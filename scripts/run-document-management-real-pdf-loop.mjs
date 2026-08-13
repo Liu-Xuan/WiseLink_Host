@@ -51,6 +51,10 @@ const fileService = new LocalMiaodaFileServiceDouble();
 const selectionBucket = 'local-drive-like-selection';
 const firstFilePath = '/selection/777-FTD-31-21002_Doc_07042025.pdf';
 const newerFilePath = '/selection/777-FTD-31-21002_Doc_09262025.pdf';
+const firstSha256 = createHash('sha256').update(firstBytes).digest('hex');
+const canonicalBucket = 'local-hosted-default';
+const orphanFilePath =
+  `/document-management/source/sha256/${firstSha256.slice(0, 2)}/${firstSha256}.pdf`;
 fileService.seed({
   bucketId: selectionBucket,
   filePath: firstFilePath,
@@ -62,6 +66,19 @@ fileService.seed({
   filePath: newerFilePath,
   bytes: newerBytes,
   fileName: '777-FTD-31-21002_Doc_09262025.pdf',
+});
+fileService.seed({
+  bucketId: canonicalBucket,
+  filePath: orphanFilePath,
+  bytes: firstBytes,
+  fileName: `${firstSha256}.pdf`,
+  metadataOverrides: {
+    id: 'local-preexisting-content-addressed-object',
+    updatedAt: '2026-08-14T03:20:24.629928515+08:00',
+  },
+});
+fileService.overrideDownloadMetadata(canonicalBucket, orphanFilePath, {
+  updatedAt: '2026-08-14T03:20:24.629929+08:00',
 });
 const catalog = new InMemoryHostedDocumentCatalog();
 const authorizationCalls = [];
@@ -105,6 +122,12 @@ const ingest = (filePath, sourceRef, idempotencyKey) =>
     serverContext,
   );
 const first = await ingest(firstFilePath, `local:${firstFilePath}`, 'host-first');
+const orphanReuseProof = {
+  filePath: orphanFilePath,
+  providerObjectId: 'local-preexisting-content-addressed-object',
+  uploadCountAfterFirstIngest: fileService.uploadCalls.length,
+  deleteCountAfterFirstIngest: fileService.removeCalls.length,
+};
 const exact = await ingest(
   firstFilePath,
   `local:${firstFilePath}:repeat`,
@@ -122,6 +145,14 @@ function accept(condition, message) {
   if (!condition) throw new Error(`HOST_DM_REAL_LOOP_FAILED:${message}`);
 }
 accept(first.decision === 'INGEST_NEW_FAMILY', 'first decision');
+accept(
+  orphanReuseProof.uploadCountAfterFirstIngest === 0,
+  'orphan reuse performed a second upload',
+);
+accept(
+  orphanReuseProof.deleteCountAfterFirstIngest === 0,
+  'orphan reuse performed a delete',
+);
 accept(exact.decision === 'RESUME_EXISTING_PROCESS', 'exact decision');
 accept(newer.decision === 'INGEST_NEW_REVISION', 'newer decision');
 accept(replay.disposition === 'IDEMPOTENT_REPLAY', 'replay disposition');
@@ -142,10 +173,11 @@ accept(
   'historical overwrite',
 );
 accept(
-  fileService.uploadCalls.length === 2 &&
+  fileService.uploadCalls.length === 1 &&
     fileService.uploadCalls.every((call) => call.options.upsert === false),
   'immutable FileService writes',
 );
+accept(fileService.removeCalls.length === 0, 'FileService delete was invoked');
 accept(authorizationCalls.length === 4, 'authorization call count');
 
 const result = {
@@ -167,7 +199,9 @@ const result = {
     documentVersions: snapshot.documentVersions.length,
     currentnessDecisions: snapshot.currentnessDecisions.length,
     fileServiceImmutableUploads: fileService.uploadCalls.length,
+    fileServiceDeletes: fileService.removeCalls.length,
   },
+  orphanReuseProof,
   family,
   versions: snapshot.documentVersions,
   documentVersionImmutableProof: true,
@@ -182,6 +216,6 @@ const sourceSha256 = await Promise.all(
 process.stdout.write(`${JSON.stringify({
   ...result,
   sourceSha256,
-  sourceOwnerCommit: 'cb5cadd940d869891e6d969ea04167c2bcbd502e',
+  sourceOwnerCommit: '4d88666a3c494633dc083388ef781ea7aafab998',
   executedFromHostBuild: true,
 }, null, 2)}\n`);

@@ -86,24 +86,22 @@ is introduced.
 
 ## Claims and non-claims
 
-Claim: one new, empty full-stack app now has a local candidate branch containing the source-level
-host composition with every hosted provider unconfigured. The production build starts locally at
-the exact app base path; after following the platform's cookie plus `X-Suda-Csrf-Token` protocol,
-Unified readiness returns `VERIFICATION_PENDING` and Registrar readiness returns `BLOCKED`, with
-both write and publication authority false.
+Claim: the unique full-stack app candidate has a local host branch containing the source-level
+composition with write-authoritative hosted providers unconfigured. The current local production
+build and Unified composition pass; Registrar readiness remains `BLOCKED`, with write and
+publication authority false. The DM owner refresh is verified only through the built local host and
+two real FTD PDFs.
 
-Non-claims: no candidate code has been pushed, no release exists, no hosted provider has been
-selected in `AppModule`, no Python runtime probe has run in hosted DEV, no
-FileService/Base/database/WorkItem was written, and no current or engineering decision was changed.
+Non-claims for this refresh: no push, release, hosted POST, environment change, Base/FileService/
+database/WorkItem/workflow mutation, current switch or engineering decision was performed. Earlier
+DEV release history is not repeated or upgraded into a new acceptance claim.
 
 ## Only blocker
 
-The remaining runtime blocker is one authorized DEV activation that binds the already-selected
-hosted providers and probes whether the Miaoda runtime supports the exact Python U0 adapter
-(`child_process`, Python executable and frozen.2 dependencies). Document Management source,
-Registrar runtime ports, authorization/permission readers and canonical deep-link origin also
-remain unbound. Until that provider assembly is activated, this app remains a candidate and
-correctly stays locked.
+The remaining activation blockers are Master trust, permission fresh-read and explicit write
+authority for the existing hosted providers. This local slice does not invent any of them. Until
+the main controller supplies and verifies those ordinary runtime inputs, the app remains a
+candidate and its mutation paths correctly stay locked.
 
 ## Phase 1B read-only DEV probe
 
@@ -125,7 +123,7 @@ weaker Validator.
 ## Phase 2C Document Management integration
 
 The exact Document Management source bundle from
-`cb5cadd940d869891e6d969ea04167c2bcbd502e` is now selectively assembled as an internal module.
+`4d88666a3c494633dc083388ef781ea7aafab998` is now selectively assembled as an internal module.
 DEV contains the owner migration's seven empty catalog tables, and the host-generated Drizzle
 schema is the only table definition consumed at runtime. The source bundle's CommonJS output and
 23 document-family adapters load from the production host build. The same built core passed the
@@ -146,11 +144,11 @@ actual bytes instead of path names and preserves the server-owned 403 response, 
 pushed or deployed. Full evidence, release identities and non-claims are in
 `docs/PHASE_2D_HOSTED_VALIDATION_ACCEPTANCE_20260814.md`.
 
-## Phase 2F locator correction candidate
+## Post-Phase-2 local owner refresh
 
 The host now consumes the owner-exported leading-slash canonicalization and the metadata/download
-object-version binding from exact DM commit `cb5cadd940d869891e6d969ea04167c2bcbd502e`.
-This does not weaken bucket, path, object, version or actual-byte checks. It preserves the caller's
-numeric FileService path in catalog lineage while comparing the provider's canonical path. At this
-commit the correction is a local candidate pending the single validation-release/closure-release
-hosted replay; no success claim is made here.
+object binding from exact DM commit `4d88666a3c494633dc083388ef781ea7aafab998`.
+`updatedAt` is audit metadata only; this does not weaken bucket, canonical path, provider object ID
+or actual-byte checks. The local two-PDF loop also preloads the first content-addressed object and
+requires its reuse with zero upload and zero delete. Phase 2 is permanently stopped: no hosted
+replay, release, environment change or online write is authorized or claimed by this refresh.
