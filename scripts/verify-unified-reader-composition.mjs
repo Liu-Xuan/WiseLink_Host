@@ -41,6 +41,7 @@ const { UnifiedReaderService } = await import(
 const {
   AEO_SPECIALIST_READER,
   AEO_SPECIALIST_READER_PORT,
+  IMMUTABLE_ACCEPTANCE_RECEIPT_OWNER,
   U0_FULL_PACKAGE_VALIDATOR,
   UNIFIED_ARTIFACT_STORE,
   UNIFIED_READER_HOST_BINDING,
@@ -92,12 +93,26 @@ const fullValidatorProvider =
     contractRoot: '/contract-root-not-executed-by-composition-check',
     contractCommit: 'fa69ada08265934951df53c7a61a3ccdb8cb2900',
     validatorRevision: 'u0-frozen2-python-hosted-probe',
+    pythonModulePath: '/vendor-path-not-executed-by-composition-check',
   });
 assert.equal(fullValidatorProvider.provide, U0_FULL_PACKAGE_VALIDATOR);
 assert.equal(
   fullValidatorProvider.useFactory().constructor.name,
   'PythonU0FullPackageValidatorAdapter',
 );
+const fakeReceiptOwner = {
+  activationBinding: exactHostBinding,
+  async persistAndReadback() {
+    throw new Error('UNEXPECTED_RECEIPT_OWNER_IO');
+  },
+};
+const receiptOwnerProvider =
+  publicApi.createImmutableAcceptanceReceiptOwnerProvider(fakeReceiptOwner);
+assert.equal(
+  receiptOwnerProvider.provide,
+  IMMUTABLE_ACCEPTANCE_RECEIPT_OWNER,
+);
+assert.equal(receiptOwnerProvider.useValue, fakeReceiptOwner);
 
 assert.equal(
   AEO_SPECIALIST_READER_PORT,
@@ -131,6 +146,10 @@ assert.equal(
   'UnconfiguredUnifiedArtifactStoreAdapter',
 );
 assert.equal(
+  defaults.get(IMMUTABLE_ACCEPTANCE_RECEIPT_OWNER).useClass.name,
+  'UnconfiguredImmutableAcceptanceReceiptOwnerAdapter',
+);
+assert.equal(
   defaults.get(AEO_SPECIALIST_READER).useClass.name,
   'UnconfiguredAeoSpecialistReaderAdapter',
 );
@@ -138,6 +157,7 @@ assert.deepEqual(defaults.get(UNIFIED_READER_HOST_BINDING).useValue, {
   mode: 'DEFAULT_UNCONFIGURED',
   artifactStoreConfigured: false,
   fullU0ValidatorConfigured: false,
+  immutableAcceptanceReceiptOwnerConfigured: false,
   aeoSpecialistReaderConfigured: false,
   authority: 'COMPOSITION_STATE_NOT_ACTIVATION_NOT_WRITE_AUTHORIZATION',
 });
@@ -155,6 +175,7 @@ const configured = providerMap(
       provide: U0_FULL_PACKAGE_VALIDATOR,
       useValue: fakeFullValidator,
     },
+    immutableAcceptanceReceiptOwnerProvider: receiptOwnerProvider,
     aeoSpecialistReaderProvider: {
       provide: AEO_SPECIALIST_READER,
       useValue: fakeAeoReader,
@@ -166,11 +187,16 @@ assert.equal(
   configured.get(U0_FULL_PACKAGE_VALIDATOR).useValue,
   fakeFullValidator,
 );
+assert.equal(
+  configured.get(IMMUTABLE_ACCEPTANCE_RECEIPT_OWNER).useValue,
+  fakeReceiptOwner,
+);
 assert.equal(configured.get(AEO_SPECIALIST_READER).useValue, fakeAeoReader);
 assert.deepEqual(configured.get(UNIFIED_READER_HOST_BINDING).useValue, {
   mode: 'HOST_CONFIGURED',
   artifactStoreConfigured: true,
   fullU0ValidatorConfigured: true,
+  immutableAcceptanceReceiptOwnerConfigured: true,
   aeoSpecialistReaderConfigured: true,
   authority: 'COMPOSITION_STATE_NOT_ACTIVATION_NOT_WRITE_AUTHORIZATION',
 });
@@ -189,6 +215,10 @@ const defaultReadiness = defaultContext.get(UnifiedReaderService).readiness();
 assert.equal(defaultReadiness.capabilities.artifactStoreConfigured, false);
 assert.equal(defaultReadiness.capabilities.fullU0ValidatorConfigured, false);
 assert.equal(
+  defaultReadiness.capabilities.immutableAcceptanceReceiptOwnerConfigured,
+  false,
+);
+assert.equal(
   defaultReadiness.capabilities.aeoSpecialistReaderConfigured,
   false,
 );
@@ -197,6 +227,11 @@ assert.ok(
 );
 assert.ok(
   defaultReadiness.blockers.includes('U0_FULL_VALIDATOR_NOT_CONFIGURED'),
+);
+assert.ok(
+  defaultReadiness.blockers.includes(
+    'IMMUTABLE_ACCEPTANCE_RECEIPT_OWNER_NOT_CONFIGURED',
+  ),
 );
 assert.ok(
   defaultReadiness.blockers.includes('AEO_SPECIALIST_READER_NOT_CONFIGURED'),
@@ -213,6 +248,7 @@ const configuredContext = await NestFactory.createApplicationContext(
       provide: U0_FULL_PACKAGE_VALIDATOR,
       useValue: fakeFullValidator,
     },
+    immutableAcceptanceReceiptOwnerProvider: receiptOwnerProvider,
     aeoSpecialistReaderProvider: {
       provide: AEO_SPECIALIST_READER,
       useValue: fakeAeoReader,
@@ -225,6 +261,10 @@ const configuredReadiness = configuredContext
   .readiness();
 assert.equal(configuredReadiness.capabilities.artifactStoreConfigured, true);
 assert.equal(configuredReadiness.capabilities.fullU0ValidatorConfigured, true);
+assert.equal(
+  configuredReadiness.capabilities.immutableAcceptanceReceiptOwnerConfigured,
+  true,
+);
 assert.equal(
   configuredReadiness.capabilities.aeoSpecialistReaderConfigured,
   true,

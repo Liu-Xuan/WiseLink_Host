@@ -2,6 +2,7 @@ import type { Provider } from '@nestjs/common';
 import { FileService } from '@lark-apaas/fullstack-nestjs-core';
 
 import {
+  IMMUTABLE_ACCEPTANCE_RECEIPT_OWNER,
   U0_FULL_PACKAGE_VALIDATOR,
   UNIFIED_ARTIFACT_STORE,
 } from './unified-reader.constants';
@@ -10,12 +11,16 @@ import {
   PythonU0FullPackageValidatorAdapter,
   type PythonU0FullPackageValidatorOptions,
 } from './python-u0-full-package-validator.adapter';
-import type { UnifiedHostActivationExactBinding } from './unified-reader.types';
+import type {
+  ImmutableAcceptanceReceiptOwnerPort,
+  UnifiedHostActivationExactBinding,
+} from './unified-reader.types';
 
 /**
- * Hosted provider boundary consumed from Unified commit
- * 2d33803602fd0c92396c381bc4793ebc29bbd7f0.  Historical HTTP mutation
- * routes and receipt-authority builders are intentionally not re-exported.
+ * Hosted provider boundary consumed through Unified commit
+ * b3e7a20245af19349a8bfa9c0da995d5eeac6acf. Historical HTTP mutation
+ * routes remain excluded; the receipt-owner factory only binds an existing
+ * platform-selected owner and does not create write authority.
  */
 export interface MiaodaFileArtifactStoreProviderOptions {
   activationBinding: UnifiedHostActivationExactBinding;
@@ -45,6 +50,15 @@ export function createPythonU0FullPackageValidatorProvider(
   };
 }
 
+export function createImmutableAcceptanceReceiptOwnerProvider(
+  owner: ImmutableAcceptanceReceiptOwnerPort,
+): Provider {
+  return {
+    provide: IMMUTABLE_ACCEPTANCE_RECEIPT_OWNER,
+    useValue: owner,
+  };
+}
+
 export { Frozen2CandidateReaderService } from './frozen2-candidate-reader.service';
 export { MiaodaFileArtifactStoreAdapter } from './miaoda-file-artifact-store.adapter';
 export {
@@ -61,6 +75,7 @@ export {
 export { UnifiedReaderService } from './unified-reader.service';
 export {
   AEO_SPECIALIST_READER_PORT,
+  IMMUTABLE_ACCEPTANCE_RECEIPT_OWNER,
   U0_FROZEN2_FAILURE_ADAPTER_PORT,
   U0_FULL_PACKAGE_VALIDATOR,
   UNIFIED_ARTIFACT_STORE,
@@ -68,6 +83,7 @@ export {
 } from './unified-reader.constants';
 export type {
   AeoSpecialistReaderPort,
+  ImmutableAcceptanceReceiptOwnerPort,
   U0Frozen2FailureAdapterInput,
   U0Frozen2FailureAdapterPort,
   U0FullPackageValidatorPort,
@@ -75,8 +91,10 @@ export type {
   UnifiedHostActivationExactBinding,
 } from './unified-reader.types';
 export type {
+  ImmutableReceiptArtifactDescriptor,
   UnifiedAcceptanceCandidateReceipt,
   UnifiedAcceptanceCorrelation,
+  UnifiedAcceptanceOwnedReceipt,
   UnifiedAcceptanceRequest,
   UnifiedPackageArtifactDescriptor,
   UnifiedPackageReadbackRequest,

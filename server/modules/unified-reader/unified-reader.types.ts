@@ -1,4 +1,7 @@
 import type {
+  ImmutableReceiptArtifactDescriptor,
+  UnifiedAcceptanceCandidateReceipt,
+  UnifiedAcceptanceCorrelation,
   UnifiedParseFailureReport,
   UnifiedPackageArtifactDescriptor,
   UnifiedPackageSourceKind,
@@ -35,6 +38,19 @@ export interface UnifiedArtifactStorePort {
   readActualBytes(
     artifact: UnifiedPackageArtifactDescriptor,
   ): Promise<Uint8Array>;
+}
+
+export interface ImmutableAcceptanceReceiptOwnerPort {
+  readonly activationBinding: UnifiedHostActivationExactBinding;
+  persistAndReadback(input: {
+    bytes: Uint8Array;
+    correlation: UnifiedAcceptanceCorrelation;
+    candidateReceipt: UnifiedAcceptanceCandidateReceipt;
+  }): Promise<{
+    artifact: ImmutableReceiptArtifactDescriptor;
+    bytes: Uint8Array;
+    reused: boolean;
+  }>;
 }
 
 export interface U0FullValidationProof {
@@ -186,6 +202,7 @@ export interface UnifiedReaderHostBindingState {
   mode: 'DEFAULT_UNCONFIGURED' | 'HOST_CONFIGURED';
   artifactStoreConfigured: boolean;
   fullU0ValidatorConfigured: boolean;
+  immutableAcceptanceReceiptOwnerConfigured: boolean;
   aeoSpecialistReaderConfigured: boolean;
   authority: 'COMPOSITION_STATE_NOT_ACTIVATION_NOT_WRITE_AUTHORIZATION';
 }

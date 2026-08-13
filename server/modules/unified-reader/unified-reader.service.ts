@@ -60,6 +60,8 @@ export class UnifiedReaderService {
           this.hostBinding.aeoSpecialistReaderConfigured,
         artifactStoreConfigured: this.hostBinding.artifactStoreConfigured,
         fullU0ValidatorConfigured: this.hostBinding.fullU0ValidatorConfigured,
+        immutableAcceptanceReceiptOwnerConfigured:
+          this.hostBinding.immutableAcceptanceReceiptOwnerConfigured,
         immutableArtifactPersistAndReadback: false,
         sourceBoundCandidateReadback: false,
         boundedSourceQuery: true,
@@ -76,6 +78,9 @@ export class UnifiedReaderService {
           : []),
         ...(!this.hostBinding.fullU0ValidatorConfigured
           ? ['U0_FULL_VALIDATOR_NOT_CONFIGURED']
+          : []),
+        ...(!this.hostBinding.immutableAcceptanceReceiptOwnerConfigured
+          ? ['IMMUTABLE_ACCEPTANCE_RECEIPT_OWNER_NOT_CONFIGURED']
           : []),
         ...(!this.hostBinding.aeoSpecialistReaderConfigured
           ? ['AEO_SPECIALIST_READER_NOT_CONFIGURED']

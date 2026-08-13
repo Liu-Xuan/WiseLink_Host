@@ -66,7 +66,7 @@ is introduced.
 3. **Unified**
    - reuse `server/modules/unified-reader/unified-reader.module.ts`;
    - consume exact Unified hosted source commit
-     `2d33803602fd0c92396c381bc4793ebc29bbd7f0` through
+     `b3e7a20245af19349a8bfa9c0da995d5eeac6acf` through
      `server/modules/unified-reader/public-api.ts`;
    - the official FileService provider can read and verify immutable package bytes, but package
      persistence is blocked before FileService I/O without a separate validation-write receipt;
@@ -102,6 +102,21 @@ The remaining activation blockers are Master trust, permission fresh-read and ex
 authority for the existing hosted providers. This local slice does not invent any of them. Until
 the main controller supplies and verifies those ordinary runtime inputs, the app remains a
 candidate and its mutation paths correctly stay locked.
+
+## Local platform-adapter coverage
+
+| Port | Local host coverage | Runtime status |
+| --- | --- | --- |
+| `RegistrarActivationArtifactStorePort` | dedicated read-only FileService actual-byte adapter; returns configured store/bucket/adapter identity | implemented and unit-tested; not sufficient to activate Registrar |
+| Registrar Master signature/trust | none | `BLOCKED`; not implemented or simulated |
+| Registrar sole-writer permission fresh-read | none | `BLOCKED`; not implemented or simulated |
+| Registrar validation-write authorization | none | `BLOCKED`; not implemented or simulated |
+| `ImmutableAcceptanceReceiptOwnerPort` | Unified `b3e7a...` public DI wrapper plus explicit unconfigured adapter | `IMMUTABLE_ACCEPTANCE_RECEIPT_OWNER_NOT_CONFIGURED` |
+| Unified Python U0 Validator | existing hosted-verified adapter and ordinary `pythonModulePath` passthrough | source/config retained; no online probe in this slice |
+
+No activation manifest, immutable acceptance receipt, signature, permission grant or validation-
+write authorization is created by these adapters. This is a local composition improvement only;
+there was no push, release, environment change or online I/O.
 
 ## Phase 1B read-only DEV probe
 

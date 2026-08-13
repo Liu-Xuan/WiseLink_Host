@@ -26,6 +26,7 @@ export interface UnifiedReaderReadinessResponse {
     aeoSpecialistReaderConfigured: boolean;
     artifactStoreConfigured: boolean;
     fullU0ValidatorConfigured: boolean;
+    immutableAcceptanceReceiptOwnerConfigured: boolean;
     immutableArtifactPersistAndReadback: false;
     sourceBoundCandidateReadback: false;
     boundedSourceQuery: true;
@@ -194,6 +195,40 @@ export interface UnifiedAcceptanceCandidateReceipt {
     grantsPublication: false;
     selectsCurrent: false;
   };
+}
+
+export interface ImmutableReceiptArtifactDescriptor {
+  storeRole: 'ImmutableAcceptanceReceiptStoreCandidate';
+  ref: string;
+  sha256: string;
+  byteLength: number;
+  mediaType: 'application/json';
+}
+
+export interface UnifiedAcceptanceOwnedReceipt {
+  schemaVersion: 'wiselink.3_1.unified_acceptance_owned_receipt.v0.candidate.1';
+  owner: {
+    portRevision: 'wiselink.3_1.port.immutable_acceptance_receipt_owner.v0.candidate.1';
+    fingerprint: string;
+    activationStatus: 'CANDIDATE_ONLY';
+  };
+  selectedContract: {
+    contractId: 'techpub.parsed-package.v1';
+    contractRevision: 'frozen.2';
+  };
+  u0: {
+    contractCommit: 'fa69ada08265934951df53c7a61a3ccdb8cb2900';
+    contractManifestSha256: string;
+  };
+  handler: UnifiedAcceptanceCandidateReceipt['dispatch'];
+  artifactStoreIdentity: {
+    storeRole: 'UnifiedArtifactStoreCandidate';
+    artifactRef: string;
+    artifactSha256: string;
+    artifactByteLength: number;
+  };
+  correlation: UnifiedAcceptanceCorrelation;
+  candidateReceipt: UnifiedAcceptanceCandidateReceipt;
 }
 
 export type CanonicalWorkItemParsePhase =
