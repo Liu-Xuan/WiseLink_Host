@@ -11,6 +11,23 @@ export interface ImmutableArtifactPersistResult {
   reused: boolean;
 }
 
+/**
+ * Exact host roles required by the official FileService adapter.  The host
+ * supplies this binding; requests cannot choose any of these identities.
+ */
+export interface UnifiedHostActivationExactBinding {
+  canonicalMiaodaHostId: string;
+  tenantId: string;
+  environment: string;
+  roleResolutionRevision: string;
+  roleResolutionFingerprint: string;
+  canonicalArtifactStoreId: string;
+  soleRegistrarServicePrincipal: string;
+  immutableReceiptOwnerId: string;
+  immutableReceiptOwnerAdapterRevision: string;
+  immutableReceiptStoreId: string;
+}
+
 export interface UnifiedArtifactStorePort {
   persistAndReadback(
     bytes: Uint8Array,

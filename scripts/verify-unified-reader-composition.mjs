@@ -29,6 +29,9 @@ const {
 } = await import(
   pathToFileURL(join(moduleRoot, 'unified-reader.module.js'))
 );
+const publicApi = await import(
+  pathToFileURL(join(moduleRoot, 'public-api.js'))
+);
 const { UnifiedReaderController } = await import(
   pathToFileURL(join(moduleRoot, 'unified-reader.controller.js'))
 );
@@ -43,6 +46,57 @@ const {
   UNIFIED_READER_HOST_BINDING,
 } = await import(
   pathToFileURL(join(moduleRoot, 'unified-reader.constants.js'))
+);
+
+const exactHostBinding = {
+  canonicalMiaodaHostId: 'app_17bzc551rsg',
+  tenantId: 'tenant-composition-test',
+  environment: 'local-composition-test',
+  roleResolutionRevision: 'local-composition-test',
+  roleResolutionFingerprint:
+    'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+  canonicalArtifactStoreId: 'file-service-composition-test',
+  soleRegistrarServicePrincipal: 'registrar-composition-test',
+  immutableReceiptOwnerId: 'receipt-owner-composition-test',
+  immutableReceiptOwnerAdapterRevision: 'local-composition-test',
+  immutableReceiptStoreId: 'receipt-store-composition-test',
+};
+const fileServiceProvider = publicApi.createMiaodaFileArtifactStoreProvider({
+  activationBinding: exactHostBinding,
+});
+assert.equal(fileServiceProvider.provide, UNIFIED_ARTIFACT_STORE);
+assert.equal(fileServiceProvider.inject.length, 1);
+assert.equal(fileServiceProvider.inject[0].name, 'FileService');
+const noIoFileService = {
+  getFileMetadata() {
+    throw new Error('UNEXPECTED_FILE_SERVICE_IO');
+  },
+  upload() {
+    throw new Error('UNEXPECTED_FILE_SERVICE_IO');
+  },
+  download() {
+    throw new Error('UNEXPECTED_FILE_SERVICE_IO');
+  },
+};
+const hostedArtifactStore = fileServiceProvider.useFactory(noIoFileService);
+assert.deepEqual(hostedArtifactStore.activationBinding, exactHostBinding);
+await assert.rejects(
+  hostedArtifactStore.persistAndReadback(
+    new TextEncoder().encode('{"ok":true}\n'),
+  ),
+  /VALIDATION_WRITE_RECEIPT_REQUIRED:PACKAGE_ARTIFACT_PERSIST/u,
+);
+const fullValidatorProvider =
+  publicApi.createPythonU0FullPackageValidatorProvider({
+    pythonExecutable: '/usr/bin/python3',
+    contractRoot: '/contract-root-not-executed-by-composition-check',
+    contractCommit: 'fa69ada08265934951df53c7a61a3ccdb8cb2900',
+    validatorRevision: 'u0-frozen2-python-hosted-probe',
+  });
+assert.equal(fullValidatorProvider.provide, U0_FULL_PACKAGE_VALIDATOR);
+assert.equal(
+  fullValidatorProvider.useFactory().constructor.name,
+  'PythonU0FullPackageValidatorAdapter',
 );
 
 assert.equal(

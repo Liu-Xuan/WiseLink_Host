@@ -65,7 +65,15 @@ is introduced.
    - keep WorkItem identity/current state in that one store; do not mirror it in Unified or AEO.
 3. **Unified**
    - reuse `server/modules/unified-reader/unified-reader.module.ts`;
-   - inject the selected ArtifactStore, full Validator and exact Unified failure adapter providers;
+   - consume exact Unified hosted source commit
+     `2d33803602fd0c92396c381bc4793ebc29bbd7f0` through
+     `server/modules/unified-reader/public-api.ts`;
+   - the official FileService provider can read and verify immutable package bytes, but package
+     persistence is blocked before FileService I/O without a separate validation-write receipt;
+   - retain the exact Python frozen.2 U0 adapter for a post-DEV runtime probe of Python,
+     `child_process` and contract dependencies; do not pre-build a second Node Validator;
+   - inject the selected ArtifactStore, full Validator and exact Unified failure adapter providers
+     only after hosted bindings are authorized;
    - do not copy another Reader/Validator implementation.
 4. **AEO**
    - export one `AEO_SPECIALIST_READER_PORT` provider from its internal module;
@@ -79,15 +87,20 @@ is introduced.
 ## Claims and non-claims
 
 Claim: one new, empty full-stack app now has a local candidate branch containing the source-level
-host composition with every hosted provider unconfigured.
+host composition with every hosted provider unconfigured. The production build starts locally at
+the exact app base path; after following the platform's cookie plus `X-Suda-Csrf-Token` protocol,
+Unified readiness returns `VERIFICATION_PENDING` and Registrar readiness returns `BLOCKED`, with
+both write and publication authority false.
 
 Non-claims: no candidate code has been pushed, no release exists, no hosted provider has been
-selected, no FileService/Base/database/WorkItem was written, and no current or engineering decision
-was changed.
+selected in `AppModule`, no Python runtime probe has run in hosted DEV, no
+FileService/Base/database/WorkItem was written, and no current or engineering decision was changed.
 
 ## Only blocker
 
-The 3.1 master has not yet selected the exact hosted provider set for the first authorized vertical:
-Document Management source adapter, WorkItem Registrar, ArtifactStore, full U0 Validator,
-authorization/permission readers and canonical deep-link origin. Until that one provider assembly is
-selected, this app remains a candidate and correctly stays locked.
+The remaining runtime blocker is one authorized DEV activation that binds the already-selected
+hosted providers and probes whether the Miaoda runtime supports the exact Python U0 adapter
+(`child_process`, Python executable and frozen.2 dependencies). Document Management source,
+Registrar runtime ports, authorization/permission readers and canonical deep-link origin also
+remain unbound. Until that provider assembly is activated, this app remains a candidate and
+correctly stays locked.

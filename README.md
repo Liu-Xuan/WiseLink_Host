@@ -34,7 +34,7 @@ existing `CanonicalHostModuleOptions` / `UnifiedReaderModuleOptions` seams:
 | Assessment Hosted Registrar activation | `server/modules/assessment-registrar/` | exact `bb73aac…` activation provider + three Base capabilities | `BLOCKED` before any Base I/O |
 | Host authn/authz | `canonical-host.controller.ts` and host module | platform `@NeedLogin`, `authorizationProvider`, `permissionSnapshotProvider` | authn enforced; providers `UNCONFIGURED` |
 | Canonical Miaoda binding | `canonical-entry-facade.service.ts` | `miaodaAppBindingProvider` | `UNCONFIGURED` |
-| Unified Reader / Validator / ArtifactStore | `server/modules/unified-reader/` | `unifiedReader.{artifactStoreProvider, fullU0ValidatorProvider, u0Frozen2FailureAdapterProvider}` | all `UNCONFIGURED` |
+| Unified Reader / Validator / ArtifactStore | `server/modules/unified-reader/` | `public-api.ts` supplies official FileService + exact Python U0 provider factories; existing Unified failure port remains the sole failure authority | all `UNCONFIGURED` |
 | AEO specialist reader | Unified module only | `unifiedReader.aeoSpecialistReaderProvider` | `UNCONFIGURED` |
 | Failure write authorization | host module | `failureValidationWriteAuthorizationProvider` | `UNCONFIGURED` |
 
@@ -58,3 +58,11 @@ Assessment Hosted Registrar lineage is the exact clean source commit
 `bb73aacfc4d883ce13fb6cc2fec6704057b98f24`. Only its hosted activation provider, existing
 activation loader and the three Registrar Base capabilities are assembled here; the Assessment
 workbench UI and unrelated services are not copied.
+
+Unified hosted-consumption lineage is exact clean commit
+`2d33803602fd0c92396c381bc4793ebc29bbd7f0`. This host consumes the official FileService provider
+factory, the frozen.2 Python U0 Validator factory and their shared types. It does not copy Unified's
+historical HTTP mutation surface, receipt owner or another FailureReport builder. Package writes
+remain blocked before FileService I/O until a separately authorized validation-write path exists.
+The Python adapter is retained for a later DEV runtime capability probe; it is not bound by the
+default `AppModule`.
