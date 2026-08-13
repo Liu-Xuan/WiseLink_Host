@@ -104,3 +104,20 @@ hosted providers and probes whether the Miaoda runtime supports the exact Python
 Registrar runtime ports, authorization/permission readers and canonical deep-link origin also
 remain unbound. Until that provider assembly is activated, this app remains a candidate and
 correctly stays locked.
+
+## Phase 1B read-only DEV probe
+
+The first controlled release adds one bounded, login-protected `GET /api/runtime-probe` endpoint.
+It accepts no executable, path, package or persistence input. It checks only:
+
+- a fixed `python3` / `python` / `/usr/bin/python3` executable list;
+- `child_process` execution and a temporary-file create/read/delete cycle;
+- `jsonschema` availability;
+- the exact U0 frozen.2 manifest bytes and required Reader/schema/extension assets copied from U0
+  commit `fa69ada08265934951df53c7a61a3ccdb8cb2900`;
+- a strict read of the bundled minimal frozen.2 PDF package.
+
+The endpoint hard-codes every business, artifact and Base write authority to `false`. It never
+calls FileService, Base, WorkItem, package persistence or receipt persistence. A missing hosted
+dependency returns `BLOCKED` with an explicit blocker; it does not fall back to a local service or a
+weaker Validator.

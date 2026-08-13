@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:techpub:schema:v1:parse-failure-report:frozen-2",
+  "title": "Technical Publication Parse Failure Report v1 frozen revision 2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schemaVersion",
+    "contractRevision",
+    "failureId",
+    "stage",
+    "code",
+    "message",
+    "blocking",
+    "packageProduced",
+    "producer",
+    "observedAt",
+    "parameters"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "urn:techpub:schema:v1:parse-failure-report:frozen-2"
+    },
+    "schemaVersion": {
+      "const": "techpub.parse-failure-report.v1"
+    },
+    "contractRevision": {
+      "const": "frozen.2"
+    },
+    "failureId": {
+      "type": "string",
+      "pattern": "^urn:techpub:parse-failure:v1:sha256:[0-9a-f]{64}$"
+    },
+    "sourceKind": {
+      "enum": [
+        "pdf",
+        "native_s1000d",
+        "unknown"
+      ]
+    },
+    "inputRef": {
+      "type": "string",
+      "minLength": 1
+    },
+    "inputHash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "stage": {
+      "enum": [
+        "discovery",
+        "source_integrity",
+        "security",
+        "schema_binding",
+        "parse",
+        "projection"
+      ]
+    },
+    "code": {
+      "type": "string",
+      "pattern": "^[A-Z0-9]+(?:[._][A-Z0-9]+)+$"
+    },
+    "message": {
+      "type": "string",
+      "minLength": 1
+    },
+    "blocking": {
+      "const": true
+    },
+    "packageProduced": {
+      "const": false
+    },
+    "producer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version",
+        "buildHash"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "buildHash": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "observedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "parameters": {
+      "type": "object",
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

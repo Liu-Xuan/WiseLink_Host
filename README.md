@@ -17,7 +17,10 @@ writing an old Base, old app, TDMS, AAmis, a demo store or a developer workstati
 
 The root app installs `CanonicalHostModule.forRoot()` before the fallback `ViewModule`, with every
 effectful provider unconfigured. The previous app's runtime-probe module is deliberately not part
-of this candidate.
+of this candidate. A new bounded `GET /api/runtime-probe` endpoint is included only for the first
+DEV release: it is login-protected, accepts no input, writes no business/artifact data, and checks
+the hosted Python executable, `child_process`, temporary files, `jsonschema`, pinned frozen.2
+runtime assets and a strict minimal Reader invocation.
 
 The first page is `WorkItem > 文档与解析`. With no configured Registrar it shows an explicit locked
 state and never falls back to sample data.

@@ -1,0 +1,25 @@
+{
+  "$schema": "urn:techpub:schema:v1:extension-registry:frozen-2",
+  "schemaVersion": "techpub.extension-registry.v1",
+  "contractRevision": "frozen.2",
+  "extensions": [
+    {
+      "namespace": "urn:techpub:ext:review-note:v1",
+      "schemaId": "urn:techpub:schema:v1:extension:review-note:frozen-1",
+      "version": "1.0.0",
+      "schemaPath": "extensions/review-note.schema.json"
+    },
+    {
+      "namespace": "urn:techpub:ext:pdf-visual-lineage:v1",
+      "schemaId": "urn:techpub:schema:v1:extension:pdf-visual-lineage:frozen-1",
+      "version": "1.0.0",
+      "schemaPath": "extensions/pdf-visual-lineage.schema.json"
+    },
+    {
+      "namespace": "urn:techpub:ext:s1000d-native-lineage:v1",
+      "schemaId": "urn:techpub:schema:v1:extension:s1000d-native-lineage:frozen-2",
+      "version": "1.1.0",
+      "schemaPath": "extensions/s1000d-native-lineage.schema.json"
+    }
+  ]
+}

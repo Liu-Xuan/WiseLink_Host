@@ -1,0 +1,2516 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:techpub:schema:v1:parsed-package:frozen-2",
+  "title": "Technical Publication Parsed Package v1 frozen revision 2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schemaVersion",
+    "contractRevision",
+    "packageId",
+    "integrity",
+    "result",
+    "artifacts",
+    "source",
+    "profile",
+    "lineage",
+    "document",
+    "publicationStructures",
+    "modules",
+    "sourceRefs",
+    "sourceSegments",
+    "contentUnits",
+    "references",
+    "assets",
+    "applicability",
+    "coverage",
+    "findings",
+    "extensions"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "urn:techpub:schema:v1:parsed-package:frozen-2"
+    },
+    "schemaVersion": {
+      "const": "techpub.parsed-package.v1"
+    },
+    "contractRevision": {
+      "const": "frozen.2"
+    },
+    "packageId": {
+      "$ref": "#/$defs/entityId"
+    },
+    "integrity": {
+      "$ref": "#/$defs/integrity"
+    },
+    "result": {
+      "$ref": "#/$defs/result"
+    },
+    "artifacts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/artifact"
+      }
+    },
+    "source": {
+      "$ref": "#/$defs/source"
+    },
+    "profile": {
+      "$ref": "#/$defs/profile"
+    },
+    "lineage": {
+      "$ref": "#/$defs/lineage"
+    },
+    "document": {
+      "$ref": "#/$defs/document"
+    },
+    "publicationStructures": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/publicationStructure"
+      }
+    },
+    "modules": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/module"
+      }
+    },
+    "sourceRefs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/sourceRef"
+      }
+    },
+    "sourceSegments": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/sourceSegment"
+      }
+    },
+    "contentUnits": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/contentUnit"
+      }
+    },
+    "references": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/reference"
+      }
+    },
+    "assets": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/asset"
+      }
+    },
+    "applicability": {
+      "$ref": "#/$defs/applicability"
+    },
+    "coverage": {
+      "$ref": "#/$defs/coverage"
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/finding"
+      }
+    },
+    "extensions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/extension"
+      }
+    }
+  },
+  "$defs": {
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "safeInteger": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "nonNegativeInteger": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "positiveInteger": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "entityId": {
+      "type": "string",
+      "pattern": "^urn:techpub:[a-z0-9-]+:v1:sha256:[0-9a-f]{64}$"
+    },
+    "entityIdArray": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/entityId"
+      }
+    },
+    "nonEmptyEntityIdArray": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/entityId"
+      }
+    },
+    "stringArray": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/nonEmptyString"
+      }
+    },
+    "authority": {
+      "enum": [
+        "source_asserted",
+        "parser_normalized",
+        "parser_candidate",
+        "service_observed",
+        "service_generated"
+      ]
+    },
+    "confidence": {
+      "enum": [
+        "deterministic",
+        "high",
+        "medium",
+        "low",
+        "needs_review"
+      ]
+    },
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hashSpecVersion",
+        "canonicalization",
+        "digestAlgorithm",
+        "contentHash",
+        "semanticHash",
+        "provenanceHash",
+        "coverageHash"
+      ],
+      "properties": {
+        "hashSpecVersion": {
+          "const": "techpub.hash.v1"
+        },
+        "canonicalization": {
+          "const": "RFC8785-JCS"
+        },
+        "digestAlgorithm": {
+          "const": "SHA-256"
+        },
+        "contentHash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "semanticHash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "provenanceHash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "coverageHash": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "accountingComplete",
+        "contentPreserved",
+        "structuredCoverageComplete"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "complete",
+            "partial"
+          ]
+        },
+        "accountingComplete": {
+          "type": "boolean"
+        },
+        "contentPreserved": {
+          "type": "boolean"
+        },
+        "structuredCoverageComplete": {
+          "type": "boolean"
+        }
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifactId",
+        "origin",
+        "role",
+        "artifactRef",
+        "sha256",
+        "mediaType"
+      ],
+      "properties": {
+        "artifactId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "origin": {
+          "enum": [
+            "source",
+            "derived",
+            "generated"
+          ]
+        },
+        "role": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "artifactRef": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "mediaType": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "byteLength": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "normalizedPath": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "originalPath": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      }
+    },
+    "legacyIdentifier": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "namespace",
+        "value"
+      ],
+      "properties": {
+        "namespace": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "value": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "sourcePackageId",
+        "sourcePackageHash",
+        "identityAuthority",
+        "artifactIds",
+        "deliveryObjects",
+        "legacyIdentifiers"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "pdf",
+            "native_s1000d"
+          ]
+        },
+        "sourcePackageId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "sourcePackageHash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "identityAuthority": {
+          "$ref": "#/$defs/authority"
+        },
+        "artifactIds": {
+          "$ref": "#/$defs/nonEmptyEntityIdArray"
+        },
+        "deliveryObjects": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/deliveryObject"
+          }
+        },
+        "legacyIdentifiers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/legacyIdentifier"
+          }
+        }
+      }
+    },
+    "deliveryObject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "deliveryObjectId",
+        "kind",
+        "identifier",
+        "artifactIds",
+        "sourceRefIds"
+      ],
+      "properties": {
+        "deliveryObjectId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "kind": {
+          "enum": [
+            "dml",
+            "ddn",
+            "other"
+          ]
+        },
+        "identifier": {
+          "$ref": "#/$defs/authorityIdentifier"
+        },
+        "artifactIds": {
+          "$ref": "#/$defs/entityIdArray"
+        },
+        "sourceRefIds": {
+          "$ref": "#/$defs/entityIdArray"
+        }
+      }
+    },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "canonicalModel",
+        "sourceProfile",
+        "mappingProfile"
+      ],
+      "properties": {
+        "canonicalModel": {
+          "const": "technical-publication-core.v1"
+        },
+        "sourceProfile": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "sourceStandard": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name"
+          ],
+          "properties": {
+            "name": {
+              "$ref": "#/$defs/nonEmptyString"
+            },
+            "issue": {
+              "$ref": "#/$defs/nonEmptyString"
+            },
+            "profile": {
+              "$ref": "#/$defs/nonEmptyString"
+            }
+          }
+        },
+        "mappingProfile": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "version",
+            "hash"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/nonEmptyString"
+            },
+            "version": {
+              "$ref": "#/$defs/nonEmptyString"
+            },
+            "hash": {
+              "$ref": "#/$defs/sha256"
+            }
+          }
+        }
+      }
+    },
+    "lineage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "generatedAt",
+        "producer",
+        "inputs"
+      ],
+      "properties": {
+        "generatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "producer": {
+          "$ref": "#/$defs/producer"
+        },
+        "inputs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/lineageInput"
+          }
+        }
+      }
+    },
+    "producer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version",
+        "runtime",
+        "buildHash"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "version": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "runtime": {
+          "enum": [
+            "python",
+            "typescript",
+            "javascript",
+            "other"
+          ]
+        },
+        "buildHash": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "lineageInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role",
+        "schemaVersion",
+        "id",
+        "hash",
+        "artifactIds"
+      ],
+      "properties": {
+        "role": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "schemaVersion": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "id": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "artifactIds": {
+          "$ref": "#/$defs/nonEmptyEntityIdArray"
+        }
+      }
+    },
+    "sourcedString": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "authority",
+        "mappingStatus",
+        "sourceRefIds"
+      ],
+      "properties": {
+        "value": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "authority": {
+          "$ref": "#/$defs/authority"
+        },
+        "mappingStatus": {
+          "enum": [
+            "exact",
+            "normalized",
+            "inferred"
+          ]
+        },
+        "sourceRefIds": {
+          "$ref": "#/$defs/nonEmptyEntityIdArray"
+        },
+        "findingIds": {
+          "$ref": "#/$defs/entityIdArray"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "mappingStatus": {
+                "const": "inferred"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "findingIds"
+            ],
+            "properties": {
+              "authority": {
+                "enum": [
+                  "service_observed",
+                  "service_generated"
+                ]
+              },
+              "findingIds": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "$ref": "#/$defs/entityId"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "authorityIdentifier": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scheme",
+        "value",
+        "authority",
+        "completeness",
+        "sourceRefIds"
+      ],
+      "properties": {
+        "scheme": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "value": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "authority": {
+          "$ref": "#/$defs/authority"
+        },
+        "completeness": {
+          "enum": [
+            "complete",
+            "partial"
+          ]
+        },
+        "missingComponents": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "sourceRefIds": {
+          "$ref": "#/$defs/nonEmptyEntityIdArray"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "completeness": {
+                "const": "partial"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "missingComponents"
+            ],
+            "properties": {
+              "missingComponents": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "$ref": "#/$defs/nonEmptyString"
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "missingComponents": {
+                "maxItems": 0
+              }
+            }
+          }
+        }
+      ]
+    },
+    "targetIdentifier": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scheme",
+        "value",
+        "completeness"
+      ],
+      "properties": {
+        "scheme": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "value": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "completeness": {
+          "enum": [
+            "complete",
+            "partial"
+          ]
+        },
+        "missingComponents": {
+          "$ref": "#/$defs/stringArray"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "completeness": {
+                "const": "partial"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "missingComponents"
+            ],
+            "properties": {
+              "missingComponents": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "$ref": "#/$defs/nonEmptyString"
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "missingComponents": {
+                "maxItems": 0
+              }
+            }
+          }
+        }
+      ]
+    },
+    "document": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "documentId",
+        "documentType",
+        "title",
+        "identifiers",
+        "language",
+        "relationships"
+      ],
+      "properties": {
+        "documentId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "documentType": {
+          "$ref": "#/$defs/sourcedString"
+        },
+        "title": {
+          "$ref": "#/$defs/sourcedString"
+        },
+        "identifiers": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/authorityIdentifier"
+          }
+        },
+        "language": {
+          "$ref": "#/$defs/sourcedString"
+        },
+        "revision": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "label"
+          ],
+          "properties": {
+            "label": {
+              "$ref": "#/$defs/sourcedString"
+            },
+            "date": {
+              "$ref": "#/$defs/sourcedString"
+            }
+          }
+        },
+        "securityClassification": {
+          "$ref": "#/$defs/sourcedString"
+        },
+        "relationships": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/documentRelationship"
+          }
+        }
+      }
+    },
+    "documentRelationship": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "relationshipType",
+        "targetIdentifier",
+        "sourceRefIds"
+      ],
+      "properties": {
+        "relationshipType": {
+          "enum": [
+            "supersedes",
+            "superseded_by",
+            "related_source"
+          ]
+        },
+        "targetIdentifier": {
+          "$ref": "#/$defs/targetIdentifier"
+        },
+        "sourceRefIds": {
+          "$ref": "#/$defs/nonEmptyEntityIdArray"
+        }
+      }
+    },
+    "sourceRef": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/pdfSourceRef"
+        },
+        {
+          "$ref": "#/$defs/xmlSourceRef"
+        }
+      ]
+    },
+    "pdfSourceRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceRefId",
+        "kind",
+        "artifactId",
+        "pageStart",
+        "pageEnd",
+        "anchorTextHash"
+      ],
+      "properties": {
+        "sourceRefId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "kind": {
+          "const": "pdf"
+        },
+        "artifactId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "pageStart": {
+          "$ref": "#/$defs/positiveInteger"
+        },
+        "pageEnd": {
+          "$ref": "#/$defs/positiveInteger"
+        },
+        "bbox": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000000
+          }
+        },
+        "charStart": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "charEnd": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "charOffsetUnit": {
+          "const": "unicode_scalar_value"
+        },
+        "quote": {
+          "type": "string"
+        },
+        "anchorTextHash": {
+          "$ref": "#/$defs/sha256"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "anyOf": [
+              {
+                "required": [
+                  "charStart"
+                ]
+              },
+              {
+                "required": [
+                  "charEnd"
+                ]
+              },
+              {
+                "required": [
+                  "charOffsetUnit"
+                ]
+              }
+            ]
+          },
+          "then": {
+            "required": [
+              "charStart",
+              "charEnd",
+              "charOffsetUnit"
+            ]
+          }
+        }
+      ]
+    },
+    "xmlSourceRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceRefId",
+        "kind",
+        "artifactId",
+        "normalizedPath",
+        "xpath",
+        "anchorTextHash"
+      ],
+      "properties": {
+        "sourceRefId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "kind": {
+          "const": "xml"
+        },
+        "artifactId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "normalizedPath": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "xpath": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "elementId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "quote": {
+          "type": "string"
+        },
+        "anchorTextHash": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "sourceSegment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceSegmentId",
+        "continuityKey",
+        "kind",
+        "expectedSemantic",
+        "order",
+        "sourceRefIds",
+        "segmentHash",
+        "coverageRequired"
+      ],
+      "properties": {
+        "sourceSegmentId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "continuityKey": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "kind": {
+          "enum": [
+            "source_metadata",
+            "text_block",
+            "list_item",
+            "table_region",
+            "figure_region",
+            "residual_text",
+            "xml_element",
+            "other"
+          ]
+        },
+        "expectedSemantic": {
+          "enum": [
+            "metadata",
+            "heading",
+            "text",
+            "list",
+            "step",
+            "advisory",
+            "table",
+            "figure",
+            "reference",
+            "applicability",
+            "asset",
+            "other"
+          ]
+        },
+        "order": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "parentSourceSegmentId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "sourceRefIds": {
+          "$ref": "#/$defs/nonEmptyEntityIdArray"
+        },
+        "segmentHash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "coverageRequired": {
+          "type": "boolean"
+        }
+      }
+    },
+    "module": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "moduleId",
+        "continuityKey",
+        "moduleKind",
+        "informationType",
+        "authority",
+        "identityStability",
+        "order",
+        "title",
+        "sourceRefIds",
+        "contentUnitIds"
+      ],
+      "properties": {
+        "moduleId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "continuityKey": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "moduleKind": {
+          "enum": [
+            "data_module",
+            "logical_document",
+            "other"
+          ]
+        },
+        "informationType": {
+          "enum": [
+            "descriptive",
+            "procedural",
+            "planning",
+            "publication",
+            "composite",
+            "other"
+          ]
+        },
+        "authority": {
+          "$ref": "#/$defs/authority"
+        },
+        "identityStability": {
+          "enum": [
+            "source_stable",
+            "generated_stable",
+            "revision_scoped"
+          ]
+        },
+        "order": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "standardIdentity": {
+          "$ref": "#/$defs/authorityIdentifier"
+        },
+        "title": {
+          "$ref": "#/$defs/sourcedString"
+        },
+        "sourceRefIds": {
+          "$ref": "#/$defs/nonEmptyEntityIdArray"
+        },
+        "contentUnitIds": {
+          "$ref": "#/$defs/nonEmptyEntityIdArray"
+        }
+      }
+    },
+    "publicationStructure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "publicationStructureId",
+        "continuityKey",
+        "kind",
+        "authority",
+        "order",
+        "title",
+        "sourceRefIds",
+        "nodes"
+      ],
+      "properties": {
+        "publicationStructureId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "continuityKey": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "kind": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "authority": {
+          "$ref": "#/$defs/authority"
+        },
+        "order": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "standardIdentity": {
+          "$ref": "#/$defs/authorityIdentifier"
+        },
+        "title": {
+          "$ref": "#/$defs/sourcedString"
+        },
+        "sourceRefIds": {
+          "$ref": "#/$defs/nonEmptyEntityIdArray"
+        },
+        "nodes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/publicationNode"
+          }
+        }
+      }
+    },
+    "publicationNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "nodeId",
+        "continuityKey",
+        "order",
+        "title",
+        "moduleIds",
+        "children"
+      ],
+      "properties": {
+        "nodeId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "continuityKey": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "order": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "title": {
+          "$ref": "#/$defs/sourcedString"
+        },
+        "moduleIds": {
+          "$ref": "#/$defs/entityIdArray"
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/publicationNode"
+          }
+        }
+      }
+    },
+    "mapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "confidence",
+        "findingIds"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "mapped_exactly",
+            "mapped_with_normalization",
+            "preserved_as_text"
+          ]
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "findingIds": {
+          "$ref": "#/$defs/entityIdArray"
+        }
+      }
+    },
+    "contentUnit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "unitId",
+        "continuityKey",
+        "unitHash",
+        "moduleId",
+        "kind",
+        "identityStability",
+        "order",
+        "depth",
+        "sourceRefIds",
+        "sourceSegmentIds",
+        "mapping",
+        "payload"
+      ],
+      "properties": {
+        "unitId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "continuityKey": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "unitHash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "moduleId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "kind": {
+          "enum": [
+            "heading",
+            "paragraph",
+            "list",
+            "list_item",
+            "step",
+            "advisory",
+            "table",
+            "figure",
+            "reference",
+            "preserved_source"
+          ]
+        },
+        "identityStability": {
+          "enum": [
+            "source_stable",
+            "generated_stable",
+            "revision_scoped"
+          ]
+        },
+        "order": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "depth": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "parentUnitId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "sourceRefIds": {
+          "$ref": "#/$defs/nonEmptyEntityIdArray"
+        },
+        "sourceSegmentIds": {
+          "$ref": "#/$defs/nonEmptyEntityIdArray"
+        },
+        "mapping": {
+          "$ref": "#/$defs/mapping"
+        },
+        "payload": {}
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "heading"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/headingPayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "paragraph"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/paragraphPayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "list"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/listPayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "list_item"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/listItemPayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "step"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/stepPayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "advisory"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/advisoryPayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "table"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/tablePayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "figure"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/figurePayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "reference"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/referencePayload"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "preserved_source"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/preservedSourcePayload"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "headingPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "text",
+        "level"
+      ],
+      "properties": {
+        "text": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "level": {
+          "$ref": "#/$defs/positiveInteger"
+        }
+      }
+    },
+    "paragraphPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "text",
+        "role"
+      ],
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "role": {
+          "enum": [
+            "body",
+            "lead",
+            "caption",
+            "other"
+          ]
+        }
+      }
+    },
+    "listPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "listType",
+        "itemUnitIds"
+      ],
+      "properties": {
+        "listType": {
+          "enum": [
+            "ordered",
+            "unordered",
+            "definition"
+          ]
+        },
+        "itemUnitIds": {
+          "$ref": "#/$defs/nonEmptyEntityIdArray"
+        }
+      }
+    },
+    "listItemPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "text"
+      ],
+      "properties": {
+        "marker": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      }
+    },
+    "stepPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stepRole",
+        "instructionText"
+      ],
+      "properties": {
+        "stepRole": {
+          "enum": [
+            "procedural",
+            "substep",
+            "verification",
+            "other"
+          ]
+        },
+        "label": {
+          "type": "string"
+        },
+        "instructionText": {
+          "type": "string"
+        }
+      }
+    },
+    "advisoryPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "advisoryType",
+        "text",
+        "scope"
+      ],
+      "properties": {
+        "advisoryType": {
+          "enum": [
+            "warning",
+            "caution",
+            "note"
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "targetUnitIds"
+          ],
+          "properties": {
+            "kind": {
+              "enum": [
+                "parent_unit",
+                "parent_subtree",
+                "explicit_units",
+                "module"
+              ]
+            },
+            "targetUnitIds": {
+              "$ref": "#/$defs/entityIdArray"
+            }
+          }
+        }
+      }
+    },
+    "tablePayload": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/gridTablePayload"
+        },
+        {
+          "$ref": "#/$defs/preservedTablePayload"
+        }
+      ]
+    },
+    "gridTablePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "layout",
+        "columnCount",
+        "rowGroups"
+      ],
+      "properties": {
+        "layout": {
+          "const": "grid"
+        },
+        "caption": {
+          "type": "string"
+        },
+        "columnCount": {
+          "$ref": "#/$defs/positiveInteger"
+        },
+        "columns": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/tableColumn"
+          }
+        },
+        "rowGroups": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/tableRowGroup"
+          }
+        },
+        "continuation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "continuityKey"
+          ],
+          "properties": {
+            "continuityKey": {
+              "$ref": "#/$defs/nonEmptyString"
+            }
+          }
+        }
+      }
+    },
+    "tableColumn": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "columnId",
+        "order",
+        "sourceRefIds"
+      ],
+      "properties": {
+        "columnId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "order": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "name": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "width": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "align": {
+          "enum": [
+            "left",
+            "center",
+            "right",
+            "justify",
+            "char"
+          ]
+        },
+        "sourceRefIds": {
+          "$ref": "#/$defs/nonEmptyEntityIdArray"
+        }
+      }
+    },
+    "preservedTablePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "layout",
+        "rawText",
+        "findingIds"
+      ],
+      "properties": {
+        "layout": {
+          "const": "preserved"
+        },
+        "caption": {
+          "type": "string"
+        },
+        "rawText": {
+          "type": "string"
+        },
+        "findingIds": {
+          "$ref": "#/$defs/nonEmptyEntityIdArray"
+        }
+      }
+    },
+    "tableRowGroup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rowGroupId",
+        "kind",
+        "order",
+        "rows"
+      ],
+      "properties": {
+        "rowGroupId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "kind": {
+          "enum": [
+            "thead",
+            "tbody",
+            "tfoot"
+          ]
+        },
+        "order": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "rows": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/tableRow"
+          }
+        }
+      }
+    },
+    "tableRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rowId",
+        "order",
+        "cells",
+        "sourceRefIds"
+      ],
+      "properties": {
+        "rowId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "order": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "cells": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/tableCell"
+          }
+        },
+        "sourceRefIds": {
+          "$ref": "#/$defs/nonEmptyEntityIdArray"
+        }
+      }
+    },
+    "tableCell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cellId",
+        "order",
+        "columnStart",
+        "rowSpan",
+        "colSpan",
+        "role",
+        "inlineContent",
+        "sourceRefIds"
+      ],
+      "properties": {
+        "cellId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "order": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "columnStart": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "rowSpan": {
+          "$ref": "#/$defs/positiveInteger"
+        },
+        "colSpan": {
+          "$ref": "#/$defs/positiveInteger"
+        },
+        "role": {
+          "enum": [
+            "header",
+            "data"
+          ]
+        },
+        "inlineContent": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/inlineContent"
+          }
+        },
+        "sourceRefIds": {
+          "$ref": "#/$defs/nonEmptyEntityIdArray"
+        }
+      }
+    },
+    "inlineContent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "inlineId",
+        "kind",
+        "text",
+        "sourceRefIds"
+      ],
+      "properties": {
+        "inlineId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "kind": {
+          "enum": [
+            "text",
+            "paragraph",
+            "list_item"
+          ]
+        },
+        "text": {
+          "type": "string"
+        },
+        "sourceRefIds": {
+          "$ref": "#/$defs/nonEmptyEntityIdArray"
+        }
+      }
+    },
+    "figurePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "figureId",
+        "assetIds",
+        "referenceIds"
+      ],
+      "properties": {
+        "figureId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "caption": {
+          "type": "string"
+        },
+        "assetIds": {
+          "$ref": "#/$defs/entityIdArray"
+        },
+        "referenceIds": {
+          "$ref": "#/$defs/entityIdArray"
+        }
+      }
+    },
+    "referencePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "referenceIds"
+      ],
+      "properties": {
+        "referenceIds": {
+          "$ref": "#/$defs/nonEmptyEntityIdArray"
+        }
+      }
+    },
+    "preservedSourcePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rawText",
+        "reasonCode"
+      ],
+      "properties": {
+        "rawText": {
+          "type": "string"
+        },
+        "reasonCode": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      }
+    },
+    "reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "referenceId",
+        "referenceType",
+        "fromUnitId",
+        "target",
+        "resolutionStatus",
+        "authority",
+        "sourceRefIds",
+        "findingIds"
+      ],
+      "properties": {
+        "referenceId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "referenceType": {
+          "enum": [
+            "internal_anchor",
+            "module_reference",
+            "publication_reference",
+            "external_reference",
+            "asset_reference",
+            "supersedes",
+            "related_source"
+          ]
+        },
+        "fromUnitId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "target": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "identifier"
+          ],
+          "properties": {
+            "kind": {
+              "enum": [
+                "unit",
+                "module",
+                "publication",
+                "asset",
+                "external"
+              ]
+            },
+            "identifier": {
+              "$ref": "#/$defs/targetIdentifier"
+            }
+          }
+        },
+        "resolutionStatus": {
+          "enum": [
+            "resolved",
+            "external",
+            "missing",
+            "ambiguous"
+          ]
+        },
+        "authority": {
+          "$ref": "#/$defs/authority"
+        },
+        "sourceRefIds": {
+          "$ref": "#/$defs/nonEmptyEntityIdArray"
+        },
+        "findingIds": {
+          "$ref": "#/$defs/entityIdArray"
+        }
+      }
+    },
+    "asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "assetId",
+        "logicalType",
+        "authority",
+        "sourceRefIds",
+        "renditions"
+      ],
+      "properties": {
+        "assetId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "logicalType": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "authority": {
+          "$ref": "#/$defs/authority"
+        },
+        "standardIdentity": {
+          "$ref": "#/$defs/authorityIdentifier"
+        },
+        "title": {
+          "$ref": "#/$defs/sourcedString"
+        },
+        "sourceRefIds": {
+          "$ref": "#/$defs/nonEmptyEntityIdArray"
+        },
+        "renditions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/rendition"
+          }
+        }
+      }
+    },
+    "rendition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "renditionId",
+        "role",
+        "artifactId",
+        "mediaType",
+        "sha256",
+        "sourceRefIds"
+      ],
+      "properties": {
+        "renditionId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "role": {
+          "enum": [
+            "source_original",
+            "pdf_crop",
+            "rendered_preview",
+            "writer_icn"
+          ]
+        },
+        "artifactId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "mediaType": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "pixelWidth": {
+          "$ref": "#/$defs/positiveInteger"
+        },
+        "pixelHeight": {
+          "$ref": "#/$defs/positiveInteger"
+        },
+        "sourceRefIds": {
+          "$ref": "#/$defs/nonEmptyEntityIdArray"
+        }
+      }
+    },
+    "applicability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceExpressions",
+        "normalizedCandidates",
+        "assignments"
+      ],
+      "properties": {
+        "sourceExpressions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/applicabilitySource"
+          }
+        },
+        "normalizedCandidates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/applicabilityCandidate"
+          }
+        },
+        "assignments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/applicabilityAssignment"
+          }
+        }
+      }
+    },
+    "applicabilitySource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expressionId",
+        "text",
+        "form",
+        "authority",
+        "sourceRefIds"
+      ],
+      "properties": {
+        "expressionId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "text": {
+          "type": "string"
+        },
+        "form": {
+          "enum": [
+            "logical_expression",
+            "external_identity_reference",
+            "display_text"
+          ]
+        },
+        "authority": {
+          "const": "source_asserted"
+        },
+        "sourceRefIds": {
+          "$ref": "#/$defs/nonEmptyEntityIdArray"
+        }
+      }
+    },
+    "applicabilityAssignment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "assignmentId",
+        "expressionId",
+        "target",
+        "authority"
+      ],
+      "properties": {
+        "assignmentId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "expressionId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "target": {
+          "$ref": "#/$defs/applicabilityTarget"
+        },
+        "sourceReferenceId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "authority": {
+          "const": "source_asserted"
+        }
+      }
+    },
+    "applicabilityTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "sourceRefIds"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "module",
+            "content_unit",
+            "source_element"
+          ]
+        },
+        "targetId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "sourceRefIds": {
+          "$ref": "#/$defs/nonEmptyEntityIdArray"
+        }
+      }
+    },
+    "applicabilityCandidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidateId",
+        "language",
+        "confidence",
+        "sourceExpressionIds",
+        "expression",
+        "authority"
+      ],
+      "properties": {
+        "candidateId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "language": {
+          "const": "techpub-applicability-expr.v1"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "sourceExpressionIds": {
+          "$ref": "#/$defs/nonEmptyEntityIdArray"
+        },
+        "expression": {
+          "$ref": "#/$defs/appExpression"
+        },
+        "authority": {
+          "const": "parser_candidate"
+        }
+      }
+    },
+    "appExpression": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operator",
+            "predicate"
+          ],
+          "properties": {
+            "operator": {
+              "const": "predicate"
+            },
+            "predicate": {
+              "$ref": "#/$defs/appPredicate"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operator",
+            "children"
+          ],
+          "properties": {
+            "operator": {
+              "enum": [
+                "all",
+                "any"
+              ]
+            },
+            "children": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/appExpression"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operator",
+            "children"
+          ],
+          "properties": {
+            "operator": {
+              "const": "not"
+            },
+            "children": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 1,
+              "items": {
+                "$ref": "#/$defs/appExpression"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "appPredicate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "property",
+        "comparator",
+        "values"
+      ],
+      "properties": {
+        "property": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "comparator": {
+          "enum": [
+            "eq",
+            "neq",
+            "in",
+            "not_in",
+            "range",
+            "contains"
+          ]
+        },
+        "values": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "$ref": "#/$defs/safeInteger"
+              },
+              {
+                "type": "boolean"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "basis",
+        "entries",
+        "summary"
+      ],
+      "properties": {
+        "basis": {
+          "$ref": "#/$defs/coverageBasis"
+        },
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/coverageEntry"
+          }
+        },
+        "summary": {
+          "$ref": "#/$defs/coverageSummary"
+        }
+      }
+    },
+    "coverageBasis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "segmentSetId",
+        "segmentSetHash",
+        "segmentationProfileId",
+        "segmentationProfileHash",
+        "requiredSourceSegmentCount"
+      ],
+      "properties": {
+        "segmentSetId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "segmentSetHash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "segmentationProfileId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "segmentationProfileHash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "requiredSourceSegmentCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        }
+      }
+    },
+    "coverageEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceSegmentId",
+        "disposition",
+        "targetIds",
+        "findingIds"
+      ],
+      "properties": {
+        "sourceSegmentId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "disposition": {
+          "enum": [
+            "mapped_exactly",
+            "mapped_with_normalization",
+            "preserved_as_text",
+            "intentionally_excluded_with_reason",
+            "blocked_with_finding"
+          ]
+        },
+        "targetIds": {
+          "$ref": "#/$defs/entityIdArray"
+        },
+        "findingIds": {
+          "$ref": "#/$defs/entityIdArray"
+        },
+        "reasonCode": {
+          "enum": [
+            "pagination_artifact",
+            "decorative_graphic",
+            "blank",
+            "schema_definition"
+          ]
+        }
+      }
+    },
+    "coverageSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requiredSourceSegmentCount",
+        "mappedExactlyCount",
+        "mappedWithNormalizationCount",
+        "preservedAsTextCount",
+        "intentionallyExcludedCount",
+        "blockedCount",
+        "accountingComplete",
+        "contentPreserved",
+        "structuredCoverageComplete"
+      ],
+      "properties": {
+        "requiredSourceSegmentCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "mappedExactlyCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "mappedWithNormalizationCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "preservedAsTextCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "intentionallyExcludedCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "blockedCount": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "accountingComplete": {
+          "type": "boolean"
+        },
+        "contentPreserved": {
+          "type": "boolean"
+        },
+        "structuredCoverageComplete": {
+          "type": "boolean"
+        }
+      }
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "findingId",
+        "code",
+        "severity",
+        "message",
+        "stage",
+        "blocking",
+        "blocks",
+        "sourceRefIds",
+        "sourceSegmentIds",
+        "affectedUnitIds",
+        "parameters"
+      ],
+      "properties": {
+        "findingId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "code": {
+          "type": "string",
+          "pattern": "^[A-Z0-9]+(?:[._][A-Z0-9]+)+$"
+        },
+        "severity": {
+          "enum": [
+            "info",
+            "warning",
+            "error"
+          ]
+        },
+        "message": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "stage": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "blocking": {
+          "type": "boolean"
+        },
+        "blocks": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "sourceRefIds": {
+          "$ref": "#/$defs/entityIdArray"
+        },
+        "sourceSegmentIds": {
+          "$ref": "#/$defs/entityIdArray"
+        },
+        "affectedUnitIds": {
+          "$ref": "#/$defs/entityIdArray"
+        },
+        "parameters": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+          },
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "$ref": "#/$defs/safeInteger"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "oneOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "$ref": "#/$defs/safeInteger"
+                    },
+                    {
+                      "type": "boolean"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        "detailArtifactId": {
+          "$ref": "#/$defs/entityId"
+        }
+      }
+    },
+    "extension": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "namespace",
+        "schemaId",
+        "version",
+        "targetIds",
+        "semanticImpact",
+        "payloadHash",
+        "payload"
+      ],
+      "properties": {
+        "namespace": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "schemaId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "version": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "targetIds": {
+          "$ref": "#/$defs/entityIdArray"
+        },
+        "semanticImpact": {
+          "type": "boolean"
+        },
+        "payloadHash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "payload": {
+          "type": "object"
+        }
+      }
+    }
+  }
+}

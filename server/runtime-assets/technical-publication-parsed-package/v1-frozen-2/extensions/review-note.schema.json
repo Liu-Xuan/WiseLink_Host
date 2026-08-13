@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:techpub:schema:v1:extension:review-note:frozen-1",
+  "title": "Non-authoritative review note extension",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "note",
+    "reviewState"
+  ],
+  "properties": {
+    "note": {
+      "type": "string"
+    },
+    "reviewState": {
+      "enum": [
+        "unreviewed",
+        "reviewed"
+      ]
+    }
+  }
+}

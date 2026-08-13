@@ -10,6 +10,11 @@
         "include": "capabilities/**/*.json",
         "outDir": "dist/server",
         "watchAssets": true
+      },
+      {
+        "include": "runtime-assets/**/*",
+        "outDir": "dist/server",
+        "watchAssets": true
       }
     ],
     "plugins": [

@@ -1,0 +1,256 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:techpub:schema:v1:extension:s1000d-native-lineage:frozen-2",
+  "title": "Native S1000D parser, schema binding, and controlled-baseline lineage",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "parser",
+    "realControlledBaseline",
+    "moduleMappings",
+    "deliveryObjectMappings"
+  ],
+  "properties": {
+    "parser": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profileVersion",
+        "schemaVersion",
+        "packageHash",
+        "snapshotArtifactId",
+        "summary"
+      ],
+      "properties": {
+        "profileVersion": { "$ref": "#/$defs/nonEmptyString" },
+        "schemaVersion": { "$ref": "#/$defs/nonEmptyString" },
+        "packageHash": { "$ref": "#/$defs/sha256" },
+        "snapshotArtifactId": { "$ref": "#/$defs/entityId" },
+        "summary": { "$ref": "#/$defs/parserSummary" }
+      }
+    },
+    "realControlledBaseline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "summaryArtifactId",
+        "sourcePolicy",
+        "profileVersion",
+        "parserPackageHash",
+        "counts",
+        "publicationModuleCoverage"
+      ],
+      "properties": {
+        "summaryArtifactId": { "$ref": "#/$defs/entityId" },
+        "sourcePolicy": { "$ref": "#/$defs/nonEmptyString" },
+        "profileVersion": { "$ref": "#/$defs/nonEmptyString" },
+        "parserPackageHash": { "$ref": "#/$defs/sha256" },
+        "counts": { "$ref": "#/$defs/baselineCounts" },
+        "publicationModuleCoverage": {
+          "enum": [
+            "absent_in_real_baseline_covered_by_synthetic_fixture",
+            "present_in_real_baseline"
+          ]
+        }
+      }
+    },
+    "schemaBinding": {
+      "$ref": "#/$defs/schemaBinding"
+    },
+    "moduleMappings": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "coreModuleId",
+          "moduleType",
+          "schemaName",
+          "parserIdentity",
+          "sourcePath"
+        ],
+        "properties": {
+          "coreModuleId": { "$ref": "#/$defs/entityId" },
+          "moduleType": { "enum": ["dm", "pm", "imf", "upf", "other"] },
+          "schemaName": { "$ref": "#/$defs/nonEmptyString" },
+          "parserIdentity": { "$ref": "#/$defs/nonEmptyString" },
+          "sourcePath": { "$ref": "#/$defs/normalizedPath" }
+        }
+      }
+    },
+    "deliveryObjectMappings": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "deliveryObjectId",
+          "moduleType",
+          "schemaName",
+          "parserIdentity",
+          "sourcePath"
+        ],
+        "properties": {
+          "deliveryObjectId": { "$ref": "#/$defs/entityId" },
+          "moduleType": { "enum": ["dml", "ddn", "imf", "upf", "other"] },
+          "schemaName": { "$ref": "#/$defs/nonEmptyString" },
+          "parserIdentity": { "$ref": "#/$defs/nonEmptyString" },
+          "sourcePath": { "$ref": "#/$defs/normalizedPath" }
+        }
+      }
+    },
+    "tableSourceStyles": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/tableSourceStyle"
+      }
+    }
+  },
+  "$defs": {
+    "nonEmptyString": { "type": "string", "minLength": 1 },
+    "nonNegativeInteger": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+    "sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "entityId": {
+      "type": "string",
+      "pattern": "^urn:techpub:[a-z0-9-]+:v1:sha256:[0-9a-f]{64}$"
+    },
+    "entityIdArray": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/entityId" },
+      "uniqueItems": true
+    },
+    "nonEmptyEntityIdArray": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/entityId" },
+      "uniqueItems": true
+    },
+    "normalizedPath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\).+$"
+    },
+    "schemaBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profileVersion",
+        "artifactId",
+        "sha256",
+        "catalogMode",
+        "validation"
+      ],
+      "properties": {
+        "profileVersion": { "$ref": "#/$defs/nonEmptyString" },
+        "artifactId": { "$ref": "#/$defs/entityId" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "catalogMode": { "const": "offline" },
+        "validation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "xsdParsed",
+            "flatEntrypointsCompiled",
+            "xmlValidated"
+          ],
+          "properties": {
+            "xsdParsed": { "$ref": "#/$defs/nonNegativeInteger" },
+            "flatEntrypointsCompiled": { "$ref": "#/$defs/nonNegativeInteger" },
+            "xmlValidated": { "$ref": "#/$defs/nonNegativeInteger" }
+          }
+        }
+      }
+    },
+    "tableSourceStyle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "coreUnitId",
+        "sourceRefIds"
+      ],
+      "properties": {
+        "coreUnitId": { "$ref": "#/$defs/entityId" },
+        "styleName": { "$ref": "#/$defs/nonEmptyString" },
+        "frame": { "$ref": "#/$defs/nonEmptyString" },
+        "rowSeparator": { "$ref": "#/$defs/nonEmptyString" },
+        "columnSeparator": { "$ref": "#/$defs/nonEmptyString" },
+        "sourceRefIds": { "$ref": "#/$defs/nonEmptyEntityIdArray" },
+        "columnStyles": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["coreColumnId", "order"],
+            "properties": {
+              "coreColumnId": { "$ref": "#/$defs/entityId" },
+              "order": { "$ref": "#/$defs/nonNegativeInteger" },
+              "sourceName": { "$ref": "#/$defs/nonEmptyString" },
+              "width": { "$ref": "#/$defs/nonEmptyString" },
+              "align": { "$ref": "#/$defs/nonEmptyString" }
+            }
+          }
+        }
+      }
+    },
+    "parserSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "valid",
+        "fileCount",
+        "moduleCount",
+        "contentUnitCount",
+        "referenceCount",
+        "assetCount",
+        "findingCount",
+        "referenceCounts"
+      ],
+      "properties": {
+        "valid": { "type": "boolean" },
+        "fileCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "moduleCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "contentUnitCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "referenceCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "assetCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "findingCount": { "$ref": "#/$defs/nonNegativeInteger" },
+        "referenceCounts": {
+          "type": "object",
+          "propertyNames": { "minLength": 1 },
+          "additionalProperties": { "$ref": "#/$defs/nonNegativeInteger" }
+        }
+      }
+    },
+    "baselineCounts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "files",
+        "documents",
+        "dataModules",
+        "dml",
+        "ddn",
+        "publicationModules",
+        "contentUnits",
+        "references",
+        "assets",
+        "findings"
+      ],
+      "properties": {
+        "files": { "$ref": "#/$defs/nonNegativeInteger" },
+        "documents": { "$ref": "#/$defs/nonNegativeInteger" },
+        "dataModules": { "$ref": "#/$defs/nonNegativeInteger" },
+        "dml": { "$ref": "#/$defs/nonNegativeInteger" },
+        "ddn": { "$ref": "#/$defs/nonNegativeInteger" },
+        "publicationModules": { "$ref": "#/$defs/nonNegativeInteger" },
+        "imf": { "$ref": "#/$defs/nonNegativeInteger" },
+        "upf": { "$ref": "#/$defs/nonNegativeInteger" },
+        "contentUnits": { "$ref": "#/$defs/nonNegativeInteger" },
+        "references": { "$ref": "#/$defs/nonNegativeInteger" },
+        "assets": { "$ref": "#/$defs/nonNegativeInteger" },
+        "findings": { "$ref": "#/$defs/nonNegativeInteger" }
+      }
+    }
+  }
+}
