@@ -44,6 +44,18 @@ export class GlobalExceptionFilter implements ExceptionFilter {
           timestamp: Date.now(),
         },
       };
+    } else if (isStatusBearingError(exception)) {
+      // 内部模块的稳定错误对象：保留服务端定义的 HTTP 状态与机器码，
+      // 不把明确的权限/输入拒绝误报成 500。
+      httpStatus = exception.statusCode as HttpStatus;
+      errorResponse = {
+        error: {
+          code: exception.code,
+          message: exception.message,
+          details: serializeDetails(exception.details),
+          timestamp: Date.now(),
+        },
+      };
     } else if (
       typeof exception === 'object' &&
       exception !== null &&
@@ -75,4 +87,29 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
     response.status(httpStatus).json(errorResponse);
   }
+}
+
+interface StatusBearingError {
+  code: string;
+  message: string;
+  statusCode: number;
+  details?: unknown;
+}
+
+function isStatusBearingError(value: unknown): value is StatusBearingError {
+  if (typeof value !== 'object' || value === null) return false;
+  const candidate = value as Partial<StatusBearingError>;
+  return (
+    typeof candidate.code === 'string' &&
+    candidate.code.length > 0 &&
+    typeof candidate.message === 'string' &&
+    Number.isInteger(candidate.statusCode) &&
+    Number(candidate.statusCode) >= 400 &&
+    Number(candidate.statusCode) <= 599
+  );
+}
+
+function serializeDetails(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  return typeof value === 'string' ? value : JSON.stringify(value);
 }

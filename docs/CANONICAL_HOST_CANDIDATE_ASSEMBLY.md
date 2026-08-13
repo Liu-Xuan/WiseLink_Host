@@ -135,3 +135,13 @@ The host authorization provider remains deliberately unconfigured and rejects be
 FileService I/O. No online catalog rows or FileService bytes were created, and this Phase 2C source
 has not been published. Detailed evidence and current non-claims are in
 `docs/DOCUMENT_MANAGEMENT_PHASE_2C_ACCEPTANCE.md`.
+
+## Phase 2D hosted validation status
+
+The hosted Python/vendor/U0 probe and strict Reader now pass in DEV. A bounded validation window
+was deployed and closed, but its single DM POST exposed numeric FileService path handling before
+any catalog or immutable-source write. The closure release is current; all seven DM tables remain
+empty and FileService contains only the two authorized FTD PDFs. The local correction validates
+actual bytes instead of path names and preserves the server-owned 403 response, but it has not been
+pushed or deployed. Full evidence, release identities and non-claims are in
+`docs/PHASE_2D_HOSTED_VALIDATION_ACCEPTANCE_20260814.md`.
