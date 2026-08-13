@@ -1,0 +1,48 @@
+{
+  "schemaVersion": "techpub.fixture.s1000d-real-baseline-summary.v1",
+  "sourcePolicy": "controlled_local_path_no_manufacturer_body_committed",
+  "profileVersion": "S1000D_4-2",
+  "parserPackageHash": "sha256:fce0866f43bd00741f352ee4811dc09a22f6898620823beda3e67f56d8661cc5",
+  "counts": {
+    "files": 73,
+    "documents": 39,
+    "dataModules": 37,
+    "dml": 1,
+    "ddn": 1,
+    "publicationModules": 0,
+    "contentUnits": 435,
+    "references": 354,
+    "assets": 5,
+    "findings": 0
+  },
+  "contentUnitCounts": {
+    "caution": 1,
+    "figure": 3,
+    "heading": 98,
+    "list_item": 19,
+    "note": 24,
+    "paragraph": 129,
+    "step": 84,
+    "table": 76,
+    "warning": 1
+  },
+  "referenceCounts": {
+    "delivery_file:resolved": 41,
+    "dm:resolved": 185,
+    "external_publication:external": 100,
+    "internal:resolved": 28
+  },
+  "applicabilityShapeCounts": {
+    "applic": 103,
+    "assert": 203,
+    "evaluate": 101,
+    "productAttribute": 5
+  },
+  "verification": {
+    "xsdValidatedDocuments": 39,
+    "resolvedDmReferences": 185,
+    "resolvedInternalReferences": 28,
+    "referencedIcnAssets": 5,
+    "directoryZipEquivalent": true
+  }
+}

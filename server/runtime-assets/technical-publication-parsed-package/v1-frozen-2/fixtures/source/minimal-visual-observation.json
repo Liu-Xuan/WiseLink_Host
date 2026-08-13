@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "techpub.fixture.visual-observation.v1",
+  "runId": "VISUAL-OBSERVATION-FIXTURE-001",
+  "finding": "One bounded paragraph was observed on page 1.",
+  "sourcePages": [
+    1
+  ]
+}

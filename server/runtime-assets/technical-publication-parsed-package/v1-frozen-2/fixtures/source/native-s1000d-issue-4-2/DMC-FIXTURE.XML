@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dmodule xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:noNamespaceSchemaLocation="http://www.s1000d.org/S1000D_4-2/xml_schema_flat/descript.xsd">
+  <identAndStatusSection>
+    <dmAddress>
+      <dmIdent>
+        <dmCode modelIdentCode="FIXTURE" systemDiffCode="A" systemCode="00"
+          subSystemCode="0" subSubSystemCode="0" assyCode="00" disassyCode="00"
+          disassyCodeVariant="A" infoCode="040" infoCodeVariant="A" itemLocationCode="D"/>
+        <language languageIsoCode="en" countryIsoCode="US"/>
+        <issueInfo issueNumber="001" inWork="00"/>
+      </dmIdent>
+      <dmAddressItems>
+        <dmTitle><techName>Fixture equipment</techName><infoName>Controlled procedure</infoName></dmTitle>
+      </dmAddressItems>
+    </dmAddress>
+    <dmStatus>
+      <applic id="app-fixture-1">
+        <displayText><simplePara>TEST ASSET GROUP ALPHA ONLY</simplePara></displayText>
+        <assert applicPropertyIdent="fixture-group" applicPropertyType="prodattr"
+          applicPropertyValues="ALPHA"/>
+      </applic>
+    </dmStatus>
+  </identAndStatusSection>
+  <content>
+    <description>
+      <levelledPara id="section-overview">
+        <title>Controlled fixture overview</title>
+        <para>This synthetic module contains no manufacturer instruction.</para>
+      </levelledPara>
+    </description>
+    <procedure>
+      <mainProcedure>
+        <proceduralStep id="step-fixture-1">
+          <para>Disconnect the synthetic test power source.</para>
+          <warning id="warning-fixture-1"><warningAndCautionPara>Use only the synthetic test set.</warningAndCautionPara></warning>
+          <caution id="caution-fixture-1"><warningAndCautionPara>Protect the fixture connector.</warningAndCautionPara></caution>
+          <note id="note-fixture-1"><notePara>This note has no engineering authority.</notePara></note>
+          <randomList>
+            <listItem><para>Inspect the synthetic label.</para></listItem>
+          </randomList>
+          <table id="table-fixture-1">
+            <title>Fixture parts</title>
+            <tgroup cols="2">
+              <tbody>
+                <row><entry>Item</entry><entry>Status</entry></row>
+                <row><entry>Fixture label</entry><entry>CHECK</entry></row>
+              </tbody>
+            </tgroup>
+          </table>
+          <figure id="figure-fixture-1">
+            <title>Fixture connection</title>
+            <graphic id="graphic-fixture-1" infoEntityIdent="ICN-FIXTURE-001"/>
+          </figure>
+          <internalRef internalRefId="step-fixture-1" internalRefTargetType="step"/>
+          <externalPubRef>
+            <externalPubRefIdent><externalPubCode>FIXTURE-MANUAL-001</externalPubCode></externalPubRefIdent>
+          </externalPubRef>
+        </proceduralStep>
+      </mainProcedure>
+    </procedure>
+  </content>
+</dmodule>
