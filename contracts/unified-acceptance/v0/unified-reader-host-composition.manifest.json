@@ -1,0 +1,51 @@
+{
+  "schemaVersion": "wiselink.3_1.unified_reader_host_composition.v0.candidate",
+  "authority": "SOURCE_COMPOSITION_NOT_ACTIVATION_NOT_WRITE_AUTHORIZATION",
+  "canonicalHost": {
+    "logicalRole": "CanonicalMiaodaApp",
+    "exactObjectBinding": null,
+    "bindingStatus": "UNRESOLVED"
+  },
+  "module": {
+    "export": "UnifiedReaderModule",
+    "factory": "UnifiedReaderModule.forRoot",
+    "defaultMode": "DEFAULT_UNCONFIGURED"
+  },
+  "ports": {
+    "artifactStore": {
+      "token": "UNIFIED_ARTIFACT_STORE",
+      "defaultConfigured": false
+    },
+    "aeoSpecialistReader": {
+      "internalToken": "AEO_SPECIALIST_READER",
+      "exportedPortToken": "wiselink.3_1.port.aeo_specialist_reader.v0.candidate",
+      "bridgeFactory": "createAeoSpecialistReaderBridgeProvider",
+      "defaultConfigured": false,
+      "expectedHandlerId": "AeoStructuredParseCandidateReader",
+      "expectedHandlerRevision": "aeo-structured-parse-reader.candidate.1"
+    }
+  },
+  "acceptanceFacade": {
+    "registryRevision": "unified-acceptance-registry.candidate.1",
+    "implementationRevision": "unified-acceptance-facade.candidate.2",
+    "contracts": [
+      "techpub.parsed-package.v1/frozen.2",
+      "aeo_structured_parse_v1/candidate.1"
+    ],
+    "genericFallbackAllowed": false
+  },
+  "httpSurface": [
+    {
+      "method": "GET",
+      "path": "api/unified-reader/readiness",
+      "writesBusinessData": false
+    }
+  ],
+  "validation": {
+    "onlineWritesAuthorized": false,
+    "applicationPublishAuthorized": false,
+    "currentSwitchAuthorized": false,
+    "canonicalAcceptanceAuthorized": false,
+    "requiredNextAuthority": "WISELINK_3_1_MASTER_R1_AND_PERMISSION_WRITER_ACTIVATION"
+  }
+}

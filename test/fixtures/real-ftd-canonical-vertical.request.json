@@ -1,0 +1,25 @@
+{
+  "schemaVersion": "wiselink.3_1.canonical_pdf_vertical_request.v0.candidate",
+  "workItemId": "WI-DM-FTD-FD88DCB9CF64CF3B",
+  "requestId": "parser_request_841bd2dde8a830caa02e4e70",
+  "source": {
+    "documentId": "document_3943d8eb5b7c7ee8fc742092",
+    "documentVersionId": "document_version_fd88dcb9cf64cf3ba21033ef",
+    "parserRequestId": "parser_request_841bd2dde8a830caa02e4e70",
+    "sourceArtifactId": "sha256:b1b5c198df4a3d42925218f48d70ddc361563c65692be35dac4c81e0d8367a3c",
+    "sourceFileSha256": "sha256:b1b5c198df4a3d42925218f48d70ddc361563c65692be35dac4c81e0d8367a3c",
+    "sourceByteLength": 122102,
+    "driveFileToken": "BuTHbLZgZov4wkx67tQcj0D8n7d",
+    "driveSourceVersion": "7673096278665858323"
+  },
+  "classification": {
+    "status": "CANDIDATE",
+    "normalizedFamily": "FTD",
+    "classifierReleaseId": "intake-classifier-release:q1-native-migration@1.0.0",
+    "classifierReleaseHash": "sha256:d374483eaa1c209912bf8ed0f830b582f8f0578e3149899de24633ad8e10587c",
+    "parserProfileId": "parser-profile:boeing.ftd.v1@1.0.0",
+    "parserProfileHash": "sha256:c47a7388da23d106c2476b579308c458332127153930ced8c684212f1b431731",
+    "fingerprint": "sha256:95728aebf5e6ce6b2aa8078389ce551d9a121ca0476d469a19f3d2dc4693b1a4"
+  },
+  "query": "applicability"
+}
