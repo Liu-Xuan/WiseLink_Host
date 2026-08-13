@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dml xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:noNamespaceSchemaLocation="http://www.s1000d.org/S1000D_4-2/xml_schema_flat/dml.xsd">
+  <identAndStatusSection>
+    <dmlAddress>
+      <dmlIdent>
+        <dmlCode modelIdentCode="FIXTURE" senderIdent="ZZZZZ" dmlType="s" yearOfDataIssue="2026" seqNumber="00001"/>
+        <language languageIsoCode="en" countryIsoCode="US"/>
+        <issueInfo issueNumber="001" inWork="00"/>
+      </dmlIdent>
+    </dmlAddress>
+  </identAndStatusSection>
+  <dmlContent>
+    <dmlEntry>
+      <dmRef>
+        <dmRefIdent>
+          <dmCode modelIdentCode="FIXTURE" systemDiffCode="A" systemCode="00"
+            subSystemCode="0" subSubSystemCode="0" assyCode="00" disassyCode="00"
+            disassyCodeVariant="A" infoCode="040" infoCodeVariant="A" itemLocationCode="D"/>
+        </dmRefIdent>
+      </dmRef>
+    </dmlEntry>
+  </dmlContent>
+</dml>

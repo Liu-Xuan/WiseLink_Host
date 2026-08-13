@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ddn xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:noNamespaceSchemaLocation="http://www.s1000d.org/S1000D_4-2/xml_schema_flat/ddn.xsd">
+  <identAndStatusSection>
+    <ddnAddress>
+      <ddnIdent>
+        <ddnCode modelIdentCode="FIXTURE" senderIdent="ZZZZZ" receiverIdent="YYYYY"
+          yearOfDataIssue="2026" seqNumber="00001"/>
+        <language languageIsoCode="en" countryIsoCode="US"/>
+        <issueInfo issueNumber="001" inWork="00"/>
+      </ddnIdent>
+    </ddnAddress>
+  </identAndStatusSection>
+  <ddnContent>
+    <dispatchFileName>DMC-FIXTURE.XML</dispatchFileName>
+    <dispatchFileName>ICN-FIXTURE-001.png</dispatchFileName>
+  </ddnContent>
+</ddn>

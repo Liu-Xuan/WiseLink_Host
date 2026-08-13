@@ -1,0 +1,298 @@
+{
+  "schemaVersion": "s1000d-service.parsed-document.v1",
+  "sourceKind": "native_s1000d",
+  "profileVersion": "S1000D_4-2",
+  "package": {
+    "source": "contract://fixtures/source/native-s1000d-issue-4-2",
+    "hash": "sha256:b5f52e0c4c26d925e863bf1aee708b04f21ab66cdfb69f65a7fca93d3844eed8",
+    "files": [
+      {
+        "path": "DDN-FIXTURE.XML",
+        "sha256": "0255a570f3b3d1e6aa853e9903590eb7397ccae8398641a6fce329b2c463f83b",
+        "size": 718,
+        "mediaType": "application/xml"
+      },
+      {
+        "path": "DMC-FIXTURE.XML",
+        "sha256": "bec4007c96a58782edd331f47b787153869975273ca9da21d4175e4053ffdb81",
+        "size": 2873,
+        "mediaType": "application/xml"
+      },
+      {
+        "path": "DML-FIXTURE.XML",
+        "sha256": "9f56655d0bca0ed9a016724ab924adcb7fa376d570f8856f7365149a83de91af",
+        "size": 936,
+        "mediaType": "application/xml"
+      },
+      {
+        "path": "ICN-FIXTURE-001.png",
+        "sha256": "626f1dff3211a5d3a5f74fdebb87cbf8dffb4bbc49fc747deebc39a781fe1193",
+        "size": 67,
+        "mediaType": "image/png"
+      },
+      {
+        "path": "PMC-FIXTURE.XML",
+        "sha256": "404c584cee7eca8e2ad7446e9cb168d0dc7ca66108e1120a4fd204ba3287d47d",
+        "size": 1037,
+        "mediaType": "application/xml"
+      },
+      {
+        "path": "SCHEMA/ddn.xsd",
+        "sha256": "0e467b0425184682921d4fa8f116d828534d1c326ef008faff17341af6062c79",
+        "size": 359,
+        "mediaType": "application/octet-stream"
+      },
+      {
+        "path": "SCHEMA/descript.xsd",
+        "sha256": "b3ea9cfe15be19396f437efcad4469aa34341944134a5b651d54cc5ba9fe09dd",
+        "size": 363,
+        "mediaType": "application/octet-stream"
+      },
+      {
+        "path": "SCHEMA/dml.xsd",
+        "sha256": "cca665e04b291b9e9d93d6bba1e1b534569e092c0ce68bd0104cccc5a7e97216",
+        "size": 359,
+        "mediaType": "application/octet-stream"
+      },
+      {
+        "path": "SCHEMA/pm.xsd",
+        "sha256": "3b8dd444f39ae93e9cedf079f019d6c4516b844106b7f72679806a283eaa0958",
+        "size": 358,
+        "mediaType": "application/octet-stream"
+      }
+    ]
+  },
+  "modules": [
+    {
+      "moduleType": "ddn",
+      "schemaName": "ddn.xsd",
+      "sourcePath": "DDN-FIXTURE.XML",
+      "identity": "ddn:-:modelIdentCode=FIXTURE;receiverIdent=YYYYY;senderIdent=ZZZZZ;seqNumber=00001;yearOfDataIssue=2026:001-00:en-US",
+      "baseCode": "modelIdentCode=FIXTURE;receiverIdent=YYYYY;senderIdent=ZZZZZ;seqNumber=00001;yearOfDataIssue=2026",
+      "identExtension": null,
+      "issueNumber": "001",
+      "inWork": "00",
+      "language": "en-US",
+      "title": null,
+      "contentType": "ddn",
+      "schemaValid": true
+    },
+    {
+      "moduleType": "dm",
+      "schemaName": "descript.xsd",
+      "sourcePath": "DMC-FIXTURE.XML",
+      "identity": "dm:-:modelIdentCode=FIXTURE;systemDiffCode=A;systemCode=00;subSystemCode=0;subSubSystemCode=0;assyCode=00;disassyCode=00;disassyCodeVariant=A;infoCode=040;infoCodeVariant=A;itemLocationCode=D:001-00:en-US",
+      "baseCode": "modelIdentCode=FIXTURE;systemDiffCode=A;systemCode=00;subSystemCode=0;subSubSystemCode=0;assyCode=00;disassyCode=00;disassyCodeVariant=A;infoCode=040;infoCodeVariant=A;itemLocationCode=D",
+      "identExtension": null,
+      "issueNumber": "001",
+      "inWork": "00",
+      "language": "en-US",
+      "title": "Fixture equipment Controlled procedure",
+      "contentType": "description",
+      "schemaValid": true
+    },
+    {
+      "moduleType": "dml",
+      "schemaName": "dml.xsd",
+      "sourcePath": "DML-FIXTURE.XML",
+      "identity": "dml:-:dmlType=s;modelIdentCode=FIXTURE;senderIdent=ZZZZZ;seqNumber=00001;yearOfDataIssue=2026:001-00:en-US",
+      "baseCode": "dmlType=s;modelIdentCode=FIXTURE;senderIdent=ZZZZZ;seqNumber=00001;yearOfDataIssue=2026",
+      "identExtension": null,
+      "issueNumber": "001",
+      "inWork": "00",
+      "language": "en-US",
+      "title": null,
+      "contentType": "dml",
+      "schemaValid": true
+    },
+    {
+      "moduleType": "pm",
+      "schemaName": "pm.xsd",
+      "sourcePath": "PMC-FIXTURE.XML",
+      "identity": "pm:-:modelIdentCode=FIXTURE;pmIssuer=ZZZZZ;pmNumber=00001;pmVolume=01:001-00:en-US",
+      "baseCode": "modelIdentCode=FIXTURE;pmIssuer=ZZZZZ;pmNumber=00001;pmVolume=01",
+      "identExtension": null,
+      "issueNumber": "001",
+      "inWork": "00",
+      "language": "en-US",
+      "title": "Controlled fixture publication",
+      "contentType": "pm",
+      "schemaValid": true
+    }
+  ],
+  "contentUnits": [
+    {
+      "unitId": "unit:e3ad029ae9e0bdd4fbb14cf341ace8868cea4ddc2c2c55efbb2ce007502e0e4d",
+      "moduleIdentity": "dm:-:modelIdentCode=FIXTURE;systemDiffCode=A;systemCode=00;subSystemCode=0;subSubSystemCode=0;assyCode=00;disassyCode=00;disassyCodeVariant=A;infoCode=040;infoCodeVariant=A;itemLocationCode=D:001-00:en-US",
+      "kind": "heading",
+      "text": "Controlled fixture overview",
+      "sourcePath": "DMC-FIXTURE.XML",
+      "locator": "/dmodule/content/description/levelledPara/title",
+      "elementId": null,
+      "parentUnitId": null
+    },
+    {
+      "unitId": "unit:b1033e421b8f284ab80f588a48b55e4d30107a3cd52b054d23dc9ad96e117466",
+      "moduleIdentity": "dm:-:modelIdentCode=FIXTURE;systemDiffCode=A;systemCode=00;subSystemCode=0;subSubSystemCode=0;assyCode=00;disassyCode=00;disassyCodeVariant=A;infoCode=040;infoCodeVariant=A;itemLocationCode=D:001-00:en-US",
+      "kind": "paragraph",
+      "text": "This synthetic module contains no manufacturer instruction.",
+      "sourcePath": "DMC-FIXTURE.XML",
+      "locator": "/dmodule/content/description/levelledPara/para",
+      "elementId": null,
+      "parentUnitId": null
+    },
+    {
+      "unitId": "unit:a735a5efb956db336ac37fb4486cdea831decb8cc66dcfe144a57bc5a1ad5ed7",
+      "moduleIdentity": "dm:-:modelIdentCode=FIXTURE;systemDiffCode=A;systemCode=00;subSystemCode=0;subSubSystemCode=0;assyCode=00;disassyCode=00;disassyCodeVariant=A;infoCode=040;infoCodeVariant=A;itemLocationCode=D:001-00:en-US",
+      "kind": "step",
+      "text": "Disconnect the synthetic test power source. Inspect the synthetic label. FIXTURE-MANUAL-001",
+      "sourcePath": "DMC-FIXTURE.XML",
+      "locator": "/dmodule/content/procedure/mainProcedure/proceduralStep",
+      "elementId": "step-fixture-1",
+      "parentUnitId": null
+    },
+    {
+      "unitId": "unit:d1369bfc29e6d9afa2eaa0df5ed9a346f9de8d34b735a26d7b40a2d55ef4093d",
+      "moduleIdentity": "dm:-:modelIdentCode=FIXTURE;systemDiffCode=A;systemCode=00;subSystemCode=0;subSubSystemCode=0;assyCode=00;disassyCode=00;disassyCodeVariant=A;infoCode=040;infoCodeVariant=A;itemLocationCode=D:001-00:en-US",
+      "kind": "warning",
+      "text": "Use only the synthetic test set.",
+      "sourcePath": "DMC-FIXTURE.XML",
+      "locator": "/dmodule/content/procedure/mainProcedure/proceduralStep/warning",
+      "elementId": "warning-fixture-1",
+      "parentUnitId": "unit:a735a5efb956db336ac37fb4486cdea831decb8cc66dcfe144a57bc5a1ad5ed7"
+    },
+    {
+      "unitId": "unit:ceab3fa3f1a77b725cad223937b6229c4afcc839d6f37cc7a2a89216505940ea",
+      "moduleIdentity": "dm:-:modelIdentCode=FIXTURE;systemDiffCode=A;systemCode=00;subSystemCode=0;subSubSystemCode=0;assyCode=00;disassyCode=00;disassyCodeVariant=A;infoCode=040;infoCodeVariant=A;itemLocationCode=D:001-00:en-US",
+      "kind": "caution",
+      "text": "Protect the fixture connector.",
+      "sourcePath": "DMC-FIXTURE.XML",
+      "locator": "/dmodule/content/procedure/mainProcedure/proceduralStep/caution",
+      "elementId": "caution-fixture-1",
+      "parentUnitId": "unit:a735a5efb956db336ac37fb4486cdea831decb8cc66dcfe144a57bc5a1ad5ed7"
+    },
+    {
+      "unitId": "unit:c494ebcd02ad3feb092413d4781bcebe3d97eb7c6421dec1f93668005fc18b28",
+      "moduleIdentity": "dm:-:modelIdentCode=FIXTURE;systemDiffCode=A;systemCode=00;subSystemCode=0;subSubSystemCode=0;assyCode=00;disassyCode=00;disassyCodeVariant=A;infoCode=040;infoCodeVariant=A;itemLocationCode=D:001-00:en-US",
+      "kind": "note",
+      "text": "This note has no engineering authority.",
+      "sourcePath": "DMC-FIXTURE.XML",
+      "locator": "/dmodule/content/procedure/mainProcedure/proceduralStep/note",
+      "elementId": "note-fixture-1",
+      "parentUnitId": "unit:a735a5efb956db336ac37fb4486cdea831decb8cc66dcfe144a57bc5a1ad5ed7"
+    },
+    {
+      "unitId": "unit:dfd83346d054e1344adbd95ee3e53960de3a5e3a21ed9bd7d9546ae539ea6a92",
+      "moduleIdentity": "dm:-:modelIdentCode=FIXTURE;systemDiffCode=A;systemCode=00;subSystemCode=0;subSubSystemCode=0;assyCode=00;disassyCode=00;disassyCodeVariant=A;infoCode=040;infoCodeVariant=A;itemLocationCode=D:001-00:en-US",
+      "kind": "list_item",
+      "text": "Inspect the synthetic label.",
+      "sourcePath": "DMC-FIXTURE.XML",
+      "locator": "/dmodule/content/procedure/mainProcedure/proceduralStep/randomList/listItem",
+      "elementId": null,
+      "parentUnitId": "unit:a735a5efb956db336ac37fb4486cdea831decb8cc66dcfe144a57bc5a1ad5ed7"
+    },
+    {
+      "unitId": "unit:26d854197d22608f4970cbdd2eae37cbf31f50ba0350b5a75e570662b2c8fb6a",
+      "moduleIdentity": "dm:-:modelIdentCode=FIXTURE;systemDiffCode=A;systemCode=00;subSystemCode=0;subSubSystemCode=0;assyCode=00;disassyCode=00;disassyCodeVariant=A;infoCode=040;infoCodeVariant=A;itemLocationCode=D:001-00:en-US",
+      "kind": "table",
+      "text": "Fixture parts Item Status Fixture label CHECK",
+      "sourcePath": "DMC-FIXTURE.XML",
+      "locator": "/dmodule/content/procedure/mainProcedure/proceduralStep/table",
+      "elementId": "table-fixture-1",
+      "parentUnitId": "unit:a735a5efb956db336ac37fb4486cdea831decb8cc66dcfe144a57bc5a1ad5ed7"
+    },
+    {
+      "unitId": "unit:c95558c7b0f2f03678735db668990081f2cd18c53e97d9908261f1615328c74a",
+      "moduleIdentity": "dm:-:modelIdentCode=FIXTURE;systemDiffCode=A;systemCode=00;subSystemCode=0;subSubSystemCode=0;assyCode=00;disassyCode=00;disassyCodeVariant=A;infoCode=040;infoCodeVariant=A;itemLocationCode=D:001-00:en-US",
+      "kind": "figure",
+      "text": "Fixture connection",
+      "sourcePath": "DMC-FIXTURE.XML",
+      "locator": "/dmodule/content/procedure/mainProcedure/proceduralStep/figure",
+      "elementId": "figure-fixture-1",
+      "parentUnitId": "unit:a735a5efb956db336ac37fb4486cdea831decb8cc66dcfe144a57bc5a1ad5ed7"
+    }
+  ],
+  "references": [
+    {
+      "sourceModuleIdentity": "ddn:-:modelIdentCode=FIXTURE;receiverIdent=YYYYY;senderIdent=ZZZZZ;seqNumber=00001;yearOfDataIssue=2026:001-00:en-US",
+      "sourcePath": "DDN-FIXTURE.XML",
+      "referenceType": "delivery_file",
+      "targetIdentity": "DMC-FIXTURE.XML",
+      "resolution": "resolved",
+      "targetSourcePath": "DMC-FIXTURE.XML",
+      "locator": "/ddn/ddnContent/dispatchFileName[1]"
+    },
+    {
+      "sourceModuleIdentity": "ddn:-:modelIdentCode=FIXTURE;receiverIdent=YYYYY;senderIdent=ZZZZZ;seqNumber=00001;yearOfDataIssue=2026:001-00:en-US",
+      "sourcePath": "DDN-FIXTURE.XML",
+      "referenceType": "delivery_file",
+      "targetIdentity": "ICN-FIXTURE-001.png",
+      "resolution": "resolved",
+      "targetSourcePath": "ICN-FIXTURE-001.png",
+      "locator": "/ddn/ddnContent/dispatchFileName[2]"
+    },
+    {
+      "sourceModuleIdentity": "dm:-:modelIdentCode=FIXTURE;systemDiffCode=A;systemCode=00;subSystemCode=0;subSubSystemCode=0;assyCode=00;disassyCode=00;disassyCodeVariant=A;infoCode=040;infoCodeVariant=A;itemLocationCode=D:001-00:en-US",
+      "sourcePath": "DMC-FIXTURE.XML",
+      "referenceType": "internal",
+      "targetIdentity": "step-fixture-1",
+      "resolution": "resolved",
+      "targetSourcePath": "DMC-FIXTURE.XML",
+      "locator": "/dmodule/content/procedure/mainProcedure/proceduralStep/internalRef"
+    },
+    {
+      "sourceModuleIdentity": "dm:-:modelIdentCode=FIXTURE;systemDiffCode=A;systemCode=00;subSystemCode=0;subSubSystemCode=0;assyCode=00;disassyCode=00;disassyCodeVariant=A;infoCode=040;infoCodeVariant=A;itemLocationCode=D:001-00:en-US",
+      "sourcePath": "DMC-FIXTURE.XML",
+      "referenceType": "external_publication",
+      "targetIdentity": "FIXTURE-MANUAL-001",
+      "resolution": "external",
+      "targetSourcePath": null,
+      "locator": "/dmodule/content/procedure/mainProcedure/proceduralStep/externalPubRef"
+    },
+    {
+      "sourceModuleIdentity": "dml:-:dmlType=s;modelIdentCode=FIXTURE;senderIdent=ZZZZZ;seqNumber=00001;yearOfDataIssue=2026:001-00:en-US",
+      "sourcePath": "DML-FIXTURE.XML",
+      "referenceType": "dm",
+      "targetIdentity": "dm:-:modelIdentCode=FIXTURE;systemDiffCode=A;systemCode=00;subSystemCode=0;subSubSystemCode=0;assyCode=00;disassyCode=00;disassyCodeVariant=A;infoCode=040;infoCodeVariant=A;itemLocationCode=D:001-00:en-US",
+      "resolution": "resolved",
+      "targetSourcePath": "DMC-FIXTURE.XML",
+      "locator": "/dml/dmlContent/dmlEntry/dmRef"
+    },
+    {
+      "sourceModuleIdentity": "pm:-:modelIdentCode=FIXTURE;pmIssuer=ZZZZZ;pmNumber=00001;pmVolume=01:001-00:en-US",
+      "sourcePath": "PMC-FIXTURE.XML",
+      "referenceType": "dm",
+      "targetIdentity": "dm:-:modelIdentCode=FIXTURE;systemDiffCode=A;systemCode=00;subSystemCode=0;subSubSystemCode=0;assyCode=00;disassyCode=00;disassyCodeVariant=A;infoCode=040;infoCodeVariant=A;itemLocationCode=D:001-00:en-US",
+      "resolution": "resolved",
+      "targetSourcePath": "DMC-FIXTURE.XML",
+      "locator": "/pm/content/pmEntry/dmRef"
+    }
+  ],
+  "assets": [
+    {
+      "identity": "ICN-FIXTURE-001",
+      "sourcePath": "ICN-FIXTURE-001.png",
+      "sha256": "626f1dff3211a5d3a5f74fdebb87cbf8dffb4bbc49fc747deebc39a781fe1193",
+      "mediaType": "image/png",
+      "referencedBy": [
+        "dm:-:modelIdentCode=FIXTURE;systemDiffCode=A;systemCode=00;subSystemCode=0;subSubSystemCode=0;assyCode=00;disassyCode=00;disassyCodeVariant=A;infoCode=040;infoCodeVariant=A;itemLocationCode=D:001-00:en-US"
+      ]
+    }
+  ],
+  "findings": [],
+  "summary": {
+    "valid": true,
+    "fileCount": 9,
+    "moduleCount": 4,
+    "contentUnitCount": 9,
+    "referenceCount": 6,
+    "assetCount": 1,
+    "findingCount": 0,
+    "referenceCounts": {
+      "delivery_file:resolved": 2,
+      "internal:resolved": 1,
+      "external_publication:external": 1,
+      "dm:resolved": 2
+    }
+  }
+}

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dmodule issue="4.2" id="DM-FIXTURE-001">
+  <title>Controlled contract fixture</title>
+  <para id="p-1">Disconnect electrical power.</para>
+</dmodule>
