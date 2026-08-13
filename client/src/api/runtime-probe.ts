@@ -45,14 +45,16 @@ export async function runPhase2fValidation(): Promise<Phase2fValidationResult> {
       PHASE2F_VALIDATION_BODY,
       { meta: { autoJumpToLogin: false } },
     );
+    const code = responseCode(response.data);
+    const ok = response.status >= 200 && response.status < 300;
     return {
       path: PHASE2F_VALIDATION_PATH,
       status: response.status,
-      code: null,
+      code,
       body: response.data,
       requestId: header(response.headers, 'x-request-id'),
       traceId: header(response.headers, 'x-log-trace-id'),
-      ok: true,
+      ok,
     };
   } catch (cause: unknown) {
     const response = asBackendError(cause).response;
