@@ -48,4 +48,27 @@ describe('runtime probe Phase 2F client action', () => {
     );
     expect(post).toHaveBeenCalledTimes(1);
   });
+
+  it('normalizes a Miaoda-resolved 403 response as a failed stable-code result', async () => {
+    post.mockResolvedValue({
+      status: 403,
+      data: {
+        error: {
+          code: 'DOCUMENT_MANAGEMENT_VALIDATION_FORBIDDEN',
+          message: 'Phase 2D validation run ID is not configured.',
+        },
+      },
+      headers: { 'x-request-id': 'resolved-403' },
+    });
+
+    await expect(runPhase2fValidation()).resolves.toEqual(
+      expect.objectContaining({
+        status: 403,
+        code: 'DOCUMENT_MANAGEMENT_VALIDATION_FORBIDDEN',
+        requestId: 'resolved-403',
+        ok: false,
+      }),
+    );
+    expect(post).toHaveBeenCalledTimes(1);
+  });
 });
