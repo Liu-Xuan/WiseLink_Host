@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
 
 import { UNIFIED_READER } from './unified-reader.constants';
@@ -23,13 +23,19 @@ export interface PythonU0FullPackageValidatorOptions {
   contractRoot: string;
   contractCommit: string;
   validatorRevision: string;
+  pythonModulePath?: string;
 }
 
-/** Host-configured adapter for the selected U0 frozen.2 full Validator. */
+/**
+ * Exact frozen.2 U0 Schema/Semantic Validator adapter. It is host-configured
+ * only; no path or executable is read from an HTTP request.
+ */
 export class PythonU0FullPackageValidatorAdapter implements U0FullPackageValidatorPort {
   private readonly pythonExecutable: string;
   private readonly contractRoot: string;
   private readonly validatorRevision: string;
+  private readonly pythonEnvironment: NodeJS.ProcessEnv | undefined;
+  private readonly pythonModulePath: string | undefined;
 
   constructor(options: PythonU0FullPackageValidatorOptions) {
     this.pythonExecutable = requiredText(
@@ -48,6 +54,22 @@ export class PythonU0FullPackageValidatorAdapter implements U0FullPackageValidat
       'validator.validatorRevision',
       300,
     );
+    this.pythonModulePath = options.pythonModulePath
+      ? resolve(
+          requiredText(
+            options.pythonModulePath,
+            'validator.pythonModulePath',
+            2000,
+          ),
+        )
+      : undefined;
+    this.pythonEnvironment = this.pythonModulePath
+      ? {
+          ...process.env,
+          PYTHONPATH: this.pythonModulePath,
+          PYTHONNOUSERSITE: '1',
+        }
+      : undefined;
   }
 
   async validateActualBytes(input: {
@@ -63,13 +85,16 @@ export class PythonU0FullPackageValidatorAdapter implements U0FullPackageValidat
     ) {
       throw new Error('FULL_U0_VALIDATOR_REJECTED:ACTUAL_BYTE_MISMATCH');
     }
-    const directory = await mkdtemp(join(tmpdir(), 'wiselink-u0-validator-'));
+    await this.assertVendoredRuntime();
+    const directory = await mkdtemp(
+      join(tmpdir(), 'wiselink-u0-full-validator-'),
+    );
     const packagePath = join(directory, 'package.json');
     try {
       await writeFile(packagePath, input.bytes, { flag: 'wx' });
       const { stdout } = await execFileAsync(
         this.pythonExecutable,
-        [
+        this.pythonArguments([
           '-m',
           'scripts.read_package',
           '--contract-root',
@@ -78,9 +103,10 @@ export class PythonU0FullPackageValidatorAdapter implements U0FullPackageValidat
           packagePath,
           '--mode',
           'strict',
-        ],
+        ]),
         {
           cwd: this.contractRoot,
+          env: this.pythonEnvironment,
           encoding: 'utf8',
           maxBuffer: 2 * 1024 * 1024,
           timeout: 120_000,
@@ -116,8 +142,9 @@ export class PythonU0FullPackageValidatorAdapter implements U0FullPackageValidat
       ) {
         throw error;
       }
-      const failed = parseFailedProcessOutput(error);
-      if (failed?.ok === false) {
+      const failedResponse: ValidatorResponse | null =
+        parseFailedProcessOutput(error);
+      if (failedResponse?.ok === false) {
         throw new Error('FULL_U0_VALIDATOR_REJECTED:STRICT_VALIDATION');
       }
       throw new Error('FULL_U0_VALIDATOR_UNAVAILABLE:PROCESS_FAILURE');
@@ -140,13 +167,14 @@ export class PythonU0FullPackageValidatorAdapter implements U0FullPackageValidat
         'FULL_U0_FAILURE_REPORT_VALIDATOR_REJECTED:ACTUAL_BYTE_MISMATCH',
       );
     }
-    const directory: string = await mkdtemp(
+    await this.assertVendoredRuntime();
+    const directory = await mkdtemp(
       join(tmpdir(), 'wiselink-u0-failure-validator-'),
     );
-    const reportPath: string = join(directory, 'failure-report.json');
+    const reportPath = join(directory, 'failure-report.json');
     try {
       await writeFile(reportPath, input.bytes, { flag: 'wx' });
-      const code: string = [
+      const code = [
         'import json,sys',
         'from pathlib import Path',
         'from scripts.contract_core import validate_parse_failure_report',
@@ -158,16 +186,16 @@ export class PythonU0FullPackageValidatorAdapter implements U0FullPackageValidat
       ].join(';');
       const { stdout } = await execFileAsync(
         this.pythonExecutable,
-        ['-c', code, this.contractRoot, reportPath],
+        this.pythonArguments(['-c', code, this.contractRoot, reportPath]),
         {
           cwd: this.contractRoot,
+          env: this.pythonEnvironment,
           encoding: 'utf8',
           maxBuffer: 2 * 1024 * 1024,
           timeout: 120_000,
         },
       );
-      const response: FailureValidatorResponse =
-        parseFailureValidatorResponse(stdout);
+      const response = parseFailureValidatorResponse(stdout);
       if (response.ok !== true || response.failureId !== input.failureId) {
         throw new Error(
           'FULL_U0_FAILURE_REPORT_VALIDATOR_REJECTED:STRICT_VALIDATION',
@@ -186,14 +214,11 @@ export class PythonU0FullPackageValidatorAdapter implements U0FullPackageValidat
     } catch (error) {
       if (
         error instanceof Error &&
-        error.message.startsWith(
-          'FULL_U0_FAILURE_REPORT_VALIDATOR_REJECTED:',
-        )
+        error.message.startsWith('FULL_U0_FAILURE_REPORT_VALIDATOR_REJECTED:')
       ) {
         throw error;
       }
-      const failed: FailureValidatorResponse | null =
-        parseFailureProcessOutput(error);
+      const failed = parseFailureProcessOutput(error);
       if (failed?.ok === false) {
         throw new Error(
           'FULL_U0_FAILURE_REPORT_VALIDATOR_REJECTED:STRICT_VALIDATION',
@@ -229,6 +254,91 @@ export class PythonU0FullPackageValidatorAdapter implements U0FullPackageValidat
       );
     }
   }
+
+  private async assertVendoredRuntime(): Promise<void> {
+    if (!this.pythonModulePath) return;
+    try {
+      const { stdout } = await execFileAsync(
+        this.pythonExecutable,
+        this.pythonArguments([
+          '-c',
+          [
+            'import json,platform,sysconfig',
+            'from pathlib import Path',
+            'from importlib.metadata import version',
+            'import attrs,jsonschema,jsonschema_specifications,referencing,rfc3339_validator,rpds,rpds.rpds,six,typing_extensions',
+            'modules={"attrs":attrs,"jsonschema":jsonschema,"jsonschemaSpecifications":jsonschema_specifications,"referencing":referencing,"rfc3339":rfc3339_validator,"rpds":rpds,"rpdsNative":rpds.rpds,"six":six,"typingExtensions":typing_extensions}',
+            'versions={name:version(name) for name in ("attrs","jsonschema","jsonschema-specifications","referencing","rfc3339-validator","rpds-py","six","typing-extensions")}',
+            'origins={name:str(Path(module.__file__).resolve()) for name,module in modules.items()}',
+            'print(json.dumps({"python":platform.python_version(),"system":platform.system().lower(),"machine":platform.machine().lower(),"soabi":sysconfig.get_config_var("SOABI"),"versions":versions,"origins":origins},sort_keys=True,separators=(",",":")))',
+          ].join(';'),
+        ]),
+        {
+          cwd: this.contractRoot,
+          env: this.pythonEnvironment,
+          encoding: 'utf8',
+          maxBuffer: 64 * 1024,
+          timeout: 30_000,
+        },
+      );
+      const runtime = JSON.parse(stdout.trim()) as PythonVendorRuntime;
+      const target: string = basename(this.pythonModulePath);
+      const expectedMachine: string =
+        target === 'linux-arm64-cp39'
+          ? 'aarch64'
+          : target === 'linux-x64-cp39'
+            ? 'x86_64'
+            : '';
+      if (
+        !runtime.python?.startsWith('3.9.') ||
+        runtime.system !== 'linux' ||
+        runtime.machine !== expectedMachine ||
+        !runtime.soabi?.startsWith(`cpython-39-${expectedMachine}`) ||
+        runtime.versions?.attrs !== '26.1.0' ||
+        runtime.versions?.jsonschema !== '4.25.1' ||
+        runtime.versions?.['jsonschema-specifications'] !== '2025.9.1' ||
+        runtime.versions?.referencing !== '0.36.2' ||
+        runtime.versions?.['rfc3339-validator'] !== '0.1.4' ||
+        runtime.versions?.['rpds-py'] !== '0.27.1' ||
+        runtime.versions?.six !== '1.17.0' ||
+        runtime.versions?.['typing-extensions'] !== '4.16.0' ||
+        !runtime.origins ||
+        !Object.values(runtime.origins).every((origin: string) =>
+          isInside(this.pythonModulePath as string, origin),
+        ) ||
+        !runtime.origins.rpdsNative?.endsWith(
+          `rpds.cpython-39-${expectedMachine}-linux-gnu.so`,
+        )
+      ) {
+        throw new Error('PYTHON_VENDOR_VERSION');
+      }
+    } catch {
+      throw new Error('FULL_U0_VALIDATOR_UNAVAILABLE:PYTHON_VENDOR_IMPORT');
+    }
+  }
+
+  private pythonArguments(args: string[]): string[] {
+    return this.pythonModulePath ? ['-S', ...args] : args;
+  }
+}
+
+interface PythonVendorRuntime {
+  python?: string;
+  system?: string;
+  machine?: string;
+  soabi?: string;
+  versions?: Record<string, string>;
+  origins?: Record<string, string>;
+}
+
+function isInside(root: string, candidate: string): boolean {
+  const path: string = relative(resolve(root), resolve(candidate));
+  return (
+    path !== '' &&
+    path !== '..' &&
+    !path.startsWith(`..${sep}`) &&
+    !isAbsolute(path)
+  );
 }
 
 interface ValidatorResponse {
@@ -274,11 +384,9 @@ function parseFailedProcessOutput(error: unknown): ValidatorResponse | null {
 function parseFailureValidatorResponse(
   stdout: string,
 ): FailureValidatorResponse {
-  const text: string = stdout.trim();
+  const text = stdout.trim();
   if (text === '') {
-    throw new Error(
-      'FULL_U0_FAILURE_REPORT_VALIDATOR_REJECTED:EMPTY_RESPONSE',
-    );
+    throw new Error('FULL_U0_FAILURE_REPORT_VALIDATOR_REJECTED:EMPTY_RESPONSE');
   }
   try {
     return JSON.parse(text) as FailureValidatorResponse;

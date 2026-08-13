@@ -84,3 +84,4 @@ export type {
   UnifiedParseFailureReport,
   UnifiedReaderReadinessResponse,
 } from '@shared/api.interface';
+export { resolveVendoredU0PythonModulePath } from '../../runtime/u0-python/resolve-vendored-python-module-path';

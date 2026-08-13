@@ -5,13 +5,15 @@ import { PlatformModule } from '@lark-apaas/fullstack-nestjs-core';
 import { GlobalExceptionFilter } from './common/filters/exception.filter';
 import { AssessmentRegistrarModule } from './modules/assessment-registrar/assessment-registrar.module';
 import { CanonicalHostModule } from './modules/canonical-host/canonical-host.module';
-import {
-  DOCUMENT_MANAGEMENT_INGEST_AUTHORIZER,
-  DocumentManagementHostedModule,
-} from './modules/document-management/src/hosted/nest';
-import { UnconfiguredDocumentManagementIngestAuthorizer } from './modules/document-management/src/hosted/nest/unconfigured-document-management-ingest-authorizer';
+import { DocumentManagementValidationModule } from './modules/document-management-validation/document-management-validation.module';
 import { RuntimeProbeModule } from './modules/runtime-probe/runtime-probe.module';
+import { createHostedU0FullPackageValidatorProvider } from './modules/unified-reader/hosted-u0-full-validator.provider';
 import { ViewModule } from './modules/view/view.module';
+
+const hostedU0ValidatorProvider =
+  process.env.WL_U0_HOSTED_VALIDATOR_ENABLED === 'true'
+    ? createHostedU0FullPackageValidatorProvider()
+    : undefined;
 
 @Module({
   imports: [
@@ -19,13 +21,12 @@ import { ViewModule } from './modules/view/view.module';
     PlatformModule.forRoot(),
     // ====== @route-section: business-modules START ======
     AssessmentRegistrarModule.forHostedRegistrar(),
-    CanonicalHostModule.forRoot(),
-    DocumentManagementHostedModule.register({
-      authorizerProvider: {
-        provide: DOCUMENT_MANAGEMENT_INGEST_AUTHORIZER,
-        useClass: UnconfiguredDocumentManagementIngestAuthorizer,
+    CanonicalHostModule.forRoot({
+      unifiedReader: {
+        fullU0ValidatorProvider: hostedU0ValidatorProvider,
       },
     }),
+    DocumentManagementValidationModule,
     RuntimeProbeModule,
     // ====== @route-section: business-modules END ======
 

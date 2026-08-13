@@ -12,6 +12,11 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 
+import {
+  inspectHostedU0PythonRuntime,
+  resolveHostedU0PythonRuntime,
+  type HostedU0PythonRuntime,
+} from '../../runtime/u0-python/hosted-u0-python-runtime';
 import type {
   RuntimeProbeCheck,
   RuntimeProbeResponse,
@@ -41,25 +46,32 @@ export class RuntimeProbeService {
       strictReader: fail('NOT_RUN'),
     };
     const blockers: string[] = [];
-    const pythonExecutable = await resolvePythonExecutable();
-    if (!pythonExecutable) {
-      checks.pythonExecutable = fail('PYTHON_EXECUTABLE_NOT_FOUND');
+    let pythonRuntime: HostedU0PythonRuntime | null = null;
+    try {
+      pythonRuntime = await resolveHostedU0PythonRuntime();
+      checks.pythonExecutable = pass(
+        JSON.stringify({
+          executable: pythonRuntime.pythonExecutable,
+          version: pythonRuntime.pythonVersion,
+          platform: pythonRuntime.platform,
+          arch: pythonRuntime.arch,
+          modulePath: pythonRuntime.pythonModulePath,
+        }),
+      );
+    } catch (error) {
+      checks.pythonExecutable = fail(errorSummary(error));
       blockers.push('HOSTED_PYTHON_EXECUTABLE_NOT_FOUND');
-    } else {
-      checks.pythonExecutable = pass(pythonExecutable);
+    }
+    if (pythonRuntime) {
       checks.childProcess = await commandCheck(
-        pythonExecutable,
-        ['-c', 'import sys; print(sys.version.split()[0])'],
+        pythonRuntime.pythonExecutable,
+        ['-S', '-c', 'import sys; print(sys.version.split()[0])'],
         'HOSTED_CHILD_PROCESS_FAILED',
         blockers,
+        pythonEnvironment(pythonRuntime),
       );
-      checks.jsonschemaDependency = await commandCheck(
-        pythonExecutable,
-        [
-          '-c',
-          'import jsonschema; print(getattr(jsonschema, "__version__", "installed"))',
-        ],
-        'HOSTED_JSONSCHEMA_DEPENDENCY_MISSING',
+      checks.jsonschemaDependency = await vendoredDependencyCheck(
+        pythonRuntime,
         blockers,
       );
     }
@@ -68,7 +80,7 @@ export class RuntimeProbeService {
     checks.exactU0Manifest = await manifestCheck(contractRoot, blockers);
     checks.exactU0Scripts = await scriptsCheck(contractRoot, blockers);
     if (
-      pythonExecutable &&
+      pythonRuntime &&
       checks.childProcess.status === 'PASS' &&
       checks.jsonschemaDependency.status === 'PASS' &&
       checks.exactU0Manifest.status === 'PASS' &&
@@ -76,7 +88,7 @@ export class RuntimeProbeService {
       checks.temporaryFile.status === 'PASS'
     ) {
       checks.strictReader = await strictReaderCheck(
-        pythonExecutable,
+        pythonRuntime,
         contractRoot,
         blockers,
       );
@@ -112,38 +124,36 @@ export class RuntimeProbeService {
   }
 }
 
-async function resolvePythonExecutable(): Promise<string | null> {
-  for (const candidate of ['python3', 'python', '/usr/bin/python3']) {
-    try {
-      const { stdout } = await execFileAsync(candidate, ['--version'], {
-        encoding: 'utf8',
-        timeout: 5_000,
-      });
-      if (stdout.trim() !== '' || candidate === '/usr/bin/python3') {
-        return candidate;
-      }
-    } catch {
-      // Try the next fixed executable. No request parameter controls this list.
-    }
-  }
-  return null;
-}
-
 async function commandCheck(
   executable: string,
   args: string[],
   blocker: string,
   blockers: string[],
+  env?: NodeJS.ProcessEnv,
 ): Promise<RuntimeProbeCheck> {
   try {
     const { stdout, stderr } = await execFileAsync(executable, args, {
       encoding: 'utf8',
       timeout: 10_000,
       maxBuffer: 64 * 1024,
+      env,
     });
     return pass((stdout || stderr).trim().slice(0, 300) || 'EXIT_0');
   } catch (error) {
     blockers.push(blocker);
+    return fail(errorSummary(error));
+  }
+}
+
+async function vendoredDependencyCheck(
+  runtime: HostedU0PythonRuntime,
+  blockers: string[],
+): Promise<RuntimeProbeCheck> {
+  try {
+    const inspection = await inspectHostedU0PythonRuntime(runtime);
+    return pass(JSON.stringify(inspection));
+  } catch (error) {
+    blockers.push('HOSTED_JSONSCHEMA_DEPENDENCY_MISSING');
     return fail(errorSummary(error));
   }
 }
@@ -216,14 +226,15 @@ async function scriptsCheck(
 }
 
 async function strictReaderCheck(
-  pythonExecutable: string,
+  runtime: HostedU0PythonRuntime,
   contractRoot: string,
   blockers: string[],
 ): Promise<RuntimeProbeCheck> {
   try {
     const { stdout } = await execFileAsync(
-      pythonExecutable,
+      runtime.pythonExecutable,
       [
+        '-S',
         '-m',
         'scripts.read_package',
         '--contract-root',
@@ -238,6 +249,7 @@ async function strictReaderCheck(
         encoding: 'utf8',
         timeout: 30_000,
         maxBuffer: 256 * 1024,
+        env: pythonEnvironment(runtime),
       },
     );
     const parsed = JSON.parse(stdout) as {
@@ -255,6 +267,14 @@ async function strictReaderCheck(
     blockers.push('HOSTED_U0_STRICT_READER_FAILED');
     return fail(errorSummary(error));
   }
+}
+
+function pythonEnvironment(runtime: HostedU0PythonRuntime): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    PYTHONPATH: runtime.pythonModulePath,
+    PYTHONNOUSERSITE: '1',
+  };
 }
 
 function pass(detail: string): RuntimeProbeCheck {

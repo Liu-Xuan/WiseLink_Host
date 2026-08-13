@@ -26,6 +26,7 @@
     "test:watch": "jest --watch",
     "test:e2e": "jest --config test/e2e/jest.config.js",
     "test:unified:composition": "npm run build:server && node scripts/verify-unified-reader-composition.mjs",
+    "test:unified:host-vendored-real": "npm run build:server && node scripts/verify-host-u0-vendored-real.mjs",
     "test:canonical:activation": "npm run build:server && node scripts/verify-canonical-activation-deltas.mjs",
     "test:document-management:composition": "npm run build:server && node scripts/verify-document-management-composition.mjs",
     "test:document-management:real-pdf": "npm run build:server && node scripts/run-document-management-real-pdf-loop.mjs",
