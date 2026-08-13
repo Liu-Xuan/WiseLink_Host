@@ -11,6 +11,15 @@ function required(value, fieldName) {
   return normalized;
 }
 
+// @lark-apaas/file-service removes leading slashes before provider I/O. Keep the
+// caller-facing path for Catalog lineage, but compare the provider's canonical
+// path so `/123.pdf` and `123.pdf` identify the same exact FileService object.
+function providerFilePath(value, fieldName) {
+  const normalized = required(value, fieldName).replace(/^\/+/, '');
+  if (!normalized) fail('HOSTED_FILE_REFERENCE_INVALID', `${fieldName} is required.`);
+  return normalized;
+}
+
 async function streamToBuffer(stream, maxBytes) {
   const chunks = [];
   let byteLength = 0;
@@ -71,17 +80,21 @@ function metadataIdentity(metadata, expectedBucketId, expectedFilePath) {
   if (!metadata) fail('FILESERVICE_OBJECT_NOT_FOUND', `File not found: ${expectedFilePath}`);
   const bucketId = required(metadata.bucketID, 'metadata.bucketID');
   const filePath = required(metadata.filePath, 'metadata.filePath');
-  if (bucketId !== expectedBucketId || filePath !== expectedFilePath) {
+  const expectedProviderFilePath = providerFilePath(expectedFilePath, 'expectedFilePath');
+  const actualProviderFilePath = providerFilePath(filePath, 'metadata.filePath');
+  if (bucketId !== expectedBucketId || actualProviderFilePath !== expectedProviderFilePath) {
     fail('FILESERVICE_LOCATOR_DRIFT', 'FileService returned a different bucket or path.', {
       expectedBucketId,
       expectedFilePath,
+      expectedProviderFilePath,
       actualBucketId: bucketId,
       actualFilePath: filePath,
+      actualProviderFilePath,
     });
   }
   return {
     bucketId,
-    filePath,
+    filePath: expectedFilePath,
     providerObjectId: required(metadata.id, 'metadata.id'),
     providerVersionId: required(metadata.updatedAt, 'metadata.updatedAt'),
     fileName: required(metadata.name, 'metadata.name'),
@@ -98,6 +111,17 @@ async function downloadActualBytes(service, locator, maxBytes) {
   const downloadMetadata = result?.metadata
     ? metadataIdentity(result.metadata, locator.bucketId, locator.filePath)
     : locator;
+  if (
+    downloadMetadata.providerObjectId !== locator.providerObjectId
+    || downloadMetadata.providerVersionId !== locator.providerVersionId
+  ) {
+    fail('FILESERVICE_OBJECT_VERSION_DRIFT', 'FileService download resolved another object version.', {
+      expectedProviderObjectId: locator.providerObjectId,
+      expectedProviderVersionId: locator.providerVersionId,
+      actualProviderObjectId: downloadMetadata.providerObjectId,
+      actualProviderVersionId: downloadMetadata.providerVersionId,
+    });
+  }
   const bytes = await bodyToBuffer(result?.content, maxBytes);
   if (
     downloadMetadata.providerByteLength > 0
