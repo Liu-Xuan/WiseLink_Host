@@ -105,15 +105,15 @@ candidate and its mutation paths correctly stay locked.
 
 ## Local platform-adapter coverage
 
-| Port                                        | Local host coverage                                                                                                       | Runtime status                                                                   |
-| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| `RegistrarActivationArtifactStorePort`      | dedicated read-only FileService actual-byte adapter; returns configured store/bucket/adapter identity                     | implemented and unit-tested; not sufficient to activate Registrar                |
-| Registrar Master signature/trust            | none                                                                                                                      | `BLOCKED`; not implemented or simulated                                          |
-| Registrar sole-writer permission fresh-read | none                                                                                                                      | `BLOCKED`; not implemented or simulated                                          |
-| Registrar validation-write authorization    | none                                                                                                                      | `BLOCKED`; not implemented or simulated                                          |
-| Dedicated Registrar Base transport          | server-only tenant-access-token OpenAPI adapter for three-table search/create/update; business actor fields remain opaque | implemented and tested but not registered; dedicated app identity/scopes pending |
-| `ImmutableAcceptanceReceiptOwnerPort`       | Unified `b3e7a...` public DI wrapper plus explicit unconfigured adapter                                                   | `IMMUTABLE_ACCEPTANCE_RECEIPT_OWNER_NOT_CONFIGURED`                              |
-| Unified Python U0 Validator                 | existing hosted-verified adapter and ordinary `pythonModulePath` passthrough                                              | source/config retained; no online probe in this slice                            |
+| Port                                        | Local host coverage                                                                                                       | Runtime status                                                                          |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `RegistrarActivationArtifactStorePort`      | dedicated read-only FileService actual-byte adapter; returns configured store/bucket/adapter identity                     | implemented and unit-tested; not sufficient to activate Registrar                       |
+| Registrar Master signature/trust            | none                                                                                                                      | `BLOCKED`; not implemented or simulated                                                 |
+| Registrar sole-writer permission fresh-read | none                                                                                                                      | `BLOCKED`; not implemented or simulated                                                 |
+| Registrar validation-write authorization    | none                                                                                                                      | `BLOCKED`; not implemented or simulated                                                 |
+| Dedicated Registrar Base transport          | server-only tenant-access-token OpenAPI adapter for three-table search/create/update; business actor fields remain opaque | implemented and tested but not registered; dedicated app identity/scopes pending        |
+| `ImmutableAcceptanceReceiptOwnerPort`       | receipt-only FileService actual owner plus Unified `b3e7a...` DI wrapper; default module remains unconfigured             | local adapter verified; runtime identity/store and external write authorization pending |
+| Unified Python U0 Validator                 | existing hosted-verified adapter and ordinary `pythonModulePath` passthrough                                              | source/config retained; no online probe in this slice                                   |
 
 No activation manifest, immutable acceptance receipt, signature, permission grant or validation-
 write authorization is created by these adapters. This is a local composition improvement only;
@@ -182,3 +182,18 @@ unit tests. Binding still requires an exact dedicated app ID, record search/crea
 permissions, Base access, server-secret injection and the selected Registrar's exact field mapper.
 This slice performs no network call, push, release, environment change, Base write or FileService
 I/O.
+
+## Immutable acceptance receipt owner local slice
+
+One ordinary FileService-backed `ImmutableAcceptanceReceiptOwnerPort` now persists only bytes
+already supplied after an external validation-write authorization decision. Its receipt bucket is
+runtime-configured and its path is fixed from the raw SHA-256; it never accepts a client path.
+`upsert=false` prevents overwrite, and both new uploads and existing-path reuse require a fresh
+metadata read plus exact-byte download verification. Provider timestamps remain audit-only.
+
+The owner has no signing, Master activation, write-authorization, WorkItem, CAS, currentness or
+publication operation. Its runtime identity must not alias `CanonicalHubRegistrar`. It is exported
+for the existing Unified `createImmutableAcceptanceReceiptOwnerProvider(owner)` composition but is
+not wired in `AppModule`; the production-default owner remains explicitly unconfigured and makes
+no FileService call. Detailed tests and integration inputs are recorded in
+`docs/IMMUTABLE_ACCEPTANCE_RECEIPT_OWNER_LOCAL_ACCEPTANCE_20260814.md`.

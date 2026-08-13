@@ -62,6 +62,14 @@ export function createImmutableAcceptanceReceiptOwnerProvider(
 export { Frozen2CandidateReaderService } from './frozen2-candidate-reader.service';
 export { MiaodaFileArtifactStoreAdapter } from './miaoda-file-artifact-store.adapter';
 export {
+  createMiaodaImmutableAcceptanceReceiptOwner,
+  IMMUTABLE_RECEIPT_OWNER_ENV,
+  MiaodaImmutableAcceptanceReceiptOwnerAdapter,
+  prepareMiaodaImmutableAcceptanceReceiptOwner,
+  type MiaodaImmutableAcceptanceReceiptOwnerOptions,
+  type MiaodaImmutableReceiptOwnerPreparation,
+} from './miaoda-immutable-acceptance-receipt-owner.adapter';
+export {
   PythonU0FullPackageValidatorAdapter,
   type PythonU0FullPackageValidatorOptions,
 } from './python-u0-full-package-validator.adapter';
