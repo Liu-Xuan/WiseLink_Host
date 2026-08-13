@@ -2,12 +2,17 @@ import { useEffect, useState } from 'react';
 
 import {
   getReadOnlyRuntimeProbe,
+  runPhase2fValidation,
+  type Phase2fValidationResult,
   type ReadOnlyProbeResult,
 } from '@client/src/api/runtime-probe';
 
 export default function RuntimeProbePage() {
   const [results, setResults] = useState<ReadOnlyProbeResult[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [validation, setValidation] = useState<Phase2fValidationResult | null>(null);
+  const [validationRunning, setValidationRunning] = useState(false);
+  const [validationAttempted, setValidationAttempted] = useState(false);
 
   useEffect(() => {
     getReadOnlyRuntimeProbe()
@@ -16,6 +21,17 @@ export default function RuntimeProbePage() {
         setError(cause instanceof Error ? cause.message : 'RUNTIME_PROBE_FAILED');
       });
   }, []);
+
+  async function runValidationOnce() {
+    if (validationAttempted || validationRunning) return;
+    setValidationAttempted(true);
+    setValidationRunning(true);
+    try {
+      setValidation(await runPhase2fValidation());
+    } finally {
+      setValidationRunning(false);
+    }
+  }
 
   return (
     <main className="parse-shell">
@@ -45,6 +61,29 @@ export default function RuntimeProbePage() {
           </section>
         ))
       )}
+      <section className="parse-panel" data-testid="phase2f-validation-panel">
+        <h2>Phase 2F hosted DM validation</h2>
+        <p>
+          固定读取两份已授权 FTD FileService 对象。页面不接受路径或权限输入；登录、CSRF、
+          validation window、run ID 与实际字节由服务端校验。
+        </p>
+        <button
+          data-testid="phase2f-validation-trigger"
+          disabled={validationAttempted || validationRunning}
+          onClick={runValidationOnce}
+          type="button"
+        >
+          {validationRunning ? 'RUNNING' : validationAttempted ? 'ATTEMPTED' : 'RUN PHASE 2F ONCE'}
+        </button>
+        {validation ? (
+          <div data-testid="phase2f-validation-result">
+            <p>
+              HTTP {validation.status} · {validation.code ?? (validation.ok ? 'PASS' : 'NO_CODE')}
+            </p>
+            <pre>{JSON.stringify(validation, null, 2)}</pre>
+          </div>
+        ) : null}
+      </section>
     </main>
   );
 }

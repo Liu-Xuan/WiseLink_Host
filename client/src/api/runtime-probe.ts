@@ -6,6 +6,23 @@ export interface ReadOnlyProbeResult {
   body: unknown;
 }
 
+export interface Phase2fValidationResult {
+  path: string;
+  status: number;
+  code: string | null;
+  body: unknown;
+  requestId: string | null;
+  traceId: string | null;
+  ok: boolean;
+}
+
+const PHASE2F_VALIDATION_PATH =
+  '/api/document-management/validation/phase2d-ftd-two-version';
+const PHASE2F_VALIDATION_BODY = Object.freeze({
+  firstFilePath: '/1873430484255770.pdf',
+  newerFilePath: '/1873430479421449.pdf',
+});
+
 export async function getReadOnlyRuntimeProbe(): Promise<ReadOnlyProbeResult[]> {
   const paths = [
     '/api/runtime-probe',
@@ -19,4 +36,64 @@ export async function getReadOnlyRuntimeProbe(): Promise<ReadOnlyProbeResult[]> 
     results.push({ path, status: response.status, body: response.data });
   }
   return results;
+}
+
+export async function runPhase2fValidation(): Promise<Phase2fValidationResult> {
+  try {
+    const response = await axiosForBackend.post<unknown>(
+      PHASE2F_VALIDATION_PATH,
+      PHASE2F_VALIDATION_BODY,
+      { meta: { autoJumpToLogin: false } },
+    );
+    return {
+      path: PHASE2F_VALIDATION_PATH,
+      status: response.status,
+      code: null,
+      body: response.data,
+      requestId: header(response.headers, 'x-request-id'),
+      traceId: header(response.headers, 'x-log-trace-id'),
+      ok: true,
+    };
+  } catch (cause: unknown) {
+    const response = asBackendError(cause).response;
+    return {
+      path: PHASE2F_VALIDATION_PATH,
+      status: response?.status ?? 0,
+      code: responseCode(response?.data),
+      body: response?.data ?? { message: errorMessage(cause) },
+      requestId: header(response?.headers, 'x-request-id'),
+      traceId: header(response?.headers, 'x-log-trace-id'),
+      ok: false,
+    };
+  }
+}
+
+interface BackendErrorResponse {
+  status?: number;
+  data?: unknown;
+  headers?: unknown;
+}
+
+function asBackendError(value: unknown): { response?: BackendErrorResponse } {
+  return value && typeof value === 'object'
+    ? (value as { response?: BackendErrorResponse })
+    : {};
+}
+
+function responseCode(value: unknown): string | null {
+  if (!value || typeof value !== 'object') return null;
+  const error = (value as { error?: unknown }).error;
+  if (!error || typeof error !== 'object') return null;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === 'string' && code.length > 0 ? code : null;
+}
+
+function header(value: unknown, name: string): string | null {
+  if (!value || typeof value !== 'object') return null;
+  const candidate = (value as Record<string, unknown>)[name];
+  return typeof candidate === 'string' && candidate.length > 0 ? candidate : null;
+}
+
+function errorMessage(value: unknown): string {
+  return value instanceof Error ? value.message : 'PHASE2F_VALIDATION_REQUEST_FAILED';
 }
