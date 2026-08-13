@@ -1,0 +1,25 @@
+{
+  "schemaVersion": "v8.4-document-family-adapter.v1",
+  "adapterId": "issuer.honeywell.sil.v1",
+  "extends": "generic.supplier_sil.v1",
+  "issuerPolicy": {
+    "issuer": "HONEYWELL",
+    "issuerAliases": ["\\bHONEYWELL\\b"]
+  },
+  "docFamily": "SIL",
+  "subtype": "supplier_service_information_letter",
+  "templateMode": "issuer_overlay_source_bounded",
+  "formatOverlay": "honeywell_supplier_sil",
+  "matchPolicy": {
+    "priority": 45,
+    "issuerAliases": ["\\bHONEYWELL\\b"],
+    "filenamePatterns": ["HONEYWELL.*(SIL|SERVICE[-_\\s]*INFORMATION[-_\\s]*LETTER)"],
+    "textPatterns": ["\\bHONEYWELL\\b[\\s\\S]{0,160}\\b(SIL|SERVICE\\s+INFORMATION\\s+LETTER)\\b"]
+  },
+  "issuerOverlaySchemaRef": "schema.issuer.honeywell.sil.v1",
+  "documentTypeProfileRef": "honeywell_sil",
+  "parseProfileRef": "honeywell.sil",
+  "structuredParseTemplateRef": "supplier_sil",
+  "closurePolicyOverlayRef": "closure.overlay.honeywell_sil.v1",
+  "fixtureSetRef": "backend/test-fixtures/document-family-adapters/honeywell_sil"
+}

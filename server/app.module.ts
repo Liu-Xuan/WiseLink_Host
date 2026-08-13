@@ -5,7 +5,9 @@ import { PlatformModule } from '@lark-apaas/fullstack-nestjs-core';
 import { GlobalExceptionFilter } from './common/filters/exception.filter';
 import { AssessmentRegistrarModule } from './modules/assessment-registrar/assessment-registrar.module';
 import { CanonicalHostModule } from './modules/canonical-host/canonical-host.module';
+import { DocumentManagementValidationModule } from './modules/document-management-validation/document-management-validation.module';
 import { RuntimeProbeModule } from './modules/runtime-probe/runtime-probe.module';
+import { createHostedU0FullPackageValidatorProvider } from './modules/unified-reader/hosted-u0-full-validator.provider';
 import { ViewModule } from './modules/view/view.module';
 
 @Module({
@@ -14,7 +16,13 @@ import { ViewModule } from './modules/view/view.module';
     PlatformModule.forRoot(),
     // ====== @route-section: business-modules START ======
     AssessmentRegistrarModule.forHostedRegistrar(),
-    CanonicalHostModule.forRoot(),
+    CanonicalHostModule.forRoot({
+      unifiedReader: {
+        fullU0ValidatorProvider:
+          createHostedU0FullPackageValidatorProvider(),
+      },
+    }),
+    DocumentManagementValidationModule,
     RuntimeProbeModule,
     // ====== @route-section: business-modules END ======
 

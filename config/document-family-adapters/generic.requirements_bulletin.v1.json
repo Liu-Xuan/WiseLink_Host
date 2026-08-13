@@ -1,0 +1,29 @@
+{
+  "schemaVersion": "v8.4-document-family-adapter.v1",
+  "adapterId": "generic.requirements_bulletin.v1",
+  "extends": "generic.general_document.v1",
+  "docFamily": "RB",
+  "subtype": "requirements_bulletin",
+  "templateMode": "profile_guided_source_bounded",
+  "formatOverlay": "generic_requirements_bulletin",
+  "matchPolicy": {
+    "priority": 35,
+    "filenamePatterns": ["REQUIREMENTS[-_\\s]*BULLETIN", "(^|[^A-Z0-9])RB[-_\\s]*[A-Z0-9]"],
+    "textPatterns": ["\\bREQUIREMENTS\\s+BULLETIN\\b", "\\bREQUIRED\\s+FOR\\s+COMPLIANCE\\b"]
+  },
+  "sourceContract": {
+    "requiredSources": ["physicalDocumentId", "logicalDocumentId", "pageRange", "source_excerpt", "section_path"],
+    "missingSourceNeedKind": "subdocument_boundary_review_need",
+    "tableFidelityRequired": true,
+    "genericReadAllowed": false
+  },
+  "canonicalSchemaRef": "schema.document.requirements_bulletin.v1",
+  "issuerOverlaySchemaRef": null,
+  "documentTypeProfileRef": "generic_requirements_bulletin",
+  "parseProfileRef": "generic.requirements_bulletin",
+  "documentTemplateRef": "config/document-templates/generic_rb/template.yaml",
+  "structuredParseTemplateRef": "requirements_bulletin",
+  "evaluationProfileRef": "evaluation.rb.source_closed.v1",
+  "closurePolicyOverlayRef": "closure.overlay.generic_requirements_bulletin.v1",
+  "fixtureSetRef": "backend/test-fixtures/document-family-adapters/generic_rb"
+}

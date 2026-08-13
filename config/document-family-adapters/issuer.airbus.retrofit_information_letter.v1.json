@@ -1,0 +1,32 @@
+{
+  "schemaVersion": "v8.4-document-family-adapter.v1",
+  "adapterId": "issuer.airbus.retrofit_information_letter.v1",
+  "extends": "generic.service_bulletin.v1",
+  "issuerPolicy": {
+    "issuer": "AIRBUS",
+    "issuerAliases": ["\\bAIRBUS\\b", "AIRBUS\\s+S\\.A\\.S\\."]
+  },
+  "docFamily": "SB",
+  "subtype": "retrofit_information_letter",
+  "templateMode": "issuer_overlay_source_bounded",
+  "formatOverlay": "airbus_retrofit_information_letter",
+  "matchPolicy": {
+    "priority": 76,
+    "issuerAliases": ["\\bAIRBUS\\b", "AIRBUS\\s+S\\.A\\.S\\."],
+    "sourceTypes": ["airbus_retrofit_information_letter"],
+    "filenamePatterns": ["^RIL\\s+V[0-9A-Z]+"],
+    "textPatterns": [
+      "\\bRETROFIT\\s+INFORMATION\\s+LETTER\\s*-\\s*RIL\\b",
+      "\\bRIL\\s+Reference\\s*:\\s*V[0-9A-Z]+\\s+R[0-9]+"
+    ],
+    "documentCodePatterns": ["^V[0-9A-Z]+$"]
+  },
+  "issuerOverlaySchemaRef": "schema.issuer.airbus.retrofit_information_letter.v1",
+  "documentTypeProfileRef": "airbus_retrofit_information_letter",
+  "parseProfileRef": "airbus.retrofit_information_letter",
+  "documentTemplateRef": "config/document-templates/generic_sb/template.yaml",
+  "structuredParseTemplateRef": "airbus_service_bulletin",
+  "evaluationProfileRef": "evaluation.sb.source_closed.v1",
+  "closurePolicyOverlayRef": "closure.overlay.generic_service_bulletin.v1",
+  "fixtureSetRef": "backend/test-fixtures/document-family-adapters/airbus_ril"
+}

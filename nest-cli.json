@@ -15,6 +15,11 @@
         "include": "runtime-assets/**/*",
         "outDir": "dist/server",
         "watchAssets": true
+      },
+      {
+        "include": "runtime/u0-python/vendor/**/*",
+        "outDir": "dist/server",
+        "watchAssets": false
       }
     ],
     "plugins": [

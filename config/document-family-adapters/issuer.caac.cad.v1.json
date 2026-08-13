@@ -1,0 +1,25 @@
+{
+  "schemaVersion": "v8.4-document-family-adapter.v1",
+  "adapterId": "issuer.caac.cad.v1",
+  "extends": "generic.airworthiness_directive.v1",
+  "issuerPolicy": {
+    "issuer": "CAAC",
+    "issuerAliases": ["\\bCAAC\\b", "中国民用航空局", "民航局"]
+  },
+  "docFamily": "AD",
+  "subtype": "caac_cad",
+  "formatOverlay": "caac_cad",
+  "matchPolicy": {
+    "priority": 45,
+    "sourceTypes": ["ad"],
+    "issuerAliases": ["\\bCAAC\\b", "中国民用航空局", "民航局"],
+    "filenamePatterns": ["CAD[0-9]{4}", "CAAC.*CAD"],
+    "textPatterns": ["中国民用航空局", "\\bCAAC\\b", "\\bCAD[0-9]{4}"]
+  },
+  "issuerOverlaySchemaRef": "schema.issuer.caac.cad.v1",
+  "documentTypeProfileRef": "caac_cad",
+  "parseProfileRef": "caac.cad",
+  "structuredParseTemplateRef": "airworthiness_directive",
+  "closurePolicyOverlayRef": "closure.overlay.caac_cad.v1",
+  "fixtureSetRef": "backend/test-fixtures/document-family-adapters/caac_cad"
+}

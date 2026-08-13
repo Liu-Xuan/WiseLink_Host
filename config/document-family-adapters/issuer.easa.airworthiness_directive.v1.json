@@ -1,0 +1,25 @@
+{
+  "schemaVersion": "v8.4-document-family-adapter.v1",
+  "adapterId": "issuer.easa.airworthiness_directive.v1",
+  "extends": "generic.airworthiness_directive.v1",
+  "issuerPolicy": {
+    "issuer": "EASA",
+    "issuerAliases": ["\\bEASA\\b", "EUROPEAN\\s+UNION\\s+AVIATION\\s+SAFETY\\s+AGENCY"]
+  },
+  "docFamily": "AD",
+  "subtype": "easa_airworthiness_directive",
+  "formatOverlay": "easa_airworthiness_directive",
+  "matchPolicy": {
+    "priority": 45,
+    "sourceTypes": ["ad"],
+    "issuerAliases": ["\\bEASA\\b", "EUROPEAN\\s+UNION\\s+AVIATION\\s+SAFETY\\s+AGENCY"],
+    "filenamePatterns": ["EASA.*AD", "EAD[0-9]{4}"],
+    "textPatterns": ["\\bEASA\\b[\\s\\S]{0,160}\\bAIRWORTHINESS\\s+DIRECTIVE\\b", "EUROPEAN\\s+UNION\\s+AVIATION\\s+SAFETY\\s+AGENCY[\\s\\S]{0,160}\\bAIRWORTHINESS\\s+DIRECTIVE\\b", "\\bEMERGENCY\\s+AIRWORTHINESS\\s+DIRECTIVE\\b"]
+  },
+  "issuerOverlaySchemaRef": "schema.issuer.easa.ad.v1",
+  "documentTypeProfileRef": "easa_airworthiness_directive",
+  "parseProfileRef": "easa.ad",
+  "structuredParseTemplateRef": "airworthiness_directive",
+  "closurePolicyOverlayRef": "closure.overlay.easa_ad.v1",
+  "fixtureSetRef": "backend/test-fixtures/document-family-adapters/easa_ad"
+}

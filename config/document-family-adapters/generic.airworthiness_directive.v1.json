@@ -1,0 +1,30 @@
+{
+  "schemaVersion": "v8.4-document-family-adapter.v1",
+  "adapterId": "generic.airworthiness_directive.v1",
+  "extends": "generic.general_document.v1",
+  "docFamily": "AD",
+  "subtype": "airworthiness_directive",
+  "templateMode": "profile_guided_source_bounded",
+  "formatOverlay": "generic_airworthiness_directive",
+  "matchPolicy": {
+    "priority": 30,
+    "sourceTypes": ["ad"],
+    "filenamePatterns": ["AIRWORTHINESS[-_\\s]*DIRECTIVE", "(^|[^A-Z0-9])AD[-_\\s]*[0-9]{4}"],
+    "textPatterns": ["\\bAIRWORTHINESS\\s+DIRECTIVE\\b", "\\bAD[-_\\s]*[0-9]{4}[-_\\s]*[0-9]{1,2}"]
+  },
+  "sourceContract": {
+    "requiredSources": ["source.pdf_or_mineru_markdown", "source_excerpt", "authority_identity", "referenced_service_information_excerpt"],
+    "missingSourceNeedKind": "source_excerpt_request",
+    "tableFidelityRequired": true,
+    "genericReadAllowed": false
+  },
+  "canonicalSchemaRef": "schema.document.airworthiness_directive.v1",
+  "issuerOverlaySchemaRef": null,
+  "documentTypeProfileRef": "generic_airworthiness_directive",
+  "parseProfileRef": "generic.airworthiness_directive",
+  "documentTemplateRef": "config/document-templates/airworthiness_directive/template.yaml",
+  "structuredParseTemplateRef": "airworthiness_directive",
+  "evaluationProfileRef": "evaluation.ad.source_closed.v1",
+  "closurePolicyOverlayRef": "closure.overlay.generic_airworthiness_directive.v1",
+  "fixtureSetRef": "backend/test-fixtures/document-family-adapters/airworthiness_directive"
+}

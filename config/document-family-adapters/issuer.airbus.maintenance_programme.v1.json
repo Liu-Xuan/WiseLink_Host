@@ -1,0 +1,37 @@
+{
+  "schemaVersion": "v8.4-document-family-adapter.v1",
+  "adapterId": "issuer.airbus.maintenance_programme.v1",
+  "extends": "generic.maintenance_task.v1",
+  "issuerPolicy": {
+    "issuer": "AIRBUS",
+    "issuerAliases": ["\\bAIRBUS\\b", "AIRBUS\\s+S\\.A\\.S\\."]
+  },
+  "docFamily": "MT",
+  "subtype": "maintenance_programme",
+  "templateMode": "issuer_overlay_source_bounded",
+  "formatOverlay": "airbus_als_cmp",
+  "matchPolicy": {
+    "priority": 72,
+    "issuerAliases": ["\\bAIRBUS\\b", "AIRBUS\\s+S\\.A\\.S\\."],
+    "sourceTypes": ["airbus_maintenance_programme"],
+    "filenamePatterns": [
+      "\\bALS\\s+Part\\s+[0-9]\\b",
+      "\\bALS\\s+PART\\s+[0-9]\\b",
+      "\\bETOPS\\s+CMP\\b"
+    ],
+    "textPatterns": [
+      "\\bAIRWORTHINESS\\s+LIMITATIONS\\s+SECTION\\b",
+      "\\bALS\\s+Part\\s+[0-9]\\b",
+      "\\bETOPS\\s+CMP\\s+Document\\b",
+      "\\bConfiguration,\\s*Maintenance,\\s*Procedure\\s+and\\s+Dispatch\\b"
+    ]
+  },
+  "issuerOverlaySchemaRef": "schema.issuer.airbus.maintenance_programme.v1",
+  "documentTypeProfileRef": "airbus_maintenance_programme",
+  "parseProfileRef": "airbus.maintenance_programme",
+  "documentTemplateRef": "config/document-templates/maintenance_task/template.yaml",
+  "structuredParseTemplateRef": "maintenance_task",
+  "evaluationProfileRef": "evaluation.mt.source_closed.v1",
+  "closurePolicyOverlayRef": "closure.overlay.maintenance_task.v1",
+  "fixtureSetRef": "backend/test-fixtures/document-family-adapters/airbus_maintenance_programme"
+}

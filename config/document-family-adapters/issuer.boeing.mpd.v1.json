@@ -1,0 +1,39 @@
+{
+  "schemaVersion": "v8.4-document-family-adapter.v1",
+  "adapterId": "issuer.boeing.mpd.v1",
+  "extends": "generic.maintenance_task.v1",
+  "issuerPolicy": {
+    "issuer": "BOEING",
+    "issuerAliases": ["\\bBOEING\\b", "\\bBCA\\b"]
+  },
+  "docFamily": "MT",
+  "subtype": "maintenance_planning_document",
+  "templateMode": "issuer_overlay_source_bounded",
+  "formatOverlay": "boeing_mpd",
+  "matchPolicy": {
+    "priority": 90,
+    "sourceTypes": ["boeing_mpd", "mpd"],
+    "filenamePatterns": ["(?:^|[^A-Z0-9])(?:B737|737|B777|777|747|767|787)[-_\\sA-Z0-9/]*MPD(?:[^A-Z0-9]|$)", "MAINTENANCE[-_\\s]*PLANNING[-_\\s]*DOCUMENT"],
+    "textPatterns": [
+      "\\b(?:737|747|767|777|787)[-0-9A-Z/\\s]*\\n\\s*MAINTENANCE\\s+PLANNING\\s+DOCUMENT\\b",
+      "\\bMAINTENANCE\\s+PLANNING\\s+DOCUMENT\\b[\\s\\S]{0,160}\\bDOCUMENT\\s+D[0-9A-Z]{5,}\\b",
+      "\\bDOCUMENT\\s+D[0-9A-Z]{5,}\\b[\\s\\S]{0,160}\\bMAINTENANCE\\s+PLANNING\\s+DOCUMENT\\b"
+    ],
+    "documentCodePatterns": ["^D[0-9A-Z]{5,}$"]
+  },
+  "sourceContract": {
+    "requiredSources": ["source.pdf_or_mineru_markdown", "source_excerpt", "table_location_when_table_used"],
+    "missingSourceNeedKind": "source_excerpt_request",
+    "tableFidelityRequired": true,
+    "genericReadAllowed": false
+  },
+  "canonicalSchemaRef": "schema.document.maintenance_task.v1",
+  "issuerOverlaySchemaRef": "schema.issuer.boeing.mpd.v1",
+  "documentTypeProfileRef": "boeing_mpd",
+  "parseProfileRef": "boeing.mpd",
+  "documentTemplateRef": "config/document-templates/boeing_mpd/template.yaml",
+  "structuredParseTemplateRef": "boeing_mpd",
+  "evaluationProfileRef": "evaluation.mt.boeing_mpd.source_closed.v1",
+  "closurePolicyOverlayRef": "closure.overlay.boeing_mpd.v1",
+  "fixtureSetRef": "backend/test-fixtures/document-family-adapters/boeing_mpd"
+}

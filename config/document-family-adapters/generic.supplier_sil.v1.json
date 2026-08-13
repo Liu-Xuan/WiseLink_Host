@@ -1,0 +1,29 @@
+{
+  "schemaVersion": "v8.4-document-family-adapter.v1",
+  "adapterId": "generic.supplier_sil.v1",
+  "extends": "generic.general_document.v1",
+  "docFamily": "SIL",
+  "subtype": "supplier_service_information_letter",
+  "templateMode": "profile_guided_source_bounded",
+  "formatOverlay": "generic_supplier_sil",
+  "matchPolicy": {
+    "priority": 25,
+    "filenamePatterns": ["SERVICE[-_\\s]*INFORMATION[-_\\s]*LETTER", "(^|[^A-Z0-9])SIL[-_\\s]*[A-Z0-9]"],
+    "textPatterns": ["\\bSERVICE\\s+INFORMATION\\s+LETTER\\b", "(^|[^A-Z0-9])SIL[-_\\s]*[A-Z0-9]"]
+  },
+  "sourceContract": {
+    "requiredSources": ["source.pdf_or_mineru_markdown", "source_excerpt", "part_or_software_identity"],
+    "missingSourceNeedKind": "source_excerpt_request",
+    "tableFidelityRequired": true,
+    "genericReadAllowed": false
+  },
+  "canonicalSchemaRef": "schema.document.supplier_sil.v1",
+  "issuerOverlaySchemaRef": null,
+  "documentTypeProfileRef": "generic_supplier_sil",
+  "parseProfileRef": "generic.supplier_sil",
+  "documentTemplateRef": "config/document-templates/generic_sil/template.yaml",
+  "structuredParseTemplateRef": "supplier_sil",
+  "evaluationProfileRef": "evaluation.sil.source_closed.v1",
+  "closurePolicyOverlayRef": "closure.overlay.generic_supplier_sil.v1",
+  "fixtureSetRef": "backend/test-fixtures/document-family-adapters/generic_sil"
+}

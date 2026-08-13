@@ -1,0 +1,39 @@
+{
+  "schemaVersion": "v8.4-document-family-adapter.v1",
+  "adapterId": "generic.general_document.v1",
+  "issuerPolicy": {
+    "issuer": "GENERIC",
+    "issuerAliases": []
+  },
+  "docFamily": "GENERIC",
+  "subtype": "general_document",
+  "templateMode": "generic_source_bounded",
+  "formatOverlay": "generic",
+  "matchPolicy": {
+    "priority": 0,
+    "sourceTypes": ["generic", "generic_pdf", "pdf", "word", "unknown"],
+    "filenamePatterns": [],
+    "textPatterns": []
+  },
+  "sourceContract": {
+    "requiredSources": ["source.pdf_or_mineru_markdown", "source_excerpt"],
+    "missingSourceNeedKind": "source_excerpt_request",
+    "tableFidelityRequired": false,
+    "genericReadAllowed": true
+  },
+  "canonicalSchemaRef": "schema.document.generic.v1",
+  "issuerOverlaySchemaRef": null,
+  "documentTypeProfileRef": "generic_document",
+  "parseProfileRef": "generic.document",
+  "documentTemplateRef": "config/document-templates/generic_pdf/template.yaml",
+  "structuredParseTemplateRef": "generic_document",
+  "evaluationProfileRef": "evaluation.generic.source_closed.v1",
+  "closurePolicyOverlayRef": "closure.overlay.generic_document.v1",
+  "fixtureSetRef": "backend/test-fixtures/document-family-adapters/generic_document",
+  "genericContract": {
+    "allowedOutputs": ["sectionMapCandidate", "candidateEvidence", "sourceExcerptCandidate", "NeedCandidate", "EngineeringNeed"],
+    "requiredNeedOnTemplateMiss": "template_gap",
+    "backendLabels": ["generic_interpretation", "candidate_only", "closure_authority_none", "template_gap_open"],
+    "forbiddenOutputs": ["formal_claim_closure", "formal_action_readiness", "topic_closure"]
+  }
+}

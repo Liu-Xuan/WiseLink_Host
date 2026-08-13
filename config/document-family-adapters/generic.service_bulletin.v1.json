@@ -1,0 +1,34 @@
+{
+  "schemaVersion": "v8.4-document-family-adapter.v1",
+  "adapterId": "generic.service_bulletin.v1",
+  "extends": "generic.general_document.v1",
+  "issuerPolicy": {
+    "issuer": "GENERIC",
+    "issuerAliases": []
+  },
+  "docFamily": "SB",
+  "subtype": "service_bulletin",
+  "templateMode": "profile_guided_source_bounded",
+  "formatOverlay": "generic_service_bulletin",
+  "matchPolicy": {
+    "priority": 20,
+    "filenamePatterns": ["(^|[^A-Z0-9])SB[-_\\s]*[A-Z0-9]", "SERVICE[-_\\s]*BULLETIN"],
+    "textPatterns": ["\\bSERVICE\\s+BULLETIN\\b", "(^|[^A-Z0-9])SB[-_\\s]*[A-Z0-9]"],
+    "docFamilyPatterns": ["\\bSERVICE\\s+BULLETIN\\b"]
+  },
+  "sourceContract": {
+    "requiredSources": ["source.pdf_or_mineru_markdown", "source_excerpt", "table_location_when_table_used"],
+    "missingSourceNeedKind": "source_excerpt_request",
+    "tableFidelityRequired": true,
+    "genericReadAllowed": false
+  },
+  "canonicalSchemaRef": "schema.document.service_bulletin.v1",
+  "issuerOverlaySchemaRef": null,
+  "documentTypeProfileRef": "generic_service_bulletin",
+  "parseProfileRef": "generic.service_bulletin",
+  "documentTemplateRef": "config/document-templates/generic_sb/template.yaml",
+  "structuredParseTemplateRef": "service_bulletin",
+  "evaluationProfileRef": "evaluation.sb.source_closed.v1",
+  "closurePolicyOverlayRef": "closure.overlay.generic_service_bulletin.v1",
+  "fixtureSetRef": "backend/test-fixtures/document-family-adapters/generic_sb"
+}
