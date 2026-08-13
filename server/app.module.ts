@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { PlatformModule } from '@lark-apaas/fullstack-nestjs-core';
 
 import { GlobalExceptionFilter } from './common/filters/exception.filter';
+import { AssessmentRegistrarModule } from './modules/assessment-registrar/assessment-registrar.module';
 import { CanonicalHostModule } from './modules/canonical-host/canonical-host.module';
 import { ViewModule } from './modules/view/view.module';
 
@@ -11,6 +12,7 @@ import { ViewModule } from './modules/view/view.module';
     // 平台 Module，提供平台能力
     PlatformModule.forRoot(),
     // ====== @route-section: business-modules START ======
+    AssessmentRegistrarModule.forHostedRegistrar(),
     CanonicalHostModule.forRoot(),
     // ====== @route-section: business-modules END ======
 

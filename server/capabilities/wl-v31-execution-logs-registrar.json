@@ -1,0 +1,162 @@
+{
+  "id": "wl-v31-execution-logs-registrar",
+  "pluginKey": "@official-plugins/feishu-bitable",
+  "pluginVersion": "1.0.22",
+  "name": "WiseLink 3.1 ExecutionLogs Registrar",
+  "description": "每次受控 WorkItem 变更的追加式运行记录；保存输入输出引用、摘要、幂等与错误。",
+  "icon": "",
+  "paramsSchema": {},
+  "formValue": {
+    "appToken": "VorbbDXAkaHbLMsUTV2cBCW5nRd",
+    "tableID": "tbl8v4CB4VZUcb5e",
+    "fields": [
+      {
+        "id": "fld22MtRTf",
+        "name": "execution_id",
+        "type": 1,
+        "bizType": "Text",
+        "readable": true,
+        "writeable": true
+      },
+      {
+        "id": "fldHp8oZfi",
+        "name": "work_item_id",
+        "type": 1,
+        "bizType": "Text",
+        "readable": true,
+        "writeable": true
+      },
+      {
+        "id": "fldhSJgpvS",
+        "name": "work_item_state_version",
+        "type": 2,
+        "bizType": "Number",
+        "readable": true,
+        "writeable": true
+      },
+      {
+        "id": "fldfQHDYRz",
+        "name": "capability_id",
+        "type": 1,
+        "bizType": "Text",
+        "readable": true,
+        "writeable": true
+      },
+      {
+        "id": "fld5XgB9SD",
+        "name": "run_status",
+        "type": 3,
+        "bizType": "SingleSelect",
+        "enumValues": [
+          "PENDING",
+          "RUNNING",
+          "SUCCEEDED",
+          "FAILED",
+          "WAITING_INPUT",
+          "WAITING_REVIEW",
+          "CANCELLED",
+          "SUPERSEDED"
+        ],
+        "readable": true,
+        "writeable": true
+      },
+      {
+        "id": "fldDPhBoQ1",
+        "name": "idempotency_key",
+        "type": 1,
+        "bizType": "Text",
+        "readable": true,
+        "writeable": true
+      },
+      {
+        "id": "fldPznMwLC",
+        "name": "request_correlation_id",
+        "type": 1,
+        "bizType": "Text",
+        "readable": true,
+        "writeable": true
+      },
+      {
+        "id": "fldmdGEbHS",
+        "name": "input_manifest_ref",
+        "type": 1,
+        "bizType": "Text",
+        "readable": true,
+        "writeable": true
+      },
+      {
+        "id": "fldEyceq9K",
+        "name": "input_manifest_sha256",
+        "type": 1,
+        "bizType": "Text",
+        "readable": true,
+        "writeable": true
+      },
+      {
+        "id": "fld4yfvpNq",
+        "name": "output_artifact_ref",
+        "type": 1,
+        "bizType": "Text",
+        "readable": true,
+        "writeable": true
+      },
+      {
+        "id": "fldSHacqaX",
+        "name": "output_artifact_sha256",
+        "type": 1,
+        "bizType": "Text",
+        "readable": true,
+        "writeable": true
+      },
+      {
+        "id": "fldjDr20Ec",
+        "name": "error_code",
+        "type": 1,
+        "bizType": "Text",
+        "readable": true,
+        "writeable": true
+      },
+      {
+        "id": "fldkn8EUcg",
+        "name": "error_message",
+        "type": 1,
+        "bizType": "Text",
+        "readable": true,
+        "writeable": true
+      },
+      {
+        "id": "fldzMfkgaV",
+        "name": "attempt_number",
+        "type": 2,
+        "bizType": "Number",
+        "readable": true,
+        "writeable": true
+      },
+      {
+        "id": "fld8TZxIjZ",
+        "name": "started_at",
+        "type": 5,
+        "bizType": "DateTime",
+        "readable": true,
+        "writeable": true
+      },
+      {
+        "id": "fldR4Jxwqn",
+        "name": "completed_at",
+        "type": 5,
+        "bizType": "DateTime",
+        "readable": true,
+        "writeable": true
+      },
+      {
+        "id": "fld9vK8Z9x",
+        "name": "created_at",
+        "type": 1001,
+        "bizType": "CreatedTime",
+        "readable": true,
+        "writeable": false
+      }
+    ]
+  }
+}
+

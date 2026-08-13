@@ -31,6 +31,7 @@ existing `CanonicalHostModuleOptions` / `UnifiedReaderModuleOptions` seams:
 | --- | --- | --- | --- |
 | Document Management | `server/modules/canonical-host/canonical-host.module.ts` | `pdfProducerProvider`, plus an exact DM request adapter inside a future DM module | `UNCONFIGURED` |
 | Registrar / WorkItem | same host module | `workItemRegistrarProvider` | `UNCONFIGURED` |
+| Assessment Hosted Registrar activation | `server/modules/assessment-registrar/` | exact `bb73aac…` activation provider + three Base capabilities | `BLOCKED` before any Base I/O |
 | Host authn/authz | `canonical-host.controller.ts` and host module | platform `@NeedLogin`, `authorizationProvider`, `permissionSnapshotProvider` | authn enforced; providers `UNCONFIGURED` |
 | Canonical Miaoda binding | `canonical-entry-facade.service.ts` | `miaodaAppBindingProvider` | `UNCONFIGURED` |
 | Unified Reader / Validator / ArtifactStore | `server/modules/unified-reader/` | `unifiedReader.{artifactStoreProvider, fullU0ValidatorProvider, u0Frozen2FailureAdapterProvider}` | all `UNCONFIGURED` |
@@ -52,3 +53,8 @@ database schema, FileService object, WorkItem or release is created by this prep
 Implementation lineage: the host source was migrated from local commit
 `23dbc9d72840478d9c7157025bdc6ed5722ac782`. Git metadata, `.spark` metadata, environment files,
 old runtime probes and old application bindings were not migrated.
+
+Assessment Hosted Registrar lineage is the exact clean source commit
+`bb73aacfc4d883ce13fb6cc2fec6704057b98f24`. Only its hosted activation provider, existing
+activation loader and the three Registrar Base capabilities are assembled here; the Assessment
+workbench UI and unrelated services are not copied.

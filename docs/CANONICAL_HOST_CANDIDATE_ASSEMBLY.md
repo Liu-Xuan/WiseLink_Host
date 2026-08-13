@@ -55,8 +55,13 @@ is introduced.
      `CANONICAL_PDF_PRODUCER` port;
    - bind it in `server/app.module.ts` only after its exact hosted integration is selected.
 2. **Registrar**
-   - add one adapter under `server/modules/work-item/` implementing
-     `CanonicalWorkItemRegistrarPort` against the selected store;
+   - `server/modules/assessment-registrar/` now selectively assembles the Hosted Registrar
+     activation provider from exact Assessment commit
+     `bb73aacfc4d883ce13fb6cc2fec6704057b98f24`;
+   - the provider maps the selected 65/28/17 Base tables but remains `BLOCKED` before capability
+     loading until the master supplies hosted runtime/bootstrap/ports;
+   - add one later adapter implementing `CanonicalWorkItemRegistrarPort` against this same
+     Registrar service after activation; do not add another writer;
    - keep WorkItem identity/current state in that one store; do not mirror it in Unified or AEO.
 3. **Unified**
    - reuse `server/modules/unified-reader/unified-reader.module.ts`;
