@@ -125,7 +125,7 @@ weaker Validator.
 ## Phase 2C Document Management integration
 
 The exact Document Management source bundle from
-`78f5920ec9f49898d70ea4a4bb7468e7f92bbb3c` is now selectively assembled as an internal module.
+`cb5cadd940d869891e6d969ea04167c2bcbd502e` is now selectively assembled as an internal module.
 DEV contains the owner migration's seven empty catalog tables, and the host-generated Drizzle
 schema is the only table definition consumed at runtime. The source bundle's CommonJS output and
 23 document-family adapters load from the production host build. The same built core passed the
@@ -145,3 +145,12 @@ empty and FileService contains only the two authorized FTD PDFs. The local corre
 actual bytes instead of path names and preserves the server-owned 403 response, but it has not been
 pushed or deployed. Full evidence, release identities and non-claims are in
 `docs/PHASE_2D_HOSTED_VALIDATION_ACCEPTANCE_20260814.md`.
+
+## Phase 2F locator correction candidate
+
+The host now consumes the owner-exported leading-slash canonicalization and the metadata/download
+object-version binding from exact DM commit `cb5cadd940d869891e6d969ea04167c2bcbd502e`.
+This does not weaken bucket, path, object, version or actual-byte checks. It preserves the caller's
+numeric FileService path in catalog lineage while comparing the provider's canonical path. At this
+commit the correction is a local candidate pending the single validation-release/closure-release
+hosted replay; no success claim is made here.
