@@ -10,11 +10,6 @@ import { RuntimeProbeModule } from './modules/runtime-probe/runtime-probe.module
 import { createHostedU0FullPackageValidatorProvider } from './modules/unified-reader/hosted-u0-full-validator.provider';
 import { ViewModule } from './modules/view/view.module';
 
-const hostedU0ValidatorProvider =
-  process.env.WL_U0_HOSTED_VALIDATOR_ENABLED === 'true'
-    ? createHostedU0FullPackageValidatorProvider()
-    : undefined;
-
 @Module({
   imports: [
     // 平台 Module，提供平台能力
@@ -23,7 +18,8 @@ const hostedU0ValidatorProvider =
     AssessmentRegistrarModule.forHostedRegistrar(),
     CanonicalHostModule.forRoot({
       unifiedReader: {
-        fullU0ValidatorProvider: hostedU0ValidatorProvider,
+        fullU0ValidatorProvider:
+          createHostedU0FullPackageValidatorProvider(),
       },
     }),
     DocumentManagementValidationModule,
