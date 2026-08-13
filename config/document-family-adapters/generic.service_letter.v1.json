@@ -1,0 +1,34 @@
+{
+  "schemaVersion": "v8.4-document-family-adapter.v1",
+  "adapterId": "generic.service_letter.v1",
+  "extends": "generic.general_document.v1",
+  "issuerPolicy": {
+    "issuer": "GENERIC",
+    "issuerAliases": []
+  },
+  "docFamily": "SL",
+  "subtype": "service_letter",
+  "templateMode": "profile_guided_source_bounded",
+  "formatOverlay": "generic_service_letter",
+  "matchPolicy": {
+    "priority": 20,
+    "filenamePatterns": ["(^|[^A-Z0-9])SL[-_\\s]*[A-Z0-9]", "SERVICE[-_\\s]*LETTER"],
+    "textPatterns": ["\\bSERVICE\\s+LETTER\\b", "(^|[^A-Z0-9])SL[-_\\s]*[A-Z0-9]"],
+    "docFamilyPatterns": ["\\bSERVICE\\s+LETTER\\b"]
+  },
+  "sourceContract": {
+    "requiredSources": ["source.pdf_or_mineru_markdown", "source_excerpt"],
+    "missingSourceNeedKind": "source_excerpt_request",
+    "tableFidelityRequired": false,
+    "genericReadAllowed": false
+  },
+  "canonicalSchemaRef": "schema.document.service_letter.v1",
+  "issuerOverlaySchemaRef": null,
+  "documentTypeProfileRef": "generic_service_letter",
+  "parseProfileRef": "generic.service_letter",
+  "documentTemplateRef": "config/document-templates/generic_sl/template.yaml",
+  "structuredParseTemplateRef": "service_letter",
+  "evaluationProfileRef": "evaluation.sl.source_closed.v1",
+  "closurePolicyOverlayRef": "closure.overlay.generic_service_letter.v1",
+  "fixtureSetRef": "backend/test-fixtures/document-family-adapters/generic_sl"
+}

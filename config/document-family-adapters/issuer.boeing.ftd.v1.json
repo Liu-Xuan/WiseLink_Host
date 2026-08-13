@@ -1,0 +1,38 @@
+{
+  "schemaVersion": "v8.4-document-family-adapter.v1",
+  "adapterId": "issuer.boeing.ftd.v1",
+  "extends": "generic.general_document.v1",
+  "issuerPolicy": {
+    "issuer": "BOEING",
+    "issuerAliases": ["\\bBOEING\\b"]
+  },
+  "docFamily": "FTD",
+  "subtype": "fleet_team_digest",
+  "templateMode": "issuer_overlay_source_bounded",
+  "formatOverlay": "boeing_ftd",
+  "matchPolicy": {
+    "priority": 50,
+    "sourceTypes": ["boeing_ftd", "ftd"],
+    "filenamePatterns": ["(^|[^A-Z0-9])(737MAX|737NG|737|747|767|777|787)[-_\\s]*FTD[-_\\s]*[0-9]", "FLEET[-_\\s]*TEAM[-_\\s]*DIGEST"],
+    "textPatterns": [
+      "\\bFLEET\\s+TEAM\\s+DIGEST\\s+(?:(?:737MAX|737NG|737|747|767|777|787)[-_\\s]*FTD[-_\\s]*[0-9]{2}[-_\\s]*[0-9]{5}|ISSUE\\s+TITLE\\s*:)",
+      "\\b(?:737MAX|737NG|737|747|767|777|787)[-_\\s]*FTD[-_\\s]*[0-9]{2}[-_\\s]*[0-9]{5}\\s+FLEET\\s+TEAM\\s+DIGEST\\b",
+      "\\bFTD\\s+NUMBER\\s*:"
+    ]
+  },
+  "sourceContract": {
+    "requiredSources": ["source.pdf_or_mineru_markdown", "source_excerpt"],
+    "missingSourceNeedKind": "source_excerpt_request",
+    "tableFidelityRequired": true,
+    "genericReadAllowed": false
+  },
+  "canonicalSchemaRef": "schema.document.boeing_ftd.v1",
+  "issuerOverlaySchemaRef": "schema.issuer.boeing.ftd.v1",
+  "documentTypeProfileRef": "boeing_ftd",
+  "parseProfileRef": "boeing.ftd.v1",
+  "documentTemplateRef": "config/document-templates/boeing_ftd/template.yaml",
+  "structuredParseTemplateRef": "boeing_ftd",
+  "evaluationProfileRef": "evaluation.ftd.source_closed.v1",
+  "closurePolicyOverlayRef": "closure.overlay.boeing_ftd.v1",
+  "fixtureSetRef": "backend/test-fixtures/document-family-adapters/boeing_ftd"
+}

@@ -1,0 +1,35 @@
+{
+  "schemaVersion": "v8.4-document-family-adapter.v1",
+  "adapterId": "generic.maintenance_task.v1",
+  "extends": "generic.general_document.v1",
+  "issuerPolicy": {
+    "issuer": "GENERIC",
+    "issuerAliases": []
+  },
+  "docFamily": "MT",
+  "subtype": "maintenance_task",
+  "templateMode": "profile_guided_source_bounded",
+  "formatOverlay": "maintenance_task",
+  "matchPolicy": {
+    "priority": 25,
+    "sourceTypes": ["maintenance_task", "mpd", "mt"],
+    "filenamePatterns": ["MAINTENANCE[-_\\s]*TASK", "MAINTENANCE[-_\\s]*PLANNING[-_\\s]*DOCUMENT", "\\bMPD\\b"],
+    "textPatterns": ["\\bMAINTENANCE\\s+TASK\\b", "\\bMAINTENANCE\\s+PLANNING\\s+DOCUMENT\\b", "\\bMPD\\b"],
+    "docFamilyPatterns": ["\\bMAINTENANCE\\s+(?:TASK|PLANNING)\\b"]
+  },
+  "sourceContract": {
+    "requiredSources": ["source.pdf_or_mineru_markdown", "source_excerpt"],
+    "missingSourceNeedKind": "source_excerpt_request",
+    "tableFidelityRequired": true,
+    "genericReadAllowed": false
+  },
+  "canonicalSchemaRef": "schema.document.maintenance_task.v1",
+  "issuerOverlaySchemaRef": null,
+  "documentTypeProfileRef": "maintenance_task",
+  "parseProfileRef": "generic.maintenance_task",
+  "documentTemplateRef": "config/document-templates/maintenance_task/template.yaml",
+  "structuredParseTemplateRef": "maintenance_task",
+  "evaluationProfileRef": "evaluation.mt.source_closed.v1",
+  "closurePolicyOverlayRef": "closure.overlay.maintenance_task.v1",
+  "fixtureSetRef": "backend/test-fixtures/document-family-adapters/maintenance_task"
+}

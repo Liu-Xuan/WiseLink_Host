@@ -2,6 +2,7 @@
   "extends": "@lark-apaas/fullstack-presets/lib/simple/tsconfig/tsconfig.node.json",
   "compilerOptions": {
     "baseUrl": "./",
+    "allowJs": true,
     "outDir": "./dist",
     "preserveWatchOutput": true,
     "paths": {

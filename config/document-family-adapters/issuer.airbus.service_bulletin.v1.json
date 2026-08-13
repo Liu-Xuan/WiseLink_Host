@@ -1,0 +1,37 @@
+{
+  "schemaVersion": "v8.4-document-family-adapter.v1",
+  "adapterId": "issuer.airbus.service_bulletin.v1",
+  "extends": "generic.service_bulletin.v1",
+  "issuerPolicy": {
+    "issuer": "AIRBUS",
+    "issuerAliases": ["\\bAIRBUS\\b", "AIRBUS\\s+S\\.A\\.S\\."]
+  },
+  "docFamily": "SB",
+  "subtype": "service_bulletin",
+  "templateMode": "issuer_overlay_source_bounded",
+  "formatOverlay": "airbus_service_bulletin",
+  "matchPolicy": {
+    "priority": 58,
+    "issuerAliases": ["\\bAIRBUS\\b", "AIRBUS\\s+S\\.A\\.S\\."],
+    "sourceTypes": ["airbus_service_bulletin"],
+    "filenamePatterns": [
+      "^A(?:318|319|320|321|330|340|350|380)-[0-9]{2}-[A-Z0-9]{3,5}(?:\\s+R[0-9]+)?\\.pdf$"
+    ],
+    "textPatterns": [
+      "\\bAIRBUS\\b[\\s\\S]{0,600}\\bSERVICE\\s+BULLETIN\\b[\\s\\S]{0,600}\\bATA\\s+SYSTEM\\s*:\\s*[0-9]{2}\\b",
+      "\\bSERVICE\\s+BULLETIN\\b[\\s\\S]{0,600}\\bAIRBUS\\b[\\s\\S]{0,900}\\bATA\\s+SYSTEM\\s*:\\s*[0-9]{2}\\b",
+      "\\bThis\\s+page\\s+transmits\\s+Revision\\s+No\\.\\s+[0-9]+\\s+of\\s+Service\\s+Bulletin\\s+No\\.\\s+A(?:318|319|320|321|330|340|350|380)-[0-9]{2}-[A-Z0-9]{3,5}\\b"
+    ],
+    "documentCodePatterns": [
+      "^A(?:318|319|320|321|330|340|350|380)-[0-9]{2}-[A-Z0-9]{3,5}$"
+    ]
+  },
+  "issuerOverlaySchemaRef": "schema.issuer.airbus.service_bulletin.v1",
+  "documentTypeProfileRef": "airbus_service_bulletin",
+  "parseProfileRef": "airbus.sb",
+  "documentTemplateRef": "config/document-templates/generic_sb/template.yaml",
+  "structuredParseTemplateRef": "airbus_service_bulletin",
+  "evaluationProfileRef": "evaluation.sb.source_closed.v1",
+  "closurePolicyOverlayRef": "closure.overlay.generic_service_bulletin.v1",
+  "fixtureSetRef": "backend/test-fixtures/document-family-adapters/airbus_sb"
+}

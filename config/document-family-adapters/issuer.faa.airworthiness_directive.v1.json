@@ -1,0 +1,25 @@
+{
+  "schemaVersion": "v8.4-document-family-adapter.v1",
+  "adapterId": "issuer.faa.airworthiness_directive.v1",
+  "extends": "generic.airworthiness_directive.v1",
+  "issuerPolicy": {
+    "issuer": "FAA",
+    "issuerAliases": ["\\bFAA\\b", "FEDERAL\\s+AVIATION\\s+ADMINISTRATION"]
+  },
+  "docFamily": "AD",
+  "subtype": "faa_airworthiness_directive",
+  "formatOverlay": "faa_airworthiness_directive",
+  "matchPolicy": {
+    "priority": 45,
+    "sourceTypes": ["ad"],
+    "issuerAliases": ["\\bFAA\\b", "FEDERAL\\s+AVIATION\\s+ADMINISTRATION"],
+    "filenamePatterns": ["FAA.*AD[-_\\s]*[0-9]{4}", "AD[0-9]{4}[-_\\s]*[0-9]{1,2}"],
+    "textPatterns": ["\\bFEDERAL\\s+AVIATION\\s+ADMINISTRATION\\b", "\\bFAA\\b[\\s\\S]{0,160}\\bAIRWORTHINESS\\s+DIRECTIVE\\b"]
+  },
+  "issuerOverlaySchemaRef": "schema.issuer.faa.ad.v1",
+  "documentTypeProfileRef": "faa_airworthiness_directive",
+  "parseProfileRef": "faa.ad",
+  "structuredParseTemplateRef": "airworthiness_directive",
+  "closurePolicyOverlayRef": "closure.overlay.faa_ad.v1",
+  "fixtureSetRef": "backend/test-fixtures/document-family-adapters/faa_ad"
+}

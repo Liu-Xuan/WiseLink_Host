@@ -1,0 +1,36 @@
+{
+  "schemaVersion": "v8.4-document-family-adapter.v1",
+  "adapterId": "issuer.airbus.operator_transmission.v1",
+  "extends": "generic.service_bulletin.v1",
+  "issuerPolicy": {
+    "issuer": "AIRBUS",
+    "issuerAliases": ["\\bAIRBUS\\b", "AIRBUS\\s+S\\.A\\.S\\."]
+  },
+  "docFamily": "SB",
+  "subtype": "operator_transmission",
+  "templateMode": "issuer_overlay_source_bounded",
+  "formatOverlay": "airbus_operator_transmission",
+  "matchPolicy": {
+    "priority": 74,
+    "issuerAliases": ["\\bAIRBUS\\b", "AIRBUS\\s+S\\.A\\.S\\."],
+    "sourceTypes": ["airbus_operator_transmission", "airbus_aot", "airbus_oit", "airbus_fot", "airbus_sbit"],
+    "filenamePatterns": [
+      "^(?:SBIT-?|AOT-|OIT-|FOT-)[A-Z0-9]"
+    ],
+    "textPatterns": [
+      "\\bSERVICE\\s+BULLETIN\\s+INFORMATION\\s+TRANSMISSION\\b",
+      "\\bOIT\\s+CATEGORY\\s*:\\s*SERVICE\\s+BULLETIN\\s+INFORMATION\\s+TRANSMISSION\\b",
+      "\\bALERT\\s+OPERATORS\\s+TRANSMISSION\\s*-\\s*AOT\\b",
+      "\\bOPERATORS\\s+INFORMATION\\s+TRANSMISSION\\s*-\\s*OIT\\b",
+      "\\bFLIGHT\\s+OPERATIONS\\s+TRANSMISSION\\s*-\\s*FOT\\b"
+    ]
+  },
+  "issuerOverlaySchemaRef": "schema.issuer.airbus.operator_transmission.v1",
+  "documentTypeProfileRef": "airbus_operator_transmission",
+  "parseProfileRef": "airbus.operator_transmission",
+  "documentTemplateRef": "config/document-templates/generic_sb/template.yaml",
+  "structuredParseTemplateRef": "airbus_service_bulletin",
+  "evaluationProfileRef": "evaluation.sb.source_closed.v1",
+  "closurePolicyOverlayRef": "closure.overlay.generic_service_bulletin.v1",
+  "fixtureSetRef": "backend/test-fixtures/document-family-adapters/airbus_operator_transmission"
+}

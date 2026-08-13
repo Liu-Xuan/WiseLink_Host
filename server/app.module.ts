@@ -5,6 +5,11 @@ import { PlatformModule } from '@lark-apaas/fullstack-nestjs-core';
 import { GlobalExceptionFilter } from './common/filters/exception.filter';
 import { AssessmentRegistrarModule } from './modules/assessment-registrar/assessment-registrar.module';
 import { CanonicalHostModule } from './modules/canonical-host/canonical-host.module';
+import {
+  DOCUMENT_MANAGEMENT_INGEST_AUTHORIZER,
+  DocumentManagementHostedModule,
+} from './modules/document-management/src/hosted/nest';
+import { UnconfiguredDocumentManagementIngestAuthorizer } from './modules/document-management/src/hosted/nest/unconfigured-document-management-ingest-authorizer';
 import { RuntimeProbeModule } from './modules/runtime-probe/runtime-probe.module';
 import { ViewModule } from './modules/view/view.module';
 
@@ -15,6 +20,12 @@ import { ViewModule } from './modules/view/view.module';
     // ====== @route-section: business-modules START ======
     AssessmentRegistrarModule.forHostedRegistrar(),
     CanonicalHostModule.forRoot(),
+    DocumentManagementHostedModule.register({
+      authorizerProvider: {
+        provide: DOCUMENT_MANAGEMENT_INGEST_AUTHORIZER,
+        useClass: UnconfiguredDocumentManagementIngestAuthorizer,
+      },
+    }),
     RuntimeProbeModule,
     // ====== @route-section: business-modules END ======
 

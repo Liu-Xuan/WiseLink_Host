@@ -121,3 +121,17 @@ The endpoint hard-codes every business, artifact and Base write authority to `fa
 calls FileService, Base, WorkItem, package persistence or receipt persistence. A missing hosted
 dependency returns `BLOCKED` with an explicit blocker; it does not fall back to a local service or a
 weaker Validator.
+
+## Phase 2C Document Management integration
+
+The exact Document Management source bundle from
+`78f5920ec9f49898d70ea4a4bb7468e7f92bbb3c` is now selectively assembled as an internal module.
+DEV contains the owner migration's seven empty catalog tables, and the host-generated Drizzle
+schema is the only table definition consumed at runtime. The source bundle's CommonJS output and
+23 document-family adapters load from the production host build. The same built core passed the
+real two-PDF FTD revision/idempotency loop with local test providers.
+
+The host authorization provider remains deliberately unconfigured and rejects before DB or
+FileService I/O. No online catalog rows or FileService bytes were created, and this Phase 2C source
+has not been published. Detailed evidence and current non-claims are in
+`docs/DOCUMENT_MANAGEMENT_PHASE_2C_ACCEPTANCE.md`.

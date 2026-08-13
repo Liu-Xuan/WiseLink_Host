@@ -1,0 +1,49 @@
+{
+  "schemaVersion": "v8.4-document-family-adapter.v1",
+  "adapterId": "issuer.airbus.support_document.v1",
+  "extends": "generic.general_document.v1",
+  "issuerPolicy": {
+    "issuer": "AIRBUS",
+    "issuerAliases": ["\\bAIRBUS\\b", "AIRBUS\\s+S\\.A\\.S\\."]
+  },
+  "docFamily": "GENERIC",
+  "subtype": "airbus_support_document",
+  "templateMode": "declared_generic_source_bounded",
+  "formatOverlay": "airbus_support_document",
+  "matchPolicy": {
+    "priority": 64,
+    "issuerAliases": ["\\bAIRBUS\\b", "AIRBUS\\s+S\\.A\\.S\\."],
+    "sourceTypes": ["airbus_support_document"],
+    "filenamePatterns": [
+      "^TFU\\b",
+      "\\bConcession\\b",
+      "^AME[0-9A-Z-]+"
+    ],
+    "textPatterns": [
+      "\\bEngineering\\s+Support\\b[\\s\\S]{0,120}\\bStatus\\s*:\\s*Open\\b",
+      "\\bCONCESSION\\b[\\s\\S]{0,300}\\bDescription\\s+of\\s+Divergence\\b",
+      "\\bREVISION\\s+RECORD\\b"
+    ]
+  },
+  "sourceContract": {
+    "requiredSources": ["source.pdf_or_mineru_markdown", "source_excerpt"],
+    "missingSourceNeedKind": "issuer_format_profile_need",
+    "tableFidelityRequired": false,
+    "genericReadAllowed": false
+  },
+  "canonicalSchemaRef": "schema.document.generic.v1",
+  "issuerOverlaySchemaRef": "schema.issuer.airbus.support_document.v1",
+  "documentTypeProfileRef": "airbus_support_document",
+  "parseProfileRef": "airbus.support_document",
+  "documentTemplateRef": "config/document-templates/generic_pdf/template.yaml",
+  "structuredParseTemplateRef": "generic_document",
+  "evaluationProfileRef": "evaluation.generic.source_closed.v1",
+  "closurePolicyOverlayRef": "closure.overlay.generic_document.v1",
+  "fixtureSetRef": "backend/test-fixtures/document-family-adapters/airbus_support_document",
+  "genericContract": {
+    "allowedOutputs": ["sectionMapCandidate", "candidateEvidence", "sourceExcerptCandidate", "NeedCandidate", "EngineeringNeed"],
+    "requiredNeedOnTemplateMiss": "issuer_format_profile_need",
+    "backendLabels": ["declared_airbus_support_document", "candidate_only", "closure_authority_none", "template_gap_open"],
+    "forbiddenOutputs": ["formal_claim_closure", "formal_action_readiness", "topic_closure"]
+  }
+}

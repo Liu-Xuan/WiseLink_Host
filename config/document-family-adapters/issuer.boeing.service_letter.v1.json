@@ -1,0 +1,37 @@
+{
+  "schemaVersion": "v8.4-document-family-adapter.v1",
+  "adapterId": "issuer.boeing.service_letter.v1",
+  "extends": "generic.service_letter.v1",
+  "issuerPolicy": {
+    "issuer": "BOEING",
+    "issuerAliases": ["\\bBOEING\\b", "THE\\s+BOEING\\s+COMPANY", "\\bBCA\\s+CUSTOMER\\s+SUPPORT\\b"]
+  },
+  "docFamily": "SL",
+  "subtype": "service_letter",
+  "templateMode": "issuer_overlay_source_bounded",
+  "formatOverlay": "boeing_service_letter",
+  "matchPolicy": {
+    "priority": 40,
+    "sourceTypes": ["boeing_service_letter"],
+    "issuerAliases": ["\\bBOEING\\b", "THE\\s+BOEING\\s+COMPANY", "\\bBCA\\s+CUSTOMER\\s+SUPPORT\\b"],
+    "filenamePatterns": [
+      "BOEING.*SL[-_\\s]*[0-9A-Z]",
+      "BOE[-_\\s]*(737|747|767|777|787)[-_\\s]*SL[-_\\s]*[0-9]",
+      "(^|[^A-Z0-9])(737|747|767|777|787)[-_\\s]*SL[-_\\s]*[0-9]",
+      "(^|[^A-Z0-9])SL[-_\\s]*(737|747|767|777|787)"
+    ],
+    "textPatterns": [
+      "\\bBOEING\\b[\\s\\S]{0,120}\\bSERVICE\\s+LETTER\\b",
+      "\\bSERVICE\\s+LETTER\\b[\\s\\S]{0,120}\\bBOEING\\b",
+      "\\bBCA\\s+CUSTOMER\\s+SUPPORT\\s+SERVICE\\s+LETTER\\b"
+    ]
+  },
+  "issuerOverlaySchemaRef": "schema.issuer.boeing.service_letter.v1",
+  "documentTypeProfileRef": "boeing_service_letter",
+  "parseProfileRef": "boeing.sl",
+  "documentTemplateRef": "config/document-templates/boeing_sl/template.yaml",
+  "structuredParseTemplateRef": "boeing_sl",
+  "evaluationProfileRef": "evaluation.sl.source_closed.v1",
+  "closurePolicyOverlayRef": "closure.overlay.boeing_service_letter.v1",
+  "fixtureSetRef": "backend/test-fixtures/document-family-adapters/boeing_sl"
+}
