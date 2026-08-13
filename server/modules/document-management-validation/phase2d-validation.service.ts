@@ -1,11 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { FileService } from '@lark-apaas/fullstack-nestjs-core';
-import { basename } from 'node:path';
 
 import {
   DocumentManagementHostedService,
   type HostedRequestContext,
 } from '../document-management/src/hosted/nest';
+import { MiaodaFileServiceArtifactStore } from '../document-management/src/hosted/miaodaFileServiceArtifactStore.js';
 import { PHASE2D_VALIDATION_ROLE } from './phase2d-validation-authorizer';
 
 const FIRST = {
@@ -42,15 +42,16 @@ export class Phase2dValidationService {
         statusCode: 403,
       });
     }
-    const firstFilePath = exactValidationFilePath(
-      request?.firstFilePath,
-      FIRST.fileName,
-    );
-    const newerFilePath = exactValidationFilePath(
-      request?.newerFilePath,
-      NEWER.fileName,
-    );
+    const firstFilePath = exactValidationFilePath(request?.firstFilePath);
+    const newerFilePath = exactValidationFilePath(request?.newerFilePath);
     const bucketId = await this.fileService.getDefaultBucket();
+    const sourceStore = new MiaodaFileServiceArtifactStore(this.fileService);
+    const [firstSelection, newerSelection] = await Promise.all([
+      sourceStore.readSelection({ bucketId, filePath: firstFilePath }),
+      sourceStore.readSelection({ bucketId, filePath: newerFilePath }),
+    ]);
+    assertValidationSelection(firstSelection, FIRST);
+    assertValidationSelection(newerSelection, NEWER);
     const context: HostedRequestContext = {
       ...authenticatedContext,
       roles: [...authenticatedContext.roles, PHASE2D_VALIDATION_ROLE],
@@ -58,6 +59,7 @@ export class Phase2dValidationService {
     const ingest = (
       filePath: string,
       stage: 'first' | 'exact' | 'newer',
+      expected: typeof FIRST | typeof NEWER,
     ) =>
       this.documentManagement.ingestFileServiceSelection(
         {
@@ -65,15 +67,15 @@ export class Phase2dValidationService {
           sourceChannel: 'phase2d_hosted_validation_file_service',
           sourceRef: `phase2d:${runId}:${stage}:${filePath}`,
           idempotencyKey: `phase2d:${runId}:${stage}`,
-          descriptor: {},
+          descriptor: { originalFilename: expected.fileName },
         },
         context,
       );
 
-    const first = await ingest(firstFilePath, 'first');
-    const exact = await ingest(firstFilePath, 'exact');
-    const newer = await ingest(newerFilePath, 'newer');
-    const replay = await ingest(newerFilePath, 'newer');
+    const first = await ingest(firstFilePath, 'first', FIRST);
+    const exact = await ingest(firstFilePath, 'exact', FIRST);
+    const newer = await ingest(newerFilePath, 'newer', NEWER);
+    const replay = await ingest(newerFilePath, 'newer', NEWER);
     assertDecision(first, 'INGEST_NEW_FAMILY', 'first');
     assertDecision(exact, 'RESUME_EXISTING_PROCESS', 'exact');
     assertDecision(newer, 'INGEST_NEW_REVISION', 'newer');
@@ -135,15 +137,34 @@ export class Phase2dValidationService {
   }
 }
 
-function exactValidationFilePath(value: unknown, expectedFileName: string): string {
+function exactValidationFilePath(value: unknown): string {
   const path = typeof value === 'string' ? value.trim() : '';
-  if (!path || basename(path) !== expectedFileName) {
-    throw Object.assign(new Error(`Only ${expectedFileName} is accepted.`), {
+  if (!path) {
+    throw Object.assign(new Error('A FileService path is required.'), {
       code: 'DOCUMENT_MANAGEMENT_VALIDATION_INPUT_INVALID',
       statusCode: 400,
     });
   }
   return path;
+}
+
+function assertValidationSelection(
+  value: Record<string, unknown>,
+  expected: { sha256: string; byteLength: number },
+): void {
+  if (
+    value.readbackVerified !== true ||
+    value.sha256 !== expected.sha256 ||
+    Number(value.byteLength) !== expected.byteLength
+  ) {
+    throw Object.assign(
+      new Error('The selected FileService object is not an authorized Phase 2D validation PDF.'),
+      {
+        code: 'DOCUMENT_MANAGEMENT_VALIDATION_INPUT_INVALID',
+        statusCode: 400,
+      },
+    );
+  }
 }
 
 function assertDecision(
