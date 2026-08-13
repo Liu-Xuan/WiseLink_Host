@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wiselink.example/contracts/unified-acceptance/v0/unified-acceptance-request.schema.json",
+  "title": "WiseLink 3.1 Unified Acceptance Request Candidate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "correlation", "package", "specialistContext"],
+  "properties": {
+    "schemaVersion": {
+      "const": "wiselink.3_1.unified_acceptance_request.v0.candidate"
+    },
+    "correlation": { "$ref": "#/$defs/correlation" },
+    "package": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["packageId", "contract", "artifact"],
+      "properties": {
+        "packageId": { "$ref": "#/$defs/text" },
+        "contract": { "$ref": "#/$defs/contract" },
+        "artifact": { "$ref": "#/$defs/artifact" }
+      }
+    },
+    "specialistContext": {
+      "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/aeoContext" }]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "package": {
+            "properties": {
+              "contract": {
+                "properties": {
+                  "contractId": { "const": "techpub.parsed-package.v1" }
+                },
+                "required": ["contractId"]
+              }
+            },
+            "required": ["contract"]
+          }
+        }
+      },
+      "then": {
+        "properties": { "specialistContext": { "type": "null" } }
+      },
+      "else": {
+        "properties": { "specialistContext": { "$ref": "#/$defs/aeoContext" } }
+      }
+    }
+  ],
+  "$defs": {
+    "text": { "type": "string", "minLength": 1, "maxLength": 1000 },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "correlation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "workItemId",
+        "requestId",
+        "documentVersionId",
+        "permissionSnapshotVersion",
+        "classificationFingerprint"
+      ],
+      "properties": {
+        "workItemId": { "$ref": "#/$defs/text" },
+        "requestId": { "$ref": "#/$defs/text" },
+        "documentVersionId": { "$ref": "#/$defs/text" },
+        "permissionSnapshotVersion": { "$ref": "#/$defs/text" },
+        "classificationFingerprint": { "$ref": "#/$defs/text" }
+      }
+    },
+    "contract": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["contractId", "contractRevision"],
+          "properties": {
+            "contractId": { "const": "techpub.parsed-package.v1" },
+            "contractRevision": { "const": "frozen.2" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["contractId", "contractRevision"],
+          "properties": {
+            "contractId": { "const": "aeo_structured_parse_v1" },
+            "contractRevision": { "const": "candidate.1" }
+          }
+        }
+      ]
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["storeRole", "ref", "sha256", "byteLength", "mediaType"],
+      "properties": {
+        "storeRole": { "const": "UnifiedArtifactStoreCandidate" },
+        "ref": { "$ref": "#/$defs/text" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "byteLength": { "type": "integer", "minimum": 1 },
+        "mediaType": { "const": "application/json" }
+      }
+    },
+    "aeoContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "family",
+        "formalAeoIdentity",
+        "revision",
+        "iteration",
+        "sourceMediaType",
+        "sourceByteLength",
+        "sourceSha256",
+        "packageHash",
+        "currentness"
+      ],
+      "properties": {
+        "family": { "const": "AEO" },
+        "formalAeoIdentity": { "$ref": "#/$defs/text" },
+        "revision": { "$ref": "#/$defs/text" },
+        "iteration": { "$ref": "#/$defs/text" },
+        "sourceMediaType": { "$ref": "#/$defs/text" },
+        "sourceByteLength": { "type": "integer", "minimum": 1 },
+        "sourceSha256": { "$ref": "#/$defs/sha256" },
+        "packageHash": { "$ref": "#/$defs/sha256" },
+        "currentness": {
+          "enum": ["UNVERIFIED", "CURRENT", "HISTORICAL", "CANCELLED"]
+        }
+      }
+    }
+  }
+}

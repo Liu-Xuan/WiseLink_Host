@@ -1,0 +1,148 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:techpub:schema:v1:extension:pdf-visual-lineage:frozen-1",
+  "title": "PDF visual observation and review lineage",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "sourceUnitSet",
+    "structuredParsePackage",
+    "visualRuns"
+  ],
+  "properties": {
+    "sourceUnitSet": {
+      "$ref": "#/$defs/boundInput"
+    },
+    "structuredParsePackage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "contentHash",
+        "semanticOutputHash"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "contentHash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "semanticOutputHash": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "visualRuns": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "runId",
+          "mode",
+          "status",
+          "artifactIds",
+          "promptHash",
+          "modelId",
+          "modelConfigHash",
+          "outputHash"
+        ],
+        "properties": {
+          "runId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "mode": {
+            "enum": [
+              "SHADOW",
+              "CANDIDATE"
+            ]
+          },
+          "status": {
+            "enum": [
+              "SUCCEEDED",
+              "FAILED"
+            ]
+          },
+          "artifactIds": {
+            "$ref": "#/$defs/entityIdArray"
+          },
+          "promptHash": {
+            "$ref": "#/$defs/sha256"
+          },
+          "modelId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "modelConfigHash": {
+            "$ref": "#/$defs/sha256"
+          },
+          "outputHash": {
+            "$ref": "#/$defs/sha256"
+          },
+          "review": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "runId",
+              "result",
+              "artifactIds"
+            ],
+            "properties": {
+              "runId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "result": {
+                "enum": [
+                  "MATCH",
+                  "MISMATCH",
+                  "NEEDS_REVIEW"
+                ]
+              },
+              "artifactIds": {
+                "$ref": "#/$defs/entityIdArray"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "entityId": {
+      "type": "string",
+      "pattern": "^urn:techpub:[a-z0-9-]+:v1:sha256:[0-9a-f]{64}$"
+    },
+    "entityIdArray": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/entityId"
+      }
+    },
+    "boundInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "hash"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "hash": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    }
+  }
+}

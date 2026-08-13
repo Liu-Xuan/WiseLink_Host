@@ -1,0 +1,217 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:techpub:schema:v1:writer-provenance-manifest:frozen-2",
+  "title": "S1000D Writer Provenance Manifest v1 frozen revision 2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schemaVersion",
+    "contractRevision",
+    "manifestId",
+    "inputPackage",
+    "writerProfile",
+    "generatedPackageHash",
+    "generatedArtifacts",
+    "unitMappings",
+    "assetMappings",
+    "noAuthority",
+    "createdAt"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "urn:techpub:schema:v1:writer-provenance-manifest:frozen-2"
+    },
+    "schemaVersion": {
+      "const": "techpub.writer-provenance-manifest.v1"
+    },
+    "contractRevision": {
+      "const": "frozen.2"
+    },
+    "manifestId": {
+      "type": "string",
+      "pattern": "^urn:techpub:writer-manifest:v1:sha256:[0-9a-f]{64}$"
+    },
+    "inputPackage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "packageId",
+        "contentHash",
+        "semanticHash",
+        "provenanceHash"
+      ],
+      "properties": {
+        "packageId": {
+          "type": "string",
+          "pattern": "^urn:techpub:package:v1:sha256:[0-9a-f]{64}$"
+        },
+        "contentHash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "semanticHash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "provenanceHash": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "writerProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "hash"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "hash": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "generatedPackageHash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "generatedArtifacts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "normalizedPath",
+          "mediaType",
+          "byteLength",
+          "sha256"
+        ],
+        "properties": {
+          "normalizedPath": {
+            "type": "string",
+            "minLength": 1
+          },
+          "mediaType": {
+            "type": "string",
+            "minLength": 1
+          },
+          "byteLength": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "sha256": {
+            "$ref": "#/$defs/sha256"
+          }
+        }
+      }
+    },
+    "unitMappings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "originUnitId",
+          "originSourceRefIds",
+          "generatedPath",
+          "xpath"
+        ],
+        "properties": {
+          "originUnitId": {
+            "$ref": "#/$defs/entityId"
+          },
+          "originSourceRefIds": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/$defs/entityId"
+            }
+          },
+          "generatedPath": {
+            "type": "string",
+            "minLength": 1
+          },
+          "xpath": {
+            "type": "string",
+            "minLength": 1
+          },
+          "elementId": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "assetMappings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "originAssetId",
+          "generatedPath",
+          "sha256"
+        ],
+        "properties": {
+          "originAssetId": {
+            "$ref": "#/$defs/entityId"
+          },
+          "generatedPath": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sha256": {
+            "$ref": "#/$defs/sha256"
+          }
+        }
+      }
+    },
+    "noAuthority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "oemIdentityClaimed",
+        "approvalClaimed",
+        "releaseClaimed",
+        "airworthinessClaimed"
+      ],
+      "properties": {
+        "oemIdentityClaimed": {
+          "const": false
+        },
+        "approvalClaimed": {
+          "const": false
+        },
+        "releaseClaimed": {
+          "const": false
+        },
+        "airworthinessClaimed": {
+          "const": false
+        }
+      }
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "entityId": {
+      "type": "string",
+      "pattern": "^urn:techpub:[a-z0-9-]+:v1:sha256:[0-9a-f]{64}$"
+    }
+  }
+}

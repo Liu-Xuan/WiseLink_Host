@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wiselink.example/contracts/unified-acceptance/v0/unified-reader-host-composition.manifest.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "authority",
+    "canonicalHost",
+    "module",
+    "ports",
+    "acceptanceFacade",
+    "httpSurface",
+    "validation"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "wiselink.3_1.unified_reader_host_composition.v0.candidate"
+    },
+    "authority": {
+      "const": "SOURCE_COMPOSITION_NOT_ACTIVATION_NOT_WRITE_AUTHORIZATION"
+    },
+    "canonicalHost": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["logicalRole", "exactObjectBinding", "bindingStatus"],
+      "properties": {
+        "logicalRole": { "const": "CanonicalMiaodaApp" },
+        "exactObjectBinding": { "type": "null" },
+        "bindingStatus": { "const": "UNRESOLVED" }
+      }
+    },
+    "module": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["export", "factory", "defaultMode"],
+      "properties": {
+        "export": { "const": "UnifiedReaderModule" },
+        "factory": { "const": "UnifiedReaderModule.forRoot" },
+        "defaultMode": { "const": "DEFAULT_UNCONFIGURED" }
+      }
+    },
+    "ports": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifactStore", "aeoSpecialistReader"],
+      "properties": {
+        "artifactStore": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["token", "defaultConfigured"],
+          "properties": {
+            "token": { "const": "UNIFIED_ARTIFACT_STORE" },
+            "defaultConfigured": { "const": false }
+          }
+        },
+        "aeoSpecialistReader": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "internalToken",
+            "exportedPortToken",
+            "bridgeFactory",
+            "defaultConfigured",
+            "expectedHandlerId",
+            "expectedHandlerRevision"
+          ],
+          "properties": {
+            "internalToken": { "const": "AEO_SPECIALIST_READER" },
+            "exportedPortToken": {
+              "const": "wiselink.3_1.port.aeo_specialist_reader.v0.candidate"
+            },
+            "bridgeFactory": {
+              "const": "createAeoSpecialistReaderBridgeProvider"
+            },
+            "defaultConfigured": { "const": false },
+            "expectedHandlerId": {
+              "const": "AeoStructuredParseCandidateReader"
+            },
+            "expectedHandlerRevision": {
+              "const": "aeo-structured-parse-reader.candidate.1"
+            }
+          }
+        }
+      }
+    },
+    "acceptanceFacade": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "registryRevision",
+        "implementationRevision",
+        "contracts",
+        "genericFallbackAllowed"
+      ],
+      "properties": {
+        "registryRevision": {
+          "const": "unified-acceptance-registry.candidate.1"
+        },
+        "implementationRevision": {
+          "const": "unified-acceptance-facade.candidate.2"
+        },
+        "contracts": {
+          "type": "array",
+          "prefixItems": [
+            { "const": "techpub.parsed-package.v1/frozen.2" },
+            { "const": "aeo_structured_parse_v1/candidate.1" }
+          ],
+          "items": false,
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "genericFallbackAllowed": { "const": false }
+      }
+    },
+    "httpSurface": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["method", "path", "writesBusinessData"],
+          "properties": {
+            "method": { "const": "GET" },
+            "path": { "const": "api/unified-reader/readiness" },
+            "writesBusinessData": { "const": false }
+          }
+        }
+      ],
+      "items": false,
+      "minItems": 1,
+      "maxItems": 1
+    },
+    "validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "onlineWritesAuthorized",
+        "applicationPublishAuthorized",
+        "currentSwitchAuthorized",
+        "canonicalAcceptanceAuthorized",
+        "requiredNextAuthority"
+      ],
+      "properties": {
+        "onlineWritesAuthorized": { "const": false },
+        "applicationPublishAuthorized": { "const": false },
+        "currentSwitchAuthorized": { "const": false },
+        "canonicalAcceptanceAuthorized": { "const": false },
+        "requiredNextAuthority": {
+          "const": "WISELINK_3_1_MASTER_R1_AND_PERMISSION_WRITER_ACTIVATION"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:techpub:schema:v1:artifact-record:frozen-2",
+  "title": "Technical Publication Artifact Record v1 frozen revision 2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schemaVersion",
+    "contractRevision",
+    "artifactRef",
+    "mediaType",
+    "byteLength",
+    "artifactHash",
+    "packageId",
+    "contentHash"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "urn:techpub:schema:v1:artifact-record:frozen-2"
+    },
+    "schemaVersion": {
+      "const": "techpub.artifact-record.v1"
+    },
+    "contractRevision": {
+      "const": "frozen.2"
+    },
+    "artifactRef": {
+      "type": "string",
+      "minLength": 1
+    },
+    "mediaType": {
+      "const": "application/json"
+    },
+    "byteLength": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "artifactHash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "packageId": {
+      "type": "string",
+      "pattern": "^urn:techpub:package:v1:sha256:[0-9a-f]{64}$"
+    },
+    "contentHash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  }
+}

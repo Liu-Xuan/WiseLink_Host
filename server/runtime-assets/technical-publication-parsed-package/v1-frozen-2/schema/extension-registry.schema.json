@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:techpub:schema:v1:extension-registry:frozen-2",
+  "title": "Technical Publication Extension Registry v1 frozen revision 2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schemaVersion",
+    "contractRevision",
+    "extensions"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "urn:techpub:schema:v1:extension-registry:frozen-2"
+    },
+    "schemaVersion": {
+      "const": "techpub.extension-registry.v1"
+    },
+    "contractRevision": {
+      "const": "frozen.2"
+    },
+    "extensions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "namespace",
+          "schemaId",
+          "version",
+          "schemaPath"
+        ],
+        "properties": {
+          "namespace": {
+            "type": "string",
+            "minLength": 1
+          },
+          "schemaId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "schemaPath": {
+            "type": "string",
+            "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+\\.json$"
+          }
+        }
+      }
+    }
+  }
+}

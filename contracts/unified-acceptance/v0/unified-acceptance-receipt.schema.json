@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wiselink.example/contracts/unified-acceptance/v0/unified-acceptance-receipt.schema.json",
+  "title": "WiseLink 3.1 Unified Acceptance Candidate Receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "receiptId",
+    "receiptCanonicalSha256",
+    "acceptanceFacade",
+    "correlation",
+    "package",
+    "dispatch",
+    "validationStatus",
+    "validatedSummaryHash",
+    "sourceBoundUnitCount",
+    "authority"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "wiselink.3_1.unified_acceptance_receipt.v0.candidate.2"
+    },
+    "receiptId": {
+      "type": "string",
+      "pattern": "^unified_acceptance_candidate_[0-9a-f]{32}$"
+    },
+    "receiptCanonicalSha256": { "$ref": "#/$defs/prefixedSha256" },
+    "acceptanceFacade": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "registryRevision", "implementationRevision"],
+      "properties": {
+        "role": { "const": "UnifiedAcceptanceFacadeCandidate" },
+        "registryRevision": { "const": "unified-acceptance-registry.candidate.1" },
+        "implementationRevision": { "const": "unified-acceptance-facade.candidate.2" }
+      }
+    },
+    "correlation": { "$ref": "unified-acceptance-request.schema.json#/$defs/correlation" },
+    "package": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "packageId",
+        "contract",
+        "artifactStoreRole",
+        "artifactRef",
+        "artifactSha256",
+        "artifactByteLength",
+        "artifactMediaType"
+      ],
+      "properties": {
+        "packageId": { "type": "string", "minLength": 1 },
+        "contract": { "$ref": "unified-acceptance-request.schema.json#/$defs/contract" },
+        "artifactStoreRole": { "const": "UnifiedArtifactStoreCandidate" },
+        "artifactRef": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "artifactSha256": { "$ref": "#/$defs/sha256" },
+        "artifactByteLength": { "type": "integer", "minimum": 1 },
+        "artifactMediaType": { "const": "application/json" }
+      }
+    },
+    "dispatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["route", "handlerId", "handlerRevision", "fallbackUsed"],
+      "properties": {
+        "route": { "enum": ["UNIFIED_FROZEN_2", "AEO_SPECIALIST"] },
+        "handlerId": { "type": "string", "minLength": 1 },
+        "handlerRevision": { "type": "string", "minLength": 1 },
+        "fallbackUsed": { "const": false }
+      }
+    },
+    "validationStatus": { "const": "CANDIDATE_ACCEPTED" },
+    "validatedSummaryHash": { "$ref": "#/$defs/prefixedSha256" },
+    "sourceBoundUnitCount": { "type": "integer", "minimum": 1 },
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "canonicalReaderActivated",
+        "createsWorkItemState",
+        "createsEngineeringConclusion",
+        "grantsPublication",
+        "selectsCurrent"
+      ],
+      "properties": {
+        "canonicalReaderActivated": { "const": false },
+        "createsWorkItemState": { "const": false },
+        "createsEngineeringConclusion": { "const": false },
+        "grantsPublication": { "const": false },
+        "selectsCurrent": { "const": false }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "prefixedSha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+  }
+}
