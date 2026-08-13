@@ -105,14 +105,15 @@ candidate and its mutation paths correctly stay locked.
 
 ## Local platform-adapter coverage
 
-| Port | Local host coverage | Runtime status |
-| --- | --- | --- |
-| `RegistrarActivationArtifactStorePort` | dedicated read-only FileService actual-byte adapter; returns configured store/bucket/adapter identity | implemented and unit-tested; not sufficient to activate Registrar |
-| Registrar Master signature/trust | none | `BLOCKED`; not implemented or simulated |
-| Registrar sole-writer permission fresh-read | none | `BLOCKED`; not implemented or simulated |
-| Registrar validation-write authorization | none | `BLOCKED`; not implemented or simulated |
-| `ImmutableAcceptanceReceiptOwnerPort` | Unified `b3e7a...` public DI wrapper plus explicit unconfigured adapter | `IMMUTABLE_ACCEPTANCE_RECEIPT_OWNER_NOT_CONFIGURED` |
-| Unified Python U0 Validator | existing hosted-verified adapter and ordinary `pythonModulePath` passthrough | source/config retained; no online probe in this slice |
+| Port                                        | Local host coverage                                                                                                       | Runtime status                                                                   |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `RegistrarActivationArtifactStorePort`      | dedicated read-only FileService actual-byte adapter; returns configured store/bucket/adapter identity                     | implemented and unit-tested; not sufficient to activate Registrar                |
+| Registrar Master signature/trust            | none                                                                                                                      | `BLOCKED`; not implemented or simulated                                          |
+| Registrar sole-writer permission fresh-read | none                                                                                                                      | `BLOCKED`; not implemented or simulated                                          |
+| Registrar validation-write authorization    | none                                                                                                                      | `BLOCKED`; not implemented or simulated                                          |
+| Dedicated Registrar Base transport          | server-only tenant-access-token OpenAPI adapter for three-table search/create/update; business actor fields remain opaque | implemented and tested but not registered; dedicated app identity/scopes pending |
+| `ImmutableAcceptanceReceiptOwnerPort`       | Unified `b3e7a...` public DI wrapper plus explicit unconfigured adapter                                                   | `IMMUTABLE_ACCEPTANCE_RECEIPT_OWNER_NOT_CONFIGURED`                              |
+| Unified Python U0 Validator                 | existing hosted-verified adapter and ordinary `pythonModulePath` passthrough                                              | source/config retained; no online probe in this slice                            |
 
 No activation manifest, immutable acceptance receipt, signature, permission grant or validation-
 write authorization is created by these adapters. This is a local composition improvement only;
@@ -167,3 +168,17 @@ object binding from exact DM commit `4d88666a3c494633dc083388ef781ea7aafab998`.
 or actual-byte checks. The local two-PDF loop also preloads the first content-addressed object and
 requires its reuse with zero upload and zero delete. Phase 2 is permanently stopped: no hosted
 replay, release, environment change or online write is authorized or claimed by this refresh.
+
+## Dedicated Registrar Base adapter local slice
+
+The host now contains one unbound server-only Open Platform transport for WorkItems, Decisions and
+ExecutionLogs. It uses `tenant_access_token`, not `ctx.userContext`, for Base calls. The existing
+authenticated actor remains an unchanged business field, while the selected Registrar continues
+to own authorization, append-only Decisions and CAS. The old generic client capability is not
+consumed as a Registrar writer.
+
+The transport is intentionally not in `AppModule`; placeholder configuration is exercised only by
+unit tests. Binding still requires an exact dedicated app ID, record search/create/update
+permissions, Base access, server-secret injection and the selected Registrar's exact field mapper.
+This slice performs no network call, push, release, environment change, Base write or FileService
+I/O.
