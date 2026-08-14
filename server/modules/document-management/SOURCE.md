@@ -19,8 +19,14 @@ host DEV schema. The module-owned table declaration file is deliberately not use
 
 The exporter-generated CommonJS registry path is adjusted from five to six parent
 segments because the host stores adapters at `dist/config/document-family-adapters`,
-not `dist/server/config/document-family-adapters`. Adapter bytes and business logic
-remain unchanged.
+not `dist/server/config/document-family-adapters`.
+
+The host carries one corrective database-adapter patch after the owner export. Drizzle 0.44.6
+requires `insert(...).select(...)` to select every target-table field in the exact generated
+schema order. The hosted Catalog now supplies the generated UUID and audit fields for the
+existing `dm_document`, `dm_document_version`, and `dm_currentness_decision` statements. This
+does not change the seven-table schema, document identity, currentness semantics, or owner
+business rules.
 
 The host keeps ordinary providers only. Without Master trust, permission fresh-read and write
 authority, Registrar readiness remains `BLOCKED` and Document Management ingestion remains

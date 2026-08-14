@@ -30,6 +30,7 @@
     "test:canonical:activation": "npm run build:server && node scripts/verify-canonical-activation-deltas.mjs",
     "test:document-management:composition": "npm run build:server && node scripts/verify-document-management-composition.mjs",
     "test:document-management:real-pdf": "npm run build:server && node scripts/run-document-management-real-pdf-loop.mjs",
+    "test:document-management:catalog-insert-shape": "npm run build:server && node scripts/verify-hosted-catalog-insert-select-shape.mjs",
     "test:ordinary:first-ftd-loop": "npm run build:server && node scripts/run-ordinary-first-ftd-loop.mjs",
     "eslint": "eslint . --quiet",
     "stylelint": "stylelint client/src/**/*.css --quiet",

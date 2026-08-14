@@ -23,6 +23,10 @@ function asDate(value: string | Date) {
   return value instanceof Date ? value : new Date(value);
 }
 
+function asAuditUser(userId: string, alias: string) {
+  return sql<string>`ROW(${userId})::user_profile`.as(alias);
+}
+
 function parseJson(value: string) {
   return JSON.parse(value);
 }
@@ -405,11 +409,23 @@ export class MiaodaHostedDocumentCatalog {
       const insertedDocument = this.db.$with('inserted_document').as(
         this.db.insert(dmDocument).select(
           this.db.select({
+            id: sql<string>`gen_random_uuid()`.as('id'),
             documentId: sql<string>`${command.document.documentId}`.as('document_id'),
             familyId: insertedFamily.familyId,
             documentFamily: sql<string>`${command.document.documentFamily}`.as('document_family'),
             status: sql<string>`${command.document.status}`.as('status'),
             createdAt: sql<Date>`${asDate(command.document.createdAt)}`.as('created_at'),
+            createdBy: asAuditUser(
+              command.documentVersion.committedBy,
+              '_created_by',
+            ),
+            updatedAt: sql<Date>`${asDate(command.document.createdAt)}`.as(
+              '_updated_at',
+            ),
+            updatedBy: asAuditUser(
+              command.documentVersion.committedBy,
+              '_updated_by',
+            ),
           }).from(insertedFamily),
         ).returning({ familyId: dmDocument.familyId }),
       );
@@ -446,6 +462,7 @@ export class MiaodaHostedDocumentCatalog {
     const insertedVersion = this.db.$with('inserted_document_version').as(
       this.db.insert(dmDocumentVersion).select(
         this.db.select({
+          id: sql<string>`gen_random_uuid()`.as('id'),
           documentVersionId: sql<string>`${command.documentVersion.documentVersionId}`.as('document_version_id'),
           documentId: sql<string>`${command.documentVersion.documentId}`.as('document_id'),
           familyId: moved.familyId,
@@ -463,6 +480,20 @@ export class MiaodaHostedDocumentCatalog {
           lifecycleStatus: sql<string>`COMMITTED_IMMUTABLE`.as('lifecycle_status'),
           committedAt: sql<Date>`${asDate(command.documentVersion.committedAt)}`.as('committed_at'),
           committedBy: sql<string>`${command.documentVersion.committedBy}`.as('committed_by'),
+          createdAt: sql<Date>`${asDate(command.documentVersion.committedAt)}`.as(
+            '_created_at',
+          ),
+          createdBy: asAuditUser(
+            command.documentVersion.committedBy,
+            '_created_by',
+          ),
+          updatedAt: sql<Date>`${asDate(command.documentVersion.committedAt)}`.as(
+            '_updated_at',
+          ),
+          updatedBy: asAuditUser(
+            command.documentVersion.committedBy,
+            '_updated_by',
+          ),
         }).from(moved),
       ).returning({
         documentVersionId: dmDocumentVersion.documentVersionId,
@@ -471,6 +502,7 @@ export class MiaodaHostedDocumentCatalog {
     );
     const movedRows = await this.db.with(moved, insertedVersion).insert(dmCurrentnessDecision).select(
       this.db.select({
+        id: sql<string>`gen_random_uuid()`.as('id'),
         currentnessDecisionId: sql<string>`${command.currentnessDecision.currentnessDecisionId}`.as('currentness_decision_id'),
         familyId: moved.familyId,
         previousDocumentVersionId: sql<string | null>`${command.observedCurrentDocumentVersionId}`.as('previous_document_version_id'),
@@ -481,6 +513,20 @@ export class MiaodaHostedDocumentCatalog {
         decidedAt: sql<Date>`${asDate(command.currentnessDecision.decidedAt)}`.as('decided_at'),
         decidedBy: sql<string>`${command.currentnessDecision.decidedBy}`.as('decided_by'),
         preflightId: sql<string>`${command.preflightId}`.as('preflight_id'),
+        createdAt: sql<Date>`${asDate(command.currentnessDecision.decidedAt)}`.as(
+          '_created_at',
+        ),
+        createdBy: asAuditUser(
+          command.currentnessDecision.decidedBy,
+          '_created_by',
+        ),
+        updatedAt: sql<Date>`${asDate(command.currentnessDecision.decidedAt)}`.as(
+          '_updated_at',
+        ),
+        updatedBy: asAuditUser(
+          command.currentnessDecision.decidedBy,
+          '_updated_by',
+        ),
       }).from(moved).innerJoin(
         insertedVersion,
         eq(insertedVersion.familyId, moved.familyId),
