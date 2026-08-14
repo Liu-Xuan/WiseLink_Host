@@ -39,6 +39,9 @@ const { UnifiedReaderModule } = await import(
 const { U0_FROZEN2_FAILURE_ADAPTER_PORT } = await import(
   pathToFileURL(join(unifiedModuleRoot, 'unified-reader.constants.js'))
 );
+const openApiSpec = JSON.parse(
+  await readFile(join(root, 'docs/openapi.json'), 'utf8'),
+);
 
 const providers = providerMap(CanonicalHostModule.forRoot().providers ?? []);
 const unifiedProviders = providerMap(
@@ -114,6 +117,10 @@ assert.deepEqual(readRoutes([CanonicalHostOpenApiController]), [
     path: 'openapi/wiselink/work-items/:workItemId/deep-link',
   },
 ]);
+assert.deepEqual(
+  readOpenApiSpecRoutes(openApiSpec),
+  readRoutes([CanonicalHostOpenApiController]),
+);
 
 const source = await readFile(
   join(root, 'client/src/pages/DocumentParsingPage/DocumentParsingPage.tsx'),
@@ -213,4 +220,21 @@ function readRoutes(controllers) {
         ];
       });
   });
+}
+
+function readOpenApiSpecRoutes(spec) {
+  return Object.entries(spec.paths).flatMap(([path, pathItem]) =>
+    Object.entries(pathItem).flatMap(([method]) =>
+      ['get', 'post', 'put', 'patch', 'delete'].includes(method)
+        ? [
+            {
+              method: method.toUpperCase(),
+              path: path
+                .replace(/^\//u, '')
+                .replace(/\{([^}]+)\}/gu, ':$1'),
+            },
+          ]
+        : [],
+    ),
+  );
 }

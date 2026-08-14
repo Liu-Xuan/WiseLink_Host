@@ -18,6 +18,17 @@
 同一个 ArtifactStore 和 Unified Reader。`requestId`、`documentVersionId`、
 permission snapshot、artifact ref 和 deep link 均从服务端 fresh-read，不由 Aily 传入。
 
+## 本地验收
+
+- OpenAPI spec 自检：`3 paths`，每条均有 `operationId` 和 `responses`；
+- 生产构建路由读回：三条全部为 `GET`，Controller 无 `@NeedLogin`，mutation route=`0`；
+- Jest：`19 suites / 87 tests PASS`；
+- server/client typecheck、lint、production build：`PASS`；
+- Canonical host composition 和 Unified Reader composition：`PASS`；
+- 真实 FTD 本地循环：`ORDINARY_FIRST_FTD_LOOP_PASS`，`311` units、`239` refs、
+  `software` 查询 `38/38` source-bound，重复触发复用同一 WorkItem；
+- online write、push、release、API Key、Aily Skill 创建：`0`。
+
 ## 为什么不直接调用现有 `/api`
 
 现有 `/api/canonical-host/**` 使用妙搭 `@NeedLogin` 登录上下文。Aily Workflow 的 HTTP
