@@ -106,20 +106,33 @@ assert.equal(
 assert.deepEqual(readRoutes([CanonicalHostOpenApiController]), [
   {
     method: 'GET',
-    path: 'openapi/wiselink/work-items/:workItemId/status',
+    path: 'openapi/wiselink/work-items/status',
   },
   {
     method: 'GET',
-    path: 'openapi/wiselink/work-items/:workItemId/parsed-units',
+    path: 'openapi/wiselink/work-items/parsed-units',
   },
   {
     method: 'GET',
-    path: 'openapi/wiselink/work-items/:workItemId/deep-link',
+    path: 'openapi/wiselink/work-items/deep-link',
   },
 ]);
 assert.deepEqual(
   readOpenApiSpecRoutes(openApiSpec),
   readRoutes([CanonicalHostOpenApiController]),
+);
+assert.ok(
+  Object.keys(openApiSpec.paths).every((path) => !path.includes('{')),
+);
+assert.ok(
+  Object.values(openApiSpec.paths).every((pathItem) =>
+    pathItem.get.parameters.some(
+      (parameter) =>
+        parameter.in === 'query' &&
+        parameter.name === 'workItemId' &&
+        parameter.required === true,
+    ),
+  ),
 );
 
 const source = await readFile(

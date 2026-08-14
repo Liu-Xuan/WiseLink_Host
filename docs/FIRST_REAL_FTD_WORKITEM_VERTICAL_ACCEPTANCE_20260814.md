@@ -154,6 +154,7 @@ failure artifacts; they are directly tied to wrong user-visible results.
 C. No new gate/hash/contract framework was added. The transient read was handled as a bounded
 read-only operation, not as a new business retry mechanism.
 
-D. Yes: the next action is a scoped DEV OpenAPI Key and three Aily read-only Skill mappings over
-this completed loop, followed by classification/general producer expansion rather than more
-infrastructure.
+D. Yes: the hosted dynamic-path probe exposed Miaoda's literal OpenAPI Key path-scope behavior.
+The local adapter now uses fixed paths plus a required `workItemId` query; the next action is one
+fixed-scope hosted read-only revalidation and then three Aily Skill mappings, followed by
+classification/general producer expansion rather than more infrastructure.

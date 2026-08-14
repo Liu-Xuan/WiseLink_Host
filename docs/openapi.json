@@ -1,12 +1,12 @@
 {
   "paths": {
-    "/openapi/wiselink/work-items/{workItemId}/status": {
+    "/openapi/wiselink/work-items/status": {
       "get": {
         "operationId": "getWorkItemStatus",
         "summary": "读取 WiseLink WorkItem 状态和解析包摘要",
         "parameters": [
           {
-            "in": "path",
+            "in": "query",
             "name": "workItemId",
             "required": true,
             "schema": { "type": "string" },
@@ -70,13 +70,13 @@
         }
       }
     },
-    "/openapi/wiselink/work-items/{workItemId}/parsed-units": {
+    "/openapi/wiselink/work-items/parsed-units": {
       "get": {
         "operationId": "querySourceBoundUnits",
         "summary": "查询解析包中带来源引用的内容单元",
         "parameters": [
           {
-            "in": "path",
+            "in": "query",
             "name": "workItemId",
             "required": true,
             "schema": { "type": "string" },
@@ -148,13 +148,13 @@
         }
       }
     },
-    "/openapi/wiselink/work-items/{workItemId}/deep-link": {
+    "/openapi/wiselink/work-items/deep-link": {
       "get": {
         "operationId": "getWorkItemDeepLink",
         "summary": "读取服务端派生的妙搭 WorkItem 深链",
         "parameters": [
           {
-            "in": "path",
+            "in": "query",
             "name": "workItemId",
             "required": true,
             "schema": { "type": "string" },

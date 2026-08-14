@@ -65,9 +65,10 @@ WorkItem repository, Unified Reader and canonical app binding. The routes contai
 because Miaoda's OpenAPI gateway authenticates them with a scoped application API Key; no
 `start_parse` write tool is exposed.
 
-Local implementation and the exact pending platform actions are recorded in
-`docs/AILY_MINIMAL_ENTRY_HANDOFF_20260814.md`. No OpenAPI Key, Aily Skill, release or online write
-was created in this local-only slice.
+Local implementation and the exact platform handoff are recorded in
+`docs/AILY_MINIMAL_ENTRY_HANDOFF_20260814.md`. Hosted testing proved that Miaoda OpenAPI Key scopes
+match paths literally, so the current local revision uses three fixed GET paths with a required
+`workItemId` query parameter. This revision has not been pushed, released or applied to the Key.
 
 ## Goal alignment
 
@@ -75,6 +76,6 @@ was created in this local-only slice.
 - New code is limited to the missing ordinary WorkItem store, producer/storage adapters and error
   persistence needed for that path.
 - No new package contract, hash scheme, baseline or general gate was introduced.
-- The hosted real document loop is complete; the Aily read-only adapter now exists locally and the
-  next action is a scoped DEV OpenAPI Key plus three Aily read-only Skill mappings, not another
-  proof framework.
+- The hosted real document loop is complete; the Aily read-only adapter now has a local fixed-path
+  correction. The next action is one hosted revalidation with matching fixed-path Key scopes,
+  followed by the three Aily read-only Skill mappings, not another proof framework.
