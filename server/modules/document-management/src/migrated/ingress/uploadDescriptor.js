@@ -164,6 +164,9 @@ export function normalizeDescriptorDocumentFamily(value = '') {
   const adapterFamily = normalizeDocumentFamily(explicit);
   if (adapterFamily) return adapterFamily;
   const normalized = explicit.toUpperCase();
+  // 3.1 catalog-only delta: accept only an explicit governed classification;
+  // filenames and Parser adapter profiles must not invent this family.
+  if (normalized === 'OEM_REFERENCE' || normalized === 'OEM REFERENCE') return 'OEM_REFERENCE';
   if (/\bFTD\b|FLEET\s+TEAM\s+DIGEST/u.test(normalized)) return 'FTD';
   if (/\b(?:ASB|SB)\b|SERVICE\s+BULLETIN/u.test(normalized)) return 'SB';
   if (/\bSL\b|SERVICE\s+LETTER/u.test(normalized)) return 'SL';
@@ -201,6 +204,7 @@ function familyFromDocumentCategory(category = '') {
 function familyFromSourceType(sourceType = '') {
   const normalized = normalizeApiSourceType(sourceType);
   if (!normalized) return '';
+  if (normalized === 'oem_reference') return 'OEM_REFERENCE';
   if (normalized === 'boeing_ftd') return 'FTD';
   if (normalized === 'boeing_asb' || normalized === 'boeing_sb' || normalized.startsWith('airbus_service_bulletin') || normalized.startsWith('airbus_operator_transmission') || normalized.startsWith('airbus_retrofit_information_letter')) return 'SB';
   if (normalized === 'boeing_sl') return 'SL';
@@ -234,6 +238,7 @@ function defaultSourceTypeForFamily(canonicalDocumentFamily = '', context = {}) 
     if (category.includes('maintenance_tip')) return 'boeing_maintenance_tip';
     return 'maintenance_task';
   }
+  if (canonicalDocumentFamily === 'OEM_REFERENCE') return 'oem_reference';
   if (canonicalDocumentFamily === 'SB') {
     if (category.startsWith('airbus_')) {
       return {
@@ -262,6 +267,7 @@ function resolveDisplayDocumentFamily({ explicitFamily = '', canonicalDocumentFa
   if (canonicalDocumentFamily === 'SIL') return 'SIL';
   if (canonicalDocumentFamily === 'RB') return 'RB';
   if (canonicalDocumentFamily === 'MT') return 'MT';
+  if (canonicalDocumentFamily === 'OEM_REFERENCE') return 'OEM Reference';
   return canonicalDocumentFamily || 'GENERIC';
 }
 
@@ -356,7 +362,7 @@ export function resolveUploadDescriptorClassification(descriptor = {}) {
       ? adapterDocumentCategory
       : normalizeString(dimensions.documentCategory, 'generic'),
     parserFormat: normalizeString(dimensions.parserFormat, 'pdf'),
-    adapterRelease: adapter ? {
+    adapterRelease: canonicalDocumentFamily === 'OEM_REFERENCE' ? null : adapter ? {
       adapterId: adapter.adapterId,
       adapterVersion: adapter.schemaVersion,
       adapterHash: '',

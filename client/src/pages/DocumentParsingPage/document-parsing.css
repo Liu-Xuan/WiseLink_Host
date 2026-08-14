@@ -194,6 +194,10 @@
   border: 1px solid var(--parse-rule);
   font-size: 11px;
 }
+.parse-reference-tag {
+  border-color: var(--parse-signal);
+  color: #8b3b19;
+}
 .parse-accent {
   color: #f7f3e8;
   background: var(--parse-teal);
@@ -240,6 +244,24 @@
 }
 .parse-candidate-warning svg {
   min-width: 18px;
+}
+.parse-reference-boundary {
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid rgba(230, 104, 47, 0.45);
+  background: rgba(230, 104, 47, 0.08);
+}
+.parse-reference-boundary strong {
+  color: #8b3b19;
+  letter-spacing: 0.08em;
+}
+.parse-reference-boundary p {
+  margin: 10px 0 6px;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+}
+.parse-reference-boundary small {
+  color: rgba(20, 37, 31, 0.66);
 }
 
 .parse-query-card form {

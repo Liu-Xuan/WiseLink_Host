@@ -71,6 +71,8 @@ export default function DocumentParsingPage() {
   }
 
   const pkg = data.workItem.package;
+  const usagePolicy = pkg?.usagePolicy;
+  const referenceOnly = usagePolicy?.presentationMode === 'REFERENCE_ONLY';
   const results: UnifiedReaderQueryResult[] = data.queryResults;
   const fileLabel: string = `${data.workItem.classification.normalizedFamily} · ${short(data.workItem.source.sourceArtifactId, 20, 8)}`;
 
@@ -110,6 +112,18 @@ export default function DocumentParsingPage() {
           </div>
           <h2>{pkg?.title ?? fileLabel}</h2>
           <dl>
+            {pkg?.documentIdentity ? (
+              <div>
+                <dt>Document code</dt>
+                <dd>{pkg.documentIdentity.documentCode}</dd>
+              </div>
+            ) : null}
+            {pkg?.documentIdentity?.businessRevision ? (
+              <div>
+                <dt>Revision</dt>
+                <dd>{pkg.documentIdentity.businessRevision}</dd>
+              </div>
+            ) : null}
             <div>
               <dt>DocumentVersion</dt>
               <dd>{short(data.workItem.source.documentVersionId, 24, 8)}</dd>
@@ -139,6 +153,9 @@ export default function DocumentParsingPage() {
             {data.workItem.classification.status}
           </span>
           <span className="parse-tag">{pkg?.contractRevision ?? 'NO PACKAGE'}</span>
+          {referenceOnly ? (
+            <span className="parse-tag parse-reference-tag">REFERENCE ONLY</span>
+          ) : null}
         </article>
 
         <article className="parse-panel parse-metric-card parse-accent">
@@ -153,7 +170,12 @@ export default function DocumentParsingPage() {
             <strong>{pkg?.sourceRefCount ?? 0}</strong>
             <span>来源引用</span>
           </div>
-          <p>结果状态：{pkg?.resultStatus.toUpperCase() ?? data.workItem.phase}</p>
+          <p>
+            结果状态：
+            {usagePolicy?.qualityStatus ??
+              pkg?.resultStatus.toUpperCase() ??
+              data.workItem.phase}
+          </p>
         </article>
       </section>
 
@@ -181,6 +203,19 @@ export default function DocumentParsingPage() {
             <AlertTriangle /> 当前结果是 DEV 候选解析包；未切 production/current，
             不生成适用性或工程结论。
           </div>
+          {referenceOnly && usagePolicy ? (
+            <div className="parse-reference-boundary">
+              <strong>REFERENCE ONLY · {usagePolicy.qualityStatus}</strong>
+              <p>
+                Applicability：{usagePolicy.applicability.sourceExpressionCount} source
+                expression / {usagePolicy.applicability.normalizedCandidateCount}{' '}
+                candidate / {usagePolicy.applicability.assignmentCount} assignment
+              </p>
+              <small>
+                Assessment 自动采纳：禁止 · AEO 自动采纳：禁止
+              </small>
+            </div>
+          ) : null}
         </article>
 
         <article className="parse-panel parse-query-card">

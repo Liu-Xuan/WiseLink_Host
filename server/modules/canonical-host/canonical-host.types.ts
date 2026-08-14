@@ -1,6 +1,7 @@
 import type {
   CanonicalEntryQueryRequest,
   CanonicalFailureValidationWriteReceipt,
+  CanonicalParsedPackageUsagePolicy,
   CanonicalPdfVerticalRunRequest,
   CanonicalWorkItemProjection,
 } from '@shared/api.interface';
@@ -40,6 +41,11 @@ export type CanonicalPdfProducerResult =
       bytes: Uint8Array;
       strictReaderValidated: true;
       executionRoute: string;
+      usagePolicy?: CanonicalParsedPackageUsagePolicy;
+      documentIdentity?: {
+        documentCode: string;
+        businessRevision: string | null;
+      };
     }
   | {
       kind: 'FAILURE_SIGNAL';

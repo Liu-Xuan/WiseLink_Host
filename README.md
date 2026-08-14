@@ -14,13 +14,17 @@ labs, not additional user products.
 
 The host now contains the ordinary first business path:
 
-`authenticated Miaoda action → exact DM DocumentVersion → create-or-reuse WorkItem → FTD PDF
-producer adapter → techpub.parsed-package.v1/frozen.2 → immutable FileService readback → full U0
+`authenticated Miaoda action → exact DM DocumentVersion → create-or-reuse WorkItem → controlled PDF
+producer profile → techpub.parsed-package.v1/frozen.2 → immutable FileService readback → full U0
 Validator → Unified Reader query → same WorkItem page/deep-link`
+
+The same route now accepts both the established FTD profile and one controlled, catalog-only
+`OEM_REFERENCE` profile. The latter is reference-only and cannot create applicability, Assessment
+or AEO authority.
 
 The path uses:
 
-- DM owner source `3ebc61c0532c5ee04122a251464fc644d1238439` without taking over DM
+- DM owner source `7eec76ae972312ecb81bbce569140df6c782fbba` without taking over DM
   currentness;
 - Unified owner source `b3e7a20245af19349a8bfa9c0da995d5eeac6acf` and U0 commit
   `fa69ada08265934951df53c7a61a3ccdb8cb2900`;
@@ -44,6 +48,17 @@ source-bound `software` Reader results. The same WorkItem deep link renders
 `CANDIDATE_READBACK_VERIFIED`, 311 content units and 239 source references.
 
 Detailed evidence: `docs/FIRST_REAL_FTD_WORKITEM_VERTICAL_ACCEPTANCE_20260814.md`.
+
+## Local controlled OEM reference version chain
+
+Airbus FAST is one `AIRBUS-FAST` document family. ISSUE 61 and ISSUE 62 are two immutable
+DocumentVersions, not two family identities and not two Parser Profiles. Both use the existing
+`OEM_REFERENCE / frozen.2-controlled-oem-reference.1` route, produce distinct frozen.2 packages,
+and remain available through separate ordinary WorkItems after Catalog current generation moves
+from 1 to 2. Both pages render `REFERENCE ONLY`, `NEEDS_REVIEW`, applicability `0/0/0`, and the
+prohibition on Assessment/AEO automatic adoption.
+
+Detailed evidence: `docs/OEM_REFERENCE_VERSION_CHAIN_ACCEPTANCE_20260815.md`.
 
 ## Hosted DEV acceptance state
 
@@ -72,10 +87,11 @@ match paths literally, so the current local revision uses three fixed GET paths 
 
 ## Goal alignment
 
-- This slice directly produces a source-bounded parsed result an engineer can inspect.
+- This slice directly produces a source-bounded FTD or controlled OEM reference result an engineer
+  can inspect in the same page.
 - New code is limited to the missing ordinary WorkItem store, producer/storage adapters and error
   persistence needed for that path.
 - No new package contract, hash scheme, baseline or general gate was introduced.
-- The hosted real document loop is complete; the Aily read-only adapter now has a local fixed-path
-  correction. The next action is one hosted revalidation with matching fixed-path Key scopes,
-  followed by the three Aily read-only Skill mappings, not another proof framework.
+- The hosted FTD loop remains complete; OEM_REFERENCE is local-only and has not been published.
+  The next product action is a single authorized hosted OEM reference validation when requested,
+  then the existing Aily read-only mappings—without adding another parser or state store.

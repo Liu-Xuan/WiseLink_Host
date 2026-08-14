@@ -259,6 +259,19 @@ export interface CanonicalClassificationSelection {
   fingerprint: string;
 }
 
+export interface CanonicalParsedPackageUsagePolicy {
+  presentationMode: 'ENGINEERING_DOCUMENT' | 'REFERENCE_ONLY';
+  qualityStatus: 'PASS' | 'NEEDS_REVIEW';
+  applicability: {
+    sourceExpressionCount: number;
+    normalizedCandidateCount: number;
+    assignmentCount: number;
+  };
+  assessmentAutoAdoptionAllowed: false;
+  aeoAutoAdoptionAllowed: false;
+  projectionSource: 'IMMUTABLE_PACKAGE_ACTUAL_BYTES';
+}
+
 export interface CanonicalWorkItemPackageProjection {
   packageId: string;
   contractId: 'techpub.parsed-package.v1';
@@ -270,9 +283,14 @@ export interface CanonicalWorkItemPackageProjection {
   coverageHash: string;
   resultStatus: 'complete' | 'partial';
   title: string;
+  documentIdentity?: {
+    documentCode: string;
+    businessRevision: string | null;
+  };
   contentUnitCount: number;
   sourceRefCount: number;
   readerReceiptId: string;
+  usagePolicy?: CanonicalParsedPackageUsagePolicy;
   fullValidatorProof: {
     validatorId: 'U0Frozen2SchemaSemanticValidator';
     validatorRevision: string;

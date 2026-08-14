@@ -67,7 +67,7 @@ await access(
 
 process.stdout.write(`${JSON.stringify({
   status: 'PASS',
-  sourceOwnerCommit: '3ebc61c0532c5ee04122a251464fc644d1238439',
+  sourceOwnerCommit: 'fcab253b17dd1d118232fdbb72f4e0fe2d295f0e',
   appId: 'app_17bzc551rsg',
   moduleLoad: 'COMMONJS_PASS',
   hostAuthorizationDefault: 'FAIL_CLOSED_BEFORE_IO',
