@@ -250,6 +250,6 @@ const sourceSha256 = await Promise.all(
 process.stdout.write(`${JSON.stringify({
   ...result,
   sourceSha256,
-  sourceOwnerCommit: '3ebc61c0532c5ee04122a251464fc644d1238439',
+  sourceOwnerCommit: 'fcab253b17dd1d118232fdbb72f4e0fe2d295f0e',
   executedFromHostBuild: true,
 }, null, 2)}\n`);

@@ -141,7 +141,7 @@ export class CanonicalHostVerticalService {
         next: {
           ...withoutRevision(projection),
           phase: 'CANDIDATE_READBACK_VERIFIED',
-          package: packageProjection(readback),
+          package: packageProjection(readback, produced.usagePolicy),
           failure: null,
           recordingFailure: null,
         },
@@ -581,6 +581,7 @@ function withoutRevision(
 
 function packageProjection(
   readback: UnifiedPackageReadbackResponse,
+  usagePolicy: Extract<CanonicalPdfProducerResult, { kind: 'PACKAGE' }>['usagePolicy'],
 ): NonNullable<CanonicalWorkItemProjection['package']> {
   return {
     packageId: readback.package.packageId,
@@ -596,6 +597,7 @@ function packageProjection(
     contentUnitCount: readback.package.contentUnitCount,
     sourceRefCount: readback.package.sourceRefCount,
     readerReceiptId: readback.receipt.readerReceiptId,
+    ...(usagePolicy ? { usagePolicy: structuredClone(usagePolicy) } : {}),
     fullValidatorProof: {
       validatorId: readback.fullValidatorProof.validatorId,
       validatorRevision: readback.fullValidatorProof.validatorRevision,

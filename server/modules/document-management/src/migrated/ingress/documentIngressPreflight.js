@@ -208,9 +208,13 @@ export function documentIngressIdentityFromDescriptor(
     ? `DATE:${revisionDate}`
     : /^R\d{1,4}$/u.test(businessRevision)
       ? `REV:${String(Number(businessRevision.slice(1))).padStart(8, '0')}`
-      : sourceGeneratedDateControlled
-        ? `GENERATED:${sourceGeneratedDate}`
-        : '';
+      // Numbered OEM publications use their source issue as the exact version
+      // axis when no controlled day-level publication date exists.
+      : /^ISSUE\s*#?\s*\d{1,6}$/u.test(businessRevision)
+        ? `ISSUE:${String(Number(businessRevision.match(/\d+/u)?.[0])).padStart(8, '0')}`
+        : sourceGeneratedDateControlled
+          ? `GENERATED:${sourceGeneratedDate}`
+          : '';
 
   return {
     schemaVersion: 'wiselink.0_10.document_ingress_identity.v1',

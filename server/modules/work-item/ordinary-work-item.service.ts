@@ -28,6 +28,19 @@ const FTD_CLASSIFICATION: CanonicalClassificationSelection = {
     'sha256:95728aebf5e6ce6b2aa8078389ce551d9a121ca0476d469a19f3d2dc4693b1a4',
 };
 
+const OEM_REFERENCE_CLASSIFICATION: CanonicalClassificationSelection = {
+  status: 'CANDIDATE',
+  normalizedFamily: 'OEM_REFERENCE',
+  classifierReleaseId: 'intake-classifier-release:q1-native-migration@1.0.0',
+  classifierReleaseHash:
+    'sha256:d374483eaa1c209912bf8ed0f830b582f8f0578e3149899de24633ad8e10587c',
+  parserProfileId: 'parser-profile:generic.document@1.0.0',
+  parserProfileHash:
+    'sha256:0508c397ca2249dc38507b7de312547503208dad6ad7993659ec900713ed1dde',
+  fingerprint:
+    'sha256:9e0f6036c057009b18c19333f33a3945b06cb567c27b1859b2e6ba47979f42c5',
+};
+
 export interface OrdinaryPdfParseInput {
   documentVersionId?: unknown;
   selection?: {
@@ -133,13 +146,12 @@ export class OrdinaryWorkItemService {
 }
 
 function classificationFor(family: string): CanonicalClassificationSelection {
-  if (family !== 'FTD') {
-    throw Object.assign(
-      new Error(`No activated hosted PDF producer profile for ${family}.`),
-      { code: 'PDF_PRODUCER_PROFILE_NOT_AVAILABLE', statusCode: 409 },
-    );
-  }
-  return { ...FTD_CLASSIFICATION };
+  if (family === 'FTD') return { ...FTD_CLASSIFICATION };
+  if (family === 'OEM_REFERENCE') return { ...OEM_REFERENCE_CLASSIFICATION };
+  throw Object.assign(
+    new Error(`No activated hosted PDF producer profile for ${family}.`),
+    { code: 'PDF_PRODUCER_PROFILE_NOT_AVAILABLE', statusCode: 409 },
+  );
 }
 
 function optionalQuery(value: unknown): string {

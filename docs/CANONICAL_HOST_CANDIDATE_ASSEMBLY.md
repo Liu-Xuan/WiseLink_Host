@@ -10,7 +10,7 @@ as non-blocking historical modules; they are not prerequisites for the first bus
 Current composition:
 
 - `work_item` and `action_attempt` are ordinary Miaoda DB tables with a business uniqueness key;
-- DM exact owner source remains `3ebc61c0532c5ee04122a251464fc644d1238439` and supplies only the
+- DM exact owner source is `fcab253b17dd1d118232fdbb72f4e0fe2d295f0e` and supplies only the
   exact `DocumentVersion` identity to WorkItem processing;
 - the first production adapter consumes the verified real FTD producer output and emits the
   selected frozen.2 Unified Parsed Package;
@@ -182,7 +182,7 @@ weaker Validator.
 ## Phase 2C Document Management integration
 
 The exact Document Management source bundle from
-`3ebc61c0532c5ee04122a251464fc644d1238439` is now selectively assembled as an internal module.
+`fcab253b17dd1d118232fdbb72f4e0fe2d295f0e` is now selectively assembled as an internal module.
 DEV contains the owner migration's seven empty catalog tables, and the host-generated Drizzle
 schema is the only table definition consumed at runtime. The source bundle's CommonJS output and
 23 document-family adapters load from the production host build. The same built core passed the
@@ -206,7 +206,7 @@ pushed or deployed. Full evidence, release identities and non-claims are in
 ## Post-Phase-2 local owner refresh
 
 The host now consumes the owner-exported leading-slash canonicalization and the metadata/download
-object binding from exact DM commit `3ebc61c0532c5ee04122a251464fc644d1238439`.
+object binding from exact DM commit `fcab253b17dd1d118232fdbb72f4e0fe2d295f0e`.
 `updatedAt` is audit metadata only; this does not weaken bucket, canonical path, provider object ID
 or actual-byte checks. The local two-PDF loop also preloads the first content-addressed object and
 requires its reuse with zero upload and zero delete. Phase 2 is permanently stopped: no hosted
