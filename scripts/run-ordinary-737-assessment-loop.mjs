@@ -509,6 +509,28 @@ assert.equal(ingestCalls, 1);
 assert.equal(repository.parseReservation.workItemId, secondResynthesis.workItemId);
 assert.equal(fileService.uploadCalls.length, 6);
 
+const phase6dAeo = process.env.WL_PHASE6D_AEO_LOOP === '1'
+  ? await (async () => {
+      const { runPhase6dAeoSameWorkItemLoop } = await import(
+        './run-phase6d-aeo-same-workitem.mjs'
+      );
+      const assessmentActualBytes = await artifactStore.readActualBytes(
+        secondResynthesis.assessment.artifact,
+      );
+      const fast62Bytes = await readFile(
+        resolve(
+          root,
+          'test/fixtures/airbus-fast62-oem-reference.frozen2.unified-package.json',
+        ),
+      );
+      return runPhase6dAeoSameWorkItemLoop({
+        canonicalWorkItem: page.workItem,
+        assessmentActualBytes,
+        fast62Bytes,
+      });
+    })()
+  : null;
+
 process.stdout.write(`${JSON.stringify({
   status: 'ORDINARY_737_ASSESSMENT_LOOP_PASS',
   source: {
@@ -557,6 +579,7 @@ process.stdout.write(`${JSON.stringify({
     status: value.status,
   })),
   parserPackageColumnsUnchanged: true,
+  phase6dAeo,
   onlineWrites: 0,
   releaseCreated: false,
 }, null, 2)}\n`);
