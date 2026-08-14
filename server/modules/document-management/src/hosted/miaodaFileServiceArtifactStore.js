@@ -177,8 +177,9 @@ export class MiaodaFileServiceArtifactStore {
     let metadata = await scoped.getFileMetadata(filePath);
     let reusedExisting = Boolean(metadata);
     if (!metadata) {
+      const uploadFilePath = providerFilePath(filePath, 'filePath');
       metadata = await scoped.upload(sourceBytes, {
-        filePath,
+        filePath: uploadFilePath,
         fileName: `${sha256}.pdf`,
         contentType: mediaType,
         upsert: false,

@@ -530,3 +530,26 @@ export interface CanonicalDocumentParsingPageResponse {
     permissionSnapshotVersion: string;
   };
 }
+
+export interface FileServiceP0ProbeResponse {
+  schemaVersion: 'wiselink.3_1.fileservice_p0_probe.v1';
+  status: 'PASS';
+  stage: 'ACTUAL_BYTE_READBACK_VERIFIED';
+  artifact: {
+    bucketId: string;
+    filePath: string;
+    providerFilePath: string;
+    providerObjectId: string;
+    sha256: string;
+    byteLength: number;
+    mediaType: 'application/json';
+    readbackVerified: true;
+    reusedExisting: false;
+  };
+  authority: {
+    authenticatedActorRequired: true;
+    businessWritePerformed: false;
+    databaseWritePerformed: false;
+    workItemCreated: false;
+  };
+}

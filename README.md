@@ -20,7 +20,7 @@ Validator → Unified Reader query → same WorkItem page/deep-link`
 
 The path uses:
 
-- DM owner source `4d88666a3c494633dc083388ef781ea7aafab998` without taking over DM
+- DM owner source `3ebc61c0532c5ee04122a251464fc644d1238439` without taking over DM
   currentness;
 - Unified owner source `b3e7a20245af19349a8bfa9c0da995d5eeac6acf` and U0 commit
   `fa69ada08265934951df53c7a61a3ccdb8cb2900`;

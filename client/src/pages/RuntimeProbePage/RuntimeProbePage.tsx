@@ -2,15 +2,15 @@ import { useEffect, useState } from 'react';
 
 import {
   getReadOnlyRuntimeProbe,
-  runFirstFtdVertical,
-  type FirstFtdVerticalResult,
+  runFileServiceP0Probe,
+  type FileServiceP0ProbeResult,
   type ReadOnlyProbeResult,
 } from '@client/src/api/runtime-probe';
 
 export default function RuntimeProbePage() {
   const [results, setResults] = useState<ReadOnlyProbeResult[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [validation, setValidation] = useState<FirstFtdVerticalResult | null>(null);
+  const [validation, setValidation] = useState<FileServiceP0ProbeResult | null>(null);
   const [validationRunning, setValidationRunning] = useState(false);
   const [validationAttempted, setValidationAttempted] = useState(false);
 
@@ -27,7 +27,7 @@ export default function RuntimeProbePage() {
     setValidationAttempted(true);
     setValidationRunning(true);
     try {
-      setValidation(await runFirstFtdVertical());
+      setValidation(await runFileServiceP0Probe());
     } finally {
       setValidationRunning(false);
     }
@@ -41,8 +41,8 @@ export default function RuntimeProbePage() {
           <h1>托管运行时只读探针</h1>
           <p className="parse-lede">
             仅使用妙搭官方登录与 CSRF 客户端读取运行时、Unified Reader 和 Registrar
-            readiness。下方独立按钮只在人工点击时创建或复用一条真实 FTD WorkItem；
-            不写 Base，也不创建工程结论。
+            readiness。下方独立按钮只写入并逐字节读回一个固定的非业务 JSON 探针；
+            不运行 PDF 纵切、不写数据库，也不创建 WorkItem 或工程结论。
           </p>
         </div>
       </header>
@@ -62,14 +62,14 @@ export default function RuntimeProbePage() {
           </section>
         ))
       )}
-      <section className="parse-panel" data-testid="first-ftd-vertical-panel">
-        <h2>First real FTD WorkItem vertical</h2>
+      <section className="parse-panel" data-testid="file-service-p0-panel">
+        <h2>FileService P0 upload/readback</h2>
         <p>
-          固定消费已授权的 exact FTD DocumentVersion。页面不接受路径、WorkItem ID 或权限
-          输入；登录、CSRF、WorkItem 身份和幂等复用均由服务端处理。
+          页面不接受路径、文件内容或权限输入；固定 JSON、固定 content-addressed 路径、
+          登录和 CSRF 均由服务端控制。按钮仅允许当前页面人工尝试一次。
         </p>
         <button
-          data-testid="first-ftd-vertical-trigger"
+          data-testid="file-service-p0-trigger"
           disabled={validationAttempted || validationRunning}
           onClick={runValidationOnce}
           type="button"
@@ -78,10 +78,10 @@ export default function RuntimeProbePage() {
             ? 'RUNNING'
             : validationAttempted
               ? 'ATTEMPTED'
-              : 'RUN FIRST FTD VERTICAL ONCE'}
+              : 'RUN FILESERVICE P0 ONCE'}
         </button>
         {validation ? (
-          <div data-testid="first-ftd-vertical-result">
+          <div data-testid="file-service-p0-result">
             <p>
               HTTP {validation.status} · {validation.code ?? (validation.ok ? 'PASS' : 'NO_CODE')}
             </p>

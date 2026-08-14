@@ -4,7 +4,10 @@ jest.mock('@lark-apaas/client-toolkit/utils/getAxiosForBackend', () => ({
   axiosForBackend: request,
 }));
 
-import { runFirstFtdVertical } from '../../client/src/api/runtime-probe';
+import {
+  runFileServiceP0Probe,
+  runFirstFtdVertical,
+} from '../../client/src/api/runtime-probe';
 
 describe('runtime probe first FTD vertical client action', () => {
   beforeEach(() => request.mockReset());
@@ -81,5 +84,29 @@ describe('runtime probe first FTD vertical client action', () => {
       }),
     );
     expect(request).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('runtime probe FileService P0 client action', () => {
+  beforeEach(() => request.mockReset());
+
+  it('uses axiosForBackend once without client-supplied path or bytes', async () => {
+    request.mockResolvedValue({
+      status: 200,
+      data: { status: 'PASS' },
+      headers: { 'x-log-trace-id': 'trace-p0' },
+    });
+
+    await expect(runFileServiceP0Probe()).resolves.toMatchObject({
+      status: 200,
+      traceId: 'trace-p0',
+      ok: true,
+    });
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(request).toHaveBeenCalledWith({
+      url: '/api/runtime-probe/file-service-upload',
+      method: 'POST',
+      meta: { autoJumpToLogin: false },
+    });
   });
 });
