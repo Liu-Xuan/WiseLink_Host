@@ -1,5 +1,10 @@
 # OEM_REFERENCE same-WorkItem acceptance — 2026-08-15
 
+> Superseded for current identity and package claims by
+> `OEM_REFERENCE_VERSION_CHAIN_ACCEPTANCE_20260815.md`. This file remains historical evidence for
+> the first single-version slice; its old `AIRBUS-FAST-61` family identity and package IDs must not
+> be used by current consumers.
+
 ## Outcome
 
 The canonical host now runs a controlled Airbus OEM reference through the existing ordinary
@@ -8,9 +13,9 @@ business path:
 `controlled DocumentVersion → existing PDF producer → frozen.2 package → immutable FileService
 readback → full U0 Validator → Unified Reader → same WorkItem page and server-derived deep link`
 
-No second producer, Reader, table, queue, worker or currentness source was created. The existing
-`ExactFtdFrozen2PdfProducerAdapter` now selects one of two exact profiles; the established hosted
-FTD profile remains unchanged.
+No second producer, Reader, table, queue, worker or currentness source was created. The current
+implementation uses one OEM_REFERENCE profile with exact per-DocumentVersion bindings; the
+established hosted FTD profile remains unchanged.
 
 ## Exact sources
 
@@ -97,7 +102,7 @@ Non-claims:
 
 - A. Yes: an engineer can inspect the OEM reference package and source-bound Reader output in the
   same WorkItem page.
-- B. Complexity is limited to a second exact profile in the existing producer and a thin usage
+- B. Complexity is limited to an exact OEM binding in the existing producer and a thin usage
   projection derived from immutable package bytes; it directly prevents reference material from
   being treated as applicable engineering authority.
 - C. No new gate, hash scheme, frozen contract, baseline, table or receipt was introduced.

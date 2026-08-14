@@ -42,6 +42,10 @@ export type CanonicalPdfProducerResult =
       strictReaderValidated: true;
       executionRoute: string;
       usagePolicy?: CanonicalParsedPackageUsagePolicy;
+      documentIdentity?: {
+        documentCode: string;
+        businessRevision: string | null;
+      };
     }
   | {
       kind: 'FAILURE_SIGNAL';

@@ -24,7 +24,7 @@ or AEO authority.
 
 The path uses:
 
-- DM owner source `fcab253b17dd1d118232fdbb72f4e0fe2d295f0e` without taking over DM
+- DM owner source `7eec76ae972312ecb81bbce569140df6c782fbba` without taking over DM
   currentness;
 - Unified owner source `b3e7a20245af19349a8bfa9c0da995d5eeac6acf` and U0 commit
   `fa69ada08265934951df53c7a61a3ccdb8cb2900`;
@@ -49,17 +49,16 @@ source-bound `software` Reader results. The same WorkItem deep link renders
 
 Detailed evidence: `docs/FIRST_REAL_FTD_WORKITEM_VERTICAL_ACCEPTANCE_20260814.md`.
 
-## Local controlled OEM reference result
+## Local controlled OEM reference version chain
 
-Airbus FAST #61 (10,036,964 bytes) is admitted only through the server-confirmed
-`OEM_REFERENCE` classification and exact DocumentVersion
-`document_version_ad56cbdaec487e554130afe4`. The formal DM request at Unified commit
-`bb836ed6e97383f651a57657d7361fa64d898126` produces the exact accepted byte-stable frozen.2 partial package.
-The same ordinary WorkItem path persists/readbacks it, passes U0, returns source-bound Reader
-results, and projects the canonical page/deep-link with `REFERENCE ONLY`, `NEEDS_REVIEW` and
-applicability `0/0/0`.
+Airbus FAST is one `AIRBUS-FAST` document family. ISSUE 61 and ISSUE 62 are two immutable
+DocumentVersions, not two family identities and not two Parser Profiles. Both use the existing
+`OEM_REFERENCE / frozen.2-controlled-oem-reference.1` route, produce distinct frozen.2 packages,
+and remain available through separate ordinary WorkItems after Catalog current generation moves
+from 1 to 2. Both pages render `REFERENCE ONLY`, `NEEDS_REVIEW`, applicability `0/0/0`, and the
+prohibition on Assessment/AEO automatic adoption.
 
-Detailed evidence: `docs/OEM_REFERENCE_SAME_WORKITEM_ACCEPTANCE_20260815.md`.
+Detailed evidence: `docs/OEM_REFERENCE_VERSION_CHAIN_ACCEPTANCE_20260815.md`.
 
 ## Hosted DEV acceptance state
 

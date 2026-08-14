@@ -112,6 +112,18 @@ export default function DocumentParsingPage() {
           </div>
           <h2>{pkg?.title ?? fileLabel}</h2>
           <dl>
+            {pkg?.documentIdentity ? (
+              <div>
+                <dt>Document code</dt>
+                <dd>{pkg.documentIdentity.documentCode}</dd>
+              </div>
+            ) : null}
+            {pkg?.documentIdentity?.businessRevision ? (
+              <div>
+                <dt>Revision</dt>
+                <dd>{pkg.documentIdentity.businessRevision}</dd>
+              </div>
+            ) : null}
             <div>
               <dt>DocumentVersion</dt>
               <dd>{short(data.workItem.source.documentVersionId, 24, 8)}</dd>

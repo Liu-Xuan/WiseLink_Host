@@ -283,6 +283,10 @@ export interface CanonicalWorkItemPackageProjection {
   coverageHash: string;
   resultStatus: 'complete' | 'partial';
   title: string;
+  documentIdentity?: {
+    documentCode: string;
+    businessRevision: string | null;
+  };
   contentUnitCount: number;
   sourceRefCount: number;
   readerReceiptId: string;

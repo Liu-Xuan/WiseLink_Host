@@ -16,6 +16,7 @@ await mkdir(producerAssetTargetDirectory, { recursive: true });
 const producerAssets = [
   'real-ftd-frozen2.unified-package.json',
   'airbus-fast61-oem-reference.frozen2.unified-package.json',
+  'airbus-fast62-oem-reference.frozen2.unified-package.json',
 ];
 const copiedProducerAssets = [];
 for (const assetName of producerAssets) {

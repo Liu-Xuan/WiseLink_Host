@@ -1,7 +1,7 @@
 # Document Management hosted source
 
 - source owner repository: `document-management-app-q2d`
-- source owner commit: `fcab253b17dd1d118232fdbb72f4e0fe2d295f0e`
+- source owner commit: `7eec76ae972312ecb81bbce569140df6c782fbba`
 - exported with: `npm run export:hosted-module -- --output <empty-directory>`
 - host app candidate: `app_17bzc551rsg`
 - module role: versioned internal source bundle; not a second user application
@@ -48,7 +48,9 @@ reused only after exact byte verification, with zero upload and zero delete. The
 passes the provider-canonical path without a leading slash to the official 0.1.2 upload preflight;
 the caller-facing Catalog receipt continues to use the leading-slash path.
 
-The `fcab253` owner refresh adds the controlled, catalog-only `OEM_REFERENCE` family and the
-`ISSUE <number>` revision ordering used by Airbus FAST. It deliberately returns no Document
-Management parser adapter release: parser routing remains a canonical-host concern and cannot be
-selected from a filename or an unconfirmed discovery result.
+The owner chain from `fcab253` through `7eec76a` adds the controlled, catalog-only
+`OEM_REFERENCE` family and proves the `ISSUE <number>` revision ordering used by Airbus FAST.
+`AIRBUS-FAST` is the stable document code; ISSUE 61 and ISSUE 62 are two revisions of that same
+family/document. The bundle deliberately returns no Document Management parser adapter release:
+parser routing remains a canonical-host concern and cannot be selected from a filename or an
+unconfirmed discovery result.

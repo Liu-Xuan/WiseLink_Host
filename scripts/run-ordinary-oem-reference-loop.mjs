@@ -8,17 +8,74 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const importBuilt = (relativePath) =>
   import(pathToFileURL(resolve(root, 'dist/server', relativePath)));
 
-const DOCUMENT_ID = 'document_3ca189e09878d76f24477bf1';
-const DOCUMENT_VERSION_ID = 'document_version_ad56cbdaec487e554130afe4';
-const SOURCE_ARTIFACT_ID = 'source_artifact_56333e4df067698cc0ce9689';
-const SOURCE_SHA256 =
-  '05cf88265253e63a16bb3d850c2bff5a6b620088a245b316fcdbddcc6a8c0dd8';
-const SOURCE_BYTE_LENGTH = 10_036_964;
-const PACKAGE_ID =
-  'urn:techpub:package:v1:sha256:88824f5f49f28b1f80ad2fc3df7e12b87bee7510f134c06323a5d8ced1b48797';
-const PACKAGE_ARTIFACT_SHA256 =
-  'a079ebf1333ec09eb9d74d3024e6e3d1d7a0f02d243188be824f8b0fb37735ab';
-const PACKAGE_BYTE_LENGTH = 493_117;
+const DOCUMENT_ID = 'document_ca48ac1dc4b0642ef85c97b6';
+const FAMILY_ID = 'family_10e75a738b3d197ddab94307';
+const DOCUMENT_CODE = 'AIRBUS-FAST';
+const MAPPING_PROFILE = 'frozen.2-controlled-oem-reference.1';
+const VERSIONS = [
+  {
+    issue: 61,
+    businessRevision: 'ISSUE 61',
+    pdfPath: '/private/tmp/airbus-fast61-april2018.pdf',
+    fileName: 'airbus-fast61-april2018.pdf',
+    sourcePath: 'controlled-oem-reference/airbus-fast61-april2018.pdf',
+    providerObjectId: 'local-oem-reference-fast61-issue61',
+    documentVersionId: 'document_version_7d5aca8851db8ea41b89003d',
+    sourceArtifactId: 'source_artifact_56333e4df067698cc0ce9689',
+    sourceSha256:
+      '05cf88265253e63a16bb3d850c2bff5a6b620088a245b316fcdbddcc6a8c0dd8',
+    sourceByteLength: 10_036_964,
+    packageFixture:
+      'airbus-fast61-oem-reference.frozen2.unified-package.json',
+    artifactRecordFixture:
+      'airbus-fast61-oem-reference.frozen2.artifact-record.json',
+    packageId:
+      'urn:techpub:package:v1:sha256:c2e4716fdde0ca6d29673d19ec21288d0030ac07a6d511081e7d857400897aa3',
+    packageArtifactSha256:
+      'abd9b428864cd47bb28617c251d7504095add87b84388b4605fd80e421af9f48',
+    packageByteLength: 493_111,
+    semanticHash:
+      'sha256:439154c42b51a2be6d2fdbbf1e5546f2054fe881ddb9384a76ce079531cc86db',
+    provenanceHash:
+      'sha256:226eefc3fb5f7cbc451c2d4e9165fa31781395853e5a84c52bb94d953a9671be',
+    coverageHash:
+      'sha256:efa78d0e362756ced700b1be75a3505513fb7c62ad94c19180eb093f5c7516db',
+    workItemId: 'WI-LOCAL-OEM-REFERENCE-FAST61',
+    requestId: 'REQ-LOCAL-OEM-REFERENCE-FAST61',
+    attemptId: 'ATT-LOCAL-OEM-REFERENCE-FAST61',
+  },
+  {
+    issue: 62,
+    businessRevision: 'ISSUE 62',
+    pdfPath: '/private/tmp/airbus-fast62-october2018.pdf',
+    fileName: 'airbus-fast62-october2018.pdf',
+    sourcePath: 'controlled-oem-reference/airbus-fast62-october2018.pdf',
+    providerObjectId: 'local-oem-reference-fast62-issue62',
+    documentVersionId: 'document_version_c71fbc457cdc5e7a05725a4d',
+    sourceArtifactId: 'source_artifact_cbf15ea1ac0b2575ed939d45',
+    sourceSha256:
+      '7b793ed00e10ae8513de6972cce06128986c938b565986f49aa02405fab4f380',
+    sourceByteLength: 7_179_982,
+    packageFixture:
+      'airbus-fast62-oem-reference.frozen2.unified-package.json',
+    artifactRecordFixture:
+      'airbus-fast62-oem-reference.frozen2.artifact-record.json',
+    packageId:
+      'urn:techpub:package:v1:sha256:bd7d7f707b6ac6518d99de187c1f1295f70df5d12714d4eab000f6025cb354a2',
+    packageArtifactSha256:
+      '305aff0102c82cfac5609d99ca47b2dd574a05d27b5a3ba889630a979fbfb2ec',
+    packageByteLength: 508_172,
+    semanticHash:
+      'sha256:b1ff0474818ea8a33867e3c121d74c1b65c71665d885937f905b68e607af9de6',
+    provenanceHash:
+      'sha256:cafcfb9ee525a07ded948f7996e8d71a69924141a447321481dabbc8212298f8',
+    coverageHash:
+      'sha256:6e3bf643f863a45d463c7fa04c3e7f6e4da05f95d52cac3e83d959582f34bd87',
+    workItemId: 'WI-LOCAL-OEM-REFERENCE-FAST62',
+    requestId: 'REQ-LOCAL-OEM-REFERENCE-FAST62',
+    attemptId: 'ATT-LOCAL-OEM-REFERENCE-FAST62',
+  },
+];
 const APP_ORIGIN =
   'https://hv5zjf4j8yb.feishuapp.com/app/app_17bzc551rsg';
 
@@ -95,57 +152,71 @@ function metadata(bucketId, filePath, stored) {
 }
 
 class LocalReservationRepository {
-  reservation = null;
+  reservations = new Map();
 
   async reserve(input) {
-    if (!this.reservation) {
-      this.reservation = {
-        workItemId: 'WI-LOCAL-OEM-REFERENCE-FAST61',
-        requestId: 'REQ-LOCAL-OEM-REFERENCE-FAST61',
-        attemptId: 'ATT-LOCAL-OEM-REFERENCE-FAST61',
+    const version = VERSIONS.find(
+      (candidate) => candidate.documentVersionId === input.documentVersionId,
+    );
+    assert.ok(version);
+    const existing = this.reservations.get(input.documentVersionId);
+    if (!existing) {
+      const reservation = {
+        workItemId: version.workItemId,
+        requestId: version.requestId,
+        attemptId: version.attemptId,
         identity: structuredClone(input),
       };
-      return { ...this.reservation, created: true };
+      this.reservations.set(input.documentVersionId, reservation);
+      return { ...reservation, created: true };
     }
-    assert.deepEqual(input, this.reservation.identity);
-    return { ...this.reservation, created: false };
+    assert.deepEqual(input, existing.identity);
+    return { ...existing, created: false };
   }
 }
 
 class LocalProjectionRegistrar {
-  projection = null;
+  projections = new Map();
   producerStateTransitions = 0;
 
   async loadOrCreate(seed) {
-    if (!this.projection) {
-      this.projection = { ...structuredClone(seed), revision: 1 };
+    if (!this.projections.has(seed.workItemId)) {
+      this.projections.set(seed.workItemId, {
+        ...structuredClone(seed),
+        revision: 1,
+      });
     }
-    return structuredClone(this.projection);
+    return structuredClone(this.projections.get(seed.workItemId));
   }
 
-  async compareAndSet({ expectedRevision, next }) {
-    assert.equal(this.projection.revision, expectedRevision);
-    this.projection = {
+  async compareAndSet({ workItemId, expectedRevision, next }) {
+    const projection = this.projections.get(workItemId);
+    assert.ok(projection);
+    assert.equal(projection.revision, expectedRevision);
+    const updated = {
       ...structuredClone(next),
       revision: expectedRevision + 1,
     };
+    this.projections.set(workItemId, updated);
     this.producerStateTransitions += 1;
-    return structuredClone(this.projection);
+    return structuredClone(updated);
   }
 
   async getExact(input) {
-    assert.equal(this.projection.workItemId, input.workItemId);
-    assert.equal(this.projection.requestId, input.requestId);
+    const projection = this.projections.get(input.workItemId);
+    assert.ok(projection);
+    assert.equal(projection.requestId, input.requestId);
     assert.equal(
-      this.projection.source.documentVersionId,
+      projection.source.documentVersionId,
       input.documentVersionId,
     );
-    return structuredClone(this.projection);
+    return structuredClone(projection);
   }
 
   async getByWorkItemId(workItemId) {
-    assert.equal(this.projection.workItemId, workItemId);
-    return structuredClone(this.projection);
+    const projection = this.projections.get(workItemId);
+    assert.ok(projection);
+    return structuredClone(projection);
   }
 }
 
@@ -186,72 +257,94 @@ const [
   importBuilt('modules/unified-reader/unified-reader.service.js'),
 ]);
 
-const pdfPath = '/private/tmp/airbus-fast61-april2018.pdf';
-const pdfBytes = await readFile(pdfPath);
-assert.equal(pdfBytes.byteLength, SOURCE_BYTE_LENGTH);
-const packageFixtureBytes = await readFile(
-  resolve(
-    root,
-    'test/fixtures/airbus-fast61-oem-reference.frozen2.unified-package.json',
-  ),
-);
-const packageFixture = JSON.parse(packageFixtureBytes.toString('utf8'));
-const artifactRecord = JSON.parse(
-  await readFile(
-    resolve(
-      root,
-      'test/fixtures/airbus-fast61-oem-reference.frozen2.artifact-record.json',
-    ),
-    'utf8',
-  ),
-);
-assert.equal(packageFixtureBytes.byteLength, PACKAGE_BYTE_LENGTH);
-assert.equal(
-  createHash('sha256').update(packageFixtureBytes).digest('hex'),
-  PACKAGE_ARTIFACT_SHA256,
-);
-assert.equal(packageFixture.packageId, PACKAGE_ID);
-assert.equal(packageFixture.contentUnits.length, 84);
-assert.equal(packageFixture.sourceRefs.length, 80);
-assert.equal(packageFixture.sourceSegments.length, 40);
-assert.equal(artifactRecord.packageId, PACKAGE_ID);
-assert.equal(artifactRecord.contentHash, PACKAGE_ID.replace('urn:techpub:package:v1:', ''));
-assert.equal(artifactRecord.artifactHash, `sha256:${PACKAGE_ARTIFACT_SHA256}`);
-assert.equal(artifactRecord.byteLength, PACKAGE_BYTE_LENGTH);
-const sourcePath = 'controlled-oem-reference/airbus-fast61-april2018.pdf';
-const providerObjectId = 'local-oem-reference-fast61-issue61';
 const fileService = new LocalFileService();
-fileService.seed({
-  bucketId: fileService.defaultBucket,
-  filePath: sourcePath,
-  bytes: pdfBytes,
-  fileName: 'airbus-fast61-april2018.pdf',
-  contentType: 'application/pdf',
-  id: providerObjectId,
-});
+const fixtureByVersion = new Map();
+const resolvedByVersion = new Map();
 
-const resolved = {
-  version: {
-    documentId: DOCUMENT_ID,
-    documentVersionId: DOCUMENT_VERSION_ID,
-    sourceArtifactId: SOURCE_ARTIFACT_ID,
-    pdfSha256: SOURCE_SHA256,
-    byteLength: SOURCE_BYTE_LENGTH,
-  },
-  family: {
-    familyId: 'family_6d2f5ae200f2999e8874188a',
-    documentFamily: 'OEM_REFERENCE',
-  },
-  artifact: {
+for (const version of VERSIONS) {
+  const sourceBytes = await readFile(version.pdfPath);
+  assert.equal(sourceBytes.byteLength, version.sourceByteLength);
+  assert.equal(
+    createHash('sha256').update(sourceBytes).digest('hex'),
+    version.sourceSha256,
+  );
+  const packageBytes = await readFile(
+    resolve(root, 'test/fixtures', version.packageFixture),
+  );
+  const packageFixture = JSON.parse(packageBytes.toString('utf8'));
+  const artifactRecord = JSON.parse(
+    await readFile(
+      resolve(root, 'test/fixtures', version.artifactRecordFixture),
+      'utf8',
+    ),
+  );
+  assert.equal(packageBytes.byteLength, version.packageByteLength);
+  assert.equal(
+    createHash('sha256').update(packageBytes).digest('hex'),
+    version.packageArtifactSha256,
+  );
+  assert.equal(packageFixture.packageId, version.packageId);
+  assert.equal(packageFixture.integrity.semanticHash, version.semanticHash);
+  assert.equal(packageFixture.integrity.provenanceHash, version.provenanceHash);
+  assert.equal(packageFixture.integrity.coverageHash, version.coverageHash);
+  assert.equal(packageFixture.contentUnits.length, 84);
+  assert.equal(packageFixture.sourceRefs.length, 80);
+  assert.equal(packageFixture.sourceSegments.length, 40);
+  assert.equal(packageFixture.document.identifiers[0].value, DOCUMENT_CODE);
+  assert.equal(
+    packageFixture.document.revision.label.value,
+    version.businessRevision,
+  );
+  assert.equal(artifactRecord.packageId, version.packageId);
+  assert.equal(
+    artifactRecord.contentHash,
+    version.packageId.replace('urn:techpub:package:v1:', ''),
+  );
+  assert.equal(
+    artifactRecord.artifactHash,
+    `sha256:${version.packageArtifactSha256}`,
+  );
+  assert.equal(artifactRecord.byteLength, version.packageByteLength);
+  fileService.seed({
     bucketId: fileService.defaultBucket,
-    filePath: sourcePath,
-    providerObjectId,
-    providerVersionId: providerObjectId,
-  },
-};
+    filePath: version.sourcePath,
+    bytes: sourceBytes,
+    fileName: version.fileName,
+    contentType: 'application/pdf',
+    id: version.providerObjectId,
+  });
+  fixtureByVersion.set(version.documentVersionId, {
+    packageFixture,
+    artifactRecord,
+  });
+  resolvedByVersion.set(version.documentVersionId, {
+    version: {
+      documentId: DOCUMENT_ID,
+      documentVersionId: version.documentVersionId,
+      sourceArtifactId: version.sourceArtifactId,
+      pdfSha256: version.sourceSha256,
+      byteLength: version.sourceByteLength,
+    },
+    family: {
+      familyId: FAMILY_ID,
+      documentFamily: 'OEM_REFERENCE',
+      canonicalDocumentNumber: DOCUMENT_CODE,
+      currentDocumentVersionId: VERSIONS[1].documentVersionId,
+      currentGeneration: 2,
+    },
+    artifact: {
+      bucketId: fileService.defaultBucket,
+      filePath: version.sourcePath,
+      providerObjectId: version.providerObjectId,
+      providerVersionId: version.providerObjectId,
+    },
+  });
+}
+
 const resolver = {
   async resolve(documentVersionId) {
-    assert.equal(documentVersionId, DOCUMENT_VERSION_ID);
+    const resolved = resolvedByVersion.get(documentVersionId);
+    assert.ok(resolved);
     return structuredClone(resolved);
   },
 };
@@ -279,10 +372,14 @@ const exactProducer = new ExactFtdFrozen2PdfProducerAdapter(
   resolver,
   validator,
 );
-let producerRunCount = 0;
+const producerRunCounts = new Map();
 const producer = {
   async producePdf(request) {
-    producerRunCount += 1;
+    const documentVersionId = request.source.documentVersionId;
+    producerRunCounts.set(
+      documentVersionId,
+      (producerRunCounts.get(documentVersionId) ?? 0) + 1,
+    );
     return exactProducer.producePdf(request);
   },
 };
@@ -331,114 +428,184 @@ const actor = {
   roles: ['authenticated'],
   env: 'local',
 };
-const request = { documentVersionId: DOCUMENT_VERSION_ID, query: 'FAST' };
-const first = await workItems.parsePdf(request, actor);
-if (first.result.status !== 'CANDIDATE_VERTICAL_VERIFIED') {
-  throw new Error(`OEM_REFERENCE_FIRST_LOOP_FAILED:${JSON.stringify(first.result.workItem)}`);
+const acceptedVersions = [];
+
+for (const version of VERSIONS) {
+  const request = {
+    documentVersionId: version.documentVersionId,
+    query: 'FAST',
+  };
+  const first = await workItems.parsePdf(request, actor);
+  if (first.result.status !== 'CANDIDATE_VERTICAL_VERIFIED') {
+    throw new Error(
+      `OEM_REFERENCE_LOOP_FAILED:${version.issue}:${JSON.stringify(first.result.workItem)}`,
+    );
+  }
+  const repeat = await workItems.parsePdf(request, actor);
+  const page = await vertical.page(
+    { workItemId: first.result.workItem.workItemId, query: 'FAST' },
+    actor,
+  );
+  const fixture = fixtureByVersion.get(version.documentVersionId);
+  assert.ok(fixture);
+  assert.equal(first.workItemCreated, true);
+  assert.equal(repeat.workItemReused, true);
+  assert.equal(repeat.result.workItem.workItemId, version.workItemId);
+  assert.equal(first.result.workItem.workItemId, version.workItemId);
+  assert.equal(
+    first.result.workItem.source.documentVersionId,
+    version.documentVersionId,
+  );
+  assert.equal(
+    first.result.workItem.classification.normalizedFamily,
+    'OEM_REFERENCE',
+  );
+  assert.equal(
+    first.result.workItem.classification.parserProfileId,
+    'parser-profile:generic.document@1.0.0',
+  );
+  assert.equal(first.result.workItem.package.packageId, version.packageId);
+  assert.equal(
+    first.result.workItem.package.artifact.sha256,
+    version.packageArtifactSha256,
+  );
+  assert.equal(
+    first.result.workItem.package.artifact.byteLength,
+    version.packageByteLength,
+  );
+  assert.equal(first.result.workItem.package.semanticHash, version.semanticHash);
+  assert.equal(
+    first.result.workItem.package.provenanceHash,
+    version.provenanceHash,
+  );
+  assert.equal(first.result.workItem.package.coverageHash, version.coverageHash);
+  assert.equal(first.result.workItem.package.resultStatus, 'partial');
+  assert.equal(first.result.workItem.package.contentUnitCount, 84);
+  assert.equal(first.result.workItem.package.sourceRefCount, 80);
+  assert.deepEqual(first.result.workItem.package.documentIdentity, {
+    documentCode: DOCUMENT_CODE,
+    businessRevision: version.businessRevision,
+  });
+  assert.deepEqual(first.result.workItem.package.usagePolicy, {
+    presentationMode: 'REFERENCE_ONLY',
+    qualityStatus: 'NEEDS_REVIEW',
+    applicability: {
+      sourceExpressionCount: 0,
+      normalizedCandidateCount: 0,
+      assignmentCount: 0,
+    },
+    assessmentAutoAdoptionAllowed: false,
+    aeoAutoAdoptionAllowed: false,
+    projectionSource: 'IMMUTABLE_PACKAGE_ACTUAL_BYTES',
+  });
+  assert.equal(producerRunCounts.get(version.documentVersionId), 1);
+  assert.ok(page.queryResults.length > 0);
+  assert.ok(
+    page.queryResults.every((item) => item.sourceRefIds.length > 0),
+  );
+  assert.equal(page.workItem.workItemId, version.workItemId);
+  assert.equal(page.workItem.package.packageId, version.packageId);
+  assert.equal(
+    page.entry.deepLinkPath,
+    `${APP_ORIGIN}/work-items/${version.workItemId}/documents`,
+  );
+  assert.equal('assessment' in first.result.workItem, false);
+  assert.equal('aeo' in first.result.workItem, false);
+  acceptedVersions.push({ version, first, repeat, page, fixture });
 }
-const second = await workItems.parsePdf(request, actor);
-const sourcePage = await vertical.page(
-  { workItemId: first.result.workItem.workItemId, query: 'FAST' },
+
+const historicalIssue61Page = await vertical.page(
+  { workItemId: VERSIONS[0].workItemId, query: 'FAST' },
   actor,
 );
-
-assert.equal(first.workItemCreated, true);
-assert.equal(second.workItemReused, true);
-assert.equal(first.result.status, 'CANDIDATE_VERTICAL_VERIFIED');
-assert.equal(second.result.workItem.workItemId, first.result.workItem.workItemId);
-assert.equal(first.result.workItem.source.documentVersionId, DOCUMENT_VERSION_ID);
-assert.equal(first.result.workItem.classification.normalizedFamily, 'OEM_REFERENCE');
-assert.equal(first.result.workItem.package.packageId, PACKAGE_ID);
-assert.equal(first.result.workItem.package.artifact.sha256, PACKAGE_ARTIFACT_SHA256);
-assert.equal(first.result.workItem.package.artifact.byteLength, PACKAGE_BYTE_LENGTH);
-assert.equal(first.result.workItem.package.resultStatus, 'partial');
-assert.equal(first.result.workItem.package.contentUnitCount, 84);
-assert.equal(first.result.workItem.package.sourceRefCount, 80);
-assert.deepEqual(first.result.workItem.package.usagePolicy, {
-  presentationMode: 'REFERENCE_ONLY',
-  qualityStatus: 'NEEDS_REVIEW',
-  applicability: {
-    sourceExpressionCount: 0,
-    normalizedCandidateCount: 0,
-    assignmentCount: 0,
-  },
-  assessmentAutoAdoptionAllowed: false,
-  aeoAutoAdoptionAllowed: false,
-  projectionSource: 'IMMUTABLE_PACKAGE_ACTUAL_BYTES',
-});
-assert.equal(producerRunCount, 1);
-assert.equal(registrar.producerStateTransitions, 2);
-assert.ok(sourcePage.queryResults.length > 0);
-assert.ok(
-  sourcePage.queryResults.every((item) => item.sourceRefIds.length > 0),
+assert.equal(
+  historicalIssue61Page.workItem.source.documentVersionId,
+  VERSIONS[0].documentVersionId,
 );
 assert.equal(
-  sourcePage.entry.deepLinkPath,
-  `${APP_ORIGIN}/work-items/WI-LOCAL-OEM-REFERENCE-FAST61/documents`,
+  historicalIssue61Page.workItem.package.packageId,
+  VERSIONS[0].packageId,
 );
-assert.equal('assessment' in first.result.workItem, false);
-assert.equal('aeo' in first.result.workItem, false);
-assert.equal(fileService.uploadCalls.length, 1);
+assert.notEqual(VERSIONS[0].workItemId, VERSIONS[1].workItemId);
+assert.notEqual(VERSIONS[0].documentVersionId, VERSIONS[1].documentVersionId);
+assert.equal(registrar.producerStateTransitions, 4);
+assert.equal(fileService.uploadCalls.length, 2);
 assert.equal(fileService.removeCalls.length, 0);
 
 process.stdout.write(
   `${JSON.stringify(
     {
-      status: 'ORDINARY_OEM_REFERENCE_LOOP_PASS',
+      status: 'ORDINARY_OEM_REFERENCE_VERSION_CHAIN_PASS',
       formalEntry: {
         schema: 'wiselink.v3_1.document_management.parse_request_export.v1',
         documentManagementOwnerCommit:
-          'fcab253b17dd1d118232fdbb72f4e0fe2d295f0e',
+          '7eec76ae972312ecb81bbce569140df6c782fbba',
         parserCommit: '454957b9f1559ea9bde72c32524f14507794cfdc',
         unifiedAcceptanceCommit:
-          'bbc2824bdf4cb9ce9c82f1be53fd24dd768966b5',
+          '916e647a0edd7d02c77433e4765ce42237a369c9',
         formalRequestCommit:
           'bb836ed6e97383f651a57657d7361fa64d898126',
+        mappingProfile: MAPPING_PROFILE,
       },
-      source: {
-        path: pdfPath,
-        byteLength: pdfBytes.byteLength,
-        sha256: SOURCE_SHA256,
-        documentVersionId: DOCUMENT_VERSION_ID,
+      documentChain: {
+        familyId: FAMILY_ID,
+        documentId: DOCUMENT_ID,
+        documentCode: DOCUMENT_CODE,
+        currentGeneration: 2,
+        currentDocumentVersionId: VERSIONS[1].documentVersionId,
+        historicalDocumentVersionId: VERSIONS[0].documentVersionId,
+        historicalWorkItemStillReadable: true,
       },
-      workItem: {
-        workItemId: first.result.workItem.workItemId,
-        firstCreated: first.workItemCreated,
-        repeatReused: second.workItemReused,
-        producerRunCount,
-        phase: first.result.workItem.phase,
-      },
-      package: {
-        packageId: first.result.workItem.package.packageId,
-        artifact: first.result.workItem.package.artifact,
-        resultStatus: first.result.workItem.package.resultStatus,
-        contentUnitCount: first.result.workItem.package.contentUnitCount,
-        sourceRefCount: first.result.workItem.package.sourceRefCount,
-        sourceSegmentCount: packageFixture.sourceSegments.length,
-        usagePolicy: first.result.workItem.package.usagePolicy,
-        fullValidator: first.result.workItem.package.fullValidatorProof,
-        artifactRecord: {
-          schema: artifactRecord.$schema,
-          artifactHash: artifactRecord.artifactHash,
-          byteLength: artifactRecord.byteLength,
-          contentHash: artifactRecord.contentHash,
-          packageId: artifactRecord.packageId,
+      versions: acceptedVersions.map(({ version, first, repeat, page, fixture }) => ({
+        issue: version.issue,
+        businessRevision: version.businessRevision,
+        source: {
+          path: version.pdfPath,
+          byteLength: version.sourceByteLength,
+          sha256: version.sourceSha256,
+          documentVersionId: version.documentVersionId,
         },
-      },
-      reader: {
-        applicabilityObjects:
-          first.result.workItem.package.usagePolicy.applicability,
-        sourceBoundResultCount: sourcePage.queryResults.length,
-        allReturnedUnitsSourceBound: sourcePage.queryResults.every(
-          (item) => item.sourceRefIds.length > 0,
-        ),
-      },
-      page: {
-        deepLink: sourcePage.entry.deepLinkPath,
-        sameWorkItem: sourcePage.workItem.workItemId,
-        referenceOnly: true,
-        qualityStatus: 'NEEDS_REVIEW',
-      },
+        workItem: {
+          workItemId: first.result.workItem.workItemId,
+          firstCreated: first.workItemCreated,
+          repeatReused: repeat.workItemReused,
+          producerRunCount: producerRunCounts.get(version.documentVersionId),
+          phase: first.result.workItem.phase,
+        },
+        package: {
+          packageId: first.result.workItem.package.packageId,
+          artifact: first.result.workItem.package.artifact,
+          resultStatus: first.result.workItem.package.resultStatus,
+          documentIdentity: first.result.workItem.package.documentIdentity,
+          semanticHash: first.result.workItem.package.semanticHash,
+          provenanceHash: first.result.workItem.package.provenanceHash,
+          coverageHash: first.result.workItem.package.coverageHash,
+          contentUnitCount: first.result.workItem.package.contentUnitCount,
+          sourceRefCount: first.result.workItem.package.sourceRefCount,
+          sourceSegmentCount: fixture.packageFixture.sourceSegments.length,
+          usagePolicy: first.result.workItem.package.usagePolicy,
+          fullValidator: first.result.workItem.package.fullValidatorProof,
+          artifactRecord: {
+            schema: fixture.artifactRecord.$schema,
+            artifactHash: fixture.artifactRecord.artifactHash,
+            byteLength: fixture.artifactRecord.byteLength,
+            contentHash: fixture.artifactRecord.contentHash,
+            packageId: fixture.artifactRecord.packageId,
+          },
+        },
+        reader: {
+          sourceBoundResultCount: page.queryResults.length,
+          allReturnedUnitsSourceBound: page.queryResults.every(
+            (item) => item.sourceRefIds.length > 0,
+          ),
+        },
+        page: {
+          deepLink: page.entry.deepLinkPath,
+          sameWorkItem: page.workItem.workItemId,
+          referenceOnly: true,
+          qualityStatus: 'NEEDS_REVIEW',
+        },
+      })),
       authority: {
         assessmentAutoAdoption: false,
         aeoAutoAdoption: false,
