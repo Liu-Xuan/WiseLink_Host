@@ -25,6 +25,10 @@ function asDate(value: string | Date) {
   return value instanceof Date ? value : new Date(value);
 }
 
+function asSqlTimestamp(value: string | Date) {
+  return asDate(value).toISOString();
+}
+
 function asAuditUser(userId: string, alias: string) {
   return sql<string>`ROW(${userId})::user_profile`.as(alias);
 }
@@ -773,12 +777,14 @@ export class MiaodaHostedDocumentCatalog {
             familyId: insertedFamily.familyId,
             documentFamily: sql<string>`${command.document.documentFamily}`.as('document_family'),
             status: sql<string>`${command.document.status}`.as('status'),
-            createdAt: sql<Date>`${asDate(command.document.createdAt)}`.as('created_at'),
+            createdAt: sql<string>`${asSqlTimestamp(command.document.createdAt)}`.as(
+              'created_at',
+            ),
             createdBy: asAuditUser(
               command.documentVersion.committedBy,
               '_created_by',
             ),
-            updatedAt: sql<Date>`${asDate(command.document.createdAt)}`.as(
+            updatedAt: sql<string>`${asSqlTimestamp(command.document.createdAt)}`.as(
               '_updated_at',
             ),
             updatedBy: asAuditUser(
@@ -836,17 +842,25 @@ export class MiaodaHostedDocumentCatalog {
           pdfSha256: sql<string>`${command.documentVersion.pdfSha256}`.as('pdf_sha256'),
           byteLength: sql<number>`${command.documentVersion.byteLength}`.as('byte_length'),
           mediaType: sql<string>`${command.documentVersion.mediaType}`.as('media_type'),
-          lifecycleStatus: sql<string>`COMMITTED_IMMUTABLE`.as('lifecycle_status'),
-          committedAt: sql<Date>`${asDate(command.documentVersion.committedAt)}`.as('committed_at'),
+          lifecycleStatus: sql<string>`${'COMMITTED_IMMUTABLE'}`.as(
+            'lifecycle_status',
+          ),
+          committedAt: sql<string>`${asSqlTimestamp(
+            command.documentVersion.committedAt,
+          )}`.as('committed_at'),
           committedBy: sql<string>`${command.documentVersion.committedBy}`.as('committed_by'),
-          createdAt: sql<Date>`${asDate(command.documentVersion.committedAt)}`.as(
+          createdAt: sql<string>`${asSqlTimestamp(
+            command.documentVersion.committedAt,
+          )}`.as(
             '_created_at',
           ),
           createdBy: asAuditUser(
             command.documentVersion.committedBy,
             '_created_by',
           ),
-          updatedAt: sql<Date>`${asDate(command.documentVersion.committedAt)}`.as(
+          updatedAt: sql<string>`${asSqlTimestamp(
+            command.documentVersion.committedAt,
+          )}`.as(
             '_updated_at',
           ),
           updatedBy: asAuditUser(
@@ -869,17 +883,23 @@ export class MiaodaHostedDocumentCatalog {
         previousGeneration: sql<number>`${command.observedCurrentGeneration}`.as('previous_generation'),
         nextGeneration: sql<number>`${command.observedCurrentGeneration + 1}`.as('next_generation'),
         reason: sql<string>`${command.currentnessDecision.reason}`.as('reason'),
-        decidedAt: sql<Date>`${asDate(command.currentnessDecision.decidedAt)}`.as('decided_at'),
+        decidedAt: sql<string>`${asSqlTimestamp(
+          command.currentnessDecision.decidedAt,
+        )}`.as('decided_at'),
         decidedBy: sql<string>`${command.currentnessDecision.decidedBy}`.as('decided_by'),
         preflightId: sql<string>`${command.preflightId}`.as('preflight_id'),
-        createdAt: sql<Date>`${asDate(command.currentnessDecision.decidedAt)}`.as(
+        createdAt: sql<string>`${asSqlTimestamp(
+          command.currentnessDecision.decidedAt,
+        )}`.as(
           '_created_at',
         ),
         createdBy: asAuditUser(
           command.currentnessDecision.decidedBy,
           '_created_by',
         ),
-        updatedAt: sql<Date>`${asDate(command.currentnessDecision.decidedAt)}`.as(
+        updatedAt: sql<string>`${asSqlTimestamp(
+          command.currentnessDecision.decidedAt,
+        )}`.as(
           '_updated_at',
         ),
         updatedBy: asAuditUser(
