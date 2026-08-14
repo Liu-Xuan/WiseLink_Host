@@ -136,6 +136,15 @@ try {
 assert.ok(observedError instanceof Error);
 assert.doesNotMatch(observedError.message, /Insert select error/u);
 assert.match(observedError.message, /^Failed query:/u);
+assert.equal(
+  observedError.params.filter((value) => value instanceof Date).length,
+  0,
+  'insert-select parameters must not expose Date objects to postgres.js',
+);
+assert.ok(
+  observedError.params.includes('COMMITTED_IMMUTABLE'),
+  'lifecycle status must be a bound string value, not an SQL identifier',
+);
 assert.equal(withCall, 2);
 
 process.stdout.write(`${JSON.stringify({
@@ -146,6 +155,8 @@ process.stdout.write(`${JSON.stringify({
     'dm_document_version',
     'dm_currentness_decision',
   ],
+  dateParametersPassedToPostgresJs: 0,
+  lifecycleStatusParameterized: true,
   databaseMutationPerformed: false,
   onlineMutationPerformed: false,
 }, null, 2)}\n`);
