@@ -13,6 +13,8 @@ import { CanonicalEntryFacadeService } from './canonical-entry-facade.service';
 import { CanonicalHostVerticalService } from './canonical-host-vertical.service';
 import { CanonicalHostController } from './canonical-host.controller';
 import { CanonicalFailureRecordingService } from './canonical-failure-recording.service';
+import { ExactFtdFrozen2PdfProducerAdapter } from './exact-ftd-frozen2-pdf-producer.adapter';
+import { OrdinaryFailureValidationWriteAuthorizationAdapter } from './ordinary-failure-validation-write-authorization.adapter';
 import {
   CANONICAL_AUTHORIZATION,
   CANONICAL_FAILURE_VALIDATION_WRITE_AUTHORIZATION,
@@ -24,6 +26,10 @@ import {
   CANONICAL_WORK_ITEM_REGISTRAR,
 } from './canonical-host.constants';
 import type { CanonicalHostBindingState } from './canonical-host.types';
+import { MiaodaCanonicalWorkItemRegistrarAdapter } from '../work-item/miaoda-canonical-work-item-registrar.adapter';
+import { MiaodaDocumentVersionSourceResolver } from '../work-item/miaoda-document-version-source.resolver';
+import { MiaodaWorkItemRepository } from '../work-item/miaoda-work-item.repository';
+import { OrdinaryWorkItemService } from '../work-item/ordinary-work-item.service';
 import { UnconfiguredCanonicalPdfProducerAdapter } from './unconfigured-canonical-pdf-producer.adapter';
 import { UnconfiguredCanonicalMiaodaAppBindingAdapter } from './unconfigured-canonical-miaoda-app-binding.adapter';
 import { UnconfiguredCanonicalAuthorizationAdapter } from './unconfigured-canonical-authorization.adapter';
@@ -49,6 +55,12 @@ export interface CanonicalHostModuleOptions {
     CanonicalEntryFacadeService,
     CanonicalFailureRecordingService,
     CanonicalHostVerticalService,
+    ExactFtdFrozen2PdfProducerAdapter,
+    MiaodaWorkItemRepository,
+    MiaodaDocumentVersionSourceResolver,
+    MiaodaCanonicalWorkItemRegistrarAdapter,
+    OrdinaryWorkItemService,
+    OrdinaryFailureValidationWriteAuthorizationAdapter,
   ],
 })
 export class CanonicalHostModule {
@@ -95,8 +107,7 @@ export class CanonicalHostModule {
         options.pdfProducerProvider &&
         options.authorizationProvider &&
         options.permissionSnapshotProvider &&
-        options.miaodaAppBindingProvider &&
-        options.failureValidationWriteAuthorizationProvider
+        options.miaodaAppBindingProvider
           ? 'HOST_CONFIGURED'
           : 'DEFAULT_UNCONFIGURED',
       workItemRegistrarConfigured: Boolean(options.workItemRegistrarProvider),
@@ -133,6 +144,12 @@ export class CanonicalHostModule {
         CanonicalEntryFacadeService,
         CanonicalFailureRecordingService,
         CanonicalHostVerticalService,
+        ExactFtdFrozen2PdfProducerAdapter,
+        MiaodaWorkItemRepository,
+        MiaodaDocumentVersionSourceResolver,
+        MiaodaCanonicalWorkItemRegistrarAdapter,
+        OrdinaryWorkItemService,
+        OrdinaryFailureValidationWriteAuthorizationAdapter,
       ],
       exports: [
         CanonicalEntryFacadeService,

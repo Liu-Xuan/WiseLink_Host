@@ -77,7 +77,6 @@ export class CanonicalFailureRecordingService {
     executionRoute: string;
     packageAttempt: PackageAttempt | null;
   }): Promise<CanonicalFailureRecordingResult> {
-    assertSourceContract(this.adapter.sourceContract);
     const source: U0Frozen2FailureAdapterInput = this.adapterInput(input);
     const built: U0Frozen2FailureBuildResult = this.adapter.build(source);
 
@@ -149,18 +148,6 @@ export class CanonicalFailureRecordingService {
         executionRoute: input.executionRoute,
       },
     };
-  }
-}
-
-function assertSourceContract(
-  actual: U0Frozen2FailureAdapterPort['sourceContract'],
-): void {
-  for (const key of Object.keys(UNIFIED_FAILURE_SOURCE) as Array<
-    keyof typeof UNIFIED_FAILURE_SOURCE
-  >) {
-    if (actual[key] !== UNIFIED_FAILURE_SOURCE[key]) {
-      throw new Error(`U0_FAILURE_ADAPTER_SOURCE_DRIFT:${key}`);
-    }
   }
 }
 

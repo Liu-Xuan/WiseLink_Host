@@ -6,7 +6,7 @@ export interface ReadOnlyProbeResult {
   body: unknown;
 }
 
-export interface Phase2fValidationResult {
+export interface FirstFtdVerticalResult {
   path: string;
   status: number;
   code: string | null;
@@ -16,11 +16,14 @@ export interface Phase2fValidationResult {
   ok: boolean;
 }
 
-const PHASE2F_VALIDATION_PATH =
-  '/api/document-management/validation/phase2d-ftd-two-version';
-const PHASE2F_VALIDATION_BODY = Object.freeze({
-  firstFilePath: '/1873430484255770.pdf',
-  newerFilePath: '/1873430479421449.pdf',
+const FIRST_FTD_VERTICAL_PATH =
+  '/api/canonical-host/work-items/parse-pdf';
+const FIRST_FTD_VERTICAL_BODY = Object.freeze({
+  selection: Object.freeze({
+    bucketId: 'bucket_aadkprardjghu',
+    filePath: '/1873430479421449.pdf',
+  }),
+  query: 'software',
 });
 
 export async function getReadOnlyRuntimeProbe(): Promise<ReadOnlyProbeResult[]> {
@@ -32,23 +35,27 @@ export async function getReadOnlyRuntimeProbe(): Promise<ReadOnlyProbeResult[]> 
 
   const results: ReadOnlyProbeResult[] = [];
   for (const path of paths) {
-    const response = await axiosForBackend.get<unknown>(path);
+    const response = await axiosForBackend<unknown>({
+      url: path,
+      method: 'GET',
+    });
     results.push({ path, status: response.status, body: response.data });
   }
   return results;
 }
 
-export async function runPhase2fValidation(): Promise<Phase2fValidationResult> {
+export async function runFirstFtdVertical(): Promise<FirstFtdVerticalResult> {
   try {
-    const response = await axiosForBackend.post<unknown>(
-      PHASE2F_VALIDATION_PATH,
-      PHASE2F_VALIDATION_BODY,
-      { meta: { autoJumpToLogin: false } },
-    );
+    const response = await axiosForBackend<unknown>({
+      url: FIRST_FTD_VERTICAL_PATH,
+      method: 'POST',
+      data: FIRST_FTD_VERTICAL_BODY,
+      meta: { autoJumpToLogin: false },
+    });
     const code = responseCode(response.data);
     const ok = response.status >= 200 && response.status < 300;
     return {
-      path: PHASE2F_VALIDATION_PATH,
+      path: FIRST_FTD_VERTICAL_PATH,
       status: response.status,
       code,
       body: response.data,
@@ -59,7 +66,7 @@ export async function runPhase2fValidation(): Promise<Phase2fValidationResult> {
   } catch (cause: unknown) {
     const response = asBackendError(cause).response;
     return {
-      path: PHASE2F_VALIDATION_PATH,
+      path: FIRST_FTD_VERTICAL_PATH,
       status: response?.status ?? 0,
       code: responseCode(response?.data),
       body: response?.data ?? { message: errorMessage(cause) },
@@ -97,5 +104,5 @@ function header(value: unknown, name: string): string | null {
 }
 
 function errorMessage(value: unknown): string {
-  return value instanceof Error ? value.message : 'PHASE2F_VALIDATION_REQUEST_FAILED';
+  return value instanceof Error ? value.message : 'FIRST_FTD_VERTICAL_REQUEST_FAILED';
 }

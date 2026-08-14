@@ -2,15 +2,15 @@ import { useEffect, useState } from 'react';
 
 import {
   getReadOnlyRuntimeProbe,
-  runPhase2fValidation,
-  type Phase2fValidationResult,
+  runFirstFtdVertical,
+  type FirstFtdVerticalResult,
   type ReadOnlyProbeResult,
 } from '@client/src/api/runtime-probe';
 
 export default function RuntimeProbePage() {
   const [results, setResults] = useState<ReadOnlyProbeResult[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [validation, setValidation] = useState<Phase2fValidationResult | null>(null);
+  const [validation, setValidation] = useState<FirstFtdVerticalResult | null>(null);
   const [validationRunning, setValidationRunning] = useState(false);
   const [validationAttempted, setValidationAttempted] = useState(false);
 
@@ -27,7 +27,7 @@ export default function RuntimeProbePage() {
     setValidationAttempted(true);
     setValidationRunning(true);
     try {
-      setValidation(await runPhase2fValidation());
+      setValidation(await runFirstFtdVertical());
     } finally {
       setValidationRunning(false);
     }
@@ -41,7 +41,8 @@ export default function RuntimeProbePage() {
           <h1>托管运行时只读探针</h1>
           <p className="parse-lede">
             仅使用妙搭官方登录与 CSRF 客户端读取运行时、Unified Reader 和 Registrar
-            readiness；不写 Base、FileService 或 WorkItem。
+            readiness。下方独立按钮只在人工点击时创建或复用一条真实 FTD WorkItem；
+            不写 Base，也不创建工程结论。
           </p>
         </div>
       </header>
@@ -61,22 +62,26 @@ export default function RuntimeProbePage() {
           </section>
         ))
       )}
-      <section className="parse-panel" data-testid="phase2f-validation-panel">
-        <h2>Phase 2F hosted DM validation</h2>
+      <section className="parse-panel" data-testid="first-ftd-vertical-panel">
+        <h2>First real FTD WorkItem vertical</h2>
         <p>
-          固定读取两份已授权 FTD FileService 对象。页面不接受路径或权限输入；登录、CSRF、
-          validation window、run ID 与实际字节由服务端校验。
+          固定消费已授权的 exact FTD DocumentVersion。页面不接受路径、WorkItem ID 或权限
+          输入；登录、CSRF、WorkItem 身份和幂等复用均由服务端处理。
         </p>
         <button
-          data-testid="phase2f-validation-trigger"
+          data-testid="first-ftd-vertical-trigger"
           disabled={validationAttempted || validationRunning}
           onClick={runValidationOnce}
           type="button"
         >
-          {validationRunning ? 'RUNNING' : validationAttempted ? 'ATTEMPTED' : 'RUN PHASE 2F ONCE'}
+          {validationRunning
+            ? 'RUNNING'
+            : validationAttempted
+              ? 'ATTEMPTED'
+              : 'RUN FIRST FTD VERTICAL ONCE'}
         </button>
         {validation ? (
-          <div data-testid="phase2f-validation-result">
+          <div data-testid="first-ftd-vertical-result">
             <p>
               HTTP {validation.status} · {validation.code ?? (validation.ok ? 'PASS' : 'NO_CODE')}
             </p>

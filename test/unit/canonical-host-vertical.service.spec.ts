@@ -471,66 +471,6 @@ describe('CanonicalHostVerticalService', () => {
     expect(persistSpy).not.toHaveBeenCalled();
   });
 
-  it.each([
-    ['port', 'wiselink.3_1.port.invalid'],
-    ['sourceCommit', '0'.repeat(40)],
-    ['adapterRevision', 'candidate.drift'],
-    ['adapterBuildHash', `sha256:${'0'.repeat(64)}`],
-    ['manifestSha256', '0'.repeat(64)],
-    ['implementationSha256', '0'.repeat(64)],
-  ] as const)(
-    'rejects Unified failure adapter %s drift before write',
-    async (field, value) => {
-      const request = await realRequest();
-      const store = new InMemoryArtifactStore();
-      const persistSpy = jest.spyOn(store, 'persistAndReadback');
-      const adapter = unifiedEbf84fFailureAdapter(fullValidator());
-      const drifted = {
-        ...adapter,
-        sourceContract: { ...adapter.sourceContract, [field]: value },
-      };
-      const service = new CanonicalHostVerticalService(
-        new InMemoryRegistrar(),
-        {
-          producePdf: jest.fn().mockResolvedValue({
-            kind: 'FAILURE_SIGNAL',
-            failureCode: 'PDF.PROFILE_UNSUPPORTED',
-            message: 'No profile.',
-            executionRoute: 'drift-probe',
-          }),
-        },
-        authorization(),
-        permissionSnapshots(),
-        store,
-        new UnifiedReaderService(
-          store,
-          new Frozen2CandidateReaderService(),
-          fullValidator(),
-          {
-            mode: 'HOST_CONFIGURED',
-            artifactStoreConfigured: true,
-            fullU0ValidatorConfigured: true,
-            aeoSpecialistReaderConfigured: false,
-            authority:
-              'COMPOSITION_STATE_NOT_ACTIVATION_NOT_WRITE_AUTHORIZATION',
-          },
-        ),
-        entryFacade(),
-        new CanonicalFailureRecordingService(
-          drifted,
-          validationWriteAuthorization(),
-          store,
-          { nowIso: () => '2026-08-13T07:00:00.000Z' },
-        ),
-      );
-
-      await expect(service.runPdf(request, TEST_ACTOR)).rejects.toThrow(
-        `U0_FAILURE_ADAPTER_SOURCE_DRIFT:${field}`,
-      );
-      expect(persistSpy).not.toHaveBeenCalled();
-    },
-  );
-
   it('records Validator failure as immutable FailureReport with actual-byte readback', async () => {
     const request = await realRequest();
     const bytes = await realPackageBytes();

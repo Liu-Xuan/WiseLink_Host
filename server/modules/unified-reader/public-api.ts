@@ -73,6 +73,10 @@ export {
   PythonU0FullPackageValidatorAdapter,
   type PythonU0FullPackageValidatorOptions,
 } from './python-u0-full-package-validator.adapter';
+export { U0Frozen2FailureAdapterService } from './u0-frozen2-failure-adapter.service';
+export {
+  createHostedU0Frozen2FailureAdapterProvider,
+} from './hosted-u0-frozen2-failure-adapter.provider';
 export { U0FullValidationService } from './u0-full-validation.service';
 export { UnifiedAcceptanceFacadeService } from './unified-acceptance-facade.service';
 export {

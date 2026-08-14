@@ -478,7 +478,7 @@ export interface CanonicalPdfVerticalRunResponse {
   entry: CanonicalEntryFacadeResponse;
   authority: {
     canonicalRoleSelected: false;
-    onlineWritePerformed: false;
+    onlineWritePerformed: boolean;
     applicationPublished: false;
     currentSelectionChanged: false;
     engineeringConclusionCreated: false;

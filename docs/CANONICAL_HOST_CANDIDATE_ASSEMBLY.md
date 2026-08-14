@@ -1,5 +1,38 @@
 # Canonical host candidate assembly
 
+## Superseding current state — 2026-08-14
+
+The earlier activation-first plan below is retained as history, but it no longer defines the main
+path. The current owner decision selects an ordinary authenticated WorkItem vertical in the single
+Miaoda app. Registrar activation, Base WorkItem storage and detached receipt ownership may remain
+as non-blocking historical modules; they are not prerequisites for the first business loop.
+
+Current composition:
+
+- `work_item` and `action_attempt` are ordinary Miaoda DB tables with a business uniqueness key;
+- DM exact owner source remains `4d88666a3c494633dc083388ef781ea7aafab998` and supplies only the
+  exact `DocumentVersion` identity to WorkItem processing;
+- the first production adapter consumes the verified real FTD producer output and emits the
+  selected frozen.2 Unified Parsed Package;
+- package and FailureReport bytes use the same ordinary immutable FileService adapter with actual
+  byte readback;
+- Unified's sole frozen.2 Validator, Reader and FailureReport adapter are configured in the host;
+- the Miaoda page and hidden validation action read the same WorkItem; Aily remains later and
+  read-only.
+
+Local acceptance, exact identities and remaining non-claims are recorded in
+`FIRST_REAL_FTD_WORKITEM_VERTICAL_ACCEPTANCE_20260814.md`.
+
+### Goal alignment
+
+This supersede removes old activation blockers from the product path and advances a directly
+inspectable result. It adds no second producer, package contract, hash scheme or gate. The next
+step is one controlled hosted DEV loop, not more activation proof.
+
+---
+
+## Historical assembly record
+
 Date: 2026-08-13
 
 ## Decision

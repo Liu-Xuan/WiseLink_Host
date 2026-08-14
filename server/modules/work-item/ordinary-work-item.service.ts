@@ -1,0 +1,171 @@
+import { createHash } from 'node:crypto';
+
+import { Injectable } from '@nestjs/common';
+
+import type {
+  CanonicalClassificationSelection,
+  CanonicalPdfVerticalRunRequest,
+} from '@shared/api.interface';
+import { CanonicalHostVerticalService } from '../canonical-host/canonical-host-vertical.service';
+import type { CanonicalHostActor } from '../canonical-host/canonical-host.types';
+import {
+  DocumentManagementHostedService,
+  type HostedRequestContext,
+} from '../document-management/src/hosted/nest';
+import { MiaodaDocumentVersionSourceResolver } from './miaoda-document-version-source.resolver';
+import { MiaodaWorkItemRepository } from './miaoda-work-item.repository';
+
+const FTD_CLASSIFICATION: CanonicalClassificationSelection = {
+  status: 'CANDIDATE',
+  normalizedFamily: 'FTD',
+  classifierReleaseId: 'intake-classifier-release:q1-native-migration@1.0.0',
+  classifierReleaseHash:
+    'sha256:d374483eaa1c209912bf8ed0f830b582f8f0578e3149899de24633ad8e10587c',
+  parserProfileId: 'parser-profile:boeing.ftd.v1@1.0.0',
+  parserProfileHash:
+    'sha256:c47a7388da23d106c2476b579308c458332127153930ced8c684212f1b431731',
+  fingerprint:
+    'sha256:95728aebf5e6ce6b2aa8078389ce551d9a121ca0476d469a19f3d2dc4693b1a4',
+};
+
+export interface OrdinaryPdfParseInput {
+  documentVersionId?: unknown;
+  selection?: {
+    bucketId?: unknown;
+    filePath?: unknown;
+  };
+  query?: unknown;
+}
+
+@Injectable()
+export class OrdinaryWorkItemService {
+  constructor(
+    private readonly documentManagement: DocumentManagementHostedService,
+    private readonly resolver: MiaodaDocumentVersionSourceResolver,
+    private readonly repository: MiaodaWorkItemRepository,
+    private readonly vertical: CanonicalHostVerticalService,
+  ) {}
+
+  async parsePdf(
+    input: OrdinaryPdfParseInput,
+    actor: CanonicalHostActor,
+    origin: 'MIAODA' | 'AILY' = 'MIAODA',
+  ) {
+    const context: HostedRequestContext = {
+      actorUserId: actor.userId,
+      tenantId: actor.tenantId,
+      roles: [...actor.roles],
+    };
+    const documentVersionId = input.documentVersionId
+      ? requiredText(input.documentVersionId, 'documentVersionId', 96)
+      : await this.ingestSelection(input.selection, context);
+    const resolved = await this.resolver.resolve(documentVersionId);
+    const classification = classificationFor(resolved.family.documentFamily);
+    const reservation = await this.repository.reserve({
+      tenantId: actor.tenantId,
+      actorUserId: actor.userId,
+      documentId: resolved.version.documentId,
+      documentVersionId: resolved.version.documentVersionId,
+      sourceArtifactId: resolved.version.sourceArtifactId,
+      sourceFileSha256: resolved.version.pdfSha256,
+      sourceByteLength: Number(resolved.version.byteLength),
+      normalizedFamily: classification.normalizedFamily,
+      requestOrigin: origin,
+    });
+    const request: CanonicalPdfVerticalRunRequest = {
+      schemaVersion: 'wiselink.3_1.canonical_pdf_vertical_request.v0.candidate',
+      workItemId: reservation.workItemId,
+      requestId: reservation.requestId,
+      source: {
+        documentId: resolved.version.documentId,
+        documentVersionId: resolved.version.documentVersionId,
+        parserRequestId: reservation.requestId,
+        sourceArtifactId: resolved.version.sourceArtifactId,
+        sourceFileSha256: `sha256:${resolved.version.pdfSha256}`,
+        sourceByteLength: Number(resolved.version.byteLength),
+        driveFileToken: resolved.artifact.providerObjectId,
+        driveSourceVersion: resolved.artifact.providerVersionId,
+      },
+      classification,
+      query: optionalQuery(input.query),
+    };
+    const result = await this.vertical.runPdf(request, actor);
+    return {
+      schemaVersion: 'wiselink.3_1.ordinary_work_item_run.v1',
+      workItemCreated: reservation.created,
+      workItemReused: !reservation.created,
+      actionAttemptId: reservation.attemptId,
+      result: {
+        ...result,
+        authority: {
+          ...result.authority,
+          onlineWritePerformed: !['local', 'test'].includes(actor.env),
+        },
+      },
+    };
+  }
+
+  private async ingestSelection(
+    selection: OrdinaryPdfParseInput['selection'],
+    context: HostedRequestContext,
+  ): Promise<string> {
+    const bucketId = requiredText(selection?.bucketId, 'selection.bucketId', 255);
+    const filePath = requiredText(selection?.filePath, 'selection.filePath', 1024);
+    const key = createHash('sha256')
+      .update(`${context.tenantId}\n${bucketId}\n${filePath}`)
+      .digest('hex');
+    const result = await this.documentManagement.ingestFileServiceSelection(
+      {
+        selection: { bucketId, filePath },
+        sourceChannel: 'canonical_miaoda_document_selection',
+        sourceRef: `miaoda-file-service:${bucketId}:${filePath}`,
+        idempotencyKey: `ordinary-document-ingest:${key}`,
+        descriptor: {},
+      },
+      context,
+    );
+    return requiredText(
+      (result as Record<string, unknown>).documentVersionId,
+      'ingest.documentVersionId',
+      96,
+    );
+  }
+}
+
+function classificationFor(family: string): CanonicalClassificationSelection {
+  if (family !== 'FTD') {
+    throw Object.assign(
+      new Error(`No activated hosted PDF producer profile for ${family}.`),
+      { code: 'PDF_PRODUCER_PROFILE_NOT_AVAILABLE', statusCode: 409 },
+    );
+  }
+  return { ...FTD_CLASSIFICATION };
+}
+
+function optionalQuery(value: unknown): string {
+  if (value === undefined || value === null || value === '') {
+    return 'applicability';
+  }
+  return requiredText(value, 'query', 200);
+}
+
+function requiredText(
+  value: unknown,
+  field: string,
+  maxLength: number,
+): string {
+  if (typeof value !== 'string') {
+    throw Object.assign(new Error(`${field} is required.`), {
+      code: 'WORK_ITEM_INPUT_INVALID',
+      statusCode: 400,
+    });
+  }
+  const normalized = value.trim().normalize('NFC');
+  if (!normalized || normalized.length > maxLength) {
+    throw Object.assign(new Error(`${field} is invalid.`), {
+      code: 'WORK_ITEM_INPUT_INVALID',
+      statusCode: 400,
+    });
+  }
+  return normalized;
+}

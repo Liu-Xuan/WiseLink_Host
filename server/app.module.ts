@@ -6,8 +6,28 @@ import { GlobalExceptionFilter } from './common/filters/exception.filter';
 import { AssessmentRegistrarModule } from './modules/assessment-registrar/assessment-registrar.module';
 import { CanonicalHostModule } from './modules/canonical-host/canonical-host.module';
 import { DocumentManagementValidationModule } from './modules/document-management-validation/document-management-validation.module';
+import { DocumentManagementRuntimeModule } from './modules/document-management-runtime/document-management-runtime.module';
 import { RuntimeProbeModule } from './modules/runtime-probe/runtime-probe.module';
+import { ExactFtdFrozen2PdfProducerAdapter } from './modules/canonical-host/exact-ftd-frozen2-pdf-producer.adapter';
+import { MiaodaCanonicalWorkItemRegistrarAdapter } from './modules/work-item/miaoda-canonical-work-item-registrar.adapter';
+import {
+  OrdinaryCanonicalAuthorizationAdapter,
+  OrdinaryCanonicalPermissionSnapshotAdapter,
+} from './modules/canonical-host/ordinary-canonical-authorization.adapter';
+import { OrdinaryMiaodaAppBindingAdapter } from './modules/canonical-host/ordinary-miaoda-app-binding.adapter';
+import {
+  CANONICAL_AUTHORIZATION,
+  CANONICAL_FAILURE_VALIDATION_WRITE_AUTHORIZATION,
+  CANONICAL_MIAODA_APP_BINDING,
+  CANONICAL_PDF_PRODUCER,
+  CANONICAL_PERMISSION_SNAPSHOT,
+  CANONICAL_WORK_ITEM_REGISTRAR,
+} from './modules/canonical-host/canonical-host.constants';
+import { OrdinaryFailureValidationWriteAuthorizationAdapter } from './modules/canonical-host/ordinary-failure-validation-write-authorization.adapter';
+import { UNIFIED_ARTIFACT_STORE } from './modules/unified-reader/unified-reader.constants';
+import { MiaodaOrdinaryArtifactStoreAdapter } from './modules/unified-reader/miaoda-ordinary-artifact-store.adapter';
 import { createHostedU0FullPackageValidatorProvider } from './modules/unified-reader/hosted-u0-full-validator.provider';
+import { createHostedU0Frozen2FailureAdapterProvider } from './modules/unified-reader/hosted-u0-frozen2-failure-adapter.provider';
 import { ViewModule } from './modules/view/view.module';
 
 @Module({
@@ -17,9 +37,40 @@ import { ViewModule } from './modules/view/view.module';
     // ====== @route-section: business-modules START ======
     AssessmentRegistrarModule.forHostedRegistrar(),
     CanonicalHostModule.forRoot({
+      imports: [DocumentManagementRuntimeModule],
+      workItemRegistrarProvider: {
+        provide: CANONICAL_WORK_ITEM_REGISTRAR,
+        useClass: MiaodaCanonicalWorkItemRegistrarAdapter,
+      },
+      pdfProducerProvider: {
+        provide: CANONICAL_PDF_PRODUCER,
+        useExisting: ExactFtdFrozen2PdfProducerAdapter,
+      },
+      authorizationProvider: {
+        provide: CANONICAL_AUTHORIZATION,
+        useClass: OrdinaryCanonicalAuthorizationAdapter,
+      },
+      permissionSnapshotProvider: {
+        provide: CANONICAL_PERMISSION_SNAPSHOT,
+        useClass: OrdinaryCanonicalPermissionSnapshotAdapter,
+      },
+      miaodaAppBindingProvider: {
+        provide: CANONICAL_MIAODA_APP_BINDING,
+        useClass: OrdinaryMiaodaAppBindingAdapter,
+      },
+      failureValidationWriteAuthorizationProvider: {
+        provide: CANONICAL_FAILURE_VALIDATION_WRITE_AUTHORIZATION,
+        useExisting: OrdinaryFailureValidationWriteAuthorizationAdapter,
+      },
       unifiedReader: {
+        artifactStoreProvider: {
+          provide: UNIFIED_ARTIFACT_STORE,
+          useExisting: MiaodaOrdinaryArtifactStoreAdapter,
+        },
         fullU0ValidatorProvider:
           createHostedU0FullPackageValidatorProvider(),
+        u0Frozen2FailureAdapterProvider:
+          createHostedU0Frozen2FailureAdapterProvider(),
       },
     }),
     DocumentManagementValidationModule,

@@ -1,71 +1,69 @@
 # WiseLink 3.1｜工程资料与综合评估
 
-This repository is the local source for the only current
-`CANONICAL_HOST_CANDIDATE`:
+This repository is the source of the single WiseLink 3.1 full-stack Miaoda host candidate:
 
 - Miaoda app: `app_17bzc551rsg`
-- App type: `full_stack`
+- App name: `WiseLink 3.1｜工程资料与综合评估`
 - Branch: `codex/v3-1-canonical-host-candidate`
-- Published releases: none
-- Online business tables/files: none
+- Product shape: one Miaoda host + one later Aily entry + internal modules
 
-It is a candidate assembly, not an activated hosted runtime. Every business provider stays
-explicitly unconfigured by default. The application therefore fails closed instead of reading or
-writing an old Base, old app, TDMS, AAmis, a demo store or a developer workstation.
+Parser Lab, DM labs, Assessment workbenches and historical Hub apps are module sources or internal
+labs, not additional user products.
 
-## Current composition
+## Current runnable vertical
 
-The root app installs `CanonicalHostModule.forRoot()` before the fallback `ViewModule`, with every
-effectful provider unconfigured. The previous app's runtime-probe module is deliberately not part
-of this candidate. A new bounded `GET /api/runtime-probe` endpoint is included only for the first
-DEV release: it is login-protected, accepts no input, writes no business/artifact data, and checks
-the hosted Python executable, `child_process`, temporary files, `jsonschema`, pinned frozen.2
-runtime assets and a strict minimal Reader invocation.
+The host now contains the ordinary first business path:
 
-The first page is `WorkItem > 文档与解析`. With no configured Registrar it shows an explicit locked
-state and never falls back to sample data.
+`authenticated Miaoda action → exact DM DocumentVersion → create-or-reuse WorkItem → FTD PDF
+producer adapter → techpub.parsed-package.v1/frozen.2 → immutable FileService readback → full U0
+Validator → Unified Reader query → same WorkItem page/deep-link`
 
-## Selective internal-module assembly plan
+The path uses:
 
-No second user application is created. The following owners attach to this host only through the
-existing `CanonicalHostModuleOptions` / `UnifiedReaderModuleOptions` seams:
+- DM owner source `4d88666a3c494633dc083388ef781ea7aafab998` without taking over DM
+  currentness;
+- Unified owner source `b3e7a20245af19349a8bfa9c0da995d5eeac6acf` and U0 commit
+  `fa69ada08265934951df53c7a61a3ccdb8cb2900`;
+- the existing frozen.2 FailureReport adapter and strict failure validator;
+- a normal Miaoda database `WorkItem` plus one `ActionAttempt`, not Base, a queue, worker or lease
+  platform;
+- the platform `@NeedLogin` user context, server-side action authorization, business unique key and
+  compare-and-set revision.
 
-| Module owner | Files in this host | Provider seam | Phase-1 default |
-| --- | --- | --- | --- |
-| Document Management | `server/modules/canonical-host/canonical-host.module.ts` | `pdfProducerProvider`, plus an exact DM request adapter inside a future DM module | `UNCONFIGURED` |
-| Registrar / WorkItem | same host module | `workItemRegistrarProvider` | `UNCONFIGURED` |
-| Assessment Hosted Registrar activation | `server/modules/assessment-registrar/` | exact `bb73aac…` activation provider + three Base capabilities | `BLOCKED` before any Base I/O |
-| Host authn/authz | `canonical-host.controller.ts` and host module | platform `@NeedLogin`, `authorizationProvider`, `permissionSnapshotProvider` | authn enforced; providers `UNCONFIGURED` |
-| Canonical Miaoda binding | `canonical-entry-facade.service.ts` | `miaodaAppBindingProvider` | `UNCONFIGURED` |
-| Unified Reader / Validator / ArtifactStore | `server/modules/unified-reader/` | `public-api.ts` supplies official FileService + exact Python U0 provider factories; existing Unified failure port remains the sole failure authority | all `UNCONFIGURED` |
-| AEO specialist reader | Unified module only | `unifiedReader.aeoSpecialistReaderProvider` | `UNCONFIGURED` |
-| Failure write authorization | host module | `failureValidationWriteAuthorizationProvider` | `UNCONFIGURED` |
+The hidden `/runtime-probe` page provides read-only hosted dependency checks plus one manually
+triggered, fixed real-FTD validation action. It uses imported `axiosForBackend`, accepts no client
+WorkItem ID/path/authority, and cannot create Assessment/AEO conclusions.
 
-The host does not import module implementation repositories wholesale. Each owner supplies one
-Nest provider for the existing seam; the root app remains the only user-facing assembly.
+## Verified local result
 
-## Next real vertical
+The real newer FTD PDF (122,102 bytes) resolves to
+`document_version_fd88dcb9cf64cf3ba21033ef`. The first run reaches
+`CANDIDATE_READBACK_VERIFIED`; the repeat returns the same WorkItem. The persisted package has 311
+content units, 239 source references and 38 source-bounded `software` query results. An explicit
+unsupported-producer run creates, persists, reads back and strictly validates a frozen.2
+FailureReport instead of returning `artifact:null`.
 
-After the 3.1 master selects the exact hosted provider bindings, the shortest runnable path is:
+Detailed evidence: `docs/FIRST_REAL_FTD_WORKITEM_VERTICAL_ACCEPTANCE_20260814.md`.
 
-`DM exact request → same WorkItem Registrar → PDF producer → frozen.2 package → ArtifactStore → full Validator → bounded Reader → same Miaoda page`
+## Online state before hosted business validation
 
-Aily remains a later read-only status/query/deep-link façade over this same WorkItem. No provider,
-database schema, FileService object, WorkItem or release is created by this preparation commit.
+DEV schema contains the seven existing DM tables plus `work_item` and `action_attempt`; both new
+tables have zero records before the first hosted call. The schema was applied once and read back.
+Existing authorized FTD files are retained. This source slice has not yet pushed a new commit,
+created a new release, called the hosted business POST or changed production/current.
 
-Implementation lineage: the host source was migrated from local commit
-`23dbc9d72840478d9c7157025bdc6ed5722ac782`. Git metadata, `.spark` metadata, environment files,
-old runtime probes and old application bindings were not migrated.
+## Next step
 
-Assessment Hosted Registrar lineage is the exact clean source commit
-`bb73aacfc4d883ce13fb6cc2fec6704057b98f24`. Only its hosted activation provider, existing
-activation loader and the three Registrar Base capabilities are assembled here; the Assessment
-workbench UI and unrelated services are not copied.
+Commit the clean local implementation, push only this app's `sprint/default`, create one controlled
+DEV validation release, fresh-read the current DB/FileService state, then use the logged-in hidden
+page to perform exactly one POST. Success requires the same WorkItem page/readback and no automatic
+retry. Assessment, AEO, Aily mutation, OpenClaw and production release remain out of scope.
 
-Unified hosted-consumption lineage is exact clean commit
-`2d33803602fd0c92396c381bc4793ebc29bbd7f0`. This host consumes the official FileService provider
-factory, the frozen.2 Python U0 Validator factory and their shared types. It does not copy Unified's
-historical HTTP mutation surface, receipt owner or another FailureReport builder. Package writes
-remain blocked before FileService I/O until a separately authorized validation-write path exists.
-The Python adapter is retained for a later DEV runtime capability probe; it is not bound by the
-default `AppModule`.
+## Goal alignment
+
+- This slice directly produces a source-bounded parsed result an engineer can inspect.
+- New code is limited to the missing ordinary WorkItem store, producer/storage adapters and error
+  persistence needed for that path.
+- No new package contract, hash scheme, baseline or general gate was introduced.
+- The next action remains the shortest path to a hosted real document loop, not another proof
+  framework.

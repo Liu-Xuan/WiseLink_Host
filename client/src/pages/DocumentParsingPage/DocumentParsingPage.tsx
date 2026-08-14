@@ -178,8 +178,8 @@ export default function DocumentParsingPage() {
             </p>
           )}
           <div className="parse-candidate-warning">
-            <AlertTriangle /> exact hosted roles 尚未核定；本页只有 fresh-read 权限，
-            不触发线上写入。
+            <AlertTriangle /> 当前结果是 DEV 候选解析包；未切 production/current，
+            不生成适用性或工程结论。
           </div>
         </article>
 

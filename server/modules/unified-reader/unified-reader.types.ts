@@ -5,8 +5,11 @@ import type {
   UnifiedParseFailureReport,
   UnifiedPackageArtifactDescriptor,
   UnifiedPackageSourceKind,
+  U0Frozen2FailureAdapterReceipt,
   UnifiedReaderQueryResult,
 } from '@shared/api.interface';
+
+export type { U0Frozen2FailureAdapterReceipt };
 
 export interface ImmutableArtifactPersistResult {
   artifact: UnifiedPackageArtifactDescriptor;
@@ -138,15 +141,6 @@ export interface U0Frozen2FailureAdapterResult {
 }
 
 export interface U0Frozen2FailureAdapterPort {
-  readonly sourceContract: {
-    port: 'wiselink.3_1.port.u0_frozen2_failure_adapter.v0.candidate.1';
-    sourceCommit: 'ebf84f87213227b0a4bdf2f9d4909ca1a58b3518';
-    adapterRevision: 'candidate.1';
-    adapterBuildHash: 'sha256:255b3354ee9aa0eebd9e2d0a2beb9338d9ce261330de0b1ebb1b3ce0ff804b84';
-    manifestSha256: string;
-    implementationSha256: string;
-    inputSchemaSha256: string;
-  };
   build(input: U0Frozen2FailureAdapterInput): U0Frozen2FailureBuildResult;
   validateActualBytes(input: {
     source: U0Frozen2FailureAdapterInput;

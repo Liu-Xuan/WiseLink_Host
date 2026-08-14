@@ -1,7 +1,7 @@
 /* eslint-disable */
 /** auto generated, do not edit */
 import { sql } from 'drizzle-orm';
-import { bigint, boolean, index, integer, pgTable, text, uniqueIndex, uuid, varchar, customType } from "drizzle-orm/pg-core"
+import { bigint, boolean, foreignKey, index, integer, pgTable, text, uniqueIndex, uuid, varchar, customType } from "drizzle-orm/pg-core"
 
 export const customTimestamptz = customType<{
   data: Date;
@@ -116,6 +116,79 @@ export const fileAttachmentArray = customType<{
     });
   },
 });
+
+export const actionAttempt = pgTable("action_attempt", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  attemptId: varchar("attempt_id", { length: 96 }).notNull().unique(),
+  workItemId: varchar("work_item_id", { length: 96 }).notNull(),
+  actionType: varchar("action_type", { length: 64 }).notNull(),
+  attemptNo: integer("attempt_no").notNull().default(1),
+  triggerRequestId: varchar("trigger_request_id", { length: 96 }).notNull(),
+  requestOrigin: varchar("request_origin", { length: 32 }).notNull(),
+  status: varchar("status", { length: 64 }).notNull().default('pending'),
+  producerRunId: varchar("producer_run_id", { length: 96 }),
+  packageArtifactRef: text("package_artifact_ref"),
+  packageArtifactSha256: varchar("package_artifact_sha256", { length: 64 }),
+  failureArtifactRef: text("failure_artifact_ref"),
+  failureArtifactSha256: varchar("failure_artifact_sha256", { length: 64 }),
+  errorCode: varchar("error_code", { length: 160 }),
+  errorMessage: text("error_message"),
+  actorUserId: varchar("actor_user_id", { length: 255 }).notNull(),
+  tenantId: varchar("tenant_id", { length: 128 }).notNull(),
+  startedAt: customTimestamptz("started_at", { precision: 3 }),
+  completedAt: customTimestamptz("completed_at", { precision: 3 }),
+  createdAt: customTimestamptz("created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: customTimestamptz("updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  // System field: Creator (auto-filled, do not modify)
+  createdBy: userProfile("_created_by"),
+  // System field: Updater (auto-filled, do not modify)
+  updatedBy: userProfile("_updated_by"),
+}, (table) => [
+  uniqueIndex("uk_action_attempt_business_id").on(table.attemptId),
+  uniqueIndex("uk_action_attempt_primary").on(table.workItemId, table.actionType, table.attemptNo),
+  index("idx_action_attempt_status").on(table.status, table.updatedAt),
+  index("idx_action_attempt_work_item").on(table.workItemId, table.attemptNo),
+  foreignKey({
+    columns: [table.workItemId],
+    foreignColumns: [workItem.workItemId],
+    name: "fk_action_attempt_work_item",
+  }),
+]);
+
+export const workItem = pgTable("work_item", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workItemId: varchar("work_item_id", { length: 96 }).notNull().unique(),
+  tenantId: varchar("tenant_id", { length: 128 }).notNull(),
+  actionType: varchar("action_type", { length: 64 }).notNull(),
+  documentId: varchar("document_id", { length: 96 }).notNull(),
+  documentVersionId: varchar("document_version_id", { length: 96 }).notNull(),
+  sourceArtifactId: varchar("source_artifact_id", { length: 96 }).notNull(),
+  sourceFileSha256: varchar("source_file_sha256", { length: 64 }).notNull(),
+  sourceByteLength: bigint("source_byte_length", { mode: 'number' }).notNull(),
+  normalizedFamily: varchar("normalized_family", { length: 64 }).notNull(),
+  requestId: varchar("request_id", { length: 96 }).notNull(),
+  status: varchar("status", { length: 64 }).notNull().default('reserved'),
+  revision: integer("revision").notNull().default(0),
+  projectionJson: text("projection_json"),
+  packageId: text("package_id"),
+  packageArtifactRef: text("package_artifact_ref"),
+  packageArtifactSha256: varchar("package_artifact_sha256", { length: 64 }),
+  failureCode: varchar("failure_code", { length: 160 }),
+  failureArtifactRef: text("failure_artifact_ref"),
+  failureArtifactSha256: varchar("failure_artifact_sha256", { length: 64 }),
+  requestedByUserId: varchar("requested_by_user_id", { length: 255 }).notNull(),
+  createdAt: customTimestamptz("created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: customTimestamptz("updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  // System field: Creator (auto-filled, do not modify)
+  createdBy: userProfile("_created_by"),
+  // System field: Updater (auto-filled, do not modify)
+  updatedBy: userProfile("_updated_by"),
+}, (table) => [
+  uniqueIndex("uk_work_item_business_id").on(table.workItemId),
+  uniqueIndex("uk_work_item_document_parse").on(table.tenantId, table.actionType, table.documentVersionId),
+  index("idx_work_item_status").on(table.status, table.updatedAt),
+  index("idx_work_item_document").on(table.documentId, table.documentVersionId),
+]);
 
 export const dmCurrentnessDecision = pgTable("dm_currentness_decision", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -315,6 +388,7 @@ export const dmSourceArtifact = pgTable("dm_source_artifact", {
 ]);
 
 // table aliases
+export const actionAttemptTable = actionAttempt;
 export const dmAcquisitionTable = dmAcquisition;
 export const dmCurrentnessDecisionTable = dmCurrentnessDecision;
 export const dmDocumentTable = dmDocument;
@@ -322,3 +396,4 @@ export const dmDocumentVersionTable = dmDocumentVersion;
 export const dmIngressPreflightTable = dmIngressPreflight;
 export const dmPublicationFamilyTable = dmPublicationFamily;
 export const dmSourceArtifactTable = dmSourceArtifact;
+export const workItemTable = workItem;
