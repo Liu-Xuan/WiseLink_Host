@@ -20,14 +20,23 @@ Current composition:
 - the Miaoda page and hidden validation action read the same WorkItem; Aily remains later and
   read-only.
 
-Local acceptance, exact identities and remaining non-claims are recorded in
+Hosted DEV acceptance, exact identities and remaining non-claims are recorded in
 `FIRST_REAL_FTD_WORKITEM_VERTICAL_ACCEPTANCE_20260814.md`.
+
+The first real hosted vertical is now `COMPLETE/PASS`: one authenticated request produced the exact
+DM DocumentVersion, one WorkItem/ActionAttempt, one immutable frozen.2 package, full U0 validation,
+source-bound Reader results and the same Miaoda page/deep-link. Validation is closed. A subsequent
+response-less FileService page read succeeded on one bounded read-only retry and is classified
+`TRANSIENT_READ_RECOVERED_BY_SINGLE_READ_ONLY_RETRY`; the business POST remains non-retrying.
 
 ### Goal alignment
 
 This supersede removes old activation blockers from the product path and advances a directly
 inspectable result. It adds no second producer, package contract, hash scheme or gate. The next
-step is one controlled hosted DEV loop, not more activation proof.
+step is the three-skill Aily read-only mapping (status plus package summary, source-bound query and
+server-derived deep link) over the same WorkItem read model, not more activation proof. The native
+`/openapi` wrappers are locally implemented; scoped API Key creation, Aily configuration and any
+release remain pending.
 
 ---
 

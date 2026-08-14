@@ -12,6 +12,7 @@ import {
 import { CanonicalEntryFacadeService } from './canonical-entry-facade.service';
 import { CanonicalHostVerticalService } from './canonical-host-vertical.service';
 import { CanonicalHostController } from './canonical-host.controller';
+import { CanonicalHostOpenApiController } from './canonical-host.openapi.controller';
 import { CanonicalFailureRecordingService } from './canonical-failure-recording.service';
 import { ExactFtdFrozen2PdfProducerAdapter } from './exact-ftd-frozen2-pdf-producer.adapter';
 import { OrdinaryFailureValidationWriteAuthorizationAdapter } from './ordinary-failure-validation-write-authorization.adapter';
@@ -50,7 +51,7 @@ export interface CanonicalHostModuleOptions {
 }
 
 @Module({
-  controllers: [CanonicalHostController],
+  controllers: [CanonicalHostController, CanonicalHostOpenApiController],
   providers: [
     CanonicalEntryFacadeService,
     CanonicalFailureRecordingService,
@@ -128,7 +129,7 @@ export class CanonicalHostModule {
         UnifiedReaderModule.forRoot(options.unifiedReader),
         ...(options.imports ?? []),
       ],
-      controllers: [CanonicalHostController],
+      controllers: [CanonicalHostController, CanonicalHostOpenApiController],
       providers: [
         workItemRegistrarProvider,
         pdfProducerProvider,

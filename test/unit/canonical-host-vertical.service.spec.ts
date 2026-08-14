@@ -269,8 +269,14 @@ describe('CanonicalHostVerticalService', () => {
       workItemId: request.workItemId,
       requestId: request.requestId,
       documentVersionId: request.source.documentVersionId,
-        query: request.query,
+      query: request.query,
     }, TEST_ACTOR);
+    const ailyEntry = await service.openApiStatus(request.workItemId);
+    const ailyQuery = await service.openApiQuery({
+      workItemId: request.workItemId,
+      query: request.query,
+    });
+    const ailyDeepLink = await service.openApiDeepLink(request.workItemId);
 
     expect(first).toMatchObject({
       status: 'CANDIDATE_VERTICAL_VERIFIED',
@@ -316,6 +322,42 @@ describe('CanonicalHostVerticalService', () => {
     expect(producer.producePdf).toHaveBeenCalledTimes(1);
     expect(entry.packageId).toBe(packageId);
     expect(query.readback.package.packageId).toBe(packageId);
+    expect(ailyEntry).toEqual({
+      entry,
+      packageSummary: expect.objectContaining({
+        packageId,
+        contractRevision: 'frozen.2',
+        contentUnitCount: 311,
+        sourceRefCount: 239,
+        fullValidationStatus: 'FULL_STRICT_VALIDATOR_PASSED',
+      }),
+    });
+    expect(ailyQuery).toMatchObject({
+      workItemId: request.workItemId,
+      packageId,
+      query: request.query,
+      resultCount: ailyQuery.results.length,
+    });
+    expect(ailyQuery.results.length).toBeGreaterThan(0);
+    expect(
+      ailyQuery.results.every(
+        (item) => item.sourceRefIds.length > 0,
+      ),
+    ).toBe(true);
+    expect(ailyDeepLink).toEqual({
+      workItemId: request.workItemId,
+      deepLink: `${TEST_APP_ORIGIN}/work-items/${request.workItemId}/documents`,
+    });
+    await expect(
+      service.openApiQuery({
+        workItemId: request.workItemId,
+        query: ' ',
+      }),
+    ).rejects.toMatchObject({
+      code: 'AILY_READ_INPUT_INVALID',
+      statusCode: 400,
+    });
+    expect(producer.producePdf).toHaveBeenCalledTimes(1);
   });
 
   it('persists an explicit FailureReport and leaves query unavailable', async () => {

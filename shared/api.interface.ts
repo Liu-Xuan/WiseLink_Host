@@ -511,6 +511,37 @@ export interface CanonicalEntryQueryRequest {
   query: string;
 }
 
+export interface AilyParsedPackageSummary {
+  packageId: string;
+  contractId: 'techpub.parsed-package.v1';
+  contractRevision: 'frozen.2';
+  artifactSha256: string;
+  resultStatus: 'complete' | 'partial';
+  title: string;
+  contentUnitCount: number;
+  sourceRefCount: number;
+  readerReceiptId: string;
+  fullValidationStatus: 'FULL_STRICT_VALIDATOR_PASSED';
+}
+
+export interface AilyWorkItemStatusResponse {
+  entry: CanonicalEntryFacadeResponse;
+  packageSummary: AilyParsedPackageSummary | null;
+}
+
+export interface AilyParsedPackageQueryResponse {
+  workItemId: string;
+  packageId: string;
+  query: string;
+  resultCount: number;
+  results: UnifiedReaderQueryResult[];
+}
+
+export interface AilyWorkItemDeepLinkResponse {
+  workItemId: string;
+  deepLink: string;
+}
+
 export interface CanonicalEntryQueryResponse {
   schemaVersion: 'wiselink.3_1.canonical_entry_query.v0.candidate';
   status: 'CANDIDATE_QUERY_VERIFIED';

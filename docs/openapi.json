@@ -1,0 +1,194 @@
+{
+  "paths": {
+    "/openapi/wiselink/work-items/{workItemId}/status": {
+      "get": {
+        "operationId": "getWorkItemStatus",
+        "summary": "读取 WiseLink WorkItem 状态和解析包摘要",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workItemId",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "同一妙搭账本中的 WorkItem ID",
+            "example": "WI-c2943f5a-d023-46ac-9cf5-9480de0aabaf"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "返回最新 WorkItem 状态和选定解析包摘要",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["entry", "packageSummary"],
+                  "properties": {
+                    "entry": {
+                      "type": "object",
+                      "description": "现有 CanonicalEntry fresh-read 投影",
+                      "example": {
+                        "schemaVersion": "wiselink.3_1.canonical_entry_facade.v0.candidate",
+                        "workItemId": "WI-c2943f5a-d023-46ac-9cf5-9480de0aabaf",
+                        "requestId": "REQ-e4ea4706-ece6-4012-b1d5-603bdc0affe9",
+                        "phase": "CANDIDATE_READBACK_VERIFIED",
+                        "documentVersionId": "document_version_fd88dcb9cf64cf3ba21033ef",
+                        "normalizedFamily": "FTD",
+                        "packageId": "urn:techpub:package:v1:sha256:9e734a0de1c37c368b954662e9bb11036cc24b430468a073b31da127380df622",
+                        "packageArtifactSha256": "349ef64d4538f77aeaf20796deea0e2c5ac2e7cb6d0b4df587570b32d09c56d2",
+                        "failureCode": null,
+                        "deepLinkPath": "https://example.feishuapp.com/app/app_17bzc551rsg/work-items/WI-c2943f5a-d023-46ac-9cf5-9480de0aabaf/documents",
+                        "capabilities": {
+                          "status": true,
+                          "queryParsedUnits": true,
+                          "deepLink": true,
+                          "mutatesParsingState": false
+                        }
+                      }
+                    },
+                    "packageSummary": {
+                      "type": "object",
+                      "nullable": true,
+                      "description": "选定 frozen.2 解析包摘要；尚无解析包时为 null",
+                      "example": {
+                        "packageId": "urn:techpub:package:v1:sha256:9e734a0de1c37c368b954662e9bb11036cc24b430468a073b31da127380df622",
+                        "contractId": "techpub.parsed-package.v1",
+                        "contractRevision": "frozen.2",
+                        "artifactSha256": "349ef64d4538f77aeaf20796deea0e2c5ac2e7cb6d0b4df587570b32d09c56d2",
+                        "resultStatus": "partial",
+                        "title": "777-FTD-31-21002",
+                        "contentUnitCount": 311,
+                        "sourceRefCount": 239,
+                        "readerReceiptId": "reader_receipt_dee9feaf9c3d7accfa6de49d77dcd645",
+                        "fullValidationStatus": "FULL_STRICT_VALIDATOR_PASSED"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/openapi/wiselink/work-items/{workItemId}/parsed-units": {
+      "get": {
+        "operationId": "querySourceBoundUnits",
+        "summary": "查询解析包中带来源引用的内容单元",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workItemId",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "同一妙搭账本中的 WorkItem ID",
+            "example": "WI-c2943f5a-d023-46ac-9cf5-9480de0aabaf"
+          },
+          {
+            "in": "query",
+            "name": "query",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "在已验证解析包中执行的只读查询文本",
+            "example": "software"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "返回带 sourceRefIds 的内容单元",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "workItemId",
+                    "packageId",
+                    "query",
+                    "resultCount",
+                    "results"
+                  ],
+                  "properties": {
+                    "workItemId": {
+                      "type": "string",
+                      "description": "查询所属 WorkItem",
+                      "example": "WI-c2943f5a-d023-46ac-9cf5-9480de0aabaf"
+                    },
+                    "packageId": {
+                      "type": "string",
+                      "description": "实际读取的 frozen.2 解析包 ID",
+                      "example": "urn:techpub:package:v1:sha256:9e734a0de1c37c368b954662e9bb11036cc24b430468a073b31da127380df622"
+                    },
+                    "query": {
+                      "type": "string",
+                      "description": "规范化后的查询文本",
+                      "example": "software"
+                    },
+                    "resultCount": {
+                      "type": "integer",
+                      "description": "本次返回的内容单元数",
+                      "example": 38
+                    },
+                    "results": {
+                      "type": "array",
+                      "description": "Unified Reader 返回的来源绑定单元",
+                      "items": {
+                        "type": "object",
+                        "example": {
+                          "unitId": "CU-0001",
+                          "kind": "software",
+                          "text": "Software configuration source text.",
+                          "sourceRefIds": ["SR-0001"]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/openapi/wiselink/work-items/{workItemId}/deep-link": {
+      "get": {
+        "operationId": "getWorkItemDeepLink",
+        "summary": "读取服务端派生的妙搭 WorkItem 深链",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workItemId",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "同一妙搭账本中的 WorkItem ID",
+            "example": "WI-c2943f5a-d023-46ac-9cf5-9480de0aabaf"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "返回该 WorkItem 的 canonical 妙搭页面地址",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["workItemId", "deepLink"],
+                  "properties": {
+                    "workItemId": {
+                      "type": "string",
+                      "description": "深链所属 WorkItem",
+                      "example": "WI-c2943f5a-d023-46ac-9cf5-9480de0aabaf"
+                    },
+                    "deepLink": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "由服务端 canonical app binding 派生的完整 HTTPS 深链",
+                      "example": "https://example.feishuapp.com/app/app_17bzc551rsg/work-items/WI-c2943f5a-d023-46ac-9cf5-9480de0aabaf/documents"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
