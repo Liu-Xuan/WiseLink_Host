@@ -85,21 +85,21 @@ export class DocumentManagementHostedCore {
       sourceRef: request.sourceRef,
       selection: request.selection,
     });
+    let incompleteIngestion = null;
     if (existingIngestion) {
-      if (existingIngestion.status !== 'COMMITTED') {
-        fail(
-          'INGESTION_REPLAY_INCOMPLETE',
-          'Idempotent replay found an incomplete prior ingestion; no additional I/O was performed.',
-          { acquisitionId: existingIngestion.acquisitionId },
-        );
+      if (existingIngestion.status === 'INCOMPLETE') {
+        incompleteIngestion = existingIngestion;
+      } else if (existingIngestion.status !== 'COMMITTED') {
+        fail('INGESTION_REPLAY_STATE_INVALID', 'Idempotent replay returned an unsupported state.');
+      } else {
+        return {
+          ...existingIngestion,
+          disposition: 'IDEMPOTENT_REPLAY',
+          newDocumentVersionCreated: false,
+          currentnessChanged: false,
+          catalogFreshReadVerified: true,
+        };
       }
-      return {
-        ...existingIngestion,
-        disposition: 'IDEMPOTENT_REPLAY',
-        newDocumentVersionCreated: false,
-        currentnessChanged: false,
-        catalogFreshReadVerified: true,
-      };
     }
 
     const selected = await this.artifactStore.readSelection(request.selection);
@@ -108,6 +108,12 @@ export class DocumentManagementHostedCore {
     if (actualSha256 !== selected.sha256 || selected.bytes.byteLength !== selected.byteLength) {
       fail('SELECTION_ACTUAL_BYTE_MISMATCH', 'Selection receipt does not match actual bytes.');
     }
+    const sourceArtifactId = deterministicId(
+      'source_artifact',
+      actualSha256,
+      selected.bytes.byteLength,
+    );
+    const acquisitionId = deterministicId('acquisition', tenantId, idempotencyKey);
     const immutable = await this.artifactStore.persistImmutableSource({
       bytes: selected.bytes,
       sha256: actualSha256,
@@ -117,14 +123,37 @@ export class DocumentManagementHostedCore {
     if (!immutable.readbackVerified) {
       fail('IMMUTABLE_READBACK_REQUIRED', 'Canonical FileService source lacks actual-byte readback.');
     }
+    if (immutable.reusedExisting === true && !incompleteIngestion) {
+      if (typeof this.catalog.assertImmutableSourceReuseSafe !== 'function') {
+        fail(
+          'IMMUTABLE_SOURCE_REUSE_CATALOG_CHECK_REQUIRED',
+          'Reusing an existing immutable source requires a fresh Catalog state check.',
+        );
+      }
+      const reuse = await this.catalog.assertImmutableSourceReuseSafe({
+        sourceArtifactId,
+        acquisitionId,
+        idempotencyKey,
+        sha256: actualSha256,
+        byteLength: selected.bytes.byteLength,
+        mediaType: 'application/pdf',
+        bucketId: immutable.bucketId,
+        filePath: immutable.filePath,
+        providerObjectId: immutable.providerObjectId,
+        providerVersionId: immutable.providerVersionId,
+      });
+      if (
+        reuse?.disposition !== 'ORPHAN_RECOVERY_ALLOWED'
+        && reuse?.disposition !== 'CATALOGED_SOURCE_REUSE_ALLOWED'
+      ) {
+        fail(
+          'IMMUTABLE_SOURCE_REUSE_STATE_INVALID',
+          'Catalog did not return one supported immutable-source reuse disposition.',
+        );
+      }
+    }
 
     const acquiredAt = this.now();
-    const sourceArtifactId = deterministicId(
-      'source_artifact',
-      actualSha256,
-      selected.bytes.byteLength,
-    );
-    const acquisitionId = deterministicId('acquisition', tenantId, idempotencyKey);
     const sourceDescriptor = {
       ...(request.descriptor || {}),
       originalFilename: request.descriptor?.originalFilename || selected.fileName,
@@ -135,34 +164,39 @@ export class DocumentManagementHostedCore {
       sourceStorageKey: `${immutable.bucketId}:${immutable.filePath}`,
       providerUpdatedAt: selected.providerUpdatedAt || null,
     };
-    const acquisition = await this.catalog.recordAcquisition({
-      sourceArtifact: {
-        sourceArtifactId,
-        sha256: actualSha256,
-        byteLength: selected.bytes.byteLength,
-        mediaType: 'application/pdf',
-        bucketId: immutable.bucketId,
-        filePath: immutable.filePath,
-        providerObjectId: immutable.providerObjectId,
-        providerVersionId: immutable.providerVersionId,
-        readbackVerified: true,
-        createdAt: acquiredAt,
-      },
-      acquisition: {
-        acquisitionId,
-        sourceArtifactId,
-        sourceChannel: required(request.sourceChannel, 'request.sourceChannel'),
-        sourceRef: required(request.sourceRef, 'request.sourceRef'),
-        selectionBucketId: selected.bucketId,
-        selectionFilePath: selected.filePath,
-        providerObjectId: selected.providerObjectId,
-        providerVersionId: selected.providerVersionId,
-        acquiredBy: actorUserId,
-        acquiredAt,
-        idempotencyKey,
-        sourceDescriptor,
-      },
-    });
+    const sourceArtifactRecord = {
+      sourceArtifactId,
+      sha256: actualSha256,
+      byteLength: selected.bytes.byteLength,
+      mediaType: 'application/pdf',
+      bucketId: immutable.bucketId,
+      filePath: immutable.filePath,
+      providerObjectId: immutable.providerObjectId,
+      providerVersionId: immutable.providerVersionId,
+      readbackVerified: true,
+      createdAt: acquiredAt,
+    };
+    const acquisitionRecord = {
+      acquisitionId,
+      sourceArtifactId,
+      sourceChannel: required(request.sourceChannel, 'request.sourceChannel'),
+      sourceRef: required(request.sourceRef, 'request.sourceRef'),
+      selectionBucketId: selected.bucketId,
+      selectionFilePath: selected.filePath,
+      providerObjectId: selected.providerObjectId,
+      providerVersionId: selected.providerVersionId,
+      acquiredBy: actorUserId,
+      acquiredAt,
+      idempotencyKey,
+      sourceDescriptor,
+    };
+    let acquisition = acquisitionRecord;
+    if (!incompleteIngestion) {
+      acquisition = await this.catalog.recordAcquisition({
+        sourceArtifact: sourceArtifactRecord,
+        acquisition: acquisitionRecord,
+      });
+    }
 
     const normalizedDescriptor = normalizeUploadDescriptor(sourceDescriptor);
     const documents = await this.catalog.listIngressDocuments();
@@ -186,7 +220,7 @@ export class DocumentManagementHostedCore {
       observedFamily?.currentGeneration || 0,
       observedFamily?.currentDocumentVersionId || 'none',
     );
-    await this.catalog.recordPreflight({
+    const preflightRecord = {
       preflightId,
       acquisitionId: acquisition.acquisitionId,
       decision: decision.decision,
@@ -198,7 +232,15 @@ export class DocumentManagementHostedCore {
       decisionPayload: decision,
       status: 'READY',
       createdAt: this.now(),
-    });
+    };
+    if (!incompleteIngestion) {
+      await this.catalog.recordPreflight(preflightRecord);
+    } else if (decision.decision !== 'INGEST_NEW_FAMILY') {
+      fail(
+        'INCOMPLETE_INGESTION_RECOVERY_DECISION_UNSUPPORTED',
+        'Narrow residual recovery only supports the original new-family commit path.',
+      );
+    }
 
     if (EXACT_LINK_DECISIONS.has(decision.decision)) {
       const exactVersion = await this.catalog.findExactDocumentVersion({
@@ -261,6 +303,38 @@ export class DocumentManagementHostedCore {
       familyId,
       decision.incoming.comparableVersion,
     );
+    if (incompleteIngestion) {
+      if (immutable.reusedExisting !== true) {
+        fail(
+          'INCOMPLETE_INGESTION_RECOVERY_IMMUTABLE_REQUIRED',
+          'Residual recovery requires the exact pre-existing immutable FileService object.',
+        );
+      }
+      if (typeof this.catalog.assertIncompleteIngestionRecoverySafe !== 'function') {
+        fail(
+          'INCOMPLETE_INGESTION_RECOVERY_CHECK_REQUIRED',
+          'Residual recovery requires a fresh Catalog and WorkItem state check.',
+        );
+      }
+      const recovery = await this.catalog.assertIncompleteIngestionRecoverySafe({
+        sourceArtifact: sourceArtifactRecord,
+        acquisition: acquisitionRecord,
+        preflight: preflightRecord,
+        downstream: {
+          familyId,
+          canonicalIdentityKey: familyIdentityKey,
+          documentId,
+          documentVersionId,
+        },
+      });
+      if (recovery?.disposition !== 'INCOMPLETE_INGESTION_RECOVERY_ALLOWED') {
+        fail(
+          'INCOMPLETE_INGESTION_RECOVERY_STATE_INVALID',
+          'Catalog did not return the supported residual recovery disposition.',
+        );
+      }
+      acquisition = recovery.acquisition;
+    }
     const committedAt = this.now();
     const commit = await this.catalog.commitNewVersion({
       idempotencyKey: `catalog:${tenantId}:${idempotencyKey}`,

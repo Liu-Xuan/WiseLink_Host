@@ -4,7 +4,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import 'reflect-metadata';
-import { RequestMethod } from '@nestjs/common';
+import { Module, RequestMethod } from '@nestjs/common';
 import {
   METHOD_METADATA,
   MODULE_METADATA,
@@ -79,6 +79,11 @@ const noIoFileService = {
     throw new Error('UNEXPECTED_FILE_SERVICE_IO');
   },
 };
+class NoIoFileServiceModule {}
+Module({
+  providers: [{ provide: fileServiceProvider.inject[0], useValue: noIoFileService }],
+  exports: [fileServiceProvider.inject[0]],
+})(NoIoFileServiceModule);
 const hostedArtifactStore = fileServiceProvider.useFactory(noIoFileService);
 assert.deepEqual(hostedArtifactStore.activationBinding, exactHostBinding);
 await assert.rejects(
@@ -208,8 +213,8 @@ assert.throws(
   /UNIFIED_ARTIFACT_STORE_PROVIDER_INVALID/u,
 );
 const defaultContext = await NestFactory.createApplicationContext(
-  UnifiedReaderModule.forRoot(),
-  { logger: false },
+  UnifiedReaderModule.forRoot({ imports: [NoIoFileServiceModule] }),
+  { logger: ['error'], abortOnError: false },
 );
 const defaultReadiness = defaultContext.get(UnifiedReaderService).readiness();
 assert.equal(defaultReadiness.capabilities.artifactStoreConfigured, false);
@@ -240,6 +245,7 @@ await defaultContext.close();
 
 const configuredContext = await NestFactory.createApplicationContext(
   UnifiedReaderModule.forRoot({
+    imports: [NoIoFileServiceModule],
     artifactStoreProvider: {
       provide: UNIFIED_ARTIFACT_STORE,
       useValue: fakeArtifactStore,
@@ -254,7 +260,7 @@ const configuredContext = await NestFactory.createApplicationContext(
       useValue: fakeAeoReader,
     },
   }),
-  { logger: false },
+  { logger: ['error'], abortOnError: false },
 );
 const configuredReadiness = configuredContext
   .get(UnifiedReaderService)

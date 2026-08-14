@@ -53,17 +53,16 @@ class LocalProjectionRegistrar {
   }
 }
 const [
-  { DocumentManagementHostedCore },
-  { MiaodaFileServiceArtifactStore },
   { InMemoryHostedDocumentCatalog },
   { LocalMiaodaFileServiceDouble },
 ] = await Promise.all([
-  import(pathToFileURL(resolve(ownerRoot, 'src/hosted/documentManagementHostedCore.js'))),
-  import(pathToFileURL(resolve(ownerRoot, 'src/hosted/miaodaFileServiceArtifactStore.js'))),
   import(pathToFileURL(resolve(ownerRoot, 'src/hosted/inMemoryHostedDocumentCatalog.js'))),
   import(pathToFileURL(resolve(ownerRoot, 'src/hosted/testing/localFileServiceDouble.js'))),
 ]);
 const [
+  { DocumentManagementHostedCore },
+  { MiaodaFileServiceArtifactStore },
+  { classifyImmutableSourceReuseState, classifyIncompleteIngestionRecoveryState },
   { ExactFtdFrozen2PdfProducerAdapter },
   { OrdinaryCanonicalAuthorizationAdapter, OrdinaryCanonicalPermissionSnapshotAdapter },
   { OrdinaryMiaodaAppBindingAdapter },
@@ -79,6 +78,9 @@ const [
   { U0Frozen2FailureAdapterService },
   { UnifiedReaderService },
 ] = await Promise.all([
+  importBuilt('modules/document-management/src/hosted/documentManagementHostedCore.js'),
+  importBuilt('modules/document-management/src/hosted/miaodaFileServiceArtifactStore.js'),
+  importBuilt('modules/document-management/src/hosted/nest/miaoda-hosted-document-catalog.js'),
   importBuilt('modules/canonical-host/exact-ftd-frozen2-pdf-producer.adapter.js'),
   importBuilt('modules/canonical-host/ordinary-canonical-authorization.adapter.js'),
   importBuilt('modules/canonical-host/ordinary-miaoda-app-binding.adapter.js'),
@@ -107,6 +109,82 @@ fileService.seed({
   fileName: '777-FTD-31-21002_Doc_09262025.pdf',
 });
 const catalog = new InMemoryHostedDocumentCatalog();
+catalog.assertImmutableSourceReuseSafe = async (input) => {
+  const snapshot = catalog.snapshot();
+  const acquisitions = snapshot.acquisitions.filter((row) => (
+    row.acquisitionId === input.acquisitionId
+    || row.idempotencyKey === input.idempotencyKey
+    || row.sourceArtifactId === input.sourceArtifactId
+  ));
+  const acquisitionIds = new Set([
+    input.acquisitionId,
+    ...acquisitions.map((row) => row.acquisitionId),
+  ]);
+  return classifyImmutableSourceReuseState(input, {
+    artifacts: snapshot.sourceArtifacts.filter((row) => (
+      row.sourceArtifactId === input.sourceArtifactId
+      || (row.sha256 === input.sha256 && row.byteLength === input.byteLength)
+      || (row.bucketId === input.bucketId && row.filePath === input.filePath)
+    )),
+    acquisitions,
+    preflights: snapshot.preflights.filter((row) => acquisitionIds.has(row.acquisitionId)),
+    versions: snapshot.documentVersions.filter((row) => (
+      row.sourceArtifactId === input.sourceArtifactId
+      || row.acquisitionId === input.acquisitionId
+    )),
+  });
+};
+catalog.assertIncompleteIngestionRecoverySafe = async (input) => {
+  const snapshot = catalog.snapshot();
+  return classifyIncompleteIngestionRecoveryState(input, {
+    artifacts: snapshot.sourceArtifacts.filter((row) => (
+      row.sourceArtifactId === input.sourceArtifact.sourceArtifactId
+      || (row.sha256 === input.sourceArtifact.sha256
+        && row.byteLength === input.sourceArtifact.byteLength)
+      || (row.bucketId === input.sourceArtifact.bucketId
+        && row.filePath === input.sourceArtifact.filePath)
+    )),
+    acquisitions: snapshot.acquisitions.filter((row) => (
+      row.acquisitionId === input.acquisition.acquisitionId
+      || row.idempotencyKey === input.acquisition.idempotencyKey
+      || row.sourceArtifactId === input.sourceArtifact.sourceArtifactId
+    )).map((row) => ({
+      ...row,
+      sourceDescriptorJson: JSON.stringify(row.sourceDescriptor),
+    })),
+    preflights: snapshot.preflights.filter((row) => (
+      row.preflightId === input.preflight.preflightId
+      || row.acquisitionId === input.acquisition.acquisitionId
+    )).map((row) => ({
+      ...row,
+      documentVersionId: row.documentVersionId ?? null,
+      commitIdempotencyKey: row.commitIdempotencyKey ?? null,
+      normalizedDescriptorJson: JSON.stringify(row.normalizedDescriptor),
+      decisionPayloadJson: JSON.stringify(row.decisionPayload),
+    })),
+    families: snapshot.publicationFamilies.filter((row) => (
+      row.familyId === input.downstream.familyId
+      || row.canonicalIdentityKey === input.downstream.canonicalIdentityKey
+    )),
+    documents: snapshot.documents.filter((row) => (
+      row.documentId === input.downstream.documentId
+      || row.familyId === input.downstream.familyId
+    )),
+    versions: snapshot.documentVersions.filter((row) => (
+      row.documentVersionId === input.downstream.documentVersionId
+      || row.familyId === input.downstream.familyId
+      || row.sourceArtifactId === input.sourceArtifact.sourceArtifactId
+      || row.acquisitionId === input.acquisition.acquisitionId
+    )),
+    currentness: snapshot.currentnessDecisions.filter((row) => (
+      row.familyId === input.downstream.familyId
+      || row.preflightId === input.preflight.preflightId
+      || row.nextDocumentVersionId === input.downstream.documentVersionId
+    )),
+    workItems: [],
+    actionAttempts: [],
+  });
+};
 const dmCore = new DocumentManagementHostedCore({
   artifactStore: new MiaodaFileServiceArtifactStore(fileService),
   catalog,
@@ -200,6 +278,39 @@ const request = {
   selection: { bucketId: selectionBucket, filePath: selectionPath },
   query: 'software',
 };
+let residualProof = null;
+if (process.env.WL_TEST_SEED_THREE_ROW_RESIDUAL === '1') {
+  const commitNewVersion = catalog.commitNewVersion.bind(catalog);
+  catalog.commitNewVersion = async () => {
+    throw Object.assign(new Error('Simulated hosted commit failure after three ingress rows.'), {
+      code: 'SIMULATED_HOSTED_COMMIT_FAILURE',
+    });
+  };
+  await assert.rejects(
+    workItems.parsePdf(request, actor),
+    (error) => error?.code === 'SIMULATED_HOSTED_COMMIT_FAILURE',
+  );
+  catalog.commitNewVersion = commitNewVersion;
+  const residual = catalog.snapshot();
+  assert.equal(residual.sourceArtifacts.length, 1);
+  assert.equal(residual.acquisitions.length, 1);
+  assert.equal(residual.preflights.length, 1);
+  assert.equal(residual.publicationFamilies.length, 0);
+  assert.equal(residual.documents.length, 0);
+  assert.equal(residual.documentVersions.length, 0);
+  assert.equal(residual.currentnessDecisions.length, 0);
+  assert.equal(reservationRepository.reservation, null);
+  residualProof = {
+    sourceArtifacts: residual.sourceArtifacts.length,
+    acquisitions: residual.acquisitions.length,
+    preflights: residual.preflights.length,
+    downstreamRows: 0,
+    workItems: 0,
+    actionAttempts: 0,
+    immutableUploadsBeforeRecovery: fileService.uploadCalls.length,
+    sourceFilePath: residual.sourceArtifacts[0].filePath,
+  };
+}
 const first = await workItems.parsePdf(request, actor);
 if (first.result.status !== 'CANDIDATE_VERTICAL_VERIFIED') {
   throw new Error(`FIRST_LOOP_FAILED:${JSON.stringify(first.result.workItem)}`);
@@ -258,6 +369,15 @@ assert.equal(failure.workItem.failure.adapterReceipt.actualByteReadbackVerified,
 await artifactStore.readActualBytes(failure.workItem.failure.artifact);
 assert.equal(first.result.authority.onlineWritePerformed, false);
 assert.equal(fileService.removeCalls.length, 0);
+if (residualProof) {
+  assert.equal(residualProof.immutableUploadsBeforeRecovery, 1);
+  assert.equal(
+    fileService.uploadCalls.filter(
+      (call) => call.options.filePath === residualProof.sourceFilePath.replace(/^\//u, ''),
+    ).length,
+    1,
+  );
+}
 
 process.stdout.write(`${JSON.stringify({
   status: 'ORDINARY_FIRST_FTD_LOOP_PASS',
@@ -298,4 +418,5 @@ process.stdout.write(`${JSON.stringify({
     deletes: fileService.removeCalls.length,
   },
   onlineWrites: 0,
+  residualRecovery: residualProof,
 }, null, 2)}\n`);
