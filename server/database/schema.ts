@@ -1,7 +1,7 @@
 /* eslint-disable */
 /** auto generated, do not edit */
 import { sql } from 'drizzle-orm';
-import { bigint, boolean, foreignKey, index, integer, pgTable, text, uniqueIndex, uuid, varchar, customType } from "drizzle-orm/pg-core"
+import { bigint, boolean, check, foreignKey, index, integer, pgTable, text, uniqueIndex, uuid, varchar, customType } from "drizzle-orm/pg-core"
 
 export const customTimestamptz = customType<{
   data: Date;
@@ -387,6 +387,77 @@ export const dmSourceArtifact = pgTable("dm_source_artifact", {
   uniqueIndex("uk_dm_source_artifact_locator").on(table.bucketId, table.filePath),
 ]);
 
+export const externalSearchRun = pgTable("external_search_run", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: varchar("tenant_id", { length: 128 }).notNull(),
+  searchRunRef: varchar("search_run_ref", { length: 255 }).notNull(),
+  sourceSystem: varchar("source_system", { length: 128 }).notNull(),
+  query: text("query").notNull(),
+  resultStatus: varchar("result_status", { length: 64 }).notNull(),
+  observedAt: customTimestamptz("observed_at", { precision: 3 }).notNull(),
+  accessRestricted: boolean("access_restricted").notNull().default(false),
+  truncated: boolean("truncated").notNull().default(false),
+  partialOnly: boolean("partial_only").notNull().default(false),
+  recordedByUserId: varchar("recorded_by_user_id", { length: 255 }).notNull(),
+  // System field: Creation time (auto-filled, do not modify)
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  // System field: Creator (auto-filled, do not modify)
+  createdBy: userProfile("_created_by").default(sql`CASE
+    WHEN (current_setting('app.user_id'::text, true) = ''::text) THEN NULL`),
+  // System field: Update time (auto-filled, do not modify)
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  // System field: Updater (auto-filled, do not modify)
+  updatedBy: userProfile("_updated_by").default(sql`CASE
+    WHEN (current_setting('app.user_id'::text, true) = ''::text) THEN NULL`),
+}, (table) => [
+  uniqueIndex("uk_external_search_run_tenant_ref").on(table.tenantId, table.searchRunRef),
+  index("idx_external_search_run_observed").on(table.tenantId, table.observedAt),
+  check("ck_external_search_run_status", sql`${table.resultStatus} IN ('ZERO_RESULTS_FOR_TARGET_IDENTIFIER', 'ACCESS_DENIED', 'PARTIAL_RESULTS', 'CANDIDATES_FOUND')`),
+]);
+
+export const externalDiscoveryCandidate = pgTable("external_discovery_candidate", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: varchar("tenant_id", { length: 128 }).notNull(),
+  searchRunRef: varchar("search_run_ref", { length: 255 }).notNull(),
+  candidateRef: varchar("candidate_ref", { length: 255 }).notNull(),
+  publisher: varchar("publisher", { length: 32 }).notNull(),
+  title: text("title").notNull(),
+  sourceUrl: text("source_url").notNull(),
+  disposition: varchar("disposition", { length: 96 }).notNull(),
+  reviewStatus: varchar("review_status", { length: 32 }).notNull().default('PENDING'),
+  reviewDecision: varchar("review_decision", { length: 64 }),
+  reviewedByUserId: varchar("reviewed_by_user_id", { length: 255 }),
+  reviewedAt: customTimestamptz("reviewed_at", { precision: 3 }),
+  // System field: Creation time (auto-filled, do not modify)
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  // System field: Creator (auto-filled, do not modify)
+  createdBy: userProfile("_created_by").default(sql`CASE
+    WHEN (current_setting('app.user_id'::text, true) = ''::text) THEN NULL`),
+  // System field: Update time (auto-filled, do not modify)
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  // System field: Updater (auto-filled, do not modify)
+  updatedBy: userProfile("_updated_by").default(sql`CASE
+    WHEN (current_setting('app.user_id'::text, true) = ''::text) THEN NULL`),
+}, (table) => [
+  uniqueIndex("uk_external_candidate_tenant_ref").on(table.tenantId, table.candidateRef),
+  index("idx_external_candidate_run").on(table.tenantId, table.searchRunRef),
+  index("idx_external_candidate_review").on(table.tenantId, table.reviewStatus, table.updatedAt),
+  foreignKey({
+    columns: [table.tenantId, table.searchRunRef],
+    foreignColumns: [externalSearchRun.tenantId, externalSearchRun.searchRunRef],
+    name: "fk_external_candidate_search_run",
+  }),
+  check("ck_external_candidate_publisher", sql`${table.publisher} IN ('AIRBUS', 'BOEING', 'COMAC')`),
+  check("ck_external_candidate_review_status", sql`${table.reviewStatus} IN ('PENDING', 'HUMAN_SELECTED', 'REJECTED')`),
+  check("ck_external_candidate_review_group", sql`(
+    (${table.reviewStatus} = 'PENDING' AND ${table.reviewDecision} IS NULL AND ${table.reviewedByUserId} IS NULL AND ${table.reviewedAt} IS NULL)
+    OR
+    (${table.reviewStatus} = 'HUMAN_SELECTED' AND ${table.reviewDecision} = 'HUMAN_SELECTED_FOR_INGEST' AND ${table.reviewedByUserId} IS NOT NULL AND ${table.reviewedAt} IS NOT NULL)
+    OR
+    (${table.reviewStatus} = 'REJECTED' AND ${table.reviewDecision} = 'HUMAN_REJECTED' AND ${table.reviewedByUserId} IS NOT NULL AND ${table.reviewedAt} IS NOT NULL)
+  )`),
+]);
+
 // table aliases
 export const actionAttemptTable = actionAttempt;
 export const dmAcquisitionTable = dmAcquisition;
@@ -396,4 +467,6 @@ export const dmDocumentVersionTable = dmDocumentVersion;
 export const dmIngressPreflightTable = dmIngressPreflight;
 export const dmPublicationFamilyTable = dmPublicationFamily;
 export const dmSourceArtifactTable = dmSourceArtifact;
+export const externalDiscoveryCandidateTable = externalDiscoveryCandidate;
+export const externalSearchRunTable = externalSearchRun;
 export const workItemTable = workItem;
