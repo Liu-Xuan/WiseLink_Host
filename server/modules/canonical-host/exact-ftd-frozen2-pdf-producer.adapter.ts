@@ -5,6 +5,7 @@ import { FileService } from '@lark-apaas/fullstack-nestjs-core';
 import { Injectable } from '@nestjs/common';
 
 import type {
+  CanonicalClassificationSelection,
   CanonicalParsedPackageUsagePolicy,
   CanonicalPdfVerticalRunRequest,
   UnifiedPackageArtifactDescriptor,
@@ -17,9 +18,10 @@ import type {
   CanonicalPdfProducerPort,
   CanonicalPdfProducerResult,
 } from './canonical-host.types';
+import { PHASE5_737_34_3830_HANDOFF } from '../document-management/src/hosted/phase5BoeingSbHandoff.js';
 
 interface ExactPdfProfile {
-  family: 'FTD' | 'OEM_REFERENCE';
+  family: 'FTD' | 'OEM_REFERENCE' | 'SB';
   parserProfileId: string;
   parserProfileHash: string;
   documentType: 'service_bulletin' | 'oem_reference';
@@ -37,6 +39,7 @@ interface ExactPdfBinding {
   assetName: string;
   documentCode: string;
   businessRevision: string | null;
+  packageRevisionLabel: string | null;
 }
 
 const FTD_PROFILE: ExactPdfProfile = {
@@ -61,7 +64,31 @@ const OEM_REFERENCE_PROFILE: ExactPdfProfile = {
     'dm_formal_parse_request->controlled_oem_reference_producer_output->u0_frozen2_strict_validator',
 };
 
+const SB_PROFILE: ExactPdfProfile = {
+  family: 'SB',
+  parserProfileId: phase5Handoff().canonicalHostClassification.parserProfileId,
+  parserProfileHash:
+    phase5Handoff().canonicalHostClassification.parserProfileHash,
+  documentType: 'service_bulletin',
+  presentationMode: 'ENGINEERING_DOCUMENT',
+  executionRoute:
+    'dm_phase5_boeing_sb_document_version->existing_pdf_producer_output->u0_frozen2_strict_validator',
+};
+
 const EXACT_BINDINGS: readonly ExactPdfBinding[] = [
+  {
+    profile: SB_PROFILE,
+    sourceSha256: phase5Handoff().source.sha256,
+    sourceByteLength: phase5Handoff().source.byteLength,
+    documentId: phase5Handoff().catalogIdentity.documentId,
+    documentVersionId: phase5Handoff().catalogIdentity.documentVersionId,
+    packageId: phase5Handoff().parsedPackageImport.packageId,
+    assetName:
+      'assessment-host/real-sb/737-34-3830-original-issue/unified-package.frozen-2.json',
+    documentCode: phase5Handoff().descriptor.documentCode,
+    businessRevision: phase5Handoff().descriptor.businessRevision,
+    packageRevisionLabel: null,
+  },
   {
     profile: FTD_PROFILE,
     sourceSha256:
@@ -74,6 +101,7 @@ const EXACT_BINDINGS: readonly ExactPdfBinding[] = [
     assetName: 'real-ftd-frozen2.unified-package.json',
     documentCode: '777-FTD-31-21002',
     businessRevision: null,
+    packageRevisionLabel: null,
   },
   {
     profile: OEM_REFERENCE_PROFILE,
@@ -87,6 +115,7 @@ const EXACT_BINDINGS: readonly ExactPdfBinding[] = [
     assetName: 'airbus-fast61-oem-reference.frozen2.unified-package.json',
     documentCode: 'AIRBUS-FAST',
     businessRevision: 'ISSUE 61',
+    packageRevisionLabel: 'ISSUE 61',
   },
   {
     profile: OEM_REFERENCE_PROFILE,
@@ -100,6 +129,7 @@ const EXACT_BINDINGS: readonly ExactPdfBinding[] = [
     assetName: 'airbus-fast62-oem-reference.frozen2.unified-package.json',
     documentCode: 'AIRBUS-FAST',
     businessRevision: 'ISSUE 62',
+    packageRevisionLabel: 'ISSUE 62',
   },
 ] as const;
 
@@ -202,11 +232,13 @@ function exactBindingForRequest(
 
 async function readPackageAsset(assetName: string): Promise<Uint8Array> {
   const candidates = [
+    resolve(process.cwd(), 'dist/server/runtime-assets', assetName),
     resolve(
       process.cwd(),
       'dist/server/runtime-assets/first-vertical',
       assetName,
     ),
+    resolve(process.cwd(), 'server/runtime-assets', assetName),
     resolve(process.cwd(), 'test/fixtures', assetName),
     resolve(__dirname, '../../runtime-assets/first-vertical', assetName),
   ];
@@ -218,6 +250,16 @@ async function readPackageAsset(assetName: string): Promise<Uint8Array> {
     }
   }
   throw new Error('PDF_PRODUCER_ASSET_NOT_PACKAGED');
+}
+
+function phase5Handoff() {
+  return PHASE5_737_34_3830_HANDOFF as {
+    source: { sha256: string; byteLength: number };
+    descriptor: { documentCode: string; businessRevision: string };
+    catalogIdentity: { documentId: string; documentVersionId: string };
+    canonicalHostClassification: CanonicalClassificationSelection;
+    parsedPackageImport: { packageId: string };
+  };
 }
 
 function assertPackageSourceBinding(
@@ -276,7 +318,7 @@ function assertPackageSourceBinding(
     Number(sourceArtifact?.byteLength) !== binding.sourceByteLength ||
     documentType?.value !== profile.documentType ||
     documentCode !== binding.documentCode ||
-    (revisionLabel ?? null) !== binding.businessRevision ||
+    (revisionLabel ?? null) !== binding.packageRevisionLabel ||
     !['complete', 'partial'].includes(String(result?.status))
   ) {
     throw new Error('PDF_PRODUCER_PACKAGE_SOURCE_BINDING_MISMATCH');

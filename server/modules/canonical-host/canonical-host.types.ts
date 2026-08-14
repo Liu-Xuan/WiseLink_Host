@@ -19,7 +19,12 @@ export interface CanonicalHostActor {
 }
 
 export interface CanonicalAuthorizationDecision {
-  action: 'PARSE_PDF' | 'READ_DOCUMENT_PARSING' | 'QUERY_PARSED_UNITS';
+  action:
+    | 'PARSE_PDF'
+    | 'READ_DOCUMENT_PARSING'
+    | 'QUERY_PARSED_UNITS'
+    | 'EVALUATE_JOB_AID'
+    | 'RESYNTHESIZE_ASSESSMENT';
   allowed: true;
   actorFingerprint: string;
   decisionId: string;

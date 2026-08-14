@@ -1,0 +1,33 @@
+{
+  "runtime": "FEISHU_HOSTED_OPENCLAW",
+  "runtimeAppId": "app_17c3zn24kv2",
+  "provider": "BOEING",
+  "query": "777 FTD 31-21002 software",
+  "resultStatus": "ZERO_RESULTS_FOR_TARGET_IDENTIFIER",
+  "observedAt": "2026-08-14T14:36:00.000Z",
+  "accessRestricted": false,
+  "truncated": false,
+  "partialOnly": true,
+  "excludedNonOemCandidateCount": 2,
+  "candidates": [
+    {
+      "title": "Boeing 777 Full Flight Simulators landing page",
+      "sourceUrl": "https://services.boeing.com/training-solutions/campuses/miami-campus/boeing-777-full-flight-simulators",
+      "documentNumber": null,
+      "revisionLabel": null,
+      "snippet": null,
+      "relationshipReason": "Boeing 官方公开页面，仅与 777 训练设备相关；未直接命中 FTD 31-21002 或其软件要求。",
+      "matchLevel": "TANGENTIAL"
+    },
+    {
+      "title": "Boeing Training and Simulation Digital Services 2026 catalog",
+      "sourceUrl": "https://services.boeing.com/bgsmedias/sys_master/images/h9e/hf0/9023346704414/Training-and-Simulation-Digital-Services-2026/Training-and-Simulation-Digital-Services-2026.pdf",
+      "documentNumber": null,
+      "revisionLabel": "2026",
+      "snippet": null,
+      "relationshipReason": "Boeing 官方公开目录，仅属训练与仿真数字服务旁相关材料；未直接命中 FTD 31-21002。",
+      "matchLevel": "TANGENTIAL"
+    }
+  ],
+  "error": null
+}

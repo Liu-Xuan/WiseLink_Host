@@ -95,6 +95,15 @@ assert.deepEqual(
   Reflect.getMetadata(NEED_LOGIN_KEY, CanonicalHostController),
   { loginPath: undefined },
 );
+const authenticatedRoutes = readRoutes([CanonicalHostController]);
+assert.ok(authenticatedRoutes.some((route) =>
+  route.method === 'POST' &&
+  route.path ===
+    'api/canonical-host/work-items/:workItemId/assessment/evaluate'));
+assert.ok(authenticatedRoutes.some((route) =>
+  route.method === 'POST' &&
+  route.path ===
+    'api/canonical-host/work-items/:workItemId/assessment/resynthesize'));
 assert.equal(
   Reflect.getMetadata(PATH_METADATA, CanonicalHostOpenApiController),
   'openapi/wiselink',
@@ -158,6 +167,67 @@ const controllerSource = await readFile(
   'utf8',
 );
 assert.ok(!controllerSource.includes('deepLinkPath'));
+
+const assessmentCalls = [];
+const controller = new CanonicalHostController(
+  {},
+  {},
+  {
+    evaluateCandidate: async (input, actor) => {
+      assessmentCalls.push({ action: 'EVALUATE', input, actor });
+      return { revision: 4 };
+    },
+    resynthesizeAfterEngineerChange: async (input, actor) => {
+      assessmentCalls.push({ action: 'RESYNTHESIZE', input, actor });
+      return { revision: 5 };
+    },
+  },
+);
+const hostRequest = {
+  userContext: {
+    userId: 'activation-engineer',
+    tenantId: 'activation-tenant',
+    appId: 'app_17bzc551rsg',
+    roles: ['authenticated'],
+    env: 'development',
+  },
+};
+await controller.evaluateAssessment('WI-SB-ACTIVATION', {}, hostRequest);
+await controller.resynthesizeAssessment(
+  'WI-SB-ACTIVATION',
+  {
+    expectedRevision: 4,
+    criterionId: 'JAC-001',
+    decision: 'deferred',
+    comment: '需要补证',
+  },
+  hostRequest,
+);
+assert.equal(assessmentCalls.length, 2);
+assert.equal(assessmentCalls[0].actor.userId, 'activation-engineer');
+assert.equal(assessmentCalls[0].input.assessmentAsOf,
+  assessmentCalls[0].input.generatedAt);
+assert.deepEqual(assessmentCalls[1].input.review, {
+  baseRecordId: 'ENGINEER-REVIEW:WI-SB-ACTIVATION:JAC-001',
+  decision: 'deferred',
+  comment: '需要补证',
+  reviewingEngineerUserIds: ['activation-engineer'],
+  status: 'NEEDS_REVIEW',
+  updatedAt: assessmentCalls[1].input.review.updatedAt,
+});
+assert.equal(assessmentCalls[1].input.expectedRevision, 4);
+let rejectedStatus = null;
+try {
+  await controller.evaluateAssessment(
+    'WI-SB-ACTIVATION',
+    { actor: { userId: 'untrusted' } },
+    hostRequest,
+  );
+} catch (error) {
+  rejectedStatus = error.getStatus?.();
+}
+assert.equal(rejectedStatus, 400);
+assert.equal(assessmentCalls.length, 2);
 
 process.stdout.write(
   `${JSON.stringify(
