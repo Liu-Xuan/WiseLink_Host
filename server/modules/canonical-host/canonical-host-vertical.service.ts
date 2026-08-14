@@ -1,6 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
 
 import type {
+  AilyParsedPackageQueryResponse,
+  AilyWorkItemDeepLinkResponse,
+  AilyWorkItemStatusResponse,
   CanonicalDocumentParsingPageResponse,
   CanonicalEntryQueryRequest,
   CanonicalEntryQueryResponse,
@@ -175,6 +178,79 @@ export class CanonicalHostVerticalService {
     });
     const projection = await this.registrar.getExact(input);
     return this.entryFacade.status(projection);
+  }
+
+  async openApiStatus(
+    workItemId: string,
+  ): Promise<AilyWorkItemStatusResponse> {
+    const exactWorkItemId: string = requiredOpenApiText(
+      workItemId,
+      'workItemId',
+      200,
+    );
+    const projection: CanonicalWorkItemProjection =
+      await this.registrar.getByWorkItemId(exactWorkItemId);
+    return {
+      entry: this.entryFacade.status(projection),
+      packageSummary:
+        projection.package === null
+          ? null
+          : {
+              packageId: projection.package.packageId,
+              contractId: projection.package.contractId,
+              contractRevision: projection.package.contractRevision,
+              artifactSha256: projection.package.artifact.sha256,
+              resultStatus: projection.package.resultStatus,
+              title: projection.package.title,
+              contentUnitCount: projection.package.contentUnitCount,
+              sourceRefCount: projection.package.sourceRefCount,
+              readerReceiptId: projection.package.readerReceiptId,
+              fullValidationStatus: 'FULL_STRICT_VALIDATOR_PASSED',
+            },
+    };
+  }
+
+  async openApiDeepLink(
+    workItemId: string,
+  ): Promise<AilyWorkItemDeepLinkResponse> {
+    const status: AilyWorkItemStatusResponse =
+      await this.openApiStatus(workItemId);
+    return {
+      workItemId: status.entry.workItemId,
+      deepLink: status.entry.deepLinkPath,
+    };
+  }
+
+  async openApiQuery(input: {
+    workItemId: string;
+    query: string | undefined;
+  }): Promise<AilyParsedPackageQueryResponse> {
+    const exactWorkItemId: string = requiredOpenApiText(
+      input.workItemId,
+      'workItemId',
+      200,
+    );
+    const projection: CanonicalWorkItemProjection =
+      await this.registrar.getByWorkItemId(exactWorkItemId);
+    if (
+      projection.phase !== 'CANDIDATE_READBACK_VERIFIED' ||
+      projection.package === null
+    ) {
+      throw new Error(`WORK_ITEM_QUERY_NOT_READY:${projection.phase}`);
+    }
+    const query: string = requiredOpenApiText(input.query, 'query', 200);
+    const readback: UnifiedPackageReadbackResponse = await this.readPackage(
+      projection,
+      projection.permissionSnapshotVersion,
+      query,
+    );
+    return {
+      workItemId: projection.workItemId,
+      packageId: readback.package.packageId,
+      query,
+      resultCount: readback.queryResults.length,
+      results: readback.queryResults,
+    };
   }
 
   async page(
@@ -444,6 +520,29 @@ export class CanonicalHostVerticalService {
       documentVersionId: request.source.documentVersionId,
     });
   }
+}
+
+function requiredOpenApiText(
+  value: unknown,
+  field: string,
+  maxLength: number,
+): string {
+  if (typeof value !== 'string') {
+    throw Object.assign(new Error(`${field} is required.`), {
+      code: 'AILY_READ_INPUT_INVALID',
+      statusCode: 400,
+      details: { field },
+    });
+  }
+  const normalized: string = value.trim().normalize('NFC');
+  if (!normalized || normalized.length > maxLength) {
+    throw Object.assign(new Error(`${field} is invalid.`), {
+      code: 'AILY_READ_INPUT_INVALID',
+      statusCode: 400,
+      details: { field },
+    });
+  }
+  return normalized;
 }
 
 function seedProjection(

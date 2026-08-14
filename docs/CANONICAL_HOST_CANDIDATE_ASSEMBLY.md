@@ -33,8 +33,10 @@ response-less FileService page read succeeded on one bounded read-only retry and
 
 This supersede removes old activation blockers from the product path and advances a directly
 inspectable result. It adds no second producer, package contract, hash scheme or gate. The next
-step is the four-tool Aily read-only facade (status, package summary, source-bound query and
-server-derived deep link) over the same WorkItem read model, not more activation proof.
+step is the three-skill Aily read-only mapping (status plus package summary, source-bound query and
+server-derived deep link) over the same WorkItem read model, not more activation proof. The native
+`/openapi` wrappers are locally implemented; scoped API Key creation, Aily configuration and any
+release remain pending.
 
 ---
 

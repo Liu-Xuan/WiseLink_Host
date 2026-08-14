@@ -57,12 +57,17 @@ One later page read initially failed before a FileService HTTP response and then
 single read-only retry. It is classified `TRANSIENT_READ_RECOVERED_BY_SINGLE_READ_ONLY_RETRY`; no
 business POST retry was added or performed.
 
-## Next step
+## Aily native read-only adapter
 
-Expose four Aily read-only tools over the same host read model: WorkItem/status, parsed-package
-summary, source-bound query and server-derived Miaoda deep link. Aily must not copy state or create
-parser retries, mutations or engineering conclusions. Assessment, AEO, OpenClaw and production
-release remain out of scope for this slice.
+The local host now exposes three GET-only `/openapi` wrappers for Aily: WorkItem status plus
+parsed-package summary, source-bound query, and server-derived Miaoda deep link. They reuse the same
+WorkItem repository, Unified Reader and canonical app binding. The routes contain no `@NeedLogin`
+because Miaoda's OpenAPI gateway authenticates them with a scoped application API Key; no
+`start_parse` write tool is exposed.
+
+Local implementation and the exact pending platform actions are recorded in
+`docs/AILY_MINIMAL_ENTRY_HANDOFF_20260814.md`. No OpenAPI Key, Aily Skill, release or online write
+was created in this local-only slice.
 
 ## Goal alignment
 
@@ -70,5 +75,6 @@ release remain out of scope for this slice.
 - New code is limited to the missing ordinary WorkItem store, producer/storage adapters and error
   persistence needed for that path.
 - No new package contract, hash scheme, baseline or general gate was introduced.
-- The hosted real document loop is complete; the next action is the shortest same-ledger Aily
-  read-only integration, not another proof framework.
+- The hosted real document loop is complete; the Aily read-only adapter now exists locally and the
+  next action is a scoped DEV OpenAPI Key plus three Aily read-only Skill mappings, not another
+  proof framework.

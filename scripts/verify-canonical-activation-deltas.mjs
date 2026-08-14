@@ -4,7 +4,12 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import 'reflect-metadata';
-import { MODULE_METADATA, PATH_METADATA } from '@nestjs/common/constants.js';
+import { RequestMethod } from '@nestjs/common';
+import {
+  METHOD_METADATA,
+  MODULE_METADATA,
+  PATH_METADATA,
+} from '@nestjs/common/constants.js';
 import { NEED_LOGIN_KEY } from '@lark-apaas/nestjs-authnpaas';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -15,6 +20,9 @@ const { CanonicalHostModule } = await import(
 );
 const { CanonicalHostController } = await import(
   pathToFileURL(join(moduleRoot, 'canonical-host.controller.js'))
+);
+const { CanonicalHostOpenApiController } = await import(
+  pathToFileURL(join(moduleRoot, 'canonical-host.openapi.controller.js'))
 );
 const {
   CANONICAL_AUTHORIZATION,
@@ -72,7 +80,10 @@ const controllers = Reflect.getMetadata(
   MODULE_METADATA.CONTROLLERS,
   CanonicalHostModule,
 );
-assert.deepEqual(controllers, [CanonicalHostController]);
+assert.deepEqual(controllers, [
+  CanonicalHostController,
+  CanonicalHostOpenApiController,
+]);
 assert.equal(
   Reflect.getMetadata(PATH_METADATA, CanonicalHostController),
   'api/canonical-host',
@@ -81,6 +92,28 @@ assert.deepEqual(
   Reflect.getMetadata(NEED_LOGIN_KEY, CanonicalHostController),
   { loginPath: undefined },
 );
+assert.equal(
+  Reflect.getMetadata(PATH_METADATA, CanonicalHostOpenApiController),
+  'openapi/wiselink',
+);
+assert.equal(
+  Reflect.getMetadata(NEED_LOGIN_KEY, CanonicalHostOpenApiController),
+  undefined,
+);
+assert.deepEqual(readRoutes([CanonicalHostOpenApiController]), [
+  {
+    method: 'GET',
+    path: 'openapi/wiselink/work-items/:workItemId/status',
+  },
+  {
+    method: 'GET',
+    path: 'openapi/wiselink/work-items/:workItemId/parsed-units',
+  },
+  {
+    method: 'GET',
+    path: 'openapi/wiselink/work-items/:workItemId/deep-link',
+  },
+]);
 
 const source = await readFile(
   join(root, 'client/src/pages/DocumentParsingPage/DocumentParsingPage.tsx'),
@@ -122,6 +155,12 @@ process.stdout.write(
       writeRequestSelfReportedAuthorityFields: [],
       pageProjection: 'SERVER_FRESH_READ_ONLY',
       controllerNeedLogin: true,
+      openApi: {
+        authentication: 'MIAODA_OPENAPI_KEY_GATEWAY',
+        controllerNeedLogin: false,
+        routes: readRoutes([CanonicalHostOpenApiController]),
+        mutationRoutes: 0,
+      },
       hardCodedSamplePresent: false,
       failureStates: ['FAILED_WITH_IMMUTABLE_ARTIFACT', 'RECORDING_FAILED'],
       selectedFailureContract: {
@@ -154,4 +193,24 @@ function providerMap(providers) {
       )
       .map((provider) => [provider.provide, provider]),
   );
+}
+
+function readRoutes(controllers) {
+  return controllers.flatMap((controller) => {
+    const basePath = Reflect.getMetadata(PATH_METADATA, controller);
+    return Object.getOwnPropertyNames(controller.prototype)
+      .filter((name) => name !== 'constructor')
+      .flatMap((name) => {
+        const handler = controller.prototype[name];
+        const path = Reflect.getMetadata(PATH_METADATA, handler);
+        const method = Reflect.getMetadata(METHOD_METADATA, handler);
+        if (path === undefined || method === undefined) return [];
+        return [
+          {
+            method: RequestMethod[method],
+            path: [basePath, path].filter(Boolean).join('/'),
+          },
+        ];
+      });
+  });
 }

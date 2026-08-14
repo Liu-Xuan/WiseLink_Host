@@ -132,12 +132,12 @@ DEV path and the downloaded package passed the same full strict Validator.
 
 ## Next slice: Aily same-ledger read-only facade
 
-Add only four read-only tools against the existing canonical host read model:
+The local host now provides three `/openapi` GET wrappers against the existing canonical host read
+model:
 
-1. get the exact WorkItem and processing status;
-2. read the selected parsed-package summary;
-3. query source-bound parsed units/results;
-4. return the server-derived canonical Miaoda deep link for that WorkItem.
+1. get the exact WorkItem/status and selected parsed-package summary;
+2. query source-bound parsed units/results;
+3. return the server-derived canonical Miaoda deep link for that WorkItem.
 
 Aily owns no WorkItem, parser state, package copy, retry, mutation or engineering conclusion. If a
 host identity or exact WorkItem is unavailable, the facade fails explicitly instead of inventing a
@@ -154,5 +154,6 @@ failure artifacts; they are directly tied to wrong user-visible results.
 C. No new gate/hash/contract framework was added. The transient read was handled as a bounded
 read-only operation, not as a new business retry mechanism.
 
-D. Yes: the next action is the four-tool Aily read-only facade over this completed loop, followed by
-classification/general producer expansion rather than more infrastructure.
+D. Yes: the next action is a scoped DEV OpenAPI Key and three Aily read-only Skill mappings over
+this completed loop, followed by classification/general producer expansion rather than more
+infrastructure.
