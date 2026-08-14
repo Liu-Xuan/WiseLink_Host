@@ -21,14 +21,23 @@ const storeModulePath = resolve(
   root,
   'dist/server/modules/document-management/src/hosted/miaodaFileServiceArtifactStore.js',
 );
+const catalogModulePath = resolve(
+  root,
+  'dist/server/modules/document-management/src/hosted/nest/miaoda-hosted-document-catalog.js',
+);
 const ownerRoot = resolve(
   root,
   '../../../../../../CodexHome/worktrees/d415/WiseLink/private/runtime/miaoda-app-repos/document-management-app-q2d',
 );
-const [{ DocumentManagementHostedCore }, { MiaodaFileServiceArtifactStore }] =
+const [
+  { DocumentManagementHostedCore },
+  { MiaodaFileServiceArtifactStore },
+  { classifyImmutableSourceReuseState },
+] =
   await Promise.all([
     import(pathToFileURL(coreModulePath)),
     import(pathToFileURL(storeModulePath)),
+    import(pathToFileURL(catalogModulePath)),
   ]);
 const [{ InMemoryHostedDocumentCatalog }, { LocalMiaodaFileServiceDouble }] =
   await Promise.all([
@@ -81,6 +90,31 @@ fileService.overrideDownloadMetadata(canonicalBucket, orphanFilePath, {
   updatedAt: '2026-08-14T03:20:24.629929+08:00',
 });
 const catalog = new InMemoryHostedDocumentCatalog();
+catalog.assertImmutableSourceReuseSafe = async (input) => {
+  const snapshot = catalog.snapshot();
+  const acquisitions = snapshot.acquisitions.filter((row) => (
+    row.acquisitionId === input.acquisitionId
+    || row.idempotencyKey === input.idempotencyKey
+    || row.sourceArtifactId === input.sourceArtifactId
+  ));
+  const acquisitionIds = new Set([
+    input.acquisitionId,
+    ...acquisitions.map((row) => row.acquisitionId),
+  ]);
+  return classifyImmutableSourceReuseState(input, {
+    artifacts: snapshot.sourceArtifacts.filter((row) => (
+      row.sourceArtifactId === input.sourceArtifactId
+      || (row.sha256 === input.sha256 && row.byteLength === input.byteLength)
+      || (row.bucketId === input.bucketId && row.filePath === input.filePath)
+    )),
+    acquisitions,
+    preflights: snapshot.preflights.filter((row) => acquisitionIds.has(row.acquisitionId)),
+    versions: snapshot.documentVersions.filter((row) => (
+      row.sourceArtifactId === input.sourceArtifactId
+      || row.acquisitionId === input.acquisitionId
+    )),
+  });
+};
 const authorizationCalls = [];
 const actorUserId = 'local-hosted-registrar';
 const tenantId = 'local-hosted-tenant';

@@ -28,6 +28,15 @@ existing `dm_document`, `dm_document_version`, and `dm_currentness_decision` sta
 does not change the seven-table schema, document identity, currentness semantics, or owner
 business rules.
 
+The host also carries the failure-specific recovery correction proven by the first hosted FTD run.
+A pre-existing content-addressed FileService object may continue only after exact metadata and
+actual-byte readback plus a fresh Catalog check. Zero related Catalog rows is an allowed orphan
+recovery; complete committed lineage is an allowed ordinary reuse. One narrow residual shape is
+also recoverable: exactly one matching SourceArtifact, Acquisition and READY ingress preflight,
+with the same actor/route/metadata and no related family, document, version, currentness, WorkItem
+or ActionAttempt. It resumes the existing `commitNewVersion` path without rewriting or deleting
+those three rows. Any other partial or conflicting lineage remains fail-closed.
+
 The host keeps ordinary providers only. Without Master trust, permission fresh-read and write
 authority, Registrar readiness remains `BLOCKED` and Document Management ingestion remains
 fail-closed before I/O. Phase 2 is permanently stopped; this owner refresh does not authorize a

@@ -3,9 +3,10 @@ import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 
 import {
+  actionAttempt,
   dmAcquisition,
   dmCurrentnessDecision,
   dmDocument,
@@ -13,6 +14,7 @@ import {
   dmIngressPreflight,
   dmPublicationFamily,
   dmSourceArtifact,
+  workItem,
 } from '@server/database/schema';
 
 function fail(code: string, message: string, details: Record<string, unknown> = {}) {
@@ -29,6 +31,259 @@ function asAuditUser(userId: string, alias: string) {
 
 function parseJson(value: string) {
   return JSON.parse(value);
+}
+
+const COMPLETE_ACQUISITION_STATUSES = new Set([
+  'COMMITTED_CANONICAL',
+  'LINKED_EXACT_DOCUMENT_VERSION',
+]);
+
+type ImmutableSourceReuseInput = {
+  sourceArtifactId: string;
+  acquisitionId: string;
+  idempotencyKey: string;
+  sha256: string;
+  byteLength: number;
+  mediaType: string;
+  bucketId: string;
+  filePath: string;
+  providerObjectId: string;
+  providerVersionId: string;
+};
+
+type ImmutableSourceReuseState = {
+  artifacts: Array<typeof dmSourceArtifact.$inferSelect>;
+  acquisitions: Array<typeof dmAcquisition.$inferSelect>;
+  preflights: Array<typeof dmIngressPreflight.$inferSelect>;
+  versions: Array<typeof dmDocumentVersion.$inferSelect>;
+};
+
+type IncompleteIngestionRecoveryInput = {
+  sourceArtifact: ImmutableSourceReuseInput;
+  acquisition: {
+    acquisitionId: string;
+    sourceArtifactId: string;
+    sourceChannel: string;
+    sourceRef: string;
+    selectionBucketId: string;
+    selectionFilePath: string;
+    providerObjectId: string;
+    providerVersionId: string;
+    acquiredBy: string;
+    idempotencyKey: string;
+    sourceDescriptor: Record<string, unknown>;
+  };
+  preflight: {
+    preflightId: string;
+    acquisitionId: string;
+    decision: string;
+    branch: string;
+    observedCurrentGeneration: number;
+    observedCurrentDocumentVersionId: string | null;
+    normalizedDescriptor: Record<string, unknown>;
+    decisionPayload: Record<string, unknown>;
+  };
+  downstream: {
+    familyId: string;
+    canonicalIdentityKey: string;
+    documentId: string;
+    documentVersionId: string;
+  };
+};
+
+type IncompleteIngestionRecoveryState = {
+  artifacts: Array<typeof dmSourceArtifact.$inferSelect>;
+  acquisitions: Array<typeof dmAcquisition.$inferSelect>;
+  preflights: Array<typeof dmIngressPreflight.$inferSelect>;
+  families: Array<typeof dmPublicationFamily.$inferSelect>;
+  documents: Array<typeof dmDocument.$inferSelect>;
+  versions: Array<typeof dmDocumentVersion.$inferSelect>;
+  currentness: Array<typeof dmCurrentnessDecision.$inferSelect>;
+  workItems: unknown[];
+  actionAttempts: unknown[];
+};
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right));
+    return `{${entries.map(([key, child]) => `${JSON.stringify(key)}:${stableJson(child)}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function withoutGeneratedAt(value: Record<string, unknown>) {
+  const { generatedAt: _generatedAt, ...semantic } = value;
+  return semantic;
+}
+
+export function classifyIncompleteIngestionRecoveryState(
+  input: IncompleteIngestionRecoveryInput,
+  state: IncompleteIngestionRecoveryState,
+) {
+  const downstreamCount = state.families.length
+    + state.documents.length
+    + state.versions.length
+    + state.currentness.length
+    + state.workItems.length
+    + state.actionAttempts.length;
+  if (
+    state.artifacts.length !== 1
+    || state.acquisitions.length !== 1
+    || state.preflights.length !== 1
+  ) {
+    fail(
+      'INCOMPLETE_INGESTION_RECOVERY_SHAPE_MISMATCH',
+      'Recovery requires exactly one SourceArtifact, Acquisition, and READY ingress preflight.',
+    );
+  }
+  if (downstreamCount !== 0) {
+    fail(
+      'INCOMPLETE_INGESTION_RECOVERY_DOWNSTREAM_PRESENT',
+      'Recovery is forbidden after any related family, document, version, currentness, WorkItem, or ActionAttempt exists.',
+    );
+  }
+  const artifact = state.artifacts[0];
+  const expectedArtifact = input.sourceArtifact;
+  if (
+    artifact.sourceArtifactId !== expectedArtifact.sourceArtifactId
+    || artifact.sha256 !== expectedArtifact.sha256
+    || Number(artifact.byteLength) !== Number(expectedArtifact.byteLength)
+    || artifact.mediaType !== expectedArtifact.mediaType
+    || artifact.bucketId !== expectedArtifact.bucketId
+    || artifact.filePath !== expectedArtifact.filePath
+    || artifact.providerObjectId !== expectedArtifact.providerObjectId
+    || artifact.providerVersionId !== expectedArtifact.providerVersionId
+    || artifact.readbackVerified !== true
+  ) {
+    fail(
+      'INCOMPLETE_INGESTION_RECOVERY_ARTIFACT_CONFLICT',
+      'Residual SourceArtifact differs from the freshly verified immutable object.',
+    );
+  }
+  const acquisition = state.acquisitions[0];
+  const expectedAcquisition = input.acquisition;
+  if (
+    acquisition.acquisitionId !== expectedAcquisition.acquisitionId
+    || acquisition.sourceArtifactId !== expectedAcquisition.sourceArtifactId
+    || acquisition.sourceChannel !== expectedAcquisition.sourceChannel
+    || acquisition.sourceRef !== expectedAcquisition.sourceRef
+    || acquisition.selectionBucketId !== expectedAcquisition.selectionBucketId
+    || acquisition.selectionFilePath !== expectedAcquisition.selectionFilePath
+    || acquisition.providerObjectId !== expectedAcquisition.providerObjectId
+    || acquisition.providerVersionId !== expectedAcquisition.providerVersionId
+    || acquisition.acquiredBy !== expectedAcquisition.acquiredBy
+    || acquisition.idempotencyKey !== expectedAcquisition.idempotencyKey
+    || acquisition.status !== 'ACQUIRED_READBACK_VERIFIED'
+    || acquisition.documentVersionId !== null
+    || stableJson(parseJson(acquisition.sourceDescriptorJson))
+      !== stableJson(expectedAcquisition.sourceDescriptor)
+  ) {
+    fail(
+      'INCOMPLETE_INGESTION_RECOVERY_ACQUISITION_CONFLICT',
+      'Residual Acquisition differs from the same actor, route, selection, or source metadata.',
+    );
+  }
+  const preflight = state.preflights[0];
+  const expectedPreflight = input.preflight;
+  if (
+    preflight.preflightId !== expectedPreflight.preflightId
+    || preflight.acquisitionId !== expectedPreflight.acquisitionId
+    || preflight.decision !== expectedPreflight.decision
+    || preflight.branch !== expectedPreflight.branch
+    || preflight.executionAuthorized !== false
+    || preflight.observedCurrentGeneration !== expectedPreflight.observedCurrentGeneration
+    || (preflight.observedCurrentDocumentVersionId || null)
+      !== (expectedPreflight.observedCurrentDocumentVersionId || null)
+    || preflight.status !== 'READY'
+    || preflight.documentVersionId !== null
+    || preflight.commitIdempotencyKey !== null
+    || stableJson(parseJson(preflight.normalizedDescriptorJson))
+      !== stableJson(expectedPreflight.normalizedDescriptor)
+    || stableJson(withoutGeneratedAt(parseJson(preflight.decisionPayloadJson)))
+      !== stableJson(withoutGeneratedAt(expectedPreflight.decisionPayload))
+  ) {
+    fail(
+      'INCOMPLETE_INGESTION_RECOVERY_PREFLIGHT_CONFLICT',
+      'Residual ingress preflight differs from the deterministic retry decision.',
+    );
+  }
+  return {
+    disposition: 'INCOMPLETE_INGESTION_RECOVERY_ALLOWED',
+    acquisition,
+    preflight,
+  };
+}
+
+export function classifyImmutableSourceReuseState(
+  input: ImmutableSourceReuseInput,
+  state: ImmutableSourceReuseState,
+) {
+  const artifacts = state.artifacts ?? [];
+  const acquisitions = state.acquisitions ?? [];
+  const preflights = state.preflights ?? [];
+  const versions = state.versions ?? [];
+  if (
+    artifacts.length === 0
+    && acquisitions.length === 0
+    && preflights.length === 0
+    && versions.length === 0
+  ) {
+    return { disposition: 'ORPHAN_RECOVERY_ALLOWED' };
+  }
+  if (artifacts.length !== 1) {
+    fail(
+      'IMMUTABLE_SOURCE_REUSE_DB_PARTIAL',
+      'Existing immutable bytes do not have one complete Catalog source identity.',
+    );
+  }
+  const artifact = artifacts[0];
+  if (
+    artifact.sourceArtifactId !== input.sourceArtifactId
+    || artifact.sha256 !== input.sha256
+    || Number(artifact.byteLength) !== Number(input.byteLength)
+    || artifact.mediaType !== input.mediaType
+    || artifact.bucketId !== input.bucketId
+    || artifact.filePath !== input.filePath
+    || artifact.providerObjectId !== input.providerObjectId
+    || artifact.providerVersionId !== input.providerVersionId
+    || artifact.readbackVerified !== true
+  ) {
+    fail(
+      'IMMUTABLE_SOURCE_REUSE_DB_CONFLICT',
+      'Existing Catalog source identity differs from the verified immutable object.',
+    );
+  }
+  const versionIds = new Set(versions.map((row) => row.documentVersionId));
+  const completeAcquisitions = acquisitions.length > 0 && acquisitions.every((row) => (
+    row.sourceArtifactId === input.sourceArtifactId
+    && COMPLETE_ACQUISITION_STATUSES.has(row.status)
+    && Boolean(row.documentVersionId)
+    && versionIds.has(row.documentVersionId)
+  ));
+  const preflightByAcquisition = new Map(
+    preflights.map((row) => [row.acquisitionId, row]),
+  );
+  const completePreflights = acquisitions.length > 0 && acquisitions.every((row) => {
+    const preflight = preflightByAcquisition.get(row.acquisitionId);
+    return preflight?.status === 'COMMITTED'
+      && preflight.documentVersionId === row.documentVersionId;
+  });
+  const completeVersions = versions.length > 0 && versions.every((row) => (
+    row.sourceArtifactId === input.sourceArtifactId
+    && acquisitions.some((acquisition) => (
+      acquisition.acquisitionId === row.acquisitionId
+      && acquisition.documentVersionId === row.documentVersionId
+    ))
+  ));
+  if (!completeAcquisitions || !completePreflights || !completeVersions) {
+    fail(
+      'IMMUTABLE_SOURCE_REUSE_DB_PARTIAL',
+      'Existing immutable bytes are bound to incomplete Catalog state.',
+    );
+  }
+  return { disposition: 'CATALOGED_SOURCE_REUSE_ALLOWED' };
 }
 
 @Injectable()
@@ -132,6 +387,110 @@ export class MiaodaHostedDocumentCatalog {
       currentGeneration: row.family.currentGeneration,
       immutableReadbackVerified: true,
     };
+  }
+
+  async assertImmutableSourceReuseSafe(input: ImmutableSourceReuseInput) {
+    const artifacts = await this.db.select().from(dmSourceArtifact).where(or(
+      eq(dmSourceArtifact.sourceArtifactId, input.sourceArtifactId),
+      and(
+        eq(dmSourceArtifact.sha256, input.sha256),
+        eq(dmSourceArtifact.byteLength, Number(input.byteLength)),
+      ),
+      and(
+        eq(dmSourceArtifact.bucketId, input.bucketId),
+        eq(dmSourceArtifact.filePath, input.filePath),
+      ),
+    )).limit(3);
+    const acquisitions = await this.db.select().from(dmAcquisition).where(or(
+      eq(dmAcquisition.acquisitionId, input.acquisitionId),
+      eq(dmAcquisition.idempotencyKey, input.idempotencyKey),
+      eq(dmAcquisition.sourceArtifactId, input.sourceArtifactId),
+    )).limit(100);
+    const acquisitionIds = [...new Set([
+      input.acquisitionId,
+      ...acquisitions.map((row) => row.acquisitionId),
+    ])];
+    const preflights = await this.db.select().from(dmIngressPreflight).where(
+      inArray(dmIngressPreflight.acquisitionId, acquisitionIds),
+    ).limit(100);
+    const versions = await this.db.select().from(dmDocumentVersion).where(or(
+      eq(dmDocumentVersion.sourceArtifactId, input.sourceArtifactId),
+      eq(dmDocumentVersion.acquisitionId, input.acquisitionId),
+    )).limit(100);
+    return classifyImmutableSourceReuseState(input, {
+      artifacts,
+      acquisitions,
+      preflights,
+      versions,
+    });
+  }
+
+  async assertIncompleteIngestionRecoverySafe(input: IncompleteIngestionRecoveryInput) {
+    const artifacts = await this.db.select().from(dmSourceArtifact).where(or(
+      eq(dmSourceArtifact.sourceArtifactId, input.sourceArtifact.sourceArtifactId),
+      and(
+        eq(dmSourceArtifact.sha256, input.sourceArtifact.sha256),
+        eq(dmSourceArtifact.byteLength, Number(input.sourceArtifact.byteLength)),
+      ),
+      and(
+        eq(dmSourceArtifact.bucketId, input.sourceArtifact.bucketId),
+        eq(dmSourceArtifact.filePath, input.sourceArtifact.filePath),
+      ),
+    )).limit(3);
+    const acquisitions = await this.db.select().from(dmAcquisition).where(or(
+      eq(dmAcquisition.acquisitionId, input.acquisition.acquisitionId),
+      eq(dmAcquisition.idempotencyKey, input.acquisition.idempotencyKey),
+      eq(dmAcquisition.sourceArtifactId, input.sourceArtifact.sourceArtifactId),
+    )).limit(3);
+    const preflights = await this.db.select().from(dmIngressPreflight).where(or(
+      eq(dmIngressPreflight.preflightId, input.preflight.preflightId),
+      eq(dmIngressPreflight.acquisitionId, input.acquisition.acquisitionId),
+    )).limit(3);
+    const families = await this.db.select().from(dmPublicationFamily).where(or(
+      eq(dmPublicationFamily.familyId, input.downstream.familyId),
+      eq(dmPublicationFamily.canonicalIdentityKey, input.downstream.canonicalIdentityKey),
+    )).limit(3);
+    const documents = await this.db.select().from(dmDocument).where(or(
+      eq(dmDocument.documentId, input.downstream.documentId),
+      eq(dmDocument.familyId, input.downstream.familyId),
+    )).limit(3);
+    const versions = await this.db.select().from(dmDocumentVersion).where(or(
+      eq(dmDocumentVersion.documentVersionId, input.downstream.documentVersionId),
+      eq(dmDocumentVersion.familyId, input.downstream.familyId),
+      eq(dmDocumentVersion.sourceArtifactId, input.sourceArtifact.sourceArtifactId),
+      eq(dmDocumentVersion.acquisitionId, input.acquisition.acquisitionId),
+    )).limit(3);
+    const currentness = await this.db.select().from(dmCurrentnessDecision).where(or(
+      eq(dmCurrentnessDecision.familyId, input.downstream.familyId),
+      eq(dmCurrentnessDecision.preflightId, input.preflight.preflightId),
+      eq(dmCurrentnessDecision.nextDocumentVersionId, input.downstream.documentVersionId),
+    )).limit(3);
+    const workItems = await this.db.select().from(workItem).where(or(
+      eq(workItem.sourceArtifactId, input.sourceArtifact.sourceArtifactId),
+      eq(workItem.documentId, input.downstream.documentId),
+      eq(workItem.documentVersionId, input.downstream.documentVersionId),
+    )).limit(3);
+    const actionAttempts = await this.db.select({
+      attemptId: actionAttempt.attemptId,
+    }).from(actionAttempt).innerJoin(
+      workItem,
+      eq(workItem.workItemId, actionAttempt.workItemId),
+    ).where(or(
+      eq(workItem.sourceArtifactId, input.sourceArtifact.sourceArtifactId),
+      eq(workItem.documentId, input.downstream.documentId),
+      eq(workItem.documentVersionId, input.downstream.documentVersionId),
+    )).limit(3);
+    return classifyIncompleteIngestionRecoveryState(input, {
+      artifacts,
+      acquisitions,
+      preflights,
+      families,
+      documents,
+      versions,
+      currentness,
+      workItems,
+      actionAttempts,
+    });
   }
 
   async recordAcquisition({ sourceArtifact, acquisition }) {

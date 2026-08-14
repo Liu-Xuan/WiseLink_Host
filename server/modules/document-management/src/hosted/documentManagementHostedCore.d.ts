@@ -6,6 +6,8 @@ export interface HostedCorePorts {
   catalog: {
     recordAcquisition(input: unknown): Promise<unknown>;
     findIngestionByIdempotency(input: unknown): Promise<unknown>;
+    assertImmutableSourceReuseSafe(input: unknown): Promise<unknown>;
+    assertIncompleteIngestionRecoverySafe(input: unknown): Promise<unknown>;
     listIngressDocuments(): Promise<unknown[]>;
     observeFamily(identityKey: string): Promise<unknown>;
     recordPreflight(input: unknown): Promise<unknown>;
