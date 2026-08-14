@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
-import { Inject, Injectable } from '@nestjs/common';
+import { ConflictException, Inject, Injectable } from '@nestjs/common';
 
 import type {
   CanonicalAssessmentCandidateProjection,
@@ -53,6 +53,7 @@ export interface CanonicalAssessmentEvaluateInput {
 
 export interface CanonicalAssessmentResynthesisInput {
   workItemId: string;
+  expectedRevision: number;
   criterionId: string;
   review: EngineerReviewState;
   externalDiscovery?: HostedOpenClawDiscoveryResult | null;
@@ -80,12 +81,12 @@ export class CanonicalHostAssessmentService {
     actor: CanonicalHostActor,
   ): Promise<CanonicalWorkItemProjection> {
     let workItem = await this.requiredSbWorkItem(input.workItemId);
-    if (workItem.assessment) return workItem;
     const permissionSnapshotVersion = await this.authorize(
       workItem,
       actor,
       'EVALUATE_JOB_AID',
     );
+    if (workItem.assessment) return workItem;
     const attempt = await this.repository.reserveAssessmentAction({
       workItemId: workItem.workItemId,
       actionType: 'EVALUATE_JOB_AID',
@@ -93,6 +94,7 @@ export class CanonicalHostAssessmentService {
       requestOrigin: 'MIAODA',
       actorUserId: actor.userId,
       tenantId: actor.tenantId,
+      attemptNo: 1,
     });
     if (!attempt.created) {
       workItem = await this.requiredSbWorkItem(input.workItemId);
@@ -172,9 +174,11 @@ export class CanonicalHostAssessmentService {
     actor: CanonicalHostActor,
   ): Promise<CanonicalWorkItemProjection> {
     let workItem = await this.requiredSbWorkItem(input.workItemId);
-    if (!workItem.assessment) throw new Error('ASSESSMENT_CANDIDATE_REQUIRED');
-    if (workItem.assessment.resynthesisAttemptId) return workItem;
     await this.authorize(workItem, actor, 'RESYNTHESIZE_ASSESSMENT');
+    if (!workItem.assessment) throw new Error('ASSESSMENT_CANDIDATE_REQUIRED');
+    if (workItem.revision !== input.expectedRevision) {
+      throw new ConflictException('WORK_ITEM_CAS_CONFLICT');
+    }
     const attempt = await this.repository.reserveAssessmentAction({
       workItemId: workItem.workItemId,
       actionType: 'RESYNTHESIZE_ASSESSMENT',
@@ -182,10 +186,11 @@ export class CanonicalHostAssessmentService {
       requestOrigin: 'MIAODA',
       actorUserId: actor.userId,
       tenantId: actor.tenantId,
+      attemptNo: input.expectedRevision,
     });
     if (!attempt.created) {
       workItem = await this.requiredSbWorkItem(input.workItemId);
-      if (workItem.assessment?.resynthesisAttemptId) return workItem;
+      if (workItem.revision !== input.expectedRevision) return workItem;
       throw new Error('ASSESSMENT_RESYNTHESIS_INCOMPLETE_PRIOR_ATTEMPT');
     }
     try {
@@ -262,6 +267,16 @@ export class CanonicalHostAssessmentService {
       requestId: workItem.requestId,
       documentVersionId: workItem.source.documentVersionId,
     });
+    if (!decision.allowed || decision.action !== action) {
+      throw new Error('CANONICAL_ACTION_NOT_AUTHORIZED');
+    }
+    requiredDecisionText(decision.actorFingerprint, 'actorFingerprint');
+    requiredDecisionText(decision.decisionId, 'decisionId');
+    requiredDecisionText(decision.decisionHash, 'decisionHash');
+    requiredDecisionText(
+      decision.permissionSnapshotVersion,
+      'permissionSnapshotVersion',
+    );
     const snapshot = await this.permissionSnapshots.freshRead({
       actor,
       decision,
@@ -401,6 +416,12 @@ function requiredIso(value: string, field: string): string {
     throw new Error('ASSESSMENT_' + field.toUpperCase() + '_INVALID');
   }
   return value;
+}
+
+function requiredDecisionText(value: unknown, field: string): void {
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new Error('CANONICAL_AUTHORIZATION_DECISION_INVALID:' + field);
+  }
 }
 
 function errorCode(error: unknown): string {

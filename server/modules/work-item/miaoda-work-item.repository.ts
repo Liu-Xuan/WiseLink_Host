@@ -235,7 +235,11 @@ export class MiaodaWorkItemRepository {
     requestOrigin: 'MIAODA' | 'AILY';
     actorUserId: string;
     tenantId: string;
+    attemptNo: number;
   }): Promise<AssessmentActionAttemptReservation> {
+    if (!Number.isSafeInteger(input.attemptNo) || input.attemptNo < 1) {
+      throw new Error('ASSESSMENT_ACTION_ATTEMPT_NUMBER_INVALID');
+    }
     const now = new Date();
     const attemptId = 'ATT-' + randomUUID();
     const inserted = await this.db
@@ -244,7 +248,7 @@ export class MiaodaWorkItemRepository {
         attemptId,
         workItemId: input.workItemId,
         actionType: input.actionType,
-        attemptNo: 1,
+        attemptNo: input.attemptNo,
         triggerRequestId: input.triggerRequestId,
         requestOrigin: input.requestOrigin,
         status: 'RUNNING',
@@ -268,7 +272,7 @@ export class MiaodaWorkItemRepository {
       .where(and(
         eq(actionAttempt.workItemId, input.workItemId),
         eq(actionAttempt.actionType, input.actionType),
-        eq(actionAttempt.attemptNo, 1),
+        eq(actionAttempt.attemptNo, input.attemptNo),
       ))
       .limit(1);
     if (!stored) throw new Error('ASSESSMENT_ACTION_ATTEMPT_READBACK_FAILED');

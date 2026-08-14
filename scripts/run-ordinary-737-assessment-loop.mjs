@@ -118,14 +118,15 @@ class LocalWorkItemRepository {
   }
 
   async reserveAssessmentAction(input) {
-    const existing = this.assessmentActions.get(input.actionType);
+    const key = `${input.actionType}:${input.attemptNo}`;
+    const existing = this.assessmentActions.get(key);
     if (existing) return { attemptId: existing.attemptId, created: false };
     const value = {
       ...structuredClone(input),
-      attemptId: `ATT-LOCAL-${input.actionType}`,
+      attemptId: `ATT-LOCAL-${input.actionType}-${input.attemptNo}`,
       status: 'RUNNING',
     };
-    this.assessmentActions.set(input.actionType, value);
+    this.assessmentActions.set(key, value);
     return { attemptId: value.attemptId, created: true };
   }
 
@@ -439,10 +440,11 @@ const criterionId = initialAssessment.evaluation.snapshot.items[0].criterionId;
 const resynthesized = await assessment.resynthesizeAfterEngineerChange(
   {
     workItemId: evaluated.workItemId,
+    expectedRevision: evaluated.revision,
     criterionId,
     review: {
       baseRecordId: 'LOCAL-ENGINEER-REVIEW-001',
-      decision: 'PASS',
+      decision: 'confirmed_pass',
       comment: 'Local acceptance only; no engineering closure authority.',
       reviewingEngineerUserIds: [actor.userId],
       status: 'ENGINEER_CONFIRMED',
@@ -458,23 +460,54 @@ assert.equal(resynthesized.assessment.previousOverallStale, true);
 assert.equal(resynthesized.assessment.staleReason, 'ENGINEER_ITEM_SET_CHANGED');
 assert.equal(resynthesized.package.packageId, parsed.result.workItem.package.packageId);
 assert.equal(repository.assessmentActions.size, 2);
-assert.equal(repository.assessmentActions.get('EVALUATE_JOB_AID').status, 'SUCCEEDED');
-assert.equal(repository.assessmentActions.get('RESYNTHESIZE_ASSESSMENT').status, 'SUCCEEDED');
+assert.equal(repository.assessmentActions.get('EVALUATE_JOB_AID:1').status, 'SUCCEEDED');
+assert.equal(
+  repository.assessmentActions.get(`RESYNTHESIZE_ASSESSMENT:${evaluated.revision}`).status,
+  'SUCCEEDED',
+);
 
-const page = await vertical.page(
-  { workItemId: resynthesized.workItemId, query: 'applicability' },
+const secondCriterionId = initialAssessment.evaluation.snapshot.items[1].criterionId;
+const secondResynthesis = await assessment.resynthesizeAfterEngineerChange(
+  {
+    workItemId: resynthesized.workItemId,
+    expectedRevision: resynthesized.revision,
+    criterionId: secondCriterionId,
+    review: {
+      baseRecordId: 'LOCAL-ENGINEER-REVIEW-002',
+      decision: 'deferred',
+      comment: 'Second explicit edit proves revision-scoped resynthesis.',
+      reviewingEngineerUserIds: [actor.userId],
+      status: 'NEEDS_REVIEW',
+      updatedAt: '2026-08-13T02:00:00.000Z',
+    },
+    externalDiscovery: zeroResultDiscovery,
+    reviewedExternalManifest: fast62Manifest,
+  },
   actor,
 );
-const openApi = await vertical.openApiStatus(resynthesized.workItemId);
-const deepLink = await vertical.openApiDeepLink(resynthesized.workItemId);
+assert.equal(secondResynthesis.revision, resynthesized.revision + 1);
+assert.equal(repository.assessmentActions.size, 3);
+assert.equal(
+  repository.assessmentActions.get(
+    `RESYNTHESIZE_ASSESSMENT:${resynthesized.revision}`,
+  ).status,
+  'SUCCEEDED',
+);
+
+const page = await vertical.page(
+  { workItemId: secondResynthesis.workItemId, query: 'applicability' },
+  actor,
+);
+const openApi = await vertical.openApiStatus(secondResynthesis.workItemId);
+const deepLink = await vertical.openApiDeepLink(secondResynthesis.workItemId);
 assert.equal(page.workItem.assessment.criterionCount, 150);
 assert.equal(openApi.assessmentSummary.criterionCount, 150);
 assert.equal(openApi.assessmentSummary.artifact.sha256,
-  resynthesized.assessment.artifact.sha256);
+  secondResynthesis.assessment.artifact.sha256);
 assert.equal(deepLink.deepLink, page.entry.deepLinkPath);
 assert.equal(ingestCalls, 1);
-assert.equal(repository.parseReservation.workItemId, resynthesized.workItemId);
-assert.equal(fileService.uploadCalls.length, 5);
+assert.equal(repository.parseReservation.workItemId, secondResynthesis.workItemId);
+assert.equal(fileService.uploadCalls.length, 6);
 
 process.stdout.write(`${JSON.stringify({
   status: 'ORDINARY_737_ASSESSMENT_LOOP_PASS',
@@ -485,32 +518,32 @@ process.stdout.write(`${JSON.stringify({
     providerObjectId: sourceMetadata.id,
   },
   documentVersionId: parsed.result.workItem.source.documentVersionId,
-  workItemId: resynthesized.workItemId,
+  workItemId: secondResynthesis.workItemId,
   package: {
-    packageId: resynthesized.package.packageId,
-    artifact: resynthesized.package.artifact,
-    fullValidator: resynthesized.package.fullValidatorProof.status
+    packageId: secondResynthesis.package.packageId,
+    artifact: secondResynthesis.package.artifact,
+    fullValidator: secondResynthesis.package.fullValidatorProof.status
       ?? 'FULL_STRICT_VALIDATOR_PASSED',
     readerQueryResultCount: page.queryResults.length,
   },
   assessment: {
-    criterionSetId: resynthesized.assessment.criterionSetId,
-    criterionCount: resynthesized.assessment.criterionCount,
-    evaluationItemCount: resynthesized.assessment.evaluationItemCount,
-    packageStatus: resynthesized.assessment.packageStatus,
-    applicabilityOverall: resynthesized.assessment.applicabilityOverall,
-    authorityLevel: resynthesized.assessment.authorityLevel,
-    artifact: resynthesized.assessment.artifact,
-    evaluateAttemptId: resynthesized.assessment.evaluateAttemptId,
-    resynthesisAttemptId: resynthesized.assessment.resynthesisAttemptId,
+    criterionSetId: secondResynthesis.assessment.criterionSetId,
+    criterionCount: secondResynthesis.assessment.criterionCount,
+    evaluationItemCount: secondResynthesis.assessment.evaluationItemCount,
+    packageStatus: secondResynthesis.assessment.packageStatus,
+    applicabilityOverall: secondResynthesis.assessment.applicabilityOverall,
+    authorityLevel: secondResynthesis.assessment.authorityLevel,
+    artifact: secondResynthesis.assessment.artifact,
+    evaluateAttemptId: secondResynthesis.assessment.evaluateAttemptId,
+    resynthesisAttemptId: secondResynthesis.assessment.resynthesisAttemptId,
   },
   external: {
-    discoveryStatus: resynthesized.assessment.externalDiscoveryStatus,
-    discoveryIsEvidence: resynthesized.assessment.externalDiscoveryIsEvidence,
+    discoveryStatus: secondResynthesis.assessment.externalDiscoveryStatus,
+    discoveryIsEvidence: secondResynthesis.assessment.externalDiscoveryIsEvidence,
     initialReviewedDocumentVersionId: fast61.documentVersionId,
     currentReviewedDocumentVersionId: fast62.documentVersionId,
     externalStaleReason: externalRevisionResynthesis.staleState.reason,
-    finalEngineerStaleReason: resynthesized.assessment.staleReason,
+    finalEngineerStaleReason: secondResynthesis.assessment.staleReason,
     oldRevisionAbsentFromCurrentTransport: true,
   },
   page: {

@@ -40,12 +40,19 @@ the initial candidate; changing the reviewed manifest to #62 produces
   DocumentVersion from the rebuilt transport;
 - an explicit engineer review change yielded `ENGINEER_ITEM_SET_CHANGED` and a second immutable
   assessment artifact;
-- exactly one `EVALUATE_JOB_AID` ActionAttempt and one `RESYNTHESIZE_ASSESSMENT` ActionAttempt
-  succeeded;
+- exactly one `EVALUATE_JOB_AID` ActionAttempt and two revision-scoped
+  `RESYNTHESIZE_ASSESSMENT` ActionAttempts succeeded;
 - the parser package identity remained unchanged; Assessment refs/hashes are stored only in the
   nullable WorkItem assessment projection, never in parser package fields on ActionAttempt;
 - the same WorkItem page, fixed read-only OpenAPI status and server-derived deep link fresh-read the
-  candidate projection.
+  candidate projection;
+- two authenticated Miaoda actions now expose the same service path:
+  `POST .../assessment/evaluate` and `POST .../assessment/resynthesize`;
+- the browser never supplies actor, authority, package, external discovery, reviewed OEM manifest,
+  permission snapshot or evaluation time. The server owns those values; resynthesis requires the
+  current WorkItem revision and derives review status from the selected decision;
+- two consecutive revision-scoped resynthesis attempts succeeded, proving that later engineer
+  edits are not silently ignored and an old page revision cannot overwrite the current projection.
 
 ## Commands
 
@@ -61,7 +68,7 @@ npm run build:prod
 Observed acceptance:
 
 - real 737 Assessment loop: PASS;
-- Jest: 19 suites / 87 tests PASS;
+- Jest: 20 suites / 89 tests PASS;
 - server/client typecheck, ESLint, Stylelint, production build and OpenAPI self-check: PASS.
 
 ## Claims and non-claims
@@ -79,15 +86,16 @@ Non-claims:
 - no push, release, environment change or online write was performed;
 - no Assessment or AEO engineering conclusion was confirmed;
 - OpenClaw output was not adopted as evidence;
-- no new table, endpoint, package contract, hash rule, baseline, gate, queue, worker or second
-  persistence truth was added;
+- no new table, package contract, hash rule, baseline, gate, queue, worker or second persistence
+  truth was added; the only new endpoints are the two authenticated product actions above, while
+  Aily OpenAPI remains exactly three GET-only routes and zero mutation routes;
 - hosted Assessment and Aily skill execution remain unverified.
 
 ## Goal alignment
 
 - This slice moves an exact SB from parsing into a source-bounded, reviewable Job Aid candidate.
-- Added complexity is limited to ordinary Assessment composition, two ActionAttempts and one thin
-  WorkItem projection; it directly prevents parser/assessment artifact identity confusion.
+- Added complexity is limited to ordinary Assessment composition, existing ActionAttempts and one
+  thin WorkItem projection; it directly prevents parser/assessment artifact identity confusion.
 - The implementation advances the real loop instead of adding gates or special-case rule lists.
 - The shortest next step is one separately authorized hosted Assessment validation, followed by
   mapping the existing fixed read-only OpenAPI into Aily skills.

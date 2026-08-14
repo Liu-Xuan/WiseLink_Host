@@ -34,6 +34,12 @@ export default function DocumentParsingPage() {
     useState<CanonicalDocumentParsingPageResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [assessmentAction, setAssessmentAction] = useState<
+    'EVALUATE' | 'RESYNTHESIZE' | null
+  >(null);
+  const [assessmentError, setAssessmentError] = useState<string | null>(null);
+  const [criterionId, setCriterionId] = useState<string>('');
+  const [engineerComment, setEngineerComment] = useState<string>('');
 
   async function load(nextQuery: string): Promise<void> {
     if (!workItemId) {
@@ -75,6 +81,9 @@ export default function DocumentParsingPage() {
   const usagePolicy = pkg?.usagePolicy;
   const referenceOnly = usagePolicy?.presentationMode === 'REFERENCE_ONLY';
   const assessment = data.workItem.assessment ?? null;
+  const assessmentEligible =
+    data.workItem.classification.status === 'CONFIRMED' &&
+    data.workItem.classification.normalizedFamily === 'SB';
   const results: UnifiedReaderQueryResult[] = data.queryResults;
   const fileLabel: string = `${data.workItem.classification.normalizedFamily} · ${short(data.workItem.source.sourceArtifactId, 20, 8)}`;
 
@@ -256,30 +265,117 @@ export default function DocumentParsingPage() {
         </article>
       </section>
 
-      {assessment ? (
+      {assessmentEligible ? (
         <section className="parse-assessment-panel" aria-label="Job Aid 候选评估">
           <div className="parse-panel-label">
             <ClipboardCheck /> Job Aid 候选评估 · 同一 WorkItem
           </div>
-          <div className="parse-assessment-grid">
-            <div>
-              <strong>{assessment.criterionCount}</strong>
-              <span>受控检查项</span>
+          {assessment ? (
+            <>
+              <div className="parse-assessment-grid">
+                <div>
+                  <strong>{assessment.criterionCount}</strong>
+                  <span>受控检查项</span>
+                </div>
+                <div>
+                  <strong>{assessment.packageStatus}</strong>
+                  <span>{assessment.applicabilityOverall}</span>
+                </div>
+                <div>
+                  <strong>{assessment.status}</strong>
+                  <span>{assessment.staleReason ?? 'INITIAL_CANDIDATE'}</span>
+                </div>
+              </div>
+              <p>
+                外部发现：{assessment.externalDiscoveryStatus ?? 'NOT_RUN'}；只作候选发现，
+                Evidence={String(assessment.externalDiscoveryIsEvidence)}。当前结果仍为
+                candidate_only，工程关闭={assessment.blocksEngineeringClosure ? '阻断' : '未阻断'}。
+              </p>
+              <form
+                className="parse-assessment-action"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  if (!criterionId.trim() || !engineerComment.trim()) return;
+                  setAssessmentAction('RESYNTHESIZE');
+                  setAssessmentError(null);
+                  void canonicalHost
+                    .resynthesizeAssessment(workItemId, {
+                      expectedRevision: data.workItem.revision,
+                      criterionId: criterionId.trim(),
+                      decision: 'deferred',
+                      comment: engineerComment.trim(),
+                    })
+                    .then(() => load(query.trim()))
+                    .catch((cause: unknown) => {
+                      setAssessmentError(
+                        cause instanceof Error
+                          ? cause.message
+                          : 'ASSESSMENT_RESYNTHESIS_FAILED',
+                      );
+                    })
+                    .finally(() => setAssessmentAction(null));
+                }}
+              >
+                <input
+                  value={criterionId}
+                  onChange={(event) => setCriterionId(event.target.value)}
+                  placeholder="需复核的 Criterion ID"
+                  aria-label="需复核的 Criterion ID"
+                />
+                <input
+                  value={engineerComment}
+                  onChange={(event) => setEngineerComment(event.target.value)}
+                  placeholder="工程师修改说明"
+                  aria-label="工程师修改说明"
+                />
+                <button
+                  type="submit"
+                  disabled={
+                    assessmentAction !== null ||
+                    !criterionId.trim() ||
+                    !engineerComment.trim()
+                  }
+                >
+                  {assessmentAction === 'RESYNTHESIZE'
+                    ? '正在重综合…'
+                    : '保存补证意见并重综合'}
+                </button>
+              </form>
+            </>
+          ) : (
+            <div className="parse-assessment-empty">
+              <p>
+                当前 SB 已完成统一解析；可在同一 WorkItem 生成 N 项 Job Aid 候选评估。
+                该动作只生成 candidate_only，不形成工程结论。
+              </p>
+              <button
+                type="button"
+                disabled={assessmentAction !== null}
+                onClick={() => {
+                  setAssessmentAction('EVALUATE');
+                  setAssessmentError(null);
+                  void canonicalHost
+                    .evaluateAssessment(workItemId)
+                    .then(() => load(query.trim()))
+                    .catch((cause: unknown) => {
+                      setAssessmentError(
+                        cause instanceof Error
+                          ? cause.message
+                          : 'ASSESSMENT_EVALUATE_FAILED',
+                      );
+                    })
+                    .finally(() => setAssessmentAction(null));
+                }}
+              >
+                {assessmentAction === 'EVALUATE'
+                  ? '正在生成候选评估…'
+                  : '生成 Job Aid 候选评估'}
+              </button>
             </div>
-            <div>
-              <strong>{assessment.packageStatus}</strong>
-              <span>{assessment.applicabilityOverall}</span>
-            </div>
-            <div>
-              <strong>{assessment.status}</strong>
-              <span>{assessment.staleReason ?? 'INITIAL_CANDIDATE'}</span>
-            </div>
-          </div>
-          <p>
-            外部发现：{assessment.externalDiscoveryStatus ?? 'NOT_RUN'}；只作候选发现，
-            Evidence={String(assessment.externalDiscoveryIsEvidence)}。当前结果仍为
-            candidate_only，工程关闭={assessment.blocksEngineeringClosure ? '阻断' : '未阻断'}。
-          </p>
+          )}
+          {assessmentError ? (
+            <p className="parse-assessment-error">{assessmentError}</p>
+          ) : null}
         </section>
       ) : null}
 
