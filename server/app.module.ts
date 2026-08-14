@@ -74,7 +74,7 @@ import { ViewModule } from './modules/view/view.module';
     }),
     DocumentManagementValidationModule,
     RuntimeProbeModule,
-    ExternalDiscoveryModule,
+    ExternalDiscoveryModule.forRoot(),
     // ====== @route-section: business-modules END ======
 
     // ⚠️ @route-order: last
