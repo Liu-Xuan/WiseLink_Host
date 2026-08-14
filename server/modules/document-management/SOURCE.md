@@ -1,7 +1,7 @@
 # Document Management hosted source
 
 - source owner repository: `document-management-app-q2d`
-- source owner commit: `4d88666a3c494633dc083388ef781ea7aafab998`
+- source owner commit: `3ebc61c0532c5ee04122a251464fc644d1238439`
 - exported with: `npm run export:hosted-module -- --output <empty-directory>`
 - host app candidate: `app_17bzc551rsg`
 - module role: versioned internal source bundle; not a second user application
@@ -29,4 +29,6 @@ hosted replay, environment change or online write.
 
 The refreshed FileService adapter treats `updatedAt` as audit metadata only. Bucket, canonical
 path, provider object ID and actual bytes remain strict. A pre-existing content-addressed source is
-reused only after exact byte verification, with zero upload and zero delete.
+reused only after exact byte verification, with zero upload and zero delete. The owner now also
+passes the provider-canonical path without a leading slash to the official 0.1.2 upload preflight;
+the caller-facing Catalog receipt continues to use the leading-slash path.
