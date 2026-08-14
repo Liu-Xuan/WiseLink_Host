@@ -1,0 +1,22 @@
+{
+  "hostedAppId": "app_17c3zn24kv2",
+  "query": "777 FTD 31-21002 software",
+  "resultStatus": "ZERO_RESULTS_FOR_TARGET_IDENTIFIER",
+  "accessRestricted": false,
+  "truncated": false,
+  "partialOnly": true,
+  "directTargetMatchCount": 0,
+  "candidates": [
+    {
+      "publisher": "BOEING",
+      "disposition": "TANGENTIAL_NO_DIRECT_MATCH",
+      "url": "https://services.boeing.com/training-solutions/campuses/miami-campus/boeing-777-full-flight-simulators"
+    },
+    {
+      "publisher": "BOEING",
+      "disposition": "TANGENTIAL_NO_DIRECT_MATCH",
+      "url": "https://services.boeing.com/bgsmedias/sys_master/images/h9e/hf0/9023346704414/Training-and-Simulation-Digital-Services-2026/Training-and-Simulation-Digital-Services-2026.pdf"
+    }
+  ],
+  "excludedNonOemSources": ["federalregister.gov", "csair.com"]
+}
