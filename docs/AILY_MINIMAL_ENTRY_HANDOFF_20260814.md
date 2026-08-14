@@ -1,6 +1,6 @@
 # Aily 最小入口交接
 
-状态：`LOCAL_READ_ONLY_WRAPPER_COMPLETE / OPENAPI_KEY_AND_AILY_CONFIG_PENDING`
+状态：`LOCAL_FIXED_PATH_REVISION_COMPLETE / HOSTED_REVALIDATION_PENDING`
 
 ## 本轮范围
 
@@ -10,9 +10,9 @@
 
 | Aily Skill | 妙搭 OpenAPI | 输入 | 输出重点 |
 | --- | --- | --- | --- |
-| `get_parse_status` | `GET /openapi/wiselink/work-items/{workItemId}/status` | `workItemId` | phase、failure、frozen.2 package summary、server deep link |
-| `query_parsed_package` | `GET /openapi/wiselink/work-items/{workItemId}/parsed-units?query=...` | `workItemId`、`query` | 同一 Reader 的 source-bound results |
-| `get_deep_link` | `GET /openapi/wiselink/work-items/{workItemId}/deep-link` | `workItemId` | 妙搭服务端生成的 HTTPS 深链 |
+| `get_parse_status` | `GET /openapi/wiselink/work-items/status?workItemId=...` | `workItemId` | phase、failure、frozen.2 package summary、server deep link |
+| `query_parsed_package` | `GET /openapi/wiselink/work-items/parsed-units?workItemId=...&query=...` | `workItemId`、`query` | 同一 Reader 的 source-bound results |
+| `get_deep_link` | `GET /openapi/wiselink/work-items/deep-link?workItemId=...` | `workItemId` | 妙搭服务端生成的 HTTPS 深链 |
 
 三项入口复用同一个 `CanonicalHostVerticalService`、同一个妙搭数据库 WorkItem、
 同一个 ArtifactStore 和 Unified Reader。`requestId`、`documentVersionId`、
@@ -27,7 +27,20 @@ permission snapshot、artifact ref 和 deep link 均从服务端 fresh-read，�
 - Canonical host composition 和 Unified Reader composition：`PASS`；
 - 真实 FTD 本地循环：`ORDINARY_FIRST_FTD_LOOP_PASS`，`311` units、`239` refs、
   `software` 查询 `38/38` source-bound，重复触发复用同一 WorkItem；
-- online write、push、release、API Key、Aily Skill 创建：`0`。
+- 本次固定路径修订的 online write、push、release、API Key update、Aily Skill 创建：`0`。
+
+## Hosted 网关实测与修订
+
+DEV release `7673846198880472323`（exact commit
+`805ebec3e1c85c096526c6e02fca1a25ca9ff048`）已证明：
+
+- 妙搭 OpenAPI Key 的调用头必须是 `Authorization: Bearer <secret>`；
+- `request_scope.http_path` 对路径执行字面匹配，不把 `{workItemId}` 当作路由模板；
+- 动态 WorkItem 路径因此在网关层返回 `request path not allowed`；把
+  `{workItemId}` 字面编码后能进入 Nest，但自然会因不存在该字面 WorkItem 而失败。
+
+本地修订将三条路由改为固定 path，并把 `workItemId` 移入必填 query。业务 Service、
+返回类型、Reader、服务端深链和只读边界均未改变。该修订尚未 push、release 或更新 Key。
 
 ## 为什么不直接调用现有 `/api`
 
@@ -55,14 +68,14 @@ lark-cli apps +openapi-key-list \
 lark-cli apps +openapi-key-create \
   --app-id app_17bzc551rsg \
   --name "WiseLink 3.1 Aily read-only" \
-  --scope-api 'GET /openapi/wiselink/work-items/{workItemId}/status' \
-  --scope-api 'GET /openapi/wiselink/work-items/{workItemId}/parsed-units' \
-  --scope-api 'GET /openapi/wiselink/work-items/{workItemId}/deep-link' \
+  --scope-api 'GET /openapi/wiselink/work-items/status' \
+  --scope-api 'GET /openapi/wiselink/work-items/parsed-units' \
+  --scope-api 'GET /openapi/wiselink/work-items/deep-link' \
   --as user
 ```
 
 `create` 只回显一次原始密钥。原始值必须直接保存到 Aily HTTP/自定义连接器的 Secret
-凭证字段，并由连接器注入 `X-Api-Key`；不得写入 Git、文档、Prompt、对话、普通环境变量
+凭证字段，并由连接器注入 `Authorization: Bearer <secret>`；不得写入 Git、文档、Prompt、对话、普通环境变量
 截图或日志。后续 `list/get` 只能看到脱敏预览，丢失时只能执行受控 reset。
 
 然后建立三个 Workflow Skill；只声明上表字段，不提供任意 URL/header/body 输入。先在 Aily
@@ -79,7 +92,7 @@ lark-cli apps +openapi-key-create \
 ## Non-claims
 
 - 未创建或发布 Aily Agent/Skill。
-- 未创建、重置或回显妙搭 OpenAPI Key。
-- 未发布妙搭新版本，因此 hosted `/openapi` 尚不可调用。
+- 本修订未创建、重置、更新或回显妙搭 OpenAPI Key；现有 Key 仍绑定旧动态路径 scope。
+- 固定路径修订尚未发布；hosted `/openapi` 仍是 release `7673846198880472323` 的动态路径版本。
 - 未写 WorkItem、Base、FileService、DocumentVersion 或 ParsedPackage。
 - 未触发第二次解析，未加入 Assessment、Job Aid 或 OpenClaw。
