@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   ArrowUpRight,
   CheckCircle2,
+  ClipboardCheck,
   FileText,
   Fingerprint,
   LockKeyhole,
@@ -73,6 +74,7 @@ export default function DocumentParsingPage() {
   const pkg = data.workItem.package;
   const usagePolicy = pkg?.usagePolicy;
   const referenceOnly = usagePolicy?.presentationMode === 'REFERENCE_ONLY';
+  const assessment = data.workItem.assessment ?? null;
   const results: UnifiedReaderQueryResult[] = data.queryResults;
   const fileLabel: string = `${data.workItem.classification.normalizedFamily} · ${short(data.workItem.source.sourceArtifactId, 20, 8)}`;
 
@@ -253,6 +255,33 @@ export default function DocumentParsingPage() {
           </div>
         </article>
       </section>
+
+      {assessment ? (
+        <section className="parse-assessment-panel" aria-label="Job Aid 候选评估">
+          <div className="parse-panel-label">
+            <ClipboardCheck /> Job Aid 候选评估 · 同一 WorkItem
+          </div>
+          <div className="parse-assessment-grid">
+            <div>
+              <strong>{assessment.criterionCount}</strong>
+              <span>受控检查项</span>
+            </div>
+            <div>
+              <strong>{assessment.packageStatus}</strong>
+              <span>{assessment.applicabilityOverall}</span>
+            </div>
+            <div>
+              <strong>{assessment.status}</strong>
+              <span>{assessment.staleReason ?? 'INITIAL_CANDIDATE'}</span>
+            </div>
+          </div>
+          <p>
+            外部发现：{assessment.externalDiscoveryStatus ?? 'NOT_RUN'}；只作候选发现，
+            Evidence={String(assessment.externalDiscoveryIsEvidence)}。当前结果仍为
+            candidate_only，工程关闭={assessment.blocksEngineeringClosure ? '阻断' : '未阻断'}。
+          </p>
+        </section>
+      ) : null}
 
       <footer className="parse-footer">
         <span>{data.workItem.workItemId}</span>

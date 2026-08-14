@@ -38,6 +38,8 @@ import { UnconfiguredCanonicalPermissionSnapshotAdapter } from './unconfigured-c
 import { UnconfiguredCanonicalWorkItemRegistrarAdapter } from './unconfigured-canonical-work-item-registrar.adapter';
 import { SystemCanonicalHostClockAdapter } from './system-canonical-host-clock.adapter';
 import { UnconfiguredFailureValidationWriteAuthorizationAdapter } from './unconfigured-failure-validation-write-authorization.adapter';
+import { AssessmentHostConsumerModule } from '../assessment-workbench/assessment-host-consumer.public-api';
+import { CanonicalHostAssessmentService } from './canonical-host-assessment.service';
 
 export interface CanonicalHostModuleOptions {
   imports?: ModuleMetadata['imports'];
@@ -62,6 +64,7 @@ export interface CanonicalHostModuleOptions {
     MiaodaCanonicalWorkItemRegistrarAdapter,
     OrdinaryWorkItemService,
     OrdinaryFailureValidationWriteAuthorizationAdapter,
+    CanonicalHostAssessmentService,
   ],
 })
 export class CanonicalHostModule {
@@ -127,6 +130,7 @@ export class CanonicalHostModule {
       module: CanonicalHostModule,
       imports: [
         UnifiedReaderModule.forRoot(options.unifiedReader),
+        AssessmentHostConsumerModule,
         ...(options.imports ?? []),
       ],
       controllers: [CanonicalHostController, CanonicalHostOpenApiController],
@@ -151,10 +155,12 @@ export class CanonicalHostModule {
         MiaodaCanonicalWorkItemRegistrarAdapter,
         OrdinaryWorkItemService,
         OrdinaryFailureValidationWriteAuthorizationAdapter,
+        CanonicalHostAssessmentService,
       ],
       exports: [
         CanonicalEntryFacadeService,
         CanonicalHostVerticalService,
+        CanonicalHostAssessmentService,
         CANONICAL_HOST_BINDING,
       ],
     };

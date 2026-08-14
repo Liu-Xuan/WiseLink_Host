@@ -211,6 +211,7 @@ export class CanonicalHostVerticalService {
               readerReceiptId: projection.package.readerReceiptId,
               fullValidationStatus: 'FULL_STRICT_VALIDATOR_PASSED',
             },
+      assessmentSummary: projection.assessment ?? null,
     };
   }
 

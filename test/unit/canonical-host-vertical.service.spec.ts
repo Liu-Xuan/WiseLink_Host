@@ -324,6 +324,7 @@ describe('CanonicalHostVerticalService', () => {
     expect(query.readback.package.packageId).toBe(packageId);
     expect(ailyEntry).toEqual({
       entry,
+      assessmentSummary: null,
       packageSummary: expect.objectContaining({
         packageId,
         contractRevision: 'frozen.2',

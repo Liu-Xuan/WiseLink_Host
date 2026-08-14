@@ -21,7 +21,7 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "required": ["entry", "packageSummary"],
+                  "required": ["entry", "packageSummary", "assessmentSummary"],
                   "properties": {
                     "entry": {
                       "type": "object",
@@ -60,6 +60,25 @@
                         "sourceRefCount": 239,
                         "readerReceiptId": "reader_receipt_dee9feaf9c3d7accfa6de49d77dcd645",
                         "fullValidationStatus": "FULL_STRICT_VALIDATOR_PASSED"
+                      }
+                    },
+                    "assessmentSummary": {
+                      "type": "object",
+                      "nullable": true,
+                      "description": "同一 WorkItem 的 Job Aid 候选评估薄投影；尚未评估时为 null，且始终不构成工程结论",
+                      "example": {
+                        "status": "CANDIDATE_ONLY_RESYNTHESIZED",
+                        "criterionSetId": "JACS-72D0484B6F1C17A38F671F46",
+                        "criterionCount": 150,
+                        "evaluationItemCount": 150,
+                        "packageStatus": "BLOCKED_MISSING_INPUT",
+                        "applicabilityOverall": "待核实",
+                        "authorityLevel": "candidate_only",
+                        "blocksEngineeringClosure": true,
+                        "externalDiscoveryStatus": "ZERO_RESULTS_FOR_TARGET_IDENTIFIER",
+                        "externalDiscoveryIsEvidence": false,
+                        "previousOverallStale": true,
+                        "staleReason": "ENGINEER_ITEM_SET_CHANGED"
                       }
                     }
                   }

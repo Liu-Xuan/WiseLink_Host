@@ -31,6 +31,15 @@ export interface WorkItemReservation {
   created: boolean;
 }
 
+export type AssessmentActionType =
+  | 'EVALUATE_JOB_AID'
+  | 'RESYNTHESIZE_ASSESSMENT';
+
+export interface AssessmentActionAttemptReservation {
+  attemptId: string;
+  created: boolean;
+}
+
 @Injectable()
 export class MiaodaWorkItemRepository {
   constructor(
@@ -217,6 +226,102 @@ export class MiaodaWorkItemRepository {
       .limit(1);
     if (!row) throw new Error('WORK_ITEM_NOT_FOUND');
     return row;
+  }
+
+  async reserveAssessmentAction(input: {
+    workItemId: string;
+    actionType: AssessmentActionType;
+    triggerRequestId: string;
+    requestOrigin: 'MIAODA' | 'AILY';
+    actorUserId: string;
+    tenantId: string;
+  }): Promise<AssessmentActionAttemptReservation> {
+    const now = new Date();
+    const attemptId = 'ATT-' + randomUUID();
+    const inserted = await this.db
+      .insert(actionAttempt)
+      .values({
+        attemptId,
+        workItemId: input.workItemId,
+        actionType: input.actionType,
+        attemptNo: 1,
+        triggerRequestId: input.triggerRequestId,
+        requestOrigin: input.requestOrigin,
+        status: 'RUNNING',
+        actorUserId: input.actorUserId,
+        tenantId: input.tenantId,
+        startedAt: now,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoNothing({
+        target: [
+          actionAttempt.workItemId,
+          actionAttempt.actionType,
+          actionAttempt.attemptNo,
+        ],
+      })
+      .returning({ attemptId: actionAttempt.attemptId });
+    const [stored] = await this.db
+      .select()
+      .from(actionAttempt)
+      .where(and(
+        eq(actionAttempt.workItemId, input.workItemId),
+        eq(actionAttempt.actionType, input.actionType),
+        eq(actionAttempt.attemptNo, 1),
+      ))
+      .limit(1);
+    if (!stored) throw new Error('ASSESSMENT_ACTION_ATTEMPT_READBACK_FAILED');
+    if (
+      stored.triggerRequestId !== input.triggerRequestId ||
+      stored.actorUserId !== input.actorUserId ||
+      stored.tenantId !== input.tenantId
+    ) {
+      throw new Error('ASSESSMENT_ACTION_ATTEMPT_IDENTITY_MISMATCH');
+    }
+    return {
+      attemptId: stored.attemptId,
+      created: inserted.length === 1,
+    };
+  }
+
+  async completeAssessmentAction(attemptId: string): Promise<void> {
+    const now = new Date();
+    const updated = await this.db
+      .update(actionAttempt)
+      .set({
+        status: 'SUCCEEDED',
+        completedAt: now,
+        updatedAt: now,
+      })
+      .where(and(
+        eq(actionAttempt.attemptId, attemptId),
+        eq(actionAttempt.status, 'RUNNING'),
+      ))
+      .returning({ attemptId: actionAttempt.attemptId });
+    if (updated.length !== 1) {
+      throw new Error('ASSESSMENT_ACTION_ATTEMPT_COMPLETION_CONFLICT');
+    }
+  }
+
+  async failAssessmentAction(input: {
+    attemptId: string;
+    errorCode: string;
+    errorMessage: string;
+  }): Promise<void> {
+    await this.db
+      .update(actionAttempt)
+      .set({
+        status: 'FAILED',
+        errorCode: input.errorCode.slice(0, 160),
+        errorMessage: input.errorMessage,
+        completedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(and(
+        eq(actionAttempt.attemptId, input.attemptId),
+        eq(actionAttempt.status, 'RUNNING'),
+      ));
   }
 
   private async updatePrimaryAttempt(

@@ -456,6 +456,30 @@ export interface CanonicalWorkItemRecordingFailureProjection {
   message: string;
 }
 
+export interface CanonicalAssessmentCandidateProjection {
+  status: 'CANDIDATE_ONLY' | 'CANDIDATE_ONLY_RESYNTHESIZED';
+  criterionSetId: string;
+  criterionCount: number;
+  evaluationItemCount: number;
+  packageStatus: string;
+  applicabilityOverall: string;
+  authorityLevel: 'candidate_only';
+  warningCodes: string[];
+  blocksEngineeringClosure: boolean;
+  externalDiscoveryStatus: string | null;
+  externalDiscoveryIsEvidence: false;
+  previousOverallStale: boolean;
+  staleReason:
+    | 'ENGINEER_ITEM_SET_CHANGED'
+    | 'EXTERNAL_CONTEXT_STALE'
+    | null;
+  currentContextHash: string;
+  currentTransportHash: string;
+  artifact: UnifiedPackageArtifactDescriptor;
+  evaluateAttemptId: string;
+  resynthesisAttemptId: string | null;
+}
+
 export interface CanonicalParseAuthorizationProjection {
   action: 'PARSE_PDF';
   actorFingerprint: string;
@@ -475,6 +499,7 @@ export interface CanonicalWorkItemProjection {
   source: CanonicalDocumentVersionSelection;
   classification: CanonicalClassificationSelection;
   package: CanonicalWorkItemPackageProjection | null;
+  assessment?: CanonicalAssessmentCandidateProjection | null;
   failure: CanonicalWorkItemFailureProjection | null;
   recordingFailure: CanonicalWorkItemRecordingFailureProjection | null;
 }
@@ -545,6 +570,7 @@ export interface AilyParsedPackageSummary {
 export interface AilyWorkItemStatusResponse {
   entry: CanonicalEntryFacadeResponse;
   packageSummary: AilyParsedPackageSummary | null;
+  assessmentSummary: CanonicalAssessmentCandidateProjection | null;
 }
 
 export interface AilyParsedPackageQueryResponse {
