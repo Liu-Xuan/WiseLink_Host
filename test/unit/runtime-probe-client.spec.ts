@@ -1,74 +1,85 @@
-const post = jest.fn();
+const request = jest.fn();
 
 jest.mock('@lark-apaas/client-toolkit/utils/getAxiosForBackend', () => ({
-  axiosForBackend: { post, get: jest.fn() },
+  axiosForBackend: request,
 }));
 
-import { runPhase2fValidation } from '../../client/src/api/runtime-probe';
+import { runFirstFtdVertical } from '../../client/src/api/runtime-probe';
 
-describe('runtime probe Phase 2F client action', () => {
-  beforeEach(() => post.mockReset());
+describe('runtime probe first FTD vertical client action', () => {
+  beforeEach(() => request.mockReset());
 
-  it('uses axiosForBackend with the app-relative route and fixed authorized FileService paths', async () => {
-    post.mockResolvedValue({ status: 200, data: { status: 'PASS' }, headers: {} });
+  it('uses axiosForBackend once with the exact authorized FileService selection', async () => {
+    request.mockResolvedValue({
+      status: 200,
+      data: { status: 'CANDIDATE_VERTICAL_VERIFIED' },
+      headers: {},
+    });
 
-    await expect(runPhase2fValidation()).resolves.toMatchObject({ status: 200, ok: true });
-    expect(post).toHaveBeenCalledWith(
-      '/api/document-management/validation/phase2d-ftd-two-version',
-      {
-        firstFilePath: '/1873430484255770.pdf',
-        newerFilePath: '/1873430479421449.pdf',
+    await expect(runFirstFtdVertical()).resolves.toMatchObject({
+      status: 200,
+      ok: true,
+    });
+    expect(request).toHaveBeenCalledWith({
+      url: '/api/canonical-host/work-items/parse-pdf',
+      method: 'POST',
+      data: {
+        selection: {
+          bucketId: 'bucket_aadkprardjghu',
+          filePath: '/1873430479421449.pdf',
+        },
+        query: 'software',
       },
-      { meta: { autoJumpToLogin: false } },
-    );
+      meta: { autoJumpToLogin: false },
+    });
   });
 
-  it('preserves the closed-window HTTP 403 and stable server code without retrying', async () => {
-    post.mockRejectedValue({
+  it('preserves a server rejection without retrying', async () => {
+    request.mockRejectedValue({
       response: {
         status: 403,
         data: {
           error: {
-            code: 'DOCUMENT_MANAGEMENT_VALIDATION_FORBIDDEN',
-            message: 'Phase 2D validation run ID is not configured.',
+            code: 'CANONICAL_ACTION_NOT_AUTHORIZED',
+            message: 'The authenticated actor is not authorized.',
           },
         },
         headers: { 'x-request-id': 'request-403', 'x-log-trace-id': 'trace-403' },
       },
     });
 
-    await expect(runPhase2fValidation()).resolves.toEqual(
+    await expect(runFirstFtdVertical()).resolves.toEqual(
       expect.objectContaining({
         status: 403,
-        code: 'DOCUMENT_MANAGEMENT_VALIDATION_FORBIDDEN',
+        code: 'CANONICAL_ACTION_NOT_AUTHORIZED',
         requestId: 'request-403',
         traceId: 'trace-403',
         ok: false,
       }),
     );
-    expect(post).toHaveBeenCalledTimes(1);
+    expect(request).toHaveBeenCalledTimes(1);
   });
 
-  it('normalizes a Miaoda-resolved 403 response as a failed stable-code result', async () => {
-    post.mockResolvedValue({
+  it('normalizes a resolved 403 response as a failed result', async () => {
+    request.mockResolvedValue({
       status: 403,
       data: {
         error: {
-          code: 'DOCUMENT_MANAGEMENT_VALIDATION_FORBIDDEN',
-          message: 'Phase 2D validation run ID is not configured.',
+          code: 'CANONICAL_ACTION_NOT_AUTHORIZED',
+          message: 'The authenticated actor is not authorized.',
         },
       },
       headers: { 'x-request-id': 'resolved-403' },
     });
 
-    await expect(runPhase2fValidation()).resolves.toEqual(
+    await expect(runFirstFtdVertical()).resolves.toEqual(
       expect.objectContaining({
         status: 403,
-        code: 'DOCUMENT_MANAGEMENT_VALIDATION_FORBIDDEN',
+        code: 'CANONICAL_ACTION_NOT_AUTHORIZED',
         requestId: 'resolved-403',
         ok: false,
       }),
     );
-    expect(post).toHaveBeenCalledTimes(1);
+    expect(request).toHaveBeenCalledTimes(1);
   });
 });

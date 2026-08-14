@@ -4,23 +4,29 @@ import type { Request } from 'express';
 
 import type {
   CanonicalEntryQueryRequest,
-  CanonicalPdfVerticalRunRequest,
 } from '@shared/api.interface';
 
+import { OrdinaryWorkItemService } from '../work-item/ordinary-work-item.service';
 import { CanonicalHostVerticalService } from './canonical-host-vertical.service';
 import type { CanonicalHostActor } from './canonical-host.types';
 
 @NeedLogin()
 @Controller('api/canonical-host')
 export class CanonicalHostController {
-  constructor(private readonly service: CanonicalHostVerticalService) {}
+  constructor(
+    private readonly service: CanonicalHostVerticalService,
+    private readonly workItems: OrdinaryWorkItemService,
+  ) {}
 
   @Post('work-items/parse-pdf')
   runPdf(
-    @Body() request: CanonicalPdfVerticalRunRequest,
+    @Body() request: unknown,
     @Req() httpRequest: Request,
   ) {
-    return this.service.runPdf(request, hostActor(httpRequest));
+    return this.workItems.parsePdf(
+      request as Parameters<OrdinaryWorkItemService['parsePdf']>[0],
+      hostActor(httpRequest),
+    );
   }
 
   @Get('work-items/:workItemId/document-parsing')
@@ -61,7 +67,7 @@ export class CanonicalHostController {
   }
 }
 
-function hostActor(request: Request): CanonicalHostActor {
+export function hostActor(request: Request): CanonicalHostActor {
   const context = request.userContext;
   if (!context?.userId || !context.tenantId || !context.appId || !context.env) {
     throw new Error('CANONICAL_HOST_ACTOR_CONTEXT_REQUIRED');

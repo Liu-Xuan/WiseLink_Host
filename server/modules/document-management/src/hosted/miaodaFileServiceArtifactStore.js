@@ -80,6 +80,7 @@ function metadataIdentity(metadata, expectedBucketId, expectedFilePath) {
   if (!metadata) fail('FILESERVICE_OBJECT_NOT_FOUND', `File not found: ${expectedFilePath}`);
   const bucketId = required(metadata.bucketID, 'metadata.bucketID');
   const filePath = required(metadata.filePath, 'metadata.filePath');
+  const providerObjectId = required(metadata.id, 'metadata.id');
   const expectedProviderFilePath = providerFilePath(expectedFilePath, 'expectedFilePath');
   const actualProviderFilePath = providerFilePath(filePath, 'metadata.filePath');
   if (bucketId !== expectedBucketId || actualProviderFilePath !== expectedProviderFilePath) {
@@ -95,8 +96,12 @@ function metadataIdentity(metadata, expectedBucketId, expectedFilePath) {
   return {
     bucketId,
     filePath: expectedFilePath,
-    providerObjectId: required(metadata.id, 'metadata.id'),
-    providerVersionId: required(metadata.updatedAt, 'metadata.updatedAt'),
+    providerObjectId,
+    // FileService exposes no independent immutable version key. The immutable
+    // object id is therefore the exact provider identity; updatedAt is audit
+    // metadata only and may be serialized at different precision across APIs.
+    providerVersionId: providerObjectId,
+    providerUpdatedAt: String(metadata.updatedAt || '').trim() || null,
     fileName: required(metadata.name, 'metadata.name'),
     mediaType: String(metadata.metadata?.mimeType || 'application/octet-stream').trim(),
     providerByteLength: Number(metadata.metadata?.contentLength || 0),
@@ -113,13 +118,10 @@ async function downloadActualBytes(service, locator, maxBytes) {
     : locator;
   if (
     downloadMetadata.providerObjectId !== locator.providerObjectId
-    || downloadMetadata.providerVersionId !== locator.providerVersionId
   ) {
-    fail('FILESERVICE_OBJECT_VERSION_DRIFT', 'FileService download resolved another object version.', {
+    fail('FILESERVICE_OBJECT_VERSION_DRIFT', 'FileService download resolved another object.', {
       expectedProviderObjectId: locator.providerObjectId,
-      expectedProviderVersionId: locator.providerVersionId,
       actualProviderObjectId: downloadMetadata.providerObjectId,
-      actualProviderVersionId: downloadMetadata.providerVersionId,
     });
   }
   const bytes = await bodyToBuffer(result?.content, maxBytes);
@@ -205,6 +207,7 @@ export class MiaodaFileServiceArtifactStore {
       filePath,
       providerObjectId: identity.providerObjectId,
       providerVersionId: identity.providerVersionId,
+      providerUpdatedAt: identity.providerUpdatedAt,
       sha256,
       byteLength: sourceBytes.byteLength,
       mediaType,

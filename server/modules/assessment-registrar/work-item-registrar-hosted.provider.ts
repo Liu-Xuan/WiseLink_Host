@@ -236,4 +236,3 @@ function value(
   const raw = environment[field]?.trim();
   return raw ? raw : null;
 }
-

@@ -65,8 +65,9 @@ function requiredDeepLink(
   } catch {
     throw new Error('CANONICAL_ENTRY_INVALID:DEEP_LINK_URL');
   }
+  const basePath = origin.pathname.replace(/\/$/u, '');
   const expectedPath: string =
-    `/work-items/${encodeURIComponent(workItemId)}/documents`;
+    `${basePath}/work-items/${encodeURIComponent(workItemId)}/documents`;
   if (
     parsed.protocol !== 'https:' ||
     origin.protocol !== 'https:' ||
@@ -76,7 +77,6 @@ function requiredDeepLink(
     parsed.search !== '' ||
     parsed.hash !== '' ||
     parsed.pathname !== expectedPath ||
-    origin.pathname !== '/' ||
     origin.search !== '' ||
     origin.hash !== ''
   ) {

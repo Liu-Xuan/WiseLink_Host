@@ -6,13 +6,16 @@ import {
 } from '@nestjs/common';
 
 import { Frozen2CandidateReaderService } from './frozen2-candidate-reader.service';
+import { MiaodaOrdinaryArtifactStoreAdapter } from './miaoda-ordinary-artifact-store.adapter';
 import { UnconfiguredAeoSpecialistReaderAdapter } from './unconfigured-aeo-specialist-reader.adapter';
 import { UnconfiguredUnifiedArtifactStoreAdapter } from './unconfigured-unified-artifact-store.adapter';
 import { UnconfiguredU0FullPackageValidatorAdapter } from './unconfigured-u0-full-package-validator.adapter';
 import { UnconfiguredU0Frozen2FailureAdapter } from './unconfigured-u0-frozen2-failure-adapter.adapter';
+import { UnconfiguredImmutableAcceptanceReceiptOwnerAdapter } from './unconfigured-immutable-acceptance-receipt-owner.adapter';
 import {
   AEO_SPECIALIST_READER,
   AEO_SPECIALIST_READER_PORT,
+  IMMUTABLE_ACCEPTANCE_RECEIPT_OWNER,
   U0_FULL_PACKAGE_VALIDATOR,
   U0_FROZEN2_FAILURE_ADAPTER_PORT,
   UNIFIED_ARTIFACT_STORE,
@@ -20,6 +23,7 @@ import {
 } from './unified-reader.constants';
 import { UnifiedAcceptanceFacadeService } from './unified-acceptance-facade.service';
 import { U0FullValidationService } from './u0-full-validation.service';
+import { U0Frozen2FailureAdapterService } from './u0-frozen2-failure-adapter.service';
 import { UnifiedReaderController } from './unified-reader.controller';
 import { UnifiedReaderService } from './unified-reader.service';
 import type { UnifiedReaderHostBindingState } from './unified-reader.types';
@@ -28,6 +32,7 @@ export interface UnifiedReaderModuleOptions {
   imports?: ModuleMetadata['imports'];
   artifactStoreProvider?: Provider;
   fullU0ValidatorProvider?: Provider;
+  immutableAcceptanceReceiptOwnerProvider?: Provider;
   u0Frozen2FailureAdapterProvider?: Provider;
   aeoSpecialistReaderProvider?: Provider;
 }
@@ -44,6 +49,8 @@ export function createAeoSpecialistReaderBridgeProvider(): Provider {
   controllers: [UnifiedReaderController],
   providers: [
     Frozen2CandidateReaderService,
+    MiaodaOrdinaryArtifactStoreAdapter,
+    U0Frozen2FailureAdapterService,
     U0FullValidationService,
     UnifiedAcceptanceFacadeService,
     UnifiedReaderService,
@@ -84,15 +91,25 @@ export class UnifiedReaderModule {
       UnconfiguredU0Frozen2FailureAdapter,
       'U0_FROZEN2_FAILURE_ADAPTER_PROVIDER_INVALID',
     );
+    const immutableAcceptanceReceiptOwnerProvider = resolvePortProvider(
+      options.immutableAcceptanceReceiptOwnerProvider,
+      IMMUTABLE_ACCEPTANCE_RECEIPT_OWNER,
+      UnconfiguredImmutableAcceptanceReceiptOwnerAdapter,
+      'IMMUTABLE_ACCEPTANCE_RECEIPT_OWNER_PROVIDER_INVALID',
+    );
     const hostBinding: UnifiedReaderHostBindingState = {
       mode:
         options.artifactStoreProvider ||
         options.fullU0ValidatorProvider ||
+        options.immutableAcceptanceReceiptOwnerProvider ||
         options.aeoSpecialistReaderProvider
           ? 'HOST_CONFIGURED'
           : 'DEFAULT_UNCONFIGURED',
       artifactStoreConfigured: Boolean(options.artifactStoreProvider),
       fullU0ValidatorConfigured: Boolean(options.fullU0ValidatorProvider),
+      immutableAcceptanceReceiptOwnerConfigured: Boolean(
+        options.immutableAcceptanceReceiptOwnerProvider,
+      ),
       aeoSpecialistReaderConfigured: Boolean(
         options.aeoSpecialistReaderProvider,
       ),
@@ -104,6 +121,7 @@ export class UnifiedReaderModule {
       providers: [
         artifactStoreProvider,
         fullU0ValidatorProvider,
+        immutableAcceptanceReceiptOwnerProvider,
         u0Frozen2FailureAdapterProvider,
         aeoSpecialistReaderProvider,
         { provide: UNIFIED_READER_HOST_BINDING, useValue: hostBinding },
@@ -114,6 +132,7 @@ export class UnifiedReaderModule {
         AEO_SPECIALIST_READER,
         UNIFIED_ARTIFACT_STORE,
         U0_FULL_PACKAGE_VALIDATOR,
+        IMMUTABLE_ACCEPTANCE_RECEIPT_OWNER,
         U0_FROZEN2_FAILURE_ADAPTER_PORT,
         U0FullValidationService,
         UNIFIED_READER_HOST_BINDING,

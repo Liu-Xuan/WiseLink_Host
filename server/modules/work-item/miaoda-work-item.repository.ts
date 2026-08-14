@@ -1,0 +1,287 @@
+import { randomUUID } from 'node:crypto';
+
+import { Inject, Injectable } from '@nestjs/common';
+import {
+  DRIZZLE_DATABASE,
+  type PostgresJsDatabase,
+} from '@lark-apaas/fullstack-nestjs-core';
+import { and, eq, isNull } from 'drizzle-orm';
+
+import type { CanonicalWorkItemProjection } from '@shared/api.interface';
+import { actionAttempt, workItem } from '../../database/schema';
+
+const ACTION_TYPE = 'PARSE_PDF';
+
+export interface WorkItemReservationInput {
+  tenantId: string;
+  actorUserId: string;
+  documentId: string;
+  documentVersionId: string;
+  sourceArtifactId: string;
+  sourceFileSha256: string;
+  sourceByteLength: number;
+  normalizedFamily: string;
+  requestOrigin: 'MIAODA' | 'AILY';
+}
+
+export interface WorkItemReservation {
+  workItemId: string;
+  requestId: string;
+  attemptId: string;
+  created: boolean;
+}
+
+@Injectable()
+export class MiaodaWorkItemRepository {
+  constructor(
+    @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
+  ) {}
+
+  async reserve(
+    input: WorkItemReservationInput,
+  ): Promise<WorkItemReservation> {
+    const now = new Date();
+    const candidate = {
+      workItemId: `WI-${randomUUID()}`,
+      requestId: `REQ-${randomUUID()}`,
+      attemptId: `ATT-${randomUUID()}`,
+    };
+    const inserted = await this.db
+      .insert(workItem)
+      .values({
+        workItemId: candidate.workItemId,
+        tenantId: input.tenantId,
+        actionType: ACTION_TYPE,
+        documentId: input.documentId,
+        documentVersionId: input.documentVersionId,
+        sourceArtifactId: input.sourceArtifactId,
+        sourceFileSha256: rawHash(input.sourceFileSha256),
+        sourceByteLength: input.sourceByteLength,
+        normalizedFamily: input.normalizedFamily,
+        requestId: candidate.requestId,
+        status: 'RESERVED',
+        revision: 0,
+        requestedByUserId: input.actorUserId,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoNothing({
+        target: [
+          workItem.tenantId,
+          workItem.actionType,
+          workItem.documentVersionId,
+        ],
+      })
+      .returning({ workItemId: workItem.workItemId });
+
+    const [stored] = await this.db
+      .select()
+      .from(workItem)
+      .where(
+        and(
+          eq(workItem.tenantId, input.tenantId),
+          eq(workItem.actionType, ACTION_TYPE),
+          eq(workItem.documentVersionId, input.documentVersionId),
+        ),
+      )
+      .limit(1);
+    if (!stored) throw new Error('WORK_ITEM_RESERVATION_READBACK_FAILED');
+    assertReservationIdentity(stored, input);
+
+    const created = inserted.length === 1;
+    if (created) {
+      await this.db
+        .insert(actionAttempt)
+        .values({
+          attemptId: candidate.attemptId,
+          workItemId: stored.workItemId,
+          actionType: ACTION_TYPE,
+          attemptNo: 1,
+          triggerRequestId: stored.requestId,
+          requestOrigin: input.requestOrigin,
+          status: 'PENDING',
+          actorUserId: input.actorUserId,
+          tenantId: input.tenantId,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .onConflictDoNothing({
+          target: [
+            actionAttempt.workItemId,
+            actionAttempt.actionType,
+            actionAttempt.attemptNo,
+          ],
+        });
+    }
+    const [attempt] = await this.db
+      .select()
+      .from(actionAttempt)
+      .where(
+        and(
+          eq(actionAttempt.workItemId, stored.workItemId),
+          eq(actionAttempt.actionType, ACTION_TYPE),
+          eq(actionAttempt.attemptNo, 1),
+        ),
+      )
+      .limit(1);
+    if (!attempt) throw new Error('ACTION_ATTEMPT_READBACK_FAILED');
+    return {
+      workItemId: stored.workItemId,
+      requestId: stored.requestId,
+      attemptId: attempt.attemptId,
+      created,
+    };
+  }
+
+  async loadProjection(
+    workItemId: string,
+  ): Promise<CanonicalWorkItemProjection | null> {
+    const [row] = await this.db
+      .select()
+      .from(workItem)
+      .where(eq(workItem.workItemId, workItemId))
+      .limit(1);
+    if (!row) throw new Error('WORK_ITEM_NOT_FOUND');
+    return parseProjection(row.projectionJson);
+  }
+
+  async initializeProjection(
+    workItemId: string,
+    seed: Omit<CanonicalWorkItemProjection, 'revision'>,
+  ): Promise<CanonicalWorkItemProjection> {
+    const projection: CanonicalWorkItemProjection = { ...seed, revision: 1 };
+    const updated = await this.db
+      .update(workItem)
+      .set({
+        projectionJson: JSON.stringify(projection),
+        status: projection.phase,
+        revision: 1,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(workItem.workItemId, workItemId),
+          eq(workItem.revision, 0),
+          isNull(workItem.projectionJson),
+        ),
+      )
+      .returning({ workItemId: workItem.workItemId });
+    if (updated.length === 1) return projection;
+    const existing = await this.loadProjection(workItemId);
+    if (!existing) throw new Error('WORK_ITEM_INITIALIZATION_CONFLICT');
+    return existing;
+  }
+
+  async compareAndSet(input: {
+    workItemId: string;
+    expectedRevision: number;
+    next: Omit<CanonicalWorkItemProjection, 'revision'>;
+  }): Promise<CanonicalWorkItemProjection> {
+    const next: CanonicalWorkItemProjection = {
+      ...input.next,
+      revision: input.expectedRevision + 1,
+    };
+    const now = new Date();
+    const updated = await this.db
+      .update(workItem)
+      .set({
+        projectionJson: JSON.stringify(next),
+        status: next.phase,
+        revision: next.revision,
+        packageId: next.package?.packageId ?? null,
+        packageArtifactRef: next.package?.artifact.ref ?? null,
+        packageArtifactSha256: next.package?.artifact.sha256 ?? null,
+        failureCode:
+          next.failure?.failureCode ?? next.recordingFailure?.failureCode ?? null,
+        failureArtifactRef: next.failure?.artifact.ref ?? null,
+        failureArtifactSha256: next.failure?.artifact.sha256 ?? null,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(workItem.workItemId, input.workItemId),
+          eq(workItem.revision, input.expectedRevision),
+        ),
+      )
+      .returning({ workItemId: workItem.workItemId });
+    if (updated.length !== 1) throw new Error('WORK_ITEM_CAS_CONFLICT');
+    await this.updatePrimaryAttempt(next, now);
+    return next;
+  }
+
+  async getRow(workItemId: string) {
+    const [row] = await this.db
+      .select()
+      .from(workItem)
+      .where(eq(workItem.workItemId, workItemId))
+      .limit(1);
+    if (!row) throw new Error('WORK_ITEM_NOT_FOUND');
+    return row;
+  }
+
+  private async updatePrimaryAttempt(
+    projection: CanonicalWorkItemProjection,
+    now: Date,
+  ): Promise<void> {
+    const terminal = [
+      'CANDIDATE_READBACK_VERIFIED',
+      'FAILED',
+      'RECORDING_FAILED',
+    ].includes(projection.phase);
+    await this.db
+      .update(actionAttempt)
+      .set({
+        status: terminal
+          ? projection.phase === 'CANDIDATE_READBACK_VERIFIED'
+            ? 'SUCCEEDED'
+            : projection.phase
+          : projection.phase,
+        packageArtifactRef: projection.package?.artifact.ref ?? null,
+        packageArtifactSha256: projection.package?.artifact.sha256 ?? null,
+        failureArtifactRef: projection.failure?.artifact.ref ?? null,
+        failureArtifactSha256: projection.failure?.artifact.sha256 ?? null,
+        errorCode:
+          projection.failure?.failureCode ??
+          projection.recordingFailure?.failureCode ??
+          null,
+        startedAt: projection.phase === 'PARSING' ? now : undefined,
+        completedAt: terminal ? now : undefined,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(actionAttempt.workItemId, projection.workItemId),
+          eq(actionAttempt.actionType, ACTION_TYPE),
+          eq(actionAttempt.attemptNo, 1),
+        ),
+      );
+  }
+}
+
+function rawHash(value: string): string {
+  return value.replace(/^sha256:/u, '');
+}
+
+function parseProjection(value: string | null): CanonicalWorkItemProjection | null {
+  if (value === null) return null;
+  const parsed = JSON.parse(value) as CanonicalWorkItemProjection;
+  if (!parsed.workItemId || !Number.isInteger(parsed.revision)) {
+    throw new Error('WORK_ITEM_PROJECTION_INVALID');
+  }
+  return parsed;
+}
+
+function assertReservationIdentity(
+  row: typeof workItem.$inferSelect,
+  input: WorkItemReservationInput,
+): void {
+  if (
+    row.documentId !== input.documentId ||
+    row.sourceArtifactId !== input.sourceArtifactId ||
+    row.sourceFileSha256 !== rawHash(input.sourceFileSha256) ||
+    Number(row.sourceByteLength) !== input.sourceByteLength ||
+    row.normalizedFamily !== input.normalizedFamily
+  ) {
+    throw new Error('WORK_ITEM_BUSINESS_KEY_COLLISION');
+  }
+}

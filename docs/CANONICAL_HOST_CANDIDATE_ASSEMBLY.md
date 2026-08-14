@@ -1,5 +1,38 @@
 # Canonical host candidate assembly
 
+## Superseding current state — 2026-08-14
+
+The earlier activation-first plan below is retained as history, but it no longer defines the main
+path. The current owner decision selects an ordinary authenticated WorkItem vertical in the single
+Miaoda app. Registrar activation, Base WorkItem storage and detached receipt ownership may remain
+as non-blocking historical modules; they are not prerequisites for the first business loop.
+
+Current composition:
+
+- `work_item` and `action_attempt` are ordinary Miaoda DB tables with a business uniqueness key;
+- DM exact owner source remains `4d88666a3c494633dc083388ef781ea7aafab998` and supplies only the
+  exact `DocumentVersion` identity to WorkItem processing;
+- the first production adapter consumes the verified real FTD producer output and emits the
+  selected frozen.2 Unified Parsed Package;
+- package and FailureReport bytes use the same ordinary immutable FileService adapter with actual
+  byte readback;
+- Unified's sole frozen.2 Validator, Reader and FailureReport adapter are configured in the host;
+- the Miaoda page and hidden validation action read the same WorkItem; Aily remains later and
+  read-only.
+
+Local acceptance, exact identities and remaining non-claims are recorded in
+`FIRST_REAL_FTD_WORKITEM_VERTICAL_ACCEPTANCE_20260814.md`.
+
+### Goal alignment
+
+This supersede removes old activation blockers from the product path and advances a directly
+inspectable result. It adds no second producer, package contract, hash scheme or gate. The next
+step is one controlled hosted DEV loop, not more activation proof.
+
+---
+
+## Historical assembly record
+
 Date: 2026-08-13
 
 ## Decision
@@ -66,7 +99,7 @@ is introduced.
 3. **Unified**
    - reuse `server/modules/unified-reader/unified-reader.module.ts`;
    - consume exact Unified hosted source commit
-     `2d33803602fd0c92396c381bc4793ebc29bbd7f0` through
+     `b3e7a20245af19349a8bfa9c0da995d5eeac6acf` through
      `server/modules/unified-reader/public-api.ts`;
    - the official FileService provider can read and verify immutable package bytes, but package
      persistence is blocked before FileService I/O without a separate validation-write receipt;
@@ -86,24 +119,38 @@ is introduced.
 
 ## Claims and non-claims
 
-Claim: one new, empty full-stack app now has a local candidate branch containing the source-level
-host composition with every hosted provider unconfigured. The production build starts locally at
-the exact app base path; after following the platform's cookie plus `X-Suda-Csrf-Token` protocol,
-Unified readiness returns `VERIFICATION_PENDING` and Registrar readiness returns `BLOCKED`, with
-both write and publication authority false.
+Claim: the unique full-stack app candidate has a local host branch containing the source-level
+composition with write-authoritative hosted providers unconfigured. The current local production
+build and Unified composition pass; Registrar readiness remains `BLOCKED`, with write and
+publication authority false. The DM owner refresh is verified only through the built local host and
+two real FTD PDFs.
 
-Non-claims: no candidate code has been pushed, no release exists, no hosted provider has been
-selected in `AppModule`, no Python runtime probe has run in hosted DEV, no
-FileService/Base/database/WorkItem was written, and no current or engineering decision was changed.
+Non-claims for this refresh: no push, release, hosted POST, environment change, Base/FileService/
+database/WorkItem/workflow mutation, current switch or engineering decision was performed. Earlier
+DEV release history is not repeated or upgraded into a new acceptance claim.
 
 ## Only blocker
 
-The remaining runtime blocker is one authorized DEV activation that binds the already-selected
-hosted providers and probes whether the Miaoda runtime supports the exact Python U0 adapter
-(`child_process`, Python executable and frozen.2 dependencies). Document Management source,
-Registrar runtime ports, authorization/permission readers and canonical deep-link origin also
-remain unbound. Until that provider assembly is activated, this app remains a candidate and
-correctly stays locked.
+The remaining activation blockers are Master trust, permission fresh-read and explicit write
+authority for the existing hosted providers. This local slice does not invent any of them. Until
+the main controller supplies and verifies those ordinary runtime inputs, the app remains a
+candidate and its mutation paths correctly stay locked.
+
+## Local platform-adapter coverage
+
+| Port                                        | Local host coverage                                                                                                       | Runtime status                                                                          |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `RegistrarActivationArtifactStorePort`      | dedicated read-only FileService actual-byte adapter; returns configured store/bucket/adapter identity                     | implemented and unit-tested; not sufficient to activate Registrar                       |
+| Registrar Master signature/trust            | none                                                                                                                      | `BLOCKED`; not implemented or simulated                                                 |
+| Registrar sole-writer permission fresh-read | none                                                                                                                      | `BLOCKED`; not implemented or simulated                                                 |
+| Registrar validation-write authorization    | none                                                                                                                      | `BLOCKED`; not implemented or simulated                                                 |
+| Dedicated Registrar Base transport          | server-only tenant-access-token OpenAPI adapter for three-table search/create/update; business actor fields remain opaque | implemented and tested but not registered; dedicated app identity/scopes pending        |
+| `ImmutableAcceptanceReceiptOwnerPort`       | receipt-only FileService actual owner plus Unified `b3e7a...` DI wrapper; default module remains unconfigured             | local adapter verified; runtime identity/store and external write authorization pending |
+| Unified Python U0 Validator                 | existing hosted-verified adapter and ordinary `pythonModulePath` passthrough                                              | source/config retained; no online probe in this slice                                   |
+
+No activation manifest, immutable acceptance receipt, signature, permission grant or validation-
+write authorization is created by these adapters. This is a local composition improvement only;
+there was no push, release, environment change or online I/O.
 
 ## Phase 1B read-only DEV probe
 
@@ -125,7 +172,7 @@ weaker Validator.
 ## Phase 2C Document Management integration
 
 The exact Document Management source bundle from
-`cb5cadd940d869891e6d969ea04167c2bcbd502e` is now selectively assembled as an internal module.
+`4d88666a3c494633dc083388ef781ea7aafab998` is now selectively assembled as an internal module.
 DEV contains the owner migration's seven empty catalog tables, and the host-generated Drizzle
 schema is the only table definition consumed at runtime. The source bundle's CommonJS output and
 23 document-family adapters load from the production host build. The same built core passed the
@@ -146,11 +193,40 @@ actual bytes instead of path names and preserves the server-owned 403 response, 
 pushed or deployed. Full evidence, release identities and non-claims are in
 `docs/PHASE_2D_HOSTED_VALIDATION_ACCEPTANCE_20260814.md`.
 
-## Phase 2F locator correction candidate
+## Post-Phase-2 local owner refresh
 
 The host now consumes the owner-exported leading-slash canonicalization and the metadata/download
-object-version binding from exact DM commit `cb5cadd940d869891e6d969ea04167c2bcbd502e`.
-This does not weaken bucket, path, object, version or actual-byte checks. It preserves the caller's
-numeric FileService path in catalog lineage while comparing the provider's canonical path. At this
-commit the correction is a local candidate pending the single validation-release/closure-release
-hosted replay; no success claim is made here.
+object binding from exact DM commit `4d88666a3c494633dc083388ef781ea7aafab998`.
+`updatedAt` is audit metadata only; this does not weaken bucket, canonical path, provider object ID
+or actual-byte checks. The local two-PDF loop also preloads the first content-addressed object and
+requires its reuse with zero upload and zero delete. Phase 2 is permanently stopped: no hosted
+replay, release, environment change or online write is authorized or claimed by this refresh.
+
+## Dedicated Registrar Base adapter local slice
+
+The host now contains one unbound server-only Open Platform transport for WorkItems, Decisions and
+ExecutionLogs. It uses `tenant_access_token`, not `ctx.userContext`, for Base calls. The existing
+authenticated actor remains an unchanged business field, while the selected Registrar continues
+to own authorization, append-only Decisions and CAS. The old generic client capability is not
+consumed as a Registrar writer.
+
+The transport is intentionally not in `AppModule`; placeholder configuration is exercised only by
+unit tests. Binding still requires an exact dedicated app ID, record search/create/update
+permissions, Base access, server-secret injection and the selected Registrar's exact field mapper.
+This slice performs no network call, push, release, environment change, Base write or FileService
+I/O.
+
+## Immutable acceptance receipt owner local slice
+
+One ordinary FileService-backed `ImmutableAcceptanceReceiptOwnerPort` now persists only bytes
+already supplied after an external validation-write authorization decision. Its receipt bucket is
+runtime-configured and its path is fixed from the raw SHA-256; it never accepts a client path.
+`upsert=false` prevents overwrite, and both new uploads and existing-path reuse require a fresh
+metadata read plus exact-byte download verification. Provider timestamps remain audit-only.
+
+The owner has no signing, Master activation, write-authorization, WorkItem, CAS, currentness or
+publication operation. Its runtime identity must not alias `CanonicalHubRegistrar`. It is exported
+for the existing Unified `createImmutableAcceptanceReceiptOwnerProvider(owner)` composition but is
+not wired in `AppModule`; the production-default owner remains explicitly unconfigured and makes
+no FileService call. Detailed tests and integration inputs are recorded in
+`docs/IMMUTABLE_ACCEPTANCE_RECEIPT_OWNER_LOCAL_ACCEPTANCE_20260814.md`.

@@ -3,6 +3,7 @@ export interface HostedFileServiceSelection extends Record<string, unknown> {
   filePath: string;
   providerObjectId: string;
   providerVersionId: string;
+  providerUpdatedAt: string | null;
   fileName: string;
   mediaType: string;
   bytes: Buffer;

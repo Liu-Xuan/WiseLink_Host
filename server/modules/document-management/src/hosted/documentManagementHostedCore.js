@@ -133,6 +133,7 @@ export class DocumentManagementHostedCore {
       sizeBytes: selected.bytes.byteLength,
       sourceKind: request.sourceChannel || 'miaoda_file_service_selection',
       sourceStorageKey: `${immutable.bucketId}:${immutable.filePath}`,
+      providerUpdatedAt: selected.providerUpdatedAt || null,
     };
     const acquisition = await this.catalog.recordAcquisition({
       sourceArtifact: {
