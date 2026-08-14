@@ -34,30 +34,35 @@ The hidden `/runtime-probe` page provides read-only hosted dependency checks plu
 triggered, fixed real-FTD validation action. It uses imported `axiosForBackend`, accepts no client
 WorkItem ID/path/authority, and cannot create Assessment/AEO conclusions.
 
-## Verified local result
+## Verified hosted DEV result
 
-The real newer FTD PDF (122,102 bytes) resolves to
-`document_version_fd88dcb9cf64cf3ba21033ef`. The first run reaches
-`CANDIDATE_READBACK_VERIFIED`; the repeat returns the same WorkItem. The persisted package has 311
-content units, 239 source references and 38 source-bounded `software` query results. An explicit
-unsupported-producer run creates, persists, reads back and strictly validates a frozen.2
-FailureReport instead of returning `artifact:null`.
+The real FTD PDF (122,102 bytes) resolves to
+`document_version_fd88dcb9cf64cf3ba21033ef`. One authenticated hosted business request created
+WorkItem `WI-c2943f5a-d023-46ac-9cf5-9480de0aabaf` and one successful ActionAttempt, persisted and
+read back a 662,441-byte frozen.2 package, passed the full U0 Validator, and returned 38
+source-bound `software` Reader results. The same WorkItem deep link renders
+`CANDIDATE_READBACK_VERIFIED`, 311 content units and 239 source references.
 
 Detailed evidence: `docs/FIRST_REAL_FTD_WORKITEM_VERTICAL_ACCEPTANCE_20260814.md`.
 
-## Online state before hosted business validation
+## Hosted DEV acceptance state
 
-DEV schema contains the seven existing DM tables plus `work_item` and `action_attempt`; both new
-tables have zero records before the first hosted call. The schema was applied once and read back.
-Existing authorized FTD files are retained. This source slice has not yet pushed a new commit,
-created a new release, called the hosted business POST or changed production/current.
+DEV contains the seven DM tables plus `work_item` and `action_attempt`; after the accepted run, all
+nine contain exactly one related record. FileService contains the pre-existing objects plus one
+content-addressed package object. Closure release `7673837917727050950` is deployed from exact
+commit `65467a48b5010a98fe41921bdb0f9279deb8362c`; validation is disabled and its run ID is absent.
+No production/current switch or engineering conclusion was made.
+
+One later page read initially failed before a FileService HTTP response and then succeeded on a
+single read-only retry. It is classified `TRANSIENT_READ_RECOVERED_BY_SINGLE_READ_ONLY_RETRY`; no
+business POST retry was added or performed.
 
 ## Next step
 
-Commit the clean local implementation, push only this app's `sprint/default`, create one controlled
-DEV validation release, fresh-read the current DB/FileService state, then use the logged-in hidden
-page to perform exactly one POST. Success requires the same WorkItem page/readback and no automatic
-retry. Assessment, AEO, Aily mutation, OpenClaw and production release remain out of scope.
+Expose four Aily read-only tools over the same host read model: WorkItem/status, parsed-package
+summary, source-bound query and server-derived Miaoda deep link. Aily must not copy state or create
+parser retries, mutations or engineering conclusions. Assessment, AEO, OpenClaw and production
+release remain out of scope for this slice.
 
 ## Goal alignment
 
@@ -65,5 +70,5 @@ retry. Assessment, AEO, Aily mutation, OpenClaw and production release remain ou
 - New code is limited to the missing ordinary WorkItem store, producer/storage adapters and error
   persistence needed for that path.
 - No new package contract, hash scheme, baseline or general gate was introduced.
-- The next action remains the shortest path to a hosted real document loop, not another proof
-  framework.
+- The hosted real document loop is complete; the next action is the shortest same-ledger Aily
+  read-only integration, not another proof framework.
