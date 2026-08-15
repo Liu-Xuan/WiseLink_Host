@@ -37,13 +37,6 @@ const FIRST_FTD_VERTICAL_BODY = Object.freeze({
   }),
   query: 'software',
 });
-const PHASE9_BOEING_SB_VERTICAL_BODY = Object.freeze({
-  selection: Object.freeze({
-    bucketId: 'bucket_aadkprardjghu',
-    filePath: '/1873513486767111.pdf',
-  }),
-  query: 'applicability',
-});
 const FILE_SERVICE_P0_PROBE_PATH =
   '/api/runtime-probe/file-service-upload';
 
@@ -66,21 +59,11 @@ export async function getReadOnlyRuntimeProbe(): Promise<ReadOnlyProbeResult[]> 
 }
 
 export async function runFirstFtdVertical(): Promise<FirstFtdVerticalResult> {
-  return runPdfVertical(FIRST_FTD_VERTICAL_BODY);
-}
-
-export async function runPhase9BoeingSbVertical(): Promise<FirstFtdVerticalResult> {
-  return runPdfVertical(PHASE9_BOEING_SB_VERTICAL_BODY);
-}
-
-async function runPdfVertical(
-  body: typeof FIRST_FTD_VERTICAL_BODY | typeof PHASE9_BOEING_SB_VERTICAL_BODY,
-): Promise<FirstFtdVerticalResult> {
   try {
     const response = await axiosForBackend<unknown>({
       url: FIRST_FTD_VERTICAL_PATH,
       method: 'POST',
-      data: body,
+      data: FIRST_FTD_VERTICAL_BODY,
       meta: { autoJumpToLogin: false },
     });
     const code = responseCode(response.data);

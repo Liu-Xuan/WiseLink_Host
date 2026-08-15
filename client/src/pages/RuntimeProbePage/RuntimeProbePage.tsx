@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react';
 import {
   getReadOnlyRuntimeProbe,
   runFirstFtdVertical,
-  runPhase9BoeingSbVertical,
   type FirstFtdVerticalResult,
   type ReadOnlyProbeResult,
 } from '@client/src/api/runtime-probe';
@@ -15,10 +14,6 @@ export default function RuntimeProbePage() {
     useState<FirstFtdVerticalResult | null>(null);
   const [validationRunning, setValidationRunning] = useState(false);
   const [validationAttempted, setValidationAttempted] = useState(false);
-  const [sbValidation, setSbValidation] =
-    useState<FirstFtdVerticalResult | null>(null);
-  const [sbValidationRunning, setSbValidationRunning] = useState(false);
-  const [sbValidationAttempted, setSbValidationAttempted] = useState(false);
 
   useEffect(() => {
     getReadOnlyRuntimeProbe()
@@ -36,17 +31,6 @@ export default function RuntimeProbePage() {
       setValidation(await runFirstFtdVertical());
     } finally {
       setValidationRunning(false);
-    }
-  }
-
-  async function runSbValidationOnce() {
-    if (sbValidationAttempted || sbValidationRunning) return;
-    setSbValidationAttempted(true);
-    setSbValidationRunning(true);
-    try {
-      setSbValidation(await runPhase9BoeingSbVertical());
-    } finally {
-      setSbValidationRunning(false);
     }
   }
 
@@ -103,34 +87,6 @@ export default function RuntimeProbePage() {
               HTTP {validation.status} · {validation.code ?? (validation.ok ? 'PASS' : 'NO_CODE')}
             </p>
             <pre>{JSON.stringify(validation, null, 2)}</pre>
-          </div>
-        ) : null}
-      </section>
-      <section className="parse-panel" data-testid="phase9-boeing-sb-panel">
-        <h2>Phase 9 Boeing SB WorkItem vertical</h2>
-        <p>
-          固定读取已验证的 737-34-3830 Original selection；页面不接受路径、权限或
-          文档身份输入，不自动重试。按钮仅允许当前页面人工尝试一次。
-        </p>
-        <button
-          data-testid="phase9-boeing-sb-trigger"
-          disabled={sbValidationAttempted || sbValidationRunning}
-          onClick={runSbValidationOnce}
-          type="button"
-        >
-          {sbValidationRunning
-            ? 'RUNNING'
-            : sbValidationAttempted
-              ? 'ATTEMPTED'
-              : 'RUN PHASE 9 BOEING SB ONCE'}
-        </button>
-        {sbValidation ? (
-          <div data-testid="phase9-boeing-sb-result">
-            <p>
-              HTTP {sbValidation.status} ·{' '}
-              {sbValidation.code ?? (sbValidation.ok ? 'PASS' : 'NO_CODE')}
-            </p>
-            <pre>{JSON.stringify(sbValidation, null, 2)}</pre>
           </div>
         ) : null}
       </section>
