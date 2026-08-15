@@ -81,6 +81,7 @@ describe('ExternalDiscoveryService candidate-only admission', () => {
     ['ZERO_RESULTS_FOR_TARGET_IDENTIFIER', false, false, false],
     ['ACCESS_DENIED', true, false, false],
     ['PARTIAL_RESULTS', false, false, true],
+    ['TRUNCATED', false, true, false],
   ] as const)(
     'records %s without allowing selection or DM I/O',
     async (resultStatus, accessRestricted, truncated, partialOnly) => {
@@ -100,6 +101,26 @@ describe('ExternalDiscoveryService candidate-only admission', () => {
           context: CONTEXT,
         }),
       ).rejects.toMatchObject({ code: `OEM_MONITORING_${resultStatus}_NOT_ADOPTABLE` });
+      expect(documentManagement.ingestFileServiceSelection).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ['accessRestricted', true, false, false],
+    ['truncated', false, true, false],
+    ['partialOnly', false, false, true],
+  ] as const)(
+    'keeps legacy CANDIDATES_FOUND with %s discovery-only',
+    async (_flag, accessRestricted, truncated, partialOnly) => {
+      const run = foundRun({ accessRestricted, truncated, partialOnly });
+      await service.recordSearchRun(run, CONTEXT);
+      await expect(
+        service.select({
+          searchRunRef: run.searchRunRef,
+          candidateRef: 'candidate-direct',
+          context: CONTEXT,
+        }),
+      ).rejects.toMatchObject({ code: 'OEM_MONITORING_SEARCH_RUN_INCOMPLETE' });
       expect(documentManagement.ingestFileServiceSelection).not.toHaveBeenCalled();
     },
   );
@@ -166,9 +187,14 @@ describe('ExternalDiscoveryService candidate-only admission', () => {
   });
 });
 
-function foundRun(): FeishuNativeOemSearchRun {
+function foundRun(
+  flags: Partial<Pick<
+    FeishuNativeOemSearchRun,
+    'accessRestricted' | 'truncated' | 'partialOnly'
+  >> = {},
+): FeishuNativeOemSearchRun {
   return {
-    ...searchRun('CANDIDATES_FOUND'),
+    ...searchRun('CANDIDATES_FOUND', flags),
     candidates: [
       {
         candidateRef: 'candidate-direct',

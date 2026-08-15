@@ -2,7 +2,12 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
-import { ConflictException, Inject, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+} from '@nestjs/common';
 
 import type {
   CanonicalAssessmentCandidateProjection,
@@ -98,6 +103,7 @@ export class CanonicalHostAssessmentService {
     });
     if (!attempt.created) {
       workItem = await this.requiredSbWorkItem(input.workItemId);
+      await this.authorize(workItem, actor, 'EVALUATE_JOB_AID');
       if (workItem.assessment) return workItem;
       throw new Error('ASSESSMENT_EVALUATE_INCOMPLETE_PRIOR_ATTEMPT');
     }
@@ -175,10 +181,21 @@ export class CanonicalHostAssessmentService {
   ): Promise<CanonicalWorkItemProjection> {
     let workItem = await this.requiredSbWorkItem(input.workItemId);
     await this.authorize(workItem, actor, 'RESYNTHESIZE_ASSESSMENT');
-    if (!workItem.assessment) throw new Error('ASSESSMENT_CANDIDATE_REQUIRED');
+    if (!workItem.assessment) {
+      throw new ConflictException('ASSESSMENT_CANDIDATE_REQUIRED');
+    }
     if (workItem.revision !== input.expectedRevision) {
       throw new ConflictException('WORK_ITEM_CAS_CONFLICT');
     }
+    validateEngineerChange(input, actor);
+    const previous = await this.readAssessmentResult(
+      workItem.assessment.artifact,
+    );
+    const changed = structuredClone(previous.evaluation.snapshot);
+    const item = changed.items.find(
+      (candidate) => candidate.criterionId === input.criterionId,
+    );
+    if (!item) throw assessmentBadRequest('ASSESSMENT_CRITERION_NOT_FOUND');
     const attempt = await this.repository.reserveAssessmentAction({
       workItemId: workItem.workItemId,
       actionType: 'RESYNTHESIZE_ASSESSMENT',
@@ -190,18 +207,15 @@ export class CanonicalHostAssessmentService {
     });
     if (!attempt.created) {
       workItem = await this.requiredSbWorkItem(input.workItemId);
+      await this.authorize(
+        workItem,
+        actor,
+        'RESYNTHESIZE_ASSESSMENT',
+      );
       if (workItem.revision !== input.expectedRevision) return workItem;
       throw new Error('ASSESSMENT_RESYNTHESIS_INCOMPLETE_PRIOR_ATTEMPT');
     }
     try {
-      const previous = await this.readAssessmentResult(
-        workItem.assessment.artifact,
-      );
-      const changed = structuredClone(previous.evaluation.snapshot);
-      const item = changed.items.find(
-        (candidate) => candidate.criterionId === input.criterionId,
-      );
-      if (!item) throw new Error('ASSESSMENT_CRITERION_NOT_FOUND');
       item.engineerReview = structuredClone(input.review);
       const result = this.assessment.resynthesizeAfterEngineerChange(
         previous,
@@ -267,7 +281,7 @@ export class CanonicalHostAssessmentService {
       requestId: workItem.requestId,
       documentVersionId: workItem.source.documentVersionId,
     });
-    if (!decision.allowed || decision.action !== action) {
+    if (decision.allowed !== true || decision.action !== action) {
       throw new Error('CANONICAL_ACTION_NOT_AUTHORIZED');
     }
     requiredDecisionText(decision.actorFingerprint, 'actorFingerprint');
@@ -284,7 +298,14 @@ export class CanonicalHostAssessmentService {
       requestId: workItem.requestId,
       documentVersionId: workItem.source.documentVersionId,
     });
-    if (snapshot.permissionSnapshotVersion !== decision.permissionSnapshotVersion) {
+    requiredDecisionText(
+      snapshot?.permissionSnapshotVersion,
+      'freshPermissionSnapshotVersion',
+    );
+    if (
+      snapshot.permissionSnapshotVersion !==
+      decision.permissionSnapshotVersion
+    ) {
       throw new Error('ASSESSMENT_PERMISSION_SNAPSHOT_CHANGED');
     }
     return snapshot.permissionSnapshotVersion;
@@ -422,6 +443,51 @@ function requiredDecisionText(value: unknown, field: string): void {
   if (typeof value !== 'string' || value.trim() === '') {
     throw new Error('CANONICAL_AUTHORIZATION_DECISION_INVALID:' + field);
   }
+}
+
+function validateEngineerChange(
+  input: CanonicalAssessmentResynthesisInput,
+  actor: CanonicalHostActor,
+): void {
+  if (!Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 1) {
+    throw assessmentBadRequest('ASSESSMENT_EXPECTEDREVISION_INVALID');
+  }
+  if (input.criterionId.trim() === '') {
+    throw assessmentBadRequest('ASSESSMENT_CRITERIONID_REQUIRED');
+  }
+  const review = input.review;
+  const expectedStatus =
+    review.decision === 'confirmed_pass' ||
+    review.decision === 'confirmed_fail'
+      ? 'ENGINEER_CONFIRMED'
+      : review.decision === 'returned_for_rework' ||
+          review.decision === 'deferred'
+        ? 'NEEDS_REVIEW'
+        : null;
+  if (expectedStatus === null || review.status !== expectedStatus) {
+    throw assessmentBadRequest(
+      'ASSESSMENT_ENGINEER_DECISION_STATUS_INVALID',
+    );
+  }
+  if (
+    review.comment.trim() === '' ||
+    review.baseRecordId.trim() === '' ||
+    !Number.isFinite(Date.parse(review.updatedAt))
+  ) {
+    throw assessmentBadRequest('ASSESSMENT_ENGINEER_REVIEW_INVALID');
+  }
+  if (
+    review.reviewingEngineerUserIds.length !== 1 ||
+    review.reviewingEngineerUserIds[0] !== actor.userId
+  ) {
+    throw assessmentBadRequest(
+      'ASSESSMENT_ENGINEER_REVIEW_ACTOR_INVALID',
+    );
+  }
+}
+
+function assessmentBadRequest(code: string): BadRequestException {
+  return new BadRequestException({ code, message: code });
 }
 
 function errorCode(error: unknown): string {

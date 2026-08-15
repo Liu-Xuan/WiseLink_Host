@@ -107,7 +107,7 @@ export class AssessmentHostConsumerService {
     const stale = previous.overall.context.contextHash !== changedContext.contextHash
       || previous.overall.transport.transportHash !== overall.transport.transportHash;
     return this.result(
-      previous.evaluation,
+      changedEvaluation,
       overall,
       externalDiscovery,
       stale,

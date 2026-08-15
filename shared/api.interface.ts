@@ -633,6 +633,7 @@ export type ExternalDiscoveryResultStatus =
   | 'ZERO_RESULTS_FOR_TARGET_IDENTIFIER'
   | 'ACCESS_DENIED'
   | 'PARTIAL_RESULTS'
+  | 'TRUNCATED'
   | 'CANDIDATES_FOUND';
 
 export type ExternalDiscoveryReviewStatus =

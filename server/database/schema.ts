@@ -412,7 +412,7 @@ export const externalSearchRun = pgTable("external_search_run", {
 }, (table) => [
   uniqueIndex("uk_external_search_run_tenant_ref").on(table.tenantId, table.searchRunRef),
   index("idx_external_search_run_observed").on(table.tenantId, table.observedAt),
-  check("ck_external_search_run_status", sql`${table.resultStatus} IN ('ZERO_RESULTS_FOR_TARGET_IDENTIFIER', 'ACCESS_DENIED', 'PARTIAL_RESULTS', 'CANDIDATES_FOUND')`),
+  check("ck_external_search_run_status", sql`${table.resultStatus} IN ('ZERO_RESULTS_FOR_TARGET_IDENTIFIER', 'ACCESS_DENIED', 'PARTIAL_RESULTS', 'TRUNCATED', 'CANDIDATES_FOUND')`),
 ]);
 
 export const externalDiscoveryCandidate = pgTable("external_discovery_candidate", {

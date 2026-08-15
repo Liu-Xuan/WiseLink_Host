@@ -2,6 +2,7 @@ export type FeishuNativeOemResultStatus =
   | 'ZERO_RESULTS_FOR_TARGET_IDENTIFIER'
   | 'ACCESS_DENIED'
   | 'PARTIAL_RESULTS'
+  | 'TRUNCATED'
   | 'CANDIDATES_FOUND';
 
 export interface FeishuNativeOemSearchCandidate {
@@ -85,6 +86,7 @@ const SEARCH_RUN_STATUSES = new Set<FeishuNativeOemResultStatus>([
   'ZERO_RESULTS_FOR_TARGET_IDENTIFIER',
   'ACCESS_DENIED',
   'PARTIAL_RESULTS',
+  'TRUNCATED',
   'CANDIDATES_FOUND',
 ]);
 const OEM_PUBLISHERS = new Set(['AIRBUS', 'BOEING', 'COMAC']);
@@ -245,6 +247,9 @@ function normalizeSearchRun(value: FeishuNativeOemSearchRun): FeishuNativeOemSea
   }
   if (resultStatus === 'PARTIAL_RESULTS' && input.partialOnly !== true && input.truncated !== true) {
     fail('OEM_MONITORING_PARTIAL_RESULT_INCONSISTENT', 'PARTIAL_RESULTS must be partial or truncated.');
+  }
+  if (resultStatus === 'TRUNCATED' && input.truncated !== true) {
+    fail('OEM_MONITORING_TRUNCATED_FLAG_REQUIRED', 'TRUNCATED requires truncated=true.');
   }
   if (resultStatus === 'CANDIDATES_FOUND' && directMatches.length === 0) {
     fail('OEM_MONITORING_DIRECT_MATCH_REQUIRED', 'CANDIDATES_FOUND requires an official direct match.');

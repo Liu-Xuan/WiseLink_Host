@@ -437,6 +437,8 @@ assert.equal(
 );
 
 const criterionId = initialAssessment.evaluation.snapshot.items[0].criterionId;
+const firstEngineerComment =
+  'Local acceptance only; no engineering closure authority.';
 const resynthesized = await assessment.resynthesizeAfterEngineerChange(
   {
     workItemId: evaluated.workItemId,
@@ -445,7 +447,7 @@ const resynthesized = await assessment.resynthesizeAfterEngineerChange(
     review: {
       baseRecordId: 'LOCAL-ENGINEER-REVIEW-001',
       decision: 'confirmed_pass',
-      comment: 'Local acceptance only; no engineering closure authority.',
+      comment: firstEngineerComment,
       reviewingEngineerUserIds: [actor.userId],
       status: 'ENGINEER_CONFIRMED',
       updatedAt: '2026-08-13T01:00:00.000Z',
@@ -467,6 +469,8 @@ assert.equal(
 );
 
 const secondCriterionId = initialAssessment.evaluation.snapshot.items[1].criterionId;
+const secondEngineerComment =
+  'Second explicit edit proves revision-scoped resynthesis.';
 const secondResynthesis = await assessment.resynthesizeAfterEngineerChange(
   {
     workItemId: resynthesized.workItemId,
@@ -475,7 +479,7 @@ const secondResynthesis = await assessment.resynthesizeAfterEngineerChange(
     review: {
       baseRecordId: 'LOCAL-ENGINEER-REVIEW-002',
       decision: 'deferred',
-      comment: 'Second explicit edit proves revision-scoped resynthesis.',
+      comment: secondEngineerComment,
       reviewingEngineerUserIds: [actor.userId],
       status: 'NEEDS_REVIEW',
       updatedAt: '2026-08-13T02:00:00.000Z',
@@ -493,6 +497,33 @@ assert.equal(
   ).status,
   'SUCCEEDED',
 );
+assert.deepEqual(
+  [...repository.assessmentActions.values()]
+    .filter((value) => value.actionType === 'RESYNTHESIZE_ASSESSMENT')
+    .map((value) => value.attemptNo),
+  [evaluated.revision, resynthesized.revision],
+);
+const secondAssessmentBytes = await artifactStore.readActualBytes(
+  secondResynthesis.assessment.artifact,
+);
+const secondAssessment = JSON.parse(
+  new TextDecoder().decode(secondAssessmentBytes),
+);
+assert.equal(
+  secondAssessment.evaluation.snapshot.items.find(
+    (item) => item.criterionId === criterionId,
+  ).engineerReview.comment,
+  firstEngineerComment,
+);
+assert.equal(
+  secondAssessment.evaluation.snapshot.items.find(
+    (item) => item.criterionId === secondCriterionId,
+  ).engineerReview.comment,
+  secondEngineerComment,
+);
+const secondTransportText = JSON.stringify(secondAssessment.overall.transport);
+assert.equal(secondTransportText.includes(firstEngineerComment), true);
+assert.equal(secondTransportText.includes(secondEngineerComment), true);
 
 const page = await vertical.page(
   { workItemId: secondResynthesis.workItemId, query: 'applicability' },
@@ -576,6 +607,7 @@ process.stdout.write(`${JSON.stringify({
   actionAttempts: [...repository.assessmentActions.values()].map((value) => ({
     actionType: value.actionType,
     attemptId: value.attemptId,
+    attemptNo: value.attemptNo,
     status: value.status,
   })),
   parserPackageColumnsUnchanged: true,

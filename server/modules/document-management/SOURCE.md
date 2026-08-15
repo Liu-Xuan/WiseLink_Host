@@ -56,11 +56,13 @@ parser routing remains a canonical-host concern and cannot be selected from a fi
 unconfirmed discovery result.
 
 Phase 6C consumes the owner monitoring handoff at exact commit
-`c54538b` as a host-local TypeScript adaptation in
+`1031cb030eb0c05299c3b932a98806658a15cdaa` as a host-local TypeScript adaptation in
 `server/modules/external-discovery/feishu-native-oem-monitoring-ingress.ts`.
-The adaptation only widens the owner SearchRun result vocabulary to the four observed outcomes
+This supersedes the older `c54538b` status semantics. The adaptation preserves the owner SearchRun
+result vocabulary
 (`ZERO_RESULTS_FOR_TARGET_IDENTIFIER`, `ACCESS_DENIED`, `PARTIAL_RESULTS`,
-`CANDIDATES_FOUND`) and adds a terminal human rejection. It does not change Document Management
+`TRUNCATED`, `CANDIDATES_FOUND`) and adds a terminal human rejection. It does not change Document Management
 identity/currentness or call ingestion without an actual FileService selection. Only a complete
-`DIRECT_OFFICIAL_SOURCE_MATCH` may be human-selected; a rejected candidate cannot later be
-selected or ingested.
+`CANDIDATES_FOUND` run with all three incomplete flags false and a
+`DIRECT_OFFICIAL_SOURCE_MATCH` may be human-selected; zero, denied, partial, truncated and
+flagged legacy results stay discovery-only. A rejected candidate cannot later be selected or ingested.

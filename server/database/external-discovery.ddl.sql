@@ -33,6 +33,7 @@ CREATE TABLE external_search_run (
       'ZERO_RESULTS_FOR_TARGET_IDENTIFIER',
       'ACCESS_DENIED',
       'PARTIAL_RESULTS',
+      'TRUNCATED',
       'CANDIDATES_FOUND'
     )
   )
