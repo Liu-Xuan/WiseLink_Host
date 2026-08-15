@@ -7,6 +7,7 @@ jest.mock('@lark-apaas/client-toolkit/utils/getAxiosForBackend', () => ({
 import {
   runFileServiceP0Probe,
   runFirstFtdVertical,
+  runPhase9BoeingSbVertical,
 } from '../../client/src/api/runtime-probe';
 
 describe('runtime probe first FTD vertical client action', () => {
@@ -84,6 +85,37 @@ describe('runtime probe first FTD vertical client action', () => {
       }),
     );
     expect(request).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('runtime probe Phase 9 Boeing SB client action', () => {
+  beforeEach(() => request.mockReset());
+
+  it('uses axiosForBackend once with the exact verified 737 selection', async () => {
+    request.mockResolvedValue({
+      status: 201,
+      data: { status: 'CANDIDATE_VERTICAL_VERIFIED' },
+      headers: { 'x-log-trace-id': 'phase9-trace' },
+    });
+
+    await expect(runPhase9BoeingSbVertical()).resolves.toMatchObject({
+      status: 201,
+      traceId: 'phase9-trace',
+      ok: true,
+    });
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(request).toHaveBeenCalledWith({
+      url: '/api/canonical-host/work-items/parse-pdf',
+      method: 'POST',
+      data: {
+        selection: {
+          bucketId: 'bucket_aadkprardjghu',
+          filePath: '/1873513486767111.pdf',
+        },
+        query: 'applicability',
+      },
+      meta: { autoJumpToLogin: false },
+    });
   });
 });
 
