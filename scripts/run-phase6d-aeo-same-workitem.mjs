@@ -28,6 +28,7 @@ class LocalAeoHostedBundle {
     this.candidates = [];
     this.decisions = [];
     this.sequence = 0;
+    this.artifactIo = { persist: 0, read: 0 };
   }
 
   describe() {
@@ -71,6 +72,7 @@ class LocalAeoHostedBundle {
   }
 
   async persistImmutable(input) {
+    this.artifactIo.persist += 1;
     const artifactSha256 = sha256(input.bytes);
     const artifactRef =
       `artifact://canonical-host/phase6d/${input.artifactKind.toLowerCase()}/` +
@@ -85,6 +87,7 @@ class LocalAeoHostedBundle {
   }
 
   async readActualBytes(artifactRef) {
+    this.artifactIo.read += 1;
     const bytes = this.bytes.get(artifactRef);
     if (!bytes) throw new Error('LOCAL_AEO_ARTIFACT_NOT_FOUND');
     return Uint8Array.from(bytes);
@@ -162,9 +165,9 @@ export async function runPhase6dAeoSameWorkItemLoop(input) {
       'document_version_c71fbc457cdc5e7a05725a4d',
     );
     const fast62 = JSON.parse(Buffer.from(input.fast62Bytes).toString('utf8'));
-    const adapted = adapter.adapt({
-      canonicalWorkItem: input.canonicalWorkItem,
-      assessmentActualBytes: input.assessmentActualBytes,
+    const adapterInput = (canonicalWorkItem, assessmentActualBytes) => ({
+      canonicalWorkItem,
+      assessmentActualBytes,
       authoringSeed: bundle.workItem.authoringSeed,
       authoringSeedActualBytes: r09Bytes,
       aeoTargetIdentity: {
@@ -188,6 +191,34 @@ export async function runPhase6dAeoSameWorkItemLoop(input) {
       ],
       observedAt: '2026-08-15T00:00:00.000Z',
     });
+    assert.equal(input.canonicalWorkItem.revision, 6);
+    assert.equal(
+      input.canonicalWorkItem.assessment.resynthesisAttemptId,
+      'ATT-LOCAL-RESYNTHESIZE_ASSESSMENT-5',
+    );
+    assert.equal(
+      input.canonicalWorkItem.assessment.artifact.sha256,
+      '2113ab042ede84105f5dd976aef5ec54cb9bf794edfec79ac75844f676fa1da0',
+    );
+    assert.throws(
+      () => adapter.adapt(adapterInput(
+        input.initialCandidateWorkItem,
+        input.initialCandidateAssessmentBytes,
+      )),
+      /ASSESSMENT_EXPLICIT_RESYNTHESIS_REQUIRED/u,
+    );
+    assert.throws(
+      () => adapter.adapt(adapterInput(
+        input.canonicalWorkItem,
+        input.previousResynthesisAssessmentBytes,
+      )),
+      /ASSESSMENT_ACTUAL_BYTES_MISMATCH/u,
+    );
+    assert.deepEqual(bundle.artifactIo, { persist: 0, read: 0 });
+    const adapted = adapter.adapt(adapterInput(
+      input.canonicalWorkItem,
+      input.assessmentActualBytes,
+    ));
     assert.equal(adapted.workItem.workItemId, input.canonicalWorkItem.workItemId);
     assert.equal(adapted.workItem.sourceContext.document.documentVersionId,
       'document_version_f4813607b91ee1a20e754e2d');
@@ -222,7 +253,7 @@ export async function runPhase6dAeoSameWorkItemLoop(input) {
       'COMMITTED',
       JSON.stringify(bootstrap.blockers ?? [], null, 2),
     );
-    const session = await sessions.open({
+    let session = await sessions.open({
       workItemId: common.workItemId,
       requestId: common.requestId,
       requesterRef: common.requesterRef,
@@ -234,30 +265,60 @@ export async function runPhase6dAeoSameWorkItemLoop(input) {
       'READY',
       JSON.stringify(session.blockers ?? [], null, 2),
     );
-    const candidate = adapted.candidates[0];
-    assert.ok(candidate);
-    const working = await actions.executeFromAuthenticatedHost({
-      ...common,
-      action: 'PERSIST_WORKING_COPY',
-      expectedStateVersion: initialStateVersion + 1,
-      idempotencyKey: 'phase6d:working:adopt-fast62',
-      expectedWorkingRevision: session.workingRevision,
-      expectedContentHash: session.contentHash,
-      projection: session.projection,
-      transactions: session.transactions,
-      candidateDisposition: {
+    const dispositionUsages = ['ADOPT', 'ADAPT', 'REFERENCE_ONLY', 'IGNORE'];
+    const workingResults = [];
+    const dispositionReadback = [];
+    for (const [index, usage] of dispositionUsages.entries()) {
+      const candidate = adapted.candidates[index % adapted.candidates.length];
+      const targetBlock = session.projection.blockManifest[index];
+      assert.ok(candidate);
+      assert.ok(targetBlock);
+      const workingResult = await actions.executeFromAuthenticatedHost({
+        ...common,
+        action: 'PERSIST_WORKING_COPY',
+        expectedStateVersion: bundle.workItem.stateVersion,
+        idempotencyKey: `phase8:working:${usage.toLowerCase()}`,
+        expectedWorkingRevision: session.workingRevision,
+        expectedContentHash: session.contentHash,
+        projection: session.projection,
+        transactions: session.transactions,
+        candidateDisposition: {
+          candidateId: candidate.candidateId,
+          targetBlockId: targetBlock.blockId,
+          usage,
+          decisionNote:
+            `Phase 8 local-only explicit ${usage}; not engineering approval.`,
+        },
+      });
+      const workingBytes = await bundle.readActualBytes(
+        workingResult.artifact.artifactRef,
+      );
+      const workingArtifact = JSON.parse(Buffer.from(workingBytes).toString('utf8'));
+      const latestDecision = workingArtifact.sourceManifest.adoptionDecisions.at(-1);
+      assert.equal(latestDecision.usage, usage);
+      dispositionReadback.push({
+        usage,
         candidateId: candidate.candidateId,
-        targetBlockId: session.projection.blockManifest[0].blockId,
-        usage: 'ADOPT',
-        decisionNote:
-          'Phase 6D local-only explicit adoption candidate; not engineering approval.',
-      },
-    });
+        decisionRef: latestDecision.decisionRef,
+        workingRevision: workingResult.artifact.workingRevision,
+      });
+      workingResults.push(workingResult);
+      session = await sessions.open({
+        workItemId: common.workItemId,
+        requestId: common.requestId,
+        requesterRef: common.requesterRef,
+        permissionSnapshotVersion: common.permissionSnapshotVersion,
+        expectedStateVersion: bundle.workItem.stateVersion,
+      });
+      assert.equal(session.status, 'READY');
+    }
+    const working = workingResults.at(-1);
+    assert.ok(working);
     const draft = await actions.executeFromAuthenticatedHost({
       ...common,
       action: 'FREEZE_DRAFT_PACKAGE',
-      expectedStateVersion: initialStateVersion + 2,
-      idempotencyKey: 'phase6d:draft',
+      expectedStateVersion: bundle.workItem.stateVersion,
+      idempotencyKey: 'phase8:draft',
       workingArtifactRef: working.artifact.artifactRef,
       workingArtifactSha256: working.artifact.artifactSha256,
       expectedWorkingRevision: working.artifact.workingRevision,
@@ -265,46 +326,52 @@ export async function runPhase6dAeoSameWorkItemLoop(input) {
     const word = await actions.executeFromAuthenticatedHost({
       ...common,
       action: 'EXPORT_WORD_CANDIDATE',
-      expectedStateVersion: initialStateVersion + 3,
-      idempotencyKey: 'phase6d:word',
+      expectedStateVersion: bundle.workItem.stateVersion,
+      idempotencyKey: 'phase8:word',
       draftArtifactRef: draft.artifact.artifactRef,
       draftArtifactSha256: draft.artifact.artifactSha256,
     });
-    const workingBytes = await bundle.readActualBytes(working.artifact.artifactRef);
-    const workingArtifact = JSON.parse(Buffer.from(workingBytes).toString('utf8'));
     const wordBytes = await bundle.readActualBytes(word.artifact.artifactRef);
     assert.equal(Buffer.from(wordBytes).subarray(0, 2).toString('ascii'), 'PK');
-    assert.equal(bundle.workItem.stateVersion, initialStateVersion + 4);
+    assert.equal(bundle.workItem.stateVersion, initialStateVersion + 7);
     assert.equal(bundle.workItem.workItemId, input.canonicalWorkItem.workItemId);
-    assert.equal(
-      workingArtifact.sourceManifest.adoptionDecisions.at(-1).usage,
-      'ADOPT',
-    );
+    assert.deepEqual(dispositionReadback.map((value) => value.usage), dispositionUsages);
     assert.equal(fast62.applicability.sourceExpressions.length, 0);
     assert.equal(fast62.applicability.normalizedCandidates.length, 0);
     assert.equal(fast62.applicability.assignments.length, 0);
     assert.equal(
-      [bootstrap, working, draft, word].every(
+      [bootstrap, ...workingResults, draft, word].every(
         (result) => result.validationWriteAuthorization === null,
       ),
       true,
     );
     return {
-      status: 'PHASE6D_AEO_SAME_WORKITEM_ADOPT_WORD_PASS',
-      ownerCommit: '7a8403ef93b015d35f886eece4865f66741812dd',
+      status: 'PHASE8_AEO_CURRENT_RESYNTHESIS_TO_WORD_PASS',
+      ownerCommit: 'cf9a377497d2bfa0c514de4c0c4ff60a3bfc3278',
       defaultAdapterConfigured: false,
       configuredOnlyInLocalContext: true,
       workItemId: bundle.workItem.workItemId,
       uniqueWorkItemCount: 1,
       stateVersionTransition: [initialStateVersion, bundle.workItem.stateVersion],
       assessmentAuthority: adapted.workItem.sourceContext.assessment.authorityLevel,
+      currentAssessment: {
+        workItemRevision: input.canonicalWorkItem.revision,
+        resynthesisAttemptId:
+          input.canonicalWorkItem.assessment.resynthesisAttemptId,
+        artifactSha256: input.canonicalWorkItem.assessment.artifact.sha256,
+      },
+      rejectedBeforeAeoArtifactIo: {
+        initialCandidate: 'ASSESSMENT_EXPLICIT_RESYNTHESIS_REQUIRED',
+        previousResynthesis: 'ASSESSMENT_ACTUAL_BYTES_MISMATCH',
+        observedIo: { persist: 0, read: 0 },
+      },
       reviewedOemDocumentVersionId: reviewed.externalDocumentVersionId,
       r09AuthoringSeed: {
         packageId: r09.parsePackageId,
         byteLength: r09Bytes.byteLength,
         sha256: sha256(r09Bytes),
       },
-      explicitDisposition: 'ADOPT',
+      explicitDispositions: dispositionReadback,
       artifactKinds: bundle.workItem.artifactIndex.map((entry) => entry.artifactKind),
       word: {
         artifactRef: word.artifact.artifactRef,

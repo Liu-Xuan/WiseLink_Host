@@ -112,11 +112,18 @@ export function adaptSameWorkItemAssessmentForAeo(
     fail('ASSESSMENT_AUTHORITY_INVALID');
   }
   if (
-    assessment.status !== 'CANDIDATE_ONLY' &&
-    assessment.status !== 'CANDIDATE_ONLY_RESYNTHESIZED'
+    assessment.status !== 'CANDIDATE_ONLY_RESYNTHESIZED' ||
+    assessment.previousOverallStale !== true ||
+    assessment.staleReason !== 'ENGINEER_ITEM_SET_CHANGED' ||
+    typeof assessment.resynthesisAttemptId !== 'string' ||
+    assessment.resynthesisAttemptId.trim() === ''
   ) {
-    fail('ASSESSMENT_STATUS_INVALID');
+    fail('ASSESSMENT_EXPLICIT_RESYNTHESIS_REQUIRED');
   }
+  const resynthesisAttemptId = text(
+    assessment.resynthesisAttemptId,
+    'assessment.resynthesisAttemptId',
+  );
   const assessmentArtifact = asRecord(
     assessment.artifact,
     'assessment.artifact',
@@ -131,6 +138,13 @@ export function adaptSameWorkItemAssessmentForAeo(
     input.assessmentActualBytes,
     'ASSESSMENT_ACTUAL_BYTES_INVALID',
   );
+  assertCurrentResynthesizedAssessment({
+    host,
+    source,
+    pkg,
+    assessment,
+    assessmentResult,
+  });
   const discoveryBoundary = asRecord(
     asRecord(assessmentResult.externalDiscovery, 'externalDiscovery')
       .authorityBoundary,
@@ -405,13 +419,7 @@ export function adaptSameWorkItemAssessmentForAeo(
           assessment.evaluateAttemptId,
           'assessment.evaluateAttemptId',
         ),
-        resynthesisAttemptId:
-          assessment.resynthesisAttemptId === null
-            ? null
-            : text(
-                assessment.resynthesisAttemptId,
-                'assessment.resynthesisAttemptId',
-              ),
+        resynthesisAttemptId,
       },
     },
     authoringSeed: input.authoringSeed,
@@ -443,6 +451,74 @@ export function adaptSameWorkItemAssessmentForAeo(
     authority:
       'SERVER_FRESH_READ_CANDIDATES_NOT_AUTOMATIC_ADOPTION_NOT_ENGINEERING_APPROVAL',
   };
+}
+
+function assertCurrentResynthesizedAssessment(input: {
+  host: Record<string, unknown>;
+  source: Record<string, unknown>;
+  pkg: Record<string, unknown>;
+  assessment: Record<string, unknown>;
+  assessmentResult: Record<string, unknown>;
+}): void {
+  const summary = asRecord(input.assessmentResult.summary, 'summary');
+  const staleState = asRecord(input.assessmentResult.staleState, 'staleState');
+  const overall = asRecord(input.assessmentResult.overall, 'overall');
+  const overallContext = asRecord(overall.context, 'overall.context');
+  const overallTransport = asRecord(overall.transport, 'overall.transport');
+  const workItemId = text(input.host.workItemId, 'workItemId');
+  const documentVersionId = text(
+    input.source.documentVersionId,
+    'source.documentVersionId',
+  );
+  const parsedPackageId = text(input.pkg.packageId, 'package.packageId');
+  const currentContextHash = text(
+    input.assessment.currentContextHash,
+    'assessment.currentContextHash',
+  );
+  const currentTransportHash = text(
+    input.assessment.currentTransportHash,
+    'assessment.currentTransportHash',
+  );
+
+  exactText(summary.workItemId, workItemId, 'summary.workItemId');
+  exactText(
+    summary.documentVersionId,
+    documentVersionId,
+    'summary.documentVersionId',
+  );
+  exactText(
+    summary.parsedPackageId,
+    parsedPackageId,
+    'summary.parsedPackageId',
+  );
+  if (
+    summary.authorityLevel !== 'candidate_only' ||
+    summary.blocksEngineeringClosure !== true ||
+    staleState.previousOverallStale !== true ||
+    staleState.reason !== 'ENGINEER_ITEM_SET_CHANGED'
+  ) {
+    fail('ASSESSMENT_RESYNTHESIS_STATE_MISMATCH');
+  }
+  exactText(
+    staleState.currentContextHash,
+    currentContextHash,
+    'staleState.currentContextHash',
+  );
+  exactText(
+    staleState.currentTransportHash,
+    currentTransportHash,
+    'staleState.currentTransportHash',
+  );
+  exactText(
+    overallContext.contextHash,
+    currentContextHash,
+    'overall.context.contextHash',
+  );
+  exactText(
+    overallTransport.transportHash,
+    currentTransportHash,
+    'overall.transport.transportHash',
+  );
 }
 
 function assertServerConfirmedTarget(

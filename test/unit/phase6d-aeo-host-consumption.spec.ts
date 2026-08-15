@@ -26,7 +26,7 @@ describe('Phase 6D AEO host consumption', () => {
     expect(publicApiSource).toContain('provideAeoSameWorkItemAssessmentAdapter');
   });
 
-  it('pins the exact 7a8403e R09 fixture bytes used by the local same-WorkItem loop', () => {
+  it('pins the exact cf9a377 R09 fixture bytes used by the local same-WorkItem loop', () => {
     const bytes = readFileSync(
       resolve(process.cwd(), 'test/fixtures/aeo-r09-authoring-seed.json'),
     );
@@ -34,5 +34,25 @@ describe('Phase 6D AEO host consumption', () => {
     expect(JSON.parse(bytes.toString('utf8')).parsePackageId).toBe(
       'AEOPARSE-D39EB2E83C552549A9AA5784',
     );
+  });
+
+  it('requires the current explicit cumulative resynthesis before AEO projection', () => {
+    const adapterSource = readFileSync(
+      resolve(
+        process.cwd(),
+        'server/modules/aeo-authoring/aeo-same-workitem-assessment.adapter.ts',
+      ),
+      'utf8',
+    );
+    const sourceReceipt = readFileSync(
+      resolve(process.cwd(), 'server/modules/aeo-authoring/SOURCE.md'),
+      'utf8',
+    );
+    expect(sourceReceipt).toContain(
+      'cf9a377497d2bfa0c514de4c0c4ff60a3bfc3278',
+    );
+    expect(adapterSource).toContain('ASSESSMENT_EXPLICIT_RESYNTHESIS_REQUIRED');
+    expect(adapterSource).toContain('assertCurrentResynthesizedAssessment');
+    expect(adapterSource).toContain("staleState.reason !== 'ENGINEER_ITEM_SET_CHANGED'");
   });
 });

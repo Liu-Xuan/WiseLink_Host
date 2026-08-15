@@ -415,6 +415,11 @@ const initialAssessmentBytes = await artifactStore.readActualBytes(
   evaluated.assessment.artifact,
 );
 const initialAssessment = JSON.parse(new TextDecoder().decode(initialAssessmentBytes));
+const initialCandidatePage = await vertical.page(
+  { workItemId: evaluated.workItemId, query: 'applicability' },
+  actor,
+);
+assert.equal(initialCandidatePage.workItem.assessment.status, 'CANDIDATE_ONLY');
 const externalRevisionResynthesis =
   assessmentConsumer.resynthesizeAfterReviewedExternalChange(
     initialAssessment,
@@ -466,6 +471,17 @@ assert.equal(repository.assessmentActions.get('EVALUATE_JOB_AID:1').status, 'SUC
 assert.equal(
   repository.assessmentActions.get(`RESYNTHESIZE_ASSESSMENT:${evaluated.revision}`).status,
   'SUCCEEDED',
+);
+const previousResynthesisBytes = await artifactStore.readActualBytes(
+  resynthesized.assessment.artifact,
+);
+const previousResynthesisPage = await vertical.page(
+  { workItemId: resynthesized.workItemId, query: 'applicability' },
+  actor,
+);
+assert.equal(
+  previousResynthesisPage.workItem.assessment.resynthesisAttemptId,
+  resynthesized.assessment.resynthesisAttemptId,
 );
 
 const secondCriterionId = initialAssessment.evaluation.snapshot.items[1].criterionId;
@@ -557,6 +573,9 @@ const phase6dAeo = process.env.WL_PHASE6D_AEO_LOOP === '1'
       return runPhase6dAeoSameWorkItemLoop({
         canonicalWorkItem: page.workItem,
         assessmentActualBytes,
+        initialCandidateWorkItem: initialCandidatePage.workItem,
+        initialCandidateAssessmentBytes: initialAssessmentBytes,
+        previousResynthesisAssessmentBytes: previousResynthesisBytes,
         fast62Bytes,
       });
     })()

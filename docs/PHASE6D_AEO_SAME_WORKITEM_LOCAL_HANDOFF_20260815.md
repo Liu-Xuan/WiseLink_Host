@@ -1,5 +1,10 @@
 # Phase 6D — AEO same-WorkItem local integration handoff
 
+> Historical acceptance: the active host source seam is superseded by AEO owner commit
+> `cf9a377497d2bfa0c514de4c0c4ff60a3bfc3278`; see
+> `PHASE8_AEO_CURRENT_RESYNTHESIS_LOCAL_ACCEPTANCE_20260815.md`. The identities below remain the
+> original Phase 6D evidence and are not the current source pin.
+
 ## Outcome
 
 The canonical host now consumes the AEO owner public seam from exact commit
