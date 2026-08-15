@@ -25,7 +25,7 @@ export interface CanonicalAuthorizationDecision {
     | 'QUERY_PARSED_UNITS'
     | 'EVALUATE_JOB_AID'
     | 'RESYNTHESIZE_ASSESSMENT';
-  allowed: true;
+  allowed: boolean;
   actorFingerprint: string;
   decisionId: string;
   decisionHash: string;

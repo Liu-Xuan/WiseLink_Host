@@ -1,5 +1,9 @@
 # Local owner refresh acceptance — 2026-08-14
 
+> **ARCHIVED / SUPERSEDED** — 本文记录 activation-first 阶段的历史验收。当前 ordinary 妙搭
+> WorkItem/ActionAttempt 已取代 Hosted Registrar/Base 路线；文中的 Registrar blockers 不再是
+> 产品主线 blocker。
+
 ## Scope
 
 This is a local-only integration slice after Phase 2 was permanently stopped. It consumes:

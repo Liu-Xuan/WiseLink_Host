@@ -54,3 +54,15 @@ The owner chain from `fcab253` through `7eec76a` adds the controlled, catalog-on
 family/document. The bundle deliberately returns no Document Management parser adapter release:
 parser routing remains a canonical-host concern and cannot be selected from a filename or an
 unconfirmed discovery result.
+
+Phase 6C consumes the owner monitoring handoff at exact commit
+`1031cb030eb0c05299c3b932a98806658a15cdaa` as a host-local TypeScript adaptation in
+`server/modules/external-discovery/feishu-native-oem-monitoring-ingress.ts`.
+This supersedes the older `c54538b` status semantics. The adaptation preserves the owner SearchRun
+result vocabulary
+(`ZERO_RESULTS_FOR_TARGET_IDENTIFIER`, `ACCESS_DENIED`, `PARTIAL_RESULTS`,
+`TRUNCATED`, `CANDIDATES_FOUND`) and adds a terminal human rejection. It does not change Document Management
+identity/currentness or call ingestion without an actual FileService selection. Only a complete
+`CANDIDATES_FOUND` run with all three incomplete flags false and a
+`DIRECT_OFFICIAL_SOURCE_MATCH` may be human-selected; zero, denied, partial, truncated and
+flagged legacy results stay discovery-only. A rejected candidate cannot later be selected or ingested.

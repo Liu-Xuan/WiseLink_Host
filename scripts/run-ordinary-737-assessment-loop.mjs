@@ -415,6 +415,11 @@ const initialAssessmentBytes = await artifactStore.readActualBytes(
   evaluated.assessment.artifact,
 );
 const initialAssessment = JSON.parse(new TextDecoder().decode(initialAssessmentBytes));
+const initialCandidatePage = await vertical.page(
+  { workItemId: evaluated.workItemId, query: 'applicability' },
+  actor,
+);
+assert.equal(initialCandidatePage.workItem.assessment.status, 'CANDIDATE_ONLY');
 const externalRevisionResynthesis =
   assessmentConsumer.resynthesizeAfterReviewedExternalChange(
     initialAssessment,
@@ -437,6 +442,8 @@ assert.equal(
 );
 
 const criterionId = initialAssessment.evaluation.snapshot.items[0].criterionId;
+const firstEngineerComment =
+  'Local acceptance only; no engineering closure authority.';
 const resynthesized = await assessment.resynthesizeAfterEngineerChange(
   {
     workItemId: evaluated.workItemId,
@@ -445,7 +452,7 @@ const resynthesized = await assessment.resynthesizeAfterEngineerChange(
     review: {
       baseRecordId: 'LOCAL-ENGINEER-REVIEW-001',
       decision: 'confirmed_pass',
-      comment: 'Local acceptance only; no engineering closure authority.',
+      comment: firstEngineerComment,
       reviewingEngineerUserIds: [actor.userId],
       status: 'ENGINEER_CONFIRMED',
       updatedAt: '2026-08-13T01:00:00.000Z',
@@ -465,8 +472,21 @@ assert.equal(
   repository.assessmentActions.get(`RESYNTHESIZE_ASSESSMENT:${evaluated.revision}`).status,
   'SUCCEEDED',
 );
+const previousResynthesisBytes = await artifactStore.readActualBytes(
+  resynthesized.assessment.artifact,
+);
+const previousResynthesisPage = await vertical.page(
+  { workItemId: resynthesized.workItemId, query: 'applicability' },
+  actor,
+);
+assert.equal(
+  previousResynthesisPage.workItem.assessment.resynthesisAttemptId,
+  resynthesized.assessment.resynthesisAttemptId,
+);
 
 const secondCriterionId = initialAssessment.evaluation.snapshot.items[1].criterionId;
+const secondEngineerComment =
+  'Second explicit edit proves revision-scoped resynthesis.';
 const secondResynthesis = await assessment.resynthesizeAfterEngineerChange(
   {
     workItemId: resynthesized.workItemId,
@@ -475,7 +495,7 @@ const secondResynthesis = await assessment.resynthesizeAfterEngineerChange(
     review: {
       baseRecordId: 'LOCAL-ENGINEER-REVIEW-002',
       decision: 'deferred',
-      comment: 'Second explicit edit proves revision-scoped resynthesis.',
+      comment: secondEngineerComment,
       reviewingEngineerUserIds: [actor.userId],
       status: 'NEEDS_REVIEW',
       updatedAt: '2026-08-13T02:00:00.000Z',
@@ -493,6 +513,33 @@ assert.equal(
   ).status,
   'SUCCEEDED',
 );
+assert.deepEqual(
+  [...repository.assessmentActions.values()]
+    .filter((value) => value.actionType === 'RESYNTHESIZE_ASSESSMENT')
+    .map((value) => value.attemptNo),
+  [evaluated.revision, resynthesized.revision],
+);
+const secondAssessmentBytes = await artifactStore.readActualBytes(
+  secondResynthesis.assessment.artifact,
+);
+const secondAssessment = JSON.parse(
+  new TextDecoder().decode(secondAssessmentBytes),
+);
+assert.equal(
+  secondAssessment.evaluation.snapshot.items.find(
+    (item) => item.criterionId === criterionId,
+  ).engineerReview.comment,
+  firstEngineerComment,
+);
+assert.equal(
+  secondAssessment.evaluation.snapshot.items.find(
+    (item) => item.criterionId === secondCriterionId,
+  ).engineerReview.comment,
+  secondEngineerComment,
+);
+const secondTransportText = JSON.stringify(secondAssessment.overall.transport);
+assert.equal(secondTransportText.includes(firstEngineerComment), true);
+assert.equal(secondTransportText.includes(secondEngineerComment), true);
 
 const page = await vertical.page(
   { workItemId: secondResynthesis.workItemId, query: 'applicability' },
@@ -508,6 +555,31 @@ assert.equal(deepLink.deepLink, page.entry.deepLinkPath);
 assert.equal(ingestCalls, 1);
 assert.equal(repository.parseReservation.workItemId, secondResynthesis.workItemId);
 assert.equal(fileService.uploadCalls.length, 6);
+
+const phase6dAeo = process.env.WL_PHASE6D_AEO_LOOP === '1'
+  ? await (async () => {
+      const { runPhase6dAeoSameWorkItemLoop } = await import(
+        './run-phase6d-aeo-same-workitem.mjs'
+      );
+      const assessmentActualBytes = await artifactStore.readActualBytes(
+        secondResynthesis.assessment.artifact,
+      );
+      const fast62Bytes = await readFile(
+        resolve(
+          root,
+          'test/fixtures/airbus-fast62-oem-reference.frozen2.unified-package.json',
+        ),
+      );
+      return runPhase6dAeoSameWorkItemLoop({
+        canonicalWorkItem: page.workItem,
+        assessmentActualBytes,
+        initialCandidateWorkItem: initialCandidatePage.workItem,
+        initialCandidateAssessmentBytes: initialAssessmentBytes,
+        previousResynthesisAssessmentBytes: previousResynthesisBytes,
+        fast62Bytes,
+      });
+    })()
+  : null;
 
 process.stdout.write(`${JSON.stringify({
   status: 'ORDINARY_737_ASSESSMENT_LOOP_PASS',
@@ -554,9 +626,11 @@ process.stdout.write(`${JSON.stringify({
   actionAttempts: [...repository.assessmentActions.values()].map((value) => ({
     actionType: value.actionType,
     attemptId: value.attemptId,
+    attemptNo: value.attemptNo,
     status: value.status,
   })),
   parserPackageColumnsUnchanged: true,
+  phase6dAeo,
   onlineWrites: 0,
   releaseCreated: false,
 }, null, 2)}\n`);

@@ -628,3 +628,66 @@ export interface FileServiceP0ProbeResponse {
     workItemCreated: false;
   };
 }
+
+export type ExternalDiscoveryResultStatus =
+  | 'ZERO_RESULTS_FOR_TARGET_IDENTIFIER'
+  | 'ACCESS_DENIED'
+  | 'PARTIAL_RESULTS'
+  | 'TRUNCATED'
+  | 'CANDIDATES_FOUND';
+
+export type ExternalDiscoveryReviewStatus =
+  | 'PENDING'
+  | 'HUMAN_SELECTED'
+  | 'REJECTED';
+
+export interface ExternalDiscoveryCandidateView {
+  searchRunRef: string;
+  candidateRef: string;
+  publisher: 'AIRBUS' | 'BOEING' | 'COMAC';
+  title: string;
+  url: string;
+  disposition: string;
+  reviewStatus: ExternalDiscoveryReviewStatus;
+  reviewDecision:
+    | 'HUMAN_SELECTED_FOR_INGEST'
+    | 'HUMAN_REJECTED'
+    | null;
+  reviewedByUserId: string | null;
+  reviewedAt: string | null;
+  eligibleForHumanSelection: boolean;
+  selectionBlockReason: string | null;
+}
+
+export interface ExternalDiscoverySearchRunView {
+  searchRunRef: string;
+  sourceSystem: string;
+  query: string;
+  resultStatus: ExternalDiscoveryResultStatus;
+  observedAt: string;
+  accessRestricted: boolean;
+  truncated: boolean;
+  partialOnly: boolean;
+  candidates: ExternalDiscoveryCandidateView[];
+}
+
+export interface ExternalDiscoveryPageResponse {
+  status: 'FRESH_READ';
+  searchRuns: ExternalDiscoverySearchRunView[];
+  authority: {
+    currentnessChanged: false;
+    documentManagementIoPerformed: false;
+    engineeringConclusionCreated: false;
+  };
+}
+
+export interface ExternalDiscoverySelectionResponse {
+  status: 'HUMAN_REVIEW_RECORDED';
+  searchRunRef: string;
+  candidateRef: string;
+  reviewStatus: 'HUMAN_SELECTED' | 'REJECTED';
+  reviewDecision: 'HUMAN_SELECTED_FOR_INGEST' | 'HUMAN_REJECTED';
+  reviewedByUserId: string;
+  reviewedAt: string;
+  documentManagementIoPerformed: false;
+}

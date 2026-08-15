@@ -7,6 +7,7 @@ import { CanonicalHostModule } from './modules/canonical-host/canonical-host.mod
 import { DocumentManagementValidationModule } from './modules/document-management-validation/document-management-validation.module';
 import { DocumentManagementRuntimeModule } from './modules/document-management-runtime/document-management-runtime.module';
 import { RuntimeProbeModule } from './modules/runtime-probe/runtime-probe.module';
+import { ExternalDiscoveryModule } from './modules/external-discovery/external-discovery.module';
 import { ExactFtdFrozen2PdfProducerAdapter } from './modules/canonical-host/exact-ftd-frozen2-pdf-producer.adapter';
 import { MiaodaCanonicalWorkItemRegistrarAdapter } from './modules/work-item/miaoda-canonical-work-item-registrar.adapter';
 import {
@@ -73,6 +74,7 @@ import { ViewModule } from './modules/view/view.module';
     }),
     DocumentManagementValidationModule,
     RuntimeProbeModule,
+    ExternalDiscoveryModule.forRoot(),
     // ====== @route-section: business-modules END ======
 
     // ⚠️ @route-order: last

@@ -150,6 +150,10 @@ const source = await readFile(
 );
 assert.ok(source.includes('getDocumentParsingPage'));
 assert.ok(source.includes('FRESH READ REQUIRED'));
+assert.ok(source.includes("['原件', '分类', '解析', '统一包', 'Reader']"));
+assert.ok(source.includes('.evaluateAssessment(workItemId)'));
+assert.ok(source.includes('.resynthesizeAssessment(workItemId'));
+assert.ok(source.includes('expectedRevision: data.workItem.revision'));
 assert.ok(!source.includes('const SAMPLE'));
 const request = JSON.parse(
   await readFile(
@@ -244,6 +248,11 @@ process.stdout.write(
       },
       writeRequestSelfReportedAuthorityFields: [],
       pageProjection: 'SERVER_FRESH_READ_ONLY',
+      pageActions: {
+        evaluate: 'AUTHENTICATED_SAME_WORK_ITEM',
+        engineerChangeResynthesis: 'AUTHENTICATED_EXPECTED_REVISION',
+        parsePhasePreserved: true,
+      },
       controllerNeedLogin: true,
       openApi: {
         authentication: 'MIAODA_OPENAPI_KEY_GATEWAY',

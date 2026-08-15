@@ -1,5 +1,9 @@
 # Dedicated Registrar Base adapter — local acceptance
 
+> **ARCHIVED / SUPERSEDED** — 本文仅保留 2026-08-14 的 local evidence。当前 ordinary 妙搭
+> WorkItem 主线不使用该 transport；对应源码、旧 Base capability 和专项测试已删除。本文中的
+> 任何“后续绑定”都不是当前计划。
+
 Date: 2026-08-14
 
 ## Outcome

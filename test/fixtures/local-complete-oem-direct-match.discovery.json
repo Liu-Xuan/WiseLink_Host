@@ -1,0 +1,20 @@
+{
+  "fixtureScope": "LOCAL_ONLY_COMPLETE_DIRECT_MATCH",
+  "searchRunRef": "local-openclaw-direct-match-20260815-001",
+  "sourceSystem": "OPENCLAW_HOSTED_DISCOVERY",
+  "query": "AIRBUS FAST issue 62 official PDF",
+  "resultStatus": "CANDIDATES_FOUND",
+  "observedAt": "2026-08-15T08:30:00.000Z",
+  "accessRestricted": false,
+  "truncated": false,
+  "partialOnly": false,
+  "candidates": [
+    {
+      "candidateRef": "local-airbus-fast-62-direct",
+      "publisher": "AIRBUS",
+      "title": "FAST issue 62",
+      "url": "https://www.airbus.com/en/newsroom/news/2018-10-fast-magazine-62",
+      "disposition": "DIRECT_OFFICIAL_SOURCE_MATCH"
+    }
+  ]
+}

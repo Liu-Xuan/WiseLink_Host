@@ -1,5 +1,8 @@
 # Host platform adapters — local acceptance
 
+> **ARCHIVED / SUPERSEDED IN PART** — Unified/U0 actual-byte 证据仍可追溯；Registrar activation
+> adapter 部分已被 ordinary WorkItem 主线 supersede，相关未装配源码与 capability 已删除。
+
 Date: 2026-08-14
 
 ## Inputs and scope
