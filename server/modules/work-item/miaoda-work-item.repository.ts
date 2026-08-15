@@ -185,6 +185,7 @@ export class MiaodaWorkItemRepository {
     workItemId: string;
     expectedRevision: number;
     next: Omit<CanonicalWorkItemProjection, 'revision'>;
+    syncPrimaryAttempt?: boolean;
   }): Promise<CanonicalWorkItemProjection> {
     const next: CanonicalWorkItemProjection = {
       ...input.next,
@@ -214,7 +215,9 @@ export class MiaodaWorkItemRepository {
       )
       .returning({ workItemId: workItem.workItemId });
     if (updated.length !== 1) throw new Error('WORK_ITEM_CAS_CONFLICT');
-    await this.updatePrimaryAttempt(next, now);
+    if (input.syncPrimaryAttempt !== false) {
+      await this.updatePrimaryAttempt(next, now);
+    }
     return next;
   }
 

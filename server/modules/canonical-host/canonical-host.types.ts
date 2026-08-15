@@ -113,6 +113,7 @@ export interface CanonicalWorkItemRegistrarPort {
     workItemId: string;
     expectedRevision: number;
     next: Omit<CanonicalWorkItemProjection, 'revision'>;
+    syncPrimaryAttempt?: boolean;
   }): Promise<CanonicalWorkItemProjection>;
   getExact(input: {
     workItemId: string;
