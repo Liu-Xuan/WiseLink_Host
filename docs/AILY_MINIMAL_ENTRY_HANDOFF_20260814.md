@@ -1,98 +1,85 @@
-# Aily 最小入口交接
+# Aily Skill 与 WiseLink 只读连接器交接
 
-状态：`LOCAL_FIXED_PATH_REVISION_COMPLETE / HOSTED_REVALIDATION_PENDING`
+状态：`SKILL_FIRST / SINGLE_READONLY_CONNECTOR / NO_COMPLEX_WORKFLOW`
 
-## 本轮范围
+## 当前决定
 
-第一条真实 PDF 纵切已经形成 WorkItem
-`WI-c2943f5a-d023-46ac-9cf5-9480de0aabaf`。本切片只为 Aily 暴露三项只读能力，
-不再次解析，不创建 WorkItem，不写 Base、妙搭数据库或 FileService。
+Aily 使用一个面向用户的 Skill 组织理解、查询和结果解释，不再以可视化 Workflow 编排
+WiseLink 主流程。Skill 只调用一个 owner-only 的只读自定义连接器；解析、评估、重综合、
+AEO 写入和 WorkItem 状态仍由妙搭服务端拥有。
 
-| Aily Skill | 妙搭 OpenAPI | 输入 | 输出重点 |
+这不是另一套系统：连接器只是现有妙搭 read model 的薄入口，没有自己的队列、worker、
+数据库、状态账本或业务决策。
+
+## 单一连接器 operation
+
+| operation | 固定妙搭 OpenAPI | 输入 | 用途 |
 | --- | --- | --- | --- |
-| `get_parse_status` | `GET /openapi/wiselink/work-items/status?workItemId=...` | `workItemId` | phase、failure、frozen.2 package summary、server deep link |
-| `query_parsed_package` | `GET /openapi/wiselink/work-items/parsed-units?workItemId=...&query=...` | `workItemId`、`query` | 同一 Reader 的 source-bound results |
-| `get_deep_link` | `GET /openapi/wiselink/work-items/deep-link?workItemId=...` | `workItemId` | 妙搭服务端生成的 HTTPS 深链 |
+| `get_parse_status` | `GET /openapi/wiselink/work-items/status` | `workItemId` | 读取状态、failure、frozen.2 package 摘要和服务端深链 |
+| `query_parsed_package` | `GET /openapi/wiselink/work-items/parsed-units` | `workItemId`, `query` | 查询同一 Unified Reader 的 source-bound units |
+| `get_deep_link` | `GET /openapi/wiselink/work-items/deep-link` | `workItemId` | 获取服务端生成的妙搭 WorkItem 深链 |
 
-三项入口复用同一个 `CanonicalHostVerticalService`、同一个妙搭数据库 WorkItem、
-同一个 ArtifactStore 和 Unified Reader。`requestId`、`documentVersionId`、
-permission snapshot、artifact ref 和 deep link 均从服务端 fresh-read，不由 Aily 传入。
+每个 operation 的 path 固定，`workItemId`/`query` 是结构化 query 参数。连接器不接受任意
+URL、header、body 或 method，不暴露 `start_parse` 或其他 mutation。
 
-## 本地验收
+三个路由复用同一个 `CanonicalHostVerticalService`、同一个普通妙搭 WorkItem repository、
+同一个 FileService ArtifactStore 和同一个 Unified Reader。`requestId`、`DocumentVersion`、
+permission snapshot、artifact ref 与 deep link 均由服务端 fresh-read，不由 Aily 补造。
 
-- OpenAPI spec 自检：`3 paths`，每条均有 `operationId` 和 `responses`；
-- 生产构建路由读回：三条全部为 `GET`，Controller 无 `@NeedLogin`，mutation route=`0`；
-- Jest：`19 suites / 87 tests PASS`；
-- server/client typecheck、lint、production build：`PASS`；
-- Canonical host composition 和 Unified Reader composition：`PASS`；
-- 真实 FTD 本地循环：`ORDINARY_FIRST_FTD_LOOP_PASS`，`311` units、`239` refs、
-  `software` 查询 `38/38` source-bound，重复触发复用同一 WorkItem；
-- 本次固定路径修订的 online write、push、release、API Key update、Aily Skill 创建：`0`。
+## Skill 职责
 
-## Hosted 网关实测与修订
+Skill 可以：
 
-DEV release `7673846198880472323`（exact commit
-`805ebec3e1c85c096526c6e02fca1a25ca9ff048`）已证明：
+1. 让用户提供或确认 `workItemId`；
+2. 读取 WorkItem 当前状态；
+3. 按用户问题调用 source-bound query；
+4. 解释 candidate、stale、warning 和 source reference；
+5. 返回同一 WorkItem 的妙搭深链，提醒用户在妙搭执行需要认证的写动作。
 
-- 妙搭 OpenAPI Key 的调用头必须是 `Authorization: Bearer <secret>`；
-- `request_scope.http_path` 对路径执行字面匹配，不把 `{workItemId}` 当作路由模板；
-- 动态 WorkItem 路径因此在网关层返回 `request path not allowed`；把
-  `{workItemId}` 字面编码后能进入 Nest，但自然会因不存在该字面 WorkItem 而失败。
+Skill 不可以：
 
-本地修订将三条路由改为固定 path，并把 `workItemId` 移入必填 query。业务 Service、
-返回类型、Reader、服务端深链和只读边界均未改变。该修订尚未 push、release 或更新 Key。
+- 在 Prompt 中重建 Job Aid、综合评估或 AEO 状态；
+- 根据搜索 snippet 自动形成适用性或工程结论；
+- 直写 WorkItem、DocumentVersion、FileService、Assessment、AEO 或 currentness；
+- 代表工程师批准、发布或发送正式产物；
+- 调用任意网址或把 OpenAPI credential 暴露给模型输入。
 
-## 为什么不直接调用现有 `/api`
+## OpenClaw 关系
 
-现有 `/api/canonical-host/**` 使用妙搭 `@NeedLogin` 登录上下文。Aily Workflow 的 HTTP
-节点可以调用 HTTP/HTTPS 服务，但不会继承用户浏览器中的妙搭 Cookie。复制 Cookie 或关闭
-CSRF 都不是可接受方案。
+OpenClaw 是 OEM 网站发现工具，不是 Parser、Reader、Assessment 或第二 WorkItem owner。
+当 Aily Skill 需要 Boeing/Airbus/COMAC 外部资料时，可委托 OpenClaw 执行只读发现；返回的
+SearchRun/candidate 先进入飞书原生候选清单。只有完整、非受限、直接官方来源且经人工选择的
+实际文件，才进入既有 DM ingest。ZERO_RESULT、ACCESS_DENIED、PARTIAL、TRUNCATED 和未采纳
+snippet 不创建 DocumentVersion 或 WorkItem。
 
-妙搭 `/openapi` 路由由平台网关使用应用 OpenAPI Key 鉴权，适合 Aily 的服务端只读调用。
-它仍在同一妙搭应用、同一 Nest service 内，不是新 MCP、网关或第二后端。
+若 Aily 不能原生调用 OpenClaw，只允许在 OpenClaw 已存在的正式 server operation 之上增加
+一个只读 connector/MCP 映射；不得自建第二爬虫、调度器或数据账本。
 
-参考：
+## 已完成验证
 
-- 飞书 Aily HTTP 节点：https://www.feishu.cn/content/k9cgfg70
-- 飞书 Aily 自定义连接器：https://www.feishu.cn/content/ya5j9hjw
+真实 WorkItem `WI-c2943f5a-d023-46ac-9cf5-9480de0aabaf` 的三条固定 GET 已在 hosted DEV
+使用受限 key 各调用一次并通过：
 
-## Aily 平台最小配置
+- status：`CANDIDATE_READBACK_VERIFIED`，311 units / 239 refs，frozen.2 strict validation PASS；
+- `software` query：38/38 results 均有 sourceRefs；
+- deep link：由妙搭服务端生成并指向同一 WorkItem。
 
-发布包含上述三条路由的 DEV 版本后，先只读检查现有 Key，再创建一个仅覆盖这三条 GET
-路由的专用 Key：
+源码 OpenAPI spec 为 [openapi.json](openapi.json)，只含三个 GET path，mutation route 为 0。
 
-```bash
-lark-cli apps +openapi-key-list \
-  --app-id app_17bzc551rsg --as user
+## 已废止方案
 
-lark-cli apps +openapi-key-create \
-  --app-id app_17bzc551rsg \
-  --name "WiseLink 3.1 Aily read-only" \
-  --scope-api 'GET /openapi/wiselink/work-items/status' \
-  --scope-api 'GET /openapi/wiselink/work-items/parsed-units' \
-  --scope-api 'GET /openapi/wiselink/work-items/deep-link' \
-  --as user
-```
+- 三个独立 Workflow Skill；
+- 在 Workflow HTTP 节点中手工拼 `{{workItemId}}`/`{{query}}`；
+- 由 Aily Workflow 串联解析、评估、AEO 或文件写入；
+- 让 Aily 持有浏览器 Cookie、关闭 CSRF，或使用任意 URL HTTP 节点。
 
-`create` 只回显一次原始密钥。原始值必须直接保存到 Aily HTTP/自定义连接器的 Secret
-凭证字段，并由连接器注入 `Authorization: Bearer <secret>`；不得写入 Git、文档、Prompt、对话、普通环境变量
-截图或日志。后续 `list/get` 只能看到脱敏预览，丢失时只能执行受控 reset。
+平台上若仍存在旧 Workflow 草稿，只能作为未发布历史草稿；不得绑定到当前 Agent、连接器或
+Skill，也不得作为验收证据。删除平台资产属于独立线上清理动作，不由本源码提交代替。
 
-然后建立三个 Workflow Skill；只声明上表字段，不提供任意 URL/header/body 输入。先在 Aily
-调试态读取上面的真实 WorkItem，核对状态、查询结果和深链与妙搭页面一致。Aily 发布属于
-后续独立动作，本提交不执行。
+## 下一平台动作
 
-## 第四项 `start_parse`
-
-本轮不配置 `start_parse`。真实 WorkItem 已完成，重复调用会违反“不得触发第二次解析”的
-边界。未来需要时复用现有
-`POST /api/canonical-host/work-items/parse-pdf` 的普通业务 service，另行暴露受控写入口；
-不能让 Aily 直写数据库，也不应为此建设队列、MCP 网关或独立服务。
-
-## Non-claims
-
-- 未创建或发布 Aily Agent/Skill。
-- 本修订未创建、重置、更新或回显妙搭 OpenAPI Key；现有 Key 仍绑定旧动态路径 scope。
-- 固定路径修订尚未发布；hosted `/openapi` 仍是 release `7673846198880472323` 的动态路径版本。
-- 未写 WorkItem、Base、FileService、DocumentVersion 或 ParsedPackage。
-- 未触发第二次解析，未加入 Assessment、Job Aid 或 OpenClaw。
+1. 在 Aily 创建或复用一个 owner-only 自定义连接器并导入 `openapi.json`；
+2. 只保留上述三个 operation，使用现有受限 Bearer credential；
+3. 创建一个用户可理解的 WiseLink 查询/评估 Skill，工具仅选择该连接器；
+4. 用真实 WorkItem 验证 status → query → deep-link；
+5. 不发布旧 Workflow，不开放写 operation。

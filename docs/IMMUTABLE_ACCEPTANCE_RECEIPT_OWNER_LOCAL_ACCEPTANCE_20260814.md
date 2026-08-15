@@ -1,5 +1,9 @@
 # Immutable acceptance receipt owner — local acceptance
 
+> **ARCHIVED / NON-RUNTIME EVIDENCE** — 本文不定义当前 Aily/WorkItem 主线。当前生产仍使用
+> ordinary FileService actual-byte persistence/readback；本文的未装配 owner 试验不得被解释为
+> 第二个 store、Registrar 或发布前置条件。
+
 Date: 2026-08-14
 
 ## Outcome

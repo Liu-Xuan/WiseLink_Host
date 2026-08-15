@@ -1,97 +1,82 @@
 # WiseLink 3.1｜工程资料与综合评估
 
-This repository is the source of the single WiseLink 3.1 full-stack Miaoda host candidate:
+本仓库是 WiseLink 3.1 的唯一妙搭业务宿主：
 
-- Miaoda app: `app_17bzc551rsg`
-- App name: `WiseLink 3.1｜工程资料与综合评估`
-- Branch: `codex/v3-1-canonical-host-candidate`
-- Product shape: one Miaoda host + one later Aily entry + internal modules
+- 妙搭应用：`app_17bzc551rsg`
+- 分支：`codex/v3-1-canonical-host-candidate`
+- 业务状态真源：本应用数据库中的同一 `WorkItem` 与 `ActionAttempt`
+- 文件真源：本应用 FileService 中的不可变实际字节
+- 智能入口：Aily Skill + 一个只读自定义连接器
 
-Parser Lab, DM labs, Assessment workbenches and historical Hub apps are module sources or internal
-labs, not additional user products.
+Parser Lab、DM Lab、Assessment Workbench、AEO owner 仓库和历史 Hub 都只是模块来源或验收来源，
+不是第二个产品、第二个 WorkItem Store 或第二条业务主线。
 
-## Current runnable vertical
+## 当前主线
 
-The host now contains the ordinary first business path:
+```text
+工程师在妙搭选择受控文件
+  → DM 生成 exact DocumentVersion/currentness
+  → 同一 WorkItem 创建或复用
+  → Parser 生成 frozen.2 ParsedPackage
+  → FileService actual-byte readback
+  → U0 full Validator + Unified Reader
+  → Job Aid / 综合评估 candidate
+  → 工程师修改后 stale，显式重综合
+  → 当前累计 Assessment 进入 AEO
+  → working copy / Draft / Word candidate
+  → 妙搭页面与 Aily Skill 读取同一 WorkItem
+```
 
-`authenticated Miaoda action → exact DM DocumentVersion → create-or-reuse WorkItem → controlled PDF
-producer profile → techpub.parsed-package.v1/frozen.2 → immutable FileService readback → full U0
-Validator → Unified Reader query → same WorkItem page/deep-link`
+真实 737 本地循环已经覆盖 Job Aid `N=150`、两次累计工程师修改、显式重综合，以及 AEO
+`ADOPT / ADAPT / REFERENCE_ONLY / IGNORE` 到 Word candidate。真实 FTD hosted 循环已经覆盖
+DocumentVersion、WorkItem、不可变 ParsedPackage、U0、Reader 和页面 fresh-read。
 
-The same route now accepts both the established FTD profile and one controlled, catalog-only
-`OEM_REFERENCE` profile. The latter is reference-only and cannot create applicability, Assessment
-or AEO authority.
+## Aily 最小入口
 
-The path uses:
+Aily 不保存解析、评估或 AEO 状态，也不运行复杂可视化 Workflow。一个面向用户的 Skill
+负责理解问题、按需调用只读连接器，并解释同一 WorkItem 的现有结果。
 
-- DM owner source `7eec76ae972312ecb81bbce569140df6c782fbba` without taking over DM
-  currentness;
-- Unified owner source `b3e7a20245af19349a8bfa9c0da995d5eeac6acf` and U0 commit
-  `fa69ada08265934951df53c7a61a3ccdb8cb2900`;
-- the existing frozen.2 FailureReport adapter and strict failure validator;
-- a normal Miaoda database `WorkItem` plus one `ActionAttempt`, not Base, a queue, worker or lease
-  platform;
-- the platform `@NeedLogin` user context, server-side action authorization, business unique key and
-  compare-and-set revision.
+只读连接器只暴露三个固定 GET operation：
 
-The hidden `/runtime-probe` page provides read-only hosted dependency checks plus one manually
-triggered, fixed real-FTD validation action. It uses imported `axiosForBackend`, accepts no client
-WorkItem ID/path/authority, and cannot create Assessment/AEO conclusions.
+- `get_parse_status` → `/openapi/wiselink/work-items/status`
+- `query_parsed_package` → `/openapi/wiselink/work-items/parsed-units`
+- `get_deep_link` → `/openapi/wiselink/work-items/deep-link`
 
-## Verified hosted DEV result
+`workItemId`（以及查询 operation 的 `query`）是结构化参数；连接器不能接受任意 URL、header、
+body 或 mutation。解析、评估、重综合和 AEO 写动作继续由登录态妙搭服务端执行。
 
-The real FTD PDF (122,102 bytes) resolves to
-`document_version_fd88dcb9cf64cf3ba21033ef`. One authenticated hosted business request created
-WorkItem `WI-c2943f5a-d023-46ac-9cf5-9480de0aabaf` and one successful ActionAttempt, persisted and
-read back a 662,441-byte frozen.2 package, passed the full U0 Validator, and returned 38
-source-bound `software` Reader results. The same WorkItem deep link renders
-`CANDIDATE_READBACK_VERIFIED`, 311 content units and 239 source references.
+OpenClaw 只负责 Boeing、Airbus、COMAC 等外部来源发现。搜索结果和 snippet 不是工程证据；
+只有完整、非受限、人工选中的官方文件进入现有 DM ingest 后，才可能产生 DocumentVersion 和
+后续 WorkItem。
 
-Detailed evidence: `docs/FIRST_REAL_FTD_WORKITEM_VERTICAL_ACCEPTANCE_20260814.md`.
+详见 [Aily Skill 与只读连接器交接](docs/AILY_MINIMAL_ENTRY_HANDOFF_20260814.md)。
 
-## Local controlled OEM reference version chain
+## 保留的安全边界
 
-Airbus FAST is one `AIRBUS-FAST` document family. ISSUE 61 and ISSUE 62 are two immutable
-DocumentVersions, not two family identities and not two Parser Profiles. Both use the existing
-`OEM_REFERENCE / frozen.2-controlled-oem-reference.1` route, produce distinct frozen.2 packages,
-and remain available through separate ordinary WorkItems after Catalog current generation moves
-from 1 to 2. Both pages render `REFERENCE ONLY`, `NEEDS_REVIEW`, applicability `0/0/0`, and the
-prohibition on Assessment/AEO automatic adoption.
+- 妙搭业务写操作使用 `@NeedLogin` actor、服务端 authorization、permission fresh-read；
+- WorkItem 更新复用业务唯一键、state revision 和 compare-and-set；
+- package、Assessment、AEO、Word 与 FailureReport 都要求实际字节、长度和 SHA-256 readback；
+- Aily/OpenClaw 不直写 WorkItem、DocumentVersion、FileService、Assessment 或 AEO；
+- 不自动形成适用性、工程批准、正式 Draft/Word 或发布结论；
+- 正式发布、不可逆操作和权限变更仍按项目授权执行。
 
-Detailed evidence: `docs/OEM_REFERENCE_VERSION_CHAIN_ACCEPTANCE_20260815.md`.
+## 已清理的旧方案
 
-## Hosted DEV acceptance state
+以下内容不再属于当前源码或构建产物：
 
-DEV contains the seven DM tables plus `work_item` and `action_attempt`; after the accepted run, all
-nine contain exactly one related record. FileService contains the pre-existing objects plus one
-content-addressed package object. Closure release `7673837917727050950` is deployed from exact
-commit `65467a48b5010a98fe41921bdb0f9279deb8362c`; validation is disabled and its run ID is absent.
-No production/current switch or engineering conclusion was made.
+- 未装配的 Assessment Hosted Registrar / detached activation 路线；
+- 绑定旧三表 Base 的 `feishu-bitable` Registrar capability 文件；
+- 专用 Open Platform Base writer 试验；
+- “三个 Aily Workflow Skill”配置方案。
 
-One later page read initially failed before a FileService HTTP response and then succeeded on a
-single read-only retry. It is classified `TRANSIENT_READ_RECOVERED_BY_SINGLE_READ_ONLY_RETRY`; no
-business POST retry was added or performed.
+当前 ordinary `MiaodaCanonicalWorkItemRegistrarAdapter` 仍保留；它只是同一妙搭数据库
+WorkItem 的服务端适配器，不是被删除的历史 Base Registrar。Unified Reader、U0 Validator、
+FailureReport、认证、CAS 和 actual-byte 校验也全部保留。
 
-## Aily native read-only adapter
+## 文档入口
 
-The local host now exposes three GET-only `/openapi` wrappers for Aily: WorkItem status plus
-parsed-package summary, source-bound query, and server-derived Miaoda deep link. They reuse the same
-WorkItem repository, Unified Reader and canonical app binding. The routes contain no `@NeedLogin`
-because Miaoda's OpenAPI gateway authenticates them with a scoped application API Key; no
-`start_parse` write tool is exposed.
-
-Local implementation and the exact platform handoff are recorded in
-`docs/AILY_MINIMAL_ENTRY_HANDOFF_20260814.md`. Hosted testing proved that Miaoda OpenAPI Key scopes
-match paths literally, so the current local revision uses three fixed GET paths with a required
-`workItemId` query parameter. This revision has not been pushed, released or applied to the Key.
-
-## Goal alignment
-
-- This slice directly produces a source-bounded FTD or controlled OEM reference result an engineer
-  can inspect in the same page.
-- New code is limited to the missing ordinary WorkItem store, producer/storage adapters and error
-  persistence needed for that path.
-- No new package contract, hash scheme, baseline or general gate was introduced.
-- The hosted FTD loop remains complete; OEM_REFERENCE is local-only and has not been published.
-  The next product action is a single authorized hosted OEM reference validation when requested,
-  then the existing Aily read-only mappings—without adding another parser or state store.
+- [当前架构与装配边界](docs/CANONICAL_HOST_CANDIDATE_ASSEMBLY.md)
+- [真实 FTD hosted 纵切](docs/FIRST_REAL_FTD_WORKITEM_VERTICAL_ACCEPTANCE_20260814.md)
+- [737 累计评估](docs/PHASE7_737_ASSESSMENT_CUMULATIVE_RESYNTHESIS_ACCEPTANCE_20260815.md)
+- [当前 Assessment 到 AEO/Word](docs/PHASE8_AEO_CURRENT_RESYNTHESIS_LOCAL_ACCEPTANCE_20260815.md)
+- [文档索引与历史归档说明](docs/README.md)

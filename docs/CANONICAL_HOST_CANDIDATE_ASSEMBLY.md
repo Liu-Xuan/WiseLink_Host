@@ -1,242 +1,94 @@
-# Canonical host candidate assembly
+# Canonical Host 当前架构与装配边界
 
-## Superseding current state — 2026-08-14
+更新时间：2026-08-15
 
-The earlier activation-first plan below is retained as history, but it no longer defines the main
-path. The current owner decision selects an ordinary authenticated WorkItem vertical in the single
-Miaoda app. Registrar activation, Base WorkItem storage and detached receipt ownership may remain
-as non-blocking historical modules; they are not prerequisites for the first business loop.
+## 产品边界
 
-Current composition:
+`app_17bzc551rsg` 是 WiseLink 3.1 的唯一妙搭业务宿主。当前设计只保留：
 
-- `work_item` and `action_attempt` are ordinary Miaoda DB tables with a business uniqueness key;
-- DM exact owner source is `fcab253b17dd1d118232fdbb72f4e0fe2d295f0e` and supplies only the
-  exact `DocumentVersion` identity to WorkItem processing;
-- the first production adapter consumes the verified real FTD producer output and emits the
-  selected frozen.2 Unified Parsed Package;
-- package and FailureReport bytes use the same ordinary immutable FileService adapter with actual
-  byte readback;
-- Unified's sole frozen.2 Validator, Reader and FailureReport adapter are configured in the host;
-- the Miaoda page and hidden validation action read the same WorkItem; Aily remains later and
-  read-only.
+- 一个妙搭 DB WorkItem/ActionAttempt 真源；
+- 一个妙搭 FileService 不可变 artifact store；
+- 一套 DM DocumentVersion/currentness；
+- 一套 frozen.2 U0 Validator、Unified Reader 和 FailureReport authority；
+- 一个妙搭页面；
+- 一个 Aily Skill 和一个只读连接器。
 
-Hosted DEV acceptance, exact identities and remaining non-claims are recorded in
-`FIRST_REAL_FTD_WORKITEM_VERTICAL_ACCEPTANCE_20260814.md`.
+Parser、Assessment、AEO 和 external discovery 以内部模块接入；它们不拥有第二个 WorkItem、
+第二个 Reader、第二个 ArtifactStore 或用户产品入口。
 
-The first real hosted vertical is now `COMPLETE/PASS`: one authenticated request produced the exact
-DM DocumentVersion, one WorkItem/ActionAttempt, one immutable frozen.2 package, full U0 validation,
-source-bound Reader results and the same Miaoda page/deep-link. Validation is closed. A subsequent
-response-less FileService page read succeeded on one bounded read-only retry and is classified
-`TRANSIENT_READ_RECOVERED_BY_SINGLE_READ_ONLY_RETRY`; the business POST remains non-retrying.
+## AppModule 实际装配
 
-### Goal alignment
+生产 `AppModule` 当前装配：
 
-This supersede removes old activation blockers from the product path and advances a directly
-inspectable result. It adds no second producer, package contract, hash scheme or gate. The next
-step is the three-skill Aily read-only mapping (status plus package summary, source-bound query and
-server-derived deep link) over the same WorkItem read model, not more activation proof. A hosted
-probe proved that Miaoda API Key scopes match paths literally; the native `/openapi` wrappers now
-use fixed paths plus a required `workItemId` query locally. Fixed-scope Key update, hosted
-revalidation and Aily configuration remain pending.
+- `CanonicalHostModule`：普通 WorkItem、授权、permission snapshot、PDF producer、failure path；
+- `DocumentManagementRuntimeModule`：exact DocumentVersion/currentness；
+- `UnifiedReaderModule`：ordinary FileService adapter、U0 full Validator、frozen.2 FailureReport；
+- `AssessmentHostConsumerModule`：Job Aid/整体评估的 host-consumable provider；
+- `ExternalDiscoveryModule`：飞书原生 SearchRun/candidate 记录与人工选择边界；
+- `RuntimeProbeModule`：隐藏的、登录态、只读运行环境探针；
+- `ViewModule`：最后注册的页面 fallback。
 
----
+`AeoAuthoringModule` 仍未装配到生产 `AppModule`。Phase 8 只在本地验收上下文中注入 owner
+provider，证明当前累计 Assessment 到 working/Draft/Word 的同 WorkItem 链路；没有线上 AEO
+路由或 authority。
 
-## Historical assembly record
+## 当前业务主线
 
-Date: 2026-08-13
+1. 登录态妙搭动作读取 server-owned actor、authorization 与 permission snapshot；
+2. DM 生成或复用 immutable DocumentVersion；
+3. ordinary repository 以业务唯一键创建或复用 WorkItem；
+4. producer 生成 frozen.2 package；
+5. FileService persist 后实际字节/长度/SHA-256 readback；
+6. U0 full Validator 通过后 Unified Reader 才可查询；
+7. Job Aid/整体评估生成 candidate，工程师修改使旧结果 stale，显式重综合；
+8. 只有当前累计 resynthesis 可进入 AEO candidate；
+9. 页面和 Aily Skill 都读取同一 WorkItem projection。
 
-## Decision
+WorkItem 写入复用现有 state revision/CAS 和 ActionAttempt。没有队列、worker、租约平台或
+Base 镜像。
 
-`app_17bzc551rsg` (`WiseLink 3.1｜工程资料与综合评估`) is suitable as the single
-`CANONICAL_HOST_CANDIDATE`.
+## Aily 与 OpenClaw
 
-Read-only platform inspection established:
+Aily 使用 Skill，不使用复杂 Workflow。Skill 只调用单一只读 connector 的 status、
+source-bound query、deep-link 三个固定 GET。需要写入或人工确认时返回妙搭 deep link。
 
-- app type is `full_stack`;
-- the app was created on 2026-08-12;
-- releases are empty;
-- application database tables are empty;
-- FileService contains 0 files and 0 bytes.
+OpenClaw 只负责 OEM 网站发现。搜索 run/candidate 持久化在飞书原生候选层；snippet/URL 不进入
+DM。只有完整、非受限、直接官方来源且经人工选择的实际文件，才调用既有 DM ingest。
 
-The official `lark-cli apps +init` path created this app's own repository and
-`sprint/default`. Development continues on local branch
-`codex/v3-1-canonical-host-candidate`. This candidate was not initialized by changing the remote or
-`.spark/meta.json` of another app.
+## 已删除的 superseded 源码
 
-## Source migration audit
+以下未被 `AppModule`、运行时模块或当前验收主线引用，已从源码和构建 assets 删除：
 
-Source baseline:
+- `server/modules/assessment-registrar/` detached activation/Hosted Registrar 试验；
+- `server/capabilities/wl-v31-*-registrar.json` 旧三表 Base capability；
+- 对应的 dedicated Open Platform Base transport 和仅验证这些试验的单元测试。
 
-- worktree: `private/runtime/worktrees/v3-1-canonical-host-main-loop`;
-- exact source commit: `23dbc9d72840478d9c7157025bdc6ed5722ac782`;
-- source and target both use the current NestJS/React `full_stack` scaffold;
-- dependencies are compatible; the target keeps its newer platform-generated scaffold and lockfile.
+它们曾是 activation-first 路线的 local evidence，但普通妙搭 WorkItem 主线已经 supersede
+该方案。历史结论仍可从 Git 和标记为 archived 的验收文档追溯。
 
-Migrated:
+需要特别区分：当前 `MiaodaCanonicalWorkItemRegistrarAdapter` 是 ordinary WorkItem service 的
+服务端适配器，仍在生产装配并保留认证、CAS 和 ActionAttempt；它不是旧 Hosted Registrar。
 
-- canonical-host module and its tests;
-- Unified Reader/Validator composition source and tests;
-- Document & Parsing page and API client;
-- existing machine composition contracts needed to exercise the migrated module.
+## 保留的模块来源
 
-Not migrated:
+- Unified 的 unconfigured adapters/public factories：用于默认 fail-closed 和组合测试；
+- AEO owner source snapshot：用于同 WorkItem AEO 本地验收，生产未装配；
+- Runtime probe/validation closure：用于已授权的托管环境验证；
+- 历史 acceptance 文档：作为证据归档，不是当前实现说明。
 
-- `.git`, remote, branch history, `.spark/meta.json`, `.env`, `.env.local`;
-- the prior app's runtime-probe implementation and UI;
-- any old app/Base/Aily/TDMS/AAmis/demo identity;
-- generated `dist`, `node_modules`, logs or temporary receipts;
-- real provider configuration or online business data.
+这些内容不得被解释为第二套产品或激活路线。
 
-## File-level provider plan
+## 验收入口
 
-The existing composition seams are sufficient; no new receipt, authority, schema, contract or gate
-is introduced.
+- hosted FTD：`FIRST_REAL_FTD_WORKITEM_VERTICAL_ACCEPTANCE_20260814.md`
+- 737 累计评估：`PHASE7_737_ASSESSMENT_CUMULATIVE_RESYNTHESIS_ACCEPTANCE_20260815.md`
+- Assessment → AEO/Word：`PHASE8_AEO_CURRENT_RESYNTHESIS_LOCAL_ACCEPTANCE_20260815.md`
+- Aily Skill/connector：`AILY_MINIMAL_ENTRY_HANDOFF_20260814.md`
+- 外部 OEM discovery：`PHASE6C_EXTERNAL_DISCOVERY_CANDIDATE_STORE_HANDOFF_20260815.md`
 
-1. **Document Management producer**
-   - add one internal DM adapter module under `server/modules/document-management/`;
-   - translate an authorized exact DocumentVersion request to the existing
-     `CANONICAL_PDF_PRODUCER` port;
-   - bind it in `server/app.module.ts` only after its exact hosted integration is selected.
-2. **Registrar**
-   - `server/modules/assessment-registrar/` now selectively assembles the Hosted Registrar
-     activation provider from exact Assessment commit
-     `bb73aacfc4d883ce13fb6cc2fec6704057b98f24`;
-   - the provider maps the selected 65/28/17 Base tables but remains `BLOCKED` before capability
-     loading until the master supplies hosted runtime/bootstrap/ports;
-   - add one later adapter implementing `CanonicalWorkItemRegistrarPort` against this same
-     Registrar service after activation; do not add another writer;
-   - keep WorkItem identity/current state in that one store; do not mirror it in Unified or AEO.
-3. **Unified**
-   - reuse `server/modules/unified-reader/unified-reader.module.ts`;
-   - consume exact Unified hosted source commit
-     `b3e7a20245af19349a8bfa9c0da995d5eeac6acf` through
-     `server/modules/unified-reader/public-api.ts`;
-   - the official FileService provider can read and verify immutable package bytes, but package
-     persistence is blocked before FileService I/O without a separate validation-write receipt;
-   - retain the exact Python frozen.2 U0 adapter for a post-DEV runtime probe of Python,
-     `child_process` and contract dependencies; do not pre-build a second Node Validator;
-   - inject the selected ArtifactStore, full Validator and exact Unified failure adapter providers
-     only after hosted bindings are authorized;
-   - do not copy another Reader/Validator implementation.
-4. **AEO**
-   - export one `AEO_SPECIALIST_READER_PORT` provider from its internal module;
-   - use `createAeoSpecialistReaderBridgeProvider()` and `aeoSpecialistReaderProvider`; AEO does
-     not create a second app or WorkItem store.
-5. **Miaoda and Aily**
-   - Miaoda reads only the fresh WorkItem projection at
-     `client/src/pages/DocumentParsingPage/`;
-   - Aily later calls the existing status/query/deep-link façade and owns no parsing state.
+## Non-claims
 
-## Claims and non-claims
-
-Claim: the unique full-stack app candidate has a local host branch containing the source-level
-composition with write-authoritative hosted providers unconfigured. The current local production
-build and Unified composition pass; Registrar readiness remains `BLOCKED`, with write and
-publication authority false. The DM owner refresh is verified only through the built local host and
-two real FTD PDFs.
-
-Non-claims for this refresh: no push, release, hosted POST, environment change, Base/FileService/
-database/WorkItem/workflow mutation, current switch or engineering decision was performed. Earlier
-DEV release history is not repeated or upgraded into a new acceptance claim.
-
-## Only blocker
-
-The remaining activation blockers are Master trust, permission fresh-read and explicit write
-authority for the existing hosted providers. This local slice does not invent any of them. Until
-the main controller supplies and verifies those ordinary runtime inputs, the app remains a
-candidate and its mutation paths correctly stay locked.
-
-## Local platform-adapter coverage
-
-| Port                                        | Local host coverage                                                                                                       | Runtime status                                                                          |
-| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `RegistrarActivationArtifactStorePort`      | dedicated read-only FileService actual-byte adapter; returns configured store/bucket/adapter identity                     | implemented and unit-tested; not sufficient to activate Registrar                       |
-| Registrar Master signature/trust            | none                                                                                                                      | `BLOCKED`; not implemented or simulated                                                 |
-| Registrar sole-writer permission fresh-read | none                                                                                                                      | `BLOCKED`; not implemented or simulated                                                 |
-| Registrar validation-write authorization    | none                                                                                                                      | `BLOCKED`; not implemented or simulated                                                 |
-| Dedicated Registrar Base transport          | server-only tenant-access-token OpenAPI adapter for three-table search/create/update; business actor fields remain opaque | implemented and tested but not registered; dedicated app identity/scopes pending        |
-| `ImmutableAcceptanceReceiptOwnerPort`       | receipt-only FileService actual owner plus Unified `b3e7a...` DI wrapper; default module remains unconfigured             | local adapter verified; runtime identity/store and external write authorization pending |
-| Unified Python U0 Validator                 | existing hosted-verified adapter and ordinary `pythonModulePath` passthrough                                              | source/config retained; no online probe in this slice                                   |
-
-No activation manifest, immutable acceptance receipt, signature, permission grant or validation-
-write authorization is created by these adapters. This is a local composition improvement only;
-there was no push, release, environment change or online I/O.
-
-## Phase 1B read-only DEV probe
-
-The first controlled release adds one bounded, login-protected `GET /api/runtime-probe` endpoint.
-It accepts no executable, path, package or persistence input. It checks only:
-
-- a fixed `python3` / `python` / `/usr/bin/python3` executable list;
-- `child_process` execution and a temporary-file create/read/delete cycle;
-- `jsonschema` availability;
-- the exact U0 frozen.2 manifest bytes and required Reader/schema/extension assets copied from U0
-  commit `fa69ada08265934951df53c7a61a3ccdb8cb2900`;
-- a strict read of the bundled minimal frozen.2 PDF package.
-
-The endpoint hard-codes every business, artifact and Base write authority to `false`. It never
-calls FileService, Base, WorkItem, package persistence or receipt persistence. A missing hosted
-dependency returns `BLOCKED` with an explicit blocker; it does not fall back to a local service or a
-weaker Validator.
-
-## Phase 2C Document Management integration
-
-The exact Document Management source bundle from
-`fcab253b17dd1d118232fdbb72f4e0fe2d295f0e` is now selectively assembled as an internal module.
-DEV contains the owner migration's seven empty catalog tables, and the host-generated Drizzle
-schema is the only table definition consumed at runtime. The source bundle's CommonJS output and
-23 document-family adapters load from the production host build. The same built core passed the
-real two-PDF FTD revision/idempotency loop with local test providers.
-
-The host authorization provider remains deliberately unconfigured and rejects before DB or
-FileService I/O. No online catalog rows or FileService bytes were created, and this Phase 2C source
-has not been published. Detailed evidence and current non-claims are in
-`docs/DOCUMENT_MANAGEMENT_PHASE_2C_ACCEPTANCE.md`.
-
-## Phase 2D hosted validation status
-
-The hosted Python/vendor/U0 probe and strict Reader now pass in DEV. A bounded validation window
-was deployed and closed, but its single DM POST exposed numeric FileService path handling before
-any catalog or immutable-source write. The closure release is current; all seven DM tables remain
-empty and FileService contains only the two authorized FTD PDFs. The local correction validates
-actual bytes instead of path names and preserves the server-owned 403 response, but it has not been
-pushed or deployed. Full evidence, release identities and non-claims are in
-`docs/PHASE_2D_HOSTED_VALIDATION_ACCEPTANCE_20260814.md`.
-
-## Post-Phase-2 local owner refresh
-
-The host now consumes the owner-exported leading-slash canonicalization and the metadata/download
-object binding from exact DM commit `fcab253b17dd1d118232fdbb72f4e0fe2d295f0e`.
-`updatedAt` is audit metadata only; this does not weaken bucket, canonical path, provider object ID
-or actual-byte checks. The local two-PDF loop also preloads the first content-addressed object and
-requires its reuse with zero upload and zero delete. Phase 2 is permanently stopped: no hosted
-replay, release, environment change or online write is authorized or claimed by this refresh.
-
-## Dedicated Registrar Base adapter local slice
-
-The host now contains one unbound server-only Open Platform transport for WorkItems, Decisions and
-ExecutionLogs. It uses `tenant_access_token`, not `ctx.userContext`, for Base calls. The existing
-authenticated actor remains an unchanged business field, while the selected Registrar continues
-to own authorization, append-only Decisions and CAS. The old generic client capability is not
-consumed as a Registrar writer.
-
-The transport is intentionally not in `AppModule`; placeholder configuration is exercised only by
-unit tests. Binding still requires an exact dedicated app ID, record search/create/update
-permissions, Base access, server-secret injection and the selected Registrar's exact field mapper.
-This slice performs no network call, push, release, environment change, Base write or FileService
-I/O.
-
-## Immutable acceptance receipt owner local slice
-
-One ordinary FileService-backed `ImmutableAcceptanceReceiptOwnerPort` now persists only bytes
-already supplied after an external validation-write authorization decision. Its receipt bucket is
-runtime-configured and its path is fixed from the raw SHA-256; it never accepts a client path.
-`upsert=false` prevents overwrite, and both new uploads and existing-path reuse require a fresh
-metadata read plus exact-byte download verification. Provider timestamps remain audit-only.
-
-The owner has no signing, Master activation, write-authorization, WorkItem, CAS, currentness or
-publication operation. Its runtime identity must not alias `CanonicalHubRegistrar`. It is exported
-for the existing Unified `createImmutableAcceptanceReceiptOwnerProvider(owner)` composition but is
-not wired in `AppModule`; the production-default owner remains explicitly unconfigured and makes
-no FileService call. Detailed tests and integration inputs are recorded in
-`docs/IMMUTABLE_ACCEPTANCE_RECEIPT_OWNER_LOCAL_ACCEPTANCE_20260814.md`.
+- 本地 AEO 通过不等于 hosted AEO、正式 Draft/Word 或工程批准；
+- Aily 只读接口不授权解析、评估、重综合或发布；
+- OpenClaw discovery 不形成适用性或工程证据；
+- 本装配说明不授权 push、release、线上写、权限变化或 current switch。
