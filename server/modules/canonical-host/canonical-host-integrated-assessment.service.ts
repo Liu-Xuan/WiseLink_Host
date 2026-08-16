@@ -53,17 +53,8 @@ export class CanonicalHostIntegratedAssessmentService {
     if (!this.baseRuleProvider.configured) {
       throw unavailable('BASE_RULE_RESULT_PROVIDER_NOT_CONFIGURED');
     }
-    const workItem = await this.requiredParsedWorkItem(workItemId);
+    let workItem = await this.requiredParsedWorkItem(workItemId);
     await this.authorize(workItem, actor, 'PERSIST_BASE_RULE_RESULT');
-    const result = await this.baseRuleProvider.readResult({ workItem });
-    validateBaseResult(result, workItem);
-    if (
-      workItem.integratedAssessment?.baseRules.sourceResultId ===
-      result.sourceResultId
-    ) {
-      return workItem;
-    }
-
     const revision =
       (workItem.integratedAssessment?.baseRules.revision ?? 0) + 1;
     const attempt = await this.repository.reserveAssessmentAction({
@@ -76,9 +67,31 @@ export class CanonicalHostIntegratedAssessmentService {
       attemptNo: revision,
     });
     if (!attempt.created) {
+      workItem = await this.requiredParsedWorkItem(workItemId);
+      await this.authorize(workItem, actor, 'PERSIST_BASE_RULE_RESULT');
+      if (
+        workItem.integratedAssessment?.baseRules.revision === revision &&
+        workItem.integratedAssessment.baseRules.actionAttemptId ===
+          attempt.attemptId
+      ) {
+        return workItem;
+      }
       throw new Error('BASE_RULE_RESULT_INCOMPLETE_PRIOR_ATTEMPT');
     }
     try {
+      const result = await this.baseRuleProvider.readResult({
+        workItem,
+        actionAttemptId: attempt.attemptId,
+        expectedRevision: workItem.revision,
+      });
+      validateBaseResult(result, workItem);
+      if (
+        workItem.integratedAssessment?.baseRules.sourceResultId ===
+        result.sourceResultId
+      ) {
+        await this.repository.completeAssessmentAction(attempt.attemptId);
+        return workItem;
+      }
       const persisted = await this.artifactStore.persistAndReadback(
         result.artifactBytes,
       );
@@ -138,23 +151,10 @@ export class CanonicalHostIntegratedAssessmentService {
     if (!this.openClawProvider.configured) {
       throw unavailable('OPENCLAW_OVERALL_PROVIDER_NOT_CONFIGURED');
     }
-    const workItem = await this.requiredParsedWorkItem(workItemId);
-    const baseRules = workItem.integratedAssessment?.baseRules;
+    let workItem = await this.requiredParsedWorkItem(workItemId);
+    let baseRules = workItem.integratedAssessment?.baseRules;
     if (!baseRules) throw new Error('BASE_RULE_CANDIDATE_REQUIRED');
     await this.authorize(workItem, actor, 'PERSIST_OPENCLAW_OVERALL');
-    const result = await this.openClawProvider.synthesize({
-      workItem,
-      baseRules,
-    });
-    validateOverallResult(result, workItem, baseRules);
-    if (
-      workItem.integratedAssessment?.overallSynthesis?.sourceResultId ===
-        result.sourceResultId &&
-      workItem.integratedAssessment.overallSynthesis.status === 'CANDIDATE_ONLY'
-    ) {
-      return workItem;
-    }
-
     const revision =
       (workItem.integratedAssessment?.overallSynthesis?.revision ?? 0) + 1;
     const attempt = await this.repository.reserveAssessmentAction({
@@ -167,9 +167,37 @@ export class CanonicalHostIntegratedAssessmentService {
       attemptNo: revision,
     });
     if (!attempt.created) {
+      workItem = await this.requiredParsedWorkItem(workItemId);
+      await this.authorize(workItem, actor, 'PERSIST_OPENCLAW_OVERALL');
+      if (
+        workItem.integratedAssessment?.overallSynthesis?.revision ===
+          revision &&
+        workItem.integratedAssessment.overallSynthesis.actionAttemptId ===
+          attempt.attemptId
+      ) {
+        return workItem;
+      }
       throw new Error('OPENCLAW_OVERALL_INCOMPLETE_PRIOR_ATTEMPT');
     }
     try {
+      baseRules = workItem.integratedAssessment?.baseRules;
+      if (!baseRules) throw new Error('BASE_RULE_CANDIDATE_REQUIRED');
+      const result = await this.openClawProvider.synthesize({
+        workItem,
+        baseRules,
+        actionAttemptId: attempt.attemptId,
+        expectedRevision: workItem.revision,
+      });
+      validateOverallResult(result, workItem, baseRules);
+      if (
+        workItem.integratedAssessment?.overallSynthesis?.sourceResultId ===
+          result.sourceResultId &&
+        workItem.integratedAssessment.overallSynthesis.status ===
+          'CANDIDATE_ONLY'
+      ) {
+        await this.repository.completeAssessmentAction(attempt.attemptId);
+        return workItem;
+      }
       const persisted = await this.artifactStore.persistAndReadback(
         result.artifactBytes,
       );
@@ -253,7 +281,9 @@ export class CanonicalHostIntegratedAssessmentService {
       requestId: workItem.requestId,
       documentVersionId: workItem.source.documentVersionId,
     });
-    if (snapshot.permissionSnapshotVersion !== decision.permissionSnapshotVersion) {
+    if (
+      snapshot.permissionSnapshotVersion !== decision.permissionSnapshotVersion
+    ) {
       throw new Error('INTEGRATED_ASSESSMENT_PERMISSION_SNAPSHOT_CHANGED');
     }
   }
@@ -331,5 +361,7 @@ function errorCode(value: unknown): string {
 }
 
 function errorMessage(value: unknown): string {
-  return value instanceof Error ? value.message : 'Unknown integrated assessment error.';
+  return value instanceof Error
+    ? value.message
+    : 'Unknown integrated assessment error.';
 }

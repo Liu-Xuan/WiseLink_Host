@@ -197,9 +197,9 @@ describe('CanonicalHostIntegratedAssessmentService', () => {
         },
       },
     });
-    expect(overallB.integratedAssessment?.overallSynthesis?.artifact.ref).not.toBe(
-      overallA.integratedAssessment?.overallSynthesis?.artifact.ref,
-    );
+    expect(
+      overallB.integratedAssessment?.overallSynthesis?.artifact.ref,
+    ).not.toBe(overallA.integratedAssessment?.overallSynthesis?.artifact.ref);
 
     basePort.sourceResultId = 'BASE-RESULT-2';
     basePort.artifactBytes = bytes({ source: 'TEST_ONLY_BASE_RESULT_2' });
@@ -223,6 +223,120 @@ describe('CanonicalHostIntegratedAssessmentService', () => {
     expect(store.values.size).toBe(4);
     expect(repository.completeAssessmentAction).toHaveBeenCalledTimes(4);
     expect(repository.failAssessmentAction).not.toHaveBeenCalled();
+    expect(basePort.calls).toEqual([
+      {
+        actionAttemptId: 'ATT-TEST-1',
+        expectedRevision: 3,
+      },
+      {
+        actionAttemptId: 'ATT-TEST-4',
+        expectedRevision: 6,
+      },
+    ]);
+    expect(openClawPort.calls).toEqual([
+      {
+        actionAttemptId: 'ATT-TEST-2',
+        expectedRevision: 4,
+      },
+      {
+        actionAttemptId: 'ATT-TEST-3',
+        expectedRevision: 5,
+      },
+    ]);
+  });
+
+  it('reserves the server ActionAttempt before Base I/O and rejects a duplicate in progress', async () => {
+    const registrar = new MemoryRegistrar(workItem());
+    const store = new MemoryArtifactStore();
+    const basePort = mutableBasePort();
+    const repository = {
+      reserveAssessmentAction: jest.fn(async () => ({
+        attemptId: 'ATT-EXISTING',
+        created: false,
+      })),
+      completeAssessmentAction: jest.fn(),
+      failAssessmentAction: jest.fn(),
+    };
+    const service = new CanonicalHostIntegratedAssessmentService(
+      registrar,
+      authorization(),
+      permissionSnapshots(),
+      basePort,
+      mutableOverallPort(),
+      store,
+      repository as never,
+    );
+
+    await expect(
+      service.persistBaseRuleCandidate('WI-TEST', ACTOR),
+    ).rejects.toThrow('BASE_RULE_RESULT_INCOMPLETE_PRIOR_ATTEMPT');
+
+    expect(repository.reserveAssessmentAction).toHaveBeenCalledTimes(1);
+    expect(basePort.calls).toEqual([]);
+    expect(store.values.size).toBe(0);
+  });
+
+  it('returns a completed duplicate from the WorkItem projection without a second Base trigger', async () => {
+    const before = workItem();
+    const completed: CanonicalWorkItemProjection = {
+      ...workItem(),
+      revision: 4,
+      integratedAssessment: {
+        status: 'BASE_RULE_CANDIDATE_READY',
+        baseRules: {
+          status: 'CANDIDATE_ONLY',
+          revision: 1,
+          sourceResultId: 'BASE-RESULT-EXISTING',
+          criterionSetId: 'CRITERION-SET-TEST',
+          criterionCount: 2,
+          evaluationItemCount: 2,
+          unresolvedCount: 1,
+          sourceBoundCandidateCount: 1,
+          artifact: {
+            storeRole: 'UnifiedArtifactStoreCandidate',
+            ref: 'artifact://base-result-existing',
+            sha256: '4'.repeat(64),
+            byteLength: 100,
+            mediaType: 'application/json',
+          },
+          actionAttemptId: 'ATT-EXISTING',
+        },
+        overallSynthesis: null,
+      },
+    };
+    const registrar = {
+      getByWorkItemId: jest
+        .fn()
+        .mockResolvedValueOnce(structuredClone(before))
+        .mockResolvedValueOnce(structuredClone(completed)),
+      compareAndSet: jest.fn(),
+    };
+    const store = new MemoryArtifactStore();
+    const basePort = mutableBasePort();
+    const repository = {
+      reserveAssessmentAction: jest.fn(async () => ({
+        attemptId: 'ATT-EXISTING',
+        created: false,
+      })),
+      completeAssessmentAction: jest.fn(),
+      failAssessmentAction: jest.fn(),
+    };
+    const service = new CanonicalHostIntegratedAssessmentService(
+      registrar as never,
+      authorization(),
+      permissionSnapshots(),
+      basePort,
+      mutableOverallPort(),
+      store,
+      repository as never,
+    );
+
+    await expect(
+      service.persistBaseRuleCandidate('WI-TEST', ACTOR),
+    ).resolves.toEqual(completed);
+    expect(basePort.calls).toEqual([]);
+    expect(registrar.compareAndSet).not.toHaveBeenCalled();
+    expect(store.values.size).toBe(0);
   });
 });
 
@@ -296,12 +410,15 @@ function workItem(): CanonicalWorkItemProjection {
 function mutableBasePort(): CanonicalBaseRuleResultProviderPort & {
   sourceResultId: string;
   artifactBytes: Uint8Array;
+  calls: Array<{ actionAttemptId: string; expectedRevision: number }>;
 } {
   return {
     configured: true,
     sourceResultId: 'BASE-RESULT-1',
     artifactBytes: bytes({ source: 'TEST_ONLY_BASE_RESULT_1' }),
-    async readResult({ workItem }) {
+    calls: [],
+    async readResult({ workItem, actionAttemptId, expectedRevision }) {
+      this.calls.push({ actionAttemptId, expectedRevision });
       return {
         sourceResultId: this.sourceResultId,
         workItemId: workItem.workItemId,
@@ -325,6 +442,7 @@ function mutableOverallPort(): CanonicalOpenClawOverallProviderPort & {
   gap: string | null;
   candidateRefCount: number;
   artifactBytes: Uint8Array;
+  calls: Array<{ actionAttemptId: string; expectedRevision: number }>;
 } {
   return {
     configured: true,
@@ -332,13 +450,20 @@ function mutableOverallPort(): CanonicalOpenClawOverallProviderPort & {
     discoveryStatus: 'NO_DISCOVERY',
     gap: null,
     candidateRefCount: 0,
+    calls: [],
     artifactBytes: bytes({
       source: 'TEST_ONLY_OPENCLAW_A',
       discovery: null,
       adopted: false,
       usableAsEvidence: false,
     }),
-    async synthesize({ workItem, baseRules }) {
+    async synthesize({
+      workItem,
+      baseRules,
+      actionAttemptId,
+      expectedRevision,
+    }) {
+      this.calls.push({ actionAttemptId, expectedRevision });
       return {
         sourceResultId: this.sourceResultId,
         workItemId: workItem.workItemId,
@@ -361,7 +486,9 @@ function mutableOverallPort(): CanonicalOpenClawOverallProviderPort & {
 
 function authorization() {
   return {
-    async authorize(input: { action: CanonicalAuthorizationDecision['action'] }) {
+    async authorize(input: {
+      action: CanonicalAuthorizationDecision['action'];
+    }) {
       return {
         action: input.action,
         allowed: true,

@@ -168,6 +168,10 @@ export interface CanonicalBaseRuleResultProviderPort {
   readonly configured: boolean;
   readResult(input: {
     workItem: CanonicalWorkItemProjection;
+    /** Server-owned ActionAttempt identity; the Base trigger must use it as Client-Token. */
+    actionAttemptId: string;
+    /** WorkItem revision that the eventual candidate must be compared-and-set against. */
+    expectedRevision: number;
   }): Promise<CanonicalBaseRuleResult>;
 }
 
@@ -193,5 +197,8 @@ export interface CanonicalOpenClawOverallProviderPort {
   synthesize(input: {
     workItem: CanonicalWorkItemProjection;
     baseRules: import('@shared/api.interface').CanonicalBaseRuleCandidateProjection;
+    /** Server-owned ActionAttempt identity; any external trigger must use it idempotently. */
+    actionAttemptId: string;
+    expectedRevision: number;
   }): Promise<CanonicalOpenClawOverallResult>;
 }
