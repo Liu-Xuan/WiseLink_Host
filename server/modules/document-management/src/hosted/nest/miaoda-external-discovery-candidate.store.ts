@@ -8,14 +8,14 @@ import { and, desc, eq } from 'drizzle-orm';
 import {
   externalDiscoveryCandidate,
   externalSearchRun,
-} from '../../database/schema';
+} from '../../../../../database/schema';
 import type {
   FeishuNativeOemCandidateStore,
   FeishuNativeOemHumanRejection,
   FeishuNativeOemHumanSelection,
   FeishuNativeOemSearchRun,
   FeishuNativeOemServerContext,
-} from './feishu-native-oem-monitoring-ingress';
+} from '../../../../external-discovery/feishu-native-oem-monitoring-ingress';
 
 type DatabaseExecutor = PostgresJsDatabase;
 
@@ -137,6 +137,8 @@ export class MiaodaExternalDiscoveryCandidateStore
           eq(externalDiscoveryCandidate.searchRunRef, selection.searchRunRef),
           eq(externalDiscoveryCandidate.candidateRef, selection.candidateRef),
           eq(externalDiscoveryCandidate.reviewStatus, 'PENDING'),
+          eq(externalDiscoveryCandidate.publisher, selection.publisher),
+          eq(externalDiscoveryCandidate.sourceUrl, selection.sourceUrl),
         ),
       )
       .returning({ candidateRef: externalDiscoveryCandidate.candidateRef });

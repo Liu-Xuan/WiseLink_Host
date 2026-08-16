@@ -5,13 +5,15 @@ import type {
   ExternalDiscoverySearchRunView,
   ExternalDiscoverySelectionResponse,
 } from '@shared/api.interface';
-import { DocumentManagementHostedService } from '../document-management/src/hosted/nest';
+import {
+  DocumentManagementHostedService,
+  MiaodaExternalDiscoveryCandidateStore,
+} from '../document-management/src/hosted/nest';
 import {
   FeishuNativeOemMonitoringIngress,
   type FeishuNativeOemSearchRun,
   type FeishuNativeOemServerContext,
 } from './feishu-native-oem-monitoring-ingress';
-import { MiaodaExternalDiscoveryCandidateStore } from './miaoda-external-discovery-candidate.store';
 
 const DIRECT_MATCH = 'DIRECT_OFFICIAL_SOURCE_MATCH';
 
