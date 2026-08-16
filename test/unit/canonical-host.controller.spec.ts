@@ -43,6 +43,7 @@ function target() {
   const integratedAssessments = {
     persistBaseRuleCandidate: jest.fn().mockResolvedValue({ revision: 7 }),
     persistOpenClawOverall: jest.fn().mockResolvedValue({ revision: 8 }),
+    confirmOpenClawOverallForAeo: jest.fn().mockResolvedValue({ revision: 9 }),
   };
   return {
     assessments,
@@ -181,12 +182,25 @@ describe('CanonicalHostController assessment actions', () => {
         HOST_REQUEST as never,
       ),
     ).resolves.toEqual({ revision: 8 });
+    await expect(
+      controller.confirmOpenClawOverallForAeo(
+        'WI-SB-1001',
+        {},
+        HOST_REQUEST as never,
+      ),
+    ).resolves.toEqual({ revision: 9 });
 
     expect(integratedAssessments.persistBaseRuleCandidate).toHaveBeenCalledWith(
       'WI-SB-1001',
       expect.objectContaining({ userId: 'engineer-1001' }),
     );
     expect(integratedAssessments.persistOpenClawOverall).toHaveBeenCalledWith(
+      'WI-SB-1001',
+      expect.objectContaining({ userId: 'engineer-1001' }),
+    );
+    expect(
+      integratedAssessments.confirmOpenClawOverallForAeo,
+    ).toHaveBeenCalledWith(
       'WI-SB-1001',
       expect.objectContaining({ userId: 'engineer-1001' }),
     );
@@ -236,5 +250,23 @@ describe('CanonicalHostController assessment actions', () => {
       ),
     ).toThrow(UnauthorizedException);
     expect(integratedAssessments.persistBaseRuleCandidate).not.toHaveBeenCalled();
+  });
+
+  it('rejects client-supplied confirmation identity before the service', () => {
+    const { controller, integratedAssessments } = target();
+
+    expect(() =>
+      controller.confirmOpenClawOverallForAeo(
+        'WI-SB-1001',
+        {
+          overallArtifactRef: 'artifact://client-value',
+          actor: 'client-value',
+        },
+        HOST_REQUEST as never,
+      ),
+    ).toThrow(BadRequestException);
+    expect(
+      integratedAssessments.confirmOpenClawOverallForAeo,
+    ).not.toHaveBeenCalled();
   });
 });

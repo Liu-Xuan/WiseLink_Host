@@ -1,4 +1,4 @@
-import { isOfficialOemCandidateUrl } from './openclaw-discovery-provider-mapping';
+import { isOfficialOemCandidateUrl } from '../document-management/src/hosted/openClawDiscoveryProviderMapping';
 
 export type FeishuNativeOemResultStatus =
   | 'ZERO_RESULTS_FOR_TARGET_IDENTIFIER'

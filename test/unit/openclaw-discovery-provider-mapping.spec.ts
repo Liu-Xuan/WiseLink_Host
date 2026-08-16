@@ -1,7 +1,7 @@
 import {
   isOfficialOemCandidateUrl,
   mapHostedOpenClawDiscoveryResult,
-} from '../../server/modules/external-discovery/openclaw-discovery-provider-mapping';
+} from '../../server/modules/document-management/src/hosted/openClawDiscoveryProviderMapping';
 
 describe('DM Phase 13D hosted OpenClaw provider mapping', () => {
   it.each([

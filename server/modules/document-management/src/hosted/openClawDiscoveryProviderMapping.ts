@@ -1,4 +1,4 @@
-import type { FeishuNativeOemSearchRun } from './feishu-native-oem-monitoring-ingress';
+import type { FeishuNativeOemSearchRun } from '../../../external-discovery/feishu-native-oem-monitoring-ingress';
 
 const RESULT_STATUSES = new Set<FeishuNativeOemSearchRun['resultStatus']>([
   'ZERO_RESULTS_FOR_TARGET_IDENTIFIER',

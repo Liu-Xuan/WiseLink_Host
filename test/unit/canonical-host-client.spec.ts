@@ -9,6 +9,7 @@ jest.mock('@lark-apaas/client-toolkit/logger', () => ({
 }));
 
 import {
+  confirmIntegratedOverallForAeo,
   evaluateAssessment,
   persistIntegratedBaseRules,
   persistIntegratedOpenClawOverall,
@@ -74,6 +75,7 @@ describe('canonical host assessment client', () => {
   it.each([
     ['Base rules', persistIntegratedBaseRules, 'base-rules'],
     ['OpenClaw overall', persistIntegratedOpenClawOverall, 'overall-synthesis'],
+    ['AEO confirmation', confirmIntegratedOverallForAeo, 'confirm-for-aeo'],
   ] as const)(
     'uses one authenticated empty-body POST for %s',
     async (_label, action, path) => {

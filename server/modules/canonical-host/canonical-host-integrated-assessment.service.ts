@@ -3,6 +3,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import type {
   CanonicalBaseRuleCandidateProjection,
   CanonicalIntegratedAssessmentProjection,
+  CanonicalOverallForAeoConfirmationProjection,
   CanonicalOpenClawOverallProjection,
   CanonicalWorkItemProjection,
 } from '@shared/api.interface';
@@ -122,6 +123,7 @@ export class CanonicalHostIntegratedAssessmentService {
           : 'BASE_RULE_CANDIDATE_READY',
         baseRules,
         overallSynthesis,
+        overallForAeoConfirmation: null,
       };
       const updated = await this.registrar.compareAndSet({
         workItemId: workItem.workItemId,
@@ -228,6 +230,91 @@ export class CanonicalHostIntegratedAssessmentService {
             status: 'OVERALL_CANDIDATE_READY',
             baseRules,
             overallSynthesis,
+            overallForAeoConfirmation: null,
+          },
+        },
+      });
+      await this.repository.completeAssessmentAction(attempt.attemptId);
+      return updated;
+    } catch (error) {
+      await this.repository.failAssessmentAction({
+        attemptId: attempt.attemptId,
+        errorCode: errorCode(error),
+        errorMessage: errorMessage(error),
+      });
+      throw error;
+    }
+  }
+
+  async confirmOpenClawOverallForAeo(
+    workItemId: string,
+    actor: CanonicalHostActor,
+  ): Promise<CanonicalWorkItemProjection> {
+    let workItem = await this.requiredParsedWorkItem(workItemId);
+    let integrated = requiredReadyOverall(workItem);
+    await this.authorize(
+      workItem,
+      actor,
+      'CONFIRM_OPENCLAW_OVERALL_FOR_AEO',
+    );
+    const existing = integrated.overallForAeoConfirmation ?? null;
+    if (existing) {
+      assertConfirmationBindsCurrentOverall(existing, workItem, integrated);
+      if (existing.workItemRevision === workItem.revision) return workItem;
+    }
+
+    const overall = integrated.overallSynthesis;
+    const attempt = await this.repository.reserveAssessmentAction({
+      workItemId: workItem.workItemId,
+      actionType: 'CONFIRM_OPENCLAW_OVERALL_FOR_AEO',
+      triggerRequestId: workItem.requestId,
+      requestOrigin: 'MIAODA',
+      actorUserId: actor.userId,
+      tenantId: actor.tenantId,
+      attemptNo: workItem.revision,
+    });
+    if (!attempt.created) {
+      workItem = await this.requiredParsedWorkItem(workItemId);
+      integrated = requiredReadyOverall(workItem);
+      await this.authorize(
+        workItem,
+        actor,
+        'CONFIRM_OPENCLAW_OVERALL_FOR_AEO',
+      );
+      const completed = integrated.overallForAeoConfirmation ?? null;
+      if (completed?.actionAttemptId === attempt.attemptId) {
+        assertConfirmationBindsCurrentOverall(completed, workItem, integrated);
+        if (completed.workItemRevision !== workItem.revision) {
+          throw new Error(
+            'OPENCLAW_OVERALL_CONFIRMATION_INCOMPLETE_PRIOR_ATTEMPT',
+          );
+        }
+        return workItem;
+      }
+      throw new Error('OPENCLAW_OVERALL_CONFIRMATION_INCOMPLETE_PRIOR_ATTEMPT');
+    }
+
+    try {
+      const confirmation: CanonicalOverallForAeoConfirmationProjection = {
+        status: 'HUMAN_CONFIRMED',
+        authority: 'CANONICAL_WORKITEM_SERVER_FRESH_READ',
+        workItemRevision: workItem.revision + 1,
+        overallRevision: overall.revision,
+        overallArtifactRef: overall.artifact.ref,
+        overallArtifactSha256: overall.artifact.sha256,
+        actionAttemptId: attempt.attemptId,
+        confirmingActorUserId: actor.userId,
+        confirmedAt: new Date().toISOString(),
+      };
+      const updated = await this.registrar.compareAndSet({
+        workItemId: workItem.workItemId,
+        expectedRevision: workItem.revision,
+        syncPrimaryAttempt: false,
+        next: {
+          ...withoutRevision(workItem),
+          integratedAssessment: {
+            ...integrated,
+            overallForAeoConfirmation: confirmation,
           },
         },
       });
@@ -261,7 +348,9 @@ export class CanonicalHostIntegratedAssessmentService {
     actor: CanonicalHostActor,
     action: Extract<
       CanonicalAuthorizationDecision['action'],
-      'PERSIST_BASE_RULE_RESULT' | 'PERSIST_OPENCLAW_OVERALL'
+      | 'PERSIST_BASE_RULE_RESULT'
+      | 'PERSIST_OPENCLAW_OVERALL'
+      | 'CONFIRM_OPENCLAW_OVERALL_FOR_AEO'
     >,
   ): Promise<void> {
     const decision = await this.authorization.authorize({
@@ -286,6 +375,49 @@ export class CanonicalHostIntegratedAssessmentService {
     ) {
       throw new Error('INTEGRATED_ASSESSMENT_PERMISSION_SNAPSHOT_CHANGED');
     }
+  }
+}
+
+function requiredReadyOverall(
+  workItem: CanonicalWorkItemProjection,
+): CanonicalIntegratedAssessmentProjection & {
+  overallSynthesis: CanonicalOpenClawOverallProjection;
+} {
+  const integrated = workItem.integratedAssessment;
+  const overall = integrated?.overallSynthesis;
+  if (
+    integrated?.status !== 'OVERALL_CANDIDATE_READY' ||
+    overall?.status !== 'CANDIDATE_ONLY' ||
+    overall.staleReason !== null
+  ) {
+    throw new Error('OPENCLAW_OVERALL_NOT_READY_FOR_AEO_CONFIRMATION');
+  }
+  return {
+    ...integrated,
+    overallSynthesis: overall,
+  };
+}
+
+function assertConfirmationBindsCurrentOverall(
+  confirmation: CanonicalOverallForAeoConfirmationProjection,
+  workItem: CanonicalWorkItemProjection,
+  integrated: CanonicalIntegratedAssessmentProjection & {
+    overallSynthesis: CanonicalOpenClawOverallProjection;
+  },
+): void {
+  const overall = integrated.overallSynthesis;
+  if (
+    confirmation.status !== 'HUMAN_CONFIRMED' ||
+    confirmation.authority !== 'CANONICAL_WORKITEM_SERVER_FRESH_READ' ||
+    confirmation.workItemRevision > workItem.revision ||
+    confirmation.overallRevision !== overall.revision ||
+    confirmation.overallArtifactRef !== overall.artifact.ref ||
+    confirmation.overallArtifactSha256 !== overall.artifact.sha256 ||
+    !confirmation.actionAttemptId.trim() ||
+    !confirmation.confirmingActorUserId.trim() ||
+    !confirmation.confirmedAt.trim()
+  ) {
+    throw new Error('OPENCLAW_OVERALL_AEO_CONFIRMATION_STALE');
   }
 }
 

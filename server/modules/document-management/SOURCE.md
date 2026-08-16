@@ -66,3 +66,13 @@ identity/currentness or call ingestion without an actual FileService selection. 
 `CANDIDATES_FOUND` run with all three incomplete flags false and a
 `DIRECT_OFFICIAL_SOURCE_MATCH` may be human-selected; zero, denied, partial, truncated and
 flagged legacy results stay discovery-only. A rejected candidate cannot later be selected or ingested.
+
+Phase 13D consumes the owner persistence handoff at exact commit
+`ddb77bbf5bc8bb898f93a9e72f171dfee86230e9`. The single
+`MiaodaExternalDiscoveryCandidateStore` provider and the hosted OpenClaw result mapper now live
+inside this owner bundle. They use only the host-generated declarations for the existing
+`external_search_run` and `external_discovery_candidate` tables; no duplicate provider, table,
+queue, worker or trigger is retained. The owner mapper keeps denied, partial, truncated and flagged
+legacy results discovery-only, and the review update binds the fresh publisher and source URL so a
+candidate-row drift cannot be approved between read and conditional update. The owner nullable
+`failure_code` migration remains local-only and is not applied by this source synchronization.

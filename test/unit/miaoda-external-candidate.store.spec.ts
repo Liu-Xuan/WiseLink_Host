@@ -1,5 +1,7 @@
+import { PgDialect } from 'drizzle-orm/pg-core';
+
 import type { FeishuNativeOemSearchRun } from '../../server/modules/external-discovery/feishu-native-oem-monitoring-ingress';
-import { MiaodaExternalDiscoveryCandidateStore } from '../../server/modules/external-discovery/miaoda-external-discovery-candidate.store';
+import { MiaodaExternalDiscoveryCandidateStore } from '../../server/modules/document-management/src/hosted/nest/miaoda-external-discovery-candidate.store';
 import {
   externalDiscoveryCandidate,
   externalSearchRun,
@@ -56,6 +58,54 @@ describe('MiaodaExternalDiscoveryCandidateStore transaction boundary', () => {
     expect(db.transaction).toHaveBeenCalledTimes(1);
     expect(state.run?.searchRunRef).toBe(run.searchRunRef);
     expect(state.candidates).toHaveLength(2);
+  });
+
+  it('binds the fresh publisher and source URL in the conditional review update', async () => {
+    let updateSql = '';
+    let updateParams: unknown[] = [];
+    const db = {
+      update: () => ({
+        set: () => ({
+          where: (condition: unknown) => {
+            const query = new PgDialect().sqlToQuery(condition as never);
+            updateSql = query.sql;
+            updateParams = query.params;
+            return {
+              returning: async () => [{ candidateRef: 'candidate-1' }],
+            };
+          },
+        }),
+      }),
+    };
+    const store = new MiaodaExternalDiscoveryCandidateStore(db as never);
+
+    await expect(
+      store.recordHumanSelection(
+        {
+          searchRunRef: 'run-found-001',
+          candidateRef: 'candidate-1',
+          decision: 'HUMAN_SELECTED_FOR_INGEST',
+          reviewedBy: 'engineer-1',
+          reviewedAt: '2026-08-16T14:00:00.000Z',
+          publisher: 'AIRBUS',
+          sourceUrl: 'https://www.airbus.com/en/newsroom/stories/fast-62',
+        },
+        {
+          actorUserId: 'engineer-1',
+          tenantId: 'tenant-1',
+          roles: ['engineer'],
+        },
+      ),
+    ).resolves.toMatchObject({ disposition: 'RECORDED' });
+
+    expect(updateSql).toContain('"publisher" =');
+    expect(updateSql).toContain('"source_url" =');
+    expect(updateParams).toEqual(
+      expect.arrayContaining([
+        'AIRBUS',
+        'https://www.airbus.com/en/newsroom/stories/fast-62',
+      ]),
+    );
   });
 });
 

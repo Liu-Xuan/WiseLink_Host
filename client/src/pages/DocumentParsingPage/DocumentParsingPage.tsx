@@ -36,7 +36,12 @@ export default function DocumentParsingPage() {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [assessmentAction, setAssessmentAction] = useState<
-    'EVALUATE' | 'RESYNTHESIZE' | 'BASE_RULES' | 'OPENCLAW_OVERALL' | null
+    | 'EVALUATE'
+    | 'RESYNTHESIZE'
+    | 'BASE_RULES'
+    | 'OPENCLAW_OVERALL'
+    | 'CONFIRM_OVERALL_FOR_AEO'
+    | null
   >(null);
   const [assessmentError, setAssessmentError] = useState<string | null>(null);
   const [criterionId, setCriterionId] = useState<string>('');
@@ -91,15 +96,20 @@ export default function DocumentParsingPage() {
   const fileLabel: string = `${data.workItem.classification.normalizedFamily} · ${short(data.workItem.source.sourceArtifactId, 20, 8)}`;
 
   async function runIntegratedAction(
-    action: 'BASE_RULES' | 'OPENCLAW_OVERALL',
+    action:
+      | 'BASE_RULES'
+      | 'OPENCLAW_OVERALL'
+      | 'CONFIRM_OVERALL_FOR_AEO',
   ): Promise<void> {
     setAssessmentAction(action);
     setAssessmentError(null);
     try {
       if (action === 'BASE_RULES') {
         await canonicalHost.persistIntegratedBaseRules(workItemId);
-      } else {
+      } else if (action === 'OPENCLAW_OVERALL') {
         await canonicalHost.persistIntegratedOpenClawOverall(workItemId);
+      } else {
+        await canonicalHost.confirmIntegratedOverallForAeo(workItemId);
       }
       await load(query.trim() || 'applicability');
     } catch (cause) {
@@ -329,6 +339,31 @@ export default function DocumentParsingPage() {
                       .externalDiscoveryIsEvidence,
                   )}。
                 </p>
+              ) : null}
+              {integratedAssessment.overallSynthesis?.status ===
+                'CANDIDATE_ONLY' &&
+              integratedAssessment.overallSynthesis.staleReason === null ? (
+                integratedAssessment.overallForAeoConfirmation ? (
+                  <p>
+                    已由工程师显式确认用于 AEO 候选输入 ·{' '}
+                    {integratedAssessment.overallForAeoConfirmation.confirmedAt} ·
+                    WorkItem revision{' '}
+                    {integratedAssessment.overallForAeoConfirmation.workItemRevision}。
+                    该确认不等于 ADOPT、工程批准或发布。
+                  </p>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={assessmentAction !== null}
+                    onClick={() =>
+                      void runIntegratedAction('CONFIRM_OVERALL_FOR_AEO')
+                    }
+                  >
+                    {assessmentAction === 'CONFIRM_OVERALL_FOR_AEO'
+                      ? '正在确认当前整体综合…'
+                      : '确认当前整体综合用于 AEO 候选'}
+                  </button>
+                )
               ) : null}
               {integratedAssessment.overallSynthesis === null ? (
                 <button
