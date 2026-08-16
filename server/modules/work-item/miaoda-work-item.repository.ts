@@ -34,6 +34,8 @@ export interface WorkItemReservation {
 export type AssessmentActionType =
   | 'EVALUATE_JOB_AID'
   | 'RESYNTHESIZE_ASSESSMENT'
+  | 'PERSIST_BASE_RULE_RESULT'
+  | 'PERSIST_OPENCLAW_OVERALL'
   | 'RUN_AEO_CANDIDATE_LOOP';
 
 export interface AssessmentActionAttemptReservation {

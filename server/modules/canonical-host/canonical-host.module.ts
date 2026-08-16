@@ -20,10 +20,12 @@ import { ExactFtdFrozen2PdfProducerAdapter } from './exact-ftd-frozen2-pdf-produ
 import { OrdinaryFailureValidationWriteAuthorizationAdapter } from './ordinary-failure-validation-write-authorization.adapter';
 import {
   CANONICAL_AUTHORIZATION,
+  CANONICAL_BASE_RULE_RESULT_PROVIDER,
   CANONICAL_FAILURE_VALIDATION_WRITE_AUTHORIZATION,
   CANONICAL_HOST_BINDING,
   CANONICAL_HOST_CLOCK,
   CANONICAL_MIAODA_APP_BINDING,
+  CANONICAL_OPENCLAW_OVERALL_PROVIDER,
   CANONICAL_PDF_PRODUCER,
   CANONICAL_PERMISSION_SNAPSHOT,
   CANONICAL_WORK_ITEM_REGISTRAR,
@@ -42,7 +44,11 @@ import { SystemCanonicalHostClockAdapter } from './system-canonical-host-clock.a
 import { UnconfiguredFailureValidationWriteAuthorizationAdapter } from './unconfigured-failure-validation-write-authorization.adapter';
 import { AssessmentHostConsumerModule } from '../assessment-workbench/assessment-host-consumer.public-api';
 import { CanonicalHostAssessmentService } from './canonical-host-assessment.service';
-import { CanonicalHostAeoService } from './canonical-host-aeo.service';
+import { CanonicalHostIntegratedAssessmentService } from './canonical-host-integrated-assessment.service';
+import {
+  UnconfiguredCanonicalBaseRuleResultProvider,
+  UnconfiguredCanonicalOpenClawOverallProvider,
+} from './unconfigured-integrated-assessment.adapters';
 
 export interface CanonicalHostModuleOptions {
   imports?: ModuleMetadata['imports'];
@@ -53,6 +59,8 @@ export interface CanonicalHostModuleOptions {
   permissionSnapshotProvider?: Provider;
   miaodaAppBindingProvider?: Provider;
   failureValidationWriteAuthorizationProvider?: Provider;
+  baseRuleResultProvider?: Provider;
+  openClawOverallProvider?: Provider;
 }
 
 @Module({
@@ -73,7 +81,7 @@ export interface CanonicalHostModuleOptions {
     OrdinaryWorkItemService,
     OrdinaryFailureValidationWriteAuthorizationAdapter,
     CanonicalHostAssessmentService,
-    CanonicalHostAeoService,
+    CanonicalHostIntegratedAssessmentService,
   ],
 })
 export class CanonicalHostModule {
@@ -114,6 +122,18 @@ export class CanonicalHostModule {
       UnconfiguredFailureValidationWriteAuthorizationAdapter,
       'FAILURE_VALIDATION_WRITE_AUTHORIZATION_PROVIDER_INVALID',
     );
+    const baseRuleResultProvider = resolveProvider(
+      options.baseRuleResultProvider,
+      CANONICAL_BASE_RULE_RESULT_PROVIDER,
+      UnconfiguredCanonicalBaseRuleResultProvider,
+      'BASE_RULE_RESULT_PROVIDER_INVALID',
+    );
+    const openClawOverallProvider = resolveProvider(
+      options.openClawOverallProvider,
+      CANONICAL_OPENCLAW_OVERALL_PROVIDER,
+      UnconfiguredCanonicalOpenClawOverallProvider,
+      'OPENCLAW_OVERALL_PROVIDER_INVALID',
+    );
     const binding: CanonicalHostBindingState = {
       mode:
         options.workItemRegistrarProvider &&
@@ -152,6 +172,8 @@ export class CanonicalHostModule {
         permissionSnapshotProvider,
         miaodaAppBindingProvider,
         failureValidationWriteAuthorizationProvider,
+        baseRuleResultProvider,
+        openClawOverallProvider,
         {
           provide: CANONICAL_HOST_CLOCK,
           useClass: SystemCanonicalHostClockAdapter,
@@ -168,13 +190,13 @@ export class CanonicalHostModule {
         OrdinaryWorkItemService,
         OrdinaryFailureValidationWriteAuthorizationAdapter,
         CanonicalHostAssessmentService,
-        CanonicalHostAeoService,
+        CanonicalHostIntegratedAssessmentService,
       ],
       exports: [
         CanonicalEntryFacadeService,
         CanonicalHostVerticalService,
         CanonicalHostAssessmentService,
-        CanonicalHostAeoService,
+        CanonicalHostIntegratedAssessmentService,
         CANONICAL_HOST_BINDING,
       ],
     };

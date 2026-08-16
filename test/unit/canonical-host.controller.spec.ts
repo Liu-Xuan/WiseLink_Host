@@ -40,19 +40,12 @@ function target() {
       .fn()
       .mockResolvedValue({ revision: 6 }),
   };
-  const aeo = {
-    runPhase10CandidateLoop: jest.fn().mockResolvedValue({
-      status: 'CANDIDATE_WORD_EXPORTED',
-    }),
-  };
   return {
     assessments,
-    aeo,
     controller: new CanonicalHostController(
       {} as never,
       {} as never,
       assessments as never,
-      aeo as never,
     ),
   };
 }
@@ -163,36 +156,5 @@ describe('CanonicalHostController assessment actions', () => {
       ),
     ).toThrow(UnauthorizedException);
     expect(assessments.evaluateCandidate).not.toHaveBeenCalled();
-  });
-
-  it('runs the fixed Phase10 action with an empty body and server actor only', async () => {
-    const { aeo, controller } = target();
-
-    await expect(
-      controller.runPhase10AeoCandidateLoop({}, HOST_REQUEST as never),
-    ).resolves.toEqual({ status: 'CANDIDATE_WORD_EXPORTED' });
-    expect(aeo.runPhase10CandidateLoop).toHaveBeenCalledTimes(1);
-    expect(aeo.runPhase10CandidateLoop).toHaveBeenCalledWith(
-      expect.objectContaining({
-        userId: 'engineer-1001',
-        tenantId: 'tenant-2001',
-        appId: 'app_17bzc551rsg',
-      }),
-    );
-  });
-
-  it.each([
-    { workItemId: 'client-value' },
-    { actor: 'client-value' },
-    { package: 'client-value' },
-    { authority: true },
-    { path: '/tmp/client-value' },
-  ])('rejects every client-supplied Phase10 field', (body) => {
-    const { aeo, controller } = target();
-
-    expect(() =>
-      controller.runPhase10AeoCandidateLoop(body, HOST_REQUEST as never),
-    ).toThrow(BadRequestException);
-    expect(aeo.runPhase10CandidateLoop).not.toHaveBeenCalled();
   });
 });

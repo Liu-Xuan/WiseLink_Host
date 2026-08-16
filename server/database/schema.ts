@@ -394,6 +394,7 @@ export const externalSearchRun = pgTable("external_search_run", {
   sourceSystem: varchar("source_system", { length: 128 }).notNull(),
   query: text("query").notNull(),
   resultStatus: varchar("result_status", { length: 64 }).notNull(),
+  failureCode: varchar("failure_code", { length: 96 }),
   observedAt: customTimestamptz("observed_at", { precision: 3 }).notNull(),
   accessRestricted: boolean("access_restricted").notNull().default(false),
   truncated: boolean("truncated").notNull().default(false),

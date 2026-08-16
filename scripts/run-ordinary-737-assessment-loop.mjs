@@ -377,19 +377,22 @@ const fast61 = await readFastReceipt('61', reader, artifactStore);
 const fast62 = await readFastReceipt('62', reader, artifactStore);
 const fast61Manifest = reviewedFastManifest(preview, fast61);
 const fast62Manifest = reviewedFastManifest(preview, fast62);
-const zeroResultDiscovery = {
+const accessDeniedDiscovery = {
   runtime: 'FEISHU_HOSTED_OPENCLAW',
   runtimeAppId: 'app_17c3zn24kv2',
   provider: 'BOEING',
   query: '777 FTD 31-21002 software',
-  resultStatus: 'ZERO_RESULTS_FOR_TARGET_IDENTIFIER',
+  resultStatus: 'ACCESS_DENIED',
   observedAt: '2026-08-14T00:00:00.000Z',
   candidates: [],
-  accessRestricted: false,
+  accessRestricted: true,
   truncated: false,
   partialOnly: true,
-  excludedNonOemCandidateCount: 2,
-  error: null,
+  excludedNonOemCandidateCount: 0,
+  error: {
+    code: 'UPSTREAM_CONNECT_TIMEOUT',
+    message: 'Boeing official upstream connection timed out.',
+  },
 };
 
 const evaluated = await assessment.evaluateCandidate(
@@ -397,7 +400,7 @@ const evaluated = await assessment.evaluateCandidate(
     workItemId: parsed.result.workItem.workItemId,
     assessmentAsOf: '2026-08-13T00:00:00.000Z',
     generatedAt: '2026-08-13T00:00:00.000Z',
-    externalDiscovery: zeroResultDiscovery,
+    externalDiscovery: accessDeniedDiscovery,
     reviewedExternalManifest: fast61Manifest,
   },
   actor,
@@ -407,7 +410,7 @@ assert.equal(evaluated.assessment.evaluationItemCount, 150);
 assert.equal(evaluated.assessment.authorityLevel, 'candidate_only');
 assert.equal(evaluated.assessment.blocksEngineeringClosure, true);
 assert.equal(evaluated.assessment.externalDiscoveryStatus,
-  'ZERO_RESULTS_FOR_TARGET_IDENTIFIER');
+  'ACCESS_DENIED');
 assert.equal(evaluated.assessment.externalDiscoveryIsEvidence, false);
 assert.equal(evaluated.package.packageId, parsed.result.workItem.package.packageId);
 
@@ -424,7 +427,7 @@ const externalRevisionResynthesis =
   assessmentConsumer.resynthesizeAfterReviewedExternalChange(
     initialAssessment,
     fast62Manifest,
-    zeroResultDiscovery,
+    accessDeniedDiscovery,
   );
 assert.equal(externalRevisionResynthesis.staleState.previousOverallStale, true);
 assert.equal(externalRevisionResynthesis.staleState.reason, 'EXTERNAL_CONTEXT_STALE');
@@ -457,7 +460,7 @@ const resynthesized = await assessment.resynthesizeAfterEngineerChange(
       status: 'ENGINEER_CONFIRMED',
       updatedAt: '2026-08-13T01:00:00.000Z',
     },
-    externalDiscovery: zeroResultDiscovery,
+    externalDiscovery: accessDeniedDiscovery,
     reviewedExternalManifest: fast62Manifest,
   },
   actor,
@@ -500,7 +503,7 @@ const secondResynthesis = await assessment.resynthesizeAfterEngineerChange(
       status: 'NEEDS_REVIEW',
       updatedAt: '2026-08-13T02:00:00.000Z',
     },
-    externalDiscovery: zeroResultDiscovery,
+    externalDiscovery: accessDeniedDiscovery,
     reviewedExternalManifest: fast62Manifest,
   },
   actor,
@@ -556,32 +559,6 @@ assert.equal(ingestCalls, 1);
 assert.equal(repository.parseReservation.workItemId, secondResynthesis.workItemId);
 assert.equal(fileService.uploadCalls.length, 6);
 
-const phase6dAeo = process.env.WL_PHASE6D_AEO_LOOP === '1'
-  ? await (async () => {
-      const { runPhase6dAeoSameWorkItemLoop } = await import(
-        './run-phase6d-aeo-same-workitem.mjs'
-      );
-      const assessmentActualBytes = await artifactStore.readActualBytes(
-        secondResynthesis.assessment.artifact,
-      );
-      const fast62Bytes = await readFile(
-        resolve(
-          root,
-          'test/fixtures/airbus-fast62-oem-reference.frozen2.unified-package.json',
-        ),
-      );
-      return runPhase6dAeoSameWorkItemLoop({
-        canonicalWorkItem: page.workItem,
-        assessmentActualBytes,
-        sourceParsedPackageActualBytes: packageBytes,
-        initialCandidateWorkItem: initialCandidatePage.workItem,
-        initialCandidateAssessmentBytes: initialAssessmentBytes,
-        previousResynthesisAssessmentBytes: previousResynthesisBytes,
-        fast62Bytes,
-      });
-    })()
-  : null;
-
 process.stdout.write(`${JSON.stringify({
   status: 'ORDINARY_737_ASSESSMENT_LOOP_PASS',
   source: {
@@ -631,7 +608,6 @@ process.stdout.write(`${JSON.stringify({
     status: value.status,
   })),
   parserPackageColumnsUnchanged: true,
-  phase6dAeo,
   onlineWrites: 0,
   releaseCreated: false,
 }, null, 2)}\n`);

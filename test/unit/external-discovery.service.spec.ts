@@ -230,6 +230,8 @@ function searchRun(
     accessRestricted: flags.accessRestricted ?? false,
     truncated: flags.truncated ?? false,
     partialOnly: flags.partialOnly ?? false,
+    failureCode:
+      resultStatus === 'ACCESS_DENIED' ? 'UPSTREAM_CONNECT_TIMEOUT' : null,
     candidates: [
       {
         candidateRef: `candidate-${resultStatus}`,

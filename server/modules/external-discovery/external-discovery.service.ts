@@ -11,7 +11,7 @@ import {
   type FeishuNativeOemSearchRun,
   type FeishuNativeOemServerContext,
 } from './feishu-native-oem-monitoring-ingress';
-import { MiaodaExternalCandidateStore } from './miaoda-external-candidate.store';
+import { MiaodaExternalDiscoveryCandidateStore } from './miaoda-external-discovery-candidate.store';
 
 const DIRECT_MATCH = 'DIRECT_OFFICIAL_SOURCE_MATCH';
 
@@ -20,7 +20,7 @@ export class ExternalDiscoveryService {
   private readonly ingress: FeishuNativeOemMonitoringIngress;
 
   constructor(
-    private readonly store: MiaodaExternalCandidateStore,
+    private readonly store: MiaodaExternalDiscoveryCandidateStore,
     documentManagement: DocumentManagementHostedService,
   ) {
     this.ingress = new FeishuNativeOemMonitoringIngress({

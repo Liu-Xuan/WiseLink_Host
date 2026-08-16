@@ -325,6 +325,7 @@ describe('CanonicalHostVerticalService', () => {
     expect(ailyEntry).toEqual({
       entry,
       assessmentSummary: null,
+      integratedAssessmentSummary: null,
       packageSummary: expect.objectContaining({
         packageId,
         contractRevision: 'frozen.2',

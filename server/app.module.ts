@@ -4,7 +4,6 @@ import { PlatformModule } from '@lark-apaas/fullstack-nestjs-core';
 
 import { GlobalExceptionFilter } from './common/filters/exception.filter';
 import { CanonicalHostModule } from './modules/canonical-host/canonical-host.module';
-import { DocumentManagementValidationModule } from './modules/document-management-validation/document-management-validation.module';
 import { DocumentManagementRuntimeModule } from './modules/document-management-runtime/document-management-runtime.module';
 import { RuntimeProbeModule } from './modules/runtime-probe/runtime-probe.module';
 import { ExternalDiscoveryModule } from './modules/external-discovery/external-discovery.module';
@@ -72,9 +71,8 @@ import { ViewModule } from './modules/view/view.module';
           createHostedU0Frozen2FailureAdapterProvider(),
       },
     }),
-    DocumentManagementValidationModule,
     RuntimeProbeModule,
-    ExternalDiscoveryModule.forRoot(),
+    ExternalDiscoveryModule,
     // ====== @route-section: business-modules END ======
 
     // ⚠️ @route-order: last

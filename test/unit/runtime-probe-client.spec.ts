@@ -4,109 +4,27 @@ jest.mock('@lark-apaas/client-toolkit/utils/getAxiosForBackend', () => ({
   axiosForBackend: request,
 }));
 
-import {
-  runFileServiceP0Probe,
-  runFirstFtdVertical,
-} from '../../client/src/api/runtime-probe';
+import { getReadOnlyRuntimeProbe } from '../../client/src/api/runtime-probe';
 
-describe('runtime probe first FTD vertical client action', () => {
+describe('runtime probe read-only client', () => {
   beforeEach(() => request.mockReset());
 
-  it('uses axiosForBackend once with the exact authorized FileService selection', async () => {
-    request.mockResolvedValue({
-      status: 200,
-      data: { status: 'CANDIDATE_VERTICAL_VERIFIED' },
-      headers: {},
-    });
+  it('only reads hosted runtime and Unified readiness', async () => {
+    request
+      .mockResolvedValueOnce({ status: 200, data: { status: 'PASS' } })
+      .mockResolvedValueOnce({ status: 200, data: { status: 'READY' } });
 
-    await expect(runFirstFtdVertical()).resolves.toMatchObject({
-      status: 200,
-      ok: true,
-    });
-    expect(request).toHaveBeenCalledWith({
-      url: '/api/canonical-host/work-items/parse-pdf',
-      method: 'POST',
-      data: {
-        selection: {
-          bucketId: 'bucket_aadkprardjghu',
-          filePath: '/1873430479421449.pdf',
-        },
-        query: 'software',
+    await expect(getReadOnlyRuntimeProbe()).resolves.toEqual([
+      { path: '/api/runtime-probe', status: 200, body: { status: 'PASS' } },
+      {
+        path: '/api/unified-reader/readiness',
+        status: 200,
+        body: { status: 'READY' },
       },
-      meta: { autoJumpToLogin: false },
-    });
-  });
-
-  it('preserves a server rejection without retrying', async () => {
-    request.mockRejectedValue({
-      response: {
-        status: 403,
-        data: {
-          error: {
-            code: 'CANONICAL_ACTION_NOT_AUTHORIZED',
-            message: 'The authenticated actor is not authorized.',
-          },
-        },
-        headers: { 'x-request-id': 'request-403', 'x-log-trace-id': 'trace-403' },
-      },
-    });
-
-    await expect(runFirstFtdVertical()).resolves.toEqual(
-      expect.objectContaining({
-        status: 403,
-        code: 'CANONICAL_ACTION_NOT_AUTHORIZED',
-        requestId: 'request-403',
-        traceId: 'trace-403',
-        ok: false,
-      }),
-    );
-    expect(request).toHaveBeenCalledTimes(1);
-  });
-
-  it('normalizes a resolved 403 response as a failed result', async () => {
-    request.mockResolvedValue({
-      status: 403,
-      data: {
-        error: {
-          code: 'CANONICAL_ACTION_NOT_AUTHORIZED',
-          message: 'The authenticated actor is not authorized.',
-        },
-      },
-      headers: { 'x-request-id': 'resolved-403' },
-    });
-
-    await expect(runFirstFtdVertical()).resolves.toEqual(
-      expect.objectContaining({
-        status: 403,
-        code: 'CANONICAL_ACTION_NOT_AUTHORIZED',
-        requestId: 'resolved-403',
-        ok: false,
-      }),
-    );
-    expect(request).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe('runtime probe FileService P0 client action', () => {
-  beforeEach(() => request.mockReset());
-
-  it('uses axiosForBackend once without client-supplied path or bytes', async () => {
-    request.mockResolvedValue({
-      status: 200,
-      data: { status: 'PASS' },
-      headers: { 'x-log-trace-id': 'trace-p0' },
-    });
-
-    await expect(runFileServiceP0Probe()).resolves.toMatchObject({
-      status: 200,
-      traceId: 'trace-p0',
-      ok: true,
-    });
-    expect(request).toHaveBeenCalledTimes(1);
-    expect(request).toHaveBeenCalledWith({
-      url: '/api/runtime-probe/file-service-upload',
-      method: 'POST',
-      meta: { autoJumpToLogin: false },
-    });
+    ]);
+    expect(request.mock.calls).toEqual([
+      [{ url: '/api/runtime-probe', method: 'GET' }],
+      [{ url: '/api/unified-reader/readiness', method: 'GET' }],
+    ]);
   });
 });
