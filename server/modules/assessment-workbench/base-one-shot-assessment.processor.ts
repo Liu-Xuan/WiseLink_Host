@@ -17,7 +17,20 @@ export interface BaseOneShotAssessmentPacket {
   purpose: typeof BASE_ONE_SHOT_PURPOSE;
   correlation: BaseOneShotCorrelation;
   operatorInstruction: string[];
-  assessmentInput: Record<string, any>;
+  subjectContext: {
+    documentIdentity: Record<string, unknown>;
+    assessmentAsOf: string;
+    unifiedParsedPackage: Record<string, unknown>;
+    parsedResult: Record<string, unknown>;
+    controlledContext: Record<string, unknown>;
+    sourceDerivation: Record<string, unknown>;
+    publicPackageCoverage: {
+      resultStatus: string;
+      contentUnitCount: number;
+      sourceRefCount: number;
+      applicabilitySourceExpressions: unknown[];
+    };
+  };
   jobAidContext: {
     identity: Record<string, unknown>;
     currentAssessment: Record<string, any>;
@@ -28,6 +41,12 @@ export interface BaseOneShotAssessmentPacket {
       rows: unknown[][];
       rowCount: number;
       valueDictionaries?: Record<string, unknown[]>;
+    };
+    missingInformationProjection: {
+      sourceColumn: 'missingInformation';
+      projectedColumn: 'missingPredicateKeys';
+      fullDescriptionsOwnedByCanonicalHost: true;
+      modelMayInventMissingInputs: false;
     };
     resourceTable: Record<string, any>;
     sourceEvidenceCatalog: Record<string, any>;
@@ -50,7 +69,7 @@ export interface BaseOneShotAssessmentResult {
   criterionCount: number;
 }
 
-const CRITERION_COLUMNS = [
+const SOURCE_CRITERION_COLUMNS = [
   'sequence',
   'criterionId',
   'question',
@@ -62,6 +81,9 @@ const CRITERION_COLUMNS = [
   'sourceEvidenceCandidateIds',
   'engineerReview',
 ];
+
+const PACKET_CRITERION_COLUMNS = SOURCE_CRITERION_COLUMNS.map((column) =>
+  column === 'missingInformation' ? 'missingPredicateKeys' : column);
 
 const RULE_RESULT_FIELDS = [
   'ruleId',
@@ -75,11 +97,11 @@ const RULE_RESULT_FIELDS = [
   'humanReviewRequired',
 ];
 
-const BASE_ONE_SHOT_OUTPUT_MAX_UTF8_BYTES = 90_000;
-const BASE_ONE_SHOT_RULE_RESULT_ROW_MAX_UTF8_BYTES = 540;
+const BASE_ONE_SHOT_OUTPUT_MAX_UTF8_BYTES = 60_000;
+const BASE_ONE_SHOT_RULE_RESULT_ROW_MAX_UTF8_BYTES = 360;
 const BASE_ONE_SHOT_NEXT_ROUND_MAX_ITEMS = 12;
 const BASE_ONE_SHOT_NEXT_ROUND_ITEM_MAX_UTF8_BYTES = 400;
-const BASE_ONE_SHOT_OUTPUT_ENVELOPE_RESERVE_UTF8_BYTES = 4_200;
+const BASE_ONE_SHOT_OUTPUT_ENVELOPE_RESERVE_UTF8_BYTES = 6_000;
 
 /**
  * Ordinary in-process adapter for one Feishu Base AI-field invocation. Base is
@@ -138,15 +160,23 @@ export function buildBaseOneShotAssessmentPacket(
   const context = input.evaluationContext;
   const criterionTable = context.criterionTable;
   const resourceTable = context.resourceTable;
-  const criterionIndexes = CRITERION_COLUMNS.map((column) => {
+  const criterionIndexes = SOURCE_CRITERION_COLUMNS.map((column) => {
     const index = criterionTable.columns.indexOf(column);
     if (index < 0) {
       throw new Error(`BASE_ONE_SHOT_CRITERION_COLUMN_MISSING:${column}`);
     }
     return index;
   });
+  const missingInformationIndex = SOURCE_CRITERION_COLUMNS.indexOf(
+    'missingInformation',
+  );
   const criterionRows = criterionTable.rows.map((row) =>
-    criterionIndexes.map((index) => row[index]));
+    criterionIndexes.map((index, packetIndex) => {
+      const value = row[index];
+      return packetIndex === missingInformationIndex
+        ? projectMissingPredicateKeys(value)
+        : value;
+    }));
   const expectedCount = context.manifest.jobAidRuleSet.criteriaCount;
   if (
     !Number.isInteger(expectedCount) ||
@@ -159,13 +189,21 @@ export function buildBaseOneShotAssessmentPacket(
       `${resourceTable.rows.length}:${expectedCount}`,
     );
   }
-  const criterionIdIndex = CRITERION_COLUMNS.indexOf('criterionId');
+  const criterionIdIndex = PACKET_CRITERION_COLUMNS.indexOf('criterionId');
   const criterionIds = criterionRows.map((row) => String(row[criterionIdIndex]));
   if (new Set(criterionIds).size !== expectedCount) {
     throw new Error('BASE_ONE_SHOT_CRITERION_IDS_NOT_UNIQUE');
   }
 
   const manifest = context.manifest;
+  const upstreamPackage = subject.upstreamBinding?.unifiedParsedPackage;
+  if (!upstreamPackage || typeof upstreamPackage !== 'object') {
+    throw new Error('BASE_ONE_SHOT_UNIFIED_PACKAGE_BINDING_REQUIRED');
+  }
+  const boundedUnifiedPackage = structuredClone(
+    upstreamPackage,
+  ) as Record<string, unknown>;
+  delete boundedUnifiedPackage.readerReceipt;
 
   return {
     purpose: BASE_ONE_SHOT_PURPOSE,
@@ -177,13 +215,28 @@ export function buildBaseOneShotAssessmentPacket(
       `ruleResults 必须按 COLUMNAR_ROWS 返回 columns+rows，columns 严格等于 ruleResultRequiredFields；rows 必须包含 criterionTable 的全部 ${expectedCount} 个 ruleId，每项恰好一次且顺序不变。`,
       `每个 ruleResults.rows 项都必须保留 ${RULE_RESULT_FIELDS.join('/')} 九项语义；只压缩表达和复用输入中的 ID，不得删除字段、规则、事实判断、规则适用分析、结论、来源、缺口或人工复核要求。`,
       `完整输出 UTF-8 必须不超过 ${BASE_ONE_SHOT_OUTPUT_MAX_UTF8_BYTES} 字节；每个 ruleResults row JSON 不超过 ${BASE_ONE_SHOT_RULE_RESULT_ROW_MAX_UTF8_BYTES} 字节，不复抄长问题原文、来源原文或重复模板。`,
-      'assessmentInput 必须作为完整、既有 v4 subject input 使用；不得用 query 命中数替代 contentUnit/sourceRef 覆盖，applicabilitySourceExpressions 为空时不得推断不适用。',
+      'subjectContext 只含已由 Unified/host 绑定的核心字段、包哈希、覆盖计数；sourceEvidenceCatalog 保留规则关联 locator。不得把未提供的逐页原文补造为事实，不得用 query 命中数替代 contentUnit/sourceRef 覆盖。',
+      'criterionTable.missingPredicateKeys 是宿主从既有 missingInformation 机械投影的谓词键；missingInputs 只能复用这些键，完整补证描述由 canonical host 持有并在模型返回后机械合并。',
       'Base 只执行固定 Job Aid 逐项候选判断、自检和缺口整理；禁止生成整体评估意见，禁止返回 overallAssessment。',
       '整体综合由托管 OpenClaw 基于 Base 的完整 N/N 结果和评估上下文另行完成；本次输出必须设置 holisticSynthesisDeferredToOpenClaw=true、overallOpinionProduced=false。',
       '必须区分受控事实、source-bounded parser candidate、历史意见、知识候选、AI 推断、假设和缺口；缺少受控资源时保留 UNKNOWN/WAITING_INPUT，不得补造。',
       '不得创建 EvidenceRef、FleetFact、工程师确认、ClosureDecision、批准、放行或适航结论。',
     ],
-    assessmentInput: subject,
+    subjectContext: {
+      documentIdentity: subject.documentIdentity,
+      assessmentAsOf: subject.assessmentAsOf,
+      unifiedParsedPackage: boundedUnifiedPackage,
+      parsedResult: subject.parsedResult,
+      controlledContext: subject.controlledContext,
+      sourceDerivation: subject.sourceDerivation,
+      publicPackageCoverage: {
+        resultStatus: observation.resultStatus,
+        contentUnitCount: observation.contentUnitCount,
+        sourceRefCount: observation.sourceRefCount,
+        applicabilitySourceExpressions:
+          observation.applicabilitySourceExpressions,
+      },
+    },
     jobAidContext: {
       identity: {
         documentId: manifest.documentId,
@@ -199,10 +252,16 @@ export function buildBaseOneShotAssessmentPacket(
       structuredAssessmentContext: context.structuredAssessmentContext,
       resourceSummary: context.resourceSummary,
       criterionTable: {
-        columns: CRITERION_COLUMNS,
+        columns: PACKET_CRITERION_COLUMNS,
         rows: criterionRows,
         rowCount: criterionRows.length,
         valueDictionaries: criterionTable.valueDictionaries,
+      },
+      missingInformationProjection: {
+        sourceColumn: 'missingInformation',
+        projectedColumn: 'missingPredicateKeys',
+        fullDescriptionsOwnedByCanonicalHost: true,
+        modelMayInventMissingInputs: false,
       },
       resourceTable,
       sourceEvidenceCatalog: context.sourceEvidenceCatalog,
@@ -232,7 +291,6 @@ export function buildBaseOneShotAssessmentPacket(
       echoCorrelationExactly: true,
       doNotInferCorrelationFromContextIdOrAssessmentPackageId: true,
       expectedRuleCount: expectedCount,
-      expectedRuleIds: criterionIds,
       mustReturnEveryInputRuleExactlyOnce: true,
       omissionsExamplesOrEtcAreForbidden: true,
       ruleResultRequiredFields: RULE_RESULT_FIELDS,
@@ -531,6 +589,18 @@ function criterionIds(packet: BaseOneShotAssessmentPacket): string[] {
   const index = table.columns.indexOf('criterionId');
   if (index < 0) throw new Error('BASE_ONE_SHOT_CRITERION_ID_COLUMN_MISSING');
   return table.rows.map((row) => String(row[index]));
+}
+
+function projectMissingPredicateKeys(value: unknown): string[] {
+  if (typeof value !== 'string' || value.trim() === '') return [];
+  const firstLine = value.split('\n', 1)[0].trim();
+  const prefix = '缺少谓词输入：';
+  if (!firstLine.startsWith(prefix)) return [];
+  return firstLine
+    .slice(prefix.length)
+    .split(/[、,，]/u)
+    .map((key) => key.trim())
+    .filter(Boolean);
 }
 
 function assertCorrelation(correlation: BaseOneShotCorrelation): void {

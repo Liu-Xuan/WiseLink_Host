@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { AssessmentHostConsumerService } from './assessment-host-consumer.service';
 import { BaseOneShotAssessmentProcessor } from './base-one-shot-assessment.processor';
+import { DynamicRulesEvaluationProcessor } from './dynamic-rules-evaluation.processor';
 import { EvaluationContextService } from './evaluation-context.service';
 import { KnowledgeRetrievalContextService } from './knowledge-retrieval-context.service';
 
@@ -12,10 +13,15 @@ import { KnowledgeRetrievalContextService } from './knowledge-retrieval-context.
 @Module({
   providers: [
     AssessmentHostConsumerService,
+    DynamicRulesEvaluationProcessor,
     BaseOneShotAssessmentProcessor,
     EvaluationContextService,
     KnowledgeRetrievalContextService,
   ],
-  exports: [AssessmentHostConsumerService, BaseOneShotAssessmentProcessor],
+  exports: [
+    AssessmentHostConsumerService,
+    DynamicRulesEvaluationProcessor,
+    BaseOneShotAssessmentProcessor,
+  ],
 })
 export class AssessmentHostConsumerModule {}
