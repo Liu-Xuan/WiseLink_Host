@@ -167,6 +167,7 @@ const [
   { AssessmentHostConsumerService },
   { DynamicRulesEvaluationProcessor },
   { buildUnifiedSbJobAidAssessmentInput },
+  { buildOpenClawOverallSynthesisInput, consumeOpenClawOverallSynthesisOutput },
   { buildJobAidCriterionSetVersion },
 ] = await Promise.all([
   importBuilt('modules/document-management/src/hosted/phase5BoeingSbHandoff.js'),
@@ -185,6 +186,7 @@ const [
   importBuilt('modules/assessment-workbench/assessment-host-consumer.service.js'),
   importBuilt('modules/assessment-workbench/dynamic-rules-evaluation.processor.js'),
   importBuilt('modules/assessment-workbench/unified-assessment-input.js'),
+  importBuilt('modules/canonical-host/openclaw-overall-synthesis.processor.js'),
   importBuilt('modules/assessment-workbench/job-aid-runtime/criterionSet.js'),
 ]);
 
@@ -410,6 +412,103 @@ assert.equal(dynamicModelInputText.includes('workItemId'), false);
 assert.equal(dynamicModelInputText.includes('actionAttemptId'), false);
 assert.equal(dynamicModelInputText.includes('expectedRevision'), false);
 assert.equal(Buffer.byteLength(dynamicModelInputText, 'utf8') <= 45_000, true);
+const criterionTable = dynamicRequest.modelInput.jobAidContext.criterionTable;
+const criterionIdIndex = criterionTable.columns.indexOf('criterionId');
+const dynamicOutputBytes = Buffer.from(JSON.stringify({
+  callerCorrelationRef: dynamicRequest.modelInput.callerCorrelationRef,
+  authorityLevel: 'candidate_only',
+  engineeringConclusion: null,
+  applicabilityOverall:
+    dynamicRequest.modelInput.jobAidContext.currentAssessment.applicabilityOverall,
+  ruleResults: {
+    columns: [
+      'ruleId', 'result', 'factsConsidered', 'ruleApplication',
+      'analysisSummary', 'conclusion', 'sourceRefs', 'missingInputs',
+      'humanReviewRequired',
+    ],
+    rows: criterionTable.rows.map((row) => [
+      row[criterionIdIndex], 'UNKNOWN', [], 'controlled facts unavailable',
+      'requires engineer review', 'WAITING_INPUT', [], ['controlled_input'], true,
+    ]),
+  },
+  overallSelfCheck: {
+    ruleResultCount: 150,
+    rulesWithMissingInputs: 150,
+    humanReviewRequiredCount: 150,
+    overallOpinionProduced: false,
+    holisticSynthesisDeferredToOpenClaw: true,
+  },
+  nextRoundChecklist: [],
+  completionSelfCheck: {
+    expectedRuleCount: 150,
+    sourcePageCount:
+      dynamicRequest.modelInput.responseInstruction.completionSelfCheck.sourcePageCount,
+    allInputRulesReturned: true,
+    returnedRuleIdsMatchInputOrder: true,
+    returnedRuleIdsUnique: true,
+  },
+}));
+const localBaseRules = {
+  status: 'CANDIDATE_ONLY', revision: 1, sourceResultId: 'local-dynamic-150',
+  criterionSetId: criterionSet.criterionSetId, criterionCount: 150,
+  evaluationItemCount: 150, unresolvedCount: 150,
+  sourceBoundCandidateCount: 0,
+  artifact: {
+    storeRole: 'UnifiedArtifactStoreCandidate', ref: 'local://dynamic-output',
+    sha256: sha256(dynamicOutputBytes), byteLength: dynamicOutputBytes.byteLength,
+    mediaType: 'application/json',
+  },
+  actionAttemptId: 'ATT-INTERNAL-LOCAL-DYNAMIC',
+};
+const workItemWithBase = {
+  ...parsed.result.workItem,
+  integratedAssessment: {
+    status: 'BASE_RULE_CANDIDATE_READY', baseRules: localBaseRules,
+    overallSynthesis: null, overallForAeoConfirmation: null,
+  },
+};
+const discoveryRuns = [
+  {
+    searchRunRef: 'search:boeing:local-denied', sourceSystem: 'FEISHU_HOSTED_OPENCLAW',
+    query: '737-34-3830', resultStatus: 'ACCESS_DENIED',
+    observedAt: '2026-08-16T01:00:00.000Z', accessRestricted: true,
+    truncated: false, partialOnly: false, failureCode: 'UPSTREAM_CONNECT_TIMEOUT', candidates: [],
+  },
+  {
+    searchRunRef: 'search:airbus:local-complete', sourceSystem: 'FEISHU_HOSTED_OPENCLAW',
+    query: 'FAST 62', resultStatus: 'CANDIDATES_FOUND',
+    observedAt: '2026-08-16T01:01:00.000Z', accessRestricted: false,
+    truncated: false, partialOnly: false, failureCode: null,
+    candidates: [{ candidateRef: 'airbus-fast62', publisher: 'AIRBUS', title: 'FAST 62', url: 'https://www.airbus.com/en/newsroom/stories/fast-62', disposition: 'DIRECT_OFFICIAL_SOURCE_MATCH' }],
+  },
+  {
+    searchRunRef: 'search:comac:local-partial', sourceSystem: 'FEISHU_HOSTED_OPENCLAW',
+    query: 'COMAC publication', resultStatus: 'PARTIAL_RESULTS',
+    observedAt: '2026-08-16T01:02:00.000Z', accessRestricted: false,
+    truncated: true, partialOnly: true, failureCode: 'OFFICIAL_LIST_PARTIAL',
+    candidates: [{ candidateRef: 'comac-partial', publisher: 'COMAC', title: 'COMAC list', url: 'https://www.comac.cc/publication', disposition: 'TANGENTIAL_NO_DIRECT_MATCH' }],
+  },
+];
+const overallAInput = buildOpenClawOverallSynthesisInput({
+  workItem: workItemWithBase, baseRules: localBaseRules,
+  baseArtifactBytes: dynamicOutputBytes, packageBytes, discoveries: [],
+  outputCorrelationRef: 'OVR-LOCAL-A',
+});
+const overallBInput = buildOpenClawOverallSynthesisInput({
+  workItem: workItemWithBase, baseRules: localBaseRules,
+  baseArtifactBytes: dynamicOutputBytes, packageBytes,
+  discoveries: discoveryRuns, outputCorrelationRef: 'OVR-LOCAL-B',
+});
+const overallA = localOverallOutput(overallAInput, 'NO_DISCOVERY', {}, 0);
+const overallB = localOverallOutput(overallBInput,
+  'AIRBUS:COMPLETE;BOEING:ACCESS_DENIED;COMAC:PARTIAL_RESULTS',
+  {
+    airbus: providerSummary('COMPLETE', true, false, 1, null),
+    boeing: providerSummary('ACCESS_DENIED', false, true, 0, 'UPSTREAM_CONNECT_TIMEOUT'),
+    comac: providerSummary('PARTIAL_RESULTS', false, false, 1, 'OFFICIAL_LIST_PARTIAL'),
+  }, 2);
+consumeOpenClawOverallSynthesisOutput(overallAInput, JSON.stringify(overallA));
+consumeOpenClawOverallSynthesisOutput(overallBInput, JSON.stringify(overallB));
 const fast61 = await readFastReceipt('61', reader, artifactStore);
 const fast62 = await readFastReceipt('62', reader, artifactStore);
 const fast61Manifest = reviewedFastManifest(preview, fast61);
@@ -634,6 +733,13 @@ process.stdout.write(`${JSON.stringify({
     authorityFree: true,
     callerCorrelationRef: dynamicRequest.modelInput.callerCorrelationRef,
   },
+  overallSynthesisAB: {
+    noDiscoveryStatus: overallA.discoveryStatus,
+    realThreeProviderStatus: overallB.discoveryStatus,
+    baseRuleCount: overallAInput.baseRuleResult.items.length,
+    candidateRefCount: overallB.candidateRefCount,
+    candidateOnly: true,
+  },
   external: {
     discoveryStatus: secondResynthesis.assessment.externalDiscoveryStatus,
     discoveryIsEvidence: secondResynthesis.assessment.externalDiscoveryIsEvidence,
@@ -659,6 +765,32 @@ process.stdout.write(`${JSON.stringify({
   onlineWrites: 0,
   releaseCreated: false,
 }, null, 2)}\n`);
+
+function providerSummary(status, direct, accessRestricted, candidateCount, failureCode) {
+  return {
+    status,
+    match: direct ? 'DIRECT_OFFICIAL_SOURCE_MATCH' : 'NO_DIRECT_OFFICIAL_SOURCE_MATCH',
+    accessRestricted, candidateCount, failureCode,
+    source: 'OFFICIAL_OEM_PUBLIC_SOURCE', baiduAcceptedAsOfficial: false,
+  };
+}
+
+function localOverallOutput(input, discoveryStatus, providers, candidateRefCount) {
+  return {
+    sourceResultId: input.outputCorrelationRef,
+    documentVersionId: input.baseRuleResult.documentVersionId,
+    packageId: input.baseRuleResult.packageId,
+    baseRuleRevision: input.baseRuleResult.revision,
+    baseRuleArtifactSha256: input.baseRuleResult.artifactSha256,
+    discoveryStatus, gap: discoveryStatus === 'NO_DISCOVERY' ? null : 'Discovery remains non-evidence.',
+    candidateRefCount, findingCount: 0, unresolvedCount: 150,
+    authorityLevel: 'candidate_only', externalDiscoveryIsEvidence: false,
+    overallCandidate: 'Controlled inputs remain incomplete; engineer review is required.',
+    findings: [], missingInputs: ['controlled FleetFacts'],
+    applicabilityStatus: 'UNKNOWN/WAITING_INPUT', engineeringReviewRequired: true,
+    adopted: false, usableAsEvidence: false, providers,
+  };
+}
 
 function assessmentOptions(workItem, artifactBytes, rulePack, ruleDigest, criterionSet) {
   return {

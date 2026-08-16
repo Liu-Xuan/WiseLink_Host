@@ -1,6 +1,8 @@
--- Local-only Phase 6C schema handoff. Do not apply to DEV/online in this slice.
--- When separately authorized, execute this entire transaction in DEV first,
--- regenerate server/database/schema.ts, and independently read back constraints.
+-- Current Canonical Host / Document Management migration for the sole hosted
+-- external OEM discovery store. Apply only after separate schema authorization.
+-- Execute this entire transaction in DEV first, independently read back both
+-- empty tables and their constraints, regenerate server/database/schema.ts,
+-- then review and separately confirm the DEV-to-online migration.
 
 BEGIN;
 
@@ -11,6 +13,7 @@ CREATE TABLE external_search_run (
   source_system VARCHAR(128) NOT NULL,
   query TEXT NOT NULL,
   result_status VARCHAR(64) NOT NULL,
+  failure_code VARCHAR(96),
   observed_at TIMESTAMPTZ(3) NOT NULL,
   access_restricted BOOLEAN NOT NULL DEFAULT FALSE,
   truncated BOOLEAN NOT NULL DEFAULT FALSE,

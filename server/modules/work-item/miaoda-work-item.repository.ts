@@ -38,6 +38,7 @@ export type AssessmentActionType =
   | 'PERSIST_OPENCLAW_OVERALL'
   | 'CONFIRM_OPENCLAW_OVERALL_FOR_AEO'
   | 'OPENCLAW_DYNAMIC_EVALUATION'
+  | 'OPENCLAW_OVERALL_SYNTHESIS'
   | 'RUN_AEO_CANDIDATE_LOOP';
 
 export interface AssessmentActionAttemptReservation {
@@ -52,6 +53,19 @@ export interface DynamicEvaluationActionAttempt {
   attemptNo: number;
   triggerRequestId: string;
   requestOrigin: 'OPENCLAW';
+  status: string;
+  actorUserId: string;
+  tenantId: string;
+  createdAt: Date;
+}
+
+export interface OverallSynthesisActionAttempt {
+  attemptId: string;
+  workItemId: string;
+  actionType: 'OPENCLAW_OVERALL_SYNTHESIS';
+  attemptNo: number;
+  triggerRequestId: string;
+  requestOrigin: string;
   status: string;
   actorUserId: string;
   tenantId: string;
@@ -394,6 +408,88 @@ export class MiaodaWorkItemRepository {
     }
   }
 
+  async reserveOverallSynthesisAction(input: {
+    workItemId: string;
+    actorUserId: string;
+    tenantId: string;
+    attemptNo: number;
+    providerCodes: string[];
+  }): Promise<OverallSynthesisActionAttempt & { created: boolean }> {
+    const requestOrigin = overallRequestOrigin(input.providerCodes);
+    const now = new Date();
+    const attemptId = `ATT-${randomUUID()}`;
+    const callerCorrelationRef = `OVR-${randomUUID()}`;
+    const inserted = await this.db
+      .insert(actionAttempt)
+      .values({
+        attemptId,
+        workItemId: input.workItemId,
+        actionType: 'OPENCLAW_OVERALL_SYNTHESIS',
+        attemptNo: input.attemptNo,
+        triggerRequestId: callerCorrelationRef,
+        requestOrigin,
+        status: 'RUNNING',
+        actorUserId: input.actorUserId,
+        tenantId: input.tenantId,
+        startedAt: now,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoNothing({
+        target: [
+          actionAttempt.workItemId,
+          actionAttempt.actionType,
+          actionAttempt.attemptNo,
+        ],
+      })
+      .returning({ attemptId: actionAttempt.attemptId });
+    const stored = await this.getOverallSynthesisActionByIdentity(
+      input.workItemId,
+      input.attemptNo,
+    );
+    if (
+      stored.actorUserId !== input.actorUserId ||
+      stored.tenantId !== input.tenantId ||
+      stored.requestOrigin !== requestOrigin
+    ) {
+      throw new Error('OPENCLAW_OVERALL_ATTEMPT_IDENTITY_MISMATCH');
+    }
+    return { ...stored, created: inserted.length === 1 };
+  }
+
+  async getOverallSynthesisActionByCallerRef(
+    callerCorrelationRef: string,
+  ): Promise<OverallSynthesisActionAttempt> {
+    const rows = await this.db
+      .select()
+      .from(actionAttempt)
+      .where(
+        and(
+          eq(actionAttempt.triggerRequestId, callerCorrelationRef),
+          eq(actionAttempt.actionType, 'OPENCLAW_OVERALL_SYNTHESIS'),
+        ),
+      )
+      .limit(2);
+    if (rows.length !== 1) throw new Error('OPENCLAW_OVERALL_ATTEMPT_NOT_FOUND');
+    return overallSynthesisAttempt(rows[0]);
+  }
+
+  async claimOverallSynthesisCommit(attemptId: string): Promise<void> {
+    const updated = await this.db
+      .update(actionAttempt)
+      .set({ status: 'COMMITTING', updatedAt: new Date() })
+      .where(
+        and(
+          eq(actionAttempt.attemptId, attemptId),
+          eq(actionAttempt.status, 'RUNNING'),
+        ),
+      )
+      .returning({ attemptId: actionAttempt.attemptId });
+    if (updated.length !== 1) {
+      throw new Error('OPENCLAW_OVERALL_COMMIT_ALREADY_CLAIMED');
+    }
+  }
+
   async completeAssessmentAction(attemptId: string): Promise<void> {
     const now = new Date();
     const updated = await this.db
@@ -452,6 +548,25 @@ export class MiaodaWorkItemRepository {
       throw new Error('DYNAMIC_EVALUATION_ATTEMPT_READBACK_FAILED');
     }
     return dynamicEvaluationAttempt(stored);
+  }
+
+  private async getOverallSynthesisActionByIdentity(
+    workItemId: string,
+    attemptNo: number,
+  ): Promise<OverallSynthesisActionAttempt> {
+    const [stored] = await this.db
+      .select()
+      .from(actionAttempt)
+      .where(
+        and(
+          eq(actionAttempt.workItemId, workItemId),
+          eq(actionAttempt.actionType, 'OPENCLAW_OVERALL_SYNTHESIS'),
+          eq(actionAttempt.attemptNo, attemptNo),
+        ),
+      )
+      .limit(1);
+    if (!stored) throw new Error('OPENCLAW_OVERALL_ATTEMPT_READBACK_FAILED');
+    return overallSynthesisAttempt(stored);
   }
 
   private async updatePrimaryAttempt(
@@ -515,6 +630,38 @@ function dynamicEvaluationAttempt(
     tenantId: stored.tenantId,
     createdAt: stored.createdAt,
   };
+}
+
+function overallSynthesisAttempt(
+  stored: typeof actionAttempt.$inferSelect,
+): OverallSynthesisActionAttempt {
+  if (
+    stored.actionType !== 'OPENCLAW_OVERALL_SYNTHESIS' ||
+    !stored.requestOrigin.startsWith('OPENCLAW_OVR_') ||
+    !(stored.createdAt instanceof Date)
+  ) {
+    throw new Error('OPENCLAW_OVERALL_ATTEMPT_IDENTITY_INVALID');
+  }
+  return {
+    attemptId: stored.attemptId,
+    workItemId: stored.workItemId,
+    actionType: stored.actionType,
+    attemptNo: stored.attemptNo,
+    triggerRequestId: stored.triggerRequestId,
+    requestOrigin: stored.requestOrigin,
+    status: stored.status,
+    actorUserId: stored.actorUserId,
+    tenantId: stored.tenantId,
+    createdAt: stored.createdAt,
+  };
+}
+
+function overallRequestOrigin(providerCodes: string[]): string {
+  const unique = [...new Set(providerCodes)].sort();
+  if (unique.some((code) => !['A', 'B', 'C'].includes(code))) {
+    throw new Error('OPENCLAW_OVERALL_PROVIDER_CODE_INVALID');
+  }
+  return `OPENCLAW_OVR_${unique.length > 0 ? unique.join('') : 'NONE'}`;
 }
 
 function rawHash(value: string): string {

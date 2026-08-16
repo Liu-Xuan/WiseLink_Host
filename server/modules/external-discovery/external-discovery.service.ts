@@ -38,6 +38,57 @@ export class ExternalDiscoveryService {
     return this.ingress.recordSearchRun(searchRun, context);
   }
 
+  async readSearchRuns(
+    searchRunRefs: string[],
+    context: FeishuNativeOemServerContext,
+  ): Promise<FeishuNativeOemSearchRun[]> {
+    const values = await Promise.all(
+      searchRunRefs.map((searchRunRef) =>
+        this.store.readSearchRun(searchRunRef, context)),
+    );
+    if (values.some((value) => value === null)) {
+      throw new Error('OEM_MONITORING_SEARCH_RUN_NOT_FOUND');
+    }
+    return values as FeishuNativeOemSearchRun[];
+  }
+
+  async latestSearchRunsAsOf(
+    providerCodes: string[],
+    observedAtInclusive: string,
+    context: FeishuNativeOemServerContext,
+  ): Promise<FeishuNativeOemSearchRun[]> {
+    if (providerCodes.length === 0) return [];
+    const providerByCode = { A: 'AIRBUS', B: 'BOEING', C: 'COMAC' } as const;
+    const wanted = providerCodes.map((code) => {
+      const provider = providerByCode[code as keyof typeof providerByCode];
+      if (!provider) throw new Error('OPENCLAW_OVERALL_PROVIDER_CODE_INVALID');
+      return provider;
+    });
+    const cutoff = Date.parse(observedAtInclusive);
+    if (Number.isNaN(cutoff)) {
+      throw new Error('OPENCLAW_OVERALL_DISCOVERY_CUTOFF_INVALID');
+    }
+    const entries = await this.store.listSearchRuns(context);
+    return wanted.map((provider) => {
+      const latest = entries
+        .map(({ searchRun }) => searchRun)
+        .filter(
+          (run) =>
+            run.sourceSystem === 'FEISHU_HOSTED_OPENCLAW' &&
+            run.searchRunRef.startsWith(`search:${provider.toLowerCase()}:`) &&
+            run.candidates.every((candidate) => candidate.publisher === provider) &&
+            !Number.isNaN(Date.parse(run.observedAt)) &&
+            Date.parse(run.observedAt) <= cutoff,
+        )
+        .sort((left, right) =>
+          right.observedAt.localeCompare(left.observedAt) ||
+          right.searchRunRef.localeCompare(left.searchRunRef),
+        )[0];
+      if (!latest) throw new Error(`OPENCLAW_OVERALL_DISCOVERY_NOT_FOUND:${provider}`);
+      return latest;
+    });
+  }
+
   async list(
     context: FeishuNativeOemServerContext,
   ): Promise<ExternalDiscoveryPageResponse> {

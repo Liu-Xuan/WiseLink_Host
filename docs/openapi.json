@@ -304,7 +304,7 @@
       "post": {
         "operationId": "handleOpenClawMcp",
         "summary": "OpenClaw 专用动态规则候选评估 MCP 入口",
-        "description": "独立承载三个只读工具及受控 dynamic-N begin/commit；服务端派生 actor、权限、WorkItem revision 和 ActionAttempt，拒绝客户端提供 authority、URL、Header、模型或 agent 身份。",
+        "description": "独立承载三个只读工具、OEM discovery 记录及受控 dynamic-N/overall begin/commit；服务端派生 actor、权限、WorkItem revision 和 ActionAttempt，拒绝客户端提供 authority、URL policy override、Header、模型或 agent 身份。",
         "requestBody": {
           "required": true,
           "content": {

@@ -18,6 +18,9 @@ import { CanonicalHostMcpService } from './canonical-host-mcp.service';
 import { CanonicalHostOpenClawMcpOpenApiController } from './canonical-host-openclaw-mcp.openapi.controller';
 import { CanonicalHostOpenClawMcpService } from './canonical-host-openclaw-mcp.service';
 import { CanonicalHostOpenClawDynamicEvaluationService } from './canonical-host-openclaw-dynamic-evaluation.service';
+import { CanonicalHostOpenClawDiscoveryService } from './canonical-host-openclaw-discovery.service';
+import { CanonicalHostOpenClawOverallService } from './canonical-host-openclaw-overall.service';
+import { ExternalDiscoveryModule } from '../external-discovery/external-discovery.module';
 import { CanonicalFailureRecordingService } from './canonical-failure-recording.service';
 import { ExactFtdFrozen2PdfProducerAdapter } from './exact-ftd-frozen2-pdf-producer.adapter';
 import { OrdinaryFailureValidationWriteAuthorizationAdapter } from './ordinary-failure-validation-write-authorization.adapter';
@@ -67,6 +70,7 @@ export interface CanonicalHostModuleOptions {
 }
 
 @Module({
+  imports: [ExternalDiscoveryModule, AssessmentHostConsumerModule],
   controllers: [
     CanonicalHostController,
     CanonicalHostOpenApiController,
@@ -80,6 +84,8 @@ export interface CanonicalHostModuleOptions {
     CanonicalHostMcpService,
     CanonicalHostOpenClawMcpService,
     CanonicalHostOpenClawDynamicEvaluationService,
+    CanonicalHostOpenClawDiscoveryService,
+    CanonicalHostOpenClawOverallService,
     ExactFtdFrozen2PdfProducerAdapter,
     MiaodaWorkItemRepository,
     MiaodaDocumentVersionSourceResolver,
@@ -164,6 +170,7 @@ export class CanonicalHostModule {
       imports: [
         UnifiedReaderModule.forRoot(options.unifiedReader),
         AssessmentHostConsumerModule,
+        ExternalDiscoveryModule,
         ...(options.imports ?? []),
       ],
       controllers: [
@@ -192,6 +199,8 @@ export class CanonicalHostModule {
         CanonicalHostMcpService,
         CanonicalHostOpenClawMcpService,
         CanonicalHostOpenClawDynamicEvaluationService,
+        CanonicalHostOpenClawDiscoveryService,
+        CanonicalHostOpenClawOverallService,
         ExactFtdFrozen2PdfProducerAdapter,
         MiaodaWorkItemRepository,
         MiaodaDocumentVersionSourceResolver,

@@ -185,7 +185,45 @@ describe('ExternalDiscoveryService candidate-only admission', () => {
     ).rejects.toMatchObject({ code: 'OEM_MONITORING_HUMAN_SELECTION_REQUIRED' });
     expect(documentManagement.ingestFileServiceSelection).not.toHaveBeenCalled();
   });
+
+  it('selects only deterministic server-owned hosted runs for overall synthesis', async () => {
+    const earlier = hostedRun('search:boeing:earlier', '2026-08-16T01:00:00.000Z');
+    const latest = hostedRun('search:boeing:latest', '2026-08-16T02:00:00.000Z');
+    const foreign = hostedRun('search:boeing:foreign', '2026-08-16T03:00:00.000Z');
+    foreign.sourceSystem = 'FOREIGN_DISCOVERY';
+    await store.recordSearchRun(earlier, CONTEXT);
+    await store.recordSearchRun(latest, CONTEXT);
+    await store.recordSearchRun(foreign, CONTEXT);
+
+    await expect(
+      service.latestSearchRunsAsOf(['B'], '2026-08-16T02:30:00.000Z', CONTEXT),
+    ).resolves.toMatchObject([{ searchRunRef: latest.searchRunRef }]);
+    await expect(
+      service.latestSearchRunsAsOf(['B'], 'not-a-date', CONTEXT),
+    ).rejects.toThrow('OPENCLAW_OVERALL_DISCOVERY_CUTOFF_INVALID');
+  });
 });
+
+function hostedRun(searchRunRef: string, observedAt: string): FeishuNativeOemSearchRun {
+  return {
+    searchRunRef,
+    sourceSystem: 'FEISHU_HOSTED_OPENCLAW',
+    query: 'Boeing controlled publication',
+    resultStatus: 'CANDIDATES_FOUND',
+    observedAt,
+    accessRestricted: false,
+    truncated: false,
+    partialOnly: false,
+    failureCode: null,
+    candidates: [{
+      candidateRef: `${searchRunRef}:candidate:001`,
+      publisher: 'BOEING',
+      title: 'Official Boeing candidate',
+      url: 'https://www.boeing.com/candidate.pdf',
+      disposition: 'DIRECT_OFFICIAL_SOURCE_MATCH',
+    }],
+  };
+}
 
 function foundRun(
   flags: Partial<Pick<

@@ -8,6 +8,11 @@ import { z } from 'zod/v4';
 
 import { CanonicalHostOpenClawDynamicEvaluationService } from './canonical-host-openclaw-dynamic-evaluation.service';
 import {
+  CanonicalHostOpenClawDiscoveryService,
+  type PublicHostedDiscoveryResult,
+} from './canonical-host-openclaw-discovery.service';
+import { CanonicalHostOpenClawOverallService } from './canonical-host-openclaw-overall.service';
+import {
   mcpWorkItemId,
   registerCanonicalHostReadonlyMcpTools,
   textResult,
@@ -16,6 +21,33 @@ import { CanonicalHostVerticalService } from './canonical-host-vertical.service'
 
 const attemptRef = z.string().trim().min(1).max(200);
 const modelOutput = z.string().trim().min(1).max(80_000);
+const overallOutput = z.string().trim().min(1).max(160_000);
+const discoveryCandidate = z.object({
+  title: z.string().trim().min(1).max(1000),
+  sourceUrl: z.string().url().max(4000),
+  documentNumber: z.string().trim().min(1).max(500).nullable(),
+  revisionLabel: z.string().trim().min(1).max(500).nullable(),
+  snippet: z.string().trim().min(1).max(4000).nullable(),
+  relationshipReason: z.string().trim().min(1).max(2000),
+  matchLevel: z.enum(['DIRECT', 'TANGENTIAL']),
+}).strict();
+const publicDiscoveryResult = z.object({
+  provider: z.enum(['BOEING', 'AIRBUS', 'COMAC']),
+  query: z.string().trim().min(1).max(2000),
+  resultStatus: z.enum([
+    'COMPLETE', 'PARTIAL', 'ACCESS_DENIED', 'ZERO_RESULT',
+    'ZERO_RESULTS_FOR_TARGET_IDENTIFIER', 'TRUNCATED',
+  ]),
+  candidates: z.array(discoveryCandidate).max(100),
+  accessRestricted: z.boolean().optional(),
+  truncated: z.boolean().optional(),
+  partialOnly: z.boolean().optional(),
+  excludedNonOemCandidateCount: z.number().int().min(0).optional(),
+  error: z.object({
+    code: z.string().trim().min(1).max(300),
+    message: z.string().trim().min(1).max(2000),
+  }).strict().nullable(),
+}).strict();
 
 const beginAnnotations = {
   readOnlyHint: false,
@@ -39,6 +71,8 @@ export class CanonicalHostOpenClawMcpService {
   constructor(
     private readonly vertical: CanonicalHostVerticalService,
     private readonly dynamicEvaluation: CanonicalHostOpenClawDynamicEvaluationService,
+    private readonly discovery: CanonicalHostOpenClawDiscoveryService,
+    private readonly overall: CanonicalHostOpenClawOverallService,
   ) {
     const handler = createMcpHandler(() => this.createServer(), {
       legacy: 'stateless',
@@ -92,6 +126,59 @@ export class CanonicalHostOpenClawMcpService {
         textResult(
           await this.dynamicEvaluation.commit(selectedAttemptRef, output),
         ),
+    );
+
+    server.registerTool(
+      'record_oem_discovery_run',
+      {
+        title: '记录 OEM 公开网站发现结果',
+        description:
+          '把 OpenClaw 公开 OEM discovery 结果记录到妙搭 SearchRun/候选表；时间、租户、actor 和 SearchRun 身份均由服务端派生，不采纳文档或触发 DM。',
+        inputSchema: z.object({
+          workItemId: mcpWorkItemId,
+          result: publicDiscoveryResult,
+        }).strict(),
+        annotations: commitAnnotations,
+      },
+      async ({ workItemId, result }) =>
+        textResult(
+          await this.discovery.record(
+            workItemId,
+            result as PublicHostedDiscoveryResult,
+          ),
+        ),
+    );
+
+    server.registerTool(
+      'begin_overall_synthesis',
+      {
+        title: '开始整体候选综合',
+        description:
+          '服务端读取同一 WorkItem 的完整 dynamic-N 实际字节、frozen.2 来源和可选 discovery SearchRun，返回 authority-free 整体综合输入。',
+        inputSchema: z.object({
+          workItemId: mcpWorkItemId,
+          providers: z.array(z.enum(['AIRBUS', 'BOEING', 'COMAC'])).max(3).optional(),
+        }).strict(),
+        annotations: beginAnnotations,
+      },
+      async ({ workItemId, providers }) =>
+        textResult(await this.overall.begin(workItemId, providers ?? [])),
+    );
+
+    server.registerTool(
+      'commit_overall_candidate',
+      {
+        title: '提交整体 candidate_only 候选',
+        description:
+          '仅按服务端 opaque attempt 验证完整 overall 输出，保存原始实际字节并 CAS 写回同一 WorkItem；不形成人工确认或工程结论。',
+        inputSchema: z.object({
+          attemptRef,
+          output: overallOutput,
+        }).strict(),
+        annotations: commitAnnotations,
+      },
+      async ({ attemptRef: selectedAttemptRef, output }) =>
+        textResult(await this.overall.commit(selectedAttemptRef, output)),
     );
 
     return server;

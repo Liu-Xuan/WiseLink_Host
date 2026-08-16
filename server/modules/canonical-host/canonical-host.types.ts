@@ -27,6 +27,7 @@ export interface CanonicalAuthorizationDecision {
     | 'RESYNTHESIZE_ASSESSMENT'
     | 'PERSIST_BASE_RULE_RESULT'
     | 'PERSIST_OPENCLAW_OVERALL'
+    | 'RECORD_OEM_DISCOVERY_RUN'
     | 'CONFIRM_OPENCLAW_OVERALL_FOR_AEO'
     | 'RUN_AEO_CANDIDATE_LOOP';
   allowed: boolean;
