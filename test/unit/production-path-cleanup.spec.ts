@@ -31,6 +31,8 @@ describe('Phase 13C production path', () => {
     expect(client).toContain('integratedAssessment.baseRules');
     expect(client).toContain('integratedAssessment.overallSynthesis');
     expect(client).toContain('WAITING_REAL_BASE_RESULT');
+    expect(client).toContain('运行 Base 固定规则评估');
+    expect(client).toContain('运行 OpenClaw 整体候选综合');
     expect(externalModule).not.toContain('ExternalDiscoveryAutomation');
     expect(externalModule).not.toContain('@Automation');
     expect(assets).not.toContain('phase10-aeo');

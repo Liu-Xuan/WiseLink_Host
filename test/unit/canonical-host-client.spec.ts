@@ -10,6 +10,8 @@ jest.mock('@lark-apaas/client-toolkit/logger', () => ({
 
 import {
   evaluateAssessment,
+  persistIntegratedBaseRules,
+  persistIntegratedOpenClawOverall,
   resynthesizeAssessment,
 } from '../../client/src/api/canonical-host';
 
@@ -68,4 +70,22 @@ describe('canonical host assessment client', () => {
     ).rejects.toBeDefined();
     expect(request).toHaveBeenCalledTimes(1);
   });
+
+  it.each([
+    ['Base rules', persistIntegratedBaseRules, 'base-rules'],
+    ['OpenClaw overall', persistIntegratedOpenClawOverall, 'overall-synthesis'],
+  ] as const)(
+    'uses one authenticated empty-body POST for %s',
+    async (_label, action, path) => {
+      request.mockResolvedValue({ status: 200, data: { revision: 10 } });
+
+      await expect(action('WI-SB-1001')).resolves.toEqual({ revision: 10 });
+      expect(request).toHaveBeenCalledTimes(1);
+      expect(request).toHaveBeenCalledWith({
+        url: `/api/canonical-host/work-items/WI-SB-1001/integrated-assessment/${path}`,
+        method: 'POST',
+        data: {},
+      });
+    },
+  );
 });

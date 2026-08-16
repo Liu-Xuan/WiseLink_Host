@@ -92,3 +92,47 @@ export async function resynthesizeAssessment(
     throw error;
   }
 }
+
+export async function persistIntegratedBaseRules(
+  workItemId: string,
+): Promise<CanonicalWorkItemProjection> {
+  return runIntegratedAssessmentAction(
+    workItemId,
+    'base-rules',
+    'BASE_RULE_RESULT_ACCESS_DENIED',
+    '读取并保存 Base 固定规则候选失败',
+  );
+}
+
+export async function persistIntegratedOpenClawOverall(
+  workItemId: string,
+): Promise<CanonicalWorkItemProjection> {
+  return runIntegratedAssessmentAction(
+    workItemId,
+    'overall-synthesis',
+    'OPENCLAW_OVERALL_ACCESS_DENIED',
+    '运行并保存 OpenClaw 整体候选失败',
+  );
+}
+
+async function runIntegratedAssessmentAction(
+  workItemId: string,
+  action: 'base-rules' | 'overall-synthesis',
+  deniedCode: string,
+  logMessage: string,
+): Promise<CanonicalWorkItemProjection> {
+  try {
+    const response = await axiosForBackend<CanonicalWorkItemProjection>({
+      url: `/api/canonical-host/work-items/${encodeURIComponent(workItemId)}/integrated-assessment/${action}`,
+      method: 'POST',
+      data: {},
+    });
+    if (response.status === 401 || response.status === 403) {
+      throw new Error(deniedCode);
+    }
+    return response.data;
+  } catch (error) {
+    logger.error(logMessage, error);
+    throw error;
+  }
+}

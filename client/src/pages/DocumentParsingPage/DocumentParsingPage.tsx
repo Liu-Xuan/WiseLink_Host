@@ -36,7 +36,7 @@ export default function DocumentParsingPage() {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [assessmentAction, setAssessmentAction] = useState<
-    'EVALUATE' | 'RESYNTHESIZE' | null
+    'EVALUATE' | 'RESYNTHESIZE' | 'BASE_RULES' | 'OPENCLAW_OVERALL' | null
   >(null);
   const [assessmentError, setAssessmentError] = useState<string | null>(null);
   const [criterionId, setCriterionId] = useState<string>('');
@@ -89,6 +89,27 @@ export default function DocumentParsingPage() {
   const aeo = data.workItem.aeo ?? null;
   const results: UnifiedReaderQueryResult[] = data.queryResults;
   const fileLabel: string = `${data.workItem.classification.normalizedFamily} · ${short(data.workItem.source.sourceArtifactId, 20, 8)}`;
+
+  async function runIntegratedAction(
+    action: 'BASE_RULES' | 'OPENCLAW_OVERALL',
+  ): Promise<void> {
+    setAssessmentAction(action);
+    setAssessmentError(null);
+    try {
+      if (action === 'BASE_RULES') {
+        await canonicalHost.persistIntegratedBaseRules(workItemId);
+      } else {
+        await canonicalHost.persistIntegratedOpenClawOverall(workItemId);
+      }
+      await load(query.trim() || 'applicability');
+    } catch (cause) {
+      setAssessmentError(
+        cause instanceof Error ? cause.message : 'INTEGRATED_ASSESSMENT_FAILED',
+      );
+    } finally {
+      setAssessmentAction(null);
+    }
+  }
 
   return (
     <main className="parse-shell">
@@ -309,6 +330,17 @@ export default function DocumentParsingPage() {
                   )}。
                 </p>
               ) : null}
+              {integratedAssessment.overallSynthesis === null ? (
+                <button
+                  type="button"
+                  disabled={assessmentAction !== null}
+                  onClick={() => void runIntegratedAction('OPENCLAW_OVERALL')}
+                >
+                  {assessmentAction === 'OPENCLAW_OVERALL'
+                    ? '正在运行整体综合…'
+                    : '运行 OpenClaw 整体候选综合'}
+                </button>
+              ) : null}
             </>
           ) : (
             <div className="parse-assessment-empty">
@@ -317,8 +349,22 @@ export default function DocumentParsingPage() {
                 本地样本或固定 150/150 代替。托管 OpenClaw 只在 Base 候选到达后生成
                 candidate_only 整体综合。
               </p>
+              <button
+                type="button"
+                disabled={assessmentAction !== null}
+                onClick={() => void runIntegratedAction('BASE_RULES')}
+              >
+                {assessmentAction === 'BASE_RULES'
+                  ? '正在运行固定规则评估…'
+                  : '运行 Base 固定规则评估'}
+              </button>
             </div>
           )}
+          {assessmentError ? (
+            <p className="parse-assessment-error" role="alert">
+              {assessmentError}
+            </p>
+          ) : null}
         </section>
       ) : null}
 
