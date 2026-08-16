@@ -161,6 +161,18 @@ export class CanonicalHostController {
     );
   }
 
+  @Post('work-items/:workItemId/integrated-assessment/confirm-for-aeo')
+  confirmOpenClawOverallForAeo(
+    @Param('workItemId') workItemId: string,
+    @Body() body: unknown,
+    @Req() httpRequest: Request,
+  ) {
+    integratedAssessmentActionBody(body);
+    return this.integratedAssessments.confirmOpenClawOverallForAeo(
+      requiredText(workItemId, 'workItemId'),
+      hostActor(httpRequest),
+    );
+  }
 }
 
 export function hostActor(request: Request): CanonicalHostActor {

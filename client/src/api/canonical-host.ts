@@ -115,9 +115,20 @@ export async function persistIntegratedOpenClawOverall(
   );
 }
 
+export async function confirmIntegratedOverallForAeo(
+  workItemId: string,
+): Promise<CanonicalWorkItemProjection> {
+  return runIntegratedAssessmentAction(
+    workItemId,
+    'confirm-for-aeo',
+    'OPENCLAW_OVERALL_CONFIRMATION_ACCESS_DENIED',
+    '确认当前整体综合用于 AEO 失败',
+  );
+}
+
 async function runIntegratedAssessmentAction(
   workItemId: string,
-  action: 'base-rules' | 'overall-synthesis',
+  action: 'base-rules' | 'overall-synthesis' | 'confirm-for-aeo',
   deniedCode: string,
   logMessage: string,
 ): Promise<CanonicalWorkItemProjection> {

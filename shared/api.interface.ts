@@ -511,6 +511,18 @@ export interface CanonicalOpenClawOverallProjection {
   staleReason: 'BASE_RULE_RESULT_CHANGED' | null;
 }
 
+export interface CanonicalOverallForAeoConfirmationProjection {
+  status: 'HUMAN_CONFIRMED';
+  authority: 'CANONICAL_WORKITEM_SERVER_FRESH_READ';
+  workItemRevision: number;
+  overallRevision: number;
+  overallArtifactRef: string;
+  overallArtifactSha256: string;
+  actionAttemptId: string;
+  confirmingActorUserId: string;
+  confirmedAt: string;
+}
+
 export interface CanonicalIntegratedAssessmentProjection {
   status:
     | 'BASE_RULE_CANDIDATE_READY'
@@ -518,6 +530,10 @@ export interface CanonicalIntegratedAssessmentProjection {
     | 'OVERALL_CANDIDATE_STALE';
   baseRules: CanonicalBaseRuleCandidateProjection;
   overallSynthesis: CanonicalOpenClawOverallProjection | null;
+  /** Absent on older projections; only an explicit authenticated host action sets it. */
+  overallForAeoConfirmation?:
+    | CanonicalOverallForAeoConfirmationProjection
+    | null;
 }
 
 export interface CanonicalAeoCandidateArtifactProjection {

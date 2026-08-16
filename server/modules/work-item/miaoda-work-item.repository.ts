@@ -36,6 +36,7 @@ export type AssessmentActionType =
   | 'RESYNTHESIZE_ASSESSMENT'
   | 'PERSIST_BASE_RULE_RESULT'
   | 'PERSIST_OPENCLAW_OVERALL'
+  | 'CONFIRM_OPENCLAW_OVERALL_FOR_AEO'
   | 'RUN_AEO_CANDIDATE_LOOP';
 
 export interface AssessmentActionAttemptReservation {
