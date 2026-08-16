@@ -1,6 +1,4 @@
-export {
-  AssessmentHostConsumerModule,
-} from './assessment-host-consumer.module';
+export { AssessmentHostConsumerModule } from './assessment-host-consumer.module';
 export {
   AssessmentHostConsumerService,
   type AssessmentHostCandidateRequest,
@@ -21,3 +19,12 @@ export {
   type ExternalDiscoveryCandidateDraft,
   type HostedOpenClawDiscoveryResult,
 } from './external-discovery-assessment';
+export {
+  BASE_ONE_SHOT_PURPOSE,
+  BaseOneShotAssessmentProcessor,
+  buildBaseOneShotAssessmentPacket,
+  consumeBaseOneShotAssessmentResult,
+  type BaseOneShotAssessmentPacket,
+  type BaseOneShotAssessmentResult,
+  type BaseOneShotCorrelation,
+} from './base-one-shot-assessment.processor';
