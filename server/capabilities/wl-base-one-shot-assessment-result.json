@@ -1,0 +1,88 @@
+{
+  "id": "wl-base-one-shot-assessment-result",
+  "pluginKey": "@official-plugins/feishu-bitable",
+  "pluginVersion": "1.0.22",
+  "name": "WiseLink 单次全量规则评估只读结果",
+  "description": "只读获取既有 Base 单次全量规则评估输入与输出；不得触发 AI、更新记录或删除记录。",
+  "icon": "",
+  "paramsSchema": {},
+  "formValue": {
+    "appToken": "TWOVbMcJBaMvlDsvY5GceKibn7d",
+    "tableID": "tblV8mJeyvVZcthC",
+    "fields": [
+      {
+        "id": "fld1jDDXe6",
+        "name": "LLM输入",
+        "type": 1,
+        "bizType": "Text",
+        "readable": true,
+        "writeable": false
+      },
+      {
+        "id": "fld8rfdCni",
+        "name": "综合评估草稿｜DeepSeek-V4｜DEV.输出结果",
+        "type": 1,
+        "bizType": "Text",
+        "readable": true,
+        "writeable": false
+      },
+      {
+        "id": "fldBwbdujG",
+        "name": "处理状态",
+        "type": 3,
+        "bizType": "SingleSelect",
+        "enumValues": [
+          "REQUESTED",
+          "READY",
+          "INVALID",
+          "CONSUMED",
+          "STALE",
+          "FAILED",
+          "SUCCEEDED"
+        ],
+        "readable": true,
+        "writeable": false
+      },
+      {
+        "id": "flda5xI0Xd",
+        "name": "ActionAttemptId",
+        "type": 1,
+        "bizType": "Text",
+        "readable": true,
+        "writeable": false
+      },
+      {
+        "id": "fldotMD28b",
+        "name": "TransportId",
+        "type": 1,
+        "bizType": "Text",
+        "readable": true,
+        "writeable": false
+      },
+      {
+        "id": "fldwUN1FU3",
+        "name": "CriterionCount",
+        "type": 2,
+        "bizType": "Number",
+        "readable": true,
+        "writeable": false
+      },
+      {
+        "id": "fldYSNUjB2",
+        "name": "WorkItemId",
+        "type": 1,
+        "bizType": "Text",
+        "readable": true,
+        "writeable": false
+      },
+      {
+        "id": "fldhxNdo6a",
+        "name": "ExpectedRevision",
+        "type": 2,
+        "bizType": "Number",
+        "readable": true,
+        "writeable": false
+      }
+    ]
+  }
+}
