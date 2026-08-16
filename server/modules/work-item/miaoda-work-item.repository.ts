@@ -33,7 +33,8 @@ export interface WorkItemReservation {
 
 export type AssessmentActionType =
   | 'EVALUATE_JOB_AID'
-  | 'RESYNTHESIZE_ASSESSMENT';
+  | 'RESYNTHESIZE_ASSESSMENT'
+  | 'RUN_AEO_CANDIDATE_LOOP';
 
 export interface AssessmentActionAttemptReservation {
   attemptId: string;

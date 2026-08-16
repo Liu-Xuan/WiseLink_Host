@@ -8,6 +8,23 @@ import type {
 import { logger } from '@lark-apaas/client-toolkit/logger';
 import { axiosForBackend } from '@lark-apaas/client-toolkit/utils/getAxiosForBackend';
 
+export interface Phase10AeoCandidateLoopResult {
+  schemaVersion: 'wiselink.3_1.phase10_aeo_candidate_loop.v1';
+  status: 'CANDIDATE_WORD_EXPORTED';
+  workItem: CanonicalWorkItemProjection;
+  transition: [5, 9];
+  targetIdentity: 'AEO-B787-46-0015-R09';
+  disposition: 'ADOPT';
+  sourceCandidateCount: number;
+  word: {
+    artifactRef: string;
+    artifactSha256: string;
+    byteLength: number;
+    mediaType: string;
+    ooxmlZipSignature: 'PK';
+  };
+}
+
 export async function getDocumentParsingPage(
   workItemId: string,
   query: string,
@@ -89,6 +106,24 @@ export async function resynthesizeAssessment(
     return response.data;
   } catch (error) {
     logger.error('按工程师修改重综合失败', error);
+    throw error;
+  }
+}
+
+export async function runPhase10AeoCandidateLoop(): Promise<Phase10AeoCandidateLoopResult> {
+  try {
+    const response = await axiosForBackend<Phase10AeoCandidateLoopResult>({
+      url: '/api/canonical-host/validation/phase10-aeo-candidate-loop',
+      method: 'POST',
+      data: {},
+      meta: { autoJumpToLogin: false },
+    });
+    if (response.status === 401 || response.status === 403) {
+      throw new Error('AEO_PHASE10_ACTION_ACCESS_DENIED');
+    }
+    return response.data;
+  } catch (error) {
+    logger.error('执行 Phase10 AEO 候选循环失败', error);
     throw error;
   }
 }

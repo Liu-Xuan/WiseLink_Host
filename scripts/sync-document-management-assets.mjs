@@ -26,10 +26,26 @@ for (const assetName of producerAssets) {
   copiedProducerAssets.push({ producerAssetSource, producerAssetTarget });
 }
 
+const phase10TargetDirectory = resolve(
+  root,
+  'dist/server/runtime-assets/phase10-aeo',
+);
+await mkdir(phase10TargetDirectory, { recursive: true });
+const phase10SeedSource = resolve(
+  root,
+  'test/fixtures/aeo-r09-authoring-seed.json',
+);
+const phase10SeedTarget = resolve(
+  phase10TargetDirectory,
+  'aeo-r09-authoring-seed.json',
+);
+await copyFile(phase10SeedSource, phase10SeedTarget);
+
 process.stdout.write(`${JSON.stringify({
   source,
   target,
   copiedProducerAssets,
+  phase10Seed: { phase10SeedSource, phase10SeedTarget },
   copiedForHostedRuntime: true,
   onlineMutationPerformed: false,
 })}\n`);

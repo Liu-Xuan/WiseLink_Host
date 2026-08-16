@@ -5,6 +5,7 @@ import {
   ArrowUpRight,
   CheckCircle2,
   ClipboardCheck,
+  FileOutput,
   FileText,
   Fingerprint,
   LockKeyhole,
@@ -40,6 +41,9 @@ export default function DocumentParsingPage() {
   const [assessmentError, setAssessmentError] = useState<string | null>(null);
   const [criterionId, setCriterionId] = useState<string>('');
   const [engineerComment, setEngineerComment] = useState<string>('');
+  const [aeoRunning, setAeoRunning] = useState<boolean>(false);
+  const [aeoAttempted, setAeoAttempted] = useState<boolean>(false);
+  const [aeoError, setAeoError] = useState<string | null>(null);
 
   async function load(nextQuery: string): Promise<void> {
     if (!workItemId) {
@@ -84,6 +88,8 @@ export default function DocumentParsingPage() {
   const assessmentEligible =
     data.workItem.classification.status === 'CONFIRMED' &&
     data.workItem.classification.normalizedFamily === 'SB';
+  const aeo = data.workItem.aeo ?? null;
+  const phase10Action = data.validationActions.phase10AeoCandidateLoop;
   const results: UnifiedReaderQueryResult[] = data.queryResults;
   const fileLabel: string = `${data.workItem.classification.normalizedFamily} · ${short(data.workItem.source.sourceArtifactId, 20, 8)}`;
 
@@ -375,6 +381,69 @@ export default function DocumentParsingPage() {
           )}
           {assessmentError ? (
             <p className="parse-assessment-error">{assessmentError}</p>
+          ) : null}
+        </section>
+      ) : null}
+
+      {aeo || phase10Action.enabled ? (
+        <section className="parse-aeo-panel" aria-label="AEO 候选编写">
+          <div className="parse-panel-label">
+            <FileOutput /> AEO 候选编写 · 同一 WorkItem
+          </div>
+          <div className="parse-aeo-heading">
+            <div>
+              <p className="parse-aeo-kicker">SERVER-CONFIRMED TARGET</p>
+              <h2>{aeo?.targetIdentity ?? phase10Action.targetIdentity}</h2>
+            </div>
+            <span>{aeo?.status ?? 'VALIDATION READY'}</span>
+          </div>
+          <p>
+            处置方式：{aeo?.disposition ?? phase10Action.disposition}；权限：
+            {aeo?.authorityLevel ?? phase10Action.authorityLevel}。该纵切只产生
+            Working / Draft candidate / Word candidate，不形成正式 Draft、发布或工程结论。
+          </p>
+          {aeo ? (
+            <div className="parse-aeo-artifacts">
+              {aeo.artifacts.map((artifact) => (
+                <div key={`${artifact.artifactKind}:${artifact.artifactSha256}`}>
+                  <strong>{artifact.artifactKind}</strong>
+                  <span>{artifact.byteLength.toLocaleString()} bytes</span>
+                  <small>{short(artifact.artifactSha256, 18, 10)}</small>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <button
+              data-testid="phase10-aeo-candidate-loop-trigger"
+              type="button"
+              disabled={aeoRunning || aeoAttempted}
+              onClick={() => {
+                if (aeoRunning || aeoAttempted) return;
+                setAeoAttempted(true);
+                setAeoRunning(true);
+                setAeoError(null);
+                void canonicalHost
+                  .runPhase10AeoCandidateLoop()
+                  .then(() => load(query.trim()))
+                  .catch((cause: unknown) => {
+                    setAeoError(
+                      cause instanceof Error
+                        ? cause.message
+                        : 'AEO_PHASE10_CANDIDATE_LOOP_FAILED',
+                    );
+                  })
+                  .finally(() => setAeoRunning(false));
+              }}
+            >
+              {aeoRunning
+                ? 'RUNNING 5 → 9'
+                : aeoAttempted
+                  ? 'ATTEMPTED'
+                  : 'RUN PHASE 10 AEO ONCE'}
+            </button>
+          )}
+          {aeoError ? (
+            <p className="parse-assessment-error">{aeoError}</p>
           ) : null}
         </section>
       ) : null}

@@ -30,6 +30,7 @@ export interface AeoAcceptedOemReferenceActualBytes {
 export interface AeoSameWorkItemAssessmentAdapterInput {
   canonicalWorkItem: unknown;
   assessmentActualBytes: Uint8Array;
+  sourceParsedPackageActualBytes: Uint8Array;
   authoringSeed: AeoWorkItemReadModel['authoringSeed'];
   authoringSeedActualBytes: Uint8Array;
   aeoTargetIdentity: AeoServerConfirmedTargetIdentity;
@@ -138,6 +139,17 @@ export function adaptSameWorkItemAssessmentForAeo(
     input.assessmentActualBytes,
     'ASSESSMENT_ACTUAL_BYTES_INVALID',
   );
+  verifyBytes(
+    input.sourceParsedPackageActualBytes,
+    text(packageArtifact.sha256, 'package.artifact.sha256'),
+    integer(packageArtifact.byteLength, 'package.artifact.byteLength'),
+    'SOURCE_PARSED_PACKAGE_ACTUAL_BYTES_MISMATCH',
+  );
+  const sourceParsedPackage = parseJson(
+    input.sourceParsedPackageActualBytes,
+    'SOURCE_PARSED_PACKAGE_ACTUAL_BYTES_INVALID',
+  );
+  assertCurrentSourceParsedPackage({ source, pkg, sourceParsedPackage });
   assertCurrentResynthesizedAssessment({
     host,
     source,
@@ -145,13 +157,15 @@ export function adaptSameWorkItemAssessmentForAeo(
     assessment,
     assessmentResult,
   });
-  const discoveryBoundary = asRecord(
-    asRecord(assessmentResult.externalDiscovery, 'externalDiscovery')
-      .authorityBoundary,
-    'externalDiscovery.authorityBoundary',
-  );
-  if (discoveryBoundary.externalDiscoveryIsEvidence !== false) {
-    fail('EXTERNAL_DISCOVERY_MUST_NOT_BE_EVIDENCE');
+  if (assessmentResult.externalDiscovery !== null) {
+    const discoveryBoundary = asRecord(
+      asRecord(assessmentResult.externalDiscovery, 'externalDiscovery')
+        .authorityBoundary,
+      'externalDiscovery.authorityBoundary',
+    );
+    if (discoveryBoundary.externalDiscoveryIsEvidence !== false) {
+      fail('EXTERNAL_DISCOVERY_MUST_NOT_BE_EVIDENCE');
+    }
   }
   assertServerConfirmedTarget(input.aeoTargetIdentity);
   verifyBytes(
@@ -240,7 +254,38 @@ export function adaptSameWorkItemAssessmentForAeo(
   );
   const candidates: AeoSimilarCandidateSummary[] = [];
   const referenceArtifacts: AeoSameWorkItemAssessmentAdapterResult['referenceArtifacts'] =
-    [];
+    [
+      {
+        artifactRef: text(packageArtifact.ref, 'package.artifact.ref'),
+        artifactSha256: text(packageArtifact.sha256, 'package.artifact.sha256'),
+        bytes: Uint8Array.from(input.sourceParsedPackageActualBytes),
+      },
+    ];
+  const sourceContentUnits = asArray(
+    sourceParsedPackage.contentUnits,
+    'sourceParsedPackage.contentUnits',
+  );
+  for (const [index, rawUnit] of sourceContentUnits.entries()) {
+    const unit = asRecord(rawUnit, 'sourceParsedPackage.contentUnit');
+    candidates.push({
+      candidateId: text(unit.unitId, 'sourceParsedPackage.contentUnit.unitId'),
+      sourceKind: 'SB_SOURCE',
+      title: `${text(pkg.title, 'package.title')} · ${text(
+        unit.kind,
+        'sourceParsedPackage.contentUnit.kind',
+      )} ${index + 1}`,
+      reason:
+        `同一 WorkItem 的 Reader-accepted SB ParsedPackage 内容单元；` +
+        `DocumentVersion ${text(source.documentVersionId, 'source.documentVersionId')}；` +
+        '仅为待复核来源候选，不从 applicability 计数推断工程事实。',
+      sourceArtifactRef: text(packageArtifact.ref, 'package.artifact.ref'),
+      sourceArtifactSha256: text(
+        packageArtifact.sha256,
+        'package.artifact.sha256',
+      ),
+      eligibility: 'CANDIDATE_REQUIRES_REVIEW',
+    });
+  }
   for (const rawRecord of knowledgeRecords) {
     const record = asRecord(rawRecord, 'knowledgeContext.record');
     if (
@@ -316,7 +361,7 @@ export function adaptSameWorkItemAssessmentForAeo(
       bytes: Uint8Array.from(accepted.reference.bytes),
     });
   }
-  if (candidates.length === 0) fail('NO_DM_ADOPTED_OEM_REFERENCE');
+  if (candidates.length === 0) fail('NO_REVIEWABLE_SOURCE_CANDIDATE');
 
   const workItem = normalizeWorkItemReadModel({
     schemaVersion: AEO_ARTIFACT_INDEX_VERSION,
@@ -451,6 +496,47 @@ export function adaptSameWorkItemAssessmentForAeo(
     authority:
       'SERVER_FRESH_READ_CANDIDATES_NOT_AUTOMATIC_ADOPTION_NOT_ENGINEERING_APPROVAL',
   };
+}
+
+function assertCurrentSourceParsedPackage(input: {
+  source: Record<string, unknown>;
+  pkg: Record<string, unknown>;
+  sourceParsedPackage: Record<string, unknown>;
+}): void {
+  exactText(
+    input.sourceParsedPackage.packageId,
+    text(input.pkg.packageId, 'package.packageId'),
+    'sourceParsedPackage.packageId',
+  );
+  const source = asRecord(
+    input.sourceParsedPackage.source,
+    'sourcePackage.source',
+  );
+  const legacyIdentifiers = asArray(
+    source.legacyIdentifiers,
+    'sourcePackage.source.legacyIdentifiers',
+  );
+  for (const [namespace, expected] of [
+    [
+      'wiselink_document_id',
+      text(input.source.documentId, 'source.documentId'),
+    ],
+    [
+      'wiselink_document_version_id',
+      text(input.source.documentVersionId, 'source.documentVersionId'),
+    ],
+  ] as const) {
+    if (
+      !legacyIdentifiers.some((entry) => {
+        const identifier = asRecord(entry, 'sourcePackage.legacyIdentifier');
+        return (
+          identifier.namespace === namespace && identifier.value === expected
+        );
+      })
+    ) {
+      fail(`SOURCE_PARSED_PACKAGE_IDENTITY_MISMATCH:${namespace}`);
+    }
+  }
 }
 
 function assertCurrentResynthesizedAssessment(input: {

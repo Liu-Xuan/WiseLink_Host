@@ -49,7 +49,7 @@ describe('Phase 6D AEO host consumption', () => {
       'utf8',
     );
     expect(sourceReceipt).toContain(
-      'cf9a377497d2bfa0c514de4c0c4ff60a3bfc3278',
+      '8a2ea67aea5d60c0c72750a9e539404214296aeb',
     );
     expect(adapterSource).toContain('ASSESSMENT_EXPLICIT_RESYNTHESIS_REQUIRED');
     expect(adapterSource).toContain('assertCurrentResynthesizedAssessment');

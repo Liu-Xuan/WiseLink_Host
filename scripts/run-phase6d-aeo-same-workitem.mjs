@@ -159,15 +159,20 @@ export async function runPhase6dAeoSameWorkItemLoop(input) {
   try {
     const adapter = context.get(publicApi.AEO_SAME_WORKITEM_ASSESSMENT_ADAPTER);
     const assessment = JSON.parse(Buffer.from(input.assessmentActualBytes).toString('utf8'));
-    const reviewed = assessment.overall.context.knowledgeContext.records[0];
-    assert.equal(
-      reviewed.externalDocumentVersionId,
-      'document_version_c71fbc457cdc5e7a05725a4d',
-    );
-    const fast62 = JSON.parse(Buffer.from(input.fast62Bytes).toString('utf8'));
+    const reviewed = assessment.overall.context.knowledgeContext.records[0] ?? null;
+    if (!input.phase10Hosted) {
+      assert.equal(
+        reviewed?.externalDocumentVersionId,
+        'document_version_c71fbc457cdc5e7a05725a4d',
+      );
+    }
+    const fast62 = input.fast62Bytes
+      ? JSON.parse(Buffer.from(input.fast62Bytes).toString('utf8'))
+      : null;
     const adapterInput = (canonicalWorkItem, assessmentActualBytes) => ({
       canonicalWorkItem,
       assessmentActualBytes,
+      sourceParsedPackageActualBytes: input.sourceParsedPackageActualBytes,
       authoringSeed: bundle.workItem.authoringSeed,
       authoringSeedActualBytes: r09Bytes,
       aeoTargetIdentity: {
@@ -177,43 +182,62 @@ export async function runPhase6dAeoSameWorkItemLoop(input) {
         confirmationRef:
           'artifact://canonical-workitem/phase6d/confirmed-aeo-target',
       },
-      acceptedOemReferences: [
-        {
-          documentVersionId: reviewed.externalDocumentVersionId,
-          parsedPackageId: fast62.packageId,
-          artifactRef: reviewed.parsedPackageArtifactRef,
-          artifactSha256: sha256(input.fast62Bytes),
-          readerReceiptId: 'READER-FAST62-PHASE6D-LOCAL',
-          readerRevision: 'canonical-host.phase6d.local',
-          validationStatus: 'ACCEPTED',
-          bytes: input.fast62Bytes,
-        },
-      ],
+      acceptedOemReferences:
+        reviewed && fast62 && input.fast62Bytes
+          ? [
+              {
+                documentVersionId: reviewed.externalDocumentVersionId,
+                parsedPackageId: fast62.packageId,
+                artifactRef: reviewed.parsedPackageArtifactRef,
+                artifactSha256: sha256(input.fast62Bytes),
+                readerReceiptId: 'READER-FAST62-PHASE6D-LOCAL',
+                readerRevision: 'canonical-host.phase6d.local',
+                validationStatus: 'ACCEPTED',
+                bytes: input.fast62Bytes,
+              },
+            ]
+          : [],
       observedAt: '2026-08-15T00:00:00.000Z',
     });
-    assert.equal(input.canonicalWorkItem.revision, 6);
-    assert.equal(
-      input.canonicalWorkItem.assessment.resynthesisAttemptId,
-      'ATT-LOCAL-RESYNTHESIZE_ASSESSMENT-5',
-    );
-    assert.equal(
-      input.canonicalWorkItem.assessment.artifact.sha256,
-      '2113ab042ede84105f5dd976aef5ec54cb9bf794edfec79ac75844f676fa1da0',
-    );
-    assert.throws(
-      () => adapter.adapt(adapterInput(
-        input.initialCandidateWorkItem,
-        input.initialCandidateAssessmentBytes,
-      )),
-      /ASSESSMENT_EXPLICIT_RESYNTHESIS_REQUIRED/u,
-    );
-    assert.throws(
-      () => adapter.adapt(adapterInput(
-        input.canonicalWorkItem,
-        input.previousResynthesisAssessmentBytes,
-      )),
-      /ASSESSMENT_ACTUAL_BYTES_MISMATCH/u,
-    );
+    if (input.phase10Hosted) {
+      assert.equal(input.canonicalWorkItem.revision, 5);
+      assert.equal(
+        input.canonicalWorkItem.assessment.resynthesisAttemptId,
+        'ATT-607f98a9-a2d0-401b-9515-9bd5e6059654',
+      );
+      assert.equal(
+        input.canonicalWorkItem.assessment.artifact.sha256,
+        '33fa0888b8b1756b4fdfdfbd849dddc97edc93e938e558cbb53015f16481df22',
+      );
+    } else {
+      assert.equal(input.canonicalWorkItem.revision, 6);
+      assert.equal(
+        input.canonicalWorkItem.assessment.resynthesisAttemptId,
+        'ATT-LOCAL-RESYNTHESIZE_ASSESSMENT-5',
+      );
+      assert.equal(
+        input.canonicalWorkItem.assessment.artifact.sha256,
+        '2113ab042ede84105f5dd976aef5ec54cb9bf794edfec79ac75844f676fa1da0',
+      );
+    }
+    if (input.initialCandidateWorkItem && input.initialCandidateAssessmentBytes) {
+      assert.throws(
+        () => adapter.adapt(adapterInput(
+          input.initialCandidateWorkItem,
+          input.initialCandidateAssessmentBytes,
+        )),
+        /ASSESSMENT_EXPLICIT_RESYNTHESIS_REQUIRED/u,
+      );
+    }
+    if (input.previousResynthesisAssessmentBytes) {
+      assert.throws(
+        () => adapter.adapt(adapterInput(
+          input.canonicalWorkItem,
+          input.previousResynthesisAssessmentBytes,
+        )),
+        /ASSESSMENT_ACTUAL_BYTES_MISMATCH/u,
+      );
+    }
     assert.deepEqual(bundle.artifactIo, { persist: 0, read: 0 });
     const adapted = adapter.adapt(adapterInput(
       input.canonicalWorkItem,
@@ -225,6 +249,10 @@ export async function runPhase6dAeoSameWorkItemLoop(input) {
     assert.equal(adapted.workItem.sourceContext.assessment.authorityLevel, 'candidate_only');
     assert.equal(adapted.authority,
       'SERVER_FRESH_READ_CANDIDATES_NOT_AUTOMATIC_ADOPTION_NOT_ENGINEERING_APPROVAL');
+    assert.equal(
+      adapted.candidates.some((candidate) => candidate.sourceKind === 'SB_SOURCE'),
+      true,
+    );
     Object.assign(bundle.workItem, structuredClone(adapted.workItem));
     bundle.candidates.push(...adapted.candidates);
     for (const artifact of adapted.referenceArtifacts) {
@@ -265,7 +293,9 @@ export async function runPhase6dAeoSameWorkItemLoop(input) {
       'READY',
       JSON.stringify(session.blockers ?? [], null, 2),
     );
-    const dispositionUsages = ['ADOPT', 'ADAPT', 'REFERENCE_ONLY', 'IGNORE'];
+    const dispositionUsages = input.phase10Hosted
+      ? ['ADOPT']
+      : ['ADOPT', 'ADAPT', 'REFERENCE_ONLY', 'IGNORE'];
     const workingResults = [];
     const dispositionReadback = [];
     for (const [index, usage] of dispositionUsages.entries()) {
@@ -277,7 +307,9 @@ export async function runPhase6dAeoSameWorkItemLoop(input) {
         ...common,
         action: 'PERSIST_WORKING_COPY',
         expectedStateVersion: bundle.workItem.stateVersion,
-        idempotencyKey: `phase8:working:${usage.toLowerCase()}`,
+        idempotencyKey:
+          `${input.phase10Hosted ? 'phase10' : 'phase8'}:` +
+          `working:${usage.toLowerCase()}`,
         expectedWorkingRevision: session.workingRevision,
         expectedContentHash: session.contentHash,
         projection: session.projection,
@@ -287,7 +319,8 @@ export async function runPhase6dAeoSameWorkItemLoop(input) {
           targetBlockId: targetBlock.blockId,
           usage,
           decisionNote:
-            `Phase 8 local-only explicit ${usage}; not engineering approval.`,
+            `${input.phase10Hosted ? 'Phase 10' : 'Phase 8'} ` +
+            `local-only explicit ${usage}; not engineering approval.`,
         },
       });
       const workingBytes = await bundle.readActualBytes(
@@ -333,12 +366,23 @@ export async function runPhase6dAeoSameWorkItemLoop(input) {
     });
     const wordBytes = await bundle.readActualBytes(word.artifact.artifactRef);
     assert.equal(Buffer.from(wordBytes).subarray(0, 2).toString('ascii'), 'PK');
-    assert.equal(bundle.workItem.stateVersion, initialStateVersion + 7);
+    assert.equal(
+      bundle.workItem.stateVersion,
+      initialStateVersion + dispositionUsages.length + 3,
+    );
     assert.equal(bundle.workItem.workItemId, input.canonicalWorkItem.workItemId);
     assert.deepEqual(dispositionReadback.map((value) => value.usage), dispositionUsages);
-    assert.equal(fast62.applicability.sourceExpressions.length, 0);
-    assert.equal(fast62.applicability.normalizedCandidates.length, 0);
-    assert.equal(fast62.applicability.assignments.length, 0);
+    if (fast62) {
+      assert.equal(fast62.applicability.sourceExpressions.length, 0);
+      assert.equal(fast62.applicability.normalizedCandidates.length, 0);
+      assert.equal(fast62.applicability.assignments.length, 0);
+    }
+    const sourcePackage = JSON.parse(
+      Buffer.from(input.sourceParsedPackageActualBytes).toString('utf8'),
+    );
+    assert.equal(sourcePackage.applicability.sourceExpressions.length, 0);
+    assert.equal(sourcePackage.applicability.normalizedCandidates.length, 0);
+    assert.equal(sourcePackage.applicability.assignments.length, 0);
     assert.equal(
       [bootstrap, ...workingResults, draft, word].every(
         (result) => result.validationWriteAuthorization === null,
@@ -346,8 +390,10 @@ export async function runPhase6dAeoSameWorkItemLoop(input) {
       true,
     );
     return {
-      status: 'PHASE8_AEO_CURRENT_RESYNTHESIS_TO_WORD_PASS',
-      ownerCommit: 'cf9a377497d2bfa0c514de4c0c4ff60a3bfc3278',
+      status: input.phase10Hosted
+        ? 'PHASE10_AEO_HOSTED_INPUT_LOCAL_REPLAY_PASS'
+        : 'PHASE8_AEO_CURRENT_RESYNTHESIS_TO_WORD_PASS',
+      ownerCommit: '8a2ea67aea5d60c0c72750a9e539404214296aeb',
       defaultAdapterConfigured: false,
       configuredOnlyInLocalContext: true,
       workItemId: bundle.workItem.workItemId,
@@ -365,7 +411,11 @@ export async function runPhase6dAeoSameWorkItemLoop(input) {
         previousResynthesis: 'ASSESSMENT_ACTUAL_BYTES_MISMATCH',
         observedIo: { persist: 0, read: 0 },
       },
-      reviewedOemDocumentVersionId: reviewed.externalDocumentVersionId,
+      reviewedOemDocumentVersionId:
+        reviewed?.externalDocumentVersionId ?? null,
+      sourceCandidateCount: adapted.candidates.filter(
+        (candidate) => candidate.sourceKind === 'SB_SOURCE',
+      ).length,
       r09AuthoringSeed: {
         packageId: r09.parsePackageId,
         byteLength: r09Bytes.byteLength,
