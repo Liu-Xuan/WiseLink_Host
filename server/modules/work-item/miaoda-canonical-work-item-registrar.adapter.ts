@@ -21,6 +21,7 @@ export class MiaodaCanonicalWorkItemRegistrarAdapter
     workItemId: string;
     expectedRevision: number;
     next: Omit<CanonicalWorkItemProjection, 'revision'>;
+    syncPrimaryAttempt?: boolean;
   }): Promise<CanonicalWorkItemProjection> {
     return this.repository.compareAndSet(input);
   }

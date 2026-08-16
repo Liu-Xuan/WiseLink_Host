@@ -480,6 +480,32 @@ export interface CanonicalAssessmentCandidateProjection {
   resynthesisAttemptId: string | null;
 }
 
+export interface CanonicalAeoCandidateArtifactProjection {
+  artifactKind:
+    | 'AUTHORING_BOOTSTRAP'
+    | 'WORKING_COPY'
+    | 'DRAFT_PACKAGE'
+    | 'WORD_EXPORT';
+  artifactRef: string;
+  artifactSha256: string;
+  byteLength: number;
+  mediaType: string;
+  state: 'AVAILABLE' | 'CANDIDATE' | 'BLOCKED';
+}
+
+export interface CanonicalAeoCandidateProjection {
+  status: 'CANDIDATE_AUTHORING_IN_PROGRESS' | 'CANDIDATE_WORD_EXPORTED';
+  targetIdentity: 'AEO-B787-46-0015-R09';
+  disposition: 'ADOPT';
+  authorityLevel: 'candidate_only';
+  sourceCandidateCount: number;
+  automaticallyAdopted: false;
+  engineeringApproved: false;
+  actionAttemptId: string;
+  ownerCommit: '8a2ea67aea5d60c0c72750a9e539404214296aeb';
+  artifacts: CanonicalAeoCandidateArtifactProjection[];
+}
+
 export interface CanonicalParseAuthorizationProjection {
   action: 'PARSE_PDF';
   actorFingerprint: string;
@@ -500,6 +526,7 @@ export interface CanonicalWorkItemProjection {
   classification: CanonicalClassificationSelection;
   package: CanonicalWorkItemPackageProjection | null;
   assessment?: CanonicalAssessmentCandidateProjection | null;
+  aeo?: CanonicalAeoCandidateProjection | null;
   failure: CanonicalWorkItemFailureProjection | null;
   recordingFailure: CanonicalWorkItemRecordingFailureProjection | null;
 }
@@ -603,6 +630,14 @@ export interface CanonicalDocumentParsingPageResponse {
     action: 'READ_DOCUMENT_PARSING';
     decisionId: string;
     permissionSnapshotVersion: string;
+  };
+  validationActions: {
+    phase10AeoCandidateLoop: {
+      enabled: boolean;
+      targetIdentity: 'AEO-B787-46-0015-R09';
+      disposition: 'ADOPT';
+      authorityLevel: 'candidate_only';
+    };
   };
 }
 

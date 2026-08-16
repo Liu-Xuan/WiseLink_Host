@@ -10,6 +10,7 @@ jest.mock('@lark-apaas/client-toolkit/logger', () => ({
 
 import {
   evaluateAssessment,
+  runPhase10AeoCandidateLoop,
   resynthesizeAssessment,
 } from '../../client/src/api/canonical-host';
 
@@ -67,5 +68,23 @@ describe('canonical host assessment client', () => {
       }),
     ).rejects.toBeDefined();
     expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it('calls the fixed Phase10 path once with no client identity or locator', async () => {
+    request.mockResolvedValue({
+      status: 201,
+      data: { status: 'CANDIDATE_WORD_EXPORTED' },
+    });
+
+    await expect(runPhase10AeoCandidateLoop()).resolves.toEqual({
+      status: 'CANDIDATE_WORD_EXPORTED',
+    });
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(request).toHaveBeenCalledWith({
+      url: '/api/canonical-host/validation/phase10-aeo-candidate-loop',
+      method: 'POST',
+      data: {},
+      meta: { autoJumpToLogin: false },
+    });
   });
 });

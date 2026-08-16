@@ -573,6 +573,7 @@ const phase6dAeo = process.env.WL_PHASE6D_AEO_LOOP === '1'
       return runPhase6dAeoSameWorkItemLoop({
         canonicalWorkItem: page.workItem,
         assessmentActualBytes,
+        sourceParsedPackageActualBytes: packageBytes,
         initialCandidateWorkItem: initialCandidatePage.workItem,
         initialCandidateAssessmentBytes: initialAssessmentBytes,
         previousResynthesisAssessmentBytes: previousResynthesisBytes,

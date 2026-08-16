@@ -297,6 +297,14 @@ export class CanonicalHostVerticalService {
         permissionSnapshotVersion:
           actionContext.decision.permissionSnapshotVersion,
       },
+      validationActions: {
+        phase10AeoCandidateLoop: {
+          enabled: phase10AeoActionEnabled(projection),
+          targetIdentity: 'AEO-B787-46-0015-R09',
+          disposition: 'ADOPT',
+          authorityLevel: 'candidate_only',
+        },
+      },
     };
   }
 
@@ -525,6 +533,22 @@ export class CanonicalHostVerticalService {
       documentVersionId: request.source.documentVersionId,
     });
   }
+}
+
+function phase10AeoActionEnabled(
+  projection: CanonicalWorkItemProjection,
+): boolean {
+  return (
+    process.env.WL_PHASE10_AEO_VALIDATION_ENABLED === 'true' &&
+    Boolean(process.env.WL_PHASE10_AEO_VALIDATION_RUN_ID?.trim()) &&
+    projection.workItemId === 'WI-9fd1dd58-c7ed-4889-bc67-9a5d3bfbd52e' &&
+    projection.revision === 5 &&
+    projection.source.documentVersionId ===
+      'document_version_f4813607b91ee1a20e754e2d' &&
+    projection.assessment?.artifact.sha256 ===
+      '33fa0888b8b1756b4fdfdfbd849dddc97edc93e938e558cbb53015f16481df22' &&
+    !projection.aeo
+  );
 }
 
 function requiredOpenApiText(

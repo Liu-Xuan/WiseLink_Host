@@ -40,6 +40,7 @@ import { SystemCanonicalHostClockAdapter } from './system-canonical-host-clock.a
 import { UnconfiguredFailureValidationWriteAuthorizationAdapter } from './unconfigured-failure-validation-write-authorization.adapter';
 import { AssessmentHostConsumerModule } from '../assessment-workbench/assessment-host-consumer.public-api';
 import { CanonicalHostAssessmentService } from './canonical-host-assessment.service';
+import { CanonicalHostAeoService } from './canonical-host-aeo.service';
 
 export interface CanonicalHostModuleOptions {
   imports?: ModuleMetadata['imports'];
@@ -65,6 +66,7 @@ export interface CanonicalHostModuleOptions {
     OrdinaryWorkItemService,
     OrdinaryFailureValidationWriteAuthorizationAdapter,
     CanonicalHostAssessmentService,
+    CanonicalHostAeoService,
   ],
 })
 export class CanonicalHostModule {
@@ -156,11 +158,13 @@ export class CanonicalHostModule {
         OrdinaryWorkItemService,
         OrdinaryFailureValidationWriteAuthorizationAdapter,
         CanonicalHostAssessmentService,
+        CanonicalHostAeoService,
       ],
       exports: [
         CanonicalEntryFacadeService,
         CanonicalHostVerticalService,
         CanonicalHostAssessmentService,
+        CanonicalHostAeoService,
         CANONICAL_HOST_BINDING,
       ],
     };

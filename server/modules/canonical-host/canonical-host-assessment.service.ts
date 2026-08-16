@@ -158,6 +158,7 @@ export class CanonicalHostAssessmentService {
       const updated = await this.registrar.compareAndSet({
         workItemId: workItem.workItemId,
         expectedRevision: workItem.revision,
+        syncPrimaryAttempt: false,
         next: {
           ...withoutRevision(workItem),
           assessment: projection,
@@ -233,6 +234,7 @@ export class CanonicalHostAssessmentService {
       const updated = await this.registrar.compareAndSet({
         workItemId: workItem.workItemId,
         expectedRevision: workItem.revision,
+        syncPrimaryAttempt: false,
         next: {
           ...withoutRevision(workItem),
           assessment: projection,

@@ -24,7 +24,8 @@ export interface CanonicalAuthorizationDecision {
     | 'READ_DOCUMENT_PARSING'
     | 'QUERY_PARSED_UNITS'
     | 'EVALUATE_JOB_AID'
-    | 'RESYNTHESIZE_ASSESSMENT';
+    | 'RESYNTHESIZE_ASSESSMENT'
+    | 'RUN_AEO_CANDIDATE_LOOP';
   allowed: boolean;
   actorFingerprint: string;
   decisionId: string;
@@ -113,6 +114,7 @@ export interface CanonicalWorkItemRegistrarPort {
     workItemId: string;
     expectedRevision: number;
     next: Omit<CanonicalWorkItemProjection, 'revision'>;
+    syncPrimaryAttempt?: boolean;
   }): Promise<CanonicalWorkItemProjection>;
   getExact(input: {
     workItemId: string;
