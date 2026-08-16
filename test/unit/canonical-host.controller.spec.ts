@@ -40,19 +40,18 @@ function target() {
       .fn()
       .mockResolvedValue({ revision: 6 }),
   };
-  const aeo = {
-    runPhase10CandidateLoop: jest.fn().mockResolvedValue({
-      status: 'CANDIDATE_WORD_EXPORTED',
-    }),
+  const integratedAssessments = {
+    persistBaseRuleCandidate: jest.fn().mockResolvedValue({ revision: 7 }),
+    persistOpenClawOverall: jest.fn().mockResolvedValue({ revision: 8 }),
   };
   return {
     assessments,
-    aeo,
+    integratedAssessments,
     controller: new CanonicalHostController(
       {} as never,
       {} as never,
       assessments as never,
-      aeo as never,
+      integratedAssessments as never,
     ),
   };
 }
@@ -165,34 +164,77 @@ describe('CanonicalHostController assessment actions', () => {
     expect(assessments.evaluateCandidate).not.toHaveBeenCalled();
   });
 
-  it('runs the fixed Phase10 action with an empty body and server actor only', async () => {
-    const { aeo, controller } = target();
+  it('exposes the two integrated assessment steps only as authenticated empty-body actions', async () => {
+    const { controller, integratedAssessments } = target();
 
     await expect(
-      controller.runPhase10AeoCandidateLoop({}, HOST_REQUEST as never),
-    ).resolves.toEqual({ status: 'CANDIDATE_WORD_EXPORTED' });
-    expect(aeo.runPhase10CandidateLoop).toHaveBeenCalledTimes(1);
-    expect(aeo.runPhase10CandidateLoop).toHaveBeenCalledWith(
-      expect.objectContaining({
-        userId: 'engineer-1001',
-        tenantId: 'tenant-2001',
-        appId: 'app_17bzc551rsg',
-      }),
+      controller.persistBaseRuleCandidate(
+        'WI-SB-1001',
+        {},
+        HOST_REQUEST as never,
+      ),
+    ).resolves.toEqual({ revision: 7 });
+    await expect(
+      controller.persistOpenClawOverall(
+        'WI-SB-1001',
+        {},
+        HOST_REQUEST as never,
+      ),
+    ).resolves.toEqual({ revision: 8 });
+
+    expect(integratedAssessments.persistBaseRuleCandidate).toHaveBeenCalledWith(
+      'WI-SB-1001',
+      expect.objectContaining({ userId: 'engineer-1001' }),
+    );
+    expect(integratedAssessments.persistOpenClawOverall).toHaveBeenCalledWith(
+      'WI-SB-1001',
+      expect.objectContaining({ userId: 'engineer-1001' }),
     );
   });
 
   it.each([
-    { workItemId: 'client-value' },
-    { actor: 'client-value' },
-    { package: 'client-value' },
-    { authority: true },
-    { path: '/tmp/client-value' },
-  ])('rejects every client-supplied Phase10 field', (body) => {
-    const { aeo, controller } = target();
+    ['base', { sourceResultId: 'client-result' }],
+    ['overall', { authority: 'client-authority' }],
+  ])(
+    'rejects client-supplied integrated assessment %s input before invoking a provider',
+    async (step, body) => {
+      const { controller, integratedAssessments } = target();
+
+      let caught: unknown;
+      try {
+        if (step === 'base') {
+          await controller.persistBaseRuleCandidate(
+            'WI-SB-1001',
+            body,
+            HOST_REQUEST as never,
+          );
+        } else {
+          await controller.persistOpenClawOverall(
+            'WI-SB-1001',
+            body,
+            HOST_REQUEST as never,
+          );
+        }
+      } catch (error) {
+        caught = error;
+      }
+
+      expect(caught).toBeInstanceOf(BadRequestException);
+      expect(integratedAssessments.persistBaseRuleCandidate).not.toHaveBeenCalled();
+      expect(integratedAssessments.persistOpenClawOverall).not.toHaveBeenCalled();
+    },
+  );
+
+  it('requires the authenticated host actor for integrated assessment actions', async () => {
+    const { controller, integratedAssessments } = target();
 
     expect(() =>
-      controller.runPhase10AeoCandidateLoop(body, HOST_REQUEST as never),
-    ).toThrow(BadRequestException);
-    expect(aeo.runPhase10CandidateLoop).not.toHaveBeenCalled();
+      controller.persistBaseRuleCandidate(
+        'WI-SB-1001',
+        {},
+        { userContext: null } as never,
+      ),
+    ).toThrow(UnauthorizedException);
+    expect(integratedAssessments.persistBaseRuleCandidate).not.toHaveBeenCalled();
   });
 });

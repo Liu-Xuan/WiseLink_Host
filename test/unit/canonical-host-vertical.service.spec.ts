@@ -325,6 +325,7 @@ describe('CanonicalHostVerticalService', () => {
     expect(ailyEntry).toEqual({
       entry,
       assessmentSummary: null,
+      integratedAssessmentSummary: null,
       packageSummary: expect.objectContaining({
         packageId,
         contractRevision: 'frozen.2',
@@ -349,6 +350,70 @@ describe('CanonicalHostVerticalService', () => {
       workItemId: request.workItemId,
       deepLink: `${TEST_APP_ORIGIN}/work-items/${request.workItemId}/documents`,
     });
+    const { revision, ...currentWithoutRevision } = first.workItem;
+    const integratedProjection = await registrar.compareAndSet({
+      workItemId: request.workItemId,
+      expectedRevision: revision,
+      next: {
+        ...currentWithoutRevision,
+        integratedAssessment: {
+          status: 'OVERALL_CANDIDATE_STALE',
+          baseRules: {
+            status: 'CANDIDATE_ONLY',
+            revision: 2,
+            sourceResultId: 'BASE-RULE-RESULT-2',
+            criterionSetId: 'JACS-72D0484B6F1C17A38F671F46',
+            criterionCount: 150,
+            evaluationItemCount: 150,
+            unresolvedCount: 119,
+            sourceBoundCandidateCount: 25,
+            artifact: first.workItem.package!.artifact,
+            actionAttemptId: 'ATT-BASE-RULE-2',
+          },
+          overallSynthesis: {
+            status: 'STALE',
+            revision: 1,
+            sourceResultId: 'OPENCLAW-OVERALL-1',
+            basedOnBaseRuleRevision: 1,
+            basedOnBaseRuleArtifactSha256:
+              first.workItem.package!.artifact.sha256,
+            discoveryStatus: 'ACCESS_DENIED',
+            gap: 'BOEING:UPSTREAM_CONNECT_TIMEOUT',
+            candidateRefCount: 0,
+            findingCount: 1,
+            unresolvedCount: 119,
+            authorityLevel: 'candidate_only',
+            externalDiscoveryIsEvidence: false,
+            artifact: first.workItem.package!.artifact,
+            actionAttemptId: 'ATT-OPENCLAW-OVERALL-1',
+            staleReason: 'BASE_RULE_RESULT_CHANGED',
+          },
+        },
+      },
+    });
+    const integratedStatus = await service.openApiStatus(request.workItemId);
+    const integratedPage = await service.page(
+      { workItemId: request.workItemId, query: request.query },
+      TEST_ACTOR,
+    );
+    expect(integratedProjection.revision).toBe(revision + 1);
+    expect(integratedStatus.integratedAssessmentSummary).toMatchObject({
+      status: 'OVERALL_CANDIDATE_STALE',
+      baseRules: {
+        status: 'CANDIDATE_ONLY',
+        revision: 2,
+        criterionCount: 150,
+        evaluationItemCount: 150,
+      },
+      overallSynthesis: {
+        status: 'STALE',
+        authorityLevel: 'candidate_only',
+        staleReason: 'BASE_RULE_RESULT_CHANGED',
+      },
+    });
+    expect(integratedPage.workItem.integratedAssessment).toEqual(
+      integratedStatus.integratedAssessmentSummary,
+    );
     await expect(
       service.openApiQuery({
         workItemId: request.workItemId,

@@ -22,7 +22,7 @@ import type {
 
 import { OrdinaryWorkItemService } from '../work-item/ordinary-work-item.service';
 import { CanonicalHostAssessmentService } from './canonical-host-assessment.service';
-import { CanonicalHostAeoService } from './canonical-host-aeo.service';
+import { CanonicalHostIntegratedAssessmentService } from './canonical-host-integrated-assessment.service';
 import { CanonicalHostVerticalService } from './canonical-host-vertical.service';
 import type { CanonicalHostActor } from './canonical-host.types';
 
@@ -40,7 +40,7 @@ export class CanonicalHostController {
     private readonly service: CanonicalHostVerticalService,
     private readonly workItems: OrdinaryWorkItemService,
     private readonly assessments: CanonicalHostAssessmentService,
-    private readonly aeo: CanonicalHostAeoService,
+    private readonly integratedAssessments: CanonicalHostIntegratedAssessmentService,
   ) {}
 
   @Post('work-items/parse-pdf')
@@ -135,14 +135,32 @@ export class CanonicalHostController {
     );
   }
 
-  @Post('validation/phase10-aeo-candidate-loop')
-  runPhase10AeoCandidateLoop(
+  @Post('work-items/:workItemId/integrated-assessment/base-rules')
+  persistBaseRuleCandidate(
+    @Param('workItemId') workItemId: string,
     @Body() body: unknown,
     @Req() httpRequest: Request,
   ) {
-    phase10AeoBody(body);
-    return this.aeo.runPhase10CandidateLoop(hostActor(httpRequest));
+    integratedAssessmentActionBody(body);
+    return this.integratedAssessments.persistBaseRuleCandidate(
+      requiredText(workItemId, 'workItemId'),
+      hostActor(httpRequest),
+    );
   }
+
+  @Post('work-items/:workItemId/integrated-assessment/overall-synthesis')
+  persistOpenClawOverall(
+    @Param('workItemId') workItemId: string,
+    @Body() body: unknown,
+    @Req() httpRequest: Request,
+  ) {
+    integratedAssessmentActionBody(body);
+    return this.integratedAssessments.persistOpenClawOverall(
+      requiredText(workItemId, 'workItemId'),
+      hostActor(httpRequest),
+    );
+  }
+
 }
 
 export function hostActor(request: Request): CanonicalHostActor {
@@ -163,15 +181,8 @@ function assessmentEvaluateBody(body: unknown): void {
   ordinaryBody(body, []);
 }
 
-function phase10AeoBody(body: unknown): void {
-  if (
-    !body ||
-    typeof body !== 'object' ||
-    Array.isArray(body) ||
-    Object.keys(body as Record<string, unknown>).length !== 0
-  ) {
-    throw badRequest('AEO_PHASE10_REQUEST_BODY_MUST_BE_EMPTY');
-  }
+function integratedAssessmentActionBody(body: unknown): void {
+  ordinaryBody(body, []);
 }
 
 function assessmentResynthesisBody(body: unknown): {

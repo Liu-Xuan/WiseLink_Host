@@ -1,11 +1,11 @@
 import type { FeishuNativeOemSearchRun } from '../../server/modules/external-discovery/feishu-native-oem-monitoring-ingress';
-import { MiaodaExternalCandidateStore } from '../../server/modules/external-discovery/miaoda-external-candidate.store';
+import { MiaodaExternalDiscoveryCandidateStore } from '../../server/modules/external-discovery/miaoda-external-discovery-candidate.store';
 import {
   externalDiscoveryCandidate,
   externalSearchRun,
 } from '../../server/database/schema';
 
-describe('MiaodaExternalCandidateStore transaction boundary', () => {
+describe('MiaodaExternalDiscoveryCandidateStore transaction boundary', () => {
   it('persists one run and N candidates in one database transaction', async () => {
     const state: {
       run: Record<string, unknown> | null;
@@ -17,7 +17,7 @@ describe('MiaodaExternalCandidateStore transaction boundary', () => {
         callback(transaction),
       ),
     };
-    const store = new MiaodaExternalCandidateStore(db as never);
+    const store = new MiaodaExternalDiscoveryCandidateStore(db as never);
     const run: FeishuNativeOemSearchRun = {
       searchRunRef: 'run-found-001',
       sourceSystem: 'OPENCLAW_HOSTED_DISCOVERY',
@@ -27,6 +27,7 @@ describe('MiaodaExternalCandidateStore transaction boundary', () => {
       accessRestricted: false,
       truncated: false,
       partialOnly: false,
+      failureCode: null,
       candidates: [
         {
           candidateRef: 'candidate-1',

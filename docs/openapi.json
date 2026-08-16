@@ -3,7 +3,7 @@
     "/openapi/wiselink/work-items/status": {
       "get": {
         "operationId": "getWorkItemStatus",
-        "summary": "读取 WiseLink WorkItem 状态和解析包摘要",
+        "summary": "读取 WiseLink WorkItem 状态、解析包和候选综合摘要",
         "parameters": [
           {
             "in": "query",
@@ -21,7 +21,12 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "required": ["entry", "packageSummary", "assessmentSummary"],
+                  "required": [
+                    "entry",
+                    "packageSummary",
+                    "assessmentSummary",
+                    "integratedAssessmentSummary"
+                  ],
                   "properties": {
                     "entry": {
                       "type": "object",
@@ -79,6 +84,54 @@
                         "externalDiscoveryIsEvidence": false,
                         "previousOverallStale": true,
                         "staleReason": "ENGINEER_ITEM_SET_CHANGED"
+                      }
+                    },
+                    "integratedAssessmentSummary": {
+                      "type": "object",
+                      "nullable": true,
+                      "description": "同一 WorkItem 的 Base 动态 N 规则候选与 OpenClaw candidate_only 整体综合薄投影；旧记录或结果尚未到达时为 null",
+                      "example": {
+                        "status": "OVERALL_CANDIDATE_STALE",
+                        "baseRules": {
+                          "status": "CANDIDATE_ONLY",
+                          "revision": 2,
+                          "sourceResultId": "BASE-RULE-RESULT-737-REV-2",
+                          "criterionSetId": "JACS-72D0484B6F1C17A38F671F46",
+                          "criterionCount": 150,
+                          "evaluationItemCount": 150,
+                          "unresolvedCount": 119,
+                          "sourceBoundCandidateCount": 25,
+                          "artifact": {
+                            "storeRole": "UnifiedArtifactStoreCandidate",
+                            "ref": "wiselink/integrated-assessment/base-rules/BASE-RULE-RESULT-737-REV-2.json",
+                            "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                            "byteLength": 73786,
+                            "mediaType": "application/json"
+                          },
+                          "actionAttemptId": "ATT-BASE-RULE-2"
+                        },
+                        "overallSynthesis": {
+                          "status": "STALE",
+                          "revision": 1,
+                          "sourceResultId": "OPENCLAW-OVERALL-737-REV-1",
+                          "basedOnBaseRuleRevision": 1,
+                          "discoveryStatus": "ACCESS_DENIED",
+                          "gap": "BOEING:UPSTREAM_CONNECT_TIMEOUT",
+                          "candidateRefCount": 0,
+                          "findingCount": 1,
+                          "unresolvedCount": 119,
+                          "authorityLevel": "candidate_only",
+                          "externalDiscoveryIsEvidence": false,
+                          "artifact": {
+                            "storeRole": "UnifiedArtifactStoreCandidate",
+                            "ref": "wiselink/integrated-assessment/overall/OPENCLAW-OVERALL-737-REV-1.json",
+                            "sha256": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+                            "byteLength": 8192,
+                            "mediaType": "application/json"
+                          },
+                          "actionAttemptId": "ATT-OPENCLAW-OVERALL-1",
+                          "staleReason": "BASE_RULE_RESULT_CHANGED"
+                        }
                       }
                     }
                   }

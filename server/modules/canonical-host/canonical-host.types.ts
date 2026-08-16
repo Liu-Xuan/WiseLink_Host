@@ -25,6 +25,8 @@ export interface CanonicalAuthorizationDecision {
     | 'QUERY_PARSED_UNITS'
     | 'EVALUATE_JOB_AID'
     | 'RESYNTHESIZE_ASSESSMENT'
+    | 'PERSIST_BASE_RULE_RESULT'
+    | 'PERSIST_OPENCLAW_OVERALL'
     | 'RUN_AEO_CANDIDATE_LOOP';
   allowed: boolean;
   actorFingerprint: string;
@@ -147,3 +149,56 @@ export interface CanonicalPageInput {
 }
 
 export type CanonicalQueryInput = CanonicalEntryQueryRequest;
+
+export interface CanonicalBaseRuleResult {
+  sourceResultId: string;
+  workItemId: string;
+  documentVersionId: string;
+  packageId: string;
+  packageArtifactSha256: string;
+  criterionSetId: string;
+  criterionCount: number;
+  evaluationItemCount: number;
+  unresolvedCount: number;
+  sourceBoundCandidateCount: number;
+  artifactBytes: Uint8Array;
+}
+
+export interface CanonicalBaseRuleResultProviderPort {
+  readonly configured: boolean;
+  readResult(input: {
+    workItem: CanonicalWorkItemProjection;
+    /** Server-owned ActionAttempt identity; the Base trigger must use it as Client-Token. */
+    actionAttemptId: string;
+    /** WorkItem revision that the eventual candidate must be compared-and-set against. */
+    expectedRevision: number;
+  }): Promise<CanonicalBaseRuleResult>;
+}
+
+export interface CanonicalOpenClawOverallResult {
+  sourceResultId: string;
+  workItemId: string;
+  documentVersionId: string;
+  packageId: string;
+  baseRuleRevision: number;
+  baseRuleArtifactSha256: string;
+  discoveryStatus: string;
+  gap: string | null;
+  candidateRefCount: number;
+  findingCount: number;
+  unresolvedCount: number;
+  authorityLevel: 'candidate_only';
+  externalDiscoveryIsEvidence: false;
+  artifactBytes: Uint8Array;
+}
+
+export interface CanonicalOpenClawOverallProviderPort {
+  readonly configured: boolean;
+  synthesize(input: {
+    workItem: CanonicalWorkItemProjection;
+    baseRules: import('@shared/api.interface').CanonicalBaseRuleCandidateProjection;
+    /** Server-owned ActionAttempt identity; any external trigger must use it idempotently. */
+    actionAttemptId: string;
+    expectedRevision: number;
+  }): Promise<CanonicalOpenClawOverallResult>;
+}

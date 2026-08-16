@@ -36,14 +36,11 @@ export default function DocumentParsingPage() {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [assessmentAction, setAssessmentAction] = useState<
-    'EVALUATE' | 'RESYNTHESIZE' | null
+    'EVALUATE' | 'RESYNTHESIZE' | 'BASE_RULES' | 'OPENCLAW_OVERALL' | null
   >(null);
   const [assessmentError, setAssessmentError] = useState<string | null>(null);
   const [criterionId, setCriterionId] = useState<string>('');
   const [engineerComment, setEngineerComment] = useState<string>('');
-  const [aeoRunning, setAeoRunning] = useState<boolean>(false);
-  const [aeoAttempted, setAeoAttempted] = useState<boolean>(false);
-  const [aeoError, setAeoError] = useState<string | null>(null);
 
   async function load(nextQuery: string): Promise<void> {
     if (!workItemId) {
@@ -85,13 +82,34 @@ export default function DocumentParsingPage() {
   const usagePolicy = pkg?.usagePolicy;
   const referenceOnly = usagePolicy?.presentationMode === 'REFERENCE_ONLY';
   const assessment = data.workItem.assessment ?? null;
+  const integratedAssessment = data.workItem.integratedAssessment ?? null;
   const assessmentEligible =
     data.workItem.classification.status === 'CONFIRMED' &&
     data.workItem.classification.normalizedFamily === 'SB';
   const aeo = data.workItem.aeo ?? null;
-  const phase10Action = data.validationActions.phase10AeoCandidateLoop;
   const results: UnifiedReaderQueryResult[] = data.queryResults;
   const fileLabel: string = `${data.workItem.classification.normalizedFamily} · ${short(data.workItem.source.sourceArtifactId, 20, 8)}`;
+
+  async function runIntegratedAction(
+    action: 'BASE_RULES' | 'OPENCLAW_OVERALL',
+  ): Promise<void> {
+    setAssessmentAction(action);
+    setAssessmentError(null);
+    try {
+      if (action === 'BASE_RULES') {
+        await canonicalHost.persistIntegratedBaseRules(workItemId);
+      } else {
+        await canonicalHost.persistIntegratedOpenClawOverall(workItemId);
+      }
+      await load(query.trim() || 'applicability');
+    } catch (cause) {
+      setAssessmentError(
+        cause instanceof Error ? cause.message : 'INTEGRATED_ASSESSMENT_FAILED',
+      );
+    } finally {
+      setAssessmentAction(null);
+    }
+  }
 
   return (
     <main className="parse-shell">
@@ -272,6 +290,85 @@ export default function DocumentParsingPage() {
       </section>
 
       {assessmentEligible ? (
+        <section className="parse-assessment-panel" aria-label="Base 规则与整体综合候选">
+          <div className="parse-panel-label">
+            <ClipboardCheck /> Base 动态 N 规则 + OpenClaw 整体综合 · 同一 WorkItem
+          </div>
+          {integratedAssessment ? (
+            <>
+              <div className="parse-assessment-grid">
+                <div>
+                  <strong>{integratedAssessment.baseRules.criterionCount}</strong>
+                  <span>Base 受控规则项</span>
+                </div>
+                <div>
+                  <strong>{integratedAssessment.baseRules.status}</strong>
+                  <span>
+                    {integratedAssessment.baseRules.unresolvedCount} 项未闭合 · revision{' '}
+                    {integratedAssessment.baseRules.revision}
+                  </span>
+                </div>
+                <div>
+                  <strong>
+                    {integratedAssessment.overallSynthesis?.status ??
+                      'WAITING_OPENCLAW_RESULT'}
+                  </strong>
+                  <span>
+                    {integratedAssessment.overallSynthesis
+                      ? `${integratedAssessment.overallSynthesis.findingCount} findings · ${integratedAssessment.overallSynthesis.candidateRefCount} candidate refs · revision ${integratedAssessment.overallSynthesis.revision}`
+                      : '尚未收到托管 OpenClaw candidate_only 综合'}
+                  </span>
+                </div>
+              </div>
+              {integratedAssessment.overallSynthesis ? (
+                <p>
+                  调查状态：{integratedAssessment.overallSynthesis.discoveryStatus}；
+                  gap：{integratedAssessment.overallSynthesis.gap ?? 'NONE'}；未采纳的外部发现
+                  Evidence={String(
+                    integratedAssessment.overallSynthesis
+                      .externalDiscoveryIsEvidence,
+                  )}。
+                </p>
+              ) : null}
+              {integratedAssessment.overallSynthesis === null ? (
+                <button
+                  type="button"
+                  disabled={assessmentAction !== null}
+                  onClick={() => void runIntegratedAction('OPENCLAW_OVERALL')}
+                >
+                  {assessmentAction === 'OPENCLAW_OVERALL'
+                    ? '正在运行整体综合…'
+                    : '运行 OpenClaw 整体候选综合'}
+                </button>
+              ) : null}
+            </>
+          ) : (
+            <div className="parse-assessment-empty">
+              <p>
+                WAITING_REAL_BASE_RESULT：尚未收到真实 Base 动态 N 规则处理结果；不会以
+                本地样本或固定 150/150 代替。托管 OpenClaw 只在 Base 候选到达后生成
+                candidate_only 整体综合。
+              </p>
+              <button
+                type="button"
+                disabled={assessmentAction !== null}
+                onClick={() => void runIntegratedAction('BASE_RULES')}
+              >
+                {assessmentAction === 'BASE_RULES'
+                  ? '正在运行固定规则评估…'
+                  : '运行 Base 固定规则评估'}
+              </button>
+            </div>
+          )}
+          {assessmentError ? (
+            <p className="parse-assessment-error" role="alert">
+              {assessmentError}
+            </p>
+          ) : null}
+        </section>
+      ) : null}
+
+      {assessmentEligible ? (
         <section className="parse-assessment-panel" aria-label="Job Aid 候选评估">
           <div className="parse-panel-label">
             <ClipboardCheck /> Job Aid 候选评估 · 同一 WorkItem
@@ -385,7 +482,7 @@ export default function DocumentParsingPage() {
         </section>
       ) : null}
 
-      {aeo || phase10Action.enabled ? (
+      {aeo ? (
         <section className="parse-aeo-panel" aria-label="AEO 候选编写">
           <div className="parse-panel-label">
             <FileOutput /> AEO 候选编写 · 同一 WorkItem
@@ -393,58 +490,23 @@ export default function DocumentParsingPage() {
           <div className="parse-aeo-heading">
             <div>
               <p className="parse-aeo-kicker">SERVER-CONFIRMED TARGET</p>
-              <h2>{aeo?.targetIdentity ?? phase10Action.targetIdentity}</h2>
+              <h2>{aeo.targetIdentity}</h2>
             </div>
-            <span>{aeo?.status ?? 'VALIDATION READY'}</span>
+            <span>{aeo.status}</span>
           </div>
           <p>
-            处置方式：{aeo?.disposition ?? phase10Action.disposition}；权限：
-            {aeo?.authorityLevel ?? phase10Action.authorityLevel}。该纵切只产生
+            处置方式：{aeo.disposition}；权限：{aeo.authorityLevel}。该纵切只产生
             Working / Draft candidate / Word candidate，不形成正式 Draft、发布或工程结论。
           </p>
-          {aeo ? (
-            <div className="parse-aeo-artifacts">
-              {aeo.artifacts.map((artifact) => (
-                <div key={`${artifact.artifactKind}:${artifact.artifactSha256}`}>
-                  <strong>{artifact.artifactKind}</strong>
-                  <span>{artifact.byteLength.toLocaleString()} bytes</span>
-                  <small>{short(artifact.artifactSha256, 18, 10)}</small>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <button
-              data-testid="phase10-aeo-candidate-loop-trigger"
-              type="button"
-              disabled={aeoRunning || aeoAttempted}
-              onClick={() => {
-                if (aeoRunning || aeoAttempted) return;
-                setAeoAttempted(true);
-                setAeoRunning(true);
-                setAeoError(null);
-                void canonicalHost
-                  .runPhase10AeoCandidateLoop()
-                  .then(() => load(query.trim()))
-                  .catch((cause: unknown) => {
-                    setAeoError(
-                      cause instanceof Error
-                        ? cause.message
-                        : 'AEO_PHASE10_CANDIDATE_LOOP_FAILED',
-                    );
-                  })
-                  .finally(() => setAeoRunning(false));
-              }}
-            >
-              {aeoRunning
-                ? 'RUNNING 5 → 9'
-                : aeoAttempted
-                  ? 'ATTEMPTED'
-                  : 'RUN PHASE 10 AEO ONCE'}
-            </button>
-          )}
-          {aeoError ? (
-            <p className="parse-assessment-error">{aeoError}</p>
-          ) : null}
+          <div className="parse-aeo-artifacts">
+            {aeo.artifacts.map((artifact) => (
+              <div key={`${artifact.artifactKind}:${artifact.artifactSha256}`}>
+                <strong>{artifact.artifactKind}</strong>
+                <span>{artifact.byteLength.toLocaleString()} bytes</span>
+                <small>{short(artifact.artifactSha256, 18, 10)}</small>
+              </div>
+            ))}
+          </div>
         </section>
       ) : null}
 

@@ -1,3 +1,5 @@
+import { isOfficialOemCandidateUrl } from './openclaw-discovery-provider-mapping';
+
 export type FeishuNativeOemResultStatus =
   | 'ZERO_RESULTS_FOR_TARGET_IDENTIFIER'
   | 'ACCESS_DENIED'
@@ -22,6 +24,7 @@ export interface FeishuNativeOemSearchRun {
   accessRestricted: boolean;
   truncated: boolean;
   partialOnly: boolean;
+  failureCode: string | null;
   candidates: FeishuNativeOemSearchCandidate[];
 }
 
@@ -186,19 +189,29 @@ export class FeishuNativeOemMonitoringIngress {
     if (!review) {
       fail('OEM_MONITORING_HUMAN_SELECTION_REQUIRED', 'Candidate must be selected before FileService/DM I/O.');
     }
+    if (
+      review.publisher !== candidate.publisher ||
+      review.sourceUrl !== candidate.url
+    ) {
+      fail(
+        'OEM_MONITORING_SELECTION_RECEIPT_DRIFT',
+        'Human selection no longer matches the fresh candidate row.',
+      );
+    }
+    const descriptor = ordinaryObject(value.descriptor ?? {});
+    rejectDiscoveryContentInAcquisitionDescriptor(descriptor);
     return this.input.documentManagement.ingestFileServiceSelection({
       sourceChannel: 'openclaw_external_monitor_review',
       sourceRef: candidateRef,
       selection: value.selection,
       descriptor: {
-        ...ordinaryObject(value.descriptor ?? {}),
+        ...descriptor,
         externalDiscovery: {
           discoverySystem: searchRun.sourceSystem,
           publisher: candidate.publisher,
           searchRunRef,
           candidateRef,
           observedAt: searchRun.observedAt,
-          sourceUrl: candidate.url,
           sourceLocator: 'MIAODA_FILE_SERVICE_SELECTION',
           disposition: 'HUMAN_SELECTED_FOR_INGEST',
           selectionReview: {
@@ -263,6 +276,7 @@ function normalizeSearchRun(value: FeishuNativeOemSearchRun): FeishuNativeOemSea
     accessRestricted: input.accessRestricted === true,
     truncated: input.truncated === true,
     partialOnly: input.partialOnly === true,
+    failureCode: requiredFailureCode(input.failureCode, resultStatus),
     candidates,
   };
 }
@@ -308,7 +322,49 @@ function selectedCandidate(
   if (searchRun.accessRestricted || searchRun.truncated || searchRun.partialOnly) {
     fail('OEM_MONITORING_SEARCH_RUN_INCOMPLETE', 'Restricted, truncated or partial SearchRun requires another review.');
   }
+  if (!isOfficialOemCandidateUrl(candidate.publisher, candidate.url)) {
+    fail(
+      'OEM_MONITORING_CANDIDATE_DOMAIN_NOT_OFFICIAL',
+      'A direct candidate must resolve to the declared OEM official domain over HTTPS.',
+    );
+  }
   return candidate;
+}
+
+function requiredFailureCode(
+  value: unknown,
+  resultStatus: FeishuNativeOemResultStatus,
+): string | null {
+  const normalized = typeof value === 'string' ? value.trim() : '';
+  if (resultStatus === 'ACCESS_DENIED' && !normalized) {
+    fail(
+      'OEM_MONITORING_FAILURE_CODE_REQUIRED',
+      'ACCESS_DENIED requires a stable failureCode.',
+    );
+  }
+  return normalized || null;
+}
+
+function rejectDiscoveryContentInAcquisitionDescriptor(
+  value: unknown,
+  path = 'descriptor',
+): void {
+  if (!value || typeof value !== 'object') return;
+  if (Array.isArray(value)) {
+    value.forEach((entry, index) =>
+      rejectDiscoveryContentInAcquisitionDescriptor(entry, `${path}[${index}]`),
+    );
+    return;
+  }
+  for (const [key, entry] of Object.entries(value)) {
+    if (['url', 'sourceUrl', 'snippet'].includes(key)) {
+      fail(
+        'OEM_MONITORING_DISCOVERY_CONTENT_NOT_ALLOWED_IN_ACQUISITION',
+        `${path}.${key} belongs in external_discovery_candidate, not dm_acquisition.`,
+      );
+    }
+    rejectDiscoveryContentInAcquisitionDescriptor(entry, `${path}.${key}`);
+  }
 }
 
 function requiredServerContext(value: FeishuNativeOemServerContext): FeishuNativeOemServerContext {

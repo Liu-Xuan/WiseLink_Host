@@ -10,7 +10,8 @@ jest.mock('@lark-apaas/client-toolkit/logger', () => ({
 
 import {
   evaluateAssessment,
-  runPhase10AeoCandidateLoop,
+  persistIntegratedBaseRules,
+  persistIntegratedOpenClawOverall,
   resynthesizeAssessment,
 } from '../../client/src/api/canonical-host';
 
@@ -70,21 +71,21 @@ describe('canonical host assessment client', () => {
     expect(request).toHaveBeenCalledTimes(1);
   });
 
-  it('calls the fixed Phase10 path once with no client identity or locator', async () => {
-    request.mockResolvedValue({
-      status: 201,
-      data: { status: 'CANDIDATE_WORD_EXPORTED' },
-    });
+  it.each([
+    ['Base rules', persistIntegratedBaseRules, 'base-rules'],
+    ['OpenClaw overall', persistIntegratedOpenClawOverall, 'overall-synthesis'],
+  ] as const)(
+    'uses one authenticated empty-body POST for %s',
+    async (_label, action, path) => {
+      request.mockResolvedValue({ status: 200, data: { revision: 10 } });
 
-    await expect(runPhase10AeoCandidateLoop()).resolves.toEqual({
-      status: 'CANDIDATE_WORD_EXPORTED',
-    });
-    expect(request).toHaveBeenCalledTimes(1);
-    expect(request).toHaveBeenCalledWith({
-      url: '/api/canonical-host/validation/phase10-aeo-candidate-loop',
-      method: 'POST',
-      data: {},
-      meta: { autoJumpToLogin: false },
-    });
-  });
+      await expect(action('WI-SB-1001')).resolves.toEqual({ revision: 10 });
+      expect(request).toHaveBeenCalledTimes(1);
+      expect(request).toHaveBeenCalledWith({
+        url: `/api/canonical-host/work-items/WI-SB-1001/integrated-assessment/${path}`,
+        method: 'POST',
+        data: {},
+      });
+    },
+  );
 });

@@ -20,7 +20,7 @@ import type {
 type DatabaseExecutor = PostgresJsDatabase;
 
 @Injectable()
-export class MiaodaExternalCandidateStore
+export class MiaodaExternalDiscoveryCandidateStore
   implements FeishuNativeOemCandidateStore
 {
   constructor(
@@ -40,6 +40,7 @@ export class MiaodaExternalCandidateStore
           sourceSystem: searchRun.sourceSystem,
           query: searchRun.query,
           resultStatus: searchRun.resultStatus,
+          failureCode: searchRun.failureCode,
           observedAt: new Date(searchRun.observedAt),
           accessRestricted: searchRun.accessRestricted,
           truncated: searchRun.truncated,
@@ -304,6 +305,7 @@ export class MiaodaExternalCandidateStore
       accessRestricted: run.accessRestricted,
       truncated: run.truncated,
       partialOnly: run.partialOnly,
+      failureCode: run.failureCode,
       candidates: candidates.map((candidate) => ({
         candidateRef: candidate.candidateRef,
         publisher: candidate.publisher as 'AIRBUS' | 'BOEING' | 'COMAC',

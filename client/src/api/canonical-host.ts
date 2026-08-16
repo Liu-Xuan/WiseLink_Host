@@ -8,23 +8,6 @@ import type {
 import { logger } from '@lark-apaas/client-toolkit/logger';
 import { axiosForBackend } from '@lark-apaas/client-toolkit/utils/getAxiosForBackend';
 
-export interface Phase10AeoCandidateLoopResult {
-  schemaVersion: 'wiselink.3_1.phase10_aeo_candidate_loop.v1';
-  status: 'CANDIDATE_WORD_EXPORTED';
-  workItem: CanonicalWorkItemProjection;
-  transition: [5, 9];
-  targetIdentity: 'AEO-B787-46-0015-R09';
-  disposition: 'ADOPT';
-  sourceCandidateCount: number;
-  word: {
-    artifactRef: string;
-    artifactSha256: string;
-    byteLength: number;
-    mediaType: string;
-    ooxmlZipSignature: 'PK';
-  };
-}
-
 export async function getDocumentParsingPage(
   workItemId: string,
   query: string,
@@ -110,20 +93,46 @@ export async function resynthesizeAssessment(
   }
 }
 
-export async function runPhase10AeoCandidateLoop(): Promise<Phase10AeoCandidateLoopResult> {
+export async function persistIntegratedBaseRules(
+  workItemId: string,
+): Promise<CanonicalWorkItemProjection> {
+  return runIntegratedAssessmentAction(
+    workItemId,
+    'base-rules',
+    'BASE_RULE_RESULT_ACCESS_DENIED',
+    '读取并保存 Base 固定规则候选失败',
+  );
+}
+
+export async function persistIntegratedOpenClawOverall(
+  workItemId: string,
+): Promise<CanonicalWorkItemProjection> {
+  return runIntegratedAssessmentAction(
+    workItemId,
+    'overall-synthesis',
+    'OPENCLAW_OVERALL_ACCESS_DENIED',
+    '运行并保存 OpenClaw 整体候选失败',
+  );
+}
+
+async function runIntegratedAssessmentAction(
+  workItemId: string,
+  action: 'base-rules' | 'overall-synthesis',
+  deniedCode: string,
+  logMessage: string,
+): Promise<CanonicalWorkItemProjection> {
   try {
-    const response = await axiosForBackend<Phase10AeoCandidateLoopResult>({
-      url: '/api/canonical-host/validation/phase10-aeo-candidate-loop',
+    const response = await axiosForBackend<CanonicalWorkItemProjection>({
+      url: `/api/canonical-host/work-items/${encodeURIComponent(workItemId)}/integrated-assessment/${action}`,
       method: 'POST',
       data: {},
-      meta: { autoJumpToLogin: false },
     });
     if (response.status === 401 || response.status === 403) {
-      throw new Error('AEO_PHASE10_ACTION_ACCESS_DENIED');
+      throw new Error(deniedCode);
     }
     return response.data;
   } catch (error) {
-    logger.error('执行 Phase10 AEO 候选循环失败', error);
+    logger.error(logMessage, error);
     throw error;
   }
 }

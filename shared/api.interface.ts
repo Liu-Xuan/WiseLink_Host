@@ -480,6 +480,46 @@ export interface CanonicalAssessmentCandidateProjection {
   resynthesisAttemptId: string | null;
 }
 
+export interface CanonicalBaseRuleCandidateProjection {
+  status: 'CANDIDATE_ONLY';
+  revision: number;
+  sourceResultId: string;
+  criterionSetId: string;
+  criterionCount: number;
+  evaluationItemCount: number;
+  unresolvedCount: number;
+  sourceBoundCandidateCount: number;
+  artifact: UnifiedPackageArtifactDescriptor;
+  actionAttemptId: string;
+}
+
+export interface CanonicalOpenClawOverallProjection {
+  status: 'CANDIDATE_ONLY' | 'STALE';
+  revision: number;
+  sourceResultId: string;
+  basedOnBaseRuleRevision: number;
+  basedOnBaseRuleArtifactSha256: string;
+  discoveryStatus: string;
+  gap: string | null;
+  candidateRefCount: number;
+  findingCount: number;
+  unresolvedCount: number;
+  authorityLevel: 'candidate_only';
+  externalDiscoveryIsEvidence: false;
+  artifact: UnifiedPackageArtifactDescriptor;
+  actionAttemptId: string;
+  staleReason: 'BASE_RULE_RESULT_CHANGED' | null;
+}
+
+export interface CanonicalIntegratedAssessmentProjection {
+  status:
+    | 'BASE_RULE_CANDIDATE_READY'
+    | 'OVERALL_CANDIDATE_READY'
+    | 'OVERALL_CANDIDATE_STALE';
+  baseRules: CanonicalBaseRuleCandidateProjection;
+  overallSynthesis: CanonicalOpenClawOverallProjection | null;
+}
+
 export interface CanonicalAeoCandidateArtifactProjection {
   artifactKind:
     | 'AUTHORING_BOOTSTRAP'
@@ -526,6 +566,7 @@ export interface CanonicalWorkItemProjection {
   classification: CanonicalClassificationSelection;
   package: CanonicalWorkItemPackageProjection | null;
   assessment?: CanonicalAssessmentCandidateProjection | null;
+  integratedAssessment?: CanonicalIntegratedAssessmentProjection | null;
   aeo?: CanonicalAeoCandidateProjection | null;
   failure: CanonicalWorkItemFailureProjection | null;
   recordingFailure: CanonicalWorkItemRecordingFailureProjection | null;
@@ -598,6 +639,7 @@ export interface AilyWorkItemStatusResponse {
   entry: CanonicalEntryFacadeResponse;
   packageSummary: AilyParsedPackageSummary | null;
   assessmentSummary: CanonicalAssessmentCandidateProjection | null;
+  integratedAssessmentSummary: CanonicalIntegratedAssessmentProjection | null;
 }
 
 export interface AilyParsedPackageQueryResponse {
@@ -630,37 +672,6 @@ export interface CanonicalDocumentParsingPageResponse {
     action: 'READ_DOCUMENT_PARSING';
     decisionId: string;
     permissionSnapshotVersion: string;
-  };
-  validationActions: {
-    phase10AeoCandidateLoop: {
-      enabled: boolean;
-      targetIdentity: 'AEO-B787-46-0015-R09';
-      disposition: 'ADOPT';
-      authorityLevel: 'candidate_only';
-    };
-  };
-}
-
-export interface FileServiceP0ProbeResponse {
-  schemaVersion: 'wiselink.3_1.fileservice_p0_probe.v1';
-  status: 'PASS';
-  stage: 'ACTUAL_BYTE_READBACK_VERIFIED';
-  artifact: {
-    bucketId: string;
-    filePath: string;
-    providerFilePath: string;
-    providerObjectId: string;
-    sha256: string;
-    byteLength: number;
-    mediaType: 'application/json';
-    readbackVerified: true;
-    reusedExisting: false;
-  };
-  authority: {
-    authenticatedActorRequired: true;
-    businessWritePerformed: false;
-    databaseWritePerformed: false;
-    workItemCreated: false;
   };
 }
 
@@ -699,6 +710,7 @@ export interface ExternalDiscoverySearchRunView {
   sourceSystem: string;
   query: string;
   resultStatus: ExternalDiscoveryResultStatus;
+  failureCode: string | null;
   observedAt: string;
   accessRestricted: boolean;
   truncated: boolean;
