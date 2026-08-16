@@ -1,28 +1,30 @@
-# Aily Skill 与 WiseLink 只读连接器交接
+# Aily Skill 与 WiseLink 只读 MCP 交接
 
-状态：`SKILL_FIRST / SINGLE_READONLY_CONNECTOR / NO_COMPLEX_WORKFLOW`
+状态：`SKILL_FIRST / SINGLE_READONLY_MCP / NO_COMPLEX_WORKFLOW`
 
 ## 当前决定
 
 Aily 使用一个面向用户的 Skill 组织理解、查询和结果解释，不再以可视化 Workflow 编排
-WiseLink 主流程。Skill 只调用一个 owner-only 的只读自定义连接器；解析、评估、重综合、
+WiseLink 主流程。Skill 只调用一个 owner-only 的只读 MCP 服务；解析、评估、重综合、
 AEO 写入和 WorkItem 状态仍由妙搭服务端拥有。
 
-这不是另一套系统：连接器只是现有妙搭 read model 的薄入口，没有自己的队列、worker、
+这不是另一套系统：MCP 只是现有妙搭 read model 的薄协议入口，没有自己的队列、worker、
 数据库、状态账本或业务决策。
 
-## 单一连接器 operation
+## 单一 MCP 入口与三个工具
 
-| operation | 固定妙搭 OpenAPI | 输入 | 用途 |
-| --- | --- | --- | --- |
-| `get_parse_status` | `GET /openapi/wiselink/work-items/status` | `workItemId` | 读取状态、failure、frozen.2 package 摘要和服务端深链 |
-| `query_parsed_package` | `GET /openapi/wiselink/work-items/parsed-units` | `workItemId`, `query` | 查询同一 Unified Reader 的 source-bound units |
-| `get_deep_link` | `GET /openapi/wiselink/work-items/deep-link` | `workItemId` | 获取服务端生成的妙搭 WorkItem 深链 |
+| tool | 输入 | 用途 |
+| --- | --- | --- |
+| `get_parse_status` | `workItemId` | 读取状态、failure、frozen.2 package 摘要和服务端深链 |
+| `query_parsed_package` | `workItemId`, `query` | 查询同一 Unified Reader 的 source-bound units |
+| `get_deep_link` | `workItemId` | 获取服务端生成的妙搭 WorkItem 深链 |
 
-每个 operation 的 path 固定，`workItemId`/`query` 是结构化 query 参数。连接器不接受任意
-URL、header、body 或 method，不暴露 `start_parse` 或其他 mutation。
+传输入口固定为 `POST /openapi/wiselink/mcp`。服务端使用官方 MCP TypeScript SDK v2，按请求
+创建 server，返回 JSON；不提供 SSE、session、resource、prompt、queue 或 store。工具输入为
+严格结构化对象，不接受任意 URL、header、actor、authority，也不暴露 `start_parse` 或其他
+mutation。三个既有固定 GET 继续保留用于普通 OpenAPI 只读调用。
 
-三个路由复用同一个 `CanonicalHostVerticalService`、同一个普通妙搭 WorkItem repository、
+三个工具复用同一个 `CanonicalHostVerticalService`、同一个普通妙搭 WorkItem repository、
 同一个 FileService ArtifactStore 和同一个 Unified Reader。`requestId`、`DocumentVersion`、
 permission snapshot、artifact ref 与 deep link 均由服务端 fresh-read，不由 Aily 补造。
 
@@ -53,7 +55,7 @@ SearchRun/candidate 先进入飞书原生候选清单。只有完整、非受限
 snippet 不创建 DocumentVersion 或 WorkItem。
 
 若 Aily 不能原生调用 OpenClaw，只允许在 OpenClaw 已存在的正式 server operation 之上增加
-一个只读 connector/MCP 映射；不得自建第二爬虫、调度器或数据账本。
+只读 MCP 映射；不得自建第二爬虫、调度器或数据账本。
 
 ## 已完成验证
 
@@ -64,7 +66,12 @@ snippet 不创建 DocumentVersion 或 WorkItem。
 - `software` query：38/38 results 均有 sourceRefs；
 - deep link：由妙搭服务端生成并指向同一 WorkItem。
 
-源码 OpenAPI spec 为 [openapi.json](openapi.json)，只含三个 GET path，mutation route 为 0。
+源码 OpenAPI spec 为 [openapi.json](openapi.json)，保留三个 GET，并登记一个 MCP JSON POST
+传输入口；MCP 内部 mutation tool 为 0。
+
+真实 Aily TEST 已证明：上传 Skill 不会把“自定义连接器”自动注册到新版自定义智能体的 MCP
+工具表，因此连接器不能作为当前 Agent 的直接工具。平台集成生成 MCP 因账号缺“业务集成”
+权限暂不可用，本 endpoint 是同一服务的最小协议适配，不是第二套业务实现。
 
 ## 已废止方案
 
@@ -78,8 +85,10 @@ Skill，也不得作为验收证据。删除平台资产属于独立线上清理
 
 ## 下一平台动作
 
-1. 在 Aily 创建或复用一个 owner-only 自定义连接器并导入 `openapi.json`；
-2. 只保留上述三个 operation，使用现有受限 Bearer credential；
-3. 创建一个用户可理解的 WiseLink 查询/评估 Skill，工具仅选择该连接器；
-4. 用真实 WorkItem 验证 status → query → deep-link；
-5. 不发布旧 Workflow，不开放写 operation。
+1. 发布包含 `/openapi/wiselink/mcp` 的 DEV revision；
+2. 单独授权后，把 `allow_all=false` 的专用 key 增加精确 `POST /openapi/wiselink/mcp`
+   scope；当前只含三个 GET 的 key 在更新前不能调用 MCP；
+3. 在 Aily 当前 Agent 的“工具 / MCP 服务”中登记该固定 URL 和受限 Bearer credential；
+4. 工具清单必须精确读回上述三个工具，且不出现资源、prompt 或写工具；
+5. 用真实 WorkItem 验证 initialize → tools/list → status → query → deep-link；
+6. 不发布旧 Workflow，不开放写 operation。

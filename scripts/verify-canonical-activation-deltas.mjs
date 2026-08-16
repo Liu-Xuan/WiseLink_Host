@@ -24,6 +24,9 @@ const { CanonicalHostController } = await import(
 const { CanonicalHostOpenApiController } = await import(
   pathToFileURL(join(moduleRoot, 'canonical-host.openapi.controller.js'))
 );
+const { CanonicalHostMcpOpenApiController } = await import(
+  pathToFileURL(join(moduleRoot, 'canonical-host-mcp.openapi.controller.js'))
+);
 const {
   CANONICAL_AUTHORIZATION,
   CANONICAL_FAILURE_VALIDATION_WRITE_AUTHORIZATION,
@@ -52,8 +55,7 @@ assert.equal(
   'UnconfiguredCanonicalAuthorizationAdapter',
 );
 assert.equal(
-  providers.get(CANONICAL_FAILURE_VALIDATION_WRITE_AUTHORIZATION).useClass
-    .name,
+  providers.get(CANONICAL_FAILURE_VALIDATION_WRITE_AUTHORIZATION).useClass.name,
   'UnconfiguredFailureValidationWriteAuthorizationAdapter',
 );
 assert.equal(
@@ -86,30 +88,46 @@ const controllers = Reflect.getMetadata(
 assert.deepEqual(controllers, [
   CanonicalHostController,
   CanonicalHostOpenApiController,
+  CanonicalHostMcpOpenApiController,
 ]);
 assert.equal(
   Reflect.getMetadata(PATH_METADATA, CanonicalHostController),
   'api/canonical-host',
 );
-assert.deepEqual(
-  Reflect.getMetadata(NEED_LOGIN_KEY, CanonicalHostController),
-  { loginPath: undefined },
-);
+assert.deepEqual(Reflect.getMetadata(NEED_LOGIN_KEY, CanonicalHostController), {
+  loginPath: undefined,
+});
 const authenticatedRoutes = readRoutes([CanonicalHostController]);
-assert.ok(authenticatedRoutes.some((route) =>
-  route.method === 'POST' &&
-  route.path ===
-    'api/canonical-host/work-items/:workItemId/assessment/evaluate'));
-assert.ok(authenticatedRoutes.some((route) =>
-  route.method === 'POST' &&
-  route.path ===
-    'api/canonical-host/work-items/:workItemId/assessment/resynthesize'));
+assert.ok(
+  authenticatedRoutes.some(
+    (route) =>
+      route.method === 'POST' &&
+      route.path ===
+        'api/canonical-host/work-items/:workItemId/assessment/evaluate',
+  ),
+);
+assert.ok(
+  authenticatedRoutes.some(
+    (route) =>
+      route.method === 'POST' &&
+      route.path ===
+        'api/canonical-host/work-items/:workItemId/assessment/resynthesize',
+  ),
+);
 assert.equal(
   Reflect.getMetadata(PATH_METADATA, CanonicalHostOpenApiController),
   'openapi/wiselink',
 );
 assert.equal(
   Reflect.getMetadata(NEED_LOGIN_KEY, CanonicalHostOpenApiController),
+  undefined,
+);
+assert.equal(
+  Reflect.getMetadata(PATH_METADATA, CanonicalHostMcpOpenApiController),
+  'openapi/wiselink',
+);
+assert.equal(
+  Reflect.getMetadata(NEED_LOGIN_KEY, CanonicalHostMcpOpenApiController),
   undefined,
 );
 assert.deepEqual(readRoutes([CanonicalHostOpenApiController]), [
@@ -128,20 +146,26 @@ assert.deepEqual(readRoutes([CanonicalHostOpenApiController]), [
 ]);
 assert.deepEqual(
   readOpenApiSpecRoutes(openApiSpec),
-  readRoutes([CanonicalHostOpenApiController]),
+  readRoutes([
+    CanonicalHostOpenApiController,
+    CanonicalHostMcpOpenApiController,
+  ]),
 );
+assert.deepEqual(readRoutes([CanonicalHostMcpOpenApiController]), [
+  { method: 'POST', path: 'openapi/wiselink/mcp' },
+]);
+assert.ok(Object.keys(openApiSpec.paths).every((path) => !path.includes('{')));
 assert.ok(
-  Object.keys(openApiSpec.paths).every((path) => !path.includes('{')),
-);
-assert.ok(
-  Object.values(openApiSpec.paths).every((pathItem) =>
-    pathItem.get.parameters.some(
-      (parameter) =>
-        parameter.in === 'query' &&
-        parameter.name === 'workItemId' &&
-        parameter.required === true,
+  Object.entries(openApiSpec.paths)
+    .filter(([path]) => path !== '/openapi/wiselink/mcp')
+    .every(([, pathItem]) =>
+      pathItem.get.parameters.some(
+        (parameter) =>
+          parameter.in === 'query' &&
+          parameter.name === 'workItemId' &&
+          parameter.required === true,
+      ),
     ),
-  ),
 );
 
 const source = await readFile(
@@ -209,8 +233,10 @@ await controller.resynthesizeAssessment(
 );
 assert.equal(assessmentCalls.length, 2);
 assert.equal(assessmentCalls[0].actor.userId, 'activation-engineer');
-assert.equal(assessmentCalls[0].input.assessmentAsOf,
-  assessmentCalls[0].input.generatedAt);
+assert.equal(
+  assessmentCalls[0].input.assessmentAsOf,
+  assessmentCalls[0].input.generatedAt,
+);
 assert.deepEqual(assessmentCalls[1].input.review, {
   baseRecordId: 'ENGINEER-REVIEW:WI-SB-ACTIVATION:JAC-001',
   decision: 'deferred',
@@ -257,7 +283,11 @@ process.stdout.write(
       openApi: {
         authentication: 'MIAODA_OPENAPI_KEY_GATEWAY',
         controllerNeedLogin: false,
-        routes: readRoutes([CanonicalHostOpenApiController]),
+        routes: readRoutes([
+          CanonicalHostOpenApiController,
+          CanonicalHostMcpOpenApiController,
+        ]),
+        mcpTransportRoutes: 1,
         mutationRoutes: 0,
       },
       hardCodedSamplePresent: false,
@@ -269,8 +299,7 @@ process.stdout.write(
         actualByteReadbackRequired: true,
         uniqueAdapterPort:
           'wiselink.3_1.port.u0_frozen2_failure_adapter.v0.candidate.1',
-        unifiedSourceCommit:
-          'ebf84f87213227b0a4bdf2f9d4909ca1a58b3518',
+        unifiedSourceCommit: 'ebf84f87213227b0a4bdf2f9d4909ca1a58b3518',
       },
       deepLinkWire: 'SERVER_DERIVED_FROM_VERIFIED_CANONICAL_BINDING_ONLY',
       onlineWrites: 0,
@@ -321,9 +350,7 @@ function readOpenApiSpecRoutes(spec) {
         ? [
             {
               method: method.toUpperCase(),
-              path: path
-                .replace(/^\//u, '')
-                .replace(/\{([^}]+)\}/gu, ':$1'),
+              path: path.replace(/^\//u, '').replace(/\{([^}]+)\}/gu, ':$1'),
             },
           ]
         : [],
