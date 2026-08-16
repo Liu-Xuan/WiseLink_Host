@@ -554,6 +554,8 @@ assert.equal(page.workItem.assessment.criterionCount, 150);
 assert.equal(openApi.assessmentSummary.criterionCount, 150);
 assert.equal(openApi.assessmentSummary.artifact.sha256,
   secondResynthesis.assessment.artifact.sha256);
+assert.equal(page.workItem.integratedAssessment ?? null, null);
+assert.equal(openApi.integratedAssessmentSummary, null);
 assert.equal(deepLink.deepLink, page.entry.deepLinkPath);
 assert.equal(ingestCalls, 1);
 assert.equal(repository.parseReservation.workItemId, secondResynthesis.workItemId);
@@ -600,6 +602,7 @@ process.stdout.write(`${JSON.stringify({
     status: page.status,
     deepLink: page.entry.deepLinkPath,
     assessmentFreshRead: openApi.assessmentSummary.status,
+    integratedAssessmentSummary: openApi.integratedAssessmentSummary,
   },
   actionAttempts: [...repository.assessmentActions.values()].map((value) => ({
     actionType: value.actionType,

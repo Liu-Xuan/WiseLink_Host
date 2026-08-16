@@ -20,7 +20,28 @@ const mcp = new CanonicalHostMcpService({
   openApiStatus: async (workItemId) => {
     calls.push({ tool: 'get_parse_status', workItemId });
     await delay(workItemId.endsWith('SLOW') ? 15 : 1);
-    return { workItemId, status: `STATUS:${workItemId}` };
+    return workItemId === 'WI-STATUS'
+      ? {
+          workItemId,
+          status: `STATUS:${workItemId}`,
+          integratedAssessmentSummary: {
+            status: 'OVERALL_CANDIDATE_STALE',
+            baseRules: {
+              status: 'CANDIDATE_ONLY',
+              revision: 2,
+              criterionCount: 150,
+              evaluationItemCount: 150,
+              unresolvedCount: 119,
+            },
+            overallSynthesis: {
+              status: 'STALE',
+              revision: 1,
+              authorityLevel: 'candidate_only',
+              staleReason: 'BASE_RULE_RESULT_CHANGED',
+            },
+          },
+        }
+      : { workItemId, status: `STATUS:${workItemId}` };
   },
   openApiQuery: async ({ workItemId, query }) => {
     calls.push({ tool: 'query_parsed_package', workItemId, query });
@@ -98,7 +119,26 @@ try {
           arguments: { workItemId: 'WI-STATUS' },
         }),
       ),
-      { workItemId: 'WI-STATUS', status: 'STATUS:WI-STATUS' },
+      {
+        workItemId: 'WI-STATUS',
+        status: 'STATUS:WI-STATUS',
+        integratedAssessmentSummary: {
+          status: 'OVERALL_CANDIDATE_STALE',
+          baseRules: {
+            status: 'CANDIDATE_ONLY',
+            revision: 2,
+            criterionCount: 150,
+            evaluationItemCount: 150,
+            unresolvedCount: 119,
+          },
+          overallSynthesis: {
+            status: 'STALE',
+            revision: 1,
+            authorityLevel: 'candidate_only',
+            staleReason: 'BASE_RULE_RESULT_CHANGED',
+          },
+        },
+      },
     );
     assert.deepEqual(
       resultJson(

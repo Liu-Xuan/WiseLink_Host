@@ -22,6 +22,9 @@ describe('Phase 13C production path', () => {
     expect(runtimeController).not.toContain('file-service-upload');
     expect(client).not.toContain('RUN PHASE 10 AEO ONCE');
     expect(client).not.toContain('phase10-aeo-candidate-loop-trigger');
+    expect(client).toContain('integratedAssessment.baseRules');
+    expect(client).toContain('integratedAssessment.overallSynthesis');
+    expect(client).toContain('WAITING_REAL_BASE_RESULT');
     expect(externalModule).not.toContain('ExternalDiscoveryAutomation');
     expect(externalModule).not.toContain('@Automation');
     expect(assets).not.toContain('phase10-aeo');
@@ -29,6 +32,35 @@ describe('Phase 13C production path', () => {
     await expect(
       access(resolve(root, 'server/modules/aeo-authoring/public-api.ts')),
     ).rejects.toBeDefined();
+  });
+
+  it('publishes the nullable integrated assessment summary on the fixed status OpenAPI', async () => {
+    const openApi = JSON.parse(
+      await source('docs/openapi.json'),
+    ) as {
+      paths: Record<string, {
+        get?: {
+          responses?: Record<string, {
+            content?: Record<string, {
+              schema?: {
+                required?: string[];
+                properties?: Record<string, unknown>;
+              };
+            }>;
+          }>;
+        };
+      }>;
+    };
+    const responseSchema = openApi.paths[
+      '/openapi/wiselink/work-items/status'
+    ]?.get?.responses?.['200']?.content?.['application/json']?.schema;
+
+    expect(responseSchema?.required).toContain(
+      'integratedAssessmentSummary',
+    );
+    expect(responseSchema?.properties).toHaveProperty(
+      'integratedAssessmentSummary',
+    );
   });
 });
 
