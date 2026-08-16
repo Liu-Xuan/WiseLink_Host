@@ -208,6 +208,44 @@
           }
         }
       }
+    },
+    "/openapi/wiselink/mcp": {
+      "post": {
+        "operationId": "handleWiseLinkMcp",
+        "summary": "WiseLink 三项只读能力的无状态 MCP 传输入口",
+        "description": "仅承载 MCP initialize、tools/list 与三个只读 tool call；不提供任意 HTTP、资源、提示词、会话或写操作。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "由 MCP SDK 生成并校验的 JSON-RPC 消息",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "MCP JSON 响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "MCP 通知已接受"
+          },
+          "400": {
+            "description": "无效 MCP 消息或工具参数"
+          }
+        }
+      }
     }
   }
 }

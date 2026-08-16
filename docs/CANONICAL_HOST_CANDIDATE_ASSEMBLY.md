@@ -11,7 +11,7 @@
 - 一套 DM DocumentVersion/currentness；
 - 一套 frozen.2 U0 Validator、Unified Reader 和 FailureReport authority；
 - 一个妙搭页面；
-- 一个 Aily Skill 和一个只读连接器。
+- 一个 Aily Skill 和一个只读 MCP 服务。
 
 Parser、Assessment、AEO 和 external discovery 以内部模块接入；它们不拥有第二个 WorkItem、
 第二个 Reader、第二个 ArtifactStore 或用户产品入口。
@@ -49,8 +49,9 @@ Base 镜像。
 
 ## Aily 与 OpenClaw
 
-Aily 使用 Skill，不使用复杂 Workflow。Skill 只调用单一只读 connector 的 status、
-source-bound query、deep-link 三个固定 GET。需要写入或人工确认时返回妙搭 deep link。
+Aily 使用 Skill，不使用复杂 Workflow。Skill 只调用单一无状态 MCP 的 status、source-bound
+query、deep-link 三个工具；MCP 进程内复用现有服务，三个固定 GET 继续保留。需要写入或人工
+确认时返回妙搭 deep link。
 
 OpenClaw 只负责 OEM 网站发现。搜索 run/candidate 持久化在飞书原生候选层；snippet/URL 不进入
 DM。只有完整、非受限、直接官方来源且经人工选择的实际文件，才调用既有 DM ingest。
@@ -83,7 +84,7 @@ DM。只有完整、非受限、直接官方来源且经人工选择的实际文
 - hosted FTD：`FIRST_REAL_FTD_WORKITEM_VERTICAL_ACCEPTANCE_20260814.md`
 - 737 累计评估：`PHASE7_737_ASSESSMENT_CUMULATIVE_RESYNTHESIS_ACCEPTANCE_20260815.md`
 - Assessment → AEO/Word：`PHASE8_AEO_CURRENT_RESYNTHESIS_LOCAL_ACCEPTANCE_20260815.md`
-- Aily Skill/connector：`AILY_MINIMAL_ENTRY_HANDOFF_20260814.md`
+- Aily Skill/MCP：`AILY_MINIMAL_ENTRY_HANDOFF_20260814.md`
 - 外部 OEM discovery：`PHASE6C_EXTERNAL_DISCOVERY_CANDIDATE_STORE_HANDOFF_20260815.md`
 
 ## Non-claims

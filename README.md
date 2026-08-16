@@ -6,7 +6,7 @@
 - 分支：`codex/v3-1-canonical-host-candidate`
 - 业务状态真源：本应用数据库中的同一 `WorkItem` 与 `ActionAttempt`
 - 文件真源：本应用 FileService 中的不可变实际字节
-- 智能入口：Aily Skill + 一个只读自定义连接器
+- 智能入口：Aily Skill + 一个只读 MCP 服务
 
 Parser Lab、DM Lab、Assessment Workbench、AEO owner 仓库和历史 Hub 都只是模块来源或验收来源，
 不是第二个产品、第二个 WorkItem Store 或第二条业务主线。
@@ -34,22 +34,23 @@ DocumentVersion、WorkItem、不可变 ParsedPackage、U0、Reader 和页面 fre
 ## Aily 最小入口
 
 Aily 不保存解析、评估或 AEO 状态，也不运行复杂可视化 Workflow。一个面向用户的 Skill
-负责理解问题、按需调用只读连接器，并解释同一 WorkItem 的现有结果。
+负责理解问题、按需调用只读 MCP 工具，并解释同一 WorkItem 的现有结果。
 
-只读连接器只暴露三个固定 GET operation：
+MCP 只有一个无状态 JSON POST 入口 `/openapi/wiselink/mcp`，只注册三个工具：
 
-- `get_parse_status` → `/openapi/wiselink/work-items/status`
-- `query_parsed_package` → `/openapi/wiselink/work-items/parsed-units`
-- `get_deep_link` → `/openapi/wiselink/work-items/deep-link`
+- `get_parse_status`
+- `query_parsed_package`
+- `get_deep_link`
 
-`workItemId`（以及查询 operation 的 `query`）是结构化参数；连接器不能接受任意 URL、header、
-body 或 mutation。解析、评估、重综合和 AEO 写动作继续由登录态妙搭服务端执行。
+三个既有固定 GET 继续保留并与 MCP 复用同一服务。MCP 工具只接受 `workItemId`（查询工具再
+接受 `query`），不接受 URL、header、actor、authority 或 mutation。解析、评估、重综合和
+AEO 写动作继续由登录态妙搭服务端执行。
 
 OpenClaw 只负责 Boeing、Airbus、COMAC 等外部来源发现。搜索结果和 snippet 不是工程证据；
 只有完整、非受限、人工选中的官方文件进入现有 DM ingest 后，才可能产生 DocumentVersion 和
 后续 WorkItem。
 
-详见 [Aily Skill 与只读连接器交接](docs/AILY_MINIMAL_ENTRY_HANDOFF_20260814.md)。
+详见 [Aily Skill 与只读 MCP 交接](docs/AILY_MINIMAL_ENTRY_HANDOFF_20260814.md)。
 
 ## 保留的安全边界
 

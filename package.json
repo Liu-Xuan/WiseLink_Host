@@ -28,6 +28,7 @@
     "test:unified:composition": "npm run build:server && node scripts/verify-unified-reader-composition.mjs",
     "test:unified:host-vendored-real": "npm run build:server && node scripts/verify-host-u0-vendored-real.mjs",
     "test:canonical:activation": "npm run build:server && node scripts/verify-canonical-activation-deltas.mjs",
+    "test:canonical:mcp": "npm run build:server && node scripts/verify-canonical-mcp.mjs",
     "test:document-management:composition": "npm run build:server && node scripts/verify-document-management-composition.mjs",
     "test:document-management:real-pdf": "npm run build:server && node scripts/run-document-management-real-pdf-loop.mjs",
     "test:document-management:catalog-insert-shape": "npm run build:server && node scripts/verify-hosted-catalog-insert-select-shape.mjs",
@@ -55,6 +56,8 @@
   },
   "dependencies": {
     "@lark-apaas/fullstack-nestjs-core": "^1.1.57",
+    "@modelcontextprotocol/node": "^2.0.0",
+    "@modelcontextprotocol/server": "^2.0.0",
     "@nestjs/axios": "^4.0.1",
     "@nestjs/cache-manager": "^3.1.3",
     "@nestjs/common": "^10.4.20",
@@ -86,6 +89,7 @@
     "@lark-apaas/client-toolkit": "^1.2.61",
     "@lark-apaas/fullstack-presets": "^1.1.0",
     "@lark-apaas/fullstack-vite-preset": "^1.0.33",
+    "@modelcontextprotocol/client": "^2.0.0",
     "@nestjs/cli": "^10.4.9",
     "@nestjs/testing": "^10.4.20",
     "@radix-ui/react-accordion": "^1.2.12",
@@ -205,7 +209,7 @@
     "vite": "^7.3.1",
     "xlsx": "^0.18.5",
     "xlsx-js-style": "^1.2.0",
-    "zod": "^3.25.76",
+    "zod": "^4.4.3",
     "zustand": "~5.0.8"
   },
   "overrides": {

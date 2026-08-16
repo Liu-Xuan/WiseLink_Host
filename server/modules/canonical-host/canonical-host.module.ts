@@ -13,6 +13,8 @@ import { CanonicalEntryFacadeService } from './canonical-entry-facade.service';
 import { CanonicalHostVerticalService } from './canonical-host-vertical.service';
 import { CanonicalHostController } from './canonical-host.controller';
 import { CanonicalHostOpenApiController } from './canonical-host.openapi.controller';
+import { CanonicalHostMcpOpenApiController } from './canonical-host-mcp.openapi.controller';
+import { CanonicalHostMcpService } from './canonical-host-mcp.service';
 import { CanonicalFailureRecordingService } from './canonical-failure-recording.service';
 import { ExactFtdFrozen2PdfProducerAdapter } from './exact-ftd-frozen2-pdf-producer.adapter';
 import { OrdinaryFailureValidationWriteAuthorizationAdapter } from './ordinary-failure-validation-write-authorization.adapter';
@@ -54,11 +56,16 @@ export interface CanonicalHostModuleOptions {
 }
 
 @Module({
-  controllers: [CanonicalHostController, CanonicalHostOpenApiController],
+  controllers: [
+    CanonicalHostController,
+    CanonicalHostOpenApiController,
+    CanonicalHostMcpOpenApiController,
+  ],
   providers: [
     CanonicalEntryFacadeService,
     CanonicalFailureRecordingService,
     CanonicalHostVerticalService,
+    CanonicalHostMcpService,
     ExactFtdFrozen2PdfProducerAdapter,
     MiaodaWorkItemRepository,
     MiaodaDocumentVersionSourceResolver,
@@ -119,9 +126,7 @@ export class CanonicalHostModule {
       workItemRegistrarConfigured: Boolean(options.workItemRegistrarProvider),
       pdfProducerConfigured: Boolean(options.pdfProducerProvider),
       authorizationConfigured: Boolean(options.authorizationProvider),
-      permissionSnapshotConfigured: Boolean(
-        options.permissionSnapshotProvider,
-      ),
+      permissionSnapshotConfigured: Boolean(options.permissionSnapshotProvider),
       miaodaAppBindingConfigured: Boolean(options.miaodaAppBindingProvider),
       failureValidationWriteAuthorizationConfigured: Boolean(
         options.failureValidationWriteAuthorizationProvider,
@@ -135,7 +140,11 @@ export class CanonicalHostModule {
         AssessmentHostConsumerModule,
         ...(options.imports ?? []),
       ],
-      controllers: [CanonicalHostController, CanonicalHostOpenApiController],
+      controllers: [
+        CanonicalHostController,
+        CanonicalHostOpenApiController,
+        CanonicalHostMcpOpenApiController,
+      ],
       providers: [
         workItemRegistrarProvider,
         pdfProducerProvider,
@@ -151,6 +160,7 @@ export class CanonicalHostModule {
         CanonicalEntryFacadeService,
         CanonicalFailureRecordingService,
         CanonicalHostVerticalService,
+        CanonicalHostMcpService,
         ExactFtdFrozen2PdfProducerAdapter,
         MiaodaWorkItemRepository,
         MiaodaDocumentVersionSourceResolver,
