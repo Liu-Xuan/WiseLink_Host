@@ -38,6 +38,7 @@
     "test:ordinary:first-ftd-residual-recovery": "WL_TEST_SEED_THREE_ROW_RESIDUAL=1 npm run test:ordinary:first-ftd-loop",
     "test:ordinary:oem-reference-loop": "npm run build:server && node scripts/run-ordinary-oem-reference-loop.mjs",
     "test:ordinary:737-assessment-loop": "npm run build:server && node scripts/run-ordinary-737-assessment-loop.mjs",
+    "export:phase13:base-result": "npm run build:server && node scripts/export-phase13-base-result.cjs",
     "accept:phase13:integrated-assessment": "npm run build:server && node scripts/run-phase13-integrated-assessment-acceptance.mjs",
     "eslint": "eslint . --quiet",
     "stylelint": "stylelint client/src/**/*.css --quiet",
