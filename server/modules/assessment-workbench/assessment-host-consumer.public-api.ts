@@ -30,6 +30,7 @@ export {
   type ExternalDiscoveryCandidateDraft,
   type HostedOpenClawDiscoveryResult,
 } from './external-discovery-assessment';
+export { normalizeHostedOpenClawDiscoveryResult } from './hosted-openclaw-discovery-normalizer';
 /**
  * Historical Base AI-field compatibility exports. New hosts use the dynamic
  * rules exports above and do not need a Base record or AI field.

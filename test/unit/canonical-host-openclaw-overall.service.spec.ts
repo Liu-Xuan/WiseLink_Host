@@ -1,0 +1,268 @@
+import type { CanonicalWorkItemProjection } from '@shared/api.interface';
+import { CanonicalHostOpenClawOverallService } from '../../server/modules/canonical-host/canonical-host-openclaw-overall.service';
+
+const WORK_ITEM_ID = 'WI-OVERALL-150';
+const ATTEMPT_ID = 'ATT-INTERNAL-OVERALL';
+const ATTEMPT_REF = 'OVR-OPAQUE-CALLER-REF';
+const BASE_SHA = 'a'.repeat(64);
+
+describe('CanonicalHostOpenClawOverallService', () => {
+  it('returns an authority-free input with an opaque caller ref', async () => {
+    const harness = createHarness();
+    const begun = await harness.service.begin(WORK_ITEM_ID, []);
+
+    expect(begun.attemptRef).toBe(ATTEMPT_REF);
+    expect(begun.selectedDiscoveryRefs).toEqual([]);
+    expect(begun.modelInput.baseRuleResult).toMatchObject({
+      revision: 1,
+      criterionCount: 1,
+      evaluationItemCount: 1,
+    });
+    const serialized = JSON.stringify(begun.modelInput);
+    expect(serialized).not.toContain(WORK_ITEM_ID);
+    expect(serialized).not.toContain(ATTEMPT_ID);
+    expect(serialized).not.toContain('actor');
+    expect(serialized).not.toContain('"authority"');
+  });
+
+  it('keeps invalid output retryable, then persists exact corrected bytes and CASes once', async () => {
+    const harness = createHarness();
+
+    await expect(harness.service.commit(ATTEMPT_REF, '{}')).rejects.toThrow(
+      'OVERALL_OUTPUT_SHAPE_INVALID',
+    );
+    expect(harness.state.persisted).toEqual([]);
+    expect(harness.state.failed).toEqual([]);
+    expect(harness.state.status).toBe('RUNNING');
+
+    const output = validOutput();
+    const committed = await harness.service.commit(ATTEMPT_REF, output);
+
+    expect(harness.state.persisted).toEqual([output]);
+    expect(harness.state.casCount).toBe(1);
+    expect(harness.state.completed).toEqual([ATTEMPT_ID]);
+    expect(committed).toMatchObject({
+      workItemId: WORK_ITEM_ID,
+      workItemRevision: 6,
+      status: 'OVERALL_CANDIDATE_READY',
+      overallSynthesis: {
+        authorityLevel: 'candidate_only',
+        externalDiscoveryIsEvidence: false,
+        actionAttemptId: ATTEMPT_ID,
+      },
+    });
+  });
+
+  it('rejects a stale WorkItem revision before claim and persistence', async () => {
+    const harness = createHarness({ workItemRevision: 6, attemptNo: 5 });
+
+    await expect(harness.service.commit(ATTEMPT_REF, validOutput())).rejects.toThrow(
+      'WORK_ITEM_CAS_CONFLICT',
+    );
+    expect(harness.state.claimCount).toBe(0);
+    expect(harness.state.persisted).toEqual([]);
+  });
+
+  it('allows only one of two concurrent commits to persist', async () => {
+    const harness = createHarness();
+    const output = validOutput();
+    const results = await Promise.allSettled([
+      harness.service.commit(ATTEMPT_REF, output),
+      harness.service.commit(ATTEMPT_REF, output),
+    ]);
+
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+    expect(harness.state.persisted).toEqual([output]);
+    expect(harness.state.casCount).toBe(1);
+    expect(harness.state.failed).toEqual([]);
+  });
+});
+
+function createHarness(options: { workItemRevision?: number; attemptNo?: number } = {}) {
+  const workItem = workItemProjection(options.workItemRevision ?? 5);
+  const attempt = {
+    attemptId: ATTEMPT_ID,
+    workItemId: WORK_ITEM_ID,
+    actionType: 'OPENCLAW_OVERALL_SYNTHESIS' as const,
+    attemptNo: options.attemptNo ?? workItem.revision,
+    triggerRequestId: ATTEMPT_REF,
+    requestOrigin: 'OPENCLAW_OVR_NONE',
+    status: 'RUNNING' as const,
+    actorUserId: 'service:openclaw-main',
+    tenantId: 'tenant-overall',
+    createdAt: new Date('2026-08-16T12:00:00.000Z'),
+  };
+  const state = {
+    status: 'RUNNING',
+    claimCount: 0,
+    casCount: 0,
+    persisted: [] as string[],
+    completed: [] as string[],
+    failed: [] as string[],
+  };
+  const registrar = {
+    getByWorkItemId: async () => workItem,
+    compareAndSet: async (input: {
+      expectedRevision: number;
+      next: Omit<CanonicalWorkItemProjection, 'revision'>;
+    }) => {
+      state.casCount += 1;
+      return { ...input.next, revision: input.expectedRevision + 1 };
+    },
+  };
+  const repository = {
+    getRow: async () => ({ tenantId: 'tenant-overall' }),
+    reserveOverallSynthesisAction: async () => ({ ...attempt, status: state.status }),
+    getOverallSynthesisActionByCallerRef: async () => ({ ...attempt, status: state.status }),
+    claimOverallSynthesisCommit: async () => {
+      state.claimCount += 1;
+      if (state.status !== 'RUNNING') throw new Error('OPENCLAW_OVERALL_COMMIT_ALREADY_CLAIMED');
+      state.status = 'COMMITTING';
+    },
+    completeAssessmentAction: async (attemptId: string) => {
+      state.status = 'SUCCEEDED';
+      state.completed.push(attemptId);
+    },
+    failAssessmentAction: async (input: { attemptId: string }) => {
+      state.status = 'FAILED';
+      state.failed.push(input.attemptId);
+    },
+  };
+  const artifactStore = {
+    readActualBytes: async (artifact: { ref: string }) =>
+      artifact.ref === 'artifact://base' ? baseArtifactBytes() : packageBytes(),
+    persistAndReadback: async (bytes: Uint8Array) => {
+      const output = new TextDecoder().decode(bytes);
+      state.persisted.push(output);
+      return {
+        artifact: {
+          storeRole: 'UnifiedArtifactStoreCandidate' as const,
+          ref: 'artifact://overall-output',
+          sha256: 'c'.repeat(64),
+          byteLength: bytes.byteLength,
+          mediaType: 'application/json' as const,
+        },
+        actualBytes: bytes,
+        reused: false,
+      };
+    },
+  };
+  return {
+    state,
+    service: new CanonicalHostOpenClawOverallService(
+      registrar as never,
+      {
+        authorize: async (input: { action: string }) => ({
+          action: input.action,
+          allowed: true,
+          permissionSnapshotVersion: 'permission-overall',
+        }),
+      } as never,
+      { freshRead: async () => ({ permissionSnapshotVersion: 'permission-overall' }) } as never,
+      artifactStore as never,
+      repository as never,
+      { latestSearchRunsAsOf: async () => [] } as never,
+    ),
+  };
+}
+
+function workItemProjection(revision: number): CanonicalWorkItemProjection {
+  return {
+    workItemId: WORK_ITEM_ID,
+    requestId: 'REQ-OVERALL-150',
+    revision,
+    phase: 'CANDIDATE_READBACK_VERIFIED',
+    source: { documentId: 'DOC-737', documentVersionId: 'DV-737' },
+    classification: { parserProfileId: 'issuer.boeing.sb' },
+    package: {
+      packageId: 'PKG-737',
+      contractRevision: 'frozen.2',
+      contentUnitCount: 1,
+      documentIdentity: { documentCode: '737-34-3830', businessRevision: 'Original Issue' },
+      artifact: artifact('artifact://package', 'b'.repeat(64)),
+    },
+    integratedAssessment: {
+      status: 'BASE_RULE_CANDIDATE_READY',
+      baseRules: {
+        status: 'CANDIDATE_ONLY',
+        revision: 1,
+        sourceResultId: 'BASE-RESULT-1',
+        criterionSetId: 'JACS-ONE',
+        criterionCount: 1,
+        evaluationItemCount: 1,
+        unresolvedCount: 0,
+        sourceBoundCandidateCount: 1,
+        authorityLevel: 'candidate_only',
+        artifact: artifact('artifact://base', BASE_SHA),
+        actionAttemptId: 'ATT-BASE',
+        staleReason: null,
+      },
+      overallSynthesis: null,
+      overallForAeoConfirmation: null,
+    },
+  } as unknown as CanonicalWorkItemProjection;
+}
+
+function artifact(ref: string, sha256: string) {
+  return {
+    storeRole: 'UnifiedArtifactStoreCandidate' as const,
+    ref,
+    sha256,
+    byteLength: 1,
+    mediaType: 'application/json' as const,
+  };
+}
+
+function baseArtifactBytes(): Uint8Array {
+  return new TextEncoder().encode(JSON.stringify({
+    ruleResults: {
+      columns: [
+        'ruleId', 'result', 'factsConsidered', 'ruleApplication',
+        'analysisSummary', 'conclusion', 'sourceRefs', 'missingInputs',
+        'humanReviewRequired',
+      ],
+      rows: [[
+        'RULE-001', 'PASS', ['Fact'], 'Applied rule', 'Analysis',
+        'Candidate finding', ['SRC-001'], [], true,
+      ]],
+    },
+  }));
+}
+
+function packageBytes(): Uint8Array {
+  return new TextEncoder().encode(JSON.stringify({
+    sourceRefs: [{ sourceRefId: 'SRC-001', pageStart: 1, pageEnd: 1 }],
+  }));
+}
+
+function validOutput(): string {
+  return JSON.stringify({
+    sourceResultId: ATTEMPT_REF,
+    documentVersionId: 'DV-737',
+    packageId: 'PKG-737',
+    baseRuleRevision: 1,
+    baseRuleArtifactSha256: `sha256:${BASE_SHA}`,
+    discoveryStatus: 'NO_DISCOVERY',
+    gap: null,
+    candidateRefCount: 0,
+    findingCount: 1,
+    unresolvedCount: 0,
+    authorityLevel: 'candidate_only',
+    externalDiscoveryIsEvidence: false,
+    overallCandidate: '候选综合：当前规则结果与来源定位一致，仍需工程师复核。',
+    findings: [{
+      finding: '候选发现',
+      basis: '来源定位 SRC-001',
+      sourceRefIds: ['SRC-001'],
+      assumptions: [],
+      uncertainty: '需工程师复核',
+    }],
+    missingInputs: [],
+    applicabilityStatus: 'CANDIDATE_REVIEW_REQUIRED',
+    engineeringReviewRequired: true,
+    adopted: false,
+    usableAsEvidence: false,
+    providers: {},
+  });
+}

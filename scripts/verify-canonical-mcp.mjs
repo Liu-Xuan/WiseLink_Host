@@ -19,6 +19,7 @@ const { CanonicalHostOpenClawMcpService } = await import(
 
 const calls = [];
 const dynamicCalls = [];
+const orchestratorCalls = [];
 const methods = [];
 const vertical = {
   openApiStatus: async (workItemId) => {
@@ -65,7 +66,7 @@ const vertical = {
   },
 };
 const mcp = new CanonicalHostMcpService(vertical);
-const openClawMcp = new CanonicalHostOpenClawMcpService(vertical, {
+const dynamicEvaluation = {
   begin: async (workItemId) => {
     dynamicCalls.push({ tool: 'begin_dynamic_evaluation', workItemId });
     return {
@@ -89,7 +90,29 @@ const openClawMcp = new CanonicalHostOpenClawMcpService(vertical, {
       status: 'BASE_RULE_CANDIDATE_READY',
     };
   },
-});
+};
+const discovery = {
+  record: async (workItemId, result) => {
+    orchestratorCalls.push({ tool: 'record_oem_discovery_run', workItemId, result });
+    return { searchRunRef: 'search:boeing:server-owned', resultStatus: 'ACCESS_DENIED' };
+  },
+};
+const overall = {
+  begin: async (workItemId, providers) => {
+    orchestratorCalls.push({ tool: 'begin_overall_synthesis', workItemId, providers });
+    return { attemptRef: 'OVR-OPAQUE', selectedDiscoveryRefs: ['search:boeing:server-owned'], modelInput: { operation: 'SYNTHESIZE_OVERALL_CANDIDATE', outputCorrelationRef: 'OVR-OPAQUE' } };
+  },
+  commit: async (selectedAttemptRef, output) => {
+    orchestratorCalls.push({ tool: 'commit_overall_candidate', attemptRef: selectedAttemptRef, output });
+    return { workItemId: 'WI-DYNAMIC', workItemRevision: 7, status: 'OVERALL_CANDIDATE_READY' };
+  },
+};
+const openClawMcp = new CanonicalHostOpenClawMcpService(
+  vertical,
+  dynamicEvaluation,
+  discovery,
+  overall,
+);
 
 const httpServer = createServer(async (request, response) => {
   methods.push(request.method);
@@ -258,6 +281,9 @@ try {
         'get_deep_link',
         'begin_dynamic_evaluation',
         'commit_dynamic_evaluation_candidate',
+        'record_oem_discovery_run',
+        'begin_overall_synthesis',
+        'commit_overall_candidate',
       ],
     );
     assert.deepEqual(
@@ -313,6 +339,25 @@ try {
         output: '{"candidate":"complete"}',
       },
     ]);
+    const denied = {
+      provider: 'BOEING', query: '737 SB', resultStatus: 'ACCESS_DENIED',
+      candidates: [], accessRestricted: true, truncated: false,
+      partialOnly: false, excludedNonOemCandidateCount: 0,
+      error: { code: 'UPSTREAM_CONNECT_TIMEOUT', message: 'timeout' },
+    };
+    await openClawClient.callTool({
+      name: 'record_oem_discovery_run',
+      arguments: { workItemId: 'WI-DYNAMIC', result: denied },
+    });
+    await openClawClient.callTool({
+      name: 'begin_overall_synthesis',
+      arguments: { workItemId: 'WI-DYNAMIC', providers: ['BOEING'] },
+    });
+    await openClawClient.callTool({
+      name: 'commit_overall_candidate',
+      arguments: { attemptRef: 'OVR-OPAQUE', output: '{"candidate":"complete"}' },
+    });
+    assert.equal(orchestratorCalls.length, 3);
   } finally {
     await openClawClient.close();
   }
@@ -405,11 +450,14 @@ try {
           'get_deep_link',
           'begin_dynamic_evaluation',
           'commit_dynamic_evaluation_candidate',
+          'record_oem_discovery_run',
+          'begin_overall_synthesis',
+          'commit_overall_candidate',
         ],
         resources: 0,
         prompts: 0,
         ailyMutationTools: 0,
-        openClawCandidateMutationTools: 2,
+        openClawCandidateMutationTools: 5,
         servedMethods: ['POST'],
         rejectedClientTransportMethods: [
           ...new Set(methods.filter((method) => method !== 'POST')),
