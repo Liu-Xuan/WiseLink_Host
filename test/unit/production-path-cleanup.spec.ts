@@ -19,6 +19,12 @@ describe('Phase 13C production path', () => {
     expect(app).not.toContain('DocumentManagementValidationModule');
     expect(app).not.toContain('ExternalDiscoveryModule.forRoot');
     expect(controller).not.toContain('phase10-aeo-candidate-loop');
+    expect(controller).toContain(
+      "work-items/:workItemId/integrated-assessment/base-rules",
+    );
+    expect(controller).toContain(
+      "work-items/:workItemId/integrated-assessment/overall-synthesis",
+    );
     expect(runtimeController).not.toContain('file-service-upload');
     expect(client).not.toContain('RUN PHASE 10 AEO ONCE');
     expect(client).not.toContain('phase10-aeo-candidate-loop-trigger');

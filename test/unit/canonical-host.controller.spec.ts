@@ -40,12 +40,18 @@ function target() {
       .fn()
       .mockResolvedValue({ revision: 6 }),
   };
+  const integratedAssessments = {
+    persistBaseRuleCandidate: jest.fn().mockResolvedValue({ revision: 7 }),
+    persistOpenClawOverall: jest.fn().mockResolvedValue({ revision: 8 }),
+  };
   return {
     assessments,
+    integratedAssessments,
     controller: new CanonicalHostController(
       {} as never,
       {} as never,
       assessments as never,
+      integratedAssessments as never,
     ),
   };
 }
@@ -156,5 +162,79 @@ describe('CanonicalHostController assessment actions', () => {
       ),
     ).toThrow(UnauthorizedException);
     expect(assessments.evaluateCandidate).not.toHaveBeenCalled();
+  });
+
+  it('exposes the two integrated assessment steps only as authenticated empty-body actions', async () => {
+    const { controller, integratedAssessments } = target();
+
+    await expect(
+      controller.persistBaseRuleCandidate(
+        'WI-SB-1001',
+        {},
+        HOST_REQUEST as never,
+      ),
+    ).resolves.toEqual({ revision: 7 });
+    await expect(
+      controller.persistOpenClawOverall(
+        'WI-SB-1001',
+        {},
+        HOST_REQUEST as never,
+      ),
+    ).resolves.toEqual({ revision: 8 });
+
+    expect(integratedAssessments.persistBaseRuleCandidate).toHaveBeenCalledWith(
+      'WI-SB-1001',
+      expect.objectContaining({ userId: 'engineer-1001' }),
+    );
+    expect(integratedAssessments.persistOpenClawOverall).toHaveBeenCalledWith(
+      'WI-SB-1001',
+      expect.objectContaining({ userId: 'engineer-1001' }),
+    );
+  });
+
+  it.each([
+    ['base', { sourceResultId: 'client-result' }],
+    ['overall', { authority: 'client-authority' }],
+  ])(
+    'rejects client-supplied integrated assessment %s input before invoking a provider',
+    async (step, body) => {
+      const { controller, integratedAssessments } = target();
+
+      let caught: unknown;
+      try {
+        if (step === 'base') {
+          await controller.persistBaseRuleCandidate(
+            'WI-SB-1001',
+            body,
+            HOST_REQUEST as never,
+          );
+        } else {
+          await controller.persistOpenClawOverall(
+            'WI-SB-1001',
+            body,
+            HOST_REQUEST as never,
+          );
+        }
+      } catch (error) {
+        caught = error;
+      }
+
+      expect(caught).toBeInstanceOf(BadRequestException);
+      expect(integratedAssessments.persistBaseRuleCandidate).not.toHaveBeenCalled();
+      expect(integratedAssessments.persistOpenClawOverall).not.toHaveBeenCalled();
+    },
+  );
+
+  it('requires the authenticated host actor for integrated assessment actions', async () => {
+    const { controller, integratedAssessments } = target();
+
+    expect(() =>
+      controller.persistBaseRuleCandidate(
+        'WI-SB-1001',
+        {},
+        { userContext: null } as never,
+      ),
+    ).toThrow(UnauthorizedException);
+    expect(integratedAssessments.persistBaseRuleCandidate).not.toHaveBeenCalled();
   });
 });

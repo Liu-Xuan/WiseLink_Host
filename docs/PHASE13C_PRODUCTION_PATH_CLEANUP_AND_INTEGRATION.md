@@ -70,7 +70,8 @@ Miaoda authenticated page/action
       -> WorkItem CAS + ActionAttempt
       -> one FileService actual-byte store
 
-Phase 13C internal coordinator (no public write route in this slice)
+Miaoda authenticated integrated-assessment actions
+  -> strict empty request body; actor comes only from the server login context
   -> real Base rule result provider [default unconfigured]
       -> actual bytes persist/readback
       -> WorkItem.integratedAssessment.baseRules thin projection
@@ -89,6 +90,12 @@ The Base result provider must supply the real dynamic-N result bytes and its sou
 OpenClaw provider must supply the real candidate-only synthesis bytes and the Base revision it used.
 Both remain unconfigured until owner output is available. An unavailable provider is an explicit
 waiting condition and must perform zero WorkItem, ActionAttempt, database, or FileService mutation.
+The only write entry points are the login-required Miaoda routes
+`POST /api/canonical-host/work-items/:workItemId/integrated-assessment/base-rules` and
+`POST /api/canonical-host/work-items/:workItemId/integrated-assessment/overall-synthesis`. Both
+accept an empty object only; the actor, authority decision, permission snapshot, result bytes and
+result identity cannot be supplied by the caller. The fixed OpenAPI key routes and the MCP facade
+remain read-only and expose no integrated-assessment mutation tool.
 
 AEO owner Phase 13E exact commit
 `eba49c7c0cb86ded7e3485c8d32bcbaf228557c3` is recorded only as a later consumer seam. Its

@@ -22,6 +22,7 @@ import type {
 
 import { OrdinaryWorkItemService } from '../work-item/ordinary-work-item.service';
 import { CanonicalHostAssessmentService } from './canonical-host-assessment.service';
+import { CanonicalHostIntegratedAssessmentService } from './canonical-host-integrated-assessment.service';
 import { CanonicalHostVerticalService } from './canonical-host-vertical.service';
 import type { CanonicalHostActor } from './canonical-host.types';
 
@@ -39,6 +40,7 @@ export class CanonicalHostController {
     private readonly service: CanonicalHostVerticalService,
     private readonly workItems: OrdinaryWorkItemService,
     private readonly assessments: CanonicalHostAssessmentService,
+    private readonly integratedAssessments: CanonicalHostIntegratedAssessmentService,
   ) {}
 
   @Post('work-items/parse-pdf')
@@ -133,6 +135,32 @@ export class CanonicalHostController {
     );
   }
 
+  @Post('work-items/:workItemId/integrated-assessment/base-rules')
+  persistBaseRuleCandidate(
+    @Param('workItemId') workItemId: string,
+    @Body() body: unknown,
+    @Req() httpRequest: Request,
+  ) {
+    integratedAssessmentActionBody(body);
+    return this.integratedAssessments.persistBaseRuleCandidate(
+      requiredText(workItemId, 'workItemId'),
+      hostActor(httpRequest),
+    );
+  }
+
+  @Post('work-items/:workItemId/integrated-assessment/overall-synthesis')
+  persistOpenClawOverall(
+    @Param('workItemId') workItemId: string,
+    @Body() body: unknown,
+    @Req() httpRequest: Request,
+  ) {
+    integratedAssessmentActionBody(body);
+    return this.integratedAssessments.persistOpenClawOverall(
+      requiredText(workItemId, 'workItemId'),
+      hostActor(httpRequest),
+    );
+  }
+
 }
 
 export function hostActor(request: Request): CanonicalHostActor {
@@ -150,6 +178,10 @@ export function hostActor(request: Request): CanonicalHostActor {
 }
 
 function assessmentEvaluateBody(body: unknown): void {
+  ordinaryBody(body, []);
+}
+
+function integratedAssessmentActionBody(body: unknown): void {
   ordinaryBody(body, []);
 }
 
