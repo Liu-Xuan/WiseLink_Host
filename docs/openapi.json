@@ -299,6 +299,44 @@
           }
         }
       }
+    },
+    "/openapi/wiselink/openclaw-mcp": {
+      "post": {
+        "operationId": "handleOpenClawMcp",
+        "summary": "OpenClaw 专用动态规则候选评估 MCP 入口",
+        "description": "独立承载三个只读工具及受控 dynamic-N begin/commit；服务端派生 actor、权限、WorkItem revision 和 ActionAttempt，拒绝客户端提供 authority、URL、Header、模型或 agent 身份。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "由 MCP SDK 生成并校验的无状态 JSON-RPC 消息",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "MCP JSON 响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "MCP 通知已接受"
+          },
+          "400": {
+            "description": "无效 MCP 消息、未知工具或严格参数校验失败"
+          }
+        }
+      }
     }
   }
 }

@@ -27,6 +27,11 @@ const { CanonicalHostOpenApiController } = await import(
 const { CanonicalHostMcpOpenApiController } = await import(
   pathToFileURL(join(moduleRoot, 'canonical-host-mcp.openapi.controller.js'))
 );
+const { CanonicalHostOpenClawMcpOpenApiController } = await import(
+  pathToFileURL(
+    join(moduleRoot, 'canonical-host-openclaw-mcp.openapi.controller.js'),
+  )
+);
 const {
   CANONICAL_AUTHORIZATION,
   CANONICAL_FAILURE_VALIDATION_WRITE_AUTHORIZATION,
@@ -89,6 +94,7 @@ assert.deepEqual(controllers, [
   CanonicalHostController,
   CanonicalHostOpenApiController,
   CanonicalHostMcpOpenApiController,
+  CanonicalHostOpenClawMcpOpenApiController,
 ]);
 assert.equal(
   Reflect.getMetadata(PATH_METADATA, CanonicalHostController),
@@ -130,6 +136,17 @@ assert.equal(
   Reflect.getMetadata(NEED_LOGIN_KEY, CanonicalHostMcpOpenApiController),
   undefined,
 );
+assert.equal(
+  Reflect.getMetadata(PATH_METADATA, CanonicalHostOpenClawMcpOpenApiController),
+  'openapi/wiselink',
+);
+assert.equal(
+  Reflect.getMetadata(
+    NEED_LOGIN_KEY,
+    CanonicalHostOpenClawMcpOpenApiController,
+  ),
+  undefined,
+);
 assert.deepEqual(readRoutes([CanonicalHostOpenApiController]), [
   {
     method: 'GET',
@@ -149,15 +166,19 @@ assert.deepEqual(
   readRoutes([
     CanonicalHostOpenApiController,
     CanonicalHostMcpOpenApiController,
+    CanonicalHostOpenClawMcpOpenApiController,
   ]),
 );
 assert.deepEqual(readRoutes([CanonicalHostMcpOpenApiController]), [
   { method: 'POST', path: 'openapi/wiselink/mcp' },
 ]);
+assert.deepEqual(readRoutes([CanonicalHostOpenClawMcpOpenApiController]), [
+  { method: 'POST', path: 'openapi/wiselink/openclaw-mcp' },
+]);
 assert.ok(Object.keys(openApiSpec.paths).every((path) => !path.includes('{')));
 assert.ok(
   Object.entries(openApiSpec.paths)
-    .filter(([path]) => path !== '/openapi/wiselink/mcp')
+    .filter(([path]) => !path.endsWith('mcp'))
     .every(([, pathItem]) =>
       pathItem.get.parameters.some(
         (parameter) =>
@@ -286,9 +307,11 @@ process.stdout.write(
         routes: readRoutes([
           CanonicalHostOpenApiController,
           CanonicalHostMcpOpenApiController,
+          CanonicalHostOpenClawMcpOpenApiController,
         ]),
-        mcpTransportRoutes: 1,
-        mutationRoutes: 0,
+        mcpTransportRoutes: 2,
+        ailyMutationTools: 0,
+        openClawCandidateMutationTools: 2,
       },
       hardCodedSamplePresent: false,
       failureStates: ['FAILED_WITH_IMMUTABLE_ARTIFACT', 'RECORDING_FAILED'],

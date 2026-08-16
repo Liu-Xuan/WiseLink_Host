@@ -20,6 +20,7 @@ import {
   type AssessmentHostCandidateResult,
   type HostedOpenClawDiscoveryResult,
 } from '../assessment-workbench/assessment-host-consumer.public-api';
+import { buildUnifiedSbJobAidAssessmentInput } from '../assessment-workbench/unified-assessment-input';
 import {
   buildJobAidCriterionSetVersion,
 } from '../assessment-workbench/job-aid-runtime/criterionSet.js';
@@ -65,6 +66,11 @@ export interface CanonicalAssessmentResynthesisInput {
   reviewedExternalManifest?: unknown;
 }
 
+export interface PreparedDynamicRulesCandidate
+  extends AssessmentHostCandidateResult {
+  dynamicRulesInput: Record<string, unknown>;
+}
+
 @Injectable()
 export class CanonicalHostAssessmentService {
   constructor(
@@ -108,45 +114,13 @@ export class CanonicalHostAssessmentService {
       throw new Error('ASSESSMENT_EVALUATE_INCOMPLETE_PRIOR_ATTEMPT');
     }
     try {
-      const packageBytes = await this.readAcceptedPackage(
+      const result = await this.prepareDynamicRulesCandidate({
         workItem,
         permissionSnapshotVersion,
-      );
-      const ruleBytes = await readAssessmentAsset('job-aid/rule-pack-0.2.json');
-      const rulePack = JSON.parse(Buffer.from(ruleBytes).toString('utf8')) as
-        Record<string, unknown>;
-      const ruleDigest =
-        'sha256:' + createHash('sha256').update(ruleBytes).digest('hex');
-      const criterionSet = buildJobAidCriterionSetVersion({
-        rulePack,
-        artifactRef: RULE_ARTIFACT_REF,
-        artifactDigest: ruleDigest,
-        artifactVersion: RULE_ARTIFACT_VERSION,
-        canonicalCriteriaHash: RULE_CRITERIA_HASH,
-        sourceJobAidDocumentVersionStatus: 'VERSION_UNCONFIRMED',
-        lifecycleStatus: 'ACTIVE',
-      });
-      const result = this.assessment.runCandidate({
-        assessment: {
-          workItemId: workItem.workItemId,
-          documentVersionBinding: assessmentBinding(workItem),
-          artifactBytes: packageBytes,
-          assessmentAsOf: requiredIso(input.assessmentAsOf, 'assessmentAsOf'),
-          rulePack,
-          rulePackHash: ruleDigest.slice('sha256:'.length),
-          criterionSet,
-          jobAidSourceIdentity: {
-            status: 'SOURCE_IDENTITY_MISMATCH',
-            sourceManifestHash: JOB_AID_SOURCE_MANIFEST_HASH,
-            allowsCandidateOnlyAssessment: true,
-            blocksEngineeringClosure: true,
-            blocksRulePromotion: true,
-          },
-          generatedAt: requiredIso(input.generatedAt, 'generatedAt'),
-        },
+        assessmentAsOf: input.assessmentAsOf,
+        generatedAt: input.generatedAt,
         externalDiscovery: input.externalDiscovery ?? null,
-        reviewedExternalOemManifest:
-          input.reviewedExternalManifest ?? null,
+        reviewedExternalManifest: input.reviewedExternalManifest ?? null,
       });
       const persisted = await this.persistResult(result);
       const projection = assessmentProjection(
@@ -174,6 +148,64 @@ export class CanonicalHostAssessmentService {
       });
       throw error;
     }
+  }
+
+  async prepareDynamicRulesCandidate(input: {
+    workItem: CanonicalWorkItemProjection;
+    permissionSnapshotVersion: string;
+    assessmentAsOf: string;
+    generatedAt: string;
+    externalDiscovery: HostedOpenClawDiscoveryResult | null;
+    reviewedExternalManifest: unknown | null;
+  }): Promise<PreparedDynamicRulesCandidate> {
+    const packageBytes = await this.readAcceptedPackage(
+      input.workItem,
+      input.permissionSnapshotVersion,
+    );
+    const ruleBytes = await readAssessmentAsset('job-aid/rule-pack-0.2.json');
+    const rulePack = JSON.parse(Buffer.from(ruleBytes).toString('utf8')) as
+      Record<string, unknown>;
+    const ruleDigest =
+      'sha256:' + createHash('sha256').update(ruleBytes).digest('hex');
+    const criterionSet = buildJobAidCriterionSetVersion({
+      rulePack,
+      artifactRef: RULE_ARTIFACT_REF,
+      artifactDigest: ruleDigest,
+      artifactVersion: RULE_ARTIFACT_VERSION,
+      canonicalCriteriaHash: RULE_CRITERIA_HASH,
+      sourceJobAidDocumentVersionStatus: 'VERSION_UNCONFIRMED',
+      lifecycleStatus: 'ACTIVE',
+    });
+    const assessmentOptions = {
+        workItemId: input.workItem.workItemId,
+        documentVersionBinding: assessmentBinding(input.workItem),
+        artifactBytes: packageBytes,
+        assessmentAsOf: requiredIso(input.assessmentAsOf, 'assessmentAsOf'),
+        rulePack,
+        rulePackHash: ruleDigest.slice('sha256:'.length),
+        criterionSet,
+        jobAidSourceIdentity: {
+          status: 'SOURCE_IDENTITY_MISMATCH',
+          sourceManifestHash: JOB_AID_SOURCE_MANIFEST_HASH,
+          allowsCandidateOnlyAssessment: true,
+          blocksEngineeringClosure: true,
+          blocksRulePromotion: true,
+        },
+        generatedAt: requiredIso(input.generatedAt, 'generatedAt'),
+      };
+    const dynamicRulesInput = buildUnifiedSbJobAidAssessmentInput({
+      documentVersionBinding: assessmentOptions.documentVersionBinding,
+      artifactBytes: packageBytes,
+      assessmentAsOf: assessmentOptions.assessmentAsOf,
+    });
+    return {
+      ...this.assessment.runCandidate({
+      assessment: assessmentOptions,
+      externalDiscovery: input.externalDiscovery,
+      reviewedExternalOemManifest: input.reviewedExternalManifest,
+      }),
+      dynamicRulesInput,
+    };
   }
 
   async resynthesizeAfterEngineerChange(

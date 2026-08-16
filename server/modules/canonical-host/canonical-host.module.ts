@@ -15,6 +15,9 @@ import { CanonicalHostController } from './canonical-host.controller';
 import { CanonicalHostOpenApiController } from './canonical-host.openapi.controller';
 import { CanonicalHostMcpOpenApiController } from './canonical-host-mcp.openapi.controller';
 import { CanonicalHostMcpService } from './canonical-host-mcp.service';
+import { CanonicalHostOpenClawMcpOpenApiController } from './canonical-host-openclaw-mcp.openapi.controller';
+import { CanonicalHostOpenClawMcpService } from './canonical-host-openclaw-mcp.service';
+import { CanonicalHostOpenClawDynamicEvaluationService } from './canonical-host-openclaw-dynamic-evaluation.service';
 import { CanonicalFailureRecordingService } from './canonical-failure-recording.service';
 import { ExactFtdFrozen2PdfProducerAdapter } from './exact-ftd-frozen2-pdf-producer.adapter';
 import { OrdinaryFailureValidationWriteAuthorizationAdapter } from './ordinary-failure-validation-write-authorization.adapter';
@@ -68,12 +71,15 @@ export interface CanonicalHostModuleOptions {
     CanonicalHostController,
     CanonicalHostOpenApiController,
     CanonicalHostMcpOpenApiController,
+    CanonicalHostOpenClawMcpOpenApiController,
   ],
   providers: [
     CanonicalEntryFacadeService,
     CanonicalFailureRecordingService,
     CanonicalHostVerticalService,
     CanonicalHostMcpService,
+    CanonicalHostOpenClawMcpService,
+    CanonicalHostOpenClawDynamicEvaluationService,
     ExactFtdFrozen2PdfProducerAdapter,
     MiaodaWorkItemRepository,
     MiaodaDocumentVersionSourceResolver,
@@ -164,6 +170,7 @@ export class CanonicalHostModule {
         CanonicalHostController,
         CanonicalHostOpenApiController,
         CanonicalHostMcpOpenApiController,
+        CanonicalHostOpenClawMcpOpenApiController,
       ],
       providers: [
         workItemRegistrarProvider,
@@ -183,6 +190,8 @@ export class CanonicalHostModule {
         CanonicalFailureRecordingService,
         CanonicalHostVerticalService,
         CanonicalHostMcpService,
+        CanonicalHostOpenClawMcpService,
+        CanonicalHostOpenClawDynamicEvaluationService,
         ExactFtdFrozen2PdfProducerAdapter,
         MiaodaWorkItemRepository,
         MiaodaDocumentVersionSourceResolver,

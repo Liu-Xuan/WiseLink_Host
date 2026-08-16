@@ -13,10 +13,14 @@ const moduleRoot = join(root, 'dist/server/modules/canonical-host');
 const { CanonicalHostMcpService } = await import(
   pathToFileURL(join(moduleRoot, 'canonical-host-mcp.service.js'))
 );
+const { CanonicalHostOpenClawMcpService } = await import(
+  pathToFileURL(join(moduleRoot, 'canonical-host-openclaw-mcp.service.js'))
+);
 
 const calls = [];
+const dynamicCalls = [];
 const methods = [];
-const mcp = new CanonicalHostMcpService({
+const vertical = {
   openApiStatus: async (workItemId) => {
     calls.push({ tool: 'get_parse_status', workItemId });
     await delay(workItemId.endsWith('SLOW') ? 15 : 1);
@@ -59,17 +63,49 @@ const mcp = new CanonicalHostMcpService({
       deepLink: `https://host.example.test/work-items/${workItemId}/documents`,
     };
   },
+};
+const mcp = new CanonicalHostMcpService(vertical);
+const openClawMcp = new CanonicalHostOpenClawMcpService(vertical, {
+  begin: async (workItemId) => {
+    dynamicCalls.push({ tool: 'begin_dynamic_evaluation', workItemId });
+    return {
+      attemptRef: 'DYN-OPAQUE-CALLER-REF',
+      modelInput: {
+        purpose: 'EVALUATE_DYNAMIC_RULES',
+        callerCorrelationRef: 'DYN-OPAQUE-CALLER-REF',
+        criterionCount: 150,
+      },
+    };
+  },
+  commit: async (attemptRef, output) => {
+    dynamicCalls.push({
+      tool: 'commit_dynamic_evaluation_candidate',
+      attemptRef,
+      output,
+    });
+    return {
+      workItemId: 'WI-DYNAMIC',
+      workItemRevision: 6,
+      status: 'BASE_RULE_CANDIDATE_READY',
+    };
+  },
 });
 
 const httpServer = createServer(async (request, response) => {
   methods.push(request.method);
-  if (request.method !== 'POST' || request.url !== '/openapi/wiselink/mcp') {
+  const selectedMcp =
+    request.url === '/openapi/wiselink/mcp'
+      ? mcp
+      : request.url === '/openapi/wiselink/openclaw-mcp'
+        ? openClawMcp
+        : null;
+  if (request.method !== 'POST' || selectedMcp === null) {
     response.writeHead(405, { Allow: 'POST' });
     response.end();
     return;
   }
   try {
-    await mcp.handle(request, response, await readJsonBody(request));
+    await selectedMcp.handle(request, response, await readJsonBody(request));
   } catch (error) {
     response.writeHead(500, { 'content-type': 'application/json' });
     response.end(
@@ -203,6 +239,85 @@ try {
   }
 
   calls.length = 0;
+  dynamicCalls.length = 0;
+  const openClawEndpoint = new URL(
+    '/openapi/wiselink/openclaw-mcp',
+    endpoint,
+  );
+  const openClawClient = await connectedClient(
+    openClawEndpoint,
+    'openclaw-mcp-client',
+  );
+  try {
+    const listed = await openClawClient.listTools();
+    assert.deepEqual(
+      listed.tools.map(({ name }) => name),
+      [
+        'get_parse_status',
+        'query_parsed_package',
+        'get_deep_link',
+        'begin_dynamic_evaluation',
+        'commit_dynamic_evaluation_candidate',
+      ],
+    );
+    assert.deepEqual(
+      resultJson(
+        await openClawClient.callTool({
+          name: 'begin_dynamic_evaluation',
+          arguments: { workItemId: 'WI-DYNAMIC' },
+        }),
+      ),
+      {
+        attemptRef: 'DYN-OPAQUE-CALLER-REF',
+        modelInput: {
+          purpose: 'EVALUATE_DYNAMIC_RULES',
+          callerCorrelationRef: 'DYN-OPAQUE-CALLER-REF',
+          criterionCount: 150,
+        },
+      },
+    );
+    assert.deepEqual(
+      resultJson(
+        await openClawClient.callTool({
+          name: 'commit_dynamic_evaluation_candidate',
+          arguments: {
+            attemptRef: 'DYN-OPAQUE-CALLER-REF',
+            output: '{"candidate":"complete"}',
+          },
+        }),
+      ),
+      {
+        workItemId: 'WI-DYNAMIC',
+        workItemRevision: 6,
+        status: 'BASE_RULE_CANDIDATE_READY',
+      },
+    );
+    const rejected = await openClawClient.callTool({
+      name: 'begin_dynamic_evaluation',
+      arguments: {
+        workItemId: 'WI-DYNAMIC',
+        actor: 'untrusted',
+        authority: true,
+        url: 'https://untrusted.example.test',
+        header: { Authorization: 'untrusted' },
+        model: 'untrusted',
+        agentId: 'untrusted',
+      },
+    });
+    assert.equal(rejected.isError, true);
+    assert.deepEqual(dynamicCalls, [
+      { tool: 'begin_dynamic_evaluation', workItemId: 'WI-DYNAMIC' },
+      {
+        tool: 'commit_dynamic_evaluation_candidate',
+        attemptRef: 'DYN-OPAQUE-CALLER-REF',
+        output: '{"candidate":"complete"}',
+      },
+    ]);
+  } finally {
+    await openClawClient.close();
+  }
+
+  calls.length = 0;
   const modernClient = await connectedClient(
     endpoint,
     'mcp-modern-client',
@@ -279,10 +394,22 @@ try {
         status: 'PASSED',
         transport: 'STATELESS_STREAMABLE_HTTP_JSON_POST_ONLY',
         protocolVersions: ['2026-07-28', '2025-11-25'],
-        tools: ['get_parse_status', 'query_parsed_package', 'get_deep_link'],
+        ailyTools: [
+          'get_parse_status',
+          'query_parsed_package',
+          'get_deep_link',
+        ],
+        openClawTools: [
+          'get_parse_status',
+          'query_parsed_package',
+          'get_deep_link',
+          'begin_dynamic_evaluation',
+          'commit_dynamic_evaluation_candidate',
+        ],
         resources: 0,
         prompts: 0,
-        mutationTools: 0,
+        ailyMutationTools: 0,
+        openClawCandidateMutationTools: 2,
         servedMethods: ['POST'],
         rejectedClientTransportMethods: [
           ...new Set(methods.filter((method) => method !== 'POST')),

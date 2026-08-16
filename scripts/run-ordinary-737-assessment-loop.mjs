@@ -165,6 +165,8 @@ const [
   { U0FullValidationService },
   { UnifiedReaderService },
   { AssessmentHostConsumerService },
+  { DynamicRulesEvaluationProcessor },
+  { buildUnifiedSbJobAidAssessmentInput },
   { buildJobAidCriterionSetVersion },
 ] = await Promise.all([
   importBuilt('modules/document-management/src/hosted/phase5BoeingSbHandoff.js'),
@@ -181,6 +183,8 @@ const [
   importBuilt('modules/unified-reader/u0-full-validation.service.js'),
   importBuilt('modules/unified-reader/unified-reader.service.js'),
   importBuilt('modules/assessment-workbench/assessment-host-consumer.service.js'),
+  importBuilt('modules/assessment-workbench/dynamic-rules-evaluation.processor.js'),
+  importBuilt('modules/assessment-workbench/unified-assessment-input.js'),
   importBuilt('modules/assessment-workbench/job-aid-runtime/criterionSet.js'),
 ]);
 
@@ -373,6 +377,39 @@ const preview = assessmentConsumer.runCandidate({
     criterionSet,
   ),
 });
+const dynamicProcessor = new DynamicRulesEvaluationProcessor();
+const dynamicRulesInput = buildUnifiedSbJobAidAssessmentInput({
+  documentVersionBinding: assessmentOptions(
+    parsed.result.workItem,
+    packageBytes,
+    rulePack,
+    ruleDigest,
+    criterionSet,
+  ).documentVersionBinding,
+  artifactBytes: packageBytes,
+  assessmentAsOf: '2026-08-13T00:00:00.000Z',
+});
+const dynamicRequest = dynamicProcessor.buildRequest(
+  dynamicRulesInput,
+  preview.overall.transport,
+  {
+    transportId: 'OPENCLAW-DYNAMIC:ATT-INTERNAL-LOCAL-737',
+    workItemId: parsed.result.workItem.workItemId,
+    actionAttemptId: 'ATT-INTERNAL-LOCAL-737',
+    expectedRevision: parsed.result.workItem.revision,
+    documentVersionId: parsed.result.workItem.source.documentVersionId,
+  },
+  'DYN-LOCAL-737-OPAQUE',
+);
+const dynamicModelInputText = JSON.stringify(dynamicRequest.modelInput);
+assert.equal(dynamicRequest.modelInput.purpose, 'EVALUATE_DYNAMIC_RULES');
+assert.equal(dynamicRequest.modelInput.jobAidContext.criterionTable.rowCount, 150);
+assert.equal(dynamicModelInputText.includes(parsed.result.workItem.workItemId), false);
+assert.equal(dynamicModelInputText.includes('ATT-INTERNAL-LOCAL-737'), false);
+assert.equal(dynamicModelInputText.includes('workItemId'), false);
+assert.equal(dynamicModelInputText.includes('actionAttemptId'), false);
+assert.equal(dynamicModelInputText.includes('expectedRevision'), false);
+assert.equal(Buffer.byteLength(dynamicModelInputText, 'utf8') <= 45_000, true);
 const fast61 = await readFastReceipt('61', reader, artifactStore);
 const fast62 = await readFastReceipt('62', reader, artifactStore);
 const fast61Manifest = reviewedFastManifest(preview, fast61);
@@ -588,6 +625,14 @@ process.stdout.write(`${JSON.stringify({
     artifact: secondResynthesis.assessment.artifact,
     evaluateAttemptId: secondResynthesis.assessment.evaluateAttemptId,
     resynthesisAttemptId: secondResynthesis.assessment.resynthesisAttemptId,
+  },
+  dynamicEvaluationInput: {
+    purpose: dynamicRequest.modelInput.purpose,
+    criterionCount:
+      dynamicRequest.modelInput.jobAidContext.criterionTable.rowCount,
+    byteLength: Buffer.byteLength(dynamicModelInputText, 'utf8'),
+    authorityFree: true,
+    callerCorrelationRef: dynamicRequest.modelInput.callerCorrelationRef,
   },
   external: {
     discoveryStatus: secondResynthesis.assessment.externalDiscoveryStatus,

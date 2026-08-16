@@ -1,5 +1,16 @@
 export { AssessmentHostConsumerModule } from './assessment-host-consumer.module';
 export {
+  DYNAMIC_RULES_EVALUATION_PURPOSE,
+  DynamicRulesEvaluationProcessor,
+  buildDynamicRulesEvaluationRequest,
+  consumeDynamicRulesEvaluationOutput,
+  type DynamicRulesEvaluationCorrelation,
+  type DynamicRulesEvaluationInput,
+  type DynamicRulesEvaluationPrivateEnvelope,
+  type DynamicRulesEvaluationRequest,
+  type DynamicRulesEvaluationResult,
+} from './dynamic-rules-evaluation.processor';
+export {
   AssessmentHostConsumerService,
   type AssessmentHostCandidateRequest,
   type AssessmentHostCandidateResult,
@@ -19,6 +30,10 @@ export {
   type ExternalDiscoveryCandidateDraft,
   type HostedOpenClawDiscoveryResult,
 } from './external-discovery-assessment';
+/**
+ * Historical Base AI-field compatibility exports. New hosts use the dynamic
+ * rules exports above and do not need a Base record or AI field.
+ */
 export {
   BASE_ONE_SHOT_PURPOSE,
   BaseOneShotAssessmentProcessor,
