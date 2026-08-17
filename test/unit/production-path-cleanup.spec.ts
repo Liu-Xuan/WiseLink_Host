@@ -5,31 +5,38 @@ const root = resolve(__dirname, '../..');
 
 describe('Phase 13C production path', () => {
   it('does not expose old validation actions or host-owned OpenClaw automation', async () => {
-    const [app, controller, runtimeController, client, externalModule, assets, packageJson] =
-      await Promise.all([
-        source('server/app.module.ts'),
-        source('server/modules/canonical-host/canonical-host.controller.ts'),
-        source('server/modules/runtime-probe/runtime-probe.controller.ts'),
-        source('client/src/pages/DocumentParsingPage/DocumentParsingPage.tsx'),
-        source('server/modules/external-discovery/external-discovery.module.ts'),
-        source('scripts/sync-document-management-assets.mjs'),
-        source('package.json'),
-      ]);
+    const [
+      app,
+      controller,
+      runtimeController,
+      client,
+      externalModule,
+      assets,
+      packageJson,
+    ] = await Promise.all([
+      source('server/app.module.ts'),
+      source('server/modules/canonical-host/canonical-host.controller.ts'),
+      source('server/modules/runtime-probe/runtime-probe.controller.ts'),
+      source('client/src/pages/DocumentParsingPage/DocumentParsingPage.tsx'),
+      source('server/modules/external-discovery/external-discovery.module.ts'),
+      source('scripts/sync-document-management-assets.mjs'),
+      source('package.json'),
+    ]);
 
     expect(app).not.toContain('DocumentManagementValidationModule');
     expect(app).not.toContain('ExternalDiscoveryModule.forRoot');
     expect(controller).not.toContain('phase10-aeo-candidate-loop');
-    expect(controller).toContain(
-      "work-items/:workItemId/integrated-assessment/base-rules",
+    expect(controller).not.toContain(
+      'work-items/:workItemId/integrated-assessment/base-rules',
     );
-    expect(controller).toContain(
-      "work-items/:workItemId/integrated-assessment/overall-synthesis",
+    expect(controller).not.toContain(
+      'work-items/:workItemId/integrated-assessment/overall-synthesis',
     );
     const openClawMcp = await source(
       'server/modules/canonical-host/canonical-host-openclaw-mcp.service.ts',
     );
-    expect(openClawMcp).not.toContain('begin_dynamic_evaluation');
-    expect(openClawMcp).not.toContain('commit_dynamic_evaluation_candidate');
+    expect(openClawMcp).toContain('begin_dynamic_evaluation');
+    expect(openClawMcp).toContain('commit_dynamic_evaluation_candidate');
     expect(openClawMcp).toContain('begin_overall_synthesis');
     expect(openClawMcp).toContain('commit_overall_candidate');
     await expect(
@@ -39,15 +46,16 @@ describe('Phase 13C production path', () => {
           'server/modules/canonical-host/canonical-host-openclaw-dynamic-evaluation.service.ts',
         ),
       ),
-    ).rejects.toBeDefined();
+    ).resolves.toBeUndefined();
     expect(runtimeController).not.toContain('file-service-upload');
     expect(client).not.toContain('RUN PHASE 10 AEO ONCE');
     expect(client).not.toContain('phase10-aeo-candidate-loop-trigger');
     expect(client).toContain('integratedAssessment.baseRules');
     expect(client).toContain('integratedAssessment.overallSynthesis');
-    expect(client).toContain('WAITING_REAL_BASE_RESULT');
-    expect(client).toContain('运行 Base 固定规则评估');
-    expect(client).toContain('运行 OpenClaw 整体候选综合');
+    expect(client).toContain('WAITING_OPENCLAW_DYNAMIC_EVALUATION');
+    expect(client).not.toContain('运行 Base 固定规则评估');
+    expect(client).not.toContain('运行 OpenClaw 整体候选综合');
+    expect(client).toContain('OpenClaw 动态 N + 整体综合');
     expect(externalModule).not.toContain('ExternalDiscoveryAutomation');
     expect(externalModule).not.toContain('@Automation');
     expect(assets).not.toContain('phase10-aeo');
@@ -58,29 +66,35 @@ describe('Phase 13C production path', () => {
   });
 
   it('publishes the nullable integrated assessment summary on the fixed status OpenAPI', async () => {
-    const openApi = JSON.parse(
-      await source('docs/openapi.json'),
-    ) as {
-      paths: Record<string, {
-        get?: {
-          responses?: Record<string, {
-            content?: Record<string, {
-              schema?: {
-                required?: string[];
-                properties?: Record<string, unknown>;
-              };
-            }>;
-          }>;
-        };
-      }>;
+    const openApi = JSON.parse(await source('docs/openapi.json')) as {
+      paths: Record<
+        string,
+        {
+          get?: {
+            responses?: Record<
+              string,
+              {
+                content?: Record<
+                  string,
+                  {
+                    schema?: {
+                      required?: string[];
+                      properties?: Record<string, unknown>;
+                    };
+                  }
+                >;
+              }
+            >;
+          };
+        }
+      >;
     };
-    const responseSchema = openApi.paths[
-      '/openapi/wiselink/work-items/status'
-    ]?.get?.responses?.['200']?.content?.['application/json']?.schema;
+    const responseSchema =
+      openApi.paths['/openapi/wiselink/work-items/status']?.get?.responses?.[
+        '200'
+      ]?.content?.['application/json']?.schema;
 
-    expect(responseSchema?.required).toContain(
-      'integratedAssessmentSummary',
-    );
+    expect(responseSchema?.required).toContain('integratedAssessmentSummary');
     expect(responseSchema?.properties).toHaveProperty(
       'integratedAssessmentSummary',
     );
