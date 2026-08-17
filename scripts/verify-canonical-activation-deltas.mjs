@@ -196,9 +196,10 @@ const source = await readFile(
 assert.ok(source.includes('getDocumentParsingPage'));
 assert.ok(source.includes('FRESH READ REQUIRED'));
 assert.ok(source.includes("['原件', '分类', '解析', '统一包', 'Reader']"));
-assert.ok(source.includes('.evaluateAssessment(workItemId)'));
-assert.ok(source.includes('.resynthesizeAssessment(workItemId'));
-assert.ok(source.includes('expectedRevision: data.workItem.revision'));
+assert.ok(!source.includes('.evaluateAssessment(workItemId)'));
+assert.ok(!source.includes('.resynthesizeAssessment(workItemId'));
+assert.ok(source.includes('confirmIntegratedOverallForAeo(workItemId)'));
+assert.ok(source.includes('OpenClaw 动态 N + 整体综合'));
 assert.ok(!source.includes('const SAMPLE'));
 const request = JSON.parse(
   await readFile(
@@ -296,9 +297,15 @@ process.stdout.write(
       writeRequestSelfReportedAuthorityFields: [],
       pageProjection: 'SERVER_FRESH_READ_ONLY',
       pageActions: {
-        evaluate: 'AUTHENTICATED_SAME_WORK_ITEM',
-        engineerChangeResynthesis: 'AUTHENTICATED_EXPECTED_REVISION',
+        dynamicEvaluation: 'OPENCLAW_MCP_ONLY',
+        overallSynthesis: 'OPENCLAW_MCP_ONLY',
+        aeoConfirmation: 'AUTHENTICATED_HUMAN_ACTION_ONLY',
         parsePhasePreserved: true,
+      },
+      legacyAssessmentControllerSafetyVerified: {
+        serverDerivedActor: true,
+        expectedRevisionRequired: true,
+        clientAuthorityRejected: true,
       },
       controllerNeedLogin: true,
       openApi: {

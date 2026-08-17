@@ -35,6 +35,16 @@ describe('CanonicalHostOpenClawOverallService', () => {
     );
   });
 
+  it('rejects a legacy Base result that was not produced by OpenClaw dynamic N/N', async () => {
+    const harness = createHarness({
+      dynamicSourceResultId: 'base://legacy-one-shot-result',
+    });
+
+    await expect(harness.service.begin(WORK_ITEM_ID, [])).rejects.toThrow(
+      'OPENCLAW_OVERALL_DYNAMIC_N_CANDIDATE_REQUIRED',
+    );
+  });
+
   it('keeps invalid output retryable, then persists exact corrected bytes and CASes once', async () => {
     const harness = createHarness();
 
@@ -93,8 +103,12 @@ function createHarness(options: {
   workItemRevision?: number;
   attemptNo?: number;
   candidateSourceRef?: string;
+  dynamicSourceResultId?: string;
 } = {}) {
-  const workItem = workItemProjection(options.workItemRevision ?? 5);
+  const workItem = workItemProjection(
+    options.workItemRevision ?? 5,
+    options.dynamicSourceResultId,
+  );
   const attempt = {
     attemptId: ATTEMPT_ID,
     workItemId: WORK_ITEM_ID,
@@ -197,7 +211,10 @@ function createHarness(options: {
   };
 }
 
-function workItemProjection(revision: number): CanonicalWorkItemProjection {
+function workItemProjection(
+  revision: number,
+  dynamicSourceResultId = 'openclaw-dynamic://DYN-RESULT-1',
+): CanonicalWorkItemProjection {
   return {
     workItemId: WORK_ITEM_ID,
     requestId: 'REQ-OVERALL-150',
@@ -217,7 +234,7 @@ function workItemProjection(revision: number): CanonicalWorkItemProjection {
       baseRules: {
         status: 'CANDIDATE_ONLY',
         revision: 1,
-        sourceResultId: 'BASE-RESULT-1',
+        sourceResultId: dynamicSourceResultId,
         criterionSetId: 'JACS-ONE',
         criterionCount: 1,
         evaluationItemCount: 1,

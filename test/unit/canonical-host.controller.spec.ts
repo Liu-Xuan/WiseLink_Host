@@ -41,8 +41,6 @@ function target() {
       .mockResolvedValue({ revision: 6 }),
   };
   const integratedAssessments = {
-    persistBaseRuleCandidate: jest.fn().mockResolvedValue({ revision: 7 }),
-    persistOpenClawOverall: jest.fn().mockResolvedValue({ revision: 8 }),
     confirmOpenClawOverallForAeo: jest.fn().mockResolvedValue({ revision: 9 }),
   };
   return {
@@ -165,23 +163,9 @@ describe('CanonicalHostController assessment actions', () => {
     expect(assessments.evaluateCandidate).not.toHaveBeenCalled();
   });
 
-  it('exposes the two integrated assessment steps only as authenticated empty-body actions', async () => {
+  it('exposes only the human AEO confirmation as an authenticated empty-body action', async () => {
     const { controller, integratedAssessments } = target();
 
-    await expect(
-      controller.persistBaseRuleCandidate(
-        'WI-SB-1001',
-        {},
-        HOST_REQUEST as never,
-      ),
-    ).resolves.toEqual({ revision: 7 });
-    await expect(
-      controller.persistOpenClawOverall(
-        'WI-SB-1001',
-        {},
-        HOST_REQUEST as never,
-      ),
-    ).resolves.toEqual({ revision: 8 });
     await expect(
       controller.confirmOpenClawOverallForAeo(
         'WI-SB-1001',
@@ -190,14 +174,6 @@ describe('CanonicalHostController assessment actions', () => {
       ),
     ).resolves.toEqual({ revision: 9 });
 
-    expect(integratedAssessments.persistBaseRuleCandidate).toHaveBeenCalledWith(
-      'WI-SB-1001',
-      expect.objectContaining({ userId: 'engineer-1001' }),
-    );
-    expect(integratedAssessments.persistOpenClawOverall).toHaveBeenCalledWith(
-      'WI-SB-1001',
-      expect.objectContaining({ userId: 'engineer-1001' }),
-    );
     expect(
       integratedAssessments.confirmOpenClawOverallForAeo,
     ).toHaveBeenCalledWith(
@@ -206,50 +182,19 @@ describe('CanonicalHostController assessment actions', () => {
     );
   });
 
-  it.each([
-    ['base', { sourceResultId: 'client-result' }],
-    ['overall', { authority: 'client-authority' }],
-  ])(
-    'rejects client-supplied integrated assessment %s input before invoking a provider',
-    async (step, body) => {
-      const { controller, integratedAssessments } = target();
-
-      let caught: unknown;
-      try {
-        if (step === 'base') {
-          await controller.persistBaseRuleCandidate(
-            'WI-SB-1001',
-            body,
-            HOST_REQUEST as never,
-          );
-        } else {
-          await controller.persistOpenClawOverall(
-            'WI-SB-1001',
-            body,
-            HOST_REQUEST as never,
-          );
-        }
-      } catch (error) {
-        caught = error;
-      }
-
-      expect(caught).toBeInstanceOf(BadRequestException);
-      expect(integratedAssessments.persistBaseRuleCandidate).not.toHaveBeenCalled();
-      expect(integratedAssessments.persistOpenClawOverall).not.toHaveBeenCalled();
-    },
-  );
-
-  it('requires the authenticated host actor for integrated assessment actions', async () => {
+  it('requires the authenticated host actor for AEO confirmation', () => {
     const { controller, integratedAssessments } = target();
 
     expect(() =>
-      controller.persistBaseRuleCandidate(
+      controller.confirmOpenClawOverallForAeo(
         'WI-SB-1001',
         {},
         { userContext: null } as never,
       ),
     ).toThrow(UnauthorizedException);
-    expect(integratedAssessments.persistBaseRuleCandidate).not.toHaveBeenCalled();
+    expect(
+      integratedAssessments.confirmOpenClawOverallForAeo,
+    ).not.toHaveBeenCalled();
   });
 
   it('rejects client-supplied confirmation identity before the service', () => {

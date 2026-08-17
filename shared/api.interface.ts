@@ -481,6 +481,11 @@ export interface CanonicalAssessmentCandidateProjection {
 }
 
 export interface CanonicalBaseRuleCandidateProjection {
+  /**
+   * Backward-compatible storage name. In the current runtime this projection
+   * is produced only by the hosted OpenClaw dynamic-N evaluation; Base may
+   * hold RuleSet/review projections but is not an evaluation executor.
+   */
   status: 'CANDIDATE_ONLY';
   revision: number;
   sourceResultId: string;

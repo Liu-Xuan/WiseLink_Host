@@ -17,6 +17,7 @@ import { CanonicalHostMcpOpenApiController } from './canonical-host-mcp.openapi.
 import { CanonicalHostMcpService } from './canonical-host-mcp.service';
 import { CanonicalHostOpenClawMcpOpenApiController } from './canonical-host-openclaw-mcp.openapi.controller';
 import { CanonicalHostOpenClawMcpService } from './canonical-host-openclaw-mcp.service';
+import { CanonicalHostOpenClawDynamicEvaluationService } from './canonical-host-openclaw-dynamic-evaluation.service';
 import { CanonicalHostOpenClawDiscoveryService } from './canonical-host-openclaw-discovery.service';
 import { CanonicalHostOpenClawOverallService } from './canonical-host-openclaw-overall.service';
 import { ExternalDiscoveryModule } from '../external-discovery/external-discovery.module';
@@ -82,6 +83,7 @@ export interface CanonicalHostModuleOptions {
     CanonicalHostVerticalService,
     CanonicalHostMcpService,
     CanonicalHostOpenClawMcpService,
+    CanonicalHostOpenClawDynamicEvaluationService,
     CanonicalHostOpenClawDiscoveryService,
     CanonicalHostOpenClawOverallService,
     ExactFtdFrozen2PdfProducerAdapter,
@@ -196,6 +198,7 @@ export class CanonicalHostModule {
         CanonicalHostVerticalService,
         CanonicalHostMcpService,
         CanonicalHostOpenClawMcpService,
+        CanonicalHostOpenClawDynamicEvaluationService,
         CanonicalHostOpenClawDiscoveryService,
         CanonicalHostOpenClawOverallService,
         ExactFtdFrozen2PdfProducerAdapter,

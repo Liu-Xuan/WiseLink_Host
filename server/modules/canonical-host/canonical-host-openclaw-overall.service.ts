@@ -216,9 +216,12 @@ export class CanonicalHostOpenClawOverallService {
     if (
       workItem.phase !== 'CANDIDATE_READBACK_VERIFIED' ||
       !workItem.package ||
-      !workItem.integratedAssessment?.baseRules
+      !workItem.integratedAssessment?.baseRules ||
+      !workItem.integratedAssessment.baseRules.sourceResultId.startsWith(
+        'openclaw-dynamic://',
+      )
     ) {
-      throw new Error('OPENCLAW_OVERALL_BASE_RULE_CANDIDATE_REQUIRED');
+      throw new Error('OPENCLAW_OVERALL_DYNAMIC_N_CANDIDATE_REQUIRED');
     }
     return workItem;
   }

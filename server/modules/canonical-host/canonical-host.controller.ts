@@ -135,32 +135,6 @@ export class CanonicalHostController {
     );
   }
 
-  @Post('work-items/:workItemId/integrated-assessment/base-rules')
-  persistBaseRuleCandidate(
-    @Param('workItemId') workItemId: string,
-    @Body() body: unknown,
-    @Req() httpRequest: Request,
-  ) {
-    integratedAssessmentActionBody(body);
-    return this.integratedAssessments.persistBaseRuleCandidate(
-      requiredText(workItemId, 'workItemId'),
-      hostActor(httpRequest),
-    );
-  }
-
-  @Post('work-items/:workItemId/integrated-assessment/overall-synthesis')
-  persistOpenClawOverall(
-    @Param('workItemId') workItemId: string,
-    @Body() body: unknown,
-    @Req() httpRequest: Request,
-  ) {
-    integratedAssessmentActionBody(body);
-    return this.integratedAssessments.persistOpenClawOverall(
-      requiredText(workItemId, 'workItemId'),
-      hostActor(httpRequest),
-    );
-  }
-
   @Post('work-items/:workItemId/integrated-assessment/confirm-for-aeo')
   confirmOpenClawOverallForAeo(
     @Param('workItemId') workItemId: string,
