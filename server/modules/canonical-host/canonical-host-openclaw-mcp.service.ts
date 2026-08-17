@@ -133,7 +133,7 @@ export class CanonicalHostOpenClawMcpService {
       {
         title: '记录 OEM 公开网站发现结果',
         description:
-          '把 OpenClaw 公开 OEM discovery 结果记录到妙搭 SearchRun/候选表；时间、租户、actor 和 SearchRun 身份均由服务端派生，不采纳文档或触发 DM。',
+          '可选后台工具：仅在整体综合明确指出需补充某一 OEM 调查时，记录该次公开网站 discovery 到妙搭 SearchRun/候选表；时间、租户、actor 和 SearchRun 身份均由服务端派生，不采纳文档或触发 DM。',
         inputSchema: z.object({
           workItemId: mcpWorkItemId,
           result: publicDiscoveryResult,
@@ -154,7 +154,7 @@ export class CanonicalHostOpenClawMcpService {
       {
         title: '开始整体候选综合',
         description:
-          '服务端读取同一 WorkItem 的完整 dynamic-N 实际字节、frozen.2 来源和可选 discovery SearchRun，返回 authority-free 整体综合输入。',
+          '默认 providers=[]，先只基于同一 WorkItem 的完整 dynamic-N 实际字节和 frozen.2 来源完成整体综合；仅在已有综合明确指出不确定项后，才按需指定相关 OEM provider 做显式重综合。',
         inputSchema: z.object({
           workItemId: mcpWorkItemId,
           providers: z.array(z.enum(['AIRBUS', 'BOEING', 'COMAC'])).max(3).optional(),
