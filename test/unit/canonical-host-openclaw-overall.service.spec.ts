@@ -18,11 +18,21 @@ describe('CanonicalHostOpenClawOverallService', () => {
       criterionCount: 1,
       evaluationItemCount: 1,
     });
+    expect((begun.modelInput.baseRuleResult.items as Array<Record<string, unknown>>)[0]
+      .sourceRefIds).toEqual(['SRC-001']);
     const serialized = JSON.stringify(begun.modelInput);
     expect(serialized).not.toContain(WORK_ITEM_ID);
     expect(serialized).not.toContain(ATTEMPT_ID);
     expect(serialized).not.toContain('actor');
     expect(serialized).not.toContain('"authority"');
+  });
+
+  it('rejects a source-evidence candidate whose mapped ref is not in frozen.2', async () => {
+    const harness = createHarness({ candidateSourceRef: 'SRC-NOT-IN-PACKAGE' });
+
+    await expect(harness.service.begin(WORK_ITEM_ID, [])).rejects.toThrow(
+      'BASE_SOURCE_EVIDENCE_UNKNOWN_SOURCE_REF:SRC-NOT-IN-PACKAGE',
+    );
   });
 
   it('keeps invalid output retryable, then persists exact corrected bytes and CASes once', async () => {
@@ -79,7 +89,11 @@ describe('CanonicalHostOpenClawOverallService', () => {
   });
 });
 
-function createHarness(options: { workItemRevision?: number; attemptNo?: number } = {}) {
+function createHarness(options: {
+  workItemRevision?: number;
+  attemptNo?: number;
+  candidateSourceRef?: string;
+} = {}) {
   const workItem = workItemProjection(options.workItemRevision ?? 5);
   const attempt = {
     attemptId: ATTEMPT_ID,
@@ -163,6 +177,22 @@ function createHarness(options: { workItemRevision?: number; attemptNo?: number 
       artifactStore as never,
       repository as never,
       { latestSearchRunsAsOf: async () => [] } as never,
+      {
+        prepareDynamicRulesCandidate: async () => ({
+          overall: {
+            context: {
+              criterionCards: [{
+                sourceEvidenceCandidates: [{
+                  candidateId: 'SEC-001',
+                  sourceRefs: [{
+                    sourceRefId: options.candidateSourceRef ?? 'SRC-001',
+                  }],
+                }],
+              }],
+            },
+          },
+        }),
+      } as never,
     ),
   };
 }
@@ -224,7 +254,7 @@ function baseArtifactBytes(): Uint8Array {
       ],
       rows: [[
         'RULE-001', 'PASS', ['Fact'], 'Applied rule', 'Analysis',
-        'Candidate finding', ['SRC-001'], [], true,
+        'Candidate finding', ['SEC-001'], [], true,
       ]],
     },
   }));

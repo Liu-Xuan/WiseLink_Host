@@ -414,6 +414,19 @@ assert.equal(dynamicModelInputText.includes('expectedRevision'), false);
 assert.equal(Buffer.byteLength(dynamicModelInputText, 'utf8') <= 45_000, true);
 const criterionTable = dynamicRequest.modelInput.jobAidContext.criterionTable;
 const criterionIdIndex = criterionTable.columns.indexOf('criterionId');
+const sourceCandidateIndex = criterionTable.columns.indexOf(
+  'sourceEvidenceCandidateIds',
+);
+const sourceCandidateDictionary = criterionTable.valueDictionaries
+  .sourceEvidenceCandidateIds;
+const sourceCandidateIdsFor = (row) => {
+  const encoded = row[sourceCandidateIndex];
+  const decoded = Number.isInteger(encoded)
+    ? sourceCandidateDictionary[encoded]
+    : encoded;
+  assert.equal(Array.isArray(decoded), true);
+  return decoded;
+};
 const dynamicOutputBytes = Buffer.from(JSON.stringify({
   callerCorrelationRef: dynamicRequest.modelInput.callerCorrelationRef,
   authorityLevel: 'candidate_only',
@@ -428,7 +441,8 @@ const dynamicOutputBytes = Buffer.from(JSON.stringify({
     ],
     rows: criterionTable.rows.map((row) => [
       row[criterionIdIndex], 'UNKNOWN', [], 'controlled facts unavailable',
-      'requires engineer review', 'WAITING_INPUT', [], ['controlled_input'], true,
+      'requires engineer review', 'WAITING_INPUT', sourceCandidateIdsFor(row),
+      ['controlled_input'], true,
     ]),
   },
   overallSelfCheck: {
@@ -452,7 +466,9 @@ const localBaseRules = {
   status: 'CANDIDATE_ONLY', revision: 1, sourceResultId: 'local-dynamic-150',
   criterionSetId: criterionSet.criterionSetId, criterionCount: 150,
   evaluationItemCount: 150, unresolvedCount: 150,
-  sourceBoundCandidateCount: 0,
+  sourceBoundCandidateCount: criterionTable.rows.filter(
+    (row) => sourceCandidateIdsFor(row).length > 0,
+  ).length,
   artifact: {
     storeRole: 'UnifiedArtifactStoreCandidate', ref: 'local://dynamic-output',
     sha256: sha256(dynamicOutputBytes), byteLength: dynamicOutputBytes.byteLength,
@@ -492,13 +508,37 @@ const discoveryRuns = [
 const overallAInput = buildOpenClawOverallSynthesisInput({
   workItem: workItemWithBase, baseRules: localBaseRules,
   baseArtifactBytes: dynamicOutputBytes, packageBytes, discoveries: [],
+  sourceEvidenceCandidates: preview.overall.context.criterionCards.flatMap(
+    (criterion) => criterion.sourceEvidenceCandidates,
+  ),
   outputCorrelationRef: 'OVR-LOCAL-A',
 });
 const overallBInput = buildOpenClawOverallSynthesisInput({
   workItem: workItemWithBase, baseRules: localBaseRules,
   baseArtifactBytes: dynamicOutputBytes, packageBytes,
   discoveries: discoveryRuns, outputCorrelationRef: 'OVR-LOCAL-B',
+  sourceEvidenceCandidates: preview.overall.context.criterionCards.flatMap(
+    (criterion) => criterion.sourceEvidenceCandidates,
+  ),
 });
+const mappedOverallItems = overallAInput.baseRuleResult.items;
+const mappedOverallSourceRefs = mappedOverallItems.flatMap(
+  (item) => item.sourceRefIds,
+);
+assert.equal(
+  mappedOverallItems.filter((item) => item.sourceRefIds.length > 0).length,
+  localBaseRules.sourceBoundCandidateCount,
+);
+assert.equal(mappedOverallSourceRefs.length > 0, true);
+assert.equal(
+  mappedOverallSourceRefs.every((sourceRefId) =>
+    sourceRefId.startsWith('urn:techpub:source-ref:v1:sha256:'),
+  ),
+  true,
+);
+assert.equal(mappedOverallSourceRefs.some((sourceRefId) =>
+  sourceRefId.startsWith('SEC-'),
+), false);
 const overallA = localOverallOutput(overallAInput, 'NO_DISCOVERY', {}, 0);
 const overallB = localOverallOutput(overallBInput,
   'AIRBUS:COMPLETE;BOEING:ACCESS_DENIED;COMAC:PARTIAL_RESULTS',
@@ -737,6 +777,8 @@ process.stdout.write(`${JSON.stringify({
     noDiscoveryStatus: overallA.discoveryStatus,
     realThreeProviderStatus: overallB.discoveryStatus,
     baseRuleCount: overallAInput.baseRuleResult.items.length,
+    sourceBoundRuleCount: localBaseRules.sourceBoundCandidateCount,
+    secCandidatesMappedToUnifiedSourceRefs: true,
     candidateRefCount: overallB.candidateRefCount,
     candidateOnly: true,
   },

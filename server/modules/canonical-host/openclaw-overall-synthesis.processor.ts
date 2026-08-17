@@ -39,6 +39,7 @@ export function buildOpenClawOverallSynthesisInput(input: {
   baseArtifactBytes: Uint8Array;
   packageBytes: Uint8Array;
   discoveries: FeishuNativeOemSearchRun[];
+  sourceEvidenceCandidates: unknown[];
   outputCorrelationRef: string;
 }): OpenClawOverallSynthesisInput {
   const baseOutput = parseObject(input.baseArtifactBytes, 'BASE_ARTIFACT_JSON_INVALID');
@@ -54,6 +55,10 @@ export function buildOpenClawOverallSynthesisInput(input: {
       };
     });
   const knownRefs = new Set(sourceRefs.map(({ sourceRefId }) => sourceRefId));
+  const candidateRefs = sourceEvidenceCandidateRefs(
+    input.sourceEvidenceCandidates,
+    knownRefs,
+  );
   const ruleResults = object(baseOutput.ruleResults, 'BASE_RULE_RESULTS_INVALID');
   if (JSON.stringify(ruleResults.columns) !== JSON.stringify(RULE_COLUMNS)) {
     throw new Error('BASE_RULE_RESULT_COLUMNS_INVALID');
@@ -73,10 +78,11 @@ export function buildOpenClawOverallSynthesisInput(input: {
     const criterionId = text(raw[0], 'BASE_RULE_ID_INVALID');
     if (ids.has(criterionId)) throw new Error(`BASE_DUPLICATE_CRITERION:${criterionId}`);
     ids.add(criterionId);
-    const sourceRefIds = textArray(raw[6], 'BASE_ITEM_SOURCE_REFS_INVALID');
-    sourceRefIds.forEach((ref) => {
-      if (!knownRefs.has(ref)) throw new Error(`BASE_UNKNOWN_SOURCE_REF:${ref}`);
-    });
+    const sourceRefIds = expandBaseSourceRefs(
+      textArray(raw[6], 'BASE_ITEM_SOURCE_REFS_INVALID'),
+      candidateRefs,
+      knownRefs,
+    );
     return {
       criterionId,
       status: text(raw[1], 'BASE_ITEM_STATUS_INVALID'),
@@ -137,6 +143,65 @@ export function buildOpenClawOverallSynthesisInput(input: {
   };
   rejectPrivateAuthority(modelInput);
   return modelInput;
+}
+
+function sourceEvidenceCandidateRefs(
+  candidates: unknown[],
+  knownRefs: Set<string>,
+): Map<string, string[]> {
+  if (!Array.isArray(candidates)) {
+    throw new Error('BASE_SOURCE_EVIDENCE_CATALOG_INVALID');
+  }
+  const result = new Map<string, string[]>();
+  for (const value of candidates) {
+    const candidate = object(value, 'BASE_SOURCE_EVIDENCE_CANDIDATE_INVALID');
+    const candidateId = text(
+      candidate.candidateId,
+      'BASE_SOURCE_EVIDENCE_CANDIDATE_ID_INVALID',
+    );
+    const refs = requiredArray(
+      candidate.sourceRefs,
+      'BASE_SOURCE_EVIDENCE_CANDIDATE_REFS_INVALID',
+    ).map((sourceRef) => {
+      const sourceRefId = text(
+        object(sourceRef, 'BASE_SOURCE_EVIDENCE_CANDIDATE_REF_INVALID')
+          .sourceRefId,
+        'BASE_SOURCE_EVIDENCE_CANDIDATE_REF_ID_INVALID',
+      );
+      if (!knownRefs.has(sourceRefId)) {
+        throw new Error(`BASE_SOURCE_EVIDENCE_UNKNOWN_SOURCE_REF:${sourceRefId}`);
+      }
+      return sourceRefId;
+    });
+    if (refs.length === 0) {
+      throw new Error(`BASE_SOURCE_EVIDENCE_CANDIDATE_UNBOUND:${candidateId}`);
+    }
+    const normalized = [...new Set(refs)];
+    const existing = result.get(candidateId);
+    if (existing && JSON.stringify(existing) !== JSON.stringify(normalized)) {
+      throw new Error(`BASE_SOURCE_EVIDENCE_CANDIDATE_DRIFT:${candidateId}`);
+    }
+    result.set(candidateId, normalized);
+  }
+  return result;
+}
+
+function expandBaseSourceRefs(
+  refs: string[],
+  candidateRefs: Map<string, string[]>,
+  knownRefs: Set<string>,
+): string[] {
+  const expanded: string[] = [];
+  for (const ref of refs) {
+    if (knownRefs.has(ref)) {
+      expanded.push(ref);
+      continue;
+    }
+    const mapped = candidateRefs.get(ref);
+    if (!mapped) throw new Error(`BASE_UNKNOWN_SOURCE_REF:${ref}`);
+    expanded.push(...mapped);
+  }
+  return [...new Set(expanded)];
 }
 
 export function consumeOpenClawOverallSynthesisOutput(
