@@ -481,6 +481,11 @@ export interface CanonicalAssessmentCandidateProjection {
 }
 
 export interface CanonicalBaseRuleCandidateProjection {
+  /**
+   * Backward-compatible storage name. In the current runtime this projection
+   * is produced only by the hosted OpenClaw dynamic-N evaluation; Base may
+   * hold RuleSet/review projections but is not an evaluation executor.
+   */
   status: 'CANDIDATE_ONLY';
   revision: number;
   sourceResultId: string;
@@ -499,6 +504,8 @@ export interface CanonicalOpenClawOverallProjection {
   sourceResultId: string;
   basedOnBaseRuleRevision: number;
   basedOnBaseRuleArtifactSha256: string;
+  basedOnEngineerReviewRevision: number | null;
+  basedOnEngineerReviewArtifactSha256: string | null;
   discoveryStatus: string;
   gap: string | null;
   candidateRefCount: number;
@@ -508,7 +515,45 @@ export interface CanonicalOpenClawOverallProjection {
   externalDiscoveryIsEvidence: false;
   artifact: UnifiedPackageArtifactDescriptor;
   actionAttemptId: string;
-  staleReason: 'BASE_RULE_RESULT_CHANGED' | null;
+  staleReason:
+    | 'BASE_RULE_RESULT_CHANGED'
+    | 'ENGINEER_REVIEW_CHANGED'
+    | null;
+}
+
+export type CanonicalEngineerReviewDecision =
+  | 'confirmed_pass'
+  | 'confirmed_fail'
+  | 'returned_for_rework'
+  | 'deferred';
+
+export interface CanonicalEngineerReviewLedgerProjection {
+  status: 'HUMAN_REVIEW_RECORDED';
+  revision: number;
+  reviewCount: number;
+  criterionSetId: string;
+  artifact: UnifiedPackageArtifactDescriptor;
+  actionAttemptId: string;
+}
+
+export interface CanonicalEngineerReviewPageItem {
+  criterionId: string;
+  dynamicResult: string;
+  candidateConclusion: string;
+  humanReviewRequired: boolean;
+  latestReview: {
+    decision: CanonicalEngineerReviewDecision;
+    status: 'ENGINEER_CONFIRMED' | 'NEEDS_REVIEW';
+    comment: string;
+    recordedAt: string;
+  } | null;
+}
+
+export interface CanonicalEngineerReviewPageContext {
+  criterionSetId: string;
+  baseRuleRevision: number;
+  ledger: CanonicalEngineerReviewLedgerProjection | null;
+  items: CanonicalEngineerReviewPageItem[];
 }
 
 export interface CanonicalOverallForAeoConfirmationProjection {
@@ -530,6 +575,8 @@ export interface CanonicalIntegratedAssessmentProjection {
     | 'OVERALL_CANDIDATE_STALE';
   baseRules: CanonicalBaseRuleCandidateProjection;
   overallSynthesis: CanonicalOpenClawOverallProjection | null;
+  /** Append-only, actual-byte verified human review history. */
+  engineerReviews?: CanonicalEngineerReviewLedgerProjection | null;
   /** Absent on older projections; only an explicit authenticated host action sets it. */
   overallForAeoConfirmation?:
     | CanonicalOverallForAeoConfirmationProjection
@@ -551,15 +598,48 @@ export interface CanonicalAeoCandidateArtifactProjection {
 
 export interface CanonicalAeoCandidateProjection {
   status: 'CANDIDATE_AUTHORING_IN_PROGRESS' | 'CANDIDATE_WORD_EXPORTED';
-  targetIdentity: 'AEO-B787-46-0015-R09';
+  /** Server-derived candidate identity; never accepted from the client. */
+  targetIdentity: string;
   disposition: 'ADOPT';
   authorityLevel: 'candidate_only';
   sourceCandidateCount: number;
   automaticallyAdopted: false;
   engineeringApproved: false;
   actionAttemptId: string;
-  ownerCommit: '8a2ea67aea5d60c0c72750a9e539404214296aeb';
+  ownerCommit: '74333547ae5cd1878259812353d59563cc9041da';
+  /** Historical authoring source, distinct from the candidate target. */
+  authoringTemplate: {
+    role: 'CONTROLLED_TEMPLATE_SOURCE';
+    identity: 'AEO-B787-46-0015-R09';
+    artifactRef: string;
+    artifactSha256: string;
+  };
+  sourceOverall: {
+    revision: number;
+    artifactRef: string;
+    artifactSha256: string;
+    confirmationActionAttemptId: string;
+    confirmedWorkItemRevision: number;
+    engineerReviewRevision: number | null;
+    engineerReviewArtifactSha256: string | null;
+  };
   artifacts: CanonicalAeoCandidateArtifactProjection[];
+}
+
+export interface CanonicalAeoCandidateRunResponse {
+  schemaVersion: 'wiselink.3_1.aeo_candidate_run.v1';
+  status: 'CANDIDATE_WORD_EXPORTED';
+  workItem: CanonicalWorkItemProjection;
+  aeo: CanonicalAeoCandidateProjection;
+  replayed: boolean;
+  baseAiCallCount: 0;
+  authority: {
+    candidateOnly: true;
+    automaticallyAdopted: false;
+    engineeringApproved: false;
+    productionPublished: false;
+    currentChanged: false;
+  };
 }
 
 export interface CanonicalParseAuthorizationProjection {
@@ -684,6 +764,7 @@ export interface CanonicalDocumentParsingPageResponse {
   workItem: CanonicalWorkItemProjection;
   entry: CanonicalEntryFacadeResponse;
   queryResults: UnifiedReaderQueryResult[];
+  engineerReviewContext?: CanonicalEngineerReviewPageContext | null;
   readAuthorization: {
     action: 'READ_DOCUMENT_PARSING';
     decisionId: string;

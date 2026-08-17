@@ -105,7 +105,7 @@ assert.deepEqual(Reflect.getMetadata(NEED_LOGIN_KEY, CanonicalHostController), {
 });
 const authenticatedRoutes = readRoutes([CanonicalHostController]);
 assert.ok(
-  authenticatedRoutes.some(
+  !authenticatedRoutes.some(
     (route) =>
       route.method === 'POST' &&
       route.path ===
@@ -113,11 +113,19 @@ assert.ok(
   ),
 );
 assert.ok(
-  authenticatedRoutes.some(
+  !authenticatedRoutes.some(
     (route) =>
       route.method === 'POST' &&
       route.path ===
         'api/canonical-host/work-items/:workItemId/assessment/resynthesize',
+  ),
+);
+assert.ok(
+  authenticatedRoutes.some(
+    (route) =>
+      route.method === 'POST' &&
+      route.path ===
+        'api/canonical-host/work-items/:workItemId/integrated-assessment/engineer-reviews',
   ),
 );
 assert.equal(
@@ -196,9 +204,12 @@ const source = await readFile(
 assert.ok(source.includes('getDocumentParsingPage'));
 assert.ok(source.includes('FRESH READ REQUIRED'));
 assert.ok(source.includes("['原件', '分类', '解析', '统一包', 'Reader']"));
-assert.ok(source.includes('.evaluateAssessment(workItemId)'));
-assert.ok(source.includes('.resynthesizeAssessment(workItemId'));
-assert.ok(source.includes('expectedRevision: data.workItem.revision'));
+assert.ok(!source.includes('.evaluateAssessment(workItemId)'));
+assert.ok(!source.includes('.resynthesizeAssessment(workItemId'));
+assert.ok(source.includes('confirmIntegratedOverallForAeo(workItemId)'));
+assert.ok(source.includes('generateAeoCandidate(workItemId)'));
+assert.ok(source.includes('生成AEO候选'));
+assert.ok(source.includes('OpenClaw 动态 N + 整体综合'));
 assert.ok(!source.includes('const SAMPLE'));
 const request = JSON.parse(
   await readFile(
@@ -217,20 +228,20 @@ const controllerSource = await readFile(
 );
 assert.ok(!controllerSource.includes('deepLinkPath'));
 
-const assessmentCalls = [];
+const reviewCalls = [];
 const controller = new CanonicalHostController(
   {},
   {},
   {
-    evaluateCandidate: async (input, actor) => {
-      assessmentCalls.push({ action: 'EVALUATE', input, actor });
-      return { revision: 4 };
-    },
-    resynthesizeAfterEngineerChange: async (input, actor) => {
-      assessmentCalls.push({ action: 'RESYNTHESIZE', input, actor });
+    confirmOpenClawOverallForAeo: async () => ({ revision: 5 }),
+  },
+  {
+    recordReview: async (input, actor) => {
+      reviewCalls.push({ input, actor });
       return { revision: 5 };
     },
   },
+  { generateCandidate: async () => ({ revision: 6 }) },
 );
 const hostRequest = {
   userContext: {
@@ -241,8 +252,7 @@ const hostRequest = {
     env: 'development',
   },
 };
-await controller.evaluateAssessment('WI-SB-ACTIVATION', {}, hostRequest);
-await controller.resynthesizeAssessment(
+await controller.recordEngineerReview(
   'WI-SB-ACTIVATION',
   {
     expectedRevision: 4,
@@ -252,33 +262,33 @@ await controller.resynthesizeAssessment(
   },
   hostRequest,
 );
-assert.equal(assessmentCalls.length, 2);
-assert.equal(assessmentCalls[0].actor.userId, 'activation-engineer');
-assert.equal(
-  assessmentCalls[0].input.assessmentAsOf,
-  assessmentCalls[0].input.generatedAt,
-);
-assert.deepEqual(assessmentCalls[1].input.review, {
-  baseRecordId: 'ENGINEER-REVIEW:WI-SB-ACTIVATION:JAC-001',
+assert.equal(reviewCalls.length, 1);
+assert.equal(reviewCalls[0].actor.userId, 'activation-engineer');
+assert.deepEqual(reviewCalls[0].input, {
+  workItemId: 'WI-SB-ACTIVATION',
+  expectedRevision: 4,
+  criterionId: 'JAC-001',
   decision: 'deferred',
   comment: '需要补证',
-  reviewingEngineerUserIds: ['activation-engineer'],
-  status: 'NEEDS_REVIEW',
-  updatedAt: assessmentCalls[1].input.review.updatedAt,
 });
-assert.equal(assessmentCalls[1].input.expectedRevision, 4);
 let rejectedStatus = null;
 try {
-  await controller.evaluateAssessment(
+  await controller.recordEngineerReview(
     'WI-SB-ACTIVATION',
-    { actor: { userId: 'untrusted' } },
+    {
+      expectedRevision: 4,
+      criterionId: 'JAC-001',
+      decision: 'deferred',
+      comment: '需要补证',
+      actor: { userId: 'untrusted' },
+    },
     hostRequest,
   );
 } catch (error) {
   rejectedStatus = error.getStatus?.();
 }
 assert.equal(rejectedStatus, 400);
-assert.equal(assessmentCalls.length, 2);
+assert.equal(reviewCalls.length, 1);
 
 process.stdout.write(
   `${JSON.stringify(
@@ -296,9 +306,15 @@ process.stdout.write(
       writeRequestSelfReportedAuthorityFields: [],
       pageProjection: 'SERVER_FRESH_READ_ONLY',
       pageActions: {
-        evaluate: 'AUTHENTICATED_SAME_WORK_ITEM',
-        engineerChangeResynthesis: 'AUTHENTICATED_EXPECTED_REVISION',
+        dynamicEvaluation: 'OPENCLAW_MCP_ONLY',
+        overallSynthesis: 'OPENCLAW_MCP_ONLY',
+        aeoConfirmation: 'AUTHENTICATED_HUMAN_ACTION_ONLY',
         parsePhasePreserved: true,
+      },
+      engineerReviewControllerSafetyVerified: {
+        serverDerivedActor: true,
+        expectedRevisionRequired: true,
+        clientAuthorityRejected: true,
       },
       controllerNeedLogin: true,
       openApi: {

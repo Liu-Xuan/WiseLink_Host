@@ -50,7 +50,10 @@ import { SystemCanonicalHostClockAdapter } from './system-canonical-host-clock.a
 import { UnconfiguredFailureValidationWriteAuthorizationAdapter } from './unconfigured-failure-validation-write-authorization.adapter';
 import { AssessmentHostConsumerModule } from '../assessment-workbench/assessment-host-consumer.public-api';
 import { CanonicalHostAssessmentService } from './canonical-host-assessment.service';
+import { CanonicalHostAeoService } from './canonical-host-aeo.service';
 import { CanonicalHostIntegratedAssessmentService } from './canonical-host-integrated-assessment.service';
+import { CanonicalHostEngineerReviewService } from './canonical-host-engineer-review.service';
+import { AeoSameWorkItemAuthoringModule } from '../aeo-authoring/public-api';
 import {
   UnconfiguredCanonicalBaseRuleResultProvider,
   UnconfiguredCanonicalOpenClawOverallProvider,
@@ -70,7 +73,11 @@ export interface CanonicalHostModuleOptions {
 }
 
 @Module({
-  imports: [ExternalDiscoveryModule, AssessmentHostConsumerModule],
+  imports: [
+    ExternalDiscoveryModule,
+    AssessmentHostConsumerModule,
+    AeoSameWorkItemAuthoringModule.forRoot(),
+  ],
   controllers: [
     CanonicalHostController,
     CanonicalHostOpenApiController,
@@ -94,6 +101,8 @@ export interface CanonicalHostModuleOptions {
     OrdinaryFailureValidationWriteAuthorizationAdapter,
     CanonicalHostAssessmentService,
     CanonicalHostIntegratedAssessmentService,
+    CanonicalHostEngineerReviewService,
+    CanonicalHostAeoService,
   ],
 })
 export class CanonicalHostModule {
@@ -171,6 +180,7 @@ export class CanonicalHostModule {
         UnifiedReaderModule.forRoot(options.unifiedReader),
         AssessmentHostConsumerModule,
         ExternalDiscoveryModule,
+        AeoSameWorkItemAuthoringModule.forRoot(),
         ...(options.imports ?? []),
       ],
       controllers: [
@@ -209,12 +219,16 @@ export class CanonicalHostModule {
         OrdinaryFailureValidationWriteAuthorizationAdapter,
         CanonicalHostAssessmentService,
         CanonicalHostIntegratedAssessmentService,
+        CanonicalHostEngineerReviewService,
+        CanonicalHostAeoService,
       ],
       exports: [
         CanonicalEntryFacadeService,
         CanonicalHostVerticalService,
         CanonicalHostAssessmentService,
         CanonicalHostIntegratedAssessmentService,
+        CanonicalHostEngineerReviewService,
+        CanonicalHostAeoService,
         CANONICAL_HOST_BINDING,
       ],
     };

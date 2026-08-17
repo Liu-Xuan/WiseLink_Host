@@ -158,6 +158,7 @@ const [
   { CanonicalEntryFacadeService },
   { CanonicalHostVerticalService },
   { CanonicalHostAssessmentService },
+  { CanonicalHostAeoService },
   { OrdinaryWorkItemService },
   { MiaodaOrdinaryArtifactStoreAdapter },
   { Frozen2CandidateReaderService },
@@ -165,6 +166,7 @@ const [
   { U0FullValidationService },
   { UnifiedReaderService },
   { AssessmentHostConsumerService },
+  { AeoReviewedIntegratedAssessmentConsumer },
   { DynamicRulesEvaluationProcessor },
   { buildUnifiedSbJobAidAssessmentInput },
   { buildOpenClawOverallSynthesisInput, consumeOpenClawOverallSynthesisOutput },
@@ -177,6 +179,7 @@ const [
   importBuilt('modules/canonical-host/canonical-entry-facade.service.js'),
   importBuilt('modules/canonical-host/canonical-host-vertical.service.js'),
   importBuilt('modules/canonical-host/canonical-host-assessment.service.js'),
+  importBuilt('modules/canonical-host/canonical-host-aeo.service.js'),
   importBuilt('modules/work-item/ordinary-work-item.service.js'),
   importBuilt('modules/unified-reader/miaoda-ordinary-artifact-store.adapter.js'),
   importBuilt('modules/unified-reader/frozen2-candidate-reader.service.js'),
@@ -184,6 +187,7 @@ const [
   importBuilt('modules/unified-reader/u0-full-validation.service.js'),
   importBuilt('modules/unified-reader/unified-reader.service.js'),
   importBuilt('modules/assessment-workbench/assessment-host-consumer.service.js'),
+  importBuilt('modules/aeo-authoring/aeo-reviewed-integrated-assessment.consumer.js'),
   importBuilt('modules/assessment-workbench/dynamic-rules-evaluation.processor.js'),
   importBuilt('modules/assessment-workbench/unified-assessment-input.js'),
   importBuilt('modules/canonical-host/openclaw-overall-synthesis.processor.js'),
@@ -462,18 +466,19 @@ const dynamicOutputBytes = Buffer.from(JSON.stringify({
     returnedRuleIdsUnique: true,
   },
 }));
+const dynamicPersisted = await artifactStore.persistAndReadback(
+  dynamicOutputBytes,
+);
 const localBaseRules = {
-  status: 'CANDIDATE_ONLY', revision: 1, sourceResultId: 'local-dynamic-150',
+  status: 'CANDIDATE_ONLY', revision: 1,
+  sourceResultId:
+    `openclaw-dynamic://${dynamicRequest.modelInput.callerCorrelationRef}`,
   criterionSetId: criterionSet.criterionSetId, criterionCount: 150,
   evaluationItemCount: 150, unresolvedCount: 150,
   sourceBoundCandidateCount: criterionTable.rows.filter(
     (row) => sourceCandidateIdsFor(row).length > 0,
   ).length,
-  artifact: {
-    storeRole: 'UnifiedArtifactStoreCandidate', ref: 'local://dynamic-output',
-    sha256: sha256(dynamicOutputBytes), byteLength: dynamicOutputBytes.byteLength,
-    mediaType: 'application/json',
-  },
+  artifact: dynamicPersisted.artifact,
   actionAttemptId: 'ATT-INTERNAL-LOCAL-DYNAMIC',
 };
 const workItemWithBase = {
@@ -511,6 +516,7 @@ const overallAInput = buildOpenClawOverallSynthesisInput({
   sourceEvidenceCandidates: preview.overall.context.criterionCards.flatMap(
     (criterion) => criterion.sourceEvidenceCandidates,
   ),
+  engineerReviewContext: { revision: null, artifactSha256: null, reviewCount: 0, history: [], effective: [] },
   outputCorrelationRef: 'OVR-LOCAL-A',
 });
 const overallBInput = buildOpenClawOverallSynthesisInput({
@@ -520,6 +526,7 @@ const overallBInput = buildOpenClawOverallSynthesisInput({
   sourceEvidenceCandidates: preview.overall.context.criterionCards.flatMap(
     (criterion) => criterion.sourceEvidenceCandidates,
   ),
+  engineerReviewContext: { revision: null, artifactSha256: null, reviewCount: 0, history: [], effective: [] },
 });
 const mappedOverallItems = overallAInput.baseRuleResult.items;
 const mappedOverallSourceRefs = mappedOverallItems.flatMap(
@@ -549,6 +556,8 @@ const overallB = localOverallOutput(overallBInput,
   }, 2);
 consumeOpenClawOverallSynthesisOutput(overallAInput, JSON.stringify(overallA));
 consumeOpenClawOverallSynthesisOutput(overallBInput, JSON.stringify(overallB));
+const overallABytes = Buffer.from(JSON.stringify(overallA));
+const overallAPersisted = await artifactStore.persistAndReadback(overallABytes);
 const fast61 = await readFastReceipt('61', reader, artifactStore);
 const fast62 = await readFastReceipt('62', reader, artifactStore);
 const fast61Manifest = reviewedFastManifest(preview, fast61);
@@ -720,6 +729,85 @@ const secondTransportText = JSON.stringify(secondAssessment.overall.transport);
 assert.equal(secondTransportText.includes(firstEngineerComment), true);
 assert.equal(secondTransportText.includes(secondEngineerComment), true);
 
+const beforeIntegrated = await registrar.getByWorkItemId(
+  secondResynthesis.workItemId,
+);
+const integratedRevision = beforeIntegrated.revision + 1;
+const withIntegrated = await registrar.compareAndSet({
+  workItemId: beforeIntegrated.workItemId,
+  expectedRevision: beforeIntegrated.revision,
+  syncPrimaryAttempt: false,
+  next: {
+    ...withoutRevision(beforeIntegrated),
+    integratedAssessment: {
+      status: 'OVERALL_CANDIDATE_READY',
+      baseRules: localBaseRules,
+      overallSynthesis: {
+        status: 'CANDIDATE_ONLY',
+        revision: 1,
+        sourceResultId: overallA.sourceResultId,
+        basedOnBaseRuleRevision: localBaseRules.revision,
+        basedOnBaseRuleArtifactSha256: localBaseRules.artifact.sha256,
+        basedOnEngineerReviewRevision: null,
+        basedOnEngineerReviewArtifactSha256: null,
+        discoveryStatus: overallA.discoveryStatus,
+        gap: overallA.gap,
+        candidateRefCount: overallA.candidateRefCount,
+        findingCount: overallA.findingCount,
+        unresolvedCount: overallA.unresolvedCount,
+        authorityLevel: 'candidate_only',
+        externalDiscoveryIsEvidence: false,
+        artifact: overallAPersisted.artifact,
+        actionAttemptId: 'ATT-LOCAL-OPENCLAW-OVERALL-A',
+        staleReason: null,
+      },
+      overallForAeoConfirmation: {
+        status: 'HUMAN_CONFIRMED',
+        authority: 'CANONICAL_WORKITEM_SERVER_FRESH_READ',
+        workItemRevision: integratedRevision,
+        overallRevision: 1,
+        overallArtifactRef: overallAPersisted.artifact.ref,
+        overallArtifactSha256: overallAPersisted.artifact.sha256,
+        actionAttemptId: 'ATT-LOCAL-CONFIRM-OVERALL-FOR-AEO',
+        confirmingActorUserId: actor.userId,
+        confirmedAt: '2026-08-17T00:00:00.000Z',
+      },
+    },
+  },
+});
+assert.equal(withIntegrated.revision, integratedRevision);
+
+const baseAiCallCount = 0;
+const aeo = new CanonicalHostAeoService(
+  registrar,
+  authorization,
+  permissionSnapshots,
+  artifactStore,
+  repository,
+  fileService,
+  new AeoReviewedIntegratedAssessmentConsumer(),
+);
+const uploadsBeforeAeo = fileService.uploadCalls.length;
+const aeoRun = await aeo.generateCandidate(withIntegrated.workItemId, actor);
+assert.equal(aeoRun.status, 'CANDIDATE_WORD_EXPORTED');
+assert.equal(aeoRun.replayed, false);
+assert.equal(aeoRun.baseAiCallCount, 0);
+assert.equal(aeoRun.aeo.artifacts.length, 4);
+assert.equal(aeoRun.aeo.targetIdentity.startsWith(
+  'AEO-CANDIDATE-737-34-3830-',
+), true);
+assert.notEqual(
+  aeoRun.aeo.targetIdentity,
+  aeoRun.aeo.authoringTemplate.identity,
+);
+assert.equal(aeoRun.aeo.authoringTemplate.role, 'CONTROLLED_TEMPLATE_SOURCE');
+assert.equal(fileService.uploadCalls.length, uploadsBeforeAeo + 4);
+const uploadsAfterAeo = fileService.uploadCalls.length;
+const aeoReplay = await aeo.generateCandidate(withIntegrated.workItemId, actor);
+assert.equal(aeoReplay.replayed, true);
+assert.deepEqual(aeoReplay.aeo, aeoRun.aeo);
+assert.equal(fileService.uploadCalls.length, uploadsAfterAeo);
+
 const page = await vertical.page(
   { workItemId: secondResynthesis.workItemId, query: 'applicability' },
   actor,
@@ -730,12 +818,14 @@ assert.equal(page.workItem.assessment.criterionCount, 150);
 assert.equal(openApi.assessmentSummary.criterionCount, 150);
 assert.equal(openApi.assessmentSummary.artifact.sha256,
   secondResynthesis.assessment.artifact.sha256);
-assert.equal(page.workItem.integratedAssessment ?? null, null);
-assert.equal(openApi.integratedAssessmentSummary, null);
+assert.equal(page.workItem.integratedAssessment.baseRules.criterionCount, 150);
+assert.equal(openApi.integratedAssessmentSummary.overallSynthesis.status,
+  'CANDIDATE_ONLY');
+assert.equal(page.workItem.aeo.status, 'CANDIDATE_WORD_EXPORTED');
 assert.equal(deepLink.deepLink, page.entry.deepLinkPath);
 assert.equal(ingestCalls, 1);
 assert.equal(repository.parseReservation.workItemId, secondResynthesis.workItemId);
-assert.equal(fileService.uploadCalls.length, 6);
+assert.equal(baseAiCallCount, 0);
 
 process.stdout.write(`${JSON.stringify({
   status: 'ORDINARY_737_ASSESSMENT_LOOP_PASS',
@@ -776,11 +866,19 @@ process.stdout.write(`${JSON.stringify({
   overallSynthesisAB: {
     noDiscoveryStatus: overallA.discoveryStatus,
     optionalDiscoveryResynthesisStatus: overallB.discoveryStatus,
-    baseRuleCount: overallAInput.baseRuleResult.items.length,
-    sourceBoundRuleCount: localBaseRules.sourceBoundCandidateCount,
+    dynamicCriterionCount: overallAInput.baseRuleResult.items.length,
+    sourceBoundCriterionCount: localBaseRules.sourceBoundCandidateCount,
     secCandidatesMappedToUnifiedSourceRefs: true,
     candidateRefCount: overallB.candidateRefCount,
     candidateOnly: true,
+  },
+  aeo: {
+    status: aeoRun.aeo.status,
+    targetIdentity: aeoRun.aeo.targetIdentity,
+    authoringTemplate: aeoRun.aeo.authoringTemplate,
+    artifacts: aeoRun.aeo.artifacts,
+    replayedWithoutIo: aeoReplay.replayed,
+    baseAiCallCount,
   },
   external: {
     discoveryStatus: secondResynthesis.assessment.externalDiscoveryStatus,
@@ -796,6 +894,7 @@ process.stdout.write(`${JSON.stringify({
     deepLink: page.entry.deepLinkPath,
     assessmentFreshRead: openApi.assessmentSummary.status,
     integratedAssessmentSummary: openApi.integratedAssessmentSummary,
+    aeoStatus: page.workItem.aeo.status,
   },
   actionAttempts: [...repository.assessmentActions.values()].map((value) => ({
     actionType: value.actionType,
@@ -824,6 +923,8 @@ function localOverallOutput(input, discoveryStatus, providers, candidateRefCount
     packageId: input.baseRuleResult.packageId,
     baseRuleRevision: input.baseRuleResult.revision,
     baseRuleArtifactSha256: input.baseRuleResult.artifactSha256,
+    engineerReviewRevision: input.engineerReviewContext.revision,
+    engineerReviewArtifactSha256: input.engineerReviewContext.artifactSha256,
     discoveryStatus, gap: discoveryStatus === 'NO_DISCOVERY' ? null : 'Discovery remains non-evidence.',
     candidateRefCount, findingCount: 0, unresolvedCount: 150,
     authorityLevel: 'candidate_only', externalDiscoveryIsEvidence: false,
@@ -871,6 +972,11 @@ function assessmentOptions(workItem, artifactBytes, rulePack, ruleDigest, criter
     },
     generatedAt: '2026-08-13T00:00:00.000Z',
   };
+}
+
+function withoutRevision(workItem) {
+  const { revision: _revision, ...rest } = workItem;
+  return rest;
 }
 
 async function readFastReceipt(issue, unifiedReader, store) {

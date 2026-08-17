@@ -19,6 +19,7 @@ import {
   CANONICAL_WORK_ITEM_REGISTRAR,
 } from './canonical-host.constants';
 import { CanonicalHostAssessmentService } from './canonical-host-assessment.service';
+import { CanonicalHostEngineerReviewService } from './canonical-host-engineer-review.service';
 import type {
   CanonicalAuthorizationPort,
   CanonicalHostActor,
@@ -55,6 +56,7 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
     private readonly repository: MiaodaWorkItemRepository,
     private readonly assessment: CanonicalHostAssessmentService,
     private readonly processor: DynamicRulesEvaluationProcessor,
+    private readonly engineerReviews: CanonicalHostEngineerReviewService,
   ) {}
 
   async begin(workItemId: string): Promise<BeginDynamicEvaluationResult> {
@@ -91,6 +93,8 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
     const attempt = await this.repository.getDynamicEvaluationActionByCallerRef(
       attemptRef,
     );
+    const recovered = await this.recoverExistingCommit(attempt);
+    if (recovered) return recovered;
     if (attempt.status !== 'RUNNING') {
       throw new Error('DYNAMIC_EVALUATION_ATTEMPT_NOT_RUNNING');
     }
@@ -111,6 +115,21 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
         attempt,
       );
       const result = this.processor.consumeOutput(request, output);
+      const currentBase = workItem.integratedAssessment?.baseRules;
+      if (workItem.integratedAssessment?.engineerReviews && currentBase) {
+        const prospectiveBase = baseRuleProjection(
+          workItem,
+          attempt,
+          request.modelInput.expectedSelfCheck,
+          result,
+          currentBase.artifact,
+        );
+        await this.engineerReviews.assertLedgerCompatibleWithDynamicBytes(
+          workItem,
+          prospectiveBase,
+          new TextEncoder().encode(output),
+        );
+      }
       try {
         await this.repository.claimDynamicEvaluationCommit(attempt.attemptId);
         commitClaimed = true;
@@ -144,6 +163,7 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
           ? 'OVERALL_CANDIDATE_STALE'
           : 'BASE_RULE_CANDIDATE_READY',
         baseRules,
+        engineerReviews: workItem.integratedAssessment?.engineerReviews ?? null,
         overallSynthesis,
         overallForAeoConfirmation: null,
       };
@@ -154,6 +174,9 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
         next: {
           ...withoutRevision(workItem),
           integratedAssessment,
+          // A candidate AEO is bound to the exact dynamic/overall artifact pair.
+          // A new dynamic evaluation makes any previous authoring projection stale.
+          aeo: null,
         },
       });
       await this.repository.completeAssessmentAction(attempt.attemptId);
@@ -165,14 +188,54 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
       };
     } catch (error) {
       if (commitClaimed) {
-        await this.repository.failAssessmentAction({
-          attemptId: attempt.attemptId,
-          errorCode: errorCode(error),
-          errorMessage: errorMessage(error),
-        });
+        const recovered = await this.recoverClaimedFailure(attempt, error);
+        if (recovered) return recovered;
       }
       throw error;
     }
+  }
+
+  private async recoverExistingCommit(
+    attempt: DynamicEvaluationActionAttempt,
+  ): Promise<CommitDynamicEvaluationResult | null> {
+    if (attempt.status === 'RUNNING') return null;
+    const workItem = await this.requiredSbWorkItem(attempt.workItemId);
+    const committed = committedDynamicResult(workItem, attempt);
+    if (committed && attempt.status === 'COMMITTING') {
+      await this.repository.completeAssessmentAction(attempt.attemptId);
+      return committed;
+    }
+    if (committed && attempt.status === 'SUCCEEDED') return committed;
+    if (attempt.status === 'COMMITTING') {
+      throw new Error('DYNAMIC_EVALUATION_COMMIT_IN_PROGRESS');
+    }
+    throw new Error('DYNAMIC_EVALUATION_ATTEMPT_NOT_RUNNING');
+  }
+
+  private async recoverClaimedFailure(
+    attempt: DynamicEvaluationActionAttempt,
+    error: unknown,
+  ): Promise<CommitDynamicEvaluationResult | null> {
+    const workItem = await this.requiredSbWorkItem(attempt.workItemId);
+    const committed = committedDynamicResult(workItem, attempt);
+    if (committed) {
+      await this.repository.completeAssessmentAction(attempt.attemptId);
+      return committed;
+    }
+    if (workItem.revision === attempt.attemptNo) {
+      await this.repository.releaseOpenClawCommitForRetry({
+        attemptId: attempt.attemptId,
+        errorCode: errorCode(error),
+        errorMessage: errorMessage(error),
+      });
+      return null;
+    }
+    await this.repository.failAssessmentAction({
+      attemptId: attempt.attemptId,
+      errorCode: errorCode(error),
+      errorMessage: errorMessage(error),
+    });
+    return null;
   }
 
   private async buildRequest(
@@ -228,12 +291,15 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
   ): Promise<string> {
     const decision = await this.authorization.authorize({
       actor,
-      action: 'PERSIST_BASE_RULE_RESULT',
+      action: 'PERSIST_OPENCLAW_DYNAMIC_EVALUATION',
       workItemId: workItem.workItemId,
       requestId: workItem.requestId,
       documentVersionId: workItem.source.documentVersionId,
     });
-    if (!decision.allowed || decision.action !== 'PERSIST_BASE_RULE_RESULT') {
+    if (
+      !decision.allowed ||
+      decision.action !== 'PERSIST_OPENCLAW_DYNAMIC_EVALUATION'
+    ) {
       throw new Error('CANONICAL_ACTION_NOT_AUTHORIZED');
     }
     const snapshot = await this.permissionSnapshots.freshRead({
@@ -262,6 +328,23 @@ function serviceActor(tenantId: string): CanonicalHostActor {
     appId: CANONICAL_APP_ID,
     roles: [],
     env: 'hosted',
+  };
+}
+
+function committedDynamicResult(
+  workItem: CanonicalWorkItemProjection,
+  attempt: DynamicEvaluationActionAttempt,
+): CommitDynamicEvaluationResult | null {
+  const integrated = workItem.integratedAssessment;
+  const baseRules = integrated?.baseRules;
+  if (!integrated || baseRules?.actionAttemptId !== attempt.attemptId) {
+    return null;
+  }
+  return {
+    workItemId: workItem.workItemId,
+    workItemRevision: workItem.revision,
+    status: integrated.status,
+    baseRules,
   };
 }
 

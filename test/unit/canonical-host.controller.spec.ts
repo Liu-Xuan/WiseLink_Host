@@ -34,35 +34,38 @@ const HOST_REQUEST = {
 };
 
 function target() {
-  const assessments = {
-    evaluateCandidate: jest.fn().mockResolvedValue({ revision: 5 }),
-    resynthesizeAfterEngineerChange: jest
-      .fn()
-      .mockResolvedValue({ revision: 6 }),
-  };
   const integratedAssessments = {
-    persistBaseRuleCandidate: jest.fn().mockResolvedValue({ revision: 7 }),
-    persistOpenClawOverall: jest.fn().mockResolvedValue({ revision: 8 }),
     confirmOpenClawOverallForAeo: jest.fn().mockResolvedValue({ revision: 9 }),
   };
+  const engineerReviews = {
+    recordReview: jest.fn().mockResolvedValue({ revision: 6 }),
+    pageContext: jest.fn().mockResolvedValue(null),
+  };
+  const aeo = {
+    generateCandidate: jest.fn().mockResolvedValue({
+      status: 'CANDIDATE_WORD_EXPORTED',
+    }),
+  };
   return {
-    assessments,
+    engineerReviews,
     integratedAssessments,
+    aeo,
     controller: new CanonicalHostController(
       {} as never,
       {} as never,
-      assessments as never,
       integratedAssessments as never,
+      engineerReviews as never,
+      aeo as never,
     ),
   };
 }
 
 describe('CanonicalHostController assessment actions', () => {
-  it('derives the actor and NEEDS_REVIEW status on a valid deferred change', async () => {
-    const { assessments, controller } = target();
+  it('passes only ordinary review fields and the authenticated actor', async () => {
+    const { engineerReviews, controller } = target();
 
     await expect(
-      controller.resynthesizeAssessment(
+      controller.recordEngineerReview(
         'WI-SB-1001',
         {
           expectedRevision: 5,
@@ -74,25 +77,22 @@ describe('CanonicalHostController assessment actions', () => {
       ),
     ).resolves.toEqual({ revision: 6 });
 
-    expect(assessments.resynthesizeAfterEngineerChange).toHaveBeenCalledWith(
-      expect.objectContaining({
+    expect(engineerReviews.recordReview).toHaveBeenCalledWith(
+      {
         workItemId: 'WI-SB-1001',
         expectedRevision: 5,
         criterionId: 'JAC-001',
-        review: expect.objectContaining({
-          decision: 'deferred',
-          status: 'NEEDS_REVIEW',
-          reviewingEngineerUserIds: ['engineer-1001'],
-        }),
-      }),
+        decision: 'deferred',
+        comment: '需要补充受控证据。',
+      },
       expect.objectContaining({ userId: 'engineer-1001' }),
     );
   });
 
-  it('derives ENGINEER_CONFIRMED only for a confirmed decision', async () => {
-    const { assessments, controller } = target();
+  it('accepts a confirmed decision without client supplied status', async () => {
+    const { engineerReviews, controller } = target();
 
-    await controller.resynthesizeAssessment(
+    await controller.recordEngineerReview(
       'WI-SB-1001',
       {
         expectedRevision: 5,
@@ -103,13 +103,8 @@ describe('CanonicalHostController assessment actions', () => {
       HOST_REQUEST as never,
     );
 
-    expect(assessments.resynthesizeAfterEngineerChange).toHaveBeenCalledWith(
-      expect.objectContaining({
-        review: expect.objectContaining({
-          decision: 'confirmed_pass',
-          status: 'ENGINEER_CONFIRMED',
-        }),
-      }),
+    expect(engineerReviews.recordReview).toHaveBeenCalledWith(
+      expect.objectContaining({ decision: 'confirmed_pass' }),
       expect.any(Object),
     );
   });
@@ -121,11 +116,11 @@ describe('CanonicalHostController assessment actions', () => {
     [{ expectedRevision: 5, criterionId: 'JAC-001', decision: 'deferred', comment: '' }],
     [{ expectedRevision: 5, criterionId: 'JAC-001', decision: 'deferred', comment: 'x', status: 'ENGINEER_CONFIRMED' }],
   ])('maps malformed engineer input to HTTP 400', async (body) => {
-    const { assessments, controller } = target();
+    const { engineerReviews, controller } = target();
 
     let caught: unknown;
     try {
-      await controller.resynthesizeAssessment(
+      await controller.recordEngineerReview(
         'WI-SB-1001',
         body,
         HOST_REQUEST as never,
@@ -136,52 +131,44 @@ describe('CanonicalHostController assessment actions', () => {
 
     expect(caught).toBeInstanceOf(BadRequestException);
     expect((caught as BadRequestException).getStatus()).toBe(400);
-    expect(assessments.resynthesizeAfterEngineerChange).not.toHaveBeenCalled();
+    expect(engineerReviews.recordReview).not.toHaveBeenCalled();
   });
 
   it('rejects client-supplied authority fields as HTTP 400', async () => {
-    const { assessments, controller } = target();
+    const { engineerReviews, controller } = target();
 
     expect(() =>
-      controller.evaluateAssessment(
+      controller.recordEngineerReview(
         'WI-SB-1001',
-        { permissionSnapshotVersion: 'client-value' },
+        {
+          expectedRevision: 5,
+          criterionId: 'JAC-001',
+          decision: 'deferred',
+          comment: 'x',
+          permissionSnapshotVersion: 'client-value',
+        },
         HOST_REQUEST as never,
       ),
     ).toThrow(BadRequestException);
-    expect(assessments.evaluateCandidate).not.toHaveBeenCalled();
+    expect(engineerReviews.recordReview).not.toHaveBeenCalled();
   });
 
   it('requires the authenticated host actor for assessment actions', async () => {
-    const { assessments, controller } = target();
+    const { engineerReviews, controller } = target();
 
     expect(() =>
-      controller.evaluateAssessment(
+      controller.recordEngineerReview(
         'WI-SB-1001',
-        {},
+        { expectedRevision: 5, criterionId: 'JAC-001', decision: 'deferred', comment: 'x' },
         { userContext: null } as never,
       ),
     ).toThrow(UnauthorizedException);
-    expect(assessments.evaluateCandidate).not.toHaveBeenCalled();
+    expect(engineerReviews.recordReview).not.toHaveBeenCalled();
   });
 
-  it('exposes the two integrated assessment steps only as authenticated empty-body actions', async () => {
+  it('exposes only the human AEO confirmation as an authenticated empty-body action', async () => {
     const { controller, integratedAssessments } = target();
 
-    await expect(
-      controller.persistBaseRuleCandidate(
-        'WI-SB-1001',
-        {},
-        HOST_REQUEST as never,
-      ),
-    ).resolves.toEqual({ revision: 7 });
-    await expect(
-      controller.persistOpenClawOverall(
-        'WI-SB-1001',
-        {},
-        HOST_REQUEST as never,
-      ),
-    ).resolves.toEqual({ revision: 8 });
     await expect(
       controller.confirmOpenClawOverallForAeo(
         'WI-SB-1001',
@@ -190,14 +177,6 @@ describe('CanonicalHostController assessment actions', () => {
       ),
     ).resolves.toEqual({ revision: 9 });
 
-    expect(integratedAssessments.persistBaseRuleCandidate).toHaveBeenCalledWith(
-      'WI-SB-1001',
-      expect.objectContaining({ userId: 'engineer-1001' }),
-    );
-    expect(integratedAssessments.persistOpenClawOverall).toHaveBeenCalledWith(
-      'WI-SB-1001',
-      expect.objectContaining({ userId: 'engineer-1001' }),
-    );
     expect(
       integratedAssessments.confirmOpenClawOverallForAeo,
     ).toHaveBeenCalledWith(
@@ -206,50 +185,19 @@ describe('CanonicalHostController assessment actions', () => {
     );
   });
 
-  it.each([
-    ['base', { sourceResultId: 'client-result' }],
-    ['overall', { authority: 'client-authority' }],
-  ])(
-    'rejects client-supplied integrated assessment %s input before invoking a provider',
-    async (step, body) => {
-      const { controller, integratedAssessments } = target();
-
-      let caught: unknown;
-      try {
-        if (step === 'base') {
-          await controller.persistBaseRuleCandidate(
-            'WI-SB-1001',
-            body,
-            HOST_REQUEST as never,
-          );
-        } else {
-          await controller.persistOpenClawOverall(
-            'WI-SB-1001',
-            body,
-            HOST_REQUEST as never,
-          );
-        }
-      } catch (error) {
-        caught = error;
-      }
-
-      expect(caught).toBeInstanceOf(BadRequestException);
-      expect(integratedAssessments.persistBaseRuleCandidate).not.toHaveBeenCalled();
-      expect(integratedAssessments.persistOpenClawOverall).not.toHaveBeenCalled();
-    },
-  );
-
-  it('requires the authenticated host actor for integrated assessment actions', async () => {
+  it('requires the authenticated host actor for AEO confirmation', () => {
     const { controller, integratedAssessments } = target();
 
     expect(() =>
-      controller.persistBaseRuleCandidate(
+      controller.confirmOpenClawOverallForAeo(
         'WI-SB-1001',
         {},
         { userContext: null } as never,
       ),
     ).toThrow(UnauthorizedException);
-    expect(integratedAssessments.persistBaseRuleCandidate).not.toHaveBeenCalled();
+    expect(
+      integratedAssessments.confirmOpenClawOverallForAeo,
+    ).not.toHaveBeenCalled();
   });
 
   it('rejects client-supplied confirmation identity before the service', () => {
@@ -268,5 +216,34 @@ describe('CanonicalHostController assessment actions', () => {
     expect(
       integratedAssessments.confirmOpenClawOverallForAeo,
     ).not.toHaveBeenCalled();
+  });
+
+  it('exposes AEO candidate generation only as an authenticated empty-body action', async () => {
+    const { controller, aeo } = target();
+
+    await expect(
+      controller.generateAeoCandidate(
+        'WI-SB-1001',
+        {},
+        HOST_REQUEST as never,
+      ),
+    ).resolves.toEqual({ status: 'CANDIDATE_WORD_EXPORTED' });
+    expect(aeo.generateCandidate).toHaveBeenCalledWith(
+      'WI-SB-1001',
+      expect.objectContaining({ userId: 'engineer-1001' }),
+    );
+  });
+
+  it('rejects a client-supplied AEO target or authority before the service', () => {
+    const { controller, aeo } = target();
+
+    expect(() =>
+      controller.generateAeoCandidate(
+        'WI-SB-1001',
+        { targetIdentity: 'AEO-CLIENT', authority: 'CLIENT' },
+        HOST_REQUEST as never,
+      ),
+    ).toThrow(BadRequestException);
+    expect(aeo.generateCandidate).not.toHaveBeenCalled();
   });
 });

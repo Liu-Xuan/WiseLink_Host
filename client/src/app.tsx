@@ -3,6 +3,7 @@ import { Route, Routes } from 'react-router-dom';
 
 import Layout from './components/Layout';
 import DocumentParsingPage from './pages/DocumentParsingPage/DocumentParsingPage';
+import WorkspaceHomePage from './pages/WorkspaceHomePage/WorkspaceHomePage';
 import NotFound from './pages/NotFound/NotFound';
 import RuntimeProbePage from './pages/RuntimeProbePage/RuntimeProbePage';
 import ExternalDiscoveryPage from './pages/ExternalDiscoveryPage/ExternalDiscoveryPage';
@@ -11,7 +12,7 @@ const RoutesComponent = () => {
   return (
     <Routes>
       <Route element={<Layout />}>
-        <Route index element={<DocumentParsingPage />} />
+        <Route index element={<WorkspaceHomePage />} />
         <Route path="runtime-probe" element={<RuntimeProbePage />} />
         <Route path="external-discovery" element={<ExternalDiscoveryPage />} />
         <Route

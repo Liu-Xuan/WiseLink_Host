@@ -24,6 +24,7 @@ import type {
   CanonicalWorkItemRegistrarPort,
 } from './canonical-host.types';
 import { CanonicalHostAssessmentService } from './canonical-host-assessment.service';
+import { CanonicalHostEngineerReviewService } from './canonical-host-engineer-review.service';
 import {
   buildOpenClawOverallSynthesisInput,
   consumeOpenClawOverallSynthesisOutput,
@@ -47,6 +48,7 @@ export class CanonicalHostOpenClawOverallService {
     private readonly repository: MiaodaWorkItemRepository,
     private readonly discovery: ExternalDiscoveryService,
     private readonly assessment: CanonicalHostAssessmentService,
+    private readonly engineerReviews: CanonicalHostEngineerReviewService,
   ) {}
 
   async begin(
@@ -91,6 +93,8 @@ export class CanonicalHostOpenClawOverallService {
     const attempt = await this.repository.getOverallSynthesisActionByCallerRef(
       attemptRef,
     );
+    const recovered = await this.recoverExistingCommit(attempt);
+    if (recovered) return recovered;
     if (attempt.status !== 'RUNNING') {
       throw new Error('OPENCLAW_OVERALL_ATTEMPT_NOT_RUNNING');
     }
@@ -124,6 +128,10 @@ export class CanonicalHostOpenClawOverallService {
         sourceResultId: requiredText(parsed.sourceResultId),
         basedOnBaseRuleRevision: baseRules.revision,
         basedOnBaseRuleArtifactSha256: baseRules.artifact.sha256,
+        basedOnEngineerReviewRevision:
+          modelInput.engineerReviewContext.revision,
+        basedOnEngineerReviewArtifactSha256:
+          modelInput.engineerReviewContext.artifactSha256,
         discoveryStatus: requiredText(parsed.discoveryStatus),
         gap: nullableString(parsed.gap),
         candidateRefCount: requiredCount(parsed.candidateRefCount),
@@ -138,6 +146,7 @@ export class CanonicalHostOpenClawOverallService {
       const integratedAssessment: CanonicalIntegratedAssessmentProjection = {
         status: 'OVERALL_CANDIDATE_READY',
         baseRules,
+        engineerReviews: workItem.integratedAssessment?.engineerReviews ?? null,
         overallSynthesis: overall,
         overallForAeoConfirmation: null,
       };
@@ -145,7 +154,13 @@ export class CanonicalHostOpenClawOverallService {
         workItemId: workItem.workItemId,
         expectedRevision: workItem.revision,
         syncPrimaryAttempt: false,
-        next: { ...withoutRevision(workItem), integratedAssessment },
+        next: {
+          ...withoutRevision(workItem),
+          integratedAssessment,
+          // A new overall candidate must be confirmed before it can seed AEO.
+          // Do not keep displaying a candidate bound to an older synthesis.
+          aeo: null,
+        },
       });
       await this.repository.completeAssessmentAction(attempt.attemptId);
       return {
@@ -156,14 +171,54 @@ export class CanonicalHostOpenClawOverallService {
       };
     } catch (error) {
       if (claimed) {
-        await this.repository.failAssessmentAction({
-          attemptId: attempt.attemptId,
-          errorCode: errorCode(error),
-          errorMessage: error instanceof Error ? error.message : String(error),
-        });
+        const recovered = await this.recoverClaimedFailure(attempt, error);
+        if (recovered) return recovered;
       }
       throw error;
     }
+  }
+
+  private async recoverExistingCommit(
+    attempt: OverallSynthesisActionAttempt,
+  ): Promise<Record<string, unknown> | null> {
+    if (attempt.status === 'RUNNING') return null;
+    const workItem = await this.requiredBaseRules(attempt.workItemId);
+    const committed = committedOverallResult(workItem, attempt);
+    if (committed && attempt.status === 'COMMITTING') {
+      await this.repository.completeAssessmentAction(attempt.attemptId);
+      return committed;
+    }
+    if (committed && attempt.status === 'SUCCEEDED') return committed;
+    if (attempt.status === 'COMMITTING') {
+      throw new Error('OPENCLAW_OVERALL_COMMIT_IN_PROGRESS');
+    }
+    throw new Error('OPENCLAW_OVERALL_ATTEMPT_NOT_RUNNING');
+  }
+
+  private async recoverClaimedFailure(
+    attempt: OverallSynthesisActionAttempt,
+    error: unknown,
+  ): Promise<Record<string, unknown> | null> {
+    const workItem = await this.requiredBaseRules(attempt.workItemId);
+    const committed = committedOverallResult(workItem, attempt);
+    if (committed) {
+      await this.repository.completeAssessmentAction(attempt.attemptId);
+      return committed;
+    }
+    if (workItem.revision === attempt.attemptNo) {
+      await this.repository.releaseOpenClawCommitForRetry({
+        attemptId: attempt.attemptId,
+        errorCode: errorCode(error),
+        errorMessage: errorMessage(error),
+      });
+      return null;
+    }
+    await this.repository.failAssessmentAction({
+      attemptId: attempt.attemptId,
+      errorCode: errorCode(error),
+      errorMessage: errorMessage(error),
+    });
+    return null;
   }
 
   private async buildPacket(
@@ -181,7 +236,7 @@ export class CanonicalHostOpenClawOverallService {
       serverContext(serviceActor(attempt.tenantId)),
     );
     const timestamp = attempt.createdAt.toISOString();
-    const [baseArtifactBytes, packageBytes, dynamicCandidate] = await Promise.all([
+    const [baseArtifactBytes, packageBytes, dynamicCandidate, engineerReviewContext] = await Promise.all([
       this.artifactStore.readActualBytes(baseRules.artifact),
       this.artifactStore.readActualBytes(workItem.package!.artifact),
       this.assessment.prepareDynamicRulesCandidate({
@@ -192,7 +247,9 @@ export class CanonicalHostOpenClawOverallService {
         externalDiscovery: null,
         reviewedExternalManifest: null,
       }),
+      this.engineerReviews.modelContext(workItem),
     ]);
+    assertDynamicCandidateSummary(dynamicCandidate.summary, workItem, baseRules);
     const sourceEvidenceCandidates = dynamicCandidate.overall.context.criterionCards
       .flatMap((criterion) => criterion.sourceEvidenceCandidates);
     return {
@@ -204,6 +261,7 @@ export class CanonicalHostOpenClawOverallService {
         packageBytes,
         discoveries,
         sourceEvidenceCandidates,
+        engineerReviewContext,
         outputCorrelationRef: attempt.triggerRequestId,
       }),
     };
@@ -216,9 +274,25 @@ export class CanonicalHostOpenClawOverallService {
     if (
       workItem.phase !== 'CANDIDATE_READBACK_VERIFIED' ||
       !workItem.package ||
-      !workItem.integratedAssessment?.baseRules
+      !workItem.integratedAssessment?.baseRules ||
+      !workItem.integratedAssessment.baseRules.sourceResultId.startsWith(
+        'openclaw-dynamic://',
+      )
     ) {
-      throw new Error('OPENCLAW_OVERALL_BASE_RULE_CANDIDATE_REQUIRED');
+      throw new Error('OPENCLAW_OVERALL_DYNAMIC_N_CANDIDATE_REQUIRED');
+    }
+    const baseRules = workItem.integratedAssessment.baseRules;
+    const attempt = await this.repository.getDynamicEvaluationActionByAttemptId(
+      baseRules.actionAttemptId,
+    );
+    if (
+      attempt.attemptId !== baseRules.actionAttemptId ||
+      attempt.workItemId !== workItem.workItemId ||
+      attempt.status !== 'SUCCEEDED' ||
+      baseRules.sourceResultId !==
+        `openclaw-dynamic://${attempt.triggerRequestId}`
+    ) {
+      throw new Error('OPENCLAW_OVERALL_DYNAMIC_N_ATTEMPT_MISMATCH');
     }
     return workItem;
   }
@@ -255,6 +329,43 @@ function serviceActor(tenantId: string): CanonicalHostActor {
   if (!tenantId.trim()) throw new Error('OPENCLAW_OVERALL_TENANT_REQUIRED');
   return { userId: OPENCLAW_SERVICE_USER_ID, tenantId, appId: CANONICAL_APP_ID, roles: [], env: 'hosted' };
 }
+function committedOverallResult(
+  workItem: CanonicalWorkItemProjection,
+  attempt: OverallSynthesisActionAttempt,
+): Record<string, unknown> | null {
+  const integrated = workItem.integratedAssessment;
+  const overall = integrated?.overallSynthesis;
+  if (!integrated || overall?.actionAttemptId !== attempt.attemptId) return null;
+  return {
+    workItemId: workItem.workItemId,
+    workItemRevision: workItem.revision,
+    status: integrated.status,
+    overallSynthesis: overall,
+  };
+}
+function assertDynamicCandidateSummary(
+  summary: {
+    workItemId: string;
+    documentVersionId: string;
+    parsedPackageId: string;
+    criterionSetId: string;
+    criterionCount: number;
+    evaluationItemCount: number;
+  },
+  workItem: CanonicalWorkItemProjection,
+  baseRules: CanonicalIntegratedAssessmentProjection['baseRules'],
+): void {
+  if (
+    summary.workItemId !== workItem.workItemId ||
+    summary.documentVersionId !== workItem.source.documentVersionId ||
+    summary.parsedPackageId !== workItem.package?.packageId ||
+    summary.criterionSetId !== baseRules.criterionSetId ||
+    summary.criterionCount !== baseRules.criterionCount ||
+    summary.evaluationItemCount !== baseRules.evaluationItemCount
+  ) {
+    throw new Error('OPENCLAW_OVERALL_DYNAMIC_N_CONTEXT_DRIFT');
+  }
+}
 function serverContext(actor: CanonicalHostActor) { return { actorUserId: actor.userId, tenantId: actor.tenantId, roles: [] as string[] }; }
 function providerCodesFor(providers: string[]): string[] {
   if (new Set(providers).size !== providers.length || providers.length > 3) throw new Error('OPENCLAW_OVERALL_PROVIDERS_INVALID');
@@ -268,3 +379,4 @@ function nullableString(value: unknown): string | null { if (value === null) ret
 function requiredCount(value: unknown): number { if (!Number.isSafeInteger(value) || Number(value) < 0) throw new Error('OPENCLAW_OVERALL_RESULT_COUNT_INVALID'); return Number(value); }
 function withoutRevision(workItem: CanonicalWorkItemProjection): Omit<CanonicalWorkItemProjection, 'revision'> { const { revision: _revision, ...rest } = workItem; return rest; }
 function errorCode(error: unknown): string { return error instanceof Error ? error.message.split(':', 1)[0] : 'OPENCLAW_OVERALL_FAILED'; }
+function errorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error); }

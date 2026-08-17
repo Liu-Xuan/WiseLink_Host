@@ -16,7 +16,6 @@ import {
 import { OrdinaryMiaodaAppBindingAdapter } from './modules/canonical-host/ordinary-miaoda-app-binding.adapter';
 import {
   CANONICAL_AUTHORIZATION,
-  CANONICAL_BASE_RULE_RESULT_PROVIDER,
   CANONICAL_FAILURE_VALIDATION_WRITE_AUTHORIZATION,
   CANONICAL_MIAODA_APP_BINDING,
   CANONICAL_PDF_PRODUCER,
@@ -29,7 +28,6 @@ import { MiaodaOrdinaryArtifactStoreAdapter } from './modules/unified-reader/mia
 import { createHostedU0FullPackageValidatorProvider } from './modules/unified-reader/hosted-u0-full-validator.provider';
 import { createHostedU0Frozen2FailureAdapterProvider } from './modules/unified-reader/hosted-u0-frozen2-failure-adapter.provider';
 import { ViewModule } from './modules/view/view.module';
-import { MiaodaBaseOneShotRuleResultProvider } from './modules/canonical-host/miaoda-base-one-shot-rule-result.provider';
 
 @Module({
   imports: [
@@ -61,10 +59,6 @@ import { MiaodaBaseOneShotRuleResultProvider } from './modules/canonical-host/mi
       failureValidationWriteAuthorizationProvider: {
         provide: CANONICAL_FAILURE_VALIDATION_WRITE_AUTHORIZATION,
         useExisting: OrdinaryFailureValidationWriteAuthorizationAdapter,
-      },
-      baseRuleResultProvider: {
-        provide: CANONICAL_BASE_RULE_RESULT_PROVIDER,
-        useClass: MiaodaBaseOneShotRuleResultProvider,
       },
       unifiedReader: {
         artifactStoreProvider: {
