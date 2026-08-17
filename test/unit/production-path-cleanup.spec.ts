@@ -66,6 +66,8 @@ describe('Phase 13C production path', () => {
     expect(client).not.toContain('运行 Base 固定规则评估');
     expect(client).not.toContain('运行 OpenClaw 整体候选综合');
     expect(client).toContain('OpenClaw 动态 N + 整体综合');
+    expect(client).toContain('aeo.authoringTemplate ?');
+    expect(client).toContain('历史候选未记录编写模板身份');
     expect(externalModule).not.toContain('ExternalDiscoveryAutomation');
     expect(externalModule).not.toContain('@Automation');
     expect(assets).not.toContain('phase10-aeo');

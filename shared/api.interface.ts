@@ -607,13 +607,18 @@ export interface CanonicalAeoCandidateProjection {
   engineeringApproved: false;
   actionAttemptId: string;
   ownerCommit: '74333547ae5cd1878259812353d59563cc9041da';
-  /** Historical authoring source, distinct from the candidate target. */
-  authoringTemplate: {
+  /**
+   * Historical authoring source, distinct from the candidate target.
+   *
+   * Older hosted candidate projections predate this audit field. They remain
+   * readable, but the UI must not invent a template identity for them.
+   */
+  authoringTemplate?: {
     role: 'CONTROLLED_TEMPLATE_SOURCE';
     identity: 'AEO-B787-46-0015-R09';
     artifactRef: string;
     artifactSha256: string;
-  };
+  } | null;
   sourceOverall: {
     revision: number;
     artifactRef: string;
