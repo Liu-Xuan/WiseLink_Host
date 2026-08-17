@@ -30,17 +30,27 @@ export class MiaodaOrdinaryArtifactStoreAdapter
     const bytes = Uint8Array.from(input);
     const digest = sha256Raw(bytes);
     const filePath = this.filePath(digest);
-    const bucketId = await this.fileService.getDefaultBucket();
+    const bucketId = await providerCall(
+      'ARTIFACT_STORE_DEFAULT_BUCKET_READ_FAILED',
+      () => this.fileService.getDefaultBucket(),
+    );
     const scoped = this.fileService.from(bucketId);
-    const existing = await scoped.getFileMetadata(filePath);
+    const existing = await providerCall(
+      'ARTIFACT_STORE_METADATA_READ_FAILED',
+      () => scoped.getFileMetadata(filePath),
+    );
     let reused = true;
     if (existing === null) {
-      const uploaded = await scoped.upload(bytes, {
-        filePath,
-        fileName: `${digest}.json`,
-        contentType: JSON_MEDIA_TYPE,
-        upsert: false,
-      });
+      const uploaded = await providerCall(
+        'ARTIFACT_STORE_UPLOAD_FAILED',
+        () =>
+          scoped.upload(bytes, {
+            filePath,
+            fileName: `${digest}.json`,
+            contentType: JSON_MEDIA_TYPE,
+            upsert: false,
+          }),
+      );
       if (canonicalPath(uploaded.filePath) !== canonicalPath(filePath)) {
         throw new Error('ARTIFACT_UPLOAD_PATH_MISMATCH');
       }
@@ -65,9 +75,15 @@ export class MiaodaOrdinaryArtifactStoreAdapter
   ): Promise<Uint8Array> {
     assertDescriptor(artifact, this.artifactRefPrefix());
     const filePath = this.filePath(artifact.sha256);
-    const bucketId = await this.fileService.getDefaultBucket();
+    const bucketId = await providerCall(
+      'ARTIFACT_STORE_DEFAULT_BUCKET_READ_FAILED',
+      () => this.fileService.getDefaultBucket(),
+    );
     const scoped = this.fileService.from(bucketId);
-    const metadata = await scoped.getFileMetadata(filePath);
+    const metadata = await providerCall(
+      'ARTIFACT_STORE_METADATA_READ_FAILED',
+      () => scoped.getFileMetadata(filePath),
+    );
     if (
       metadata === null ||
       metadata.bucketID !== bucketId ||
@@ -77,8 +93,14 @@ export class MiaodaOrdinaryArtifactStoreAdapter
     ) {
       throw new Error('ARTIFACT_READBACK_MISMATCH:METADATA');
     }
-    const downloaded = await scoped.download(filePath);
-    const actual = await bodyBytes(downloaded.content);
+    const downloaded = await providerCall(
+      'ARTIFACT_STORE_DOWNLOAD_FAILED',
+      () => scoped.download(filePath),
+    );
+    const actual = await providerCall(
+      'ARTIFACT_STORE_DOWNLOAD_BODY_READ_FAILED',
+      () => bodyBytes(downloaded.content),
+    );
     if (
       downloaded.metadata === null ||
       downloaded.metadata.id !== metadata.id ||
@@ -169,4 +191,18 @@ function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
     left.byteLength === right.byteLength &&
     left.every((value, index) => value === right[index])
   );
+}
+
+async function providerCall<T>(
+  code: string,
+  operation: () => T | PromiseLike<T>,
+): Promise<T> {
+  try {
+    return await operation();
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    const error = new Error(`${code}:${message}`);
+    (error as Error & { cause?: unknown }).cause = cause;
+    throw error;
+  }
 }

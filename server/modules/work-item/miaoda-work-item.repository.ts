@@ -510,6 +510,31 @@ export class MiaodaWorkItemRepository {
     }
   }
 
+  async recordOpenClawBeginFailure(input: {
+    attemptId: string;
+    errorCode: string;
+    errorMessage: string;
+  }): Promise<void> {
+    const updated = await this.db
+      .update(actionAttempt)
+      .set({
+        errorCode: input.errorCode.slice(0, 160),
+        errorMessage: input.errorMessage,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(actionAttempt.attemptId, input.attemptId),
+          eq(actionAttempt.actionType, 'OPENCLAW_OVERALL_SYNTHESIS'),
+          eq(actionAttempt.status, 'RUNNING'),
+        ),
+      )
+      .returning({ attemptId: actionAttempt.attemptId });
+    if (updated.length !== 1) {
+      throw new Error('OPENCLAW_OVERALL_BEGIN_FAILURE_RECORD_CONFLICT');
+    }
+  }
+
   async releaseOpenClawCommitForRetry(input: {
     attemptId: string;
     errorCode: string;

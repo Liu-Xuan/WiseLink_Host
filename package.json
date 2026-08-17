@@ -55,6 +55,7 @@
   },
   "dependencies": {
     "@lark-apaas/fullstack-nestjs-core": "^1.1.57",
+    "@lark-apaas/nestjs-common": "^0.1.9",
     "@modelcontextprotocol/node": "^2.0.0",
     "@modelcontextprotocol/server": "^2.0.0",
     "@nestjs/axios": "^4.0.1",

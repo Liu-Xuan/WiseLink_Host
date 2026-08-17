@@ -34,6 +34,44 @@ describe('CanonicalHostOpenClawOverallService', () => {
     });
   });
 
+  it('records the exact packet failure and reuses the same RUNNING attempt', async () => {
+    const providerCause = new TypeError('fetch failed');
+    const harness = createHarness({
+      artifactReadFailureRef: 'artifact://base',
+      artifactReadFailure: providerCause,
+    });
+
+    let caught: unknown;
+    try {
+      await harness.service.begin(WORK_ITEM_ID, []);
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toBe(
+      'OPENCLAW_OVERALL_BASE_ARTIFACT_READ_FAILED:fetch failed',
+    );
+    expect((caught as Error & { cause?: unknown }).cause).toBe(providerCause);
+    expect(harness.state.beginFailures).toEqual([
+      {
+        attemptId: ATTEMPT_ID,
+        errorCode: 'OPENCLAW_OVERALL_BASE_ARTIFACT_READ_FAILED',
+        errorMessage:
+          'OPENCLAW_OVERALL_BASE_ARTIFACT_READ_FAILED:fetch failed',
+      },
+    ]);
+    expect(harness.state.status).toBe('RUNNING');
+    expect(harness.state.persisted).toEqual([]);
+    expect(harness.state.casCount).toBe(0);
+
+    await expect(harness.service.begin(WORK_ITEM_ID, [])).resolves.toMatchObject({
+      attemptRef: ATTEMPT_REF,
+    });
+    expect(harness.state.reserveCount).toBe(2);
+    expect(harness.state.beginFailures).toHaveLength(1);
+  });
+
   it('rejects a source-evidence candidate whose mapped ref is not in frozen.2', async () => {
     const harness = createHarness({ candidateSourceRef: 'SRC-NOT-IN-PACKAGE' });
 
@@ -188,6 +226,8 @@ function createHarness(options: {
   dynamicAttemptStatus?: string;
   transientPersistFailures?: number;
   persistGate?: PersistGate;
+  artifactReadFailureRef?: string;
+  artifactReadFailure?: unknown;
 } = {}) {
   const workItem = workItemProjection(
     options.workItemRevision ?? 5,
@@ -207,6 +247,7 @@ function createHarness(options: {
   };
   const state = {
     status: 'RUNNING',
+    reserveCount: 0,
     claimCount: 0,
     casCount: 0,
     releaseCount: 0,
@@ -214,6 +255,13 @@ function createHarness(options: {
     persisted: [] as string[],
     completed: [] as string[],
     failed: [] as string[],
+    beginFailures: [] as Array<{
+      attemptId: string;
+      errorCode: string;
+      errorMessage: string;
+    }>,
+    artifactReadFailuresRemaining:
+      options.artifactReadFailureRef === undefined ? 0 : 1,
   };
   const registrar = {
     getByWorkItemId: async () => workItem,
@@ -240,12 +288,25 @@ function createHarness(options: {
       tenantId: 'tenant-overall',
       createdAt: new Date('2026-08-16T11:00:00.000Z'),
     }),
-    reserveOverallSynthesisAction: async () => ({ ...attempt, status: state.status }),
+    reserveOverallSynthesisAction: async () => {
+      state.reserveCount += 1;
+      return { ...attempt, status: state.status };
+    },
     getOverallSynthesisActionByCallerRef: async () => ({ ...attempt, status: state.status }),
     claimOverallSynthesisCommit: async () => {
       state.claimCount += 1;
       if (state.status !== 'RUNNING') throw new Error('OPENCLAW_OVERALL_COMMIT_ALREADY_CLAIMED');
       state.status = 'COMMITTING';
+    },
+    recordOpenClawBeginFailure: async (input: {
+      attemptId: string;
+      errorCode: string;
+      errorMessage: string;
+    }) => {
+      if (state.status !== 'RUNNING') {
+        throw new Error('OPENCLAW_OVERALL_BEGIN_FAILURE_RECORD_CONFLICT');
+      }
+      state.beginFailures.push(input);
     },
     releaseOpenClawCommitForRetry: async () => {
       if (state.status !== 'COMMITTING') {
@@ -264,8 +325,18 @@ function createHarness(options: {
     },
   };
   const artifactStore = {
-    readActualBytes: async (artifact: { ref: string }) =>
-      artifact.ref === 'artifact://base' ? baseArtifactBytes() : packageBytes(),
+    readActualBytes: async (artifact: { ref: string }) => {
+      if (
+        artifact.ref === options.artifactReadFailureRef &&
+        state.artifactReadFailuresRemaining > 0
+      ) {
+        state.artifactReadFailuresRemaining -= 1;
+        throw options.artifactReadFailure ?? new TypeError('fetch failed');
+      }
+      return artifact.ref === 'artifact://base'
+        ? baseArtifactBytes()
+        : packageBytes();
+    },
     persistAndReadback: async (bytes: Uint8Array) => {
       if (state.transientPersistFailures > 0) {
         state.transientPersistFailures -= 1;
