@@ -22,6 +22,7 @@ import type {
 
 import { OrdinaryWorkItemService } from '../work-item/ordinary-work-item.service';
 import { CanonicalHostAssessmentService } from './canonical-host-assessment.service';
+import { CanonicalHostAeoService } from './canonical-host-aeo.service';
 import { CanonicalHostIntegratedAssessmentService } from './canonical-host-integrated-assessment.service';
 import { CanonicalHostVerticalService } from './canonical-host-vertical.service';
 import type { CanonicalHostActor } from './canonical-host.types';
@@ -41,6 +42,7 @@ export class CanonicalHostController {
     private readonly workItems: OrdinaryWorkItemService,
     private readonly assessments: CanonicalHostAssessmentService,
     private readonly integratedAssessments: CanonicalHostIntegratedAssessmentService,
+    private readonly aeo: CanonicalHostAeoService,
   ) {}
 
   @Post('work-items/parse-pdf')
@@ -143,6 +145,19 @@ export class CanonicalHostController {
   ) {
     integratedAssessmentActionBody(body);
     return this.integratedAssessments.confirmOpenClawOverallForAeo(
+      requiredText(workItemId, 'workItemId'),
+      hostActor(httpRequest),
+    );
+  }
+
+  @Post('work-items/:workItemId/aeo/candidate')
+  generateAeoCandidate(
+    @Param('workItemId') workItemId: string,
+    @Body() body: unknown,
+    @Req() httpRequest: Request,
+  ) {
+    integratedAssessmentActionBody(body);
+    return this.aeo.generateCandidate(
       requiredText(workItemId, 'workItemId'),
       hostActor(httpRequest),
     );

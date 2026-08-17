@@ -40,7 +40,7 @@ export default function DocumentParsingPage() {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [assessmentAction, setAssessmentAction] = useState<
-    'CONFIRM_OVERALL_FOR_AEO' | null
+    'CONFIRM_OVERALL_FOR_AEO' | 'GENERATE_AEO_CANDIDATE' | null
   >(null);
   const [assessmentError, setAssessmentError] = useState<string | null>(null);
 
@@ -101,6 +101,21 @@ export default function DocumentParsingPage() {
     } catch (cause) {
       setAssessmentError(
         cause instanceof Error ? cause.message : 'INTEGRATED_ASSESSMENT_FAILED',
+      );
+    } finally {
+      setAssessmentAction(null);
+    }
+  }
+
+  async function generateAeoCandidate(): Promise<void> {
+    setAssessmentAction('GENERATE_AEO_CANDIDATE');
+    setAssessmentError(null);
+    try {
+      await canonicalHost.generateAeoCandidate(workItemId);
+      await load(query.trim() || 'applicability');
+    } catch (cause) {
+      setAssessmentError(
+        cause instanceof Error ? cause.message : 'AEO_CANDIDATE_FAILED',
       );
     } finally {
       setAssessmentAction(null);
@@ -557,19 +572,32 @@ export default function DocumentParsingPage() {
                     'CANDIDATE_ONLY' &&
                   integratedAssessment.overallSynthesis.staleReason === null ? (
                     integratedAssessment.overallForAeoConfirmation ? (
-                      <p>
-                        已由工程师显式确认用于 AEO 候选输入 ·{' '}
-                        {
-                          integratedAssessment.overallForAeoConfirmation
-                            .confirmedAt
-                        }{' '}
-                        · WorkItem revision{' '}
-                        {
-                          integratedAssessment.overallForAeoConfirmation
-                            .workItemRevision
-                        }
-                        。 该确认不等于 ADOPT、工程批准或发布。
-                      </p>
+                      <div className="parse-aeo-ready-action">
+                        <p>
+                          已由工程师显式确认用于 AEO 候选输入 ·{' '}
+                          {
+                            integratedAssessment.overallForAeoConfirmation
+                              .confirmedAt
+                          }{' '}
+                          · WorkItem revision{' '}
+                          {
+                            integratedAssessment.overallForAeoConfirmation
+                              .workItemRevision
+                          }
+                          。该确认不等于工程批准或发布。
+                        </p>
+                        {!aeo ? (
+                          <button
+                            type="button"
+                            disabled={assessmentAction !== null}
+                            onClick={() => void generateAeoCandidate()}
+                          >
+                            {assessmentAction === 'GENERATE_AEO_CANDIDATE'
+                              ? '正在生成 AEO 候选…'
+                              : '生成AEO候选'}
+                          </button>
+                        ) : null}
+                      </div>
                     ) : (
                       <button
                         type="button"
@@ -632,6 +660,11 @@ export default function DocumentParsingPage() {
                 处置方式：{aeo.disposition}；权限：{aeo.authorityLevel}
                 。该纵切只产生 Working / Draft candidate / Word
                 candidate，不形成正式 Draft、发布或工程结论。
+              </p>
+              <p>
+                编写模板：{aeo.authoringTemplate.identity}（
+                {aeo.authoringTemplate.role}）；模板只提供受控结构，
+                与服务器派生的候选目标不同。
               </p>
               <div className="parse-aeo-artifacts">
                 {aeo.artifacts.map((artifact) => (

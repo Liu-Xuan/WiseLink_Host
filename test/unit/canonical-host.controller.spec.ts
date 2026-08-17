@@ -43,14 +43,21 @@ function target() {
   const integratedAssessments = {
     confirmOpenClawOverallForAeo: jest.fn().mockResolvedValue({ revision: 9 }),
   };
+  const aeo = {
+    generateCandidate: jest.fn().mockResolvedValue({
+      status: 'CANDIDATE_WORD_EXPORTED',
+    }),
+  };
   return {
     assessments,
     integratedAssessments,
+    aeo,
     controller: new CanonicalHostController(
       {} as never,
       {} as never,
       assessments as never,
       integratedAssessments as never,
+      aeo as never,
     ),
   };
 }
@@ -213,5 +220,34 @@ describe('CanonicalHostController assessment actions', () => {
     expect(
       integratedAssessments.confirmOpenClawOverallForAeo,
     ).not.toHaveBeenCalled();
+  });
+
+  it('exposes AEO candidate generation only as an authenticated empty-body action', async () => {
+    const { controller, aeo } = target();
+
+    await expect(
+      controller.generateAeoCandidate(
+        'WI-SB-1001',
+        {},
+        HOST_REQUEST as never,
+      ),
+    ).resolves.toEqual({ status: 'CANDIDATE_WORD_EXPORTED' });
+    expect(aeo.generateCandidate).toHaveBeenCalledWith(
+      'WI-SB-1001',
+      expect.objectContaining({ userId: 'engineer-1001' }),
+    );
+  });
+
+  it('rejects a client-supplied AEO target or authority before the service', () => {
+    const { controller, aeo } = target();
+
+    expect(() =>
+      controller.generateAeoCandidate(
+        'WI-SB-1001',
+        { targetIdentity: 'AEO-CLIENT', authority: 'CLIENT' },
+        HOST_REQUEST as never,
+      ),
+    ).toThrow(BadRequestException);
+    expect(aeo.generateCandidate).not.toHaveBeenCalled();
   });
 });

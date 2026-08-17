@@ -556,15 +556,46 @@ export interface CanonicalAeoCandidateArtifactProjection {
 
 export interface CanonicalAeoCandidateProjection {
   status: 'CANDIDATE_AUTHORING_IN_PROGRESS' | 'CANDIDATE_WORD_EXPORTED';
-  targetIdentity: 'AEO-B787-46-0015-R09';
+  /** Server-derived candidate identity; never accepted from the client. */
+  targetIdentity: string;
   disposition: 'ADOPT';
   authorityLevel: 'candidate_only';
   sourceCandidateCount: number;
   automaticallyAdopted: false;
   engineeringApproved: false;
   actionAttemptId: string;
-  ownerCommit: '8a2ea67aea5d60c0c72750a9e539404214296aeb';
+  ownerCommit: '74333547ae5cd1878259812353d59563cc9041da';
+  /** Historical authoring source, distinct from the candidate target. */
+  authoringTemplate: {
+    role: 'CONTROLLED_TEMPLATE_SOURCE';
+    identity: 'AEO-B787-46-0015-R09';
+    artifactRef: string;
+    artifactSha256: string;
+  };
+  sourceOverall: {
+    revision: number;
+    artifactRef: string;
+    artifactSha256: string;
+    confirmationActionAttemptId: string;
+    confirmedWorkItemRevision: number;
+  };
   artifacts: CanonicalAeoCandidateArtifactProjection[];
+}
+
+export interface CanonicalAeoCandidateRunResponse {
+  schemaVersion: 'wiselink.3_1.aeo_candidate_run.v1';
+  status: 'CANDIDATE_WORD_EXPORTED';
+  workItem: CanonicalWorkItemProjection;
+  aeo: CanonicalAeoCandidateProjection;
+  replayed: boolean;
+  baseAiCallCount: 0;
+  authority: {
+    candidateOnly: true;
+    automaticallyAdopted: false;
+    engineeringApproved: false;
+    productionPublished: false;
+    currentChanged: false;
+  };
 }
 
 export interface CanonicalParseAuthorizationProjection {

@@ -1,5 +1,6 @@
 import type {
   CanonicalDocumentParsingPageResponse,
+  CanonicalAeoCandidateRunResponse,
   CanonicalEntryQueryRequest,
   CanonicalEntryQueryResponse,
   CanonicalWorkItemProjection,
@@ -63,6 +64,25 @@ export async function confirmIntegratedOverallForAeo(
     return response.data;
   } catch (error) {
     logger.error('确认当前整体综合用于 AEO 失败', error);
+    throw error;
+  }
+}
+
+export async function generateAeoCandidate(
+  workItemId: string,
+): Promise<CanonicalAeoCandidateRunResponse> {
+  try {
+    const response = await axiosForBackend<CanonicalAeoCandidateRunResponse>({
+      url: `/api/canonical-host/work-items/${encodeURIComponent(workItemId)}/aeo/candidate`,
+      method: 'POST',
+      data: {},
+    });
+    if (response.status === 401 || response.status === 403) {
+      throw new Error('AEO_CANDIDATE_ACCESS_DENIED');
+    }
+    return response.data;
+  } catch (error) {
+    logger.error('生成同一 WorkItem 的 AEO 候选失败', error);
     throw error;
   }
 }

@@ -147,7 +147,13 @@ export class CanonicalHostOpenClawOverallService {
         workItemId: workItem.workItemId,
         expectedRevision: workItem.revision,
         syncPrimaryAttempt: false,
-        next: { ...withoutRevision(workItem), integratedAssessment },
+        next: {
+          ...withoutRevision(workItem),
+          integratedAssessment,
+          // A new overall candidate must be confirmed before it can seed AEO.
+          // Do not keep displaying a candidate bound to an older synthesis.
+          aeo: null,
+        },
       });
       await this.repository.completeAssessmentAction(attempt.attemptId);
       return {

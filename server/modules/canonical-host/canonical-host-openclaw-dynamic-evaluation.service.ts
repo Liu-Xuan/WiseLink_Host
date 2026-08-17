@@ -156,6 +156,9 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
         next: {
           ...withoutRevision(workItem),
           integratedAssessment,
+          // A candidate AEO is bound to the exact dynamic/overall artifact pair.
+          // A new dynamic evaluation makes any previous authoring projection stale.
+          aeo: null,
         },
       });
       await this.repository.completeAssessmentAction(attempt.attemptId);

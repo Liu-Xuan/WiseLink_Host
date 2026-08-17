@@ -62,7 +62,18 @@ describe('Phase 13C production path', () => {
     expect(packageJson).not.toContain('test:phase6d:aeo-same-workitem');
     await expect(
       access(resolve(root, 'server/modules/aeo-authoring/public-api.ts')),
+    ).resolves.toBeUndefined();
+    const aeoPublic = await source(
+      'server/modules/aeo-authoring/public-api.ts',
+    );
+    expect(aeoPublic).toContain('AeoReviewedIntegratedAssessmentConsumer');
+    expect(aeoPublic).not.toContain('Controller');
+    await expect(
+      access(resolve(root, 'server/modules/aeo-authoring/aeo-aily.controller.ts')),
     ).rejects.toBeDefined();
+    expect(controller).toContain(
+      'work-items/:workItemId/aeo/candidate',
+    );
   });
 
   it('publishes the nullable integrated assessment summary on the fixed status OpenAPI', async () => {

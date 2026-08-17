@@ -199,6 +199,8 @@ assert.ok(source.includes("['原件', '分类', '解析', '统一包', 'Reader']
 assert.ok(!source.includes('.evaluateAssessment(workItemId)'));
 assert.ok(!source.includes('.resynthesizeAssessment(workItemId'));
 assert.ok(source.includes('confirmIntegratedOverallForAeo(workItemId)'));
+assert.ok(source.includes('generateAeoCandidate(workItemId)'));
+assert.ok(source.includes('生成AEO候选'));
 assert.ok(source.includes('OpenClaw 动态 N + 整体综合'));
 assert.ok(!source.includes('const SAMPLE'));
 const request = JSON.parse(
