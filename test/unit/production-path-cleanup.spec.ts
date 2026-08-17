@@ -25,6 +25,21 @@ describe('Phase 13C production path', () => {
     expect(controller).toContain(
       "work-items/:workItemId/integrated-assessment/overall-synthesis",
     );
+    const openClawMcp = await source(
+      'server/modules/canonical-host/canonical-host-openclaw-mcp.service.ts',
+    );
+    expect(openClawMcp).not.toContain('begin_dynamic_evaluation');
+    expect(openClawMcp).not.toContain('commit_dynamic_evaluation_candidate');
+    expect(openClawMcp).toContain('begin_overall_synthesis');
+    expect(openClawMcp).toContain('commit_overall_candidate');
+    await expect(
+      access(
+        resolve(
+          root,
+          'server/modules/canonical-host/canonical-host-openclaw-dynamic-evaluation.service.ts',
+        ),
+      ),
+    ).rejects.toBeDefined();
     expect(runtimeController).not.toContain('file-service-upload');
     expect(client).not.toContain('RUN PHASE 10 AEO ONCE');
     expect(client).not.toContain('phase10-aeo-candidate-loop-trigger');

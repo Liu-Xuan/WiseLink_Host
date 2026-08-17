@@ -94,8 +94,14 @@ The only write entry points are the login-required Miaoda routes
 `POST /api/canonical-host/work-items/:workItemId/integrated-assessment/base-rules` and
 `POST /api/canonical-host/work-items/:workItemId/integrated-assessment/overall-synthesis`. Both
 accept an empty object only; the actor, authority decision, permission snapshot, result bytes and
-result identity cannot be supplied by the caller. The fixed OpenAPI key routes and the MCP facade
-remain read-only and expose no integrated-assessment mutation tool.
+result identity cannot be supplied by the caller. The fixed Aily OpenAPI key routes and its MCP
+facade remain read-only and expose no integrated-assessment mutation tool.
+
+After the Base one-shot run became the selected rule-processing path, the superseded OpenClaw MCP
+tools `begin_dynamic_evaluation` and `commit_dynamic_evaluation_candidate`, their injectable
+service, and its dedicated unit test were removed. The Base wrapper only reads the already-created
+READY record; it cannot trigger or retry Base. The separate OpenClaw surface retains only discovery
+recording and overall begin/commit for a later exact hosted wrapper.
 
 AEO owner Phase 13E exact commit
 `eba49c7c0cb86ded7e3485c8d32bcbaf228557c3` is recorded only as a later consumer seam. Its
@@ -159,10 +165,13 @@ delete either immutable artifact.
 
 - targeted Phase 13C and DM Phase 13D suites passed, including OpenClaw Boeing/Airbus/COMAC
   mapping, single-store transaction/review behavior, A/B overall history, and cleanup assertions;
-- final full Jest regression: 23 suites / 103 tests passed;
+- final full Jest regression for the current cleanup commit: 27 suites / 138 tests passed;
 - server/client typecheck, ESLint, Stylelint, production server/client build, and precommit passed;
 - read-only MCP verification passed with exactly `get_parse_status`, `query_parsed_package`, and
   `get_deep_link`; mutation tool count remained zero;
+- the separate OpenClaw MCP protocol check exposes those three read tools plus
+  `record_oem_discovery_run`, `begin_overall_synthesis`, and `commit_overall_candidate`; the two
+  superseded dynamic Base tools are absent;
 - the MCP verifier's first restricted-sandbox run failed at `listen(127.0.0.1)` with `EPERM`;
   the unchanged test passed when rerun with local-loopback permission. No product implementation or
   security boundary was changed to hide that environment failure;
