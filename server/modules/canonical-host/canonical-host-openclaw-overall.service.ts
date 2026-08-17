@@ -23,6 +23,7 @@ import type {
   CanonicalPermissionSnapshotPort,
   CanonicalWorkItemRegistrarPort,
 } from './canonical-host.types';
+import { CanonicalHostAssessmentService } from './canonical-host-assessment.service';
 import {
   buildOpenClawOverallSynthesisInput,
   consumeOpenClawOverallSynthesisOutput,
@@ -45,6 +46,7 @@ export class CanonicalHostOpenClawOverallService {
     private readonly artifactStore: UnifiedArtifactStorePort,
     private readonly repository: MiaodaWorkItemRepository,
     private readonly discovery: ExternalDiscoveryService,
+    private readonly assessment: CanonicalHostAssessmentService,
   ) {}
 
   async begin(
@@ -58,7 +60,7 @@ export class CanonicalHostOpenClawOverallService {
     const workItem = await this.requiredBaseRules(workItemId);
     const row = await this.repository.getRow(workItem.workItemId);
     const actor = serviceActor(row.tenantId);
-    await this.authorize(workItem, actor);
+    const permissionSnapshotVersion = await this.authorize(workItem, actor);
     const providerCodes = providerCodesFor(providers);
     const attempt = await this.repository.reserveOverallSynthesisAction({
       workItemId: workItem.workItemId,
@@ -70,7 +72,11 @@ export class CanonicalHostOpenClawOverallService {
     if (attempt.status !== 'RUNNING') {
       throw new Error('OPENCLAW_OVERALL_PRIOR_ATTEMPT_NOT_RUNNING');
     }
-    const packet = await this.buildPacket(workItem, attempt);
+    const packet = await this.buildPacket(
+      workItem,
+      attempt,
+      permissionSnapshotVersion,
+    );
     return {
       attemptRef: attempt.triggerRequestId,
       selectedDiscoveryRefs: packet.selectedDiscoveryRefs,
@@ -96,10 +102,14 @@ export class CanonicalHostOpenClawOverallService {
     if (attempt.actorUserId !== actor.userId) {
       throw new Error('OPENCLAW_OVERALL_SERVICE_ACTOR_MISMATCH');
     }
-    await this.authorize(workItem, actor);
+    const permissionSnapshotVersion = await this.authorize(workItem, actor);
     let claimed = false;
     try {
-      const { modelInput } = await this.buildPacket(workItem, attempt);
+      const { modelInput } = await this.buildPacket(
+        workItem,
+        attempt,
+        permissionSnapshotVersion,
+      );
       const parsed = consumeOpenClawOverallSynthesisOutput(modelInput, output);
       await this.repository.claimOverallSynthesisCommit(attempt.attemptId);
       claimed = true;
@@ -159,6 +169,7 @@ export class CanonicalHostOpenClawOverallService {
   private async buildPacket(
     workItem: CanonicalWorkItemProjection,
     attempt: OverallSynthesisActionAttempt,
+    permissionSnapshotVersion: string,
   ): Promise<{
     selectedDiscoveryRefs: string[];
     modelInput: OpenClawOverallSynthesisInput;
@@ -169,10 +180,21 @@ export class CanonicalHostOpenClawOverallService {
       attempt.createdAt.toISOString(),
       serverContext(serviceActor(attempt.tenantId)),
     );
-    const [baseArtifactBytes, packageBytes] = await Promise.all([
+    const timestamp = attempt.createdAt.toISOString();
+    const [baseArtifactBytes, packageBytes, dynamicCandidate] = await Promise.all([
       this.artifactStore.readActualBytes(baseRules.artifact),
       this.artifactStore.readActualBytes(workItem.package!.artifact),
+      this.assessment.prepareDynamicRulesCandidate({
+        workItem,
+        permissionSnapshotVersion,
+        assessmentAsOf: timestamp,
+        generatedAt: timestamp,
+        externalDiscovery: null,
+        reviewedExternalManifest: null,
+      }),
     ]);
+    const sourceEvidenceCandidates = dynamicCandidate.overall.context.criterionCards
+      .flatMap((criterion) => criterion.sourceEvidenceCandidates);
     return {
       selectedDiscoveryRefs: discoveries.map((value) => value.searchRunRef),
       modelInput: buildOpenClawOverallSynthesisInput({
@@ -181,6 +203,7 @@ export class CanonicalHostOpenClawOverallService {
         baseArtifactBytes,
         packageBytes,
         discoveries,
+        sourceEvidenceCandidates,
         outputCorrelationRef: attempt.triggerRequestId,
       }),
     };
@@ -203,7 +226,7 @@ export class CanonicalHostOpenClawOverallService {
   private async authorize(
     workItem: CanonicalWorkItemProjection,
     actor: CanonicalHostActor,
-  ): Promise<void> {
+  ): Promise<string> {
     const decision = await this.authorization.authorize({
       actor,
       action: 'PERSIST_OPENCLAW_OVERALL',
@@ -224,6 +247,7 @@ export class CanonicalHostOpenClawOverallService {
     if (snapshot.permissionSnapshotVersion !== decision.permissionSnapshotVersion) {
       throw new Error('OPENCLAW_OVERALL_PERMISSION_SNAPSHOT_CHANGED');
     }
+    return snapshot.permissionSnapshotVersion;
   }
 }
 
