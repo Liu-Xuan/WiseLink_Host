@@ -28,6 +28,7 @@ export class DocumentManagementHostedController {
 
   @Post('ingestions/file-service')
   ingestFileServiceSelection(@Body() body: unknown, @Req() request: Request) {
+    rejectReservedExternalDiscoveryClaims(body);
     return this.service.ingestFileServiceSelection(body, contextFromRequest(request));
   }
 
@@ -37,5 +38,32 @@ export class DocumentManagementHostedController {
     @Req() request: Request,
   ) {
     return this.service.getDocumentVersion(documentVersionId, contextFromRequest(request));
+  }
+}
+
+function rejectReservedExternalDiscoveryClaims(body: unknown): void {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return;
+  const value = body as Record<string, unknown>;
+  const descriptor = value.descriptor;
+  const claimsExternalDiscovery =
+    descriptor !== null &&
+    typeof descriptor === 'object' &&
+    !Array.isArray(descriptor) &&
+    Object.hasOwn(descriptor, 'externalDiscovery');
+  const sourceChannel = String(value.sourceChannel ?? '').trim();
+  if (
+    claimsExternalDiscovery ||
+    sourceChannel === 'openclaw_external_discovery_review' ||
+    sourceChannel === 'openclaw_external_monitor_review'
+  ) {
+    throw Object.assign(
+      new Error(
+        'External discovery provenance can only be written by the server-owned reviewed-candidate ingestion service.',
+      ),
+      {
+        code: 'EXTERNAL_DISCOVERY_REVIEWED_INGEST_REQUIRED',
+        statusCode: 400,
+      },
+    );
   }
 }
