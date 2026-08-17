@@ -74,11 +74,21 @@ export class CanonicalHostOpenClawOverallService {
     if (attempt.status !== 'RUNNING') {
       throw new Error('OPENCLAW_OVERALL_PRIOR_ATTEMPT_NOT_RUNNING');
     }
-    const packet = await this.buildPacket(
-      workItem,
-      attempt,
-      permissionSnapshotVersion,
-    );
+    let packet: Awaited<ReturnType<typeof this.buildPacket>>;
+    try {
+      packet = await this.buildPacket(
+        workItem,
+        attempt,
+        permissionSnapshotVersion,
+      );
+    } catch (error) {
+      await this.repository.recordOpenClawBeginFailure({
+        attemptId: attempt.attemptId,
+        errorCode: errorCode(error),
+        errorMessage: errorMessage(error),
+      });
+      throw error;
+    }
     return {
       attemptRef: attempt.triggerRequestId,
       selectedDiscoveryRefs: packet.selectedDiscoveryRefs,
@@ -230,24 +240,41 @@ export class CanonicalHostOpenClawOverallService {
     modelInput: OpenClawOverallSynthesisInput;
   }> {
     const baseRules = workItem.integratedAssessment!.baseRules;
-    const discoveries = await this.discovery.latestSearchRunsAsOf(
-      providerCodesFromOrigin(attempt.requestOrigin),
-      attempt.createdAt.toISOString(),
-      serverContext(serviceActor(attempt.tenantId)),
+    const discoveries = await packetInput(
+      'OPENCLAW_OVERALL_DISCOVERY_READ_FAILED',
+      () =>
+        this.discovery.latestSearchRunsAsOf(
+          providerCodesFromOrigin(attempt.requestOrigin),
+          attempt.createdAt.toISOString(),
+          serverContext(serviceActor(attempt.tenantId)),
+        ),
     );
     const timestamp = attempt.createdAt.toISOString();
-    const [baseArtifactBytes, packageBytes, dynamicCandidate, engineerReviewContext] = await Promise.all([
-      this.artifactStore.readActualBytes(baseRules.artifact),
-      this.artifactStore.readActualBytes(workItem.package!.artifact),
-      this.assessment.prepareDynamicRulesCandidate({
-        workItem,
-        permissionSnapshotVersion,
-        assessmentAsOf: timestamp,
-        generatedAt: timestamp,
-        externalDiscovery: null,
-        reviewedExternalManifest: null,
-      }),
-      this.engineerReviews.modelContext(workItem),
+    const [
+      baseArtifactBytes,
+      packageBytes,
+      dynamicCandidate,
+      engineerReviewContext,
+    ] = await Promise.all([
+      packetInput('OPENCLAW_OVERALL_BASE_ARTIFACT_READ_FAILED', () =>
+        this.artifactStore.readActualBytes(baseRules.artifact),
+      ),
+      packetInput('OPENCLAW_OVERALL_PACKAGE_ARTIFACT_READ_FAILED', () =>
+        this.artifactStore.readActualBytes(workItem.package!.artifact),
+      ),
+      packetInput('OPENCLAW_OVERALL_DYNAMIC_CANDIDATE_BUILD_FAILED', () =>
+        this.assessment.prepareDynamicRulesCandidate({
+          workItem,
+          permissionSnapshotVersion,
+          assessmentAsOf: timestamp,
+          generatedAt: timestamp,
+          externalDiscovery: null,
+          reviewedExternalManifest: null,
+        }),
+      ),
+      packetInput('OPENCLAW_OVERALL_ENGINEER_REVIEW_READ_FAILED', () =>
+        this.engineerReviews.modelContext(workItem),
+      ),
     ]);
     assertDynamicCandidateSummary(dynamicCandidate.summary, workItem, baseRules);
     const sourceEvidenceCandidates = dynamicCandidate.overall.context.criterionCards
@@ -380,3 +407,15 @@ function requiredCount(value: unknown): number { if (!Number.isSafeInteger(value
 function withoutRevision(workItem: CanonicalWorkItemProjection): Omit<CanonicalWorkItemProjection, 'revision'> { const { revision: _revision, ...rest } = workItem; return rest; }
 function errorCode(error: unknown): string { return error instanceof Error ? error.message.split(':', 1)[0] : 'OPENCLAW_OVERALL_FAILED'; }
 function errorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error); }
+async function packetInput<T>(
+  code: string,
+  operation: () => T | PromiseLike<T>,
+): Promise<T> {
+  try {
+    return await operation();
+  } catch (cause) {
+    const error = new Error(`${code}:${errorMessage(cause)}`);
+    (error as Error & { cause?: unknown }).cause = cause;
+    throw error;
+  }
+}

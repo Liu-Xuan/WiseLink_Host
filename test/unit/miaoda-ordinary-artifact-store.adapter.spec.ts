@@ -102,4 +102,41 @@ describe('MiaodaOrdinaryArtifactStoreAdapter', () => {
     );
     expect(scoped.uploadCount).toBe(0);
   });
+
+  it('preserves the default-bucket provider failure stage and cause', async () => {
+    const providerCause = new TypeError('fetch failed');
+    const fileService = {
+      getDefaultBucket: async () => {
+        throw providerCause;
+      },
+      from: jest.fn(),
+    };
+    const adapter = new MiaodaOrdinaryArtifactStoreAdapter(
+      fileService as never,
+    );
+    const bytes = new TextEncoder().encode('{"package":true}\n');
+    const artifact = {
+      storeRole: 'UnifiedArtifactStoreCandidate' as const,
+      ref:
+        'artifact://UnifiedArtifactStoreCandidate/' +
+        `unified-parsed-packages/sha256/${sha256Raw(bytes)}`,
+      sha256: sha256Raw(bytes),
+      byteLength: bytes.byteLength,
+      mediaType: 'application/json' as const,
+    };
+
+    let caught: unknown;
+    try {
+      await adapter.readActualBytes(artifact);
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toBe(
+      'ARTIFACT_STORE_DEFAULT_BUCKET_READ_FAILED:fetch failed',
+    );
+    expect((caught as Error & { cause?: unknown }).cause).toBe(providerCause);
+    expect(fileService.from).not.toHaveBeenCalled();
+  });
 });
