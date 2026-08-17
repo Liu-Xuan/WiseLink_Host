@@ -392,6 +392,25 @@ export class MiaodaWorkItemRepository {
     return dynamicEvaluationAttempt(storedRows[0]);
   }
 
+  async getDynamicEvaluationActionByAttemptId(
+    attemptId: string,
+  ): Promise<DynamicEvaluationActionAttempt> {
+    const storedRows = await this.db
+      .select()
+      .from(actionAttempt)
+      .where(
+        and(
+          eq(actionAttempt.attemptId, attemptId),
+          eq(actionAttempt.actionType, 'OPENCLAW_DYNAMIC_EVALUATION'),
+        ),
+      )
+      .limit(2);
+    if (storedRows.length !== 1) {
+      throw new Error('DYNAMIC_EVALUATION_ATTEMPT_NOT_FOUND');
+    }
+    return dynamicEvaluationAttempt(storedRows[0]);
+  }
+
   async claimDynamicEvaluationCommit(attemptId: string): Promise<void> {
     const updated = await this.db
       .update(actionAttempt)
@@ -490,12 +509,44 @@ export class MiaodaWorkItemRepository {
     }
   }
 
+  async releaseOpenClawCommitForRetry(input: {
+    attemptId: string;
+    errorCode: string;
+    errorMessage: string;
+  }): Promise<void> {
+    const updated = await this.db
+      .update(actionAttempt)
+      .set({
+        status: 'RUNNING',
+        errorCode: input.errorCode.slice(0, 160),
+        errorMessage: input.errorMessage,
+        completedAt: null,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(actionAttempt.attemptId, input.attemptId),
+          inArray(actionAttempt.actionType, [
+            'OPENCLAW_DYNAMIC_EVALUATION',
+            'OPENCLAW_OVERALL_SYNTHESIS',
+          ]),
+          eq(actionAttempt.status, 'COMMITTING'),
+        ),
+      )
+      .returning({ attemptId: actionAttempt.attemptId });
+    if (updated.length !== 1) {
+      throw new Error('OPENCLAW_COMMIT_RETRY_RELEASE_CONFLICT');
+    }
+  }
+
   async completeAssessmentAction(attemptId: string): Promise<void> {
     const now = new Date();
     const updated = await this.db
       .update(actionAttempt)
       .set({
         status: 'SUCCEEDED',
+        errorCode: null,
+        errorMessage: null,
         completedAt: now,
         updatedAt: now,
       })

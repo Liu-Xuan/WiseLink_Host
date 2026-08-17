@@ -78,6 +78,26 @@ describe('CanonicalHostOpenClawDynamicEvaluationService', () => {
     expect(harness.state.persistedOutputs).toEqual([]);
   });
 
+  it('releases a claimed transient FileService failure for the same opaque attempt', async () => {
+    const harness = createHarness({ transientPersistFailures: 1 });
+    await harness.service.begin(WORK_ITEM_ID);
+    const output = validOutput();
+
+    await expect(harness.service.commit(ATTEMPT_REF, output)).rejects.toThrow(
+      'FILESERVICE_TRANSIENT_READBACK_FAILURE',
+    );
+    expect(harness.state.status).toBe('RUNNING');
+    expect(harness.state.releaseCount).toBe(1);
+    expect(harness.state.failedAttempts).toEqual([]);
+
+    await expect(harness.service.commit(ATTEMPT_REF, output)).resolves.toMatchObject({
+      workItemId: WORK_ITEM_ID,
+      workItemRevision: 6,
+    });
+    expect(harness.state.persistedOutputs).toEqual([output]);
+    expect(harness.state.casCount).toBe(1);
+  });
+
   it('atomically allows only one of two concurrent commits to persist', async () => {
     const harness = createHarness();
     const output = validOutput();
@@ -94,12 +114,44 @@ describe('CanonicalHostOpenClawDynamicEvaluationService', () => {
     expect(harness.state.casCount).toBe(1);
     expect(harness.state.failedAttempts).toEqual([]);
   });
+
+  it('does not release another caller active COMMITTING claim', async () => {
+    const entered = deferred<void>();
+    const release = deferred<void>();
+    const harness = createHarness({ persistGate: { entered, release } });
+    const output = validOutput();
+    const first = harness.service.commit(ATTEMPT_REF, output);
+    await entered.promise;
+
+    await expect(harness.service.commit(ATTEMPT_REF, output)).rejects.toThrow(
+      'DYNAMIC_EVALUATION_COMMIT_IN_PROGRESS',
+    );
+    expect(harness.state.releaseCount).toBe(0);
+    expect(harness.state.claimCount).toBe(1);
+
+    release.resolve();
+    await expect(first).resolves.toMatchObject({ workItemId: WORK_ITEM_ID });
+    expect(harness.state.persistedOutputs).toEqual([output]);
+    expect(harness.state.casCount).toBe(1);
+  });
 });
+
+interface Deferred<T> {
+  promise: Promise<T>;
+  resolve(value?: T): void;
+}
+
+interface PersistGate {
+  entered: Deferred<void>;
+  release: Deferred<void>;
+}
 
 interface HarnessOptions {
   transientBeginFailures?: number;
   workItemRevision?: number;
   attemptNo?: number;
+  transientPersistFailures?: number;
+  persistGate?: PersistGate;
 }
 
 interface HarnessState {
@@ -108,7 +160,9 @@ interface HarnessState {
   consumeCount: number;
   claimCount: number;
   casCount: number;
+  releaseCount: number;
   transientBeginFailures: number;
+  transientPersistFailures: number;
   persistedOutputs: string[];
   failedAttempts: string[];
   completedAttempts: string[];
@@ -134,7 +188,9 @@ function createHarness(options: HarnessOptions = {}) {
     consumeCount: 0,
     claimCount: 0,
     casCount: 0,
+    releaseCount: 0,
     transientBeginFailures: options.transientBeginFailures ?? 0,
+    transientPersistFailures: options.transientPersistFailures ?? 0,
     persistedOutputs: [],
     failedAttempts: [],
     completedAttempts: [],
@@ -154,7 +210,7 @@ function createHarness(options: HarnessOptions = {}) {
   } as unknown as CanonicalWorkItemRegistrarPort;
   const authorization = {
     authorize: async (input: { actor: { userId: string } }) => ({
-      action: 'PERSIST_BASE_RULE_RESULT' as const,
+      action: 'PERSIST_OPENCLAW_DYNAMIC_EVALUATION' as const,
       allowed: input.actor.userId === 'service:openclaw-main',
       actorFingerprint: 'server-derived',
       decisionId: 'decision-dynamic',
@@ -169,6 +225,14 @@ function createHarness(options: HarnessOptions = {}) {
   } as unknown as CanonicalPermissionSnapshotPort;
   const artifactStore = {
     persistAndReadback: async (bytes: Uint8Array) => {
+      if (state.transientPersistFailures > 0) {
+        state.transientPersistFailures -= 1;
+        throw new Error('FILESERVICE_TRANSIENT_READBACK_FAILURE');
+      }
+      if (options.persistGate) {
+        options.persistGate.entered.resolve();
+        await options.persistGate.release.promise;
+      }
       const output = new TextDecoder().decode(bytes);
       state.persistedOutputs.push(output);
       return {
@@ -200,6 +264,13 @@ function createHarness(options: HarnessOptions = {}) {
         throw new Error('DYNAMIC_EVALUATION_COMMIT_ALREADY_CLAIMED');
       }
       state.status = 'COMMITTING';
+    },
+    releaseOpenClawCommitForRetry: async () => {
+      if (state.status !== 'COMMITTING') {
+        throw new Error('OPENCLAW_COMMIT_RETRY_RELEASE_CONFLICT');
+      }
+      state.releaseCount += 1;
+      state.status = 'RUNNING';
     },
     completeAssessmentAction: async (attemptId: string) => {
       state.status = 'SUCCEEDED';
@@ -303,4 +374,15 @@ function validOutput(): string {
       sourceRefs: [`SOURCE-${index + 1}`],
     })),
   });
+}
+
+function deferred<T>(): Deferred<T> {
+  let resolvePromise: (value: T | PromiseLike<T>) => void = () => undefined;
+  const promise = new Promise<T>((resolve) => {
+    resolvePromise = resolve;
+  });
+  return {
+    promise,
+    resolve: (value?: T) => resolvePromise(value as T),
+  };
 }

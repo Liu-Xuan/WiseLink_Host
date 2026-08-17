@@ -45,6 +45,27 @@ describe('CanonicalHostOpenClawOverallService', () => {
     );
   });
 
+  it('rejects a fresh rule catalog whose criterionSet drifted from the dynamic artifact', async () => {
+    const harness = createHarness({ freshCriterionSetId: 'JACS-B' });
+
+    await expect(harness.service.begin(WORK_ITEM_ID, [])).rejects.toThrow(
+      'OPENCLAW_OVERALL_DYNAMIC_N_CONTEXT_DRIFT',
+    );
+  });
+
+  it.each([
+    [{ dynamicAttemptId: 'ATT-OTHER' }],
+    [{ dynamicAttemptWorkItemId: 'WI-OTHER' }],
+    [{ dynamicAttemptTriggerRef: 'DYN-OTHER' }],
+    [{ dynamicAttemptStatus: 'RUNNING' }],
+  ])('rejects dynamic ActionAttempt identity drift: %o', async (options) => {
+    const harness = createHarness(options);
+
+    await expect(harness.service.begin(WORK_ITEM_ID, [])).rejects.toThrow(
+      'OPENCLAW_OVERALL_DYNAMIC_N_ATTEMPT_MISMATCH',
+    );
+  });
+
   it('keeps invalid output retryable, then persists exact corrected bytes and CASes once', async () => {
     const harness = createHarness();
 
@@ -83,6 +104,25 @@ describe('CanonicalHostOpenClawOverallService', () => {
     expect(harness.state.persisted).toEqual([]);
   });
 
+  it('releases a claimed transient FileService failure for the same opaque attempt', async () => {
+    const harness = createHarness({ transientPersistFailures: 1 });
+    const output = validOutput();
+
+    await expect(harness.service.commit(ATTEMPT_REF, output)).rejects.toThrow(
+      'FILESERVICE_TRANSIENT_READBACK_FAILURE',
+    );
+    expect(harness.state.status).toBe('RUNNING');
+    expect(harness.state.releaseCount).toBe(1);
+    expect(harness.state.failed).toEqual([]);
+
+    await expect(harness.service.commit(ATTEMPT_REF, output)).resolves.toMatchObject({
+      workItemId: WORK_ITEM_ID,
+      workItemRevision: 6,
+    });
+    expect(harness.state.persisted).toEqual([output]);
+    expect(harness.state.casCount).toBe(1);
+  });
+
   it('allows only one of two concurrent commits to persist', async () => {
     const harness = createHarness();
     const output = validOutput();
@@ -97,13 +137,50 @@ describe('CanonicalHostOpenClawOverallService', () => {
     expect(harness.state.casCount).toBe(1);
     expect(harness.state.failed).toEqual([]);
   });
+
+  it('does not release another caller active COMMITTING claim', async () => {
+    const entered = deferred<void>();
+    const release = deferred<void>();
+    const harness = createHarness({ persistGate: { entered, release } });
+    const output = validOutput();
+    const first = harness.service.commit(ATTEMPT_REF, output);
+    await entered.promise;
+
+    await expect(harness.service.commit(ATTEMPT_REF, output)).rejects.toThrow(
+      'OPENCLAW_OVERALL_COMMIT_IN_PROGRESS',
+    );
+    expect(harness.state.releaseCount).toBe(0);
+    expect(harness.state.claimCount).toBe(1);
+
+    release.resolve();
+    await expect(first).resolves.toMatchObject({ workItemId: WORK_ITEM_ID });
+    expect(harness.state.persisted).toEqual([output]);
+    expect(harness.state.casCount).toBe(1);
+  });
 });
+
+interface Deferred<T> {
+  promise: Promise<T>;
+  resolve(value?: T): void;
+}
+
+interface PersistGate {
+  entered: Deferred<void>;
+  release: Deferred<void>;
+}
 
 function createHarness(options: {
   workItemRevision?: number;
   attemptNo?: number;
   candidateSourceRef?: string;
   dynamicSourceResultId?: string;
+  freshCriterionSetId?: string;
+  dynamicAttemptId?: string;
+  dynamicAttemptWorkItemId?: string;
+  dynamicAttemptTriggerRef?: string;
+  dynamicAttemptStatus?: string;
+  transientPersistFailures?: number;
+  persistGate?: PersistGate;
 } = {}) {
   const workItem = workItemProjection(
     options.workItemRevision ?? 5,
@@ -125,6 +202,8 @@ function createHarness(options: {
     status: 'RUNNING',
     claimCount: 0,
     casCount: 0,
+    releaseCount: 0,
+    transientPersistFailures: options.transientPersistFailures ?? 0,
     persisted: [] as string[],
     completed: [] as string[],
     failed: [] as string[],
@@ -141,12 +220,32 @@ function createHarness(options: {
   };
   const repository = {
     getRow: async () => ({ tenantId: 'tenant-overall' }),
+    getDynamicEvaluationActionByAttemptId: async () => ({
+      attemptId: options.dynamicAttemptId ?? 'ATT-BASE',
+      workItemId: options.dynamicAttemptWorkItemId ?? WORK_ITEM_ID,
+      actionType: 'OPENCLAW_DYNAMIC_EVALUATION' as const,
+      attemptNo: 4,
+      triggerRequestId:
+        options.dynamicAttemptTriggerRef ?? 'DYN-RESULT-1',
+      requestOrigin: 'OPENCLAW' as const,
+      status: options.dynamicAttemptStatus ?? 'SUCCEEDED',
+      actorUserId: 'service:openclaw-main',
+      tenantId: 'tenant-overall',
+      createdAt: new Date('2026-08-16T11:00:00.000Z'),
+    }),
     reserveOverallSynthesisAction: async () => ({ ...attempt, status: state.status }),
     getOverallSynthesisActionByCallerRef: async () => ({ ...attempt, status: state.status }),
     claimOverallSynthesisCommit: async () => {
       state.claimCount += 1;
       if (state.status !== 'RUNNING') throw new Error('OPENCLAW_OVERALL_COMMIT_ALREADY_CLAIMED');
       state.status = 'COMMITTING';
+    },
+    releaseOpenClawCommitForRetry: async () => {
+      if (state.status !== 'COMMITTING') {
+        throw new Error('OPENCLAW_COMMIT_RETRY_RELEASE_CONFLICT');
+      }
+      state.releaseCount += 1;
+      state.status = 'RUNNING';
     },
     completeAssessmentAction: async (attemptId: string) => {
       state.status = 'SUCCEEDED';
@@ -161,6 +260,14 @@ function createHarness(options: {
     readActualBytes: async (artifact: { ref: string }) =>
       artifact.ref === 'artifact://base' ? baseArtifactBytes() : packageBytes(),
     persistAndReadback: async (bytes: Uint8Array) => {
+      if (state.transientPersistFailures > 0) {
+        state.transientPersistFailures -= 1;
+        throw new Error('FILESERVICE_TRANSIENT_READBACK_FAILURE');
+      }
+      if (options.persistGate) {
+        options.persistGate.entered.resolve();
+        await options.persistGate.release.promise;
+      }
       const output = new TextDecoder().decode(bytes);
       state.persisted.push(output);
       return {
@@ -193,6 +300,14 @@ function createHarness(options: {
       { latestSearchRunsAsOf: async () => [] } as never,
       {
         prepareDynamicRulesCandidate: async () => ({
+          summary: {
+            workItemId: WORK_ITEM_ID,
+            documentVersionId: 'DV-737',
+            parsedPackageId: 'PKG-737',
+            criterionSetId: options.freshCriterionSetId ?? 'JACS-ONE',
+            criterionCount: 1,
+            evaluationItemCount: 1,
+          },
           overall: {
             context: {
               criterionCards: [{
@@ -312,4 +427,15 @@ function validOutput(): string {
     usableAsEvidence: false,
     providers: {},
   });
+}
+
+function deferred<T>(): Deferred<T> {
+  let resolvePromise: (value: T | PromiseLike<T>) => void = () => undefined;
+  const promise = new Promise<T>((resolve) => {
+    resolvePromise = resolve;
+  });
+  return {
+    promise,
+    resolve: (value?: T) => resolvePromise(value as T),
+  };
 }
