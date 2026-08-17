@@ -17,7 +17,8 @@ const RULE_COLUMNS = [
 ] as const;
 const OUTPUT_KEYS = [
   'sourceResultId', 'documentVersionId', 'packageId', 'baseRuleRevision',
-  'baseRuleArtifactSha256', 'discoveryStatus', 'gap', 'candidateRefCount',
+  'baseRuleArtifactSha256', 'engineerReviewRevision',
+  'engineerReviewArtifactSha256', 'discoveryStatus', 'gap', 'candidateRefCount',
   'findingCount', 'unresolvedCount', 'authorityLevel',
   'externalDiscoveryIsEvidence', 'overallCandidate', 'findings',
   'missingInputs', 'applicabilityStatus', 'engineeringReviewRequired',
@@ -31,6 +32,24 @@ export interface OpenClawOverallSynthesisInput {
   unifiedSourceContext: Record<string, unknown>;
   adoptedDocumentVersions: Array<Record<string, unknown>>;
   externalDiscoveryResults: Array<Record<string, unknown>>;
+  engineerReviewContext: OpenClawEngineerReviewContext;
+}
+
+export interface OpenClawEngineerReviewContext {
+  revision: number | null;
+  artifactSha256: string | null;
+  reviewCount: number;
+  history: OpenClawEngineerReviewItem[];
+  effective: OpenClawEngineerReviewItem[];
+}
+
+export interface OpenClawEngineerReviewItem {
+  sequence: number;
+  criterionId: string;
+  decision: 'confirmed_pass' | 'confirmed_fail' | 'returned_for_rework' | 'deferred';
+  status: 'ENGINEER_CONFIRMED' | 'NEEDS_REVIEW';
+  comment: string;
+  recordedAt: string;
 }
 
 export function buildOpenClawOverallSynthesisInput(input: {
@@ -40,6 +59,7 @@ export function buildOpenClawOverallSynthesisInput(input: {
   packageBytes: Uint8Array;
   discoveries: FeishuNativeOemSearchRun[];
   sourceEvidenceCandidates: unknown[];
+  engineerReviewContext: OpenClawEngineerReviewContext;
   outputCorrelationRef: string;
 }): OpenClawOverallSynthesisInput {
   const baseOutput = parseObject(input.baseArtifactBytes, 'BASE_ARTIFACT_JSON_INVALID');
@@ -140,6 +160,7 @@ export function buildOpenClawOverallSynthesisInput(input: {
       currentness: 'CURRENT',
     }],
     externalDiscoveryResults: input.discoveries.map(toHostedDiscovery),
+    engineerReviewContext: structuredClone(input.engineerReviewContext),
   };
   rejectPrivateAuthority(modelInput);
   return modelInput;
@@ -215,6 +236,8 @@ export function consumeOpenClawOverallSynthesisOutput(
   same(parsed.packageId, input.baseRuleResult.packageId, 'OVERALL_PACKAGE_ID_MISMATCH');
   same(parsed.baseRuleRevision, input.baseRuleResult.revision, 'OVERALL_BASE_REVISION_MISMATCH');
   same(parsed.baseRuleArtifactSha256, input.baseRuleResult.artifactSha256, 'OVERALL_BASE_ARTIFACT_MISMATCH');
+  same(parsed.engineerReviewRevision, input.engineerReviewContext.revision, 'OVERALL_ENGINEER_REVIEW_REVISION_MISMATCH');
+  same(parsed.engineerReviewArtifactSha256, input.engineerReviewContext.artifactSha256, 'OVERALL_ENGINEER_REVIEW_ARTIFACT_MISMATCH');
   same(parsed.authorityLevel, 'candidate_only', 'OVERALL_AUTHORITY_INVALID');
   same(parsed.externalDiscoveryIsEvidence, false, 'OVERALL_DISCOVERY_EVIDENCE_INVALID');
   same(parsed.adopted, false, 'OVERALL_ADOPTION_INVALID');
@@ -253,6 +276,48 @@ export function consumeOpenClawOverallSynthesisOutput(
   rejectAuthoritativeNarrative(parsed, findings);
   count(parsed.unresolvedCount, 'OVERALL_UNRESOLVED_COUNT_INVALID');
   return parsed;
+}
+
+export interface DynamicRuleReviewItem {
+  criterionId: string;
+  dynamicResult: string;
+  candidateConclusion: string;
+  humanReviewRequired: boolean;
+}
+
+export function readDynamicRuleReviewItems(
+  baseRules: CanonicalBaseRuleCandidateProjection,
+  bytes: Uint8Array,
+): DynamicRuleReviewItem[] {
+  const output = parseObject(bytes, 'BASE_ARTIFACT_JSON_INVALID');
+  const ruleResults = object(output.ruleResults, 'BASE_RULE_RESULTS_INVALID');
+  if (JSON.stringify(ruleResults.columns) !== JSON.stringify(RULE_COLUMNS)) {
+    throw new Error('BASE_RULE_RESULT_COLUMNS_INVALID');
+  }
+  const rows = requiredArray(ruleResults.rows, 'BASE_RULE_RESULT_ROWS_INVALID');
+  if (
+    rows.length !== baseRules.criterionCount ||
+    rows.length !== baseRules.evaluationItemCount
+  ) {
+    throw new Error('BASE_DYNAMIC_N_INCOMPLETE');
+  }
+  const ids = new Set<string>();
+  return rows.map((raw, index) => {
+    if (!Array.isArray(raw) || raw.length !== RULE_COLUMNS.length) {
+      throw new Error(`BASE_RULE_RESULT_ROW_INVALID:${index}`);
+    }
+    const criterionId = text(raw[0], 'BASE_RULE_ID_INVALID');
+    if (ids.has(criterionId)) {
+      throw new Error(`BASE_DUPLICATE_CRITERION:${criterionId}`);
+    }
+    ids.add(criterionId);
+    return {
+      criterionId,
+      dynamicResult: text(raw[1], 'BASE_ITEM_STATUS_INVALID'),
+      candidateConclusion: text(raw[5], 'BASE_ITEM_CONCLUSION_INVALID'),
+      humanReviewRequired: boolean(raw[8], 'BASE_ITEM_HUMAN_REVIEW_INVALID'),
+    };
+  });
 }
 
 function toHostedDiscovery(run: FeishuNativeOemSearchRun): Record<string, unknown> {
@@ -359,6 +424,7 @@ function textArray(value: unknown, code: string): string[] { const values = requ
 function nullableText(value: unknown, code: string): void { if (value !== null && (typeof value !== 'string' || !value.trim())) throw new Error(code); }
 function integer(value: unknown, code: string): number { if (!Number.isSafeInteger(value)) throw new Error(code); return Number(value); }
 function count(value: unknown, code: string): number { const result = integer(value, code); if (result < 0) throw new Error(code); return result; }
+function boolean(value: unknown, code: string): boolean { if (typeof value !== 'boolean') throw new Error(code); return value; }
 function same(actual: unknown, expected: unknown, code: string): void { if (actual !== expected) throw new Error(code); }
 function exactKeys(value: Record<string, unknown>, keys: readonly string[], code: string): void { if (Object.keys(value).length !== keys.length || keys.some((key) => !(key in value)) || Object.keys(value).some((key) => !keys.includes(key))) throw new Error(`${code}_SHAPE_INVALID`); }
 function compactFact(value: unknown): string | null { if (value === null || value === undefined || (Array.isArray(value) && value.length === 0)) return null; if (typeof value === 'string') return value.trim() || null; return JSON.stringify(value); }

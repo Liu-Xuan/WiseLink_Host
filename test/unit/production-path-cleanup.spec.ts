@@ -32,6 +32,16 @@ describe('Phase 13C production path', () => {
     expect(controller).not.toContain(
       'work-items/:workItemId/integrated-assessment/overall-synthesis',
     );
+    expect(controller).not.toContain(
+      'work-items/:workItemId/assessment/evaluate',
+    );
+    expect(controller).not.toContain(
+      'work-items/:workItemId/assessment/resynthesize',
+    );
+    expect(controller).toContain(
+      'work-items/:workItemId/integrated-assessment/engineer-reviews',
+    );
+    expect(client).toContain('保存只记录人的判断，不运行模型');
     const openClawMcp = await source(
       'server/modules/canonical-host/canonical-host-openclaw-mcp.service.ts',
     );

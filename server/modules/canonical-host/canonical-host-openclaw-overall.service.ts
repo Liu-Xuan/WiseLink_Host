@@ -24,6 +24,7 @@ import type {
   CanonicalWorkItemRegistrarPort,
 } from './canonical-host.types';
 import { CanonicalHostAssessmentService } from './canonical-host-assessment.service';
+import { CanonicalHostEngineerReviewService } from './canonical-host-engineer-review.service';
 import {
   buildOpenClawOverallSynthesisInput,
   consumeOpenClawOverallSynthesisOutput,
@@ -47,6 +48,7 @@ export class CanonicalHostOpenClawOverallService {
     private readonly repository: MiaodaWorkItemRepository,
     private readonly discovery: ExternalDiscoveryService,
     private readonly assessment: CanonicalHostAssessmentService,
+    private readonly engineerReviews: CanonicalHostEngineerReviewService,
   ) {}
 
   async begin(
@@ -126,6 +128,10 @@ export class CanonicalHostOpenClawOverallService {
         sourceResultId: requiredText(parsed.sourceResultId),
         basedOnBaseRuleRevision: baseRules.revision,
         basedOnBaseRuleArtifactSha256: baseRules.artifact.sha256,
+        basedOnEngineerReviewRevision:
+          modelInput.engineerReviewContext.revision,
+        basedOnEngineerReviewArtifactSha256:
+          modelInput.engineerReviewContext.artifactSha256,
         discoveryStatus: requiredText(parsed.discoveryStatus),
         gap: nullableString(parsed.gap),
         candidateRefCount: requiredCount(parsed.candidateRefCount),
@@ -140,6 +146,7 @@ export class CanonicalHostOpenClawOverallService {
       const integratedAssessment: CanonicalIntegratedAssessmentProjection = {
         status: 'OVERALL_CANDIDATE_READY',
         baseRules,
+        engineerReviews: workItem.integratedAssessment?.engineerReviews ?? null,
         overallSynthesis: overall,
         overallForAeoConfirmation: null,
       };
@@ -229,7 +236,7 @@ export class CanonicalHostOpenClawOverallService {
       serverContext(serviceActor(attempt.tenantId)),
     );
     const timestamp = attempt.createdAt.toISOString();
-    const [baseArtifactBytes, packageBytes, dynamicCandidate] = await Promise.all([
+    const [baseArtifactBytes, packageBytes, dynamicCandidate, engineerReviewContext] = await Promise.all([
       this.artifactStore.readActualBytes(baseRules.artifact),
       this.artifactStore.readActualBytes(workItem.package!.artifact),
       this.assessment.prepareDynamicRulesCandidate({
@@ -240,6 +247,7 @@ export class CanonicalHostOpenClawOverallService {
         externalDiscovery: null,
         reviewedExternalManifest: null,
       }),
+      this.engineerReviews.modelContext(workItem),
     ]);
     assertDynamicCandidateSummary(dynamicCandidate.summary, workItem, baseRules);
     const sourceEvidenceCandidates = dynamicCandidate.overall.context.criterionCards
@@ -253,6 +261,7 @@ export class CanonicalHostOpenClawOverallService {
         packageBytes,
         discoveries,
         sourceEvidenceCandidates,
+        engineerReviewContext,
         outputCorrelationRef: attempt.triggerRequestId,
       }),
     };

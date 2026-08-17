@@ -4,6 +4,7 @@ import type {
   CanonicalEntryQueryRequest,
   CanonicalEntryQueryResponse,
   CanonicalWorkItemProjection,
+  CanonicalEngineerReviewDecision,
 } from '@shared/api.interface';
 
 import { logger } from '@lark-apaas/client-toolkit/logger';
@@ -26,6 +27,31 @@ export async function getDocumentParsingPage(
     return response.data;
   } catch (error) {
     logger.error('读取文档与解析 fresh projection 失败', error);
+    throw error;
+  }
+}
+
+export async function recordEngineerReview(
+  workItemId: string,
+  input: {
+    expectedRevision: number;
+    criterionId: string;
+    decision: CanonicalEngineerReviewDecision;
+    comment: string;
+  },
+): Promise<CanonicalWorkItemProjection> {
+  try {
+    const response = await axiosForBackend<CanonicalWorkItemProjection>({
+      url: `/api/canonical-host/work-items/${encodeURIComponent(workItemId)}/integrated-assessment/engineer-reviews`,
+      method: 'POST',
+      data: input,
+    });
+    if (response.status === 401 || response.status === 403) {
+      throw new Error('ENGINEER_REVIEW_ACCESS_DENIED');
+    }
+    return response.data;
+  } catch (error) {
+    logger.error('记录工程师逐项意见失败', error);
     throw error;
   }
 }

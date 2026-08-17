@@ -25,6 +25,13 @@ describe('CanonicalHostOpenClawOverallService', () => {
     expect(serialized).not.toContain(ATTEMPT_ID);
     expect(serialized).not.toContain('actor');
     expect(serialized).not.toContain('"authority"');
+    expect(begun.modelInput.engineerReviewContext).toEqual({
+      revision: null,
+      artifactSha256: null,
+      reviewCount: 0,
+      history: [],
+      effective: [],
+    });
   });
 
   it('rejects a source-evidence candidate whose mapped ref is not in frozen.2', async () => {
@@ -322,6 +329,15 @@ function createHarness(options: {
           },
         }),
       } as never,
+      {
+        modelContext: async () => ({
+          revision: null,
+          artifactSha256: null,
+          reviewCount: 0,
+          history: [],
+          effective: [],
+        }),
+      } as never,
     ),
   };
 }
@@ -405,6 +421,8 @@ function validOutput(): string {
     packageId: 'PKG-737',
     baseRuleRevision: 1,
     baseRuleArtifactSha256: `sha256:${BASE_SHA}`,
+    engineerReviewRevision: null,
+    engineerReviewArtifactSha256: null,
     discoveryStatus: 'NO_DISCOVERY',
     gap: null,
     candidateRefCount: 0,

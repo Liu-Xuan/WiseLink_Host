@@ -173,6 +173,10 @@ export class CanonicalHostAeoService {
             integrated.overallForAeoConfirmation.actionAttemptId,
           confirmedWorkItemRevision:
             integrated.overallForAeoConfirmation.workItemRevision,
+          engineerReviewRevision:
+            integrated.overallSynthesis.basedOnEngineerReviewRevision,
+          engineerReviewArtifactSha256:
+            integrated.overallSynthesis.basedOnEngineerReviewArtifactSha256,
         },
         initialBytes: new Map([
           [R09_TEMPLATE_ARTIFACT_REF, templateBytes],
@@ -595,6 +599,14 @@ function requiredConfirmedOverall(
   ) {
     throw new Error('AEO_CONFIRMED_OVERALL_NOT_CURRENT');
   }
+  const reviews = integrated.engineerReviews ?? null;
+  if (
+    overall.basedOnEngineerReviewRevision !== (reviews?.revision ?? null) ||
+    overall.basedOnEngineerReviewArtifactSha256 !==
+      (reviews?.artifact.sha256 ?? null)
+  ) {
+    throw new Error('AEO_CONFIRMED_OVERALL_REVIEW_BINDING_STALE');
+  }
   return {
     ...integrated,
     overallSynthesis: overall,
@@ -615,7 +627,11 @@ function assertAeoBindsCurrentOverall(
     aeo.sourceOverall.confirmationActionAttemptId !==
       confirmation.actionAttemptId ||
     aeo.sourceOverall.confirmedWorkItemRevision !==
-      confirmation.workItemRevision
+      confirmation.workItemRevision ||
+    aeo.sourceOverall.engineerReviewRevision !==
+      overall.basedOnEngineerReviewRevision ||
+    aeo.sourceOverall.engineerReviewArtifactSha256 !==
+      overall.basedOnEngineerReviewArtifactSha256
   ) {
     throw new Error('AEO_CANDIDATE_STALE_FOR_CURRENT_OVERALL');
   }

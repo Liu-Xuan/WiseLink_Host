@@ -122,6 +122,7 @@ export class CanonicalHostIntegratedAssessmentService {
           ? 'OVERALL_CANDIDATE_STALE'
           : 'BASE_RULE_CANDIDATE_READY',
         baseRules,
+        engineerReviews: workItem.integratedAssessment?.engineerReviews ?? null,
         overallSynthesis,
         overallForAeoConfirmation: null,
       };
@@ -209,6 +210,10 @@ export class CanonicalHostIntegratedAssessmentService {
         sourceResultId: result.sourceResultId,
         basedOnBaseRuleRevision: result.baseRuleRevision,
         basedOnBaseRuleArtifactSha256: result.baseRuleArtifactSha256,
+        basedOnEngineerReviewRevision:
+          workItem.integratedAssessment?.engineerReviews?.revision ?? null,
+        basedOnEngineerReviewArtifactSha256:
+          workItem.integratedAssessment?.engineerReviews?.artifact.sha256 ?? null,
         discoveryStatus: result.discoveryStatus,
         gap: result.gap,
         candidateRefCount: result.candidateRefCount,
@@ -229,6 +234,7 @@ export class CanonicalHostIntegratedAssessmentService {
           integratedAssessment: {
             status: 'OVERALL_CANDIDATE_READY',
             baseRules,
+            engineerReviews: workItem.integratedAssessment?.engineerReviews ?? null,
             overallSynthesis,
             overallForAeoConfirmation: null,
           },
@@ -392,10 +398,25 @@ function requiredReadyOverall(
   ) {
     throw new Error('OPENCLAW_OVERALL_NOT_READY_FOR_AEO_CONFIRMATION');
   }
+  assertOverallBindsCurrentReviews(integrated, overall);
   return {
     ...integrated,
     overallSynthesis: overall,
   };
+}
+
+function assertOverallBindsCurrentReviews(
+  integrated: CanonicalIntegratedAssessmentProjection,
+  overall: CanonicalOpenClawOverallProjection,
+): void {
+  const reviews = integrated.engineerReviews ?? null;
+  if (
+    overall.basedOnEngineerReviewRevision !== (reviews?.revision ?? null) ||
+    overall.basedOnEngineerReviewArtifactSha256 !==
+      (reviews?.artifact.sha256 ?? null)
+  ) {
+    throw new Error('OPENCLAW_OVERALL_ENGINEER_REVIEW_BINDING_STALE');
+  }
 }
 
 function assertConfirmationBindsCurrentOverall(

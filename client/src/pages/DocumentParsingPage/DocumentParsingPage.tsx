@@ -16,9 +16,16 @@ import {
 
 import { canonicalHost } from '@client/src/api';
 import type {
+  CanonicalEngineerReviewDecision,
   CanonicalDocumentParsingPageResponse,
   UnifiedReaderQueryResult,
 } from '@shared/api.interface';
+import { Button } from '@client/src/components/ui/button';
+import {
+  NativeSelect,
+  NativeSelectOption,
+} from '@client/src/components/ui/native-select';
+import { Textarea } from '@client/src/components/ui/textarea';
 
 import { WorkItemContextDock } from './WorkItemContextDock';
 import { WorkItemContextTree } from './WorkItemContextTree';
@@ -43,6 +50,11 @@ export default function DocumentParsingPage() {
     'CONFIRM_OVERALL_FOR_AEO' | 'GENERATE_AEO_CANDIDATE' | null
   >(null);
   const [assessmentError, setAssessmentError] = useState<string | null>(null);
+  const [reviewCriterionId, setReviewCriterionId] = useState('');
+  const [reviewDecision, setReviewDecision] =
+    useState<CanonicalEngineerReviewDecision>('deferred');
+  const [reviewComment, setReviewComment] = useState('');
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
 
   async function load(nextQuery: string): Promise<void> {
     if (!workItemId) {
@@ -90,6 +102,9 @@ export default function DocumentParsingPage() {
     data.workItem.classification.normalizedFamily === 'SB';
   const aeo = data.workItem.aeo ?? null;
   const results: UnifiedReaderQueryResult[] = data.queryResults;
+  const reviewContext = data.engineerReviewContext ?? null;
+  const selectedReviewCriterion =
+    reviewCriterionId || reviewContext?.items[0]?.criterionId || '';
   const fileLabel: string = `${data.workItem.classification.normalizedFamily} · ${short(data.workItem.source.sourceArtifactId, 20, 8)}`;
 
   async function confirmOverallForAeo(): Promise<void> {
@@ -119,6 +134,31 @@ export default function DocumentParsingPage() {
       );
     } finally {
       setAssessmentAction(null);
+    }
+  }
+
+  async function recordEngineerReview(): Promise<void> {
+    if (!selectedReviewCriterion || !reviewComment.trim()) {
+      setAssessmentError('ENGINEER_REVIEW_CRITERION_AND_COMMENT_REQUIRED');
+      return;
+    }
+    setReviewSubmitting(true);
+    setAssessmentError(null);
+    try {
+      await canonicalHost.recordEngineerReview(workItemId, {
+        expectedRevision: data.workItem.revision,
+        criterionId: selectedReviewCriterion,
+        decision: reviewDecision,
+        comment: reviewComment.trim(),
+      });
+      setReviewComment('');
+      await load(query.trim() || 'applicability');
+    } catch (cause) {
+      setAssessmentError(
+        cause instanceof Error ? cause.message : 'ENGINEER_REVIEW_FAILED',
+      );
+    } finally {
+      setReviewSubmitting(false);
     }
   }
 
@@ -568,6 +608,98 @@ export default function DocumentParsingPage() {
                       )}
                     </article>
                   </div>
+                  {reviewContext ? (
+                    <section
+                      className="parse-engineer-review"
+                      aria-label="工程师逐项复核"
+                    >
+                      <header>
+                        <div>
+                          <span>ENGINEER REVIEW · APPEND ONLY</span>
+                          <h3>记录逐项意见</h3>
+                        </div>
+                        <strong>
+                          {reviewContext.ledger?.reviewCount ?? 0} 条历史意见
+                        </strong>
+                      </header>
+                      <p>
+                        保存只记录人的判断，不运行模型，也不改写动态 N/N。
+                        保存后当前整体候选会标记为过期，须由 OpenClaw
+                        显式重综合。
+                      </p>
+                      <div className="parse-engineer-review-form">
+                        <label>
+                          规则项
+                          <NativeSelect
+                            value={selectedReviewCriterion}
+                            onChange={(event) =>
+                              setReviewCriterionId(event.target.value)
+                            }
+                          >
+                            {reviewContext.items.map((item) => (
+                              <NativeSelectOption
+                                key={item.criterionId}
+                                value={item.criterionId}
+                              >
+                                {item.criterionId} · {item.dynamicResult}
+                              </NativeSelectOption>
+                            ))}
+                          </NativeSelect>
+                        </label>
+                        <label>
+                          处理意见
+                          <NativeSelect
+                            value={reviewDecision}
+                            onChange={(event) =>
+                              setReviewDecision(
+                                event.target.value as CanonicalEngineerReviewDecision,
+                              )
+                            }
+                          >
+                            <NativeSelectOption value="confirmed_pass">
+                              确认通过
+                            </NativeSelectOption>
+                            <NativeSelectOption value="confirmed_fail">
+                              确认不通过
+                            </NativeSelectOption>
+                            <NativeSelectOption value="returned_for_rework">
+                              退回补充
+                            </NativeSelectOption>
+                            <NativeSelectOption value="deferred">
+                              暂缓判断
+                            </NativeSelectOption>
+                          </NativeSelect>
+                        </label>
+                        <label className="parse-engineer-review-comment">
+                          说明
+                          <Textarea
+                            value={reviewComment}
+                            onChange={(event) =>
+                              setReviewComment(event.target.value)
+                            }
+                            placeholder="说明依据、异议或仍需补齐的输入"
+                            maxLength={4000}
+                          />
+                        </label>
+                        <Button
+                          type="button"
+                          disabled={reviewSubmitting}
+                          onClick={() => void recordEngineerReview()}
+                        >
+                          {reviewSubmitting ? '正在保存…' : '保存工程师意见'}
+                        </Button>
+                      </div>
+                      {reviewContext.items
+                        .filter((item) => item.latestReview)
+                        .map((item) => (
+                          <p key={item.criterionId} className="parse-review-latest">
+                            <strong>{item.criterionId}</strong> ·{' '}
+                            {item.latestReview!.decision} ·{' '}
+                            {item.latestReview!.comment}
+                          </p>
+                        ))}
+                    </section>
+                  ) : null}
                   {integratedAssessment.overallSynthesis?.status ===
                     'CANDIDATE_ONLY' &&
                   integratedAssessment.overallSynthesis.staleReason === null ? (

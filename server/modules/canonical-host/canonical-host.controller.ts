@@ -13,21 +13,18 @@ import { NeedLogin } from '@lark-apaas/fullstack-nestjs-core';
 import type { Request } from 'express';
 
 import type {
+  CanonicalEngineerReviewDecision,
   CanonicalEntryQueryRequest,
 } from '@shared/api.interface';
-import type {
-  EngineerActionDecision,
-  EvaluationItemBaseStatus,
-} from '@shared/assessment-host.interface';
 
 import { OrdinaryWorkItemService } from '../work-item/ordinary-work-item.service';
-import { CanonicalHostAssessmentService } from './canonical-host-assessment.service';
 import { CanonicalHostAeoService } from './canonical-host-aeo.service';
+import { CanonicalHostEngineerReviewService } from './canonical-host-engineer-review.service';
 import { CanonicalHostIntegratedAssessmentService } from './canonical-host-integrated-assessment.service';
 import { CanonicalHostVerticalService } from './canonical-host-vertical.service';
 import type { CanonicalHostActor } from './canonical-host.types';
 
-const ENGINEER_DECISIONS = new Set<EngineerActionDecision>([
+const ENGINEER_DECISIONS = new Set<CanonicalEngineerReviewDecision>([
   'confirmed_pass',
   'confirmed_fail',
   'returned_for_rework',
@@ -40,8 +37,8 @@ export class CanonicalHostController {
   constructor(
     private readonly service: CanonicalHostVerticalService,
     private readonly workItems: OrdinaryWorkItemService,
-    private readonly assessments: CanonicalHostAssessmentService,
     private readonly integratedAssessments: CanonicalHostIntegratedAssessmentService,
+    private readonly engineerReviews: CanonicalHostEngineerReviewService,
     private readonly aeo: CanonicalHostAeoService,
   ) {}
 
@@ -62,7 +59,7 @@ export class CanonicalHostController {
     @Query('query') query: string,
     @Req() httpRequest: Request,
   ) {
-    return this.service.page(
+    return this.pageWithEngineerReviews(
       {
         workItemId,
         query,
@@ -93,47 +90,16 @@ export class CanonicalHostController {
     return this.service.query(request, hostActor(httpRequest));
   }
 
-  @Post('work-items/:workItemId/assessment/evaluate')
-  evaluateAssessment(
+  @Post('work-items/:workItemId/integrated-assessment/engineer-reviews')
+  recordEngineerReview(
     @Param('workItemId') workItemId: string,
     @Body() body: unknown,
     @Req() httpRequest: Request,
   ) {
-    assessmentEvaluateBody(body);
-    const now = new Date().toISOString();
-    return this.assessments.evaluateCandidate(
-      {
-        workItemId: requiredText(workItemId, 'workItemId'),
-        assessmentAsOf: now,
-        generatedAt: now,
-      },
+    const input = engineerReviewBody(body);
+    return this.engineerReviews.recordReview(
+      { workItemId: requiredText(workItemId, 'workItemId'), ...input },
       hostActor(httpRequest),
-    );
-  }
-
-  @Post('work-items/:workItemId/assessment/resynthesize')
-  resynthesizeAssessment(
-    @Param('workItemId') workItemId: string,
-    @Body() body: unknown,
-    @Req() httpRequest: Request,
-  ) {
-    const input = assessmentResynthesisBody(body);
-    const actor = hostActor(httpRequest);
-    return this.assessments.resynthesizeAfterEngineerChange(
-      {
-        workItemId: requiredText(workItemId, 'workItemId'),
-        expectedRevision: input.expectedRevision,
-        criterionId: input.criterionId,
-        review: {
-          baseRecordId: `ENGINEER-REVIEW:${workItemId}:${input.criterionId}`,
-          decision: input.decision,
-          comment: input.comment,
-          reviewingEngineerUserIds: [actor.userId],
-          status: input.status,
-          updatedAt: new Date().toISOString(),
-        },
-      },
-      actor,
     );
   }
 
@@ -162,6 +128,18 @@ export class CanonicalHostController {
       hostActor(httpRequest),
     );
   }
+
+  private async pageWithEngineerReviews(
+    input: { workItemId: string; query: string },
+    actor: CanonicalHostActor,
+  ) {
+    const page = await this.service.page(input, actor);
+    return {
+      ...page,
+      engineerReviewContext:
+        await this.engineerReviews.pageContext(page.workItem),
+    };
+  }
 }
 
 export function hostActor(request: Request): CanonicalHostActor {
@@ -178,20 +156,15 @@ export function hostActor(request: Request): CanonicalHostActor {
   };
 }
 
-function assessmentEvaluateBody(body: unknown): void {
-  ordinaryBody(body, []);
-}
-
 function integratedAssessmentActionBody(body: unknown): void {
   ordinaryBody(body, []);
 }
 
-function assessmentResynthesisBody(body: unknown): {
+function engineerReviewBody(body: unknown): {
   expectedRevision: number;
   criterionId: string;
-  decision: EngineerActionDecision;
+  decision: CanonicalEngineerReviewDecision;
   comment: string;
-  status: EvaluationItemBaseStatus;
 } {
   const value = ordinaryBody(body, [
     'expectedRevision',
@@ -204,16 +177,12 @@ function assessmentResynthesisBody(body: unknown): {
   const decision = requiredText(
     value.decision,
     'decision',
-  ) as EngineerActionDecision;
+  ) as CanonicalEngineerReviewDecision;
   const comment = requiredText(value.comment, 'comment');
   if (!ENGINEER_DECISIONS.has(decision)) {
-    throw badRequest('ASSESSMENT_ENGINEER_DECISION_INVALID');
+    throw badRequest('ENGINEER_REVIEW_DECISION_INVALID');
   }
-  const status: EvaluationItemBaseStatus =
-    decision === 'confirmed_pass' || decision === 'confirmed_fail'
-      ? 'ENGINEER_CONFIRMED'
-      : 'NEEDS_REVIEW';
-  return { expectedRevision, criterionId, decision, comment, status };
+  return { expectedRevision, criterionId, decision, comment };
 }
 
 function ordinaryBody(

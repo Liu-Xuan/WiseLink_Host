@@ -516,6 +516,7 @@ const overallAInput = buildOpenClawOverallSynthesisInput({
   sourceEvidenceCandidates: preview.overall.context.criterionCards.flatMap(
     (criterion) => criterion.sourceEvidenceCandidates,
   ),
+  engineerReviewContext: { revision: null, artifactSha256: null, reviewCount: 0, history: [], effective: [] },
   outputCorrelationRef: 'OVR-LOCAL-A',
 });
 const overallBInput = buildOpenClawOverallSynthesisInput({
@@ -525,6 +526,7 @@ const overallBInput = buildOpenClawOverallSynthesisInput({
   sourceEvidenceCandidates: preview.overall.context.criterionCards.flatMap(
     (criterion) => criterion.sourceEvidenceCandidates,
   ),
+  engineerReviewContext: { revision: null, artifactSha256: null, reviewCount: 0, history: [], effective: [] },
 });
 const mappedOverallItems = overallAInput.baseRuleResult.items;
 const mappedOverallSourceRefs = mappedOverallItems.flatMap(
@@ -746,6 +748,8 @@ const withIntegrated = await registrar.compareAndSet({
         sourceResultId: overallA.sourceResultId,
         basedOnBaseRuleRevision: localBaseRules.revision,
         basedOnBaseRuleArtifactSha256: localBaseRules.artifact.sha256,
+        basedOnEngineerReviewRevision: null,
+        basedOnEngineerReviewArtifactSha256: null,
         discoveryStatus: overallA.discoveryStatus,
         gap: overallA.gap,
         candidateRefCount: overallA.candidateRefCount,
@@ -919,6 +923,8 @@ function localOverallOutput(input, discoveryStatus, providers, candidateRefCount
     packageId: input.baseRuleResult.packageId,
     baseRuleRevision: input.baseRuleResult.revision,
     baseRuleArtifactSha256: input.baseRuleResult.artifactSha256,
+    engineerReviewRevision: input.engineerReviewContext.revision,
+    engineerReviewArtifactSha256: input.engineerReviewContext.artifactSha256,
     discoveryStatus, gap: discoveryStatus === 'NO_DISCOVERY' ? null : 'Discovery remains non-evidence.',
     candidateRefCount, findingCount: 0, unresolvedCount: 150,
     authorityLevel: 'candidate_only', externalDiscoveryIsEvidence: false,

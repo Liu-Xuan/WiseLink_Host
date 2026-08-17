@@ -981,6 +981,63 @@
   white-space: nowrap;
 }
 
+.parse-engineer-review {
+  margin: 20px 0;
+  padding: 18px;
+  border: 1px solid var(--parse-rule);
+  background: rgb(255 255 255 / 56%);
+}
+
+.parse-engineer-review > header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: start;
+}
+
+.parse-engineer-review > header span,
+.parse-engineer-review > header strong {
+  color: var(--parse-accent);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+}
+
+.parse-engineer-review > header h3 {
+  margin: 4px 0 0;
+}
+
+.parse-engineer-review-form {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(180px, 0.65fr);
+  gap: 14px;
+  align-items: end;
+}
+
+.parse-engineer-review-form label {
+  display: grid;
+  gap: 6px;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.parse-engineer-review-form [data-slot='native-select-wrapper'] {
+  width: 100%;
+}
+
+.parse-engineer-review-comment {
+  grid-column: 1 / -1;
+}
+
+.parse-engineer-review-form button {
+  justify-self: start;
+}
+
+.parse-review-latest {
+  margin: 10px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--parse-rule);
+}
+
 .engineering-reasoning-steps article > strong {
   color: var(--parse-teal);
 }
@@ -1068,7 +1125,8 @@
   }
   .engineering-reasoning-trail > header,
   .engineering-reasoning-steps,
-  .parse-assessment-audit {
+  .parse-assessment-audit,
+  .parse-engineer-review-form {
     grid-template-columns: 1fr;
   }
 }

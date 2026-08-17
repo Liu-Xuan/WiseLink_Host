@@ -19,6 +19,7 @@ import {
   CANONICAL_WORK_ITEM_REGISTRAR,
 } from './canonical-host.constants';
 import { CanonicalHostAssessmentService } from './canonical-host-assessment.service';
+import { CanonicalHostEngineerReviewService } from './canonical-host-engineer-review.service';
 import type {
   CanonicalAuthorizationPort,
   CanonicalHostActor,
@@ -55,6 +56,7 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
     private readonly repository: MiaodaWorkItemRepository,
     private readonly assessment: CanonicalHostAssessmentService,
     private readonly processor: DynamicRulesEvaluationProcessor,
+    private readonly engineerReviews: CanonicalHostEngineerReviewService,
   ) {}
 
   async begin(workItemId: string): Promise<BeginDynamicEvaluationResult> {
@@ -113,6 +115,21 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
         attempt,
       );
       const result = this.processor.consumeOutput(request, output);
+      const currentBase = workItem.integratedAssessment?.baseRules;
+      if (workItem.integratedAssessment?.engineerReviews && currentBase) {
+        const prospectiveBase = baseRuleProjection(
+          workItem,
+          attempt,
+          request.modelInput.expectedSelfCheck,
+          result,
+          currentBase.artifact,
+        );
+        await this.engineerReviews.assertLedgerCompatibleWithDynamicBytes(
+          workItem,
+          prospectiveBase,
+          new TextEncoder().encode(output),
+        );
+      }
       try {
         await this.repository.claimDynamicEvaluationCommit(attempt.attemptId);
         commitClaimed = true;
@@ -146,6 +163,7 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
           ? 'OVERALL_CANDIDATE_STALE'
           : 'BASE_RULE_CANDIDATE_READY',
         baseRules,
+        engineerReviews: workItem.integratedAssessment?.engineerReviews ?? null,
         overallSynthesis,
         overallForAeoConfirmation: null,
       };

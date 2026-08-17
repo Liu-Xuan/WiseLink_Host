@@ -52,6 +52,7 @@ import { AssessmentHostConsumerModule } from '../assessment-workbench/assessment
 import { CanonicalHostAssessmentService } from './canonical-host-assessment.service';
 import { CanonicalHostAeoService } from './canonical-host-aeo.service';
 import { CanonicalHostIntegratedAssessmentService } from './canonical-host-integrated-assessment.service';
+import { CanonicalHostEngineerReviewService } from './canonical-host-engineer-review.service';
 import { AeoSameWorkItemAuthoringModule } from '../aeo-authoring/public-api';
 import {
   UnconfiguredCanonicalBaseRuleResultProvider,
@@ -100,6 +101,7 @@ export interface CanonicalHostModuleOptions {
     OrdinaryFailureValidationWriteAuthorizationAdapter,
     CanonicalHostAssessmentService,
     CanonicalHostIntegratedAssessmentService,
+    CanonicalHostEngineerReviewService,
     CanonicalHostAeoService,
   ],
 })
@@ -217,6 +219,7 @@ export class CanonicalHostModule {
         OrdinaryFailureValidationWriteAuthorizationAdapter,
         CanonicalHostAssessmentService,
         CanonicalHostIntegratedAssessmentService,
+        CanonicalHostEngineerReviewService,
         CanonicalHostAeoService,
       ],
       exports: [
@@ -224,6 +227,7 @@ export class CanonicalHostModule {
         CanonicalHostVerticalService,
         CanonicalHostAssessmentService,
         CanonicalHostIntegratedAssessmentService,
+        CanonicalHostEngineerReviewService,
         CanonicalHostAeoService,
         CANONICAL_HOST_BINDING,
       ],
