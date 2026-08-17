@@ -793,11 +793,17 @@ export default function DocumentParsingPage() {
                 。该纵切只产生 Working / Draft candidate / Word
                 candidate，不形成正式 Draft、发布或工程结论。
               </p>
-              <p>
-                编写模板：{aeo.authoringTemplate.identity}（
-                {aeo.authoringTemplate.role}）；模板只提供受控结构，
-                与服务器派生的候选目标不同。
-              </p>
+              {aeo.authoringTemplate ? (
+                <p>
+                  编写模板：{aeo.authoringTemplate.identity}（
+                  {aeo.authoringTemplate.role}）；模板只提供受控结构，
+                  与服务器派生的候选目标不同。
+                </p>
+              ) : (
+                <p>
+                  历史候选未记录编写模板身份；页面不会据此补猜或改变候选目标。
+                </p>
+              )}
               <div className="parse-aeo-artifacts">
                 {aeo.artifacts.map((artifact) => (
                   <div
