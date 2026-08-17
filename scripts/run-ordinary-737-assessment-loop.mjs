@@ -775,7 +775,7 @@ process.stdout.write(`${JSON.stringify({
   },
   overallSynthesisAB: {
     noDiscoveryStatus: overallA.discoveryStatus,
-    realThreeProviderStatus: overallB.discoveryStatus,
+    optionalDiscoveryResynthesisStatus: overallB.discoveryStatus,
     baseRuleCount: overallAInput.baseRuleResult.items.length,
     sourceBoundRuleCount: localBaseRules.sourceBoundCandidateCount,
     secCandidatesMappedToUnifiedSourceRefs: true,

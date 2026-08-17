@@ -122,13 +122,14 @@ applied online in this slice. URL/snippet stay in the candidate table. A later a
 descriptor may contain only SearchRun/Candidate references, publisher, observed time, and the
 server-owned review receipt; it must not copy discovery URL/snippet.
 
-The OpenClaw A/B comparison binds the same Phase 9 WorkItem, DocumentVersion, parsed package, and
-Base full-N artifact/revision. A is `NO_DISCOVERY` (not `ZERO_RESULTS`) with zero candidate refs. B
-keeps provider-level details only in immutable artifact bytes: Airbus `COMPLETE` plus direct official
-FAST #62, Boeing `ACCESS_DENIED` with `UPSTREAM_CONNECT_TIMEOUT` and zero candidates, and COMAC an
-official-list/RSS partial or truncated gap. All remain `adopted=false` and
-`usableAsEvidence=false`. A→B increments only overall revision and preserves A history; only a Base
-revision change makes the current overall projection `STALE / BASE_RULE_RESULT_CHANGED`.
+The OpenClaw acceptance comparison binds the same Phase 9 WorkItem, DocumentVersion, parsed package,
+and Base full-N artifact/revision. The current mainline stops after A: `NO_DISCOVERY` (not
+`ZERO_RESULTS`) with zero candidate refs. Discovery is optional background work, not a mandatory
+three-provider stage. Only when A explicitly identifies an uncertainty may the host query the
+relevant provider and run an explicit resynthesis. The historical B fixture remains coverage for
+that optional path: provider-level details stay only in immutable artifact bytes and all results
+remain `adopted=false` and `usableAsEvidence=false`. A→B preserves A history; only a Base revision
+change makes the current overall projection `STALE / BASE_RULE_RESULT_CHANGED`.
 
 The later acceptance loop is:
 
