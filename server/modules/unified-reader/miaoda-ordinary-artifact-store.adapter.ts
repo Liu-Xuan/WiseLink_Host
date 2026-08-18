@@ -21,6 +21,8 @@ const JSON_MEDIA_TYPE = 'application/json' as const;
 export class MiaodaOrdinaryArtifactStoreAdapter
   implements UnifiedArtifactStorePort
 {
+  private defaultBucketLookup: Promise<string> | null = null;
+
   constructor(private readonly fileService: FileService) {}
 
   async persistAndReadback(
@@ -30,10 +32,7 @@ export class MiaodaOrdinaryArtifactStoreAdapter
     const bytes = Uint8Array.from(input);
     const digest = sha256Raw(bytes);
     const filePath = this.filePath(digest);
-    const bucketId = await providerCall(
-      'ARTIFACT_STORE_DEFAULT_BUCKET_READ_FAILED',
-      () => this.fileService.getDefaultBucket(),
-    );
+    const bucketId = await this.getDefaultBucket();
     const scoped = this.fileService.from(bucketId);
     const existing = await providerCall(
       'ARTIFACT_STORE_METADATA_READ_FAILED',
@@ -75,10 +74,7 @@ export class MiaodaOrdinaryArtifactStoreAdapter
   ): Promise<Uint8Array> {
     assertDescriptor(artifact, this.artifactRefPrefix());
     const filePath = this.filePath(artifact.sha256);
-    const bucketId = await providerCall(
-      'ARTIFACT_STORE_DEFAULT_BUCKET_READ_FAILED',
-      () => this.fileService.getDefaultBucket(),
-    );
+    const bucketId = await this.getDefaultBucket();
     const scoped = this.fileService.from(bucketId);
     const metadata = await providerCall(
       'ARTIFACT_STORE_METADATA_READ_FAILED',
@@ -110,6 +106,34 @@ export class MiaodaOrdinaryArtifactStoreAdapter
       throw new Error('ARTIFACT_READBACK_MISMATCH:BYTES');
     }
     return actual;
+  }
+
+  /**
+   * The SDK caches a successful bucket lookup, but does not deduplicate
+   * concurrent misses. Build-packet reads can arrive together, so share only
+   * the in-flight read. A rejected lookup is cleared and is never retried by
+   * this adapter; a later business action may make its own explicit attempt.
+   */
+  private getDefaultBucket(): Promise<string> {
+    if (this.defaultBucketLookup) return this.defaultBucketLookup;
+    const lookup = providerCall(
+      'ARTIFACT_STORE_DEFAULT_BUCKET_READ_FAILED',
+      () => this.fileService.getDefaultBucket(),
+    );
+    this.defaultBucketLookup = lookup;
+    void lookup.then(
+      () => {
+        if (this.defaultBucketLookup === lookup) {
+          this.defaultBucketLookup = null;
+        }
+      },
+      () => {
+        if (this.defaultBucketLookup === lookup) {
+          this.defaultBucketLookup = null;
+        }
+      },
+    );
+    return lookup;
   }
 
   private filePath(digest: string): string {
