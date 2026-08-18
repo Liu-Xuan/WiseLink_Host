@@ -1,4 +1,11 @@
-import { BookOpenCheck, FileSearch2, Gauge, Radar } from 'lucide-react';
+import {
+  Activity,
+  BookOpenCheck,
+  FileSearch2,
+  LibraryBig,
+  Radar,
+  ShieldCheck,
+} from 'lucide-react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 
 import './app-shell.css';
@@ -13,40 +20,51 @@ const Layout = () => {
     <div className="wiselink-app-shell">
       <header className="wiselink-app-header">
         <NavLink className="wiselink-app-brand" to="/">
-          <span className="wiselink-app-mark">WL</span>
+          <span className="wiselink-app-mark" aria-hidden="true">
+            W
+          </span>
           <span>
             <strong>WiseLink</strong>
-            <small>工程资料与综合评估</small>
+            <small>3.1 / CANONICAL HOST</small>
           </span>
         </NavLink>
 
         <nav className="wiselink-app-navigation" aria-label="WiseLink 主导航">
           <NavLink end to="/">
-            <Gauge aria-hidden="true" /> 入口
+            <LibraryBig aria-hidden="true" /> 资料库
           </NavLink>
           {workItemId ? (
             <NavLink
               to={`/work-items/${encodeURIComponent(workItemId)}/documents`}
             >
-              <BookOpenCheck aria-hidden="true" /> 工作台
+              <BookOpenCheck aria-hidden="true" /> WorkItem 工作台
             </NavLink>
           ) : (
             <span className="is-disabled">
-              <BookOpenCheck aria-hidden="true" /> 工作台
+              <BookOpenCheck aria-hidden="true" /> WorkItem 工作台
             </span>
           )}
           <NavLink to="/external-discovery">
-            <Radar aria-hidden="true" /> 外部资料
+            <Radar aria-hidden="true" /> 外部发现
           </NavLink>
         </nav>
 
         <div className="wiselink-app-context">
+          <span className="wiselink-app-host-status">
+            <ShieldCheck aria-hidden="true" /> 唯一妙搭应用
+          </span>
           {workItemId ? (
-            <span title={workItemId}>
-              <FileSearch2 aria-hidden="true" /> {shortId(workItemId)}
-            </span>
+            <NavLink
+              className="wiselink-app-work-item"
+              title={workItemId}
+              to={`/work-items/${encodeURIComponent(workItemId)}/documents`}
+            >
+              <FileSearch2 aria-hidden="true" />
+              <span>{shortId(workItemId)}</span>
+              <Activity aria-hidden="true" />
+            </NavLink>
           ) : (
-            <span className="is-boundary">唯一妙搭应用</span>
+            <span className="is-boundary">等待 WorkItem 绑定</span>
           )}
         </div>
       </header>
