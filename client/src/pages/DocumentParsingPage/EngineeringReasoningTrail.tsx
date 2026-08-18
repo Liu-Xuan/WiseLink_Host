@@ -29,6 +29,8 @@ export function EngineeringReasoningTrail({
   const integrated = data.workItem.integratedAssessment ?? null;
   const dynamic = integrated?.baseRules ?? null;
   const overall = integrated?.overallSynthesis ?? null;
+  const sourceRefCount: number = data.workItem.package?.sourceRefCount ?? 0;
+  const unresolvedCount: number = dynamic?.unresolvedCount ?? 0;
   const steps: TrailStep[] = [
     {
       label: '锁定工程对象',
@@ -95,12 +97,25 @@ export function EngineeringReasoningTrail({
     >
       <header>
         <div>
-          <span>HOW THE CANDIDATE WAS FORMED</span>
-          <h2>方法、依据、缺口与人工动作</h2>
+          <span>TRACEABLE CANDIDATE FORMATION</span>
+          <h2>系统查阅了什么，以及候选如何形成：方法、依据、缺口与人工动作</h2>
         </div>
-        <p>
-          展示可核验的执行记录和证据链，不把模型不可审计的隐式思维草稿当作依据。
-        </p>
+        <div className="engineering-reasoning-header-meta">
+          <p>
+            只展示可核验的执行记录和证据链，不把模型不可审计的隐式思维草稿当作依据。
+          </p>
+          <div className="engineering-reasoning-summary" aria-label="查阅摘要">
+            <span>
+              <strong>{data.queryResults.length}</strong> Reader hits
+            </span>
+            <span>
+              <strong>{sourceRefCount}</strong> source refs
+            </span>
+            <span>
+              <strong>{unresolvedCount}</strong> unresolved
+            </span>
+          </div>
+        </div>
       </header>
       <div className="engineering-reasoning-steps">
         {steps.map((step, index) => (

@@ -1,17 +1,18 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import {
   AlertTriangle,
   ArrowUpRight,
   CheckCircle2,
   ClipboardCheck,
-  FileOutput,
   FileText,
   Fingerprint,
+  LocateFixed,
   LockKeyhole,
   Search,
   ShieldCheck,
   Waypoints,
+  X,
 } from 'lucide-react';
 
 import { canonicalHost } from '@client/src/api';
@@ -25,11 +26,16 @@ import {
   NativeSelect,
   NativeSelectOption,
 } from '@client/src/components/ui/native-select';
+import { Input } from '@client/src/components/ui/input';
 import { Textarea } from '@client/src/components/ui/textarea';
 
 import { WorkItemContextDock } from './WorkItemContextDock';
-import { WorkItemContextTree } from './WorkItemContextTree';
+import {
+  WorkItemContextTree,
+  type WorkbenchNode,
+} from './WorkItemContextTree';
 import { EngineeringReasoningTrail } from './EngineeringReasoningTrail';
+import { AeoAuthoringWorkspace } from './AeoAuthoringWorkspace';
 import './document-parsing.css';
 
 function short(value: string, front = 18, back = 10): string {
@@ -38,9 +44,46 @@ function short(value: string, front = 18, back = 10): string {
     : `${value.slice(0, front)}…${value.slice(-back)}`;
 }
 
+const DEFAULT_READER_QUERY = 'applicability';
+
+const NODE_TARGETS: Record<WorkbenchNode, string> = {
+  document: 'workspace-document',
+  package: 'workspace-package',
+  reader: 'workspace-reader',
+  assessment: 'workspace-assessment',
+  overall: 'workspace-reasoning',
+  aeo: 'workspace-aeo',
+};
+
+const NODE_TABS: Record<WorkbenchNode, string> = {
+  document: 'source',
+  package: 'source',
+  reader: 'reader',
+  assessment: 'assessment',
+  overall: 'overall',
+  aeo: 'aeo',
+};
+
+function getWorkbenchNode(value: string | null): WorkbenchNode {
+  if (
+    value === 'package' ||
+    value === 'reader' ||
+    value === 'assessment' ||
+    value === 'overall' ||
+    value === 'aeo'
+  ) {
+    return value;
+  }
+  return 'document';
+}
+
 export default function DocumentParsingPage() {
   const { workItemId = '' } = useParams<{ workItemId: string }>();
-  const [query, setQuery] = useState<string>('applicability');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeNode: WorkbenchNode = getWorkbenchNode(searchParams.get('node'));
+  const activeQuery: string =
+    searchParams.get('q')?.trim() || DEFAULT_READER_QUERY;
+  const [query, setQuery] = useState<string>(activeQuery);
   const [data, setData] = useState<CanonicalDocumentParsingPageResponse | null>(
     null,
   );
@@ -50,11 +93,25 @@ export default function DocumentParsingPage() {
     'CONFIRM_OVERALL_FOR_AEO' | 'GENERATE_AEO_CANDIDATE' | null
   >(null);
   const [assessmentError, setAssessmentError] = useState<string | null>(null);
-  const [reviewCriterionId, setReviewCriterionId] = useState('');
   const [reviewDecision, setReviewDecision] =
     useState<CanonicalEngineerReviewDecision>('deferred');
   const [reviewComment, setReviewComment] = useState('');
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
+
+  function updateDeepLink(
+    changes: Record<string, string | null>,
+    replace = false,
+  ): void {
+    const next: URLSearchParams = new URLSearchParams(searchParams);
+    Object.entries(changes).forEach(([key, value]: [string, string | null]) => {
+      if (value === null) {
+        next.delete(key);
+      } else {
+        next.set(key, value);
+      }
+    });
+    setSearchParams(next, { replace });
+  }
 
   async function load(nextQuery: string): Promise<void> {
     if (!workItemId) {
@@ -77,8 +134,22 @@ export default function DocumentParsingPage() {
   }
 
   useEffect(() => {
-    void load('applicability');
-  }, [workItemId]);
+    setQuery(activeQuery);
+    void load(activeQuery);
+  }, [workItemId, activeQuery]);
+
+  useEffect(() => {
+    if (loading || data === null) return;
+    const targetId: string =
+      activeNode === 'aeo' && !data.workItem.aeo
+        ? 'workspace-assessment'
+        : NODE_TARGETS[activeNode];
+    const target: HTMLElement | null = document.getElementById(targetId);
+    if (!target) return;
+    window.requestAnimationFrame(() =>
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+    );
+  }, [activeNode, data, loading]);
 
   if (loading) {
     return <LockedState title="正在读取同一 WorkItem…" detail="FRESH_READ" />;
@@ -102,9 +173,27 @@ export default function DocumentParsingPage() {
     data.workItem.classification.normalizedFamily === 'SB';
   const aeo = data.workItem.aeo ?? null;
   const results: UnifiedReaderQueryResult[] = data.queryResults;
+  const requestedReaderUnit: string = searchParams.get('unit')?.trim() ?? '';
+  const requestedSourceRef: string =
+    searchParams.get('sourceRef')?.trim() ?? '';
+  const selectedReaderResult = results.find(
+    (result) =>
+      (requestedReaderUnit === '' || result.unitId === requestedReaderUnit) &&
+      (requestedSourceRef === '' ||
+        result.sourceRefIds.includes(requestedSourceRef)),
+  );
+  const sourceRefMatchesCurrentQuery = Boolean(
+    requestedSourceRef && selectedReaderResult,
+  );
   const reviewContext = data.engineerReviewContext ?? null;
+  const requestedReviewCriterion: string =
+    searchParams.get('criterion')?.trim() ?? '';
   const selectedReviewCriterion =
-    reviewCriterionId || reviewContext?.items[0]?.criterionId || '';
+    reviewContext?.items.some(
+      (item) => item.criterionId === requestedReviewCriterion,
+    )
+      ? requestedReviewCriterion
+      : reviewContext?.items[0]?.criterionId || '';
   const fileLabel: string = `${data.workItem.classification.normalizedFamily} · ${short(data.workItem.source.sourceArtifactId, 20, 8)}`;
 
   async function confirmOverallForAeo(): Promise<void> {
@@ -112,7 +201,7 @@ export default function DocumentParsingPage() {
     setAssessmentError(null);
     try {
       await canonicalHost.confirmIntegratedOverallForAeo(workItemId);
-      await load(query.trim() || 'applicability');
+      await load(activeQuery);
     } catch (cause) {
       setAssessmentError(
         cause instanceof Error ? cause.message : 'INTEGRATED_ASSESSMENT_FAILED',
@@ -127,7 +216,7 @@ export default function DocumentParsingPage() {
     setAssessmentError(null);
     try {
       await canonicalHost.generateAeoCandidate(workItemId);
-      await load(query.trim() || 'applicability');
+      await load(activeQuery);
     } catch (cause) {
       setAssessmentError(
         cause instanceof Error ? cause.message : 'AEO_CANDIDATE_FAILED',
@@ -152,7 +241,7 @@ export default function DocumentParsingPage() {
         comment: reviewComment.trim(),
       });
       setReviewComment('');
-      await load(query.trim() || 'applicability');
+      await load(activeQuery);
     } catch (cause) {
       setAssessmentError(
         cause instanceof Error ? cause.message : 'ENGINEER_REVIEW_FAILED',
@@ -180,19 +269,60 @@ export default function DocumentParsingPage() {
         </div>
       </header>
 
-      <section className="parse-rail" aria-label="解析阶段">
-        {['原件', '分类', '解析', '统一包', 'Reader'].map(
-          (label: string, index: number) => (
-            <div className="parse-rail-step" key={label}>
+      <section className="parse-rail" aria-label="工作台视图">
+        {([
+          ['文档', 'document', 'workspace-document'],
+          ['解析包', 'package', 'workspace-package'],
+          ['Reader', 'reader', 'workspace-reader'],
+          ['动态评估', 'assessment', 'workspace-assessment'],
+          ['综合记录', 'overall', 'workspace-reasoning'],
+          ['AEO 候选', 'aeo', 'workspace-aeo'],
+        ] as const).map(
+          ([label, node, target]: readonly [
+            string,
+            WorkbenchNode,
+            string,
+          ], index: number) => (
+            <button
+              type="button"
+              className={`parse-rail-step${
+                activeNode === node ? ' is-active' : ''
+              }`}
+              key={node}
+              aria-current={activeNode === node ? 'page' : undefined}
+              onClick={() => {
+                updateDeepLink({ node, tab: NODE_TABS[node] });
+                const targetId: string =
+                  node === 'aeo' && !aeo ? 'workspace-assessment' : target;
+                window.requestAnimationFrame(() =>
+                  document.getElementById(targetId)?.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'start',
+                  }),
+                );
+              }}
+            >
               <span>{String(index + 1).padStart(2, '0')}</span>
               <strong>{label}</strong>
-            </div>
+            </button>
           ),
         )}
       </section>
 
       <div className="workitem-workbench-layout">
-        <WorkItemContextTree data={data} />
+        <WorkItemContextTree
+          data={data}
+          activeNode={activeNode}
+          onNodeSelect={(node: WorkbenchNode, target: string) => {
+            updateDeepLink({ node, tab: NODE_TABS[node] });
+            window.requestAnimationFrame(() =>
+              document.getElementById(target)?.scrollIntoView({
+                behavior: 'smooth',
+                block: 'start',
+              }),
+            );
+          }}
+        />
         <div className="workitem-workbench-main">
           <section className="parse-hero-grid" id="workspace-document">
             <article className="parse-panel parse-document-card">
@@ -341,27 +471,107 @@ export default function DocumentParsingPage() {
               <form
                 onSubmit={(event) => {
                   event.preventDefault();
-                  void load(query.trim());
+                  const nextQuery: string = query.trim() || DEFAULT_READER_QUERY;
+                  updateDeepLink({
+                    q: nextQuery,
+                    node: 'reader',
+                    tab: 'reader',
+                    unit: null,
+                    sourceRef: null,
+                  });
+                  if (nextQuery === activeQuery) {
+                    void load(nextQuery);
+                  }
                 }}
               >
-                <input
+                <Input
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   aria-label="解析单元查询"
                 />
-                <button type="submit">查询</button>
+                <Button type="submit" size="sm" data-ai-section-type="button">
+                  查询 <Search aria-hidden="true" />
+                </Button>
               </form>
+              {requestedSourceRef ? (
+                <div
+                  className={`parse-reader-focus${
+                    sourceRefMatchesCurrentQuery ? '' : ' is-missing'
+                  }`}
+                  role="status"
+                >
+                  <LocateFixed aria-hidden="true" />
+                  <div>
+                    <span>SELECTED SOURCE REF</span>
+                    <strong title={requestedSourceRef}>
+                      {short(requestedSourceRef, 24, 12)}
+                    </strong>
+                    <small>
+                      {selectedReaderResult
+                        ? `unit · ${short(selectedReaderResult.unitId, 22, 8)}`
+                        : 'SOURCE_REF_NOT_IN_CURRENT_QUERY'}
+                    </small>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    title="清除来源定位"
+                    aria-label="清除来源定位"
+                    onClick={() =>
+                      updateDeepLink({ unit: null, sourceRef: null })
+                    }
+                  >
+                    <X aria-hidden="true" />
+                  </Button>
+                </div>
+              ) : null}
               <div className="parse-results">
                 {results.length > 0 ? (
                   results.map((result: UnifiedReaderQueryResult) => (
-                    <div className="parse-result" key={result.unitId}>
+                    <article
+                      className={`parse-result${
+                        selectedReaderResult?.unitId === result.unitId
+                          ? ' is-selected'
+                          : ''
+                      }`}
+                      key={result.unitId}
+                    >
                       <span>{result.kind}</span>
                       <p>{result.text}</p>
                       <small>
                         {result.sourceRefIds.length} 个 sourceRef ·{' '}
                         {short(result.unitId, 22, 8)}
                       </small>
-                    </div>
+                      <div
+                        className="parse-result-source-refs"
+                        aria-label={`${result.unitId} 来源引用`}
+                      >
+                        {result.sourceRefIds.map((sourceRef) => (
+                          <button
+                            type="button"
+                            className={
+                              requestedSourceRef === sourceRef
+                                ? 'is-selected'
+                                : ''
+                            }
+                            key={sourceRef}
+                            title={sourceRef}
+                            onClick={() =>
+                              updateDeepLink({
+                                node: 'reader',
+                                tab: 'reader',
+                                unit: result.unitId,
+                                sourceRef,
+                              })
+                            }
+                          >
+                            <LocateFixed aria-hidden="true" />
+                            {short(sourceRef, 16, 7)}
+                          </button>
+                        ))}
+                      </div>
+                    </article>
                   ))
                 ) : (
                   <p className="parse-empty">没有匹配的来源绑定单元。</p>
@@ -610,6 +820,50 @@ export default function DocumentParsingPage() {
                   </div>
                   {reviewContext ? (
                     <section
+                      className="parse-criterion-list"
+                      aria-label="当前 CriterionSet 逐项投影"
+                    >
+                      <header>
+                        <div>
+                          <span>CRITERION SET · FRESH PROJECTION</span>
+                          <h3>{reviewContext.criterionSetId}</h3>
+                        </div>
+                        <strong>{reviewContext.items.length} 项</strong>
+                      </header>
+                      <div className="parse-criterion-grid">
+                        {reviewContext.items.map((item) => {
+                          const selected = item.criterionId === selectedReviewCriterion;
+                          const reviewState = item.latestReview?.status ?? 'NEEDS_REVIEW';
+                          return (
+                            <button
+                              type="button"
+                              className={`parse-criterion-card${selected ? ' is-selected' : ''}`}
+                              key={item.criterionId}
+                              aria-current={selected ? 'true' : undefined}
+                              onClick={() =>
+                                updateDeepLink({
+                                  criterion: item.criterionId,
+                                  node: 'assessment',
+                                  tab: 'assessment',
+                                })
+                              }
+                            >
+                              <span className="parse-criterion-card-id">
+                                {item.criterionId}
+                              </span>
+                              <strong>{item.dynamicResult}</strong>
+                              <p>{item.candidateConclusion}</p>
+                              <small>
+                                {item.humanReviewRequired ? '需人工复核' : '当前无人工复核标记'} · {reviewState}
+                              </small>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </section>
+                  ) : null}
+                  {reviewContext ? (
+                    <section
                       className="parse-engineer-review"
                       aria-label="工程师逐项复核"
                     >
@@ -633,7 +887,11 @@ export default function DocumentParsingPage() {
                           <NativeSelect
                             value={selectedReviewCriterion}
                             onChange={(event) =>
-                              setReviewCriterionId(event.target.value)
+                              updateDeepLink({
+                                criterion: event.target.value,
+                                node: 'assessment',
+                                tab: 'assessment',
+                              })
                             }
                           >
                             {reviewContext.items.map((item) => (
@@ -719,7 +977,7 @@ export default function DocumentParsingPage() {
                           。该确认不等于工程批准或发布。
                         </p>
                         {!aeo ? (
-                          <button
+                          <Button
                             type="button"
                             disabled={assessmentAction !== null}
                             onClick={() => void generateAeoCandidate()}
@@ -727,11 +985,11 @@ export default function DocumentParsingPage() {
                             {assessmentAction === 'GENERATE_AEO_CANDIDATE'
                               ? '正在生成 AEO 候选…'
                               : '生成AEO候选'}
-                          </button>
+                          </Button>
                         ) : null}
                       </div>
                     ) : (
-                      <button
+                      <Button
                         type="button"
                         disabled={assessmentAction !== null}
                         onClick={() => void confirmOverallForAeo()}
@@ -739,7 +997,7 @@ export default function DocumentParsingPage() {
                         {assessmentAction === 'CONFIRM_OVERALL_FOR_AEO'
                           ? '正在确认当前整体综合…'
                           : '确认当前整体综合用于 AEO 候选'}
-                      </button>
+                      </Button>
                     )
                   ) : null}
                 </>
@@ -753,8 +1011,23 @@ export default function DocumentParsingPage() {
                 </div>
               )}
               {assessment ? (
-                <details className="parse-historical-assessment">
-                  <summary>查看历史 Job Aid 候选投影（只读）</summary>
+                <details
+                  className="parse-historical-assessment"
+                  open={searchParams.get('drawer') === 'history'}
+                >
+                  <summary
+                    onClick={(event) => {
+                      event.preventDefault();
+                      updateDeepLink({
+                        drawer:
+                          searchParams.get('drawer') === 'history'
+                            ? null
+                            : 'history',
+                      });
+                    }}
+                  >
+                    查看历史 Job Aid 候选投影（只读）
+                  </summary>
                   <p>
                     {assessment.status} · {assessment.criterionCount} 项 ·{' '}
                     {assessment.applicabilityOverall} · stale=
@@ -773,49 +1046,12 @@ export default function DocumentParsingPage() {
           <EngineeringReasoningTrail data={data} />
 
           {aeo ? (
-            <section
-              className="parse-aeo-panel"
-              id="workspace-aeo"
-              aria-label="AEO 候选编写"
-            >
-              <div className="parse-panel-label">
-                <FileOutput /> AEO 候选编写 · 同一 WorkItem
-              </div>
-              <div className="parse-aeo-heading">
-                <div>
-                  <p className="parse-aeo-kicker">SERVER-CONFIRMED TARGET</p>
-                  <h2>{aeo.targetIdentity}</h2>
-                </div>
-                <span>{aeo.status}</span>
-              </div>
-              <p>
-                处置方式：{aeo.disposition}；权限：{aeo.authorityLevel}
-                。该纵切只产生 Working / Draft candidate / Word
-                candidate，不形成正式 Draft、发布或工程结论。
-              </p>
-              {aeo.authoringTemplate ? (
-                <p>
-                  编写模板：{aeo.authoringTemplate.identity}（
-                  {aeo.authoringTemplate.role}）；模板只提供受控结构，
-                  与服务器派生的候选目标不同。
-                </p>
-              ) : (
-                <p>
-                  历史候选未记录编写模板身份；页面不会据此补猜或改变候选目标。
-                </p>
-              )}
-              <div className="parse-aeo-artifacts">
-                {aeo.artifacts.map((artifact) => (
-                  <div
-                    key={`${artifact.artifactKind}:${artifact.artifactSha256}`}
-                  >
-                    <strong>{artifact.artifactKind}</strong>
-                    <span>{artifact.byteLength.toLocaleString()} bytes</span>
-                    <small>{short(artifact.artifactSha256, 18, 10)}</small>
-                  </div>
-                ))}
-              </div>
-            </section>
+            <AeoAuthoringWorkspace
+              workItemId={workItemId}
+              workItemRevision={data.workItem.revision}
+              aeo={aeo}
+              integratedAssessment={integratedAssessment}
+            />
           ) : null}
 
           <footer className="parse-footer">
@@ -828,7 +1064,7 @@ export default function DocumentParsingPage() {
         <WorkItemContextDock
           data={data}
           refreshing={loading}
-          onRefresh={() => void load(query.trim() || 'applicability')}
+          onRefresh={() => void load(activeQuery)}
         />
       </div>
     </main>

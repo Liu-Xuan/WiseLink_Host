@@ -1,98 +1,434 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
+  Archive,
   ArrowRight,
-  BookOpenCheck,
-  FileStack,
-  Radar,
+  CheckCircle2,
+  ChevronRight,
+  CircleAlert,
+  Clock3,
+  FileBox,
+  FileText,
+  FolderTree,
+  GitBranch,
+  Hash,
+  Link2,
+  LoaderCircle,
+  Network,
+  PackageCheck,
+  RefreshCw,
+  Search,
   ShieldCheck,
   Workflow,
 } from 'lucide-react';
 
+import type {
+  CanonicalDocumentParsingPageResponse,
+  CanonicalWorkItemProjection,
+} from '@shared/api.interface';
+import { getDocumentParsingPage } from '@client/src/api/canonical-host';
+import { Button } from '@client/src/components/ui/button';
+import { Input } from '@client/src/components/ui/input';
+
 import './workspace-home.css';
 
-const WORKSPACES = [
-  {
-    icon: FileStack,
-    label: '资料与版本',
-    detail: 'DocumentVersion、currentness、原件与来源身份。',
-  },
-  {
-    icon: BookOpenCheck,
-    label: '阅读与解析',
-    detail: 'frozen.2、完整 Validator、Reader 与来源定位。',
-  },
-  {
-    icon: Workflow,
-    label: '评估与编写',
-    detail: 'OpenClaw 动态 N、整体候选、人工复核与 AEO 产物。',
-  },
-  {
-    icon: Radar,
-    label: '外部资料',
-    detail: '公开发现、候选审核；真实字节到位后才进入 DM。',
-  },
-] as const;
+type LibrarySelection = 'work-item' | 'document' | 'version' | 'package' | 'assessment' | 'aeo';
+
+interface LibraryNode {
+  id: LibrarySelection;
+  label: string;
+  detail: string;
+  icon: typeof FolderTree;
+  state?: string;
+}
+
+interface RelationNode {
+  id: LibrarySelection;
+  label: string;
+  detail: string;
+  icon: typeof FolderTree;
+  tone: 'blue' | 'teal' | 'amber' | 'purple' | 'slate';
+}
+
+const PHASE_LABELS: Record<CanonicalWorkItemProjection['phase'], string> = {
+  PARSE_REQUESTED: '等待解析',
+  PARSING: '解析中',
+  CANDIDATE_READBACK_VERIFIED: '候选已回读',
+  FAILED: '解析失败',
+  RECORDING_FAILED: '记录失败',
+};
+
+function shortHash(value: string | null | undefined, length = 18): string {
+  const normalized = String(value ?? '').trim();
+  if (!normalized) return '未返回';
+  return normalized.length > length ? `${normalized.slice(0, length)}…` : normalized;
+}
+
+function byteLabel(value: number | null | undefined): string {
+  if (!Number.isFinite(value)) return '未返回';
+  return `${Number(value).toLocaleString('zh-CN')} bytes`;
+}
+
+function errorLabel(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) return error.message;
+  return 'Host fresh-read 失败，请从当前事项深链重新进入。';
+}
+
+function phaseTone(phase: CanonicalWorkItemProjection['phase']): 'ready' | 'loading' | 'danger' | 'muted' {
+  if (phase === 'CANDIDATE_READBACK_VERIFIED') return 'ready';
+  if (phase === 'PARSING' || phase === 'PARSE_REQUESTED') return 'loading';
+  if (phase === 'FAILED' || phase === 'RECORDING_FAILED') return 'danger';
+  return 'muted';
+}
+
+function relationToneClass(tone: RelationNode['tone']): string {
+  return `library-graph-node--${tone}`;
+}
 
 export default function WorkspaceHomePage() {
   const navigate = useNavigate();
-  const [workItemId, setWorkItemId] = useState('');
+  const [searchParams] = useSearchParams();
+  const [workItemId, setWorkItemId] = useState<string>(searchParams.get('workItemId') ?? '');
+  const [data, setData] = useState<CanonicalDocumentParsingPageResponse | null>(null);
+  const [selection, setSelection] = useState<LibrarySelection>('work-item');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [refreshRevision, setRefreshRevision] = useState(0);
 
-  function openWorkItem(): void {
+  useEffect(() => {
+    const deepLinkedWorkItemId = searchParams.get('workItemId')?.trim() ?? '';
+    setWorkItemId(deepLinkedWorkItemId);
+    if (!deepLinkedWorkItemId) {
+      setData(null);
+      setError(null);
+      setSelection('work-item');
+      return;
+    }
+
+    let cancelled = false;
+    setLoading(true);
+    setData(null);
+    setError(null);
+    void getDocumentParsingPage(deepLinkedWorkItemId, '')
+      .then((fresh) => {
+        if (cancelled) return;
+        setData(fresh);
+        setSelection('work-item');
+      })
+      .catch((reason: unknown) => {
+        if (cancelled) return;
+        setData(null);
+        setError(errorLabel(reason));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshRevision, searchParams]);
+
+  const projection = data?.workItem ?? null;
+  const phaseLabel = projection ? PHASE_LABELS[projection.phase] : '等待 WorkItem 绑定';
+  const tone = projection ? phaseTone(projection.phase) : 'muted';
+  const nodes = useMemo<LibraryNode[]>(() => {
+    if (!projection) return [];
+
+    const next: LibraryNode[] = [
+      {
+        id: 'work-item',
+        label: projection.workItemId,
+        detail: `${phaseLabel} · revision ${projection.revision}`,
+        icon: Workflow,
+        state: phaseLabel,
+      },
+      {
+        id: 'document',
+        label: projection.package?.title || projection.source.documentId,
+        detail: 'CanonicalDocumentCatalog · 当前源资料',
+        icon: FileText,
+        state: projection.classification.normalizedFamily,
+      },
+      {
+        id: 'version',
+        label: projection.source.documentVersionId,
+        detail: 'DocumentVersion · 原件身份与来源绑定',
+        icon: GitBranch,
+        state: byteLabel(projection.source.sourceByteLength),
+      },
+    ];
+
+    if (projection.package) {
+      next.push({
+        id: 'package',
+        label: projection.package.packageId,
+        detail: `${projection.package.contractRevision} · ${projection.package.resultStatus}`,
+        icon: PackageCheck,
+        state: `${projection.package.contentUnitCount} units`,
+      });
+    }
+    if (projection.integratedAssessment) {
+      next.push({
+        id: 'assessment',
+        label: '综合评估候选',
+        detail: projection.integratedAssessment.overallSynthesis
+          ? 'OpenClaw overall · candidate_only'
+          : '动态规则结果 · 等待整体综合',
+        icon: CheckCircle2,
+        state: projection.integratedAssessment.status,
+      });
+    }
+    if (projection.aeo) {
+      next.push({
+        id: 'aeo',
+        label: 'AEO 候选编辑',
+        detail: '同一 WorkItem · candidate_only',
+        icon: Archive,
+        state: projection.aeo.status,
+      });
+    }
+    return next;
+  }, [phaseLabel, projection]);
+
+  const relations = useMemo<RelationNode[]>(() => {
+    if (!projection) return [];
+    const next: RelationNode[] = [
+      {
+        id: 'document',
+        label: projection.package?.title || projection.source.documentId,
+        detail: 'source document',
+        icon: FileText,
+        tone: 'blue',
+      },
+      {
+        id: 'version',
+        label: projection.source.documentVersionId,
+        detail: shortHash(projection.source.sourceFileSha256),
+        icon: GitBranch,
+        tone: 'teal',
+      },
+    ];
+    if (projection.package) {
+      next.push({
+        id: 'package',
+        label: projection.package.packageId,
+        detail: `${projection.package.contentUnitCount} units · ${projection.package.sourceRefCount} refs`,
+        icon: PackageCheck,
+        tone: 'amber',
+      });
+    }
+    if (projection.integratedAssessment) {
+      next.push({
+        id: 'assessment',
+        label: '综合评估候选',
+        detail: projection.integratedAssessment.status,
+        icon: CheckCircle2,
+        tone: 'purple',
+      });
+    }
+    if (projection.aeo) {
+      next.push({
+        id: 'aeo',
+        label: 'AEO 候选',
+        detail: 'candidate_only',
+        icon: Archive,
+        tone: 'slate',
+      });
+    }
+    return next;
+  }, [projection]);
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>): void {
+    event.preventDefault();
     const normalized = workItemId.trim();
     if (!normalized) return;
-    navigate(`/work-items/${encodeURIComponent(normalized)}/documents`);
+    navigate(`/?workItemId=${encodeURIComponent(normalized)}`);
+  }
+
+  function openWorkbench(): void {
+    if (!projection) return;
+    navigate(`/work-items/${encodeURIComponent(projection.workItemId)}/documents?node=reader&tab=reader`);
+  }
+
+  function refresh(): void {
+    if (!workItemId.trim()) return;
+    setRefreshRevision((current) => current + 1);
   }
 
   return (
-    <main className="workspace-home">
-      <section className="workspace-home-hero">
+    <main className="library-home">
+      <header className="library-home-header">
         <div>
-          <p>WISELINK 3.1 · CANONICAL ENGINEERING WORKSPACE</p>
-          <h1>把资料、评估与编写，放回同一个工程事项。</h1>
-          <span>
-            这是唯一正式妙搭应用。历史模块贡献页面和交互，不再保留独立应用、
-            独立 WorkItem 或第二套状态。
-          </span>
+          <p className="library-home-eyebrow"><span aria-hidden="true" /> WISELINK 3.1 / DOCUMENT LIBRARY</p>
+          <h1>资料库</h1>
+          <p className="library-home-lede">
+            从资料目录、版本来源和关联链路开始；打开具体事项后，再进入同一 WorkItem 的解析、评估与 AEO 工作台。
+          </p>
         </div>
-        <div className="workspace-home-boundary">
+        <div className="library-read-state" aria-label="资料读取状态">
           <ShieldCheck aria-hidden="true" />
-          <strong>ONE APP</strong>
-          <span>同一权限 · 同一 WorkItem · 同一实际字节</span>
+          <div>
+            <strong>CANONICAL HOST READ</strong>
+            <span>目录、预览和图谱只来自 fresh projection</span>
+          </div>
         </div>
+      </header>
+
+      <section className="library-query-band" aria-labelledby="library-query-title">
+        <div>
+          <span className="library-section-label">OPEN FROM CONTROLLED ENTRY</span>
+          <h2 id="library-query-title">读取一个 WorkItem 资料上下文</h2>
+        </div>
+        <form className="library-query-form" onSubmit={handleSubmit}>
+          <label htmlFor="library-work-item-id">WorkItem ID 或 Aily 深链中的 ID</label>
+          <div className="library-query-row">
+            <div className="library-query-input">
+              <Search aria-hidden="true" />
+              <Input
+                id="library-work-item-id"
+                value={workItemId}
+                onChange={(event) => setWorkItemId(event.target.value)}
+                placeholder="例如 WI-2026-001"
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </div>
+            <Button type="submit" size="lg" disabled={!workItemId.trim() || loading} data-ai-section-type="button">
+              {loading ? <LoaderCircle className="library-spin" aria-hidden="true" /> : <ArrowRight aria-hidden="true" />}
+              {loading ? '读取中…' : '打开资料库'}
+            </Button>
+          </div>
+        </form>
       </section>
 
-      <form
-        className="workspace-home-entry"
-        onSubmit={(event) => {
-          event.preventDefault();
-          openWorkItem();
-        }}
-      >
-        <label htmlFor="canonical-work-item-id">打开 WorkItem</label>
-        <input
-          id="canonical-work-item-id"
-          value={workItemId}
-          onChange={(event) => setWorkItemId(event.target.value)}
-          placeholder="WI-…"
-          autoComplete="off"
-        />
-        <button type="submit" disabled={!workItemId.trim()}>
-          进入统一工作台 <ArrowRight aria-hidden="true" />
-        </button>
-        <small>页面只按服务端 fresh-read 展示；不存在时不会回退样本。</small>
-      </form>
+      {error ? (
+        <div className="library-alert" role="alert">
+          <CircleAlert aria-hidden="true" />
+          <div><strong>当前事项无法读取</strong><span>{error}</span></div>
+          <Button type="button" variant="outline" onClick={refresh}><RefreshCw aria-hidden="true" />重试</Button>
+        </div>
+      ) : null}
 
-      <section className="workspace-home-grid" aria-label="统一工作区">
-        {WORKSPACES.map((workspace, index) => (
-          <article key={workspace.label}>
-            <span>{String(index + 1).padStart(2, '0')}</span>
-            <workspace.icon aria-hidden="true" />
-            <h2>{workspace.label}</h2>
-            <p>{workspace.detail}</p>
-          </article>
-        ))}
+      <section className="library-surface" aria-label="资料库目录与预览">
+        <aside className="library-tree-panel">
+          <div className="library-panel-heading">
+            <div><span className="library-section-label">CATALOG TREE</span><h2>资料目录</h2></div>
+            <FolderTree aria-hidden="true" />
+          </div>
+          <div className="library-tree-root">
+            <div className="library-tree-root-label"><FolderTree aria-hidden="true" /><strong>Canonical Document Catalog</strong></div>
+            <span>HOST</span>
+          </div>
+          {nodes.length === 0 ? (
+            <div className="library-tree-empty">
+              <FileBox aria-hidden="true" />
+              <strong>等待可访问的 WorkItem</strong>
+              <p>首页不创建任务，也不回退历史样本。请从 Aily 任务深链进入，或输入已有 ID。</p>
+            </div>
+          ) : (
+            <div className="library-tree-list" role="tree" aria-label="当前 WorkItem 资料树">
+              {nodes.map((node, index) => {
+                const NodeIcon = node.icon;
+                const isActive = selection === node.id;
+                return (
+                  <button
+                    key={node.id}
+                    type="button"
+                    className={`library-tree-node${isActive ? ' is-active' : ''}`}
+                    onClick={() => setSelection(node.id)}
+                    role="treeitem"
+                    aria-selected={isActive}
+                  >
+                    <span className="library-tree-indent" aria-hidden="true">{index === 0 ? '' : '└'}</span>
+                    <NodeIcon aria-hidden="true" />
+                    <span className="library-tree-copy"><strong>{node.label}</strong><small>{node.detail}</small></span>
+                    {node.state ? <em>{node.state}</em> : null}
+                    <ChevronRight aria-hidden="true" />
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          <div className="library-tree-footer"><Link2 aria-hidden="true" /><span>只读目录 · 不在此处创建或改变 WorkItem</span></div>
+        </aside>
+
+        <section className="library-preview-panel" aria-label="资料预览与概述">
+          <div className="library-panel-heading">
+            <div><span className="library-section-label">PREVIEW / OVERVIEW</span><h2>{projection ? '资料预览' : '预览与概述'}</h2></div>
+            {projection ? <span className={`library-phase library-phase--${tone}`}>{phaseLabel}</span> : null}
+          </div>
+          {!projection ? (
+            <div className="library-preview-empty"><FileText aria-hidden="true" /><h3>选择一个真实事项后查看资料</h3><p>这里将展示资料版本、解析状态、来源摘要和当前可见的内容单元。</p></div>
+          ) : (
+            <>
+              <div className="library-preview-title">
+                <div className="library-document-icon"><FileText aria-hidden="true" /></div>
+                <div><h3>{projection.package?.title || projection.source.documentId}</h3><p>{projection.classification.normalizedFamily} · {projection.source.documentVersionId}</p></div>
+                <Button type="button" size="sm" onClick={openWorkbench}><Workflow aria-hidden="true" />进入工作台</Button>
+              </div>
+              <dl className="library-facts">
+                <div><dt><Hash aria-hidden="true" />WorkItem</dt><dd>{projection.workItemId}</dd></div>
+                <div><dt><Clock3 aria-hidden="true" />Revision</dt><dd>{projection.revision}</dd></div>
+                <div><dt><FileBox aria-hidden="true" />原始字节</dt><dd>{byteLabel(projection.source.sourceByteLength)}</dd></div>
+                <div><dt><GitBranch aria-hidden="true" />来源 SHA</dt><dd title={projection.source.sourceFileSha256}>{shortHash(projection.source.sourceFileSha256)}</dd></div>
+                <div><dt><ShieldCheck aria-hidden="true" />权限快照</dt><dd>{projection.permissionSnapshotVersion}</dd></div>
+                <div><dt><Network aria-hidden="true" />解析单元</dt><dd>{projection.package ? `${projection.package.contentUnitCount} units / ${projection.package.sourceRefCount} refs` : '尚未形成 package'}</dd></div>
+              </dl>
+              <div className="library-preview-block">
+                <div className="library-block-heading"><span>SOURCE-BOUND CONTENT</span><strong>{data?.queryResults.length ?? 0} 个当前返回单元</strong></div>
+                {data?.queryResults.length ? (
+                  <div className="library-content-list">
+                    {data.queryResults.slice(0, 4).map((result) => (
+                      <article key={result.unitId}>
+                        <div><strong>{result.unitId}</strong><span>{result.kind}</span></div>
+                        <p>{result.text}</p>
+                        <small>{result.sourceRefIds.join(' · ') || '无 sourceRef'}</small>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="library-inline-empty">当前 fresh-read 没有返回内容单元；页面不会用样本填充预览。</p>
+                )}
+              </div>
+              {selection !== 'work-item' ? <p className="library-selection-note">当前选中：{nodes.find((node) => node.id === selection)?.label ?? '资料节点'}。右侧概述随 Host projection 更新。</p> : null}
+            </>
+          )}
+        </section>
+
+        <aside className="library-graph-panel" aria-label="关联文档图谱">
+          <div className="library-panel-heading">
+            <div><span className="library-section-label">RELATION GRAPH</span><h2>关联文档图谱</h2></div>
+            <Network aria-hidden="true" />
+          </div>
+          {!projection ? (
+            <div className="library-graph-empty"><Network aria-hidden="true" /><h3>等待资料关系</h3><p>读取事项后展示来源资料、版本、解析包和候选状态之间的 Host 关系。</p></div>
+          ) : (
+            <>
+              <div className="library-graph-note"><GitBranch aria-hidden="true" /><span>当前展示的是 fresh projection 中已返回的来源链，不补造未返回的外部文档关系。</span></div>
+              <div className="library-graph-flow">
+                {relations.map((node, index) => {
+                  const NodeIcon = node.icon;
+                  return (
+                    <div key={node.id} className="library-graph-step">
+                      <button type="button" className={`library-graph-node ${relationToneClass(node.tone)}`} onClick={() => setSelection(node.id)}>
+                        <NodeIcon aria-hidden="true" /><span><strong>{node.label}</strong><small>{node.detail}</small></span>
+                      </button>
+                      {index < relations.length - 1 ? <div className="library-graph-edge"><span>Host relation</span><ArrowRight aria-hidden="true" /></div> : null}
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="library-graph-boundary"><CircleAlert aria-hidden="true" /><span>关联文档图谱的外部节点需由 Host projection 明确返回；当前没有关系时保持空，不以候选替代事实。</span></div>
+            </>
+          )}
+        </aside>
       </section>
+
+      <footer className="library-home-footer">
+        <span><ShieldCheck aria-hidden="true" />唯一 app_17bzc551rsg · WorkItem / permission / revision 由 Host 持有</span>
+        <span>预览仅读 · 候选不等于工程结论</span>
+      </footer>
     </main>
   );
 }

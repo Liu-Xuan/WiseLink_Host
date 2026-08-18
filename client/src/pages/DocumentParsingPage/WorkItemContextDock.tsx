@@ -1,6 +1,7 @@
 import { ArrowUpRight, CheckCircle2, Circle, RefreshCw } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
+import { Button } from '@client/src/components/ui/button';
 import type { CanonicalDocumentParsingPageResponse } from '@shared/api.interface';
 
 interface WorkItemContextDockProps {
@@ -9,13 +10,21 @@ interface WorkItemContextDockProps {
   onRefresh: () => void;
 }
 
+interface ContextStep {
+  label: string;
+  done: boolean;
+}
+
 export function WorkItemContextDock({
   data,
   refreshing,
   onRefresh,
 }: WorkItemContextDockProps) {
   const integrated = data.workItem.integratedAssessment ?? null;
-  const steps = [
+  const overall = integrated?.overallSynthesis ?? null;
+  const unresolvedCount: number = integrated?.baseRules.unresolvedCount ?? 0;
+  const candidateState: string = overall?.status ?? 'WAITING_CANDIDATE';
+  const steps: ContextStep[] = [
     {
       label: 'DocumentVersion',
       done: Boolean(data.workItem.source.documentVersionId),
@@ -24,7 +33,7 @@ export function WorkItemContextDock({
     { label: 'OpenClaw 动态 N', done: Boolean(integrated?.baseRules) },
     {
       label: '整体候选',
-      done: integrated?.overallSynthesis?.status === 'CANDIDATE_ONLY',
+      done: overall?.status === 'CANDIDATE_ONLY',
     },
     { label: 'AEO 候选', done: Boolean(data.workItem.aeo) },
   ];
@@ -32,13 +41,15 @@ export function WorkItemContextDock({
   return (
     <aside className="workitem-context-dock" aria-label="当前工程事项摘要">
       <header>
-        <span>当前工程事项</span>
-        <strong>{data.workItem.phase}</strong>
-        <small>WorkItem revision {data.workItem.revision}</small>
+        <div>
+          <span>WORK ITEM INSPECTOR</span>
+          <strong>{data.workItem.phase}</strong>
+        </div>
+        <small>revision {data.workItem.revision}</small>
       </header>
 
-      <section className="workitem-context-steps">
-        {steps.map((step, index) => (
+      <section className="workitem-context-steps" aria-label="事项阶段">
+        {steps.map((step: ContextStep, index: number) => (
           <div className={step.done ? 'is-done' : ''} key={step.label}>
             {step.done ? (
               <CheckCircle2 aria-hidden="true" />
@@ -58,24 +69,43 @@ export function WorkItemContextDock({
         </div>
         <div>
           <dt>权限快照</dt>
-          <dd>{short(data.readAuthorization.permissionSnapshotVersion)}</dd>
+          <dd title={data.readAuthorization.permissionSnapshotVersion}>
+            {short(data.readAuthorization.permissionSnapshotVersion)}
+          </dd>
         </div>
         <div>
-          <dt>状态</dt>
+          <dt>候选状态</dt>
+          <dd>{candidateState}</dd>
+        </div>
+        <div>
+          <dt>缺口 / 未闭合</dt>
+          <dd>{unresolvedCount}</dd>
+        </div>
+        <div>
+          <dt>页面状态</dt>
           <dd>{data.status}</dd>
         </div>
       </dl>
 
-      <button type="button" disabled={refreshing} onClick={onRefresh}>
+      <Button
+        type="button"
+        variant="outline"
+        disabled={refreshing}
+        onClick={onRefresh}
+        data-ai-section-type="button"
+      >
         <RefreshCw aria-hidden="true" />
         {refreshing ? '正在 fresh-read…' : '刷新当前 WorkItem'}
-      </button>
-      <Link to="/external-discovery">
+      </Button>
+      <Link
+        to={`/external-discovery?workItemId=${encodeURIComponent(
+          data.workItem.workItemId,
+        )}`}
+      >
         查看外部资料候选 <ArrowUpRight aria-hidden="true" />
       </Link>
       <p>
-        页面吸收了历史工作台的目录、阅读与任务摘要布局；所有状态仍来自唯一妙搭
-        WorkItem，不承接旧应用状态。
+        检查器只呈现 Host 的 revision、权限、候选和人工边界；不承接旧应用状态。
       </p>
     </aside>
   );
