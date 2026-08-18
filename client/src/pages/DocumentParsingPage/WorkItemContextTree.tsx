@@ -11,7 +11,10 @@ import {
 } from 'lucide-react';
 
 import { Input } from '@client/src/components/ui/input';
-import type { CanonicalDocumentParsingPageResponse } from '@shared/api.interface';
+import type {
+  CanonicalDocumentParsingPageResponse,
+  CanonicalLibraryIndexNode,
+} from '@shared/api.interface';
 
 type WorkbenchNode =
   | 'document'
@@ -109,107 +112,74 @@ export function WorkItemContextTree({
 }
 
 function buildNodes(data: CanonicalDocumentParsingPageResponse): ContextNode[] {
-  const pkg = data.workItem.package;
-  const integrated = data.workItem.integratedAssessment ?? null;
-  const overall = integrated?.overallSynthesis ?? null;
-  const documentCode: string =
-    pkg?.documentIdentity?.documentCode ?? pkg?.title ?? '受控文档';
-  const revision: string =
-    pkg?.documentIdentity?.businessRevision ?? '当前修订';
-  return [
-    {
-      id: 'family',
-      label: data.workItem.classification.normalizedFamily,
-      detail: data.workItem.classification.parserProfileId,
-      level: 0,
-      target: 'workspace-document',
-      deepLinkNode: 'document',
-      state: 'ready',
-      icon: Boxes,
-    },
-    {
-      id: 'document',
-      label: documentCode,
-      detail: data.workItem.source.documentVersionId,
-      level: 1,
-      target: 'workspace-document',
-      deepLinkNode: 'document',
-      state: 'ready',
-      icon: FileText,
-    },
-    {
-      id: 'revision',
-      label: revision,
-      detail: `${data.workItem.source.sourceByteLength.toLocaleString()} bytes`,
-      level: 2,
-      target: 'workspace-document',
-      deepLinkNode: 'document',
-      state: 'ready',
-      icon: FileCheck2,
-    },
-    {
-      id: 'source',
-      label: '原件与来源身份',
-      detail: data.workItem.source.sourceArtifactId,
-      level: 3,
-      target: 'workspace-document',
-      deepLinkNode: 'document',
-      state: 'ready',
-      icon: FileText,
-    },
-    {
-      id: 'package',
-      label: 'Unified Parsed Package',
-      detail: pkg?.contractRevision ?? '尚未生成',
-      level: 3,
-      target: 'workspace-package',
-      deepLinkNode: 'package',
-      state: pkg ? 'ready' : 'waiting',
-      icon: PackageCheck,
-    },
-    {
-      id: 'reader',
-      label: 'Reader 来源定位',
-      detail: `${data.queryResults.length} 个当前查询结果`,
-      level: 3,
-      target: 'workspace-reader',
-      deepLinkNode: 'reader',
-      state: pkg ? 'ready' : 'waiting',
-      icon: Search,
-    },
-    {
-      id: 'reasoning',
-      label: '查阅与候选形成记录',
-      detail: integrated
-        ? '动态规则 · 整体候选 · 人工动作'
-        : '等待受控评估产物',
-      level: 3,
-      target: 'workspace-reasoning',
-      deepLinkNode: 'overall',
-      state: overall?.staleReason ? 'attention' : integrated ? 'ready' : 'waiting',
-      icon: BrainCircuit,
-    },
-    {
-      id: 'assessment',
-      label: 'OpenClaw 动态 N',
-      detail: integrated?.baseRules.status ?? '尚未生成',
-      level: 3,
-      target: 'workspace-assessment',
-      deepLinkNode: 'assessment',
-      state: integrated?.baseRules ? 'ready' : 'waiting',
-      icon: BrainCircuit,
-    },
-    {
-      id: 'aeo',
-      label: 'AEO 候选编写',
-      detail: data.workItem.aeo?.status ?? '等待人工确认',
-      level: 3,
-      target: data.workItem.aeo ? 'workspace-aeo' : 'workspace-assessment',
-      deepLinkNode: 'aeo',
-      state: data.workItem.aeo ? 'ready' : 'waiting',
-      icon: FileCheck2,
-    },
-  ];
+  const lookup = new Map<string, CanonicalLibraryIndexNode>(
+    data.libraryIndex.nodes.map((node: CanonicalLibraryIndexNode) => [
+      node.id,
+      node,
+    ]),
+  );
+  return data.libraryIndex.nodes.map((node: CanonicalLibraryIndexNode) => {
+    const level = depthFor(node, lookup);
+    return {
+      id: node.id,
+      label: node.label,
+      detail: node.detail,
+      level,
+      target: targetByNode(node.targetNode),
+      deepLinkNode: node.targetNode,
+      state: stateFor(node),
+      icon: iconForNode(node.kind),
+    } satisfies ContextNode;
+  });
+}
+
+function depthFor(
+  node: CanonicalLibraryIndexNode,
+  lookup: Map<string, CanonicalLibraryIndexNode>,
+): number {
+  let depth = 0;
+  let parentId = node.parentId;
+  while (parentId) {
+    const parent = lookup.get(parentId);
+    if (!parent) break;
+    depth += 1;
+    parentId = parent.parentId;
+  }
+  return depth;
+}
+
+function targetByNode(value: CanonicalLibraryIndexNode['targetNode']): string {
+  if (value === 'document') return 'workspace-document';
+  if (value === 'package') return 'workspace-package';
+  if (value === 'reader') return 'workspace-reader';
+  if (value === 'assessment') return 'workspace-assessment';
+  if (value === 'overall') return 'workspace-reasoning';
+  return 'workspace-aeo';
+}
+
+function stateFor(node: CanonicalLibraryIndexNode): 'ready' | 'waiting' | 'attention' {
+  if (node.state.includes('STALE') || node.state.includes('FAILED')) {
+    return 'attention';
+  }
+  if (node.kind === 'AEO_CANDIDATE' && node.state === 'WAITING') {
+    return 'waiting';
+  }
+  if (node.state.includes('WAIT')) {
+    return 'waiting';
+  }
+  return 'ready';
+}
+
+function iconForNode(kind: CanonicalLibraryIndexNode['kind']): typeof FileText {
+  if (kind === 'WORK_ITEM') return Boxes;
+  if (kind === 'DOCUMENT') return FileText;
+  if (kind === 'DOCUMENT_VERSION') return FileCheck2;
+  if (kind === 'PARSED_PACKAGE') return PackageCheck;
+  if (kind === 'READER_QUERY') return Search;
+  if (kind === 'DYNAMIC_EVALUATION' || kind === 'OVERALL_SYNTHESIS') {
+    return BrainCircuit;
+  }
+  return FileCheck2;
 }
 
 export type { WorkbenchNode };

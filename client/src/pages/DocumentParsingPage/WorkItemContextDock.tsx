@@ -22,6 +22,8 @@ export function WorkItemContextDock({
 }: WorkItemContextDockProps) {
   const integrated = data.workItem.integratedAssessment ?? null;
   const overall = integrated?.overallSynthesis ?? null;
+  const audit = data.workbenchAudit;
+  const timeline = data.timeline;
   const unresolvedCount: number = integrated?.baseRules.unresolvedCount ?? 0;
   const candidateState: string = overall?.status ?? 'WAITING_CANDIDATE';
   const steps: ContextStep[] = [
@@ -35,7 +37,7 @@ export function WorkItemContextDock({
       label: '整体候选',
       done: overall?.status === 'CANDIDATE_ONLY',
     },
-    { label: 'AEO 候选', done: Boolean(data.workItem.aeo) },
+    { label: 'AEO 候选（并行）', done: Boolean(data.workItem.aeo) },
   ];
 
   return (
@@ -84,6 +86,14 @@ export function WorkItemContextDock({
         <div>
           <dt>页面状态</dt>
           <dd>{data.status}</dd>
+        </div>
+        <div>
+          <dt>审计步骤</dt>
+          <dd>{audit.candidateFormationSteps.length}</dd>
+        </div>
+        <div>
+          <dt>时间线事件</dt>
+          <dd>{timeline.events.length}</dd>
         </div>
       </dl>
 

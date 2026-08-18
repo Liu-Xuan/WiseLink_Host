@@ -21,6 +21,7 @@ import { OrdinaryWorkItemService } from '../work-item/ordinary-work-item.service
 import { CanonicalHostAeoService } from './canonical-host-aeo.service';
 import { CanonicalHostEngineerReviewService } from './canonical-host-engineer-review.service';
 import { CanonicalHostIntegratedAssessmentService } from './canonical-host-integrated-assessment.service';
+import { buildCanonicalPageProjections } from './canonical-host-page-projections';
 import { CanonicalHostVerticalService } from './canonical-host-vertical.service';
 import type { CanonicalHostActor } from './canonical-host.types';
 
@@ -134,10 +135,16 @@ export class CanonicalHostController {
     actor: CanonicalHostActor,
   ) {
     const page = await this.service.page(input, actor);
+    const engineerReviewContext =
+      await this.engineerReviews.pageContext(page.workItem);
     return {
       ...page,
-      engineerReviewContext:
-        await this.engineerReviews.pageContext(page.workItem),
+      engineerReviewContext,
+      ...buildCanonicalPageProjections({
+        workItem: page.workItem,
+        queryResults: page.queryResults,
+        engineerReviewContext,
+      }),
     };
   }
 }
