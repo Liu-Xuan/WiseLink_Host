@@ -106,6 +106,14 @@ const overall = {
     orchestratorCalls.push({ tool: 'commit_overall_candidate', attemptRef: selectedAttemptRef, output });
     return { workItemId: 'WI-DYNAMIC', workItemRevision: 7, status: 'OVERALL_CANDIDATE_READY' };
   },
+  resume: async (attemptRef) => ({
+    attemptRef,
+    selectedDiscoveryRefs: [],
+    modelInput: {
+      operation: 'SYNTHESIZE_OVERALL_CANDIDATE',
+      outputCorrelationRef: attemptRef,
+    },
+  }),
 };
 const openClawMcp = new CanonicalHostOpenClawMcpService(
   vertical,
@@ -283,6 +291,7 @@ try {
         'commit_dynamic_evaluation_candidate',
         'record_oem_discovery_run',
         'begin_overall_synthesis',
+        'resume_overall_synthesis',
         'commit_overall_candidate',
       ],
     );
@@ -352,6 +361,18 @@ try {
     await openClawClient.callTool({
       name: 'begin_overall_synthesis',
       arguments: { workItemId: 'WI-DYNAMIC', providers: ['BOEING'] },
+    });
+    const resumed = await openClawClient.callTool({
+      name: 'resume_overall_synthesis',
+      arguments: { attemptRef: 'OVR-EXISTING' },
+    });
+    assert.deepEqual(resultJson(resumed), {
+      attemptRef: 'OVR-EXISTING',
+      selectedDiscoveryRefs: [],
+      modelInput: {
+        operation: 'SYNTHESIZE_OVERALL_CANDIDATE',
+        outputCorrelationRef: 'OVR-EXISTING',
+      },
     });
     await openClawClient.callTool({
       name: 'commit_overall_candidate',
@@ -452,6 +473,7 @@ try {
           'commit_dynamic_evaluation_candidate',
           'record_oem_discovery_run',
           'begin_overall_synthesis',
+          'resume_overall_synthesis',
           'commit_overall_candidate',
         ],
         resources: 0,

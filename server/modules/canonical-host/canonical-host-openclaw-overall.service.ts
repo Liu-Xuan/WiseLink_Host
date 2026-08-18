@@ -96,6 +96,55 @@ export class CanonicalHostOpenClawOverallService {
     };
   }
 
+  async resume(
+    attemptReference: string,
+  ): Promise<{
+    attemptRef: string;
+    selectedDiscoveryRefs: string[];
+    modelInput: OpenClawOverallSynthesisInput;
+  }> {
+    const attempt = await this.repository.getOverallSynthesisActionByRef(
+      attemptReference,
+    );
+    if (attempt.actionType !== 'OPENCLAW_OVERALL_SYNTHESIS') {
+      throw new Error('OPENCLAW_OVERALL_RESUME_ACTION_MISMATCH');
+    }
+    if (attempt.status !== 'RUNNING') {
+      throw new Error('OPENCLAW_OVERALL_RESUME_ATTEMPT_NOT_RUNNING');
+    }
+    if (
+      attempt.packageArtifactRef !== null ||
+      attempt.packageArtifactSha256 !== null ||
+      attempt.failureArtifactRef !== null ||
+      attempt.failureArtifactSha256 !== null
+    ) {
+      throw new Error('OPENCLAW_OVERALL_RESUME_ARTIFACT_ALREADY_PRESENT');
+    }
+
+    const workItem = await this.requiredBaseRules(attempt.workItemId);
+    if (workItem.workItemId !== attempt.workItemId) {
+      throw new Error('OPENCLAW_OVERALL_RESUME_WORK_ITEM_MISMATCH');
+    }
+    if (workItem.revision !== attempt.attemptNo) {
+      throw new Error('OPENCLAW_OVERALL_RESUME_REVISION_MISMATCH');
+    }
+    const actor = serviceActor(attempt.tenantId);
+    if (attempt.actorUserId !== actor.userId) {
+      throw new Error('OPENCLAW_OVERALL_SERVICE_ACTOR_MISMATCH');
+    }
+    const permissionSnapshotVersion = await this.authorize(workItem, actor);
+    const packet = await this.buildPacket(
+      workItem,
+      attempt,
+      permissionSnapshotVersion,
+    );
+    return {
+      attemptRef: attempt.triggerRequestId,
+      selectedDiscoveryRefs: packet.selectedDiscoveryRefs,
+      modelInput: packet.modelInput,
+    };
+  }
+
   async commit(
     attemptRef: string,
     output: string,

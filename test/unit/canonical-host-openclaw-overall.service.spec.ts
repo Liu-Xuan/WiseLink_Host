@@ -72,6 +72,45 @@ describe('CanonicalHostOpenClawOverallService', () => {
     expect(harness.state.beginFailures).toHaveLength(1);
   });
 
+  it('resumes an existing RUNNING attempt without reserving or writing', async () => {
+    const harness = createHarness();
+
+    const first = await harness.service.resume(ATTEMPT_REF);
+    const second = await harness.service.resume(ATTEMPT_ID);
+
+    expect(first.attemptRef).toBe(ATTEMPT_REF);
+    expect(second.modelInput).toEqual(first.modelInput);
+    expect(harness.state.reserveCount).toBe(0);
+    expect(harness.state.persisted).toEqual([]);
+    expect(harness.state.completed).toEqual([]);
+    expect(harness.state.failed).toEqual([]);
+  });
+
+  it.each([
+    [{ resumeStatus: 'SUCCEEDED' }, 'OPENCLAW_OVERALL_RESUME_ATTEMPT_NOT_RUNNING'],
+    [{ resumeActionType: 'OPENCLAW_DYNAMIC_EVALUATION' }, 'OPENCLAW_OVERALL_RESUME_ACTION_MISMATCH'],
+    [{ attemptNo: 4 }, 'OPENCLAW_OVERALL_RESUME_REVISION_MISMATCH'],
+    [{ resumeWorkItemId: 'WI-OTHER' }, 'OPENCLAW_OVERALL_RESUME_WORK_ITEM_MISMATCH'],
+  ])('rejects an invalid resume identity: %o', async (options, errorCode) => {
+    const harness = createHarness(options);
+
+    await expect(harness.service.resume(ATTEMPT_REF)).rejects.toThrow(errorCode);
+    expect(harness.state.reserveCount).toBe(0);
+    expect(harness.state.persisted).toEqual([]);
+  });
+
+  it.each([
+    [{ packageArtifactRef: 'artifact://result' }],
+    [{ failureArtifactSha256: BASE_SHA }],
+  ])('rejects a resume when the attempt already has an artifact: %o', async (options) => {
+    const harness = createHarness(options);
+
+    await expect(harness.service.resume(ATTEMPT_REF)).rejects.toThrow(
+      'OPENCLAW_OVERALL_RESUME_ARTIFACT_ALREADY_PRESENT',
+    );
+    expect(harness.state.reserveCount).toBe(0);
+  });
+
   it('rejects a source-evidence candidate whose mapped ref is not in frozen.2', async () => {
     const harness = createHarness({ candidateSourceRef: 'SRC-NOT-IN-PACKAGE' });
 
@@ -217,6 +256,13 @@ interface PersistGate {
 function createHarness(options: {
   workItemRevision?: number;
   attemptNo?: number;
+  resumeStatus?: string;
+  resumeActionType?: string;
+  resumeWorkItemId?: string;
+  packageArtifactRef?: string | null;
+  packageArtifactSha256?: string | null;
+  failureArtifactRef?: string | null;
+  failureArtifactSha256?: string | null;
   candidateSourceRef?: string;
   dynamicSourceResultId?: string;
   freshCriterionSetId?: string;
@@ -235,14 +281,20 @@ function createHarness(options: {
   );
   const attempt = {
     attemptId: ATTEMPT_ID,
-    workItemId: WORK_ITEM_ID,
-    actionType: 'OPENCLAW_OVERALL_SYNTHESIS' as const,
+    workItemId: options.resumeWorkItemId ?? WORK_ITEM_ID,
+    actionType: (options.resumeActionType ?? 'OPENCLAW_OVERALL_SYNTHESIS') as
+      | 'OPENCLAW_OVERALL_SYNTHESIS'
+      | 'OPENCLAW_DYNAMIC_EVALUATION',
     attemptNo: options.attemptNo ?? workItem.revision,
     triggerRequestId: ATTEMPT_REF,
     requestOrigin: 'OPENCLAW_OVR_NONE',
-    status: 'RUNNING' as const,
+    status: options.resumeStatus ?? 'RUNNING',
     actorUserId: 'service:openclaw-main',
     tenantId: 'tenant-overall',
+    packageArtifactRef: options.packageArtifactRef ?? null,
+    packageArtifactSha256: options.packageArtifactSha256 ?? null,
+    failureArtifactRef: options.failureArtifactRef ?? null,
+    failureArtifactSha256: options.failureArtifactSha256 ?? null,
     createdAt: new Date('2026-08-16T12:00:00.000Z'),
   };
   const state = {
@@ -293,6 +345,7 @@ function createHarness(options: {
       return { ...attempt, status: state.status };
     },
     getOverallSynthesisActionByCallerRef: async () => ({ ...attempt, status: state.status }),
+    getOverallSynthesisActionByRef: async () => attempt,
     claimOverallSynthesisCommit: async () => {
       state.claimCount += 1;
       if (state.status !== 'RUNNING') throw new Error('OPENCLAW_OVERALL_COMMIT_ALREADY_CLAIMED');
