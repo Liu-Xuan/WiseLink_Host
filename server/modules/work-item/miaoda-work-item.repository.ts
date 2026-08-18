@@ -5,7 +5,7 @@ import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { and, eq, inArray, isNull, or } from 'drizzle-orm';
 
 import type { CanonicalWorkItemProjection } from '@shared/api.interface';
 import { actionAttempt, workItem } from '../../database/schema';
@@ -70,6 +70,10 @@ export interface OverallSynthesisActionAttempt {
   status: string;
   actorUserId: string;
   tenantId: string;
+  packageArtifactRef: string | null;
+  packageArtifactSha256: string | null;
+  failureArtifactRef: string | null;
+  failureArtifactSha256: string | null;
   createdAt: Date;
 }
 
@@ -494,6 +498,26 @@ export class MiaodaWorkItemRepository {
     return overallSynthesisAttempt(rows[0]);
   }
 
+  async getOverallSynthesisActionByRef(
+    reference: string,
+  ): Promise<OverallSynthesisActionAttempt> {
+    const rows = await this.db
+      .select()
+      .from(actionAttempt)
+      .where(
+        and(
+          eq(actionAttempt.actionType, 'OPENCLAW_OVERALL_SYNTHESIS'),
+          or(
+            eq(actionAttempt.attemptId, reference),
+            eq(actionAttempt.triggerRequestId, reference),
+          ),
+        ),
+      )
+      .limit(2);
+    if (rows.length !== 1) throw new Error('OPENCLAW_OVERALL_ATTEMPT_NOT_FOUND');
+    return overallSynthesisAttempt(rows[0]);
+  }
+
   async claimOverallSynthesisCommit(attemptId: string): Promise<void> {
     const updated = await this.db
       .update(actionAttempt)
@@ -729,6 +753,10 @@ function overallSynthesisAttempt(
     status: stored.status,
     actorUserId: stored.actorUserId,
     tenantId: stored.tenantId,
+    packageArtifactRef: stored.packageArtifactRef,
+    packageArtifactSha256: stored.packageArtifactSha256,
+    failureArtifactRef: stored.failureArtifactRef,
+    failureArtifactSha256: stored.failureArtifactSha256,
     createdAt: stored.createdAt,
   };
 }
