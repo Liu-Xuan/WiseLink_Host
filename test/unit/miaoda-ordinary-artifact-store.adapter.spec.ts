@@ -79,6 +79,51 @@ describe('MiaodaOrdinaryArtifactStoreAdapter', () => {
     expect(scoped.uploadCount).toBe(1);
   });
 
+  it('treats a hosted metadata 404 as an absent object before upload', async () => {
+    const bytes = new TextEncoder().encode('{"package":true}\n');
+    const digest = sha256Raw(bytes);
+    const path = `unified-parsed-packages/sha256/${digest}.json`;
+    const scoped = {
+      getFileMetadata: jest
+        .fn()
+        .mockRejectedValueOnce(
+          Object.assign(new Error('FileService: 404 Not Found'), {
+            statusCode: 404,
+          }),
+        )
+        .mockResolvedValueOnce({
+          id: 'hosted-file-1',
+          bucketID: 'bucket-hosted-test',
+          filePath: `/${path}`,
+          metadata: {
+            contentLength: String(bytes.byteLength),
+            mimeType: 'application/json',
+          },
+        }),
+      upload: jest.fn(async (_bytes: Uint8Array, options: { filePath: string }) => ({
+        filePath: options.filePath,
+      })),
+      download: jest.fn(async () => ({
+        content: bytes,
+        metadata: { id: 'hosted-file-1' },
+      })),
+    };
+    const fileService = {
+      getDefaultBucket: async () => 'bucket-hosted-test',
+      from: () => scoped,
+    };
+    const adapter = new MiaodaOrdinaryArtifactStoreAdapter(
+      fileService as never,
+    );
+
+    await expect(adapter.persistAndReadback(bytes)).resolves.toMatchObject({
+      reused: false,
+      bytes,
+    });
+    expect(scoped.upload).toHaveBeenCalledTimes(1);
+    expect(scoped.getFileMetadata).toHaveBeenCalledTimes(2);
+  });
+
   it('rejects a digest path containing different actual bytes', async () => {
     const scoped = new LocalScopedFileService('bucket-local');
     const fileService = {

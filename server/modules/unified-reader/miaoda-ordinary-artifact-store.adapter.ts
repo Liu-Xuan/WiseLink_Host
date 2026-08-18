@@ -37,7 +37,7 @@ export class MiaodaOrdinaryArtifactStoreAdapter
     const scoped = this.fileService.from(bucketId);
     const existing = await providerCall(
       'ARTIFACT_STORE_METADATA_READ_FAILED',
-      () => scoped.getFileMetadata(filePath),
+      () => getOptionalMetadata(() => scoped.getFileMetadata(filePath)),
     );
     let reused = true;
     if (existing === null) {
@@ -205,4 +205,51 @@ async function providerCall<T>(
     (error as Error & { cause?: unknown }).cause = cause;
     throw error;
   }
+}
+
+/**
+ * FileService implementations normally return null for an absent object, but
+ * the hosted provider may surface the same condition as an HTTP 404/error
+ * code. Only the pre-upload existence probe may normalize that response;
+ * readback remains strict and still treats every provider error as fatal.
+ */
+async function getOptionalMetadata<T>(
+  operation: () => T | PromiseLike<T>,
+): Promise<T | null> {
+  try {
+    return await operation();
+  } catch (cause) {
+    if (isFileNotFoundError(cause)) return null;
+    throw cause;
+  }
+}
+
+function isFileNotFoundError(cause: unknown): boolean {
+  if (!cause || typeof cause !== 'object') return false;
+  const value = cause as {
+    code?: unknown;
+    status?: unknown;
+    statusCode?: unknown;
+    message?: unknown;
+    response?: { status?: unknown; data?: { code?: unknown } };
+    cause?: unknown;
+  };
+  const statuses = [value.status, value.statusCode, value.response?.status];
+  if (statuses.some((status) => Number(status) === 404)) return true;
+
+  const codes = [value.code, value.response?.data?.code]
+    .map((code) => String(code ?? '').trim().toUpperCase())
+    .filter(Boolean);
+  if (codes.some((code) => code === 'NOT_FOUND' || code.endsWith('_NOT_FOUND'))) {
+    return true;
+  }
+
+  const message = String(value.message ?? '').toLowerCase();
+  if (/\b404\b/.test(message) && /not found|does not exist/.test(message)) {
+    return true;
+  }
+  if (/(file|object|path|resource).*(not found|does not exist)/.test(message)) {
+    return true;
+  }
+  return value.cause ? isFileNotFoundError(value.cause) : false;
 }
