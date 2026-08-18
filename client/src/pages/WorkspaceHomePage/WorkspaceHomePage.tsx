@@ -24,6 +24,8 @@ import {
 
 import type {
   CanonicalDocumentParsingPageResponse,
+  CanonicalLibraryIndexNode,
+  CanonicalRelatedDocumentRelation,
   CanonicalWorkItemProjection,
 } from '@shared/api.interface';
 import { getDocumentParsingPage } from '@client/src/api/canonical-host';
@@ -32,7 +34,7 @@ import { Input } from '@client/src/components/ui/input';
 
 import './workspace-home.css';
 
-type LibrarySelection = 'work-item' | 'document' | 'version' | 'package' | 'assessment' | 'aeo';
+type LibrarySelection = string;
 
 interface LibraryNode {
   id: LibrarySelection;
@@ -40,6 +42,7 @@ interface LibraryNode {
   detail: string;
   icon: typeof FolderTree;
   state?: string;
+  targetNode: string;
 }
 
 interface RelationNode {
@@ -83,6 +86,31 @@ function phaseTone(phase: CanonicalWorkItemProjection['phase']): 'ready' | 'load
 
 function relationToneClass(tone: RelationNode['tone']): string {
   return `library-graph-node--${tone}`;
+}
+
+function iconForLibraryKind(kind: CanonicalLibraryIndexNode['kind']): typeof FolderTree {
+  switch (kind) {
+    case 'WORK_ITEM':
+      return Workflow;
+    case 'DOCUMENT':
+      return FileText;
+    case 'DOCUMENT_VERSION':
+      return GitBranch;
+    case 'PARSED_PACKAGE':
+      return PackageCheck;
+    case 'READER_QUERY':
+      return Search;
+    case 'DYNAMIC_EVALUATION':
+      return CheckCircle2;
+    case 'OVERALL_SYNTHESIS':
+      return Network;
+    case 'ENGINEER_REVIEW':
+      return ShieldCheck;
+    case 'AEO_CANDIDATE':
+      return Archive;
+    default:
+      return FolderTree;
+  }
 }
 
 export default function WorkspaceHomePage() {
@@ -133,111 +161,38 @@ export default function WorkspaceHomePage() {
   const phaseLabel = projection ? PHASE_LABELS[projection.phase] : '等待 WorkItem 绑定';
   const tone = projection ? phaseTone(projection.phase) : 'muted';
   const nodes = useMemo<LibraryNode[]>(() => {
-    if (!projection) return [];
-
-    const next: LibraryNode[] = [
-      {
-        id: 'work-item',
-        label: projection.workItemId,
-        detail: `${phaseLabel} · revision ${projection.revision}`,
-        icon: Workflow,
-        state: phaseLabel,
-      },
-      {
-        id: 'document',
-        label: projection.package?.title || projection.source.documentId,
-        detail: 'CanonicalDocumentCatalog · 当前源资料',
-        icon: FileText,
-        state: projection.classification.normalizedFamily,
-      },
-      {
-        id: 'version',
-        label: projection.source.documentVersionId,
-        detail: 'DocumentVersion · 原件身份与来源绑定',
-        icon: GitBranch,
-        state: byteLabel(projection.source.sourceByteLength),
-      },
-    ];
-
-    if (projection.package) {
-      next.push({
-        id: 'package',
-        label: projection.package.packageId,
-        detail: `${projection.package.contractRevision} · ${projection.package.resultStatus}`,
-        icon: PackageCheck,
-        state: `${projection.package.contentUnitCount} units`,
-      });
-    }
-    if (projection.integratedAssessment) {
-      next.push({
-        id: 'assessment',
-        label: '综合评估候选',
-        detail: projection.integratedAssessment.overallSynthesis
-          ? 'OpenClaw overall · candidate_only'
-          : '动态规则结果 · 等待整体综合',
-        icon: CheckCircle2,
-        state: projection.integratedAssessment.status,
-      });
-    }
-    if (projection.aeo) {
-      next.push({
-        id: 'aeo',
-        label: 'AEO 候选编辑',
-        detail: '同一 WorkItem · candidate_only',
-        icon: Archive,
-        state: projection.aeo.status,
-      });
-    }
-    return next;
-  }, [phaseLabel, projection]);
+    if (!data) return [];
+    return data.libraryIndex.nodes.map((node: CanonicalLibraryIndexNode) => ({
+      id: node.id,
+      label: node.label,
+      detail: node.detail,
+      icon: iconForLibraryKind(node.kind),
+      state: node.state,
+      targetNode: node.targetNode,
+    }));
+  }, [data]);
 
   const relations = useMemo<RelationNode[]>(() => {
-    if (!projection) return [];
-    const next: RelationNode[] = [
-      {
-        id: 'document',
-        label: projection.package?.title || projection.source.documentId,
-        detail: 'source document',
-        icon: FileText,
-        tone: 'blue',
-      },
-      {
-        id: 'version',
-        label: projection.source.documentVersionId,
-        detail: shortHash(projection.source.sourceFileSha256),
-        icon: GitBranch,
-        tone: 'teal',
-      },
-    ];
-    if (projection.package) {
-      next.push({
-        id: 'package',
-        label: projection.package.packageId,
-        detail: `${projection.package.contentUnitCount} units · ${projection.package.sourceRefCount} refs`,
-        icon: PackageCheck,
-        tone: 'amber',
-      });
-    }
-    if (projection.integratedAssessment) {
-      next.push({
-        id: 'assessment',
-        label: '综合评估候选',
-        detail: projection.integratedAssessment.status,
-        icon: CheckCircle2,
-        tone: 'purple',
-      });
-    }
-    if (projection.aeo) {
-      next.push({
-        id: 'aeo',
-        label: 'AEO 候选',
-        detail: 'candidate_only',
-        icon: Archive,
-        tone: 'slate',
-      });
-    }
-    return next;
-  }, [projection]);
+    if (!data) return [];
+    return data.relatedDocuments.relations.map(
+      (relation: CanonicalRelatedDocumentRelation): RelationNode => ({
+        id: relation.toNodeId,
+        label: relation.label,
+        detail: `${relation.relationRole} · ${shortHash(relation.sourceLocator)}`,
+        icon: FolderTree,
+        tone:
+          relation.relationRole === 'SELECTED_DOCUMENT_VERSION'
+            ? 'blue'
+            : relation.relationRole === 'PRODUCED_PARSED_PACKAGE'
+              ? 'amber'
+              : relation.relationRole === 'HAS_OVERALL_SYNTHESIS'
+                ? 'purple'
+                : relation.relationRole === 'HAS_AEO_CANDIDATE'
+                  ? 'slate'
+                  : 'teal',
+      }),
+    );
+  }, [data]);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
@@ -248,7 +203,19 @@ export default function WorkspaceHomePage() {
 
   function openWorkbench(): void {
     if (!projection) return;
-    navigate(`/work-items/${encodeURIComponent(projection.workItemId)}/documents?node=reader&tab=reader`);
+    const selectedNode: LibraryNode | undefined = nodes.find(
+      (node: LibraryNode) => node.id === selection,
+    );
+    const targetNode: string = selectedNode?.targetNode ?? 'reader';
+    const targetTab: string =
+      targetNode === 'document'
+        ? 'source'
+        : targetNode === 'package'
+          ? 'source'
+          : targetNode;
+    navigate(
+      `/work-items/${encodeURIComponent(projection.workItemId)}/documents?node=${encodeURIComponent(targetNode)}&tab=${encodeURIComponent(targetTab)}`,
+    );
   }
 
   function refresh(): void {
@@ -364,7 +331,7 @@ export default function WorkspaceHomePage() {
             <>
               <div className="library-preview-title">
                 <div className="library-document-icon"><FileText aria-hidden="true" /></div>
-                <div><h3>{projection.package?.title || projection.source.documentId}</h3><p>{projection.classification.normalizedFamily} · {projection.source.documentVersionId}</p></div>
+                <div><h3>{data.libraryIndex.rootLabel}</h3><p>{projection.classification.normalizedFamily} · {projection.source.documentVersionId}</p></div>
                 <Button type="button" size="sm" onClick={openWorkbench}><Workflow aria-hidden="true" />进入工作台</Button>
               </div>
               <dl className="library-facts">
@@ -374,7 +341,23 @@ export default function WorkspaceHomePage() {
                 <div><dt><GitBranch aria-hidden="true" />来源 SHA</dt><dd title={projection.source.sourceFileSha256}>{shortHash(projection.source.sourceFileSha256)}</dd></div>
                 <div><dt><ShieldCheck aria-hidden="true" />权限快照</dt><dd>{projection.permissionSnapshotVersion}</dd></div>
                 <div><dt><Network aria-hidden="true" />解析单元</dt><dd>{projection.package ? `${projection.package.contentUnitCount} units / ${projection.package.sourceRefCount} refs` : '尚未形成 package'}</dd></div>
+                <div><dt><FolderTree aria-hidden="true" />资料库投影</dt><dd>{data.libraryIndex.nodes.length} nodes</dd></div>
+                <div><dt><Link2 aria-hidden="true" />关系投影</dt><dd>{data.relatedDocuments.relations.length} relations</dd></div>
+                <div><dt><GitBranch aria-hidden="true" />审计条目</dt><dd>{data.workbenchAudit.candidateFormationSteps.length} steps</dd></div>
+                <div><dt><Clock3 aria-hidden="true" />时间线</dt><dd>{data.timeline.events.length} events</dd></div>
               </dl>
+              <div className="library-preview-block">
+                <div className="library-block-heading"><span>WORKBENCH AUDIT</span><strong>{data.workbenchAudit.reader.queryResultCount} reader hits</strong></div>
+                <div className="library-content-list">
+                  {data.workbenchAudit.candidateFormationSteps.map((step) => (
+                    <article key={step.id}>
+                      <div><strong>{step.label}</strong><span>{step.status}</span></div>
+                      <p>{step.summary}</p>
+                      <small title={step.evidenceRef}>{shortHash(step.evidenceRef)}</small>
+                    </article>
+                  ))}
+                </div>
+              </div>
               <div className="library-preview-block">
                 <div className="library-block-heading"><span>SOURCE-BOUND CONTENT</span><strong>{data?.queryResults.length ?? 0} 个当前返回单元</strong></div>
                 {data?.queryResults.length ? (

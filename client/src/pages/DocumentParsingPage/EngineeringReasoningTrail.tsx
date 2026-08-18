@@ -29,8 +29,11 @@ export function EngineeringReasoningTrail({
   const integrated = data.workItem.integratedAssessment ?? null;
   const dynamic = integrated?.baseRules ?? null;
   const overall = integrated?.overallSynthesis ?? null;
+  const audit = data.workbenchAudit;
+  const timeline = data.timeline;
   const sourceRefCount: number = data.workItem.package?.sourceRefCount ?? 0;
   const unresolvedCount: number = dynamic?.unresolvedCount ?? 0;
+  const latestTimelineEvent = timeline.events[timeline.events.length - 1] ?? null;
   const steps: TrailStep[] = [
     {
       label: '锁定工程对象',
@@ -114,6 +117,12 @@ export function EngineeringReasoningTrail({
             <span>
               <strong>{unresolvedCount}</strong> unresolved
             </span>
+            <span>
+              <strong>{audit.candidateFormationSteps.length}</strong> audit steps
+            </span>
+            <span>
+              <strong>{timeline.events.length}</strong> timeline events
+            </span>
           </div>
         </div>
       </header>
@@ -135,6 +144,19 @@ export function EngineeringReasoningTrail({
             <small title={step.evidence}>{short(step.evidence)}</small>
           </article>
         ))}
+      </div>
+      <div className="engineering-reasoning-summary" aria-label="时间线与投影摘要">
+        {latestTimelineEvent ? (
+          <span>
+            <strong>{latestTimelineEvent.kind}</strong> {latestTimelineEvent.status}
+          </span>
+        ) : null}
+        <span>
+          <strong>{audit.reader.queryResultCount}</strong> audit reader hits
+        </span>
+        <span>
+          <strong>{audit.reader.uniqueSourceRefCount}</strong> unique source refs
+        </span>
       </div>
     </section>
   );

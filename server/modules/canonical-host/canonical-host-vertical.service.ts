@@ -27,6 +27,7 @@ import {
   CANONICAL_PERMISSION_SNAPSHOT,
   CANONICAL_WORK_ITEM_REGISTRAR,
 } from './canonical-host.constants';
+import { buildCanonicalPageProjections } from './canonical-host-page-projections';
 import { CanonicalEntryFacadeService } from './canonical-entry-facade.service';
 import { CanonicalFailureRecordingService } from './canonical-failure-recording.service';
 import type {
@@ -293,6 +294,11 @@ export class CanonicalHostVerticalService {
       workItem: projection,
       entry: this.entryFacade.status(projection),
       queryResults,
+      ...buildCanonicalPageProjections({
+        workItem: projection,
+        queryResults,
+        engineerReviewContext: null,
+      }),
       readAuthorization: {
         action: 'READ_DOCUMENT_PARSING',
         decisionId: actionContext.decision.decisionId,

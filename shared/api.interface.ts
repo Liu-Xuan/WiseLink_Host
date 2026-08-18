@@ -763,6 +763,179 @@ export interface CanonicalEntryQueryResponse {
   readback: UnifiedPackageReadbackResponse;
 }
 
+export type CanonicalWorkbenchTargetNode =
+  | 'document'
+  | 'package'
+  | 'reader'
+  | 'assessment'
+  | 'overall'
+  | 'aeo';
+
+export type CanonicalLibraryIndexNodeKind =
+  | 'WORK_ITEM'
+  | 'DOCUMENT'
+  | 'DOCUMENT_VERSION'
+  | 'PARSED_PACKAGE'
+  | 'READER_QUERY'
+  | 'DYNAMIC_EVALUATION'
+  | 'OVERALL_SYNTHESIS'
+  | 'ENGINEER_REVIEW'
+  | 'AEO_CANDIDATE';
+
+export interface CanonicalLibraryIndexNode {
+  id: string;
+  parentId: string | null;
+  kind: CanonicalLibraryIndexNodeKind;
+  label: string;
+  detail: string;
+  state: string;
+  targetNode: CanonicalWorkbenchTargetNode;
+  authority:
+    | 'HOST_WORKITEM_PROJECTION'
+    | 'HOST_READER_PROJECTION'
+    | 'HOST_ENGINEER_REVIEW_CONTEXT';
+}
+
+export interface CanonicalLibraryIndexProjection {
+  schemaVersion: 'wiselink.3_1.library_index_projection.v0.candidate';
+  scope: 'CURRENT_WORKITEM_ONLY';
+  workItemId: string;
+  rootLabel: string;
+  nodes: CanonicalLibraryIndexNode[];
+  completeness: {
+    crossWorkItemLibraryAvailable: false;
+    relatedDocumentIndexAvailable: false;
+    note: string;
+  };
+}
+
+export type CanonicalRelatedDocumentRelationRole =
+  | 'SELECTED_DOCUMENT_VERSION'
+  | 'PRODUCED_PARSED_PACKAGE'
+  | 'HAS_READER_RESULTS'
+  | 'HAS_DYNAMIC_EVALUATION'
+  | 'HAS_ENGINEER_REVIEW'
+  | 'HAS_OVERALL_SYNTHESIS'
+  | 'HAS_AEO_CANDIDATE';
+
+export interface CanonicalRelatedDocumentRelation {
+  id: string;
+  fromNodeId: string;
+  toNodeId: string;
+  relationRole: CanonicalRelatedDocumentRelationRole;
+  label: string;
+  sourceLocator: string;
+  resolution: 'RESOLVED';
+  authority: 'EXPLICIT_WORKITEM_BINDING' | 'DERIVED_FROM_CURRENT_PROJECTION';
+}
+
+export interface CanonicalRelatedDocumentProjection {
+  schemaVersion: 'wiselink.3_1.related_document_projection.v0.candidate';
+  scope: 'CURRENT_WORKITEM_ONLY';
+  workItemId: string;
+  relations: CanonicalRelatedDocumentRelation[];
+  boundary: {
+    externalRelatedDocumentsInferred: false;
+    note: string;
+  };
+}
+
+export interface CanonicalWorkbenchAuditProjection {
+  schemaVersion: 'wiselink.3_1.workbench_audit_projection.v0.candidate';
+  workItemId: string;
+  packageReadback: {
+    packageId: string | null;
+    contractRevision: string | null;
+    resultStatus: string | null;
+    contentUnitCount: number;
+    sourceRefCount: number;
+    artifactRef: string | null;
+    artifactSha256: string | null;
+  };
+  reader: {
+    queryResultCount: number;
+    sourceBoundResultCount: number;
+    uniqueSourceRefCount: number;
+    allReturnedResultsSourceBound: boolean;
+    applicabilityConclusionAllowed: false;
+    note: string;
+  };
+  applicabilityAuthority: {
+    sourceExpressionCount: number | null;
+    normalizedCandidateCount: number | null;
+    assignmentCount: number | null;
+    inferredFromDocumentPresence: false;
+  };
+  dynamicEvaluation: {
+    status: string;
+    criterionSetId: string;
+    criterionCount: number;
+    evaluationItemCount: number;
+    unresolvedCount: number;
+    sourceBoundCandidateCount: number;
+    artifactSha256: string;
+    actionAttemptId: string;
+  } | null;
+  engineerReview: {
+    revision: number;
+    reviewCount: number;
+    effectiveReviewedCount: number;
+    actionAttemptId: string;
+  } | null;
+  overallSynthesis: {
+    status: string;
+    revision: number;
+    discoveryStatus: string;
+    gap: string | null;
+    findingCount: number;
+    candidateRefCount: number;
+    unresolvedCount: number;
+    staleReason: string | null;
+    artifactSha256: string;
+    actionAttemptId: string;
+  } | null;
+  candidateFormationSteps: {
+    id: string;
+    label: string;
+    status: string;
+    summary: string;
+    evidenceRef: string;
+  }[];
+}
+
+export interface CanonicalTimelineEvent {
+  id: string;
+  sequence: number;
+  kind:
+    | 'WORKITEM_REVISION'
+    | 'DOCUMENT_VERSION_BOUND'
+    | 'PACKAGE_READBACK'
+    | 'READER_QUERY'
+    | 'DYNAMIC_EVALUATION'
+    | 'ENGINEER_REVIEW'
+    | 'OVERALL_SYNTHESIS'
+    | 'OVERALL_CONFIRMATION'
+    | 'AEO_CANDIDATE'
+    | 'FAILURE';
+  label: string;
+  status: string;
+  detail: string;
+  occurredAt: string | null;
+  revision: number | null;
+  artifactRef: string | null;
+  actionAttemptId: string | null;
+}
+
+export interface CanonicalTimelineProjection {
+  schemaVersion: 'wiselink.3_1.timeline_projection.v0.candidate';
+  workItemId: string;
+  events: CanonicalTimelineEvent[];
+  boundary: {
+    onlyServerObservedEvents: true;
+    note: string;
+  };
+}
+
 export interface CanonicalDocumentParsingPageResponse {
   schemaVersion: 'wiselink.3_1.document_parsing_page.v0.candidate';
   status: 'FRESH_READ';
@@ -770,6 +943,10 @@ export interface CanonicalDocumentParsingPageResponse {
   entry: CanonicalEntryFacadeResponse;
   queryResults: UnifiedReaderQueryResult[];
   engineerReviewContext?: CanonicalEngineerReviewPageContext | null;
+  libraryIndex: CanonicalLibraryIndexProjection;
+  relatedDocuments: CanonicalRelatedDocumentProjection;
+  workbenchAudit: CanonicalWorkbenchAuditProjection;
+  timeline: CanonicalTimelineProjection;
   readAuthorization: {
     action: 'READ_DOCUMENT_PARSING';
     decisionId: string;
