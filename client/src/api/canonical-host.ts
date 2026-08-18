@@ -10,16 +10,20 @@ import type {
 import { logger } from '@lark-apaas/client-toolkit/logger';
 import { axiosForBackend } from '@lark-apaas/client-toolkit/utils/getAxiosForBackend';
 
+const DEFAULT_DOCUMENT_PARSING_QUERY = 'applicability';
+
 export async function getDocumentParsingPage(
   workItemId: string,
   query: string,
 ): Promise<CanonicalDocumentParsingPageResponse> {
   try {
+    const normalizedQuery =
+      query.trim() || DEFAULT_DOCUMENT_PARSING_QUERY;
     const response =
       await axiosForBackend<CanonicalDocumentParsingPageResponse>({
         url: `/api/canonical-host/work-items/${encodeURIComponent(workItemId)}/document-parsing`,
         method: 'GET',
-        params: { query },
+        params: { query: normalizedQuery },
       });
     if (response.status === 401 || response.status === 403) {
       throw new Error('CANONICAL_PAGE_ACCESS_DENIED');
