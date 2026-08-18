@@ -184,4 +184,45 @@ describe('MiaodaOrdinaryArtifactStoreAdapter', () => {
     expect((caught as Error & { cause?: unknown }).cause).toBe(providerCause);
     expect(fileService.from).not.toHaveBeenCalled();
   });
+
+  it('shares one concurrent default-bucket read without retrying it', async () => {
+    const bytes = new TextEncoder().encode('{"package":true}\n');
+    const digest = sha256Raw(bytes);
+    const path = `unified-parsed-packages/sha256/${digest}.json`;
+    const scoped = new LocalScopedFileService('bucket-concurrent-test');
+    scoped.files.set(path, {
+      id: 'concurrent-file-1',
+      bytes,
+      mimeType: 'application/json',
+    });
+    let releaseBucket!: (bucketId: string) => void;
+    const bucketReady = new Promise<string>((resolve) => {
+      releaseBucket = resolve;
+    });
+    const getDefaultBucket = jest.fn(() => bucketReady);
+    const fileService = {
+      getDefaultBucket,
+      from: () => scoped,
+    };
+    const adapter = new MiaodaOrdinaryArtifactStoreAdapter(
+      fileService as never,
+    );
+    const artifact = {
+      storeRole: 'UnifiedArtifactStoreCandidate' as const,
+      ref:
+        'artifact://UnifiedArtifactStoreCandidate/' +
+        `unified-parsed-packages/sha256/${digest}`,
+      sha256: digest,
+      byteLength: bytes.byteLength,
+      mediaType: 'application/json' as const,
+    };
+
+    const first = adapter.readActualBytes(artifact);
+    const second = adapter.readActualBytes(artifact);
+    expect(getDefaultBucket).toHaveBeenCalledTimes(1);
+    releaseBucket('bucket-concurrent-test');
+
+    await expect(Promise.all([first, second])).resolves.toEqual([bytes, bytes]);
+    expect(getDefaultBucket).toHaveBeenCalledTimes(1);
+  });
 });
