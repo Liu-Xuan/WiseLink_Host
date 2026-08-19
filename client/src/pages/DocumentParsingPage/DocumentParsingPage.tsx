@@ -503,6 +503,18 @@ export default function DocumentParsingPage() {
                   查询 <Search aria-hidden="true" />
                 </Button>
               </form>
+              {data.readerProjection ? (
+                <div className="parse-reader-projection" role="status">
+                  <strong>
+                    Structured units {data.readerProjection.structuredUnitCount} · source refs{' '}
+                    {data.readerProjection.sourceRefCount}
+                  </strong>
+                  <span>
+                    PDF preview: {data.readerProjection.pdfPreview.status} · translation:{' '}
+                    {data.readerProjection.translation.status}
+                  </span>
+                </div>
+              ) : null}
               {requestedSourceRef ? (
                 <div
                   className={`parse-reader-focus${

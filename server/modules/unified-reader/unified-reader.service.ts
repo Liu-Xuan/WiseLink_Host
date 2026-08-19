@@ -179,6 +179,10 @@ export class UnifiedReaderService {
       queryResults: summary.queryResults.map((result) => ({
         ...result,
         sourceRefIds: [...result.sourceRefIds],
+        sourceLocators: result.sourceLocators?.map((locator) => ({
+          ...locator,
+          bbox: locator.bbox ? [...locator.bbox] : null,
+        })),
       })),
     };
   }

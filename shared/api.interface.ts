@@ -56,6 +56,46 @@ export interface UnifiedReaderQueryResult {
   kind: string;
   text: string;
   sourceRefIds: string[];
+  /** Frozen.2 source locator details when the package provides them. */
+  sourceLocators?: UnifiedReaderSourceLocator[];
+}
+
+export interface UnifiedReaderSourceLocator {
+  sourceRefId: string;
+  kind: string;
+  artifactId: string | null;
+  pageStart: number | null;
+  pageEnd: number | null;
+  charStart: number | null;
+  charEnd: number | null;
+  charOffsetUnit: string | null;
+  normalizedPath: string | null;
+  xpath: string | null;
+  elementId: string | null;
+  quote: string | null;
+  bbox: number[] | null;
+}
+
+export interface CanonicalReaderProjection {
+  sourceKind: UnifiedPackageSourceKind;
+  structuredUnitCount: number;
+  sourceRefCount: number;
+  query: string;
+  units: Array<{
+    unitId: string;
+    kind: string;
+    text: string;
+    sourceRefIds: string[];
+    sourceLocators: UnifiedReaderSourceLocator[];
+  }>;
+  pdfPreview: {
+    status: 'UNAVAILABLE';
+    reason: 'PDF_PREVIEW_NOT_CONFIGURED';
+  };
+  translation: {
+    status: 'UNAVAILABLE';
+    reason: 'TRANSLATION_PROJECTION_NOT_AVAILABLE';
+  };
 }
 
 export interface UnifiedReaderCandidateReceipt {
@@ -985,6 +1025,7 @@ export interface CanonicalDocumentParsingPageResponse {
   workItem: CanonicalWorkItemProjection;
   entry: CanonicalEntryFacadeResponse;
   queryResults: UnifiedReaderQueryResult[];
+  readerProjection?: CanonicalReaderProjection | null;
   engineerReviewContext?: CanonicalEngineerReviewPageContext | null;
   libraryIndex: CanonicalLibraryIndexProjection;
   relatedDocuments: CanonicalRelatedDocumentProjection;

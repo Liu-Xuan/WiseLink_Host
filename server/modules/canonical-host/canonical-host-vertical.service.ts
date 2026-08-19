@@ -10,6 +10,8 @@ import type {
   CanonicalPdfVerticalRunRequest,
   CanonicalPdfVerticalRunResponse,
   CanonicalWorkItemProjection,
+  CanonicalReaderProjection,
+  UnifiedPackageSourceKind,
   UnifiedPackageReadbackResponse,
 } from '@shared/api.interface';
 
@@ -293,6 +295,7 @@ export class CanonicalHostVerticalService {
         documentVersionId: projection.source.documentVersionId,
       });
     let queryResults: UnifiedPackageReadbackResponse['queryResults'] = [];
+    let readerSourceKind: UnifiedPackageSourceKind | null = null;
     if (
       projection.phase === 'CANDIDATE_READBACK_VERIFIED' &&
       projection.package !== null
@@ -304,6 +307,7 @@ export class CanonicalHostVerticalService {
           input.query,
         );
       queryResults = readback.queryResults;
+      readerSourceKind = readback.package.sourceKind;
     }
     return {
       schemaVersion: CANONICAL_HOST.documentParsingPageSchemaVersion,
@@ -311,6 +315,12 @@ export class CanonicalHostVerticalService {
       workItem: projection,
       entry: this.entryFacade.status(projection),
       queryResults,
+      readerProjection: buildReaderProjection(
+        projection,
+        queryResults,
+        input.query,
+        readerSourceKind,
+      ),
       ...buildCanonicalPageProjections({
         workItem: projection,
         queryResults,
@@ -550,6 +560,39 @@ export class CanonicalHostVerticalService {
       documentVersionId: request.source.documentVersionId,
     });
   }
+}
+
+function buildReaderProjection(
+  workItem: CanonicalWorkItemProjection,
+  queryResults: UnifiedPackageReadbackResponse['queryResults'],
+  query: string,
+  sourceKind: UnifiedPackageSourceKind | null,
+): CanonicalReaderProjection | null {
+  if (!workItem.package || sourceKind === null) return null;
+  return {
+    sourceKind,
+    structuredUnitCount: workItem.package.contentUnitCount,
+    sourceRefCount: workItem.package.sourceRefCount,
+    query,
+    units: queryResults.map((result) => ({
+      unitId: result.unitId,
+      kind: result.kind,
+      text: result.text,
+      sourceRefIds: [...result.sourceRefIds],
+      sourceLocators: (result.sourceLocators ?? []).map((locator) => ({
+        ...locator,
+        bbox: locator.bbox ? [...locator.bbox] : null,
+      })),
+    })),
+    pdfPreview: {
+      status: 'UNAVAILABLE',
+      reason: 'PDF_PREVIEW_NOT_CONFIGURED',
+    },
+    translation: {
+      status: 'UNAVAILABLE',
+      reason: 'TRANSLATION_PROJECTION_NOT_AVAILABLE',
+    },
+  };
 }
 
 function requiredOpenApiText(

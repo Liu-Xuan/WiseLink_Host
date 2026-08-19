@@ -958,6 +958,18 @@ describe('CanonicalHostVerticalService', () => {
       },
     });
     expect(page.queryResults.length).toBeGreaterThan(0);
+    expect(page.readerProjection).toMatchObject({
+      structuredUnitCount: 311,
+      sourceRefCount: 239,
+      pdfPreview: {
+        status: 'UNAVAILABLE',
+        reason: 'PDF_PREVIEW_NOT_CONFIGURED',
+      },
+      translation: {
+        status: 'UNAVAILABLE',
+        reason: 'TRANSLATION_PROJECTION_NOT_AVAILABLE',
+      },
+    });
     expect(authorizeSpy).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'READ_DOCUMENT_PARSING' }),
     );
