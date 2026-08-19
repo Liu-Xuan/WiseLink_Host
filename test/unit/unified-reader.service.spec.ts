@@ -92,6 +92,7 @@ describe('UnifiedReaderService hosted candidate loop', () => {
         immutableArtifactPersistAndReadback: false,
         sourceBoundCandidateReadback: false,
         workItemMutation: false,
+        currentnessMutation: false,
         publication: false,
       },
       blockers: expect.arrayContaining([
@@ -120,6 +121,10 @@ describe('UnifiedReaderService hosted candidate loop', () => {
 
       expect(response).toMatchObject({
         status: 'CANDIDATE_READBACK_VERIFIED',
+        workItemId: `wi-${sourceKind}`,
+        requestId: `req-${sourceKind}`,
+        documentVersionId: `docv-${sourceKind}`,
+        permissionSnapshotVersion: 'perm-test-1',
         package: {
           packageId,
           sourceKind,
