@@ -502,7 +502,7 @@ export function consumeBaseOneShotAssessmentResult(
   }
   const overallSelfCheck = normalizeOverallSelfCheck(
     parsed,
-    ruleResults: normalizedRuleResults,
+    normalizedRuleResults,
     expectedIds.length,
   );
   return {
@@ -510,7 +510,7 @@ export function consumeBaseOneShotAssessmentResult(
     authorityLevel: 'candidate_only',
     engineeringConclusion: null,
     applicabilityOverall: parsed.applicabilityOverall,
-    ruleResults,
+    ruleResults: normalizedRuleResults,
     overallSelfCheck,
     nextRoundChecklist: parsed.nextRoundChecklist,
     completionSelfCheck: parsed.completionSelfCheck,
@@ -541,11 +541,21 @@ export function serializeNormalizedBaseOneShotOutput(
       BASE_ONE_SHOT_RULE_RESULT_FIELDS.map((field) => rule[field]),
     ),
   };
+  const rowBytes = parsed.ruleResults.rows.map((row: unknown[]) =>
+    Buffer.byteLength(JSON.stringify(row), 'utf8'),
+  );
+  if (rowBytes.some((bytes: number) => bytes > BASE_ONE_SHOT_RULE_RESULT_ROW_MAX_UTF8_BYTES)) {
+    throw new Error('BASE_ONE_SHOT_NORMALIZED_RULE_ROW_BUDGET_EXCEEDED');
+  }
   parsed.overallSelfCheck = {
     ...(parsed.overallSelfCheck ?? {}),
     ...result.overallSelfCheck,
   };
-  return Buffer.from(JSON.stringify(parsed), 'utf8');
+  const bytes = Buffer.from(JSON.stringify(parsed), 'utf8');
+  if (bytes.byteLength > BASE_ONE_SHOT_OUTPUT_MAX_UTF8_BYTES) {
+    throw new Error('BASE_ONE_SHOT_NORMALIZED_OUTPUT_BUDGET_EXCEEDED');
+  }
+  return bytes;
 }
 
 function normalizeOverallSelfCheck(
@@ -670,6 +680,10 @@ function validateRuleSemantics(
     }
     const resultStatus = String(result.result);
     const conclusion = String(result.conclusion);
+    if (expected.predicateResult === 'TRUE' &&
+        (resultStatus === 'BLOCKED_MISSING_INPUT' || missingInputs.length > 0)) {
+      throw new Error(`BASE_ONE_SHOT_TRUE_PREDICATE_BLOCKED:${index}`);
+    }
     if (resultStatus === 'BLOCKED_MISSING_INPUT' && missingInputs.length === 0) {
       throw new Error(`BASE_ONE_SHOT_BLOCKED_WITHOUT_MISSING_INPUT:${index}`);
     }
@@ -677,9 +691,17 @@ function validateRuleSemantics(
         /(?:PASS|FAIL|CONDITIONAL|通过|不通过)/iu.test(resultStatus)) {
       throw new Error(`BASE_ONE_SHOT_FALSE_PREDICATE_CONCLUSION_INVALID:${index}`);
     }
+    if (expected.predicateResult === 'UNKNOWN' &&
+        result.humanReviewRequired !== true) {
+      throw new Error(`BASE_ONE_SHOT_UNKNOWN_REVIEW_REQUIRED:${index}`);
+    }
     const hasSourceCandidate = expected.sourceEvidenceCandidateIds.length > 0;
     const facts = stringArray(result.factsConsidered, 'BASE_ONE_SHOT_FACTS_TYPE_INVALID');
     const sourceRefs = stringArray(result.sourceRefs, 'BASE_ONE_SHOT_SOURCE_REFS_TYPE_INVALID');
+    if (sourceRefs.some((ref: string): boolean =>
+      !expected.sourceEvidenceCandidateIds.includes(ref))) {
+      throw new Error(`BASE_ONE_SHOT_SOURCE_REF_NOT_BOUND:${index}`);
+    }
     if (hasSourceCandidate && expected.predicateResult !== 'FALSE' &&
         facts.length === 0 && sourceRefs.length === 0 &&
         /(?:UNKNOWN\/WAITING_INPUT|WAITING_INPUT|BLOCKED_MISSING_INPUT)/u.test(resultStatus)) {

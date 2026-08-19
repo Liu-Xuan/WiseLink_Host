@@ -27,6 +27,42 @@ describe('dynamic candidate semantic validation', () => {
       'BASE_ONE_SHOT_MISSING_INPUT_NOT_BOUND',
     );
   });
+
+  it('does not allow a TRUE predicate to remain blocked', () => {
+    const packet = packetWithSemantics();
+    const output = candidateOutput(packet, [
+      ['RULE-1', 'UNKNOWN/WAITING_INPUT', ['FACT-1'], '需要补证。', '仍待机队事实。', 'conditional', ['SRC-1'], ['fleet.fact'], true],
+      ['RULE-2', 'BLOCKED_MISSING_INPUT', [], '规则需要补证。', '不应在 TRUE 谓词下阻断。', 'UNKNOWN/WAITING_INPUT', [], [], false],
+      ['RULE-3', 'NOT_APPLICABLE', [], '谓词为 FALSE。', '该规则不适用。', 'not_applicable', [], [], false],
+    ]);
+    expect(() => consumeBaseOneShotAssessmentResult(packet, output)).toThrow(
+      'BASE_ONE_SHOT_TRUE_PREDICATE_BLOCKED',
+    );
+  });
+
+  it('requires UNKNOWN rows to request engineer review', () => {
+    const packet = packetWithSemantics();
+    const output = candidateOutput(packet, [
+      ['RULE-1', 'UNKNOWN/WAITING_INPUT', [], '需要补证。', '仍待机队事实。', 'UNKNOWN/WAITING_INPUT', [], ['fleet.fact'], false],
+      ['RULE-2', 'CANDIDATE_PASS', ['FACT-2'], '已读取来源。', '规则条件满足。', 'pass', ['SRC-2'], [], false],
+      ['RULE-3', 'NOT_APPLICABLE', [], '谓词为 FALSE。', '该规则不适用。', 'not_applicable', [], [], false],
+    ]);
+    expect(() => consumeBaseOneShotAssessmentResult(packet, output)).toThrow(
+      'BASE_ONE_SHOT_UNKNOWN_REVIEW_REQUIRED',
+    );
+  });
+
+  it('rejects source references that are not bound to the criterion', () => {
+    const packet = packetWithSemantics();
+    const output = candidateOutput(packet, [
+      ['RULE-1', 'UNKNOWN/WAITING_INPUT', ['FACT-1'], '需要补证。', '仍待机队事实。', 'UNKNOWN/WAITING_INPUT', ['SRC-1'], ['fleet.fact'], true],
+      ['RULE-2', 'CANDIDATE_PASS', ['FACT-2'], '已读取来源。', '规则条件满足。', 'pass', ['SRC-NOT-BOUND'], [], false],
+      ['RULE-3', 'NOT_APPLICABLE', [], '谓词为 FALSE。', '该规则不适用。', 'not_applicable', [], [], false],
+    ]);
+    expect(() => consumeBaseOneShotAssessmentResult(packet, output)).toThrow(
+      'BASE_ONE_SHOT_SOURCE_REF_NOT_BOUND',
+    );
+  });
 });
 
 function packetWithSemantics(): BaseOneShotAssessmentPacket {
