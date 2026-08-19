@@ -13,12 +13,12 @@ import { NeedLogin } from '@lark-apaas/fullstack-nestjs-core';
 import type { Request } from 'express';
 
 import type {
-  CanonicalDevelopmentWorkItemRunRequest,
   CanonicalEngineerReviewDecision,
   CanonicalEntryQueryRequest,
 } from '@shared/api.interface';
 
 import { OrdinaryWorkItemService } from '../work-item/ordinary-work-item.service';
+import { developmentRunBody } from './canonical-development-run-input';
 import { CanonicalHostAeoService } from './canonical-host-aeo.service';
 import { CanonicalHostEngineerReviewService } from './canonical-host-engineer-review.service';
 import { CanonicalHostIntegratedAssessmentService } from './canonical-host-integrated-assessment.service';
@@ -177,27 +177,6 @@ export function hostActor(request: Request): CanonicalHostActor {
 
 function integratedAssessmentActionBody(body: unknown): void {
   ordinaryBody(body, []);
-}
-
-function developmentRunBody(body: unknown): CanonicalDevelopmentWorkItemRunRequest {
-  const value = ordinaryBody(body, [
-    'documentVersionId',
-    'developmentRunToken',
-    'query',
-  ]);
-  return {
-    documentVersionId: requiredText(
-      value.documentVersionId,
-      'documentVersionId',
-    ),
-    developmentRunToken: requiredText(
-      value.developmentRunToken,
-      'developmentRunToken',
-    ),
-    query: value.query === undefined
-      ? undefined
-      : requiredText(value.query, 'query'),
-  };
 }
 
 function engineerReviewBody(body: unknown): {

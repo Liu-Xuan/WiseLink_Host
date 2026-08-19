@@ -1,5 +1,93 @@
 {
   "paths": {
+    "/openapi/wiselink/development-work-items": {
+      "post": {
+        "operationId": "createDevelopmentWorkItem",
+        "summary": "受控创建 S1 开发验收 WorkItem",
+        "description": "仅供受控开发验收编排调用，不是生产前端功能。服务端从受信请求上下文取得租户，并固定使用 S1 验收服务身份；请求体不得携带 actor、roles、authority 或其他权限字段。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["documentVersionId", "developmentRunToken"],
+                "properties": {
+                  "documentVersionId": {
+                    "type": "string",
+                    "description": "要运行的精确且当前的 DocumentVersion ID",
+                    "example": "document_version_f4813607b91ee1a20e754e2d"
+                  },
+                  "developmentRunToken": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "本次开发验收运行的一次性幂等 UUID",
+                    "example": "0f8fad5b-d9cb-469f-a165-70867728950e"
+                  },
+                  "query": {
+                    "type": "string",
+                    "description": "Reader 查询词，省略时由服务端使用默认查询",
+                    "example": "applicability"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "创建或幂等复用开发验收 WorkItem，并返回首个解析 ActionAttempt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["schemaVersion", "workItemCreated", "workItemReused", "actionAttemptId", "result"],
+                  "properties": {
+                    "schemaVersion": {
+                      "type": "string",
+                      "description": "运行响应合同版本",
+                      "example": "wiselink.3_1.ordinary_work_item_run.v1"
+                    },
+                    "workItemCreated": {
+                      "type": "boolean",
+                      "description": "本次是否新建 WorkItem",
+                      "example": true
+                    },
+                    "workItemReused": {
+                      "type": "boolean",
+                      "description": "本次是否按幂等键复用既有 WorkItem",
+                      "example": false
+                    },
+                    "actionAttemptId": {
+                      "type": "string",
+                      "description": "首个解析 ActionAttempt ID",
+                      "example": "ATT-5f199e47-8f75-4c12-a8f5-bc0f8f3ec401"
+                    },
+                    "result": {
+                      "type": "object",
+                      "description": "解析垂直流程结果；详细字段随 canonical Host 页面 fresh projection 读取",
+                      "example": {
+                        "status": "CANDIDATE_VERTICAL_VERIFIED",
+                        "workItem": { "workItemId": "WI-example", "revision": 1 },
+                        "authority": {
+                          "canonicalRoleSelected": false,
+                          "onlineWritePerformed": true,
+                          "applicationPublished": false,
+                          "currentSelectionChanged": false,
+                          "engineeringConclusionCreated": false
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "请求体、DocumentVersion 或幂等 UUID 无效" },
+          "409": { "description": "DocumentVersion 非当前版本或当前解析配置不可用" }
+        }
+      }
+    },
     "/openapi/wiselink/work-items/status": {
       "get": {
         "operationId": "getWorkItemStatus",
