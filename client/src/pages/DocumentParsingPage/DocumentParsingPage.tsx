@@ -204,6 +204,10 @@ export default function DocumentParsingPage() {
     )
       ? requestedReviewCriterion
       : reviewContext?.items[0]?.criterionId || '';
+  const selectedReviewItem =
+    reviewContext?.items.find(
+      (item) => item.criterionId === selectedReviewCriterion,
+    ) ?? null;
   const fileLabel: string = `${data.workItem.classification.normalizedFamily} · ${short(data.workItem.source.sourceArtifactId, 20, 8)}`;
 
   async function confirmOverallForAeo(): Promise<void> {
@@ -640,6 +644,64 @@ export default function DocumentParsingPage() {
                       </span>
                     </div>
                   </div>
+                  {integratedAssessment.overallSynthesis?.overallCandidate ? (
+                    <section className="parse-business-candidate">
+                      <header>
+                        <div>
+                          <span>AI 初步综合意见 · CANDIDATE ONLY</span>
+                          <h3>先给出工程判断，再由工程师校正</h3>
+                        </div>
+                        <strong>
+                          {integratedAssessment.overallSynthesis
+                            .applicabilityStatus ?? '待人工复核'}
+                        </strong>
+                      </header>
+                      <p>
+                        {integratedAssessment.overallSynthesis.overallCandidate}
+                      </p>
+                      {integratedAssessment.overallSynthesis.findings?.length ? (
+                        <div className="parse-business-findings">
+                          {integratedAssessment.overallSynthesis.findings.map(
+                            (finding, index) => (
+                              <article key={`${finding.finding}-${index}`}>
+                                <h4>{finding.finding}</h4>
+                                <dl>
+                                  <div>
+                                    <dt>依据</dt>
+                                    <dd>{finding.basis}</dd>
+                                  </div>
+                                  <div>
+                                    <dt>假设</dt>
+                                    <dd>
+                                      {finding.assumptions.join('；') || '无额外假设'}
+                                    </dd>
+                                  </div>
+                                  <div>
+                                    <dt>不确定性</dt>
+                                    <dd>{finding.uncertainty}</dd>
+                                  </div>
+                                </dl>
+                              </article>
+                            ),
+                          )}
+                        </div>
+                      ) : null}
+                      {integratedAssessment.overallSynthesis.missingInputs
+                        ?.length ? (
+                        <div className="parse-business-next">
+                          <strong>会改变结论的缺口 / 建议补证</strong>
+                          <ul>
+                            {integratedAssessment.overallSynthesis.missingInputs.map(
+                              (item) => <li key={item}>{item}</li>,
+                            )}
+                          </ul>
+                          <small>
+                            OpenClaw 只对明确缺口按需查询已授权资料源或知识库；未查询的来源不会被伪装成证据。
+                          </small>
+                        </div>
+                      ) : null}
+                    </section>
+                  ) : null}
                   {integratedAssessment.overallSynthesis ? (
                     <p>
                       调查状态：
@@ -882,6 +944,67 @@ export default function DocumentParsingPage() {
                           );
                         })}
                       </div>
+                      {selectedReviewItem ? (
+                        <article className="parse-criterion-detail">
+                          <header>
+                            <div>
+                              <span>当前初步判断</span>
+                              <h4>{selectedReviewItem.criterionId}</h4>
+                            </div>
+                            <strong>{selectedReviewItem.candidateConclusion}</strong>
+                          </header>
+                          <dl>
+                            <div>
+                              <dt>已知事实</dt>
+                              <dd>
+                                {selectedReviewItem.factsConsidered?.join('；') ||
+                                  '当前尚无可引用的受控事实'}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>规则如何作用</dt>
+                              <dd>
+                                {selectedReviewItem.ruleApplication ||
+                                  '尚未形成可解释的规则应用'}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>分析与影响</dt>
+                              <dd>
+                                {selectedReviewItem.analysisSummary ||
+                                  '尚未形成可解释的业务分析'}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>仍缺什么</dt>
+                              <dd>
+                                {selectedReviewItem.missingInputs?.join('；') ||
+                                  '当前没有明确缺口'}
+                              </dd>
+                            </div>
+                          </dl>
+                          {selectedReviewItem.sourceRefs?.length ? (
+                            <div className="parse-criterion-sources">
+                              <span>来源定位</span>
+                              {selectedReviewItem.sourceRefs.map((sourceRef) => (
+                                <button
+                                  type="button"
+                                  key={sourceRef}
+                                  onClick={() =>
+                                    updateDeepLink({
+                                      node: 'reader',
+                                      tab: 'reader',
+                                      sourceRef,
+                                    })
+                                  }
+                                >
+                                  {sourceRef}
+                                </button>
+                              ))}
+                            </div>
+                          ) : null}
+                        </article>
+                      ) : null}
                     </section>
                   ) : null}
                   {reviewContext ? (

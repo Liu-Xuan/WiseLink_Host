@@ -218,6 +218,9 @@ export function buildBaseOneShotAssessmentPacket(
       `完整输出 UTF-8 必须不超过 ${BASE_ONE_SHOT_OUTPUT_MAX_UTF8_BYTES} 字节；每个 ruleResults row JSON 不超过 ${BASE_ONE_SHOT_RULE_RESULT_ROW_MAX_UTF8_BYTES} 字节，不复抄长问题原文、来源原文或重复模板。`,
       'subjectContext 只含已由 Unified/host 绑定的核心字段、包哈希、覆盖计数；sourceEvidenceCatalog 保留规则关联 locator。不得把未提供的逐页原文补造为事实，不得用 query 命中数替代 contentUnit/sourceRef 覆盖。',
       'criterionTable.missingPredicateKeys 是宿主从既有 missingInformation 机械投影的谓词键；missingInputs 只能复用这些键，完整补证描述由 canonical host 持有并在模型返回后机械合并。',
+      '必须先读取每一行的 predicateResult/status/candidateConclusion、missingPredicateKeys 和 sourceEvidenceCandidateIds。已有 predicate、候选结论或来源候选时，必须保留其业务下界并给出该规则的事实、影响和条件性判断；不得把已知候选统一降级为 BLOCKED_MISSING_INPUT。',
+      'BLOCKED_MISSING_INPUT 只能用于该规则确实没有任何可解释的事实下界且 missingInputs 明确非空的项；missingInputs 为空时不得使用该状态。predicateResult=FALSE 必须表达为不适用，predicateResult=TRUE 且已有来源候选时至少给出候选通过、候选不通过或条件性判断之一。',
+      'UNKNOWN/WAITING_INPUT 只表示当前结论维度仍未知，不等于整条规则没有分析。即使需要补证，也必须说明已看到的事实、对工程工作的影响、改变判断所需的输入和建议下一步；不得对全部规则重复使用空事实和三句占位文本。',
       'Base 只执行固定 Job Aid 逐项候选判断、自检和缺口整理；禁止生成整体评估意见，禁止返回 overallAssessment。',
       '整体综合由托管 OpenClaw 基于 Base 的完整 N/N 结果和评估上下文另行完成；本次输出必须设置 holisticSynthesisDeferredToOpenClaw=true、overallOpinionProduced=false。',
       '必须区分受控事实、source-bounded parser candidate、历史意见、知识候选、AI 推断、假设和缺口；缺少受控资源时保留 UNKNOWN/WAITING_INPUT，不得补造。',
@@ -451,6 +454,7 @@ export function consumeBaseOneShotAssessmentResult(
   ) {
     throw new Error('BASE_ONE_SHOT_RULE_MEMBERSHIP_OR_ORDER_MISMATCH');
   }
+  validateRuleSemantics(packet, ruleResults);
   const normalizedRuleResults = normalizePredicateBoundRuleResults(
     packet,
     ruleResults,
@@ -498,7 +502,7 @@ export function consumeBaseOneShotAssessmentResult(
   }
   const overallSelfCheck = normalizeOverallSelfCheck(
     parsed,
-    normalizedRuleResults,
+    ruleResults: normalizedRuleResults,
     expectedIds.length,
   );
   return {
@@ -506,7 +510,7 @@ export function consumeBaseOneShotAssessmentResult(
     authorityLevel: 'candidate_only',
     engineeringConclusion: null,
     applicabilityOverall: parsed.applicabilityOverall,
-    ruleResults: normalizedRuleResults,
+    ruleResults,
     overallSelfCheck,
     nextRoundChecklist: parsed.nextRoundChecklist,
     completionSelfCheck: parsed.completionSelfCheck,
@@ -515,9 +519,8 @@ export function consumeBaseOneShotAssessmentResult(
 }
 
 /**
- * Re-encodes the validated host-normalized rows into the existing Base
- * artifact envelope so later overall/readback consumers see the same
- * predicate semantics without another schema.
+ * Re-encodes host-normalized rows into the existing Base artifact envelope so
+ * later dynamic/overall/readback consumers see the same predicate semantics.
  */
 export function serializeNormalizedBaseOneShotOutput(
   output: string,
@@ -568,9 +571,6 @@ function normalizeOverallSelfCheck(
   ) {
     throw new Error('BASE_ONE_SHOT_OVERALL_SELF_CHECK_MISMATCH');
   }
-  // Counts are recomputed from the host-normalized rows above. This prevents
-  // a model's generic "missing input" count from turning source candidates or
-  // predicate FALSE rows into a package-wide missing-FleetFacts signal.
   return {
     ...value,
     rulesWithMissingInputs,
@@ -578,10 +578,16 @@ function normalizeOverallSelfCheck(
   };
 }
 
+interface CriterionSemanticRow {
+  predicateResult: string;
+  candidateConclusion: string;
+  missingPredicateKeys: string[];
+  sourceEvidenceCandidateIds: string[];
+}
+
 /**
- * The criterion table is the host-owned applicability source. A model may
- * summarize a source candidate, but it cannot turn a controlled predicate
- * result into a different state or invent FleetFacts gaps.
+ * The criterion table is Host-owned applicability input. The model may explain
+ * a candidate, but cannot change FALSE/UNKNOWN/TRUE semantics or invent gaps.
  */
 function normalizePredicateBoundRuleResults(
   packet: BaseOneShotAssessmentPacket,
@@ -646,6 +652,98 @@ function decodeCriterionTableValue(
   const dictionary = table.valueDictionaries?.[column];
   const decoded = dictionary?.[Number(value)];
   return typeof decoded === 'string' ? decoded : null;
+}
+
+function validateRuleSemantics(
+  packet: BaseOneShotAssessmentPacket,
+  ruleResults: Array<Record<string, unknown>>,
+): void {
+  const semantics = criterionSemanticRows(packet);
+  if (semantics === null) return;
+  let genericRows = 0;
+  const signatures = new Set<string>();
+  ruleResults.forEach((result: Record<string, unknown>, index: number): void => {
+    const expected = semantics[index];
+    const missingInputs = stringArray(result.missingInputs, 'BASE_ONE_SHOT_MISSING_INPUTS_TYPE_INVALID');
+    if (missingInputs.some((value: string): boolean => !expected.missingPredicateKeys.includes(value))) {
+      throw new Error(`BASE_ONE_SHOT_MISSING_INPUT_NOT_BOUND:${index}`);
+    }
+    const resultStatus = String(result.result);
+    const conclusion = String(result.conclusion);
+    if (resultStatus === 'BLOCKED_MISSING_INPUT' && missingInputs.length === 0) {
+      throw new Error(`BASE_ONE_SHOT_BLOCKED_WITHOUT_MISSING_INPUT:${index}`);
+    }
+    if (expected.predicateResult === 'FALSE' &&
+        /(?:PASS|FAIL|CONDITIONAL|通过|不通过)/iu.test(resultStatus)) {
+      throw new Error(`BASE_ONE_SHOT_FALSE_PREDICATE_CONCLUSION_INVALID:${index}`);
+    }
+    const hasSourceCandidate = expected.sourceEvidenceCandidateIds.length > 0;
+    const facts = stringArray(result.factsConsidered, 'BASE_ONE_SHOT_FACTS_TYPE_INVALID');
+    const sourceRefs = stringArray(result.sourceRefs, 'BASE_ONE_SHOT_SOURCE_REFS_TYPE_INVALID');
+    if (hasSourceCandidate && expected.predicateResult !== 'FALSE' &&
+        facts.length === 0 && sourceRefs.length === 0 &&
+        /(?:UNKNOWN\/WAITING_INPUT|WAITING_INPUT|BLOCKED_MISSING_INPUT)/u.test(resultStatus)) {
+      throw new Error(`BASE_ONE_SHOT_KNOWN_CANDIDATE_DOWNGRADED:${index}`);
+    }
+    const signature = JSON.stringify([
+      result.ruleApplication,
+      result.analysisSummary,
+      result.conclusion,
+      facts.length,
+      sourceRefs.length,
+    ]);
+    signatures.add(signature);
+    if (facts.length === 0 && sourceRefs.length === 0 &&
+        result.ruleApplication === '按本条规则评估。' &&
+        result.analysisSummary === '受控事实不足。' &&
+        conclusion === 'UNKNOWN/WAITING_INPUT') {
+      genericRows += 1;
+    }
+  });
+  if (ruleResults.length >= 3 && genericRows === ruleResults.length && signatures.size === 1) {
+    throw new Error('BASE_ONE_SHOT_SEMANTIC_OUTPUT_DEGRADED');
+  }
+}
+
+function criterionSemanticRows(
+  packet: BaseOneShotAssessmentPacket,
+): CriterionSemanticRow[] | null {
+  const table = packet.jobAidContext.criterionTable;
+  const required = [
+    'predicateResult',
+    'candidateConclusion',
+    'missingPredicateKeys',
+    'sourceEvidenceCandidateIds',
+  ];
+  if (required.some((column: string): boolean => table.columns.indexOf(column) < 0)) {
+    return null;
+  }
+  return table.rows.map((row: unknown[]): CriterionSemanticRow => ({
+    predicateResult: dictionaryText(row[table.columns.indexOf('predicateResult')], table.valueDictionaries?.predicateResult),
+    candidateConclusion: dictionaryText(row[table.columns.indexOf('candidateConclusion')], table.valueDictionaries?.candidateConclusion),
+    missingPredicateKeys: stringArray(row[table.columns.indexOf('missingPredicateKeys')], 'BASE_ONE_SHOT_INPUT_MISSING_KEYS_INVALID'),
+    sourceEvidenceCandidateIds: stringArray(
+      dictionaryValue(row[table.columns.indexOf('sourceEvidenceCandidateIds')], table.valueDictionaries?.sourceEvidenceCandidateIds),
+      'BASE_ONE_SHOT_INPUT_SOURCE_CANDIDATES_INVALID',
+    ),
+  }));
+}
+
+function dictionaryValue(value: unknown, dictionary: unknown[] | undefined): unknown {
+  if (!Number.isInteger(value) || !Array.isArray(dictionary)) return value;
+  return dictionary[Number(value)];
+}
+
+function dictionaryText(value: unknown, dictionary: unknown[] | undefined): string {
+  const decoded = dictionaryValue(value, dictionary);
+  return typeof decoded === 'string' ? decoded : String(decoded ?? '');
+}
+
+function stringArray(value: unknown, code: string): string[] {
+  if (!Array.isArray(value) || value.some((item: unknown): boolean => typeof item !== 'string')) {
+    throw new Error(code);
+  }
+  return value as string[];
 }
 
 function decodeColumnarRuleResults(

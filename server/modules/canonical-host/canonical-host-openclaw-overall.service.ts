@@ -201,6 +201,12 @@ export class CanonicalHostOpenClawOverallService {
         artifact: persisted.artifact,
         actionAttemptId: attempt.attemptId,
         staleReason: null,
+        overallCandidate: requiredText(parsed.overallCandidate),
+        findings: overallFindings(parsed.findings),
+        missingInputs: requiredTextArray(parsed.missingInputs),
+        applicabilityStatus: requiredText(parsed.applicabilityStatus),
+        engineeringReviewRequired: parsed.engineeringReviewRequired === true,
+        providers: requiredObject(parsed.providers),
       };
       const integratedAssessment: CanonicalIntegratedAssessmentProjection = {
         status: 'OVERALL_CANDIDATE_READY',
@@ -453,6 +459,40 @@ function providerCodesFromOrigin(origin: string): string[] { const value = origi
 function requiredText(value: unknown): string { if (typeof value !== 'string' || !value.trim()) throw new Error('OPENCLAW_OVERALL_RESULT_TEXT_INVALID'); return value; }
 function nullableString(value: unknown): string | null { if (value === null) return null; return requiredText(value); }
 function requiredCount(value: unknown): number { if (!Number.isSafeInteger(value) || Number(value) < 0) throw new Error('OPENCLAW_OVERALL_RESULT_COUNT_INVALID'); return Number(value); }
+function requiredTextArray(value: unknown): string[] {
+  if (!Array.isArray(value) || value.some((item: unknown): boolean => typeof item !== 'string' || !item.trim())) {
+    throw new Error('OPENCLAW_OVERALL_RESULT_TEXT_ARRAY_INVALID');
+  }
+  return value as string[];
+}
+function requiredObject(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('OPENCLAW_OVERALL_RESULT_OBJECT_INVALID');
+  }
+  return value as Record<string, unknown>;
+}
+function overallFindings(value: unknown): Array<{
+  finding: string;
+  basis: string;
+  sourceRefIds: string[];
+  assumptions: string[];
+  uncertainty: string;
+}> {
+  if (!Array.isArray(value)) throw new Error('OPENCLAW_OVERALL_RESULT_FINDINGS_INVALID');
+  return value.map((item: unknown) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      throw new Error('OPENCLAW_OVERALL_RESULT_FINDING_INVALID');
+    }
+    const finding = item as Record<string, unknown>;
+    return {
+      finding: requiredText(finding.finding),
+      basis: requiredText(finding.basis),
+      sourceRefIds: requiredTextArray(finding.sourceRefIds),
+      assumptions: requiredTextArray(finding.assumptions),
+      uncertainty: requiredText(finding.uncertainty),
+    };
+  });
+}
 function withoutRevision(workItem: CanonicalWorkItemProjection): Omit<CanonicalWorkItemProjection, 'revision'> { const { revision: _revision, ...rest } = workItem; return rest; }
 function errorCode(error: unknown): string { return error instanceof Error ? error.message.split(':', 1)[0] : 'OPENCLAW_OVERALL_FAILED'; }
 function errorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error); }

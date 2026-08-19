@@ -559,6 +559,19 @@ export interface CanonicalOpenClawOverallProjection {
     | 'BASE_RULE_RESULT_CHANGED'
     | 'ENGINEER_REVIEW_CHANGED'
     | null;
+  /** Business-readable candidate content copied from the verified overall artifact. */
+  overallCandidate?: string;
+  findings?: Array<{
+    finding: string;
+    basis: string;
+    sourceRefIds: string[];
+    assumptions: string[];
+    uncertainty: string;
+  }>;
+  missingInputs?: string[];
+  applicabilityStatus?: string;
+  engineeringReviewRequired?: boolean;
+  providers?: Record<string, unknown>;
 }
 
 export type CanonicalEngineerReviewDecision =
@@ -581,6 +594,11 @@ export interface CanonicalEngineerReviewPageItem {
   dynamicResult: string;
   candidateConclusion: string;
   humanReviewRequired: boolean;
+  factsConsidered?: string[];
+  ruleApplication?: string;
+  analysisSummary?: string;
+  sourceRefs?: string[];
+  missingInputs?: string[];
   latestReview: {
     decision: CanonicalEngineerReviewDecision;
     status: 'ENGINEER_CONFIRMED' | 'NEEDS_REVIEW';

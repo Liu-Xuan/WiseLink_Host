@@ -275,6 +275,11 @@ export function consumeOpenClawOverallSynthesisOutput(
   same(JSON.stringify(parsed.providers), JSON.stringify(providerSummaries(input.externalDiscoveryResults)), 'OVERALL_PROVIDER_SUMMARY_MISMATCH');
   rejectAuthoritativeNarrative(parsed, findings);
   count(parsed.unresolvedCount, 'OVERALL_UNRESOLVED_COUNT_INVALID');
+  same(
+    parsed.unresolvedCount,
+    input.baseRuleResult.unresolvedCount,
+    'OVERALL_UNRESOLVED_COUNT_MISMATCH',
+  );
   return parsed;
 }
 
@@ -283,6 +288,11 @@ export interface DynamicRuleReviewItem {
   dynamicResult: string;
   candidateConclusion: string;
   humanReviewRequired: boolean;
+  factsConsidered: string[];
+  ruleApplication: string;
+  analysisSummary: string;
+  sourceRefs: string[];
+  missingInputs: string[];
 }
 
 export function readDynamicRuleReviewItems(
@@ -314,7 +324,12 @@ export function readDynamicRuleReviewItems(
     return {
       criterionId,
       dynamicResult: text(raw[1], 'BASE_ITEM_STATUS_INVALID'),
+      factsConsidered: textArray(raw[2], 'BASE_ITEM_FACTS_INVALID'),
+      ruleApplication: text(raw[3], 'BASE_ITEM_RULE_APPLICATION_INVALID'),
+      analysisSummary: text(raw[4], 'BASE_ITEM_ANALYSIS_INVALID'),
       candidateConclusion: text(raw[5], 'BASE_ITEM_CONCLUSION_INVALID'),
+      sourceRefs: textArray(raw[6], 'BASE_ITEM_SOURCE_REFS_INVALID'),
+      missingInputs: textArray(raw[7], 'BASE_ITEM_MISSING_INPUTS_INVALID'),
       humanReviewRequired: boolean(raw[8], 'BASE_ITEM_HUMAN_REVIEW_INVALID'),
     };
   });
