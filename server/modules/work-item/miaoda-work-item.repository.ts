@@ -87,13 +87,14 @@ export class MiaodaWorkItemRepository {
   async reserve(
     input: WorkItemReservationInput,
   ): Promise<WorkItemReservation> {
+    return this.db.transaction(async (transaction) => {
     const now = new Date();
     const candidate = {
       workItemId: `WI-${randomUUID()}`,
       requestId: `REQ-${randomUUID()}`,
       attemptId: `ATT-${randomUUID()}`,
     };
-    const inserted = await this.db
+    const inserted = await transaction
       .insert(workItem)
       .values({
         workItemId: candidate.workItemId,
@@ -123,7 +124,7 @@ export class MiaodaWorkItemRepository {
       })
       .returning({ workItemId: workItem.workItemId });
 
-    const [stored] = await this.db
+    const [stored] = await transaction
       .select()
       .from(workItem)
       .where(
@@ -140,7 +141,7 @@ export class MiaodaWorkItemRepository {
 
     const created = inserted.length === 1;
     if (created) {
-      await this.db
+      await transaction
         .insert(actionAttempt)
         .values({
           attemptId: candidate.attemptId,
@@ -163,7 +164,7 @@ export class MiaodaWorkItemRepository {
           ],
         });
     }
-    const [attempt] = await this.db
+    const [attempt] = await transaction
       .select()
       .from(actionAttempt)
       .where(
@@ -181,6 +182,7 @@ export class MiaodaWorkItemRepository {
       attemptId: attempt.attemptId,
       created,
     };
+    });
   }
 
   async loadProjection(

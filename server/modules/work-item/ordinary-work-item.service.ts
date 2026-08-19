@@ -60,6 +60,7 @@ export interface OrdinaryPdfParseInput {
 
 const DEVELOPMENT_RUN_TOKEN_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+const DEVELOPMENT_WORK_ITEM_ROLE_ID = 'wiselink_development';
 
 @Injectable()
 export class OrdinaryWorkItemService {
@@ -83,6 +84,7 @@ export class OrdinaryWorkItemService {
     input: CanonicalDevelopmentWorkItemRunRequest,
     actor: CanonicalHostActor,
   ): Promise<CanonicalOrdinaryWorkItemRunResponse> {
+    requireDevelopmentWorkItemRole(actor);
     const developmentRunToken = requiredDevelopmentRunToken(
       input.developmentRunToken,
     );
@@ -94,6 +96,7 @@ export class OrdinaryWorkItemService {
       actor,
       'MIAODA',
       `dev:${developmentRunToken}`,
+      true,
     );
   }
 
@@ -102,6 +105,7 @@ export class OrdinaryWorkItemService {
     actor: CanonicalHostActor,
     origin: 'MIAODA' | 'AILY',
     runKey: string,
+    requireCurrentDocumentVersion = false,
   ): Promise<CanonicalOrdinaryWorkItemRunResponse> {
     const context: HostedRequestContext = {
       actorUserId: actor.userId,
@@ -111,7 +115,9 @@ export class OrdinaryWorkItemService {
     const documentVersionId = input.documentVersionId
       ? requiredText(input.documentVersionId, 'documentVersionId', 96)
       : await this.ingestSelection(input.selection, context);
-    const resolved = await this.resolver.resolve(documentVersionId);
+    const resolved = await this.resolver.resolve(documentVersionId, {
+      requireCurrent: requireCurrentDocumentVersion,
+    });
     const classification = classificationFor(resolved.family.documentFamily);
     const reservation = await this.repository.reserve({
       tenantId: actor.tenantId,
@@ -201,6 +207,15 @@ export class OrdinaryWorkItemService {
       'ingest.documentVersionId',
       96,
     );
+  }
+}
+
+function requireDevelopmentWorkItemRole(actor: CanonicalHostActor): void {
+  if (!actor.roles.includes(DEVELOPMENT_WORK_ITEM_ROLE_ID)) {
+    throw Object.assign(new Error('Development WorkItem role is required.'), {
+      code: 'DEVELOPMENT_WORK_ITEM_ROLE_REQUIRED',
+      statusCode: 403,
+    });
   }
 }
 

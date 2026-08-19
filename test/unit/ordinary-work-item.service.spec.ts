@@ -27,7 +27,7 @@ const ACTOR = {
   userId: 'engineer-1001',
   tenantId: 'tenant-2001',
   appId: 'app_17bzc551rsg',
-  roles: ['authenticated'],
+  roles: ['authenticated', 'wiselink_development'],
   env: 'test',
 };
 
@@ -73,6 +73,7 @@ function target() {
     }),
   };
   return {
+    resolver,
     repository,
     service: new OrdinaryWorkItemService(
       {} as never,
@@ -98,7 +99,7 @@ describe('OrdinaryWorkItemService run identity', () => {
   });
 
   it('binds explicit development runs to the normalized UUID key', async () => {
-    const { repository, service } = target();
+    const { repository, resolver, service } = target();
 
     await service.createDevelopmentRun(
       {
@@ -113,6 +114,28 @@ describe('OrdinaryWorkItemService run identity', () => {
         runKey: 'dev:0f8fad5b-d9cb-469f-a165-70867728950e',
       }),
     );
+    expect(resolver.resolve).toHaveBeenCalledWith('document-version-sb', {
+      requireCurrent: true,
+    });
+  });
+
+  it('rejects an authenticated non-developer before DocumentVersion or WorkItem I/O', async () => {
+    const { repository, resolver, service } = target();
+
+    await expect(
+      service.createDevelopmentRun(
+        {
+          documentVersionId: 'document-version-sb',
+          developmentRunToken: '0f8fad5b-d9cb-469f-a165-70867728950e',
+        },
+        { ...ACTOR, roles: ['authenticated'] },
+      ),
+    ).rejects.toMatchObject({
+      code: 'DEVELOPMENT_WORK_ITEM_ROLE_REQUIRED',
+      statusCode: 403,
+    });
+    expect(resolver.resolve).not.toHaveBeenCalled();
+    expect(repository.reserve).not.toHaveBeenCalled();
   });
 
   it('rejects malformed development tokens before reserving a WorkItem', async () => {

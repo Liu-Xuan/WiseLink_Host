@@ -29,10 +29,7 @@ import type {
   CanonicalRelatedDocumentRelation,
   CanonicalWorkItemProjection,
 } from '@shared/api.interface';
-import {
-  createWorkItemFromDocumentVersion,
-  getDocumentParsingPage,
-} from '@client/src/api/canonical-host';
+import { getDocumentParsingPage } from '@client/src/api/canonical-host';
 import { Button } from '@client/src/components/ui/button';
 import { Input } from '@client/src/components/ui/input';
 import {
@@ -128,17 +125,12 @@ export default function WorkspaceHomePage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [workItemId, setWorkItemId] = useState<string>(searchParams.get('workItemId') ?? '');
-  const [documentVersionId, setDocumentVersionId] = useState<string>('');
   const [data, setData] = useState<CanonicalDocumentParsingPageResponse | null>(null);
   const [selection, setSelection] = useState<LibrarySelection>('work-item');
   const [catalogFilter, setCatalogFilter] = useState<string>('');
   const [recentWorkItems, setRecentWorkItems] = useState<RecentWorkItemReference[]>([]);
   const [loading, setLoading] = useState(false);
-  const [creatingWorkItem, setCreatingWorkItem] = useState(false);
-  const [developmentRunToken, setDevelopmentRunToken] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [createError, setCreateError] = useState<string | null>(null);
-  const [createNotice, setCreateNotice] = useState<string | null>(null);
   const [refreshRevision, setRefreshRevision] = useState(0);
 
   useEffect(() => {
@@ -279,38 +271,6 @@ export default function WorkspaceHomePage() {
     navigate(`/?workItemId=${encodeURIComponent(normalized)}`);
   }
 
-  async function handleCreateWorkItem(
-    event: FormEvent<HTMLFormElement>,
-  ): Promise<void> {
-    event.preventDefault();
-    const normalized = documentVersionId.trim();
-    if (!normalized || creatingWorkItem) return;
-    setCreatingWorkItem(true);
-    setCreateError(null);
-    setCreateNotice(null);
-    const runToken: string = developmentRunToken ?? crypto.randomUUID();
-    setDevelopmentRunToken(runToken);
-    try {
-      const response = await createWorkItemFromDocumentVersion(
-        normalized,
-        runToken,
-      );
-      setCreateNotice(
-        response.workItemCreated
-          ? `已创建 ${response.result.workItem.workItemId}`
-          : `请求已安全恢复 ${response.result.workItem.workItemId}`,
-      );
-      setDevelopmentRunToken(null);
-      navigate(
-        `/?workItemId=${encodeURIComponent(response.result.workItem.workItemId)}`,
-      );
-    } catch (reason: unknown) {
-      setCreateError(errorLabel(reason));
-    } finally {
-      setCreatingWorkItem(false);
-    }
-  }
-
   function openWorkbench(targetNodeOverride?: string): void {
     if (!projection) return;
     const selectedNode: LibraryNode | undefined = nodes.find(
@@ -390,41 +350,6 @@ export default function WorkspaceHomePage() {
               {loading ? '读取中…' : '定位资料'}
             </Button>
           </div>
-        </form>
-      </section>
-
-      <section className="library-query-band library-query-band--developer" aria-labelledby="developer-entry-title">
-        <div>
-          <span className="library-section-label">DEVELOPMENT ENTRY</span>
-          <h2 id="developer-entry-title">从受控 DocumentVersion 创建开发事项</h2>
-          <p className="library-query-note">
-            仅用于开发验证；Host 会创建新的 WorkItem，不复用旧 attempt，也不改变 current 文档。
-          </p>
-        </div>
-        <form className="library-query-form" onSubmit={handleCreateWorkItem}>
-          <label htmlFor="library-document-version-id">已确认的 DocumentVersion ID</label>
-          <div className="library-query-row">
-            <div className="library-query-input">
-              <GitBranch aria-hidden="true" />
-              <Input
-                id="library-document-version-id"
-                value={documentVersionId}
-                onChange={(event) => {
-                  setDocumentVersionId(event.target.value);
-                  setDevelopmentRunToken(null);
-                }}
-                placeholder="document_version_f4813607b91ee1a20e754e2d"
-                autoComplete="off"
-                spellCheck={false}
-              />
-            </div>
-            <Button type="submit" size="lg" disabled={!documentVersionId.trim() || creatingWorkItem}>
-              {creatingWorkItem ? <LoaderCircle className="library-spin" aria-hidden="true" /> : <Workflow aria-hidden="true" />}
-              {creatingWorkItem ? '创建中…' : '创建开发 WorkItem'}
-            </Button>
-          </div>
-          {createError ? <p className="library-entry-error" role="alert">{createError}</p> : null}
-          {createNotice ? <p className="library-entry-notice" role="status">{createNotice}</p> : null}
         </form>
       </section>
 

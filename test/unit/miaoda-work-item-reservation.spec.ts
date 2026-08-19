@@ -1,4 +1,5 @@
 import { MiaodaWorkItemRepository } from '../../server/modules/work-item/miaoda-work-item.repository';
+import { actionAttempt } from '../../server/database/schema';
 
 interface StoredWorkItem {
   workItemId: string;
@@ -25,14 +26,29 @@ function database() {
   const workItems: StoredWorkItem[] = [];
   const attempts: StoredAttempt[] = [];
   let selectedKind: 'work-item' | 'attempt' = 'work-item';
+  let failActionAttemptInsert = false;
 
   const db = {
     insert: jest.fn((table: unknown) => {
       const kind: 'work-item' | 'attempt' =
-        String(table).includes('action_attempt') ? 'attempt' : 'work-item';
+        table === actionAttempt ? 'attempt' : 'work-item';
       return {
         values: (value: StoredWorkItem | StoredAttempt) => ({
-          onConflictDoNothing: () => ({
+          onConflictDoNothing: () => {
+            if (kind === 'attempt' && failActionAttemptInsert) {
+              throw new Error('ACTION_ATTEMPT_INSERT_FAILED');
+            }
+            if (kind === 'attempt') {
+              const row = value as StoredAttempt;
+              const existing = attempts.find(
+                (current) =>
+                  current.workItemId === row.workItemId &&
+                  current.actionType === row.actionType &&
+                  current.attemptNo === row.attemptNo,
+              );
+              if (!existing) attempts.push(row);
+            }
+            return {
             returning: async () => {
               if (kind === 'work-item') {
                 const row = value as StoredWorkItem;
@@ -48,22 +64,16 @@ function database() {
                 return [{ workItemId: row.workItemId }];
               }
               const row = value as StoredAttempt;
-              const existing = attempts.find(
-                (current) =>
-                  current.workItemId === row.workItemId &&
-                    current.actionType === row.actionType &&
-                    current.attemptNo === row.attemptNo,
-              );
-              if (!existing) attempts.push(row);
-              return existing ? [] : [{ attemptId: row.attemptId }];
+              return [{ attemptId: row.attemptId }];
             },
-          }),
+          };
+          },
         }),
       };
     }),
     select: jest.fn(() => ({
       from: (table: unknown) => {
-        selectedKind = String(table).includes('action_attempt')
+        selectedKind = table === actionAttempt
           ? 'attempt'
           : 'work-item';
         return {
@@ -77,8 +87,26 @@ function database() {
         };
       },
     })),
+    transaction: jest.fn(async (callback: (transaction: typeof db) => unknown) => {
+      const workItemsSnapshot = [...workItems];
+      const attemptsSnapshot = [...attempts];
+      try {
+        return await callback(db);
+      } catch (error) {
+        workItems.splice(0, workItems.length, ...workItemsSnapshot);
+        attempts.splice(0, attempts.length, ...attemptsSnapshot);
+        throw error;
+      }
+    }),
   };
-  return { db, workItems };
+  return {
+    db,
+    workItems,
+    attempts,
+    failActionAttemptInsert: (value: boolean) => {
+      failActionAttemptInsert = value;
+    },
+  };
 }
 
 function input(runKey: string) {
@@ -111,5 +139,17 @@ describe('MiaodaWorkItemRepository reservation identity', () => {
     expect(second.created).toBe(true);
     expect(second.workItemId).not.toBe(first.workItemId);
     expect(workItems).toHaveLength(2);
+  });
+
+  it('rolls back the WorkItem when the first ActionAttempt insert fails', async () => {
+    const { db, workItems, attempts, failActionAttemptInsert } = database();
+    const repository = new MiaodaWorkItemRepository(db as never);
+    failActionAttemptInsert(true);
+
+    await expect(repository.reserve(input('dev:rollback'))).rejects.toThrow(
+      'ACTION_ATTEMPT_INSERT_FAILED',
+    );
+    expect(workItems).toHaveLength(0);
+    expect(attempts).toHaveLength(0);
   });
 });
