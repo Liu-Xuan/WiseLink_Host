@@ -117,6 +117,22 @@
   box-shadow: 0 4px 18px rgb(30 45 70 / 3%);
 }
 
+.library-query-band--developer {
+  border-color: #c9d8e8;
+  background: #f8fbff;
+}
+
+.library-query-band--developer .library-section-label {
+  color: #8a641d;
+}
+
+.library-entry-error {
+  margin: 7px 0 0;
+  color: #b42318;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
 .library-query-band h2,
 .library-panel-heading h2 {
   margin: 6px 0 0;
@@ -125,6 +141,7 @@
   font-weight: 700;
   line-height: 1.25;
 }
+.library-query-note { max-width: 420px; margin: 8px 0 0; color: #7a8898; font-size: 11px; line-height: 1.6; }
 
 .library-query-form {
   display: grid;
@@ -281,6 +298,9 @@
 .library-tree-root-label svg { width: 16px; height: 16px; color: #3e76b5; }
 .library-tree-root-label strong { overflow: hidden; color: #31445a; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .library-tree-root > span { color: #7e8da1; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 9px; }
+.library-tree-search { display: flex; min-height: 34px; align-items: center; gap: 7px; margin-top: 8px; padding: 0 9px; border: 1px solid #d7e1eb; border-radius: 5px; background: #fff; }
+.library-tree-search > svg { width: 14px; height: 14px; color: #7189a3; }
+.library-tree-search input { min-height: 31px; padding: 0; border: 0; outline: 0; background: transparent; box-shadow: none; font-size: 10px; }
 
 .library-tree-list { display: grid; gap: 3px; margin-top: 8px; }
 
@@ -330,6 +350,24 @@
 .library-tree-empty p,
 .library-preview-empty p,
 .library-graph-empty p { max-width: 240px; margin: 0; color: #8a98a8; font-size: 11px; line-height: 1.65; }
+.library-recent-list { display: grid; gap: 4px; margin-top: 12px; }
+.library-recent-heading { display: flex; align-items: center; gap: 6px; padding: 8px 4px 5px; color: #6d8198; font-size: 10px; font-weight: 700; }
+.library-recent-heading svg { width: 14px; height: 14px; color: #4c82b6; }
+.library-recent-group { display: grid; gap: 4px; }
+.library-recent-group h3 { display: flex; align-items: center; gap: 5px; margin: 7px 4px 2px; color: #72869c; font-size: 9px; font-weight: 750; letter-spacing: 0.04em; text-transform: uppercase; }
+.library-recent-group h3 svg { width: 13px; height: 13px; color: #5c8abb; }
+.library-recent-item { display: flex; width: 100%; min-width: 0; align-items: stretch; border: 1px solid #dfe7ef; border-radius: 5px; background: #fff; }
+.library-recent-item:hover { border-color: #b9d3ed; background: #f3f8fd; }
+.library-recent-open { display: flex; min-width: 0; flex: 1; align-items: center; gap: 7px; padding: 9px 7px; border: 0; text-align: left; background: transparent; cursor: pointer; }
+.library-recent-open > svg:first-child { width: 15px; height: 15px; flex: 0 0 15px; color: #4f81b2; }
+.library-recent-open > svg:last-child { width: 13px; height: 13px; flex: 0 0 13px; color: #9aaaba; }
+.library-recent-open span { display: grid; min-width: 0; flex: 1; gap: 3px; }
+.library-recent-open strong { overflow: hidden; color: #3b536e; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.library-recent-open small { overflow: hidden; color: #8a99a9; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.library-recent-preview { display: grid; width: 31px; flex: 0 0 31px; place-items: center; border: 0; border-left: 1px solid #e5ebf1; color: #6984a0; background: transparent; cursor: pointer; }
+.library-recent-preview:hover { color: #2567a8; background: #eaf3fc; }
+.library-recent-preview svg { width: 14px; height: 14px; }
+.library-recent-boundary, .library-recent-no-result { margin: 8px 4px 0; color: #8c99a8; font-size: 9px; line-height: 1.5; }
 
 .library-tree-footer { gap: 6px; margin-top: auto; padding-top: 15px; color: #8b9aab; font-size: 10px; line-height: 1.5; }
 .library-tree-footer svg { width: 14px; height: 14px; flex: 0 0 14px; }
