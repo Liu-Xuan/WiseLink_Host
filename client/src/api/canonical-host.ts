@@ -3,6 +3,7 @@ import type {
   CanonicalAeoCandidateRunResponse,
   CanonicalEntryQueryRequest,
   CanonicalEntryQueryResponse,
+  CanonicalPdfVerticalRunResponse,
   CanonicalWorkItemProjection,
   CanonicalEngineerReviewDecision,
 } from '@shared/api.interface';
@@ -11,6 +12,32 @@ import { logger } from '@lark-apaas/client-toolkit/logger';
 import { axiosForBackend } from '@lark-apaas/client-toolkit/utils/getAxiosForBackend';
 
 const DEFAULT_DOCUMENT_PARSING_QUERY = 'applicability';
+
+export async function createWorkItemFromDocumentVersion(
+  documentVersionId: string,
+): Promise<CanonicalPdfVerticalRunResponse> {
+  const normalizedDocumentVersionId = documentVersionId.trim();
+  if (!normalizedDocumentVersionId) {
+    throw new Error('DOCUMENT_VERSION_ID_REQUIRED');
+  }
+  try {
+    const response = await axiosForBackend<CanonicalPdfVerticalRunResponse>({
+      url: '/api/canonical-host/work-items/parse-pdf',
+      method: 'POST',
+      data: {
+        documentVersionId: normalizedDocumentVersionId,
+        query: DEFAULT_DOCUMENT_PARSING_QUERY,
+      },
+    });
+    if (response.status === 401 || response.status === 403) {
+      throw new Error('CANONICAL_WORK_ITEM_CREATE_ACCESS_DENIED');
+    }
+    return response.data;
+  } catch (error) {
+    logger.error('从受控 DocumentVersion 创建开发 WorkItem 失败', error);
+    throw error;
+  }
+}
 
 export async function getDocumentParsingPage(
   workItemId: string,

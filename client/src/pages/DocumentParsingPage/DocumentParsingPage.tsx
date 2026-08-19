@@ -28,6 +28,7 @@ import {
 } from '@client/src/components/ui/native-select';
 import { Input } from '@client/src/components/ui/input';
 import { Textarea } from '@client/src/components/ui/textarea';
+import { rememberRecentWorkItem } from '@client/src/utils/recent-work-items';
 
 import { WorkItemContextDock } from './WorkItemContextDock';
 import {
@@ -125,6 +126,15 @@ export default function DocumentParsingPage() {
       const fresh: CanonicalDocumentParsingPageResponse =
         await canonicalHost.getDocumentParsingPage(workItemId, nextQuery);
       setData(fresh);
+      rememberRecentWorkItem({
+        workItemId: fresh.workItem.workItemId,
+        family: fresh.workItem.classification.normalizedFamily,
+        documentLabel:
+          fresh.workItem.package?.documentIdentity?.documentCode ??
+          fresh.workItem.package?.title ??
+          fresh.workItem.source.documentId,
+        documentVersionId: fresh.workItem.source.documentVersionId,
+      });
     } catch (cause) {
       setData(null);
       setError(cause instanceof Error ? cause.message : 'FRESH_READ_FAILED');

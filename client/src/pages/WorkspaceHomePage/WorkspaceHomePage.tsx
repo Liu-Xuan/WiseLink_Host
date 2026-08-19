@@ -8,6 +8,7 @@ import {
   CircleAlert,
   Clock3,
   FileBox,
+  FileClock,
   FileText,
   FolderTree,
   GitBranch,
@@ -28,9 +29,18 @@ import type {
   CanonicalRelatedDocumentRelation,
   CanonicalWorkItemProjection,
 } from '@shared/api.interface';
-import { getDocumentParsingPage } from '@client/src/api/canonical-host';
+import {
+  createWorkItemFromDocumentVersion,
+  getDocumentParsingPage,
+} from '@client/src/api/canonical-host';
 import { Button } from '@client/src/components/ui/button';
 import { Input } from '@client/src/components/ui/input';
+import {
+  readRecentWorkItems,
+  rememberRecentWorkItem,
+  type RecentWorkItemReference,
+  workItemIdFromLocator,
+} from '@client/src/utils/recent-work-items';
 
 import './workspace-home.css';
 
@@ -38,6 +48,7 @@ type LibrarySelection = string;
 
 interface LibraryNode {
   id: LibrarySelection;
+  kind: CanonicalLibraryIndexNode['kind'];
   label: string;
   detail: string;
   icon: typeof FolderTree;
@@ -117,10 +128,15 @@ export default function WorkspaceHomePage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [workItemId, setWorkItemId] = useState<string>(searchParams.get('workItemId') ?? '');
+  const [documentVersionId, setDocumentVersionId] = useState<string>('');
   const [data, setData] = useState<CanonicalDocumentParsingPageResponse | null>(null);
   const [selection, setSelection] = useState<LibrarySelection>('work-item');
+  const [catalogFilter, setCatalogFilter] = useState<string>('');
+  const [recentWorkItems, setRecentWorkItems] = useState<RecentWorkItemReference[]>([]);
   const [loading, setLoading] = useState(false);
+  const [creatingWorkItem, setCreatingWorkItem] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [createError, setCreateError] = useState<string | null>(null);
   const [refreshRevision, setRefreshRevision] = useState(0);
 
   useEffect(() => {
@@ -130,6 +146,7 @@ export default function WorkspaceHomePage() {
       setData(null);
       setError(null);
       setSelection('work-item');
+      setRecentWorkItems(readRecentWorkItems());
       return;
     }
 
@@ -142,6 +159,16 @@ export default function WorkspaceHomePage() {
         if (cancelled) return;
         setData(fresh);
         setSelection('work-item');
+        rememberRecentWorkItem({
+          workItemId: fresh.workItem.workItemId,
+          family: fresh.workItem.classification.normalizedFamily,
+          documentLabel:
+            fresh.workItem.package?.documentIdentity?.documentCode ??
+            fresh.workItem.package?.title ??
+            fresh.workItem.source.documentId,
+          documentVersionId: fresh.workItem.source.documentVersionId,
+        });
+        setRecentWorkItems(readRecentWorkItems());
       })
       .catch((reason: unknown) => {
         if (cancelled) return;
@@ -164,6 +191,7 @@ export default function WorkspaceHomePage() {
     if (!data) return [];
     return data.libraryIndex.nodes.map((node: CanonicalLibraryIndexNode) => ({
       id: node.id,
+      kind: node.kind,
       label: node.label,
       detail: node.detail,
       icon: iconForLibraryKind(node.kind),
@@ -171,6 +199,54 @@ export default function WorkspaceHomePage() {
       targetNode: node.targetNode,
     }));
   }, [data]);
+  const visibleNodes = useMemo<LibraryNode[]>(() => {
+    const filter: string = catalogFilter.trim().toLowerCase();
+    if (!filter) return nodes;
+    return nodes.filter((node: LibraryNode): boolean =>
+      `${node.label} ${node.detail} ${node.state ?? ''}`
+        .toLowerCase()
+        .includes(filter),
+    );
+  }, [catalogFilter, nodes]);
+
+  const recentFamilies = useMemo<
+    Array<{ family: string; documents: RecentWorkItemReference[] }>
+  >(() => {
+    const grouped: Map<string, RecentWorkItemReference[]> = new Map();
+    recentWorkItems.forEach((reference: RecentWorkItemReference): void => {
+      grouped.set(reference.family, [
+        ...(grouped.get(reference.family) ?? []),
+        reference,
+      ]);
+    });
+    return Array.from(grouped.entries()).map(
+      ([family, documents]: [string, RecentWorkItemReference[]]) => ({
+        family,
+        documents,
+      }),
+    );
+  }, [recentWorkItems]);
+
+  const visibleRecentFamilies = useMemo(() => {
+    const filter: string = catalogFilter.trim().toLowerCase();
+    if (!filter) return recentFamilies;
+    return recentFamilies
+      .map(
+        (group: { family: string; documents: RecentWorkItemReference[] }) => ({
+          family: group.family,
+          documents: group.documents.filter(
+            (reference: RecentWorkItemReference): boolean =>
+              `${reference.family} ${reference.documentLabel} ${reference.documentVersionId} ${reference.workItemId}`
+                .toLowerCase()
+                .includes(filter),
+          ),
+        }),
+      )
+      .filter(
+        (group: { family: string; documents: RecentWorkItemReference[] }): boolean =>
+          group.documents.length > 0,
+      );
+  }, [catalogFilter, recentFamilies]);
 
   const relations = useMemo<RelationNode[]>(() => {
     if (!data) return [];
@@ -196,17 +272,35 @@ export default function WorkspaceHomePage() {
 
   function handleSubmit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
-    const normalized = workItemId.trim();
+    const normalized = workItemIdFromLocator(workItemId);
     if (!normalized) return;
     navigate(`/?workItemId=${encodeURIComponent(normalized)}`);
   }
 
-  function openWorkbench(): void {
+  async function handleCreateWorkItem(
+    event: FormEvent<HTMLFormElement>,
+  ): Promise<void> {
+    event.preventDefault();
+    const normalized = documentVersionId.trim();
+    if (!normalized || creatingWorkItem) return;
+    setCreatingWorkItem(true);
+    setCreateError(null);
+    try {
+      const created = await createWorkItemFromDocumentVersion(normalized);
+      navigate(`/?workItemId=${encodeURIComponent(created.workItem.workItemId)}`);
+    } catch (reason: unknown) {
+      setCreateError(errorLabel(reason));
+    } finally {
+      setCreatingWorkItem(false);
+    }
+  }
+
+  function openWorkbench(targetNodeOverride?: string): void {
     if (!projection) return;
     const selectedNode: LibraryNode | undefined = nodes.find(
       (node: LibraryNode) => node.id === selection,
     );
-    const targetNode: string = selectedNode?.targetNode ?? 'reader';
+    const targetNode: string = targetNodeOverride ?? selectedNode?.targetNode ?? 'reader';
     const targetTab: string =
       targetNode === 'document'
         ? 'source'
@@ -216,6 +310,17 @@ export default function WorkspaceHomePage() {
     navigate(
       `/work-items/${encodeURIComponent(projection.workItemId)}/documents?node=${encodeURIComponent(targetNode)}&tab=${encodeURIComponent(targetTab)}`,
     );
+  }
+
+  function selectLibraryNode(node: LibraryNode): void {
+    setSelection(node.id);
+    if (
+      node.kind === 'WORK_ITEM' ||
+      node.kind === 'DOCUMENT' ||
+      node.kind === 'DOCUMENT_VERSION'
+    ) {
+      openWorkbench(node.targetNode);
+    }
   }
 
   function refresh(): void {
@@ -244,11 +349,12 @@ export default function WorkspaceHomePage() {
 
       <section className="library-query-band" aria-labelledby="library-query-title">
         <div>
-          <span className="library-section-label">OPEN FROM CONTROLLED ENTRY</span>
-          <h2 id="library-query-title">读取一个 WorkItem 资料上下文</h2>
+          <span className="library-section-label">START FROM THE LIBRARY</span>
+          <h2 id="library-query-title">从资料目录进入工作台</h2>
+          <p className="library-query-note">先按族群、文档和修订浏览；选择具体资料后，系统会自动打开同一 WorkItem。</p>
         </div>
         <form className="library-query-form" onSubmit={handleSubmit}>
-          <label htmlFor="library-work-item-id">WorkItem ID 或 Aily 深链中的 ID</label>
+          <label htmlFor="library-work-item-id">已有任务链接（次级定位）</label>
           <div className="library-query-row">
             <div className="library-query-input">
               <Search aria-hidden="true" />
@@ -256,16 +362,47 @@ export default function WorkspaceHomePage() {
                 id="library-work-item-id"
                 value={workItemId}
                 onChange={(event) => setWorkItemId(event.target.value)}
-                placeholder="例如 WI-2026-001"
+                placeholder="粘贴 Aily 深链或 WorkItem ID"
                 autoComplete="off"
                 spellCheck={false}
               />
             </div>
             <Button type="submit" size="lg" disabled={!workItemId.trim() || loading} data-ai-section-type="button">
               {loading ? <LoaderCircle className="library-spin" aria-hidden="true" /> : <ArrowRight aria-hidden="true" />}
-              {loading ? '读取中…' : '打开资料库'}
+              {loading ? '读取中…' : '定位资料'}
             </Button>
           </div>
+        </form>
+      </section>
+
+      <section className="library-query-band library-query-band--developer" aria-labelledby="developer-entry-title">
+        <div>
+          <span className="library-section-label">DEVELOPMENT ENTRY</span>
+          <h2 id="developer-entry-title">从受控 DocumentVersion 创建开发事项</h2>
+          <p className="library-query-note">
+            仅用于开发验证；Host 会创建新的 WorkItem，不复用旧 attempt，也不改变 current 文档。
+          </p>
+        </div>
+        <form className="library-query-form" onSubmit={handleCreateWorkItem}>
+          <label htmlFor="library-document-version-id">已确认的 DocumentVersion ID</label>
+          <div className="library-query-row">
+            <div className="library-query-input">
+              <GitBranch aria-hidden="true" />
+              <Input
+                id="library-document-version-id"
+                value={documentVersionId}
+                onChange={(event) => setDocumentVersionId(event.target.value)}
+                placeholder="document_version_f4813607b91ee1a20e754e2d"
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </div>
+            <Button type="submit" size="lg" disabled={!documentVersionId.trim() || creatingWorkItem}>
+              {creatingWorkItem ? <LoaderCircle className="library-spin" aria-hidden="true" /> : <Workflow aria-hidden="true" />}
+              {creatingWorkItem ? '创建中…' : '创建开发 WorkItem'}
+            </Button>
+          </div>
+          {createError ? <p className="library-entry-error" role="alert">{createError}</p> : null}
         </form>
       </section>
 
@@ -287,15 +424,59 @@ export default function WorkspaceHomePage() {
             <div className="library-tree-root-label"><FolderTree aria-hidden="true" /><strong>Canonical Document Catalog</strong></div>
             <span>HOST</span>
           </div>
+          <label className="library-tree-search">
+            <Search aria-hidden="true" />
+            <Input
+              value={catalogFilter}
+              onChange={(event) => setCatalogFilter(event.target.value)}
+              placeholder="筛选文档、版本或族群"
+              aria-label="筛选资料目录"
+            />
+          </label>
           {nodes.length === 0 ? (
-            <div className="library-tree-empty">
-              <FileBox aria-hidden="true" />
-              <strong>等待可访问的 WorkItem</strong>
-              <p>首页不创建任务，也不回退历史样本。请从 Aily 任务深链进入，或输入已有 ID。</p>
-            </div>
+            recentWorkItems.length > 0 ? (
+              <div className="library-recent-list" role="tree" aria-label="最近访问的受控事项">
+                <div className="library-recent-heading"><FileClock aria-hidden="true" /><span>最近访问的受控事项</span></div>
+                {visibleRecentFamilies.map((group) => (
+                  <section className="library-recent-group" key={group.family}>
+                    <h3><FolderTree aria-hidden="true" /> {group.family}</h3>
+                    {group.documents.map((reference: RecentWorkItemReference) => (
+                      <div className="library-recent-item" key={reference.workItemId}>
+                        <button
+                          className="library-recent-open"
+                          type="button"
+                          onClick={() => navigate(`/work-items/${encodeURIComponent(reference.workItemId)}/documents?node=document&tab=source`)}
+                        >
+                          <FileText aria-hidden="true" />
+                          <span><strong>{reference.documentLabel}</strong><small>{reference.documentVersionId || reference.workItemId}</small></span>
+                          <ChevronRight aria-hidden="true" />
+                        </button>
+                        <button
+                          className="library-recent-preview"
+                          type="button"
+                          title="预览资料"
+                          aria-label={`预览 ${reference.documentLabel}`}
+                          onClick={() => navigate(`/?workItemId=${encodeURIComponent(reference.workItemId)}`)}
+                        >
+                          <Search aria-hidden="true" />
+                        </button>
+                      </div>
+                    ))}
+                  </section>
+                ))}
+                {visibleRecentFamilies.length === 0 ? <p className="library-recent-no-result">当前筛选没有匹配资料。</p> : null}
+                <p className="library-recent-boundary">最近访问仅用于导航，不保存资料内容、权限或候选状态。</p>
+              </div>
+            ) : (
+              <div className="library-tree-empty">
+                <FileBox aria-hidden="true" />
+                <strong>从一个真实资料入口开始</strong>
+                <p>从 Aily 任务深链进入一次后，资料会出现在这里；后续点击资料即可回到同一工作台。</p>
+              </div>
+            )
           ) : (
             <div className="library-tree-list" role="tree" aria-label="当前 WorkItem 资料树">
-              {nodes.map((node, index) => {
+              {visibleNodes.map((node, index) => {
                 const NodeIcon = node.icon;
                 const isActive = selection === node.id;
                 return (
@@ -303,7 +484,7 @@ export default function WorkspaceHomePage() {
                     key={node.id}
                     type="button"
                     className={`library-tree-node${isActive ? ' is-active' : ''}`}
-                    onClick={() => setSelection(node.id)}
+                    onClick={() => selectLibraryNode(node)}
                     role="treeitem"
                     aria-selected={isActive}
                   >
@@ -315,6 +496,7 @@ export default function WorkspaceHomePage() {
                   </button>
                 );
               })}
+              {visibleNodes.length === 0 ? <p className="library-recent-no-result">当前筛选没有匹配节点。</p> : null}
             </div>
           )}
           <div className="library-tree-footer"><Link2 aria-hidden="true" /><span>只读目录 · 不在此处创建或改变 WorkItem</span></div>
@@ -326,13 +508,13 @@ export default function WorkspaceHomePage() {
             {projection ? <span className={`library-phase library-phase--${tone}`}>{phaseLabel}</span> : null}
           </div>
           {!projection ? (
-            <div className="library-preview-empty"><FileText aria-hidden="true" /><h3>选择一个真实事项后查看资料</h3><p>这里将展示资料版本、解析状态、来源摘要和当前可见的内容单元。</p></div>
+            <div className="library-preview-empty"><FileText aria-hidden="true" /><h3>选择左侧资料节点</h3><p>资料预览、来源绑定和候选状态会在 Host fresh-read 返回后显示；目录不会创建或猜测 WorkItem。</p></div>
           ) : (
             <>
               <div className="library-preview-title">
                 <div className="library-document-icon"><FileText aria-hidden="true" /></div>
                 <div><h3>{data.libraryIndex.rootLabel}</h3><p>{projection.classification.normalizedFamily} · {projection.source.documentVersionId}</p></div>
-                <Button type="button" size="sm" onClick={openWorkbench}><Workflow aria-hidden="true" />进入工作台</Button>
+                <Button type="button" size="sm" onClick={() => openWorkbench()}><Workflow aria-hidden="true" />进入工作台</Button>
               </div>
               <dl className="library-facts">
                 <div><dt><Hash aria-hidden="true" />WorkItem</dt><dd>{projection.workItemId}</dd></div>
