@@ -135,8 +135,10 @@ export default function WorkspaceHomePage() {
   const [recentWorkItems, setRecentWorkItems] = useState<RecentWorkItemReference[]>([]);
   const [loading, setLoading] = useState(false);
   const [creatingWorkItem, setCreatingWorkItem] = useState(false);
+  const [developmentRunToken, setDevelopmentRunToken] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [createNotice, setCreateNotice] = useState<string | null>(null);
   const [refreshRevision, setRefreshRevision] = useState(0);
 
   useEffect(() => {
@@ -185,7 +187,7 @@ export default function WorkspaceHomePage() {
   }, [refreshRevision, searchParams]);
 
   const projection = data?.workItem ?? null;
-  const phaseLabel = projection ? PHASE_LABELS[projection.phase] : '等待 WorkItem 绑定';
+  const phaseLabel = projection ? PHASE_LABELS[projection.phase] : '尚未选择 WorkItem';
   const tone = projection ? phaseTone(projection.phase) : 'muted';
   const nodes = useMemo<LibraryNode[]>(() => {
     if (!data) return [];
@@ -285,9 +287,23 @@ export default function WorkspaceHomePage() {
     if (!normalized || creatingWorkItem) return;
     setCreatingWorkItem(true);
     setCreateError(null);
+    setCreateNotice(null);
+    const runToken: string = developmentRunToken ?? crypto.randomUUID();
+    setDevelopmentRunToken(runToken);
     try {
-      const created = await createWorkItemFromDocumentVersion(normalized);
-      navigate(`/?workItemId=${encodeURIComponent(created.workItem.workItemId)}`);
+      const response = await createWorkItemFromDocumentVersion(
+        normalized,
+        runToken,
+      );
+      setCreateNotice(
+        response.workItemCreated
+          ? `已创建 ${response.result.workItem.workItemId}`
+          : `请求已安全恢复 ${response.result.workItem.workItemId}`,
+      );
+      setDevelopmentRunToken(null);
+      navigate(
+        `/?workItemId=${encodeURIComponent(response.result.workItem.workItemId)}`,
+      );
     } catch (reason: unknown) {
       setCreateError(errorLabel(reason));
     } finally {
@@ -351,7 +367,9 @@ export default function WorkspaceHomePage() {
         <div>
           <span className="library-section-label">START FROM THE LIBRARY</span>
           <h2 id="library-query-title">从资料目录进入工作台</h2>
-          <p className="library-query-note">先按族群、文档和修订浏览；选择具体资料后，系统会自动打开同一 WorkItem。</p>
+          <p className="library-query-note">
+            先按族群、文档和修订浏览；选择具体资料后，系统会自动打开同一 WorkItem。输入已有任务链接只做只读定位，不会解除权限、恢复 attempt 或推进 revision。
+          </p>
         </div>
         <form className="library-query-form" onSubmit={handleSubmit}>
           <label htmlFor="library-work-item-id">已有任务链接（次级定位）</label>
@@ -391,7 +409,10 @@ export default function WorkspaceHomePage() {
               <Input
                 id="library-document-version-id"
                 value={documentVersionId}
-                onChange={(event) => setDocumentVersionId(event.target.value)}
+                onChange={(event) => {
+                  setDocumentVersionId(event.target.value);
+                  setDevelopmentRunToken(null);
+                }}
                 placeholder="document_version_f4813607b91ee1a20e754e2d"
                 autoComplete="off"
                 spellCheck={false}
@@ -403,6 +424,7 @@ export default function WorkspaceHomePage() {
             </Button>
           </div>
           {createError ? <p className="library-entry-error" role="alert">{createError}</p> : null}
+          {createNotice ? <p className="library-entry-notice" role="status">{createNotice}</p> : null}
         </form>
       </section>
 

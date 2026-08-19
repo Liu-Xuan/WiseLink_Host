@@ -34,6 +34,11 @@ const HOST_REQUEST = {
 };
 
 function target() {
+  const workItems = {
+    createDevelopmentRun: jest.fn().mockResolvedValue({
+      workItemCreated: true,
+    }),
+  };
   const integratedAssessments = {
     confirmOpenClawOverallForAeo: jest.fn().mockResolvedValue({ revision: 9 }),
   };
@@ -47,12 +52,13 @@ function target() {
     }),
   };
   return {
+    workItems,
     engineerReviews,
     integratedAssessments,
     aeo,
     controller: new CanonicalHostController(
       {} as never,
-      {} as never,
+      workItems as never,
       integratedAssessments as never,
       engineerReviews as never,
       aeo as never,
@@ -61,6 +67,41 @@ function target() {
 }
 
 describe('CanonicalHostController assessment actions', () => {
+  it('routes development runs through the authenticated Host actor', async () => {
+    const { controller, workItems } = target();
+
+    await expect(
+      controller.createDevelopmentRun(
+        {
+          documentVersionId: 'document_version_sb',
+          developmentRunToken: '0f8fad5b-d9cb-469f-a165-70867728950e',
+        },
+        HOST_REQUEST as never,
+      ),
+    ).resolves.toEqual({ workItemCreated: true });
+    expect(workItems.createDevelopmentRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        documentVersionId: 'document_version_sb',
+      }),
+      expect.objectContaining({ userId: 'engineer-1001' }),
+    );
+  });
+
+  it('rejects development-run authority fields before entering the service', async () => {
+    const { controller, workItems } = target();
+    expect(() =>
+      controller.createDevelopmentRun(
+        {
+          documentVersionId: 'document_version_sb',
+          developmentRunToken: '0f8fad5b-d9cb-469f-a165-70867728950e',
+          authority: 'forged',
+        } as never,
+        HOST_REQUEST as never,
+      ),
+    ).toThrow(BadRequestException);
+    expect(workItems.createDevelopmentRun).not.toHaveBeenCalled();
+  });
+
   it('passes only ordinary review fields and the authenticated actor', async () => {
     const { engineerReviews, controller } = target();
 

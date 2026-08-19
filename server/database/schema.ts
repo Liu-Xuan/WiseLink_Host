@@ -179,13 +179,14 @@ export const workItem = pgTable("work_item", {
   requestedByUserId: varchar("requested_by_user_id", { length: 255 }).notNull(),
   createdAt: customTimestamptz("created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: customTimestamptz("updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  runKey: varchar("run_key", { length: 96 }).notNull().default('canonical'),
   // System field: Creator (auto-filled, do not modify)
   createdBy: userProfile("_created_by"),
   // System field: Updater (auto-filled, do not modify)
   updatedBy: userProfile("_updated_by"),
 }, (table) => [
   uniqueIndex("uk_work_item_business_id").on(table.workItemId),
-  uniqueIndex("uk_work_item_document_parse").on(table.tenantId, table.actionType, table.documentVersionId),
+  uniqueIndex("uk_work_item_document_parse").on(table.tenantId, table.actionType, table.documentVersionId, table.runKey),
   index("idx_work_item_status").on(table.status, table.updatedAt),
   index("idx_work_item_document").on(table.documentId, table.documentVersionId),
 ]);

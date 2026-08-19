@@ -697,6 +697,20 @@ export interface CanonicalPdfVerticalRunResponse {
   };
 }
 
+export interface CanonicalDevelopmentWorkItemRunRequest {
+  documentVersionId: string;
+  developmentRunToken: string;
+  query?: string;
+}
+
+export interface CanonicalOrdinaryWorkItemRunResponse {
+  schemaVersion: 'wiselink.3_1.ordinary_work_item_run.v1';
+  workItemCreated: boolean;
+  workItemReused: boolean;
+  actionAttemptId: string;
+  result: CanonicalPdfVerticalRunResponse;
+}
+
 export interface CanonicalEntryFacadeResponse {
   schemaVersion: 'wiselink.3_1.canonical_entry_facade.v0.candidate';
   workItemId: string;

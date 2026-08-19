@@ -64,7 +64,7 @@ const Layout = () => {
               <Activity aria-hidden="true" />
             </NavLink>
           ) : (
-            <span className="is-boundary">等待 WorkItem 绑定</span>
+            <span className="is-boundary">尚未选择 WorkItem</span>
           )}
         </div>
       </header>

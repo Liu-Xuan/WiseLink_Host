@@ -24,6 +24,7 @@ CREATE TABLE work_item (
   requested_by_user_id VARCHAR(255) NOT NULL,
   created_at TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  run_key VARCHAR(96) NOT NULL DEFAULT 'canonical',
   _created_at TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   _created_by user_profile,
   _updated_at TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -32,7 +33,8 @@ CREATE TABLE work_item (
   CONSTRAINT uk_work_item_document_parse UNIQUE (
     tenant_id,
     action_type,
-    document_version_id
+    document_version_id,
+    run_key
   ),
   CONSTRAINT ck_work_item_source_byte_length CHECK (source_byte_length > 0),
   CONSTRAINT ck_work_item_source_sha CHECK (source_file_sha256 ~ '^[a-f0-9]{64}$')
@@ -102,6 +104,8 @@ COMMENT ON TABLE work_item IS
   'WiseLink 3.1 ordinary authenticated business WorkItem; parsed content remains in FileService.';
 COMMENT ON COLUMN work_item.projection_json IS
   'Thin status/ref projection only; never stores full parsed package content.';
+COMMENT ON COLUMN work_item.run_key IS
+  'Server-scoped idempotency key: canonical for ordinary processing; dev:<uuid> for explicit repeatable development runs.';
 COMMENT ON TABLE action_attempt IS
   'Explicit user-triggered action attempts; the primary parse attempt is unique per WorkItem.';
 
