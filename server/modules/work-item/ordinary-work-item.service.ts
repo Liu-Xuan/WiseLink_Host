@@ -5,6 +5,8 @@ import { Injectable, Optional } from '@nestjs/common';
 
 import type {
   CanonicalClassificationSelection,
+  CanonicalDevelopmentWorkItemRunRequest,
+  CanonicalOrdinaryWorkItemRunResponse,
   CanonicalPdfVerticalRunRequest,
 } from '@shared/api.interface';
 import { CanonicalHostVerticalService } from '../canonical-host/canonical-host-vertical.service';
@@ -56,6 +58,9 @@ export interface OrdinaryPdfParseInput {
   query?: unknown;
 }
 
+const DEVELOPMENT_RUN_TOKEN_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+
 @Injectable()
 export class OrdinaryWorkItemService {
   constructor(
@@ -70,7 +75,34 @@ export class OrdinaryWorkItemService {
     input: OrdinaryPdfParseInput,
     actor: CanonicalHostActor,
     origin: 'MIAODA' | 'AILY' = 'MIAODA',
-  ) {
+  ): Promise<CanonicalOrdinaryWorkItemRunResponse> {
+    return this.runPdf(input, actor, origin, 'canonical');
+  }
+
+  async createDevelopmentRun(
+    input: CanonicalDevelopmentWorkItemRunRequest,
+    actor: CanonicalHostActor,
+  ): Promise<CanonicalOrdinaryWorkItemRunResponse> {
+    const developmentRunToken = requiredDevelopmentRunToken(
+      input.developmentRunToken,
+    );
+    return this.runPdf(
+      {
+        documentVersionId: input.documentVersionId,
+        query: input.query,
+      },
+      actor,
+      'MIAODA',
+      `dev:${developmentRunToken}`,
+    );
+  }
+
+  private async runPdf(
+    input: OrdinaryPdfParseInput,
+    actor: CanonicalHostActor,
+    origin: 'MIAODA' | 'AILY',
+    runKey: string,
+  ): Promise<CanonicalOrdinaryWorkItemRunResponse> {
     const context: HostedRequestContext = {
       actorUserId: actor.userId,
       tenantId: actor.tenantId,
@@ -91,6 +123,7 @@ export class OrdinaryWorkItemService {
       sourceByteLength: Number(resolved.version.byteLength),
       normalizedFamily: classification.normalizedFamily,
       requestOrigin: origin,
+      runKey,
     });
     const request: CanonicalPdfVerticalRunRequest = {
       schemaVersion: 'wiselink.3_1.canonical_pdf_vertical_request.v0.candidate',
@@ -212,6 +245,18 @@ function requiredText(
   if (!normalized || normalized.length > maxLength) {
     throw Object.assign(new Error(`${field} is invalid.`), {
       code: 'WORK_ITEM_INPUT_INVALID',
+      statusCode: 400,
+    });
+  }
+  return normalized;
+}
+
+function requiredDevelopmentRunToken(value: unknown): string {
+  const normalized = requiredText(value, 'developmentRunToken', 36)
+    .toLowerCase();
+  if (!DEVELOPMENT_RUN_TOKEN_PATTERN.test(normalized)) {
+    throw Object.assign(new Error('developmentRunToken is invalid.'), {
+      code: 'WORK_ITEM_DEVELOPMENT_RUN_TOKEN_INVALID',
       statusCode: 400,
     });
   }

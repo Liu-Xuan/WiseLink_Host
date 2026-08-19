@@ -1,9 +1,9 @@
 import type {
   CanonicalDocumentParsingPageResponse,
+  CanonicalOrdinaryWorkItemRunResponse,
   CanonicalAeoCandidateRunResponse,
   CanonicalEntryQueryRequest,
   CanonicalEntryQueryResponse,
-  CanonicalPdfVerticalRunResponse,
   CanonicalWorkItemProjection,
   CanonicalEngineerReviewDecision,
 } from '@shared/api.interface';
@@ -15,17 +15,19 @@ const DEFAULT_DOCUMENT_PARSING_QUERY = 'applicability';
 
 export async function createWorkItemFromDocumentVersion(
   documentVersionId: string,
-): Promise<CanonicalPdfVerticalRunResponse> {
+  developmentRunToken: string,
+): Promise<CanonicalOrdinaryWorkItemRunResponse> {
   const normalizedDocumentVersionId = documentVersionId.trim();
   if (!normalizedDocumentVersionId) {
     throw new Error('DOCUMENT_VERSION_ID_REQUIRED');
   }
   try {
-    const response = await axiosForBackend<CanonicalPdfVerticalRunResponse>({
-      url: '/api/canonical-host/work-items/parse-pdf',
+    const response = await axiosForBackend<CanonicalOrdinaryWorkItemRunResponse>({
+      url: '/api/canonical-host/work-items/development-runs',
       method: 'POST',
       data: {
         documentVersionId: normalizedDocumentVersionId,
+        developmentRunToken,
         query: DEFAULT_DOCUMENT_PARSING_QUERY,
       },
     });

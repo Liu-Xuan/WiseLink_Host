@@ -60,17 +60,33 @@ describe('canonical host assessment client', () => {
   it('creates a new development WorkItem from an exact DocumentVersion', async () => {
     request.mockResolvedValue({
       status: 200,
-      data: { workItem: { workItemId: 'WI-NEW-SB' } },
+      data: {
+        schemaVersion: 'wiselink.3_1.ordinary_work_item_run.v1',
+        workItemCreated: true,
+        workItemReused: false,
+        actionAttemptId: 'ATT-NEW-SB',
+        result: { workItem: { workItemId: 'WI-NEW-SB' } },
+      },
     });
 
     await expect(
-      createWorkItemFromDocumentVersion('  document_version_sb  '),
-    ).resolves.toEqual({ workItem: { workItemId: 'WI-NEW-SB' } });
+      createWorkItemFromDocumentVersion(
+        '  document_version_sb  ',
+        '0f8fad5b-d9cb-469f-a165-70867728950e',
+      ),
+    ).resolves.toEqual({
+      schemaVersion: 'wiselink.3_1.ordinary_work_item_run.v1',
+      workItemCreated: true,
+      workItemReused: false,
+      actionAttemptId: 'ATT-NEW-SB',
+      result: { workItem: { workItemId: 'WI-NEW-SB' } },
+    });
     expect(request).toHaveBeenCalledWith({
-      url: '/api/canonical-host/work-items/parse-pdf',
+      url: '/api/canonical-host/work-items/development-runs',
       method: 'POST',
       data: {
         documentVersionId: 'document_version_sb',
+        developmentRunToken: '0f8fad5b-d9cb-469f-a165-70867728950e',
         query: 'applicability',
       },
     });

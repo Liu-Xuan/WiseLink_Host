@@ -13,6 +13,7 @@ import { NeedLogin } from '@lark-apaas/fullstack-nestjs-core';
 import type { Request } from 'express';
 
 import type {
+  CanonicalDevelopmentWorkItemRunRequest,
   CanonicalEngineerReviewDecision,
   CanonicalEntryQueryRequest,
 } from '@shared/api.interface';
@@ -50,6 +51,17 @@ export class CanonicalHostController {
   ) {
     return this.workItems.parsePdf(
       request as Parameters<OrdinaryWorkItemService['parsePdf']>[0],
+      hostActor(httpRequest),
+    );
+  }
+
+  @Post('work-items/development-runs')
+  createDevelopmentRun(
+    @Body() body: unknown,
+    @Req() httpRequest: Request,
+  ) {
+    return this.workItems.createDevelopmentRun(
+      developmentRunBody(body),
       hostActor(httpRequest),
     );
   }
@@ -165,6 +177,27 @@ export function hostActor(request: Request): CanonicalHostActor {
 
 function integratedAssessmentActionBody(body: unknown): void {
   ordinaryBody(body, []);
+}
+
+function developmentRunBody(body: unknown): CanonicalDevelopmentWorkItemRunRequest {
+  const value = ordinaryBody(body, [
+    'documentVersionId',
+    'developmentRunToken',
+    'query',
+  ]);
+  return {
+    documentVersionId: requiredText(
+      value.documentVersionId,
+      'documentVersionId',
+    ),
+    developmentRunToken: requiredText(
+      value.developmentRunToken,
+      'developmentRunToken',
+    ),
+    query: value.query === undefined
+      ? undefined
+      : requiredText(value.query, 'query'),
+  };
 }
 
 function engineerReviewBody(body: unknown): {

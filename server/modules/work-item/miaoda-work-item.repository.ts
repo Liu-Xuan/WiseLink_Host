@@ -22,6 +22,7 @@ export interface WorkItemReservationInput {
   sourceByteLength: number;
   normalizedFamily: string;
   requestOrigin: 'MIAODA' | 'AILY';
+  runKey: string;
 }
 
 export interface WorkItemReservation {
@@ -104,6 +105,7 @@ export class MiaodaWorkItemRepository {
         sourceFileSha256: rawHash(input.sourceFileSha256),
         sourceByteLength: input.sourceByteLength,
         normalizedFamily: input.normalizedFamily,
+        runKey: input.runKey,
         requestId: candidate.requestId,
         status: 'RESERVED',
         revision: 0,
@@ -116,6 +118,7 @@ export class MiaodaWorkItemRepository {
           workItem.tenantId,
           workItem.actionType,
           workItem.documentVersionId,
+          workItem.runKey,
         ],
       })
       .returning({ workItemId: workItem.workItemId });
@@ -128,6 +131,7 @@ export class MiaodaWorkItemRepository {
           eq(workItem.tenantId, input.tenantId),
           eq(workItem.actionType, ACTION_TYPE),
           eq(workItem.documentVersionId, input.documentVersionId),
+          eq(workItem.runKey, input.runKey),
         ),
       )
       .limit(1);
@@ -792,6 +796,7 @@ function assertReservationIdentity(
     row.sourceFileSha256 !== rawHash(input.sourceFileSha256) ||
     Number(row.sourceByteLength) !== input.sourceByteLength ||
     row.normalizedFamily !== input.normalizedFamily
+    || row.runKey !== input.runKey
   ) {
     throw new Error('WORK_ITEM_BUSINESS_KEY_COLLISION');
   }

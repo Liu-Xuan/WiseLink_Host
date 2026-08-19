@@ -133,6 +133,13 @@
   line-height: 1.5;
 }
 
+.library-entry-notice {
+  margin: 7px 0 0;
+  color: #216e4e;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
 .library-query-band h2,
 .library-panel-heading h2 {
   margin: 6px 0 0;
