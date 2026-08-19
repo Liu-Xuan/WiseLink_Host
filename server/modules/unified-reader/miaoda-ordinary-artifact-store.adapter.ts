@@ -76,7 +76,7 @@ export class MiaodaOrdinaryArtifactStoreAdapter
     const filePath = this.filePath(artifact.sha256);
     const bucketId = await this.getDefaultBucket();
     const scoped = this.fileService.from(bucketId);
-    const metadata = await providerCall(
+    const metadata = await providerCallWithTransportRetry(
       'ARTIFACT_STORE_METADATA_READ_FAILED',
       () => scoped.getFileMetadata(filePath),
     );
@@ -89,7 +89,7 @@ export class MiaodaOrdinaryArtifactStoreAdapter
     ) {
       throw new Error('ARTIFACT_READBACK_MISMATCH:METADATA');
     }
-    const downloaded = await providerCall(
+    const downloaded = await providerCallWithTransportRetry(
       'ARTIFACT_STORE_DOWNLOAD_FAILED',
       () => scoped.download(filePath),
     );
@@ -224,11 +224,104 @@ async function providerCall<T>(
   try {
     return await operation();
   } catch (cause) {
-    const message = cause instanceof Error ? cause.message : String(cause);
-    const error = new Error(`${code}:${message}`);
-    (error as Error & { cause?: unknown }).cause = cause;
-    throw error;
+    throw providerError(code, cause);
   }
+}
+
+/**
+ * A FileService request can fail before receiving an HTTP response when the
+ * hosted transport briefly loses its connection. Retry that request once;
+ * status-bearing provider errors and all semantic readback checks stay
+ * fail-closed and are never retried.
+ */
+async function providerCallWithTransportRetry<T>(
+  code: string,
+  operation: () => T | PromiseLike<T>,
+): Promise<T> {
+  try {
+    return await operation();
+  } catch (firstCause) {
+    if (!isTransportFailure(firstCause)) {
+      throw providerError(code, firstCause);
+    }
+    try {
+      return await operation();
+    } catch (secondCause) {
+      throw providerError(code, secondCause);
+    }
+  }
+}
+
+function providerError(code: string, cause: unknown): Error {
+  const message = cause instanceof Error ? cause.message : String(cause);
+  const error = new Error(`${code}:${message}`);
+  (error as Error & { cause?: unknown }).cause = cause;
+  return error;
+}
+
+function isTransportFailure(cause: unknown): boolean {
+  return !hasHttpStatus(cause) && hasTransportSignature(cause);
+}
+
+function hasHttpStatus(cause: unknown, seen = new Set<unknown>()): boolean {
+  if (!cause || (typeof cause !== 'object' && typeof cause !== 'function')) {
+    return false;
+  }
+  if (seen.has(cause)) return false;
+  seen.add(cause);
+
+  const value = cause as {
+    message?: unknown;
+    code?: unknown;
+    status?: unknown;
+    statusCode?: unknown;
+    response?: { status?: unknown };
+    cause?: unknown;
+  };
+  const statusValues = [value.status, value.statusCode, value.response?.status];
+  if (statusValues.some((status) => status !== undefined && status !== null)) {
+    return true;
+  }
+  return hasHttpStatus(value.cause, seen);
+}
+
+function hasTransportSignature(
+  cause: unknown,
+  seen = new Set<unknown>(),
+): boolean {
+  if (!cause || (typeof cause !== 'object' && typeof cause !== 'function')) {
+    return false;
+  }
+  if (seen.has(cause)) return false;
+  seen.add(cause);
+
+  const value = cause as {
+    message?: unknown;
+    code?: unknown;
+    cause?: unknown;
+  };
+
+  const message = String(value.message ?? '')
+    .trim()
+    .toLowerCase();
+  const code = String(value.code ?? '')
+    .trim()
+    .toUpperCase();
+  if (
+    message === 'fetch failed' ||
+    [
+      'ECONNRESET',
+      'ETIMEDOUT',
+      'EAI_AGAIN',
+      'ENETUNREACH',
+      'ECONNREFUSED',
+      'UND_ERR_SOCKET',
+      'UND_ERR_CONNECT_TIMEOUT',
+    ].includes(code)
+  ) {
+    return true;
+  }
+  return hasTransportSignature(value.cause, seen);
 }
 
 /**
