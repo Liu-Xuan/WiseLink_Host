@@ -1,6 +1,5 @@
 import type {
   CanonicalDocumentParsingPageResponse,
-  CanonicalOrdinaryWorkItemRunResponse,
   CanonicalAeoCandidateRunResponse,
   CanonicalEntryQueryRequest,
   CanonicalEntryQueryResponse,
@@ -12,34 +11,6 @@ import { logger } from '@lark-apaas/client-toolkit/logger';
 import { axiosForBackend } from '@lark-apaas/client-toolkit/utils/getAxiosForBackend';
 
 const DEFAULT_DOCUMENT_PARSING_QUERY = 'applicability';
-
-export async function createWorkItemFromDocumentVersion(
-  documentVersionId: string,
-  developmentRunToken: string,
-): Promise<CanonicalOrdinaryWorkItemRunResponse> {
-  const normalizedDocumentVersionId = documentVersionId.trim();
-  if (!normalizedDocumentVersionId) {
-    throw new Error('DOCUMENT_VERSION_ID_REQUIRED');
-  }
-  try {
-    const response = await axiosForBackend<CanonicalOrdinaryWorkItemRunResponse>({
-      url: '/api/canonical-host/work-items/development-runs',
-      method: 'POST',
-      data: {
-        documentVersionId: normalizedDocumentVersionId,
-        developmentRunToken,
-        query: DEFAULT_DOCUMENT_PARSING_QUERY,
-      },
-    });
-    if (response.status === 401 || response.status === 403) {
-      throw new Error('CANONICAL_WORK_ITEM_CREATE_ACCESS_DENIED');
-    }
-    return response.data;
-  } catch (error) {
-    logger.error('从受控 DocumentVersion 创建开发 WorkItem 失败', error);
-    throw error;
-  }
-}
 
 export async function getDocumentParsingPage(
   workItemId: string,

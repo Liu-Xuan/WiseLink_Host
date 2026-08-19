@@ -10,7 +10,6 @@ jest.mock('@lark-apaas/client-toolkit/logger', () => ({
 
 import {
   confirmIntegratedOverallForAeo,
-  createWorkItemFromDocumentVersion,
   generateAeoCandidate,
   getDocumentParsingPage,
 } from '../../client/src/api/canonical-host';
@@ -54,41 +53,6 @@ describe('canonical host assessment client', () => {
       url: '/api/canonical-host/work-items/WI-SB-1001/document-parsing',
       method: 'GET',
       params: { query: 'sourceRef APP-001' },
-    });
-  });
-
-  it('creates a new development WorkItem from an exact DocumentVersion', async () => {
-    request.mockResolvedValue({
-      status: 200,
-      data: {
-        schemaVersion: 'wiselink.3_1.ordinary_work_item_run.v1',
-        workItemCreated: true,
-        workItemReused: false,
-        actionAttemptId: 'ATT-NEW-SB',
-        result: { workItem: { workItemId: 'WI-NEW-SB' } },
-      },
-    });
-
-    await expect(
-      createWorkItemFromDocumentVersion(
-        '  document_version_sb  ',
-        '0f8fad5b-d9cb-469f-a165-70867728950e',
-      ),
-    ).resolves.toEqual({
-      schemaVersion: 'wiselink.3_1.ordinary_work_item_run.v1',
-      workItemCreated: true,
-      workItemReused: false,
-      actionAttemptId: 'ATT-NEW-SB',
-      result: { workItem: { workItemId: 'WI-NEW-SB' } },
-    });
-    expect(request).toHaveBeenCalledWith({
-      url: '/api/canonical-host/work-items/development-runs',
-      method: 'POST',
-      data: {
-        documentVersionId: 'document_version_sb',
-        developmentRunToken: '0f8fad5b-d9cb-469f-a165-70867728950e',
-        query: 'applicability',
-      },
     });
   });
 
