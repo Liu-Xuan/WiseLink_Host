@@ -61,6 +61,8 @@ export interface OrdinaryPdfParseInput {
 const DEVELOPMENT_RUN_TOKEN_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const DEVELOPMENT_WORK_ITEM_ROLE_ID = 'wiselink_development';
+const CANONICAL_HOST_APP_ID = 'app_17bzc551rsg';
+const S1_ACCEPTANCE_ACTOR_ID = 'service:wiselink-s1-acceptance';
 
 @Injectable()
 export class OrdinaryWorkItemService {
@@ -85,6 +87,36 @@ export class OrdinaryWorkItemService {
     actor: CanonicalHostActor,
   ): Promise<CanonicalOrdinaryWorkItemRunResponse> {
     requireDevelopmentWorkItemRole(actor);
+    return this.runDevelopment(input, actor);
+  }
+
+  async createDevelopmentAcceptanceRun(
+    input: CanonicalDevelopmentWorkItemRunRequest,
+  ): Promise<CanonicalOrdinaryWorkItemRunResponse> {
+    const documentVersionId = requiredText(
+      input.documentVersionId,
+      'documentVersionId',
+      96,
+    );
+    const tenantId = await this.repository.resolveDevelopmentTenant(
+      documentVersionId,
+    );
+    return this.runDevelopment(
+      { ...input, documentVersionId },
+      {
+        userId: S1_ACCEPTANCE_ACTOR_ID,
+        tenantId,
+        appId: CANONICAL_HOST_APP_ID,
+        roles: [],
+        env: 'hosted',
+      },
+    );
+  }
+
+  private runDevelopment(
+    input: CanonicalDevelopmentWorkItemRunRequest,
+    actor: CanonicalHostActor,
+  ): Promise<CanonicalOrdinaryWorkItemRunResponse> {
     const developmentRunToken = requiredDevelopmentRunToken(
       input.developmentRunToken,
     );

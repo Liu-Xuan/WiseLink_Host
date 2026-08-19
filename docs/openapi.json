@@ -4,7 +4,7 @@
       "post": {
         "operationId": "createDevelopmentWorkItem",
         "summary": "受控创建 S1 开发验收 WorkItem",
-        "description": "仅供受控开发验收编排调用，不是生产前端功能。服务端从受信请求上下文取得租户，并固定使用 S1 验收服务身份；请求体不得携带 actor、roles、authority 或其他权限字段。",
+        "description": "仅供受控开发验收编排调用，不是生产前端功能。服务端从精确 DocumentVersion 的既有 Host WorkItem 绑定解析唯一租户，并固定使用 S1 验收服务身份；无绑定或多租户歧义时拒绝，请求体不得携带 actor、roles、tenantId、authority 或其他权限字段。",
         "requestBody": {
           "required": true,
           "content": {

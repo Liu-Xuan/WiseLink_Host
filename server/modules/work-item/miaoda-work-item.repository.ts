@@ -274,6 +274,33 @@ export class MiaodaWorkItemRepository {
     return row;
   }
 
+  async resolveDevelopmentTenant(
+    documentVersionId: string,
+  ): Promise<string> {
+    const rows = await this.db
+      .selectDistinct({ tenantId: workItem.tenantId })
+      .from(workItem)
+      .where(eq(workItem.documentVersionId, documentVersionId))
+      .limit(2);
+    if (rows.length !== 1 || !rows[0].tenantId.trim()) {
+      throw Object.assign(
+        new Error(
+          rows.length === 0
+            ? 'Development DocumentVersion has no Host tenant binding.'
+            : 'Development DocumentVersion tenant binding is ambiguous.',
+        ),
+        {
+          code:
+            rows.length === 0
+              ? 'DEVELOPMENT_DOCUMENT_TENANT_NOT_FOUND'
+              : 'DEVELOPMENT_DOCUMENT_TENANT_AMBIGUOUS',
+          statusCode: 409,
+        },
+      );
+    }
+    return rows[0].tenantId;
+  }
+
   async reserveAssessmentAction(input: {
     workItemId: string;
     actionType: AssessmentActionType;
