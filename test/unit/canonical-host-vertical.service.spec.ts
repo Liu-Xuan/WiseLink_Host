@@ -963,6 +963,33 @@ describe('CanonicalHostVerticalService', () => {
     );
   });
 
+  it('returns tenant-scoped 404 before authorization or projection read', async () => {
+    const registrar = new InMemoryRegistrar();
+    const authorize = authorization();
+    const authorizeSpy = jest.spyOn(authorize, 'authorize');
+    const service = new CanonicalHostVerticalService(
+      registrar,
+      {} as never,
+      authorize,
+      permissionSnapshots(),
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {
+        loadTenantScopedProjection: jest.fn().mockResolvedValue(null),
+      } as never,
+    );
+
+    await expect(
+      service.page({ workItemId: 'WI-OTHER-TENANT', query: '' }, TEST_ACTOR),
+    ).rejects.toMatchObject({
+      code: 'LIBRARY_WORK_ITEM_NOT_FOUND',
+      statusCode: 404,
+    });
+    expect(authorizeSpy).not.toHaveBeenCalled();
+  });
+
   it('fails closed when CanonicalMiaodaApp binding is unconfigured', async () => {
     const request = await realRequest();
     const facade = new CanonicalEntryFacadeService(

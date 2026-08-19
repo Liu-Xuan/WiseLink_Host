@@ -22,6 +22,7 @@ export interface CanonicalAuthorizationDecision {
   action:
     | 'PARSE_PDF'
     | 'READ_DOCUMENT_PARSING'
+    | 'READ_LIBRARY_INDEX'
     | 'QUERY_PARSED_UNITS'
     | 'EVALUATE_JOB_AID'
     | 'RESYNTHESIZE_ASSESSMENT'

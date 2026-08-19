@@ -197,6 +197,32 @@ export class MiaodaWorkItemRepository {
     return parseProjection(row.projectionJson);
   }
 
+  /**
+   * Bind the WorkItem lookup to the authenticated tenant before exposing any
+   * projection. A cross-tenant id is intentionally indistinguishable from a
+   * missing id to the caller.
+   */
+  async loadTenantScopedProjection(
+    workItemId: string,
+    tenantId: string,
+  ): Promise<{
+    row: typeof workItem.$inferSelect;
+    projection: CanonicalWorkItemProjection | null;
+  } | null> {
+    const [row] = await this.db
+      .select()
+      .from(workItem)
+      .where(
+        and(
+          eq(workItem.workItemId, workItemId),
+          eq(workItem.tenantId, tenantId),
+        ),
+      )
+      .limit(1);
+    if (!row) return null;
+    return { row, projection: parseProjection(row.projectionJson) };
+  }
+
   async initializeProjection(
     workItemId: string,
     seed: Omit<CanonicalWorkItemProjection, 'revision'>,

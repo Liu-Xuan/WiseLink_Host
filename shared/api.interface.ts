@@ -823,6 +823,35 @@ export interface CanonicalLibraryIndexProjection {
   };
 }
 
+export interface CanonicalLibraryIndexReadResponse {
+  schemaVersion: 'wiselink.3_1.library_index_read.v0.candidate';
+  scope: 'CURRENT_WORKITEM_ONLY';
+  workItem: {
+    workItemId: string;
+    revision: number;
+    phase: string;
+  };
+  document: {
+    documentId: string;
+    documentVersionId: string;
+    documentCode: string;
+    businessRevision: string;
+    normalizedFamily: string;
+  };
+  currentness: {
+    familyId: string;
+    currentDocumentVersionId: string | null;
+    currentGeneration: number;
+    selectedVersionIsCurrent: boolean;
+  };
+  libraryIndex: CanonicalLibraryIndexProjection;
+  readAuthorization: {
+    action: 'READ_LIBRARY_INDEX';
+    decisionId: string;
+    permissionSnapshotVersion: string;
+  };
+}
+
 export type CanonicalRelatedDocumentRelationRole =
   | 'SELECTED_DOCUMENT_VERSION'
   | 'PRODUCED_PARSED_PACKAGE'

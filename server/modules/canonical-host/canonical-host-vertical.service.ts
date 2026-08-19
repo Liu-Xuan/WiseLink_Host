@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 
 import type {
   AilyParsedPackageQueryResponse,
@@ -42,6 +42,7 @@ import type {
   CanonicalStatusInput,
   CanonicalWorkItemRegistrarPort,
 } from './canonical-host.types';
+import { MiaodaWorkItemRepository } from '../work-item/miaoda-work-item.repository';
 
 @Injectable()
 export class CanonicalHostVerticalService {
@@ -59,6 +60,9 @@ export class CanonicalHostVerticalService {
     private readonly reader: UnifiedReaderService,
     private readonly entryFacade: CanonicalEntryFacadeService,
     private readonly failureRecording: CanonicalFailureRecordingService,
+    @Optional()
+    @Inject(MiaodaWorkItemRepository)
+    private readonly tenantScopedWorkItems?: MiaodaWorkItemRepository,
   ) {}
 
   async runPdf(
@@ -265,8 +269,21 @@ export class CanonicalHostVerticalService {
     input: CanonicalPageInput,
     actor: CanonicalHostActor,
   ): Promise<CanonicalDocumentParsingPageResponse> {
+    const scoped = this.tenantScopedWorkItems
+      ? await this.tenantScopedWorkItems.loadTenantScopedProjection(
+          input.workItemId,
+          actor.tenantId,
+        )
+      : null;
+    if (this.tenantScopedWorkItems && (!scoped || !scoped.projection)) {
+      throw Object.assign(
+        new Error('LIBRARY_WORK_ITEM_NOT_FOUND'),
+        { code: 'LIBRARY_WORK_ITEM_NOT_FOUND', statusCode: 404 },
+      );
+    }
     const projection: CanonicalWorkItemProjection =
-      await this.registrar.getByWorkItemId(input.workItemId);
+      scoped?.projection ??
+      (await this.registrar.getByWorkItemId(input.workItemId));
     const actionContext: CanonicalHostActionContext =
       await this.authorizeAction({
         actor,

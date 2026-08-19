@@ -5,12 +5,31 @@ import type {
   CanonicalEntryQueryResponse,
   CanonicalWorkItemProjection,
   CanonicalEngineerReviewDecision,
+  CanonicalLibraryIndexReadResponse,
 } from '@shared/api.interface';
 
 import { logger } from '@lark-apaas/client-toolkit/logger';
 import { axiosForBackend } from '@lark-apaas/client-toolkit/utils/getAxiosForBackend';
 
 const DEFAULT_DOCUMENT_PARSING_QUERY = 'applicability';
+
+export async function getLibraryIndex(
+  workItemId: string,
+): Promise<CanonicalLibraryIndexReadResponse> {
+  try {
+    const response = await axiosForBackend<CanonicalLibraryIndexReadResponse>({
+      url: `/api/canonical-host/work-items/${encodeURIComponent(workItemId)}/library-index`,
+      method: 'GET',
+    });
+    if (response.status === 401) throw new Error('CANONICAL_LIBRARY_LOGIN_REQUIRED');
+    if (response.status === 403) throw new Error('CANONICAL_LIBRARY_ACCESS_DENIED');
+    if (response.status === 404) throw new Error('CANONICAL_LIBRARY_NOT_FOUND');
+    return response.data;
+  } catch (error) {
+    logger.error('读取 WorkItem LibraryIndex fresh projection 失败', error);
+    throw error;
+  }
+}
 
 export async function getDocumentParsingPage(
   workItemId: string,

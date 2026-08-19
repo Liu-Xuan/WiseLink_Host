@@ -51,22 +51,51 @@ function target() {
       status: 'CANDIDATE_WORD_EXPORTED',
     }),
   };
+  const libraryIndex = {
+    read: jest.fn().mockResolvedValue({
+      schemaVersion: 'wiselink.3_1.library_index_read.v0.candidate',
+      scope: 'CURRENT_WORKITEM_ONLY',
+    }),
+  };
   return {
     workItems,
     engineerReviews,
     integratedAssessments,
     aeo,
+    libraryIndex,
     controller: new CanonicalHostController(
       {} as never,
       workItems as never,
       integratedAssessments as never,
       engineerReviews as never,
       aeo as never,
+      libraryIndex as never,
     ),
   };
 }
 
 describe('CanonicalHostController assessment actions', () => {
+  it('routes the tenant-scoped LibraryIndex read through the authenticated actor', async () => {
+    const { controller, libraryIndex } = target();
+
+    await expect(
+      controller.library('WI-LIBRARY-1', HOST_REQUEST as never),
+    ).resolves.toEqual(expect.objectContaining({
+      scope: 'CURRENT_WORKITEM_ONLY',
+    }));
+    expect(libraryIndex.read).toHaveBeenCalledWith({
+      workItemId: 'WI-LIBRARY-1',
+      actor: expect.objectContaining({ tenantId: 'tenant-2001' }),
+    });
+  });
+
+  it('requires a logged-in actor before entering the LibraryIndex service', () => {
+    const { controller, libraryIndex } = target();
+    expect(() => controller.library('WI-LIBRARY-1', { userContext: null } as never))
+      .toThrow(UnauthorizedException);
+    expect(libraryIndex.read).not.toHaveBeenCalled();
+  });
+
   it('routes development runs through the authenticated Host actor', async () => {
     const { controller, workItems } = target();
 

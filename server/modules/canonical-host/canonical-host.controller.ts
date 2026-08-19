@@ -8,6 +8,7 @@ import {
   Query,
   Req,
   UnauthorizedException,
+  Optional,
 } from '@nestjs/common';
 import { NeedLogin } from '@lark-apaas/fullstack-nestjs-core';
 import type { Request } from 'express';
@@ -24,6 +25,7 @@ import { CanonicalHostEngineerReviewService } from './canonical-host-engineer-re
 import { CanonicalHostIntegratedAssessmentService } from './canonical-host-integrated-assessment.service';
 import { buildCanonicalPageProjections } from './canonical-host-page-projections';
 import { CanonicalHostVerticalService } from './canonical-host-vertical.service';
+import { CanonicalHostLibraryIndexService } from './canonical-host-library-index.service';
 import type { CanonicalHostActor } from './canonical-host.types';
 
 const ENGINEER_DECISIONS = new Set<CanonicalEngineerReviewDecision>([
@@ -42,6 +44,7 @@ export class CanonicalHostController {
     private readonly integratedAssessments: CanonicalHostIntegratedAssessmentService,
     private readonly engineerReviews: CanonicalHostEngineerReviewService,
     private readonly aeo: CanonicalHostAeoService,
+    @Optional() private readonly libraryIndex?: CanonicalHostLibraryIndexService,
   ) {}
 
   @Post('work-items/parse-pdf')
@@ -79,6 +82,20 @@ export class CanonicalHostController {
       },
       hostActor(httpRequest),
     );
+  }
+
+  @Get('work-items/:workItemId/library-index')
+  library(
+    @Param('workItemId') workItemId: string,
+    @Req() httpRequest: Request,
+  ) {
+    if (!this.libraryIndex) {
+      throw new Error('CANONICAL_LIBRARY_INDEX_SERVICE_UNCONFIGURED');
+    }
+    return this.libraryIndex.read({
+      workItemId: requiredText(workItemId, 'workItemId'),
+      actor: hostActor(httpRequest),
+    });
   }
 
   @Get('work-items/:workItemId/status')
