@@ -1,0 +1,63 @@
+import { BadRequestException } from '@nestjs/common';
+
+import type { CanonicalDevelopmentWorkItemRunRequest } from '@shared/api.interface';
+
+const ALLOWED_KEYS = new Set([
+  'documentVersionId',
+  'developmentRunToken',
+  'query',
+]);
+
+const FORBIDDEN_AUTHORITY_KEYS = new Set([
+  'actor',
+  'roles',
+  'tenantId',
+  'userId',
+  'authority',
+  'decisionId',
+  'permissionSnapshotVersion',
+]);
+
+export function developmentRunBody(
+  body: unknown,
+): CanonicalDevelopmentWorkItemRunRequest {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    throw badRequest('DEVELOPMENT_RUN_REQUEST_BODY_INVALID');
+  }
+  const value = body as Record<string, unknown>;
+  for (const key of Object.keys(value)) {
+    if (FORBIDDEN_AUTHORITY_KEYS.has(key)) {
+      throw badRequest(
+        `DEVELOPMENT_RUN_REQUEST_INVALID:SELF_REPORTED_AUTHORITY:${key}`,
+      );
+    }
+    if (!ALLOWED_KEYS.has(key)) {
+      throw badRequest(`DEVELOPMENT_RUN_REQUEST_INVALID:UNKNOWN_FIELD:${key}`);
+    }
+  }
+  return {
+    documentVersionId: requiredText(
+      value.documentVersionId,
+      'documentVersionId',
+    ),
+    developmentRunToken: requiredText(
+      value.developmentRunToken,
+      'developmentRunToken',
+    ),
+    query:
+      value.query === undefined
+        ? undefined
+        : requiredText(value.query, 'query'),
+  };
+}
+
+function requiredText(value: unknown, field: string): string {
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw badRequest(`DEVELOPMENT_RUN_${field.toUpperCase()}_REQUIRED`);
+  }
+  return value.trim();
+}
+
+function badRequest(code: string): BadRequestException {
+  return new BadRequestException({ code, message: code });
+}
