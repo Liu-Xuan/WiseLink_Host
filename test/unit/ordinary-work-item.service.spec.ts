@@ -49,6 +49,7 @@ function target() {
     }),
   };
   const repository = {
+    resolveDevelopmentTenant: jest.fn().mockResolvedValue('tenant-2001'),
     reserve: jest.fn().mockResolvedValue({
       workItemId: 'WI-NEW-SB',
       requestId: 'REQ-NEW-SB',
@@ -75,6 +76,7 @@ function target() {
   return {
     resolver,
     repository,
+    vertical,
     service: new OrdinaryWorkItemService(
       {} as never,
       resolver as never,
@@ -136,6 +138,35 @@ describe('OrdinaryWorkItemService run identity', () => {
     });
     expect(resolver.resolve).not.toHaveBeenCalled();
     expect(repository.reserve).not.toHaveBeenCalled();
+  });
+
+  it('derives the S1 acceptance tenant from the exact DocumentVersion binding', async () => {
+    const { repository, vertical, service } = target();
+
+    await service.createDevelopmentAcceptanceRun({
+      documentVersionId: 'document-version-sb',
+      developmentRunToken: '0f8fad5b-d9cb-469f-a165-70867728950e',
+    });
+
+    expect(repository.resolveDevelopmentTenant).toHaveBeenCalledWith(
+      'document-version-sb',
+    );
+    expect(repository.reserve).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorUserId: 'service:wiselink-s1-acceptance',
+        tenantId: 'tenant-2001',
+      }),
+    );
+    expect(vertical.runPdf).toHaveBeenCalledWith(
+      expect.any(Object),
+      {
+        userId: 'service:wiselink-s1-acceptance',
+        tenantId: 'tenant-2001',
+        appId: 'app_17bzc551rsg',
+        roles: [],
+        env: 'hosted',
+      },
+    );
   });
 
   it('rejects malformed development tokens before reserving a WorkItem', async () => {
