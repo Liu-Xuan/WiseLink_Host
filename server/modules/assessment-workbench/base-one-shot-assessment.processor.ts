@@ -85,7 +85,7 @@ const SOURCE_CRITERION_COLUMNS = [
 const PACKET_CRITERION_COLUMNS = SOURCE_CRITERION_COLUMNS.map((column) =>
   column === 'missingInformation' ? 'missingPredicateKeys' : column);
 
-const RULE_RESULT_FIELDS = [
+export const BASE_ONE_SHOT_RULE_RESULT_FIELDS = [
   'ruleId',
   'result',
   'factsConsidered',
@@ -96,6 +96,7 @@ const RULE_RESULT_FIELDS = [
   'missingInputs',
   'humanReviewRequired',
 ];
+const RULE_RESULT_FIELDS = BASE_ONE_SHOT_RULE_RESULT_FIELDS;
 
 const BASE_ONE_SHOT_OUTPUT_MAX_UTF8_BYTES = 60_000;
 const BASE_ONE_SHOT_RULE_RESULT_ROW_MAX_UTF8_BYTES = 360;
@@ -450,6 +451,10 @@ export function consumeBaseOneShotAssessmentResult(
   ) {
     throw new Error('BASE_ONE_SHOT_RULE_MEMBERSHIP_OR_ORDER_MISMATCH');
   }
+  const normalizedRuleResults = normalizePredicateBoundRuleResults(
+    packet,
+    ruleResults,
+  );
   if (!Array.isArray(parsed.nextRoundChecklist)) {
     throw new Error('BASE_ONE_SHOT_NEXT_ROUND_CHECKLIST_REQUIRED');
   }
@@ -493,7 +498,7 @@ export function consumeBaseOneShotAssessmentResult(
   }
   const overallSelfCheck = normalizeOverallSelfCheck(
     parsed,
-    ruleResults,
+    normalizedRuleResults,
     expectedIds.length,
   );
   return {
@@ -501,12 +506,43 @@ export function consumeBaseOneShotAssessmentResult(
     authorityLevel: 'candidate_only',
     engineeringConclusion: null,
     applicabilityOverall: parsed.applicabilityOverall,
-    ruleResults,
+    ruleResults: normalizedRuleResults,
     overallSelfCheck,
     nextRoundChecklist: parsed.nextRoundChecklist,
     completionSelfCheck: parsed.completionSelfCheck,
     criterionCount: expectedIds.length,
   };
+}
+
+/**
+ * Re-encodes the validated host-normalized rows into the existing Base
+ * artifact envelope so later overall/readback consumers see the same
+ * predicate semantics without another schema.
+ */
+export function serializeNormalizedBaseOneShotOutput(
+  output: string,
+  result: BaseOneShotAssessmentResult,
+): Uint8Array {
+  const parsed = JSON.parse(output) as Record<string, any>;
+  if (
+    !parsed.ruleResults ||
+    typeof parsed.ruleResults !== 'object' ||
+    !Array.isArray(parsed.ruleResults.columns) ||
+    !Array.isArray(parsed.ruleResults.rows)
+  ) {
+    return Buffer.from(output, 'utf8');
+  }
+  parsed.ruleResults = {
+    columns: [...BASE_ONE_SHOT_RULE_RESULT_FIELDS],
+    rows: result.ruleResults.map((rule) =>
+      BASE_ONE_SHOT_RULE_RESULT_FIELDS.map((field) => rule[field]),
+    ),
+  };
+  parsed.overallSelfCheck = {
+    ...(parsed.overallSelfCheck ?? {}),
+    ...result.overallSelfCheck,
+  };
+  return Buffer.from(JSON.stringify(parsed), 'utf8');
 }
 
 function normalizeOverallSelfCheck(
@@ -527,14 +563,89 @@ function normalizeOverallSelfCheck(
   }
   if (
     value.ruleResultCount !== expectedRuleCount ||
-    value.rulesWithMissingInputs !== rulesWithMissingInputs ||
-    value.humanReviewRequiredCount !== humanReviewRequiredCount ||
     value.overallOpinionProduced !== false ||
     value.holisticSynthesisDeferredToOpenClaw !== true
   ) {
     throw new Error('BASE_ONE_SHOT_OVERALL_SELF_CHECK_MISMATCH');
   }
-  return value as Record<string, unknown>;
+  // Counts are recomputed from the host-normalized rows above. This prevents
+  // a model's generic "missing input" count from turning source candidates or
+  // predicate FALSE rows into a package-wide missing-FleetFacts signal.
+  return {
+    ...value,
+    rulesWithMissingInputs,
+    humanReviewRequiredCount,
+  };
+}
+
+/**
+ * The criterion table is the host-owned applicability source. A model may
+ * summarize a source candidate, but it cannot turn a controlled predicate
+ * result into a different state or invent FleetFacts gaps.
+ */
+function normalizePredicateBoundRuleResults(
+  packet: BaseOneShotAssessmentPacket,
+  ruleResults: Array<Record<string, unknown>>,
+): Array<Record<string, unknown>> {
+  const table = packet.jobAidContext.criterionTable;
+  const predicateIndex = table.columns.indexOf('predicateResult');
+  if (predicateIndex < 0) return ruleResults;
+  return ruleResults.map((result, index) => {
+    const predicateResult = decodeCriterionTableValue(
+      table,
+      table.rows[index]?.[predicateIndex],
+      'predicateResult',
+    );
+    if (predicateResult === 'FALSE') {
+      return {
+        ...result,
+        result: 'NOT_APPLICABLE',
+        conclusion: '不适用',
+        sourceRefs: [],
+        missingInputs: [],
+        humanReviewRequired: false,
+      };
+    }
+    if (predicateResult === 'UNKNOWN') {
+      const missingPredicateKeys = predicateKeysForRow(packet, index);
+      return {
+        ...result,
+        result: 'UNKNOWN/WAITING_INPUT',
+        conclusion: '信息不足',
+        missingInputs: missingPredicateKeys,
+      };
+    }
+    if (predicateResult === 'TRUE') {
+      return { ...result, missingInputs: [] };
+    }
+    return result;
+  });
+}
+
+function predicateKeysForRow(
+  packet: BaseOneShotAssessmentPacket,
+  rowIndex: number,
+): string[] {
+  const table = packet.jobAidContext.criterionTable;
+  const index = table.columns.indexOf('missingPredicateKeys');
+  if (index < 0) return [];
+  const value = table.rows[rowIndex]?.[index];
+  if (!Array.isArray(value)) return [];
+  return value.filter((key): key is string =>
+    typeof key === 'string' && key.trim() !== '',
+  );
+}
+
+function decodeCriterionTableValue(
+  table: BaseOneShotAssessmentPacket['jobAidContext']['criterionTable'],
+  value: unknown,
+  column: string,
+): string | null {
+  if (typeof value === 'string') return value;
+  if (!Number.isInteger(value)) return null;
+  const dictionary = table.valueDictionaries?.[column];
+  const decoded = dictionary?.[Number(value)];
+  return typeof decoded === 'string' ? decoded : null;
 }
 
 function decodeColumnarRuleResults(

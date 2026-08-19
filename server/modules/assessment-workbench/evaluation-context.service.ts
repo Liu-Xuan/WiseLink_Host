@@ -292,25 +292,12 @@ function buildResourceAssessment(
   const sourceCandidateCount = item.analysis.sourceEvidenceCandidates.length;
   const adoptionCount = item.sourceEvidenceAdoptions.length;
   const confirmedReview = isConfirmedReview(item.engineerReview);
-  let availabilityStatus: ResourceAvailabilityStatus;
-
-  if (confirmedReview || item.evidenceRefCount > 0) {
-    availabilityStatus = 'AVAILABLE_VERIFIED';
-  } else if (sourceCandidateCount > 0 || adoptionCount > 0) {
-    availabilityStatus = 'AVAILABLE_CANDIDATE';
-  } else if (item.analysis.predicateResult === 'FALSE') {
-    availabilityStatus = 'NOT_APPLICABLE';
-  } else if (
-    item.analysis.predicateResult === 'UNKNOWN' ||
-    item.missingInformation !== null ||
-    item.status === 'EVIDENCE_MISSING' ||
-    item.status === 'NOT_STARTED' ||
-    item.status === 'NEEDS_REVIEW'
-  ) {
-    availabilityStatus = 'MISSING';
-  } else {
-    availabilityStatus = 'AVAILABLE_CANDIDATE';
-  }
+  const availabilityStatus = classifyResourceAvailability({
+    item,
+    confirmedReview,
+    sourceCandidateCount,
+    adoptionCount,
+  });
 
   const missing = availabilityStatus === 'MISSING';
   return {
@@ -342,6 +329,41 @@ function buildResourceAssessment(
       : null,
     authorityBoundary: 'candidate_only',
   };
+}
+
+/**
+ * Applicability is evaluated before evidence availability. A source-bound
+ * document candidate cannot turn a controlled FALSE into an applicable rule,
+ * and it cannot satisfy a missing FleetFacts/installation predicate.
+ */
+export function classifyResourceAvailability(input: {
+  item: Pick<ShadowEvaluationItem, 'analysis' | 'missingInformation' | 'status' | 'evidenceRefCount'>;
+  confirmedReview: boolean;
+  sourceCandidateCount: number;
+  adoptionCount: number;
+}): ResourceAvailabilityStatus {
+  const { item, confirmedReview, sourceCandidateCount, adoptionCount } = input;
+  if (item.analysis.predicateResult === 'FALSE') {
+    return 'NOT_APPLICABLE';
+  }
+  if (item.analysis.predicateResult === 'UNKNOWN') {
+    return 'MISSING';
+  }
+  if (confirmedReview || item.evidenceRefCount > 0) {
+    return 'AVAILABLE_VERIFIED';
+  }
+  if (sourceCandidateCount > 0 || adoptionCount > 0) {
+    return 'AVAILABLE_CANDIDATE';
+  }
+  if (
+    item.missingInformation !== null ||
+    item.status === 'EVIDENCE_MISSING' ||
+    item.status === 'NOT_STARTED' ||
+    item.status === 'NEEDS_REVIEW'
+  ) {
+    return 'MISSING';
+  }
+  return 'AVAILABLE_CANDIDATE';
 }
 
 function isConfirmedReview(review: EngineerReviewState | null): boolean {

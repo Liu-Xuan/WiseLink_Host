@@ -7,6 +7,7 @@ import type {
   CanonicalWorkItemProjection,
 } from '@shared/api.interface';
 import { DynamicRulesEvaluationProcessor } from '../assessment-workbench/assessment-host-consumer.public-api';
+import { serializeNormalizedBaseOneShotOutput } from '../assessment-workbench/base-one-shot-assessment.processor';
 import { UNIFIED_ARTIFACT_STORE } from '../unified-reader/unified-reader.constants';
 import type { UnifiedArtifactStorePort } from '../unified-reader/unified-reader.types';
 import {
@@ -115,6 +116,10 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
         attempt,
       );
       const result = this.processor.consumeOutput(request, output);
+      const normalizedArtifactBytes = serializeNormalizedBaseOneShotOutput(
+        output,
+        result,
+      );
       const currentBase = workItem.integratedAssessment?.baseRules;
       if (workItem.integratedAssessment?.engineerReviews && currentBase) {
         const prospectiveBase = baseRuleProjection(
@@ -127,7 +132,7 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
         await this.engineerReviews.assertLedgerCompatibleWithDynamicBytes(
           workItem,
           prospectiveBase,
-          new TextEncoder().encode(output),
+          normalizedArtifactBytes,
         );
       }
       try {
@@ -140,7 +145,7 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
         throw error;
       }
       const persisted = await this.artifactStore.persistAndReadback(
-        new TextEncoder().encode(output),
+        normalizedArtifactBytes,
       );
       const baseRules = baseRuleProjection(
         workItem,
