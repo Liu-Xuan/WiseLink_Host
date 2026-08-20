@@ -4,6 +4,7 @@ import { FileService } from '@lark-apaas/fullstack-nestjs-core';
 import { DocumentManagementHostedCore } from '../documentManagementHostedCore.js';
 import { MiaodaFileServiceArtifactStore } from '../miaodaFileServiceArtifactStore.js';
 import { MiaodaHostedDocumentCatalog } from './miaoda-hosted-document-catalog';
+import { assertProductionMiaodaBrowserIdentityAvailable } from '../../../../work-item/production-miaoda-browser-ingress';
 import {
   DOCUMENT_MANAGEMENT_INGEST_AUTHORIZER,
   type DocumentManagementIngestAuthorizer,
@@ -35,6 +36,7 @@ export class DocumentManagementHostedService {
   }
 
   ingestFileServiceSelection(request: unknown, context: HostedRequestContext) {
+    assertProductionMiaodaBrowserIdentityAvailable();
     return this.core.ingestFileServiceSelection(request, context);
   }
 
@@ -42,6 +44,7 @@ export class DocumentManagementHostedService {
     context: HostedRequestContext,
     selection: { bucketId: string; filePath: string },
   ): Promise<void> {
+    assertProductionMiaodaBrowserIdentityAvailable();
     return this.authorizer.assertCanIngest({
       ...context,
       action: 'DOCUMENT_INGEST',
@@ -53,6 +56,7 @@ export class DocumentManagementHostedService {
     documentVersionId: string,
     context: HostedRequestContext,
   ) {
+    assertProductionMiaodaBrowserIdentityAvailable();
     await this.authorizer.assertCanRead({
       ...context,
       action: 'DOCUMENT_READ',

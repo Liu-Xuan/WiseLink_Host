@@ -34,6 +34,7 @@ export interface WorkItemReservation {
 
 export interface WorkItemAuthorizationBinding {
   workItemId: string;
+  revision: number;
   tenantId: string;
   requestId: string;
   documentId: string;
@@ -239,6 +240,7 @@ export class MiaodaWorkItemRepository {
     const [row] = await this.db
       .select({
         workItemId: workItem.workItemId,
+        revision: workItem.revision,
         tenantId: workItem.tenantId,
         requestId: workItem.requestId,
         documentId: workItem.documentId,
@@ -266,6 +268,7 @@ export class MiaodaWorkItemRepository {
     const [row] = await this.db
       .select({
         workItemId: workItem.workItemId,
+        revision: workItem.revision,
         tenantId: workItem.tenantId,
         requestId: workItem.requestId,
         documentId: workItem.documentId,
@@ -300,6 +303,7 @@ export class MiaodaWorkItemRepository {
     const [row] = await this.db
       .select({
         workItemId: workItem.workItemId,
+        revision: workItem.revision,
         tenantId: workItem.tenantId,
         requestId: workItem.requestId,
         documentId: workItem.documentId,

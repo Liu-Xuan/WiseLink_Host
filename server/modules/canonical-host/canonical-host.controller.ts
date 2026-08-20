@@ -9,6 +9,7 @@ import {
   Req,
   UnauthorizedException,
   Optional,
+  UseGuards,
 } from '@nestjs/common';
 import { NeedLogin } from '@lark-apaas/fullstack-nestjs-core';
 import type { Request } from 'express';
@@ -19,6 +20,7 @@ import type {
 } from '@shared/api.interface';
 
 import { OrdinaryWorkItemService } from '../work-item/ordinary-work-item.service';
+import { ProductionMiaodaBrowserObjectIngressGuard } from '../work-item/production-miaoda-browser-ingress';
 import { developmentRunBody } from './canonical-development-run-input';
 import { CanonicalHostAeoService } from './canonical-host-aeo.service';
 import { CanonicalHostEngineerReviewService } from './canonical-host-engineer-review.service';
@@ -36,6 +38,7 @@ const ENGINEER_DECISIONS = new Set<CanonicalEngineerReviewDecision>([
 ]);
 
 @NeedLogin()
+@UseGuards(ProductionMiaodaBrowserObjectIngressGuard)
 @Controller('api/canonical-host')
 export class CanonicalHostController {
   constructor(
@@ -183,9 +186,15 @@ export class CanonicalHostController {
   }
 }
 
-export function hostActor(request: Request): CanonicalHostActor {
+function hostActor(request: Request): CanonicalHostActor {
   const context = request.userContext;
-  if (!context?.userId || !context.tenantId || !context.appId || !context.env) {
+  if (
+    !context?.userId ||
+    !context.tenantId ||
+    !context.appId ||
+    !context.env ||
+    context.isSystemAccount === true
+  ) {
     throw new UnauthorizedException('CANONICAL_HOST_ACTOR_CONTEXT_REQUIRED');
   }
   return {

@@ -26,7 +26,7 @@ export class DocumentManagementHostedModule {
         MiaodaHostedDocumentCatalog,
         DocumentManagementHostedService,
       ],
-      exports: [MiaodaHostedDocumentCatalog, DocumentManagementHostedService],
+      exports: [DocumentManagementHostedService],
     };
   }
 }

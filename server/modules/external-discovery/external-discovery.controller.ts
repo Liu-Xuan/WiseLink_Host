@@ -1,11 +1,15 @@
-import { Controller, Get, Param, Post, Req } from '@nestjs/common';
+import { Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { NeedLogin } from '@lark-apaas/fullstack-nestjs-core';
 import type { Request } from 'express';
 
-import { hostActor } from '../canonical-host/canonical-host.controller';
+import {
+  assertProductionMiaodaBrowserIdentityAvailable,
+  ProductionMiaodaBrowserObjectIngressGuard,
+} from '../work-item/production-miaoda-browser-ingress';
 import { ExternalDiscoveryService } from './external-discovery.service';
 
 @NeedLogin()
+@UseGuards(ProductionMiaodaBrowserObjectIngressGuard)
 @Controller('api/external-discovery')
 export class ExternalDiscoveryController {
   constructor(private readonly service: ExternalDiscoveryService) {}
@@ -43,10 +47,22 @@ export class ExternalDiscoveryController {
 }
 
 function serverContext(request: Request) {
-  const actor = hostActor(request);
+  assertProductionMiaodaBrowserIdentityAvailable();
+  const actor = request.userContext;
+  if (
+    !actor?.userId ||
+    actor.tenantId === undefined ||
+    actor.tenantId === null ||
+    actor.isSystemAccount === true
+  ) {
+    throw Object.assign(new Error('CANONICAL_HOST_ACTOR_CONTEXT_REQUIRED'), {
+      code: 'CANONICAL_HOST_ACTOR_CONTEXT_REQUIRED',
+      statusCode: 401,
+    });
+  }
   return {
-    actorUserId: actor.userId,
-    tenantId: actor.tenantId,
-    roles: actor.roles,
+    actorUserId: String(actor.userId),
+    tenantId: String(actor.tenantId),
+    roles: [...(actor.roles ?? [])],
   };
 }

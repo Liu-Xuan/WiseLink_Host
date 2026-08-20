@@ -1,7 +1,19 @@
-import { Body, Controller, Get, Param, Post, Req } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { NeedLogin } from '@lark-apaas/fullstack-nestjs-core';
 import type { Request } from 'express';
 
+import {
+  assertProductionMiaodaBrowserIdentityAvailable,
+  ProductionMiaodaBrowserObjectIngressGuard,
+} from '../../../../work-item/production-miaoda-browser-ingress';
 import { DocumentManagementHostedService } from './document-management-hosted.service';
 
 function contextFromRequest(request: Request) {
@@ -19,6 +31,7 @@ function contextFromRequest(request: Request) {
   };
 }
 @NeedLogin()
+@UseGuards(ProductionMiaodaBrowserObjectIngressGuard)
 @Controller('api/document-management')
 // Registered by DocumentManagementHostedModule.register(); the static lint rule
 // cannot follow DynamicModule metadata.
@@ -28,6 +41,7 @@ export class DocumentManagementHostedController {
 
   @Post('ingestions/file-service')
   ingestFileServiceSelection(@Body() body: unknown, @Req() request: Request) {
+    assertProductionMiaodaBrowserIdentityAvailable();
     rejectReservedExternalDiscoveryClaims(body);
     return this.service.ingestFileServiceSelection(body, contextFromRequest(request));
   }
@@ -37,6 +51,7 @@ export class DocumentManagementHostedController {
     @Param('documentVersionId') documentVersionId: string,
     @Req() request: Request,
   ) {
+    assertProductionMiaodaBrowserIdentityAvailable();
     return this.service.getDocumentVersion(documentVersionId, contextFromRequest(request));
   }
 }

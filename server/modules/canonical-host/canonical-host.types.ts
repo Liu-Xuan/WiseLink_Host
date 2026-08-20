@@ -9,6 +9,7 @@ import type {
   U0Frozen2FailureAdapterInput,
   U0Frozen2FailureBuildResult,
 } from '../unified-reader/unified-reader.types';
+import type { CanonicalMiaodaFinalUserActorContext } from '../work-item/canonical-object-access.port';
 
 export interface CanonicalHostActor {
   userId: string;
@@ -16,6 +17,8 @@ export interface CanonicalHostActor {
   appId: string;
   roles: string[];
   env: string;
+  /** Reserved for a future verified adapter; never populated from userContext. */
+  objectAccessActor?: CanonicalMiaodaFinalUserActorContext;
 }
 
 export interface CanonicalAuthorizationDecision {

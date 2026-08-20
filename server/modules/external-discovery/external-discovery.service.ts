@@ -9,6 +9,7 @@ import {
   DocumentManagementHostedService,
   MiaodaExternalDiscoveryCandidateStore,
 } from '../document-management/src/hosted/nest';
+import { assertProductionMiaodaBrowserIdentityAvailable } from '../work-item/production-miaoda-browser-ingress';
 import {
   FeishuNativeOemMonitoringIngress,
   type FeishuNativeOemSearchRun,
@@ -92,6 +93,7 @@ export class ExternalDiscoveryService {
   async list(
     context: FeishuNativeOemServerContext,
   ): Promise<ExternalDiscoveryPageResponse> {
+    assertProductionMiaodaBrowserIdentityAvailable();
     const entries = await this.store.listSearchRuns(context);
     return {
       status: 'FRESH_READ',
@@ -111,6 +113,7 @@ export class ExternalDiscoveryService {
     candidateRef: string;
     context: FeishuNativeOemServerContext;
   }): Promise<ExternalDiscoverySelectionResponse> {
+    assertProductionMiaodaBrowserIdentityAvailable();
     const result = (await this.ingress.recordHumanSelection(
       {
         searchRunRef: input.searchRunRef,
@@ -141,6 +144,7 @@ export class ExternalDiscoveryService {
     candidateRef: string;
     context: FeishuNativeOemServerContext;
   }): Promise<ExternalDiscoverySelectionResponse> {
+    assertProductionMiaodaBrowserIdentityAvailable();
     const result = (await this.ingress.recordHumanRejection(
       {
         searchRunRef: input.searchRunRef,
@@ -170,6 +174,7 @@ export class ExternalDiscoveryService {
     input: unknown,
     context: FeishuNativeOemServerContext,
   ): Promise<unknown> {
+    assertProductionMiaodaBrowserIdentityAvailable();
     return this.ingress.ingestSelectedCandidate(input, context);
   }
 }

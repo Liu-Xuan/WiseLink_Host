@@ -11,6 +11,5 @@ export {
   DOCUMENT_MANAGEMENT_INGEST_AUTHORIZER,
   type DocumentManagementIngestAuthorizer,
 } from './document-management-hosted.tokens';
-export { MiaodaHostedDocumentCatalog } from './miaoda-hosted-document-catalog';
 export { MiaodaExternalDiscoveryCandidateStore } from './miaoda-external-discovery-candidate.store';
 export { UnconfiguredDocumentManagementIngestAuthorizer } from './unconfigured-document-management-ingest-authorizer';

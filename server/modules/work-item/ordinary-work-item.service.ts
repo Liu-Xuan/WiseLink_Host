@@ -18,6 +18,7 @@ import {
 } from '../document-management/src/hosted/nest';
 import { MiaodaDocumentVersionSourceResolver } from './miaoda-document-version-source.resolver';
 import { MiaodaWorkItemRepository } from './miaoda-work-item.repository';
+import { assertProductionMiaodaBrowserIdentityAvailable } from './production-miaoda-browser-ingress';
 import { MiaodaFileServiceArtifactStore } from '../document-management/src/hosted/miaodaFileServiceArtifactStore.js';
 import {
   createPhase5BoeingSbIngestRequest,
@@ -76,6 +77,7 @@ export class OrdinaryWorkItemService {
     actor: CanonicalHostActor,
     origin: 'MIAODA' | 'AILY' = 'MIAODA',
   ): Promise<CanonicalOrdinaryWorkItemRunResponse> {
+    assertProductionMiaodaBrowserIdentityAvailable();
     return this.runPdf(input, actor, origin, 'canonical');
   }
 
@@ -83,6 +85,7 @@ export class OrdinaryWorkItemService {
     input: CanonicalDevelopmentWorkItemRunRequest,
     actor: CanonicalHostActor,
   ): Promise<CanonicalOrdinaryWorkItemRunResponse> {
+    assertProductionMiaodaBrowserIdentityAvailable();
     requireDevelopmentWorkItemRole(actor);
     return this.runDevelopment(input, actor);
   }

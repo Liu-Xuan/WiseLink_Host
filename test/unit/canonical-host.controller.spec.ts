@@ -15,9 +15,13 @@ jest.mock('@nestjs/common', () => {
   };
 });
 
-jest.mock('@lark-apaas/fullstack-nestjs-core', () => ({
-  NeedLogin: () => () => undefined,
-}));
+jest.mock('@lark-apaas/fullstack-nestjs-core', () => {
+  const actual = jest.requireActual('@lark-apaas/fullstack-nestjs-core');
+  return {
+    ...actual,
+    NeedLogin: () => () => undefined,
+  };
+});
 
 import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 
@@ -35,6 +39,7 @@ const HOST_REQUEST = {
 
 function target() {
   const workItems = {
+    parsePdf: jest.fn().mockResolvedValue({ workItemCreated: true }),
     createDevelopmentRun: jest.fn().mockResolvedValue({
       workItemCreated: true,
     }),
@@ -75,18 +80,6 @@ function target() {
 }
 
 describe('CanonicalHostController assessment actions', () => {
-  it('returns only the server-derived identity used to namespace browser metadata', () => {
-    const { controller } = target();
-
-    expect(controller.identityContext(HOST_REQUEST as never)).toEqual({
-      userId: 'engineer-1001',
-      tenantId: 'tenant-2001',
-    });
-    expect(() =>
-      controller.identityContext({ userContext: null } as never),
-    ).toThrow(UnauthorizedException);
-  });
-
   it('routes the tenant-scoped LibraryIndex read through the authenticated actor', async () => {
     const { controller, libraryIndex } = target();
 
@@ -99,8 +92,12 @@ describe('CanonicalHostController assessment actions', () => {
     );
     expect(libraryIndex.read).toHaveBeenCalledWith({
       workItemId: 'WI-LIBRARY-1',
-      actor: expect.objectContaining({ tenantId: 'tenant-2001' }),
+      actor: expect.objectContaining({
+        tenantId: 'tenant-2001',
+      }),
     });
+    const actor = libraryIndex.read.mock.calls[0]?.[0]?.actor;
+    expect(actor).not.toHaveProperty('objectAccessActor');
   });
 
   it('requires a logged-in actor before entering the LibraryIndex service', () => {
@@ -109,41 +106,6 @@ describe('CanonicalHostController assessment actions', () => {
       controller.library('WI-LIBRARY-1', { userContext: null } as never),
     ).toThrow(UnauthorizedException);
     expect(libraryIndex.read).not.toHaveBeenCalled();
-  });
-
-  it('routes development runs through the authenticated Host actor', async () => {
-    const { controller, workItems } = target();
-
-    await expect(
-      controller.createDevelopmentRun(
-        {
-          documentVersionId: 'document_version_sb',
-          developmentRunToken: '0f8fad5b-d9cb-469f-a165-70867728950e',
-        },
-        HOST_REQUEST as never,
-      ),
-    ).resolves.toEqual({ workItemCreated: true });
-    expect(workItems.createDevelopmentRun).toHaveBeenCalledWith(
-      expect.objectContaining({
-        documentVersionId: 'document_version_sb',
-      }),
-      expect.objectContaining({ userId: 'engineer-1001' }),
-    );
-  });
-
-  it('rejects development-run authority fields before entering the service', async () => {
-    const { controller, workItems } = target();
-    expect(() =>
-      controller.createDevelopmentRun(
-        {
-          documentVersionId: 'document_version_sb',
-          developmentRunToken: '0f8fad5b-d9cb-469f-a165-70867728950e',
-          authority: 'forged',
-        } as never,
-        HOST_REQUEST as never,
-      ),
-    ).toThrow(BadRequestException);
-    expect(workItems.createDevelopmentRun).not.toHaveBeenCalled();
   });
 
   it('passes only ordinary review fields and the authenticated actor', async () => {

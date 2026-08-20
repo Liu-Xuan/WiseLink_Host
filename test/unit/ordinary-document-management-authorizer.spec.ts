@@ -114,7 +114,9 @@ describe('ordinary document-management authorization', () => {
     ).rejects.toMatchObject({ code: 'DOCUMENT_ACTION_FORBIDDEN' });
   });
 
-  it('performs no Catalog or FileService I/O when DocumentVersion read is denied', async () => {
+  it.each(['ingest', 'authorize-ingest', 'read'] as const)(
+    'rejects direct hosted-service %s before context, authorizer, Catalog, or FileService I/O',
+    async (operation) => {
     const fileService = { from: jest.fn() };
     const catalog = {
       readDocumentVersion: jest.fn(),
@@ -122,12 +124,7 @@ describe('ordinary document-management authorization', () => {
     };
     const authorizer = {
       assertCanIngest: jest.fn(),
-      assertCanRead: jest.fn().mockRejectedValue(
-        Object.assign(new Error('DOCUMENT_VERSION_NOT_FOUND'), {
-          code: 'DOCUMENT_VERSION_NOT_FOUND',
-          statusCode: 404,
-        }),
-      ),
+      assertCanRead: jest.fn(),
     };
     const service = new DocumentManagementHostedService(
       fileService as never,
@@ -135,17 +132,43 @@ describe('ordinary document-management authorization', () => {
       authorizer,
     );
 
-    await expect(
-      service.getDocumentVersion('DV-1', {
-        ...creatorContext,
-        actorUserId: 'outsider',
-      }),
-    ).rejects.toMatchObject({
-      code: 'DOCUMENT_VERSION_NOT_FOUND',
-      statusCode: 404,
-    });
-    expect(catalog.readDocumentVersion).not.toHaveBeenCalled();
-    expect(catalog.readFamily).not.toHaveBeenCalled();
-    expect(fileService.from).not.toHaveBeenCalled();
-  });
+      const forbidden = new Proxy(
+        {},
+        {
+          get(): never {
+            throw new Error('DIRECT_DM_SERVICE_READ_CALLER_INPUT');
+          },
+        },
+      );
+      const invoke = (): unknown => {
+        if (operation === 'ingest') {
+          return service.ingestFileServiceSelection(
+            forbidden,
+            forbidden as typeof creatorContext,
+          );
+        }
+        if (operation === 'authorize-ingest') {
+          return service.assertCanIngest(
+            forbidden as typeof creatorContext,
+            forbidden as { bucketId: string; filePath: string },
+          );
+        }
+        return service.getDocumentVersion(
+          'DV-1',
+          forbidden as typeof creatorContext,
+        );
+      };
+
+      await expect(Promise.resolve().then(invoke)).rejects.toMatchObject({
+        code: 'CANONICAL_IDENTITY_HANDOFF_UNAVAILABLE',
+        statusCode: 503,
+        denialSource: 'MIAODA_BROWSER_UNAVAILABLE_ADAPTER',
+      });
+      expect(authorizer.assertCanIngest).not.toHaveBeenCalled();
+      expect(authorizer.assertCanRead).not.toHaveBeenCalled();
+      expect(catalog.readDocumentVersion).not.toHaveBeenCalled();
+      expect(catalog.readFamily).not.toHaveBeenCalled();
+      expect(fileService.from).not.toHaveBeenCalled();
+    },
+  );
 });
