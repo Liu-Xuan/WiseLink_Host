@@ -2,8 +2,10 @@ import type {
   CanonicalEngineerReviewPageContext,
   CanonicalIntegratedAssessmentProjection,
   CanonicalWorkbenchAuditProjection,
+  CanonicalReaderProjection,
 } from '../../shared/api.interface';
 import {
+  buildAssessmentBusinessContent,
   buildAssessmentSemantics,
   buildReaderCapabilities,
   getReaderViewMode,
@@ -12,25 +14,13 @@ import {
 describe('canonical Host workbench projection', () => {
   it('keeps PDF and bilingual modes explicit when Host data is absent', () => {
     const capabilities = buildReaderCapabilities({
-      source: {
-        documentId: 'DOC-1',
-        documentVersionId: 'DV-1',
-        parserRequestId: 'REQ-1',
-        sourceArtifactId: 'ART-1',
-        sourceFileSha256: 'abc',
-        sourceByteLength: 1024,
-        driveFileToken: 'FILE-1',
-        driveSourceVersion: 'V1',
-      },
-      package: null,
-      canQueryParsedUnits: false,
-      readerAudit: readerAudit(0, 0),
+      readerProjection: null,
     });
 
     expect(getReaderViewMode('unknown')).toBe('structured');
     expect(capabilities).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ mode: 'source', status: 'LIMITED' }),
+        expect.objectContaining({ mode: 'source', status: 'UNAVAILABLE' }),
         expect.objectContaining({
           mode: 'structured',
           status: 'UNAVAILABLE',
@@ -38,52 +28,47 @@ describe('canonical Host workbench projection', () => {
         expect.objectContaining({ mode: 'bilingual', status: 'UNAVAILABLE' }),
       ]),
     );
-    expect(capabilities[0].note).toContain('未投影 PDF 预览 URL');
+    expect(capabilities[0].note).toContain('没有 Reader projection');
     expect(capabilities[2].note).toContain('不会推断或补造译文');
   });
 
   it('reports structured Reader availability from Host audit only', () => {
     const capabilities = buildReaderCapabilities({
-      source: {
-        documentId: 'DOC-1',
-        documentVersionId: 'DV-1',
-        parserRequestId: 'REQ-1',
-        sourceArtifactId: 'ART-1',
-        sourceFileSha256: 'abc',
-        sourceByteLength: 1024,
-        driveFileToken: 'FILE-1',
-        driveSourceVersion: 'V1',
-      },
-      package: {
-        packageId: 'PKG-1',
-        contractId: 'techpub.parsed-package.v1',
-        contractRevision: 'frozen.2',
-        artifact: artifact('PKG-ART'),
-        contentHash: 'content',
-        semanticHash: 'semantic',
-        provenanceHash: 'provenance',
-        coverageHash: 'coverage',
-        resultStatus: 'complete',
-        title: 'SB test',
-        contentUnitCount: 4,
-        sourceRefCount: 3,
-        readerReceiptId: 'RECEIPT-1',
-        fullValidatorProof: {
-          validatorId: 'U0Frozen2SchemaSemanticValidator',
-          validatorRevision: 'V1',
-          contractCommit: 'fa69ada08265934951df53c7a61a3ccdb8cb2900',
-          artifactSha256: 'PKG-ART',
-        },
-      },
-      canQueryParsedUnits: true,
-      readerAudit: readerAudit(4, 3),
+      readerProjection: readerProjection(),
     });
 
     expect(capabilities[1]).toEqual(
       expect.objectContaining({ mode: 'structured', status: 'AVAILABLE' }),
     );
-    expect(capabilities[1].note).toContain('4 个单元');
-    expect(capabilities[1].note).toContain('3 个完成来源绑定');
+    expect(capabilities[1].note).toContain('2 个单元');
+    expect(capabilities[1].note).toContain('2 个带 source locator');
+  });
+
+  it('uses Host Reader locators and business assessment content without a second source', () => {
+    const projection = readerProjection();
+    expect(projection.units[0].sourceLocators[0]).toMatchObject({
+      sourceRefId: 'SRC-001',
+      pageStart: 4,
+      pageEnd: 5,
+      charStart: 12,
+      charEnd: 42,
+      normalizedPath: '/section/applicability',
+    });
+    const content = buildAssessmentBusinessContent(
+      integratedAssessmentWithBusinessContent(),
+      reviewContextWithBusinessContent(),
+      'RULE-1',
+    );
+    expect(content.overall?.overallCandidate).toContain('候选综合');
+    expect(content.overall?.findings?.[0].sourceRefIds).toEqual(['SRC-001']);
+    expect(content.overall?.missingInputs).toEqual(['受控机队事实']);
+    expect(content.selectedReviewItem).toMatchObject({
+      factsConsidered: ['文档事实 A'],
+      ruleApplication: '规则应用 A',
+      analysisSummary: '分析摘要 A',
+      sourceRefs: ['SRC-001'],
+      missingInputs: ['输入 A'],
+    });
   });
 
   it('surfaces stale, source, review, and missing-input gaps', () => {
@@ -133,6 +118,108 @@ function readerAudit(
     allReturnedResultsSourceBound: queryResultCount === sourceBoundResultCount,
     applicabilityConclusionAllowed: false,
     note: 'Host Reader audit',
+  };
+}
+
+function readerProjection(): CanonicalReaderProjection {
+  return {
+    sourceKind: 'native_s1000d',
+    structuredUnitCount: 2,
+    sourceRefCount: 2,
+    query: 'applicability',
+    units: [
+      {
+        unitId: 'UNIT-1',
+        kind: 'paragraph',
+        text: '受控原文',
+        sourceRefIds: ['SRC-001'],
+        sourceLocators: [
+          {
+            sourceRefId: 'SRC-001',
+            kind: 'pdf',
+            artifactId: 'ART-1',
+            pageStart: 4,
+            pageEnd: 5,
+            charStart: 12,
+            charEnd: 42,
+            charOffsetUnit: 'utf16',
+            normalizedPath: '/section/applicability',
+            xpath: null,
+            elementId: 'app-1',
+            quote: '受控原文',
+            bbox: [1, 2, 3, 4],
+          },
+        ],
+      },
+      {
+        unitId: 'UNIT-2',
+        kind: 'table',
+        text: '受控表格',
+        sourceRefIds: ['SRC-002'],
+        sourceLocators: [
+          {
+            sourceRefId: 'SRC-002',
+            kind: 'xml',
+            artifactId: 'ART-1',
+            pageStart: null,
+            pageEnd: null,
+            charStart: null,
+            charEnd: null,
+            charOffsetUnit: null,
+            normalizedPath: '/table/effectivity',
+            xpath: '/root/table[1]',
+            elementId: null,
+            quote: null,
+            bbox: null,
+          },
+        ],
+      },
+    ],
+    pdfPreview: {
+      status: 'UNAVAILABLE',
+      reason: 'PDF_PREVIEW_NOT_CONFIGURED',
+    },
+    translation: {
+      status: 'UNAVAILABLE',
+      reason: 'TRANSLATION_PROJECTION_NOT_AVAILABLE',
+    },
+  };
+}
+
+function integratedAssessmentWithBusinessContent(): CanonicalIntegratedAssessmentProjection {
+  return {
+    ...integratedAssessment(),
+    overallSynthesis: {
+      ...integratedAssessment().overallSynthesis!,
+      overallCandidate: '候选综合：需要人工复核。',
+      applicabilityStatus: '待人工复核',
+      findings: [
+        {
+          finding: '适用性存在条件',
+          basis: '依据文档事实 A',
+          sourceRefIds: ['SRC-001'],
+          assumptions: ['假设 A'],
+          uncertainty: '不确定性 A',
+        },
+      ],
+      missingInputs: ['受控机队事实'],
+    },
+  };
+}
+
+function reviewContextWithBusinessContent(): CanonicalEngineerReviewPageContext {
+  return {
+    ...reviewContext(),
+    items: [
+      {
+        ...reviewContext().items[0],
+        factsConsidered: ['文档事实 A'],
+        ruleApplication: '规则应用 A',
+        analysisSummary: '分析摘要 A',
+        sourceRefs: ['SRC-001'],
+        missingInputs: ['输入 A'],
+      },
+    ],
   };
 }
 

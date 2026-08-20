@@ -1,9 +1,9 @@
 import type {
-  CanonicalDocumentVersionSelection,
   CanonicalEngineerReviewPageContext,
   CanonicalIntegratedAssessmentProjection,
+  CanonicalOpenClawOverallProjection,
+  CanonicalReaderProjection,
   CanonicalWorkbenchAuditProjection,
-  CanonicalWorkItemPackageProjection,
 } from '@shared/api.interface';
 
 type ReaderViewMode = 'source' | 'structured' | 'bilingual';
@@ -17,10 +17,14 @@ interface ReaderCapability {
 }
 
 interface ReaderProjectionInput {
-  source: CanonicalDocumentVersionSelection;
-  package: CanonicalWorkItemPackageProjection | null;
-  canQueryParsedUnits: boolean;
-  readerAudit: CanonicalWorkbenchAuditProjection['reader'];
+  readerProjection: CanonicalReaderProjection | null;
+}
+
+interface AssessmentBusinessContent {
+  overall: CanonicalOpenClawOverallProjection | null;
+  selectedReviewItem:
+    | CanonicalEngineerReviewPageContext['items'][number]
+    | null;
 }
 
 interface AssessmentProjectionInput {
@@ -82,38 +86,67 @@ function getReaderViewMode(value: string | null): ReaderViewMode {
   return 'structured';
 }
 
+function findReaderProjectionUnit(
+  readerProjection: CanonicalReaderProjection | null,
+  unitId: string,
+  sourceRefId: string,
+): CanonicalReaderProjection['units'][number] | undefined {
+  return readerProjection?.units.find(
+    (unit) =>
+      (unitId === '' || unit.unitId === unitId) &&
+      (sourceRefId === '' || unit.sourceRefIds.includes(sourceRefId)),
+  );
+}
+
 function buildReaderCapabilities(
   input: ReaderProjectionInput,
 ): ReaderCapability[] {
-  const structuredAvailable: boolean =
-    input.package !== null && input.canQueryParsedUnits;
-  const returnedCount: number = input.readerAudit.queryResultCount;
-  const sourceBoundCount: number = input.readerAudit.sourceBoundResultCount;
+  const projection = input.readerProjection;
+  const locatedUnitCount: number =
+    projection?.units.filter((unit) => unit.sourceLocators.length > 0).length ??
+    0;
 
   return [
     {
       mode: 'source',
       label: 'PDF 原文',
-      status: 'LIMITED',
-      note:
-        `已绑定 DocumentVersion ${input.source.documentVersionId}；` +
-        'Host 当前未投影 PDF 预览 URL、页码或 bbox 定位。',
+      status: projection ? projection.pdfPreview.status : 'UNAVAILABLE',
+      note: projection
+        ? `Host PDF 预览状态：${projection.pdfPreview.status} · ${projection.pdfPreview.reason}`
+        : '当前 WorkItem 没有 Reader projection，无法确认 PDF 预览能力。',
     },
     {
       mode: 'structured',
       label: '结构化原文',
-      status: structuredAvailable ? 'AVAILABLE' : 'UNAVAILABLE',
-      note: structuredAvailable
-        ? `当前查询返回 ${returnedCount} 个单元，${sourceBoundCount} 个完成来源绑定。`
-        : '当前 WorkItem 尚无可查询的受控解析包。',
+      status: projection ? 'AVAILABLE' : 'UNAVAILABLE',
+      note: projection
+        ? `当前查询返回 ${projection.units.length} 个单元，${locatedUnitCount} 个带 source locator。`
+        : '当前 WorkItem 尚无可查询的 Host Reader projection。',
     },
     {
       mode: 'bilingual',
       label: '中英文对照',
-      status: 'UNAVAILABLE',
-      note: 'Host 当前未投影双语内容单元或翻译来源，页面不会推断或补造译文。',
+      status: projection ? projection.translation.status : 'UNAVAILABLE',
+      note: projection
+        ? `Host 双语投影状态：${projection.translation.status} · ${projection.translation.reason}`
+        : '当前 WorkItem 没有 Reader projection，页面不会推断或补造译文。',
     },
   ];
+}
+
+function buildAssessmentBusinessContent(
+  integratedAssessment: CanonicalIntegratedAssessmentProjection | null,
+  engineerReviewContext: CanonicalEngineerReviewPageContext | null,
+  selectedCriterionId: string,
+): AssessmentBusinessContent {
+  const items = engineerReviewContext?.items ?? [];
+  return {
+    overall: integratedAssessment?.overallSynthesis ?? null,
+    selectedReviewItem:
+      items.find((item) => item.criterionId === selectedCriterionId) ??
+      items[0] ??
+      null,
+  };
 }
 
 function buildAssessmentSemantics(
@@ -228,11 +261,14 @@ function buildAssessmentSemantics(
 }
 
 export {
+  buildAssessmentBusinessContent,
   buildAssessmentSemantics,
   buildReaderCapabilities,
+  findReaderProjectionUnit,
   getReaderViewMode,
 };
 export type {
+  AssessmentBusinessContent,
   AssessmentGap,
   AssessmentProjectionInput,
   AssessmentSemantics,

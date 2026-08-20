@@ -1,16 +1,10 @@
-import {
-  FileSearch,
-  Languages,
-  LocateFixed,
-  Search,
-  X,
-} from 'lucide-react';
+import { FileSearch, Languages, LocateFixed, Search, X } from 'lucide-react';
 
 import { Button } from '@client/src/components/ui/button';
 import { Input } from '@client/src/components/ui/input';
 import type {
+  CanonicalReaderProjection,
   CanonicalDocumentParsingPageResponse,
-  UnifiedReaderQueryResult,
 } from '@shared/api.interface';
 
 import {
@@ -22,11 +16,11 @@ import {
 interface DocumentReaderWorkspaceProps {
   data: Pick<
     CanonicalDocumentParsingPageResponse,
-    'workItem' | 'entry' | 'queryResults' | 'workbenchAudit'
+    'workItem' | 'entry' | 'readerProjection'
   >;
   query: string;
   requestedSourceRef: string;
-  selectedReaderResult: UnifiedReaderQueryResult | undefined;
+  selectedReaderResult: CanonicalReaderProjection['units'][number] | undefined;
   readerMode: ReaderViewMode;
   onQueryChange: (value: string) => void;
   onQuerySubmit: () => void;
@@ -54,10 +48,7 @@ export function DocumentReaderWorkspace({
   onClearSourceRef,
 }: DocumentReaderWorkspaceProps) {
   const capabilities: ReaderCapability[] = buildReaderCapabilities({
-    source: data.workItem.source,
-    package: data.workItem.package,
-    canQueryParsedUnits: data.entry.capabilities.queryParsedUnits,
-    readerAudit: data.workbenchAudit.reader,
+    readerProjection: data.readerProjection ?? null,
   });
   const activeCapability: ReaderCapability =
     capabilities.find(
@@ -72,7 +63,11 @@ export function DocumentReaderWorkspace({
       <div className="parse-panel-label">
         <FileSearch /> 同一 Reader 查询 · 受控视图
       </div>
-      <div className="parse-reader-modes" role="tablist" aria-label="Reader 视图">
+      <div
+        className="parse-reader-modes"
+        role="tablist"
+        aria-label="Reader 视图"
+      >
         {capabilities.map((capability: ReaderCapability) => {
           const Icon =
             capability.mode === 'source'
@@ -116,10 +111,15 @@ export function DocumentReaderWorkspace({
           <div className="parse-reader-missing-state">
             <FileSearch aria-hidden="true" />
             <div>
-              <strong>暂不能预览 PDF 页面</strong>
+              <strong>
+                {data.readerProjection?.pdfPreview.status === 'UNAVAILABLE'
+                  ? '暂不能预览 PDF 页面'
+                  : 'PDF 原文预览状态未知'}
+              </strong>
               <p>
-                当前 Host 只返回来源身份和哈希；没有 PDF 预览 URL、页码或 bbox
-                locator。不会用本地文件或猜测位置替代受控来源。
+                {data.readerProjection?.pdfPreview.reason ??
+                  'PDF_PREVIEW_PROJECTION_MISSING'}
+                。不会用本地文件或猜测位置替代受控来源。
               </p>
             </div>
           </div>
@@ -130,9 +130,15 @@ export function DocumentReaderWorkspace({
         <section className="parse-reader-missing-state" aria-label="双语视图">
           <Languages aria-hidden="true" />
           <div>
-            <strong>中英文对照暂不可用</strong>
+            <strong>
+              {data.readerProjection?.translation.status === 'UNAVAILABLE'
+                ? '中英文对照暂不可用'
+                : '双语视图状态未知'}
+            </strong>
             <p>
-              当前 canonical Host 没有双语内容单元或翻译来源 projection；页面不会推断或补造译文。
+              {data.readerProjection?.translation.reason ??
+                'TRANSLATION_PROJECTION_MISSING'}
+              。页面不会推断或补造译文。
             </p>
           </div>
         </section>
@@ -186,8 +192,8 @@ export function DocumentReaderWorkspace({
             </div>
           ) : null}
           <div className="parse-results" data-ai-section-type="card-list">
-            {data.queryResults.length > 0 ? (
-              data.queryResults.map((result: UnifiedReaderQueryResult) => (
+            {data.readerProjection?.units.length ? (
+              data.readerProjection.units.map((result) => (
                 <article
                   className={`parse-result${
                     selectedReaderResult?.unitId === result.unitId
@@ -199,7 +205,8 @@ export function DocumentReaderWorkspace({
                   <span>{result.kind}</span>
                   <p>{result.text}</p>
                   <small>
-                    {result.sourceRefIds.length} 个 sourceRef · {result.unitId}
+                    {result.sourceRefIds.length} 个 sourceRef ·{' '}
+                    {result.sourceLocators.length} 个 locator · {result.unitId}
                   </small>
                   <div
                     className="parse-result-source-refs"
@@ -213,13 +220,56 @@ export function DocumentReaderWorkspace({
                         }
                         key={sourceRef}
                         title={sourceRef}
-                        onClick={() => onSourceRefSelect(result.unitId, sourceRef)}
+                        onClick={() =>
+                          onSourceRefSelect(result.unitId, sourceRef)
+                        }
                       >
                         <LocateFixed aria-hidden="true" />
                         {sourceRef}
                       </button>
                     ))}
                   </div>
+                  {result.sourceLocators.length > 0 ? (
+                    <div
+                      className="parse-reader-locators"
+                      aria-label={`${result.unitId} 受控来源定位`}
+                    >
+                      {result.sourceLocators.map((locator) => (
+                        <div
+                          className="parse-reader-locator"
+                          key={`${result.unitId}-${locator.sourceRefId}`}
+                        >
+                          <span>{locator.sourceRefId}</span>
+                          <p>
+                            {locator.pageStart !== null
+                              ? `页 ${locator.pageStart}${locator.pageEnd && locator.pageEnd !== locator.pageStart ? `-${locator.pageEnd}` : ''}`
+                              : '页码未投影'}
+                            {' · '}
+                            {locator.charStart !== null
+                              ? `字符 ${locator.charStart}${locator.charEnd !== null ? `-${locator.charEnd}` : ''}`
+                              : '字符区间未投影'}
+                          </p>
+                          <small
+                            title={
+                              locator.normalizedPath ??
+                              locator.xpath ??
+                              locator.elementId ??
+                              undefined
+                            }
+                          >
+                            {locator.normalizedPath ??
+                              locator.xpath ??
+                              locator.elementId ??
+                              locator.quote ??
+                              '结构路径未投影'}
+                            {locator.bbox
+                              ? ` · bbox ${locator.bbox.join(',')}`
+                              : ''}
+                          </small>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                 </article>
               ))
             ) : (

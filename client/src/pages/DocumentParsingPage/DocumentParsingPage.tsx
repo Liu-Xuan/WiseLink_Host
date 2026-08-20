@@ -16,7 +16,6 @@ import { canonicalHost } from '@client/src/api';
 import type {
   CanonicalEngineerReviewDecision,
   CanonicalDocumentParsingPageResponse,
-  UnifiedReaderQueryResult,
 } from '@shared/api.interface';
 import { Button } from '@client/src/components/ui/button';
 import {
@@ -27,15 +26,13 @@ import { Textarea } from '@client/src/components/ui/textarea';
 import { rememberRecentWorkItem } from '@client/src/utils/recent-work-items';
 
 import { WorkItemContextDock } from './WorkItemContextDock';
-import {
-  WorkItemContextTree,
-  type WorkbenchNode,
-} from './WorkItemContextTree';
+import { WorkItemContextTree, type WorkbenchNode } from './WorkItemContextTree';
 import { EngineeringReasoningTrail } from './EngineeringReasoningTrail';
 import { AeoAuthoringWorkspace } from './AeoAuthoringWorkspace';
 import { AssessmentSemanticsOverview } from './AssessmentSemanticsOverview';
 import { DocumentReaderWorkspace } from './DocumentReaderWorkspace';
 import {
+  buildAssessmentBusinessContent,
   getReaderViewMode,
   type ReaderViewMode,
 } from './workbench-projection';
@@ -187,7 +184,7 @@ export default function DocumentParsingPage() {
     data.workItem.classification.status === 'CONFIRMED' &&
     data.workItem.classification.normalizedFamily === 'SB';
   const aeo = data.workItem.aeo ?? null;
-  const results: UnifiedReaderQueryResult[] = data.queryResults;
+  const results = data.readerProjection?.units ?? [];
   const requestedReaderUnit: string = searchParams.get('unit')?.trim() ?? '';
   const requestedSourceRef: string =
     searchParams.get('sourceRef')?.trim() ?? '';
@@ -200,12 +197,17 @@ export default function DocumentParsingPage() {
   const reviewContext = data.engineerReviewContext ?? null;
   const requestedReviewCriterion: string =
     searchParams.get('criterion')?.trim() ?? '';
-  const selectedReviewCriterion =
-    reviewContext?.items.some(
-      (item) => item.criterionId === requestedReviewCriterion,
-    )
-      ? requestedReviewCriterion
-      : reviewContext?.items[0]?.criterionId || '';
+  const selectedReviewCriterion = reviewContext?.items.some(
+    (item) => item.criterionId === requestedReviewCriterion,
+  )
+    ? requestedReviewCriterion
+    : reviewContext?.items[0]?.criterionId || '';
+  const { overall: overallCandidate, selectedReviewItem } =
+    buildAssessmentBusinessContent(
+      integratedAssessment,
+      reviewContext,
+      selectedReviewCriterion,
+    );
   const fileLabel: string = `${data.workItem.classification.normalizedFamily} · ${short(data.workItem.source.sourceArtifactId, 20, 8)}`;
 
   function submitReaderQuery(): void {
@@ -297,19 +299,20 @@ export default function DocumentParsingPage() {
       </header>
 
       <section className="parse-rail" aria-label="工作台视图">
-        {([
-          ['文档', 'document', 'workspace-document'],
-          ['解析包', 'package', 'workspace-package'],
-          ['Reader', 'reader', 'workspace-reader'],
-          ['动态评估', 'assessment', 'workspace-assessment'],
-          ['综合记录', 'overall', 'workspace-reasoning'],
-          ['AEO 候选', 'aeo', 'workspace-aeo'],
-        ] as const).map(
-          ([label, node, target]: readonly [
-            string,
-            WorkbenchNode,
-            string,
-          ], index: number) => (
+        {(
+          [
+            ['文档', 'document', 'workspace-document'],
+            ['解析包', 'package', 'workspace-package'],
+            ['Reader', 'reader', 'workspace-reader'],
+            ['动态评估', 'assessment', 'workspace-assessment'],
+            ['综合记录', 'overall', 'workspace-reasoning'],
+            ['AEO 候选', 'aeo', 'workspace-aeo'],
+          ] as const
+        ).map(
+          (
+            [label, node, target]: readonly [string, WorkbenchNode, string],
+            index: number,
+          ) => (
             <button
               type="button"
               className={`parse-rail-step${
@@ -530,6 +533,94 @@ export default function DocumentParsingPage() {
               <AssessmentSemanticsOverview data={data} />
               {integratedAssessment ? (
                 <>
+                  {overallCandidate &&
+                  (overallCandidate.overallCandidate ||
+                    overallCandidate.findings?.length ||
+                    overallCandidate.missingInputs?.length) ? (
+                    <section
+                      className="parse-business-candidate"
+                      aria-label="整体业务候选"
+                    >
+                      <header>
+                        <div>
+                          <span>AI 初步综合意见 · CANDIDATE ONLY</span>
+                          <h3>先展示业务判断，再由工程师校正</h3>
+                        </div>
+                        <strong>
+                          {overallCandidate.applicabilityStatus ??
+                            overallCandidate.status}
+                          {overallCandidate.status === 'STALE'
+                            ? ' · 需重综合'
+                            : ''}
+                        </strong>
+                      </header>
+                      {overallCandidate.overallCandidate ? (
+                        <p>{overallCandidate.overallCandidate}</p>
+                      ) : null}
+                      {overallCandidate.findings?.length ? (
+                        <div className="parse-business-findings">
+                          {overallCandidate.findings.map((finding, index) => (
+                            <article key={`${finding.finding}-${index}`}>
+                              <h4>{finding.finding}</h4>
+                              <dl>
+                                <div>
+                                  <dt>依据</dt>
+                                  <dd>{finding.basis}</dd>
+                                </div>
+                                <div>
+                                  <dt>假设</dt>
+                                  <dd>
+                                    {finding.assumptions.join('；') ||
+                                      '无额外假设'}
+                                  </dd>
+                                </div>
+                                <div>
+                                  <dt>不确定性</dt>
+                                  <dd>{finding.uncertainty}</dd>
+                                </div>
+                              </dl>
+                              {finding.sourceRefIds.length ? (
+                                <div className="parse-finding-sources">
+                                  <span>来源定位</span>
+                                  {finding.sourceRefIds.map((sourceRef) => (
+                                    <button
+                                      type="button"
+                                      key={sourceRef}
+                                      onClick={() =>
+                                        updateDeepLink({
+                                          node: 'reader',
+                                          tab: 'reader',
+                                          readerMode: 'structured',
+                                          unit: null,
+                                          sourceRef,
+                                        })
+                                      }
+                                    >
+                                      {sourceRef}
+                                    </button>
+                                  ))}
+                                </div>
+                              ) : null}
+                            </article>
+                          ))}
+                        </div>
+                      ) : null}
+                      {overallCandidate.missingInputs?.length ? (
+                        <div className="parse-business-next">
+                          <strong>会改变结论的缺口 / 建议补证</strong>
+                          <ul>
+                            {overallCandidate.missingInputs.map((item) => (
+                              <li key={item}>{item}</li>
+                            ))}
+                          </ul>
+                          <small>
+                            OpenClaw
+                            只对明确缺口按需查询已授权资料源或知识库；未查询的来源不会被伪装成证据。
+                          </small>
+                        </div>
+                      ) : null}
+                    </section>
+                  ) : null}
                   <div className="parse-assessment-grid">
                     <div>
                       <strong>
@@ -771,8 +862,10 @@ export default function DocumentParsingPage() {
                       </header>
                       <div className="parse-criterion-grid">
                         {reviewContext.items.map((item) => {
-                          const selected = item.criterionId === selectedReviewCriterion;
-                          const reviewState = item.latestReview?.status ?? 'NEEDS_REVIEW';
+                          const selected =
+                            item.criterionId === selectedReviewCriterion;
+                          const reviewState =
+                            item.latestReview?.status ?? 'NEEDS_REVIEW';
                           return (
                             <button
                               type="button"
@@ -793,12 +886,83 @@ export default function DocumentParsingPage() {
                               <strong>{item.dynamicResult}</strong>
                               <p>{item.candidateConclusion}</p>
                               <small>
-                                {item.humanReviewRequired ? '需人工复核' : '当前无人工复核标记'} · {reviewState}
+                                {item.humanReviewRequired
+                                  ? '需人工复核'
+                                  : '当前无人工复核标记'}{' '}
+                                · {reviewState}
                               </small>
                             </button>
                           );
                         })}
                       </div>
+                      {selectedReviewItem ? (
+                        <article className="parse-criterion-detail">
+                          <header>
+                            <div>
+                              <span>当前初步判断</span>
+                              <h4>{selectedReviewItem.criterionId}</h4>
+                            </div>
+                            <strong>
+                              {selectedReviewItem.candidateConclusion}
+                            </strong>
+                          </header>
+                          <dl>
+                            <div>
+                              <dt>已知事实</dt>
+                              <dd>
+                                {selectedReviewItem.factsConsidered?.join(
+                                  '；',
+                                ) || '当前尚无可引用的受控事实'}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>规则如何作用</dt>
+                              <dd>
+                                {selectedReviewItem.ruleApplication ||
+                                  '尚未形成可解释的规则应用'}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>分析与影响</dt>
+                              <dd>
+                                {selectedReviewItem.analysisSummary ||
+                                  '尚未形成可解释的业务分析'}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>仍缺什么</dt>
+                              <dd>
+                                {selectedReviewItem.missingInputs?.join('；') ||
+                                  '当前没有明确缺口'}
+                              </dd>
+                            </div>
+                          </dl>
+                          {selectedReviewItem.sourceRefs?.length ? (
+                            <div className="parse-criterion-sources">
+                              <span>来源定位</span>
+                              {selectedReviewItem.sourceRefs.map(
+                                (sourceRef) => (
+                                  <button
+                                    type="button"
+                                    key={sourceRef}
+                                    onClick={() =>
+                                      updateDeepLink({
+                                        node: 'reader',
+                                        tab: 'reader',
+                                        readerMode: 'structured',
+                                        unit: null,
+                                        sourceRef,
+                                      })
+                                    }
+                                  >
+                                    {sourceRef}
+                                  </button>
+                                ),
+                              )}
+                            </div>
+                          ) : null}
+                        </article>
+                      ) : null}
                     </section>
                   ) : null}
                   {reviewContext ? (
@@ -849,7 +1013,8 @@ export default function DocumentParsingPage() {
                             value={reviewDecision}
                             onChange={(event) =>
                               setReviewDecision(
-                                event.target.value as CanonicalEngineerReviewDecision,
+                                event.target
+                                  .value as CanonicalEngineerReviewDecision,
                               )
                             }
                           >
@@ -889,7 +1054,10 @@ export default function DocumentParsingPage() {
                       {reviewContext.items
                         .filter((item) => item.latestReview)
                         .map((item) => (
-                          <p key={item.criterionId} className="parse-review-latest">
+                          <p
+                            key={item.criterionId}
+                            className="parse-review-latest"
+                          >
                             <strong>{item.criterionId}</strong> ·{' '}
                             {item.latestReview!.decision} ·{' '}
                             {item.latestReview!.comment}
