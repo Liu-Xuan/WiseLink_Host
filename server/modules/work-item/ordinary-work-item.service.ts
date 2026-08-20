@@ -10,6 +10,7 @@ import type {
   CanonicalPdfVerticalRunRequest,
 } from '@shared/api.interface';
 import { CanonicalHostVerticalService } from '../canonical-host/canonical-host-vertical.service';
+import { CANONICAL_DEVELOPMENT_ROLE_ID } from '../canonical-host/canonical-host.constants';
 import type { CanonicalHostActor } from '../canonical-host/canonical-host.types';
 import {
   DocumentManagementHostedService,
@@ -60,10 +61,6 @@ export interface OrdinaryPdfParseInput {
 
 const DEVELOPMENT_RUN_TOKEN_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
-const DEVELOPMENT_WORK_ITEM_ROLE_ID = 'wiselink_development';
-const CANONICAL_HOST_APP_ID = 'app_17bzc551rsg';
-const S1_ACCEPTANCE_ACTOR_ID = 'service:wiselink-s1-acceptance';
-
 @Injectable()
 export class OrdinaryWorkItemService {
   constructor(
@@ -91,24 +88,13 @@ export class OrdinaryWorkItemService {
   }
 
   async createDevelopmentAcceptanceRun(
-    input: CanonicalDevelopmentWorkItemRunRequest,
+    _input: CanonicalDevelopmentWorkItemRunRequest,
   ): Promise<CanonicalOrdinaryWorkItemRunResponse> {
-    const documentVersionId = requiredText(
-      input.documentVersionId,
-      'documentVersionId',
-      96,
-    );
-    const tenantId = await this.repository.resolveDevelopmentTenant(
-      documentVersionId,
-    );
-    return this.runDevelopment(
-      { ...input, documentVersionId },
+    throw Object.assign(
+      new Error('Canonical OpenAPI service scope is unavailable.'),
       {
-        userId: S1_ACCEPTANCE_ACTOR_ID,
-        tenantId,
-        appId: CANONICAL_HOST_APP_ID,
-        roles: [],
-        env: 'hosted',
+        code: 'CANONICAL_SERVICE_SCOPE_UNAVAILABLE',
+        statusCode: 503,
       },
     );
   }
@@ -147,6 +133,14 @@ export class OrdinaryWorkItemService {
     const documentVersionId = input.documentVersionId
       ? requiredText(input.documentVersionId, 'documentVersionId', 96)
       : await this.ingestSelection(input.selection, context);
+    if (input.documentVersionId) {
+      await this.assertCanResolveDocumentVersion({
+        actor,
+        documentVersionId,
+        runKey,
+        developmentCreate: requireCurrentDocumentVersion,
+      });
+    }
     const resolved = await this.resolver.resolve(documentVersionId, {
       requireCurrent: requireCurrentDocumentVersion,
     });
@@ -200,18 +194,30 @@ export class OrdinaryWorkItemService {
     selection: OrdinaryPdfParseInput['selection'],
     context: HostedRequestContext,
   ): Promise<string> {
-    const bucketId = requiredText(selection?.bucketId, 'selection.bucketId', 255);
-    const filePath = requiredText(selection?.filePath, 'selection.filePath', 1024);
+    const bucketId = requiredText(
+      selection?.bucketId,
+      'selection.bucketId',
+      255,
+    );
+    const filePath = requiredText(
+      selection?.filePath,
+      'selection.filePath',
+      1024,
+    );
+    await this.documentManagement.assertCanIngest(context, {
+      bucketId,
+      filePath,
+    });
     const key = createHash('sha256')
       .update(`${context.tenantId}\n${bucketId}\n${filePath}`)
       .digest('hex');
     const baseRequest = {
-        selection: { bucketId, filePath },
-        sourceChannel: 'canonical_miaoda_document_selection',
-        sourceRef: `miaoda-file-service:${bucketId}:${filePath}`,
-        idempotencyKey: `ordinary-document-ingest:${key}`,
-        descriptor: {},
-      };
+      selection: { bucketId, filePath },
+      sourceChannel: 'canonical_miaoda_document_selection',
+      sourceRef: `miaoda-file-service:${bucketId}:${filePath}`,
+      idempotencyKey: `ordinary-document-ingest:${key}`,
+      descriptor: {},
+    };
     let request = baseRequest;
     if (this.fileService) {
       const actual = await new MiaodaFileServiceArtifactStore(
@@ -224,8 +230,7 @@ export class OrdinaryWorkItemService {
       ) {
         request = createPhase5BoeingSbIngestRequest({
           selection: { bucketId, filePath },
-          sourceRef:
-            `miaoda-file-service:${bucketId}:${actual.providerObjectId}`,
+          sourceRef: `miaoda-file-service:${bucketId}:${actual.providerObjectId}`,
           idempotencyKey: `ordinary-document-ingest:${key}`,
         });
       }
@@ -240,10 +245,53 @@ export class OrdinaryWorkItemService {
       96,
     );
   }
+
+  private async assertCanResolveDocumentVersion(input: {
+    actor: CanonicalHostActor;
+    documentVersionId: string;
+    runKey: string;
+    developmentCreate: boolean;
+  }): Promise<void> {
+    const existing = await this.repository.loadTenantRunAuthorizationBinding({
+      tenantId: input.actor.tenantId,
+      documentVersionId: input.documentVersionId,
+      runKey: input.runKey,
+    });
+    if (existing) {
+      await this.vertical.authorizeExistingWorkItem({
+        actor: input.actor,
+        action: 'PARSE_PDF',
+        workItemId: existing.workItemId,
+        requestId: existing.requestId,
+        documentVersionId: existing.documentVersionId,
+      });
+      return;
+    }
+    const ownedBinding =
+      await this.repository.loadTenantDocumentAuthorizationBinding({
+        tenantId: input.actor.tenantId,
+        documentVersionId: input.documentVersionId,
+        actorUserId: input.actor.userId,
+      });
+    if (ownedBinding) {
+      await this.vertical.authorizeExistingWorkItem({
+        actor: input.actor,
+        action: 'PARSE_PDF',
+        workItemId: ownedBinding.workItemId,
+        requestId: ownedBinding.requestId,
+        documentVersionId: ownedBinding.documentVersionId,
+      });
+      return;
+    }
+    throw Object.assign(new Error('CANONICAL_WORK_ITEM_NOT_FOUND'), {
+      code: 'CANONICAL_WORK_ITEM_NOT_FOUND',
+      statusCode: 404,
+    });
+  }
 }
 
 function requireDevelopmentWorkItemRole(actor: CanonicalHostActor): void {
-  if (!actor.roles.includes(DEVELOPMENT_WORK_ITEM_ROLE_ID)) {
+  if (!actor.roles.includes(CANONICAL_DEVELOPMENT_ROLE_ID)) {
     throw Object.assign(new Error('Development WorkItem role is required.'), {
       code: 'DEVELOPMENT_WORK_ITEM_ROLE_REQUIRED',
       statusCode: 403,
@@ -299,8 +347,11 @@ function requiredText(
 }
 
 function requiredDevelopmentRunToken(value: unknown): string {
-  const normalized = requiredText(value, 'developmentRunToken', 36)
-    .toLowerCase();
+  const normalized = requiredText(
+    value,
+    'developmentRunToken',
+    36,
+  ).toLowerCase();
   if (!DEVELOPMENT_RUN_TOKEN_PATTERN.test(normalized)) {
     throw Object.assign(new Error('developmentRunToken is invalid.'), {
       code: 'WORK_ITEM_DEVELOPMENT_RUN_TOKEN_INVALID',

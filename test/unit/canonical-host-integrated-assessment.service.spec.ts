@@ -52,6 +52,10 @@ class MemoryRegistrar implements CanonicalWorkItemRegistrarPort {
   async getByWorkItemId() {
     return structuredClone(this.value);
   }
+
+  async getTenantScopedByWorkItemId() {
+    return this.getByWorkItemId();
+  }
 }
 
 class MemoryArtifactStore implements UnifiedArtifactStorePort {
@@ -80,7 +84,11 @@ class MemoryArtifactStore implements UnifiedArtifactStorePort {
 
 describe('CanonicalHostIntegratedAssessmentService', () => {
   it('fails before any mutation when the real Base provider is unconfigured', async () => {
-    const registrar = { getByWorkItemId: jest.fn() };
+    const getByWorkItemId = jest.fn();
+    const registrar = {
+      getByWorkItemId,
+      getTenantScopedByWorkItemId: getByWorkItemId,
+    };
     const repository = {
       reserveAssessmentAction: jest.fn(),
       completeAssessmentAction: jest.fn(),
@@ -316,10 +324,7 @@ describe('CanonicalHostIntegratedAssessmentService', () => {
 
     await service.persistBaseRuleCandidate('WI-TEST', ACTOR);
     await service.persistOpenClawOverall('WI-TEST', ACTOR);
-    const first = await service.confirmOpenClawOverallForAeo(
-      'WI-TEST',
-      ACTOR,
-    );
+    const first = await service.confirmOpenClawOverallForAeo('WI-TEST', ACTOR);
     const afterUnrelatedCas = await registrar.compareAndSet({
       expectedRevision: first.revision,
       next: withoutRevisionForTest(first),
@@ -376,12 +381,15 @@ describe('CanonicalHostIntegratedAssessmentService', () => {
 
     await service.persistBaseRuleCandidate('WI-TEST', ACTOR);
     await service.persistOpenClawOverall('WI-TEST', ACTOR);
-    const beforeConfirmation = repository.reserveAssessmentAction.mock.calls
-      .length;
+    const beforeConfirmation =
+      repository.reserveAssessmentAction.mock.calls.length;
 
     await expect(
       service.confirmOpenClawOverallForAeo('WI-TEST', ACTOR),
-    ).rejects.toThrow('CANONICAL_ACTION_NOT_AUTHORIZED');
+    ).rejects.toMatchObject({
+      code: 'CANONICAL_WORK_ITEM_NOT_FOUND',
+      statusCode: 404,
+    });
     expect(repository.reserveAssessmentAction).toHaveBeenCalledTimes(
       beforeConfirmation,
     );
@@ -560,11 +568,13 @@ describe('CanonicalHostIntegratedAssessmentService', () => {
         overallSynthesis: null,
       },
     };
+    const getByWorkItemId = jest
+      .fn()
+      .mockResolvedValueOnce(structuredClone(before))
+      .mockResolvedValueOnce(structuredClone(completed));
     const registrar = {
-      getByWorkItemId: jest
-        .fn()
-        .mockResolvedValueOnce(structuredClone(before))
-        .mockResolvedValueOnce(structuredClone(completed)),
+      getByWorkItemId,
+      getTenantScopedByWorkItemId: getByWorkItemId,
       compareAndSet: jest.fn(),
     };
     const store = new MemoryArtifactStore();

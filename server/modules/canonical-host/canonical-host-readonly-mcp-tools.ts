@@ -2,6 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod/v4';
 
 import type { CanonicalHostVerticalService } from './canonical-host-vertical.service';
+import type { CanonicalServiceScopeAuthorizationPort } from './canonical-service-scope.authorization';
 
 export const mcpWorkItemId = z.string().trim().min(1).max(200);
 export const mcpQuery = z.string().trim().min(1).max(200);
@@ -16,6 +17,7 @@ const readOnlyAnnotations = {
 export function registerCanonicalHostReadonlyMcpTools(
   server: McpServer,
   vertical: CanonicalHostVerticalService,
+  serviceScope: CanonicalServiceScopeAuthorizationPort,
 ): void {
   server.registerTool(
     'get_parse_status',
@@ -26,7 +28,14 @@ export function registerCanonicalHostReadonlyMcpTools(
       inputSchema: z.object({ workItemId: mcpWorkItemId }).strict(),
       annotations: readOnlyAnnotations,
     },
-    async ({ workItemId }) => textResult(await vertical.openApiStatus(workItemId)),
+    async ({ workItemId }) => {
+      const scope = await serviceScope.authorizeWorkItemRead({
+        transport: 'READONLY_MCP',
+        operation: 'READ_STATUS',
+        workItemId,
+      });
+      return textResult(await vertical.openApiStatus(workItemId, scope));
+    },
   );
 
   server.registerTool(
@@ -40,8 +49,16 @@ export function registerCanonicalHostReadonlyMcpTools(
         .strict(),
       annotations: readOnlyAnnotations,
     },
-    async ({ workItemId, query }) =>
-      textResult(await vertical.openApiQuery({ workItemId, query })),
+    async ({ workItemId, query }) => {
+      const scope = await serviceScope.authorizeWorkItemRead({
+        transport: 'READONLY_MCP',
+        operation: 'QUERY_PARSED_PACKAGE',
+        workItemId,
+      });
+      return textResult(
+        await vertical.openApiQuery({ workItemId, query }, scope),
+      );
+    },
   );
 
   server.registerTool(
@@ -52,8 +69,14 @@ export function registerCanonicalHostReadonlyMcpTools(
       inputSchema: z.object({ workItemId: mcpWorkItemId }).strict(),
       annotations: readOnlyAnnotations,
     },
-    async ({ workItemId }) =>
-      textResult(await vertical.openApiDeepLink(workItemId)),
+    async ({ workItemId }) => {
+      const scope = await serviceScope.authorizeWorkItemRead({
+        transport: 'READONLY_MCP',
+        operation: 'READ_DEEP_LINK',
+        workItemId,
+      });
+      return textResult(await vertical.openApiDeepLink(workItemId, scope));
+    },
   );
 }
 

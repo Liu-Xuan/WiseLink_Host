@@ -116,6 +116,14 @@ class InMemoryRegistrar implements CanonicalWorkItemRegistrarPort {
     if (!value) throw new Error('WORK_ITEM_NOT_FOUND');
     return clone(value);
   }
+
+  async getTenantScopedByWorkItemId(input: {
+    workItemId: string;
+    tenantId: string;
+  }): Promise<CanonicalWorkItemProjection> {
+    if (!input.tenantId.trim()) throw new Error('WORK_ITEM_NOT_FOUND');
+    return this.getByWorkItemId(input.workItemId);
+  }
 }
 
 const TEST_PERMISSION_SNAPSHOT =
@@ -131,14 +139,23 @@ const TEST_ACTOR: CanonicalHostActor = {
 
 const TEST_APP_ORIGIN = 'https://candidate-host.example.test';
 
+function serviceScope(workItemId: string) {
+  return {
+    principalId: 'service:verified-test-api-key',
+    appId: 'app_17bzc551rsg',
+    tenantId: TEST_ACTOR.tenantId,
+    workItemId,
+    authorizationFingerprint: 'verified-service-scope:test',
+  };
+}
+
 function entryFacade(): CanonicalEntryFacadeService {
   return new CanonicalEntryFacadeService({
     deepLinkForWorkItem: (workItemId: string) => ({
       bindingStatus: 'VERIFIED_CANONICAL',
       appId: 'app-synthetic-unit-test-only',
       origin: TEST_APP_ORIGIN,
-      deepLink:
-        `${TEST_APP_ORIGIN}/work-items/${encodeURIComponent(workItemId)}/documents`,
+      deepLink: `${TEST_APP_ORIGIN}/work-items/${encodeURIComponent(workItemId)}/documents`,
     }),
   });
 }
@@ -158,7 +175,10 @@ function failureReports(
 
 function validationWriteAuthorization() {
   return {
-    authorize: async ({ source, built }: Parameters<
+    authorize: async ({
+      source,
+      built,
+    }: Parameters<
       import('../../server/modules/canonical-host/canonical-host.types').CanonicalFailureValidationWriteAuthorizationPort['authorize']
     >[0]) => ({
       schemaVersion:
@@ -167,8 +187,7 @@ function validationWriteAuthorization() {
       receiptId: 'validation-write-receipt-local-test',
       receiptHash:
         'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-      port:
-        'wiselink.3_1.port.failure_validation_write_authorization.v0.candidate.1' as const,
+      port: 'wiselink.3_1.port.failure_validation_write_authorization.v0.candidate.1' as const,
       revision: 'candidate.1' as const,
       fingerprint:
         'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
@@ -260,23 +279,38 @@ describe('CanonicalHostVerticalService', () => {
 
     const first = await service.runPdf(request, TEST_ACTOR);
     const second = await service.runPdf(request, TEST_ACTOR);
-    const entry = await service.status({
-      workItemId: request.workItemId,
-      requestId: request.requestId,
-      documentVersionId: request.source.documentVersionId,
-    }, TEST_ACTOR);
-    const query = await service.query({
-      workItemId: request.workItemId,
-      requestId: request.requestId,
-      documentVersionId: request.source.documentVersionId,
-      query: request.query,
-    }, TEST_ACTOR);
-    const ailyEntry = await service.openApiStatus(request.workItemId);
-    const ailyQuery = await service.openApiQuery({
-      workItemId: request.workItemId,
-      query: request.query,
-    });
-    const ailyDeepLink = await service.openApiDeepLink(request.workItemId);
+    const entry = await service.status(
+      {
+        workItemId: request.workItemId,
+        requestId: request.requestId,
+        documentVersionId: request.source.documentVersionId,
+      },
+      TEST_ACTOR,
+    );
+    const query = await service.query(
+      {
+        workItemId: request.workItemId,
+        requestId: request.requestId,
+        documentVersionId: request.source.documentVersionId,
+        query: request.query,
+      },
+      TEST_ACTOR,
+    );
+    const ailyEntry = await service.openApiStatus(
+      request.workItemId,
+      serviceScope(request.workItemId),
+    );
+    const ailyQuery = await service.openApiQuery(
+      {
+        workItemId: request.workItemId,
+        query: request.query,
+      },
+      serviceScope(request.workItemId),
+    );
+    const ailyDeepLink = await service.openApiDeepLink(
+      request.workItemId,
+      serviceScope(request.workItemId),
+    );
 
     expect(first).toMatchObject({
       status: 'CANDIDATE_VERTICAL_VERIFIED',
@@ -297,8 +331,7 @@ describe('CanonicalHostVerticalService', () => {
       entry: {
         phase: 'CANDIDATE_READBACK_VERIFIED',
         packageId,
-        deepLinkPath:
-          `${TEST_APP_ORIGIN}/work-items/${request.workItemId}/documents`,
+        deepLinkPath: `${TEST_APP_ORIGIN}/work-items/${request.workItemId}/documents`,
         capabilities: {
           status: true,
           queryParsedUnits: true,
@@ -342,9 +375,7 @@ describe('CanonicalHostVerticalService', () => {
     });
     expect(ailyQuery.results.length).toBeGreaterThan(0);
     expect(
-      ailyQuery.results.every(
-        (item) => item.sourceRefIds.length > 0,
-      ),
+      ailyQuery.results.every((item) => item.sourceRefIds.length > 0),
     ).toBe(true);
     expect(ailyDeepLink).toEqual({
       workItemId: request.workItemId,
@@ -391,7 +422,10 @@ describe('CanonicalHostVerticalService', () => {
         },
       },
     });
-    const integratedStatus = await service.openApiStatus(request.workItemId);
+    const integratedStatus = await service.openApiStatus(
+      request.workItemId,
+      serviceScope(request.workItemId),
+    );
     const integratedPage = await service.page(
       { workItemId: request.workItemId, query: request.query },
       TEST_ACTOR,
@@ -415,10 +449,13 @@ describe('CanonicalHostVerticalService', () => {
       integratedStatus.integratedAssessmentSummary,
     );
     await expect(
-      service.openApiQuery({
-        workItemId: request.workItemId,
-        query: ' ',
-      }),
+      service.openApiQuery(
+        {
+          workItemId: request.workItemId,
+          query: ' ',
+        },
+        serviceScope(request.workItemId),
+      ),
     ).rejects.toMatchObject({
       code: 'AILY_READ_INPUT_INVALID',
       statusCode: 400,
@@ -471,8 +508,7 @@ describe('CanonicalHostVerticalService', () => {
           failureCode: 'PRODUCER_UNSUPPORTED',
           adapterReceipt: {
             adapter: {
-              port:
-                'wiselink.3_1.port.u0_frozen2_failure_adapter.v0.candidate.1',
+              port: 'wiselink.3_1.port.u0_frozen2_failure_adapter.v0.candidate.1',
               adapterId: 'U0Frozen2FailureAdapterService',
             },
             selectedFailureContract: {
@@ -502,12 +538,15 @@ describe('CanonicalHostVerticalService', () => {
       },
     });
     await expect(
-      service.query({
-        workItemId: request.workItemId,
-        requestId: request.requestId,
-        documentVersionId: request.source.documentVersionId,
-        query: request.query,
-      }, TEST_ACTOR),
+      service.query(
+        {
+          workItemId: request.workItemId,
+          requestId: request.requestId,
+          documentVersionId: request.source.documentVersionId,
+          query: request.query,
+        },
+        TEST_ACTOR,
+      ),
     ).rejects.toThrow('WORK_ITEM_QUERY_NOT_READY:FAILED');
   });
 
@@ -975,7 +1014,7 @@ describe('CanonicalHostVerticalService', () => {
     );
   });
 
-  it('returns tenant-scoped 404 before authorization or projection read', async () => {
+  it('authorizes before tenant-scoped projection read', async () => {
     const registrar = new InMemoryRegistrar();
     const authorize = authorization();
     const authorizeSpy = jest.spyOn(authorize, 'authorize');
@@ -988,18 +1027,77 @@ describe('CanonicalHostVerticalService', () => {
       {} as never,
       {} as never,
       {} as never,
-      {
-        loadTenantScopedProjection: jest.fn().mockResolvedValue(null),
-      } as never,
     );
 
     await expect(
       service.page({ workItemId: 'WI-OTHER-TENANT', query: '' }, TEST_ACTOR),
     ).rejects.toMatchObject({
-      code: 'LIBRARY_WORK_ITEM_NOT_FOUND',
+      message: 'WORK_ITEM_NOT_FOUND',
+    });
+    expect(authorizeSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('performs no projection, Reader, or artifact I/O for an unauthorized page actor', async () => {
+    const registrar = {
+      getTenantScopedByWorkItemId: jest.fn(),
+    };
+    const authorize = {
+      authorize: jest.fn().mockRejectedValue(
+        Object.assign(new Error('CANONICAL_WORK_ITEM_NOT_FOUND'), {
+          code: 'CANONICAL_WORK_ITEM_NOT_FOUND',
+          statusCode: 404,
+        }),
+      ),
+    };
+    const permissions = { freshRead: jest.fn() };
+    const reader = { readback: jest.fn() };
+    const artifactStore = { readActualBytes: jest.fn() };
+    const service = new CanonicalHostVerticalService(
+      registrar as never,
+      {} as never,
+      authorize as never,
+      permissions as never,
+      artifactStore as never,
+      reader as never,
+      {} as never,
+      {} as never,
+    );
+
+    await expect(
+      service.page(
+        { workItemId: 'WI-SAME-TENANT-OUTSIDER', query: '' },
+        TEST_ACTOR,
+      ),
+    ).rejects.toMatchObject({
+      code: 'CANONICAL_WORK_ITEM_NOT_FOUND',
       statusCode: 404,
     });
-    expect(authorizeSpy).not.toHaveBeenCalled();
+    expect(registrar.getTenantScopedByWorkItemId).not.toHaveBeenCalled();
+    expect(permissions.freshRead).not.toHaveBeenCalled();
+    expect(reader.readback).not.toHaveBeenCalled();
+    expect(artifactStore.readActualBytes).not.toHaveBeenCalled();
+  });
+
+  it('does not disguise projection infrastructure failures as a service-scope 404', async () => {
+    const registrar = {
+      getTenantScopedByWorkItemId: jest
+        .fn()
+        .mockRejectedValue(new Error('DATABASE_CONNECTION_FAILED')),
+    };
+    const service = new CanonicalHostVerticalService(
+      registrar as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await expect(
+      service.openApiStatus('WI-1', serviceScope('WI-1')),
+    ).rejects.toThrow('DATABASE_CONNECTION_FAILED');
   });
 
   it('fails closed when CanonicalMiaodaApp binding is unconfigured', async () => {
@@ -1037,41 +1135,47 @@ describe('CanonicalHostVerticalService', () => {
     'decision',
     'permissionSnapshotVersion',
     'deepLinkPath',
-  ])('rejects parse request self-reported authority field %s', async (field) => {
-    const request = await realRequest();
-    const untrustedRequest = {
-      ...request,
-      [field]: field === 'permissionSnapshotVersion' ? 'client-snapshot' : {},
-    } as CanonicalPdfVerticalRunRequest;
-    const producer = { producePdf: jest.fn() };
-    const store = new InMemoryArtifactStore();
-    const service = new CanonicalHostVerticalService(
-      new InMemoryRegistrar(),
-      producer,
-      authorization(),
-      permissionSnapshots(),
-      store,
-      new UnifiedReaderService(
+  ])(
+    'rejects parse request self-reported authority field %s',
+    async (field) => {
+      const request = await realRequest();
+      const untrustedRequest = {
+        ...request,
+        [field]: field === 'permissionSnapshotVersion' ? 'client-snapshot' : {},
+      } as CanonicalPdfVerticalRunRequest;
+      const producer = { producePdf: jest.fn() };
+      const store = new InMemoryArtifactStore();
+      const service = new CanonicalHostVerticalService(
+        new InMemoryRegistrar(),
+        producer,
+        authorization(),
+        permissionSnapshots(),
         store,
-        new Frozen2CandidateReaderService(),
-        fullValidator(),
-        {
-          mode: 'HOST_CONFIGURED',
-          artifactStoreConfigured: true,
-          fullU0ValidatorConfigured: true,
-          aeoSpecialistReaderConfigured: false,
-          authority: 'COMPOSITION_STATE_NOT_ACTIVATION_NOT_WRITE_AUTHORIZATION',
-        },
-      ),
-      entryFacade(),
-      failureReports(store, fullValidator()),
-    );
+        new UnifiedReaderService(
+          store,
+          new Frozen2CandidateReaderService(),
+          fullValidator(),
+          {
+            mode: 'HOST_CONFIGURED',
+            artifactStoreConfigured: true,
+            fullU0ValidatorConfigured: true,
+            aeoSpecialistReaderConfigured: false,
+            authority:
+              'COMPOSITION_STATE_NOT_ACTIVATION_NOT_WRITE_AUTHORIZATION',
+          },
+        ),
+        entryFacade(),
+        failureReports(store, fullValidator()),
+      );
 
-    await expect(service.runPdf(untrustedRequest, TEST_ACTOR)).rejects.toThrow(
-      `CANONICAL_VERTICAL_REQUEST_INVALID:SELF_REPORTED_AUTHORITY:${field}`,
-    );
-    expect(producer.producePdf).not.toHaveBeenCalled();
-  });
+      await expect(
+        service.runPdf(untrustedRequest, TEST_ACTOR),
+      ).rejects.toThrow(
+        `CANONICAL_VERTICAL_REQUEST_INVALID:SELF_REPORTED_AUTHORITY:${field}`,
+      );
+      expect(producer.producePdf).not.toHaveBeenCalled();
+    },
+  );
 
   it('rejects idempotency collisions before producer execution', async () => {
     const request = await realRequest();

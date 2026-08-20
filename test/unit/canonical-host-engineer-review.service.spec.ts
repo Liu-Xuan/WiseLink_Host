@@ -125,6 +125,7 @@ function target() {
   const service = new CanonicalHostEngineerReviewService(
     {
       getByWorkItemId: async () => state.workItem,
+      getTenantScopedByWorkItemId: async () => state.workItem,
       compareAndSet: async (input: {
         expectedRevision: number;
         next: Omit<CanonicalWorkItemProjection, 'revision'>;
@@ -257,17 +258,19 @@ function dynamicBytes() {
           'missingInputs',
           'humanReviewRequired',
         ],
-        rows: [[
-          'RULE-001',
-          'PASS',
-          ['fact'],
-          'rule application',
-          'analysis',
-          'candidate conclusion',
-          ['SRC-001'],
-          [],
-          true,
-        ]],
+        rows: [
+          [
+            'RULE-001',
+            'PASS',
+            ['fact'],
+            'rule application',
+            'analysis',
+            'candidate conclusion',
+            ['SRC-001'],
+            [],
+            true,
+          ],
+        ],
       },
     }),
   );

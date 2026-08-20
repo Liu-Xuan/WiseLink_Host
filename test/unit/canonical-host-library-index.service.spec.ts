@@ -35,11 +35,13 @@ const projection = {
   recordingFailure: null,
 } as unknown as CanonicalWorkItemProjection;
 
-function target(overrides: {
-  row?: Record<string, unknown>;
-  scoped?: unknown;
-  decision?: Record<string, unknown>;
-} = {}) {
+function target(
+  overrides: {
+    row?: Record<string, unknown>;
+    scoped?: unknown;
+    decision?: Record<string, unknown>;
+  } = {},
+) {
   const repository = {
     loadTenantScopedProjection: jest.fn().mockResolvedValue(
       overrides.scoped === undefined
@@ -108,48 +110,76 @@ describe('CanonicalHostLibraryIndexService', () => {
   it('scopes WorkItem lookup by tenant and returns currentness-backed thin projection', async () => {
     const { service, repository, authorization, resolver } = target();
 
-    const result = await service.read({ workItemId: projection.workItemId, actor });
+    const result = await service.read({
+      workItemId: projection.workItemId,
+      actor,
+    });
 
     expect(repository.loadTenantScopedProjection).toHaveBeenCalledWith(
       projection.workItemId,
       actor.tenantId,
     );
-    expect(authorization.authorize).toHaveBeenCalledWith(expect.objectContaining({
-      action: 'READ_LIBRARY_INDEX',
-      workItemId: projection.workItemId,
-    }));
+    expect(authorization.authorize).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'READ_LIBRARY_INDEX',
+        workItemId: projection.workItemId,
+      }),
+    );
     expect(result.scope).toBe('CURRENT_WORKITEM_ONLY');
-    expect(result.document).toEqual(expect.objectContaining({
-      documentId: 'document-1',
-      documentVersionId: 'document-version-1',
-      documentCode: '737-34-3830',
-    }));
+    expect(result.document).toEqual(
+      expect.objectContaining({
+        documentId: 'document-1',
+        documentVersionId: 'document-version-1',
+        documentCode: '737-34-3830',
+      }),
+    );
     expect(result.currentness.selectedVersionIsCurrent).toBe(true);
     expect(result.readAuthorization.action).toBe('READ_LIBRARY_INDEX');
     expect(resolver.resolve).toHaveBeenCalledTimes(1);
   });
 
   it('returns the same 404 boundary for a missing or cross-tenant WorkItem', async () => {
-    const { service, authorization, resolver } = target({ scoped: null });
+    const { service, repository, authorization, permissions, resolver } =
+      target({
+        scoped: null,
+      });
+    authorization.authorize.mockRejectedValue(
+      Object.assign(new Error('CANONICAL_WORK_ITEM_NOT_FOUND'), {
+        code: 'CANONICAL_WORK_ITEM_NOT_FOUND',
+        statusCode: 404,
+      }),
+    );
 
-    await expect(service.read({ workItemId: 'WI-OTHER-TENANT', actor }))
-      .rejects.toMatchObject({ code: 'LIBRARY_WORK_ITEM_NOT_FOUND', statusCode: 404 });
-    expect(authorization.authorize).not.toHaveBeenCalled();
+    await expect(
+      service.read({ workItemId: 'WI-OTHER-TENANT', actor }),
+    ).rejects.toMatchObject({
+      code: 'CANONICAL_WORK_ITEM_NOT_FOUND',
+      statusCode: 404,
+    });
+    expect(authorization.authorize).toHaveBeenCalledTimes(1);
+    expect(repository.loadTenantScopedProjection).not.toHaveBeenCalled();
+    expect(permissions.freshRead).not.toHaveBeenCalled();
     expect(resolver.resolve).not.toHaveBeenCalled();
   });
 
-  it('returns 403 on a denied decision before DM or permission reads', async () => {
-    const { service, authorization, permissions, resolver } = target({
-      decision: {
-        action: 'READ_LIBRARY_INDEX',
-        allowed: false,
-        decisionId: 'decision-denied',
-        permissionSnapshotVersion: 'permission-snapshot:test',
-      },
-    });
+  it('returns the same 404 on a denied decision before projection, DM, or permission reads', async () => {
+    const { service, repository, authorization, permissions, resolver } =
+      target({
+        decision: {
+          action: 'READ_LIBRARY_INDEX',
+          allowed: false,
+          decisionId: 'decision-denied',
+          permissionSnapshotVersion: 'permission-snapshot:test',
+        },
+      });
 
-    await expect(service.read({ workItemId: projection.workItemId, actor }))
-      .rejects.toMatchObject({ code: 'LIBRARY_INDEX_READ_FORBIDDEN', statusCode: 403 });
+    await expect(
+      service.read({ workItemId: projection.workItemId, actor }),
+    ).rejects.toMatchObject({
+      code: 'CANONICAL_WORK_ITEM_NOT_FOUND',
+      statusCode: 404,
+    });
+    expect(repository.loadTenantScopedProjection).not.toHaveBeenCalled();
     expect(permissions.freshRead).not.toHaveBeenCalled();
     expect(resolver.resolve).not.toHaveBeenCalled();
   });
@@ -170,7 +200,10 @@ describe('CanonicalHostLibraryIndexService', () => {
         currentGeneration: 2,
       },
     });
-    const historical = await context.service.read({ workItemId: projection.workItemId, actor });
+    const historical = await context.service.read({
+      workItemId: projection.workItemId,
+      actor,
+    });
     expect(historical.currentness.selectedVersionIsCurrent).toBe(false);
     expect(historical.currentness.currentGeneration).toBe(2);
   });

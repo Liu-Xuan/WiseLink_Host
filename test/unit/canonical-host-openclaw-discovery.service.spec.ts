@@ -1,6 +1,35 @@
 import { CanonicalHostOpenClawDiscoveryService } from '../../server/modules/canonical-host/canonical-host-openclaw-discovery.service';
 
 describe('CanonicalHostOpenClawDiscoveryService', () => {
+  it('rejects before WorkItem or candidate-store I/O without service scope', async () => {
+    const registrar = { getTenantScopedByWorkItemId: jest.fn() };
+    const discovery = { recordSearchRun: jest.fn() };
+    const service = new CanonicalHostOpenClawDiscoveryService(
+      registrar as never,
+      { nowIso: jest.fn() } as never,
+      {} as never,
+      {} as never,
+      discovery as never,
+      {
+        authorizeOpenClawWorkItem: jest.fn().mockRejectedValue(
+          Object.assign(new Error('scope unavailable'), {
+            code: 'CANONICAL_SERVICE_SCOPE_UNAVAILABLE',
+            statusCode: 503,
+          }),
+        ),
+      } as never,
+    );
+
+    await expect(
+      service.record('WI-DISCOVERY', deniedResult()),
+    ).rejects.toMatchObject({
+      code: 'CANONICAL_SERVICE_SCOPE_UNAVAILABLE',
+      statusCode: 503,
+    });
+    expect(registrar.getTenantScopedByWorkItemId).not.toHaveBeenCalled();
+    expect(discovery.recordSearchRun).not.toHaveBeenCalled();
+  });
+
   it('derives service identity/time/ref and records ACCESS_DENIED without DM I/O', async () => {
     const recorded: Array<Record<string, unknown>> = [];
     const service = createService(recorded);
@@ -33,9 +62,9 @@ describe('CanonicalHostOpenClawDiscoveryService', () => {
   it('rejects permission drift before candidate-store write', async () => {
     const recorded: Array<Record<string, unknown>> = [];
     const service = createService(recorded, 'permission-drift');
-    await expect(service.record('WI-DISCOVERY', deniedResult())).rejects.toThrow(
-      'OPENCLAW_DISCOVERY_PERMISSION_SNAPSHOT_CHANGED',
-    );
+    await expect(
+      service.record('WI-DISCOVERY', deniedResult()),
+    ).rejects.toThrow('OPENCLAW_DISCOVERY_PERMISSION_SNAPSHOT_CHANGED');
     expect(recorded).toEqual([]);
   });
 });
@@ -46,7 +75,7 @@ function createService(
 ) {
   return new CanonicalHostOpenClawDiscoveryService(
     {
-      getByWorkItemId: async () => ({
+      getTenantScopedByWorkItemId: async () => ({
         workItemId: 'WI-DISCOVERY',
         requestId: 'REQ-DISCOVERY',
         source: { documentVersionId: 'DV-DISCOVERY' },
@@ -63,12 +92,20 @@ function createService(
     {
       freshRead: async () => ({ permissionSnapshotVersion: freshPermission }),
     } as never,
-    { getRow: async () => ({ tenantId: 'tenant-hosted' }) } as never,
     {
       recordSearchRun: async (searchRun: unknown, context: unknown) => {
         recorded.push({ searchRun, context });
         return { disposition: 'RECORDED' };
       },
+    } as never,
+    {
+      authorizeOpenClawWorkItem: async () => ({
+        principalId: 'service:openclaw-test',
+        appId: 'app_17bzc551rsg',
+        tenantId: 'tenant-hosted',
+        workItemId: 'WI-DISCOVERY',
+        authorizationFingerprint: 'scope:discovery-test',
+      }),
     } as never,
   );
 }

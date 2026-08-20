@@ -27,6 +27,12 @@ import type {
   CanonicalPermissionSnapshotPort,
   CanonicalWorkItemRegistrarPort,
 } from './canonical-host.types';
+import {
+  CANONICAL_SERVICE_SCOPE_AUTHORIZATION,
+  type CanonicalServiceScopeAuthorizationPort,
+  type CanonicalVerifiedOpenClawAttemptScope,
+  type CanonicalVerifiedServiceScope,
+} from './canonical-service-scope.authorization';
 
 const OPENCLAW_SERVICE_USER_ID = 'service:openclaw-main';
 const CANONICAL_APP_ID = 'app_17bzc551rsg';
@@ -58,12 +64,18 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
     private readonly assessment: CanonicalHostAssessmentService,
     private readonly processor: DynamicRulesEvaluationProcessor,
     private readonly engineerReviews: CanonicalHostEngineerReviewService,
+    @Inject(CANONICAL_SERVICE_SCOPE_AUTHORIZATION)
+    private readonly serviceScope: CanonicalServiceScopeAuthorizationPort,
   ) {}
 
   async begin(workItemId: string): Promise<BeginDynamicEvaluationResult> {
-    const workItem = await this.requiredSbWorkItem(workItemId);
-    const row = await this.repository.getRow(workItem.workItemId);
-    const actor = serviceActor(row.tenantId);
+    const scope = await this.serviceScope.authorizeOpenClawWorkItem({
+      operation: 'BEGIN_DYNAMIC',
+      workItemId,
+    });
+    assertWorkItemScope(scope, workItemId);
+    const workItem = await this.requiredSbWorkItem(workItemId, scope.tenantId);
+    const actor = serviceActor(scope.tenantId);
     const permissionSnapshotVersion = await this.authorize(workItem, actor);
     const attempt = await this.repository.reserveDynamicEvaluationAction({
       workItemId: workItem.workItemId,
@@ -81,9 +93,10 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
     );
     return {
       attemptRef: attempt.triggerRequestId,
-      modelInput: structuredClone(
-        request.modelInput,
-      ) as Record<string, unknown>,
+      modelInput: structuredClone(request.modelInput) as Record<
+        string,
+        unknown
+      >,
     };
   }
 
@@ -91,15 +104,23 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
     attemptRef: string,
     output: string,
   ): Promise<CommitDynamicEvaluationResult> {
-    const attempt = await this.repository.getDynamicEvaluationActionByCallerRef(
+    const scope = await this.serviceScope.authorizeOpenClawAttempt({
+      operation: 'COMMIT_DYNAMIC',
       attemptRef,
-    );
+    });
+    assertAttemptScope(scope, attemptRef);
+    const attempt =
+      await this.repository.getDynamicEvaluationActionByCallerRef(attemptRef);
+    assertAttemptBinding(scope, attempt);
     const recovered = await this.recoverExistingCommit(attempt);
     if (recovered) return recovered;
     if (attempt.status !== 'RUNNING') {
       throw new Error('DYNAMIC_EVALUATION_ATTEMPT_NOT_RUNNING');
     }
-    const workItem = await this.requiredSbWorkItem(attempt.workItemId);
+    const workItem = await this.requiredSbWorkItem(
+      attempt.workItemId,
+      scope.tenantId,
+    );
     if (workItem.revision !== attempt.attemptNo) {
       throw new Error('WORK_ITEM_CAS_CONFLICT');
     }
@@ -204,7 +225,10 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
     attempt: DynamicEvaluationActionAttempt,
   ): Promise<CommitDynamicEvaluationResult | null> {
     if (attempt.status === 'RUNNING') return null;
-    const workItem = await this.requiredSbWorkItem(attempt.workItemId);
+    const workItem = await this.requiredSbWorkItem(
+      attempt.workItemId,
+      attempt.tenantId,
+    );
     const committed = committedDynamicResult(workItem, attempt);
     if (committed && attempt.status === 'COMMITTING') {
       await this.repository.completeAssessmentAction(attempt.attemptId);
@@ -221,7 +245,10 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
     attempt: DynamicEvaluationActionAttempt,
     error: unknown,
   ): Promise<CommitDynamicEvaluationResult | null> {
-    const workItem = await this.requiredSbWorkItem(attempt.workItemId);
+    const workItem = await this.requiredSbWorkItem(
+      attempt.workItemId,
+      attempt.tenantId,
+    );
     const committed = committedDynamicResult(workItem, attempt);
     if (committed) {
       await this.repository.completeAssessmentAction(attempt.attemptId);
@@ -273,8 +300,12 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
 
   private async requiredSbWorkItem(
     workItemId: string,
+    tenantId: string,
   ): Promise<CanonicalWorkItemProjection> {
-    const workItem = await this.registrar.getByWorkItemId(workItemId);
+    const workItem = await this.registrar.getTenantScopedByWorkItemId({
+      workItemId,
+      tenantId,
+    });
     if (
       workItem.phase !== 'CANDIDATE_READBACK_VERIFIED' ||
       workItem.package === null
@@ -336,6 +367,49 @@ function serviceActor(tenantId: string): CanonicalHostActor {
   };
 }
 
+function assertWorkItemScope(
+  scope: CanonicalVerifiedServiceScope,
+  workItemId: string,
+): void {
+  if (
+    scope.workItemId !== workItemId ||
+    scope.appId !== CANONICAL_APP_ID ||
+    !scope.principalId.trim() ||
+    !scope.tenantId.trim() ||
+    !scope.authorizationFingerprint.trim()
+  ) {
+    throw openClawScopeNotFound();
+  }
+}
+
+function assertAttemptScope(
+  scope: CanonicalVerifiedOpenClawAttemptScope,
+  attemptRef: string,
+): void {
+  assertWorkItemScope(scope, scope.workItemId);
+  if (scope.attemptRef !== attemptRef) throw openClawScopeNotFound();
+}
+
+function assertAttemptBinding(
+  scope: CanonicalVerifiedOpenClawAttemptScope,
+  attempt: DynamicEvaluationActionAttempt,
+): void {
+  if (
+    attempt.workItemId !== scope.workItemId ||
+    attempt.tenantId !== scope.tenantId ||
+    attempt.triggerRequestId !== scope.attemptRef
+  ) {
+    throw openClawScopeNotFound();
+  }
+}
+
+function openClawScopeNotFound(): Error & { code: string; statusCode: number } {
+  return Object.assign(new Error('CANONICAL_WORK_ITEM_NOT_FOUND'), {
+    code: 'CANONICAL_WORK_ITEM_NOT_FOUND',
+    statusCode: 404,
+  });
+}
+
 function committedDynamicResult(
   workItem: CanonicalWorkItemProjection,
   attempt: DynamicEvaluationActionAttempt,
@@ -395,12 +469,12 @@ function requiredText(value: unknown, code: string): string {
   return value;
 }
 
-function requiredCount(
-  value: unknown,
-  maximum: number,
-  code: string,
-): number {
-  if (!Number.isSafeInteger(value) || Number(value) < 0 || Number(value) > maximum) {
+function requiredCount(value: unknown, maximum: number, code: string): number {
+  if (
+    !Number.isSafeInteger(value) ||
+    Number(value) < 0 ||
+    Number(value) > maximum
+  ) {
     throw new Error(code);
   }
   return Number(value);

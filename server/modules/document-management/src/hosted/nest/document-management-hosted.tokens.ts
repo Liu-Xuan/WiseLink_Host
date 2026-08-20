@@ -8,12 +8,14 @@ export interface DocumentManagementIngestAuthorizer {
     tenantId: string;
     roles: string[];
     action: 'DOCUMENT_INGEST';
+    selection: { bucketId: string; filePath: string };
   }): Promise<void>;
 
-  assertCanRead?(input: {
+  assertCanRead(input: {
     actorUserId: string;
     tenantId: string;
     roles: string[];
     action: 'DOCUMENT_READ';
+    documentVersionId: string;
   }): Promise<void>;
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import {
   AlertTriangle,
@@ -24,6 +24,8 @@ import {
 } from '@client/src/components/ui/native-select';
 import { Textarea } from '@client/src/components/ui/textarea';
 import { rememberRecentWorkItem } from '@client/src/utils/recent-work-items';
+import { forgetRecentWorkItem } from '@client/src/utils/recent-work-items';
+import { useCurrentUserProfile } from '@lark-apaas/client-toolkit/hooks/useCurrentUserProfile';
 
 import { WorkItemContextDock } from './WorkItemContextDock';
 import { WorkItemContextTree, type WorkbenchNode } from './WorkItemContextTree';
@@ -36,6 +38,7 @@ import {
   getReaderViewMode,
   type ReaderViewMode,
 } from './workbench-projection';
+import { runCanonicalDocumentParsingLoad } from './document-parsing-load';
 import './document-parsing.css';
 
 function short(value: string, front = 18, back = 10): string {
@@ -78,6 +81,11 @@ function getWorkbenchNode(value: string | null): WorkbenchNode {
 }
 
 export default function DocumentParsingPage() {
+  const currentUser = useCurrentUserProfile();
+  const actorSignal: string = String(currentUser.user_id ?? '').trim();
+  const actorSignalRef = useRef<string>(actorSignal);
+  actorSignalRef.current = actorSignal;
+  const loadEpochRef = useRef<number>(0);
   const { workItemId = '' } = useParams<{ workItemId: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const activeNode: WorkbenchNode = getWorkbenchNode(searchParams.get('node'));
@@ -87,9 +95,9 @@ export default function DocumentParsingPage() {
     searchParams.get('readerMode'),
   );
   const [query, setQuery] = useState<string>(activeQuery);
-  const [data, setData] = useState<CanonicalDocumentParsingPageResponse | null>(
-    null,
-  );
+  const [pageData, setPageData] =
+    useState<CanonicalDocumentParsingPageResponse | null>(null);
+  const [pageActorSignal, setPageActorSignal] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [assessmentAction, setAssessmentAction] = useState<
@@ -117,38 +125,70 @@ export default function DocumentParsingPage() {
   }
 
   async function load(nextQuery: string): Promise<void> {
+    const epoch: number = loadEpochRef.current + 1;
+    loadEpochRef.current = epoch;
+    const startedActorSignal: string = actorSignal;
     if (!workItemId) {
       setError('WORKITEM_ID_REQUIRED');
       setLoading(false);
       return;
     }
     setLoading(true);
+    setPageData(null);
+    setPageActorSignal(null);
     setError(null);
-    try {
-      const fresh: CanonicalDocumentParsingPageResponse =
-        await canonicalHost.getDocumentParsingPage(workItemId, nextQuery);
-      setData(fresh);
-      rememberRecentWorkItem({
-        workItemId: fresh.workItem.workItemId,
-        family: fresh.workItem.classification.normalizedFamily,
-        documentLabel:
-          fresh.workItem.package?.documentIdentity?.documentCode ??
-          fresh.workItem.package?.title ??
-          fresh.workItem.source.documentId,
-        documentVersionId: fresh.workItem.source.documentVersionId,
-      });
-    } catch (cause) {
-      setData(null);
-      setError(cause instanceof Error ? cause.message : 'FRESH_READ_FAILED');
-    } finally {
-      setLoading(false);
-    }
+    const isCurrent = (): boolean =>
+      loadEpochRef.current === epoch &&
+      actorSignalRef.current === startedActorSignal;
+    await runCanonicalDocumentParsingLoad({
+      isCurrent,
+      readIdentity: canonicalHost.getCanonicalHostIdentityContext,
+      readPage: () =>
+        canonicalHost.getDocumentParsingPage(workItemId, nextQuery),
+      onFresh: (identity, fresh) => {
+        setPageData(fresh);
+        setPageActorSignal(startedActorSignal);
+        rememberRecentWorkItem(identity, {
+          workItemId: fresh.workItem.workItemId,
+          family: fresh.workItem.classification.normalizedFamily,
+          documentLabel:
+            fresh.workItem.package?.documentIdentity?.documentCode ??
+            fresh.workItem.package?.title ??
+            fresh.workItem.source.documentId,
+          documentVersionId: fresh.workItem.source.documentVersionId,
+        });
+      },
+      onDenied: (identity, cause) => {
+        setPageData(null);
+        setPageActorSignal(null);
+        if (canonicalHost.isCanonicalObjectNotFound(cause)) {
+          forgetRecentWorkItem(identity, workItemId);
+        }
+        setError(cause instanceof Error ? cause.message : 'FRESH_READ_FAILED');
+      },
+      onIdentityError: (cause) => {
+        setPageData(null);
+        setPageActorSignal(null);
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : 'CANONICAL_HOST_IDENTITY_REQUIRED',
+        );
+      },
+      onSettled: () => setLoading(false),
+    });
   }
 
   useEffect(() => {
     setQuery(activeQuery);
     void load(activeQuery);
-  }, [workItemId, activeQuery]);
+    return () => {
+      loadEpochRef.current += 1;
+    };
+  }, [workItemId, activeQuery, actorSignal]);
+
+  const data: CanonicalDocumentParsingPageResponse | null =
+    pageActorSignal === actorSignal ? pageData : null;
 
   useEffect(() => {
     if (loading || data === null) return;

@@ -28,6 +28,7 @@ import type {
   CanonicalPermissionSnapshotPort,
   CanonicalWorkItemRegistrarPort,
 } from './canonical-host.types';
+import { authorizeAndLoadCanonicalWorkItem } from './canonical-authorized-work-item-reader';
 
 @Injectable()
 export class CanonicalHostIntegratedAssessmentService {
@@ -54,8 +55,12 @@ export class CanonicalHostIntegratedAssessmentService {
     if (!this.baseRuleProvider.configured) {
       throw unavailable('BASE_RULE_RESULT_PROVIDER_NOT_CONFIGURED');
     }
-    let workItem = await this.requiredParsedWorkItem(workItemId);
-    await this.authorize(workItem, actor, 'PERSIST_BASE_RULE_RESULT');
+    let authorized = await this.authorizeAndLoad(
+      workItemId,
+      actor,
+      'PERSIST_BASE_RULE_RESULT',
+    );
+    let workItem = requiredParsedWorkItem(authorized.workItem);
     const revision =
       (workItem.integratedAssessment?.baseRules.revision ?? 0) + 1;
     const attempt = await this.repository.reserveAssessmentAction({
@@ -68,8 +73,12 @@ export class CanonicalHostIntegratedAssessmentService {
       attemptNo: revision,
     });
     if (!attempt.created) {
-      workItem = await this.requiredParsedWorkItem(workItemId);
-      await this.authorize(workItem, actor, 'PERSIST_BASE_RULE_RESULT');
+      authorized = await this.authorizeAndLoad(
+        workItemId,
+        actor,
+        'PERSIST_BASE_RULE_RESULT',
+      );
+      workItem = requiredParsedWorkItem(authorized.workItem);
       if (
         workItem.integratedAssessment?.baseRules.revision === revision &&
         workItem.integratedAssessment.baseRules.actionAttemptId ===
@@ -154,10 +163,14 @@ export class CanonicalHostIntegratedAssessmentService {
     if (!this.openClawProvider.configured) {
       throw unavailable('OPENCLAW_OVERALL_PROVIDER_NOT_CONFIGURED');
     }
-    let workItem = await this.requiredParsedWorkItem(workItemId);
+    let authorized = await this.authorizeAndLoad(
+      workItemId,
+      actor,
+      'PERSIST_OPENCLAW_OVERALL',
+    );
+    let workItem = requiredParsedWorkItem(authorized.workItem);
     let baseRules = workItem.integratedAssessment?.baseRules;
     if (!baseRules) throw new Error('BASE_RULE_CANDIDATE_REQUIRED');
-    await this.authorize(workItem, actor, 'PERSIST_OPENCLAW_OVERALL');
     const revision =
       (workItem.integratedAssessment?.overallSynthesis?.revision ?? 0) + 1;
     const attempt = await this.repository.reserveAssessmentAction({
@@ -170,8 +183,12 @@ export class CanonicalHostIntegratedAssessmentService {
       attemptNo: revision,
     });
     if (!attempt.created) {
-      workItem = await this.requiredParsedWorkItem(workItemId);
-      await this.authorize(workItem, actor, 'PERSIST_OPENCLAW_OVERALL');
+      authorized = await this.authorizeAndLoad(
+        workItemId,
+        actor,
+        'PERSIST_OPENCLAW_OVERALL',
+      );
+      workItem = requiredParsedWorkItem(authorized.workItem);
       if (
         workItem.integratedAssessment?.overallSynthesis?.revision ===
           revision &&
@@ -213,7 +230,8 @@ export class CanonicalHostIntegratedAssessmentService {
         basedOnEngineerReviewRevision:
           workItem.integratedAssessment?.engineerReviews?.revision ?? null,
         basedOnEngineerReviewArtifactSha256:
-          workItem.integratedAssessment?.engineerReviews?.artifact.sha256 ?? null,
+          workItem.integratedAssessment?.engineerReviews?.artifact.sha256 ??
+          null,
         discoveryStatus: result.discoveryStatus,
         gap: result.gap,
         candidateRefCount: result.candidateRefCount,
@@ -234,7 +252,8 @@ export class CanonicalHostIntegratedAssessmentService {
           integratedAssessment: {
             status: 'OVERALL_CANDIDATE_READY',
             baseRules,
-            engineerReviews: workItem.integratedAssessment?.engineerReviews ?? null,
+            engineerReviews:
+              workItem.integratedAssessment?.engineerReviews ?? null,
             overallSynthesis,
             overallForAeoConfirmation: null,
           },
@@ -256,13 +275,13 @@ export class CanonicalHostIntegratedAssessmentService {
     workItemId: string,
     actor: CanonicalHostActor,
   ): Promise<CanonicalWorkItemProjection> {
-    let workItem = await this.requiredParsedWorkItem(workItemId);
-    let integrated = requiredReadyOverall(workItem);
-    await this.authorize(
-      workItem,
+    let authorized = await this.authorizeAndLoad(
+      workItemId,
       actor,
       'CONFIRM_OPENCLAW_OVERALL_FOR_AEO',
     );
+    let workItem = requiredParsedWorkItem(authorized.workItem);
+    let integrated = requiredReadyOverall(workItem);
     const existing = integrated.overallForAeoConfirmation ?? null;
     if (existing) {
       assertConfirmationBindsCurrentOverall(existing, workItem, integrated);
@@ -280,13 +299,13 @@ export class CanonicalHostIntegratedAssessmentService {
       attemptNo: workItem.revision,
     });
     if (!attempt.created) {
-      workItem = await this.requiredParsedWorkItem(workItemId);
-      integrated = requiredReadyOverall(workItem);
-      await this.authorize(
-        workItem,
+      authorized = await this.authorizeAndLoad(
+        workItemId,
         actor,
         'CONFIRM_OPENCLAW_OVERALL_FOR_AEO',
       );
+      workItem = requiredParsedWorkItem(authorized.workItem);
+      integrated = requiredReadyOverall(workItem);
       const completed = integrated.overallForAeoConfirmation ?? null;
       if (completed?.actionAttemptId === attempt.attemptId) {
         assertConfirmationBindsCurrentOverall(completed, workItem, integrated);
@@ -336,21 +355,8 @@ export class CanonicalHostIntegratedAssessmentService {
     }
   }
 
-  private async requiredParsedWorkItem(
+  private authorizeAndLoad(
     workItemId: string,
-  ): Promise<CanonicalWorkItemProjection> {
-    const workItem = await this.registrar.getByWorkItemId(workItemId);
-    if (
-      workItem.phase !== 'CANDIDATE_READBACK_VERIFIED' ||
-      workItem.package === null
-    ) {
-      throw new Error('INTEGRATED_ASSESSMENT_PARSED_PACKAGE_NOT_READY');
-    }
-    return workItem;
-  }
-
-  private async authorize(
-    workItem: CanonicalWorkItemProjection,
     actor: CanonicalHostActor,
     action: Extract<
       CanonicalAuthorizationDecision['action'],
@@ -358,30 +364,28 @@ export class CanonicalHostIntegratedAssessmentService {
       | 'PERSIST_OPENCLAW_OVERALL'
       | 'CONFIRM_OPENCLAW_OVERALL_FOR_AEO'
     >,
-  ): Promise<void> {
-    const decision = await this.authorization.authorize({
+  ) {
+    return authorizeAndLoadCanonicalWorkItem({
+      authorization: this.authorization,
+      permissionSnapshots: this.permissionSnapshots,
+      registrar: this.registrar,
       actor,
       action,
-      workItemId: workItem.workItemId,
-      requestId: workItem.requestId,
-      documentVersionId: workItem.source.documentVersionId,
+      workItemId,
     });
-    if (!decision.allowed || decision.action !== action) {
-      throw new Error('CANONICAL_ACTION_NOT_AUTHORIZED');
-    }
-    const snapshot = await this.permissionSnapshots.freshRead({
-      actor,
-      decision,
-      workItemId: workItem.workItemId,
-      requestId: workItem.requestId,
-      documentVersionId: workItem.source.documentVersionId,
-    });
-    if (
-      snapshot.permissionSnapshotVersion !== decision.permissionSnapshotVersion
-    ) {
-      throw new Error('INTEGRATED_ASSESSMENT_PERMISSION_SNAPSHOT_CHANGED');
-    }
   }
+}
+
+function requiredParsedWorkItem(
+  workItem: CanonicalWorkItemProjection,
+): CanonicalWorkItemProjection {
+  if (
+    workItem.phase !== 'CANDIDATE_READBACK_VERIFIED' ||
+    workItem.package === null
+  ) {
+    throw new Error('INTEGRATED_ASSESSMENT_PARSED_PACKAGE_NOT_READY');
+  }
+  return workItem;
 }
 
 function requiredReadyOverall(

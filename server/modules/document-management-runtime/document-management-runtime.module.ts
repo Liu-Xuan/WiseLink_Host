@@ -5,9 +5,11 @@ import {
   DocumentManagementHostedModule,
 } from '../document-management/src/hosted/nest';
 import { OrdinaryDocumentManagementAuthorizer } from './ordinary-document-management-authorizer';
+import { WorkItemRuntimeModule } from '../work-item/work-item-runtime.module';
 
 @Module({
   imports: [
+    WorkItemRuntimeModule,
     DocumentManagementHostedModule.register({
       authorizerProvider: {
         provide: DOCUMENT_MANAGEMENT_INGEST_AUTHORIZER,

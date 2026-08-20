@@ -75,14 +75,28 @@ function target() {
 }
 
 describe('CanonicalHostController assessment actions', () => {
+  it('returns only the server-derived identity used to namespace browser metadata', () => {
+    const { controller } = target();
+
+    expect(controller.identityContext(HOST_REQUEST as never)).toEqual({
+      userId: 'engineer-1001',
+      tenantId: 'tenant-2001',
+    });
+    expect(() =>
+      controller.identityContext({ userContext: null } as never),
+    ).toThrow(UnauthorizedException);
+  });
+
   it('routes the tenant-scoped LibraryIndex read through the authenticated actor', async () => {
     const { controller, libraryIndex } = target();
 
     await expect(
       controller.library('WI-LIBRARY-1', HOST_REQUEST as never),
-    ).resolves.toEqual(expect.objectContaining({
-      scope: 'CURRENT_WORKITEM_ONLY',
-    }));
+    ).resolves.toEqual(
+      expect.objectContaining({
+        scope: 'CURRENT_WORKITEM_ONLY',
+      }),
+    );
     expect(libraryIndex.read).toHaveBeenCalledWith({
       workItemId: 'WI-LIBRARY-1',
       actor: expect.objectContaining({ tenantId: 'tenant-2001' }),
@@ -91,8 +105,9 @@ describe('CanonicalHostController assessment actions', () => {
 
   it('requires a logged-in actor before entering the LibraryIndex service', () => {
     const { controller, libraryIndex } = target();
-    expect(() => controller.library('WI-LIBRARY-1', { userContext: null } as never))
-      .toThrow(UnauthorizedException);
+    expect(() =>
+      controller.library('WI-LIBRARY-1', { userContext: null } as never),
+    ).toThrow(UnauthorizedException);
     expect(libraryIndex.read).not.toHaveBeenCalled();
   });
 
@@ -180,11 +195,47 @@ describe('CanonicalHostController assessment actions', () => {
   });
 
   it.each([
-    [{ expectedRevision: 0, criterionId: 'JAC-001', decision: 'deferred', comment: 'x' }],
-    [{ expectedRevision: 5, criterionId: '', decision: 'deferred', comment: 'x' }],
-    [{ expectedRevision: 5, criterionId: 'JAC-001', decision: 'overridden', comment: 'x' }],
-    [{ expectedRevision: 5, criterionId: 'JAC-001', decision: 'deferred', comment: '' }],
-    [{ expectedRevision: 5, criterionId: 'JAC-001', decision: 'deferred', comment: 'x', status: 'ENGINEER_CONFIRMED' }],
+    [
+      {
+        expectedRevision: 0,
+        criterionId: 'JAC-001',
+        decision: 'deferred',
+        comment: 'x',
+      },
+    ],
+    [
+      {
+        expectedRevision: 5,
+        criterionId: '',
+        decision: 'deferred',
+        comment: 'x',
+      },
+    ],
+    [
+      {
+        expectedRevision: 5,
+        criterionId: 'JAC-001',
+        decision: 'overridden',
+        comment: 'x',
+      },
+    ],
+    [
+      {
+        expectedRevision: 5,
+        criterionId: 'JAC-001',
+        decision: 'deferred',
+        comment: '',
+      },
+    ],
+    [
+      {
+        expectedRevision: 5,
+        criterionId: 'JAC-001',
+        decision: 'deferred',
+        comment: 'x',
+        status: 'ENGINEER_CONFIRMED',
+      },
+    ],
   ])('maps malformed engineer input to HTTP 400', async (body) => {
     const { engineerReviews, controller } = target();
 
@@ -229,7 +280,12 @@ describe('CanonicalHostController assessment actions', () => {
     expect(() =>
       controller.recordEngineerReview(
         'WI-SB-1001',
-        { expectedRevision: 5, criterionId: 'JAC-001', decision: 'deferred', comment: 'x' },
+        {
+          expectedRevision: 5,
+          criterionId: 'JAC-001',
+          decision: 'deferred',
+          comment: 'x',
+        },
         { userContext: null } as never,
       ),
     ).toThrow(UnauthorizedException);
@@ -259,11 +315,9 @@ describe('CanonicalHostController assessment actions', () => {
     const { controller, integratedAssessments } = target();
 
     expect(() =>
-      controller.confirmOpenClawOverallForAeo(
-        'WI-SB-1001',
-        {},
-        { userContext: null } as never,
-      ),
+      controller.confirmOpenClawOverallForAeo('WI-SB-1001', {}, {
+        userContext: null,
+      } as never),
     ).toThrow(UnauthorizedException);
     expect(
       integratedAssessments.confirmOpenClawOverallForAeo,
@@ -292,11 +346,7 @@ describe('CanonicalHostController assessment actions', () => {
     const { controller, aeo } = target();
 
     await expect(
-      controller.generateAeoCandidate(
-        'WI-SB-1001',
-        {},
-        HOST_REQUEST as never,
-      ),
+      controller.generateAeoCandidate('WI-SB-1001', {}, HOST_REQUEST as never),
     ).resolves.toEqual({ status: 'CANDIDATE_WORD_EXPORTED' });
     expect(aeo.generateCandidate).toHaveBeenCalledWith(
       'WI-SB-1001',

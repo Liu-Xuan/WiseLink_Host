@@ -39,7 +39,7 @@ import {
 import type { CanonicalHostBindingState } from './canonical-host.types';
 import { MiaodaCanonicalWorkItemRegistrarAdapter } from '../work-item/miaoda-canonical-work-item-registrar.adapter';
 import { MiaodaDocumentVersionSourceResolver } from '../work-item/miaoda-document-version-source.resolver';
-import { MiaodaWorkItemRepository } from '../work-item/miaoda-work-item.repository';
+import { WorkItemRuntimeModule } from '../work-item/work-item-runtime.module';
 import { OrdinaryWorkItemService } from '../work-item/ordinary-work-item.service';
 import { UnconfiguredCanonicalPdfProducerAdapter } from './unconfigured-canonical-pdf-producer.adapter';
 import { UnconfiguredCanonicalMiaodaAppBindingAdapter } from './unconfigured-canonical-miaoda-app-binding.adapter';
@@ -59,6 +59,10 @@ import {
   UnconfiguredCanonicalBaseRuleResultProvider,
   UnconfiguredCanonicalOpenClawOverallProvider,
 } from './unconfigured-integrated-assessment.adapters';
+import {
+  CANONICAL_SERVICE_SCOPE_AUTHORIZATION,
+  UnavailableCanonicalServiceScopeAuthorization,
+} from './canonical-service-scope.authorization';
 
 export interface CanonicalHostModuleOptions {
   imports?: ModuleMetadata['imports'];
@@ -78,6 +82,7 @@ export interface CanonicalHostModuleOptions {
     ExternalDiscoveryModule,
     AssessmentHostConsumerModule,
     AeoSameWorkItemAuthoringModule.forRoot(),
+    WorkItemRuntimeModule,
   ],
   controllers: [
     CanonicalHostController,
@@ -95,7 +100,6 @@ export interface CanonicalHostModuleOptions {
     CanonicalHostOpenClawDiscoveryService,
     CanonicalHostOpenClawOverallService,
     ExactFtdFrozen2PdfProducerAdapter,
-    MiaodaWorkItemRepository,
     MiaodaDocumentVersionSourceResolver,
     MiaodaCanonicalWorkItemRegistrarAdapter,
     OrdinaryWorkItemService,
@@ -105,6 +109,11 @@ export interface CanonicalHostModuleOptions {
     CanonicalHostEngineerReviewService,
     CanonicalHostLibraryIndexService,
     CanonicalHostAeoService,
+    UnavailableCanonicalServiceScopeAuthorization,
+    {
+      provide: CANONICAL_SERVICE_SCOPE_AUTHORIZATION,
+      useExisting: UnavailableCanonicalServiceScopeAuthorization,
+    },
   ],
 })
 export class CanonicalHostModule {
@@ -183,6 +192,7 @@ export class CanonicalHostModule {
         AssessmentHostConsumerModule,
         ExternalDiscoveryModule,
         AeoSameWorkItemAuthoringModule.forRoot(),
+        WorkItemRuntimeModule,
         ...(options.imports ?? []),
       ],
       controllers: [
@@ -214,7 +224,6 @@ export class CanonicalHostModule {
         CanonicalHostOpenClawDiscoveryService,
         CanonicalHostOpenClawOverallService,
         ExactFtdFrozen2PdfProducerAdapter,
-        MiaodaWorkItemRepository,
         MiaodaDocumentVersionSourceResolver,
         MiaodaCanonicalWorkItemRegistrarAdapter,
         OrdinaryWorkItemService,
@@ -224,6 +233,11 @@ export class CanonicalHostModule {
         CanonicalHostEngineerReviewService,
         CanonicalHostLibraryIndexService,
         CanonicalHostAeoService,
+        UnavailableCanonicalServiceScopeAuthorization,
+        {
+          provide: CANONICAL_SERVICE_SCOPE_AUTHORIZATION,
+          useExisting: UnavailableCanonicalServiceScopeAuthorization,
+        },
       ],
       exports: [
         CanonicalEntryFacadeService,

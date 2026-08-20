@@ -25,9 +25,10 @@ export class UnconfiguredCanonicalWorkItemRegistrarAdapter implements CanonicalW
     throw new Error('CANONICAL_WORK_ITEM_REGISTRAR_NOT_CONFIGURED');
   }
 
-  async getByWorkItemId(
-    _workItemId: string,
-  ): Promise<CanonicalWorkItemProjection> {
+  async getTenantScopedByWorkItemId(_input: {
+    workItemId: string;
+    tenantId: string;
+  }): Promise<CanonicalWorkItemProjection> {
     throw new Error('CANONICAL_WORK_ITEM_REGISTRAR_NOT_CONFIGURED');
   }
 }

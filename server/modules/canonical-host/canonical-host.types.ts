@@ -98,8 +98,8 @@ export interface CanonicalAuthorizationPort {
     actor: CanonicalHostActor;
     action: CanonicalAuthorizationDecision['action'];
     workItemId: string;
-    requestId: string;
-    documentVersionId: string;
+    requestId?: string;
+    documentVersionId?: string;
   }): Promise<CanonicalAuthorizationDecision>;
 }
 
@@ -108,8 +108,8 @@ export interface CanonicalPermissionSnapshotPort {
     actor: CanonicalHostActor;
     decision: CanonicalAuthorizationDecision;
     workItemId: string;
-    requestId: string;
-    documentVersionId: string;
+    requestId?: string;
+    documentVersionId?: string;
   }): Promise<{ permissionSnapshotVersion: string }>;
 }
 
@@ -128,7 +128,10 @@ export interface CanonicalWorkItemRegistrarPort {
     requestId: string;
     documentVersionId: string;
   }): Promise<CanonicalWorkItemProjection>;
-  getByWorkItemId(workItemId: string): Promise<CanonicalWorkItemProjection>;
+  getTenantScopedByWorkItemId(input: {
+    workItemId: string;
+    tenantId: string;
+  }): Promise<CanonicalWorkItemProjection>;
 }
 
 export interface CanonicalHostBindingState {

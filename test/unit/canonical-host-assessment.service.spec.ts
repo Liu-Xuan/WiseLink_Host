@@ -64,8 +64,10 @@ function deniedService(
     authorize: jest.fn().mockResolvedValue(decision),
   };
   const permissionSnapshots = { freshRead: jest.fn() };
+  const getByWorkItemId = jest.fn().mockResolvedValue(projection);
   const registrar = {
-    getByWorkItemId: jest.fn().mockResolvedValue(projection),
+    getByWorkItemId,
+    getTenantScopedByWorkItemId: getByWorkItemId,
   };
   const service = new CanonicalHostAssessmentService(
     registrar as never,
@@ -76,7 +78,7 @@ function deniedService(
     {} as never,
     {} as never,
   );
-  return { authorization, permissionSnapshots, service };
+  return { authorization, permissionSnapshots, registrar, service };
 }
 
 function authorizedService(
@@ -102,13 +104,17 @@ function authorizedService(
   const permissionSnapshots = {
     freshRead: jest.fn().mockResolvedValue({ permissionSnapshotVersion }),
   };
+  const getByWorkItemId = jest.fn().mockResolvedValue(projection);
   const registrar = {
-    getByWorkItemId: jest.fn().mockResolvedValue(projection),
+    getByWorkItemId,
+    getTenantScopedByWorkItemId: getByWorkItemId,
   };
   const artifactStore = {
-    readActualBytes: jest.fn().mockResolvedValue(
-      new TextEncoder().encode(JSON.stringify(options.assessmentArtifact)),
-    ),
+    readActualBytes: jest
+      .fn()
+      .mockResolvedValue(
+        new TextEncoder().encode(JSON.stringify(options.assessmentArtifact)),
+      ),
   };
   const repository = {
     reserveAssessmentAction: jest.fn(),
@@ -146,7 +152,11 @@ function existingAssessment() {
 }
 
 function engineerReview(
-  decision: 'confirmed_pass' | 'confirmed_fail' | 'returned_for_rework' | 'deferred',
+  decision:
+    | 'confirmed_pass'
+    | 'confirmed_fail'
+    | 'returned_for_rework'
+    | 'deferred',
   status: 'ENGINEER_CONFIRMED' | 'NEEDS_REVIEW',
 ) {
   return {
@@ -176,9 +186,13 @@ describe('CanonicalHostAssessmentService authorization ordering', () => {
         },
         ACTOR,
       ),
-    ).rejects.toThrow('CANONICAL_ACTION_NOT_AUTHORIZED');
+    ).rejects.toMatchObject({
+      code: 'CANONICAL_WORK_ITEM_NOT_FOUND',
+      statusCode: 404,
+    });
     expect(target.authorization.authorize).toHaveBeenCalledTimes(1);
     expect(target.permissionSnapshots.freshRead).not.toHaveBeenCalled();
+    expect(target.registrar.getTenantScopedByWorkItemId).not.toHaveBeenCalled();
   });
 
   it('does not return an already resynthesized assessment before authorization', async () => {
@@ -206,9 +220,13 @@ describe('CanonicalHostAssessmentService authorization ordering', () => {
         },
         ACTOR,
       ),
-    ).rejects.toThrow('CANONICAL_ACTION_NOT_AUTHORIZED');
+    ).rejects.toMatchObject({
+      code: 'CANONICAL_WORK_ITEM_NOT_FOUND',
+      statusCode: 404,
+    });
     expect(target.authorization.authorize).toHaveBeenCalledTimes(1);
     expect(target.permissionSnapshots.freshRead).not.toHaveBeenCalled();
+    expect(target.registrar.getTenantScopedByWorkItemId).not.toHaveBeenCalled();
   });
 
   it('rejects a denied decision even when the action string matches', async () => {
@@ -226,8 +244,12 @@ describe('CanonicalHostAssessmentService authorization ordering', () => {
         },
         ACTOR,
       ),
-    ).rejects.toThrow('CANONICAL_ACTION_NOT_AUTHORIZED');
+    ).rejects.toMatchObject({
+      code: 'CANONICAL_WORK_ITEM_NOT_FOUND',
+      statusCode: 404,
+    });
     expect(target.permissionSnapshots.freshRead).not.toHaveBeenCalled();
+    expect(target.registrar.getTenantScopedByWorkItemId).not.toHaveBeenCalled();
   });
 
   it('rejects an allowed decision for a different action', async () => {
@@ -245,8 +267,12 @@ describe('CanonicalHostAssessmentService authorization ordering', () => {
         },
         ACTOR,
       ),
-    ).rejects.toThrow('CANONICAL_ACTION_NOT_AUTHORIZED');
+    ).rejects.toMatchObject({
+      code: 'CANONICAL_WORK_ITEM_NOT_FOUND',
+      statusCode: 404,
+    });
     expect(target.permissionSnapshots.freshRead).not.toHaveBeenCalled();
+    expect(target.registrar.getTenantScopedByWorkItemId).not.toHaveBeenCalled();
   });
 
   it('authorizes and fresh-reads permission before reusing an existing result', async () => {

@@ -27,6 +27,7 @@ import {
   readDynamicRuleReviewItems,
   type OpenClawEngineerReviewContext,
 } from './openclaw-overall-synthesis.processor';
+import { authorizeAndLoadCanonicalWorkItem } from './canonical-authorized-work-item-reader';
 
 const LEDGER_KIND = 'CANONICAL_ENGINEER_REVIEW_LEDGER';
 const LEDGER_VERSION = 1;
@@ -90,8 +91,8 @@ export class CanonicalHostEngineerReviewService {
     actor: CanonicalHostActor,
   ): Promise<CanonicalWorkItemProjection> {
     validateRecordInput(input);
-    let workItem = await this.requiredDynamicWorkItem(input.workItemId);
-    await this.authorize(workItem, actor);
+    let authorized = await this.authorizeAndLoad(input.workItemId, actor);
+    let workItem = requiredDynamicWorkItem(authorized.workItem);
     if (workItem.revision !== input.expectedRevision) {
       throw new Error('WORK_ITEM_CAS_CONFLICT');
     }
@@ -111,9 +112,12 @@ export class CanonicalHostEngineerReviewService {
       attemptNo: workItem.revision,
     });
     if (!attempt.created) {
-      workItem = await this.requiredDynamicWorkItem(input.workItemId);
-      await this.authorize(workItem, actor);
-      if (workItem.integratedAssessment?.engineerReviews?.actionAttemptId === attempt.attemptId) {
+      authorized = await this.authorizeAndLoad(input.workItemId, actor);
+      workItem = requiredDynamicWorkItem(authorized.workItem);
+      if (
+        workItem.integratedAssessment?.engineerReviews?.actionAttemptId ===
+        attempt.attemptId
+      ) {
         return workItem;
       }
       throw new Error('ENGINEER_REVIEW_INCOMPLETE_PRIOR_ATTEMPT');
@@ -258,7 +262,9 @@ export class CanonicalHostEngineerReviewService {
       throw new Error('ENGINEER_REVIEW_RULESET_CHANGED');
     }
     const known = new Set(
-      readDynamicRuleReviewItems(baseRules, bytes).map((item) => item.criterionId),
+      readDynamicRuleReviewItems(baseRules, bytes).map(
+        (item) => item.criterionId,
+      ),
     );
     if (ledger.reviews.some((review) => !known.has(review.criterionId))) {
       throw new Error('ENGINEER_REVIEW_CRITERION_SET_DRIFT');
@@ -269,7 +275,11 @@ export class CanonicalHostEngineerReviewService {
     const baseRules = workItem.integratedAssessment!.baseRules;
     const bytes = await this.artifactStore.readActualBytes(baseRules.artifact);
     const items = readDynamicRuleReviewItems(baseRules, bytes);
-    await this.assertLedgerCompatibleWithDynamicBytes(workItem, baseRules, bytes);
+    await this.assertLedgerCompatibleWithDynamicBytes(
+      workItem,
+      baseRules,
+      bytes,
+    );
     return items;
   }
 
@@ -284,59 +294,54 @@ export class CanonicalHostEngineerReviewService {
     return ledger;
   }
 
-  private async requiredDynamicWorkItem(workItemId: string) {
-    const workItem = await this.registrar.getByWorkItemId(workItemId);
-    if (
-      workItem.phase !== 'CANDIDATE_READBACK_VERIFIED' ||
-      !workItem.package ||
-      !workItem.integratedAssessment?.baseRules ||
-      !workItem.integratedAssessment.baseRules.sourceResultId.startsWith(
-        'openclaw-dynamic://',
-      )
-    ) {
-      throw new Error('ENGINEER_REVIEW_DYNAMIC_N_CANDIDATE_REQUIRED');
-    }
-    return workItem;
-  }
-
-  private async authorize(
-    workItem: CanonicalWorkItemProjection,
-    actor: CanonicalHostActor,
-  ): Promise<void> {
-    const decision = await this.authorization.authorize({
+  private authorizeAndLoad(workItemId: string, actor: CanonicalHostActor) {
+    return authorizeAndLoadCanonicalWorkItem({
+      authorization: this.authorization,
+      permissionSnapshots: this.permissions,
+      registrar: this.registrar,
       actor,
       action: 'RECORD_ENGINEER_REVIEW',
-      workItemId: workItem.workItemId,
-      requestId: workItem.requestId,
-      documentVersionId: workItem.source.documentVersionId,
+      workItemId,
     });
-    if (!decision.allowed || decision.action !== 'RECORD_ENGINEER_REVIEW') {
-      throw new Error('CANONICAL_ACTION_NOT_AUTHORIZED');
-    }
-    const snapshot = await this.permissions.freshRead({
-      actor,
-      decision,
-      workItemId: workItem.workItemId,
-      requestId: workItem.requestId,
-      documentVersionId: workItem.source.documentVersionId,
-    });
-    if (snapshot.permissionSnapshotVersion !== decision.permissionSnapshotVersion) {
-      throw new Error('ENGINEER_REVIEW_PERMISSION_SNAPSHOT_CHANGED');
-    }
   }
 }
 
+function requiredDynamicWorkItem(
+  workItem: CanonicalWorkItemProjection,
+): CanonicalWorkItemProjection {
+  if (
+    workItem.phase !== 'CANDIDATE_READBACK_VERIFIED' ||
+    !workItem.package ||
+    !workItem.integratedAssessment?.baseRules ||
+    !workItem.integratedAssessment.baseRules.sourceResultId.startsWith(
+      'openclaw-dynamic://',
+    )
+  ) {
+    throw new Error('ENGINEER_REVIEW_DYNAMIC_N_CANDIDATE_REQUIRED');
+  }
+  return workItem;
+}
+
 function validateRecordInput(input: RecordEngineerReviewInput): void {
-  if (!input.workItemId.trim() || !input.criterionId.trim() || !input.comment.trim()) {
+  if (
+    !input.workItemId.trim() ||
+    !input.criterionId.trim() ||
+    !input.comment.trim()
+  ) {
     throw new Error('ENGINEER_REVIEW_INPUT_INVALID');
   }
-  if (!Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 1) {
+  if (
+    !Number.isSafeInteger(input.expectedRevision) ||
+    input.expectedRevision < 1
+  ) {
     throw new Error('ENGINEER_REVIEW_EXPECTED_REVISION_INVALID');
   }
   statusFor(input.decision);
 }
 
-function statusFor(decision: CanonicalEngineerReviewDecision): EngineerReviewStatus {
+function statusFor(
+  decision: CanonicalEngineerReviewDecision,
+): EngineerReviewStatus {
   if (decision === 'confirmed_pass' || decision === 'confirmed_fail') {
     return 'ENGINEER_CONFIRMED';
   }
@@ -386,7 +391,8 @@ function assertLedger(
     ledger.workItemId !== workItem.workItemId ||
     ledger.documentVersionId !== workItem.source.documentVersionId ||
     ledger.packageId !== workItem.package?.packageId ||
-    ledger.criterionSetId !== workItem.integratedAssessment?.baseRules.criterionSetId ||
+    ledger.criterionSetId !==
+      workItem.integratedAssessment?.baseRules.criterionSetId ||
     ledger.criterionSetId !== projection.criterionSetId ||
     ledger.revision !== projection.revision ||
     ledger.reviews.length !== projection.reviewCount

@@ -19,6 +19,44 @@ const ATTEMPT_ID = 'ATT-INTERNAL-NOT-FOR-MODEL';
 const ATTEMPT_REF = 'DYN-OPAQUE-CALLER-REF';
 
 describe('CanonicalHostOpenClawDynamicEvaluationService', () => {
+  it('rejects commit/recovery before attempt, projection, or artifact I/O without scope', async () => {
+    const registrar = { getTenantScopedByWorkItemId: jest.fn() };
+    const repository = {
+      getDynamicEvaluationActionByCallerRef: jest.fn(),
+      completeAssessmentAction: jest.fn(),
+    };
+    const artifactStore = { persistAndReadback: jest.fn() };
+    const service = new CanonicalHostOpenClawDynamicEvaluationService(
+      registrar as never,
+      {} as never,
+      {} as never,
+      artifactStore as never,
+      repository as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {
+        authorizeOpenClawAttempt: jest.fn().mockRejectedValue(
+          Object.assign(new Error('scope unavailable'), {
+            code: 'CANONICAL_SERVICE_SCOPE_UNAVAILABLE',
+            statusCode: 503,
+          }),
+        ),
+      } as never,
+    );
+
+    await expect(service.commit('ATT-CALLER', '{}')).rejects.toMatchObject({
+      code: 'CANONICAL_SERVICE_SCOPE_UNAVAILABLE',
+      statusCode: 503,
+    });
+    expect(
+      repository.getDynamicEvaluationActionByCallerRef,
+    ).not.toHaveBeenCalled();
+    expect(repository.completeAssessmentAction).not.toHaveBeenCalled();
+    expect(registrar.getTenantScopedByWorkItemId).not.toHaveBeenCalled();
+    expect(artifactStore.persistAndReadback).not.toHaveBeenCalled();
+  });
+
   it('keeps a pre-model transient failure recoverable on the same opaque ref', async () => {
     const harness = createHarness({ transientBeginFailures: 1 });
 
@@ -90,7 +128,9 @@ describe('CanonicalHostOpenClawDynamicEvaluationService', () => {
     expect(harness.state.releaseCount).toBe(1);
     expect(harness.state.failedAttempts).toEqual([]);
 
-    await expect(harness.service.commit(ATTEMPT_REF, output)).resolves.toMatchObject({
+    await expect(
+      harness.service.commit(ATTEMPT_REF, output),
+    ).resolves.toMatchObject({
       workItemId: WORK_ITEM_ID,
       workItemRevision: 6,
     });
@@ -107,8 +147,12 @@ describe('CanonicalHostOpenClawDynamicEvaluationService', () => {
       harness.service.commit(ATTEMPT_REF, output),
     ]);
 
-    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
-    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+    expect(
+      results.filter((result) => result.status === 'fulfilled'),
+    ).toHaveLength(1);
+    expect(
+      results.filter((result) => result.status === 'rejected'),
+    ).toHaveLength(1);
     expect(harness.state.claimCount).toBe(2);
     expect(harness.state.persistedOutputs).toEqual([output]);
     expect(harness.state.casCount).toBe(1);
@@ -197,6 +241,7 @@ function createHarness(options: HarnessOptions = {}) {
   };
   const registrar = {
     getByWorkItemId: async () => workItem,
+    getTenantScopedByWorkItemId: async () => workItem,
     compareAndSet: async (input: {
       expectedRevision: number;
       next: Omit<CanonicalWorkItemProjection, 'revision'>;
@@ -252,7 +297,11 @@ function createHarness(options: HarnessOptions = {}) {
     getRow: async () => ({ tenantId: 'tenant-dynamic' }),
     reserveDynamicEvaluationAction: async () => {
       state.reserveCount += 1;
-      return { ...attempt, status: state.status, created: state.reserveCount === 1 };
+      return {
+        ...attempt,
+        status: state.status,
+        created: state.reserveCount === 1,
+      };
     },
     getDynamicEvaluationActionByCallerRef: async () => ({
       ...attempt,
@@ -302,7 +351,8 @@ function createHarness(options: HarnessOptions = {}) {
     ): DynamicRulesEvaluationRequest => ({
       privateEnvelope: {
         callerCorrelationRef,
-        correlation: correlation as DynamicRulesEvaluationRequest['privateEnvelope']['correlation'],
+        correlation:
+          correlation as DynamicRulesEvaluationRequest['privateEnvelope']['correlation'],
       },
       modelInput: {
         purpose: 'EVALUATE_DYNAMIC_RULES',
@@ -344,6 +394,26 @@ function createHarness(options: HarnessOptions = {}) {
       repository,
       assessment,
       processor,
+      {
+        assertLedgerCompatibleWithDynamicBytes: async () => undefined,
+      } as never,
+      {
+        authorizeOpenClawWorkItem: async () => ({
+          principalId: 'service:openclaw-test',
+          appId: 'app_17bzc551rsg',
+          tenantId: attempt.tenantId,
+          workItemId: attempt.workItemId,
+          authorizationFingerprint: 'scope:dynamic-test',
+        }),
+        authorizeOpenClawAttempt: async () => ({
+          principalId: 'service:openclaw-test',
+          appId: 'app_17bzc551rsg',
+          tenantId: attempt.tenantId,
+          workItemId: attempt.workItemId,
+          attemptRef: attempt.triggerRequestId,
+          authorizationFingerprint: 'scope:dynamic-test',
+        }),
+      } as never,
     ),
   };
 }

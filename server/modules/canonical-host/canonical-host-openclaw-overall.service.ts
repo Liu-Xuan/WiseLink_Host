@@ -26,6 +26,12 @@ import type {
 import { CanonicalHostAssessmentService } from './canonical-host-assessment.service';
 import { CanonicalHostEngineerReviewService } from './canonical-host-engineer-review.service';
 import {
+  CANONICAL_SERVICE_SCOPE_AUTHORIZATION,
+  type CanonicalServiceScopeAuthorizationPort,
+  type CanonicalVerifiedOpenClawAttemptScope,
+  type CanonicalVerifiedServiceScope,
+} from './canonical-service-scope.authorization';
+import {
   buildOpenClawOverallSynthesisInput,
   consumeOpenClawOverallSynthesisOutput,
   type OpenClawOverallSynthesisInput,
@@ -49,6 +55,8 @@ export class CanonicalHostOpenClawOverallService {
     private readonly discovery: ExternalDiscoveryService,
     private readonly assessment: CanonicalHostAssessmentService,
     private readonly engineerReviews: CanonicalHostEngineerReviewService,
+    @Inject(CANONICAL_SERVICE_SCOPE_AUTHORIZATION)
+    private readonly serviceScope: CanonicalServiceScopeAuthorizationPort,
   ) {}
 
   async begin(
@@ -59,9 +67,13 @@ export class CanonicalHostOpenClawOverallService {
     selectedDiscoveryRefs: string[];
     modelInput: OpenClawOverallSynthesisInput;
   }> {
-    const workItem = await this.requiredBaseRules(workItemId);
-    const row = await this.repository.getRow(workItem.workItemId);
-    const actor = serviceActor(row.tenantId);
+    const scope = await this.serviceScope.authorizeOpenClawWorkItem({
+      operation: 'BEGIN_OVERALL',
+      workItemId,
+    });
+    assertWorkItemScope(scope, workItemId);
+    const workItem = await this.requiredBaseRules(workItemId, scope.tenantId);
+    const actor = serviceActor(scope.tenantId);
     const permissionSnapshotVersion = await this.authorize(workItem, actor);
     const providerCodes = providerCodesFor(providers);
     const attempt = await this.repository.reserveOverallSynthesisAction({
@@ -96,16 +108,19 @@ export class CanonicalHostOpenClawOverallService {
     };
   }
 
-  async resume(
-    attemptReference: string,
-  ): Promise<{
+  async resume(attemptReference: string): Promise<{
     attemptRef: string;
     selectedDiscoveryRefs: string[];
     modelInput: OpenClawOverallSynthesisInput;
   }> {
-    const attempt = await this.repository.getOverallSynthesisActionByRef(
-      attemptReference,
-    );
+    const scope = await this.serviceScope.authorizeOpenClawAttempt({
+      operation: 'RESUME_OVERALL',
+      attemptRef: attemptReference,
+    });
+    assertAttemptScope(scope, attemptReference);
+    const attempt =
+      await this.repository.getOverallSynthesisActionByRef(attemptReference);
+    assertAttemptBinding(scope, attempt);
     if (attempt.actionType !== 'OPENCLAW_OVERALL_SYNTHESIS') {
       throw new Error('OPENCLAW_OVERALL_RESUME_ACTION_MISMATCH');
     }
@@ -121,7 +136,10 @@ export class CanonicalHostOpenClawOverallService {
       throw new Error('OPENCLAW_OVERALL_RESUME_ARTIFACT_ALREADY_PRESENT');
     }
 
-    const workItem = await this.requiredBaseRules(attempt.workItemId);
+    const workItem = await this.requiredBaseRules(
+      attempt.workItemId,
+      scope.tenantId,
+    );
     if (workItem.workItemId !== attempt.workItemId) {
       throw new Error('OPENCLAW_OVERALL_RESUME_WORK_ITEM_MISMATCH');
     }
@@ -149,15 +167,23 @@ export class CanonicalHostOpenClawOverallService {
     attemptRef: string,
     output: string,
   ): Promise<Record<string, unknown>> {
-    const attempt = await this.repository.getOverallSynthesisActionByCallerRef(
+    const scope = await this.serviceScope.authorizeOpenClawAttempt({
+      operation: 'COMMIT_OVERALL',
       attemptRef,
-    );
+    });
+    assertAttemptScope(scope, attemptRef);
+    const attempt =
+      await this.repository.getOverallSynthesisActionByCallerRef(attemptRef);
+    assertAttemptBinding(scope, attempt);
     const recovered = await this.recoverExistingCommit(attempt);
     if (recovered) return recovered;
     if (attempt.status !== 'RUNNING') {
       throw new Error('OPENCLAW_OVERALL_ATTEMPT_NOT_RUNNING');
     }
-    const workItem = await this.requiredBaseRules(attempt.workItemId);
+    const workItem = await this.requiredBaseRules(
+      attempt.workItemId,
+      scope.tenantId,
+    );
     if (workItem.revision !== attempt.attemptNo) {
       throw new Error('WORK_ITEM_CAS_CONFLICT');
     }
@@ -247,7 +273,10 @@ export class CanonicalHostOpenClawOverallService {
     attempt: OverallSynthesisActionAttempt,
   ): Promise<Record<string, unknown> | null> {
     if (attempt.status === 'RUNNING') return null;
-    const workItem = await this.requiredBaseRules(attempt.workItemId);
+    const workItem = await this.requiredBaseRules(
+      attempt.workItemId,
+      attempt.tenantId,
+    );
     const committed = committedOverallResult(workItem, attempt);
     if (committed && attempt.status === 'COMMITTING') {
       await this.repository.completeAssessmentAction(attempt.attemptId);
@@ -264,7 +293,10 @@ export class CanonicalHostOpenClawOverallService {
     attempt: OverallSynthesisActionAttempt,
     error: unknown,
   ): Promise<Record<string, unknown> | null> {
-    const workItem = await this.requiredBaseRules(attempt.workItemId);
+    const workItem = await this.requiredBaseRules(
+      attempt.workItemId,
+      attempt.tenantId,
+    );
     const committed = committedOverallResult(workItem, attempt);
     if (committed) {
       await this.repository.completeAssessmentAction(attempt.attemptId);
@@ -331,9 +363,15 @@ export class CanonicalHostOpenClawOverallService {
         this.engineerReviews.modelContext(workItem),
       ),
     ]);
-    assertDynamicCandidateSummary(dynamicCandidate.summary, workItem, baseRules);
-    const sourceEvidenceCandidates = dynamicCandidate.overall.context.criterionCards
-      .flatMap((criterion) => criterion.sourceEvidenceCandidates);
+    assertDynamicCandidateSummary(
+      dynamicCandidate.summary,
+      workItem,
+      baseRules,
+    );
+    const sourceEvidenceCandidates =
+      dynamicCandidate.overall.context.criterionCards.flatMap(
+        (criterion) => criterion.sourceEvidenceCandidates,
+      );
     return {
       selectedDiscoveryRefs: discoveries.map((value) => value.searchRunRef),
       modelInput: buildOpenClawOverallSynthesisInput({
@@ -351,8 +389,12 @@ export class CanonicalHostOpenClawOverallService {
 
   private async requiredBaseRules(
     workItemId: string,
+    tenantId: string,
   ): Promise<CanonicalWorkItemProjection> {
-    const workItem = await this.registrar.getByWorkItemId(workItemId);
+    const workItem = await this.registrar.getTenantScopedByWorkItemId({
+      workItemId,
+      tenantId,
+    });
     if (
       workItem.phase !== 'CANDIDATE_READBACK_VERIFIED' ||
       !workItem.package ||
@@ -400,7 +442,9 @@ export class CanonicalHostOpenClawOverallService {
       requestId: workItem.requestId,
       documentVersionId: workItem.source.documentVersionId,
     });
-    if (snapshot.permissionSnapshotVersion !== decision.permissionSnapshotVersion) {
+    if (
+      snapshot.permissionSnapshotVersion !== decision.permissionSnapshotVersion
+    ) {
       throw new Error('OPENCLAW_OVERALL_PERMISSION_SNAPSHOT_CHANGED');
     }
     return snapshot.permissionSnapshotVersion;
@@ -409,7 +453,52 @@ export class CanonicalHostOpenClawOverallService {
 
 function serviceActor(tenantId: string): CanonicalHostActor {
   if (!tenantId.trim()) throw new Error('OPENCLAW_OVERALL_TENANT_REQUIRED');
-  return { userId: OPENCLAW_SERVICE_USER_ID, tenantId, appId: CANONICAL_APP_ID, roles: [], env: 'hosted' };
+  return {
+    userId: OPENCLAW_SERVICE_USER_ID,
+    tenantId,
+    appId: CANONICAL_APP_ID,
+    roles: [],
+    env: 'hosted',
+  };
+}
+function assertWorkItemScope(
+  scope: CanonicalVerifiedServiceScope,
+  workItemId: string,
+): void {
+  if (
+    scope.workItemId !== workItemId ||
+    scope.appId !== CANONICAL_APP_ID ||
+    !scope.principalId.trim() ||
+    !scope.tenantId.trim() ||
+    !scope.authorizationFingerprint.trim()
+  ) {
+    throw openClawScopeNotFound();
+  }
+}
+function assertAttemptScope(
+  scope: CanonicalVerifiedOpenClawAttemptScope,
+  attemptRef: string,
+): void {
+  assertWorkItemScope(scope, scope.workItemId);
+  if (scope.attemptRef !== attemptRef) throw openClawScopeNotFound();
+}
+function assertAttemptBinding(
+  scope: CanonicalVerifiedOpenClawAttemptScope,
+  attempt: OverallSynthesisActionAttempt,
+): void {
+  if (
+    attempt.workItemId !== scope.workItemId ||
+    attempt.tenantId !== scope.tenantId ||
+    attempt.triggerRequestId !== scope.attemptRef
+  ) {
+    throw openClawScopeNotFound();
+  }
+}
+function openClawScopeNotFound(): Error & { code: string; statusCode: number } {
+  return Object.assign(new Error('CANONICAL_WORK_ITEM_NOT_FOUND'), {
+    code: 'CANONICAL_WORK_ITEM_NOT_FOUND',
+    statusCode: 404,
+  });
 }
 function committedOverallResult(
   workItem: CanonicalWorkItemProjection,
@@ -417,7 +506,8 @@ function committedOverallResult(
 ): Record<string, unknown> | null {
   const integrated = workItem.integratedAssessment;
   const overall = integrated?.overallSynthesis;
-  if (!integrated || overall?.actionAttemptId !== attempt.attemptId) return null;
+  if (!integrated || overall?.actionAttemptId !== attempt.attemptId)
+    return null;
   return {
     workItemId: workItem.workItemId,
     workItemRevision: workItem.revision,
@@ -448,19 +538,48 @@ function assertDynamicCandidateSummary(
     throw new Error('OPENCLAW_OVERALL_DYNAMIC_N_CONTEXT_DRIFT');
   }
 }
-function serverContext(actor: CanonicalHostActor) { return { actorUserId: actor.userId, tenantId: actor.tenantId, roles: [] as string[] }; }
+function serverContext(actor: CanonicalHostActor) {
+  return {
+    actorUserId: actor.userId,
+    tenantId: actor.tenantId,
+    roles: [] as string[],
+  };
+}
 function providerCodesFor(providers: string[]): string[] {
-  if (new Set(providers).size !== providers.length || providers.length > 3) throw new Error('OPENCLAW_OVERALL_PROVIDERS_INVALID');
-  const codes = providers.map((provider) => ({ AIRBUS: 'A', BOEING: 'B', COMAC: 'C' })[provider]);
-  if (codes.some((code) => !code)) throw new Error('OPENCLAW_OVERALL_PROVIDERS_INVALID');
+  if (new Set(providers).size !== providers.length || providers.length > 3)
+    throw new Error('OPENCLAW_OVERALL_PROVIDERS_INVALID');
+  const codes = providers.map(
+    (provider) => ({ AIRBUS: 'A', BOEING: 'B', COMAC: 'C' })[provider],
+  );
+  if (codes.some((code) => !code))
+    throw new Error('OPENCLAW_OVERALL_PROVIDERS_INVALID');
   return codes as string[];
 }
-function providerCodesFromOrigin(origin: string): string[] { const value = origin.replace(/^OPENCLAW_OVR_/u, ''); return value === 'NONE' ? [] : [...value]; }
-function requiredText(value: unknown): string { if (typeof value !== 'string' || !value.trim()) throw new Error('OPENCLAW_OVERALL_RESULT_TEXT_INVALID'); return value; }
-function nullableString(value: unknown): string | null { if (value === null) return null; return requiredText(value); }
-function requiredCount(value: unknown): number { if (!Number.isSafeInteger(value) || Number(value) < 0) throw new Error('OPENCLAW_OVERALL_RESULT_COUNT_INVALID'); return Number(value); }
+function providerCodesFromOrigin(origin: string): string[] {
+  const value = origin.replace(/^OPENCLAW_OVR_/u, '');
+  return value === 'NONE' ? [] : [...value];
+}
+function requiredText(value: unknown): string {
+  if (typeof value !== 'string' || !value.trim())
+    throw new Error('OPENCLAW_OVERALL_RESULT_TEXT_INVALID');
+  return value;
+}
+function nullableString(value: unknown): string | null {
+  if (value === null) return null;
+  return requiredText(value);
+}
+function requiredCount(value: unknown): number {
+  if (!Number.isSafeInteger(value) || Number(value) < 0)
+    throw new Error('OPENCLAW_OVERALL_RESULT_COUNT_INVALID');
+  return Number(value);
+}
 function requiredTextArray(value: unknown): string[] {
-  if (!Array.isArray(value) || value.some((item: unknown): boolean => typeof item !== 'string' || !item.trim())) {
+  if (
+    !Array.isArray(value) ||
+    value.some(
+      (item: unknown): boolean => typeof item !== 'string' || !item.trim(),
+    )
+  ) {
     throw new Error('OPENCLAW_OVERALL_RESULT_TEXT_ARRAY_INVALID');
   }
   return value as string[];
@@ -478,7 +597,8 @@ function overallFindings(value: unknown): Array<{
   assumptions: string[];
   uncertainty: string;
 }> {
-  if (!Array.isArray(value)) throw new Error('OPENCLAW_OVERALL_RESULT_FINDINGS_INVALID');
+  if (!Array.isArray(value))
+    throw new Error('OPENCLAW_OVERALL_RESULT_FINDINGS_INVALID');
   return value.map((item: unknown) => {
     if (!item || typeof item !== 'object' || Array.isArray(item)) {
       throw new Error('OPENCLAW_OVERALL_RESULT_FINDING_INVALID');
@@ -493,9 +613,20 @@ function overallFindings(value: unknown): Array<{
     };
   });
 }
-function withoutRevision(workItem: CanonicalWorkItemProjection): Omit<CanonicalWorkItemProjection, 'revision'> { const { revision: _revision, ...rest } = workItem; return rest; }
-function errorCode(error: unknown): string { return error instanceof Error ? error.message.split(':', 1)[0] : 'OPENCLAW_OVERALL_FAILED'; }
-function errorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error); }
+function withoutRevision(
+  workItem: CanonicalWorkItemProjection,
+): Omit<CanonicalWorkItemProjection, 'revision'> {
+  const { revision: _revision, ...rest } = workItem;
+  return rest;
+}
+function errorCode(error: unknown): string {
+  return error instanceof Error
+    ? error.message.split(':', 1)[0]
+    : 'OPENCLAW_OVERALL_FAILED';
+}
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 async function packetInput<T>(
   code: string,
   operation: () => T | PromiseLike<T>,

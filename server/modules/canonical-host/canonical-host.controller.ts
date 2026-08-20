@@ -44,14 +44,18 @@ export class CanonicalHostController {
     private readonly integratedAssessments: CanonicalHostIntegratedAssessmentService,
     private readonly engineerReviews: CanonicalHostEngineerReviewService,
     private readonly aeo: CanonicalHostAeoService,
-    @Optional() private readonly libraryIndex?: CanonicalHostLibraryIndexService,
+    @Optional()
+    private readonly libraryIndex?: CanonicalHostLibraryIndexService,
   ) {}
 
+  @Get('identity-context')
+  identityContext(@Req() httpRequest: Request) {
+    const actor = hostActor(httpRequest);
+    return { userId: actor.userId, tenantId: actor.tenantId };
+  }
+
   @Post('work-items/parse-pdf')
-  runPdf(
-    @Body() request: unknown,
-    @Req() httpRequest: Request,
-  ) {
+  runPdf(@Body() request: unknown, @Req() httpRequest: Request) {
     return this.workItems.parsePdf(
       request as Parameters<OrdinaryWorkItemService['parsePdf']>[0],
       hostActor(httpRequest),
@@ -59,10 +63,7 @@ export class CanonicalHostController {
   }
 
   @Post('work-items/development-runs')
-  createDevelopmentRun(
-    @Body() body: unknown,
-    @Req() httpRequest: Request,
-  ) {
+  createDevelopmentRun(@Body() body: unknown, @Req() httpRequest: Request) {
     return this.workItems.createDevelopmentRun(
       developmentRunBody(body),
       hostActor(httpRequest),
@@ -105,11 +106,14 @@ export class CanonicalHostController {
     @Query('documentVersionId') documentVersionId: string,
     @Req() httpRequest: Request,
   ) {
-    return this.service.status({
-      workItemId,
-      requestId,
-      documentVersionId,
-    }, hostActor(httpRequest));
+    return this.service.status(
+      {
+        workItemId,
+        requestId,
+        documentVersionId,
+      },
+      hostActor(httpRequest),
+    );
   }
 
   @Post('work-items/query-parsed-units')
@@ -164,8 +168,9 @@ export class CanonicalHostController {
     actor: CanonicalHostActor,
   ) {
     const page = await this.service.page(input, actor);
-    const engineerReviewContext =
-      await this.engineerReviews.pageContext(page.workItem);
+    const engineerReviewContext = await this.engineerReviews.pageContext(
+      page.workItem,
+    );
     return {
       ...page,
       engineerReviewContext,

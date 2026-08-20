@@ -6,7 +6,6 @@ import type { HostedOpenClawDiscoveryResult } from '../assessment-workbench/exte
 import { normalizeHostedOpenClawDiscoveryResult } from '../assessment-workbench/hosted-openclaw-discovery-normalizer';
 import { mapHostedOpenClawDiscoveryResult } from '../document-management/src/hosted/openClawDiscoveryProviderMapping';
 import { ExternalDiscoveryService } from '../external-discovery/external-discovery.service';
-import { MiaodaWorkItemRepository } from '../work-item/miaoda-work-item.repository';
 import {
   CANONICAL_AUTHORIZATION,
   CANONICAL_HOST_CLOCK,
@@ -19,6 +18,10 @@ import type {
   CanonicalPermissionSnapshotPort,
   CanonicalWorkItemRegistrarPort,
 } from './canonical-host.types';
+import {
+  CANONICAL_SERVICE_SCOPE_AUTHORIZATION,
+  type CanonicalServiceScopeAuthorizationPort,
+} from './canonical-service-scope.authorization';
 
 const OPENCLAW_SERVICE_USER_ID = 'service:openclaw-main';
 const HOSTED_OPENCLAW_APP_ID = 'app_17c3zn24kv2';
@@ -39,19 +42,38 @@ export class CanonicalHostOpenClawDiscoveryService {
     private readonly authorization: CanonicalAuthorizationPort,
     @Inject(CANONICAL_PERMISSION_SNAPSHOT)
     private readonly permissions: CanonicalPermissionSnapshotPort,
-    private readonly repository: MiaodaWorkItemRepository,
     private readonly discovery: ExternalDiscoveryService,
+    @Inject(CANONICAL_SERVICE_SCOPE_AUTHORIZATION)
+    private readonly serviceScope: CanonicalServiceScopeAuthorizationPort,
   ) {}
 
   async record(
     workItemId: string,
     publicResult: PublicHostedDiscoveryResult,
   ): Promise<Record<string, unknown>> {
-    const workItem = await this.registrar.getByWorkItemId(workItemId);
-    const row = await this.repository.getRow(workItem.workItemId);
+    const scope = await this.serviceScope.authorizeOpenClawWorkItem({
+      operation: 'RECORD_DISCOVERY',
+      workItemId,
+    });
+    if (
+      scope.workItemId !== workItemId ||
+      scope.appId !== 'app_17bzc551rsg' ||
+      !scope.principalId.trim() ||
+      !scope.tenantId.trim() ||
+      !scope.authorizationFingerprint.trim()
+    ) {
+      throw Object.assign(new Error('CANONICAL_WORK_ITEM_NOT_FOUND'), {
+        code: 'CANONICAL_WORK_ITEM_NOT_FOUND',
+        statusCode: 404,
+      });
+    }
+    const workItem = await this.registrar.getTenantScopedByWorkItemId({
+      workItemId,
+      tenantId: scope.tenantId,
+    });
     const actor = {
       userId: OPENCLAW_SERVICE_USER_ID,
-      tenantId: row.tenantId,
+      tenantId: scope.tenantId,
       appId: 'app_17bzc551rsg',
       roles: [] as string[],
       env: 'hosted',
@@ -73,7 +95,9 @@ export class CanonicalHostOpenClawDiscoveryService {
       requestId: workItem.requestId,
       documentVersionId: workItem.source.documentVersionId,
     });
-    if (snapshot.permissionSnapshotVersion !== decision.permissionSnapshotVersion) {
+    if (
+      snapshot.permissionSnapshotVersion !== decision.permissionSnapshotVersion
+    ) {
       throw new Error('OPENCLAW_DISCOVERY_PERMISSION_SNAPSHOT_CHANGED');
     }
     const observedAt = this.clock.nowIso();
@@ -83,8 +107,7 @@ export class CanonicalHostOpenClawDiscoveryService {
       runtimeAppId: HOSTED_OPENCLAW_APP_ID,
       observedAt,
     });
-    const searchRunRef =
-      `search:${normalized.provider.toLowerCase()}:${randomUUID()}`;
+    const searchRunRef = `search:${normalized.provider.toLowerCase()}:${randomUUID()}`;
     const mapped = mapHostedOpenClawDiscoveryResult({
       providerResult: toDmProviderResult(normalized),
       searchRunRef,
@@ -93,7 +116,7 @@ export class CanonicalHostOpenClawDiscoveryService {
     });
     const stored = (await this.discovery.recordSearchRun(mapped, {
       actorUserId: actor.userId,
-      tenantId: row.tenantId,
+      tenantId: scope.tenantId,
       roles: [],
     })) as { disposition?: string };
     return {
@@ -126,10 +149,8 @@ function toDmProviderResult(
     resultStatus,
     accessRestricted:
       value.resultStatus === 'ACCESS_DENIED' || value.accessRestricted === true,
-    truncated:
-      value.resultStatus === 'TRUNCATED' || value.truncated === true,
-    partialOnly:
-      value.resultStatus === 'PARTIAL' || value.partialOnly === true,
+    truncated: value.resultStatus === 'TRUNCATED' || value.truncated === true,
+    partialOnly: value.resultStatus === 'PARTIAL' || value.partialOnly === true,
     failureCode: value.error?.code ?? null,
     candidates: value.candidates.map((candidate) => ({
       publisher: value.provider,

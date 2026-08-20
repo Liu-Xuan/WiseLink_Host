@@ -1,7 +1,10 @@
 import { Injectable, Inject } from '@nestjs/common';
 
 import type { CanonicalLibraryIndexReadResponse } from '@shared/api.interface';
-import { CANONICAL_AUTHORIZATION, CANONICAL_PERMISSION_SNAPSHOT } from './canonical-host.constants';
+import {
+  CANONICAL_AUTHORIZATION,
+  CANONICAL_PERMISSION_SNAPSHOT,
+} from './canonical-host.constants';
 import { buildCanonicalPageProjections } from './canonical-host-page-projections';
 import type {
   CanonicalAuthorizationPort,
@@ -28,41 +31,26 @@ export class CanonicalHostLibraryIndexService {
     workItemId: string;
     actor: CanonicalHostActor;
   }): Promise<CanonicalLibraryIndexReadResponse> {
-    const scoped = await this.workItems.loadTenantScopedProjection(
-      input.workItemId,
-      input.actor.tenantId,
-    );
-    if (!scoped || !scoped.projection) {
-      throw statusError(
-        'LIBRARY_WORK_ITEM_NOT_FOUND',
-        'The WorkItem is not available in the current tenant.',
-        404,
-      );
-    }
-
-    const { row, projection } = scoped;
     const decision = await this.authorization.authorize({
       actor: input.actor,
       action: READ_ACTION,
-      workItemId: row.workItemId,
-      requestId: row.requestId,
-      documentVersionId: row.documentVersionId,
+      workItemId: input.workItemId,
     });
     if (decision.action !== READ_ACTION || decision.allowed !== true) {
       throw statusError(
-        'LIBRARY_INDEX_READ_FORBIDDEN',
-        'The current actor is not allowed to read this WorkItem library index.',
-        403,
+        'CANONICAL_WORK_ITEM_NOT_FOUND',
+        'The WorkItem is not available.',
+        404,
       );
     }
     const fresh = await this.permissions.freshRead({
       actor: input.actor,
       decision,
-      workItemId: row.workItemId,
-      requestId: row.requestId,
-      documentVersionId: row.documentVersionId,
+      workItemId: input.workItemId,
     });
-    if (fresh.permissionSnapshotVersion !== decision.permissionSnapshotVersion) {
+    if (
+      fresh.permissionSnapshotVersion !== decision.permissionSnapshotVersion
+    ) {
       throw statusError(
         'LIBRARY_INDEX_PERMISSION_SNAPSHOT_DRIFT',
         'The permission snapshot changed during the read.',
@@ -70,13 +58,32 @@ export class CanonicalHostLibraryIndexService {
       );
     }
 
+    const scoped = await this.workItems.loadTenantScopedProjection(
+      input.workItemId,
+      input.actor.tenantId,
+    );
+    if (!scoped || !scoped.projection) {
+      throw statusError(
+        'CANONICAL_WORK_ITEM_NOT_FOUND',
+        'The WorkItem is not available.',
+        404,
+      );
+    }
+
+    const { row, projection } = scoped;
+
     // The existing DM resolver is the sole source of document identity and
     // currentness. It also verifies immutable source-artifact byte identity.
-    let source: Awaited<ReturnType<MiaodaDocumentVersionSourceResolver['resolve']>>;
+    let source: Awaited<
+      ReturnType<MiaodaDocumentVersionSourceResolver['resolve']>
+    >;
     try {
       source = await this.documentVersions.resolve(row.documentVersionId);
     } catch (error) {
-      if (error instanceof Error && error.message === 'DOCUMENT_VERSION_NOT_FOUND') {
+      if (
+        error instanceof Error &&
+        error.message === 'DOCUMENT_VERSION_NOT_FOUND'
+      ) {
         throw statusError(
           'LIBRARY_DOCUMENT_VERSION_NOT_FOUND',
           'The selected DocumentVersion is not available.',
@@ -118,7 +125,8 @@ export class CanonicalHostLibraryIndexService {
         currentDocumentVersionId: source.family.currentDocumentVersionId,
         currentGeneration: source.family.currentGeneration,
         selectedVersionIsCurrent:
-          source.family.currentDocumentVersionId === source.version.documentVersionId,
+          source.family.currentDocumentVersionId ===
+          source.version.documentVersionId,
       },
       libraryIndex,
       readAuthorization: {
@@ -130,7 +138,11 @@ export class CanonicalHostLibraryIndexService {
   }
 }
 
-function statusError(code: string, message: string, statusCode: number): Error & {
+function statusError(
+  code: string,
+  message: string,
+  statusCode: number,
+): Error & {
   code: string;
   statusCode: number;
 } {

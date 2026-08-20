@@ -13,6 +13,22 @@ import { axiosForBackend } from '@lark-apaas/client-toolkit/utils/getAxiosForBac
 
 const DEFAULT_DOCUMENT_PARSING_QUERY = 'applicability';
 
+export interface CanonicalHostIdentityContext {
+  userId: string;
+  tenantId: string;
+}
+
+export async function getCanonicalHostIdentityContext(): Promise<CanonicalHostIdentityContext> {
+  const response = await axiosForBackend<CanonicalHostIdentityContext>({
+    url: '/api/canonical-host/identity-context',
+    method: 'GET',
+  });
+  if (response.status === 401 || response.status === 403) {
+    throw new Error('CANONICAL_HOST_IDENTITY_REQUIRED');
+  }
+  return response.data;
+}
+
 export async function getLibraryIndex(
   workItemId: string,
 ): Promise<CanonicalLibraryIndexReadResponse> {
@@ -21,13 +37,15 @@ export async function getLibraryIndex(
       url: `/api/canonical-host/work-items/${encodeURIComponent(workItemId)}/library-index`,
       method: 'GET',
     });
-    if (response.status === 401) throw new Error('CANONICAL_LIBRARY_LOGIN_REQUIRED');
-    if (response.status === 403) throw new Error('CANONICAL_LIBRARY_ACCESS_DENIED');
-    if (response.status === 404) throw new Error('CANONICAL_LIBRARY_NOT_FOUND');
+    if (response.status === 401)
+      throw new Error('CANONICAL_LIBRARY_LOGIN_REQUIRED');
+    if (response.status === 403 || response.status === 404) {
+      throw canonicalObjectNotFound();
+    }
     return response.data;
   } catch (error) {
     logger.error('读取 WorkItem LibraryIndex fresh projection 失败', error);
-    throw error;
+    throw normalizedDirectObjectError(error);
   }
 }
 
@@ -36,22 +54,55 @@ export async function getDocumentParsingPage(
   query: string,
 ): Promise<CanonicalDocumentParsingPageResponse> {
   try {
-    const normalizedQuery =
-      query.trim() || DEFAULT_DOCUMENT_PARSING_QUERY;
+    const normalizedQuery = query.trim() || DEFAULT_DOCUMENT_PARSING_QUERY;
     const response =
       await axiosForBackend<CanonicalDocumentParsingPageResponse>({
         url: `/api/canonical-host/work-items/${encodeURIComponent(workItemId)}/document-parsing`,
         method: 'GET',
         params: { query: normalizedQuery },
       });
-    if (response.status === 401 || response.status === 403) {
-      throw new Error('CANONICAL_PAGE_ACCESS_DENIED');
+    if (response.status === 401) {
+      throw new Error('CANONICAL_PAGE_LOGIN_REQUIRED');
+    }
+    if (response.status === 403 || response.status === 404) {
+      throw canonicalObjectNotFound();
     }
     return response.data;
   } catch (error) {
     logger.error('读取文档与解析 fresh projection 失败', error);
-    throw error;
+    throw normalizedDirectObjectError(error);
   }
+}
+
+function normalizedDirectObjectError(error: unknown): unknown {
+  const status = responseStatus(error);
+  if (status === 403 || status === 404) return canonicalObjectNotFound();
+  return error;
+}
+
+export function isCanonicalObjectNotFound(error: unknown): boolean {
+  return isRecord(error) && error.code === 'CANONICAL_WORK_ITEM_NOT_FOUND';
+}
+
+function responseStatus(error: unknown): number | null {
+  if (!isRecord(error)) return null;
+  const response = error.response;
+  if (!isRecord(response)) return null;
+  return typeof response.status === 'number' ? response.status : null;
+}
+
+function canonicalObjectNotFound(): Error & {
+  code: string;
+  statusCode: number;
+} {
+  return Object.assign(new Error('CANONICAL_WORK_ITEM_NOT_FOUND'), {
+    code: 'CANONICAL_WORK_ITEM_NOT_FOUND',
+    statusCode: 404,
+  });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 
 export async function recordEngineerReview(
@@ -69,13 +120,16 @@ export async function recordEngineerReview(
       method: 'POST',
       data: input,
     });
-    if (response.status === 401 || response.status === 403) {
+    if (response.status === 401) {
       throw new Error('ENGINEER_REVIEW_ACCESS_DENIED');
+    }
+    if (response.status === 403 || response.status === 404) {
+      throw canonicalObjectNotFound();
     }
     return response.data;
   } catch (error) {
     logger.error('记录工程师逐项意见失败', error);
-    throw error;
+    throw normalizedDirectObjectError(error);
   }
 }
 
@@ -88,13 +142,16 @@ export async function queryParsedUnits(
       method: 'POST',
       data: request,
     });
-    if (response.status === 401 || response.status === 403) {
+    if (response.status === 401) {
       throw new Error('CANONICAL_QUERY_ACCESS_DENIED');
+    }
+    if (response.status === 403 || response.status === 404) {
+      throw canonicalObjectNotFound();
     }
     return response.data;
   } catch (error) {
     logger.error('查询解析单元失败', error);
-    throw error;
+    throw normalizedDirectObjectError(error);
   }
 }
 
@@ -107,13 +164,16 @@ export async function confirmIntegratedOverallForAeo(
       method: 'POST',
       data: {},
     });
-    if (response.status === 401 || response.status === 403) {
+    if (response.status === 401) {
       throw new Error('OPENCLAW_OVERALL_CONFIRMATION_ACCESS_DENIED');
+    }
+    if (response.status === 403 || response.status === 404) {
+      throw canonicalObjectNotFound();
     }
     return response.data;
   } catch (error) {
     logger.error('确认当前整体综合用于 AEO 失败', error);
-    throw error;
+    throw normalizedDirectObjectError(error);
   }
 }
 
@@ -126,12 +186,15 @@ export async function generateAeoCandidate(
       method: 'POST',
       data: {},
     });
-    if (response.status === 401 || response.status === 403) {
+    if (response.status === 401) {
       throw new Error('AEO_CANDIDATE_ACCESS_DENIED');
+    }
+    if (response.status === 403 || response.status === 404) {
+      throw canonicalObjectNotFound();
     }
     return response.data;
   } catch (error) {
     logger.error('生成同一 WorkItem 的 AEO 候选失败', error);
-    throw error;
+    throw normalizedDirectObjectError(error);
   }
 }

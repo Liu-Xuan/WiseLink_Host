@@ -7,6 +7,78 @@ const ATTEMPT_REF = 'OVR-OPAQUE-CALLER-REF';
 const BASE_SHA = 'a'.repeat(64);
 
 describe('CanonicalHostOpenClawOverallService', () => {
+  it('rejects resume/recovery before attempt, projection, or artifact I/O without scope', async () => {
+    const registrar = { getTenantScopedByWorkItemId: jest.fn() };
+    const repository = {
+      getOverallSynthesisActionByRef: jest.fn(),
+      completeAssessmentAction: jest.fn(),
+    };
+    const artifactStore = { readActualBytes: jest.fn() };
+    const service = new CanonicalHostOpenClawOverallService(
+      registrar as never,
+      {} as never,
+      {} as never,
+      artifactStore as never,
+      repository as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {
+        authorizeOpenClawAttempt: jest.fn().mockRejectedValue(
+          Object.assign(new Error('scope unavailable'), {
+            code: 'CANONICAL_SERVICE_SCOPE_UNAVAILABLE',
+            statusCode: 503,
+          }),
+        ),
+      } as never,
+    );
+
+    await expect(service.resume('ATT-CALLER')).rejects.toMatchObject({
+      code: 'CANONICAL_SERVICE_SCOPE_UNAVAILABLE',
+      statusCode: 503,
+    });
+    expect(repository.getOverallSynthesisActionByRef).not.toHaveBeenCalled();
+    expect(repository.completeAssessmentAction).not.toHaveBeenCalled();
+    expect(registrar.getTenantScopedByWorkItemId).not.toHaveBeenCalled();
+    expect(artifactStore.readActualBytes).not.toHaveBeenCalled();
+  });
+
+  it('rejects an attempt-scope ref mismatch before attempt or recovery I/O', async () => {
+    const registrar = { getTenantScopedByWorkItemId: jest.fn() };
+    const repository = {
+      getOverallSynthesisActionByRef: jest.fn(),
+      completeAssessmentAction: jest.fn(),
+    };
+    const service = new CanonicalHostOpenClawOverallService(
+      registrar as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      repository as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {
+        authorizeOpenClawAttempt: jest.fn().mockResolvedValue({
+          principalId: 'service:openclaw-test',
+          appId: 'app_17bzc551rsg',
+          tenantId: 'tenant-overall',
+          workItemId: WORK_ITEM_ID,
+          attemptRef: 'ATT-DIFFERENT',
+          authorizationFingerprint: 'scope:overall-test',
+        }),
+      } as never,
+    );
+
+    await expect(service.resume(ATTEMPT_REF)).rejects.toMatchObject({
+      code: 'CANONICAL_WORK_ITEM_NOT_FOUND',
+      statusCode: 404,
+    });
+    expect(repository.getOverallSynthesisActionByRef).not.toHaveBeenCalled();
+    expect(repository.completeAssessmentAction).not.toHaveBeenCalled();
+    expect(registrar.getTenantScopedByWorkItemId).not.toHaveBeenCalled();
+  });
+
   it('returns an authority-free input with an opaque caller ref', async () => {
     const harness = createHarness();
     const begun = await harness.service.begin(WORK_ITEM_ID, []);
@@ -18,8 +90,11 @@ describe('CanonicalHostOpenClawOverallService', () => {
       criterionCount: 1,
       evaluationItemCount: 1,
     });
-    expect((begun.modelInput.baseRuleResult.items as Array<Record<string, unknown>>)[0]
-      .sourceRefIds).toEqual(['SRC-001']);
+    expect(
+      (
+        begun.modelInput.baseRuleResult.items as Array<Record<string, unknown>>
+      )[0].sourceRefIds,
+    ).toEqual(['SRC-001']);
     const serialized = JSON.stringify(begun.modelInput);
     expect(serialized).not.toContain(WORK_ITEM_ID);
     expect(serialized).not.toContain(ATTEMPT_ID);
@@ -57,15 +132,16 @@ describe('CanonicalHostOpenClawOverallService', () => {
       {
         attemptId: ATTEMPT_ID,
         errorCode: 'OPENCLAW_OVERALL_BASE_ARTIFACT_READ_FAILED',
-        errorMessage:
-          'OPENCLAW_OVERALL_BASE_ARTIFACT_READ_FAILED:fetch failed',
+        errorMessage: 'OPENCLAW_OVERALL_BASE_ARTIFACT_READ_FAILED:fetch failed',
       },
     ]);
     expect(harness.state.status).toBe('RUNNING');
     expect(harness.state.persisted).toEqual([]);
     expect(harness.state.casCount).toBe(0);
 
-    await expect(harness.service.begin(WORK_ITEM_ID, [])).resolves.toMatchObject({
+    await expect(
+      harness.service.begin(WORK_ITEM_ID, []),
+    ).resolves.toMatchObject({
       attemptRef: ATTEMPT_REF,
     });
     expect(harness.state.reserveCount).toBe(2);
@@ -75,11 +151,9 @@ describe('CanonicalHostOpenClawOverallService', () => {
   it('resumes an existing RUNNING attempt without reserving or writing', async () => {
     const harness = createHarness();
 
-    const first = await harness.service.resume(ATTEMPT_REF);
-    const second = await harness.service.resume(ATTEMPT_ID);
+    const resumed = await harness.service.resume(ATTEMPT_REF);
 
-    expect(first.attemptRef).toBe(ATTEMPT_REF);
-    expect(second.modelInput).toEqual(first.modelInput);
+    expect(resumed.attemptRef).toBe(ATTEMPT_REF);
     expect(harness.state.reserveCount).toBe(0);
     expect(harness.state.persisted).toEqual([]);
     expect(harness.state.completed).toEqual([]);
@@ -87,14 +161,25 @@ describe('CanonicalHostOpenClawOverallService', () => {
   });
 
   it.each([
-    [{ resumeStatus: 'SUCCEEDED' }, 'OPENCLAW_OVERALL_RESUME_ATTEMPT_NOT_RUNNING'],
-    [{ resumeActionType: 'OPENCLAW_DYNAMIC_EVALUATION' }, 'OPENCLAW_OVERALL_RESUME_ACTION_MISMATCH'],
+    [
+      { resumeStatus: 'SUCCEEDED' },
+      'OPENCLAW_OVERALL_RESUME_ATTEMPT_NOT_RUNNING',
+    ],
+    [
+      { resumeActionType: 'OPENCLAW_DYNAMIC_EVALUATION' },
+      'OPENCLAW_OVERALL_RESUME_ACTION_MISMATCH',
+    ],
     [{ attemptNo: 4 }, 'OPENCLAW_OVERALL_RESUME_REVISION_MISMATCH'],
-    [{ resumeWorkItemId: 'WI-OTHER' }, 'OPENCLAW_OVERALL_RESUME_WORK_ITEM_MISMATCH'],
+    [
+      { resumeWorkItemId: 'WI-OTHER' },
+      'OPENCLAW_OVERALL_RESUME_WORK_ITEM_MISMATCH',
+    ],
   ])('rejects an invalid resume identity: %o', async (options, errorCode) => {
     const harness = createHarness(options);
 
-    await expect(harness.service.resume(ATTEMPT_REF)).rejects.toThrow(errorCode);
+    await expect(harness.service.resume(ATTEMPT_REF)).rejects.toThrow(
+      errorCode,
+    );
     expect(harness.state.reserveCount).toBe(0);
     expect(harness.state.persisted).toEqual([]);
   });
@@ -102,14 +187,17 @@ describe('CanonicalHostOpenClawOverallService', () => {
   it.each([
     [{ packageArtifactRef: 'artifact://result' }],
     [{ failureArtifactSha256: BASE_SHA }],
-  ])('rejects a resume when the attempt already has an artifact: %o', async (options) => {
-    const harness = createHarness(options);
+  ])(
+    'rejects a resume when the attempt already has an artifact: %o',
+    async (options) => {
+      const harness = createHarness(options);
 
-    await expect(harness.service.resume(ATTEMPT_REF)).rejects.toThrow(
-      'OPENCLAW_OVERALL_RESUME_ARTIFACT_ALREADY_PRESENT',
-    );
-    expect(harness.state.reserveCount).toBe(0);
-  });
+      await expect(harness.service.resume(ATTEMPT_REF)).rejects.toThrow(
+        'OPENCLAW_OVERALL_RESUME_ARTIFACT_ALREADY_PRESENT',
+      );
+      expect(harness.state.reserveCount).toBe(0);
+    },
+  );
 
   it('rejects a source-evidence candidate whose mapped ref is not in frozen.2', async () => {
     const harness = createHarness({ candidateSourceRef: 'SRC-NOT-IN-PACKAGE' });
@@ -181,9 +269,9 @@ describe('CanonicalHostOpenClawOverallService', () => {
   it('rejects a stale WorkItem revision before claim and persistence', async () => {
     const harness = createHarness({ workItemRevision: 6, attemptNo: 5 });
 
-    await expect(harness.service.commit(ATTEMPT_REF, validOutput())).rejects.toThrow(
-      'WORK_ITEM_CAS_CONFLICT',
-    );
+    await expect(
+      harness.service.commit(ATTEMPT_REF, validOutput()),
+    ).rejects.toThrow('WORK_ITEM_CAS_CONFLICT');
     expect(harness.state.claimCount).toBe(0);
     expect(harness.state.persisted).toEqual([]);
   });
@@ -199,7 +287,9 @@ describe('CanonicalHostOpenClawOverallService', () => {
     expect(harness.state.releaseCount).toBe(1);
     expect(harness.state.failed).toEqual([]);
 
-    await expect(harness.service.commit(ATTEMPT_REF, output)).resolves.toMatchObject({
+    await expect(
+      harness.service.commit(ATTEMPT_REF, output),
+    ).resolves.toMatchObject({
       workItemId: WORK_ITEM_ID,
       workItemRevision: 6,
     });
@@ -215,8 +305,12 @@ describe('CanonicalHostOpenClawOverallService', () => {
       harness.service.commit(ATTEMPT_REF, output),
     ]);
 
-    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
-    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+    expect(
+      results.filter((result) => result.status === 'fulfilled'),
+    ).toHaveLength(1);
+    expect(
+      results.filter((result) => result.status === 'rejected'),
+    ).toHaveLength(1);
     expect(harness.state.persisted).toEqual([output]);
     expect(harness.state.casCount).toBe(1);
     expect(harness.state.failed).toEqual([]);
@@ -253,28 +347,30 @@ interface PersistGate {
   release: Deferred<void>;
 }
 
-function createHarness(options: {
-  workItemRevision?: number;
-  attemptNo?: number;
-  resumeStatus?: string;
-  resumeActionType?: string;
-  resumeWorkItemId?: string;
-  packageArtifactRef?: string | null;
-  packageArtifactSha256?: string | null;
-  failureArtifactRef?: string | null;
-  failureArtifactSha256?: string | null;
-  candidateSourceRef?: string;
-  dynamicSourceResultId?: string;
-  freshCriterionSetId?: string;
-  dynamicAttemptId?: string;
-  dynamicAttemptWorkItemId?: string;
-  dynamicAttemptTriggerRef?: string;
-  dynamicAttemptStatus?: string;
-  transientPersistFailures?: number;
-  persistGate?: PersistGate;
-  artifactReadFailureRef?: string;
-  artifactReadFailure?: unknown;
-} = {}) {
+function createHarness(
+  options: {
+    workItemRevision?: number;
+    attemptNo?: number;
+    resumeStatus?: string;
+    resumeActionType?: string;
+    resumeWorkItemId?: string;
+    packageArtifactRef?: string | null;
+    packageArtifactSha256?: string | null;
+    failureArtifactRef?: string | null;
+    failureArtifactSha256?: string | null;
+    candidateSourceRef?: string;
+    dynamicSourceResultId?: string;
+    freshCriterionSetId?: string;
+    dynamicAttemptId?: string;
+    dynamicAttemptWorkItemId?: string;
+    dynamicAttemptTriggerRef?: string;
+    dynamicAttemptStatus?: string;
+    transientPersistFailures?: number;
+    persistGate?: PersistGate;
+    artifactReadFailureRef?: string;
+    artifactReadFailure?: unknown;
+  } = {},
+) {
   const workItem = workItemProjection(
     options.workItemRevision ?? 5,
     options.dynamicSourceResultId,
@@ -317,6 +413,7 @@ function createHarness(options: {
   };
   const registrar = {
     getByWorkItemId: async () => workItem,
+    getTenantScopedByWorkItemId: async () => workItem,
     compareAndSet: async (input: {
       expectedRevision: number;
       next: Omit<CanonicalWorkItemProjection, 'revision'>;
@@ -332,8 +429,7 @@ function createHarness(options: {
       workItemId: options.dynamicAttemptWorkItemId ?? WORK_ITEM_ID,
       actionType: 'OPENCLAW_DYNAMIC_EVALUATION' as const,
       attemptNo: 4,
-      triggerRequestId:
-        options.dynamicAttemptTriggerRef ?? 'DYN-RESULT-1',
+      triggerRequestId: options.dynamicAttemptTriggerRef ?? 'DYN-RESULT-1',
       requestOrigin: 'OPENCLAW' as const,
       status: options.dynamicAttemptStatus ?? 'SUCCEEDED',
       actorUserId: 'service:openclaw-main',
@@ -344,11 +440,15 @@ function createHarness(options: {
       state.reserveCount += 1;
       return { ...attempt, status: state.status };
     },
-    getOverallSynthesisActionByCallerRef: async () => ({ ...attempt, status: state.status }),
+    getOverallSynthesisActionByCallerRef: async () => ({
+      ...attempt,
+      status: state.status,
+    }),
     getOverallSynthesisActionByRef: async () => attempt,
     claimOverallSynthesisCommit: async () => {
       state.claimCount += 1;
-      if (state.status !== 'RUNNING') throw new Error('OPENCLAW_OVERALL_COMMIT_ALREADY_CLAIMED');
+      if (state.status !== 'RUNNING')
+        throw new Error('OPENCLAW_OVERALL_COMMIT_ALREADY_CLAIMED');
       state.status = 'COMMITTING';
     },
     recordOpenClawBeginFailure: async (input: {
@@ -425,7 +525,11 @@ function createHarness(options: {
           permissionSnapshotVersion: 'permission-overall',
         }),
       } as never,
-      { freshRead: async () => ({ permissionSnapshotVersion: 'permission-overall' }) } as never,
+      {
+        freshRead: async () => ({
+          permissionSnapshotVersion: 'permission-overall',
+        }),
+      } as never,
       artifactStore as never,
       repository as never,
       { latestSearchRunsAsOf: async () => [] } as never,
@@ -441,14 +545,20 @@ function createHarness(options: {
           },
           overall: {
             context: {
-              criterionCards: [{
-                sourceEvidenceCandidates: [{
-                  candidateId: 'SEC-001',
-                  sourceRefs: [{
-                    sourceRefId: options.candidateSourceRef ?? 'SRC-001',
-                  }],
-                }],
-              }],
+              criterionCards: [
+                {
+                  sourceEvidenceCandidates: [
+                    {
+                      candidateId: 'SEC-001',
+                      sourceRefs: [
+                        {
+                          sourceRefId: options.candidateSourceRef ?? 'SRC-001',
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
             },
           },
         }),
@@ -460,6 +570,23 @@ function createHarness(options: {
           reviewCount: 0,
           history: [],
           effective: [],
+        }),
+      } as never,
+      {
+        authorizeOpenClawWorkItem: async () => ({
+          principalId: 'service:openclaw-test',
+          appId: 'app_17bzc551rsg',
+          tenantId: attempt.tenantId,
+          workItemId: attempt.workItemId,
+          authorizationFingerprint: 'scope:overall-test',
+        }),
+        authorizeOpenClawAttempt: async (input: { attemptRef: string }) => ({
+          principalId: 'service:openclaw-test',
+          appId: 'app_17bzc551rsg',
+          tenantId: attempt.tenantId,
+          workItemId: attempt.workItemId,
+          attemptRef: input.attemptRef,
+          authorizationFingerprint: 'scope:overall-test',
         }),
       } as never,
     ),
@@ -481,7 +608,10 @@ function workItemProjection(
       packageId: 'PKG-737',
       contractRevision: 'frozen.2',
       contentUnitCount: 1,
-      documentIdentity: { documentCode: '737-34-3830', businessRevision: 'Original Issue' },
+      documentIdentity: {
+        documentCode: '737-34-3830',
+        businessRevision: 'Original Issue',
+      },
       artifact: artifact('artifact://package', 'b'.repeat(64)),
     },
     integratedAssessment: {
@@ -517,25 +647,44 @@ function artifact(ref: string, sha256: string) {
 }
 
 function baseArtifactBytes(): Uint8Array {
-  return new TextEncoder().encode(JSON.stringify({
-    ruleResults: {
-      columns: [
-        'ruleId', 'result', 'factsConsidered', 'ruleApplication',
-        'analysisSummary', 'conclusion', 'sourceRefs', 'missingInputs',
-        'humanReviewRequired',
-      ],
-      rows: [[
-        'RULE-001', 'PASS', ['Fact'], 'Applied rule', 'Analysis',
-        'Candidate finding', ['SEC-001'], [], true,
-      ]],
-    },
-  }));
+  return new TextEncoder().encode(
+    JSON.stringify({
+      ruleResults: {
+        columns: [
+          'ruleId',
+          'result',
+          'factsConsidered',
+          'ruleApplication',
+          'analysisSummary',
+          'conclusion',
+          'sourceRefs',
+          'missingInputs',
+          'humanReviewRequired',
+        ],
+        rows: [
+          [
+            'RULE-001',
+            'PASS',
+            ['Fact'],
+            'Applied rule',
+            'Analysis',
+            'Candidate finding',
+            ['SEC-001'],
+            [],
+            true,
+          ],
+        ],
+      },
+    }),
+  );
 }
 
 function packageBytes(): Uint8Array {
-  return new TextEncoder().encode(JSON.stringify({
-    sourceRefs: [{ sourceRefId: 'SRC-001', pageStart: 1, pageEnd: 1 }],
-  }));
+  return new TextEncoder().encode(
+    JSON.stringify({
+      sourceRefs: [{ sourceRefId: 'SRC-001', pageStart: 1, pageEnd: 1 }],
+    }),
+  );
 }
 
 function validOutput(): string {
@@ -555,13 +704,15 @@ function validOutput(): string {
     authorityLevel: 'candidate_only',
     externalDiscoveryIsEvidence: false,
     overallCandidate: '候选综合：当前规则结果与来源定位一致，仍需工程师复核。',
-    findings: [{
-      finding: '候选发现',
-      basis: '来源定位 SRC-001',
-      sourceRefIds: ['SRC-001'],
-      assumptions: [],
-      uncertainty: '需工程师复核',
-    }],
+    findings: [
+      {
+        finding: '候选发现',
+        basis: '来源定位 SRC-001',
+        sourceRefIds: ['SRC-001'],
+        assumptions: [],
+        uncertainty: '需工程师复核',
+      },
+    ],
     missingInputs: [],
     applicabilityStatus: 'CANDIDATE_REVIEW_REQUIRED',
     engineeringReviewRequired: true,
