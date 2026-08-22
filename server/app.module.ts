@@ -28,6 +28,7 @@ import { MiaodaOrdinaryArtifactStoreAdapter } from './modules/unified-reader/mia
 import { createHostedU0FullPackageValidatorProvider } from './modules/unified-reader/hosted-u0-full-validator.provider';
 import { createHostedU0Frozen2FailureAdapterProvider } from './modules/unified-reader/hosted-u0-frozen2-failure-adapter.provider';
 import { ViewModule } from './modules/view/view.module';
+import { IdentityModule } from './modules/identity/identity.module';
 
 @Module({
   imports: [
@@ -73,6 +74,7 @@ import { ViewModule } from './modules/view/view.module';
     }),
     RuntimeProbeModule,
     ExternalDiscoveryModule,
+    IdentityModule,
     // ====== @route-section: business-modules END ======
 
     // ⚠️ @route-order: last

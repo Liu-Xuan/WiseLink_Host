@@ -73,10 +73,12 @@ export interface CanonicalMiaodaFinalUserActorContext {
     id: string;
   };
   subjectDecision: {
-    source: 'MIAODA_GATEWAY_USER_CONTEXT';
+    source:
+      | 'MIAODA_GATEWAY_USER_CONTEXT'
+      | 'FEISHU_OAUTH_USER_ACCESS_TOKEN';
     applicationScopeId: string;
     tenantId: string;
-    version: 'miaoda-user-context.v1';
+    version: string;
     decidedAt: string;
   };
   tenantId: string;
@@ -86,13 +88,19 @@ export interface CanonicalMiaodaFinalUserActorContext {
   workspaceProvenance: 'UNAVAILABLE';
   env: string;
   platformRoles: readonly string[];
-  identityProvenance: 'MIAODA_GATEWAY_USER_CONTEXT';
-  feishuUserId: null;
-  feishuOpenId: null;
-  feishuIdentityProvenance: 'UNAVAILABLE';
-  sessionId: null;
-  sessionRevision: null;
-  sessionProvenance: 'UNAVAILABLE';
+  identityProvenance:
+    | 'MIAODA_GATEWAY_USER_CONTEXT'
+    | 'FEISHU_OAUTH_USER_ACCESS_TOKEN';
+  feishuUserId: string | null;
+  feishuOpenId: string | null;
+  feishuIdentityProvenance:
+    | 'UNAVAILABLE'
+    | 'FEISHU_OAUTH_USER_ACCESS_TOKEN';
+  sessionId: string | null;
+  sessionRevision: number | null;
+  sessionProvenance:
+    | 'UNAVAILABLE'
+    | 'SERVER_OPAQUE_SESSION';
 }
 
 export interface CanonicalUnavailableActorContext {
