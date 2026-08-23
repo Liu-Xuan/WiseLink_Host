@@ -139,6 +139,33 @@ export const actionAttempt = pgTable("action_attempt", {
   completedAt: customTimestamptz("completed_at", { precision: 3 }),
   createdAt: customTimestamptz("created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: customTimestamptz("updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  priority: integer("priority").notNull().default(100),
+  inputRevision: integer("input_revision"),
+  baseRevision: integer("base_revision"),
+  documentVersionId: varchar("document_version_id", { length: 96 }),
+  taskEnvelopeJson: text("task_envelope_json"),
+  taskInputHash: varchar("task_input_hash", { length: 64 }),
+  resultEnvelopeJson: text("result_envelope_json"),
+  resultContentHash: varchar("result_content_hash", { length: 64 }),
+  idempotencyKey: varchar("idempotency_key", { length: 255 }),
+  claimCount: integer("claim_count").notNull().default(0),
+  retryCount: integer("retry_count").notNull().default(0),
+  maxAttempts: integer("max_attempts").notNull().default(3),
+  leaseOwner: varchar("lease_owner", { length: 160 }),
+  leaseToken: varchar("lease_token", { length: 96 }),
+  leaseGeneration: integer("lease_generation").notNull().default(0),
+  leaseExpiresAt: customTimestamptz("lease_expires_at", { precision: 3 }),
+  lastHeartbeatAt: customTimestamptz("last_heartbeat_at", { precision: 3 }),
+  nextAttemptAt: customTimestamptz("next_attempt_at", { precision: 3 }),
+  deadlineAt: customTimestamptz("deadline_at", { precision: 3 }),
+  cancelRequestedAt: customTimestamptz("cancel_requested_at", { precision: 3 }),
+  cancelReason: text("cancel_reason"),
+  terminalReason: varchar("terminal_reason", { length: 160 }),
+  projectionApplied: boolean("projection_applied").notNull().default(false),
+  executorSessionKey: varchar("executor_session_key", { length: 512 }),
+  operationRef: varchar("operation_ref", { length: 128 }),
+  commitStartedAt: customTimestamptz("commit_started_at", { precision: 3 }),
+  leaseSlot: integer("lease_slot"),
   // System field: Creator (auto-filled, do not modify)
   createdBy: userProfile("_created_by"),
   // System field: Updater (auto-filled, do not modify)
@@ -148,6 +175,20 @@ export const actionAttempt = pgTable("action_attempt", {
   uniqueIndex("uk_action_attempt_primary").on(table.workItemId, table.actionType, table.attemptNo),
   index("idx_action_attempt_status").on(table.status, table.updatedAt),
   index("idx_action_attempt_work_item").on(table.workItemId, table.attemptNo),
+  uniqueIndex("uk_action_attempt_idempotency")
+    .on(table.tenantId, table.idempotencyKey)
+    .where(sql`${table.idempotencyKey} IS NOT NULL AND ${table.status} IN ('QUEUED', 'RUNNING', 'RETRY_SCHEDULED', 'COMMITTING')`),
+  index("idx_action_attempt_due_queue").on(table.status, table.nextAttemptAt, table.priority, table.createdAt),
+  index("idx_action_attempt_lease").on(table.status, table.leaseExpiresAt),
+  uniqueIndex("uk_action_attempt_active_work_task")
+    .on(table.workItemId, table.actionType)
+    .where(sql`${table.status} IN ('QUEUED', 'RUNNING', 'RETRY_SCHEDULED', 'COMMITTING')`),
+  uniqueIndex("uk_action_attempt_operation_ref")
+    .on(table.operationRef)
+    .where(sql`${table.operationRef} IS NOT NULL`),
+  uniqueIndex("uk_action_attempt_lease_slot")
+    .on(table.tenantId, table.requestOrigin, table.leaseSlot)
+    .where(sql`${table.status} IN ('RUNNING', 'COMMITTING') AND ${table.leaseSlot} IS NOT NULL`),
   foreignKey({
     columns: [table.workItemId],
     foreignColumns: [workItem.workItemId],

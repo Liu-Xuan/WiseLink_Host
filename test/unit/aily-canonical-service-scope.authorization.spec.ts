@@ -19,6 +19,7 @@ describe('AilyCanonicalServiceScopeAuthorization', () => {
     const service = new AilyCanonicalServiceScopeAuthorization(
       context,
       objectAccess as never,
+      executorScope() as never,
     );
 
     const scope = await context.run(
@@ -52,6 +53,7 @@ describe('AilyCanonicalServiceScopeAuthorization', () => {
     const service = new AilyCanonicalServiceScopeAuthorization(
       new RequestContextService(),
       { freshRead: jest.fn() } as never,
+      executorScope() as never,
     );
 
     await expect(
@@ -61,7 +63,65 @@ describe('AilyCanonicalServiceScopeAuthorization', () => {
       statusCode: 401,
     });
   });
+
+  it('delegates DEV, OpenAPI, and OpenClaw service scope without using Aily identity', async () => {
+    const delegate = executorScope();
+    const objectAccess = { freshRead: jest.fn() };
+    const service = new AilyCanonicalServiceScopeAuthorization(
+      new RequestContextService(),
+      objectAccess as never,
+      delegate as never,
+    );
+    const developmentInput = {
+      documentVersionId: 'DV-1',
+      developmentRunToken: '00000000-0000-4000-8000-000000000001',
+    };
+    const readInput = {
+      transport: 'OPENAPI_REST' as const,
+      operation: 'READ_STATUS' as const,
+      workItemId: 'WI-1',
+    };
+    const workItemInput = {
+      operation: 'BEGIN_DYNAMIC' as const,
+      workItemId: 'WI-1',
+    };
+    const attemptInput = {
+      operation: 'HEARTBEAT_ATTEMPT' as const,
+      attemptRef: 'ATT-1',
+    };
+
+    await service.authorizeDevelopmentCreate(developmentInput);
+    await service.authorizeWorkItemRead(readInput);
+    await service.assertTransport({ transport: 'OPENCLAW_MCP' });
+    await service.authorizeOpenClawWorkItem(workItemInput);
+    await service.authorizeOpenClawAttempt(attemptInput);
+
+    expect(delegate.authorizeDevelopmentCreate).toHaveBeenCalledWith(
+      developmentInput,
+    );
+    expect(delegate.authorizeWorkItemRead).toHaveBeenCalledWith(readInput);
+    expect(delegate.assertTransport).toHaveBeenCalledWith({
+      transport: 'OPENCLAW_MCP',
+    });
+    expect(delegate.authorizeOpenClawWorkItem).toHaveBeenCalledWith(
+      workItemInput,
+    );
+    expect(delegate.authorizeOpenClawAttempt).toHaveBeenCalledWith(
+      attemptInput,
+    );
+    expect(objectAccess.freshRead).not.toHaveBeenCalled();
+  });
 });
+
+function executorScope() {
+  return {
+    authorizeWorkItemRead: jest.fn().mockResolvedValue({}),
+    authorizeDevelopmentCreate: jest.fn().mockResolvedValue({}),
+    assertTransport: jest.fn().mockResolvedValue(undefined),
+    authorizeOpenClawWorkItem: jest.fn().mockResolvedValue({}),
+    authorizeOpenClawAttempt: jest.fn().mockResolvedValue({}),
+  };
+}
 
 function actor(): CanonicalAilyFinalUserActorContext {
   return {

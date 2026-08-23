@@ -12,6 +12,7 @@ import type {
 import { CanonicalHostVerticalService } from '../canonical-host/canonical-host-vertical.service';
 import { CANONICAL_DEVELOPMENT_ROLE_ID } from '../canonical-host/canonical-host.constants';
 import type { CanonicalHostActor } from '../canonical-host/canonical-host.types';
+import type { CanonicalVerifiedDevelopmentCreateScope } from '../canonical-host/canonical-service-scope.authorization';
 import {
   DocumentManagementHostedService,
   type HostedRequestContext,
@@ -62,6 +63,7 @@ export interface OrdinaryPdfParseInput {
 
 const DEVELOPMENT_RUN_TOKEN_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+const CANONICAL_APP_ID = 'app_17bzc551rsg';
 @Injectable()
 export class OrdinaryWorkItemService {
   constructor(
@@ -100,20 +102,17 @@ export class OrdinaryWorkItemService {
   }
 
   async createDevelopmentAcceptanceRun(
-    _input: CanonicalDevelopmentWorkItemRunRequest,
+    input: CanonicalDevelopmentWorkItemRunRequest,
+    scope: CanonicalVerifiedDevelopmentCreateScope,
   ): Promise<CanonicalOrdinaryWorkItemRunResponse> {
-    throw Object.assign(
-      new Error('Canonical OpenAPI service scope is unavailable.'),
-      {
-        code: 'CANONICAL_SERVICE_SCOPE_UNAVAILABLE',
-        statusCode: 503,
-      },
-    );
+    assertDevelopmentCreateScope(input, scope);
+    return this.runDevelopment(input, developmentServiceActor(scope), scope);
   }
 
   private runDevelopment(
     input: CanonicalDevelopmentWorkItemRunRequest,
     actor: CanonicalHostActor,
+    developmentScope?: CanonicalVerifiedDevelopmentCreateScope,
   ): Promise<CanonicalOrdinaryWorkItemRunResponse> {
     const developmentRunToken = requiredDevelopmentRunToken(
       input.developmentRunToken,
@@ -126,6 +125,7 @@ export class OrdinaryWorkItemService {
       'MIAODA',
       `dev:${developmentRunToken}`,
       true,
+      developmentScope,
     );
   }
 
@@ -135,6 +135,7 @@ export class OrdinaryWorkItemService {
     origin: 'MIAODA' | 'AILY',
     runKey: string,
     requireCurrentDocumentVersion = false,
+    developmentScope?: CanonicalVerifiedDevelopmentCreateScope,
   ): Promise<CanonicalOrdinaryWorkItemRunResponse> {
     const context: HostedRequestContext = {
       actorUserId: actor.userId,
@@ -147,12 +148,22 @@ export class OrdinaryWorkItemService {
       ? requiredText(input.documentVersionId, 'documentVersionId', 96)
       : await this.ingestSelection(input.selection, context);
     if (input.documentVersionId) {
-      await this.assertCanResolveDocumentVersion({
-        actor,
-        documentVersionId,
-        runKey,
-        developmentCreate: requireCurrentDocumentVersion,
-      });
+      if (developmentScope) {
+        assertDevelopmentCreateScope(
+          {
+            documentVersionId,
+            developmentRunToken: developmentScope.developmentRunToken,
+          },
+          developmentScope,
+        );
+      } else {
+        await this.assertCanResolveDocumentVersion({
+          actor,
+          documentVersionId,
+          runKey,
+          developmentCreate: requireCurrentDocumentVersion,
+        });
+      }
     }
     const resolved = await this.resolver.resolve(documentVersionId, {
       requireCurrent: requireCurrentDocumentVersion,
@@ -187,7 +198,13 @@ export class OrdinaryWorkItemService {
       classification,
       query: optionalQuery(input.query),
     };
-    const result = await this.vertical.runPdf(request, actor);
+    const result = developmentScope
+      ? await this.vertical.runPdfWithDevelopmentScope(
+          request,
+          actor,
+          developmentScope,
+        )
+      : await this.vertical.runPdf(request, actor);
     return {
       schemaVersion: 'wiselink.3_1.ordinary_work_item_run.v1',
       workItemCreated: reservation.created,
@@ -301,6 +318,56 @@ export class OrdinaryWorkItemService {
       statusCode: 404,
     });
   }
+}
+
+function assertDevelopmentCreateScope(
+  input: Pick<
+    CanonicalDevelopmentWorkItemRunRequest,
+    'documentVersionId' | 'developmentRunToken'
+  >,
+  scope: CanonicalVerifiedDevelopmentCreateScope,
+): void {
+  const documentVersionId = requiredText(
+    input.documentVersionId,
+    'documentVersionId',
+    96,
+  );
+  const developmentRunToken = requiredDevelopmentRunToken(
+    input.developmentRunToken,
+  );
+  if (
+    scope.appId !== CANONICAL_APP_ID ||
+    !scope.principalId.startsWith('service:') ||
+    !scope.tenantId.trim() ||
+    !['DEV', 'UAT'].includes(scope.environment) ||
+    scope.documentVersionId !== documentVersionId ||
+    scope.developmentRunToken !== developmentRunToken ||
+    !/^sha256:[0-9a-f]{64}$/u.test(scope.authorizationFingerprint)
+  ) {
+    throw developmentScopeNotFound();
+  }
+}
+
+function developmentServiceActor(
+  scope: CanonicalVerifiedDevelopmentCreateScope,
+): CanonicalHostActor {
+  return {
+    userId: scope.principalId,
+    tenantId: scope.tenantId,
+    appId: scope.appId,
+    roles: [],
+    env: scope.environment.toLowerCase(),
+  };
+}
+
+function developmentScopeNotFound(): Error & {
+  code: string;
+  statusCode: number;
+} {
+  return Object.assign(new Error('Canonical development scope not found.'), {
+    code: 'CANONICAL_DEVELOPMENT_SCOPE_NOT_FOUND',
+    statusCode: 404,
+  });
 }
 
 function requireDevelopmentWorkItemRole(actor: CanonicalHostActor): void {

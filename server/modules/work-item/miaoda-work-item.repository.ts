@@ -850,7 +850,7 @@ function dynamicEvaluationAttempt(
 ): DynamicEvaluationActionAttempt {
   if (
     stored.actionType !== 'OPENCLAW_DYNAMIC_EVALUATION' ||
-    stored.requestOrigin !== 'OPENCLAW' ||
+    !['OPENCLAW', 'OPENCLAW_MCP_V1'].includes(stored.requestOrigin) ||
     !(stored.createdAt instanceof Date)
   ) {
     throw new Error('DYNAMIC_EVALUATION_ATTEMPT_IDENTITY_INVALID');
@@ -861,7 +861,7 @@ function dynamicEvaluationAttempt(
     actionType: stored.actionType,
     attemptNo: stored.attemptNo,
     triggerRequestId: stored.triggerRequestId,
-    requestOrigin: stored.requestOrigin,
+    requestOrigin: 'OPENCLAW',
     status: stored.status,
     actorUserId: stored.actorUserId,
     tenantId: stored.tenantId,

@@ -57,4 +57,41 @@ describe('MiaodaWorkItemRepository assessment CAS audit isolation', () => {
 
     expect(target.syncPrimaryAttempt).toHaveBeenCalledTimes(1);
   });
+
+  it('reads a durable OPENCLAW_MCP_V1 dynamic row through the legacy domain port', async () => {
+    const createdAt = new Date('2026-08-24T10:00:00.000Z');
+    const limit = jest.fn().mockResolvedValue([
+      {
+        attemptId: 'ATT-DURABLE-DYNAMIC',
+        workItemId: 'WI-AUDIT-1',
+        actionType: 'OPENCLAW_DYNAMIC_EVALUATION',
+        attemptNo: 2,
+        triggerRequestId: 'REQ-DURABLE-DYNAMIC',
+        requestOrigin: 'OPENCLAW_MCP_V1',
+        status: 'SUCCEEDED',
+        actorUserId: 'service:openclaw-main',
+        tenantId: 'tenant-audit',
+        createdAt,
+      },
+    ]);
+    const where = jest.fn().mockReturnValue({ limit });
+    const from = jest.fn().mockReturnValue({ where });
+    const select = jest.fn().mockReturnValue({ from });
+    const target = new MiaodaWorkItemRepository({ select } as never);
+
+    await expect(
+      target.getDynamicEvaluationActionByAttemptId('ATT-DURABLE-DYNAMIC'),
+    ).resolves.toEqual({
+      attemptId: 'ATT-DURABLE-DYNAMIC',
+      workItemId: 'WI-AUDIT-1',
+      actionType: 'OPENCLAW_DYNAMIC_EVALUATION',
+      attemptNo: 2,
+      triggerRequestId: 'REQ-DURABLE-DYNAMIC',
+      requestOrigin: 'OPENCLAW',
+      status: 'SUCCEEDED',
+      actorUserId: 'service:openclaw-main',
+      tenantId: 'tenant-audit',
+      createdAt,
+    });
+  });
 });

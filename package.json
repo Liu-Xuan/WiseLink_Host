@@ -23,6 +23,7 @@
     "build:client": "NODE_ENV=production vite build --config vite.config.ts",
     "start": "NODE_ENV=production node main.js",
     "test": "jest",
+    "test:openclaw:worker": "node --test test/node/openclaw-action-attempt-worker.test.mjs",
     "test:watch": "jest --watch",
     "test:e2e": "jest --config test/e2e/jest.config.js",
     "test:unified:composition": "npm run build:server && node scripts/verify-unified-reader-composition.mjs",

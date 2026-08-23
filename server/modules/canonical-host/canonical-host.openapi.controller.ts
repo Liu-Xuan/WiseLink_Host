@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -38,9 +39,23 @@ export class CanonicalHostOpenApiController {
   async createDevelopmentWorkItem(
     @Body() body: CanonicalDevelopmentWorkItemRunRequest,
   ): Promise<CanonicalOrdinaryWorkItemRunResponse> {
-    await this.serviceScope.assertDevelopmentCreate();
+    const input = developmentRunBody(body);
+    if (!input.documentVersionId) {
+      throw new BadRequestException({
+        code: 'CANONICAL_DEVELOPMENT_SERVICE_DOCUMENT_VERSION_REQUIRED',
+        message: 'Service-scoped creation requires a current DocumentVersion.',
+      });
+    }
+    const documentVersionInput = {
+      ...input,
+      documentVersionId: input.documentVersionId,
+    };
+    const scope = await this.serviceScope.authorizeDevelopmentCreate(
+      documentVersionInput,
+    );
     return this.workItems.createDevelopmentAcceptanceRun(
-      developmentRunBody(body),
+      documentVersionInput,
+      scope,
     );
   }
 

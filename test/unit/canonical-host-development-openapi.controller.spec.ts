@@ -17,6 +17,15 @@ import { BadRequestException } from '@nestjs/common';
 import { CanonicalHostOpenApiController } from '../../server/modules/canonical-host/canonical-host.openapi.controller';
 
 describe('CanonicalHostOpenApiController development acceptance', () => {
+  const createScope = {
+    principalId: 'service:openclaw-dev-real',
+    appId: 'app_17bzc551rsg',
+    tenantId: 'tenant-dev',
+    environment: 'DEV',
+    documentVersionId: 'document_version_f4813607b91ee1a20e754e2d',
+    developmentRunToken: '0f8fad5b-d9cb-469f-a165-70867728950e',
+    authorizationFingerprint: `sha256:${'a'.repeat(64)}`,
+  };
   const vertical = {
     openApiStatus: jest.fn().mockResolvedValue({ kind: 'status' }),
     openApiQuery: jest.fn().mockResolvedValue({ kind: 'query' }),
@@ -34,7 +43,7 @@ describe('CanonicalHostOpenApiController development acceptance', () => {
   });
 
   const allowedScope = {
-    assertDevelopmentCreate: jest.fn().mockResolvedValue(undefined),
+    authorizeDevelopmentCreate: jest.fn().mockResolvedValue(createScope),
     authorizeWorkItemRead: jest.fn(),
     assertTransport: jest.fn(),
   };
@@ -54,17 +63,21 @@ describe('CanonicalHostOpenApiController development acceptance', () => {
       }),
     ).resolves.toMatchObject({ workItemCreated: true });
 
-    expect(workItems.createDevelopmentAcceptanceRun).toHaveBeenCalledWith({
+    const input = {
       documentVersionId: 'document_version_f4813607b91ee1a20e754e2d',
       developmentRunToken: '0f8fad5b-d9cb-469f-a165-70867728950e',
       query: 'applicability',
-    });
-    expect(allowedScope.assertDevelopmentCreate).toHaveBeenCalledTimes(1);
+    };
+    expect(allowedScope.authorizeDevelopmentCreate).toHaveBeenCalledWith(input);
+    expect(workItems.createDevelopmentAcceptanceRun).toHaveBeenCalledWith(
+      input,
+      createScope,
+    );
   });
 
   it('fails closed before any development WorkItem I/O without service scope', async () => {
     const serviceScope = {
-      assertDevelopmentCreate: jest.fn().mockRejectedValue(
+      authorizeDevelopmentCreate: jest.fn().mockRejectedValue(
         Object.assign(new Error('scope unavailable'), {
           code: 'CANONICAL_SERVICE_SCOPE_UNAVAILABLE',
           statusCode: 503,
@@ -86,6 +99,31 @@ describe('CanonicalHostOpenApiController development acceptance', () => {
       code: 'CANONICAL_SERVICE_SCOPE_UNAVAILABLE',
       statusCode: 503,
     });
+    expect(workItems.createDevelopmentAcceptanceRun).not.toHaveBeenCalled();
+  });
+
+  it('rejects a native FileService selection on the service-scoped route', async () => {
+    const controller = new CanonicalHostOpenApiController(
+      vertical as never,
+      workItems as never,
+      allowedScope as never,
+    );
+
+    await expect(
+      controller.createDevelopmentWorkItem({
+        selection: {
+          bucketId: 'bucket-default',
+          filePath: 'wiselink/dev-intake/source.pdf',
+        },
+        developmentRunToken: '0f8fad5b-d9cb-469f-a165-70867728950e',
+      }),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({
+        code: 'CANONICAL_DEVELOPMENT_SERVICE_DOCUMENT_VERSION_REQUIRED',
+      }),
+      status: 400,
+    });
+    expect(allowedScope.authorizeDevelopmentCreate).not.toHaveBeenCalled();
     expect(workItems.createDevelopmentAcceptanceRun).not.toHaveBeenCalled();
   });
 

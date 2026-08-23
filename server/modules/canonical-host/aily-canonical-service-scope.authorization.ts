@@ -7,8 +7,9 @@ import {
   type CanonicalObjectAccessPort,
 } from '../work-item/canonical-object-access.port';
 import {
-  canonicalServiceScopeUnavailable,
+  CANONICAL_EXECUTOR_SERVICE_SCOPE_AUTHORIZATION,
   type CanonicalServiceScopeAuthorizationPort,
+  type CanonicalVerifiedDevelopmentCreateScope,
   type CanonicalVerifiedOpenClawAttemptScope,
   type CanonicalVerifiedServiceScope,
 } from './canonical-service-scope.authorization';
@@ -26,6 +27,8 @@ export class AilyCanonicalServiceScopeAuthorization implements CanonicalServiceS
     private readonly requestContext: RequestContextService,
     @Inject(CANONICAL_OBJECT_ACCESS)
     private readonly objectAccess: CanonicalObjectAccessPort,
+    @Inject(CANONICAL_EXECUTOR_SERVICE_SCOPE_AUTHORIZATION)
+    private readonly executorScope: CanonicalServiceScopeAuthorizationPort,
   ) {}
 
   async authorizeWorkItemRead(input: {
@@ -33,8 +36,8 @@ export class AilyCanonicalServiceScopeAuthorization implements CanonicalServiceS
     operation: 'READ_STATUS' | 'QUERY_PARSED_PACKAGE' | 'READ_DEEP_LINK';
     workItemId: string;
   }): Promise<CanonicalVerifiedServiceScope> {
-    if (input.transport !== 'READONLY_MCP') {
-      throw canonicalServiceScopeUnavailable();
+    if (input.transport === 'OPENAPI_REST') {
+      return this.executorScope.authorizeWorkItemRead(input);
     }
     const actor = this.requireAilyActor();
     const result = await this.objectAccess.freshRead({
@@ -80,23 +83,39 @@ export class AilyCanonicalServiceScopeAuthorization implements CanonicalServiceS
     };
   }
 
-  assertDevelopmentCreate(): Promise<void> {
-    return Promise.reject(canonicalServiceScopeUnavailable());
+  authorizeDevelopmentCreate(input: {
+    documentVersionId: string;
+    developmentRunToken: string;
+  }): Promise<CanonicalVerifiedDevelopmentCreateScope> {
+    return this.executorScope.authorizeDevelopmentCreate(input);
   }
 
-  async assertTransport(input: { transport: 'READONLY_MCP' }): Promise<void> {
-    if (input.transport !== 'READONLY_MCP') {
-      throw canonicalServiceScopeUnavailable();
+  async assertTransport(input: {
+    transport: 'READONLY_MCP' | 'OPENCLAW_MCP';
+  }): Promise<void> {
+    if (input.transport === 'OPENCLAW_MCP') {
+      return this.executorScope.assertTransport(input);
     }
     this.requireAilyActor();
   }
 
-  authorizeOpenClawWorkItem(): Promise<CanonicalVerifiedServiceScope> {
-    return Promise.reject(canonicalServiceScopeUnavailable());
+  authorizeOpenClawWorkItem(input: {
+    operation: 'BEGIN_DYNAMIC' | 'RECORD_DISCOVERY' | 'BEGIN_OVERALL';
+    workItemId: string;
+  }): Promise<CanonicalVerifiedServiceScope> {
+    return this.executorScope.authorizeOpenClawWorkItem(input);
   }
 
-  authorizeOpenClawAttempt(): Promise<CanonicalVerifiedOpenClawAttemptScope> {
-    return Promise.reject(canonicalServiceScopeUnavailable());
+  authorizeOpenClawAttempt(input: {
+    operation:
+      | 'COMMIT_DYNAMIC'
+      | 'RESUME_OVERALL'
+      | 'COMMIT_OVERALL'
+      | 'HEARTBEAT_ATTEMPT'
+      | 'CANCEL_ATTEMPT';
+    attemptRef: string;
+  }): Promise<CanonicalVerifiedOpenClawAttemptScope> {
+    return this.executorScope.authorizeOpenClawAttempt(input);
   }
 
   private requireAilyActor(): CanonicalAilyFinalUserActorContext {

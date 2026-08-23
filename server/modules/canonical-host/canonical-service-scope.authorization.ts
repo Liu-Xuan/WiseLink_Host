@@ -3,12 +3,25 @@ import { Injectable } from '@nestjs/common';
 export const CANONICAL_SERVICE_SCOPE_AUTHORIZATION = Symbol(
   'CANONICAL_SERVICE_SCOPE_AUTHORIZATION',
 );
+export const CANONICAL_EXECUTOR_SERVICE_SCOPE_AUTHORIZATION = Symbol(
+  'CANONICAL_EXECUTOR_SERVICE_SCOPE_AUTHORIZATION',
+);
 
 export interface CanonicalVerifiedServiceScope {
   principalId: string;
   appId: string;
   tenantId: string;
   workItemId: string;
+  authorizationFingerprint: string;
+}
+
+export interface CanonicalVerifiedDevelopmentCreateScope {
+  principalId: string;
+  appId: string;
+  tenantId: string;
+  environment: 'DEV' | 'UAT';
+  documentVersionId: string;
+  developmentRunToken: string;
   authorizationFingerprint: string;
 }
 
@@ -22,14 +35,24 @@ export interface CanonicalServiceScopeAuthorizationPort {
     operation: 'READ_STATUS' | 'QUERY_PARSED_PACKAGE' | 'READ_DEEP_LINK';
     workItemId: string;
   }): Promise<CanonicalVerifiedServiceScope>;
-  assertDevelopmentCreate(): Promise<void>;
-  assertTransport(input: { transport: 'READONLY_MCP' }): Promise<void>;
+  authorizeDevelopmentCreate(input: {
+    documentVersionId: string;
+    developmentRunToken: string;
+  }): Promise<CanonicalVerifiedDevelopmentCreateScope>;
+  assertTransport(input: {
+    transport: 'READONLY_MCP' | 'OPENCLAW_MCP';
+  }): Promise<void>;
   authorizeOpenClawWorkItem(input: {
     operation: 'BEGIN_DYNAMIC' | 'RECORD_DISCOVERY' | 'BEGIN_OVERALL';
     workItemId: string;
   }): Promise<CanonicalVerifiedServiceScope>;
   authorizeOpenClawAttempt(input: {
-    operation: 'COMMIT_DYNAMIC' | 'RESUME_OVERALL' | 'COMMIT_OVERALL';
+    operation:
+      | 'COMMIT_DYNAMIC'
+      | 'RESUME_OVERALL'
+      | 'COMMIT_OVERALL'
+      | 'HEARTBEAT_ATTEMPT'
+      | 'CANCEL_ATTEMPT';
     attemptRef: string;
   }): Promise<CanonicalVerifiedOpenClawAttemptScope>;
 }
@@ -40,7 +63,7 @@ export class UnavailableCanonicalServiceScopeAuthorization implements CanonicalS
     return Promise.reject(canonicalServiceScopeUnavailable());
   }
 
-  assertDevelopmentCreate(): Promise<void> {
+  authorizeDevelopmentCreate(): Promise<CanonicalVerifiedDevelopmentCreateScope> {
     return Promise.reject(canonicalServiceScopeUnavailable());
   }
 

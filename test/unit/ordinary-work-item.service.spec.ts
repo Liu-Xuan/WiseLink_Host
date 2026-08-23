@@ -31,6 +31,15 @@ const ACTOR = {
   roles: ['authenticated', 'wiselink_development'],
   env: 'test',
 };
+const DEVELOPMENT_SCOPE = {
+  principalId: 'service:openclaw-dev-real',
+  appId: 'app_17bzc551rsg',
+  tenantId: 'tenant-dev',
+  environment: 'DEV' as const,
+  documentVersionId: 'document-version-sb',
+  developmentRunToken: '0f8fad5b-d9cb-469f-a165-70867728950e',
+  authorizationFingerprint: `sha256:${'e'.repeat(64)}`,
+};
 
 function target() {
   const fileService = { from: jest.fn() };
@@ -85,21 +94,8 @@ function target() {
   };
   const vertical = {
     authorizeExistingWorkItem: jest.fn().mockResolvedValue({}),
-    runPdf: jest.fn().mockResolvedValue({
-      schemaVersion:
-        'wiselink.3_1.canonical_pdf_vertical_response.v0.candidate',
-      status: 'CANDIDATE_VERTICAL_VERIFIED',
-      workItem: { workItemId: 'WI-NEW-SB' },
-      readback: null,
-      entry: {},
-      authority: {
-        canonicalRoleSelected: false,
-        onlineWritePerformed: false,
-        applicationPublished: false,
-        currentSelectionChanged: false,
-        engineeringConclusionCreated: false,
-      },
-    }),
+    runPdf: jest.fn().mockResolvedValue(verticalResult()),
+    runPdfWithDevelopmentScope: jest.fn().mockResolvedValue(verticalResult()),
   };
   return {
     documentManagement,
@@ -114,6 +110,24 @@ function target() {
       vertical as never,
       fileService as never,
     ),
+  };
+}
+
+function verticalResult() {
+  return {
+    schemaVersion:
+      'wiselink.3_1.canonical_pdf_vertical_response.v0.candidate',
+    status: 'CANDIDATE_VERTICAL_VERIFIED',
+    workItem: { workItemId: 'WI-NEW-SB' },
+    readback: null,
+    entry: {},
+    authority: {
+      canonicalRoleSelected: false,
+      onlineWritePerformed: false,
+      applicationPublished: false,
+      currentSelectionChanged: false,
+      engineeringConclusionCreated: false,
+    },
   };
 }
 
@@ -216,23 +230,49 @@ describe('OrdinaryWorkItemService run identity', () => {
     expectNoOrdinaryRunIo(targetValue);
   });
 
-  it('fails closed for S1 acceptance before resolving any tenant or document', async () => {
+  it('runs one exact service-scoped development WorkItem without final-user impersonation', async () => {
     const { repository, resolver, vertical, service } = target();
 
     await expect(
-      service.createDevelopmentAcceptanceRun({
-        documentVersionId: 'document-version-sb',
-        developmentRunToken: '0f8fad5b-d9cb-469f-a165-70867728950e',
-      }),
-    ).rejects.toMatchObject({
-      code: 'CANONICAL_SERVICE_SCOPE_UNAVAILABLE',
-      statusCode: 503,
+      service.createDevelopmentAcceptanceRun(
+        {
+          documentVersionId: 'document-version-sb',
+          developmentRunToken: '0f8fad5b-d9cb-469f-a165-70867728950e',
+        },
+        DEVELOPMENT_SCOPE,
+      ),
+    ).resolves.toMatchObject({
+      workItemCreated: true,
+      actionAttemptId: 'ATT-NEW-SB',
     });
 
     expect(repository.loadTenantRunAuthorizationBinding).not.toHaveBeenCalled();
-    expect(resolver.resolve).not.toHaveBeenCalled();
-    expect(repository.reserve).not.toHaveBeenCalled();
+    expect(resolver.resolve).toHaveBeenCalledWith('document-version-sb', {
+      requireCurrent: true,
+    });
+    expect(repository.reserve).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: 'tenant-dev',
+        actorUserId: 'service:openclaw-dev-real',
+        runKey: 'dev:0f8fad5b-d9cb-469f-a165-70867728950e',
+      }),
+    );
     expect(vertical.runPdf).not.toHaveBeenCalled();
+    expect(vertical.runPdfWithDevelopmentScope).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workItemId: 'WI-NEW-SB',
+        source: expect.objectContaining({
+          documentVersionId: 'document-version-sb',
+        }),
+      }),
+      expect.objectContaining({
+        userId: 'service:openclaw-dev-real',
+        tenantId: 'tenant-dev',
+        roles: [],
+        env: 'dev',
+      }),
+      DEVELOPMENT_SCOPE,
+    );
   });
 
   it('ingests an owned hosted selection, reserves a DEV WorkItem, and returns the vertical result', async () => {
@@ -334,6 +374,26 @@ describe('OrdinaryWorkItemService run identity', () => {
     }
     expectNoOrdinaryRunIo(targetValue);
   });
+
+  it('rejects a mismatched development scope before every resolver or write', async () => {
+    const targetValue = target();
+    await expect(
+      targetValue.service.createDevelopmentAcceptanceRun(
+        {
+          documentVersionId: 'document-version-sb',
+          developmentRunToken: '0f8fad5b-d9cb-469f-a165-70867728950e',
+        },
+        {
+          ...DEVELOPMENT_SCOPE,
+          documentVersionId: 'document-version-other',
+        },
+      ),
+    ).rejects.toMatchObject({
+      code: 'CANONICAL_DEVELOPMENT_SCOPE_NOT_FOUND',
+      statusCode: 404,
+    });
+    expectNoOrdinaryRunIo(targetValue);
+  });
 });
 
 function expectNoOrdinaryRunIo(targetValue: ReturnType<typeof target>): void {
@@ -359,6 +419,9 @@ function expectNoOrdinaryRunIo(targetValue: ReturnType<typeof target>): void {
   ).not.toHaveBeenCalled();
   expect(targetValue.vertical.authorizeExistingWorkItem).not.toHaveBeenCalled();
   expect(targetValue.vertical.runPdf).not.toHaveBeenCalled();
+  expect(
+    targetValue.vertical.runPdfWithDevelopmentScope,
+  ).not.toHaveBeenCalled();
 }
 
 function restoreProcessEnv(key: string, value: string | undefined): void {

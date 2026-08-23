@@ -9,6 +9,7 @@ import {
   UnifiedReaderModule,
   type UnifiedReaderModuleOptions,
 } from '../unified-reader/unified-reader.module';
+import { ActionAttemptModule } from '../action-attempt/action-attempt.module';
 import { CanonicalEntryFacadeService } from './canonical-entry-facade.service';
 import { AilyCanonicalServiceScopeAuthorization } from './aily-canonical-service-scope.authorization';
 import {
@@ -66,6 +67,7 @@ import {
   UnconfiguredCanonicalOpenClawOverallProvider,
 } from './unconfigured-integrated-assessment.adapters';
 import {
+  CANONICAL_EXECUTOR_SERVICE_SCOPE_AUTHORIZATION,
   CANONICAL_SERVICE_SCOPE_AUTHORIZATION,
   UnavailableCanonicalServiceScopeAuthorization,
 } from './canonical-service-scope.authorization';
@@ -81,10 +83,12 @@ export interface CanonicalHostModuleOptions {
   failureValidationWriteAuthorizationProvider?: Provider;
   baseRuleResultProvider?: Provider;
   openClawOverallProvider?: Provider;
+  serviceScopeAuthorizationProvider?: Provider;
 }
 
 @Module({
   imports: [
+    ActionAttemptModule,
     ExternalDiscoveryModule,
     AssessmentHostConsumerModule,
     AeoSameWorkItemAuthoringModule.forRoot(),
@@ -123,6 +127,10 @@ export interface CanonicalHostModuleOptions {
     CanonicalHostLibraryIndexService,
     CanonicalHostAeoService,
     UnavailableCanonicalServiceScopeAuthorization,
+    {
+      provide: CANONICAL_EXECUTOR_SERVICE_SCOPE_AUTHORIZATION,
+      useExisting: UnavailableCanonicalServiceScopeAuthorization,
+    },
     {
       provide: CANONICAL_SERVICE_SCOPE_AUTHORIZATION,
       useExisting: AilyCanonicalServiceScopeAuthorization,
@@ -179,6 +187,12 @@ export class CanonicalHostModule {
       UnconfiguredCanonicalOpenClawOverallProvider,
       'OPENCLAW_OVERALL_PROVIDER_INVALID',
     );
+    const serviceScopeAuthorizationProvider = resolveProvider(
+      options.serviceScopeAuthorizationProvider,
+      CANONICAL_EXECUTOR_SERVICE_SCOPE_AUTHORIZATION,
+      UnavailableCanonicalServiceScopeAuthorization,
+      'CANONICAL_EXECUTOR_SERVICE_SCOPE_AUTHORIZATION_PROVIDER_INVALID',
+    );
     const binding: CanonicalHostBindingState = {
       mode:
         options.workItemRegistrarProvider &&
@@ -201,6 +215,7 @@ export class CanonicalHostModule {
     return {
       module: CanonicalHostModule,
       imports: [
+        ActionAttemptModule,
         UnifiedReaderModule.forRoot(options.unifiedReader),
         AssessmentHostConsumerModule,
         ExternalDiscoveryModule,
@@ -223,6 +238,7 @@ export class CanonicalHostModule {
         failureValidationWriteAuthorizationProvider,
         baseRuleResultProvider,
         openClawOverallProvider,
+        serviceScopeAuthorizationProvider,
         {
           provide: CANONICAL_HOST_CLOCK,
           useClass: SystemCanonicalHostClockAdapter,
@@ -253,7 +269,6 @@ export class CanonicalHostModule {
         CanonicalHostEngineerReviewService,
         CanonicalHostLibraryIndexService,
         CanonicalHostAeoService,
-        UnavailableCanonicalServiceScopeAuthorization,
         {
           provide: CANONICAL_SERVICE_SCOPE_AUTHORIZATION,
           useExisting: AilyCanonicalServiceScopeAuthorization,

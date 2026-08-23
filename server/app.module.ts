@@ -29,6 +29,8 @@ import { createHostedU0FullPackageValidatorProvider } from './modules/unified-re
 import { createHostedU0Frozen2FailureAdapterProvider } from './modules/unified-reader/hosted-u0-frozen2-failure-adapter.provider';
 import { ViewModule } from './modules/view/view.module';
 import { IdentityModule } from './modules/identity/identity.module';
+import { ConfiguredDevelopmentCanonicalServiceScopeAuthorization } from './modules/canonical-host/configured-development-service-scope.authorization';
+import { CANONICAL_EXECUTOR_SERVICE_SCOPE_AUTHORIZATION } from './modules/canonical-host/canonical-service-scope.authorization';
 
 @Module({
   imports: [
@@ -61,13 +63,16 @@ import { IdentityModule } from './modules/identity/identity.module';
         provide: CANONICAL_FAILURE_VALIDATION_WRITE_AUTHORIZATION,
         useExisting: OrdinaryFailureValidationWriteAuthorizationAdapter,
       },
+      serviceScopeAuthorizationProvider: {
+        provide: CANONICAL_EXECUTOR_SERVICE_SCOPE_AUTHORIZATION,
+        useClass: ConfiguredDevelopmentCanonicalServiceScopeAuthorization,
+      },
       unifiedReader: {
         artifactStoreProvider: {
           provide: UNIFIED_ARTIFACT_STORE,
           useExisting: MiaodaOrdinaryArtifactStoreAdapter,
         },
-        fullU0ValidatorProvider:
-          createHostedU0FullPackageValidatorProvider(),
+        fullU0ValidatorProvider: createHostedU0FullPackageValidatorProvider(),
         u0Frozen2FailureAdapterProvider:
           createHostedU0Frozen2FailureAdapterProvider(),
       },

@@ -157,6 +157,10 @@ assert.equal(
 );
 assert.deepEqual(readRoutes([CanonicalHostOpenApiController]), [
   {
+    method: 'POST',
+    path: 'openapi/wiselink/development-work-items',
+  },
+  {
     method: 'GET',
     path: 'openapi/wiselink/work-items/status',
   },
@@ -186,7 +190,7 @@ assert.deepEqual(readRoutes([CanonicalHostOpenClawMcpOpenApiController]), [
 assert.ok(Object.keys(openApiSpec.paths).every((path) => !path.includes('{')));
 assert.ok(
   Object.entries(openApiSpec.paths)
-    .filter(([path]) => !path.endsWith('mcp'))
+    .filter(([path, pathItem]) => !path.endsWith('mcp') && pathItem.get)
     .every(([, pathItem]) =>
       pathItem.get.parameters.some(
         (parameter) =>
@@ -203,7 +207,9 @@ const source = await readFile(
 );
 assert.ok(source.includes('getDocumentParsingPage'));
 assert.ok(source.includes('FRESH READ REQUIRED'));
-assert.ok(source.includes("['原件', '分类', '解析', '统一包', 'Reader']"));
+assert.ok(source.includes("['文档', 'document', 'workspace-document']"));
+assert.ok(source.includes("['解析包', 'package', 'workspace-package']"));
+assert.ok(source.includes("['Reader', 'reader', 'workspace-reader']"));
 assert.ok(!source.includes('.evaluateAssessment(workItemId)'));
 assert.ok(!source.includes('.resynthesizeAssessment(workItemId'));
 assert.ok(source.includes('confirmIntegratedOverallForAeo(workItemId)'));
@@ -243,13 +249,15 @@ const controller = new CanonicalHostController(
   },
   { generateCandidate: async () => ({ revision: 6 }) },
 );
+const previousSandboxId = process.env.SANDBOX_ID;
+process.env.SANDBOX_ID = 'canonical-activation-hosted-sandbox';
 const hostRequest = {
   userContext: {
     userId: 'activation-engineer',
     tenantId: 'activation-tenant',
     appId: 'app_17bzc551rsg',
     roles: ['authenticated'],
-    env: 'development',
+    env: 'preview',
   },
 };
 await controller.recordEngineerReview(
@@ -289,6 +297,8 @@ try {
 }
 assert.equal(rejectedStatus, 400);
 assert.equal(reviewCalls.length, 1);
+if (previousSandboxId === undefined) delete process.env.SANDBOX_ID;
+else process.env.SANDBOX_ID = previousSandboxId;
 
 process.stdout.write(
   `${JSON.stringify(

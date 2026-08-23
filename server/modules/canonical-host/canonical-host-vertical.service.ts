@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { Inject, Injectable } from '@nestjs/common';
 
 import type {
@@ -44,7 +46,10 @@ import type {
   CanonicalStatusInput,
   CanonicalWorkItemRegistrarPort,
 } from './canonical-host.types';
-import type { CanonicalVerifiedServiceScope } from './canonical-service-scope.authorization';
+import type {
+  CanonicalVerifiedDevelopmentCreateScope,
+  CanonicalVerifiedServiceScope,
+} from './canonical-service-scope.authorization';
 
 @Injectable()
 export class CanonicalHostVerticalService {
@@ -77,6 +82,25 @@ export class CanonicalHostVerticalService {
         requestId: request.requestId,
         documentVersionId: request.source.documentVersionId,
       });
+    return this.runPdfAuthorized(request, actionContext);
+  }
+
+  async runPdfWithDevelopmentScope(
+    request: CanonicalPdfVerticalRunRequest,
+    actor: CanonicalHostActor,
+    scope: CanonicalVerifiedDevelopmentCreateScope,
+  ): Promise<CanonicalPdfVerticalRunResponse> {
+    validateRequest(request);
+    return this.runPdfAuthorized(
+      request,
+      developmentActionContext(request, actor, scope),
+    );
+  }
+
+  private async runPdfAuthorized(
+    request: CanonicalPdfVerticalRunRequest,
+    actionContext: CanonicalHostActionContext,
+  ): Promise<CanonicalPdfVerticalRunResponse> {
     let projection: CanonicalWorkItemProjection =
       await this.registrar.loadOrCreate(seedProjection(request, actionContext));
     assertSameRequest(projection, request);
@@ -586,6 +610,54 @@ export class CanonicalHostVerticalService {
       documentVersionId: request.source.documentVersionId,
     });
   }
+}
+
+function developmentActionContext(
+  request: CanonicalPdfVerticalRunRequest,
+  actor: CanonicalHostActor,
+  scope: CanonicalVerifiedDevelopmentCreateScope,
+): CanonicalHostActionContext {
+  if (
+    scope.appId !== 'app_17bzc551rsg' ||
+    scope.appId !== actor.appId ||
+    scope.principalId !== actor.userId ||
+    scope.tenantId !== actor.tenantId ||
+    scope.documentVersionId !== request.source.documentVersionId ||
+    actor.env !== scope.environment.toLowerCase() ||
+    !scope.developmentRunToken.trim() ||
+    !scope.authorizationFingerprint.trim()
+  ) {
+    throw serviceScopedWorkItemNotFound();
+  }
+  const seed = JSON.stringify({
+    source: 'CONFIGURED_DEVELOPMENT_CREATE_SCOPE',
+    appId: scope.appId,
+    principalId: scope.principalId,
+    tenantId: scope.tenantId,
+    environment: scope.environment,
+    documentVersionId: scope.documentVersionId,
+    developmentRunToken: scope.developmentRunToken,
+    workItemId: request.workItemId,
+    requestId: request.requestId,
+    authorizationFingerprint: scope.authorizationFingerprint,
+  });
+  const decisionHash = sha256(seed);
+  const decision: CanonicalAuthorizationDecision = {
+    action: 'PARSE_PDF',
+    allowed: true,
+    actorFingerprint: sha256(
+      `${scope.appId}\n${scope.principalId}\n${scope.tenantId}`,
+    ),
+    decisionId: `decision-${decisionHash.slice(7, 39)}`,
+    decisionHash,
+    permissionSnapshotVersion: scope.authorizationFingerprint,
+  };
+  validateDecision(decision, 'PARSE_PDF');
+  return { actor, decision };
+}
+
+function sha256(value: string): string {
+  return `sha256:${createHash('sha256').update(value).digest('hex')}`;
 }
 
 function serviceScopedWorkItemNotFound(): Error & {
