@@ -14,6 +14,8 @@ export interface HostedRequestContext {
   actorUserId: string;
   tenantId: string;
   roles: string[];
+  appId: string;
+  env: string;
 }
 
 @Injectable()
@@ -36,7 +38,8 @@ export class DocumentManagementHostedService {
   }
 
   ingestFileServiceSelection(request: unknown, context: HostedRequestContext) {
-    assertProductionMiaodaBrowserIdentityAvailable();
+    assertProductionMiaodaBrowserIdentityAvailable(hostedIdentity(context));
+    assertDevelopmentPreviewContext(context);
     return this.core.ingestFileServiceSelection(request, context);
   }
 
@@ -44,7 +47,8 @@ export class DocumentManagementHostedService {
     context: HostedRequestContext,
     selection: { bucketId: string; filePath: string },
   ): Promise<void> {
-    assertProductionMiaodaBrowserIdentityAvailable();
+    assertProductionMiaodaBrowserIdentityAvailable(hostedIdentity(context));
+    assertDevelopmentPreviewContext(context);
     return this.authorizer.assertCanIngest({
       ...context,
       action: 'DOCUMENT_INGEST',
@@ -56,7 +60,7 @@ export class DocumentManagementHostedService {
     documentVersionId: string,
     context: HostedRequestContext,
   ) {
-    assertProductionMiaodaBrowserIdentityAvailable();
+    assertProductionMiaodaBrowserIdentityAvailable(hostedIdentity(context));
     await this.authorizer.assertCanRead({
       ...context,
       action: 'DOCUMENT_READ',
@@ -74,5 +78,26 @@ export class DocumentManagementHostedService {
     }
     const family = await this.catalog.readFamily(version.familyId);
     return { version, family };
+  }
+}
+
+function hostedIdentity(context: HostedRequestContext) {
+  return {
+    userId: context.actorUserId,
+    tenantId: context.tenantId,
+    appId: context.appId,
+    env: context.env,
+  };
+}
+
+function assertDevelopmentPreviewContext(context: HostedRequestContext): void {
+  if (context.env !== 'preview') {
+    throw Object.assign(
+      new Error('Document ingestion is available only in hosted preview.'),
+      {
+        code: 'DOCUMENT_INGEST_PREVIEW_REQUIRED',
+        statusCode: 403,
+      },
+    );
   }
 }

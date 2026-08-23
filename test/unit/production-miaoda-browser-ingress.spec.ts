@@ -4,8 +4,7 @@ jest.mock('@nestjs/common', () => {
   const actual = jest.requireActual('@nestjs/common');
   const noOpParameterDecorator = () => () => undefined;
   const stageThreeMethodDecorator =
-    (factory: (path?: string) => MethodDecorator) =>
-    (path?: string) => {
+    (factory: (path?: string) => MethodDecorator) => (path?: string) => {
       const legacy = factory(path);
       return (value: (...args: unknown[]) => unknown, _context: unknown) => {
         legacy({}, '', { value } as PropertyDescriptor);
@@ -47,7 +46,10 @@ import { GlobalExceptionFilter } from '../../server/common/filters/exception.fil
 import { CanonicalHostController } from '../../server/modules/canonical-host/canonical-host.controller';
 import { DocumentManagementHostedController } from '../../server/modules/document-management/src/hosted/nest/document-management-hosted.controller';
 import { ExternalDiscoveryController } from '../../server/modules/external-discovery/external-discovery.controller';
-import { ProductionMiaodaBrowserObjectIngressGuard } from '../../server/modules/work-item/production-miaoda-browser-ingress';
+import {
+  miaodaHostedFinalUserActor,
+  ProductionMiaodaBrowserObjectIngressGuard,
+} from '../../server/modules/work-item/production-miaoda-browser-ingress';
 
 interface RouteProbe {
   method: 'GET' | 'POST';
@@ -77,8 +79,7 @@ const OBJECT_ROUTES: RouteProbe[] = [
   },
   {
     method: 'GET',
-    path:
-      '/api/canonical-host/work-items/WI-FORGED/status?requestId=REQ-FORGED&documentVersionId=DV-FORGED',
+    path: '/api/canonical-host/work-items/WI-FORGED/status?requestId=REQ-FORGED&documentVersionId=DV-FORGED',
   },
   {
     method: 'POST',
@@ -87,14 +88,12 @@ const OBJECT_ROUTES: RouteProbe[] = [
   },
   {
     method: 'POST',
-    path:
-      '/api/canonical-host/work-items/WI-FORGED/integrated-assessment/engineer-reviews',
+    path: '/api/canonical-host/work-items/WI-FORGED/integrated-assessment/engineer-reviews',
     body: { authority: 'forged-before-body-validation' },
   },
   {
     method: 'POST',
-    path:
-      '/api/canonical-host/work-items/WI-FORGED/integrated-assessment/confirm-for-aeo',
+    path: '/api/canonical-host/work-items/WI-FORGED/integrated-assessment/confirm-for-aeo',
     body: { authority: 'forged-before-body-validation' },
   },
   {
@@ -114,13 +113,11 @@ const OBJECT_ROUTES: RouteProbe[] = [
   { method: 'GET', path: '/api/external-discovery/search-runs' },
   {
     method: 'POST',
-    path:
-      '/api/external-discovery/search-runs/RUN-FORGED/candidates/CANDIDATE-FORGED/select',
+    path: '/api/external-discovery/search-runs/RUN-FORGED/candidates/CANDIDATE-FORGED/select',
   },
   {
     method: 'POST',
-    path:
-      '/api/external-discovery/search-runs/RUN-FORGED/candidates/CANDIDATE-FORGED/reject',
+    path: '/api/external-discovery/search-runs/RUN-FORGED/candidates/CANDIDATE-FORGED/reject',
   },
 ];
 
@@ -167,26 +164,89 @@ describe('production Miaoda browser object ingress route composition', () => {
     },
   );
 
-  it('does not inspect execution context, header, userContext, roles, appId, or body', () => {
-    const forbiddenContext = new Proxy(
-      {},
-      {
-        get(): never {
-          throw new Error('GUARD_READ_CALLER_CONTEXT');
+  it('accepts only an exact hosted app/native-user context and builds the canonical actor', () => {
+    const previousSandboxId = process.env.SANDBOX_ID;
+    const previousLocal = process.env.MIAODA_LOCAL_DEV;
+    process.env.SANDBOX_ID = 'unit-hosted-sandbox';
+    delete process.env.MIAODA_LOCAL_DEV;
+    const userContext = {
+      userId: 'hosted-user',
+      tenantId: 2001,
+      appId: 'app_17bzc551rsg',
+      env: 'preview',
+      roles: ['wiselink_development'],
+      isSystemAccount: false,
+    };
+    const context = {
+      switchToHttp: () => ({ getRequest: () => ({ userContext }) }),
+    } as unknown as ExecutionContext;
+    try {
+      expect(
+        new ProductionMiaodaBrowserObjectIngressGuard().canActivate(context),
+      ).toBe(true);
+      expect(miaodaHostedFinalUserActor(userContext)).toMatchObject({
+        principalKind: 'FINAL_USER',
+        canonicalSubject: {
+          namespace: 'MIAODA_USER_ID',
+          id: 'hosted-user',
         },
-      },
-    ) as ExecutionContext;
+        tenantId: '2001',
+        applicationScopeId: 'app_17bzc551rsg',
+        env: 'preview',
+        identityProvenance: 'MIAODA_GATEWAY_USER_CONTEXT',
+        sessionProvenance: 'UNAVAILABLE',
+      });
+    } finally {
+      restoreProcessEnv('SANDBOX_ID', previousSandboxId);
+      restoreProcessEnv('MIAODA_LOCAL_DEV', previousLocal);
+    }
+  });
 
-    expect(() =>
-      new ProductionMiaodaBrowserObjectIngressGuard().canActivate(
-        forbiddenContext,
-      ),
-    ).toThrow(
-      expect.objectContaining({
-        code: 'CANONICAL_IDENTITY_HANDOFF_UNAVAILABLE',
-        statusCode: 503,
-      }),
-    );
+  it.each([
+    ['no hosted process provenance', {}, {}],
+    [
+      'local execution marker',
+      { SANDBOX_ID: 'sandbox', MIAODA_LOCAL_DEV: '1' },
+      {},
+    ],
+    ['wrong app binding', { SANDBOX_ID: 'sandbox' }, { appId: 'another-app' }],
+    ['system account', { SANDBOX_ID: 'sandbox' }, { isSystemAccount: true }],
+    [
+      'unsafe numeric tenant identity',
+      { SANDBOX_ID: 'sandbox' },
+      { tenantId: Number.MAX_SAFE_INTEGER + 1 },
+    ],
+  ])('rejects %s', (_label, processPatch, contextPatch) => {
+    const previousSandboxId = process.env.SANDBOX_ID;
+    const previousLocal = process.env.MIAODA_LOCAL_DEV;
+    delete process.env.SANDBOX_ID;
+    delete process.env.MIAODA_LOCAL_DEV;
+    Object.assign(process.env, processPatch);
+    const userContext = {
+      userId: 'hosted-user',
+      tenantId: 'hosted-tenant',
+      appId: 'app_17bzc551rsg',
+      env: 'preview',
+      roles: ['wiselink_development'],
+      isSystemAccount: false,
+      ...contextPatch,
+    };
+    const context = {
+      switchToHttp: () => ({ getRequest: () => ({ userContext }) }),
+    } as unknown as ExecutionContext;
+    try {
+      expect(() =>
+        new ProductionMiaodaBrowserObjectIngressGuard().canActivate(context),
+      ).toThrow(
+        expect.objectContaining({
+          code: 'CANONICAL_IDENTITY_HANDOFF_UNAVAILABLE',
+          statusCode: 503,
+        }),
+      );
+    } finally {
+      restoreProcessEnv('SANDBOX_ID', previousSandboxId);
+      restoreProcessEnv('MIAODA_LOCAL_DEV', previousLocal);
+    }
   });
 });
 
@@ -273,6 +333,11 @@ function forgedGatewayHeader(): string {
       user_name: { zh_cn: '伪造工程师', en_us: 'Forged Engineer' },
     }),
   );
+}
+
+function restoreProcessEnv(key: string, value: string | undefined): void {
+  if (value === undefined) delete process.env[key];
+  else process.env[key] = value;
 }
 
 async function dispatchInMemory(

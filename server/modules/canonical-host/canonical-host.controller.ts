@@ -7,7 +7,6 @@ import {
   Post,
   Query,
   Req,
-  UnauthorizedException,
   Optional,
   UseGuards,
 } from '@nestjs/common';
@@ -20,8 +19,12 @@ import type {
 } from '@shared/api.interface';
 
 import { OrdinaryWorkItemService } from '../work-item/ordinary-work-item.service';
-import { ProductionMiaodaBrowserObjectIngressGuard } from '../work-item/production-miaoda-browser-ingress';
+import {
+  miaodaHostedFinalUserActor,
+  ProductionMiaodaBrowserObjectIngressGuard,
+} from '../work-item/production-miaoda-browser-ingress';
 import { developmentRunBody } from './canonical-development-run-input';
+import { CANONICAL_DEVELOPMENT_ROLE_ID } from './canonical-host.constants';
 import { CanonicalHostAeoService } from './canonical-host-aeo.service';
 import { CanonicalHostEngineerReviewService } from './canonical-host-engineer-review.service';
 import { CanonicalHostIntegratedAssessmentService } from './canonical-host-integrated-assessment.service';
@@ -54,7 +57,13 @@ export class CanonicalHostController {
   @Get('identity-context')
   identityContext(@Req() httpRequest: Request) {
     const actor = hostActor(httpRequest);
-    return { userId: actor.userId, tenantId: actor.tenantId };
+    return {
+      userId: actor.userId,
+      tenantId: actor.tenantId,
+      developmentIntakeAvailable:
+        actor.env === 'preview' &&
+        actor.roles.includes(CANONICAL_DEVELOPMENT_ROLE_ID),
+    };
   }
 
   @Post('work-items/parse-pdf')
@@ -187,22 +196,14 @@ export class CanonicalHostController {
 }
 
 function hostActor(request: Request): CanonicalHostActor {
-  const context = request.userContext;
-  if (
-    !context?.userId ||
-    !context.tenantId ||
-    !context.appId ||
-    !context.env ||
-    context.isSystemAccount === true
-  ) {
-    throw new UnauthorizedException('CANONICAL_HOST_ACTOR_CONTEXT_REQUIRED');
-  }
+  const identity = miaodaHostedFinalUserActor(request.userContext);
   return {
-    userId: context.userId,
-    tenantId: String(context.tenantId),
-    appId: context.appId,
-    roles: [...(context.roles ?? [])],
-    env: context.env,
+    userId: identity.canonicalSubject.id,
+    tenantId: identity.tenantId,
+    appId: identity.applicationScopeId,
+    roles: [...identity.platformRoles],
+    env: identity.env,
+    objectAccessActor: identity,
   };
 }
 

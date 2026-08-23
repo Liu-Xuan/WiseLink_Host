@@ -14,7 +14,12 @@ const creatorContext = {
   actorUserId: 'user-creator',
   tenantId: 'tenant-a',
   roles: [] as string[],
+  appId: 'app_17bzc551rsg',
+  env: 'preview',
 };
+
+const OWNED_PATH =
+  'wiselink/dev-intake/0f8fad5b-d9cb-469f-a165-70867728950e/source.pdf';
 
 function binding() {
   return {
@@ -37,6 +42,7 @@ describe('ordinary document-management authorization', () => {
     };
     const authorizer = new OrdinaryDocumentManagementAuthorizer(
       repository as never,
+      {} as never,
     );
 
     await expect(
@@ -76,6 +82,7 @@ describe('ordinary document-management authorization', () => {
       };
       const authorizer = new OrdinaryDocumentManagementAuthorizer(
         repository as never,
+        {} as never,
       );
 
       await expect(
@@ -91,79 +98,147 @@ describe('ordinary document-management authorization', () => {
     },
   );
 
-  it('does not let the development role replace FileService selection scope', async () => {
-    const authorizer = new OrdinaryDocumentManagementAuthorizer({} as never);
+  it('grants only a development-role selection owned by the same FileService user', async () => {
+    const metadata = {
+      bucketID: 'bucket-default',
+      filePath: OWNED_PATH,
+      createdBy: { userID: creatorContext.actorUserId },
+    };
+    const fileService = fileServiceTarget(metadata);
+    const authorizer = new OrdinaryDocumentManagementAuthorizer(
+      {} as never,
+      fileService as never,
+    );
 
     await expect(
       authorizer.assertCanIngest({
         ...creatorContext,
         roles: ['wiselink_development'],
         action: 'DOCUMENT_INGEST',
-        selection: { bucketId: 'bucket-1', filePath: '/source.pdf' },
+        selection: { bucketId: 'bucket-default', filePath: OWNED_PATH },
       }),
-    ).rejects.toMatchObject({
-      code: 'DOCUMENT_SELECTION_SCOPE_UNAVAILABLE',
-      statusCode: 503,
-    });
+    ).resolves.toBeUndefined();
+    expect(fileService.from).toHaveBeenCalledWith('bucket-default');
+    expect(fileService.getFileMetadata).toHaveBeenCalledWith(OWNED_PATH);
+  });
+
+  it.each([
+    [
+      'wrong bucket',
+      'bucket-other',
+      {
+        bucketID: 'bucket-default',
+        filePath: OWNED_PATH,
+        createdBy: { userID: creatorContext.actorUserId },
+      },
+    ],
+    [
+      'wrong owner',
+      'bucket-default',
+      {
+        bucketID: 'bucket-default',
+        filePath: OWNED_PATH,
+        createdBy: { userID: 'another-user' },
+      },
+    ],
+    [
+      'unsafe numeric owner identity',
+      'bucket-default',
+      {
+        bucketID: 'bucket-default',
+        filePath: OWNED_PATH,
+        createdBy: { userID: Number.MAX_SAFE_INTEGER + 1 },
+      },
+    ],
+  ])(
+    'rejects %s without entering document ingest',
+    async (_label, bucketId, metadata) => {
+      const fileService = fileServiceTarget(metadata);
+      const authorizer = new OrdinaryDocumentManagementAuthorizer(
+        {} as never,
+        fileService as never,
+      );
+      await expect(
+        authorizer.assertCanIngest({
+          ...creatorContext,
+          roles: ['wiselink_development'],
+          action: 'DOCUMENT_INGEST',
+          selection: { bucketId, filePath: OWNED_PATH },
+        }),
+      ).rejects.toMatchObject({ code: 'DOCUMENT_ACTION_FORBIDDEN' });
+    },
+  );
+
+  it('does not let the development role bypass the isolated DEV path', async () => {
+    const fileService = fileServiceTarget(null);
+    const authorizer = new OrdinaryDocumentManagementAuthorizer(
+      {} as never,
+      fileService as never,
+    );
+
+    await expect(
+      authorizer.assertCanIngest({
+        ...creatorContext,
+        roles: ['wiselink_development'],
+        action: 'DOCUMENT_INGEST',
+        selection: { bucketId: 'bucket-default', filePath: 'source.pdf' },
+      }),
+    ).rejects.toMatchObject({ code: 'DOCUMENT_ACTION_FORBIDDEN' });
     await expect(
       authorizer.assertCanIngest({
         ...creatorContext,
         action: 'DOCUMENT_INGEST',
-        selection: { bucketId: 'bucket-1', filePath: '/source.pdf' },
+        selection: { bucketId: 'bucket-default', filePath: OWNED_PATH },
       }),
     ).rejects.toMatchObject({ code: 'DOCUMENT_ACTION_FORBIDDEN' });
   });
 
   it.each(['ingest', 'authorize-ingest', 'read'] as const)(
-    'rejects direct hosted-service %s before context, authorizer, Catalog, or FileService I/O',
+    'rejects local hosted-service %s before authorizer, Catalog, or FileService I/O',
     async (operation) => {
-    const fileService = { from: jest.fn() };
-    const catalog = {
-      readDocumentVersion: jest.fn(),
-      readFamily: jest.fn(),
-    };
-    const authorizer = {
-      assertCanIngest: jest.fn(),
-      assertCanRead: jest.fn(),
-    };
-    const service = new DocumentManagementHostedService(
-      fileService as never,
-      catalog as never,
-      authorizer,
-    );
-
-      const forbidden = new Proxy(
-        {},
-        {
-          get(): never {
-            throw new Error('DIRECT_DM_SERVICE_READ_CALLER_INPUT');
-          },
-        },
+      const fileService = { from: jest.fn() };
+      const catalog = {
+        readDocumentVersion: jest.fn(),
+        readFamily: jest.fn(),
+      };
+      const authorizer = {
+        assertCanIngest: jest.fn(),
+        assertCanRead: jest.fn(),
+      };
+      const service = new DocumentManagementHostedService(
+        fileService as never,
+        catalog as never,
+        authorizer,
       );
+
+      const previousLocal = process.env.MIAODA_LOCAL_DEV;
+      const previousSandbox = process.env.SANDBOX_ID;
+      process.env.MIAODA_LOCAL_DEV = '1';
+      process.env.SANDBOX_ID = 'unit-hosted-sandbox';
+      const context = { ...creatorContext };
       const invoke = (): unknown => {
         if (operation === 'ingest') {
-          return service.ingestFileServiceSelection(
-            forbidden,
-            forbidden as typeof creatorContext,
-          );
+          return service.ingestFileServiceSelection({}, context);
         }
         if (operation === 'authorize-ingest') {
-          return service.assertCanIngest(
-            forbidden as typeof creatorContext,
-            forbidden as { bucketId: string; filePath: string },
-          );
+          return service.assertCanIngest(context, {
+            bucketId: 'bucket-default',
+            filePath: OWNED_PATH,
+          });
         }
-        return service.getDocumentVersion(
-          'DV-1',
-          forbidden as typeof creatorContext,
-        );
+        return service.getDocumentVersion('DV-1', context);
       };
 
-      await expect(Promise.resolve().then(invoke)).rejects.toMatchObject({
-        code: 'CANONICAL_IDENTITY_HANDOFF_UNAVAILABLE',
-        statusCode: 503,
-        denialSource: 'MIAODA_BROWSER_UNAVAILABLE_ADAPTER',
-      });
+      try {
+        await expect(Promise.resolve().then(invoke)).rejects.toMatchObject({
+          code: 'CANONICAL_IDENTITY_HANDOFF_UNAVAILABLE',
+          statusCode: 503,
+          denialSource: 'MIAODA_BROWSER_UNAVAILABLE_ADAPTER',
+        });
+      } finally {
+        restoreProcessEnv('MIAODA_LOCAL_DEV', previousLocal);
+        restoreProcessEnv('SANDBOX_ID', previousSandbox);
+      }
       expect(authorizer.assertCanIngest).not.toHaveBeenCalled();
       expect(authorizer.assertCanRead).not.toHaveBeenCalled();
       expect(catalog.readDocumentVersion).not.toHaveBeenCalled();
@@ -171,4 +246,58 @@ describe('ordinary document-management authorization', () => {
       expect(fileService.from).not.toHaveBeenCalled();
     },
   );
+
+  it.each(['ingest', 'authorize-ingest'] as const)(
+    'rejects hosted runtime %s because this intake is preview-only',
+    async (operation) => {
+      const fileService = { from: jest.fn() };
+      const authorizer = {
+        assertCanIngest: jest.fn(),
+        assertCanRead: jest.fn(),
+      };
+      const service = new DocumentManagementHostedService(
+        fileService as never,
+        {} as never,
+        authorizer,
+      );
+      const previousSandbox = process.env.SANDBOX_ID;
+      const previousLocal = process.env.MIAODA_LOCAL_DEV;
+      process.env.SANDBOX_ID = 'unit-hosted-sandbox';
+      delete process.env.MIAODA_LOCAL_DEV;
+      const context = { ...creatorContext, env: 'runtime' };
+      const invoke = (): unknown =>
+        operation === 'ingest'
+          ? service.ingestFileServiceSelection({}, context)
+          : service.assertCanIngest(context, {
+              bucketId: 'bucket-default',
+              filePath: OWNED_PATH,
+            });
+
+      try {
+        await expect(Promise.resolve().then(invoke)).rejects.toMatchObject({
+          code: 'DOCUMENT_INGEST_PREVIEW_REQUIRED',
+          statusCode: 403,
+        });
+      } finally {
+        restoreProcessEnv('SANDBOX_ID', previousSandbox);
+        restoreProcessEnv('MIAODA_LOCAL_DEV', previousLocal);
+      }
+      expect(authorizer.assertCanIngest).not.toHaveBeenCalled();
+      expect(fileService.from).not.toHaveBeenCalled();
+    },
+  );
 });
+
+function fileServiceTarget(metadata: unknown) {
+  const getFileMetadata = jest.fn().mockResolvedValue(metadata);
+  return {
+    getDefaultBucket: jest.fn().mockResolvedValue('bucket-default'),
+    from: jest.fn().mockReturnValue({ getFileMetadata }),
+    getFileMetadata,
+  };
+}
+
+function restoreProcessEnv(key: string, value: string | undefined): void {
+  if (value === undefined) delete process.env[key];
+  else process.env[key] = value;
+}

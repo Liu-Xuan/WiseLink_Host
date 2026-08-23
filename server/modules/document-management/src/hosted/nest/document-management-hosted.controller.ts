@@ -19,15 +19,20 @@ import { DocumentManagementHostedService } from './document-management-hosted.se
 function contextFromRequest(request: Request) {
   const user = request.userContext;
   if (!user?.userId || user.tenantId === undefined || user.tenantId === null) {
-    throw Object.assign(new Error('Authenticated Miaoda user context is required.'), {
-      code: 'SERVER_LOGIN_CONTEXT_REQUIRED',
-      statusCode: 401,
-    });
+    throw Object.assign(
+      new Error('Authenticated Miaoda user context is required.'),
+      {
+        code: 'SERVER_LOGIN_CONTEXT_REQUIRED',
+        statusCode: 401,
+      },
+    );
   }
   return {
     actorUserId: String(user.userId),
     tenantId: String(user.tenantId),
     roles: Array.isArray(user.roles) ? [...user.roles] : [],
+    appId: String(user.appId ?? ''),
+    env: String(user.env ?? ''),
   };
 }
 @NeedLogin()
@@ -43,7 +48,10 @@ export class DocumentManagementHostedController {
   ingestFileServiceSelection(@Body() body: unknown, @Req() request: Request) {
     assertProductionMiaodaBrowserIdentityAvailable();
     rejectReservedExternalDiscoveryClaims(body);
-    return this.service.ingestFileServiceSelection(body, contextFromRequest(request));
+    return this.service.ingestFileServiceSelection(
+      body,
+      contextFromRequest(request),
+    );
   }
 
   @Get('document-versions/:documentVersionId')
@@ -52,7 +60,10 @@ export class DocumentManagementHostedController {
     @Req() request: Request,
   ) {
     assertProductionMiaodaBrowserIdentityAvailable();
-    return this.service.getDocumentVersion(documentVersionId, contextFromRequest(request));
+    return this.service.getDocumentVersion(
+      documentVersionId,
+      contextFromRequest(request),
+    );
   }
 }
 

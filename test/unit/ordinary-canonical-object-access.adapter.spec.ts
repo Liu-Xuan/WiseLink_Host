@@ -15,10 +15,10 @@ import {
 } from '../../server/modules/work-item/miaoda-work-item.repository';
 import {
   UnavailableAilyObjectAccessAdapter,
-  UnavailableMiaodaBrowserObjectAccessAdapter,
   UnavailableServiceObjectAccessAdapter,
   UnavailableSessionObjectAccessAdapter,
 } from '../../server/modules/work-item/unavailable-canonical-object-access.adapters';
+import { MiaodaHostedCanonicalObjectAccessAdapter } from '../../server/modules/work-item/miaoda-hosted-canonical-object-access.adapter';
 import { WorkItemRuntimeModule } from '../../server/modules/work-item/work-item-runtime.module';
 import {
   SyntheticDevelopmentCanonicalObjectAccessAdapter,
@@ -221,23 +221,34 @@ describe('synthetic development creator-only fixture', () => {
   });
 });
 
-describe('production browser identity remains unavailable', () => {
-  it('routes a fully populated Miaoda actor to the unavailable adapter', async () => {
-    const result = await productionRouter().freshRead({
-      actor: callerConstructedMiaodaActor(),
+describe('hosted native browser creator-only access', () => {
+  it('fresh-reads and grants only the exact Host creator binding', async () => {
+    const repository = productionRepository();
+    const result = await productionRouter(repository).freshRead({
+      actor: hostedMiaodaActor(),
       action: 'READ_WORK_ITEM',
       accessRoot: { kind: 'WORK_ITEM', id: 'WI1' },
     });
 
     expect(result).toMatchObject({
-      allowed: false,
-      code: 'CANONICAL_IDENTITY_HANDOFF_UNAVAILABLE',
-      denialSource: 'MIAODA_BROWSER_UNAVAILABLE_ADAPTER',
-      statusCode: 503,
+      allowed: true,
+      workItemId: 'WI1',
+      tenantId: 'tenant-1',
+      actorUserId: 'user-a',
+      ownerFact: { isOwner: true },
+      auditProvenance: {
+        identity: 'MIAODA_GATEWAY_USER_CONTEXT',
+        objectAuthorization: 'HOST_WORK_ITEM_REQUESTED_BY',
+      },
+    });
+    expect(repository.loadAuthorizationBinding).toHaveBeenCalledWith({
+      workItemId: 'WI1',
+      tenantId: 'tenant-1',
+      actorUserId: 'user-a',
     });
   });
 
-  it('parses a local header but still returns 503 before repository I/O', async () => {
+  it('does not promote an SDK-parsed header into the required hosted actor decision', async () => {
     const request = {
       headers: gatewayIdentityHeader('user-a', 'tenant-1'),
     } as unknown as Request;
@@ -249,8 +260,8 @@ describe('production browser identity remains unavailable', () => {
       appId: 'app_17bzc551rsg',
     });
 
-    const repository = { loadAuthorizationBinding: jest.fn() };
-    const result = await productionRouter().freshRead({
+    const repository = productionRepository();
+    const result = await productionRouter(repository).freshRead({
       actor: callerConstructedMiaodaActor(),
       action: 'READ_WORK_ITEM',
       accessRoot: { kind: 'WORK_ITEM', id: 'WI1' },
@@ -258,7 +269,7 @@ describe('production browser identity remains unavailable', () => {
 
     expect(result).toMatchObject({
       allowed: false,
-      denialSource: 'MIAODA_BROWSER_UNAVAILABLE_ADAPTER',
+      denialSource: 'MIAODA_OBJECT_ACCESS',
       statusCode: 503,
     });
     expect(repository.loadAuthorizationBinding).not.toHaveBeenCalled();
@@ -266,8 +277,8 @@ describe('production browser identity remains unavailable', () => {
 });
 
 describe('WorkItemRuntimeModule object access routing', () => {
-  it('selects every unavailable adapter through DI with repository I/O=0', async () => {
-    const repository = { loadAuthorizationBinding: jest.fn() };
+  it('selects hosted Miaoda ACL plus fail-closed Aily/service/session adapters through DI', async () => {
+    const repository = productionRepository();
     const moduleRef = await Test.createTestingModule({
       imports: [WorkItemRuntimeModule],
     })
@@ -280,13 +291,13 @@ describe('WorkItemRuntimeModule object access routing', () => {
 
     await expect(
       port.freshRead({
-        actor: callerConstructedMiaodaActor(),
+        actor: hostedMiaodaActor(),
         action: 'READ_WORK_ITEM',
         accessRoot: { kind: 'WORK_ITEM', id: 'WI1' },
       }),
     ).resolves.toMatchObject({
-      denialSource: 'MIAODA_BROWSER_UNAVAILABLE_ADAPTER',
-      statusCode: 503,
+      allowed: true,
+      workItemId: 'WI1',
     });
     await expect(
       port.freshRead({
@@ -310,7 +321,7 @@ describe('WorkItemRuntimeModule object access routing', () => {
     });
     await expect(
       port.freshRead({
-        actor: callerConstructedMiaodaActor(),
+        actor: hostedMiaodaActor(),
         action: 'ISSUE_ATTACHMENT_INTAKE',
         accessRoot: { kind: 'WORK_ITEM', id: 'WI1' },
       }),
@@ -318,7 +329,7 @@ describe('WorkItemRuntimeModule object access routing', () => {
       denialSource: 'SESSION_UNAVAILABLE_ADAPTER',
       statusCode: 503,
     });
-    expect(repository.loadAuthorizationBinding).not.toHaveBeenCalled();
+    expect(repository.loadAuthorizationBinding).toHaveBeenCalledTimes(1);
     await moduleRef.close();
   });
 });
@@ -347,19 +358,50 @@ function syntheticTarget() {
   };
 }
 
-function productionRouter(): CanonicalObjectAccessRouter {
+function productionRouter(
+  repository = productionRepository(),
+): CanonicalObjectAccessRouter {
   return new CanonicalObjectAccessRouter(
-    new UnavailableMiaodaBrowserObjectAccessAdapter(),
+    new MiaodaHostedCanonicalObjectAccessAdapter(repository as never),
     new UnavailableAilyObjectAccessAdapter(),
     new UnavailableServiceObjectAccessAdapter(),
     new UnavailableSessionObjectAccessAdapter(),
   );
 }
 
+function productionRepository() {
+  return {
+    loadAuthorizationBinding: jest.fn(
+      async (input: {
+        workItemId: string;
+        tenantId: string;
+        actorUserId: string;
+      }) =>
+        bindings.find(
+          (value) =>
+            value.workItemId === input.workItemId &&
+            value.tenantId === input.tenantId &&
+            value.requestedByUserId === input.actorUserId,
+        ) ?? null,
+    ),
+  };
+}
+
 function callerConstructedMiaodaActor(): CanonicalMiaodaFinalUserActorContext {
   return {
     ...syntheticMiaodaActorFixture('user-a', 'tenant-1'),
     env: 'runtime',
+  };
+}
+
+function hostedMiaodaActor(): CanonicalMiaodaFinalUserActorContext {
+  const actor = callerConstructedMiaodaActor();
+  return {
+    ...actor,
+    subjectDecision: {
+      ...actor.subjectDecision,
+      version: 'miaoda-hosted-native-sso.v1',
+    },
   };
 }
 

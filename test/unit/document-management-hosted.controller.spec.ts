@@ -47,10 +47,7 @@ describe('DocumentManagementHostedController direct-call defense', () => {
               forbidden,
               forbidden as Request,
             )
-          : controller.getDocumentVersion(
-              'DV-FORGED',
-              forbidden as Request,
-            );
+          : controller.getDocumentVersion('DV-FORGED', forbidden as Request);
 
       expect(invoke).toThrow(
         expect.objectContaining({

@@ -6,6 +6,8 @@ import type {
   CanonicalWorkItemProjection,
   CanonicalEngineerReviewDecision,
   CanonicalLibraryIndexReadResponse,
+  CanonicalDevelopmentWorkItemRunRequest,
+  CanonicalOrdinaryWorkItemRunResponse,
 } from '@shared/api.interface';
 
 import { logger } from '@lark-apaas/client-toolkit/logger';
@@ -16,6 +18,7 @@ const DEFAULT_DOCUMENT_PARSING_QUERY = 'applicability';
 export interface CanonicalHostIdentityContext {
   userId: string;
   tenantId: string;
+  developmentIntakeAvailable?: boolean;
 }
 
 export async function getCanonicalHostIdentityContext(): Promise<CanonicalHostIdentityContext> {
@@ -27,6 +30,23 @@ export async function getCanonicalHostIdentityContext(): Promise<CanonicalHostId
     throw new Error('CANONICAL_HOST_IDENTITY_REQUIRED');
   }
   return response.data;
+}
+
+export async function createDevelopmentWorkItem(
+  input: CanonicalDevelopmentWorkItemRunRequest,
+): Promise<CanonicalOrdinaryWorkItemRunResponse> {
+  try {
+    const response =
+      await axiosForBackend<CanonicalOrdinaryWorkItemRunResponse>({
+        url: '/api/canonical-host/work-items/development-runs',
+        method: 'POST',
+        data: input,
+      });
+    return response.data;
+  } catch (error) {
+    logger.error('创建隔离 DEV WorkItem 失败', error);
+    throw error;
+  }
 }
 
 export async function getLibraryIndex(
