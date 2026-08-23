@@ -1,17 +1,41 @@
-import { readdir, readFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 const clientSourceRoot = resolve(__dirname, '../../client/src');
 
 describe('canonical Host production client boundary', () => {
-  it('does not expose the development WorkItem creation route or API', async () => {
-    const source = (await collectSourceFiles(clientSourceRoot)).join('\n');
-    const normalizedSource = source.toLowerCase();
+  it('exposes only the hosted DEV FileService upload/create/readback entry', async () => {
+    const [api, intake, home] = await Promise.all([
+      readFile(resolve(clientSourceRoot, 'api/canonical-host.ts'), 'utf8'),
+      readFile(
+        resolve(
+          clientSourceRoot,
+          'pages/WorkspaceHomePage/HostedDevelopmentIntake.tsx',
+        ),
+        'utf8',
+      ),
+      readFile(
+        resolve(
+          clientSourceRoot,
+          'pages/WorkspaceHomePage/WorkspaceHomePage.tsx',
+        ),
+        'utf8',
+      ),
+    ]);
 
-    expect(normalizedSource).not.toContain('development-runs');
-    expect(normalizedSource).not.toContain('createworkitemfromdocumentversion');
-    expect(source).not.toContain('创建开发 WorkItem');
-    expect(source).not.toContain('从受控 DocumentVersion 创建开发事项');
+    expect(api).toContain('/api/canonical-host/work-items/development-runs');
+    expect(intake).toContain('wiselink/dev-intake/');
+    expect(intake).toContain('uploadFile');
+    expect(intake).toContain('upsert: false');
+    expect(intake).toContain('createDevelopmentWorkItem');
+    expect(intake).toContain('getDocumentParsingPage');
+    expect(intake).toContain('developmentRunToken');
+    expect(intake).toContain('crypto.subtle.digest');
+    expect(intake).toContain("'SHA-256'");
+    expect(intake).toContain('sourceFileSha256');
+    expect(intake).toContain('sourceByteLength');
+    expect(home).toContain('HostedDevelopmentIntake');
+    expect(home).toContain('identity.developmentIntakeAvailable === true');
   });
 
   it('keeps the library-first navigation and WorkItem deep link', async () => {
@@ -74,15 +98,3 @@ describe('canonical Host production client boundary', () => {
     expect(workbench).toContain('unit: null');
   });
 });
-
-async function collectSourceFiles(directory: string): Promise<string[]> {
-  const entries = await readdir(directory, { withFileTypes: true });
-  const files = await Promise.all(
-    entries.map(async (entry) => {
-      const entryPath = resolve(directory, entry.name);
-      if (entry.isDirectory()) return collectSourceFiles(entryPath);
-      return [await readFile(entryPath, 'utf8')];
-    }),
-  );
-  return files.flat();
-}

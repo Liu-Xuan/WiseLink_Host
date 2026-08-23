@@ -1,4 +1,9 @@
-import { DynamicModule, Module, type Provider } from '@nestjs/common';
+import {
+  DynamicModule,
+  Module,
+  type ModuleMetadata,
+  type Provider,
+} from '@nestjs/common';
 
 import { DocumentManagementHostedController } from './document-management-hosted.controller';
 import { DocumentManagementHostedService } from './document-management-hosted.service';
@@ -6,20 +11,28 @@ import { MiaodaHostedDocumentCatalog } from './miaoda-hosted-document-catalog';
 import { DOCUMENT_MANAGEMENT_INGEST_AUTHORIZER } from './document-management-hosted.tokens';
 
 export interface DocumentManagementHostedModuleOptions {
+  imports?: ModuleMetadata['imports'];
   authorizerProvider: Provider;
 }
 @Module({})
 export class DocumentManagementHostedModule {
-  static register(options: DocumentManagementHostedModuleOptions): DynamicModule {
+  static register(
+    options: DocumentManagementHostedModuleOptions,
+  ): DynamicModule {
     const provider = options?.authorizerProvider;
     if (!provider || typeof provider !== 'object' || !('provide' in provider)) {
-      throw new Error('DocumentManagementHostedModule requires a server-bound authorizerProvider.');
+      throw new Error(
+        'DocumentManagementHostedModule requires a server-bound authorizerProvider.',
+      );
     }
     if (provider.provide !== DOCUMENT_MANAGEMENT_INGEST_AUTHORIZER) {
-      throw new Error('authorizerProvider must bind DOCUMENT_MANAGEMENT_INGEST_AUTHORIZER.');
+      throw new Error(
+        'authorizerProvider must bind DOCUMENT_MANAGEMENT_INGEST_AUTHORIZER.',
+      );
     }
     return {
       module: DocumentManagementHostedModule,
+      imports: options.imports ?? [],
       controllers: [DocumentManagementHostedController],
       providers: [
         provider,

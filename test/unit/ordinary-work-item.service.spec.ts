@@ -22,6 +22,7 @@ jest.mock(
 );
 
 import { OrdinaryWorkItemService } from '../../server/modules/work-item/ordinary-work-item.service';
+import { MiaodaFileServiceArtifactStore } from '../../server/modules/document-management/src/hosted/miaodaFileServiceArtifactStore.js';
 
 const ACTOR = {
   userId: 'engineer-1001',
@@ -117,6 +118,19 @@ function target() {
 }
 
 describe('OrdinaryWorkItemService run identity', () => {
+  beforeEach(() => {
+    jest.mocked(MiaodaFileServiceArtifactStore).mockImplementation(
+      () =>
+        ({
+          readSelection: jest.fn().mockResolvedValue({
+            sha256: 'e'.repeat(64),
+            byteLength: 2048,
+            providerObjectId: 'uploaded-object',
+          }),
+        }) as never,
+    );
+  });
+
   it('rejects a forged selection before every DM, FileService, binding, resolver, reserve, attempt, and vertical I/O', async () => {
     const targetValue = target();
 
@@ -151,6 +165,35 @@ describe('OrdinaryWorkItemService run identity', () => {
       denialSource: 'MIAODA_BROWSER_UNAVAILABLE_ADAPTER',
     });
 
+    expectNoOrdinaryRunIo(targetValue);
+  });
+
+  it('requires the single development route for a hosted FileService selection', async () => {
+    const targetValue = target();
+    const previousSandbox = process.env.SANDBOX_ID;
+    const previousLocal = process.env.MIAODA_LOCAL_DEV;
+    process.env.SANDBOX_ID = 'unit-hosted-sandbox';
+    delete process.env.MIAODA_LOCAL_DEV;
+    try {
+      await expect(
+        targetValue.service.parsePdf(
+          {
+            selection: {
+              bucketId: 'bucket-default',
+              filePath:
+                'wiselink/dev-intake/0f8fad5b-d9cb-469f-a165-70867728950e/source.pdf',
+            },
+          },
+          { ...ACTOR, env: 'preview' },
+        ),
+      ).rejects.toMatchObject({
+        code: 'CANONICAL_DEVELOPMENT_RUN_REQUIRED',
+        statusCode: 400,
+      });
+    } finally {
+      restoreProcessEnv('SANDBOX_ID', previousSandbox);
+      restoreProcessEnv('MIAODA_LOCAL_DEV', previousLocal);
+    }
     expectNoOrdinaryRunIo(targetValue);
   });
 
@@ -192,6 +235,105 @@ describe('OrdinaryWorkItemService run identity', () => {
     expect(vertical.runPdf).not.toHaveBeenCalled();
   });
 
+  it('ingests an owned hosted selection, reserves a DEV WorkItem, and returns the vertical result', async () => {
+    const targetValue = target();
+    targetValue.documentManagement.ingestFileServiceSelection.mockResolvedValue(
+      {
+        documentVersionId: 'document-version-sb',
+      },
+    );
+    const previousSandbox = process.env.SANDBOX_ID;
+    const previousLocal = process.env.MIAODA_LOCAL_DEV;
+    process.env.SANDBOX_ID = 'unit-hosted-sandbox';
+    delete process.env.MIAODA_LOCAL_DEV;
+    try {
+      const result = await targetValue.service.createDevelopmentRun(
+        {
+          selection: {
+            bucketId: 'bucket-default',
+            filePath:
+              'wiselink/dev-intake/0f8fad5b-d9cb-469f-a165-70867728950e/source.pdf',
+          },
+          developmentRunToken: '7c9e6679-7425-40de-944b-e07fc1f90ae7',
+          query: 'applicability',
+        },
+        { ...ACTOR, env: 'preview' },
+      );
+
+      expect(result).toMatchObject({
+        workItemCreated: true,
+        workItemReused: false,
+        actionAttemptId: 'ATT-NEW-SB',
+        result: { workItem: { workItemId: 'WI-NEW-SB' } },
+      });
+      expect(
+        targetValue.documentManagement.assertCanIngest,
+      ).toHaveBeenCalledWith(
+        {
+          actorUserId: ACTOR.userId,
+          tenantId: ACTOR.tenantId,
+          roles: ACTOR.roles,
+          appId: ACTOR.appId,
+          env: 'preview',
+        },
+        {
+          bucketId: 'bucket-default',
+          filePath:
+            'wiselink/dev-intake/0f8fad5b-d9cb-469f-a165-70867728950e/source.pdf',
+        },
+      );
+      expect(
+        targetValue.documentManagement.ingestFileServiceSelection,
+      ).toHaveBeenCalledTimes(1);
+      expect(targetValue.repository.reserve).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tenantId: ACTOR.tenantId,
+          actorUserId: ACTOR.userId,
+          documentVersionId: 'document-version-sb',
+          sourceFileSha256: 'a'.repeat(64),
+          sourceByteLength: 1024,
+          runKey: 'dev:7c9e6679-7425-40de-944b-e07fc1f90ae7',
+        }),
+      );
+      expect(
+        targetValue.repository.loadTenantRunAuthorizationBinding,
+      ).not.toHaveBeenCalled();
+      expect(targetValue.vertical.runPdf).toHaveBeenCalledTimes(1);
+    } finally {
+      restoreProcessEnv('SANDBOX_ID', previousSandbox);
+      restoreProcessEnv('MIAODA_LOCAL_DEV', previousLocal);
+    }
+  });
+
+  it('rejects a runtime development create before every downstream I/O', async () => {
+    const targetValue = target();
+    const previousSandbox = process.env.SANDBOX_ID;
+    const previousLocal = process.env.MIAODA_LOCAL_DEV;
+    process.env.SANDBOX_ID = 'unit-hosted-sandbox';
+    delete process.env.MIAODA_LOCAL_DEV;
+    try {
+      await expect(
+        targetValue.service.createDevelopmentRun(
+          {
+            selection: {
+              bucketId: 'bucket-default',
+              filePath:
+                'wiselink/dev-intake/0f8fad5b-d9cb-469f-a165-70867728950e/source.pdf',
+            },
+            developmentRunToken: '7c9e6679-7425-40de-944b-e07fc1f90ae7',
+          },
+          { ...ACTOR, env: 'runtime' },
+        ),
+      ).rejects.toMatchObject({
+        code: 'DEVELOPMENT_WORK_ITEM_PREVIEW_REQUIRED',
+        statusCode: 403,
+      });
+    } finally {
+      restoreProcessEnv('SANDBOX_ID', previousSandbox);
+      restoreProcessEnv('MIAODA_LOCAL_DEV', previousLocal);
+    }
+    expectNoOrdinaryRunIo(targetValue);
+  });
 });
 
 function expectNoOrdinaryRunIo(targetValue: ReturnType<typeof target>): void {
@@ -208,17 +350,18 @@ function expectNoOrdinaryRunIo(targetValue: ReturnType<typeof target>): void {
     targetValue.repository.loadTenantDocumentAuthorizationBinding,
   ).not.toHaveBeenCalled();
   expect(targetValue.repository.reserve).not.toHaveBeenCalled();
-  expect(
-    targetValue.repository.reserveAssessmentAction,
-  ).not.toHaveBeenCalled();
+  expect(targetValue.repository.reserveAssessmentAction).not.toHaveBeenCalled();
   expect(
     targetValue.repository.reserveDynamicEvaluationAction,
   ).not.toHaveBeenCalled();
   expect(
     targetValue.repository.reserveOverallSynthesisAction,
   ).not.toHaveBeenCalled();
-  expect(
-    targetValue.vertical.authorizeExistingWorkItem,
-  ).not.toHaveBeenCalled();
+  expect(targetValue.vertical.authorizeExistingWorkItem).not.toHaveBeenCalled();
   expect(targetValue.vertical.runPdf).not.toHaveBeenCalled();
+}
+
+function restoreProcessEnv(key: string, value: string | undefined): void {
+  if (value === undefined) delete process.env[key];
+  else process.env[key] = value;
 }

@@ -9,11 +9,20 @@ export interface UploadFileData {
   url: string;
 }
 
-export async function uploadFile(file: File): Promise<UploadFileData> {
+export interface UploadFileOptions {
+  filePath?: string;
+  contentType?: string;
+  upsert?: boolean;
+}
+
+export async function uploadFile(
+  file: File,
+  options: UploadFileOptions = {},
+): Promise<UploadFileData> {
   const dataloom = await getDataloom();
   const bucket = dataloom.storage.from(getDefaultBucketId());
 
-  const result = await bucket.uploadFile(file);
+  const result = await bucket.uploadFile(file, options);
 
   if (result.error) {
     throw result.error;

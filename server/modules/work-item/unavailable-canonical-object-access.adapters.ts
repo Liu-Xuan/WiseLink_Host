@@ -7,11 +7,13 @@ import type {
 } from './canonical-object-access.port';
 
 /**
- * The installed runtime parses a caller-constructable header and exposes no
- * signature or hosted-ingress attestation to application code. Browser object
- * access therefore remains unavailable even when @NeedLogin sees a userId.
+ * Explicit closed composition used when no platform-hosted native-user ingress
+ * has constructed an eligible actor.
  */
 @Injectable()
+// Retained as an explicit closed adapter for negative-path composition tests;
+// the hosted runtime uses MiaodaHostedCanonicalObjectAccessAdapter instead.
+// eslint-disable-next-line @darraghor/nestjs-typed/injectable-should-be-provided
 export class UnavailableMiaodaBrowserObjectAccessAdapter implements CanonicalObjectAccessPort {
   async freshRead(
     input: CanonicalObjectAccessInput,

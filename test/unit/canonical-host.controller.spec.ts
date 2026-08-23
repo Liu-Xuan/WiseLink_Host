@@ -23,7 +23,7 @@ jest.mock('@lark-apaas/fullstack-nestjs-core', () => {
   };
 });
 
-import { BadRequestException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException } from '@nestjs/common';
 
 import { CanonicalHostController } from '../../server/modules/canonical-host/canonical-host.controller';
 
@@ -33,7 +33,7 @@ const HOST_REQUEST = {
     tenantId: 'tenant-2001',
     appId: 'app_17bzc551rsg',
     roles: ['authenticated'],
-    env: 'development',
+    env: 'preview',
   },
 };
 
@@ -80,6 +80,39 @@ function target() {
 }
 
 describe('CanonicalHostController assessment actions', () => {
+  const previousSandboxId = process.env.SANDBOX_ID;
+  const previousLocalDev = process.env.MIAODA_LOCAL_DEV;
+
+  beforeAll(() => {
+    process.env.SANDBOX_ID = 'unit-hosted-sandbox';
+    delete process.env.MIAODA_LOCAL_DEV;
+  });
+
+  afterAll(() => {
+    restoreEnvironmentVariable('SANDBOX_ID', previousSandboxId);
+    restoreEnvironmentVariable('MIAODA_LOCAL_DEV', previousLocalDev);
+  });
+
+  it('advertises DEV intake only to the preview development role', () => {
+    const { controller } = target();
+    const preview = {
+      userContext: {
+        ...HOST_REQUEST.userContext,
+        roles: ['authenticated', 'wiselink_development'],
+      },
+    };
+    const runtime = {
+      userContext: { ...preview.userContext, env: 'runtime' },
+    };
+
+    expect(controller.identityContext(preview as never)).toMatchObject({
+      developmentIntakeAvailable: true,
+    });
+    expect(controller.identityContext(runtime as never)).toMatchObject({
+      developmentIntakeAvailable: false,
+    });
+  });
+
   it('routes the tenant-scoped LibraryIndex read through the authenticated actor', async () => {
     const { controller, libraryIndex } = target();
 
@@ -97,14 +130,27 @@ describe('CanonicalHostController assessment actions', () => {
       }),
     });
     const actor = libraryIndex.read.mock.calls[0]?.[0]?.actor;
-    expect(actor).not.toHaveProperty('objectAccessActor');
+    expect(actor).toMatchObject({
+      userId: 'engineer-1001',
+      tenantId: 'tenant-2001',
+      appId: 'app_17bzc551rsg',
+      env: 'preview',
+      objectAccessActor: {
+        canonicalSubject: {
+          namespace: 'MIAODA_USER_ID',
+          id: 'engineer-1001',
+        },
+        identityProvenance: 'MIAODA_GATEWAY_USER_CONTEXT',
+        applicationScopeId: 'app_17bzc551rsg',
+      },
+    });
   });
 
   it('requires a logged-in actor before entering the LibraryIndex service', () => {
     const { controller, libraryIndex } = target();
-    expect(() =>
+    expectIdentityHandoffUnavailable(() =>
       controller.library('WI-LIBRARY-1', { userContext: null } as never),
-    ).toThrow(UnauthorizedException);
+    );
     expect(libraryIndex.read).not.toHaveBeenCalled();
   });
 
@@ -239,7 +285,7 @@ describe('CanonicalHostController assessment actions', () => {
   it('requires the authenticated host actor for assessment actions', async () => {
     const { engineerReviews, controller } = target();
 
-    expect(() =>
+    expectIdentityHandoffUnavailable(() =>
       controller.recordEngineerReview(
         'WI-SB-1001',
         {
@@ -250,7 +296,7 @@ describe('CanonicalHostController assessment actions', () => {
         },
         { userContext: null } as never,
       ),
-    ).toThrow(UnauthorizedException);
+    );
     expect(engineerReviews.recordReview).not.toHaveBeenCalled();
   });
 
@@ -276,11 +322,11 @@ describe('CanonicalHostController assessment actions', () => {
   it('requires the authenticated host actor for AEO confirmation', () => {
     const { controller, integratedAssessments } = target();
 
-    expect(() =>
+    expectIdentityHandoffUnavailable(() =>
       controller.confirmOpenClawOverallForAeo('WI-SB-1001', {}, {
         userContext: null,
       } as never),
-    ).toThrow(UnauthorizedException);
+    );
     expect(
       integratedAssessments.confirmOpenClawOverallForAeo,
     ).not.toHaveBeenCalled();
@@ -329,3 +375,24 @@ describe('CanonicalHostController assessment actions', () => {
     expect(aeo.generateCandidate).not.toHaveBeenCalled();
   });
 });
+
+function expectIdentityHandoffUnavailable(action: () => unknown): void {
+  let caught: unknown;
+  try {
+    action();
+  } catch (error) {
+    caught = error;
+  }
+  expect(caught).toMatchObject({
+    code: 'CANONICAL_IDENTITY_HANDOFF_UNAVAILABLE',
+    statusCode: 503,
+  });
+}
+
+function restoreEnvironmentVariable(name: string, value: string | undefined) {
+  if (value === undefined) {
+    delete process.env[name];
+    return;
+  }
+  process.env[name] = value;
+}

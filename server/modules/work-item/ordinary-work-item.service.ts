@@ -77,7 +77,16 @@ export class OrdinaryWorkItemService {
     actor: CanonicalHostActor,
     origin: 'MIAODA' | 'AILY' = 'MIAODA',
   ): Promise<CanonicalOrdinaryWorkItemRunResponse> {
-    assertProductionMiaodaBrowserIdentityAvailable();
+    assertProductionMiaodaBrowserIdentityAvailable(actor);
+    if (input.selection !== undefined) {
+      throw Object.assign(
+        new Error('New FileService selections require the development route.'),
+        {
+          code: 'CANONICAL_DEVELOPMENT_RUN_REQUIRED',
+          statusCode: 400,
+        },
+      );
+    }
     return this.runPdf(input, actor, origin, 'canonical');
   }
 
@@ -85,7 +94,7 @@ export class OrdinaryWorkItemService {
     input: CanonicalDevelopmentWorkItemRunRequest,
     actor: CanonicalHostActor,
   ): Promise<CanonicalOrdinaryWorkItemRunResponse> {
-    assertProductionMiaodaBrowserIdentityAvailable();
+    assertProductionMiaodaBrowserIdentityAvailable(actor);
     requireDevelopmentWorkItemRole(actor);
     return this.runDevelopment(input, actor);
   }
@@ -110,10 +119,9 @@ export class OrdinaryWorkItemService {
       input.developmentRunToken,
     );
     return this.runPdf(
-      {
-        documentVersionId: input.documentVersionId,
-        query: input.query,
-      },
+      input.documentVersionId
+        ? { documentVersionId: input.documentVersionId, query: input.query }
+        : { selection: input.selection, query: input.query },
       actor,
       'MIAODA',
       `dev:${developmentRunToken}`,
@@ -132,6 +140,8 @@ export class OrdinaryWorkItemService {
       actorUserId: actor.userId,
       tenantId: actor.tenantId,
       roles: [...actor.roles],
+      appId: actor.appId,
+      env: actor.env,
     };
     const documentVersionId = input.documentVersionId
       ? requiredText(input.documentVersionId, 'documentVersionId', 96)
@@ -294,6 +304,15 @@ export class OrdinaryWorkItemService {
 }
 
 function requireDevelopmentWorkItemRole(actor: CanonicalHostActor): void {
+  if (actor.env !== 'preview') {
+    throw Object.assign(
+      new Error('Development WorkItem creation is preview-only.'),
+      {
+        code: 'DEVELOPMENT_WORK_ITEM_PREVIEW_REQUIRED',
+        statusCode: 403,
+      },
+    );
+  }
   if (!actor.roles.includes(CANONICAL_DEVELOPMENT_ROLE_ID)) {
     throw Object.assign(new Error('Development WorkItem role is required.'), {
       code: 'DEVELOPMENT_WORK_ITEM_ROLE_REQUIRED',

@@ -756,7 +756,11 @@ export interface CanonicalPdfVerticalRunResponse {
 }
 
 export interface CanonicalDevelopmentWorkItemRunRequest {
-  documentVersionId: string;
+  documentVersionId?: string;
+  selection?: {
+    bucketId: string;
+    filePath: string;
+  };
   developmentRunToken: string;
   query?: string;
 }

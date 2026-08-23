@@ -5,34 +5,39 @@ import { CanonicalObjectAccessRouter } from './canonical-object-access.router';
 import { MiaodaWorkItemRepository } from './miaoda-work-item.repository';
 import {
   UnavailableAilyObjectAccessAdapter,
-  UnavailableMiaodaBrowserObjectAccessAdapter,
   UnavailableServiceObjectAccessAdapter,
   UnavailableSessionObjectAccessAdapter,
 } from './unavailable-canonical-object-access.adapters';
+import { MiaodaHostedCanonicalObjectAccessAdapter } from './miaoda-hosted-canonical-object-access.adapter';
 
 @Module({
   providers: [
     MiaodaWorkItemRepository,
-    UnavailableMiaodaBrowserObjectAccessAdapter,
+    {
+      provide: MiaodaHostedCanonicalObjectAccessAdapter,
+      inject: [MiaodaWorkItemRepository],
+      useFactory: (workItems: MiaodaWorkItemRepository) =>
+        new MiaodaHostedCanonicalObjectAccessAdapter(workItems),
+    },
     UnavailableAilyObjectAccessAdapter,
     UnavailableServiceObjectAccessAdapter,
     UnavailableSessionObjectAccessAdapter,
     {
       provide: CanonicalObjectAccessRouter,
       inject: [
-        UnavailableMiaodaBrowserObjectAccessAdapter,
+        MiaodaHostedCanonicalObjectAccessAdapter,
         UnavailableAilyObjectAccessAdapter,
         UnavailableServiceObjectAccessAdapter,
         UnavailableSessionObjectAccessAdapter,
       ],
       useFactory: (
-        unavailableMiaoda: UnavailableMiaodaBrowserObjectAccessAdapter,
+        hostedMiaoda: MiaodaHostedCanonicalObjectAccessAdapter,
         unavailableAily: UnavailableAilyObjectAccessAdapter,
         unavailableService: UnavailableServiceObjectAccessAdapter,
         unavailableSession: UnavailableSessionObjectAccessAdapter,
       ) =>
         new CanonicalObjectAccessRouter(
-          unavailableMiaoda,
+          hostedMiaoda,
           unavailableAily,
           unavailableService,
           unavailableSession,

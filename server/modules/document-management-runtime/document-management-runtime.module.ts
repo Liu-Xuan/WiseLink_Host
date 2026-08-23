@@ -9,8 +9,8 @@ import { WorkItemRuntimeModule } from '../work-item/work-item-runtime.module';
 
 @Module({
   imports: [
-    WorkItemRuntimeModule,
     DocumentManagementHostedModule.register({
+      imports: [WorkItemRuntimeModule],
       authorizerProvider: {
         provide: DOCUMENT_MANAGEMENT_INGEST_AUTHORIZER,
         useClass: OrdinaryDocumentManagementAuthorizer,

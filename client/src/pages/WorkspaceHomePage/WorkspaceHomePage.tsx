@@ -46,6 +46,7 @@ import {
 } from '@client/src/utils/recent-work-items';
 
 import './workspace-home.css';
+import { HostedDevelopmentIntake } from './HostedDevelopmentIntake';
 
 type LibrarySelection = string;
 
@@ -150,6 +151,8 @@ export default function WorkspaceHomePage() {
   >([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [developmentIntakeAvailable, setDevelopmentIntakeAvailable] =
+    useState(false);
   const [refreshRevision, setRefreshRevision] = useState(0);
 
   useEffect(() => {
@@ -160,9 +163,13 @@ export default function WorkspaceHomePage() {
     setData(null);
     setError(null);
     setRecentWorkItems([]);
+    setDevelopmentIntakeAvailable(false);
     void (async () => {
       const identity = await getCanonicalHostIdentityContext();
       if (cancelled) return;
+      setDevelopmentIntakeAvailable(
+        identity.developmentIntakeAvailable === true,
+      );
       setRecentWorkItems(readRecentWorkItems(identity));
       if (!deepLinkedWorkItemId) {
         setSelection('work-item');
@@ -361,6 +368,8 @@ export default function WorkspaceHomePage() {
           </div>
         </div>
       </header>
+
+      {developmentIntakeAvailable ? <HostedDevelopmentIntake /> : null}
 
       <section
         className="library-query-band"

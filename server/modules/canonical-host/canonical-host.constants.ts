@@ -34,6 +34,8 @@ export const CANONICAL_OPENCLAW_OVERALL_PROVIDER = Symbol(
   'CANONICAL_OPENCLAW_OVERALL_PROVIDER',
 );
 
+export const CANONICAL_MIAODA_APP_ID = 'app_17bzc551rsg';
+
 // Verified with platform role-list/role-get for app_17bzc551rsg.
 // This role is limited to controlled development WorkItem creation/S1 flows;
 // it is never an object-read bypass.

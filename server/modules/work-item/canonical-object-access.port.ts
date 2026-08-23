@@ -61,9 +61,9 @@ export interface CanonicalFeishuSubjectMappingEvidence {
 
 /**
  * This exported interface is only an asserted snapshot shape and is never
- * identity proof by itself. Production Miaoda browser routing remains
- * unavailable until Host can verify a platform identity exchange or a hosted
- * ingress trust contract; copying every field must never create a grant.
+ * identity proof by itself. Application controllers may construct it only
+ * after the platform-hosted ingress has accepted the native user context;
+ * external request bodies must never supply this object.
  */
 export interface CanonicalMiaodaFinalUserActorContext {
   principalKind: 'FINAL_USER';
