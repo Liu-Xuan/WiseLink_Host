@@ -380,6 +380,31 @@ export class ActionAttemptLifecycleService {
     );
   }
 
+  async finishResultGateFailure(
+    prepared: PreparedActionAttemptCommit,
+    cause: unknown,
+  ): Promise<ActionAttemptTerminalProjection> {
+    if (prepared.row.status !== 'COMMITTING') {
+      return terminalProjection(prepared.row);
+    }
+    const errorMessage = boundedFailureMessage(cause);
+    const updated = await this.repository.finishResultGateFailure({
+      attemptId: prepared.row.attemptId,
+      leaseToken: requiredLeaseToken(prepared.row),
+      leaseGeneration: prepared.row.leaseGeneration,
+      result: prepared.result,
+      errorCode: resultGateErrorCode(errorMessage),
+      errorMessage,
+      now: new Date(),
+    });
+    if (!updated) throw conflict('ACTION_ATTEMPT_TERMINALIZATION_LOST');
+    return terminalProjection(
+      requiredRow(
+        await this.repository.readByAttemptId(prepared.row.attemptId),
+      ),
+    );
+  }
+
   async requestCancel(input: {
     attemptRef: string;
     tenantId: string;
@@ -502,6 +527,10 @@ export class ActionAttemptLifecycleService {
       const claimed = await this.repository.claimExact({
         attemptId: row.attemptId,
         expectedStatus: row.status as 'QUEUED' | 'RETRY_SCHEDULED',
+        expectedClaimCount: row.claimCount,
+        expectedLeaseGeneration: row.leaseGeneration,
+        operationRef: requiredOperationRef(row),
+        startedAt: row.startedAt,
         leaseOwner: input.leaseOwner,
         leaseSlot,
         now,
@@ -781,6 +810,27 @@ function requiredLeaseToken(row: ActionAttemptRow): string {
   if (!row.leaseToken)
     throw leaseConflict('ACTION_ATTEMPT_LEASE_TOKEN_MISSING');
   return row.leaseToken;
+}
+
+function requiredOperationRef(row: ActionAttemptRow): string {
+  if (!row.operationRef) throw conflict('ACTION_ATTEMPT_OPERATION_REF_MISSING');
+  return row.operationRef;
+}
+
+function boundedFailureMessage(cause: unknown): string {
+  const message = cause instanceof Error ? cause.message : String(cause);
+  return message.trim().slice(0, 4_000) || 'Host Result Gate rejected output.';
+}
+
+function resultGateErrorCode(message: string): string {
+  return (
+    message
+      .split(':', 1)[0]
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9._-]+/gu, '_')
+      .slice(0, 160) || 'HOST_RESULT_GATE_REJECTED'
+  );
 }
 
 function requiredRow(row: ActionAttemptRow | null): ActionAttemptRow {

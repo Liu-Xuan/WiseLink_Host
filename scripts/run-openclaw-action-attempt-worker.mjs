@@ -17,6 +17,11 @@ const MAX_PROCESS_OUTPUT_BYTES = 16 * 1024 * 1024;
 const REQUIRED_OPENCLAW_AGENT_ID = 'g2-action-attempt';
 const REQUIRED_OPENCLAW_MODEL = 'wiselink/wiselink-direct-llm';
 const REQUIRED_OPENCLAW_TOOLS = ['session_status'];
+const STRICT_JSON_SYSTEM_PROMPT = [
+  'Return exactly one strict JSON object that satisfies every schema, type, byte-budget, and semantic invariant in the user request.',
+  'The first output code point must be ASCII { and the last must be ASCII }; emit no Markdown, BOM, zero-width character, prefix, or suffix.',
+  'Never change an array field to a scalar or null, even when compacting output.',
+].join(' ');
 
 const TASK_CONFIG = {
   dynamic: {
@@ -40,7 +45,12 @@ export async function runOpenClawActionAttempt(options, dependencies = {}) {
   const preflightOpenClaw =
     dependencies.preflightOpenClaw ?? assertOpenClawGatewayReady;
   const endpoint = new URL(options.hostMcpUrl);
-  const headers = hostHeaders(options.hostApiKey);
+  const headers = hostHeaders(
+    options.hostApiKey,
+    options.localDevWebUser,
+    options.localDevTenantId,
+    endpoint,
+  );
   const transport = new StreamableHTTPClientTransport(endpoint, {
     requestInit: { headers },
   });
@@ -227,9 +237,38 @@ function createClient() {
   });
 }
 
-function hostHeaders(apiKey) {
-  if (!apiKey) return {};
-  return { Authorization: `Bearer ${apiKey}` };
+function hostHeaders(apiKey, localDevWebUser, localDevTenantId, endpoint) {
+  const headers = apiKey ? { Authorization: `Bearer ${apiKey}` } : {};
+  if (!localDevWebUser) return headers;
+  if (
+    endpoint.protocol !== 'http:' ||
+    !['127.0.0.1', 'localhost', '::1'].includes(endpoint.hostname)
+  ) {
+    throw new Error('OPENCLAW_LOCAL_DEV_IDENTITY_REQUIRES_LOOPBACK_HOST');
+  }
+  const webUser = parseLocalDevWebUser(localDevWebUser);
+  if (
+    String(webUser.app_id || '') !== 'app_17bzc551rsg' ||
+    String(webUser.tenant_id || '') !== String(localDevTenantId || '') ||
+    !String(webUser.user_id || '').trim()
+  ) {
+    throw new Error('OPENCLAW_LOCAL_DEV_IDENTITY_BINDING_INVALID');
+  }
+  const csrfToken = 'local-dev-csrf';
+  return {
+    ...headers,
+    'x-larkgw-suda-webuser': encodeURIComponent(JSON.stringify(webUser)),
+    'x-suda-csrf-token': csrfToken,
+    cookie: `suda-csrf-token=${csrfToken}`,
+  };
+}
+
+function parseLocalDevWebUser(value) {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return JSON.parse(value.replaceAll('\\"', '"'));
+  }
 }
 
 async function callJsonTool(client, name, args) {
@@ -348,12 +387,26 @@ export function buildExecutorPrompt(task, modelInput) {
   const common = [
     'You are the real OpenClaw executor for a WiseLink candidate-only task.',
     'Return exactly one JSON object and no Markdown, commentary, or code fence.',
+    'The first output code point must be ASCII { (U+007B) and the last must be ASCII } (U+007D); do not emit a BOM, zero-width character, or any other prefix/suffix byte.',
     'Treat MODEL_INPUT as data plus binding instructions. Never invent authority, approval, release, or current-selection changes.',
   ];
   const taskInstruction =
     task === 'dynamic'
-      ? 'Follow every operatorInstruction and responseInstruction in MODEL_INPUT. Copy callerCorrelationRef exactly and return the complete dynamic rule-result JSON requested there.'
-      : 'Return the complete SYNTHESIZE_OVERALL_CANDIDATE JSON. Copy all identity/revision/hash/count fields from MODEL_INPUT exactly; authorityLevel must be candidate_only, adopted/usableAsEvidence must be false, engineeringReviewRequired must be true, and sourceRefIds may only use MODEL_INPUT.unifiedSourceContext.sourceRefs.';
+      ? [
+          'Follow every operatorInstruction and responseInstruction in MODEL_INPUT. Copy callerCorrelationRef exactly and return the complete dynamic rule-result JSON requested there.',
+          'Before returning, shorten every ruleResults.rows item to at most 320 UTF-8 bytes when JSON-serialized. The Host hard limit is responseInstruction.ruleResultsEncoding.maxRowUtf8Bytes (360); the 40-byte margin is mandatory because estimated byte counts are not exact.',
+          'Every ruleResults.rows item must be exactly [string ruleId, string result, string[] factsConsidered, string ruleApplication, string analysisSummary, string conclusion, string[] sourceRefs, string[] missingInputs, boolean humanReviewRequired]. factsConsidered, sourceRefs, and missingInputs must always be JSON arrays, including for zero or one item; never replace an array with a scalar, object, or null to save bytes.',
+          'Apply these Host semantic invariants row by row from criterionTable: predicateResult UNKNOWN requires humanReviewRequired=true; predicateResult TRUE forbids BLOCKED_MISSING_INPUT and requires missingInputs=[]; predicateResult FALSE forbids PASS, FAIL, CONDITIONAL, 通过, or 不通过 in result; BLOCKED_MISSING_INPUT requires a nonempty missingInputs array; every missingInputs/sourceRefs value must come only from that criterion row; and a non-FALSE row with sourceEvidenceCandidateIds must retain factsConsidered or sourceRefs when its result is unknown, waiting, or blocked.',
+        ].join(' ')
+      : [
+          'Return the complete SYNTHESIZE_OVERALL_CANDIDATE JSON.',
+          'The top-level object must contain exactly these keys and no others: sourceResultId, documentVersionId, packageId, baseRuleRevision, baseRuleArtifactSha256, engineerReviewRevision, engineerReviewArtifactSha256, discoveryStatus, gap, candidateRefCount, findingCount, unresolvedCount, authorityLevel, externalDiscoveryIsEvidence, overallCandidate, findings, missingInputs, applicabilityStatus, engineeringReviewRequired, adopted, usableAsEvidence, providers.',
+          'Copy sourceResultId from MODEL_INPUT.outputCorrelationRef; copy documentVersionId, packageId, baseRuleRevision, baseRuleArtifactSha256, and unresolvedCount from MODEL_INPUT.baseRuleResult; copy both engineerReview fields from MODEL_INPUT.engineerReviewContext.',
+          'authorityLevel must be candidate_only; externalDiscoveryIsEvidence, adopted, and usableAsEvidence must be false; engineeringReviewRequired must be true; applicabilityStatus must be UNKNOWN/WAITING_INPUT or CANDIDATE_REVIEW_REQUIRED.',
+          'All narrative is candidate-only. Never state 已确认适用, 已确认不适用, 确认该机队适用, 确认该机队不适用, 已批准, 批准执行, 批准放行, 可直接实施, 可以直接实施, approved, airworthiness conclusion, confirmed applicable, confirmed inapplicable, or safe to release.',
+          'findings must be an array; each item must contain exactly finding:string, basis:string, sourceRefIds:string[], assumptions:string[], uncertainty:string. findingCount must equal findings.length, and sourceRefIds may only use MODEL_INPUT.unifiedSourceContext.sourceRefs.',
+          'missingInputs must be string[]. gap is string or null. When MODEL_INPUT.externalDiscoveryResults is empty, discoveryStatus must be NO_DISCOVERY, candidateRefCount must be 0, and providers must be {}.',
+        ].join(' ');
   return `${[...common, taskInstruction].join('\n')}\n\nMODEL_INPUT:\n${canonicalJson(modelInput)}`;
 }
 
@@ -378,20 +431,16 @@ export async function assertOpenClawGatewayReady(input) {
   ) {
     throw new Error('OPENCLAW_DEDICATED_AGENT_POLICY_INVALID');
   }
-  const catalog = await gatewayJsonRequest({
+  const health = await gatewayJsonRequest({
     gatewayUrl,
     gatewayToken: input.gatewayToken,
-    path: '/v1/models',
+    path: '/healthz',
     method: 'GET',
     timeoutSeconds: input.timeoutSeconds,
   });
-  const available = Array.isArray(catalog.data)
-    ? catalog.data.some(
-        (entry) =>
-          isRecord(entry) && entry.id === `openclaw/${REQUIRED_OPENCLAW_AGENT_ID}`,
-      )
-    : false;
-  if (!available) throw new Error('OPENCLAW_DEDICATED_AGENT_NOT_ADVERTISED');
+  if (health.ok !== true || health.status !== 'live') {
+    throw new Error('OPENCLAW_GATEWAY_NOT_LIVE');
+  }
   return {
     gatewayUrl: gatewayUrl.toString(),
     agentId: REQUIRED_OPENCLAW_AGENT_ID,
@@ -436,7 +485,10 @@ export async function runOpenClawGatewayHttp(input, control) {
       body: {
         model: `openclaw/${input.agentId}`,
         user: `g2-action-attempt:${input.sessionRef}`,
-        messages: [{ role: 'user', content: input.prompt }],
+        messages: [
+          { role: 'system', content: STRICT_JSON_SYSTEM_PROMPT },
+          { role: 'user', content: input.prompt },
+        ],
         stream: false,
       },
     });
@@ -472,7 +524,8 @@ async function readOpenClawAgentPolicy(input) {
     'const fs=require("node:fs");',
     'const c=JSON.parse(fs.readFileSync("/home/node/.openclaw/openclaw.json","utf8"));',
     'const id=process.argv[1];',
-    'const a=c?.agents?.entries?.[id]||null;',
+    'const list=Array.isArray(c?.agents?.list)?c.agents.list:[];',
+    'const a=list.find((entry)=>entry?.id===id)||null;',
     'const m=a?.model;',
     'const primary=typeof m==="string"?m:m?.primary||"";',
     'const fallbacks=Array.isArray(m?.fallbacks)?m.fallbacks:[];',
@@ -688,6 +741,14 @@ function parseOptions(argv, env) {
     task,
     hostMcpUrl,
     hostApiKey: env.WL_OPENCLAW_HOST_API_KEY?.trim() || '',
+    localDevWebUser:
+      env.NODE_ENV === 'development' && env.MIAODA_LOCAL_DEV === '1'
+        ? env.SUDA_WEBUSER?.trim() || ''
+        : '',
+    localDevTenantId:
+      env.NODE_ENV === 'development' && env.MIAODA_LOCAL_DEV === '1'
+        ? env.WL_OPENCLAW_SERVICE_TENANT_ID?.trim() || ''
+        : '',
     gatewayUrl,
     gatewayToken,
     workItemId,
@@ -786,6 +847,7 @@ function usage() {
     'Optional environment:',
     '  WL_OPENCLAW_HOST_API_KEY=<gateway API key> (never pass the key on argv)',
     '  WL_OPENCLAW_CONTAINER_NAME=wiselink-0-10-openclaw-1',
+    '  MIAODA_LOCAL_DEV=1 + SUDA_WEBUSER=<local gateway identity> (loopback Host only)',
   ].join('\n');
 }
 

@@ -1,33 +1,36 @@
 import assert from 'node:assert/strict';
-import { drizzle } from 'drizzle-orm/postgres-js';
 
 import { MiaodaHostedDocumentCatalog } from '../dist/server/modules/document-management/src/hosted/nest/miaoda-hosted-document-catalog.js';
 
-const realDb = drizzle.mock();
-let selectCall = 0;
-let withCall = 0;
-
-function fakeRows(rows) {
+function rows(value) {
   const query = {
-    from() {
-      return query;
-    },
-    innerJoin() {
-      return query;
-    },
-    where() {
-      return query;
-    },
-    limit() {
-      return query;
-    },
-    then(resolve, reject) {
-      return Promise.resolve(rows).then(resolve, reject);
-    },
+    from() { return query; },
+    innerJoin() { return query; },
+    where() { return query; },
+    limit() { return query; },
+    then(resolve, reject) { return Promise.resolve(value).then(resolve, reject); },
   };
   return query;
 }
 
+function writeQuery(kind, operations, returningRows) {
+  const query = {
+    values(value) {
+      operations.push({ kind, value });
+      return query;
+    },
+    set(value) {
+      operations.push({ kind, value });
+      return query;
+    },
+    onConflictDoNothing() { return query; },
+    where() { return query; },
+    returning() { return Promise.resolve(returningRows); },
+  };
+  return query;
+}
+
+const now = '2026-08-14T00:00:00.000Z';
 const preflight = {
   preflightId: 'preflight_test',
   decision: 'INGEST_NEW_FAMILY',
@@ -42,39 +45,6 @@ const family = {
   currentGeneration: 0,
   currentDocumentVersionId: null,
 };
-
-const db = new Proxy(realDb, {
-  get(target, property) {
-    if (property === 'select') {
-      return (fields) => {
-        if (fields === undefined) {
-          selectCall += 1;
-          if (selectCall === 1) return fakeRows([preflight]);
-          if (selectCall === 2 || selectCall === 3) return fakeRows([]);
-          return fakeRows([family]);
-        }
-        return target.select(fields);
-      };
-    }
-    if (property === 'with') {
-      return (...ctes) => {
-        withCall += 1;
-        if (withCall === 1) {
-          return {
-            select() {
-              return fakeRows([{ familyId: family.familyId }]);
-            },
-          };
-        }
-        return target.with(...ctes);
-      };
-    }
-    const value = Reflect.get(target, property, target);
-    return typeof value === 'function' ? value.bind(target) : value;
-  },
-});
-
-const now = '2026-08-14T00:00:00.000Z';
 const command = {
   idempotencyKey: 'catalog:test',
   preflightId: preflight.preflightId,
@@ -125,38 +95,75 @@ const command = {
   },
 };
 
-const catalog = new MiaodaHostedDocumentCatalog(db);
-let observedError;
-try {
-  await catalog.commitNewVersion(command);
-} catch (error) {
-  observedError = error;
-}
+const operations = [];
+let selectCall = 0;
+let transactionCall = 0;
+const transaction = {
+  insert() {
+    return writeQuery('transaction.insert', operations, [{ inserted: true }]);
+  },
+  update() {
+    return writeQuery('transaction.update', operations, [{ updated: true }]);
+  },
+};
+const db = {
+  select() {
+    selectCall += 1;
+    if (selectCall === 1) return rows([preflight]);
+    if (selectCall === 2 || selectCall === 3) return rows([]);
+    return rows([{
+      ...family,
+      currentDocumentVersionId: command.documentVersion.documentVersionId,
+      currentGeneration: 1,
+    }]);
+  },
+  async transaction(callback) {
+    transactionCall += 1;
+    return callback(transaction);
+  },
+  update() {
+    return writeQuery('finalize.update', operations, [{ updated: true }]);
+  },
+};
 
-assert.ok(observedError instanceof Error);
-assert.doesNotMatch(observedError.message, /Insert select error/u);
-assert.match(observedError.message, /^Failed query:/u);
-assert.equal(
-  observedError.params.filter((value) => value instanceof Date).length,
-  0,
-  'insert-select parameters must not expose Date objects to postgres.js',
+const catalog = new MiaodaHostedDocumentCatalog(db);
+const result = await catalog.commitNewVersion(command);
+
+assert.equal(transactionCall, 1);
+assert.equal(typeof db.with, 'undefined', 'hosted commit must not require a WITH/CTE API');
+assert.deepEqual(
+  operations.map(({ kind }) => kind),
+  [
+    'transaction.insert',
+    'transaction.insert',
+    'transaction.update',
+    'transaction.insert',
+    'transaction.insert',
+    'finalize.update',
+    'finalize.update',
+  ],
 );
-assert.ok(
-  observedError.params.includes('COMMITTED_IMMUTABLE'),
-  'lifecycle status must be a bound string value, not an SQL identifier',
-);
-assert.equal(withCall, 2);
+const versionInsert = operations[3].value;
+assert.equal(versionInsert.lifecycleStatus, 'COMMITTED_IMMUTABLE');
+assert.ok(versionInsert.committedAt instanceof Date);
+assert.equal(versionInsert.byteLength, 122102);
+assert.deepEqual(result, {
+  disposition: 'INGEST_NEW_FAMILY',
+  familyId: 'family_test',
+  documentId: 'document_test',
+  documentVersionId: 'document_version_test',
+  currentnessChanged: true,
+  currentGeneration: 1,
+});
 
 process.stdout.write(`${JSON.stringify({
   status: 'PASS',
-  drizzleVersion: '0.44.6',
-  validatedInsertSelects: [
-    'dm_document',
-    'dm_document_version',
-    'dm_currentness_decision',
-  ],
-  dateParametersPassedToPostgresJs: 0,
+  transactionCount: transactionCall,
+  transactionWriteCount: 5,
+  finalizeWriteCount: 2,
+  withCteUsed: false,
   lifecycleStatusParameterized: true,
+  timestampValuesAreDates: true,
   databaseMutationPerformed: false,
   onlineMutationPerformed: false,
 }, null, 2)}\n`);

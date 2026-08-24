@@ -89,9 +89,15 @@ fresh-read 响应、WorkItem status、DocumentVersion currentness 与 FileServic
 ```text
 WL_OPENCLAW_DEVELOPMENT_CREATE_ENABLED=0
 WL_OPENCLAW_SERVICE_WORK_ITEM_ID=<returned-WI-id>
+WL_LOCAL_U0_PYTHON=<absolute-python3-path-with-jsonschema>
 ```
 
 重启 DEV Host 后，用错误 WorkItem ID 做一次 404 fail-closed 读回，再用 exact ID 读取成功。
+`NODE_ENV=development` 且 `MIAODA_LOCAL_DEV=1` 时，Host 必须显式设置
+`WL_LOCAL_U0_PYTHON`；缺失即以 `FULL_U0_VALIDATOR_UNAVAILABLE:LOCAL_PYTHON_REQUIRED`
+停止启动，不得回退到 partial validator。妙搭本地路由前缀为
+`/app/<app-id>/openapi/wiselink/openclaw-mcp`，托管 DEV 路由仍以部署返回的
+`/api/openapi/wiselink/openclaw-mcp` 为准，不得互相猜测替换。
 
 ## 6. 专用 OpenClaw Gateway
 
@@ -108,8 +114,9 @@ WL_OPENCLAW_SERVICE_WORK_ITEM_ID=<returned-WI-id>
     }
   },
   "agents": {
-    "entries": {
-      "g2-action-attempt": {
+    "list": [
+      {
+        "id": "g2-action-attempt",
         "model": {
           "primary": "wiselink/wiselink-direct-llm",
           "fallbacks": []
@@ -120,7 +127,7 @@ WL_OPENCLAW_SERVICE_WORK_ITEM_ID=<returned-WI-id>
           "allow": ["session_status"]
         }
       }
-    }
+    ]
   }
 }
 ```
@@ -179,8 +186,99 @@ overall 首次使用 `providers=[]`；只有 Host 已存在明确 gap 时才按�
 - 浏览器：同一 WorkItem fresh projection 显示 `BASE_RULE_CANDIDATE_READY` 与 `OVERALL_CANDIDATE_READY`，刷新后仍存在；
 - non-claims：candidate-only；没有工程批准、AEO 确认、current selection 改动、发布、生产部署或适航结论。
 
-## 10. 当前已观察与未完成
+## 10. 2026-08-24 隔离 DEV 实跑证据
 
-已观察：本地 OpenClaw/provider-proxy 容器 healthy；真实 `openclaw agent --local` canary 由 provider `wiselink`、model `wiselink-direct-llm` 在约 14 秒返回指定 JSON；这只证明真实 OpenClaw/model 可达，不证明本 runbook 的 Host/DB/FileService 纵切。
+唯一新建资源为 `document_version_f4813607b91ee1a20e754e2d` 和
+`WI-5e2e17a2-0b47-44c9-b5e6-38e4acd4db27`；Document catalog current generation
+为 1，WorkItem 最终 revision 为 5。专用容器 `wiselink-g2-openclaw-dev` 的 Gateway
+为 `127.0.0.1:18791`，agent 为 `g2-action-attempt`，provider/model 为
+`wiselink/wiselink-direct-llm`；没有使用共享 `main`、provider 直连、simulation 或
+loopback executor。
 
-当前本地 Gateway 没有 `g2-action-attempt`，显式 config 中 chat-completions 未开启且 `plugins.allow` 为空，因此共享 `main` 不能用于业务运行。平台/数据库/新容器写入还受当前 Codex 外部审批额度阻断；在 owner 完成第 3、4、6 节目标并恢复外部访问前，真实纵切状态必须保持 **blocked / non-claim**。
+- dynamic：`ATT-1e15d705-28c1-4de1-b62a-0e512d26d855`，ResultEnvelope hash
+  `46f9978e08c3d4dd9a1bf1a26d169abca6e0b2fcbf2576585451dfd4a8ead9b7`，
+  `SUCCEEDED/PROJECTION_CAS_APPLIED`，revision `3→4`；FileService artifact
+  `f614137da74dedf00f4289982d05b0d11d245307d4360b4b1006512dfd16e9da`，
+  32606 bytes，下载后 hash/length 一致。
+- overall：`ATT-2805df1a-b0d3-47fb-bd24-41760fb4a429`，ResultEnvelope hash
+  `52ce3b1a88203f63ec2fc92294b26992fba8f0d1323112a556113c454acb30be`，
+  `SUCCEEDED/PROJECTION_CAS_APPLIED`，revision `4→5`；FileService artifact
+  `fdcd12620395c5a79731bcc6cae5822af5a5a404ce0a940658cac8925dbc44a0`，
+  5098 bytes，下载后 hash/length 一致。
+- 同一用户 fresh-read 显示 `BASE_RULE_CANDIDATE_READY` 与
+  `OVERALL_CANDIDATE_READY`；两者均为 candidate-only，未产生 AEO/工程批准。
+- 真实故障项：重复 begin 返回同 attempt/fence；RUNNING cancel 进入
+  `CANCELLED_BY_REQUEST` 且不改 revision；60 秒 lease 过期后同 operation ref
+  `claimCount 1→2`、`retryCount 0→1`、`leaseGeneration 1→2`；Host 进程重启后
+  仍从 PostgreSQL 完成相同恢复，取消后 token/slot 均清空；另有真实 deadline
+  超时与 late-commit fence 拒绝。多种实际损坏模型输出均明确终态
+  `FAILED/HOST_RESULT_GATE_REJECTED`，完整 ResultEnvelope hash 保留，未静默写成 `{}`。
+
+尚未宣称真实 DEV 通过的矩阵项：注入 Host 5xx、五 WorkItem 并发槽、
+`COMMITTING/cancel` too-late 竞态、合法 revision 变更引发的
+`CAS CONFLICT/OBSOLETE`、`currentRevision < baseRevision` 以及人为损坏 stored JSON。
+其中 5xx bounded retry 与 durable COMMITTING replay 已由 worker HTTP 测试覆盖；其余只保留
+focused state-machine/Result Gate 测试证据，不能替代后续单独批准的真实 DEV 演练。
+
+## 11. Native/Open-source reuse audit
+
+### 11.1 已核验的原生能力与处置
+
+| 能力/真实证据 | 处置 | 理由与精确实现 |
+| --- | --- | --- |
+| 妙搭应用原生 FileService：`lark-cli 1.0.87 apps +file-get` 对隔离对象 `/1874368159994884.pdf` 实际读回 `application/pdf`、1060204 bytes | `REUSE_NATIVE` | 浏览器上传应直接使用已安装的 `@lark-apaas/dataloom@0.1.4` storage；其本地官方 SDK 实现走 runtime `pre_upload → object uploadUrl → callback`，不再增加 WiseLink 分片协议。Host 只注入 `@lark-apaas/fullstack-nestjs-core@1.1.57` 的 `FileService`。 |
+| `MiaodaFileServiceArtifactStore` 的 `FileService.download(...).asStream()`、locator/version 校验、流式 byte count、SHA-256、immutable readback；本次 source 与 canonical artifact 均实际 hash/length 一致 | `ADAPT_EXISTING` | 复用 `server/modules/document-management/src/hosted/miaodaFileServiceArtifactStore.js` 和 `documentManagementHostedCore.js`，只保留 DocumentVersion/acquisition/correlation 薄适配。当前原生入口上限按 100 MiB 处理；更大文件是 backlog，非主链 blocker。 |
+| 妙搭 DEV PostgreSQL/Dataloom：CLI 实际读回 `action_attempt` 的 49 个业务列、平台 4 个审计列、FK/unique 约束和 11 个索引；运行时使用 `DRIZZLE_DATABASE` | `REUSE_NATIVE` | 复用官方 `@lark-apaas/fullstack-nestjs-core` DB provider、`drizzle-orm@0.44.6`（Apache-2.0）和平台 transaction；不自建数据库、连接池或存储服务。 |
+| `@NeedLogin`、`UserContextMiddleware`、`RequestContextService`、service-scope API key/tenant/workItem scope | `REUSE_NATIVE` | 身份与请求上下文继续由妙搭 SDK/Host 注入；`server/modules/identity/` 和 `canonical-service-scope.authorization.ts` 只做 WiseLink ACL/scope fail-closed，不另建登录/session。 |
+| OpenClaw 2026.3.13：专用 Gateway `healthz=live`，原生 agents list 读回 `g2-action-attempt`，chat-completions 已启用，provider/model=`wiselink/wiselink-direct-llm`，plugin allowlist=`[wiselink]` | `REUSE_NATIVE` | `scripts/run-openclaw-action-attempt-worker.mjs` 只做 TaskEnvelope/ResultEnvelope 适配，通过标准 `@modelcontextprotocol/client@2.0.0`（MIT）调用 Host MCP、通过 OpenClaw 原生 Gateway HTTP 调模型；禁止 provider 直连、共享 `main` 和 simulation。 |
+| 妙搭 automation CLI 原生提供 cron/record-change/webhook/审批 trigger；实际 `automation-list` 返回当前应用 0 项 | `ADAPT_EXISTING` | 生产唤醒/调度优先使用托管 automation 与已发布 handler，不新增自建 supervisor。它只能作为 wake-up hint；投递语义尚未实跑，不能替代 ActionAttempt idempotency/fence/Result Gate。当前 DEV worker 命令保留为有界验收入口，不宣称生产守护进程。 |
+| 妙搭原生日志/trace/requests/latency/CPU/memory/PV/UV CLI | `REUSE_NATIVE` | 后续部署只接平台观测，不新建监控栈。本次命令只支持 online；因禁止生产访问未调用，当前证据来自隔离 Host/DB/FileService/Gateway readback。 |
+| 飞书开放平台提供 Aily 智能体/机器人发布能力；但当前 `lark-cli 1.0.87` 无 `aily` typed command，仓库 `UnavailableAilyObjectAccessAdapter` 仍显式 fail-closed | `HOLD_CUSTOM` | 本专项不把 Aily 当成已验证 transport，也不另造 Aily session/skill wrapper。获得官方可调用合同并完成真实同用户 handoff 前保持 non-claim。 |
+
+### 11.2 WiseLink 必须保留的领域逻辑
+
+以下统一为 `KEEP_DOMAIN_LOGIC`，不能交给 provider、OpenClaw、automation 或通用队列直接写
+`current`：
+
+- `server/modules/action-attempt/`：WorkItem/task 唯一、ActionAttempt/operation correlation、
+  TaskEnvelope/ResultEnvelope hash 与 binding、terminal receipt、cancel/deadline、COMMITTING
+  durable cutoff、`projectionApplied`；
+- lease token/generation 虽有通用队列形态，但在这里也是 stale executor 的 Host commit fence；
+  即便以后由托管 automation 或开源队列唤醒，也必须保留并由 Host 终结；
+- `server/modules/canonical-host/canonical-host-openclaw-dynamic-evaluation.service.ts` 与
+  `canonical-host-openclaw-overall.service.ts`：Result Gate、candidate-only、
+  `currentRevision < baseRevision` fail-closed、CAS `APPLIED/CONFLICT/OBSOLETE`；
+- DocumentVersion currentness、ACL、FileService actual-byte receipt、WorkItem revision 与同一用户
+  fresh-read。
+
+`priority/nextAttemptAt` 调度、四槽扫描、heartbeat 续租与 worker 退避属于“领域 fence 周边的
+通用任务机制”。当前仅保留真实纵切所需最小实现；禁止继续扩成 dashboard、通用 scheduler、
+worker fleet manager 或通知系统。若托管 automation 能稳定唤醒，则由它负责唤醒，DB row 只负责
+领域状态和 fence。
+
+### 11.3 成熟开源候选（未引入）
+
+平台 automation 尚未证明精确的 sub-minute retry/cancel/lease/commit-fence，因此只比较、不安装：
+
+| 候选 | 维护/license/兼容性 | 取舍 |
+| --- | --- | --- |
+| [pg-boss](https://www.npmjs.com/package/pg-boss) | 2026-08-24 为 12.27.0、17 天内发布、MIT，PostgreSQL `SKIP LOCKED`，已有 Drizzle adapter、retry/backoff/cancel/dead-letter | PostgreSQL/Node 栈兼容，若托管 handler 的唤醒/恢复真实失败，列为第一替换候选；但会新增独立 schema、maintenance worker，并且仍不能替代 Result Gate/CAS，当前不引入。 |
+| [Graphile Worker](https://worker.graphile.org/docs) | MIT，PostgreSQL 12+、Node 22.18+，LISTEN/NOTIFY、retry/backoff、`job_key` dedupe | 技术兼容；locked job 的 `job_key` 默认可能产生第二 job，且要新增 `graphile_worker` schema/worker，替换成本高于当前四槽窄链，当前不引入。 |
+| [BullMQ](https://docs.bullmq.io/) | MIT，成熟的 retry/concurrency/dedup，但依赖 Redis | 妙搭现有 PostgreSQL/FileService/automation 已足够，不为本链新增 Redis 运维面，拒绝进入当前集成。 |
+
+### 11.4 暂缓/移除重复与集成影响
+
+- `8a7a664eae0bb0369b9d2c4d4fc6c8af37701a59`（34 files、7411 insertions）的
+  `server/modules/large-pdf-upload/`、`client/src/api/large-pdf-upload.ts`、
+  `client/src/pages/LargePdfUploadPage/` 及自建 8 MiB upload session/chunk 协议统一为
+  `HOLD_CUSTOM`，不得进入 canonical mainline；其中与 Dataloom direct upload 重复的上传/session
+  层为 `REMOVE_DUPLICATE`。可复用的 DM actual-byte 校验思想只通过现有 FileService adapter
+  实现，不 cherry-pick 该候选。
+- 当前 G2 候选没有上述 large-pdf 文件，也没有 pg-boss/Graphile Worker/BullMQ 依赖；其 parent
+  仍为 `006146b2267e0dc316f9550411c178a292f9b04b`。
+- canonical 集成顺序：先合入本 G2 的 Result Gate/claim 修复与真实 runbook；再在独立候选中用
+  Dataloom 原生直传替换上传 UI；生产 worker 唤醒优先做妙搭 automation disabled 配置、同名
+  handler、release 与真实 DEV/UAT probe。只有该 probe 给出可复现的投递/恢复缺口，才评估
+  pg-boss；不得反向恢复 8 MiB 分片或直接让 provider 写 current。
+- non-claims：未创建/启用 automation，未发布 handler，未调用 Aily 会话，未查询 online
+  observability，未验证 >100 MiB，未安装任何新队列库，未 push/部署/触碰生产或历史对象。

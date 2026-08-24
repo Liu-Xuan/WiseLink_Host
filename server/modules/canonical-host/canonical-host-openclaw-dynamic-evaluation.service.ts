@@ -188,14 +188,24 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
         canonicalJson(request.modelInput) !==
         canonicalJson(prepared.task.modelInput)
       ) {
-        throw new Error('DYNAMIC_EVALUATION_TASK_MODEL_INPUT_DRIFT');
+        return this.attempts.finishResultGateFailure(
+          prepared,
+          new Error('DYNAMIC_EVALUATION_TASK_MODEL_INPUT_DRIFT'),
+        );
       }
-      const output = requiredModelOutput(prepared.result);
-      const result = this.processor.consumeOutput(request, output);
-      const normalizedArtifactBytes = serializeNormalizedBaseOneShotOutput(
-        output,
-        result,
-      );
+      let output: string;
+      let result: ReturnType<DynamicRulesEvaluationProcessor['consumeOutput']>;
+      let normalizedArtifactBytes: Uint8Array;
+      try {
+        output = requiredModelOutput(prepared.result);
+        result = this.processor.consumeOutput(request, output);
+        normalizedArtifactBytes = serializeNormalizedBaseOneShotOutput(
+          output,
+          result,
+        );
+      } catch (error) {
+        return this.attempts.finishResultGateFailure(prepared, error);
+      }
       const currentBase = workItem.integratedAssessment?.baseRules;
       if (workItem.integratedAssessment?.engineerReviews && currentBase) {
         const prospectiveBase = baseRuleProjection(

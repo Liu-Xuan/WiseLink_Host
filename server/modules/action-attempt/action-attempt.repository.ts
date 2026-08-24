@@ -96,6 +96,7 @@ export class ActionAttemptRepository {
         and(
           eq(actionAttempt.tenantId, input.tenantId),
           eq(actionAttempt.idempotencyKey, input.idempotencyKey),
+          inArray(actionAttempt.status, [...ACTIVE_STATUSES]),
         ),
       )
       .orderBy(actionAttempt.createdAt)
@@ -156,6 +157,10 @@ export class ActionAttemptRepository {
   async claimExact(input: {
     attemptId: string;
     expectedStatus: 'QUEUED' | 'RETRY_SCHEDULED';
+    expectedClaimCount: number;
+    expectedLeaseGeneration: number;
+    operationRef: string;
+    startedAt: Date | null;
     leaseOwner: string;
     leaseSlot: number;
     now: Date;
@@ -166,16 +171,16 @@ export class ActionAttemptRepository {
         .update(actionAttempt)
         .set({
           status: 'RUNNING',
-          claimCount: sql`${actionAttempt.claimCount} + 1`,
+          claimCount: input.expectedClaimCount + 1,
           leaseOwner: input.leaseOwner,
           leaseToken: randomUUID(),
-          leaseGeneration: sql`${actionAttempt.leaseGeneration} + 1`,
+          leaseGeneration: input.expectedLeaseGeneration + 1,
           leaseSlot: input.leaseSlot,
-          executorSessionKey: sql`CONCAT('g2-action-attempt:', ${actionAttempt.operationRef})`,
+          executorSessionKey: `g2-action-attempt:${input.operationRef}`,
           leaseExpiresAt: new Date(input.now.getTime() + input.leaseMs),
           lastHeartbeatAt: input.now,
           nextAttemptAt: null,
-          startedAt: sql`COALESCE(${actionAttempt.startedAt}, ${input.now})`,
+          startedAt: input.startedAt ?? input.now,
           errorCode: null,
           errorMessage: null,
           updatedAt: input.now,
@@ -184,6 +189,12 @@ export class ActionAttemptRepository {
           and(
             eq(actionAttempt.attemptId, input.attemptId),
             eq(actionAttempt.status, input.expectedStatus),
+            eq(actionAttempt.claimCount, input.expectedClaimCount),
+            eq(
+              actionAttempt.leaseGeneration,
+              input.expectedLeaseGeneration,
+            ),
+            eq(actionAttempt.operationRef, input.operationRef),
             isNull(actionAttempt.leaseToken),
             or(
               isNull(actionAttempt.nextAttemptAt),
@@ -377,7 +388,7 @@ export class ActionAttemptRepository {
       .update(actionAttempt)
       .set({
         status: 'RETRY_SCHEDULED',
-        retryCount: sql`${actionAttempt.retryCount} + 1`,
+        retryCount: row.retryCount + 1,
         nextAttemptAt: input.now,
         leaseOwner: null,
         leaseToken: null,
@@ -395,6 +406,7 @@ export class ActionAttemptRepository {
           eq(actionAttempt.status, 'RUNNING'),
           eq(actionAttempt.leaseToken, row.leaseToken),
           eq(actionAttempt.leaseGeneration, row.leaseGeneration),
+          eq(actionAttempt.retryCount, row.retryCount),
           lte(actionAttempt.leaseExpiresAt, input.now),
           lt(actionAttempt.claimCount, actionAttempt.maxAttempts),
         ),
@@ -433,6 +445,29 @@ export class ActionAttemptRepository {
     const row = await this.readByAttemptId(input.attemptId);
     if (row?.status === 'COMMITTING' || row?.commitStartedAt) return 'TOO_LATE';
     return 'NOT_ACTIVE';
+  }
+
+  async finishResultGateFailure(input: {
+    attemptId: string;
+    leaseToken: string;
+    leaseGeneration: number;
+    result: OpenClawResultEnvelope;
+    errorCode: string;
+    errorMessage: string;
+    now: Date;
+  }): Promise<boolean> {
+    return this.finishTerminal({
+      attemptId: input.attemptId,
+      fromStatus: 'COMMITTING',
+      status: 'FAILED',
+      terminalReason: 'HOST_RESULT_GATE_REJECTED',
+      leaseToken: input.leaseToken,
+      leaseGeneration: input.leaseGeneration,
+      result: input.result,
+      errorCode: input.errorCode,
+      errorMessage: input.errorMessage,
+      now: input.now,
+    });
   }
 }
 

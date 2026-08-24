@@ -254,6 +254,12 @@ function createHarness() {
       terminalReason: 'PROJECTION_CAS_APPLIED',
     })),
     finishProjectionConflict: jest.fn(),
+    finishResultGateFailure: jest.fn(async () => ({
+      attemptRef: ATTEMPT_REF,
+      status: 'FAILED',
+      projectionApplied: false,
+      terminalReason: 'HOST_RESULT_GATE_REJECTED',
+    })),
   };
   const scope = {
     authorizeOpenClawWorkItem: jest.fn(async () => ({

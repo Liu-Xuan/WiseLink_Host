@@ -13,6 +13,7 @@ import { DOCUMENT_MANAGEMENT_INGEST_AUTHORIZER } from './document-management-hos
 export interface DocumentManagementHostedModuleOptions {
   imports?: ModuleMetadata['imports'];
   authorizerProvider: Provider;
+  imports?: ModuleMetadata['imports'];
 }
 @Module({})
 export class DocumentManagementHostedModule {

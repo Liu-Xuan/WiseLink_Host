@@ -261,6 +261,42 @@ describe('ActionAttemptLifecycleService', () => {
     expect(repository.row?.resultEnvelopeJson).not.toBe('{}');
   });
 
+  it('terminalizes a deterministic Host Result Gate rejection without losing the envelope', async () => {
+    const repository = new MemoryActionAttemptRepository();
+    const service = new ActionAttemptLifecycleService(repository as never);
+    const claim = await service.reserveAndClaim(
+      reservationInput(async () => ({ controlled: true })),
+    );
+    const result = successResult(claim.task);
+    const prepared = await service.prepareCommit({
+      attemptRef: claim.attemptRef,
+      tenantId: 'tenant-test',
+      workItemId: 'WI-test',
+      principalId: 'openclaw-real',
+      leaseToken: claim.leaseToken,
+      leaseGeneration: claim.leaseGeneration,
+      result,
+    });
+
+    await expect(
+      service.finishResultGateFailure(
+        prepared,
+        new Error('BASE_ONE_SHOT_RULE_RESULT_ROW_BUDGET_EXCEEDED:2'),
+      ),
+    ).resolves.toMatchObject({
+      status: 'FAILED',
+      projectionApplied: false,
+      terminalReason: 'HOST_RESULT_GATE_REJECTED',
+    });
+    expect(repository.row).toMatchObject({
+      status: 'FAILED',
+      errorCode: 'BASE_ONE_SHOT_RULE_RESULT_ROW_BUDGET_EXCEEDED',
+      errorMessage: 'BASE_ONE_SHOT_RULE_RESULT_ROW_BUDGET_EXCEEDED:2',
+      resultContentHash: result.contentHash,
+    });
+    expect(repository.row?.resultEnvelopeJson).toBe(canonicalJson(result));
+  });
+
   it('cancels RUNNING atomically and fences the stale executor', async () => {
     const repository = new MemoryActionAttemptRepository();
     const service = new ActionAttemptLifecycleService(repository as never);
@@ -311,7 +347,12 @@ class MemoryActionAttemptRepository {
   }
 
   async readByIdempotency(input: { idempotencyKey: string }) {
-    return this.row?.idempotencyKey === input.idempotencyKey ? this.row : null;
+    return this.row?.idempotencyKey === input.idempotencyKey &&
+      ['QUEUED', 'RUNNING', 'RETRY_SCHEDULED', 'COMMITTING'].includes(
+        this.row.status,
+      )
+      ? this.row
+      : null;
   }
 
   async readByOperationRef(operationRef: string) {
@@ -393,6 +434,8 @@ class MemoryActionAttemptRepository {
     terminalReason: string;
     result?: OpenClawResultEnvelope;
     projectionApplied?: boolean;
+    errorCode?: string;
+    errorMessage?: string;
     now: Date;
   }) {
     const row = this.requiredRow();
@@ -406,6 +449,8 @@ class MemoryActionAttemptRepository {
         : row.resultEnvelopeJson,
       resultContentHash: input.result?.contentHash ?? row.resultContentHash,
       projectionApplied: input.projectionApplied ?? false,
+      errorCode: input.errorCode ?? row.errorCode,
+      errorMessage: input.errorMessage ?? row.errorMessage,
       completedAt: input.now,
       leaseOwner: null,
       leaseToken: null,
@@ -415,6 +460,32 @@ class MemoryActionAttemptRepository {
     };
     this.transitions.push(input.status);
     return true;
+  }
+
+  async finishResultGateFailure(input: {
+    leaseToken: string;
+    leaseGeneration: number;
+    result: OpenClawResultEnvelope;
+    errorCode: string;
+    errorMessage: string;
+    now: Date;
+  }) {
+    const row = this.requiredRow();
+    if (
+      row.leaseToken !== input.leaseToken ||
+      row.leaseGeneration !== input.leaseGeneration
+    ) {
+      return false;
+    }
+    return this.finishTerminal({
+      fromStatus: 'COMMITTING',
+      status: 'FAILED',
+      terminalReason: 'HOST_RESULT_GATE_REJECTED',
+      result: input.result,
+      errorCode: input.errorCode,
+      errorMessage: input.errorMessage,
+      now: input.now,
+    });
   }
 
   async recoverExpiredRunning(input: { now: Date }) {

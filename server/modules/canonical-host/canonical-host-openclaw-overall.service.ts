@@ -240,8 +240,14 @@ export class CanonicalHostOpenClawOverallService {
       const modelInput = storedOverallInput(
         prepared.task.modelInput,
       ).modelInput;
-      const output = requiredModelOutput(prepared.result);
-      const parsed = consumeOpenClawOverallSynthesisOutput(modelInput, output);
+      let output: string;
+      let parsed: ReturnType<typeof consumeOpenClawOverallSynthesisOutput>;
+      try {
+        output = requiredModelOutput(prepared.result);
+        parsed = consumeOpenClawOverallSynthesisOutput(modelInput, output);
+      } catch (error) {
+        return this.attempts.finishResultGateFailure(prepared, error);
+      }
       const persisted = await this.artifactStore.persistAndReadback(
         new TextEncoder().encode(output),
       );

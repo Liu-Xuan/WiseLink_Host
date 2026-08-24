@@ -25,14 +25,6 @@ function asDate(value: string | Date) {
   return value instanceof Date ? value : new Date(value);
 }
 
-function asSqlTimestamp(value: string | Date) {
-  return asDate(value).toISOString();
-}
-
-function asAuditUser(userId: string, alias: string) {
-  return sql<string>`ROW(${userId})::user_profile`.as(alias);
-}
-
 function parseJson(value: string) {
   return JSON.parse(value);
 }
@@ -757,9 +749,9 @@ export class MiaodaHostedDocumentCatalog {
       };
     }
     const familyCreatedInCommand = !familyBefore;
-    if (familyCreatedInCommand) {
-      const insertedFamily = this.db.$with('inserted_publication_family').as(
-        this.db.insert(dmPublicationFamily).values({
+    await this.db.transaction(async (transaction) => {
+      if (familyCreatedInCommand) {
+        const createdFamily = await transaction.insert(dmPublicationFamily).values({
           ...command.family,
           currentDocumentVersionId: null,
           currentGeneration: 0,
@@ -767,49 +759,23 @@ export class MiaodaHostedDocumentCatalog {
           updatedAt: asDate(command.family.createdAt),
         }).onConflictDoNothing({ target: dmPublicationFamily.familyId }).returning({
           familyId: dmPublicationFamily.familyId,
-        }),
-      );
-      const insertedDocument = this.db.$with('inserted_document').as(
-        this.db.insert(dmDocument).select(
-          this.db.select({
-            id: sql<string>`gen_random_uuid()`.as('id'),
-            documentId: sql<string>`${command.document.documentId}`.as('document_id'),
-            familyId: insertedFamily.familyId,
-            documentFamily: sql<string>`${command.document.documentFamily}`.as('document_family'),
-            status: sql<string>`${command.document.status}`.as('status'),
-            createdAt: sql<string>`${asSqlTimestamp(command.document.createdAt)}`.as(
-              'created_at',
-            ),
-            createdBy: asAuditUser(
-              command.documentVersion.committedBy,
-              '_created_by',
-            ),
-            updatedAt: sql<string>`${asSqlTimestamp(command.document.createdAt)}`.as(
-              '_updated_at',
-            ),
-            updatedBy: asAuditUser(
-              command.documentVersion.committedBy,
-              '_updated_by',
-            ),
-          }).from(insertedFamily),
-        ).returning({ familyId: dmDocument.familyId }),
-      );
-      const created = await this.db.with(insertedFamily, insertedDocument).select({
-        familyId: insertedFamily.familyId,
-      }).from(insertedFamily).innerJoin(
-        insertedDocument,
-        eq(insertedDocument.familyId, insertedFamily.familyId),
-      );
-      if (created.length !== 1) {
-        fail('FAMILY_CREATE_CONFLICT', 'Family/Document creation did not commit as one hosted statement.');
+        });
+        if (createdFamily.length !== 1) {
+          fail('FAMILY_CREATE_CONFLICT', 'Family was created concurrently after preflight.');
+        }
+        const createdDocument = await transaction.insert(dmDocument).values({
+          documentId: command.document.documentId,
+          familyId: command.document.familyId,
+          documentFamily: command.document.documentFamily,
+          status: command.document.status,
+          createdAt: asDate(command.document.createdAt),
+        }).returning({ familyId: dmDocument.familyId });
+        if (createdDocument.length !== 1) {
+          fail('FAMILY_CREATE_CONFLICT', 'Family Document was not created in the hosted transaction.');
+        }
       }
-      [familyBefore] = await this.db.select().from(dmPublicationFamily).where(
-        eq(dmPublicationFamily.familyId, command.family.familyId),
-      ).limit(1);
-    }
-    if (!familyBefore) fail('FAMILY_NOT_FOUND', 'Hosted Family was not available for currentness CAS.');
-    const moved = this.db.$with('moved_family_head').as(
-      this.db.update(dmPublicationFamily).set({
+
+      const movedRows = await transaction.update(dmPublicationFamily).set({
         currentDocumentVersionId: command.documentVersion.documentVersionId,
         currentGeneration: command.observedCurrentGeneration + 1,
         updatedAt: asDate(command.documentVersion.committedAt),
@@ -822,97 +788,62 @@ export class MiaodaHostedDocumentCatalog {
             command.observedCurrentDocumentVersionId,
           )
           : isNull(dmPublicationFamily.currentDocumentVersionId),
-      )).returning({ familyId: dmPublicationFamily.familyId }),
-    );
-    const insertedVersion = this.db.$with('inserted_document_version').as(
-      this.db.insert(dmDocumentVersion).select(
-        this.db.select({
-          id: sql<string>`gen_random_uuid()`.as('id'),
-          documentVersionId: sql<string>`${command.documentVersion.documentVersionId}`.as('document_version_id'),
-          documentId: sql<string>`${command.documentVersion.documentId}`.as('document_id'),
-          familyId: moved.familyId,
-          revisionId: sql<string>`${command.documentVersion.revisionId}`.as('revision_id'),
-          canonicalRevisionIdentity: sql<string>`${command.documentVersion.canonicalRevisionIdentity}`.as('canonical_revision_identity'),
-          businessRevision: sql<string>`${command.documentVersion.businessRevision}`.as('business_revision'),
-          revisionDate: sql<string>`${command.documentVersion.revisionDate}`.as('revision_date'),
-          sourceGeneratedDate: sql<string>`${command.documentVersion.sourceGeneratedDate}`.as('source_generated_date'),
-          originalFilename: sql<string>`${command.documentVersion.originalFilename}`.as('original_filename'),
-          sourceArtifactId: sql<string>`${command.documentVersion.sourceArtifactId}`.as('source_artifact_id'),
-          acquisitionId: sql<string>`${command.documentVersion.acquisitionId}`.as('acquisition_id'),
-          pdfSha256: sql<string>`${command.documentVersion.pdfSha256}`.as('pdf_sha256'),
-          byteLength: sql<number>`${command.documentVersion.byteLength}`.as('byte_length'),
-          mediaType: sql<string>`${command.documentVersion.mediaType}`.as('media_type'),
-          lifecycleStatus: sql<string>`${'COMMITTED_IMMUTABLE'}`.as(
-            'lifecycle_status',
-          ),
-          committedAt: sql<string>`${asSqlTimestamp(
-            command.documentVersion.committedAt,
-          )}`.as('committed_at'),
-          committedBy: sql<string>`${command.documentVersion.committedBy}`.as('committed_by'),
-          createdAt: sql<string>`${asSqlTimestamp(
-            command.documentVersion.committedAt,
-          )}`.as(
-            '_created_at',
-          ),
-          createdBy: asAuditUser(
-            command.documentVersion.committedBy,
-            '_created_by',
-          ),
-          updatedAt: sql<string>`${asSqlTimestamp(
-            command.documentVersion.committedAt,
-          )}`.as(
-            '_updated_at',
-          ),
-          updatedBy: asAuditUser(
-            command.documentVersion.committedBy,
-            '_updated_by',
-          ),
-        }).from(moved),
-      ).returning({
-        documentVersionId: dmDocumentVersion.documentVersionId,
-        familyId: dmDocumentVersion.familyId,
-      }),
-    );
-    const movedRows = await this.db.with(moved, insertedVersion).insert(dmCurrentnessDecision).select(
-      this.db.select({
-        id: sql<string>`gen_random_uuid()`.as('id'),
-        currentnessDecisionId: sql<string>`${command.currentnessDecision.currentnessDecisionId}`.as('currentness_decision_id'),
-        familyId: moved.familyId,
-        previousDocumentVersionId: sql<string | null>`${command.observedCurrentDocumentVersionId}`.as('previous_document_version_id'),
-        nextDocumentVersionId: sql<string>`${command.documentVersion.documentVersionId}`.as('next_document_version_id'),
-        previousGeneration: sql<number>`${command.observedCurrentGeneration}`.as('previous_generation'),
-        nextGeneration: sql<number>`${command.observedCurrentGeneration + 1}`.as('next_generation'),
-        reason: sql<string>`${command.currentnessDecision.reason}`.as('reason'),
-        decidedAt: sql<string>`${asSqlTimestamp(
-          command.currentnessDecision.decidedAt,
-        )}`.as('decided_at'),
-        decidedBy: sql<string>`${command.currentnessDecision.decidedBy}`.as('decided_by'),
-        preflightId: sql<string>`${command.preflightId}`.as('preflight_id'),
-        createdAt: sql<string>`${asSqlTimestamp(
-          command.currentnessDecision.decidedAt,
-        )}`.as(
-          '_created_at',
-        ),
-        createdBy: asAuditUser(
-          command.currentnessDecision.decidedBy,
-          '_created_by',
-        ),
-        updatedAt: sql<string>`${asSqlTimestamp(
-          command.currentnessDecision.decidedAt,
-        )}`.as(
-          '_updated_at',
-        ),
-        updatedBy: asAuditUser(
-          command.currentnessDecision.decidedBy,
-          '_updated_by',
-        ),
-      }).from(moved).innerJoin(
-        insertedVersion,
-        eq(insertedVersion.familyId, moved.familyId),
-      ),
-    ).returning();
-    if (movedRows.length !== 1) {
-      fail('CURRENTNESS_CAS_CONFLICT', 'Family current head changed after preflight.');
+      )).returning({ familyId: dmPublicationFamily.familyId });
+      if (movedRows.length !== 1) {
+        fail('CURRENTNESS_CAS_CONFLICT', 'Family current head changed after preflight.');
+      }
+
+      const insertedVersion = await transaction.insert(dmDocumentVersion).values({
+        documentVersionId: command.documentVersion.documentVersionId,
+        documentId: command.documentVersion.documentId,
+        familyId: command.documentVersion.familyId,
+        revisionId: command.documentVersion.revisionId,
+        canonicalRevisionIdentity: command.documentVersion.canonicalRevisionIdentity,
+        businessRevision: command.documentVersion.businessRevision,
+        revisionDate: command.documentVersion.revisionDate,
+        sourceGeneratedDate: command.documentVersion.sourceGeneratedDate,
+        originalFilename: command.documentVersion.originalFilename,
+        sourceArtifactId: command.documentVersion.sourceArtifactId,
+        acquisitionId: command.documentVersion.acquisitionId,
+        pdfSha256: command.documentVersion.pdfSha256,
+        byteLength: Number(command.documentVersion.byteLength),
+        mediaType: command.documentVersion.mediaType,
+        lifecycleStatus: 'COMMITTED_IMMUTABLE',
+        committedAt: asDate(command.documentVersion.committedAt),
+        committedBy: command.documentVersion.committedBy,
+      }).returning({ documentVersionId: dmDocumentVersion.documentVersionId });
+      if (insertedVersion.length !== 1) {
+        fail('DOCUMENT_VERSION_INSERT_CONFLICT', 'DocumentVersion was not created in the hosted transaction.');
+      }
+
+      const currentnessRows = await transaction.insert(dmCurrentnessDecision).values({
+        currentnessDecisionId: command.currentnessDecision.currentnessDecisionId,
+        familyId: command.family.familyId,
+        previousDocumentVersionId: command.observedCurrentDocumentVersionId,
+        nextDocumentVersionId: command.documentVersion.documentVersionId,
+        previousGeneration: command.observedCurrentGeneration,
+        nextGeneration: command.observedCurrentGeneration + 1,
+        reason: command.currentnessDecision.reason,
+        decidedAt: asDate(command.currentnessDecision.decidedAt),
+        decidedBy: command.currentnessDecision.decidedBy,
+        preflightId: command.preflightId,
+      }).returning({
+        currentnessDecisionId: dmCurrentnessDecision.currentnessDecisionId,
+      });
+      if (currentnessRows.length !== 1) {
+        fail('CURRENTNESS_COMMIT_CONFLICT', 'Currentness decision was not created in the hosted transaction.');
+      }
+    });
+
+    [familyBefore] = await this.db.select().from(dmPublicationFamily).where(
+      eq(dmPublicationFamily.familyId, command.family.familyId),
+    ).limit(1);
+    if (
+      !familyBefore
+      || familyBefore.currentDocumentVersionId !== command.documentVersion.documentVersionId
+      || familyBefore.currentGeneration !== command.observedCurrentGeneration + 1
+    ) {
+      fail('CURRENTNESS_READBACK_CONFLICT', 'Hosted Family currentness failed fresh readback.');
     }
 
     await this.finalizeCatalogLinks(command);

@@ -113,7 +113,17 @@ describe('CanonicalHostOpenClawDynamicEvaluationService', () => {
 
     await expect(
       harness.service.commit(ATTEMPT_REF, LEASE_TOKEN, 1, dynamicResult()),
-    ).rejects.toThrow('DYNAMIC_EVALUATION_TASK_MODEL_INPUT_DRIFT');
+    ).resolves.toMatchObject({
+      status: 'FAILED',
+      projectionApplied: false,
+      terminalReason: 'HOST_RESULT_GATE_REJECTED',
+    });
+    expect(harness.attempts.finishResultGateFailure).toHaveBeenCalledWith(
+      harness.prepared,
+      expect.objectContaining({
+        message: 'DYNAMIC_EVALUATION_TASK_MODEL_INPUT_DRIFT',
+      }),
+    );
     expect(harness.processor.consumeOutput).not.toHaveBeenCalled();
     expect(harness.artifactStore.persistAndReadback).not.toHaveBeenCalled();
     expect(harness.registrar.compareAndSet).not.toHaveBeenCalled();
@@ -244,6 +254,12 @@ function createHarness() {
       terminalReason: 'PROJECTION_CAS_APPLIED',
     })),
     finishProjectionConflict: jest.fn(),
+    finishResultGateFailure: jest.fn(async () => ({
+      attemptRef: ATTEMPT_REF,
+      status: 'FAILED',
+      projectionApplied: false,
+      terminalReason: 'HOST_RESULT_GATE_REJECTED',
+    })),
   };
   const scope = {
     authorizeOpenClawWorkItem: jest.fn(async () => ({
