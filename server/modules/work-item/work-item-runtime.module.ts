@@ -2,13 +2,13 @@ import { Module } from '@nestjs/common';
 
 import { CANONICAL_OBJECT_ACCESS } from './canonical-object-access.port';
 import { CanonicalObjectAccessRouter } from './canonical-object-access.router';
+import { MiaodaHostedCanonicalObjectAccessAdapter } from './miaoda-hosted-canonical-object-access.adapter';
 import { MiaodaWorkItemRepository } from './miaoda-work-item.repository';
 import {
   UnavailableAilyObjectAccessAdapter,
   UnavailableServiceObjectAccessAdapter,
   UnavailableSessionObjectAccessAdapter,
 } from './unavailable-canonical-object-access.adapters';
-import { MiaodaHostedCanonicalObjectAccessAdapter } from './miaoda-hosted-canonical-object-access.adapter';
 
 @Module({
   providers: [
@@ -31,13 +31,13 @@ import { MiaodaHostedCanonicalObjectAccessAdapter } from './miaoda-hosted-canoni
         UnavailableSessionObjectAccessAdapter,
       ],
       useFactory: (
-        hostedMiaoda: MiaodaHostedCanonicalObjectAccessAdapter,
+        hostedFinalUser: MiaodaHostedCanonicalObjectAccessAdapter,
         unavailableAily: UnavailableAilyObjectAccessAdapter,
         unavailableService: UnavailableServiceObjectAccessAdapter,
         unavailableSession: UnavailableSessionObjectAccessAdapter,
       ) =>
         new CanonicalObjectAccessRouter(
-          hostedMiaoda,
+          hostedFinalUser,
           unavailableAily,
           unavailableService,
           unavailableSession,

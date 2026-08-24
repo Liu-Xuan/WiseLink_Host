@@ -2,8 +2,12 @@ import { createHash } from 'node:crypto';
 
 import { Inject, Injectable } from '@nestjs/common';
 
-import { CANONICAL_MIAODA_APP_ID } from '../canonical-host/canonical-host.constants';
+import {
+  CANONICAL_AILY_AGENT_ID,
+  CANONICAL_MIAODA_APP_ID,
+} from '../canonical-host/canonical-host.constants';
 import type {
+  CanonicalAilyFinalUserActorContext,
   CanonicalGrantableObjectAccessAction,
   CanonicalMiaodaFinalUserActorContext,
   CanonicalObjectAccessDenied,
@@ -17,6 +21,15 @@ import {
   type WorkItemAuthorizationBinding,
 } from './miaoda-work-item.repository';
 
+type HostedFinalUserActor =
+  | CanonicalMiaodaFinalUserActorContext
+  | CanonicalAilyFinalUserActorContext;
+
+/**
+ * Host-owned WorkItem relation adapter shared by native Miaoda browser and
+ * signed Aily MCP identities. Identity proof stays at each transport edge;
+ * this adapter only fresh-reads the canonical owner relation.
+ */
 @Injectable()
 // WorkItemRuntimeModule supplies this adapter through an explicit factory so
 // the repository dependency remains visible in module wiring.
@@ -82,33 +95,52 @@ export class MiaodaHostedCanonicalObjectAccessAdapter implements CanonicalObject
 
 function hostedNativeActor(
   actor: CanonicalObjectAccessInput['actor'],
-): actor is CanonicalMiaodaFinalUserActorContext {
+): actor is HostedFinalUserActor {
+  if (
+    actor.principalKind !== 'FINAL_USER' ||
+    actor.canonicalSubject.namespace !== 'MIAODA_USER_ID' ||
+    actor.canonicalSubject.id.trim().length === 0 ||
+    actor.subjectDecision.applicationScopeId !== actor.applicationScopeId ||
+    actor.subjectDecision.tenantId !== actor.tenantId ||
+    actor.applicationScopeId !== CANONICAL_MIAODA_APP_ID ||
+    actor.workspaceId !== null ||
+    actor.workspaceProvenance !== 'UNAVAILABLE' ||
+    actor.sessionId !== null ||
+    actor.sessionRevision !== null ||
+    actor.sessionProvenance !== 'UNAVAILABLE'
+  ) {
+    return false;
+  }
+  if (actor.transport === 'AILY_SIGNED_MCP_HTTP') {
+    return (
+      actor.identityProvenance === 'AILY_SIGNED_JWT' &&
+      actor.feishuIdentityProvenance === 'AILY_SIGNED_JWT' &&
+      actor.feishuUserId.trim().length > 0 &&
+      actor.feishuOpenId === null &&
+      actor.subjectDecision.source ===
+        'AILY_SIGNED_JWT_AND_MIAODA_AUTHNPAAS_ID_CONVERT' &&
+      actor.subjectDecision.version ===
+        'aily-jwt-hs256.authnpaas-user-convert.v1' &&
+      actor.applicationScopeProvenance === 'HOST_CONFIGURED_MIAODA_APP_ID' &&
+      actor.agentId === CANONICAL_AILY_AGENT_ID &&
+      Number.isFinite(Date.parse(actor.tokenExpiresAt))
+    );
+  }
   return (
-    actor.principalKind === 'FINAL_USER' &&
     actor.transport === 'MIAODA_AUTHENTICATED_HTTP' &&
-    actor.canonicalSubject.namespace === 'MIAODA_USER_ID' &&
-    actor.canonicalSubject.id.trim().length > 0 &&
     actor.identityProvenance === 'MIAODA_GATEWAY_USER_CONTEXT' &&
     actor.subjectDecision.source === 'MIAODA_GATEWAY_USER_CONTEXT' &&
-    actor.subjectDecision.applicationScopeId === actor.applicationScopeId &&
-    actor.subjectDecision.tenantId === actor.tenantId &&
     actor.subjectDecision.version === 'miaoda-hosted-native-sso.v1' &&
     actor.applicationScopeProvenance === 'MIAODA_GATEWAY_APP_CONTEXT' &&
-    actor.applicationScopeId === CANONICAL_MIAODA_APP_ID &&
     (actor.env === 'preview' || actor.env === 'runtime') &&
-    actor.workspaceId === null &&
-    actor.workspaceProvenance === 'UNAVAILABLE' &&
     actor.feishuUserId === null &&
     actor.feishuOpenId === null &&
-    actor.feishuIdentityProvenance === 'UNAVAILABLE' &&
-    actor.sessionId === null &&
-    actor.sessionRevision === null &&
-    actor.sessionProvenance === 'UNAVAILABLE'
+    actor.feishuIdentityProvenance === 'UNAVAILABLE'
   );
 }
 
 function grant(
-  actor: CanonicalMiaodaFinalUserActorContext,
+  actor: HostedFinalUserActor,
   action: CanonicalGrantableObjectAccessAction,
   binding: WorkItemAuthorizationBinding,
 ): CanonicalObjectAccessGrant {
@@ -148,6 +180,7 @@ function grant(
       accessRevision,
     }),
   );
+  const aily = actor.transport === 'AILY_SIGNED_MCP_HTTP';
   return {
     allowed: true,
     action,
@@ -175,8 +208,10 @@ function grant(
     authorizationFingerprint,
     freshReadAt: new Date().toISOString(),
     auditProvenance: {
-      identity: 'MIAODA_GATEWAY_USER_CONTEXT',
-      applicationScope: 'MIAODA_GATEWAY_APP_CONTEXT',
+      identity: aily
+        ? 'AILY_SIGNED_JWT_AND_MIAODA_AUTHNPAAS_ID_CONVERT'
+        : 'MIAODA_GATEWAY_USER_CONTEXT',
+      applicationScope: actor.applicationScopeProvenance,
       workspace: 'UNAVAILABLE',
       objectAuthorization: 'HOST_WORK_ITEM_REQUESTED_BY',
       memberAuthorization: 'UNAVAILABLE',
@@ -190,7 +225,7 @@ function grant(
 
 function ownedBindingMatches(
   binding: WorkItemAuthorizationBinding | null,
-  actor: CanonicalMiaodaFinalUserActorContext,
+  actor: HostedFinalUserActor,
   workItemId: string,
 ): binding is WorkItemAuthorizationBinding {
   return Boolean(
@@ -237,7 +272,11 @@ function denied(
     accessRoot: input.accessRoot,
     code,
     statusCode,
-    denialSource: 'MIAODA_OBJECT_ACCESS',
+    denialSource:
+      input.actor.principalKind === 'FINAL_USER' &&
+      input.actor.transport === 'AILY_SIGNED_MCP_HTTP'
+        ? 'AILY_SIGNED_MCP_OBJECT_ACCESS'
+        : 'MIAODA_OBJECT_ACCESS',
   };
 }
 

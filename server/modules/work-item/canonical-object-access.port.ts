@@ -73,9 +73,7 @@ export interface CanonicalMiaodaFinalUserActorContext {
     id: string;
   };
   subjectDecision: {
-    source:
-      | 'MIAODA_GATEWAY_USER_CONTEXT'
-      | 'FEISHU_OAUTH_USER_ACCESS_TOKEN';
+    source: 'MIAODA_GATEWAY_USER_CONTEXT' | 'FEISHU_OAUTH_USER_ACCESS_TOKEN';
     applicationScopeId: string;
     tenantId: string;
     version: string;
@@ -93,14 +91,47 @@ export interface CanonicalMiaodaFinalUserActorContext {
     | 'FEISHU_OAUTH_USER_ACCESS_TOKEN';
   feishuUserId: string | null;
   feishuOpenId: string | null;
-  feishuIdentityProvenance:
-    | 'UNAVAILABLE'
-    | 'FEISHU_OAUTH_USER_ACCESS_TOKEN';
+  feishuIdentityProvenance: 'UNAVAILABLE' | 'FEISHU_OAUTH_USER_ACCESS_TOKEN';
   sessionId: string | null;
   sessionRevision: number | null;
-  sessionProvenance:
-    | 'UNAVAILABLE'
-    | 'SERVER_OPAQUE_SESSION';
+  sessionProvenance: 'UNAVAILABLE' | 'SERVER_OPAQUE_SESSION';
+}
+
+/**
+ * Final-user identity delivered by Feishu Aily's native signed MCP handoff.
+ * The JWT proves the Feishu caller and tenant for this exact HTTP request;
+ * AuthNPaasService then maps the Feishu user_id to the canonical Miaoda user.
+ */
+export interface CanonicalAilyFinalUserActorContext {
+  principalKind: 'FINAL_USER';
+  transport: 'AILY_SIGNED_MCP_HTTP';
+  canonicalSubject: {
+    namespace: 'MIAODA_USER_ID';
+    id: string;
+  };
+  subjectDecision: {
+    source: 'AILY_SIGNED_JWT_AND_MIAODA_AUTHNPAAS_ID_CONVERT';
+    applicationScopeId: string;
+    tenantId: string;
+    version: 'aily-jwt-hs256.authnpaas-user-convert.v1';
+    decidedAt: string;
+  };
+  tenantId: string;
+  applicationScopeId: string;
+  applicationScopeProvenance: 'HOST_CONFIGURED_MIAODA_APP_ID';
+  workspaceId: null;
+  workspaceProvenance: 'UNAVAILABLE';
+  env: string;
+  platformRoles: readonly string[];
+  identityProvenance: 'AILY_SIGNED_JWT';
+  feishuUserId: string;
+  feishuOpenId: null;
+  feishuIdentityProvenance: 'AILY_SIGNED_JWT';
+  agentId: string;
+  tokenExpiresAt: string;
+  sessionId: null;
+  sessionRevision: null;
+  sessionProvenance: 'UNAVAILABLE';
 }
 
 export interface CanonicalUnavailableActorContext {
@@ -112,6 +143,7 @@ export interface CanonicalUnavailableActorContext {
 
 export type CanonicalActorContext =
   | CanonicalMiaodaFinalUserActorContext
+  | CanonicalAilyFinalUserActorContext
   | CanonicalUnavailableActorContext;
 
 export type CanonicalObjectAccessDenyCode =
@@ -132,6 +164,7 @@ export interface CanonicalObjectAccessDenied {
   statusCode: 400 | 404 | 409 | 503;
   denialSource:
     | 'MIAODA_OBJECT_ACCESS'
+    | 'AILY_SIGNED_MCP_OBJECT_ACCESS'
     | 'MIAODA_BROWSER_UNAVAILABLE_ADAPTER'
     | 'AILY_UNAVAILABLE_ADAPTER'
     | 'SERVICE_UNAVAILABLE_ADAPTER'
@@ -148,7 +181,9 @@ export interface CanonicalObjectAccessGrant {
   documentVersionId: string;
   tenantId: string;
   applicationScopeId: string;
-  applicationScopeProvenance: 'MIAODA_GATEWAY_APP_CONTEXT';
+  applicationScopeProvenance:
+    | 'MIAODA_GATEWAY_APP_CONTEXT'
+    | 'HOST_CONFIGURED_MIAODA_APP_ID';
   workspaceId: null;
   workspaceProvenance: 'UNAVAILABLE';
   actorUserId: string;
@@ -178,8 +213,12 @@ export interface CanonicalObjectAccessGrant {
   authorizationFingerprint: string;
   freshReadAt: string;
   auditProvenance: {
-    identity: 'MIAODA_GATEWAY_USER_CONTEXT';
-    applicationScope: 'MIAODA_GATEWAY_APP_CONTEXT';
+    identity:
+      | 'MIAODA_GATEWAY_USER_CONTEXT'
+      | 'AILY_SIGNED_JWT_AND_MIAODA_AUTHNPAAS_ID_CONVERT';
+    applicationScope:
+      | 'MIAODA_GATEWAY_APP_CONTEXT'
+      | 'HOST_CONFIGURED_MIAODA_APP_ID';
     workspace: 'UNAVAILABLE';
     objectAuthorization: 'HOST_WORK_ITEM_REQUESTED_BY';
     memberAuthorization: 'UNAVAILABLE';

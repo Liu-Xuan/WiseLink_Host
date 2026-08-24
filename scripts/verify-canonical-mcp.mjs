@@ -65,7 +65,16 @@ const vertical = {
     };
   },
 };
-const mcp = new CanonicalHostMcpService(vertical);
+const readonlyScope = {
+  authorizeWorkItemRead: async ({ workItemId }) => ({
+    principalId: 'transport-verifier-final-user',
+    appId: 'app_17bzc551rsg',
+    tenantId: 'transport-verifier-tenant',
+    workItemId,
+    authorizationFingerprint: `transport-verifier:${workItemId}`,
+  }),
+};
+const mcp = new CanonicalHostMcpService(vertical, readonlyScope);
 const dynamicEvaluation = {
   begin: async (workItemId) => {
     dynamicCalls.push({ tool: 'begin_dynamic_evaluation', workItemId });

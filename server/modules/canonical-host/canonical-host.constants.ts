@@ -35,6 +35,7 @@ export const CANONICAL_OPENCLAW_OVERALL_PROVIDER = Symbol(
 );
 
 export const CANONICAL_MIAODA_APP_ID = 'app_17bzc551rsg';
+export const CANONICAL_AILY_AGENT_ID = 'agent_4krmu8apqgdky';
 
 // Verified with platform role-list/role-get for app_17bzc551rsg.
 // This role is limited to controlled development WorkItem creation/S1 flows;

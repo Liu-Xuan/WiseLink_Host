@@ -17,7 +17,7 @@ import {
 // eslint-disable-next-line @darraghor/nestjs-typed/injectable-should-be-provided
 export class CanonicalObjectAccessRouter implements CanonicalObjectAccessPort {
   constructor(
-    private readonly hostedMiaoda: CanonicalObjectAccessPort,
+    private readonly finalUser: CanonicalObjectAccessPort,
     private readonly unavailableAily: UnavailableAilyObjectAccessAdapter,
     private readonly unavailableService: UnavailableServiceObjectAccessAdapter,
     private readonly unavailableSession: UnavailableSessionObjectAccessAdapter,
@@ -40,6 +40,6 @@ export class CanonicalObjectAccessRouter implements CanonicalObjectAccessPort {
     ) {
       return this.unavailableSession.freshRead(input);
     }
-    return this.hostedMiaoda.freshRead(input);
+    return this.finalUser.freshRead(input);
   }
 }

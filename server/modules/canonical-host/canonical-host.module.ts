@@ -10,6 +10,12 @@ import {
   type UnifiedReaderModuleOptions,
 } from '../unified-reader/unified-reader.module';
 import { CanonicalEntryFacadeService } from './canonical-entry-facade.service';
+import { AilyCanonicalServiceScopeAuthorization } from './aily-canonical-service-scope.authorization';
+import {
+  AILY_IDENTITY_JWT_SECRET,
+  AilyNativeFinalUserIdentityService,
+  ailyIdentityJwtSecretFromEnv,
+} from './aily-native-final-user-identity.service';
 import { CanonicalHostVerticalService } from './canonical-host-vertical.service';
 import { CanonicalHostController } from './canonical-host.controller';
 import { CanonicalHostOpenApiController } from './canonical-host.openapi.controller';
@@ -95,6 +101,13 @@ export interface CanonicalHostModuleOptions {
     CanonicalFailureRecordingService,
     CanonicalHostVerticalService,
     CanonicalHostMcpService,
+    AilyNativeFinalUserIdentityService,
+    AilyCanonicalServiceScopeAuthorization,
+    {
+      provide: AILY_IDENTITY_JWT_SECRET,
+      inject: [],
+      useFactory: (): string | null => ailyIdentityJwtSecretFromEnv(),
+    },
     CanonicalHostOpenClawMcpService,
     CanonicalHostOpenClawDynamicEvaluationService,
     CanonicalHostOpenClawDiscoveryService,
@@ -112,7 +125,7 @@ export interface CanonicalHostModuleOptions {
     UnavailableCanonicalServiceScopeAuthorization,
     {
       provide: CANONICAL_SERVICE_SCOPE_AUTHORIZATION,
-      useExisting: UnavailableCanonicalServiceScopeAuthorization,
+      useExisting: AilyCanonicalServiceScopeAuthorization,
     },
   ],
 })
@@ -219,6 +232,13 @@ export class CanonicalHostModule {
         CanonicalFailureRecordingService,
         CanonicalHostVerticalService,
         CanonicalHostMcpService,
+        AilyNativeFinalUserIdentityService,
+        AilyCanonicalServiceScopeAuthorization,
+        {
+          provide: AILY_IDENTITY_JWT_SECRET,
+          inject: [],
+          useFactory: (): string | null => ailyIdentityJwtSecretFromEnv(),
+        },
         CanonicalHostOpenClawMcpService,
         CanonicalHostOpenClawDynamicEvaluationService,
         CanonicalHostOpenClawDiscoveryService,
@@ -236,7 +256,7 @@ export class CanonicalHostModule {
         UnavailableCanonicalServiceScopeAuthorization,
         {
           provide: CANONICAL_SERVICE_SCOPE_AUTHORIZATION,
-          useExisting: UnavailableCanonicalServiceScopeAuthorization,
+          useExisting: AilyCanonicalServiceScopeAuthorization,
         },
       ],
       exports: [
