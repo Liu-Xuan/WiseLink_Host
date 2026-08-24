@@ -2,10 +2,7 @@ import { createHash } from 'node:crypto';
 
 import { Inject, Injectable } from '@nestjs/common';
 
-import {
-  CANONICAL_AILY_AGENT_ID,
-  CANONICAL_MIAODA_APP_ID,
-} from '../canonical-host/canonical-host.constants';
+import { CANONICAL_MIAODA_APP_ID } from '../canonical-host/canonical-host.constants';
 import type {
   CanonicalAilyFinalUserActorContext,
   CanonicalGrantableObjectAccessAction,
@@ -112,6 +109,10 @@ function hostedNativeActor(
     return false;
   }
   if (actor.transport === 'AILY_SIGNED_MCP_HTTP') {
+    // agentId is entrance/provenance only; the entrance allowlist lives at
+    // ingress (AilyNativeFinalUserIdentityService). Once the native signed
+    // Aily actor is verified at ingress, agentId is neither an
+    // authorization predicate nor a fingerprint input here.
     return (
       actor.identityProvenance === 'AILY_SIGNED_JWT' &&
       actor.feishuIdentityProvenance === 'AILY_SIGNED_JWT' &&
@@ -122,7 +123,6 @@ function hostedNativeActor(
       actor.subjectDecision.version ===
         'aily-jwt-hs256.authnpaas-user-convert.v1' &&
       actor.applicationScopeProvenance === 'HOST_CONFIGURED_MIAODA_APP_ID' &&
-      actor.agentId === CANONICAL_AILY_AGENT_ID &&
       Number.isFinite(Date.parse(actor.tokenExpiresAt))
     );
   }

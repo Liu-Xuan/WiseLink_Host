@@ -63,3 +63,6 @@ pnpm-lock.yaml
 # Agent files
 .agent/
 .npm_cache
+
+# U0 vendor build scratch (wheels, standalone CPython, local verification vendors)
+.u0-build/

@@ -96,7 +96,7 @@ export async function inspectHostedU0PythonRuntime(
     inspection.python !== runtime.pythonVersion ||
     inspection.system !== 'linux' ||
     !allowedMachines.has(inspection.machine) ||
-    !inspection.soabi.startsWith('cpython-39-') ||
+    !/^cpython-(39|310)-/.test(inspection.soabi ?? '') ||
     Object.values(inspection.origins).some(
       (origin) => !origin.startsWith(`${runtime.pythonModulePath}/`),
     )

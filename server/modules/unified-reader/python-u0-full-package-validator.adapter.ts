@@ -283,17 +283,13 @@ export class PythonU0FullPackageValidatorAdapter implements U0FullPackageValidat
       );
       const runtime = JSON.parse(stdout.trim()) as PythonVendorRuntime;
       const target: string = basename(this.pythonModulePath);
-      const expectedMachine: string =
-        target === 'linux-arm64-cp39'
-          ? 'aarch64'
-          : target === 'linux-x64-cp39'
-            ? 'x86_64'
-            : '';
-      if (
-        !runtime.python?.startsWith('3.9.') ||
-        runtime.system !== 'linux' ||
-        runtime.machine !== expectedMachine ||
-        !runtime.soabi?.startsWith(`cpython-39-${expectedMachine}`) ||
+      const expected = EXPECTED_VENDOR_RUNTIMES[target];
+        if (
+          !expected ||
+          !runtime.python?.startsWith(expected.pythonPrefix) ||
+            runtime.system !== expected.system ||
+            runtime.machine !== expected.machine ||
+      !runtime.soabi?.startsWith(expected.soabiPrefix) ||
         runtime.versions?.attrs !== '26.1.0' ||
         runtime.versions?.jsonschema !== '4.25.1' ||
         runtime.versions?.['jsonschema-specifications'] !== '2025.9.1' ||
@@ -306,10 +302,8 @@ export class PythonU0FullPackageValidatorAdapter implements U0FullPackageValidat
         !Object.values(runtime.origins).every((origin: string) =>
           isInside(this.pythonModulePath as string, origin),
         ) ||
-        !runtime.origins.rpdsNative?.endsWith(
-          `rpds.cpython-39-${expectedMachine}-linux-gnu.so`,
-        )
-      ) {
+        !runtime.origins.rpdsNative?.endsWith(expected.rpdsNativeSuffix)
+          ) {
         throw new Error('PYTHON_VENDOR_VERSION');
       }
     } catch {
@@ -330,6 +324,55 @@ interface PythonVendorRuntime {
   versions?: Record<string, string>;
   origins?: Record<string, string>;
 }
+
+interface ExpectedVendorRuntime {
+  system: 'linux' | 'darwin';
+  machine: string;
+  pythonPrefix: string;
+  soabiPrefix: string;
+  rpdsNativeSuffix: string;
+}
+
+const EXPECTED_VENDOR_RUNTIMES: Record<string, ExpectedVendorRuntime> = {
+  'linux-arm64-cp39': {
+    system: 'linux',
+    machine: 'aarch64',
+    pythonPrefix: '3.9.',
+    soabiPrefix: 'cpython-39-aarch64',
+    rpdsNativeSuffix: 'rpds.cpython-39-aarch64-linux-gnu.so',
+  },
+  'linux-x64-cp39': {
+    system: 'linux',
+    machine: 'x86_64',
+    pythonPrefix: '3.9.',
+    soabiPrefix: 'cpython-39-x86_64',
+    rpdsNativeSuffix: 'rpds.cpython-39-x86_64-linux-gnu.so',
+  },
+  'linux-arm64-cp310': {
+    system: 'linux',
+    machine: 'aarch64',
+    pythonPrefix: '3.10.',
+    soabiPrefix: 'cpython-310-aarch64',
+    rpdsNativeSuffix: 'rpds.cpython-310-aarch64-linux-gnu.so',
+  },
+  'linux-x64-cp310': {
+    system: 'linux',
+    machine: 'x86_64',
+    pythonPrefix: '3.10.',
+    soabiPrefix: 'cpython-310-x86_64',
+    rpdsNativeSuffix: 'rpds.cpython-310-x86_64-linux-gnu.so',
+  },
+  // Local real-run verification vendor (genuine x86_64 CPython 3.10 under
+  // Rosetta on macOS). Hosted resolution never selects these directories;
+  // resolveVendoredU0PythonModulePath only resolves linux-*.
+  'darwin-x64-cp310': {
+    system: 'darwin',
+    machine: 'x86_64',
+    pythonPrefix: '3.10.',
+    soabiPrefix: 'cpython-310-',
+    rpdsNativeSuffix: 'rpds.cpython-310-darwin.so',
+  },
+};
 
 function isInside(root: string, candidate: string): boolean {
   const path: string = relative(resolve(root), resolve(candidate));

@@ -35,7 +35,17 @@ export const CANONICAL_OPENCLAW_OVERALL_PROVIDER = Symbol(
 );
 
 export const CANONICAL_MIAODA_APP_ID = 'app_17bzc551rsg';
-export const CANONICAL_AILY_AGENT_ID = 'agent_4krmu8apqgdky';
+
+/**
+ * Entrance/provenance only. This is the single Aily agent currently allowed
+ * to reach the Host read-only MCP transport. It is never an Actor or ACL
+ * input: the final-user Actor derives only from the verified x-aily-jwt
+ * `user_id` + `tenant_id` after the official AuthNPaasService
+ * Feishu user_id -> Miaoda userId mapping. No agent -> spring app mapping is
+ * asserted or relied on. The earlier `agent_4krmu8apqgdky` entrance is
+ * abandoned and must stay absent from active assumptions.
+ */
+export const CANONICAL_AILY_AGENT_ID = 'agent_4km47c77ujwqphg';
 
 // Verified with platform role-list/role-get for app_17bzc551rsg.
 // This role is limited to controlled development WorkItem creation/S1 flows;
