@@ -31,6 +31,10 @@ const REQUIRED_DOCUMENT_FIELD_ROUTES = Object.freeze({
   ]),
   'APP-001': Object.freeze(['coreFields.applicabilityRaw.value']),
   'APP-002': Object.freeze(['coreFields.applicabilityRaw.value']),
+  'IMP-001': Object.freeze(['familyFields.workInstructionSteps.value[0]']),
+  'IMP-005': Object.freeze([
+    'familyFields.groupSpecificConcurrentRequirements.value[0]',
+  ]),
 });
 
 /**

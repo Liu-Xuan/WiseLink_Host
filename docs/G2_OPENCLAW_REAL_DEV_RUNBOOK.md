@@ -282,3 +282,63 @@ worker fleet manager 或通知系统。若托管 automation 能稳定唤醒，�
   pg-boss；不得反向恢复 8 MiB 分片或直接让 provider 写 current。
 - non-claims：未创建/启用 automation，未发布 handler，未调用 Aily 会话，未查询 online
   observability，未验证 >100 MiB，未安装任何新队列库，未 push/部署/触碰生产或历史对象。
+
+## 12. Job-Aid 原生 section window 重放（SSOT revision 197）
+
+Host 只消费 Frozen-2 已有的 `SECTION_ANCHOR/SECTION_WINDOW` 与 SourceRef，不重新解析 PDF：
+
+- Effectivity 页 6、Concurrent Requirements 页 13、Work Instructions 页 20 被映射到既有
+  `StructuredAssessmentContext`；完整 Frozen-2 包和页 21–22 仍保留，但没有伪称已完成 7 个
+  独立 work step 的结构化提取。
+- OpenClaw packet 保持小于 45,000 bytes；仅 APP-001、APP-002、CLS-001、GOV-003、
+  IMP-001、IMP-005 六项得到 source-bounded candidate。candidate 不是 EvidenceRef，也不证明
+  Fleet applicability。
+- Host 对边界 U+FEFF/U+200B 做窄清理；predicate、missing key 和 UNKNOWN 人工复核标志由
+  Host 机械归一化。单行预算为 400 bytes，总输出仍为 60,000 bytes。唯一允许的位置 ID 修复是：
+  恰好一个非 Criterion ID 与该行 result 单元格相同；合法 Criterion ID 交换、缺行、多处损坏
+  仍 fail-closed。
+
+同一隔离 WorkItem revision 5 上的四次真实重放均经过专用 OpenClaw Gateway HTTP，agent/model
+均为 `g2-action-attempt` / `wiselink/wiselink-direct-llm`，没有 simulation 或 provider 直连：
+
+| Attempt | ResultEnvelope hash | Host 观察 |
+| --- | --- | --- |
+| `ATT-b8e67cbd-504f-414f-8f57-5e1e6f884ab7` | `423a2aca7454f74ed2bdee30386939acebd4004f3eb421a217f69f1354111b1c` | 前导 U+200B；`FAILED/BASE_ONE_SHOT_OUTPUT_JSON_INVALID` |
+| `ATT-792f8892-a987-455a-8951-9ed19d343f19` | `75828740ea9e39c9578990238ccd3d6c0f445e6ff8bfe48c1cb01a508d3b753a` | GOV-003 373/360 bytes，且模型自造 missing key；`FAILED` |
+| `ATT-e7ac6e6c-19d3-45a1-bc88-1db088d51d2c` | `87d806e2ed7359cb23988033f4859aabc4d15429d39e6e65697aff7ac8cff20b` | DEC-005 ruleId 单格误写为 result；`FAILED` |
+| `ATT-17e36d96-5bdc-46d1-892e-4fdd7703dba5` | `07e9492c400375a3dab85fecfcf225fa2b8b235c671a688ffed54981d03eacf1` | 顶层缺一个结束 `}`；`FAILED/BASE_ONE_SHOT_OUTPUT_JSON_INVALID` |
+
+第二、三轮真实模型字节在相应窄修复后均通过完整离线 consumer；第三轮为 150/150、124 个
+Host-bound 缺口、149 项人工复核、33,159 bytes 规范化 artifact。但没有用离线结果回写 DB。
+第四轮是新的实质损坏，Host 正确保留完整 ResultEnvelope/hash、释放 lease/slot、
+`projectionApplied=false`，WorkItem revision 仍为 5。因此本轮 **不宣称** 新 Job-Aid context 已跨过
+Result Gate/CAS，也没有运行新的 overall；历史第 10 节 dynamic/overall 成功证据仍有效。
+
+精确外部阻断是 `wiselink-direct-llm` 在同一严格 JSON 合同上的非确定性结构损坏。下一步应优先
+验证 OpenClaw/模型原生 structured-output/JSON-schema 能力或可观测的同 Attempt bounded regeneration；
+不得在 Host 继续增加任意 JSON 修补，也不得把损坏内容替换为 `{}`。
+
+## 13. Feishu evidence research 候选的 TaskEnvelope seam（只读审查）
+
+只读核验候选 `ec1885a057514aee62ae67afbe4da1f092e01163` 的
+`server/modules/feishu-evidence-research/**`。处置为 `ADAPT_EXISTING`：其 frozen binding、locator/version
+核对、private candidate-only session、显式 adoption receipt/CAS 边界可复用；当前没有接入 runtime，
+没有真实飞书读取，不能计入 G2 完成。
+
+最窄 Host 集成应是：
+
+1. Host 以 `transport=OPENCLAW_MCP` fresh-authorize WorkItem/Attempt，并在 Host 内构造
+   `FeishuEvidenceServicePrincipal`；principal、tenant、authorization fingerprint 不进入 MCP schema
+   或 TaskEnvelope model input。
+2. Host 在 ActionAttempt begin 内调用 `beginResearch`，把 frozen query/bindings/read plan 作为
+   TaskEnvelope 的 candidate-only source/connector 输入；OpenClaw 只用飞书原生只读工具执行窄查询。
+3. OpenClaw 将 exact readback 放入 ResultEnvelope；Host Result Gate 校验 attempt/fence 后在内部调用
+   `commitReadback`。OpenClaw 不直接持 ACL、不直接创建 EvidenceRef、不写 WorkItem/current。
+4. `adoptCandidates` 不注册为 OpenClaw MCP 写工具。只有工程师显式 ReviewAction(expectedRevision)
+   才能调用 adoption port，形成 input revision+1、STALE 和受影响项重评。
+
+给 integration planner 的唯一共享接口依赖是 transport-aware composite service-scope：WorkItem 和
+Attempt authorize 输入必须显式包含 `transport: 'OPENCLAW_MCP' | 'AILY'`，并返回现有 verified
+principal/tenant/workItem scope；研究 readback 复用 Attempt authorize，不新增以 `researchRef` 为 ACL
+真源的接口。`9350` 的旧身份接口不得被本候选吸收，`package.json`、
+`verify-canonical-mcp.mjs`、`canonical-host.module.ts` 均不在本提交修改范围。

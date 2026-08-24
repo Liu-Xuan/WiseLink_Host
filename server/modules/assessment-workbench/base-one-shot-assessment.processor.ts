@@ -99,7 +99,7 @@ export const BASE_ONE_SHOT_RULE_RESULT_FIELDS = [
 const RULE_RESULT_FIELDS = BASE_ONE_SHOT_RULE_RESULT_FIELDS;
 
 const BASE_ONE_SHOT_OUTPUT_MAX_UTF8_BYTES = 60_000;
-const BASE_ONE_SHOT_RULE_RESULT_ROW_MAX_UTF8_BYTES = 360;
+const BASE_ONE_SHOT_RULE_RESULT_ROW_MAX_UTF8_BYTES = 400;
 const BASE_ONE_SHOT_NEXT_ROUND_MAX_ITEMS = 12;
 const BASE_ONE_SHOT_NEXT_ROUND_ITEM_MAX_UTF8_BYTES = 400;
 const BASE_ONE_SHOT_OUTPUT_ENVELOPE_RESERVE_UTF8_BYTES = 6_000;
@@ -393,8 +393,9 @@ export function consumeBaseOneShotAssessmentResult(
     );
   }
   let parsed: Record<string, any>;
+  const normalizedOutput = normalizeBoundaryJsonFormatMarks(output);
   try {
-    parsed = JSON.parse(output) as Record<string, any>;
+    parsed = JSON.parse(normalizedOutput) as Record<string, any>;
   } catch {
     throw new Error('BASE_ONE_SHOT_OUTPUT_JSON_INVALID');
   }
@@ -448,17 +449,16 @@ export function consumeBaseOneShotAssessmentResult(
     }
     returnedIds.push(String(result.ruleId));
   }
-  if (
-    new Set(returnedIds).size !== returnedIds.length ||
-    returnedIds.some((id, index) => id !== expectedIds[index])
-  ) {
-    throw new Error('BASE_ONE_SHOT_RULE_MEMBERSHIP_OR_ORDER_MISMATCH');
-  }
-  validateRuleSemantics(packet, ruleResults);
+  const identityBoundRuleResults = bindSingleDuplicatedResultCellRuleId(
+    ruleResults,
+    returnedIds,
+    expectedIds,
+  );
   const normalizedRuleResults = normalizePredicateBoundRuleResults(
     packet,
-    ruleResults,
+    identityBoundRuleResults,
   );
+  validateRuleSemantics(packet, normalizedRuleResults);
   if (!Array.isArray(parsed.nextRoundChecklist)) {
     throw new Error('BASE_ONE_SHOT_NEXT_ROUND_CHECKLIST_REQUIRED');
   }
@@ -518,6 +518,29 @@ export function consumeBaseOneShotAssessmentResult(
   };
 }
 
+function bindSingleDuplicatedResultCellRuleId(
+  ruleResults: Array<Record<string, unknown>>,
+  returnedIds: string[],
+  expectedIds: string[],
+): Array<Record<string, unknown>> {
+  const mismatches = returnedIds
+    .map((id, index) => id === expectedIds[index] ? -1 : index)
+    .filter((index) => index >= 0);
+  if (mismatches.length === 0) return ruleResults;
+  const index = mismatches[0];
+  const expectedIdSet = new Set(expectedIds);
+  if (
+    mismatches.length !== 1 ||
+    new Set(returnedIds).size !== returnedIds.length ||
+    expectedIdSet.has(returnedIds[index]) ||
+    returnedIds[index] !== ruleResults[index].result
+  ) {
+    throw new Error('BASE_ONE_SHOT_RULE_MEMBERSHIP_OR_ORDER_MISMATCH');
+  }
+  return ruleResults.map((result, resultIndex) =>
+    resultIndex === index ? { ...result, ruleId: expectedIds[index] } : result);
+}
+
 /**
  * Re-encodes host-normalized rows into the existing Base artifact envelope so
  * later dynamic/overall/readback consumers see the same predicate semantics.
@@ -526,14 +549,15 @@ export function serializeNormalizedBaseOneShotOutput(
   output: string,
   result: BaseOneShotAssessmentResult,
 ): Uint8Array {
-  const parsed = JSON.parse(output) as Record<string, any>;
+  const normalizedOutput = normalizeBoundaryJsonFormatMarks(output);
+  const parsed = JSON.parse(normalizedOutput) as Record<string, any>;
   if (
     !parsed.ruleResults ||
     typeof parsed.ruleResults !== 'object' ||
     !Array.isArray(parsed.ruleResults.columns) ||
     !Array.isArray(parsed.ruleResults.rows)
   ) {
-    return Buffer.from(output, 'utf8');
+    return Buffer.from(normalizedOutput, 'utf8');
   }
   parsed.ruleResults = {
     columns: [...BASE_ONE_SHOT_RULE_RESULT_FIELDS],
@@ -556,6 +580,10 @@ export function serializeNormalizedBaseOneShotOutput(
     throw new Error('BASE_ONE_SHOT_NORMALIZED_OUTPUT_BUDGET_EXCEEDED');
   }
   return bytes;
+}
+
+export function normalizeBoundaryJsonFormatMarks(value: string): string {
+  return value.replace(/^[\s\uFEFF\u200B]+|[\s\uFEFF\u200B]+$/gu, '');
 }
 
 function normalizeOverallSelfCheck(
@@ -629,6 +657,7 @@ function normalizePredicateBoundRuleResults(
         result: 'UNKNOWN/WAITING_INPUT',
         conclusion: '信息不足',
         missingInputs: missingPredicateKeys,
+        humanReviewRequired: true,
       };
     }
     if (predicateResult === 'TRUE') {

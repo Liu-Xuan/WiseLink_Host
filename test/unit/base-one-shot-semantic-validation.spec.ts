@@ -12,20 +12,21 @@ describe('dynamic candidate semantic validation', () => {
       ['RULE-3', 'BLOCKED_MISSING_INPUT', [], '按本条规则评估。', '受控事实不足。', 'UNKNOWN/WAITING_INPUT', [], [], true],
     ]);
     expect(() => consumeBaseOneShotAssessmentResult(packet, output)).toThrow(
-      'BASE_ONE_SHOT_BLOCKED_WITHOUT_MISSING_INPUT',
+      'BASE_ONE_SHOT_KNOWN_CANDIDATE_DOWNGRADED',
     );
   });
 
-  it('rejects a missing input that is not declared by the criterion', () => {
+  it('replaces model missing inputs with Host-declared predicate keys', () => {
     const packet = packetWithSemantics();
     const output = candidateOutput(packet, [
-      ['RULE-1', 'UNKNOWN_MISSING_INPUT', [], '需要补证。', '当前无法确认。', 'conditional', [], ['not.allowed'], true],
+      ['RULE-1', 'UNKNOWN_MISSING_INPUT', ['FACT-1'], '需要补证。', '当前无法确认。', 'conditional', ['SRC-1'], ['not.allowed'], true],
       ['RULE-2', 'CANDIDATE_PASS', ['FACT-2'], '已读取来源。', '规则条件满足。', 'pass', ['SRC-2'], [], false],
       ['RULE-3', 'NOT_APPLICABLE', [], '谓词为 FALSE。', '该规则不适用。', 'not_applicable', [], [], false],
     ]);
-    expect(() => consumeBaseOneShotAssessmentResult(packet, output)).toThrow(
-      'BASE_ONE_SHOT_MISSING_INPUT_NOT_BOUND',
-    );
+
+    const result = consumeBaseOneShotAssessmentResult(packet, output);
+
+    expect(result.ruleResults[0].missingInputs).toEqual(['fleet.fact']);
   });
 
   it('does not allow a TRUE predicate to remain blocked', () => {
@@ -40,16 +41,38 @@ describe('dynamic candidate semantic validation', () => {
     );
   });
 
-  it('requires UNKNOWN rows to request engineer review', () => {
+  it('clears model-invented predicate gaps from a non-blocked TRUE row', () => {
     const packet = packetWithSemantics();
     const output = candidateOutput(packet, [
-      ['RULE-1', 'UNKNOWN/WAITING_INPUT', [], '需要补证。', '仍待机队事实。', 'UNKNOWN/WAITING_INPUT', [], ['fleet.fact'], false],
+      ['RULE-1', 'UNKNOWN/WAITING_INPUT', ['FACT-1'], '需要补证。', '仍待机队事实。', 'conditional', ['SRC-1'], ['fleet.fact'], true],
+      ['RULE-2', 'WAITING_INPUT', ['FACT-2'], '已读取来源。', '工程结论仍待复核。', 'conditional', ['SRC-2'], ['model.invented'], true],
+      ['RULE-3', 'NOT_APPLICABLE', [], '谓词为 FALSE。', '该规则不适用。', 'not_applicable', [], [], false],
+    ]);
+
+    const result = consumeBaseOneShotAssessmentResult(packet, output);
+
+    expect(result.ruleResults[1]).toMatchObject({
+      result: 'WAITING_INPUT',
+      sourceRefs: ['SRC-2'],
+      missingInputs: [],
+      humanReviewRequired: true,
+    });
+  });
+
+  it('forces UNKNOWN rows to request engineer review', () => {
+    const packet = packetWithSemantics();
+    const output = candidateOutput(packet, [
+      ['RULE-1', 'UNKNOWN/WAITING_INPUT', ['FACT-1'], '需要补证。', '仍待机队事实。', 'UNKNOWN/WAITING_INPUT', ['SRC-1'], ['fleet.fact'], false],
       ['RULE-2', 'CANDIDATE_PASS', ['FACT-2'], '已读取来源。', '规则条件满足。', 'pass', ['SRC-2'], [], false],
       ['RULE-3', 'NOT_APPLICABLE', [], '谓词为 FALSE。', '该规则不适用。', 'not_applicable', [], [], false],
     ]);
-    expect(() => consumeBaseOneShotAssessmentResult(packet, output)).toThrow(
-      'BASE_ONE_SHOT_UNKNOWN_REVIEW_REQUIRED',
-    );
+    const result = consumeBaseOneShotAssessmentResult(packet, output);
+
+    expect(result.ruleResults[0]).toMatchObject({
+      result: 'UNKNOWN/WAITING_INPUT',
+      missingInputs: ['fleet.fact'],
+      humanReviewRequired: true,
+    });
   });
 
   it('rejects source references that are not bound to the criterion', () => {
@@ -61,6 +84,35 @@ describe('dynamic candidate semantic validation', () => {
     ]);
     expect(() => consumeBaseOneShotAssessmentResult(packet, output)).toThrow(
       'BASE_ONE_SHOT_SOURCE_REF_NOT_BOUND',
+    );
+  });
+
+  it('rebinds one result-cell value copied into a Host-owned ruleId cell', () => {
+    const packet = packetWithSemantics();
+    const output = candidateOutput(packet, [
+      ['RULE-1', 'UNKNOWN/WAITING_INPUT', ['FACT-1'], '需要补证。', '仍待机队事实。', 'conditional', ['SRC-1'], ['fleet.fact'], true],
+      ['RULE-2', 'CANDIDATE_PASS', ['FACT-2'], '已读取来源。', '规则条件满足。', 'pass', ['SRC-2'], [], false],
+      ['NOT_APPLICABLE', 'NOT_APPLICABLE', [], '谓词为 FALSE。', '该规则不适用。', 'not_applicable', [], [], false],
+    ]);
+
+    const result = consumeBaseOneShotAssessmentResult(packet, output);
+
+    expect(result.ruleResults[2]).toMatchObject({
+      ruleId: 'RULE-3',
+      result: 'NOT_APPLICABLE',
+    });
+  });
+
+  it('still rejects a swap between valid Host-owned ruleIds', () => {
+    const packet = packetWithSemantics();
+    const output = candidateOutput(packet, [
+      ['RULE-2', 'UNKNOWN/WAITING_INPUT', ['FACT-1'], '需要补证。', '仍待机队事实。', 'conditional', ['SRC-1'], ['fleet.fact'], true],
+      ['RULE-1', 'CANDIDATE_PASS', ['FACT-2'], '已读取来源。', '规则条件满足。', 'pass', ['SRC-2'], [], false],
+      ['RULE-3', 'NOT_APPLICABLE', [], '谓词为 FALSE。', '该规则不适用。', 'not_applicable', [], [], false],
+    ]);
+
+    expect(() => consumeBaseOneShotAssessmentResult(packet, output)).toThrow(
+      'BASE_ONE_SHOT_RULE_MEMBERSHIP_OR_ORDER_MISMATCH',
     );
   });
 });

@@ -157,6 +157,24 @@ describe('MiaodaBaseOneShotRuleResultProvider', () => {
     expect(result.ruleResults[1].missingInputs).toEqual([]);
     expect(result.overallSelfCheck.rulesWithMissingInputs).toBe(1);
   });
+
+  it('accepts a boundary zero-width format mark without weakening JSON gates', () => {
+    const output = `\u200B${outputText()}`;
+    const result = consumeBaseOneShotAssessmentResult(
+      packetValue() as any,
+      output,
+    );
+    const normalized = serializeNormalizedBaseOneShotOutput(output, result);
+
+    expect(JSON.parse(Buffer.from(normalized).toString('utf8'))).toMatchObject({
+      correlation: packetValue().correlation,
+      authorityLevel: 'candidate_only',
+    });
+    expect(() => consumeBaseOneShotAssessmentResult(
+      packetValue() as any,
+      `\u200B${outputText()} trailing-corruption`,
+    )).toThrow('BASE_ONE_SHOT_OUTPUT_JSON_INVALID');
+  });
 });
 
 function providerFor(value: ReturnType<typeof record>) {

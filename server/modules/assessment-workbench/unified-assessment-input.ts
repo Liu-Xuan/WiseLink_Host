@@ -5,6 +5,10 @@ import type {
   UnifiedParsedPackageArtifactRecord,
   UnifiedParsedPackageReadback,
 } from './unified-parsed-package-reader';
+import type {
+  StructuredAssessmentContext,
+  StructuredSourceBinding,
+} from '@shared/assessment-host.interface';
 import {
   readFrozenUnifiedParsedPackageForSbAssessment,
 } from './unified-parsed-package-reader';
@@ -32,12 +36,20 @@ interface UnifiedContentUnit {
   kind: string;
   sourceRefIds: string[];
   payload: Record<string, unknown>;
+  continuityKey?: string;
+  order?: number;
 }
 
 interface UnifiedPackage {
   sourceRefs: UnifiedSourceRef[];
   contentUnits: UnifiedContentUnit[];
   document: Record<string, any>;
+}
+
+interface NativeSectionWindow {
+  heading: string;
+  unit: UnifiedContentUnit;
+  rawText: string;
 }
 
 export interface BuildUnifiedAssessmentInputOptions {
@@ -127,8 +139,10 @@ export function buildUnifiedSbJobAidAssessmentInput({
     pattern: /ATA System:\s*(\d{2})\d*/u,
     transform: (value) => [value],
   });
+  const nativeStructured = buildNativeStructuredAssessmentContext(pkg, refs);
   const sourceBindings = [
     documentType, documentCode, title, revision, issueDate, issuer, ata,
+    ...nativeStructured.sourceBindings,
   ].filter(Boolean) as Array<Record<string, unknown>>;
   const readerReceiptHash = hashCanonical(readback);
 
@@ -171,13 +185,16 @@ export function buildUnifiedSbJobAidAssessmentInput({
       documentId: readback.documentId,
       revisionId: readback.documentVersionId,
       docFamily: 'SB',
-      coreFields: Object.fromEntries(sourceBindings.map((binding) => {
+      coreFields: Object.fromEntries(sourceBindings
+        .filter((binding) => String(binding.fieldPath).startsWith('coreFields.'))
+        .map((binding) => {
         const fieldName = String(binding.fieldPath).split('.')[1];
         return [fieldName, { value: binding.structuredValue }];
-      })),
+        })),
     },
     controlledContext: {},
     sourceDerivation: { facts: [] },
+    structuredAssessmentContext: nativeStructured.context,
     publicPackageObservation: {
       resultStatus: readback.resultStatus,
       contentUnitCount: readback.contentUnitCount,
@@ -188,6 +205,264 @@ export function buildUnifiedSbJobAidAssessmentInput({
       pageSourceRefs: selectPageSourceRefs(pkg.sourceRefs),
     },
   });
+}
+
+function buildNativeStructuredAssessmentContext(
+  pkg: UnifiedPackage,
+  refs: Map<string, UnifiedSourceRef>,
+): {
+  context: StructuredAssessmentContext;
+  sourceBindings: Array<Record<string, unknown>>;
+} {
+  const windows = nativeSectionWindows(pkg, refs);
+  const applicabilityWindow = shortestWindow(windows, 'effectivity');
+  const concurrentWindow = shortestWindow(windows, 'concurrent requirements');
+  const workInstructionsWindow = firstSourceRefOnly(
+    shortestWindow(windows, 'work instructions'),
+    refs,
+  );
+
+  const applicabilityBinding = applicabilityWindow
+    ? sourcedBinding({
+        fieldPath: 'coreFields.applicabilityRaw.value',
+        value: applicabilityWindow.rawText,
+        unitType: 'native_section_window',
+        sourceRefIds: applicabilityWindow.unit.sourceRefIds,
+        refs,
+      })
+    : null;
+  const concurrentBinding = concurrentWindow
+    ? sourcedBinding({
+        fieldPath:
+          'familyFields.groupSpecificConcurrentRequirements.value[0]',
+        value: {
+          requirementState: 'PRESENT',
+          documentRequirements: [],
+          nonDocumentRequirements: [],
+          retrievalEvaluationLoopRequired: null,
+          rawText: concurrentWindow.rawText,
+        },
+        unitType: 'native_section_window',
+        sourceRefIds: concurrentWindow.unit.sourceRefIds,
+        refs,
+      })
+    : null;
+  const workInstructionsBinding = workInstructionsWindow
+    ? sourcedBinding({
+        fieldPath: 'familyFields.workInstructionSteps.value[0]',
+        value: {
+          stepPath: 'WP3.1',
+          stepLabel: 'B. WORK INSTRUCTIONS',
+          instructionText: workInstructionsWindow.rawText,
+          workPackageNumber: null,
+          workPackageLabel: null,
+          workPackageTitle: null,
+          sourcePage: firstPage(workInstructionsWindow, refs),
+        },
+        unitType: 'native_section_window',
+        sourceRefIds: workInstructionsWindow.unit.sourceRefIds,
+        refs,
+      })
+    : null;
+
+  const applicabilitySource = applicabilityBinding
+    ? structuredSourceBinding(
+        applicabilityBinding,
+        'coreFields.applicabilityRaw.value',
+      )
+    : null;
+  const concurrentSource = concurrentBinding
+    ? structuredSourceBinding(
+        concurrentBinding,
+        'familyFields.groupSpecificConcurrentRequirements.value[0]',
+      )
+    : null;
+  const workInstructionsSource = workInstructionsBinding
+    ? structuredSourceBinding(
+        workInstructionsBinding,
+        'familyFields.workInstructionSteps.value[0]',
+      )
+    : null;
+
+  return {
+    context: {
+      schemaVersion:
+        'wiselink.v3_1.sb_job_aid.structured_assessment_context.v1',
+      applicability: applicabilitySource
+        ? {
+            availability: 'AVAILABLE_CANDIDATE',
+            rawText: applicabilityWindow!.rawText,
+            source: applicabilitySource,
+          }
+        : { availability: 'MISSING', rawText: null, source: null },
+      concurrentRequirements: concurrentSource
+        ? {
+            availability: 'AVAILABLE_CANDIDATE',
+            entries: [{
+              requirementState: 'PRESENT',
+              normalizedPresence: 'PRESENT',
+              requirementsStructured: false,
+              documentRequirements: [],
+              nonDocumentRequirements: [],
+              retrievalEvaluationLoopRequired: null,
+              rawText: concurrentWindow!.rawText,
+              source: concurrentSource,
+            }],
+          }
+        : { availability: 'MISSING', entries: [] },
+      workInstructions: workInstructionsSource
+        ? {
+            availability: 'AVAILABLE_CANDIDATE',
+            stepCount: 1,
+            stepIds: ['WP3.1'],
+            steps: [{
+              stepId: 'WP3.1',
+              stepPath: 'WP3.1',
+              stepLabel: 'B. WORK INSTRUCTIONS',
+              instructionText: workInstructionsWindow!.rawText,
+              workPackageNumber: null,
+              workPackageLabel: null,
+              workPackageTitle: null,
+              sourcePage: firstPage(workInstructionsWindow!, refs),
+              source: workInstructionsSource,
+            }],
+          }
+        : {
+            availability: 'MISSING',
+            stepCount: 0,
+            stepIds: [],
+            steps: [],
+          },
+      authorityBoundary: {
+        sourceBoundParserCandidateOnly: true,
+        documentApplicabilityProvesFleetApplicability: false,
+        createsFleetFact: false,
+        createsEvidenceRef: false,
+        createsEngineerDecision: false,
+      },
+    },
+    sourceBindings: [
+      applicabilityBinding,
+      concurrentBinding,
+      workInstructionsBinding,
+    ].filter((binding): binding is Record<string, unknown> => binding !== null),
+  };
+}
+
+function nativeSectionWindows(
+  pkg: UnifiedPackage,
+  refs: Map<string, UnifiedSourceRef>,
+): NativeSectionWindow[] {
+  const units = [...pkg.contentUnits]
+    .sort((left, right) => (left.order ?? 0) - (right.order ?? 0));
+  let heading: string | null = null;
+  const windows: NativeSectionWindow[] = [];
+  for (const unit of units) {
+    if (unit.kind !== 'paragraph' || typeof unit.payload.text !== 'string') {
+      continue;
+    }
+    const observation = parseNativeObservation(unit.payload.text);
+    if (!observation) continue;
+    if (observation.observationType === 'SECTION_ANCHOR') {
+      heading = optionalText(observation.value?.matchedHeading);
+      continue;
+    }
+    if (
+      observation.observationType !== 'SECTION_WINDOW' ||
+      observation.value?.semanticBodyState !== 'CONTENT' ||
+      !heading
+    ) {
+      continue;
+    }
+    const rawText = unit.sourceRefIds
+      .map((sourceRefId) => refs.get(sourceRefId)?.quote ?? '')
+      .filter(Boolean)
+      .join('\n\n')
+      .trim();
+    if (rawText) windows.push({ heading, unit, rawText });
+    heading = null;
+  }
+  return windows;
+}
+
+function parseNativeObservation(value: string): {
+  observationType?: string;
+  value?: Record<string, unknown>;
+} | null {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as {
+          observationType?: string;
+          value?: Record<string, unknown>;
+        }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function shortestWindow(
+  windows: NativeSectionWindow[],
+  heading: string,
+): NativeSectionWindow | null {
+  const normalizedHeading = heading.trim().toLowerCase();
+  return windows
+    .filter((window) => window.heading.trim().toLowerCase() === normalizedHeading)
+    .sort((left, right) => left.rawText.length - right.rawText.length
+      || (left.unit.order ?? 0) - (right.unit.order ?? 0))[0] ?? null;
+}
+
+function firstSourceRefOnly(
+  window: NativeSectionWindow | null,
+  refs: Map<string, UnifiedSourceRef>,
+): NativeSectionWindow | null {
+  if (!window || window.unit.sourceRefIds.length === 0) return null;
+  const sourceRefIds = window.unit.sourceRefIds.slice(0, 1);
+  const rawText = trimGeneratedPageFooter(
+    refs.get(sourceRefIds[0])?.quote ?? '',
+  );
+  if (!rawText) return null;
+  return {
+    ...window,
+    unit: { ...window.unit, sourceRefIds },
+    rawText,
+  };
+}
+
+function trimGeneratedPageFooter(value: string): string {
+  return value
+    .replace(/\n(?:Export Controlled ECCN:|BOEING PROPRIETARY\b)[\s\S]*$/u, '')
+    .trim();
+}
+
+function firstPage(
+  window: NativeSectionWindow,
+  refs: Map<string, UnifiedSourceRef>,
+): number | null {
+  const pages = window.unit.sourceRefIds
+    .map((sourceRefId) => refs.get(sourceRefId)?.pageStart)
+    .filter((page): page is number => Number.isInteger(page));
+  return pages.length > 0 ? Math.min(...pages) : null;
+}
+
+function structuredSourceBinding(
+  binding: Record<string, unknown>,
+  structurePath: string,
+): StructuredSourceBinding {
+  return {
+    structurePath,
+    objectId: String(binding.unitId),
+    objectHash: String(binding.unitHash),
+    sourceUnitIds: [String(binding.unitId)],
+    sourceRefs: structuredClone(
+      binding.sourceRefs as Array<Record<string, unknown>>,
+    ),
+  };
+}
+
+function optionalText(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
 export function readUnifiedArtifactRecord(

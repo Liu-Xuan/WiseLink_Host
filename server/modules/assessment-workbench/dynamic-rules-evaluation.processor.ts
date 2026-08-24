@@ -5,6 +5,7 @@ import {
   BASE_ONE_SHOT_PURPOSE,
   buildBaseOneShotAssessmentPacket,
   consumeBaseOneShotAssessmentResult,
+  normalizeBoundaryJsonFormatMarks,
   type BaseOneShotAssessmentPacket,
   type BaseOneShotAssessmentResult,
   type BaseOneShotCorrelation,
@@ -173,7 +174,9 @@ export function consumeDynamicRulesEvaluationOutput(
   }
   let parsed: Record<string, unknown>;
   try {
-    parsed = JSON.parse(output) as Record<string, unknown>;
+    parsed = JSON.parse(
+      normalizeBoundaryJsonFormatMarks(output),
+    ) as Record<string, unknown>;
   } catch {
     throw new Error('BASE_ONE_SHOT_OUTPUT_JSON_INVALID');
   }

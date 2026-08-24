@@ -3,7 +3,6 @@ import type {
   ShadowCandidateConclusion,
   ShadowEvaluationItem,
   ShadowEvaluationStatus,
-  StructuredAssessmentContext,
 } from '@shared/assessment-host.interface';
 
 export function buildUnifiedAssessmentSnapshot(
@@ -42,6 +41,14 @@ export function buildUnifiedAssessmentSnapshot(
     || parsedSourceContext.status !== 'AVAILABLE_CANDIDATE'
     || parsedSourceContext.pageCount !== parsedSourceContext.sourcePages?.length) {
     throw new Error('UNIFIED_ASSESSMENT_PARSED_SOURCE_CONTEXT_INVALID');
+  }
+  const structuredAssessmentContext =
+    assessmentPackage.structuredAssessmentContext;
+  if (structuredAssessmentContext?.schemaVersion
+      !== 'wiselink.v3_1.sb_job_aid.structured_assessment_context.v1'
+    || structuredAssessmentContext.authorityBoundary
+      ?.documentApplicabilityProvesFleetApplicability !== false) {
+    throw new Error('UNIFIED_ASSESSMENT_STRUCTURED_CONTEXT_INVALID');
   }
   return {
     snapshotId: `local-unified:${assessmentPackage.packageId}`,
@@ -138,7 +145,7 @@ export function buildUnifiedAssessmentSnapshot(
       resultStatus: parsed.resultStatus,
     },
     parsedSourceContext,
-    structuredAssessmentContext: missingUnifiedStructuredContext(),
+    structuredAssessmentContext,
     items,
   };
 }
@@ -231,22 +238,4 @@ function countConclusions(items: ShadowEvaluationItem[]) {
   };
   for (const item of items) counts[item.candidateConclusion] += 1;
   return counts;
-}
-
-function missingUnifiedStructuredContext(): StructuredAssessmentContext {
-  return {
-    schemaVersion: 'wiselink.v3_1.sb_job_aid.structured_assessment_context.v1',
-    applicability: { availability: 'MISSING', rawText: null, source: null },
-    concurrentRequirements: { availability: 'MISSING', entries: [] },
-    workInstructions: {
-      availability: 'MISSING', stepCount: 0, stepIds: [], steps: [],
-    },
-    authorityBoundary: {
-      sourceBoundParserCandidateOnly: true,
-      documentApplicabilityProvesFleetApplicability: false,
-      createsFleetFact: false,
-      createsEvidenceRef: false,
-      createsEngineerDecision: false,
-    },
-  };
 }
