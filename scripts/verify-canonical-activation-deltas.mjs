@@ -337,7 +337,7 @@ process.stdout.write(
         ]),
         mcpTransportRoutes: 2,
         ailyMutationTools: 0,
-        openClawCandidateMutationTools: 5,
+        openClawCandidateMutationTools: 7,
       },
       hardCodedSamplePresent: false,
       failureStates: ['FAILED_WITH_IMMUTABLE_ARTIFACT', 'RECORDING_FAILED'],
