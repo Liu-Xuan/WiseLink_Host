@@ -24,6 +24,7 @@ export interface HostedU0PythonInspection {
 }
 
 export async function resolveHostedU0PythonRuntime(): Promise<HostedU0PythonRuntime> {
+  let lastVendorError: Error | null = null;
   for (const pythonExecutable of PYTHON_CANDIDATES) {
     try {
       const { stdout, stderr } = await execFileAsync(
@@ -34,21 +35,30 @@ export async function resolveHostedU0PythonRuntime(): Promise<HostedU0PythonRunt
       const match = `${stdout}\n${stderr}`.match(/Python\s+(\d+\.\d+\.\d+)/);
       if (!match) continue;
       const pythonVersion = match[1];
-      const pythonModulePath = resolveVendoredU0PythonModulePath({
-        pythonVersion,
-      });
-      return {
-        pythonExecutable,
-        pythonVersion,
-        platform: process.platform,
-        arch: process.arch,
-        pythonModulePath,
-      };
+      try {
+        const pythonModulePath = resolveVendoredU0PythonModulePath({
+          pythonVersion,
+        });
+        return {
+          pythonExecutable,
+          pythonVersion,
+          platform: process.platform,
+          arch: process.arch,
+          pythonModulePath,
+        };
+      } catch (error) {
+        // A resolvable interpreter with no matching vendor is a precise,
+        // request-independent unavailable condition. Remember it so the
+        // final failure names the exact vendor mismatch instead of a generic
+        // runtime error.
+        lastVendorError = error instanceof Error ? error : null;
+      }
     } catch {
       // Continue through the fixed server-owned executable list. Requests cannot
       // select an executable or a module path.
     }
   }
+  if (lastVendorError) throw lastVendorError;
   throw new Error('FULL_U0_VALIDATOR_UNAVAILABLE:PYTHON_VENDOR_RUNTIME');
 }
 
