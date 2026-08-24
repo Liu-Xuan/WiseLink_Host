@@ -46,7 +46,7 @@ export class DocumentManagementHostedController {
 
   @Post('ingestions/file-service')
   ingestFileServiceSelection(@Body() body: unknown, @Req() request: Request) {
-    assertProductionMiaodaBrowserIdentityAvailable();
+    assertProductionMiaodaBrowserIdentityAvailable(request.userContext);
     rejectReservedExternalDiscoveryClaims(body);
     return this.service.ingestFileServiceSelection(
       body,
@@ -59,7 +59,7 @@ export class DocumentManagementHostedController {
     @Param('documentVersionId') documentVersionId: string,
     @Req() request: Request,
   ) {
-    assertProductionMiaodaBrowserIdentityAvailable();
+    assertProductionMiaodaBrowserIdentityAvailable(request.userContext);
     return this.service.getDocumentVersion(
       documentVersionId,
       contextFromRequest(request),

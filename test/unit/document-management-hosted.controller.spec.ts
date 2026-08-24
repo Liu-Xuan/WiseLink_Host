@@ -45,9 +45,11 @@ describe('DocumentManagementHostedController direct-call defense', () => {
         operation === 'ingest'
           ? controller.ingestFileServiceSelection(
               forbidden,
-              forbidden as Request,
+              { userContext: undefined } as Request,
             )
-          : controller.getDocumentVersion('DV-FORGED', forbidden as Request);
+          : controller.getDocumentVersion('DV-FORGED', {
+              userContext: undefined,
+            } as Request);
 
       expect(invoke).toThrow(
         expect.objectContaining({
@@ -60,4 +62,47 @@ describe('DocumentManagementHostedController direct-call defense', () => {
       expect(service.getDocumentVersion).not.toHaveBeenCalled();
     },
   );
+
+  it('reuses the hosted native user context for FileService ingestion', async () => {
+    const service = {
+      ingestFileServiceSelection: jest.fn().mockResolvedValue({
+        documentVersionId: 'DV-NATIVE',
+      }),
+      getDocumentVersion: jest.fn(),
+    };
+    const controller = new DocumentManagementHostedController(
+      service as never,
+    );
+    const previousSandboxId = process.env.SANDBOX_ID;
+    process.env.SANDBOX_ID = 'unit-hosted-sandbox';
+    const body = {
+      selection: {
+        bucketId: 'bucket-default',
+        filePath: 'wiselink/dev-intake/source.pdf',
+      },
+    };
+    try {
+      await expect(
+        controller.ingestFileServiceSelection(body, {
+          userContext: {
+            userId: '1812345678901234567',
+            tenantId: '7283059256756502547',
+            appId: 'app_17bzc551rsg',
+            env: 'preview',
+            roles: ['authenticated', 'wiselink_development'],
+          },
+        } as Request),
+      ).resolves.toEqual({ documentVersionId: 'DV-NATIVE' });
+    } finally {
+      if (previousSandboxId === undefined) delete process.env.SANDBOX_ID;
+      else process.env.SANDBOX_ID = previousSandboxId;
+    }
+    expect(service.ingestFileServiceSelection).toHaveBeenCalledWith(body, {
+      actorUserId: '1812345678901234567',
+      tenantId: '7283059256756502547',
+      roles: ['authenticated', 'wiselink_development'],
+      appId: 'app_17bzc551rsg',
+      env: 'preview',
+    });
+  });
 });
