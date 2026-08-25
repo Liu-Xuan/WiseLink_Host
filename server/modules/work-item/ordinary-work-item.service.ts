@@ -111,7 +111,7 @@ export class OrdinaryWorkItemService {
   }
 
   async createOauthSessionDevelopmentRun(
-    input: CanonicalDevelopmentWorkItemRunRequest & { documentVersionId: string },
+    input: CanonicalDevelopmentWorkItemRunRequest,
     sessionActor: CanonicalMiaodaFinalUserActorContext,
   ): Promise<CanonicalOrdinaryWorkItemRunResponse> {
     if (
@@ -132,12 +132,16 @@ export class OrdinaryWorkItemService {
       userId: sessionActor.canonicalSubject.id,
       tenantId: sessionActor.tenantId,
       appId: sessionActor.applicationScopeId,
-      roles: [],
+      // This capability is server-derived from the verified OAuth session and
+      // this preview-only route. It is never accepted from the request body.
+      roles: [CANONICAL_DEVELOPMENT_ROLE_ID],
       env: sessionActor.env,
       objectAccessActor: sessionActor,
     };
     return this.runPdf(
-      { documentVersionId: input.documentVersionId, query: input.query },
+      input.documentVersionId
+        ? { documentVersionId: input.documentVersionId, query: input.query }
+        : { selection: input.selection, query: input.query },
       actor,
       'MIAODA',
       `dev:${developmentRunToken}`,

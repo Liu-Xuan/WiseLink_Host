@@ -208,6 +208,27 @@ describe('official OAuth -> persistent session G0', () => {
       expect.objectContaining({ documentVersionId: 'DV-1' }),
       actor,
     );
+    await controller.create(
+      {
+        selection: {
+          bucketId: 'bucket-default',
+          filePath:
+            'wiselink/dev-intake/0f8fad5b-d9cb-469f-a165-70867728950e/source.pdf',
+        },
+        developmentRunToken: '22222222-2222-4222-8222-222222222222',
+      },
+      { headers: { cookie: 'wl_session=opaque' } } as never,
+    );
+    expect(workItems.createOauthSessionDevelopmentRun).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        selection: {
+          bucketId: 'bucket-default',
+          filePath:
+            'wiselink/dev-intake/0f8fad5b-d9cb-469f-a165-70867728950e/source.pdf',
+        },
+      }),
+      actor,
+    );
     await expect(
       controller.create(
         { documentVersionId: 'DV-1', developmentRunToken: '11111111-1111-4111-8111-111111111111', userId: 'forged' },
