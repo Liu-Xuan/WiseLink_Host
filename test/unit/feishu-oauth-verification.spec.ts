@@ -34,6 +34,7 @@ const VALID_USER_INFO: FeishuUserInfoResponse = {
 };
 
 const VALID_MAPPING: SubjectTenantMapping = {
+  mappingId: '11111111-1111-4111-8111-111111111111',
   miaodaUserId: 'miaoda_user_001',
   miaodaTenantId: '2001',
   feishuTenantKey: 'tkey_tenant_a',
@@ -117,6 +118,7 @@ describe('FeishuOAuthVerificationAdapter fail-closed contract', () => {
     expect(mapping.resolveMapping).toHaveBeenCalledWith({
       feishuOpenId: 'ou_valid_user_001',
       feishuTenantKey: 'tkey_tenant_a',
+      expectedClientId: 'cli_valid_app',
     });
   });
 
@@ -165,6 +167,9 @@ describe('FeishuOAuthVerificationAdapter fail-closed contract', () => {
     expect(r.kind).toBe('VERIFIED');
     if (r.kind === 'VERIFIED') {
       expect(r.identity.provenance).toBe('FEISHU_OAUTH_USER_ACCESS_TOKEN');
+      expect(r.identity.subjectMappingId).toBe(
+        '11111111-1111-4111-8111-111111111111',
+      );
       expect(r.identity.miaodaUserId).toBe('miaoda_user_001');
       expect(r.identity.tenantId).toBe('2001');
       expect(r.identity.feishuUserId).toBe('emp_001');

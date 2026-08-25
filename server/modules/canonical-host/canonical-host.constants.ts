@@ -39,7 +39,8 @@ export const CANONICAL_MIAODA_APP_ID = 'app_17bzc551rsg';
 /**
  * Entrance/provenance only. This is the single Aily agent currently allowed
  * to reach the Host read-only MCP transport. It is never an Actor or ACL
- * input: the final-user Actor derives only from the verified x-aily-jwt
+ * input: the final-user Actor may derive only from a future official native
+ * platform handoff; no custom identity header is accepted.
  * `user_id` + `tenant_id` after the official AuthNPaasService
  * Feishu user_id -> Miaoda userId mapping. No agent -> spring app mapping is
  * asserted or relied on. The earlier `agent_4krmu8apqgdky` entrance is

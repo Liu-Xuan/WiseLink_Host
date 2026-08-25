@@ -10,8 +10,7 @@ import { OAUTH_CONFIG, type OAuthConfigPort } from './oauth-config.port';
 /**
  * Resolves a server-side opaque session from the incoming HTTP request.
  *
- * The session token is extracted from the `Authorization: Bearer <token>`
- * header (preferred) or a `wl_session` httpOnly cookie (DEV browser flow).
+ * The session token is extracted only from the `wl_session` HttpOnly cookie.
  * It is NEVER read from query params or request body — those are
  * caller-constructible channels (R08 violation).
  *
@@ -21,6 +20,7 @@ import { OAUTH_CONFIG, type OAuthConfigPort } from './oauth-config.port';
 export interface ResolvedSession {
   identity: VerifiedIdentity;
   actor: CanonicalMiaodaFinalUserActorContext;
+  session: { id: string; revision: number; expiresAt: Date };
 }
 
 @Injectable()
@@ -33,60 +33,48 @@ export class SessionResolver {
 
   /**
    * Resolve the session from the request. Returns null when:
-   * - No Bearer token or cookie is present
+   * - No cookie is present
    * - The token is unknown or expired
    *
    * Returns a ResolvedSession when the token is valid. The actor context
    * is built from the server-stored VerifiedIdentity, NOT from any
    * caller-asserted field.
    */
-  resolve(httpRequest: Request): ResolvedSession | null {
+  async resolve(httpRequest: Request): Promise<ResolvedSession | null> {
     const token = this.extractToken(httpRequest);
     if (!token) return null;
 
-    const session = this.sessionStore.validate(token);
+    const session = await this.sessionStore.validate(token);
     if (!session) return null;
 
     const { identity, revision } = session;
 
-    // `userContext` is injected by the platform gateway middleware. It is
-    // NOT a standard Express Request field, so we access it defensively
-    // via a structural cast — this compiles under both tsc (with the
-    // platform's type augmentation) and ts-node (without it).
-    const userContext = (
-      httpRequest as { userContext?: { appId?: string; env?: string } }
-    ).userContext;
-    const applicationScopeId = userContext?.appId ?? 'app_unknown';
-    const env =
-      userContext?.env ?? process.env.NODE_ENV ?? 'development';
+    const applicationScopeId = this.oauthConfig.applicationScopeId;
+    const env = this.oauthConfig.sessionEnvironment;
 
     const actor = buildActorContextFromVerifiedIdentity(
       identity,
-      { sessionId: token, sessionRevision: revision },
+      { sessionId: session.sessionId, sessionRevision: revision },
       applicationScopeId,
       env,
     );
 
-    return { identity, actor };
+    return {
+      identity,
+      actor,
+      session: {
+        id: session.sessionId,
+        revision,
+        expiresAt: session.expiresAt,
+      },
+    };
   }
 
   /**
-   * Extract the opaque session token from the request. Checks
-   * Authorization: Bearer first, then the httpOnly cookie.
+   * Extract the opaque session token from the httpOnly cookie only.
    * Never reads from query params or body.
    */
   private extractToken(httpRequest: Request): string | null {
-    // 1. Authorization: Bearer <token>
-    const authHeader = httpRequest.headers?.authorization;
-    if (
-      typeof authHeader === 'string' &&
-      authHeader.startsWith('Bearer ')
-    ) {
-      const token = authHeader.slice(7).trim();
-      if (token.length > 0) return token;
-    }
-
-    // 2. httpOnly cookie (DEV browser flow)
     const cookieHeader = httpRequest.headers?.cookie;
     if (typeof cookieHeader === 'string') {
       const match = cookieHeader

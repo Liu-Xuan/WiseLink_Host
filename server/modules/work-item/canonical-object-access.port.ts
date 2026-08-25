@@ -81,7 +81,9 @@ export interface CanonicalMiaodaFinalUserActorContext {
   };
   tenantId: string;
   applicationScopeId: string;
-  applicationScopeProvenance: 'MIAODA_GATEWAY_APP_CONTEXT';
+  applicationScopeProvenance:
+    | 'MIAODA_GATEWAY_APP_CONTEXT'
+    | 'HOST_CONFIGURED_MIAODA_APP_ID';
   workspaceId: null;
   workspaceProvenance: 'UNAVAILABLE';
   env: string;
@@ -97,18 +99,11 @@ export interface CanonicalMiaodaFinalUserActorContext {
   sessionProvenance: 'UNAVAILABLE' | 'SERVER_OPAQUE_SESSION';
 }
 
-/**
- * Final-user identity delivered by Feishu Aily's native signed MCP handoff.
- * The JWT proves the Feishu caller and tenant for this exact HTTP request;
- * AuthNPaasService then maps the Feishu user_id to the canonical Miaoda user.
- */
+/** Legacy disabled adapter shape retained for negative-path compatibility. */
 export interface CanonicalAilyFinalUserActorContext {
   principalKind: 'FINAL_USER';
   transport: 'AILY_SIGNED_MCP_HTTP';
-  canonicalSubject: {
-    namespace: 'MIAODA_USER_ID';
-    id: string;
-  };
+  canonicalSubject: { namespace: 'MIAODA_USER_ID'; id: string };
   subjectDecision: {
     source: 'AILY_SIGNED_JWT_AND_MIAODA_AUTHNPAAS_ID_CONVERT';
     applicationScopeId: string;
@@ -215,6 +210,7 @@ export interface CanonicalObjectAccessGrant {
   auditProvenance: {
     identity:
       | 'MIAODA_GATEWAY_USER_CONTEXT'
+      | 'FEISHU_OAUTH_USER_ACCESS_TOKEN_AND_HOST_MAPPING'
       | 'AILY_SIGNED_JWT_AND_MIAODA_AUTHNPAAS_ID_CONVERT';
     applicationScope:
       | 'MIAODA_GATEWAY_APP_CONTEXT'
@@ -222,7 +218,7 @@ export interface CanonicalObjectAccessGrant {
     workspace: 'UNAVAILABLE';
     objectAuthorization: 'HOST_WORK_ITEM_REQUESTED_BY';
     memberAuthorization: 'UNAVAILABLE';
-    session: 'UNAVAILABLE';
+    session: 'UNAVAILABLE' | 'SERVER_OPAQUE_SESSION';
     correlationFieldsAreAuthorizationInputs: false;
     platformRolesAreObjectGrantInputs: false;
     platformRolesMayBeActionPolicyInputs: true;

@@ -1,347 +1,171 @@
 import 'reflect-metadata';
 
-// Mock NestJS decorators that crash under ts-jest stage-3 ES decorators.
 jest.mock('@nestjs/common', () => {
   const actual = jest.requireActual('@nestjs/common');
-  const noOpDecorator = () => () => undefined;
-  return {
-    ...actual,
-    Controller: noOpDecorator,
-    Get: noOpDecorator,
-    Inject: noOpDecorator,
-    Req: noOpDecorator,
-    Res: noOpDecorator,
-    Query: noOpDecorator,
-    Param: noOpDecorator,
-    HttpCode: noOpDecorator,
-    HttpException: actual.HttpException,
-    HttpStatus: actual.HttpStatus,
-    Logger: actual.Logger,
-  };
+  const noOp = () => () => undefined;
+  return { ...actual, Controller: noOp, Get: noOp, Inject: noOp, Query: noOp, Res: noOp, HttpCode: noOp };
 });
-
-import type { Response } from 'express';
 
 import { OauthFlowController } from '../../server/modules/identity/oauth-flow.controller';
-import { OauthStateStore } from '../../server/modules/identity/oauth-state.store';
-import { SessionStore } from '../../server/modules/identity/session.store';
-import type { OAuthConfigPort } from '../../server/modules/identity/oauth-config.port';
-import type { FeishuOAuthTokenHttpPort } from '../../server/modules/identity/feishu-oauth-token.http';
-import type { FeishuOAuthVerificationPort } from '../../server/modules/identity/feishu-oauth-verification.adapter';
-import type { VerifiedIdentityResult } from '../../server/modules/identity/identity.types';
 
-// ─── Helpers ────────────────────────────────────────────────────────────
-
-function mockResponse(): Response & {
-  status: jest.Mock;
-  json: jest.Mock;
-  redirect: jest.Mock;
-  cookie: jest.Mock;
-} {
-  return {
-    status: jest.fn().mockReturnThis(),
-    json: jest.fn().mockReturnThis(),
-    redirect: jest.fn().mockReturnThis(),
-    cookie: jest.fn().mockReturnThis(),
-  } as unknown as Response & {
-    status: jest.Mock;
-    json: jest.Mock;
-    redirect: jest.Mock;
-    cookie: jest.Mock;
-  };
-}
-
-function mockOauthConfig(configured: boolean): OAuthConfigPort {
-  return {
-    get configured() {
-      return configured;
-    },
-    get clientId() {
-      return configured ? 'cli_test_app' : null;
-    },
-    get redirectUri() {
-      return configured ? 'https://dev.example.com/api/identity/oauth/callback' : null;
-    },
-  };
-}
-
-const VERIFIED_RESULT: VerifiedIdentityResult = {
-  kind: 'VERIFIED',
-  identity: {
-    provenance: 'FEISHU_OAUTH_USER_ACCESS_TOKEN',
-    miaodaUserId: 'miaoda_user_001',
-    tenantId: '2001',
-    feishuUserId: 'emp_001',
-    feishuOpenId: 'ou_valid_001',
-    namespacedSubject: {
-      namespace: 'FEISHU_OPEN_ID',
-      subject: 'ou_valid_001',
-      tenantKey: 'tkey_a',
-    },
-    verifiedAt: '2026-08-23T10:00:00.000Z',
-  },
+const configured = {
+  configured: true,
+  clientId: 'cli_aadde8b579f95bc9',
+  redirectUri: 'https://hv5zjf4j8yb.feishuapp.com/app/app_17bzc551rsg/api/identity/oauth/callback',
+  applicationScopeId: 'app_17bzc551rsg' as const,
+  sessionEnvironment: 'preview' as const,
+};
+const identity = {
+  subjectMappingId: '11111111-1111-4111-8111-111111111111',
+  provenance: 'FEISHU_OAUTH_USER_ACCESS_TOKEN' as const,
+  miaodaUserId: 'miaoda-user-1', tenantId: 'tenant-1', feishuUserId: null,
+  feishuOpenId: 'ou-user-1',
+  namespacedSubject: { namespace: 'FEISHU_OPEN_ID' as const, subject: 'ou-user-1', tenantKey: 'tenant-key-1' },
+  verifiedAt: '2026-08-25T00:00:00.000Z',
 };
 
-describe('OauthFlowController', () => {
-  let stateStore: OauthStateStore;
-  let sessionStore: SessionStore;
-  let tokenHttp: jest.Mocked<FeishuOAuthTokenHttpPort>;
-  let verification: jest.Mocked<FeishuOAuthVerificationPort>;
+describe('OauthFlowController official OAuth contract', () => {
+  beforeEach(() => { process.env.FEISHU_OAUTH_CLIENT_SECRET = 'controlled-dev-secret'; });
+  afterEach(() => { delete process.env.FEISHU_OAUTH_CLIENT_SECRET; });
 
-  beforeEach(() => {
-    stateStore = new OauthStateStore();
-    sessionStore = new SessionStore();
-    tokenHttp = { fetchToken: jest.fn() };
-    verification = { verify: jest.fn() };
+  it('fails closed when authorize configuration is absent', async () => {
+    const response = fakeResponse();
+    await controller({ ...configured, configured: false }, {}, {}, {}, {}).beginAuthorize(response as never);
+    expect(response.status).toHaveBeenCalledWith(503);
   });
 
-  // ── authorize ──
-  describe('beginAuthorize', () => {
-    it('returns 503 when OAuth is not configured (fail-closed)', () => {
-      const config = mockOauthConfig(false);
-      const controller = new OauthFlowController(
-        config, stateStore, tokenHttp, verification, sessionStore,
-      );
-      const res = mockResponse();
+  it('redirects only to the official Feishu authorize endpoint', async () => {
+    const response = fakeResponse();
+    await controller(configured, { issue: jest.fn().mockResolvedValue('state-1') }, {}, {}, {}).beginAuthorize(response as never);
+    const url = new URL(response.redirect.mock.calls[0][1]);
+    expect(`${url.origin}${url.pathname}`).toBe('https://accounts.feishu.cn/open-apis/authen/v1/authorize');
+  });
 
-      controller.beginAuthorize(res);
+  it('sends state + PKCE S256 + exact callback URL', async () => {
+    const state = { issue: jest.fn().mockResolvedValue('state-1') }; const response = fakeResponse();
+    await controller(configured, state, {}, {}, {}).beginAuthorize(response as never);
+    const url = new URL(response.redirect.mock.calls[0][1]);
+    expect(url.searchParams.get('state')).toBe('state-1');
+    expect(url.searchParams.get('code_challenge_method')).toBe('S256');
+    expect(url.searchParams.get('code_challenge')).toBeTruthy();
+    expect(url.searchParams.get('redirect_uri')).toBe(configured.redirectUri);
+    expect(state.issue).toHaveBeenCalledWith(expect.any(String));
+  });
 
-      expect(res.status).toHaveBeenCalledWith(503);
-      expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({ code: 'IDENTITY_OAUTH_NOT_CONFIGURED' }),
-      );
-      expect(res.redirect).not.toHaveBeenCalled();
-    });
+  it('fails closed when callback configuration is absent', async () => {
+    const response = fakeResponse();
+    await controller({ ...configured, configured: false }, {}, {}, {}, {}).handleCallback('code', 'state', response as never);
+    expect(response.status).toHaveBeenCalledWith(503);
+  });
 
-    it('redirects to Feishu authorize URL with state + code_challenge', () => {
-      const config = mockOauthConfig(true);
-      const controller = new OauthFlowController(
-        config, stateStore, tokenHttp, verification, sessionStore,
-      );
-      const res = mockResponse();
+  it('rejects a callback without code', async () => {
+    const response = fakeResponse();
+    await controller(configured, {}, {}, {}, {}).handleCallback(undefined, 'state', response as never);
+    expect(response.status).toHaveBeenCalledWith(400);
+    expect(response.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'OAUTH_CALLBACK_MISSING_CODE' }));
+  });
 
-      controller.beginAuthorize(res);
+  it('rejects a callback without state', async () => {
+    const response = fakeResponse();
+    await controller(configured, {}, {}, {}, {}).handleCallback('code', undefined, response as never);
+    expect(response.status).toHaveBeenCalledWith(400);
+    expect(response.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'OAUTH_CALLBACK_MISSING_STATE' }));
+  });
 
-      expect(res.redirect).toHaveBeenCalledTimes(1);
-      const url = res.redirect.mock.calls[0][1] as string;
-      const parsed = new URL(url);
-      expect(parsed.origin).toBe('https://accounts.feishu.cn');
-      expect(parsed.pathname).toBe('/oauth/auth');
-      expect(parsed.searchParams.get('client_id')).toBe('cli_test_app');
-      expect(parsed.searchParams.get('response_type')).toBe('code');
-      expect(parsed.searchParams.get('state')).toBeTruthy();
-      expect(parsed.searchParams.get('code_challenge')).toBeTruthy();
-      expect(parsed.searchParams.get('code_challenge_method')).toBe('S256');
-    });
+  it('rejects expired or replayed state before token exchange', async () => {
+    const token = { fetchToken: jest.fn() }; const response = fakeResponse();
+    await controller(configured, { consume: jest.fn().mockResolvedValue(null) }, token, {}, {}).handleCallback('code', 'state', response as never);
+    expect(response.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'OAUTH_STATE_INVALID' }));
+    expect(token.fetchToken).not.toHaveBeenCalled();
+  });
 
-    it('issues a different state on each call', () => {
-      const config = mockOauthConfig(true);
-      const controller = new OauthFlowController(
-        config, stateStore, tokenHttp, verification, sessionStore,
-      );
-      const res1 = mockResponse();
-      const res2 = mockResponse();
+  it('fails closed when the controlled server secret is unavailable', async () => {
+    delete process.env.FEISHU_OAUTH_CLIENT_SECRET; const response = fakeResponse();
+    await controller(configured, { consume: jest.fn().mockResolvedValue({ codeVerifier: 'v' }) }, {}, {}, {}).handleCallback('code', 'state', response as never);
+    expect(response.status).toHaveBeenCalledWith(503);
+  });
 
-      controller.beginAuthorize(res1);
-      controller.beginAuthorize(res2);
+  it('fails closed when official token exchange fails', async () => {
+    const response = fakeResponse();
+    await controller(configured, { consume: jest.fn().mockResolvedValue({ codeVerifier: 'v' }) }, { fetchToken: jest.fn().mockResolvedValue(null) }, {}, {}).handleCallback('code', 'state', response as never);
+    expect(response.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'OAUTH_TOKEN_EXCHANGE_FAILED' }));
+  });
 
-      const url1 = new URL(res1.redirect.mock.calls[0][1] as string);
-      const url2 = new URL(res2.redirect.mock.calls[0][1] as string);
-      expect(url1.searchParams.get('state')).not.toBe(
-        url2.searchParams.get('state'),
-      );
+  it('passes the stored PKCE verifier and server configuration to token exchange', async () => {
+    const token = { fetchToken: jest.fn().mockResolvedValue(null) };
+    const response = fakeResponse();
+    await controller(
+      configured,
+      { consume: jest.fn().mockResolvedValue({ codeVerifier: 'stored-pkce-verifier' }) },
+      token,
+      {},
+      {},
+    ).handleCallback('authorization-code', 'state', response as never);
+    expect(token.fetchToken).toHaveBeenCalledWith({
+      clientId: configured.clientId,
+      clientSecret: 'controlled-dev-secret',
+      code: 'authorization-code',
+      redirectUri: configured.redirectUri,
+      codeVerifier: 'stored-pkce-verifier',
     });
   });
 
-  // ── callback ──
-  describe('handleCallback', () => {
-    it('returns 503 when OAuth is not configured', async () => {
-      const config = mockOauthConfig(false);
-      const controller = new OauthFlowController(
-        config, stateStore, tokenHttp, verification, sessionStore,
-      );
-      const res = mockResponse();
-
-      await controller.handleCallback('code', 'state', res);
-
-      expect(res.status).toHaveBeenCalledWith(503);
-      expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({ code: 'IDENTITY_OAUTH_NOT_CONFIGURED' }),
-      );
+  it('passes only the server-returned access token and client id to identity verification', async () => {
+    const verification = { verify: jest.fn().mockResolvedValue({ kind: 'UNAVAILABLE', reason: 'FEISHU_SUBJECT_MAPPING_MISSING' }) };
+    await controller(
+      configured,
+      { consume: jest.fn().mockResolvedValue({ codeVerifier: 'v' }) },
+      { fetchToken: jest.fn().mockResolvedValue({ accessToken: 'official-user-access-token' }) },
+      verification,
+      {},
+    ).handleCallback('code', 'state', fakeResponse() as never);
+    expect(verification.verify).toHaveBeenCalledWith({
+      accessToken: 'official-user-access-token',
+      clientId: configured.clientId,
+      contextTenantId: '',
     });
+  });
 
-    it('returns 400 when code is missing', async () => {
-      const config = mockOauthConfig(true);
-      const controller = new OauthFlowController(
-        config, stateStore, tokenHttp, verification, sessionStore,
-      );
-      const res = mockResponse();
+  it('fails closed when user_info or Host mapping verification fails', async () => {
+    const response = fakeResponse();
+    await controller(configured, { consume: jest.fn().mockResolvedValue({ codeVerifier: 'v' }) }, { fetchToken: jest.fn().mockResolvedValue({ accessToken: 'token' }) }, { verify: jest.fn().mockResolvedValue({ kind: 'UNAVAILABLE', reason: 'FEISHU_SUBJECT_MAPPING_MISSING' }) }, {}).handleCallback('code', 'state', response as never);
+    expect(response.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'IDENTITY_VERIFICATION_UNAVAILABLE' }));
+  });
 
-      await controller.handleCallback(undefined, 'state', res);
+  it('sets an exact secure HttpOnly cookie and returns no JSON token', async () => {
+    const response = fakeResponse();
+    await successController(identity).handleCallback('code', 'state', response as never);
+    expect(response.cookie).toHaveBeenCalledWith('wl_session', 'raw-session-token', expect.objectContaining({ httpOnly: true, secure: true, sameSite: 'lax', path: '/' }));
+    expect(response.status).toHaveBeenCalledWith(204);
+    expect(response.send).toHaveBeenCalledWith();
+    expect(response.json).not.toHaveBeenCalled();
+  });
 
-      expect(res.status).toHaveBeenCalledWith(400);
-      expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({ code: 'OAUTH_CALLBACK_MISSING_CODE' }),
-      );
-    });
-
-    it('returns 400 when state is missing', async () => {
-      const config = mockOauthConfig(true);
-      const controller = new OauthFlowController(
-        config, stateStore, tokenHttp, verification, sessionStore,
-      );
-      const res = mockResponse();
-
-      await controller.handleCallback('code', undefined, res);
-
-      expect(res.status).toHaveBeenCalledWith(400);
-      expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({ code: 'OAUTH_CALLBACK_MISSING_STATE' }),
-      );
-    });
-
-    it('returns 400 when state is invalid (never issued)', async () => {
-      const config = mockOauthConfig(true);
-      const controller = new OauthFlowController(
-        config, stateStore, tokenHttp, verification, sessionStore,
-      );
-      const res = mockResponse();
-
-      await controller.handleCallback('code', 'bogus-state', res);
-
-      expect(res.status).toHaveBeenCalledWith(400);
-      expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({ code: 'OAUTH_STATE_INVALID' }),
-      );
-    });
-
-    it('returns 400 on state replay (one-time consumption)', async () => {
-      const config = mockOauthConfig(true);
-      const controller = new OauthFlowController(
-        config, stateStore, tokenHttp, verification, sessionStore,
-      );
-      // Issue a real state
-      const state = stateStore.issue('verifier-123');
-      const res1 = mockResponse();
-      const res2 = mockResponse();
-
-      await controller.handleCallback('code', state, res1);
-      await controller.handleCallback('code', state, res2);
-
-      // First call should not be a 400 STATE_INVALID
-      expect(res2.status).toHaveBeenCalledWith(400);
-      expect(res2.json).toHaveBeenCalledWith(
-        expect.objectContaining({ code: 'OAUTH_STATE_INVALID' }),
-      );
-    });
-
-    it('returns 503 when token exchange fails', async () => {
-      const config = mockOauthConfig(true);
-      process.env.FEISHU_OAUTH_CLIENT_SECRET = 'secret123';
-      const controller = new OauthFlowController(
-        config, stateStore, tokenHttp, verification, sessionStore,
-      );
-      tokenHttp.fetchToken.mockResolvedValue(null);
-      const state = stateStore.issue('verifier-123');
-      const res = mockResponse();
-
-      await controller.handleCallback('code', state, res);
-
-      expect(res.status).toHaveBeenCalledWith(503);
-      expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({ code: 'OAUTH_TOKEN_EXCHANGE_FAILED' }),
-      );
-      delete process.env.FEISHU_OAUTH_CLIENT_SECRET;
-    });
-
-    it('returns 503 when identity verification fails', async () => {
-      const config = mockOauthConfig(true);
-      process.env.FEISHU_OAUTH_CLIENT_SECRET = 'secret123';
-      tokenHttp.fetchToken.mockResolvedValue({
-        accessToken: 'access-tok',
-        tokenType: 'Bearer',
-        expiresIn: 7200,
-        refreshToken: null,
-      });
-      verification.verify.mockResolvedValue({
-        kind: 'UNAVAILABLE',
-        reason: 'FEISHU_SUBJECT_MAPPING_MISSING',
-      });
-      const controller = new OauthFlowController(
-        config, stateStore, tokenHttp, verification, sessionStore,
-      );
-      const state = stateStore.issue('verifier-123');
-      const res = mockResponse();
-
-      await controller.handleCallback('code', state, res);
-
-      expect(res.status).toHaveBeenCalledWith(503);
-      expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({
-          code: 'IDENTITY_VERIFICATION_UNAVAILABLE',
-          details: { reason: 'FEISHU_SUBJECT_MAPPING_MISSING' },
-        }),
-      );
-      delete process.env.FEISHU_OAUTH_CLIENT_SECRET;
-    });
-
-    it('creates a session and sets httpOnly cookie on success', async () => {
-      const config = mockOauthConfig(true);
-      process.env.FEISHU_OAUTH_CLIENT_SECRET = 'secret123';
-      tokenHttp.fetchToken.mockResolvedValue({
-        accessToken: 'access-tok',
-        tokenType: 'Bearer',
-        expiresIn: 7200,
-        refreshToken: null,
-      });
-      verification.verify.mockResolvedValue(VERIFIED_RESULT);
-      const controller = new OauthFlowController(
-        config, stateStore, tokenHttp, verification, sessionStore,
-      );
-      const state = stateStore.issue('verifier-123');
-      const res = mockResponse();
-
-      await controller.handleCallback('code', state, res);
-
-      expect(res.status).toHaveBeenCalledWith(200);
-      expect(res.cookie).toHaveBeenCalledWith(
-        'wl_session',
-        expect.any(String),
-        expect.objectContaining({ httpOnly: true }),
-      );
-      const body = res.json.mock.calls[0][0];
-      expect(body.status).toBe('VERIFIED');
-      expect(body.session.token).toBeTruthy();
-      expect(body.identity.miaodaUserId).toBe('miaoda_user_001');
-      expect(body.identity.provenance).toBe('FEISHU_OAUTH_USER_ACCESS_TOKEN');
-      delete process.env.FEISHU_OAUTH_CLIENT_SECRET;
-    });
-
-    it('passes the PKCE code_verifier from the state store to the token exchange', async () => {
-      const config = mockOauthConfig(true);
-      process.env.FEISHU_OAUTH_CLIENT_SECRET = 'secret123';
-      tokenHttp.fetchToken.mockResolvedValue({
-        accessToken: 'tok',
-        tokenType: 'Bearer',
-        expiresIn: 7200,
-        refreshToken: null,
-      });
-      verification.verify.mockResolvedValue(VERIFIED_RESULT);
-      const controller = new OauthFlowController(
-        config, stateStore, tokenHttp, verification, sessionStore,
-      );
-      const state = stateStore.issue('my-specific-verifier-1234567890');
-      const res = mockResponse();
-
-      await controller.handleCallback('code', state, res);
-
-      expect(tokenHttp.fetchToken).toHaveBeenCalledWith(
-        expect.objectContaining({
-          codeVerifier: 'my-specific-verifier-1234567890',
-          code: 'code',
-        }),
-      );
-      delete process.env.FEISHU_OAUTH_CLIENT_SECRET;
-    });
+  it('does not fail when official user_info omits user_id', async () => {
+    const response = fakeResponse();
+    await successController({ ...identity, feishuUserId: null }).handleCallback('code', 'state', response as never);
+    expect(response.status).toHaveBeenCalledWith(204);
+    expect(response.json).not.toHaveBeenCalled();
   });
 });
+
+function controller(config: unknown, state: unknown, token: unknown, verification: unknown, session: unknown) {
+  return new OauthFlowController(config as never, state as never, token as never, verification as never, session as never);
+}
+
+function successController(verifiedIdentity: typeof identity) {
+  return controller(
+    configured,
+    { consume: jest.fn().mockResolvedValue({ codeVerifier: 'verifier' }) },
+    { fetchToken: jest.fn().mockResolvedValue({ accessToken: 'user-access-token' }) },
+    { verify: jest.fn().mockResolvedValue({ kind: 'VERIFIED', identity: verifiedIdentity }) },
+    { create: jest.fn().mockResolvedValue({ token: 'raw-session-token', expiresAt: new Date(Date.now() + 60000) }) },
+  );
+}
+
+function fakeResponse() {
+  const response = { status: jest.fn(), json: jest.fn(), send: jest.fn(), cookie: jest.fn(), redirect: jest.fn() };
+  response.status.mockReturnValue(response); response.json.mockReturnValue(response);
+  response.send.mockReturnValue(response); response.cookie.mockReturnValue(response); response.redirect.mockReturnValue(response);
+  return response;
+}

@@ -2,356 +2,212 @@ import 'reflect-metadata';
 
 jest.mock('@nestjs/common', () => {
   const actual = jest.requireActual('@nestjs/common');
-  const noOpDecorator = () => () => undefined;
-  return {
-    ...actual,
-    Controller: noOpDecorator,
-    Get: noOpDecorator,
-    Inject: noOpDecorator,
-    Req: noOpDecorator,
-  };
+  const noOp = () => () => undefined;
+  return { ...actual, Controller: noOp, Get: noOp, Req: noOp };
 });
 
-jest.mock('@lark-apaas/fullstack-nestjs-core', () => {
-  const actual = jest.requireActual('@lark-apaas/fullstack-nestjs-core');
-  return {
-    ...actual,
-    NeedLogin: () => () => undefined,
-  };
-});
-
-import { UnavailableIdentityVerificationAdapter } from '../../server/modules/identity/identity-verification.port';
+import { HttpException } from '@nestjs/common';
 import { WhoamiController } from '../../server/modules/identity/whoami.controller';
-import type { WhoamiResponse } from '../../server/modules/identity/identity.types';
+import { SessionResolver } from '../../server/modules/identity/session-resolver.service';
 
-const HOST_REQUEST = {
-  userContext: {
-    userId: 'engineer-1001',
-    tenantId: 2001,
-    appId: 'app_17bzc551rsg',
-    roles: ['authenticated', 'wiselink_development'],
-    env: 'development',
+const identity = {
+  subjectMappingId: '11111111-1111-4111-8111-111111111111',
+  provenance: 'FEISHU_OAUTH_USER_ACCESS_TOKEN' as const,
+  miaodaUserId: 'miaoda-user-1',
+  tenantId: 'tenant-1',
+  feishuUserId: null,
+  feishuOpenId: 'ou-user-1',
+  namespacedSubject: {
+    namespace: 'FEISHU_OPEN_ID' as const,
+    subject: 'ou-user-1',
+    tenantKey: 'tenant-key-1',
   },
+  verifiedAt: '2026-08-25T00:00:00.000Z',
 };
 
-describe('WhoamiController fail-closed identity seam', () => {
-  it('returns null verifiedIdentity and UNAVAILABLE_503 object-access status', async () => {
-    const adapter = new UnavailableIdentityVerificationAdapter();
-    const controller = new WhoamiController(adapter);
-
-    const response = await controller.whoami(HOST_REQUEST as never);
-
-    expect(response.verifiedIdentity).toBeNull();
-    expect(response.objectAccessStatus).toBe('UNAVAILABLE_503');
-    expect(response.session).toBeNull();
+describe('WhoamiController persistent session contract', () => {
+  it('rejects missing/expired/revoked sessions and ignores forged gateway/body identity', async () => {
+    const sessions = { resolve: jest.fn().mockResolvedValue(null) };
+    const controller = new WhoamiController(sessions as never);
+    await expect(
+      controller.whoami({
+        headers: { authorization: 'Bearer forged', 'x-user-id': 'forged' },
+        userContext: { userId: 'forged', tenantId: 'forged' },
+        body: { userId: 'forged', tenantId: 'forged', agentId: 'forged' },
+      } as never),
+    ).rejects.toBeInstanceOf(HttpException);
+    expect(sessions.resolve).toHaveBeenCalledTimes(1);
   });
 
-  it('extracts claimedContext from the unverified gateway header', async () => {
-    const adapter = new UnavailableIdentityVerificationAdapter();
-    const controller = new WhoamiController(adapter);
-
-    const response = await controller.whoami(HOST_REQUEST as never);
-
-    expect(response.claimedContext).toEqual({
-      miaodaUserId: 'engineer-1001',
-      tenantId: '2001',
-      appId: 'app_17bzc551rsg',
-      env: 'development',
-      roles: ['authenticated', 'wiselink_development'],
-    isSystemAccount: false,
-    });
-  });
-
-  it('does not elevate claimed context to a verified identity', async () => {
-    const adapter = new UnavailableIdentityVerificationAdapter();
-    const controller = new WhoamiController(adapter);
-
-    const response: WhoamiResponse = await controller.whoami(
-      HOST_REQUEST as never,
-    );
-
-    // Even though claimedContext has roles including 'wiselink_development',
-    // verifiedIdentity must remain null — roles from a caller-constructible
-    // header are never a trust source.
-    expect(response.verifiedIdentity).toBeNull();
-    expect(response.claimedContext.roles).toContain('wiselink_development');
-  });
-
-  it('handles missing userContext gracefully', async () => {
-    const adapter = new UnavailableIdentityVerificationAdapter();
-    const controller = new WhoamiController(adapter);
-
-    const response = await controller.whoami({
-      userContext: null,
-    } as never);
-
-    expect(response.verifiedIdentity).toBeNull();
-    expect(response.claimedContext.miaodaUserId).toBeNull();
-    expect(response.claimedContext.tenantId).toBeNull();
-    expect(response.claimedContext.appId).toBeNull();
-    expect(response.claimedContext.env).toBeNull();
-    expect(response.claimedContext.roles).toEqual([]);
-    expect(response.claimedContext.isSystemAccount).toBe(false);
-    expect(response.objectAccessStatus).toBe('UNAVAILABLE_503');
-  });
-
-  it('does not call verify when contextUserId is null', async () => {
-    const adapter = new UnavailableIdentityVerificationAdapter();
-    const verifySpy = jest.spyOn(adapter, 'verify');
-
-    const controller = new WhoamiController(adapter);
-
-    await controller.whoami({ userContext: null } as never);
-
-    expect(verifySpy).not.toHaveBeenCalled();
-  });
-
-  it('does not call verify when contextUserId is a system/bot account', async () => {
-    const adapter = new UnavailableIdentityVerificationAdapter();
-    const verifySpy = jest.spyOn(adapter, 'verify');
-
-    const controller = new WhoamiController(adapter);
-
-    const systemRequest = {
-      userContext: {
-        userId: 'system_scheduler_001',
-        tenantId: 2001,
-        appId: 'app_17bzc551rsg',
-        roles: ['authenticated'],
-        env: 'production',
-        isSystemAccount: true,
-      },
-    };
-
-    const response = await controller.whoami(systemRequest as never);
-
-    // System accounts are never sent to verify — they cannot be cast into a
-    // final user even if a future adapter is wired.
-    expect(verifySpy).not.toHaveBeenCalled();
-    expect(response.verifiedIdentity).toBeNull();
-    expect(response.claimedContext.isSystemAccount).toBe(true);
-    expect(response.claimedContext.miaodaUserId).toBe('system_scheduler_001');
-    expect(response.objectAccessStatus).toBe('UNAVAILABLE_503');
-  });
-
-  it('calls verify when contextUserId is present (returns UNAVAILABLE)', async () => {
-    const adapter = new UnavailableIdentityVerificationAdapter();
-    const verifySpy = jest.spyOn(adapter, 'verify');
-
-    const controller = new WhoamiController(adapter);
-
-    await controller.whoami(HOST_REQUEST as never);
-
-    expect(verifySpy).toHaveBeenCalledWith({
-      contextUserId: 'engineer-1001',
-      contextTenantId: '2001',
-    });
-  });
-
-  it('does not read the request body for identity fields', async () => {
-    const adapter = new UnavailableIdentityVerificationAdapter();
-    const controller = new WhoamiController(adapter);
-
-    const requestWithBody = {
-      userContext: HOST_REQUEST.userContext,
-      body: {
-        userId: 'attacker-injected',
-        roles: ['admin'],
-        provenance: 'SIGNED_HOSTED_INGRESS',
-      },
-    };
-
-    const response = await controller.whoami(requestWithBody as never);
-
-    // Body fields must never appear in the response.
-    expect(response.verifiedIdentity).toBeNull();
-    expect(response.claimedContext.miaodaUserId).toBe('engineer-1001');
-    expect(response.claimedContext.roles).not.toContain('admin');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Anti-forgery: a bot open_id, a plain object, or a machine context can never
-// be cast into a verified final user. The default adapter is unavailable, so
-// verifiedIdentity is always null — but the assertions below lock the
-// invariant explicitly against future regressions.
-// ---------------------------------------------------------------------------
-describe('WhoamiController anti-forgery invariants', () => {
-  it('does not forge a verified identity from a bot open_id in claimedContext', async () => {
-    const adapter = new UnavailableIdentityVerificationAdapter();
-    const controller = new WhoamiController(adapter);
-
-    const botRequest = {
-      userContext: {
-        userId: 'cli_a1b2c3d4', // bot app_id masquerading as userId
-        tenantId: 2001,
-        appId: 'app_17bzc551rsg',
-        roles: ['authenticated'],
-        env: 'production',
-        // A bot might inject its own open_id into the gateway header
-        openId: 'ou_bot_6f7e8d9c0b1a2f3e4d5c6b7a8',
-      },
-    };
-
-    const response = await controller.whoami(botRequest as never);
-
-    expect(response.verifiedIdentity).toBeNull();
-    // The claimed context reflects the unverified header — but it never
-    // becomes a namespacedSubject.
-    expect(response.claimedContext.miaodaUserId).toBe('cli_a1b2c3d4');
-  });
-
-  it('does not forge a verified identity from a plain object in body', async () => {
-    const adapter = new UnavailableIdentityVerificationAdapter();
-    const controller = new WhoamiController(adapter);
-
-    const forgeryRequest = {
-      userContext: HOST_REQUEST.userContext,
-      body: {
-        // Attacker tries to construct a NamespacedSubject directly
-        namespacedSubject: {
-          namespace: 'FEISHU_OPEN_ID',
-          subject: 'ou_forged_open_id',
-          tenantKey: 'forged_tenant_key',
+  it('returns only identity rehydrated from the persistent session', async () => {
+    const sessions = {
+      resolve: jest.fn().mockResolvedValue({
+        identity,
+        session: {
+          id: 'session-row-1',
+          revision: 2,
+          expiresAt: new Date('2026-08-25T01:00:00.000Z'),
         },
-        provenance: 'FEISHU_OAUTH_USER_ACCESS_TOKEN',
-        verifiedAt: '2026-01-01T00:00:00.000Z',
+      }),
+    };
+    const response = await new WhoamiController(sessions as never).whoami({
+      body: { userId: 'forged', tenantId: 'forged' },
+    } as never);
+    expect(response).toEqual({
+      authenticated: true,
+      verifiedIdentity: {
+        provenance: identity.provenance,
+        miaodaUserId: identity.miaodaUserId,
+        tenantId: identity.tenantId,
+        feishuUserId: identity.feishuUserId,
+        feishuOpenId: identity.feishuOpenId,
+        namespacedSubject: identity.namespacedSubject,
+        verifiedAt: identity.verifiedAt,
       },
-    };
-
-    const response = await controller.whoami(forgeryRequest as never);
-
-    expect(response.verifiedIdentity).toBeNull();
-    // Body-constructed subject must not leak into the response.
-    if (response.verifiedIdentity) {
-      expect(response.verifiedIdentity.namespacedSubject).toBeNull();
-    }
+      session: {
+        id: 'session-row-1',
+        revision: 2,
+        expiresAt: '2026-08-25T01:00:00.000Z',
+        provenance: 'SERVER_OPAQUE_SESSION',
+      },
+    });
+    expect(JSON.stringify(response)).not.toContain('forged');
   });
 
-  it('does not forge a verified identity from a machine/bot userContext', async () => {
-    const adapter = new UnavailableIdentityVerificationAdapter();
-    const verifySpy = jest.spyOn(adapter, 'verify');
-const controller = new WhoamiController(adapter);
-
-      const machineContext = {
-        userContext: {
-        userId: 'bot_scheduler_001',
-        tenantId: 2001,
-        appId: 'app_17bzc551rsg',
-        roles: ['authenticated', 'machine'],
-        env: 'production',
-      userType: 'bot',
-    isSystemAccount: true,
-},
-    };
-
-    const response = await controller.whoami(machineContext as never);
-
-    // A machine/bot context is never a final user — verify is not called.
-  expect(verifySpy).not.toHaveBeenCalled();
-    expect(response.verifiedIdentity).toBeNull();
-    expect(response.claimedContext.isSystemAccount).toBe(true);
-    expect(response.objectAccessStatus).toBe('UNAVAILABLE_503');
+  it.each([
+    ['gateway user', { userContext: { userId: 'forged-user', tenantId: 'forged-tenant' } }],
+    ['body actor', { body: { actor: { userId: 'forged-user' } } }],
+    ['body subject', { body: { namespacedSubject: { namespace: 'FEISHU_OPEN_ID', subject: 'ou-forged' } } }],
+    ['system account', { userContext: { userId: 'system-1', isSystemAccount: true, roles: ['admin'] } }],
+    ['bot open_id', { userContext: { userId: 'cli-bot', openId: 'ou-bot' } }],
+    ['agent id', { body: { agentId: 'agent_4km47c77ujwqphg', userId: 'forged-user' } }],
+    ['numeric sender', { body: { sender: { sender_id: 123456 } } }],
+    ['authorization bearer', { headers: { authorization: 'Bearer caller-token' } }],
+  ])('does not elevate forged %s without a server session', async (_label, request) => {
+    const sessions = { resolve: jest.fn().mockResolvedValue(null) };
+    await expect(
+      new WhoamiController(sessions as never).whoami(request as never),
+    ).rejects.toMatchObject({ status: 401 });
   });
 
-  it('returns null namespacedSubject in verifiedIdentity when unavailable', async () => {
-    const adapter = new UnavailableIdentityVerificationAdapter();
-    const controller = new WhoamiController(adapter);
+  it('allows user_id to remain absent when open_id + tenant_key were mapped', async () => {
+    const sessions = {
+      resolve: jest.fn().mockResolvedValue({
+        identity,
+        session: { id: 'session-row-1', revision: 1, expiresAt: new Date('2026-08-25T01:00:00.000Z') },
+      }),
+    };
+    const response = await new WhoamiController(sessions as never).whoami({} as never);
+    expect(response.verifiedIdentity.feishuUserId).toBeNull();
+    expect(response.verifiedIdentity.feishuOpenId).toBe('ou-user-1');
+  });
 
-    const response = await controller.whoami(HOST_REQUEST as never);
+  it('is deterministic for the same persistent session snapshot', async () => {
+    const resolved = {
+      identity,
+      session: { id: 'session-row-1', revision: 1, expiresAt: new Date('2026-08-25T01:00:00.000Z') },
+    };
+    const controller = new WhoamiController({ resolve: jest.fn().mockResolvedValue(resolved) } as never);
+    const first = await controller.whoami({} as never);
+    const second = await controller.whoami({} as never);
+    expect(first).toEqual(second);
+  });
 
-    // verifiedIdentity is null entirely (adapter returns UNAVAILABLE), so
-    // namespacedSubject can never be populated. This assertion documents
-    // the invariant: no subject can exist without verification.
-    expect(response.verifiedIdentity).toBeNull();
+  it('ignores Authorization Bearer as a session source', async () => {
+    const store = { validate: jest.fn() };
+    expect(await realResolver(store).resolve({ headers: { authorization: 'Bearer forged' } } as never)).toBeNull();
+    expect(store.validate).not.toHaveBeenCalled();
+  });
+
+  it('ignores x-user-id as an identity source', async () => {
+    const store = { validate: jest.fn() };
+    expect(await realResolver(store).resolve({ headers: { 'x-user-id': 'forged' } } as never)).toBeNull();
+    expect(store.validate).not.toHaveBeenCalled();
+  });
+
+  it('ignores request body actor fields', async () => {
+    const store = { validate: jest.fn() };
+    expect(await realResolver(store).resolve({ headers: {}, body: { actor: identity } } as never)).toBeNull();
+    expect(store.validate).not.toHaveBeenCalled();
+  });
+
+  it('ignores Miaoda gateway userContext as final-user proof', async () => {
+    const store = { validate: jest.fn() };
+    expect(await realResolver(store).resolve({ headers: {}, userContext: { userId: 'forged' } } as never)).toBeNull();
+    expect(store.validate).not.toHaveBeenCalled();
+  });
+
+  it('ignores system-account context without a session', async () => {
+    const store = { validate: jest.fn() };
+    expect(await realResolver(store).resolve({ headers: {}, userContext: { userId: 'system', isSystemAccount: true } } as never)).toBeNull();
+    expect(store.validate).not.toHaveBeenCalled();
+  });
+
+  it('ignores agentId provenance as ACL input', async () => {
+    const store = { validate: jest.fn() };
+    expect(await realResolver(store).resolve({ headers: {}, body: { agentId: 'agent_4km47c77ujwqphg' } } as never)).toBeNull();
+    expect(store.validate).not.toHaveBeenCalled();
+  });
+
+  it('ignores numeric sender as ACL input', async () => {
+    const store = { validate: jest.fn() };
+    expect(await realResolver(store).resolve({ headers: {}, body: { sender: 123456 } } as never)).toBeNull();
+    expect(store.validate).not.toHaveBeenCalled();
+  });
+
+  it('rejects an empty session cookie', async () => {
+    const store = { validate: jest.fn() };
+    expect(await realResolver(store).resolve({ headers: { cookie: 'wl_session=' } } as never)).toBeNull();
+    expect(store.validate).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unknown session cookie', async () => {
+    const store = { validate: jest.fn().mockResolvedValue(null) };
+    expect(await realResolver(store).resolve({ headers: { cookie: 'wl_session=unknown' } } as never)).toBeNull();
+    expect(store.validate).toHaveBeenCalledWith('unknown');
+  });
+
+  it('rejects an expired persistent session', async () => {
+    const store = { validate: jest.fn().mockResolvedValue(null) };
+    expect(await realResolver(store).resolve({ headers: { cookie: 'wl_session=expired' } } as never)).toBeNull();
+    expect(store.validate).toHaveBeenCalledWith('expired');
+  });
+
+  it('rejects a revoked persistent session', async () => {
+    const store = { validate: jest.fn().mockResolvedValue(null) };
+    expect(await realResolver(store).resolve({ headers: { cookie: 'wl_session=revoked' } } as never)).toBeNull();
+    expect(store.validate).toHaveBeenCalledWith('revoked');
+  });
+
+  it('uses the database session row id, never the raw cookie, in ActorContext', async () => {
+    const store = { validate: jest.fn().mockResolvedValue({
+      sessionId: 'session-row-1', revision: 1,
+      expiresAt: new Date('2026-08-25T01:00:00.000Z'), identity,
+    }) };
+    const resolved = await realResolver(store).resolve({ headers: { cookie: 'wl_session=raw-cookie-secret' } } as never);
+    expect(resolved?.actor.sessionId).toBe('session-row-1');
+    expect(JSON.stringify(resolved?.actor)).not.toContain('raw-cookie-secret');
+  });
+
+  it('never imports platform roles from caller context into the OAuth actor', async () => {
+    const store = { validate: jest.fn().mockResolvedValue({
+      sessionId: 'session-row-1', revision: 1,
+      expiresAt: new Date('2026-08-25T01:00:00.000Z'), identity,
+    }) };
+    const resolved = await realResolver(store).resolve({
+      headers: { cookie: 'wl_session=valid' },
+      userContext: { roles: ['admin'] },
+    } as never);
+    expect(resolved?.actor.platformRoles).toEqual([]);
   });
 });
 
-// ---------------------------------------------------------------------------
-// Sequential I/O = 0 proof: the fail-closed adapter performs no I/O (no
-// network, no filesystem, no clock, no database). It is a pure function of
-// its input. These tests prove that property by asserting determinism,
-// absence of side effects, and call-order independence.
-// ---------------------------------------------------------------------------
-describe('UnavailableIdentityVerificationAdapter sequential I/O = 0 proof', () => {
-  it('is deterministic: identical inputs produce identical outputs', async () => {
-    const adapter = new UnavailableIdentityVerificationAdapter();
-    const input = { contextUserId: 'engineer-1001', contextTenantId: '2001' };
-
-    const results = await Promise.all([
-      adapter.verify(input),
-      adapter.verify(input),
-      adapter.verify(input),
-    ]);
-
-    expect(results[0]).toEqual(results[1]);
-    expect(results[1]).toEqual(results[2]);
-    expect(results[0]).toEqual({
-      kind: 'UNAVAILABLE',
-      reason: 'FEISHU_OAUTH_NOT_CONFIGURED',
-    });
+function realResolver(store: { validate: jest.Mock }) {
+  return new SessionResolver(store as never, {
+    configured: true,
+    clientId: 'cli_aadde8b579f95bc9',
+    redirectUri: 'https://host/api/identity/oauth/callback',
+    applicationScopeId: 'app_17bzc551rsg',
+    sessionEnvironment: 'preview',
   });
-
-  it('has no side effects: verify does not mutate adapter state', async () => {
-    const adapter = new UnavailableIdentityVerificationAdapter();
-    const input = { contextUserId: 'engineer-1001', contextTenantId: '2001' };
-
-    const before = JSON.stringify(adapter);
-    await adapter.verify(input);
-    await adapter.verify(input);
-    const after = JSON.stringify(adapter);
-
-    expect(after).toBe(before);
-  });
-
-  it('call-order independence: results do not depend on call sequence', async () => {
-    const adapter = new UnavailableIdentityVerificationAdapter();
-    const inputA = { contextUserId: 'user-A', contextTenantId: 't-A' };
-    const inputB = { contextUserId: 'user-B', contextTenantId: 't-B' };
-
-    const [aFirst, bFirst] = await Promise.all([
-      adapter.verify(inputA),
-      adapter.verify(inputB),
-    ]);
-
-    // Reverse order
-    const [bSecond, aSecond] = await Promise.all([
-      adapter.verify(inputB),
-      adapter.verify(inputA),
-    ]);
-
-    expect(aFirst).toEqual(aSecond);
-    expect(bFirst).toEqual(bSecond);
-  });
-
-  it('produces no filesystem or network I/O (pure in-memory)', async () => {
-    // The adapter has no dependencies on fs, http, or any external resource.
-    // We prove this by constructing it with zero external bindings and
-    // confirming it resolves without error.
-    const adapter = new UnavailableIdentityVerificationAdapter();
-
-    const result = await adapter.verify({
-      contextUserId: 'engineer-1001',
-      contextTenantId: '2001',
-    });
-
-    expect(result.kind).toBe('UNAVAILABLE');
-    expect(result).not.toHaveProperty('verifiedAt');
-    expect(result).not.toHaveProperty('feishuOpenId');
-  });
-
-  it('does not depend on wall-clock time', async () => {
-    const adapter = new UnavailableIdentityVerificationAdapter();
-    const input = { contextUserId: 'engineer-1001', contextTenantId: '2001' };
-
-    const result1 = await adapter.verify(input);
-
-    // Even if we waited some time, the result is identical — no timestamp
-    // is embedded in the UNAVAILABLE path.
-    await new Promise((resolve) => setTimeout(resolve, 10));
-
-    const result2 = await adapter.verify(input);
-
-    expect(result1).toEqual(result2);
-  });
-});
+}

@@ -22,6 +22,8 @@ export interface OAuthConfigPort {
   readonly redirectUri: string | null;
   /** True only when clientId + clientSecret + redirectUri are all present. */
   readonly configured: boolean;
+  readonly applicationScopeId: 'app_17bzc551rsg';
+  readonly sessionEnvironment: 'preview' | 'runtime';
 }
 
 /**
@@ -36,6 +38,8 @@ export interface OAuthConfigPort {
 // Symbol token provider.
 // eslint-disable-next-line @darraghor/nestjs-typed/injectable-should-be-provided
 export class EnvOauthConfigAdapter implements OAuthConfigPort {
+  readonly applicationScopeId = 'app_17bzc551rsg' as const;
+  readonly sessionEnvironment = 'preview' as const;
   private readonly _clientId: string | null;
   private readonly _redirectUri: string | null;
   private readonly _configured: boolean;

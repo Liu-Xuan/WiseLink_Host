@@ -27,6 +27,8 @@ export interface VerifiedAilyFinalUserIdentity {
  * conversion. No message/session lookup or tenant-token exchange is needed.
  */
 @Injectable()
+// Retained as disabled legacy code; no module registers this custom protocol.
+// eslint-disable-next-line @darraghor/nestjs-typed/injectable-should-be-provided
 export class AilyNativeFinalUserIdentityService {
   constructor(
     private readonly authn: AuthNPaasService,

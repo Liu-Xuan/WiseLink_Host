@@ -67,9 +67,9 @@ export class OauthFlowController {
    */
   @Get('authorize')
   @HttpCode(HttpStatus.FOUND)
-  beginAuthorize(
+  async beginAuthorize(
     @Res() response: Response,
-  ): void {
+  ): Promise<void> {
     // Fail-closed: when OAuth is not configured, return 503.
     if (!this.oauthConfig.configured) {
       response.status(503).json({
@@ -88,10 +88,12 @@ export class OauthFlowController {
     const pkce = generatePkcePair();
 
     // 2. Issue one-time state, binding the code_verifier.
-    const state = this.stateStore.issue(pkce.codeVerifier);
+    const state = await this.stateStore.issue(pkce.codeVerifier);
 
     // 3. Build the Feishu authorize URL.
-    const authorizeUrl = new URL('https://accounts.feishu.cn/oauth/auth');
+    const authorizeUrl = new URL(
+      'https://accounts.feishu.cn/open-apis/authen/v1/authorize',
+    );
     authorizeUrl.searchParams.set('client_id', clientId);
     authorizeUrl.searchParams.set('redirect_uri', redirectUri);
     authorizeUrl.searchParams.set('response_type', 'code');
@@ -157,7 +159,7 @@ export class OauthFlowController {
     }
 
     // 2. Consume one-time state — replay or expired → deny
-    const stateEntry = this.stateStore.consume(state);
+    const stateEntry = await this.stateStore.consume(state);
     if (!stateEntry) {
       response.status(400).json({
         code: 'OAUTH_STATE_INVALID',
@@ -222,31 +224,19 @@ export class OauthFlowController {
 
     // 5. Create opaque server session
     const { token: sessionToken, expiresAt } =
-      this.sessionStore.create(verifyResult.identity);
+      await this.sessionStore.create(verifyResult.identity);
 
     // 6. Set httpOnly cookie — token never visible to JS
     response.cookie('wl_session', sessionToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: true,
       sameSite: 'lax',
-      maxAge: expiresAt - Date.now(),
+      maxAge: expiresAt.getTime() - Date.now(),
       path: '/',
     });
 
-    // 7. Return session info (token in body for non-browser clients too)
-    response.status(200).json({
-      status: 'VERIFIED',
-      session: {
-        token: sessionToken,
-        expiresAt: new Date(expiresAt).toISOString(),
-      },
-      identity: {
-        provenance: verifyResult.identity.provenance,
-        miaodaUserId: verifyResult.identity.miaodaUserId,
-        tenantId: verifyResult.identity.tenantId,
-        namespacedSubject: verifyResult.identity.namespacedSubject,
-        verifiedAt: verifyResult.identity.verifiedAt,
-      },
-    });
+    // No session/token or identity is returned to JavaScript. The browser
+    // continues with the opaque HttpOnly cookie and can call whoami.
+    response.status(204).send();
   }
 }

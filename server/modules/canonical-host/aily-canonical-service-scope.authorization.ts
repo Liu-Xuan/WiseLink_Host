@@ -18,6 +18,9 @@ export const AILY_ACTOR_REQUEST_CONTEXT_KEY =
   'wiselinkAilyFinalUserActor' as const;
 
 @Injectable()
+// Retained but intentionally not registered: official native handoff is the
+// only permitted future activation path.
+// eslint-disable-next-line @darraghor/nestjs-typed/injectable-should-be-provided
 export class AilyCanonicalServiceScopeAuthorization implements CanonicalServiceScopeAuthorizationPort {
   private readonly logger = new Logger(
     AilyCanonicalServiceScopeAuthorization.name,

@@ -53,6 +53,8 @@ export type VerifiedIdentityResult =
   | { kind: 'UNAVAILABLE'; reason: IdentityUnavailableReason };
 
 export interface VerifiedIdentity {
+  /** Host-owned mapping row; required before a persistent session is issued. */
+  subjectMappingId: string;
   provenance: IdentityProvenance;
   miaodaUserId: string;
   tenantId: string;
@@ -90,37 +92,22 @@ export interface IdentityUnavailableError {
 
 /** Whoami response shape. */
 export interface WhoamiResponse {
+  authenticated: true;
   verifiedIdentity: {
-    provenance: IdentityProvenance | null;
-    miaodaUserId: string | null;
-    tenantId: string | null;
+    provenance: IdentityProvenance;
+    miaodaUserId: string;
+    tenantId: string;
     feishuUserId: string | null;
     feishuOpenId: string | null;
     namespacedSubject: NamespacedSubject | null;
     verifiedAt: string | null;
-  } | null;
-  /** Unverified context — explicitly labelled, never a trust source. */
-  claimedContext: {
-    miaodaUserId: string | null;
-    tenantId: string | null;
-    appId: string | null;
-    env: string | null;
-    roles: readonly string[];
-  /** True if the gateway context marks this as a system/bot account. */
-    isSystemAccount: boolean;
   };
-  /**
-  * Result of probing the real CanonicalObjectAccessPort with the
-* ActorContext derived from the gateway header. In G0 the actor is
-   * always UNAVAILABLE, so the probe always yields a 503 denial — but
-   * the probe exercises the *actual* object-access router, proving the
-   * identity → object-access seam is wired and fail-closed, not a
-   * hard-coded constant.
-   */
-  objectAccessProbe: WhoamiObjectAccessProbe;
-  /** @deprecated use objectAccessProbe; kept for backward compatibility. */
-  objectAccessStatus: 'UNAVAILABLE_503';
-  session: null;
+  session: {
+    id: string;
+    revision: number;
+    expiresAt: string;
+    provenance: 'SERVER_OPAQUE_SESSION';
+  };
 }
 
 /**

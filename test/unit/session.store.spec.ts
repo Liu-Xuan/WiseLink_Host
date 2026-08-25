@@ -3,117 +3,137 @@ import 'reflect-metadata';
 import { SessionStore } from '../../server/modules/identity/session.store';
 import type { VerifiedIdentity } from '../../server/modules/identity/identity.types';
 
-const VALID_IDENTITY: VerifiedIdentity = {
+const identity: VerifiedIdentity = {
+  subjectMappingId: '11111111-1111-4111-8111-111111111111',
   provenance: 'FEISHU_OAUTH_USER_ACCESS_TOKEN',
   miaodaUserId: 'miaoda_user_001',
   tenantId: '2001',
-  feishuUserId: 'emp_001',
+  feishuUserId: null,
   feishuOpenId: 'ou_valid_001',
-  namespacedSubject: {
-    namespace: 'FEISHU_OPEN_ID',
-    subject: 'ou_valid_001',
-    tenantKey: 'tkey_a',
-  },
-  verifiedAt: '2026-08-23T00:00:00.000Z',
+  namespacedSubject: { namespace: 'FEISHU_OPEN_ID', subject: 'ou_valid_001', tenantKey: 'tkey_a' },
+  verifiedAt: '2026-08-25T00:00:00.000Z',
 };
 
-describe('SessionStore', () => {
-  let store: SessionStore;
+function repository() {
+  const rows = new Map<string, { revoked: boolean; expiresAt: Date; sessionId: string; revision: number }>();
+  let sequence = 0;
+  return {
+    rows,
+    createSession: jest.fn(async (input: { tokenHash: string; expiresAt: Date }) => {
+      const revision = ++sequence;
+      const sessionId = `session-row-${revision}`;
+      rows.set(input.tokenHash, { revoked: false, expiresAt: input.expiresAt, sessionId, revision });
+      return { sessionId, revision };
+    }),
+    validateSession: jest.fn(async (tokenHash: string, now: Date) => {
+      const row = rows.get(tokenHash);
+      if (!row || row.revoked || row.expiresAt <= now) return null;
+      return {
+        sessionId: row.sessionId,
+        sessionRevision: row.revision,
+        expiresAt: row.expiresAt,
+        feishuUserId: null,
+        mapping: {
+          id: identity.subjectMappingId,
+          feishuOpenId: identity.feishuOpenId,
+          feishuTenantKey: identity.namespacedSubject.tenantKey,
+          feishuUserId: null,
+          miaodaUserId: identity.miaodaUserId,
+          miaodaTenantId: identity.tenantId,
+          expectedClientId: 'cli_aadde8b579f95bc9',
+          revision: 1,
+        },
+      };
+    }),
+    revokeSession: jest.fn(async (tokenHash: string) => {
+      const row = rows.get(tokenHash);
+      if (!row || row.revoked) return false;
+      row.revoked = true;
+      return true;
+    }),
+  };
+}
 
-  beforeEach(() => {
-    store = new SessionStore();
+describe('SessionStore persistent opaque-session contract', () => {
+  it('creates and validates a database-backed session', async () => {
+    const repo = repository(); const store = new SessionStore(repo as never);
+    const created = await store.create(identity);
+    await expect(store.validate(created.token)).resolves.toMatchObject({ identity: { miaodaUserId: 'miaoda_user_001' } });
   });
 
-  // ── Create + validate ──
-  it('creates a session that can be validated', () => {
-    const { token } = store.create(VALID_IDENTITY);
-    const result = store.validate(token);
-    expect(result).not.toBeNull();
-    expect(result?.identity.miaodaUserId).toBe('miaoda_user_001');
+  it('persists only the SHA-256 token digest', async () => {
+    const repo = repository(); const created = await new SessionStore(repo as never).create(identity);
+    const input = repo.createSession.mock.calls[0][0];
+    expect(input.tokenHash).toMatch(/^[0-9a-f]{64}$/u);
+    expect(input.tokenHash).not.toBe(created.token);
   });
 
-  it('returns the correct identity on validation', () => {
-    const { token } = store.create(VALID_IDENTITY);
-    const result = store.validate(token);
-    expect(result?.identity).toEqual(VALID_IDENTITY);
+  it('rehydrates optional user_id as null from open_id + tenant_key mapping', async () => {
+    const repo = repository(); const store = new SessionStore(repo as never);
+    const created = await store.create(identity);
+    expect((await store.validate(created.token))?.identity.feishuUserId).toBeNull();
   });
 
-  it('returns a session revision on validation', () => {
-    const { token } = store.create(VALID_IDENTITY);
-    const result = store.validate(token);
-    expect(result?.revision).toBeGreaterThan(0);
+  it('allows repeated validation without consuming the session', async () => {
+    const repo = repository(); const store = new SessionStore(repo as never);
+    const created = await store.create(identity);
+    await expect(store.validate(created.token)).resolves.not.toBeNull();
+    await expect(store.validate(created.token)).resolves.not.toBeNull();
   });
 
-  // ── Multi-use (sessions are NOT one-time) ──
-  it('allows the same session to be validated multiple times', () => {
-    const { token } = store.create(VALID_IDENTITY);
-    const r1 = store.validate(token);
-    const r2 = store.validate(token);
-    const r3 = store.validate(token);
-    expect(r1).not.toBeNull();
-    expect(r2).not.toBeNull();
-    expect(r3).not.toBeNull();
-    // Same identity and revision each time
-    expect(r1?.identity).toEqual(r2?.identity);
-    expect(r2?.revision).toBe(r3?.revision);
+  it('rejects a never-issued token', async () => {
+    await expect(new SessionStore(repository() as never).validate('unknown')).resolves.toBeNull();
   });
 
-  // ── Fail-closed ──
-  it('returns null for a never-issued token', () => {
-    expect(store.validate('never-issued')).toBeNull();
+  it('rejects an empty token without database I/O', async () => {
+    const repo = repository();
+    await expect(new SessionStore(repo as never).validate('')).resolves.toBeNull();
+    expect(repo.validateSession).not.toHaveBeenCalled();
   });
 
-  it('returns null for empty string', () => {
-    expect(store.validate('')).toBeNull();
+  it('issues independent high-entropy opaque tokens', async () => {
+    const store = new SessionStore(repository() as never);
+    const values = await Promise.all([store.create(identity), store.create(identity), store.create(identity)]);
+    expect(new Set(values.map((value) => value.token)).size).toBe(3);
+    expect(values[0].token).toMatch(/^[A-Za-z0-9_-]{32,}$/u);
   });
 
-  it('produces different tokens on each create (random)', () => {
-    const t1 = store.create(VALID_IDENTITY).token;
-    const t2 = store.create(VALID_IDENTITY).token;
-    const t3 = store.create(VALID_IDENTITY).token;
-    expect(t1).not.toBe(t2);
-    expect(t2).not.toBe(t3);
+  it('revokes a session immediately', async () => {
+    const repo = repository(); const store = new SessionStore(repo as never);
+    const created = await store.create(identity);
+    await expect(store.revoke(created.token)).resolves.toBe(true);
+    await expect(store.validate(created.token)).resolves.toBeNull();
   });
 
-  // ── Revoke ──
-  it('revokes a session so it can no longer be validated', () => {
-    const { token } = store.create(VALID_IDENTITY);
-    expect(store.validate(token)).not.toBeNull();
-    expect(store.revoke(token)).toBe(true);
-    expect(store.validate(token)).toBeNull();
+  it('returns false when revoking an already-revoked session', async () => {
+    const repo = repository(); const store = new SessionStore(repo as never);
+    const created = await store.create(identity); await store.revoke(created.token);
+    await expect(store.revoke(created.token)).resolves.toBe(false);
   });
 
-  it('revoking an already-revoked session returns false', () => {
-    const { token } = store.create(VALID_IDENTITY);
-    store.revoke(token);
-    expect(store.revoke(token)).toBe(false);
+  it('returns false when revoking an unknown session', async () => {
+    await expect(new SessionStore(repository() as never).revoke('unknown')).resolves.toBe(false);
   });
 
-  it('revoking an unknown token returns false', () => {
-    expect(store.revoke('never-issued')).toBe(false);
+  it('rejects an expired session', async () => {
+    const repo = repository(); const store = new SessionStore(repo as never);
+    const created = await store.create(identity);
+    for (const row of repo.rows.values()) row.expiresAt = new Date(0);
+    await expect(store.validate(created.token)).resolves.toBeNull();
   });
 
-  // ── Revision increments ──
-  it('assigns monotonically increasing revisions to new sessions', () => {
-    const r1 = store.create(VALID_IDENTITY);
-    const r2 = store.create(VALID_IDENTITY);
-    const v1 = store.validate(r1.token);
-    const v2 = store.validate(r2.token);
-    expect(v2?.revision).toBeGreaterThan(v1?.revision ?? 0);
+  it('keeps server row id/revision separate from the raw cookie token', async () => {
+    const repo = repository(); const store = new SessionStore(repo as never);
+    const created = await store.create(identity); const validated = await store.validate(created.token);
+    expect(validated?.sessionId).toBe('session-row-1');
+    expect(validated?.revision).toBe(1);
+    expect(validated?.sessionId).not.toBe(created.token);
   });
 
-  // ── Opaque token ──
-  it('token is a base64url string with sufficient entropy', () => {
-    const { token } = store.create(VALID_IDENTITY);
-    expect(token.length).toBeGreaterThanOrEqual(32);
-    expect(/^[A-Za-z0-9_-]+$/.test(token)).toBe(true);
-  });
-
-  // ── No identity leakage ──
-  it('token does not contain miaodaUserId, openId, or tenantId', () => {
-    const { token } = store.create(VALID_IDENTITY);
-    expect(token).not.toContain('miaoda_user_001');
-    expect(token).not.toContain('ou_valid_001');
-    expect(token).not.toContain('2001');
+  it('does not leak identity fields in the opaque browser token', async () => {
+    const created = await new SessionStore(repository() as never).create(identity);
+    expect(created.token).not.toContain(identity.miaodaUserId);
+    expect(created.token).not.toContain(identity.feishuOpenId!);
+    expect(created.token).not.toContain(identity.tenantId);
   });
 });

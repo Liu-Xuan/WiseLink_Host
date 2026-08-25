@@ -10,15 +10,17 @@ import {
 } from './feishu-oauth-verification.adapter';
 import {
   FEISHU_OAUTH_TOKEN_HTTP,
-  UnavailableFeishuOAuthTokenHttpAdapter,
+  HttpFeishuOAuthTokenAdapter,
+  type FeishuOAuthTokenFetch,
 } from './feishu-oauth-token.http';
 import {
   FEISHU_USER_INFO_HTTP,
-  UnavailableFeishuUserInfoHttpAdapter,
+  HttpFeishuUserInfoAdapter,
+  type FeishuUserInfoFetch,
 } from './feishu-user-info.http';
 import {
   SUBJECT_TENANT_MAPPING,
-  UnavailableSubjectTenantMappingAdapter,
+  DatabaseSubjectTenantMappingAdapter,
 } from './subject-tenant-mapping.port';
 import {
   OAUTH_CONFIG,
@@ -31,6 +33,7 @@ import { WhoamiController } from './whoami.controller';
 import { OauthFlowController } from './oauth-flow.controller';
 import { ProtectedWorkItemReadController } from './protected-work-item-read.controller';
 import { WorkItemRuntimeModule } from '../work-item/work-item-runtime.module';
+import { IdentityRepository } from './identity.repository';
 
 @Module({
   imports: [WorkItemRuntimeModule],
@@ -57,18 +60,19 @@ import { WorkItemRuntimeModule } from '../work-item/work-item-runtime.module';
       useClass: FeishuOAuthVerificationAdapter,
     },
 
-    // ── Feishu HTTP ports — default unavailable ──
-    // In the project default environment (no credentials), both return
-    // null → every OAuth callback fails closed at token-exchange or
-    // user_info. A DEV/UAT environment wires HttpFeishuOAuthTokenAdapter
-    // and HttpFeishuUserInfoAdapter via custom providers.
     {
       provide: FEISHU_OAUTH_TOKEN_HTTP,
-      useClass: UnavailableFeishuOAuthTokenHttpAdapter,
+      useFactory: () =>
+        new HttpFeishuOAuthTokenAdapter(
+          globalThis.fetch as unknown as FeishuOAuthTokenFetch,
+        ),
     },
     {
       provide: FEISHU_USER_INFO_HTTP,
-      useClass: UnavailableFeishuUserInfoHttpAdapter,
+      useFactory: () =>
+        new HttpFeishuUserInfoAdapter(
+          globalThis.fetch as unknown as FeishuUserInfoFetch,
+        ),
     },
 
     // ── Subject/tenant mapping — default unavailable ──
@@ -76,7 +80,7 @@ import { WorkItemRuntimeModule } from '../work-item/work-item-runtime.module';
     // backed or API-backed adapter is provisioned.
     {
       provide: SUBJECT_TENANT_MAPPING,
-      useClass: UnavailableSubjectTenantMappingAdapter,
+      useClass: DatabaseSubjectTenantMappingAdapter,
     },
 
     // ── OAuth configuration (reads from process.env) ──
@@ -86,9 +90,11 @@ import { WorkItemRuntimeModule } from '../work-item/work-item-runtime.module';
     },
 
     // ── Server-side stores and resolver ──
+    IdentityRepository,
     OauthStateStore,
     SessionStore,
     SessionResolver,
   ],
+  exports: [SessionResolver],
 })
 export class IdentityModule {}

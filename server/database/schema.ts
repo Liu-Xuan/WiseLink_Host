@@ -501,6 +501,69 @@ export const externalDiscoveryCandidate = pgTable("external_discovery_candidate"
   )`),
 ]);
 
+/** Host-owned Feishu OAuth subject -> canonical Miaoda subject mapping. */
+export const identitySubjectMapping = pgTable("identity_subject_mapping", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  feishuOpenId: varchar("feishu_open_id", { length: 255 }).notNull(),
+  feishuTenantKey: varchar("feishu_tenant_key", { length: 255 }).notNull(),
+  feishuUserId: varchar("feishu_user_id", { length: 255 }),
+  miaodaUserId: varchar("miaoda_user_id", { length: 255 }).notNull(),
+  miaodaTenantId: varchar("miaoda_tenant_id", { length: 128 }).notNull(),
+  expectedClientId: varchar("expected_client_id", { length: 128 }).notNull(),
+  status: varchar("status", { length: 32 }).notNull().default('ACTIVE'),
+  revision: integer("revision").notNull().default(1),
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  createdBy: userProfile("_created_by"),
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedBy: userProfile("_updated_by"),
+}, (table) => [
+  uniqueIndex("uk_identity_subject_feishu_app").on(table.feishuTenantKey, table.feishuOpenId, table.expectedClientId),
+  index("idx_identity_subject_miaoda").on(table.miaodaTenantId, table.miaodaUserId),
+  check("ck_identity_subject_status", sql`${table.status} IN ('ACTIVE', 'REVOKED')`),
+  check("ck_identity_subject_revision", sql`${table.revision} > 0`),
+]);
+
+/** One-time server-side OAuth state and PKCE verifier. Raw state is never stored. */
+export const identityOauthState = pgTable("identity_oauth_state", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  stateHash: varchar("state_hash", { length: 64 }).notNull(),
+  codeVerifier: varchar("code_verifier", { length: 128 }).notNull(),
+  expiresAt: customTimestamptz("expires_at", { precision: 3 }).notNull(),
+  consumedAt: customTimestamptz("consumed_at", { precision: 3 }),
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  createdBy: userProfile("_created_by"),
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedBy: userProfile("_updated_by"),
+}, (table) => [
+  uniqueIndex("uk_identity_oauth_state_hash").on(table.stateHash),
+  index("idx_identity_oauth_state_expiry").on(table.expiresAt),
+]);
+
+/** Persistent opaque browser session. Only a SHA-256 token digest is stored. */
+export const identitySession = pgTable("identity_session", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  sessionTokenHash: varchar("session_token_hash", { length: 64 }).notNull(),
+  subjectMappingId: uuid("subject_mapping_id").notNull(),
+  feishuUserId: varchar("feishu_user_id", { length: 255 }),
+  revision: integer("revision").notNull().default(1),
+  expiresAt: customTimestamptz("expires_at", { precision: 3 }).notNull(),
+  revokedAt: customTimestamptz("revoked_at", { precision: 3 }),
+  lastSeenAt: customTimestamptz("last_seen_at", { precision: 3 }).notNull(),
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  createdBy: userProfile("_created_by"),
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedBy: userProfile("_updated_by"),
+}, (table) => [
+  uniqueIndex("uk_identity_session_token_hash").on(table.sessionTokenHash),
+  index("idx_identity_session_subject").on(table.subjectMappingId, table.expiresAt),
+  check("ck_identity_session_revision", sql`${table.revision} > 0`),
+  foreignKey({
+    columns: [table.subjectMappingId],
+    foreignColumns: [identitySubjectMapping.id],
+    name: "fk_identity_session_subject_mapping",
+  }),
+]);
+
 // table aliases
 export const actionAttemptTable = actionAttempt;
 export const dmAcquisitionTable = dmAcquisition;
@@ -512,4 +575,7 @@ export const dmPublicationFamilyTable = dmPublicationFamily;
 export const dmSourceArtifactTable = dmSourceArtifact;
 export const externalDiscoveryCandidateTable = externalDiscoveryCandidate;
 export const externalSearchRunTable = externalSearchRun;
+export const identityOauthStateTable = identityOauthState;
+export const identitySessionTable = identitySession;
+export const identitySubjectMappingTable = identitySubjectMapping;
 export const workItemTable = workItem;

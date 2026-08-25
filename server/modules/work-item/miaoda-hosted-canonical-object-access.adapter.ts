@@ -101,18 +101,11 @@ function hostedNativeActor(
     actor.subjectDecision.tenantId !== actor.tenantId ||
     actor.applicationScopeId !== CANONICAL_MIAODA_APP_ID ||
     actor.workspaceId !== null ||
-    actor.workspaceProvenance !== 'UNAVAILABLE' ||
-    actor.sessionId !== null ||
-    actor.sessionRevision !== null ||
-    actor.sessionProvenance !== 'UNAVAILABLE'
+    actor.workspaceProvenance !== 'UNAVAILABLE'
   ) {
     return false;
   }
   if (actor.transport === 'AILY_SIGNED_MCP_HTTP') {
-    // agentId is entrance/provenance only; the entrance allowlist lives at
-    // ingress (AilyNativeFinalUserIdentityService). Once the native signed
-    // Aily actor is verified at ingress, agentId is neither an
-    // authorization predicate nor a fingerprint input here.
     return (
       actor.identityProvenance === 'AILY_SIGNED_JWT' &&
       actor.feishuIdentityProvenance === 'AILY_SIGNED_JWT' &&
@@ -123,7 +116,27 @@ function hostedNativeActor(
       actor.subjectDecision.version ===
         'aily-jwt-hs256.authnpaas-user-convert.v1' &&
       actor.applicationScopeProvenance === 'HOST_CONFIGURED_MIAODA_APP_ID' &&
+      actor.sessionId === null &&
+      actor.sessionRevision === null &&
+      actor.sessionProvenance === 'UNAVAILABLE' &&
       Number.isFinite(Date.parse(actor.tokenExpiresAt))
+    );
+  }
+  if (actor.identityProvenance === 'FEISHU_OAUTH_USER_ACCESS_TOKEN') {
+    return (
+      actor.transport === 'MIAODA_AUTHENTICATED_HTTP' &&
+      actor.subjectDecision.source === 'FEISHU_OAUTH_USER_ACCESS_TOKEN' &&
+      actor.subjectDecision.version === 'feishu-oauth-verified.v1' &&
+      actor.applicationScopeProvenance === 'HOST_CONFIGURED_MIAODA_APP_ID' &&
+      (actor.env === 'preview' || actor.env === 'runtime') &&
+      actor.feishuOpenId !== null &&
+      actor.feishuOpenId.trim().length > 0 &&
+      actor.feishuIdentityProvenance === 'FEISHU_OAUTH_USER_ACCESS_TOKEN' &&
+      typeof actor.sessionId === 'string' &&
+      actor.sessionId.trim().length > 0 &&
+      Number.isSafeInteger(actor.sessionRevision) &&
+      Number(actor.sessionRevision) > 0 &&
+      actor.sessionProvenance === 'SERVER_OPAQUE_SESSION'
     );
   }
   return (
@@ -135,7 +148,10 @@ function hostedNativeActor(
     (actor.env === 'preview' || actor.env === 'runtime') &&
     actor.feishuUserId === null &&
     actor.feishuOpenId === null &&
-    actor.feishuIdentityProvenance === 'UNAVAILABLE'
+    actor.feishuIdentityProvenance === 'UNAVAILABLE' &&
+    actor.sessionId === null &&
+    actor.sessionRevision === null &&
+    actor.sessionProvenance === 'UNAVAILABLE'
   );
 }
 
@@ -181,6 +197,9 @@ function grant(
     }),
   );
   const aily = actor.transport === 'AILY_SIGNED_MCP_HTTP';
+  const oauth =
+    actor.transport === 'MIAODA_AUTHENTICATED_HTTP' &&
+    actor.identityProvenance === 'FEISHU_OAUTH_USER_ACCESS_TOKEN';
   return {
     allowed: true,
     action,
@@ -210,12 +229,14 @@ function grant(
     auditProvenance: {
       identity: aily
         ? 'AILY_SIGNED_JWT_AND_MIAODA_AUTHNPAAS_ID_CONVERT'
-        : 'MIAODA_GATEWAY_USER_CONTEXT',
+        : oauth
+          ? 'FEISHU_OAUTH_USER_ACCESS_TOKEN_AND_HOST_MAPPING'
+          : 'MIAODA_GATEWAY_USER_CONTEXT',
       applicationScope: actor.applicationScopeProvenance,
       workspace: 'UNAVAILABLE',
       objectAuthorization: 'HOST_WORK_ITEM_REQUESTED_BY',
       memberAuthorization: 'UNAVAILABLE',
-      session: 'UNAVAILABLE',
+      session: oauth ? 'SERVER_OPAQUE_SESSION' : 'UNAVAILABLE',
       correlationFieldsAreAuthorizationInputs: false,
       platformRolesAreObjectGrantInputs: false,
       platformRolesMayBeActionPolicyInputs: true,
