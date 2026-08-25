@@ -1,5 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { IdentityRepository } from './identity.repository';
+import { OAUTH_CONFIG, type OAuthConfigPort } from './oauth-config.port';
 
 export const SUBJECT_TENANT_MAPPING = Symbol('SUBJECT_TENANT_MAPPING');
 
@@ -29,6 +30,7 @@ export interface SubjectTenantMappingPort {
   resolveMapping(input: {
     feishuOpenId: string;
     feishuTenantKey: string;
+    feishuUserId: string | null;
     expectedClientId: string;
   }): Promise<SubjectTenantMapping | null>;
 }
@@ -46,6 +48,7 @@ export class UnavailableSubjectTenantMappingAdapter
   async resolveMapping(_input: {
     feishuOpenId: string;
     feishuTenantKey: string;
+    feishuUserId: string | null;
     expectedClientId: string;
   }): Promise<SubjectTenantMapping | null> {
     return null;
@@ -58,14 +61,29 @@ export class UnavailableSubjectTenantMappingAdapter
 export class DatabaseSubjectTenantMappingAdapter
   implements SubjectTenantMappingPort
 {
-  constructor(private readonly repository: IdentityRepository) {}
+  constructor(
+    private readonly repository: IdentityRepository,
+    @Inject(OAUTH_CONFIG) private readonly oauthConfig: OAuthConfigPort,
+  ) {}
 
   async resolveMapping(input: {
     feishuOpenId: string;
     feishuTenantKey: string;
+    feishuUserId: string | null;
     expectedClientId: string;
   }): Promise<SubjectTenantMapping | null> {
-    const mapping = await this.repository.resolveSubjectMapping(input);
+    let mapping = await this.repository.resolveSubjectMapping(input);
+    const bootstrap = this.oauthConfig.mappingBootstrap;
+    if (
+      !mapping &&
+      bootstrap.kind === 'ENABLED' &&
+      this.oauthConfig.clientId === input.expectedClientId
+    ) {
+      mapping = await this.repository.bootstrapSubjectMapping({
+        ...input,
+        miaodaTenantId: bootstrap.miaodaTenantId,
+      });
+    }
     if (!mapping) return null;
     return {
       mappingId: mapping.id,

@@ -84,6 +84,7 @@ export class FeishuOAuthVerificationAdapter
       await this.subjectMapping.resolveMapping({
         feishuOpenId: userInfo.openId,
         feishuTenantKey: userInfo.tenantKey,
+        feishuUserId: userInfo.userId,
         expectedClientId: input.clientId,
       });
 

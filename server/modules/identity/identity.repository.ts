@@ -3,7 +3,7 @@ import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import { and, eq, gt, isNull } from 'drizzle-orm';
+import { and, eq, gt, isNull, sql } from 'drizzle-orm';
 
 import {
   identityOauthState,
@@ -93,6 +93,74 @@ export class IdentityRepository {
       )
       .limit(1);
     return mapping ?? null;
+  }
+
+  /**
+   * One-time isolated DEV bootstrap. The Feishu subject fields are supplied
+   * only by the server-side official user_info adapter. The canonical user is
+   * derived from the Hosted transaction's app.user_id, never from a request or
+   * environment variable. RLS and the active actor/client unique index are the
+   * final enforcement boundary.
+   */
+  async bootstrapSubjectMapping(input: {
+    feishuOpenId: string;
+    feishuTenantKey: string;
+    feishuUserId: string | null;
+    expectedClientId: string;
+    miaodaTenantId: string;
+  }): Promise<PersistedSubjectMapping | null> {
+    const actorRows = await this.db.execute<{ miaodaUserId: string | null }>(
+      sql`SELECT NULLIF(current_setting('app.user_id', TRUE), '') AS "miaodaUserId"`,
+    );
+    const miaodaUserId = actorRows[0]?.miaodaUserId;
+    if (!miaodaUserId) return null;
+
+    const [activeForActor] = await this.db
+      .select({ id: identitySubjectMapping.id })
+      .from(identitySubjectMapping)
+      .where(
+        and(
+          eq(identitySubjectMapping.miaodaUserId, miaodaUserId),
+          eq(identitySubjectMapping.expectedClientId, input.expectedClientId),
+          eq(identitySubjectMapping.status, 'ACTIVE'),
+        ),
+      )
+      .limit(1);
+    if (activeForActor) return null;
+
+    const [created] = await this.db
+      .insert(identitySubjectMapping)
+      .values({
+        feishuOpenId: input.feishuOpenId,
+        feishuTenantKey: input.feishuTenantKey,
+        feishuUserId: input.feishuUserId,
+        miaodaUserId,
+        miaodaTenantId: input.miaodaTenantId,
+        expectedClientId: input.expectedClientId,
+        status: 'ACTIVE',
+        revision: 1,
+      })
+      .onConflictDoNothing()
+      .returning({
+        id: identitySubjectMapping.id,
+        feishuOpenId: identitySubjectMapping.feishuOpenId,
+        feishuTenantKey: identitySubjectMapping.feishuTenantKey,
+        feishuUserId: identitySubjectMapping.feishuUserId,
+        miaodaUserId: identitySubjectMapping.miaodaUserId,
+        miaodaTenantId: identitySubjectMapping.miaodaTenantId,
+        expectedClientId: identitySubjectMapping.expectedClientId,
+        revision: identitySubjectMapping.revision,
+      });
+
+    if (
+      !created ||
+      created.miaodaUserId !== miaodaUserId ||
+      created.miaodaTenantId !== input.miaodaTenantId ||
+      created.expectedClientId !== input.expectedClientId
+    ) {
+      return null;
+    }
+    return created;
   }
 
   async createSession(input: {
