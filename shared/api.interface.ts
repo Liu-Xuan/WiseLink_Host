@@ -1,5 +1,14 @@
 export type UnifiedPackageSourceKind = 'pdf' | 'native_s1000d';
 
+export interface OfficialOauthStartResponse {
+  authorizeUrl: string;
+}
+
+export interface OfficialOauthCallbackRequest {
+  code: string;
+  state: string;
+}
+
 export interface UnifiedPackageArtifactDescriptor {
   storeRole: 'UnifiedArtifactStoreCandidate';
   ref: string;

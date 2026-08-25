@@ -206,7 +206,7 @@ function realResolver(store: { validate: jest.Mock }) {
   return new SessionResolver(store as never, {
     configured: true,
     clientId: 'cli_aadde8b579f95bc9',
-    redirectUri: 'https://host/api/identity/oauth/callback',
+    redirectUri: 'https://host/client/oauth/callback',
     applicationScopeId: 'app_17bzc551rsg',
     sessionEnvironment: 'preview',
   });

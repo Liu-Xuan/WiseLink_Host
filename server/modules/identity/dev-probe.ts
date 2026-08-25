@@ -13,8 +13,8 @@
  * controller/provider references across the project.
  *
  * Probes:
- *  1. GET /api/identity/oauth/authorize → 503 (OAuth not configured)
- *  2. GET /api/identity/oauth/callback → 503 (OAuth not configured)
+ *  1. POST /api/identity/oauth/start → 503 (OAuth not configured)
+ *  2. POST /api/identity/oauth/callback → 503 (OAuth not configured)
  *  3. GET /api/identity/work-items/WI-001 → 401 (no session)
  *  4. GET /api/identity/work-items/WI-001 with fake Bearer → 401 (unknown token)
  *
@@ -115,20 +115,24 @@ async function main() {
   let allPass = true;
   const results: { probe: string; status: number; expected: number; pass: boolean }[] = [];
 
-  // Probe 1: authorize → 503
+  // Probe 1: start → 503
   {
-    const res = await fetch(`${base}/api/identity/oauth/authorize`, {
-      redirect: 'manual',
+    const res = await fetch(`${base}/api/identity/oauth/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
     });
     const pass = res.status === 503;
-    results.push({ probe: 'authorize', status: res.status, expected: 503, pass });
+    results.push({ probe: 'start', status: res.status, expected: 503, pass });
     if (!pass) allPass = false;
   }
 
   // Probe 2: callback → 503
   {
-    const res = await fetch(`${base}/api/identity/oauth/callback?code=x&state=y`, {
-      redirect: 'manual',
+    const res = await fetch(`${base}/api/identity/oauth/callback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: 'x', state: 'y' }),
     });
     const pass = res.status === 503;
     results.push({ probe: 'callback', status: res.status, expected: 503, pass });

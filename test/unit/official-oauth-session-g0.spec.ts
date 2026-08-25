@@ -106,7 +106,7 @@ describe('official OAuth -> persistent session G0', () => {
     const resolver = new SessionResolver(sessionStore as never, {
       configured: true,
       clientId: 'cli_aadde8b579f95bc9',
-      redirectUri: 'https://host/api/identity/oauth/callback',
+      redirectUri: 'https://host/client/oauth/callback',
       applicationScopeId: 'app_17bzc551rsg',
       sessionEnvironment: 'preview',
     });
@@ -142,7 +142,7 @@ describe('official OAuth -> persistent session G0', () => {
       {
         configured: true,
         clientId: 'cli_aadde8b579f95bc9',
-        redirectUri: 'https://hv5zjf4j8yb.feishuapp.com/app/app_17bzc551rsg/api/identity/oauth/callback',
+        redirectUri: 'https://hv5zjf4j8yb.feishuapp.com/app/app_17bzc551rsg/client/oauth/callback',
         applicationScopeId: 'app_17bzc551rsg',
         sessionEnvironment: 'preview',
       },
@@ -153,16 +153,18 @@ describe('official OAuth -> persistent session G0', () => {
     );
     const response = fakeResponse();
     await controller.beginAuthorize(response as never);
-    expect(response.redirect).toHaveBeenCalledWith(
-      302,
-      expect.stringContaining('accounts.feishu.cn/open-apis/authen/v1/authorize'),
-    );
+    expect(response.status).toHaveBeenCalledWith(200);
+    expect(response.json).toHaveBeenCalledWith({
+      authorizeUrl: expect.stringContaining(
+        'accounts.feishu.cn/open-apis/authen/v1/authorize',
+      ),
+    });
 
     const callback = new OauthFlowController(
       {
         configured: true,
         clientId: 'cli_aadde8b579f95bc9',
-        redirectUri: 'https://hv5zjf4j8yb.feishuapp.com/app/app_17bzc551rsg/api/identity/oauth/callback',
+        redirectUri: 'https://hv5zjf4j8yb.feishuapp.com/app/app_17bzc551rsg/client/oauth/callback',
         applicationScopeId: 'app_17bzc551rsg',
         sessionEnvironment: 'preview',
       },
@@ -173,7 +175,10 @@ describe('official OAuth -> persistent session G0', () => {
     );
     const callbackResponse = fakeResponse();
     process.env.FEISHU_OAUTH_CLIENT_SECRET = 'controlled-dev-secret';
-    await callback.handleCallback('code', 'state', callbackResponse as never);
+    await callback.handleCallback(
+      { code: 'code', state: 'state' },
+      callbackResponse as never,
+    );
     delete process.env.FEISHU_OAUTH_CLIENT_SECRET;
     expect(callbackResponse.cookie).toHaveBeenCalledWith(
       'wl_session', 'raw-secret-token',

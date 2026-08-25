@@ -3,7 +3,7 @@ import 'reflect-metadata';
 jest.mock('@nestjs/common', () => {
   const actual = jest.requireActual('@nestjs/common');
   const noOp = () => () => undefined;
-  return { ...actual, Controller: noOp, Get: noOp, Inject: noOp, Query: noOp, Res: noOp, HttpCode: noOp };
+  return { ...actual, Body: noOp, Controller: noOp, Inject: noOp, Post: noOp, Res: noOp, HttpCode: noOp };
 });
 
 import { OauthFlowController } from '../../server/modules/identity/oauth-flow.controller';
@@ -11,7 +11,7 @@ import { OauthFlowController } from '../../server/modules/identity/oauth-flow.co
 const configured = {
   configured: true,
   clientId: 'cli_aadde8b579f95bc9',
-  redirectUri: 'https://hv5zjf4j8yb.feishuapp.com/app/app_17bzc551rsg/api/identity/oauth/callback',
+  redirectUri: 'https://hv5zjf4j8yb.feishuapp.com/app/app_17bzc551rsg/client/oauth/callback',
   applicationScopeId: 'app_17bzc551rsg' as const,
   sessionEnvironment: 'preview' as const,
 };
@@ -34,17 +34,17 @@ describe('OauthFlowController official OAuth contract', () => {
     expect(response.status).toHaveBeenCalledWith(503);
   });
 
-  it('redirects only to the official Feishu authorize endpoint', async () => {
+  it('returns only the official Feishu authorize endpoint', async () => {
     const response = fakeResponse();
     await controller(configured, { issue: jest.fn().mockResolvedValue('state-1') }, {}, {}, {}).beginAuthorize(response as never);
-    const url = new URL(response.redirect.mock.calls[0][1]);
+    const url = new URL(response.json.mock.calls[0][0].authorizeUrl);
     expect(`${url.origin}${url.pathname}`).toBe('https://accounts.feishu.cn/open-apis/authen/v1/authorize');
   });
 
   it('sends state + PKCE S256 + exact callback URL', async () => {
     const state = { issue: jest.fn().mockResolvedValue('state-1') }; const response = fakeResponse();
     await controller(configured, state, {}, {}, {}).beginAuthorize(response as never);
-    const url = new URL(response.redirect.mock.calls[0][1]);
+    const url = new URL(response.json.mock.calls[0][0].authorizeUrl);
     expect(url.searchParams.get('state')).toBe('state-1');
     expect(url.searchParams.get('code_challenge_method')).toBe('S256');
     expect(url.searchParams.get('code_challenge')).toBeTruthy();
@@ -54,40 +54,57 @@ describe('OauthFlowController official OAuth contract', () => {
 
   it('fails closed when callback configuration is absent', async () => {
     const response = fakeResponse();
-    await controller({ ...configured, configured: false }, {}, {}, {}, {}).handleCallback('code', 'state', response as never);
+    await controller({ ...configured, configured: false }, {}, {}, {}, {}).handleCallback({ code: 'code', state: 'state' }, response as never);
     expect(response.status).toHaveBeenCalledWith(503);
   });
 
   it('rejects a callback without code', async () => {
     const response = fakeResponse();
-    await controller(configured, {}, {}, {}, {}).handleCallback(undefined, 'state', response as never);
+    await controller(configured, {}, {}, {}, {}).handleCallback({ code: '', state: 'state' }, response as never);
     expect(response.status).toHaveBeenCalledWith(400);
     expect(response.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'OAUTH_CALLBACK_MISSING_CODE' }));
   });
 
   it('rejects a callback without state', async () => {
     const response = fakeResponse();
-    await controller(configured, {}, {}, {}, {}).handleCallback('code', undefined, response as never);
+    await controller(configured, {}, {}, {}, {}).handleCallback({ code: 'code', state: '' }, response as never);
     expect(response.status).toHaveBeenCalledWith(400);
     expect(response.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'OAUTH_CALLBACK_MISSING_STATE' }));
   });
 
   it('rejects expired or replayed state before token exchange', async () => {
     const token = { fetchToken: jest.fn() }; const response = fakeResponse();
-    await controller(configured, { consume: jest.fn().mockResolvedValue(null) }, token, {}, {}).handleCallback('code', 'state', response as never);
+    await controller(configured, { consume: jest.fn().mockResolvedValue(null) }, token, {}, {}).handleCallback({ code: 'code', state: 'state' }, response as never);
     expect(response.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'OAUTH_STATE_INVALID' }));
     expect(token.fetchToken).not.toHaveBeenCalled();
   });
 
+  it('never reflects callback code or state in an error response', async () => {
+    const response = fakeResponse();
+    await controller(
+      configured,
+      { consume: jest.fn().mockResolvedValue(null) },
+      {},
+      {},
+      {},
+    ).handleCallback(
+      { code: 'sensitive-code', state: 'sensitive-state' },
+      response as never,
+    );
+    const reflected = JSON.stringify(response.json.mock.calls);
+    expect(reflected).not.toContain('sensitive-code');
+    expect(reflected).not.toContain('sensitive-state');
+  });
+
   it('fails closed when the controlled server secret is unavailable', async () => {
     delete process.env.FEISHU_OAUTH_CLIENT_SECRET; const response = fakeResponse();
-    await controller(configured, { consume: jest.fn().mockResolvedValue({ codeVerifier: 'v' }) }, {}, {}, {}).handleCallback('code', 'state', response as never);
+    await controller(configured, { consume: jest.fn().mockResolvedValue({ codeVerifier: 'v' }) }, {}, {}, {}).handleCallback({ code: 'code', state: 'state' }, response as never);
     expect(response.status).toHaveBeenCalledWith(503);
   });
 
   it('fails closed when official token exchange fails', async () => {
     const response = fakeResponse();
-    await controller(configured, { consume: jest.fn().mockResolvedValue({ codeVerifier: 'v' }) }, { fetchToken: jest.fn().mockResolvedValue(null) }, {}, {}).handleCallback('code', 'state', response as never);
+    await controller(configured, { consume: jest.fn().mockResolvedValue({ codeVerifier: 'v' }) }, { fetchToken: jest.fn().mockResolvedValue(null) }, {}, {}).handleCallback({ code: 'code', state: 'state' }, response as never);
     expect(response.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'OAUTH_TOKEN_EXCHANGE_FAILED' }));
   });
 
@@ -100,7 +117,7 @@ describe('OauthFlowController official OAuth contract', () => {
       token,
       {},
       {},
-    ).handleCallback('authorization-code', 'state', response as never);
+    ).handleCallback({ code: 'authorization-code', state: 'state' }, response as never);
     expect(token.fetchToken).toHaveBeenCalledWith({
       clientId: configured.clientId,
       clientSecret: 'controlled-dev-secret',
@@ -118,7 +135,7 @@ describe('OauthFlowController official OAuth contract', () => {
       { fetchToken: jest.fn().mockResolvedValue({ accessToken: 'official-user-access-token' }) },
       verification,
       {},
-    ).handleCallback('code', 'state', fakeResponse() as never);
+    ).handleCallback({ code: 'code', state: 'state' }, fakeResponse() as never);
     expect(verification.verify).toHaveBeenCalledWith({
       accessToken: 'official-user-access-token',
       clientId: configured.clientId,
@@ -128,13 +145,13 @@ describe('OauthFlowController official OAuth contract', () => {
 
   it('fails closed when user_info or Host mapping verification fails', async () => {
     const response = fakeResponse();
-    await controller(configured, { consume: jest.fn().mockResolvedValue({ codeVerifier: 'v' }) }, { fetchToken: jest.fn().mockResolvedValue({ accessToken: 'token' }) }, { verify: jest.fn().mockResolvedValue({ kind: 'UNAVAILABLE', reason: 'FEISHU_SUBJECT_MAPPING_MISSING' }) }, {}).handleCallback('code', 'state', response as never);
+    await controller(configured, { consume: jest.fn().mockResolvedValue({ codeVerifier: 'v' }) }, { fetchToken: jest.fn().mockResolvedValue({ accessToken: 'token' }) }, { verify: jest.fn().mockResolvedValue({ kind: 'UNAVAILABLE', reason: 'FEISHU_SUBJECT_MAPPING_MISSING' }) }, {}).handleCallback({ code: 'code', state: 'state' }, response as never);
     expect(response.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'IDENTITY_VERIFICATION_UNAVAILABLE' }));
   });
 
   it('sets an exact secure HttpOnly cookie and returns no JSON token', async () => {
     const response = fakeResponse();
-    await successController(identity).handleCallback('code', 'state', response as never);
+    await successController(identity).handleCallback({ code: 'code', state: 'state' }, response as never);
     expect(response.cookie).toHaveBeenCalledWith('wl_session', 'raw-session-token', expect.objectContaining({ httpOnly: true, secure: true, sameSite: 'lax', path: '/' }));
     expect(response.status).toHaveBeenCalledWith(204);
     expect(response.send).toHaveBeenCalledWith();
@@ -143,7 +160,7 @@ describe('OauthFlowController official OAuth contract', () => {
 
   it('does not fail when official user_info omits user_id', async () => {
     const response = fakeResponse();
-    await successController({ ...identity, feishuUserId: null }).handleCallback('code', 'state', response as never);
+    await successController({ ...identity, feishuUserId: null }).handleCallback({ code: 'code', state: 'state' }, response as never);
     expect(response.status).toHaveBeenCalledWith(204);
     expect(response.json).not.toHaveBeenCalled();
   });
