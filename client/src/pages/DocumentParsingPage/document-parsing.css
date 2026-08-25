@@ -1,25 +1,56 @@
 :root {
-  --parse-ink: #1f2937;
-  --parse-heading: #17202d;
-  --parse-muted: #748196;
-  --parse-rule: #dfe4ea;
-  --parse-rule-strong: #cbd5e1;
-  --parse-blue: #1f67c1;
-  --parse-blue-soft: #eef5ff;
-  --parse-green: #2f7a4b;
-  --parse-green-soft: #f1faf4;
-  --parse-warning: #a56120;
-  --parse-warning-soft: #fff8ed;
-  --parse-danger: #b34143;
-  --parse-paper: #f5f7fa;
+  --parse-ink: var(--wl-ink);
+  --parse-heading: var(--wl-ink);
+  --parse-muted: var(--wl-muted);
+  --parse-rule: var(--wl-border-strong);
+  --parse-rule-strong: var(--wl-border-strong);
+  --parse-blue: var(--wl-accent);
+  --parse-blue-soft: var(--wl-accent-soft);
+  --parse-green: var(--wl-green);
+  --parse-green-soft: var(--wl-green-soft);
+  --parse-warning: var(--wl-amber);
+  --parse-warning-soft: var(--wl-amber-soft);
+  --parse-danger: var(--wl-red);
+  --parse-paper: transparent;
   --parse-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+/* ── 全屏工作台模式：固定高度三栏容器（Spec R01 §4.2） ── */
+
+.parse-shell--workbench {
+  display: flex;
+  height: calc(100vh - 96px);
+  min-height: 480px;
+  padding: 12px 0 0;
+  overflow: hidden;
+}
+
+.parse-shell--workbench > .wl-workbench-shell {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 沉浸模式：隐藏 AppShell 顶栏与浮动 Dock，让内容占满视口 */
+body[data-wl-immersive='true'] .wiselink-app-header,
+body[data-wl-immersive='true'] .wiselink-breadcrumb,
+body[data-wl-immersive='true'] .wl-dock {
+  display: none;
+}
+
+body[data-wl-immersive='true'] .wiselink-app-body {
+  padding: 0;
+}
+
+body[data-wl-immersive='true'] .parse-shell--workbench {
+  height: 100vh;
+  padding-top: 0;
 }
 
 .parse-shell {
   min-height: 100vh;
   padding: 28px clamp(14px, 3vw, 40px) 58px;
   color: var(--parse-ink);
-  background: var(--parse-paper);
+  background: transparent;
 }
 
 .parse-locked-shell {
@@ -117,7 +148,7 @@
   grid-template-columns: auto 1fr;
   align-items: center;
   gap: 5px 9px;
-  border: 1px solid #cfe7d8;
+  border: 1px solid var(--wl-green-soft);
   border-radius: 7px;
   color: var(--parse-green);
   background: var(--parse-green-soft);
@@ -150,7 +181,7 @@
   border: 1px solid var(--parse-rule);
   border-radius: 6px;
   overflow: hidden;
-  background: #fff;
+  background: var(--wl-surface-solid);
 }
 
 .parse-rail-step {
@@ -163,7 +194,7 @@
   border: 0;
   border-right: 1px solid var(--parse-rule);
   color: #778497;
-  background: #fff;
+  background: var(--wl-surface-solid);
   font: inherit;
   text-align: left;
   cursor: pointer;
@@ -227,7 +258,7 @@
   overflow: auto;
   border: 1px solid var(--parse-rule);
   border-radius: 7px;
-  background: #fff;
+  background: var(--wl-surface-solid);
   box-shadow: 0 3px 14px rgb(30 45 70 / 4%);
   scrollbar-width: thin;
 }
@@ -357,8 +388,8 @@
 
 .workitem-tree-node:hover,
 .workitem-tree-node.is-active {
-  border-color: #d3e1fb;
-  color: #1556b8;
+  border-color: var(--wl-accent-soft);
+  color: var(--wl-accent);
   background: #f4f8ff;
 }
 
@@ -400,7 +431,7 @@
 }
 
 .workitem-tree-node.is-active strong {
-  color: #1556b8;
+  color: var(--wl-accent);
 }
 
 .workitem-tree-state {
@@ -526,7 +557,7 @@
   border-radius: 5px;
   border-color: var(--parse-rule-strong);
   color: #536174;
-  background: #fff;
+  background: var(--wl-surface-solid);
   font-size: 11px;
 }
 
@@ -547,6 +578,166 @@
 .workitem-context-dock > a svg {
   width: 13px;
   height: 13px;
+}
+
+/* ── 顶部可折叠综合评估条（Spec R01 §4.2 顶部可折叠综合评估） ── */
+.parse-overall-bar {
+  width: min(1440px, 100%);
+  margin: 0 auto 14px;
+  border: 1px solid var(--parse-rule);
+  border-radius: 7px;
+  background: var(--wl-glass-soft);
+  box-shadow: 0 3px 14px rgb(30 45 70 / 3%);
+}
+
+/* §06 需更新传播：旧结果降低视觉权重但不消失（琥珀色边线 + 内容降透明度） */
+.parse-overall-bar.is-stale {
+  border-color: rgb(242 162 58 / 38%);
+}
+
+.parse-overall-bar.is-stale summary > svg,
+.parse-overall-bar.is-stale summary > small,
+.parse-overall-bar.is-stale .parse-overall-bar-findings {
+  opacity: 0.66;
+}
+
+.parse-overall-bar.is-stale summary > strong {
+  border-color: rgb(242 162 58 / 45%);
+  color: var(--wl-amber-ink);
+}
+
+.parse-overall-bar summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 46px;
+  padding: 8px 16px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.parse-overall-bar summary::-webkit-details-marker {
+  display: none;
+}
+
+.parse-overall-bar summary svg {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+  color: var(--wl-accent);
+}
+
+.parse-overall-bar summary > span {
+  flex: 0 0 auto;
+  color: var(--wl-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.parse-overall-bar summary > strong {
+  flex: 0 0 auto;
+  padding: 2px 10px;
+  border: 1px solid var(--parse-rule);
+  border-radius: 999px;
+  color: var(--wl-ink);
+  font-size: 11px;
+}
+
+.parse-overall-bar summary > small {
+  overflow: hidden;
+  flex: 1;
+  min-width: 0;
+  color: var(--wl-muted);
+  font-size: 11.5px;
+  line-height: 1.55;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.parse-overall-bar summary > svg:last-child {
+  color: var(--wl-muted);
+  transition: transform var(--wl-motion-fast) ease;
+}
+
+.parse-overall-bar[open] summary > svg:last-child {
+  transform: rotate(180deg);
+}
+
+.parse-overall-bar-findings {
+  display: grid;
+  margin: 0;
+  padding: 4px 16px 14px;
+  gap: 8px;
+  list-style: none;
+}
+
+.parse-overall-bar-findings li {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+}
+
+.parse-overall-bar-findings strong {
+  color: var(--wl-ink);
+  font-size: 12px;
+}
+
+.parse-overall-bar-findings span {
+  flex: 1;
+  min-width: 200px;
+  color: var(--wl-muted);
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+
+.parse-overall-bar-findings button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border: 1px solid rgba(22, 119, 255, 0.24);
+  border-radius: 999px;
+  background: var(--wl-accent-soft);
+  color: var(--wl-accent);
+  font-size: 10.5px;
+  cursor: pointer;
+}
+
+.parse-overall-bar-findings button svg {
+  width: 11px;
+  height: 11px;
+}
+
+.parse-overall-bar-empty {
+  margin: 0;
+  padding: 0 16px 14px;
+  color: var(--wl-muted);
+  font-size: 11.5px;
+}
+
+/* ── Reader 双列并排：中左结构化解析 · 中右 PDF 原文（§4.2）
+ * 1920 下 PDF ≥42% 内容宽度（0.95/(1.05+0.95)≈47.5%）；
+ * 1280 下 PDF 最小宽度 520px（§10.1 硬性验收）。 ── */
+.parse-reader-split {
+  display: grid;
+  width: min(1440px, 100%);
+  margin: 0 auto 14px;
+  align-items: start;
+  gap: 14px;
+  grid-template-columns: minmax(0, 1.05fr) minmax(520px, 0.95fr);
+}
+
+/* 窄屏：不挤压 PDF 至 520px 以下，退化为单列堆叠（§10.1 主操作始终可见） */
+@media (max-width: 1100px) {
+  .parse-reader-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.parse-reader-split .parse-reader-workspace {
+  margin: 0;
 }
 
 .parse-hero-grid,
@@ -573,7 +764,7 @@
 .engineering-reasoning-trail {
   border: 1px solid var(--parse-rule);
   border-radius: 7px;
-  background: #fff;
+  background: var(--wl-surface-solid);
   box-shadow: 0 3px 14px rgb(30 45 70 / 3%);
 }
 
@@ -615,7 +806,7 @@
 
 .parse-family {
   margin-top: 20px;
-  color: #2f75d6;
+  color: var(--wl-accent);
   font-family: var(--parse-mono);
   font-size: clamp(32px, 4vw, 52px);
   font-weight: 750;
@@ -651,7 +842,7 @@
 
 .parse-accent {
   border-color: #2d73c9;
-  color: #fff;
+  color: #ffffff;
   background: #2468b8;
 }
 
@@ -832,7 +1023,7 @@
   border: 1px solid #cbd8e8;
   border-radius: 4px;
   color: #58789f;
-  background: #fff;
+  background: var(--wl-surface-solid);
   font-family: var(--parse-mono);
   font-size: 8px;
   cursor: pointer;
@@ -921,7 +1112,7 @@
   border: 1px solid var(--parse-rule);
   border-radius: 5px;
   color: var(--parse-muted);
-  background: #fff;
+  background: var(--wl-surface-solid);
   font: inherit;
   text-align: left;
   cursor: pointer;
@@ -998,7 +1189,7 @@
   padding: 14px;
   border: 1px solid var(--parse-rule);
   border-radius: 5px;
-  background: #fff;
+  background: var(--wl-surface-solid);
 }
 
 .parse-reader-source-view > div:first-child {
@@ -1064,7 +1255,7 @@
   padding: 8px 9px;
   border: 1px solid #d7e2ef;
   border-radius: 4px;
-  background: #fff;
+  background: var(--wl-surface-solid);
 }
 
 .parse-reader-locator > span {
@@ -1090,10 +1281,10 @@
 
 .parse-assessment-semantics {
   margin: 14px 0 16px;
-  padding: 14px;
+  padding: 16px;
   border: 1px solid #c6d9f3;
-  border-radius: 6px;
-  background: #fff;
+  border-radius: var(--wl-radius-md);
+  background: var(--wl-surface-solid);
 }
 
 .parse-assessment-semantics > header {
@@ -1105,20 +1296,19 @@
 
 .parse-assessment-semantics > header span {
   color: #5276a6;
-  font-family: var(--parse-mono);
-  font-size: 8px;
+  font-size: 10.5px;
+  font-weight: 700;
 }
 
 .parse-assessment-semantics > header h3 {
   margin: 5px 0 0;
   color: var(--parse-heading);
-  font-size: 14px;
+  font-size: 16px;
 }
 
 .parse-assessment-semantics > header strong {
   color: #356fb9;
-  font-family: var(--parse-mono);
-  font-size: 10px;
+  font-size: 11.5px;
   overflow-wrap: anywhere;
 }
 
@@ -1137,8 +1327,8 @@
   align-items: center;
   gap: 4px 7px;
   border: 1px solid var(--parse-rule);
-  border-radius: 5px;
-  background: #fbfdff;
+  border-radius: var(--wl-radius-sm);
+  background: #f8fbff;
 }
 
 .parse-assessment-semantics-grid svg {
@@ -1151,13 +1341,12 @@
 .parse-assessment-semantics-grid span,
 .parse-assessment-semantics-grid small {
   color: #7a899b;
-  font-size: 9px;
+  font-size: 10.5px;
 }
 
 .parse-assessment-semantics-grid strong {
   color: var(--parse-heading);
-  font-family: var(--parse-mono);
-  font-size: 11px;
+  font-size: 12px;
   overflow-wrap: anywhere;
 }
 
@@ -1197,28 +1386,27 @@
 
 .parse-assessment-gap-list article strong {
   color: #6f5525;
-  font-size: 10px;
+  font-size: 11.5px;
 }
 
 .parse-assessment-gap-list article span {
   color: #756950;
-  font-size: 9px;
-  line-height: 1.5;
+  font-size: 11px;
+  line-height: 1.6;
   overflow-wrap: anywhere;
 }
 
 .parse-assessment-gap-list article small {
   color: #9a8b6e;
-  font-family: var(--parse-mono);
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .parse-assessment-gap-list p,
 .parse-assessment-boundary {
   margin: 0;
   color: #8795a7;
-  font-size: 9px;
-  line-height: 1.5;
+  font-size: 10.5px;
+  line-height: 1.6;
 }
 
 .parse-assessment-boundary {
@@ -1236,8 +1424,92 @@
   width: min(1440px, 100%);
   margin: 0 auto 14px;
   padding: 20px;
-  border-color: #c6d9f3;
-  background: #fbfdff;
+  border: 1px solid var(--wl-border-strong);
+  border-radius: var(--wl-radius-panel);
+  background: var(--wl-surface-solid);
+  box-shadow: 0 10px 32px rgb(38 63 108 / 7%);
+}
+
+.parse-assessment-workspace {
+  display: grid;
+  gap: 14px;
+}
+
+.parse-assessment-workspace > .parse-panel-label {
+  color: var(--wl-accent);
+  font-family: var(--wl-font);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+.parse-assessment-workspace > .wl-overall-hero,
+.parse-assessment-workspace > .parse-assessment-semantics {
+  margin: 0;
+}
+
+.parse-assessment-workspace > .wl-overall-hero {
+  padding: 22px 24px;
+  border-radius: var(--wl-radius-panel);
+  box-shadow: none;
+}
+
+.parse-assessment-scope-note {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+  padding: 16px 18px;
+  border: 1px solid rgb(242 162 58 / 28%);
+  border-radius: var(--wl-radius-md);
+  background: var(--wl-amber-soft);
+}
+
+.parse-assessment-scope-note > svg {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  color: var(--wl-amber-ink);
+}
+
+.parse-assessment-scope-note span {
+  color: var(--wl-amber-ink);
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0.06em;
+}
+
+.parse-assessment-scope-note h3 {
+  margin: 4px 0 5px;
+  color: var(--wl-ink);
+  font-size: 14px;
+}
+
+.parse-assessment-scope-note p {
+  margin: 0;
+  max-width: 760px;
+  color: var(--wl-muted);
+  font-size: 11.5px;
+  line-height: 1.7;
+}
+
+.parse-assessment-audit-details {
+  margin-top: 12px;
+  border: 1px solid var(--wl-border);
+  border-radius: var(--wl-radius-md);
+  background: var(--wl-glass-soft);
+}
+
+.parse-assessment-audit-details > summary {
+  padding: 11px 14px;
+  color: var(--wl-muted);
+  font-size: 11.5px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.parse-assessment-audit-details .parse-assessment-audit {
+  margin: 0;
+  padding: 0 12px 12px;
 }
 
 .parse-assessment-panel > p {
@@ -1303,12 +1575,12 @@
 
 .parse-assessment-action input {
   border: 1px solid var(--parse-rule-strong);
-  background: #fff;
+  background: var(--wl-surface-solid);
 }
 
 .parse-assessment-action button,
 .parse-assessment-empty button {
-  color: #fff;
+  color: #ffffff;
   background: #1f67c1;
   cursor: pointer;
 }
@@ -1379,7 +1651,7 @@
   padding: 13px;
   border: 1px solid var(--parse-rule);
   border-radius: 5px;
-  background: #fff;
+  background: var(--wl-surface-solid);
 }
 
 .parse-business-findings h4 {
@@ -1477,7 +1749,7 @@
   padding: 15px;
   border: 1px solid var(--parse-rule);
   border-radius: 6px;
-  background: #fff;
+  background: var(--wl-surface-solid);
 }
 
 .parse-assessment-audit article > span {
@@ -1584,7 +1856,7 @@
   border: 1px solid var(--parse-rule);
   border-radius: 5px;
   color: var(--parse-ink);
-  background: #fff;
+  background: var(--wl-surface-solid);
   font: inherit;
   text-align: left;
   cursor: pointer;
@@ -1639,7 +1911,7 @@
   padding: 15px;
   border: 1px solid var(--parse-rule);
   border-radius: 6px;
-  background: #fff;
+  background: var(--wl-surface-solid);
 }
 
 .parse-engineer-review > header {
@@ -1737,7 +2009,7 @@
   justify-content: space-between;
   align-items: center;
   gap: 14px;
-  border: 1px solid #cfe7d8;
+  border: 1px solid var(--wl-green-soft);
   border-radius: 6px;
   background: var(--parse-green-soft);
 }
@@ -1753,7 +2025,7 @@
   flex: 0 0 auto;
   min-height: 34px;
   border-radius: 5px;
-  background: #2f7a4b;
+  background: var(--wl-green);
   font-size: 10px;
 }
 
@@ -1862,7 +2134,7 @@
 }
 
 .engineering-reasoning-steps article.is-done {
-  border-color: #cfe7d8;
+  border-color: var(--wl-green-soft);
   background: var(--parse-green-soft);
 }
 
@@ -1935,7 +2207,7 @@
   border: 1px solid #cfd8e3;
   border-radius: 7px;
   color: var(--parse-ink);
-  background: #fff;
+  background: var(--wl-surface-solid);
   box-shadow: 0 3px 14px rgb(30 45 70 / 3%);
 }
 
@@ -2050,7 +2322,7 @@
   border: 1px solid var(--parse-rule);
   border-left: 3px solid #b9c6d5;
   border-radius: 4px;
-  background: #fff;
+  background: var(--wl-surface-solid);
 }
 
 .aeo-authoring-artifact.is-available {
@@ -2119,7 +2391,7 @@
 }
 
 .aeo-authoring-editor {
-  background: #f8fafc;
+  background: var(--wl-bg-2);
 }
 
 .aeo-authoring-editor-placeholder {
@@ -2131,7 +2403,7 @@
   align-content: center;
   border: 1px dashed #c5d1df;
   border-radius: 5px;
-  background: #fff;
+  background: var(--wl-surface-solid);
   text-align: center;
 }
 
@@ -2353,6 +2625,12 @@
 }
 
 @media (max-width: 720px) {
+  .parse-shell.parse-shell--workbench {
+    height: calc(100dvh - 118px);
+    min-height: 620px;
+    padding: 8px 0 0;
+  }
+
   .parse-shell {
     padding: 22px 12px 46px;
   }
@@ -2394,6 +2672,25 @@
   .parse-engineer-review-form,
   .aeo-authoring-grid {
     grid-template-columns: 1fr;
+  }
+
+  .parse-overall-bar summary {
+    align-items: center;
+    flex-wrap: nowrap;
+    padding: 8px 10px;
+  }
+
+  .parse-overall-bar summary > small {
+    display: none;
+  }
+
+  .parse-assessment-scope-note {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .parse-assessment-scope-note > button {
+    grid-column: 1 / -1;
+    width: 100%;
   }
 
   .parse-reader-modes,
@@ -2488,5 +2785,83 @@
 
   .parse-assessment-audit dl {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 390px) {
+  .parse-shell {
+    padding: 14px 8px 36px;
+  }
+
+  .parse-masthead {
+    gap: 12px;
+  }
+
+  .parse-masthead h1 {
+    font-size: 22px;
+  }
+
+  .parse-lede {
+    font-size: 12px;
+  }
+
+  .parse-rail {
+    grid-template-columns: 1fr;
+  }
+
+  .parse-rail-step {
+    border-right: 0;
+    border-bottom: 1px solid var(--parse-rule);
+  }
+
+  .parse-rail-step:last-child {
+    border-bottom: 0;
+  }
+
+  .parse-panel,
+  .parse-assessment-panel,
+  .engineering-reasoning-trail {
+    padding: 12px;
+  }
+
+  .parse-document-card h2,
+  .parse-package-card h3 {
+    font-size: 17px;
+  }
+
+  .parse-family {
+    font-size: 28px;
+  }
+
+  .parse-hash-stack p {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+
+  .parse-assessment-grid,
+  .parse-assessment-audit,
+  .parse-engineer-review-form,
+  .parse-reader-modes,
+  .parse-reader-source-view,
+  .parse-assessment-semantics-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .aeo-authoring-header {
+    padding: 12px;
+  }
+
+  .aeo-authoring-header h2 {
+    font-size: 18px;
+  }
+
+  .engineering-reasoning-steps article {
+    padding: 10px;
+  }
+
+  .parse-footer {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
   }
 }

@@ -35,6 +35,11 @@ import {
   getDocumentParsingPage,
   isCanonicalObjectNotFound,
 } from '@client/src/api/canonical-host';
+import NavigatorTree from '@client/src/features/navigation/NavigatorTree';
+import type {
+  NavigationNodeView,
+  NavigatorMode,
+} from '@client/src/features/navigation/treeMappers';
 import { Button } from '@client/src/components/ui/button';
 import { Input } from '@client/src/components/ui/input';
 import {
@@ -90,8 +95,13 @@ function byteLabel(value: number | null | undefined): string {
 }
 
 function errorLabel(error: unknown): string {
-  if (error instanceof Error && error.message.trim()) return error.message;
-  return 'Host fresh-read 失败，请从当前事项深链重新进入。';
+  if (
+    error instanceof Error &&
+    /NOT_FOUND|无权|FORBIDDEN|403|404/iu.test(error.message)
+  ) {
+    return '无法找到该事项，或当前账户没有查看权限。';
+  }
+  return 'UNAVAILABLE · 当前连接无法读取资料，请稍后重试。';
 }
 
 function phaseTone(
@@ -145,6 +155,9 @@ export default function WorkspaceHomePage() {
     null,
   );
   const [selection, setSelection] = useState<LibrarySelection>('work-item');
+  const [treeMode, setTreeMode] = useState<NavigatorMode>(
+    searchParams.get('mode') === 'matter' ? 'matter' : 'document',
+  );
   const [catalogFilter, setCatalogFilter] = useState<string>('');
   const [recentWorkItems, setRecentWorkItems] = useState<
     RecentWorkItemReference[]
@@ -219,11 +232,15 @@ export default function WorkspaceHomePage() {
   const projection = data?.workItem ?? null;
   const phaseLabel = projection
     ? PHASE_LABELS[projection.phase]
-    : '尚未选择 WorkItem';
+    : '尚未选择工程事项';
   const tone = projection ? phaseTone(projection.phase) : 'muted';
-  const nodes = useMemo<LibraryNode[]>(() => {
+  const nodes = useMemo(() => {
     if (!data) return [];
-    return data.libraryIndex.nodes.map((node: CanonicalLibraryIndexNode) => ({
+    return data.libraryIndex.nodes;
+  }, [data]);
+  const visibleNodes = useMemo<LibraryNode[]>(() => {
+    if (!data) return [];
+    return data.libraryIndex.nodes.map((node) => ({
       id: node.id,
       kind: node.kind,
       label: node.label,
@@ -233,15 +250,6 @@ export default function WorkspaceHomePage() {
       targetNode: node.targetNode,
     }));
   }, [data]);
-  const visibleNodes = useMemo<LibraryNode[]>(() => {
-    const filter: string = catalogFilter.trim().toLowerCase();
-    if (!filter) return nodes;
-    return nodes.filter((node: LibraryNode): boolean =>
-      `${node.label} ${node.detail} ${node.state ?? ''}`
-        .toLowerCase()
-        .includes(filter),
-    );
-  }, [catalogFilter, nodes]);
 
   const recentFamilies = useMemo<
     Array<{ family: string; documents: RecentWorkItemReference[] }>
@@ -310,13 +318,13 @@ export default function WorkspaceHomePage() {
     event.preventDefault();
     const normalized = workItemIdFromLocator(workItemId);
     if (!normalized) return;
-    navigate(`/?workItemId=${encodeURIComponent(normalized)}`);
+    navigate(`/library?workItemId=${encodeURIComponent(normalized)}`);
   }
 
   function openWorkbench(targetNodeOverride?: string): void {
     if (!projection) return;
-    const selectedNode: LibraryNode | undefined = nodes.find(
-      (node: LibraryNode) => node.id === selection,
+    const selectedNode: CanonicalLibraryIndexNode | undefined = nodes.find(
+      (node: CanonicalLibraryIndexNode) => node.id === selection,
     );
     const targetNode: string =
       targetNodeOverride ?? selectedNode?.targetNode ?? 'reader';
@@ -329,6 +337,30 @@ export default function WorkspaceHomePage() {
     navigate(
       `/work-items/${encodeURIComponent(projection.workItemId)}/documents?node=${encodeURIComponent(targetNode)}&tab=${encodeURIComponent(targetTab)}`,
     );
+  }
+
+  function handleTreeModeChange(mode: NavigatorMode): void {
+    setTreeMode(mode);
+    // 深链同步：仅替换 URL 查询参数，不触发数据重读
+    const params = new URLSearchParams(window.location.search);
+    params.set('mode', mode);
+    window.history.replaceState(
+      null,
+      '',
+      `${window.location.pathname}?${params.toString()}`,
+    );
+  }
+
+  function handleTreeSelect(node: NavigationNodeView): void {
+    setSelection(node.id);
+    if (
+      (node.kind === 'matter' ||
+        node.kind === 'document' ||
+        node.kind === 'version') &&
+      node.targetNode
+    ) {
+      openWorkbench(node.targetNode);
+    }
   }
 
   function selectLibraryNode(node: LibraryNode): void {
@@ -348,7 +380,7 @@ export default function WorkspaceHomePage() {
   }
 
   return (
-    <main className="library-home">
+    <main className="library-home" aria-busy={loading}>
       <header className="library-home-header">
         <div>
           <p className="library-home-eyebrow">
@@ -357,14 +389,14 @@ export default function WorkspaceHomePage() {
           <h1>资料库</h1>
           <p className="library-home-lede">
             从资料目录、版本来源和关联链路开始；打开具体事项后，再进入同一
-            WorkItem 的解析、评估与 AEO 工作台。
+            工程事项的解析、评估与候选编写工作台。
           </p>
         </div>
         <div className="library-read-state" aria-label="资料读取状态">
           <ShieldCheck aria-hidden="true" />
           <div>
-            <strong>CANONICAL HOST READ</strong>
-            <span>目录、预览和图谱只来自 fresh projection</span>
+            <strong>当前资料</strong>
+            <span>目录、预览和关系只显示实际返回内容</span>
           </div>
         </div>
       </header>
@@ -380,8 +412,7 @@ export default function WorkspaceHomePage() {
           <h2 id="library-query-title">从资料目录进入工作台</h2>
           <p className="library-query-note">
             先按族群、文档和修订浏览；选择具体资料后，系统会自动打开同一
-            WorkItem。输入已有任务链接只做只读定位，不会解除权限、恢复 attempt
-            或推进 revision。
+            工程事项。输入已有任务链接只做只读定位，不会改变权限或评估版本。
           </p>
         </div>
         <form className="library-query-form" onSubmit={handleSubmit}>
@@ -393,7 +424,7 @@ export default function WorkspaceHomePage() {
                 id="library-work-item-id"
                 value={workItemId}
                 onChange={(event) => setWorkItemId(event.target.value)}
-                placeholder="粘贴 Aily 深链或 WorkItem ID"
+                placeholder="粘贴已有事项链接或事项 ID"
                 autoComplete="off"
                 spellCheck={false}
               />
@@ -438,141 +469,100 @@ export default function WorkspaceHomePage() {
             </div>
             <FolderTree aria-hidden="true" />
           </div>
-          <div className="library-tree-root">
-            <div className="library-tree-root-label">
-              <FolderTree aria-hidden="true" />
-              <strong>Canonical Document Catalog</strong>
-            </div>
-            <span>HOST</span>
-          </div>
-          <label className="library-tree-search">
-            <Search aria-hidden="true" />
-            <Input
-              value={catalogFilter}
-              onChange={(event) => setCatalogFilter(event.target.value)}
-              placeholder="筛选文档、版本或族群"
-              aria-label="筛选资料目录"
-            />
-          </label>
           {nodes.length === 0 ? (
-            recentWorkItems.length > 0 ? (
-              <div
-                className="library-recent-list"
-                role="tree"
-                aria-label="最近访问的受控事项"
-              >
-                <div className="library-recent-heading">
-                  <FileClock aria-hidden="true" />
-                  <span>最近访问的受控事项</span>
-                </div>
-                {visibleRecentFamilies.map((group) => (
-                  <section className="library-recent-group" key={group.family}>
-                    <h3>
-                      <FolderTree aria-hidden="true" /> {group.family}
-                    </h3>
-                    {group.documents.map(
-                      (reference: RecentWorkItemReference) => (
-                        <div
-                          className="library-recent-item"
-                          key={reference.workItemId}
-                        >
-                          <button
-                            className="library-recent-open"
-                            type="button"
-                            onClick={() =>
-                              navigate(
-                                `/work-items/${encodeURIComponent(reference.workItemId)}/documents?node=document&tab=source`,
-                              )
-                            }
+            <div className="library-tree-recent-wrapper">
+              {recentWorkItems.length > 0 ? (
+                <div
+                  className="library-recent-list"
+                  role="tree"
+                  aria-label="最近访问的受控事项"
+                >
+                  <div className="library-recent-heading">
+                    <FileClock aria-hidden="true" />
+                    <span>最近访问的受控事项</span>
+                  </div>
+                  {visibleRecentFamilies.map((group) => (
+                    <section
+                      className="library-recent-group"
+                      key={group.family}
+                    >
+                      <h3>
+                        <FolderTree aria-hidden="true" /> {group.family}
+                      </h3>
+                      {group.documents.map(
+                        (reference: RecentWorkItemReference) => (
+                          <div
+                            className="library-recent-item"
+                            key={reference.workItemId}
                           >
-                            <FileText aria-hidden="true" />
-                            <span>
-                              <strong>{reference.documentLabel}</strong>
-                              <small>
-                                {reference.documentVersionId ||
-                                  reference.workItemId}
-                              </small>
-                            </span>
-                            <ChevronRight aria-hidden="true" />
-                          </button>
-                          <button
-                            className="library-recent-preview"
-                            type="button"
-                            title="预览资料"
-                            aria-label={`预览 ${reference.documentLabel}`}
-                            onClick={() =>
-                              navigate(
-                                `/?workItemId=${encodeURIComponent(reference.workItemId)}`,
-                              )
-                            }
-                          >
-                            <Search aria-hidden="true" />
-                          </button>
-                        </div>
-                      ),
-                    )}
-                  </section>
-                ))}
-                {visibleRecentFamilies.length === 0 ? (
-                  <p className="library-recent-no-result">
-                    当前筛选没有匹配资料。
+                            <button
+                              className="library-recent-open"
+                              type="button"
+                              onClick={() =>
+                                navigate(
+                                  `/work-items/${encodeURIComponent(reference.workItemId)}/documents?node=assessment&tab=assessment`,
+                                )
+                              }
+                            >
+                              <FileText aria-hidden="true" />
+                              <span>
+                                <strong>{reference.documentLabel}</strong>
+                                <small>
+                                  {reference.documentVersionId ||
+                                    reference.workItemId}
+                                </small>
+                              </span>
+                              <ChevronRight aria-hidden="true" />
+                            </button>
+                            <button
+                              className="library-recent-preview"
+                              type="button"
+                              title="预览资料"
+                              aria-label={`预览 ${reference.documentLabel}`}
+                              onClick={() =>
+                                navigate(
+                                  `/library?workItemId=${encodeURIComponent(reference.workItemId)}`,
+                                )
+                              }
+                            >
+                              <Search aria-hidden="true" />
+                            </button>
+                          </div>
+                        ),
+                      )}
+                    </section>
+                  ))}
+                  {visibleRecentFamilies.length === 0 ? (
+                    <p className="library-recent-no-result">
+                      当前筛选没有匹配资料。
+                    </p>
+                  ) : null}
+                  <p className="library-recent-boundary">
+                    最近访问仅用于导航，不保存资料内容、权限或候选状态。
                   </p>
-                ) : null}
-                <p className="library-recent-boundary">
-                  最近访问仅用于导航，不保存资料内容、权限或候选状态。
-                </p>
-              </div>
-            ) : (
-              <div className="library-tree-empty">
-                <FileBox aria-hidden="true" />
-                <strong>从一个真实资料入口开始</strong>
-                <p>
-                  从 Aily
-                  任务深链进入一次后，资料会出现在这里；后续点击资料即可回到同一工作台。
-                </p>
-              </div>
-            )
-          ) : (
-            <div
-              className="library-tree-list"
-              role="tree"
-              aria-label="当前 WorkItem 资料树"
-            >
-              {visibleNodes.map((node, index) => {
-                const NodeIcon = node.icon;
-                const isActive = selection === node.id;
-                return (
-                  <button
-                    key={node.id}
-                    type="button"
-                    className={`library-tree-node${isActive ? ' is-active' : ''}`}
-                    onClick={() => selectLibraryNode(node)}
-                    role="treeitem"
-                    aria-selected={isActive}
-                  >
-                    <span className="library-tree-indent" aria-hidden="true">
-                      {index === 0 ? '' : '└'}
-                    </span>
-                    <NodeIcon aria-hidden="true" />
-                    <span className="library-tree-copy">
-                      <strong>{node.label}</strong>
-                      <small>{node.detail}</small>
-                    </span>
-                    {node.state ? <em>{node.state}</em> : null}
-                    <ChevronRight aria-hidden="true" />
-                  </button>
-                );
-              })}
-              {visibleNodes.length === 0 ? (
-                <p className="library-recent-no-result">
-                  当前筛选没有匹配节点。
-                </p>
-              ) : null}
+                </div>
+              ) : (
+                <div className="library-tree-empty">
+                  <FileBox aria-hidden="true" />
+                  <strong>从一个真实资料入口开始</strong>
+                  <p>
+                    从团队工作伙伴的任务链接进入一次后，资料会出现在这里；后续点击资料即可回到同一工作台。
+                  </p>
+                </div>
+              )}
             </div>
+          ) : (
+            <NavigatorTree
+              nodes={nodes}
+              mode={treeMode}
+              onModeChange={handleTreeModeChange}
+              selectedId={selection}
+              onSelect={handleTreeSelect}
+            />
           )}
           <div className="library-tree-footer">
             <Link2 aria-hidden="true" />
-            <span>只读目录 · 不在此处创建或改变 WorkItem</span>
+            <span>只读目录 · 不在此处新建或改变工程事项</span>
           </div>
         </aside>
 
@@ -589,14 +579,32 @@ export default function WorkspaceHomePage() {
             ) : null}
           </div>
           {!projection ? (
-            <div className="library-preview-empty">
-              <FileText aria-hidden="true" />
-              <h3>选择左侧资料节点</h3>
-              <p>
-                资料预览、来源绑定和候选状态会在 Host fresh-read
-                返回后显示；目录不会创建或猜测 WorkItem。
-              </p>
-            </div>
+            loading ? (
+              <div
+                className="library-preview-skeleton"
+                role="status"
+                aria-live="polite"
+              >
+                <div className="skeleton-line skeleton-line--lg" />
+                <div className="skeleton-line" />
+                <div className="skeleton-line" />
+                <div className="skeleton-grid">
+                  <div className="skeleton-block" />
+                  <div className="skeleton-block" />
+                  <div className="skeleton-block" />
+                </div>
+                <div className="skeleton-line" />
+                <span className="library-skeleton-hint">正在读取最新资料…</span>
+              </div>
+            ) : (
+              <div className="library-preview-empty">
+                <FileText aria-hidden="true" />
+                <h3>选择左侧资料节点</h3>
+                <p>
+                  资料预览、来源绑定和候选状态会在最新资料返回后显示；目录不会创建或猜测工程事项。
+                </p>
+              </div>
+            )
           ) : (
             <>
               <div className="library-preview-title">
@@ -619,14 +627,14 @@ export default function WorkspaceHomePage() {
                 <div>
                   <dt>
                     <Hash aria-hidden="true" />
-                    WorkItem
+                    事项标识
                   </dt>
                   <dd>{projection.workItemId}</dd>
                 </div>
                 <div>
                   <dt>
                     <Clock3 aria-hidden="true" />
-                    Revision
+                    评估版本
                   </dt>
                   <dd>{projection.revision}</dd>
                 </div>
@@ -661,27 +669,27 @@ export default function WorkspaceHomePage() {
                   <dd>
                     {projection.package
                       ? `${projection.package.contentUnitCount} units / ${projection.package.sourceRefCount} refs`
-                      : '尚未形成 package'}
+                      : '尚未形成解析结果'}
                   </dd>
                 </div>
                 <div>
                   <dt>
                     <FolderTree aria-hidden="true" />
-                    资料库投影
+                    资料节点
                   </dt>
                   <dd>{data.libraryIndex.nodes.length} nodes</dd>
                 </div>
                 <div>
                   <dt>
                     <Link2 aria-hidden="true" />
-                    关系投影
+                    资料关系
                   </dt>
                   <dd>{data.relatedDocuments.relations.length} relations</dd>
                 </div>
                 <div>
                   <dt>
                     <GitBranch aria-hidden="true" />
-                    审计条目
+                    候选形成记录
                   </dt>
                   <dd>
                     {data.workbenchAudit.candidateFormationSteps.length} steps
@@ -690,16 +698,16 @@ export default function WorkspaceHomePage() {
                 <div>
                   <dt>
                     <Clock3 aria-hidden="true" />
-                    时间线
+                    变化记录
                   </dt>
                   <dd>{data.timeline.events.length} events</dd>
                 </div>
               </dl>
               <div className="library-preview-block">
                 <div className="library-block-heading">
-                  <span>WORKBENCH AUDIT</span>
+                  <span>候选形成记录</span>
                   <strong>
-                    {data.workbenchAudit.reader.queryResultCount} reader hits
+                    {data.workbenchAudit.reader.queryResultCount} 条原文命中
                   </strong>
                 </div>
                 <div className="library-content-list">
@@ -719,7 +727,7 @@ export default function WorkspaceHomePage() {
               </div>
               <div className="library-preview-block">
                 <div className="library-block-heading">
-                  <span>SOURCE-BOUND CONTENT</span>
+                  <span>已绑定来源内容</span>
                   <strong>
                     {data?.queryResults.length ?? 0} 个当前返回单元
                   </strong>
@@ -734,14 +742,14 @@ export default function WorkspaceHomePage() {
                         </div>
                         <p>{result.text}</p>
                         <small>
-                          {result.sourceRefIds.join(' · ') || '无 sourceRef'}
+                          {result.sourceRefIds.join(' · ') || '无原文定位'}
                         </small>
                       </article>
                     ))}
                   </div>
                 ) : (
                   <p className="library-inline-empty">
-                    当前 fresh-read 没有返回内容单元；页面不会用样本填充预览。
+                    当前没有返回内容单元；页面不会用样本填充预览。
                   </p>
                 )}
               </div>
@@ -750,7 +758,7 @@ export default function WorkspaceHomePage() {
                   当前选中：
                   {nodes.find((node) => node.id === selection)?.label ??
                     '资料节点'}
-                  。右侧概述随 Host projection 更新。
+                  。右侧概述随最新资料更新。
                 </p>
               ) : null}
             </>
@@ -766,20 +774,38 @@ export default function WorkspaceHomePage() {
             <Network aria-hidden="true" />
           </div>
           {!projection ? (
+            loading ? (
+              <div
+                className="library-graph-skeleton"
+                role="status"
+                aria-live="polite"
+              >
+                <Network aria-hidden="true" />
+                <h3>正在读取关系图谱…</h3>
+                <p>最新资料返回后将展示来源链。</p>
+              </div>
+            ) : (
+              <div className="library-graph-empty">
+                <Network aria-hidden="true" />
+                <h3>等待资料关系</h3>
+                <p>
+                  读取事项后展示来源资料、版本、解析结果和候选状态之间的关系。
+                </p>
+              </div>
+            )
+          ) : relations.length === 0 ? (
             <div className="library-graph-empty">
               <Network aria-hidden="true" />
-              <h3>等待资料关系</h3>
-              <p>
-                读取事项后展示来源资料、版本、解析包和候选状态之间的 Host 关系。
-              </p>
+              <h3>当前无关联资料</h3>
+              <span className="library-unavailable-badge">暂无数据</span>
+              <p>当前未返回任何关联文档关系；页面不补造外部文档关系。</p>
             </div>
           ) : (
             <>
               <div className="library-graph-note">
                 <GitBranch aria-hidden="true" />
                 <span>
-                  当前展示的是 fresh projection
-                  中已返回的来源链，不补造未返回的外部文档关系。
+                  当前展示的是已返回的来源链，不补造未返回的外部文档关系。
                 </span>
               </div>
               <div className="library-graph-flow">
@@ -800,7 +826,7 @@ export default function WorkspaceHomePage() {
                       </button>
                       {index < relations.length - 1 ? (
                         <div className="library-graph-edge">
-                          <span>Host relation</span>
+                          <span>资料关系</span>
                           <ArrowRight aria-hidden="true" />
                         </div>
                       ) : null}
@@ -811,8 +837,7 @@ export default function WorkspaceHomePage() {
               <div className="library-graph-boundary">
                 <CircleAlert aria-hidden="true" />
                 <span>
-                  关联文档图谱的外部节点需由 Host projection
-                  明确返回；当前没有关系时保持空，不以候选替代事实。
+                  外部资料节点必须由实际数据明确返回；当前没有关系时保持空，不以候选替代事实。
                 </span>
               </div>
             </>
@@ -823,7 +848,7 @@ export default function WorkspaceHomePage() {
       <footer className="library-home-footer">
         <span>
           <ShieldCheck aria-hidden="true" />
-          唯一 app_17bzc551rsg · WorkItem / permission / revision 由 Host 持有
+          当前资料与版本均来自受控服务
         </span>
         <span>预览仅读 · 候选不等于工程结论</span>
       </footer>

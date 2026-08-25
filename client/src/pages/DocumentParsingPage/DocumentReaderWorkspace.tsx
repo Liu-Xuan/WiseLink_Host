@@ -99,16 +99,15 @@ export function DocumentReaderWorkspace({
       </div>
       <div className="parse-reader-capability-strip" aria-live="polite">
         <strong>{activeCapability.note}</strong>
-        <span>Host projection · CURRENT_WORKITEM_ONLY</span>
+        <span>当前事项 · 结构化原文</span>
       </div>
 
       {readerMode === 'source' ? (
         <section className="parse-reader-source-view" aria-label="PDF 原文绑定">
           <div>
-            <span>DOCUMENTVERSION SOURCE</span>
-            <strong>{data.workItem.source.documentVersionId}</strong>
+            <span>受控文件来源</span>
+            <strong>已绑定当前文件版本</strong>
             <p>
-              文件标识：{data.workItem.source.sourceArtifactId} ·{' '}
               {data.workItem.source.sourceByteLength.toLocaleString()} bytes
             </p>
           </div>

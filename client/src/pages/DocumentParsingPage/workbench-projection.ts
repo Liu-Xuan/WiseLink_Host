@@ -175,16 +175,16 @@ function buildReaderCapabilities(
       label: 'PDF 原文',
       status: projection ? projection.pdfPreview.status : 'UNAVAILABLE',
       note: projection
-        ? `Host PDF 预览状态：${projection.pdfPreview.status} · ${projection.pdfPreview.reason}`
-        : '当前 WorkItem 没有 Reader projection，无法确认 PDF 预览能力。',
+        ? `PDF 预览：${projection.pdfPreview.status} · ${projection.pdfPreview.reason}`
+        : '当前事项没有 Reader projection，尚无可用的 PDF 预览。',
     },
     {
       mode: 'structured',
       label: '结构化原文',
       status: projection ? 'AVAILABLE' : 'UNAVAILABLE',
       note: projection
-        ? `当前查询返回 ${projection.units.length} 个单元，${locatedUnitCount} 个带 source locator。`
-        : '当前 WorkItem 尚无可查询的 Host Reader projection。',
+        ? `当前查询返回 ${projection.units.length} 个单元（内容单元），${locatedUnitCount} 个带 source locator、可定位到原文。`
+        : '当前事项没有 Reader projection，尚无可查询的结构化原文。',
     },
     {
       mode: 'bilingual',
@@ -192,7 +192,7 @@ function buildReaderCapabilities(
       status: translationView ? translationView.capability : 'UNAVAILABLE',
       note: translationView
         ? `${translationView.detail} · 原文轴 ${translationView.ownerSourceReaderConsumptionAllowed ? '开放' : '关闭'} / 双语轴 ${translationView.bilingualTranslationConsumptionAllowed ? '开放' : '关闭'}`
-        : '当前 WorkItem 没有 Reader projection，页面不会推断或补造译文。',
+        : '当前事项没有 Reader projection；页面不会推断或补造译文。',
     },
   ];
 }
@@ -234,16 +234,16 @@ function buildAssessmentSemantics(
   if (unboundReaderCount > 0) {
     gaps.push({
       code: 'READER_SOURCE_BINDING_MISSING',
-      label: 'Reader 来源绑定不完整',
-      detail: `${unboundReaderCount} 个查询结果没有 sourceRef。`,
+      label: '部分结果尚未关联原文',
+      detail: `${unboundReaderCount} 个查询结果还不能定位到原文。`,
       authority: 'HOST_READER_AUDIT',
     });
   }
   if (dynamic && dynamic.unresolvedCount > 0) {
     gaps.push({
       code: 'DYNAMIC_ITEMS_UNRESOLVED',
-      label: '动态规则项未闭合',
-      detail: `${dynamic.unresolvedCount} 个规则项仍需输入或复核。`,
+      label: '逐项评估尚未闭合',
+      detail: `${dynamic.unresolvedCount} 个评估项仍需补充信息或复核。`,
       authority: 'HOST_DYNAMIC_EVALUATION',
     });
   }
@@ -259,7 +259,7 @@ function buildAssessmentSemantics(
     gaps.push({
       code: 'OVERALL_CANDIDATE_MISSING',
       label: '整体候选尚未形成',
-      detail: 'Host 尚未返回基于当前动态结果的整体候选。',
+      detail: '基于当前逐项结果的综合意见尚未形成。',
       authority: 'HOST_OVERALL_SYNTHESIS',
     });
   }
@@ -267,7 +267,7 @@ function buildAssessmentSemantics(
     gaps.push({
       code: 'OVERALL_CANDIDATE_STALE',
       label: '整体候选已过期',
-      detail: overall.staleReason ?? 'Host 将当前整体候选标记为 STALE。',
+      detail: overall.staleReason ?? '当前综合意见需要根据新信息更新。',
       authority: 'HOST_OVERALL_SYNTHESIS',
     });
   }
@@ -319,7 +319,7 @@ function buildAssessmentSemantics(
       : null,
     gaps,
     boundary:
-      '所有状态均为同一 WorkItem 的 Host 候选投影，不构成工程、适航或发布结论。',
+      '页面展示的是同一工程事项的候选意见；在工程师确认前，不构成工程、适航或发布结论。',
   };
 }
 

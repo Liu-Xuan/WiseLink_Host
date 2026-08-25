@@ -1,0 +1,103 @@
+/* ============================================================
+ * WiseLink 3.1 · Apple Glass Design Tokens (Spec R01 §5)
+ * 浅色为默认；深色通过 html[data-wl-theme="dark"] 切换。
+ * ============================================================ */
+
+:root {
+  /* 基础色 */
+  --wl-bg: #f5f7fb;
+  --wl-bg-2: #eef3fb;
+  --wl-ink: #172033;
+  --wl-muted: #647086;
+  --wl-faint: #8c97aa;
+
+  /* 线条 */
+  --wl-border: rgba(30, 55, 92, 0.1);
+  --wl-border-strong: rgba(30, 55, 92, 0.16);
+
+  /* 五级材质（G0–G4） */
+  --wl-glass-nav: rgba(255, 255, 255, 0.58);
+  --wl-glass-panel: rgba(255, 255, 255, 0.72);
+  --wl-glass-content: rgba(255, 255, 255, 0.88);
+  --wl-glass-soft: rgba(255, 255, 255, 0.48);
+  --wl-surface-solid: #ffffff;
+
+  /* 语义色（§5.2 颜色权威规则） */
+  --wl-accent: #1677ff;
+  --wl-accent-soft: rgba(22, 119, 255, 0.1);
+  --wl-accent-2: #6e7cff;
+  --wl-green: #25b86b;
+  --wl-green-soft: rgba(37, 184, 107, 0.11);
+  --wl-amber: #f2a23a;
+  --wl-amber-soft: rgba(242, 162, 58, 0.14);
+  /* 琥珀文字色：浅色底上保证对比度（§5.2 颜色权威规则） */
+  --wl-amber-ink: #a3620f;
+  --wl-red: #e85a62;
+  --wl-red-soft: rgba(232, 90, 98, 0.12);
+  --wl-purple: #8b6cff;
+
+  /* 阴影 */
+  --wl-shadow-1: 0 12px 36px rgba(38, 63, 108, 0.1);
+  --wl-shadow-2: 0 24px 80px rgba(38, 63, 108, 0.16);
+  --wl-shadow-focus:
+    0 0 0 1px rgba(83, 145, 255, 0.32), 0 20px 60px rgba(48, 111, 255, 0.18);
+
+  /* 模糊 */
+  --wl-blur-nav: 28px;
+  --wl-blur-panel: 20px;
+
+  /* 圆角 */
+  --wl-radius-shell: 30px;
+  --wl-radius-xl: 24px;
+  --wl-radius-panel: 18px;
+  --wl-radius-md: 13px;
+  --wl-radius-sm: 10px;
+
+  /* 间距 */
+  --wl-space-1: 4px;
+  --wl-space-2: 8px;
+  --wl-space-3: 12px;
+  --wl-space-4: 16px;
+  --wl-space-5: 20px;
+  --wl-space-6: 24px;
+  --wl-space-8: 32px;
+
+  /* 动效时长 */
+  --wl-motion-fast: 160ms;
+  --wl-motion-base: 260ms;
+  --wl-motion-slow: 560ms;
+
+  /* 字体 */
+  --wl-font:
+    -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text',
+    'PingFang SC', 'Microsoft YaHei', 'Segoe UI', sans-serif;
+  --wl-mono:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
+    monospace;
+}
+
+html[data-wl-theme='dark'] {
+  --wl-bg: #0a0e15;
+  --wl-bg-2: #101827;
+  --wl-ink: #f2f6ff;
+  --wl-muted: #b2bfd4;
+  --wl-faint: #8997ae;
+
+  --wl-border: rgba(255, 255, 255, 0.09);
+  --wl-border-strong: rgba(255, 255, 255, 0.15);
+
+  --wl-glass-nav: rgba(19, 26, 40, 0.64);
+  --wl-glass-panel: rgba(22, 30, 45, 0.74);
+  --wl-glass-content: rgba(24, 32, 48, 0.9);
+  --wl-glass-soft: rgba(18, 25, 38, 0.48);
+  --wl-surface-solid: #131a27;
+
+  --wl-accent-soft: rgba(64, 132, 255, 0.16);
+  --wl-green-soft: rgba(46, 196, 110, 0.14);
+  --wl-amber-soft: rgba(240, 166, 60, 0.16);
+  --wl-amber-ink: #f2a23a;
+  --wl-red-soft: rgba(228, 96, 104, 0.15);
+
+  --wl-shadow-1: 0 14px 44px rgba(0, 0, 0, 0.24);
+  --wl-shadow-2: 0 32px 100px rgba(0, 0, 0, 0.36);
+}
