@@ -28,6 +28,7 @@ describe('canonical Host production client boundary', () => {
     expect(intake).toContain('uploadFile');
     expect(intake).toContain('upsert: false');
     expect(intake).toContain('createDevelopmentWorkItem');
+    expect(intake).toContain('requireOfficialOauthSession');
     expect(intake).toContain('getDocumentParsingPage');
     expect(intake).toContain('developmentRunToken');
     expect(intake).toContain('crypto.subtle.digest');

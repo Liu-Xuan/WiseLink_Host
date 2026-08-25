@@ -16,10 +16,39 @@ import {
   isCanonicalObjectNotFound,
   queryParsedUnits,
   recordEngineerReview,
+  requireOfficialOauthSession,
 } from '../../client/src/api/canonical-host';
 
 describe('canonical host assessment client', () => {
   beforeEach(() => request.mockReset());
+
+  it('preflights the official opaque session through the Hosted axios bridge', async () => {
+    request.mockResolvedValue({
+      status: 200,
+      data: {
+        authenticated: true,
+        verifiedIdentity: { provenance: 'FEISHU_OAUTH_USER_ACCESS_TOKEN' },
+        session: { provenance: 'SERVER_OPAQUE_SESSION' },
+      },
+    });
+
+    await expect(requireOfficialOauthSession()).resolves.toBeUndefined();
+    expect(request).toHaveBeenCalledWith({
+      url: '/api/identity/whoami',
+      method: 'GET',
+    });
+  });
+
+  it('fails closed when the Hosted whoami response is not an opaque session', async () => {
+    request.mockResolvedValue({
+      status: 200,
+      data: { authenticated: true, verifiedIdentity: {} },
+    });
+
+    await expect(requireOfficialOauthSession()).rejects.toThrow(
+      'OFFICIAL_OAUTH_SESSION_REQUIRED',
+    );
+  });
 
   it('uses the default Reader query for an empty document parsing request', async () => {
     request.mockResolvedValue({ status: 200, data: { workItem: {} } });
