@@ -13,6 +13,7 @@ import {
 import {
   createDevelopmentWorkItem,
   getDocumentParsingPage,
+  requireOfficialOauthSession,
 } from '@client/src/api/canonical-host';
 import { uploadFile } from '@client/src/components/business-ui/api/files/service';
 import { Button } from '@client/src/components/ui/button';
@@ -71,6 +72,8 @@ export function HostedDevelopmentIntake() {
     if (!file || busy) return;
     setError(null);
     try {
+      setPhase('creating');
+      await requireOfficialOauthSession();
       const localSha256 = await sha256File(file);
       let selection = uploaded;
       if (!selection) {

@@ -21,6 +21,14 @@ export interface CanonicalHostIdentityContext {
   developmentIntakeAvailable?: boolean;
 }
 
+interface OfficialOauthWhoamiResponse {
+  authenticated?: boolean;
+  verifiedIdentity?: unknown;
+  session?: {
+    provenance?: unknown;
+  };
+}
+
 export async function getCanonicalHostIdentityContext(): Promise<CanonicalHostIdentityContext> {
   const response = await axiosForBackend<CanonicalHostIdentityContext>({
     url: '/api/canonical-host/identity-context',
@@ -36,6 +44,25 @@ export async function getCanonicalHostIdentityContext(): Promise<CanonicalHostId
     );
   }
   return response.data;
+}
+
+export async function requireOfficialOauthSession(): Promise<void> {
+  const response = await axiosForBackend<OfficialOauthWhoamiResponse>({
+    url: '/api/identity/whoami',
+    method: 'GET',
+  });
+  if (
+    response.status < 200 ||
+    response.status >= 300 ||
+    response.data.authenticated !== true ||
+    !response.data.verifiedIdentity ||
+    response.data.session?.provenance !== 'SERVER_OPAQUE_SESSION'
+  ) {
+    throw backendResponseError(
+      response.data,
+      'OFFICIAL_OAUTH_SESSION_REQUIRED',
+    );
+  }
 }
 
 export async function createDevelopmentWorkItem(
