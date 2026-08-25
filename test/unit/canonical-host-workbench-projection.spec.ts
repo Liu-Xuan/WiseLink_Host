@@ -8,6 +8,7 @@ import {
   buildAssessmentBusinessContent,
   buildAssessmentSemantics,
   buildReaderCapabilities,
+  describeTranslationProjection,
   getReaderViewMode,
 } from '../../client/src/pages/DocumentParsingPage/workbench-projection';
 
@@ -68,6 +69,77 @@ describe('canonical Host workbench projection', () => {
       analysisSummary: '分析摘要 A',
       sourceRefs: ['SRC-001'],
       missingInputs: ['输入 A'],
+    });
+  });
+
+  describe('describeTranslationProjection (two-axis view model)', () => {
+    it('renders unavailable without inventing an axis', () => {
+      const view = describeTranslationProjection({
+        status: 'UNAVAILABLE',
+        reason: 'TRANSLATION_PROJECTION_NOT_AVAILABLE',
+      });
+      expect(view.capability).toBe('UNAVAILABLE');
+      expect(view.ownerSourceReaderConsumptionAllowed).toBe(false);
+      expect(view.bilingualTranslationConsumptionAllowed).toBe(false);
+      expect(view.detail).toContain('不会推断或补造译文');
+    });
+
+    it('renders translation_pending as source-current with the bilingual axis closed', () => {
+      const view = describeTranslationProjection({
+        status: 'SOURCE_CURRENT_TRANSLATION_PENDING',
+        axes: {
+          ownerProductState: 'translation_pending',
+          ownerSourceReaderConsumptionAllowed: true,
+          bilingualTranslationConsumptionAllowed: false,
+          translatedUnitCount: 4,
+          pendingTranslationUnitCount: 6,
+          translationRequiredUnitCount: 10,
+          failureReasons: [],
+        },
+      });
+      expect(view.capability).toBe('LIMITED');
+      expect(view.headline).toContain('原文阅读投影当前');
+      expect(view.detail).toContain('不提升双语轴');
+      expect(view.ownerSourceReaderConsumptionAllowed).toBe(true);
+      expect(view.bilingualTranslationConsumptionAllowed).toBe(false);
+    });
+
+    it('renders bilingual readiness only when the owner axes allow it', () => {
+      const view = describeTranslationProjection({
+        status: 'BILINGUAL_READING_AID_AVAILABLE',
+        axes: {
+          ownerProductState: 'reading_aid_available',
+          ownerSourceReaderConsumptionAllowed: true,
+          bilingualTranslationConsumptionAllowed: true,
+          translatedUnitCount: 10,
+          pendingTranslationUnitCount: 0,
+          translationRequiredUnitCount: 10,
+          failureReasons: [],
+        },
+      });
+      expect(view.capability).toBe('AVAILABLE');
+      expect(view.ownerSourceReaderConsumptionAllowed).toBe(true);
+      expect(view.bilingualTranslationConsumptionAllowed).toBe(true);
+      expect(view.detail).toContain('10/10');
+    });
+
+    it('renders a gap with both axes closed and the failure reasons verbatim', () => {
+      const view = describeTranslationProjection({
+        status: 'TRANSLATION_GAP',
+        axes: {
+          ownerProductState: 'needs_inputs',
+          ownerSourceReaderConsumptionAllowed: false,
+          bilingualTranslationConsumptionAllowed: false,
+          translatedUnitCount: 0,
+          pendingTranslationUnitCount: 10,
+          translationRequiredUnitCount: 10,
+          failureReasons: ['OWNER_CURRENT_CONSUMPTION_DENIED'],
+        },
+      });
+      expect(view.capability).toBe('UNAVAILABLE');
+      expect(view.detail).toContain('OWNER_CURRENT_CONSUMPTION_DENIED');
+      expect(view.ownerSourceReaderConsumptionAllowed).toBe(false);
+      expect(view.bilingualTranslationConsumptionAllowed).toBe(false);
     });
   });
 

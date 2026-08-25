@@ -20,6 +20,11 @@
         "include": "runtime/u0-python/vendor/**/*",
         "outDir": "dist/server",
         "watchAssets": false
+      },
+      {
+        "include": "modules/professional-input/parser/*.mjs",
+        "outDir": "dist/server",
+        "watchAssets": false
       }
     ],
     "plugins": [

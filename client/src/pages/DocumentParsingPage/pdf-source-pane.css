@@ -1,0 +1,134 @@
+/* ============================================================
+ * WiseLink 3.1 · PdfSourcePane (Spec R01 §4.2 中右 PDF 原文栏)
+ * 与左侧结构化解析结果并排；定位态展示页码与引文。
+ * ============================================================ */
+
+.parse-pdf-pane {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.parse-pdf-binding {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--wl-border);
+  border-radius: var(--wl-radius-md);
+  background: var(--wl-glass-soft);
+}
+
+.parse-pdf-binding span {
+  color: var(--wl-faint);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.parse-pdf-binding strong {
+  overflow: hidden;
+  color: var(--wl-ink);
+  font-family: var(--wl-mono);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.parse-pdf-binding p {
+  margin: 0;
+  color: var(--wl-muted);
+  font-size: 11px;
+}
+
+/* ── 当前定位：页码 + 引文（§4.2 点击依据定位页码区域） ── */
+.parse-pdf-located {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid rgba(22, 119, 255, 0.32);
+  border-radius: var(--wl-radius-md);
+  background: var(--wl-accent-soft);
+}
+
+.parse-pdf-located svg {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  color: var(--wl-accent);
+}
+
+.parse-pdf-located span {
+  color: var(--wl-faint);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.parse-pdf-located strong {
+  color: var(--wl-ink);
+  font-size: 13px;
+}
+
+.parse-pdf-located small {
+  display: block;
+  overflow: hidden;
+  color: var(--wl-muted);
+  font-size: 11px;
+  line-height: 1.6;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.parse-pdf-canvas {
+  display: grid;
+  flex: 1;
+  min-height: 220px;
+  place-items: center;
+  padding: 20px;
+  border: 1px solid var(--wl-border);
+  border-radius: var(--wl-radius-md);
+  background: var(--wl-glass-soft);
+  color: var(--wl-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.parse-pdf-translation {
+  color: var(--wl-faint);
+  font-size: 10.5px;
+}
+
+.parse-pdf-located-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.parse-pdf-located-actions button {
+  padding: 6px 12px;
+  border: 1px solid var(--wl-border);
+  border-radius: var(--wl-radius-sm);
+  background: var(--wl-surface-solid);
+  color: var(--wl-muted);
+  font-size: 11px;
+  cursor: pointer;
+  transition:
+    color var(--wl-motion-fast) ease,
+    border-color var(--wl-motion-fast) ease;
+}
+
+.parse-pdf-located-actions button:hover {
+  color: var(--wl-accent);
+  border-color: rgba(22, 119, 255, 0.32);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .parse-pdf-located {
+    animation: none;
+  }
+}

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 
 import type {
   AilyParsedPackageQueryResponse,
@@ -29,11 +29,17 @@ import {
   CANONICAL_HOST,
   CANONICAL_PDF_PRODUCER,
   CANONICAL_PERMISSION_SNAPSHOT,
+  CANONICAL_TRANSLATION_OWNER_OBSERVATION,
   CANONICAL_WORK_ITEM_REGISTRAR,
 } from './canonical-host.constants';
 import { buildCanonicalPageProjections } from './canonical-host-page-projections';
 import { CanonicalEntryFacadeService } from './canonical-entry-facade.service';
 import { CanonicalFailureRecordingService } from './canonical-failure-recording.service';
+import {
+  deriveTranslationConsumptionAxes,
+  type CanonicalTranslationConsumptionBinding,
+  type CanonicalTranslationOwnerObservation,
+} from './canonical-reader-consumption';
 import type {
   CanonicalAuthorizationDecision,
   CanonicalAuthorizationPort,
@@ -46,6 +52,7 @@ import type {
   CanonicalStatusInput,
   CanonicalWorkItemRegistrarPort,
 } from './canonical-host.types';
+import type { CanonicalTranslationOwnerObservationPort } from './canonical-translation-owner-observation.port';
 import type {
   CanonicalVerifiedDevelopmentCreateScope,
   CanonicalVerifiedServiceScope,
@@ -67,6 +74,9 @@ export class CanonicalHostVerticalService {
     private readonly reader: UnifiedReaderService,
     private readonly entryFacade: CanonicalEntryFacadeService,
     private readonly failureRecording: CanonicalFailureRecordingService,
+    @Optional()
+    @Inject(CANONICAL_TRANSLATION_OWNER_OBSERVATION)
+    private readonly translationOwnerObservation: CanonicalTranslationOwnerObservationPort | null,
   ) {}
 
   async runPdf(
@@ -319,6 +329,7 @@ export class CanonicalHostVerticalService {
       queryResults = readback.queryResults;
       readerSourceKind = readback.package.sourceKind;
     }
+    const translation = await this.readTranslationConsumptionAxes(projection);
     return {
       schemaVersion: CANONICAL_HOST.documentParsingPageSchemaVersion,
       status: 'FRESH_READ',
@@ -330,6 +341,7 @@ export class CanonicalHostVerticalService {
         queryResults,
         input.query,
         readerSourceKind,
+        translation,
       ),
       ...buildCanonicalPageProjections({
         workItem: projection,
@@ -343,6 +355,48 @@ export class CanonicalHostVerticalService {
           actionContext.decision.permissionSnapshotVersion,
       },
     };
+  }
+
+  /**
+   * WL31 translation-reader candidate: derive the two independent
+   * consumption axes from the owner observation (when configured) bound to
+   * the exact current package lineage. Unconfigured or failing owner reads
+   * fail closed to TRANSLATION_PROJECTION_NOT_AVAILABLE.
+   */
+  private async readTranslationConsumptionAxes(
+    projection: CanonicalWorkItemProjection,
+  ): Promise<CanonicalReaderProjection['translation']> {
+    if (
+      this.translationOwnerObservation == null ||
+      !this.translationOwnerObservation.configured ||
+      projection.package === null
+    ) {
+      return {
+        status: 'UNAVAILABLE',
+        reason: 'TRANSLATION_PROJECTION_NOT_AVAILABLE',
+      };
+    }
+    const binding: CanonicalTranslationConsumptionBinding | null =
+      workItemTranslationBinding(projection);
+    if (binding === null) {
+      return {
+        status: 'UNAVAILABLE',
+        reason: 'TRANSLATION_PROJECTION_NOT_AVAILABLE',
+      };
+    }
+    let observation: CanonicalTranslationOwnerObservation | null = null;
+    try {
+      observation = await this.translationOwnerObservation.readObservation({
+        documentId: binding.documentId,
+        revisionId: binding.revisionId,
+      });
+    } catch {
+      return {
+        status: 'UNAVAILABLE',
+        reason: 'TRANSLATION_PROJECTION_NOT_AVAILABLE',
+      };
+    }
+    return deriveTranslationConsumptionAxes({ observation, binding });
   }
 
   async query(
@@ -680,11 +734,32 @@ function isExplicitWorkItemNotFound(error: unknown): boolean {
   );
 }
 
+/**
+ * Build the Host-side translation consumption binding from the current
+ * WorkItem projection. The binding is never fabricated: SBD identity is the
+ * current parsed package, and TCP lineage is null until Host projects one.
+ */
+function workItemTranslationBinding(
+  workItem: CanonicalWorkItemProjection,
+): CanonicalTranslationConsumptionBinding | null {
+  const pkg = workItem.package;
+  if (pkg === null) return null;
+  return {
+    documentId: workItem.source.documentId,
+    revisionId: workItem.source.documentVersionId,
+    sbdPackageId: pkg.packageId,
+    sbdContentHash: pkg.contentHash,
+    tcpPackageId: null,
+    tcpContentHash: null,
+  };
+}
+
 function buildReaderProjection(
   workItem: CanonicalWorkItemProjection,
   queryResults: UnifiedPackageReadbackResponse['queryResults'],
   query: string,
   sourceKind: UnifiedPackageSourceKind | null,
+  translation: CanonicalReaderProjection['translation'],
 ): CanonicalReaderProjection | null {
   if (!workItem.package || sourceKind === null) return null;
   return {
@@ -706,10 +781,7 @@ function buildReaderProjection(
       status: 'UNAVAILABLE',
       reason: 'PDF_PREVIEW_NOT_CONFIGURED',
     },
-    translation: {
-      status: 'UNAVAILABLE',
-      reason: 'TRANSLATION_PROJECTION_NOT_AVAILABLE',
-    },
+    translation,
   };
 }
 

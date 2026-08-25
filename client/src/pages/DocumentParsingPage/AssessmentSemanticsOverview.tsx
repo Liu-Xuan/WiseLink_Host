@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 
 import type { CanonicalDocumentParsingPageResponse } from '@shared/api.interface';
+import { humanState } from '@client/src/features/navigation/treeMappers';
 
 import {
   buildAssessmentSemantics,
@@ -33,15 +34,15 @@ export function AssessmentSemanticsOverview({
     <section className="parse-assessment-semantics" aria-label="评估语义概览">
       <header>
         <div>
-          <span>ASSESSMENT SEMANTICS · HOST PROJECTION</span>
-          <h3>候选状态、依据与缺口</h3>
+          <span>当前评估进度</span>
+          <h3>结果、依据与待补信息</h3>
         </div>
-        <strong>{semantics.candidateState}</strong>
+        <strong>{humanState(semantics.candidateState) ?? '待评估'}</strong>
       </header>
       <div className="parse-assessment-semantics-grid">
         <article>
           <ClipboardCheck aria-hidden="true" />
-          <span>动态 N/N</span>
+          <span>逐项评估</span>
           <strong>
             {semantics.dynamic
               ? `${semantics.dynamic.evaluationItemCount}/${semantics.dynamic.criterionCount}`
@@ -50,17 +51,19 @@ export function AssessmentSemanticsOverview({
           <small>
             {semantics.dynamic
               ? `${semantics.dynamic.unresolvedCount} 项未闭合 · ${semantics.dynamic.sourceBoundCandidateCount} 项来源绑定`
-              : '当前 WorkItem 没有动态评估 projection'}
+              : '当前文件尚无逐项评估结果'}
           </small>
         </article>
         <article>
           <FileCheck2 aria-hidden="true" />
           <span>整体候选</span>
-          <strong>{semantics.overall?.status ?? '等待候选'}</strong>
+          <strong>
+            {humanState(semantics.overall?.status) ?? '等待综合意见'}
+          </strong>
           <small>
             {semantics.overall
-              ? `${semantics.overall.findingCount} findings · ${semantics.overall.candidateRefCount} refs`
-              : '不会由页面自行生成综合结果'}
+              ? `${semantics.overall.findingCount} 项判断 · ${semantics.overall.candidateRefCount} 条依据`
+              : '完成必要评估后自动显示'}
           </small>
         </article>
         <article>
@@ -68,7 +71,8 @@ export function AssessmentSemanticsOverview({
           <span>人工复核</span>
           <strong>{semantics.review.pendingCount} 项待处理</strong>
           <small>
-            {semantics.review.recordedCount} 条已记录 · {semantics.review.itemCount} 项投影
+            {semantics.review.recordedCount} 条已记录 ·{' '}
+            {semantics.review.itemCount} 项投影
           </small>
         </article>
       </div>
@@ -82,11 +86,11 @@ export function AssessmentSemanticsOverview({
             <article key={gap.code}>
               <strong>{gap.label}</strong>
               <span>{gap.detail}</span>
-              <small>{gap.authority}</small>
+              <small>以当前受控资料为准</small>
             </article>
           ))
         ) : (
-          <p>Host 当前 projection 没有报告未闭合缺口。</p>
+          <p>当前结果没有报告未闭合缺口。</p>
         )}
       </div>
       <p className="parse-assessment-boundary">{semantics.boundary}</p>

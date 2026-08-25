@@ -1,0 +1,136 @@
+/* ============================================================
+ * WiseLink 3.1 · Motion & Breathing (Spec R01 §6)
+ * 动效只表达焦点、运行与版本变化；整块内容不持续缩放。
+ * ============================================================ */
+
+/* 当前焦点呼吸：边缘光 3.6s 一次，内容本身不缩放（§6） */
+@keyframes wl-focus-breathe {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 1px rgba(84, 145, 255, 0.22),
+      0 20px 60px rgba(40, 104, 230, 0.12);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px rgba(104, 168, 255, 0.44),
+      0 24px 76px rgba(40, 104, 230, 0.22);
+  }
+}
+
+.wl-focus-card[data-active='true'] {
+  animation: wl-focus-breathe 3.6s ease-in-out infinite;
+}
+
+/* 任务胶囊：运行中仅状态点缓慢脉动，完成平滑转为待复核（§6） */
+@keyframes wl-status-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.55;
+    transform: scale(0.88);
+  }
+}
+
+.wl-status-dot[data-pulse='true'] {
+  animation: wl-status-pulse 1.6s ease-in-out infinite;
+}
+
+/* 原文定位：SourceRef 点击后一次性淡入高亮 900ms（§6） */
+@keyframes wl-source-locate {
+  0% {
+    background-color: rgba(22, 119, 255, 0.28);
+    box-shadow: 0 0 0 3px rgba(22, 119, 255, 0.35);
+  }
+  100% {
+    background-color: rgba(22, 119, 255, 0);
+    box-shadow: 0 0 0 3px rgba(22, 119, 255, 0);
+  }
+}
+
+.wl-source-flash {
+  animation: wl-source-locate 900ms ease-out 1;
+}
+
+/* 需更新传播：琥珀色光线从变更来源向受影响标签传播一次（§6） */
+@keyframes wl-stale-propagate {
+  0% {
+    box-shadow: 0 0 0 0 rgba(242, 162, 58, 0);
+  }
+  35% {
+    box-shadow: 0 0 0 3px rgba(242, 162, 58, 0.45);
+  }
+  100% {
+    box-shadow: 0 0 0 3px rgba(242, 162, 58, 0);
+  }
+}
+
+.wl-stale-flash {
+  animation: wl-stale-propagate 1.4s ease-out 1;
+}
+
+/* 全屏转场：260–360ms 位移/淡入，保持空间连续（§6） */
+.wl-workbench-enter {
+  animation: wl-view-transition 320ms cubic-bezier(0.32, 0.72, 0.24, 1) 1;
+}
+
+@keyframes wl-view-transition {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.995);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* 对话框/浮层弹入：缩放 + 淡入（§6） */
+@keyframes wl-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* 任务进行中：持续旋转（§4.3 任务胶囊） */
+@keyframes wl-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 任务进度条：缓慢平滑填充 */
+.wl-progress-bar {
+  transition: width var(--wl-motion-slow) ease;
+}
+
+/* ── reduced-motion 全局降级（§6 / §10.2） ── */
+@media (prefers-reduced-motion: reduce) {
+  .wl-focus-card[data-active='true'],
+  .wl-status-dot[data-pulse='true'],
+  .wl-environment::before,
+  .wl-environment::after {
+    animation: none;
+  }
+
+  .wl-source-flash,
+  .wl-stale-flash,
+  .wl-workbench-enter {
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+  }
+
+  .wl-environment,
+  .wl-environment * {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

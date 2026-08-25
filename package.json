@@ -38,6 +38,7 @@
     "test:document-management:orphan-recovery": "npm run build:server && node scripts/verify-hosted-orphan-recovery.mjs",
     "test:document-management:external-candidate": "npm run build:server && node scripts/verify-external-candidate-document-version-reuse.mjs",
     "test:ordinary:first-ftd-loop": "npm run build:server && node scripts/run-ordinary-first-ftd-loop.mjs",
+    "test:professional-input:real-ftd": "jest --runInBand test/unit/professional-input/host-native-real-ftd.spec.ts",
     "test:ordinary:first-ftd-residual-recovery": "WL_TEST_SEED_THREE_ROW_RESIDUAL=1 npm run test:ordinary:first-ftd-loop",
     "test:ordinary:oem-reference-loop": "npm run build:server && node scripts/run-ordinary-oem-reference-loop.mjs",
     "test:ordinary:737-assessment-loop": "npm run build:server && node scripts/run-ordinary-737-assessment-loop.mjs",
@@ -80,6 +81,7 @@
     "drizzle-orm": "0.44.6",
     "hbs": "^4.2.0",
     "jsonwebtoken": "^9.0.3",
+    "pdfjs-dist": "4.10.38",
     "reflect-metadata": "^0.1.14",
     "tslib": "^2.8.1"
   },

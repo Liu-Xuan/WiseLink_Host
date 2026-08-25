@@ -33,7 +33,8 @@ export function EngineeringReasoningTrail({
   const timeline = data.timeline;
   const sourceRefCount: number = data.workItem.package?.sourceRefCount ?? 0;
   const unresolvedCount: number = dynamic?.unresolvedCount ?? 0;
-  const latestTimelineEvent = timeline.events[timeline.events.length - 1] ?? null;
+  const latestTimelineEvent =
+    timeline.events[timeline.events.length - 1] ?? null;
   const steps: TrailStep[] = [
     {
       label: '锁定工程对象',
@@ -70,7 +71,7 @@ export function EngineeringReasoningTrail({
       status: overall?.status ?? 'WAITING_OVERALL_CANDIDATE',
       detail: overall
         ? `${overall.findingCount} findings · gap ${overall.gap ?? 'NONE'} · discovery ${overall.discoveryStatus}`
-        : '只有明确缺口才调用相关资料源 Skill',
+        : '只有明确缺口时才查询相关资料来源',
       evidence: overall?.artifact.sha256 ?? 'NO_OVERALL_ARTIFACT',
       done: overall?.status === 'CANDIDATE_ONLY',
       icon: GitCompareArrows,
@@ -118,7 +119,8 @@ export function EngineeringReasoningTrail({
               <strong>{unresolvedCount}</strong> unresolved
             </span>
             <span>
-              <strong>{audit.candidateFormationSteps.length}</strong> audit steps
+              <strong>{audit.candidateFormationSteps.length}</strong> audit
+              steps
             </span>
             <span>
               <strong>{timeline.events.length}</strong> timeline events
@@ -145,17 +147,22 @@ export function EngineeringReasoningTrail({
           </article>
         ))}
       </div>
-      <div className="engineering-reasoning-summary" aria-label="时间线与投影摘要">
+      <div
+        className="engineering-reasoning-summary"
+        aria-label="时间线与投影摘要"
+      >
         {latestTimelineEvent ? (
           <span>
-            <strong>{latestTimelineEvent.kind}</strong> {latestTimelineEvent.status}
+            <strong>{latestTimelineEvent.kind}</strong>{' '}
+            {latestTimelineEvent.status}
           </span>
         ) : null}
         <span>
           <strong>{audit.reader.queryResultCount}</strong> audit reader hits
         </span>
         <span>
-          <strong>{audit.reader.uniqueSourceRefCount}</strong> unique source refs
+          <strong>{audit.reader.uniqueSourceRefCount}</strong> unique source
+          refs
         </span>
       </div>
     </section>

@@ -1,0 +1,213 @@
+/* ============================================================
+ * WiseLink 3.1 · EvidencePanel (Spec R01 §4.2 底部证据栏 / §7)
+ * G3 内容玻璃；SourceRef 定位闪烁动画来自 motion.css。
+ * ============================================================ */
+
+.wl-evidence-panel {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.wl-evidence-head {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.wl-evidence-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--wl-ink);
+  font-size: 12px;
+}
+
+.wl-evidence-title svg {
+  width: 15px;
+  height: 15px;
+  color: var(--wl-accent);
+}
+
+.wl-evidence-title strong {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.wl-evidence-title span {
+  color: var(--wl-muted);
+  font-size: 11.5px;
+}
+
+.wl-evidence-clear {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border: 1px solid rgba(22, 119, 255, 0.24);
+  border-radius: 999px;
+  background: var(--wl-accent-soft);
+  color: var(--wl-accent);
+  font-size: 11px;
+  font-weight: 650;
+  font-family: var(--wl-mono);
+  cursor: pointer;
+}
+
+.wl-evidence-clear svg {
+  width: 12px;
+  height: 12px;
+}
+
+.wl-evidence-hint {
+  color: var(--wl-faint);
+  font-size: 11px;
+}
+
+.wl-evidence-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 10px;
+  align-content: start;
+  padding-bottom: 4px;
+}
+
+.wl-evidence-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--wl-border);
+  border-radius: var(--wl-radius-md);
+  background: var(--wl-glass-soft);
+  transition: border-color var(--wl-motion-fast) ease;
+}
+
+.wl-evidence-item.is-target-unit {
+  border-color: rgba(22, 119, 255, 0.32);
+}
+
+.wl-evidence-item header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.wl-evidence-item header svg {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 13px;
+  color: var(--wl-muted);
+}
+
+.wl-evidence-item header strong {
+  overflow: hidden;
+  color: var(--wl-muted);
+  font-family: var(--wl-mono);
+  font-size: 10.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wl-evidence-item header span {
+  margin-left: auto;
+  flex: 0 0 auto;
+  padding: 1px 8px;
+  border: 1px solid var(--wl-border);
+  border-radius: 999px;
+  color: var(--wl-faint);
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.wl-evidence-item p {
+  margin: 0;
+  color: var(--wl-ink);
+  font-size: 12.5px;
+  line-height: 1.7;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+.wl-evidence-item footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.wl-evidence-ref {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 4px 9px;
+  border: 1px solid var(--wl-border);
+  border-radius: var(--wl-radius-sm);
+  background: var(--wl-surface-solid);
+  color: var(--wl-muted);
+  font-family: var(--wl-mono);
+  font-size: 10px;
+  cursor: pointer;
+  transition:
+    color var(--wl-motion-fast) ease,
+    border-color var(--wl-motion-fast) ease,
+    background-color var(--wl-motion-fast) ease;
+}
+
+.wl-evidence-ref svg {
+  width: 11px;
+  height: 11px;
+  flex: 0 0 11px;
+}
+
+.wl-evidence-ref span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wl-evidence-ref:hover {
+  color: var(--wl-accent);
+  border-color: rgba(22, 119, 255, 0.32);
+  background: var(--wl-accent-soft);
+}
+
+.wl-evidence-ref.is-active {
+  color: var(--wl-accent);
+  border-color: rgba(22, 119, 255, 0.42);
+  background: var(--wl-accent-soft);
+  box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.18);
+}
+
+.wl-evidence-no-ref {
+  color: var(--wl-faint);
+  font-size: 10.5px;
+}
+
+.wl-evidence-empty {
+  margin: 0;
+  padding: 20px;
+  color: var(--wl-muted);
+  font-size: 12px;
+  text-align: center;
+  line-height: 1.7;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wl-source-flash {
+    animation: none;
+  }
+}
