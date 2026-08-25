@@ -14,18 +14,20 @@ import {
   type OAuthFailureCode,
 } from './oauth-failure-code';
 
-type OAuthPageStatus = 'WORKING' | 'FAILED';
+type OAuthPageStatus = 'WORKING' | 'READY' | 'FAILED';
 
 export default function OAuthCallbackPage() {
   const navigate = useNavigate();
   const [status, setStatus] = useState<OAuthPageStatus>('WORKING');
   const [failureCode, setFailureCode] = useState<OAuthFailureCode | null>(null);
+  const [authorizeUrl, setAuthorizeUrl] = useState<string | null>(null);
   const [attempt, setAttempt] = useState<number>(0);
 
   useEffect(() => {
     let active = true;
     setStatus('WORKING');
     setFailureCode(null);
+    setAuthorizeUrl(null);
 
     const callbackParams = new URLSearchParams(window.location.search);
     const codes = callbackParams.getAll('code');
@@ -56,8 +58,11 @@ export default function OAuthCallbackPage() {
         return;
       }
 
-      const authorizeUrl = await startOfficialOauth();
-      if (active) window.location.assign(authorizeUrl);
+      const nextAuthorizeUrl = await startOfficialOauth();
+      if (active) {
+        setAuthorizeUrl(nextAuthorizeUrl);
+        setStatus('READY');
+      }
     })().catch((error: unknown) => {
       if (active) {
         setFailureCode(toOauthFailureCode(error));
@@ -82,6 +87,18 @@ export default function OAuthCallbackPage() {
                 正在通过妙搭官方同源请求完成安全验证，请勿关闭此页面。
               </p>
             </div>
+          </div>
+        ) : status === 'READY' && authorizeUrl ? (
+          <div className="flex flex-col items-center gap-4 text-center">
+            <div>
+              <h1 className="text-xl font-semibold">飞书身份连接已就绪</h1>
+              <p className="mt-2 text-sm text-muted-foreground">
+                使用官方飞书授权页继续。授权完成后将自动返回 WiseLink。
+              </p>
+            </div>
+            <Button asChild data-ai-section-type="button">
+              <a href={authorizeUrl}>继续前往飞书授权</a>
+            </Button>
           </div>
         ) : (
           <div className="flex flex-col items-center gap-4 text-center" role="alert">
