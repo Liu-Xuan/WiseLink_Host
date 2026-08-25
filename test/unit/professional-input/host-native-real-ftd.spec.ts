@@ -47,6 +47,7 @@ jest.mock(
 import type { UnifiedPackageArtifactDescriptor } from '@shared/api.interface';
 
 import { ExactFtdFrozen2PdfProducerAdapter } from '../../../server/modules/canonical-host/exact-ftd-frozen2-pdf-producer.adapter';
+import { scopedProfessionalArtifactRef } from '../../../server/modules/canonical-host/scoped-professional-artifact-correlation.port';
 import { Frozen2CandidateReaderService } from '../../../server/modules/unified-reader/frozen2-candidate-reader.service';
 import { PythonU0FullPackageValidatorAdapter } from '../../../server/modules/unified-reader/python-u0-full-package-validator.adapter';
 import { U0FullValidationService } from '../../../server/modules/unified-reader/u0-full-validation.service';
@@ -158,21 +159,48 @@ describeRealFtd('Host-native professional input with actual FTD bytes', () => {
         contentLength: sourceBytes.byteLength,
       },
     };
+    const professionalFilePath =
+      '/canonical-host/professional-artifacts/real-ftd-test.json';
+    let professionalBytes: Uint8Array | null = null;
     const fileService = {
-      readSelection: jest.fn(async () => ({
-        bucketId: fileMetadata.bucketID,
-        filePath,
-        providerObjectId: fileMetadata.id,
-        providerVersionId: fileMetadata.id,
-        providerUpdatedAt: fileMetadata.updatedAt,
-        fileName: fileMetadata.name,
-        mediaType: fileMetadata.metadata.mimeType,
-        providerByteLength: fileMetadata.metadata.contentLength,
-        bytes: sourceBytes,
-        byteLength: sourceBytes.byteLength,
-        sha256: sha256Raw(sourceBytes),
-        readbackVerified: true,
-      })),
+      readSelection: jest.fn(
+        async (selection: { bucketId: string; filePath: string }) => {
+          if (selection.filePath === professionalFilePath) {
+            if (!professionalBytes) {
+              throw new Error('PROFESSIONAL_BYTES_NOT_REGISTERED');
+            }
+            return {
+              bucketId: fileMetadata.bucketID,
+              filePath: professionalFilePath,
+              providerObjectId: 'provider-object-real-ftd-professional-test',
+              providerVersionId:
+                'provider-object-real-ftd-professional-test',
+              providerUpdatedAt: fileMetadata.updatedAt,
+              fileName: 'real-ftd-test.json',
+              mediaType: 'application/json',
+              providerByteLength: professionalBytes.byteLength,
+              bytes: professionalBytes,
+              byteLength: professionalBytes.byteLength,
+              sha256: sha256Raw(professionalBytes),
+              readbackVerified: true,
+            };
+          }
+          return {
+            bucketId: fileMetadata.bucketID,
+            filePath,
+            providerObjectId: fileMetadata.id,
+            providerVersionId: fileMetadata.id,
+            providerUpdatedAt: fileMetadata.updatedAt,
+            fileName: fileMetadata.name,
+            mediaType: fileMetadata.metadata.mimeType,
+            providerByteLength: fileMetadata.metadata.contentLength,
+            bytes: sourceBytes,
+            byteLength: sourceBytes.byteLength,
+            sha256: sha256Raw(sourceBytes),
+            readbackVerified: true,
+          };
+        },
+      ),
     };
 
     const documentId = 'document_actual_ftd_professional_input_test';
@@ -231,6 +259,49 @@ describeRealFtd('Host-native professional input with actual FTD bytes', () => {
       fileService as never,
       { resolve: resolveCurrent } as never,
       fullValidator,
+      {
+        available: true,
+        persistAndCorrelate: jest.fn(async (correlationRequest, produced) => {
+          professionalBytes = Uint8Array.from(produced.bytes);
+          return {
+            schemaVersion:
+              'wiselink.3_1.scoped_professional_artifact_correlation.v1',
+            status: 'HOST_SCOPE_BOUND_IMMUTABLE',
+            scope: {
+              workItemId: correlationRequest.workItemId,
+              documentVersionId: correlationRequest.documentVersionId,
+            },
+            source: {
+              documentId: correlationRequest.documentId,
+              sourceArtifactId: correlationRequest.sourceArtifactId,
+              sha256: correlationRequest.sourceSha256,
+              byteLength: correlationRequest.sourceByteLength,
+              providerObjectId: correlationRequest.sourceProviderObjectId,
+            },
+            profile: { ...correlationRequest.classification },
+            professionalArtifact: {
+              professionalArtifactId: produced.packageId,
+              ownerWorkItemId: correlationRequest.workItemId,
+              ownerDocumentVersionId: correlationRequest.documentVersionId,
+              packageId: produced.packageId,
+              artifact: {
+                ...produced.artifact,
+                ref: scopedProfessionalArtifactRef(
+                  correlationRequest,
+                  produced.packageId,
+                ),
+              },
+              fileServiceLocator: {
+                bucketId: fileMetadata.bucketID,
+                filePath: professionalFilePath,
+                providerObjectId:
+                  'provider-object-real-ftd-professional-test',
+              },
+            },
+            lineage: { ...produced.lineage },
+          };
+        }),
+      },
     );
     const produced = await producer.producePdf({
       schemaVersion: 'wiselink.3_1.canonical_pdf_vertical_request.v0.candidate',
