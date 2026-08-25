@@ -19,6 +19,8 @@ import type {
   CanonicalPdfProducerResult,
 } from './canonical-host.types';
 import { PHASE5_737_34_3830_HANDOFF } from '../document-management/src/hosted/phase5BoeingSbHandoff.js';
+import { runProfessionalInputPipeline } from '../professional-input/builders/professional-input-pipeline';
+import { PdfjsDistLayoutExtractor } from '../professional-input/parser/pdfjs-dist-layout-extractor.adapter';
 
 interface ExactPdfProfile {
   family: 'FTD' | 'OEM_REFERENCE' | 'SB';
@@ -134,9 +136,7 @@ const EXACT_BINDINGS: readonly ExactPdfBinding[] = [
 ] as const;
 
 @Injectable()
-export class ExactFtdFrozen2PdfProducerAdapter
-  implements CanonicalPdfProducerPort
-{
+export class ExactFtdFrozen2PdfProducerAdapter implements CanonicalPdfProducerPort {
   constructor(
     private readonly fileService: FileService,
     private readonly resolver: MiaodaDocumentVersionSourceResolver,
@@ -146,6 +146,9 @@ export class ExactFtdFrozen2PdfProducerAdapter
   async producePdf(
     request: CanonicalPdfVerticalRunRequest,
   ): Promise<CanonicalPdfProducerResult> {
+    if (matchesHostNativeFtdProfile(request)) {
+      return this.produceHostNativeFtd(request);
+    }
     const binding = exactBindingForRequest(request);
     if (!binding) {
       return {
@@ -157,7 +160,9 @@ export class ExactFtdFrozen2PdfProducerAdapter
       };
     }
     const profile = binding.profile;
-    const resolved = await this.resolver.resolve(binding.documentVersionId);
+    const resolved = await this.resolver.resolve(binding.documentVersionId, {
+      requireCurrent: true,
+    });
     if (
       resolved.version.documentId !== binding.documentId ||
       resolved.family.documentFamily !== profile.family
@@ -211,6 +216,97 @@ export class ExactFtdFrozen2PdfProducerAdapter
       },
     };
   }
+
+  private async produceHostNativeFtd(
+    request: CanonicalPdfVerticalRunRequest,
+  ): Promise<CanonicalPdfProducerResult> {
+    const resolved = await this.resolver.resolve(
+      request.source.documentVersionId,
+      { requireCurrent: true },
+    );
+    if (
+      resolved.version.documentId !== request.source.documentId ||
+      resolved.version.documentVersionId !== request.source.documentVersionId ||
+      resolved.version.sourceArtifactId !== request.source.sourceArtifactId ||
+      resolved.family.documentFamily !== 'FTD' ||
+      resolved.artifact.sourceArtifactId !== request.source.sourceArtifactId ||
+      resolved.artifact.mediaType !== 'application/pdf' ||
+      request.source.sourceFileSha256 !==
+        `sha256:${resolved.artifact.sha256}` ||
+      request.source.sourceByteLength !== Number(resolved.artifact.byteLength)
+    ) {
+      throw new Error('PDF_PRODUCER_DOCUMENT_VERSION_READBACK_MISMATCH');
+    }
+    const sourceStore = new MiaodaFileServiceArtifactStore(this.fileService);
+    const selection = await sourceStore.readSelection({
+      bucketId: resolved.artifact.bucketId,
+      filePath: resolved.artifact.filePath,
+    });
+    if (
+      selection.readbackVerified !== true ||
+      selection.sha256 !== resolved.artifact.sha256 ||
+      selection.byteLength !== Number(resolved.artifact.byteLength) ||
+      selection.providerObjectId !== resolved.artifact.providerObjectId
+    ) {
+      throw new Error('PDF_PRODUCER_SOURCE_READBACK_MISMATCH');
+    }
+    const pipeline = runProfessionalInputPipeline(
+      {
+        pdfBytes: selection.bytes,
+        artifact: {
+          artifactRef: `artifact://CanonicalArtifactStore/${resolved.artifact.filePath.replace(/^\/+/, '')}`,
+          normalizedPath: resolved.version.originalFilename,
+        },
+        document: {
+          documentCode: resolved.family.canonicalDocumentNumber,
+          documentType: FTD_PROFILE.documentType,
+          language: 'en-US',
+        },
+        lineage: {
+          generatedAt: new Date(resolved.version.committedAt).toISOString(),
+          producerName: 'WiseLinkCanonicalHostProfessionalInput',
+          producerVersion: 'professional-input-pure.v1.candidate.1',
+        },
+      },
+      { extractor: new PdfjsDistLayoutExtractor() },
+    );
+    await this.validator.validate(pipeline.u0Input);
+    return {
+      kind: 'PACKAGE',
+      packageId: pipeline.pkg.packageId,
+      contractId: 'techpub.parsed-package.v1',
+      contractRevision: 'frozen.2',
+      bytes: pipeline.u0Input.bytes,
+      strictReaderValidated: true,
+      executionRoute: FTD_PROFILE.executionRoute,
+      usagePolicy: {
+        presentationMode: FTD_PROFILE.presentationMode,
+        qualityStatus: 'PASS',
+        applicability: {
+          sourceExpressionCount: 0,
+          normalizedCandidateCount: 0,
+          assignmentCount: 0,
+        },
+        assessmentAutoAdoptionAllowed: false,
+        aeoAutoAdoptionAllowed: false,
+        projectionSource: 'IMMUTABLE_PACKAGE_ACTUAL_BYTES',
+      },
+      documentIdentity: {
+        documentCode: resolved.family.canonicalDocumentNumber,
+        businessRevision: resolved.version.businessRevision || null,
+      },
+    };
+  }
+}
+
+function matchesHostNativeFtdProfile(
+  request: CanonicalPdfVerticalRunRequest,
+): boolean {
+  return (
+    request.classification.normalizedFamily === FTD_PROFILE.family &&
+    request.classification.parserProfileId === FTD_PROFILE.parserProfileId &&
+    request.classification.parserProfileHash === FTD_PROFILE.parserProfileHash
+  );
 }
 
 function exactBindingForRequest(
@@ -268,7 +364,9 @@ function assertPackageSourceBinding(
 ): CanonicalParsedPackageUsagePolicy {
   const profile = binding.profile;
   const source = value.source as Record<string, unknown> | undefined;
-  const artifacts = value.artifacts as Array<Record<string, unknown>> | undefined;
+  const artifacts = value.artifacts as
+    | Array<Record<string, unknown>>
+    | undefined;
   const legacy = source?.legacyIdentifiers as
     | Array<Record<string, unknown>>
     | undefined;
@@ -293,7 +391,9 @@ function assertPackageSourceBinding(
   const revisionLabel = (revision?.label as Record<string, unknown> | undefined)
     ?.value;
   const result = value.result as Record<string, unknown> | undefined;
-  const applicability = value.applicability as Record<string, unknown> | undefined;
+  const applicability = value.applicability as
+    | Record<string, unknown>
+    | undefined;
   const sourceExpressions = arrayValue(
     applicability?.sourceExpressions,
     'applicability.sourceExpressions',
