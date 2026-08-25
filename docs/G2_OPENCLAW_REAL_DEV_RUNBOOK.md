@@ -6,14 +6,21 @@
 
 以下均不算完成：fixture、simulation、loopback executor、直接调用 provider、`main` OpenClaw agent、只跑单测、只看 HTTP 200、只看到容器 healthy、绕过 Host 写 WorkItem、把损坏结果替换为 `{}`。
 
-## 2. 固定基线与代码目标
+## 2. 固定基线与代码目标（R08 revision 293）
 
-- canonical baseline：`codex/wl31-mainline@006146b2267e0dc316f9550411c178a292f9b04b`
-- 本方向分支：`codex/g2-openclaw-real-chain`
+- accepted DEV integration parent：`77f2a56d4eacecd31e4a501630ee5fe3985fb25a`
+- G2 历史证据链（只作 lineage/evidence）：`367e2fd8d8bc95699381a173ad1144089c6817b2 → d74049cc483e98f889fc756ef2eb865cb2019d30 → ca56193727e8d2284665aa749f12598c573afb2d`
+- 当前本地候选分支：`codex/wl31-g2-new-dv-correlation-20260825`
 - migration：`migrations/0003_action_attempt_openclaw_v1.sql`
 - Host 状态机：`server/modules/action-attempt/`
 - OpenClaw worker：`scripts/run-openclaw-action-attempt-worker.mjs`
 - 不 push、不合并、不部署生产；只使用一个全新隔离 DEV/UAT DocumentVersion 和其新建 WorkItem。
+
+### 2.1 新 WI/DV 专业产物的强制边界
+
+`ExactFtdFrozen2PdfProducerAdapter` 不再保留任何固定 DocumentVersion/package asset fallback。每一次运行都必须先由 Host 从 FileService fresh-read 新 DocumentVersion 的实际 PDF bytes 并核验 source hash/length/provider object；随后通过私有 `ScopedProfessionalArtifactCorrelationPort` 定位同一 `workItemId + documentVersionId` 授权域内新迁入登记的 frozen.2 专业产物。Host 再按 correlation 的 FileService locator fresh-read 专业产物实际 bytes，并核验 scope owner、scope-bound artifact ref、provider object、hash/length、完整 classification 与 frozen.2/U0。
+
+当前唯一生产者是 Host-native PDF pipeline：它从上述 source actual bytes 生成 frozen.2，并先通过 strict U0。`MiaodaScopedProfessionalArtifactCorrelationAdapter` 随后把这些已验证的相同 bytes 写入 exact `workItemId + documentVersionId` FileService 路径并登记 correlation；Host 再独立 fresh-read professional bytes，逐项核验 scope/ref/provider/hash/length、完整 classification 和与 pipeline 输出的 byte identity。lineage 不拥有或授权 artifact。若显式配置 unavailable provider，仍精确返回 `PDF_PRODUCER_CORRELATION_UNAVAILABLE`；任何配置都不会从 fixture、本地资产、历史 binding、simulation 或第二 producer/parser 继续运行。
 
 ## 3. 写入目标、owner 与审批点
 
@@ -56,7 +63,11 @@ ORDER BY indexname;
 
 ## 5. Host 两阶段 exact scope
 
-阶段 A 只允许创建一个新 DEV WorkItem：
+阶段 A 必须先跨过 G0：浏览器只走官方 OAuth `state + PKCE → token → user_info(open_id + tenant_key) → Host mapping/session`，再以 Host session/ActorContext/ACL 创建并读回一个全新隔离 DEV DocumentVersion/WorkItem。`user_id` 缺失不阻断，不接受自造 `x-aily-jwt`，App Secret 只可存在于隔离 DEV 受控 env，不进入 Git、日志或证据。
+
+阶段 A 的具体 HTTP 路径以 Hosted release 暴露的 OAuth session-backed Host route 为准；当前 API-key `/development-work-items` route 不能替代最终用户 OAuth 创建/读取，也不得作为 G0 通过证据。必须 fresh-read WorkItem status、DocumentVersion currentness 与 source FileService artifact，保存 returned `WI-...`，且不输出 OAuth token、App Secret 或 API key。
+
+阶段 B 才为这个已由同一 OAuth session 创建并读回的 exact WorkItem 开启专用 executor service scope：
 
 ```text
 WL_OPENCLAW_SERVICE_SCOPE_ENABLED=1
@@ -64,27 +75,12 @@ WL_OPENCLAW_GATEWAY_AUTH_MODE=API_KEY
 WL_OPENCLAW_SERVICE_SCOPE_ENV=DEV
 WL_OPENCLAW_SERVICE_PRINCIPAL_ID=service:openclaw-g2-dev
 WL_OPENCLAW_SERVICE_TENANT_ID=<exact-dev-tenant>
-WL_OPENCLAW_DEVELOPMENT_CREATE_ENABLED=1
+WL_OPENCLAW_DEVELOPMENT_CREATE_ENABLED=0
 WL_OPENCLAW_DEVELOPMENT_DOCUMENT_VERSION_ID=<exact-new-current-document-version>
 WL_OPENCLAW_DEVELOPMENT_RUN_TOKEN=<new-uuid>
 ```
 
-用 API Key 调用一次：
-
-```http
-POST /api/openapi/wiselink/development-work-items
-Content-Type: application/json
-
-{
-  "documentVersionId": "<exact-new-current-document-version>",
-  "developmentRunToken": "<same-new-uuid>",
-  "query": "applicability"
-}
-```
-
-fresh-read 响应、WorkItem status、DocumentVersion currentness 与 FileService artifact；保存 returned `WI-...`，不得输出 API key。
-
-阶段 B 撤销创建能力并绑定唯一 WorkItem：
+随后保持创建能力关闭并绑定唯一 WorkItem：
 
 ```text
 WL_OPENCLAW_DEVELOPMENT_CREATE_ENABLED=0
@@ -186,7 +182,9 @@ overall 首次使用 `providers=[]`；只有 Host 已存在明确 gap 时才按�
 - 浏览器：同一 WorkItem fresh projection 显示 `BASE_RULE_CANDIDATE_READY` 与 `OVERALL_CANDIDATE_READY`，刷新后仍存在；
 - non-claims：candidate-only；没有工程批准、AEO 确认、current selection 改动、发布、生产部署或适航结论。
 
-## 10. 2026-08-24 隔离 DEV 实跑证据
+## 10. 2026-08-24 隔离 DEV 历史实跑证据（受保护、禁止复用）
+
+本节对象只证明 `ca561937` 当时的 OpenClaw HTTP/Result Gate/CAS 能力，不能作为新 WI/DV 的输入、artifact owner、correlation 正例或授权来源；即使 source/package SHA 与 bytes 完全相同，也禁止跨 WorkItem 复用。
 
 唯一新建资源为 `document_version_f4813607b91ee1a20e754e2d` 和
 `WI-5e2e17a2-0b47-44c9-b5e6-38e4acd4db27`；Document catalog current generation
@@ -341,4 +339,13 @@ Result Gate/CAS，也没有运行新的 overall；历史第 10 节 dynamic/overa
 Attempt authorize 输入必须显式包含 `transport: 'OPENCLAW_MCP' | 'AILY'`，并返回现有 verified
 principal/tenant/workItem scope；研究 readback 复用 Attempt authorize，不新增以 `researchRef` 为 ACL
 真源的接口。`9350` 的旧身份接口不得被本候选吸收，`package.json`、
-`verify-canonical-mcp.mjs`、`canonical-host.module.ts` 均不在本提交修改范围。
+`verify-canonical-mcp.mjs` 不在本提交修改范围；`canonical-host.module.ts` 只注册由 Host-native PDF 输出驱动的 scoped professional correlation provider，不接入 Feishu evidence candidate。
+
+## 14. revision 293 后的可执行 post-G0 顺序与唯一阻断
+
+1. 官方 OAuth session 创建并读回全新 DEV DocumentVersion/WorkItem；观察 HTTP correlation、ActorContext mapping、tenant/workItem ACL、DocumentVersion currentness 与 source FileService actual-byte receipt。
+2. Host-native PDF pipeline 从该新 DV 的 actual source bytes 生成不可变 frozen.2，strict U0 通过后才写入 exact `workItemId + documentVersionId` FileService 路径并登记 `ScopedProfessionalArtifactCorrelation`。Host 独立 fresh-read professional bytes；登记绑定 source artifact/provider/hash/length、完整 classification、专业 artifact identity/owner/locator/hash/length，并要求其与 pipeline 输出 byte-identical。
+3. Host 重新运行 canonical PDF vertical：source bytes 与专业 artifact bytes 均由 Host FileService fresh-read；scope/ref/hash/length/classification/package source/U0 任一不一致即停止。通过后才允许创建/claim ActionAttempt。
+4. 专用 `g2-action-attempt` 依次运行 dynamic/overall；观察 DB `QUEUED→RUNNING→COMMITTING→terminal`、HTTP begin/heartbeat/commit、Trace attempt/operation correlation、ResultEnvelope hash、FileService candidate actual-byte readback、WorkItem revision CAS/current fresh-read。
+
+当前代码已接通第 2 步的生产与持久化 owner，但本地验收只证明真实 FTD/parser/U0/Reader，以及有界 FileService/DB doubles 下的双 actual-byte/scope 校验。尚未在新 OAuth DEV WorkItem 上执行托管 FileService/DB、ActionAttempt、OpenClaw 与 CAS，因此不得把本地通过冒充为第 3–4 步真实 DEV 纵切完成。

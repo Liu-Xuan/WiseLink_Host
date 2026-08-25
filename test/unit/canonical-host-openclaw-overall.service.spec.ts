@@ -62,21 +62,26 @@ describe('CanonicalHostOpenClawOverallService', () => {
   });
 
   it('resumes only the same live principal lease without rebuilding input', async () => {
-    const harness = createHarness();
-    const resumed = await harness.service.resume(ATTEMPT_REF);
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-24T10:30:00.000Z'));
+    try {
+      const harness = createHarness();
+      const resumed = await harness.service.resume(ATTEMPT_REF);
 
-    expect(resumed).toMatchObject({
-      attemptRef: ATTEMPT_REF,
-      leaseToken: LEASE_TOKEN,
-      leaseGeneration: 1,
-      modelInput: { outputCorrelationRef: TRIGGER_REF },
-    });
-    expect(harness.attempts.readScoped).toHaveBeenCalledWith({
-      attemptRef: ATTEMPT_REF,
-      tenantId: 'tenant-overall',
-      workItemId: WORK_ITEM_ID,
-    });
-    expect(harness.artifactStore.readActualBytes).not.toHaveBeenCalled();
+      expect(resumed).toMatchObject({
+        attemptRef: ATTEMPT_REF,
+        leaseToken: LEASE_TOKEN,
+        leaseGeneration: 1,
+        modelInput: { outputCorrelationRef: TRIGGER_REF },
+      });
+      expect(harness.attempts.readScoped).toHaveBeenCalledWith({
+        attemptRef: ATTEMPT_REF,
+        tenantId: 'tenant-overall',
+        workItemId: WORK_ITEM_ID,
+      });
+      expect(harness.artifactStore.readActualBytes).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('validates ResultEnvelope output, persists bytes, CASes current, then succeeds', async () => {

@@ -1,0 +1,147 @@
+/* ============================================================
+ * WiseLink 3.1 · Glass Material Layers (Spec R01 §5.1 / §9.4)
+ * G0 环境背景 → G4 实体内容面，五级材质体系。
+ * 性能约束：同一视觉区域只允许 1–2 层 backdrop-filter。
+ * ============================================================ */
+
+/* ── §10.2 无障碍工具类：仅屏幕阅读器可见的播报文本 ── */
+.wl-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ── G0 环境背景：低饱和渐变 + 呼吸光团（不承载文字） ── */
+.wl-environment {
+  position: relative;
+  min-height: 100vh;
+  color: var(--wl-ink);
+  background:
+    radial-gradient(
+      circle at 12% 6%,
+      rgba(83, 148, 255, 0.18),
+      transparent 28%
+    ),
+    radial-gradient(
+      circle at 92% 15%,
+      rgba(144, 101, 255, 0.14),
+      transparent 28%
+    ),
+    radial-gradient(
+      circle at 55% 92%,
+      rgba(47, 214, 231, 0.12),
+      transparent 30%
+    ),
+    linear-gradient(145deg, var(--wl-bg), var(--wl-bg-2));
+  background-attachment: fixed;
+}
+
+/* 环境呼吸光团：仅 transform/opacity，避免 layout/paint 抖动（§10.3） */
+.wl-environment::before,
+.wl-environment::after {
+  content: '';
+  position: fixed;
+  z-index: -1;
+  width: 40vw;
+  height: 40vw;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.16;
+  pointer-events: none;
+  animation: wl-ambient-breathe 9s ease-in-out infinite alternate;
+}
+
+.wl-environment::before {
+  left: -18vw;
+  top: 15vh;
+  background: #5d9cff;
+}
+
+.wl-environment::after {
+  right: -16vw;
+  top: 45vh;
+  background: #8f6bff;
+  animation-delay: -4s;
+}
+
+@keyframes wl-ambient-breathe {
+  from {
+    transform: scale(0.94) translate3d(0, 0, 0);
+    opacity: 0.12;
+  }
+  to {
+    transform: scale(1.08) translate3d(2vw, -1vh, 0);
+    opacity: 0.22;
+  }
+}
+
+/* ── G1 浮动导航玻璃：Dock、顶栏、模式切换（高模糊、高透明、细描边） ── */
+.wl-glass-nav {
+  background: var(--wl-glass-nav);
+  border: 1px solid var(--wl-border);
+  backdrop-filter: blur(var(--wl-blur-nav)) saturate(155%);
+  -webkit-backdrop-filter: blur(var(--wl-blur-nav)) saturate(155%);
+}
+
+/* ── G2 导航与目录玻璃：目录树、证据栏、活动栏 ── */
+.wl-glass-panel {
+  background: var(--wl-glass-panel);
+  border: 1px solid var(--wl-border);
+  backdrop-filter: blur(var(--wl-blur-panel)) saturate(135%);
+  -webkit-backdrop-filter: blur(var(--wl-blur-panel)) saturate(135%);
+}
+
+/* ── G3 专业内容面：综合意见、解析结果、表格、复核表单 ── */
+.wl-glass-content {
+  background: var(--wl-glass-content);
+  border: 1px solid var(--wl-border);
+  border-radius: var(--wl-radius-panel);
+  box-shadow: var(--wl-shadow-1);
+}
+
+/* G3 软填充：嵌套在玻璃面内部的子卡，不再叠加 backdrop-filter（§9.4） */
+.wl-glass-soft {
+  background: var(--wl-glass-soft);
+  border: 1px solid var(--wl-border);
+  border-radius: var(--wl-radius-md);
+}
+
+/* ── G4 原文与关键输入：PDF、代码、长表格、输入框，实体底色 ── */
+.wl-surface-solid {
+  background: var(--wl-surface-solid);
+  border: 1px solid var(--wl-border);
+  border-radius: var(--wl-radius-md);
+}
+
+/* ── 不支持 backdrop-filter 的浏览器：更高不透明度实体回退（§9.4） ── */
+@supports not (
+  (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))
+) {
+  .wl-glass-nav,
+  .wl-glass-panel {
+    background: rgba(248, 250, 255, 0.96);
+  }
+
+  html[data-wl-theme='dark'] .wl-glass-nav,
+  html[data-wl-theme='dark'] .wl-glass-panel {
+    background: rgba(18, 25, 38, 0.96);
+  }
+}
+
+/* ── 焦点轮廓：玻璃背景上不隐藏键盘焦点（§10.2） ── */
+.wl-environment button:focus-visible,
+.wl-environment a:focus-visible,
+.wl-environment input:focus-visible,
+.wl-environment textarea:focus-visible,
+.wl-environment select:focus-visible,
+.wl-environment [role='treeitem']:focus-visible {
+  outline: 2px solid var(--wl-accent);
+  outline-offset: 2px;
+}

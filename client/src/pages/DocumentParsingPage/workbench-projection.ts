@@ -3,6 +3,7 @@ import type {
   CanonicalIntegratedAssessmentProjection,
   CanonicalOpenClawOverallProjection,
   CanonicalReaderProjection,
+  CanonicalReaderTranslationProjection,
   CanonicalWorkbenchAuditProjection,
 } from '@shared/api.interface';
 
@@ -18,6 +19,65 @@ interface ReaderCapability {
 
 interface ReaderProjectionInput {
   readerProjection: CanonicalReaderProjection | null;
+}
+
+interface TranslationViewInfo {
+  capability: ReaderCapabilityStatus;
+  headline: string;
+  detail: string;
+  ownerSourceReaderConsumptionAllowed: boolean;
+  bilingualTranslationConsumptionAllowed: boolean;
+}
+
+/**
+ * Consume the Host-derived two-axis translation projection. The browser only
+ * renders what the Host derived: it never re-derives an axis, matches
+ * translation rows, or treats `translation_pending` as bilingual readiness.
+ */
+function describeTranslationProjection(
+  translation: CanonicalReaderTranslationProjection,
+): TranslationViewInfo {
+  if (translation.status === 'UNAVAILABLE') {
+    return {
+      capability: 'UNAVAILABLE',
+      headline: '中英文对照暂不可用',
+      detail: `${translation.reason}。页面不会推断或补造译文。`,
+      ownerSourceReaderConsumptionAllowed: false,
+      bilingualTranslationConsumptionAllowed: false,
+    };
+  }
+  const axes = translation.axes;
+  if (translation.status === 'BILINGUAL_READING_AID_AVAILABLE') {
+    return {
+      capability: 'AVAILABLE',
+      headline: '双语阅读辅助可用（owner 提供为准）',
+      detail: `翻译单元 ${axes.translatedUnitCount}/${axes.translationRequiredUnitCount}，待生成 ${axes.pendingTranslationUnitCount}。`,
+      ownerSourceReaderConsumptionAllowed:
+        axes.ownerSourceReaderConsumptionAllowed,
+      bilingualTranslationConsumptionAllowed:
+        axes.bilingualTranslationConsumptionAllowed,
+    };
+  }
+  if (translation.status === 'SOURCE_CURRENT_TRANSLATION_PENDING') {
+    return {
+      capability: 'LIMITED',
+      headline: '原文阅读投影当前；译文待生成',
+      detail: `翻译单元 ${axes.translatedUnitCount}/${axes.translationRequiredUnitCount}，待生成 ${axes.pendingTranslationUnitCount}。已有译文计数仅展示，不提升双语轴。`,
+      ownerSourceReaderConsumptionAllowed:
+        axes.ownerSourceReaderConsumptionAllowed,
+      bilingualTranslationConsumptionAllowed:
+        axes.bilingualTranslationConsumptionAllowed,
+    };
+  }
+  return {
+    capability: 'UNAVAILABLE',
+    headline: '翻译投影存在缺口（GAP）',
+    detail: `未满足的 owner 守卫：${axes.failureReasons.join('、') || '未提供'}。两条消费轴均关闭。`,
+    ownerSourceReaderConsumptionAllowed:
+      axes.ownerSourceReaderConsumptionAllowed,
+    bilingualTranslationConsumptionAllowed:
+      axes.bilingualTranslationConsumptionAllowed,
+  };
 }
 
 interface AssessmentBusinessContent {
@@ -105,6 +165,9 @@ function buildReaderCapabilities(
   const locatedUnitCount: number =
     projection?.units.filter((unit) => unit.sourceLocators.length > 0).length ??
     0;
+  const translationView: TranslationViewInfo | null = projection
+    ? describeTranslationProjection(projection.translation)
+    : null;
 
   return [
     {
@@ -112,24 +175,24 @@ function buildReaderCapabilities(
       label: 'PDF 原文',
       status: projection ? projection.pdfPreview.status : 'UNAVAILABLE',
       note: projection
-        ? `Host PDF 预览状态：${projection.pdfPreview.status} · ${projection.pdfPreview.reason}`
-        : '当前 WorkItem 没有 Reader projection，无法确认 PDF 预览能力。',
+        ? `PDF 预览：${projection.pdfPreview.status} · ${projection.pdfPreview.reason}`
+        : '当前事项没有 Reader projection，尚无可用的 PDF 预览。',
     },
     {
       mode: 'structured',
       label: '结构化原文',
       status: projection ? 'AVAILABLE' : 'UNAVAILABLE',
       note: projection
-        ? `当前查询返回 ${projection.units.length} 个单元，${locatedUnitCount} 个带 source locator。`
-        : '当前 WorkItem 尚无可查询的 Host Reader projection。',
+        ? `当前查询返回 ${projection.units.length} 个单元（内容单元），${locatedUnitCount} 个带 source locator、可定位到原文。`
+        : '当前事项没有 Reader projection，尚无可查询的结构化原文。',
     },
     {
       mode: 'bilingual',
       label: '中英文对照',
-      status: projection ? projection.translation.status : 'UNAVAILABLE',
-      note: projection
-        ? `Host 双语投影状态：${projection.translation.status} · ${projection.translation.reason}`
-        : '当前 WorkItem 没有 Reader projection，页面不会推断或补造译文。',
+      status: translationView ? translationView.capability : 'UNAVAILABLE',
+      note: translationView
+        ? `${translationView.detail} · 原文轴 ${translationView.ownerSourceReaderConsumptionAllowed ? '开放' : '关闭'} / 双语轴 ${translationView.bilingualTranslationConsumptionAllowed ? '开放' : '关闭'}`
+        : '当前事项没有 Reader projection；页面不会推断或补造译文。',
     },
   ];
 }
@@ -171,16 +234,16 @@ function buildAssessmentSemantics(
   if (unboundReaderCount > 0) {
     gaps.push({
       code: 'READER_SOURCE_BINDING_MISSING',
-      label: 'Reader 来源绑定不完整',
-      detail: `${unboundReaderCount} 个查询结果没有 sourceRef。`,
+      label: '部分结果尚未关联原文',
+      detail: `${unboundReaderCount} 个查询结果还不能定位到原文。`,
       authority: 'HOST_READER_AUDIT',
     });
   }
   if (dynamic && dynamic.unresolvedCount > 0) {
     gaps.push({
       code: 'DYNAMIC_ITEMS_UNRESOLVED',
-      label: '动态规则项未闭合',
-      detail: `${dynamic.unresolvedCount} 个规则项仍需输入或复核。`,
+      label: '逐项评估尚未闭合',
+      detail: `${dynamic.unresolvedCount} 个评估项仍需补充信息或复核。`,
       authority: 'HOST_DYNAMIC_EVALUATION',
     });
   }
@@ -196,7 +259,7 @@ function buildAssessmentSemantics(
     gaps.push({
       code: 'OVERALL_CANDIDATE_MISSING',
       label: '整体候选尚未形成',
-      detail: 'Host 尚未返回基于当前动态结果的整体候选。',
+      detail: '基于当前逐项结果的综合意见尚未形成。',
       authority: 'HOST_OVERALL_SYNTHESIS',
     });
   }
@@ -204,7 +267,7 @@ function buildAssessmentSemantics(
     gaps.push({
       code: 'OVERALL_CANDIDATE_STALE',
       label: '整体候选已过期',
-      detail: overall.staleReason ?? 'Host 将当前整体候选标记为 STALE。',
+      detail: overall.staleReason ?? '当前综合意见需要根据新信息更新。',
       authority: 'HOST_OVERALL_SYNTHESIS',
     });
   }
@@ -256,7 +319,7 @@ function buildAssessmentSemantics(
       : null,
     gaps,
     boundary:
-      '所有状态均为同一 WorkItem 的 Host 候选投影，不构成工程、适航或发布结论。',
+      '页面展示的是同一工程事项的候选意见；在工程师确认前，不构成工程、适航或发布结论。',
   };
 }
 
@@ -264,6 +327,7 @@ export {
   buildAssessmentBusinessContent,
   buildAssessmentSemantics,
   buildReaderCapabilities,
+  describeTranslationProjection,
   findReaderProjectionUnit,
   getReaderViewMode,
 };
@@ -275,4 +339,5 @@ export type {
   ReaderCapability,
   ReaderProjectionInput,
   ReaderViewMode,
+  TranslationViewInfo,
 };

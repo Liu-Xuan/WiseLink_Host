@@ -29,6 +29,12 @@ export async function getCanonicalHostIdentityContext(): Promise<CanonicalHostId
   if (response.status === 401 || response.status === 403) {
     throw new Error('CANONICAL_HOST_IDENTITY_REQUIRED');
   }
+  if (response.status < 200 || response.status >= 300) {
+    throw backendResponseError(
+      response.data,
+      'CANONICAL_HOST_IDENTITY_UNAVAILABLE',
+    );
+  }
   return response.data;
 }
 
@@ -62,6 +68,12 @@ export async function getLibraryIndex(
     if (response.status === 403 || response.status === 404) {
       throw canonicalObjectNotFound();
     }
+    if (response.status < 200 || response.status >= 300) {
+      throw backendResponseError(
+        response.data,
+        'CANONICAL_LIBRARY_UNAVAILABLE',
+      );
+    }
     return response.data;
   } catch (error) {
     logger.error('读取 WorkItem LibraryIndex fresh projection 失败', error);
@@ -86,6 +98,12 @@ export async function getDocumentParsingPage(
     }
     if (response.status === 403 || response.status === 404) {
       throw canonicalObjectNotFound();
+    }
+    if (response.status < 200 || response.status >= 300) {
+      throw backendResponseError(
+        response.data,
+        'CANONICAL_DOCUMENT_VIEW_UNAVAILABLE',
+      );
     }
     return response.data;
   } catch (error) {
@@ -123,6 +141,17 @@ function canonicalObjectNotFound(): Error & {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
+}
+
+function backendResponseError(data: unknown, fallback: string): Error {
+  if (
+    isRecord(data) &&
+    typeof data.message === 'string' &&
+    data.message.trim()
+  ) {
+    return new Error(data.message);
+  }
+  return new Error(fallback);
 }
 
 export async function recordEngineerReview(

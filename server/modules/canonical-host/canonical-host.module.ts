@@ -37,6 +37,7 @@ import {
   CANONICAL_PDF_PRODUCER,
   CANONICAL_PERMISSION_SNAPSHOT,
   CANONICAL_WORK_ITEM_REGISTRAR,
+  SCOPED_PROFESSIONAL_ARTIFACT_CORRELATION,
 } from './canonical-host.constants';
 import type { CanonicalHostBindingState } from './canonical-host.types';
 import { MiaodaCanonicalWorkItemRegistrarAdapter } from '../work-item/miaoda-canonical-work-item-registrar.adapter';
@@ -67,6 +68,10 @@ import {
   CANONICAL_SERVICE_SCOPE_AUTHORIZATION,
   UnavailableCanonicalServiceScopeAuthorization,
 } from './canonical-service-scope.authorization';
+import {
+  MiaodaScopedProfessionalArtifactCorrelationAdapter,
+  UnavailableScopedProfessionalArtifactCorrelationAdapter,
+} from './scoped-professional-artifact-correlation.port';
 
 export interface CanonicalHostModuleOptions {
   imports?: ModuleMetadata['imports'];
@@ -80,6 +85,7 @@ export interface CanonicalHostModuleOptions {
   baseRuleResultProvider?: Provider;
   openClawOverallProvider?: Provider;
   serviceScopeAuthorizationProvider?: Provider;
+  professionalArtifactCorrelationProvider?: Provider;
 }
 
 @Module({
@@ -118,6 +124,12 @@ export interface CanonicalHostModuleOptions {
     CanonicalHostLibraryIndexService,
     CanonicalHostAeoService,
     UnavailableCanonicalServiceScopeAuthorization,
+    UnavailableScopedProfessionalArtifactCorrelationAdapter,
+    MiaodaScopedProfessionalArtifactCorrelationAdapter,
+    {
+      provide: SCOPED_PROFESSIONAL_ARTIFACT_CORRELATION,
+      useExisting: MiaodaScopedProfessionalArtifactCorrelationAdapter,
+    },
     {
       provide: CANONICAL_EXECUTOR_SERVICE_SCOPE_AUTHORIZATION,
       useExisting: UnavailableCanonicalServiceScopeAuthorization,
@@ -184,6 +196,12 @@ export class CanonicalHostModule {
       UnavailableCanonicalServiceScopeAuthorization,
       'CANONICAL_EXECUTOR_SERVICE_SCOPE_AUTHORIZATION_PROVIDER_INVALID',
     );
+    const professionalArtifactCorrelationProvider = resolveProvider(
+      options.professionalArtifactCorrelationProvider,
+      SCOPED_PROFESSIONAL_ARTIFACT_CORRELATION,
+      MiaodaScopedProfessionalArtifactCorrelationAdapter,
+      'SCOPED_PROFESSIONAL_ARTIFACT_CORRELATION_PROVIDER_INVALID',
+    );
     const binding: CanonicalHostBindingState = {
       mode:
         options.workItemRegistrarProvider &&
@@ -232,6 +250,7 @@ export class CanonicalHostModule {
         baseRuleResultProvider,
         openClawOverallProvider,
         serviceScopeAuthorizationProvider,
+        professionalArtifactCorrelationProvider,
         {
           provide: CANONICAL_HOST_CLOCK,
           useClass: SystemCanonicalHostClockAdapter,

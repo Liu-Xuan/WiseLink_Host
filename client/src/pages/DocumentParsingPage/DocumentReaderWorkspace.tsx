@@ -9,6 +9,7 @@ import type {
 
 import {
   buildReaderCapabilities,
+  describeTranslationProjection,
   type ReaderCapability,
   type ReaderViewMode,
 } from './workbench-projection';
@@ -50,6 +51,9 @@ export function DocumentReaderWorkspace({
   const capabilities: ReaderCapability[] = buildReaderCapabilities({
     readerProjection: data.readerProjection ?? null,
   });
+  const translationView = data.readerProjection
+    ? describeTranslationProjection(data.readerProjection.translation)
+    : null;
   const activeCapability: ReaderCapability =
     capabilities.find(
       (capability: ReaderCapability) => capability.mode === readerMode,
@@ -95,16 +99,15 @@ export function DocumentReaderWorkspace({
       </div>
       <div className="parse-reader-capability-strip" aria-live="polite">
         <strong>{activeCapability.note}</strong>
-        <span>Host projection · CURRENT_WORKITEM_ONLY</span>
+        <span>当前事项 · 结构化原文</span>
       </div>
 
       {readerMode === 'source' ? (
         <section className="parse-reader-source-view" aria-label="PDF 原文绑定">
           <div>
-            <span>DOCUMENTVERSION SOURCE</span>
-            <strong>{data.workItem.source.documentVersionId}</strong>
+            <span>受控文件来源</span>
+            <strong>已绑定当前文件版本</strong>
             <p>
-              文件标识：{data.workItem.source.sourceArtifactId} ·{' '}
               {data.workItem.source.sourceByteLength.toLocaleString()} bytes
             </p>
           </div>
@@ -130,16 +133,23 @@ export function DocumentReaderWorkspace({
         <section className="parse-reader-missing-state" aria-label="双语视图">
           <Languages aria-hidden="true" />
           <div>
-            <strong>
-              {data.readerProjection?.translation.status === 'UNAVAILABLE'
-                ? '中英文对照暂不可用'
-                : '双语视图状态未知'}
-            </strong>
+            <strong>{translationView?.headline ?? '中英文对照暂不可用'}</strong>
             <p>
-              {data.readerProjection?.translation.reason ??
-                'TRANSLATION_PROJECTION_MISSING'}
-              。页面不会推断或补造译文。
+              {translationView?.detail ?? 'TRANSLATION_PROJECTION_MISSING'}
+              。页面不会推断或补造译文，两条消费轴由 Host 派生。
             </p>
+            {translationView ? (
+              <small>
+                原文轴：
+                {translationView.ownerSourceReaderConsumptionAllowed
+                  ? '开放'
+                  : '关闭'}{' '}
+                · 双语轴：
+                {translationView.bilingualTranslationConsumptionAllowed
+                  ? '开放'
+                  : '关闭'}
+              </small>
+            ) : null}
           </div>
         </section>
       ) : null}

@@ -33,6 +33,8 @@ export function HostedDevelopmentIntake() {
   const [uploaded, setUploaded] = useState<UploadedSelection | null>(null);
   const [phase, setPhase] = useState<IntakePhase>('idle');
   const [error, setError] = useState<string | null>(null);
+  const busy =
+    phase === 'uploading' || phase === 'creating' || phase === 'readback';
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const next = acceptedFiles[0] ?? null;
@@ -46,7 +48,7 @@ export function HostedDevelopmentIntake() {
     }
     if (!next.name.toLowerCase().endsWith('.pdf')) {
       setFile(null);
-      setError('当前纵切仅接受 PDF。');
+      setError('当前入口仅接受 PDF。');
       return;
     }
     if (next.size <= 0 || next.size > MAX_PDF_BYTES) {
@@ -61,11 +63,9 @@ export function HostedDevelopmentIntake() {
     accept: { 'application/pdf': ['.pdf'] },
     maxFiles: 1,
     multiple: false,
+    disabled: busy,
     onDrop,
   });
-
-  const busy =
-    phase === 'uploading' || phase === 'creating' || phase === 'readback';
 
   async function createWorkItem(): Promise<void> {
     if (!file || busy) return;
@@ -132,18 +132,15 @@ export function HostedDevelopmentIntake() {
   return (
     <section className="hosted-intake" aria-labelledby="hosted-intake-title">
       <div className="hosted-intake-copy">
-        <span className="library-section-label">HOSTED DEV INTAKE</span>
-        <h2 id="hosted-intake-title">上传真实 PDF 并新建隔离事项</h2>
+        <span className="library-section-label">受控资料上传</span>
+        <h2 id="hosted-intake-title">上传 PDF 并新建工程事项</h2>
         <p>
-          文件先进入当前用户的妙搭 FileService 默认 bucket；Host
-          随后按实际字节校验 hash/size、形成 DocumentVersion 与
-          WorkItem，并以同一用户 fresh-read。
+          文件先进入当前用户的受控文件空间；系统随后按实际字节校验文件、
+          形成文件版本与工程事项，并立即校验资料关联与完整性。
         </p>
         <div className="hosted-intake-boundary">
           <ShieldCheck aria-hidden="true" />
-          <span>
-            仅 hosted native SSO + DEV 角色；本地 Host 与非本人文件均拒绝。
-          </span>
+          <span>仅限已授权用户；非本人文件与未授权环境均拒绝。</span>
         </div>
       </div>
 
@@ -151,6 +148,11 @@ export function HostedDevelopmentIntake() {
         <div
           {...getRootProps({
             className: `hosted-intake-drop${isDragActive ? ' is-active' : ''}`,
+            role: 'button',
+            'aria-label': file
+              ? `更换 PDF 文件，当前为 ${file.name}`
+              : '选择一个 PDF 文件',
+            'aria-disabled': busy,
           })}
         >
           <input {...getInputProps()} />
@@ -224,14 +226,14 @@ function safePdfName(fileName: string): string {
 }
 
 function phaseLabel(phase: IntakePhase, uploaded: boolean): string {
-  if (phase === 'uploading') return '上传 FileService…';
-  if (phase === 'creating') return 'Host 校验并创建…';
+  if (phase === 'uploading') return '上传受控文件…';
+  if (phase === 'creating') return '校验并创建…';
   if (phase === 'readback') return '同用户回读…';
-  if (phase === 'failed' && uploaded) return '重新提交 Host';
-  return '上传并创建 DEV WorkItem';
+  if (phase === 'failed' && uploaded) return '重新提交';
+  return '上传并创建测试事项';
 }
 
 function intakeError(reason: unknown): string {
   if (reason instanceof Error && reason.message.trim()) return reason.message;
-  return 'Hosted DEV 纵切失败，请保留当前文件后重试。';
+  return '工程事项创建失败，请保留当前文件后重试。';
 }

@@ -10,6 +10,7 @@ import RoutesComponent from './app.tsx';
 import './index.css';
 import { createPortal } from 'react-dom';
 import { Toaster } from '@client/src/components/ui/sonner';
+import { WlThemeProvider } from '@client/src/app/providers/ThemeProvider';
 
 const CLIENT_BASE_PATH = process.env.CLIENT_BASE_PATH || '/';
 
@@ -25,8 +26,10 @@ const MainApp = () => {
             />
           )}
         >
-          <RoutesComponent />
-          {createPortal(<Toaster />, document.body)}
+          <WlThemeProvider>
+            <RoutesComponent />
+            {createPortal(<Toaster />, document.body)}
+          </WlThemeProvider>
         </ErrorBoundary>
       </AppContainer>
     </BrowserRouter>

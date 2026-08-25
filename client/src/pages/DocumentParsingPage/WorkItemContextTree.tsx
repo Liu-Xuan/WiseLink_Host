@@ -21,6 +21,7 @@ type WorkbenchNode =
   | 'package'
   | 'reader'
   | 'assessment'
+  | 'review'
   | 'overall'
   | 'aeo';
 
@@ -105,7 +106,7 @@ export function WorkItemContextTree({
       </div>
       <footer>
         <span>{nodes.length} 个上下文节点</span>
-        <small>由服务端 fresh-read 生成，不维护浏览器目录真源。</small>
+        <small>目录随当前工程事项的最新资料更新。</small>
       </footer>
     </aside>
   );
@@ -157,7 +158,9 @@ function targetByNode(value: CanonicalLibraryIndexNode['targetNode']): string {
   return 'workspace-aeo';
 }
 
-function stateFor(node: CanonicalLibraryIndexNode): 'ready' | 'waiting' | 'attention' {
+function stateFor(
+  node: CanonicalLibraryIndexNode,
+): 'ready' | 'waiting' | 'attention' {
   if (node.state.includes('STALE') || node.state.includes('FAILED')) {
     return 'attention';
   }

@@ -28,11 +28,11 @@ export function WorkItemContextDock({
   const candidateState: string = overall?.status ?? 'WAITING_CANDIDATE';
   const steps: ContextStep[] = [
     {
-      label: 'DocumentVersion',
+      label: '文件版本已绑定',
       done: Boolean(data.workItem.source.documentVersionId),
     },
-    { label: 'frozen.2 + Reader', done: Boolean(data.workItem.package) },
-    { label: 'OpenClaw 动态 N', done: Boolean(integrated?.baseRules) },
+    { label: '结构化原文', done: Boolean(data.workItem.package) },
+    { label: '动态评估', done: Boolean(integrated?.baseRules) },
     {
       label: '整体候选',
       done: overall?.status === 'CANDIDATE_ONLY',
@@ -44,10 +44,10 @@ export function WorkItemContextDock({
     <aside className="workitem-context-dock" aria-label="当前工程事项摘要">
       <header>
         <div>
-          <span>WORK ITEM INSPECTOR</span>
-          <strong>{data.workItem.phase}</strong>
+          <span>工程事项进度</span>
+          <strong>{phaseLabel(data.workItem.phase)}</strong>
         </div>
-        <small>revision {data.workItem.revision}</small>
+        <small>当前版本 r{data.workItem.revision}</small>
       </header>
 
       <section className="workitem-context-steps" aria-label="事项阶段">
@@ -64,38 +64,41 @@ export function WorkItemContextDock({
         ))}
       </section>
 
-      <dl>
-        <div>
-          <dt>读取授权</dt>
-          <dd>{data.readAuthorization.action}</dd>
-        </div>
-        <div>
-          <dt>权限快照</dt>
-          <dd title={data.readAuthorization.permissionSnapshotVersion}>
-            {short(data.readAuthorization.permissionSnapshotVersion)}
-          </dd>
-        </div>
-        <div>
-          <dt>候选状态</dt>
-          <dd>{candidateState}</dd>
-        </div>
-        <div>
-          <dt>缺口 / 未闭合</dt>
-          <dd>{unresolvedCount}</dd>
-        </div>
-        <div>
-          <dt>页面状态</dt>
-          <dd>{data.status}</dd>
-        </div>
-        <div>
-          <dt>审计步骤</dt>
-          <dd>{audit.candidateFormationSteps.length}</dd>
-        </div>
-        <div>
-          <dt>时间线事件</dt>
-          <dd>{timeline.events.length}</dd>
-        </div>
-      </dl>
+      <details>
+        <summary>运行与版本详情</summary>
+        <dl>
+          <div>
+            <dt>读取授权</dt>
+            <dd>{data.readAuthorization.action}</dd>
+          </div>
+          <div>
+            <dt>权限快照</dt>
+            <dd title={data.readAuthorization.permissionSnapshotVersion}>
+              {short(data.readAuthorization.permissionSnapshotVersion)}
+            </dd>
+          </div>
+          <div>
+            <dt>候选状态</dt>
+            <dd>{candidateState}</dd>
+          </div>
+          <div>
+            <dt>缺口 / 未闭合</dt>
+            <dd>{unresolvedCount}</dd>
+          </div>
+          <div>
+            <dt>页面状态</dt>
+            <dd>{data.status}</dd>
+          </div>
+          <div>
+            <dt>审计步骤</dt>
+            <dd>{audit.candidateFormationSteps.length}</dd>
+          </div>
+          <div>
+            <dt>时间线事件</dt>
+            <dd>{timeline.events.length}</dd>
+          </div>
+        </dl>
+      </details>
 
       <Button
         type="button"
@@ -105,7 +108,7 @@ export function WorkItemContextDock({
         data-ai-section-type="button"
       >
         <RefreshCw aria-hidden="true" />
-        {refreshing ? '正在 fresh-read…' : '刷新当前 WorkItem'}
+        {refreshing ? '正在读取最新结果…' : '刷新当前工程事项'}
       </Button>
       <Link
         to={`/external-discovery?workItemId=${encodeURIComponent(
@@ -114,13 +117,27 @@ export function WorkItemContextDock({
       >
         查看外部资料候选 <ArrowUpRight aria-hidden="true" />
       </Link>
-      <p>
-        检查器只呈现 Host 的 revision、权限、候选和人工边界；不承接旧应用状态。
-      </p>
+      <p>此处仅展示当前事项的版本、权限、候选意见和人工确认边界。</p>
     </aside>
   );
 }
 
 function short(value: string): string {
   return value.length > 24 ? `${value.slice(0, 14)}…${value.slice(-7)}` : value;
+}
+
+function phaseLabel(value: string): string {
+  const normalized = value.trim().toUpperCase();
+  if (normalized.includes('BLOCK')) return '需要处理阻断';
+  if (normalized.includes('RUN') || normalized.includes('PROCESS')) {
+    return '分析进行中';
+  }
+  if (normalized.includes('WAIT') || normalized.includes('PENDING')) {
+    return '等待必要输入';
+  }
+  if (normalized.includes('REVIEW')) return '等待工程师复核';
+  if (normalized.includes('COMPLETE') || normalized.includes('CURRENT')) {
+    return '当前结果可复核';
+  }
+  return '工程评估处理中';
 }
