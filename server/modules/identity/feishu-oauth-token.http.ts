@@ -1,9 +1,11 @@
 import { Injectable } from '@nestjs/common';
 
+import type { FeishuOAuthTokenApiVersion } from './oauth-config.port';
+
 export const FEISHU_OAUTH_TOKEN_HTTP = Symbol('FEISHU_OAUTH_TOKEN_HTTP');
 
 /**
- * Response from the official Feishu OAuth v3 token endpoint
+ * Response from an official Feishu OAuth token endpoint
  * (authorization_code grant). Only fields needed for identity
  * verification are captured.
  */
@@ -42,25 +44,31 @@ export type FeishuOAuthTokenFailureReporter = (
   diagnostic: FeishuOAuthTokenFailureDiagnostic,
 ) => void;
 
+export interface FeishuOAuthTokenRequest {
+  /** Selected by strict server configuration before OAuth start. */
+  apiVersion: FeishuOAuthTokenApiVersion;
+  clientId: string;
+  clientSecret: string;
+  code: string;
+  redirectUri: string;
+  /** PKCE code_verifier — required for both selected official contracts. */
+  codeVerifier: string;
+}
+
 export interface FeishuOAuthTokenHttpPort {
   /**
-   * Exchanges an authorization_code for an access_token via the official
-   * Feishu OAuth v3 token endpoint. Returns null on any failure
+   * Exchanges an authorization_code for an access_token via exactly one
+   * server-selected official Feishu token endpoint. Returns null on any failure
    * (HTTP error, API error, network, timeout, malformed response).
    */
-  fetchToken(input: {
-    clientId: string;
-    clientSecret: string;
-    code: string;
-    redirectUri: string;
-    /** PKCE code_verifier — required (PKCE is always used). */
-    codeVerifier: string;
-  }): Promise<FeishuOAuthTokenResponse | null>;
+  fetchToken(
+    input: FeishuOAuthTokenRequest,
+  ): Promise<FeishuOAuthTokenResponse | null>;
 }
 
 /**
- * Minimal fetch-like transport signature for the Feishu OAuth v3 token
- * endpoint. Structurally compatible with the global `fetch` so that
+ * Minimal fetch-like transport signature for the Feishu OAuth token
+ * endpoints. Structurally compatible with the global `fetch` so that
  * production wiring can pass `globalThis.fetch`, while tests inject
  * a trivial mock.
  */
@@ -79,44 +87,40 @@ export type FeishuOAuthTokenFetch = (
 }>;
 
 /**
- * Default adapter — always returns null (unavailable) because
- * no Feishu OAuth app credentials are configured. A future
- * HttpFeishuOAuthTokenAdapter will replace this once the Feishu
- * client_id/client_secret and redirect_uri are provisioned.
+ * Explicit unavailable adapter for fail-closed development probes and tests.
+ * It never performs network I/O.
  */
 @Injectable()
 // eslint-disable-next-line @darraghor/nestjs-typed/injectable-should-be-provided
 export class UnavailableFeishuOAuthTokenHttpAdapter
   implements FeishuOAuthTokenHttpPort
 {
-  async fetchToken(_input: {
-    clientId: string;
-    clientSecret: string;
-    code: string;
-    redirectUri: string;
-    codeVerifier: string;
-  }): Promise<FeishuOAuthTokenResponse | null> {
+  async fetchToken(
+    _input: FeishuOAuthTokenRequest,
+  ): Promise<FeishuOAuthTokenResponse | null> {
     return null;
   }
 }
 
 /**
- * HTTP adapter that calls the official Feishu OAuth v3 token endpoint
- * (accounts.feishu.cn/oauth/v3/token) with a server-injected
- * authorization_code. Designed for DEV/UAT manual injection — NOT
- * registered in IdentityModule. The project default environment never
- * instantiates this class, so it never networks.
+ * HTTP adapter that calls exactly one server-selected official Feishu OAuth
+ * token endpoint with a server-held authorization_code + PKCE verifier.
+ * v2 is an explicitly selected, R08-approved temporary DEV/UAT compatibility
+ * contract; v3 remains the default and long-term contract. A failure never
+ * retries against the other endpoint.
  *
  * Fail-closed: non-2xx, API code non-zero, network error, timeout/abort,
  * or malformed JSON/fields all return null — never throws, never logs
  * client_secret, code, or token.
  */
 @Injectable()
-// Private seam — not wired in any module; supplied via manual / custom
-// provider in DEV/UAT only.
+// Supplied through IdentityModule; the static lint rule cannot follow the
+// Symbol token provider.
 // eslint-disable-next-line @darraghor/nestjs-typed/injectable-should-be-provided
 export class HttpFeishuOAuthTokenAdapter implements FeishuOAuthTokenHttpPort {
-  private static readonly TOKEN_URL =
+  private static readonly V2_TOKEN_URL =
+    'https://open.feishu.cn/open-apis/authen/v2/oauth/token';
+  private static readonly V3_TOKEN_URL =
     'https://accounts.feishu.cn/oauth/v3/token';
   private static readonly DEFAULT_TIMEOUT_MS = 5000;
 
@@ -127,20 +131,24 @@ export class HttpFeishuOAuthTokenAdapter implements FeishuOAuthTokenHttpPort {
       undefined,
   ) {}
 
-  async fetchToken(input: {
-    clientId: string;
-    clientSecret: string;
-    code: string;
-    redirectUri: string;
-    codeVerifier: string;
-  }): Promise<FeishuOAuthTokenResponse | null> {
-    const { clientId, clientSecret, code, redirectUri, codeVerifier } = input;
+  async fetchToken(
+    input: FeishuOAuthTokenRequest,
+  ): Promise<FeishuOAuthTokenResponse | null> {
+    const {
+      apiVersion,
+      clientId,
+      clientSecret,
+      code,
+      redirectUri,
+      codeVerifier,
+    } = input;
 
     // Defensive: all params must be non-empty, including codeVerifier.
     // The caller should guard these, but the adapter must be safe in
     // isolation too. PKCE is always required — a missing or blank
     // code_verifier means no fetch occurs.
     if (
+      (apiVersion !== 'v2' && apiVersion !== 'v3') ||
       !clientId ||
       clientId.trim() === '' ||
       !clientSecret ||
@@ -155,14 +163,10 @@ export class HttpFeishuOAuthTokenAdapter implements FeishuOAuthTokenHttpPort {
       return null;
     }
 
-    const body = new URLSearchParams({
-      grant_type: 'authorization_code',
-      client_id: clientId,
-      client_secret: clientSecret,
-      code,
-      redirect_uri: redirectUri,
-      code_verifier: codeVerifier,
-    }).toString();
+    const request = HttpFeishuOAuthTokenAdapter.buildRequest(input);
+    if (!request) {
+      return null;
+    }
 
     const controller = new AbortController();
     const timeoutId = setTimeout(
@@ -171,17 +175,12 @@ export class HttpFeishuOAuthTokenAdapter implements FeishuOAuthTokenHttpPort {
     );
 
     try {
-      const response = await this.fetchImpl(
-        HttpFeishuOAuthTokenAdapter.TOKEN_URL,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-          },
-          body,
-          signal: controller.signal,
-        },
-      );
+      const response = await this.fetchImpl(request.url, {
+        method: 'POST',
+        headers: request.headers,
+        body: request.body,
+        signal: controller.signal,
+      });
 
       let jsonBody: unknown;
       try {
@@ -232,8 +231,43 @@ export class HttpFeishuOAuthTokenAdapter implements FeishuOAuthTokenHttpPort {
     }
   }
 
+  private static buildRequest(
+    input: FeishuOAuthTokenRequest,
+  ): { url: string; headers: Record<string, string>; body: string } | null {
+    const fields = {
+      grant_type: 'authorization_code',
+      client_id: input.clientId,
+      client_secret: input.clientSecret,
+      code: input.code,
+      redirect_uri: input.redirectUri,
+      code_verifier: input.codeVerifier,
+    };
+
+    if (input.apiVersion === 'v2') {
+      return {
+        url: HttpFeishuOAuthTokenAdapter.V2_TOKEN_URL,
+        headers: {
+          'Content-Type': 'application/json;charset=utf-8',
+        },
+        body: JSON.stringify(fields),
+      };
+    }
+
+    if (input.apiVersion === 'v3') {
+      return {
+        url: HttpFeishuOAuthTokenAdapter.V3_TOKEN_URL,
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams(fields).toString(),
+      };
+    }
+
+    return null;
+  }
+
   /**
-   * Parse the Feishu OAuth v3 token response body. Returns null when:
+   * Parse the official Feishu OAuth v2/v3 token response body. Returns null when:
    * - body is not a JSON object
    * - top-level `code` is a non-zero number (API-level error)
    * - `access_token` is missing, non-string, or empty
@@ -242,8 +276,8 @@ export class HttpFeishuOAuthTokenAdapter implements FeishuOAuthTokenHttpPort {
    *
    * `refresh_token` is optional — null when absent or non-string.
    *
-   * Note: the token endpoint's success response has no `code` field;
-   * error responses include a non-zero numeric `code`.
+   * v2 success includes `code: 0`; v3 success may omit `code`. Both official
+   * error forms include a non-zero numeric `code` and/or allowlisted `error`.
    */
   private static parseToken(body: unknown): FeishuOAuthTokenResponse | null {
     if (typeof body !== 'object' || body === null || Array.isArray(body)) {
@@ -252,7 +286,7 @@ export class HttpFeishuOAuthTokenAdapter implements FeishuOAuthTokenHttpPort {
 
     const obj = body as Record<string, unknown>;
 
-    // Token endpoint success responses have no `code` field.
+    // v3 success may omit `code`; v2 success includes `code: 0`.
     // Error responses include a non-zero numeric `code` — fail closed.
     if (typeof obj.code === 'number' && obj.code !== 0) {
       return null;

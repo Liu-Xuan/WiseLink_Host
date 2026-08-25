@@ -75,11 +75,11 @@ export class OauthFlowController {
     @Res() response: Response,
   ): Promise<void> {
     // Fail-closed: when OAuth is not configured, return 503.
-    if (!this.oauthConfig.configured) {
+    if (!this.oauthConfig.configured || !this.oauthConfig.tokenApiVersion) {
       response.status(503).json({
         code: 'IDENTITY_OAUTH_NOT_CONFIGURED',
         message:
-          'Feishu OAuth is not configured. Set FEISHU_OAUTH_CLIENT_ID, FEISHU_OAUTH_CLIENT_SECRET, and FEISHU_OAUTH_REDIRECT_URI.',
+          'Feishu OAuth is not configured. Set the required credentials, redirect URI, and a supported token API version.',
         statusCode: 503,
       });
       return;
@@ -138,7 +138,7 @@ export class OauthFlowController {
     @Res() response: Response,
   ): Promise<void> {
     // Fail-closed: not configured
-    if (!this.oauthConfig.configured) {
+    if (!this.oauthConfig.configured || !this.oauthConfig.tokenApiVersion) {
       response.status(503).json({
         code: 'IDENTITY_OAUTH_NOT_CONFIGURED',
         message: 'Feishu OAuth is not configured.',
@@ -183,6 +183,7 @@ export class OauthFlowController {
     const clientId = this.oauthConfig.clientId!;
     const clientSecret = process.env.FEISHU_OAUTH_CLIENT_SECRET;
     const redirectUri = this.oauthConfig.redirectUri!;
+    const tokenApiVersion = this.oauthConfig.tokenApiVersion;
 
     if (!clientSecret) {
       response.status(503).json({
@@ -195,6 +196,7 @@ export class OauthFlowController {
 
     // 3. Server-side token exchange with PKCE
     const tokenResponse = await this.tokenHttp.fetchToken({
+      apiVersion: tokenApiVersion,
       clientId,
       clientSecret,
       code,

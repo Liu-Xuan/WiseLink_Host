@@ -2,6 +2,15 @@ import { Injectable } from '@nestjs/common';
 
 export const OAUTH_CONFIG = Symbol('OAUTH_CONFIG');
 
+export type FeishuOAuthTokenApiVersion = 'v2' | 'v3';
+
+/**
+ * R08-approved, temporary official compatibility mode for DEV/UAT only.
+ * The long-term/default token contract remains v3.
+ */
+export const FEISHU_OAUTH_V2_COMPATIBILITY_MODE =
+  'OFFICIAL_TEMPORARY_COMPATIBILITY' as const;
+
 /**
  * Server-side OAuth configuration port.
  *
@@ -20,7 +29,13 @@ export interface OAuthConfigPort {
   readonly clientId: string | null;
   /** The Hosted SPA callback URL registered with Feishu. */
   readonly redirectUri: string | null;
-  /** True only when clientId + clientSecret + redirectUri are all present. */
+  /**
+   * Official token endpoint selected before OAuth start. Unknown runtime
+   * values are represented as null so the flow fails closed before state
+   * issuance. An absent setting defaults to the long-term v3 contract.
+   */
+  readonly tokenApiVersion: FeishuOAuthTokenApiVersion | null;
+  /** True only when credentials, redirect URI, and token version are valid. */
   readonly configured: boolean;
   readonly applicationScopeId: 'app_17bzc551rsg';
   readonly sessionEnvironment: 'preview' | 'runtime';
@@ -30,8 +45,8 @@ export interface OAuthConfigPort {
  * Default adapter — reads from process.env at construction time.
  *
  * In the project default environment (no .env, no provisioned Feishu
- * app), every field is null and `configured` is false → all OAuth-flow
- * endpoints return 503.
+ * app), credentials/redirect are null and `configured` is false → all
+ * OAuth-flow endpoints return 503. The absent version setting resolves to v3.
  */
 @Injectable()
 // Supplied through IdentityModule; the static lint rule cannot follow the
@@ -42,16 +57,23 @@ export class EnvOauthConfigAdapter implements OAuthConfigPort {
   readonly sessionEnvironment = 'preview' as const;
   private readonly _clientId: string | null;
   private readonly _redirectUri: string | null;
+  private readonly _tokenApiVersion: FeishuOAuthTokenApiVersion | null;
   private readonly _configured: boolean;
 
   constructor() {
     const clientId = process.env.FEISHU_OAUTH_CLIENT_ID;
     const clientSecret = process.env.FEISHU_OAUTH_CLIENT_SECRET;
     const redirectUri = process.env.FEISHU_OAUTH_REDIRECT_URI;
+    const tokenApiVersion = resolveTokenApiVersion(
+      process.env.FEISHU_OAUTH_TOKEN_API_VERSION,
+    );
 
     this._clientId = clientId || null;
     this._redirectUri = redirectUri || null;
-    this._configured = Boolean(clientId && clientSecret && redirectUri);
+    this._tokenApiVersion = tokenApiVersion;
+    this._configured = Boolean(
+      clientId && clientSecret && redirectUri && tokenApiVersion,
+    );
   }
 
   get clientId(): string | null {
@@ -62,7 +84,23 @@ export class EnvOauthConfigAdapter implements OAuthConfigPort {
     return this._redirectUri;
   }
 
+  get tokenApiVersion(): FeishuOAuthTokenApiVersion | null {
+    return this._tokenApiVersion;
+  }
+
   get configured(): boolean {
     return this._configured;
   }
+}
+
+function resolveTokenApiVersion(
+  configuredValue: string | undefined,
+): FeishuOAuthTokenApiVersion | null {
+  if (configuredValue === undefined) {
+    return 'v3';
+  }
+  if (configuredValue === 'v2' || configuredValue === 'v3') {
+    return configuredValue;
+  }
+  return null;
 }

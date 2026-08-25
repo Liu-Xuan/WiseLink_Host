@@ -107,6 +107,7 @@ describe('official OAuth -> persistent session G0', () => {
       configured: true,
       clientId: 'cli_aadde8b579f95bc9',
       redirectUri: 'https://host/client/oauth/callback',
+      tokenApiVersion: 'v3',
       applicationScopeId: 'app_17bzc551rsg',
       sessionEnvironment: 'preview',
     });
@@ -143,6 +144,7 @@ describe('official OAuth -> persistent session G0', () => {
         configured: true,
         clientId: 'cli_aadde8b579f95bc9',
         redirectUri: 'https://hv5zjf4j8yb.feishuapp.com/app/app_17bzc551rsg/client/oauth/callback',
+        tokenApiVersion: 'v3',
         applicationScopeId: 'app_17bzc551rsg',
         sessionEnvironment: 'preview',
       },
@@ -165,6 +167,7 @@ describe('official OAuth -> persistent session G0', () => {
         configured: true,
         clientId: 'cli_aadde8b579f95bc9',
         redirectUri: 'https://hv5zjf4j8yb.feishuapp.com/app/app_17bzc551rsg/client/oauth/callback',
+        tokenApiVersion: 'v3',
         applicationScopeId: 'app_17bzc551rsg',
         sessionEnvironment: 'preview',
       },
