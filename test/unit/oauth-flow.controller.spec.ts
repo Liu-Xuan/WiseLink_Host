@@ -13,6 +13,7 @@ const configured = {
   clientId: 'cli_aadde8b579f95bc9',
   redirectUri: 'https://hv5zjf4j8yb.feishuapp.com/app/app_17bzc551rsg/client/oauth/callback',
   tokenApiVersion: 'v3' as const,
+  mappingBootstrap: { kind: 'DISABLED' as const },
   applicationScopeId: 'app_17bzc551rsg' as const,
   sessionEnvironment: 'preview' as const,
 };

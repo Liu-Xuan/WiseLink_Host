@@ -208,6 +208,7 @@ function realResolver(store: { validate: jest.Mock }) {
     clientId: 'cli_aadde8b579f95bc9',
     redirectUri: 'https://host/client/oauth/callback',
     tokenApiVersion: 'v3',
+    mappingBootstrap: { kind: 'DISABLED' },
     applicationScopeId: 'app_17bzc551rsg',
     sessionEnvironment: 'preview',
   });

@@ -11,6 +11,18 @@ export type FeishuOAuthTokenApiVersion = 'v2' | 'v3';
 export const FEISHU_OAUTH_V2_COMPATIBILITY_MODE =
   'OFFICIAL_TEMPORARY_COMPATIBILITY' as const;
 
+export const FEISHU_OAUTH_MAPPING_BOOTSTRAP_MODE =
+  'OFFICIAL_ONE_TIME_ISOLATED_DEV' as const;
+
+export type OAuthMappingBootstrapConfig =
+  | { readonly kind: 'DISABLED' }
+  | { readonly kind: 'INVALID' }
+  | {
+      readonly kind: 'ENABLED';
+      readonly mode: typeof FEISHU_OAUTH_MAPPING_BOOTSTRAP_MODE;
+      readonly miaodaTenantId: string;
+    };
+
 /**
  * Server-side OAuth configuration port.
  *
@@ -35,6 +47,8 @@ export interface OAuthConfigPort {
    * issuance. An absent setting defaults to the long-term v3 contract.
    */
   readonly tokenApiVersion: FeishuOAuthTokenApiVersion | null;
+  /** Default-off, one-time DEV mapping bootstrap; never accepts caller data. */
+  readonly mappingBootstrap: OAuthMappingBootstrapConfig;
   /** True only when credentials, redirect URI, and token version are valid. */
   readonly configured: boolean;
   readonly applicationScopeId: 'app_17bzc551rsg';
@@ -58,6 +72,7 @@ export class EnvOauthConfigAdapter implements OAuthConfigPort {
   private readonly _clientId: string | null;
   private readonly _redirectUri: string | null;
   private readonly _tokenApiVersion: FeishuOAuthTokenApiVersion | null;
+  private readonly _mappingBootstrap: OAuthMappingBootstrapConfig;
   private readonly _configured: boolean;
 
   constructor() {
@@ -67,10 +82,15 @@ export class EnvOauthConfigAdapter implements OAuthConfigPort {
     const tokenApiVersion = resolveTokenApiVersion(
       process.env.FEISHU_OAUTH_TOKEN_API_VERSION,
     );
+    const mappingBootstrap = resolveMappingBootstrap(
+      process.env.FEISHU_OAUTH_MAPPING_BOOTSTRAP_MODE,
+      process.env.FEISHU_OAUTH_MAPPING_BOOTSTRAP_MIAODA_TENANT_ID,
+    );
 
     this._clientId = clientId || null;
     this._redirectUri = redirectUri || null;
     this._tokenApiVersion = tokenApiVersion;
+    this._mappingBootstrap = mappingBootstrap;
     this._configured = Boolean(
       clientId && clientSecret && redirectUri && tokenApiVersion,
     );
@@ -88,9 +108,33 @@ export class EnvOauthConfigAdapter implements OAuthConfigPort {
     return this._tokenApiVersion;
   }
 
+  get mappingBootstrap(): OAuthMappingBootstrapConfig {
+    return this._mappingBootstrap;
+  }
+
   get configured(): boolean {
     return this._configured;
   }
+}
+
+function resolveMappingBootstrap(
+  configuredMode: string | undefined,
+  configuredTenantId: string | undefined,
+): OAuthMappingBootstrapConfig {
+  if (configuredMode === undefined || configuredMode === '') {
+    return { kind: 'DISABLED' };
+  }
+  if (configuredMode !== FEISHU_OAUTH_MAPPING_BOOTSTRAP_MODE) {
+    return { kind: 'INVALID' };
+  }
+  if (!configuredTenantId || configuredTenantId.trim() === '') {
+    return { kind: 'INVALID' };
+  }
+  return {
+    kind: 'ENABLED',
+    mode: FEISHU_OAUTH_MAPPING_BOOTSTRAP_MODE,
+    miaodaTenantId: configuredTenantId,
+  };
 }
 
 function resolveTokenApiVersion(
