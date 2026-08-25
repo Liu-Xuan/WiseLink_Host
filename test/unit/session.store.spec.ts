@@ -1,6 +1,9 @@
 import 'reflect-metadata';
 
-import { SessionStore } from '../../server/modules/identity/session.store';
+import {
+  HOST_SESSION_ABSOLUTE_TTL_MS,
+  SessionStore,
+} from '../../server/modules/identity/session.store';
 import type { VerifiedIdentity } from '../../server/modules/identity/identity.types';
 
 const identity: VerifiedIdentity = {
@@ -55,6 +58,23 @@ function repository() {
 }
 
 describe('SessionStore persistent opaque-session contract', () => {
+  it('issues one fixed seven-day absolute lifetime', async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-08-26T00:00:00.000Z'));
+    try {
+      const repo = repository();
+      const created = await new SessionStore(repo as never).create(identity);
+      expect(created.expiresAt.getTime() - Date.now()).toBe(
+        HOST_SESSION_ABSOLUTE_TTL_MS,
+      );
+      expect(
+        repo.createSession.mock.calls[0][0].expiresAt.getTime() - Date.now(),
+      ).toBe(HOST_SESSION_ABSOLUTE_TTL_MS);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('creates and validates a database-backed session', async () => {
     const repo = repository(); const store = new SessionStore(repo as never);
     const created = await store.create(identity);
@@ -79,6 +99,22 @@ describe('SessionStore persistent opaque-session contract', () => {
     const created = await store.create(identity);
     await expect(store.validate(created.token)).resolves.not.toBeNull();
     await expect(store.validate(created.token)).resolves.not.toBeNull();
+  });
+
+  it('does not slide the absolute expiry during validation', async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-08-26T00:00:00.000Z'));
+    try {
+      const repo = repository();
+      const store = new SessionStore(repo as never);
+      const created = await store.create(identity);
+      jest.advanceTimersByTime(24 * 60 * 60 * 1000);
+      const validated = await store.validate(created.token);
+      expect(validated?.expiresAt).toEqual(created.expiresAt);
+      expect([...repo.rows.values()][0].expiresAt).toEqual(created.expiresAt);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('rejects a never-issued token', async () => {

@@ -11,10 +11,10 @@ export interface ValidatedSession {
   identity: VerifiedIdentity;
 }
 
+export const HOST_SESSION_ABSOLUTE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
 @Injectable()
 export class SessionStore {
-  private static readonly TTL_MS = 30 * 60 * 1000;
-
   constructor(private readonly repository: IdentityRepository) {}
 
   async create(identity: VerifiedIdentity): Promise<{
@@ -25,7 +25,9 @@ export class SessionStore {
   }> {
     const token = randomBytes(32).toString('base64url');
     const now = new Date();
-    const expiresAt = new Date(now.getTime() + SessionStore.TTL_MS);
+    const expiresAt = new Date(
+      now.getTime() + HOST_SESSION_ABSOLUTE_TTL_MS,
+    );
     const persisted = await this.repository.createSession({
       tokenHash: digest(token),
       subjectMappingId: identity.subjectMappingId,
