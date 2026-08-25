@@ -18,7 +18,7 @@ export const OAUTH_CONFIG = Symbol('OAUTH_CONFIG');
 export interface OAuthConfigPort {
   /** Feishu OAuth app client_id (e.g. "cli_xxx"). Null when unconfigured. */
   readonly clientId: string | null;
-  /** The server's own callback URL. Null when unconfigured. */
+  /** The Hosted SPA callback URL registered with Feishu. */
   readonly redirectUri: string | null;
   /** True only when clientId + clientSecret + redirectUri are all present. */
   readonly configured: boolean;
