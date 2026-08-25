@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   HttpException,
@@ -30,16 +29,6 @@ export class OauthSessionDevelopmentWorkItemController {
       );
     }
     const input = developmentRunBody(body);
-    if (!input.documentVersionId) {
-      throw new BadRequestException({
-        code: 'OAUTH_SESSION_DOCUMENT_VERSION_REQUIRED',
-        message:
-          'OAuth session creation consumes an existing current DocumentVersion owned by the mapped Miaoda user.',
-      });
-    }
-    return this.workItems.createOauthSessionDevelopmentRun(
-      { ...input, documentVersionId: input.documentVersionId },
-      session.actor,
-    );
+    return this.workItems.createOauthSessionDevelopmentRun(input, session.actor);
   }
 }

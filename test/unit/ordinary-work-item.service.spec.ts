@@ -345,6 +345,99 @@ describe('OrdinaryWorkItemService run identity', () => {
     }
   });
 
+  it('uses only the verified OAuth session actor for a same-user FileService selection', async () => {
+    const targetValue = target();
+    targetValue.documentManagement.ingestFileServiceSelection.mockResolvedValue(
+      { documentVersionId: 'document-version-sb' },
+    );
+    const previousSandbox = process.env.SANDBOX_ID;
+    const previousLocal = process.env.MIAODA_LOCAL_DEV;
+    process.env.SANDBOX_ID = 'unit-hosted-sandbox';
+    delete process.env.MIAODA_LOCAL_DEV;
+    try {
+      await expect(
+        targetValue.service.createOauthSessionDevelopmentRun(
+          {
+            selection: {
+              bucketId: 'bucket-default',
+              filePath:
+                'wiselink/dev-intake/0f8fad5b-d9cb-469f-a165-70867728950e/source.pdf',
+            },
+            developmentRunToken: '22222222-2222-4222-8222-222222222222',
+            query: 'applicability',
+          },
+          {
+            principalKind: 'FINAL_USER',
+            transport: 'MIAODA_AUTHENTICATED_HTTP',
+            canonicalSubject: {
+              namespace: 'MIAODA_USER_ID',
+              id: ACTOR.userId,
+            },
+            subjectDecision: {
+              source: 'FEISHU_OAUTH_USER_ACCESS_TOKEN',
+              applicationScopeId: ACTOR.appId,
+              tenantId: ACTOR.tenantId,
+              version: 'feishu-oauth-verified.v1',
+              decidedAt: '2026-08-26T00:00:00.000Z',
+            },
+            tenantId: ACTOR.tenantId,
+            applicationScopeId: ACTOR.appId,
+            applicationScopeProvenance: 'HOST_CONFIGURED_MIAODA_APP_ID',
+            workspaceId: null,
+            workspaceProvenance: 'UNAVAILABLE',
+            env: 'preview',
+            platformRoles: [],
+            identityProvenance: 'FEISHU_OAUTH_USER_ACCESS_TOKEN',
+            feishuUserId: null,
+            feishuOpenId: 'official-open-id',
+            feishuIdentityProvenance: 'FEISHU_OAUTH_USER_ACCESS_TOKEN',
+            sessionId: 'session-id',
+            sessionRevision: 1,
+            sessionProvenance: 'SERVER_OPAQUE_SESSION',
+          },
+        ),
+      ).resolves.toMatchObject({
+        workItemCreated: true,
+        result: { workItem: { workItemId: 'WI-NEW-SB' } },
+      });
+
+      expect(
+        targetValue.documentManagement.assertCanIngest,
+      ).toHaveBeenCalledWith(
+        {
+          actorUserId: ACTOR.userId,
+          tenantId: ACTOR.tenantId,
+          roles: ['wiselink_development'],
+          appId: ACTOR.appId,
+          env: 'preview',
+        },
+        {
+          bucketId: 'bucket-default',
+          filePath:
+            'wiselink/dev-intake/0f8fad5b-d9cb-469f-a165-70867728950e/source.pdf',
+        },
+      );
+      expect(targetValue.resolver.resolve).toHaveBeenCalledWith(
+        'document-version-sb',
+        {
+          requireCurrent: true,
+          expectedCreatorUserId: ACTOR.userId,
+        },
+      );
+      expect(targetValue.repository.reserve).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tenantId: ACTOR.tenantId,
+          actorUserId: ACTOR.userId,
+          documentVersionId: 'document-version-sb',
+          runKey: 'dev:22222222-2222-4222-8222-222222222222',
+        }),
+      );
+    } finally {
+      restoreProcessEnv('SANDBOX_ID', previousSandbox);
+      restoreProcessEnv('MIAODA_LOCAL_DEV', previousLocal);
+    }
+  });
+
   it('rejects a runtime development create before every downstream I/O', async () => {
     const targetValue = target();
     const previousSandbox = process.env.SANDBOX_ID;
