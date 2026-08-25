@@ -18,6 +18,30 @@ export interface FeishuOAuthTokenResponse {
   refreshToken: string | null;
 }
 
+export type FeishuOAuthTokenFailureClassification =
+  | 'UPSTREAM_HTTP_ERROR'
+  | 'UPSTREAM_OAUTH_ERROR'
+  | 'MALFORMED_RESPONSE'
+  | 'NETWORK_ERROR'
+  | 'TIMEOUT';
+
+/**
+ * Allowlisted diagnostics for a failed token exchange. This deliberately
+ * excludes request fields, response descriptions, credentials, protocol
+ * material, and tokens.
+ */
+export interface FeishuOAuthTokenFailureDiagnostic {
+  event: 'FEISHU_OAUTH_TOKEN_EXCHANGE_FAILED';
+  classification: FeishuOAuthTokenFailureClassification;
+  httpStatus?: number;
+  upstreamCode?: number;
+  upstreamError?: string;
+}
+
+export type FeishuOAuthTokenFailureReporter = (
+  diagnostic: FeishuOAuthTokenFailureDiagnostic,
+) => void;
+
 export interface FeishuOAuthTokenHttpPort {
   /**
    * Exchanges an authorization_code for an access_token via the official
@@ -99,6 +123,8 @@ export class HttpFeishuOAuthTokenAdapter implements FeishuOAuthTokenHttpPort {
   constructor(
     private readonly fetchImpl: FeishuOAuthTokenFetch,
     private readonly timeoutMs: number = HttpFeishuOAuthTokenAdapter.DEFAULT_TIMEOUT_MS,
+    private readonly reportFailure: FeishuOAuthTokenFailureReporter = () =>
+      undefined,
   ) {}
 
   async fetchToken(input: {
@@ -157,16 +183,49 @@ export class HttpFeishuOAuthTokenAdapter implements FeishuOAuthTokenHttpPort {
         },
       );
 
-      if (!response.ok) {
+      let jsonBody: unknown;
+      try {
+        jsonBody = await response.json();
+      } catch {
+        this.reportFailure({
+          event: 'FEISHU_OAUTH_TOKEN_EXCHANGE_FAILED',
+          classification: response.ok
+            ? 'MALFORMED_RESPONSE'
+            : 'UPSTREAM_HTTP_ERROR',
+          httpStatus: response.status,
+        });
         return null;
       }
 
-      const jsonBody: unknown = await response.json();
-      return HttpFeishuOAuthTokenAdapter.parseToken(jsonBody);
+      if (!response.ok) {
+        this.reportFailure(
+          HttpFeishuOAuthTokenAdapter.classifyFailure(
+            jsonBody,
+            response.status,
+            'UPSTREAM_HTTP_ERROR',
+          ),
+        );
+        return null;
+      }
+
+      const token = HttpFeishuOAuthTokenAdapter.parseToken(jsonBody);
+      if (!token) {
+        this.reportFailure(
+          HttpFeishuOAuthTokenAdapter.classifyFailure(
+            jsonBody,
+            response.status,
+            'MALFORMED_RESPONSE',
+          ),
+        );
+      }
+      return token;
     } catch {
-      // Swallow ALL errors — network failure, abort/timeout, JSON parse
-      // error, etc. Never rethrow; never log (secret/code/token could
-      // be in error).
+      this.reportFailure({
+        event: 'FEISHU_OAUTH_TOKEN_EXCHANGE_FAILED',
+        classification: controller.signal.aborted
+          ? 'TIMEOUT'
+          : 'NETWORK_ERROR',
+      });
       return null;
     } finally {
       clearTimeout(timeoutId);
@@ -221,6 +280,45 @@ export class HttpFeishuOAuthTokenAdapter implements FeishuOAuthTokenHttpPort {
       tokenType,
       expiresIn,
       refreshToken: typeof refreshToken === 'string' ? refreshToken : null,
+    };
+  }
+
+  private static classifyFailure(
+    body: unknown,
+    httpStatus: number,
+    fallback: FeishuOAuthTokenFailureClassification,
+  ): FeishuOAuthTokenFailureDiagnostic {
+    const base: FeishuOAuthTokenFailureDiagnostic = {
+      event: 'FEISHU_OAUTH_TOKEN_EXCHANGE_FAILED',
+      classification: fallback,
+      httpStatus,
+    };
+
+    if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+      return base;
+    }
+
+    const obj = body as Record<string, unknown>;
+    const upstreamCode =
+      typeof obj.code === 'number' &&
+      Number.isFinite(obj.code) &&
+      obj.code !== 0
+        ? obj.code
+        : undefined;
+    const upstreamError =
+      typeof obj.error === 'string' &&
+      /^[A-Za-z0-9._-]{1,64}$/u.test(obj.error)
+        ? obj.error
+        : undefined;
+
+    return {
+      ...base,
+      classification:
+        upstreamCode !== undefined || upstreamError !== undefined
+          ? 'UPSTREAM_OAUTH_ERROR'
+          : fallback,
+      ...(upstreamCode !== undefined ? { upstreamCode } : {}),
+      ...(upstreamError !== undefined ? { upstreamError } : {}),
     };
   }
 }

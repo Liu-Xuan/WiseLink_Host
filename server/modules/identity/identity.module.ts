@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Logger, Module } from '@nestjs/common';
 
 import {
   IDENTITY_VERIFICATION,
@@ -11,6 +11,7 @@ import {
 import {
   FEISHU_OAUTH_TOKEN_HTTP,
   HttpFeishuOAuthTokenAdapter,
+  type FeishuOAuthTokenFailureDiagnostic,
   type FeishuOAuthTokenFetch,
 } from './feishu-oauth-token.http';
 import {
@@ -62,10 +63,16 @@ import { IdentityRepository } from './identity.repository';
 
     {
       provide: FEISHU_OAUTH_TOKEN_HTTP,
-      useFactory: () =>
-        new HttpFeishuOAuthTokenAdapter(
+      useFactory: () => {
+        const logger = new Logger(HttpFeishuOAuthTokenAdapter.name);
+        return new HttpFeishuOAuthTokenAdapter(
           globalThis.fetch as unknown as FeishuOAuthTokenFetch,
-        ),
+          5000,
+          (diagnostic: FeishuOAuthTokenFailureDiagnostic) => {
+            logger.warn(JSON.stringify(diagnostic));
+          },
+        );
+      },
     },
     {
       provide: FEISHU_USER_INFO_HTTP,
