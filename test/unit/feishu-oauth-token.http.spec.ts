@@ -3,6 +3,7 @@ import 'reflect-metadata';
 import {
   HttpFeishuOAuthTokenAdapter,
   UnavailableFeishuOAuthTokenHttpAdapter,
+  type FeishuOAuthTokenFailureDiagnostic,
   type FeishuOAuthTokenFetch,
   type FeishuOAuthTokenResponse,
 } from '../../server/modules/identity/feishu-oauth-token.http';
@@ -228,15 +229,85 @@ describe('HttpFeishuOAuthTokenAdapter', () => {
 
   // ── T8: API-level error (code !== 0) → null ──
   it('returns null when Feishu API code is non-zero', async () => {
+    const diagnostics: FeishuOAuthTokenFailureDiagnostic[] = [];
     const fetchImpl = recordingFetch(
       makeResponse(true, 200, {
-        code: 99991663,
-        msg: 'invalid grant code',
+        code: 20049,
+        error: 'invalid_grant',
+        error_description: `must never log ${CODE_VERIFIER}`,
       }),
     );
-    const adapter = new HttpFeishuOAuthTokenAdapter(fetchImpl);
+    const adapter = new HttpFeishuOAuthTokenAdapter(
+      fetchImpl,
+      5000,
+      (diagnostic) => diagnostics.push(diagnostic),
+    );
 
     expect(await adapter.fetchToken(VALID_INPUT)).toBeNull();
+    expect(diagnostics).toEqual([
+      {
+        event: 'FEISHU_OAUTH_TOKEN_EXCHANGE_FAILED',
+        classification: 'UPSTREAM_OAUTH_ERROR',
+        httpStatus: 200,
+        upstreamCode: 20049,
+        upstreamError: 'invalid_grant',
+      },
+    ]);
+    expect(JSON.stringify(diagnostics)).not.toContain(CODE_VERIFIER);
+  });
+
+  it('reports only allowlisted fields for a non-2xx OAuth error', async () => {
+    const diagnostics: FeishuOAuthTokenFailureDiagnostic[] = [];
+    const fetchImpl = recordingFetch(
+      makeResponse(false, 400, {
+        code: 20002,
+        error: 'invalid_client',
+        error_description: `${CLIENT_SECRET} ${CODE}`,
+      }),
+    );
+    const adapter = new HttpFeishuOAuthTokenAdapter(
+      fetchImpl,
+      5000,
+      (diagnostic) => diagnostics.push(diagnostic),
+    );
+
+    expect(await adapter.fetchToken(VALID_INPUT)).toBeNull();
+    expect(diagnostics).toEqual([
+      {
+        event: 'FEISHU_OAUTH_TOKEN_EXCHANGE_FAILED',
+        classification: 'UPSTREAM_OAUTH_ERROR',
+        httpStatus: 400,
+        upstreamCode: 20002,
+        upstreamError: 'invalid_client',
+      },
+    ]);
+    const output = JSON.stringify(diagnostics);
+    expect(output).not.toContain(CLIENT_SECRET);
+    expect(output).not.toContain(CODE);
+  });
+
+  it('does not propagate an unsafe upstream error string', async () => {
+    const diagnostics: FeishuOAuthTokenFailureDiagnostic[] = [];
+    const fetchImpl = recordingFetch(
+      makeResponse(false, 400, {
+        error: `invalid grant ${CODE}`,
+      }),
+    );
+    const adapter = new HttpFeishuOAuthTokenAdapter(
+      fetchImpl,
+      5000,
+      (diagnostic) => diagnostics.push(diagnostic),
+    );
+
+    expect(await adapter.fetchToken(VALID_INPUT)).toBeNull();
+    expect(diagnostics).toEqual([
+      {
+        event: 'FEISHU_OAUTH_TOKEN_EXCHANGE_FAILED',
+        classification: 'UPSTREAM_HTTP_ERROR',
+        httpStatus: 400,
+      },
+    ]);
+    expect(JSON.stringify(diagnostics)).not.toContain(CODE);
   });
 
   // ── T9: success response with code: 0 is accepted ──
@@ -310,12 +381,23 @@ describe('HttpFeishuOAuthTokenAdapter', () => {
 
   // ── T12: network error (fetch rejects) → null, never throws ──
   it('returns null when fetch rejects with a network error', async () => {
+    const diagnostics: FeishuOAuthTokenFailureDiagnostic[] = [];
     const fetchImpl: FeishuOAuthTokenFetch = jest
       .fn()
       .mockRejectedValue(new TypeError('fetch failed: ENOTFOUND'));
-    const adapter = new HttpFeishuOAuthTokenAdapter(fetchImpl);
+    const adapter = new HttpFeishuOAuthTokenAdapter(
+      fetchImpl,
+      5000,
+      (diagnostic) => diagnostics.push(diagnostic),
+    );
 
     await expect(adapter.fetchToken(VALID_INPUT)).resolves.toBeNull();
+    expect(diagnostics).toEqual([
+      {
+        event: 'FEISHU_OAUTH_TOKEN_EXCHANGE_FAILED',
+        classification: 'NETWORK_ERROR',
+      },
+    ]);
   });
 
   // ── T13: timeout/abort → null, never throws ──
@@ -332,14 +414,49 @@ describe('HttpFeishuOAuthTokenAdapter', () => {
 
   // ── T14: json() rejects → null ──
   it('returns null when response.json() throws', async () => {
+    const diagnostics: FeishuOAuthTokenFailureDiagnostic[] = [];
     const fetchImpl: FeishuOAuthTokenFetch = jest.fn().mockResolvedValue({
       ok: true,
       status: 200,
       json: () => Promise.reject(new SyntaxError('Unexpected token <')),
     });
-    const adapter = new HttpFeishuOAuthTokenAdapter(fetchImpl);
+    const adapter = new HttpFeishuOAuthTokenAdapter(
+      fetchImpl,
+      5000,
+      (diagnostic) => diagnostics.push(diagnostic),
+    );
 
     expect(await adapter.fetchToken(VALID_INPUT)).toBeNull();
+    expect(diagnostics).toEqual([
+      {
+        event: 'FEISHU_OAUTH_TOKEN_EXCHANGE_FAILED',
+        classification: 'MALFORMED_RESPONSE',
+        httpStatus: 200,
+      },
+    ]);
+  });
+
+  it('classifies a non-JSON non-2xx response as upstream HTTP error', async () => {
+    const diagnostics: FeishuOAuthTokenFailureDiagnostic[] = [];
+    const fetchImpl: FeishuOAuthTokenFetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 502,
+      json: () => Promise.reject(new SyntaxError('Unexpected token <')),
+    });
+    const adapter = new HttpFeishuOAuthTokenAdapter(
+      fetchImpl,
+      5000,
+      (diagnostic) => diagnostics.push(diagnostic),
+    );
+
+    expect(await adapter.fetchToken(VALID_INPUT)).toBeNull();
+    expect(diagnostics).toEqual([
+      {
+        event: 'FEISHU_OAUTH_TOKEN_EXCHANGE_FAILED',
+        classification: 'UPSTREAM_HTTP_ERROR',
+        httpStatus: 502,
+      },
+    ]);
   });
 
   // ── T15: AbortController signal is passed to fetch ──
