@@ -9,6 +9,7 @@ import type {
 
 import {
   buildReaderCapabilities,
+  describeTranslationProjection,
   type ReaderCapability,
   type ReaderViewMode,
 } from './workbench-projection';
@@ -50,6 +51,9 @@ export function DocumentReaderWorkspace({
   const capabilities: ReaderCapability[] = buildReaderCapabilities({
     readerProjection: data.readerProjection ?? null,
   });
+  const translationView = data.readerProjection
+    ? describeTranslationProjection(data.readerProjection.translation)
+    : null;
   const activeCapability: ReaderCapability =
     capabilities.find(
       (capability: ReaderCapability) => capability.mode === readerMode,
@@ -130,16 +134,23 @@ export function DocumentReaderWorkspace({
         <section className="parse-reader-missing-state" aria-label="双语视图">
           <Languages aria-hidden="true" />
           <div>
-            <strong>
-              {data.readerProjection?.translation.status === 'UNAVAILABLE'
-                ? '中英文对照暂不可用'
-                : '双语视图状态未知'}
-            </strong>
+            <strong>{translationView?.headline ?? '中英文对照暂不可用'}</strong>
             <p>
-              {data.readerProjection?.translation.reason ??
-                'TRANSLATION_PROJECTION_MISSING'}
-              。页面不会推断或补造译文。
+              {translationView?.detail ?? 'TRANSLATION_PROJECTION_MISSING'}
+              。页面不会推断或补造译文，两条消费轴由 Host 派生。
             </p>
+            {translationView ? (
+              <small>
+                原文轴：
+                {translationView.ownerSourceReaderConsumptionAllowed
+                  ? '开放'
+                  : '关闭'}{' '}
+                · 双语轴：
+                {translationView.bilingualTranslationConsumptionAllowed
+                  ? '开放'
+                  : '关闭'}
+              </small>
+            ) : null}
           </div>
         </section>
       ) : null}

@@ -1014,6 +1014,103 @@ describe('CanonicalHostVerticalService', () => {
     );
   });
 
+  it('derives two-axis translation projection from a configured owner observation', async () => {
+    const request = await realRequest();
+    const bytes = await realPackageBytes();
+    const registrar = new InMemoryRegistrar();
+    const store = new InMemoryArtifactStore();
+    const observationPort = {
+      configured: true,
+      readObservation: jest.fn(),
+    };
+    const service = new CanonicalHostVerticalService(
+      registrar,
+      {
+        producePdf: jest.fn().mockResolvedValue({
+          kind: 'PACKAGE',
+          packageId:
+            'urn:techpub:package:v1:sha256:9e734a0de1c37c368b954662e9bb11036cc24b430468a073b31da127380df622',
+          contractId: 'techpub.parsed-package.v1',
+          contractRevision: 'frozen.2',
+          bytes,
+          strictReaderValidated: true,
+          executionRoute: 'test-translation-axes',
+        }),
+      },
+      authorization(),
+      permissionSnapshots(),
+      store,
+      new UnifiedReaderService(
+        store,
+        new Frozen2CandidateReaderService(),
+        fullValidator(),
+        {
+          mode: 'HOST_CONFIGURED',
+          artifactStoreConfigured: true,
+          fullU0ValidatorConfigured: true,
+          aeoSpecialistReaderConfigured: false,
+          authority:
+            'COMPOSITION_STATE_NOT_ACTIVATION_NOT_WRITE_AUTHORIZATION',
+        },
+      ),
+      entryFacade(),
+      failureReports(store, fullValidator()),
+      observationPort,
+    );
+    await service.runPdf(request, TEST_ACTOR);
+
+    // Owner reports no observation yet: both axes fail closed.
+    observationPort.readObservation.mockResolvedValueOnce(null);
+    const first = await service.page(
+      { workItemId: request.workItemId, query: request.query },
+      TEST_ACTOR,
+    );
+    expect(first.readerProjection?.translation).toEqual({
+      status: 'UNAVAILABLE',
+      reason: 'TRANSLATION_PROJECTION_NOT_AVAILABLE',
+    });
+
+    // Bind an owner observation to the exact current lineage.
+    const pkg = first.workItem.package!;
+    observationPort.readObservation.mockResolvedValueOnce({
+      schemaVersion: 'wiselink.3_1.translation_owner_observation.v0.candidate',
+      documentId: first.workItem.source.documentId,
+      revisionId: first.workItem.source.documentVersionId,
+      sourceTruth: 'StructuredBilingualDocument.units',
+      currentConsumptionAllowed: true,
+      currentnessGuardReason: null,
+      productState: 'reading_aid_available',
+      translatedUnitCount: 10,
+      pendingTranslationUnitCount: 0,
+      translationRequiredUnitCount: 10,
+      lineage: {
+        documentId: first.workItem.source.documentId,
+        revisionId: first.workItem.source.documentVersionId,
+        sbdPackageId: pkg.packageId,
+        sbdContentHash: pkg.contentHash,
+        tcpPackageId: null,
+        tcpContentHash: null,
+      },
+    });
+    const second = await service.page(
+      { workItemId: request.workItemId, query: request.query },
+      TEST_ACTOR,
+    );
+    expect(second.readerProjection?.translation).toMatchObject({
+      status: 'BILINGUAL_READING_AID_AVAILABLE',
+      axes: {
+        ownerSourceReaderConsumptionAllowed: true,
+        bilingualTranslationConsumptionAllowed: true,
+        translatedUnitCount: 10,
+        pendingTranslationUnitCount: 0,
+      },
+    });
+    expect(observationPort.readObservation).toHaveBeenCalledWith({
+      documentId: first.workItem.source.documentId,
+      revisionId: first.workItem.source.documentVersionId,
+    });
+  });
+
   it('authorizes before tenant-scoped projection read', async () => {
     const registrar = new InMemoryRegistrar();
     const authorize = authorization();

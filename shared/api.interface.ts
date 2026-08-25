@@ -85,6 +85,29 @@ export interface UnifiedReaderSourceLocator {
   bbox: number[] | null;
 }
 
+export interface CanonicalReaderTranslationAxesProjection {
+  ownerSourceReaderConsumptionAllowed: boolean;
+  bilingualTranslationConsumptionAllowed: boolean;
+  ownerProductState: string;
+  translatedUnitCount: number;
+  pendingTranslationUnitCount: number;
+  translationRequiredUnitCount: number;
+  failureReasons: string[];
+}
+
+export type CanonicalReaderTranslationProjection =
+  | {
+      status: 'UNAVAILABLE';
+      reason: 'TRANSLATION_PROJECTION_NOT_AVAILABLE';
+    }
+  | {
+      status:
+        | 'BILINGUAL_READING_AID_AVAILABLE'
+        | 'SOURCE_CURRENT_TRANSLATION_PENDING'
+        | 'TRANSLATION_GAP';
+      axes: CanonicalReaderTranslationAxesProjection;
+    };
+
 export interface CanonicalReaderProjection {
   sourceKind: UnifiedPackageSourceKind;
   structuredUnitCount: number;
@@ -101,10 +124,7 @@ export interface CanonicalReaderProjection {
     status: 'UNAVAILABLE';
     reason: 'PDF_PREVIEW_NOT_CONFIGURED';
   };
-  translation: {
-    status: 'UNAVAILABLE';
-    reason: 'TRANSLATION_PROJECTION_NOT_AVAILABLE';
-  };
+  translation: CanonicalReaderTranslationProjection;
 }
 
 export interface UnifiedReaderCandidateReceipt {
@@ -400,8 +420,7 @@ export type U0FailureRetryClass =
   | 'SAFE_WITH_SAME_INPUT';
 
 export interface U0Frozen2FailureAdapterReceipt {
-  schemaVersion:
-    'wiselink.3_1.u0_frozen2_failure_adapter_receipt.v0.candidate.1';
+  schemaVersion: 'wiselink.3_1.u0_frozen2_failure_adapter_receipt.v0.candidate.1';
   receiptId: string;
   receiptHash: string;
   adapter: {
@@ -475,8 +494,7 @@ export interface U0Frozen2FailureAdapterReceipt {
 }
 
 export interface CanonicalFailureValidationWriteReceipt {
-  schemaVersion:
-    'wiselink.3_1.failure_validation_write_receipt.v0.candidate.1';
+  schemaVersion: 'wiselink.3_1.failure_validation_write_receipt.v0.candidate.1';
   status: 'AUTHORIZED';
   receiptId: string;
   receiptHash: string;
@@ -518,10 +536,7 @@ export interface CanonicalAssessmentCandidateProjection {
   externalDiscoveryStatus: string | null;
   externalDiscoveryIsEvidence: false;
   previousOverallStale: boolean;
-  staleReason:
-    | 'ENGINEER_ITEM_SET_CHANGED'
-    | 'EXTERNAL_CONTEXT_STALE'
-    | null;
+  staleReason: 'ENGINEER_ITEM_SET_CHANGED' | 'EXTERNAL_CONTEXT_STALE' | null;
   currentContextHash: string;
   currentTransportHash: string;
   artifact: UnifiedPackageArtifactDescriptor;
@@ -564,10 +579,7 @@ export interface CanonicalOpenClawOverallProjection {
   externalDiscoveryIsEvidence: false;
   artifact: UnifiedPackageArtifactDescriptor;
   actionAttemptId: string;
-  staleReason:
-    | 'BASE_RULE_RESULT_CHANGED'
-    | 'ENGINEER_REVIEW_CHANGED'
-    | null;
+  staleReason: 'BASE_RULE_RESULT_CHANGED' | 'ENGINEER_REVIEW_CHANGED' | null;
   /** Business-readable candidate content copied from the verified overall artifact. */
   overallCandidate?: string;
   findings?: Array<{
@@ -645,9 +657,7 @@ export interface CanonicalIntegratedAssessmentProjection {
   /** Append-only, actual-byte verified human review history. */
   engineerReviews?: CanonicalEngineerReviewLedgerProjection | null;
   /** Absent on older projections; only an explicit authenticated host action sets it. */
-  overallForAeoConfirmation?:
-    | CanonicalOverallForAeoConfirmationProjection
-    | null;
+  overallForAeoConfirmation?: CanonicalOverallForAeoConfirmationProjection | null;
 }
 
 export interface CanonicalAeoCandidateArtifactProjection {
@@ -1089,10 +1099,7 @@ export interface ExternalDiscoveryCandidateView {
   url: string;
   disposition: string;
   reviewStatus: ExternalDiscoveryReviewStatus;
-  reviewDecision:
-    | 'HUMAN_SELECTED_FOR_INGEST'
-    | 'HUMAN_REJECTED'
-    | null;
+  reviewDecision: 'HUMAN_SELECTED_FOR_INGEST' | 'HUMAN_REJECTED' | null;
   reviewedByUserId: string | null;
   reviewedAt: string | null;
   eligibleForHumanSelection: boolean;

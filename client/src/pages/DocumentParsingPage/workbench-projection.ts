@@ -3,6 +3,7 @@ import type {
   CanonicalIntegratedAssessmentProjection,
   CanonicalOpenClawOverallProjection,
   CanonicalReaderProjection,
+  CanonicalReaderTranslationProjection,
   CanonicalWorkbenchAuditProjection,
 } from '@shared/api.interface';
 
@@ -18,6 +19,65 @@ interface ReaderCapability {
 
 interface ReaderProjectionInput {
   readerProjection: CanonicalReaderProjection | null;
+}
+
+interface TranslationViewInfo {
+  capability: ReaderCapabilityStatus;
+  headline: string;
+  detail: string;
+  ownerSourceReaderConsumptionAllowed: boolean;
+  bilingualTranslationConsumptionAllowed: boolean;
+}
+
+/**
+ * Consume the Host-derived two-axis translation projection. The browser only
+ * renders what the Host derived: it never re-derives an axis, matches
+ * translation rows, or treats `translation_pending` as bilingual readiness.
+ */
+function describeTranslationProjection(
+  translation: CanonicalReaderTranslationProjection,
+): TranslationViewInfo {
+  if (translation.status === 'UNAVAILABLE') {
+    return {
+      capability: 'UNAVAILABLE',
+      headline: '中英文对照暂不可用',
+      detail: `${translation.reason}。页面不会推断或补造译文。`,
+      ownerSourceReaderConsumptionAllowed: false,
+      bilingualTranslationConsumptionAllowed: false,
+    };
+  }
+  const axes = translation.axes;
+  if (translation.status === 'BILINGUAL_READING_AID_AVAILABLE') {
+    return {
+      capability: 'AVAILABLE',
+      headline: '双语阅读辅助可用（owner 提供为准）',
+      detail: `翻译单元 ${axes.translatedUnitCount}/${axes.translationRequiredUnitCount}，待生成 ${axes.pendingTranslationUnitCount}。`,
+      ownerSourceReaderConsumptionAllowed:
+        axes.ownerSourceReaderConsumptionAllowed,
+      bilingualTranslationConsumptionAllowed:
+        axes.bilingualTranslationConsumptionAllowed,
+    };
+  }
+  if (translation.status === 'SOURCE_CURRENT_TRANSLATION_PENDING') {
+    return {
+      capability: 'LIMITED',
+      headline: '原文阅读投影当前；译文待生成',
+      detail: `翻译单元 ${axes.translatedUnitCount}/${axes.translationRequiredUnitCount}，待生成 ${axes.pendingTranslationUnitCount}。已有译文计数仅展示，不提升双语轴。`,
+      ownerSourceReaderConsumptionAllowed:
+        axes.ownerSourceReaderConsumptionAllowed,
+      bilingualTranslationConsumptionAllowed:
+        axes.bilingualTranslationConsumptionAllowed,
+    };
+  }
+  return {
+    capability: 'UNAVAILABLE',
+    headline: '翻译投影存在缺口（GAP）',
+    detail: `未满足的 owner 守卫：${axes.failureReasons.join('、') || '未提供'}。两条消费轴均关闭。`,
+    ownerSourceReaderConsumptionAllowed:
+      axes.ownerSourceReaderConsumptionAllowed,
+    bilingualTranslationConsumptionAllowed:
+      axes.bilingualTranslationConsumptionAllowed,
+  };
 }
 
 interface AssessmentBusinessContent {
@@ -105,6 +165,9 @@ function buildReaderCapabilities(
   const locatedUnitCount: number =
     projection?.units.filter((unit) => unit.sourceLocators.length > 0).length ??
     0;
+  const translationView: TranslationViewInfo | null = projection
+    ? describeTranslationProjection(projection.translation)
+    : null;
 
   return [
     {
@@ -126,9 +189,9 @@ function buildReaderCapabilities(
     {
       mode: 'bilingual',
       label: '中英文对照',
-      status: projection ? projection.translation.status : 'UNAVAILABLE',
-      note: projection
-        ? `Host 双语投影状态：${projection.translation.status} · ${projection.translation.reason}`
+      status: translationView ? translationView.capability : 'UNAVAILABLE',
+      note: translationView
+        ? `${translationView.detail} · 原文轴 ${translationView.ownerSourceReaderConsumptionAllowed ? '开放' : '关闭'} / 双语轴 ${translationView.bilingualTranslationConsumptionAllowed ? '开放' : '关闭'}`
         : '当前 WorkItem 没有 Reader projection，页面不会推断或补造译文。',
     },
   ];
@@ -264,6 +327,7 @@ export {
   buildAssessmentBusinessContent,
   buildAssessmentSemantics,
   buildReaderCapabilities,
+  describeTranslationProjection,
   findReaderProjectionUnit,
   getReaderViewMode,
 };
@@ -275,4 +339,5 @@ export type {
   ReaderCapability,
   ReaderProjectionInput,
   ReaderViewMode,
+  TranslationViewInfo,
 };
