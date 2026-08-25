@@ -139,6 +139,33 @@ export const actionAttempt = pgTable("action_attempt", {
   completedAt: customTimestamptz("completed_at", { precision: 3 }),
   createdAt: customTimestamptz("created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: customTimestamptz("updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  priority: integer("priority").notNull().default(100),
+  inputRevision: integer("input_revision"),
+  baseRevision: integer("base_revision"),
+  documentVersionId: varchar("document_version_id", { length: 96 }),
+  taskEnvelopeJson: text("task_envelope_json"),
+  taskInputHash: varchar("task_input_hash", { length: 64 }),
+  resultEnvelopeJson: text("result_envelope_json"),
+  resultContentHash: varchar("result_content_hash", { length: 64 }),
+  idempotencyKey: varchar("idempotency_key", { length: 255 }),
+  claimCount: integer("claim_count").notNull().default(0),
+  retryCount: integer("retry_count").notNull().default(0),
+  maxAttempts: integer("max_attempts").notNull().default(3),
+  leaseOwner: varchar("lease_owner", { length: 160 }),
+  leaseToken: varchar("lease_token", { length: 96 }),
+  leaseGeneration: integer("lease_generation").notNull().default(0),
+  leaseExpiresAt: customTimestamptz("lease_expires_at", { precision: 3 }),
+  lastHeartbeatAt: customTimestamptz("last_heartbeat_at", { precision: 3 }),
+  nextAttemptAt: customTimestamptz("next_attempt_at", { precision: 3 }),
+  deadlineAt: customTimestamptz("deadline_at", { precision: 3 }),
+  cancelRequestedAt: customTimestamptz("cancel_requested_at", { precision: 3 }),
+  cancelReason: text("cancel_reason"),
+  terminalReason: varchar("terminal_reason", { length: 160 }),
+  projectionApplied: boolean("projection_applied").notNull().default(false),
+  executorSessionKey: varchar("executor_session_key", { length: 512 }),
+  operationRef: varchar("operation_ref", { length: 128 }),
+  commitStartedAt: customTimestamptz("commit_started_at", { precision: 3 }),
+  leaseSlot: integer("lease_slot"),
   // System field: Creator (auto-filled, do not modify)
   createdBy: userProfile("_created_by"),
   // System field: Updater (auto-filled, do not modify)
@@ -148,6 +175,20 @@ export const actionAttempt = pgTable("action_attempt", {
   uniqueIndex("uk_action_attempt_primary").on(table.workItemId, table.actionType, table.attemptNo),
   index("idx_action_attempt_status").on(table.status, table.updatedAt),
   index("idx_action_attempt_work_item").on(table.workItemId, table.attemptNo),
+  uniqueIndex("uk_action_attempt_idempotency")
+    .on(table.tenantId, table.idempotencyKey)
+    .where(sql`${table.idempotencyKey} IS NOT NULL AND ${table.status} IN ('QUEUED', 'RUNNING', 'RETRY_SCHEDULED', 'COMMITTING')`),
+  index("idx_action_attempt_due_queue").on(table.status, table.nextAttemptAt, table.priority, table.createdAt),
+  index("idx_action_attempt_lease").on(table.status, table.leaseExpiresAt),
+  uniqueIndex("uk_action_attempt_active_work_task")
+    .on(table.workItemId, table.actionType)
+    .where(sql`${table.status} IN ('QUEUED', 'RUNNING', 'RETRY_SCHEDULED', 'COMMITTING')`),
+  uniqueIndex("uk_action_attempt_operation_ref")
+    .on(table.operationRef)
+    .where(sql`${table.operationRef} IS NOT NULL`),
+  uniqueIndex("uk_action_attempt_lease_slot")
+    .on(table.tenantId, table.requestOrigin, table.leaseSlot)
+    .where(sql`${table.status} IN ('RUNNING', 'COMMITTING') AND ${table.leaseSlot} IS NOT NULL`),
   foreignKey({
     columns: [table.workItemId],
     foreignColumns: [workItem.workItemId],
@@ -460,6 +501,69 @@ export const externalDiscoveryCandidate = pgTable("external_discovery_candidate"
   )`),
 ]);
 
+/** Host-owned Feishu OAuth subject -> canonical Miaoda subject mapping. */
+export const identitySubjectMapping = pgTable("identity_subject_mapping", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  feishuOpenId: varchar("feishu_open_id", { length: 255 }).notNull(),
+  feishuTenantKey: varchar("feishu_tenant_key", { length: 255 }).notNull(),
+  feishuUserId: varchar("feishu_user_id", { length: 255 }),
+  miaodaUserId: varchar("miaoda_user_id", { length: 255 }).notNull(),
+  miaodaTenantId: varchar("miaoda_tenant_id", { length: 128 }).notNull(),
+  expectedClientId: varchar("expected_client_id", { length: 128 }).notNull(),
+  status: varchar("status", { length: 32 }).notNull().default('ACTIVE'),
+  revision: integer("revision").notNull().default(1),
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  createdBy: userProfile("_created_by"),
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedBy: userProfile("_updated_by"),
+}, (table) => [
+  uniqueIndex("uk_identity_subject_feishu_app").on(table.feishuTenantKey, table.feishuOpenId, table.expectedClientId),
+  index("idx_identity_subject_miaoda").on(table.miaodaTenantId, table.miaodaUserId),
+  check("ck_identity_subject_status", sql`${table.status} IN ('ACTIVE', 'REVOKED')`),
+  check("ck_identity_subject_revision", sql`${table.revision} > 0`),
+]);
+
+/** One-time server-side OAuth state and PKCE verifier. Raw state is never stored. */
+export const identityOauthState = pgTable("identity_oauth_state", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  stateHash: varchar("state_hash", { length: 64 }).notNull(),
+  codeVerifier: varchar("code_verifier", { length: 128 }).notNull(),
+  expiresAt: customTimestamptz("expires_at", { precision: 3 }).notNull(),
+  consumedAt: customTimestamptz("consumed_at", { precision: 3 }),
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  createdBy: userProfile("_created_by"),
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedBy: userProfile("_updated_by"),
+}, (table) => [
+  uniqueIndex("uk_identity_oauth_state_hash").on(table.stateHash),
+  index("idx_identity_oauth_state_expiry").on(table.expiresAt),
+]);
+
+/** Persistent opaque browser session. Only a SHA-256 token digest is stored. */
+export const identitySession = pgTable("identity_session", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  sessionTokenHash: varchar("session_token_hash", { length: 64 }).notNull(),
+  subjectMappingId: uuid("subject_mapping_id").notNull(),
+  feishuUserId: varchar("feishu_user_id", { length: 255 }),
+  revision: integer("revision").notNull().default(1),
+  expiresAt: customTimestamptz("expires_at", { precision: 3 }).notNull(),
+  revokedAt: customTimestamptz("revoked_at", { precision: 3 }),
+  lastSeenAt: customTimestamptz("last_seen_at", { precision: 3 }).notNull(),
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  createdBy: userProfile("_created_by"),
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedBy: userProfile("_updated_by"),
+}, (table) => [
+  uniqueIndex("uk_identity_session_token_hash").on(table.sessionTokenHash),
+  index("idx_identity_session_subject").on(table.subjectMappingId, table.expiresAt),
+  check("ck_identity_session_revision", sql`${table.revision} > 0`),
+  foreignKey({
+    columns: [table.subjectMappingId],
+    foreignColumns: [identitySubjectMapping.id],
+    name: "fk_identity_session_subject_mapping",
+  }),
+]);
+
 // table aliases
 export const actionAttemptTable = actionAttempt;
 export const dmAcquisitionTable = dmAcquisition;
@@ -471,4 +575,7 @@ export const dmPublicationFamilyTable = dmPublicationFamily;
 export const dmSourceArtifactTable = dmSourceArtifact;
 export const externalDiscoveryCandidateTable = externalDiscoveryCandidate;
 export const externalSearchRunTable = externalSearchRun;
+export const identityOauthStateTable = identityOauthState;
+export const identitySessionTable = identitySession;
+export const identitySubjectMappingTable = identitySubjectMapping;
 export const workItemTable = workItem;

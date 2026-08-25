@@ -5,6 +5,7 @@ import {
   BASE_ONE_SHOT_PURPOSE,
   buildBaseOneShotAssessmentPacket,
   consumeBaseOneShotAssessmentResult,
+  normalizeBoundaryJsonFormatMarks,
   type BaseOneShotAssessmentPacket,
   type BaseOneShotAssessmentResult,
   type BaseOneShotCorrelation,
@@ -173,7 +174,9 @@ export function consumeDynamicRulesEvaluationOutput(
   }
   let parsed: Record<string, unknown>;
   try {
-    parsed = JSON.parse(output) as Record<string, unknown>;
+    parsed = JSON.parse(
+      normalizeBoundaryJsonFormatMarks(output),
+    ) as Record<string, unknown>;
   } catch {
     throw new Error('BASE_ONE_SHOT_OUTPUT_JSON_INVALID');
   }
@@ -273,8 +276,10 @@ function assertSourceRefsBoundToInput(
   const sourceIndex = criterionTable.columns.indexOf(
     'sourceEvidenceCandidateIds',
   );
+  const missingIndex = criterionTable.columns.indexOf('missingPredicateKeys');
   if (
     sourceIndex < 0 ||
+    missingIndex < 0 ||
     criterionTable.rows.length !== result.ruleResults.length
   ) {
     throw new Error('DYNAMIC_RULES_SOURCE_REF_BINDING_INVALID');
@@ -316,6 +321,23 @@ function assertSourceRefsBoundToInput(
       throw new Error(
         `DYNAMIC_RULES_SOURCE_REF_NOT_BOUND:${index}:${invalid}`,
       );
+    }
+    const missingValue = criterionTable.rows[index][missingIndex];
+    if (
+      !Array.isArray(missingValue) ||
+      missingValue.some((value: unknown): boolean => typeof value !== 'string')
+    ) {
+      throw new Error(`DYNAMIC_RULES_MISSING_INPUT_BINDING_INVALID:${index}`);
+    }
+    const allowedMissing = new Set(missingValue as string[]);
+    const returnedMissing = ruleResult.missingInputs;
+    if (
+      !Array.isArray(returnedMissing) ||
+      returnedMissing.some((value: unknown): boolean =>
+        typeof value !== 'string' || !allowedMissing.has(value),
+      )
+    ) {
+      throw new Error(`DYNAMIC_RULES_MISSING_INPUT_NOT_BOUND:${index}`);
     }
   });
 }

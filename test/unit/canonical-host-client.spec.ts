@@ -12,6 +12,10 @@ import {
   confirmIntegratedOverallForAeo,
   generateAeoCandidate,
   getDocumentParsingPage,
+  getLibraryIndex,
+  isCanonicalObjectNotFound,
+  queryParsedUnits,
+  recordEngineerReview,
 } from '../../client/src/api/canonical-host';
 
 describe('canonical host assessment client', () => {
@@ -53,6 +57,88 @@ describe('canonical host assessment client', () => {
       url: '/api/canonical-host/work-items/WI-SB-1001/document-parsing',
       method: 'GET',
       params: { query: 'sourceRef APP-001' },
+    });
+  });
+
+  it('normalizes a fulfilled 403 without exposing object existence', async () => {
+    request.mockResolvedValue({ status: 403, data: { message: 'forbidden' } });
+
+    const promise = getDocumentParsingPage('WI-DIRECT-ID', '');
+
+    await expect(promise).rejects.toMatchObject({
+      code: 'CANONICAL_WORK_ITEM_NOT_FOUND',
+      statusCode: 404,
+    });
+    await promise.catch((error) => {
+      expect(isCanonicalObjectNotFound(error)).toBe(true);
+    });
+  });
+
+  it('normalizes a rejected Axios-style 404 to the same boundary', async () => {
+    request.mockRejectedValue({
+      isAxiosError: true,
+      response: { status: 404, data: { message: 'not found' } },
+    });
+
+    await expect(
+      getDocumentParsingPage('WI-MISSING', ''),
+    ).rejects.toMatchObject({
+      code: 'CANONICAL_WORK_ITEM_NOT_FOUND',
+      statusCode: 404,
+    });
+  });
+
+  it('normalizes a fulfilled LibraryIndex 403 without exposing object existence', async () => {
+    request.mockResolvedValue({ status: 403, data: { message: 'forbidden' } });
+
+    await expect(getLibraryIndex('WI-DIRECT-ID')).rejects.toMatchObject({
+      code: 'CANONICAL_WORK_ITEM_NOT_FOUND',
+      statusCode: 404,
+    });
+  });
+
+  it('normalizes a rejected LibraryIndex 404 to the same boundary', async () => {
+    request.mockRejectedValue({
+      isAxiosError: true,
+      response: { status: 404, data: { message: 'not found' } },
+    });
+
+    await expect(getLibraryIndex('WI-MISSING')).rejects.toMatchObject({
+      code: 'CANONICAL_WORK_ITEM_NOT_FOUND',
+      statusCode: 404,
+    });
+  });
+
+  it('normalizes fulfilled 403 for a direct-ID mutation before exposing a distinct error', async () => {
+    request.mockResolvedValue({ status: 403, data: { message: 'forbidden' } });
+
+    await expect(
+      recordEngineerReview('WI-DIRECT-ID', {
+        expectedRevision: 4,
+        criterionId: 'JAC-001',
+        decision: 'deferred',
+        comment: 'review',
+      }),
+    ).rejects.toMatchObject({
+      code: 'CANONICAL_WORK_ITEM_NOT_FOUND',
+      statusCode: 404,
+    });
+  });
+
+  it('normalizes rejected 404 for a body-carried direct WorkItem ID', async () => {
+    request.mockRejectedValue({
+      isAxiosError: true,
+      response: { status: 404, data: { message: 'not found' } },
+    });
+
+    await expect(
+      queryParsedUnits({
+        workItemId: 'WI-DIRECT-ID',
+        query: 'applicability',
+      } as never),
+    ).rejects.toMatchObject({
+      code: 'CANONICAL_WORK_ITEM_NOT_FOUND',
+      statusCode: 404,
     });
   });
 

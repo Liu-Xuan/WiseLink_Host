@@ -5,7 +5,7 @@ import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import { and, eq, inArray, isNull, or } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm';
 
 import type { CanonicalWorkItemProjection } from '@shared/api.interface';
 import { actionAttempt, workItem } from '../../database/schema';
@@ -30,6 +30,24 @@ export interface WorkItemReservation {
   requestId: string;
   attemptId: string;
   created: boolean;
+}
+
+export interface WorkItemAuthorizationBinding {
+  workItemId: string;
+  revision: number;
+  tenantId: string;
+  requestId: string;
+  documentId: string;
+  documentVersionId: string;
+  requestedByUserId: string;
+  runKey: string;
+}
+
+export interface OwnedWorkItemSummary extends WorkItemAuthorizationBinding {
+  status: string;
+  actionType: string;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export type AssessmentActionType =
@@ -84,104 +102,102 @@ export class MiaodaWorkItemRepository {
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
   ) {}
 
-  async reserve(
-    input: WorkItemReservationInput,
-  ): Promise<WorkItemReservation> {
+  async reserve(input: WorkItemReservationInput): Promise<WorkItemReservation> {
     return this.db.transaction(async (transaction) => {
-    const now = new Date();
-    const candidate = {
-      workItemId: `WI-${randomUUID()}`,
-      requestId: `REQ-${randomUUID()}`,
-      attemptId: `ATT-${randomUUID()}`,
-    };
-    const inserted = await transaction
-      .insert(workItem)
-      .values({
-        workItemId: candidate.workItemId,
-        tenantId: input.tenantId,
-        actionType: ACTION_TYPE,
-        documentId: input.documentId,
-        documentVersionId: input.documentVersionId,
-        sourceArtifactId: input.sourceArtifactId,
-        sourceFileSha256: rawHash(input.sourceFileSha256),
-        sourceByteLength: input.sourceByteLength,
-        normalizedFamily: input.normalizedFamily,
-        runKey: input.runKey,
-        requestId: candidate.requestId,
-        status: 'RESERVED',
-        revision: 0,
-        requestedByUserId: input.actorUserId,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .onConflictDoNothing({
-        target: [
-          workItem.tenantId,
-          workItem.actionType,
-          workItem.documentVersionId,
-          workItem.runKey,
-        ],
-      })
-      .returning({ workItemId: workItem.workItemId });
-
-    const [stored] = await transaction
-      .select()
-      .from(workItem)
-      .where(
-        and(
-          eq(workItem.tenantId, input.tenantId),
-          eq(workItem.actionType, ACTION_TYPE),
-          eq(workItem.documentVersionId, input.documentVersionId),
-          eq(workItem.runKey, input.runKey),
-        ),
-      )
-      .limit(1);
-    if (!stored) throw new Error('WORK_ITEM_RESERVATION_READBACK_FAILED');
-    assertReservationIdentity(stored, input);
-
-    const created = inserted.length === 1;
-    if (created) {
-      await transaction
-        .insert(actionAttempt)
+      const now = new Date();
+      const candidate = {
+        workItemId: `WI-${randomUUID()}`,
+        requestId: `REQ-${randomUUID()}`,
+        attemptId: `ATT-${randomUUID()}`,
+      };
+      const inserted = await transaction
+        .insert(workItem)
         .values({
-          attemptId: candidate.attemptId,
-          workItemId: stored.workItemId,
-          actionType: ACTION_TYPE,
-          attemptNo: 1,
-          triggerRequestId: stored.requestId,
-          requestOrigin: input.requestOrigin,
-          status: 'PENDING',
-          actorUserId: input.actorUserId,
+          workItemId: candidate.workItemId,
           tenantId: input.tenantId,
+          actionType: ACTION_TYPE,
+          documentId: input.documentId,
+          documentVersionId: input.documentVersionId,
+          sourceArtifactId: input.sourceArtifactId,
+          sourceFileSha256: rawHash(input.sourceFileSha256),
+          sourceByteLength: input.sourceByteLength,
+          normalizedFamily: input.normalizedFamily,
+          runKey: input.runKey,
+          requestId: candidate.requestId,
+          status: 'RESERVED',
+          revision: 0,
+          requestedByUserId: input.actorUserId,
           createdAt: now,
           updatedAt: now,
         })
         .onConflictDoNothing({
           target: [
-            actionAttempt.workItemId,
-            actionAttempt.actionType,
-            actionAttempt.attemptNo,
+            workItem.tenantId,
+            workItem.actionType,
+            workItem.documentVersionId,
+            workItem.runKey,
           ],
-        });
-    }
-    const [attempt] = await transaction
-      .select()
-      .from(actionAttempt)
-      .where(
-        and(
-          eq(actionAttempt.workItemId, stored.workItemId),
-          eq(actionAttempt.actionType, ACTION_TYPE),
-          eq(actionAttempt.attemptNo, 1),
-        ),
-      )
-      .limit(1);
-    if (!attempt) throw new Error('ACTION_ATTEMPT_READBACK_FAILED');
-    return {
-      workItemId: stored.workItemId,
-      requestId: stored.requestId,
-      attemptId: attempt.attemptId,
-      created,
-    };
+        })
+        .returning({ workItemId: workItem.workItemId });
+
+      const [stored] = await transaction
+        .select()
+        .from(workItem)
+        .where(
+          and(
+            eq(workItem.tenantId, input.tenantId),
+            eq(workItem.actionType, ACTION_TYPE),
+            eq(workItem.documentVersionId, input.documentVersionId),
+            eq(workItem.runKey, input.runKey),
+          ),
+        )
+        .limit(1);
+      if (!stored) throw new Error('WORK_ITEM_RESERVATION_READBACK_FAILED');
+      assertReservationIdentity(stored, input);
+
+      const created = inserted.length === 1;
+      if (created) {
+        await transaction
+          .insert(actionAttempt)
+          .values({
+            attemptId: candidate.attemptId,
+            workItemId: stored.workItemId,
+            actionType: ACTION_TYPE,
+            attemptNo: 1,
+            triggerRequestId: stored.requestId,
+            requestOrigin: input.requestOrigin,
+            status: 'PENDING',
+            actorUserId: input.actorUserId,
+            tenantId: input.tenantId,
+            createdAt: now,
+            updatedAt: now,
+          })
+          .onConflictDoNothing({
+            target: [
+              actionAttempt.workItemId,
+              actionAttempt.actionType,
+              actionAttempt.attemptNo,
+            ],
+          });
+      }
+      const [attempt] = await transaction
+        .select()
+        .from(actionAttempt)
+        .where(
+          and(
+            eq(actionAttempt.workItemId, stored.workItemId),
+            eq(actionAttempt.actionType, ACTION_TYPE),
+            eq(actionAttempt.attemptNo, 1),
+          ),
+        )
+        .limit(1);
+      if (!attempt) throw new Error('ACTION_ATTEMPT_READBACK_FAILED');
+      return {
+        workItemId: stored.workItemId,
+        requestId: stored.requestId,
+        attemptId: attempt.attemptId,
+        created,
+      };
     });
   }
 
@@ -195,6 +211,150 @@ export class MiaodaWorkItemRepository {
       .limit(1);
     if (!row) throw new Error('WORK_ITEM_NOT_FOUND');
     return parseProjection(row.projectionJson);
+  }
+
+  /**
+   * Bind the WorkItem lookup to the authenticated tenant before exposing any
+   * projection. A cross-tenant id is intentionally indistinguishable from a
+   * missing id to the caller.
+   */
+  async loadTenantScopedProjection(
+    workItemId: string,
+    tenantId: string,
+  ): Promise<{
+    row: typeof workItem.$inferSelect;
+    projection: CanonicalWorkItemProjection | null;
+  } | null> {
+    const [row] = await this.db
+      .select()
+      .from(workItem)
+      .where(
+        and(
+          eq(workItem.workItemId, workItemId),
+          eq(workItem.tenantId, tenantId),
+        ),
+      )
+      .limit(1);
+    if (!row) return null;
+    return { row, projection: parseProjection(row.projectionJson) };
+  }
+
+  async loadAuthorizationBinding(input: {
+    workItemId: string;
+    tenantId: string;
+    actorUserId: string;
+  }): Promise<WorkItemAuthorizationBinding | null> {
+    const [row] = await this.db
+      .select({
+        workItemId: workItem.workItemId,
+        revision: workItem.revision,
+        tenantId: workItem.tenantId,
+        requestId: workItem.requestId,
+        documentId: workItem.documentId,
+        documentVersionId: workItem.documentVersionId,
+        requestedByUserId: workItem.requestedByUserId,
+        runKey: workItem.runKey,
+      })
+      .from(workItem)
+      .where(
+        and(
+          eq(workItem.workItemId, input.workItemId),
+          eq(workItem.tenantId, input.tenantId),
+          eq(workItem.requestedByUserId, input.actorUserId),
+        ),
+      )
+      .limit(1);
+    return row ?? null;
+  }
+
+  /** Fresh creator-only list; tenant and actor are both server-session facts. */
+  async listOwnedWorkItems(input: {
+    tenantId: string;
+    actorUserId: string;
+    limit?: number;
+  }): Promise<OwnedWorkItemSummary[]> {
+    const limit = Math.min(Math.max(input.limit ?? 20, 1), 50);
+    return this.db
+      .select({
+        workItemId: workItem.workItemId,
+        revision: workItem.revision,
+        tenantId: workItem.tenantId,
+        requestId: workItem.requestId,
+        documentId: workItem.documentId,
+        documentVersionId: workItem.documentVersionId,
+        requestedByUserId: workItem.requestedByUserId,
+        runKey: workItem.runKey,
+        status: workItem.status,
+        actionType: workItem.actionType,
+        createdAt: workItem.createdAt,
+        updatedAt: workItem.updatedAt,
+      })
+      .from(workItem)
+      .where(
+        and(
+          eq(workItem.tenantId, input.tenantId),
+          eq(workItem.requestedByUserId, input.actorUserId),
+        ),
+      )
+      .orderBy(desc(workItem.updatedAt))
+      .limit(limit);
+  }
+
+  async loadTenantRunAuthorizationBinding(input: {
+    tenantId: string;
+    documentVersionId: string;
+    runKey: string;
+  }): Promise<WorkItemAuthorizationBinding | null> {
+    const [row] = await this.db
+      .select({
+        workItemId: workItem.workItemId,
+        revision: workItem.revision,
+        tenantId: workItem.tenantId,
+        requestId: workItem.requestId,
+        documentId: workItem.documentId,
+        documentVersionId: workItem.documentVersionId,
+        requestedByUserId: workItem.requestedByUserId,
+        runKey: workItem.runKey,
+      })
+      .from(workItem)
+      .where(
+        and(
+          eq(workItem.tenantId, input.tenantId),
+          eq(workItem.documentVersionId, input.documentVersionId),
+          eq(workItem.runKey, input.runKey),
+        ),
+      )
+      .limit(1);
+    return row ?? null;
+  }
+
+  async loadTenantDocumentAuthorizationBinding(input: {
+    tenantId: string;
+    documentVersionId: string;
+    actorUserId?: string;
+  }): Promise<WorkItemAuthorizationBinding | null> {
+    const conditions = [
+      eq(workItem.tenantId, input.tenantId),
+      eq(workItem.documentVersionId, input.documentVersionId),
+    ];
+    if (input.actorUserId) {
+      conditions.push(eq(workItem.requestedByUserId, input.actorUserId));
+    }
+    const [row] = await this.db
+      .select({
+        workItemId: workItem.workItemId,
+        revision: workItem.revision,
+        tenantId: workItem.tenantId,
+        requestId: workItem.requestId,
+        documentId: workItem.documentId,
+        documentVersionId: workItem.documentVersionId,
+        requestedByUserId: workItem.requestedByUserId,
+        runKey: workItem.runKey,
+      })
+      .from(workItem)
+      .where(and(...conditions))
+      .limit(1);
+    return row ?? null;
   }
 
   async initializeProjection(
@@ -245,7 +405,9 @@ export class MiaodaWorkItemRepository {
         packageArtifactRef: next.package?.artifact.ref ?? null,
         packageArtifactSha256: next.package?.artifact.sha256 ?? null,
         failureCode:
-          next.failure?.failureCode ?? next.recordingFailure?.failureCode ?? null,
+          next.failure?.failureCode ??
+          next.recordingFailure?.failureCode ??
+          null,
         failureArtifactRef: next.failure?.artifact.ref ?? null,
         failureArtifactSha256: next.failure?.artifact.sha256 ?? null,
         updatedAt: now,
@@ -272,33 +434,6 @@ export class MiaodaWorkItemRepository {
       .limit(1);
     if (!row) throw new Error('WORK_ITEM_NOT_FOUND');
     return row;
-  }
-
-  async resolveDevelopmentTenant(
-    documentVersionId: string,
-  ): Promise<string> {
-    const rows = await this.db
-      .selectDistinct({ tenantId: workItem.tenantId })
-      .from(workItem)
-      .where(eq(workItem.documentVersionId, documentVersionId))
-      .limit(2);
-    if (rows.length !== 1 || !rows[0].tenantId.trim()) {
-      throw Object.assign(
-        new Error(
-          rows.length === 0
-            ? 'Development DocumentVersion has no Host tenant binding.'
-            : 'Development DocumentVersion tenant binding is ambiguous.',
-        ),
-        {
-          code:
-            rows.length === 0
-              ? 'DEVELOPMENT_DOCUMENT_TENANT_NOT_FOUND'
-              : 'DEVELOPMENT_DOCUMENT_TENANT_AMBIGUOUS',
-          statusCode: 409,
-        },
-      );
-    }
-    return rows[0].tenantId;
   }
 
   async reserveAssessmentAction(input: {
@@ -342,11 +477,13 @@ export class MiaodaWorkItemRepository {
     const [stored] = await this.db
       .select()
       .from(actionAttempt)
-      .where(and(
-        eq(actionAttempt.workItemId, input.workItemId),
-        eq(actionAttempt.actionType, input.actionType),
-        eq(actionAttempt.attemptNo, input.attemptNo),
-      ))
+      .where(
+        and(
+          eq(actionAttempt.workItemId, input.workItemId),
+          eq(actionAttempt.actionType, input.actionType),
+          eq(actionAttempt.attemptNo, input.attemptNo),
+        ),
+      )
       .limit(1);
     if (!stored) throw new Error('ASSESSMENT_ACTION_ATTEMPT_READBACK_FAILED');
     if (
@@ -527,7 +664,8 @@ export class MiaodaWorkItemRepository {
         ),
       )
       .limit(2);
-    if (rows.length !== 1) throw new Error('OPENCLAW_OVERALL_ATTEMPT_NOT_FOUND');
+    if (rows.length !== 1)
+      throw new Error('OPENCLAW_OVERALL_ATTEMPT_NOT_FOUND');
     return overallSynthesisAttempt(rows[0]);
   }
 
@@ -547,7 +685,8 @@ export class MiaodaWorkItemRepository {
         ),
       )
       .limit(2);
-    if (rows.length !== 1) throw new Error('OPENCLAW_OVERALL_ATTEMPT_NOT_FOUND');
+    if (rows.length !== 1)
+      throw new Error('OPENCLAW_OVERALL_ATTEMPT_NOT_FOUND');
     return overallSynthesisAttempt(rows[0]);
   }
 
@@ -633,10 +772,12 @@ export class MiaodaWorkItemRepository {
         completedAt: now,
         updatedAt: now,
       })
-      .where(and(
-        eq(actionAttempt.attemptId, attemptId),
-        inArray(actionAttempt.status, ['RUNNING', 'COMMITTING']),
-      ))
+      .where(
+        and(
+          eq(actionAttempt.attemptId, attemptId),
+          inArray(actionAttempt.status, ['RUNNING', 'COMMITTING']),
+        ),
+      )
       .returning({ attemptId: actionAttempt.attemptId });
     if (updated.length !== 1) {
       throw new Error('ASSESSMENT_ACTION_ATTEMPT_COMPLETION_CONFLICT');
@@ -657,10 +798,12 @@ export class MiaodaWorkItemRepository {
         completedAt: new Date(),
         updatedAt: new Date(),
       })
-      .where(and(
-        eq(actionAttempt.attemptId, input.attemptId),
-        inArray(actionAttempt.status, ['RUNNING', 'COMMITTING']),
-      ));
+      .where(
+        and(
+          eq(actionAttempt.attemptId, input.attemptId),
+          inArray(actionAttempt.status, ['RUNNING', 'COMMITTING']),
+        ),
+      );
   }
 
   private async getDynamicEvaluationActionByIdentity(
@@ -747,7 +890,7 @@ function dynamicEvaluationAttempt(
 ): DynamicEvaluationActionAttempt {
   if (
     stored.actionType !== 'OPENCLAW_DYNAMIC_EVALUATION' ||
-    stored.requestOrigin !== 'OPENCLAW' ||
+    !['OPENCLAW', 'OPENCLAW_MCP_V1'].includes(stored.requestOrigin) ||
     !(stored.createdAt instanceof Date)
   ) {
     throw new Error('DYNAMIC_EVALUATION_ATTEMPT_IDENTITY_INVALID');
@@ -758,7 +901,7 @@ function dynamicEvaluationAttempt(
     actionType: stored.actionType,
     attemptNo: stored.attemptNo,
     triggerRequestId: stored.triggerRequestId,
-    requestOrigin: stored.requestOrigin,
+    requestOrigin: 'OPENCLAW',
     status: stored.status,
     actorUserId: stored.actorUserId,
     tenantId: stored.tenantId,
@@ -806,7 +949,9 @@ function rawHash(value: string): string {
   return value.replace(/^sha256:/u, '');
 }
 
-function parseProjection(value: string | null): CanonicalWorkItemProjection | null {
+function parseProjection(
+  value: string | null,
+): CanonicalWorkItemProjection | null {
   if (value === null) return null;
   const parsed = JSON.parse(value) as CanonicalWorkItemProjection;
   if (!parsed.workItemId || !Number.isInteger(parsed.revision)) {
@@ -824,8 +969,8 @@ function assertReservationIdentity(
     row.sourceArtifactId !== input.sourceArtifactId ||
     row.sourceFileSha256 !== rawHash(input.sourceFileSha256) ||
     Number(row.sourceByteLength) !== input.sourceByteLength ||
-    row.normalizedFamily !== input.normalizedFamily
-    || row.runKey !== input.runKey
+    row.normalizedFamily !== input.normalizedFamily ||
+    row.runKey !== input.runKey
   ) {
     throw new Error('WORK_ITEM_BUSINESS_KEY_COLLISION');
   }

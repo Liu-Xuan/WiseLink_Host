@@ -44,9 +44,9 @@ import type {
   CanonicalPermissionSnapshotPort,
   CanonicalWorkItemRegistrarPort,
 } from './canonical-host.types';
+import { authorizeAndLoadCanonicalWorkItem } from './canonical-authorized-work-item-reader';
 
-const AEO_OWNER_COMMIT =
-  '74333547ae5cd1878259812353d59563cc9041da' as const;
+const AEO_OWNER_COMMIT = '74333547ae5cd1878259812353d59563cc9041da' as const;
 const R09_TEMPLATE_IDENTITY = 'AEO-B787-46-0015-R09';
 const R09_TEMPLATE_ARTIFACT_REF =
   'artifact://CanonicalArtifactStore/aeo-authoring/templates/r09-controlled-template.json';
@@ -74,8 +74,13 @@ export class CanonicalHostAeoService {
     workItemId: string,
     actor: CanonicalHostActor,
   ): Promise<CanonicalAeoCandidateRunResponse> {
-    let canonical = await this.requiredInput(workItemId);
-    const permissionSnapshotVersion = await this.authorize(canonical, actor);
+    let authorized = await this.authorizeAndLoad(workItemId, actor);
+    let canonical = requiredAeoInput(authorized.workItem);
+    assertAeoPermissionSnapshot(
+      canonical,
+      authorized.permissionSnapshotVersion,
+    );
+    const permissionSnapshotVersion = authorized.permissionSnapshotVersion;
 
     if (canonical.aeo?.status === 'CANDIDATE_WORD_EXPORTED') {
       const integrated = requiredConfirmedOverall(canonical, false);
@@ -95,8 +100,12 @@ export class CanonicalHostAeoService {
       attemptNo: 1,
     });
     if (!attempt.created) {
-      canonical = await this.requiredInput(workItemId);
-      await this.authorize(canonical, actor);
+      authorized = await this.authorizeAndLoad(workItemId, actor);
+      canonical = requiredAeoInput(authorized.workItem);
+      assertAeoPermissionSnapshot(
+        canonical,
+        authorized.permissionSnapshotVersion,
+      );
       if (
         canonical.aeo?.status === 'CANDIDATE_WORD_EXPORTED' &&
         canonical.aeo.actionAttemptId === attempt.attemptId
@@ -279,9 +288,11 @@ export class CanonicalHostAeoService {
         throw new Error('AEO_WORD_CANDIDATE_NOT_OOXML');
       }
 
-      const updated = await this.registrar.getByWorkItemId(
+      const finalAuthorized = await this.authorizeAndLoad(
         canonical.workItemId,
+        actor,
       );
+      const updated = finalAuthorized.workItem;
       if (
         updated.aeo?.status !== 'CANDIDATE_WORD_EXPORTED' ||
         updated.aeo.targetIdentity !== targetIdentity ||
@@ -301,49 +312,38 @@ export class CanonicalHostAeoService {
     }
   }
 
-  private async requiredInput(
-    workItemId: string,
-  ): Promise<CanonicalWorkItemProjection> {
-    const workItem = await this.registrar.getByWorkItemId(workItemId);
-    if (
-      workItem.phase !== 'CANDIDATE_READBACK_VERIFIED' ||
-      !workItem.package ||
-      workItem.classification.status !== 'CONFIRMED' ||
-      workItem.classification.normalizedFamily !== 'SB'
-    ) {
-      throw new Error('AEO_CANDIDATE_SOURCE_NOT_READY');
-    }
-    return workItem;
-  }
-
-  private async authorize(
-    workItem: CanonicalWorkItemProjection,
-    actor: CanonicalHostActor,
-  ): Promise<string> {
-    const decision = await this.authorization.authorize({
+  private authorizeAndLoad(workItemId: string, actor: CanonicalHostActor) {
+    return authorizeAndLoadCanonicalWorkItem({
+      authorization: this.authorization,
+      permissionSnapshots: this.permissionSnapshots,
+      registrar: this.registrar,
       actor,
       action: 'RUN_AEO_CANDIDATE_LOOP',
-      workItemId: workItem.workItemId,
-      requestId: workItem.requestId,
-      documentVersionId: workItem.source.documentVersionId,
+      workItemId,
     });
-    if (!decision.allowed || decision.action !== 'RUN_AEO_CANDIDATE_LOOP') {
-      throw new Error('CANONICAL_ACTION_NOT_AUTHORIZED');
-    }
-    const snapshot = await this.permissionSnapshots.freshRead({
-      actor,
-      decision,
-      workItemId: workItem.workItemId,
-      requestId: workItem.requestId,
-      documentVersionId: workItem.source.documentVersionId,
-    });
-    if (
-      snapshot.permissionSnapshotVersion !== decision.permissionSnapshotVersion ||
-      snapshot.permissionSnapshotVersion !== workItem.permissionSnapshotVersion
-    ) {
-      throw new Error('AEO_PERMISSION_SNAPSHOT_CHANGED');
-    }
-    return snapshot.permissionSnapshotVersion;
+  }
+}
+
+function requiredAeoInput(
+  workItem: CanonicalWorkItemProjection,
+): CanonicalWorkItemProjection {
+  if (
+    workItem.phase !== 'CANDIDATE_READBACK_VERIFIED' ||
+    !workItem.package ||
+    workItem.classification.status !== 'CONFIRMED' ||
+    workItem.classification.normalizedFamily !== 'SB'
+  ) {
+    throw new Error('AEO_CANDIDATE_SOURCE_NOT_READY');
+  }
+  return workItem;
+}
+
+function assertAeoPermissionSnapshot(
+  workItem: CanonicalWorkItemProjection,
+  permissionSnapshotVersion: string,
+): void {
+  if (workItem.permissionSnapshotVersion !== permissionSnapshotVersion) {
+    throw new Error('AEO_PERMISSION_SNAPSHOT_CHANGED');
   }
 }
 
@@ -499,9 +499,10 @@ class CanonicalAeoActionContext
     ) {
       throw new Error('AEO_WORKITEM_CAS_PRECONDITION_FAILED');
     }
-    const current = await this.input.registrar.getByWorkItemId(
-      request.workItemId,
-    );
+    const current = await this.input.registrar.getTenantScopedByWorkItemId({
+      workItemId: request.workItemId,
+      tenantId: this.input.actor.tenantId,
+    });
     if (current.revision !== request.expectedStateVersion) {
       throw new Error('WORK_ITEM_CAS_CONFLICT');
     }
@@ -522,9 +523,8 @@ class CanonicalAeoActionContext
       };
     }
     const artifact = {
-      artifactKind:
-        request.artifact
-          .artifactKind as CanonicalAeoCandidateProjection['artifacts'][number]['artifactKind'],
+      artifactKind: request.artifact
+        .artifactKind as CanonicalAeoCandidateProjection['artifacts'][number]['artifactKind'],
       artifactRef: request.artifact.artifactRef,
       artifactSha256: request.artifact.artifactSha256,
       byteLength: request.artifact.byteLength,
@@ -563,8 +563,7 @@ class CanonicalAeoActionContext
       },
     });
     this.workItem.stateVersion = next.revision;
-    this.workItem.aeo.stateVersion =
-      `AEO-STATE-${next.revision}-${request.artifact.artifactSha256.slice(0, 12)}`;
+    this.workItem.aeo.stateVersion = `AEO-STATE-${next.revision}-${request.artifact.artifactSha256.slice(0, 12)}`;
     this.workItem.aeo.state = request.nextAeoState;
     this.workItem.artifactIndex.push(structuredClone(request.artifact));
     return {
@@ -821,9 +820,15 @@ function response(
   };
 }
 
-function requireCommitted<T extends { status: string; artifact: unknown; committedStateVersion: number | null; blockers: unknown; action: string }>(
-  result: T,
-): T {
+function requireCommitted<
+  T extends {
+    status: string;
+    artifact: unknown;
+    committedStateVersion: number | null;
+    blockers: unknown;
+    action: string;
+  },
+>(result: T): T {
   if (
     result.status !== 'COMMITTED' ||
     !result.artifact ||

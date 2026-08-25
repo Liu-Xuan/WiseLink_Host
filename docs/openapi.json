@@ -4,7 +4,7 @@
       "post": {
         "operationId": "createDevelopmentWorkItem",
         "summary": "受控创建 S1 开发验收 WorkItem",
-        "description": "仅供受控开发验收编排调用，不是生产前端功能。服务端从精确 DocumentVersion 的既有 Host WorkItem 绑定解析唯一租户，并固定使用 S1 验收服务身份；无绑定或多租户歧义时拒绝，请求体不得携带 actor、roles、tenantId、authority 或其他权限字段。",
+        "description": "仅供受控 DEV/UAT 验收编排调用，不是生产前端功能。网关先完成 API Key transport 认证，Host 再要求显式启用的 service principal/tenant、exact current DocumentVersion 与一次性 developmentRunToken 全量匹配；任一配置缺失或不匹配都在 Catalog/FileService I/O 前 fail closed。请求体不得携带 actor、roles、tenantId、authority 或其他权限字段。",
         "requestBody": {
           "required": true,
           "content": {
@@ -41,7 +41,13 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "required": ["schemaVersion", "workItemCreated", "workItemReused", "actionAttemptId", "result"],
+                  "required": [
+                    "schemaVersion",
+                    "workItemCreated",
+                    "workItemReused",
+                    "actionAttemptId",
+                    "result"
+                  ],
                   "properties": {
                     "schemaVersion": {
                       "type": "string",
@@ -68,7 +74,10 @@
                       "description": "解析垂直流程结果；详细字段随 canonical Host 页面 fresh projection 读取",
                       "example": {
                         "status": "CANDIDATE_VERTICAL_VERIFIED",
-                        "workItem": { "workItemId": "WI-example", "revision": 1 },
+                        "workItem": {
+                          "workItemId": "WI-example",
+                          "revision": 1
+                        },
                         "authority": {
                           "canonicalRoleSelected": false,
                           "onlineWritePerformed": true,
@@ -84,7 +93,10 @@
             }
           },
           "400": { "description": "请求体、DocumentVersion 或幂等 UUID 无效" },
-          "409": { "description": "DocumentVersion 非当前版本或当前解析配置不可用" }
+          "409": {
+            "description": "DocumentVersion 非当前版本或当前解析配置不可用"
+          },
+          "503": { "description": "受控 DEV/UAT 创建 service scope 未完整配置或未启用" }
         }
       }
     },
@@ -92,6 +104,7 @@
       "get": {
         "operationId": "getWorkItemStatus",
         "summary": "读取 WiseLink WorkItem 状态、解析包和候选综合摘要",
+        "description": "仅接受 API Key transport 认证且由 Host 显式配置绑定到 exact tenant + WorkItem 的 service scope；未配置、非 DEV/UAT 或 WorkItem 不匹配时在 I/O 前 fail closed。",
         "parameters": [
           {
             "in": "query",
@@ -226,6 +239,9 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "网关尚未提供可验证的 exact WorkItem service scope"
           }
         }
       }
@@ -234,6 +250,7 @@
       "get": {
         "operationId": "querySourceBoundUnits",
         "summary": "查询解析包中带来源引用的内容单元",
+        "description": "仅接受 API Key transport 认证且由 Host 显式配置绑定到 exact tenant + WorkItem 的 service scope；未配置、非 DEV/UAT 或 WorkItem 不匹配时在 package artifact/content I/O 前 fail closed。",
         "parameters": [
           {
             "in": "query",
@@ -304,6 +321,9 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "网关尚未提供可验证的 exact WorkItem service scope"
           }
         }
       }
@@ -312,6 +332,7 @@
       "get": {
         "operationId": "getWorkItemDeepLink",
         "summary": "读取服务端派生的妙搭 WorkItem 深链",
+        "description": "仅接受 API Key transport 认证且由 Host 显式配置绑定到 exact tenant + WorkItem 的 service scope；未配置、非 DEV/UAT 或 WorkItem 不匹配时在 WorkItem I/O 前 fail closed。",
         "parameters": [
           {
             "in": "query",
@@ -346,6 +367,9 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "网关尚未提供可验证的 exact WorkItem service scope"
           }
         }
       }
@@ -354,7 +378,7 @@
       "post": {
         "operationId": "handleWiseLinkMcp",
         "summary": "WiseLink 三项只读能力的无状态 MCP 传输入口",
-        "description": "仅承载 MCP initialize、tools/list 与三个只读 tool call；不提供任意 HTTP、资源、提示词、会话或写操作。",
+        "description": "仅承载 MCP initialize、tools/list 与三个只读 tool call；每个工具都必须通过 API Key transport 并绑定 Host 显式配置的 exact tenant + WorkItem service scope，缺失或不匹配时在 MCP 业务 I/O 前 fail closed。",
         "requestBody": {
           "required": true,
           "content": {
@@ -384,6 +408,9 @@
           },
           "400": {
             "description": "无效 MCP 消息或工具参数"
+          },
+          "503": {
+            "description": "网关尚未提供可验证的 MCP service/WorkItem scope"
           }
         }
       }
@@ -391,8 +418,8 @@
     "/openapi/wiselink/openclaw-mcp": {
       "post": {
         "operationId": "handleOpenClawMcp",
-        "summary": "OpenClaw 专用动态规则候选评估 MCP 入口",
-        "description": "独立承载三个查询工具、既有 overall attempt 的只读 resume、OEM discovery 记录及受控 dynamic-N/overall begin/commit；服务端派生 actor、权限、WorkItem revision 和 ActionAttempt，拒绝客户端提供 authority、URL policy override、Header、模型或 agent 身份。",
+        "summary": "OpenClaw 专用 ActionAttempt 队列与候选评估 MCP 入口",
+        "description": "承载 dynamic-N 与 overall 的 PostgreSQL QUEUED→lease claim→RUNNING→完整 ResultEnvelope→COMMITTING→Host CAS/current 链路，并提供 heartbeat/cancel。TaskEnvelope 由 Host 密封并随 claim 返回；重复 begin 遇到 COMMITTING 时返回 DB 中重新校验 hash/binding 的 recovery ResultEnvelope，executor 只重放 Host commit、不二次调用模型。损坏、缺字段或 hash/binding 不一致的 ResultEnvelope 不会被替换为 {}。仅当 API Key transport、service principal、tenant 与 exact WorkItem/ActionAttempt allowlist 全部可验证时处理业务 I/O；未配置时 fail closed。",
         "requestBody": {
           "required": true,
           "content": {
@@ -422,6 +449,12 @@
           },
           "400": {
             "description": "无效 MCP 消息、未知工具或严格参数校验失败"
+          },
+          "409": {
+            "description": "lease fencing、取消截止、ResultEnvelope 绑定或 WorkItem CAS 冲突"
+          },
+          "503": {
+            "description": "未配置可验证的 OpenClaw service/object scope、专用 executor 不可用，或同 tenant 的四个执行槽均被占用"
           }
         }
       }

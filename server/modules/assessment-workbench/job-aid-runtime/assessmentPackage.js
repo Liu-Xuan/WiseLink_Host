@@ -207,6 +207,9 @@ export function buildSbJobAidAssessmentPackage({
     parsedSourceContext: unifiedInput
       ? buildUnifiedParsedSourceContext(input)
       : null,
+    structuredAssessmentContext: unifiedInput
+      ? structuredClone(input.structuredAssessmentContext)
+      : null,
     authorityBoundary: buildAuthorityBoundary(),
     nonClaims: [
       'This package is an engineering assessment candidate and cannot approve, publish, complete, or release work.',
@@ -388,8 +391,34 @@ function assertUnifiedAssessmentInput(input) {
       throw new Error(`sourceBindings[${index}] is not source-bounded.`);
     }
   }
+  assertUnifiedStructuredAssessmentContext(input.structuredAssessmentContext);
   buildUnifiedParsedSourceContext(input);
   return true;
+}
+
+function assertUnifiedStructuredAssessmentContext(context) {
+  if (context?.schemaVersion
+      !== 'wiselink.v3_1.sb_job_aid.structured_assessment_context.v1'
+    || !['AVAILABLE_CANDIDATE', 'MISSING'].includes(
+      context.applicability?.availability,
+    )
+    || !Array.isArray(context.concurrentRequirements?.entries)
+    || !Array.isArray(context.workInstructions?.stepIds)
+    || !Array.isArray(context.workInstructions?.steps)
+    || context.workInstructions.stepCount
+      !== context.workInstructions.stepIds.length
+    || context.workInstructions.stepCount
+      !== context.workInstructions.steps.length
+    || new Set(context.workInstructions.stepIds).size
+      !== context.workInstructions.stepIds.length
+    || context.authorityBoundary?.sourceBoundParserCandidateOnly !== true
+    || context.authorityBoundary?.documentApplicabilityProvesFleetApplicability
+      !== false
+    || context.authorityBoundary?.createsFleetFact !== false
+    || context.authorityBoundary?.createsEvidenceRef !== false
+    || context.authorityBoundary?.createsEngineerDecision !== false) {
+    throw new Error('Unified structured assessment context is invalid.');
+  }
 }
 
 function assertFeishuNativeAssessmentInput(input) {

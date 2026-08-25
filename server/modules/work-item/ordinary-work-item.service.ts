@@ -10,13 +10,17 @@ import type {
   CanonicalPdfVerticalRunRequest,
 } from '@shared/api.interface';
 import { CanonicalHostVerticalService } from '../canonical-host/canonical-host-vertical.service';
+import { CANONICAL_DEVELOPMENT_ROLE_ID } from '../canonical-host/canonical-host.constants';
 import type { CanonicalHostActor } from '../canonical-host/canonical-host.types';
+import type { CanonicalVerifiedDevelopmentCreateScope } from '../canonical-host/canonical-service-scope.authorization';
+import type { CanonicalMiaodaFinalUserActorContext } from './canonical-object-access.port';
 import {
   DocumentManagementHostedService,
   type HostedRequestContext,
 } from '../document-management/src/hosted/nest';
 import { MiaodaDocumentVersionSourceResolver } from './miaoda-document-version-source.resolver';
 import { MiaodaWorkItemRepository } from './miaoda-work-item.repository';
+import { assertProductionMiaodaBrowserIdentityAvailable } from './production-miaoda-browser-ingress';
 import { MiaodaFileServiceArtifactStore } from '../document-management/src/hosted/miaodaFileServiceArtifactStore.js';
 import {
   createPhase5BoeingSbIngestRequest,
@@ -60,10 +64,7 @@ export interface OrdinaryPdfParseInput {
 
 const DEVELOPMENT_RUN_TOKEN_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
-const DEVELOPMENT_WORK_ITEM_ROLE_ID = 'wiselink_development';
-const CANONICAL_HOST_APP_ID = 'app_17bzc551rsg';
-const S1_ACCEPTANCE_ACTOR_ID = 'service:wiselink-s1-acceptance';
-
+const CANONICAL_APP_ID = 'app_17bzc551rsg';
 @Injectable()
 export class OrdinaryWorkItemService {
   constructor(
@@ -79,6 +80,16 @@ export class OrdinaryWorkItemService {
     actor: CanonicalHostActor,
     origin: 'MIAODA' | 'AILY' = 'MIAODA',
   ): Promise<CanonicalOrdinaryWorkItemRunResponse> {
+    assertProductionMiaodaBrowserIdentityAvailable(actor);
+    if (input.selection !== undefined) {
+      throw Object.assign(
+        new Error('New FileService selections require the development route.'),
+        {
+          code: 'CANONICAL_DEVELOPMENT_RUN_REQUIRED',
+          statusCode: 400,
+        },
+      );
+    }
     return this.runPdf(input, actor, origin, 'canonical');
   }
 
@@ -86,49 +97,73 @@ export class OrdinaryWorkItemService {
     input: CanonicalDevelopmentWorkItemRunRequest,
     actor: CanonicalHostActor,
   ): Promise<CanonicalOrdinaryWorkItemRunResponse> {
+    assertProductionMiaodaBrowserIdentityAvailable(actor);
     requireDevelopmentWorkItemRole(actor);
     return this.runDevelopment(input, actor);
   }
 
   async createDevelopmentAcceptanceRun(
     input: CanonicalDevelopmentWorkItemRunRequest,
+    scope: CanonicalVerifiedDevelopmentCreateScope,
   ): Promise<CanonicalOrdinaryWorkItemRunResponse> {
-    const documentVersionId = requiredText(
-      input.documentVersionId,
-      'documentVersionId',
-      96,
+    assertDevelopmentCreateScope(input, scope);
+    return this.runDevelopment(input, developmentServiceActor(scope), scope);
+  }
+
+  async createOauthSessionDevelopmentRun(
+    input: CanonicalDevelopmentWorkItemRunRequest & { documentVersionId: string },
+    sessionActor: CanonicalMiaodaFinalUserActorContext,
+  ): Promise<CanonicalOrdinaryWorkItemRunResponse> {
+    if (
+      sessionActor.identityProvenance !== 'FEISHU_OAUTH_USER_ACCESS_TOKEN' ||
+      sessionActor.sessionProvenance !== 'SERVER_OPAQUE_SESSION' ||
+      sessionActor.env !== 'preview' ||
+      sessionActor.applicationScopeId !== CANONICAL_APP_ID
+    ) {
+      throw Object.assign(new Error('CANONICAL_IDENTITY_HANDOFF_UNAVAILABLE'), {
+        code: 'CANONICAL_IDENTITY_HANDOFF_UNAVAILABLE',
+        statusCode: 503,
+      });
+    }
+    const developmentRunToken = requiredDevelopmentRunToken(
+      input.developmentRunToken,
     );
-    const tenantId = await this.repository.resolveDevelopmentTenant(
-      documentVersionId,
-    );
-    return this.runDevelopment(
-      { ...input, documentVersionId },
-      {
-        userId: S1_ACCEPTANCE_ACTOR_ID,
-        tenantId,
-        appId: CANONICAL_HOST_APP_ID,
-        roles: [],
-        env: 'hosted',
-      },
+    const actor: CanonicalHostActor = {
+      userId: sessionActor.canonicalSubject.id,
+      tenantId: sessionActor.tenantId,
+      appId: sessionActor.applicationScopeId,
+      roles: [],
+      env: sessionActor.env,
+      objectAccessActor: sessionActor,
+    };
+    return this.runPdf(
+      { documentVersionId: input.documentVersionId, query: input.query },
+      actor,
+      'MIAODA',
+      `dev:${developmentRunToken}`,
+      true,
+      undefined,
+      true,
     );
   }
 
   private runDevelopment(
     input: CanonicalDevelopmentWorkItemRunRequest,
     actor: CanonicalHostActor,
+    developmentScope?: CanonicalVerifiedDevelopmentCreateScope,
   ): Promise<CanonicalOrdinaryWorkItemRunResponse> {
     const developmentRunToken = requiredDevelopmentRunToken(
       input.developmentRunToken,
     );
     return this.runPdf(
-      {
-        documentVersionId: input.documentVersionId,
-        query: input.query,
-      },
+      input.documentVersionId
+        ? { documentVersionId: input.documentVersionId, query: input.query }
+        : { selection: input.selection, query: input.query },
       actor,
       'MIAODA',
       `dev:${developmentRunToken}`,
       true,
+      developmentScope,
     );
   }
 
@@ -138,17 +173,40 @@ export class OrdinaryWorkItemService {
     origin: 'MIAODA' | 'AILY',
     runKey: string,
     requireCurrentDocumentVersion = false,
+    developmentScope?: CanonicalVerifiedDevelopmentCreateScope,
+    oauthSessionCreate = false,
   ): Promise<CanonicalOrdinaryWorkItemRunResponse> {
     const context: HostedRequestContext = {
       actorUserId: actor.userId,
       tenantId: actor.tenantId,
       roles: [...actor.roles],
+      appId: actor.appId,
+      env: actor.env,
     };
     const documentVersionId = input.documentVersionId
       ? requiredText(input.documentVersionId, 'documentVersionId', 96)
       : await this.ingestSelection(input.selection, context);
+    if (input.documentVersionId) {
+      if (developmentScope) {
+        assertDevelopmentCreateScope(
+          {
+            documentVersionId,
+            developmentRunToken: developmentScope.developmentRunToken,
+          },
+          developmentScope,
+        );
+      } else if (!oauthSessionCreate) {
+        await this.assertCanResolveDocumentVersion({
+          actor,
+          documentVersionId,
+          runKey,
+          developmentCreate: requireCurrentDocumentVersion,
+        });
+      }
+    }
     const resolved = await this.resolver.resolve(documentVersionId, {
       requireCurrent: requireCurrentDocumentVersion,
+      expectedCreatorUserId: oauthSessionCreate ? actor.userId : undefined,
     });
     const classification = classificationFor(resolved.family.documentFamily);
     const reservation = await this.repository.reserve({
@@ -180,7 +238,13 @@ export class OrdinaryWorkItemService {
       classification,
       query: optionalQuery(input.query),
     };
-    const result = await this.vertical.runPdf(request, actor);
+    const result = developmentScope
+      ? await this.vertical.runPdfWithDevelopmentScope(
+          request,
+          actor,
+          developmentScope,
+        )
+      : await this.vertical.runPdf(request, actor);
     return {
       schemaVersion: 'wiselink.3_1.ordinary_work_item_run.v1',
       workItemCreated: reservation.created,
@@ -200,18 +264,30 @@ export class OrdinaryWorkItemService {
     selection: OrdinaryPdfParseInput['selection'],
     context: HostedRequestContext,
   ): Promise<string> {
-    const bucketId = requiredText(selection?.bucketId, 'selection.bucketId', 255);
-    const filePath = requiredText(selection?.filePath, 'selection.filePath', 1024);
+    const bucketId = requiredText(
+      selection?.bucketId,
+      'selection.bucketId',
+      255,
+    );
+    const filePath = requiredText(
+      selection?.filePath,
+      'selection.filePath',
+      1024,
+    );
+    await this.documentManagement.assertCanIngest(context, {
+      bucketId,
+      filePath,
+    });
     const key = createHash('sha256')
       .update(`${context.tenantId}\n${bucketId}\n${filePath}`)
       .digest('hex');
     const baseRequest = {
-        selection: { bucketId, filePath },
-        sourceChannel: 'canonical_miaoda_document_selection',
-        sourceRef: `miaoda-file-service:${bucketId}:${filePath}`,
-        idempotencyKey: `ordinary-document-ingest:${key}`,
-        descriptor: {},
-      };
+      selection: { bucketId, filePath },
+      sourceChannel: 'canonical_miaoda_document_selection',
+      sourceRef: `miaoda-file-service:${bucketId}:${filePath}`,
+      idempotencyKey: `ordinary-document-ingest:${key}`,
+      descriptor: {},
+    };
     let request = baseRequest;
     if (this.fileService) {
       const actual = await new MiaodaFileServiceArtifactStore(
@@ -224,8 +300,7 @@ export class OrdinaryWorkItemService {
       ) {
         request = createPhase5BoeingSbIngestRequest({
           selection: { bucketId, filePath },
-          sourceRef:
-            `miaoda-file-service:${bucketId}:${actual.providerObjectId}`,
+          sourceRef: `miaoda-file-service:${bucketId}:${actual.providerObjectId}`,
           idempotencyKey: `ordinary-document-ingest:${key}`,
         });
       }
@@ -240,10 +315,112 @@ export class OrdinaryWorkItemService {
       96,
     );
   }
+
+  private async assertCanResolveDocumentVersion(input: {
+    actor: CanonicalHostActor;
+    documentVersionId: string;
+    runKey: string;
+    developmentCreate: boolean;
+  }): Promise<void> {
+    const existing = await this.repository.loadTenantRunAuthorizationBinding({
+      tenantId: input.actor.tenantId,
+      documentVersionId: input.documentVersionId,
+      runKey: input.runKey,
+    });
+    if (existing) {
+      await this.vertical.authorizeExistingWorkItem({
+        actor: input.actor,
+        action: 'PARSE_PDF',
+        workItemId: existing.workItemId,
+        requestId: existing.requestId,
+        documentVersionId: existing.documentVersionId,
+      });
+      return;
+    }
+    const ownedBinding =
+      await this.repository.loadTenantDocumentAuthorizationBinding({
+        tenantId: input.actor.tenantId,
+        documentVersionId: input.documentVersionId,
+        actorUserId: input.actor.userId,
+      });
+    if (ownedBinding) {
+      await this.vertical.authorizeExistingWorkItem({
+        actor: input.actor,
+        action: 'PARSE_PDF',
+        workItemId: ownedBinding.workItemId,
+        requestId: ownedBinding.requestId,
+        documentVersionId: ownedBinding.documentVersionId,
+      });
+      return;
+    }
+    throw Object.assign(new Error('CANONICAL_WORK_ITEM_NOT_FOUND'), {
+      code: 'CANONICAL_WORK_ITEM_NOT_FOUND',
+      statusCode: 404,
+    });
+  }
+}
+
+function assertDevelopmentCreateScope(
+  input: Pick<
+    CanonicalDevelopmentWorkItemRunRequest,
+    'documentVersionId' | 'developmentRunToken'
+  >,
+  scope: CanonicalVerifiedDevelopmentCreateScope,
+): void {
+  const documentVersionId = requiredText(
+    input.documentVersionId,
+    'documentVersionId',
+    96,
+  );
+  const developmentRunToken = requiredDevelopmentRunToken(
+    input.developmentRunToken,
+  );
+  if (
+    scope.appId !== CANONICAL_APP_ID ||
+    !scope.principalId.startsWith('service:') ||
+    !scope.tenantId.trim() ||
+    !['DEV', 'UAT'].includes(scope.environment) ||
+    scope.documentVersionId !== documentVersionId ||
+    scope.developmentRunToken !== developmentRunToken ||
+    !/^sha256:[0-9a-f]{64}$/u.test(scope.authorizationFingerprint)
+  ) {
+    throw developmentScopeNotFound();
+  }
+}
+
+function developmentServiceActor(
+  scope: CanonicalVerifiedDevelopmentCreateScope,
+): CanonicalHostActor {
+  return {
+    userId: scope.principalId,
+    tenantId: scope.tenantId,
+    appId: scope.appId,
+    roles: [],
+    env: scope.environment.toLowerCase(),
+  };
+}
+
+function developmentScopeNotFound(): Error & {
+  code: string;
+  statusCode: number;
+} {
+  return Object.assign(new Error('Canonical development scope not found.'), {
+    code: 'CANONICAL_DEVELOPMENT_SCOPE_NOT_FOUND',
+    statusCode: 404,
+  });
 }
 
 function requireDevelopmentWorkItemRole(actor: CanonicalHostActor): void {
-  if (!actor.roles.includes(DEVELOPMENT_WORK_ITEM_ROLE_ID)) {
+  if (actor.env !== 'preview') {
+    throw Object.assign(
+      new Error('Development WorkItem creation is preview-only.'),
+      {
+        code: 'DEVELOPMENT_WORK_ITEM_PREVIEW_REQUIRED',
+        statusCode: 403,
+      },
+    );
+  }
+  if (!actor.roles.includes(CANONICAL_DEVELOPMENT_ROLE_ID)) {
     throw Object.assign(new Error('Development WorkItem role is required.'), {
       code: 'DEVELOPMENT_WORK_ITEM_ROLE_REQUIRED',
       statusCode: 403,
@@ -299,8 +476,11 @@ function requiredText(
 }
 
 function requiredDevelopmentRunToken(value: unknown): string {
-  const normalized = requiredText(value, 'developmentRunToken', 36)
-    .toLowerCase();
+  const normalized = requiredText(
+    value,
+    'developmentRunToken',
+    36,
+  ).toLowerCase();
   if (!DEVELOPMENT_RUN_TOKEN_PATTERN.test(normalized)) {
     throw Object.assign(new Error('developmentRunToken is invalid.'), {
       code: 'WORK_ITEM_DEVELOPMENT_RUN_TOKEN_INVALID',

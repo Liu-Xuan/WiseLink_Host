@@ -21,9 +21,7 @@ import {
   type HostedOpenClawDiscoveryResult,
 } from '../assessment-workbench/assessment-host-consumer.public-api';
 import { buildUnifiedSbJobAidAssessmentInput } from '../assessment-workbench/unified-assessment-input';
-import {
-  buildJobAidCriterionSetVersion,
-} from '../assessment-workbench/job-aid-runtime/criterionSet.js';
+import { buildJobAidCriterionSetVersion } from '../assessment-workbench/job-aid-runtime/criterionSet.js';
 import { UNIFIED_ARTIFACT_STORE } from '../unified-reader/unified-reader.constants';
 import { UnifiedReaderService } from '../unified-reader/unified-reader.service';
 import type { UnifiedArtifactStorePort } from '../unified-reader/unified-reader.types';
@@ -40,9 +38,9 @@ import type {
 } from './canonical-host.types';
 import { MiaodaWorkItemRepository } from '../work-item/miaoda-work-item.repository';
 import { PHASE5_737_34_3830_HANDOFF } from '../document-management/src/hosted/phase5BoeingSbHandoff.js';
+import { authorizeAndLoadCanonicalWorkItem } from './canonical-authorized-work-item-reader';
 
-const RULE_ARTIFACT_REF =
-  'feishu-drive://file/Q3eVb8SGFovADCxSdH6cWDKCnme';
+const RULE_ARTIFACT_REF = 'feishu-drive://file/Q3eVb8SGFovADCxSdH6cWDKCnme';
 const RULE_ARTIFACT_VERSION = '7672126854932728804';
 const RULE_CRITERIA_HASH =
   'sha256:29a085166e2f08391b6f057a9e6dbb881800bd087cef9c359ea3a6f93ebc03cd';
@@ -66,8 +64,7 @@ export interface CanonicalAssessmentResynthesisInput {
   reviewedExternalManifest?: unknown;
 }
 
-export interface PreparedDynamicRulesCandidate
-  extends AssessmentHostCandidateResult {
+export interface PreparedDynamicRulesCandidate extends AssessmentHostCandidateResult {
   dynamicRulesInput: Record<string, unknown>;
 }
 
@@ -91,12 +88,13 @@ export class CanonicalHostAssessmentService {
     input: CanonicalAssessmentEvaluateInput,
     actor: CanonicalHostActor,
   ): Promise<CanonicalWorkItemProjection> {
-    let workItem = await this.requiredSbWorkItem(input.workItemId);
-    const permissionSnapshotVersion = await this.authorize(
-      workItem,
+    let authorized = await this.authorizeAndLoad(
+      input.workItemId,
       actor,
       'EVALUATE_JOB_AID',
     );
+    let workItem = requiredSbWorkItem(authorized.workItem);
+    const permissionSnapshotVersion = authorized.permissionSnapshotVersion;
     if (workItem.assessment) return workItem;
     const attempt = await this.repository.reserveAssessmentAction({
       workItemId: workItem.workItemId,
@@ -108,8 +106,12 @@ export class CanonicalHostAssessmentService {
       attemptNo: 1,
     });
     if (!attempt.created) {
-      workItem = await this.requiredSbWorkItem(input.workItemId);
-      await this.authorize(workItem, actor, 'EVALUATE_JOB_AID');
+      authorized = await this.authorizeAndLoad(
+        input.workItemId,
+        actor,
+        'EVALUATE_JOB_AID',
+      );
+      workItem = requiredSbWorkItem(authorized.workItem);
       if (workItem.assessment) return workItem;
       throw new Error('ASSESSMENT_EVALUATE_INCOMPLETE_PRIOR_ATTEMPT');
     }
@@ -163,8 +165,9 @@ export class CanonicalHostAssessmentService {
       input.permissionSnapshotVersion,
     );
     const ruleBytes = await readAssessmentAsset('job-aid/rule-pack-0.2.json');
-    const rulePack = JSON.parse(Buffer.from(ruleBytes).toString('utf8')) as
-      Record<string, unknown>;
+    const rulePack = JSON.parse(
+      Buffer.from(ruleBytes).toString('utf8'),
+    ) as Record<string, unknown>;
     const ruleDigest =
       'sha256:' + createHash('sha256').update(ruleBytes).digest('hex');
     const criterionSet = buildJobAidCriterionSetVersion({
@@ -177,22 +180,22 @@ export class CanonicalHostAssessmentService {
       lifecycleStatus: 'ACTIVE',
     });
     const assessmentOptions = {
-        workItemId: input.workItem.workItemId,
-        documentVersionBinding: assessmentBinding(input.workItem),
-        artifactBytes: packageBytes,
-        assessmentAsOf: requiredIso(input.assessmentAsOf, 'assessmentAsOf'),
-        rulePack,
-        rulePackHash: ruleDigest.slice('sha256:'.length),
-        criterionSet,
-        jobAidSourceIdentity: {
-          status: 'SOURCE_IDENTITY_MISMATCH',
-          sourceManifestHash: JOB_AID_SOURCE_MANIFEST_HASH,
-          allowsCandidateOnlyAssessment: true,
-          blocksEngineeringClosure: true,
-          blocksRulePromotion: true,
-        },
-        generatedAt: requiredIso(input.generatedAt, 'generatedAt'),
-      };
+      workItemId: input.workItem.workItemId,
+      documentVersionBinding: assessmentBinding(input.workItem),
+      artifactBytes: packageBytes,
+      assessmentAsOf: requiredIso(input.assessmentAsOf, 'assessmentAsOf'),
+      rulePack,
+      rulePackHash: ruleDigest.slice('sha256:'.length),
+      criterionSet,
+      jobAidSourceIdentity: {
+        status: 'SOURCE_IDENTITY_MISMATCH',
+        sourceManifestHash: JOB_AID_SOURCE_MANIFEST_HASH,
+        allowsCandidateOnlyAssessment: true,
+        blocksEngineeringClosure: true,
+        blocksRulePromotion: true,
+      },
+      generatedAt: requiredIso(input.generatedAt, 'generatedAt'),
+    };
     const dynamicRulesInput = buildUnifiedSbJobAidAssessmentInput({
       documentVersionBinding: assessmentOptions.documentVersionBinding,
       artifactBytes: packageBytes,
@@ -200,9 +203,9 @@ export class CanonicalHostAssessmentService {
     });
     return {
       ...this.assessment.runCandidate({
-      assessment: assessmentOptions,
-      externalDiscovery: input.externalDiscovery,
-      reviewedExternalOemManifest: input.reviewedExternalManifest,
+        assessment: assessmentOptions,
+        externalDiscovery: input.externalDiscovery,
+        reviewedExternalOemManifest: input.reviewedExternalManifest,
       }),
       dynamicRulesInput,
     };
@@ -212,8 +215,12 @@ export class CanonicalHostAssessmentService {
     input: CanonicalAssessmentResynthesisInput,
     actor: CanonicalHostActor,
   ): Promise<CanonicalWorkItemProjection> {
-    let workItem = await this.requiredSbWorkItem(input.workItemId);
-    await this.authorize(workItem, actor, 'RESYNTHESIZE_ASSESSMENT');
+    let authorized = await this.authorizeAndLoad(
+      input.workItemId,
+      actor,
+      'RESYNTHESIZE_ASSESSMENT',
+    );
+    let workItem = requiredSbWorkItem(authorized.workItem);
     if (!workItem.assessment) {
       throw new ConflictException('ASSESSMENT_CANDIDATE_REQUIRED');
     }
@@ -239,12 +246,12 @@ export class CanonicalHostAssessmentService {
       attemptNo: input.expectedRevision,
     });
     if (!attempt.created) {
-      workItem = await this.requiredSbWorkItem(input.workItemId);
-      await this.authorize(
-        workItem,
+      authorized = await this.authorizeAndLoad(
+        input.workItemId,
         actor,
         'RESYNTHESIZE_ASSESSMENT',
       );
+      workItem = requiredSbWorkItem(authorized.workItem);
       if (workItem.revision !== input.expectedRevision) return workItem;
       throw new Error('ASSESSMENT_RESYNTHESIS_INCOMPLETE_PRIOR_ATTEMPT');
     }
@@ -284,65 +291,19 @@ export class CanonicalHostAssessmentService {
     }
   }
 
-  private async requiredSbWorkItem(
+  private authorizeAndLoad(
     workItemId: string,
-  ): Promise<CanonicalWorkItemProjection> {
-    const workItem = await this.registrar.getByWorkItemId(workItemId);
-    if (
-      workItem.phase !== 'CANDIDATE_READBACK_VERIFIED' ||
-      workItem.package === null
-    ) {
-      throw new Error('ASSESSMENT_PARSED_PACKAGE_NOT_READY');
-    }
-    if (
-      workItem.classification.status !== 'CONFIRMED' ||
-      workItem.classification.normalizedFamily !== 'SB'
-    ) {
-      throw new Error('NOT_APPLICABLE_FOR_SB_ASSESSMENT');
-    }
-    return workItem;
-  }
-
-  private async authorize(
-    workItem: CanonicalWorkItemProjection,
     actor: CanonicalHostActor,
     action: 'EVALUATE_JOB_AID' | 'RESYNTHESIZE_ASSESSMENT',
-  ): Promise<string> {
-    const decision = await this.authorization.authorize({
+  ) {
+    return authorizeAndLoadCanonicalWorkItem({
+      authorization: this.authorization,
+      permissionSnapshots: this.permissionSnapshots,
+      registrar: this.registrar,
       actor,
       action,
-      workItemId: workItem.workItemId,
-      requestId: workItem.requestId,
-      documentVersionId: workItem.source.documentVersionId,
+      workItemId,
     });
-    if (decision.allowed !== true || decision.action !== action) {
-      throw new Error('CANONICAL_ACTION_NOT_AUTHORIZED');
-    }
-    requiredDecisionText(decision.actorFingerprint, 'actorFingerprint');
-    requiredDecisionText(decision.decisionId, 'decisionId');
-    requiredDecisionText(decision.decisionHash, 'decisionHash');
-    requiredDecisionText(
-      decision.permissionSnapshotVersion,
-      'permissionSnapshotVersion',
-    );
-    const snapshot = await this.permissionSnapshots.freshRead({
-      actor,
-      decision,
-      workItemId: workItem.workItemId,
-      requestId: workItem.requestId,
-      documentVersionId: workItem.source.documentVersionId,
-    });
-    requiredDecisionText(
-      snapshot?.permissionSnapshotVersion,
-      'freshPermissionSnapshotVersion',
-    );
-    if (
-      snapshot.permissionSnapshotVersion !==
-      decision.permissionSnapshotVersion
-    ) {
-      throw new Error('ASSESSMENT_PERMISSION_SNAPSHOT_CHANGED');
-    }
-    return snapshot.permissionSnapshotVersion;
   }
 
   private async readAcceptedPackage(
@@ -430,8 +391,8 @@ function assessmentProjection(
     warningCodes: [...result.summary.warningCodes],
     blocksEngineeringClosure: result.summary.blocksEngineeringClosure,
     externalDiscoveryStatus:
-      result.externalDiscovery?.ailyModelInput.externalDiscovery.resultStatus
-      ?? null,
+      result.externalDiscovery?.ailyModelInput.externalDiscovery.resultStatus ??
+      null,
     externalDiscoveryIsEvidence: false,
     previousOverallStale: result.staleState.previousOverallStale,
     staleReason: result.staleState.reason,
@@ -445,8 +406,16 @@ function assessmentProjection(
 
 async function readAssessmentAsset(relativePath: string): Promise<Uint8Array> {
   const candidates = [
-    resolve(process.cwd(), 'dist/server/runtime-assets/assessment-host', relativePath),
-    resolve(process.cwd(), 'server/runtime-assets/assessment-host', relativePath),
+    resolve(
+      process.cwd(),
+      'dist/server/runtime-assets/assessment-host',
+      relativePath,
+    ),
+    resolve(
+      process.cwd(),
+      'server/runtime-assets/assessment-host',
+      relativePath,
+    ),
     resolve(__dirname, '../../runtime-assets/assessment-host', relativePath),
   ];
   for (const path of candidates) {
@@ -466,6 +435,24 @@ function withoutRevision(
   return rest;
 }
 
+function requiredSbWorkItem(
+  workItem: CanonicalWorkItemProjection,
+): CanonicalWorkItemProjection {
+  if (
+    workItem.phase !== 'CANDIDATE_READBACK_VERIFIED' ||
+    workItem.package === null
+  ) {
+    throw new Error('ASSESSMENT_PARSED_PACKAGE_NOT_READY');
+  }
+  if (
+    workItem.classification.status !== 'CONFIRMED' ||
+    workItem.classification.normalizedFamily !== 'SB'
+  ) {
+    throw new Error('NOT_APPLICABLE_FOR_SB_ASSESSMENT');
+  }
+  return workItem;
+}
+
 function requiredIso(value: string, field: string): string {
   if (!Number.isFinite(Date.parse(value))) {
     throw new Error('ASSESSMENT_' + field.toUpperCase() + '_INVALID');
@@ -473,17 +460,14 @@ function requiredIso(value: string, field: string): string {
   return value;
 }
 
-function requiredDecisionText(value: unknown, field: string): void {
-  if (typeof value !== 'string' || value.trim() === '') {
-    throw new Error('CANONICAL_AUTHORIZATION_DECISION_INVALID:' + field);
-  }
-}
-
 function validateEngineerChange(
   input: CanonicalAssessmentResynthesisInput,
   actor: CanonicalHostActor,
 ): void {
-  if (!Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 1) {
+  if (
+    !Number.isSafeInteger(input.expectedRevision) ||
+    input.expectedRevision < 1
+  ) {
     throw assessmentBadRequest('ASSESSMENT_EXPECTEDREVISION_INVALID');
   }
   if (input.criterionId.trim() === '') {
@@ -491,17 +475,14 @@ function validateEngineerChange(
   }
   const review = input.review;
   const expectedStatus =
-    review.decision === 'confirmed_pass' ||
-    review.decision === 'confirmed_fail'
+    review.decision === 'confirmed_pass' || review.decision === 'confirmed_fail'
       ? 'ENGINEER_CONFIRMED'
       : review.decision === 'returned_for_rework' ||
           review.decision === 'deferred'
         ? 'NEEDS_REVIEW'
         : null;
   if (expectedStatus === null || review.status !== expectedStatus) {
-    throw assessmentBadRequest(
-      'ASSESSMENT_ENGINEER_DECISION_STATUS_INVALID',
-    );
+    throw assessmentBadRequest('ASSESSMENT_ENGINEER_DECISION_STATUS_INVALID');
   }
   if (
     review.comment.trim() === '' ||
@@ -514,9 +495,7 @@ function validateEngineerChange(
     review.reviewingEngineerUserIds.length !== 1 ||
     review.reviewingEngineerUserIds[0] !== actor.userId
   ) {
-    throw assessmentBadRequest(
-      'ASSESSMENT_ENGINEER_REVIEW_ACTOR_INVALID',
-    );
+    throw assessmentBadRequest('ASSESSMENT_ENGINEER_REVIEW_ACTOR_INVALID');
   }
 }
 

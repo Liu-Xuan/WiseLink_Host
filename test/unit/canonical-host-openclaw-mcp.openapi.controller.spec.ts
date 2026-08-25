@@ -13,59 +13,57 @@ jest.mock('@nestjs/common', () => {
   };
 });
 
-import { RequestContextService } from '@lark-apaas/nestjs-common';
-
 import { CanonicalHostOpenClawMcpOpenApiController } from '../../server/modules/canonical-host/canonical-host-openclaw-mcp.openapi.controller';
 
 describe('CanonicalHostOpenClawMcpOpenApiController', () => {
-  it('binds an API-key MCP request to the canonical host FileService context', async () => {
-    const context = new RequestContextService();
-    const observedAppIds: Array<string | undefined> = [];
-    const mcp = {
-      handle: jest.fn(async () => {
-        observedAppIds.push(context.get('appId'));
-      }),
+  it('fails closed before MCP or object I/O without trusted scope', async () => {
+    const mcp = { handle: jest.fn() };
+    const serviceScope = {
+      assertTransport: jest.fn().mockRejectedValue(
+        Object.assign(new Error('scope unavailable'), {
+          code: 'CANONICAL_SERVICE_SCOPE_UNAVAILABLE',
+          statusCode: 503,
+        }),
+      ),
     };
     const controller = new CanonicalHostOpenClawMcpOpenApiController(
       mcp as never,
-      context,
+      serviceScope as never,
     );
 
-    await context.run({ appId: '' }, () =>
-      controller.handleOpenClawMcp({} as never, {} as never, {}),
-    );
-
-    expect(observedAppIds).toEqual(['app_17bzc551rsg']);
-    expect(mcp.handle).toHaveBeenCalledTimes(1);
-  });
-
-  it('rejects a request already bound to another application', () => {
-    const context = new RequestContextService();
-    const mcp = { handle: jest.fn() };
-    const controller = new CanonicalHostOpenClawMcpOpenApiController(
-      mcp as never,
-      context,
-    );
-
-    expect(() =>
-      context.run({ appId: 'app_other' }, () =>
-        controller.handleOpenClawMcp({} as never, {} as never, {}),
-      ),
-    ).toThrow('OPENCLAW_MCP_HOST_CONTEXT_MISMATCH');
+    await expect(
+      controller.handleOpenClawMcp({} as never, {} as never, {
+        params: {
+          arguments: {
+            workItemId: 'WI-caller-supplied',
+            tenantId: 'tenant-caller-supplied',
+            actor: 'caller-supplied',
+          },
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: 'CANONICAL_SERVICE_SCOPE_UNAVAILABLE',
+      statusCode: 503,
+    });
     expect(mcp.handle).not.toHaveBeenCalled();
   });
 
-  it('fails explicitly when the platform request context is unavailable', () => {
-    const context = new RequestContextService();
+  it('forwards to the real MCP handler only after transport scope succeeds', async () => {
     const mcp = { handle: jest.fn() };
+    const serviceScope = { assertTransport: jest.fn() };
     const controller = new CanonicalHostOpenClawMcpOpenApiController(
       mcp as never,
-      context,
+      serviceScope as never,
     );
+    const request = {} as never;
+    const response = {} as never;
+    const body = { jsonrpc: '2.0', method: 'tools/list', id: 1 };
 
-    expect(() =>
-      controller.handleOpenClawMcp({} as never, {} as never, {}),
-    ).toThrow('OPENCLAW_MCP_REQUEST_CONTEXT_UNAVAILABLE');
-    expect(mcp.handle).not.toHaveBeenCalled();
+    await controller.handleOpenClawMcp(request, response, body);
+
+    expect(serviceScope.assertTransport).toHaveBeenCalledWith({
+      transport: 'OPENCLAW_MCP',
+    });
+    expect(mcp.handle).toHaveBeenCalledWith(request, response, body);
   });
 });

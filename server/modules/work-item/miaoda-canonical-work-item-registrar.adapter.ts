@@ -5,16 +5,16 @@ import type { CanonicalWorkItemRegistrarPort } from '../canonical-host/canonical
 import { MiaodaWorkItemRepository } from './miaoda-work-item.repository';
 
 @Injectable()
-export class MiaodaCanonicalWorkItemRegistrarAdapter
-  implements CanonicalWorkItemRegistrarPort
-{
+export class MiaodaCanonicalWorkItemRegistrarAdapter implements CanonicalWorkItemRegistrarPort {
   constructor(private readonly repository: MiaodaWorkItemRepository) {}
 
   async loadOrCreate(
     seed: Omit<CanonicalWorkItemProjection, 'revision'>,
   ): Promise<CanonicalWorkItemProjection> {
     const existing = await this.repository.loadProjection(seed.workItemId);
-    return existing ?? this.repository.initializeProjection(seed.workItemId, seed);
+    return (
+      existing ?? this.repository.initializeProjection(seed.workItemId, seed)
+    );
   }
 
   compareAndSet(input: {
@@ -41,11 +41,26 @@ export class MiaodaCanonicalWorkItemRegistrarAdapter
     return projection;
   }
 
-  getByWorkItemId(workItemId: string): Promise<CanonicalWorkItemProjection> {
-    return this.required(workItemId);
+  async getTenantScopedByWorkItemId(input: {
+    workItemId: string;
+    tenantId: string;
+  }): Promise<CanonicalWorkItemProjection> {
+    const scoped = await this.repository.loadTenantScopedProjection(
+      input.workItemId,
+      input.tenantId,
+    );
+    if (!scoped?.projection) {
+      throw Object.assign(new Error('WORK_ITEM_NOT_FOUND'), {
+        code: 'WORK_ITEM_NOT_FOUND',
+        statusCode: 404,
+      });
+    }
+    return scoped.projection;
   }
 
-  private async required(workItemId: string): Promise<CanonicalWorkItemProjection> {
+  private async required(
+    workItemId: string,
+  ): Promise<CanonicalWorkItemProjection> {
     const projection = await this.repository.loadProjection(workItemId);
     if (!projection) throw new Error('WORK_ITEM_NOT_INITIALIZED');
     return projection;

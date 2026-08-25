@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   toNodeHandler,
   type NodeMcpRequestHandler,
@@ -7,13 +7,21 @@ import { createMcpHandler, McpServer } from '@modelcontextprotocol/server';
 
 import { CanonicalHostVerticalService } from './canonical-host-vertical.service';
 import { registerCanonicalHostReadonlyMcpTools } from './canonical-host-readonly-mcp-tools';
+import {
+  CANONICAL_SERVICE_SCOPE_AUTHORIZATION,
+  type CanonicalServiceScopeAuthorizationPort,
+} from './canonical-service-scope.authorization';
 
 @Injectable()
 export class CanonicalHostMcpService {
   private readonly logger = new Logger(CanonicalHostMcpService.name);
   private readonly nodeHandler: NodeMcpRequestHandler;
 
-  constructor(private readonly vertical: CanonicalHostVerticalService) {
+  constructor(
+    private readonly vertical: CanonicalHostVerticalService,
+    @Inject(CANONICAL_SERVICE_SCOPE_AUTHORIZATION)
+    private readonly serviceScope: CanonicalServiceScopeAuthorizationPort,
+  ) {
     const handler = createMcpHandler(() => this.createServer(), {
       legacy: 'stateless',
       responseMode: 'json',
@@ -38,7 +46,11 @@ export class CanonicalHostMcpService {
       version: '1.0.0',
     });
 
-    registerCanonicalHostReadonlyMcpTools(server, this.vertical);
+    registerCanonicalHostReadonlyMcpTools(
+      server,
+      this.vertical,
+      this.serviceScope,
+    );
 
     return server;
   }

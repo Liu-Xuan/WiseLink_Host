@@ -20,7 +20,69 @@ const { CanonicalHostOpenClawMcpService } = await import(
 const calls = [];
 const dynamicCalls = [];
 const orchestratorCalls = [];
+const attemptCalls = [];
 const methods = [];
+const leaseToken = '00000000-0000-4000-8000-000000000001';
+const leaseExpiresAt = '2026-08-24T12:01:00.000Z';
+const dynamicModelInput = {
+  purpose: 'EVALUATE_DYNAMIC_RULES',
+  callerCorrelationRef: 'DYN-OPAQUE-CALLER-REF',
+  criterionCount: 150,
+};
+const overallModelInput = {
+  operation: 'SYNTHESIZE_OVERALL_CANDIDATE',
+  outputCorrelationRef: 'OVR-OPAQUE',
+};
+const dynamicBeginResult = {
+  attemptRef: 'DYN-OPAQUE-CALLER-REF',
+  status: 'RUNNING',
+  leaseToken,
+  leaseGeneration: 1,
+  leaseExpiresAt,
+  task: mockTaskEnvelope({
+    actionAttemptId: 'ATT-DYNAMIC',
+    operationRef: 'DYN-OPAQUE-CALLER-REF',
+    taskType: 'OPENCLAW_DYNAMIC_EVALUATION',
+    modelInput: dynamicModelInput,
+  }),
+  modelInput: dynamicModelInput,
+};
+const overallBeginResult = {
+  attemptRef: 'OVR-OPAQUE',
+  status: 'RUNNING',
+  leaseToken,
+  leaseGeneration: 1,
+  leaseExpiresAt,
+  task: mockTaskEnvelope({
+    actionAttemptId: 'ATT-OVERALL',
+    operationRef: 'OVR-OPAQUE',
+    taskType: 'OPENCLAW_OVERALL_SYNTHESIS',
+    modelInput: {
+      modelInput: overallModelInput,
+      selectedDiscoveryRefs: ['search:boeing:server-owned'],
+      providerCodes: ['BOEING'],
+    },
+  }),
+  selectedDiscoveryRefs: ['search:boeing:server-owned'],
+  modelInput: overallModelInput,
+};
+const candidateResult = {
+  schemaVersion: 'wiselink.3_1.openclaw_result_envelope.v1',
+  contentHash: 'b'.repeat(64),
+};
+const serviceScope = {
+  authorizeWorkItemRead: async ({ workItemId }) => serviceScopeFor(workItemId),
+  authorizeDevelopmentCreate: async () => {
+    throw new Error('DEVELOPMENT_CREATE_NOT_EXPECTED_IN_MCP_SMOKE');
+  },
+  assertTransport: async () => undefined,
+  authorizeOpenClawWorkItem: async ({ workItemId }) =>
+    serviceScopeFor(workItemId),
+  authorizeOpenClawAttempt: async ({ attemptRef }) => ({
+    ...serviceScopeFor('WI-DYNAMIC'),
+    attemptRef,
+  }),
+};
 const vertical = {
   openApiStatus: async (workItemId) => {
     calls.push({ tool: 'get_parse_status', workItemId });
@@ -65,24 +127,19 @@ const vertical = {
     };
   },
 };
-const mcp = new CanonicalHostMcpService(vertical);
+const mcp = new CanonicalHostMcpService(vertical, serviceScope);
 const dynamicEvaluation = {
   begin: async (workItemId) => {
     dynamicCalls.push({ tool: 'begin_dynamic_evaluation', workItemId });
-    return {
-      attemptRef: 'DYN-OPAQUE-CALLER-REF',
-      modelInput: {
-        purpose: 'EVALUATE_DYNAMIC_RULES',
-        callerCorrelationRef: 'DYN-OPAQUE-CALLER-REF',
-        criterionCount: 150,
-      },
-    };
+    return structuredClone(dynamicBeginResult);
   },
-  commit: async (attemptRef, output) => {
+  commit: async (attemptRef, selectedLeaseToken, leaseGeneration, result) => {
     dynamicCalls.push({
       tool: 'commit_dynamic_evaluation_candidate',
       attemptRef,
-      output,
+      leaseToken: selectedLeaseToken,
+      leaseGeneration,
+      result,
     });
     return {
       workItemId: 'WI-DYNAMIC',
@@ -100,26 +157,65 @@ const discovery = {
 const overall = {
   begin: async (workItemId, providers) => {
     orchestratorCalls.push({ tool: 'begin_overall_synthesis', workItemId, providers });
-    return { attemptRef: 'OVR-OPAQUE', selectedDiscoveryRefs: ['search:boeing:server-owned'], modelInput: { operation: 'SYNTHESIZE_OVERALL_CANDIDATE', outputCorrelationRef: 'OVR-OPAQUE' } };
+    return structuredClone(overallBeginResult);
   },
-  commit: async (selectedAttemptRef, output) => {
-    orchestratorCalls.push({ tool: 'commit_overall_candidate', attemptRef: selectedAttemptRef, output });
+  commit: async (selectedAttemptRef, selectedLeaseToken, leaseGeneration, result) => {
+    orchestratorCalls.push({
+      tool: 'commit_overall_candidate',
+      attemptRef: selectedAttemptRef,
+      leaseToken: selectedLeaseToken,
+      leaseGeneration,
+      result,
+    });
     return { workItemId: 'WI-DYNAMIC', workItemRevision: 7, status: 'OVERALL_CANDIDATE_READY' };
   },
-  resume: async (attemptRef) => ({
-    attemptRef,
-    selectedDiscoveryRefs: [],
-    modelInput: {
+  resume: async (attemptRef) => {
+    const modelInput = {
       operation: 'SYNTHESIZE_OVERALL_CANDIDATE',
       outputCorrelationRef: attemptRef,
-    },
-  }),
+    };
+    return {
+      attemptRef,
+      leaseToken,
+      leaseGeneration: 2,
+      leaseExpiresAt,
+      task: mockTaskEnvelope({
+        actionAttemptId: 'ATT-OVERALL-EXISTING',
+        operationRef: attemptRef,
+        taskType: 'OPENCLAW_OVERALL_SYNTHESIS',
+        modelInput: {
+          modelInput,
+          selectedDiscoveryRefs: [],
+          providerCodes: [],
+        },
+      }),
+      selectedDiscoveryRefs: [],
+      modelInput,
+    };
+  },
+};
+const attempts = {
+  heartbeat: async (input) => {
+    attemptCalls.push({ tool: 'heartbeat_action_attempt', ...input });
+    return { leaseExpiresAt };
+  },
+  requestCancel: async (input) => {
+    attemptCalls.push({ tool: 'cancel_action_attempt', ...input });
+    return {
+      attemptRef: input.attemptRef,
+      status: 'CANCELLED',
+      projectionApplied: false,
+      terminalReason: 'CANCELLED_BY_REQUEST',
+    };
+  },
 };
 const openClawMcp = new CanonicalHostOpenClawMcpService(
   vertical,
   dynamicEvaluation,
   discovery,
   overall,
+  attempts,
+  serviceScope,
 );
 
 const httpServer = createServer(async (request, response) => {
@@ -293,6 +389,8 @@ try {
         'begin_overall_synthesis',
         'resume_overall_synthesis',
         'commit_overall_candidate',
+        'heartbeat_action_attempt',
+        'cancel_action_attempt',
       ],
     );
     assert.deepEqual(
@@ -302,14 +400,7 @@ try {
           arguments: { workItemId: 'WI-DYNAMIC' },
         }),
       ),
-      {
-        attemptRef: 'DYN-OPAQUE-CALLER-REF',
-        modelInput: {
-          purpose: 'EVALUATE_DYNAMIC_RULES',
-          callerCorrelationRef: 'DYN-OPAQUE-CALLER-REF',
-          criterionCount: 150,
-        },
-      },
+      dynamicBeginResult,
     );
     assert.deepEqual(
       resultJson(
@@ -317,7 +408,9 @@ try {
           name: 'commit_dynamic_evaluation_candidate',
           arguments: {
             attemptRef: 'DYN-OPAQUE-CALLER-REF',
-            output: '{"candidate":"complete"}',
+            leaseToken,
+            leaseGeneration: 1,
+            result: candidateResult,
           },
         }),
       ),
@@ -345,7 +438,9 @@ try {
       {
         tool: 'commit_dynamic_evaluation_candidate',
         attemptRef: 'DYN-OPAQUE-CALLER-REF',
-        output: '{"candidate":"complete"}',
+        leaseToken,
+        leaseGeneration: 1,
+        result: candidateResult,
       },
     ]);
     const denied = {
@@ -366,19 +461,86 @@ try {
       name: 'resume_overall_synthesis',
       arguments: { attemptRef: 'OVR-EXISTING' },
     });
+    const resumedModelInput = {
+      operation: 'SYNTHESIZE_OVERALL_CANDIDATE',
+      outputCorrelationRef: 'OVR-EXISTING',
+    };
     assert.deepEqual(resultJson(resumed), {
       attemptRef: 'OVR-EXISTING',
+      leaseToken,
+      leaseGeneration: 2,
+      leaseExpiresAt,
+      task: mockTaskEnvelope({
+        actionAttemptId: 'ATT-OVERALL-EXISTING',
+        operationRef: 'OVR-EXISTING',
+        taskType: 'OPENCLAW_OVERALL_SYNTHESIS',
+        modelInput: {
+          modelInput: resumedModelInput,
+          selectedDiscoveryRefs: [],
+          providerCodes: [],
+        },
+      }),
       selectedDiscoveryRefs: [],
-      modelInput: {
-        operation: 'SYNTHESIZE_OVERALL_CANDIDATE',
-        outputCorrelationRef: 'OVR-EXISTING',
-      },
+      modelInput: resumedModelInput,
     });
     await openClawClient.callTool({
       name: 'commit_overall_candidate',
-      arguments: { attemptRef: 'OVR-OPAQUE', output: '{"candidate":"complete"}' },
+      arguments: {
+        attemptRef: 'OVR-OPAQUE',
+        leaseToken,
+        leaseGeneration: 1,
+        result: candidateResult,
+      },
     });
     assert.equal(orchestratorCalls.length, 3);
+    assert.deepEqual(
+      resultJson(
+        await openClawClient.callTool({
+          name: 'heartbeat_action_attempt',
+          arguments: {
+            attemptRef: 'DYN-OPAQUE-CALLER-REF',
+            leaseToken,
+            leaseGeneration: 1,
+          },
+        }),
+      ),
+      { leaseExpiresAt },
+    );
+    assert.deepEqual(
+      resultJson(
+        await openClawClient.callTool({
+          name: 'cancel_action_attempt',
+          arguments: {
+            attemptRef: 'DYN-OPAQUE-CALLER-REF',
+            reason: 'cancel isolated MCP smoke attempt',
+          },
+        }),
+      ),
+      {
+        attemptRef: 'DYN-OPAQUE-CALLER-REF',
+        status: 'CANCELLED',
+        projectionApplied: false,
+        terminalReason: 'CANCELLED_BY_REQUEST',
+      },
+    );
+    assert.deepEqual(attemptCalls, [
+      {
+        tool: 'heartbeat_action_attempt',
+        attemptRef: 'DYN-OPAQUE-CALLER-REF',
+        tenantId: 'tenant-mcp-smoke',
+        workItemId: 'WI-DYNAMIC',
+        principalId: 'service:openclaw-mcp-smoke',
+        leaseToken,
+        leaseGeneration: 1,
+      },
+      {
+        tool: 'cancel_action_attempt',
+        attemptRef: 'DYN-OPAQUE-CALLER-REF',
+        tenantId: 'tenant-mcp-smoke',
+        workItemId: 'WI-DYNAMIC',
+        reason: 'cancel isolated MCP smoke attempt',
+      },
+    ]);
   } finally {
     await openClawClient.close();
   }
@@ -475,11 +637,13 @@ try {
           'begin_overall_synthesis',
           'resume_overall_synthesis',
           'commit_overall_candidate',
+          'heartbeat_action_attempt',
+          'cancel_action_attempt',
         ],
         resources: 0,
         prompts: 0,
         ailyMutationTools: 0,
-        openClawCandidateMutationTools: 5,
+        openClawCandidateMutationTools: 7,
         servedMethods: ['POST'],
         rejectedClientTransportMethods: [
           ...new Set(methods.filter((method) => method !== 'POST')),
@@ -494,6 +658,38 @@ try {
   await new Promise((resolveClose, rejectClose) =>
     httpServer.close((error) => (error ? rejectClose(error) : resolveClose())),
   );
+}
+
+function serviceScopeFor(workItemId) {
+  return {
+    principalId: 'service:openclaw-mcp-smoke',
+    appId: 'app-mcp-smoke',
+    tenantId: 'tenant-mcp-smoke',
+    workItemId,
+    authorizationFingerprint: 'mcp-smoke-fingerprint',
+  };
+}
+
+function mockTaskEnvelope(input) {
+  return {
+    schemaVersion: 'wiselink.3_1.openclaw_task_envelope.v1',
+    actionAttemptId: input.actionAttemptId,
+    operationRef: input.operationRef,
+    taskType: input.taskType,
+    priority: 100,
+    tenantId: 'tenant-mcp-smoke',
+    workItemId: 'WI-DYNAMIC',
+    inputRevision: 5,
+    baseRevision: 5,
+    documentVersionId: 'DV-MCP-SMOKE',
+    sourceRefs: [{ ref: 'artifact://mcp-smoke', sha256: 'a'.repeat(64) }],
+    allowedConnectors: [],
+    hostResolvedMissingInputs: [],
+    modelInput: structuredClone(input.modelInput),
+    deadline: '2026-08-24T12:10:00.000Z',
+    idempotencyKey: `mcp-smoke:${input.operationRef}`,
+    inputHash: 'c'.repeat(64),
+  };
 }
 
 async function connectedClient(endpoint, name, era = 'legacy') {

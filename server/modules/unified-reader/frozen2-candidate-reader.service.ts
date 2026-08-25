@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 
 import type {
   UnifiedPackageArtifactDescriptor,
+  UnifiedReaderSourceLocator,
   UnifiedReaderQueryResult,
 } from '@shared/api.interface';
 
@@ -30,6 +31,7 @@ interface ParsedContentUnit {
   kind: string;
   text: string;
   sourceRefIds: string[];
+  sourceLocators: UnifiedReaderSourceLocator[];
 }
 
 interface InspectedPackage {
@@ -122,8 +124,9 @@ export class Frozen2CandidateReaderService {
       throw new Error('PACKAGE_SEMANTIC_VALIDATION_FAILED:FALSE_COMPLETE');
     }
     const sourceRefs: unknown[] = recordArray(pkg.sourceRefs, 'sourceRefs');
-    const sourceRefIds: Set<string> = this.sourceRefIdSet(sourceRefs);
-    const units: ParsedContentUnit[] = this.contentUnits(pkg, sourceRefIds);
+    const sourceRefById = this.sourceRefIndex(sourceRefs);
+    const sourceRefIds = new Set(sourceRefById.keys());
+    const units: ParsedContentUnit[] = this.contentUnits(pkg, sourceRefIds, sourceRefById);
     const document: Record<string, unknown> = recordValue(
       pkg.document,
       'document',
@@ -191,8 +194,8 @@ export class Frozen2CandidateReaderService {
     }
   }
 
-  private sourceRefIdSet(sourceRefs: unknown[]): Set<string> {
-    const ids: Set<string> = new Set<string>();
+  private sourceRefIndex(sourceRefs: unknown[]): Map<string, UnifiedReaderSourceLocator> {
+    const refs = new Map<string, UnifiedReaderSourceLocator>();
     sourceRefs.forEach((value: unknown, index: number) => {
       const ref: Record<string, unknown> = recordValue(
         value,
@@ -202,20 +205,21 @@ export class Frozen2CandidateReaderService {
         ref.sourceRefId,
         `sourceRefs[${index}].sourceRefId`,
       );
-      if (ids.has(sourceRefId)) {
+      if (refs.has(sourceRefId)) {
         throw new Error('PACKAGE_SEMANTIC_VALIDATION_FAILED:DUPLICATE_SOURCE_REF');
       }
-      ids.add(sourceRefId);
+      refs.set(sourceRefId, sourceLocator(ref, sourceRefId));
     });
-    if (ids.size === 0) {
+    if (refs.size === 0) {
       throw new Error('PACKAGE_SEMANTIC_VALIDATION_FAILED:SOURCE_REFS_EMPTY');
     }
-    return ids;
+    return refs;
   }
 
   private contentUnits(
     pkg: Record<string, unknown>,
     sourceRefIds: Set<string>,
+    sourceRefById: Map<string, UnifiedReaderSourceLocator>,
   ): ParsedContentUnit[] {
     const values: unknown[] = recordArray(pkg.contentUnits, 'contentUnits');
     if (values.length === 0) {
@@ -247,6 +251,7 @@ export class Frozen2CandidateReaderService {
         kind: requiredText(unit.kind, `contentUnits[${index}].kind`, 100),
         text: extractText(unit),
         sourceRefIds: refs,
+        sourceLocators: refs.map((sourceRefId) => sourceRefById.get(sourceRefId)!).map(cloneLocator),
       };
     });
   }
@@ -263,6 +268,7 @@ export class Frozen2CandidateReaderService {
           kind: unit.kind,
           text: unit.text,
           sourceRefIds: [...unit.sourceRefIds],
+          sourceLocators: unit.sourceLocators.map(cloneLocator),
         });
       }
     });
@@ -282,6 +288,58 @@ function assertArtifactBytes(
   ) {
     throw new Error('ARTIFACT_READBACK_MISMATCH:DESCRIPTOR_OR_BYTES');
   }
+}
+
+function sourceLocator(
+  ref: Record<string, unknown>,
+  sourceRefId: string,
+): UnifiedReaderSourceLocator {
+  return {
+    sourceRefId,
+    kind: optionalText(ref.kind),
+    artifactId: optionalTextOrNull(ref.artifactId),
+    pageStart: optionalIntegerOrNull(ref.pageStart),
+    pageEnd: optionalIntegerOrNull(ref.pageEnd),
+    charStart: optionalIntegerOrNull(ref.charStart),
+    charEnd: optionalIntegerOrNull(ref.charEnd),
+    charOffsetUnit: optionalTextOrNull(ref.charOffsetUnit),
+    normalizedPath: optionalTextOrNull(ref.normalizedPath),
+    xpath: optionalTextOrNull(ref.xpath),
+    elementId: optionalTextOrNull(ref.elementId),
+    quote: optionalTextOrNull(ref.quote),
+    bbox: optionalNumberArrayOrNull(ref.bbox),
+  };
+}
+
+function cloneLocator(locator: UnifiedReaderSourceLocator): UnifiedReaderSourceLocator {
+  return { ...locator, bbox: locator.bbox ? [...locator.bbox] : null };
+}
+
+function optionalText(value: unknown): string {
+  return typeof value === 'string' && value.trim() !== '' ? value.trim() : 'unknown';
+}
+
+function optionalTextOrNull(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() !== '' ? value.trim() : null;
+}
+
+function optionalIntegerOrNull(value: unknown): number | null {
+  if (value === undefined || value === null) return null;
+  if (!Number.isSafeInteger(value)) {
+    throw new Error('PACKAGE_SEMANTIC_VALIDATION_FAILED:SOURCE_LOCATOR_INTEGER');
+  }
+  return Number(value);
+}
+
+function optionalNumberArrayOrNull(value: unknown): number[] | null {
+  if (value === undefined || value === null) return null;
+  if (
+    !Array.isArray(value) ||
+    value.some((item) => typeof item !== 'number' || !Number.isFinite(item))
+  ) {
+    throw new Error('PACKAGE_SEMANTIC_VALIDATION_FAILED:SOURCE_LOCATOR_BBOX');
+  }
+  return value.map(Number);
 }
 
 function sourceKindValue(value: unknown): 'pdf' | 'native_s1000d' {

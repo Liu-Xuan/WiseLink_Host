@@ -1,12 +1,16 @@
 import { getDocumentFamilyAdapter } from '../migrated/adapters/documentFamilyAdapterRegistry.js';
-import {
-  buildGovernedDocumentIngressPreflightDecision,
-} from '../migrated/ingress/documentIngressPreflight.js';
+import { buildGovernedDocumentIngressPreflightDecision } from '../migrated/ingress/documentIngressPreflight.js';
 import { normalizeUploadDescriptor } from '../migrated/ingress/uploadDescriptor.js';
 import { deterministicId, sha256Hex } from '../runtime/valueTools.js';
 
-const NEW_VERSION_DECISIONS = new Set(['INGEST_NEW_FAMILY', 'INGEST_NEW_REVISION']);
-const EXACT_LINK_DECISIONS = new Set(['REUSE_EXACT', 'RESUME_EXISTING_PROCESS']);
+const NEW_VERSION_DECISIONS = new Set([
+  'INGEST_NEW_FAMILY',
+  'INGEST_NEW_REVISION',
+]);
+const EXACT_LINK_DECISIONS = new Set([
+  'REUSE_EXACT',
+  'RESUME_EXISTING_PROCESS',
+]);
 
 function fail(code, message, details = {}) {
   throw Object.assign(new Error(message), { code, details });
@@ -14,16 +18,31 @@ function fail(code, message, details = {}) {
 
 function required(value, fieldName) {
   const normalized = String(value || '').trim();
-  if (!normalized) fail('HOSTED_INGEST_INPUT_INVALID', `${fieldName} is required.`);
+  if (!normalized)
+    fail('HOSTED_INGEST_INPUT_INVALID', `${fieldName} is required.`);
   return normalized;
 }
 
 function assertPdf(bytes, mediaType) {
-  if (!Buffer.isBuffer(bytes) || bytes.byteLength < 8 || bytes.subarray(0, 5).toString() !== '%PDF-') {
-    fail('INVALID_PDF_INPUT', 'Selected FileService object is not a PDF byte stream.');
+  if (
+    !Buffer.isBuffer(bytes) ||
+    bytes.byteLength < 8 ||
+    bytes.subarray(0, 5).toString() !== '%PDF-'
+  ) {
+    fail(
+      'INVALID_PDF_INPUT',
+      'Selected FileService object is not a PDF byte stream.',
+    );
   }
-  if (mediaType && mediaType !== 'application/pdf' && mediaType !== 'application/octet-stream') {
-    fail('INVALID_PDF_MEDIA_TYPE', `Unsupported selected media type: ${mediaType}`);
+  if (
+    mediaType &&
+    mediaType !== 'application/pdf' &&
+    mediaType !== 'application/octet-stream'
+  ) {
+    fail(
+      'INVALID_PDF_MEDIA_TYPE',
+      `Unsupported selected media type: ${mediaType}`,
+    );
   }
 }
 
@@ -49,12 +68,23 @@ function rejectSelfReportedAuthority(request) {
 function issuerFor(normalizedDescriptor) {
   const explicit = String(normalizedDescriptor.issuer || '').trim();
   if (explicit) return explicit.toUpperCase();
-  const adapter = getDocumentFamilyAdapter(normalizedDescriptor.adapterRelease?.adapterId);
-  return String(adapter?.issuerPolicy?.issuer || 'UNKNOWN').trim().toUpperCase() || 'UNKNOWN';
+  const adapter = getDocumentFamilyAdapter(
+    normalizedDescriptor.adapterRelease?.adapterId,
+  );
+  return (
+    String(adapter?.issuerPolicy?.issuer || 'UNKNOWN')
+      .trim()
+      .toUpperCase() || 'UNKNOWN'
+  );
 }
 
 export class DocumentManagementHostedCore {
-  constructor({ artifactStore, catalog, authorizer, now = () => new Date().toISOString() } = {}) {
+  constructor({
+    artifactStore,
+    catalog,
+    authorizer,
+    now = () => new Date().toISOString(),
+  } = {}) {
     if (!artifactStore || !catalog || !authorizer) {
       fail(
         'HOSTED_DOCUMENT_MANAGEMENT_NOT_CONFIGURED',
@@ -69,14 +99,31 @@ export class DocumentManagementHostedCore {
 
   async ingestFileServiceSelection(request = {}, serverContext = {}) {
     rejectSelfReportedAuthority(request);
-    const actorUserId = required(serverContext.actorUserId, 'serverContext.actorUserId');
+    const actorUserId = required(
+      serverContext.actorUserId,
+      'serverContext.actorUserId',
+    );
     const tenantId = required(serverContext.tenantId, 'serverContext.tenantId');
-    const idempotencyKey = required(request.idempotencyKey, 'request.idempotencyKey');
+    const idempotencyKey = required(
+      request.idempotencyKey,
+      'request.idempotencyKey',
+    );
+    const selection = {
+      bucketId: required(
+        request.selection?.bucketId,
+        'request.selection.bucketId',
+      ),
+      filePath: required(
+        request.selection?.filePath,
+        'request.selection.filePath',
+      ),
+    };
     await this.authorizer.assertCanIngest({
       actorUserId,
       tenantId,
       roles: Array.isArray(serverContext.roles) ? [...serverContext.roles] : [],
       action: 'DOCUMENT_INGEST',
+      selection,
     });
 
     const existingIngestion = await this.catalog.findIngestionByIdempotency({
@@ -90,7 +137,10 @@ export class DocumentManagementHostedCore {
       if (existingIngestion.status === 'INCOMPLETE') {
         incompleteIngestion = existingIngestion;
       } else if (existingIngestion.status !== 'COMMITTED') {
-        fail('INGESTION_REPLAY_STATE_INVALID', 'Idempotent replay returned an unsupported state.');
+        fail(
+          'INGESTION_REPLAY_STATE_INVALID',
+          'Idempotent replay returned an unsupported state.',
+        );
       } else {
         return {
           ...existingIngestion,
@@ -105,15 +155,25 @@ export class DocumentManagementHostedCore {
     const selected = await this.artifactStore.readSelection(request.selection);
     assertPdf(selected.bytes, selected.mediaType);
     const actualSha256 = sha256Hex(selected.bytes);
-    if (actualSha256 !== selected.sha256 || selected.bytes.byteLength !== selected.byteLength) {
-      fail('SELECTION_ACTUAL_BYTE_MISMATCH', 'Selection receipt does not match actual bytes.');
+    if (
+      actualSha256 !== selected.sha256 ||
+      selected.bytes.byteLength !== selected.byteLength
+    ) {
+      fail(
+        'SELECTION_ACTUAL_BYTE_MISMATCH',
+        'Selection receipt does not match actual bytes.',
+      );
     }
     const sourceArtifactId = deterministicId(
       'source_artifact',
       actualSha256,
       selected.bytes.byteLength,
     );
-    const acquisitionId = deterministicId('acquisition', tenantId, idempotencyKey);
+    const acquisitionId = deterministicId(
+      'acquisition',
+      tenantId,
+      idempotencyKey,
+    );
     const immutable = await this.artifactStore.persistImmutableSource({
       bytes: selected.bytes,
       sha256: actualSha256,
@@ -121,7 +181,10 @@ export class DocumentManagementHostedCore {
       mediaType: 'application/pdf',
     });
     if (!immutable.readbackVerified) {
-      fail('IMMUTABLE_READBACK_REQUIRED', 'Canonical FileService source lacks actual-byte readback.');
+      fail(
+        'IMMUTABLE_READBACK_REQUIRED',
+        'Canonical FileService source lacks actual-byte readback.',
+      );
     }
     if (immutable.reusedExisting === true && !incompleteIngestion) {
       if (typeof this.catalog.assertImmutableSourceReuseSafe !== 'function') {
@@ -143,8 +206,8 @@ export class DocumentManagementHostedCore {
         providerVersionId: immutable.providerVersionId,
       });
       if (
-        reuse?.disposition !== 'ORPHAN_RECOVERY_ALLOWED'
-        && reuse?.disposition !== 'CATALOGED_SOURCE_REUSE_ALLOWED'
+        reuse?.disposition !== 'ORPHAN_RECOVERY_ALLOWED' &&
+        reuse?.disposition !== 'CATALOGED_SOURCE_REUSE_ALLOWED'
       ) {
         fail(
           'IMMUTABLE_SOURCE_REUSE_STATE_INVALID',
@@ -156,7 +219,8 @@ export class DocumentManagementHostedCore {
     const acquiredAt = this.now();
     const sourceDescriptor = {
       ...(request.descriptor || {}),
-      originalFilename: request.descriptor?.originalFilename || selected.fileName,
+      originalFilename:
+        request.descriptor?.originalFilename || selected.fileName,
       mediaType: 'application/pdf',
       sha256: actualSha256,
       sizeBytes: selected.bytes.byteLength,
@@ -227,7 +291,8 @@ export class DocumentManagementHostedCore {
       branch: decision.branch,
       executionAuthorized: false,
       observedCurrentGeneration: observedFamily?.currentGeneration || 0,
-      observedCurrentDocumentVersionId: observedFamily?.currentDocumentVersionId || null,
+      observedCurrentDocumentVersionId:
+        observedFamily?.currentDocumentVersionId || null,
       normalizedDescriptor,
       decisionPayload: decision,
       status: 'READY',
@@ -248,7 +313,10 @@ export class DocumentManagementHostedCore {
         byteLength: selected.bytes.byteLength,
       });
       if (!exactVersion) {
-        fail('EXACT_DOCUMENT_VERSION_NOT_FOUND', `${decision.decision} requires one exact DocumentVersion.`);
+        fail(
+          'EXACT_DOCUMENT_VERSION_NOT_FOUND',
+          `${decision.decision} requires one exact DocumentVersion.`,
+        );
       }
       await this.catalog.linkAcquisitionToVersion({
         acquisitionId: acquisition.acquisitionId,
@@ -284,11 +352,14 @@ export class DocumentManagementHostedCore {
       };
     }
     if (
-      normalizedDescriptor.canonicalDocumentFamily === 'GENERIC'
-      || !decision.incoming.identityResolved
-      || !decision.incoming.versionOrderResolved
+      normalizedDescriptor.canonicalDocumentFamily === 'GENERIC' ||
+      !decision.incoming.identityResolved ||
+      !decision.incoming.versionOrderResolved
     ) {
-      fail('IDENTITY_NOT_COMMITTABLE', 'Canonical commit requires non-GENERIC resolved identity and version.');
+      fail(
+        'IDENTITY_NOT_COMMITTABLE',
+        'Canonical commit requires non-GENERIC resolved identity and version.',
+      );
     }
 
     const familyId = deterministicId('family', familyIdentityKey);
@@ -310,23 +381,27 @@ export class DocumentManagementHostedCore {
           'Residual recovery requires the exact pre-existing immutable FileService object.',
         );
       }
-      if (typeof this.catalog.assertIncompleteIngestionRecoverySafe !== 'function') {
+      if (
+        typeof this.catalog.assertIncompleteIngestionRecoverySafe !== 'function'
+      ) {
         fail(
           'INCOMPLETE_INGESTION_RECOVERY_CHECK_REQUIRED',
           'Residual recovery requires a fresh Catalog and WorkItem state check.',
         );
       }
-      const recovery = await this.catalog.assertIncompleteIngestionRecoverySafe({
-        sourceArtifact: sourceArtifactRecord,
-        acquisition: acquisitionRecord,
-        preflight: preflightRecord,
-        downstream: {
-          familyId,
-          canonicalIdentityKey: familyIdentityKey,
-          documentId,
-          documentVersionId,
+      const recovery = await this.catalog.assertIncompleteIngestionRecoverySafe(
+        {
+          sourceArtifact: sourceArtifactRecord,
+          acquisition: acquisitionRecord,
+          preflight: preflightRecord,
+          downstream: {
+            familyId,
+            canonicalIdentityKey: familyIdentityKey,
+            documentId,
+            documentVersionId,
+          },
         },
-      });
+      );
       if (recovery?.disposition !== 'INCOMPLETE_INGESTION_RECOVERY_ALLOWED') {
         fail(
           'INCOMPLETE_INGESTION_RECOVERY_STATE_INVALID',
@@ -341,7 +416,8 @@ export class DocumentManagementHostedCore {
       preflightId,
       preflightDecision: decision.decision,
       observedCurrentGeneration: observedFamily?.currentGeneration || 0,
-      observedCurrentDocumentVersionId: observedFamily?.currentDocumentVersionId || null,
+      observedCurrentDocumentVersionId:
+        observedFamily?.currentDocumentVersionId || null,
       family: {
         familyId,
         canonicalIdentityKey: familyIdentityKey,
@@ -389,15 +465,20 @@ export class DocumentManagementHostedCore {
         preflightId,
       },
     });
-    const freshVersion = await this.catalog.readDocumentVersion(commit.documentVersionId);
+    const freshVersion = await this.catalog.readDocumentVersion(
+      commit.documentVersionId,
+    );
     const freshFamily = await this.catalog.readFamily(commit.familyId);
     if (
-      !freshVersion
-      || freshVersion.pdfSha256 !== actualSha256
-      || freshVersion.byteLength !== selected.bytes.byteLength
-      || freshFamily?.currentDocumentVersionId !== freshVersion.documentVersionId
+      !freshVersion ||
+      freshVersion.pdfSha256 !== actualSha256 ||
+      freshVersion.byteLength !== selected.bytes.byteLength ||
+      freshFamily?.currentDocumentVersionId !== freshVersion.documentVersionId
     ) {
-      fail('CATALOG_FRESH_READ_MISMATCH', 'Hosted Catalog fresh read does not prove exact version/currentness.');
+      fail(
+        'CATALOG_FRESH_READ_MISMATCH',
+        'Hosted Catalog fresh read does not prove exact version/currentness.',
+      );
     }
     return {
       acquisitionId: acquisition.acquisitionId,

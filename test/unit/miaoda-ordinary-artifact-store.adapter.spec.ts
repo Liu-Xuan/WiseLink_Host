@@ -10,6 +10,7 @@ interface StoredFile {
 class LocalScopedFileService {
   readonly files = new Map<string, StoredFile>();
   uploadCount = 0;
+  downloadCount = 0;
 
   constructor(private readonly bucketId: string) {}
 
@@ -42,6 +43,7 @@ class LocalScopedFileService {
   }
 
   async download(filePath: string) {
+    this.downloadCount += 1;
     const stored = this.files.get(filePath);
     if (!stored) throw new Error('FILE_NOT_FOUND');
     const bytes = Uint8Array.from(stored.bytes);
@@ -124,6 +126,224 @@ describe('MiaodaOrdinaryArtifactStoreAdapter', () => {
     expect(scoped.getFileMetadata).toHaveBeenCalledTimes(2);
   });
 
+  it('retries one transport failure for the readback metadata request', async () => {
+    const bytes = new TextEncoder().encode('{"package":true}\n');
+    const digest = sha256Raw(bytes);
+    const path = `unified-parsed-packages/sha256/${digest}.json`;
+    const metadata = {
+      id: 'metadata-retry-file',
+      bucketID: 'bucket-retry-test',
+      filePath: `/${path}`,
+      metadata: {
+        contentLength: String(bytes.byteLength),
+        mimeType: 'application/json',
+      },
+    };
+    const scoped = {
+      getFileMetadata: jest
+        .fn()
+        .mockRejectedValueOnce(
+          Object.assign(new TypeError('fetch failed'), {
+            cause: Object.assign(new Error('other side closed'), {
+              code: 'UND_ERR_SOCKET',
+            }),
+          }),
+        )
+        .mockResolvedValue(metadata),
+      download: jest.fn(async () => ({
+        content: bytes,
+        metadata: { id: metadata.id },
+      })),
+    };
+    const adapter = new MiaodaOrdinaryArtifactStoreAdapter({
+      getDefaultBucket: async () => 'bucket-retry-test',
+      from: () => scoped,
+    } as never);
+
+    await expect(
+      adapter.readActualBytes({
+        storeRole: 'UnifiedArtifactStoreCandidate',
+        ref: `artifact://UnifiedArtifactStoreCandidate/unified-parsed-packages/sha256/${digest}`,
+        sha256: digest,
+        byteLength: bytes.byteLength,
+        mediaType: 'application/json',
+      }),
+    ).resolves.toEqual(bytes);
+    expect(scoped.getFileMetadata).toHaveBeenCalledTimes(2);
+    expect(scoped.download).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries one transport failure for the download request and then succeeds', async () => {
+    const bytes = new TextEncoder().encode('{"package":true}\n');
+    const digest = sha256Raw(bytes);
+    const path = `unified-parsed-packages/sha256/${digest}.json`;
+    const metadata = {
+      id: 'download-retry-file',
+      bucketID: 'bucket-download-retry-test',
+      filePath: `/${path}`,
+      metadata: {
+        contentLength: String(bytes.byteLength),
+        mimeType: 'application/json',
+      },
+    };
+    const scoped = {
+      getFileMetadata: jest.fn().mockResolvedValue(metadata),
+      download: jest
+        .fn()
+        .mockRejectedValueOnce(new TypeError('fetch failed'))
+        .mockResolvedValue({
+          content: bytes,
+          metadata: { id: metadata.id },
+        }),
+    };
+    const adapter = new MiaodaOrdinaryArtifactStoreAdapter({
+      getDefaultBucket: async () => 'bucket-download-retry-test',
+      from: () => scoped,
+    } as never);
+
+    await expect(
+      adapter.readActualBytes({
+        storeRole: 'UnifiedArtifactStoreCandidate',
+        ref: `artifact://UnifiedArtifactStoreCandidate/unified-parsed-packages/sha256/${digest}`,
+        sha256: digest,
+        byteLength: bytes.byteLength,
+        mediaType: 'application/json',
+      }),
+    ).resolves.toEqual(bytes);
+    expect(scoped.download).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not retry a status-bearing provider failure', async () => {
+    const bytes = new TextEncoder().encode('{"package":true}\n');
+    const digest = sha256Raw(bytes);
+    const path = `unified-parsed-packages/sha256/${digest}.json`;
+    const notFound = Object.assign(new Error('Not Found'), { status: 404 });
+    const scoped = {
+      getFileMetadata: jest.fn().mockRejectedValue(notFound),
+      download: jest.fn(),
+    };
+    const adapter = new MiaodaOrdinaryArtifactStoreAdapter({
+      getDefaultBucket: async () => 'bucket-no-retry-test',
+      from: () => scoped,
+    } as never);
+
+    await expect(
+      adapter.readActualBytes({
+        storeRole: 'UnifiedArtifactStoreCandidate',
+        ref: `artifact://UnifiedArtifactStoreCandidate/unified-parsed-packages/sha256/${digest}`,
+        sha256: digest,
+        byteLength: bytes.byteLength,
+        mediaType: 'application/json',
+      }),
+    ).rejects.toThrow('ARTIFACT_STORE_METADATA_READ_FAILED:Not Found');
+    expect(scoped.getFileMetadata).toHaveBeenCalledTimes(1);
+    expect(scoped.download).not.toHaveBeenCalled();
+  });
+
+  it('does not retry a fetch wrapper whose cause is an HTTP 404', async () => {
+    const bytes = new TextEncoder().encode('{"package":true}\n');
+    const digest = sha256Raw(bytes);
+    const path = `unified-parsed-packages/sha256/${digest}.json`;
+    const notFound = Object.assign(new Error('Not Found'), { status: 404 });
+    const transportWrapper = Object.assign(new TypeError('fetch failed'), {
+      cause: notFound,
+    });
+    const scoped = {
+      getFileMetadata: jest.fn().mockRejectedValue(transportWrapper),
+      download: jest.fn(),
+    };
+    const adapter = new MiaodaOrdinaryArtifactStoreAdapter({
+      getDefaultBucket: async () => 'bucket-nested-no-retry-test',
+      from: () => scoped,
+    } as never);
+
+    await expect(
+      adapter.readActualBytes({
+        storeRole: 'UnifiedArtifactStoreCandidate',
+        ref: `artifact://UnifiedArtifactStoreCandidate/unified-parsed-packages/sha256/${digest}`,
+        sha256: digest,
+        byteLength: bytes.byteLength,
+        mediaType: 'application/json',
+      }),
+    ).rejects.toThrow('ARTIFACT_STORE_METADATA_READ_FAILED:fetch failed');
+    expect(scoped.getFileMetadata).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not retry a downloaded metadata identity mismatch', async () => {
+    const bytes = new TextEncoder().encode('{"package":true}\n');
+    const digest = sha256Raw(bytes);
+    const path = `unified-parsed-packages/sha256/${digest}.json`;
+    const scoped = {
+      getFileMetadata: jest.fn().mockResolvedValue({
+        id: 'semantic-mismatch-file',
+        bucketID: 'bucket-semantic-mismatch-test',
+        filePath: `/${path}`,
+        metadata: {
+          contentLength: String(bytes.byteLength),
+          mimeType: 'application/json',
+        },
+      }),
+      download: jest.fn().mockResolvedValue({
+        content: bytes,
+        metadata: { id: 'different-file' },
+      }),
+    };
+    const adapter = new MiaodaOrdinaryArtifactStoreAdapter({
+      getDefaultBucket: async () => 'bucket-semantic-mismatch-test',
+      from: () => scoped,
+    } as never);
+
+    await expect(
+      adapter.readActualBytes({
+        storeRole: 'UnifiedArtifactStoreCandidate',
+        ref: `artifact://UnifiedArtifactStoreCandidate/unified-parsed-packages/sha256/${digest}`,
+        sha256: digest,
+        byteLength: bytes.byteLength,
+        mediaType: 'application/json',
+      }),
+    ).rejects.toThrow('ARTIFACT_READBACK_MISMATCH:BYTES');
+    expect(scoped.getFileMetadata).toHaveBeenCalledTimes(1);
+    expect(scoped.download).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails closed after one transport retry without a third request', async () => {
+    const bytes = new TextEncoder().encode('{"package":true}\n');
+    const digest = sha256Raw(bytes);
+    const path = `unified-parsed-packages/sha256/${digest}.json`;
+    const first = new TypeError('fetch failed');
+    const second = new TypeError('fetch failed');
+    const scoped = {
+      getFileMetadata: jest.fn().mockResolvedValue({
+        id: 'download-fail-file',
+        bucketID: 'bucket-download-fail-test',
+        filePath: `/${path}`,
+        metadata: {
+          contentLength: String(bytes.byteLength),
+          mimeType: 'application/json',
+        },
+      }),
+      download: jest
+        .fn()
+        .mockRejectedValueOnce(first)
+        .mockRejectedValueOnce(second),
+    };
+    const adapter = new MiaodaOrdinaryArtifactStoreAdapter({
+      getDefaultBucket: async () => 'bucket-download-fail-test',
+      from: () => scoped,
+    } as never);
+
+    await expect(
+      adapter.readActualBytes({
+        storeRole: 'UnifiedArtifactStoreCandidate',
+        ref: `artifact://UnifiedArtifactStoreCandidate/unified-parsed-packages/sha256/${digest}`,
+        sha256: digest,
+        byteLength: bytes.byteLength,
+        mediaType: 'application/json',
+      }),
+    ).rejects.toThrow('ARTIFACT_STORE_DOWNLOAD_FAILED:fetch failed');
+    expect(scoped.download).toHaveBeenCalledTimes(2);
+  });
+
   it('rejects a digest path containing different actual bytes', async () => {
     const scoped = new LocalScopedFileService('bucket-local');
     const fileService = {
@@ -146,6 +366,7 @@ describe('MiaodaOrdinaryArtifactStoreAdapter', () => {
       'ARTIFACT_READBACK_MISMATCH:BYTES',
     );
     expect(scoped.uploadCount).toBe(0);
+    expect(scoped.downloadCount).toBe(1);
   });
 
   it('preserves the default-bucket provider failure stage and cause', async () => {

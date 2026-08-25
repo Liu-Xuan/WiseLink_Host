@@ -22,67 +22,87 @@ import type { Request } from 'express';
 
 import { DocumentManagementHostedController } from '../../server/modules/document-management/src/hosted/nest/document-management-hosted.controller';
 
-describe('DocumentManagementHostedController', () => {
-  const request = {
-    userContext: {
-      userId: 'user-1',
-      tenantId: 'tenant-1',
-      roles: ['engineer'],
-    },
-  } as unknown as Request;
-
-  it.each([
-    {
-      sourceChannel: 'openclaw_external_discovery_review',
-      descriptor: {},
-    },
-    {
-      sourceChannel: 'openclaw_external_monitor_review',
-      descriptor: {},
-    },
-    {
-      sourceChannel: 'canonical_miaoda_document_selection',
-      descriptor: { externalDiscovery: { candidateRef: 'forged' } },
-    },
-  ])(
-    'rejects external-discovery provenance on the generic ingestion route before DM I/O',
-    async (body) => {
+describe('DocumentManagementHostedController direct-call defense', () => {
+  it.each(['ingest', 'read'] as const)(
+    'rejects direct %s before body, request context, or service access',
+    (operation) => {
       const service = {
         ingestFileServiceSelection: jest.fn(),
+        getDocumentVersion: jest.fn(),
       };
-      const controller = new DocumentManagementHostedController(service as never);
+      const controller = new DocumentManagementHostedController(
+        service as never,
+      );
+      const forbidden = new Proxy(
+        {},
+        {
+          get(): never {
+            throw new Error('DIRECT_DM_CONTROLLER_READ_CALLER_INPUT');
+          },
+        },
+      );
+      const invoke = (): unknown =>
+        operation === 'ingest'
+          ? controller.ingestFileServiceSelection(
+              forbidden,
+              { userContext: undefined } as Request,
+            )
+          : controller.getDocumentVersion('DV-FORGED', {
+              userContext: undefined,
+            } as Request);
 
-      expect(() => controller.ingestFileServiceSelection(body, request)).toThrow(
+      expect(invoke).toThrow(
         expect.objectContaining({
-          code: 'EXTERNAL_DISCOVERY_REVIEWED_INGEST_REQUIRED',
-          statusCode: 400,
+          code: 'CANONICAL_IDENTITY_HANDOFF_UNAVAILABLE',
+          statusCode: 503,
+          denialSource: 'MIAODA_BROWSER_UNAVAILABLE_ADAPTER',
         }),
       );
       expect(service.ingestFileServiceSelection).not.toHaveBeenCalled();
+      expect(service.getDocumentVersion).not.toHaveBeenCalled();
     },
   );
 
-  it('keeps ordinary authenticated FileService ingestion unchanged', async () => {
-    const result = { documentVersionId: 'document-version-1' };
+  it('reuses the hosted native user context for FileService ingestion', async () => {
     const service = {
-      ingestFileServiceSelection: jest.fn().mockResolvedValue(result),
+      ingestFileServiceSelection: jest.fn().mockResolvedValue({
+        documentVersionId: 'DV-NATIVE',
+      }),
+      getDocumentVersion: jest.fn(),
     };
-    const controller = new DocumentManagementHostedController(service as never);
+    const controller = new DocumentManagementHostedController(
+      service as never,
+    );
+    const previousSandboxId = process.env.SANDBOX_ID;
+    process.env.SANDBOX_ID = 'unit-hosted-sandbox';
     const body = {
-      sourceChannel: 'canonical_miaoda_document_selection',
-      sourceRef: 'miaoda-file-service:bucket:path',
-      selection: { bucketId: 'bucket', filePath: '/path.pdf' },
-      descriptor: { originalFilename: 'file.pdf' },
-      idempotencyKey: 'ordinary-ingest-1',
+      selection: {
+        bucketId: 'bucket-default',
+        filePath: 'wiselink/dev-intake/source.pdf',
+      },
     };
-
-    await expect(
-      controller.ingestFileServiceSelection(body, request),
-    ).resolves.toEqual(result);
+    try {
+      await expect(
+        controller.ingestFileServiceSelection(body, {
+          userContext: {
+            userId: '1812345678901234567',
+            tenantId: '7283059256756502547',
+            appId: 'app_17bzc551rsg',
+            env: 'preview',
+            roles: ['authenticated', 'wiselink_development'],
+          },
+        } as Request),
+      ).resolves.toEqual({ documentVersionId: 'DV-NATIVE' });
+    } finally {
+      if (previousSandboxId === undefined) delete process.env.SANDBOX_ID;
+      else process.env.SANDBOX_ID = previousSandboxId;
+    }
     expect(service.ingestFileServiceSelection).toHaveBeenCalledWith(body, {
-      actorUserId: 'user-1',
-      tenantId: 'tenant-1',
-      roles: ['engineer'],
+      actorUserId: '1812345678901234567',
+      tenantId: '7283059256756502547',
+      roles: ['authenticated', 'wiselink_development'],
+      appId: 'app_17bzc551rsg',
+      env: 'preview',
     });
   });
 });

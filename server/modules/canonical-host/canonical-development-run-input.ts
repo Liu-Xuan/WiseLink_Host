@@ -4,6 +4,7 @@ import type { CanonicalDevelopmentWorkItemRunRequest } from '@shared/api.interfa
 
 const ALLOWED_KEYS = new Set([
   'documentVersionId',
+  'selection',
   'developmentRunToken',
   'query',
 ]);
@@ -35,11 +36,16 @@ export function developmentRunBody(
       throw badRequest(`DEVELOPMENT_RUN_REQUEST_INVALID:UNKNOWN_FIELD:${key}`);
     }
   }
+  const documentVersionId = optionalText(
+    value.documentVersionId,
+    'documentVersionId',
+  );
+  const selection = optionalSelection(value.selection);
+  if ((documentVersionId ? 1 : 0) + (selection ? 1 : 0) !== 1) {
+    throw badRequest('DEVELOPMENT_RUN_SOURCE_EXACTLY_ONE_REQUIRED');
+  }
   return {
-    documentVersionId: requiredText(
-      value.documentVersionId,
-      'documentVersionId',
-    ),
+    ...(documentVersionId ? { documentVersionId } : { selection }),
     developmentRunToken: requiredText(
       value.developmentRunToken,
       'developmentRunToken',
@@ -49,6 +55,32 @@ export function developmentRunBody(
         ? undefined
         : requiredText(value.query, 'query'),
   };
+}
+
+function optionalSelection(
+  value: unknown,
+): { bucketId: string; filePath: string } | undefined {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw badRequest('DEVELOPMENT_RUN_SELECTION_INVALID');
+  }
+  const selection = value as Record<string, unknown>;
+  const keys = Object.keys(selection);
+  if (
+    keys.some((key) => key !== 'bucketId' && key !== 'filePath') ||
+    keys.length !== 2
+  ) {
+    throw badRequest('DEVELOPMENT_RUN_SELECTION_INVALID');
+  }
+  return {
+    bucketId: requiredText(selection.bucketId, 'selection.bucketId'),
+    filePath: requiredText(selection.filePath, 'selection.filePath'),
+  };
+}
+
+function optionalText(value: unknown, field: string): string | undefined {
+  if (value === undefined) return undefined;
+  return requiredText(value, field);
 }
 
 function requiredText(value: unknown, field: string): string {

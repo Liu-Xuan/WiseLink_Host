@@ -92,6 +92,7 @@ describe('UnifiedReaderService hosted candidate loop', () => {
         immutableArtifactPersistAndReadback: false,
         sourceBoundCandidateReadback: false,
         workItemMutation: false,
+        currentnessMutation: false,
         publication: false,
       },
       blockers: expect.arrayContaining([
@@ -120,6 +121,10 @@ describe('UnifiedReaderService hosted candidate loop', () => {
 
       expect(response).toMatchObject({
         status: 'CANDIDATE_READBACK_VERIFIED',
+        workItemId: `wi-${sourceKind}`,
+        requestId: `req-${sourceKind}`,
+        documentVersionId: `docv-${sourceKind}`,
+        permissionSnapshotVersion: 'perm-test-1',
         package: {
           packageId,
           sourceKind,
@@ -139,6 +144,27 @@ describe('UnifiedReaderService hosted candidate loop', () => {
         },
       });
       expect(response.queryResults[0].sourceRefIds.length).toBeGreaterThan(0);
+      expect(response.queryResults[0].sourceLocators).toEqual([
+        expect.objectContaining(
+          sourceKind === 'pdf'
+            ? {
+                sourceRefId: `source-ref-${sourceKind}`,
+                kind: 'pdf',
+                pageStart: 2,
+                pageEnd: 2,
+                charOffsetUnit: 'unicode_scalar_value',
+                quote: 'Disconnect electrical power.',
+              }
+            : {
+                sourceRefId: `source-ref-${sourceKind}`,
+                kind: 'xml',
+                normalizedPath: 'DMC-FIXTURE.XML',
+                xpath: '/dmodule/content/description/levelledPara',
+                elementId: 'para-1',
+                quote: 'Disconnect electrical power.',
+              },
+        ),
+      ]);
     },
   );
 
@@ -196,7 +222,30 @@ function makeCandidatePackage(sourceKind: 'pdf' | 'native_s1000d'): {
       contentPreserved: true,
       structuredCoverageComplete: true,
     },
-    sourceRefs: [{ sourceRefId }],
+    sourceRefs: [
+      sourceKind === 'pdf'
+        ? {
+            sourceRefId,
+            kind: 'pdf',
+            artifactId: `artifact-${sourceKind}`,
+            pageStart: 2,
+            pageEnd: 2,
+            charStart: 10,
+            charEnd: 38,
+            charOffsetUnit: 'unicode_scalar_value',
+            quote: 'Disconnect electrical power.',
+            bbox: [1, 2, 3, 4],
+          }
+        : {
+            sourceRefId,
+            kind: 'xml',
+            artifactId: `artifact-${sourceKind}`,
+            normalizedPath: 'DMC-FIXTURE.XML',
+            xpath: '/dmodule/content/description/levelledPara',
+            elementId: 'para-1',
+            quote: 'Disconnect electrical power.',
+          },
+    ],
     contentUnits: [
       {
         unitId: `unit-${sourceKind}-heading`,

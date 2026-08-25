@@ -1,388 +1,474 @@
 import type { CanonicalWorkItemProjection } from '@shared/api.interface';
-import type { DynamicRulesEvaluationRequest } from '../../server/modules/assessment-workbench/assessment-host-consumer.public-api';
+
+import {
+  sealResultEnvelope,
+  sealTaskEnvelope,
+} from '../../server/modules/action-attempt/action-attempt-envelope';
+import type { ActionAttemptRow } from '../../server/modules/action-attempt/action-attempt.types';
 import { CanonicalHostOpenClawDynamicEvaluationService } from '../../server/modules/canonical-host/canonical-host-openclaw-dynamic-evaluation.service';
-import type {
-  CanonicalAuthorizationPort,
-  CanonicalPermissionSnapshotPort,
-  CanonicalWorkItemRegistrarPort,
-} from '../../server/modules/canonical-host/canonical-host.types';
-import type { CanonicalHostAssessmentService } from '../../server/modules/canonical-host/canonical-host-assessment.service';
-import type { DynamicRulesEvaluationProcessor } from '../../server/modules/assessment-workbench/dynamic-rules-evaluation.processor';
-import type { UnifiedArtifactStorePort } from '../../server/modules/unified-reader/unified-reader.types';
-import type {
-  DynamicEvaluationActionAttempt,
-  MiaodaWorkItemRepository,
-} from '../../server/modules/work-item/miaoda-work-item.repository';
 
 const WORK_ITEM_ID = 'WI-DYNAMIC-150';
-const ATTEMPT_ID = 'ATT-INTERNAL-NOT-FOR-MODEL';
-const ATTEMPT_REF = 'DYN-OPAQUE-CALLER-REF';
+const ATTEMPT_ID = 'ATT-DYNAMIC-REAL';
+const ATTEMPT_REF = 'AQ-DYNAMIC-REAL';
+const LEASE_TOKEN = '00000000-0000-4000-8000-000000000001';
 
 describe('CanonicalHostOpenClawDynamicEvaluationService', () => {
-  it('keeps a pre-model transient failure recoverable on the same opaque ref', async () => {
-    const harness = createHarness({ transientBeginFailures: 1 });
-
-    await expect(harness.service.begin(WORK_ITEM_ID)).rejects.toThrow(
-      'TRANSIENT_READER_FAILURE',
-    );
-    const recovered = await harness.service.begin(WORK_ITEM_ID);
-
-    expect(recovered.attemptRef).toBe(ATTEMPT_REF);
-    expect(JSON.stringify(recovered.modelInput)).not.toContain(ATTEMPT_ID);
-    expect(JSON.stringify(recovered.modelInput)).not.toContain(WORK_ITEM_ID);
-    expect(JSON.stringify(recovered.modelInput)).not.toContain('actor');
-    expect(harness.state.reserveCount).toBe(2);
-    expect(harness.state.failedAttempts).toEqual([]);
-    expect(harness.state.status).toBe('RUNNING');
-  });
-
-  it('rejects invalid output without persistence and permits corrected N/N commit', async () => {
+  it('rejects before ActionAttempt or WorkItem I/O when service scope is absent', async () => {
     const harness = createHarness();
-    await harness.service.begin(WORK_ITEM_ID);
+    harness.scope.authorizeOpenClawAttempt.mockRejectedValueOnce(
+      Object.assign(new Error('scope unavailable'), {
+        code: 'CANONICAL_SERVICE_SCOPE_UNAVAILABLE',
+        statusCode: 503,
+      }),
+    );
 
     await expect(
-      harness.service.commit(ATTEMPT_REF, '{"incomplete":true}'),
-    ).rejects.toThrow('DYNAMIC_RULES_OUTPUT_INVALID');
-    expect(harness.state.persistedOutputs).toEqual([]);
-    expect(harness.state.failedAttempts).toEqual([]);
-    expect(harness.state.status).toBe('RUNNING');
+      harness.service.commit(ATTEMPT_REF, LEASE_TOKEN, 1, {}),
+    ).rejects.toMatchObject({
+      code: 'CANONICAL_SERVICE_SCOPE_UNAVAILABLE',
+      statusCode: 503,
+    });
+    expect(harness.attempts.prepareCommit).not.toHaveBeenCalled();
+    expect(
+      harness.registrar.getTenantScopedByWorkItemId,
+    ).not.toHaveBeenCalled();
+    expect(harness.artifactStore.persistAndReadback).not.toHaveBeenCalled();
+  });
 
-    const output = validOutput();
-    const committed = await harness.service.commit(ATTEMPT_REF, output);
+  it('uses the durable queue claim and returns its exact fencing lease', async () => {
+    const harness = createHarness();
+    const begun = await harness.service.begin(WORK_ITEM_ID);
 
-    expect(harness.state.persistedOutputs).toEqual([output]);
-    expect(harness.state.casCount).toBe(1);
-    expect(harness.state.completedAttempts).toEqual([ATTEMPT_ID]);
+    expect(harness.attempts.reserveAndClaim).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workItemId: WORK_ITEM_ID,
+        taskType: 'OPENCLAW_DYNAMIC_EVALUATION',
+        leaseOwner: 'service:openclaw-real',
+        inputRevision: 5,
+        baseRevision: 5,
+      }),
+    );
+    expect(begun).toMatchObject({
+      attemptRef: ATTEMPT_REF,
+      status: 'RUNNING',
+      leaseToken: LEASE_TOKEN,
+      leaseGeneration: 1,
+      modelInput: { purpose: 'EVALUATE_DYNAMIC_RULES' },
+    });
+    expect(harness.processor.buildRequest.mock.calls[0][2]).toMatchObject({
+      expectedRevision: 5,
+    });
+  });
+
+  it('consumes only ResultEnvelope.modelOutput, persists actual bytes, CASes, then finalizes', async () => {
+    const harness = createHarness();
+    const result = dynamicResult();
+    const committed = await harness.service.commit(
+      ATTEMPT_REF,
+      LEASE_TOKEN,
+      1,
+      result,
+    );
+
+    expect(harness.attempts.prepareCommit).toHaveBeenCalledWith({
+      attemptRef: ATTEMPT_REF,
+      tenantId: 'tenant-dynamic',
+      workItemId: WORK_ITEM_ID,
+      principalId: 'service:openclaw-real',
+      leaseToken: LEASE_TOKEN,
+      leaseGeneration: 1,
+      result,
+    });
+    expect(harness.processor.consumeOutput).toHaveBeenCalledWith(
+      expect.any(Object),
+      result.modelOutput,
+    );
+    expect(harness.artifactStore.persistAndReadback).toHaveBeenCalledTimes(1);
+    expect(harness.registrar.compareAndSet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workItemId: WORK_ITEM_ID,
+        expectedRevision: 5,
+        syncPrimaryAttempt: false,
+      }),
+    );
+    expect(harness.attempts.finishProjectionSuccess).toHaveBeenCalledTimes(1);
     expect(committed).toMatchObject({
       workItemId: WORK_ITEM_ID,
       workItemRevision: 6,
       status: 'BASE_RULE_CANDIDATE_READY',
       baseRules: {
-        criterionCount: 150,
-        evaluationItemCount: 150,
-        unresolvedCount: 119,
-        sourceBoundCandidateCount: 150,
+        criterionCount: 2,
+        evaluationItemCount: 2,
         actionAttemptId: ATTEMPT_ID,
       },
     });
   });
 
-  it('rejects a stale WorkItem revision before consume, claim or persist', async () => {
-    const harness = createHarness({ workItemRevision: 6, attemptNo: 5 });
+  it('fails closed if a rebuilt private request drifts from the sealed TaskEnvelope input', async () => {
+    const harness = createHarness();
+    harness.prepared.task.modelInput = {
+      purpose: 'EVALUATE_DYNAMIC_RULES',
+      expectedSelfCheck: { criterionSetId: 'DRIFTED' },
+    };
 
     await expect(
-      harness.service.commit(ATTEMPT_REF, validOutput()),
-    ).rejects.toThrow('WORK_ITEM_CAS_CONFLICT');
-    expect(harness.state.consumeCount).toBe(0);
-    expect(harness.state.claimCount).toBe(0);
-    expect(harness.state.persistedOutputs).toEqual([]);
-  });
-
-  it('releases a claimed transient FileService failure for the same opaque attempt', async () => {
-    const harness = createHarness({ transientPersistFailures: 1 });
-    await harness.service.begin(WORK_ITEM_ID);
-    const output = validOutput();
-
-    await expect(harness.service.commit(ATTEMPT_REF, output)).rejects.toThrow(
-      'FILESERVICE_TRANSIENT_READBACK_FAILURE',
-    );
-    expect(harness.state.status).toBe('RUNNING');
-    expect(harness.state.releaseCount).toBe(1);
-    expect(harness.state.failedAttempts).toEqual([]);
-
-    await expect(harness.service.commit(ATTEMPT_REF, output)).resolves.toMatchObject({
-      workItemId: WORK_ITEM_ID,
-      workItemRevision: 6,
+      harness.service.commit(ATTEMPT_REF, LEASE_TOKEN, 1, dynamicResult()),
+    ).resolves.toMatchObject({
+      status: 'FAILED',
+      projectionApplied: false,
+      terminalReason: 'HOST_RESULT_GATE_REJECTED',
     });
-    expect(harness.state.persistedOutputs).toEqual([output]);
-    expect(harness.state.casCount).toBe(1);
-  });
-
-  it('atomically allows only one of two concurrent commits to persist', async () => {
-    const harness = createHarness();
-    const output = validOutput();
-
-    const results = await Promise.allSettled([
-      harness.service.commit(ATTEMPT_REF, output),
-      harness.service.commit(ATTEMPT_REF, output),
-    ]);
-
-    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
-    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
-    expect(harness.state.claimCount).toBe(2);
-    expect(harness.state.persistedOutputs).toEqual([output]);
-    expect(harness.state.casCount).toBe(1);
-    expect(harness.state.failedAttempts).toEqual([]);
-  });
-
-  it('does not release another caller active COMMITTING claim', async () => {
-    const entered = deferred<void>();
-    const release = deferred<void>();
-    const harness = createHarness({ persistGate: { entered, release } });
-    const output = validOutput();
-    const first = harness.service.commit(ATTEMPT_REF, output);
-    await entered.promise;
-
-    await expect(harness.service.commit(ATTEMPT_REF, output)).rejects.toThrow(
-      'DYNAMIC_EVALUATION_COMMIT_IN_PROGRESS',
+    expect(harness.attempts.finishResultGateFailure).toHaveBeenCalledWith(
+      harness.prepared,
+      expect.objectContaining({
+        message: 'DYNAMIC_EVALUATION_TASK_MODEL_INPUT_DRIFT',
+      }),
     );
-    expect(harness.state.releaseCount).toBe(0);
-    expect(harness.state.claimCount).toBe(1);
+    expect(harness.processor.consumeOutput).not.toHaveBeenCalled();
+    expect(harness.artifactStore.persistAndReadback).not.toHaveBeenCalled();
+    expect(harness.registrar.compareAndSet).not.toHaveBeenCalled();
+  });
 
-    release.resolve();
-    await expect(first).resolves.toMatchObject({ workItemId: WORK_ITEM_ID });
-    expect(harness.state.persistedOutputs).toEqual([output]);
-    expect(harness.state.casCount).toBe(1);
+  it('reconciles a post-CAS 5xx replay from the WorkItem projection', async () => {
+    const harness = createHarness();
+    const result = dynamicResult();
+    harness.workItem.integratedAssessment = {
+      status: 'BASE_RULE_CANDIDATE_READY',
+      baseRules: {
+        status: 'CANDIDATE_ONLY',
+        revision: 1,
+        sourceResultId: 'openclaw-dynamic://REQ-DYNAMIC-REAL',
+        criterionSetId: 'JACS-DYNAMIC-2',
+        criterionCount: 2,
+        evaluationItemCount: 2,
+        unresolvedCount: 1,
+        sourceBoundCandidateCount: 2,
+        artifact: artifact('artifact://dynamic-output'),
+        actionAttemptId: ATTEMPT_ID,
+      },
+      engineerReviews: null,
+      overallSynthesis: null,
+      overallForAeoConfirmation: null,
+    };
+    harness.workItem.revision = 6;
+    harness.prepared.row.status = 'COMMITTING';
+
+    await expect(
+      harness.service.commit(ATTEMPT_REF, LEASE_TOKEN, 1, result),
+    ).resolves.toMatchObject({ workItemId: WORK_ITEM_ID, workItemRevision: 6 });
+    expect(harness.artifactStore.persistAndReadback).not.toHaveBeenCalled();
+    expect(harness.registrar.compareAndSet).not.toHaveBeenCalled();
+    expect(harness.attempts.finishProjectionSuccess).toHaveBeenCalledTimes(1);
+  });
+
+  it('terminalizes a CAS race without a second projection write', async () => {
+    const harness = createHarness();
+    harness.workItem.revision = 6;
+
+    await expect(
+      harness.service.commit(ATTEMPT_REF, LEASE_TOKEN, 1, dynamicResult()),
+    ).rejects.toThrow('WORK_ITEM_CAS_CONFLICT');
+    expect(harness.attempts.finishProjectionConflict).toHaveBeenCalledWith({
+      prepared: harness.prepared,
+      currentRevision: 6,
+    });
+    expect(harness.artifactStore.persistAndReadback).not.toHaveBeenCalled();
   });
 });
 
-interface Deferred<T> {
-  promise: Promise<T>;
-  resolve(value?: T): void;
-}
-
-interface PersistGate {
-  entered: Deferred<void>;
-  release: Deferred<void>;
-}
-
-interface HarnessOptions {
-  transientBeginFailures?: number;
-  workItemRevision?: number;
-  attemptNo?: number;
-  transientPersistFailures?: number;
-  persistGate?: PersistGate;
-}
-
-interface HarnessState {
-  status: string;
-  reserveCount: number;
-  consumeCount: number;
-  claimCount: number;
-  casCount: number;
-  releaseCount: number;
-  transientBeginFailures: number;
-  transientPersistFailures: number;
-  persistedOutputs: string[];
-  failedAttempts: string[];
-  completedAttempts: string[];
-}
-
-function createHarness(options: HarnessOptions = {}) {
-  const workItem = workItemProjection(options.workItemRevision ?? 5);
-  const attempt: DynamicEvaluationActionAttempt = {
-    attemptId: ATTEMPT_ID,
-    workItemId: WORK_ITEM_ID,
-    actionType: 'OPENCLAW_DYNAMIC_EVALUATION',
-    attemptNo: options.attemptNo ?? workItem.revision,
-    triggerRequestId: ATTEMPT_REF,
-    requestOrigin: 'OPENCLAW',
-    status: 'RUNNING',
-    actorUserId: 'service:openclaw-main',
-    tenantId: 'tenant-dynamic',
-    createdAt: new Date('2026-08-16T12:00:00.000Z'),
-  };
-  const state: HarnessState = {
-    status: 'RUNNING',
-    reserveCount: 0,
-    consumeCount: 0,
-    claimCount: 0,
-    casCount: 0,
-    releaseCount: 0,
-    transientBeginFailures: options.transientBeginFailures ?? 0,
-    transientPersistFailures: options.transientPersistFailures ?? 0,
-    persistedOutputs: [],
-    failedAttempts: [],
-    completedAttempts: [],
-  };
+function createHarness() {
+  const workItem = workItemProjection();
+  const task = taskEnvelope(workItem);
+  const row = actionRow(task);
+  const prepared = { row, task, result: dynamicResult(task), recovery: false };
   const registrar = {
-    getByWorkItemId: async () => workItem,
-    compareAndSet: async (input: {
-      expectedRevision: number;
-      next: Omit<CanonicalWorkItemProjection, 'revision'>;
-    }) => {
-      state.casCount += 1;
-      if (input.expectedRevision !== workItem.revision) {
-        throw new Error('WORK_ITEM_CAS_CONFLICT');
-      }
-      return { ...input.next, revision: input.expectedRevision + 1 };
-    },
-  } as unknown as CanonicalWorkItemRegistrarPort;
-  const authorization = {
-    authorize: async (input: { actor: { userId: string } }) => ({
-      action: 'PERSIST_OPENCLAW_DYNAMIC_EVALUATION' as const,
-      allowed: input.actor.userId === 'service:openclaw-main',
-      actorFingerprint: 'server-derived',
-      decisionId: 'decision-dynamic',
-      decisionHash: 'decision-dynamic-hash',
-      permissionSnapshotVersion: 'permission-dynamic',
-    }),
-  } as unknown as CanonicalAuthorizationPort;
-  const permissions = {
-    freshRead: async () => ({
-      permissionSnapshotVersion: 'permission-dynamic',
-    }),
-  } as unknown as CanonicalPermissionSnapshotPort;
+    getTenantScopedByWorkItemId: jest.fn(async () => workItem),
+    compareAndSet: jest.fn(
+      async (input: {
+        expectedRevision: number;
+        next: Omit<CanonicalWorkItemProjection, 'revision'>;
+      }) => ({ ...input.next, revision: input.expectedRevision + 1 }),
+    ),
+  };
   const artifactStore = {
-    persistAndReadback: async (bytes: Uint8Array) => {
-      if (state.transientPersistFailures > 0) {
-        state.transientPersistFailures -= 1;
-        throw new Error('FILESERVICE_TRANSIENT_READBACK_FAILURE');
-      }
-      if (options.persistGate) {
-        options.persistGate.entered.resolve();
-        await options.persistGate.release.promise;
-      }
-      const output = new TextDecoder().decode(bytes);
-      state.persistedOutputs.push(output);
-      return {
-        artifact: {
-          storeRole: 'UnifiedArtifactStoreCandidate' as const,
-          ref: 'artifact://dynamic-output',
-          sha256: 'a'.repeat(64),
-          byteLength: bytes.byteLength,
-          mediaType: 'application/json' as const,
-        },
-        actualBytes: bytes,
-        reused: false,
-      };
-    },
-  } as unknown as UnifiedArtifactStorePort;
-  const repository = {
-    getRow: async () => ({ tenantId: 'tenant-dynamic' }),
-    reserveDynamicEvaluationAction: async () => {
-      state.reserveCount += 1;
-      return { ...attempt, status: state.status, created: state.reserveCount === 1 };
-    },
-    getDynamicEvaluationActionByCallerRef: async () => ({
-      ...attempt,
-      status: state.status,
-    }),
-    claimDynamicEvaluationCommit: async () => {
-      state.claimCount += 1;
-      if (state.status !== 'RUNNING') {
-        throw new Error('DYNAMIC_EVALUATION_COMMIT_ALREADY_CLAIMED');
-      }
-      state.status = 'COMMITTING';
-    },
-    releaseOpenClawCommitForRetry: async () => {
-      if (state.status !== 'COMMITTING') {
-        throw new Error('OPENCLAW_COMMIT_RETRY_RELEASE_CONFLICT');
-      }
-      state.releaseCount += 1;
-      state.status = 'RUNNING';
-    },
-    completeAssessmentAction: async (attemptId: string) => {
-      state.status = 'SUCCEEDED';
-      state.completedAttempts.push(attemptId);
-    },
-    failAssessmentAction: async (input: { attemptId: string }) => {
-      state.status = 'FAILED';
-      state.failedAttempts.push(input.attemptId);
-    },
-  } as unknown as MiaodaWorkItemRepository;
+    persistAndReadback: jest.fn(async (bytes: Uint8Array) => ({
+      artifact: artifact('artifact://dynamic-output', bytes.byteLength),
+      actualBytes: bytes,
+      reused: false,
+    })),
+  };
   const assessment = {
-    prepareDynamicRulesCandidate: async () => {
-      if (state.transientBeginFailures > 0) {
-        state.transientBeginFailures -= 1;
-        throw new Error('TRANSIENT_READER_FAILURE');
-      }
-      return {
-        candidateArtifact: { schemaVersion: 'assessment-input' },
-        overall: { transport: { evaluationContext: {} } },
-      };
-    },
-  } as unknown as CanonicalHostAssessmentService;
+    prepareDynamicRulesCandidate: jest.fn(async () => ({
+      dynamicRulesInput: {},
+      overall: { transport: {} },
+    })),
+  };
   const processor = {
-    buildRequest: (
-      _assessmentInput: unknown,
-      _transport: unknown,
-      correlation: Record<string, unknown>,
-      callerCorrelationRef: string,
-    ): DynamicRulesEvaluationRequest => ({
+    buildRequest: jest.fn(() => ({
       privateEnvelope: {
-        callerCorrelationRef,
-        correlation: correlation as DynamicRulesEvaluationRequest['privateEnvelope']['correlation'],
+        callerCorrelationRef: 'REQ-DYNAMIC-REAL',
+        correlation: {},
       },
       modelInput: {
         purpose: 'EVALUATE_DYNAMIC_RULES',
-        callerCorrelationRef,
-        operatorInstruction: [],
-        subjectContext: {},
-        jobAidContext: {},
-        expectedSelfCheck: {
-          criterionSetId: 'JACS-DYNAMIC-150',
-          criterionCount: 150,
-        },
-        responseInstruction: {},
-      } as unknown as DynamicRulesEvaluationRequest['modelInput'],
-    }),
-    consumeOutput: (_request: unknown, output: string) => {
-      state.consumeCount += 1;
-      const parsed = JSON.parse(output) as Record<string, unknown>;
-      if (
-        parsed.callerCorrelationRef !== ATTEMPT_REF ||
-        !Array.isArray(parsed.ruleResults) ||
-        parsed.ruleResults.length !== 150
-      ) {
-        throw new Error('DYNAMIC_RULES_OUTPUT_INVALID');
-      }
-      return {
-        ruleResults: parsed.ruleResults,
-        overallSelfCheck: { rulesWithMissingInputs: 119 },
-        criterionCount: 150,
-      };
-    },
-  } as unknown as DynamicRulesEvaluationProcessor;
-  return {
-    state,
-    service: new CanonicalHostOpenClawDynamicEvaluationService(
-      registrar,
-      authorization,
-      permissions,
-      artifactStore,
-      repository,
-      assessment,
-      processor,
+        expectedSelfCheck: { criterionSetId: 'JACS-DYNAMIC-2' },
+      },
+    })),
+    consumeOutput: jest.fn(() => ({
+      ruleResults: [{ sourceRefs: ['SRC-1'] }, { sourceRefs: ['SRC-2'] }],
+      overallSelfCheck: { rulesWithMissingInputs: 1 },
+      criterionCount: 2,
+    })),
+  };
+  const attempts = {
+    reserveAndClaim: jest.fn(
+      async (input: {
+        buildModelInput(
+          identity: Record<string, unknown>,
+        ): Promise<Record<string, unknown>>;
+      }) => {
+        const modelInput = await input.buildModelInput({
+          attemptId: ATTEMPT_ID,
+          operationRef: ATTEMPT_REF,
+          triggerRequestId: 'REQ-DYNAMIC-REAL',
+          attemptNo: 1,
+          createdAt: new Date('2026-08-24T10:00:00.000Z'),
+        });
+        return {
+          attemptRef: ATTEMPT_REF,
+          status: 'RUNNING',
+          leaseToken: LEASE_TOKEN,
+          leaseGeneration: 1,
+          leaseExpiresAt: '2026-08-24T11:00:00.000Z',
+          task: { ...task, modelInput },
+          created: true,
+          triggerRequestId: 'REQ-DYNAMIC-REAL',
+        };
+      },
     ),
+    prepareCommit: jest.fn(async () => prepared),
+    finishProjectionSuccess: jest.fn(async () => ({
+      attemptRef: ATTEMPT_REF,
+      status: 'SUCCEEDED',
+      projectionApplied: true,
+      terminalReason: 'PROJECTION_CAS_APPLIED',
+    })),
+    finishProjectionConflict: jest.fn(),
+    finishResultGateFailure: jest.fn(async () => ({
+      attemptRef: ATTEMPT_REF,
+      status: 'FAILED',
+      projectionApplied: false,
+      terminalReason: 'HOST_RESULT_GATE_REJECTED',
+    })),
+  };
+  const scope = {
+    authorizeOpenClawWorkItem: jest.fn(async () => ({
+      principalId: 'service:openclaw-real',
+      appId: 'app_17bzc551rsg',
+      tenantId: 'tenant-dynamic',
+      workItemId: WORK_ITEM_ID,
+      authorizationFingerprint: 'scope:dynamic-real',
+    })),
+    authorizeOpenClawAttempt: jest.fn(async () => ({
+      principalId: 'service:openclaw-real',
+      appId: 'app_17bzc551rsg',
+      tenantId: 'tenant-dynamic',
+      workItemId: WORK_ITEM_ID,
+      attemptRef: ATTEMPT_REF,
+      authorizationFingerprint: 'scope:dynamic-real',
+    })),
+  };
+  const service = new CanonicalHostOpenClawDynamicEvaluationService(
+    registrar as never,
+    artifactStore as never,
+    assessment as never,
+    processor as never,
+    { assertLedgerCompatibleWithDynamicBytes: jest.fn() } as never,
+    attempts as never,
+    scope as never,
+  );
+  return {
+    service,
+    workItem,
+    prepared,
+    registrar,
+    artifactStore,
+    processor,
+    attempts,
+    scope,
   };
 }
 
-function workItemProjection(revision: number): CanonicalWorkItemProjection {
+function workItemProjection(): CanonicalWorkItemProjection {
   return {
+    schemaVersion: 'wiselink.3_1.canonical_work_item_projection.v0.candidate',
     workItemId: WORK_ITEM_ID,
-    requestId: 'REQ-DYNAMIC-150',
-    revision,
+    requestId: 'REQ-WORK-ITEM',
+    revision: 5,
     phase: 'CANDIDATE_READBACK_VERIFIED',
+    permissionSnapshotVersion: 'permission-dynamic',
+    parseAuthorization: {
+      action: 'PARSE_PDF',
+      actorFingerprint: 'actor',
+      decisionId: 'decision',
+      decisionHash: 'decision-hash',
+      permissionSnapshotVersion: 'permission-dynamic',
+    },
     source: {
-      documentVersionId: 'document-version-dynamic-150',
+      documentId: 'DOC-DYNAMIC',
+      documentVersionId: 'DV-DYNAMIC',
+      parserRequestId: 'PARSER-REQ',
+      sourceArtifactId: 'SOURCE-ARTIFACT',
+      sourceFileSha256: 'b'.repeat(64),
+      sourceByteLength: 100,
+      driveFileToken: 'drive-token',
+      driveSourceVersion: '1',
     },
     classification: {
       status: 'CONFIRMED',
       normalizedFamily: 'SB',
+      classifierReleaseId: 'classifier',
+      classifierReleaseHash: 'hash',
+      parserProfileId: 'issuer.boeing',
+      parserProfileHash: 'profile-hash',
+      fingerprint: 'fingerprint',
     },
-    package: { packageId: 'package-dynamic-150' },
+    package: {
+      packageId: 'PKG-DYNAMIC',
+      contractId: 'techpub.parsed-package.v1',
+      contractRevision: 'frozen.2',
+      artifact: artifact('artifact://package'),
+      contentHash: 'c'.repeat(64),
+      semanticHash: 'd'.repeat(64),
+      provenanceHash: 'e'.repeat(64),
+      coverageHash: 'f'.repeat(64),
+      resultStatus: 'complete',
+      title: 'Dynamic test',
+      contentUnitCount: 2,
+      sourceRefCount: 2,
+      readerReceiptId: 'reader-receipt',
+      fullValidatorProof: {
+        validatorId: 'U0Frozen2SchemaSemanticValidator',
+        validatorRevision: 'v1',
+        contractCommit: 'fa69ada08265934951df53c7a61a3ccdb8cb2900',
+        artifactSha256: 'a'.repeat(64),
+      },
+    },
     integratedAssessment: null,
-  } as unknown as CanonicalWorkItemProjection;
+    failure: null,
+    recordingFailure: null,
+  };
 }
 
-function validOutput(): string {
-  return JSON.stringify({
-    callerCorrelationRef: ATTEMPT_REF,
-    ruleResults: Array.from({ length: 150 }, (_value, index) => ({
-      ruleId: `RULE-${index + 1}`,
-      sourceRefs: [`SOURCE-${index + 1}`],
-    })),
+function taskEnvelope(workItem: CanonicalWorkItemProjection) {
+  return sealTaskEnvelope({
+    schemaVersion: 'wiselink.3_1.openclaw_task_envelope.v1',
+    actionAttemptId: ATTEMPT_ID,
+    operationRef: ATTEMPT_REF,
+    taskType: 'OPENCLAW_DYNAMIC_EVALUATION',
+    priority: 100,
+    tenantId: 'tenant-dynamic',
+    workItemId: WORK_ITEM_ID,
+    inputRevision: 5,
+    baseRevision: 5,
+    documentVersionId: workItem.source.documentVersionId,
+    sourceRefs: [
+      {
+        ref: workItem.package!.artifact.ref,
+        sha256: workItem.package!.artifact.sha256,
+      },
+    ],
+    allowedConnectors: [],
+    hostResolvedMissingInputs: [],
+    modelInput: {
+      purpose: 'EVALUATE_DYNAMIC_RULES',
+      expectedSelfCheck: { criterionSetId: 'JACS-DYNAMIC-2' },
+    },
+    deadline: '2026-08-24T12:00:00.000Z',
+    idempotencyKey: 'openclaw-v1:dynamic:test',
   });
 }
 
-function deferred<T>(): Deferred<T> {
-  let resolvePromise: (value: T | PromiseLike<T>) => void = () => undefined;
-  const promise = new Promise<T>((resolve) => {
-    resolvePromise = resolve;
+function dynamicResult(task = taskEnvelope(workItemProjection())) {
+  return sealResultEnvelope({
+    schemaVersion: 'wiselink.3_1.openclaw_result_envelope.v1',
+    actionAttemptId: task.actionAttemptId,
+    operationRef: task.operationRef,
+    taskType: task.taskType,
+    workItemId: task.workItemId,
+    baseRevision: task.baseRevision,
+    status: 'SUCCEEDED',
+    businessOutcome: 'CANDIDATE_READY',
+    candidateStatus: null,
+    modelOutput: JSON.stringify({ callerCorrelationRef: 'REQ-DYNAMIC-REAL' }),
+    outputArtifactRefs: [],
+    sourceRefs: [...task.sourceRefs],
+    factsConsidered: [],
+    missingInputs: [],
+    conflicts: [],
+    warnings: [],
+    modelVersion: 'openclaw-real',
+    promptVersion: 'dynamic-prompt-v1',
+    skillVersion: 'dynamic-skill-v1',
+    toolVersions: { host: '006146b' },
+    runMetrics: { durationMs: 1, inputUnits: 1, outputUnits: 1 },
+    errorCode: null,
+    errorDetail: null,
   });
+}
+
+function actionRow(task: ReturnType<typeof taskEnvelope>): ActionAttemptRow {
+  const now = new Date('2026-08-24T10:00:00.000Z');
   return {
-    promise,
-    resolve: (value?: T) => resolvePromise(value as T),
+    attemptId: ATTEMPT_ID,
+    operationRef: ATTEMPT_REF,
+    triggerRequestId: 'REQ-DYNAMIC-REAL',
+    workItemId: WORK_ITEM_ID,
+    actionType: 'OPENCLAW_DYNAMIC_EVALUATION',
+    attemptNo: 1,
+    status: 'COMMITTING',
+    requestOrigin: 'OPENCLAW_MCP_V1',
+    tenantId: 'tenant-dynamic',
+    actorUserId: 'service:openclaw-main',
+    priority: 100,
+    inputRevision: 5,
+    baseRevision: 5,
+    documentVersionId: 'DV-DYNAMIC',
+    taskEnvelopeJson: JSON.stringify(task),
+    taskInputHash: task.inputHash,
+    resultEnvelopeJson: null,
+    resultContentHash: null,
+    idempotencyKey: task.idempotencyKey,
+    claimCount: 1,
+    retryCount: 0,
+    maxAttempts: 3,
+    leaseOwner: 'service:openclaw-real',
+    leaseToken: LEASE_TOKEN,
+    leaseGeneration: 1,
+    leaseExpiresAt: new Date('2026-08-24T11:00:00.000Z'),
+    lastHeartbeatAt: now,
+    nextAttemptAt: null,
+    deadlineAt: new Date(task.deadline),
+    cancelRequestedAt: null,
+    cancelReason: null,
+    terminalReason: null,
+    projectionApplied: false,
+    executorSessionKey: null,
+    commitStartedAt: now,
+    leaseSlot: 0,
+    startedAt: now,
+    completedAt: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+function artifact(ref: string, byteLength = 100) {
+  return {
+    storeRole: 'UnifiedArtifactStoreCandidate' as const,
+    ref,
+    sha256: 'a'.repeat(64),
+    byteLength,
+    mediaType: 'application/json' as const,
   };
 }

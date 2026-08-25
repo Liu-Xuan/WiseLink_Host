@@ -7,31 +7,47 @@ import type {
   CanonicalWorkItemProjection,
 } from '@shared/api.interface';
 import { DynamicRulesEvaluationProcessor } from '../assessment-workbench/assessment-host-consumer.public-api';
+import { serializeNormalizedBaseOneShotOutput } from '../assessment-workbench/base-one-shot-assessment.processor';
+import { canonicalJson } from '../action-attempt/action-attempt-envelope';
+import { ActionAttemptLifecycleService } from '../action-attempt/action-attempt-lifecycle.service';
+import type {
+  OpenClawResultEnvelope,
+  OpenClawTaskEnvelope,
+} from '../action-attempt/action-attempt-envelope.types';
+import type {
+  ActionAttemptRow,
+  ActionAttemptTerminalProjection,
+  NewActionAttemptIdentity,
+  PreparedActionAttemptCommit,
+} from '../action-attempt/action-attempt.types';
 import { UNIFIED_ARTIFACT_STORE } from '../unified-reader/unified-reader.constants';
 import type { UnifiedArtifactStorePort } from '../unified-reader/unified-reader.types';
-import {
-  MiaodaWorkItemRepository,
-  type DynamicEvaluationActionAttempt,
-} from '../work-item/miaoda-work-item.repository';
-import {
-  CANONICAL_AUTHORIZATION,
-  CANONICAL_PERMISSION_SNAPSHOT,
-  CANONICAL_WORK_ITEM_REGISTRAR,
-} from './canonical-host.constants';
+import type { DynamicEvaluationActionAttempt } from '../work-item/miaoda-work-item.repository';
+import { CANONICAL_WORK_ITEM_REGISTRAR } from './canonical-host.constants';
 import { CanonicalHostAssessmentService } from './canonical-host-assessment.service';
 import { CanonicalHostEngineerReviewService } from './canonical-host-engineer-review.service';
 import type {
-  CanonicalAuthorizationPort,
   CanonicalHostActor,
-  CanonicalPermissionSnapshotPort,
   CanonicalWorkItemRegistrarPort,
 } from './canonical-host.types';
+import {
+  CANONICAL_SERVICE_SCOPE_AUTHORIZATION,
+  type CanonicalServiceScopeAuthorizationPort,
+  type CanonicalVerifiedOpenClawAttemptScope,
+  type CanonicalVerifiedServiceScope,
+} from './canonical-service-scope.authorization';
 
 const OPENCLAW_SERVICE_USER_ID = 'service:openclaw-main';
 const CANONICAL_APP_ID = 'app_17bzc551rsg';
 
 export interface BeginDynamicEvaluationResult {
   attemptRef: string;
+  status: 'RUNNING' | 'COMMITTING';
+  leaseToken: string;
+  leaseGeneration: number;
+  leaseExpiresAt: string;
+  task: OpenClawTaskEnvelope;
+  recoveryResult?: OpenClawResultEnvelope;
   modelInput: Record<string, unknown>;
 }
 
@@ -47,74 +63,149 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
   constructor(
     @Inject(CANONICAL_WORK_ITEM_REGISTRAR)
     private readonly registrar: CanonicalWorkItemRegistrarPort,
-    @Inject(CANONICAL_AUTHORIZATION)
-    private readonly authorization: CanonicalAuthorizationPort,
-    @Inject(CANONICAL_PERMISSION_SNAPSHOT)
-    private readonly permissionSnapshots: CanonicalPermissionSnapshotPort,
     @Inject(UNIFIED_ARTIFACT_STORE)
     private readonly artifactStore: UnifiedArtifactStorePort,
-    private readonly repository: MiaodaWorkItemRepository,
     private readonly assessment: CanonicalHostAssessmentService,
     private readonly processor: DynamicRulesEvaluationProcessor,
     private readonly engineerReviews: CanonicalHostEngineerReviewService,
+    private readonly attempts: ActionAttemptLifecycleService,
+    @Inject(CANONICAL_SERVICE_SCOPE_AUTHORIZATION)
+    private readonly serviceScope: CanonicalServiceScopeAuthorizationPort,
   ) {}
 
   async begin(workItemId: string): Promise<BeginDynamicEvaluationResult> {
-    const workItem = await this.requiredSbWorkItem(workItemId);
-    const row = await this.repository.getRow(workItem.workItemId);
-    const actor = serviceActor(row.tenantId);
-    const permissionSnapshotVersion = await this.authorize(workItem, actor);
-    const attempt = await this.repository.reserveDynamicEvaluationAction({
+    const scope = await this.serviceScope.authorizeOpenClawWorkItem({
+      operation: 'BEGIN_DYNAMIC',
+      workItemId,
+    });
+    assertWorkItemScope(scope, workItemId);
+    const workItem = await this.requiredSbWorkItem(workItemId, scope.tenantId);
+    const actor = serviceActor(scope.tenantId);
+    const permissionSnapshotVersion = servicePermissionSnapshot(
+      workItem,
+      scope,
+    );
+    const claim = await this.attempts.reserveAndClaim({
       workItemId: workItem.workItemId,
+      taskType: 'OPENCLAW_DYNAMIC_EVALUATION',
       actorUserId: actor.userId,
       tenantId: actor.tenantId,
-      attemptNo: workItem.revision,
+      leaseOwner: scope.principalId,
+      documentVersionId: workItem.source.documentVersionId,
+      inputRevision: workItem.revision,
+      baseRevision: workItem.revision,
+      idempotencyKey: dynamicIdempotencyKey(workItem),
+      sourceRefs: [
+        {
+          ref: workItem.package!.artifact.ref,
+          sha256: workItem.package!.artifact.sha256,
+        },
+      ],
+      buildModelInput: async (identity) => {
+        const request = await this.buildRequest(
+          workItem,
+          permissionSnapshotVersion,
+          dynamicAttempt(identity, workItem, actor),
+        );
+        return structuredClone(request.modelInput) as Record<string, unknown>;
+      },
     });
-    if (attempt.status !== 'RUNNING') {
-      throw new Error('DYNAMIC_EVALUATION_PRIOR_ATTEMPT_NOT_RUNNING');
-    }
-    const request = await this.buildRequest(
-      workItem,
-      permissionSnapshotVersion,
-      attempt,
-    );
     return {
-      attemptRef: attempt.triggerRequestId,
-      modelInput: structuredClone(
-        request.modelInput,
-      ) as Record<string, unknown>,
+      attemptRef: claim.attemptRef,
+      status: claim.status,
+      leaseToken: claim.leaseToken,
+      leaseGeneration: claim.leaseGeneration,
+      leaseExpiresAt: claim.leaseExpiresAt,
+      task: structuredClone(claim.task),
+      ...(claim.status === 'COMMITTING'
+        ? { recoveryResult: structuredClone(claim.recoveryResult) }
+        : {}),
+      modelInput: structuredClone(claim.task.modelInput),
     };
   }
 
   async commit(
     attemptRef: string,
-    output: string,
-  ): Promise<CommitDynamicEvaluationResult> {
-    const attempt = await this.repository.getDynamicEvaluationActionByCallerRef(
+    leaseToken: string,
+    leaseGeneration: number,
+    resultEnvelope: unknown,
+  ): Promise<
+    CommitDynamicEvaluationResult | ActionAttemptTerminalProjection
+  > {
+    const scope = await this.serviceScope.authorizeOpenClawAttempt({
+      operation: 'COMMIT_DYNAMIC',
       attemptRef,
-    );
-    const recovered = await this.recoverExistingCommit(attempt);
+    });
+    assertAttemptScope(scope, attemptRef);
+    const prepared = await this.attempts.prepareCommit({
+      attemptRef,
+      tenantId: scope.tenantId,
+      workItemId: scope.workItemId,
+      principalId: scope.principalId,
+      leaseToken,
+      leaseGeneration,
+      result: resultEnvelope,
+    });
+    const attempt = dynamicAttemptFromRow(prepared.row);
+    assertAttemptBinding(scope, attempt, attemptRef);
+    const recovered = await this.recoverPreparedCommit(prepared);
     if (recovered) return recovered;
-    if (attempt.status !== 'RUNNING') {
-      throw new Error('DYNAMIC_EVALUATION_ATTEMPT_NOT_RUNNING');
+    if (prepared.row.status === 'SUCCEEDED') {
+      throw new Error('DYNAMIC_EVALUATION_SUCCEEDED_PROJECTION_MISSING');
     }
-    const workItem = await this.requiredSbWorkItem(attempt.workItemId);
-    if (workItem.revision !== attempt.attemptNo) {
-      throw new Error('WORK_ITEM_CAS_CONFLICT');
+    if (prepared.row.status !== 'COMMITTING') {
+      return this.attempts.projectTerminal(prepared.row);
     }
-    const actor = serviceActor(attempt.tenantId);
-    if (attempt.actorUserId !== actor.userId) {
+    if (prepared.result.status !== 'SUCCEEDED') {
+      throw new Error('DYNAMIC_EVALUATION_COMMITTING_RESULT_INVALID');
+    }
+    const actor = serviceActor(prepared.row.tenantId);
+    if (prepared.row.actorUserId !== actor.userId) {
       throw new Error('DYNAMIC_EVALUATION_SERVICE_ACTOR_MISMATCH');
     }
-    const permissionSnapshotVersion = await this.authorize(workItem, actor);
-    let commitClaimed = false;
+    const workItem = await this.requiredSbWorkItem(
+      prepared.row.workItemId,
+      scope.tenantId,
+    );
+    if (workItem.revision !== prepared.task.baseRevision) {
+      await this.attempts.finishProjectionConflict({
+        prepared,
+        currentRevision: workItem.revision,
+      });
+      throw new Error('WORK_ITEM_CAS_CONFLICT');
+    }
+    const permissionSnapshotVersion = servicePermissionSnapshot(
+      workItem,
+      scope,
+    );
     try {
       const request = await this.buildRequest(
         workItem,
         permissionSnapshotVersion,
         attempt,
       );
-      const result = this.processor.consumeOutput(request, output);
+      if (
+        canonicalJson(request.modelInput) !==
+        canonicalJson(prepared.task.modelInput)
+      ) {
+        return this.attempts.finishResultGateFailure(
+          prepared,
+          new Error('DYNAMIC_EVALUATION_TASK_MODEL_INPUT_DRIFT'),
+        );
+      }
+      let output: string;
+      let result: ReturnType<DynamicRulesEvaluationProcessor['consumeOutput']>;
+      let normalizedArtifactBytes: Uint8Array;
+      try {
+        output = requiredModelOutput(prepared.result);
+        result = this.processor.consumeOutput(request, output);
+        normalizedArtifactBytes = serializeNormalizedBaseOneShotOutput(
+          output,
+          result,
+        );
+      } catch (error) {
+        return this.attempts.finishResultGateFailure(prepared, error);
+      }
       const currentBase = workItem.integratedAssessment?.baseRules;
       if (workItem.integratedAssessment?.engineerReviews && currentBase) {
         const prospectiveBase = baseRuleProjection(
@@ -127,20 +218,11 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
         await this.engineerReviews.assertLedgerCompatibleWithDynamicBytes(
           workItem,
           prospectiveBase,
-          new TextEncoder().encode(output),
+          normalizedArtifactBytes,
         );
       }
-      try {
-        await this.repository.claimDynamicEvaluationCommit(attempt.attemptId);
-        commitClaimed = true;
-      } catch (error) {
-        if (errorCode(error) === 'DYNAMIC_EVALUATION_COMMIT_ALREADY_CLAIMED') {
-          throw error;
-        }
-        throw error;
-      }
       const persisted = await this.artifactStore.persistAndReadback(
-        new TextEncoder().encode(output),
+        normalizedArtifactBytes,
       );
       const baseRules = baseRuleProjection(
         workItem,
@@ -169,7 +251,7 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
       };
       const updated = await this.registrar.compareAndSet({
         workItemId: workItem.workItemId,
-        expectedRevision: workItem.revision,
+        expectedRevision: prepared.task.baseRevision,
         syncPrimaryAttempt: false,
         next: {
           ...withoutRevision(workItem),
@@ -179,7 +261,7 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
           aeo: null,
         },
       });
-      await this.repository.completeAssessmentAction(attempt.attemptId);
+      await this.attempts.finishProjectionSuccess(prepared);
       return {
         workItemId: updated.workItemId,
         workItemRevision: updated.revision,
@@ -187,54 +269,36 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
         baseRules,
       };
     } catch (error) {
-      if (commitClaimed) {
-        const recovered = await this.recoverClaimedFailure(attempt, error);
-        if (recovered) return recovered;
-      }
+      const recovered = await this.recoverPreparedCommit(prepared);
+      if (recovered) return recovered;
       throw error;
     }
   }
 
-  private async recoverExistingCommit(
-    attempt: DynamicEvaluationActionAttempt,
-  ): Promise<CommitDynamicEvaluationResult | null> {
-    if (attempt.status === 'RUNNING') return null;
-    const workItem = await this.requiredSbWorkItem(attempt.workItemId);
-    const committed = committedDynamicResult(workItem, attempt);
-    if (committed && attempt.status === 'COMMITTING') {
-      await this.repository.completeAssessmentAction(attempt.attemptId);
-      return committed;
-    }
-    if (committed && attempt.status === 'SUCCEEDED') return committed;
-    if (attempt.status === 'COMMITTING') {
-      throw new Error('DYNAMIC_EVALUATION_COMMIT_IN_PROGRESS');
-    }
-    throw new Error('DYNAMIC_EVALUATION_ATTEMPT_NOT_RUNNING');
-  }
-
-  private async recoverClaimedFailure(
-    attempt: DynamicEvaluationActionAttempt,
-    error: unknown,
-  ): Promise<CommitDynamicEvaluationResult | null> {
-    const workItem = await this.requiredSbWorkItem(attempt.workItemId);
+  private async recoverPreparedCommit(
+    prepared: PreparedActionAttemptCommit,
+  ): Promise<
+    CommitDynamicEvaluationResult | ActionAttemptTerminalProjection | null
+  > {
+    const workItem = await this.requiredSbWorkItem(
+      prepared.row.workItemId,
+      prepared.row.tenantId,
+    );
+    const attempt = dynamicAttemptFromRow(prepared.row);
     const committed = committedDynamicResult(workItem, attempt);
     if (committed) {
-      await this.repository.completeAssessmentAction(attempt.attemptId);
+      await this.attempts.finishProjectionSuccess(prepared);
       return committed;
     }
-    if (workItem.revision === attempt.attemptNo) {
-      await this.repository.releaseOpenClawCommitForRetry({
-        attemptId: attempt.attemptId,
-        errorCode: errorCode(error),
-        errorMessage: errorMessage(error),
+    if (
+      prepared.row.status === 'COMMITTING' &&
+      workItem.revision !== prepared.task.baseRevision
+    ) {
+      return this.attempts.finishProjectionConflict({
+        prepared,
+        currentRevision: workItem.revision,
       });
-      return null;
     }
-    await this.repository.failAssessmentAction({
-      attemptId: attempt.attemptId,
-      errorCode: errorCode(error),
-      errorMessage: errorMessage(error),
-    });
     return null;
   }
 
@@ -268,12 +332,13 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
 
   private async requiredSbWorkItem(
     workItemId: string,
+    tenantId: string,
   ): Promise<CanonicalWorkItemProjection> {
-    const workItem = await this.registrar.getByWorkItemId(workItemId);
-    if (
-      workItem.phase !== 'CANDIDATE_READBACK_VERIFIED' ||
-      workItem.package === null
-    ) {
+    const workItem = await this.registrar.getTenantScopedByWorkItemId({
+      workItemId,
+      tenantId,
+    });
+    if (workItem.phase !== 'CANDIDATE_READBACK_VERIFIED' || !workItem.package) {
       throw new Error('DYNAMIC_EVALUATION_PARSED_PACKAGE_NOT_READY');
     }
     if (
@@ -283,38 +348,6 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
       throw new Error('DYNAMIC_EVALUATION_REQUIRES_CONFIRMED_SB');
     }
     return workItem;
-  }
-
-  private async authorize(
-    workItem: CanonicalWorkItemProjection,
-    actor: CanonicalHostActor,
-  ): Promise<string> {
-    const decision = await this.authorization.authorize({
-      actor,
-      action: 'PERSIST_OPENCLAW_DYNAMIC_EVALUATION',
-      workItemId: workItem.workItemId,
-      requestId: workItem.requestId,
-      documentVersionId: workItem.source.documentVersionId,
-    });
-    if (
-      !decision.allowed ||
-      decision.action !== 'PERSIST_OPENCLAW_DYNAMIC_EVALUATION'
-    ) {
-      throw new Error('CANONICAL_ACTION_NOT_AUTHORIZED');
-    }
-    const snapshot = await this.permissionSnapshots.freshRead({
-      actor,
-      decision,
-      workItemId: workItem.workItemId,
-      requestId: workItem.requestId,
-      documentVersionId: workItem.source.documentVersionId,
-    });
-    if (
-      snapshot.permissionSnapshotVersion !== decision.permissionSnapshotVersion
-    ) {
-      throw new Error('DYNAMIC_EVALUATION_PERMISSION_SNAPSHOT_CHANGED');
-    }
-    return snapshot.permissionSnapshotVersion;
   }
 }
 
@@ -329,6 +362,122 @@ function serviceActor(tenantId: string): CanonicalHostActor {
     roles: [],
     env: 'hosted',
   };
+}
+
+function servicePermissionSnapshot(
+  workItem: CanonicalWorkItemProjection,
+  scope: CanonicalVerifiedServiceScope,
+): string {
+  if (
+    scope.workItemId !== workItem.workItemId ||
+    !scope.authorizationFingerprint.trim()
+  ) {
+    throw openClawScopeNotFound();
+  }
+  return scope.authorizationFingerprint;
+}
+
+function assertWorkItemScope(
+  scope: CanonicalVerifiedServiceScope,
+  workItemId: string,
+): void {
+  if (
+    scope.workItemId !== workItemId ||
+    scope.appId !== CANONICAL_APP_ID ||
+    !scope.principalId.trim() ||
+    !scope.tenantId.trim() ||
+    !scope.authorizationFingerprint.trim()
+  ) {
+    throw openClawScopeNotFound();
+  }
+}
+
+function assertAttemptScope(
+  scope: CanonicalVerifiedOpenClawAttemptScope,
+  attemptRef: string,
+): void {
+  assertWorkItemScope(scope, scope.workItemId);
+  if (scope.attemptRef !== attemptRef) throw openClawScopeNotFound();
+}
+
+function assertAttemptBinding(
+  scope: CanonicalVerifiedOpenClawAttemptScope,
+  attempt: DynamicEvaluationActionAttempt,
+  attemptRef: string,
+): void {
+  if (
+    attempt.workItemId !== scope.workItemId ||
+    attempt.tenantId !== scope.tenantId ||
+    attemptRef !== scope.attemptRef
+  ) {
+    throw openClawScopeNotFound();
+  }
+}
+
+function dynamicAttempt(
+  identity: NewActionAttemptIdentity,
+  workItem: CanonicalWorkItemProjection,
+  actor: CanonicalHostActor,
+): DynamicEvaluationActionAttempt {
+  return {
+    attemptId: identity.attemptId,
+    workItemId: workItem.workItemId,
+    actionType: 'OPENCLAW_DYNAMIC_EVALUATION',
+    attemptNo: workItem.revision,
+    triggerRequestId: identity.triggerRequestId,
+    requestOrigin: 'OPENCLAW',
+    status: 'QUEUED',
+    actorUserId: actor.userId,
+    tenantId: actor.tenantId,
+    createdAt: identity.createdAt,
+  };
+}
+
+function dynamicAttemptFromRow(
+  row: ActionAttemptRow,
+): DynamicEvaluationActionAttempt {
+  if (row.actionType !== 'OPENCLAW_DYNAMIC_EVALUATION') {
+    throw new Error('DYNAMIC_EVALUATION_ACTION_TYPE_MISMATCH');
+  }
+  return {
+    attemptId: row.attemptId,
+    workItemId: row.workItemId,
+    actionType: 'OPENCLAW_DYNAMIC_EVALUATION',
+    attemptNo: row.baseRevision ?? row.attemptNo,
+    triggerRequestId: row.triggerRequestId,
+    requestOrigin: 'OPENCLAW',
+    status: row.status,
+    actorUserId: row.actorUserId,
+    tenantId: row.tenantId,
+    createdAt: row.createdAt,
+  };
+}
+
+function dynamicIdempotencyKey(workItem: CanonicalWorkItemProjection): string {
+  return [
+    'openclaw-v1',
+    'dynamic',
+    workItem.workItemId,
+    workItem.revision,
+    workItem.package?.artifact?.sha256,
+  ].join(':');
+}
+
+function requiredModelOutput(result: OpenClawResultEnvelope): string {
+  if (
+    typeof result.modelOutput !== 'string' ||
+    result.modelOutput.trim() === ''
+  ) {
+    throw new Error('DYNAMIC_EVALUATION_MODEL_OUTPUT_REQUIRED');
+  }
+  return result.modelOutput;
+}
+
+function openClawScopeNotFound(): Error & { code: string; statusCode: number } {
+  return Object.assign(new Error('CANONICAL_WORK_ITEM_NOT_FOUND'), {
+    code: 'CANONICAL_WORK_ITEM_NOT_FOUND',
+    statusCode: 404,
+  });
 }
 
 function committedDynamicResult(
@@ -390,12 +539,12 @@ function requiredText(value: unknown, code: string): string {
   return value;
 }
 
-function requiredCount(
-  value: unknown,
-  maximum: number,
-  code: string,
-): number {
-  if (!Number.isSafeInteger(value) || Number(value) < 0 || Number(value) > maximum) {
+function requiredCount(value: unknown, maximum: number, code: string): number {
+  if (
+    !Number.isSafeInteger(value) ||
+    Number(value) < 0 ||
+    Number(value) > maximum
+  ) {
     throw new Error(code);
   }
   return Number(value);
@@ -406,14 +555,4 @@ function withoutRevision(
 ): Omit<CanonicalWorkItemProjection, 'revision'> {
   const { revision: _revision, ...rest } = workItem;
   return rest;
-}
-
-function errorCode(error: unknown): string {
-  return error instanceof Error && error.message
-    ? error.message.split(':', 1)[0]
-    : 'DYNAMIC_EVALUATION_FAILED';
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

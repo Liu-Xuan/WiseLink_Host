@@ -9,6 +9,7 @@ import type {
   U0Frozen2FailureAdapterInput,
   U0Frozen2FailureBuildResult,
 } from '../unified-reader/unified-reader.types';
+import type { CanonicalMiaodaFinalUserActorContext } from '../work-item/canonical-object-access.port';
 
 export interface CanonicalHostActor {
   userId: string;
@@ -16,12 +17,15 @@ export interface CanonicalHostActor {
   appId: string;
   roles: string[];
   env: string;
+  /** Reserved for a future verified adapter; never populated from userContext. */
+  objectAccessActor?: CanonicalMiaodaFinalUserActorContext;
 }
 
 export interface CanonicalAuthorizationDecision {
   action:
     | 'PARSE_PDF'
     | 'READ_DOCUMENT_PARSING'
+    | 'READ_LIBRARY_INDEX'
     | 'QUERY_PARSED_UNITS'
     | 'EVALUATE_JOB_AID'
     | 'RESYNTHESIZE_ASSESSMENT'
@@ -97,8 +101,8 @@ export interface CanonicalAuthorizationPort {
     actor: CanonicalHostActor;
     action: CanonicalAuthorizationDecision['action'];
     workItemId: string;
-    requestId: string;
-    documentVersionId: string;
+    requestId?: string;
+    documentVersionId?: string;
   }): Promise<CanonicalAuthorizationDecision>;
 }
 
@@ -107,8 +111,8 @@ export interface CanonicalPermissionSnapshotPort {
     actor: CanonicalHostActor;
     decision: CanonicalAuthorizationDecision;
     workItemId: string;
-    requestId: string;
-    documentVersionId: string;
+    requestId?: string;
+    documentVersionId?: string;
   }): Promise<{ permissionSnapshotVersion: string }>;
 }
 
@@ -127,7 +131,10 @@ export interface CanonicalWorkItemRegistrarPort {
     requestId: string;
     documentVersionId: string;
   }): Promise<CanonicalWorkItemProjection>;
-  getByWorkItemId(workItemId: string): Promise<CanonicalWorkItemProjection>;
+  getTenantScopedByWorkItemId(input: {
+    workItemId: string;
+    tenantId: string;
+  }): Promise<CanonicalWorkItemProjection>;
 }
 
 export interface CanonicalHostBindingState {

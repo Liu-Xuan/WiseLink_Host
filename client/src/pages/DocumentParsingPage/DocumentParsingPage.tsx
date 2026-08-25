@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import {
   AlertTriangle,
@@ -7,36 +7,38 @@ import {
   ClipboardCheck,
   FileText,
   Fingerprint,
-  LocateFixed,
   LockKeyhole,
-  Search,
   ShieldCheck,
   Waypoints,
-  X,
 } from 'lucide-react';
 
 import { canonicalHost } from '@client/src/api';
 import type {
   CanonicalEngineerReviewDecision,
   CanonicalDocumentParsingPageResponse,
-  UnifiedReaderQueryResult,
 } from '@shared/api.interface';
 import { Button } from '@client/src/components/ui/button';
 import {
   NativeSelect,
   NativeSelectOption,
 } from '@client/src/components/ui/native-select';
-import { Input } from '@client/src/components/ui/input';
 import { Textarea } from '@client/src/components/ui/textarea';
 import { rememberRecentWorkItem } from '@client/src/utils/recent-work-items';
+import { forgetRecentWorkItem } from '@client/src/utils/recent-work-items';
+import { useCurrentUserProfile } from '@lark-apaas/client-toolkit/hooks/useCurrentUserProfile';
 
 import { WorkItemContextDock } from './WorkItemContextDock';
-import {
-  WorkItemContextTree,
-  type WorkbenchNode,
-} from './WorkItemContextTree';
+import { WorkItemContextTree, type WorkbenchNode } from './WorkItemContextTree';
 import { EngineeringReasoningTrail } from './EngineeringReasoningTrail';
 import { AeoAuthoringWorkspace } from './AeoAuthoringWorkspace';
+import { AssessmentSemanticsOverview } from './AssessmentSemanticsOverview';
+import { DocumentReaderWorkspace } from './DocumentReaderWorkspace';
+import {
+  buildAssessmentBusinessContent,
+  getReaderViewMode,
+  type ReaderViewMode,
+} from './workbench-projection';
+import { runCanonicalDocumentParsingLoad } from './document-parsing-load';
 import './document-parsing.css';
 
 function short(value: string, front = 18, back = 10): string {
@@ -79,15 +81,23 @@ function getWorkbenchNode(value: string | null): WorkbenchNode {
 }
 
 export default function DocumentParsingPage() {
+  const currentUser = useCurrentUserProfile();
+  const actorSignal: string = String(currentUser.user_id ?? '').trim();
+  const actorSignalRef = useRef<string>(actorSignal);
+  actorSignalRef.current = actorSignal;
+  const loadEpochRef = useRef<number>(0);
   const { workItemId = '' } = useParams<{ workItemId: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const activeNode: WorkbenchNode = getWorkbenchNode(searchParams.get('node'));
   const activeQuery: string =
     searchParams.get('q')?.trim() || DEFAULT_READER_QUERY;
-  const [query, setQuery] = useState<string>(activeQuery);
-  const [data, setData] = useState<CanonicalDocumentParsingPageResponse | null>(
-    null,
+  const readerMode: ReaderViewMode = getReaderViewMode(
+    searchParams.get('readerMode'),
   );
+  const [query, setQuery] = useState<string>(activeQuery);
+  const [pageData, setPageData] =
+    useState<CanonicalDocumentParsingPageResponse | null>(null);
+  const [pageActorSignal, setPageActorSignal] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [assessmentAction, setAssessmentAction] = useState<
@@ -115,38 +125,70 @@ export default function DocumentParsingPage() {
   }
 
   async function load(nextQuery: string): Promise<void> {
+    const epoch: number = loadEpochRef.current + 1;
+    loadEpochRef.current = epoch;
+    const startedActorSignal: string = actorSignal;
     if (!workItemId) {
       setError('WORKITEM_ID_REQUIRED');
       setLoading(false);
       return;
     }
     setLoading(true);
+    setPageData(null);
+    setPageActorSignal(null);
     setError(null);
-    try {
-      const fresh: CanonicalDocumentParsingPageResponse =
-        await canonicalHost.getDocumentParsingPage(workItemId, nextQuery);
-      setData(fresh);
-      rememberRecentWorkItem({
-        workItemId: fresh.workItem.workItemId,
-        family: fresh.workItem.classification.normalizedFamily,
-        documentLabel:
-          fresh.workItem.package?.documentIdentity?.documentCode ??
-          fresh.workItem.package?.title ??
-          fresh.workItem.source.documentId,
-        documentVersionId: fresh.workItem.source.documentVersionId,
-      });
-    } catch (cause) {
-      setData(null);
-      setError(cause instanceof Error ? cause.message : 'FRESH_READ_FAILED');
-    } finally {
-      setLoading(false);
-    }
+    const isCurrent = (): boolean =>
+      loadEpochRef.current === epoch &&
+      actorSignalRef.current === startedActorSignal;
+    await runCanonicalDocumentParsingLoad({
+      isCurrent,
+      readIdentity: canonicalHost.getCanonicalHostIdentityContext,
+      readPage: () =>
+        canonicalHost.getDocumentParsingPage(workItemId, nextQuery),
+      onFresh: (identity, fresh) => {
+        setPageData(fresh);
+        setPageActorSignal(startedActorSignal);
+        rememberRecentWorkItem(identity, {
+          workItemId: fresh.workItem.workItemId,
+          family: fresh.workItem.classification.normalizedFamily,
+          documentLabel:
+            fresh.workItem.package?.documentIdentity?.documentCode ??
+            fresh.workItem.package?.title ??
+            fresh.workItem.source.documentId,
+          documentVersionId: fresh.workItem.source.documentVersionId,
+        });
+      },
+      onDenied: (identity, cause) => {
+        setPageData(null);
+        setPageActorSignal(null);
+        if (canonicalHost.isCanonicalObjectNotFound(cause)) {
+          forgetRecentWorkItem(identity, workItemId);
+        }
+        setError(cause instanceof Error ? cause.message : 'FRESH_READ_FAILED');
+      },
+      onIdentityError: (cause) => {
+        setPageData(null);
+        setPageActorSignal(null);
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : 'CANONICAL_HOST_IDENTITY_REQUIRED',
+        );
+      },
+      onSettled: () => setLoading(false),
+    });
   }
 
   useEffect(() => {
     setQuery(activeQuery);
     void load(activeQuery);
-  }, [workItemId, activeQuery]);
+    return () => {
+      loadEpochRef.current += 1;
+    };
+  }, [workItemId, activeQuery, actorSignal]);
+
+  const data: CanonicalDocumentParsingPageResponse | null =
+    pageActorSignal === actorSignal ? pageData : null;
 
   useEffect(() => {
     if (loading || data === null) return;
@@ -182,7 +224,7 @@ export default function DocumentParsingPage() {
     data.workItem.classification.status === 'CONFIRMED' &&
     data.workItem.classification.normalizedFamily === 'SB';
   const aeo = data.workItem.aeo ?? null;
-  const results: UnifiedReaderQueryResult[] = data.queryResults;
+  const results = data.readerProjection?.units ?? [];
   const requestedReaderUnit: string = searchParams.get('unit')?.trim() ?? '';
   const requestedSourceRef: string =
     searchParams.get('sourceRef')?.trim() ?? '';
@@ -192,19 +234,36 @@ export default function DocumentParsingPage() {
       (requestedSourceRef === '' ||
         result.sourceRefIds.includes(requestedSourceRef)),
   );
-  const sourceRefMatchesCurrentQuery = Boolean(
-    requestedSourceRef && selectedReaderResult,
-  );
   const reviewContext = data.engineerReviewContext ?? null;
   const requestedReviewCriterion: string =
     searchParams.get('criterion')?.trim() ?? '';
-  const selectedReviewCriterion =
-    reviewContext?.items.some(
-      (item) => item.criterionId === requestedReviewCriterion,
-    )
-      ? requestedReviewCriterion
-      : reviewContext?.items[0]?.criterionId || '';
+  const selectedReviewCriterion = reviewContext?.items.some(
+    (item) => item.criterionId === requestedReviewCriterion,
+  )
+    ? requestedReviewCriterion
+    : reviewContext?.items[0]?.criterionId || '';
+  const { overall: overallCandidate, selectedReviewItem } =
+    buildAssessmentBusinessContent(
+      integratedAssessment,
+      reviewContext,
+      selectedReviewCriterion,
+    );
   const fileLabel: string = `${data.workItem.classification.normalizedFamily} · ${short(data.workItem.source.sourceArtifactId, 20, 8)}`;
+
+  function submitReaderQuery(): void {
+    const nextQuery: string = query.trim() || DEFAULT_READER_QUERY;
+    updateDeepLink({
+      q: nextQuery,
+      node: 'reader',
+      tab: 'reader',
+      unit: null,
+      sourceRef: null,
+      readerMode: 'structured',
+    });
+    if (nextQuery === activeQuery) {
+      void load(nextQuery);
+    }
+  }
 
   async function confirmOverallForAeo(): Promise<void> {
     setAssessmentAction('CONFIRM_OVERALL_FOR_AEO');
@@ -280,19 +339,20 @@ export default function DocumentParsingPage() {
       </header>
 
       <section className="parse-rail" aria-label="工作台视图">
-        {([
-          ['文档', 'document', 'workspace-document'],
-          ['解析包', 'package', 'workspace-package'],
-          ['Reader', 'reader', 'workspace-reader'],
-          ['动态评估', 'assessment', 'workspace-assessment'],
-          ['综合记录', 'overall', 'workspace-reasoning'],
-          ['AEO 候选', 'aeo', 'workspace-aeo'],
-        ] as const).map(
-          ([label, node, target]: readonly [
-            string,
-            WorkbenchNode,
-            string,
-          ], index: number) => (
+        {(
+          [
+            ['文档', 'document', 'workspace-document'],
+            ['解析包', 'package', 'workspace-package'],
+            ['Reader', 'reader', 'workspace-reader'],
+            ['动态评估', 'assessment', 'workspace-assessment'],
+            ['综合记录', 'overall', 'workspace-reasoning'],
+            ['AEO 候选', 'aeo', 'workspace-aeo'],
+          ] as const
+        ).map(
+          (
+            [label, node, target]: readonly [string, WorkbenchNode, string],
+            index: number,
+          ) => (
             <button
               type="button"
               className={`parse-rail-step${
@@ -471,123 +531,34 @@ export default function DocumentParsingPage() {
               ) : null}
             </article>
 
-            <article
-              className="parse-panel parse-query-card"
-              id="workspace-reader"
-            >
-              <div className="parse-panel-label">
-                <Search /> 同一 Reader 查询
-              </div>
-              <form
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  const nextQuery: string = query.trim() || DEFAULT_READER_QUERY;
-                  updateDeepLink({
-                    q: nextQuery,
-                    node: 'reader',
-                    tab: 'reader',
-                    unit: null,
-                    sourceRef: null,
-                  });
-                  if (nextQuery === activeQuery) {
-                    void load(nextQuery);
-                  }
-                }}
-              >
-                <Input
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  aria-label="解析单元查询"
-                />
-                <Button type="submit" size="sm" data-ai-section-type="button">
-                  查询 <Search aria-hidden="true" />
-                </Button>
-              </form>
-              {requestedSourceRef ? (
-                <div
-                  className={`parse-reader-focus${
-                    sourceRefMatchesCurrentQuery ? '' : ' is-missing'
-                  }`}
-                  role="status"
-                >
-                  <LocateFixed aria-hidden="true" />
-                  <div>
-                    <span>SELECTED SOURCE REF</span>
-                    <strong title={requestedSourceRef}>
-                      {short(requestedSourceRef, 24, 12)}
-                    </strong>
-                    <small>
-                      {selectedReaderResult
-                        ? `unit · ${short(selectedReaderResult.unitId, 22, 8)}`
-                        : 'SOURCE_REF_NOT_IN_CURRENT_QUERY'}
-                    </small>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    title="清除来源定位"
-                    aria-label="清除来源定位"
-                    onClick={() =>
-                      updateDeepLink({ unit: null, sourceRef: null })
-                    }
-                  >
-                    <X aria-hidden="true" />
-                  </Button>
-                </div>
-              ) : null}
-              <div className="parse-results">
-                {results.length > 0 ? (
-                  results.map((result: UnifiedReaderQueryResult) => (
-                    <article
-                      className={`parse-result${
-                        selectedReaderResult?.unitId === result.unitId
-                          ? ' is-selected'
-                          : ''
-                      }`}
-                      key={result.unitId}
-                    >
-                      <span>{result.kind}</span>
-                      <p>{result.text}</p>
-                      <small>
-                        {result.sourceRefIds.length} 个 sourceRef ·{' '}
-                        {short(result.unitId, 22, 8)}
-                      </small>
-                      <div
-                        className="parse-result-source-refs"
-                        aria-label={`${result.unitId} 来源引用`}
-                      >
-                        {result.sourceRefIds.map((sourceRef) => (
-                          <button
-                            type="button"
-                            className={
-                              requestedSourceRef === sourceRef
-                                ? 'is-selected'
-                                : ''
-                            }
-                            key={sourceRef}
-                            title={sourceRef}
-                            onClick={() =>
-                              updateDeepLink({
-                                node: 'reader',
-                                tab: 'reader',
-                                unit: result.unitId,
-                                sourceRef,
-                              })
-                            }
-                          >
-                            <LocateFixed aria-hidden="true" />
-                            {short(sourceRef, 16, 7)}
-                          </button>
-                        ))}
-                      </div>
-                    </article>
-                  ))
-                ) : (
-                  <p className="parse-empty">没有匹配的来源绑定单元。</p>
-                )}
-              </div>
-            </article>
+            <DocumentReaderWorkspace
+              data={data}
+              query={query}
+              requestedSourceRef={requestedSourceRef}
+              selectedReaderResult={selectedReaderResult}
+              readerMode={readerMode}
+              onQueryChange={setQuery}
+              onQuerySubmit={submitReaderQuery}
+              onReaderModeChange={(mode: ReaderViewMode) =>
+                updateDeepLink({
+                  node: 'reader',
+                  tab: 'reader',
+                  readerMode: mode,
+                })
+              }
+              onSourceRefSelect={(unitId: string, sourceRef: string) =>
+                updateDeepLink({
+                  node: 'reader',
+                  tab: 'reader',
+                  unit: unitId,
+                  sourceRef,
+                  readerMode: 'structured',
+                })
+              }
+              onClearSourceRef={() =>
+                updateDeepLink({ unit: null, sourceRef: null })
+              }
+            />
           </section>
 
           {assessmentEligible ? (
@@ -599,8 +570,97 @@ export default function DocumentParsingPage() {
               <div className="parse-panel-label">
                 <ClipboardCheck /> OpenClaw 动态 N + 整体综合 · 同一 WorkItem
               </div>
+              <AssessmentSemanticsOverview data={data} />
               {integratedAssessment ? (
                 <>
+                  {overallCandidate &&
+                  (overallCandidate.overallCandidate ||
+                    overallCandidate.findings?.length ||
+                    overallCandidate.missingInputs?.length) ? (
+                    <section
+                      className="parse-business-candidate"
+                      aria-label="整体业务候选"
+                    >
+                      <header>
+                        <div>
+                          <span>AI 初步综合意见 · CANDIDATE ONLY</span>
+                          <h3>先展示业务判断，再由工程师校正</h3>
+                        </div>
+                        <strong>
+                          {overallCandidate.applicabilityStatus ??
+                            overallCandidate.status}
+                          {overallCandidate.status === 'STALE'
+                            ? ' · 需重综合'
+                            : ''}
+                        </strong>
+                      </header>
+                      {overallCandidate.overallCandidate ? (
+                        <p>{overallCandidate.overallCandidate}</p>
+                      ) : null}
+                      {overallCandidate.findings?.length ? (
+                        <div className="parse-business-findings">
+                          {overallCandidate.findings.map((finding, index) => (
+                            <article key={`${finding.finding}-${index}`}>
+                              <h4>{finding.finding}</h4>
+                              <dl>
+                                <div>
+                                  <dt>依据</dt>
+                                  <dd>{finding.basis}</dd>
+                                </div>
+                                <div>
+                                  <dt>假设</dt>
+                                  <dd>
+                                    {finding.assumptions.join('；') ||
+                                      '无额外假设'}
+                                  </dd>
+                                </div>
+                                <div>
+                                  <dt>不确定性</dt>
+                                  <dd>{finding.uncertainty}</dd>
+                                </div>
+                              </dl>
+                              {finding.sourceRefIds.length ? (
+                                <div className="parse-finding-sources">
+                                  <span>来源定位</span>
+                                  {finding.sourceRefIds.map((sourceRef) => (
+                                    <button
+                                      type="button"
+                                      key={sourceRef}
+                                      onClick={() =>
+                                        updateDeepLink({
+                                          node: 'reader',
+                                          tab: 'reader',
+                                          readerMode: 'structured',
+                                          unit: null,
+                                          sourceRef,
+                                        })
+                                      }
+                                    >
+                                      {sourceRef}
+                                    </button>
+                                  ))}
+                                </div>
+                              ) : null}
+                            </article>
+                          ))}
+                        </div>
+                      ) : null}
+                      {overallCandidate.missingInputs?.length ? (
+                        <div className="parse-business-next">
+                          <strong>会改变结论的缺口 / 建议补证</strong>
+                          <ul>
+                            {overallCandidate.missingInputs.map((item) => (
+                              <li key={item}>{item}</li>
+                            ))}
+                          </ul>
+                          <small>
+                            OpenClaw
+                            只对明确缺口按需查询已授权资料源或知识库；未查询的来源不会被伪装成证据。
+                          </small>
+                        </div>
+                      ) : null}
+                    </section>
+                  ) : null}
                   <div className="parse-assessment-grid">
                     <div>
                       <strong>
@@ -842,8 +902,10 @@ export default function DocumentParsingPage() {
                       </header>
                       <div className="parse-criterion-grid">
                         {reviewContext.items.map((item) => {
-                          const selected = item.criterionId === selectedReviewCriterion;
-                          const reviewState = item.latestReview?.status ?? 'NEEDS_REVIEW';
+                          const selected =
+                            item.criterionId === selectedReviewCriterion;
+                          const reviewState =
+                            item.latestReview?.status ?? 'NEEDS_REVIEW';
                           return (
                             <button
                               type="button"
@@ -864,12 +926,83 @@ export default function DocumentParsingPage() {
                               <strong>{item.dynamicResult}</strong>
                               <p>{item.candidateConclusion}</p>
                               <small>
-                                {item.humanReviewRequired ? '需人工复核' : '当前无人工复核标记'} · {reviewState}
+                                {item.humanReviewRequired
+                                  ? '需人工复核'
+                                  : '当前无人工复核标记'}{' '}
+                                · {reviewState}
                               </small>
                             </button>
                           );
                         })}
                       </div>
+                      {selectedReviewItem ? (
+                        <article className="parse-criterion-detail">
+                          <header>
+                            <div>
+                              <span>当前初步判断</span>
+                              <h4>{selectedReviewItem.criterionId}</h4>
+                            </div>
+                            <strong>
+                              {selectedReviewItem.candidateConclusion}
+                            </strong>
+                          </header>
+                          <dl>
+                            <div>
+                              <dt>已知事实</dt>
+                              <dd>
+                                {selectedReviewItem.factsConsidered?.join(
+                                  '；',
+                                ) || '当前尚无可引用的受控事实'}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>规则如何作用</dt>
+                              <dd>
+                                {selectedReviewItem.ruleApplication ||
+                                  '尚未形成可解释的规则应用'}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>分析与影响</dt>
+                              <dd>
+                                {selectedReviewItem.analysisSummary ||
+                                  '尚未形成可解释的业务分析'}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>仍缺什么</dt>
+                              <dd>
+                                {selectedReviewItem.missingInputs?.join('；') ||
+                                  '当前没有明确缺口'}
+                              </dd>
+                            </div>
+                          </dl>
+                          {selectedReviewItem.sourceRefs?.length ? (
+                            <div className="parse-criterion-sources">
+                              <span>来源定位</span>
+                              {selectedReviewItem.sourceRefs.map(
+                                (sourceRef) => (
+                                  <button
+                                    type="button"
+                                    key={sourceRef}
+                                    onClick={() =>
+                                      updateDeepLink({
+                                        node: 'reader',
+                                        tab: 'reader',
+                                        readerMode: 'structured',
+                                        unit: null,
+                                        sourceRef,
+                                      })
+                                    }
+                                  >
+                                    {sourceRef}
+                                  </button>
+                                ),
+                              )}
+                            </div>
+                          ) : null}
+                        </article>
+                      ) : null}
                     </section>
                   ) : null}
                   {reviewContext ? (
@@ -920,7 +1053,8 @@ export default function DocumentParsingPage() {
                             value={reviewDecision}
                             onChange={(event) =>
                               setReviewDecision(
-                                event.target.value as CanonicalEngineerReviewDecision,
+                                event.target
+                                  .value as CanonicalEngineerReviewDecision,
                               )
                             }
                           >
@@ -960,7 +1094,10 @@ export default function DocumentParsingPage() {
                       {reviewContext.items
                         .filter((item) => item.latestReview)
                         .map((item) => (
-                          <p key={item.criterionId} className="parse-review-latest">
+                          <p
+                            key={item.criterionId}
+                            className="parse-review-latest"
+                          >
                             <strong>{item.criterionId}</strong> ·{' '}
                             {item.latestReview!.decision} ·{' '}
                             {item.latestReview!.comment}

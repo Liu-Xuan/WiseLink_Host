@@ -6,6 +6,10 @@ import {
   BASE_ONE_SHOT_RESULT_RECORD_ID,
   MiaodaBaseOneShotRuleResultProvider,
 } from '../../server/modules/canonical-host/miaoda-base-one-shot-rule-result.provider';
+import {
+  consumeBaseOneShotAssessmentResult,
+  serializeNormalizedBaseOneShotOutput,
+} from '../../server/modules/assessment-workbench/base-one-shot-assessment.processor';
 
 const PACKAGE_ID = 'PACKAGE-TEST';
 const PACKAGE_SHA = `sha256:${'a'.repeat(64)}`;
@@ -45,8 +49,12 @@ describe('MiaodaBaseOneShotRuleResultProvider', () => {
       unresolvedCount: 1,
       sourceBoundCandidateCount: 1,
     });
-    expect(Buffer.from(result.artifactBytes).toString('utf8')).toBe(
+    const normalized = consumeBaseOneShotAssessmentResult(
+      packetValue() as any,
       outputText(),
+    );
+    expect(Buffer.from(result.artifactBytes)).toEqual(
+      Buffer.from(serializeNormalizedBaseOneShotOutput(outputText(), normalized)),
     );
   });
 
@@ -106,6 +114,66 @@ describe('MiaodaBaseOneShotRuleResultProvider', () => {
     await expect(read(provider)).rejects.toThrow(
       'BASE_ONE_SHOT_OUTPUT_TOP_LEVEL_SHAPE_INVALID',
     );
+  });
+
+  it('normalizes predicate FALSE before unresolved/source candidate counts', () => {
+    const packet = packetValue() as any;
+    packet.jobAidContext.criterionTable.rows[0] = ['RULE-1', 0, []];
+    const output = JSON.parse(outputText());
+    output.ruleResults.rows[0][6] = ['SOURCE-1'];
+    output.overallSelfCheck.rulesWithMissingInputs = 1;
+
+    const result = consumeBaseOneShotAssessmentResult(
+      packet,
+      JSON.stringify(output),
+    );
+
+    expect(result.ruleResults[0]).toMatchObject({
+      result: 'NOT_APPLICABLE',
+      conclusion: '不适用',
+      sourceRefs: [],
+      missingInputs: [],
+      humanReviewRequired: false,
+    });
+    expect(result.overallSelfCheck).toMatchObject({
+      rulesWithMissingInputs: 0,
+      humanReviewRequiredCount: 0,
+    });
+  });
+
+  it('keeps UNKNOWN tied to predicate keys and clears model gaps from TRUE rows', () => {
+    const packet = packetValue() as any;
+    const output = JSON.parse(outputText());
+    output.ruleResults.rows[0][7] = ['MODEL-GENERIC-GAP'];
+    output.ruleResults.rows[1][7] = ['DOCUMENT-CANDIDATE-GAP'];
+    output.overallSelfCheck.rulesWithMissingInputs = 2;
+
+    const result = consumeBaseOneShotAssessmentResult(
+      packet,
+      JSON.stringify(output),
+    );
+
+    expect(result.ruleResults[0].missingInputs).toEqual(['INPUT-1']);
+    expect(result.ruleResults[1].missingInputs).toEqual([]);
+    expect(result.overallSelfCheck.rulesWithMissingInputs).toBe(1);
+  });
+
+  it('accepts a boundary zero-width format mark without weakening JSON gates', () => {
+    const output = `\u200B${outputText()}`;
+    const result = consumeBaseOneShotAssessmentResult(
+      packetValue() as any,
+      output,
+    );
+    const normalized = serializeNormalizedBaseOneShotOutput(output, result);
+
+    expect(JSON.parse(Buffer.from(normalized).toString('utf8'))).toMatchObject({
+      correlation: packetValue().correlation,
+      authorityLevel: 'candidate_only',
+    });
+    expect(() => consumeBaseOneShotAssessmentResult(
+      packetValue() as any,
+      `\u200B${outputText()} trailing-corruption`,
+    )).toThrow('BASE_ONE_SHOT_OUTPUT_JSON_INVALID');
   });
 });
 
@@ -184,9 +252,15 @@ function packetValue() {
       },
       currentAssessment: { applicabilityOverall: '待核实' },
       criterionTable: {
-        columns: ['criterionId'],
-        rows: [['RULE-1'], ['RULE-2']],
+        columns: ['criterionId', 'predicateResult', 'missingPredicateKeys'],
+        rows: [
+          ['RULE-1', 1, ['INPUT-1']],
+          ['RULE-2', 2, []],
+        ],
         rowCount: 2,
+        valueDictionaries: {
+          predicateResult: ['FALSE', 'UNKNOWN', 'TRUE'],
+        },
       },
     },
     expectedSelfCheck: {

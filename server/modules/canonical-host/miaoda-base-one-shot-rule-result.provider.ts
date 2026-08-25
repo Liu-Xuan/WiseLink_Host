@@ -4,6 +4,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import {
   BASE_ONE_SHOT_PURPOSE,
   consumeBaseOneShotAssessmentResult,
+  serializeNormalizedBaseOneShotOutput,
   type BaseOneShotAssessmentPacket,
 } from '../assessment-workbench/base-one-shot-assessment.processor';
 import type {
@@ -117,7 +118,7 @@ export class MiaodaBaseOneShotRuleResultProvider
         'UNRESOLVED_COUNT',
       ),
       sourceBoundCandidateCount,
-      artifactBytes: Buffer.from(output, 'utf8'),
+      artifactBytes: serializeNormalizedBaseOneShotOutput(output, consumed),
     };
   }
 }

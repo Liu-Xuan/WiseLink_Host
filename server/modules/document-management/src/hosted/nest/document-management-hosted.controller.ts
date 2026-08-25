@@ -1,24 +1,42 @@
-import { Body, Controller, Get, Param, Post, Req } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { NeedLogin } from '@lark-apaas/fullstack-nestjs-core';
 import type { Request } from 'express';
 
+import {
+  assertProductionMiaodaBrowserIdentityAvailable,
+  ProductionMiaodaBrowserObjectIngressGuard,
+} from '../../../../work-item/production-miaoda-browser-ingress';
 import { DocumentManagementHostedService } from './document-management-hosted.service';
 
 function contextFromRequest(request: Request) {
   const user = request.userContext;
   if (!user?.userId || user.tenantId === undefined || user.tenantId === null) {
-    throw Object.assign(new Error('Authenticated Miaoda user context is required.'), {
-      code: 'SERVER_LOGIN_CONTEXT_REQUIRED',
-      statusCode: 401,
-    });
+    throw Object.assign(
+      new Error('Authenticated Miaoda user context is required.'),
+      {
+        code: 'SERVER_LOGIN_CONTEXT_REQUIRED',
+        statusCode: 401,
+      },
+    );
   }
   return {
     actorUserId: String(user.userId),
     tenantId: String(user.tenantId),
     roles: Array.isArray(user.roles) ? [...user.roles] : [],
+    appId: String(user.appId ?? ''),
+    env: String(user.env ?? ''),
   };
 }
 @NeedLogin()
+@UseGuards(ProductionMiaodaBrowserObjectIngressGuard)
 @Controller('api/document-management')
 // Registered by DocumentManagementHostedModule.register(); the static lint rule
 // cannot follow DynamicModule metadata.
@@ -28,8 +46,12 @@ export class DocumentManagementHostedController {
 
   @Post('ingestions/file-service')
   ingestFileServiceSelection(@Body() body: unknown, @Req() request: Request) {
+    assertProductionMiaodaBrowserIdentityAvailable(request.userContext);
     rejectReservedExternalDiscoveryClaims(body);
-    return this.service.ingestFileServiceSelection(body, contextFromRequest(request));
+    return this.service.ingestFileServiceSelection(
+      body,
+      contextFromRequest(request),
+    );
   }
 
   @Get('document-versions/:documentVersionId')
@@ -37,7 +59,11 @@ export class DocumentManagementHostedController {
     @Param('documentVersionId') documentVersionId: string,
     @Req() request: Request,
   ) {
-    return this.service.getDocumentVersion(documentVersionId, contextFromRequest(request));
+    assertProductionMiaodaBrowserIdentityAvailable(request.userContext);
+    return this.service.getDocumentVersion(
+      documentVersionId,
+      contextFromRequest(request),
+    );
   }
 }
 

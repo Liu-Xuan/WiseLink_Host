@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { Inject, Injectable } from '@nestjs/common';
 
 import type {
@@ -10,6 +12,8 @@ import type {
   CanonicalPdfVerticalRunRequest,
   CanonicalPdfVerticalRunResponse,
   CanonicalWorkItemProjection,
+  CanonicalReaderProjection,
+  UnifiedPackageSourceKind,
   UnifiedPackageReadbackResponse,
 } from '@shared/api.interface';
 
@@ -42,6 +46,10 @@ import type {
   CanonicalStatusInput,
   CanonicalWorkItemRegistrarPort,
 } from './canonical-host.types';
+import type {
+  CanonicalVerifiedDevelopmentCreateScope,
+  CanonicalVerifiedServiceScope,
+} from './canonical-service-scope.authorization';
 
 @Injectable()
 export class CanonicalHostVerticalService {
@@ -74,10 +82,27 @@ export class CanonicalHostVerticalService {
         requestId: request.requestId,
         documentVersionId: request.source.documentVersionId,
       });
+    return this.runPdfAuthorized(request, actionContext);
+  }
+
+  async runPdfWithDevelopmentScope(
+    request: CanonicalPdfVerticalRunRequest,
+    actor: CanonicalHostActor,
+    scope: CanonicalVerifiedDevelopmentCreateScope,
+  ): Promise<CanonicalPdfVerticalRunResponse> {
+    validateRequest(request);
+    return this.runPdfAuthorized(
+      request,
+      developmentActionContext(request, actor, scope),
+    );
+  }
+
+  private async runPdfAuthorized(
+    request: CanonicalPdfVerticalRunRequest,
+    actionContext: CanonicalHostActionContext,
+  ): Promise<CanonicalPdfVerticalRunResponse> {
     let projection: CanonicalWorkItemProjection =
-      await this.registrar.loadOrCreate(
-        seedProjection(request, actionContext),
-      );
+      await this.registrar.loadOrCreate(seedProjection(request, actionContext));
     assertSameRequest(projection, request);
     assertSameAuthorization(projection, actionContext);
     if (projection.phase === 'CANDIDATE_READBACK_VERIFIED') {
@@ -86,10 +111,7 @@ export class CanonicalHostVerticalService {
       } catch (error) {
         const failed: CanonicalWorkItemProjection =
           await this.recordUnexpectedFailure(request, projection, error);
-        return failedResponse(
-          failed,
-          this.entryFacade.status(failed),
-        );
+        return failedResponse(failed, this.entryFacade.status(failed));
       }
     }
     if (projection.phase !== 'PARSE_REQUESTED') {
@@ -166,10 +188,7 @@ export class CanonicalHostVerticalService {
           packageAttempt,
           executionRoute,
         );
-      return failedResponse(
-        failed,
-        this.entryFacade.status(failed),
-      );
+      return failedResponse(failed, this.entryFacade.status(failed));
     }
   }
 
@@ -187,14 +206,17 @@ export class CanonicalHostVerticalService {
 
   async openApiStatus(
     workItemId: string,
+    scope: CanonicalVerifiedServiceScope,
   ): Promise<AilyWorkItemStatusResponse> {
     const exactWorkItemId: string = requiredOpenApiText(
       workItemId,
       'workItemId',
       200,
     );
-    const projection: CanonicalWorkItemProjection =
-      await this.registrar.getByWorkItemId(exactWorkItemId);
+    const projection = await this.serviceScopedProjection(
+      exactWorkItemId,
+      scope,
+    );
     return {
       entry: this.entryFacade.status(projection),
       packageSummary:
@@ -213,33 +235,40 @@ export class CanonicalHostVerticalService {
               fullValidationStatus: 'FULL_STRICT_VALIDATOR_PASSED',
             },
       assessmentSummary: projection.assessment ?? null,
-      integratedAssessmentSummary:
-        projection.integratedAssessment ?? null,
+      integratedAssessmentSummary: projection.integratedAssessment ?? null,
     };
   }
 
   async openApiDeepLink(
     workItemId: string,
+    scope: CanonicalVerifiedServiceScope,
   ): Promise<AilyWorkItemDeepLinkResponse> {
-    const status: AilyWorkItemStatusResponse =
-      await this.openApiStatus(workItemId);
+    const status: AilyWorkItemStatusResponse = await this.openApiStatus(
+      workItemId,
+      scope,
+    );
     return {
       workItemId: status.entry.workItemId,
       deepLink: status.entry.deepLinkPath,
     };
   }
 
-  async openApiQuery(input: {
-    workItemId: string;
-    query: string | undefined;
-  }): Promise<AilyParsedPackageQueryResponse> {
+  async openApiQuery(
+    input: {
+      workItemId: string;
+      query: string | undefined;
+    },
+    scope: CanonicalVerifiedServiceScope,
+  ): Promise<AilyParsedPackageQueryResponse> {
     const exactWorkItemId: string = requiredOpenApiText(
       input.workItemId,
       'workItemId',
       200,
     );
-    const projection: CanonicalWorkItemProjection =
-      await this.registrar.getByWorkItemId(exactWorkItemId);
+    const projection = await this.serviceScopedProjection(
+      exactWorkItemId,
+      scope,
+    );
     if (
       projection.phase !== 'CANDIDATE_READBACK_VERIFIED' ||
       projection.package === null
@@ -265,28 +294,30 @@ export class CanonicalHostVerticalService {
     input: CanonicalPageInput,
     actor: CanonicalHostActor,
   ): Promise<CanonicalDocumentParsingPageResponse> {
-    const projection: CanonicalWorkItemProjection =
-      await this.registrar.getByWorkItemId(input.workItemId);
     const actionContext: CanonicalHostActionContext =
       await this.authorizeAction({
         actor,
         action: 'READ_DOCUMENT_PARSING',
         workItemId: input.workItemId,
-        requestId: projection.requestId,
-        documentVersionId: projection.source.documentVersionId,
+      });
+    const projection: CanonicalWorkItemProjection =
+      await this.registrar.getTenantScopedByWorkItemId({
+        workItemId: input.workItemId,
+        tenantId: actor.tenantId,
       });
     let queryResults: UnifiedPackageReadbackResponse['queryResults'] = [];
+    let readerSourceKind: UnifiedPackageSourceKind | null = null;
     if (
       projection.phase === 'CANDIDATE_READBACK_VERIFIED' &&
       projection.package !== null
     ) {
-      const readback: UnifiedPackageReadbackResponse =
-        await this.readPackage(
-          projection,
-          actionContext.decision.permissionSnapshotVersion,
-          input.query,
-        );
+      const readback: UnifiedPackageReadbackResponse = await this.readPackage(
+        projection,
+        actionContext.decision.permissionSnapshotVersion,
+        input.query,
+      );
       queryResults = readback.queryResults;
+      readerSourceKind = readback.package.sourceKind;
     }
     return {
       schemaVersion: CANONICAL_HOST.documentParsingPageSchemaVersion,
@@ -294,6 +325,12 @@ export class CanonicalHostVerticalService {
       workItem: projection,
       entry: this.entryFacade.status(projection),
       queryResults,
+      readerProjection: buildReaderProjection(
+        projection,
+        queryResults,
+        input.query,
+        readerSourceKind,
+      ),
       ...buildCanonicalPageProjections({
         workItem: projection,
         queryResults,
@@ -425,13 +462,15 @@ export class CanonicalHostVerticalService {
         error,
         permissionSnapshotVersion: running.permissionSnapshotVersion,
         executionRoute,
-        packageAttempt: packageAttempt ?? (running.package
-          ? {
-              packageId: running.package.packageId,
-              contractId: running.package.contractId,
-              contractRevision: running.package.contractRevision,
-            }
-          : null),
+        packageAttempt:
+          packageAttempt ??
+          (running.package
+            ? {
+                packageId: running.package.packageId,
+                contractId: running.package.contractId,
+                contractRevision: running.package.contractRevision,
+              }
+            : null),
       });
       await this.registrar.compareAndSet({
         workItemId: request.workItemId,
@@ -505,8 +544,8 @@ export class CanonicalHostVerticalService {
     actor: CanonicalHostActor;
     action: CanonicalAuthorizationDecision['action'];
     workItemId: string;
-    requestId: string;
-    documentVersionId: string;
+    requestId?: string;
+    documentVersionId?: string;
   }): Promise<CanonicalHostActionContext> {
     const decision: CanonicalAuthorizationDecision =
       await this.authorization.authorize(input);
@@ -518,10 +557,48 @@ export class CanonicalHostVerticalService {
       requestId: input.requestId,
       documentVersionId: input.documentVersionId,
     });
-    if (fresh.permissionSnapshotVersion !== decision.permissionSnapshotVersion) {
+    if (
+      fresh.permissionSnapshotVersion !== decision.permissionSnapshotVersion
+    ) {
       throw new Error('AUTHORIZATION_STALE_PERMISSION_SNAPSHOT');
     }
     return { actor: input.actor, decision };
+  }
+
+  authorizeExistingWorkItem(input: {
+    actor: CanonicalHostActor;
+    action: CanonicalAuthorizationDecision['action'];
+    workItemId: string;
+    requestId?: string;
+    documentVersionId?: string;
+  }): Promise<CanonicalHostActionContext> {
+    return this.authorizeAction(input);
+  }
+
+  private async serviceScopedProjection(
+    workItemId: string,
+    scope: CanonicalVerifiedServiceScope,
+  ): Promise<CanonicalWorkItemProjection> {
+    if (
+      scope.workItemId !== workItemId ||
+      scope.appId !== 'app_17bzc551rsg' ||
+      !scope.principalId.trim() ||
+      !scope.tenantId.trim() ||
+      !scope.authorizationFingerprint.trim()
+    ) {
+      throw serviceScopedWorkItemNotFound();
+    }
+    try {
+      return await this.registrar.getTenantScopedByWorkItemId({
+        workItemId,
+        tenantId: scope.tenantId,
+      });
+    } catch (error) {
+      if (isExplicitWorkItemNotFound(error)) {
+        throw serviceScopedWorkItemNotFound();
+      }
+      throw error;
+    }
   }
 
   private freshRead(
@@ -533,6 +610,107 @@ export class CanonicalHostVerticalService {
       documentVersionId: request.source.documentVersionId,
     });
   }
+}
+
+function developmentActionContext(
+  request: CanonicalPdfVerticalRunRequest,
+  actor: CanonicalHostActor,
+  scope: CanonicalVerifiedDevelopmentCreateScope,
+): CanonicalHostActionContext {
+  if (
+    scope.appId !== 'app_17bzc551rsg' ||
+    scope.appId !== actor.appId ||
+    scope.principalId !== actor.userId ||
+    scope.tenantId !== actor.tenantId ||
+    scope.documentVersionId !== request.source.documentVersionId ||
+    actor.env !== scope.environment.toLowerCase() ||
+    !scope.developmentRunToken.trim() ||
+    !scope.authorizationFingerprint.trim()
+  ) {
+    throw serviceScopedWorkItemNotFound();
+  }
+  const seed = JSON.stringify({
+    source: 'CONFIGURED_DEVELOPMENT_CREATE_SCOPE',
+    appId: scope.appId,
+    principalId: scope.principalId,
+    tenantId: scope.tenantId,
+    environment: scope.environment,
+    documentVersionId: scope.documentVersionId,
+    developmentRunToken: scope.developmentRunToken,
+    workItemId: request.workItemId,
+    requestId: request.requestId,
+    authorizationFingerprint: scope.authorizationFingerprint,
+  });
+  const decisionHash = sha256(seed);
+  const decision: CanonicalAuthorizationDecision = {
+    action: 'PARSE_PDF',
+    allowed: true,
+    actorFingerprint: sha256(
+      `${scope.appId}\n${scope.principalId}\n${scope.tenantId}`,
+    ),
+    decisionId: `decision-${decisionHash.slice(7, 39)}`,
+    decisionHash,
+    permissionSnapshotVersion: scope.authorizationFingerprint,
+  };
+  validateDecision(decision, 'PARSE_PDF');
+  return { actor, decision };
+}
+
+function sha256(value: string): string {
+  return `sha256:${createHash('sha256').update(value).digest('hex')}`;
+}
+
+function serviceScopedWorkItemNotFound(): Error & {
+  code: string;
+  statusCode: number;
+} {
+  return Object.assign(new Error('CANONICAL_WORK_ITEM_NOT_FOUND'), {
+    code: 'CANONICAL_WORK_ITEM_NOT_FOUND',
+    statusCode: 404,
+  });
+}
+
+function isExplicitWorkItemNotFound(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const value = error as { code?: unknown; message?: unknown };
+  return (
+    value.code === 'WORK_ITEM_NOT_FOUND' ||
+    value.code === 'CANONICAL_WORK_ITEM_NOT_FOUND' ||
+    value.message === 'WORK_ITEM_NOT_FOUND'
+  );
+}
+
+function buildReaderProjection(
+  workItem: CanonicalWorkItemProjection,
+  queryResults: UnifiedPackageReadbackResponse['queryResults'],
+  query: string,
+  sourceKind: UnifiedPackageSourceKind | null,
+): CanonicalReaderProjection | null {
+  if (!workItem.package || sourceKind === null) return null;
+  return {
+    sourceKind,
+    structuredUnitCount: workItem.package.contentUnitCount,
+    sourceRefCount: workItem.package.sourceRefCount,
+    query,
+    units: queryResults.map((result) => ({
+      unitId: result.unitId,
+      kind: result.kind,
+      text: result.text,
+      sourceRefIds: [...result.sourceRefIds],
+      sourceLocators: (result.sourceLocators ?? []).map((locator) => ({
+        ...locator,
+        bbox: locator.bbox ? [...locator.bbox] : null,
+      })),
+    })),
+    pdfPreview: {
+      status: 'UNAVAILABLE',
+      reason: 'PDF_PREVIEW_NOT_CONFIGURED',
+    },
+    translation: {
+      status: 'UNAVAILABLE',
+      reason: 'TRANSLATION_PROJECTION_NOT_AVAILABLE',
+    },
+  };
 }
 
 function requiredOpenApiText(
@@ -567,8 +745,7 @@ function seedProjection(
     workItemId: request.workItemId,
     requestId: request.requestId,
     phase: 'PARSE_REQUESTED',
-    permissionSnapshotVersion:
-      actionContext.decision.permissionSnapshotVersion,
+    permissionSnapshotVersion: actionContext.decision.permissionSnapshotVersion,
     parseAuthorization: {
       action: 'PARSE_PDF',
       actorFingerprint: actionContext.decision.actorFingerprint,
@@ -595,8 +772,14 @@ function withoutRevision(
 
 function packageProjection(
   readback: UnifiedPackageReadbackResponse,
-  usagePolicy: Extract<CanonicalPdfProducerResult, { kind: 'PACKAGE' }>['usagePolicy'],
-  documentIdentity: Extract<CanonicalPdfProducerResult, { kind: 'PACKAGE' }>['documentIdentity'],
+  usagePolicy: Extract<
+    CanonicalPdfProducerResult,
+    { kind: 'PACKAGE' }
+  >['usagePolicy'],
+  documentIdentity: Extract<
+    CanonicalPdfProducerResult,
+    { kind: 'PACKAGE' }
+  >['documentIdentity'],
 ): NonNullable<CanonicalWorkItemProjection['package']> {
   return {
     packageId: readback.package.packageId,
@@ -657,9 +840,7 @@ function failedResponse(
   return {
     schemaVersion: CANONICAL_HOST.responseSchemaVersion,
     status:
-      workItem.phase === 'RECORDING_FAILED'
-        ? 'RECORDING_FAILED'
-        : 'FAILED',
+      workItem.phase === 'RECORDING_FAILED' ? 'RECORDING_FAILED' : 'FAILED',
     workItem,
     readback: null,
     entry,
@@ -724,7 +905,10 @@ function validateDecision(
   expectedAction: CanonicalAuthorizationDecision['action'],
 ): void {
   if (!decision.allowed || decision.action !== expectedAction) {
-    throw new Error('CANONICAL_ACTION_NOT_AUTHORIZED');
+    throw Object.assign(new Error('CANONICAL_WORK_ITEM_NOT_FOUND'), {
+      code: 'CANONICAL_WORK_ITEM_NOT_FOUND',
+      statusCode: 404,
+    });
   }
   requiredText(decision.actorFingerprint, 'decision.actorFingerprint', 80);
   requiredText(decision.decisionId, 'decision.decisionId', 200);
@@ -753,7 +937,8 @@ function assertSameAuthorization(
 }
 
 function stableCauseCode(error: unknown): string {
-  const message: string = error instanceof Error ? error.message : 'UNKNOWN_ERROR';
+  const message: string =
+    error instanceof Error ? error.message : 'UNKNOWN_ERROR';
   const [head = 'UNKNOWN_ERROR'] = message.split(':', 1);
   const normalized: string = head
     .trim()

@@ -1,3 +1,6 @@
+import {
+  FeishuNativeOemMonitoringIngress,
+} from '../../server/modules/external-discovery/feishu-native-oem-monitoring-ingress';
 import type {
   FeishuNativeOemHumanRejection,
   FeishuNativeOemHumanSelection,
@@ -67,6 +70,7 @@ describe('ExternalDiscoveryService candidate-only admission', () => {
   let store: MemoryCandidateStore;
   let documentManagement: { ingestFileServiceSelection: jest.Mock };
   let service: ExternalDiscoveryService;
+  let ingress: FeishuNativeOemMonitoringIngress;
 
   beforeEach(() => {
     store = new MemoryCandidateStore();
@@ -75,6 +79,10 @@ describe('ExternalDiscoveryService candidate-only admission', () => {
       store as never,
       documentManagement as never,
     );
+    ingress = new FeishuNativeOemMonitoringIngress({
+      candidateStore: store,
+      documentManagement,
+    });
   });
 
   it.each([
@@ -91,15 +99,13 @@ describe('ExternalDiscoveryService candidate-only admission', () => {
         partialOnly,
       });
       await service.recordSearchRun(run, CONTEXT);
-      const page = await service.list(CONTEXT);
-      expect(page.searchRuns).toHaveLength(1);
-      expect(page.searchRuns[0]?.resultStatus).toBe(resultStatus);
+      expect(store.runs.get(run.searchRunRef)?.resultStatus).toBe(resultStatus);
       await expect(
-        service.select({
+        ingress.recordHumanSelection({
           searchRunRef: run.searchRunRef,
           candidateRef: run.candidates[0]!.candidateRef,
-          context: CONTEXT,
-        }),
+          decision: 'HUMAN_SELECTED_FOR_INGEST',
+        }, CONTEXT),
       ).rejects.toMatchObject({ code: `OEM_MONITORING_${resultStatus}_NOT_ADOPTABLE` });
       expect(documentManagement.ingestFileServiceSelection).not.toHaveBeenCalled();
     },
@@ -115,11 +121,11 @@ describe('ExternalDiscoveryService candidate-only admission', () => {
       const run = foundRun({ accessRestricted, truncated, partialOnly });
       await service.recordSearchRun(run, CONTEXT);
       await expect(
-        service.select({
+        ingress.recordHumanSelection({
           searchRunRef: run.searchRunRef,
           candidateRef: 'candidate-direct',
-          context: CONTEXT,
-        }),
+          decision: 'HUMAN_SELECTED_FOR_INGEST',
+        }, CONTEXT),
       ).rejects.toMatchObject({ code: 'OEM_MONITORING_SEARCH_RUN_INCOMPLETE' });
       expect(documentManagement.ingestFileServiceSelection).not.toHaveBeenCalled();
     },
@@ -132,22 +138,21 @@ describe('ExternalDiscoveryService candidate-only admission', () => {
     expect(store.runs.get(run.searchRunRef)?.candidates).toHaveLength(2);
 
     await expect(
-      service.select({
+      ingress.recordHumanSelection({
         searchRunRef: run.searchRunRef,
         candidateRef: 'candidate-direct',
-        context: CONTEXT,
-      }),
+        decision: 'HUMAN_SELECTED_FOR_INGEST',
+      }, CONTEXT),
     ).resolves.toMatchObject({
-      status: 'HUMAN_REVIEW_RECORDED',
-      reviewStatus: 'HUMAN_SELECTED',
-      documentManagementIoPerformed: false,
+      disposition: 'RECORDED',
+      selection: { decision: 'HUMAN_SELECTED_FOR_INGEST' },
     });
     await expect(
-      service.select({
+      ingress.recordHumanSelection({
         searchRunRef: run.searchRunRef,
         candidateRef: 'candidate-direct',
-        context: CONTEXT,
-      }),
+        decision: 'HUMAN_SELECTED_FOR_INGEST',
+      }, CONTEXT),
     ).rejects.toMatchObject({ code: 'OEM_MONITORING_SELECTION_CONFLICT' });
     expect(documentManagement.ingestFileServiceSelection).not.toHaveBeenCalled();
   });
@@ -156,24 +161,24 @@ describe('ExternalDiscoveryService candidate-only admission', () => {
     const run = foundRun();
     await service.recordSearchRun(run, CONTEXT);
     await expect(
-      service.reject({
+      ingress.recordHumanRejection({
         searchRunRef: run.searchRunRef,
         candidateRef: 'candidate-direct',
-        context: CONTEXT,
-      }),
+        decision: 'HUMAN_REJECTED',
+      }, CONTEXT),
     ).resolves.toMatchObject({
-      reviewStatus: 'REJECTED',
-      reviewDecision: 'HUMAN_REJECTED',
+      disposition: 'RECORDED',
+      selection: { decision: 'HUMAN_REJECTED' },
     });
     await expect(
-      service.select({
+      ingress.recordHumanSelection({
         searchRunRef: run.searchRunRef,
         candidateRef: 'candidate-direct',
-        context: CONTEXT,
-      }),
+        decision: 'HUMAN_SELECTED_FOR_INGEST',
+      }, CONTEXT),
     ).rejects.toMatchObject({ code: 'OEM_MONITORING_SELECTION_CONFLICT' });
     await expect(
-      service.ingestSelectedCandidate(
+      ingress.ingestSelectedCandidate(
         {
           searchRunRef: run.searchRunRef,
           candidateRef: 'candidate-direct',
@@ -202,6 +207,67 @@ describe('ExternalDiscoveryService candidate-only admission', () => {
       service.latestSearchRunsAsOf(['B'], 'not-a-date', CONTEXT),
     ).rejects.toThrow('OPENCLAW_OVERALL_DISCOVERY_CUTOFF_INVALID');
   });
+});
+
+describe('ExternalDiscoveryService production browser methods', () => {
+  it.each(['list', 'select', 'reject', 'ingest'] as const)(
+    'rejects direct %s before every real store or DM dependency',
+    async (action) => {
+      const store = {
+        recordSearchRun: jest.fn(),
+        readSearchRun: jest.fn(),
+        recordHumanSelection: jest.fn(),
+        recordHumanRejection: jest.fn(),
+        readHumanSelection: jest.fn(),
+        listSearchRuns: jest.fn(),
+      };
+      const documentManagement = { ingestFileServiceSelection: jest.fn() };
+      const service = new ExternalDiscoveryService(
+        store as never,
+        documentManagement as never,
+      );
+      const operation =
+        action === 'list'
+          ? service.list(CONTEXT)
+          : action === 'select'
+            ? service.select({
+                searchRunRef: 'forged-run',
+                candidateRef: 'forged-candidate',
+                context: CONTEXT,
+              })
+            : action === 'reject'
+              ? service.reject({
+                  searchRunRef: 'forged-run',
+                  candidateRef: 'forged-candidate',
+                  context: CONTEXT,
+                })
+              : Promise.resolve().then(() =>
+                  service.ingestSelectedCandidate(
+                    {
+                      searchRunRef: 'forged-run',
+                      candidateRef: 'forged-candidate',
+                      selection: {
+                        bucketId: 'forged-bucket',
+                        filePath: '/forged.pdf',
+                      },
+                    },
+                    CONTEXT,
+                  ),
+                );
+
+      await expect(operation).rejects.toMatchObject({
+        code: 'CANONICAL_IDENTITY_HANDOFF_UNAVAILABLE',
+        statusCode: 503,
+        denialSource: 'MIAODA_BROWSER_UNAVAILABLE_ADAPTER',
+      });
+      for (const dependency of Object.values(store)) {
+        expect(dependency).not.toHaveBeenCalled();
+      }
+      expect(
+        documentManagement.ingestFileServiceSelection,
+      ).not.toHaveBeenCalled();
+    },
+  );
 });
 
 function hostedRun(searchRunRef: string, observedAt: string): FeishuNativeOemSearchRun {

@@ -56,6 +56,46 @@ export interface UnifiedReaderQueryResult {
   kind: string;
   text: string;
   sourceRefIds: string[];
+  /** Frozen.2 source locator details when the package provides them. */
+  sourceLocators?: UnifiedReaderSourceLocator[];
+}
+
+export interface UnifiedReaderSourceLocator {
+  sourceRefId: string;
+  kind: string;
+  artifactId: string | null;
+  pageStart: number | null;
+  pageEnd: number | null;
+  charStart: number | null;
+  charEnd: number | null;
+  charOffsetUnit: string | null;
+  normalizedPath: string | null;
+  xpath: string | null;
+  elementId: string | null;
+  quote: string | null;
+  bbox: number[] | null;
+}
+
+export interface CanonicalReaderProjection {
+  sourceKind: UnifiedPackageSourceKind;
+  structuredUnitCount: number;
+  sourceRefCount: number;
+  query: string;
+  units: Array<{
+    unitId: string;
+    kind: string;
+    text: string;
+    sourceRefIds: string[];
+    sourceLocators: UnifiedReaderSourceLocator[];
+  }>;
+  pdfPreview: {
+    status: 'UNAVAILABLE';
+    reason: 'PDF_PREVIEW_NOT_CONFIGURED';
+  };
+  translation: {
+    status: 'UNAVAILABLE';
+    reason: 'TRANSLATION_PROJECTION_NOT_AVAILABLE';
+  };
 }
 
 export interface UnifiedReaderCandidateReceipt {
@@ -519,6 +559,19 @@ export interface CanonicalOpenClawOverallProjection {
     | 'BASE_RULE_RESULT_CHANGED'
     | 'ENGINEER_REVIEW_CHANGED'
     | null;
+  /** Business-readable candidate content copied from the verified overall artifact. */
+  overallCandidate?: string;
+  findings?: Array<{
+    finding: string;
+    basis: string;
+    sourceRefIds: string[];
+    assumptions: string[];
+    uncertainty: string;
+  }>;
+  missingInputs?: string[];
+  applicabilityStatus?: string;
+  engineeringReviewRequired?: boolean;
+  providers?: Record<string, unknown>;
 }
 
 export type CanonicalEngineerReviewDecision =
@@ -541,6 +594,11 @@ export interface CanonicalEngineerReviewPageItem {
   dynamicResult: string;
   candidateConclusion: string;
   humanReviewRequired: boolean;
+  factsConsidered?: string[];
+  ruleApplication?: string;
+  analysisSummary?: string;
+  sourceRefs?: string[];
+  missingInputs?: string[];
   latestReview: {
     decision: CanonicalEngineerReviewDecision;
     status: 'ENGINEER_CONFIRMED' | 'NEEDS_REVIEW';
@@ -698,7 +756,11 @@ export interface CanonicalPdfVerticalRunResponse {
 }
 
 export interface CanonicalDevelopmentWorkItemRunRequest {
-  documentVersionId: string;
+  documentVersionId?: string;
+  selection?: {
+    bucketId: string;
+    filePath: string;
+  };
   developmentRunToken: string;
   query?: string;
 }
@@ -820,6 +882,35 @@ export interface CanonicalLibraryIndexProjection {
     crossWorkItemLibraryAvailable: false;
     relatedDocumentIndexAvailable: false;
     note: string;
+  };
+}
+
+export interface CanonicalLibraryIndexReadResponse {
+  schemaVersion: 'wiselink.3_1.library_index_read.v0.candidate';
+  scope: 'CURRENT_WORKITEM_ONLY';
+  workItem: {
+    workItemId: string;
+    revision: number;
+    phase: string;
+  };
+  document: {
+    documentId: string;
+    documentVersionId: string;
+    documentCode: string;
+    businessRevision: string;
+    normalizedFamily: string;
+  };
+  currentness: {
+    familyId: string;
+    currentDocumentVersionId: string | null;
+    currentGeneration: number;
+    selectedVersionIsCurrent: boolean;
+  };
+  libraryIndex: CanonicalLibraryIndexProjection;
+  readAuthorization: {
+    action: 'READ_LIBRARY_INDEX';
+    decisionId: string;
+    permissionSnapshotVersion: string;
   };
 }
 
@@ -956,6 +1047,7 @@ export interface CanonicalDocumentParsingPageResponse {
   workItem: CanonicalWorkItemProjection;
   entry: CanonicalEntryFacadeResponse;
   queryResults: UnifiedReaderQueryResult[];
+  readerProjection?: CanonicalReaderProjection | null;
   engineerReviewContext?: CanonicalEngineerReviewPageContext | null;
   libraryIndex: CanonicalLibraryIndexProjection;
   relatedDocuments: CanonicalRelatedDocumentProjection;

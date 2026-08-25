@@ -1,11 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { FileService } from '@lark-apaas/fullstack-nestjs-core';
 
-import {
-  DocumentManagementHostedCore,
-} from '../documentManagementHostedCore.js';
+import { DocumentManagementHostedCore } from '../documentManagementHostedCore.js';
 import { MiaodaFileServiceArtifactStore } from '../miaodaFileServiceArtifactStore.js';
 import { MiaodaHostedDocumentCatalog } from './miaoda-hosted-document-catalog';
+import { assertProductionMiaodaBrowserIdentityAvailable } from '../../../../work-item/production-miaoda-browser-ingress';
 import {
   DOCUMENT_MANAGEMENT_INGEST_AUTHORIZER,
   type DocumentManagementIngestAuthorizer,
@@ -15,6 +14,8 @@ export interface HostedRequestContext {
   actorUserId: string;
   tenantId: string;
   roles: string[];
+  appId: string;
+  env: string;
 }
 
 @Injectable()
@@ -37,19 +38,66 @@ export class DocumentManagementHostedService {
   }
 
   ingestFileServiceSelection(request: unknown, context: HostedRequestContext) {
+    assertProductionMiaodaBrowserIdentityAvailable(hostedIdentity(context));
+    assertDevelopmentPreviewContext(context);
     return this.core.ingestFileServiceSelection(request, context);
   }
 
-  async getDocumentVersion(documentVersionId: string, context: HostedRequestContext) {
-    await this.authorizer.assertCanRead?.({ ...context, action: 'DOCUMENT_READ' });
+  assertCanIngest(
+    context: HostedRequestContext,
+    selection: { bucketId: string; filePath: string },
+  ): Promise<void> {
+    assertProductionMiaodaBrowserIdentityAvailable(hostedIdentity(context));
+    assertDevelopmentPreviewContext(context);
+    return this.authorizer.assertCanIngest({
+      ...context,
+      action: 'DOCUMENT_INGEST',
+      selection,
+    });
+  }
+
+  async getDocumentVersion(
+    documentVersionId: string,
+    context: HostedRequestContext,
+  ) {
+    assertProductionMiaodaBrowserIdentityAvailable(hostedIdentity(context));
+    await this.authorizer.assertCanRead({
+      ...context,
+      action: 'DOCUMENT_READ',
+      documentVersionId,
+    });
     const version = await this.catalog.readDocumentVersion(documentVersionId);
     if (!version) {
-      throw Object.assign(new Error(`DocumentVersion not found: ${documentVersionId}`), {
-        code: 'DOCUMENT_VERSION_NOT_FOUND',
-        statusCode: 404,
-      });
+      throw Object.assign(
+        new Error(`DocumentVersion not found: ${documentVersionId}`),
+        {
+          code: 'DOCUMENT_VERSION_NOT_FOUND',
+          statusCode: 404,
+        },
+      );
     }
     const family = await this.catalog.readFamily(version.familyId);
     return { version, family };
+  }
+}
+
+function hostedIdentity(context: HostedRequestContext) {
+  return {
+    userId: context.actorUserId,
+    tenantId: context.tenantId,
+    appId: context.appId,
+    env: context.env,
+  };
+}
+
+function assertDevelopmentPreviewContext(context: HostedRequestContext): void {
+  if (context.env !== 'preview') {
+    throw Object.assign(
+      new Error('Document ingestion is available only in hosted preview.'),
+      {
+        code: 'DOCUMENT_INGEST_PREVIEW_REQUIRED',
+        statusCode: 403,
+      },
+    );
   }
 }

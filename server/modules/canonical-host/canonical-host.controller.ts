@@ -7,7 +7,8 @@ import {
   Post,
   Query,
   Req,
-  UnauthorizedException,
+  Optional,
+  UseGuards,
 } from '@nestjs/common';
 import { NeedLogin } from '@lark-apaas/fullstack-nestjs-core';
 import type { Request } from 'express';
@@ -18,12 +19,17 @@ import type {
 } from '@shared/api.interface';
 
 import { OrdinaryWorkItemService } from '../work-item/ordinary-work-item.service';
-import { developmentRunBody } from './canonical-development-run-input';
+import {
+  miaodaHostedFinalUserActor,
+  ProductionMiaodaBrowserObjectIngressGuard,
+} from '../work-item/production-miaoda-browser-ingress';
+import { CANONICAL_DEVELOPMENT_ROLE_ID } from './canonical-host.constants';
 import { CanonicalHostAeoService } from './canonical-host-aeo.service';
 import { CanonicalHostEngineerReviewService } from './canonical-host-engineer-review.service';
 import { CanonicalHostIntegratedAssessmentService } from './canonical-host-integrated-assessment.service';
 import { buildCanonicalPageProjections } from './canonical-host-page-projections';
 import { CanonicalHostVerticalService } from './canonical-host-vertical.service';
+import { CanonicalHostLibraryIndexService } from './canonical-host-library-index.service';
 import type { CanonicalHostActor } from './canonical-host.types';
 
 const ENGINEER_DECISIONS = new Set<CanonicalEngineerReviewDecision>([
@@ -34,6 +40,7 @@ const ENGINEER_DECISIONS = new Set<CanonicalEngineerReviewDecision>([
 ]);
 
 @NeedLogin()
+@UseGuards(ProductionMiaodaBrowserObjectIngressGuard)
 @Controller('api/canonical-host')
 export class CanonicalHostController {
   constructor(
@@ -42,26 +49,26 @@ export class CanonicalHostController {
     private readonly integratedAssessments: CanonicalHostIntegratedAssessmentService,
     private readonly engineerReviews: CanonicalHostEngineerReviewService,
     private readonly aeo: CanonicalHostAeoService,
+    @Optional()
+    private readonly libraryIndex?: CanonicalHostLibraryIndexService,
   ) {}
 
-  @Post('work-items/parse-pdf')
-  runPdf(
-    @Body() request: unknown,
-    @Req() httpRequest: Request,
-  ) {
-    return this.workItems.parsePdf(
-      request as Parameters<OrdinaryWorkItemService['parsePdf']>[0],
-      hostActor(httpRequest),
-    );
+  @Get('identity-context')
+  identityContext(@Req() httpRequest: Request) {
+    const actor = hostActor(httpRequest);
+    return {
+      userId: actor.userId,
+      tenantId: actor.tenantId,
+      developmentIntakeAvailable:
+        actor.env === 'preview' &&
+        actor.roles.includes(CANONICAL_DEVELOPMENT_ROLE_ID),
+    };
   }
 
-  @Post('work-items/development-runs')
-  createDevelopmentRun(
-    @Body() body: unknown,
-    @Req() httpRequest: Request,
-  ) {
-    return this.workItems.createDevelopmentRun(
-      developmentRunBody(body),
+  @Post('work-items/parse-pdf')
+  runPdf(@Body() request: unknown, @Req() httpRequest: Request) {
+    return this.workItems.parsePdf(
+      request as Parameters<OrdinaryWorkItemService['parsePdf']>[0],
       hostActor(httpRequest),
     );
   }
@@ -81,6 +88,20 @@ export class CanonicalHostController {
     );
   }
 
+  @Get('work-items/:workItemId/library-index')
+  library(
+    @Param('workItemId') workItemId: string,
+    @Req() httpRequest: Request,
+  ) {
+    if (!this.libraryIndex) {
+      throw new Error('CANONICAL_LIBRARY_INDEX_SERVICE_UNCONFIGURED');
+    }
+    return this.libraryIndex.read({
+      workItemId: requiredText(workItemId, 'workItemId'),
+      actor: hostActor(httpRequest),
+    });
+  }
+
   @Get('work-items/:workItemId/status')
   status(
     @Param('workItemId') workItemId: string,
@@ -88,11 +109,14 @@ export class CanonicalHostController {
     @Query('documentVersionId') documentVersionId: string,
     @Req() httpRequest: Request,
   ) {
-    return this.service.status({
-      workItemId,
-      requestId,
-      documentVersionId,
-    }, hostActor(httpRequest));
+    return this.service.status(
+      {
+        workItemId,
+        requestId,
+        documentVersionId,
+      },
+      hostActor(httpRequest),
+    );
   }
 
   @Post('work-items/query-parsed-units')
@@ -147,8 +171,9 @@ export class CanonicalHostController {
     actor: CanonicalHostActor,
   ) {
     const page = await this.service.page(input, actor);
-    const engineerReviewContext =
-      await this.engineerReviews.pageContext(page.workItem);
+    const engineerReviewContext = await this.engineerReviews.pageContext(
+      page.workItem,
+    );
     return {
       ...page,
       engineerReviewContext,
@@ -161,17 +186,15 @@ export class CanonicalHostController {
   }
 }
 
-export function hostActor(request: Request): CanonicalHostActor {
-  const context = request.userContext;
-  if (!context?.userId || !context.tenantId || !context.appId || !context.env) {
-    throw new UnauthorizedException('CANONICAL_HOST_ACTOR_CONTEXT_REQUIRED');
-  }
+function hostActor(request: Request): CanonicalHostActor {
+  const identity = miaodaHostedFinalUserActor(request.userContext);
   return {
-    userId: context.userId,
-    tenantId: String(context.tenantId),
-    appId: context.appId,
-    roles: [...(context.roles ?? [])],
-    env: context.env,
+    userId: identity.canonicalSubject.id,
+    tenantId: identity.tenantId,
+    appId: identity.applicationScopeId,
+    roles: [...identity.platformRoles],
+    env: identity.env,
+    objectAccessActor: identity,
   };
 }
 
