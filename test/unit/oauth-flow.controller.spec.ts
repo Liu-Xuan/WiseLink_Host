@@ -7,6 +7,7 @@ jest.mock('@nestjs/common', () => {
 });
 
 import { OauthFlowController } from '../../server/modules/identity/oauth-flow.controller';
+import { HOST_SESSION_ABSOLUTE_TTL_MS } from '../../server/modules/identity/session.store';
 
 const configured = {
   configured: true,
@@ -193,12 +194,24 @@ describe('OauthFlowController official OAuth contract', () => {
   });
 
   it('sets an exact secure HttpOnly cookie and returns no JSON token', async () => {
-    const response = fakeResponse();
-    await successController(identity).handleCallback({ code: 'code', state: 'state' }, response as never);
-    expect(response.cookie).toHaveBeenCalledWith('wl_session', 'raw-session-token', expect.objectContaining({ httpOnly: true, secure: true, sameSite: 'lax', path: '/' }));
-    expect(response.status).toHaveBeenCalledWith(204);
-    expect(response.send).toHaveBeenCalledWith();
-    expect(response.json).not.toHaveBeenCalled();
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-08-26T00:00:00.000Z'));
+    try {
+      const response = fakeResponse();
+      await successController(identity).handleCallback({ code: 'code', state: 'state' }, response as never);
+      expect(response.cookie).toHaveBeenCalledWith('wl_session', 'raw-session-token', {
+        httpOnly: true,
+        secure: true,
+        sameSite: 'lax',
+        maxAge: HOST_SESSION_ABSOLUTE_TTL_MS,
+        path: '/',
+      });
+      expect(response.status).toHaveBeenCalledWith(204);
+      expect(response.send).toHaveBeenCalledWith();
+      expect(response.json).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('does not fail when official user_info omits user_id', async () => {
@@ -219,7 +232,7 @@ function successController(verifiedIdentity: typeof identity) {
     { consume: jest.fn().mockResolvedValue({ codeVerifier: 'verifier' }) },
     { fetchToken: jest.fn().mockResolvedValue({ accessToken: 'user-access-token' }) },
     { verify: jest.fn().mockResolvedValue({ kind: 'VERIFIED', identity: verifiedIdentity }) },
-    { create: jest.fn().mockResolvedValue({ token: 'raw-session-token', expiresAt: new Date(Date.now() + 60000) }) },
+    { create: jest.fn().mockImplementation(() => Promise.resolve({ token: 'raw-session-token', expiresAt: new Date(Date.now() + HOST_SESSION_ABSOLUTE_TTL_MS) })) },
   );
 }
 
