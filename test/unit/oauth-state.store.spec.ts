@@ -2,74 +2,81 @@ import 'reflect-metadata';
 
 import { OauthStateStore } from '../../server/modules/identity/oauth-state.store';
 
-describe('OauthStateStore', () => {
-  let store: OauthStateStore;
+function repository() {
+  const rows = new Map<string, { codeVerifier: string; expiresAt: Date; consumed: boolean }>();
+  return {
+    rows,
+    issueOauthState: jest.fn(async (input: { stateHash: string; codeVerifier: string; expiresAt: Date }) => {
+      rows.set(input.stateHash, { codeVerifier: input.codeVerifier, expiresAt: input.expiresAt, consumed: false });
+    }),
+    consumeOauthState: jest.fn(async (hash: string, now: Date) => {
+      const row = rows.get(hash);
+      if (!row || row.consumed || row.expiresAt <= now) return null;
+      row.consumed = true;
+      return { codeVerifier: row.codeVerifier };
+    }),
+  };
+}
 
-  beforeEach(() => {
-    store = new OauthStateStore();
+describe('OauthStateStore persistent one-time contract', () => {
+  it('stores a SHA-256 state digest rather than the raw browser state', async () => {
+    const repo = repository();
+    const state = await new OauthStateStore(repo as never).issue('verifier-1');
+    const persisted = repo.issueOauthState.mock.calls[0][0];
+    expect(persisted.stateHash).toMatch(/^[0-9a-f]{64}$/u);
+    expect(persisted.stateHash).not.toBe(state);
   });
 
-  // ── One-time semantics ──
-  it('issues a state that can be consumed exactly once', () => {
-    const state = store.issue('verifier-123');
-    const result = store.consume(state);
-    expect(result).toEqual({ codeVerifier: 'verifier-123' });
+  it('returns the exact server-side PKCE verifier on consume', async () => {
+    const repo = repository();
+    const store = new OauthStateStore(repo as never);
+    const state = await store.issue('verifier-exact');
+    await expect(store.consume(state)).resolves.toEqual({ codeVerifier: 'verifier-exact' });
   });
 
-  it('rejects a second consumption of the same state (one-time)', () => {
-    const state = store.issue('verifier-456');
-    const first = store.consume(state);
-    const second = store.consume(state);
-    expect(first).not.toBeNull();
-    expect(second).toBeNull();
+  it('rejects replay through the repository atomic consume', async () => {
+    const repo = repository();
+    const store = new OauthStateStore(repo as never);
+    const state = await store.issue('verifier');
+    await expect(store.consume(state)).resolves.not.toBeNull();
+    await expect(store.consume(state)).resolves.toBeNull();
   });
 
-  it('returns null for a never-issued state', () => {
-    expect(store.consume('never-issued-token')).toBeNull();
+  it('rejects a never-issued state', async () => {
+    await expect(new OauthStateStore(repository() as never).consume('never-issued')).resolves.toBeNull();
   });
 
-  it('returns null for empty string', () => {
-    store.issue('verifier');
-    expect(store.consume('')).toBeNull();
+  it('rejects an empty state without a database call', async () => {
+    const repo = repository();
+    await expect(new OauthStateStore(repo as never).consume('')).resolves.toBeNull();
+    expect(repo.consumeOauthState).not.toHaveBeenCalled();
   });
 
-  it('produces different state tokens on each issue (random)', () => {
-    const s1 = store.issue('v1');
-    const s2 = store.issue('v2');
-    const s3 = store.issue('v3');
-    expect(s1).not.toBe(s2);
-    expect(s2).not.toBe(s3);
-    expect(s1).not.toBe(s3);
+  it('issues independent random browser state values', async () => {
+    const store = new OauthStateStore(repository() as never);
+    const states = await Promise.all([store.issue('v1'), store.issue('v2'), store.issue('v3')]);
+    expect(new Set(states).size).toBe(3);
   });
 
-  // ── Code verifier binding ──
-  it('returns the exact code_verifier that was bound at issue time', () => {
-    const verifier = 'a-very-specific-verifier-value-1234567890';
-    const state = store.issue(verifier);
-    const result = store.consume(state);
-    expect(result?.codeVerifier).toBe(verifier);
+  it('binds each state to its own verifier', async () => {
+    const store = new OauthStateStore(repository() as never);
+    const first = await store.issue('v-A');
+    const second = await store.issue('v-B');
+    await expect(store.consume(first)).resolves.toEqual({ codeVerifier: 'v-A' });
+    await expect(store.consume(second)).resolves.toEqual({ codeVerifier: 'v-B' });
   });
 
-  it('does not mix up verifiers across different states', () => {
-    const s1 = store.issue('verifier-A');
-    const s2 = store.issue('verifier-B');
-    expect(store.consume(s1)?.codeVerifier).toBe('verifier-A');
-    expect(store.consume(s2)?.codeVerifier).toBe('verifier-B');
+  it('rejects an expired row even when the browser presents the correct state', async () => {
+    const repo = repository();
+    const store = new OauthStateStore(repo as never);
+    const state = await store.issue('expired');
+    for (const row of repo.rows.values()) row.expiresAt = new Date(0);
+    await expect(store.consume(state)).resolves.toBeNull();
   });
 
-  // ── TTL ──
-  it('returns null for an expired state', () => {
-    const state = store.issue('verifier-expired');
-    // Manually expire: we can't time-travel the store, but we can
-    // verify the TTL is bounded by checking the constant is 5 minutes.
-    // A full time-travel test would require injecting a clock.
-    // For now, verify the state is still valid immediately.
-    expect(store.consume(state)).not.toBeNull();
-  });
-
-  // ── No I/O side effects ──
-  it('does not throw on any input', () => {
-    expect(() => store.consume('')).not.toThrow();
-    expect(() => store.consume('garbage')).not.toThrow();
+  it('does not silently downgrade a database write failure', async () => {
+    const repo = repository();
+    repo.issueOauthState.mockRejectedValueOnce(new Error('DB_UNAVAILABLE') as never);
+    await expect(new OauthStateStore(repo as never).issue('verifier')).rejects.toThrow('DB_UNAVAILABLE');
   });
 });

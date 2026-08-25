@@ -11,18 +11,13 @@ import {
 } from '../unified-reader/unified-reader.module';
 import { ActionAttemptModule } from '../action-attempt/action-attempt.module';
 import { CanonicalEntryFacadeService } from './canonical-entry-facade.service';
-import { AilyCanonicalServiceScopeAuthorization } from './aily-canonical-service-scope.authorization';
-import {
-  AILY_IDENTITY_JWT_SECRET,
-  AilyNativeFinalUserIdentityService,
-  ailyIdentityJwtSecretFromEnv,
-} from './aily-native-final-user-identity.service';
 import { CanonicalHostVerticalService } from './canonical-host-vertical.service';
 import { CanonicalHostController } from './canonical-host.controller';
 import { CanonicalHostOpenApiController } from './canonical-host.openapi.controller';
 import { CanonicalHostMcpOpenApiController } from './canonical-host-mcp.openapi.controller';
 import { CanonicalHostMcpService } from './canonical-host-mcp.service';
 import { CanonicalHostOpenClawMcpOpenApiController } from './canonical-host-openclaw-mcp.openapi.controller';
+import { OauthSessionDevelopmentWorkItemController } from './oauth-session-development-work-item.controller';
 import { CanonicalHostOpenClawMcpService } from './canonical-host-openclaw-mcp.service';
 import { CanonicalHostOpenClawDynamicEvaluationService } from './canonical-host-openclaw-dynamic-evaluation.service';
 import { CanonicalHostOpenClawDiscoveryService } from './canonical-host-openclaw-discovery.service';
@@ -47,6 +42,7 @@ import type { CanonicalHostBindingState } from './canonical-host.types';
 import { MiaodaCanonicalWorkItemRegistrarAdapter } from '../work-item/miaoda-canonical-work-item-registrar.adapter';
 import { MiaodaDocumentVersionSourceResolver } from '../work-item/miaoda-document-version-source.resolver';
 import { WorkItemRuntimeModule } from '../work-item/work-item-runtime.module';
+import { IdentityModule } from '../identity/identity.module';
 import { OrdinaryWorkItemService } from '../work-item/ordinary-work-item.service';
 import { UnconfiguredCanonicalPdfProducerAdapter } from './unconfigured-canonical-pdf-producer.adapter';
 import { UnconfiguredCanonicalMiaodaAppBindingAdapter } from './unconfigured-canonical-miaoda-app-binding.adapter';
@@ -93,25 +89,20 @@ export interface CanonicalHostModuleOptions {
     AssessmentHostConsumerModule,
     AeoSameWorkItemAuthoringModule.forRoot(),
     WorkItemRuntimeModule,
+    IdentityModule,
   ],
   controllers: [
     CanonicalHostController,
     CanonicalHostOpenApiController,
     CanonicalHostMcpOpenApiController,
     CanonicalHostOpenClawMcpOpenApiController,
+    OauthSessionDevelopmentWorkItemController,
   ],
   providers: [
     CanonicalEntryFacadeService,
     CanonicalFailureRecordingService,
     CanonicalHostVerticalService,
     CanonicalHostMcpService,
-    AilyNativeFinalUserIdentityService,
-    AilyCanonicalServiceScopeAuthorization,
-    {
-      provide: AILY_IDENTITY_JWT_SECRET,
-      inject: [],
-      useFactory: (): string | null => ailyIdentityJwtSecretFromEnv(),
-    },
     CanonicalHostOpenClawMcpService,
     CanonicalHostOpenClawDynamicEvaluationService,
     CanonicalHostOpenClawDiscoveryService,
@@ -133,7 +124,7 @@ export interface CanonicalHostModuleOptions {
     },
     {
       provide: CANONICAL_SERVICE_SCOPE_AUTHORIZATION,
-      useExisting: AilyCanonicalServiceScopeAuthorization,
+      useExisting: UnavailableCanonicalServiceScopeAuthorization,
     },
   ],
 })
@@ -221,6 +212,7 @@ export class CanonicalHostModule {
         ExternalDiscoveryModule,
         AeoSameWorkItemAuthoringModule.forRoot(),
         WorkItemRuntimeModule,
+        IdentityModule,
         ...(options.imports ?? []),
       ],
       controllers: [
@@ -228,6 +220,7 @@ export class CanonicalHostModule {
         CanonicalHostOpenApiController,
         CanonicalHostMcpOpenApiController,
         CanonicalHostOpenClawMcpOpenApiController,
+        OauthSessionDevelopmentWorkItemController,
       ],
       providers: [
         workItemRegistrarProvider,
@@ -248,13 +241,6 @@ export class CanonicalHostModule {
         CanonicalFailureRecordingService,
         CanonicalHostVerticalService,
         CanonicalHostMcpService,
-        AilyNativeFinalUserIdentityService,
-        AilyCanonicalServiceScopeAuthorization,
-        {
-          provide: AILY_IDENTITY_JWT_SECRET,
-          inject: [],
-          useFactory: (): string | null => ailyIdentityJwtSecretFromEnv(),
-        },
         CanonicalHostOpenClawMcpService,
         CanonicalHostOpenClawDynamicEvaluationService,
         CanonicalHostOpenClawDiscoveryService,
@@ -271,7 +257,7 @@ export class CanonicalHostModule {
         CanonicalHostAeoService,
         {
           provide: CANONICAL_SERVICE_SCOPE_AUTHORIZATION,
-          useExisting: AilyCanonicalServiceScopeAuthorization,
+          useExisting: UnavailableCanonicalServiceScopeAuthorization,
         },
       ],
       exports: [

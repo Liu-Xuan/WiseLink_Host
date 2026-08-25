@@ -43,7 +43,7 @@ export function buildActorContextFromVerifiedIdentity(
     },
     tenantId: identity.tenantId,
     applicationScopeId,
-    applicationScopeProvenance: 'MIAODA_GATEWAY_APP_CONTEXT',
+    applicationScopeProvenance: 'HOST_CONFIGURED_MIAODA_APP_ID',
     workspaceId: null,
     workspaceProvenance: 'UNAVAILABLE',
     env,

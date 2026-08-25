@@ -23,7 +23,6 @@ import {
   miaodaHostedFinalUserActor,
   ProductionMiaodaBrowserObjectIngressGuard,
 } from '../work-item/production-miaoda-browser-ingress';
-import { developmentRunBody } from './canonical-development-run-input';
 import { CANONICAL_DEVELOPMENT_ROLE_ID } from './canonical-host.constants';
 import { CanonicalHostAeoService } from './canonical-host-aeo.service';
 import { CanonicalHostEngineerReviewService } from './canonical-host-engineer-review.service';
@@ -70,14 +69,6 @@ export class CanonicalHostController {
   runPdf(@Body() request: unknown, @Req() httpRequest: Request) {
     return this.workItems.parsePdf(
       request as Parameters<OrdinaryWorkItemService['parsePdf']>[0],
-      hostActor(httpRequest),
-    );
-  }
-
-  @Post('work-items/development-runs')
-  createDevelopmentRun(@Body() body: unknown, @Req() httpRequest: Request) {
-    return this.workItems.createDevelopmentRun(
-      developmentRunBody(body),
       hostActor(httpRequest),
     );
   }

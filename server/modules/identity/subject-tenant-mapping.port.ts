@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { IdentityRepository } from './identity.repository';
 
 export const SUBJECT_TENANT_MAPPING = Symbol('SUBJECT_TENANT_MAPPING');
 
@@ -8,6 +9,7 @@ export const SUBJECT_TENANT_MAPPING = Symbol('SUBJECT_TENANT_MAPPING');
  * only Host-owned data may create it, and its absence is fail-closed.
  */
 export interface SubjectTenantMapping {
+  mappingId: string;
   /** Miaoda user ID — the canonical subject. */
   miaodaUserId: string;
   /** Miaoda tenant ID — must match the request context. */
@@ -27,6 +29,7 @@ export interface SubjectTenantMappingPort {
   resolveMapping(input: {
     feishuOpenId: string;
     feishuTenantKey: string;
+    expectedClientId: string;
   }): Promise<SubjectTenantMapping | null>;
 }
 
@@ -43,7 +46,33 @@ export class UnavailableSubjectTenantMappingAdapter
   async resolveMapping(_input: {
     feishuOpenId: string;
     feishuTenantKey: string;
+    expectedClientId: string;
   }): Promise<SubjectTenantMapping | null> {
     return null;
+  }
+}
+
+@Injectable()
+// Registered through the SUBJECT_TENANT_MAPPING Symbol provider.
+// eslint-disable-next-line @darraghor/nestjs-typed/injectable-should-be-provided
+export class DatabaseSubjectTenantMappingAdapter
+  implements SubjectTenantMappingPort
+{
+  constructor(private readonly repository: IdentityRepository) {}
+
+  async resolveMapping(input: {
+    feishuOpenId: string;
+    feishuTenantKey: string;
+    expectedClientId: string;
+  }): Promise<SubjectTenantMapping | null> {
+    const mapping = await this.repository.resolveSubjectMapping(input);
+    if (!mapping) return null;
+    return {
+      mappingId: mapping.id,
+      miaodaUserId: mapping.miaodaUserId,
+      miaodaTenantId: mapping.miaodaTenantId,
+      feishuTenantKey: mapping.feishuTenantKey,
+      expectedClientId: mapping.expectedClientId,
+    };
   }
 }

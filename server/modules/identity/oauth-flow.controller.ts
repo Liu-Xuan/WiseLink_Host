@@ -1,13 +1,17 @@
 import {
+  Body,
   Controller,
-  Get,
   Inject,
-  Query,
+  Post,
   Res,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
 import type { Response } from 'express';
+import type {
+  OfficialOauthCallbackRequest,
+  OfficialOauthStartResponse,
+} from '@shared/api.interface';
 
 import { OAUTH_CONFIG, type OAuthConfigPort } from './oauth-config.port';
 import { OauthStateStore } from './oauth-state.store';
@@ -28,13 +32,13 @@ import type { VerifiedIdentityResult } from './identity.types';
  *
  * Two endpoints:
  *
- *  GET /api/identity/oauth/authorize
+ *  POST /api/identity/oauth/start
  *    - Server generates PKCE pair + one-time opaque state
- *    - Redirects browser to Feishu authorize URL with state + code_challenge
+ *    - Returns the official Feishu authorize URL to the Hosted SPA
  *    - 503 when OAuth is not configured (fail-closed)
  *
- *  GET /api/identity/oauth/callback
- *    - Receives ?code + ?state from Feishu redirect
+ *  POST /api/identity/oauth/callback
+ *    - Receives code + state from the Hosted SPA JSON body
  *    - Consumes one-time state (replay = deny)
  *    - Server-side token exchange with PKCE code_verifier
  *    - Server-side user_info → mapping → verified identity
@@ -63,13 +67,13 @@ export class OauthFlowController {
    * Step 1: Begin the OAuth flow.
    *
    * Generates a PKCE pair, issues a one-time state binding the code_verifier,
-   * and redirects the browser to the Feishu authorize endpoint.
+   * and returns the Feishu authorize URL to the Hosted SPA.
    */
-  @Get('authorize')
-  @HttpCode(HttpStatus.FOUND)
-  beginAuthorize(
+  @Post('start')
+  @HttpCode(HttpStatus.OK)
+  async beginAuthorize(
     @Res() response: Response,
-  ): void {
+  ): Promise<void> {
     // Fail-closed: when OAuth is not configured, return 503.
     if (!this.oauthConfig.configured) {
       response.status(503).json({
@@ -88,10 +92,12 @@ export class OauthFlowController {
     const pkce = generatePkcePair();
 
     // 2. Issue one-time state, binding the code_verifier.
-    const state = this.stateStore.issue(pkce.codeVerifier);
+    const state = await this.stateStore.issue(pkce.codeVerifier);
 
     // 3. Build the Feishu authorize URL.
-    const authorizeUrl = new URL('https://accounts.feishu.cn/oauth/auth');
+    const authorizeUrl = new URL(
+      'https://accounts.feishu.cn/open-apis/authen/v1/authorize',
+    );
     authorizeUrl.searchParams.set('client_id', clientId);
     authorizeUrl.searchParams.set('redirect_uri', redirectUri);
     authorizeUrl.searchParams.set('response_type', 'code');
@@ -105,26 +111,30 @@ export class OauthFlowController {
       pkce.codeChallengeMethod,
     );
 
-    // 4. Redirect browser — code_verifier never leaves the server.
-    response.redirect(302, authorizeUrl.toString());
+    // The SPA performs the browser navigation. The code_verifier stays
+    // server-side and the response contains no identity or session data.
+    const body: OfficialOauthStartResponse = {
+      authorizeUrl: authorizeUrl.toString(),
+    };
+    response.status(HttpStatus.OK).json(body);
   }
 
   /**
    * Step 2: OAuth callback.
    *
-   * Feishu redirects here with ?code and ?state. The server:
+   * The Hosted SPA relays Feishu's code + state through the platform's
+   * official same-origin request client. The server:
    * 1. Consumes the one-time state (replay → deny)
    * 2. Exchanges code + code_verifier for access_token (server-side)
    * 3. Verifies identity via user_info + Host mapping
    * 4. Creates an opaque server session
-   * 5. Sets httpOnly cookie and redirects to a DEV landing page
+   * 5. Sets the httpOnly cookie; the SPA then navigates to the product page
    *
    * Any failure → 503 or 400 (fail-closed, never forges identity).
    */
-  @Get('callback')
+  @Post('callback')
   async handleCallback(
-    @Query('code') code: string | undefined,
-    @Query('state') state: string | undefined,
+    @Body() body: OfficialOauthCallbackRequest | null | undefined,
     @Res() response: Response,
   ): Promise<void> {
     // Fail-closed: not configured
@@ -137,8 +147,10 @@ export class OauthFlowController {
       return;
     }
 
-    // 1. Validate protocol parameters
-    if (!code || code.trim() === '') {
+    // 1. Validate protocol parameters without logging or reflecting them.
+    const code = normalizedProtocolParameter(body?.code);
+    const state = normalizedProtocolParameter(body?.state);
+    if (!code) {
       response.status(400).json({
         code: 'OAUTH_CALLBACK_MISSING_CODE',
         message: 'Missing authorization code.',
@@ -147,7 +159,7 @@ export class OauthFlowController {
       return;
     }
 
-    if (!state || state.trim() === '') {
+    if (!state) {
       response.status(400).json({
         code: 'OAUTH_CALLBACK_MISSING_STATE',
         message: 'Missing state parameter.',
@@ -157,7 +169,7 @@ export class OauthFlowController {
     }
 
     // 2. Consume one-time state — replay or expired → deny
-    const stateEntry = this.stateStore.consume(state);
+    const stateEntry = await this.stateStore.consume(state);
     if (!stateEntry) {
       response.status(400).json({
         code: 'OAUTH_STATE_INVALID',
@@ -222,31 +234,25 @@ export class OauthFlowController {
 
     // 5. Create opaque server session
     const { token: sessionToken, expiresAt } =
-      this.sessionStore.create(verifyResult.identity);
+      await this.sessionStore.create(verifyResult.identity);
 
     // 6. Set httpOnly cookie — token never visible to JS
     response.cookie('wl_session', sessionToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: true,
       sameSite: 'lax',
-      maxAge: expiresAt - Date.now(),
+      maxAge: expiresAt.getTime() - Date.now(),
       path: '/',
     });
 
-    // 7. Return session info (token in body for non-browser clients too)
-    response.status(200).json({
-      status: 'VERIFIED',
-      session: {
-        token: sessionToken,
-        expiresAt: new Date(expiresAt).toISOString(),
-      },
-      identity: {
-        provenance: verifyResult.identity.provenance,
-        miaodaUserId: verifyResult.identity.miaodaUserId,
-        tenantId: verifyResult.identity.tenantId,
-        namespacedSubject: verifyResult.identity.namespacedSubject,
-        verifiedAt: verifyResult.identity.verifiedAt,
-      },
-    });
+    // No session/token or identity is returned to JavaScript. The browser
+    // continues with the opaque HttpOnly cookie and can call whoami.
+    response.status(204).send();
   }
+}
+
+function normalizedProtocolParameter(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim();
+  return normalized === '' ? null : normalized;
 }

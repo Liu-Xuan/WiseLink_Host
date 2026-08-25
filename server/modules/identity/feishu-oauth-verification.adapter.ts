@@ -84,6 +84,7 @@ export class FeishuOAuthVerificationAdapter
       await this.subjectMapping.resolveMapping({
         feishuOpenId: userInfo.openId,
         feishuTenantKey: userInfo.tenantKey,
+        expectedClientId: input.clientId,
       });
 
     if (mapping === null) {
@@ -117,6 +118,7 @@ export class FeishuOAuthVerificationAdapter
     };
 
     const identity: VerifiedIdentity = {
+      subjectMappingId: mapping.mappingId,
       provenance: 'FEISHU_OAUTH_USER_ACCESS_TOKEN',
       miaodaUserId: mapping.miaodaUserId,
       tenantId: mapping.miaodaTenantId,

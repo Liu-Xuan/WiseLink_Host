@@ -13,6 +13,7 @@ import { CanonicalHostVerticalService } from '../canonical-host/canonical-host-v
 import { CANONICAL_DEVELOPMENT_ROLE_ID } from '../canonical-host/canonical-host.constants';
 import type { CanonicalHostActor } from '../canonical-host/canonical-host.types';
 import type { CanonicalVerifiedDevelopmentCreateScope } from '../canonical-host/canonical-service-scope.authorization';
+import type { CanonicalMiaodaFinalUserActorContext } from './canonical-object-access.port';
 import {
   DocumentManagementHostedService,
   type HostedRequestContext,
@@ -109,6 +110,43 @@ export class OrdinaryWorkItemService {
     return this.runDevelopment(input, developmentServiceActor(scope), scope);
   }
 
+  async createOauthSessionDevelopmentRun(
+    input: CanonicalDevelopmentWorkItemRunRequest & { documentVersionId: string },
+    sessionActor: CanonicalMiaodaFinalUserActorContext,
+  ): Promise<CanonicalOrdinaryWorkItemRunResponse> {
+    if (
+      sessionActor.identityProvenance !== 'FEISHU_OAUTH_USER_ACCESS_TOKEN' ||
+      sessionActor.sessionProvenance !== 'SERVER_OPAQUE_SESSION' ||
+      sessionActor.env !== 'preview' ||
+      sessionActor.applicationScopeId !== CANONICAL_APP_ID
+    ) {
+      throw Object.assign(new Error('CANONICAL_IDENTITY_HANDOFF_UNAVAILABLE'), {
+        code: 'CANONICAL_IDENTITY_HANDOFF_UNAVAILABLE',
+        statusCode: 503,
+      });
+    }
+    const developmentRunToken = requiredDevelopmentRunToken(
+      input.developmentRunToken,
+    );
+    const actor: CanonicalHostActor = {
+      userId: sessionActor.canonicalSubject.id,
+      tenantId: sessionActor.tenantId,
+      appId: sessionActor.applicationScopeId,
+      roles: [],
+      env: sessionActor.env,
+      objectAccessActor: sessionActor,
+    };
+    return this.runPdf(
+      { documentVersionId: input.documentVersionId, query: input.query },
+      actor,
+      'MIAODA',
+      `dev:${developmentRunToken}`,
+      true,
+      undefined,
+      true,
+    );
+  }
+
   private runDevelopment(
     input: CanonicalDevelopmentWorkItemRunRequest,
     actor: CanonicalHostActor,
@@ -136,6 +174,7 @@ export class OrdinaryWorkItemService {
     runKey: string,
     requireCurrentDocumentVersion = false,
     developmentScope?: CanonicalVerifiedDevelopmentCreateScope,
+    oauthSessionCreate = false,
   ): Promise<CanonicalOrdinaryWorkItemRunResponse> {
     const context: HostedRequestContext = {
       actorUserId: actor.userId,
@@ -156,7 +195,7 @@ export class OrdinaryWorkItemService {
           },
           developmentScope,
         );
-      } else {
+      } else if (!oauthSessionCreate) {
         await this.assertCanResolveDocumentVersion({
           actor,
           documentVersionId,
@@ -167,6 +206,7 @@ export class OrdinaryWorkItemService {
     }
     const resolved = await this.resolver.resolve(documentVersionId, {
       requireCurrent: requireCurrentDocumentVersion,
+      expectedCreatorUserId: oauthSessionCreate ? actor.userId : undefined,
     });
     const classification = classificationFor(resolved.family.documentFamily);
     const reservation = await this.repository.reserve({

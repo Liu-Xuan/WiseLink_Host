@@ -18,10 +18,12 @@ export const OAUTH_CONFIG = Symbol('OAUTH_CONFIG');
 export interface OAuthConfigPort {
   /** Feishu OAuth app client_id (e.g. "cli_xxx"). Null when unconfigured. */
   readonly clientId: string | null;
-  /** The server's own callback URL. Null when unconfigured. */
+  /** The Hosted SPA callback URL registered with Feishu. */
   readonly redirectUri: string | null;
   /** True only when clientId + clientSecret + redirectUri are all present. */
   readonly configured: boolean;
+  readonly applicationScopeId: 'app_17bzc551rsg';
+  readonly sessionEnvironment: 'preview' | 'runtime';
 }
 
 /**
@@ -36,6 +38,8 @@ export interface OAuthConfigPort {
 // Symbol token provider.
 // eslint-disable-next-line @darraghor/nestjs-typed/injectable-should-be-provided
 export class EnvOauthConfigAdapter implements OAuthConfigPort {
+  readonly applicationScopeId = 'app_17bzc551rsg' as const;
+  readonly sessionEnvironment = 'preview' as const;
   private readonly _clientId: string | null;
   private readonly _redirectUri: string | null;
   private readonly _configured: boolean;

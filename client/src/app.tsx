@@ -7,6 +7,7 @@ import WorkspaceHomePage from './pages/WorkspaceHomePage/WorkspaceHomePage';
 import NotFound from './pages/NotFound/NotFound';
 import RuntimeProbePage from './pages/RuntimeProbePage/RuntimeProbePage';
 import ExternalDiscoveryPage from './pages/ExternalDiscoveryPage/ExternalDiscoveryPage';
+import OAuthCallbackPage from './pages/OAuthCallbackPage/OAuthCallbackPage';
 
 const RoutesComponent = () => {
   return (
@@ -20,6 +21,7 @@ const RoutesComponent = () => {
           element={<DocumentParsingPage />}
         />
       </Route>
+      <Route path="client/oauth/callback" element={<OAuthCallbackPage />} />
       <Route path="*" element={<NotFound />} />
     </Routes>
   );

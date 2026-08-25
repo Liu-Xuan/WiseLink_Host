@@ -1,4 +1,5 @@
 import {
+  dmAcquisition,
   dmCurrentnessDecision,
   dmDocumentVersion,
   dmPublicationFamily,
@@ -26,6 +27,8 @@ function resolvedValue() {
   return {
     version: {
       documentVersionId: 'document-version-sb',
+      acquisitionId: 'acquisition-sb',
+      committedBy: 'miaoda-user-1',
       lifecycleStatus: 'COMMITTED_IMMUTABLE',
       pdfSha256: 'a'.repeat(64),
       byteLength: 1024,
@@ -39,6 +42,10 @@ function resolvedValue() {
       readbackVerified: true,
       sha256: 'a'.repeat(64),
       byteLength: 1024,
+    },
+    acquisition: {
+      acquisitionId: 'acquisition-sb',
+      acquiredBy: 'miaoda-user-1',
     },
     currentness: {
       familyId: 'family-sb',
@@ -61,7 +68,7 @@ describe('MiaodaDocumentVersionSourceResolver currentness', () => {
       family: { currentDocumentVersionId: 'document-version-sb' },
       currentness: { nextGeneration: 1 },
     });
-    expect(query.innerJoin).toHaveBeenCalledTimes(2);
+    expect(query.innerJoin).toHaveBeenCalledTimes(3);
     expect(query.leftJoin).toHaveBeenCalledWith(
       dmCurrentnessDecision,
       expect.anything(),
@@ -70,8 +77,20 @@ describe('MiaodaDocumentVersionSourceResolver currentness', () => {
       version: dmDocumentVersion,
       family: dmPublicationFamily,
       artifact: dmSourceArtifact,
+      acquisition: dmAcquisition,
       currentness: dmCurrentnessDecision,
     });
+  });
+
+  it('rejects a current DocumentVersion not acquired and committed by the mapped session user', async () => {
+    const { select } = database(resolvedValue());
+    const resolver = new MiaodaDocumentVersionSourceResolver({ select } as never);
+    await expect(
+      resolver.resolve('document-version-sb', {
+        requireCurrent: true,
+        expectedCreatorUserId: 'different-miaoda-user',
+      }),
+    ).rejects.toMatchObject({ code: 'DOCUMENT_VERSION_NOT_FOUND' });
   });
 
   it('rejects a committed version that is no longer the family current head', async () => {

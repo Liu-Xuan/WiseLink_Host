@@ -65,11 +65,6 @@ const OBJECT_ROUTES: RouteProbe[] = [
     body: { selection: { bucketId: 'forged', filePath: '/forged.pdf' } },
   },
   {
-    method: 'POST',
-    path: '/api/canonical-host/work-items/development-runs',
-    body: { authority: 'forged-before-body-validation' },
-  },
-  {
     method: 'GET',
     path: '/api/canonical-host/work-items/WI-FORGED/document-parsing?query=x',
   },
@@ -306,7 +301,6 @@ function routeHandlerSpies(app: INestApplication): jest.SpyInstance[] {
   return [
     jest.spyOn(canonical, 'identityContext'),
     jest.spyOn(canonical, 'runPdf'),
-    jest.spyOn(canonical, 'createDevelopmentRun'),
     jest.spyOn(canonical, 'page'),
     jest.spyOn(canonical, 'library'),
     jest.spyOn(canonical, 'status'),

@@ -7,6 +7,7 @@ import { and, eq } from 'drizzle-orm';
 
 import {
   dmCurrentnessDecision,
+  dmAcquisition,
   dmDocumentVersion,
   dmPublicationFamily,
   dmSourceArtifact,
@@ -20,13 +21,14 @@ export class MiaodaDocumentVersionSourceResolver {
 
   async resolve(
     documentVersionId: string,
-    options: { requireCurrent?: boolean } = {},
+    options: { requireCurrent?: boolean; expectedCreatorUserId?: string } = {},
   ) {
     const [value] = await this.db
       .select({
         version: dmDocumentVersion,
         family: dmPublicationFamily,
         artifact: dmSourceArtifact,
+        acquisition: dmAcquisition,
         currentness: dmCurrentnessDecision,
       })
       .from(dmDocumentVersion)
@@ -37,6 +39,10 @@ export class MiaodaDocumentVersionSourceResolver {
       .innerJoin(
         dmSourceArtifact,
         eq(dmDocumentVersion.sourceArtifactId, dmSourceArtifact.sourceArtifactId),
+      )
+      .innerJoin(
+        dmAcquisition,
+        eq(dmDocumentVersion.acquisitionId, dmAcquisition.acquisitionId),
       )
       .leftJoin(
         dmCurrentnessDecision,
@@ -55,6 +61,16 @@ export class MiaodaDocumentVersionSourceResolver {
       .where(eq(dmDocumentVersion.documentVersionId, documentVersionId))
       .limit(1);
     if (!value) throw new Error('DOCUMENT_VERSION_NOT_FOUND');
+    if (
+      options.expectedCreatorUserId &&
+      (value.version.committedBy !== options.expectedCreatorUserId ||
+        value.acquisition.acquiredBy !== options.expectedCreatorUserId)
+    ) {
+      throw Object.assign(new Error('DOCUMENT_VERSION_NOT_FOUND'), {
+        code: 'DOCUMENT_VERSION_NOT_FOUND',
+        statusCode: 404,
+      });
+    }
     if (
       value.version.lifecycleStatus !== 'COMMITTED_IMMUTABLE' ||
       value.artifact.readbackVerified !== true ||

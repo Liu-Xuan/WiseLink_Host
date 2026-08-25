@@ -2,6 +2,7 @@ import {
   Activity,
   BookOpenCheck,
   FileSearch2,
+  Fingerprint,
   LibraryBig,
   Radar,
   ShieldCheck,
@@ -46,6 +47,9 @@ const Layout = () => {
           )}
           <NavLink to="/external-discovery">
             <Radar aria-hidden="true" /> 外部发现
+          </NavLink>
+          <NavLink to="/client/oauth/callback">
+            <Fingerprint aria-hidden="true" /> 飞书身份
           </NavLink>
         </nav>
 

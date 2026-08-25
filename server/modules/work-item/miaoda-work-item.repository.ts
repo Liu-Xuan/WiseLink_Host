@@ -5,7 +5,7 @@ import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import { and, eq, inArray, isNull, or } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm';
 
 import type { CanonicalWorkItemProjection } from '@shared/api.interface';
 import { actionAttempt, workItem } from '../../database/schema';
@@ -41,6 +41,13 @@ export interface WorkItemAuthorizationBinding {
   documentVersionId: string;
   requestedByUserId: string;
   runKey: string;
+}
+
+export interface OwnedWorkItemSummary extends WorkItemAuthorizationBinding {
+  status: string;
+  actionType: string;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export type AssessmentActionType =
@@ -258,6 +265,39 @@ export class MiaodaWorkItemRepository {
       )
       .limit(1);
     return row ?? null;
+  }
+
+  /** Fresh creator-only list; tenant and actor are both server-session facts. */
+  async listOwnedWorkItems(input: {
+    tenantId: string;
+    actorUserId: string;
+    limit?: number;
+  }): Promise<OwnedWorkItemSummary[]> {
+    const limit = Math.min(Math.max(input.limit ?? 20, 1), 50);
+    return this.db
+      .select({
+        workItemId: workItem.workItemId,
+        revision: workItem.revision,
+        tenantId: workItem.tenantId,
+        requestId: workItem.requestId,
+        documentId: workItem.documentId,
+        documentVersionId: workItem.documentVersionId,
+        requestedByUserId: workItem.requestedByUserId,
+        runKey: workItem.runKey,
+        status: workItem.status,
+        actionType: workItem.actionType,
+        createdAt: workItem.createdAt,
+        updatedAt: workItem.updatedAt,
+      })
+      .from(workItem)
+      .where(
+        and(
+          eq(workItem.tenantId, input.tenantId),
+          eq(workItem.requestedByUserId, input.actorUserId),
+        ),
+      )
+      .orderBy(desc(workItem.updatedAt))
+      .limit(limit);
   }
 
   async loadTenantRunAuthorizationBinding(input: {

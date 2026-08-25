@@ -16,6 +16,7 @@ import {
   type CanonicalObjectAccessInput,
   type CanonicalObjectAccessPort,
 } from '../work-item/canonical-object-access.port';
+import { MiaodaWorkItemRepository } from '../work-item/miaoda-work-item.repository';
 
 /**
  * Protected WorkItem read endpoint — the primary "protected read path"
@@ -50,35 +51,39 @@ export class ProtectedWorkItemReadController {
     private readonly sessionResolver: SessionResolver,
     @Inject(CANONICAL_OBJECT_ACCESS)
     private readonly objectAccess: CanonicalObjectAccessPort,
+    private readonly workItems: MiaodaWorkItemRepository,
   ) {}
+
+  @Get()
+  async listMyWorkItems(@Req() httpRequest: Request) {
+    const session = await this.requireSession(httpRequest);
+    const items = await this.workItems.listOwnedWorkItems({
+      tenantId: session.actor.tenantId,
+      actorUserId: session.actor.canonicalSubject.id,
+    });
+    return {
+      items: items.map((item) => ({
+        workItemId: item.workItemId,
+        revision: item.revision,
+        status: item.status,
+        actionType: item.actionType,
+        documentId: item.documentId,
+        documentVersionId: item.documentVersionId,
+        requestId: item.requestId,
+        runKey: item.runKey,
+        createdAt: item.createdAt.toISOString(),
+        updatedAt: item.updatedAt.toISOString(),
+      })),
+    };
+  }
 
   @Get(':workItemId')
   async readWorkItem(
     @Param('workItemId') workItemId: string,
     @Req() httpRequest: Request,
-  ): Promise<{
-    workItemId: string;
-    access: { allowed: true };
-    actor: {
-      identityProvenance: string;
-      miaodaUserId: string;
-      tenantId: string;
-      sessionProvenance: string;
-    };
-  }> {
+  ) {
     // 1. Resolve server-side session — no session → 401
-    const session = this.sessionResolver.resolve(httpRequest);
-    if (!session) {
-      throw new HttpException(
-        {
-          code: 'SESSION_REQUIRED',
-          message:
-            'A valid server-side session is required. Complete Feishu OAuth at /api/identity/oauth/authorize first.',
-          statusCode: 401,
-        },
-        HttpStatus.UNAUTHORIZED,
-      );
-    }
+    const session = await this.requireSession(httpRequest);
 
     // 2. Validate the workItemId is a non-empty string
     if (!workItemId || workItemId.trim() === '') {
@@ -124,8 +129,22 @@ export class ProtectedWorkItemReadController {
     //    projection is NOT exposed here (this is the identity vertical's
     //    protected seam, not a full data API). A future endpoint may
     //    load the projection via the registrar after the ACL grant.
+    const fresh = await this.workItems.loadTenantScopedProjection(
+      accessResult.workItemId,
+      session.actor.tenantId,
+    );
+    if (!fresh) {
+      throw new HttpException(
+        { code: 'CANONICAL_WORK_ITEM_NOT_FOUND', statusCode: 404 },
+        HttpStatus.NOT_FOUND,
+      );
+    }
     return {
       workItemId: accessResult.workItemId,
+      revision: fresh.row.revision,
+      status: fresh.row.status,
+      documentVersionId: fresh.row.documentVersionId,
+      projection: fresh.projection,
       access: { allowed: true as const },
       actor: {
         identityProvenance: session.actor.identityProvenance,
@@ -134,5 +153,19 @@ export class ProtectedWorkItemReadController {
         sessionProvenance: session.actor.sessionProvenance,
       },
     };
+  }
+
+  private async requireSession(httpRequest: Request) {
+    const session = await this.sessionResolver.resolve(httpRequest);
+    if (session) return session;
+    throw new HttpException(
+      {
+        code: 'SESSION_REQUIRED',
+        message:
+          'A valid server-side session is required. Complete Feishu OAuth first.',
+        statusCode: 401,
+      },
+      HttpStatus.UNAUTHORIZED,
+    );
   }
 }
