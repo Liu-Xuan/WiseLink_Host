@@ -118,6 +118,7 @@ describe('FeishuOAuthVerificationAdapter fail-closed contract', () => {
     expect(mapping.resolveMapping).toHaveBeenCalledWith({
       feishuOpenId: 'ou_valid_user_001',
       feishuTenantKey: 'tkey_tenant_a',
+      feishuUserId: 'emp_001',
       expectedClientId: 'cli_valid_app',
     });
   });

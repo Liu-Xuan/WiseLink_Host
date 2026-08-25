@@ -1,5 +1,6 @@
 import {
   EnvOauthConfigAdapter,
+  FEISHU_OAUTH_MAPPING_BOOTSTRAP_MODE,
   FEISHU_OAUTH_V2_COMPATIBILITY_MODE,
 } from '../../server/modules/identity/oauth-config.port';
 
@@ -8,6 +9,8 @@ const MANAGED_ENV_KEYS = [
   'FEISHU_OAUTH_CLIENT_SECRET',
   'FEISHU_OAUTH_REDIRECT_URI',
   'FEISHU_OAUTH_TOKEN_API_VERSION',
+  'FEISHU_OAUTH_MAPPING_BOOTSTRAP_MODE',
+  'FEISHU_OAUTH_MAPPING_BOOTSTRAP_MIAODA_TENANT_ID',
 ] as const;
 
 describe('EnvOauthConfigAdapter token endpoint selection', () => {
@@ -25,6 +28,8 @@ describe('EnvOauthConfigAdapter token endpoint selection', () => {
     process.env.FEISHU_OAUTH_REDIRECT_URI =
       'https://dev.example.com/client/oauth/callback';
     delete process.env.FEISHU_OAUTH_TOKEN_API_VERSION;
+    delete process.env.FEISHU_OAUTH_MAPPING_BOOTSTRAP_MODE;
+    delete process.env.FEISHU_OAUTH_MAPPING_BOOTSTRAP_MIAODA_TENANT_ID;
   });
 
   afterAll(() => {
@@ -77,4 +82,35 @@ describe('EnvOauthConfigAdapter token endpoint selection', () => {
       expect(config.configured).toBe(false);
     },
   );
+
+  it('keeps the identity mapping bootstrap disabled by default', () => {
+    expect(new EnvOauthConfigAdapter().mappingBootstrap).toEqual({
+      kind: 'DISABLED',
+    });
+  });
+
+  it('enables only the exact isolated DEV mode with a controlled tenant', () => {
+    process.env.FEISHU_OAUTH_MAPPING_BOOTSTRAP_MODE =
+      FEISHU_OAUTH_MAPPING_BOOTSTRAP_MODE;
+    process.env.FEISHU_OAUTH_MAPPING_BOOTSTRAP_MIAODA_TENANT_ID =
+      'controlled-dev-tenant';
+
+    expect(new EnvOauthConfigAdapter().mappingBootstrap).toEqual({
+      kind: 'ENABLED',
+      mode: FEISHU_OAUTH_MAPPING_BOOTSTRAP_MODE,
+      miaodaTenantId: 'controlled-dev-tenant',
+    });
+  });
+
+  it.each([
+    ['UNKNOWN', 'controlled-dev-tenant'],
+    [FEISHU_OAUTH_MAPPING_BOOTSTRAP_MODE, ''],
+  ])('fails closed for invalid bootstrap config %j', (mode, tenantId) => {
+    process.env.FEISHU_OAUTH_MAPPING_BOOTSTRAP_MODE = mode;
+    process.env.FEISHU_OAUTH_MAPPING_BOOTSTRAP_MIAODA_TENANT_ID = tenantId;
+
+    expect(new EnvOauthConfigAdapter().mappingBootstrap).toEqual({
+      kind: 'INVALID',
+    });
+  });
 });

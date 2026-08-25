@@ -518,6 +518,9 @@ export const identitySubjectMapping = pgTable("identity_subject_mapping", {
   updatedBy: userProfile("_updated_by"),
 }, (table) => [
   uniqueIndex("uk_identity_subject_feishu_app").on(table.feishuTenantKey, table.feishuOpenId, table.expectedClientId),
+  uniqueIndex("uk_identity_subject_active_miaoda_app")
+    .on(table.miaodaUserId, table.expectedClientId)
+    .where(sql`${table.status} = 'ACTIVE'`),
   index("idx_identity_subject_miaoda").on(table.miaodaTenantId, table.miaodaUserId),
   check("ck_identity_subject_status", sql`${table.status} IN ('ACTIVE', 'REVOKED')`),
   check("ck_identity_subject_revision", sql`${table.revision} > 0`),
