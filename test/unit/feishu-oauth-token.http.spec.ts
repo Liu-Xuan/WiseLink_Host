@@ -56,6 +56,7 @@ function recordingFetch(
 }
 
 const VALID_INPUT = {
+  apiVersion: 'v3' as const,
   clientId: CLIENT_ID,
   clientSecret: CLIENT_SECRET,
   code: CODE,
@@ -132,6 +133,66 @@ describe('HttpFeishuOAuthTokenAdapter', () => {
     expect(params.get('code')).toBe(CODE);
     expect(params.get('redirect_uri')).toBe(REDIRECT_URI);
     expect(params.get('code_verifier')).toBe(CODE_VERIFIER);
+  });
+
+  it('sends the official v2 JSON contract with PKCE when compatibility mode is selected', async () => {
+    const fetchImpl = recordingFetch(
+      makeResponse(true, 200, {
+        code: 0,
+        access_token: 'u-access-token-v2',
+        token_type: 'Bearer',
+        expires_in: 7200,
+      }),
+    );
+    const adapter = new HttpFeishuOAuthTokenAdapter(fetchImpl, 5000);
+
+    const result = await adapter.fetchToken({
+      ...VALID_INPUT,
+      apiVersion: 'v2',
+    });
+
+    expect(result).toEqual({
+      accessToken: 'u-access-token-v2',
+      tokenType: 'Bearer',
+      expiresIn: 7200,
+      refreshToken: null,
+    });
+    expect(fetchImpl.calls).toHaveLength(1);
+    expect(fetchImpl.calls[0]).toEqual({
+      url: 'https://open.feishu.cn/open-apis/authen/v2/oauth/token',
+      init: expect.objectContaining({
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json;charset=utf-8',
+        },
+        body: JSON.stringify({
+          grant_type: 'authorization_code',
+          client_id: CLIENT_ID,
+          client_secret: CLIENT_SECRET,
+          code: CODE,
+          redirect_uri: REDIRECT_URI,
+          code_verifier: CODE_VERIFIER,
+        }),
+      }),
+    });
+  });
+
+  it('calls only the selected v2 endpoint when the exchange fails', async () => {
+    const fetchImpl = recordingFetch(
+      makeResponse(false, 400, {
+        code: 20049,
+        error: 'invalid_grant',
+      }),
+    );
+    const adapter = new HttpFeishuOAuthTokenAdapter(fetchImpl, 5000);
+
+    expect(
+      await adapter.fetchToken({ ...VALID_INPUT, apiVersion: 'v2' }),
+    ).toBeNull();
+    expect(fetchImpl.calls).toHaveLength(1);
+    expect(fetchImpl.calls[0].url).toBe(
+      'https://open.feishu.cn/open-apis/authen/v2/oauth/token',
+    );
   });
 
   // ── T4: no secret leakage — client_secret/code/token never in thrown exceptions ──

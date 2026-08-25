@@ -12,6 +12,7 @@ const configured = {
   configured: true,
   clientId: 'cli_aadde8b579f95bc9',
   redirectUri: 'https://hv5zjf4j8yb.feishuapp.com/app/app_17bzc551rsg/client/oauth/callback',
+  tokenApiVersion: 'v3' as const,
   applicationScopeId: 'app_17bzc551rsg' as const,
   sessionEnvironment: 'preview' as const,
 };
@@ -32,6 +33,22 @@ describe('OauthFlowController official OAuth contract', () => {
     const response = fakeResponse();
     await controller({ ...configured, configured: false }, {}, {}, {}, {}).beginAuthorize(response as never);
     expect(response.status).toHaveBeenCalledWith(503);
+  });
+
+  it('fails closed before state issuance when token endpoint selection is invalid', async () => {
+    const response = fakeResponse();
+    const state = { issue: jest.fn() };
+
+    await controller(
+      { ...configured, tokenApiVersion: null },
+      state,
+      {},
+      {},
+      {},
+    ).beginAuthorize(response as never);
+
+    expect(response.status).toHaveBeenCalledWith(503);
+    expect(state.issue).not.toHaveBeenCalled();
   });
 
   it('returns only the official Feishu authorize endpoint', async () => {
@@ -119,12 +136,37 @@ describe('OauthFlowController official OAuth contract', () => {
       {},
     ).handleCallback({ code: 'authorization-code', state: 'state' }, response as never);
     expect(token.fetchToken).toHaveBeenCalledWith({
+      apiVersion: 'v3',
       clientId: configured.clientId,
       clientSecret: 'controlled-dev-secret',
       code: 'authorization-code',
       redirectUri: configured.redirectUri,
       codeVerifier: 'stored-pkce-verifier',
     });
+  });
+
+  it('passes the selected v2 compatibility contract without retrying in the controller', async () => {
+    const token = { fetchToken: jest.fn().mockResolvedValue(null) };
+    const response = fakeResponse();
+
+    await controller(
+      { ...configured, tokenApiVersion: 'v2' },
+      { consume: jest.fn().mockResolvedValue({ codeVerifier: 'stored-pkce-verifier' }) },
+      token,
+      {},
+      {},
+    ).handleCallback(
+      { code: 'authorization-code', state: 'state' },
+      response as never,
+    );
+
+    expect(token.fetchToken).toHaveBeenCalledTimes(1);
+    expect(token.fetchToken).toHaveBeenCalledWith(
+      expect.objectContaining({
+        apiVersion: 'v2',
+        codeVerifier: 'stored-pkce-verifier',
+      }),
+    );
   });
 
   it('passes only the server-returned access token and client id to identity verification', async () => {
