@@ -9,17 +9,23 @@ import {
   startOfficialOauth,
 } from '@client/src/api/identity-oauth';
 import { Button } from '@client/src/components/ui/button';
+import {
+  toOauthFailureCode,
+  type OAuthFailureCode,
+} from './oauth-failure-code';
 
 type OAuthPageStatus = 'WORKING' | 'FAILED';
 
 export default function OAuthCallbackPage() {
   const navigate = useNavigate();
   const [status, setStatus] = useState<OAuthPageStatus>('WORKING');
+  const [failureCode, setFailureCode] = useState<OAuthFailureCode | null>(null);
   const [attempt, setAttempt] = useState<number>(0);
 
   useEffect(() => {
     let active = true;
     setStatus('WORKING');
+    setFailureCode(null);
 
     const callbackParams = new URLSearchParams(window.location.search);
     const codes = callbackParams.getAll('code');
@@ -52,8 +58,11 @@ export default function OAuthCallbackPage() {
 
       const authorizeUrl = await startOfficialOauth();
       if (active) window.location.assign(authorizeUrl);
-    })().catch(() => {
-      if (active) setStatus('FAILED');
+    })().catch((error: unknown) => {
+      if (active) {
+        setFailureCode(toOauthFailureCode(error));
+        setStatus('FAILED');
+      }
     });
 
     return () => {
@@ -82,6 +91,11 @@ export default function OAuthCallbackPage() {
               <p className="mt-2 text-sm text-muted-foreground">
                 授权参数无效、已过期或服务暂不可用，请重新开始。
               </p>
+              {failureCode ? (
+                <p className="mt-2 font-mono text-xs text-muted-foreground">
+                  错误代码：{failureCode}
+                </p>
+              ) : null}
             </div>
             <Button
               type="button"
