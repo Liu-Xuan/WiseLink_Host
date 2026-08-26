@@ -1,26 +1,56 @@
 /* ============================================================
- * WiseLink 3.1 · Apple Glass Design Tokens (Spec R01 §5)
- * 浅色为默认；深色通过 html[data-wl-theme="dark"] 切换。
+ * WiseLink 3.1 · Apple Glass Design Tokens (R05.1)
+ * Light/Dark 分别调校；G1/G2 才采样背景，G3/G4 保持稳定阅读面。
  * ============================================================ */
 
 :root {
   /* 基础色 */
-  --wl-bg: #f5f7fb;
-  --wl-bg-2: #eef3fb;
+  --wl-bg: #f4f7fc;
+  --wl-bg-2: #eaf0f9;
   --wl-ink: #172033;
   --wl-muted: #647086;
   --wl-faint: #8c97aa;
+
+  /* G0：三组低饱和定向环境光 */
+  --wl-ambient-cold: rgb(69 137 255 / 28%);
+  --wl-ambient-warm: rgb(244 177 104 / 22%);
+  --wl-ambient-reflect: rgb(112 90 255 / 17%);
+  --wl-ambient-cyan: rgb(44 201 225 / 12%);
 
   /* 线条 */
   --wl-border: rgba(30, 55, 92, 0.1);
   --wl-border-strong: rgba(30, 55, 92, 0.16);
 
   /* 五级材质（G0–G4） */
-  --wl-glass-nav: rgba(255, 255, 255, 0.58);
-  --wl-glass-panel: rgba(255, 255, 255, 0.72);
-  --wl-glass-content: rgba(255, 255, 255, 0.88);
-  --wl-glass-soft: rgba(255, 255, 255, 0.48);
-  --wl-surface-solid: #ffffff;
+  --wl-glass-nav: rgb(250 252 255 / 58%);
+  --wl-glass-panel: rgb(249 252 255 / 74%);
+  --wl-glass-content: rgb(252 253 255 / 91%);
+  --wl-glass-soft: rgb(247 250 255 / 72%);
+  --wl-surface-solid: #fbfcfe;
+
+  /* G1：透明 tint + 方向性镜面边缘 + 悬浮阴影 */
+  --wl-g1-tint: rgb(250 252 255 / 58%);
+  --wl-g1-tint-strong: rgb(255 255 255 / 68%);
+  --wl-g1-highlight: rgb(255 255 255 / 90%);
+  --wl-g1-cold-rim: rgb(88 157 255 / 62%);
+  --wl-g1-warm-rim: rgb(255 191 119 / 48%);
+  --wl-g1-thickness: rgb(66 110 174 / 16%);
+  --wl-g1-shadow: rgb(30 59 105 / 16%);
+
+  /* G2：比 G1 更稳、更远；内部子面不再 backdrop blur */
+  --wl-g2-tint: rgb(249 252 255 / 74%);
+  --wl-g2-tint-strong: rgb(255 255 255 / 80%);
+  --wl-g2-highlight: rgb(255 255 255 / 62%);
+  --wl-g2-cold-rim: rgb(93 151 232 / 34%);
+  --wl-g2-warm-rim: rgb(240 177 111 / 24%);
+  --wl-g2-shadow: rgb(42 67 108 / 11%);
+
+  /* G3/G4：不采样背景 */
+  --wl-g3-highlight: rgb(255 255 255 / 68%);
+  --wl-g3-shadow: rgb(35 61 101 / 10%);
+  --wl-g4-shadow: rgb(29 51 83 / 7%);
+  --wl-reduced-g1: rgb(248 250 254 / 97%);
+  --wl-reduced-g2: rgb(248 250 254 / 95%);
 
   /* 语义色（§5.2 颜色权威规则） */
   --wl-accent: #1677ff;
@@ -37,10 +67,10 @@
   --wl-purple: #8b6cff;
 
   /* 阴影 */
-  --wl-shadow-1: 0 12px 36px rgba(38, 63, 108, 0.1);
-  --wl-shadow-2: 0 24px 80px rgba(38, 63, 108, 0.16);
+  --wl-shadow-1: 0 14px 34px var(--wl-g3-shadow);
+  --wl-shadow-2: 0 28px 76px rgb(30 58 101 / 17%);
   --wl-shadow-focus:
-    0 0 0 1px rgba(83, 145, 255, 0.32), 0 20px 60px rgba(48, 111, 255, 0.18);
+    0 0 0 1px rgb(83 145 255 / 28%), 0 22px 58px rgb(48 111 255 / 17%);
 
   /* 模糊 */
   --wl-blur-nav: 28px;
@@ -48,10 +78,11 @@
 
   /* 圆角 */
   --wl-radius-shell: 30px;
-  --wl-radius-xl: 24px;
-  --wl-radius-panel: 18px;
-  --wl-radius-md: 13px;
-  --wl-radius-sm: 10px;
+  --wl-radius-xl: 25px;
+  --wl-radius-lg: 21px;
+  --wl-radius-panel: 20px;
+  --wl-radius-md: 14px;
+  --wl-radius-sm: 11px;
 
   /* 间距 */
   --wl-space-1: 4px;
@@ -77,20 +108,46 @@
 }
 
 html[data-wl-theme='dark'] {
-  --wl-bg: #0a0e15;
-  --wl-bg-2: #101827;
+  --wl-bg: #08101b;
+  --wl-bg-2: #111c2c;
   --wl-ink: #f2f6ff;
   --wl-muted: #b2bfd4;
   --wl-faint: #8997ae;
 
+  --wl-ambient-cold: rgb(50 111 221 / 24%);
+  --wl-ambient-warm: rgb(214 137 76 / 14%);
+  --wl-ambient-reflect: rgb(111 82 230 / 20%);
+  --wl-ambient-cyan: rgb(35 160 190 / 12%);
+
   --wl-border: rgba(255, 255, 255, 0.09);
   --wl-border-strong: rgba(255, 255, 255, 0.15);
 
-  --wl-glass-nav: rgba(19, 26, 40, 0.64);
-  --wl-glass-panel: rgba(22, 30, 45, 0.74);
-  --wl-glass-content: rgba(24, 32, 48, 0.9);
-  --wl-glass-soft: rgba(18, 25, 38, 0.48);
-  --wl-surface-solid: #131a27;
+  --wl-glass-nav: rgb(17 27 43 / 62%);
+  --wl-glass-panel: rgb(20 31 48 / 74%);
+  --wl-glass-content: rgb(17 27 42 / 92%);
+  --wl-glass-soft: rgb(24 36 54 / 78%);
+  --wl-surface-solid: #0d1521;
+
+  --wl-g1-tint: rgb(17 27 43 / 62%);
+  --wl-g1-tint-strong: rgb(29 42 62 / 68%);
+  --wl-g1-highlight: rgb(224 239 255 / 32%);
+  --wl-g1-cold-rim: rgb(75 145 255 / 48%);
+  --wl-g1-warm-rim: rgb(236 163 98 / 31%);
+  --wl-g1-thickness: rgb(0 0 0 / 42%);
+  --wl-g1-shadow: rgb(0 0 0 / 42%);
+
+  --wl-g2-tint: rgb(20 31 48 / 74%);
+  --wl-g2-tint-strong: rgb(28 42 61 / 78%);
+  --wl-g2-highlight: rgb(214 232 255 / 22%);
+  --wl-g2-cold-rim: rgb(76 139 232 / 31%);
+  --wl-g2-warm-rim: rgb(221 151 91 / 19%);
+  --wl-g2-shadow: rgb(0 0 0 / 30%);
+
+  --wl-g3-highlight: rgb(220 236 255 / 12%);
+  --wl-g3-shadow: rgb(0 0 0 / 28%);
+  --wl-g4-shadow: rgb(0 0 0 / 22%);
+  --wl-reduced-g1: rgb(15 24 38 / 98%);
+  --wl-reduced-g2: rgb(17 27 42 / 97%);
 
   --wl-accent-soft: rgba(64, 132, 255, 0.16);
   --wl-green-soft: rgba(46, 196, 110, 0.14);
@@ -98,6 +155,6 @@ html[data-wl-theme='dark'] {
   --wl-amber-ink: #f2a23a;
   --wl-red-soft: rgba(228, 96, 104, 0.15);
 
-  --wl-shadow-1: 0 14px 44px rgba(0, 0, 0, 0.24);
-  --wl-shadow-2: 0 32px 100px rgba(0, 0, 0, 0.36);
+  --wl-shadow-1: 0 16px 38px var(--wl-g3-shadow);
+  --wl-shadow-2: 0 30px 86px rgb(0 0 0 / 40%);
 }

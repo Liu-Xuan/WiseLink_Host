@@ -30,6 +30,20 @@ export default function OverallAssessmentHero({
   primaryActionLabel?: string;
 }) {
   const overall = view.overall;
+  const heroState =
+    view.freshness === 'superseded'
+      ? 'obsolete'
+      : view.authority === 'formal_readback'
+        ? 'formal'
+        : view.freshness === 'needs_update'
+          ? 'stale'
+          : overall && overall.missingInputs.length > 0
+            ? 'waiting'
+            : view.authority === 'engineer_confirmed'
+              ? 'engineer-confirmed'
+              : 'candidate';
+  const heroBreathes =
+    heroState === 'candidate' || heroState === 'engineer-confirmed';
   const staleLabel = staleReasonLabel(
     (
       overall as never as {
@@ -41,16 +55,23 @@ export default function OverallAssessmentHero({
     )?.staleReason ?? null,
   );
   const authorityLabel =
-    view.authority === 'engineer_confirmed'
-      ? 'AI 初步意见 · 人工确认已记录'
-      : view.authority === 'formal_readback'
-        ? '正式系统回读结果'
-        : 'AI 初步意见 · 待工程师复核';
+    heroState === 'obsolete'
+      ? '历史意见 · 已被新版本替代'
+      : heroState === 'stale'
+        ? 'AI 初步意见 · 当前结论需更新'
+        : heroState === 'waiting'
+          ? `AI 初步意见 · 等待补充 ${overall?.missingInputs.length ?? 0} 项资料`
+          : view.authority === 'engineer_confirmed'
+            ? 'AI 初步意见 · 人工确认已记录'
+            : view.authority === 'formal_readback'
+              ? '正式系统回读结果'
+              : 'AI 初步意见 · 待工程师复核';
 
   if (!overall) {
     return (
       <section
         className="wl-overall-hero wl-glass-content is-empty"
+        data-state="empty"
         aria-live="polite"
       >
         <span className="wl-overall-empty-mark" aria-hidden="true">
@@ -74,7 +95,8 @@ export default function OverallAssessmentHero({
   return (
     <section
       className="wl-overall-hero wl-glass-content wl-focus-card"
-      data-active="true"
+      data-state={heroState}
+      data-active={heroBreathes ? 'true' : 'false'}
     >
       <header className="wl-overall-head">
         <div>

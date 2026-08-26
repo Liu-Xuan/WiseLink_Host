@@ -10,15 +10,18 @@
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
-  border: 1px solid var(--wl-border);
+  border: 1px solid transparent;
   border-radius: var(--wl-radius-shell);
   background:
+    linear-gradient(180deg, var(--wl-g3-highlight), var(--wl-glass-content))
+      padding-box,
     linear-gradient(
-      145deg,
-      color-mix(in srgb, var(--wl-surface-solid) 18%, transparent),
-      transparent 42%
-    ),
-    var(--wl-glass-content);
+        140deg,
+        color-mix(in srgb, var(--wl-g1-highlight) 56%, transparent),
+        var(--wl-border),
+        color-mix(in srgb, var(--wl-g1-warm-rim) 24%, var(--wl-border))
+      )
+      border-box;
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, var(--wl-surface-solid) 58%, transparent),
     var(--wl-shadow-2);
@@ -35,14 +38,6 @@
   border-bottom: 1px solid var(--wl-border);
   border-radius: 0;
   z-index: 30;
-  background-color: var(--wl-glass-nav);
-  background-image: linear-gradient(
-    145deg,
-    color-mix(in srgb, var(--wl-surface-solid) 32%, transparent),
-    transparent 46%
-  );
-  backdrop-filter: blur(var(--wl-blur-nav)) saturate(155%);
-  -webkit-backdrop-filter: blur(var(--wl-blur-nav)) saturate(155%);
 }
 
 .wl-workbench-tool-btn {
@@ -143,6 +138,14 @@
   gap: 4px;
 }
 
+.wl-workbench-transparency-toggle {
+  display: none;
+}
+
+.wl-workbench-shell.is-immersive .wl-workbench-transparency-toggle {
+  display: grid;
+}
+
 /* ── 主体三栏 ── */
 .wl-workbench-body {
   display: flex;
@@ -157,12 +160,7 @@
   flex-direction: column;
   overflow: hidden;
   padding: 10px;
-  background-color: var(--wl-glass-panel);
-  background-image: linear-gradient(
-    150deg,
-    color-mix(in srgb, var(--wl-surface-solid) 18%, transparent),
-    transparent 42%
-  );
+  background: transparent;
 }
 
 .wl-workbench-main {
@@ -172,7 +170,7 @@
   overflow: auto;
   padding: 16px clamp(14px, 2.5vw, 28px) 32px;
   animation: wl-view-transition 320ms cubic-bezier(0.32, 0.72, 0.24, 1) 1;
-  background: color-mix(in srgb, var(--wl-glass-content) 86%, transparent);
+  background: color-mix(in srgb, var(--wl-glass-content) 96%, transparent);
 }
 
 .wl-workbench-drawer-scrim {
@@ -241,13 +239,20 @@
   flex-direction: column;
   overflow: auto;
   border-left: 1px solid var(--wl-border);
-  background-color: var(--wl-glass-panel);
-  background-image: linear-gradient(
-    150deg,
-    color-mix(in srgb, var(--wl-surface-solid) 18%, transparent),
-    transparent 42%
-  );
+  background:
+    linear-gradient(150deg, var(--wl-g2-tint-strong), var(--wl-g2-tint) 66%)
+      padding-box,
+    linear-gradient(
+        140deg,
+        var(--wl-g2-highlight),
+        color-mix(in srgb, var(--wl-g2-cold-rim) 40%, transparent),
+        color-mix(in srgb, var(--wl-g2-warm-rim) 42%, transparent)
+      )
+      border-box;
   padding: 12px 14px;
+  box-shadow: 0 12px 30px var(--wl-g2-shadow);
+  backdrop-filter: blur(var(--wl-blur-panel)) saturate(134%);
+  -webkit-backdrop-filter: blur(var(--wl-blur-panel)) saturate(134%);
 }
 
 /* 原生全屏时的背景兜底 */
@@ -335,10 +340,26 @@
     justify-content: space-around;
     gap: 2px;
     padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
-    border-top: 1px solid var(--wl-border);
-    background: var(--wl-glass-nav, rgb(255 255 255 / 78%));
-    backdrop-filter: blur(18px) saturate(1.4);
-    -webkit-backdrop-filter: blur(18px) saturate(1.4);
+    border-top: 1px solid transparent;
+    background:
+      linear-gradient(145deg, var(--wl-g1-tint-strong), var(--wl-g1-tint))
+        padding-box,
+      linear-gradient(
+          110deg,
+          var(--wl-g1-cold-rim),
+          var(--wl-g1-highlight),
+          var(--wl-g1-warm-rim)
+        )
+        border-box;
+    box-shadow:
+      inset 0 1px 0 color-mix(in srgb, var(--wl-g1-highlight) 66%, transparent),
+      0 -12px 32px var(--wl-g1-shadow);
+    backdrop-filter: blur(24px) saturate(152%);
+    -webkit-backdrop-filter: blur(24px) saturate(152%);
+  }
+
+  .wl-workbench-transparency-toggle {
+    display: grid;
   }
 
   .wl-workbench-body {
@@ -364,6 +385,12 @@
     border-radius: var(--wl-radius-panel);
     background: color-mix(in srgb, var(--wl-surface-solid) 94%, transparent);
     box-shadow: var(--wl-shadow-2);
+  }
+
+  .wl-workbench-evidence,
+  .wl-workbench-nav .wl-navigator {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
 
   .wl-workbench-drawer-close {
@@ -408,8 +435,6 @@
     display: block;
     border: 0;
     background: rgb(23 32 51 / 24%);
-    backdrop-filter: blur(2px);
-    -webkit-backdrop-filter: blur(2px);
   }
 
   .wl-workbench-mobile-tab {

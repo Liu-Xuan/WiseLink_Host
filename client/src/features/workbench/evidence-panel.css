@@ -55,7 +55,7 @@
   color: var(--wl-accent);
   font-size: 11px;
   font-weight: 650;
-  font-family: var(--wl-mono);
+  font-family: var(--wl-font);
   cursor: pointer;
 }
 
@@ -112,7 +112,7 @@
 .wl-evidence-item header strong {
   overflow: hidden;
   color: var(--wl-muted);
-  font-family: var(--wl-mono);
+  font-family: var(--wl-font);
   font-size: 10.5px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -127,7 +127,7 @@
   color: var(--wl-faint);
   font-size: 9.5px;
   font-weight: 700;
-  text-transform: uppercase;
+  letter-spacing: 0.01em;
   white-space: nowrap;
 }
 
@@ -158,7 +158,7 @@
   border-radius: var(--wl-radius-sm);
   background: var(--wl-surface-solid);
   color: var(--wl-muted);
-  font-family: var(--wl-mono);
+  font-family: var(--wl-font);
   font-size: 10px;
   cursor: pointer;
   transition:
@@ -207,7 +207,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .wl-source-flash {
+  .wl-source-flash::after {
     animation: none;
   }
 }

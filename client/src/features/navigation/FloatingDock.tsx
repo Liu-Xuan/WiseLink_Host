@@ -1,5 +1,12 @@
 import { NavLink, useLocation } from 'react-router-dom';
-import { BookOpenCheck, FileUp, LibraryBig, Moon, Sun } from 'lucide-react';
+import {
+  BookOpenCheck,
+  Contrast,
+  FileUp,
+  LibraryBig,
+  Moon,
+  Sun,
+} from 'lucide-react';
 
 import { useWlTheme } from '@client/src/app/providers/ThemeProvider';
 
@@ -10,7 +17,8 @@ import './floating-dock.css';
  * 桌面 64–78px 垂直浮动；窄屏转为底部导航，工作台由专用标签栏接管。
  */
 export default function FloatingDock({ workItemId }: { workItemId?: string }) {
-  const { theme, toggleTheme } = useWlTheme();
+  const { theme, reduceTransparency, toggleTheme, toggleTransparency } =
+    useWlTheme();
   const location = useLocation();
   const items = [
     {
@@ -74,6 +82,17 @@ export default function FloatingDock({ workItemId }: { workItemId?: string }) {
           <Moon aria-hidden="true" />
         )}
         <span>{theme === 'dark' ? '浅色' : '深色'}</span>
+      </button>
+      <button
+        type="button"
+        className="wl-dock-item"
+        onClick={toggleTransparency}
+        title={reduceTransparency ? '恢复玻璃效果' : '降低透明效果'}
+        aria-label={reduceTransparency ? '恢复玻璃效果' : '降低透明效果'}
+        aria-pressed={reduceTransparency}
+      >
+        <Contrast aria-hidden="true" />
+        <span>{reduceTransparency ? '恢复玻璃' : '降低透明'}</span>
       </button>
     </nav>
   );

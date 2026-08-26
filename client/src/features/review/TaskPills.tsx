@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { CircleDashed, Loader2, UserCheck, XCircle } from 'lucide-react';
+import { CircleDashed, UserCheck, XCircle } from 'lucide-react';
 
 import type { CanonicalTimelineProjection } from '@shared/api.interface';
 
@@ -145,7 +145,11 @@ export default function TaskPills({ timeline }: TaskPillsProps) {
           title={task.note}
         >
           {task.state === 'running' ? (
-            <Loader2 aria-hidden="true" />
+            <span
+              className="wl-status-dot"
+              data-pulse="true"
+              aria-hidden="true"
+            />
           ) : task.state === 'failed' ? (
             <XCircle aria-hidden="true" />
           ) : task.state === 'confirmed' ? (

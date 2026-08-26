@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from 'react';
 import {
+  Contrast,
   Maximize2,
   Minimize2,
   PanelLeftClose,
@@ -16,6 +17,8 @@ import {
   PanelRightClose,
   PanelRightOpen,
 } from 'lucide-react';
+
+import { useWlTheme } from '@client/src/app/providers/ThemeProvider';
 
 import './workbench-shell.css';
 
@@ -138,6 +141,7 @@ export default function WorkbenchShell({
   onTabChange,
   children,
 }: WorkbenchShellProps) {
+  const { reduceTransparency, toggleTransparency } = useWlTheme();
   const [initialPrefs] = useState(readLayoutPrefs);
   const [navWidth, setNavWidth] = useState(initialPrefs.treeWidth ?? 272);
   const [navCollapsed, setNavCollapsed] = useState(
@@ -318,28 +322,27 @@ export default function WorkbenchShell({
     window.requestAnimationFrame(() => {
       document
         .getElementById(
-          scope === 'desktop'
-            ? desktopTabId(next.key)
-            : mobileTabId(next.key),
+          scope === 'desktop' ? desktopTabId(next.key) : mobileTabId(next.key),
         )
         ?.focus();
     });
   };
 
-  const closeMobileDrawers = useCallback((restoreFocus: boolean): void => {
-    const trigger = mobileNavOpen
-      ? navTriggerRef.current
-      : evidenceTriggerRef.current;
-    setMobileNavOpen(false);
-    setMobileEvidenceOpen(false);
-    if (restoreFocus) {
-      window.requestAnimationFrame(() => trigger?.focus());
-    }
-  }, [mobileNavOpen]);
+  const closeMobileDrawers = useCallback(
+    (restoreFocus: boolean): void => {
+      const trigger = mobileNavOpen
+        ? navTriggerRef.current
+        : evidenceTriggerRef.current;
+      setMobileNavOpen(false);
+      setMobileEvidenceOpen(false);
+      if (restoreFocus) {
+        window.requestAnimationFrame(() => trigger?.focus());
+      }
+    },
+    [mobileNavOpen],
+  );
 
-  const trapDrawerFocus = (
-    event: ReactKeyboardEvent<HTMLElement>,
-  ): void => {
+  const trapDrawerFocus = (event: ReactKeyboardEvent<HTMLElement>): void => {
     if (event.key !== 'Tab') return;
     const focusable = Array.from(
       event.currentTarget.querySelectorAll<HTMLElement>(
@@ -447,9 +450,7 @@ export default function WorkbenchShell({
               }
               className={`wl-workbench-tab${activeTab === tab.key ? ' is-active' : ''}`}
               onClick={() => onTabChange(tab.key)}
-              onKeyDown={(event) =>
-                focusTab(event, tabs, tab.key, 'desktop')
-              }
+              onKeyDown={(event) => focusTab(event, tabs, tab.key, 'desktop')}
             >
               {tab.icon}
               <span>{tab.label}</span>
@@ -458,6 +459,16 @@ export default function WorkbenchShell({
         </div>
 
         <div className="wl-workbench-toolbar-actions">
+          <button
+            type="button"
+            className="wl-workbench-tool-btn wl-workbench-transparency-toggle"
+            onClick={toggleTransparency}
+            title={reduceTransparency ? '恢复玻璃效果' : '降低透明效果'}
+            aria-label={reduceTransparency ? '恢复玻璃效果' : '降低透明效果'}
+            aria-pressed={reduceTransparency}
+          >
+            <Contrast aria-hidden="true" />
+          </button>
           <button
             ref={evidenceTriggerRef}
             type="button"

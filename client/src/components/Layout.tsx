@@ -19,6 +19,12 @@ const Layout = () => {
     <div
       className={`wiselink-app-shell wl-environment${isWorkbenchRoute ? ' is-workbench-route' : ''}`}
     >
+      <div className="wl-ambient-field" aria-hidden="true">
+        <span className="wl-light wl-light--cold" />
+        <span className="wl-light wl-light--warm" />
+        <span className="wl-light wl-light--reflect" />
+      </div>
+
       <a href="#main-content" className="wiselink-skip-link">
         跳转到主内容
       </a>
