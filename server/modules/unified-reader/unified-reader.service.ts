@@ -6,6 +6,7 @@ import type {
   UnifiedPackageReadbackResponse,
   UnifiedReaderReadinessResponse,
   UnifiedReaderCandidateReceipt,
+  UnifiedReaderQueryResult,
 } from '@shared/api.interface';
 
 import { Frozen2CandidateReaderService } from './frozen2-candidate-reader.service';
@@ -89,6 +90,19 @@ export class UnifiedReaderService {
         'APPLICATION_PUBLISH_NOT_AUTHORIZED',
       ],
     };
+  }
+
+  async readAllSourceUnits(input: {
+    artifact: UnifiedPackageArtifactDescriptor;
+    packageId: string;
+  }): Promise<UnifiedReaderQueryResult[]> {
+    const bytes = await this.artifactStore.readActualBytes(input.artifact);
+    await this.fullValidator.validate({
+      artifact: input.artifact,
+      bytes,
+      packageId: input.packageId,
+    });
+    return this.reader.readAllSourceUnits(input.artifact, bytes);
   }
 
   async persistAndReadback(

@@ -41,6 +41,19 @@ interface InspectedPackage {
 
 @Injectable()
 export class Frozen2CandidateReaderService {
+  readAllSourceUnits(
+    artifact: UnifiedPackageArtifactDescriptor,
+    bytes: Uint8Array,
+  ): UnifiedReaderQueryResult[] {
+    return this.inspectInternal(artifact, bytes).units.map((unit) => ({
+      unitId: unit.unitId,
+      kind: unit.kind,
+      text: unit.text,
+      sourceRefIds: [...unit.sourceRefIds],
+      sourceLocators: unit.sourceLocators.map(cloneLocator),
+    }));
+  }
+
   read(
     artifact: UnifiedPackageArtifactDescriptor,
     bytes: Uint8Array,

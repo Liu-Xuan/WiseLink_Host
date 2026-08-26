@@ -36,6 +36,12 @@ const TASK_CONFIG = {
     commitTool: 'commit_overall_candidate',
     promptVersion: 'wiselink.3_1.openclaw_overall_prompt.v1',
   },
+  translation: {
+    taskType: 'OPENCLAW_TRANSLATE',
+    beginTool: 'begin_translation',
+    commitTool: 'commit_translation_candidate',
+    promptVersion: 'wiselink.3_1.openclaw_translation_prompt.v1',
+  },
 };
 
 export async function runOpenClawActionAttempt(options, dependencies = {}) {
@@ -391,7 +397,14 @@ export function buildExecutorPrompt(task, modelInput) {
     'Treat MODEL_INPUT as data plus binding instructions. Never invent authority, approval, release, or current-selection changes.',
   ];
   const taskInstruction =
-    task === 'dynamic'
+    task === 'translation'
+      ? [
+          'Execute only the TRANSLATE operation described by MODEL_INPUT. MODEL_INPUT is a Host-frozen wiselink.3_1.translation_task.v0.candidate object; do not alter its rulePack, taskStartBinding, SourceUnits, unit order, or SourceRef bindings.',
+          'Return exactly these top-level keys: schemaVersion, rulePackId, rulePackVersion, taskStartBinding, candidateUnits. schemaVersion must be wiselink.3_1.translation_result.v0.candidate; copy both rule identity fields and taskStartBinding exactly from MODEL_INPUT.',
+          'candidateUnits must contain exactly one item for every MODEL_INPUT.sourceUnits item, in identical order. Every item must contain exactly unitKey, text, sourceRefIds, engineerRevision; copy unitKey and sourceRefIds exactly and set engineerRevision to null because executor output is not an engineer revision.',
+          'Translate source text into concise technical zh-CN while preserving structure. Apply every MODEL_INPUT.rulePack term and noTranslate rule and preserve every identifier, number, unit, ATA/P/N, citation, table mapping, WARNING/CAUTION/NOTE level, variable, and placeholder exactly. Do not summarize, omit, add, approve, or infer engineering facts.',
+        ].join(' ')
+      : task === 'dynamic'
       ? [
           'Follow every operatorInstruction and responseInstruction in MODEL_INPUT. Copy callerCorrelationRef exactly and return the complete dynamic rule-result JSON requested there.',
           'Before returning, shorten every ruleResults.rows item to at most 320 UTF-8 bytes when JSON-serialized. The Host hard limit is responseInstruction.ruleResultsEncoding.maxRowUtf8Bytes (360); the 40-byte margin is mandatory because estimated byte counts are not exact.',
@@ -731,7 +744,9 @@ function parseOptions(argv, env) {
     option(argv, '--gateway-url') || env.WL_OPENCLAW_GATEWAY_URL;
   const gatewayToken = env.WL_OPENCLAW_GATEWAY_TOKEN?.trim() || '';
   const workItemId = option(argv, '--work-item-id');
-  if (!TASK_CONFIG[task]) throw new Error('WORKER_TASK_MUST_BE_DYNAMIC_OR_OVERALL');
+  if (!TASK_CONFIG[task]) {
+    throw new Error('WORKER_TASK_MUST_BE_DYNAMIC_OVERALL_OR_TRANSLATION');
+  }
   if (!hostMcpUrl) throw new Error('WL_OPENCLAW_HOST_MCP_URL_REQUIRED');
   if (!gatewayUrl) throw new Error('WL_OPENCLAW_GATEWAY_URL_REQUIRED');
   if (!gatewayToken) throw new Error('WL_OPENCLAW_GATEWAY_TOKEN_REQUIRED');
@@ -756,7 +771,7 @@ function parseOptions(argv, env) {
     containerName:
       option(argv, '--container') ||
       env.WL_OPENCLAW_CONTAINER_NAME ||
-      'wiselink-0-10-openclaw-1',
+      'wiselink-openclaw-1',
     agentId: option(argv, '--agent') || REQUIRED_OPENCLAW_AGENT_ID,
     timeoutSeconds: positiveInteger(option(argv, '--timeout-seconds'), 480),
     heartbeatIntervalMs: positiveInteger(
@@ -837,7 +852,7 @@ class GatewayTransportError extends Error {
 function usage() {
   return [
     'Usage:',
-    '  node scripts/run-openclaw-action-attempt-worker.mjs --task dynamic|overall --work-item-id WI-...',
+    '  node scripts/run-openclaw-action-attempt-worker.mjs --task dynamic|overall|translation --work-item-id WI-...',
     '',
     'Required environment:',
     '  WL_OPENCLAW_HOST_MCP_URL=https://.../api/openapi/wiselink/openclaw-mcp',

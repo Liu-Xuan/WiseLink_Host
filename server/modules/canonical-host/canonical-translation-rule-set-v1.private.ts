@@ -2,9 +2,10 @@
  * Host-owned immutable V1 TranslationRuleSet asset and its narrow private
  * selector. This is rule data, not a prompt and not a model/provider adapter.
  *
- * CANDIDATE_ONLY / NOT_WIRED:
- * - no Nest module registration;
- * - no ActionAttempt, ResultEnvelope, ResultGate, CAS, DB, or FileService;
+ * CANDIDATE_ONLY. The Host translation service registers this provider and
+ * carries the selected immutable asset through ActionAttempt, ResultEnvelope,
+ * ResultGate, FileService readback, and WorkItem CAS. This asset itself has:
+ * - no execution, persistence, projection, or queue behavior;
  * - no network, LLM, gateway, runtime config, or secret access;
  * - no 0.11/0.10 runtime dependency.
  *
@@ -12,6 +13,8 @@
  * plus explicit source/target locales. There is no fallback and no second
  * hash, baseline, fence, or currentness authority.
  */
+
+import { Injectable } from '@nestjs/common';
 
 import {
   TRANSLATION_RULE_PACK_SCHEMA_VERSION,
@@ -159,11 +162,11 @@ export interface PrivateTranslationRuleSetProvider {
 }
 
 /**
- * Deliberately narrow provider for the single V1 Host-owned asset.
- * It is not registered in canonical-host.module.ts. A later serial owner may
- * wire it after the durable translation boundary and persistence contract are
- * frozen; until then it remains a private, deterministic selection surface.
+ * Deliberately narrow provider for the single V1 Host-owned asset. The
+ * canonical Host translation service registers this provider directly; no
+ * runtime owner, network adapter, or fallback rule registry is introduced.
  */
+@Injectable()
 export class HostOwnedV1TranslationRuleSetPrivateProvider implements PrivateTranslationRuleSetProvider {
   select(
     selection: PrivateTranslationRuleSetSelection,

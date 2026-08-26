@@ -175,6 +175,149 @@ test('replays a Host commit after transport 5xx without a second model run', asy
   assert.equal(result.transportProof.transport, 'OPENCLAW_GATEWAY_HTTP');
 });
 
+test('runs TRANSLATE through dedicated begin/commit tools and seals its ResultEnvelope', async () => {
+  const modelInput = {
+    schemaVersion: 'wiselink.3_1.translation_task.v0.candidate',
+    sourceUnits: [
+      {
+        unitKey: 'UNIT-1',
+        kind: 'paragraph',
+        text: 'WARNING airplane 5 kg',
+        sourceRefIds: ['SRC-1'],
+      },
+    ],
+    rulePack: {
+      meta: {
+        schemaVersion: 'wiselink.3_1.translation_rule_pack.v0.candidate',
+        rulePackId: 'wiselink.host.translation-rules.zh-cn.v1',
+        rulePackVersion: '1.0.0',
+        label: 'test',
+        targetLocale: 'zh-CN',
+        sourceLocales: ['en'],
+      },
+      terms: [],
+      noTranslate: [],
+      deterministic: {},
+    },
+    taskStartBinding: {
+      documentId: 'DOC-1',
+      revisionId: 'DV-1',
+      sbdPackageId: 'PKG-1',
+      sbdContentHash: 'hash-1',
+      tcpPackageId: null,
+      tcpContentHash: null,
+    },
+  };
+  const unsealedTask = {
+    schemaVersion: 'wiselink.3_1.openclaw_task_envelope.v1',
+    actionAttemptId: 'ATT-TRANSLATE-1',
+    operationRef: 'TRN-TRANSLATE-1',
+    taskType: 'OPENCLAW_TRANSLATE',
+    priority: 100,
+    tenantId: 'tenant-worker-test',
+    workItemId: 'WI-TRANSLATE-1',
+    inputRevision: 7,
+    baseRevision: 7,
+    documentVersionId: 'DV-1',
+    sourceRefs: [{ ref: 'artifact://frozen.2', sha256: 'a'.repeat(64) }],
+    allowedConnectors: [],
+    hostResolvedMissingInputs: [],
+    modelInput,
+    deadline: '2026-08-24T12:10:00.000Z',
+    idempotencyKey: 'worker-test:translation:7',
+  };
+  const task = {
+    ...unsealedTask,
+    inputHash: canonicalSha256(unsealedTask),
+  };
+  const claim = {
+    attemptRef: task.operationRef,
+    status: 'RUNNING',
+    leaseToken: '00000000-0000-4000-8000-000000000011',
+    leaseGeneration: 1,
+    leaseExpiresAt: '2026-08-24T12:01:00.000Z',
+    task,
+    modelInput,
+  };
+  let committed = null;
+  const client = {
+    connect: async () => undefined,
+    close: async () => undefined,
+    callTool: async ({ name, arguments: args }) => {
+      if (name === 'begin_translation') return toolResult(claim);
+      if (name === 'commit_translation_candidate') {
+        committed = args.result;
+        return toolResult({
+          workItemId: task.workItemId,
+          workItemRevision: 8,
+          status: 'CANDIDATE_ONLY',
+        });
+      }
+      throw new Error(`UNEXPECTED_TOOL:${name}`);
+    },
+  };
+  let executorPrompt = '';
+  const modelOutput = JSON.stringify({
+    schemaVersion: 'wiselink.3_1.translation_result.v0.candidate',
+    rulePackId: modelInput.rulePack.meta.rulePackId,
+    rulePackVersion: modelInput.rulePack.meta.rulePackVersion,
+    taskStartBinding: modelInput.taskStartBinding,
+    candidateUnits: [
+      {
+        unitKey: 'UNIT-1',
+        text: '警告 飞机 5 kg',
+        sourceRefIds: ['SRC-1'],
+        engineerRevision: null,
+      },
+    ],
+  });
+
+  const result = await runOpenClawActionAttempt(
+    {
+      task: 'translation',
+      hostMcpUrl: 'http://127.0.0.1:3000/openclaw-mcp',
+      hostApiKey: '',
+      gatewayUrl: 'http://127.0.0.1:18789',
+      gatewayToken: 'test-secret-never-logged',
+      workItemId: task.workItemId,
+      providers: [],
+      containerName: 'openclaw-test',
+      agentId: 'g2-action-attempt',
+      timeoutSeconds: 10,
+      heartbeatIntervalMs: 60_000,
+    },
+    {
+      client,
+      executeOpenClaw: async (input) => {
+        executorPrompt = input.prompt;
+        return {
+          modelOutput,
+          provider: 'wiselink',
+          model: 'wiselink-direct-llm',
+          durationMs: 10,
+          stopReason: 'stop',
+        };
+      },
+      preflightOpenClaw: async () => ({
+        configuredModel: 'wiselink/wiselink-direct-llm',
+      }),
+    },
+  );
+
+  assert.match(
+    executorPrompt,
+    /exactly one item for every MODEL_INPUT\.sourceUnits/,
+  );
+  assert.equal(committed.taskType, 'OPENCLAW_TRANSLATE');
+  assert.equal(committed.modelOutput, modelOutput);
+  assert.equal(
+    committed.promptVersion,
+    'wiselink.3_1.openclaw_translation_prompt.v1',
+  );
+  assert.equal(result.ok, true);
+  assert.equal(result.hostCommitStatus, 'CANDIDATE_ONLY');
+});
+
 test('recovers a durable COMMITTING result without invoking OpenClaw again', async () => {
   const modelInput = { purpose: 'EVALUATE_DYNAMIC_RULES' };
   const unsealedTask = {

@@ -53,6 +53,11 @@ import type {
   CanonicalWorkItemRegistrarPort,
 } from './canonical-host.types';
 import type { CanonicalTranslationOwnerObservationPort } from './canonical-translation-owner-observation.port';
+import { parseBilingualTranslationArtifact } from './canonical-host-openclaw-translation.service';
+import {
+  CANONICAL_TRANSLATION_RULE_SET_V1_ID,
+  CANONICAL_TRANSLATION_RULE_SET_V1_VERSION,
+} from './canonical-translation-rule-set-v1.private';
 import type {
   CanonicalVerifiedDevelopmentCreateScope,
   CanonicalVerifiedServiceScope,
@@ -70,7 +75,7 @@ export class CanonicalHostVerticalService {
     @Inject(CANONICAL_PERMISSION_SNAPSHOT)
     private readonly permissionSnapshots: CanonicalPermissionSnapshotPort,
     @Inject(UNIFIED_ARTIFACT_STORE)
-    private readonly _artifactStore: UnifiedArtifactStorePort,
+    private readonly artifactStore: UnifiedArtifactStorePort,
     private readonly reader: UnifiedReaderService,
     private readonly entryFacade: CanonicalEntryFacadeService,
     private readonly failureRecording: CanonicalFailureRecordingService,
@@ -375,11 +380,7 @@ export class CanonicalHostVerticalService {
   private async readTranslationConsumptionAxes(
     projection: CanonicalWorkItemProjection,
   ): Promise<CanonicalReaderProjection['translation']> {
-    if (
-      this.translationOwnerObservation == null ||
-      !this.translationOwnerObservation.configured ||
-      projection.package === null
-    ) {
+    if (projection.package === null) {
       return {
         status: 'UNAVAILABLE',
         reason: 'TRANSLATION_PROJECTION_NOT_AVAILABLE',
@@ -393,19 +394,66 @@ export class CanonicalHostVerticalService {
         reason: 'TRANSLATION_PROJECTION_NOT_AVAILABLE',
       };
     }
-    let observation: CanonicalTranslationOwnerObservation | null = null;
+    let hostArtifact: ReturnType<
+      typeof parseBilingualTranslationArtifact
+    > | null = null;
+    if (projection.translation) {
+      try {
+        const bytes = await this.artifactStore.readActualBytes(
+          projection.translation.artifact,
+        );
+        hostArtifact = parseBilingualTranslationArtifact(bytes);
+        assertTranslationArtifactProjection(hostArtifact, projection);
+      } catch {
+        return {
+          status: 'UNAVAILABLE',
+          reason: 'TRANSLATION_PROJECTION_NOT_AVAILABLE',
+        };
+      }
+    }
+    let observation = workItemTranslationObservation(
+      projection,
+      hostArtifact?.units ?? null,
+    );
+    if (
+      observation === null &&
+      this.translationOwnerObservation?.configured === true
+    ) {
+      try {
+        observation = await this.translationOwnerObservation.readObservation({
+          documentId: binding.documentId,
+          revisionId: binding.revisionId,
+        });
+      } catch {
+        observation = null;
+      }
+    }
+    const consumption = deriveTranslationConsumptionAxes({
+      observation,
+      binding,
+    });
+    if (
+      consumption.status !== 'BILINGUAL_READING_AID_AVAILABLE' ||
+      !projection.translation ||
+      !hostArtifact
+    ) {
+      return consumption;
+    }
     try {
-      observation = await this.translationOwnerObservation.readObservation({
-        documentId: binding.documentId,
-        revisionId: binding.revisionId,
-      });
+      return {
+        ...consumption,
+        artifact: projection.translation.artifact,
+        units: hostArtifact.units.map((unit) => ({
+          ...unit,
+          sourceRefIds: [...unit.sourceRefIds],
+        })),
+      };
     } catch {
       return {
         status: 'UNAVAILABLE',
         reason: 'TRANSLATION_PROJECTION_NOT_AVAILABLE',
       };
     }
-    return deriveTranslationConsumptionAxes({ observation, binding });
   }
 
   async query(
@@ -758,9 +806,85 @@ function workItemTranslationBinding(
     revisionId: workItem.source.documentVersionId,
     sbdPackageId: pkg.packageId,
     sbdContentHash: pkg.contentHash,
-    tcpPackageId: null,
-    tcpContentHash: null,
+    tcpPackageId: workItem.translation?.artifact.ref ?? null,
+    tcpContentHash: workItem.translation?.artifact.sha256 ?? null,
   };
+}
+
+function workItemTranslationObservation(
+  workItem: CanonicalWorkItemProjection,
+  units: ReturnType<typeof parseBilingualTranslationArtifact>['units'] | null,
+): CanonicalTranslationOwnerObservation | null {
+  const translation = workItem.translation;
+  const pkg = workItem.package;
+  if (!translation || !pkg) return null;
+  const current =
+    translation.status === 'CANDIDATE_ONLY' &&
+    translation.currentness === 'CURRENT' &&
+    translation.staleReason === null &&
+    translation.documentId === workItem.source.documentId &&
+    translation.documentVersionId === workItem.source.documentVersionId &&
+    translation.sourcePackageId === pkg.packageId &&
+    translation.sourcePackageContentHash === pkg.contentHash &&
+    translation.ruleSetId === CANONICAL_TRANSLATION_RULE_SET_V1_ID &&
+    translation.ruleSetVersion === CANONICAL_TRANSLATION_RULE_SET_V1_VERSION;
+  return {
+    schemaVersion: 'wiselink.3_1.translation_owner_observation.v0.candidate',
+    documentId: translation.documentId,
+    revisionId: translation.documentVersionId,
+    sourceTruth: 'StructuredBilingualDocument.units',
+    currentConsumptionAllowed: current,
+    currentnessGuardReason: current
+      ? null
+      : 'HOST_TRANSLATION_PROJECTION_STALE',
+    productState:
+      translation.pendingTranslationUnitCount === 0
+        ? 'reading_aid_available'
+        : 'translation_pending',
+    translatedUnitCount: translation.translatedUnitCount,
+    pendingTranslationUnitCount: translation.pendingTranslationUnitCount,
+    translationRequiredUnitCount: translation.sourceUnitCount,
+    units:
+      units?.map((unit) => ({
+        unitKey: unit.unitId,
+        sourceUnitId: unit.unitId,
+        sourceRef: unit.sourceRefIds[0] ?? '',
+        sourceHash: translation.sourcePackageContentHash,
+        sourceTextHash: sha256(unit.sourceText),
+        targetLocale: translation.targetLocale,
+        translatedTextState: 'translated' as const,
+      })) ?? null,
+    lineage: {
+      documentId: translation.documentId,
+      revisionId: translation.documentVersionId,
+      sbdPackageId: translation.sourcePackageId,
+      sbdContentHash: translation.sourcePackageContentHash,
+      tcpPackageId: translation.artifact.ref,
+      tcpContentHash: translation.artifact.sha256,
+    },
+  };
+}
+
+function assertTranslationArtifactProjection(
+  artifact: ReturnType<typeof parseBilingualTranslationArtifact>,
+  workItem: CanonicalWorkItemProjection,
+): void {
+  const translation = workItem.translation;
+  if (
+    !translation ||
+    artifact.source.documentId !== translation.documentId ||
+    artifact.source.revisionId !== translation.documentVersionId ||
+    artifact.source.sbdPackageId !== translation.sourcePackageId ||
+    artifact.source.sbdContentHash !== translation.sourcePackageContentHash ||
+    artifact.ruleSet.ruleSetId !== translation.ruleSetId ||
+    artifact.ruleSet.ruleSetVersion !== translation.ruleSetVersion ||
+    translation.ruleSetId !== CANONICAL_TRANSLATION_RULE_SET_V1_ID ||
+    translation.ruleSetVersion !== CANONICAL_TRANSLATION_RULE_SET_V1_VERSION ||
+    artifact.units.length !== translation.translatedUnitCount ||
+    artifact.execution.actionAttemptId !== translation.actionAttemptId
+  ) {
+    throw new Error('TRANSLATION_ARTIFACT_PROJECTION_MISMATCH');
+  }
 }
 
 function buildReaderProjection(

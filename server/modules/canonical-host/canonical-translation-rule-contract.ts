@@ -2,21 +2,21 @@
  * WL31 translation owner/rule migration (round 1, C5 cleanup): private,
  * versioned rule-selection and deterministic validation contract.
  *
- * CANDIDATE_ONLY. Source of truth: R08 rev613 fresh-read (2026-08-26) plus
+ * CANDIDATE_ONLY. Source of truth: R08 rev692 fresh-read (2026-08-26) plus
  * the owner-confirmed docs/WORKBENCH_V1_0_11_REUSE_MAPPING_20260820.md guard
  * list, migrated from the legacy translation-owner lineage (see
  * docs/WL31_TRANSLATION_V1_PRIVATE_MIGRATION_20260826.md for the exact
  * migrate/retain/retire/gap matrix with commits).
  *
- * Boundary (typed, private, NOT wired across lanes):
+ * Boundary (typed and private; wired by the Host translation service):
  *
  *   Host frozen SourceUnits + exact selected rule pack (id + version pair)
  *     + existing currentness binding (CanonicalTranslationConsumptionBinding)
- *     -> NOT_WIRED durable ActionAttempt -> NOT_WIRED OpenClaw execution
- *     -> NOT_WIRED shared ResultEnvelope (untouched by this module)
+ *     -> durable ActionAttempt -> OpenClaw execution
+ *     -> shared ResultEnvelope
  *     -> private runtime-validated TranslationResultContract (here)
  *     -> this deterministic validator
- *     -> NOT_WIRED Host ResultGate / CAS
+ *     -> Host ResultGate / CAS
  *     -> CANDIDATE bilingual projection (existing two-axis chain).
  *
  * This module owns ONLY versioned rule selection, the private translation
@@ -24,9 +24,9 @@
  * translation. Rule execution happens in OpenClaw; model/provider
  * selection is OpenClaw runtime config. Rules live as data in the private V1
  * Host asset — never only inside a prompt. This module never calls an LLM,
- * provider, gateway, or secret, and never touches 0.11 runtime. The shared ResultEnvelope /
- * DTO surface is NOT modified: TranslationResultContract is a private,
- * lane-local runtime shape parsed fail-closed from `unknown`.
+ * provider, gateway, or secret, and never touches 0.11 runtime. The shared
+ * ResultEnvelope carries this private TranslationResultContract as modelOutput;
+ * Host parses that payload fail-closed after the shared envelope is verified.
  *
  * Currentness single source of truth: the existing private
  * CanonicalTranslationConsumptionBinding from canonical-reader-consumption.ts
@@ -188,7 +188,7 @@ export interface TranslationCandidateUnit {
 
 /**
  * The private translation task contract: what Host freezes and hands to
- * the NOT_WIRED durable ActionAttempt / OpenClaw execution boundary.
+ * the durable ActionAttempt / OpenClaw execution boundary.
  */
 export interface TranslationTaskContract {
   schemaVersion: string;
@@ -209,7 +209,7 @@ export const TRANSLATION_TASK_SCHEMA_VERSION =
 
 /**
  * The private translation RESULT contract: the runtime shape that comes
- * back from the (NOT_WIRED) execution boundary carrying the candidate
+ * back from the execution boundary carrying the candidate
  * units, the exact rule identity they claim to have been translated with,
  * and the task/currentness correlation. Parsed fail-closed from unknown —
  * the shared ResultEnvelope/DTO is NOT touched or modified.
@@ -1178,7 +1178,7 @@ export function selectTranslationRulePack(
 
 /**
  * Build the private translation task contract (the frozen payload handed
- * to the NOT_WIRED durable ActionAttempt / OpenClaw boundary). Fails
+ * to the durable ActionAttempt / OpenClaw boundary). Fails
  * closed (null) when the rule pack id/version pair or binding is not
  * exactly selectable.
  */
@@ -1205,7 +1205,7 @@ export function buildTranslationTaskContract(input: {
 
 /**
  * Parse the private translation RESULT contract from an unknown runtime
- * payload (the shape that returns from the NOT_WIRED execution boundary).
+ * payload (the shape that returns from the execution boundary).
  * Fail-closed: null on any unrecognized schema, missing rule id/version,
  * missing/invalid binding, or malformed candidate unit. The shared
  * ResultEnvelope/DTO is not touched — this is a lane-local private shape.

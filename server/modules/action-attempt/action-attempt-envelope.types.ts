@@ -1,6 +1,7 @@
 export type OpenClawActionTaskType =
   | 'OPENCLAW_DYNAMIC_EVALUATION'
-  | 'OPENCLAW_OVERALL_SYNTHESIS';
+  | 'OPENCLAW_OVERALL_SYNTHESIS'
+  | 'OPENCLAW_TRANSLATE';
 
 export type ActionAttemptStatus =
   | 'QUEUED'

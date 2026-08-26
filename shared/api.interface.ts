@@ -106,7 +106,18 @@ export type CanonicalReaderTranslationProjection =
         | 'SOURCE_CURRENT_TRANSLATION_PENDING'
         | 'TRANSLATION_GAP';
       axes: CanonicalReaderTranslationAxesProjection;
+      artifact?: UnifiedPackageArtifactDescriptor;
+      units?: CanonicalReaderBilingualUnit[];
     };
+
+export interface CanonicalReaderBilingualUnit {
+  unitId: string;
+  kind: string;
+  sourceText: string;
+  translatedText: string;
+  sourceRefIds: string[];
+  engineerRevisionId: string | null;
+}
 
 export interface CanonicalReaderProjection {
   sourceKind: UnifiedPackageSourceKind;
@@ -366,6 +377,32 @@ export interface CanonicalWorkItemPackageProjection {
     contractCommit: 'fa69ada08265934951df53c7a61a3ccdb8cb2900';
     artifactSha256: string;
   };
+}
+
+export interface CanonicalTranslationCandidateProjection {
+  schemaVersion: 'wiselink.3_1.translation_candidate_projection.v1';
+  status: 'CANDIDATE_ONLY' | 'STALE';
+  currentness: 'CURRENT' | 'STALE';
+  staleReason: 'SOURCE_CHANGED' | 'RULE_SET_CHANGED' | null;
+  sourceResultId: string;
+  actionAttemptId: string;
+  inputRevision: number;
+  documentId: string;
+  documentVersionId: string;
+  sourcePackageId: string;
+  sourcePackageContentHash: string;
+  ruleSetId: string;
+  ruleSetVersion: string;
+  sourceLocale: string;
+  targetLocale: string;
+  sourceUnitCount: number;
+  translatedUnitCount: number;
+  pendingTranslationUnitCount: number;
+  sourceRefCount: number;
+  engineerRevisionCount: number;
+  validationVerdict: 'ACCEPTED' | 'REVIEW_REQUIRED';
+  validationFindingCount: number;
+  artifact: UnifiedPackageArtifactDescriptor;
 }
 
 export interface CanonicalWorkItemFailureProjection {
@@ -743,6 +780,7 @@ export interface CanonicalWorkItemProjection {
   source: CanonicalDocumentVersionSelection;
   classification: CanonicalClassificationSelection;
   package: CanonicalWorkItemPackageProjection | null;
+  translation?: CanonicalTranslationCandidateProjection | null;
   assessment?: CanonicalAssessmentCandidateProjection | null;
   integratedAssessment?: CanonicalIntegratedAssessmentProjection | null;
   aeo?: CanonicalAeoCandidateProjection | null;
