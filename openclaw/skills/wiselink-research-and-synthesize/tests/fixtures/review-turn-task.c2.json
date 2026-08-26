@@ -1,0 +1,71 @@
+{
+  "schemaVersion": "wiselink.3_1.review_turn_task.v1.c2",
+  "mode": "INTERACTIVE_REVIEW",
+  "reviewConversationRef": "RC-fixture-001",
+  "reviewTurnRef": "RT-fixture-001",
+  "requestId": "REQ-fixture-001",
+  "actorContextRef": "ACTX-opaque-fixture",
+  "inputRevision": 7,
+  "selectedEvaluationItemId": "criterion-001",
+  "userMessage": "请解释这一项的来源，并形成候选答复。",
+  "allowedOperations": [
+    "GET_WORKITEM_CONTEXT",
+    "GET_EVALUATION_ITEM",
+    "READ_SOURCE_REFS",
+    "DRAFT_REVIEW_ACTION",
+    "PREVIEW_AFFECTED_ITEMS",
+    "GET_OPERATION_STATUS"
+  ],
+  "resourceRefs": [
+    {
+      "sourceRefId": "urn:techpub:source-ref:v1:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "resourceArtifactRef": "artifact://fixture/frozen-package",
+      "resourceArtifactSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "value": {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "kind": "page",
+        "statement": "Fixture-only source-bound statement."
+      }
+    }
+  ],
+  "allowedEvaluationItemIds": ["criterion-001"],
+  "allowedAdoptedInputRefs": ["engineer-review:1"],
+  "attachmentRefs": [],
+  "context": {
+    "workItem": {
+      "workItemId": "WI-control-plane-only",
+      "documentVersionId": "DV-fixture-001",
+      "packageId": "PKG-fixture-001",
+      "title": "Fixture package"
+    },
+    "evaluation": {
+      "criterionSetId": "CS-fixture",
+      "baseRuleRevision": 1,
+      "items": [
+        {
+          "criterionId": "criterion-001",
+          "candidateConclusion": "UNKNOWN/WAITING_INPUT",
+          "sourceRefs": [
+            "urn:techpub:source-ref:v1:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          ]
+        }
+      ]
+    },
+    "bilingual": {
+      "status": "BILINGUAL_READING_AID_AVAILABLE",
+      "units": []
+    },
+    "applicability": {
+      "candidateStatus": "UNKNOWN/WAITING_INPUT",
+      "inferredFromDocumentPresence": false
+    },
+    "adoptedInputs": []
+  },
+  "executionPolicy": {
+    "runtimeAppId": "app_17c3zn24kv2",
+    "profileRef": "wiselink-engineering",
+    "modelPolicyRef": "GLM-5.1",
+    "skillPolicyRef": "wiselink-research-and-synthesize@r09.interactive-review.c2",
+    "toolPolicyRef": "wiselink-openclaw-engineering-assessment@1.1.0#interactive-review-c2"
+  }
+}

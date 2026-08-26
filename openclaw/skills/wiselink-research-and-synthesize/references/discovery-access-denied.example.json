@@ -1,0 +1,17 @@
+{
+  "runtime": "FEISHU_HOSTED_OPENCLAW",
+  "runtimeAppId": "app_17c3zn24kv2",
+  "provider": "BOEING",
+  "query": "777 FTD 31-21002 software",
+  "resultStatus": "ACCESS_DENIED",
+  "observedAt": "2026-08-16T00:00:00.000Z",
+  "candidates": [],
+  "accessRestricted": true,
+  "truncated": false,
+  "partialOnly": false,
+  "excludedNonOemCandidateCount": 0,
+  "error": {
+    "code": "UPSTREAM_CONNECT_TIMEOUT",
+    "message": "Boeing public search shell was reachable, but its Google Custom Search data layer timed out."
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "wiselink.3_1.review_turn_candidate.v1.c2",
+  "mode": "INTERACTIVE_REVIEW",
+  "reviewConversationRef": "RC-fixture-001",
+  "reviewTurnRef": "RT-fixture-001",
+  "responseType": "SOURCE_LINK",
+  "answer": "该候选仅依据所列 SourceRef；适用性仍为 UNKNOWN/WAITING_INPUT。",
+  "sourceRefs": [
+    "urn:techpub:source-ref:v1:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  ],
+  "missingInputs": ["Controlled FleetFacts"],
+  "candidateEvidenceRefs": [],
+  "reviewActionDraft": null,
+  "affectedItemIds": [],
+  "warnings": ["candidate_only"],
+  "runtime": {
+    "runtimeAppId": "app_17c3zn24kv2",
+    "profileRef": "wiselink-engineering"
+  }
+}
