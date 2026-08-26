@@ -136,7 +136,7 @@ export interface CanonicalHostModuleOptions {
     },
     {
       provide: CANONICAL_SERVICE_SCOPE_AUTHORIZATION,
-      useExisting: UnavailableCanonicalServiceScopeAuthorization,
+      useExisting: CANONICAL_EXECUTOR_SERVICE_SCOPE_AUTHORIZATION,
     },
   ],
 })
@@ -276,7 +276,7 @@ export class CanonicalHostModule {
         CanonicalHostAeoService,
         {
           provide: CANONICAL_SERVICE_SCOPE_AUTHORIZATION,
-          useExisting: UnavailableCanonicalServiceScopeAuthorization,
+          useExisting: CANONICAL_EXECUTOR_SERVICE_SCOPE_AUTHORIZATION,
         },
       ],
       exports: [
