@@ -242,6 +242,9 @@ export default function WorkspaceHomePage() {
     developmentIntakeAvailable &&
     projection?.phase === 'FAILED' &&
     projection.failure?.failureCode === 'SOURCE_BINDING_FAILED';
+  const resumablePendingRetry =
+    developmentIntakeAvailable && projection?.phase === 'PARSE_REQUESTED';
+  const canResumeParse = retryableSourceBindingFailure || resumablePendingRetry;
   const nodes = useMemo(() => {
     if (!data) return [];
     return data.libraryIndex.nodes;
@@ -388,7 +391,7 @@ export default function WorkspaceHomePage() {
   }
 
   async function retryExistingWorkItem(): Promise<void> {
-    if (!projection || !retryableSourceBindingFailure || retrying) return;
+    if (!projection || !canResumeParse || retrying) return;
     const expectedWorkItemId = projection.workItemId;
     const expectedDocumentVersionId = projection.source.documentVersionId;
     setRetryError(null);
@@ -668,7 +671,7 @@ export default function WorkspaceHomePage() {
                   </p>
                 </div>
                 <div className="library-preview-actions">
-                  {retryableSourceBindingFailure ? (
+                  {canResumeParse ? (
                     <Button
                       type="button"
                       size="sm"
@@ -679,7 +682,11 @@ export default function WorkspaceHomePage() {
                         className={retrying ? 'library-spin' : undefined}
                         aria-hidden="true"
                       />
-                      {retrying ? '重新解析中…' : '重新解析'}
+                      {retrying
+                        ? '继续解析中…'
+                        : resumablePendingRetry
+                          ? '继续解析'
+                          : '重新解析'}
                     </Button>
                   ) : null}
                   <Button
