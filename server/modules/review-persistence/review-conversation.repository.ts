@@ -5,10 +5,17 @@ import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, isNull } from 'drizzle-orm';
+
+import type {
+  ReviewTurnAssistantCandidate,
+  ReviewTurnResponseType,
+} from '@shared/api.interface';
+import { canonicalJson } from '../action-attempt/action-attempt-envelope';
 
 import {
   engineerSuppliedInput,
+  identitySubjectMapping,
   reviewConversation,
   reviewTurn,
 } from '../../database/schema';
@@ -18,6 +25,7 @@ const ACTIVE_STATUS = 'ACTIVE';
 const CLOSED_STATUS = 'CLOSED';
 const ENGINEER_TEXT = 'ENGINEER_TEXT';
 const CANDIDATE_UNADOPTED = 'CANDIDATE_UNADOPTED';
+const OFFICIAL_CLIENT_ID = 'cli_aadde8b579f95bc9';
 
 export interface PersistedReviewConversation {
   reviewConversationId: string;
@@ -45,6 +53,7 @@ export interface PersistedReviewTurn {
   inputType: string;
   adoptionStatus: string;
   candidateText: string;
+  assistantCandidate: ReviewTurnAssistantCandidate | null;
   createdAt: Date;
 }
 
@@ -137,6 +146,105 @@ export class ReviewConversationRepository {
     const turns: PersistedReviewTurn[] =
       await this.loadTurns(reviewConversationId);
     return { conversation, turns };
+  }
+
+  async loadTurnById(
+    reviewConversationId: string,
+    reviewTurnId: string,
+  ): Promise<PersistedReviewTurn | null> {
+    const [row] = await this.db
+      .select(turnSelection())
+      .from(reviewTurn)
+      .innerJoin(
+        engineerSuppliedInput,
+        eq(
+          reviewTurn.engineerSuppliedInputId,
+          engineerSuppliedInput.engineerSuppliedInputId,
+        ),
+      )
+      .where(
+        and(
+          eq(reviewTurn.reviewConversationId, reviewConversationId),
+          eq(reviewTurn.reviewTurnId, reviewTurnId),
+        ),
+      )
+      .limit(1);
+    return row ? persistedTurn(row) : null;
+  }
+
+  async hasActiveOfficialActorMapping(input: {
+    tenantId: string;
+    actorId: string;
+  }): Promise<boolean> {
+    const [row] = await this.db
+      .select({ id: identitySubjectMapping.id })
+      .from(identitySubjectMapping)
+      .where(
+        and(
+          eq(identitySubjectMapping.miaodaTenantId, input.tenantId),
+          eq(identitySubjectMapping.miaodaUserId, input.actorId),
+          eq(identitySubjectMapping.expectedClientId, OFFICIAL_CLIENT_ID),
+          eq(identitySubjectMapping.status, ACTIVE_STATUS),
+        ),
+      )
+      .limit(1);
+    return row !== undefined;
+  }
+
+  async persistAssistantCandidate(input: {
+    conversation: PersistedReviewConversation;
+    turn: PersistedReviewTurn;
+    actionAttemptId: string;
+    candidate: Omit<
+      ReviewTurnAssistantCandidate,
+      'actionAttemptRef' | 'completedAt'
+    > & { actionAttemptRef: string };
+    completedAt: Date;
+  }): Promise<{ turn: PersistedReviewTurn; replayed: boolean }> {
+    const candidate = input.candidate;
+    const updated = await this.db
+      .update(reviewTurn)
+      .set({
+        responseType: candidate.responseType,
+        assistantResponse: candidate.answer,
+        sourceRefsJson: canonicalJson(candidate.sourceRefs),
+        missingInputsJson: canonicalJson(candidate.missingInputs),
+        candidateEvidenceRefsJson: canonicalJson(
+          candidate.candidateEvidenceRefs,
+        ),
+        reviewActionDraftJson: canonicalJson(candidate.reviewActionDraft),
+        affectedItemIdsJson: canonicalJson(candidate.affectedItemIds),
+        warningsJson: canonicalJson(candidate.warnings),
+        resultProvenanceJson: canonicalJson({
+          ...candidate.provenance,
+          actionAttemptRef: candidate.actionAttemptRef,
+        }),
+        resultContentHash: candidate.provenance.resultContentHash,
+        actionAttemptId: input.actionAttemptId,
+        assistantCompletedAt: input.completedAt,
+      })
+      .where(
+        and(
+          eq(reviewTurn.reviewTurnId, input.turn.reviewTurnId),
+          eq(
+            reviewTurn.reviewConversationId,
+            input.conversation.reviewConversationId,
+          ),
+          eq(reviewTurn.tenantId, input.conversation.tenantId),
+          eq(reviewTurn.actorId, input.conversation.actorId),
+          eq(reviewTurn.workItemId, input.conversation.workItemId),
+          eq(reviewTurn.inputRevision, input.turn.inputRevision),
+          isNull(reviewTurn.assistantResponse),
+        ),
+      )
+      .returning({ reviewTurnId: reviewTurn.reviewTurnId });
+    const stored = await this.loadTurnById(
+      input.conversation.reviewConversationId,
+      input.turn.reviewTurnId,
+    );
+    if (!stored) throw new Error('REVIEW_TURN_CANDIDATE_READBACK_FAILED');
+    assertCandidateReplay(stored, candidate);
+    return { turn: stored, replayed: updated.length === 0 };
   }
 
   async appendTextTurn(input: {
@@ -306,20 +414,8 @@ export class ReviewConversationRepository {
   private async loadTurns(
     reviewConversationId: string,
   ): Promise<PersistedReviewTurn[]> {
-    const rows: PersistedReviewTurn[] = await this.db
-      .select({
-        reviewTurnId: reviewTurn.reviewTurnId,
-        reviewConversationId: reviewTurn.reviewConversationId,
-        engineerSuppliedInputId: reviewTurn.engineerSuppliedInputId,
-        turnNo: reviewTurn.turnNo,
-        requestId: reviewTurn.requestId,
-        inputRevision: reviewTurn.inputRevision,
-        userMessage: reviewTurn.userMessage,
-        inputType: engineerSuppliedInput.inputType,
-        adoptionStatus: engineerSuppliedInput.adoptionStatus,
-        candidateText: engineerSuppliedInput.candidateText,
-        createdAt: reviewTurn.createdAt,
-      })
+    const rows = await this.db
+      .select(turnSelection())
       .from(reviewTurn)
       .innerJoin(
         engineerSuppliedInput,
@@ -330,7 +426,7 @@ export class ReviewConversationRepository {
       )
       .where(eq(reviewTurn.reviewConversationId, reviewConversationId))
       .orderBy(asc(reviewTurn.turnNo));
-    return rows;
+    return rows.map(persistedTurn);
   }
 
   private async loadTurnByRequest(
@@ -338,19 +434,7 @@ export class ReviewConversationRepository {
     requestId: string,
   ): Promise<PersistedReviewTurn | null> {
     const [row] = await this.db
-      .select({
-        reviewTurnId: reviewTurn.reviewTurnId,
-        reviewConversationId: reviewTurn.reviewConversationId,
-        engineerSuppliedInputId: reviewTurn.engineerSuppliedInputId,
-        turnNo: reviewTurn.turnNo,
-        requestId: reviewTurn.requestId,
-        inputRevision: reviewTurn.inputRevision,
-        userMessage: reviewTurn.userMessage,
-        inputType: engineerSuppliedInput.inputType,
-        adoptionStatus: engineerSuppliedInput.adoptionStatus,
-        candidateText: engineerSuppliedInput.candidateText,
-        createdAt: reviewTurn.createdAt,
-      })
+      .select(turnSelection())
       .from(reviewTurn)
       .innerJoin(
         engineerSuppliedInput,
@@ -366,7 +450,7 @@ export class ReviewConversationRepository {
         ),
       )
       .limit(1);
-    return row ?? null;
+    return row ? persistedTurn(row) : null;
   }
 
   private async requiredAggregate(
@@ -394,6 +478,164 @@ function conversationSelection() {
     lastActiveAt: reviewConversation.lastActiveAt,
     closedAt: reviewConversation.closedAt,
   };
+}
+
+function turnSelection() {
+  return {
+    reviewTurnId: reviewTurn.reviewTurnId,
+    reviewConversationId: reviewTurn.reviewConversationId,
+    engineerSuppliedInputId: reviewTurn.engineerSuppliedInputId,
+    turnNo: reviewTurn.turnNo,
+    requestId: reviewTurn.requestId,
+    inputRevision: reviewTurn.inputRevision,
+    userMessage: reviewTurn.userMessage,
+    inputType: engineerSuppliedInput.inputType,
+    adoptionStatus: engineerSuppliedInput.adoptionStatus,
+    candidateText: engineerSuppliedInput.candidateText,
+    responseType: reviewTurn.responseType,
+    assistantResponse: reviewTurn.assistantResponse,
+    sourceRefsJson: reviewTurn.sourceRefsJson,
+    missingInputsJson: reviewTurn.missingInputsJson,
+    candidateEvidenceRefsJson: reviewTurn.candidateEvidenceRefsJson,
+    reviewActionDraftJson: reviewTurn.reviewActionDraftJson,
+    affectedItemIdsJson: reviewTurn.affectedItemIdsJson,
+    warningsJson: reviewTurn.warningsJson,
+    resultProvenanceJson: reviewTurn.resultProvenanceJson,
+    resultContentHash: reviewTurn.resultContentHash,
+    actionAttemptId: reviewTurn.actionAttemptId,
+    assistantCompletedAt: reviewTurn.assistantCompletedAt,
+    createdAt: reviewTurn.createdAt,
+  };
+}
+
+interface SelectedReviewTurn {
+  reviewTurnId: string;
+  reviewConversationId: string;
+  engineerSuppliedInputId: string;
+  turnNo: number;
+  requestId: string;
+  inputRevision: number;
+  userMessage: string;
+  inputType: string;
+  adoptionStatus: string;
+  candidateText: string;
+  responseType: string | null;
+  assistantResponse: string | null;
+  sourceRefsJson: string | null;
+  missingInputsJson: string | null;
+  candidateEvidenceRefsJson: string | null;
+  reviewActionDraftJson: string | null;
+  affectedItemIdsJson: string | null;
+  warningsJson: string | null;
+  resultProvenanceJson: string | null;
+  resultContentHash: string | null;
+  actionAttemptId: string | null;
+  assistantCompletedAt: Date | null;
+  createdAt: Date;
+}
+
+function persistedTurn(row: SelectedReviewTurn): PersistedReviewTurn {
+  const empty = row.assistantResponse === null;
+  return {
+    reviewTurnId: row.reviewTurnId,
+    reviewConversationId: row.reviewConversationId,
+    engineerSuppliedInputId: row.engineerSuppliedInputId,
+    turnNo: row.turnNo,
+    requestId: row.requestId,
+    inputRevision: row.inputRevision,
+    userMessage: row.userMessage,
+    inputType: row.inputType,
+    adoptionStatus: row.adoptionStatus,
+    candidateText: row.candidateText,
+    assistantCandidate: empty ? null : parseAssistantCandidate(row),
+    createdAt: row.createdAt,
+  };
+}
+
+function parseAssistantCandidate(
+  row: SelectedReviewTurn,
+): ReviewTurnAssistantCandidate {
+  if (
+    !row.responseType ||
+    !row.assistantResponse ||
+    !row.sourceRefsJson ||
+    !row.missingInputsJson ||
+    !row.candidateEvidenceRefsJson ||
+    !row.reviewActionDraftJson ||
+    !row.affectedItemIdsJson ||
+    !row.warningsJson ||
+    !row.resultProvenanceJson ||
+    !row.resultContentHash ||
+    !row.actionAttemptId ||
+    !row.assistantCompletedAt
+  ) {
+    throw new Error('REVIEW_TURN_CANDIDATE_PARTIAL_STATE');
+  }
+  const provenance = parseJsonRecord(row.resultProvenanceJson);
+  if (provenance.resultContentHash !== row.resultContentHash) {
+    throw new Error('REVIEW_TURN_CANDIDATE_PROVENANCE_MISMATCH');
+  }
+  const actionAttemptRef = requiredJsonText(provenance.actionAttemptRef);
+  const { actionAttemptRef: _actionAttemptRef, ...resultProvenance } =
+    provenance;
+  return {
+    responseType: row.responseType as ReviewTurnResponseType,
+    answer: row.assistantResponse,
+    sourceRefs: parseJsonStringArray(row.sourceRefsJson),
+    missingInputs: parseJsonStringArray(row.missingInputsJson),
+    candidateEvidenceRefs: parseJsonStringArray(row.candidateEvidenceRefsJson),
+    reviewActionDraft: JSON.parse(
+      row.reviewActionDraftJson,
+    ) as ReviewTurnAssistantCandidate['reviewActionDraft'],
+    affectedItemIds: parseJsonStringArray(row.affectedItemIdsJson),
+    warnings: parseJsonStringArray(row.warningsJson),
+    actionAttemptRef,
+    provenance:
+      resultProvenance as unknown as ReviewTurnAssistantCandidate['provenance'],
+    completedAt: row.assistantCompletedAt.toISOString(),
+  };
+}
+
+function parseJsonRecord(value: string): Record<string, unknown> {
+  const parsed: unknown = JSON.parse(value) as unknown;
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new Error('REVIEW_TURN_CANDIDATE_JSON_INVALID');
+  }
+  return parsed as Record<string, unknown>;
+}
+
+function parseJsonStringArray(value: string): string[] {
+  const parsed: unknown = JSON.parse(value) as unknown;
+  if (
+    !Array.isArray(parsed) ||
+    parsed.some((item) => typeof item !== 'string' || !item.trim())
+  ) {
+    throw new Error('REVIEW_TURN_CANDIDATE_JSON_INVALID');
+  }
+  return [...parsed];
+}
+
+function requiredJsonText(value: unknown): string {
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new Error('REVIEW_TURN_CANDIDATE_JSON_INVALID');
+  }
+  return value;
+}
+
+function assertCandidateReplay(
+  stored: PersistedReviewTurn,
+  incoming: Omit<
+    ReviewTurnAssistantCandidate,
+    'actionAttemptRef' | 'completedAt'
+  > & { actionAttemptRef: string },
+): void {
+  if (!stored.assistantCandidate) {
+    throw new Error('REVIEW_TURN_CANDIDATE_PERSISTENCE_REJECTED');
+  }
+  const { completedAt: _completedAt, ...actual } = stored.assistantCandidate;
+  if (canonicalJson(actual) !== canonicalJson(incoming)) {
+    throw reviewPersistenceConflict('REVIEW_TURN_CANDIDATE_REPLAY_CONFLICT');
+  }
 }
 
 function assertIdempotentReplay(

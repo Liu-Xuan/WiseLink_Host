@@ -195,6 +195,7 @@ export class ActionAttemptLifecycleService {
       workItemId: string;
       principalId: string;
       result: unknown;
+      failClosedWithoutRejectionMutation?: boolean;
     },
   ): Promise<PreparedActionAttemptCommit> {
     let row = await this.requiredScoped(input.attemptRef, input);
@@ -226,6 +227,9 @@ export class ActionAttemptLifecycleService {
     assertFence(row, input);
     const now = new Date();
     if (row.deadlineAt && row.deadlineAt <= now) {
+      if (input.failClosedWithoutRejectionMutation) {
+        throw conflict('ACTION_ATTEMPT_TIMED_OUT');
+      }
       const timedOut = await this.repository.finishTerminal({
         attemptId: row.attemptId,
         fromStatus: 'RUNNING',
@@ -241,13 +245,18 @@ export class ActionAttemptLifecycleService {
       throw conflict('ACTION_ATTEMPT_TIMED_OUT');
     }
     if (!row.leaseExpiresAt || row.leaseExpiresAt <= now) {
-      await this.repository.recoverExpiredRunning({
-        attemptId: row.attemptId,
-        now,
-      });
+      if (!input.failClosedWithoutRejectionMutation) {
+        await this.repository.recoverExpiredRunning({
+          attemptId: row.attemptId,
+          now,
+        });
+      }
       throw leaseConflict('ACTION_ATTEMPT_LEASE_EXPIRED');
     }
     if (row.cancelRequestedAt) {
+      if (input.failClosedWithoutRejectionMutation) {
+        throw conflict('ACTION_ATTEMPT_CANCELLED');
+      }
       await this.repository.finishTerminal({
         attemptId: row.attemptId,
         fromStatus: 'RUNNING',
@@ -287,16 +296,29 @@ export class ActionAttemptLifecycleService {
     });
     if (!binding) throw actionAttemptNotFound();
     if (binding.documentVersionId !== task.documentVersionId) {
+      if (input.failClosedWithoutRejectionMutation) {
+        throw conflict('ACTION_ATTEMPT_DOCUMENT_VERSION_CHANGED');
+      }
       await this.terminalizeRevisionDrift(row, input, result, 'OBSOLETE', now);
       throw conflict('ACTION_ATTEMPT_DOCUMENT_VERSION_CHANGED');
     }
     if (binding.revision < task.baseRevision) {
+      if (input.failClosedWithoutRejectionMutation) {
+        throw conflict('WORK_ITEM_REVISION_REGRESSED');
+      }
       await this.terminalizeRevisionDrift(row, input, result, 'FAILED', now);
       throw conflict('WORK_ITEM_REVISION_REGRESSED');
     }
     if (binding.revision > task.baseRevision) {
       const status =
         binding.revision === task.baseRevision + 1 ? 'CONFLICT' : 'OBSOLETE';
+      if (input.failClosedWithoutRejectionMutation) {
+        throw conflict(
+          status === 'CONFLICT'
+            ? 'WORK_ITEM_REVISION_CONFLICT'
+            : 'WORK_ITEM_RESULT_OBSOLETE',
+        );
+      }
       await this.terminalizeRevisionDrift(row, input, result, status, now);
       throw conflict(
         status === 'CONFLICT'
@@ -338,6 +360,36 @@ export class ActionAttemptLifecycleService {
       leaseGeneration: prepared.row.leaseGeneration,
       result: prepared.result,
       projectionApplied: true,
+      now: new Date(),
+    });
+    if (!updated) throw conflict('ACTION_ATTEMPT_TERMINALIZATION_LOST');
+    return terminalProjection(
+      requiredRow(
+        await this.repository.readByAttemptId(prepared.row.attemptId),
+      ),
+    );
+  }
+
+  async finishCandidatePersistenceSuccess(
+    prepared: PreparedActionAttemptCommit,
+  ): Promise<ActionAttemptTerminalProjection> {
+    if (prepared.row.status === 'SUCCEEDED') {
+      return terminalProjection(prepared.row);
+    }
+    if (prepared.row.status !== 'COMMITTING') {
+      throw conflict('ACTION_ATTEMPT_NOT_COMMITTING');
+    }
+    const updated = await this.repository.finishTerminal({
+      attemptId: prepared.row.attemptId,
+      fromStatus: 'COMMITTING',
+      status: 'SUCCEEDED',
+      terminalReason: prepared.recovery
+        ? 'REVIEW_TURN_CANDIDATE_RECONCILED'
+        : 'REVIEW_TURN_CANDIDATE_PERSISTED',
+      leaseToken: requiredLeaseToken(prepared.row),
+      leaseGeneration: prepared.row.leaseGeneration,
+      result: prepared.result,
+      projectionApplied: false,
       now: new Date(),
     });
     if (!updated) throw conflict('ACTION_ATTEMPT_TERMINALIZATION_LOST');

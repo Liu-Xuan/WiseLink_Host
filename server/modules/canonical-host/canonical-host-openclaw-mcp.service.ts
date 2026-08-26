@@ -13,6 +13,7 @@ import {
   type PublicHostedDiscoveryResult,
 } from './canonical-host-openclaw-discovery.service';
 import { CanonicalHostOpenClawOverallService } from './canonical-host-openclaw-overall.service';
+import { CanonicalHostOpenClawReviewService } from './canonical-host-openclaw-review.service';
 import { CanonicalHostOpenClawTranslationService } from './canonical-host-openclaw-translation.service';
 import {
   mcpWorkItemId,
@@ -29,6 +30,9 @@ const attemptRef = z.string().trim().min(1).max(200);
 const leaseToken = z.string().uuid();
 const leaseGeneration = z.number().int().positive();
 const resultEnvelope = z.record(z.string(), z.unknown());
+const reviewConversationRef = z.string().trim().min(1).max(96);
+const reviewRequestId = z.string().trim().min(1).max(96);
+const reviewSourceRefId = z.string().trim().min(1).max(512);
 const discoveryCandidate = z
   .object({
     title: z.string().trim().min(1).max(1000),
@@ -99,6 +103,7 @@ export class CanonicalHostOpenClawMcpService {
     private readonly discovery: CanonicalHostOpenClawDiscoveryService,
     private readonly overall: CanonicalHostOpenClawOverallService,
     private readonly translation: CanonicalHostOpenClawTranslationService,
+    private readonly review: CanonicalHostOpenClawReviewService,
     private readonly attempts: ActionAttemptLifecycleService,
     @Inject(CANONICAL_SERVICE_SCOPE_AUTHORIZATION)
     private readonly serviceScope: CanonicalServiceScopeAuthorizationPort,
@@ -124,7 +129,7 @@ export class CanonicalHostOpenClawMcpService {
   private createServer(): McpServer {
     const server = new McpServer({
       name: 'wiselink-openclaw-engineering-assessment',
-      version: '1.0.0',
+      version: '1.1.0',
     });
 
     registerCanonicalHostReadonlyMcpTools(
@@ -304,6 +309,99 @@ export class CanonicalHostOpenClawMcpService {
       }) =>
         textResult(
           await this.overall.commit(
+            selectedAttemptRef,
+            selectedLeaseToken,
+            selectedLeaseGeneration,
+            result,
+          ),
+        ),
+    );
+
+    server.registerTool(
+      'begin_review_turn',
+      {
+        title: '开始已持久评审轮次',
+        description:
+          '输入仅含 C1 reviewConversationRef 与 requestId。Host 从持久会话、官方 OAuth subject 映射、WorkItem owner/current revision 派生 tenant、actor、WorkItem、turn 与 opaque actorContextRef，并在既有 durable ActionAttempt 上领取租约；客户端不能提供或覆盖 actor、tenant、WorkItem 或 sessionKey。',
+        inputSchema: z
+          .object({ reviewConversationRef, requestId: reviewRequestId })
+          .strict(),
+        annotations: beginAnnotations,
+      },
+      async ({ reviewConversationRef: conversationRef, requestId }) =>
+        textResult(await this.review.begin(conversationRef, requestId)),
+    );
+
+    server.registerTool(
+      'get_review_turn_context',
+      {
+        title: '读取评审轮次最小上下文',
+        description:
+          '只读返回该 durable attempt 冻结的 WorkItem、evaluation、bilingual、applicability、adopted inputs 最小投影与执行 policy；不返回 tenant、actor、OAuth credential 或 server-owned sessionKey。',
+        inputSchema: z.object({ attemptRef }).strict(),
+        annotations: resumeAnnotations,
+      },
+      async ({ attemptRef: selectedAttemptRef }) =>
+        textResult(await this.review.context(selectedAttemptRef)),
+    );
+
+    server.registerTool(
+      'read_source_refs',
+      {
+        title: '读取评审 attempt 冻结的 exact SourceRefs',
+        description:
+          '仅按 sourceRefId 读取该 review TaskEnvelope 内冻结的 exact SourceRef allowlist；不提供 search/query，也不读取其他 WorkItem 或未授权 artifact。',
+        inputSchema: z
+          .object({
+            attemptRef,
+            sourceRefIds: z.array(reviewSourceRefId).min(1).max(100),
+          })
+          .strict(),
+        annotations: resumeAnnotations,
+      },
+      async ({ attemptRef: selectedAttemptRef, sourceRefIds }) =>
+        textResult(
+          await this.review.readSourceRefs(selectedAttemptRef, sourceRefIds),
+        ),
+    );
+
+    server.registerTool(
+      'get_action_attempt_status',
+      {
+        title: '读取交互评审 ActionAttempt 状态',
+        description:
+          '只读返回 exact review attempt 的 RUNNING/COMMITTING/terminal 状态；COMMITTING 时返回 Host 已持久化的 recovery ResultEnvelope，供原样恢复，不触发模型或业务写入。',
+        inputSchema: z.object({ attemptRef }).strict(),
+        annotations: resumeAnnotations,
+      },
+      async ({ attemptRef: selectedAttemptRef }) =>
+        textResult(await this.review.status(selectedAttemptRef)),
+    );
+
+    server.registerTool(
+      'commit_review_turn_candidate',
+      {
+        title: '提交评审轮次候选响应',
+        description:
+          '按 exact attempt、lease token/generation 与完整 versioned ResultEnvelope fail-closed 校验 provenance/SourceRef/item allowlists，只追加 ReviewTurn assistant response、candidateEvidence 与 ReviewActionDraft 候选；绝不执行 ReviewAction 或修改 WorkItem revision/current/STALE。',
+        inputSchema: z
+          .object({
+            attemptRef,
+            leaseToken,
+            leaseGeneration,
+            result: resultEnvelope,
+          })
+          .strict(),
+        annotations: commitAnnotations,
+      },
+      async ({
+        attemptRef: selectedAttemptRef,
+        leaseToken: selectedLeaseToken,
+        leaseGeneration: selectedLeaseGeneration,
+        result,
+      }) =>
+        textResult(
+          await this.review.commit(
             selectedAttemptRef,
             selectedLeaseToken,
             selectedLeaseGeneration,

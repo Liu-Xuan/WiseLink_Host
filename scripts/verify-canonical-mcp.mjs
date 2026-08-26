@@ -20,6 +20,8 @@ const { CanonicalHostOpenClawMcpService } = await import(
 const calls = [];
 const dynamicCalls = [];
 const orchestratorCalls = [];
+const translationCalls = [];
+const reviewCalls = [];
 const attemptCalls = [];
 const methods = [];
 const leaseToken = '00000000-0000-4000-8000-000000000001';
@@ -150,16 +152,32 @@ const dynamicEvaluation = {
 };
 const discovery = {
   record: async (workItemId, result) => {
-    orchestratorCalls.push({ tool: 'record_oem_discovery_run', workItemId, result });
-    return { searchRunRef: 'search:boeing:server-owned', resultStatus: 'ACCESS_DENIED' };
+    orchestratorCalls.push({
+      tool: 'record_oem_discovery_run',
+      workItemId,
+      result,
+    });
+    return {
+      searchRunRef: 'search:boeing:server-owned',
+      resultStatus: 'ACCESS_DENIED',
+    };
   },
 };
 const overall = {
   begin: async (workItemId, providers) => {
-    orchestratorCalls.push({ tool: 'begin_overall_synthesis', workItemId, providers });
+    orchestratorCalls.push({
+      tool: 'begin_overall_synthesis',
+      workItemId,
+      providers,
+    });
     return structuredClone(overallBeginResult);
   },
-  commit: async (selectedAttemptRef, selectedLeaseToken, leaseGeneration, result) => {
+  commit: async (
+    selectedAttemptRef,
+    selectedLeaseToken,
+    leaseGeneration,
+    result,
+  ) => {
     orchestratorCalls.push({
       tool: 'commit_overall_candidate',
       attemptRef: selectedAttemptRef,
@@ -167,7 +185,11 @@ const overall = {
       leaseGeneration,
       result,
     });
-    return { workItemId: 'WI-DYNAMIC', workItemRevision: 7, status: 'OVERALL_CANDIDATE_READY' };
+    return {
+      workItemId: 'WI-DYNAMIC',
+      workItemRevision: 7,
+      status: 'OVERALL_CANDIDATE_READY',
+    };
   },
   resume: async (attemptRef) => {
     const modelInput = {
@@ -209,11 +231,93 @@ const attempts = {
     };
   },
 };
+const translation = {
+  begin: async (workItemId) => {
+    translationCalls.push({ tool: 'begin_translation', workItemId });
+    return { attemptRef: 'TRN-OPAQUE', status: 'RUNNING' };
+  },
+  commit: async (
+    selectedAttemptRef,
+    selectedLeaseToken,
+    leaseGeneration,
+    result,
+  ) => {
+    translationCalls.push({
+      tool: 'commit_translation_candidate',
+      attemptRef: selectedAttemptRef,
+      leaseToken: selectedLeaseToken,
+      leaseGeneration,
+      result,
+    });
+    return { workItemId: 'WI-DYNAMIC', status: 'CANDIDATE_ONLY' };
+  },
+};
+const review = {
+  begin: async (reviewConversationRef, requestId) => {
+    reviewCalls.push({
+      tool: 'begin_review_turn',
+      reviewConversationRef,
+      requestId,
+    });
+    return {
+      attemptRef: 'AQ-REVIEW',
+      status: 'RUNNING',
+      leaseToken,
+      leaseGeneration: 1,
+    };
+  },
+  context: async (selectedAttemptRef) => {
+    reviewCalls.push({
+      tool: 'get_review_turn_context',
+      attemptRef: selectedAttemptRef,
+    });
+    return { attemptRef: selectedAttemptRef, mode: 'INTERACTIVE_REVIEW' };
+  },
+  readSourceRefs: async (selectedAttemptRef, sourceRefIds) => {
+    reviewCalls.push({
+      tool: 'read_source_refs',
+      attemptRef: selectedAttemptRef,
+      sourceRefIds,
+    });
+    return {
+      attemptRef: selectedAttemptRef,
+      sourceRefs: [{ sourceRefId: sourceRefIds[0] }],
+    };
+  },
+  status: async (selectedAttemptRef) => {
+    reviewCalls.push({
+      tool: 'get_action_attempt_status',
+      attemptRef: selectedAttemptRef,
+    });
+    return {
+      attemptRef: selectedAttemptRef,
+      status: 'COMMITTING',
+      recoveryAvailable: true,
+    };
+  },
+  commit: async (
+    selectedAttemptRef,
+    selectedLeaseToken,
+    leaseGeneration,
+    result,
+  ) => {
+    reviewCalls.push({
+      tool: 'commit_review_turn_candidate',
+      attemptRef: selectedAttemptRef,
+      leaseToken: selectedLeaseToken,
+      leaseGeneration,
+      result,
+    });
+    return { attemptRef: selectedAttemptRef, status: 'SUCCEEDED' };
+  },
+};
 const openClawMcp = new CanonicalHostOpenClawMcpService(
   vertical,
   dynamicEvaluation,
   discovery,
   overall,
+  translation,
+  review,
   attempts,
   serviceScope,
 );
@@ -367,10 +471,7 @@ try {
 
   calls.length = 0;
   dynamicCalls.length = 0;
-  const openClawEndpoint = new URL(
-    '/openapi/wiselink/openclaw-mcp',
-    endpoint,
-  );
+  const openClawEndpoint = new URL('/openapi/wiselink/openclaw-mcp', endpoint);
   const openClawClient = await connectedClient(
     openClawEndpoint,
     'openclaw-mcp-client',
@@ -383,16 +484,25 @@ try {
         'get_parse_status',
         'query_parsed_package',
         'get_deep_link',
+        'begin_translation',
+        'commit_translation_candidate',
         'begin_dynamic_evaluation',
         'commit_dynamic_evaluation_candidate',
         'record_oem_discovery_run',
         'begin_overall_synthesis',
         'resume_overall_synthesis',
         'commit_overall_candidate',
+        'begin_review_turn',
+        'get_review_turn_context',
+        'read_source_refs',
+        'get_action_attempt_status',
+        'commit_review_turn_candidate',
         'heartbeat_action_attempt',
         'cancel_action_attempt',
       ],
     );
+    assert.equal(listed.tools.length, 18);
+    assert.equal(openClawClient.getServerVersion()?.version, '1.1.0');
     assert.deepEqual(
       resultJson(
         await openClawClient.callTool({
@@ -444,9 +554,14 @@ try {
       },
     ]);
     const denied = {
-      provider: 'BOEING', query: '737 SB', resultStatus: 'ACCESS_DENIED',
-      candidates: [], accessRestricted: true, truncated: false,
-      partialOnly: false, excludedNonOemCandidateCount: 0,
+      provider: 'BOEING',
+      query: '737 SB',
+      resultStatus: 'ACCESS_DENIED',
+      candidates: [],
+      accessRestricted: true,
+      truncated: false,
+      partialOnly: false,
+      excludedNonOemCandidateCount: 0,
       error: { code: 'UPSTREAM_CONNECT_TIMEOUT', message: 'timeout' },
     };
     await openClawClient.callTool({
@@ -493,6 +608,66 @@ try {
       },
     });
     assert.equal(orchestratorCalls.length, 3);
+    assert.deepEqual(
+      resultJson(
+        await openClawClient.callTool({
+          name: 'begin_review_turn',
+          arguments: {
+            reviewConversationRef: 'RC-1',
+            requestId: 'request-1',
+          },
+        }),
+      ),
+      {
+        attemptRef: 'AQ-REVIEW',
+        status: 'RUNNING',
+        leaseToken,
+        leaseGeneration: 1,
+      },
+    );
+    const forgedReviewBegin = await openClawClient.callTool({
+      name: 'begin_review_turn',
+      arguments: {
+        reviewConversationRef: 'RC-1',
+        requestId: 'request-1',
+        actorId: 'forged',
+        tenantId: 'forged',
+        workItemId: 'WI-FORGED',
+        sessionKey: 'forged',
+      },
+    });
+    assert.equal(forgedReviewBegin.isError, true);
+    await openClawClient.callTool({
+      name: 'get_review_turn_context',
+      arguments: { attemptRef: 'AQ-REVIEW' },
+    });
+    await openClawClient.callTool({
+      name: 'read_source_refs',
+      arguments: { attemptRef: 'AQ-REVIEW', sourceRefIds: ['SRC-1'] },
+    });
+    await openClawClient.callTool({
+      name: 'get_action_attempt_status',
+      arguments: { attemptRef: 'AQ-REVIEW' },
+    });
+    await openClawClient.callTool({
+      name: 'commit_review_turn_candidate',
+      arguments: {
+        attemptRef: 'AQ-REVIEW',
+        leaseToken,
+        leaseGeneration: 1,
+        result: candidateResult,
+      },
+    });
+    assert.deepEqual(
+      reviewCalls.map(({ tool }) => tool),
+      [
+        'begin_review_turn',
+        'get_review_turn_context',
+        'read_source_refs',
+        'get_action_attempt_status',
+        'commit_review_turn_candidate',
+      ],
+    );
     assert.deepEqual(
       resultJson(
         await openClawClient.callTool({
@@ -631,19 +806,26 @@ try {
           'get_parse_status',
           'query_parsed_package',
           'get_deep_link',
+          'begin_translation',
+          'commit_translation_candidate',
           'begin_dynamic_evaluation',
           'commit_dynamic_evaluation_candidate',
           'record_oem_discovery_run',
           'begin_overall_synthesis',
           'resume_overall_synthesis',
           'commit_overall_candidate',
+          'begin_review_turn',
+          'get_review_turn_context',
+          'read_source_refs',
+          'get_action_attempt_status',
+          'commit_review_turn_candidate',
           'heartbeat_action_attempt',
           'cancel_action_attempt',
         ],
         resources: 0,
         prompts: 0,
         ailyMutationTools: 0,
-        openClawCandidateMutationTools: 7,
+        openClawCandidateMutationTools: 11,
         servedMethods: ['POST'],
         rejectedClientTransportMethods: [
           ...new Set(methods.filter((method) => method !== 'POST')),

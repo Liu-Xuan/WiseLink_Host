@@ -76,6 +76,7 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
       | 'BEGIN_DYNAMIC'
       | 'RECORD_DISCOVERY'
       | 'BEGIN_OVERALL'
+      | 'BEGIN_REVIEW'
       | 'BEGIN_TRANSLATE';
     workItemId: string;
   }): Promise<CanonicalVerifiedServiceScope> {
@@ -88,6 +89,10 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
       | 'RESUME_OVERALL'
       | 'COMMIT_OVERALL'
       | 'COMMIT_TRANSLATE'
+      | 'GET_REVIEW_CONTEXT'
+      | 'READ_REVIEW_SOURCE_REFS'
+      | 'GET_REVIEW_ATTEMPT_STATUS'
+      | 'COMMIT_REVIEW'
       | 'HEARTBEAT_ATTEMPT'
       | 'CANCEL_ATTEMPT';
     attemptRef: string;

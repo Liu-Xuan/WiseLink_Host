@@ -15,6 +15,50 @@ export type EngineerSuppliedInputType = 'ENGINEER_TEXT';
 
 export type EngineerSuppliedInputAdoptionStatus = 'CANDIDATE_UNADOPTED';
 
+export type ReviewTurnResponseType =
+  | 'ANSWER'
+  | 'CLARIFYING_QUESTION'
+  | 'SOURCE_LINK'
+  | 'CANDIDATE_EVIDENCE'
+  | 'REVIEW_ACTION_DRAFT'
+  | 'INPUT_REQUEST'
+  | 'AFFECTED_ITEMS_PREVIEW'
+  | 'RESYNTHESIS_RESULT'
+  | 'TASK_STATUS';
+
+export interface ReviewActionDraftCandidate {
+  baseRevision: number;
+  evaluationItemId: string;
+  proposedStatus: string;
+  adoptedInputRefs: string[];
+  sourceRefs: string[];
+  assumptions: string[];
+  affectedItemIds: string[];
+  overallImpact: boolean;
+}
+
+export interface ReviewTurnAssistantCandidate {
+  responseType: ReviewTurnResponseType;
+  answer: string;
+  sourceRefs: string[];
+  missingInputs: string[];
+  candidateEvidenceRefs: string[];
+  reviewActionDraft: ReviewActionDraftCandidate | null;
+  affectedItemIds: string[];
+  warnings: string[];
+  actionAttemptRef: string;
+  provenance: {
+    runtimeAppId: 'app_17c3zn24kv2';
+    profileRef: 'wiselink-engineering';
+    modelVersion: string;
+    promptVersion: string;
+    skillVersion: string;
+    toolVersions: Record<string, string>;
+    resultContentHash: string;
+  };
+  completedAt: string;
+}
+
 export interface ReviewTurnReadModel {
   reviewTurnId: string;
   turnNo: number;
@@ -27,6 +71,7 @@ export interface ReviewTurnReadModel {
     adoptionStatus: EngineerSuppliedInputAdoptionStatus;
     text: string;
   };
+  assistantCandidate: ReviewTurnAssistantCandidate | null;
   createdAt: string;
 }
 

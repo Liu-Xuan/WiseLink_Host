@@ -236,6 +236,9 @@ function turnReadModel(turn: PersistedReviewTurn): ReviewTurnReadModel {
       adoptionStatus: 'CANDIDATE_UNADOPTED',
       text: turn.candidateText,
     },
+    assistantCandidate: turn.assistantCandidate
+      ? structuredClone(turn.assistantCandidate)
+      : null,
     createdAt: turn.createdAt.toISOString(),
   };
 }

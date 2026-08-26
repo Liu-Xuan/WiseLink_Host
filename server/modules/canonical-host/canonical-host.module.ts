@@ -23,6 +23,7 @@ import { CanonicalHostOpenClawDynamicEvaluationService } from './canonical-host-
 import { CanonicalHostOpenClawDiscoveryService } from './canonical-host-openclaw-discovery.service';
 import { CanonicalHostOpenClawOverallService } from './canonical-host-openclaw-overall.service';
 import { CanonicalHostOpenClawTranslationService } from './canonical-host-openclaw-translation.service';
+import { CanonicalHostOpenClawReviewService } from './canonical-host-openclaw-review.service';
 import { HostOwnedV1TranslationRuleSetPrivateProvider } from './canonical-translation-rule-set-v1.private';
 import { ExternalDiscoveryModule } from '../external-discovery/external-discovery.module';
 import { CanonicalFailureRecordingService } from './canonical-failure-recording.service';
@@ -46,6 +47,7 @@ import { MiaodaCanonicalWorkItemRegistrarAdapter } from '../work-item/miaoda-can
 import { MiaodaDocumentVersionSourceResolver } from '../work-item/miaoda-document-version-source.resolver';
 import { WorkItemRuntimeModule } from '../work-item/work-item-runtime.module';
 import { IdentityModule } from '../identity/identity.module';
+import { ReviewPersistenceModule } from '../review-persistence/review-persistence.module';
 import { OrdinaryWorkItemService } from '../work-item/ordinary-work-item.service';
 import { UnconfiguredCanonicalPdfProducerAdapter } from './unconfigured-canonical-pdf-producer.adapter';
 import { UnconfiguredCanonicalMiaodaAppBindingAdapter } from './unconfigured-canonical-miaoda-app-binding.adapter';
@@ -98,6 +100,7 @@ export interface CanonicalHostModuleOptions {
     AeoSameWorkItemAuthoringModule.forRoot(),
     WorkItemRuntimeModule,
     IdentityModule,
+    ReviewPersistenceModule,
   ],
   controllers: [
     CanonicalHostController,
@@ -116,6 +119,7 @@ export interface CanonicalHostModuleOptions {
     CanonicalHostOpenClawDiscoveryService,
     CanonicalHostOpenClawOverallService,
     CanonicalHostOpenClawTranslationService,
+    CanonicalHostOpenClawReviewService,
     HostOwnedV1TranslationRuleSetPrivateProvider,
     ExactFtdFrozen2PdfProducerAdapter,
     MiaodaDocumentVersionSourceResolver,
@@ -235,6 +239,7 @@ export class CanonicalHostModule {
         AeoSameWorkItemAuthoringModule.forRoot(),
         WorkItemRuntimeModule,
         IdentityModule,
+        ReviewPersistenceModule,
         ...(options.imports ?? []),
       ],
       controllers: [
@@ -269,6 +274,7 @@ export class CanonicalHostModule {
         CanonicalHostOpenClawDiscoveryService,
         CanonicalHostOpenClawOverallService,
         CanonicalHostOpenClawTranslationService,
+        CanonicalHostOpenClawReviewService,
         HostOwnedV1TranslationRuleSetPrivateProvider,
         ExactFtdFrozen2PdfProducerAdapter,
         MiaodaDocumentVersionSourceResolver,

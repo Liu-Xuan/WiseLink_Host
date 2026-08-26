@@ -209,6 +209,35 @@ describe('ActionAttemptLifecycleService', () => {
     ]);
   });
 
+  it('rejects an expired candidate lease without mutating the attempt', async () => {
+    const repository = new MemoryActionAttemptRepository();
+    const service = new ActionAttemptLifecycleService(repository as never);
+    const claim = await service.reserveAndClaim(
+      reservationInput(async () => ({ controlled: true })),
+    );
+    repository.row = {
+      ...repository.requiredRow(),
+      leaseExpiresAt: new Date(Date.now() - 1),
+    };
+    const before = structuredClone(repository.requiredRow());
+    const transitionsBefore = [...repository.transitions];
+
+    await expect(
+      service.prepareCommit({
+        attemptRef: claim.attemptRef,
+        tenantId: 'tenant-test',
+        workItemId: 'WI-test',
+        principalId: 'openclaw-real',
+        leaseToken: claim.leaseToken,
+        leaseGeneration: claim.leaseGeneration,
+        result: successResult(claim.task),
+        failClosedWithoutRejectionMutation: true,
+      }),
+    ).rejects.toMatchObject({ code: 'ACTION_ATTEMPT_LEASE_EXPIRED' });
+    expect(repository.row).toEqual(before);
+    expect(repository.transitions).toEqual(transitionsBefore);
+  });
+
   it('terminalizes a running attempt when its deadline expires before heartbeat', async () => {
     const repository = new MemoryActionAttemptRepository();
     const service = new ActionAttemptLifecycleService(repository as never);
