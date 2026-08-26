@@ -256,6 +256,57 @@ test('runs translation with fresh status and full fenced ResultEnvelope', async 
   );
 });
 
+test('rejects each forbidden translation input before the model boundary', async (t) => {
+  const leakageCases = [
+    ['actor', { actor: { id: 'actor-secret' } }],
+    ['tenant', { tenant: 'tenant-secret' }],
+    ['ACL normalized key', { A_C_L: ['private-row'] }],
+    ['sessionKey', { sessionKey: 'analysis:tenant:work-item:attempt' }],
+    [
+      'openClawSessionKey',
+      { openClawSessionKey: 'analysis:tenant:work-item:attempt' },
+    ],
+    [
+      'openClawSessionKey normalized key',
+      { 'open_claw-session key': 'analysis:tenant:work-item:attempt' },
+    ],
+    ['credential', { credential: 'credential-secret' }],
+    ['FileService locator', { file_service_locator: 'bucket/private/path' }],
+    ['raw PDF', { 'raw-pdf': 'JVBERi0xLjQ=' }],
+    ['full Fleet', { 'full fleet': [{ registration: 'B-0001' }] }],
+  ];
+
+  for (const [label, leakage] of leakageCases) {
+    await t.test(label, async () => {
+      const input = { ...translationInput(), ...leakage };
+      const task = makeTask('OPENCLAW_TRANSLATE', input);
+      const begin = runningBegin(task, { modelInput: input });
+      const toolCalls = [];
+      let translateCallCount = 0;
+      const callTool = async (name) => {
+        toolCalls.push(name);
+        if (name === 'get_parse_status') return status(WORK_ITEM_ID);
+        if (name === 'begin_translation') return begin;
+        throw new Error(`UNEXPECTED_TOOL:${name}`);
+      };
+
+      await assert.rejects(
+        runTranslation({
+          workItemId: WORK_ITEM_ID,
+          callTool,
+          translate: async () => {
+            translateCallCount += 1;
+            throw new Error('MODEL_MUST_NOT_RUN');
+          },
+        }),
+        /FORBIDDEN_AUTHORITY_INPUT/u,
+      );
+      assert.equal(translateCallCount, 0);
+      assert.deepEqual(toolCalls, ['get_parse_status', 'begin_translation']);
+    });
+  }
+});
+
 test('runs dynamic N/N and never uses old {attemptRef, output}', async () => {
   const input = await readJson(DYNAMIC_FIXTURE_URL);
   const output = buildDynamicRulesOutput(input);
@@ -644,6 +695,48 @@ test('rejects tenant, credential, FileService, raw PDF, or Fleet leakage', async
     }),
     /REVIEW_MODEL_SENSITIVE_FIELD_FORBIDDEN/u,
   );
+});
+
+test('rejects review session keys before respond, including normalized forms', async (t) => {
+  const leakageKeys = [
+    'sessionKey',
+    'openClawSessionKey',
+    'open_claw-session key',
+    'ｏｐｅｎＣｌａｗＳｅｓｓｉｏｎＫｅｙ',
+  ];
+
+  for (const leakageKey of leakageKeys) {
+    await t.test(leakageKey, async () => {
+      const reviewTask = await readJson(REVIEW_TASK_FIXTURE_URL);
+      const task = makeTask('OPENCLAW_INTERACTIVE_REVIEW', reviewTask);
+      let respondCallCount = 0;
+      const callTool = async (name) => {
+        if (name === 'begin_review_turn') return runningBegin(task);
+        if (name === 'get_review_turn_context') {
+          const context = reviewContext(task, reviewTask);
+          context.context[leakageKey] =
+            'review:tenant:actor:work-item:conversation';
+          return context;
+        }
+        throw new Error(`UNEXPECTED_TOOL:${name}`);
+      };
+
+      await assert.rejects(
+        runInteractiveReviewTurn({
+          mode: 'INTERACTIVE_REVIEW',
+          reviewConversationRef: reviewTask.reviewConversationRef,
+          requestId: reviewTask.requestId,
+          callTool,
+          respond: async () => {
+            respondCallCount += 1;
+            throw new Error('MODEL_MUST_NOT_RUN');
+          },
+        }),
+        /REVIEW_MODEL_SENSITIVE_FIELD_FORBIDDEN/u,
+      );
+      assert.equal(respondCallCount, 0);
+    });
+  }
 });
 
 function provenance(overrides = {}) {

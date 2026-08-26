@@ -6,6 +6,8 @@ import {
   WISELINK_RUNTIME_APP_ID,
   WISELINK_SKILL_VERSION,
   canonicalJson,
+  isForbiddenAuthorityInputKey,
+  normalizeAuthorityInputKey,
   sealResultEnvelope,
   serializeDynamicRulesCommitOutput,
   validatePayload,
@@ -81,6 +83,7 @@ export async function runTranslation({ workItemId, callTool, translate }) {
       callTool,
     });
   }
+  validatePayload('translation-input', begin.modelInput);
   const execution = normalizeExecution(
     await translate(structuredClone(begin.modelInput)),
   );
@@ -805,31 +808,9 @@ function sanitizeForModel(value, modelPath = '$') {
   }
   const result = {};
   for (const [key, child] of Object.entries(value)) {
-    const normalized = key.toLowerCase();
+    const normalized = normalizeAuthorityInputKey(key);
     if (normalized === 'workitemid') continue;
-    if (
-      [
-        'actor',
-        'actorid',
-        'actorcontextref',
-        'tenant',
-        'tenantid',
-        'acl',
-        'acls',
-        'credential',
-        'credentials',
-        'cookie',
-        'authorization',
-        'bucket',
-        'bucketid',
-        'filepath',
-        'objectkey',
-        'fileservicelocator',
-        'rawpdf',
-        'pdfbytes',
-        'fullfleet',
-      ].includes(normalized)
-    ) {
+    if (isForbiddenAuthorityInputKey(key)) {
       throw new Error(
         `REVIEW_MODEL_SENSITIVE_FIELD_FORBIDDEN:${modelPath}.${key}`,
       );

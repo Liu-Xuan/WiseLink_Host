@@ -89,6 +89,7 @@ const FORBIDDEN_INPUT_KEYS = new Set([
   'actor',
   'actoruserid',
   'actorroles',
+  'tenant',
   'tenantid',
   'authority',
   'authorization',
@@ -106,6 +107,8 @@ const FORBIDDEN_INPUT_KEYS = new Set([
   'acls',
   'credential',
   'credentials',
+  'sessionkey',
+  'openclawsessionkey',
   'bucket',
   'bucketid',
   'filepath',
@@ -129,9 +132,11 @@ export function validatePayload(kind, value) {
     case 'runtime-provenance':
       validateRuntimeProvenance(value);
       break;
+    case 'translation-input':
+      validateTranslationModelInput(value);
+      break;
     case 'translation-pair':
       exactKeys(value, ['input', 'output'], [], 'translation pair');
-      rejectAuthorityInput(value);
       validateTranslationPair(value.input, value.output);
       break;
     case 'review-task':
@@ -2141,7 +2146,8 @@ export function validateRuntimeProvenance(value) {
   return value;
 }
 
-export function validateTranslationPair(input, output) {
+export function validateTranslationModelInput(input) {
+  rejectAuthorityInput(input);
   exactKeys(
     input,
     ['schemaVersion', 'sourceUnits', 'rulePack', 'taskStartBinding'],
@@ -2162,6 +2168,25 @@ export function validateTranslationPair(input, output) {
   );
   assertObject(input.taskStartBinding, 'translation task binding');
   array(input.sourceUnits, 'TRANSLATION_SOURCE_UNITS_INVALID');
+  input.sourceUnits.forEach((source, index) => {
+    assertObject(source, `translation source unit ${index}`);
+    exactKeys(
+      source,
+      ['unitKey', 'kind', 'text', 'sourceRefIds'],
+      [],
+      `translation source unit ${index}`,
+    );
+    nonEmpty(source.unitKey, 'TRANSLATION_SOURCE_UNIT_KEY_REQUIRED');
+    nonEmpty(source.kind, 'TRANSLATION_SOURCE_UNIT_KIND_REQUIRED');
+    nonEmpty(source.text, 'TRANSLATION_SOURCE_TEXT_REQUIRED');
+    uniqueTextArray(source.sourceRefIds, 'TRANSLATION_SOURCE_REFS_INVALID');
+  });
+  return input;
+}
+
+export function validateTranslationPair(input, output) {
+  validateTranslationModelInput(input);
+  rejectAuthorityInput(output);
   exactKeys(
     output,
     [
@@ -2202,20 +2227,9 @@ export function validateTranslationPair(input, output) {
   );
   const sourceKeys = new Set();
   input.sourceUnits.forEach((source, index) => {
-    assertObject(source, `translation source unit ${index}`);
-    exactKeys(
-      source,
-      ['unitKey', 'kind', 'text', 'sourceRefIds'],
-      [],
-      `translation source unit ${index}`,
-    );
-    nonEmpty(source.unitKey, 'TRANSLATION_SOURCE_UNIT_KEY_REQUIRED');
     if (sourceKeys.has(source.unitKey))
       fail('TRANSLATION_SOURCE_UNIT_DUPLICATE');
     sourceKeys.add(source.unitKey);
-    nonEmpty(source.kind, 'TRANSLATION_SOURCE_UNIT_KIND_REQUIRED');
-    nonEmpty(source.text, 'TRANSLATION_SOURCE_TEXT_REQUIRED');
-    uniqueTextArray(source.sourceRefIds, 'TRANSLATION_SOURCE_REFS_INVALID');
     const candidate = output.candidateUnits[index];
     assertObject(candidate, `translation candidate unit ${index}`);
     exactKeys(
@@ -2620,10 +2634,21 @@ function rejectAuthorityInput(value, path = '$') {
     return;
   }
   for (const [key, child] of Object.entries(value)) {
-    if (FORBIDDEN_INPUT_KEYS.has(key.toLowerCase()))
+    if (isForbiddenAuthorityInputKey(key))
       fail(`FORBIDDEN_AUTHORITY_INPUT:${path}.${key}`);
     rejectAuthorityInput(child, `${path}.${key}`);
   }
+}
+
+export function normalizeAuthorityInputKey(key) {
+  return String(key)
+    .normalize('NFKC')
+    .replace(/[^a-z0-9]/giu, '')
+    .toLowerCase();
+}
+
+export function isForbiddenAuthorityInputKey(key) {
+  return FORBIDDEN_INPUT_KEYS.has(normalizeAuthorityInputKey(key));
 }
 
 function rejectAuthoritativeNarrative(output) {
