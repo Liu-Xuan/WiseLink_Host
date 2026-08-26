@@ -857,7 +857,7 @@ function usage() {
     '  node scripts/run-openclaw-action-attempt-worker.mjs --task dynamic|overall|translation --work-item-id WI-...',
     '',
     'Required environment:',
-    '  WL_OPENCLAW_HOST_MCP_URL=https://.../api/openapi/wiselink/openclaw-mcp',
+    '  WL_OPENCLAW_HOST_MCP_URL=https://<host>/app/<app-id>/openapi/wiselink/openclaw-mcp',
     '  WL_OPENCLAW_GATEWAY_URL=http://127.0.0.1:18789',
     '  WL_OPENCLAW_GATEWAY_TOKEN=<dedicated gateway token>',
     '',
