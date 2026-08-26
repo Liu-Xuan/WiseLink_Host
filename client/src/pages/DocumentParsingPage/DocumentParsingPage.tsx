@@ -737,15 +737,7 @@ export default function DocumentParsingPage() {
                   readerMode: mode,
                 })
               }
-              onSourceRefSelect={(unitId: string, sourceRef: string) =>
-                updateDeepLink({
-                  node: 'reader',
-                  tab: 'reader',
-                  unit: unitId,
-                  sourceRef,
-                  readerMode: 'structured',
-                })
-              }
+              onSourceRefSelect={locateSourceRef}
               onClearSourceRef={() =>
                 updateDeepLink({ unit: null, sourceRef: null })
               }
