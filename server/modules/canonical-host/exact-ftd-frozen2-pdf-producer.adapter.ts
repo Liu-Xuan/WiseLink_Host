@@ -54,46 +54,49 @@ const FTD_PROFILE: HostNativePdfProfile = {
     'file_service_source->host_native_pdf_pipeline->host_scoped_professional_artifact->u0_frozen2_strict_validator',
 };
 
-const EXACT_737_SB_PROFILE: HostNativePdfProfile = (() => {
-  const handoff = PHASE5_737_34_3830_HANDOFF as {
-    source: { sha256: string; byteLength: number };
-    descriptor: { documentCode: string; businessRevision: string };
-    canonicalHostClassification: {
-      status: 'CONFIRMED';
-      normalizedFamily: 'SB';
-      classifierReleaseId: string;
-      classifierReleaseHash: string;
-      parserProfileId: string;
-      parserProfileHash: string;
-      fingerprint: string;
-    };
-  };
+function exact737SbProfile(): HostNativePdfProfile | null {
+  const handoff = PHASE5_737_34_3830_HANDOFF;
+  const source = recordValue(handoff.source);
+  const descriptor = recordValue(handoff.descriptor);
+  const classification = recordValue(handoff.canonicalHostClassification);
+  if (
+    classification.status !== 'CONFIRMED' ||
+    classification.normalizedFamily !== 'SB' ||
+    !isNonEmptyString(classification.classifierReleaseId) ||
+    !isNonEmptyString(classification.classifierReleaseHash) ||
+    !isNonEmptyString(classification.parserProfileId) ||
+    !isNonEmptyString(classification.parserProfileHash) ||
+    !isNonEmptyString(classification.fingerprint) ||
+    !isNonEmptyString(source.sha256) ||
+    !Number.isSafeInteger(source.byteLength) ||
+    Number(source.byteLength) <= 0 ||
+    !isNonEmptyString(descriptor.documentCode) ||
+    !isNonEmptyString(descriptor.businessRevision)
+  ) {
+    return null;
+  }
   return {
-    family: handoff.canonicalHostClassification.normalizedFamily,
-    parserProfileId: handoff.canonicalHostClassification.parserProfileId,
-    parserProfileHash: handoff.canonicalHostClassification.parserProfileHash,
+    family: 'SB',
+    parserProfileId: classification.parserProfileId,
+    parserProfileHash: classification.parserProfileHash,
     requiredClassification: {
-      status: handoff.canonicalHostClassification.status,
-      classifierReleaseId:
-        handoff.canonicalHostClassification.classifierReleaseId,
-      classifierReleaseHash:
-        handoff.canonicalHostClassification.classifierReleaseHash,
-      fingerprint: handoff.canonicalHostClassification.fingerprint,
+      status: 'CONFIRMED',
+      classifierReleaseId: classification.classifierReleaseId,
+      classifierReleaseHash: classification.classifierReleaseHash,
+      fingerprint: classification.fingerprint,
     },
     exactSource: {
-      sha256: handoff.source.sha256,
-      byteLength: handoff.source.byteLength,
-      documentCode: handoff.descriptor.documentCode,
-      businessRevision: handoff.descriptor.businessRevision,
+      sha256: source.sha256,
+      byteLength: Number(source.byteLength),
+      documentCode: descriptor.documentCode,
+      businessRevision: descriptor.businessRevision,
     },
     documentType: 'service_bulletin',
     presentationMode: 'ENGINEERING_DOCUMENT',
     executionRoute:
       'file_service_source->host_native_pdf_pipeline->host_scoped_professional_artifact->u0_frozen2_strict_validator',
   };
-})();
-
-const HOST_NATIVE_PDF_PROFILES = [FTD_PROFILE, EXACT_737_SB_PROFILE] as const;
+}
 
 @Injectable()
 export class ExactFtdFrozen2PdfProducerAdapter implements CanonicalPdfProducerPort {
@@ -282,8 +285,10 @@ export class ExactFtdFrozen2PdfProducerAdapter implements CanonicalPdfProducerPo
 function selectHostNativePdfProfile(
   request: CanonicalPdfVerticalRunRequest,
 ): HostNativePdfProfile | null {
+  const exactSb = exact737SbProfile();
+  const profiles = exactSb ? [FTD_PROFILE, exactSb] : [FTD_PROFILE];
   return (
-    HOST_NATIVE_PDF_PROFILES.find(
+    profiles.find(
       (profile) =>
         request.classification.normalizedFamily === profile.family &&
         request.classification.parserProfileId === profile.parserProfileId &&
@@ -453,4 +458,14 @@ function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
     left.byteLength === right.byteLength &&
     left.every((value, index) => value === right[index])
   );
+}
+
+function recordValue(value: unknown): Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
 }
