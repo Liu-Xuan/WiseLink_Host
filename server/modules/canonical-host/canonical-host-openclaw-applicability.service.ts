@@ -498,7 +498,7 @@ export class CanonicalHostOpenClawApplicabilityService {
       return projectionResult(updated, terminalProjection);
     } catch (error) {
       if (!ownedArtifact) throw error;
-      if (!workItemCasAttempted || isDefiniteWorkItemCasConflict(error)) {
+      if (!workItemCasAttempted) {
         await candidateStore.discardCandidateArtifact(ownedArtifact);
         throw error;
       }
@@ -558,11 +558,14 @@ export class CanonicalHostOpenClawApplicabilityService {
           prepared.task,
           finalized.artifact,
         );
-        await finishForProjection(
-          this.attempts,
-          prepared,
-          beforeTerminalProjection,
-        );
+        await this.reconcileProjectionTerminalAfterCas({
+          scope,
+          attemptRef,
+          leaseToken,
+          leaseGeneration,
+          resultEnvelope,
+          projection: beforeTerminalProjection,
+        });
         return projectionResult(
           beforeTerminal.workItem,
           beforeTerminalProjection,
@@ -590,6 +593,26 @@ export class CanonicalHostOpenClawApplicabilityService {
       result: input.resultEnvelope,
       failClosedWithoutRejectionMutation: true,
     });
+  }
+
+  private async reconcileProjectionTerminalAfterCas(input: {
+    scope: CanonicalVerifiedOpenClawAttemptScope;
+    attemptRef: string;
+    leaseToken: string;
+    leaseGeneration: number;
+    resultEnvelope: unknown;
+    projection: CanonicalApplicabilityCandidateProjection;
+  }): Promise<void> {
+    const finishFresh = async (): Promise<void> => {
+      const prepared = await this.prepareCommit(input);
+      await finishForProjection(this.attempts, prepared, input.projection);
+    };
+    try {
+      await finishFresh();
+    } catch (error) {
+      if (!isActionAttemptTerminalizationLost(error)) throw error;
+      await finishFresh();
+    }
   }
 
   private async prepareNonCandidateTerminal(input: {
@@ -1029,11 +1052,12 @@ function requiredCandidateStagingStore(
   return candidate as UnifiedCandidateArtifactStagingPort;
 }
 
-function isDefiniteWorkItemCasConflict(error: unknown): boolean {
+function isActionAttemptTerminalizationLost(error: unknown): boolean {
   return (
     error instanceof Error &&
-    (error.message === 'WORK_ITEM_CAS_CONFLICT' ||
-      (error as Error & { code?: string }).code === 'WORK_ITEM_CAS_CONFLICT')
+    (error.message === 'ACTION_ATTEMPT_TERMINALIZATION_LOST' ||
+      (error as Error & { code?: string }).code ===
+        'ACTION_ATTEMPT_TERMINALIZATION_LOST')
   );
 }
 

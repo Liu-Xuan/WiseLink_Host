@@ -427,6 +427,64 @@ test(
       );
 
       await t.test(
+        'same-attempt concurrent duplicate preserves the winner stable artifact',
+        async (t) => {
+          const firstReachedCas = deferred();
+          const releaseFirstCas = deferred();
+          const harness = await realHarness(sql, {
+            beforeCandidateCas: async () => {
+              firstReachedCas.resolve();
+              await releaseFirstCas.promise;
+            },
+          });
+          t.after(() => harness.artifactOwner.cleanup());
+
+          const firstCommit = harness.commit();
+          await firstReachedCas.promise;
+          let second;
+          try {
+            second = await harness.commit();
+          } finally {
+            releaseFirstCas.resolve();
+          }
+          const first = await firstCommit;
+
+          assert.deepEqual(first, second);
+          assert.equal(first.workItemRevision, 9);
+          const workItem = await readWorkItemRow(sql);
+          const current = JSON.parse(workItem.projectionJson);
+          assert.equal(workItem.revision, 9);
+          assert.equal(
+            current.applicability.actionAttemptId,
+            harness.begin.task.actionAttemptId,
+          );
+          assert.deepEqual(
+            current.applicability.artifact,
+            first.applicability.artifact,
+          );
+          assert.equal(
+            await harness.artifactOwner.scoped.candidatePhysicalCount(),
+            1,
+          );
+          const bytes = await harness.artifactOwner.store.readActualBytes(
+            current.applicability.artifact,
+          );
+          assert.equal(
+            bytes.byteLength,
+            current.applicability.artifact.byteLength,
+          );
+          assert.equal(
+            createHash('sha256').update(bytes).digest('hex'),
+            current.applicability.artifact.sha256,
+          );
+          assert.equal(
+            (await readAttemptRaceState(sql, harness.begin.attemptRef)).status,
+            'SUCCEEDED',
+          );
+        },
+      );
+
+      await t.test(
         'unknown unapplied CAS outcome safely discards the finalized artifact without retry',
         async (t) => {
           const harness = await realHarness(sql, {
@@ -459,6 +517,14 @@ test(
     }
   },
 );
+
+function deferred() {
+  let resolve;
+  const promise = new Promise((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
 
 function assertSafeIsolatedDatabase(value) {
   const parsed = new URL(value);
