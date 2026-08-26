@@ -325,6 +325,38 @@ describe('ActionAttemptLifecycleService', () => {
     ).rejects.toMatchObject({ code: 'ACTION_ATTEMPT_ALREADY_CANCELLED' });
     expect(repository.row?.leaseToken).toBeNull();
   });
+
+  it('terminalizes a persisted RUNNING cancellation marker before commit', async () => {
+    const repository = new MemoryActionAttemptRepository();
+    const service = new ActionAttemptLifecycleService(repository as never);
+    const claim = await service.reserveAndClaim(
+      reservationInput(async () => ({ controlled: true })),
+    );
+    repository.row = {
+      ...repository.requiredRow(),
+      cancelRequestedAt: new Date(),
+      cancelReason: 'persisted cancellation marker',
+    };
+
+    await expect(
+      service.prepareCommit({
+        attemptRef: claim.attemptRef,
+        tenantId: 'tenant-test',
+        workItemId: 'WI-test',
+        principalId: 'openclaw-real',
+        leaseToken: claim.leaseToken,
+        leaseGeneration: claim.leaseGeneration,
+        result: successResult(claim.task),
+      }),
+    ).rejects.toMatchObject({ code: 'ACTION_ATTEMPT_CANCELLED' });
+    expect(repository.row).toMatchObject({
+      status: 'CANCELLED',
+      terminalReason: 'CANCELLED_BEFORE_COMMIT',
+      projectionApplied: false,
+    });
+    expect(repository.row?.errorCode ?? null).toBeNull();
+    expect(repository.row?.errorMessage ?? null).toBeNull();
+  });
 });
 
 class MemoryActionAttemptRepository {
