@@ -60,7 +60,6 @@
 }
 
 .wl-environment > * {
-  position: relative;
   z-index: 1;
 }
 
@@ -90,16 +89,32 @@
 
 /* ── G1 浮动导航玻璃：Dock、顶栏、模式切换（高模糊、高透明、细描边） ── */
 .wl-glass-nav {
-  background: var(--wl-glass-nav);
-  border: 1px solid var(--wl-border);
+  border: 1px solid
+    color-mix(in srgb, var(--wl-surface-solid) 58%, var(--wl-border));
+  background-color: var(--wl-glass-nav);
+  background-image: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--wl-surface-solid) 36%, transparent),
+    transparent 48%
+  );
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--wl-surface-solid) 72%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--wl-border) 58%, transparent);
   backdrop-filter: blur(var(--wl-blur-nav)) saturate(155%);
   -webkit-backdrop-filter: blur(var(--wl-blur-nav)) saturate(155%);
 }
 
 /* ── G2 导航与目录玻璃：目录树、证据栏、活动栏 ── */
 .wl-glass-panel {
-  background: var(--wl-glass-panel);
   border: 1px solid var(--wl-border);
+  background-color: var(--wl-glass-panel);
+  background-image: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--wl-surface-solid) 20%, transparent),
+    transparent 44%
+  );
+  box-shadow: inset 0 1px 0
+    color-mix(in srgb, var(--wl-surface-solid) 48%, transparent);
   backdrop-filter: blur(var(--wl-blur-panel)) saturate(135%);
   -webkit-backdrop-filter: blur(var(--wl-blur-panel)) saturate(135%);
 }

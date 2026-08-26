@@ -53,9 +53,20 @@ export default function OverallAssessmentHero({
         className="wl-overall-hero wl-glass-content is-empty"
         aria-live="polite"
       >
-        <Sparkles className="wl-overall-empty-icon" aria-hidden="true" />
+        <span className="wl-overall-empty-mark" aria-hidden="true">
+          <Sparkles className="wl-overall-empty-icon" />
+        </span>
         <h2>综合评估尚未形成</h2>
-        <p>完成文件解析与必要评估后，综合意见会在这里显示。</p>
+        <p>
+          当前尚无综合候选意见。可先核对原文与解析结果；形成候选后仍需工程师复核。
+        </p>
+        <button
+          type="button"
+          className="wl-btn wl-btn-primary"
+          onClick={onOpenWorkbench}
+        >
+          <FileSearch2 aria-hidden="true" /> 查看原文与解析
+        </button>
       </section>
     );
   }
@@ -74,7 +85,6 @@ export default function OverallAssessmentHero({
         </div>
         <div className="wl-overall-head-meta">
           <span>基于当前受控文件版本</span>
-          <span>候选版本 r{overall.revision}</span>
           <span>
             {view.freshness === 'needs_update'
               ? `当前结论需更新${staleLabel ? `（${staleLabel}）` : ''}`

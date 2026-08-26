@@ -61,7 +61,7 @@ export function WorkItemContextTree({
     <aside className="workitem-tree" aria-label="资料目录树">
       <header>
         <div>
-          <span>WORKITEM CONTENT</span>
+          <span>事项资料</span>
           <strong>资料目录</strong>
           <small>族群 · 文档 · 修订</small>
         </div>

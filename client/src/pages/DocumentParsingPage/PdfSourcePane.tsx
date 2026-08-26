@@ -128,22 +128,20 @@ export default function PdfSourcePane({
         </p>
       ) : null}
 
-      {pdfPreview ? (
-        <div className="parse-pdf-canvas" role="note">
-          <FileSearch aria-hidden="true" />
-          <div>
-            <strong>
-              {pdfPreview.status === 'UNAVAILABLE'
-                ? '暂不能预览 PDF 页面'
-                : 'PDF 原文预览状态未知'}
-            </strong>
-            <p>
-              当前受控读取链尚未提供可连续滚动与缩放的 PDF 页面画布。
-              可先使用左侧结构化原文和页码定位。
-            </p>
-          </div>
+      <div className="parse-pdf-canvas" role="note">
+        <FileSearch aria-hidden="true" />
+        <div>
+          <strong>
+            {pdfPreview?.status === 'UNAVAILABLE'
+              ? '暂不能预览 PDF 页面'
+              : 'PDF 页面预览尚未提供'}
+          </strong>
+          <p>
+            当前受控读取链尚未提供可连续滚动与缩放的 PDF 页面画布。
+            可先使用左侧结构化原文和页码定位。
+          </p>
         </div>
-      ) : null}
+      </div>
 
       {translation ? (
         <small className="parse-pdf-translation">

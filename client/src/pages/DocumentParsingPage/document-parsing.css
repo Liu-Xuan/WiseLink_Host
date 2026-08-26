@@ -156,8 +156,7 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
   grid-template-columns: auto 1fr;
   align-items: center;
   gap: 5px 9px;
-  border: 1px solid
-    color-mix(in srgb, var(--wl-accent) 28%, var(--wl-border));
+  border: 1px solid color-mix(in srgb, var(--wl-accent) 28%, var(--wl-border));
   border-radius: 7px;
   color: var(--wl-accent);
   background: var(--wl-accent-soft);
@@ -740,7 +739,7 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
   margin: 0 auto 14px;
   align-items: start;
   gap: 14px;
-  grid-template-columns: minmax(0, 1.05fr) minmax(520px, 0.95fr);
+  grid-template-columns: minmax(320px, 1fr) minmax(420px, 1.08fr);
 }
 
 /* 窄屏：不挤压 PDF 至 520px 以下，退化为单列堆叠（§10.1 主操作始终可见） */
@@ -2881,9 +2880,10 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
 }
 
 /* ── Apple Glass R03：专业工作台使用 G2/G3，PDF/输入保持 G4 实底 ── */
-.parse-shell--workbench {
-  height: calc(100dvh - 132px);
-  padding: 10px 0 0;
+.parse-shell.parse-shell--workbench {
+  height: 100%;
+  min-height: 0;
+  padding: 8px 0 0;
 }
 
 .parse-overall-bar,
@@ -2893,7 +2893,7 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
 .parse-business-candidate,
 .parse-assessment-semantics {
   border-color: var(--wl-border);
-  border-radius: var(--wl-radius-panel);
+  border-radius: var(--wl-radius-xl);
   background: var(--wl-glass-content);
   box-shadow: var(--wl-shadow-1);
 }
@@ -2919,6 +2919,11 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
   border-color: var(--wl-border-strong);
   border-radius: var(--wl-radius-md);
   background: var(--wl-surface-solid);
+}
+
+.parse-pdf-pane,
+.parse-reader-source-view {
+  border-radius: var(--wl-radius-panel);
 }
 
 .parse-reader-mode,
@@ -2956,6 +2961,10 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
 .parse-result p,
 .parse-panel p {
   font-size: 12px;
+}
+
+.parse-locked-card p {
+  font-family: var(--wl-font);
 }
 
 /* 当前工作台可见组件统一使用语义 token，避免深色主题出现旧式硬白面。 */
@@ -3056,11 +3065,7 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
 .parse-assessment-gap-list article,
 .aeo-authoring-boundary,
 .aeo-authoring-warning {
-  border-color: color-mix(
-    in srgb,
-    var(--wl-amber-ink) 30%,
-    var(--wl-border)
-  );
+  border-color: color-mix(in srgb, var(--wl-amber-ink) 30%, var(--wl-border));
   color: var(--wl-amber-ink);
   background: var(--wl-amber-soft);
 }
@@ -3082,11 +3087,7 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
 }
 
 .parse-result {
-  border-left-color: color-mix(
-    in srgb,
-    var(--wl-accent) 48%,
-    var(--wl-border)
-  );
+  border-left-color: color-mix(in srgb, var(--wl-accent) 48%, var(--wl-border));
   background: var(--wl-glass-soft);
 }
 
@@ -3117,11 +3118,7 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
 .parse-result-source-refs button.is-selected,
 .parse-finding-sources button:hover,
 .parse-criterion-sources button:hover {
-  border-color: color-mix(
-    in srgb,
-    var(--wl-accent) 45%,
-    var(--wl-border)
-  );
+  border-color: color-mix(in srgb, var(--wl-accent) 45%, var(--wl-border));
   color: var(--wl-accent);
   background: var(--wl-accent-soft);
 }
@@ -3129,11 +3126,7 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
 .parse-reader-focus,
 .parse-reader-mode:hover,
 .parse-reader-mode.is-active {
-  border-color: color-mix(
-    in srgb,
-    var(--wl-accent) 42%,
-    var(--wl-border)
-  );
+  border-color: color-mix(in srgb, var(--wl-accent) 42%, var(--wl-border));
   color: var(--wl-accent);
   background: var(--wl-accent-soft);
 }
@@ -3183,11 +3176,7 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
 }
 
 .parse-business-candidate {
-  border-color: color-mix(
-    in srgb,
-    var(--wl-accent) 30%,
-    var(--wl-border)
-  );
+  border-color: color-mix(in srgb, var(--wl-accent) 30%, var(--wl-border));
   border-radius: var(--wl-radius-panel);
   background:
     linear-gradient(145deg, var(--wl-accent-soft), transparent 54%),
@@ -3224,11 +3213,7 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
 
 .parse-criterion-card:hover,
 .parse-criterion-card.is-selected {
-  border-color: color-mix(
-    in srgb,
-    var(--wl-accent) 42%,
-    var(--wl-border)
-  );
+  border-color: color-mix(in srgb, var(--wl-accent) 42%, var(--wl-border));
   background: var(--wl-accent-soft);
 }
 
@@ -3243,11 +3228,7 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
 }
 
 .parse-aeo-ready-action {
-  border-color: color-mix(
-    in srgb,
-    var(--wl-accent) 30%,
-    var(--wl-border)
-  );
+  border-color: color-mix(in srgb, var(--wl-accent) 30%, var(--wl-border));
   border-radius: var(--wl-radius-md);
   background: var(--wl-accent-soft);
 }
@@ -3261,11 +3242,7 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
 }
 
 .engineering-reasoning-steps article.is-done {
-  border-color: color-mix(
-    in srgb,
-    var(--wl-accent) 30%,
-    var(--wl-border)
-  );
+  border-color: color-mix(in srgb, var(--wl-accent) 30%, var(--wl-border));
   background: var(--wl-accent-soft);
 }
 
@@ -3287,11 +3264,7 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
 }
 
 .aeo-authoring-seal {
-  border-color: color-mix(
-    in srgb,
-    var(--wl-accent) 30%,
-    var(--wl-border)
-  );
+  border-color: color-mix(in srgb, var(--wl-accent) 30%, var(--wl-border));
   border-radius: var(--wl-radius-md);
   background: var(--wl-accent-soft);
 }
@@ -3333,9 +3306,9 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
 
 @media (max-width: 720px) {
   .parse-shell.parse-shell--workbench {
-    height: calc(100dvh - 112px);
+    height: 100%;
     min-height: 0;
-    padding-top: 8px;
+    padding-top: 6px;
   }
 
   body[data-wl-immersive='true'] .parse-shell.parse-shell--workbench {
