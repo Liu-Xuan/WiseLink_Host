@@ -390,6 +390,19 @@ function overallModelInput() {
       history: [],
       effective: [],
     },
+    selectiveResynthesis: {
+      mode: 'INITIAL' as const,
+      criterionSetId: 'JACS-ONE',
+      baseRuleRevision: 1,
+      baseRuleArtifactSha256: BASE_SHA,
+      staleOverallRevision: null,
+      targetOverallRevision: 1,
+      priorEngineerReviewRevision: null,
+      currentEngineerReviewRevision: null,
+      affectedCriterionIds: [],
+      reusedCriterionIds: [],
+      adoptedEvidenceSourceRefIds: [],
+    },
   };
 }
 

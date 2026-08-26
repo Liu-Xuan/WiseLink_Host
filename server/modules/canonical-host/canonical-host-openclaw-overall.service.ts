@@ -42,6 +42,7 @@ import {
   consumeOpenClawOverallSynthesisOutput,
   type OpenClawOverallSynthesisInput,
 } from './openclaw-overall-synthesis.processor';
+import { assertLatestOverallCandidate } from './selective-overall-resynthesis';
 
 const OPENCLAW_SERVICE_USER_ID = 'service:openclaw-main';
 const CANONICAL_APP_ID = 'app_17bzc551rsg';
@@ -245,6 +246,10 @@ export class CanonicalHostOpenClawOverallService {
       try {
         output = requiredModelOutput(prepared.result);
         parsed = consumeOpenClawOverallSynthesisOutput(modelInput, output);
+        assertReviewDrivenOverallChanged(
+          workItem.integratedAssessment?.overallSynthesis ?? null,
+          parsed,
+        );
       } catch (error) {
         return this.attempts.finishResultGateFailure(prepared, error);
       }
@@ -254,8 +259,7 @@ export class CanonicalHostOpenClawOverallService {
       const baseRules = workItem.integratedAssessment!.baseRules;
       const overall: CanonicalOpenClawOverallProjection = {
         status: 'CANDIDATE_ONLY',
-        revision:
-          (workItem.integratedAssessment?.overallSynthesis?.revision ?? 0) + 1,
+        revision: modelInput.selectiveResynthesis.targetOverallRevision,
         sourceResultId: requiredText(parsed.sourceResultId),
         basedOnBaseRuleRevision: baseRules.revision,
         basedOnBaseRuleArtifactSha256: baseRules.artifact.sha256,
@@ -280,6 +284,7 @@ export class CanonicalHostOpenClawOverallService {
         engineeringReviewRequired: parsed.engineeringReviewRequired === true,
         providers: requiredObject(parsed.providers),
       };
+      assertLatestOverallCandidate(modelInput.selectiveResynthesis, overall);
       const integratedAssessment: CanonicalIntegratedAssessmentProjection = {
         status: 'OVERALL_CANDIDATE_READY',
         baseRules,
@@ -315,9 +320,7 @@ export class CanonicalHostOpenClawOverallService {
 
   private async recoverPreparedCommit(
     prepared: PreparedActionAttemptCommit,
-  ): Promise<
-    Record<string, unknown> | ActionAttemptTerminalProjection | null
-  > {
+  ): Promise<Record<string, unknown> | ActionAttemptTerminalProjection | null> {
     const workItem = await this.requiredBaseRules(
       prepared.row.workItemId,
       prepared.row.tenantId,
@@ -740,6 +743,27 @@ function overallFindings(value: unknown): Array<{
       uncertainty: requiredText(finding.uncertainty),
     };
   });
+}
+function assertReviewDrivenOverallChanged(
+  prior: CanonicalOpenClawOverallProjection | null,
+  parsed: Record<string, unknown>,
+): void {
+  if (!prior || prior.status !== 'STALE') return;
+  const priorBusinessContent = JSON.stringify({
+    overallCandidate: prior.overallCandidate ?? null,
+    findings: prior.findings ?? [],
+    missingInputs: prior.missingInputs ?? [],
+    applicabilityStatus: prior.applicabilityStatus ?? null,
+  });
+  const nextBusinessContent = JSON.stringify({
+    overallCandidate: parsed.overallCandidate,
+    findings: parsed.findings,
+    missingInputs: parsed.missingInputs,
+    applicabilityStatus: parsed.applicabilityStatus,
+  });
+  if (priorBusinessContent === nextBusinessContent) {
+    throw new Error('OPENCLAW_OVERALL_REVIEW_DELTA_MISSING');
+  }
 }
 function withoutRevision(
   workItem: CanonicalWorkItemProjection,
