@@ -62,6 +62,34 @@ describe('ConfiguredDevelopmentCanonicalServiceScopeAuthorization', () => {
     ).rejects.toMatchObject({ code: 'CANONICAL_WORK_ITEM_NOT_FOUND' });
   });
 
+  it('authorizes the independent translation begin and commit operations', async () => {
+    configure();
+    const service =
+      new ConfiguredDevelopmentCanonicalServiceScopeAuthorization();
+
+    await expect(
+      service.authorizeOpenClawWorkItem({
+        operation: 'BEGIN_TRANSLATE',
+        workItemId: 'WI-DEV-ISOLATED',
+      }),
+    ).resolves.toMatchObject({
+      principalId: 'service:openclaw-dev-real',
+      tenantId: 'tenant-dev',
+      workItemId: 'WI-DEV-ISOLATED',
+    });
+    await expect(
+      service.authorizeOpenClawAttempt({
+        operation: 'COMMIT_TRANSLATE',
+        attemptRef: 'TRN-TRANSLATE-1',
+      }),
+    ).resolves.toMatchObject({
+      principalId: 'service:openclaw-dev-real',
+      tenantId: 'tenant-dev',
+      workItemId: 'WI-DEV-ISOLATED',
+      attemptRef: 'TRN-TRANSLATE-1',
+    });
+  });
+
   it('authorizes one exact DocumentVersion and run token for development creation', async () => {
     configure();
     const service =

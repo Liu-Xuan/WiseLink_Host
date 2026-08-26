@@ -79,6 +79,25 @@ describe('OpenClaw ActionAttempt envelopes', () => {
       'RESULT_ENVELOPE_WAITING_INPUT_SEMANTICS_INVALID',
     );
   });
+
+  it('round-trips the OPENCLAW_TRANSLATE task and its bound result', () => {
+    const { inputHash: _inputHash, ...unsealedTask } = taskEnvelope();
+    const translationTask = sealTaskEnvelope({
+      ...unsealedTask,
+      actionAttemptId: 'ATT-translation',
+      operationRef: 'AQ-translation',
+      taskType: 'OPENCLAW_TRANSLATE',
+      idempotencyKey: 'openclaw-translate-v1:test',
+    });
+    const translationResult = resultEnvelope(translationTask);
+
+    expect(parseTaskEnvelope(canonicalJson(translationTask))).toEqual(
+      translationTask,
+    );
+    expect(
+      parseResultEnvelope({ value: translationResult, task: translationTask }),
+    ).toEqual(translationResult);
+  });
 });
 
 function taskEnvelope() {

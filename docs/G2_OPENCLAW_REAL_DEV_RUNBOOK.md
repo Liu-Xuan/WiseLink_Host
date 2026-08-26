@@ -2,15 +2,17 @@
 
 ## 1. 完成口径
 
-唯一可验收链路是：真实 Host 创建并持久化 `ActionAttempt=QUEUED`，PostgreSQL 原子 claim/lease 后进入 `RUNNING`，专用 OpenClaw Gateway agent 调用 `wiselink/wiselink-direct-llm`，executor 提交完整 `ResultEnvelope`，Host 跨过 `COMMITTING` 截止点，Result Gate 校验实际模型字节，最后通过 WorkItem revision CAS 写入 candidate-only projection 并回读 FileService/DB/浏览器。
+唯一可验收链路是：真实 Host 创建并持久化 `ActionAttempt=QUEUED`，PostgreSQL 原子 claim/lease 后进入 `RUNNING`，专用 OpenClaw Gateway agent 调用 OpenClaw 2026.3.13 内置的 `openai-codex/gpt-5.4`，executor 如实记录 provider/model 并提交完整 `ResultEnvelope`，Host 跨过 `COMMITTING` 截止点，Result Gate 校验实际模型字节，最后通过 WorkItem revision CAS 写入 candidate-only projection 并回读 FileService/DB/浏览器。
 
 以下均不算完成：fixture、simulation、loopback executor、直接调用 provider、`main` OpenClaw agent、只跑单测、只看 HTTP 200、只看到容器 healthy、绕过 Host 写 WorkItem、把损坏结果替换为 `{}`。
 
-## 2. 固定基线与代码目标（R08 revision 293）
+## 2. 固定基线与代码目标（R08 revision 692）
 
-- accepted DEV integration parent：`77f2a56d4eacecd31e4a501630ee5fe3985fb25a`
+- 当前 Hosted exact release：`a160d7d3a221a3dda58d59b4374c8cf26543fa62`；server/execution 语义等同其 `637090e02efa67f4ddf76bc194452c7f272badec` lineage
+- 本 OAuth provenance 变更直接基于：`a160d7d3a221a3dda58d59b4374c8cf26543fa62`
+- accepted DEV integration parent（历史证据）：`77f2a56d4eacecd31e4a501630ee5fe3985fb25a`
 - G2 历史证据链（只作 lineage/evidence）：`367e2fd8d8bc95699381a173ad1144089c6817b2 → d74049cc483e98f889fc756ef2eb865cb2019d30 → ca56193727e8d2284665aa749f12598c573afb2d`
-- 当前本地候选分支：`codex/wl31-g2-new-dv-correlation-20260825`
+- 当前 OAuth provenance 候选分支：`codex/wl31-openclaw-oauth-provenance-20260826`
 - migration：`migrations/0003_action_attempt_openclaw_v1.sql`
 - Host 状态机：`server/modules/action-attempt/`
 - OpenClaw worker：`scripts/run-openclaw-action-attempt-worker.mjs`
@@ -114,7 +116,7 @@ WL_LOCAL_U0_PYTHON=<absolute-python3-path-with-jsonschema>
       {
         "id": "g2-action-attempt",
         "model": {
-          "primary": "wiselink/wiselink-direct-llm",
+          "primary": "openai-codex/gpt-5.4",
           "fallbacks": []
         },
         "skills": [],
@@ -127,6 +129,51 @@ WL_LOCAL_U0_PYTHON=<absolute-python3-path-with-jsonschema>
   }
 }
 ```
+
+### 6.1 隔离 DEV 的官方 ChatGPT/Codex OAuth
+
+OpenClaw 2026.3.13 已内置 `openai-codex` provider、PKCE OAuth 与
+`openai-codex/gpt-5.4` catalog；该路径由 OpenClaw 的 `pi-ai` transport 执行，不启动
+Codex CLI，不接入 ACP/CodeM，也不需要安装 provider plugin。`plugins.allow` 仍只包含
+WiseLink 工具插件，因为 `openai-codex` 是内置 model provider，不是外部 OpenClaw plugin。
+
+OAuth state 不得继续放在易失的 `/private/tmp`。runtime owner 应先创建一个不受 Git 管理、
+目录权限为 `0700` 的稳定 state root，并整体绑定到 `/home/node/.openclaw`；推荐 DEV 路径为：
+
+```text
+/Volumes/SSD/LLM/WiseLink/private/runtime/openclaw/wl31-g2-dev/state:/home/node/.openclaw
+```
+
+OpenClaw 将同 agent 的 OAuth profile 写入
+`agents/g2-action-attempt/agent/auth-profiles.json`；该文件必须保持 `0600`，不得进入日志、
+证据、备份或 Git。OAuth access/refresh token 是 provider mint/rotate 的会话凭据，不属于
+OpenClaw static SecretRef 支持面；不得复制到 env/file SecretRef，也不得挂载或导入现有
+`~/.codex/auth.json`。
+
+runtime/config 准备完成后，用户唯一一次交互动作是在本机专用 TTY 中运行：
+
+```bash
+docker exec -it wiselink-g2-openclaw-dev \
+  node openclaw.mjs models auth \
+  --agent g2-action-attempt \
+  login --provider openai-codex
+```
+
+用户在浏览器选择明确授权的 ChatGPT workspace。若容器不能接收 loopback callback，只能在
+该 TTY 中粘贴 redirect URL/code；不得将其发到聊天、文档或 shell 日志。登录后先只读执行：
+
+```bash
+docker exec wiselink-g2-openclaw-dev \
+  node openclaw.mjs models status \
+  --agent g2-action-attempt \
+  --json --check --probe --probe-provider openai-codex
+```
+
+probe 与 Gateway `/v1/chat/completions` 真实 canary 均成功后，才允许 claim 新 DEV
+ActionAttempt。订阅 entitlement、rate limit、workspace RBAC/retention/residency 均以用户所选
+ChatGPT workspace 为准；本授权只适用于单用户隔离 DEV，不能提升为 Hosted、CI 或无人值守
+生产服务。第二个 OAuth token sink 还可能轮换 refresh token 并使既有 Codex CLI 会话需要重新
+登录，因此必须由用户明确执行这一动作。
 
 Gateway 必须使用独立 token；token 只放 secret/env，不进 argv、日志、证据或 Git。Host worker 的配置为：
 
@@ -228,7 +275,7 @@ focused state-machine/Result Gate 测试证据，不能替代后续单独批准�
 | `MiaodaFileServiceArtifactStore` 的 `FileService.download(...).asStream()`、locator/version 校验、流式 byte count、SHA-256、immutable readback；本次 source 与 canonical artifact 均实际 hash/length 一致 | `ADAPT_EXISTING` | 复用 `server/modules/document-management/src/hosted/miaodaFileServiceArtifactStore.js` 和 `documentManagementHostedCore.js`，只保留 DocumentVersion/acquisition/correlation 薄适配。当前原生入口上限按 100 MiB 处理；更大文件是 backlog，非主链 blocker。 |
 | 妙搭 DEV PostgreSQL/Dataloom：CLI 实际读回 `action_attempt` 的 49 个业务列、平台 4 个审计列、FK/unique 约束和 11 个索引；运行时使用 `DRIZZLE_DATABASE` | `REUSE_NATIVE` | 复用官方 `@lark-apaas/fullstack-nestjs-core` DB provider、`drizzle-orm@0.44.6`（Apache-2.0）和平台 transaction；不自建数据库、连接池或存储服务。 |
 | `@NeedLogin`、`UserContextMiddleware`、`RequestContextService`、service-scope API key/tenant/workItem scope | `REUSE_NATIVE` | 身份与请求上下文继续由妙搭 SDK/Host 注入；`server/modules/identity/` 和 `canonical-service-scope.authorization.ts` 只做 WiseLink ACL/scope fail-closed，不另建登录/session。 |
-| OpenClaw 2026.3.13：专用 Gateway `healthz=live`，原生 agents list 读回 `g2-action-attempt`，chat-completions 已启用，provider/model=`wiselink/wiselink-direct-llm`，plugin allowlist=`[wiselink]` | `REUSE_NATIVE` | `scripts/run-openclaw-action-attempt-worker.mjs` 只做 TaskEnvelope/ResultEnvelope 适配，通过标准 `@modelcontextprotocol/client@2.0.0`（MIT）调用 Host MCP、通过 OpenClaw 原生 Gateway HTTP 调模型；禁止 provider 直连、共享 `main` 和 simulation。 |
+| OpenClaw 2026.3.13：专用 Gateway `healthz=live`，原生 catalog/CLI 只读核验已包含 `openai-codex/gpt-5.4` 与 `models auth login --provider openai-codex`；agent 必须为 `g2-action-attempt`、fallbacks=`[]`、plugin allowlist=`[wiselink]` | `REUSE_NATIVE / AUTH_PENDING` | `scripts/run-openclaw-action-attempt-worker.mjs` 只做 TaskEnvelope/ResultEnvelope 适配，通过标准 `@modelcontextprotocol/client@2.0.0`（MIT）调用 Host MCP、通过 OpenClaw 原生 Gateway HTTP 调模型；不启动 Codex CLI/ACP/CodeM，禁止 provider 直连、共享 `main` 和 simulation。当前未发起 OAuth、未产生 auth profile、未跑该 provider 的真实 canary。 |
 | 妙搭 automation CLI 原生提供 cron/record-change/webhook/审批 trigger；实际 `automation-list` 返回当前应用 0 项 | `ADAPT_EXISTING` | 生产唤醒/调度优先使用托管 automation 与已发布 handler，不新增自建 supervisor。它只能作为 wake-up hint；投递语义尚未实跑，不能替代 ActionAttempt idempotency/fence/Result Gate。当前 DEV worker 命令保留为有界验收入口，不宣称生产守护进程。 |
 | 妙搭原生日志/trace/requests/latency/CPU/memory/PV/UV CLI | `REUSE_NATIVE` | 后续部署只接平台观测，不新建监控栈。本次命令只支持 online；因禁止生产访问未调用，当前证据来自隔离 Host/DB/FileService/Gateway readback。 |
 | 飞书开放平台提供 Aily 智能体/机器人发布能力；但当前 `lark-cli 1.0.87` 无 `aily` typed command，仓库 `UnavailableAilyObjectAccessAdapter` 仍显式 fail-closed | `HOLD_CUSTOM` | 本专项不把 Aily 当成已验证 transport，也不另造 Aily session/skill wrapper。获得官方可调用合同并完成真实同用户 handoff 前保持 non-claim。 |

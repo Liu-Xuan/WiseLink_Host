@@ -36,7 +36,7 @@ test('retries only through the real Gateway HTTP path on bounded 503s', async (t
       gatewayUrl: 'http://127.0.0.1:18789',
       gatewayToken: 'test-secret-never-logged',
       agentId: 'g2-action-attempt',
-      configuredModel: 'wiselink/wiselink-direct-llm',
+      configuredModel: 'openai-codex/gpt-5.4',
       timeoutSeconds: 10,
       sessionRef: 'OVR-TEST-RETRY',
       prompt: 'return exact JSON',
@@ -61,8 +61,8 @@ test('retries only through the real Gateway HTTP path on bounded 503s', async (t
     },
     {
       modelOutput: '{"candidate":true}',
-      provider: 'wiselink',
-      model: 'wiselink-direct-llm',
+      provider: 'openai-codex',
+      model: 'gpt-5.4',
       stopReason: 'stop',
     },
   );
@@ -78,6 +78,28 @@ test('retries only through the real Gateway HTTP path on bounded 503s', async (t
       user: 'g2-action-attempt:OVR-TEST-RETRY',
       stream: false,
     },
+  );
+});
+
+test('rejects the retired WiseLink proxy model before Gateway transport', async () => {
+  await assert.rejects(
+    runOpenClawGatewayHttp(
+      {
+        gatewayUrl: 'http://127.0.0.1:18789',
+        gatewayToken: 'test-secret-never-logged',
+        agentId: 'g2-action-attempt',
+        configuredModel: 'wiselink/wiselink-direct-llm',
+        timeoutSeconds: 10,
+        sessionRef: 'OVR-TEST-RETIRED-PROVIDER',
+        prompt: 'return exact JSON',
+      },
+      {
+        onChild: () => undefined,
+        heartbeat: async () => undefined,
+        heartbeatIntervalMs: 60_000,
+      },
+    ),
+    /OPENCLAW_DEDICATED_AGENT_BINDING_INVALID/,
   );
 });
 
@@ -115,10 +137,11 @@ test('replays a Host commit after transport 5xx without a second model run', asy
     modelInput,
   };
   let commitCalls = 0;
+  let committedResult = null;
   const client = {
     connect: async () => undefined,
     close: async () => undefined,
-    callTool: async ({ name }) => {
+    callTool: async ({ name, arguments: args }) => {
       if (name === 'begin_dynamic_evaluation') return toolResult(claim);
       if (name === 'heartbeat_action_attempt') {
         return toolResult({ leaseExpiresAt: claim.leaseExpiresAt });
@@ -126,6 +149,7 @@ test('replays a Host commit after transport 5xx without a second model run', asy
       if (name === 'commit_dynamic_evaluation_candidate') {
         commitCalls += 1;
         if (commitCalls < 3) throw new Error('HOST_TRANSPORT_HTTP_503');
+        committedResult = args.result;
         return toolResult({
           workItemId: task.workItemId,
           status: 'BASE_RULE_CANDIDATE_READY',
@@ -156,14 +180,14 @@ test('replays a Host commit after transport 5xx without a second model run', asy
         executeCalls += 1;
         return {
           modelOutput: '{"candidate":true}',
-          provider: 'wiselink',
-          model: 'wiselink-direct-llm',
+          provider: 'openai-codex',
+          model: 'gpt-5.4',
           durationMs: 10,
           stopReason: 'stop',
         };
       },
       preflightOpenClaw: async () => ({
-        configuredModel: 'wiselink/wiselink-direct-llm',
+        configuredModel: 'openai-codex/gpt-5.4',
       }),
     },
   );
@@ -173,6 +197,152 @@ test('replays a Host commit after transport 5xx without a second model run', asy
   assert.equal(result.ok, true);
   assert.equal(result.resultStatus, 'SUCCEEDED');
   assert.equal(result.transportProof.transport, 'OPENCLAW_GATEWAY_HTTP');
+  assert.equal(result.transportProof.provider, 'openai-codex');
+  assert.equal(result.transportProof.model, 'gpt-5.4');
+  assert.equal(committedResult.modelVersion, 'openai-codex/gpt-5.4');
+});
+
+test('runs TRANSLATE through dedicated begin/commit tools and seals its ResultEnvelope', async () => {
+  const modelInput = {
+    schemaVersion: 'wiselink.3_1.translation_task.v0.candidate',
+    sourceUnits: [
+      {
+        unitKey: 'UNIT-1',
+        kind: 'paragraph',
+        text: 'WARNING airplane 5 kg',
+        sourceRefIds: ['SRC-1'],
+      },
+    ],
+    rulePack: {
+      meta: {
+        schemaVersion: 'wiselink.3_1.translation_rule_pack.v0.candidate',
+        rulePackId: 'wiselink.host.translation-rules.zh-cn.v1',
+        rulePackVersion: '1.0.0',
+        label: 'test',
+        targetLocale: 'zh-CN',
+        sourceLocales: ['en'],
+      },
+      terms: [],
+      noTranslate: [],
+      deterministic: {},
+    },
+    taskStartBinding: {
+      documentId: 'DOC-1',
+      revisionId: 'DV-1',
+      sbdPackageId: 'PKG-1',
+      sbdContentHash: 'hash-1',
+      tcpPackageId: null,
+      tcpContentHash: null,
+    },
+  };
+  const unsealedTask = {
+    schemaVersion: 'wiselink.3_1.openclaw_task_envelope.v1',
+    actionAttemptId: 'ATT-TRANSLATE-1',
+    operationRef: 'TRN-TRANSLATE-1',
+    taskType: 'OPENCLAW_TRANSLATE',
+    priority: 100,
+    tenantId: 'tenant-worker-test',
+    workItemId: 'WI-TRANSLATE-1',
+    inputRevision: 7,
+    baseRevision: 7,
+    documentVersionId: 'DV-1',
+    sourceRefs: [{ ref: 'artifact://frozen.2', sha256: 'a'.repeat(64) }],
+    allowedConnectors: [],
+    hostResolvedMissingInputs: [],
+    modelInput,
+    deadline: '2026-08-24T12:10:00.000Z',
+    idempotencyKey: 'worker-test:translation:7',
+  };
+  const task = {
+    ...unsealedTask,
+    inputHash: canonicalSha256(unsealedTask),
+  };
+  const claim = {
+    attemptRef: task.operationRef,
+    status: 'RUNNING',
+    leaseToken: '00000000-0000-4000-8000-000000000011',
+    leaseGeneration: 1,
+    leaseExpiresAt: '2026-08-24T12:01:00.000Z',
+    task,
+    modelInput,
+  };
+  let committed = null;
+  const client = {
+    connect: async () => undefined,
+    close: async () => undefined,
+    callTool: async ({ name, arguments: args }) => {
+      if (name === 'begin_translation') return toolResult(claim);
+      if (name === 'commit_translation_candidate') {
+        committed = args.result;
+        return toolResult({
+          workItemId: task.workItemId,
+          workItemRevision: 8,
+          status: 'CANDIDATE_ONLY',
+        });
+      }
+      throw new Error(`UNEXPECTED_TOOL:${name}`);
+    },
+  };
+  let executorPrompt = '';
+  const modelOutput = JSON.stringify({
+    schemaVersion: 'wiselink.3_1.translation_result.v0.candidate',
+    rulePackId: modelInput.rulePack.meta.rulePackId,
+    rulePackVersion: modelInput.rulePack.meta.rulePackVersion,
+    taskStartBinding: modelInput.taskStartBinding,
+    candidateUnits: [
+      {
+        unitKey: 'UNIT-1',
+        text: '警告 飞机 5 kg',
+        sourceRefIds: ['SRC-1'],
+        engineerRevision: null,
+      },
+    ],
+  });
+
+  const result = await runOpenClawActionAttempt(
+    {
+      task: 'translation',
+      hostMcpUrl: 'http://127.0.0.1:3000/openclaw-mcp',
+      hostApiKey: '',
+      gatewayUrl: 'http://127.0.0.1:18789',
+      gatewayToken: 'test-secret-never-logged',
+      workItemId: task.workItemId,
+      providers: [],
+      containerName: 'openclaw-test',
+      agentId: 'g2-action-attempt',
+      timeoutSeconds: 10,
+      heartbeatIntervalMs: 60_000,
+    },
+    {
+      client,
+      executeOpenClaw: async (input) => {
+        executorPrompt = input.prompt;
+        return {
+          modelOutput,
+          provider: 'openai-codex',
+          model: 'gpt-5.4',
+          durationMs: 10,
+          stopReason: 'stop',
+        };
+      },
+      preflightOpenClaw: async () => ({
+        configuredModel: 'openai-codex/gpt-5.4',
+      }),
+    },
+  );
+
+  assert.match(
+    executorPrompt,
+    /exactly one item for every MODEL_INPUT\.sourceUnits/,
+  );
+  assert.equal(committed.taskType, 'OPENCLAW_TRANSLATE');
+  assert.equal(committed.modelOutput, modelOutput);
+  assert.equal(
+    committed.promptVersion,
+    'wiselink.3_1.openclaw_translation_prompt.v1',
+  );
+  assert.equal(result.ok, true);
+  assert.equal(result.hostCommitStatus, 'CANDIDATE_ONLY');
 });
 
 test('recovers a durable COMMITTING result without invoking OpenClaw again', async () => {
@@ -216,7 +386,7 @@ test('recovers a durable COMMITTING result without invoking OpenClaw again', asy
     missingInputs: [],
     conflicts: [],
     warnings: [],
-    modelVersion: 'wiselink/wiselink-direct-llm',
+    modelVersion: 'openai-codex/gpt-5.4',
     promptVersion: 'dynamic-prompt-v1',
     skillVersion: 'worker-v1',
     toolVersions: { openclaw: 'gateway-http-chat-completions' },

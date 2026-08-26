@@ -13,6 +13,7 @@ import {
   type PublicHostedDiscoveryResult,
 } from './canonical-host-openclaw-discovery.service';
 import { CanonicalHostOpenClawOverallService } from './canonical-host-openclaw-overall.service';
+import { CanonicalHostOpenClawTranslationService } from './canonical-host-openclaw-translation.service';
 import {
   mcpWorkItemId,
   registerCanonicalHostReadonlyMcpTools,
@@ -97,6 +98,7 @@ export class CanonicalHostOpenClawMcpService {
     private readonly dynamicEvaluation: CanonicalHostOpenClawDynamicEvaluationService,
     private readonly discovery: CanonicalHostOpenClawDiscoveryService,
     private readonly overall: CanonicalHostOpenClawOverallService,
+    private readonly translation: CanonicalHostOpenClawTranslationService,
     private readonly attempts: ActionAttemptLifecycleService,
     @Inject(CANONICAL_SERVICE_SCOPE_AUTHORIZATION)
     private readonly serviceScope: CanonicalServiceScopeAuthorizationPort,
@@ -129,6 +131,51 @@ export class CanonicalHostOpenClawMcpService {
       server,
       this.vertical,
       this.serviceScope,
+    );
+
+    server.registerTool(
+      'begin_translation',
+      {
+        title: '开始来源绑定的中英文候选翻译',
+        description:
+          'Host fresh-read 同一 WorkItem，冻结 frozen.2 SourceUnits、SourceRefs 与 exact versioned TranslationRuleSet，创建 durable TRANSLATE ActionAttempt；重复 begin 只恢复同一未完成 attempt。',
+        inputSchema: z.object({ workItemId: mcpWorkItemId }).strict(),
+        annotations: beginAnnotations,
+      },
+      async ({ workItemId }) =>
+        textResult(await this.translation.begin(workItemId)),
+    );
+
+    server.registerTool(
+      'commit_translation_candidate',
+      {
+        title: '提交来源绑定的中英文候选翻译',
+        description:
+          'Host 按 durable attempt 与 lease fence 校验完整 ResultEnvelope，执行 TranslationRuleSet 确定性 ResultGate、FileService 实际字节 readback 和 WorkItem CAS；OpenClaw 不能直接写 current。',
+        inputSchema: z
+          .object({
+            attemptRef,
+            leaseToken,
+            leaseGeneration,
+            result: resultEnvelope,
+          })
+          .strict(),
+        annotations: commitAnnotations,
+      },
+      async ({
+        attemptRef: selectedAttemptRef,
+        leaseToken: selectedLeaseToken,
+        leaseGeneration: selectedLeaseGeneration,
+        result,
+      }) =>
+        textResult(
+          await this.translation.commit(
+            selectedAttemptRef,
+            selectedLeaseToken,
+            selectedLeaseGeneration,
+            result,
+          ),
+        ),
     );
 
     server.registerTool(

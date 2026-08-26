@@ -72,7 +72,11 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
   }
 
   async authorizeOpenClawWorkItem(input: {
-    operation: 'BEGIN_DYNAMIC' | 'RECORD_DISCOVERY' | 'BEGIN_OVERALL';
+    operation:
+      | 'BEGIN_DYNAMIC'
+      | 'RECORD_DISCOVERY'
+      | 'BEGIN_OVERALL'
+      | 'BEGIN_TRANSLATE';
     workItemId: string;
   }): Promise<CanonicalVerifiedServiceScope> {
     return exactWorkItemScope(requiredConfig(), input.workItemId);
@@ -83,6 +87,7 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
       | 'COMMIT_DYNAMIC'
       | 'RESUME_OVERALL'
       | 'COMMIT_OVERALL'
+      | 'COMMIT_TRANSLATE'
       | 'HEARTBEAT_ATTEMPT'
       | 'CANCEL_ATTEMPT';
     attemptRef: string;

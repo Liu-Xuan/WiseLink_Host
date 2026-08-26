@@ -11,6 +11,7 @@ const SHA256_PATTERN = /^[0-9a-f]{64}$/u;
 const TASK_TYPES = new Set<OpenClawTaskEnvelope['taskType']>([
   'OPENCLAW_DYNAMIC_EVALUATION',
   'OPENCLAW_OVERALL_SYNTHESIS',
+  'OPENCLAW_TRANSLATE',
 ]);
 
 export function canonicalJson(value: unknown): string {

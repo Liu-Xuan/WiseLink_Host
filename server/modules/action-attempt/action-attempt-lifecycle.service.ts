@@ -256,10 +256,6 @@ export class ActionAttemptLifecycleService {
         leaseToken: input.leaseToken,
         leaseGeneration: input.leaseGeneration,
         result,
-        errorCode:
-          status === 'FAILED' ? (result.errorCode ?? undefined) : undefined,
-        errorMessage:
-          status === 'FAILED' ? (result.errorDetail ?? undefined) : undefined,
         now,
       });
       throw conflict('ACTION_ATTEMPT_CANCELLED');

@@ -22,6 +22,8 @@ import { CanonicalHostOpenClawMcpService } from './canonical-host-openclaw-mcp.s
 import { CanonicalHostOpenClawDynamicEvaluationService } from './canonical-host-openclaw-dynamic-evaluation.service';
 import { CanonicalHostOpenClawDiscoveryService } from './canonical-host-openclaw-discovery.service';
 import { CanonicalHostOpenClawOverallService } from './canonical-host-openclaw-overall.service';
+import { CanonicalHostOpenClawTranslationService } from './canonical-host-openclaw-translation.service';
+import { HostOwnedV1TranslationRuleSetPrivateProvider } from './canonical-translation-rule-set-v1.private';
 import { ExternalDiscoveryModule } from '../external-discovery/external-discovery.module';
 import { CanonicalFailureRecordingService } from './canonical-failure-recording.service';
 import { ExactFtdFrozen2PdfProducerAdapter } from './exact-ftd-frozen2-pdf-producer.adapter';
@@ -113,6 +115,8 @@ export interface CanonicalHostModuleOptions {
     CanonicalHostOpenClawDynamicEvaluationService,
     CanonicalHostOpenClawDiscoveryService,
     CanonicalHostOpenClawOverallService,
+    CanonicalHostOpenClawTranslationService,
+    HostOwnedV1TranslationRuleSetPrivateProvider,
     ExactFtdFrozen2PdfProducerAdapter,
     MiaodaDocumentVersionSourceResolver,
     MiaodaCanonicalWorkItemRegistrarAdapter,
@@ -136,7 +140,7 @@ export interface CanonicalHostModuleOptions {
     },
     {
       provide: CANONICAL_SERVICE_SCOPE_AUTHORIZATION,
-      useExisting: UnavailableCanonicalServiceScopeAuthorization,
+      useExisting: CANONICAL_EXECUTOR_SERVICE_SCOPE_AUTHORIZATION,
     },
   ],
 })
@@ -264,6 +268,8 @@ export class CanonicalHostModule {
         CanonicalHostOpenClawDynamicEvaluationService,
         CanonicalHostOpenClawDiscoveryService,
         CanonicalHostOpenClawOverallService,
+        CanonicalHostOpenClawTranslationService,
+        HostOwnedV1TranslationRuleSetPrivateProvider,
         ExactFtdFrozen2PdfProducerAdapter,
         MiaodaDocumentVersionSourceResolver,
         MiaodaCanonicalWorkItemRegistrarAdapter,
@@ -276,7 +282,7 @@ export class CanonicalHostModule {
         CanonicalHostAeoService,
         {
           provide: CANONICAL_SERVICE_SCOPE_AUTHORIZATION,
-          useExisting: UnavailableCanonicalServiceScopeAuthorization,
+          useExisting: CANONICAL_EXECUTOR_SERVICE_SCOPE_AUTHORIZATION,
         },
       ],
       exports: [
