@@ -171,13 +171,7 @@ export class OrdinaryWorkItemService {
     developmentScope?: CanonicalVerifiedDevelopmentCreateScope,
     oauthSessionCreate = false,
   ): Promise<CanonicalOrdinaryWorkItemRunResponse> {
-    const context: HostedRequestContext = {
-      actorUserId: actor.userId,
-      tenantId: actor.tenantId,
-      roles: [...actor.roles],
-      appId: actor.appId,
-      env: actor.env,
-    };
+    const context = hostedRequestContext(actor, oauthSessionCreate);
     const documentVersionId = input.documentVersionId
       ? requiredText(input.documentVersionId, 'documentVersionId', 96)
       : await this.ingestSelection(input.selection, context);
@@ -353,6 +347,45 @@ export class OrdinaryWorkItemService {
       statusCode: 404,
     });
   }
+}
+
+function hostedRequestContext(
+  actor: CanonicalHostActor,
+  oauthSessionCreate: boolean,
+): HostedRequestContext {
+  const context: HostedRequestContext = {
+    actorUserId: actor.userId,
+    tenantId: actor.tenantId,
+    roles: [...actor.roles],
+    appId: actor.appId,
+    env: actor.env,
+  };
+  if (!oauthSessionCreate) return context;
+
+  const finalUser = actor.objectAccessActor;
+  if (
+    finalUser?.identityProvenance !== 'FEISHU_OAUTH_USER_ACCESS_TOKEN' ||
+    finalUser.sessionProvenance !== 'SERVER_OPAQUE_SESSION' ||
+    finalUser.canonicalSubject.id !== actor.userId ||
+    finalUser.tenantId !== actor.tenantId ||
+    finalUser.applicationScopeId !== actor.appId
+  ) {
+    throw Object.assign(new Error('CANONICAL_IDENTITY_HANDOFF_UNAVAILABLE'), {
+      code: 'CANONICAL_IDENTITY_HANDOFF_UNAVAILABLE',
+      statusCode: 503,
+    });
+  }
+  return {
+    ...context,
+    runtimeIngestAuthority: {
+      mode: 'HOSTED_OAUTH_SESSION_DEVELOPMENT_RUN',
+      actorUserId: finalUser.canonicalSubject.id,
+      tenantId: finalUser.tenantId,
+      appId: finalUser.applicationScopeId,
+      identityProvenance: 'FEISHU_OAUTH_USER_ACCESS_TOKEN',
+      sessionProvenance: 'SERVER_OPAQUE_SESSION',
+    },
+  };
 }
 
 function assertDevelopmentCreateScope(

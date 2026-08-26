@@ -428,6 +428,14 @@ describe('OrdinaryWorkItemService run identity', () => {
           roles: ['authenticated', 'wiselink_development'],
           appId: ACTOR.appId,
           env: 'runtime',
+          runtimeIngestAuthority: {
+            mode: 'HOSTED_OAUTH_SESSION_DEVELOPMENT_RUN',
+            actorUserId: ACTOR.userId,
+            tenantId: ACTOR.tenantId,
+            appId: ACTOR.appId,
+            identityProvenance: 'FEISHU_OAUTH_USER_ACCESS_TOKEN',
+            sessionProvenance: 'SERVER_OPAQUE_SESSION',
+          },
         },
         {
           bucketId: 'bucket-default',
