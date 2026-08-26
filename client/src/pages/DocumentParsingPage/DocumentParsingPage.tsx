@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
+  Activity,
   AlertTriangle,
   ArrowUpRight,
-  CheckCircle2,
   ChevronDown,
   ClipboardCheck,
   FileText,
@@ -66,10 +66,27 @@ import '@client/src/features/workbench/workbench-shell.css';
 import '@client/src/features/review/review-loop.css';
 import '@client/src/features/workbench/evidence-panel.css';
 
-function short(value: string, front = 18, back = 10): string {
-  return value.length <= front + back + 1
-    ? value
-    : `${value.slice(0, front)}…${value.slice(-back)}`;
+function formatBytes(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${bytes.toLocaleString('zh-CN')} 字节`;
+}
+
+function actionErrorLabel(reason: unknown): string {
+  const message = reason instanceof Error ? reason.message : String(reason ?? '');
+  if (/CRITERION_AND_COMMENT_REQUIRED/iu.test(message)) {
+    return '请选择评估项并填写说明。';
+  }
+  if (/FORBIDDEN|UNAUTHORIZED|ACCESS_DENIED|401|403/iu.test(message)) {
+    return '当前账户没有执行此操作的权限。';
+  }
+  if (/NOT_FOUND|404/iu.test(message)) {
+    return '当前事项或评估内容已不可用，请返回资料库重新进入。';
+  }
+  if (/REVISION|CONFLICT|STALE|409|VERSION/iu.test(message)) {
+    return '当前事项已产生新版本，请刷新后基于最新结果继续。';
+  }
+  return '操作未完成，请刷新当前事项后重试。';
 }
 
 const DEFAULT_READER_QUERY = 'applicability';
@@ -109,13 +126,39 @@ const WORKBENCH_TABS: Array<{
   key: WorkbenchNode;
   label: string;
   mobileLabel?: string;
+  mobileOrder?: number;
+  icon?: ReactNode;
 }> = [
-  { key: 'assessment', label: '综合评估', mobileLabel: '概述' },
-  { key: 'package', label: '解析结果' },
-  { key: 'reader', label: 'PDF 原文', mobileLabel: '原文' },
-  { key: 'overall', label: '分析过程', mobileLabel: '活动' },
-  { key: 'review', label: '复核意见', mobileLabel: '评估' },
-  { key: 'aeo', label: 'AEO 候选' },
+  {
+    key: 'assessment',
+    label: '综合评估',
+    mobileLabel: '总体',
+    mobileOrder: 1,
+    icon: <Sparkles aria-hidden="true" />,
+  },
+  { key: 'package', label: '解析结果', icon: <Waypoints aria-hidden="true" /> },
+  {
+    key: 'reader',
+    label: 'PDF 原文',
+    mobileLabel: '原文',
+    mobileOrder: 2,
+    icon: <FileText aria-hidden="true" />,
+  },
+  {
+    key: 'overall',
+    label: '分析过程',
+    mobileLabel: '动态',
+    mobileOrder: 4,
+    icon: <Activity aria-hidden="true" />,
+  },
+  {
+    key: 'review',
+    label: '复核意见',
+    mobileLabel: '复核',
+    mobileOrder: 3,
+    icon: <ClipboardCheck aria-hidden="true" />,
+  },
+  { key: 'aeo', label: 'AEO 候选', icon: <FileText aria-hidden="true" /> },
 ];
 
 function getWorkbenchNode(value: string | null): WorkbenchNode {
@@ -136,6 +179,7 @@ function getWorkbenchNode(value: string | null): WorkbenchNode {
 
 export default function DocumentParsingPage() {
   const currentUser = useCurrentUserProfile();
+  const navigate = useNavigate();
   const actorSignal: string = String(currentUser.user_id ?? '').trim();
   const actorSignalRef = useRef<string>(actorSignal);
   actorSignalRef.current = actorSignal;
@@ -262,16 +306,21 @@ export default function DocumentParsingPage() {
         : NODE_TARGETS[activeNode];
     const target: HTMLElement | null = document.getElementById(targetId);
     if (!target) return;
-    window.requestAnimationFrame(() =>
-      target.scrollIntoView({ behavior: 'smooth', block: 'start' }),
-    );
+    window.requestAnimationFrame(() => {
+      const reduceMotion = window.matchMedia(
+        '(prefers-reduced-motion: reduce)',
+      ).matches;
+      target.scrollIntoView({
+        behavior: reduceMotion ? 'auto' : 'smooth',
+        block: 'start',
+      });
+    });
   }, [activeNode, data, loading]);
 
   if (loading) {
     return (
       <LockedState
         title="正在读取当前工程事项…"
-        detail="FRESH_READ"
         role="status"
         ariaLive="polite"
       />
@@ -281,8 +330,9 @@ export default function DocumentParsingPage() {
     return (
       <LockedState
         title="暂时无法打开当前工程事项"
-        detail={error ?? 'CANONICAL_HOST_UNCONFIGURED'}
         role="alert"
+        onRetry={() => void load(activeQuery)}
+        onBack={() => navigate('/library')}
       />
     );
   }
@@ -320,7 +370,7 @@ export default function DocumentParsingPage() {
       reviewContext,
       selectedReviewCriterion,
     );
-  const fileLabel: string = `${data.workItem.classification.normalizedFamily} · ${short(data.workItem.source.sourceArtifactId, 20, 8)}`;
+  const fileLabel: string = `${data.workItem.classification.normalizedFamily} 工程资料`;
   /* §4.1 综合评估六要素视图：当前判断/适用范围/关键依据/未决问题/风险与影响/复核建议 */
   const workItemView = toWorkItemView(data);
 
@@ -346,9 +396,7 @@ export default function DocumentParsingPage() {
       await canonicalHost.confirmIntegratedOverallForAeo(workItemId);
       await load(activeQuery);
     } catch (cause) {
-      setAssessmentError(
-        cause instanceof Error ? cause.message : 'INTEGRATED_ASSESSMENT_FAILED',
-      );
+      setAssessmentError(actionErrorLabel(cause));
     } finally {
       setAssessmentAction(null);
     }
@@ -361,9 +409,7 @@ export default function DocumentParsingPage() {
       await canonicalHost.generateAeoCandidate(workItemId);
       await load(activeQuery);
     } catch (cause) {
-      setAssessmentError(
-        cause instanceof Error ? cause.message : 'AEO_CANDIDATE_FAILED',
-      );
+      setAssessmentError(actionErrorLabel(cause));
     } finally {
       setAssessmentAction(null);
     }
@@ -371,7 +417,7 @@ export default function DocumentParsingPage() {
 
   async function recordEngineerReview(): Promise<void> {
     if (!selectedReviewCriterion || !reviewComment.trim()) {
-      setAssessmentError('ENGINEER_REVIEW_CRITERION_AND_COMMENT_REQUIRED');
+      setAssessmentError('请选择评估项并填写说明。');
       return;
     }
     setReviewSubmitting(true);
@@ -393,7 +439,7 @@ export default function DocumentParsingPage() {
       if (/revision|conflict|409|version/i.test(message)) {
         setConflictMessage(message);
       } else {
-        setAssessmentError(message);
+        setAssessmentError(actionErrorLabel(cause));
       }
     } finally {
       setReviewSubmitting(false);
@@ -453,17 +499,19 @@ export default function DocumentParsingPage() {
           <header className="parse-masthead">
             <div>
               <p className="parse-eyebrow">
-                WISELINK 3.1 · WORKITEM / 文档与解析
+                当前工程事项 · 文档与解析
               </p>
-              <h1>一份文档，一条可追溯的解析链。</h1>
+              <h1>文档与解析结果</h1>
               <p className="parse-lede">
-                当前页面读取同一工程事项的最新结果；不会用示例数据替代真实内容，也不会自行形成工程结论。
+                当前页面读取同一工程事项的最新结果，并始终把综合意见标记为待复核候选。
               </p>
             </div>
             <div className="parse-state-seal">
-              <CheckCircle2 aria-hidden="true" />
-              <span>{data.status}</span>
-              <strong>{data.workItem.phase}</strong>
+              <ShieldCheck aria-hidden="true" />
+              <span>当前状态</span>
+              <strong>
+                {humanState(data.workItem.phase) ?? '候选结果待复核'}
+              </strong>
             </div>
           </header>
         ) : null}
@@ -545,54 +593,36 @@ export default function DocumentParsingPage() {
               <dl>
                 {pkg?.documentIdentity ? (
                   <div>
-                    <dt>Document code</dt>
+                    <dt>文件编号</dt>
                     <dd>{pkg.documentIdentity.documentCode}</dd>
                   </div>
                 ) : null}
                 {pkg?.documentIdentity?.businessRevision ? (
                   <div>
-                    <dt>Revision</dt>
+                    <dt>文件版本</dt>
                     <dd>{pkg.documentIdentity.businessRevision}</dd>
                   </div>
                 ) : null}
                 <div>
-                  <dt>文件版本</dt>
-                  <dd>
-                    {short(data.workItem.source.documentVersionId, 24, 8)}
-                  </dd>
-                </div>
-                <div>
-                  <dt>来源文件</dt>
-                  <dd>{short(data.workItem.source.sourceArtifactId, 24, 8)}</dd>
-                </div>
-                <div>
-                  <dt>字节</dt>
-                  <dd>
-                    {data.workItem.source.sourceByteLength.toLocaleString()}
-                  </dd>
-                </div>
-                <div>
-                  <dt>SHA-256</dt>
-                  <dd>{short(data.workItem.source.sourceFileSha256)}</dd>
+                  <dt>文件大小</dt>
+                  <dd>{formatBytes(data.workItem.source.sourceByteLength)}</dd>
                 </div>
               </dl>
             </article>
 
             <article className="parse-panel parse-metric-card">
               <div className="parse-panel-label">
-                <Waypoints /> 分类与路由
+                <Waypoints /> 文件分类
               </div>
               <div className="parse-family">{data.entry.normalizedFamily}</div>
-              <p>{data.workItem.classification.parserProfileId}</p>
               <span className="parse-tag">
-                {data.workItem.classification.status}
-              </span>
-              <span className="parse-tag">
-                {pkg?.contractRevision ?? 'NO PACKAGE'}
+                {data.workItem.classification.status === 'CONFIRMED'
+                  ? '分类已确认'
+                  : '分类待确认'}
               </span>
               {referenceOnly ? (
                 <span className="parse-tag parse-reference-tag">
-                  REFERENCE ONLY
+                  仅供参考
                 </span>
               ) : null}
             </article>
@@ -611,9 +641,11 @@ export default function DocumentParsingPage() {
               </div>
               <p>
                 结果状态：
-                {usagePolicy?.qualityStatus ??
-                  pkg?.resultStatus.toUpperCase() ??
-                  data.workItem.phase}
+                {usagePolicy?.qualityStatus === 'NEEDS_REVIEW'
+                  ? '需要人工核对'
+                  : pkg?.resultStatus === 'complete'
+                    ? '解析结果完整'
+                    : humanState(data.workItem.phase) ?? '待确认'}
               </p>
             </article>
           </section>
@@ -625,50 +657,51 @@ export default function DocumentParsingPage() {
             id="workspace-package"
           >
             <div className="parse-panel-label">
-              <Fingerprint /> Unified Parsed Package
+              <Fingerprint /> 解析结果
             </div>
-            <h3>{short(pkg?.packageId ?? 'NO_PACKAGE_RECORDED', 36, 14)}</h3>
+            <h3>{pkg ? '结构化内容已形成' : '解析结果尚未形成'}</h3>
             {pkg ? (
               <div className="parse-hash-stack">
                 <p>
-                  <span>content</span>
-                  {short(pkg.contentHash)}
+                  <span>内容单元</span>
+                  {pkg.contentUnitCount.toLocaleString('zh-CN')} 项
                 </p>
                 <p>
-                  <span>semantic</span>
-                  {short(pkg.semanticHash)}
+                  <span>来源依据</span>
+                  {pkg.sourceRefCount.toLocaleString('zh-CN')} 条
                 </p>
                 <p>
-                  <span>provenance</span>
-                  {short(pkg.provenanceHash)}
+                  <span>解析状态</span>
+                  {pkg.resultStatus === 'complete' ? '完整' : '部分完成'}
                 </p>
                 <p>
-                  <span>coverage</span>
-                  {short(pkg.coverageHash)}
+                  <span>质量核对</span>
+                  {usagePolicy?.qualityStatus === 'NEEDS_REVIEW'
+                    ? '需要人工核对'
+                    : '当前无阻断'}
                 </p>
               </div>
             ) : (
               <p className="parse-empty">
-                {data.workItem.failure?.failureCode ??
-                  data.workItem.recordingFailure?.failureCode ??
-                  'PACKAGE_NOT_READY'}
+                {data.workItem.failure || data.workItem.recordingFailure
+                  ? '解析未完成，请刷新或联系支持人员。'
+                  : '文件正在等待解析。'}
               </p>
             )}
             <div className="parse-candidate-warning">
-              <AlertTriangle /> 当前结果是 DEV 候选解析包；未切
-              production/current， 不生成适用性或工程结论。
+              <AlertTriangle /> 当前为候选解析结果，需工程师核对；不会自动生成或发布正式工程结论。
             </div>
             {referenceOnly && usagePolicy ? (
               <div className="parse-reference-boundary">
-                <strong>REFERENCE ONLY · {usagePolicy.qualityStatus}</strong>
+                <strong>仅供参考 · 不自动采纳</strong>
                 <p>
-                  Applicability：
-                  {usagePolicy.applicability.sourceExpressionCount} source
-                  expression /{' '}
-                  {usagePolicy.applicability.normalizedCandidateCount} candidate
-                  / {usagePolicy.applicability.assignmentCount} assignment
+                  已识别 {usagePolicy.applicability.sourceExpressionCount}{' '}
+                  条适用性表达，形成{' '}
+                  {usagePolicy.applicability.normalizedCandidateCount}{' '}
+                  条候选，其中 {usagePolicy.applicability.assignmentCount}{' '}
+                  条已有受控关联。
                 </p>
-                <small>Assessment 自动采纳：禁止 · AEO 自动采纳：禁止</small>
+                <small>评估与后续编写均需工程师确认。</small>
               </div>
             ) : null}
           </article>
@@ -720,21 +753,20 @@ export default function DocumentParsingPage() {
               aria-label="工程评估工作台"
             >
               <div className="parse-panel-label">
-                <ClipboardCheck /> 工程评估工作台 · OpenClaw 动态 N + 整体综合
-                · 判断、依据与复核
+                <ClipboardCheck aria-hidden="true" /> 工程评估工作台 · 判断、依据与复核
               </div>
               <OverallAssessmentHero
                 view={workItemView}
                 onOpenWorkbench={() =>
                   updateDeepLink({ node: 'review', tab: 'review' })
                 }
-                onViewEvidence={() =>
+                onViewEvidence={(sourceRefId) =>
                   updateDeepLink({
                     node: 'reader',
                     tab: 'reader',
                     readerMode: 'structured',
                     unit: null,
-                    sourceRef: null,
+                    sourceRef: sourceRefId ?? null,
                   })
                 }
               />
@@ -792,7 +824,7 @@ export default function DocumentParsingPage() {
                               {finding.sourceRefIds.length ? (
                                 <div className="parse-finding-sources">
                                   <span>来源定位</span>
-                                  {finding.sourceRefIds.map((sourceRef) => (
+                                  {finding.sourceRefIds.map((sourceRef, index) => (
                                     <button
                                       type="button"
                                       key={sourceRef}
@@ -806,7 +838,7 @@ export default function DocumentParsingPage() {
                                         })
                                       }
                                     >
-                                      {sourceRef}
+                                      依据 {index + 1}
                                     </button>
                                   ))}
                                 </div>
@@ -885,9 +917,10 @@ export default function DocumentParsingPage() {
                         <h3>逐项规则候选</h3>
                         <dl>
                           <div>
-                            <dt>规则集</dt>
+                            <dt>当前状态</dt>
                             <dd>
-                              {integratedAssessment.baseRules.criterionSetId}
+                              {humanState(integratedAssessment.baseRules.status) ??
+                                '待评估'}
                             </dd>
                           </div>
                           <div>
@@ -915,44 +948,8 @@ export default function DocumentParsingPage() {
                               {integratedAssessment.baseRules.unresolvedCount}
                             </dd>
                           </div>
-                          <div>
-                            <dt>执行记录</dt>
-                            <dd>
-                              {short(
-                                integratedAssessment.baseRules.actionAttemptId,
-                                24,
-                                8,
-                              )}
-                            </dd>
-                          </div>
-                          <div>
-                            <dt>实际字节证据</dt>
-                            <dd
-                              title={
-                                integratedAssessment.baseRules.artifact.ref
-                              }
-                            >
-                              {short(
-                                integratedAssessment.baseRules.artifact.sha256,
-                                22,
-                                10,
-                              )}{' '}
-                              ·{' '}
-                              {integratedAssessment.baseRules.artifact.byteLength.toLocaleString()}{' '}
-                              bytes
-                            </dd>
-                          </div>
                         </dl>
-                        <small
-                          title={integratedAssessment.baseRules.sourceResultId}
-                        >
-                          source result ·{' '}
-                          {short(
-                            integratedAssessment.baseRules.sourceResultId,
-                            28,
-                            10,
-                          )}
-                        </small>
+                        <small>所有数量均来自当前事项的最新受控投影。</small>
                       </article>
 
                       <article>
@@ -962,9 +959,9 @@ export default function DocumentParsingPage() {
                           <>
                             <dl>
                               <div>
-                                <dt>基于动态结果</dt>
+                                <dt>基于逐项评估</dt>
                                 <dd>
-                                  revision{' '}
+                                  版本 r
                                   {
                                     integratedAssessment.overallSynthesis
                                       .basedOnBaseRuleRevision
@@ -972,7 +969,7 @@ export default function DocumentParsingPage() {
                                 </dd>
                               </div>
                               <div>
-                                <dt>findings / refs</dt>
+                                <dt>判断 / 来源依据</dt>
                                 <dd>
                                   {
                                     integratedAssessment.overallSynthesis
@@ -997,66 +994,41 @@ export default function DocumentParsingPage() {
                               <div>
                                 <dt>缺口</dt>
                                 <dd>
-                                  {integratedAssessment.overallSynthesis.gap ??
-                                    'NONE'}
+                                  {integratedAssessment.overallSynthesis.gap
+                                    ? '仍有待补信息'
+                                    : '当前无明确缺口'}
                                 </dd>
                               </div>
                               <div>
-                                <dt>调查边界</dt>
+                                <dt>资料调查</dt>
                                 <dd>
-                                  {
+                                  {humanState(
                                     integratedAssessment.overallSynthesis
-                                      .discoveryStatus
-                                  }{' '}
-                                  · discovery is evidence={' '}
-                                  {String(
-                                    integratedAssessment.overallSynthesis
-                                      .externalDiscoveryIsEvidence,
-                                  )}
-                                </dd>
-                              </div>
-                              <div>
-                                <dt>实际字节证据</dt>
-                                <dd
-                                  title={
-                                    integratedAssessment.overallSynthesis
-                                      .artifact.ref
-                                  }
-                                >
-                                  {short(
-                                    integratedAssessment.overallSynthesis
-                                      .artifact.sha256,
-                                    22,
-                                    10,
-                                  )}{' '}
-                                  ·{' '}
-                                  {integratedAssessment.overallSynthesis.artifact.byteLength.toLocaleString()}{' '}
-                                  bytes
+                                      .discoveryStatus,
+                                  ) ?? '状态待确认'}
+                                  {' · '}
+                                  {integratedAssessment.overallSynthesis
+                                    .externalDiscoveryIsEvidence
+                                    ? '已采纳资料可作为依据'
+                                    : '外部资料尚未作为判断依据'}
                                 </dd>
                               </div>
                             </dl>
-                            <small
-                              title={
-                                integratedAssessment.overallSynthesis
-                                  .actionAttemptId
-                              }
-                            >
-                              分析任务 ·{' '}
-                              {short(
-                                integratedAssessment.overallSynthesis
-                                  .actionAttemptId,
-                                28,
-                                10,
-                              )}{' '}
-                              · stale={' '}
-                              {integratedAssessment.overallSynthesis
-                                .staleReason ?? 'NONE'}
+                            <small>
+                              {integratedAssessment.overallSynthesis.staleReason
+                                ? `当前意见需更新（${staleReasonLabel(
+                                    integratedAssessment.overallSynthesis
+                                      .staleReason as
+                                      | 'BASE_RULE_RESULT_CHANGED'
+                                      | 'ENGINEER_REVIEW_CHANGED',
+                                  )}）`
+                                : '当前意见仍是候选，需工程师确认。'}
                             </small>
                           </>
                         ) : (
                           <p>
                             尚无整体候选。分析任务需要先读取完整逐项评估输入，
-                            再根据明确缺口选择相关资料来源；页面不会自行补造调查结果。
+                            再根据明确缺口选择相关资料来源。
                           </p>
                         )}
                       </article>
@@ -1068,17 +1040,7 @@ export default function DocumentParsingPage() {
                     integratedAssessment.overallForAeoConfirmation ? (
                       <div className="parse-aeo-ready-action">
                         <p>
-                          已由工程师显式确认用于 AEO 候选输入 ·{' '}
-                          {
-                            integratedAssessment.overallForAeoConfirmation
-                              .confirmedAt
-                          }{' '}
-                          · 事项版本{' '}
-                          {
-                            integratedAssessment.overallForAeoConfirmation
-                              .workItemRevision
-                          }
-                          。该确认不等于工程批准或发布。
+                          工程师确认已记录，可用于形成后续编写候选。该确认不等于工程批准或发布。
                         </p>
                         {!aeo ? (
                           <Button
@@ -1088,7 +1050,7 @@ export default function DocumentParsingPage() {
                           >
                             {assessmentAction === 'GENERATE_AEO_CANDIDATE'
                               ? '正在生成 AEO 候选…'
-                              : '生成AEO候选'}
+                              : '生成 AEO 候选'}
                           </Button>
                         ) : null}
                       </div>
@@ -1108,8 +1070,7 @@ export default function DocumentParsingPage() {
               ) : (
                 <div className="parse-assessment-empty">
                   <p>
-                    WAITING_OPENCLAW_DYNAMIC_EVALUATION：逐项评估尚未形成。
-                    完成当前规则要求的评估后，这里会显示真实结果；页面不会用固定数量或示例数据代替。
+                    逐项评估尚未形成。完成当前规则要求的评估后，这里会显示最新结果。
                   </p>
                 </div>
               )}
@@ -1132,9 +1093,11 @@ export default function DocumentParsingPage() {
                     查看历史逐项评估（只读）
                   </summary>
                   <p>
-                    {assessment.status} · {assessment.criterionCount} 项 ·{' '}
-                    {assessment.applicabilityOverall} · stale=
-                    {assessment.staleReason ?? 'NONE'}
+                    {humanState(assessment.status) ?? '状态待确认'} ·{' '}
+                    {assessment.criterionCount} 项 ·{' '}
+                    {humanState(assessment.applicabilityOverall) ??
+                      '适用性待确认'}{' '}
+                    · {assessment.staleReason ? '结论需更新' : '历史候选'}
                   </p>
                 </details>
               ) : null}
@@ -1151,7 +1114,7 @@ export default function DocumentParsingPage() {
               aria-label="工程评估工作台"
             >
               <div className="parse-panel-label">
-                <ClipboardCheck /> 工程评估工作台 · 判断、依据与复核
+                <ClipboardCheck aria-hidden="true" /> 工程评估工作台 · 判断、依据与复核
               </div>
               <OverallAssessmentHero
                 view={workItemView}
@@ -1163,13 +1126,13 @@ export default function DocumentParsingPage() {
                     readerMode: 'structured',
                   })
                 }
-                onViewEvidence={() =>
+                onViewEvidence={(sourceRefId) =>
                   updateDeepLink({
                     node: 'reader',
                     tab: 'reader',
                     readerMode: 'structured',
                     unit: null,
-                    sourceRef: null,
+                    sourceRef: sourceRefId ?? null,
                   })
                 }
               />
@@ -1217,8 +1180,8 @@ export default function DocumentParsingPage() {
               >
                 <header>
                   <div>
-                    <span>CRITERION SET · FRESH PROJECTION</span>
-                    <h3>{reviewContext.criterionSetId}</h3>
+                    <span>当前逐项评估</span>
+                    <h3>判断、依据与复核</h3>
                   </div>
                   <strong>{reviewContext.items.length} 项</strong>
                 </header>
@@ -1245,13 +1208,15 @@ export default function DocumentParsingPage() {
                         <span className="parse-criterion-card-id">
                           {item.criterionId}
                         </span>
-                        <strong>{item.dynamicResult}</strong>
+                        <strong>
+                          {humanState(item.dynamicResult) ?? item.dynamicResult}
+                        </strong>
                         <p>{item.candidateConclusion}</p>
                         <small>
                           {item.humanReviewRequired
                             ? '需人工复核'
                             : '当前无人工复核标记'}{' '}
-                          · {reviewState}
+                          · {humanState(reviewState) ?? '待复核'}
                         </small>
                       </button>
                     );
@@ -1299,7 +1264,7 @@ export default function DocumentParsingPage() {
                     {selectedReviewItem.sourceRefs?.length ? (
                       <div className="parse-criterion-sources">
                         <span>来源定位</span>
-                        {selectedReviewItem.sourceRefs.map((sourceRef) => (
+                        {selectedReviewItem.sourceRefs.map((sourceRef, index) => (
                           <button
                             type="button"
                             key={sourceRef}
@@ -1313,7 +1278,7 @@ export default function DocumentParsingPage() {
                               })
                             }
                           >
-                            {sourceRef}
+                            原文依据 {index + 1}
                           </button>
                         ))}
                       </div>
@@ -1335,7 +1300,7 @@ export default function DocumentParsingPage() {
                   </strong>
                 </header>
                 <p>
-                  保存只记录人的判断，不运行模型；保存只记录工程师判断，不会直接改写逐项评估结果。
+                  保存只记录工程师判断，不运行模型，也不会直接改写逐项评估结果。
                   保存后当前整体候选会标记为需更新，再由分析任务明确重新综合。
                 </p>
                 <p className="parse-review-mobile-hint" role="note">
@@ -1359,7 +1324,8 @@ export default function DocumentParsingPage() {
                           key={item.criterionId}
                           value={item.criterionId}
                         >
-                          {item.criterionId} · {item.dynamicResult}
+                          {item.criterionId} ·{' '}
+                          {humanState(item.dynamicResult) ?? item.dynamicResult}
                         </NativeSelectOption>
                       ))}
                     </NativeSelect>
@@ -1402,9 +1368,7 @@ export default function DocumentParsingPage() {
                     disabled={reviewSubmitting}
                     onClick={() => {
                       if (!selectedReviewCriterion || !reviewComment.trim()) {
-                        setAssessmentError(
-                          'ENGINEER_REVIEW_CRITERION_AND_COMMENT_REQUIRED',
-                        );
+                        setAssessmentError('请选择评估项并填写说明。');
                         return;
                       }
                       setAssessmentError(null);
@@ -1421,7 +1385,7 @@ export default function DocumentParsingPage() {
                   .map((item) => (
                     <p key={item.criterionId} className="parse-review-latest">
                       <strong>{item.criterionId}</strong> ·{' '}
-                      {item.latestReview!.decision} ·{' '}
+                      {REVIEW_DECISION_LABELS[item.latestReview!.decision]} ·{' '}
                       {item.latestReview!.comment}
                     </p>
                   ))}
@@ -1445,7 +1409,6 @@ export default function DocumentParsingPage() {
           aeo ? (
             <AeoAuthoringWorkspace
               workItemId={workItemId}
-              workItemRevision={data.workItem.revision}
               aeo={aeo}
               integratedAssessment={integratedAssessment}
             />
@@ -1567,9 +1530,10 @@ export default function DocumentParsingPage() {
 
 function LockedState(props: {
   title: string;
-  detail: string;
   role?: 'status' | 'alert';
   ariaLive?: 'polite' | 'assertive';
+  onRetry?: () => void;
+  onBack?: () => void;
 }) {
   return (
     <main
@@ -1585,12 +1549,22 @@ function LockedState(props: {
         <p className="parse-locked-guidance">
           {props.role === 'status'
             ? '正在获取当前文件、评估与依据，请稍候。'
-            : '请确认事项链接和访问权限后重试。当前页面不会用历史或示例结果代替。'}
+            : '请确认工作链接和访问权限后重试。'}
         </p>
-        <details className="parse-locked-diagnostics">
-          <summary>查看诊断信息</summary>
-          <code>{props.detail}</code>
-        </details>
+        {props.role === 'alert' ? (
+          <div className="parse-locked-actions">
+            {props.onRetry ? (
+              <Button type="button" onClick={props.onRetry}>
+                <RefreshCw aria-hidden="true" /> 重试读取
+              </Button>
+            ) : null}
+            {props.onBack ? (
+              <Button type="button" variant="outline" onClick={props.onBack}>
+                返回资料库
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
       </section>
     </main>
   );

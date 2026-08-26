@@ -41,7 +41,9 @@ describe('Phase 13C production path', () => {
     expect(controller).toContain(
       'work-items/:workItemId/integrated-assessment/engineer-reviews',
     );
-    expect(client).toContain('保存只记录人的判断，不运行模型');
+    expect(client).toContain(
+      '保存只记录工程师判断，不运行模型，也不会直接改写逐项评估结果',
+    );
     const openClawMcp = await source(
       'server/modules/canonical-host/canonical-host-openclaw-mcp.service.ts',
     );
@@ -62,10 +64,11 @@ describe('Phase 13C production path', () => {
     expect(client).not.toContain('phase10-aeo-candidate-loop-trigger');
     expect(client).toContain('integratedAssessment.baseRules');
     expect(client).toContain('integratedAssessment.overallSynthesis');
-    expect(client).toContain('WAITING_OPENCLAW_DYNAMIC_EVALUATION');
+    expect(client).not.toContain('WAITING_OPENCLAW_DYNAMIC_EVALUATION');
     expect(client).not.toContain('运行 Base 固定规则评估');
     expect(client).not.toContain('运行 OpenClaw 整体候选综合');
-    expect(client).toContain('OpenClaw 动态 N + 整体综合');
+    expect(client).toContain('工程评估工作台 · 判断、依据与复核');
+    expect(client).not.toContain('OpenClaw 动态 N + 整体综合');
     expect(externalModule).not.toContain('ExternalDiscoveryAutomation');
     expect(externalModule).not.toContain('@Automation');
     expect(assets).not.toContain('phase10-aeo');

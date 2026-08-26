@@ -57,29 +57,52 @@ export function kindLabel(kind: CanonicalLibraryIndexNodeKind): string {
   return KIND_LABELS[kind] ?? kind;
 }
 
-function stateTone(state: string | undefined): NavigationNodeView['badgeTone'] {
+function stateTone(
+  state: string | undefined,
+): NavigationNodeView['badgeTone'] {
   if (!state) return undefined;
   const upper = state.toUpperCase();
-  if (upper.includes('STALE') || upper.includes('WAITING')) return 'amber';
+  if (upper.includes('CANDIDATE') || upper.includes('HUMAN_CONFIRMED')) {
+    return 'accent';
+  }
+  if (
+    upper.includes('STALE') ||
+    upper.includes('WAITING') ||
+    upper.includes('REVIEW_REQUIRED')
+  ) {
+    return 'amber';
+  }
   if (upper.includes('FAILED') || upper.includes('CONFLICT')) return 'red';
-  if (upper.includes('READY') || upper.includes('VERIFIED')) return 'green';
+  if (
+    upper.includes('OBSOLETE') ||
+    upper.includes('SUPERSEDED') ||
+    upper.includes('CANCELLED')
+  ) {
+    return 'muted';
+  }
+  // 绿色只保留给正式系统回读；任务成功、候选就绪和人工确认都不是正式结论。
+  if (upper.includes('FORMAL_READBACK')) return 'green';
   return 'muted';
 }
+
+const INTERNAL_TEXT_PATTERN =
+  /OPENCLAW|ACTIONATTEMPT|SHA-?256|\b[0-9a-f]{40,64}\b|\b[0-9a-f]{8}-[0-9a-f-]{27,}\b|\b[A-Z][A-Z0-9_]{3,}\b/iu;
 
 /** 节点人话化标签：优先去技术化 */
 function humanLabel(node: CanonicalLibraryIndexNode): string {
   const label = node.label?.trim();
-  if (label && /openclaw/i.test(label)) {
+  if (label && INTERNAL_TEXT_PATTERN.test(label)) {
     return KIND_LABELS[node.kind] || '动态综合评估';
   }
   if (label && /document\s*version/i.test(label)) return '当前文件版本';
   if (label && /work\s*item/i.test(label)) return '当前工程事项';
-  return label || KIND_LABELS[node.kind] || node.id;
+  return label || KIND_LABELS[node.kind] || '资料节点';
 }
 
 function humanDetail(detail: string | undefined): string | undefined {
   if (!detail) return undefined;
-  return detail
+  if (INTERNAL_TEXT_PATTERN.test(detail)) return undefined;
+  const translated = detail
     .replace(/\bunits?\b/gi, '个内容单元')
     .replace(/\bcriteria\b/gi, '个评估项')
     .replace(/\bfindings?\b/gi, '项判断')
@@ -87,6 +110,7 @@ function humanDetail(detail: string | undefined): string | undefined {
     .replace(/\brefs?\b/gi, '条依据')
     .replace(/\brevision\b/gi, '版本')
     .replace(/\bfrozen\./gi, '冻结版本 ');
+  return INTERNAL_TEXT_PATTERN.test(translated) ? undefined : translated;
 }
 
 /* ── 模式 A：按文档分组（保留 Host 层级，parentId 组树） ── */
@@ -191,7 +215,8 @@ export function buildMatterTree(
 
   for (const group of MATTER_GROUPS) {
     const members = others.filter((n) => group.kinds.includes(n.kind));
-    // 每个分组节点都渲染：无成员时显示计数 0 与不可选空态（诚实降级）
+    // 只呈现 Host 实际返回的分组，避免把尚未开放的能力伪装成待办节点。
+    if (members.length === 0) continue;
     root.children!.push({
       id: `${root.id}::${group.key}`,
       kind: 'virtual' as const,
@@ -266,37 +291,65 @@ function mapKind(kind: CanonicalLibraryIndexNodeKind): NavigatorNodeKind {
 export function humanState(state: string | undefined): string | undefined {
   if (!state) return undefined;
   const upper = state.toUpperCase();
-  const table: Record<string, string> = {
-    APPLICABLE_WITH_GAPS: '有条件适用',
-    INVESTIGATED_WITH_GAPS: '已分析，仍有缺口',
-    HUMAN_REVIEW_RECORDED: '已记录复核',
-    NOT_APPLICABLE: '不适用',
-    APPLICABLE: '适用',
-    STALE: '结论需更新',
-    CURRENT: '当前有效',
-    CANDIDATE: '候选意见',
-    CANDIDATE_ONLY: '候选意见',
-    READY: '已就绪',
-    RUNNING: '进行中',
+  const exact: Record<string, string> = {
     QUEUED: '已排队',
+    RUNNING: '进行中',
     WAITING_INPUT: '还需补充资料',
-    FAILED: '未完成',
+    REVIEW_REQUIRED: '待人工复核',
+    STALE: '结论需更新',
     CONFLICT: '基于旧版本',
     OBSOLETE: '已被新版本替代',
-    VERIFIED: '已回读验证',
-    AVAILABLE: '可查看',
-    BOUND: '已关联',
-    COMPLETED: '已完成',
-    CONFIRMED: '已确认',
-    SUPERSEDED: '已被替代',
-    UNAVAILABLE: '暂无数据',
-    NOT_CONNECTED: '未连接',
-    PENDING: '待处理',
+    CANCELLED: '已取消',
+    CANDIDATE_READY: '候选可复核',
+    CANDIDATE_ONLY: '候选待确认',
+    NEEDS_REVIEW: '待人工复核',
+    HUMAN_CONFIRMED: '人工确认已记录',
+    REVIEWED: '已记录复核',
+    SUCCEEDED: '处理已结束，结果待复核',
+    COMPLETED: '处理已结束',
+    FAILED: '未完成',
+    PASS: '通过候选',
+    FAIL: '未通过候选',
+    UNKNOWN: '信息不足',
+    UNCERTAIN: '仍需确认',
   };
-  for (const [token, label] of Object.entries(table)) {
+  if (exact[upper]) return exact[upper];
+  const table: ReadonlyArray<readonly [string, string]> = [
+    ['APPLICABLE_WITH_GAPS', '有条件适用'],
+    ['INVESTIGATED_WITH_GAPS', '已分析，仍有缺口'],
+    ['HUMAN_REVIEW_RECORDED', '已记录复核'],
+    ['HUMAN_CONFIRMED', '人工确认已记录'],
+    ['WAITING_INPUT', '还需补充资料'],
+    ['REVIEW_REQUIRED', '待人工复核'],
+    ['CANDIDATE_READY', '候选可复核'],
+    ['CANDIDATE_ONLY', '候选待确认'],
+    ['NOT_APPLICABLE', '不适用'],
+    ['APPLICABLE', '适用'],
+    ['CONFLICT', '基于旧版本'],
+    ['STALE', '结论需更新'],
+    ['OBSOLETE', '已被新版本替代'],
+    ['SUPERSEDED', '已被替代'],
+    ['CANCELLED', '已取消'],
+    ['FAILED', '未完成'],
+    ['RUNNING', '进行中'],
+    ['QUEUED', '已排队'],
+    ['SUCCEEDED', '处理已结束，结果待复核'],
+    ['COMPLETED', '处理已结束'],
+    ['CURRENT', '当前有效'],
+    ['CANDIDATE', '候选待确认'],
+    ['VERIFIED', '已回读验证'],
+    ['AVAILABLE', '可查看'],
+    ['BOUND', '已关联'],
+    ['CONFIRMED', '已确认'],
+    ['READY', '可继续'],
+    ['UNAVAILABLE', '暂无数据'],
+    ['NOT_CONNECTED', '未连接'],
+    ['PENDING', '待处理'],
+  ];
+  for (const [token, label] of table) {
     if (upper.includes(token)) return label;
   }
-  return state;
+  return /[\u3400-\u9fff]/u.test(state) ? state : '状态待确认';
 }
 
 /** 客户端搜索过滤：命中节点的祖先链保留 */

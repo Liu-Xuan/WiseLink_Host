@@ -5,6 +5,7 @@ import type {
   CanonicalTimelineEvent,
   CanonicalTimelineProjection,
 } from '@shared/api.interface';
+import { humanState } from '@client/src/features/navigation/treeMappers';
 
 import './review-loop.css';
 
@@ -37,8 +38,33 @@ function kindLabel(kind: CanonicalTimelineEvent['kind']): string {
     case 'FAILURE':
       return '失败';
     default:
-      return kind;
+      return '状态变化';
   }
+}
+
+function safeDetail(detail: string | null | undefined): string | null {
+  const value = detail?.trim() ?? '';
+  if (
+    !value ||
+    /OPENCLAW|ACTIONATTEMPT|SHA-?256|\b[0-9a-f]{40,64}\b|\b[0-9a-f]{8}-[0-9a-f-]{27,}\b|\b[A-Z][A-Z0-9_]{3,}\b/iu.test(
+      value,
+    )
+  ) {
+    return null;
+  }
+  return value.slice(0, 240);
+}
+
+function occurredAtLabel(value: string | null): string {
+  if (!value) return '时间未提供';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return '时间未提供';
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(parsed);
 }
 
 /**
@@ -62,9 +88,7 @@ export default function RevisionTimeline({
           <span>版本时间线 · 只读</span>
           <strong>版本与复核时间线</strong>
         </div>
-        <small>
-          {timeline.events.length} 条事件 · {timeline.boundary.note}
-        </small>
+        <small>{timeline.events.length} 条可核验记录</small>
       </header>
       <ul className="wl-revision-timeline">
         {events.length === 0 ? (
@@ -75,7 +99,7 @@ export default function RevisionTimeline({
             </div>
           </li>
         ) : (
-          events.map((event) => (
+          events.map((event, index) => (
             <li
               key={event.id}
               className={[
@@ -86,18 +110,22 @@ export default function RevisionTimeline({
                 .join(' ')}
             >
               <span className="wl-revision-timeline-dot">
-                {event.sequence % 100}
+                {events.length - index}
               </span>
               <div className="wl-revision-timeline-body">
                 <header>
-                  <strong>{event.label || kindLabel(event.kind)}</strong>
-                  <code>{event.status}</code>
+                  <strong>{kindLabel(event.kind)}</strong>
+                  <span className="wl-revision-state">
+                    {humanState(event.status) ?? '状态待确认'}
+                  </span>
                   {event.revision !== null ? (
-                    <code>rev {event.revision}</code>
+                    <span className="wl-revision-state">
+                      版本 {event.revision}
+                    </span>
                   ) : null}
-                  <small>{event.occurredAt ?? '时间未提供'}</small>
+                  <small>{occurredAtLabel(event.occurredAt)}</small>
                 </header>
-                {event.detail ? <p>{event.detail}</p> : null}
+                {safeDetail(event.detail) ? <p>{safeDetail(event.detail)}</p> : null}
               </div>
             </li>
           ))

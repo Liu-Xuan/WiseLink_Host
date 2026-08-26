@@ -1,6 +1,4 @@
-import { useState } from 'react';
 import {
-  ChevronDown,
   FileSearch2,
   Link2,
   ListChecks,
@@ -28,10 +26,9 @@ export default function OverallAssessmentHero({
 }: {
   view: WorkItemView;
   onOpenWorkbench: () => void;
-  onViewEvidence?: () => void;
+  onViewEvidence?: (sourceRefId?: string) => void;
   primaryActionLabel?: string;
 }) {
-  const [techOpen, setTechOpen] = useState(false);
   const overall = view.overall;
   const staleLabel = staleReasonLabel(
     (
@@ -43,6 +40,12 @@ export default function OverallAssessmentHero({
       }
     )?.staleReason ?? null,
   );
+  const authorityLabel =
+    view.authority === 'engineer_confirmed'
+      ? 'AI 初步意见 · 人工确认已记录'
+      : view.authority === 'formal_readback'
+        ? '正式系统回读结果'
+        : 'AI 初步意见 · 待工程师复核';
 
   if (!overall) {
     return (
@@ -52,9 +55,7 @@ export default function OverallAssessmentHero({
       >
         <Sparkles className="wl-overall-empty-icon" aria-hidden="true" />
         <h2>综合评估尚未形成</h2>
-        <p>
-          完成文件解析与必要评估后，综合意见会在这里显示。当前不会用示例内容代替真实结果。
-        </p>
+        <p>完成文件解析与必要评估后，综合意见会在这里显示。</p>
       </section>
     );
   }
@@ -67,13 +68,13 @@ export default function OverallAssessmentHero({
       <header className="wl-overall-head">
         <div>
           <p className="wl-overall-eyebrow">
-            <Sparkles aria-hidden="true" /> AI 初步意见 · 待工程师确认
+            <Sparkles aria-hidden="true" /> {authorityLabel}
           </p>
           <h2>{view.title}</h2>
         </div>
         <div className="wl-overall-head-meta">
-          <span>基于本文件版本：{view.documentVersion}</span>
-          <span>评估版本 r{overall.revision}</span>
+          <span>基于当前受控文件版本</span>
+          <span>候选版本 r{overall.revision}</span>
           <span>
             {view.freshness === 'needs_update'
               ? `当前结论需更新${staleLabel ? `（${staleLabel}）` : ''}`
@@ -109,12 +110,12 @@ export default function OverallAssessmentHero({
                   <button
                     type="button"
                     className="wl-overall-evidence"
-                    onClick={onViewEvidence}
+                    onClick={() => onViewEvidence?.(evidence.sourceRefId)}
                   >
                     <Link2 aria-hidden="true" />
                     <span>{evidence.label}</span>
-                    {evidence.structurePath ? (
-                      <small>{evidence.structurePath}</small>
+                    {evidence.documentLabel ? (
+                      <small>{evidence.documentLabel}</small>
                     ) : null}
                   </button>
                 </li>
@@ -214,55 +215,15 @@ export default function OverallAssessmentHero({
           <FileSearch2 aria-hidden="true" /> {primaryActionLabel}
         </button>
         {onViewEvidence ? (
-          <button type="button" className="wl-btn" onClick={onViewEvidence}>
+          <button
+            type="button"
+            className="wl-btn"
+            onClick={() => onViewEvidence()}
+          >
             <Link2 aria-hidden="true" /> 查看依据
           </button>
         ) : null}
-        <span className="wl-overall-generated">本次结果未返回生成时间</span>
       </footer>
-
-      <details
-        className="wl-overall-tech"
-        onToggle={(e) => setTechOpen((e.target as HTMLDetailsElement).open)}
-      >
-        <summary>
-          <ChevronDown
-            className={techOpen ? 'is-open' : ''}
-            aria-hidden="true"
-          />
-          运行与版本详情（技术信息）
-        </summary>
-        <dl>
-          <div>
-            <dt>评估来源结果</dt>
-            <dd>{overall.technicalDetails?.sourceResultId ?? '未返回'}</dd>
-          </div>
-          <div>
-            <dt>基于基础规则版本</dt>
-            <dd>r{overall.technicalDetails?.basedOnBaseRuleRevision ?? '—'}</dd>
-          </div>
-          <div>
-            <dt>基于工程师复核版本</dt>
-            <dd>
-              {overall.technicalDetails?.basedOnEngineerReviewRevision != null
-                ? `r${overall.technicalDetails.basedOnEngineerReviewRevision}`
-                : '尚无工程师复核'}
-            </dd>
-          </div>
-          <div>
-            <dt>产物 SHA-256</dt>
-            <dd title={overall.technicalDetails?.artifactSha256}>
-              {overall.technicalDetails?.artifactSha256
-                ? `${overall.technicalDetails.artifactSha256.slice(0, 18)}…`
-                : '未返回'}
-            </dd>
-          </div>
-          <div>
-            <dt>分析任务</dt>
-            <dd>{overall.technicalDetails?.actionAttemptId ?? '未返回'}</dd>
-          </div>
-        </dl>
-      </details>
     </section>
   );
 }

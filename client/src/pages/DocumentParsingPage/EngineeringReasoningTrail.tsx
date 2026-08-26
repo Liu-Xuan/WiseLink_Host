@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 
 import type { CanonicalDocumentParsingPageResponse } from '@shared/api.interface';
+import { humanState } from '@client/src/features/navigation/treeMappers';
 
 interface EngineeringReasoningTrailProps {
   data: CanonicalDocumentParsingPageResponse;
@@ -18,7 +19,6 @@ interface TrailStep {
   label: string;
   status: string;
   detail: string;
-  evidence: string;
   done: boolean;
   icon: typeof FileSearch2;
 }
@@ -29,7 +29,6 @@ export function EngineeringReasoningTrail({
   const integrated = data.workItem.integratedAssessment ?? null;
   const dynamic = integrated?.baseRules ?? null;
   const overall = integrated?.overallSynthesis ?? null;
-  const audit = data.workbenchAudit;
   const timeline = data.timeline;
   const sourceRefCount: number = data.workItem.package?.sourceRefCount ?? 0;
   const unresolvedCount: number = dynamic?.unresolvedCount ?? 0;
@@ -38,57 +37,52 @@ export function EngineeringReasoningTrail({
   const steps: TrailStep[] = [
     {
       label: '锁定工程对象',
-      status: 'DOCUMENT_VERSION_BOUND',
-      detail: `${data.workItem.classification.normalizedFamily} · ${data.workItem.source.sourceByteLength.toLocaleString()} bytes`,
-      evidence: data.workItem.source.documentVersionId,
+      status: '当前文件版本已绑定',
+      detail: `${data.workItem.classification.normalizedFamily} · 当前受控文件`,
       done: true,
       icon: FileSearch2,
     },
     {
       label: '验证并建立来源定位',
       status: data.workItem.package
-        ? 'FROZEN_2_READER_READY'
-        : 'WAITING_PACKAGE',
+        ? '结构化原文可查看'
+        : '等待解析结果',
       detail: data.workItem.package
-        ? `${data.workItem.package.contentUnitCount} units · ${data.workItem.package.sourceRefCount} sourceRefs`
-        : '尚无可读 parsed package',
-      evidence: data.workItem.package?.artifact.sha256 ?? 'NO_PACKAGE_ARTIFACT',
+        ? `${data.workItem.package.contentUnitCount} 个内容单元 · ${data.workItem.package.sourceRefCount} 条来源依据`
+        : '尚无可读的结构化解析结果',
       done: Boolean(data.workItem.package),
       icon: BookOpenCheck,
     },
     {
       label: '执行当前规则集',
-      status: dynamic?.status ?? 'WAITING_OPENCLAW_DYNAMIC_EVALUATION',
+      status: humanState(dynamic?.status) ?? '等待逐项评估',
       detail: dynamic
-        ? `${dynamic.evaluationItemCount}/${dynamic.criterionCount} 项 · ${dynamic.unresolvedCount} unresolved`
-        : 'N 由当前规则集决定；不固定为 150',
-      evidence: dynamic?.artifact.sha256 ?? 'NO_DYNAMIC_ARTIFACT',
-      done: Boolean(dynamic),
+        ? `${dynamic.evaluationItemCount}/${dynamic.criterionCount} 项 · ${dynamic.unresolvedCount} 项未闭合`
+        : '当前尚未形成逐项评估结果',
+      done: Boolean(dynamic && /COMPLETE|CONFIRMED/iu.test(dynamic.status)),
       icon: SearchCheck,
     },
     {
       label: '比较证据、冲突与缺口',
-      status: overall?.status ?? 'WAITING_OVERALL_CANDIDATE',
+      status: humanState(overall?.status) ?? '等待综合候选',
       detail: overall
-        ? `${overall.findingCount} findings · gap ${overall.gap ?? 'NONE'} · discovery ${overall.discoveryStatus}`
+        ? `${overall.findingCount} 项判断 · ${overall.gap ? '仍有待补信息' : '当前无明确缺口'} · ${humanState(overall.discoveryStatus) ?? '资料状态待确认'}`
         : '只有明确缺口时才查询相关资料来源',
-      evidence: overall?.artifact.sha256 ?? 'NO_OVERALL_ARTIFACT',
-      done: overall?.status === 'CANDIDATE_ONLY',
+      done: false,
       icon: GitCompareArrows,
     },
     {
       label: '工程师复核与下游编写',
       status:
-        integrated?.overallForAeoConfirmation?.status ??
-        (data.workItem.aeo ? data.workItem.aeo.status : 'WAITING_HUMAN_REVIEW'),
+        humanState(
+          integrated?.overallForAeoConfirmation?.status ??
+            (data.workItem.aeo ? data.workItem.aeo.status : undefined),
+        ) ?? '等待工程师复核',
       detail: data.workItem.aeo
         ? `${data.workItem.aeo.artifacts.length} 个 AEO 候选产物；无自动批准`
         : '整体候选须显式确认后才可进入 AEO 候选',
-      evidence:
-        integrated?.overallForAeoConfirmation?.actionAttemptId ??
-        data.workItem.aeo?.actionAttemptId ??
-        'NO_HUMAN_ACTION',
-      done: Boolean(integrated?.overallForAeoConfirmation || data.workItem.aeo),
+      // 确认或编写后仍是候选，不使用“完成”视觉。
+      done: false,
       icon: UserCheck,
     },
   ];
@@ -101,8 +95,8 @@ export function EngineeringReasoningTrail({
     >
       <header>
         <div>
-          <span>TRACEABLE CANDIDATE FORMATION</span>
-          <h2>系统查阅了什么，以及候选如何形成：方法、依据、缺口与人工动作</h2>
+          <span>候选形成过程</span>
+          <h2>系统查阅了什么，以及候选如何形成</h2>
         </div>
         <div className="engineering-reasoning-header-meta">
           <p>
@@ -110,20 +104,13 @@ export function EngineeringReasoningTrail({
           </p>
           <div className="engineering-reasoning-summary" aria-label="查阅摘要">
             <span>
-              <strong>{data.queryResults.length}</strong> Reader hits
+              <strong>{data.queryResults.length}</strong> 项当前查询结果
             </span>
             <span>
-              <strong>{sourceRefCount}</strong> source refs
+              <strong>{sourceRefCount}</strong> 条来源依据
             </span>
             <span>
-              <strong>{unresolvedCount}</strong> unresolved
-            </span>
-            <span>
-              <strong>{audit.candidateFormationSteps.length}</strong> audit
-              steps
-            </span>
-            <span>
-              <strong>{timeline.events.length}</strong> timeline events
+              <strong>{unresolvedCount}</strong> 项未闭合
             </span>
           </div>
         </div>
@@ -143,7 +130,6 @@ export function EngineeringReasoningTrail({
             <h3>{step.label}</h3>
             <strong>{step.status}</strong>
             <p>{step.detail}</p>
-            <small title={step.evidence}>{short(step.evidence)}</small>
           </article>
         ))}
       </div>
@@ -153,24 +139,11 @@ export function EngineeringReasoningTrail({
       >
         {latestTimelineEvent ? (
           <span>
-            <strong>{latestTimelineEvent.kind}</strong>{' '}
-            {latestTimelineEvent.status}
+            <strong>最近状态</strong>{' '}
+            {humanState(latestTimelineEvent.status) ?? '状态待确认'}
           </span>
         ) : null}
-        <span>
-          <strong>{audit.reader.queryResultCount}</strong> audit reader hits
-        </span>
-        <span>
-          <strong>{audit.reader.uniqueSourceRefCount}</strong> unique source
-          refs
-        </span>
       </div>
     </section>
   );
-}
-
-function short(value: string): string {
-  return value.length > 36
-    ? `${value.slice(0, 22)}…${value.slice(-10)}`
-    : value;
 }

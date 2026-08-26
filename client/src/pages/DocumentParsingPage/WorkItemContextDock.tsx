@@ -1,8 +1,15 @@
-import { ArrowUpRight, CheckCircle2, Circle, RefreshCw } from 'lucide-react';
+import {
+  ArrowUpRight,
+  CheckCircle2,
+  Circle,
+  CircleDashed,
+  RefreshCw,
+} from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 import { Button } from '@client/src/components/ui/button';
 import type { CanonicalDocumentParsingPageResponse } from '@shared/api.interface';
+import { humanState } from '@client/src/features/navigation/treeMappers';
 
 interface WorkItemContextDockProps {
   data: CanonicalDocumentParsingPageResponse;
@@ -12,7 +19,7 @@ interface WorkItemContextDockProps {
 
 interface ContextStep {
   label: string;
-  done: boolean;
+  state: 'done' | 'candidate' | 'pending';
 }
 
 export function WorkItemContextDock({
@@ -22,22 +29,28 @@ export function WorkItemContextDock({
 }: WorkItemContextDockProps) {
   const integrated = data.workItem.integratedAssessment ?? null;
   const overall = integrated?.overallSynthesis ?? null;
-  const audit = data.workbenchAudit;
-  const timeline = data.timeline;
   const unresolvedCount: number = integrated?.baseRules.unresolvedCount ?? 0;
-  const candidateState: string = overall?.status ?? 'WAITING_CANDIDATE';
   const steps: ContextStep[] = [
     {
       label: '文件版本已绑定',
-      done: Boolean(data.workItem.source.documentVersionId),
+      state: data.workItem.source.documentVersionId ? 'done' : 'pending',
     },
-    { label: '结构化原文', done: Boolean(data.workItem.package) },
-    { label: '动态评估', done: Boolean(integrated?.baseRules) },
     {
-      label: '整体候选',
-      done: overall?.status === 'CANDIDATE_ONLY',
+      label: '结构化原文',
+      state: data.workItem.package ? 'done' : 'pending',
     },
-    { label: 'AEO 候选（并行）', done: Boolean(data.workItem.aeo) },
+    {
+      label: '动态评估候选',
+      state: integrated?.baseRules ? 'candidate' : 'pending',
+    },
+    {
+      label: '整体候选待复核',
+      state: overall ? 'candidate' : 'pending',
+    },
+    {
+      label: '后续编写候选',
+      state: data.workItem.aeo ? 'candidate' : 'pending',
+    },
   ];
 
   return (
@@ -47,14 +60,16 @@ export function WorkItemContextDock({
           <span>工程事项进度</span>
           <strong>{phaseLabel(data.workItem.phase)}</strong>
         </div>
-        <small>当前版本 r{data.workItem.revision}</small>
+        <small>当前受控事项</small>
       </header>
 
       <section className="workitem-context-steps" aria-label="事项阶段">
         {steps.map((step: ContextStep, index: number) => (
-          <div className={step.done ? 'is-done' : ''} key={step.label}>
-            {step.done ? (
+          <div className={`is-${step.state}`} key={step.label}>
+            {step.state === 'done' ? (
               <CheckCircle2 aria-hidden="true" />
+            ) : step.state === 'candidate' ? (
+              <CircleDashed aria-hidden="true" />
             ) : (
               <Circle aria-hidden="true" />
             )}
@@ -65,37 +80,27 @@ export function WorkItemContextDock({
       </section>
 
       <details>
-        <summary>运行与版本详情</summary>
+        <summary>当前事项摘要</summary>
         <dl>
           <div>
-            <dt>读取授权</dt>
-            <dd>{data.readAuthorization.action}</dd>
+            <dt>资料访问</dt>
+            <dd>已按当前账户权限读取</dd>
           </div>
           <div>
-            <dt>权限快照</dt>
-            <dd title={data.readAuthorization.permissionSnapshotVersion}>
-              {short(data.readAuthorization.permissionSnapshotVersion)}
+            <dt>综合意见</dt>
+            <dd>{humanState(overall?.status) ?? '尚未形成'}</dd>
+          </div>
+          <div>
+            <dt>待补信息</dt>
+            <dd>{unresolvedCount} 项未闭合</dd>
+          </div>
+          <div>
+            <dt>人工确认</dt>
+            <dd>
+              {integrated?.overallForAeoConfirmation
+                ? '已记录，不等于正式批准'
+                : '等待工程师复核'}
             </dd>
-          </div>
-          <div>
-            <dt>候选状态</dt>
-            <dd>{candidateState}</dd>
-          </div>
-          <div>
-            <dt>缺口 / 未闭合</dt>
-            <dd>{unresolvedCount}</dd>
-          </div>
-          <div>
-            <dt>页面状态</dt>
-            <dd>{data.status}</dd>
-          </div>
-          <div>
-            <dt>审计步骤</dt>
-            <dd>{audit.candidateFormationSteps.length}</dd>
-          </div>
-          <div>
-            <dt>时间线事件</dt>
-            <dd>{timeline.events.length}</dd>
           </div>
         </dl>
       </details>
@@ -117,13 +122,9 @@ export function WorkItemContextDock({
       >
         查看外部资料候选 <ArrowUpRight aria-hidden="true" />
       </Link>
-      <p>此处仅展示当前事项的版本、权限、候选意见和人工确认边界。</p>
+      <p>此处只展示当前资料、候选意见与人工复核边界。</p>
     </aside>
   );
-}
-
-function short(value: string): string {
-  return value.length > 24 ? `${value.slice(0, 14)}…${value.slice(-7)}` : value;
 }
 
 function phaseLabel(value: string): string {

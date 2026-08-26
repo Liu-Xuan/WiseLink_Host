@@ -1,4 +1,10 @@
-import { CircleCheck, CircleDashed, Clock3, FileWarning } from 'lucide-react';
+import {
+  CircleCheck,
+  CircleDashed,
+  Clock3,
+  FileWarning,
+  UserCheck,
+} from 'lucide-react';
 
 import {
   AUTHORITY_LABELS,
@@ -15,11 +21,11 @@ import './workitem-overview.css';
  */
 export default function AuthorityStrip({ view }: { view: WorkItemView }) {
   const authorityTone =
-    view.authority === 'candidate'
-      ? 'accent'
+    view.authority === 'formal_readback'
+      ? 'green'
       : view.authority === 'unavailable'
         ? 'muted'
-        : 'green';
+        : 'accent';
   const freshnessTone =
     view.freshness === 'needs_update'
       ? 'amber'
@@ -34,10 +40,12 @@ export default function AuthorityStrip({ view }: { view: WorkItemView }) {
       aria-label="候选与有效性状态"
     >
       <span className={`wl-authority-chip is-${authorityTone}`}>
-        {view.authority === 'candidate' || view.authority === 'unavailable' ? (
-          <CircleDashed aria-hidden="true" />
-        ) : (
+        {view.authority === 'formal_readback' ? (
           <CircleCheck aria-hidden="true" />
+        ) : view.authority === 'engineer_confirmed' ? (
+          <UserCheck aria-hidden="true" />
+        ) : (
+          <CircleDashed aria-hidden="true" />
         )}
         {AUTHORITY_LABELS[view.authority]}
       </span>
@@ -53,7 +61,7 @@ export default function AuthorityStrip({ view }: { view: WorkItemView }) {
 
       <span className="wl-authority-chip is-muted">
         <Clock3 aria-hidden="true" />
-        本文件版本：{view.documentVersion}
+        当前文件版本已绑定
       </span>
 
       <span className="wl-authority-chip is-muted">
@@ -64,7 +72,13 @@ export default function AuthorityStrip({ view }: { view: WorkItemView }) {
 
       <span className="wl-authority-meta">
         {view.aircraftFamily} ·{' '}
-        {view.overall ? '候选意见，待工程师确认' : '综合评估尚未形成'}
+        {view.authority === 'engineer_confirmed'
+          ? '人工确认已记录，仍不等于正式批准'
+          : view.authority === 'formal_readback'
+            ? '正式系统回读结果'
+            : view.overall
+              ? '候选意见，待工程师复核'
+              : '综合评估尚未形成'}
       </span>
     </div>
   );

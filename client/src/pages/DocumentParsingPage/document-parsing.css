@@ -71,6 +71,14 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
   color: var(--parse-blue);
 }
 
+.parse-locked-actions {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 20px;
+}
+
 .parse-locked-card h1 {
   margin: 14px 0 10px;
   color: var(--parse-heading);
@@ -499,6 +507,11 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
 
 .workitem-context-steps > div.is-done {
   color: var(--parse-green);
+}
+
+.workitem-context-steps > div.is-candidate,
+.workitem-context-steps > div.is-candidate strong {
+  color: var(--wl-accent);
 }
 
 .workitem-context-steps > div > span {
@@ -2326,13 +2339,13 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
 }
 
 .aeo-authoring-artifact.is-available {
-  border-left-color: #4c9a68;
-  background: #fbfefc;
+  border-left-color: var(--wl-accent);
+  background: var(--wl-accent-soft);
 }
 
 .aeo-authoring-artifact.is-blocked {
-  border-left-color: #c88436;
-  background: #fffaf2;
+  border-left-color: var(--wl-amber);
+  background: var(--wl-amber-soft);
 }
 
 .aeo-authoring-artifact > div {
@@ -2351,8 +2364,8 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
 
 .aeo-authoring-artifact span,
 .aeo-authoring-artifact small {
-  color: #7b899b;
-  font-family: var(--parse-mono);
+  color: var(--wl-muted);
+  font-family: var(--wl-font);
   font-size: 9px;
   overflow-wrap: anywhere;
 }
@@ -2363,7 +2376,7 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
   right: 8px;
   width: 13px;
   height: 13px;
-  color: #4c9a68;
+  color: var(--wl-accent);
 }
 
 .aeo-authoring-boundary {
@@ -2863,5 +2876,97 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
     flex-direction: column;
     align-items: flex-start;
     gap: 6px;
+  }
+}
+
+/* ── Apple Glass R02：专业工作台使用 G2/G3，PDF/输入保持 G4 实底 ── */
+.parse-shell--workbench {
+  height: calc(100dvh - 132px);
+  padding: 10px 0 0;
+}
+
+.parse-overall-bar,
+.parse-panel,
+.parse-assessment-panel,
+.engineering-reasoning-trail,
+.parse-business-candidate,
+.parse-assessment-semantics {
+  border-color: var(--wl-border);
+  border-radius: var(--wl-radius-panel);
+  background: var(--wl-glass-content);
+  box-shadow: var(--wl-shadow-1);
+}
+
+.parse-overall-bar {
+  overflow: hidden;
+  background:
+    linear-gradient(135deg, rgb(22 119 255 / 8%), transparent 60%),
+    var(--wl-glass-content);
+}
+
+.parse-panel,
+.parse-assessment-panel {
+  padding: clamp(16px, 2vw, 22px);
+}
+
+.parse-pdf-pane,
+.parse-reader-source-view,
+.parse-reader-locator,
+.parse-assessment-action input,
+.parse-engineer-review-form textarea,
+.parse-engineer-review-form select {
+  border-color: var(--wl-border-strong);
+  border-radius: var(--wl-radius-md);
+  background: var(--wl-surface-solid);
+}
+
+.parse-reader-mode,
+.parse-tag,
+.parse-assessment-action button,
+.parse-assessment-empty button {
+  border-radius: var(--wl-radius-sm);
+}
+
+.parse-assessment-semantics-grid article,
+.parse-assessment-gap-list article,
+.parse-result,
+.parse-reader-focus,
+.parse-reader-missing-state {
+  border-color: var(--wl-border);
+  border-radius: var(--wl-radius-md);
+}
+
+.parse-assessment-semantics-grid article,
+.parse-result,
+.parse-reader-focus {
+  background: var(--wl-glass-soft);
+}
+
+.parse-panel-label,
+.parse-eyebrow {
+  color: var(--wl-accent);
+  font-family: var(--wl-font);
+  font-size: 11px;
+  letter-spacing: 0.03em;
+}
+
+.parse-reader-source-view p,
+.parse-reader-missing-state p,
+.parse-result p,
+.parse-panel p {
+  font-size: 12px;
+}
+
+@media (max-width: 720px) {
+  .parse-shell.parse-shell--workbench {
+    height: calc(100dvh - 112px);
+    min-height: 0;
+    padding-top: 8px;
+  }
+
+  .parse-panel,
+  .parse-assessment-panel,
+  .engineering-reasoning-trail {
+    border-radius: var(--wl-radius-md);
   }
 }

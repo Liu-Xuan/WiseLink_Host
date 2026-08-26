@@ -7,6 +7,7 @@ import {
   History,
   Link2,
   Network,
+  RefreshCw,
 } from 'lucide-react';
 
 import {
@@ -17,6 +18,7 @@ import OverallAssessmentHero from '@client/src/features/workitem/OverallAssessme
 import AuthorityStrip from '@client/src/features/workitem/AuthorityStrip';
 import type { WorkItemView } from '@client/src/services/viewModelMappers';
 import { toWorkItemView } from '@client/src/services/viewModelMappers';
+import { humanState } from '@client/src/features/navigation/treeMappers';
 
 import '@client/src/features/workitem/workitem-overview.css';
 
@@ -31,6 +33,7 @@ export default function WorkItemOverviewPage() {
   const [view, setView] = useState<WorkItemView | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [reloadSignal, setReloadSignal] = useState(0);
 
   useEffect(() => {
     if (!workItemId) return;
@@ -47,9 +50,7 @@ export default function WorkItemOverviewPage() {
           setError(
             isCanonicalObjectNotFound(reason)
               ? '该事项不存在或当前用户无权读取；请从资料库重新进入。'
-              : reason instanceof Error && reason.message
-                ? reason.message
-                : '读取当前结果失败，请稍后重试。',
+              : '读取当前结果失败，请稍后重试。',
           );
         }
       } finally {
@@ -59,7 +60,7 @@ export default function WorkItemOverviewPage() {
     return () => {
       cancelled = true;
     };
-  }, [workItemId]);
+  }, [reloadSignal, workItemId]);
 
   function openWorkbench(): void {
     navigate(
@@ -67,9 +68,12 @@ export default function WorkItemOverviewPage() {
     );
   }
 
-  function viewEvidence(): void {
+  function viewEvidence(sourceRefId?: string): void {
+    const sourceQuery = sourceRefId
+      ? `&sourceRef=${encodeURIComponent(sourceRefId)}`
+      : '';
     navigate(
-      `/work-items/${encodeURIComponent(workItemId)}/documents?node=reader&tab=source`,
+      `/work-items/${encodeURIComponent(workItemId)}/documents?node=reader&tab=reader${sourceQuery}`,
     );
   }
 
@@ -93,13 +97,22 @@ export default function WorkItemOverviewPage() {
           <CircleAlert aria-hidden="true" />
           <span>{error}</span>
         </div>
-        <button
-          type="button"
-          className="wl-btn"
-          onClick={() => navigate('/library')}
-        >
-          <Link2 aria-hidden="true" /> 返回资料库
-        </button>
+        <div className="wl-overview-error-actions">
+          <button
+            type="button"
+            className="wl-btn wl-btn-primary"
+            onClick={() => setReloadSignal((value) => value + 1)}
+          >
+            <RefreshCw aria-hidden="true" /> 重试读取
+          </button>
+          <button
+            type="button"
+            className="wl-btn"
+            onClick={() => navigate('/library')}
+          >
+            <Link2 aria-hidden="true" /> 返回资料库
+          </button>
+        </div>
       </main>
     );
   }
@@ -125,7 +138,7 @@ export default function WorkItemOverviewPage() {
             <li>
               <FileText aria-hidden="true" />
               <span>{view.documentLabel}</span>
-              <small>{view.documentVersion}</small>
+              <small>当前受控文件版本</small>
             </li>
             <li>
               <Network aria-hidden="true" />
@@ -138,7 +151,7 @@ export default function WorkItemOverviewPage() {
             </li>
           </ul>
           <p className="wl-side-empty">
-            关联资料以当前事项返回为准；页面不会推测外部文档关系。
+            关联资料以当前事项返回为准。
           </p>
         </section>
 
@@ -152,7 +165,7 @@ export default function WorkItemOverviewPage() {
                 <li key={event.id}>
                   <FileClock aria-hidden="true" />
                   <span>{event.label}</span>
-                  <small>{event.status}</small>
+                  <small>{humanState(event.status) ?? '状态待确认'}</small>
                 </li>
               ))}
             </ul>

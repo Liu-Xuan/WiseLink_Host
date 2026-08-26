@@ -1,6 +1,7 @@
 import type {
   CanonicalDocumentParsingPageResponse,
   CanonicalOpenClawOverallProjection,
+  CanonicalTimelineEvent,
   CanonicalWorkItemProjection,
 } from '@shared/api.interface';
 
@@ -32,7 +33,8 @@ export interface EvidenceSummaryView {
     | 'historical';
   documentLabel?: string;
   page?: number;
-  structurePath?: string;
+  /** 仅用于精确定位，不在用户界面显示内部引用值。 */
+  sourceRefId?: string;
   accessState: 'available' | 'denied' | 'unknown';
   adopted: boolean;
 }
@@ -74,14 +76,6 @@ export interface OverallAssessmentView {
   missingInputs: MissingInputView[];
   /** 依据数量 */
   sourceCount: number;
-  /** 技术详情（可折叠） */
-  technicalDetails?: {
-    actionAttemptId: string;
-    artifactSha256: string;
-    basedOnBaseRuleRevision: number;
-    basedOnEngineerReviewRevision: number | null;
-    sourceResultId: string;
-  };
 }
 
 export interface WorkItemView {
@@ -130,7 +124,7 @@ function documentLabelOf(workItem: CanonicalWorkItemProjection): {
   const code = workItem.package?.documentIdentity?.documentCode;
   const title = workItem.package?.title;
   return {
-    label: code ?? title ?? workItem.source.documentId,
+    label: code ?? title ?? '未命名工程资料',
     version:
       workItem.package?.documentIdentity?.businessRevision ??
       workItem.source.documentVersionId,
@@ -149,6 +143,22 @@ function applicabilityLabel(value: string | null | undefined): string {
   return labels[normalized] ?? '适用范围待确认';
 }
 
+function timelineEventLabel(kind: CanonicalTimelineEvent['kind']): string {
+  const labels: Record<CanonicalTimelineEvent['kind'], string> = {
+    WORKITEM_REVISION: '事项版本更新',
+    DOCUMENT_VERSION_BOUND: '当前文件已关联',
+    PACKAGE_READBACK: '解析结果已回读',
+    READER_QUERY: '原文检索状态更新',
+    DYNAMIC_EVALUATION: '逐项评估状态更新',
+    ENGINEER_REVIEW: '工程师复核状态更新',
+    OVERALL_SYNTHESIS: '整体候选状态更新',
+    OVERALL_CONFIRMATION: '人工确认状态更新',
+    AEO_CANDIDATE: 'AEO 候选状态更新',
+    FAILURE: '处理未完成',
+  };
+  return labels[kind];
+}
+
 export function toWorkItemView(
   page: CanonicalDocumentParsingPageResponse,
 ): WorkItemView {
@@ -165,7 +175,7 @@ export function toWorkItemView(
       label: finding.finding,
       sourceType: 'original' as const,
       documentLabel: doc.label,
-      structurePath: finding.sourceRefIds[0],
+      sourceRefId: finding.sourceRefIds[0],
       accessState: 'available' as const,
       adopted: false,
     }));
@@ -222,14 +232,6 @@ export function toWorkItemView(
             impact: index === 0 ? '决定最终适用性判断' : undefined,
           })),
           sourceCount: overall.candidateRefCount,
-          technicalDetails: {
-            actionAttemptId: overall.actionAttemptId,
-            artifactSha256: overall.artifact?.sha256 ?? '',
-            basedOnBaseRuleRevision: overall.basedOnBaseRuleRevision,
-            basedOnEngineerReviewRevision:
-              overall.basedOnEngineerReviewRevision,
-            sourceResultId: overall.sourceResultId,
-          },
         }
       : null,
     lastEvents: page.timeline.events
@@ -237,7 +239,7 @@ export function toWorkItemView(
       .reverse()
       .map((event) => ({
         id: event.id,
-        label: event.label,
+        label: timelineEventLabel(event.kind),
         status: event.status,
         occurredAt: event.occurredAt,
       })),

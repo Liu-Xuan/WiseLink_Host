@@ -328,13 +328,13 @@
   font-size: 12px;
 }
 
-.wl-revision-timeline-body header code {
+.wl-revision-state {
   padding: 1px 7px;
   border: 1px solid var(--wl-border);
   border-radius: 999px;
   color: var(--wl-faint);
   font-size: 9.5px;
-  font-family: var(--wl-mono);
+  font-family: var(--wl-font);
 }
 
 .wl-revision-timeline-body header small {
@@ -356,6 +356,11 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.wl-task-pills-empty {
+  color: var(--wl-faint);
+  font-size: 11px;
 }
 
 .wl-task-pill {
@@ -385,9 +390,30 @@
   animation: wl-spin 1.4s linear infinite;
 }
 
+.wl-task-pill.is-candidate,
+.wl-task-pill.is-confirmed {
+  border-color: color-mix(in srgb, var(--wl-accent) 32%, var(--wl-border));
+  color: var(--wl-accent);
+  background: var(--wl-accent-soft);
+}
+
+.wl-task-pill.is-waiting,
+.wl-task-pill.is-stale,
+.wl-task-pill.is-review {
+  border-color: rgba(217, 119, 6, 0.26);
+  color: #a16207;
+}
+
+.wl-task-pill.is-conflict,
 .wl-task-pill.is-failed {
   border-color: rgba(220, 38, 38, 0.3);
   color: #dc2626;
+}
+
+.wl-task-pill.is-obsolete,
+.wl-task-pill.is-cancelled {
+  color: var(--wl-faint);
+  text-decoration-color: color-mix(in srgb, var(--wl-faint) 55%, transparent);
 }
 
 /* ── STALE / 需更新提示条 ── */

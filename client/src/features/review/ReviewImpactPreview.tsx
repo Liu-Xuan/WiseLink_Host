@@ -37,16 +37,29 @@ export default function ReviewImpactPreview({
   onConfirm,
 }: ReviewImpactPreviewProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+  const onCancelRef = useRef(onCancel);
+
+  useEffect(() => {
+    onCancelRef.current = onCancel;
+  }, [onCancel]);
 
   useEffect(() => {
     if (!open) return;
+    previousFocusRef.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onCancel();
+      if (event.key === 'Escape') onCancelRef.current();
     };
     document.addEventListener('keydown', onKey);
-    dialogRef.current?.focus();
-    return () => document.removeEventListener('keydown', onKey);
-  }, [open, onCancel]);
+    window.requestAnimationFrame(() => dialogRef.current?.focus());
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      previousFocusRef.current?.focus();
+    };
+  }, [open]);
 
   if (!open) return null;
 
@@ -65,6 +78,28 @@ export default function ReviewImpactPreview({
         aria-modal="true"
         aria-labelledby="wl-review-impact-title"
         tabIndex={-1}
+        onKeyDown={(event) => {
+          if (event.key !== 'Tab') return;
+          const focusable = Array.from(
+            event.currentTarget.querySelectorAll<HTMLElement>(
+              'button:not([disabled]), a[href], input:not([disabled]), textarea:not([disabled]), select:not([disabled])',
+            ),
+          );
+          if (focusable.length === 0) {
+            event.preventDefault();
+            event.currentTarget.focus();
+            return;
+          }
+          const first = focusable[0];
+          const last = focusable[focusable.length - 1];
+          if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault();
+            last.focus();
+          } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault();
+            first.focus();
+          }
+        }}
       >
         <header>
           <ClipboardCheck aria-hidden="true" />
@@ -125,7 +160,7 @@ export default function ReviewImpactPreview({
                 <RefreshCw className="wl-spin" aria-hidden="true" /> 正在写入…
               </>
             ) : (
-              '确认写入'
+              '记录复核意见'
             )}
           </Button>
         </footer>

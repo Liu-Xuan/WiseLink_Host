@@ -1,15 +1,16 @@
 import {
   useCallback,
   useEffect,
+  useId,
   useRef,
   useState,
+  type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react';
 import {
   Maximize2,
   Minimize2,
-  MoreHorizontal,
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightClose,
@@ -24,6 +25,8 @@ export interface WorkbenchTab {
   icon?: ReactNode;
   /** 窄屏（§10.1 390×844）底部标签文案；未提供的 tab 收入「更多」 */
   mobileLabel?: string;
+  /** 窄屏底部标签顺序，与桌面专业工作流顺序可独立。 */
+  mobileOrder?: number;
 }
 
 export interface WorkbenchShellProps {
@@ -129,8 +132,13 @@ export default function WorkbenchShell({
   const [isCompact, setIsCompact] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [mobileEvidenceOpen, setMobileEvidenceOpen] = useState(false);
+  const tabIdPrefix = useId().replace(/:/gu, '');
   const shellRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef<'nav' | 'evidence' | null>(null);
+  const navTriggerRef = useRef<HTMLButtonElement>(null);
+  const evidenceTriggerRef = useRef<HTMLButtonElement>(null);
+  const navDrawerRef = useRef<HTMLElement>(null);
+  const evidenceDrawerRef = useRef<HTMLElement>(null);
 
   /* ── §4.2 布局偏好持久化：仅界面偏好，不保存 WorkItem/current ── */
   useEffect(() => {
@@ -157,7 +165,12 @@ export default function WorkbenchShell({
     const which = draggingRef.current;
     if (!which) return;
     if (which === 'nav') {
-      const width = Math.min(NAV_MAX, Math.max(NAV_MIN, event.clientX));
+      const rect = shellRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const width = Math.min(
+        NAV_MAX,
+        Math.max(NAV_MIN, event.clientX - rect.left),
+      );
       setNavWidth(width);
     }
   }, []);
@@ -235,17 +248,118 @@ export default function WorkbenchShell({
     }
   }, []);
 
-  const navVisible = !immersive && (isCompact ? mobileNavOpen : !navCollapsed);
+  /* 沉浸模式只隐藏应用外壳，不隐藏工作台的资料目录与证据栏。 */
+  const navVisible = isCompact ? mobileNavOpen : !navCollapsed;
   const evidenceVisible =
-    Boolean(evidencePanel) &&
-    !immersive &&
-    (isCompact ? mobileEvidenceOpen : evidenceOpen);
+    Boolean(evidencePanel) && (isCompact ? mobileEvidenceOpen : evidenceOpen);
 
-  const mobileTabs = tabs.filter((tab) => tab.mobileLabel);
-  const overflowTabs = tabs.filter((tab) => !tab.mobileLabel);
-  const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
+  const mobileTabs = tabs
+    .filter((tab) => tab.mobileLabel)
+    .sort((a, b) => (a.mobileOrder ?? 99) - (b.mobileOrder ?? 99));
+  const panelId = `${tabIdPrefix}-panel`;
+  const desktopTabId = (key: string) => `${tabIdPrefix}-desktop-${key}`;
+  const mobileTabId = (key: string) => `${tabIdPrefix}-mobile-${key}`;
+  const hasDesktopActiveTab = tabs.some((tab) => tab.key === activeTab);
+  const hasMobileActiveTab = mobileTabs.some((tab) => tab.key === activeTab);
+  const activePanelLabelledBy = hasDesktopActiveTab
+    ? isCompact && hasMobileActiveTab
+      ? mobileTabId(activeTab)
+      : desktopTabId(activeTab)
+    : undefined;
+
+  const focusTab = (
+    event: ReactKeyboardEvent<HTMLButtonElement>,
+    orderedTabs: WorkbenchTab[],
+    currentKey: string,
+    scope: 'desktop' | 'mobile',
+  ): void => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
+      return;
+    }
+    event.preventDefault();
+    const currentIndex = orderedTabs.findIndex((tab) => tab.key === currentKey);
+    if (currentIndex < 0) return;
+    const nextIndex =
+      event.key === 'Home'
+        ? 0
+        : event.key === 'End'
+          ? orderedTabs.length - 1
+          : event.key === 'ArrowRight'
+            ? (currentIndex + 1) % orderedTabs.length
+            : (currentIndex - 1 + orderedTabs.length) % orderedTabs.length;
+    const next = orderedTabs[nextIndex];
+    onTabChange(next.key);
+    window.requestAnimationFrame(() => {
+      document
+        .getElementById(
+          scope === 'desktop'
+            ? desktopTabId(next.key)
+            : mobileTabId(next.key),
+        )
+        ?.focus();
+    });
+  };
+
+  const closeMobileDrawers = useCallback((restoreFocus: boolean): void => {
+    const trigger = mobileNavOpen
+      ? navTriggerRef.current
+      : evidenceTriggerRef.current;
+    setMobileNavOpen(false);
+    setMobileEvidenceOpen(false);
+    if (restoreFocus) {
+      window.requestAnimationFrame(() => trigger?.focus());
+    }
+  }, [mobileNavOpen]);
+
+  const trapDrawerFocus = (
+    event: ReactKeyboardEvent<HTMLElement>,
+  ): void => {
+    if (event.key !== 'Tab') return;
+    const focusable = Array.from(
+      event.currentTarget.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), a[href], input:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ),
+    );
+    if (focusable.length === 0) {
+      event.preventDefault();
+      event.currentTarget.focus();
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+
+  useEffect(() => {
+    if (!isCompact || (!mobileNavOpen && !mobileEvidenceOpen)) return;
+    const drawer = mobileNavOpen
+      ? navDrawerRef.current
+      : evidenceDrawerRef.current;
+    window.requestAnimationFrame(() => {
+      const first = drawer?.querySelector<HTMLElement>(
+        'button:not([disabled]), a[href], input:not([disabled])',
+      );
+      (first ?? drawer)?.focus();
+    });
+  }, [isCompact, mobileEvidenceOpen, mobileNavOpen]);
+
+  useEffect(() => {
+    if (!mobileNavOpen && !mobileEvidenceOpen) return;
+    const handleEscape = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      closeMobileDrawers(true);
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [closeMobileDrawers, mobileEvidenceOpen, mobileNavOpen]);
   const activateTab = (key: string) => {
-    setMobileMoreOpen(false);
     setMobileNavOpen(false);
     setMobileEvidenceOpen(false);
     onTabChange(key);
@@ -269,6 +383,7 @@ export default function WorkbenchShell({
         aria-label="工作台工具栏"
       >
         <button
+          ref={navTriggerRef}
           type="button"
           className="wl-workbench-tool-btn"
           onClick={() => {
@@ -291,14 +406,24 @@ export default function WorkbenchShell({
           role="tablist"
           aria-label="工作台视图"
         >
-          {tabs.map((tab) => (
+          {tabs.map((tab, index) => (
             <button
               key={tab.key}
+              id={desktopTabId(tab.key)}
               type="button"
               role="tab"
               aria-selected={activeTab === tab.key}
+              aria-controls={panelId}
+              tabIndex={
+                activeTab === tab.key || (!hasDesktopActiveTab && index === 0)
+                  ? 0
+                  : -1
+              }
               className={`wl-workbench-tab${activeTab === tab.key ? ' is-active' : ''}`}
               onClick={() => onTabChange(tab.key)}
+              onKeyDown={(event) =>
+                focusTab(event, tabs, tab.key, 'desktop')
+              }
             >
               {tab.icon}
               <span>{tab.label}</span>
@@ -308,6 +433,7 @@ export default function WorkbenchShell({
 
         <div className="wl-workbench-toolbar-actions">
           <button
+            ref={evidenceTriggerRef}
             type="button"
             className="wl-workbench-tool-btn"
             onClick={() => {
@@ -347,62 +473,37 @@ export default function WorkbenchShell({
         </div>
       </div>
 
-      {/* ── §10.1 窄屏底部标签：概述、原文、评估、活动；其余收「更多」 ── */}
+      {/* ── §10.1 窄屏底部标签：总体、原文、复核、动态 ── */}
       <nav
         className="wl-workbench-mobilebar"
         role="tablist"
         aria-label="底部视图标签"
       >
-        {mobileTabs.map((tab) => (
+        {mobileTabs.map((tab, index) => (
           <button
             key={tab.key}
+            id={mobileTabId(tab.key)}
             type="button"
             role="tab"
             aria-selected={activeTab === tab.key}
+            aria-controls={panelId}
+            tabIndex={
+              activeTab === tab.key || (!hasMobileActiveTab && index === 0)
+                ? 0
+                : -1
+            }
             className={`wl-workbench-mobile-tab${
               activeTab === tab.key ? ' is-active' : ''
             }`}
             onClick={() => activateTab(tab.key)}
+            onKeyDown={(event) =>
+              focusTab(event, mobileTabs, tab.key, 'mobile')
+            }
           >
             {tab.icon}
             <span>{tab.mobileLabel}</span>
           </button>
         ))}
-        {overflowTabs.length ? (
-          <div className="wl-workbench-mobile-more">
-            <button
-              type="button"
-              className={`wl-workbench-mobile-tab${
-                overflowTabs.some((tab) => tab.key === activeTab)
-                  ? ' is-active'
-                  : ''
-              }`}
-              aria-expanded={mobileMoreOpen}
-              onClick={() => setMobileMoreOpen((v) => !v)}
-            >
-              <MoreHorizontal aria-hidden="true" />
-              <span>更多</span>
-            </button>
-            {mobileMoreOpen ? (
-              <ul className="wl-workbench-mobile-sheet wl-glass-content">
-                {overflowTabs.map((tab) => (
-                  <li key={tab.key}>
-                    <button
-                      type="button"
-                      role="tab"
-                      aria-selected={activeTab === tab.key}
-                      className={activeTab === tab.key ? 'is-active' : ''}
-                      onClick={() => activateTab(tab.key)}
-                    >
-                      {tab.icon}
-                      <span>{tab.label}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-          </div>
-        ) : null}
       </nav>
 
       {isCompact && (mobileNavOpen || mobileEvidenceOpen) ? (
@@ -410,10 +511,8 @@ export default function WorkbenchShell({
           type="button"
           className="wl-workbench-drawer-scrim"
           aria-label="关闭工作台抽屉"
-          onClick={() => {
-            setMobileNavOpen(false);
-            setMobileEvidenceOpen(false);
-          }}
+          tabIndex={-1}
+          onClick={() => closeMobileDrawers(true)}
         />
       ) : null}
 
@@ -422,10 +521,24 @@ export default function WorkbenchShell({
         {navVisible ? (
           <>
             <aside
+              ref={navDrawerRef}
               className="wl-workbench-nav"
               style={{ width: navWidth }}
               aria-label="目录树"
+              role={isCompact ? 'dialog' : undefined}
+              aria-modal={isCompact ? true : undefined}
+              tabIndex={isCompact ? -1 : undefined}
+              onKeyDown={isCompact ? trapDrawerFocus : undefined}
             >
+              {isCompact ? (
+                <button
+                  type="button"
+                  className="wl-workbench-drawer-close"
+                  onClick={() => closeMobileDrawers(true)}
+                >
+                  <PanelLeftClose aria-hidden="true" /> 关闭资料目录
+                </button>
+              ) : null}
               {navigator}
             </aside>
             <div
@@ -433,6 +546,9 @@ export default function WorkbenchShell({
               role="separator"
               aria-orientation="vertical"
               aria-label="调整目录树宽度"
+              aria-valuemin={NAV_MIN}
+              aria-valuemax={NAV_MAX}
+              aria-valuenow={navWidth}
               tabIndex={0}
               onPointerDown={startDrag('nav')}
               onKeyDown={(event) => {
@@ -440,13 +556,24 @@ export default function WorkbenchShell({
                   setNavWidth((w) => Math.max(NAV_MIN, w - 16));
                 } else if (event.key === 'ArrowRight') {
                   setNavWidth((w) => Math.min(NAV_MAX, w + 16));
+                } else if (event.key === 'Home') {
+                  setNavWidth(NAV_MIN);
+                } else if (event.key === 'End') {
+                  setNavWidth(NAV_MAX);
                 }
               }}
             />
           </>
         ) : null}
 
-        <div className="wl-workbench-main" role="tabpanel">
+        <div
+          id={panelId}
+          className="wl-workbench-main"
+          role="tabpanel"
+          aria-labelledby={activePanelLabelledBy}
+          aria-label={activePanelLabelledBy ? undefined : '当前工作区'}
+          tabIndex={0}
+        >
           {children}
         </div>
 
@@ -457,6 +584,9 @@ export default function WorkbenchShell({
               role="separator"
               aria-orientation="vertical"
               aria-label="调整证据栏宽度"
+              aria-valuemin={EVIDENCE_MIN}
+              aria-valuemax={EVIDENCE_MAX}
+              aria-valuenow={evidenceWidth}
               tabIndex={0}
               onPointerDown={startDrag('evidence')}
               onKeyDown={(event) => {
@@ -464,14 +594,32 @@ export default function WorkbenchShell({
                   setEvidenceWidth((w) => Math.min(EVIDENCE_MAX, w + 16));
                 } else if (event.key === 'ArrowRight') {
                   setEvidenceWidth((w) => Math.max(EVIDENCE_MIN, w - 16));
+                } else if (event.key === 'Home') {
+                  setEvidenceWidth(EVIDENCE_MIN);
+                } else if (event.key === 'End') {
+                  setEvidenceWidth(EVIDENCE_MAX);
                 }
               }}
             />
             <section
+              ref={evidenceDrawerRef}
               className="wl-workbench-evidence"
               style={{ width: evidenceWidth }}
               aria-label="证据面板"
+              role={isCompact ? 'dialog' : undefined}
+              aria-modal={isCompact ? true : undefined}
+              tabIndex={isCompact ? -1 : undefined}
+              onKeyDown={isCompact ? trapDrawerFocus : undefined}
             >
+              {isCompact ? (
+                <button
+                  type="button"
+                  className="wl-workbench-drawer-close"
+                  onClick={() => closeMobileDrawers(true)}
+                >
+                  <PanelRightClose aria-hidden="true" /> 关闭原文依据
+                </button>
+              ) : null}
               {evidencePanel}
             </section>
           </>
