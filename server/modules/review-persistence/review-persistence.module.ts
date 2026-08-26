@@ -10,5 +10,6 @@ import { ReviewConversationService } from './review-conversation.service';
   imports: [IdentityModule, WorkItemRuntimeModule],
   controllers: [ReviewConversationController],
   providers: [ReviewConversationRepository, ReviewConversationService],
+  exports: [ReviewConversationRepository],
 })
 export class ReviewPersistenceModule {}

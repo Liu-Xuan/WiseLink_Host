@@ -285,12 +285,25 @@ export const reviewTurn = pgTable("review_turn", {
   userMessage: text("user_message").notNull(),
   inputType: varchar("input_type", { length: 32 }).notNull(),
   adoptionStatus: varchar("adoption_status", { length: 32 }).notNull(),
+  responseType: varchar("response_type", { length: 48 }),
+  assistantResponse: text("assistant_response"),
+  sourceRefsJson: text("source_refs_json"),
+  missingInputsJson: text("missing_inputs_json"),
+  candidateEvidenceRefsJson: text("candidate_evidence_refs_json"),
+  reviewActionDraftJson: text("review_action_draft_json"),
+  affectedItemIdsJson: text("affected_item_ids_json"),
+  warningsJson: text("warnings_json"),
+  resultProvenanceJson: text("result_provenance_json"),
+  resultContentHash: varchar("result_content_hash", { length: 64 }),
+  actionAttemptId: varchar("action_attempt_id", { length: 96 }),
+  assistantCompletedAt: customTimestamptz("assistant_completed_at", { precision: 3 }),
   createdAt: customTimestamptz("created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
   uniqueIndex("uk_review_turn_business_id").on(table.reviewTurnId),
   uniqueIndex("uk_review_turn_engineer_input").on(table.engineerSuppliedInputId),
   uniqueIndex("uk_review_turn_request").on(table.reviewConversationId, table.requestId),
   uniqueIndex("uk_review_turn_number").on(table.reviewConversationId, table.turnNo),
+  uniqueIndex("uk_review_turn_action_attempt").on(table.actionAttemptId),
   index("idx_review_turn_conversation").on(table.reviewConversationId, table.turnNo),
   index("idx_review_turn_work_item").on(table.workItemId, table.createdAt),
   foreignKey({
@@ -308,12 +321,52 @@ export const reviewTurn = pgTable("review_turn", {
     foreignColumns: [workItem.workItemId],
     name: "fk_review_turn_work_item",
   }),
+  foreignKey({
+    columns: [table.actionAttemptId],
+    foreignColumns: [actionAttempt.attemptId],
+    name: "fk_review_turn_action_attempt",
+  }),
   check("ck_review_turn_number", sql`${table.turnNo} > 0`),
   check("ck_review_turn_revision", sql`${table.inputRevision} >= 0`),
   check("ck_review_turn_request", sql`length(btrim(${table.requestId})) > 0`),
   check("ck_review_turn_message", sql`length(btrim(${table.userMessage})) > 0`),
   check("ck_review_turn_input_type", sql`${table.inputType} = 'ENGINEER_TEXT'`),
   check("ck_review_turn_adoption_status", sql`${table.adoptionStatus} = 'CANDIDATE_UNADOPTED'`),
+  check("ck_review_turn_c2_candidate_state", sql`(
+    (
+      ${table.responseType} IS NULL
+      AND ${table.assistantResponse} IS NULL
+      AND ${table.sourceRefsJson} IS NULL
+      AND ${table.missingInputsJson} IS NULL
+      AND ${table.candidateEvidenceRefsJson} IS NULL
+      AND ${table.reviewActionDraftJson} IS NULL
+      AND ${table.affectedItemIdsJson} IS NULL
+      AND ${table.warningsJson} IS NULL
+      AND ${table.resultProvenanceJson} IS NULL
+      AND ${table.resultContentHash} IS NULL
+      AND ${table.actionAttemptId} IS NULL
+      AND ${table.assistantCompletedAt} IS NULL
+    )
+    OR
+    (
+      ${table.responseType} IN (
+        'ANSWER', 'CLARIFYING_QUESTION', 'SOURCE_LINK',
+        'CANDIDATE_EVIDENCE', 'REVIEW_ACTION_DRAFT', 'INPUT_REQUEST',
+        'AFFECTED_ITEMS_PREVIEW', 'RESYNTHESIS_RESULT', 'TASK_STATUS'
+      )
+      AND length(btrim(${table.assistantResponse})) > 0
+      AND ${table.sourceRefsJson} IS NOT NULL
+      AND ${table.missingInputsJson} IS NOT NULL
+      AND ${table.candidateEvidenceRefsJson} IS NOT NULL
+      AND ${table.reviewActionDraftJson} IS NOT NULL
+      AND ${table.affectedItemIdsJson} IS NOT NULL
+      AND ${table.warningsJson} IS NOT NULL
+      AND ${table.resultProvenanceJson} IS NOT NULL
+      AND ${table.resultContentHash} ~ '^[0-9a-f]{64}$'
+      AND length(btrim(${table.actionAttemptId})) > 0
+      AND ${table.assistantCompletedAt} IS NOT NULL
+    )
+  )`),
 ]);
 
 export const engineerSuppliedInput = pgTable("engineer_supplied_input", {
