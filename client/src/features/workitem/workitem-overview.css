@@ -269,7 +269,7 @@
   max-width: 40%;
   overflow: hidden;
   color: var(--wl-faint);
-  font-family: var(--wl-mono);
+  font-family: var(--wl-font);
   font-size: 9.5px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -500,6 +500,12 @@
   background: var(--wl-red-soft);
   color: var(--wl-red);
   font-size: 12.5px;
+}
+
+.wl-overview-error-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .wl-overview-loading {

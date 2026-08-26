@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -14,10 +15,11 @@ import {
   Network,
   PackageCheck,
   Search,
-  ShieldCheck,
+  MessageSquareText,
+  ListChecks,
   Workflow,
-  CheckCircle2,
 } from 'lucide-react';
+import { Input } from '@client/src/components/ui/input';
 
 import type {
   NavigationNodeView,
@@ -49,9 +51,9 @@ const KIND_ICONS: Record<string, typeof FolderTree> = {
   document: FileText,
   version: GitBranch,
   package: PackageCheck,
-  evaluation: CheckCircle2,
+  evaluation: ListChecks,
   overall: Network,
-  review: ShieldCheck,
+  review: MessageSquareText,
   aeo: Archive,
   virtual: FolderTree,
 };
@@ -67,6 +69,8 @@ export default function NavigatorTree({
   const [query, setQuery] = useState('');
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [focusId, setFocusId] = useState<string | null>(null);
+  const idPrefix = useId().replace(/:/gu, '');
+  const treeId = `${idPrefix}-tree`;
 
   /* §10.3 大目录虚拟化：避免一次渲染全部节点。
    * 行高可变且不引入新依赖，采用渐进窗口渲染：
@@ -118,6 +122,14 @@ export default function NavigatorTree({
   const hasMore = flatVisible.length > renderedItems.length;
 
   useEffect(() => {
+    if (!focusId) return;
+    const element = treeRef.current?.querySelector<HTMLElement>(
+      `[data-node-id="${CSS.escape(focusId)}"]`,
+    );
+    element?.focus();
+  }, [focusId, renderLimit, renderedItems.length]);
+
+  useEffect(() => {
     const sentinel = sentinelRef.current;
     if (!sentinel || !hasMore) return;
     const observer = new IntersectionObserver(
@@ -162,7 +174,7 @@ export default function NavigatorTree({
           const node = flatVisible[currentIndex].node;
           if (node.children?.length && effectiveCollapsed.has(node.id)) {
             toggleCollapse(node.id);
-          } else {
+          } else if (node.children?.length) {
             nextIndex = Math.min(currentIndex + 1, flatVisible.length - 1);
           }
         }
@@ -174,7 +186,15 @@ export default function NavigatorTree({
           if (node.children?.length && !effectiveCollapsed.has(node.id)) {
             toggleCollapse(node.id);
           } else {
-            nextIndex = Math.max(currentIndex - 1, 0);
+            const currentDepth = flatVisible[currentIndex].depth;
+            if (currentDepth > 0) {
+              for (let index = currentIndex - 1; index >= 0; index -= 1) {
+                if (flatVisible[index].depth === currentDepth - 1) {
+                  nextIndex = index;
+                  break;
+                }
+              }
+            }
           }
         }
         break;
@@ -202,15 +222,31 @@ export default function NavigatorTree({
     if (nextIndex >= 0 && nextIndex < flatVisible.length) {
       // 键盘导航越过已渲染窗口时，同步扩容渐进渲染（§10.3）
       if (nextIndex >= renderLimit - 1) {
-        setRenderLimit(nextIndex + RENDER_BATCH);
+        setRenderLimit((limit) =>
+          Math.max(limit, nextIndex + RENDER_BATCH),
+        );
       }
       const next = flatVisible[nextIndex];
       setFocusId(next.node.id);
-      const el = treeRef.current?.querySelector<HTMLElement>(
-        `[data-node-id="${CSS.escape(next.node.id)}"]`,
-      );
-      el?.focus();
     }
+  }
+
+  function handleModeKeyDown(
+    event: KeyboardEvent<HTMLButtonElement>,
+    currentMode: NavigatorMode,
+  ): void {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
+      return;
+    }
+    event.preventDefault();
+    const nextMode: NavigatorMode =
+      event.key === 'ArrowLeft' || event.key === 'Home'
+        ? 'document'
+        : 'matter';
+    if (nextMode !== currentMode) onModeChange(nextMode);
+    window.requestAnimationFrame(() => {
+      document.getElementById(`${idPrefix}-${nextMode}-mode`)?.focus();
+    });
   }
 
   return (
@@ -221,20 +257,28 @@ export default function NavigatorTree({
         aria-label="目录模式切换"
       >
         <button
+          id={`${idPrefix}-document-mode`}
           type="button"
           role="tab"
           aria-selected={mode === 'document'}
+          aria-controls={treeId}
+          tabIndex={mode === 'document' ? 0 : -1}
           className={`wl-navigator-mode-btn${mode === 'document' ? ' is-active' : ''}`}
           onClick={() => onModeChange('document')}
+          onKeyDown={(event) => handleModeKeyDown(event, 'document')}
         >
           按文档
         </button>
         <button
+          id={`${idPrefix}-matter-mode`}
           type="button"
           role="tab"
           aria-selected={mode === 'matter'}
+          aria-controls={treeId}
+          tabIndex={mode === 'matter' ? 0 : -1}
           className={`wl-navigator-mode-btn${mode === 'matter' ? ' is-active' : ''}`}
           onClick={() => onModeChange('matter')}
+          onKeyDown={(event) => handleModeKeyDown(event, 'matter')}
         >
           按事项
         </button>
@@ -242,7 +286,7 @@ export default function NavigatorTree({
 
       <label className="wl-navigator-search">
         <Search aria-hidden="true" />
-        <input
+        <Input
           type="search"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
@@ -258,9 +302,11 @@ export default function NavigatorTree({
       ) : null}
 
       <div
+        id={treeId}
         ref={treeRef}
         className="wl-navigator-tree"
         role="tree"
+        aria-labelledby={`${idPrefix}-${mode}-mode`}
         aria-label={mode === 'document' ? '按文档浏览目录' : '按事项聚合目录'}
         onKeyDown={handleKeyDown}
       >

@@ -16,6 +16,12 @@ export interface PdfSourcePaneProps {
   onLocate: (unitId: string, sourceRef: string) => void;
 }
 
+function fileSizeLabel(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${bytes.toLocaleString('zh-CN')} 字节`;
+}
+
 /**
  * 中右 PDF 原文面板（Spec R01 §4.2）。
  * 与左侧结构化解析结果并排；展示 DocumentVersion 绑定与受控 PDF 预览状态。
@@ -28,12 +34,6 @@ export default function PdfSourcePane({
 }: PdfSourcePaneProps) {
   const pdfPreview = data.readerProjection?.pdfPreview ?? null;
   const translation = data.readerProjection?.translation ?? null;
-  const translationDetail =
-    translation?.status === 'UNAVAILABLE'
-      ? translation.reason
-      : translation
-        ? `原文轴 ${translation.axes.ownerSourceReaderConsumptionAllowed ? '开放' : '关闭'} / 双语轴 ${translation.axes.bilingualTranslationConsumptionAllowed ? '开放' : '关闭'}`
-        : null;
   const units = data.readerProjection?.units ?? [];
 
   // 当前定位 sourceRef 对应的页码 locators（用于「PDF 定位到正确页码」）
@@ -88,13 +88,13 @@ export default function PdfSourcePane({
   return (
     <article className="parse-panel parse-pdf-pane" aria-label="PDF 原文与定位">
       <div className="parse-panel-label">
-        <FileSearch /> PDF 原文 · 中右栏
+        <FileSearch aria-hidden="true" /> PDF 原文
       </div>
 
       <div className="parse-pdf-binding">
         <span>受控文件来源</span>
         <strong>已绑定当前文件版本</strong>
-        <p>{data.workItem.source.sourceByteLength.toLocaleString()} bytes</p>
+        <p>{fileSizeLabel(data.workItem.source.sourceByteLength)}</p>
       </div>
 
       {requestedSourceRef && locatedPages.length > 0 ? (
@@ -129,7 +129,7 @@ export default function PdfSourcePane({
       ) : null}
 
       {pdfPreview ? (
-        <div className="parse-reader-missing-state">
+        <div className="parse-pdf-canvas" role="note">
           <FileSearch aria-hidden="true" />
           <div>
             <strong>
@@ -138,8 +138,8 @@ export default function PdfSourcePane({
                 : 'PDF 原文预览状态未知'}
             </strong>
             <p>
-              {pdfPreview.reason ?? 'PDF_PREVIEW_PROJECTION_MISSING'}。
-              不会用本地文件或猜测位置替代受控来源。
+              当前受控读取链尚未提供可连续滚动与缩放的 PDF 页面画布。
+              可先使用左侧结构化原文和页码定位。
             </p>
           </div>
         </div>
@@ -147,20 +147,21 @@ export default function PdfSourcePane({
 
       {translation ? (
         <small className="parse-pdf-translation">
-          双语投影：{translation.status}
-          {translationDetail ? ` · ${translationDetail}` : ''}
+          {translation.status === 'UNAVAILABLE'
+            ? '中英文对照尚未提供'
+            : '可在中英文对照视图查看已核验译文'}
         </small>
       ) : null}
 
       {locatedPages.length > 0 ? (
         <footer className="parse-pdf-located-actions">
-          {locatedPages.map((loc) => (
+          {locatedPages.map((loc, index) => (
             <button
               type="button"
               key={`${loc.unitId}-${loc.sourceRefId}`}
               onClick={() => onLocate(loc.unitId, loc.sourceRefId)}
             >
-              在结构化解析中查看 {loc.sourceRefId.slice(0, 18)}…
+              在结构化原文中查看依据 {index + 1}
             </button>
           ))}
         </footer>

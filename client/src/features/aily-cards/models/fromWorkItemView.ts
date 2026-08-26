@@ -50,8 +50,8 @@ export function toOverallAssessmentCard(
     currentJudgment: overall?.currentJudgment ?? '暂未形成候选结论',
     applicabilitySummary:
       overall?.applicabilitySummary ?? '适用范围待评估完成后同步',
-    keyEvidenceList: (overall?.keyEvidence ?? []).map(
-      (e) => `${e.label}${e.structurePath ? `（${e.structurePath}）` : ''}`,
+    keyEvidenceList: (overall?.keyEvidence ?? []).map((e) =>
+      e.documentLabel ? `${e.label}（${e.documentLabel}）` : e.label,
     ),
     unresolvedQuestionsList: (overall?.unresolvedQuestions ?? []).map(
       (q) => q.label,

@@ -42,11 +42,19 @@ export default function EvidencePanel({
       `[data-evidence-ref="${CSS.escape(activeSourceRef)}"]`,
     );
     if (target) {
-      target.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      target.classList.remove('wl-source-flash');
-      // 强制 reflow 重启动画
-      void target.offsetWidth;
-      target.classList.add('wl-source-flash');
+      const reduceMotion = window.matchMedia(
+        '(prefers-reduced-motion: reduce)',
+      ).matches;
+      target.scrollIntoView({
+        behavior: reduceMotion ? 'auto' : 'smooth',
+        block: 'nearest',
+      });
+      if (!reduceMotion) {
+        target.classList.remove('wl-source-flash');
+        // 强制 reflow 重启动画
+        void target.offsetWidth;
+        target.classList.add('wl-source-flash');
+      }
     }
   }, [activeSourceRef, activeReaderUnit, units.length]);
 
@@ -72,10 +80,7 @@ export default function EvidencePanel({
         {activeSourceRef ? (
           <button type="button" className="wl-evidence-clear" onClick={onClear}>
             <Link2 aria-hidden="true" />
-            清除定位{' '}
-            {activeSourceRef.length > 24
-              ? `${activeSourceRef.slice(0, 14)}…`
-              : activeSourceRef}
+            清除定位
           </button>
         ) : (
           <span className="wl-evidence-hint">点击依据可定位到原文位置</span>
@@ -85,10 +90,10 @@ export default function EvidencePanel({
       <div className="wl-evidence-list" ref={listRef}>
         {units.length === 0 ? (
           <p className="wl-evidence-empty">
-            当前尚无可定位的原文依据；这里不会用示例内容代替真实资料。
+            当前尚无可定位的原文依据。
           </p>
         ) : (
-          units.map((unit) => {
+          units.map((unit, unitIndex) => {
             const isTargetUnit = unit.unitId === activeReaderUnit;
             return (
               <article
@@ -102,13 +107,13 @@ export default function EvidencePanel({
               >
                 <header>
                   <FileSearch2 aria-hidden="true" />
-                  <strong title={unit.unitId}>{unit.unitId}</strong>
+                  <strong>内容 {unitIndex + 1}</strong>
                   <span>{evidenceKindLabel(unit.kind)}</span>
                 </header>
                 <p>{unit.text}</p>
                 <footer>
                   {unit.sourceRefIds.length > 0 ? (
-                    unit.sourceRefIds.map((ref) => {
+                    unit.sourceRefIds.map((ref, refIndex) => {
                       const isActive = ref === activeSourceRef;
                       return (
                         <button
@@ -117,14 +122,10 @@ export default function EvidencePanel({
                           data-evidence-ref={ref}
                           className={`wl-evidence-ref${isActive ? ' is-active' : ''}`}
                           onClick={() => onLocate(unit.unitId, ref)}
-                          title={ref}
+                          aria-label={`定位内容 ${unitIndex + 1} 的第 ${refIndex + 1} 条依据`}
                         >
                           <LocateFixed aria-hidden="true" />
-                          <span>
-                            {ref.length > 32
-                              ? `${ref.slice(0, 20)}…${ref.slice(-8)}`
-                              : ref}
-                          </span>
+                          <span>依据 {refIndex + 1}</span>
                         </button>
                       );
                     })

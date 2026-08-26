@@ -2,11 +2,11 @@ import { useCallback, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { useNavigate } from 'react-router-dom';
 import {
-  CheckCircle2,
   FileCheck2,
   FileUp,
   LoaderCircle,
-  ShieldCheck,
+  RotateCcw,
+  Shield,
   TriangleAlert,
 } from 'lucide-react';
 
@@ -54,7 +54,7 @@ export function HostedDevelopmentIntake() {
     }
     if (next.size <= 0 || next.size > MAX_PDF_BYTES) {
       setFile(null);
-      setError('PDF 必须大于 0 bytes 且不超过 100 MiB。');
+      setError('PDF 不能为空，且文件大小不能超过 100 MB。');
       return;
     }
     setFile(next);
@@ -123,9 +123,8 @@ export function HostedDevelopmentIntake() {
       ) {
         throw new Error('CANONICAL_SAME_USER_READBACK_MISMATCH');
       }
-      navigate(
-        `/work-items/${encodeURIComponent(workItemId)}/documents?node=document&tab=source`,
-      );
+      // 新建完成后先进入事项综合概述；原文与解析结果由用户按需下钻。
+      navigate(`/work-items/${encodeURIComponent(workItemId)}`);
     } catch (reason) {
       setPhase('failed');
       setError(intakeError(reason));
@@ -135,15 +134,14 @@ export function HostedDevelopmentIntake() {
   return (
     <section className="hosted-intake" aria-labelledby="hosted-intake-title">
       <div className="hosted-intake-copy">
-        <span className="library-section-label">受控资料上传</span>
+        <span className="library-section-label">新建工程事项</span>
         <h2 id="hosted-intake-title">上传 PDF 并新建工程事项</h2>
         <p>
-          文件先进入当前用户的受控文件空间；系统随后按实际字节校验文件、
-          形成文件版本与工程事项，并立即校验资料关联与完整性。
+          选择文件后，系统会校验资料完整性并建立受控工程事项。创建成功后先进入综合评估概述。
         </p>
         <div className="hosted-intake-boundary">
-          <ShieldCheck aria-hidden="true" />
-          <span>仅限已授权用户；非本人文件与未授权环境均拒绝。</span>
+          <Shield aria-hidden="true" />
+          <span>仅限已授权用户访问；资料仍按当前权限范围显示。</span>
         </div>
       </div>
 
@@ -168,8 +166,8 @@ export function HostedDevelopmentIntake() {
             <strong>{file ? file.name : '拖入或选择一个 PDF'}</strong>
             <span>
               {file
-                ? `${file.size.toLocaleString('zh-CN')} bytes`
-                : '最大 100 MiB'}
+                ? fileSizeLabel(file.size)
+                : '最大 100 MB'}
             </span>
           </div>
         </div>
@@ -182,7 +180,7 @@ export function HostedDevelopmentIntake() {
           {busy ? (
             <LoaderCircle className="library-spin" aria-hidden="true" />
           ) : uploaded ? (
-            <CheckCircle2 aria-hidden="true" />
+            <RotateCcw aria-hidden="true" />
           ) : (
             <FileUp aria-hidden="true" />
           )}
@@ -231,12 +229,27 @@ function safePdfName(fileName: string): string {
 function phaseLabel(phase: IntakePhase, uploaded: boolean): string {
   if (phase === 'uploading') return '上传受控文件…';
   if (phase === 'creating') return '校验并创建…';
-  if (phase === 'readback') return '同用户回读…';
+  if (phase === 'readback') return '核验资料关联…';
   if (phase === 'failed' && uploaded) return '重新提交';
-  return '上传并创建测试事项';
+  return '上传并创建工程事项';
+}
+
+function fileSizeLabel(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${bytes.toLocaleString('zh-CN')} 字节`;
 }
 
 function intakeError(reason: unknown): string {
-  if (reason instanceof Error && reason.message.trim()) return reason.message;
+  const message = reason instanceof Error ? reason.message.trim() : '';
+  if (/IDENTITY|LOGIN|OAUTH|401|UNAUTHORIZED/iu.test(message)) {
+    return '请先完成飞书授权，再上传并创建工程事项。';
+  }
+  if (/SAME_USER_READBACK_MISMATCH/iu.test(message)) {
+    return '文件已上传，但事项校验尚未完成。请保留当前文件后重试；未通过校验的结果不会作为当前事项。';
+  }
+  if (/BROWSER_(RANDOM_UUID|SHA256)_UNAVAILABLE/iu.test(message)) {
+    return '当前浏览器缺少安全校验能力，请使用最新版飞书或受支持浏览器重试。';
+  }
   return '工程事项创建失败，请保留当前文件后重试。';
 }

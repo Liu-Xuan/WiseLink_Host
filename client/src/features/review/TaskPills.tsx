@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { CircleDashed, Loader2, XCircle } from 'lucide-react';
+import { CircleDashed, Loader2, UserCheck, XCircle } from 'lucide-react';
 
 import type { CanonicalTimelineProjection } from '@shared/api.interface';
 
@@ -12,7 +12,19 @@ export interface TaskPillsProps {
 interface TaskView {
   key: string;
   label: string;
-  state: 'running' | 'done' | 'failed' | 'pending';
+  state:
+    | 'running'
+    | 'done'
+    | 'failed'
+    | 'pending'
+    | 'waiting'
+    | 'review'
+    | 'confirmed'
+    | 'candidate'
+    | 'stale'
+    | 'conflict'
+    | 'obsolete'
+    | 'cancelled';
   note: string;
 }
 
@@ -26,18 +38,74 @@ const TASK_KINDS: ReadonlyArray<{
   { kind: 'AEO_CANDIDATE', label: 'AEO 候选' },
 ];
 
-function stateFromStatus(status: string): TaskView['state'] {
-  const lowered = status.toLowerCase();
-  if (lowered.includes('fail') || lowered.includes('error')) return 'failed';
+function stateFromStatus(
+  status: string,
+  kind: CanonicalTimelineProjection['events'][number]['kind'],
+): TaskView['state'] {
+  const upper = status.toUpperCase();
+  if (upper.includes('FAIL') || upper.includes('ERROR')) return 'failed';
+  if (upper.includes('CONFLICT')) return 'conflict';
+  if (upper.includes('STALE')) return 'stale';
+  if (upper.includes('CANCELLED')) return 'cancelled';
+  if (upper.includes('OBSOLETE') || upper.includes('SUPERSEDED')) {
+    return 'obsolete';
+  }
+  if (upper.includes('REVIEW_REQUIRED') || upper.includes('NEEDS_REVIEW')) {
+    return 'review';
+  }
+  if (upper.includes('HUMAN_CONFIRMED')) return 'confirmed';
+  if (upper.includes('WAITING_INPUT') || upper.includes('WAITING')) {
+    return 'waiting';
+  }
+  // CANDIDATE_READY / CANDIDATE_ONLY 均只是可复核候选，不是业务完成。
+  if (upper.includes('CANDIDATE')) return 'candidate';
+  if (upper.includes('RUN') || upper.includes('PROGRESS')) return 'running';
+  if (upper.includes('QUEUE') || upper.includes('PENDING')) return 'pending';
   if (
-    lowered.includes('complete') ||
-    lowered.includes('done') ||
-    lowered.includes('candidate') ||
-    lowered.includes('confirmed')
-  )
+    upper.includes('SUCCEEDED') ||
+    upper.includes('COMPLETE') ||
+    upper.includes('DONE')
+  ) {
+    if (kind === 'OVERALL_CONFIRMATION') return 'confirmed';
+    if (
+      kind === 'DYNAMIC_EVALUATION' ||
+      kind === 'OVERALL_SYNTHESIS' ||
+      kind === 'AEO_CANDIDATE'
+    ) {
+      return 'candidate';
+    }
     return 'done';
-  if (lowered.includes('run') || lowered.includes('progress')) return 'running';
+  }
+  if (upper.includes('CONFIRMED')) return 'confirmed';
   return 'pending';
+}
+
+function stateLabel(state: TaskView['state']): string {
+  if (state === 'done') return '已完成';
+  if (state === 'running') return '进行中';
+  if (state === 'failed') return '未完成';
+  if (state === 'waiting') return '等待补充';
+  if (state === 'review') return '待人工复核';
+  if (state === 'confirmed') return '人工确认已记录';
+  if (state === 'candidate') return '候选待复核';
+  if (state === 'stale') return '结论需更新';
+  if (state === 'conflict') return '基于旧版本';
+  if (state === 'obsolete') return '已被替代';
+  if (state === 'cancelled') return '已取消';
+  return '等待中';
+}
+
+function safeTaskNote(value: string | undefined, fallback: string): string {
+  const normalized = value?.trim() ?? '';
+  if (
+    !normalized ||
+    /OPENCLAW|ACTIONATTEMPT|SHA-?256|\b[0-9a-f]{40,64}\b|\b[0-9a-f]{8}-[0-9a-f-]{27,}\b|\b[A-Z][A-Z0-9_]{3,}\b/iu.test(
+      normalized,
+    )
+  ) {
+    return fallback;
+  }
+  return normalized.slice(0, 180);
 }
 
 /**
@@ -47,29 +115,29 @@ function stateFromStatus(status: string): TaskView['state'] {
  */
 export default function TaskPills({ timeline }: TaskPillsProps) {
   const tasks = useMemo<TaskView[]>(() => {
-    return TASK_KINDS.map(({ kind, label }) => {
+    return TASK_KINDS.flatMap(({ kind, label }) => {
       const latest = [...timeline.events]
         .reverse()
         .find((event) => event.kind === kind);
-      if (!latest) {
-        return {
+      if (!latest) return [];
+      const state = stateFromStatus(latest.status, latest.kind);
+      const statusLabel = stateLabel(state);
+      return [
+        {
           key: kind,
           label,
-          state: 'pending' as const,
-          note: '尚无进度记录',
-        };
-      }
-      return {
-        key: kind,
-        label,
-        state: stateFromStatus(latest.status),
-        note: latest.detail || latest.label || latest.status,
-      };
+          state,
+          note: safeTaskNote(latest.detail || latest.label, statusLabel),
+        },
+      ];
     });
   }, [timeline.events]);
 
   return (
     <div className="wl-task-pills" role="status" aria-label="分析任务状态">
+      {tasks.length === 0 ? (
+        <span className="wl-task-pills-empty">当前暂无分析进度记录</span>
+      ) : null}
       {tasks.map((task) => (
         <span
           key={task.key}
@@ -80,17 +148,12 @@ export default function TaskPills({ timeline }: TaskPillsProps) {
             <Loader2 aria-hidden="true" />
           ) : task.state === 'failed' ? (
             <XCircle aria-hidden="true" />
+          ) : task.state === 'confirmed' ? (
+            <UserCheck aria-hidden="true" />
           ) : task.state === 'done' ? null : (
             <CircleDashed aria-hidden="true" />
           )}
-          {task.label} ·{' '}
-          {task.state === 'done'
-            ? '已完成'
-            : task.state === 'running'
-              ? '进行中'
-              : task.state === 'failed'
-                ? '失败'
-                : '等待中'}
+          {task.label} · {stateLabel(task.state)}
         </span>
       ))}
     </div>

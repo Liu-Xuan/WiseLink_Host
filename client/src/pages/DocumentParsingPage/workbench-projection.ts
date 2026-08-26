@@ -41,7 +41,7 @@ function describeTranslationProjection(
     return {
       capability: 'UNAVAILABLE',
       headline: '中英文对照暂不可用',
-      detail: `${translation.reason}。页面不会推断或补造译文。`,
+      detail: '当前事项尚未提供可核验的译文。',
       ownerSourceReaderConsumptionAllowed: false,
       bilingualTranslationConsumptionAllowed: false,
     };
@@ -50,7 +50,7 @@ function describeTranslationProjection(
   if (translation.status === 'BILINGUAL_READING_AID_AVAILABLE') {
     return {
       capability: 'AVAILABLE',
-      headline: '双语阅读辅助可用（owner 提供为准）',
+      headline: '双语阅读辅助可用',
       detail: `翻译单元 ${axes.translatedUnitCount}/${axes.translationRequiredUnitCount}，待生成 ${axes.pendingTranslationUnitCount}。`,
       ownerSourceReaderConsumptionAllowed:
         axes.ownerSourceReaderConsumptionAllowed,
@@ -61,8 +61,8 @@ function describeTranslationProjection(
   if (translation.status === 'SOURCE_CURRENT_TRANSLATION_PENDING') {
     return {
       capability: 'LIMITED',
-      headline: '原文阅读投影当前；译文待生成',
-      detail: `翻译单元 ${axes.translatedUnitCount}/${axes.translationRequiredUnitCount}，待生成 ${axes.pendingTranslationUnitCount}。已有译文计数仅展示，不提升双语轴。`,
+      headline: '原文可读，译文仍在准备',
+      detail: `已形成 ${axes.translatedUnitCount}/${axes.translationRequiredUnitCount} 个翻译单元，仍有 ${axes.pendingTranslationUnitCount} 个待生成。`,
       ownerSourceReaderConsumptionAllowed:
         axes.ownerSourceReaderConsumptionAllowed,
       bilingualTranslationConsumptionAllowed:
@@ -71,8 +71,8 @@ function describeTranslationProjection(
   }
   return {
     capability: 'UNAVAILABLE',
-    headline: '翻译投影存在缺口（GAP）',
-    detail: `未满足的 owner 守卫：${axes.failureReasons.join('、') || '未提供'}。两条消费轴均关闭。`,
+    headline: '中英文对照暂不可用',
+    detail: '当前翻译结果尚未通过完整性校验，原文内容仍保持可追溯。',
     ownerSourceReaderConsumptionAllowed:
       axes.ownerSourceReaderConsumptionAllowed,
     bilingualTranslationConsumptionAllowed:
@@ -175,24 +175,24 @@ function buildReaderCapabilities(
       label: 'PDF 原文',
       status: projection ? projection.pdfPreview.status : 'UNAVAILABLE',
       note: projection
-        ? `PDF 预览：${projection.pdfPreview.status} · ${projection.pdfPreview.reason}`
-        : '当前事项没有 Reader projection，尚无可用的 PDF 预览。',
+        ? '当前受控读取链尚未提供 PDF 页面画布，可继续使用结构化原文与页码定位。'
+        : '当前事项尚无可用的 PDF 页面预览。',
     },
     {
       mode: 'structured',
       label: '结构化原文',
       status: projection ? 'AVAILABLE' : 'UNAVAILABLE',
       note: projection
-        ? `当前查询返回 ${projection.units.length} 个单元（内容单元），${locatedUnitCount} 个带 source locator、可定位到原文。`
-        : '当前事项没有 Reader projection，尚无可查询的结构化原文。',
+        ? `当前查询返回 ${projection.units.length} 个内容单元，其中 ${locatedUnitCount} 个可定位到原文页码。`
+        : '当前事项尚无可查询的结构化原文。',
     },
     {
       mode: 'bilingual',
       label: '中英文对照',
       status: translationView ? translationView.capability : 'UNAVAILABLE',
       note: translationView
-        ? `${translationView.detail} · 原文轴 ${translationView.ownerSourceReaderConsumptionAllowed ? '开放' : '关闭'} / 双语轴 ${translationView.bilingualTranslationConsumptionAllowed ? '开放' : '关闭'}`
-        : '当前事项没有 Reader projection；页面不会推断或补造译文。',
+        ? translationView.detail
+        : '当前事项尚无可核验的译文。',
     },
   ];
 }

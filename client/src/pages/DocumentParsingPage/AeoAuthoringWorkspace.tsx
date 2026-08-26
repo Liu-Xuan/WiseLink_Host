@@ -1,6 +1,6 @@
 import {
   AlertTriangle,
-  CheckCircle2,
+  CircleDashed,
   ClipboardList,
   FileCheck2,
   FileOutput,
@@ -19,7 +19,6 @@ import type {
 
 interface AeoAuthoringWorkspaceProps {
   workItemId: string;
-  workItemRevision: number;
   aeo: CanonicalAeoCandidateProjection;
   integratedAssessment: CanonicalIntegratedAssessmentProjection | null;
 }
@@ -29,14 +28,13 @@ const ARTIFACT_LABELS: Record<
   string
 > = {
   AUTHORING_BOOTSTRAP: '编写素材',
-  WORKING_COPY: 'Working copy',
-  DRAFT_PACKAGE: 'Draft package',
-  WORD_EXPORT: 'Word candidate',
+  WORKING_COPY: '工作副本',
+  DRAFT_PACKAGE: '候选稿件包',
+  WORD_EXPORT: 'Word 候选文件',
 };
 
 export function AeoAuthoringWorkspace({
   workItemId,
-  workItemRevision,
   aeo,
   integratedAssessment,
 }: AeoAuthoringWorkspaceProps) {
@@ -52,9 +50,9 @@ export function AeoAuthoringWorkspace({
       <header className="aeo-authoring-header">
         <div>
           <div className="parse-panel-label">
-            <FileOutput aria-hidden="true" /> AEO AUTHORING · SAME WORKITEM
+            <FileOutput aria-hidden="true" /> AEO 候选编写
           </div>
-          <p className="aeo-authoring-kicker">CANDIDATE AUTHORING SURFACE</p>
+          <p className="aeo-authoring-kicker">候选素材工作区</p>
           <h2>{aeo.targetIdentity}</h2>
           <p>
             当前工作区只处理候选编写素材。它不会创建正式
@@ -63,9 +61,9 @@ export function AeoAuthoringWorkspace({
           </p>
         </div>
         <div className="aeo-authoring-seal">
-          <span>AUTHORITY</span>
-          <strong>待工程师确认</strong>
-          <small>{humanState(aeo.status)}</small>
+          <span>当前性质</span>
+          <strong>候选待复核</strong>
+          <small>{humanState(aeo.status) ?? '状态待确认'}</small>
         </div>
       </header>
 
@@ -98,11 +96,11 @@ export function AeoAuthoringWorkspace({
             </div>
             <h3>编辑能力尚未连接</h3>
             <p>
-              当前只返回候选素材索引，尚未提供可编辑段落、双语字段和原文绑定。页面不会猜测步骤正文或保存本地草稿。
+              当前只返回候选素材索引，尚未提供可编辑段落、双语字段和原文绑定。
             </p>
             <div className="aeo-authoring-editor-actions">
               <Button type="button" disabled title="编辑能力尚未连接">
-                编辑 Working copy
+                编辑工作副本
               </Button>
               <Button
                 type="button"
@@ -122,12 +120,8 @@ export function AeoAuthoringWorkspace({
           </div>
           <dl className="aeo-authoring-facts">
             <div>
-              <dt>工程事项</dt>
-              <dd title={workItemId}>{short(workItemId)}</dd>
-            </div>
-            <div>
-              <dt>事项版本</dt>
-              <dd>{workItemRevision}</dd>
+              <dt>当前范围</dt>
+              <dd>当前受控工程事项</dd>
             </div>
             <div>
               <dt>来源候选</dt>
@@ -181,19 +175,14 @@ function ArtifactRow({
     <div className={`aeo-authoring-artifact is-${stateClass}`}>
       <div>
         <strong>{ARTIFACT_LABELS[artifact.artifactKind]}</strong>
-        <span>{artifact.state}</span>
+        <span>{humanState(artifact.state) ?? '状态待确认'}</span>
       </div>
       <small>
-        {artifact.byteLength.toLocaleString()} bytes ·{' '}
-        {short(artifact.artifactSha256)}
+        候选素材 · {humanState(artifact.state) ?? '状态待确认'}
       </small>
       {artifact.state === 'AVAILABLE' ? (
-        <CheckCircle2 aria-label="可读取" />
+        <CircleDashed aria-label="候选素材可读取" />
       ) : null}
     </div>
   );
-}
-
-function short(value: string): string {
-  return value.length > 28 ? `${value.slice(0, 15)}…${value.slice(-9)}` : value;
 }

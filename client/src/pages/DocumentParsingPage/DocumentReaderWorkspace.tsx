@@ -1,4 +1,5 @@
 import { FileSearch, Languages, LocateFixed, Search, X } from 'lucide-react';
+import { useId, type KeyboardEvent } from 'react';
 
 import { Button } from '@client/src/components/ui/button';
 import { Input } from '@client/src/components/ui/input';
@@ -33,7 +34,26 @@ interface DocumentReaderWorkspaceProps {
 function statusLabel(status: ReaderCapability['status']): string {
   if (status === 'AVAILABLE') return '可用';
   if (status === 'LIMITED') return '受限';
-  return '缺失投影';
+  return '暂不可用';
+}
+
+function unitKindLabel(kind: string): string {
+  const normalized = kind.trim().toUpperCase();
+  if (normalized.includes('TITLE') || normalized.includes('HEADING')) {
+    return '标题';
+  }
+  if (normalized.includes('TABLE')) return '表格内容';
+  if (normalized.includes('LIST')) return '列表内容';
+  if (normalized.includes('PARAGRAPH') || normalized.includes('TEXT')) {
+    return '正文';
+  }
+  return '结构化内容';
+}
+
+function fileSizeLabel(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${bytes.toLocaleString('zh-CN')} 字节`;
 }
 
 export function DocumentReaderWorkspace({
@@ -58,6 +78,37 @@ export function DocumentReaderWorkspace({
     capabilities.find(
       (capability: ReaderCapability) => capability.mode === readerMode,
     ) ?? capabilities[1];
+  const selectedLocator = selectedReaderResult?.sourceLocators.find(
+    (locator) => locator.sourceRefId === requestedSourceRef,
+  );
+  const idPrefix = useId().replace(/:/gu, '');
+  const panelId = `${idPrefix}-panel`;
+
+  function handleModeKeyDown(
+    event: KeyboardEvent<HTMLButtonElement>,
+    currentMode: ReaderViewMode,
+  ): void {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
+      return;
+    }
+    event.preventDefault();
+    const currentIndex = capabilities.findIndex(
+      (capability) => capability.mode === currentMode,
+    );
+    const nextIndex =
+      event.key === 'Home'
+        ? 0
+        : event.key === 'End'
+          ? capabilities.length - 1
+          : event.key === 'ArrowRight'
+            ? (currentIndex + 1) % capabilities.length
+            : (currentIndex - 1 + capabilities.length) % capabilities.length;
+    const next = capabilities[nextIndex];
+    onReaderModeChange(next.mode);
+    window.requestAnimationFrame(() => {
+      document.getElementById(`${idPrefix}-${next.mode}`)?.focus();
+    });
+  }
 
   return (
     <article
@@ -65,7 +116,7 @@ export function DocumentReaderWorkspace({
       id="workspace-reader"
     >
       <div className="parse-panel-label">
-        <FileSearch /> 同一 Reader 查询 · 受控视图
+        <FileSearch aria-hidden="true" /> 原文与解析
       </div>
       <div
         className="parse-reader-modes"
@@ -81,14 +132,20 @@ export function DocumentReaderWorkspace({
                 : Search;
           return (
             <button
+              id={`${idPrefix}-${capability.mode}`}
               type="button"
               role="tab"
               aria-selected={readerMode === capability.mode}
+              aria-controls={panelId}
+              tabIndex={readerMode === capability.mode ? 0 : -1}
               className={`parse-reader-mode${
                 readerMode === capability.mode ? ' is-active' : ''
               }`}
               key={capability.mode}
               onClick={() => onReaderModeChange(capability.mode)}
+              onKeyDown={(event) =>
+                handleModeKeyDown(event, capability.mode)
+              }
             >
               <Icon aria-hidden="true" />
               <span>{capability.label}</span>
@@ -99,16 +156,21 @@ export function DocumentReaderWorkspace({
       </div>
       <div className="parse-reader-capability-strip" aria-live="polite">
         <strong>{activeCapability.note}</strong>
-        <span>当前事项 · 结构化原文</span>
+        <span>当前事项 · 可追溯来源</span>
       </div>
 
       {readerMode === 'source' ? (
-        <section className="parse-reader-source-view" aria-label="PDF 原文绑定">
+        <section
+          id={panelId}
+          className="parse-reader-source-view"
+          role="tabpanel"
+          aria-labelledby={`${idPrefix}-source`}
+        >
           <div>
             <span>受控文件来源</span>
             <strong>已绑定当前文件版本</strong>
             <p>
-              {data.workItem.source.sourceByteLength.toLocaleString()} bytes
+              {fileSizeLabel(data.workItem.source.sourceByteLength)}
             </p>
           </div>
           <div className="parse-reader-missing-state">
@@ -120,9 +182,7 @@ export function DocumentReaderWorkspace({
                   : 'PDF 原文预览状态未知'}
               </strong>
               <p>
-                {data.readerProjection?.pdfPreview.reason ??
-                  'PDF_PREVIEW_PROJECTION_MISSING'}
-                。不会用本地文件或猜测位置替代受控来源。
+                当前受控读取链尚未提供 PDF 页面画布。你仍可使用结构化原文和页码定位。
               </p>
             </div>
           </div>
@@ -130,32 +190,30 @@ export function DocumentReaderWorkspace({
       ) : null}
 
       {readerMode === 'bilingual' ? (
-        <section className="parse-reader-missing-state" aria-label="双语视图">
+        <section
+          id={panelId}
+          className="parse-reader-missing-state"
+          role="tabpanel"
+          aria-labelledby={`${idPrefix}-bilingual`}
+        >
           <Languages aria-hidden="true" />
           <div>
             <strong>{translationView?.headline ?? '中英文对照暂不可用'}</strong>
             <p>
-              {translationView?.detail ?? 'TRANSLATION_PROJECTION_MISSING'}
-              。页面不会推断或补造译文，两条消费轴由 Host 派生。
+              {translationView?.detail ??
+                '当前事项尚无可核验的译文。'}
             </p>
-            {translationView ? (
-              <small>
-                原文轴：
-                {translationView.ownerSourceReaderConsumptionAllowed
-                  ? '开放'
-                  : '关闭'}{' '}
-                · 双语轴：
-                {translationView.bilingualTranslationConsumptionAllowed
-                  ? '开放'
-                  : '关闭'}
-              </small>
-            ) : null}
           </div>
         </section>
       ) : null}
 
       {readerMode === 'structured' ? (
-        <>
+        <section
+          id={panelId}
+          className="parse-reader-structured-view"
+          role="tabpanel"
+          aria-labelledby={`${idPrefix}-structured`}
+        >
           <form
             className="parse-reader-query-form"
             onSubmit={(event) => {
@@ -181,12 +239,17 @@ export function DocumentReaderWorkspace({
             >
               <LocateFixed aria-hidden="true" />
               <div>
-                <span>SELECTED SOURCE REF</span>
-                <strong title={requestedSourceRef}>{requestedSourceRef}</strong>
+                <span>当前来源定位</span>
+                <strong>
+                  {selectedLocator?.pageStart !== null &&
+                  selectedLocator?.pageStart !== undefined
+                    ? `第 ${selectedLocator.pageStart} 页${selectedLocator.pageEnd && selectedLocator.pageEnd !== selectedLocator.pageStart ? `–${selectedLocator.pageEnd} 页` : ''}`
+                    : '已选择一条原文依据'}
+                </strong>
                 <small>
                   {selectedReaderResult
-                    ? `unit · ${selectedReaderResult.unitId}`
-                    : 'SOURCE_REF_NOT_IN_CURRENT_QUERY'}
+                    ? '已在当前结构化原文中定位'
+                    : '当前查询未返回这条依据，可清除定位后重新查询'}
                 </small>
               </div>
               <Button
@@ -212,70 +275,50 @@ export function DocumentReaderWorkspace({
                   }`}
                   key={result.unitId}
                 >
-                  <span>{result.kind}</span>
+                  <span>{unitKindLabel(result.kind)}</span>
                   <p>{result.text}</p>
                   <small>
-                    {result.sourceRefIds.length} 个 sourceRef ·{' '}
-                    {result.sourceLocators.length} 个 locator · {result.unitId}
+                    {result.sourceRefIds.length} 条依据 ·{' '}
+                    {result.sourceLocators.length} 个页码定位
                   </small>
                   <div
                     className="parse-result-source-refs"
-                    aria-label={`${result.unitId} 来源引用`}
+                    aria-label="原文依据"
                   >
-                    {result.sourceRefIds.map((sourceRef: string) => (
+                    {result.sourceRefIds.map((sourceRef: string, index) => (
                       <button
                         type="button"
                         className={
                           requestedSourceRef === sourceRef ? 'is-selected' : ''
                         }
                         key={sourceRef}
-                        title={sourceRef}
+                        aria-label={`定位第 ${index + 1} 条原文依据`}
                         onClick={() =>
                           onSourceRefSelect(result.unitId, sourceRef)
                         }
                       >
                         <LocateFixed aria-hidden="true" />
-                        {sourceRef}
+                        依据 {index + 1}
                       </button>
                     ))}
                   </div>
                   {result.sourceLocators.length > 0 ? (
                     <div
                       className="parse-reader-locators"
-                      aria-label={`${result.unitId} 受控来源定位`}
+                      aria-label="受控来源定位"
                     >
-                      {result.sourceLocators.map((locator) => (
+                      {result.sourceLocators.map((locator, index) => (
                         <div
                           className="parse-reader-locator"
                           key={`${result.unitId}-${locator.sourceRefId}`}
                         >
-                          <span>{locator.sourceRefId}</span>
+                          <span>来源位置 {index + 1}</span>
                           <p>
                             {locator.pageStart !== null
                               ? `页 ${locator.pageStart}${locator.pageEnd && locator.pageEnd !== locator.pageStart ? `-${locator.pageEnd}` : ''}`
                               : '页码未投影'}
-                            {' · '}
-                            {locator.charStart !== null
-                              ? `字符 ${locator.charStart}${locator.charEnd !== null ? `-${locator.charEnd}` : ''}`
-                              : '字符区间未投影'}
                           </p>
-                          <small
-                            title={
-                              locator.normalizedPath ??
-                              locator.xpath ??
-                              locator.elementId ??
-                              undefined
-                            }
-                          >
-                            {locator.normalizedPath ??
-                              locator.xpath ??
-                              locator.elementId ??
-                              locator.quote ??
-                              '结构路径未投影'}
-                            {locator.bbox
-                              ? ` · bbox ${locator.bbox.join(',')}`
-                              : ''}
-                          </small>
+                          <small>{locator.quote ?? '当前来源未返回可展示引文'}</small>
                         </div>
                       ))}
                     </div>
@@ -286,7 +329,7 @@ export function DocumentReaderWorkspace({
               <p className="parse-empty">没有匹配的来源绑定单元。</p>
             )}
           </div>
-        </>
+        </section>
       ) : null}
     </article>
   );

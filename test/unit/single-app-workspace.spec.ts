@@ -5,24 +5,52 @@ const root = resolve(__dirname, '../..');
 
 describe('single canonical app workspace', () => {
   it('absorbs the workbench and document tree without reviving module apps', async () => {
-    const [routes, layout, page, tree, dock, trail] = await Promise.all([
-      source('client/src/app.tsx'),
-      source('client/src/components/Layout.tsx'),
-      source('client/src/pages/DocumentParsingPage/DocumentParsingPage.tsx'),
-      source('client/src/pages/DocumentParsingPage/WorkItemContextTree.tsx'),
-      source('client/src/pages/DocumentParsingPage/WorkItemContextDock.tsx'),
-      source(
-        'client/src/pages/DocumentParsingPage/EngineeringReasoningTrail.tsx',
-      ),
-    ]);
+    const [
+      routes,
+      layout,
+      floatingDock,
+      page,
+      tree,
+      dock,
+      trail,
+      shell,
+      intake,
+      taskPills,
+      motion,
+      reader,
+    ] =
+      await Promise.all([
+        source('client/src/app.tsx'),
+        source('client/src/components/Layout.tsx'),
+        source('client/src/features/navigation/FloatingDock.tsx'),
+        source('client/src/pages/DocumentParsingPage/DocumentParsingPage.tsx'),
+        source('client/src/pages/DocumentParsingPage/WorkItemContextTree.tsx'),
+        source('client/src/pages/DocumentParsingPage/WorkItemContextDock.tsx'),
+        source(
+          'client/src/pages/DocumentParsingPage/EngineeringReasoningTrail.tsx',
+        ),
+        source('client/src/features/workbench/WorkbenchShell.tsx'),
+        source(
+          'client/src/pages/WorkspaceHomePage/HostedDevelopmentIntake.tsx',
+        ),
+        source('client/src/features/review/TaskPills.tsx'),
+        source('client/src/styles/motion.css'),
+        source(
+          'client/src/pages/DocumentParsingPage/DocumentReaderWorkspace.tsx',
+        ),
+      ]);
 
     expect(routes).toContain('WorkspaceHomePage');
     expect(routes).toContain('work-items/:workItemId/documents');
     expect(routes).not.toContain('ailyCardsPreviewRoute');
     expect(routes).not.toContain('AilyCardsPreview');
     expect(routes).not.toContain('mockFixtures');
-    expect(layout).toContain('WiseLink 主导航');
-    expect(layout).toContain('AI 初步意见需复核');
+    expect(floatingDock).toContain('WiseLink 主导航');
+    expect(floatingDock).toContain('资料库');
+    expect(floatingDock).toContain('补充资料');
+    expect(floatingDock).not.toContain('is-disabled');
+    expect(layout).not.toContain('飞书身份');
+    expect(layout).not.toContain('任务总览');
     expect(layout).not.toContain('唯一妙搭应用');
     expect(layout).not.toContain('CANONICAL HOST');
     expect(page).toContain('WorkbenchShell');
@@ -31,13 +59,29 @@ describe('single canonical app workspace', () => {
     expect(tree).toContain('族群 · 文档 · 修订');
     expect(tree).toContain('随当前工程事项的最新资料更新');
     expect(dock).toContain('动态评估');
-    expect(dock).toContain('运行与版本详情');
-    expect(dock).toContain('人工确认边界');
-    expect(trail).toContain('方法、依据、缺口与人工动作');
+    expect(dock).toContain('当前事项摘要');
+    expect(dock).toContain('已记录，不等于正式批准');
+    expect(dock).not.toContain('permissionSnapshotVersion');
+    expect(dock).not.toContain('candidateState');
+    expect(trail).toContain('系统查阅了什么，以及候选如何形成');
     expect(trail).toContain('不把模型不可审计的隐式思维草稿当作依据');
     expect(page).toContain('查看评估过程与版本详情');
     expect(page).toContain('sourceBoundCandidateCount');
     expect(page).toContain('externalDiscoveryIsEvidence');
+    expect(shell).toContain(
+      '沉浸模式只隐藏应用外壳，不隐藏工作台的资料目录与证据栏',
+    );
+    expect(shell).not.toContain('!immersive &&');
+    expect(intake).toContain(
+      'navigate(`/work-items/${encodeURIComponent(workItemId)}`)',
+    );
+    expect(intake).not.toContain('node=document&tab=source');
+    expect(taskPills).toContain("if (upper.includes('CANDIDATE')) return 'candidate'");
+    expect(taskPills).toContain("if (state === 'candidate') return '候选待复核'");
+    expect(motion).toContain('.wl-spin');
+    expect(motion).toContain('.animate-spin');
+    expect(reader).not.toContain('PDF_PREVIEW_PROJECTION_MISSING');
+    expect(reader).not.toContain('SOURCE_REF_NOT_IN_CURRENT_QUERY');
   });
 
   it('keeps model execution out of the browser workbench', async () => {
@@ -53,7 +97,9 @@ describe('single canonical app workspace', () => {
     expect(api).not.toContain('persistIntegratedOpenClawOverall');
     expect(api).not.toContain('evaluateAssessment');
     expect(api).not.toContain('resynthesizeAssessment');
-    expect(page).toContain('保存只记录工程师判断，不会直接改写逐项评估结果');
+    expect(page).toContain(
+      '保存只记录工程师判断，不运行模型，也不会直接改写逐项评估结果',
+    );
     expect(page).toContain('confirmIntegratedOverallForAeo');
   });
 });

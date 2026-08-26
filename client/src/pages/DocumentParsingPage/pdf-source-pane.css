@@ -8,6 +8,7 @@
   min-width: 0;
   flex-direction: column;
   gap: 14px;
+  background: var(--wl-surface-solid);
 }
 
 .parse-pdf-binding {
@@ -30,7 +31,7 @@
 .parse-pdf-binding strong {
   overflow: hidden;
   color: var(--wl-ink);
-  font-family: var(--wl-mono);
+  font-family: var(--wl-font);
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -92,7 +93,7 @@
   padding: 20px;
   border: 1px solid var(--wl-border);
   border-radius: var(--wl-radius-md);
-  background: var(--wl-glass-soft);
+  background: var(--wl-surface-solid);
   color: var(--wl-muted);
   font-size: 12px;
   text-align: center;

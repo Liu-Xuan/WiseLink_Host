@@ -29,8 +29,8 @@ describe('canonical Host workbench projection', () => {
         expect.objectContaining({ mode: 'bilingual', status: 'UNAVAILABLE' }),
       ]),
     );
-    expect(capabilities[0].note).toContain('没有 Reader projection');
-    expect(capabilities[2].note).toContain('不会推断或补造译文');
+    expect(capabilities[0].note).toContain('PDF 页面预览');
+    expect(capabilities[2].note).toContain('尚无可核验的译文');
   });
 
   it('reports structured Reader availability from Host audit only', () => {
@@ -41,8 +41,8 @@ describe('canonical Host workbench projection', () => {
     expect(capabilities[1]).toEqual(
       expect.objectContaining({ mode: 'structured', status: 'AVAILABLE' }),
     );
-    expect(capabilities[1].note).toContain('2 个单元');
-    expect(capabilities[1].note).toContain('2 个带 source locator');
+    expect(capabilities[1].note).toContain('2 个内容单元');
+    expect(capabilities[1].note).toContain('2 个可定位到原文页码');
   });
 
   it('uses Host Reader locators and business assessment content without a second source', () => {
@@ -81,7 +81,7 @@ describe('canonical Host workbench projection', () => {
       expect(view.capability).toBe('UNAVAILABLE');
       expect(view.ownerSourceReaderConsumptionAllowed).toBe(false);
       expect(view.bilingualTranslationConsumptionAllowed).toBe(false);
-      expect(view.detail).toContain('不会推断或补造译文');
+      expect(view.detail).toContain('尚未提供可核验的译文');
     });
 
     it('renders translation_pending as source-current with the bilingual axis closed', () => {
@@ -98,8 +98,8 @@ describe('canonical Host workbench projection', () => {
         },
       });
       expect(view.capability).toBe('LIMITED');
-      expect(view.headline).toContain('原文阅读投影当前');
-      expect(view.detail).toContain('不提升双语轴');
+      expect(view.headline).toBe('原文可读，译文仍在准备');
+      expect(view.detail).toContain('仍有 6 个待生成');
       expect(view.ownerSourceReaderConsumptionAllowed).toBe(true);
       expect(view.bilingualTranslationConsumptionAllowed).toBe(false);
     });
@@ -123,7 +123,7 @@ describe('canonical Host workbench projection', () => {
       expect(view.detail).toContain('10/10');
     });
 
-    it('renders a gap with both axes closed and the failure reasons verbatim', () => {
+    it('renders a user-readable gap with both axes closed', () => {
       const view = describeTranslationProjection({
         status: 'TRANSLATION_GAP',
         axes: {
@@ -137,7 +137,8 @@ describe('canonical Host workbench projection', () => {
         },
       });
       expect(view.capability).toBe('UNAVAILABLE');
-      expect(view.detail).toContain('OWNER_CURRENT_CONSUMPTION_DENIED');
+      expect(view.detail).toContain('尚未通过完整性校验');
+      expect(view.detail).not.toContain('OWNER_CURRENT_CONSUMPTION_DENIED');
       expect(view.ownerSourceReaderConsumptionAllowed).toBe(false);
       expect(view.bilingualTranslationConsumptionAllowed).toBe(false);
     });

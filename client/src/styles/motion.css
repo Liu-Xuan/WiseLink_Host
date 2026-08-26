@@ -116,9 +116,13 @@
 @media (prefers-reduced-motion: reduce) {
   .wl-focus-card[data-active='true'],
   .wl-status-dot[data-pulse='true'],
+  .wl-task-pill.is-running svg,
+  .library-spin,
+  .wl-spin,
+  .animate-spin,
   .wl-environment::before,
   .wl-environment::after {
-    animation: none;
+    animation: none !important;
   }
 
   .wl-source-flash,
