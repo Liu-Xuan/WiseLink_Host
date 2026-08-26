@@ -64,7 +64,7 @@ export default function WorkItemOverviewPage() {
 
   function openWorkbench(): void {
     navigate(
-      `/work-items/${encodeURIComponent(workItemId)}/documents?node=overall&tab=overall`,
+      `/work-items/${encodeURIComponent(workItemId)}/documents?node=review&tab=review`,
     );
   }
 

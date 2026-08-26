@@ -78,7 +78,9 @@ export default function OverallAssessmentHero({
           <span>
             {view.freshness === 'needs_update'
               ? `当前结论需更新${staleLabel ? `（${staleLabel}）` : ''}`
-              : '当前结论仍有效'}
+              : view.authority === 'formal_readback'
+                ? '正式回读当前有效'
+                : '当前候选基于最新资料'}
           </span>
         </div>
       </header>

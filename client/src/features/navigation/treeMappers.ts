@@ -62,9 +62,7 @@ function stateTone(
 ): NavigationNodeView['badgeTone'] {
   if (!state) return undefined;
   const upper = state.toUpperCase();
-  if (upper.includes('CANDIDATE') || upper.includes('HUMAN_CONFIRMED')) {
-    return 'accent';
-  }
+  if (upper.includes('FAILED') || upper.includes('CONFLICT')) return 'red';
   if (
     upper.includes('STALE') ||
     upper.includes('WAITING') ||
@@ -72,7 +70,6 @@ function stateTone(
   ) {
     return 'amber';
   }
-  if (upper.includes('FAILED') || upper.includes('CONFLICT')) return 'red';
   if (
     upper.includes('OBSOLETE') ||
     upper.includes('SUPERSEDED') ||
@@ -82,6 +79,9 @@ function stateTone(
   }
   // 绿色只保留给正式系统回读；任务成功、候选就绪和人工确认都不是正式结论。
   if (upper.includes('FORMAL_READBACK')) return 'green';
+  if (upper.includes('CANDIDATE') || upper.includes('HUMAN_CONFIRMED')) {
+    return 'accent';
+  }
   return 'muted';
 }
 

@@ -38,6 +38,8 @@ export interface WorkbenchShellProps {
   evidenceSignal?: number;
   tabs: WorkbenchTab[];
   activeTab: string;
+  /** 窄屏四项底栏的语义归组；例如解析结果归入「原文」。 */
+  mobileActiveTab?: string;
   onTabChange: (key: string) => void;
   children: ReactNode;
 }
@@ -48,6 +50,8 @@ const NAV_MAX = 420;
 const EVIDENCE_MIN = 280;
 const EVIDENCE_MAX = 360;
 const EVIDENCE_DEFAULT = 320;
+/** 1440px 设计视口优先保证结构化结果与 PDF 并排；证据栏改为按需浮层。 */
+const EVIDENCE_INLINE_BREAKPOINT = 1480;
 /** Spec R01 §4.2：仅保存布局偏好，不保存 WorkItem/current（禁止平行真源） */
 const LAYOUT_PREFS_KEY = 'wiselink.layout.workbench';
 
@@ -69,6 +73,21 @@ function clampNumber(
     : fallback;
 }
 
+function defaultEvidenceOpen(): boolean {
+  return (
+    typeof window === 'undefined' ||
+    window.innerWidth > EVIDENCE_INLINE_BREAKPOINT
+  );
+}
+
+function defaultCompactViewport(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(max-width: 720px)').matches
+  );
+}
+
 function readLayoutPrefs(): Partial<WorkbenchLayoutPrefs> {
   try {
     const raw = window.localStorage.getItem(LAYOUT_PREFS_KEY);
@@ -85,7 +104,9 @@ function readLayoutPrefs(): Partial<WorkbenchLayoutPrefs> {
         EVIDENCE_DEFAULT,
       ),
       evidenceOpen:
-        typeof record.evidenceOpen === 'boolean' ? record.evidenceOpen : true,
+        typeof record.evidenceOpen === 'boolean'
+          ? record.evidenceOpen
+          : defaultEvidenceOpen(),
       navCollapsed:
         typeof record.navCollapsed === 'boolean' ? record.navCollapsed : false,
     };
@@ -113,6 +134,7 @@ export default function WorkbenchShell({
   evidenceSignal = 0,
   tabs,
   activeTab,
+  mobileActiveTab,
   onTabChange,
   children,
 }: WorkbenchShellProps) {
@@ -122,14 +144,14 @@ export default function WorkbenchShell({
     initialPrefs.navCollapsed ?? false,
   );
   const [evidenceOpen, setEvidenceOpen] = useState(
-    initialPrefs.evidenceOpen ?? true,
+    initialPrefs.evidenceOpen ?? defaultEvidenceOpen(),
   );
   const [evidenceWidth, setEvidenceWidth] = useState(
     initialPrefs.evidenceWidth ?? EVIDENCE_DEFAULT,
   );
   const [immersive, setImmersive] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [isCompact, setIsCompact] = useState(false);
+  const [isCompact, setIsCompact] = useState(defaultCompactViewport);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [mobileEvidenceOpen, setMobileEvidenceOpen] = useState(false);
   const tabIdPrefix = useId().replace(/:/gu, '');
@@ -256,16 +278,20 @@ export default function WorkbenchShell({
   const mobileTabs = tabs
     .filter((tab) => tab.mobileLabel)
     .sort((a, b) => (a.mobileOrder ?? 99) - (b.mobileOrder ?? 99));
+  const resolvedMobileActiveTab = mobileActiveTab ?? activeTab;
   const panelId = `${tabIdPrefix}-panel`;
   const desktopTabId = (key: string) => `${tabIdPrefix}-desktop-${key}`;
   const mobileTabId = (key: string) => `${tabIdPrefix}-mobile-${key}`;
   const hasDesktopActiveTab = tabs.some((tab) => tab.key === activeTab);
-  const hasMobileActiveTab = mobileTabs.some((tab) => tab.key === activeTab);
-  const activePanelLabelledBy = hasDesktopActiveTab
-    ? isCompact && hasMobileActiveTab
-      ? mobileTabId(activeTab)
-      : desktopTabId(activeTab)
-    : undefined;
+  const hasMobileActiveTab = mobileTabs.some(
+    (tab) => tab.key === resolvedMobileActiveTab,
+  );
+  const activePanelLabelledBy =
+    isCompact && hasMobileActiveTab
+      ? mobileTabId(resolvedMobileActiveTab)
+      : hasDesktopActiveTab
+        ? desktopTabId(activeTab)
+        : undefined;
 
   const focusTab = (
     event: ReactKeyboardEvent<HTMLButtonElement>,
@@ -485,15 +511,16 @@ export default function WorkbenchShell({
             id={mobileTabId(tab.key)}
             type="button"
             role="tab"
-            aria-selected={activeTab === tab.key}
+            aria-selected={resolvedMobileActiveTab === tab.key}
             aria-controls={panelId}
             tabIndex={
-              activeTab === tab.key || (!hasMobileActiveTab && index === 0)
+              resolvedMobileActiveTab === tab.key ||
+              (!hasMobileActiveTab && index === 0)
                 ? 0
                 : -1
             }
             className={`wl-workbench-mobile-tab${
-              activeTab === tab.key ? ' is-active' : ''
+              resolvedMobileActiveTab === tab.key ? ' is-active' : ''
             }`}
             onClick={() => activateTab(tab.key)}
             onKeyDown={(event) =>

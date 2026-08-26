@@ -11,6 +11,7 @@ import {
   LocateFixed,
   LockKeyhole,
   RefreshCw,
+  Shield,
   ShieldCheck,
   Sparkles,
   Waypoints,
@@ -493,6 +494,13 @@ export default function DocumentParsingPage() {
         evidenceSignal={evidenceSignal}
         tabs={WORKBENCH_TABS}
         activeTab={activeNode}
+        mobileActiveTab={
+          activeNode === 'document' || activeNode === 'package'
+            ? 'reader'
+            : activeNode === 'aeo'
+              ? 'review'
+              : activeNode
+        }
         onTabChange={handleTabChange}
       >
         {activeNode === 'document' ? (
@@ -507,7 +515,7 @@ export default function DocumentParsingPage() {
               </p>
             </div>
             <div className="parse-state-seal">
-              <ShieldCheck aria-hidden="true" />
+              <Shield aria-hidden="true" />
               <span>当前状态</span>
               <strong>
                 {humanState(data.workItem.phase) ?? '候选结果待复核'}

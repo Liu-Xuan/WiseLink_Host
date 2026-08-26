@@ -137,4 +137,12 @@
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
   }
+
+  .wl-btn:hover,
+  .wl-dock-item:hover,
+  .hosted-intake-drop:hover,
+  .hosted-intake-drop:focus-visible,
+  .hosted-intake-drop.is-active {
+    transform: none;
+  }
 }

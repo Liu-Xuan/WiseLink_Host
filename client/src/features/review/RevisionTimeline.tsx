@@ -24,7 +24,7 @@ function kindLabel(kind: CanonicalTimelineEvent['kind']): string {
     case 'PACKAGE_READBACK':
       return '解析回读';
     case 'READER_QUERY':
-      return 'Reader 查询';
+      return '原文查询';
     case 'DYNAMIC_EVALUATION':
       return '动态评估';
     case 'ENGINEER_REVIEW':

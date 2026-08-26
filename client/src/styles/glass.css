@@ -54,7 +54,7 @@
   height: 40vw;
   border-radius: 50%;
   filter: blur(80px);
-  opacity: 0.16;
+  opacity: 0.08;
   pointer-events: none;
   animation: wl-ambient-breathe 9s ease-in-out infinite alternate;
 }
@@ -79,12 +79,12 @@
 
 @keyframes wl-ambient-breathe {
   from {
-    transform: scale(0.94) translate3d(0, 0, 0);
-    opacity: 0.12;
+    transform: scale(0.96) translate3d(0, 0, 0);
+    opacity: 0.06;
   }
   to {
-    transform: scale(1.08) translate3d(2vw, -1vh, 0);
-    opacity: 0.22;
+    transform: scale(1.04) translate3d(2vw, -1vh, 0);
+    opacity: 0.1;
   }
 }
 

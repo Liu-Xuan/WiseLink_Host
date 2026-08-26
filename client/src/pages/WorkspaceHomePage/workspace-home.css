@@ -1280,7 +1280,7 @@
   }
 }
 
-/* ── Apple Glass R02：用 G2/G3/G4 层次覆盖旧资料页的硬白面 ── */
+/* ── Apple Glass R03：用 G2/G3/G4 层次覆盖旧资料页的硬白面 ── */
 .library-home {
   min-height: calc(100dvh - 78px);
   padding: 30px clamp(16px, 3.2vw, 48px) 48px;
@@ -1699,6 +1699,28 @@
   line-height: 1.7;
 }
 
+.skeleton-line,
+.skeleton-block {
+  background: linear-gradient(
+    90deg,
+    var(--wl-border) 0%,
+    color-mix(in srgb, var(--wl-glass-soft) 72%, var(--wl-surface-solid)) 50%,
+    var(--wl-border) 100%
+  );
+}
+
+.library-skeleton-hint {
+  color: var(--wl-faint);
+  font-family: var(--wl-font);
+}
+
+.library-unavailable-badge {
+  border-color: color-mix(in srgb, var(--wl-amber-ink) 32%, transparent);
+  border-radius: 999px;
+  color: var(--wl-amber-ink);
+  background: var(--wl-amber-soft);
+}
+
 @media (max-width: 1240px) {
   .library-surface,
   .library-surface.has-projection {
@@ -1800,28 +1822,61 @@
 }
 
 @media (max-width: 560px) {
+  .library-home {
+    padding: 14px 10px 28px;
+  }
+
   .library-home-header {
+    gap: 0;
     padding-inline: 4px;
+    padding-bottom: 10px;
   }
 
   .library-home-header h1 {
-    font-size: 34px;
+    margin: 6px 0 4px;
+    font-size: 30px;
+  }
+
+  .library-home-lede {
+    display: none;
+  }
+
+  .library-home-eyebrow,
+  .library-section-label {
+    font-size: 10px;
   }
 
   .hosted-intake,
   .library-query-band,
   .library-empty-stage {
-    padding: 18px;
+    padding: 14px;
     border-radius: var(--wl-radius-panel);
   }
 
+  .library-query-band,
   .hosted-intake {
-    gap: 14px;
+    margin-top: 10px;
+  }
+
+  .library-query-band {
+    gap: 10px;
+  }
+
+  .library-query-note {
+    display: none;
+  }
+
+  .library-query-form {
+    gap: 5px;
+  }
+
+  .hosted-intake {
+    gap: 10px;
   }
 
   .hosted-intake-copy h2 {
-    margin-block: 5px;
-    font-size: 18px;
+    margin-block: 4px;
+    font-size: 17px;
   }
 
   .hosted-intake-copy > p {
@@ -1829,16 +1884,27 @@
   }
 
   .hosted-intake-boundary {
-    margin-top: 8px;
+    display: none;
   }
 
   .hosted-intake-drop {
-    min-height: 58px;
+    min-height: 52px;
+    padding: 9px 10px;
   }
 
-  .library-query-row,
+  .library-query-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 7px;
+  }
+
+  .library-query-row button {
+    min-width: 0;
+    padding-inline: 12px;
+  }
+
   .hosted-intake-action {
     grid-template-columns: 1fr;
+    gap: 8px;
   }
 
   .library-tree-panel,

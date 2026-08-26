@@ -156,10 +156,11 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
   grid-template-columns: auto 1fr;
   align-items: center;
   gap: 5px 9px;
-  border: 1px solid var(--wl-green-soft);
+  border: 1px solid
+    color-mix(in srgb, var(--wl-accent) 28%, var(--wl-border));
   border-radius: 7px;
-  color: var(--parse-green);
-  background: var(--parse-green-soft);
+  color: var(--wl-accent);
+  background: var(--wl-accent-soft);
 }
 
 .parse-state-seal svg {
@@ -169,14 +170,14 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
 }
 
 .parse-state-seal span {
-  color: #5e8b6b;
-  font-family: var(--parse-mono);
+  color: var(--wl-muted);
+  font-family: var(--wl-font);
   font-size: 9px;
   letter-spacing: 0.06em;
 }
 
 .parse-state-seal strong {
-  color: #285d3c;
+  color: var(--wl-ink);
   font-size: 13px;
   font-weight: 700;
 }
@@ -2879,7 +2880,7 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
   }
 }
 
-/* ── Apple Glass R02：专业工作台使用 G2/G3，PDF/输入保持 G4 实底 ── */
+/* ── Apple Glass R03：专业工作台使用 G2/G3，PDF/输入保持 G4 实底 ── */
 .parse-shell--workbench {
   height: calc(100dvh - 132px);
   padding: 10px 0 0;
@@ -2957,11 +2958,389 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
   font-size: 12px;
 }
 
+/* 当前工作台可见组件统一使用语义 token，避免深色主题出现旧式硬白面。 */
+.parse-document-card dt,
+.parse-business-findings dt,
+.parse-criterion-detail dt,
+.parse-assessment-audit dt,
+.aeo-authoring-facts dt {
+  color: var(--wl-faint);
+}
+
+.parse-document-card dd,
+.parse-hash-stack p,
+.parse-business-findings dd,
+.parse-criterion-detail dd,
+.parse-business-next ul,
+.parse-assessment-audit dd,
+.aeo-authoring-facts dd {
+  color: var(--wl-muted);
+}
+
+.parse-tag,
+.parse-reader-mode small,
+.parse-reader-capability-strip span,
+.parse-reader-locator small,
+.parse-assessment-semantics-grid span,
+.parse-assessment-semantics-grid small,
+.parse-assessment-boundary,
+.parse-empty,
+.parse-assessment-panel > p,
+.parse-business-next small,
+.parse-finding-sources > span,
+.parse-criterion-sources > span,
+.parse-assessment-audit article > small,
+.parse-assessment-audit article > p,
+.parse-criterion-card small,
+.parse-engineer-review > header strong,
+.parse-engineer-review > p,
+.parse-engineer-review-form label,
+.parse-review-latest,
+.parse-historical-assessment,
+.parse-historical-assessment summary,
+.engineering-reasoning-header-meta > p,
+.engineering-reasoning-summary span,
+.engineering-reasoning-step-index,
+.engineering-reasoning-steps article > p,
+.engineering-reasoning-steps article > small,
+.aeo-authoring-kicker,
+.aeo-authoring-seal span,
+.aeo-authoring-seal small,
+.aeo-authoring-footer,
+.parse-footer {
+  color: var(--wl-muted);
+}
+
+.parse-hash-stack span,
+.parse-result span,
+.parse-reader-locator > span,
+.parse-assessment-semantics > header span,
+.parse-assessment-semantics > header strong,
+.parse-assessment-semantics-grid svg,
+.parse-assessment-grid strong,
+.parse-business-candidate > header span,
+.parse-business-candidate > header strong,
+.parse-criterion-detail > header span,
+.parse-criterion-detail > header strong,
+.parse-assessment-audit article > span,
+.parse-criterion-list > header span,
+.parse-criterion-list > header strong,
+.parse-criterion-card-id,
+.parse-engineer-review > header span,
+.engineering-reasoning-trail > header span,
+.engineering-reasoning-summary strong,
+.engineering-reasoning-steps article > strong,
+.aeo-authoring-section-label,
+.aeo-authoring-seal strong,
+.parse-footer a {
+  color: var(--wl-accent);
+}
+
+.parse-accent {
+  border-color: color-mix(in srgb, var(--wl-accent) 34%, var(--wl-border));
+  color: var(--wl-accent);
+  background:
+    linear-gradient(145deg, var(--wl-accent-soft), transparent 72%),
+    var(--wl-glass-content);
+}
+
+.parse-accent .parse-panel-label,
+.parse-accent p,
+.parse-accent .parse-metric-row span {
+  color: var(--wl-muted);
+}
+
+.parse-candidate-warning,
+.parse-reference-boundary,
+.parse-reader-missing-state,
+.parse-assessment-gap-list article,
+.aeo-authoring-boundary,
+.aeo-authoring-warning {
+  border-color: color-mix(
+    in srgb,
+    var(--wl-amber-ink) 30%,
+    var(--wl-border)
+  );
+  color: var(--wl-amber-ink);
+  background: var(--wl-amber-soft);
+}
+
+.parse-reference-boundary p,
+.parse-assessment-gap-list article span {
+  color: var(--wl-muted);
+}
+
+.parse-reference-boundary small,
+.parse-assessment-gap-list article small {
+  color: var(--wl-faint);
+}
+
+.parse-assessment-gap-list > div,
+.parse-assessment-gap-list article strong,
+.parse-reader-missing-state strong {
+  color: var(--wl-amber-ink);
+}
+
+.parse-result {
+  border-left-color: color-mix(
+    in srgb,
+    var(--wl-accent) 48%,
+    var(--wl-border)
+  );
+  background: var(--wl-glass-soft);
+}
+
+.parse-result.is-selected {
+  border-left-color: var(--wl-accent);
+  background: var(--wl-accent-soft);
+  box-shadow: inset 0 0 0 1px
+    color-mix(in srgb, var(--wl-accent) 24%, transparent);
+}
+
+.parse-result p {
+  color: var(--wl-ink);
+}
+
+.parse-result small {
+  color: var(--wl-faint);
+}
+
+.parse-result-source-refs button,
+.parse-finding-sources button,
+.parse-criterion-sources button {
+  border-color: var(--wl-border-strong);
+  color: var(--wl-muted);
+  background: var(--wl-surface-solid);
+}
+
+.parse-result-source-refs button:hover,
+.parse-result-source-refs button.is-selected,
+.parse-finding-sources button:hover,
+.parse-criterion-sources button:hover {
+  border-color: color-mix(
+    in srgb,
+    var(--wl-accent) 45%,
+    var(--wl-border)
+  );
+  color: var(--wl-accent);
+  background: var(--wl-accent-soft);
+}
+
+.parse-reader-focus,
+.parse-reader-mode:hover,
+.parse-reader-mode.is-active {
+  border-color: color-mix(
+    in srgb,
+    var(--wl-accent) 42%,
+    var(--wl-border)
+  );
+  color: var(--wl-accent);
+  background: var(--wl-accent-soft);
+}
+
+.parse-reader-capability-strip,
+.parse-assessment-audit article,
+.engineering-reasoning-steps article {
+  border-color: var(--wl-border);
+  background: var(--wl-glass-soft);
+}
+
+.parse-reader-capability-strip strong,
+.parse-reader-locator p {
+  color: var(--wl-muted);
+}
+
+.parse-reader-source-view span {
+  color: var(--wl-accent);
+}
+
+.parse-reader-locator {
+  border-color: var(--wl-border);
+  border-radius: var(--wl-radius-sm);
+  background: var(--wl-surface-solid);
+}
+
+.parse-assessment-semantics > header h3,
+.parse-business-candidate > p,
+.parse-business-next strong,
+.parse-assessment-audit h3,
+.parse-engineer-review > header h3,
+.engineering-reasoning-steps h3 {
+  color: var(--wl-ink);
+}
+
+.parse-assessment-semantics-grid article {
+  background: var(--wl-glass-soft);
+}
+
+.parse-assessment-gap-list article {
+  border-left-color: var(--wl-amber);
+  border-radius: var(--wl-radius-sm);
+}
+
+.parse-assessment-grid span {
+  color: var(--wl-muted);
+}
+
+.parse-business-candidate {
+  border-color: color-mix(
+    in srgb,
+    var(--wl-accent) 30%,
+    var(--wl-border)
+  );
+  border-radius: var(--wl-radius-panel);
+  background:
+    linear-gradient(145deg, var(--wl-accent-soft), transparent 54%),
+    var(--wl-glass-content);
+}
+
+.parse-business-findings article,
+.parse-criterion-detail,
+.parse-criterion-card,
+.parse-engineer-review {
+  border-color: var(--wl-border);
+  border-radius: var(--wl-radius-md);
+  background: var(--wl-surface-solid);
+}
+
+.parse-business-next {
+  border-color: var(--wl-border);
+}
+
+.parse-criterion-list,
+.parse-engineer-review {
+  width: min(1440px, 100%);
+  margin: 0 auto 14px;
+  padding: clamp(16px, 2vw, 22px);
+  border: 1px solid var(--wl-border);
+  border-radius: var(--wl-radius-panel);
+  background: var(--wl-glass-content);
+  box-shadow: var(--wl-shadow-1);
+}
+
+.parse-criterion-list {
+  border-top: 1px solid var(--wl-border);
+}
+
+.parse-criterion-card:hover,
+.parse-criterion-card.is-selected {
+  border-color: color-mix(
+    in srgb,
+    var(--wl-accent) 42%,
+    var(--wl-border)
+  );
+  background: var(--wl-accent-soft);
+}
+
+.parse-engineer-review-form label {
+  font-family: var(--wl-font);
+}
+
+.parse-engineer-review-form button,
+.parse-assessment-action button,
+.parse-assessment-empty button {
+  background: var(--wl-accent);
+}
+
+.parse-aeo-ready-action {
+  border-color: color-mix(
+    in srgb,
+    var(--wl-accent) 30%,
+    var(--wl-border)
+  );
+  border-radius: var(--wl-radius-md);
+  background: var(--wl-accent-soft);
+}
+
+.parse-aeo-ready-action p {
+  color: var(--wl-muted);
+}
+
+.parse-aeo-ready-action button {
+  background: var(--wl-accent);
+}
+
+.engineering-reasoning-steps article.is-done {
+  border-color: color-mix(
+    in srgb,
+    var(--wl-accent) 30%,
+    var(--wl-border)
+  );
+  background: var(--wl-accent-soft);
+}
+
+.engineering-reasoning-steps .is-done .engineering-reasoning-step-index,
+.engineering-reasoning-steps article.is-done > svg {
+  color: var(--wl-accent);
+}
+
+.aeo-authoring-workspace {
+  border-color: var(--wl-border);
+  border-radius: var(--wl-radius-panel);
+  background: var(--wl-glass-content);
+  box-shadow: var(--wl-shadow-1);
+}
+
+.aeo-authoring-header {
+  border-color: var(--wl-border);
+  background: var(--wl-glass-panel);
+}
+
+.aeo-authoring-seal {
+  border-color: color-mix(
+    in srgb,
+    var(--wl-accent) 30%,
+    var(--wl-border)
+  );
+  border-radius: var(--wl-radius-md);
+  background: var(--wl-accent-soft);
+}
+
+.aeo-authoring-structure,
+.aeo-authoring-editor,
+.aeo-authoring-footer {
+  border-color: var(--wl-border);
+}
+
+.aeo-authoring-artifact {
+  border-color: var(--wl-border);
+  background: var(--wl-surface-solid);
+}
+
+.aeo-authoring-editor {
+  background: var(--wl-bg-2);
+}
+
+.aeo-authoring-editor-placeholder {
+  border-color: var(--wl-border-strong);
+  border-radius: var(--wl-radius-md);
+  background: var(--wl-surface-solid);
+}
+
+.wl-workbench-main > .parse-assessment-empty {
+  width: min(720px, 100%);
+  min-height: 280px;
+  margin: 0 auto 14px;
+  padding: 28px;
+  place-items: center;
+  border: 1px solid var(--wl-border);
+  border-radius: var(--wl-radius-panel);
+  color: var(--wl-muted);
+  background: var(--wl-glass-content);
+  box-shadow: var(--wl-shadow-1);
+  text-align: center;
+}
+
 @media (max-width: 720px) {
   .parse-shell.parse-shell--workbench {
     height: calc(100dvh - 112px);
     min-height: 0;
     padding-top: 8px;
+  }
+
+  body[data-wl-immersive='true'] .parse-shell.parse-shell--workbench {
+    height: 100dvh;
+    padding-top: 0;
   }
 
   .parse-panel,

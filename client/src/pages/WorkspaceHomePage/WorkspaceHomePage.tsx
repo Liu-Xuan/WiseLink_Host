@@ -14,7 +14,7 @@ import {
   Network,
   RefreshCw,
   Search,
-  ShieldCheck,
+  Shield,
   Workflow,
 } from 'lucide-react';
 
@@ -645,7 +645,7 @@ export default function WorkspaceHomePage() {
                 <dl className="library-facts">
                   <div>
                     <dt>
-                      <ShieldCheck aria-hidden="true" />
+                      <Shield aria-hidden="true" />
                       当前状态
                     </dt>
                     <dd>{phaseLabel}</dd>
