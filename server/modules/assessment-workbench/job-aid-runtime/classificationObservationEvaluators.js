@@ -464,11 +464,19 @@ function pageRefs(input) {
 }
 
 function matchingManufacturerStatementRefs(sourceRefs) {
-  return sourceRefs.filter((sourceRef) =>
-    MANUFACTURER_STATEMENT_PATTERNS.some((pattern) =>
-      pattern.test(sourceRef.quote),
-    ),
-  );
+  return sourceRefs.filter((sourceRef) => {
+    const quote = String(sourceRef.quote ?? '');
+    const exactManufacturerStatement = MANUFACTURER_STATEMENT_PATTERNS.slice(
+      0,
+      2,
+    ).some((pattern) => pattern.test(quote));
+    const complianceClassification =
+      /\bcompliance\b/iu.test(quote) &&
+      MANUFACTURER_STATEMENT_PATTERNS.slice(2).some((pattern) =>
+        pattern.test(quote),
+      );
+    return exactManufacturerStatement || complianceClassification;
+  });
 }
 
 function firstMatchingPattern(value) {

@@ -74,7 +74,7 @@ test('CLS-006 extracts actual Boeing wording without making a company decision',
     item.extracted_facts.normalizedObservation.boeingRecommendationObserved,
     true,
   );
-  assert.equal(item.method_execution.sourceRefs.length >= 2, true);
+  assert.equal(item.method_execution.sourceRefs.length, 2);
   assert.equal(
     item.method_execution.engineerPresentation.sourceFacts.every(
       (fact) => fact.sourceBounded && fact.sourceRefIds.length === 1,
@@ -83,7 +83,7 @@ test('CLS-006 extracts actual Boeing wording without making a company decision',
   );
   assert.equal(
     item.method_execution.engineerPresentation.sourceFacts.every((fact) =>
-      /No compliance time is given|Boeing recommends this service bulletin|recommended|desirable|optional/iu.test(
+      /No compliance time is given|Boeing recommends this service bulletin/iu.test(
         fact.value,
       ),
     ),
@@ -128,10 +128,17 @@ test('classification methods fail closed on missing coverage/source and predicat
   const noManufacturerStatement = structuredClone(input);
   noManufacturerStatement.publicPackageObservation.pageSourceRefs =
     noManufacturerStatement.publicPackageObservation.pageSourceRefs.filter(
-      (sourceRef) =>
-        !/\bno compliance time is given\b|\bboeing recommends this service bulletin\b|\brecommended\b|\bdesirable\b|\boptional\b/iu.test(
-          sourceRef.quote,
-        ),
+      (sourceRef) => {
+        const quote = sourceRef.quote;
+        const exactStatement =
+          /\bno compliance time is given\b|\bboeing recommends this service bulletin\b/iu.test(
+            quote,
+          );
+        const complianceClassification =
+          /\bcompliance\b/iu.test(quote) &&
+          /\brecommended\b|\bdesirable\b|\boptional\b/iu.test(quote);
+        return !exactStatement && !complianceClassification;
+      },
     );
   const cls006 = criterion(buildPackage(noManufacturerStatement), 'CLS-006');
   assert.equal(cls006.status, '需补证据');
