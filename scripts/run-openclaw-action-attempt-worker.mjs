@@ -15,7 +15,9 @@ const TASK_SCHEMA = 'wiselink.3_1.openclaw_task_envelope.v1';
 const EXECUTOR_VERSION = 'wiselink-openclaw-action-attempt-worker.v1';
 const MAX_PROCESS_OUTPUT_BYTES = 16 * 1024 * 1024;
 const REQUIRED_OPENCLAW_AGENT_ID = 'g2-action-attempt';
-const REQUIRED_OPENCLAW_MODEL = 'wiselink/wiselink-direct-llm';
+const REQUIRED_OPENCLAW_MODEL = 'openai-codex/gpt-5.4';
+const REQUIRED_OPENCLAW_PROVIDER = 'openai-codex';
+const REQUIRED_OPENCLAW_PROVIDER_MODEL = 'gpt-5.4';
 const REQUIRED_OPENCLAW_TOOLS = ['session_status'];
 const STRICT_JSON_SYSTEM_PROMPT = [
   'Return exactly one strict JSON object that satisfies every schema, type, byte-budget, and semantic invariant in the user request.',
@@ -519,8 +521,8 @@ export async function runOpenClawGatewayHttp(input, control) {
     );
     return {
       modelOutput,
-      provider: 'wiselink',
-      model: 'wiselink-direct-llm',
+      provider: REQUIRED_OPENCLAW_PROVIDER,
+      model: REQUIRED_OPENCLAW_PROVIDER_MODEL,
       durationMs: Date.now() - startedAt,
       stopReason:
         isRecord(choice) && typeof choice.finish_reason === 'string'

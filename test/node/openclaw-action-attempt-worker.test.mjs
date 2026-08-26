@@ -36,7 +36,7 @@ test('retries only through the real Gateway HTTP path on bounded 503s', async (t
       gatewayUrl: 'http://127.0.0.1:18789',
       gatewayToken: 'test-secret-never-logged',
       agentId: 'g2-action-attempt',
-      configuredModel: 'wiselink/wiselink-direct-llm',
+      configuredModel: 'openai-codex/gpt-5.4',
       timeoutSeconds: 10,
       sessionRef: 'OVR-TEST-RETRY',
       prompt: 'return exact JSON',
@@ -61,8 +61,8 @@ test('retries only through the real Gateway HTTP path on bounded 503s', async (t
     },
     {
       modelOutput: '{"candidate":true}',
-      provider: 'wiselink',
-      model: 'wiselink-direct-llm',
+      provider: 'openai-codex',
+      model: 'gpt-5.4',
       stopReason: 'stop',
     },
   );
@@ -78,6 +78,28 @@ test('retries only through the real Gateway HTTP path on bounded 503s', async (t
       user: 'g2-action-attempt:OVR-TEST-RETRY',
       stream: false,
     },
+  );
+});
+
+test('rejects the retired WiseLink proxy model before Gateway transport', async () => {
+  await assert.rejects(
+    runOpenClawGatewayHttp(
+      {
+        gatewayUrl: 'http://127.0.0.1:18789',
+        gatewayToken: 'test-secret-never-logged',
+        agentId: 'g2-action-attempt',
+        configuredModel: 'wiselink/wiselink-direct-llm',
+        timeoutSeconds: 10,
+        sessionRef: 'OVR-TEST-RETIRED-PROVIDER',
+        prompt: 'return exact JSON',
+      },
+      {
+        onChild: () => undefined,
+        heartbeat: async () => undefined,
+        heartbeatIntervalMs: 60_000,
+      },
+    ),
+    /OPENCLAW_DEDICATED_AGENT_BINDING_INVALID/,
   );
 });
 
@@ -115,10 +137,11 @@ test('replays a Host commit after transport 5xx without a second model run', asy
     modelInput,
   };
   let commitCalls = 0;
+  let committedResult = null;
   const client = {
     connect: async () => undefined,
     close: async () => undefined,
-    callTool: async ({ name }) => {
+    callTool: async ({ name, arguments: args }) => {
       if (name === 'begin_dynamic_evaluation') return toolResult(claim);
       if (name === 'heartbeat_action_attempt') {
         return toolResult({ leaseExpiresAt: claim.leaseExpiresAt });
@@ -126,6 +149,7 @@ test('replays a Host commit after transport 5xx without a second model run', asy
       if (name === 'commit_dynamic_evaluation_candidate') {
         commitCalls += 1;
         if (commitCalls < 3) throw new Error('HOST_TRANSPORT_HTTP_503');
+        committedResult = args.result;
         return toolResult({
           workItemId: task.workItemId,
           status: 'BASE_RULE_CANDIDATE_READY',
@@ -156,14 +180,14 @@ test('replays a Host commit after transport 5xx without a second model run', asy
         executeCalls += 1;
         return {
           modelOutput: '{"candidate":true}',
-          provider: 'wiselink',
-          model: 'wiselink-direct-llm',
+          provider: 'openai-codex',
+          model: 'gpt-5.4',
           durationMs: 10,
           stopReason: 'stop',
         };
       },
       preflightOpenClaw: async () => ({
-        configuredModel: 'wiselink/wiselink-direct-llm',
+        configuredModel: 'openai-codex/gpt-5.4',
       }),
     },
   );
@@ -173,6 +197,9 @@ test('replays a Host commit after transport 5xx without a second model run', asy
   assert.equal(result.ok, true);
   assert.equal(result.resultStatus, 'SUCCEEDED');
   assert.equal(result.transportProof.transport, 'OPENCLAW_GATEWAY_HTTP');
+  assert.equal(result.transportProof.provider, 'openai-codex');
+  assert.equal(result.transportProof.model, 'gpt-5.4');
+  assert.equal(committedResult.modelVersion, 'openai-codex/gpt-5.4');
 });
 
 test('runs TRANSLATE through dedicated begin/commit tools and seals its ResultEnvelope', async () => {
@@ -359,7 +386,7 @@ test('recovers a durable COMMITTING result without invoking OpenClaw again', asy
     missingInputs: [],
     conflicts: [],
     warnings: [],
-    modelVersion: 'wiselink/wiselink-direct-llm',
+    modelVersion: 'openai-codex/gpt-5.4',
     promptVersion: 'dynamic-prompt-v1',
     skillVersion: 'worker-v1',
     toolVersions: { openclaw: 'gateway-http-chat-completions' },
