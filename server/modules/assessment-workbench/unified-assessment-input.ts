@@ -44,6 +44,13 @@ interface UnifiedPackage {
   sourceRefs: UnifiedSourceRef[];
   contentUnits: UnifiedContentUnit[];
   document: Record<string, any>;
+  coverage: {
+    summary: {
+      accountingComplete: boolean;
+      contentPreserved: boolean;
+      structuredCoverageComplete: boolean;
+    };
+  };
 }
 
 interface NativeSectionWindow {
@@ -203,6 +210,12 @@ export function buildUnifiedSbJobAidAssessmentInput({
         structuredClone(readback.applicabilitySourceExpressions),
       contentUnitIds: pkg.contentUnits.map((unit) => unit.unitId),
       pageSourceRefs: selectPageSourceRefs(pkg.sourceRefs),
+      sourceCoverage: {
+        accountingComplete: pkg.coverage.summary.accountingComplete === true,
+        contentPreserved: pkg.coverage.summary.contentPreserved === true,
+        structuredCoverageComplete:
+          pkg.coverage.summary.structuredCoverageComplete === true,
+      },
     },
   });
 }

@@ -30,6 +30,11 @@ import {
   executeApp003Evaluation,
   markApp003PredicateOutcome,
 } from './app003WorkObjectEvaluator.js';
+import {
+  describeClassificationObservationMethod,
+  executeClassificationObservationMethod,
+  markClassificationPredicateOutcome,
+} from './classificationObservationEvaluators.js';
 
 export const WISELINK_V3_1_SB_JOB_AID_ASSESSMENT_INPUT_SCHEMA =
   'wiselink.v3_1.sb_job_aid_assessment_input.v2';
@@ -804,8 +809,10 @@ function buildEvaluationItem({ criterion, criterionMember, context, input, answe
   if (!criterionMember) {
     throw new Error(`Criterion ${criterion.criterion_id} is not a member of the selected CriterionSet.`);
   }
-  const methodDescriptor = describeApp003EvaluationMethod({ criterion, input });
-  const effectiveContext = methodDescriptor
+  const methodDescriptor = describeApp003EvaluationMethod({ criterion, input })
+    ?? describeClassificationObservationMethod({ criterion, input });
+  const app003Method = methodDescriptor?.criterionId === 'APP-003';
+  const effectiveContext = app003Method
     ? deepMerge(context, buildApp003DiscoveryContext({ criterion, input }))
     : context;
   const applicabilityState = evaluateApplicabilityPredicate(
@@ -865,7 +872,11 @@ function buildEvaluationItem({ criterion, criterionMember, context, input, answe
       decision: '不适用',
       blocking_condition_met: false,
       ...(methodDescriptor
-        ? { method_execution: markApp003PredicateOutcome(methodDescriptor, false) }
+        ? {
+          method_execution: app003Method
+            ? markApp003PredicateOutcome(methodDescriptor, false)
+            : markClassificationPredicateOutcome(methodDescriptor, false),
+        }
         : {}),
     };
   }
@@ -919,6 +930,12 @@ function executeDeterministicCriterion(criterion, input, context, methodDescript
     descriptor: methodDescriptor,
   });
   if (app003Result) return app003Result;
+  const classificationResult = executeClassificationObservationMethod({
+    criterion,
+    input,
+    descriptor: methodDescriptor,
+  });
+  if (classificationResult) return classificationResult;
   if (criterion.criterion_id === 'GOV-003') {
     const core = input.parsedResult.coreFields ?? {};
     const identity = {
