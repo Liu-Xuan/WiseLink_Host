@@ -134,6 +134,7 @@ function target() {
       attemptId: 'ATT-NEW-SB',
       created: true,
     }),
+    reopenRetryableParseFailure: jest.fn().mockResolvedValue(null),
     reserveAssessmentAction: jest.fn(),
     reserveDynamicEvaluationAction: jest.fn(),
     reserveOverallSynthesisAction: jest.fn(),
@@ -464,6 +465,55 @@ describe('OrdinaryWorkItemService run identity', () => {
     }
   });
 
+  it('reopens only a previously classified retryable parse failure on the same WorkItem', async () => {
+    const targetValue = target();
+    targetValue.documentManagement.ingestFileServiceSelection.mockResolvedValue(
+      { documentVersionId: 'document-version-sb' },
+    );
+    targetValue.repository.reserve.mockResolvedValue({
+      workItemId: 'WI-NEW-SB',
+      requestId: 'REQ-NEW-SB',
+      attemptId: 'ATT-FIRST-FAILED',
+      created: false,
+    });
+    targetValue.repository.reopenRetryableParseFailure.mockResolvedValue({
+      attemptId: 'ATT-RETRY-2',
+      attemptNo: 2,
+    });
+
+    await expect(
+      targetValue.service.createOauthSessionDevelopmentRun(
+        {
+          selection: {
+            bucketId: 'bucket-default',
+            filePath:
+              'wiselink/dev-intake/22222222-2222-4222-8222-222222222222/source.pdf',
+          },
+          developmentRunToken: '22222222-2222-4222-8222-222222222222',
+          query: 'applicability',
+        },
+        OAUTH_SESSION_ACTOR,
+        GATEWAY_ACTOR,
+      ),
+    ).resolves.toMatchObject({
+      workItemCreated: false,
+      workItemReused: true,
+      actionAttemptId: 'ATT-RETRY-2',
+    });
+
+    expect(
+      targetValue.repository.reopenRetryableParseFailure,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workItemId: 'WI-NEW-SB',
+        requestId: 'REQ-NEW-SB',
+        documentVersionId: 'document-version-sb',
+        runKey: 'dev:22222222-2222-4222-8222-222222222222',
+      }),
+    );
+    expect(targetValue.vertical.runPdf).toHaveBeenCalledTimes(1);
+  });
+
   it('rejects OAuth development create without the native development role', async () => {
     const targetValue = target();
     await expect(
@@ -571,6 +621,9 @@ function expectNoOrdinaryRunIo(targetValue: ReturnType<typeof target>): void {
     targetValue.repository.loadTenantDocumentAuthorizationBinding,
   ).not.toHaveBeenCalled();
   expect(targetValue.repository.reserve).not.toHaveBeenCalled();
+  expect(
+    targetValue.repository.reopenRetryableParseFailure,
+  ).not.toHaveBeenCalled();
   expect(targetValue.repository.reserveAssessmentAction).not.toHaveBeenCalled();
   expect(
     targetValue.repository.reserveDynamicEvaluationAction,
