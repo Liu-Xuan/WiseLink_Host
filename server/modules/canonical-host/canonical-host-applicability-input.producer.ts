@@ -191,6 +191,47 @@ export class CanonicalHostApplicabilityInputProducer {
     return { workItem, applicabilityInput: derived };
   }
 
+  /**
+   * Post-publication recovery check. The immutable frozen.2 source binding was
+   * already validated before publication, so this path revalidates only the
+   * mutable WorkItem and controlled-selection owners. It deliberately performs
+   * no FileService operation after the WorkItem CAS boundary.
+   */
+  async readCurrentSelectionValidated(
+    scope: Pick<
+      CanonicalVerifiedApplicabilityContextScope,
+      'tenantId' | 'workItemId' | 'applicabilityContextRef'
+    >,
+  ): Promise<{
+    workItem: CanonicalWorkItemProjection;
+    applicabilityInput: CanonicalApplicabilityInputProjection;
+  }> {
+    const workItem = await this.requiredParsedWorkItem(scope);
+    const targetBindingHash = workItem.applicabilityInput?.targetBindingHash;
+    if (!targetBindingHash?.trim()) throw scopeNotFound();
+    const persisted = requiredApplicabilityInput({
+      workItem,
+      applicabilityContextRef: scope.applicabilityContextRef,
+      targetBindingHash,
+    });
+    const selection = await this.controlledSelection.readCurrent({
+      tenantId: scope.tenantId,
+      workItemId: workItem.workItemId,
+      documentVersionId: workItem.source.documentVersionId,
+      applicabilityContextRef: scope.applicabilityContextRef,
+    });
+    const derived = deriveProjection({
+      workItem,
+      applicabilityContextRef: scope.applicabilityContextRef,
+      selection,
+      targetBindingHash,
+    });
+    if (canonicalSha256(persisted) !== canonicalSha256(derived)) {
+      throw controlledSelectionDrift();
+    }
+    return { workItem, applicabilityInput: derived };
+  }
+
   private async readSourceBinding(workItem: CanonicalWorkItemProjection) {
     const sourceUnits = await this.reader.readAllSourceUnits({
       artifact: workItem.package!.artifact,

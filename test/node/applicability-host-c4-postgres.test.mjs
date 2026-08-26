@@ -1,6 +1,18 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  unlink,
+  writeFile,
+} from 'node:fs/promises';
 import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import test from 'node:test';
 
 import postgres from 'postgres';
@@ -54,10 +66,11 @@ test(
   async () => {
     assertSafeIsolatedDatabase(databaseUrl);
     const sql = postgres(databaseUrl, { max: 8 });
+    let artifactOwner = null;
     try {
       await resetDatabase(sql);
       const fixture = buildFixture();
-      const artifactOwner = await prepareOrdinaryArtifactOwner(fixture);
+      artifactOwner = await prepareOrdinaryArtifactOwner(fixture);
       await seedWorkItem(sql, fixture.workItem);
       const db = drizzle(sql);
       const workItems = new MiaodaWorkItemRepository(db);
@@ -174,9 +187,10 @@ test(
         projectionApplied: true,
         resultContentHash: result.contentHash,
       });
-      assert.equal(artifactOwner.scoped.files.size, 3);
-      assert.equal(artifactOwner.scoped.candidatePhysicalCount(), 1);
+      assert.equal(await artifactOwner.scoped.physicalFileCount(), 3);
+      assert.equal(await artifactOwner.scoped.candidatePhysicalCount(), 1);
     } finally {
+      await artifactOwner?.cleanup();
       await sql.end({ timeout: 5 });
     }
   },
@@ -189,8 +203,9 @@ test(
     assertSafeIsolatedDatabase(databaseUrl);
     const sql = postgres(databaseUrl, { max: 8 });
     try {
-      await t.test('controlled selection drift after begin', async () => {
+      await t.test('controlled selection drift after begin', async (t) => {
         const harness = await realHarness(sql);
+        t.after(() => harness.artifactOwner.cleanup());
         const before = await readWorkItemRow(sql);
         harness.selection.selectionRevision = 'selection-C4-r2';
         harness.selection.fleetMasterData.sourceRevisionKey =
@@ -220,16 +235,20 @@ test(
             leaseGeneration: harness.begin.leaseGeneration,
           },
         );
-        assert.equal(harness.artifactOwner.scoped.files.size, 2);
-        assert.equal(harness.artifactOwner.scoped.candidatePhysicalCount(), 0);
+        assert.equal(await harness.artifactOwner.scoped.physicalFileCount(), 2);
+        assert.equal(
+          await harness.artifactOwner.scoped.candidatePhysicalCount(),
+          0,
+        );
       });
 
       await t.test(
         'WorkItem drift after prepare preserves COMMITTING',
-        async () => {
+        async (t) => {
           const harness = await realHarness(sql, {
             afterPrepare: () => bumpWorkItemRevision(sql),
           });
+          t.after(() => harness.artifactOwner.cleanup());
           await assert.rejects(
             harness.commit(),
             /APPLICABILITY_COMMITTING_WORK_ITEM_DRIFT/u,
@@ -249,9 +268,12 @@ test(
           );
           assert.equal(attempt.leaseToken, harness.begin.leaseToken);
           assert.equal(attempt.leaseGeneration, harness.begin.leaseGeneration);
-          assert.equal(harness.artifactOwner.scoped.files.size, 2);
           assert.equal(
-            harness.artifactOwner.scoped.candidatePhysicalCount(),
+            await harness.artifactOwner.scoped.physicalFileCount(),
+            2,
+          );
+          assert.equal(
+            await harness.artifactOwner.scoped.candidatePhysicalCount(),
             0,
           );
         },
@@ -259,10 +281,11 @@ test(
 
       await t.test(
         'artifact stage then losing WorkItem CAS discards bytes',
-        async () => {
+        async (t) => {
           const harness = await realHarness(sql, {
             beforeCandidateCas: () => bumpWorkItemRevision(sql),
           });
+          t.after(() => harness.artifactOwner.cleanup());
           const beforeProjection = JSON.parse(
             (await readWorkItemRow(sql)).projectionJson,
           );
@@ -272,9 +295,12 @@ test(
           assert.equal(after.revision, beforeProjection.revision + 1);
           assert.equal(afterProjection.revision, beforeProjection.revision + 1);
           assert.equal(afterProjection.applicability ?? null, null);
-          assert.equal(harness.artifactOwner.scoped.files.size, 2);
           assert.equal(
-            harness.artifactOwner.scoped.candidatePhysicalCount(),
+            await harness.artifactOwner.scoped.physicalFileCount(),
+            2,
+          );
+          assert.equal(
+            await harness.artifactOwner.scoped.candidatePhysicalCount(),
             0,
           );
           const attempt = await readAttemptRaceState(
@@ -286,6 +312,146 @@ test(
           assert.equal(attempt.terminalReason, null);
           assert.equal(attempt.projectionApplied, false);
           assert.equal(attempt.resultContentHash, harness.result.contentHash);
+        },
+      );
+    } finally {
+      await sql.end({ timeout: 5 });
+    }
+  },
+);
+
+test(
+  'R09 C4 real PostgreSQL and physical FileService keep CAS as the sole publication boundary',
+  { skip: !databaseUrl, concurrency: false },
+  async (t) => {
+    assertSafeIsolatedDatabase(databaseUrl);
+    const sql = postgres(databaseUrl, { max: 8 });
+    try {
+      await t.test(
+        'finalized bytes and descriptor exist while current remains unpublished before CAS',
+        async (t) => {
+          let beforePublication = null;
+          const harness = await realHarness(sql, {
+            beforeCandidateCas: async () => {
+              beforePublication = await readWorkItemRow(sql);
+            },
+            rejectArtifactCallsAfterCas: true,
+          });
+          t.after(() => harness.artifactOwner.cleanup());
+
+          const committed = await harness.commit();
+          assert.equal(beforePublication.revision, 8);
+          assert.equal(
+            JSON.parse(beforePublication.projectionJson).applicability ?? null,
+            null,
+          );
+          assert.equal(committed.workItemRevision, 9);
+          assert.match(
+            committed.applicability.artifact.ref,
+            /\/applicability-candidate\/[0-9a-f]{64}\/[0-9a-f]{64}$/u,
+          );
+          assert.equal(
+            await harness.artifactOwner.scoped.candidatePhysicalCount(),
+            1,
+          );
+        },
+      );
+
+      await t.test(
+        'finalize durability failure leaves current unpublished and attempt sealed COMMITTING',
+        async (t) => {
+          const harness = await realHarness(sql, {
+            failFinalizeDurability: true,
+          });
+          t.after(() => harness.artifactOwner.cleanup());
+
+          await assert.rejects(
+            harness.commit(),
+            /ARTIFACT_READBACK_MISMATCH:METADATA/u,
+          );
+          const workItem = await readWorkItemRow(sql);
+          assert.equal(workItem.revision, 8);
+          assert.equal(
+            JSON.parse(workItem.projectionJson).applicability ?? null,
+            null,
+          );
+          assert.equal(
+            await harness.artifactOwner.scoped.candidatePhysicalCount(),
+            0,
+          );
+          const attempt = await readAttemptRaceState(
+            sql,
+            harness.begin.attemptRef,
+          );
+          assert.equal(attempt.status, 'COMMITTING');
+          assert.equal(attempt.completedAt, null);
+          assert.equal(attempt.terminalReason, null);
+          assert.equal(attempt.projectionApplied, false);
+          assert.equal(attempt.resultContentHash, harness.result.contentHash);
+          assert.equal(
+            JSON.parse(attempt.resultEnvelopeJson).contentHash,
+            harness.result.contentHash,
+          );
+          assert.equal(attempt.leaseToken, harness.begin.leaseToken);
+          assert.equal(attempt.leaseGeneration, harness.begin.leaseGeneration);
+        },
+      );
+
+      await t.test(
+        'unknown applied CAS outcome recovers exact current and duplicate stays idempotent',
+        async (t) => {
+          const harness = await realHarness(sql, {
+            throwAfterCandidateCasApply: true,
+            rejectArtifactCallsAfterCas: true,
+          });
+          t.after(() => harness.artifactOwner.cleanup());
+
+          const recovered = await harness.commit();
+          assert.equal(recovered.workItemRevision, 9);
+          assert.equal(
+            recovered.applicability.actionAttemptId,
+            harness.begin.task.actionAttemptId,
+          );
+          const duplicate = await harness.commit();
+          assert.deepEqual(duplicate, recovered);
+          assert.equal((await readWorkItemRow(sql)).revision, 9);
+          assert.equal(
+            await harness.artifactOwner.scoped.candidatePhysicalCount(),
+            1,
+          );
+          assert.equal(
+            (await readAttemptRaceState(sql, harness.begin.attemptRef)).status,
+            'SUCCEEDED',
+          );
+        },
+      );
+
+      await t.test(
+        'unknown unapplied CAS outcome safely discards the finalized artifact without retry',
+        async (t) => {
+          const harness = await realHarness(sql, {
+            throwBeforeCandidateCas: true,
+          });
+          t.after(() => harness.artifactOwner.cleanup());
+
+          await assert.rejects(
+            harness.commit(),
+            /WORK_ITEM_CAS_OUTCOME_UNKNOWN/u,
+          );
+          const workItem = await readWorkItemRow(sql);
+          assert.equal(workItem.revision, 8);
+          assert.equal(
+            JSON.parse(workItem.projectionJson).applicability ?? null,
+            null,
+          );
+          assert.equal(
+            await harness.artifactOwner.scoped.candidatePhysicalCount(),
+            0,
+          );
+          assert.equal(
+            (await readAttemptRaceState(sql, harness.begin.attemptRef)).status,
+            'COMMITTING',
+          );
         },
       );
     } finally {
@@ -476,7 +642,22 @@ async function realHarness(sql, options = {}) {
         candidateCasHookUsed = true;
         await options.beforeCandidateCas();
       }
-      return actualRegistrar.compareAndSet(input);
+      if (
+        input.next.applicability?.actionAttemptId &&
+        options.throwBeforeCandidateCas
+      ) {
+        throw new Error('WORK_ITEM_CAS_OUTCOME_UNKNOWN');
+      }
+      const updated = await actualRegistrar.compareAndSet(input);
+      if (input.next.applicability?.actionAttemptId) {
+        if (options.rejectArtifactCallsAfterCas) {
+          artifactOwner.scoped.rejectCalls = true;
+        }
+        if (options.throwAfterCandidateCasApply) {
+          throw new Error('WORK_ITEM_CAS_OUTCOME_UNKNOWN');
+        }
+      }
+      return updated;
     },
   };
   const attemptRepository = new ActionAttemptRepository(db);
@@ -508,6 +689,15 @@ async function realHarness(sql, options = {}) {
     scope,
     controlledSelection,
   );
+  if (options.failFinalizeDurability) {
+    const actualFinalize = artifactOwner.store.finalizeStagedCandidate.bind(
+      artifactOwner.store,
+    );
+    artifactOwner.store.finalizeStagedCandidate = async (staged) => {
+      await artifactOwner.scoped.removeAllCandidateFiles();
+      return actualFinalize(staged);
+    };
+  }
   const applicability = new CanonicalHostOpenClawApplicabilityService(
     registrar,
     artifactOwner.store,
@@ -573,62 +763,111 @@ async function readAttemptRaceState(sql, attemptRef) {
 }
 
 class LocalScopedArtifactOwner {
-  files = new Map();
+  metadata = new Map();
   nextId = 0;
+  rejectCalls = false;
 
-  constructor(bucketId) {
+  constructor(bucketId, root) {
     this.bucketId = bucketId;
+    this.root = root;
   }
 
   async getFileMetadata(filePath) {
-    const value = this.files.get(filePath);
-    if (!value) return null;
+    this.assertCallsAllowed();
+    const absolute = this.absolutePath(filePath);
+    const value = this.metadata.get(filePath);
+    if (!value || !(await exists(absolute))) return null;
+    const info = await stat(absolute);
     return {
       id: value.id,
       bucketID: this.bucketId,
       filePath: `/${filePath}`,
       metadata: {
-        contentLength: String(value.bytes.byteLength),
+        contentLength: String(info.size),
         mimeType: value.mimeType,
       },
     };
   }
 
   async upload(bytes, options) {
-    if (!options.upsert && this.files.has(options.filePath)) {
+    this.assertCallsAllowed();
+    const absolute = this.absolutePath(options.filePath);
+    if (!options.upsert && (await exists(absolute))) {
       throw new Error('LOCAL_FILE_ALREADY_EXISTS');
     }
+    await mkdir(dirname(absolute), { recursive: true });
     this.nextId += 1;
-    this.files.set(options.filePath, {
+    await writeFile(absolute, bytes, { flag: options.upsert ? 'w' : 'wx' });
+    this.metadata.set(options.filePath, {
       id: `local-file-${this.nextId}`,
-      bytes: Uint8Array.from(bytes),
       mimeType: options.contentType,
     });
     return { filePath: options.filePath };
   }
 
   async download(filePath) {
-    const value = this.files.get(filePath);
+    this.assertCallsAllowed();
+    const value = this.metadata.get(filePath);
     if (!value) throw new Error('LOCAL_FILE_NOT_FOUND');
     return {
-      content: Uint8Array.from(value.bytes),
+      content: Uint8Array.from(await readFile(this.absolutePath(filePath))),
       metadata: { id: value.id },
     };
   }
 
   async remove(filePaths) {
-    for (const filePath of filePaths) this.files.delete(filePath);
+    this.assertCallsAllowed();
+    for (const filePath of filePaths) {
+      await unlink(this.absolutePath(filePath)).catch((error) => {
+        if (error?.code !== 'ENOENT') throw error;
+      });
+      this.metadata.delete(filePath);
+    }
   }
 
-  candidatePhysicalCount() {
-    return [...this.files.keys()].filter((path) =>
-      path.includes('/_staging/applicability-attempt/'),
+  async removeAllCandidateFiles() {
+    for (const filePath of [...this.metadata.keys()]) {
+      if (filePath.includes('/applicability-candidate/')) {
+        await this.remove([filePath]);
+      }
+    }
+  }
+
+  async candidatePhysicalCount() {
+    return (await this.physicalPaths()).filter((path) =>
+      path.includes('/applicability-candidate/'),
     ).length;
+  }
+
+  async physicalFileCount() {
+    return (await this.physicalPaths()).length;
+  }
+
+  async physicalPaths() {
+    const paths = await walkFiles(this.root);
+    return paths.map((path) => relative(this.root, path).split(sep).join('/'));
+  }
+
+  assertCallsAllowed() {
+    if (this.rejectCalls) throw new Error('POST_CAS_ARTIFACT_CALL');
+  }
+
+  absolutePath(filePath) {
+    const absolute = resolve(this.root, filePath);
+    if (
+      filePath.startsWith('/') ||
+      absolute === this.root ||
+      !absolute.startsWith(`${this.root}${sep}`)
+    ) {
+      throw new Error('LOCAL_FILE_PATH_INVALID');
+    }
+    return absolute;
   }
 }
 
 async function prepareOrdinaryArtifactOwner(fixture) {
-  const scoped = new LocalScopedArtifactOwner('bucket-c4-local');
+  const root = await mkdtemp(join(tmpdir(), 'wiselink-c4-artifacts-'));
+  const scoped = new LocalScopedArtifactOwner('bucket-c4-local', root);
   const store = new MiaodaOrdinaryArtifactStoreAdapter({
     getDefaultBucket: async () => 'bucket-c4-local',
     from: () => scoped,
@@ -639,7 +878,32 @@ async function prepareOrdinaryArtifactOwner(fixture) {
   );
   fixture.workItem.package.artifact = packageStored.artifact;
   fixture.workItem.translation.artifact = bilingualStored.artifact;
-  return { store, scoped };
+  return {
+    store,
+    scoped,
+    cleanup: () => rm(root, { recursive: true, force: true }),
+  };
+}
+
+async function exists(path) {
+  try {
+    await stat(path);
+    return true;
+  } catch (error) {
+    if (error?.code === 'ENOENT') return false;
+    throw error;
+  }
+}
+
+async function walkFiles(root) {
+  const entries = await readdir(root, { withFileTypes: true });
+  const paths = [];
+  for (const entry of entries) {
+    const path = join(root, entry.name);
+    if (entry.isDirectory()) paths.push(...(await walkFiles(path)));
+    else if (entry.isFile()) paths.push(path);
+  }
+  return paths;
 }
 
 function buildFixture() {

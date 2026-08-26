@@ -144,6 +144,18 @@ describe('CanonicalHostOpenClawApplicabilityService', () => {
       1,
     );
     expect(harness.registrar.compareAndSet).toHaveBeenCalledTimes(1);
+    expect(
+      harness.artifactStore.finalizeStagedCandidate.mock.invocationCallOrder[0],
+    ).toBeLessThan(harness.registrar.compareAndSet.mock.invocationCallOrder[0]);
+    expect(
+      Math.max(
+        ...harness.artifactStore.readActualBytes.mock.invocationCallOrder,
+        harness.artifactStore.stageCandidateAndReadback.mock
+          .invocationCallOrder[0],
+        harness.artifactStore.finalizeStagedCandidate.mock
+          .invocationCallOrder[0],
+      ),
+    ).toBeLessThan(harness.registrar.compareAndSet.mock.invocationCallOrder[0]);
   });
 
   it('preserves FALSE as NOT_APPLICABLE with pass=false', async () => {
@@ -405,7 +417,37 @@ describe('CanonicalHostOpenClawApplicabilityService', () => {
     ).not.toHaveBeenCalled();
   });
 
-  it('discards a private staged artifact when a competing WorkItem CAS wins', async () => {
+  it('keeps current unpublished when artifact finalization fails', async () => {
+    const harness = applicabilityHarness();
+    const begin = await harness.begin();
+    const result = harness.resultFor(candidateFor(begin));
+    harness.artifactStore.finalizeStagedCandidate.mockRejectedValueOnce(
+      new Error('ARTIFACT_STAGE_FINALIZE_READBACK_MISMATCH'),
+    );
+
+    await expect(
+      harness.service.commit(
+        begin.attemptRef,
+        begin.leaseToken,
+        begin.leaseGeneration,
+        result,
+      ),
+    ).rejects.toThrow('ARTIFACT_STAGE_FINALIZE_READBACK_MISMATCH');
+    expect(harness.readCurrent().revision).toBe(begin.task.baseRevision);
+    expect(harness.readCurrent().applicability ?? null).toBeNull();
+    expect(harness.registrar.compareAndSet).not.toHaveBeenCalled();
+    expect(
+      harness.artifactStore.discardCandidateArtifact,
+    ).toHaveBeenCalledTimes(1);
+    expect(harness.readAttempt()).toMatchObject({
+      status: 'COMMITTING',
+      resultContentHash: result.contentHash,
+      completedAt: null,
+      projectionApplied: false,
+    });
+  });
+
+  it('discards a private finalized artifact when a competing WorkItem CAS wins', async () => {
     const harness = applicabilityHarness({
       beforeCandidateCas(current) {
         current.revision += 1;
@@ -425,12 +467,12 @@ describe('CanonicalHostOpenClawApplicabilityService', () => {
     expect(
       harness.artifactStore.stageCandidateAndReadback,
     ).toHaveBeenCalledTimes(1);
-    expect(harness.artifactStore.discardStagedCandidate).toHaveBeenCalledTimes(
+    expect(
+      harness.artifactStore.discardCandidateArtifact,
+    ).toHaveBeenCalledTimes(1);
+    expect(harness.artifactStore.finalizeStagedCandidate).toHaveBeenCalledTimes(
       1,
     );
-    expect(
-      harness.artifactStore.finalizeStagedCandidate,
-    ).not.toHaveBeenCalled();
     expect(harness.readCurrent().applicability ?? null).toBeNull();
     expect(harness.readAttempt()).toMatchObject({
       status: 'COMMITTING',
@@ -700,7 +742,7 @@ function applicabilityHarness(
         ownerRefHash: sha256(new TextEncoder().encode(ownerRef)),
         artifact: {
           storeRole: 'UnifiedArtifactStoreCandidate' as const,
-          ref: `artifact://UnifiedArtifactStoreCandidate/_staging/${ownerRef}/${sha256(bytes)}`,
+          ref: `artifact://UnifiedArtifactStoreCandidate/applicability-candidate/${ownerRef}/${sha256(bytes)}`,
           sha256: sha256(bytes),
           byteLength: bytes.byteLength,
           mediaType: 'application/json' as const,
@@ -710,11 +752,13 @@ function applicabilityHarness(
       }),
     ),
     finalizeStagedCandidate: jest.fn(async (staged: any) => ({
+      schemaVersion: 'wiselink.3_1.finalized_candidate_artifact.v1' as const,
+      ownerRefHash: staged.ownerRefHash,
       artifact: structuredClone(staged.artifact),
       bytes: staged.bytes.slice(),
       reused: staged.reused,
     })),
-    discardStagedCandidate: jest.fn(async () => undefined),
+    discardCandidateArtifact: jest.fn(async () => undefined),
   };
   const attempts = {
     reserveAndClaim: jest.fn(async (input: ReserveAndClaimInput) => {
@@ -835,6 +879,18 @@ function applicabilityHarness(
       applicabilityInput: structuredClone(current.applicabilityInput!),
     })),
     readCurrentOwnerValidated: jest.fn(async () => {
+      if (
+        canonicalSha256(ownerInput) !==
+        canonicalSha256(current.applicabilityInput!)
+      ) {
+        throw new Error('APPLICABILITY_CONTROLLED_SELECTION_DRIFT');
+      }
+      return {
+        workItem: structuredClone(current),
+        applicabilityInput: structuredClone(current.applicabilityInput!),
+      };
+    }),
+    readCurrentSelectionValidated: jest.fn(async () => {
       if (
         canonicalSha256(ownerInput) !==
         canonicalSha256(current.applicabilityInput!)

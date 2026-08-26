@@ -28,6 +28,19 @@ export interface StagedCandidateArtifactPersistResult extends ImmutableArtifactP
 }
 
 /**
+ * Attempt-owned immutable bytes which have completed the ordinary FileService
+ * durability/readback boundary and are safe for the WorkItem CAS to publish.
+ */
+export interface FinalizedCandidateArtifactPersistResult extends ImmutableArtifactPersistResult {
+  schemaVersion: 'wiselink.3_1.finalized_candidate_artifact.v1';
+  ownerRefHash: string;
+}
+
+export type CandidateArtifactPersistResult =
+  | StagedCandidateArtifactPersistResult
+  | FinalizedCandidateArtifactPersistResult;
+
+/**
  * Exact host roles required by the official FileService adapter.  The host
  * supplies this binding; requests cannot choose any of these identities.
  */
@@ -65,9 +78,9 @@ export interface UnifiedCandidateArtifactStagingPort extends UnifiedArtifactStor
   }): Promise<StagedCandidateArtifactPersistResult>;
   finalizeStagedCandidate(
     staged: StagedCandidateArtifactPersistResult,
-  ): Promise<ImmutableArtifactPersistResult>;
-  discardStagedCandidate(
-    staged: StagedCandidateArtifactPersistResult,
+  ): Promise<FinalizedCandidateArtifactPersistResult>;
+  discardCandidateArtifact(
+    candidate: CandidateArtifactPersistResult,
   ): Promise<void>;
 }
 

@@ -5,6 +5,8 @@ import type { UnifiedPackageArtifactDescriptor } from '@shared/api.interface';
 
 import { UNIFIED_READER } from './unified-reader.constants';
 import type {
+  CandidateArtifactPersistResult,
+  FinalizedCandidateArtifactPersistResult,
   ImmutableArtifactPersistResult,
   StagedCandidateArtifactPersistResult,
   UnifiedArtifactStorePort,
@@ -79,7 +81,7 @@ export class MiaodaOrdinaryArtifactStoreAdapter
     const bytes = Uint8Array.from(input.bytes);
     const digest = sha256Raw(bytes);
     const ownerRefHash = sha256Raw(new TextEncoder().encode(input.ownerRef));
-    const filePath = this.stagedFilePath(ownerRefHash, digest);
+    const filePath = this.candidateFilePath(ownerRefHash, digest);
     const bucketId = await this.getDefaultBucket();
     const scoped = this.fileService.from(bucketId);
     const existing = await providerCall(
@@ -105,7 +107,7 @@ export class MiaodaOrdinaryArtifactStoreAdapter
     }
     const artifact: UnifiedPackageArtifactDescriptor = {
       storeRole: UNIFIED_READER.artifactStoreRole,
-      ref: `${this.artifactRefPrefix()}_staging/applicability-attempt/${ownerRefHash}/${digest}`,
+      ref: `${this.artifactRefPrefix()}applicability-candidate/${ownerRefHash}/${digest}`,
       sha256: digest,
       byteLength: bytes.byteLength,
       mediaType: JSON_MEDIA_TYPE,
@@ -125,22 +127,26 @@ export class MiaodaOrdinaryArtifactStoreAdapter
 
   async finalizeStagedCandidate(
     staged: StagedCandidateArtifactPersistResult,
-  ): Promise<ImmutableArtifactPersistResult> {
-    this.assertStagedDescriptor(staged);
+  ): Promise<FinalizedCandidateArtifactPersistResult> {
+    this.assertCandidateDescriptor(staged);
     const bytes = await this.readActualBytes(staged.artifact);
     if (!sameBytes(staged.bytes, bytes)) {
       throw new Error('ARTIFACT_STAGE_FINALIZE_READBACK_MISMATCH');
     }
-    // The WorkItem CAS is the publication boundary. FileService has no rename;
-    // finalization is therefore an exact post-CAS durability/readback check.
-    return { artifact: staged.artifact, bytes, reused: staged.reused };
+    return {
+      schemaVersion: 'wiselink.3_1.finalized_candidate_artifact.v1',
+      ownerRefHash: staged.ownerRefHash,
+      artifact: staged.artifact,
+      bytes,
+      reused: staged.reused,
+    };
   }
 
-  async discardStagedCandidate(
-    staged: StagedCandidateArtifactPersistResult,
+  async discardCandidateArtifact(
+    candidate: CandidateArtifactPersistResult,
   ): Promise<void> {
-    this.assertStagedDescriptor(staged);
-    const filePath = this.descriptorFilePath(staged.artifact);
+    this.assertCandidateDescriptor(candidate);
+    const filePath = this.descriptorFilePath(candidate.artifact);
     const bucketId = await this.getDefaultBucket();
     const scoped = this.fileService.from(bucketId);
     await providerCall('ARTIFACT_STORE_STAGE_DISCARD_FAILED', () =>
@@ -228,10 +234,10 @@ export class MiaodaOrdinaryArtifactStoreAdapter
     )}.json`;
   }
 
-  private stagedFilePath(ownerRefHash: string, digest: string): string {
-    return `${UNIFIED_READER.artifactDirectory}/_staging/applicability-attempt/${rawHashValue(
+  private candidateFilePath(ownerRefHash: string, digest: string): string {
+    return `${UNIFIED_READER.artifactDirectory}/applicability-candidate/${rawHashValue(
       ownerRefHash,
-      'staged.ownerRefHash',
+      'candidate.ownerRefHash',
     )}/${rawHashValue(digest, 'artifact.sha256')}.json`;
   }
 
@@ -245,33 +251,34 @@ export class MiaodaOrdinaryArtifactStoreAdapter
     }
     const suffix = artifact.ref.slice(prefix.length);
     if (suffix === artifact.sha256) return this.filePath(artifact.sha256);
-    const staged =
-      /^_staging\/applicability-attempt\/([0-9a-f]{64})\/([0-9a-f]{64})$/u.exec(
-        suffix,
-      );
-    if (!staged || staged[2] !== artifact.sha256) {
+    const candidate =
+      /^applicability-candidate\/([0-9a-f]{64})\/([0-9a-f]{64})$/u.exec(suffix);
+    if (!candidate || candidate[2] !== artifact.sha256) {
       throw new Error('ARTIFACT_READBACK_MISMATCH:DESCRIPTOR');
     }
-    return this.stagedFilePath(staged[1]!, staged[2]!);
+    return this.candidateFilePath(candidate[1]!, candidate[2]!);
   }
 
-  private assertStagedDescriptor(
-    staged: StagedCandidateArtifactPersistResult,
+  private assertCandidateDescriptor(
+    candidate: CandidateArtifactPersistResult,
   ): void {
     if (
-      staged.schemaVersion !== 'wiselink.3_1.staged_candidate_artifact.v1' ||
-      staged.bytes.byteLength !== staged.artifact.byteLength ||
-      sha256Raw(staged.bytes) !== staged.artifact.sha256 ||
-      !staged.artifact.ref.includes(
-        `/_staging/applicability-attempt/${rawHashValue(
-          staged.ownerRefHash,
-          'staged.ownerRefHash',
+      ![
+        'wiselink.3_1.staged_candidate_artifact.v1',
+        'wiselink.3_1.finalized_candidate_artifact.v1',
+      ].includes(candidate.schemaVersion) ||
+      candidate.bytes.byteLength !== candidate.artifact.byteLength ||
+      sha256Raw(candidate.bytes) !== candidate.artifact.sha256 ||
+      !candidate.artifact.ref.includes(
+        `/applicability-candidate/${rawHashValue(
+          candidate.ownerRefHash,
+          'candidate.ownerRefHash',
         )}/`,
       )
     ) {
       throw new Error('ARTIFACT_STAGE_DESCRIPTOR_INVALID');
     }
-    this.descriptorFilePath(staged.artifact);
+    this.descriptorFilePath(candidate.artifact);
   }
 
   private artifactRefPrefix(): string {

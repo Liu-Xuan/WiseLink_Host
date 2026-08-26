@@ -87,7 +87,7 @@ describe('MiaodaOrdinaryArtifactStoreAdapter', () => {
     expect(scoped.uploadCount).toBe(1);
   });
 
-  it('stages attempt-private bytes, finalizes by exact readback, and discards with verified absence', async () => {
+  it('finalizes an attempt-owned stable descriptor before publication and discards with verified absence', async () => {
     const scoped = new LocalScopedFileService('bucket-stage-local');
     const adapter = new MiaodaOrdinaryArtifactStoreAdapter({
       getDefaultBucket: async () => 'bucket-stage-local',
@@ -100,14 +100,17 @@ describe('MiaodaOrdinaryArtifactStoreAdapter', () => {
       ownerRef: 'ATT-APP-STAGE-1',
     });
     expect(staged.artifact.ref).toMatch(
-      /\/_staging\/applicability-attempt\/[0-9a-f]{64}\/[0-9a-f]{64}$/u,
+      /\/applicability-candidate\/[0-9a-f]{64}\/[0-9a-f]{64}$/u,
     );
     expect(scoped.files.size).toBe(1);
-    await expect(
-      adapter.finalizeStagedCandidate(staged),
-    ).resolves.toMatchObject({ artifact: staged.artifact, bytes });
+    const finalized = await adapter.finalizeStagedCandidate(staged);
+    expect(finalized).toMatchObject({
+      schemaVersion: 'wiselink.3_1.finalized_candidate_artifact.v1',
+      artifact: staged.artifact,
+      bytes,
+    });
 
-    await adapter.discardStagedCandidate(staged);
+    await adapter.discardCandidateArtifact(finalized);
     expect(scoped.removeCount).toBe(1);
     expect(scoped.files.size).toBe(0);
     await expect(adapter.readActualBytes(staged.artifact)).rejects.toThrow(
