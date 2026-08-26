@@ -1,0 +1,554 @@
+{
+  "phase9": {
+    "documentVersionId": "document_version_f4813607b91ee1a20e754e2d",
+    "adoptedDocumentVersions": [
+      {
+        "documentVersionId": "document_version_f4813607b91ee1a20e754e2d",
+        "publisher": "BOEING",
+        "documentNumber": "737-34-3830",
+        "revisionLabel": "DATE:2026-05-13",
+        "adoptionStatus": "ADOPTED",
+        "currentness": "CURRENT"
+      }
+    ],
+    "packageArtifactSha256": "sha256:84d37eda63352934a69f7b1b37c0e174b74c7274e47d9041513e990c5091e1ac",
+    "criterionSetId": "JACS-72D0484B6F1C17A38F671F46",
+    "criterionIds": [
+      "GOV-001",
+      "GOV-002",
+      "GOV-003",
+      "GOV-004",
+      "GOV-005",
+      "GOV-006",
+      "GOV-007",
+      "GOV-008",
+      "GOV-009",
+      "CLS-001",
+      "CLS-002",
+      "CLS-003",
+      "CLS-004",
+      "CLS-005",
+      "CLS-006",
+      "CLS-007",
+      "CLS-008",
+      "CLS-009",
+      "CLS-010",
+      "CLS-011",
+      "APP-001",
+      "APP-002",
+      "APP-003",
+      "APP-004",
+      "APP-005",
+      "APP-006",
+      "APP-007",
+      "APP-008",
+      "APP-009",
+      "APP-010",
+      "APP-011",
+      "APP-012",
+      "APP-013",
+      "APP-014",
+      "APP-015",
+      "APP-016",
+      "APP-017",
+      "TECH-001",
+      "TECH-002",
+      "TECH-003",
+      "TECH-004",
+      "TECH-005",
+      "TECH-006",
+      "TECH-007",
+      "TECH-008",
+      "TECH-009",
+      "TECH-010",
+      "TECH-011",
+      "TECH-012",
+      "TECH-013",
+      "TECH-014",
+      "RSK-000",
+      "RSK-001",
+      "RSK-002",
+      "RSK-003",
+      "RSK-004",
+      "RSK-005",
+      "RSK-006",
+      "RSK-007",
+      "RSK-008",
+      "RSK-009",
+      "RSK-010",
+      "RSK-011",
+      "RSK-012",
+      "DEC-001",
+      "DEC-002",
+      "DEC-003",
+      "DEC-004",
+      "DEC-005",
+      "DEC-006",
+      "DEC-007",
+      "DEC-008",
+      "DEC-009",
+      "DEC-010",
+      "DEC-011",
+      "DEC-012",
+      "CTRL-001",
+      "CTRL-002",
+      "CTRL-003",
+      "CTRL-004",
+      "CTRL-005",
+      "IMP-001",
+      "IMP-002",
+      "IMP-003",
+      "IMP-004",
+      "IMP-005",
+      "IMP-006",
+      "IMP-007",
+      "IMP-008",
+      "IMP-009",
+      "IMP-010",
+      "IMP-011",
+      "IMP-012",
+      "RES-001",
+      "RES-002",
+      "RES-003",
+      "RES-004",
+      "RES-005",
+      "RES-006",
+      "RES-007",
+      "RES-008",
+      "RES-009",
+      "RES-010",
+      "RES-011",
+      "RES-012",
+      "RES-013",
+      "RES-014",
+      "RES-015",
+      "RES-016",
+      "RES-017",
+      "EO-001",
+      "EO-002",
+      "EO-003",
+      "EO-004",
+      "EO-005",
+      "EO-006",
+      "PUB-001",
+      "PUB-002",
+      "PUB-003",
+      "PUB-004",
+      "PUB-005",
+      "PUB-006",
+      "PUB-007",
+      "PUB-008",
+      "PUB-009",
+      "PUB-010",
+      "PUB-011",
+      "PUB-012",
+      "PUB-013",
+      "PUB-014",
+      "PUB-015",
+      "PUB-016",
+      "PUB-017",
+      "PUB-018",
+      "MON-001",
+      "MON-002",
+      "MON-003",
+      "MON-004",
+      "MON-005",
+      "MON-006",
+      "MON-007",
+      "MON-008",
+      "TRC-001",
+      "TRC-002",
+      "TRC-003",
+      "TRC-004",
+      "TRC-005",
+      "TRC-006",
+      "TRC-007",
+      "TRC-008"
+    ],
+    "packageId": "urn:techpub:package:v1:sha256:60c1b8548bf24a19d7d9f9cd3bc9fdafe252b034384aabcbba6d79517dc2972d",
+    "contractRevision": "frozen.2",
+    "contentUnitCount": 75,
+    "sourceRefs": [
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:1b82df92fe698a2bc4d39d4df5c6b94821e071238f7139326bb676ee3cd579a8",
+        "pageStart": 1,
+        "pageEnd": 1
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:dca93402a2057c3b3ade29727e7feb21a0ad83fe5005b82e6ee37620c804641c",
+        "pageStart": 1,
+        "pageEnd": 1
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:95323df04b10aae4a826c915dd017cdb94b07dacd1b0a1953e759558264ed297",
+        "pageStart": 1,
+        "pageEnd": 1
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:25a74e65c2a6d2718f7c2bcbe5972c22cc1a1541c5e0cdef0625a9357819a24c",
+        "pageStart": 1,
+        "pageEnd": 1
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:d365bad46c337940d61d9cfa457ba54a1b693ee097c344756abea6664bce015d",
+        "pageStart": 1,
+        "pageEnd": 1
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:0171fe74ce176d999c0026fc5c8625c6cabada9d34d49fb3161bf35a999a2602",
+        "pageStart": 2,
+        "pageEnd": 2
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:018ff06628c1b283ce212547ea619ab216987a2ccc80f3bf0b147c4478392e35",
+        "pageStart": 2,
+        "pageEnd": 2
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:63fb7f6f74548e18a4ca40135b1cf88e53070982b931cb5fa697b6240161392b",
+        "pageStart": 3,
+        "pageEnd": 3
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:7f0845165fdfa706a0042f0fe2d18dd41e2a58d3f90c77e28d9c8cdd437654a1",
+        "pageStart": 4,
+        "pageEnd": 4
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:95cbde9d9bd0ac4038a8da9add04ed5f82af489d05372fb20ded1732c388d8c4",
+        "pageStart": 5,
+        "pageEnd": 5
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:d110e9fafc621a7d6c2cabdda16ede232fcd70a8707d56ecd6f09b75288c7d8a",
+        "pageStart": 5,
+        "pageEnd": 5
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:38d11475fd658937d92980294257cda71ed8f773c67ca2307d5ddab55939dda5",
+        "pageStart": 5,
+        "pageEnd": 5
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:2f81819b7f930ce827078c3ad8fea7c529513acc0c63cd9a5ba6866ac449ca08",
+        "pageStart": 6,
+        "pageEnd": 6
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:26f1145102b03df4dc7123598373198bac914ee746d3cdc631f36f76c75bd082",
+        "pageStart": 6,
+        "pageEnd": 6
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:eed6a87b4d70624e9ac31b68122aa2d29411084dc70d17a3825aa6f6bf34943c",
+        "pageStart": 6,
+        "pageEnd": 6
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:cf67c7665ee79372ba72cbb7aa5935f759e9407896b1e6dceffca08421edecc4",
+        "pageStart": 6,
+        "pageEnd": 6
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:794f17553b9fce7764bee468ad49a2f7b288de80ef6bedaf71fa85f1f93675d6",
+        "pageStart": 6,
+        "pageEnd": 6
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:b5fd553400363ae37bb2f000e1726cc5bd66d5ab1ea8279be65082672dee5892",
+        "pageStart": 6,
+        "pageEnd": 6
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:ec29b43987d868ff408010621d9b38b46724ace2a011aa705a5dd8d1afde3332",
+        "pageStart": 6,
+        "pageEnd": 6
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:391b90fda7c0434ab659208818618ca33738cd40960f17f6ffa334ee40c7a76c",
+        "pageStart": 6,
+        "pageEnd": 6
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:977564e3b1184b637a965908a7f4ab3e58a2426c316e05f7d6758e84e62820de",
+        "pageStart": 6,
+        "pageEnd": 6
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:e33947062ec1e945ca07cda78c30e0a1d5e6b08551b49de1dbed7f857ff01609",
+        "pageStart": 6,
+        "pageEnd": 6
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:5c282b6295018905700e0fcbec2776872ce2a11cee9931e85d9cce0d8f770224",
+        "pageStart": 6,
+        "pageEnd": 6
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:ef9cd095617a7e665aa94aff17992ecd46841fc08da3b9685d1a7023b661162c",
+        "pageStart": 6,
+        "pageEnd": 6
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:8240c29c18015f2aab425b329df3124392249c2ff90e5667406b9a6357e5b483",
+        "pageStart": 7,
+        "pageEnd": 7
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:c168ab689a651bb9cb037ef8cb9f11457befaa568cdd7ce1ba88a16881a440fc",
+        "pageStart": 7,
+        "pageEnd": 7
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:2400875da169577ccbb5c2f7967ba858c197b870013ca17b3630d8ba1b3c4195",
+        "pageStart": 8,
+        "pageEnd": 8
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:2619b7adc56cec1d272f6db56fc61509e93df84acd247928b736ce8dcf37151f",
+        "pageStart": 8,
+        "pageEnd": 8
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:566e5b92203fc4cb7e325b1f09ae93f212b073f98ca253f725bc21d119542032",
+        "pageStart": 9,
+        "pageEnd": 9
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:3e1f5e3e485d837c21b5ee60907df0f4db6725ee170186c95a249c4c29d78f5e",
+        "pageStart": 9,
+        "pageEnd": 9
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:e195452124742cf25bc6e09b4e1c9aeedd5269d26f9bee55b32c3b713721b10d",
+        "pageStart": 9,
+        "pageEnd": 9
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:962864ef8c98774fe8f8709ff0207e60ba07fc4812ce0f0f339dfe5fa7c33728",
+        "pageStart": 9,
+        "pageEnd": 9
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:ce2a9420851c1ddda3c1a1284fc54bbe7e170de7083c01c62138be9f542c7a61",
+        "pageStart": 9,
+        "pageEnd": 9
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:cd1c913756f9d5929b35525db55d05d0e882a44e45d39747a918176fa40ea777",
+        "pageStart": 9,
+        "pageEnd": 9
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:127e178a1ac087d1f5d17f6b2eab7dbd77a010c8a3807504d88037082dee3bed",
+        "pageStart": 10,
+        "pageEnd": 10
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:526c6f8b8c56429538af1dd0f79884155b4fc04783182ed57c62faa06cae52e9",
+        "pageStart": 10,
+        "pageEnd": 10
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:a007bdf2f60ca74d709ab39dff37161655ff7f15933aab21070a30eaa9326c39",
+        "pageStart": 11,
+        "pageEnd": 11
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:e491078d5cf46ddceca0e2a5ee422974f1ca4799bd56bb8b72792f0885b21959",
+        "pageStart": 11,
+        "pageEnd": 11
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:e50dd18fbaea4cd59d939703d929c3ecb9b6fb66b9f8179960ec8ae3190f8459",
+        "pageStart": 12,
+        "pageEnd": 12
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:f86b4bfe088f9cac35ad2709ce7d92987b7e6842caea54c3769e7020d95a9ca0",
+        "pageStart": 12,
+        "pageEnd": 12
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:af963ab1582fa9468cf835889be4a615b6d89f43d4605fe8bfc0fcf92a9cd1f1",
+        "pageStart": 13,
+        "pageEnd": 13
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:9d5b0f64a72779b74854bfb79c8e1c8f8a61835bfd21eb67098b2e253a6af2f6",
+        "pageStart": 13,
+        "pageEnd": 13
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:bbd9d991ed5887aad372ee20a382dc9d316b32b4d0a4b36d9f3e2fa35b96b184",
+        "pageStart": 13,
+        "pageEnd": 13
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:69b8bc4804bf7f9f0fc0cb749f79d1f88f6a8d8db9ba0d48a3883d1f6788fa84",
+        "pageStart": 13,
+        "pageEnd": 13
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:f51b8b24f7554904338ba722cbea7382b81571d7325bde37462d578d1b3e84b2",
+        "pageStart": 14,
+        "pageEnd": 14
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:ca421cd105667e23b0772b99def956d0070dcfac1ca7f57ee71d555fd7cca435",
+        "pageStart": 14,
+        "pageEnd": 14
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:d199ffce379634c0181c83e9a650b8887d4c38c7538640bdf51b98bd95a4ce98",
+        "pageStart": 14,
+        "pageEnd": 14
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:9fae04addf6003fafb2138d2da568f55b7c738d0f66fbb5598ca9bb164bb08d9",
+        "pageStart": 14,
+        "pageEnd": 14
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:0d6e8de25c339e53c2d17b27fabca7337c56c2fd6d53ba745ad3e714f876d8f8",
+        "pageStart": 14,
+        "pageEnd": 14
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:15c05c681b4442c50400dfcd218e72a9d98c8ebca55297407f2a38071b6cb84b",
+        "pageStart": 15,
+        "pageEnd": 15
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:17e440c804b68446b42bb107d961dab40fff5313dbc0839689895f464a7c6549",
+        "pageStart": 15,
+        "pageEnd": 15
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:d088390f3e505f3b2755f6c1f2d9e5d9643cd3cf4ad6345043fd832b7244649a",
+        "pageStart": 15,
+        "pageEnd": 15
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:6f7087fdbb1d16ec5a507d4f8bbff50ac6a0f4794baa83656a070333c1ad06a2",
+        "pageStart": 15,
+        "pageEnd": 15
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:d015bb5738ae6d253371f1ed8ef2fca689b160f5b92433b3c215f94dd42297e4",
+        "pageStart": 16,
+        "pageEnd": 16
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:62dd07cf70fd46e87b8a14f4fff9b2d05ab30e99f7d7663dee95928bd043bff0",
+        "pageStart": 17,
+        "pageEnd": 17
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:57aa5a2e3bc2ee5d822230b57d39dab9935b1bdd560db49bb5d0f6992433bcdc",
+        "pageStart": 17,
+        "pageEnd": 17
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:cf3ca1693927f761fdb02a6d566ef77e692346be7cca8a243340523a1986076c",
+        "pageStart": 17,
+        "pageEnd": 17
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:0e788813234ac2db16786d6983773b4dc478c5e68c7c0f84f6dc4f158cc2e1db",
+        "pageStart": 17,
+        "pageEnd": 17
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:05f03bc7ecde162b114c045ce03aa39bd6e893c354f39ce023dacfee71d22d43",
+        "pageStart": 17,
+        "pageEnd": 17
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:7b433e5fb23c840076f93ead6ffa2ca205bdc686f8129c9d677e00e2d8ae2ddf",
+        "pageStart": 17,
+        "pageEnd": 17
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:9e22cb36d9dfadfafb5d9c01030b387bf2ab24caed256509a8c3e8e1b7f6e2fb",
+        "pageStart": 17,
+        "pageEnd": 17
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:6fa52329f13dbcb645fda8f3cb59cc28646a52a45c26c32df6031c607366da39",
+        "pageStart": 18,
+        "pageEnd": 18
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:49ee14dda5194fa08e9f8057d9aec3c84f2d13d9a8961deb1c9517664ea779c8",
+        "pageStart": 18,
+        "pageEnd": 18
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:ba0834d8df9a506566949666019b49803d4fba64abbb56480eb6e07f08c93e50",
+        "pageStart": 19,
+        "pageEnd": 19
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:b7faeb21af1f899c59d81c9b8b621daf7ebda18f6b334f1f70a43dd0d39c3d4b",
+        "pageStart": 19,
+        "pageEnd": 19
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:e7d0f3abd1ea9151970eecf9a895db021465a177efb7e1ea59ba68fbff6b2cb6",
+        "pageStart": 19,
+        "pageEnd": 19
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:197d8dab09a74479eee2d6bf41d72bf70ce2d6036c2558c79430450c175e9077",
+        "pageStart": 19,
+        "pageEnd": 19
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:c8d7b7bddd692fea3efee114017fa2017121266d2e6f8567f4d823853270258a",
+        "pageStart": 19,
+        "pageEnd": 19
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:cbc72fabe7bcf045bb7e8a51199a3a4826820aa6cf5f81799e067f75108e316b",
+        "pageStart": 19,
+        "pageEnd": 19
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:36c7a83c75d47dd3f4e9bc222c0eb65eeb581899676a41263bf8c596eb524b89",
+        "pageStart": 20,
+        "pageEnd": 20
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:aeda8f8c0d0cfdeb22d95031d24b72476becae2d0a887f1b087b19adaacf2390",
+        "pageStart": 20,
+        "pageEnd": 20
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:a8c2c0dd49ff5b3443a9ec11dd45dfe80de789d469769f2baa50454cf1dd69ba",
+        "pageStart": 20,
+        "pageEnd": 20
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:16e0938931b7e26eecb2d407fd16d1d440d2d426e8235450bc4dbb086e0a2d04",
+        "pageStart": 21,
+        "pageEnd": 21
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:ad9532c4ca2efc8b5955c15f8dbbf9d9a9fd0043b35c7fba2c1a23c1c62a57ef",
+        "pageStart": 21,
+        "pageEnd": 21
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:994c717df46d0341cd198b32cf4e53c091f388f6d30a788f73e2c61073ed601e",
+        "pageStart": 22,
+        "pageEnd": 22
+      },
+      {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:c3444b3c2b08efc8273d099838fc9857fd93321931d5e31f1af2d6669500083c",
+        "pageStart": 22,
+        "pageEnd": 22
+      }
+    ]
+  }
+}

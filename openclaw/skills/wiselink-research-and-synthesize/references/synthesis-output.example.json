@@ -1,0 +1,51 @@
+{
+  "sourceResultId": "phase9-overall-local-validation-001",
+  "documentVersionId": "document_version_f4813607b91ee1a20e754e2d",
+  "packageId": "urn:techpub:package:v1:sha256:60c1b8548bf24a19d7d9f9cd3bc9fdafe252b034384aabcbba6d79517dc2972d",
+  "baseRuleRevision": 1,
+  "baseRuleArtifactSha256": "sha256:63df6c4d5b5de01f97afe5a42332fb052b944e00c8f02a18dfa9e8fe85b83918",
+  "engineerReviewRevision": null,
+  "engineerReviewArtifactSha256": null,
+  "discoveryStatus": "BOEING:ACCESS_DENIED",
+  "gap": "Boeing public search data layer timed out; absence of results is not evidence of absence.",
+  "candidateRefCount": 0,
+  "findingCount": 2,
+  "unresolvedCount": 1,
+  "authorityLevel": "candidate_only",
+  "externalDiscoveryIsEvidence": false,
+  "adopted": false,
+  "usableAsEvidence": false,
+  "providers": {
+    "boeing": {
+      "status": "ACCESS_DENIED",
+      "match": "NO_DIRECT_OFFICIAL_SOURCE_MATCH",
+      "accessRestricted": true,
+      "candidateCount": 0,
+      "failureCode": "UPSTREAM_CONNECT_TIMEOUT",
+      "source": "OFFICIAL_OEM_PUBLIC_SOURCE",
+      "baiduAcceptedAsOfficial": false
+    }
+  },
+  "overallCandidate": "现有来源候选支持继续工程师复核，但缺少受控机队事实，不能判定适用性或形成批准。",
+  "findings": [
+    {
+      "finding": "Parsed package contains source-bound applicability-related text candidates.",
+      "basis": "Unified frozen.2 source context",
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:d110e9fafc621a7d6c2cabdda16ede232fcd70a8707d56ecd6f09b75288c7d8a"
+      ],
+      "assumptions": [],
+      "uncertainty": "Text candidates are not fleet applicability decisions."
+    },
+    {
+      "finding": "External Boeing discovery coverage is incomplete.",
+      "basis": "HostedOpenClawDiscoveryResult ACCESS_DENIED",
+      "sourceRefIds": [],
+      "assumptions": [],
+      "uncertainty": "A timeout cannot establish that no related OEM document exists."
+    }
+  ],
+  "missingInputs": ["Controlled FleetFacts and applicability predicates"],
+  "applicabilityStatus": "UNKNOWN/WAITING_INPUT",
+  "engineeringReviewRequired": true
+}

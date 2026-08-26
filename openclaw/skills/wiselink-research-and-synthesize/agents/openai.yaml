@@ -1,0 +1,4 @@
+interface:
+  display_name: 'WiseLink 工程评估主控'
+  short_description: '通过唯一托管 profile 编排 R09 首次分析与交互复核候选。'
+  default_prompt: 'Use $wiselink-research-and-synthesize in exactly one Host-authorized mode. For INITIAL_ANALYSIS, route only TRANSLATE, EVALUATE_JOBAID, or SYNTHESIZE_OVERALL and keep EXTRACT_APPLICABILITY blocked until a dedicated Host begin/commit pair exists. For INTERACTIVE_REVIEW, use only the exact C2 five-tool sequence, fresh-read Host context and SourceRefs, validate the full ResultEnvelope with the exact hosted provenance, and return candidate-only output without executing ReviewAction or changing revision/current/STALE.'
