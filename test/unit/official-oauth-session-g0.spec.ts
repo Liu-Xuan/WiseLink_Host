@@ -47,7 +47,9 @@ describe('official OAuth -> persistent session G0', () => {
   it('persists only state hash and atomically consumes it', async () => {
     const repository = {
       issueOauthState: jest.fn().mockResolvedValue(undefined),
-      consumeOauthState: jest.fn().mockResolvedValue({ codeVerifier: 'v'.repeat(43) }),
+      consumeOauthState: jest
+        .fn()
+        .mockResolvedValue({ codeVerifier: 'v'.repeat(43) }),
     };
     const store = new OauthStateStore(repository as never);
     const state = await store.issue('v'.repeat(43));
@@ -67,7 +69,11 @@ describe('official OAuth -> persistent session G0', () => {
 
   it('stores only a session token digest and rehydrates optional user_id', async () => {
     const repository = {
-      createSession: jest.fn().mockResolvedValue({ sessionId: 'session-row-1', revision: 1 }),
+      createSession: jest.fn().mockResolvedValue({
+        sessionId: 'session-row-1',
+        revision: 1,
+        expiresAt: new Date('2026-08-25T01:00:00.000Z'),
+      }),
       validateSession: jest.fn().mockResolvedValue({
         sessionId: 'session-row-1',
         sessionRevision: 1,
@@ -99,8 +105,10 @@ describe('official OAuth -> persistent session G0', () => {
   it('resolves only the HttpOnly cookie and ignores Authorization/body identity', async () => {
     const sessionStore = {
       validate: jest.fn().mockResolvedValue({
-        sessionId: 'session-row-1', revision: 1,
-        expiresAt: new Date('2026-08-25T01:00:00.000Z'), identity,
+        sessionId: 'session-row-1',
+        revision: 1,
+        expiresAt: new Date('2026-08-25T01:00:00.000Z'),
+        identity,
       }),
     };
     const resolver = new SessionResolver(sessionStore as never, {
@@ -112,10 +120,15 @@ describe('official OAuth -> persistent session G0', () => {
       sessionEnvironment: 'preview',
     });
     expect(
-      await resolver.resolve({ headers: { authorization: 'Bearer forged' }, body: { userId: 'forged' } } as never),
+      await resolver.resolve({
+        headers: { authorization: 'Bearer forged' },
+        body: { userId: 'forged' },
+      } as never),
     ).toBeNull();
     const resolved = await resolver.resolve({
-      headers: { cookie: 'other=1; wl_session=opaque-cookie; x-user-id=forged' },
+      headers: {
+        cookie: 'other=1; wl_session=opaque-cookie; x-user-id=forged',
+      },
       body: { tenantId: 'forged' },
     } as never);
     expect(sessionStore.validate).toHaveBeenCalledWith('opaque-cookie');
@@ -127,10 +140,16 @@ describe('official OAuth -> persistent session G0', () => {
     const resolver = {
       resolve: jest.fn().mockResolvedValue({
         identity,
-        session: { id: 'session-row-1', revision: 1, expiresAt: new Date('2026-08-25T01:00:00.000Z') },
+        session: {
+          id: 'session-row-1',
+          revision: 1,
+          expiresAt: new Date('2026-08-25T01:00:00.000Z'),
+        },
       }),
     };
-    const result = await new WhoamiController(resolver as never).whoami({ body: { userId: 'forged' } } as never);
+    const result = await new WhoamiController(resolver as never).whoami({
+      body: { userId: 'forged' },
+    } as never);
     expect(result.authenticated).toBe(true);
     expect(result.verifiedIdentity.miaodaUserId).toBe('miaoda-user-1');
     expect(result.session.id).toBe('session-row-1');
@@ -143,7 +162,8 @@ describe('official OAuth -> persistent session G0', () => {
       {
         configured: true,
         clientId: 'cli_aadde8b579f95bc9',
-        redirectUri: 'https://hv5zjf4j8yb.feishuapp.com/app/app_17bzc551rsg/client/oauth/callback',
+        redirectUri:
+          'https://hv5zjf4j8yb.feishuapp.com/app/app_17bzc551rsg/client/oauth/callback',
         tokenApiVersion: 'v3',
         mappingBootstrap: { kind: 'DISABLED' },
         applicationScopeId: 'app_17bzc551rsg',
@@ -167,16 +187,30 @@ describe('official OAuth -> persistent session G0', () => {
       {
         configured: true,
         clientId: 'cli_aadde8b579f95bc9',
-        redirectUri: 'https://hv5zjf4j8yb.feishuapp.com/app/app_17bzc551rsg/client/oauth/callback',
+        redirectUri:
+          'https://hv5zjf4j8yb.feishuapp.com/app/app_17bzc551rsg/client/oauth/callback',
         tokenApiVersion: 'v3',
         mappingBootstrap: { kind: 'DISABLED' },
         applicationScopeId: 'app_17bzc551rsg',
         sessionEnvironment: 'preview',
       },
-      { consume: jest.fn().mockResolvedValue({ codeVerifier: 'verifier' }) } as never,
-      { fetchToken: jest.fn().mockResolvedValue({ accessToken: 'user-access-token' }) } as never,
-      { verify: jest.fn().mockResolvedValue({ kind: 'VERIFIED', identity }) } as never,
-      { create: jest.fn().mockResolvedValue({ token: 'raw-secret-token', expiresAt: new Date(Date.now() + 60000) }) } as never,
+      {
+        consume: jest.fn().mockResolvedValue({ codeVerifier: 'verifier' }),
+      } as never,
+      {
+        fetchToken: jest
+          .fn()
+          .mockResolvedValue({ accessToken: 'user-access-token' }),
+      } as never,
+      {
+        verify: jest.fn().mockResolvedValue({ kind: 'VERIFIED', identity }),
+      } as never,
+      {
+        create: jest.fn().mockResolvedValue({
+          token: 'raw-secret-token',
+          expiresAt: new Date(Date.now() + 60000),
+        }),
+      } as never,
     );
     const callbackResponse = fakeResponse();
     process.env.FEISHU_OAUTH_CLIENT_SECRET = 'controlled-dev-secret';
@@ -186,8 +220,14 @@ describe('official OAuth -> persistent session G0', () => {
     );
     delete process.env.FEISHU_OAUTH_CLIENT_SECRET;
     expect(callbackResponse.cookie).toHaveBeenCalledWith(
-      'wl_session', 'raw-secret-token',
-      expect.objectContaining({ httpOnly: true, secure: true, sameSite: 'lax', path: '/' }),
+      'wl_session',
+      'raw-secret-token',
+      expect.objectContaining({
+        httpOnly: true,
+        secure: true,
+        sameSite: 'lax',
+        path: '/',
+      }),
     );
     expect(callbackResponse.status).toHaveBeenCalledWith(204);
     expect(callbackResponse.json).not.toHaveBeenCalled();
@@ -195,13 +235,20 @@ describe('official OAuth -> persistent session G0', () => {
 
   it('development create derives actor only from the resolved session', async () => {
     const actor = { canonicalSubject: { id: 'miaoda-user-1' } };
-    const workItems = { createOauthSessionDevelopmentRun: jest.fn().mockResolvedValue({ ok: true }) };
+    const workItems = {
+      createOauthSessionDevelopmentRun: jest
+        .fn()
+        .mockResolvedValue({ ok: true }),
+    };
     const controller = new OauthSessionDevelopmentWorkItemController(
       { resolve: jest.fn().mockResolvedValue({ actor }) } as never,
       workItems as never,
     );
     await controller.create(
-      { documentVersionId: 'DV-1', developmentRunToken: '11111111-1111-4111-8111-111111111111' },
+      {
+        documentVersionId: 'DV-1',
+        developmentRunToken: '11111111-1111-4111-8111-111111111111',
+      },
       { headers: { cookie: 'wl_session=opaque' } } as never,
     );
     expect(workItems.createOauthSessionDevelopmentRun).toHaveBeenCalledWith(
@@ -231,7 +278,11 @@ describe('official OAuth -> persistent session G0', () => {
     );
     await expect(
       controller.create(
-        { documentVersionId: 'DV-1', developmentRunToken: '11111111-1111-4111-8111-111111111111', userId: 'forged' },
+        {
+          documentVersionId: 'DV-1',
+          developmentRunToken: '11111111-1111-4111-8111-111111111111',
+          userId: 'forged',
+        },
         {} as never,
       ),
     ).rejects.toBeInstanceOf(HttpException);
@@ -253,12 +304,20 @@ describe('official OAuth -> persistent session G0', () => {
       }),
     };
     const workItems = {
-      listOwnedWorkItems: jest.fn().mockResolvedValue([{
-        workItemId: 'WI-1', revision: 2, status: 'READY', actionType: 'PARSE_PDF',
-        documentId: 'DOC-1', documentVersionId: 'DV-1', requestId: 'REQ-1',
-        runKey: 'dev:1', createdAt: new Date('2026-08-25T00:00:00.000Z'),
-        updatedAt: new Date('2026-08-25T00:01:00.000Z'),
-      }]),
+      listOwnedWorkItems: jest.fn().mockResolvedValue([
+        {
+          workItemId: 'WI-1',
+          revision: 2,
+          status: 'READY',
+          actionType: 'PARSE_PDF',
+          documentId: 'DOC-1',
+          documentVersionId: 'DV-1',
+          requestId: 'REQ-1',
+          runKey: 'dev:1',
+          createdAt: new Date('2026-08-25T00:00:00.000Z'),
+          updatedAt: new Date('2026-08-25T00:01:00.000Z'),
+        },
+      ]),
       loadTenantScopedProjection: jest.fn().mockResolvedValue({
         row: { revision: 2, status: 'READY', documentVersionId: 'DV-1' },
         projection: { revision: 2 },

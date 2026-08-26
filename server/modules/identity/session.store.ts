@@ -24,18 +24,13 @@ export class SessionStore {
     expiresAt: Date;
   }> {
     const token = randomBytes(32).toString('base64url');
-    const now = new Date();
-    const expiresAt = new Date(
-      now.getTime() + HOST_SESSION_ABSOLUTE_TTL_MS,
-    );
     const persisted = await this.repository.createSession({
       tokenHash: digest(token),
       subjectMappingId: identity.subjectMappingId,
       feishuUserId: identity.feishuUserId,
-      expiresAt,
-      now,
+      absoluteTtlMs: HOST_SESSION_ABSOLUTE_TTL_MS,
     });
-    return { token, expiresAt, ...persisted };
+    return { token, ...persisted };
   }
 
   async validate(token: string): Promise<ValidatedSession | null> {
