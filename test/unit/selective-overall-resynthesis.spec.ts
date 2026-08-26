@@ -4,6 +4,7 @@ import type {
 } from '@shared/api.interface';
 
 import {
+  assertLatestOverallCandidate,
   buildSelectiveOverallResynthesisPlan,
   type DynamicRuleReviewItem,
   type OpenClawEngineerReviewContext,
@@ -102,6 +103,41 @@ describe('selective overall resynthesis', () => {
       }),
     ).toThrow('SELECTIVE_RESYNTHESIS_REVIEW_HISTORY_INVALID');
   });
+
+  it('accepts an unchanged business conclusion when r2 binds the latest review, and rejects the old revision', () => {
+    const prior = staleOverall();
+    const plan = buildSelectiveOverallResynthesisPlan({
+      criterionSetId: 'JACS-TWO',
+      criterionCount: 2,
+      baseRuleRevision: 3,
+      baseRuleArtifactSha256: BASE_SHA,
+      staleOverall: prior,
+      engineerReviewProjection: reviewProjection(),
+      engineerReviewContext: supplementalContext(),
+      items: baseItems(),
+    });
+    const r2 = {
+      ...prior,
+      status: 'CANDIDATE_ONLY' as const,
+      revision: 2,
+      basedOnEngineerReviewRevision: 1,
+      basedOnEngineerReviewArtifactSha256: 'c'.repeat(64),
+      staleReason: null,
+      actionAttemptId: 'ATT-OVERALL-2',
+      artifact: artifact('artifact://overall-r2', 'e'.repeat(64)),
+      // The engineering conclusion is intentionally unchanged. The new
+      // evidence/review binding and revision, not textual novelty, define r2.
+      overallCandidate: prior.overallCandidate,
+      findings: prior.findings,
+      missingInputs: prior.missingInputs,
+      applicabilityStatus: prior.applicabilityStatus,
+    };
+
+    expect(() => assertLatestOverallCandidate(plan, r2)).not.toThrow();
+    expect(() =>
+      assertLatestOverallCandidate(plan, { ...r2, revision: 1 }),
+    ).toThrow('OPENCLAW_OVERALL_LATEST_CANDIDATE_BINDING_INVALID');
+  });
 });
 
 function baseItems(): DynamicRuleReviewItem[] {
@@ -192,6 +228,20 @@ function staleOverall(): CanonicalOpenClawOverallProjection {
     artifact: artifact('artifact://overall', 'd'.repeat(64)),
     actionAttemptId: 'ATT-OVERALL-1',
     staleReason: 'ENGINEER_REVIEW_CHANGED',
+    overallCandidate: '候选结论保持不变，但已基于新证据重新综合。',
+    findings: [
+      {
+        finding: '候选发现保持不变。',
+        basis: '来源仍支持原判断。',
+        sourceRefIds: ['SRC-A'],
+        assumptions: [],
+        uncertainty: '仍需工程师确认。',
+      },
+    ],
+    missingInputs: [],
+    applicabilityStatus: 'CANDIDATE_REVIEW_REQUIRED',
+    engineeringReviewRequired: true,
+    providers: {},
   };
 }
 

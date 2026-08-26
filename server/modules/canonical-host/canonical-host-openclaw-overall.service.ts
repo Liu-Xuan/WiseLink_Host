@@ -246,10 +246,6 @@ export class CanonicalHostOpenClawOverallService {
       try {
         output = requiredModelOutput(prepared.result);
         parsed = consumeOpenClawOverallSynthesisOutput(modelInput, output);
-        assertReviewDrivenOverallChanged(
-          workItem.integratedAssessment?.overallSynthesis ?? null,
-          parsed,
-        );
       } catch (error) {
         return this.attempts.finishResultGateFailure(prepared, error);
       }
@@ -743,27 +739,6 @@ function overallFindings(value: unknown): Array<{
       uncertainty: requiredText(finding.uncertainty),
     };
   });
-}
-function assertReviewDrivenOverallChanged(
-  prior: CanonicalOpenClawOverallProjection | null,
-  parsed: Record<string, unknown>,
-): void {
-  if (!prior || prior.status !== 'STALE') return;
-  const priorBusinessContent = JSON.stringify({
-    overallCandidate: prior.overallCandidate ?? null,
-    findings: prior.findings ?? [],
-    missingInputs: prior.missingInputs ?? [],
-    applicabilityStatus: prior.applicabilityStatus ?? null,
-  });
-  const nextBusinessContent = JSON.stringify({
-    overallCandidate: parsed.overallCandidate,
-    findings: parsed.findings,
-    missingInputs: parsed.missingInputs,
-    applicabilityStatus: parsed.applicabilityStatus,
-  });
-  if (priorBusinessContent === nextBusinessContent) {
-    throw new Error('OPENCLAW_OVERALL_REVIEW_DELTA_MISSING');
-  }
 }
 function withoutRevision(
   workItem: CanonicalWorkItemProjection,

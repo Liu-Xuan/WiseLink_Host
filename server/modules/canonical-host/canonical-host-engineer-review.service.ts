@@ -132,7 +132,6 @@ export class CanonicalHostEngineerReviewService {
     if (!dynamicItems.some((item) => item.criterionId === input.criterionId)) {
       throw new Error(`ENGINEER_REVIEW_CRITERION_UNKNOWN:${input.criterionId}`);
     }
-    await this.assertEvidenceArtifactsReadable(input);
     const existingLedger = await this.readLedger(workItem);
     const attempt = await this.repository.reserveAssessmentAction({
       workItemId: workItem.workItemId,
@@ -360,16 +359,6 @@ export class CanonicalHostEngineerReviewService {
     return ledger;
   }
 
-  private async assertEvidenceArtifactsReadable(
-    input: RecordEngineerReviewActionInput,
-  ): Promise<void> {
-    for (const evidence of input.evidence ?? []) {
-      if (evidence.artifact) {
-        await this.artifactStore.readActualBytes(evidence.artifact);
-      }
-    }
-  }
-
   private authorizeAndLoad(workItemId: string, actor: CanonicalHostActor) {
     return authorizeAndLoadCanonicalWorkItem({
       authorization: this.authorization,
@@ -427,6 +416,9 @@ function validateReviewActionInput(
     return;
   }
   if (input.actionType === 'SUPPLEMENT_EVIDENCE') {
+    if (input.evidence?.some((value) => value.kind === 'ATTACHMENT')) {
+      throw new Error('ENGINEER_REVIEW_ATTACHMENT_RESOLVER_REQUIRED');
+    }
     if (
       input.decision !== undefined ||
       input.correctedAnalysisDirection !== undefined ||
@@ -442,7 +434,7 @@ function validateReviewActionInput(
             'DOCUMENT_FACT',
             'ATTACHMENT',
           ].includes(value.kind) ||
-          (value.kind === 'ATTACHMENT' && !value.artifact),
+          value.artifact !== undefined,
       ) ||
       !validDistinctTexts(input.resolvedMissingInputs ?? [])
     ) {

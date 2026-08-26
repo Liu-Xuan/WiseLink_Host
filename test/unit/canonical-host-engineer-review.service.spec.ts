@@ -87,7 +87,7 @@ describe('CanonicalHostEngineerReviewService', () => {
     expect(harness.state.persisted).toHaveLength(0);
   });
 
-  it('adopts a readable attachment as review evidence and exposes no actor authority to OpenClaw', async () => {
+  it('records server-private non-attachment evidence and exposes no actor authority to OpenClaw', async () => {
     const harness = target();
     const updated = await harness.service.recordReviewAction(
       {
@@ -95,13 +95,12 @@ describe('CanonicalHostEngineerReviewService', () => {
         expectedRevision: 5,
         criterionId: 'RULE-001',
         actionType: 'SUPPLEMENT_EVIDENCE',
-        comment: '补充受控飞机构型附件，只重算本项。',
+        comment: '补充 Host 内部解析的受控飞机构型事实，只重算本项。',
         evidence: [
           {
-            kind: 'ATTACHMENT',
+            kind: 'AIRCRAFT_FACT',
             statement: '该机当前构型已安装目标件号。',
-            locator: 'attachment page 1',
-            artifact: attachmentArtifact(),
+            locator: 'FleetMasterData/AC-001@2026-08-26',
           },
         ],
         resolvedMissingInputs: [],
@@ -116,14 +115,6 @@ describe('CanonicalHostEngineerReviewService', () => {
     );
 
     expect(updated.revision).toBe(6);
-    expect(harness.state.readRefs).toContain('artifact://attachment');
-    const attachmentRead = harness.state.events.indexOf(
-      'read:artifact://attachment',
-    );
-    const reservation = harness.state.events.indexOf('reserve');
-    expect(attachmentRead).toBeGreaterThanOrEqual(0);
-    expect(attachmentRead).toBeLessThan(reservation);
-
     const context = await harness.service.modelContext(updated);
     expect(context.effective).toEqual([
       expect.objectContaining({
@@ -131,7 +122,7 @@ describe('CanonicalHostEngineerReviewService', () => {
         actionType: 'SUPPLEMENT_EVIDENCE',
         evidence: [
           expect.objectContaining({
-            kind: 'ATTACHMENT',
+            kind: 'AIRCRAFT_FACT',
             sourceRefId: expect.stringMatching(/^review-evidence:\/\//),
           }),
         ],
@@ -140,6 +131,40 @@ describe('CanonicalHostEngineerReviewService', () => {
     const serialized = JSON.stringify(context);
     expect(serialized).not.toContain('engineer-1');
     expect(serialized).not.toContain('ATT-1');
+  });
+
+  it('rejects caller-provided attachment descriptors before artifactStore or ActionAttempt I/O', async () => {
+    const harness = target();
+    await expect(
+      harness.service.recordReviewAction(
+        {
+          workItemId: 'WI-REVIEW',
+          expectedRevision: 5,
+          criterionId: 'RULE-001',
+          actionType: 'SUPPLEMENT_EVIDENCE',
+          comment: '不得信任 caller 提供的跨对象 artifact descriptor。',
+          evidence: [
+            {
+              kind: 'ATTACHMENT',
+              statement: 'caller 声称的附件事实。',
+              locator: 'caller-provided locator',
+              artifact: attachmentArtifact(),
+            },
+          ],
+          resolvedMissingInputs: [],
+        },
+        {
+          userId: 'engineer-1',
+          tenantId: 'tenant-1',
+          appId: 'app_17bzc551rsg',
+          env: 'development',
+          roles: [],
+        },
+      ),
+    ).rejects.toThrow('ENGINEER_REVIEW_ATTACHMENT_RESOLVER_REQUIRED');
+    expect(harness.state.readRefs).toHaveLength(0);
+    expect(harness.state.attempts).toBe(0);
+    expect(harness.state.persisted).toHaveLength(0);
   });
 
   it('fails stale expectedRevision before reserving an ActionAttempt', async () => {
@@ -179,7 +204,6 @@ function target() {
   };
   const artifacts = new Map<string, Uint8Array>([
     ['artifact://dynamic', dynamicBytes()],
-    ['artifact://attachment', new TextEncoder().encode('controlled fact')],
   ]);
   const artifactStore = {
     readActualBytes: async (artifact: { ref: string }) => {
