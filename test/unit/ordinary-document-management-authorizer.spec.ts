@@ -1,12 +1,6 @@
-const mockIngestFileServiceSelection = jest.fn();
-
 jest.mock(
   '../../server/modules/document-management/src/hosted/documentManagementHostedCore.js',
-  () => ({
-    DocumentManagementHostedCore: jest.fn().mockImplementation(() => ({
-      ingestFileServiceSelection: mockIngestFileServiceSelection,
-    })),
-  }),
+  () => ({ DocumentManagementHostedCore: jest.fn() }),
 );
 jest.mock(
   '../../server/modules/document-management/src/hosted/miaodaFileServiceArtifactStore.js',
@@ -14,7 +8,11 @@ jest.mock(
 );
 
 import { OrdinaryDocumentManagementAuthorizer } from '../../server/modules/document-management-runtime/ordinary-document-management-authorizer';
-import { DocumentManagementHostedService } from '../../server/modules/document-management/src/hosted/nest/document-management-hosted.service';
+import { DocumentManagementHostedCore } from '../../server/modules/document-management/src/hosted/documentManagementHostedCore.js';
+import {
+  DocumentManagementHostedService,
+  type HostedRequestContext,
+} from '../../server/modules/document-management/src/hosted/nest/document-management-hosted.service';
 
 const creatorContext = {
   actorUserId: 'user-creator',
@@ -26,6 +24,25 @@ const creatorContext = {
 
 const OWNED_PATH =
   'wiselink/dev-intake/0f8fad5b-d9cb-469f-a165-70867728950e/source.pdf';
+
+function runtimeContext(
+  overrides: Partial<HostedRequestContext> = {},
+): HostedRequestContext {
+  return {
+    ...creatorContext,
+    env: 'runtime',
+    roles: ['authenticated', 'wiselink_development'],
+    runtimeIngestAuthority: {
+      mode: 'HOSTED_OAUTH_SESSION_DEVELOPMENT_RUN',
+      actorUserId: creatorContext.actorUserId,
+      tenantId: creatorContext.tenantId,
+      appId: creatorContext.appId,
+      identityProvenance: 'FEISHU_OAUTH_USER_ACCESS_TOKEN',
+      sessionProvenance: 'SERVER_OPAQUE_SESSION',
+    },
+    ...overrides,
+  };
+}
 
 function binding() {
   return {
@@ -253,14 +270,21 @@ describe('ordinary document-management authorization', () => {
     },
   );
 
-  it('allows hosted runtime selection through the same-user authorizer and ingest core', async () => {
-    const fileService = { from: jest.fn() };
+  it('allows hosted runtime ingestion only with the internal OAuth-session development-run authority', async () => {
+    const core = {
+      ingestFileServiceSelection: jest.fn().mockResolvedValue({
+        documentVersionId: 'DV-RUNTIME-DEV',
+      }),
+    };
+    jest
+      .mocked(DocumentManagementHostedCore)
+      .mockImplementationOnce(() => core as never);
     const authorizer = {
       assertCanIngest: jest.fn().mockResolvedValue(undefined),
       assertCanRead: jest.fn(),
     };
     const service = new DocumentManagementHostedService(
-      fileService as never,
+      {} as never,
       {} as never,
       authorizer,
     );
@@ -268,11 +292,7 @@ describe('ordinary document-management authorization', () => {
     const previousLocal = process.env.MIAODA_LOCAL_DEV;
     process.env.SANDBOX_ID = 'unit-hosted-sandbox';
     delete process.env.MIAODA_LOCAL_DEV;
-    const context = { ...creatorContext, env: 'runtime' };
-    mockIngestFileServiceSelection.mockResolvedValue({
-      documentVersionId: 'DV-RUNTIME',
-    });
-
+    const context = runtimeContext();
     try {
       await expect(
         service.assertCanIngest(context, {
@@ -285,30 +305,118 @@ describe('ordinary document-management authorization', () => {
           { selection: { bucketId: 'bucket-default', filePath: OWNED_PATH } },
           context,
         ),
-      ).resolves.toEqual({ documentVersionId: 'DV-RUNTIME' });
+      ).resolves.toEqual({ documentVersionId: 'DV-RUNTIME-DEV' });
     } finally {
       restoreProcessEnv('SANDBOX_ID', previousSandbox);
       restoreProcessEnv('MIAODA_LOCAL_DEV', previousLocal);
     }
     expect(authorizer.assertCanIngest).toHaveBeenCalledWith({
-      ...context,
+      actorUserId: context.actorUserId,
+      tenantId: context.tenantId,
+      roles: context.roles,
       action: 'DOCUMENT_INGEST',
-      selection: {
-        bucketId: 'bucket-default',
-        filePath: OWNED_PATH,
-      },
+      selection: { bucketId: 'bucket-default', filePath: OWNED_PATH },
     });
-    expect(mockIngestFileServiceSelection).toHaveBeenCalledWith(
-      {
-        selection: {
-          bucketId: 'bucket-default',
-          filePath: OWNED_PATH,
-        },
-      },
+    expect(core.ingestFileServiceSelection).toHaveBeenCalledWith(
+      { selection: { bucketId: 'bucket-default', filePath: OWNED_PATH } },
       context,
     );
-    expect(fileService.from).not.toHaveBeenCalled();
   });
+
+  it.each([
+    [
+      'no internal authority',
+      runtimeContext({ runtimeIngestAuthority: undefined }),
+      {
+        code: 'DOCUMENT_INGEST_PREVIEW_REQUIRED',
+        statusCode: 403,
+      },
+    ],
+    [
+      'missing role',
+      runtimeContext({ roles: [] }),
+      {
+        code: 'DOCUMENT_INGEST_PREVIEW_REQUIRED',
+        statusCode: 403,
+      },
+    ],
+    [
+      'wrong role',
+      runtimeContext({ roles: ['authenticated', 'document_reader'] }),
+      {
+        code: 'DOCUMENT_INGEST_PREVIEW_REQUIRED',
+        statusCode: 403,
+      },
+    ],
+    [
+      'wrong app',
+      runtimeContext({ appId: 'another-app' }),
+      {
+        code: 'CANONICAL_IDENTITY_HANDOFF_UNAVAILABLE',
+        statusCode: 503,
+      },
+    ],
+    [
+      'unknown env',
+      runtimeContext({ env: 'production' }),
+      {
+        code: 'CANONICAL_IDENTITY_HANDOFF_UNAVAILABLE',
+        statusCode: 503,
+      },
+    ],
+    [
+      'authority bound to another user',
+      runtimeContext({
+        runtimeIngestAuthority: {
+          ...runtimeContext().runtimeIngestAuthority!,
+          actorUserId: 'another-user',
+        },
+      }),
+      {
+        code: 'DOCUMENT_INGEST_PREVIEW_REQUIRED',
+        statusCode: 403,
+      },
+    ],
+  ])(
+    'rejects hosted runtime ingestion with %s',
+    async (_label, context, expectedError) => {
+      const fileService = { from: jest.fn() };
+      const authorizer = {
+        assertCanIngest: jest.fn(),
+        assertCanRead: jest.fn(),
+      };
+      const service = new DocumentManagementHostedService(
+        fileService as never,
+        {} as never,
+        authorizer,
+      );
+      const previousSandbox = process.env.SANDBOX_ID;
+      const previousLocal = process.env.MIAODA_LOCAL_DEV;
+      process.env.SANDBOX_ID = 'unit-hosted-sandbox';
+      delete process.env.MIAODA_LOCAL_DEV;
+
+      try {
+        await expect(
+          Promise.resolve().then(() =>
+            service.assertCanIngest(context, {
+              bucketId: 'bucket-default',
+              filePath: OWNED_PATH,
+            }),
+          ),
+        ).rejects.toMatchObject(expectedError);
+        await expect(
+          Promise.resolve().then(() =>
+            service.ingestFileServiceSelection({}, context),
+          ),
+        ).rejects.toMatchObject(expectedError);
+      } finally {
+        restoreProcessEnv('SANDBOX_ID', previousSandbox);
+        restoreProcessEnv('MIAODA_LOCAL_DEV', previousLocal);
+      }
+      expect(authorizer.assertCanIngest).not.toHaveBeenCalled();
+      expect(fileService.from).not.toHaveBeenCalled();
+    },
+  );
 });
 
 function fileServiceTarget(metadata: unknown) {

@@ -205,6 +205,7 @@ describe('production Miaoda browser object ingress route composition', () => {
       {},
     ],
     ['wrong app binding', { SANDBOX_ID: 'sandbox' }, { appId: 'another-app' }],
+    ['unknown hosted env', { SANDBOX_ID: 'sandbox' }, { env: 'production' }],
     ['system account', { SANDBOX_ID: 'sandbox' }, { isSystemAccount: true }],
     [
       'unsafe numeric tenant identity',

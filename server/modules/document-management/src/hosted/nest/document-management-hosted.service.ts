@@ -4,6 +4,10 @@ import { FileService } from '@lark-apaas/fullstack-nestjs-core';
 import { DocumentManagementHostedCore } from '../documentManagementHostedCore.js';
 import { MiaodaFileServiceArtifactStore } from '../miaodaFileServiceArtifactStore.js';
 import { MiaodaHostedDocumentCatalog } from './miaoda-hosted-document-catalog';
+import {
+  CANONICAL_DEVELOPMENT_ROLE_ID,
+  CANONICAL_MIAODA_APP_ID,
+} from '../../../../canonical-host/canonical-host.constants';
 import { assertProductionMiaodaBrowserIdentityAvailable } from '../../../../work-item/production-miaoda-browser-ingress';
 import {
   DOCUMENT_MANAGEMENT_INGEST_AUTHORIZER,
@@ -16,6 +20,14 @@ export interface HostedRequestContext {
   roles: string[];
   appId: string;
   env: string;
+  runtimeIngestAuthority?: {
+    mode: 'HOSTED_OAUTH_SESSION_DEVELOPMENT_RUN';
+    actorUserId: string;
+    tenantId: string;
+    appId: string;
+    identityProvenance: 'FEISHU_OAUTH_USER_ACCESS_TOKEN';
+    sessionProvenance: 'SERVER_OPAQUE_SESSION';
+  };
 }
 
 @Injectable()
@@ -39,7 +51,7 @@ export class DocumentManagementHostedService {
 
   ingestFileServiceSelection(request: unknown, context: HostedRequestContext) {
     assertProductionMiaodaBrowserIdentityAvailable(hostedIdentity(context));
-    assertDevelopmentHostedContext(context);
+    assertDevelopmentIngestContext(context);
     return this.core.ingestFileServiceSelection(request, context);
   }
 
@@ -48,9 +60,11 @@ export class DocumentManagementHostedService {
     selection: { bucketId: string; filePath: string },
   ): Promise<void> {
     assertProductionMiaodaBrowserIdentityAvailable(hostedIdentity(context));
-    assertDevelopmentHostedContext(context);
+    assertDevelopmentIngestContext(context);
     return this.authorizer.assertCanIngest({
-      ...context,
+      actorUserId: context.actorUserId,
+      tenantId: context.tenantId,
+      roles: [...context.roles],
       action: 'DOCUMENT_INGEST',
       selection,
     });
@@ -90,14 +104,41 @@ function hostedIdentity(context: HostedRequestContext) {
   };
 }
 
-function assertDevelopmentHostedContext(context: HostedRequestContext): void {
-  if (!['preview', 'runtime'].includes(context.env)) {
-    throw Object.assign(
-      new Error('Document ingestion requires a hosted user environment.'),
-      {
-        code: 'DOCUMENT_INGEST_HOSTED_ENV_REQUIRED',
-        statusCode: 403,
-      },
-    );
+function assertDevelopmentIngestContext(context: HostedRequestContext): void {
+  // @lark-apaas/fullstack-nestjs-core derives env and roles from the hosted
+  // gateway user context. Preview stays available for development. The real
+  // online runtime additionally requires the server-only authority minted by
+  // the OAuth-session development-run path after its dual-actor checks. The
+  // authorizer then rechecks the owned default-bucket DEV path.
+  if (
+    context.env === 'preview' ||
+    (context.env === 'runtime' &&
+      context.appId === CANONICAL_MIAODA_APP_ID &&
+      context.roles.includes(CANONICAL_DEVELOPMENT_ROLE_ID) &&
+      hasOauthSessionDevelopmentRunAuthority(context))
+  ) {
+    return;
   }
+  throw Object.assign(
+    new Error('Document ingestion requires a hosted development context.'),
+    {
+      code: 'DOCUMENT_INGEST_PREVIEW_REQUIRED',
+      statusCode: 403,
+    },
+  );
+}
+
+function hasOauthSessionDevelopmentRunAuthority(
+  context: HostedRequestContext,
+): boolean {
+  const authority = context.runtimeIngestAuthority;
+  return Boolean(
+    authority &&
+      authority.mode === 'HOSTED_OAUTH_SESSION_DEVELOPMENT_RUN' &&
+      authority.actorUserId === context.actorUserId &&
+      authority.tenantId === context.tenantId &&
+      authority.appId === context.appId &&
+      authority.identityProvenance === 'FEISHU_OAUTH_USER_ACCESS_TOKEN' &&
+      authority.sessionProvenance === 'SERVER_OPAQUE_SESSION',
+  );
 }
