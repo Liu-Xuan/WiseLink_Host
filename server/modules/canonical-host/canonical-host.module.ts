@@ -24,6 +24,10 @@ import { CanonicalHostOpenClawDiscoveryService } from './canonical-host-openclaw
 import { CanonicalHostOpenClawOverallService } from './canonical-host-openclaw-overall.service';
 import { CanonicalHostOpenClawTranslationService } from './canonical-host-openclaw-translation.service';
 import { CanonicalHostOpenClawApplicabilityService } from './canonical-host-openclaw-applicability.service';
+import {
+  CanonicalHostApplicabilityInputProducer,
+  UnavailableCanonicalApplicabilityControlledSelection,
+} from './canonical-host-applicability-input.producer';
 import { CanonicalHostOpenClawReviewService } from './canonical-host-openclaw-review.service';
 import { HostOwnedV1TranslationRuleSetPrivateProvider } from './canonical-translation-rule-set-v1.private';
 import { ExternalDiscoveryModule } from '../external-discovery/external-discovery.module';
@@ -32,6 +36,7 @@ import { ExactFtdFrozen2PdfProducerAdapter } from './exact-ftd-frozen2-pdf-produ
 import { OrdinaryFailureValidationWriteAuthorizationAdapter } from './ordinary-failure-validation-write-authorization.adapter';
 import {
   CANONICAL_AUTHORIZATION,
+  CANONICAL_APPLICABILITY_CONTROLLED_SELECTION,
   CANONICAL_BASE_RULE_RESULT_PROVIDER,
   CANONICAL_FAILURE_VALIDATION_WRITE_AUTHORIZATION,
   CANONICAL_HOST_BINDING,
@@ -91,6 +96,7 @@ export interface CanonicalHostModuleOptions {
   openClawOverallProvider?: Provider;
   serviceScopeAuthorizationProvider?: Provider;
   professionalArtifactCorrelationProvider?: Provider;
+  applicabilityControlledSelectionProvider?: Provider;
 }
 
 @Module({
@@ -121,6 +127,7 @@ export interface CanonicalHostModuleOptions {
     CanonicalHostOpenClawOverallService,
     CanonicalHostOpenClawTranslationService,
     CanonicalHostOpenClawApplicabilityService,
+    CanonicalHostApplicabilityInputProducer,
     CanonicalHostOpenClawReviewService,
     HostOwnedV1TranslationRuleSetPrivateProvider,
     ExactFtdFrozen2PdfProducerAdapter,
@@ -134,6 +141,7 @@ export interface CanonicalHostModuleOptions {
     CanonicalHostLibraryIndexService,
     CanonicalHostAeoService,
     UnavailableCanonicalServiceScopeAuthorization,
+    UnavailableCanonicalApplicabilityControlledSelection,
     UnavailableScopedProfessionalArtifactCorrelationAdapter,
     MiaodaScopedProfessionalArtifactCorrelationAdapter,
     {
@@ -147,6 +155,10 @@ export interface CanonicalHostModuleOptions {
     {
       provide: CANONICAL_SERVICE_SCOPE_AUTHORIZATION,
       useExisting: CANONICAL_EXECUTOR_SERVICE_SCOPE_AUTHORIZATION,
+    },
+    {
+      provide: CANONICAL_APPLICABILITY_CONTROLLED_SELECTION,
+      useExisting: UnavailableCanonicalApplicabilityControlledSelection,
     },
   ],
 })
@@ -212,6 +224,12 @@ export class CanonicalHostModule {
       MiaodaScopedProfessionalArtifactCorrelationAdapter,
       'SCOPED_PROFESSIONAL_ARTIFACT_CORRELATION_PROVIDER_INVALID',
     );
+    const applicabilityControlledSelectionProvider = resolveProvider(
+      options.applicabilityControlledSelectionProvider,
+      CANONICAL_APPLICABILITY_CONTROLLED_SELECTION,
+      UnavailableCanonicalApplicabilityControlledSelection,
+      'CANONICAL_APPLICABILITY_CONTROLLED_SELECTION_PROVIDER_INVALID',
+    );
     const binding: CanonicalHostBindingState = {
       mode:
         options.workItemRegistrarProvider &&
@@ -262,6 +280,7 @@ export class CanonicalHostModule {
         openClawOverallProvider,
         serviceScopeAuthorizationProvider,
         professionalArtifactCorrelationProvider,
+        applicabilityControlledSelectionProvider,
         {
           provide: CANONICAL_HOST_CLOCK,
           useClass: SystemCanonicalHostClockAdapter,
@@ -277,6 +296,7 @@ export class CanonicalHostModule {
         CanonicalHostOpenClawOverallService,
         CanonicalHostOpenClawTranslationService,
         CanonicalHostOpenClawApplicabilityService,
+        CanonicalHostApplicabilityInputProducer,
         CanonicalHostOpenClawReviewService,
         HostOwnedV1TranslationRuleSetPrivateProvider,
         ExactFtdFrozen2PdfProducerAdapter,
@@ -302,6 +322,7 @@ export class CanonicalHostModule {
         CanonicalHostEngineerReviewService,
         CanonicalHostLibraryIndexService,
         CanonicalHostAeoService,
+        CanonicalHostApplicabilityInputProducer,
         CANONICAL_HOST_BINDING,
       ],
     };

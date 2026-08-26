@@ -32,7 +32,6 @@ import {
   type BlockingUnknown,
 } from '../assessment-workbench/applicability-fleet/applicabilityKleeneEngine';
 import {
-  FLEET_MASTER_DATA_SCHEMA_VERSION,
   resolveFleetSnapshot,
   type FleetMasterDataSource,
   type FleetSnapshotResolution,
@@ -41,6 +40,8 @@ import { UNIFIED_ARTIFACT_STORE } from '../unified-reader/unified-reader.constan
 import { UnifiedReaderService } from '../unified-reader/unified-reader.service';
 import type { UnifiedArtifactStorePort } from '../unified-reader/unified-reader.types';
 import { assertNoDuplicateJsonKeys } from '../unified-reader/unified-reader.utils';
+import { CanonicalHostApplicabilityInputProducer } from './canonical-host-applicability-input.producer';
+import { readFrozenApplicabilitySourceBinding } from './canonical-host-applicability-source';
 import {
   APPLICABILITY_ARTIFACT_SCHEMA_VERSION,
   APPLICABILITY_MCP_SERVER_NAME,
@@ -100,8 +101,18 @@ interface ApplicabilityCandidateArtifact {
     translationActionAttemptId: string;
     applicabilityContextRef: string;
     applicabilityBindingRevision: string;
+    targetBindingHash: string;
   };
   candidate: ApplicabilityCandidateContract;
+  hostTargetBindings: Array<{
+    expressionId: string;
+    assignmentId: string;
+    targetKind: ApplicabilityTaskSourceExpression['targetKind'];
+    targetId: string | null;
+    targetSourceRefIds: string[];
+    applicabilityLevel: ApplicabilityTaskSourceExpression['applicabilityLevel'];
+    contentRef: string | null;
+  }>;
   evaluation: ApplicabilityEvaluation;
   execution: {
     actionAttemptId: string;
@@ -149,6 +160,7 @@ export class CanonicalHostOpenClawApplicabilityService {
     private readonly attempts: ActionAttemptLifecycleService,
     @Inject(CANONICAL_SERVICE_SCOPE_AUTHORIZATION)
     private readonly serviceScope: CanonicalServiceScopeAuthorizationPort,
+    private readonly applicabilityInputs: CanonicalHostApplicabilityInputProducer,
   ) {}
 
   async begin(
@@ -163,14 +175,9 @@ export class CanonicalHostOpenClawApplicabilityService {
       },
     );
     assertApplicabilityContextScope(scope, applicabilityContextRef, requestId);
-    const workItem = await this.requiredParsedWorkItem(
-      scope.workItemId,
-      scope.tenantId,
-    );
-    const applicabilityInput = requiredApplicabilityInput(
-      workItem,
-      applicabilityContextRef,
-    );
+    await this.applicabilityInputs.produceAuthorized(scope);
+    const { workItem, applicabilityInput } =
+      await this.applicabilityInputs.resolveCurrent(scope);
     assertApplicabilityNotCurrent(workItem, applicabilityInput);
     const taskBuild = await this.buildTaskContract(
       workItem,
@@ -240,12 +247,25 @@ export class CanonicalHostOpenClawApplicabilityService {
     const result = parseResultEnvelope({ value: resultEnvelope, task });
     assertResultProvenance(result, task);
 
-    let workItem = await this.requiredParsedWorkItem(
-      row.workItemId,
-      scope.tenantId,
+    const applicabilityContextRef = requiredApplicabilityContextRef(
+      task.modelInput,
     );
+    let { workItem, applicabilityInput } =
+      await this.applicabilityInputs.resolveCurrent({
+        workItemId: row.workItemId,
+        tenantId: scope.tenantId,
+        applicabilityContextRef,
+      });
+    assertFreshAttemptWorkItemBinding(workItem, row, task);
     const recoveredProjection = workItem.applicability;
     if (recoveredProjection?.actionAttemptId === row.attemptId) {
+      assertRecoveredProjectionBinding(
+        workItem,
+        applicabilityInput,
+        recoveredProjection,
+        row,
+        task,
+      );
       const prepared = await this.prepareCommit({
         scope,
         attemptRef,
@@ -257,7 +277,24 @@ export class CanonicalHostOpenClawApplicabilityService {
       return projectionResult(workItem, recoveredProjection);
     }
 
-    if (result.status !== 'SUCCEEDED') {
+    if (workItem.revision !== task.baseRevision) {
+      throw conflict('WORK_ITEM_REVISION_CONFLICT');
+    }
+    const rebuilt = await this.buildTaskContract(workItem, applicabilityInput);
+    if (canonicalJson(rebuilt.contract) !== canonicalJson(task.modelInput)) {
+      throw new Error('APPLICABILITY_TASK_MODEL_INPUT_DRIFT');
+    }
+    if (canonicalJson(rebuilt.sourceRefs) !== canonicalJson(task.sourceRefs)) {
+      throw new Error('APPLICABILITY_TASK_RESOURCE_BINDING_DRIFT');
+    }
+    if (
+      canonicalJson(rebuilt.missingInputs) !==
+      canonicalJson(task.hostResolvedMissingInputs)
+    ) {
+      throw new Error('APPLICABILITY_TASK_MISSING_INPUT_DRIFT');
+    }
+    if (result.status === 'WAITING_INPUT') {
+      assertApplicabilityWaitingResult(result, task);
       return this.prepareNonCandidateTerminal({
         scope,
         attemptRef,
@@ -266,29 +303,30 @@ export class CanonicalHostOpenClawApplicabilityService {
         resultEnvelope,
       });
     }
-    if (workItem.revision !== task.baseRevision) {
-      throw conflict('WORK_ITEM_REVISION_CONFLICT');
-    }
-    const applicabilityInput = requiredApplicabilityInput(
-      workItem,
-      requiredApplicabilityContextRef(task.modelInput),
-    );
-    const rebuilt = await this.buildTaskContract(workItem, applicabilityInput);
-    if (canonicalJson(rebuilt.contract) !== canonicalJson(task.modelInput)) {
-      throw new Error('APPLICABILITY_TASK_MODEL_INPUT_DRIFT');
-    }
-    if (canonicalJson(rebuilt.sourceRefs) !== canonicalJson(task.sourceRefs)) {
-      throw new Error('APPLICABILITY_TASK_RESOURCE_BINDING_DRIFT');
+    if (result.status === 'FAILED') {
+      assertApplicabilityFailedResult(result);
+      return this.prepareNonCandidateTerminal({
+        scope,
+        attemptRef,
+        leaseToken,
+        leaseGeneration,
+        resultEnvelope,
+      });
     }
 
     const candidate = parseCandidateModelOutput(result.modelOutput);
     validateApplicabilityCandidateBinding(candidate, rebuilt.contract);
-    const evaluation = evaluateCandidate(candidate, rebuilt.fleetSource);
+    const evaluation = evaluateCandidate(
+      candidate,
+      rebuilt.contract,
+      rebuilt.fleetSource,
+    );
     assertOnlyHostFactUnknown(evaluation);
     const artifactValue = buildApplicabilityArtifact({
       workItem,
       applicabilityInput,
       candidate,
+      task: rebuilt.contract,
       evaluation,
       result,
     });
@@ -303,7 +341,10 @@ export class CanonicalHostOpenClawApplicabilityService {
       leaseGeneration,
       resultEnvelope,
     });
-    const recovered = await this.recoverPreparedCommit(prepared);
+    const recovered = await this.recoverPreparedCommit(
+      prepared,
+      applicabilityContextRef,
+    );
     if (recovered) return recovered;
     if (prepared.row.status !== 'COMMITTING') {
       return this.attempts.projectTerminal(prepared.row);
@@ -332,12 +373,21 @@ export class CanonicalHostOpenClawApplicabilityService {
       await finishForProjection(this.attempts, prepared, applicability);
       return projectionResult(updated, applicability);
     } catch (error) {
-      workItem = await this.requiredParsedWorkItem(
-        prepared.row.workItemId,
-        prepared.row.tenantId,
-      );
+      ({ workItem, applicabilityInput } =
+        await this.applicabilityInputs.resolveCurrent({
+          workItemId: prepared.row.workItemId,
+          tenantId: prepared.row.tenantId,
+          applicabilityContextRef,
+        }));
       const recoveredAfterFailure = workItem.applicability;
       if (recoveredAfterFailure?.actionAttemptId === prepared.row.attemptId) {
+        assertRecoveredProjectionBinding(
+          workItem,
+          applicabilityInput,
+          recoveredAfterFailure,
+          prepared.row,
+          prepared.task,
+        );
         await finishForProjection(
           this.attempts,
           prepared,
@@ -381,15 +431,26 @@ export class CanonicalHostOpenClawApplicabilityService {
 
   private async recoverPreparedCommit(
     prepared: PreparedActionAttemptCommit,
+    applicabilityContextRef: string,
   ): Promise<
     CommitApplicabilityCandidateResult | ActionAttemptTerminalProjection | null
   > {
-    const workItem = await this.requiredParsedWorkItem(
-      prepared.row.workItemId,
-      prepared.row.tenantId,
-    );
+    const { workItem, applicabilityInput } =
+      await this.applicabilityInputs.resolveCurrent({
+        workItemId: prepared.row.workItemId,
+        tenantId: prepared.row.tenantId,
+        applicabilityContextRef,
+      });
+    assertFreshAttemptWorkItemBinding(workItem, prepared.row, prepared.task);
     const applicability = workItem.applicability;
     if (applicability?.actionAttemptId === prepared.row.attemptId) {
+      assertRecoveredProjectionBinding(
+        workItem,
+        applicabilityInput,
+        applicability,
+        prepared.row,
+        prepared.task,
+      );
       await finishForProjection(this.attempts, prepared, applicability);
       return projectionResult(workItem, applicability);
     }
@@ -422,43 +483,38 @@ export class CanonicalHostOpenClawApplicabilityService {
     const packageBytes = await this.artifactStore.readActualBytes(
       workItem.package!.artifact,
     );
-    const sourceExpressions = parseFrozenSourceExpressions(
-      packageBytes,
+    const sourceBinding = readFrozenApplicabilitySourceBinding({
+      bytes: packageBytes,
       workItem,
-    );
-    const missingInputs: OpenClawTaskEnvelope['hostResolvedMissingInputs'] = [];
-    if (sourceExpressions.length === 0) {
-      missingInputs.push({
-        code: 'DOCUMENT_APPLICABILITY_EXPRESSIONS_MISSING',
-        message:
-          'The current frozen.2 package has no source-bound applicability expression.',
-      });
+      sourceUnits,
+    });
+    if (
+      sourceBinding.targetBindingHash !== applicabilityInput.targetBindingHash
+    ) {
+      throw new Error('APPLICABILITY_TARGET_BINDING_DRIFT');
     }
+    const sourceExpressions = sourceBinding.sourceExpressions;
 
     const bilingual = await this.readCurrentBilingual(workItem);
     if (bilingual === null) {
-      missingInputs.push({
-        code: 'CURRENT_BILINGUAL_TRANSLATION_MISSING',
-        message:
-          'The current document version has no current validated bilingual projection.',
-      });
+      throw new Error('CURRENT_BILINGUAL_TRANSLATION_REQUIRED');
     }
     const relevantRefIds = new Set(
       sourceExpressions.flatMap((expression) => expression.sourceRefIds),
     );
-    const bilingualUnits = bilingual
-      ? selectBilingualUnits(bilingual.units, sourceUnits, relevantRefIds)
-      : [];
+    const bilingualUnits = selectBilingualUnits(
+      bilingual.units,
+      sourceUnits,
+      relevantRefIds,
+    );
+    const coveredRefs = new Set(
+      bilingualUnits.flatMap((unit) => unit.sourceRefIds),
+    );
     if (
-      sourceExpressions.length > 0 &&
-      bilingual &&
-      bilingualUnits.length === 0
+      bilingualUnits.length === 0 ||
+      [...relevantRefIds].some((sourceRefId) => !coveredRefs.has(sourceRefId))
     ) {
-      missingInputs.push({
-        code: 'BILINGUAL_APPLICABILITY_SOURCE_UNIT_MISSING',
-        message:
-          'No bilingual SourceUnit is bound to the frozen applicability SourceRefs.',
-      });
+      throw new Error('BILINGUAL_APPLICABILITY_SOURCE_COVERAGE_REQUIRED');
     }
 
     const fleetSource = toFleetSource(applicabilityInput);
@@ -467,11 +523,9 @@ export class CanonicalHostOpenClawApplicabilityService {
       aircraftNumber: applicabilityInput.aircraftNumber,
       asOf: applicabilityInput.assessmentAsOf,
     });
+    const missingInputs: OpenClawTaskEnvelope['hostResolvedMissingInputs'] = [];
     if (applicabilityInput.currentness !== 'CURRENT') {
-      missingInputs.push({
-        code: `APPLICABILITY_INPUT_${applicabilityInput.currentness}`,
-        message: 'The Host applicability input binding is not current.',
-      });
+      throw new Error('APPLICABILITY_INPUT_NOT_CURRENT');
     }
     if (
       !fleetSource.sourceSnapshotId ||
@@ -479,39 +533,24 @@ export class CanonicalHostOpenClawApplicabilityService {
       !fleetSource.authorityRevision ||
       !fleetSource.sourceAsOf
     ) {
-      missingInputs.push({
-        code: 'FLEET_SOURCE_CURRENTNESS_UNVERIFIED',
-        message:
-          'The controlled FleetMasterData snapshot identity is incomplete.',
-      });
+      throw new Error('FLEET_SOURCE_CURRENTNESS_UNVERIFIED');
     }
     if (
       fleetSource.sourceAsOf &&
       (!isIsoDate(fleetSource.sourceAsOf) ||
         fleetSource.sourceAsOf > applicabilityInput.assessmentAsOf)
     ) {
-      missingInputs.push({
-        code: 'FLEET_SOURCE_AS_OF_INVALID',
-        message:
-          'The controlled FleetMasterData sourceAsOf is invalid or later than assessmentAsOf.',
-      });
+      throw new Error('FLEET_SOURCE_AS_OF_INVALID');
     }
-    if (
-      matchingAircraftCount(fleetSource, applicabilityInput.aircraftNumber) !==
-      1
-    ) {
-      missingInputs.push({
-        code: 'FLEET_AIRCRAFT_IDENTITY_NOT_UNIQUE',
-        message:
-          'The selected aircraft number does not resolve to exactly one controlled asset.',
-      });
+    const matchingAircraft = matchingAircraftCount(
+      fleetSource,
+      applicabilityInput.aircraftNumber,
+    );
+    if (matchingAircraft > 1) {
+      throw new Error('FLEET_AIRCRAFT_IDENTITY_NOT_UNIQUE');
     }
     if (resolution.status === 'WAITING_INPUT') {
-      missingInputs.push({
-        code: 'FLEET_AIRCRAFT_FACTS_NOT_RESOLVED',
-        message:
-          'The selected aircraft facts are missing or conflicting at assessmentAsOf.',
-      });
+      missingInputs.push(...fleetResolutionMissingInputs(resolution));
     }
 
     const assetId = resolution.provenance?.assetId ?? null;
@@ -668,65 +707,6 @@ export class CanonicalHostOpenClawApplicabilityService {
   }
 }
 
-function parseFrozenSourceExpressions(
-  bytes: Uint8Array,
-  workItem: CanonicalWorkItemProjection,
-): ApplicabilityTaskSourceExpression[] {
-  const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-  assertNoDuplicateJsonKeys(text);
-  const parsed: unknown = JSON.parse(text) as unknown;
-  const pkg = record(parsed, 'APPLICABILITY_FROZEN_PACKAGE_INVALID');
-  const applicability = record(
-    pkg.applicability,
-    'APPLICABILITY_FROZEN_BLOCK_INVALID',
-  );
-  const sourceRefs = array(pkg.sourceRefs, 'APPLICABILITY_SOURCE_REFS_INVALID');
-  const knownRefs = new Set(
-    sourceRefs.map((value) =>
-      requiredText(
-        record(value, 'APPLICABILITY_SOURCE_REF_INVALID').sourceRefId,
-        'APPLICABILITY_SOURCE_REF_ID_REQUIRED',
-      ),
-    ),
-  );
-  const seen = new Set<string>();
-  const expressions = array(
-    applicability.sourceExpressions,
-    'APPLICABILITY_SOURCE_EXPRESSIONS_INVALID',
-  ).map((value) => {
-    const expression = record(value, 'APPLICABILITY_SOURCE_EXPRESSION_INVALID');
-    const expressionId = requiredText(
-      expression.expressionId,
-      'APPLICABILITY_SOURCE_EXPRESSION_ID_REQUIRED',
-    );
-    const sourceRefIds = requiredStringArray(
-      expression.sourceRefIds,
-      'APPLICABILITY_SOURCE_EXPRESSION_REFS_INVALID',
-    );
-    if (
-      seen.has(expressionId) ||
-      sourceRefIds.some((sourceRefId) => !knownRefs.has(sourceRefId))
-    ) {
-      throw new Error('APPLICABILITY_SOURCE_EXPRESSION_BINDING_INVALID');
-    }
-    seen.add(expressionId);
-    return {
-      expressionId,
-      text: requiredText(
-        expression.text,
-        'APPLICABILITY_SOURCE_EXPRESSION_TEXT_REQUIRED',
-      ),
-      sourceRefIds,
-    };
-  });
-  const expectedCount =
-    workItem.package!.usagePolicy?.applicability.sourceExpressionCount;
-  if (expectedCount !== undefined && expectedCount !== expressions.length) {
-    throw new Error('APPLICABILITY_SOURCE_EXPRESSION_COUNT_DRIFT');
-  }
-  return expressions;
-}
-
 function selectBilingualUnits(
   bilingualUnits: CanonicalReaderBilingualUnit[],
   sourceUnits: UnifiedReaderQueryResult[],
@@ -775,6 +755,7 @@ function parseCandidateModelOutput(
 
 function evaluateCandidate(
   candidate: ApplicabilityCandidateContract,
+  task: ApplicabilityTaskContract,
   dataSource: FleetMasterDataSource,
 ): ApplicabilityEvaluation {
   const resolution = resolveFleetSnapshot({
@@ -795,14 +776,26 @@ function evaluateCandidate(
       fleetResolution: resolution,
     };
   }
+  const hostExpressionById = new Map(
+    task.sourceExpressions.map((expression) => [
+      expression.expressionId,
+      expression,
+    ]),
+  );
   const fragments: ApplicabilityFragment[] = candidate.expressions.map(
-    (expression) => ({
-      ruleFragmentId: expression.expressionId,
-      extractionStatus: expression.extractionStatus,
-      applicabilityLevel: expression.applicabilityLevel,
-      contentRef: expression.contentRef,
-      expressionAst: expression.expressionAst,
-    }),
+    (expression) => {
+      const hostExpression = hostExpressionById.get(expression.expressionId);
+      if (!hostExpression) {
+        throw new Error('APPLICABILITY_HOST_TARGET_BINDING_MISSING');
+      }
+      return {
+        ruleFragmentId: expression.expressionId,
+        extractionStatus: expression.extractionStatus,
+        applicabilityLevel: hostExpression.applicabilityLevel,
+        contentRef: hostExpression.contentRef,
+        expressionAst: expression.expressionAst,
+      };
+    },
   );
   const trace = evaluateApplicabilityFragmentSetWithTrace(
     fragments,
@@ -882,6 +875,78 @@ function assertResultProvenance(
   }
 }
 
+function assertApplicabilityWaitingResult(
+  result: OpenClawResultEnvelope,
+  task: OpenClawTaskEnvelope,
+): void {
+  if (
+    task.hostResolvedMissingInputs.length === 0 ||
+    canonicalJson(result.missingInputs) !==
+      canonicalJson(task.hostResolvedMissingInputs) ||
+    result.conflicts.length !== 0 ||
+    result.factsConsidered.length !== 0
+  ) {
+    throw new Error('APPLICABILITY_WAITING_INPUT_NOT_HOST_RESOLVED');
+  }
+}
+
+function assertApplicabilityFailedResult(result: OpenClawResultEnvelope): void {
+  if (
+    result.outputArtifactRefs.length !== 0 ||
+    result.missingInputs.length !== 0 ||
+    result.conflicts.length !== 0 ||
+    result.factsConsidered.length !== 0
+  ) {
+    throw new Error('APPLICABILITY_FAILED_RESULT_INVALID');
+  }
+}
+
+function assertFreshAttemptWorkItemBinding(
+  workItem: CanonicalWorkItemProjection,
+  row: ActionAttemptRow,
+  task: OpenClawTaskEnvelope,
+): void {
+  if (
+    row.workItemId !== workItem.workItemId ||
+    row.documentVersionId !== workItem.source.documentVersionId ||
+    task.documentVersionId !== workItem.source.documentVersionId ||
+    row.inputRevision !== task.inputRevision ||
+    row.baseRevision !== task.baseRevision ||
+    task.inputRevision !== task.baseRevision
+  ) {
+    throw conflict('APPLICABILITY_ATTEMPT_CURRENT_BINDING_MISMATCH');
+  }
+}
+
+function assertRecoveredProjectionBinding(
+  workItem: CanonicalWorkItemProjection,
+  applicabilityInput: CanonicalApplicabilityInputProjection,
+  projection: CanonicalApplicabilityCandidateProjection,
+  row: ActionAttemptRow,
+  task: OpenClawTaskEnvelope,
+): void {
+  if (
+    workItem.revision !== task.baseRevision + 1 ||
+    projection.currentness !== 'CURRENT' ||
+    projection.actionAttemptId !== row.attemptId ||
+    projection.inputRevision !== task.inputRevision ||
+    projection.documentId !== workItem.source.documentId ||
+    projection.documentVersionId !== task.documentVersionId ||
+    projection.sourcePackageId !== workItem.package!.packageId ||
+    projection.sourcePackageContentHash !== workItem.package!.contentHash ||
+    projection.translationActionAttemptId !==
+      workItem.translation?.actionAttemptId ||
+    projection.applicabilityContextRef !==
+      applicabilityInput.applicabilityContextRef ||
+    projection.applicabilityBindingRevision !==
+      applicabilityInput.bindingRevision ||
+    projection.aircraftNumber !== applicabilityInput.aircraftNumber ||
+    projection.assessmentAsOf !== applicabilityInput.assessmentAsOf
+  ) {
+    throw conflict('APPLICABILITY_RECOVERY_CURRENT_BINDING_MISMATCH');
+  }
+}
+
 function requiredApplicabilityTask(
   row: ActionAttemptRow,
 ): OpenClawTaskEnvelope {
@@ -912,25 +977,6 @@ function requiredApplicabilityContextRef(
   );
 }
 
-function requiredApplicabilityInput(
-  workItem: CanonicalWorkItemProjection,
-  applicabilityContextRef: string,
-): CanonicalApplicabilityInputProjection {
-  const input = workItem.applicabilityInput;
-  if (
-    !input ||
-    input.schemaVersion !== 'wiselink.3_1.applicability_input_projection.v1' ||
-    input.applicabilityContextRef !== applicabilityContextRef ||
-    !input.bindingRevision.trim() ||
-    !input.aircraftNumber.trim() ||
-    !isIsoDate(input.assessmentAsOf) ||
-    input.fleetMasterData.schemaVersion !== FLEET_MASTER_DATA_SCHEMA_VERSION
-  ) {
-    throw scopeNotFound();
-  }
-  return structuredClone(input);
-}
-
 function toFleetSource(
   input: CanonicalApplicabilityInputProjection,
 ): FleetMasterDataSource {
@@ -941,6 +987,7 @@ function buildApplicabilityArtifact(input: {
   workItem: CanonicalWorkItemProjection;
   applicabilityInput: CanonicalApplicabilityInputProjection;
   candidate: ApplicabilityCandidateContract;
+  task: ApplicabilityTaskContract;
   evaluation: ApplicabilityEvaluation;
   result: OpenClawResultEnvelope;
 }): ApplicabilityCandidateArtifact {
@@ -955,8 +1002,18 @@ function buildApplicabilityArtifact(input: {
       translationActionAttemptId: input.workItem.translation!.actionAttemptId,
       applicabilityContextRef: input.applicabilityInput.applicabilityContextRef,
       applicabilityBindingRevision: input.applicabilityInput.bindingRevision,
+      targetBindingHash: input.applicabilityInput.targetBindingHash,
     },
     candidate: structuredClone(input.candidate),
+    hostTargetBindings: input.task.sourceExpressions.map((expression) => ({
+      expressionId: expression.expressionId,
+      assignmentId: expression.assignmentId,
+      targetKind: expression.targetKind,
+      targetId: expression.targetId,
+      targetSourceRefIds: [...expression.targetSourceRefIds],
+      applicabilityLevel: expression.applicabilityLevel,
+      contentRef: expression.contentRef,
+    })),
     evaluation: structuredClone(input.evaluation),
     execution: {
       actionAttemptId: input.result.actionAttemptId,
@@ -1091,6 +1148,22 @@ function matchingAircraftCount(
   ).length;
 }
 
+function fleetResolutionMissingInputs(
+  resolution: FleetSnapshotResolution,
+): OpenClawTaskEnvelope['hostResolvedMissingInputs'] {
+  const values = [
+    ...resolution.missingFacts.map((item) => ({
+      code: `FLEET_MISSING_CONTROLLED_FACT_${canonicalSha256(item).slice(0, 16)}`,
+      message: item.reason,
+    })),
+    ...resolution.conflictingFacts.map((item) => ({
+      code: `FLEET_CONFLICTING_CONTROLLED_FACT_${canonicalSha256(item).slice(0, 16)}`,
+      message: item.reason,
+    })),
+  ];
+  return values.sort((left, right) => left.code.localeCompare(right.code));
+}
+
 function normalizeAircraftNumber(value: string): string {
   return value.trim().toUpperCase();
 }
@@ -1182,30 +1255,6 @@ function uniqueMissingInputs(
   return Array.from(
     new Map(values.map((value) => [value.code, value])).values(),
   );
-}
-
-function requiredStringArray(value: unknown, code: string): string[] {
-  if (
-    !Array.isArray(value) ||
-    value.length === 0 ||
-    value.some((item) => typeof item !== 'string' || !item.trim()) ||
-    new Set(value).size !== value.length
-  ) {
-    throw new Error(code);
-  }
-  return [...value] as string[];
-}
-
-function array(value: unknown, code: string): unknown[] {
-  if (!Array.isArray(value)) throw new Error(code);
-  return value;
-}
-
-function record(value: unknown, code: string): Record<string, unknown> {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw new Error(code);
-  }
-  return value as Record<string, unknown>;
 }
 
 function requiredText(value: unknown, code: string): string {

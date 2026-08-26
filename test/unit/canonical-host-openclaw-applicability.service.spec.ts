@@ -6,6 +6,7 @@ import type {
   UnifiedReaderQueryResult,
 } from '../../shared/api.interface';
 import {
+  canonicalSha256,
   sealResultEnvelope,
   sealTaskEnvelope,
 } from '../../server/modules/action-attempt/action-attempt-envelope';
@@ -45,6 +46,12 @@ describe('CanonicalHostOpenClawApplicabilityService', () => {
         expressionId: 'EXP-1',
         text: 'Applicable to Boeing 737-8 airplanes.',
         sourceRefIds: ['SRC-1'],
+        assignmentId: 'ASSIGN-1',
+        targetKind: 'module',
+        targetId: 'MODULE-1',
+        targetSourceRefIds: ['SRC-1'],
+        applicabilityLevel: 'document_effectivity',
+        contentRef: null,
       },
     ]);
     expect(task.bilingualSourceUnits).toEqual([
@@ -63,7 +70,45 @@ describe('CanonicalHostOpenClawApplicabilityService', () => {
     expect(JSON.stringify(task)).not.toContain('tenant-1');
     expect(JSON.stringify(task)).not.toContain('WI-APP-1');
     expect(begin.task.sourceRefs).toHaveLength(2);
+    expect(harness.applicabilityInputs.produceAuthorized).toHaveBeenCalledTimes(
+      1,
+    );
   });
+
+  it.each([
+    [
+      'missing frozen assignment target',
+      (harness: ReturnType<typeof applicabilityHarness>) => undefined,
+      { packageAssignments: [] },
+      'APPLICABILITY_FROZEN_USAGE_COUNT_DRIFT',
+    ],
+    [
+      'missing bilingual current',
+      (harness: ReturnType<typeof applicabilityHarness>) =>
+        harness.mutateCurrent((current) => {
+          current.translation = null;
+        }),
+      {},
+      'CURRENT_BILINGUAL_TRANSLATION_REQUIRED',
+    ],
+    [
+      'non-current controlled selection',
+      (harness: ReturnType<typeof applicabilityHarness>) =>
+        harness.mutateCurrent((current) => {
+          current.applicabilityInput!.currentness = 'STALE';
+        }),
+      {},
+      'APPLICABILITY_INPUT_NOT_CURRENT',
+    ],
+  ])(
+    'fails begin before attempt reservation: %s',
+    async (_label, mutate, options, expected) => {
+      const harness = applicabilityHarness(options);
+      mutate(harness);
+      await expect(harness.begin()).rejects.toThrow(expected);
+      expect(harness.attempts.reserveAndClaim).not.toHaveBeenCalled();
+    },
+  );
 
   it('CAS-projects an APPLICABLE candidate through the existing lifecycle', async () => {
     const harness = applicabilityHarness();
@@ -152,6 +197,62 @@ describe('CanonicalHostOpenClawApplicabilityService', () => {
     expect(harness.attempts.finishProjectionSuccess).not.toHaveBeenCalled();
   });
 
+  it('accepts only an exact Host-frozen controlled Fleet WAIT', async () => {
+    const harness = applicabilityHarness();
+    harness.mutateCurrent((current) => {
+      current.applicabilityInput!.fleetMasterData.assets = [];
+      current.applicabilityInput!.fleetMasterData.facts = [];
+    });
+    const begin = await harness.begin();
+    expect(begin.task.hostResolvedMissingInputs).toHaveLength(1);
+    const waiting = harness.resultFor(candidateFor(begin), {
+      status: 'WAITING_INPUT',
+      businessOutcome: 'WAITING_INPUT',
+      candidateStatus: 'WAITING_INPUT',
+      modelOutput: null,
+      factsConsidered: [],
+      missingInputs: structuredClone(begin.task.hostResolvedMissingInputs),
+    });
+
+    await expect(
+      harness.service.commit(
+        begin.attemptRef,
+        begin.leaseToken,
+        begin.leaseGeneration,
+        waiting,
+      ),
+    ).resolves.toMatchObject({ status: 'WAITING_INPUT' });
+    expect(harness.artifactStore.persistAndReadback).not.toHaveBeenCalled();
+    expect(harness.registrar.compareAndSet).not.toHaveBeenCalled();
+  });
+
+  it('rejects model-invented WAIT/MODEL_AST_UNSUPPORTED with zero mutation', async () => {
+    const harness = applicabilityHarness();
+    const begin = await harness.begin();
+    const waiting = harness.resultFor(candidateFor(begin), {
+      status: 'WAITING_INPUT',
+      businessOutcome: 'UNKNOWN',
+      candidateStatus: 'UNKNOWN',
+      modelOutput: null,
+      factsConsidered: [],
+      missingInputs: [
+        {
+          code: 'MODEL_AST_UNSUPPORTED',
+          message: 'The model declined to parse the expression.',
+        },
+      ],
+    });
+    await expect(
+      harness.service.commit(
+        begin.attemptRef,
+        begin.leaseToken,
+        begin.leaseGeneration,
+        waiting,
+      ),
+    ).rejects.toThrow('APPLICABILITY_WAITING_INPUT_NOT_HOST_RESOLVED');
+    expectNoCommitMutation(harness);
+  });
+
   it.each([
     [
       'cross-WorkItem SourceRef',
@@ -236,6 +337,47 @@ describe('CanonicalHostOpenClawApplicabilityService', () => {
     ).rejects.toThrow('APPLICABILITY_TASK_MODEL_INPUT_DRIFT');
     expectNoCommitMutation(drift);
   });
+
+  it.each(['WAITING_INPUT', 'FAILED'] as const)(
+    'rejects stale %s terminalization before ActionAttempt mutation',
+    async (status) => {
+      const harness = applicabilityHarness();
+      const begin = await harness.begin();
+      harness.mutateCurrent((current) => {
+        current.revision += 1;
+      });
+      const overrides: Partial<OpenClawResultEnvelope> =
+        status === 'WAITING_INPUT'
+          ? {
+              status,
+              businessOutcome: 'WAITING_INPUT',
+              candidateStatus: 'WAITING_INPUT',
+              modelOutput: null,
+              factsConsidered: [],
+              missingInputs: [
+                { code: 'FORGED_WAIT', message: 'forged model wait' },
+              ],
+            }
+          : {
+              status,
+              businessOutcome: 'NOT_PRODUCED',
+              candidateStatus: null,
+              modelOutput: null,
+              factsConsidered: [],
+              errorCode: 'MODEL_AST_UNSUPPORTED',
+              errorDetail: 'unsupported model AST',
+            };
+      await expect(
+        harness.service.commit(
+          begin.attemptRef,
+          begin.leaseToken,
+          begin.leaseGeneration,
+          harness.resultFor(candidateFor(begin), overrides),
+        ),
+      ).rejects.toThrow('WORK_ITEM_REVISION_CONFLICT');
+      expectNoCommitMutation(harness);
+    },
+  );
 
   it('rejects actual ResultEnvelope provenance and damaged envelope before mutation', async () => {
     const provenance = applicabilityHarness();
@@ -325,19 +467,39 @@ describe('CanonicalHostOpenClawApplicabilityService', () => {
 });
 
 function applicabilityHarness(
-  options: { expiredLease?: boolean; expectedGeneration?: number } = {},
+  options: {
+    expiredLease?: boolean;
+    expectedGeneration?: number;
+    packageAssignments?: unknown[];
+  } = {},
 ) {
+  const packageAssignments = options.packageAssignments ?? [
+    {
+      assignmentId: 'ASSIGN-1',
+      expressionId: 'EXP-1',
+      authority: 'source_asserted',
+      target: {
+        kind: 'module',
+        targetId: 'MODULE-1',
+        sourceRefIds: ['SRC-1'],
+      },
+    },
+  ];
   const packageBytes = new TextEncoder().encode(
     JSON.stringify({
       sourceRefs: [{ sourceRefId: 'SRC-1' }],
+      modules: [{ moduleId: 'MODULE-1' }],
       applicability: {
         sourceExpressions: [
           {
             expressionId: 'EXP-1',
             text: 'Applicable to Boeing 737-8 airplanes.',
+            form: 'display_text',
+            authority: 'source_asserted',
             sourceRefIds: ['SRC-1'],
           },
         ],
+        assignments: packageAssignments,
       },
     }),
   );
@@ -466,7 +628,15 @@ function applicabilityHarness(
           throw new Error('ACTION_ATTEMPT_LEASE_FENCE_REJECTED');
         }
         const result = input.result as OpenClawResultEnvelope;
-        if (row!.status === 'RUNNING') row!.status = 'COMMITTING';
+        if (result.status === 'WAITING_INPUT') {
+          row!.status = 'WAITING_INPUT';
+          row!.terminalReason = 'HOST_MISSING_CONTROLLED_FACTS';
+        } else if (result.status === 'FAILED') {
+          row!.status = 'FAILED';
+          row!.terminalReason = result.errorCode;
+        } else if (row!.status === 'RUNNING') {
+          row!.status = 'COMMITTING';
+        }
         row!.resultEnvelopeJson = JSON.stringify(result);
         row!.resultContentHash = result.contentHash;
         return preparedCommit(row!, task!, result);
@@ -517,17 +687,26 @@ function applicabilityHarness(
       attemptRef: 'AQ-APP-1',
     })),
   };
+  const applicabilityInputs = {
+    produceAuthorized: jest.fn(async () => structuredClone(current)),
+    resolveCurrent: jest.fn(async () => ({
+      workItem: structuredClone(current),
+      applicabilityInput: structuredClone(current.applicabilityInput!),
+    })),
+  };
   const service = new CanonicalHostOpenClawApplicabilityService(
     registrar as never,
     artifactStore as never,
     reader as never,
     attempts as never,
     serviceScope as never,
+    applicabilityInputs as never,
   );
   return {
     service,
     registrar,
     artifactStore,
+    applicabilityInputs,
     attempts,
     begin: () => service.begin('APCTX-OPAQUE-1', 'request-1'),
     resultFor(
@@ -594,8 +773,6 @@ function candidateFor(begin: {
       {
         expressionId: 'EXP-1',
         sourceRefIds: ['SRC-1'],
-        applicabilityLevel: 'document_effectivity',
-        contentRef: null,
         extractionStatus: 'extracted',
         expressionAst: {
           type: 'assert',
@@ -673,7 +850,7 @@ function parsedWorkItem(
         applicability: {
           sourceExpressionCount: 1,
           normalizedCandidateCount: 0,
-          assignmentCount: 0,
+          assignmentCount: 1,
         },
         assessmentAutoAdoptionAllowed: false,
         aeoAutoAdoptionAllowed: false,
@@ -709,6 +886,24 @@ function parsedWorkItem(
     applicabilityInput: {
       schemaVersion: 'wiselink.3_1.applicability_input_projection.v1',
       applicabilityContextRef: 'APCTX-OPAQUE-1',
+      workItemId: 'WI-APP-1',
+      documentVersionId: 'DV-1',
+      sourcePackageId: 'PKG-1',
+      sourcePackageContentHash: 'sha256:package-content',
+      sourcePackageArtifactSha256: sha256(packageBytes),
+      targetBindingHash: canonicalSha256([
+        {
+          expressionId: 'EXP-1',
+          sourceRefIds: ['SRC-1'],
+          assignmentId: 'ASSIGN-1',
+          targetKind: 'module',
+          targetId: 'MODULE-1',
+          targetSourceRefIds: ['SRC-1'],
+          applicabilityLevel: 'document_effectivity',
+          contentRef: null,
+        },
+      ]),
+      selectionRevision: 'selection-r1',
       bindingRevision: 'binding-r1',
       currentness: 'CURRENT',
       aircraftNumber: 'B-1234',

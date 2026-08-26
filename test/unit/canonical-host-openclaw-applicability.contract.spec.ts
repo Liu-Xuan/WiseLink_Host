@@ -23,6 +23,95 @@ describe('canonical Host OpenClaw applicability contract', () => {
 
   it.each([
     [
+      'false-AND invalid boolean',
+      {
+        type: 'and',
+        children: [
+          { type: 'literal', value: false },
+          {
+            type: 'assert',
+            property: 'optionInstalled',
+            operator: 'eq',
+            qualifier: 'OPT-X',
+            value: 'true',
+          },
+        ],
+      },
+    ],
+    [
+      'true-OR invalid number',
+      {
+        type: 'or',
+        children: [
+          { type: 'literal', value: true },
+          {
+            type: 'assert',
+            property: 'lineNumber',
+            operator: 'range',
+            value: { min: 100, max: '200' },
+          },
+        ],
+      },
+    ],
+  ])('rejects every invalid AST child before Kleene: %s', (_label, ast) => {
+    const raw = candidateFor(applicabilityTask());
+    raw.expressions[0].expressionAst = ast;
+    expect(() => parseApplicabilityCandidate(raw)).toThrow(
+      'APPLICABILITY_AST_VALUE_TYPE_INVALID',
+    );
+  });
+
+  it.each([
+    [
+      'boolean',
+      {
+        property: 'optionInstalled',
+        operator: 'eq',
+        qualifier: 'OPT-X',
+        value: true,
+      },
+    ],
+    ['number', { property: 'lineNumber', operator: 'gte', value: 100 }],
+    [
+      'number in',
+      { property: 'lineNumber', operator: 'in', value: [100, 200] },
+    ],
+    [
+      'number range',
+      {
+        property: 'lineNumber',
+        operator: 'range',
+        value: { min: 100, max: 200 },
+      },
+    ],
+    [
+      'date',
+      { property: 'deliveryDate', operator: 'lte', value: '2026-08-27' },
+    ],
+    [
+      'date in',
+      {
+        property: 'deliveryDate',
+        operator: 'in',
+        value: ['2026-08-26', '2026-08-27'],
+      },
+    ],
+    [
+      'date range',
+      {
+        property: 'deliveryDate',
+        operator: 'range',
+        value: { min: '2026-08-01', max: '2026-08-27' },
+      },
+    ],
+  ])('accepts registry-shaped %s values', (_label, assertion) => {
+    const raw = candidateFor(applicabilityTask());
+    raw.expressions[0].expressionAst = { type: 'assert', ...assertion };
+    expect(() => parseApplicabilityCandidate(raw)).not.toThrow();
+  });
+
+  it.each([
+    [
       'cross-WorkItem SourceRef',
       (value: Record<string, any>) => {
         value.expressions[0].sourceRefIds = ['SRC-OTHER-WORKITEM'];
@@ -81,6 +170,15 @@ describe('canonical Host OpenClaw applicability contract', () => {
       'APPLICABILITY_EXPRESSION_STATUS_INVALID',
     );
   });
+
+  it('rejects model-controlled applicabilityLevel/contentRef fields', () => {
+    const raw = candidateFor(applicabilityTask());
+    raw.expressions[0].applicabilityLevel = 'inline';
+    raw.expressions[0].contentRef = 'UNIT-FORGED';
+    expect(() => parseApplicabilityCandidate(raw)).toThrow(
+      'APPLICABILITY_CANDIDATE_EXACT_SHAPE_REQUIRED',
+    );
+  });
 });
 
 function applicabilityTask(): ApplicabilityTaskContract {
@@ -110,6 +208,12 @@ function applicabilityTask(): ApplicabilityTaskContract {
         expressionId: 'EXP-1',
         text: 'Applicable to Boeing 737-8 airplanes.',
         sourceRefIds: ['SRC-1'],
+        assignmentId: 'ASSIGN-1',
+        targetKind: 'module',
+        targetId: 'MODULE-1',
+        targetSourceRefIds: ['SRC-1'],
+        applicabilityLevel: 'document_effectivity',
+        contentRef: null,
       },
     ],
     bilingualSourceUnits: [],
@@ -137,8 +241,6 @@ function candidateFor(task: ApplicabilityTaskContract): Record<string, any> {
       {
         expressionId: 'EXP-1',
         sourceRefIds: ['SRC-1'],
-        applicabilityLevel: 'document_effectivity',
-        contentRef: null,
         extractionStatus: 'extracted',
         expressionAst: {
           type: 'assert',

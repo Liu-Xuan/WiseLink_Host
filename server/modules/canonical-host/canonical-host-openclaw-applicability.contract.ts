@@ -1,5 +1,8 @@
 import type { ApplicabilityAstNode } from '../assessment-workbench/applicability-fleet/applicabilityKleeneEngine';
-import { getRegistry } from '../assessment-workbench/applicability-fleet/applicabilityPropertyRegistry';
+import {
+  getRegistry,
+  type ApplicabilityPropertyDefinition,
+} from '../assessment-workbench/applicability-fleet/applicabilityPropertyRegistry';
 
 export const APPLICABILITY_TASK_SCHEMA_VERSION =
   'wiselink.3_1.applicability_task.v1' as const;
@@ -22,6 +25,12 @@ export interface ApplicabilityTaskSourceExpression {
   expressionId: string;
   text: string;
   sourceRefIds: string[];
+  assignmentId: string;
+  targetKind: 'module' | 'content_unit' | 'source_element';
+  targetId: string | null;
+  targetSourceRefIds: string[];
+  applicabilityLevel: 'document_effectivity' | 'inline';
+  contentRef: string | null;
 }
 
 export interface ApplicabilityTaskBilingualSourceUnit {
@@ -95,8 +104,6 @@ export interface ApplicabilityRuntimeProvenance {
 export interface ApplicabilityCandidateExpression {
   expressionId: string;
   sourceRefIds: string[];
-  applicabilityLevel: 'document_effectivity' | 'inline';
-  contentRef: string | null;
   extractionStatus: 'extracted';
   expressionAst: ApplicabilityAstNode;
 }
@@ -210,23 +217,12 @@ export function validateApplicabilityCandidateBinding(
     fail('APPLICABILITY_CANDIDATE_TASK_BINDING_MISMATCH');
   }
   const seen = new Set<string>();
-  const bilingualByUnitId = new Map(
-    task.bilingualSourceUnits.map((unit) => [unit.unitId, unit]),
-  );
   for (const expression of candidate.expressions) {
     const expected = expectedExpressions.get(expression.expressionId);
-    const contentUnit = expression.contentRef
-      ? bilingualByUnitId.get(expression.contentRef)
-      : null;
     if (
       !expected ||
       seen.has(expression.expressionId) ||
-      stable(expression.sourceRefIds) !== stable(expected.sourceRefIds) ||
-      (expression.contentRef !== null &&
-        (!contentUnit ||
-          expression.sourceRefIds.some(
-            (sourceRefId) => !contentUnit.sourceRefIds.includes(sourceRefId),
-          )))
+      stable(expression.sourceRefIds) !== stable(expected.sourceRefIds)
     ) {
       fail('APPLICABILITY_CANDIDATE_SOURCE_REF_MISMATCH');
     }
@@ -241,17 +237,10 @@ function parseCandidateExpression(
   exactKeys(expression, [
     'expressionId',
     'sourceRefIds',
-    'applicabilityLevel',
-    'contentRef',
     'extractionStatus',
     'expressionAst',
   ]);
-  if (
-    !['document_effectivity', 'inline'].includes(
-      String(expression.applicabilityLevel),
-    ) ||
-    expression.extractionStatus !== 'extracted'
-  ) {
+  if (expression.extractionStatus !== 'extracted') {
     fail('APPLICABILITY_EXPRESSION_STATUS_INVALID');
   }
   return {
@@ -263,13 +252,6 @@ function parseCandidateExpression(
       expression.sourceRefIds,
       'APPLICABILITY_EXPRESSION_SOURCE_REFS_INVALID',
     ),
-    applicabilityLevel: expression.applicabilityLevel as
-      | 'document_effectivity'
-      | 'inline',
-    contentRef:
-      expression.contentRef === null
-        ? null
-        : text(expression.contentRef, 'APPLICABILITY_CONTENT_REF_INVALID'),
     extractionStatus: 'extracted',
     expressionAst: parseAst(expression.expressionAst),
   };
@@ -311,11 +293,12 @@ function parseAst(
     if ((definition.qualifierNormalizer !== null) !== (qualifier !== null)) {
       fail('APPLICABILITY_AST_QUALIFIER_INVALID');
     }
+    const parsedValue = parseAssertValue(node.value, operator, definition);
     return {
       type,
       property,
       operator,
-      value: structuredClone(node.value),
+      value: parsedValue,
       ...(qualifier === null ? {} : { qualifier }),
     };
   }
@@ -335,6 +318,91 @@ function parseAst(
     return { type, child: parseAst(node.child, depth + 1, budget) };
   }
   fail('APPLICABILITY_AST_TYPE_UNSUPPORTED');
+}
+
+function parseAssertValue(
+  value: unknown,
+  operator: string,
+  definition: ApplicabilityPropertyDefinition,
+): unknown {
+  if (definition.valueType === 'boolean') {
+    if (typeof value !== 'boolean')
+      fail('APPLICABILITY_AST_VALUE_TYPE_INVALID');
+    return value;
+  }
+  if (operator === 'in' || operator === 'not_in') {
+    const values = array(value, 'APPLICABILITY_AST_VALUE_SHAPE_INVALID');
+    if (values.length === 0 || values.length > 200) {
+      fail('APPLICABILITY_AST_VALUE_SHAPE_INVALID');
+    }
+    const parsed = values.map((item) =>
+      parseScalarAssertValue(item, definition),
+    );
+    if (new Set(parsed.map((item) => stable(item))).size !== parsed.length) {
+      fail('APPLICABILITY_AST_VALUE_SHAPE_INVALID');
+    }
+    return parsed;
+  }
+  if (operator === 'range') {
+    if (definition.valueType !== 'number' && definition.valueType !== 'date') {
+      fail('APPLICABILITY_AST_VALUE_SHAPE_INVALID');
+    }
+    const range = record(value, 'APPLICABILITY_AST_VALUE_SHAPE_INVALID');
+    const keys = Object.keys(range).sort();
+    if (
+      keys.length === 0 ||
+      keys.some((key) => key !== 'max' && key !== 'min')
+    ) {
+      fail('APPLICABILITY_AST_VALUE_SHAPE_INVALID');
+    }
+    const parsed: { min?: number | string; max?: number | string } = {};
+    if (Object.prototype.hasOwnProperty.call(range, 'min')) {
+      parsed.min = parseScalarAssertValue(range.min, definition) as
+        | number
+        | string;
+    }
+    if (Object.prototype.hasOwnProperty.call(range, 'max')) {
+      parsed.max = parseScalarAssertValue(range.max, definition) as
+        | number
+        | string;
+    }
+    if (
+      parsed.min !== undefined &&
+      parsed.max !== undefined &&
+      parsed.min > parsed.max
+    ) {
+      fail('APPLICABILITY_AST_VALUE_RANGE_INVALID');
+    }
+    return parsed;
+  }
+  return parseScalarAssertValue(value, definition);
+}
+
+function parseScalarAssertValue(
+  value: unknown,
+  definition: ApplicabilityPropertyDefinition,
+): boolean | number | string {
+  if (definition.valueType === 'boolean') {
+    if (typeof value !== 'boolean')
+      fail('APPLICABILITY_AST_VALUE_TYPE_INVALID');
+    return value;
+  }
+  if (definition.valueType === 'number') {
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+      fail('APPLICABILITY_AST_VALUE_TYPE_INVALID');
+    }
+    return value;
+  }
+  if (definition.valueType === 'date') {
+    if (typeof value !== 'string' || !isIsoDate(value)) {
+      fail('APPLICABILITY_AST_VALUE_TYPE_INVALID');
+    }
+    return value;
+  }
+  if (typeof value !== 'string' || !value.trim()) {
+    fail('APPLICABILITY_AST_VALUE_TYPE_INVALID');
+  }
+  return value;
 }
 
 function parseSourcePackage(

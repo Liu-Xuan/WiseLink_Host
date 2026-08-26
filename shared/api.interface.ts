@@ -557,6 +557,16 @@ export interface CanonicalApplicabilityFleetFact {
 export interface CanonicalApplicabilityInputProjection {
   schemaVersion: 'wiselink.3_1.applicability_input_projection.v1';
   applicabilityContextRef: string;
+  /** Host-derived exact WorkItem/DocumentVersion/package binding. */
+  workItemId: string;
+  documentVersionId: string;
+  sourcePackageId: string;
+  sourcePackageContentHash: string;
+  sourcePackageArtifactSha256: string;
+  /** Canonical hash of frozen.2 sourceExpressions + assignments.target. */
+  targetBindingHash: string;
+  /** Revision of the server-private controlled aircraft/Fleet selection. */
+  selectionRevision: string;
   bindingRevision: string;
   currentness: 'CURRENT' | 'STALE' | 'CONFLICT' | 'UNVERIFIED';
   aircraftNumber: string;
