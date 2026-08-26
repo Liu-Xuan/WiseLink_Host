@@ -319,14 +319,14 @@ test('runs TRANSLATE through dedicated begin/commit tools and seals its ResultEn
         executorPrompt = input.prompt;
         return {
           modelOutput,
-          provider: 'wiselink',
-          model: 'wiselink-direct-llm',
+          provider: 'openai-codex',
+          model: 'gpt-5.4',
           durationMs: 10,
           stopReason: 'stop',
         };
       },
       preflightOpenClaw: async () => ({
-        configuredModel: 'wiselink/wiselink-direct-llm',
+        configuredModel: 'openai-codex/gpt-5.4',
       }),
     },
   );

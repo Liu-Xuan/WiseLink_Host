@@ -863,7 +863,7 @@ function usage() {
     '',
     'Optional environment:',
     '  WL_OPENCLAW_HOST_API_KEY=<gateway API key> (never pass the key on argv)',
-    '  WL_OPENCLAW_CONTAINER_NAME=wiselink-0-10-openclaw-1',
+    '  WL_OPENCLAW_CONTAINER_NAME=wiselink-openclaw-1',
     '  MIAODA_LOCAL_DEV=1 + SUDA_WEBUSER=<local gateway identity> (loopback Host only)',
   ].join('\n');
 }
