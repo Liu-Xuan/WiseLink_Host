@@ -87,6 +87,8 @@ const FORBIDDEN_INPUT_KEYS = new Set([
   'accesstoken',
   'tenantaccesstoken',
   'actor',
+  'actorid',
+  'actorcontextref',
   'actoruserid',
   'actorroles',
   'tenant',

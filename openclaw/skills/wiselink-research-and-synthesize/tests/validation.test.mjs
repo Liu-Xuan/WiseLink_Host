@@ -307,6 +307,52 @@ test('rejects each forbidden translation input before the model boundary', async
   }
 });
 
+test('rejects actor identity key forms before the translation model boundary', async (t) => {
+  const leakageCases = [
+    ['actorId exact', { actorId: 'actor-secret' }],
+    ['actorId case', { ACTORID: 'actor-secret' }],
+    ['actorId separator', { 'actor-id': 'actor-secret' }],
+    ['actorId NFKC', { ａｃｔｏｒＩｄ: 'actor-secret' }],
+    ['actorContextRef exact', { actorContextRef: 'actor-context-secret' }],
+    ['actorContextRef case', { ACTORCONTEXTREF: 'actor-context-secret' }],
+    [
+      'actorContextRef separator',
+      { 'Actor_Context-Ref': 'actor-context-secret' },
+    ],
+    [
+      'actorContextRef NFKC',
+      { ａｃｔｏｒＣｏｎｔｅｘｔＲｅｆ: 'actor-context-secret' },
+    ],
+  ];
+
+  for (const [label, leakage] of leakageCases) {
+    await t.test(label, async () => {
+      const input = { ...translationInput(), ...leakage };
+      const task = makeTask('OPENCLAW_TRANSLATE', input);
+      const begin = runningBegin(task, { modelInput: input });
+      let translateCallCount = 0;
+      const callTool = async (name) => {
+        if (name === 'get_parse_status') return status(WORK_ITEM_ID);
+        if (name === 'begin_translation') return begin;
+        throw new Error(`UNEXPECTED_TOOL:${name}`);
+      };
+
+      await assert.rejects(
+        runTranslation({
+          workItemId: WORK_ITEM_ID,
+          callTool,
+          translate: async () => {
+            translateCallCount += 1;
+            throw new Error('MODEL_MUST_NOT_RUN');
+          },
+        }),
+        /FORBIDDEN_AUTHORITY_INPUT/u,
+      );
+      assert.equal(translateCallCount, 0);
+    });
+  }
+});
+
 test('runs dynamic N/N and never uses old {attemptRef, output}', async () => {
   const input = await readJson(DYNAMIC_FIXTURE_URL);
   const output = buildDynamicRulesOutput(input);
@@ -716,6 +762,51 @@ test('rejects review session keys before respond, including normalized forms', a
           const context = reviewContext(task, reviewTask);
           context.context[leakageKey] =
             'review:tenant:actor:work-item:conversation';
+          return context;
+        }
+        throw new Error(`UNEXPECTED_TOOL:${name}`);
+      };
+
+      await assert.rejects(
+        runInteractiveReviewTurn({
+          mode: 'INTERACTIVE_REVIEW',
+          reviewConversationRef: reviewTask.reviewConversationRef,
+          requestId: reviewTask.requestId,
+          callTool,
+          respond: async () => {
+            respondCallCount += 1;
+            throw new Error('MODEL_MUST_NOT_RUN');
+          },
+        }),
+        /REVIEW_MODEL_SENSITIVE_FIELD_FORBIDDEN/u,
+      );
+      assert.equal(respondCallCount, 0);
+    });
+  }
+});
+
+test('rejects actor identity key forms before respond', async (t) => {
+  const leakageKeys = [
+    'actorId',
+    'ACTORID',
+    'actor-id',
+    'ａｃｔｏｒＩｄ',
+    'actorContextRef',
+    'ACTORCONTEXTREF',
+    'Actor_Context-Ref',
+    'ａｃｔｏｒＣｏｎｔｅｘｔＲｅｆ',
+  ];
+
+  for (const leakageKey of leakageKeys) {
+    await t.test(leakageKey, async () => {
+      const reviewTask = await readJson(REVIEW_TASK_FIXTURE_URL);
+      const task = makeTask('OPENCLAW_INTERACTIVE_REVIEW', reviewTask);
+      let respondCallCount = 0;
+      const callTool = async (name) => {
+        if (name === 'begin_review_turn') return runningBegin(task);
+        if (name === 'get_review_turn_context') {
+          const context = reviewContext(task, reviewTask);
+          context.context[leakageKey] = 'actor-secret';
           return context;
         }
         throw new Error(`UNEXPECTED_TOOL:${name}`);
