@@ -502,22 +502,33 @@ export class CanonicalHostOpenClawApplicabilityService {
         await candidateStore.discardCandidateArtifact(ownedArtifact);
         throw error;
       }
-      // Read the stored projection first. If CAS actually applied, never delete
-      // its referenced object; otherwise discard and verify physical absence.
+      // Read current before cleanup. Any current reference to this physical
+      // object protects its bytes; only an exact business binding may recover.
       const storedWorkItem = await this.registrar.getTenantScopedByWorkItemId({
         workItemId: prepared.row.workItemId,
         tenantId: prepared.row.tenantId,
       });
       const recoveredAfterFailure = storedWorkItem.applicability;
-      if (recoveredAfterFailure?.actionAttemptId === prepared.row.attemptId) {
+      const currentReferencesOwnedArtifact =
+        recoveredAfterFailure !== null &&
+        recoveredAfterFailure !== undefined &&
+        samePhysicalArtifactReference(
+          recoveredAfterFailure.artifact,
+          ownedArtifact.artifact,
+        );
+      if (currentReferencesOwnedArtifact) {
         if (!finalized) {
           throw conflict('APPLICABILITY_FINALIZED_ARTIFACT_REQUIRED');
+        }
+        if (recoveredAfterFailure.actionAttemptId !== prepared.row.attemptId) {
+          throw conflict(
+            'APPLICABILITY_RECOVERY_CURRENT_PHYSICAL_REF_CONFLICT',
+          );
         }
         if (
           canonicalJson(recoveredAfterFailure.artifact) !==
           canonicalJson(finalized.artifact)
         ) {
-          await candidateStore.discardCandidateArtifact(finalized);
           throw conflict('APPLICABILITY_RECOVERY_CURRENT_BINDING_MISMATCH');
         }
         const ownerValidated =
@@ -570,6 +581,10 @@ export class CanonicalHostOpenClawApplicabilityService {
           beforeTerminal.workItem,
           beforeTerminalProjection,
         );
+      }
+      if (recoveredAfterFailure?.actionAttemptId === prepared.row.attemptId) {
+        await candidateStore.discardCandidateArtifact(ownedArtifact);
+        throw conflict('APPLICABILITY_RECOVERY_CURRENT_BINDING_MISMATCH');
       }
       await candidateStore.discardCandidateArtifact(ownedArtifact);
       throw error;
@@ -1059,6 +1074,13 @@ function isActionAttemptTerminalizationLost(error: unknown): boolean {
       (error as Error & { code?: string }).code ===
         'ACTION_ATTEMPT_TERMINALIZATION_LOST')
   );
+}
+
+function samePhysicalArtifactReference(
+  left: UnifiedPackageArtifactDescriptor,
+  right: UnifiedPackageArtifactDescriptor,
+): boolean {
+  return left.storeRole === right.storeRole && left.ref === right.ref;
 }
 
 function evaluateCandidate(

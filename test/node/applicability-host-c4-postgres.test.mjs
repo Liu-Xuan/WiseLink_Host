@@ -485,6 +485,154 @@ test(
       );
 
       await t.test(
+        'CAS barrier preserves same physical ref when current descriptor metadata drifts',
+        async (t) => {
+          let ownedDescriptor = null;
+          const harness = await realHarness(sql, {
+            beforeCandidateCas: async (input) => {
+              ownedDescriptor = structuredClone(
+                input.next.applicability.artifact,
+              );
+              await publishCompetingCurrent(sql, input, (current) => {
+                current.applicability.artifact.byteLength += 1;
+              });
+            },
+          });
+          t.after(() => harness.artifactOwner.cleanup());
+
+          await assert.rejects(
+            harness.commit(),
+            /APPLICABILITY_RECOVERY_CURRENT_BINDING_MISMATCH/u,
+          );
+          const workItem = await readWorkItemRow(sql);
+          const current = JSON.parse(workItem.projectionJson);
+          assert.equal(workItem.revision, 9);
+          assert.equal(current.applicability.artifact.ref, ownedDescriptor.ref);
+          assert.equal(
+            current.applicability.artifact.storeRole,
+            ownedDescriptor.storeRole,
+          );
+          assert.notEqual(
+            current.applicability.artifact.byteLength,
+            ownedDescriptor.byteLength,
+          );
+          assert.equal(
+            await harness.artifactOwner.scoped.candidatePhysicalCount(),
+            1,
+          );
+          const bytes =
+            await harness.artifactOwner.store.readActualBytes(ownedDescriptor);
+          assert.equal(
+            createHash('sha256').update(bytes).digest('hex'),
+            ownedDescriptor.sha256,
+          );
+          assert.equal(
+            (await readAttemptRaceState(sql, harness.begin.attemptRef)).status,
+            'COMMITTING',
+          );
+        },
+      );
+
+      await t.test(
+        'CAS barrier preserves same physical ref when current attempt binding drifts',
+        async (t) => {
+          let ownedDescriptor = null;
+          const harness = await realHarness(sql, {
+            beforeCandidateCas: async (input) => {
+              ownedDescriptor = structuredClone(
+                input.next.applicability.artifact,
+              );
+              await publishCompetingCurrent(sql, input, (current) => {
+                current.applicability.actionAttemptId = 'ATT-C4-COMPETING';
+              });
+            },
+          });
+          t.after(() => harness.artifactOwner.cleanup());
+
+          await assert.rejects(
+            harness.commit(),
+            /APPLICABILITY_RECOVERY_CURRENT_PHYSICAL_REF_CONFLICT/u,
+          );
+          const workItem = await readWorkItemRow(sql);
+          const current = JSON.parse(workItem.projectionJson);
+          assert.equal(workItem.revision, 9);
+          assert.equal(
+            current.applicability.actionAttemptId,
+            'ATT-C4-COMPETING',
+          );
+          assert.deepEqual(current.applicability.artifact, ownedDescriptor);
+          assert.equal(
+            await harness.artifactOwner.scoped.candidatePhysicalCount(),
+            1,
+          );
+          const bytes =
+            await harness.artifactOwner.store.readActualBytes(ownedDescriptor);
+          assert.equal(bytes.byteLength, ownedDescriptor.byteLength);
+          assert.equal(
+            (await readAttemptRaceState(sql, harness.begin.attemptRef)).status,
+            'COMMITTING',
+          );
+        },
+      );
+
+      await t.test(
+        'CAS barrier discards owned bytes when current references a different physical ref',
+        async (t) => {
+          let ownedDescriptor = null;
+          let competingArtifact = null;
+          const harness = await realHarness(sql, {
+            beforeCandidateCas: async (input) => {
+              ownedDescriptor = structuredClone(
+                input.next.applicability.artifact,
+              );
+              await publishCompetingCurrent(sql, input, (current) => {
+                current.applicability.actionAttemptId = 'ATT-C4-COMPETING';
+                current.applicability.artifact = structuredClone(
+                  competingArtifact.artifact,
+                );
+              });
+            },
+          });
+          t.after(() => harness.artifactOwner.cleanup());
+          const competingBytes = new TextEncoder().encode(
+            JSON.stringify({ candidate: 'competing-current' }),
+          );
+          const staged =
+            await harness.artifactOwner.store.stageCandidateAndReadback({
+              bytes: competingBytes,
+              ownerRef: 'ATT-C4-COMPETING',
+            });
+          competingArtifact =
+            await harness.artifactOwner.store.finalizeStagedCandidate(staged);
+
+          await assert.rejects(harness.commit(), /WORK_ITEM_CAS_CONFLICT/u);
+          const workItem = await readWorkItemRow(sql);
+          const current = JSON.parse(workItem.projectionJson);
+          assert.equal(workItem.revision, 9);
+          assert.deepEqual(
+            current.applicability.artifact,
+            competingArtifact.artifact,
+          );
+          assert.equal(
+            await harness.artifactOwner.scoped.candidatePhysicalCount(),
+            1,
+          );
+          await assert.rejects(
+            harness.artifactOwner.store.readActualBytes(ownedDescriptor),
+            /ARTIFACT_READBACK_MISMATCH:METADATA/u,
+          );
+          const bytes = await harness.artifactOwner.store.readActualBytes(
+            competingArtifact.artifact,
+          );
+          assert.deepEqual(bytes, competingBytes);
+          assert.equal(
+            (await readAttemptRaceState(sql, harness.begin.attemptRef)).status,
+            'COMMITTING',
+          );
+        },
+      );
+
+      await t.test(
         'unknown unapplied CAS outcome safely discards the finalized artifact without retry',
         async (t) => {
           const harness = await realHarness(sql, {
@@ -524,6 +672,22 @@ function deferred() {
     resolve = done;
   });
   return { promise, resolve };
+}
+
+async function publishCompetingCurrent(sql, input, mutate) {
+  const current = structuredClone(input.next);
+  current.revision = input.expectedRevision + 1;
+  mutate(current);
+  const updated = await sql`
+    UPDATE work_item
+    SET revision = ${current.revision},
+      projection_json = ${JSON.stringify(current)},
+      updated_at = CURRENT_TIMESTAMP
+    WHERE work_item_id = ${input.workItemId}
+      AND revision = ${input.expectedRevision}
+    RETURNING revision
+  `;
+  assert.equal(updated.length, 1);
 }
 
 function assertSafeIsolatedDatabase(value) {
@@ -706,7 +870,7 @@ async function realHarness(sql, options = {}) {
         options.beforeCandidateCas
       ) {
         candidateCasHookUsed = true;
-        await options.beforeCandidateCas();
+        await options.beforeCandidateCas(input);
       }
       if (
         input.next.applicability?.actionAttemptId &&
