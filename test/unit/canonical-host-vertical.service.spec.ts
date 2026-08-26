@@ -1049,8 +1049,7 @@ describe('CanonicalHostVerticalService', () => {
           artifactStoreConfigured: true,
           fullU0ValidatorConfigured: true,
           aeoSpecialistReaderConfigured: false,
-          authority:
-            'COMPOSITION_STATE_NOT_ACTIVATION_NOT_WRITE_AUTHORIZATION',
+          authority: 'COMPOSITION_STATE_NOT_ACTIVATION_NOT_WRITE_AUTHORIZATION',
         },
       ),
       entryFacade(),
@@ -1083,6 +1082,15 @@ describe('CanonicalHostVerticalService', () => {
       translatedUnitCount: 10,
       pendingTranslationUnitCount: 0,
       translationRequiredUnitCount: 10,
+      units: Array.from({ length: 10 }, (_, index) => ({
+        unitKey: `UNIT-KEY-${index}`,
+        sourceUnitId: `SRC-UNIT-${index}`,
+        sourceRef: `SRC-REF-${index}`,
+        sourceHash: `sha256:source:${index}`,
+        sourceTextHash: `sha256:text:${index}`,
+        targetLocale: 'zh-CN',
+        translatedTextState: 'translated',
+      })),
       lineage: {
         documentId: first.workItem.source.documentId,
         revisionId: first.workItem.source.documentVersionId,

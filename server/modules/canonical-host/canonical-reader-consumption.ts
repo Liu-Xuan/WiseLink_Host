@@ -3,9 +3,9 @@ import type { CanonicalReaderTranslationProjection } from '@shared/api.interface
 /**
  * WL31 translation-reader candidate: two independent consumption axes.
  *
- * Source of truth: R08 rev370 (contract) plus the owner-confirmed
- * docs/WORKBENCH_V1_0_11_REUSE_MAPPING_20260820.md guard list. The two axes
- * are NOT interchangeable and NOT derivable from each other:
+ * Source of truth: R08 rev613 fresh-read 2026-08-26 (contract) plus the
+ * owner-confirmed docs/WORKBENCH_V1_0_11_REUSE_MAPPING_20260820.md guard list.
+ * The two axes are NOT interchangeable and NOT derivable from each other:
  *
  *   ownerSourceReaderConsumptionAllowed =
  *     owner.currentConsumptionAllowed && all currentness/identity guards pass
@@ -38,6 +38,12 @@ export interface CanonicalTranslationOwnerObservation {
   translatedUnitCount: number;
   pendingTranslationUnitCount: number;
   translationRequiredUnitCount: number;
+  /**
+   * Owner-provided slim unit rows. Rows are mandatory whenever translation-
+   * required units exist: aggregate counts cannot prove row identity,
+   * SourceRef binding, or translated-text state.
+   */
+  units: readonly CanonicalTranslationOwnerUnitRow[] | null;
   lineage: {
     documentId: string;
     revisionId: string;
@@ -47,6 +53,20 @@ export interface CanonicalTranslationOwnerObservation {
     tcpPackageId: string | null;
     tcpContentHash: string | null;
   };
+}
+
+/**
+ * SourceUnit row identities retained verbatim from the Host-owned
+ * translation observation. Consumers must not reconstruct these fields.
+ */
+export interface CanonicalTranslationOwnerUnitRow {
+  unitKey: string;
+  sourceUnitId: string;
+  sourceRef: string;
+  sourceHash: string;
+  sourceTextHash: string;
+  targetLocale: string;
+  translatedTextState: 'translated' | 'pending';
 }
 
 /**
@@ -84,6 +104,60 @@ function unitCountsConsistent(
     observation.translatedUnitCount +
       observation.pendingTranslationUnitCount ===
       observation.translationRequiredUnitCount
+  );
+}
+
+const RECOGNIZED_TRANSLATED_TEXT_STATES = ['translated', 'pending'] as const;
+
+function isNonBlankString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+/**
+ * Runtime row guard. The observation crosses a payload boundary, so its
+ * declared TypeScript type cannot establish runtime shape. Missing or
+ * malformed rows, duplicate unit keys, blank identities, unknown states, or
+ * row/count drift all fail closed instead of throwing.
+ */
+function unitRowsConsistent(
+  observation: CanonicalTranslationOwnerObservation,
+): boolean {
+  const rows: unknown = observation.units;
+  if (rows === undefined) return false;
+  if (rows === null) {
+    return observation.translationRequiredUnitCount === 0;
+  }
+  if (!Array.isArray(rows)) return false;
+  if (rows.length !== observation.translationRequiredUnitCount) return false;
+
+  const seenUnitKeys = new Set<string>();
+  let translatedRows = 0;
+  let pendingRows = 0;
+
+  for (const row of rows) {
+    if (row === null || typeof row !== 'object') return false;
+    if (!isNonBlankString(row.unitKey)) return false;
+    if (!isNonBlankString(row.sourceUnitId)) return false;
+    if (!isNonBlankString(row.sourceRef)) return false;
+    if (!isNonBlankString(row.sourceHash)) return false;
+    if (!isNonBlankString(row.sourceTextHash)) return false;
+    if (!isNonBlankString(row.targetLocale)) return false;
+    if (
+      !(RECOGNIZED_TRANSLATED_TEXT_STATES as readonly string[]).includes(
+        row.translatedTextState,
+      )
+    ) {
+      return false;
+    }
+    if (seenUnitKeys.has(row.unitKey)) return false;
+    seenUnitKeys.add(row.unitKey);
+    if (row.translatedTextState === 'translated') translatedRows += 1;
+    else pendingRows += 1;
+  }
+
+  return (
+    translatedRows === observation.translatedUnitCount &&
+    pendingRows === observation.pendingTranslationUnitCount
   );
 }
 
@@ -153,6 +227,9 @@ export function deriveTranslationConsumptionAxes(
   }
   if (!unitCountsConsistent(observation)) {
     failureReasons.push('OWNER_UNIT_COUNTS_INCONSISTENT');
+  }
+  if (!unitRowsConsistent(observation)) {
+    failureReasons.push('OWNER_UNIT_ROWS_INCONSISTENT');
   }
 
   const ownerSourceReaderConsumptionAllowed = failureReasons.length === 0;
