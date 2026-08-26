@@ -11,7 +11,10 @@ import type {
 } from '@shared/api.interface';
 import { CanonicalHostVerticalService } from '../canonical-host/canonical-host-vertical.service';
 import { CANONICAL_DEVELOPMENT_ROLE_ID } from '../canonical-host/canonical-host.constants';
-import type { CanonicalHostActor } from '../canonical-host/canonical-host.types';
+import type {
+  CanonicalHostActionContext,
+  CanonicalHostActor,
+} from '../canonical-host/canonical-host.types';
 import type { CanonicalVerifiedDevelopmentCreateScope } from '../canonical-host/canonical-service-scope.authorization';
 import type { CanonicalMiaodaFinalUserActorContext } from './canonical-object-access.port';
 import {
@@ -149,7 +152,7 @@ export class OrdinaryWorkItemService {
     if (!binding || !binding.runKey.startsWith('dev:')) {
       throw canonicalWorkItemNotFound();
     }
-    await this.vertical.authorizeExistingWorkItem({
+    const actionContext = await this.vertical.authorizeExistingWorkItem({
       actor,
       action: 'PARSE_PDF',
       workItemId: binding.workItemId,
@@ -160,11 +163,10 @@ export class OrdinaryWorkItemService {
       binding.workItemId,
       actor.tenantId,
     );
-    if (
-      !fresh ||
-      fresh.projection?.phase !== 'FAILED' ||
-      fresh.projection.failure?.failureCode !== 'SOURCE_BINDING_FAILED'
-    ) {
+    const retryableFailure =
+      fresh?.projection?.phase === 'FAILED' &&
+      fresh.projection.failure?.failureCode === 'SOURCE_BINDING_FAILED';
+    if (!retryableFailure && fresh?.projection?.phase !== 'PARSE_REQUESTED') {
       throw workItemRetryNotAvailable();
     }
     return this.runPdf(
@@ -182,6 +184,7 @@ export class OrdinaryWorkItemService {
         workItemId: binding.workItemId,
         requestId: binding.requestId,
       },
+      actionContext,
     );
   }
 
@@ -214,6 +217,7 @@ export class OrdinaryWorkItemService {
     developmentScope?: CanonicalVerifiedDevelopmentCreateScope,
     oauthSessionCreate = false,
     retryTarget?: { workItemId: string; requestId: string },
+    existingAuthorization?: CanonicalHostActionContext,
   ): Promise<CanonicalOrdinaryWorkItemRunResponse> {
     const context = hostedRequestContext(actor, oauthSessionCreate);
     const documentVersionId = input.documentVersionId
@@ -263,12 +267,41 @@ export class OrdinaryWorkItemService {
     ) {
       throw workItemRetryNotAvailable();
     }
+    let retryAuthorization = existingAuthorization;
+    if (!reservation.created && !developmentScope && !retryAuthorization) {
+      const retryState = await this.repository.loadTenantScopedProjection(
+        reservation.workItemId,
+        actor.tenantId,
+      );
+      if (
+        retryState?.projection?.phase === 'FAILED' &&
+        retryState.projection.failure?.failureCode === 'SOURCE_BINDING_FAILED'
+      ) {
+        retryAuthorization = await this.vertical.authorizeExistingWorkItem({
+          actor,
+          action: 'PARSE_PDF',
+          workItemId: reservation.workItemId,
+          requestId: reservation.requestId,
+          documentVersionId: resolved.version.documentVersionId,
+        });
+      }
+    }
     const retry = reservation.created
       ? null
       : await this.repository.reopenRetryableParseFailure({
           ...reservationInput,
           workItemId: reservation.workItemId,
           requestId: reservation.requestId,
+          authorization: retryAuthorization
+            ? {
+                action: 'PARSE_PDF',
+                actorFingerprint: retryAuthorization.decision.actorFingerprint,
+                decisionId: retryAuthorization.decision.decisionId,
+                decisionHash: retryAuthorization.decision.decisionHash,
+                permissionSnapshotVersion:
+                  retryAuthorization.decision.permissionSnapshotVersion,
+              }
+            : undefined,
         });
     if (retryTarget && !retry) throw workItemRetryNotAvailable();
     const request: CanonicalPdfVerticalRunRequest = {
@@ -288,13 +321,18 @@ export class OrdinaryWorkItemService {
       classification,
       query: optionalQuery(input.query),
     };
-    const result = developmentScope
-      ? await this.vertical.runPdfWithDevelopmentScope(
+    const result = retryAuthorization
+      ? await this.vertical.runPdfWithExistingAuthorization(
           request,
-          actor,
-          developmentScope,
+          retryAuthorization,
         )
-      : await this.vertical.runPdf(request, actor);
+      : developmentScope
+        ? await this.vertical.runPdfWithDevelopmentScope(
+            request,
+            actor,
+            developmentScope,
+          )
+        : await this.vertical.runPdf(request, actor);
     return {
       schemaVersion: 'wiselink.3_1.ordinary_work_item_run.v1',
       workItemCreated: reservation.created,
