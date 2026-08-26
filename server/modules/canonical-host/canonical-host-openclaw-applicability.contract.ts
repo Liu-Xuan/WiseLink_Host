@@ -55,6 +55,7 @@ export interface ApplicabilityTaskContract {
   aircraft: { aircraftNumber: string; assessmentAsOf: string };
   fleetBinding: {
     bindingRevision: string;
+    selectionRevision: string;
     sourceSnapshotId: string | null;
     sourceRevisionKey: string | null;
     authorityRevision: string | null;
@@ -459,6 +460,7 @@ function parseFleetBinding(
   const item = record(value, 'APPLICABILITY_FLEET_BINDING_INVALID');
   exactKeys(item, [
     'bindingRevision',
+    'selectionRevision',
     'sourceSnapshotId',
     'sourceRevisionKey',
     'authorityRevision',
@@ -468,6 +470,10 @@ function parseFleetBinding(
     bindingRevision: text(
       item.bindingRevision,
       'APPLICABILITY_BINDING_REVISION_REQUIRED',
+    ),
+    selectionRevision: text(
+      item.selectionRevision,
+      'APPLICABILITY_SELECTION_REVISION_REQUIRED',
     ),
     sourceSnapshotId: nullableText(item.sourceSnapshotId),
     sourceRevisionKey: nullableText(item.sourceRevisionKey),

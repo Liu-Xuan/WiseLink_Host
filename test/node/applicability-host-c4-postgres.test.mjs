@@ -42,18 +42,22 @@ const {
 const {
   MiaodaWorkItemRepository,
 } = require('../../server/modules/work-item/miaoda-work-item.repository.ts');
+const {
+  MiaodaOrdinaryArtifactStoreAdapter,
+} = require('../../server/modules/unified-reader/miaoda-ordinary-artifact-store.adapter.ts');
 
 const databaseUrl = process.env.APPLICABILITY_C4_TEST_DATABASE_URL;
 
 test(
   'R09 C4 real PostgreSQL producer -> begin -> commit uses existing WorkItem CAS and ActionAttempt lifecycle',
-  { skip: !databaseUrl },
+  { skip: !databaseUrl, concurrency: false },
   async () => {
     assertSafeIsolatedDatabase(databaseUrl);
     const sql = postgres(databaseUrl, { max: 8 });
     try {
       await resetDatabase(sql);
       const fixture = buildFixture();
+      const artifactOwner = await prepareOrdinaryArtifactOwner(fixture);
       await seedWorkItem(sql, fixture.workItem);
       const db = drizzle(sql);
       const workItems = new MiaodaWorkItemRepository(db);
@@ -61,7 +65,7 @@ test(
       const attemptRepository = new ActionAttemptRepository(db);
       const attempts = new ActionAttemptLifecycleService(attemptRepository);
       const scope = serviceScope();
-      const artifactStore = memoryArtifactStore(fixture.artifacts);
+      const artifactStore = artifactOwner.store;
       const reader = {
         readAllSourceUnits: async () => structuredClone(fixture.sourceUnits),
       };
@@ -101,6 +105,10 @@ test(
       );
       assert.equal(begin.task.baseRevision, 8);
       assert.equal(begin.task.hostResolvedMissingInputs.length, 0);
+      assert.equal(
+        begin.modelInput.fleetBinding.selectionRevision,
+        'selection-C4',
+      );
       assert.equal(
         begin.modelInput.sourceExpressions[0].applicabilityLevel,
         'document_effectivity',
@@ -166,6 +174,120 @@ test(
         projectionApplied: true,
         resultContentHash: result.contentHash,
       });
+      assert.equal(artifactOwner.scoped.files.size, 3);
+      assert.equal(artifactOwner.scoped.candidatePhysicalCount(), 1);
+    } finally {
+      await sql.end({ timeout: 5 });
+    }
+  },
+);
+
+test(
+  'R09 C4 real PostgreSQL rejects all three commit races without terminal/orphan mutation',
+  { skip: !databaseUrl, concurrency: false },
+  async (t) => {
+    assertSafeIsolatedDatabase(databaseUrl);
+    const sql = postgres(databaseUrl, { max: 8 });
+    try {
+      await t.test('controlled selection drift after begin', async () => {
+        const harness = await realHarness(sql);
+        const before = await readWorkItemRow(sql);
+        harness.selection.selectionRevision = 'selection-C4-r2';
+        harness.selection.fleetMasterData.sourceRevisionKey =
+          'fleet-revision-C4-r2';
+        harness.selection.fleetMasterData.authorityRevision = 'authority-C4-r2';
+        harness.selection.fleetMasterData.assets[0].assetVersionId =
+          'ASSET-V-C4-r2';
+        harness.selection.fleetMasterData.assets[0].recordHash =
+          'asset-hash-C4-r2';
+
+        await assert.rejects(
+          harness.commit(),
+          /APPLICABILITY_CONTROLLED_SELECTION_DRIFT/u,
+        );
+        const after = await readWorkItemRow(sql);
+        assert.deepEqual(after, before);
+        assert.deepEqual(
+          await readAttemptRaceState(sql, harness.begin.attemptRef),
+          {
+            status: 'RUNNING',
+            completedAt: null,
+            terminalReason: null,
+            projectionApplied: false,
+            resultEnvelopeJson: null,
+            resultContentHash: null,
+            leaseToken: harness.begin.leaseToken,
+            leaseGeneration: harness.begin.leaseGeneration,
+          },
+        );
+        assert.equal(harness.artifactOwner.scoped.files.size, 2);
+        assert.equal(harness.artifactOwner.scoped.candidatePhysicalCount(), 0);
+      });
+
+      await t.test(
+        'WorkItem drift after prepare preserves COMMITTING',
+        async () => {
+          const harness = await realHarness(sql, {
+            afterPrepare: () => bumpWorkItemRevision(sql),
+          });
+          await assert.rejects(
+            harness.commit(),
+            /APPLICABILITY_COMMITTING_WORK_ITEM_DRIFT/u,
+          );
+          const attempt = await readAttemptRaceState(
+            sql,
+            harness.begin.attemptRef,
+          );
+          assert.equal(attempt.status, 'COMMITTING');
+          assert.equal(attempt.completedAt, null);
+          assert.equal(attempt.terminalReason, null);
+          assert.equal(attempt.projectionApplied, false);
+          assert.equal(attempt.resultContentHash, harness.result.contentHash);
+          assert.equal(
+            JSON.parse(attempt.resultEnvelopeJson).contentHash,
+            harness.result.contentHash,
+          );
+          assert.equal(attempt.leaseToken, harness.begin.leaseToken);
+          assert.equal(attempt.leaseGeneration, harness.begin.leaseGeneration);
+          assert.equal(harness.artifactOwner.scoped.files.size, 2);
+          assert.equal(
+            harness.artifactOwner.scoped.candidatePhysicalCount(),
+            0,
+          );
+        },
+      );
+
+      await t.test(
+        'artifact stage then losing WorkItem CAS discards bytes',
+        async () => {
+          const harness = await realHarness(sql, {
+            beforeCandidateCas: () => bumpWorkItemRevision(sql),
+          });
+          const beforeProjection = JSON.parse(
+            (await readWorkItemRow(sql)).projectionJson,
+          );
+          await assert.rejects(harness.commit(), /WORK_ITEM_CAS_CONFLICT/u);
+          const after = await readWorkItemRow(sql);
+          const afterProjection = JSON.parse(after.projectionJson);
+          assert.equal(after.revision, beforeProjection.revision + 1);
+          assert.equal(afterProjection.revision, beforeProjection.revision + 1);
+          assert.equal(afterProjection.applicability ?? null, null);
+          assert.equal(harness.artifactOwner.scoped.files.size, 2);
+          assert.equal(
+            harness.artifactOwner.scoped.candidatePhysicalCount(),
+            0,
+          );
+          const attempt = await readAttemptRaceState(
+            sql,
+            harness.begin.attemptRef,
+          );
+          assert.equal(attempt.status, 'COMMITTING');
+          assert.equal(attempt.completedAt, null);
+          assert.equal(attempt.terminalReason, null);
+          assert.equal(attempt.projectionApplied, false);
+          assert.equal(attempt.resultContentHash, harness.result.contentHash);
+        },
+      );
     } finally {
       await sql.end({ timeout: 5 });
     }
@@ -331,27 +453,193 @@ function serviceScope() {
   };
 }
 
-function memoryArtifactStore(initial) {
-  const values = new Map(initial);
-  let counter = 0;
-  return {
-    readActualBytes: async (artifact) => {
-      const bytes = values.get(artifact.ref);
-      if (!bytes) throw new Error('TEST_ARTIFACT_NOT_FOUND');
-      return bytes.slice();
-    },
-    persistAndReadback: async (bytes) => {
-      counter += 1;
-      const ref = `artifact://c4/applicability-${counter}.json`;
-      const copy = bytes.slice();
-      values.set(ref, copy);
-      return {
-        artifact: artifact(ref, copy),
-        bytes: copy.slice(),
-        reused: false,
-      };
+async function realHarness(sql, options = {}) {
+  await resetDatabase(sql);
+  const fixture = buildFixture();
+  const artifactOwner = await prepareOrdinaryArtifactOwner(fixture);
+  await seedWorkItem(sql, fixture.workItem);
+  const db = drizzle(sql);
+  const workItems = new MiaodaWorkItemRepository(db);
+  const actualRegistrar = new MiaodaCanonicalWorkItemRegistrarAdapter(
+    workItems,
+  );
+  let candidateCasHookUsed = false;
+  const registrar = {
+    getTenantScopedByWorkItemId: (input) =>
+      actualRegistrar.getTenantScopedByWorkItemId(input),
+    compareAndSet: async (input) => {
+      if (
+        !candidateCasHookUsed &&
+        input.next.applicability?.actionAttemptId &&
+        options.beforeCandidateCas
+      ) {
+        candidateCasHookUsed = true;
+        await options.beforeCandidateCas();
+      }
+      return actualRegistrar.compareAndSet(input);
     },
   };
+  const attemptRepository = new ActionAttemptRepository(db);
+  const attempts = new ActionAttemptLifecycleService(attemptRepository);
+  if (options.afterPrepare) {
+    const actualPrepare = attempts.prepareCommit.bind(attempts);
+    let prepareHookUsed = false;
+    attempts.prepareCommit = async (input) => {
+      const prepared = await actualPrepare(input);
+      if (!prepareHookUsed && prepared.row.status === 'COMMITTING') {
+        prepareHookUsed = true;
+        await options.afterPrepare();
+      }
+      return prepared;
+    };
+  }
+  const scope = serviceScope();
+  const selection = fixture.selection;
+  const controlledSelection = {
+    readCurrent: async () => structuredClone(selection),
+  };
+  const reader = {
+    readAllSourceUnits: async () => structuredClone(fixture.sourceUnits),
+  };
+  const producer = new CanonicalHostApplicabilityInputProducer(
+    registrar,
+    artifactOwner.store,
+    reader,
+    scope,
+    controlledSelection,
+  );
+  const applicability = new CanonicalHostOpenClawApplicabilityService(
+    registrar,
+    artifactOwner.store,
+    reader,
+    attempts,
+    scope,
+    producer,
+  );
+  await producer.produce('APCTX-C4-OPAQUE', 'request-c4');
+  const begin = await applicability.begin(
+    'APCTX-C4-OPAQUE',
+    'request-c4-evaluation',
+  );
+  const result = resultFor(begin);
+  return {
+    selection,
+    artifactOwner,
+    begin,
+    result,
+    commit: () =>
+      applicability.commit(
+        begin.attemptRef,
+        begin.leaseToken,
+        begin.leaseGeneration,
+        result,
+      ),
+  };
+}
+
+async function readWorkItemRow(sql) {
+  const [row] = await sql`
+    SELECT revision, projection_json AS "projectionJson"
+    FROM work_item WHERE work_item_id = 'WI-C4'
+  `;
+  return row;
+}
+
+async function bumpWorkItemRevision(sql) {
+  const current = await readWorkItemRow(sql);
+  const projection = JSON.parse(current.projectionJson);
+  projection.revision += 1;
+  await sql`
+    UPDATE work_item
+    SET revision = ${projection.revision},
+      projection_json = ${JSON.stringify(projection)},
+      updated_at = CURRENT_TIMESTAMP
+    WHERE work_item_id = 'WI-C4' AND revision = ${current.revision}
+  `;
+}
+
+async function readAttemptRaceState(sql, attemptRef) {
+  const [row] = await sql`
+    SELECT status, completed_at AS "completedAt",
+      terminal_reason AS "terminalReason",
+      projection_applied AS "projectionApplied",
+      result_envelope_json AS "resultEnvelopeJson",
+      result_content_hash AS "resultContentHash",
+      lease_token AS "leaseToken",
+      lease_generation AS "leaseGeneration"
+    FROM action_attempt WHERE operation_ref = ${attemptRef}
+  `;
+  return row;
+}
+
+class LocalScopedArtifactOwner {
+  files = new Map();
+  nextId = 0;
+
+  constructor(bucketId) {
+    this.bucketId = bucketId;
+  }
+
+  async getFileMetadata(filePath) {
+    const value = this.files.get(filePath);
+    if (!value) return null;
+    return {
+      id: value.id,
+      bucketID: this.bucketId,
+      filePath: `/${filePath}`,
+      metadata: {
+        contentLength: String(value.bytes.byteLength),
+        mimeType: value.mimeType,
+      },
+    };
+  }
+
+  async upload(bytes, options) {
+    if (!options.upsert && this.files.has(options.filePath)) {
+      throw new Error('LOCAL_FILE_ALREADY_EXISTS');
+    }
+    this.nextId += 1;
+    this.files.set(options.filePath, {
+      id: `local-file-${this.nextId}`,
+      bytes: Uint8Array.from(bytes),
+      mimeType: options.contentType,
+    });
+    return { filePath: options.filePath };
+  }
+
+  async download(filePath) {
+    const value = this.files.get(filePath);
+    if (!value) throw new Error('LOCAL_FILE_NOT_FOUND');
+    return {
+      content: Uint8Array.from(value.bytes),
+      metadata: { id: value.id },
+    };
+  }
+
+  async remove(filePaths) {
+    for (const filePath of filePaths) this.files.delete(filePath);
+  }
+
+  candidatePhysicalCount() {
+    return [...this.files.keys()].filter((path) =>
+      path.includes('/_staging/applicability-attempt/'),
+    ).length;
+  }
+}
+
+async function prepareOrdinaryArtifactOwner(fixture) {
+  const scoped = new LocalScopedArtifactOwner('bucket-c4-local');
+  const store = new MiaodaOrdinaryArtifactStoreAdapter({
+    getDefaultBucket: async () => 'bucket-c4-local',
+    from: () => scoped,
+  });
+  const packageStored = await store.persistAndReadback(fixture.packageBytes);
+  const bilingualStored = await store.persistAndReadback(
+    fixture.bilingualBytes,
+  );
+  fixture.workItem.package.artifact = packageStored.artifact;
+  fixture.workItem.translation.artifact = bilingualStored.artifact;
+  return { store, scoped };
 }
 
 function buildFixture() {
@@ -510,10 +798,8 @@ function buildFixture() {
   };
   return {
     workItem,
-    artifacts: [
-      [packageArtifact.ref, packageBytes],
-      [bilingualArtifact.ref, bilingualBytes],
-    ],
+    packageBytes,
+    bilingualBytes,
     sourceUnits: [
       {
         unitId: 'UNIT-C4',
@@ -552,6 +838,39 @@ function buildFixture() {
       },
     },
   };
+}
+
+function resultFor(begin) {
+  const candidate = candidateFor(begin.modelInput);
+  return sealResultEnvelope({
+    schemaVersion: 'wiselink.3_1.openclaw_result_envelope.v1',
+    actionAttemptId: begin.task.actionAttemptId,
+    operationRef: begin.task.operationRef,
+    taskType: 'OPENCLAW_APPLICABILITY_EVALUATION',
+    workItemId: begin.task.workItemId,
+    baseRevision: begin.task.baseRevision,
+    status: 'SUCCEEDED',
+    businessOutcome: 'CANDIDATE_READY',
+    candidateStatus: null,
+    modelOutput: JSON.stringify(candidate),
+    outputArtifactRefs: [],
+    sourceRefs: structuredClone(begin.task.sourceRefs),
+    factsConsidered: begin.modelInput.controlledFacts.map(
+      (fact) => fact.factId,
+    ),
+    missingInputs: [],
+    conflicts: [],
+    warnings: [],
+    modelVersion: APPLICABILITY_MODEL_VERSION,
+    promptVersion: APPLICABILITY_PROMPT_VERSION,
+    skillVersion: APPLICABILITY_SKILL_VERSION,
+    toolVersions: {
+      [APPLICABILITY_MCP_SERVER_NAME]: APPLICABILITY_MCP_SERVER_VERSION,
+    },
+    runMetrics: { durationMs: 1, inputUnits: 1, outputUnits: 1 },
+    errorCode: null,
+    errorDetail: null,
+  });
 }
 
 function candidateFor(task) {

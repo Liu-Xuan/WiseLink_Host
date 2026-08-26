@@ -60,6 +60,15 @@ describe('CanonicalHostApplicabilityInputProducer', () => {
     });
     expect(resolved.applicabilityInput).toEqual(produced.applicabilityInput);
 
+    const ownerValidated = await harness.producer.readCurrentOwnerValidated({
+      tenantId: 'tenant-1',
+      workItemId: 'WI-APP-1',
+      applicabilityContextRef: 'APCTX-OPAQUE-1',
+    });
+    expect(ownerValidated.applicabilityInput).toEqual(
+      produced.applicabilityInput,
+    );
+
     await expect(
       harness.producer.produce('APCTX-OPAQUE-1', 'request-1'),
     ).resolves.toEqual(produced);
@@ -82,6 +91,24 @@ describe('CanonicalHostApplicabilityInputProducer', () => {
       ambiguous.producer.produce('APCTX-OPAQUE-1', 'request-1'),
     ).rejects.toThrow('APPLICABILITY_FLEET_AIRCRAFT_AMBIGUOUS');
     expect(ambiguous.registrar.compareAndSet).not.toHaveBeenCalled();
+  });
+
+  it('read-only commit validation detects owner selection/Fleet drift without CAS', async () => {
+    const harness = producerHarness();
+    await harness.producer.produce('APCTX-OPAQUE-1', 'request-1');
+    const casCount = harness.registrar.compareAndSet.mock.calls.length;
+    harness.selection.selectionRevision = 'selection-r2';
+    harness.selection.fleetMasterData.sourceRevisionKey = 'fleet-r2';
+    harness.selection.fleetMasterData.authorityRevision = 'authority-r2';
+
+    await expect(
+      harness.producer.readCurrentOwnerValidated({
+        tenantId: 'tenant-1',
+        workItemId: 'WI-APP-1',
+        applicabilityContextRef: 'APCTX-OPAQUE-1',
+      }),
+    ).rejects.toThrow('APPLICABILITY_CONTROLLED_SELECTION_DRIFT');
+    expect(harness.registrar.compareAndSet).toHaveBeenCalledTimes(casCount);
   });
 });
 

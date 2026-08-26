@@ -196,6 +196,7 @@ function applicabilityTask(): ApplicabilityTaskContract {
     aircraft: { aircraftNumber: 'B-1234', assessmentAsOf: '2026-08-27' },
     fleetBinding: {
       bindingRevision: 'binding-r1',
+      selectionRevision: 'selection-r1',
       sourceSnapshotId: 'fleet-snapshot-1',
       sourceRevisionKey: 'fleet-r1',
       authorityRevision: 'authority-r1',

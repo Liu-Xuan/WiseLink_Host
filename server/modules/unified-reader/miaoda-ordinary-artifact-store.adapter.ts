@@ -6,7 +6,9 @@ import type { UnifiedPackageArtifactDescriptor } from '@shared/api.interface';
 import { UNIFIED_READER } from './unified-reader.constants';
 import type {
   ImmutableArtifactPersistResult,
+  StagedCandidateArtifactPersistResult,
   UnifiedArtifactStorePort,
+  UnifiedCandidateArtifactStagingPort,
 } from './unified-reader.types';
 import { rawHashValue, sha256Raw } from './unified-reader.utils';
 
@@ -19,7 +21,7 @@ const JSON_MEDIA_TYPE = 'application/json' as const;
  */
 @Injectable()
 export class MiaodaOrdinaryArtifactStoreAdapter
-  implements UnifiedArtifactStorePort
+  implements UnifiedArtifactStorePort, UnifiedCandidateArtifactStagingPort
 {
   private defaultBucketLookup: Promise<string> | null = null;
 
@@ -40,15 +42,13 @@ export class MiaodaOrdinaryArtifactStoreAdapter
     );
     let reused = true;
     if (existing === null) {
-      const uploaded = await providerCall(
-        'ARTIFACT_STORE_UPLOAD_FAILED',
-        () =>
-          scoped.upload(bytes, {
-            filePath,
-            fileName: `${digest}.json`,
-            contentType: JSON_MEDIA_TYPE,
-            upsert: false,
-          }),
+      const uploaded = await providerCall('ARTIFACT_STORE_UPLOAD_FAILED', () =>
+        scoped.upload(bytes, {
+          filePath,
+          fileName: `${digest}.json`,
+          contentType: JSON_MEDIA_TYPE,
+          upsert: false,
+        }),
       );
       if (canonicalPath(uploaded.filePath) !== canonicalPath(filePath)) {
         throw new Error('ARTIFACT_UPLOAD_PATH_MISMATCH');
@@ -69,11 +69,96 @@ export class MiaodaOrdinaryArtifactStoreAdapter
     return { artifact, bytes: actual, reused };
   }
 
+  async stageCandidateAndReadback(input: {
+    bytes: Uint8Array;
+    ownerRef: string;
+  }): Promise<StagedCandidateArtifactPersistResult> {
+    if (input.bytes.byteLength < 1) throw new Error('ARTIFACT_BYTES_REQUIRED');
+    if (!input.ownerRef.trim())
+      throw new Error('ARTIFACT_STAGE_OWNER_REQUIRED');
+    const bytes = Uint8Array.from(input.bytes);
+    const digest = sha256Raw(bytes);
+    const ownerRefHash = sha256Raw(new TextEncoder().encode(input.ownerRef));
+    const filePath = this.stagedFilePath(ownerRefHash, digest);
+    const bucketId = await this.getDefaultBucket();
+    const scoped = this.fileService.from(bucketId);
+    const existing = await providerCall(
+      'ARTIFACT_STORE_METADATA_READ_FAILED',
+      () => getOptionalMetadata(() => scoped.getFileMetadata(filePath)),
+    );
+    let reused = true;
+    if (existing === null) {
+      const uploaded = await providerCall(
+        'ARTIFACT_STORE_STAGE_UPLOAD_FAILED',
+        () =>
+          scoped.upload(bytes, {
+            filePath,
+            fileName: `${digest}.json`,
+            contentType: JSON_MEDIA_TYPE,
+            upsert: false,
+          }),
+      );
+      if (canonicalPath(uploaded.filePath) !== canonicalPath(filePath)) {
+        throw new Error('ARTIFACT_STAGE_UPLOAD_PATH_MISMATCH');
+      }
+      reused = false;
+    }
+    const artifact: UnifiedPackageArtifactDescriptor = {
+      storeRole: UNIFIED_READER.artifactStoreRole,
+      ref: `${this.artifactRefPrefix()}_staging/applicability-attempt/${ownerRefHash}/${digest}`,
+      sha256: digest,
+      byteLength: bytes.byteLength,
+      mediaType: JSON_MEDIA_TYPE,
+    };
+    const actual = await this.readActualBytes(artifact);
+    if (!sameBytes(bytes, actual)) {
+      throw new Error('ARTIFACT_ACTUAL_BYTE_MISMATCH');
+    }
+    return {
+      schemaVersion: 'wiselink.3_1.staged_candidate_artifact.v1',
+      ownerRefHash,
+      artifact,
+      bytes: actual,
+      reused,
+    };
+  }
+
+  async finalizeStagedCandidate(
+    staged: StagedCandidateArtifactPersistResult,
+  ): Promise<ImmutableArtifactPersistResult> {
+    this.assertStagedDescriptor(staged);
+    const bytes = await this.readActualBytes(staged.artifact);
+    if (!sameBytes(staged.bytes, bytes)) {
+      throw new Error('ARTIFACT_STAGE_FINALIZE_READBACK_MISMATCH');
+    }
+    // The WorkItem CAS is the publication boundary. FileService has no rename;
+    // finalization is therefore an exact post-CAS durability/readback check.
+    return { artifact: staged.artifact, bytes, reused: staged.reused };
+  }
+
+  async discardStagedCandidate(
+    staged: StagedCandidateArtifactPersistResult,
+  ): Promise<void> {
+    this.assertStagedDescriptor(staged);
+    const filePath = this.descriptorFilePath(staged.artifact);
+    const bucketId = await this.getDefaultBucket();
+    const scoped = this.fileService.from(bucketId);
+    await providerCall('ARTIFACT_STORE_STAGE_DISCARD_FAILED', () =>
+      scoped.remove([filePath]),
+    );
+    const remaining = await providerCall(
+      'ARTIFACT_STORE_STAGE_DISCARD_VERIFY_FAILED',
+      () => getOptionalMetadata(() => scoped.getFileMetadata(filePath)),
+    );
+    if (remaining !== null) {
+      throw new Error('ARTIFACT_STAGE_DISCARD_NOT_ABSENT');
+    }
+  }
+
   async readActualBytes(
     artifact: UnifiedPackageArtifactDescriptor,
   ): Promise<Uint8Array> {
-    assertDescriptor(artifact, this.artifactRefPrefix());
-    const filePath = this.filePath(artifact.sha256);
+    const filePath = this.descriptorFilePath(artifact);
     const bucketId = await this.getDefaultBucket();
     const scoped = this.fileService.from(bucketId);
     const metadata = await providerCallWithTransportRetry(
@@ -143,6 +228,52 @@ export class MiaodaOrdinaryArtifactStoreAdapter
     )}.json`;
   }
 
+  private stagedFilePath(ownerRefHash: string, digest: string): string {
+    return `${UNIFIED_READER.artifactDirectory}/_staging/applicability-attempt/${rawHashValue(
+      ownerRefHash,
+      'staged.ownerRefHash',
+    )}/${rawHashValue(digest, 'artifact.sha256')}.json`;
+  }
+
+  private descriptorFilePath(
+    artifact: UnifiedPackageArtifactDescriptor,
+  ): string {
+    assertDescriptorBasics(artifact);
+    const prefix = this.artifactRefPrefix();
+    if (!artifact.ref.startsWith(prefix)) {
+      throw new Error('ARTIFACT_READBACK_MISMATCH:DESCRIPTOR');
+    }
+    const suffix = artifact.ref.slice(prefix.length);
+    if (suffix === artifact.sha256) return this.filePath(artifact.sha256);
+    const staged =
+      /^_staging\/applicability-attempt\/([0-9a-f]{64})\/([0-9a-f]{64})$/u.exec(
+        suffix,
+      );
+    if (!staged || staged[2] !== artifact.sha256) {
+      throw new Error('ARTIFACT_READBACK_MISMATCH:DESCRIPTOR');
+    }
+    return this.stagedFilePath(staged[1]!, staged[2]!);
+  }
+
+  private assertStagedDescriptor(
+    staged: StagedCandidateArtifactPersistResult,
+  ): void {
+    if (
+      staged.schemaVersion !== 'wiselink.3_1.staged_candidate_artifact.v1' ||
+      staged.bytes.byteLength !== staged.artifact.byteLength ||
+      sha256Raw(staged.bytes) !== staged.artifact.sha256 ||
+      !staged.artifact.ref.includes(
+        `/_staging/applicability-attempt/${rawHashValue(
+          staged.ownerRefHash,
+          'staged.ownerRefHash',
+        )}/`,
+      )
+    ) {
+      throw new Error('ARTIFACT_STAGE_DESCRIPTOR_INVALID');
+    }
+    this.descriptorFilePath(staged.artifact);
+  }
+
   private artifactRefPrefix(): string {
     return `artifact://${UNIFIED_READER.artifactStoreRole}/${UNIFIED_READER.artifactDirectory}/`;
   }
@@ -190,14 +321,12 @@ async function bodyBytes(body: unknown): Promise<Uint8Array> {
   throw new Error('ARTIFACT_READBACK_MISMATCH:BODY');
 }
 
-function assertDescriptor(
+function assertDescriptorBasics(
   artifact: UnifiedPackageArtifactDescriptor,
-  prefix: string,
 ): void {
   if (
     artifact.storeRole !== UNIFIED_READER.artifactStoreRole ||
     artifact.mediaType !== JSON_MEDIA_TYPE ||
-    artifact.ref !== `${prefix}${artifact.sha256}` ||
     !Number.isSafeInteger(artifact.byteLength) ||
     artifact.byteLength < 1
   ) {
@@ -355,9 +484,15 @@ function isFileNotFoundError(cause: unknown): boolean {
   if (statuses.some((status) => Number(status) === 404)) return true;
 
   const codes = [value.code, value.response?.data?.code]
-    .map((code) => String(code ?? '').trim().toUpperCase())
+    .map((code) =>
+      String(code ?? '')
+        .trim()
+        .toUpperCase(),
+    )
     .filter(Boolean);
-  if (codes.some((code) => code === 'NOT_FOUND' || code.endsWith('_NOT_FOUND'))) {
+  if (
+    codes.some((code) => code === 'NOT_FOUND' || code.endsWith('_NOT_FOUND'))
+  ) {
     return true;
   }
 

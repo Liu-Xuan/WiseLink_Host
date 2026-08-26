@@ -152,6 +152,45 @@ export class CanonicalHostApplicabilityInputProducer {
     return { workItem, applicabilityInput };
   }
 
+  /**
+   * Commit-time, read-only owner validation. It deliberately does not CAS the
+   * WorkItem: a changed controlled selection must invalidate the frozen task,
+   * never silently create a successor business input during commit.
+   */
+  async readCurrentOwnerValidated(
+    scope: Pick<
+      CanonicalVerifiedApplicabilityContextScope,
+      'tenantId' | 'workItemId' | 'applicabilityContextRef'
+    >,
+  ): Promise<{
+    workItem: CanonicalWorkItemProjection;
+    applicabilityInput: CanonicalApplicabilityInputProjection;
+  }> {
+    const workItem = await this.requiredParsedWorkItem(scope);
+    const selection = await this.controlledSelection.readCurrent({
+      tenantId: scope.tenantId,
+      workItemId: workItem.workItemId,
+      documentVersionId: workItem.source.documentVersionId,
+      applicabilityContextRef: scope.applicabilityContextRef,
+    });
+    const sourceBinding = await this.readSourceBinding(workItem);
+    const persisted = requiredApplicabilityInput({
+      workItem,
+      applicabilityContextRef: scope.applicabilityContextRef,
+      targetBindingHash: sourceBinding.targetBindingHash,
+    });
+    const derived = deriveProjection({
+      workItem,
+      applicabilityContextRef: scope.applicabilityContextRef,
+      selection,
+      targetBindingHash: sourceBinding.targetBindingHash,
+    });
+    if (canonicalSha256(persisted) !== canonicalSha256(derived)) {
+      throw controlledSelectionDrift();
+    }
+    return { workItem, applicabilityInput: derived };
+  }
+
   private async readSourceBinding(workItem: CanonicalWorkItemProjection) {
     const sourceUnits = await this.reader.readAllSourceUnits({
       artifact: workItem.package!.artifact,
@@ -425,5 +464,15 @@ function scopeNotFound(): Error & { code: string; statusCode: number } {
   return Object.assign(new Error('CANONICAL_WORK_ITEM_NOT_FOUND'), {
     code: 'CANONICAL_WORK_ITEM_NOT_FOUND',
     statusCode: 404,
+  });
+}
+
+function controlledSelectionDrift(): Error & {
+  code: string;
+  statusCode: number;
+} {
+  return Object.assign(new Error('APPLICABILITY_CONTROLLED_SELECTION_DRIFT'), {
+    code: 'APPLICABILITY_CONTROLLED_SELECTION_DRIFT',
+    statusCode: 409,
   });
 }

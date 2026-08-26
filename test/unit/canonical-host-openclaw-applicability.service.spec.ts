@@ -41,6 +41,7 @@ describe('CanonicalHostOpenClawApplicabilityService', () => {
       aircraftNumber: 'B-1234',
       assessmentAsOf: '2026-08-27',
     });
+    expect(task.fleetBinding.selectionRevision).toBe('selection-r1');
     expect(task.sourceExpressions).toEqual([
       {
         expressionId: 'EXP-1',
@@ -136,7 +137,12 @@ describe('CanonicalHostOpenClawApplicabilityService', () => {
     });
     expect(harness.attempts.prepareCommit).toHaveBeenCalledTimes(1);
     expect(harness.attempts.finishProjectionSuccess).toHaveBeenCalledTimes(1);
-    expect(harness.artifactStore.persistAndReadback).toHaveBeenCalledTimes(1);
+    expect(
+      harness.artifactStore.stageCandidateAndReadback,
+    ).toHaveBeenCalledTimes(1);
+    expect(harness.artifactStore.finalizeStagedCandidate).toHaveBeenCalledTimes(
+      1,
+    );
     expect(harness.registrar.compareAndSet).toHaveBeenCalledTimes(1);
   });
 
@@ -222,7 +228,9 @@ describe('CanonicalHostOpenClawApplicabilityService', () => {
         waiting,
       ),
     ).resolves.toMatchObject({ status: 'WAITING_INPUT' });
-    expect(harness.artifactStore.persistAndReadback).not.toHaveBeenCalled();
+    expect(
+      harness.artifactStore.stageCandidateAndReadback,
+    ).not.toHaveBeenCalled();
     expect(harness.registrar.compareAndSet).not.toHaveBeenCalled();
   });
 
@@ -338,6 +346,101 @@ describe('CanonicalHostOpenClawApplicabilityService', () => {
     expectNoCommitMutation(drift);
   });
 
+  it('rejects a post-begin controlled owner selection drift before prepare or artifact mutation', async () => {
+    const harness = applicabilityHarness();
+    const begin = await harness.begin();
+    harness.mutateControlledOwner((input) => {
+      input!.selectionRevision = 'selection-r2';
+      input!.fleetMasterData.sourceRevisionKey = 'fleet-r2';
+      input!.fleetMasterData.authorityRevision = 'authority-r2';
+    });
+
+    await expect(
+      harness.service.commit(
+        begin.attemptRef,
+        begin.leaseToken,
+        begin.leaseGeneration,
+        harness.resultFor(candidateFor(begin)),
+      ),
+    ).rejects.toThrow('APPLICABILITY_CONTROLLED_SELECTION_DRIFT');
+    expectNoCommitMutation(harness);
+    expect(harness.readAttempt()).toMatchObject({
+      status: 'RUNNING',
+      resultEnvelopeJson: null,
+      resultContentHash: null,
+      completedAt: null,
+      projectionApplied: false,
+    });
+  });
+
+  it('preserves COMMITTING and its sealed result when WorkItem drifts after prepare', async () => {
+    const harness = applicabilityHarness({
+      afterPrepare(current) {
+        current.revision += 1;
+      },
+    });
+    const begin = await harness.begin();
+    const result = harness.resultFor(candidateFor(begin));
+
+    await expect(
+      harness.service.commit(
+        begin.attemptRef,
+        begin.leaseToken,
+        begin.leaseGeneration,
+        result,
+      ),
+    ).rejects.toThrow('APPLICABILITY_COMMITTING_WORK_ITEM_DRIFT');
+    expect(harness.readAttempt()).toMatchObject({
+      status: 'COMMITTING',
+      resultContentHash: result.contentHash,
+      completedAt: null,
+      terminalReason: null,
+      projectionApplied: false,
+      leaseGeneration: begin.leaseGeneration,
+      leaseToken: begin.leaseToken,
+    });
+    expect(harness.attempts.finishProjectionConflict).not.toHaveBeenCalled();
+    expect(
+      harness.artifactStore.stageCandidateAndReadback,
+    ).not.toHaveBeenCalled();
+  });
+
+  it('discards a private staged artifact when a competing WorkItem CAS wins', async () => {
+    const harness = applicabilityHarness({
+      beforeCandidateCas(current) {
+        current.revision += 1;
+      },
+    });
+    const begin = await harness.begin();
+    const result = harness.resultFor(candidateFor(begin));
+
+    await expect(
+      harness.service.commit(
+        begin.attemptRef,
+        begin.leaseToken,
+        begin.leaseGeneration,
+        result,
+      ),
+    ).rejects.toThrow('WORK_ITEM_CAS_CONFLICT');
+    expect(
+      harness.artifactStore.stageCandidateAndReadback,
+    ).toHaveBeenCalledTimes(1);
+    expect(harness.artifactStore.discardStagedCandidate).toHaveBeenCalledTimes(
+      1,
+    );
+    expect(
+      harness.artifactStore.finalizeStagedCandidate,
+    ).not.toHaveBeenCalled();
+    expect(harness.readCurrent().applicability ?? null).toBeNull();
+    expect(harness.readAttempt()).toMatchObject({
+      status: 'COMMITTING',
+      resultContentHash: result.contentHash,
+      completedAt: null,
+      terminalReason: null,
+      projectionApplied: false,
+    });
+  });
+
   it.each(['WAITING_INPUT', 'FAILED'] as const)(
     'rejects stale %s terminalization before ActionAttempt mutation',
     async (status) => {
@@ -428,7 +531,9 @@ describe('CanonicalHostOpenClawApplicabilityService', () => {
           harness.resultFor(candidateFor(begin)),
         ),
       ).rejects.toThrow(expected);
-      expect(harness.artifactStore.persistAndReadback).not.toHaveBeenCalled();
+      expect(
+        harness.artifactStore.stageCandidateAndReadback,
+      ).not.toHaveBeenCalled();
       expect(harness.registrar.compareAndSet).not.toHaveBeenCalled();
     },
   );
@@ -461,7 +566,9 @@ describe('CanonicalHostOpenClawApplicabilityService', () => {
       result,
     );
     expect(duplicate).toEqual(first);
-    expect(harness.artifactStore.persistAndReadback).toHaveBeenCalledTimes(1);
+    expect(
+      harness.artifactStore.stageCandidateAndReadback,
+    ).toHaveBeenCalledTimes(1);
     expect(harness.registrar.compareAndSet).toHaveBeenCalledTimes(1);
   });
 });
@@ -471,6 +578,14 @@ function applicabilityHarness(
     expiredLease?: boolean;
     expectedGeneration?: number;
     packageAssignments?: unknown[];
+    afterPrepare?: (
+      current: CanonicalWorkItemProjection,
+      row: ActionAttemptRow,
+    ) => void;
+    beforeCandidateCas?: (
+      current: CanonicalWorkItemProjection,
+      row: ActionAttemptRow,
+    ) => void;
   } = {},
 ) {
   const packageAssignments = options.packageAssignments ?? [
@@ -534,6 +649,7 @@ function applicabilityHarness(
     }),
   );
   let current = parsedWorkItem(packageBytes, bilingualBytes);
+  let ownerInput = structuredClone(current.applicabilityInput!);
   let task: OpenClawTaskEnvelope | null = null;
   let row: ActionAttemptRow | null = null;
   const registrar = {
@@ -543,6 +659,9 @@ function applicabilityHarness(
         expectedRevision: number;
         next: Omit<CanonicalWorkItemProjection, 'revision'>;
       }) => {
+        if (input.next.applicability?.actionAttemptId === row?.attemptId) {
+          options.beforeCandidateCas?.(current, row);
+        }
         if (input.expectedRevision !== current.revision) {
           throw new Error('WORK_ITEM_CAS_CONFLICT');
         }
@@ -575,6 +694,27 @@ function applicabilityHarness(
       bytes: bytes.slice(),
       reused: false,
     })),
+    stageCandidateAndReadback: jest.fn(
+      async ({ bytes, ownerRef }: { bytes: Uint8Array; ownerRef: string }) => ({
+        schemaVersion: 'wiselink.3_1.staged_candidate_artifact.v1' as const,
+        ownerRefHash: sha256(new TextEncoder().encode(ownerRef)),
+        artifact: {
+          storeRole: 'UnifiedArtifactStoreCandidate' as const,
+          ref: `artifact://UnifiedArtifactStoreCandidate/_staging/${ownerRef}/${sha256(bytes)}`,
+          sha256: sha256(bytes),
+          byteLength: bytes.byteLength,
+          mediaType: 'application/json' as const,
+        },
+        bytes: bytes.slice(),
+        reused: false,
+      }),
+    ),
+    finalizeStagedCandidate: jest.fn(async (staged: any) => ({
+      artifact: structuredClone(staged.artifact),
+      bytes: staged.bytes.slice(),
+      reused: staged.reused,
+    })),
+    discardStagedCandidate: jest.fn(async () => undefined),
   };
   const attempts = {
     reserveAndClaim: jest.fn(async (input: ReserveAndClaimInput) => {
@@ -639,6 +779,7 @@ function applicabilityHarness(
         }
         row!.resultEnvelopeJson = JSON.stringify(result);
         row!.resultContentHash = result.contentHash;
+        options.afterPrepare?.(current, row!);
         return preparedCommit(row!, task!, result);
       },
     ),
@@ -693,6 +834,18 @@ function applicabilityHarness(
       workItem: structuredClone(current),
       applicabilityInput: structuredClone(current.applicabilityInput!),
     })),
+    readCurrentOwnerValidated: jest.fn(async () => {
+      if (
+        canonicalSha256(ownerInput) !==
+        canonicalSha256(current.applicabilityInput!)
+      ) {
+        throw new Error('APPLICABILITY_CONTROLLED_SELECTION_DRIFT');
+      }
+      return {
+        workItem: structuredClone(current),
+        applicabilityInput: structuredClone(current.applicabilityInput!),
+      };
+    }),
   };
   const service = new CanonicalHostOpenClawApplicabilityService(
     registrar as never,
@@ -748,10 +901,20 @@ function applicabilityHarness(
     },
     mutateCurrent(mutate: (value: CanonicalWorkItemProjection) => void) {
       mutate(current);
+      ownerInput = structuredClone(current.applicabilityInput!);
+    },
+    mutateControlledOwner(
+      mutate: (
+        value: CanonicalWorkItemProjection['applicabilityInput'],
+      ) => void,
+    ) {
+      mutate(ownerInput);
     },
     setAttemptStatus(status: string) {
       row!.status = status;
     },
+    readAttempt: () => structuredClone(row!),
+    readCurrent: () => structuredClone(current),
   };
 }
 
@@ -1078,6 +1241,8 @@ function expectNoCommitMutation(
   harness: ReturnType<typeof applicabilityHarness>,
 ): void {
   expect(harness.attempts.prepareCommit).not.toHaveBeenCalled();
-  expect(harness.artifactStore.persistAndReadback).not.toHaveBeenCalled();
+  expect(
+    harness.artifactStore.stageCandidateAndReadback,
+  ).not.toHaveBeenCalled();
   expect(harness.registrar.compareAndSet).not.toHaveBeenCalled();
 }
