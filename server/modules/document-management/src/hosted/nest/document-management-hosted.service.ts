@@ -39,7 +39,7 @@ export class DocumentManagementHostedService {
 
   ingestFileServiceSelection(request: unknown, context: HostedRequestContext) {
     assertProductionMiaodaBrowserIdentityAvailable(hostedIdentity(context));
-    assertDevelopmentPreviewContext(context);
+    assertDevelopmentHostedContext(context);
     return this.core.ingestFileServiceSelection(request, context);
   }
 
@@ -48,7 +48,7 @@ export class DocumentManagementHostedService {
     selection: { bucketId: string; filePath: string },
   ): Promise<void> {
     assertProductionMiaodaBrowserIdentityAvailable(hostedIdentity(context));
-    assertDevelopmentPreviewContext(context);
+    assertDevelopmentHostedContext(context);
     return this.authorizer.assertCanIngest({
       ...context,
       action: 'DOCUMENT_INGEST',
@@ -90,12 +90,12 @@ function hostedIdentity(context: HostedRequestContext) {
   };
 }
 
-function assertDevelopmentPreviewContext(context: HostedRequestContext): void {
-  if (context.env !== 'preview') {
+function assertDevelopmentHostedContext(context: HostedRequestContext): void {
+  if (!['preview', 'runtime'].includes(context.env)) {
     throw Object.assign(
-      new Error('Document ingestion is available only in hosted preview.'),
+      new Error('Document ingestion requires a hosted user environment.'),
       {
-        code: 'DOCUMENT_INGEST_PREVIEW_REQUIRED',
+        code: 'DOCUMENT_INGEST_HOSTED_ENV_REQUIRED',
         statusCode: 403,
       },
     );

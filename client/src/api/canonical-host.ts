@@ -75,6 +75,12 @@ export async function createDevelopmentWorkItem(
         method: 'POST',
         data: input,
       });
+    if (response.status < 200 || response.status >= 300) {
+      throw backendResponseError(
+        response.data,
+        'CANONICAL_DEVELOPMENT_WORK_ITEM_CREATE_FAILED',
+      );
+    }
     return response.data;
   } catch (error) {
     logger.error('创建隔离 DEV WorkItem 失败', error);
