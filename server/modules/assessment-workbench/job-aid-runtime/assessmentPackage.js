@@ -24,6 +24,12 @@ import {
   buildJobAidSourceEvidenceCandidates,
 } from './sourceEvidenceCandidates.js';
 import { applySourceEvidenceAdoptions } from './sourceEvidenceAdoptions.js';
+import {
+  buildApp003DiscoveryContext,
+  describeApp003EvaluationMethod,
+  executeApp003Evaluation,
+  markApp003PredicateOutcome,
+} from './app003WorkObjectEvaluator.js';
 
 export const WISELINK_V3_1_SB_JOB_AID_ASSESSMENT_INPUT_SCHEMA =
   'wiselink.v3_1.sb_job_aid_assessment_input.v2';
@@ -798,12 +804,16 @@ function buildEvaluationItem({ criterion, criterionMember, context, input, answe
   if (!criterionMember) {
     throw new Error(`Criterion ${criterion.criterion_id} is not a member of the selected CriterionSet.`);
   }
+  const methodDescriptor = describeApp003EvaluationMethod({ criterion, input });
+  const effectiveContext = methodDescriptor
+    ? deepMerge(context, buildApp003DiscoveryContext({ criterion, input }))
+    : context;
   const applicabilityState = evaluateApplicabilityPredicate(
     criterion.applicability_predicate,
-    context,
+    effectiveContext,
   );
   const missingPredicateInputs = collectPredicatePaths(criterion.applicability_predicate)
-    .filter((path) => !hasPath(context, path));
+    .filter((path) => !hasPath(effectiveContext, path));
   const base = {
     criterion_id: criterion.criterion_id,
     criterion_version_id: criterionMember.criterionVersionId,
@@ -844,6 +854,8 @@ function buildEvaluationItem({ criterion, criterionMember, context, input, answe
     rationale: null,
     reviewer_comment: null,
     blocking_condition_met: null,
+    missing_inputs: [],
+    ...(methodDescriptor ? { method_execution: methodDescriptor } : {}),
   };
 
   if (applicabilityState === TRI_STATE.FALSE) {
@@ -852,18 +864,42 @@ function buildEvaluationItem({ criterion, criterionMember, context, input, answe
       status: '不适用',
       decision: '不适用',
       blocking_condition_met: false,
+      ...(methodDescriptor
+        ? { method_execution: markApp003PredicateOutcome(methodDescriptor, false) }
+        : {}),
     };
   }
   if (applicabilityState === TRI_STATE.UNKNOWN) {
+    const missingInputs = methodDescriptor?.missingInputs.length
+      ? methodDescriptor.missingInputs
+      : missingPredicateInputs.map((path) => ({
+        code: 'CRITERION_APPLICABILITY_PREDICATE_INPUT_MISSING',
+        requiredEvidence: path,
+        reason: `适用性谓词缺少受控输入：${path}。`,
+        reasonCategory: 'DATA_SOURCE_NOT_CONNECTED',
+      }));
     return {
       ...base,
       status: '需补证据',
       decision: '信息不足',
       blocking_condition_met: ['HARD_BLOCK', 'ACTION_BLOCK'].includes(criterion.blocker_level),
+      missing_inputs: missingInputs,
+      ...(methodDescriptor ? {
+        method_execution: {
+          ...methodDescriptor,
+          state: 'WAITING_INPUT',
+          missingInputs,
+        },
+      } : {}),
     };
   }
 
-  const deterministic = executeDeterministicCriterion(criterion, input, context);
+  const deterministic = executeDeterministicCriterion(
+    criterion,
+    input,
+    effectiveContext,
+    methodDescriptor,
+  );
   const applicableBase = deterministic ?? {
     status: criterion.automation_mode === 'HUMAN_REQUIRED' ? '需人工复核' : '待评估',
     decision: criterion.automation_mode === 'HUMAN_REQUIRED' ? '需人工判断' : null,
@@ -876,7 +912,13 @@ function buildEvaluationItem({ criterion, criterionMember, context, input, answe
   return answer ? applyCriterionAnswer(withBase, answer) : withBase;
 }
 
-function executeDeterministicCriterion(criterion, input, context) {
+function executeDeterministicCriterion(criterion, input, context, methodDescriptor) {
+  const app003Result = executeApp003Evaluation({
+    criterion,
+    input,
+    descriptor: methodDescriptor,
+  });
+  if (app003Result) return app003Result;
   if (criterion.criterion_id === 'GOV-003') {
     const core = input.parsedResult.coreFields ?? {};
     const identity = {
