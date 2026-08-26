@@ -370,6 +370,45 @@ export class ActionAttemptLifecycleService {
     );
   }
 
+  /**
+   * Complete an accepted candidate whose deterministic Host evaluation found
+   * missing controlled facts. This reuses the existing COMMITTING cutoff and
+   * durable result; it does not create a second queue or let the executor
+   * self-declare WAITING_INPUT after returning a candidate.
+   */
+  async finishProjectionWaitingInput(
+    prepared: PreparedActionAttemptCommit,
+  ): Promise<ActionAttemptTerminalProjection> {
+    if (prepared.row.status === 'WAITING_INPUT') {
+      return terminalProjection(prepared.row);
+    }
+    if (prepared.row.status !== 'COMMITTING') {
+      throw conflict('ACTION_ATTEMPT_NOT_COMMITTING');
+    }
+    if (prepared.result.status !== 'SUCCEEDED') {
+      throw conflict('ACTION_ATTEMPT_WAITING_INPUT_RESULT_INVALID');
+    }
+    const updated = await this.repository.finishTerminal({
+      attemptId: prepared.row.attemptId,
+      fromStatus: 'COMMITTING',
+      status: 'WAITING_INPUT',
+      terminalReason: prepared.recovery
+        ? 'HOST_MISSING_FACTS_RECONCILED_FROM_PROJECTION'
+        : 'HOST_MISSING_CONTROLLED_FACTS',
+      leaseToken: requiredLeaseToken(prepared.row),
+      leaseGeneration: prepared.row.leaseGeneration,
+      result: prepared.result,
+      projectionApplied: true,
+      now: new Date(),
+    });
+    if (!updated) throw conflict('ACTION_ATTEMPT_TERMINALIZATION_LOST');
+    return terminalProjection(
+      requiredRow(
+        await this.repository.readByAttemptId(prepared.row.attemptId),
+      ),
+    );
+  }
+
   async finishCandidatePersistenceSuccess(
     prepared: PreparedActionAttemptCommit,
   ): Promise<ActionAttemptTerminalProjection> {
@@ -504,7 +543,8 @@ export class ActionAttemptLifecycleService {
         fromStatus: row.status,
         status: 'TIMED_OUT',
         terminalReason: 'ACTION_ATTEMPT_DEADLINE_EXCEEDED',
-        leaseToken: row.status === 'RUNNING' ? requiredLeaseToken(row) : undefined,
+        leaseToken:
+          row.status === 'RUNNING' ? requiredLeaseToken(row) : undefined,
         leaseGeneration:
           row.status === 'RUNNING' ? row.leaseGeneration : undefined,
         now,

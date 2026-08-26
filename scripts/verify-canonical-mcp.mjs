@@ -21,6 +21,7 @@ const calls = [];
 const dynamicCalls = [];
 const orchestratorCalls = [];
 const translationCalls = [];
+const applicabilityCalls = [];
 const reviewCalls = [];
 const attemptCalls = [];
 const methods = [];
@@ -80,6 +81,14 @@ const serviceScope = {
   assertTransport: async () => undefined,
   authorizeOpenClawWorkItem: async ({ workItemId }) =>
     serviceScopeFor(workItemId),
+  authorizeOpenClawApplicabilityContext: async ({
+    applicabilityContextRef,
+    requestId,
+  }) => ({
+    ...serviceScopeFor('WI-DYNAMIC'),
+    applicabilityContextRef,
+    requestId,
+  }),
   authorizeOpenClawAttempt: async ({ attemptRef }) => ({
     ...serviceScopeFor('WI-DYNAMIC'),
     attemptRef,
@@ -252,6 +261,31 @@ const translation = {
     return { workItemId: 'WI-DYNAMIC', status: 'CANDIDATE_ONLY' };
   },
 };
+const applicability = {
+  begin: async (applicabilityContextRef, requestId) => {
+    applicabilityCalls.push({
+      tool: 'begin_applicability_evaluation',
+      applicabilityContextRef,
+      requestId,
+    });
+    return { attemptRef: 'APP-OPAQUE', status: 'RUNNING' };
+  },
+  commit: async (
+    selectedAttemptRef,
+    selectedLeaseToken,
+    leaseGeneration,
+    result,
+  ) => {
+    applicabilityCalls.push({
+      tool: 'commit_applicability_candidate',
+      attemptRef: selectedAttemptRef,
+      leaseToken: selectedLeaseToken,
+      leaseGeneration,
+      result,
+    });
+    return { workItemId: 'WI-DYNAMIC', status: 'CANDIDATE_ONLY' };
+  },
+};
 const review = {
   begin: async (reviewConversationRef, requestId) => {
     reviewCalls.push({
@@ -317,6 +351,7 @@ const openClawMcp = new CanonicalHostOpenClawMcpService(
   discovery,
   overall,
   translation,
+  applicability,
   review,
   attempts,
   serviceScope,
@@ -486,6 +521,8 @@ try {
         'get_deep_link',
         'begin_translation',
         'commit_translation_candidate',
+        'begin_applicability_evaluation',
+        'commit_applicability_candidate',
         'begin_dynamic_evaluation',
         'commit_dynamic_evaluation_candidate',
         'record_oem_discovery_run',
@@ -501,8 +538,50 @@ try {
         'cancel_action_attempt',
       ],
     );
-    assert.equal(listed.tools.length, 18);
-    assert.equal(openClawClient.getServerVersion()?.version, '1.1.0');
+    assert.equal(listed.tools.length, 20);
+    assert.equal(openClawClient.getServerVersion()?.version, '1.2.0');
+    assert.deepEqual(
+      resultJson(
+        await openClawClient.callTool({
+          name: 'begin_applicability_evaluation',
+          arguments: {
+            applicabilityContextRef: 'APCTX-OPAQUE',
+            requestId: 'app-request-1',
+          },
+        }),
+      ),
+      { attemptRef: 'APP-OPAQUE', status: 'RUNNING' },
+    );
+    const forgedApplicabilityBegin = await openClawClient.callTool({
+      name: 'begin_applicability_evaluation',
+      arguments: {
+        applicabilityContextRef: 'APCTX-OPAQUE',
+        requestId: 'app-request-1',
+        actorId: 'forged',
+        tenantId: 'forged',
+        workItemId: 'WI-FORGED',
+        sessionKey: 'forged',
+      },
+    });
+    assert.equal(forgedApplicabilityBegin.isError, true);
+    assert.deepEqual(
+      resultJson(
+        await openClawClient.callTool({
+          name: 'commit_applicability_candidate',
+          arguments: {
+            attemptRef: 'APP-OPAQUE',
+            leaseToken,
+            leaseGeneration: 1,
+            result: candidateResult,
+          },
+        }),
+      ),
+      { workItemId: 'WI-DYNAMIC', status: 'CANDIDATE_ONLY' },
+    );
+    assert.deepEqual(
+      applicabilityCalls.map(({ tool }) => tool),
+      ['begin_applicability_evaluation', 'commit_applicability_candidate'],
+    );
     assert.deepEqual(
       resultJson(
         await openClawClient.callTool({
@@ -808,6 +887,8 @@ try {
           'get_deep_link',
           'begin_translation',
           'commit_translation_candidate',
+          'begin_applicability_evaluation',
+          'commit_applicability_candidate',
           'begin_dynamic_evaluation',
           'commit_dynamic_evaluation_candidate',
           'record_oem_discovery_run',
@@ -825,7 +906,7 @@ try {
         resources: 0,
         prompts: 0,
         ailyMutationTools: 0,
-        openClawCandidateMutationTools: 11,
+        openClawCandidateMutationTools: 13,
         servedMethods: ['POST'],
         rejectedClientTransportMethods: [
           ...new Set(methods.filter((method) => method !== 'POST')),

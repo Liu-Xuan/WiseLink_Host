@@ -101,6 +101,39 @@ describe('ActionAttemptLifecycleService', () => {
     ]);
   });
 
+  it('terminalizes a Host-evaluated missing-fact candidate as WAITING_INPUT after COMMITTING', async () => {
+    const repository = new MemoryActionAttemptRepository();
+    const service = new ActionAttemptLifecycleService(repository as never);
+    const claim = await service.reserveAndClaim(
+      reservationInput(async () => ({ controlled: true })),
+    );
+    const result = successResult(claim.task);
+    const prepared = await service.prepareCommit({
+      attemptRef: claim.attemptRef,
+      tenantId: 'tenant-test',
+      workItemId: 'WI-test',
+      principalId: 'openclaw-real',
+      leaseToken: claim.leaseToken,
+      leaseGeneration: claim.leaseGeneration,
+      result,
+    });
+
+    await expect(
+      service.finishProjectionWaitingInput(prepared),
+    ).resolves.toMatchObject({
+      status: 'WAITING_INPUT',
+      projectionApplied: true,
+      terminalReason: 'HOST_MISSING_CONTROLLED_FACTS',
+    });
+    expect(repository.transitions).toEqual([
+      'QUEUED',
+      'RUNNING',
+      'COMMITTING',
+      'WAITING_INPUT',
+    ]);
+    expect(repository.row?.resultContentHash).toBe(result.contentHash);
+  });
+
   it('fails closed when current revision regresses below base revision', async () => {
     const repository = new MemoryActionAttemptRepository();
     const service = new ActionAttemptLifecycleService(repository as never);
@@ -126,7 +159,11 @@ describe('ActionAttemptLifecycleService', () => {
   });
 
   it.each([
-    { revisionDelta: 1, status: 'CONFLICT', code: 'WORK_ITEM_REVISION_CONFLICT' },
+    {
+      revisionDelta: 1,
+      status: 'CONFLICT',
+      code: 'WORK_ITEM_REVISION_CONFLICT',
+    },
     { revisionDelta: 2, status: 'OBSOLETE', code: 'WORK_ITEM_RESULT_OBSOLETE' },
   ])(
     'terminalizes revision drift +$revisionDelta as $status',

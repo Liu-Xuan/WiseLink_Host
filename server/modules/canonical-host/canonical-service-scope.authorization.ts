@@ -29,6 +29,11 @@ export interface CanonicalVerifiedOpenClawAttemptScope extends CanonicalVerified
   attemptRef: string;
 }
 
+export interface CanonicalVerifiedApplicabilityContextScope extends CanonicalVerifiedServiceScope {
+  applicabilityContextRef: string;
+  requestId: string;
+}
+
 export interface CanonicalServiceScopeAuthorizationPort {
   authorizeWorkItemRead(input: {
     transport: 'OPENAPI_REST' | 'READONLY_MCP';
@@ -51,12 +56,18 @@ export interface CanonicalServiceScopeAuthorizationPort {
       | 'BEGIN_TRANSLATE';
     workItemId: string;
   }): Promise<CanonicalVerifiedServiceScope>;
+  authorizeOpenClawApplicabilityContext(input: {
+    operation: 'BEGIN_APPLICABILITY';
+    applicabilityContextRef: string;
+    requestId: string;
+  }): Promise<CanonicalVerifiedApplicabilityContextScope>;
   authorizeOpenClawAttempt(input: {
     operation:
       | 'COMMIT_DYNAMIC'
       | 'RESUME_OVERALL'
       | 'COMMIT_OVERALL'
       | 'COMMIT_TRANSLATE'
+      | 'COMMIT_APPLICABILITY'
       | 'GET_REVIEW_CONTEXT'
       | 'READ_REVIEW_SOURCE_REFS'
       | 'GET_REVIEW_ATTEMPT_STATUS'
@@ -82,6 +93,10 @@ export class UnavailableCanonicalServiceScopeAuthorization implements CanonicalS
   }
 
   authorizeOpenClawWorkItem(): Promise<CanonicalVerifiedServiceScope> {
+    return Promise.reject(canonicalServiceScopeUnavailable());
+  }
+
+  authorizeOpenClawApplicabilityContext(): Promise<CanonicalVerifiedApplicabilityContextScope> {
     return Promise.reject(canonicalServiceScopeUnavailable());
   }
 

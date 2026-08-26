@@ -23,6 +23,7 @@ import { CanonicalHostOpenClawDynamicEvaluationService } from './canonical-host-
 import { CanonicalHostOpenClawDiscoveryService } from './canonical-host-openclaw-discovery.service';
 import { CanonicalHostOpenClawOverallService } from './canonical-host-openclaw-overall.service';
 import { CanonicalHostOpenClawTranslationService } from './canonical-host-openclaw-translation.service';
+import { CanonicalHostOpenClawApplicabilityService } from './canonical-host-openclaw-applicability.service';
 import { CanonicalHostOpenClawReviewService } from './canonical-host-openclaw-review.service';
 import { HostOwnedV1TranslationRuleSetPrivateProvider } from './canonical-translation-rule-set-v1.private';
 import { ExternalDiscoveryModule } from '../external-discovery/external-discovery.module';
@@ -119,6 +120,7 @@ export interface CanonicalHostModuleOptions {
     CanonicalHostOpenClawDiscoveryService,
     CanonicalHostOpenClawOverallService,
     CanonicalHostOpenClawTranslationService,
+    CanonicalHostOpenClawApplicabilityService,
     CanonicalHostOpenClawReviewService,
     HostOwnedV1TranslationRuleSetPrivateProvider,
     ExactFtdFrozen2PdfProducerAdapter,
@@ -274,6 +276,7 @@ export class CanonicalHostModule {
         CanonicalHostOpenClawDiscoveryService,
         CanonicalHostOpenClawOverallService,
         CanonicalHostOpenClawTranslationService,
+        CanonicalHostOpenClawApplicabilityService,
         CanonicalHostOpenClawReviewService,
         HostOwnedV1TranslationRuleSetPrivateProvider,
         ExactFtdFrozen2PdfProducerAdapter,

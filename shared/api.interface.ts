@@ -516,6 +516,97 @@ export interface CanonicalTranslationCandidateProjection {
   artifact: UnifiedPackageArtifactDescriptor;
 }
 
+export interface CanonicalApplicabilityFleetSourceRef {
+  sourceTable: string;
+  sourceRecordId: string;
+  sourceField?: string | null;
+}
+
+export interface CanonicalApplicabilityFleetAsset {
+  assetId: string;
+  assetVersionId: string;
+  aircraftNumber: string;
+  aliases?: Array<{ aliasValue: string }>;
+  fleetFamily?: string | null;
+  aircraftModel?: string | null;
+  series?: string | null;
+  msn?: string | null;
+  lineNumber?: number | null;
+  deliveryDate?: string | null;
+  sourceRef: CanonicalApplicabilityFleetSourceRef;
+  recordHash: string;
+}
+
+export interface CanonicalApplicabilityFleetFact {
+  factId: string;
+  assetId: string;
+  factType: 'fleet_configuration' | 'sb_incorporation' | 'data_quality_issue';
+  property: string;
+  qualifier?: string | null;
+  value: unknown;
+  validAsOf?: string | null;
+  sourceRef: CanonicalApplicabilityFleetSourceRef;
+  recordHash: string;
+}
+
+/**
+ * Host-owned current aircraft selection and controlled fact snapshot.
+ * OpenClaw cannot create or update this projection. The opaque context ref is
+ * resolved by service authorization before the WorkItem is fresh-read.
+ */
+export interface CanonicalApplicabilityInputProjection {
+  schemaVersion: 'wiselink.3_1.applicability_input_projection.v1';
+  applicabilityContextRef: string;
+  bindingRevision: string;
+  currentness: 'CURRENT' | 'STALE' | 'CONFLICT' | 'UNVERIFIED';
+  aircraftNumber: string;
+  assessmentAsOf: string;
+  fleetMasterData: {
+    schemaVersion: 'wiselink.v3_1.applicability_fleet.fleet_master_data.v1';
+    sourceSnapshotId: string | null;
+    sourceRevisionKey: string | null;
+    authorityRevision: string | null;
+    sourceAsOf: string | null;
+    assets: CanonicalApplicabilityFleetAsset[];
+    facts: CanonicalApplicabilityFleetFact[];
+  };
+}
+
+export interface CanonicalApplicabilityCandidateProjection {
+  schemaVersion: 'wiselink.3_1.applicability_candidate_projection.v1';
+  status: 'CANDIDATE_ONLY' | 'WAITING_INPUT' | 'STALE';
+  currentness: 'CURRENT' | 'STALE';
+  staleReason:
+    | 'SOURCE_CHANGED'
+    | 'AIRCRAFT_SELECTION_CHANGED'
+    | 'FLEET_FACTS_CHANGED'
+    | null;
+  sourceResultId: string;
+  actionAttemptId: string;
+  inputRevision: number;
+  documentId: string;
+  documentVersionId: string;
+  sourcePackageId: string;
+  sourcePackageContentHash: string;
+  translationActionAttemptId: string;
+  applicabilityContextRef: string;
+  applicabilityBindingRevision: string;
+  aircraftNumber: string;
+  assessmentAsOf: string;
+  fleetSourceSnapshotId: string;
+  fleetSourceRevisionKey: string;
+  fleetAuthorityRevision: string;
+  fleetSourceAsOf: string;
+  sourceExpressionCount: number;
+  sourceRefCount: number;
+  decision: 'APPLICABLE' | 'NOT_APPLICABLE' | 'UNKNOWN';
+  kleeneResult: true | false | 'unknown';
+  /** True only for the evaluated APPLICABLE decision. */
+  pass: boolean;
+  blockingUnknownCount: number;
+  artifact: UnifiedPackageArtifactDescriptor;
+}
+
 export interface CanonicalWorkItemFailureProjection {
   failureCode: string;
   message: string;
@@ -892,6 +983,8 @@ export interface CanonicalWorkItemProjection {
   classification: CanonicalClassificationSelection;
   package: CanonicalWorkItemPackageProjection | null;
   translation?: CanonicalTranslationCandidateProjection | null;
+  applicabilityInput?: CanonicalApplicabilityInputProjection | null;
+  applicability?: CanonicalApplicabilityCandidateProjection | null;
   assessment?: CanonicalAssessmentCandidateProjection | null;
   integratedAssessment?: CanonicalIntegratedAssessmentProjection | null;
   aeo?: CanonicalAeoCandidateProjection | null;
