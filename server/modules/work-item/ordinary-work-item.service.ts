@@ -198,7 +198,7 @@ export class OrdinaryWorkItemService {
       expectedCreatorUserId: oauthSessionCreate ? actor.userId : undefined,
     });
     const classification = classificationFor(resolved.family.documentFamily);
-    const reservation = await this.repository.reserve({
+    const reservationInput = {
       tenantId: actor.tenantId,
       actorUserId: actor.userId,
       documentId: resolved.version.documentId,
@@ -209,7 +209,15 @@ export class OrdinaryWorkItemService {
       normalizedFamily: classification.normalizedFamily,
       requestOrigin: origin,
       runKey,
-    });
+    };
+    const reservation = await this.repository.reserve(reservationInput);
+    const retry = reservation.created
+      ? null
+      : await this.repository.reopenRetryableParseFailure({
+          ...reservationInput,
+          workItemId: reservation.workItemId,
+          requestId: reservation.requestId,
+        });
     const request: CanonicalPdfVerticalRunRequest = {
       schemaVersion: 'wiselink.3_1.canonical_pdf_vertical_request.v0.candidate',
       workItemId: reservation.workItemId,
@@ -238,7 +246,7 @@ export class OrdinaryWorkItemService {
       schemaVersion: 'wiselink.3_1.ordinary_work_item_run.v1',
       workItemCreated: reservation.created,
       workItemReused: !reservation.created,
-      actionAttemptId: reservation.attemptId,
+      actionAttemptId: retry?.attemptId ?? reservation.attemptId,
       result: {
         ...result,
         authority: {

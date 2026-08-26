@@ -32,6 +32,11 @@ export interface WorkItemReservation {
   created: boolean;
 }
 
+export interface ParseRetryReservation {
+  attemptId: string;
+  attemptNo: number;
+}
+
 export interface WorkItemAuthorizationBinding {
   workItemId: string;
   revision: number;
@@ -198,6 +203,99 @@ export class MiaodaWorkItemRepository {
         attemptId: attempt.attemptId,
         created,
       };
+    });
+  }
+
+  async reopenRetryableParseFailure(
+    input: WorkItemReservationInput & {
+      workItemId: string;
+      requestId: string;
+    },
+  ): Promise<ParseRetryReservation | null> {
+    return this.db.transaction(async (transaction) => {
+      const [stored] = await transaction
+        .select()
+        .from(workItem)
+        .where(eq(workItem.workItemId, input.workItemId))
+        .limit(1);
+      if (!stored) throw new Error('WORK_ITEM_NOT_FOUND');
+      assertRetryIdentity(stored, input);
+
+      const projection = parseProjection(stored.projectionJson);
+      if (
+        projection?.phase !== 'FAILED' ||
+        projection.failure?.failureCode !== 'SOURCE_BINDING_FAILED'
+      ) {
+        return null;
+      }
+
+      const [latestAttempt] = await transaction
+        .select()
+        .from(actionAttempt)
+        .where(
+          and(
+            eq(actionAttempt.workItemId, stored.workItemId),
+            eq(actionAttempt.actionType, ACTION_TYPE),
+          ),
+        )
+        .orderBy(desc(actionAttempt.attemptNo))
+        .limit(1);
+      if (!latestAttempt) throw new Error('ACTION_ATTEMPT_READBACK_FAILED');
+
+      const attemptNo = latestAttempt.attemptNo + 1;
+      const attemptId = `ATT-${randomUUID()}`;
+      const now = new Date();
+      const next: CanonicalWorkItemProjection = {
+        ...projection,
+        revision: projection.revision + 1,
+        phase: 'PARSE_REQUESTED',
+        package: null,
+        failure: null,
+        recordingFailure: null,
+      };
+      const updated = await transaction
+        .update(workItem)
+        .set({
+          projectionJson: JSON.stringify(next),
+          status: next.phase,
+          revision: next.revision,
+          packageId: null,
+          packageArtifactRef: null,
+          packageArtifactSha256: null,
+          failureCode: null,
+          failureArtifactRef: null,
+          failureArtifactSha256: null,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(workItem.workItemId, stored.workItemId),
+            eq(workItem.revision, projection.revision),
+          ),
+        )
+        .returning({ workItemId: workItem.workItemId });
+      if (updated.length !== 1) throw new Error('WORK_ITEM_CAS_CONFLICT');
+
+      const inserted = await transaction
+        .insert(actionAttempt)
+        .values({
+          attemptId,
+          workItemId: stored.workItemId,
+          actionType: ACTION_TYPE,
+          attemptNo,
+          triggerRequestId: stored.requestId,
+          requestOrigin: input.requestOrigin,
+          status: 'PENDING',
+          actorUserId: input.actorUserId,
+          tenantId: input.tenantId,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .returning({ attemptId: actionAttempt.attemptId });
+      if (inserted.length !== 1) {
+        throw new Error('ACTION_ATTEMPT_RETRY_INSERT_FAILED');
+      }
+      return { attemptId, attemptNo };
     });
   }
 
@@ -855,6 +953,18 @@ export class MiaodaWorkItemRepository {
       'FAILED',
       'RECORDING_FAILED',
     ].includes(projection.phase);
+    const [latestAttempt] = await this.db
+      .select({ attemptId: actionAttempt.attemptId })
+      .from(actionAttempt)
+      .where(
+        and(
+          eq(actionAttempt.workItemId, projection.workItemId),
+          eq(actionAttempt.actionType, ACTION_TYPE),
+        ),
+      )
+      .orderBy(desc(actionAttempt.attemptNo))
+      .limit(1);
+    if (!latestAttempt) throw new Error('ACTION_ATTEMPT_READBACK_FAILED');
     await this.db
       .update(actionAttempt)
       .set({
@@ -875,13 +985,7 @@ export class MiaodaWorkItemRepository {
         completedAt: terminal ? now : undefined,
         updatedAt: now,
       })
-      .where(
-        and(
-          eq(actionAttempt.workItemId, projection.workItemId),
-          eq(actionAttempt.actionType, ACTION_TYPE),
-          eq(actionAttempt.attemptNo, 1),
-        ),
-      );
+      .where(eq(actionAttempt.attemptId, latestAttempt.attemptId));
   }
 }
 
@@ -973,5 +1077,24 @@ function assertReservationIdentity(
     row.runKey !== input.runKey
   ) {
     throw new Error('WORK_ITEM_BUSINESS_KEY_COLLISION');
+  }
+}
+
+function assertRetryIdentity(
+  row: typeof workItem.$inferSelect,
+  input: WorkItemReservationInput & {
+    workItemId: string;
+    requestId: string;
+  },
+): void {
+  assertReservationIdentity(row, input);
+  if (
+    row.workItemId !== input.workItemId ||
+    row.requestId !== input.requestId ||
+    row.tenantId !== input.tenantId ||
+    row.documentVersionId !== input.documentVersionId ||
+    row.requestedByUserId !== input.actorUserId
+  ) {
+    throw new Error('WORK_ITEM_RETRY_IDENTITY_MISMATCH');
   }
 }
