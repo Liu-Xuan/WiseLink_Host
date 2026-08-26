@@ -10,6 +10,7 @@ import type { Request } from 'express';
 
 import { SessionResolver } from '../identity/session-resolver.service';
 import { OrdinaryWorkItemService } from '../work-item/ordinary-work-item.service';
+import { miaodaHostedFinalUserActor } from '../work-item/production-miaoda-browser-ingress';
 import { developmentRunBody } from './canonical-development-run-input';
 
 @Controller('api/canonical-host')
@@ -29,6 +30,10 @@ export class OauthSessionDevelopmentWorkItemController {
       );
     }
     const input = developmentRunBody(body);
-    return this.workItems.createOauthSessionDevelopmentRun(input, session.actor);
+    return this.workItems.createOauthSessionDevelopmentRun(
+      input,
+      session.actor,
+      miaodaHostedFinalUserActor(request.userContext),
+    );
   }
 }

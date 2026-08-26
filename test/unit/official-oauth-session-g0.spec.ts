@@ -233,7 +233,7 @@ describe('official OAuth -> persistent session G0', () => {
     expect(callbackResponse.json).not.toHaveBeenCalled();
   });
 
-  it('development create derives actor only from the resolved session', async () => {
+  it('development create binds the resolved session to the native gateway actor', async () => {
     const actor = { canonicalSubject: { id: 'miaoda-user-1' } };
     const workItems = {
       createOauthSessionDevelopmentRun: jest
@@ -244,28 +244,57 @@ describe('official OAuth -> persistent session G0', () => {
       { resolve: jest.fn().mockResolvedValue({ actor }) } as never,
       workItems as never,
     );
-    await controller.create(
-      {
-        documentVersionId: 'DV-1',
-        developmentRunToken: '11111111-1111-4111-8111-111111111111',
+    const previousSandbox = process.env.SANDBOX_ID;
+    process.env.SANDBOX_ID = 'unit-hosted-sandbox';
+    const request = {
+      headers: { cookie: 'wl_session=opaque' },
+      userContext: {
+        userId: 'miaoda-user-1',
+        tenantId: 'tenant-1',
+        appId: 'app_17bzc551rsg',
+        roles: ['authenticated', 'wiselink_development'],
+        env: 'runtime',
       },
-      { headers: { cookie: 'wl_session=opaque' } } as never,
-    );
+    };
+    try {
+      await controller.create(
+        {
+          documentVersionId: 'DV-1',
+          developmentRunToken: '11111111-1111-4111-8111-111111111111',
+        },
+        request as never,
+      );
+    } finally {
+      if (previousSandbox === undefined) delete process.env.SANDBOX_ID;
+      else process.env.SANDBOX_ID = previousSandbox;
+    }
     expect(workItems.createOauthSessionDevelopmentRun).toHaveBeenCalledWith(
       expect.objectContaining({ documentVersionId: 'DV-1' }),
       actor,
+      expect.objectContaining({
+        canonicalSubject: { namespace: 'MIAODA_USER_ID', id: 'miaoda-user-1' },
+        identityProvenance: 'MIAODA_GATEWAY_USER_CONTEXT',
+        platformRoles: ['authenticated', 'wiselink_development'],
+        env: 'runtime',
+      }),
     );
-    await controller.create(
-      {
-        selection: {
-          bucketId: 'bucket-default',
-          filePath:
-            'wiselink/dev-intake/0f8fad5b-d9cb-469f-a165-70867728950e/source.pdf',
+    process.env.SANDBOX_ID = 'unit-hosted-sandbox';
+    try {
+      await controller.create(
+        {
+          selection: {
+            bucketId: 'bucket-default',
+            filePath:
+              'wiselink/dev-intake/0f8fad5b-d9cb-469f-a165-70867728950e/source.pdf',
+          },
+          developmentRunToken: '22222222-2222-4222-8222-222222222222',
         },
-        developmentRunToken: '22222222-2222-4222-8222-222222222222',
-      },
-      { headers: { cookie: 'wl_session=opaque' } } as never,
-    );
+        request as never,
+      );
+    } finally {
+      if (previousSandbox === undefined) delete process.env.SANDBOX_ID;
+      else process.env.SANDBOX_ID = previousSandbox;
+    }
     expect(workItems.createOauthSessionDevelopmentRun).toHaveBeenLastCalledWith(
       expect.objectContaining({
         selection: {
@@ -275,6 +304,10 @@ describe('official OAuth -> persistent session G0', () => {
         },
       }),
       actor,
+      expect.objectContaining({
+        canonicalSubject: { namespace: 'MIAODA_USER_ID', id: 'miaoda-user-1' },
+        identityProvenance: 'MIAODA_GATEWAY_USER_CONTEXT',
+      }),
     );
     await expect(
       controller.create(

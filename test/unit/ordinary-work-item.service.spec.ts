@@ -40,6 +40,52 @@ const DEVELOPMENT_SCOPE = {
   developmentRunToken: '0f8fad5b-d9cb-469f-a165-70867728950e',
   authorizationFingerprint: `sha256:${'e'.repeat(64)}`,
 };
+const OAUTH_SESSION_ACTOR = {
+  principalKind: 'FINAL_USER',
+  transport: 'MIAODA_AUTHENTICATED_HTTP',
+  canonicalSubject: {
+    namespace: 'MIAODA_USER_ID',
+    id: ACTOR.userId,
+  },
+  subjectDecision: {
+    source: 'FEISHU_OAUTH_USER_ACCESS_TOKEN',
+    applicationScopeId: ACTOR.appId,
+    tenantId: ACTOR.tenantId,
+    version: 'feishu-oauth-verified.v1',
+    decidedAt: '2026-08-26T00:00:00.000Z',
+  },
+  tenantId: ACTOR.tenantId,
+  applicationScopeId: ACTOR.appId,
+  applicationScopeProvenance: 'HOST_CONFIGURED_MIAODA_APP_ID',
+  workspaceId: null,
+  workspaceProvenance: 'UNAVAILABLE',
+  env: 'preview',
+  platformRoles: [],
+  identityProvenance: 'FEISHU_OAUTH_USER_ACCESS_TOKEN',
+  feishuUserId: null,
+  feishuOpenId: 'official-open-id',
+  feishuIdentityProvenance: 'FEISHU_OAUTH_USER_ACCESS_TOKEN',
+  sessionId: 'session-id',
+  sessionRevision: 1,
+  sessionProvenance: 'SERVER_OPAQUE_SESSION',
+} as const;
+const GATEWAY_ACTOR = {
+  ...OAUTH_SESSION_ACTOR,
+  subjectDecision: {
+    ...OAUTH_SESSION_ACTOR.subjectDecision,
+    source: 'MIAODA_GATEWAY_USER_CONTEXT',
+    version: 'miaoda-hosted-native-sso.v1',
+  },
+  applicationScopeProvenance: 'MIAODA_GATEWAY_APP_CONTEXT',
+  env: 'runtime',
+  platformRoles: ['authenticated', 'wiselink_development'],
+  identityProvenance: 'MIAODA_GATEWAY_USER_CONTEXT',
+  feishuOpenId: null,
+  feishuIdentityProvenance: 'UNAVAILABLE',
+  sessionId: null,
+  sessionRevision: null,
+  sessionProvenance: 'UNAVAILABLE',
+} as const;
 
 function target() {
   const fileService = { from: jest.fn() };
@@ -115,8 +161,7 @@ function target() {
 
 function verticalResult() {
   return {
-    schemaVersion:
-      'wiselink.3_1.canonical_pdf_vertical_response.v0.candidate',
+    schemaVersion: 'wiselink.3_1.canonical_pdf_vertical_response.v0.candidate',
     status: 'CANDIDATE_VERTICAL_VERIFIED',
     workItem: { workItemId: 'WI-NEW-SB' },
     readback: null,
@@ -366,35 +411,8 @@ describe('OrdinaryWorkItemService run identity', () => {
             developmentRunToken: '22222222-2222-4222-8222-222222222222',
             query: 'applicability',
           },
-          {
-            principalKind: 'FINAL_USER',
-            transport: 'MIAODA_AUTHENTICATED_HTTP',
-            canonicalSubject: {
-              namespace: 'MIAODA_USER_ID',
-              id: ACTOR.userId,
-            },
-            subjectDecision: {
-              source: 'FEISHU_OAUTH_USER_ACCESS_TOKEN',
-              applicationScopeId: ACTOR.appId,
-              tenantId: ACTOR.tenantId,
-              version: 'feishu-oauth-verified.v1',
-              decidedAt: '2026-08-26T00:00:00.000Z',
-            },
-            tenantId: ACTOR.tenantId,
-            applicationScopeId: ACTOR.appId,
-            applicationScopeProvenance: 'HOST_CONFIGURED_MIAODA_APP_ID',
-            workspaceId: null,
-            workspaceProvenance: 'UNAVAILABLE',
-            env: 'preview',
-            platformRoles: [],
-            identityProvenance: 'FEISHU_OAUTH_USER_ACCESS_TOKEN',
-            feishuUserId: null,
-            feishuOpenId: 'official-open-id',
-            feishuIdentityProvenance: 'FEISHU_OAUTH_USER_ACCESS_TOKEN',
-            sessionId: 'session-id',
-            sessionRevision: 1,
-            sessionProvenance: 'SERVER_OPAQUE_SESSION',
-          },
+          OAUTH_SESSION_ACTOR,
+          GATEWAY_ACTOR,
         ),
       ).resolves.toMatchObject({
         workItemCreated: true,
@@ -407,9 +425,9 @@ describe('OrdinaryWorkItemService run identity', () => {
         {
           actorUserId: ACTOR.userId,
           tenantId: ACTOR.tenantId,
-          roles: ['wiselink_development'],
+          roles: ['authenticated', 'wiselink_development'],
           appId: ACTOR.appId,
-          env: 'preview',
+          env: 'runtime',
         },
         {
           bucketId: 'bucket-default',
@@ -436,6 +454,48 @@ describe('OrdinaryWorkItemService run identity', () => {
       restoreProcessEnv('SANDBOX_ID', previousSandbox);
       restoreProcessEnv('MIAODA_LOCAL_DEV', previousLocal);
     }
+  });
+
+  it('rejects OAuth development create without the native development role', async () => {
+    const targetValue = target();
+    await expect(
+      targetValue.service.createOauthSessionDevelopmentRun(
+        {
+          documentVersionId: 'document-version-sb',
+          developmentRunToken: '22222222-2222-4222-8222-222222222222',
+        },
+        OAUTH_SESSION_ACTOR,
+        { ...GATEWAY_ACTOR, platformRoles: ['authenticated'] },
+      ),
+    ).rejects.toMatchObject({
+      code: 'DEVELOPMENT_WORK_ITEM_ROLE_REQUIRED',
+      statusCode: 403,
+    });
+    expectNoOrdinaryRunIo(targetValue);
+  });
+
+  it('rejects a gateway user that does not match the OAuth session mapping', async () => {
+    const targetValue = target();
+    await expect(
+      targetValue.service.createOauthSessionDevelopmentRun(
+        {
+          documentVersionId: 'document-version-sb',
+          developmentRunToken: '22222222-2222-4222-8222-222222222222',
+        },
+        OAUTH_SESSION_ACTOR,
+        {
+          ...GATEWAY_ACTOR,
+          canonicalSubject: {
+            ...GATEWAY_ACTOR.canonicalSubject,
+            id: 'different-miaoda-user',
+          },
+        },
+      ),
+    ).rejects.toMatchObject({
+      code: 'CANONICAL_IDENTITY_HANDOFF_UNAVAILABLE',
+      statusCode: 503,
+    });
+    expectNoOrdinaryRunIo(targetValue);
   });
 
   it('rejects a runtime development create before every downstream I/O', async () => {
