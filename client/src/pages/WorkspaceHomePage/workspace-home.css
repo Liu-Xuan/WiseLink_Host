@@ -804,6 +804,11 @@
 .library-preview-title button {
   flex: 0 0 auto;
 }
+.library-preview-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+}
 
 .library-facts {
   display: grid;
@@ -1147,6 +1152,10 @@
   .library-preview-title button {
     width: 100%;
     justify-content: center;
+  }
+  .library-preview-actions {
+    width: 100%;
+    flex-direction: column;
   }
   .library-home-footer {
     flex-direction: column;

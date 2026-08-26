@@ -88,6 +88,28 @@ export async function createDevelopmentWorkItem(
   }
 }
 
+export async function retryDevelopmentWorkItem(
+  workItemId: string,
+): Promise<CanonicalOrdinaryWorkItemRunResponse> {
+  try {
+    const response =
+      await axiosForBackend<CanonicalOrdinaryWorkItemRunResponse>({
+        url: `/api/canonical-host/work-items/${encodeURIComponent(workItemId)}/retry-development-run`,
+        method: 'POST',
+      });
+    if (response.status < 200 || response.status >= 300) {
+      throw backendResponseError(
+        response.data,
+        'CANONICAL_DEVELOPMENT_WORK_ITEM_RETRY_FAILED',
+      );
+    }
+    return response.data;
+  } catch (error) {
+    logger.error('重新解析既有 DEV WorkItem 失败', error);
+    throw error;
+  }
+}
+
 export async function getLibraryIndex(
   workItemId: string,
 ): Promise<CanonicalLibraryIndexReadResponse> {

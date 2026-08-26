@@ -34,6 +34,8 @@ import {
   getCanonicalHostIdentityContext,
   getDocumentParsingPage,
   isCanonicalObjectNotFound,
+  requireOfficialOauthSession,
+  retryDevelopmentWorkItem,
 } from '@client/src/api/canonical-host';
 import NavigatorTree from '@client/src/features/navigation/NavigatorTree';
 import type {
@@ -167,6 +169,8 @@ export default function WorkspaceHomePage() {
   const [developmentIntakeAvailable, setDevelopmentIntakeAvailable] =
     useState(false);
   const [refreshRevision, setRefreshRevision] = useState(0);
+  const [retrying, setRetrying] = useState(false);
+  const [retryError, setRetryError] = useState<string | null>(null);
 
   useEffect(() => {
     const deepLinkedWorkItemId = searchParams.get('workItemId')?.trim() ?? '';
@@ -234,6 +238,10 @@ export default function WorkspaceHomePage() {
     ? PHASE_LABELS[projection.phase]
     : '尚未选择工程事项';
   const tone = projection ? phaseTone(projection.phase) : 'muted';
+  const retryableSourceBindingFailure =
+    developmentIntakeAvailable &&
+    projection?.phase === 'FAILED' &&
+    projection.failure?.failureCode === 'SOURCE_BINDING_FAILED';
   const nodes = useMemo(() => {
     if (!data) return [];
     return data.libraryIndex.nodes;
@@ -377,6 +385,47 @@ export default function WorkspaceHomePage() {
   function refresh(): void {
     if (!workItemId.trim()) return;
     setRefreshRevision((current) => current + 1);
+  }
+
+  async function retryExistingWorkItem(): Promise<void> {
+    if (!projection || !retryableSourceBindingFailure || retrying) return;
+    const expectedWorkItemId = projection.workItemId;
+    const expectedDocumentVersionId = projection.source.documentVersionId;
+    setRetryError(null);
+    setRetrying(true);
+    try {
+      await requireOfficialOauthSession();
+      const retried = await retryDevelopmentWorkItem(expectedWorkItemId);
+      if (
+        retried.workItemCreated ||
+        !retried.workItemReused ||
+        retried.result.status !== 'CANDIDATE_VERTICAL_VERIFIED' ||
+        retried.result.workItem.workItemId !== expectedWorkItemId ||
+        retried.result.workItem.source.documentVersionId !==
+          expectedDocumentVersionId
+      ) {
+        throw new Error('CANONICAL_SAME_WORK_ITEM_RETRY_MISMATCH');
+      }
+      const readback = await getDocumentParsingPage(
+        expectedWorkItemId,
+        'applicability',
+      );
+      if (
+        readback.workItem.phase !== 'CANDIDATE_READBACK_VERIFIED' ||
+        readback.workItem.workItemId !== expectedWorkItemId ||
+        readback.workItem.source.documentVersionId !== expectedDocumentVersionId
+      ) {
+        throw new Error('CANONICAL_SAME_WORK_ITEM_READBACK_MISMATCH');
+      }
+      setData(readback);
+      navigate(
+        `/work-items/${encodeURIComponent(expectedWorkItemId)}/documents?node=document&tab=source`,
+      );
+    } catch {
+      setRetryError('重新解析未完成；原文件与事项已保留，请稍后再试。');
+    } finally {
+      setRetrying(false);
+    }
   }
 
   return (
@@ -618,11 +667,37 @@ export default function WorkspaceHomePage() {
                     {projection.source.documentVersionId}
                   </p>
                 </div>
-                <Button type="button" size="sm" onClick={() => openWorkbench()}>
-                  <Workflow aria-hidden="true" />
-                  进入工作台
-                </Button>
+                <div className="library-preview-actions">
+                  {retryableSourceBindingFailure ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={retrying}
+                      onClick={() => void retryExistingWorkItem()}
+                    >
+                      <RefreshCw
+                        className={retrying ? 'library-spin' : undefined}
+                        aria-hidden="true"
+                      />
+                      {retrying ? '重新解析中…' : '重新解析'}
+                    </Button>
+                  ) : null}
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => openWorkbench()}
+                  >
+                    <Workflow aria-hidden="true" />
+                    进入工作台
+                  </Button>
+                </div>
               </div>
+              {retryError ? (
+                <p className="library-inline-empty" role="alert">
+                  {retryError}
+                </p>
+              ) : null}
               <dl className="library-facts">
                 <div>
                   <dt>

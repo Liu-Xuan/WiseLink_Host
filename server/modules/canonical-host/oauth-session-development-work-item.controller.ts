@@ -3,6 +3,7 @@ import {
   Controller,
   HttpException,
   HttpStatus,
+  Param,
   Post,
   Req,
 } from '@nestjs/common';
@@ -32,6 +33,25 @@ export class OauthSessionDevelopmentWorkItemController {
     const input = developmentRunBody(body);
     return this.workItems.createOauthSessionDevelopmentRun(
       input,
+      session.actor,
+      miaodaHostedFinalUserActor(request.userContext),
+    );
+  }
+
+  @Post('work-items/:workItemId/retry-development-run')
+  async retry(
+    @Param('workItemId') workItemId: string,
+    @Req() request: Request,
+  ) {
+    const session = await this.sessions.resolve(request);
+    if (!session) {
+      throw new HttpException(
+        { code: 'SESSION_REQUIRED', statusCode: 401 },
+        HttpStatus.UNAUTHORIZED,
+      );
+    }
+    return this.workItems.retryOauthSessionDevelopmentRun(
+      workItemId,
       session.actor,
       miaodaHostedFinalUserActor(request.userContext),
     );

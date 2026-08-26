@@ -110,6 +110,8 @@ function target() {
     }),
   };
   const repository = {
+    loadAuthorizationBinding: jest.fn(),
+    loadTenantScopedProjection: jest.fn(),
     loadTenantRunAuthorizationBinding: jest.fn().mockResolvedValue({
       workItemId: 'WI-OWNED-SB',
       tenantId: 'tenant-2001',
@@ -514,6 +516,171 @@ describe('OrdinaryWorkItemService run identity', () => {
     expect(targetValue.vertical.runPdf).toHaveBeenCalledTimes(1);
   });
 
+  it('retries the exact failed WorkItem from server-owned binding without a new upload token', async () => {
+    const targetValue = target();
+    targetValue.repository.loadAuthorizationBinding.mockResolvedValue({
+      workItemId: 'WI-NEW-SB',
+      requestId: 'REQ-NEW-SB',
+      documentVersionId: 'document-version-sb',
+      runKey: 'dev:22222222-2222-4222-8222-222222222222',
+    });
+    targetValue.repository.loadTenantScopedProjection.mockResolvedValue({
+      row: { workItemId: 'WI-NEW-SB' },
+      projection: {
+        phase: 'FAILED',
+        failure: { failureCode: 'SOURCE_BINDING_FAILED' },
+      },
+    });
+    targetValue.repository.reserve.mockResolvedValue({
+      workItemId: 'WI-NEW-SB',
+      requestId: 'REQ-NEW-SB',
+      attemptId: 'ATT-FIRST-FAILED',
+      created: false,
+    });
+    targetValue.repository.reopenRetryableParseFailure.mockResolvedValue({
+      attemptId: 'ATT-RETRY-2',
+      attemptNo: 2,
+    });
+
+    await expect(
+      targetValue.service.retryOauthSessionDevelopmentRun(
+        'WI-NEW-SB',
+        OAUTH_SESSION_ACTOR,
+        GATEWAY_ACTOR,
+      ),
+    ).resolves.toMatchObject({
+      workItemCreated: false,
+      workItemReused: true,
+      actionAttemptId: 'ATT-RETRY-2',
+    });
+
+    expect(
+      targetValue.repository.loadAuthorizationBinding,
+    ).toHaveBeenCalledWith({
+      workItemId: 'WI-NEW-SB',
+      tenantId: ACTOR.tenantId,
+      actorUserId: ACTOR.userId,
+    });
+    expect(targetValue.vertical.authorizeExistingWorkItem).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workItemId: 'WI-NEW-SB',
+        requestId: 'REQ-NEW-SB',
+        documentVersionId: 'document-version-sb',
+      }),
+    );
+    expect(
+      targetValue.documentManagement.assertCanIngest,
+    ).not.toHaveBeenCalled();
+    expect(
+      targetValue.documentManagement.ingestFileServiceSelection,
+    ).not.toHaveBeenCalled();
+    expect(targetValue.repository.reserve).toHaveBeenCalledWith(
+      expect.objectContaining({
+        documentVersionId: 'document-version-sb',
+        runKey: 'dev:22222222-2222-4222-8222-222222222222',
+      }),
+    );
+    expect(targetValue.vertical.runPdf).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides a retry target that is not owned by the current session actor', async () => {
+    const targetValue = target();
+    targetValue.repository.loadAuthorizationBinding.mockResolvedValue(null);
+
+    await expect(
+      targetValue.service.retryOauthSessionDevelopmentRun(
+        'WI-OTHER',
+        OAUTH_SESSION_ACTOR,
+        GATEWAY_ACTOR,
+      ),
+    ).rejects.toMatchObject({
+      code: 'CANONICAL_WORK_ITEM_NOT_FOUND',
+      statusCode: 404,
+    });
+
+    expect(
+      targetValue.vertical.authorizeExistingWorkItem,
+    ).not.toHaveBeenCalled();
+    expect(
+      targetValue.repository.loadTenantScopedProjection,
+    ).not.toHaveBeenCalled();
+    expect(targetValue.resolver.resolve).not.toHaveBeenCalled();
+    expect(targetValue.repository.reserve).not.toHaveBeenCalled();
+    expect(targetValue.vertical.runPdf).not.toHaveBeenCalled();
+  });
+
+  it('rejects a non-retryable projection before resolver, reserve, or parse I/O', async () => {
+    const targetValue = target();
+    targetValue.repository.loadAuthorizationBinding.mockResolvedValue({
+      workItemId: 'WI-NEW-SB',
+      requestId: 'REQ-NEW-SB',
+      documentVersionId: 'document-version-sb',
+      runKey: 'dev:22222222-2222-4222-8222-222222222222',
+    });
+    targetValue.repository.loadTenantScopedProjection.mockResolvedValue({
+      row: { workItemId: 'WI-NEW-SB' },
+      projection: {
+        phase: 'FAILED',
+        failure: { failureCode: 'PRODUCER_EXECUTION_FAILED' },
+      },
+    });
+
+    await expect(
+      targetValue.service.retryOauthSessionDevelopmentRun(
+        'WI-NEW-SB',
+        OAUTH_SESSION_ACTOR,
+        GATEWAY_ACTOR,
+      ),
+    ).rejects.toMatchObject({
+      code: 'WORK_ITEM_RETRY_NOT_AVAILABLE',
+      statusCode: 409,
+    });
+
+    expect(targetValue.resolver.resolve).not.toHaveBeenCalled();
+    expect(targetValue.repository.reserve).not.toHaveBeenCalled();
+    expect(
+      targetValue.repository.reopenRetryableParseFailure,
+    ).not.toHaveBeenCalled();
+    expect(targetValue.vertical.runPdf).not.toHaveBeenCalled();
+  });
+
+  it('does not parse when the retry CAS is no longer available', async () => {
+    const targetValue = target();
+    targetValue.repository.loadAuthorizationBinding.mockResolvedValue({
+      workItemId: 'WI-NEW-SB',
+      requestId: 'REQ-NEW-SB',
+      documentVersionId: 'document-version-sb',
+      runKey: 'dev:22222222-2222-4222-8222-222222222222',
+    });
+    targetValue.repository.loadTenantScopedProjection.mockResolvedValue({
+      row: { workItemId: 'WI-NEW-SB' },
+      projection: {
+        phase: 'FAILED',
+        failure: { failureCode: 'SOURCE_BINDING_FAILED' },
+      },
+    });
+    targetValue.repository.reserve.mockResolvedValue({
+      workItemId: 'WI-NEW-SB',
+      requestId: 'REQ-NEW-SB',
+      attemptId: 'ATT-FIRST-FAILED',
+      created: false,
+    });
+    targetValue.repository.reopenRetryableParseFailure.mockResolvedValue(null);
+
+    await expect(
+      targetValue.service.retryOauthSessionDevelopmentRun(
+        'WI-NEW-SB',
+        OAUTH_SESSION_ACTOR,
+        GATEWAY_ACTOR,
+      ),
+    ).rejects.toMatchObject({
+      code: 'WORK_ITEM_RETRY_NOT_AVAILABLE',
+      statusCode: 409,
+    });
+
+    expect(targetValue.vertical.runPdf).not.toHaveBeenCalled();
+  });
+
   it('rejects OAuth development create without the native development role', async () => {
     const targetValue = target();
     await expect(
@@ -614,6 +781,12 @@ function expectNoOrdinaryRunIo(targetValue: ReturnType<typeof target>): void {
   ).not.toHaveBeenCalled();
   expect(targetValue.fileService.from).not.toHaveBeenCalled();
   expect(targetValue.resolver.resolve).not.toHaveBeenCalled();
+  expect(
+    targetValue.repository.loadAuthorizationBinding,
+  ).not.toHaveBeenCalled();
+  expect(
+    targetValue.repository.loadTenantScopedProjection,
+  ).not.toHaveBeenCalled();
   expect(
     targetValue.repository.loadTenantRunAuthorizationBinding,
   ).not.toHaveBeenCalled();

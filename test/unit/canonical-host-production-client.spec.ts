@@ -24,9 +24,8 @@ describe('canonical Host production client boundary', () => {
     ]);
 
     expect(api).toContain('/api/canonical-host/work-items/development-runs');
-    expect(api).toContain(
-      'CANONICAL_DEVELOPMENT_WORK_ITEM_CREATE_FAILED',
-    );
+    expect(api).toContain('retry-development-run');
+    expect(api).toContain('CANONICAL_DEVELOPMENT_WORK_ITEM_CREATE_FAILED');
     expect(intake).toContain('wiselink/dev-intake/');
     expect(intake).toContain('uploadFile');
     expect(intake).toContain('upsert: false');
@@ -39,6 +38,10 @@ describe('canonical Host production client boundary', () => {
     expect(intake).toContain('sourceFileSha256');
     expect(intake).toContain('sourceByteLength');
     expect(home).toContain('HostedDevelopmentIntake');
+    expect(home).toContain('retryDevelopmentWorkItem');
+    expect(home).toContain("failureCode === 'SOURCE_BINDING_FAILED'");
+    expect(home).toContain('重新解析');
+    expect(home).not.toContain('localStorage');
     expect(home).toContain('identity.developmentIntakeAvailable === true');
   });
 
