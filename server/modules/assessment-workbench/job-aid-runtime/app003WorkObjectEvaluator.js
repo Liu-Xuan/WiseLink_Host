@@ -137,7 +137,7 @@ export function executeApp003Evaluation({
       sourceFacts,
     },
     rationale:
-      '737-34-3830 的 frozen.2 来源同时显示飞机 Effectivity 与 FMC 拆换工作；已确定必须进入既有部件适用性 owner，owner 结果未绑定前不输出适用/不适用结论。',
+      '当前 frozen.2 来源同时显示飞机 Effectivity 与部件拆换工作；已确定必须进入既有部件适用性 owner，owner 结果未绑定前不输出适用/不适用结论。',
     confidence: null,
     blocking_condition_met: true,
     missing_inputs: missingInputs,
