@@ -232,6 +232,131 @@ export const workItem = pgTable("work_item", {
   index("idx_work_item_document").on(table.documentId, table.documentVersionId),
 ]);
 
+export const reviewConversation = pgTable("review_conversation", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  reviewConversationId: varchar("review_conversation_id", { length: 96 }).notNull().unique(),
+  tenantId: varchar("tenant_id", { length: 128 }).notNull(),
+  actorId: varchar("actor_id", { length: 255 }).notNull(),
+  workItemId: varchar("work_item_id", { length: 96 }).notNull(),
+  openClawAgentId: varchar("openclaw_agent_id", { length: 96 }).notNull(),
+  openClawSessionKey: varchar("openclaw_session_key", { length: 1024 }).notNull().unique(),
+  startedAtRevision: integer("started_at_revision").notNull(),
+  lastSyncedRevision: integer("last_synced_revision").notNull(),
+  lastTurnNo: integer("last_turn_no").notNull().default(0),
+  status: varchar("status", { length: 32 }).notNull().default('ACTIVE'),
+  createdAt: customTimestamptz("created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  lastActiveAt: customTimestamptz("last_active_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  closedAt: customTimestamptz("closed_at", { precision: 3 }),
+}, (table) => [
+  uniqueIndex("uk_review_conversation_business_id").on(table.reviewConversationId),
+  uniqueIndex("uk_review_conversation_openclaw_session").on(table.openClawSessionKey),
+  uniqueIndex("uk_review_conversation_live")
+    .on(table.tenantId, table.actorId, table.workItemId)
+    .where(sql`${table.status} = 'ACTIVE'`),
+  index("idx_review_conversation_work_item").on(table.workItemId, table.status, table.lastActiveAt),
+  index("idx_review_conversation_actor").on(table.tenantId, table.actorId, table.status, table.lastActiveAt),
+  foreignKey({
+    columns: [table.workItemId],
+    foreignColumns: [workItem.workItemId],
+    name: "fk_review_conversation_work_item",
+  }),
+  check("ck_review_conversation_agent", sql`${table.openClawAgentId} = 'wiselink-engineering'`),
+  check("ck_review_conversation_revisions", sql`${table.startedAtRevision} >= 0 AND ${table.lastSyncedRevision} >= ${table.startedAtRevision}`),
+  check("ck_review_conversation_last_turn", sql`${table.lastTurnNo} >= 0`),
+  check("ck_review_conversation_status", sql`${table.status} IN ('ACTIVE', 'CLOSED')`),
+  check("ck_review_conversation_closed_state", sql`(
+    (${table.status} = 'ACTIVE' AND ${table.closedAt} IS NULL)
+    OR
+    (${table.status} = 'CLOSED' AND ${table.closedAt} IS NOT NULL)
+  )`),
+]);
+
+export const reviewTurn = pgTable("review_turn", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  reviewTurnId: varchar("review_turn_id", { length: 96 }).notNull().unique(),
+  reviewConversationId: varchar("review_conversation_id", { length: 96 }).notNull(),
+  engineerSuppliedInputId: varchar("engineer_supplied_input_id", { length: 96 }).notNull().unique(),
+  tenantId: varchar("tenant_id", { length: 128 }).notNull(),
+  actorId: varchar("actor_id", { length: 255 }).notNull(),
+  workItemId: varchar("work_item_id", { length: 96 }).notNull(),
+  turnNo: integer("turn_no").notNull(),
+  requestId: varchar("request_id", { length: 96 }).notNull(),
+  inputRevision: integer("input_revision").notNull(),
+  userMessage: text("user_message").notNull(),
+  inputType: varchar("input_type", { length: 32 }).notNull(),
+  adoptionStatus: varchar("adoption_status", { length: 32 }).notNull(),
+  createdAt: customTimestamptz("created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("uk_review_turn_business_id").on(table.reviewTurnId),
+  uniqueIndex("uk_review_turn_engineer_input").on(table.engineerSuppliedInputId),
+  uniqueIndex("uk_review_turn_request").on(table.reviewConversationId, table.requestId),
+  uniqueIndex("uk_review_turn_number").on(table.reviewConversationId, table.turnNo),
+  index("idx_review_turn_conversation").on(table.reviewConversationId, table.turnNo),
+  index("idx_review_turn_work_item").on(table.workItemId, table.createdAt),
+  foreignKey({
+    columns: [table.reviewConversationId],
+    foreignColumns: [reviewConversation.reviewConversationId],
+    name: "fk_review_turn_conversation",
+  }),
+  foreignKey({
+    columns: [table.engineerSuppliedInputId],
+    foreignColumns: [engineerSuppliedInput.engineerSuppliedInputId],
+    name: "fk_review_turn_engineer_input",
+  }),
+  foreignKey({
+    columns: [table.workItemId],
+    foreignColumns: [workItem.workItemId],
+    name: "fk_review_turn_work_item",
+  }),
+  check("ck_review_turn_number", sql`${table.turnNo} > 0`),
+  check("ck_review_turn_revision", sql`${table.inputRevision} >= 0`),
+  check("ck_review_turn_request", sql`length(btrim(${table.requestId})) > 0`),
+  check("ck_review_turn_message", sql`length(btrim(${table.userMessage})) > 0`),
+  check("ck_review_turn_input_type", sql`${table.inputType} = 'ENGINEER_TEXT'`),
+  check("ck_review_turn_adoption_status", sql`${table.adoptionStatus} = 'CANDIDATE_UNADOPTED'`),
+]);
+
+export const engineerSuppliedInput = pgTable("engineer_supplied_input", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  engineerSuppliedInputId: varchar("engineer_supplied_input_id", { length: 96 }).notNull().unique(),
+  reviewConversationId: varchar("review_conversation_id", { length: 96 }).notNull(),
+  reviewTurnId: varchar("review_turn_id", { length: 96 }).notNull().unique(),
+  tenantId: varchar("tenant_id", { length: 128 }).notNull(),
+  actorId: varchar("actor_id", { length: 255 }).notNull(),
+  workItemId: varchar("work_item_id", { length: 96 }).notNull(),
+  requestId: varchar("request_id", { length: 96 }).notNull(),
+  inputRevision: integer("input_revision").notNull(),
+  inputType: varchar("input_type", { length: 32 }).notNull(),
+  adoptionStatus: varchar("adoption_status", { length: 32 }).notNull(),
+  candidateText: text("candidate_text").notNull(),
+  createdAt: customTimestamptz("created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("uk_engineer_supplied_input_business_id").on(table.engineerSuppliedInputId),
+  uniqueIndex("uk_engineer_supplied_input_turn").on(table.reviewTurnId),
+  uniqueIndex("uk_engineer_supplied_input_request").on(table.reviewConversationId, table.requestId),
+  index("idx_engineer_supplied_input_conversation").on(table.reviewConversationId, table.createdAt),
+  index("idx_engineer_supplied_input_work_item").on(table.workItemId, table.createdAt),
+  foreignKey({
+    columns: [table.reviewConversationId],
+    foreignColumns: [reviewConversation.reviewConversationId],
+    name: "fk_engineer_supplied_input_conversation",
+  }),
+  foreignKey({
+    columns: [table.reviewTurnId],
+    foreignColumns: [reviewTurn.reviewTurnId],
+    name: "fk_engineer_supplied_input_turn",
+  }),
+  foreignKey({
+    columns: [table.workItemId],
+    foreignColumns: [workItem.workItemId],
+    name: "fk_engineer_supplied_input_work_item",
+  }),
+  check("ck_engineer_supplied_input_revision", sql`${table.inputRevision} >= 0`),
+  check("ck_engineer_supplied_input_type", sql`${table.inputType} = 'ENGINEER_TEXT'`),
+  check("ck_engineer_supplied_input_adoption_status", sql`${table.adoptionStatus} = 'CANDIDATE_UNADOPTED'`),
+  check("ck_engineer_supplied_input_text", sql`length(btrim(${table.candidateText})) > 0`),
+]);
+
 export const dmCurrentnessDecision = pgTable("dm_currentness_decision", {
   id: uuid("id").primaryKey().defaultRandom(),
   currentnessDecisionId: varchar("currentness_decision_id", { length: 96 }).notNull().unique(),
@@ -581,4 +706,7 @@ export const externalSearchRunTable = externalSearchRun;
 export const identityOauthStateTable = identityOauthState;
 export const identitySessionTable = identitySession;
 export const identitySubjectMappingTable = identitySubjectMapping;
+export const engineerSuppliedInputTable = engineerSuppliedInput;
+export const reviewConversationTable = reviewConversation;
+export const reviewTurnTable = reviewTurn;
 export const workItemTable = workItem;

@@ -9,6 +9,72 @@ export interface OfficialOauthCallbackRequest {
   state: string;
 }
 
+export type ReviewConversationStatus = 'ACTIVE' | 'CLOSED';
+
+export type EngineerSuppliedInputType = 'ENGINEER_TEXT';
+
+export type EngineerSuppliedInputAdoptionStatus = 'CANDIDATE_UNADOPTED';
+
+export interface ReviewTurnReadModel {
+  reviewTurnId: string;
+  turnNo: number;
+  requestId: string;
+  inputRevision: number;
+  userMessage: string;
+  engineerSuppliedInput: {
+    engineerSuppliedInputId: string;
+    inputType: EngineerSuppliedInputType;
+    adoptionStatus: EngineerSuppliedInputAdoptionStatus;
+    text: string;
+  };
+  createdAt: string;
+}
+
+/**
+ * Browser-safe ReviewConversation projection. Host actor and OpenClaw
+ * session identifiers are deliberately absent from this contract.
+ */
+export interface ReviewConversationReadModel {
+  schemaVersion: 'wiselink.3_1.review_conversation.v1.c1';
+  reviewConversationId: string;
+  workItemId: string;
+  startedAtRevision: number;
+  lastSyncedRevision: number;
+  currentWorkItemRevision: number;
+  currentRevisionSynced: boolean;
+  status: ReviewConversationStatus;
+  createdAt: string;
+  lastActiveAt: string;
+  closedAt: string | null;
+  turns: ReviewTurnReadModel[];
+}
+
+export interface CreateOrResumeReviewConversationResponse {
+  conversation: ReviewConversationReadModel;
+  resumed: boolean;
+}
+
+export interface CurrentReviewConversationResponse {
+  conversation: ReviewConversationReadModel | null;
+  currentWorkItemRevision: number;
+}
+
+export interface AppendReviewTextTurnRequest {
+  requestId: string;
+  userMessage: string;
+}
+
+export interface AppendReviewTextTurnResponse {
+  conversation: ReviewConversationReadModel;
+  turn: ReviewTurnReadModel;
+  replayed: boolean;
+}
+
+export interface CloseReviewConversationResponse {
+  conversation: ReviewConversationReadModel;
+  alreadyClosed: boolean;
+}
+
 export interface UnifiedPackageArtifactDescriptor {
   storeRole: 'UnifiedArtifactStoreCandidate';
   ref: string;
