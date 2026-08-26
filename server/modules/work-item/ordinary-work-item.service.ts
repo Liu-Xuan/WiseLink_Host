@@ -119,16 +119,7 @@ export class OrdinaryWorkItemService {
     const developmentRunToken = requiredDevelopmentRunToken(
       input.developmentRunToken,
     );
-    const actor: CanonicalHostActor = {
-      userId: gatewayActor.canonicalSubject.id,
-      tenantId: gatewayActor.tenantId,
-      appId: gatewayActor.applicationScopeId,
-      // DEV capability comes only from the native Miaoda gateway role. The
-      // opaque OAuth session independently proves the same mapped user.
-      roles: [...gatewayActor.platformRoles],
-      env: gatewayActor.env,
-      objectAccessActor: sessionActor,
-    };
+    const actor = oauthSessionDevelopmentActor(sessionActor, gatewayActor);
     return this.runPdf(
       input.documentVersionId
         ? { documentVersionId: input.documentVersionId, query: input.query }
@@ -139,6 +130,58 @@ export class OrdinaryWorkItemService {
       true,
       undefined,
       true,
+    );
+  }
+
+  async retryOauthSessionDevelopmentRun(
+    workItemIdValue: unknown,
+    sessionActor: CanonicalMiaodaFinalUserActorContext,
+    gatewayActor: CanonicalMiaodaFinalUserActorContext,
+  ): Promise<CanonicalOrdinaryWorkItemRunResponse> {
+    assertOauthSessionDevelopmentActors(sessionActor, gatewayActor);
+    const actor = oauthSessionDevelopmentActor(sessionActor, gatewayActor);
+    const workItemId = requiredText(workItemIdValue, 'workItemId', 96);
+    const binding = await this.repository.loadAuthorizationBinding({
+      workItemId,
+      tenantId: actor.tenantId,
+      actorUserId: actor.userId,
+    });
+    if (!binding || !binding.runKey.startsWith('dev:')) {
+      throw canonicalWorkItemNotFound();
+    }
+    await this.vertical.authorizeExistingWorkItem({
+      actor,
+      action: 'PARSE_PDF',
+      workItemId: binding.workItemId,
+      requestId: binding.requestId,
+      documentVersionId: binding.documentVersionId,
+    });
+    const fresh = await this.repository.loadTenantScopedProjection(
+      binding.workItemId,
+      actor.tenantId,
+    );
+    if (
+      !fresh ||
+      fresh.projection?.phase !== 'FAILED' ||
+      fresh.projection.failure?.failureCode !== 'SOURCE_BINDING_FAILED'
+    ) {
+      throw workItemRetryNotAvailable();
+    }
+    return this.runPdf(
+      {
+        documentVersionId: binding.documentVersionId,
+        query: 'applicability',
+      },
+      actor,
+      'MIAODA',
+      binding.runKey,
+      true,
+      undefined,
+      true,
+      {
+        workItemId: binding.workItemId,
+        requestId: binding.requestId,
+      },
     );
   }
 
@@ -170,6 +213,7 @@ export class OrdinaryWorkItemService {
     requireCurrentDocumentVersion = false,
     developmentScope?: CanonicalVerifiedDevelopmentCreateScope,
     oauthSessionCreate = false,
+    retryTarget?: { workItemId: string; requestId: string },
   ): Promise<CanonicalOrdinaryWorkItemRunResponse> {
     const context = hostedRequestContext(actor, oauthSessionCreate);
     const documentVersionId = input.documentVersionId
@@ -211,6 +255,14 @@ export class OrdinaryWorkItemService {
       runKey,
     };
     const reservation = await this.repository.reserve(reservationInput);
+    if (
+      retryTarget &&
+      (reservation.created ||
+        reservation.workItemId !== retryTarget.workItemId ||
+        reservation.requestId !== retryTarget.requestId)
+    ) {
+      throw workItemRetryNotAvailable();
+    }
     const retry = reservation.created
       ? null
       : await this.repository.reopenRetryableParseFailure({
@@ -218,6 +270,7 @@ export class OrdinaryWorkItemService {
           workItemId: reservation.workItemId,
           requestId: reservation.requestId,
         });
+    if (retryTarget && !retry) throw workItemRetryNotAvailable();
     const request: CanonicalPdfVerticalRunRequest = {
       schemaVersion: 'wiselink.3_1.canonical_pdf_vertical_request.v0.candidate',
       workItemId: reservation.workItemId,
@@ -450,6 +503,42 @@ function assertOauthSessionDevelopmentActors(
       statusCode: 403,
     });
   }
+}
+
+function oauthSessionDevelopmentActor(
+  sessionActor: CanonicalMiaodaFinalUserActorContext,
+  gatewayActor: CanonicalMiaodaFinalUserActorContext,
+): CanonicalHostActor {
+  return {
+    userId: gatewayActor.canonicalSubject.id,
+    tenantId: gatewayActor.tenantId,
+    appId: gatewayActor.applicationScopeId,
+    // DEV capability comes only from the native Miaoda gateway role. The
+    // opaque OAuth session independently proves the same mapped user.
+    roles: [...gatewayActor.platformRoles],
+    env: gatewayActor.env,
+    objectAccessActor: sessionActor,
+  };
+}
+
+function canonicalWorkItemNotFound(): Error & {
+  code: string;
+  statusCode: number;
+} {
+  return Object.assign(new Error('Canonical WorkItem not found.'), {
+    code: 'CANONICAL_WORK_ITEM_NOT_FOUND',
+    statusCode: 404,
+  });
+}
+
+function workItemRetryNotAvailable(): Error & {
+  code: string;
+  statusCode: number;
+} {
+  return Object.assign(new Error('WorkItem retry is not available.'), {
+    code: 'WORK_ITEM_RETRY_NOT_AVAILABLE',
+    statusCode: 409,
+  });
 }
 
 function developmentServiceActor(

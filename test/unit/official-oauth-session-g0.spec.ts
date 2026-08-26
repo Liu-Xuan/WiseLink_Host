@@ -239,6 +239,9 @@ describe('official OAuth -> persistent session G0', () => {
       createOauthSessionDevelopmentRun: jest
         .fn()
         .mockResolvedValue({ ok: true }),
+      retryOauthSessionDevelopmentRun: jest
+        .fn()
+        .mockResolvedValue({ ok: true }),
     };
     const controller = new OauthSessionDevelopmentWorkItemController(
       { resolve: jest.fn().mockResolvedValue({ actor }) } as never,
@@ -303,6 +306,21 @@ describe('official OAuth -> persistent session G0', () => {
             'wiselink/dev-intake/0f8fad5b-d9cb-469f-a165-70867728950e/source.pdf',
         },
       }),
+      actor,
+      expect.objectContaining({
+        canonicalSubject: { namespace: 'MIAODA_USER_ID', id: 'miaoda-user-1' },
+        identityProvenance: 'MIAODA_GATEWAY_USER_CONTEXT',
+      }),
+    );
+    process.env.SANDBOX_ID = 'unit-hosted-sandbox';
+    try {
+      await controller.retry('WI-1', request as never);
+    } finally {
+      if (previousSandbox === undefined) delete process.env.SANDBOX_ID;
+      else process.env.SANDBOX_ID = previousSandbox;
+    }
+    expect(workItems.retryOauthSessionDevelopmentRun).toHaveBeenCalledWith(
+      'WI-1',
       actor,
       expect.objectContaining({
         canonicalSubject: { namespace: 'MIAODA_USER_ID', id: 'miaoda-user-1' },
