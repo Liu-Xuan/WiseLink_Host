@@ -121,7 +121,7 @@ export function DocumentReaderWorkspace({
       <div
         className="parse-reader-modes"
         role="tablist"
-        aria-label="Reader 视图"
+        aria-label="原文视图"
       >
         {capabilities.map((capability: ReaderCapability) => {
           const Icon =

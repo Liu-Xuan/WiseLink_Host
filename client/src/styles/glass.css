@@ -1,7 +1,7 @@
 /* ============================================================
- * WiseLink 3.1 · Glass Material Layers (Spec R01 §5.1 / §9.4)
+ * WiseLink 3.1 · Glass Material Layers (R05.1)
  * G0 环境背景 → G4 实体内容面，五级材质体系。
- * 性能约束：同一视觉区域只允许 1–2 层 backdrop-filter。
+ * 性能约束：桌面同时可见 backdrop-filter ≤4，移动端 ≤2。
  * ============================================================ */
 
 /* ── §10.2 无障碍工具类：仅屏幕阅读器可见的播报文本 ── */
@@ -18,7 +18,7 @@
   border: 0;
 }
 
-/* ── G0 环境背景：低饱和渐变 + 呼吸光团（不承载文字） ── */
+/* ── G0 环境背景：单一采样层 + 三组定向光（不承载文字） ── */
 .wl-environment {
   position: relative;
   isolation: isolate;
@@ -26,90 +26,169 @@
   color: var(--wl-ink);
   background:
     radial-gradient(
-      circle at 12% 6%,
-      rgba(83, 148, 255, 0.18),
-      transparent 28%
+      ellipse at 14% 2%,
+      color-mix(in srgb, var(--wl-ambient-cold) 42%, transparent),
+      transparent 34%
     ),
     radial-gradient(
-      circle at 92% 15%,
-      rgba(144, 101, 255, 0.14),
-      transparent 28%
+      ellipse at 88% 4%,
+      color-mix(in srgb, var(--wl-ambient-warm) 38%, transparent),
+      transparent 31%
     ),
     radial-gradient(
-      circle at 55% 92%,
-      rgba(47, 214, 231, 0.12),
-      transparent 30%
+      ellipse at 64% 100%,
+      color-mix(in srgb, var(--wl-ambient-cyan) 46%, transparent),
+      transparent 38%
     ),
     linear-gradient(145deg, var(--wl-bg), var(--wl-bg-2));
-  background-attachment: fixed;
 }
 
-/* 环境呼吸光团：仅 transform/opacity，避免 layout/paint 抖动（§10.3） */
-.wl-environment::before,
-.wl-environment::after {
-  content: '';
+/* 独立节点避免伪元素负层级被根背景吞掉；不使用 filter 或 will-change。 */
+.wl-ambient-field {
   position: fixed;
+  inset: 0;
   z-index: 0;
-  width: 40vw;
-  height: 40vw;
-  border-radius: 50%;
-  filter: blur(80px);
-  opacity: 0.16;
+  contain: strict;
+  overflow: hidden;
   pointer-events: none;
-  animation: wl-ambient-breathe 9s ease-in-out infinite alternate;
 }
 
-.wl-environment > * {
-  position: relative;
-  z-index: 1;
+.wl-light {
+  position: absolute;
+  display: block;
+  pointer-events: none;
+  transform-origin: center;
 }
 
-.wl-environment::before {
-  left: -18vw;
-  top: 15vh;
-  background: #5d9cff;
+.wl-light--cold {
+  top: -26vh;
+  left: -19vw;
+  width: 78vw;
+  height: 82vh;
+  opacity: 0.82;
+  background: radial-gradient(
+    ellipse at center,
+    var(--wl-ambient-cold) 0%,
+    color-mix(in srgb, var(--wl-ambient-cold) 44%, transparent) 30%,
+    transparent 70%
+  );
+  animation: wl-drift-cold 9s cubic-bezier(0.2, 0.72, 0.2, 1) infinite alternate;
 }
 
-.wl-environment::after {
+.wl-light--warm {
+  top: -22vh;
+  right: -15vw;
+  width: 60vw;
+  height: 64vh;
+  opacity: 0.72;
+  background: radial-gradient(
+    ellipse at center,
+    var(--wl-ambient-warm) 0%,
+    color-mix(in srgb, var(--wl-ambient-warm) 42%, transparent) 32%,
+    transparent 72%
+  );
+  animation: wl-drift-warm 12s cubic-bezier(0.2, 0.7, 0.2, 1) infinite alternate;
+}
+
+.wl-light--reflect {
   right: -16vw;
-  top: 45vh;
-  background: #8f6bff;
-  animation-delay: -4s;
+  bottom: -34vh;
+  width: 76vw;
+  height: 76vh;
+  opacity: 0.66;
+  background:
+    radial-gradient(
+      ellipse at 58% 48%,
+      var(--wl-ambient-reflect) 0%,
+      color-mix(in srgb, var(--wl-ambient-reflect) 38%, transparent) 30%,
+      transparent 68%
+    ),
+    radial-gradient(
+      ellipse at 30% 52%,
+      var(--wl-ambient-cyan) 0%,
+      transparent 62%
+    );
+  animation: wl-drift-reflect 14s cubic-bezier(0.24, 0.68, 0.22, 1) infinite
+    alternate;
 }
 
-@keyframes wl-ambient-breathe {
-  from {
-    transform: scale(0.94) translate3d(0, 0, 0);
-    opacity: 0.12;
-  }
-  to {
-    transform: scale(1.08) translate3d(2vw, -1vh, 0);
-    opacity: 0.22;
-  }
-}
-
-/* ── G1 浮动导航玻璃：Dock、顶栏、模式切换（高模糊、高透明、细描边） ── */
+/* ── G1 功能玻璃：透明 tint + 定向镜面边缘 + 厚度线 ── */
 .wl-glass-nav {
-  background: var(--wl-glass-nav);
-  border: 1px solid var(--wl-border);
-  backdrop-filter: blur(var(--wl-blur-nav)) saturate(155%);
-  -webkit-backdrop-filter: blur(var(--wl-blur-nav)) saturate(155%);
+  position: relative;
+  isolation: isolate;
+  border: 1px solid transparent;
+  background:
+    linear-gradient(
+        145deg,
+        var(--wl-g1-tint-strong),
+        var(--wl-g1-tint) 58%,
+        color-mix(in srgb, var(--wl-g1-tint) 82%, transparent)
+      )
+      padding-box,
+    linear-gradient(
+        135deg,
+        var(--wl-g1-highlight) 0%,
+        color-mix(in srgb, var(--wl-g1-highlight) 18%, transparent) 24%,
+        color-mix(in srgb, var(--wl-g1-cold-rim) 35%, transparent) 56%,
+        color-mix(in srgb, var(--wl-g1-warm-rim) 55%, transparent) 86%
+      )
+      border-box;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--wl-g1-highlight) 72%, transparent),
+    inset 0 -1px 0 var(--wl-g1-thickness),
+    0 18px 46px var(--wl-g1-shadow);
+  backdrop-filter: blur(var(--wl-blur-nav)) saturate(158%) brightness(1.035);
+  -webkit-backdrop-filter: blur(var(--wl-blur-nav)) saturate(158%)
+    brightness(1.035);
 }
 
 /* ── G2 导航与目录玻璃：目录树、证据栏、活动栏 ── */
 .wl-glass-panel {
-  background: var(--wl-glass-panel);
-  border: 1px solid var(--wl-border);
-  backdrop-filter: blur(var(--wl-blur-panel)) saturate(135%);
-  -webkit-backdrop-filter: blur(var(--wl-blur-panel)) saturate(135%);
+  position: relative;
+  isolation: isolate;
+  border: 1px solid transparent;
+  background:
+    linear-gradient(150deg, var(--wl-g2-tint-strong), var(--wl-g2-tint) 64%)
+      padding-box,
+    linear-gradient(
+        140deg,
+        var(--wl-g2-highlight),
+        color-mix(in srgb, var(--wl-g2-cold-rim) 42%, transparent) 60%,
+        color-mix(in srgb, var(--wl-g2-warm-rim) 48%, transparent)
+      )
+      border-box;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--wl-g2-highlight) 62%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--wl-border-strong) 38%, transparent),
+    0 12px 30px var(--wl-g2-shadow);
+  backdrop-filter: blur(var(--wl-blur-panel)) saturate(134%);
+  -webkit-backdrop-filter: blur(var(--wl-blur-panel)) saturate(134%);
 }
 
 /* ── G3 专业内容面：综合意见、解析结果、表格、复核表单 ── */
 .wl-glass-content {
-  background: var(--wl-glass-content);
-  border: 1px solid var(--wl-border);
+  border: 1px solid transparent;
   border-radius: var(--wl-radius-panel);
-  box-shadow: var(--wl-shadow-1);
+  background:
+    linear-gradient(
+        180deg,
+        var(--wl-g3-highlight),
+        color-mix(in srgb, var(--wl-glass-content) 96%, transparent) 24%,
+        var(--wl-glass-content) 100%
+      )
+      padding-box,
+    linear-gradient(
+        145deg,
+        color-mix(in srgb, var(--wl-g1-highlight) 56%, transparent),
+        var(--wl-border) 48%,
+        color-mix(in srgb, var(--wl-g1-warm-rim) 24%, var(--wl-border))
+      )
+      border-box;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--wl-g3-highlight) 52%, transparent),
+    0 14px 34px var(--wl-g3-shadow);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 /* G3 软填充：嵌套在玻璃面内部的子卡，不再叠加 backdrop-filter（§9.4） */
@@ -117,6 +196,8 @@
   background: var(--wl-glass-soft);
   border: 1px solid var(--wl-border);
   border-radius: var(--wl-radius-md);
+  box-shadow: inset 0 1px 0
+    color-mix(in srgb, var(--wl-g3-highlight) 34%, transparent);
 }
 
 /* ── G4 原文与关键输入：PDF、代码、长表格、输入框，实体底色 ── */
@@ -124,6 +205,9 @@
   background: var(--wl-surface-solid);
   border: 1px solid var(--wl-border);
   border-radius: var(--wl-radius-md);
+  box-shadow: 0 5px 14px var(--wl-g4-shadow);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 /* ── 不支持 backdrop-filter 的浏览器：更高不透明度实体回退（§9.4） ── */
@@ -132,12 +216,135 @@
 ) {
   .wl-glass-nav,
   .wl-glass-panel {
-    background: rgba(248, 250, 255, 0.96);
+    background: var(--wl-reduced-g1);
   }
 
-  html[data-wl-theme='dark'] .wl-glass-nav,
-  html[data-wl-theme='dark'] .wl-glass-panel {
-    background: rgba(18, 25, 38, 0.96);
+  .wl-glass-panel {
+    background: var(--wl-reduced-g2);
+  }
+}
+
+/* 应用内“降低透明效果”；系统媒体查询只作为渐进增强。 */
+html[data-wl-transparency='reduced']
+  :is(
+    .wl-glass-nav,
+    .wl-glass-panel,
+    .wl-navigator,
+    .library-tree-panel,
+    .library-graph-panel,
+    .wl-side-panel,
+    .wl-workbench-evidence,
+    .wl-workbench-mobilebar,
+    .discovery-boundary
+  ) {
+  background: var(--wl-reduced-g2) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html[data-wl-transparency='reduced'] .wl-glass-nav {
+  background: var(--wl-reduced-g1) !important;
+}
+
+html[data-wl-transparency='reduced'] .wl-workbench-mobilebar {
+  background: var(--wl-reduced-g1) !important;
+}
+
+html[data-wl-transparency='reduced'] .wl-workbench-drawer-scrim {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  :is(
+    .wl-glass-nav,
+    .wl-glass-panel,
+    .wl-navigator,
+    .library-tree-panel,
+    .library-graph-panel,
+    .wl-side-panel,
+    .wl-workbench-evidence,
+    .wl-workbench-mobilebar,
+    .discovery-boundary
+  ) {
+    background: var(--wl-reduced-g2) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  .wl-glass-nav {
+    background: var(--wl-reduced-g1) !important;
+  }
+
+  .wl-workbench-mobilebar {
+    background: var(--wl-reduced-g1) !important;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .wl-ambient-field {
+    opacity: 0.48;
+  }
+
+  :is(
+    .wl-glass-nav,
+    .wl-glass-panel,
+    .wl-navigator,
+    .library-tree-panel,
+    .library-graph-panel,
+    .wl-side-panel,
+    .wl-workbench-evidence,
+    .wl-workbench-mobilebar,
+    .discovery-boundary
+  ) {
+    border-color: var(--wl-border-strong);
+    background: var(--wl-reduced-g2);
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .wl-glass-nav,
+  .wl-workbench-mobilebar {
+    background: var(--wl-reduced-g1);
+  }
+}
+
+@media (forced-colors: active) {
+  .wl-ambient-field {
+    display: none;
+  }
+
+  .wl-glass-nav,
+  .wl-glass-panel,
+  .wl-glass-content,
+  .wl-glass-soft,
+  .wl-surface-solid,
+  .wl-navigator,
+  .library-tree-panel,
+  .library-graph-panel,
+  .library-preview-panel,
+  .wl-side-panel,
+  .wl-workbench-shell,
+  .wl-workbench-evidence,
+  .wl-workbench-mobilebar,
+  .discovery-boundary,
+  .hosted-intake,
+  .library-query-band,
+  .library-empty-stage {
+    border: 1px solid CanvasText;
+    background: Canvas;
+    box-shadow: none;
+    color: CanvasText;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .wl-overall-hero::before,
+  .wl-overall-hero::after,
+  .wl-source-flash::after,
+  .wl-stale-flash::after {
+    display: none;
   }
 }
 

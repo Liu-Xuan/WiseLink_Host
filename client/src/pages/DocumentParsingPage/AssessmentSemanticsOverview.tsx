@@ -1,8 +1,8 @@
 import {
   AlertTriangle,
-  ClipboardCheck,
-  FileCheck2,
-  UserRoundCheck,
+  ClipboardList,
+  FileSearch2,
+  UserRound,
 } from 'lucide-react';
 
 import type { CanonicalDocumentParsingPageResponse } from '@shared/api.interface';
@@ -41,7 +41,7 @@ export function AssessmentSemanticsOverview({
       </header>
       <div className="parse-assessment-semantics-grid">
         <article>
-          <ClipboardCheck aria-hidden="true" />
+          <ClipboardList aria-hidden="true" />
           <span>逐项评估</span>
           <strong>
             {semantics.dynamic
@@ -55,7 +55,7 @@ export function AssessmentSemanticsOverview({
           </small>
         </article>
         <article>
-          <FileCheck2 aria-hidden="true" />
+          <FileSearch2 aria-hidden="true" />
           <span>整体候选</span>
           <strong>
             {humanState(semantics.overall?.status) ?? '等待综合意见'}
@@ -67,7 +67,7 @@ export function AssessmentSemanticsOverview({
           </small>
         </article>
         <article>
-          <UserRoundCheck aria-hidden="true" />
+          <UserRound aria-hidden="true" />
           <span>人工复核</span>
           <strong>{semantics.review.pendingCount} 项待处理</strong>
           <small>

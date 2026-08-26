@@ -16,10 +16,8 @@ export default function RuntimeProbePage() {
         setResults(res);
         setLoading(false);
       })
-      .catch((cause: unknown) => {
-        const detail: string =
-          cause instanceof Error ? cause.message : 'RUNTIME_PROBE_FAILED';
-        setError(`UNAVAILABLE · 当前无法读取连接状态：${detail}`);
+      .catch(() => {
+        setError('当前无法读取连接状态，请稍后重试。');
         setLoading(false);
       });
   }, []);
@@ -28,7 +26,7 @@ export default function RuntimeProbePage() {
     <main className="parse-shell" aria-busy={loading}>
       <header className="parse-masthead">
         <div>
-          <p className="parse-eyebrow">WISELINK 3.1 · 只读连接状态</p>
+          <p className="parse-eyebrow">资料连接 · 只读检查</p>
           <h1>资料与原文阅读连接状态</h1>
           <p className="parse-lede">
             仅使用当前登录身份读取连接与原文阅读就绪状态。此页面不触发资料入库、
@@ -49,7 +47,7 @@ export default function RuntimeProbePage() {
       ) : results.length === 0 ? (
         <section className="parse-panel">
           <h2>暂无连接结果</h2>
-          <p>UNAVAILABLE · 当前没有可展示的连接信息。</p>
+          <p>当前没有可展示的连接信息。</p>
         </section>
       ) : (
         results.map((result) => (
@@ -58,7 +56,7 @@ export default function RuntimeProbePage() {
             <p>
               {result.status >= 200 && result.status < 300
                 ? '当前连接可用。'
-                : 'UNAVAILABLE · 当前连接未就绪。'}
+                : '当前连接尚未就绪。'}
             </p>
           </section>
         ))

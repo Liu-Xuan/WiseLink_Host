@@ -64,12 +64,6 @@ export default function AuthorityStrip({ view }: { view: WorkItemView }) {
         当前文件版本已绑定
       </span>
 
-      <span className="wl-authority-chip is-muted">
-        {view.overall
-          ? `评估版本 r${view.overall.revision}`
-          : '评估版本尚未形成'}
-      </span>
-
       <span className="wl-authority-meta">
         {view.aircraftFamily} ·{' '}
         {view.authority === 'engineer_confirmed'

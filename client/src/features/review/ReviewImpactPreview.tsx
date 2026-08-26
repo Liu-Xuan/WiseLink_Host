@@ -7,12 +7,10 @@ import './review-loop.css';
 
 export interface ReviewImpactPreviewProps {
   open: boolean;
-  criterionId: string;
+  criterionLabel: string;
   criterionConclusion: string;
   decision: string;
   comment: string;
-  /** 当前 WorkItem revision（写入时校验） */
-  expectedRevision: number;
   /** 整体候选当前状态（预览将标记为需重综合） */
   overallStatus: string | null;
   submitting: boolean;
@@ -27,11 +25,10 @@ export interface ReviewImpactPreviewProps {
  */
 export default function ReviewImpactPreview({
   open,
-  criterionId,
+  criterionLabel,
   criterionConclusion,
   decision,
   comment,
-  expectedRevision,
   submitting,
   onCancel,
   onConfirm,
@@ -112,7 +109,7 @@ export default function ReviewImpactPreview({
         <dl className="wl-review-impact-facts">
           <div>
             <dt>规则项</dt>
-            <dd>{criterionId}</dd>
+            <dd>{criterionLabel}</dd>
           </div>
           <div>
             <dt>当前初步判断</dt>
@@ -139,8 +136,7 @@ export default function ReviewImpactPreview({
               ，随后由分析任务按受控流程重新综合。
             </li>
             <li>
-              以当前页面版本 r{expectedRevision}
-              写入；若系统已有更新，会提示刷新且不会覆盖新结果。
+              按当前页面内容写入；若系统已有更新，会提示刷新且不会覆盖新结果。
             </li>
           </ul>
         </div>

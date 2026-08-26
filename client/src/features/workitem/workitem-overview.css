@@ -18,11 +18,13 @@
   align-items: center;
   gap: 8px;
   padding: 12px 18px;
-  border: 1px solid var(--wl-border);
+  border: 1px solid transparent;
   border-radius: var(--wl-radius-panel);
-  background: var(--wl-glass-panel);
-  backdrop-filter: blur(var(--wl-blur-panel)) saturate(135%);
-  -webkit-backdrop-filter: blur(var(--wl-blur-panel)) saturate(135%);
+  background:
+    linear-gradient(180deg, var(--wl-g3-highlight), var(--wl-glass-content))
+      padding-box,
+    linear-gradient(145deg, var(--wl-g2-highlight), var(--wl-border)) border-box;
+  box-shadow: 0 10px 24px var(--wl-g3-shadow);
   font-size: 12px;
 }
 
@@ -75,26 +77,140 @@
 
 /* ── OverallAssessmentHero ── */
 .wl-overall-hero {
+  position: relative;
+  isolation: isolate;
   overflow: hidden;
   border-radius: var(--wl-radius-xl);
   padding: 28px 32px;
-  background: var(--wl-glass-content);
-  border: 1px solid var(--wl-border);
-  box-shadow: var(--wl-shadow-1);
+  border: 1px solid transparent;
+  background:
+    radial-gradient(
+        ellipse at 8% 0%,
+        color-mix(in srgb, var(--wl-ambient-cold) 48%, transparent),
+        transparent 42%
+      )
+      padding-box,
+    radial-gradient(
+        ellipse at 90% 0%,
+        color-mix(in srgb, var(--wl-ambient-warm) 40%, transparent),
+        transparent 38%
+      )
+      padding-box,
+    radial-gradient(
+        ellipse at 92% 100%,
+        color-mix(in srgb, var(--wl-ambient-reflect) 36%, transparent),
+        transparent 44%
+      )
+      padding-box,
+    linear-gradient(145deg, var(--wl-g3-highlight), var(--wl-glass-content) 44%)
+      padding-box,
+    linear-gradient(
+        132deg,
+        var(--wl-g1-highlight),
+        color-mix(in srgb, var(--wl-g1-cold-rim) 54%, transparent) 44%,
+        color-mix(in srgb, var(--wl-g1-warm-rim) 52%, transparent) 84%
+      )
+      border-box;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--wl-g1-highlight) 58%, transparent),
+    0 18px 44px var(--wl-g3-shadow);
+}
+
+.wl-overall-hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--wl-glass-content) 28%, transparent),
+    transparent 42%,
+    color-mix(in srgb, var(--wl-glass-content) 18%, transparent)
+  );
+  pointer-events: none;
+}
+
+.wl-overall-hero::after {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  z-index: 0;
+  border: 1px solid color-mix(in srgb, var(--wl-accent) 28%, transparent);
+  border-radius: calc(var(--wl-radius-xl) - 2px);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--wl-g1-highlight) 48%, transparent),
+    inset 0 0 26px color-mix(in srgb, var(--wl-accent) 10%, transparent);
+  opacity: 0.44;
+  pointer-events: none;
+}
+
+.wl-overall-hero > * {
+  position: relative;
+  z-index: 1;
+}
+
+.wl-overall-hero[data-state='waiting']::after,
+.wl-overall-hero[data-state='stale']::after {
+  border-color: color-mix(in srgb, var(--wl-amber) 42%, transparent);
+  box-shadow: inset 0 0 28px color-mix(in srgb, var(--wl-amber) 11%, transparent);
+  opacity: 0.72;
+}
+
+.wl-overall-hero[data-state='formal']::after {
+  border-color: color-mix(in srgb, var(--wl-green) 38%, transparent);
+  box-shadow: inset 0 0 24px color-mix(in srgb, var(--wl-green) 10%, transparent);
+  opacity: 0.64;
+}
+
+.wl-overall-hero[data-state='engineer-confirmed']::after {
+  border-color: color-mix(in srgb, var(--wl-accent-2) 38%, transparent);
+}
+
+.wl-overall-hero[data-state='obsolete']::after {
+  border-color: color-mix(in srgb, var(--wl-faint) 34%, transparent);
+  box-shadow: inset 0 0 22px
+    color-mix(in srgb, var(--wl-faint) 8%, transparent);
+  opacity: 0.42;
 }
 
 .wl-overall-hero.is-empty {
   display: grid;
+  min-height: 280px;
   place-items: center;
   gap: 10px;
-  padding: 56px 32px;
+  padding: 44px 32px;
+  background:
+    radial-gradient(
+      circle at 50% 12%,
+      color-mix(in srgb, var(--wl-accent-soft) 76%, transparent),
+      transparent 48%
+    ),
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--wl-surface-solid) 24%, transparent),
+      transparent 46%
+    ),
+    var(--wl-glass-content);
   text-align: center;
 }
 
+.wl-overall-empty-mark {
+  display: grid;
+  width: 58px;
+  height: 58px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--wl-accent) 26%, var(--wl-border));
+  border-radius: 20px;
+  color: var(--wl-accent);
+  background: var(--wl-accent-soft);
+  box-shadow: inset 0 1px 0
+    color-mix(in srgb, var(--wl-surface-solid) 64%, transparent);
+}
+
 .wl-overall-empty-icon {
-  width: 34px;
-  height: 34px;
-  color: var(--wl-faint);
+  width: 26px;
+  height: 26px;
 }
 
 .wl-overall-hero.is-empty h2 {
@@ -109,6 +225,10 @@
   color: var(--wl-muted);
   font-size: 13px;
   line-height: 1.7;
+}
+
+.wl-overall-hero.is-empty .wl-btn {
+  margin-top: 6px;
 }
 
 .wl-overall-head {
@@ -127,8 +247,7 @@
   color: var(--wl-accent);
   font-size: 11px;
   font-weight: 750;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  letter-spacing: 0.02em;
 }
 
 .wl-overall-eyebrow svg {
@@ -161,12 +280,12 @@
 .wl-overall-judgment {
   margin-bottom: 18px;
   padding: 16px 18px;
-  border: 1px solid rgba(22, 119, 255, 0.2);
+  border: 1px solid color-mix(in srgb, var(--wl-accent) 24%, var(--wl-border));
   border-radius: var(--wl-radius-panel);
   background: linear-gradient(
     135deg,
-    rgba(47, 130, 255, 0.11),
-    rgba(110, 124, 255, 0.07)
+    var(--wl-accent-soft),
+    color-mix(in srgb, var(--wl-glass-soft) 72%, transparent)
   );
 }
 
@@ -243,7 +362,7 @@
 }
 
 .wl-overall-evidence:hover {
-  border-color: rgba(22, 119, 255, 0.32);
+  border-color: color-mix(in srgb, var(--wl-accent) 38%, var(--wl-border));
   background: var(--wl-accent-soft);
 }
 
@@ -425,11 +544,23 @@
 
 .wl-side-panel {
   padding: 20px 22px;
-  border: 1px solid var(--wl-border);
+  border: 1px solid transparent;
   border-radius: var(--wl-radius-panel);
-  background: var(--wl-glass-panel);
-  backdrop-filter: blur(var(--wl-blur-panel)) saturate(135%);
-  -webkit-backdrop-filter: blur(var(--wl-blur-panel)) saturate(135%);
+  background:
+    linear-gradient(150deg, var(--wl-g2-tint-strong), var(--wl-g2-tint) 66%)
+      padding-box,
+    linear-gradient(
+        140deg,
+        var(--wl-g2-highlight),
+        color-mix(in srgb, var(--wl-g2-cold-rim) 42%, transparent),
+        color-mix(in srgb, var(--wl-g2-warm-rim) 46%, transparent)
+      )
+      border-box;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--wl-g2-highlight) 56%, transparent),
+    0 12px 30px var(--wl-g2-shadow);
+  backdrop-filter: blur(var(--wl-blur-panel)) saturate(134%);
+  -webkit-backdrop-filter: blur(var(--wl-blur-panel)) saturate(134%);
 }
 
 .wl-side-panel h3 {
@@ -495,7 +626,7 @@
   align-items: center;
   gap: 10px;
   padding: 14px 18px;
-  border: 1px solid var(--wl-red-soft);
+  border: 1px solid color-mix(in srgb, var(--wl-red) 34%, var(--wl-border));
   border-radius: var(--wl-radius-md);
   background: var(--wl-red-soft);
   color: var(--wl-red);

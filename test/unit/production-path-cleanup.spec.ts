@@ -67,7 +67,8 @@ describe('Phase 13C production path', () => {
     expect(client).not.toContain('WAITING_OPENCLAW_DYNAMIC_EVALUATION');
     expect(client).not.toContain('运行 Base 固定规则评估');
     expect(client).not.toContain('运行 OpenClaw 整体候选综合');
-    expect(client).toContain('工程评估工作台 · 判断、依据与复核');
+    expect(client).toContain('工程评估工作台');
+    expect(client).toContain('判断、依据与复核');
     expect(client).not.toContain('OpenClaw 动态 N + 整体综合');
     expect(externalModule).not.toContain('ExternalDiscoveryAutomation');
     expect(externalModule).not.toContain('@Automation');

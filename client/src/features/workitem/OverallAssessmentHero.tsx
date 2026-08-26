@@ -30,6 +30,20 @@ export default function OverallAssessmentHero({
   primaryActionLabel?: string;
 }) {
   const overall = view.overall;
+  const heroState =
+    view.freshness === 'superseded'
+      ? 'obsolete'
+      : view.authority === 'formal_readback'
+        ? 'formal'
+        : view.freshness === 'needs_update'
+          ? 'stale'
+          : overall && overall.missingInputs.length > 0
+            ? 'waiting'
+            : view.authority === 'engineer_confirmed'
+              ? 'engineer-confirmed'
+              : 'candidate';
+  const heroBreathes =
+    heroState === 'candidate' || heroState === 'engineer-confirmed';
   const staleLabel = staleReasonLabel(
     (
       overall as never as {
@@ -41,21 +55,39 @@ export default function OverallAssessmentHero({
     )?.staleReason ?? null,
   );
   const authorityLabel =
-    view.authority === 'engineer_confirmed'
-      ? 'AI 初步意见 · 人工确认已记录'
-      : view.authority === 'formal_readback'
-        ? '正式系统回读结果'
-        : 'AI 初步意见 · 待工程师复核';
+    heroState === 'obsolete'
+      ? '历史意见 · 已被新版本替代'
+      : heroState === 'stale'
+        ? 'AI 初步意见 · 当前结论需更新'
+        : heroState === 'waiting'
+          ? `AI 初步意见 · 等待补充 ${overall?.missingInputs.length ?? 0} 项资料`
+          : view.authority === 'engineer_confirmed'
+            ? 'AI 初步意见 · 人工确认已记录'
+            : view.authority === 'formal_readback'
+              ? '正式系统回读结果'
+              : 'AI 初步意见 · 待工程师复核';
 
   if (!overall) {
     return (
       <section
         className="wl-overall-hero wl-glass-content is-empty"
+        data-state="empty"
         aria-live="polite"
       >
-        <Sparkles className="wl-overall-empty-icon" aria-hidden="true" />
+        <span className="wl-overall-empty-mark" aria-hidden="true">
+          <Sparkles className="wl-overall-empty-icon" />
+        </span>
         <h2>综合评估尚未形成</h2>
-        <p>完成文件解析与必要评估后，综合意见会在这里显示。</p>
+        <p>
+          当前尚无综合候选意见。可先核对原文与解析结果；形成候选后仍需工程师复核。
+        </p>
+        <button
+          type="button"
+          className="wl-btn wl-btn-primary"
+          onClick={onOpenWorkbench}
+        >
+          <FileSearch2 aria-hidden="true" /> 查看原文与解析
+        </button>
       </section>
     );
   }
@@ -63,7 +95,8 @@ export default function OverallAssessmentHero({
   return (
     <section
       className="wl-overall-hero wl-glass-content wl-focus-card"
-      data-active="true"
+      data-state={heroState}
+      data-active={heroBreathes ? 'true' : 'false'}
     >
       <header className="wl-overall-head">
         <div>
@@ -74,11 +107,12 @@ export default function OverallAssessmentHero({
         </div>
         <div className="wl-overall-head-meta">
           <span>基于当前受控文件版本</span>
-          <span>候选版本 r{overall.revision}</span>
           <span>
             {view.freshness === 'needs_update'
               ? `当前结论需更新${staleLabel ? `（${staleLabel}）` : ''}`
-              : '当前结论仍有效'}
+              : view.authority === 'formal_readback'
+                ? '正式回读当前有效'
+                : '当前候选基于最新资料'}
           </span>
         </div>
       </header>

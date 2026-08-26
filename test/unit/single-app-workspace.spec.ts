@@ -16,29 +16,38 @@ describe('single canonical app workspace', () => {
       shell,
       intake,
       taskPills,
+      themeProvider,
+      glass,
+      homeStyles,
       motion,
+      overallHero,
+      reasoningTrail,
       reader,
-    ] =
-      await Promise.all([
-        source('client/src/app.tsx'),
-        source('client/src/components/Layout.tsx'),
-        source('client/src/features/navigation/FloatingDock.tsx'),
-        source('client/src/pages/DocumentParsingPage/DocumentParsingPage.tsx'),
-        source('client/src/pages/DocumentParsingPage/WorkItemContextTree.tsx'),
-        source('client/src/pages/DocumentParsingPage/WorkItemContextDock.tsx'),
-        source(
-          'client/src/pages/DocumentParsingPage/EngineeringReasoningTrail.tsx',
-        ),
-        source('client/src/features/workbench/WorkbenchShell.tsx'),
-        source(
-          'client/src/pages/WorkspaceHomePage/HostedDevelopmentIntake.tsx',
-        ),
-        source('client/src/features/review/TaskPills.tsx'),
-        source('client/src/styles/motion.css'),
-        source(
-          'client/src/pages/DocumentParsingPage/DocumentReaderWorkspace.tsx',
-        ),
-      ]);
+    ] = await Promise.all([
+      source('client/src/app.tsx'),
+      source('client/src/components/Layout.tsx'),
+      source('client/src/features/navigation/FloatingDock.tsx'),
+      source('client/src/pages/DocumentParsingPage/DocumentParsingPage.tsx'),
+      source('client/src/pages/DocumentParsingPage/WorkItemContextTree.tsx'),
+      source('client/src/pages/DocumentParsingPage/WorkItemContextDock.tsx'),
+      source(
+        'client/src/pages/DocumentParsingPage/EngineeringReasoningTrail.tsx',
+      ),
+      source('client/src/features/workbench/WorkbenchShell.tsx'),
+      source('client/src/pages/WorkspaceHomePage/HostedDevelopmentIntake.tsx'),
+      source('client/src/features/review/TaskPills.tsx'),
+      source('client/src/app/providers/ThemeProvider.tsx'),
+      source('client/src/styles/glass.css'),
+      source('client/src/pages/WorkspaceHomePage/workspace-home.css'),
+      source('client/src/styles/motion.css'),
+      source('client/src/features/workitem/OverallAssessmentHero.tsx'),
+      source(
+        'client/src/pages/DocumentParsingPage/EngineeringReasoningTrail.tsx',
+      ),
+      source(
+        'client/src/pages/DocumentParsingPage/DocumentReaderWorkspace.tsx',
+      ),
+    ]);
 
     expect(routes).toContain('WorkspaceHomePage');
     expect(routes).toContain('work-items/:workItemId/documents');
@@ -48,7 +57,11 @@ describe('single canonical app workspace', () => {
     expect(floatingDock).toContain('WiseLink 主导航');
     expect(floatingDock).toContain('资料库');
     expect(floatingDock).toContain('补充资料');
+    expect(floatingDock).toContain('toggleTransparency');
     expect(floatingDock).not.toContain('is-disabled');
+    expect(layout).toContain('wl-light--cold');
+    expect(layout).toContain('wl-light--warm');
+    expect(layout).toContain('wl-light--reflect');
     expect(layout).not.toContain('飞书身份');
     expect(layout).not.toContain('任务总览');
     expect(layout).not.toContain('唯一妙搭应用');
@@ -72,14 +85,33 @@ describe('single canonical app workspace', () => {
       '沉浸模式只隐藏应用外壳，不隐藏工作台的资料目录与证据栏',
     );
     expect(shell).not.toContain('!immersive &&');
+    expect(shell).toContain('wl-workbench-transparency-toggle');
     expect(intake).toContain(
       'navigate(`/work-items/${encodeURIComponent(workItemId)}`)',
     );
     expect(intake).not.toContain('node=document&tab=source');
-    expect(taskPills).toContain("if (upper.includes('CANDIDATE')) return 'candidate'");
-    expect(taskPills).toContain("if (state === 'candidate') return '候选待复核'");
+    expect(taskPills).toContain(
+      "if (upper.includes('CANDIDATE')) return 'candidate'",
+    );
+    expect(taskPills).toContain(
+      "if (state === 'candidate') return '候选待复核'",
+    );
+    expect(taskPills).toContain('wl-status-dot');
+    expect(themeProvider).toContain('wiselink.ui.reduce-transparency');
+    expect(glass).toContain('@media (prefers-reduced-transparency: reduce)');
+    expect(glass).toContain('@media (prefers-contrast: more)');
+    expect(glass).toContain('@media (forced-colors: active)');
+    expect(homeStyles).toContain('.library-tree-panel .wl-navigator');
+    expect(homeStyles).toContain('避免 glass-on-glass');
+    expect(motion).toContain('@keyframes wl-drift-cold');
+    expect(motion).toContain(".wl-focus-card[data-active='true']::after");
     expect(motion).toContain('.wl-spin');
     expect(motion).toContain('.animate-spin');
+    expect(overallHero).toContain("heroState === 'candidate'");
+    expect(overallHero).toContain("heroState === 'obsolete'");
+    expect(reasoningTrail).toContain(
+      "state: dynamic ? 'candidate' : 'pending'",
+    );
     expect(reader).not.toContain('PDF_PREVIEW_PROJECTION_MISSING');
     expect(reader).not.toContain('SOURCE_REF_NOT_IN_CURRENT_QUERY');
   });

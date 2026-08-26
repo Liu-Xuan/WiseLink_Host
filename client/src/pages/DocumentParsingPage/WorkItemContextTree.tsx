@@ -61,7 +61,7 @@ export function WorkItemContextTree({
     <aside className="workitem-tree" aria-label="资料目录树">
       <header>
         <div>
-          <span>WORKITEM CONTENT</span>
+          <span>事项资料</span>
           <strong>资料目录</strong>
           <small>族群 · 文档 · 修订</small>
         </div>
@@ -97,8 +97,8 @@ export function WorkItemContextTree({
             </span>
             <i
               className={`workitem-tree-state is-${node.state}`}
-              title={node.state}
-              aria-label={node.state}
+              title={contextStateLabel(node.state)}
+              aria-label={contextStateLabel(node.state)}
             />
           </button>
         ))}
@@ -171,6 +171,12 @@ function stateFor(
     return 'waiting';
   }
   return 'ready';
+}
+
+function contextStateLabel(state: ContextNode['state']): string {
+  if (state === 'attention') return '需要关注';
+  if (state === 'waiting') return '等待资料';
+  return '当前可查看';
 }
 
 function iconForNode(kind: CanonicalLibraryIndexNode['kind']): typeof FileText {

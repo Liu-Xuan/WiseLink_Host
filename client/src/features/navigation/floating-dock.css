@@ -3,9 +3,9 @@
  * 桌面左侧垂直浮动 64–78px；G1 玻璃材质；窄屏隐藏。
  * ============================================================ */
 
-.wl-dock {
+.wiselink-app-shell > .wl-dock {
   position: fixed;
-  top: 50%;
+  top: clamp(132px, 50dvh, calc(100dvh - 132px));
   left: 20px;
   z-index: 60;
   display: flex;
@@ -13,9 +13,9 @@
   align-items: center;
   gap: 6px;
   width: 68px;
+  max-height: calc(100dvh - 32px);
   padding: 10px 8px;
-  border-radius: var(--wl-radius-xl);
-  box-shadow: var(--wl-shadow-1);
+  border-radius: var(--wl-radius-shell);
   transform: translateY(-50%);
 }
 
@@ -58,8 +58,16 @@
 
 .wl-dock-item.is-active {
   color: var(--wl-accent);
-  background: var(--wl-accent-soft);
-  border-color: rgba(22, 119, 255, 0.22);
+  background:
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--wl-g1-highlight) 42%, transparent),
+      var(--wl-accent-soft)
+    );
+  border-color: color-mix(in srgb, var(--wl-accent) 24%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--wl-g1-highlight) 52%, transparent),
+    0 8px 18px color-mix(in srgb, var(--wl-accent) 12%, transparent);
 }
 
 .wl-dock-divider {
@@ -70,7 +78,7 @@
 }
 
 @media (max-width: 980px) {
-  .wl-dock {
+  .wiselink-app-shell > .wl-dock {
     top: auto;
     right: auto;
     bottom: max(12px, env(safe-area-inset-bottom));

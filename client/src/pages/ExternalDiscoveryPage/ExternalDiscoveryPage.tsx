@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   Ban,
-  CheckCircle2,
+  CircleDashed,
   ExternalLink,
   Radar,
   RefreshCw,
@@ -24,12 +24,8 @@ export default function ExternalDiscoveryPage() {
     setLoading(true);
     try {
       setData(await externalDiscovery.listSearchRuns());
-    } catch (cause) {
-      const detail: string =
-        cause instanceof Error
-          ? cause.message
-          : 'EXTERNAL_DISCOVERY_READ_FAILED';
-      setError(`UNAVAILABLE · 当前无法读取补充资料候选：${detail}`);
+    } catch {
+      setError('当前无法读取补充资料候选，请稍后重试。');
     } finally {
       setLoading(false);
     }
@@ -54,12 +50,8 @@ export default function ExternalDiscoveryPage() {
         await externalDiscovery.rejectCandidate(searchRunRef, candidateRef);
       }
       await load();
-    } catch (cause) {
-      const detail: string =
-        cause instanceof Error
-          ? cause.message
-          : 'EXTERNAL_DISCOVERY_REVIEW_FAILED';
-      setError(`UNAVAILABLE · 本次复核未提交：${detail}`);
+    } catch {
+      setError('本次复核未提交，原候选状态已保留，请稍后重试。');
     } finally {
       setBusy(null);
     }
@@ -69,10 +61,10 @@ export default function ExternalDiscoveryPage() {
     <main className="discovery-shell">
       <header className="discovery-header">
         <div>
-          <p>WISELINK 3.1 · 补充资料发现</p>
-          <h1>发现候选，不等于进入工程资料库。</h1>
+          <p>受控工程资料 · 人工筛选</p>
+          <h1>补充资料候选</h1>
           <span>
-            这里只保存检索运行与人工审核状态。没有真实受控文件时，不会产生资料读写。
+            查看可核验的官方来源候选。人工选择只记录筛选意见，不代表资料已进入工程资料库。
           </span>
         </div>
         <Radar aria-hidden="true" />
@@ -107,7 +99,8 @@ export default function ExternalDiscoveryPage() {
             <div className="discovery-run-head">
               <div>
                 <small>
-                  {run.sourceSystem} · {run.observedAt}
+                  {sourceSystemLabel(run.sourceSystem)} ·{' '}
+                  {observedAtLabel(run.observedAt)}
                 </small>
                 <h2>{run.query}</h2>
               </div>
@@ -179,7 +172,7 @@ export default function ExternalDiscoveryPage() {
                             )
                           }
                         >
-                          <CheckCircle2 aria-hidden="true" />
+                          <CircleDashed aria-hidden="true" />
                           {busy === selectKey ? '提交中…' : '人工选择'}
                         </button>
                         <button
@@ -220,8 +213,30 @@ function humanToken(value: string): string {
     NONE: '无',
     PENDING: '待复核',
     REJECTED: '已拒绝',
-    SELECTED: '已选择',
+    SELECTED: '已标记为候选',
     UNAVAILABLE: '暂无数据',
   };
-  return labels[value] ?? value.replace(/_/gu, ' ');
+  return labels[value] ?? '状态待确认';
+}
+
+function sourceSystemLabel(value: string): string {
+  const normalized = value.trim();
+  if (
+    !normalized ||
+    /OPENCLAW|ACTIONATTEMPT|SHA-?256|\b[A-Z][A-Z0-9_]{3,}\b/iu.test(normalized)
+  ) {
+    return '官方来源';
+  }
+  return normalized;
+}
+
+function observedAtLabel(value: string): string {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return '时间未提供';
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(parsed);
 }

@@ -11,6 +11,7 @@ import {
   LocateFixed,
   LockKeyhole,
   RefreshCw,
+  Shield,
   ShieldCheck,
   Sparkles,
   Waypoints,
@@ -73,7 +74,8 @@ function formatBytes(bytes: number): string {
 }
 
 function actionErrorLabel(reason: unknown): string {
-  const message = reason instanceof Error ? reason.message : String(reason ?? '');
+  const message =
+    reason instanceof Error ? reason.message : String(reason ?? '');
   if (/CRITERION_AND_COMMENT_REQUIRED/iu.test(message)) {
     return '请选择评估项并填写说明。';
   }
@@ -364,6 +366,13 @@ export default function DocumentParsingPage() {
   )
     ? requestedReviewCriterion
     : reviewContext?.items[0]?.criterionId || '';
+  const reviewCriterionLabel = (criterionId: string): string => {
+    const index =
+      reviewContext?.items.findIndex(
+        (item) => item.criterionId === criterionId,
+      ) ?? -1;
+    return index >= 0 ? `评估项 ${index + 1}` : '当前评估项';
+  };
   const { overall: overallCandidate, selectedReviewItem } =
     buildAssessmentBusinessContent(
       integratedAssessment,
@@ -493,21 +502,26 @@ export default function DocumentParsingPage() {
         evidenceSignal={evidenceSignal}
         tabs={WORKBENCH_TABS}
         activeTab={activeNode}
+        mobileActiveTab={
+          activeNode === 'document' || activeNode === 'package'
+            ? 'reader'
+            : activeNode === 'aeo'
+              ? 'review'
+              : activeNode
+        }
         onTabChange={handleTabChange}
       >
         {activeNode === 'document' ? (
           <header className="parse-masthead">
             <div>
-              <p className="parse-eyebrow">
-                当前工程事项 · 文档与解析
-              </p>
+              <p className="parse-eyebrow">当前工程事项 · 文档与解析</p>
               <h1>文档与解析结果</h1>
               <p className="parse-lede">
                 当前页面读取同一工程事项的最新结果，并始终把综合意见标记为待复核候选。
               </p>
             </div>
             <div className="parse-state-seal">
-              <ShieldCheck aria-hidden="true" />
+              <Shield aria-hidden="true" />
               <span>当前状态</span>
               <strong>
                 {humanState(data.workItem.phase) ?? '候选结果待复核'}
@@ -621,9 +635,7 @@ export default function DocumentParsingPage() {
                   : '分类待确认'}
               </span>
               {referenceOnly ? (
-                <span className="parse-tag parse-reference-tag">
-                  仅供参考
-                </span>
+                <span className="parse-tag parse-reference-tag">仅供参考</span>
               ) : null}
             </article>
 
@@ -645,7 +657,7 @@ export default function DocumentParsingPage() {
                   ? '需要人工核对'
                   : pkg?.resultStatus === 'complete'
                     ? '解析结果完整'
-                    : humanState(data.workItem.phase) ?? '待确认'}
+                    : (humanState(data.workItem.phase) ?? '待确认')}
               </p>
             </article>
           </section>
@@ -689,7 +701,8 @@ export default function DocumentParsingPage() {
               </p>
             )}
             <div className="parse-candidate-warning">
-              <AlertTriangle /> 当前为候选解析结果，需工程师核对；不会自动生成或发布正式工程结论。
+              <AlertTriangle />{' '}
+              当前为候选解析结果，需工程师核对；不会自动生成或发布正式工程结论。
             </div>
             {referenceOnly && usagePolicy ? (
               <div className="parse-reference-boundary">
@@ -753,7 +766,8 @@ export default function DocumentParsingPage() {
               aria-label="工程评估工作台"
             >
               <div className="parse-panel-label">
-                <ClipboardCheck aria-hidden="true" /> 工程评估工作台 · 判断、依据与复核
+                <ClipboardCheck aria-hidden="true" /> 工程评估工作台 ·
+                判断、依据与复核
               </div>
               <OverallAssessmentHero
                 view={workItemView}
@@ -824,23 +838,25 @@ export default function DocumentParsingPage() {
                               {finding.sourceRefIds.length ? (
                                 <div className="parse-finding-sources">
                                   <span>来源定位</span>
-                                  {finding.sourceRefIds.map((sourceRef, index) => (
-                                    <button
-                                      type="button"
-                                      key={sourceRef}
-                                      onClick={() =>
-                                        updateDeepLink({
-                                          node: 'reader',
-                                          tab: 'reader',
-                                          readerMode: 'structured',
-                                          unit: null,
-                                          sourceRef,
-                                        })
-                                      }
-                                    >
-                                      依据 {index + 1}
-                                    </button>
-                                  ))}
+                                  {finding.sourceRefIds.map(
+                                    (sourceRef, index) => (
+                                      <button
+                                        type="button"
+                                        key={sourceRef}
+                                        onClick={() =>
+                                          updateDeepLink({
+                                            node: 'reader',
+                                            tab: 'reader',
+                                            readerMode: 'structured',
+                                            unit: null,
+                                            sourceRef,
+                                          })
+                                        }
+                                      >
+                                        依据 {index + 1}
+                                      </button>
+                                    ),
+                                  )}
                                 </div>
                               ) : null}
                             </article>
@@ -876,8 +892,7 @@ export default function DocumentParsingPage() {
                       </strong>
                       <span>
                         {integratedAssessment.baseRules.unresolvedCount}{' '}
-                        项未闭合 · 评估版本 r
-                        {integratedAssessment.baseRules.revision}
+                        项未闭合
                       </span>
                     </div>
                     <div>
@@ -888,7 +903,7 @@ export default function DocumentParsingPage() {
                       </strong>
                       <span>
                         {integratedAssessment.overallSynthesis
-                          ? `${integratedAssessment.overallSynthesis.findingCount} 项判断 · ${integratedAssessment.overallSynthesis.candidateRefCount} 条依据 · 版本 r${integratedAssessment.overallSynthesis.revision}`
+                          ? `${integratedAssessment.overallSynthesis.findingCount} 项判断 · ${integratedAssessment.overallSynthesis.candidateRefCount} 条依据`
                           : '完成逐项评估后形成综合意见'}
                       </span>
                     </div>
@@ -919,8 +934,9 @@ export default function DocumentParsingPage() {
                           <div>
                             <dt>当前状态</dt>
                             <dd>
-                              {humanState(integratedAssessment.baseRules.status) ??
-                                '待评估'}
+                              {humanState(
+                                integratedAssessment.baseRules.status,
+                              ) ?? '待评估'}
                             </dd>
                           </div>
                           <div>
@@ -959,14 +975,8 @@ export default function DocumentParsingPage() {
                           <>
                             <dl>
                               <div>
-                                <dt>基于逐项评估</dt>
-                                <dd>
-                                  版本 r
-                                  {
-                                    integratedAssessment.overallSynthesis
-                                      .basedOnBaseRuleRevision
-                                  }
-                                </dd>
+                                <dt>形成依据</dt>
+                                <dd>当前逐项评估结果</dd>
                               </div>
                               <div>
                                 <dt>判断 / 来源依据</dt>
@@ -1114,7 +1124,8 @@ export default function DocumentParsingPage() {
               aria-label="工程评估工作台"
             >
               <div className="parse-panel-label">
-                <ClipboardCheck aria-hidden="true" /> 工程评估工作台 · 判断、依据与复核
+                <ClipboardCheck aria-hidden="true" /> 工程评估工作台 ·
+                判断、依据与复核
               </div>
               <OverallAssessmentHero
                 view={workItemView}
@@ -1176,7 +1187,7 @@ export default function DocumentParsingPage() {
               <section
                 className="parse-criterion-list"
                 id="workspace-review"
-                aria-label="当前 CriterionSet 逐项投影"
+                aria-label="当前逐项评估"
               >
                 <header>
                   <div>
@@ -1186,7 +1197,7 @@ export default function DocumentParsingPage() {
                   <strong>{reviewContext.items.length} 项</strong>
                 </header>
                 <div className="parse-criterion-grid">
-                  {reviewContext.items.map((item) => {
+                  {reviewContext.items.map((item, index) => {
                     const selected =
                       item.criterionId === selectedReviewCriterion;
                     const reviewState =
@@ -1206,10 +1217,10 @@ export default function DocumentParsingPage() {
                         }
                       >
                         <span className="parse-criterion-card-id">
-                          {item.criterionId}
+                          评估项 {index + 1}
                         </span>
                         <strong>
-                          {humanState(item.dynamicResult) ?? item.dynamicResult}
+                          {humanState(item.dynamicResult) ?? '状态待确认'}
                         </strong>
                         <p>{item.candidateConclusion}</p>
                         <small>
@@ -1227,7 +1238,9 @@ export default function DocumentParsingPage() {
                     <header>
                       <div>
                         <span>当前初步判断</span>
-                        <h4>{selectedReviewItem.criterionId}</h4>
+                        <h4>
+                          {reviewCriterionLabel(selectedReviewItem.criterionId)}
+                        </h4>
                       </div>
                       <strong>{selectedReviewItem.candidateConclusion}</strong>
                     </header>
@@ -1264,23 +1277,25 @@ export default function DocumentParsingPage() {
                     {selectedReviewItem.sourceRefs?.length ? (
                       <div className="parse-criterion-sources">
                         <span>来源定位</span>
-                        {selectedReviewItem.sourceRefs.map((sourceRef, index) => (
-                          <button
-                            type="button"
-                            key={sourceRef}
-                            onClick={() =>
-                              updateDeepLink({
-                                node: 'reader',
-                                tab: 'reader',
-                                readerMode: 'structured',
-                                unit: null,
-                                sourceRef,
-                              })
-                            }
-                          >
-                            原文依据 {index + 1}
-                          </button>
-                        ))}
+                        {selectedReviewItem.sourceRefs.map(
+                          (sourceRef, index) => (
+                            <button
+                              type="button"
+                              key={sourceRef}
+                              onClick={() =>
+                                updateDeepLink({
+                                  node: 'reader',
+                                  tab: 'reader',
+                                  readerMode: 'structured',
+                                  unit: null,
+                                  sourceRef,
+                                })
+                              }
+                            >
+                              原文依据 {index + 1}
+                            </button>
+                          ),
+                        )}
                       </div>
                     ) : null}
                   </article>
@@ -1319,13 +1334,13 @@ export default function DocumentParsingPage() {
                         })
                       }
                     >
-                      {reviewContext.items.map((item) => (
+                      {reviewContext.items.map((item, index) => (
                         <NativeSelectOption
                           key={item.criterionId}
                           value={item.criterionId}
                         >
-                          {item.criterionId} ·{' '}
-                          {humanState(item.dynamicResult) ?? item.dynamicResult}
+                          评估项 {index + 1} ·{' '}
+                          {humanState(item.dynamicResult) ?? '状态待确认'}
                         </NativeSelectOption>
                       ))}
                     </NativeSelect>
@@ -1384,8 +1399,8 @@ export default function DocumentParsingPage() {
                   .filter((item) => item.latestReview)
                   .map((item) => (
                     <p key={item.criterionId} className="parse-review-latest">
-                      <strong>{item.criterionId}</strong> ·{' '}
-                      {REVIEW_DECISION_LABELS[item.latestReview!.decision]} ·{' '}
+                      <strong>{reviewCriterionLabel(item.criterionId)}</strong>{' '}
+                      · {REVIEW_DECISION_LABELS[item.latestReview!.decision]} ·{' '}
                       {item.latestReview!.comment}
                     </p>
                   ))}
@@ -1393,7 +1408,7 @@ export default function DocumentParsingPage() {
             </>
           ) : (
             <div className="parse-assessment-empty" id="workspace-review">
-              <p>当前事项尚无复核上下文（需 SB 族群且分类已确认）。</p>
+              <p>当前资料尚未提供可复核的逐项内容。</p>
             </div>
           )
         ) : null}
@@ -1496,7 +1511,7 @@ export default function DocumentParsingPage() {
         {/* ── §4.3 复核闭环：写入前影响预览对话框 ── */}
         <ReviewImpactPreview
           open={reviewPreviewOpen}
-          criterionId={selectedReviewCriterion ?? ''}
+          criterionLabel={reviewCriterionLabel(selectedReviewCriterion)}
           criterionConclusion={
             selectedReviewItem?.candidateConclusion ??
             reviewContext?.items.find(
@@ -1506,7 +1521,6 @@ export default function DocumentParsingPage() {
           }
           decision={REVIEW_DECISION_LABELS[reviewDecision]}
           comment={reviewComment.trim()}
-          expectedRevision={data.workItem.revision}
           overallStatus={
             overallCandidate?.status ??
             integratedAssessment?.overallSynthesis?.status ??

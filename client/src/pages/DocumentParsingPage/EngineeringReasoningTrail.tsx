@@ -1,6 +1,7 @@
 import {
   BookOpenCheck,
   CheckCircle2,
+  Circle,
   CircleDashed,
   FileSearch2,
   GitCompareArrows,
@@ -19,7 +20,7 @@ interface TrailStep {
   label: string;
   status: string;
   detail: string;
-  done: boolean;
+  state: 'done' | 'candidate' | 'pending';
   icon: typeof FileSearch2;
 }
 
@@ -39,18 +40,16 @@ export function EngineeringReasoningTrail({
       label: '锁定工程对象',
       status: '当前文件版本已绑定',
       detail: `${data.workItem.classification.normalizedFamily} · 当前受控文件`,
-      done: true,
+      state: 'done',
       icon: FileSearch2,
     },
     {
       label: '验证并建立来源定位',
-      status: data.workItem.package
-        ? '结构化原文可查看'
-        : '等待解析结果',
+      status: data.workItem.package ? '结构化原文可查看' : '等待解析结果',
       detail: data.workItem.package
         ? `${data.workItem.package.contentUnitCount} 个内容单元 · ${data.workItem.package.sourceRefCount} 条来源依据`
         : '尚无可读的结构化解析结果',
-      done: Boolean(data.workItem.package),
+      state: data.workItem.package ? 'done' : 'pending',
       icon: BookOpenCheck,
     },
     {
@@ -59,7 +58,7 @@ export function EngineeringReasoningTrail({
       detail: dynamic
         ? `${dynamic.evaluationItemCount}/${dynamic.criterionCount} 项 · ${dynamic.unresolvedCount} 项未闭合`
         : '当前尚未形成逐项评估结果',
-      done: Boolean(dynamic && /COMPLETE|CONFIRMED/iu.test(dynamic.status)),
+      state: dynamic ? 'candidate' : 'pending',
       icon: SearchCheck,
     },
     {
@@ -68,7 +67,7 @@ export function EngineeringReasoningTrail({
       detail: overall
         ? `${overall.findingCount} 项判断 · ${overall.gap ? '仍有待补信息' : '当前无明确缺口'} · ${humanState(overall.discoveryStatus) ?? '资料状态待确认'}`
         : '只有明确缺口时才查询相关资料来源',
-      done: false,
+      state: overall ? 'candidate' : 'pending',
       icon: GitCompareArrows,
     },
     {
@@ -82,7 +81,10 @@ export function EngineeringReasoningTrail({
         ? `${data.workItem.aeo.artifacts.length} 个 AEO 候选产物；无自动批准`
         : '整体候选须显式确认后才可进入 AEO 候选',
       // 确认或编写后仍是候选，不使用“完成”视觉。
-      done: false,
+      state:
+        integrated?.overallForAeoConfirmation || data.workItem.aeo
+          ? 'candidate'
+          : 'pending',
       icon: UserCheck,
     },
   ];
@@ -117,12 +119,14 @@ export function EngineeringReasoningTrail({
       </header>
       <div className="engineering-reasoning-steps">
         {steps.map((step, index) => (
-          <article className={step.done ? 'is-done' : ''} key={step.label}>
+          <article className={`is-${step.state}`} key={step.label}>
             <div className="engineering-reasoning-step-index">
-              {step.done ? (
+              {step.state === 'done' ? (
                 <CheckCircle2 aria-hidden="true" />
-              ) : (
+              ) : step.state === 'candidate' ? (
                 <CircleDashed aria-hidden="true" />
+              ) : (
+                <Circle aria-hidden="true" />
               )}
               <span>{String(index + 1).padStart(2, '0')}</span>
             </div>
