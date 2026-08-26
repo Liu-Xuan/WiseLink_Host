@@ -24,6 +24,9 @@ describe('canonical Host production client boundary', () => {
     ]);
 
     expect(api).toContain('/api/canonical-host/work-items/development-runs');
+    expect(api).toContain(
+      'CANONICAL_DEVELOPMENT_WORK_ITEM_CREATE_FAILED',
+    );
     expect(intake).toContain('wiselink/dev-intake/');
     expect(intake).toContain('uploadFile');
     expect(intake).toContain('upsert: false');

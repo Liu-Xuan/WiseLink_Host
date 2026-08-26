@@ -1,6 +1,12 @@
+const mockIngestFileServiceSelection = jest.fn();
+
 jest.mock(
   '../../server/modules/document-management/src/hosted/documentManagementHostedCore.js',
-  () => ({ DocumentManagementHostedCore: jest.fn() }),
+  () => ({
+    DocumentManagementHostedCore: jest.fn().mockImplementation(() => ({
+      ingestFileServiceSelection: mockIngestFileServiceSelection,
+    })),
+  }),
 );
 jest.mock(
   '../../server/modules/document-management/src/hosted/miaodaFileServiceArtifactStore.js',
@@ -247,45 +253,62 @@ describe('ordinary document-management authorization', () => {
     },
   );
 
-  it.each(['ingest', 'authorize-ingest'] as const)(
-    'rejects hosted runtime %s because this intake is preview-only',
-    async (operation) => {
-      const fileService = { from: jest.fn() };
-      const authorizer = {
-        assertCanIngest: jest.fn(),
-        assertCanRead: jest.fn(),
-      };
-      const service = new DocumentManagementHostedService(
-        fileService as never,
-        {} as never,
-        authorizer,
-      );
-      const previousSandbox = process.env.SANDBOX_ID;
-      const previousLocal = process.env.MIAODA_LOCAL_DEV;
-      process.env.SANDBOX_ID = 'unit-hosted-sandbox';
-      delete process.env.MIAODA_LOCAL_DEV;
-      const context = { ...creatorContext, env: 'runtime' };
-      const invoke = (): unknown =>
-        operation === 'ingest'
-          ? service.ingestFileServiceSelection({}, context)
-          : service.assertCanIngest(context, {
-              bucketId: 'bucket-default',
-              filePath: OWNED_PATH,
-            });
+  it('allows hosted runtime selection through the same-user authorizer and ingest core', async () => {
+    const fileService = { from: jest.fn() };
+    const authorizer = {
+      assertCanIngest: jest.fn().mockResolvedValue(undefined),
+      assertCanRead: jest.fn(),
+    };
+    const service = new DocumentManagementHostedService(
+      fileService as never,
+      {} as never,
+      authorizer,
+    );
+    const previousSandbox = process.env.SANDBOX_ID;
+    const previousLocal = process.env.MIAODA_LOCAL_DEV;
+    process.env.SANDBOX_ID = 'unit-hosted-sandbox';
+    delete process.env.MIAODA_LOCAL_DEV;
+    const context = { ...creatorContext, env: 'runtime' };
+    mockIngestFileServiceSelection.mockResolvedValue({
+      documentVersionId: 'DV-RUNTIME',
+    });
 
-      try {
-        await expect(Promise.resolve().then(invoke)).rejects.toMatchObject({
-          code: 'DOCUMENT_INGEST_PREVIEW_REQUIRED',
-          statusCode: 403,
-        });
-      } finally {
-        restoreProcessEnv('SANDBOX_ID', previousSandbox);
-        restoreProcessEnv('MIAODA_LOCAL_DEV', previousLocal);
-      }
-      expect(authorizer.assertCanIngest).not.toHaveBeenCalled();
-      expect(fileService.from).not.toHaveBeenCalled();
-    },
-  );
+    try {
+      await expect(
+        service.assertCanIngest(context, {
+          bucketId: 'bucket-default',
+          filePath: OWNED_PATH,
+        }),
+      ).resolves.toBeUndefined();
+      await expect(
+        service.ingestFileServiceSelection(
+          { selection: { bucketId: 'bucket-default', filePath: OWNED_PATH } },
+          context,
+        ),
+      ).resolves.toEqual({ documentVersionId: 'DV-RUNTIME' });
+    } finally {
+      restoreProcessEnv('SANDBOX_ID', previousSandbox);
+      restoreProcessEnv('MIAODA_LOCAL_DEV', previousLocal);
+    }
+    expect(authorizer.assertCanIngest).toHaveBeenCalledWith({
+      ...context,
+      action: 'DOCUMENT_INGEST',
+      selection: {
+        bucketId: 'bucket-default',
+        filePath: OWNED_PATH,
+      },
+    });
+    expect(mockIngestFileServiceSelection).toHaveBeenCalledWith(
+      {
+        selection: {
+          bucketId: 'bucket-default',
+          filePath: OWNED_PATH,
+        },
+      },
+      context,
+    );
+    expect(fileService.from).not.toHaveBeenCalled();
+  });
 });
 
 function fileServiceTarget(metadata: unknown) {
