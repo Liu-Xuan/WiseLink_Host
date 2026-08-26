@@ -232,7 +232,8 @@ function candidate(attemptRef, resultContentHash) {
       profileRef: 'wiselink-engineering',
       modelVersion: 'GLM-5.1',
       promptVersion: 'review-prompt.v1',
-      skillVersion: 'wiselink-research-and-synthesize.v1',
+      skillVersion:
+        'wiselink-research-and-synthesize@r09.interactive-review.c2',
       toolVersions: {
         'wiselink-openclaw-engineering-assessment': '1.1.0',
       },

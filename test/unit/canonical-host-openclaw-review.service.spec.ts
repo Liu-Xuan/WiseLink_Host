@@ -14,6 +14,7 @@ import type {
   ActionAttemptRow,
   ReserveAndClaimInput,
 } from '../../server/modules/action-attempt/action-attempt.types';
+import { REVIEW_SKILL_POLICY_REF } from '../../server/modules/canonical-host/canonical-host-openclaw-review.contract';
 import { CanonicalHostOpenClawReviewService } from '../../server/modules/canonical-host/canonical-host-openclaw-review.service';
 
 describe('CanonicalHostOpenClawReviewService', () => {
@@ -87,6 +88,29 @@ describe('CanonicalHostOpenClawReviewService', () => {
     const harness = reviewHarness();
     const begin = await harness.service.begin('RC-1', 'request-1');
     const result = harness.result(begin.task, {});
+
+    await expect(
+      harness.service.commit(
+        begin.attemptRef,
+        begin.leaseToken,
+        begin.leaseGeneration,
+        result,
+      ),
+    ).rejects.toThrow('REVIEW_RESULT_PROVENANCE_INVALID');
+    expect(harness.attempts.prepareCommit).not.toHaveBeenCalled();
+    expect(
+      harness.conversations.persistAssistantCandidate,
+    ).not.toHaveBeenCalled();
+  });
+
+  it('rejects an old skill version before ActionAttempt or review mutation', async () => {
+    const harness = reviewHarness();
+    const begin = await harness.service.begin('RC-1', 'request-1');
+    const result = harness.result(
+      begin.task,
+      { 'wiselink-openclaw-engineering-assessment': '1.1.0' },
+      'wiselink-research-and-synthesize.v1',
+    );
 
     await expect(
       harness.service.commit(
@@ -347,6 +371,7 @@ function reviewHarness() {
     result(
       selectedTask: OpenClawTaskEnvelope,
       toolVersions: Record<string, string>,
+      skillVersion: string = REVIEW_SKILL_POLICY_REF,
     ): OpenClawResultEnvelope {
       return sealResultEnvelope({
         schemaVersion: 'wiselink.3_1.openclaw_result_envelope.v1',
@@ -384,7 +409,7 @@ function reviewHarness() {
         warnings: [],
         modelVersion: 'GLM-5.1',
         promptVersion: 'review-prompt.v1',
-        skillVersion: 'wiselink-research-and-synthesize.v1',
+        skillVersion,
         toolVersions,
         runMetrics: { durationMs: 1, inputUnits: 1, outputUnits: 1 },
         errorCode: null,

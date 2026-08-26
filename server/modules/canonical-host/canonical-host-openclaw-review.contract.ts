@@ -328,7 +328,7 @@ export function parseReviewTurnCandidateContract(input: {
     result.toolVersions['wiselink-openclaw-engineering-assessment'] !==
       REVIEW_MCP_PACKAGE_VERSION ||
     !result.promptVersion.trim() ||
-    !result.skillVersion.trim()
+    result.skillVersion !== task.executionPolicy.skillPolicyRef
   ) {
     fail('REVIEW_RESULT_PROVENANCE_INVALID');
   }

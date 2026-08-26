@@ -55,6 +55,25 @@ describe('interactive review C2 task/result contract', () => {
     );
   });
 
+  it.each([
+    'wiselink-research-and-synthesize.v1',
+    'arbitrary-nonempty-skill-version',
+  ])(
+    'rejects non-frozen actual skill version %s before persistence',
+    (skillVersion: string) => {
+      const task = reviewTask();
+      const result = reviewResult(
+        task,
+        {},
+        { 'wiselink-openclaw-engineering-assessment': '1.1.0' },
+        skillVersion,
+      );
+      expect(() => parseReviewTurnCandidateContract({ result, task })).toThrow(
+        'REVIEW_RESULT_PROVENANCE_INVALID',
+      );
+    },
+  );
+
   it('rejects a draft that targets an evaluation item outside the frozen set', () => {
     const task = reviewTask();
     const result = reviewResult(task, {
@@ -157,6 +176,7 @@ function reviewResult(
   toolVersions: Record<string, string> = {
     'wiselink-openclaw-engineering-assessment': '1.1.0',
   },
+  skillVersion: string = REVIEW_SKILL_POLICY_REF,
 ) {
   return sealResultEnvelope({
     schemaVersion: 'wiselink.3_1.openclaw_result_envelope.v1',
@@ -195,7 +215,7 @@ function reviewResult(
     warnings: [],
     modelVersion: 'GLM-5.1',
     promptVersion: 'review-prompt.v1',
-    skillVersion: 'wiselink-research-and-synthesize.v1',
+    skillVersion,
     toolVersions,
     runMetrics: { durationMs: 1, inputUnits: 1, outputUnits: 1 },
     errorCode: null,
