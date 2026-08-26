@@ -15,7 +15,7 @@ const normalizeSql = (value: string): string =>
 
 const extractIssueCheck = (migration: string): string => {
   const match = migration.match(
-    /(?:ALTER|CREATE) POLICY identity_session_authenticated_issue[\s\S]*?WITH CHECK \(([\s\S]*?)\n  \);/u,
+    /(?:ALTER|CREATE) POLICY identity_session_authenticated_issue(?:_runtime)?[\s\S]*?WITH CHECK \(([\s\S]*?)\n  \);/u,
   );
   if (!match?.[1]) {
     throw new Error('Identity session issue policy was not found');
@@ -40,7 +40,10 @@ describe('authenticated identity-session role rebind migration', () => {
       /DROP POLICY IF EXISTS identity_session_authenticated_issue\s+ON identity_session/iu,
     );
     expect(migration).toMatch(
-      /CREATE POLICY identity_session_authenticated_issue[\s\S]*?FOR INSERT\s+TO authenticated/iu,
+      /DROP POLICY IF EXISTS identity_session_authenticated_issue_runtime\s+ON identity_session/iu,
+    );
+    expect(migration).toMatch(
+      /CREATE POLICY identity_session_authenticated_issue_runtime[\s\S]*?FOR INSERT\s+TO authenticated/iu,
     );
     expect(executableSql).not.toMatch(/ALTER POLICY/iu);
     expect(executableSql).not.toMatch(/TO\s+authenticated_[a-z0-9_]+/iu);

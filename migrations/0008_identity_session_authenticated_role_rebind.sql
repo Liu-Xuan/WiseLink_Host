@@ -12,7 +12,10 @@ BEGIN;
 DROP POLICY IF EXISTS identity_session_authenticated_issue
   ON identity_session;
 
-CREATE POLICY identity_session_authenticated_issue
+DROP POLICY IF EXISTS identity_session_authenticated_issue_runtime
+  ON identity_session;
+
+CREATE POLICY identity_session_authenticated_issue_runtime
   ON identity_session
   AS PERMISSIVE
   FOR INSERT
