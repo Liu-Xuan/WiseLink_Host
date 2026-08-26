@@ -107,6 +107,15 @@ export class CanonicalHostVerticalService {
     );
   }
 
+  async runPdfWithExistingAuthorization(
+    request: CanonicalPdfVerticalRunRequest,
+    actionContext: CanonicalHostActionContext,
+  ): Promise<CanonicalPdfVerticalRunResponse> {
+    validateRequest(request);
+    validateDecision(actionContext.decision, 'PARSE_PDF');
+    return this.runPdfAuthorized(request, actionContext);
+  }
+
   private async runPdfAuthorized(
     request: CanonicalPdfVerticalRunRequest,
     actionContext: CanonicalHostActionContext,

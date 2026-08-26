@@ -7,7 +7,10 @@ import {
 } from '@lark-apaas/fullstack-nestjs-core';
 import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm';
 
-import type { CanonicalWorkItemProjection } from '@shared/api.interface';
+import type {
+  CanonicalParseAuthorizationProjection,
+  CanonicalWorkItemProjection,
+} from '@shared/api.interface';
 import { actionAttempt, workItem } from '../../database/schema';
 
 const ACTION_TYPE = 'PARSE_PDF';
@@ -210,6 +213,7 @@ export class MiaodaWorkItemRepository {
     input: WorkItemReservationInput & {
       workItemId: string;
       requestId: string;
+      authorization?: CanonicalParseAuthorizationProjection;
     },
   ): Promise<ParseRetryReservation | null> {
     return this.db.transaction(async (transaction) => {
@@ -222,13 +226,6 @@ export class MiaodaWorkItemRepository {
       assertRetryIdentity(stored, input);
 
       const projection = parseProjection(stored.projectionJson);
-      if (
-        projection?.phase !== 'FAILED' ||
-        projection.failure?.failureCode !== 'SOURCE_BINDING_FAILED'
-      ) {
-        return null;
-      }
-
       const [latestAttempt] = await transaction
         .select()
         .from(actionAttempt)
@@ -242,10 +239,57 @@ export class MiaodaWorkItemRepository {
         .limit(1);
       if (!latestAttempt) throw new Error('ACTION_ATTEMPT_READBACK_FAILED');
 
+      if (projection?.phase === 'PARSE_REQUESTED') {
+        if (
+          !input.authorization ||
+          latestAttempt.attemptNo < 2 ||
+          latestAttempt.status !== 'PENDING' ||
+          latestAttempt.startedAt !== null ||
+          latestAttempt.completedAt !== null ||
+          latestAttempt.errorCode !== null
+        ) {
+          return null;
+        }
+        const rebound = withRetryAuthorization(
+          projection,
+          input.authorization,
+          true,
+        );
+        if (rebound !== projection) {
+          const updated = await transaction
+            .update(workItem)
+            .set({
+              projectionJson: JSON.stringify(rebound),
+              status: rebound.phase,
+              revision: rebound.revision,
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(workItem.workItemId, stored.workItemId),
+                eq(workItem.revision, projection.revision),
+              ),
+            )
+            .returning({ workItemId: workItem.workItemId });
+          if (updated.length !== 1) throw new Error('WORK_ITEM_CAS_CONFLICT');
+        }
+        return {
+          attemptId: latestAttempt.attemptId,
+          attemptNo: latestAttempt.attemptNo,
+        };
+      }
+
+      if (
+        projection?.phase !== 'FAILED' ||
+        projection.failure?.failureCode !== 'SOURCE_BINDING_FAILED'
+      ) {
+        return null;
+      }
+
       const attemptNo = latestAttempt.attemptNo + 1;
       const attemptId = `ATT-${randomUUID()}`;
       const now = new Date();
-      const next: CanonicalWorkItemProjection = {
+      const reopened: CanonicalWorkItemProjection = {
         ...projection,
         revision: projection.revision + 1,
         phase: 'PARSE_REQUESTED',
@@ -253,6 +297,9 @@ export class MiaodaWorkItemRepository {
         failure: null,
         recordingFailure: null,
       };
+      const next = input.authorization
+        ? withRetryAuthorization(reopened, input.authorization, false)
+        : reopened;
       const updated = await transaction
         .update(workItem)
         .set({
@@ -987,6 +1034,28 @@ export class MiaodaWorkItemRepository {
       })
       .where(eq(actionAttempt.attemptId, latestAttempt.attemptId));
   }
+}
+
+function withRetryAuthorization(
+  projection: CanonicalWorkItemProjection,
+  authorization: CanonicalParseAuthorizationProjection,
+  incrementRevision: boolean,
+): CanonicalWorkItemProjection {
+  if (
+    projection.parseAuthorization.actorFingerprint ===
+      authorization.actorFingerprint &&
+    projection.parseAuthorization.decisionHash === authorization.decisionHash &&
+    projection.permissionSnapshotVersion ===
+      authorization.permissionSnapshotVersion
+  ) {
+    return projection;
+  }
+  return {
+    ...projection,
+    revision: incrementRevision ? projection.revision + 1 : projection.revision,
+    permissionSnapshotVersion: authorization.permissionSnapshotVersion,
+    parseAuthorization: { ...authorization },
+  };
 }
 
 function dynamicEvaluationAttempt(
