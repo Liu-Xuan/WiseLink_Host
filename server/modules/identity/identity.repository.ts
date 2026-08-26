@@ -167,9 +167,10 @@ export class IdentityRepository {
     tokenHash: string;
     subjectMappingId: string;
     feishuUserId: string | null;
-    expiresAt: Date;
-    now: Date;
-  }): Promise<{ sessionId: string; revision: number }> {
+    absoluteTtlMs: number;
+  }): Promise<{ sessionId: string; revision: number; expiresAt: Date }> {
+    const issuedAt = sql`CURRENT_TIMESTAMP`;
+    const expiresAt = sql`CURRENT_TIMESTAMP + (${input.absoluteTtlMs}::bigint * interval '1 millisecond')`;
     const [created] = await this.db
       .insert(identitySession)
       .values({
@@ -177,13 +178,14 @@ export class IdentityRepository {
         subjectMappingId: input.subjectMappingId,
         feishuUserId: input.feishuUserId,
         revision: 1,
-        expiresAt: input.expiresAt,
-        lastSeenAt: input.now,
-        updatedAt: input.now,
+        expiresAt,
+        lastSeenAt: issuedAt,
+        updatedAt: issuedAt,
       })
       .returning({
         sessionId: identitySession.id,
         revision: identitySession.revision,
+        expiresAt: identitySession.expiresAt,
       });
     if (!created) throw new Error('IDENTITY_SESSION_CREATE_READBACK_FAILED');
     return created;
