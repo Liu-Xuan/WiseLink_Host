@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -36,9 +36,7 @@ export class PdfjsDistLayoutExtractor implements PdfLayoutExtractorPort {
 
   constructor(
     runnerPath?: string,
-    pdfjsEntrypoint = createRequire(__filename).resolve(
-      'pdfjs-dist/legacy/build/pdf.mjs',
-    ),
+    pdfjsEntrypoint = resolvePdfjsEntrypoint(),
   ) {
     this.runnerPath =
       runnerPath ?? resolve(__dirname, 'pdfjs-layout-extractor.runner.mjs');
@@ -104,6 +102,19 @@ export class PdfjsDistLayoutExtractor implements PdfLayoutExtractorPort {
       rmSync(tempDir, { recursive: true, force: true });
     }
   }
+}
+
+function resolvePdfjsEntrypoint(): string {
+  const hostedRuntimeEntrypoint = resolve(
+    __dirname,
+    '../../../runtime-assets/professional-input/pdfjs-dist/legacy/build/pdf.mjs',
+  );
+  if (existsSync(hostedRuntimeEntrypoint)) {
+    return hostedRuntimeEntrypoint;
+  }
+  return createRequire(__filename).resolve(
+    'pdfjs-dist/legacy/build/pdf.mjs',
+  );
 }
 
 /** SHA-256 hex over the exact input bytes. */
