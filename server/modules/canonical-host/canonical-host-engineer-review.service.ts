@@ -28,6 +28,11 @@ import {
   type OpenClawEngineerReviewContext,
 } from './openclaw-overall-synthesis.processor';
 import { authorizeAndLoadCanonicalWorkItem } from './canonical-authorized-work-item-reader';
+import type {
+  CanonicalReviewActionType,
+  CanonicalReviewEvidence,
+  CanonicalReviewEvidenceInput,
+} from './selective-overall-resynthesis';
 
 const LEDGER_KIND = 'CANONICAL_ENGINEER_REVIEW_LEDGER';
 const LEDGER_VERSION = 1;
@@ -41,6 +46,10 @@ interface EngineerReviewEntry {
   decision: CanonicalEngineerReviewDecision;
   status: EngineerReviewStatus;
   comment: string;
+  actionType?: CanonicalReviewActionType;
+  evidence?: CanonicalReviewEvidence[];
+  resolvedMissingInputs?: string[];
+  correctedAnalysisDirection?: string;
   actorUserId: string;
   recordedAt: string;
   actionAttemptId: string;
@@ -70,6 +79,18 @@ export interface RecordEngineerReviewInput {
   comment: string;
 }
 
+export interface RecordEngineerReviewActionInput {
+  workItemId: string;
+  expectedRevision: number;
+  criterionId: string;
+  actionType: CanonicalReviewActionType;
+  comment: string;
+  decision?: CanonicalEngineerReviewDecision;
+  evidence?: CanonicalReviewEvidenceInput[];
+  resolvedMissingInputs?: string[];
+  correctedAnalysisDirection?: string;
+}
+
 @Injectable()
 export class CanonicalHostEngineerReviewService {
   constructor(
@@ -90,7 +111,17 @@ export class CanonicalHostEngineerReviewService {
     input: RecordEngineerReviewInput,
     actor: CanonicalHostActor,
   ): Promise<CanonicalWorkItemProjection> {
-    validateRecordInput(input);
+    return this.recordReviewAction(
+      { ...input, actionType: 'REVISE_JUDGMENT' },
+      actor,
+    );
+  }
+
+  async recordReviewAction(
+    input: RecordEngineerReviewActionInput,
+    actor: CanonicalHostActor,
+  ): Promise<CanonicalWorkItemProjection> {
+    validateReviewActionInput(input);
     let authorized = await this.authorizeAndLoad(input.workItemId, actor);
     let workItem = requiredDynamicWorkItem(authorized.workItem);
     if (workItem.revision !== input.expectedRevision) {
@@ -123,14 +154,39 @@ export class CanonicalHostEngineerReviewService {
       throw new Error('ENGINEER_REVIEW_INCOMPLETE_PRIOR_ATTEMPT');
     }
     try {
-      const status = statusFor(input.decision);
+      const decision = input.decision ?? 'deferred';
+      const status =
+        input.actionType === 'REVISE_JUDGMENT'
+          ? statusFor(decision)
+          : 'NEEDS_REVIEW';
+      const nextLedgerRevision = (existingLedger?.revision ?? 0) + 1;
       const entry: EngineerReviewEntry = {
         sequence: (existingLedger?.reviews.length ?? 0) + 1,
         criterionId: input.criterionId,
         criterionSetId: integrated.baseRules.criterionSetId,
-        decision: input.decision,
+        decision,
         status,
         comment: input.comment,
+        actionType: input.actionType,
+        ...(input.evidence
+          ? {
+              evidence: input.evidence.map((value, index) => ({
+                ...structuredClone(value),
+                sourceRefId: reviewEvidenceSourceRefId(
+                  workItem.workItemId,
+                  nextLedgerRevision,
+                  input.criterionId,
+                  index,
+                ),
+              })),
+            }
+          : {}),
+        ...(input.resolvedMissingInputs
+          ? { resolvedMissingInputs: [...input.resolvedMissingInputs] }
+          : {}),
+        ...(input.correctedAnalysisDirection
+          ? { correctedAnalysisDirection: input.correctedAnalysisDirection }
+          : {}),
         actorUserId: actor.userId,
         recordedAt: this.clock.nowIso(),
         actionAttemptId: attempt.attemptId,
@@ -291,6 +347,15 @@ export class CanonicalHostEngineerReviewService {
     const bytes = await this.artifactStore.readActualBytes(projection.artifact);
     const ledger = parseLedger(bytes);
     assertLedger(ledger, projection, workItem);
+    await Promise.all(
+      ledger.reviews.flatMap((review) =>
+        (review.evidence ?? [])
+          .filter((evidence) => evidence.artifact !== undefined)
+          .map((evidence) =>
+            this.artifactStore.readActualBytes(evidence.artifact!),
+          ),
+      ),
+    );
     return ledger;
   }
 
@@ -322,7 +387,9 @@ function requiredDynamicWorkItem(
   return workItem;
 }
 
-function validateRecordInput(input: RecordEngineerReviewInput): void {
+function validateReviewActionInput(
+  input: RecordEngineerReviewActionInput,
+): void {
   if (
     !input.workItemId.trim() ||
     !input.criterionId.trim() ||
@@ -336,7 +403,57 @@ function validateRecordInput(input: RecordEngineerReviewInput): void {
   ) {
     throw new Error('ENGINEER_REVIEW_EXPECTED_REVISION_INVALID');
   }
-  statusFor(input.decision);
+  if (input.actionType === 'REVISE_JUDGMENT') {
+    if (
+      !input.decision ||
+      input.evidence !== undefined ||
+      input.resolvedMissingInputs !== undefined ||
+      input.correctedAnalysisDirection !== undefined
+    ) {
+      throw new Error('ENGINEER_REVIEW_JUDGMENT_ACTION_INVALID');
+    }
+    statusFor(input.decision);
+    return;
+  }
+  if (input.actionType === 'SUPPLEMENT_EVIDENCE') {
+    if (input.evidence?.some((value) => value.kind === 'ATTACHMENT')) {
+      throw new Error('ENGINEER_REVIEW_ATTACHMENT_RESOLVER_REQUIRED');
+    }
+    if (
+      input.decision !== undefined ||
+      input.correctedAnalysisDirection !== undefined ||
+      !Array.isArray(input.evidence) ||
+      input.evidence.length === 0 ||
+      input.evidence.some(
+        (value) =>
+          !value.statement?.trim() ||
+          !value.locator?.trim() ||
+          ![
+            'ENGINEER_TEXT',
+            'AIRCRAFT_FACT',
+            'DOCUMENT_FACT',
+            'ATTACHMENT',
+          ].includes(value.kind) ||
+          value.artifact !== undefined,
+      ) ||
+      !validDistinctTexts(input.resolvedMissingInputs ?? [])
+    ) {
+      throw new Error('ENGINEER_REVIEW_EVIDENCE_ACTION_INVALID');
+    }
+    return;
+  }
+  if (input.actionType === 'CORRECT_ANALYSIS_DIRECTION') {
+    if (
+      input.decision !== undefined ||
+      input.evidence !== undefined ||
+      input.resolvedMissingInputs !== undefined ||
+      !input.correctedAnalysisDirection?.trim()
+    ) {
+      throw new Error('ENGINEER_REVIEW_DIRECTION_ACTION_INVALID');
+    }
+    return;
+  }
+  throw new Error('ENGINEER_REVIEW_ACTION_TYPE_INVALID');
 }
 
 function statusFor(
@@ -355,10 +472,16 @@ function sanitizedReview(review: EngineerReviewEntry) {
   return {
     sequence: review.sequence,
     criterionId: review.criterionId,
+    baseRuleRevision: review.baseRuleRevision,
+    baseRuleArtifactSha256: review.baseRuleArtifactSha256,
+    actionType: review.actionType ?? 'REVISE_JUDGMENT',
     decision: review.decision,
     status: review.status,
     comment: review.comment,
     recordedAt: review.recordedAt,
+    evidence: structuredClone(review.evidence ?? []),
+    resolvedMissingInputs: [...(review.resolvedMissingInputs ?? [])],
+    correctedAnalysisDirection: review.correctedAnalysisDirection ?? null,
   };
 }
 
@@ -408,11 +531,72 @@ function assertLedger(
       !review.actorUserId?.trim() ||
       !review.recordedAt?.trim() ||
       !review.actionAttemptId?.trim() ||
-      statusFor(review.decision) !== review.status
+      !validLedgerAction(review)
     ) {
       throw new Error('ENGINEER_REVIEW_LEDGER_ENTRY_INVALID');
     }
   });
+}
+
+function validLedgerAction(review: EngineerReviewEntry): boolean {
+  try {
+    const actionType = review.actionType ?? 'REVISE_JUDGMENT';
+    validateReviewActionInput({
+      workItemId: 'ledger-readback',
+      expectedRevision: Math.max(1, review.workItemRevisionBefore),
+      criterionId: review.criterionId,
+      actionType,
+      comment: review.comment,
+      ...(actionType === 'REVISE_JUDGMENT'
+        ? { decision: review.decision }
+        : {}),
+      ...(review.evidence ? { evidence: review.evidence } : {}),
+      ...(review.resolvedMissingInputs
+        ? { resolvedMissingInputs: review.resolvedMissingInputs }
+        : {}),
+      ...(review.correctedAnalysisDirection
+        ? { correctedAnalysisDirection: review.correctedAnalysisDirection }
+        : {}),
+    });
+    if (
+      (actionType === 'REVISE_JUDGMENT'
+        ? statusFor(review.decision)
+        : 'NEEDS_REVIEW') !== review.status
+    ) {
+      return false;
+    }
+    return (
+      (review.evidence ?? []).every((value) =>
+        Boolean(value.sourceRefId?.trim()),
+      ) &&
+      new Set((review.evidence ?? []).map((value) => value.sourceRefId))
+        .size === (review.evidence ?? []).length
+    );
+  } catch {
+    return false;
+  }
+}
+
+function validDistinctTexts(values: string[]): boolean {
+  return (
+    values.every((value) => typeof value === 'string' && value.trim() !== '') &&
+    new Set(values).size === values.length
+  );
+}
+
+function reviewEvidenceSourceRefId(
+  workItemId: string,
+  ledgerRevision: number,
+  criterionId: string,
+  index: number,
+): string {
+  return [
+    'review-evidence:/',
+    encodeURIComponent(workItemId),
+    ledgerRevision,
+    encodeURIComponent(criterionId),
+    index + 1,
+  ].join('/');
 }
 
 function assertSameBytes(expected: Uint8Array, actual: Uint8Array): void {

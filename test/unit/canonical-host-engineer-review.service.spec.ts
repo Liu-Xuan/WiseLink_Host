@@ -86,6 +86,111 @@ describe('CanonicalHostEngineerReviewService', () => {
     ).rejects.toThrow('ENGINEER_REVIEW_CRITERION_UNKNOWN:RULE-UNKNOWN');
     expect(harness.state.persisted).toHaveLength(0);
   });
+
+  it('records server-private non-attachment evidence and exposes no actor authority to OpenClaw', async () => {
+    const harness = target();
+    const updated = await harness.service.recordReviewAction(
+      {
+        workItemId: 'WI-REVIEW',
+        expectedRevision: 5,
+        criterionId: 'RULE-001',
+        actionType: 'SUPPLEMENT_EVIDENCE',
+        comment: '补充 Host 内部解析的受控飞机构型事实，只重算本项。',
+        evidence: [
+          {
+            kind: 'AIRCRAFT_FACT',
+            statement: '该机当前构型已安装目标件号。',
+            locator: 'FleetMasterData/AC-001@2026-08-26',
+          },
+        ],
+        resolvedMissingInputs: [],
+      },
+      {
+        userId: 'engineer-1',
+        tenantId: 'tenant-1',
+        appId: 'app_17bzc551rsg',
+        env: 'development',
+        roles: [],
+      },
+    );
+
+    expect(updated.revision).toBe(6);
+    const context = await harness.service.modelContext(updated);
+    expect(context.effective).toEqual([
+      expect.objectContaining({
+        criterionId: 'RULE-001',
+        actionType: 'SUPPLEMENT_EVIDENCE',
+        evidence: [
+          expect.objectContaining({
+            kind: 'AIRCRAFT_FACT',
+            sourceRefId: expect.stringMatching(/^review-evidence:\/\//),
+          }),
+        ],
+      }),
+    ]);
+    const serialized = JSON.stringify(context);
+    expect(serialized).not.toContain('engineer-1');
+    expect(serialized).not.toContain('ATT-1');
+  });
+
+  it('rejects caller-provided attachment descriptors before artifactStore or ActionAttempt I/O', async () => {
+    const harness = target();
+    await expect(
+      harness.service.recordReviewAction(
+        {
+          workItemId: 'WI-REVIEW',
+          expectedRevision: 5,
+          criterionId: 'RULE-001',
+          actionType: 'SUPPLEMENT_EVIDENCE',
+          comment: '不得信任 caller 提供的跨对象 artifact descriptor。',
+          evidence: [
+            {
+              kind: 'ATTACHMENT',
+              statement: 'caller 声称的附件事实。',
+              locator: 'caller-provided locator',
+              artifact: attachmentArtifact(),
+            },
+          ],
+          resolvedMissingInputs: [],
+        },
+        {
+          userId: 'engineer-1',
+          tenantId: 'tenant-1',
+          appId: 'app_17bzc551rsg',
+          env: 'development',
+          roles: [],
+        },
+      ),
+    ).rejects.toThrow('ENGINEER_REVIEW_ATTACHMENT_RESOLVER_REQUIRED');
+    expect(harness.state.readRefs).toHaveLength(0);
+    expect(harness.state.attempts).toBe(0);
+    expect(harness.state.persisted).toHaveLength(0);
+  });
+
+  it('fails stale expectedRevision before reserving an ActionAttempt', async () => {
+    const harness = target();
+    await expect(
+      harness.service.recordReviewAction(
+        {
+          workItemId: 'WI-REVIEW',
+          expectedRevision: 4,
+          criterionId: 'RULE-001',
+          actionType: 'CORRECT_ANALYSIS_DIRECTION',
+          comment: '应按现行构型重新判断。',
+          correctedAnalysisDirection: '以现行飞机构型和生效日期为准。',
+        },
+        {
+          userId: 'engineer-1',
+          tenantId: 'tenant-1',
+          appId: 'app_17bzc551rsg',
+          env: 'development',
+          roles: [],
+        },
+      ),
+    ).rejects.toThrow('WORK_ITEM_CAS_CONFLICT');
+    expect(harness.state.attempts).toBe(0);
+    expect(harness.state.persisted).toHaveLength(0);
+  });
 });
 
 function target() {
@@ -93,6 +198,8 @@ function target() {
     workItem: workItem(),
     persisted: [] as Uint8Array[],
     completed: [] as string[],
+    readRefs: [] as string[],
+    events: [] as string[],
     attempts: 0,
   };
   const artifacts = new Map<string, Uint8Array>([
@@ -100,6 +207,8 @@ function target() {
   ]);
   const artifactStore = {
     readActualBytes: async (artifact: { ref: string }) => {
+      state.readRefs.push(artifact.ref);
+      state.events.push(`read:${artifact.ref}`);
       const bytes = artifacts.get(artifact.ref);
       if (!bytes) throw new Error('ARTIFACT_NOT_FOUND');
       return bytes;
@@ -154,6 +263,7 @@ function target() {
     artifactStore as never,
     {
       reserveAssessmentAction: async () => {
+        state.events.push('reserve');
         state.attempts += 1;
         return { attemptId: `ATT-${state.attempts}`, created: true };
       },
@@ -164,6 +274,16 @@ function target() {
     } as never,
   );
   return { service, state };
+}
+
+function attachmentArtifact() {
+  return {
+    storeRole: 'UnifiedArtifactStoreCandidate' as const,
+    ref: 'artifact://attachment',
+    sha256: 'e'.repeat(64),
+    byteLength: 15,
+    mediaType: 'application/pdf' as const,
+  };
 }
 
 function workItem(): CanonicalWorkItemProjection {

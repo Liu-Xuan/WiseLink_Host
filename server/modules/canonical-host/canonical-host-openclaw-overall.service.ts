@@ -42,6 +42,7 @@ import {
   consumeOpenClawOverallSynthesisOutput,
   type OpenClawOverallSynthesisInput,
 } from './openclaw-overall-synthesis.processor';
+import { assertLatestOverallCandidate } from './selective-overall-resynthesis';
 
 const OPENCLAW_SERVICE_USER_ID = 'service:openclaw-main';
 const CANONICAL_APP_ID = 'app_17bzc551rsg';
@@ -254,8 +255,7 @@ export class CanonicalHostOpenClawOverallService {
       const baseRules = workItem.integratedAssessment!.baseRules;
       const overall: CanonicalOpenClawOverallProjection = {
         status: 'CANDIDATE_ONLY',
-        revision:
-          (workItem.integratedAssessment?.overallSynthesis?.revision ?? 0) + 1,
+        revision: modelInput.selectiveResynthesis.targetOverallRevision,
         sourceResultId: requiredText(parsed.sourceResultId),
         basedOnBaseRuleRevision: baseRules.revision,
         basedOnBaseRuleArtifactSha256: baseRules.artifact.sha256,
@@ -280,6 +280,7 @@ export class CanonicalHostOpenClawOverallService {
         engineeringReviewRequired: parsed.engineeringReviewRequired === true,
         providers: requiredObject(parsed.providers),
       };
+      assertLatestOverallCandidate(modelInput.selectiveResynthesis, overall);
       const integratedAssessment: CanonicalIntegratedAssessmentProjection = {
         status: 'OVERALL_CANDIDATE_READY',
         baseRules,
@@ -315,9 +316,7 @@ export class CanonicalHostOpenClawOverallService {
 
   private async recoverPreparedCommit(
     prepared: PreparedActionAttemptCommit,
-  ): Promise<
-    Record<string, unknown> | ActionAttemptTerminalProjection | null
-  > {
+  ): Promise<Record<string, unknown> | ActionAttemptTerminalProjection | null> {
     const workItem = await this.requiredBaseRules(
       prepared.row.workItemId,
       prepared.row.tenantId,

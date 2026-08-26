@@ -94,8 +94,10 @@ WL_LOCAL_U0_PYTHON=<absolute-python3-path-with-jsonschema>
 `NODE_ENV=development` 且 `MIAODA_LOCAL_DEV=1` 时，Host 必须显式设置
 `WL_LOCAL_U0_PYTHON`；缺失即以 `FULL_U0_VALIDATOR_UNAVAILABLE:LOCAL_PYTHON_REQUIRED`
 停止启动，不得回退到 partial validator。妙搭本地路由前缀为
-`/app/<app-id>/openapi/wiselink/openclaw-mcp`，托管 DEV 路由仍以部署返回的
-`/api/openapi/wiselink/openclaw-mcp` 为准，不得互相猜测替换。
+`/app/<app-id>/openapi/wiselink/openclaw-mcp`。2026-08-26 对当前 Hosted release
+的真实 API-key 预检证明：同域 `/app/<app-id>/api/openapi/...` 会进入用户登录重定向，
+而 `/app/<app-id>/openapi/...` 才进入妙搭 OpenAPI Key 网关并到达 Host。后续仍应以
+部署应用的真实 401/403/503/JSON-RPC 读回确认，不得凭路径名称互相猜测替换。
 
 ## 6. 专用 OpenClaw Gateway
 
@@ -178,7 +180,7 @@ ChatGPT workspace 为准；本授权只适用于单用户隔离 DEV，不能提�
 Gateway 必须使用独立 token；token 只放 secret/env，不进 argv、日志、证据或 Git。Host worker 的配置为：
 
 ```text
-WL_OPENCLAW_HOST_MCP_URL=<dev-host>/api/openapi/wiselink/openclaw-mcp
+WL_OPENCLAW_HOST_MCP_URL=https://<host>/app/<app-id>/openapi/wiselink/openclaw-mcp
 WL_OPENCLAW_HOST_API_KEY=<secret>
 WL_OPENCLAW_GATEWAY_URL=http://127.0.0.1:18789
 WL_OPENCLAW_GATEWAY_TOKEN=<secret>
