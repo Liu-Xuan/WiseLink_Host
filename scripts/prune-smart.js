@@ -187,13 +187,6 @@ async function smartPrune() {
   // 策略：只对 nft 已追踪到的包递归，避免收集无关依赖
   const originalPackage = JSON.parse(fs.readFileSync(ROOT_PACKAGE_JSON, 'utf8'));
 
-  // The professional-input runner loads the mature PDF engine in a child
-  // process. nodeFileTrace cannot see through that process boundary, so keep
-  // the explicitly declared runtime dependency in the hosted artifact.
-  if (originalPackage.dependencies?.['pdfjs-dist']) {
-    requiredPackages.add('pdfjs-dist');
-  }
-
   let addedSubDeps = 0;
   const visited = new Set(); // 防止循环依赖导致无限循环
   const queue = [...requiredPackages]; // BFS 队列，从 nft 结果开始（更精准）
@@ -214,12 +207,6 @@ async function smartPrune() {
         ...depPkg.dependencies,
         ...depPkg.optionalDependencies,
       };
-      if (depName === 'pdfjs-dist') {
-        // Professional input only calls document/page/text-content APIs. Do
-        // not ship pdfjs' optional native Canvas rendering dependency.
-        delete subDeps['@napi-rs/canvas'];
-      }
-
       for (const subDep of Object.keys(subDeps)) {
         // 检查包是否存在于 node_modules 中
         const subDepPath = path.join(ROOT_NODE_MODULES, subDep);

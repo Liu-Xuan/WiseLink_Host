@@ -69,6 +69,19 @@ describe('Phase 13C production path', () => {
     expect(externalModule).not.toContain('ExternalDiscoveryAutomation');
     expect(externalModule).not.toContain('@Automation');
     expect(assets).not.toContain('phase10-aeo');
+    expect(assets).toContain("'node_modules/pdfjs-dist'");
+    expect(assets).toContain(
+      "'dist/server/runtime-assets/professional-input/pdfjs-dist'",
+    );
+    const pdfjsAdapter = await source(
+      'server/modules/professional-input/parser/pdfjs-dist-layout-extractor.adapter.ts',
+    );
+    expect(pdfjsAdapter).toContain(
+      '../../../runtime-assets/professional-input/pdfjs-dist/legacy/build/pdf.mjs',
+    );
+    expect(pdfjsAdapter).toContain(
+      "createRequire(__filename).resolve(\n    'pdfjs-dist/legacy/build/pdf.mjs'",
+    );
     expect(packageJson).not.toContain('test:phase6d:aeo-same-workitem');
     await expect(
       access(resolve(root, 'server/modules/aeo-authoring/public-api.ts')),
