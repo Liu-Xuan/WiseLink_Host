@@ -40,6 +40,8 @@ describe('canonical Host production client boundary', () => {
     expect(home).toContain('HostedDevelopmentIntake');
     expect(home).toContain('retryDevelopmentWorkItem');
     expect(home).toContain("failureCode === 'SOURCE_BINDING_FAILED'");
+    expect(home).toContain("projection?.phase === 'PARSE_REQUESTED'");
+    expect(home).toContain('继续解析');
     expect(home).toContain('重新解析');
     expect(home).not.toContain('localStorage');
     expect(home).toContain('identity.developmentIntakeAvailable === true');
