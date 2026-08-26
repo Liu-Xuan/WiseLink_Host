@@ -60,7 +60,7 @@ export class CanonicalHostController {
       userId: actor.userId,
       tenantId: actor.tenantId,
       developmentIntakeAvailable:
-        actor.env === 'preview' &&
+        ['preview', 'runtime'].includes(actor.env) &&
         actor.roles.includes(CANONICAL_DEVELOPMENT_ROLE_ID),
     };
   }

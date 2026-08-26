@@ -93,7 +93,7 @@ describe('CanonicalHostController assessment actions', () => {
     restoreEnvironmentVariable('MIAODA_LOCAL_DEV', previousLocalDev);
   });
 
-  it('advertises DEV intake only to the preview development role', () => {
+  it('advertises DEV intake only to the native development role in hosted environments', () => {
     const { controller } = target();
     const preview = {
       userContext: {
@@ -109,6 +109,13 @@ describe('CanonicalHostController assessment actions', () => {
       developmentIntakeAvailable: true,
     });
     expect(controller.identityContext(runtime as never)).toMatchObject({
+      developmentIntakeAvailable: true,
+    });
+    expect(
+      controller.identityContext({
+        userContext: { ...runtime.userContext, roles: ['authenticated'] },
+      } as never),
+    ).toMatchObject({
       developmentIntakeAvailable: false,
     });
   });

@@ -113,29 +113,20 @@ export class OrdinaryWorkItemService {
   async createOauthSessionDevelopmentRun(
     input: CanonicalDevelopmentWorkItemRunRequest,
     sessionActor: CanonicalMiaodaFinalUserActorContext,
+    gatewayActor: CanonicalMiaodaFinalUserActorContext,
   ): Promise<CanonicalOrdinaryWorkItemRunResponse> {
-    if (
-      sessionActor.identityProvenance !== 'FEISHU_OAUTH_USER_ACCESS_TOKEN' ||
-      sessionActor.sessionProvenance !== 'SERVER_OPAQUE_SESSION' ||
-      sessionActor.env !== 'preview' ||
-      sessionActor.applicationScopeId !== CANONICAL_APP_ID
-    ) {
-      throw Object.assign(new Error('CANONICAL_IDENTITY_HANDOFF_UNAVAILABLE'), {
-        code: 'CANONICAL_IDENTITY_HANDOFF_UNAVAILABLE',
-        statusCode: 503,
-      });
-    }
+    assertOauthSessionDevelopmentActors(sessionActor, gatewayActor);
     const developmentRunToken = requiredDevelopmentRunToken(
       input.developmentRunToken,
     );
     const actor: CanonicalHostActor = {
-      userId: sessionActor.canonicalSubject.id,
-      tenantId: sessionActor.tenantId,
-      appId: sessionActor.applicationScopeId,
-      // This capability is server-derived from the verified OAuth session and
-      // this preview-only route. It is never accepted from the request body.
-      roles: [CANONICAL_DEVELOPMENT_ROLE_ID],
-      env: sessionActor.env,
+      userId: gatewayActor.canonicalSubject.id,
+      tenantId: gatewayActor.tenantId,
+      appId: gatewayActor.applicationScopeId,
+      // DEV capability comes only from the native Miaoda gateway role. The
+      // opaque OAuth session independently proves the same mapped user.
+      roles: [...gatewayActor.platformRoles],
+      env: gatewayActor.env,
       objectAccessActor: sessionActor,
     };
     return this.runPdf(
@@ -389,6 +380,34 @@ function assertDevelopmentCreateScope(
     !/^sha256:[0-9a-f]{64}$/u.test(scope.authorizationFingerprint)
   ) {
     throw developmentScopeNotFound();
+  }
+}
+
+function assertOauthSessionDevelopmentActors(
+  sessionActor: CanonicalMiaodaFinalUserActorContext,
+  gatewayActor: CanonicalMiaodaFinalUserActorContext,
+): void {
+  if (
+    sessionActor.identityProvenance !== 'FEISHU_OAUTH_USER_ACCESS_TOKEN' ||
+    sessionActor.sessionProvenance !== 'SERVER_OPAQUE_SESSION' ||
+    sessionActor.env !== 'preview' ||
+    sessionActor.applicationScopeId !== CANONICAL_APP_ID ||
+    gatewayActor.identityProvenance !== 'MIAODA_GATEWAY_USER_CONTEXT' ||
+    gatewayActor.applicationScopeId !== CANONICAL_APP_ID ||
+    !['preview', 'runtime'].includes(gatewayActor.env) ||
+    gatewayActor.canonicalSubject.id !== sessionActor.canonicalSubject.id ||
+    gatewayActor.tenantId !== sessionActor.tenantId
+  ) {
+    throw Object.assign(new Error('CANONICAL_IDENTITY_HANDOFF_UNAVAILABLE'), {
+      code: 'CANONICAL_IDENTITY_HANDOFF_UNAVAILABLE',
+      statusCode: 503,
+    });
+  }
+  if (!gatewayActor.platformRoles.includes(CANONICAL_DEVELOPMENT_ROLE_ID)) {
+    throw Object.assign(new Error('Development WorkItem role is required.'), {
+      code: 'DEVELOPMENT_WORK_ITEM_ROLE_REQUIRED',
+      statusCode: 403,
+    });
   }
 }
 
