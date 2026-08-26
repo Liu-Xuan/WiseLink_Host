@@ -137,9 +137,9 @@
     inset 0 1px 0 color-mix(in srgb, var(--wl-g1-highlight) 72%, transparent),
     inset 0 -1px 0 var(--wl-g1-thickness),
     0 18px 46px var(--wl-g1-shadow);
-  backdrop-filter: blur(var(--wl-blur-nav)) saturate(158%) brightness(1.035);
-  -webkit-backdrop-filter: blur(var(--wl-blur-nav)) saturate(158%)
-    brightness(1.035);
+  /* 前缀声明在前，避免构建压缩把标准属性误判为重复项而丢弃。 */
+  -webkit-backdrop-filter: blur(var(--wl-blur-nav)) saturate(158%);
+  backdrop-filter: blur(var(--wl-blur-nav)) saturate(158%);
 }
 
 /* ── G2 导航与目录玻璃：目录树、证据栏、活动栏 ── */
@@ -161,8 +161,8 @@
     inset 0 1px 0 color-mix(in srgb, var(--wl-g2-highlight) 62%, transparent),
     inset 0 -1px 0 color-mix(in srgb, var(--wl-border-strong) 38%, transparent),
     0 12px 30px var(--wl-g2-shadow);
-  backdrop-filter: blur(var(--wl-blur-panel)) saturate(134%);
   -webkit-backdrop-filter: blur(var(--wl-blur-panel)) saturate(134%);
+  backdrop-filter: blur(var(--wl-blur-panel)) saturate(134%);
 }
 
 /* ── G3 专业内容面：综合意见、解析结果、表格、复核表单 ── */
@@ -187,8 +187,8 @@
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, var(--wl-g3-highlight) 52%, transparent),
     0 14px 34px var(--wl-g3-shadow);
-  backdrop-filter: none;
   -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 /* G3 软填充：嵌套在玻璃面内部的子卡，不再叠加 backdrop-filter（§9.4） */
@@ -206,8 +206,8 @@
   border: 1px solid var(--wl-border);
   border-radius: var(--wl-radius-md);
   box-shadow: 0 5px 14px var(--wl-g4-shadow);
-  backdrop-filter: none;
   -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 /* ── 不支持 backdrop-filter 的浏览器：更高不透明度实体回退（§9.4） ── */
@@ -238,8 +238,8 @@ html[data-wl-transparency='reduced']
     .discovery-boundary
   ) {
   background: var(--wl-reduced-g2) !important;
-  backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
 }
 
 html[data-wl-transparency='reduced'] .wl-glass-nav {
@@ -251,8 +251,8 @@ html[data-wl-transparency='reduced'] .wl-workbench-mobilebar {
 }
 
 html[data-wl-transparency='reduced'] .wl-workbench-drawer-scrim {
-  backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
 }
 
 @media (prefers-reduced-transparency: reduce) {
@@ -268,8 +268,8 @@ html[data-wl-transparency='reduced'] .wl-workbench-drawer-scrim {
     .discovery-boundary
   ) {
     background: var(--wl-reduced-g2) !important;
-    backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
   }
 
   .wl-glass-nav {
@@ -300,8 +300,8 @@ html[data-wl-transparency='reduced'] .wl-workbench-drawer-scrim {
     border-color: var(--wl-border-strong);
     background: var(--wl-reduced-g2);
     box-shadow: none;
-    backdrop-filter: none;
     -webkit-backdrop-filter: none;
+    backdrop-filter: none;
   }
 
   .wl-glass-nav,
@@ -336,8 +336,8 @@ html[data-wl-transparency='reduced'] .wl-workbench-drawer-scrim {
     background: Canvas;
     box-shadow: none;
     color: CanvasText;
-    backdrop-filter: none;
     -webkit-backdrop-filter: none;
+    backdrop-filter: none;
   }
 
   .wl-overall-hero::before,

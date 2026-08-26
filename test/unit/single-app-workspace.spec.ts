@@ -23,6 +23,7 @@ describe('single canonical app workspace', () => {
       overallHero,
       reasoningTrail,
       reader,
+      workbenchStyles,
     ] = await Promise.all([
       source('client/src/app.tsx'),
       source('client/src/components/Layout.tsx'),
@@ -47,6 +48,7 @@ describe('single canonical app workspace', () => {
       source(
         'client/src/pages/DocumentParsingPage/DocumentReaderWorkspace.tsx',
       ),
+      source('client/src/features/workbench/workbench-shell.css'),
     ]);
 
     expect(routes).toContain('WorkspaceHomePage');
@@ -101,6 +103,13 @@ describe('single canonical app workspace', () => {
     expect(glass).toContain('@media (prefers-reduced-transparency: reduce)');
     expect(glass).toContain('@media (prefers-contrast: more)');
     expect(glass).toContain('@media (forced-colors: active)');
+    expect(glass).toMatch(
+      /-webkit-backdrop-filter: blur\(var\(--wl-blur-nav\)\) saturate\(158%\);\s+backdrop-filter: blur\(var\(--wl-blur-nav\)\) saturate\(158%\);/,
+    );
+    expect(glass).toMatch(
+      /-webkit-backdrop-filter: none !important;\s+backdrop-filter: none !important;/,
+    );
+    expect(glass).not.toContain('brightness(1.035)');
     expect(homeStyles).toContain('.library-tree-panel .wl-navigator');
     expect(homeStyles).toContain('避免 glass-on-glass');
     expect(motion).toContain('@keyframes wl-drift-cold');
@@ -114,6 +123,10 @@ describe('single canonical app workspace', () => {
     );
     expect(reader).not.toContain('PDF_PREVIEW_PROJECTION_MISSING');
     expect(reader).not.toContain('SOURCE_REF_NOT_IN_CURRENT_QUERY');
+    expect(page).toContain('onSourceRefSelect={locateSourceRef}');
+    expect(workbenchStyles).toMatch(
+      /\.wl-workbench-body\s*\{\s*position: relative;/,
+    );
   });
 
   it('keeps model execution out of the browser workbench', async () => {
