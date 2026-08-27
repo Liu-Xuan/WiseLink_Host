@@ -7,6 +7,7 @@ import { createMcpHandler, McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod/v4';
 
 import { ActionAttemptLifecycleService } from '../action-attempt/action-attempt-lifecycle.service';
+import { buildOpenClawTranslationDelivery } from './canonical-host-openclaw-attempt-delivery';
 import { CanonicalHostOpenClawDynamicEvaluationService } from './canonical-host-openclaw-dynamic-evaluation.service';
 import {
   CanonicalHostOpenClawDiscoveryService,
@@ -37,6 +38,7 @@ const reviewRequestId = z.string().trim().min(1).max(96);
 const reviewSourceRefId = z.string().trim().min(1).max(512);
 const applicabilityContextRef = z.string().trim().min(1).max(160);
 const applicabilityRequestId = z.string().trim().min(1).max(96);
+const deliveryPart = z.number().int().min(0).max(10_000).optional();
 const discoveryCandidate = z
   .object({
     title: z.string().trim().min(1).max(1000),
@@ -149,12 +151,19 @@ export class CanonicalHostOpenClawMcpService {
       {
         title: '开始来源绑定的中英文候选翻译',
         description:
-          'Host fresh-read 同一 WorkItem，冻结 frozen.2 SourceUnits、SourceRefs 与 exact versioned TranslationRuleSet，创建 durable TRANSLATE ActionAttempt；重复 begin 只恢复同一未完成 attempt。',
-        inputSchema: z.object({ workItemId: mcpWorkItemId }).strict(),
+          'Host fresh-read 同一 WorkItem，冻结 frozen.2 SourceUnits、SourceRefs 与 exact versioned TranslationRuleSet，创建 durable TRANSLATE ActionAttempt；按实际序列化字节上限返回可读 SourceUnit 批次，重复 part 读取只恢复同一未完成 attempt；COMMITTING 只返回 recoveryResultContentHash，完整结果从通用 status 只读恢复。',
+        inputSchema: z
+          .object({ workItemId: mcpWorkItemId, deliveryPart })
+          .strict(),
         annotations: beginAnnotations,
       },
-      async ({ workItemId }) =>
-        textResult(await this.translation.begin(workItemId)),
+      async ({ workItemId, deliveryPart: selectedDeliveryPart }) =>
+        textResult(
+          buildOpenClawTranslationDelivery(
+            await this.translation.begin(workItemId),
+            selectedDeliveryPart ?? 0,
+          ),
+        ),
     );
 
     server.registerTool(

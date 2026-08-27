@@ -14,7 +14,7 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - model policy：`official-hosted-profile-config`（官方 profile 当前可选 `GLM-5.3`，Skill 不绑定具体模型）
 - Skill：`wiselink-research-and-synthesize@r09.c4`
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（exact 20 tools）
-- Host baseline：`df4bd1a5c0698c5fd56912fba1329a9283d990c6`
+- Host baseline：`6fd2655d27edc3851c745547efaf8796ad22c82c`
 
 app/profile/Skill/MCP 是执行合同，不是允许模型自报的标签。具体模型由官方托管 profile/config 选择；每次执行必须从托管运行时取得实际
 `modelVersion`、`promptVersion`、`skillVersion` 和 `toolVersions`，由 validator 校验后写入完整
@@ -36,6 +36,8 @@ commit；Skill 不维护模型版本 allowlist。
   OpenAPI 伪造 invoke 或旧 0.11 runtime。
 - 本目录脚本是无凭据的编排/validator 模块，不连接 Host、不调用模型、不安装 Skill。历史 ZIP 安装器和
   `archive/internal-lab/phase13-ab.mjs` 均不在本版本运行资产中。
+- 官方 Hosted Agent 的真实路径是按本文件直接调用 MCP；不得假设它会执行
+  `scripts/orchestrate-host-mcp.mjs`、本地 decoder 或 shell。
 
 ## Mode 1：INITIAL_ANALYSIS
 
@@ -54,11 +56,16 @@ overall 中的文字解释成适用性结果。
 ### 通用 begin / commit
 
 1. `get_parse_status({workItemId})` fresh-read 当前状态。
-2. 调对应 `begin_*`。校验 TaskEnvelope 的 schema、`inputHash`、taskType、operationRef、actual artifact
-   ref/SHA、baseRevision 和 deadline。
+2. 调对应 `begin_*`。Translation begin 第 0 包直接返回可读的 attempt control、脱敏 taskBinding、
+   `modelInputBase` 与第一批 SourceUnits；若 `partCount > 1`，官方 Hosted Agent 用同一工具按 `deliveryPart=1..N-1`
+   顺序读取剩余可读 SourceUnits。每个完整 MCP tool result 按实际 JSON UTF-8 bytes 限在 14,000 内，不从托管
+   日志恢复截断 JSON。
 3. 若 status 为 `COMMITTING`，只调用一次 `get_action_attempt_status`，校验 Host 已持久化
-   `recoveryResult.contentHash == resultContentHash` 后返回；不调用模型、不再次 commit。
-4. 若 status 为 `RUNNING`，只把 authority-free `modelInput` 交给托管模型。
+   `recoveryResult.contentHash == resultContentHash == begin.recoveryResultContentHash` 后返回；不调用模型、不再次
+   commit。begin 只返回该有界 hash，完整 recoveryResult 由既有 status 工具读取。
+4. 若 status 为 `RUNNING`，只使用 `delivery.modelInputBase + delivery.sourceUnits` 组成的 authority-free translation
+   输入；attempt control/taskBinding 不混入翻译输入。收齐输入后 heartbeat，生成完成、commit 前再 heartbeat；生成期间
+   不要求短周期回调，Host 的长租约覆盖该段运行。
 5. 模型执行必须返回 `{output, provenance}`；provenance 必须是实际读数，实际模型非空可读，并通过固定
    Skill/MCP/prompt validator。
 6. 先验证 operation input/output pair，再构造完整
@@ -81,6 +88,12 @@ overall 中的文字解释成适用性结果。
 
 ### Translation
 
+- `begin_translation({workItemId, deliveryPart?})` 首次返回第 0 批；`partCount > 1` 时只用同一工具、同一
+  WorkItem 顺序读取其余批。每次返回的 attemptRef、leaseToken/generation、taskBinding.inputHash 与 partCount
+  必须一致，否则停止。重复读取 active attempt 不创建新 attempt、不换 lease。
+- 第 0 批的 `delivery.modelInputBase` 保存 schema、rulePack 与 taskStartBinding；所有批次的
+  `delivery.sourceUnits` 按 start/end index 连续拼成完整 196/N 个输入单元。它们是可读结构化 JSON，不需要
+  shell、Node、解压或本地脚本。
 - 输入/输出分别使用 Host 当前
   `wiselink.3_1.translation_task.v0.candidate` 与
   `wiselink.3_1.translation_result.v0.candidate`。

@@ -90,6 +90,9 @@ test('runs real applicability AST extraction through dedicated begin/commit', as
     calls.push({ name, args });
     if (name === 'begin_applicability_evaluation') return begin;
     if (name === 'get_parse_status') return status(WORK_ITEM_ID);
+    if (name === 'heartbeat_action_attempt') {
+      return heartbeatResult(task, args);
+    }
     if (name === 'commit_applicability_candidate') {
       validatePayload('result-envelope', { task, result: args.result });
       const candidate = JSON.parse(args.result.modelOutput);
@@ -146,6 +149,8 @@ test('runs real applicability AST extraction through dedicated begin/commit', as
     [
       'begin_applicability_evaluation',
       'get_parse_status',
+      'heartbeat_action_attempt',
+      'heartbeat_action_attempt',
       'commit_applicability_candidate',
       'get_parse_status',
       'get_deep_link',
@@ -277,6 +282,9 @@ test('continues INITIAL_ANALYSIS from AIMS-2 WAITING to preliminary overall', as
       if (name === 'begin_dynamic_evaluation') {
         return runningBegin(dynamicTask, { modelInput: dynamicInput });
       }
+      if (name === 'heartbeat_action_attempt') {
+        return heartbeatResult(dynamicTask, args);
+      }
       if (name === 'commit_dynamic_evaluation_candidate') {
         validatePayload('result-envelope', {
           task: dynamicTask,
@@ -341,6 +349,9 @@ test('continues INITIAL_ANALYSIS from AIMS-2 WAITING to preliminary overall', as
           modelInput: overallInput,
           selectedDiscoveryRefs: [],
         });
+      }
+      if (name === 'heartbeat_action_attempt') {
+        return heartbeatResult(overallTask, args);
       }
       if (name === 'commit_overall_candidate') {
         validatePayload('result-envelope', {
@@ -432,6 +443,9 @@ test('recovers applicability commit response loss once and never retries commit'
       return runningBegin(task, { modelInput: input });
     }
     if (name === 'get_parse_status') return status(WORK_ITEM_ID);
+    if (name === 'heartbeat_action_attempt') {
+      return heartbeatResult(task, args);
+    }
     if (name === 'commit_applicability_candidate') {
       submittedResult = args.result;
       throw new Error('TRANSPORT_RESPONSE_LOST');
@@ -603,13 +617,32 @@ test('seals actual model provenance without binding the Skill to one model versi
 
 test('runs translation with fresh status and full fenced ResultEnvelope', async () => {
   const input = translationInput();
+  input.sourceUnits.push({
+    unitKey: 'unit-002',
+    kind: 'paragraph',
+    text: 'Inspect ATA 32 before release.',
+    sourceRefIds: ['source-ref-002'],
+  });
   const task = makeTask('OPENCLAW_TRANSLATE', input);
-  const begin = runningBegin(task, { modelInput: input });
+  const deliveryParts = translationDeliveryParts(task, input, { batchSize: 1 });
+  const output = translationOutput();
+  output.candidateUnits.push({
+    unitKey: 'unit-002',
+    text: '放行前检查 ATA 32。',
+    sourceRefIds: ['source-ref-002'],
+    engineerRevision: null,
+  });
   const calls = [];
+  let deliveredModelInput;
   const callTool = async (name, args) => {
     calls.push({ name, args });
     if (name === 'get_parse_status') return status(WORK_ITEM_ID);
-    if (name === 'begin_translation') return begin;
+    if (name === 'begin_translation') {
+      return deliveryParts[args.deliveryPart ?? 0];
+    }
+    if (name === 'heartbeat_action_attempt') {
+      return heartbeatResult(task, args);
+    }
     if (name === 'commit_translation_candidate') {
       assert.deepEqual(Object.keys(args).sort(), [
         'attemptRef',
@@ -621,6 +654,12 @@ test('runs translation with fresh status and full fenced ResultEnvelope', async 
       assert.equal(args.leaseToken, LEASE_TOKEN);
       assert.equal(args.leaseGeneration, 3);
       validatePayload('result-envelope', { task, result: args.result });
+      assert.deepEqual(args.result.sourceRefs, []);
+      assert.equal(
+        JSON.stringify(args.result).includes('tenant-control-plane'),
+        false,
+      );
+      assert.equal(JSON.stringify(args.result).includes(ARTIFACT_REF), false);
       return {
         workItemId: WORK_ITEM_ID,
         workItemRevision: 8,
@@ -636,23 +675,110 @@ test('runs translation with fresh status and full fenced ResultEnvelope', async 
   const result = await runTranslation({
     workItemId: WORK_ITEM_ID,
     callTool,
-    translate: async () => ({
-      output: translationOutput(),
-      provenance: provenance(),
-    }),
+    translate: async (modelInput) => {
+      deliveredModelInput = modelInput;
+      return { output, provenance: provenance() };
+    },
   });
   assert.equal(result.outcome, 'CANDIDATE_ONLY');
   assert.equal(result.provenance.skillVersion, WISELINK_SKILL_VERSION);
+  assert.deepEqual(deliveredModelInput, input);
   assert.deepEqual(
     calls.map(({ name }) => name),
     [
       'get_parse_status',
       'begin_translation',
+      'begin_translation',
+      'heartbeat_action_attempt',
+      'heartbeat_action_attempt',
       'commit_translation_candidate',
       'get_parse_status',
       'get_deep_link',
     ],
   );
+  assert.deepEqual(calls[1].args, { workItemId: WORK_ITEM_ID });
+  assert.deepEqual(calls[2].args, {
+    workItemId: WORK_ITEM_ID,
+    deliveryPart: 1,
+  });
+});
+
+test('recovers COMMITTING translation through generic status without model or commit', async () => {
+  const input = translationInput();
+  const task = makeTask('OPENCLAW_TRANSLATE', input);
+  const recoveryResult = sealResultEnvelope({
+    task,
+    modelOutput: translationOutput(),
+    provenance: provenance(),
+  });
+  const [begin] = translationDeliveryParts(task, input, {
+    status: 'COMMITTING',
+    recoveryResult,
+  });
+  const calls = [];
+  let translateCalls = 0;
+  const result = await runTranslation({
+    workItemId: WORK_ITEM_ID,
+    callTool: async (name, args) => {
+      calls.push({ name, args });
+      if (name === 'get_parse_status') return status(WORK_ITEM_ID);
+      if (name === 'begin_translation') return begin;
+      if (name === 'get_action_attempt_status') {
+        return attemptStatus(task, 'COMMITTING', recoveryResult);
+      }
+      throw new Error(`UNEXPECTED_TOOL:${name}`);
+    },
+    translate: async () => {
+      translateCalls += 1;
+      throw new Error('MODEL_MUST_NOT_RUN');
+    },
+  });
+  assert.equal(result.outcome, 'COMMITTING_RECOVERY_READ_ONLY');
+  assert.equal(translateCalls, 0);
+  assert.deepEqual(
+    calls.map(({ name }) => name),
+    ['get_parse_status', 'begin_translation', 'get_action_attempt_status'],
+  );
+});
+
+test('recovers translation commit response loss against the delivered task binding', async () => {
+  const input = translationInput();
+  const task = makeTask('OPENCLAW_TRANSLATE', input);
+  const [begin] = translationDeliveryParts(task, input);
+  const calls = [];
+  let submittedResult;
+  const result = await runTranslation({
+    workItemId: WORK_ITEM_ID,
+    callTool: async (name, args) => {
+      calls.push(name);
+      if (name === 'get_parse_status') return status(WORK_ITEM_ID);
+      if (name === 'begin_translation') return begin;
+      if (name === 'heartbeat_action_attempt') {
+        return heartbeatResult(task, args);
+      }
+      if (name === 'commit_translation_candidate') {
+        submittedResult = args.result;
+        throw new Error('TRANSPORT_RESPONSE_LOST');
+      }
+      if (name === 'get_action_attempt_status') {
+        return attemptStatus(task, 'COMMITTING', submittedResult);
+      }
+      throw new Error(`UNEXPECTED_TOOL:${name}`);
+    },
+    translate: async () => ({
+      output: translationOutput(),
+      provenance: provenance(),
+    }),
+  });
+  assert.equal(result.outcome, 'COMMIT_RESPONSE_LOSS_RECOVERED_READ_ONLY');
+  assert.deepEqual(calls, [
+    'get_parse_status',
+    'begin_translation',
+    'heartbeat_action_attempt',
+    'heartbeat_action_attempt',
+    'commit_translation_candidate',
+    'get_action_attempt_status',
+  ]);
 });
 
 test('rejects each forbidden translation input before the model boundary', async (t) => {
@@ -679,7 +805,7 @@ test('rejects each forbidden translation input before the model boundary', async
     await t.test(label, async () => {
       const input = { ...translationInput(), ...leakage };
       const task = makeTask('OPENCLAW_TRANSLATE', input);
-      const begin = runningBegin(task, { modelInput: input });
+      const [begin] = translationDeliveryParts(task, input);
       const toolCalls = [];
       let translateCallCount = 0;
       const callTool = async (name) => {
@@ -728,7 +854,7 @@ test('rejects actor identity key forms before the translation model boundary', a
     await t.test(label, async () => {
       const input = { ...translationInput(), ...leakage };
       const task = makeTask('OPENCLAW_TRANSLATE', input);
-      const begin = runningBegin(task, { modelInput: input });
+      const [begin] = translationDeliveryParts(task, input);
       let translateCallCount = 0;
       const callTool = async (name) => {
         if (name === 'get_parse_status') return status(WORK_ITEM_ID);
@@ -762,6 +888,9 @@ test('runs dynamic N/N and never uses old {attemptRef, output}', async () => {
     calls.push({ name, args });
     if (name === 'get_parse_status') return status(WORK_ITEM_ID);
     if (name === 'begin_dynamic_evaluation') return begin;
+    if (name === 'heartbeat_action_attempt') {
+      return heartbeatResult(task, args);
+    }
     if (name === 'commit_dynamic_evaluation_candidate') {
       assert.equal(Object.hasOwn(args, 'output'), false);
       assert.equal(Object.hasOwn(args, 'result'), true);
@@ -795,6 +924,8 @@ test('runs dynamic N/N and never uses old {attemptRef, output}', async () => {
     [
       'get_parse_status',
       'begin_dynamic_evaluation',
+      'heartbeat_action_attempt',
+      'heartbeat_action_attempt',
       'commit_dynamic_evaluation_candidate',
       'get_parse_status',
       'get_deep_link',
@@ -815,6 +946,9 @@ test('does one generic dynamic status recovery after commit response loss', asyn
     }
     if (name === 'begin_dynamic_evaluation') {
       return runningBegin(task, { modelInput: input });
+    }
+    if (name === 'heartbeat_action_attempt') {
+      return heartbeatResult(task, args);
     }
     if (name === 'commit_dynamic_evaluation_candidate') {
       submittedResult = args.result;
@@ -866,6 +1000,9 @@ test('runs no-discovery overall from complete persisted dynamic N', async () => 
         : statusWithOverall(WORK_ITEM_ID, input.outputCorrelationRef);
     }
     if (name === 'begin_overall_synthesis') return begin;
+    if (name === 'heartbeat_action_attempt') {
+      return heartbeatResult(task, args);
+    }
     if (name === 'commit_overall_candidate') {
       validatePayload('result-envelope', { task, result: args.result });
       return {
@@ -1283,6 +1420,75 @@ function runningBegin(task, extra = {}) {
     task,
     ...extra,
   };
+}
+
+function heartbeatResult(task, args) {
+  assert.deepEqual(args, {
+    attemptRef: task.operationRef,
+    leaseToken: LEASE_TOKEN,
+    leaseGeneration: 3,
+  });
+  return {
+    attemptRef: task.operationRef,
+    status: 'RUNNING',
+    leaseExpiresAt: '2026-08-27T11:30:00.000Z',
+  };
+}
+
+function translationDeliveryParts(
+  task,
+  input,
+  {
+    batchSize = input.sourceUnits.length,
+    status = 'RUNNING',
+    recoveryResult,
+  } = {},
+) {
+  const sourceUnits = structuredClone(input.sourceUnits);
+  const batches = [];
+  for (let index = 0; index < sourceUnits.length; index += batchSize) {
+    batches.push(sourceUnits.slice(index, index + batchSize));
+  }
+  const { sourceUnits: _sourceUnits, ...modelInputBase } = input;
+  let startIndex = 0;
+  return batches.map((batch, partIndex) => {
+    const sourceUnitStartIndex = startIndex;
+    startIndex += batch.length;
+    return {
+      schemaVersion: 'wiselink.3_1.openclaw_translation_delivery.v1',
+      attemptRef: task.operationRef,
+      status,
+      leaseToken: LEASE_TOKEN,
+      leaseGeneration: 3,
+      leaseExpiresAt: '2026-08-27T11:00:00.000Z',
+      ...(status === 'COMMITTING'
+        ? { recoveryResultContentHash: recoveryResult?.contentHash }
+        : {}),
+      taskBinding: {
+        actionAttemptId: task.actionAttemptId,
+        operationRef: task.operationRef,
+        taskType: 'OPENCLAW_TRANSLATE',
+        workItemId: task.workItemId,
+        inputRevision: task.inputRevision,
+        baseRevision: task.baseRevision,
+        documentVersionId: task.documentVersionId,
+        deadline: task.deadline,
+        inputHash: task.inputHash,
+        sourceArtifactSha256: task.sourceRefs.map(({ sha256 }) => sha256),
+      },
+      delivery: {
+        partIndex,
+        partCount: batches.length,
+        sourceUnitStartIndex,
+        sourceUnitEndExclusive: startIndex,
+        sourceUnitCount: sourceUnits.length,
+        ...(partIndex === 0
+          ? { modelInputBase: structuredClone(modelInputBase) }
+          : {}),
+        sourceUnits: structuredClone(batch),
+      },
+    };
+  });
 }
 
 function translationInput() {

@@ -27,8 +27,11 @@
 ### Positive：TRANSLATE
 
 1. Host 创建 INITIAL_ANALYSIS Session/ActionAttempt；记录 Session key 的 Host-side binding，但不暴露 tenant/actor。
-2. 观察 `begin_translation` 返回 RUNNING、TaskEnvelope exact inputHash/artifact ref+SHA/current revision。
-3. 执行一次托管 profile 当前选定模型，记录实际 model/prompt/Skill/tool versions 和 run metrics。
+2. 观察 `begin_translation` 逐批返回可读结构化 SourceUnits；第 0 批含 modelInputBase，后续批按连续 index 覆盖
+   全部 SourceUnits。每个完整 MCP tool result 不超过 14,000 UTF-8 bytes，attempt fence/inputHash/partCount 稳定，
+   输出中没有第二份 modelInput、tenant 或 FileService locator。
+3. 模型前 heartbeat；执行一次托管 profile 当前选定模型；模型返回后再 heartbeat，并记录实际
+   model/prompt/Skill/tool versions 和 run metrics。模型生成期间不要求短周期回调。
 4. 验证 translation pair 与完整 ResultEnvelope；单次 commit。
 5. Host 读回 bilingual actual bytes、rule-set validation、candidate-only projection、same DocumentVersion/currentness。
 
@@ -63,6 +66,8 @@
 - Task hash、artifact SHA、baseRevision、leaseGeneration 或 SourceRef 任一漂移，Host fail closed。
 - commit response unknown：只读一次通用 status，匹配 resultContentHash，不重复 commit。
 - COMMITTING：只读一次通用 status 并匹配 recoveryResult/contentHash，不第二次调用模型。
+- Translation 任一批缺失、错序、超限或 attempt fence 改变：Agent 在翻译/commit 前停止，不从 session log 恢复
+  残缺输入。
 - 非 owner/跨 tenant/旧 revision/过期 lease：统一 fail closed，不泄露对象存在性。
 
 ## INTERACTIVE_REVIEW UAT

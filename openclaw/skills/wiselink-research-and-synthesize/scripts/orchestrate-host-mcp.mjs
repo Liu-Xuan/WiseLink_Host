@@ -11,6 +11,7 @@ import {
   isForbiddenAuthorityInputKey,
   normalizeAuthorityInputKey,
   sealResultEnvelope,
+  sealTranslationDeliveryResultEnvelope,
   sealWaitingInputResultEnvelope,
   serializeDynamicRulesCommitOutput,
   validatePayload,
@@ -20,6 +21,8 @@ import {
   validateReviewTask,
   validateRuntimeProvenance,
   validateTaskEnvelope,
+  validateTranslationDeliveryResultEnvelope,
+  validateTranslationDeliveryTaskBinding,
 } from './validate-payload.mjs';
 
 export const WISELINK_SESSION_MODES = [
@@ -96,8 +99,7 @@ export async function runInitialAnalysis(input) {
 export async function runTranslation({ workItemId, callTool, translate }) {
   assertCallbacks(workItemId, callTool, translate);
   const before = await callTool('get_parse_status', { workItemId });
-  const begin = await callTool('begin_translation', { workItemId });
-  assertBegin(begin, 'OPENCLAW_TRANSLATE');
+  const begin = await collectTranslationDelivery(workItemId, callTool);
   if (begin.status === 'COMMITTING') {
     return recoverInitialCommitting({
       stage: 'TRANSLATE',
@@ -108,15 +110,17 @@ export async function runTranslation({ workItemId, callTool, translate }) {
     });
   }
   validatePayload('translation-input', begin.modelInput);
+  await heartbeatAttempt(begin, callTool);
   const execution = normalizeExecution(
     await translate(structuredClone(begin.modelInput)),
   );
+  await heartbeatAttempt(begin, callTool);
   validatePayload('translation-pair', {
     input: begin.modelInput,
     output: execution.output,
   });
-  const result = sealResultEnvelope({
-    task: begin.task,
+  const result = sealTranslationDeliveryResultEnvelope({
+    taskBinding: begin.taskBinding,
     modelOutput: execution.output,
     provenance: execution.provenance,
     factsConsidered: begin.modelInput.sourceUnits.map(({ unitKey }) => unitKey),
@@ -194,9 +198,11 @@ export async function runApplicabilityEvaluation({
     if (typeof extractApplicability !== 'function') {
       throw new Error('HOST_MCP_APPLICABILITY_MODEL_CALLBACK_REQUIRED');
     }
+    await heartbeatAttempt(begin, callTool);
     const execution = normalizeExecution(
       await extractApplicability(structuredClone(begin.modelInput)),
     );
+    await heartbeatAttempt(begin, callTool);
     assertApplicabilityPromptVersion(execution.provenance);
     const astCandidate = validateApplicabilityAstCandidate(
       execution.output,
@@ -269,9 +275,11 @@ export async function runDynamicEvaluation({
     });
   }
   validatePayload('dynamic-rules-input', begin.modelInput);
+  await heartbeatAttempt(begin, callTool);
   const execution = normalizeExecution(
     await evaluateDynamicRules(structuredClone(begin.modelInput)),
   );
+  await heartbeatAttempt(begin, callTool);
   const serializedOutput = serializeDynamicRulesCommitOutput(
     begin.modelInput,
     execution.output,
@@ -392,9 +400,11 @@ async function completeOverall({
   resumed = false,
 }) {
   validatePayload('synthesis-input', begin.modelInput);
+  await heartbeatAttempt(begin, callTool);
   const execution = normalizeExecution(
     await synthesizeOverall(structuredClone(begin.modelInput)),
   );
+  await heartbeatAttempt(begin, callTool);
   validatePayload('synthesis-pair', {
     input: begin.modelInput,
     output: execution.output,
@@ -554,10 +564,14 @@ async function recoverInitialCommitting({ stage, before, begin, callTool }) {
 }
 
 async function recoverCommitting({ mode, operation, before, begin, callTool }) {
-  if (!begin.recoveryResult) {
+  const expectedContentHash =
+    begin.recoveryResult?.contentHash ?? begin.recoveryResultContentHash;
+  if (!expectedContentHash) {
     throw new Error('HOST_MCP_COMMITTING_RECOVERY_UNAVAILABLE');
   }
-  validateResultEnvelope(begin.task, begin.recoveryResult);
+  if (begin.recoveryResult) {
+    validateResultForBegin(begin, begin.recoveryResult);
+  }
   const status = await callTool('get_action_attempt_status', {
     attemptRef: begin.attemptRef,
   });
@@ -569,10 +583,10 @@ async function recoverCommitting({ mode, operation, before, begin, callTool }) {
   ) {
     throw new Error('HOST_MCP_COMMITTING_RECOVERY_UNAVAILABLE');
   }
-  validateResultEnvelope(begin.task, status.recoveryResult);
+  validateResultForBegin(begin, status.recoveryResult);
   if (
-    status.resultContentHash !== begin.recoveryResult.contentHash ||
-    status.recoveryResult.contentHash !== begin.recoveryResult.contentHash
+    status.resultContentHash !== expectedContentHash ||
+    status.recoveryResult.contentHash !== expectedContentHash
   ) {
     throw new Error('HOST_MCP_COMMITTING_RESULT_HASH_MISMATCH');
   }
@@ -618,7 +632,7 @@ async function recoverCommitResponseLoss({
     if (status.recoveryAvailable !== true || !status.recoveryResult) {
       throw outcomeUnknown('HOST_MCP_COMMIT_OUTCOME_UNKNOWN', cause, status);
     }
-    validateResultEnvelope(begin.task, status.recoveryResult);
+    validateResultForBegin(begin, status.recoveryResult);
     if (status.recoveryResult.contentHash !== result.contentHash) {
       throw outcomeUnknown('HOST_MCP_COMMIT_OUTCOME_UNKNOWN', cause, status);
     }
@@ -774,6 +788,197 @@ function assertBegin(value, taskType) {
   if (value.status === 'COMMITTING' && !value.recoveryResult) {
     throw new Error('HOST_MCP_COMMITTING_RECOVERY_REQUIRED');
   }
+}
+
+async function collectTranslationDelivery(workItemId, callTool) {
+  const first = await callTool('begin_translation', { workItemId });
+  assertTranslationDeliveryPart(first, {
+    workItemId,
+    expectedPartIndex: 0,
+  });
+  const begin = translationDeliveryControl(first);
+  if (begin.status === 'COMMITTING') return begin;
+
+  const sourceUnits = [...first.delivery.sourceUnits];
+  for (
+    let partIndex = 1;
+    partIndex < first.delivery.partCount;
+    partIndex += 1
+  ) {
+    const part = await callTool('begin_translation', {
+      workItemId,
+      deliveryPart: partIndex,
+    });
+    assertTranslationDeliveryPart(part, {
+      workItemId,
+      expectedPartIndex: partIndex,
+      expectedControl: begin,
+      expectedSourceUnitStartIndex: sourceUnits.length,
+    });
+    sourceUnits.push(...part.delivery.sourceUnits);
+  }
+  if (sourceUnits.length !== first.delivery.sourceUnitCount) {
+    throw new Error('HOST_MCP_TRANSLATION_DELIVERY_COUNT_MISMATCH');
+  }
+  const modelInput = {
+    ...structuredClone(first.delivery.modelInputBase),
+    sourceUnits: structuredClone(sourceUnits),
+  };
+  validatePayload('translation-input', modelInput);
+  return { ...begin, modelInput };
+}
+
+function assertTranslationDeliveryPart(
+  value,
+  {
+    workItemId,
+    expectedPartIndex,
+    expectedControl,
+    expectedSourceUnitStartIndex = 0,
+  },
+) {
+  if (!isRecord(value)) {
+    throw new Error('HOST_MCP_TRANSLATION_DELIVERY_INVALID');
+  }
+  assertExactKeys(
+    value,
+    [
+      'schemaVersion',
+      'attemptRef',
+      'status',
+      'leaseToken',
+      'leaseGeneration',
+      'leaseExpiresAt',
+      'taskBinding',
+      'delivery',
+    ],
+    ['recoveryResultContentHash'],
+    'HOST_MCP_TRANSLATION_DELIVERY',
+  );
+  if (
+    value.schemaVersion !== 'wiselink.3_1.openclaw_translation_delivery.v1' ||
+    !['RUNNING', 'COMMITTING'].includes(value.status)
+  ) {
+    throw new Error('HOST_MCP_TRANSLATION_DELIVERY_SCHEMA_INVALID');
+  }
+  requiredText(value.attemptRef, 'HOST_MCP_ATTEMPT_REF_REQUIRED');
+  requiredText(value.leaseToken, 'HOST_MCP_LEASE_TOKEN_REQUIRED');
+  requiredText(
+    value.leaseExpiresAt,
+    'HOST_MCP_TRANSLATION_LEASE_EXPIRY_REQUIRED',
+  );
+  if (
+    !Number.isSafeInteger(value.leaseGeneration) ||
+    value.leaseGeneration < 1
+  ) {
+    throw new Error('HOST_MCP_LEASE_GENERATION_INVALID');
+  }
+  validateTranslationDeliveryTaskBinding(value.taskBinding);
+  if (
+    value.taskBinding.operationRef !== value.attemptRef ||
+    value.taskBinding.workItemId !== workItemId
+  ) {
+    throw new Error('HOST_MCP_TRANSLATION_DELIVERY_TASK_BINDING_INVALID');
+  }
+  if (value.status === 'COMMITTING') {
+    if (!/^[a-f0-9]{64}$/u.test(value.recoveryResultContentHash ?? '')) {
+      throw new Error('HOST_MCP_COMMITTING_RECOVERY_UNAVAILABLE');
+    }
+  } else if (Object.hasOwn(value, 'recoveryResultContentHash')) {
+    throw new Error('HOST_MCP_TRANSLATION_DELIVERY_RECOVERY_HASH_UNEXPECTED');
+  }
+
+  const delivery = value.delivery;
+  if (!isRecord(delivery)) {
+    throw new Error('HOST_MCP_TRANSLATION_DELIVERY_PART_INVALID');
+  }
+  assertExactKeys(
+    delivery,
+    [
+      'partIndex',
+      'partCount',
+      'sourceUnitStartIndex',
+      'sourceUnitEndExclusive',
+      'sourceUnitCount',
+      'sourceUnits',
+    ],
+    ['modelInputBase'],
+    'HOST_MCP_TRANSLATION_DELIVERY_PART',
+  );
+  if (
+    !Number.isSafeInteger(delivery.partIndex) ||
+    delivery.partIndex !== expectedPartIndex ||
+    !Number.isSafeInteger(delivery.partCount) ||
+    delivery.partCount < 1 ||
+    delivery.partIndex >= delivery.partCount ||
+    !Number.isSafeInteger(delivery.sourceUnitStartIndex) ||
+    delivery.sourceUnitStartIndex !== expectedSourceUnitStartIndex ||
+    !Number.isSafeInteger(delivery.sourceUnitEndExclusive) ||
+    !Number.isSafeInteger(delivery.sourceUnitCount) ||
+    delivery.sourceUnitCount < 1 ||
+    !Array.isArray(delivery.sourceUnits) ||
+    delivery.sourceUnits.length < 1 ||
+    delivery.sourceUnitEndExclusive !==
+      delivery.sourceUnitStartIndex + delivery.sourceUnits.length ||
+    delivery.sourceUnitEndExclusive > delivery.sourceUnitCount
+  ) {
+    throw new Error('HOST_MCP_TRANSLATION_DELIVERY_PART_INVALID');
+  }
+  if (
+    expectedPartIndex === 0
+      ? !isRecord(delivery.modelInputBase) ||
+        Object.hasOwn(delivery.modelInputBase, 'sourceUnits')
+      : Object.hasOwn(delivery, 'modelInputBase')
+  ) {
+    throw new Error('HOST_MCP_TRANSLATION_MODEL_INPUT_BASE_INVALID');
+  }
+  if (
+    expectedPartIndex === delivery.partCount - 1 &&
+    delivery.sourceUnitEndExclusive !== delivery.sourceUnitCount
+  ) {
+    throw new Error('HOST_MCP_TRANSLATION_DELIVERY_COUNT_MISMATCH');
+  }
+  if (
+    expectedControl &&
+    canonicalJson(translationDeliveryControl(value)) !==
+      canonicalJson(expectedControl)
+  ) {
+    throw new Error('HOST_MCP_TRANSLATION_DELIVERY_FENCE_CHANGED');
+  }
+}
+
+function translationDeliveryControl(value) {
+  return {
+    attemptRef: value.attemptRef,
+    status: value.status,
+    leaseToken: value.leaseToken,
+    leaseGeneration: value.leaseGeneration,
+    leaseExpiresAt: value.leaseExpiresAt,
+    taskBinding: structuredClone(value.taskBinding),
+    partCount: value.delivery.partCount,
+    sourceUnitCount: value.delivery.sourceUnitCount,
+    ...(value.recoveryResultContentHash
+      ? { recoveryResultContentHash: value.recoveryResultContentHash }
+      : {}),
+  };
+}
+
+function validateResultForBegin(begin, result) {
+  if (begin.task) return validateResultEnvelope(begin.task, result);
+  return validateTranslationDeliveryResultEnvelope(begin.taskBinding, result);
+}
+
+async function heartbeatAttempt(begin, callTool) {
+  const heartbeat = await callTool('heartbeat_action_attempt', {
+    attemptRef: begin.attemptRef,
+    leaseToken: begin.leaseToken,
+    leaseGeneration: begin.leaseGeneration,
+  });
+  requiredText(
+    heartbeat?.leaseExpiresAt,
+    'HOST_MCP_HEARTBEAT_LEASE_EXPIRY_REQUIRED',
+  );
+  return heartbeat;
 }
 
 function assertOverallInput(value, providers) {
@@ -1105,12 +1310,13 @@ function assertReviewSourcesWereRead(candidate, readSourceRefIds) {
 }
 
 function assertGenericAttemptStatus(value, begin) {
+  const taskType = begin.task?.taskType ?? begin.taskBinding?.taskType;
   if (
     !value ||
     typeof value !== 'object' ||
     Array.isArray(value) ||
     value.attemptRef !== begin.attemptRef ||
-    value.taskType !== begin.task.taskType ||
+    value.taskType !== taskType ||
     typeof value.status !== 'string' ||
     typeof value.recoveryAvailable !== 'boolean' ||
     typeof value.projectionApplied !== 'boolean' ||
@@ -1122,6 +1328,20 @@ function assertGenericAttemptStatus(value, begin) {
       typeof value.resultContentHash !== 'string')
   ) {
     throw new Error('HOST_MCP_ACTION_ATTEMPT_STATUS_INVALID');
+  }
+}
+
+function isRecord(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function assertExactKeys(value, required, optional, code) {
+  const allowed = new Set([...required, ...optional]);
+  if (Object.keys(value).some((key) => !allowed.has(key))) {
+    throw new Error(`${code}_UNKNOWN_FIELD`);
+  }
+  if (required.some((key) => !Object.hasOwn(value, key))) {
+    throw new Error(`${code}_MISSING_FIELD`);
   }
 }
 

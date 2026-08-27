@@ -96,7 +96,9 @@
           "409": {
             "description": "DocumentVersion 非当前版本或当前解析配置不可用"
           },
-          "503": { "description": "受控 DEV/UAT 创建 service scope 未完整配置或未启用" }
+          "503": {
+            "description": "受控 DEV/UAT 创建 service scope 未完整配置或未启用"
+          }
         }
       }
     },
@@ -419,7 +421,7 @@
       "post": {
         "operationId": "handleOpenClawMcp",
         "summary": "OpenClaw 专用 ActionAttempt 队列与候选评估 MCP 入口",
-        "description": "承载 dynamic-N 与 overall 的 PostgreSQL QUEUED→lease claim→RUNNING→完整 ResultEnvelope→COMMITTING→Host CAS/current 链路，并提供 heartbeat/cancel。TaskEnvelope 由 Host 密封并随 claim 返回；重复 begin 遇到 COMMITTING 时返回 DB 中重新校验 hash/binding 的 recovery ResultEnvelope，executor 只重放 Host commit、不二次调用模型。损坏、缺字段或 hash/binding 不一致的 ResultEnvelope 不会被替换为 {}。仅当 API Key transport、service principal、tenant 与 exact WorkItem/ActionAttempt allowlist 全部可验证时处理业务 I/O；未配置时 fail closed。",
+        "description": "承载 translation、applicability、dynamic-N 与 overall 的 PostgreSQL QUEUED→lease claim→RUNNING→完整 ResultEnvelope→COMMITTING→Host CAS/current 链路，并提供 heartbeat/cancel。TaskEnvelope 由 Host 密封；translation begin 通过同一工具按实际序列化 UTF-8 bytes 返回完整 MCP tool result 不超过 14,000 bytes 的可读 SourceUnit 批次，避免托管工具输出截断且不重复返回 modelInput，不暴露 tenant 或 FileService locator。RUNNING 默认使用 30 分钟 lease/60 分钟 deadline，Skill 在模型前后受控 heartbeat，模型生成期间不依赖短周期回调。重复 begin 遇到 COMMITTING 时返回 DB 中重新校验 hash/binding 的 recovery ResultEnvelope，executor 只重放 Host commit、不二次调用模型。损坏、缺字段或 hash/binding 不一致的 ResultEnvelope 不会被替换为 {}。仅当 API Key transport、service principal、tenant 与 exact WorkItem/ActionAttempt allowlist 全部可验证时处理业务 I/O；未配置时 fail closed。",
         "requestBody": {
           "required": true,
           "content": {

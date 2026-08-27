@@ -1,6 +1,6 @@
 # R09 canonical Host MCP 编排
 
-基线：Host C5 `df4bd1a5c0698c5fd56912fba1329a9283d990c6`，包含 C4 applicability lifecycle 与
+基线：Host `6fd2655d27edc3851c745547efaf8796ad22c82c`，包含 C4 applicability lifecycle 与
 C5 unified runtime/status policy。
 Endpoint 仍是 Host 提供的 `POST /openapi/wiselink/openclaw-mcp`；Skill 不自造 HTTP。
 
@@ -14,7 +14,7 @@ Endpoint 仍是 Host 提供的 `POST /openapi/wiselink/openclaw-mcp`；Skill 不
 
 INITIAL_ANALYSIS：
 
-4. `begin_translation({workItemId})`
+4. `begin_translation({workItemId, deliveryPart?})`
 5. `commit_translation_candidate({attemptRef, leaseToken, leaseGeneration, result})`
 6. `begin_applicability_evaluation({applicabilityContextRef, requestId})`
 7. `commit_applicability_candidate({attemptRef, leaseToken, leaseGeneration, result})`
@@ -43,7 +43,12 @@ Attempt 控制面：
 
 ## TaskEnvelope 与 lease fence
 
-每个 `begin_*` 返回 `attemptRef`、status、`leaseToken`、`leaseGeneration`、lease expiry 和完整 TaskEnvelope。
+除 Translation 外，每个 `begin_*` 直接返回 `attemptRef`、status、`leaseToken`、`leaseGeneration`、lease expiry
+和完整 TaskEnvelope。Translation 的同一 begin 工具按实际序列化响应大小返回可读
+`wiselink.3_1.openclaw_translation_delivery.v1` 批次：第 0 批含脱敏 taskBinding、modelInputBase 和 SourceUnits，
+后续批只含同一绑定下的连续 SourceUnits。官方 Hosted Agent 直接逐批读取，不执行 shell/Node 解码。
+COMMITTING 批次另含有界 `recoveryResultContentHash`；完整 recoveryResult 仍只从通用 status 读取并做三方 hash
+一致性校验。
 `attemptRef` 必须等于 TaskEnvelope `operationRef`。TaskEnvelope 自带：
 
 - Host internal `actionAttemptId` 与 opaque operationRef；
@@ -52,7 +57,13 @@ Attempt 控制面：
 - authority-free `modelInput`；
 - deadline、idempotencyKey、canonical `inputHash`。
 
-Skill 不接收或构造 tenant/actor/ACL。TaskEnvelope 自身是控制面对象，不能整体发给模型。
+Translation delivery 不返回 tenant/actor/ACL、artifact ref/FileService locator、credential、sessionKey、raw PDF 或
+full Fleet；只返回必要 attempt fence、脱敏 taskBinding、source artifact SHA 与 authority-free translation input。
+其它 TaskEnvelope 自身仍是控制面对象，不能整体发给模型。
+
+RUNNING attempt 的默认 deadline 为 60 分钟、lease 为 30 分钟。INITIAL_ANALYSIS 在每次模型调用前与返回后
+调用 heartbeat；模型生成期间不要求短周期回调。WAITING_INPUT 零模型路径、COMMITTING 只读恢复与 review 五工具
+路径不插入 heartbeat。
 
 所有 commit 使用 Host 返回的 exact attemptRef、leaseToken、leaseGeneration 和完整 ResultEnvelope。旧
 `{attemptRef, output}` 已废止。
@@ -63,7 +74,10 @@ Skill 不接收或构造 tenant/actor/ACL。TaskEnvelope 自身是控制面对�
 
 ```text
 get_parse_status
-→ begin_translation
+→ begin_translation deliveryPart 0..N（可读 SourceUnit 批次）
+→ heartbeat
+→ 官方 Hosted Agent 按 modelInputBase + 连续 SourceUnits 执行翻译
+→ heartbeat
 → translation-pair validator
 → full ResultEnvelope
 → commit_translation_candidate
@@ -74,12 +88,17 @@ Host commit 才执行 exact TranslationRuleSet deterministic ResultGate、FileSe
 commit 响应丢失时只读一次通用 ActionAttempt status；仅当 `resultContentHash` 精确等于本次 sealed
 ResultEnvelope `contentHash` 才返回恢复，禁止自动 retry。
 
+当前真实失败只证明 begin observation 截断；`commit_translation_candidate` 仍使用现有完整 ResultEnvelope，未预建
+推测性的 upload/staging 合同。真实 Hosted UAT 到达 commit 后再按实际证据决定是否需要后续收窄。
+
 ### Applicability
 
 ```text
 begin_applicability_evaluation(applicabilityContextRef, requestId)
 → Host modelInput（frozen SourceExpressions/SourceRefs + bilingual SourceUnits + controlled aircraft facts）
+→ heartbeat
 → 官方托管 profile 当前选定模型只生成 source-condition AST candidate
+→ heartbeat
 → Skill 组装完整 applicability_candidate.v1 + ResultEnvelope
 → commit_applicability_candidate(attemptRef, leaseToken, leaseGeneration, result)
 → Host target binding + Fleet/Kleene + ResultGate + actual bytes + CAS/current
@@ -95,7 +114,9 @@ begin_applicability_evaluation(applicabilityContextRef, requestId)
 ```text
 get_parse_status
 → begin_dynamic_evaluation
+→ heartbeat
 → dynamic-rules-input + dynamic-rules-pair validator
+→ heartbeat
 → full ResultEnvelope
 → commit_dynamic_evaluation_candidate
 → get_parse_status [+ query_parsed_package] + get_deep_link
@@ -111,7 +132,9 @@ outcome unknown。
 ```text
 get_parse_status（dynamic N/N 已持久）
 → begin_overall_synthesis(workItemId, [])
+→ heartbeat
 → synthesis-input（含 Host selectiveResynthesis）+ synthesis-pair validator
+→ heartbeat
 → full ResultEnvelope
 → commit_overall_candidate
 → get_parse_status + get_deep_link
@@ -162,7 +185,7 @@ COMMITTING：
 ```text
 begin/status = COMMITTING
 → get_action_attempt_status({attemptRef})
-→ validate recoveryResult.contentHash == resultContentHash
+→ validate begin.recoveryResultContentHash == recoveryResult.contentHash == resultContentHash
 → return COMMITTING_RECOVERY_READ_ONLY
 ```
 

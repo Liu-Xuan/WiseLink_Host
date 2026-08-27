@@ -8,7 +8,8 @@ import type {
 
 export const ACTION_ATTEMPT_REQUEST_ORIGIN = 'OPENCLAW_MCP_V1';
 export const ACTION_ATTEMPT_MAX_PARALLEL = 4;
-export const ACTION_ATTEMPT_LEASE_MS = 60_000;
+export const ACTION_ATTEMPT_LEASE_MS = 30 * 60_000;
+export const ACTION_ATTEMPT_DEFAULT_DEADLINE_MS = 60 * 60_000;
 export const ACTION_ATTEMPT_COMMIT_RECOVERY_MS = 30_000;
 
 export interface NewActionAttemptIdentity {
