@@ -1,0 +1,92 @@
+{
+  "schemaVersion": "wiselink.3_1.applicability_task.v1",
+  "operation": "EXTRACT_APPLICABILITY",
+  "applicabilityContextRef": "APCTX-fixture-001",
+  "inputRevision": 7,
+  "documentVersionRef": "DV-fixture-001",
+  "sourcePackage": {
+    "packageId": "PKG-fixture-001",
+    "contentHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "bilingualBinding": {
+    "actionAttemptId": "ATT-TRANSLATION-fixture",
+    "artifactSha256": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "aircraft": {
+    "aircraftNumber": "B-1234",
+    "assessmentAsOf": "2026-08-27"
+  },
+  "fleetBinding": {
+    "bindingRevision": "fleet-binding-7",
+    "selectionRevision": "selection-3",
+    "sourceSnapshotId": "fleet-snapshot-20260827",
+    "sourceRevisionKey": "fleet-revision-42",
+    "authorityRevision": "authority-9",
+    "sourceAsOf": "2026-08-26"
+  },
+  "controlledAircraft": {
+    "assetId": "aircraft-asset-001",
+    "assetVersionId": "aircraft-version-007",
+    "aircraftNumber": "B-1234",
+    "fleetFamily": "737NG",
+    "aircraftModel": "737-8",
+    "series": "8",
+    "msn": "12345",
+    "lineNumber": 678,
+    "deliveryDate": "2024-03-01",
+    "recordHash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  },
+  "controlledFacts": [
+    {
+      "factId": "fleet-fact-model-001",
+      "factType": "fleet_configuration",
+      "property": "model",
+      "qualifier": null,
+      "value": "737-8",
+      "validAsOf": "2026-08-26",
+      "recordHash": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    }
+  ],
+  "sourceExpressions": [
+    {
+      "expressionId": "expression-001",
+      "text": "This service bulletin applies to Model 737-8 airplanes.",
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      ],
+      "assignmentId": "assignment-001",
+      "targetKind": "module",
+      "targetId": "module-001",
+      "targetSourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      ],
+      "applicabilityLevel": "document_effectivity",
+      "contentRef": null
+    }
+  ],
+  "bilingualSourceUnits": [
+    {
+      "unitId": "unit-001",
+      "kind": "paragraph",
+      "sourceText": "This service bulletin applies to Model 737-8 airplanes.",
+      "translatedText": "本服务通告适用于 737-8 型飞机。",
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      ]
+    }
+  ],
+  "runtimePolicy": {
+    "runtimeAppId": "app_17c3zn24kv2",
+    "profileRef": "wiselink-engineering",
+    "modelVersion": "GLM-5.1",
+    "promptVersion": "wiselink-applicability-extraction@r09.c4",
+    "skillVersion": "wiselink-research-and-synthesize@r09.c4",
+    "mcpServerName": "wiselink-openclaw-engineering-assessment",
+    "mcpServerVersion": "1.2.0"
+  },
+  "authority": {
+    "candidateOnly": true,
+    "documentTextDoesNotProveFleetApplicability": true,
+    "hostDeterministicEvaluationRequired": true
+  }
+}

@@ -1,10 +1,10 @@
 # R09 canonical Host MCP 编排
 
-基线：`00b8febe927b7bbfbdb43ced36863e5188464a76`，ancestry
-`3ace17fe49ba0d952a463bf5eb3ce8898a8ed2cc → 688d23063e418a55e8793e77087800b9c2d99084 → 00b8febe`。
+基线：Host C5 `df4bd1a5c0698c5fd56912fba1329a9283d990c6`，包含 C4 applicability lifecycle 与
+C5 unified runtime/status policy。
 Endpoint 仍是 Host 提供的 `POST /openapi/wiselink/openclaw-mcp`；Skill 不自造 HTTP。
 
-## 18 个当前工具
+## 20 个当前工具（MCP 1.2.0）
 
 只读：
 
@@ -16,27 +16,29 @@ INITIAL_ANALYSIS：
 
 4. `begin_translation({workItemId})`
 5. `commit_translation_candidate({attemptRef, leaseToken, leaseGeneration, result})`
-6. `begin_dynamic_evaluation({workItemId})`
-7. `commit_dynamic_evaluation_candidate({attemptRef, leaseToken, leaseGeneration, result})`
-8. `record_oem_discovery_run({workItemId, result})`
-9. `begin_overall_synthesis({workItemId, providers})`
-10. `resume_overall_synthesis({attemptRef})`
-11. `commit_overall_candidate({attemptRef, leaseToken, leaseGeneration, result})`
+6. `begin_applicability_evaluation({applicabilityContextRef, requestId})`
+7. `commit_applicability_candidate({attemptRef, leaseToken, leaseGeneration, result})`
+8. `begin_dynamic_evaluation({workItemId})`
+9. `commit_dynamic_evaluation_candidate({attemptRef, leaseToken, leaseGeneration, result})`
+10. `record_oem_discovery_run({workItemId, result})`
+11. `begin_overall_synthesis({workItemId, providers})`
+12. `resume_overall_synthesis({attemptRef})`
+13. `commit_overall_candidate({attemptRef, leaseToken, leaseGeneration, result})`
 
 INTERACTIVE_REVIEW：
 
-12. `begin_review_turn({reviewConversationRef, requestId})`
-13. `get_review_turn_context({attemptRef})`
-14. `read_source_refs({attemptRef, sourceRefIds})`
-15. `get_action_attempt_status({attemptRef})`
-16. `commit_review_turn_candidate({attemptRef, leaseToken, leaseGeneration, result})`
+14. `begin_review_turn({reviewConversationRef, requestId})`
+15. `get_review_turn_context({attemptRef})`
+16. `read_source_refs({attemptRef, sourceRefIds})`
+17. `get_action_attempt_status({attemptRef})`
+18. `commit_review_turn_candidate({attemptRef, leaseToken, leaseGeneration, result})`
 
 Attempt 控制面：
 
-17. `heartbeat_action_attempt({attemptRef, leaseToken, leaseGeneration})`
-18. `cancel_action_attempt({attemptRef, reason})`
+19. `heartbeat_action_attempt({attemptRef, leaseToken, leaseGeneration})`
+20. `cancel_action_attempt({attemptRef, reason})`
 
-本 Skill 的 INTERACTIVE_REVIEW runtime path 精确只使用 12–16。Heartbeat/cancel 不是 review model 工具，
+本 Skill 的 INTERACTIVE_REVIEW runtime path 精确只使用 14–18。Heartbeat/cancel 不是 review model 工具，
 不用于替代五工具会话合同。
 
 ## TaskEnvelope 与 lease fence
@@ -69,19 +71,22 @@ get_parse_status
 ```
 
 Host commit 才执行 exact TranslationRuleSet deterministic ResultGate、FileService actual bytes readback 与 CAS。
-当前 status projection 没有能把 translation commit 精确绑定回 operationRef/correlationRef 的字段；若 commit
-响应丢失，只读 status 一次后保持 outcome unknown，禁止自动 retry。
+commit 响应丢失时只读一次通用 ActionAttempt status；仅当 `resultContentHash` 精确等于本次 sealed
+ResultEnvelope `contentHash` 才返回恢复，禁止自动 retry。
 
-### Applicability blocker
-
-18-tool 包没有 `begin_applicability` / `commit_applicability_candidate` 或等价专用工具。
+### Applicability
 
 ```text
-EXTRACT_APPLICABILITY
-→ INITIAL_ANALYSIS_EXTRACT_APPLICABILITY_HOST_MCP_UNAVAILABLE
+begin_applicability_evaluation(applicabilityContextRef, requestId)
+→ Host modelInput（frozen SourceExpressions/SourceRefs + bilingual SourceUnits + controlled aircraft facts）
+→ GLM-5.1 只生成 source-condition AST candidate
+→ Skill 组装完整 applicability_candidate.v1 + ResultEnvelope
+→ commit_applicability_candidate(attemptRef, leaseToken, leaseGeneration, result)
+→ Host target binding + Fleet/Kleene + ResultGate + actual bytes + CAS/current
 ```
 
-`query_parsed_package`、dynamic 或 overall 都不能代替此 operation。
+若 Task `hostResolvedMissingInputs` 非空，不调用模型，只原样提交 WAITING_INPUT。模型不输出
+`applicabilityLevel/contentRef` 或飞机适用结论；`query_parsed_package`、dynamic、overall 仍不能代替此 operation。
 
 ### Dynamic N/N
 
@@ -94,9 +99,8 @@ get_parse_status
 → get_parse_status [+ query_parsed_package] + get_deep_link
 ```
 
-未知 commit 只读 status 一次。只有同一 WorkItem 的
-`baseRules.sourceResultId=openclaw-dynamic://<modelInput.callerCorrelationRef>`、candidate status 和 N/N 完整，
-才能认定 commit 已到 Host；否则 outcome unknown。
+未知 commit 只读一次 `get_action_attempt_status`，以 `resultContentHash` 精确绑定本次 ResultEnvelope；否则
+outcome unknown。
 
 ### Overall
 
@@ -114,8 +118,7 @@ get_parse_status（dynamic N/N 已持久）
 `resume_overall_synthesis` 只接既有 RUNNING attempt 并返回同一 Task/modelInput/lease；它不创建 attempt、
 不执行 dynamic/discovery。`COMMITTING` 不走 resume，而走只读 recovery。
 
-未知 overall commit 只有在 status 中读到
-`overallSynthesis.sourceResultId=<modelInput.outputCorrelationRef>` 和 candidate-only 边界时才可恢复确认。
+未知 overall commit 同样只按通用 ActionAttempt `resultContentHash` 一次恢复。
 
 ### Gap-driven discovery
 
@@ -154,12 +157,12 @@ COMMITTING：
 ```text
 begin/status = COMMITTING
 → get_action_attempt_status({attemptRef})
-→ validate recoveryResult
+→ validate recoveryResult.contentHash == resultContentHash
 → return COMMITTING_RECOVERY_READ_ONLY
 ```
 
-不调用模型、不重放 commit。commit 响应未知时同样只读 status 一次；即使 status 已 terminal，也不能在缺少
-exact result/candidate readback 时猜测落账内容。
+不调用模型、不重放 commit。commit 响应未知时同样只读 status 一次；terminal status 也必须精确匹配本次
+sealed ResultEnvelope 的 `contentHash` 才能返回恢复。
 
 ## 当前未授权 review operations
 

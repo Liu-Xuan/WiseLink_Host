@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "wiselink.3_1.applicability_ast_candidate.v1",
+  "expressions": [
+    {
+      "expressionId": "expression-001",
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      ],
+      "extractionStatus": "extracted",
+      "expressionAst": {
+        "type": "assert",
+        "property": "model",
+        "operator": "eq",
+        "value": "737-8"
+      }
+    }
+  ]
+}

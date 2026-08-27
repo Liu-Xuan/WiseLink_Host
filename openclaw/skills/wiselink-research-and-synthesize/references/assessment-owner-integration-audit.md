@@ -1,9 +1,9 @@
-# d3ce25f → R09 C3 迁移与 owner 集成矩阵
+# d3ce25f → R09 c4 迁移与 owner 集成矩阵
 
-本版本从历史 `d3ce25f43a926a9bfa0d7d5d982f18f71e679f9f` 的同名 Skill 迁移到 Host C2 successor
-`00b8febe927b7bbfbdb43ced36863e5188464a76`，不创建第二 Skill。
+本版本从历史 `d3ce25f43a926a9bfa0d7d5d982f18f71e679f9f` 的同名 Skill 原位升级到 Host C4+C5
+`df4bd1a5c0698c5fd56912fba1329a9283d990c6`，不创建第二 Skill。
 
-| 历史资产/语义                         | R09 C3 处理                                                                                          | 当前 owner                                           |
+| 历史资产/语义                         | R09 c4 处理                                                                                          | 当前 owner                                           |
 | ------------------------------------- | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
 | `SKILL.md` 单一 Skill 主控            | 升级为 INITIAL_ANALYSIS + INTERACTIVE_REVIEW 双 mode                                                 | Skill 编排；Host 授权/业务真源                       |
 | `agents/openai.yaml`                  | 原位升级默认提示，不新增 Agent/Profile                                                               | 妙搭唯一 profile `wiselink-engineering`              |
@@ -14,9 +14,9 @@
 | candidate-only                        | 全部结果保留候选；review commit 五个 authority flag 必须为 false                                     | Host current/ReviewAction owner                      |
 | gap-driven discovery                  | 保留选择性 provider、状态保真、未采纳非证据                                                          | Host SearchRun/DM adoption                           |
 | unknown commit                        | 升级为一次 exact readback、no blind retry；translation 缺精确读回则 unknown                          | Host status/recovery                                 |
-| 旧 9-tool `{attemptRef,output}`       | 删除；改为 18-tool、lease token/generation、完整 ResultEnvelope                                      | Host MCP 1.1.0                                       |
-| 旧 Host SHA `9fbafb55…`               | 删除；当前基线 exact `00b8febe…`                                                                     | C2 accepted successor                                |
-| `scripts/orchestrate-host-mcp.mjs`    | 升级 translation/dynamic/overall/review 路由、COMMITTING 只读恢复                                    | Skill control flow                                   |
+| 旧 9-tool `{attemptRef,output}`       | 删除；改为 exact20、lease token/generation、完整 ResultEnvelope                                      | Host MCP 1.2.0                                       |
+| 旧 Host SHA `9fbafb55…`               | 删除；当前基线 exact `df4bd1a5…`                                                                     | Host C4+C5 accepted successor                        |
+| `scripts/orchestrate-host-mcp.mjs`    | 增加 applicability，统一五类 attempt COMMITTING/commit-loss 只读恢复                                 | Skill control flow                                   |
 | `scripts/validate-payload.mjs`        | 保留 dynamic/discovery/overall validators；新增 Task/Result/translation/review/provenance validators | Skill preflight + Host final gate                    |
 | fixtures/tests                        | 保留历史 hosted 737/dynamic fixture；新增 C2 review task/candidate fixture 与双 mode tests           | 本地合同证据                                         |
 | ZIP installer                         | 不迁移；不能作为官方托管 runtime                                                                     | 官方托管 Skill UI/合同待 UAT                         |
@@ -37,7 +37,6 @@
 
 ## 当前缺口
 
-1. `EXTRACT_APPLICABILITY` 没有专用 begin/commit，不能把 dynamic 或 Reader 冒充。
-2. Review attachment/search/compare/reevaluate/resynthesize 没有 C2 工具，保持 fail closed。
-3. 本地测试没有调用官方托管 app/profile/model，不能证明 Skill 已安装、Host MCP 已在 UI 可见、业务 Session
+1. Review attachment/search/compare/reevaluate/resynthesize 没有 C2 工具，保持 fail closed。
+2. 本地测试没有调用官方托管 app/profile/model，不能证明 Skill 已安装、Host MCP 已在 UI 可见、业务 Session
    create/resume 可用或逐 turn no-fallback provenance。

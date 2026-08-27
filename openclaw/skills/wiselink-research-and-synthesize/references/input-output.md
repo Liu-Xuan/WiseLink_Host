@@ -1,6 +1,6 @@
 # R09 输入输出合同
 
-本参考描述 Skill 与 Host MCP 1.1.0 的交换对象，不定义第二套产品合同、权限、状态机或持久化。
+本参考描述 Skill 与 Host MCP 1.2.0/exact20 的交换对象，不定义第二套产品合同、权限、状态机或持久化。
 
 ## TaskEnvelope
 
@@ -56,8 +56,8 @@ Task artifact allowlist 子集。
 
 ```text
 modelVersion = GLM-5.1
-skillVersion = wiselink-research-and-synthesize@r09.interactive-review.c2
-toolVersions.wiselink-openclaw-engineering-assessment = 1.1.0
+skillVersion = wiselink-research-and-synthesize@r09.c4
+toolVersions.wiselink-openclaw-engineering-assessment = 1.2.0
 promptVersion = 当前实际运行非空版本
 ```
 
@@ -104,7 +104,24 @@ expectedSelfCheck / responseInstruction
 每行 SourceRef 只能来自该 criterion allowlist；FALSE/UNKNOWN/TRUE 语义见 SKILL.md。`SEC-*` 是 Host evidence
 candidate ID 时只能原样回显，不能生成 Unified URN 映射。
 
-## Reader / applicability
+## Applicability
+
+`begin_applicability_evaluation` 只接收 opaque `applicabilityContextRef + requestId`。Host 返回的专属 modelInput
+绑定 current DV/frozen.2、current bilingual、source expressions/refs、飞机号/asOf、窄受控 aircraft/facts 和
+runtimePolicy。
+
+模型输出只含：
+
+```text
+schemaVersion=wiselink.3_1.applicability_ast_candidate.v1
+expressions[{expressionId,sourceRefIds,extractionStatus=extracted,expressionAst}]
+```
+
+Skill 从 Host modelInput 组装 `wiselink.3_1.applicability_candidate.v1`；模型不输出 target level/contentRef、Fleet
+decision 或 current。Host commit 使用唯一 FleetMasterData + Kleene evaluator，并负责 ResultGate、actual bytes、
+CAS/current。Host 已冻结 missing input 时，ResultEnvelope 为 WAITING_INPUT、`modelOutput=null`，missing 原样传播。
+
+## Reader
 
 `query_parsed_package` 返回：
 
@@ -113,9 +130,7 @@ resultCount
 results[{unitId,kind,text,sourceRefIds[]}]
 ```
 
-Reader 命中不是 applicability assignment。只有 Host 提供的受控 applicability collections、FleetFacts 或
-predicates 才有权改变候选状态。当前 18-tool MCP 缺专用 EXTRACT_APPLICABILITY begin/commit，因此完整
-INITIAL_ANALYSIS 能力仍被这一项阻断。
+Reader 命中不是 applicability assignment；只有上面的专用 Host applicability lifecycle 能形成候选。
 
 ## Discovery
 
