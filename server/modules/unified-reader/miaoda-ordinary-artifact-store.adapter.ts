@@ -9,12 +9,15 @@ import type {
   FinalizedCandidateArtifactPersistResult,
   ImmutableArtifactPersistResult,
   StagedCandidateArtifactPersistResult,
+  StagedResultEnvelopePart,
   UnifiedArtifactStorePort,
   UnifiedCandidateArtifactStagingPort,
+  UnifiedResultEnvelopePartStagingPort,
 } from './unified-reader.types';
 import { rawHashValue, sha256Raw } from './unified-reader.utils';
 
 const JSON_MEDIA_TYPE = 'application/json' as const;
+const BINARY_MEDIA_TYPE = 'application/octet-stream' as const;
 
 /**
  * Ordinary authenticated business storage for parsed packages and failure
@@ -23,7 +26,10 @@ const JSON_MEDIA_TYPE = 'application/json' as const;
  */
 @Injectable()
 export class MiaodaOrdinaryArtifactStoreAdapter
-  implements UnifiedArtifactStorePort, UnifiedCandidateArtifactStagingPort
+  implements
+    UnifiedArtifactStorePort,
+    UnifiedCandidateArtifactStagingPort,
+    UnifiedResultEnvelopePartStagingPort
 {
   private defaultBucketLookup: Promise<string> | null = null;
 
@@ -161,6 +167,101 @@ export class MiaodaOrdinaryArtifactStoreAdapter
     }
   }
 
+  async stageResultEnvelopePartAndReadback(input: {
+    bytes: Uint8Array;
+    ownerRef: string;
+    partIndex: number;
+  }): Promise<StagedResultEnvelopePart> {
+    assertResultEnvelopePartInput(input);
+    const bytes = Uint8Array.from(input.bytes);
+    const ownerRefHash = sha256Raw(new TextEncoder().encode(input.ownerRef));
+    const filePath = this.resultEnvelopePartFilePath(
+      ownerRefHash,
+      input.partIndex,
+    );
+    const bucketId = await this.getDefaultBucket();
+    const scoped = this.fileService.from(bucketId);
+    const existing = await providerCall(
+      'ARTIFACT_STORE_METADATA_READ_FAILED',
+      () => getOptionalMetadata(() => scoped.getFileMetadata(filePath)),
+    );
+    let reused = true;
+    if (existing === null) {
+      const uploaded = await providerCall(
+        'RESULT_ENVELOPE_PART_UPLOAD_FAILED',
+        () =>
+          scoped.upload(bytes, {
+            filePath,
+            fileName: `part-${input.partIndex}.bin`,
+            contentType: BINARY_MEDIA_TYPE,
+            upsert: false,
+          }),
+      );
+      if (canonicalPath(uploaded.filePath) !== canonicalPath(filePath)) {
+        throw new Error('RESULT_ENVELOPE_PART_UPLOAD_PATH_MISMATCH');
+      }
+      reused = false;
+    }
+    const part: Omit<StagedResultEnvelopePart, 'reused'> = {
+      schemaVersion: 'wiselink.3_1.staged_result_envelope_part.v1',
+      ownerRefHash,
+      partIndex: input.partIndex,
+      sha256: sha256Raw(bytes),
+      byteLength: bytes.byteLength,
+    };
+    const actual = await this.readStagedResultEnvelopePart({
+      ownerRef: input.ownerRef,
+      part,
+    });
+    if (!sameBytes(bytes, actual)) {
+      throw new Error('RESULT_ENVELOPE_PART_REPLAY_MISMATCH');
+    }
+    return { ...part, reused };
+  }
+
+  async readStagedResultEnvelopePart(input: {
+    ownerRef: string;
+    part: Omit<StagedResultEnvelopePart, 'reused'>;
+  }): Promise<Uint8Array> {
+    assertResultEnvelopePartDescriptor(input.ownerRef, input.part);
+    const filePath = this.resultEnvelopePartFilePath(
+      input.part.ownerRefHash,
+      input.part.partIndex,
+    );
+    const bucketId = await this.getDefaultBucket();
+    const scoped = this.fileService.from(bucketId);
+    const metadata = await providerCallWithTransportRetry(
+      'RESULT_ENVELOPE_PART_METADATA_READ_FAILED',
+      () => scoped.getFileMetadata(filePath),
+    );
+    if (
+      metadata === null ||
+      metadata.bucketID !== bucketId ||
+      canonicalPath(metadata.filePath) !== canonicalPath(filePath) ||
+      Number(metadata.metadata?.contentLength) !== input.part.byteLength ||
+      metadata.metadata?.mimeType !== BINARY_MEDIA_TYPE
+    ) {
+      throw new Error('RESULT_ENVELOPE_PART_READBACK_MISMATCH:METADATA');
+    }
+    const downloaded = await providerCallWithTransportRetry(
+      'RESULT_ENVELOPE_PART_DOWNLOAD_FAILED',
+      () => scoped.download(filePath),
+    );
+    const actual = await providerCall(
+      'RESULT_ENVELOPE_PART_BODY_READ_FAILED',
+      () => bodyBytes(downloaded.content),
+    );
+    if (
+      downloaded.metadata === null ||
+      downloaded.metadata.id !== metadata.id ||
+      actual.byteLength !== input.part.byteLength ||
+      sha256Raw(actual) !== input.part.sha256
+    ) {
+      throw new Error('RESULT_ENVELOPE_PART_READBACK_MISMATCH:BYTES');
+    }
+    return actual;
+  }
+
   async readActualBytes(
     artifact: UnifiedPackageArtifactDescriptor,
   ): Promise<Uint8Array> {
@@ -241,6 +342,16 @@ export class MiaodaOrdinaryArtifactStoreAdapter
     )}/${rawHashValue(digest, 'artifact.sha256')}.json`;
   }
 
+  private resultEnvelopePartFilePath(
+    ownerRefHash: string,
+    partIndex: number,
+  ): string {
+    return `${UNIFIED_READER.artifactDirectory}/action-attempt-result/${rawHashValue(
+      ownerRefHash,
+      'resultPart.ownerRefHash',
+    )}/part-${String(partIndex).padStart(4, '0')}.bin`;
+  }
+
   private descriptorFilePath(
     artifact: UnifiedPackageArtifactDescriptor,
   ): string {
@@ -283,6 +394,42 @@ export class MiaodaOrdinaryArtifactStoreAdapter
 
   private artifactRefPrefix(): string {
     return `artifact://${UNIFIED_READER.artifactStoreRole}/${UNIFIED_READER.artifactDirectory}/`;
+  }
+}
+
+function assertResultEnvelopePartInput(input: {
+  bytes: Uint8Array;
+  ownerRef: string;
+  partIndex: number;
+}): void {
+  if (
+    !input.ownerRef.trim() ||
+    input.bytes.byteLength < 1 ||
+    !Number.isSafeInteger(input.partIndex) ||
+    input.partIndex < 0 ||
+    input.partIndex > 63
+  ) {
+    throw new Error('RESULT_ENVELOPE_PART_INPUT_INVALID');
+  }
+}
+
+function assertResultEnvelopePartDescriptor(
+  ownerRef: string,
+  part: Omit<StagedResultEnvelopePart, 'reused'>,
+): void {
+  const ownerRefHash = sha256Raw(new TextEncoder().encode(ownerRef));
+  if (
+    !ownerRef.trim() ||
+    part.schemaVersion !== 'wiselink.3_1.staged_result_envelope_part.v1' ||
+    part.ownerRefHash !== ownerRefHash ||
+    !Number.isSafeInteger(part.partIndex) ||
+    part.partIndex < 0 ||
+    part.partIndex > 63 ||
+    !Number.isSafeInteger(part.byteLength) ||
+    part.byteLength < 1 ||
+    !/^[0-9a-f]{64}$/u.test(part.sha256)
+  ) {
+    throw new Error('RESULT_ENVELOPE_PART_DESCRIPTOR_INVALID');
   }
 }
 

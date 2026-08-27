@@ -32,8 +32,12 @@
    输出中没有第二份 modelInput、tenant 或 FileService locator。
 3. 模型前 heartbeat；执行一次托管 profile 当前选定模型；模型返回后再 heartbeat，并记录实际
    model/prompt/Skill/tool versions 和 run metrics。模型生成期间不要求短周期回调。
-4. 验证 translation pair 与完整 ResultEnvelope；单次 commit。
-5. Host 读回 bilingual actual bytes、rule-set validation、candidate-only projection、same DocumentVersion/currentness。
+4. 验证 translation pair 与完整 ResultEnvelope，写入本轮 `commit-payload.json`；用同一
+   `commit_translation_candidate` 上传 6144-byte raw parts（每次 arguments <12,000 UTF-8 bytes），再用 receipts
+   调 `FINALIZE`。不得把完整 JSON 手工放入单次模型工具参数。
+5. 核对所有 UPLOAD_PART 期间 WorkItem revision/current/candidate 均不变；FINALIZE 后 Host 只增加一次 revision、
+   只产生一个 bilingual artifact，并读回完整 unit 数、rule-set validation、candidate-only projection 与同一
+   DocumentVersion/currentness。
 
 ### Positive：EVALUATE_JOBAID
 
@@ -68,6 +72,9 @@
 - COMMITTING：只读一次通用 status 并匹配 recoveryResult/contentHash，不第二次调用模型。
 - Translation 任一批缺失、错序、超限或 attempt fence 改变：Agent 在翻译/commit 前停止，不从 session log 恢复
   残缺输入。
+- Translation 重复相同 part 返回 `replayed=true` 且不重复写；同 index 冲突 bytes、缺 part receipt、staged actual-byte
+  mismatch 在 prepareCommit 前明确失败，WorkItem revision/current 不变。receipt 可乱序提交，Host 按 partIndex
+  排序后仍须完整唯一。
 - 非 owner/跨 tenant/旧 revision/过期 lease：统一 fail closed，不泄露对象存在性。
 
 ## INTERACTIVE_REVIEW UAT

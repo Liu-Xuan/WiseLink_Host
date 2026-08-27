@@ -41,6 +41,20 @@ export type CandidateArtifactPersistResult =
   | FinalizedCandidateArtifactPersistResult;
 
 /**
+ * Attempt-owned transport bytes for one large ResultEnvelope part. The
+ * descriptor deliberately omits the FileService path: callers only receive
+ * the part identity and actual-byte digest needed for a fenced finalize.
+ */
+export interface StagedResultEnvelopePart {
+  schemaVersion: 'wiselink.3_1.staged_result_envelope_part.v1';
+  ownerRefHash: string;
+  partIndex: number;
+  sha256: string;
+  byteLength: number;
+  reused: boolean;
+}
+
+/**
  * Exact host roles required by the official FileService adapter.  The host
  * supplies this binding; requests cannot choose any of these identities.
  */
@@ -82,6 +96,23 @@ export interface UnifiedCandidateArtifactStagingPort extends UnifiedArtifactStor
   discardCandidateArtifact(
     candidate: CandidateArtifactPersistResult,
   ): Promise<void>;
+}
+
+/**
+ * Optional capability of the same canonical FileService owner. It stages
+ * bounded transport parts at a deterministic attempt-owned path so an exact
+ * replay is idempotent and conflicting bytes for one part fail closed.
+ */
+export interface UnifiedResultEnvelopePartStagingPort extends UnifiedArtifactStorePort {
+  stageResultEnvelopePartAndReadback(input: {
+    bytes: Uint8Array;
+    ownerRef: string;
+    partIndex: number;
+  }): Promise<StagedResultEnvelopePart>;
+  readStagedResultEnvelopePart(input: {
+    ownerRef: string;
+    part: Omit<StagedResultEnvelopePart, 'reused'>;
+  }): Promise<Uint8Array>;
 }
 
 export interface ImmutableAcceptanceReceiptOwnerPort {

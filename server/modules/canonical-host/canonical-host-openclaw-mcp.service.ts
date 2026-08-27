@@ -16,7 +16,11 @@ import {
 import { CanonicalHostOpenClawOverallService } from './canonical-host-openclaw-overall.service';
 import { CanonicalHostOpenClawAttemptStatusService } from './canonical-host-openclaw-attempt-status.service';
 import { CanonicalHostOpenClawReviewService } from './canonical-host-openclaw-review.service';
-import { CanonicalHostOpenClawTranslationService } from './canonical-host-openclaw-translation.service';
+import {
+  CanonicalHostOpenClawTranslationService,
+  TRANSLATION_RESULT_PART_MAX_BYTES,
+  TRANSLATION_RESULT_PART_MAX_COUNT,
+} from './canonical-host-openclaw-translation.service';
 import { CanonicalHostOpenClawApplicabilityService } from './canonical-host-openclaw-applicability.service';
 import {
   mcpWorkItemId,
@@ -33,6 +37,61 @@ const attemptRef = z.string().trim().min(1).max(200);
 const leaseToken = z.string().uuid();
 const leaseGeneration = z.number().int().positive();
 const resultEnvelope = z.record(z.string(), z.unknown());
+const resultContentHash = z.string().regex(/^[0-9a-f]{64}$/u);
+const translationResultPartBinding = z
+  .object({
+    partIndex: z
+      .number()
+      .int()
+      .min(0)
+      .max(TRANSLATION_RESULT_PART_MAX_COUNT - 1),
+    sha256: z.string().regex(/^[0-9a-f]{64}$/u),
+    byteLength: z.number().int().min(1).max(TRANSLATION_RESULT_PART_MAX_BYTES),
+  })
+  .strict();
+const translationCommitInput = z.union([
+  z
+    .object({
+      attemptRef,
+      leaseToken,
+      leaseGeneration,
+      result: resultEnvelope,
+    })
+    .strict(),
+  z
+    .object({
+      attemptRef,
+      leaseToken,
+      leaseGeneration,
+      phase: z.literal('UPLOAD_PART'),
+      resultContentHash,
+      partIndex: z
+        .number()
+        .int()
+        .min(0)
+        .max(TRANSLATION_RESULT_PART_MAX_COUNT - 1),
+      partCount: z.number().int().min(1).max(TRANSLATION_RESULT_PART_MAX_COUNT),
+      payloadBase64: z
+        .string()
+        .min(4)
+        .max(Math.ceil(TRANSLATION_RESULT_PART_MAX_BYTES / 3) * 4),
+    })
+    .strict(),
+  z
+    .object({
+      attemptRef,
+      leaseToken,
+      leaseGeneration,
+      phase: z.literal('FINALIZE'),
+      resultContentHash,
+      partCount: z.number().int().min(1).max(TRANSLATION_RESULT_PART_MAX_COUNT),
+      parts: z
+        .array(translationResultPartBinding)
+        .min(1)
+        .max(TRANSLATION_RESULT_PART_MAX_COUNT),
+    })
+    .strict(),
+]);
 const reviewConversationRef = z.string().trim().min(1).max(96);
 const reviewRequestId = z.string().trim().min(1).max(96);
 const reviewSourceRefId = z.string().trim().min(1).max(512);
@@ -171,31 +230,49 @@ export class CanonicalHostOpenClawMcpService {
       {
         title: '提交来源绑定的中英文候选翻译',
         description:
-          'Host 按 durable attempt 与 lease fence 校验完整 ResultEnvelope，执行 TranslationRuleSet 确定性 ResultGate、FileService 实际字节 readback 和 WorkItem CAS；OpenClaw 不能直接写 current。',
-        inputSchema: z
-          .object({
-            attemptRef,
-            leaseToken,
-            leaseGeneration,
-            result: resultEnvelope,
-          })
-          .strict(),
+          '大结果先按 UPLOAD_PART（每 part 原始字节最多 6144，Base64）写入同一 Host FileService attempt-owned staging；相同 part 可按 lease fence 精确重放且 chunk 阶段不改变 WorkItem/current。全部 receipt 就绪后以 FINALIZE 一次组装完整 ResultEnvelope，进入既有 TranslationRuleSet ResultGate、FileService 实际字节 readback 与 WorkItem CAS。保留小结果直接 result 兼容形态；OpenClaw 不能直接写 current。',
+        inputSchema: translationCommitInput,
         annotations: commitAnnotations,
       },
-      async ({
-        attemptRef: selectedAttemptRef,
-        leaseToken: selectedLeaseToken,
-        leaseGeneration: selectedLeaseGeneration,
-        result,
-      }) =>
-        textResult(
-          await this.translation.commit(
-            selectedAttemptRef,
-            selectedLeaseToken,
-            selectedLeaseGeneration,
-            result,
+      async (input) => {
+        if ('result' in input) {
+          return textResult(
+            await this.translation.commit(
+              input.attemptRef,
+              input.leaseToken,
+              input.leaseGeneration,
+              input.result,
+            ),
+          );
+        }
+        if (input.phase === 'UPLOAD_PART') {
+          return textResult(
+            await this.translation.uploadResultPart(
+              input.attemptRef,
+              input.leaseToken,
+              input.leaseGeneration,
+              {
+                resultContentHash: input.resultContentHash,
+                partIndex: input.partIndex,
+                partCount: input.partCount,
+                payloadBase64: input.payloadBase64,
+              },
+            ),
+          );
+        }
+        return textResult(
+          await this.translation.finalizeResultParts(
+            input.attemptRef,
+            input.leaseToken,
+            input.leaseGeneration,
+            {
+              resultContentHash: input.resultContentHash,
+              partCount: input.partCount,
+              parts: input.parts,
+            },
           ),
-        ),
+        );
+      },
     );
 
     server.registerTool(

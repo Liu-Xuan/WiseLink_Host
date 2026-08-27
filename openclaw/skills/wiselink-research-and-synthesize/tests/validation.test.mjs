@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 
 import {
@@ -18,6 +21,7 @@ import {
   HOST_MCP_TOOLS,
   INITIAL_ANALYSIS_OPERATIONS,
   INTERACTIVE_REVIEW_TOOLS,
+  commitTranslationPayloadFile,
   runDynamicEvaluation,
   runApplicabilityEvaluation,
   runInitialAnalysis,
@@ -633,6 +637,7 @@ test('runs translation with fresh status and full fenced ResultEnvelope', async 
     engineerRevision: null,
   });
   const calls = [];
+  const uploaded = new Map();
   let deliveredModelInput;
   const callTool = async (name, args) => {
     calls.push({ name, args });
@@ -644,22 +649,21 @@ test('runs translation with fresh status and full fenced ResultEnvelope', async 
       return heartbeatResult(task, args);
     }
     if (name === 'commit_translation_candidate') {
-      assert.deepEqual(Object.keys(args).sort(), [
-        'attemptRef',
-        'leaseGeneration',
-        'leaseToken',
-        'result',
-      ]);
       assert.equal(args.attemptRef, task.operationRef);
       assert.equal(args.leaseToken, LEASE_TOKEN);
       assert.equal(args.leaseGeneration, 3);
-      validatePayload('result-envelope', { task, result: args.result });
-      assert.deepEqual(args.result.sourceRefs, []);
+      if (args.phase === 'UPLOAD_PART') {
+        return stageTranslationPart(args, uploaded);
+      }
+      assert.equal(args.phase, 'FINALIZE');
+      const assembled = assembleTranslationParts(args, uploaded);
+      validatePayload('result-envelope', { task, result: assembled });
+      assert.deepEqual(assembled.sourceRefs, []);
       assert.equal(
-        JSON.stringify(args.result).includes('tenant-control-plane'),
+        JSON.stringify(assembled).includes('tenant-control-plane'),
         false,
       );
-      assert.equal(JSON.stringify(args.result).includes(ARTIFACT_REF), false);
+      assert.equal(JSON.stringify(assembled).includes(ARTIFACT_REF), false);
       return {
         workItemId: WORK_ITEM_ID,
         workItemRevision: 8,
@@ -691,6 +695,7 @@ test('runs translation with fresh status and full fenced ResultEnvelope', async 
       'begin_translation',
       'heartbeat_action_attempt',
       'heartbeat_action_attempt',
+      'commit_translation_candidate',
       'commit_translation_candidate',
       'get_parse_status',
       'get_deep_link',
@@ -746,6 +751,7 @@ test('recovers translation commit response loss against the delivered task bindi
   const task = makeTask('OPENCLAW_TRANSLATE', input);
   const [begin] = translationDeliveryParts(task, input);
   const calls = [];
+  const uploaded = new Map();
   let submittedResult;
   const result = await runTranslation({
     workItemId: WORK_ITEM_ID,
@@ -757,7 +763,10 @@ test('recovers translation commit response loss against the delivered task bindi
         return heartbeatResult(task, args);
       }
       if (name === 'commit_translation_candidate') {
-        submittedResult = args.result;
+        if (args.phase === 'UPLOAD_PART') {
+          return stageTranslationPart(args, uploaded);
+        }
+        submittedResult = assembleTranslationParts(args, uploaded);
         throw new Error('TRANSPORT_RESPONSE_LOST');
       }
       if (name === 'get_action_attempt_status') {
@@ -777,8 +786,51 @@ test('recovers translation commit response loss against the delivered task bindi
     'heartbeat_action_attempt',
     'heartbeat_action_attempt',
     'commit_translation_candidate',
+    'commit_translation_candidate',
     'get_action_attempt_status',
   ]);
+});
+
+test('reads a locally sealed translation payload file and uploads bounded parts before finalize', async () => {
+  const input = translationInput();
+  const task = makeTask('OPENCLAW_TRANSLATE', input);
+  const [begin] = translationDeliveryParts(task, input);
+  const result = sealResultEnvelope({
+    task,
+    modelOutput: translationOutput(),
+    provenance: provenance(),
+  });
+  const directory = await mkdtemp(join(tmpdir(), 'wiselink-translation-'));
+  const payloadPath = join(directory, 'commit-payload.json');
+  await writeFile(
+    payloadPath,
+    JSON.stringify({
+      attemptRef: begin.attemptRef,
+      leaseToken: begin.leaseToken,
+      leaseGeneration: begin.leaseGeneration,
+      result,
+    }),
+  );
+  const uploaded = new Map();
+  try {
+    const committed = await commitTranslationPayloadFile({
+      begin,
+      payloadPath,
+      callTool: async (name, args) => {
+        assert.equal(name, 'commit_translation_candidate');
+        assert.ok(Buffer.byteLength(JSON.stringify(args)) < 12_000);
+        if (args.phase === 'UPLOAD_PART') {
+          return stageTranslationPart(args, uploaded);
+        }
+        assert.deepEqual(assembleTranslationParts(args, uploaded), result);
+        return { status: 'CANDIDATE_ONLY' };
+      },
+    });
+    assert.deepEqual(committed, { status: 'CANDIDATE_ONLY' });
+    assert.equal(uploaded.size, 1);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test('rejects each forbidden translation input before the model boundary', async (t) => {
@@ -1433,6 +1485,51 @@ function heartbeatResult(task, args) {
     status: 'RUNNING',
     leaseExpiresAt: '2026-08-27T11:30:00.000Z',
   };
+}
+
+function stageTranslationPart(args, uploaded) {
+  assert.equal(args.phase, 'UPLOAD_PART');
+  assert.ok(Buffer.byteLength(JSON.stringify(args)) < 12_000);
+  const bytes = Buffer.from(args.payloadBase64, 'base64');
+  assert.ok(bytes.byteLength > 0 && bytes.byteLength <= 6_144);
+  const existing = uploaded.get(args.partIndex);
+  if (existing && !existing.equals(bytes)) {
+    throw new Error('RESULT_ENVELOPE_PART_REPLAY_MISMATCH');
+  }
+  uploaded.set(args.partIndex, existing ?? bytes);
+  return {
+    schemaVersion: 'wiselink.3_1.translation_result_part_receipt.v1',
+    attemptRef: args.attemptRef,
+    resultContentHash: args.resultContentHash,
+    partIndex: args.partIndex,
+    partCount: args.partCount,
+    sha256: createHash('sha256').update(bytes).digest('hex'),
+    byteLength: bytes.byteLength,
+    replayed: existing !== undefined,
+  };
+}
+
+function assembleTranslationParts(args, uploaded) {
+  assert.equal(args.phase, 'FINALIZE');
+  assert.equal(args.parts.length, args.partCount);
+  const bytes = Buffer.concat(
+    [...args.parts]
+      .sort((left, right) => left.partIndex - right.partIndex)
+      .map((part, index) => {
+        assert.equal(part.partIndex, index);
+        const staged = uploaded.get(index);
+        assert.ok(staged);
+        assert.equal(part.byteLength, staged.byteLength);
+        assert.equal(
+          part.sha256,
+          createHash('sha256').update(staged).digest('hex'),
+        );
+        return staged;
+      }),
+  );
+  const result = JSON.parse(bytes.toString('utf8'));
+  assert.equal(result.contentHash, args.resultContentHash);
+  return result;
 }
 
 function translationDeliveryParts(

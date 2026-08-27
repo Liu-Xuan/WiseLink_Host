@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -21,6 +22,9 @@ const calls = [];
 const dynamicCalls = [];
 const orchestratorCalls = [];
 const translationCalls = [];
+const translationResultParts = new Map();
+let assembledTranslationResult = null;
+let translationTransportProof = null;
 const applicabilityCalls = [];
 const reviewCalls = [];
 const statusCalls = [];
@@ -260,6 +264,88 @@ const translation = {
       result,
     });
     return { workItemId: 'WI-DYNAMIC', status: 'CANDIDATE_ONLY' };
+  },
+  uploadResultPart: async (
+    selectedAttemptRef,
+    selectedLeaseToken,
+    leaseGeneration,
+    input,
+  ) => {
+    const bytes = Buffer.from(input.payloadBase64, 'base64');
+    const key = `${selectedAttemptRef}:${input.resultContentHash}:${input.partCount}:${input.partIndex}`;
+    const existing = translationResultParts.get(key);
+    if (existing && !existing.equals(bytes)) {
+      throw new Error('RESULT_ENVELOPE_PART_REPLAY_MISMATCH');
+    }
+    translationResultParts.set(key, existing ?? bytes);
+    translationCalls.push({
+      tool: 'commit_translation_candidate',
+      phase: 'UPLOAD_PART',
+      attemptRef: selectedAttemptRef,
+      leaseToken: selectedLeaseToken,
+      leaseGeneration,
+      partIndex: input.partIndex,
+      partCount: input.partCount,
+      byteLength: bytes.byteLength,
+      replayed: existing !== undefined,
+    });
+    return {
+      schemaVersion: 'wiselink.3_1.translation_result_part_receipt.v1',
+      attemptRef: selectedAttemptRef,
+      resultContentHash: input.resultContentHash,
+      partIndex: input.partIndex,
+      partCount: input.partCount,
+      sha256: createHash('sha256').update(bytes).digest('hex'),
+      byteLength: bytes.byteLength,
+      replayed: existing !== undefined,
+    };
+  },
+  finalizeResultParts: async (
+    selectedAttemptRef,
+    selectedLeaseToken,
+    leaseGeneration,
+    input,
+  ) => {
+    if (input.parts.length !== input.partCount) {
+      throw new Error('TRANSLATION_RESULT_PARTS_INCOMPLETE');
+    }
+    const ordered = [...input.parts].sort(
+      (left, right) => left.partIndex - right.partIndex,
+    );
+    const bytes = Buffer.concat(
+      ordered.map((part, index) => {
+        if (part.partIndex !== index) {
+          throw new Error('TRANSLATION_RESULT_PARTS_INCOMPLETE');
+        }
+        const staged = translationResultParts.get(
+          `${selectedAttemptRef}:${input.resultContentHash}:${input.partCount}:${index}`,
+        );
+        if (
+          !staged ||
+          staged.byteLength !== part.byteLength ||
+          createHash('sha256').update(staged).digest('hex') !== part.sha256
+        ) {
+          throw new Error('RESULT_ENVELOPE_PART_READBACK_MISMATCH');
+        }
+        return staged;
+      }),
+    );
+    assembledTranslationResult = JSON.parse(bytes.toString('utf8'));
+    translationCalls.push({
+      tool: 'commit_translation_candidate',
+      phase: 'FINALIZE',
+      attemptRef: selectedAttemptRef,
+      leaseToken: selectedLeaseToken,
+      leaseGeneration,
+      partCount: input.partCount,
+      byteLength: bytes.byteLength,
+    });
+    return {
+      workItemId: 'WI-DYNAMIC',
+      workItemRevision: 6,
+      status: 'CANDIDATE_ONLY',
+      translation: { sourceUnitCount: 196, translatedUnitCount: 196 },
+    };
   },
 };
 const applicability = {
@@ -549,6 +635,113 @@ try {
     );
     assert.equal(listed.tools.length, 20);
     assert.equal(openClawClient.getServerVersion()?.version, '1.2.0');
+    const largeTranslation = largeTranslationResultEnvelope();
+    assert.ok(
+      largeTranslation.bytes.byteLength >= 65_000 &&
+        largeTranslation.bytes.byteLength <= 75_000,
+    );
+    const rawParts = chunkBytes(largeTranslation.bytes, 6_144);
+    assert.equal(rawParts.length, 12);
+    const receipts = new Array(rawParts.length);
+    const uploadOrder = [
+      1,
+      0,
+      ...rawParts.slice(2).map((_, index) => index + 2),
+    ];
+    let maxUploadArgumentBytes = 0;
+    for (const partIndex of uploadOrder) {
+      const argumentsValue = {
+        attemptRef: 'TRN-TRANSLATION-LARGE',
+        leaseToken,
+        leaseGeneration: 1,
+        phase: 'UPLOAD_PART',
+        resultContentHash: largeTranslation.result.contentHash,
+        partIndex,
+        partCount: rawParts.length,
+        payloadBase64: rawParts[partIndex].toString('base64'),
+      };
+      const argumentBytes = Buffer.byteLength(JSON.stringify(argumentsValue));
+      maxUploadArgumentBytes = Math.max(maxUploadArgumentBytes, argumentBytes);
+      assert.ok(argumentBytes < 12_000);
+      receipts[partIndex] = resultJson(
+        await openClawClient.callTool({
+          name: 'commit_translation_candidate',
+          arguments: argumentsValue,
+        }),
+      );
+    }
+    const duplicate = resultJson(
+      await openClawClient.callTool({
+        name: 'commit_translation_candidate',
+        arguments: {
+          attemptRef: 'TRN-TRANSLATION-LARGE',
+          leaseToken,
+          leaseGeneration: 1,
+          phase: 'UPLOAD_PART',
+          resultContentHash: largeTranslation.result.contentHash,
+          partIndex: 0,
+          partCount: rawParts.length,
+          payloadBase64: rawParts[0].toString('base64'),
+        },
+      }),
+    );
+    assert.equal(duplicate.replayed, true);
+    const missingFinalize = await openClawClient.callTool({
+      name: 'commit_translation_candidate',
+      arguments: {
+        attemptRef: 'TRN-TRANSLATION-LARGE',
+        leaseToken,
+        leaseGeneration: 1,
+        phase: 'FINALIZE',
+        resultContentHash: largeTranslation.result.contentHash,
+        partCount: rawParts.length,
+        parts: receipts.slice(0, -1).map(resultPartBinding),
+      },
+    });
+    assert.equal(missingFinalize.isError, true);
+    assert.equal(
+      translationCalls.filter(({ phase }) => phase === 'FINALIZE').length,
+      0,
+    );
+    const finalized = resultJson(
+      await openClawClient.callTool({
+        name: 'commit_translation_candidate',
+        arguments: {
+          attemptRef: 'TRN-TRANSLATION-LARGE',
+          leaseToken,
+          leaseGeneration: 1,
+          phase: 'FINALIZE',
+          resultContentHash: largeTranslation.result.contentHash,
+          partCount: rawParts.length,
+          parts: receipts.map(resultPartBinding).reverse(),
+        },
+      }),
+    );
+    assert.deepEqual(finalized, {
+      workItemId: 'WI-DYNAMIC',
+      workItemRevision: 6,
+      status: 'CANDIDATE_ONLY',
+      translation: { sourceUnitCount: 196, translatedUnitCount: 196 },
+    });
+    assert.equal(
+      Buffer.byteLength(JSON.stringify(assembledTranslationResult)),
+      largeTranslation.bytes.byteLength,
+    );
+    assert.equal(
+      JSON.parse(assembledTranslationResult.modelOutput).candidateUnits.length,
+      196,
+    );
+    assert.deepEqual(assembledTranslationResult, largeTranslation.result);
+    translationTransportProof = {
+      payloadBytes: largeTranslation.bytes.byteLength,
+      sourceUnitCount: 196,
+      partCount: rawParts.length,
+      maxUploadArgumentBytes,
+      duplicatePartReplayed: duplicate.replayed,
+      outOfOrderUploadAndFinalize: true,
+      missingPartRejected: missingFinalize.isError === true,
+      readbackComplete: true,
+    };
     assert.deepEqual(
       resultJson(
         await openClawClient.callTool({
@@ -937,6 +1130,7 @@ try {
           ...new Set(methods.filter((method) => method !== 'POST')),
         ],
         concurrentClientsIsolated: true,
+        translationTransportProof,
       },
       null,
       2,
@@ -995,6 +1189,69 @@ function resultJson(result) {
   const content = result.content.find((item) => item.type === 'text');
   assert.ok(content && content.type === 'text');
   return JSON.parse(content.text);
+}
+
+function largeTranslationResultEnvelope() {
+  const filler =
+    '完成驾驶舱显示系统构型核对并保留所有警告注意步骤与件号单位。'.repeat(2) +
+    '严格复核完成并确认';
+  const candidateUnits = Array.from({ length: 196 }, (_, index) => {
+    const suffix = String(index + 1).padStart(3, '0');
+    return {
+      unitKey: `UNIT-${suffix}`,
+      text: `WARNING airplane AIMS-2 P/N 123-ABC 5 kg. ${filler}`,
+      sourceRefIds: [`SRC-${suffix}`],
+      engineerRevision: null,
+    };
+  });
+  const result = {
+    schemaVersion: 'wiselink.3_1.openclaw_result_envelope.v1',
+    actionAttemptId: 'ATT-TRANSLATION-LARGE',
+    operationRef: 'TRN-TRANSLATION-LARGE',
+    taskType: 'OPENCLAW_TRANSLATE',
+    workItemId: 'WI-DYNAMIC',
+    baseRevision: 5,
+    status: 'SUCCEEDED',
+    businessOutcome: 'CANDIDATE_READY',
+    candidateStatus: null,
+    modelOutput: JSON.stringify({
+      schemaVersion: 'wiselink.3_1.translation_result.v0.candidate',
+      candidateUnits,
+    }),
+    outputArtifactRefs: [],
+    sourceRefs: [],
+    factsConsidered: [],
+    missingInputs: [],
+    conflicts: [],
+    warnings: [],
+    modelVersion: 'GLM-5.3',
+    promptVersion: 'wiselink.3_1.openclaw_translation_prompt.v1',
+    skillVersion: 'wiselink-research-and-synthesize@r09.c4',
+    toolVersions: {
+      'wiselink-openclaw-engineering-assessment': '1.2.0',
+    },
+    runMetrics: { durationMs: 1, inputUnits: 1, outputUnits: 1 },
+    errorCode: null,
+    errorDetail: null,
+    contentHash: 'e'.repeat(64),
+  };
+  return { result, bytes: Buffer.from(JSON.stringify(result), 'utf8') };
+}
+
+function chunkBytes(bytes, partBytes) {
+  const parts = [];
+  for (let offset = 0; offset < bytes.byteLength; offset += partBytes) {
+    parts.push(bytes.subarray(offset, offset + partBytes));
+  }
+  return parts;
+}
+
+function resultPartBinding(value) {
+  return {
+    partIndex: value.partIndex,
+    sha256: value.sha256,
+    byteLength: value.byteLength,
+  };
 }
 
 async function readJsonBody(request) {
