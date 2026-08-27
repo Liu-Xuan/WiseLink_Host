@@ -16,6 +16,8 @@ import {
   type ProfessionalInputSourceArtifactInput,
   type SourceUnit,
   type SourceUnitSet,
+  type StructuredApplicability,
+  type StructuredApplicabilityExpression,
   type StructuredParsePackage,
 } from '../pure/professional-input-pure.types';
 import {
@@ -152,6 +154,8 @@ export function buildStructuredParsePackage(input: {
       'No text-bearing source units were produced; refusing to emit an empty package.',
     );
   }
+
+  const applicability = buildDeterministicApplicability(unitSet, moduleId);
 
   const sourceSegments = unitSet.units.map(toSourceSegment);
   const coverageEntries = unitSet.units.map((unit) => ({
@@ -330,11 +334,7 @@ export function buildStructuredParsePackage(input: {
     contentUnits,
     references: [],
     assets: [],
-    applicability: {
-      sourceExpressions: [],
-      normalizedCandidates: [],
-      assignments: [],
-    },
+    applicability,
     coverage,
     findings: [],
     extensions: [],
@@ -421,6 +421,159 @@ function entityIdFromHash(kind: string, digest: string): string {
     );
   }
   return techpubEntityId(kind, digest.slice('sha256:'.length));
+}
+
+const FTD_AIMS_2_APPLICABILITY_TEXT =
+  'All777modelsequippedwithAirplaneInformationManagementSystem2(AIMS-2)Platform.';
+
+interface DeterministicApplicabilityObservation {
+  sourceUnitId: string;
+  sourceRefId: string;
+  text: string;
+  aircraftModel: '777';
+  equipmentModel: 'AIMS-2';
+}
+
+/**
+ * Recognize only the directly source-bound FTD form proven by the actual-byte
+ * pipeline. A single Applicability label must be followed immediately
+ * on the same page by the complete expression in one SourceUnit/SourceRef.
+ * Any absent, split, duplicate, or ambiguous observation remains empty.
+ */
+function buildDeterministicApplicability(
+  unitSet: SourceUnitSet,
+  moduleId: string,
+): StructuredApplicability {
+  const refsById = new Map(
+    unitSet.sourceRefs.map((sourceRef) => [sourceRef.sourceRefId, sourceRef]),
+  );
+  const observations: DeterministicApplicabilityObservation[] = [];
+  for (let index = 0; index < unitSet.units.length - 1; index += 1) {
+    const heading = unitSet.units[index];
+    const expression = unitSet.units[index + 1];
+    if (
+      heading.text !== 'Applicability' ||
+      expression.order !== heading.order + 1 ||
+      expression.text !== FTD_AIMS_2_APPLICABILITY_TEXT ||
+      heading.sourceRefIds.length !== 1 ||
+      expression.sourceRefIds.length !== 1
+    ) {
+      continue;
+    }
+    const headingRef = refsById.get(heading.sourceRefIds[0]);
+    const expressionRef = refsById.get(expression.sourceRefIds[0]);
+    if (
+      !headingRef ||
+      !expressionRef ||
+      headingRef.pageStart !== expressionRef.pageStart ||
+      headingRef.quote !== heading.text ||
+      expressionRef.quote !== expression.text
+    ) {
+      continue;
+    }
+    observations.push({
+      sourceUnitId: expression.sourceUnitId,
+      sourceRefId: expressionRef.sourceRefId,
+      text: expression.text,
+      aircraftModel: '777',
+      equipmentModel: 'AIMS-2',
+    });
+  }
+  if (observations.length !== 1) {
+    return {
+      sourceExpressions: [],
+      normalizedCandidates: [],
+      assignments: [],
+    };
+  }
+
+  const observation = observations[0];
+  const expressionId = techpubEntityId(
+    'applicability-source',
+    sha256Hex(
+      jcsCanonicalize({
+        namespace: 'techpub-applicability-source-id-v1',
+        sourceUnitId: observation.sourceUnitId,
+        sourceRefId: observation.sourceRefId,
+        text: observation.text,
+      }),
+    ),
+  );
+  const normalizedExpression: StructuredApplicabilityExpression = {
+    operator: 'all',
+    children: [
+      {
+        operator: 'predicate',
+        predicate: {
+          property: 'model',
+          comparator: 'eq',
+          values: [observation.aircraftModel],
+        },
+      },
+      {
+        operator: 'predicate',
+        predicate: {
+          property: 'equipmentModelInstalled',
+          comparator: 'eq',
+          values: [observation.equipmentModel],
+        },
+      },
+    ],
+  };
+  const candidateId = techpubEntityId(
+    'applicability-candidate',
+    sha256Hex(
+      jcsCanonicalize({
+        namespace: 'techpub-applicability-candidate-id-v1',
+        expressionId,
+        expression: normalizedExpression,
+      }),
+    ),
+  );
+  const target = {
+    kind: 'module' as const,
+    targetId: moduleId,
+    sourceRefIds: [observation.sourceRefId],
+  };
+  const assignmentId = techpubEntityId(
+    'applicability-assignment',
+    sha256Hex(
+      jcsCanonicalize({
+        namespace: 'techpub-applicability-assignment-id-v1',
+        expressionId,
+        target,
+      }),
+    ),
+  );
+  return {
+    sourceExpressions: [
+      {
+        expressionId,
+        text: observation.text,
+        form: 'logical_expression',
+        authority: 'source_asserted',
+        sourceRefIds: [observation.sourceRefId],
+      },
+    ],
+    normalizedCandidates: [
+      {
+        candidateId,
+        language: 'techpub-applicability-expr.v1',
+        confidence: 'deterministic',
+        sourceExpressionIds: [expressionId],
+        expression: normalizedExpression,
+        authority: 'parser_candidate',
+      },
+    ],
+    assignments: [
+      {
+        assignmentId,
+        expressionId,
+        target,
+        authority: 'source_asserted',
+      },
+    ],
+  };
 }
 
 function coverageHashView(pkg: Record<string, unknown>): unknown {
@@ -576,13 +729,89 @@ function semanticView(pkg: Record<string, unknown>): unknown {
       standardIdentity: null,
     })),
     contentUnits: semanticUnits,
-    applicability: {
-      sourceExpressions: [],
-      normalizedCandidates: [],
-      assignments: [],
-    },
+    applicability: semanticApplicabilityView(pkg, moduleOrder, structural),
     semanticExtensions: [],
   };
+}
+
+function semanticApplicabilityView(
+  pkg: Record<string, unknown>,
+  moduleOrder: ReadonlyMap<string, number>,
+  structural: ReadonlyMap<string, string>,
+): unknown {
+  const applicability = pkg.applicability as StructuredApplicability;
+  const sourceExpressionOrder = new Map(
+    applicability.sourceExpressions.map((item, index) => [
+      item.expressionId,
+      index,
+    ]),
+  );
+  const sourceRefs = new Map(
+    (pkg.sourceRefs as Array<Record<string, unknown>>).map((item) => [
+      String(item.sourceRefId),
+      item,
+    ]),
+  );
+  const cleanSourceLocator = (sourceRefId: string): Record<string, unknown> => {
+    const sourceRef = sourceRefs.get(sourceRefId);
+    if (!sourceRef) return { kind: 'missing' };
+    return {
+      kind: 'pdf',
+      pageStart: sourceRef.pageStart,
+      pageEnd: sourceRef.pageEnd,
+      bbox: sourceRef.bbox ?? null,
+      charStart: sourceRef.charStart ?? null,
+      charEnd: sourceRef.charEnd ?? null,
+      charOffsetUnit: sourceRef.charOffsetUnit ?? null,
+    };
+  };
+  const semanticAssignments = applicability.assignments
+    .map((assignment) => {
+      const targetKind = assignment.target.kind;
+      let target: unknown;
+      if (targetKind === 'module') {
+        target = moduleOrder.get(assignment.target.targetId ?? '') ?? 'missing';
+      } else if (targetKind === 'content_unit') {
+        target = structural.get(assignment.target.targetId ?? '') ?? 'missing';
+      } else {
+        target = assignment.target.sourceRefIds
+          .map(cleanSourceLocator)
+          .sort(compareCanonicalValues);
+      }
+      return {
+        sourceExpressionOrder:
+          sourceExpressionOrder.get(assignment.expressionId) ?? 'missing',
+        targetKind,
+        target,
+        sourceLocators: assignment.target.sourceRefIds
+          .map(cleanSourceLocator)
+          .sort(compareCanonicalValues),
+        sourceReferenceId: assignment.sourceReferenceId ?? null,
+        authority: assignment.authority,
+      };
+    })
+    .sort(compareCanonicalValues);
+  return {
+    sourceExpressions: applicability.sourceExpressions.map((item) => ({
+      form: item.form,
+      text: item.text,
+    })),
+    normalizedCandidates: applicability.normalizedCandidates.map((item) => ({
+      language: item.language,
+      sourceExpressionOrders: item.sourceExpressionIds
+        .map(
+          (expressionId): number | 'missing' =>
+            sourceExpressionOrder.get(expressionId) ?? 'missing',
+        )
+        .sort((left, right) => compareText(String(left), String(right))),
+      expression: structuredClone(item.expression),
+    })),
+    assignments: semanticAssignments,
+  };
+}
+
+function compareCanonicalValues(left: unknown, right: unknown): number {
+  return compareText(jcsCanonicalize(left), jcsCanonicalize(right));
 }
 
 function stripLocationFields(value: unknown): unknown {
