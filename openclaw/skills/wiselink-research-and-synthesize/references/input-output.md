@@ -21,6 +21,21 @@ deadline / idempotencyKey / inputHash
 TaskEnvelope 是 Host 控制面对象；不能整体发给模型。INITIAL_ANALYSIS 只传 `modelInput`，review 还必须移除
 task 中的 actorContextRef 和 context 中的 workItemId。
 
+`begin_translation` 不重复返回顶层 `modelInput`，也不把完整 TaskEnvelope 暴露给 Hosted Agent。它以同一工具的
+`deliveryPart` 参数返回按实际序列化字节计算的可读批次：
+
+```text
+attemptRef/status/leaseToken/leaseGeneration/leaseExpiresAt
+taskBinding{actionAttemptId,operationRef,taskType,workItemId,revisions,documentVersionId,deadline,inputHash,sourceArtifactSha256}
+delivery{partIndex,partCount,sourceUnitStartIndex,sourceUnitEndExclusive,sourceUnitCount,modelInputBase?,sourceUnits[]}
+```
+
+第 0 批含 `modelInputBase`，后续批省略；SourceUnits 的 index 区间必须连续覆盖 sourceUnitCount。每次 part 读取必须
+保持同一 attempt fence、inputHash 与 partCount。包含 text content wrapper 的完整 MCP tool result 按
+`JSON.stringify` 后的 UTF-8 bytes 验证不超过 14,000，
+不是按固定 unit 数猜测。translation input 中没有 tenant/actor/credential/sessionKey/FileService locator/raw PDF/full
+Fleet；无需 shell、Node、解压或本地脚本。
+
 ## ResultEnvelope
 
 所有 commit 使用完整 `wiselink.3_1.openclaw_result_envelope.v1`：

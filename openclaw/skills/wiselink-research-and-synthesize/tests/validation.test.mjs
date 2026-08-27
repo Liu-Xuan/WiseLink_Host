@@ -90,6 +90,9 @@ test('runs real applicability AST extraction through dedicated begin/commit', as
     calls.push({ name, args });
     if (name === 'begin_applicability_evaluation') return begin;
     if (name === 'get_parse_status') return status(WORK_ITEM_ID);
+    if (name === 'heartbeat_action_attempt') {
+      return heartbeatResult(task, args);
+    }
     if (name === 'commit_applicability_candidate') {
       validatePayload('result-envelope', { task, result: args.result });
       const candidate = JSON.parse(args.result.modelOutput);
@@ -146,6 +149,8 @@ test('runs real applicability AST extraction through dedicated begin/commit', as
     [
       'begin_applicability_evaluation',
       'get_parse_status',
+      'heartbeat_action_attempt',
+      'heartbeat_action_attempt',
       'commit_applicability_candidate',
       'get_parse_status',
       'get_deep_link',
@@ -277,6 +282,9 @@ test('continues INITIAL_ANALYSIS from AIMS-2 WAITING to preliminary overall', as
       if (name === 'begin_dynamic_evaluation') {
         return runningBegin(dynamicTask, { modelInput: dynamicInput });
       }
+      if (name === 'heartbeat_action_attempt') {
+        return heartbeatResult(dynamicTask, args);
+      }
       if (name === 'commit_dynamic_evaluation_candidate') {
         validatePayload('result-envelope', {
           task: dynamicTask,
@@ -341,6 +349,9 @@ test('continues INITIAL_ANALYSIS from AIMS-2 WAITING to preliminary overall', as
           modelInput: overallInput,
           selectedDiscoveryRefs: [],
         });
+      }
+      if (name === 'heartbeat_action_attempt') {
+        return heartbeatResult(overallTask, args);
       }
       if (name === 'commit_overall_candidate') {
         validatePayload('result-envelope', {
@@ -432,6 +443,9 @@ test('recovers applicability commit response loss once and never retries commit'
       return runningBegin(task, { modelInput: input });
     }
     if (name === 'get_parse_status') return status(WORK_ITEM_ID);
+    if (name === 'heartbeat_action_attempt') {
+      return heartbeatResult(task, args);
+    }
     if (name === 'commit_applicability_candidate') {
       submittedResult = args.result;
       throw new Error('TRANSPORT_RESPONSE_LOST');
@@ -610,6 +624,9 @@ test('runs translation with fresh status and full fenced ResultEnvelope', async 
     calls.push({ name, args });
     if (name === 'get_parse_status') return status(WORK_ITEM_ID);
     if (name === 'begin_translation') return begin;
+    if (name === 'heartbeat_action_attempt') {
+      return heartbeatResult(task, args);
+    }
     if (name === 'commit_translation_candidate') {
       assert.deepEqual(Object.keys(args).sort(), [
         'attemptRef',
@@ -648,6 +665,8 @@ test('runs translation with fresh status and full fenced ResultEnvelope', async 
     [
       'get_parse_status',
       'begin_translation',
+      'heartbeat_action_attempt',
+      'heartbeat_action_attempt',
       'commit_translation_candidate',
       'get_parse_status',
       'get_deep_link',
@@ -762,6 +781,9 @@ test('runs dynamic N/N and never uses old {attemptRef, output}', async () => {
     calls.push({ name, args });
     if (name === 'get_parse_status') return status(WORK_ITEM_ID);
     if (name === 'begin_dynamic_evaluation') return begin;
+    if (name === 'heartbeat_action_attempt') {
+      return heartbeatResult(task, args);
+    }
     if (name === 'commit_dynamic_evaluation_candidate') {
       assert.equal(Object.hasOwn(args, 'output'), false);
       assert.equal(Object.hasOwn(args, 'result'), true);
@@ -795,6 +817,8 @@ test('runs dynamic N/N and never uses old {attemptRef, output}', async () => {
     [
       'get_parse_status',
       'begin_dynamic_evaluation',
+      'heartbeat_action_attempt',
+      'heartbeat_action_attempt',
       'commit_dynamic_evaluation_candidate',
       'get_parse_status',
       'get_deep_link',
@@ -815,6 +839,9 @@ test('does one generic dynamic status recovery after commit response loss', asyn
     }
     if (name === 'begin_dynamic_evaluation') {
       return runningBegin(task, { modelInput: input });
+    }
+    if (name === 'heartbeat_action_attempt') {
+      return heartbeatResult(task, args);
     }
     if (name === 'commit_dynamic_evaluation_candidate') {
       submittedResult = args.result;
@@ -866,6 +893,9 @@ test('runs no-discovery overall from complete persisted dynamic N', async () => 
         : statusWithOverall(WORK_ITEM_ID, input.outputCorrelationRef);
     }
     if (name === 'begin_overall_synthesis') return begin;
+    if (name === 'heartbeat_action_attempt') {
+      return heartbeatResult(task, args);
+    }
     if (name === 'commit_overall_candidate') {
       validatePayload('result-envelope', { task, result: args.result });
       return {
@@ -1282,6 +1312,19 @@ function runningBegin(task, extra = {}) {
     leaseExpiresAt: '2026-08-27T11:00:00.000Z',
     task,
     ...extra,
+  };
+}
+
+function heartbeatResult(task, args) {
+  assert.deepEqual(args, {
+    attemptRef: task.operationRef,
+    leaseToken: LEASE_TOKEN,
+    leaseGeneration: 3,
+  });
+  return {
+    attemptRef: task.operationRef,
+    status: 'RUNNING',
+    leaseExpiresAt: '2026-08-27T11:30:00.000Z',
   };
 }
 

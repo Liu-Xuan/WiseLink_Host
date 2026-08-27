@@ -9,6 +9,10 @@ import type {
   ActionAttemptWorkItemBinding,
   ReserveAndClaimInput,
 } from '../../server/modules/action-attempt/action-attempt.types';
+import {
+  ACTION_ATTEMPT_DEFAULT_DEADLINE_MS,
+  ACTION_ATTEMPT_LEASE_MS,
+} from '../../server/modules/action-attempt/action-attempt.types';
 
 describe('ActionAttemptLifecycleService', () => {
   it('persists QUEUED before claim and replays the same live fence', async () => {
@@ -39,6 +43,26 @@ describe('ActionAttemptLifecycleService', () => {
       leaseGeneration: first.leaseGeneration,
     });
     expect(builds).toBe(1);
+  });
+
+  it('gives hosted model work a 30-minute lease within a one-hour deadline', async () => {
+    const repository = new MemoryActionAttemptRepository();
+    const service = new ActionAttemptLifecycleService(repository as never);
+
+    const claim = await service.reserveAndClaim(
+      reservationInput(async () => ({ controlled: true })),
+    );
+
+    expect(ACTION_ATTEMPT_LEASE_MS).toBe(30 * 60_000);
+    expect(ACTION_ATTEMPT_DEFAULT_DEADLINE_MS).toBe(60 * 60_000);
+    expect(
+      new Date(claim.leaseExpiresAt).getTime() -
+        repository.row!.createdAt.getTime(),
+    ).toBe(ACTION_ATTEMPT_LEASE_MS);
+    expect(
+      repository.row!.deadlineAt.getTime() -
+        repository.row!.createdAt.getTime(),
+    ).toBe(ACTION_ATTEMPT_DEFAULT_DEADLINE_MS);
   });
 
   it('crosses a durable COMMITTING cutoff and reconciles duplicate delivery', async () => {

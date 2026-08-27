@@ -34,10 +34,27 @@ type RuntimeProvenanceOverrides = Partial<
 >;
 
 describe('CanonicalHostOpenClawTranslationService', () => {
+  it('reuses the same active attempt and lease when delivery parts repeat begin', async () => {
+    const harness = harnessForTranslation();
+
+    const first = await harness.service.begin(harness.workItem.workItemId);
+    const nextPart = await harness.service.begin(harness.workItem.workItemId);
+
+    expect(nextPart).toEqual(first);
+    expect(nextPart.attemptRef).toBe(first.attemptRef);
+    expect(nextPart.leaseToken).toBe(first.leaseToken);
+    expect(nextPart.leaseGeneration).toBe(first.leaseGeneration);
+    expect(nextPart.task.inputHash).toBe(first.task.inputHash);
+    expect(first).not.toHaveProperty('modelInput');
+    expect(harness.attempts.reserveAndClaim).toHaveBeenCalledTimes(2);
+    expect(harness.reader.readAllSourceUnits).toHaveBeenCalledTimes(1);
+  });
+
   it('freezes Reader units and exact rules, validates, persists readback bytes, and CAS-projects candidate-only bilingual output', async () => {
     const harness = harnessForTranslation();
     const begin = await harness.service.begin(harness.workItem.workItemId);
-    const taskContract = begin.modelInput as unknown as TranslationTaskContract;
+    const taskContract = begin.task
+      .modelInput as unknown as TranslationTaskContract;
     expect(begin.task.taskType).toBe('OPENCLAW_TRANSLATE');
     expect(taskContract.sourceUnits).toHaveLength(2);
     expect(taskContract.rulePack.meta).toMatchObject({
@@ -126,7 +143,8 @@ describe('CanonicalHostOpenClawTranslationService', () => {
   it('fails ResultGate and performs no artifact or projection write when a number changes', async () => {
     const harness = harnessForTranslation();
     const begin = await harness.service.begin(harness.workItem.workItemId);
-    const taskContract = begin.modelInput as unknown as TranslationTaskContract;
+    const taskContract = begin.task
+      .modelInput as unknown as TranslationTaskContract;
     harness.prepare(
       JSON.stringify({
         schemaVersion: TRANSLATION_RESULT_SCHEMA_VERSION,
@@ -176,7 +194,8 @@ describe('CanonicalHostOpenClawTranslationService', () => {
   it('fails ResultGate on a non-exact model result shape without writing', async () => {
     const harness = harnessForTranslation();
     const begin = await harness.service.begin(harness.workItem.workItemId);
-    const taskContract = begin.modelInput as unknown as TranslationTaskContract;
+    const taskContract = begin.task
+      .modelInput as unknown as TranslationTaskContract;
     harness.prepare(
       JSON.stringify({
         schemaVersion: TRANSLATION_RESULT_SCHEMA_VERSION,
@@ -299,6 +318,18 @@ function harnessForTranslation() {
         attemptNo: 1,
         createdAt: new Date('2026-08-26T10:00:00.000Z'),
       };
+      if (task) {
+        return {
+          attemptRef: identity.operationRef,
+          status: 'RUNNING' as const,
+          leaseToken: '00000000-0000-4000-8000-000000000001',
+          leaseGeneration: 1,
+          leaseExpiresAt: '2026-08-26T10:01:00.000Z',
+          task,
+          created: false,
+          triggerRequestId: identity.triggerRequestId,
+        };
+      }
       const modelInput = await input.buildModelInput(identity);
       task = sealTaskEnvelope({
         schemaVersion: 'wiselink.3_1.openclaw_task_envelope.v1',
@@ -365,6 +396,7 @@ function harnessForTranslation() {
     service,
     workItem,
     registrar,
+    reader,
     artifactStore,
     attempts,
     get result() {

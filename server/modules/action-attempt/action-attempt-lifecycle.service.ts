@@ -19,6 +19,7 @@ import type {
 import { ActionAttemptRepository } from './action-attempt.repository';
 import {
   ACTION_ATTEMPT_COMMIT_RECOVERY_MS,
+  ACTION_ATTEMPT_DEFAULT_DEADLINE_MS,
   ACTION_ATTEMPT_LEASE_MS,
   ACTION_ATTEMPT_MAX_PARALLEL,
   ACTION_ATTEMPT_REQUEST_ORIGIN,
@@ -33,7 +34,6 @@ import {
 
 const DEFAULT_PRIORITY = 100;
 const DEFAULT_MAX_ATTEMPTS = 3;
-const DEFAULT_DEADLINE_MS = 10 * 60_000;
 
 @Injectable()
 export class ActionAttemptLifecycleService {
@@ -82,7 +82,8 @@ export class ActionAttemptLifecycleService {
       createdAt: now,
     };
     const deadlineAt =
-      input.deadlineAt ?? new Date(now.getTime() + DEFAULT_DEADLINE_MS);
+      input.deadlineAt ??
+      new Date(now.getTime() + ACTION_ATTEMPT_DEFAULT_DEADLINE_MS);
     const priority = input.priority ?? DEFAULT_PRIORITY;
     const modelInput = await input.buildModelInput(identity);
     const task = parseTaskEnvelope(

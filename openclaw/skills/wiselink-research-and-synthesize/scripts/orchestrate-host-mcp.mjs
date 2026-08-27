@@ -108,9 +108,11 @@ export async function runTranslation({ workItemId, callTool, translate }) {
     });
   }
   validatePayload('translation-input', begin.modelInput);
+  await heartbeatAttempt(begin, callTool);
   const execution = normalizeExecution(
     await translate(structuredClone(begin.modelInput)),
   );
+  await heartbeatAttempt(begin, callTool);
   validatePayload('translation-pair', {
     input: begin.modelInput,
     output: execution.output,
@@ -194,9 +196,11 @@ export async function runApplicabilityEvaluation({
     if (typeof extractApplicability !== 'function') {
       throw new Error('HOST_MCP_APPLICABILITY_MODEL_CALLBACK_REQUIRED');
     }
+    await heartbeatAttempt(begin, callTool);
     const execution = normalizeExecution(
       await extractApplicability(structuredClone(begin.modelInput)),
     );
+    await heartbeatAttempt(begin, callTool);
     assertApplicabilityPromptVersion(execution.provenance);
     const astCandidate = validateApplicabilityAstCandidate(
       execution.output,
@@ -269,9 +273,11 @@ export async function runDynamicEvaluation({
     });
   }
   validatePayload('dynamic-rules-input', begin.modelInput);
+  await heartbeatAttempt(begin, callTool);
   const execution = normalizeExecution(
     await evaluateDynamicRules(structuredClone(begin.modelInput)),
   );
+  await heartbeatAttempt(begin, callTool);
   const serializedOutput = serializeDynamicRulesCommitOutput(
     begin.modelInput,
     execution.output,
@@ -392,9 +398,11 @@ async function completeOverall({
   resumed = false,
 }) {
   validatePayload('synthesis-input', begin.modelInput);
+  await heartbeatAttempt(begin, callTool);
   const execution = normalizeExecution(
     await synthesizeOverall(structuredClone(begin.modelInput)),
   );
+  await heartbeatAttempt(begin, callTool);
   validatePayload('synthesis-pair', {
     input: begin.modelInput,
     output: execution.output,
@@ -774,6 +782,19 @@ function assertBegin(value, taskType) {
   if (value.status === 'COMMITTING' && !value.recoveryResult) {
     throw new Error('HOST_MCP_COMMITTING_RECOVERY_REQUIRED');
   }
+}
+
+async function heartbeatAttempt(begin, callTool) {
+  const heartbeat = await callTool('heartbeat_action_attempt', {
+    attemptRef: begin.attemptRef,
+    leaseToken: begin.leaseToken,
+    leaseGeneration: begin.leaseGeneration,
+  });
+  requiredText(
+    heartbeat?.leaseExpiresAt,
+    'HOST_MCP_HEARTBEAT_LEASE_EXPIRY_REQUIRED',
+  );
+  return heartbeat;
 }
 
 function assertOverallInput(value, providers) {

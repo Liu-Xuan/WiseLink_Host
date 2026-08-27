@@ -97,7 +97,6 @@ export interface BeginTranslationResult {
   leaseExpiresAt: string;
   task: OpenClawTaskEnvelope;
   recoveryResult?: OpenClawResultEnvelope;
-  modelInput: Record<string, unknown>;
 }
 
 export interface CommitTranslationResult {
@@ -164,7 +163,6 @@ export class CanonicalHostOpenClawTranslationService {
       ...(claim.status === 'COMMITTING'
         ? { recoveryResult: structuredClone(claim.recoveryResult) }
         : {}),
-      modelInput: structuredClone(claim.task.modelInput),
     };
   }
 
