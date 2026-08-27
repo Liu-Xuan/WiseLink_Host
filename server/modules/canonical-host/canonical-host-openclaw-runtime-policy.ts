@@ -12,7 +12,7 @@ import type { ActionAttemptRow } from '../action-attempt/action-attempt.types';
 export const CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY = {
   runtimeAppId: 'app_17c3zn24kv2',
   profileRef: 'wiselink-engineering',
-  modelVersion: 'GLM-5.1',
+  modelVersion: 'GLM-5.3',
   skillVersion: 'wiselink-research-and-synthesize@r09.c4',
   mcpServerName: 'wiselink-openclaw-engineering-assessment',
   mcpServerVersion: '1.2.0',

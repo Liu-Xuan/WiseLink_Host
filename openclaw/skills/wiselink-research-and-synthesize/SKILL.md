@@ -11,7 +11,7 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
-- model policy：`GLM-5.1`
+- model policy：`GLM-5.3`
 - Skill：`wiselink-research-and-synthesize@r09.c4`
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（exact 20 tools）
 - Host baseline：`df4bd1a5c0698c5fd56912fba1329a9283d990c6`
@@ -157,7 +157,7 @@ commit_review_turn_candidate
 begin_review_turn({reviewConversationRef, requestId})
 → get_review_turn_context({attemptRef})
 → read_source_refs({attemptRef, sourceRefIds}) [仅按本轮明确需要]
-→ 托管 GLM-5.1 生成 review_turn_candidate.v1.c2
+→ 托管 GLM-5.3 生成 review_turn_candidate.v1.c2
 → validator + full ResultEnvelope
 → commit_review_turn_candidate({attemptRef, leaseToken, leaseGeneration, result})
 ```
@@ -203,7 +203,7 @@ tool 版本、run metrics、错误字段和 canonical SHA-256 `contentHash`。
 
 当前 validator 强制：
 
-- `modelVersion=GLM-5.1`
+- `modelVersion=GLM-5.3`
 - `skillVersion=wiselink-research-and-synthesize@r09.c4`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行

@@ -14,7 +14,10 @@ import type {
   ActionAttemptRow,
   ReserveAndClaimInput,
 } from '../../server/modules/action-attempt/action-attempt.types';
-import { REVIEW_SKILL_POLICY_REF } from '../../server/modules/canonical-host/canonical-host-openclaw-review.contract';
+import {
+  REVIEW_MODEL_POLICY_REF,
+  REVIEW_SKILL_POLICY_REF,
+} from '../../server/modules/canonical-host/canonical-host-openclaw-review.contract';
 import { CanonicalHostOpenClawReviewService } from '../../server/modules/canonical-host/canonical-host-openclaw-review.service';
 import { encodeReviewAttachmentParsedArtifact } from '../../server/modules/review-persistence/review-attachment-artifact';
 
@@ -99,10 +102,15 @@ describe('CanonicalHostOpenClawReviewService', () => {
     });
   });
 
-  it('rejects missing actual provenance before ActionAttempt or review mutation', async () => {
+  it('rejects discontinued model before ActionAttempt or review mutation', async () => {
     const harness = reviewHarness();
     const begin = await harness.service.begin('RC-1', 'request-1');
-    const result = harness.result(begin.task, {});
+    const result = harness.result(
+      begin.task,
+      { 'wiselink-openclaw-engineering-assessment': '1.2.0' },
+      REVIEW_SKILL_POLICY_REF,
+      'GLM-5.1',
+    );
 
     await expect(
       harness.service.commit(
@@ -411,6 +419,7 @@ function reviewHarness(withAttachment = false) {
       selectedTask: OpenClawTaskEnvelope,
       toolVersions: Record<string, string>,
       skillVersion: string = REVIEW_SKILL_POLICY_REF,
+      modelVersion: string = REVIEW_MODEL_POLICY_REF,
     ): OpenClawResultEnvelope {
       return sealResultEnvelope({
         schemaVersion: 'wiselink.3_1.openclaw_result_envelope.v1',
@@ -446,7 +455,7 @@ function reviewHarness(withAttachment = false) {
         missingInputs: [],
         conflicts: [],
         warnings: [],
-        modelVersion: 'GLM-5.1',
+        modelVersion,
         promptVersion: 'review-prompt.v1',
         skillVersion,
         toolVersions,

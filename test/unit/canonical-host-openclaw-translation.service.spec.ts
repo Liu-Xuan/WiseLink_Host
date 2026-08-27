@@ -211,8 +211,8 @@ describe('CanonicalHostOpenClawTranslationService', () => {
   });
 
   it.each<[string, RuntimeProvenanceOverrides]>([
-    ['wrong model', { modelVersion: 'GPT-5' }],
-    ['fallback model', { modelVersion: 'GLM-5.1/fallback' }],
+    ['discontinued model', { modelVersion: 'GLM-5.1' }],
+    ['fallback model', { modelVersion: 'GLM-5.3/fallback' }],
     [
       'wrong skill',
       { skillVersion: 'wiselink-research-and-synthesize@r09.c3' },

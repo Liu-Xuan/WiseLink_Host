@@ -75,7 +75,7 @@ test('pins exact20 MCP 1.2, five review tools, and hosted provenance', () => {
     WISELINK_SKILL_VERSION,
     'wiselink-research-and-synthesize@r09.c4',
   );
-  assert.equal(WISELINK_MODEL_VERSION, 'GLM-5.1');
+  assert.equal(WISELINK_MODEL_VERSION, 'GLM-5.3');
   assert.equal(WISELINK_HOST_MCP_VERSION, '1.2.0');
 });
 
@@ -583,7 +583,7 @@ test('seals exact full ResultEnvelope and rejects self-reported version drift', 
       sealResultEnvelope({
         task,
         modelOutput: translationOutput(),
-        provenance: provenance({ modelVersion: 'fallback-model' }),
+        provenance: provenance({ modelVersion: 'GLM-5.1' }),
       }),
     /RUNTIME_MODEL_VERSION_POLICY_MISMATCH/u,
   );

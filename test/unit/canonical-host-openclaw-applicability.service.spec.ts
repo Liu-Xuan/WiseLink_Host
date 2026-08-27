@@ -612,7 +612,7 @@ describe('CanonicalHostOpenClawApplicabilityService', () => {
     const provenance = applicabilityHarness();
     const begin = await provenance.begin();
     const wrong = provenance.resultFor(candidateFor(begin), {
-      modelVersion: 'fallback-model',
+      modelVersion: 'GLM-5.1',
     });
     await expect(
       provenance.service.commit(
