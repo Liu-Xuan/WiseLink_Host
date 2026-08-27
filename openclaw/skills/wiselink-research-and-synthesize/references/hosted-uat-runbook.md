@@ -46,12 +46,15 @@
 3. 单次 full ResultEnvelope commit；Host 读回 target binding、Fleet/Kleene 结果、actual bytes 与 current
    applicability candidate。
 4. 选择一个 Host 缺事实样本，确认零模型调用、missing 原样 WAITING_INPUT。
+5. 确认该 WAITING_INPUT 不终止 INITIAL_ANALYSIS，随后 Dynamic N/N、Job-Aid 与 overall 仍实际执行。
 
 ### Positive：SYNTHESIZE_OVERALL
 
 1. fresh-read dynamic N/N 已持久；先 `providers=[]`。
-2. overall input 绑定 frozen.2、完整 N/N、adopted DVs、review history/effective 和 SourceRefs。
-3. 输出保持 candidate-only、external discovery non-evidence、适用性缺事实时 UNKNOWN。
+2. overall input 绑定 frozen.2、完整 N/N、adopted DVs、review history/effective、Host
+   `selectiveResynthesis` 和 SourceRefs。
+3. 输出保持 candidate-only、external discovery non-evidence；飞机身份/机型已知但 AIMS-2 构型未接入时，仍给出
+   初步工程综合，并明确条件性 UNKNOWN、人工/后续数据确认要求和不可最终批准/发布。
 4. 单次 commit；Host 读回 actual bytes/current overall r1。
 
 ### Required negative

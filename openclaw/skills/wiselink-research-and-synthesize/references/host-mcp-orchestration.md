@@ -87,6 +87,8 @@ begin_applicability_evaluation(applicabilityContextRef, requestId)
 
 若 Task `hostResolvedMissingInputs` 非空，不调用模型，只原样提交 WAITING_INPUT。模型不输出
 `applicabilityLevel/contentRef` 或飞机适用结论；`query_parsed_package`、dynamic、overall 仍不能代替此 operation。
+该 WAITING_INPUT 只终结 applicability attempt，不终结 INITIAL_ANALYSIS；Host 后续允许的 dynamic/Job-Aid/overall
+继续执行，且 UNKNOWN 保持不变。
 
 ### Dynamic N/N
 
@@ -109,7 +111,7 @@ outcome unknown。
 ```text
 get_parse_status（dynamic N/N 已持久）
 → begin_overall_synthesis(workItemId, [])
-→ synthesis-input + synthesis-pair validator
+→ synthesis-input（含 Host selectiveResynthesis）+ synthesis-pair validator
 → full ResultEnvelope
 → commit_overall_candidate
 → get_parse_status + get_deep_link
@@ -119,6 +121,9 @@ get_parse_status（dynamic N/N 已持久）
 不执行 dynamic/discovery。`COMMITTING` 不走 resume，而走只读 recovery。
 
 未知 overall commit 同样只按通用 ActionAttempt `resultContentHash` 一次恢复。
+
+若 Host 输入表明飞机身份/机型已知、AIMS-2 构型事实未接入，仍调用 overall 模型形成 candidate-only 初步工程
+综合；输出明确保持 `UNKNOWN/WAITING_INPUT`、列出缺口和人工/后续数据确认要求，不得最终批准或发布。
 
 ### Gap-driven discovery
 

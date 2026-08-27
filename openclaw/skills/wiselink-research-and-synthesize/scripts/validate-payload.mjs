@@ -1298,6 +1298,7 @@ function validateSynthesisInput(input) {
       'adoptedDocumentVersions',
       'externalDiscoveryResults',
       'engineerReviewContext',
+      'selectiveResynthesis',
     ],
     [],
     'synthesis input',
@@ -1312,6 +1313,7 @@ function validateSynthesisInput(input) {
   validateUnifiedSourceContext(input.unifiedSourceContext);
   validateAdoptedDocumentVersions(input.adoptedDocumentVersions);
   validateEngineerReviewContext(input.engineerReviewContext);
+  assertObject(input.selectiveResynthesis, 'selective resynthesis');
   array(input.externalDiscoveryResults, 'SYNTHESIS_DISCOVERY_RESULTS_INVALID');
   for (const result of input.externalDiscoveryResults)
     validateDiscoveryOutput(result);

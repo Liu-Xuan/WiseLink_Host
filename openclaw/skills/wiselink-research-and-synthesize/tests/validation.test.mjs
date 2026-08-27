@@ -208,6 +208,174 @@ test('propagates only Host-frozen applicability missing input without a model ca
   );
 });
 
+test('continues INITIAL_ANALYSIS from AIMS-2 WAITING to preliminary overall', async () => {
+  const applicabilityInput = await readJson(APPLICABILITY_TASK_FIXTURE_URL);
+  const missingInputs = [
+    {
+      code: 'FLEET_MISSING_CONTROLLED_FACT_equipmentModelInstalled',
+      message: 'Controlled AIMS-2 configuration fact is not connected.',
+    },
+  ];
+  const applicabilityTask = makeTask(
+    'OPENCLAW_APPLICABILITY_EVALUATION',
+    applicabilityInput,
+    missingInputs,
+  );
+  let applicabilityModelCalls = 0;
+  const applicability = await runInitialAnalysis({
+    mode: 'INITIAL_ANALYSIS',
+    operation: 'EXTRACT_APPLICABILITY',
+    applicabilityContextRef: applicabilityInput.applicabilityContextRef,
+    requestId: 'REQ-applicability-aims2-waiting',
+    callTool: async (name, args) => {
+      if (name === 'begin_applicability_evaluation') {
+        return runningBegin(applicabilityTask, {
+          modelInput: applicabilityInput,
+        });
+      }
+      if (name === 'get_parse_status') return status(WORK_ITEM_ID);
+      if (name === 'commit_applicability_candidate') {
+        validatePayload('result-envelope', {
+          task: applicabilityTask,
+          result: args.result,
+        });
+        return {
+          attemptRef: applicabilityTask.operationRef,
+          status: 'WAITING_INPUT',
+          projectionApplied: false,
+          terminalReason: 'HOST_RESOLVED_MISSING_INPUT',
+        };
+      }
+      if (name === 'get_deep_link') {
+        return { workItemId: WORK_ITEM_ID, deepLink: '/work-item/fixture' };
+      }
+      throw new Error(`UNEXPECTED_TOOL:${name}`);
+    },
+    extractApplicability: async () => {
+      applicabilityModelCalls += 1;
+      throw new Error('MODEL_MUST_NOT_RUN');
+    },
+    runtimeProvenance: applicabilityProvenance({
+      runMetrics: { durationMs: 0, inputUnits: 0, outputUnits: 0 },
+    }),
+  });
+  assert.equal(applicability.ok, true);
+  assert.equal(applicability.outcome, 'WAITING_INPUT');
+  assert.equal(applicabilityModelCalls, 0);
+
+  const dynamicInput = await readJson(DYNAMIC_FIXTURE_URL);
+  const dynamicOutput = buildDynamicRulesOutput(dynamicInput);
+  const dynamicTask = makeTask('OPENCLAW_DYNAMIC_EVALUATION', dynamicInput);
+  let dynamicModelCalls = 0;
+  const dynamic = await runInitialAnalysis({
+    mode: 'INITIAL_ANALYSIS',
+    operation: 'EVALUATE_JOBAID',
+    workItemId: WORK_ITEM_ID,
+    callTool: async (name, args) => {
+      if (name === 'get_parse_status') return status(WORK_ITEM_ID);
+      if (name === 'begin_dynamic_evaluation') {
+        return runningBegin(dynamicTask, { modelInput: dynamicInput });
+      }
+      if (name === 'commit_dynamic_evaluation_candidate') {
+        validatePayload('result-envelope', {
+          task: dynamicTask,
+          result: args.result,
+        });
+        return {
+          workItemId: WORK_ITEM_ID,
+          workItemRevision: 8,
+          status: 'BASE_RULE_CANDIDATE_READY',
+        };
+      }
+      if (name === 'get_deep_link') {
+        return { workItemId: WORK_ITEM_ID, deepLink: '/work-item/fixture' };
+      }
+      throw new Error(`UNEXPECTED_TOOL:${name}`);
+    },
+    evaluateDynamicRules: async () => {
+      dynamicModelCalls += 1;
+      return { output: dynamicOutput, provenance: provenance() };
+    },
+  });
+  assert.equal(dynamic.outcome, 'CANDIDATE_ONLY');
+  assert.equal(dynamicModelCalls, 1);
+
+  const overallInput = synthesisInput();
+  overallInput.baseRuleResult.items[0].missingInputs = [
+    'Controlled AIMS-2 configuration fact is not connected.',
+  ];
+  const overallOutput = synthesisOutput(overallInput);
+  overallOutput.gap = 'AIMS-2 configuration data is not connected.';
+  overallOutput.overallCandidate =
+    '飞机身份和机型已知；AIMS-2 构型数据未接入，适用性保持条件性未知，需工程师或后续受控数据确认；当前可形成初步工程综合候选，但不得最终批准或发布。';
+  overallOutput.findings[0] = {
+    finding: '飞机身份和机型已知，AIMS-2 构型状态未知。',
+    basis: 'Dynamic N/N and frozen.2 SourceRef',
+    sourceRefIds: [overallInput.unifiedSourceContext.sourceRefs[0].sourceRefId],
+    assumptions: [],
+    uncertainty: 'AIMS-2 构型数据未接入，适用性需人工或后续数据确认。',
+  };
+  overallOutput.missingInputs = [
+    'Controlled AIMS-2 configuration fact is not connected.',
+  ];
+  const overallTask = makeTask('OPENCLAW_OVERALL_SYNTHESIS', {
+    modelInput: overallInput,
+    selectedDiscoveryRefs: [],
+    providerCodes: [],
+  });
+  let overallStatusReads = 0;
+  let overallModelCalls = 0;
+  const overall = await runInitialAnalysis({
+    mode: 'INITIAL_ANALYSIS',
+    operation: 'SYNTHESIZE_OVERALL',
+    workItemId: WORK_ITEM_ID,
+    providers: [],
+    callTool: async (name, args) => {
+      if (name === 'get_parse_status') {
+        overallStatusReads += 1;
+        return overallStatusReads === 1
+          ? statusWithDynamic(WORK_ITEM_ID, 'REQ-DYNAMIC')
+          : statusWithOverall(WORK_ITEM_ID, overallInput.outputCorrelationRef);
+      }
+      if (name === 'begin_overall_synthesis') {
+        return runningBegin(overallTask, {
+          modelInput: overallInput,
+          selectedDiscoveryRefs: [],
+        });
+      }
+      if (name === 'commit_overall_candidate') {
+        validatePayload('result-envelope', {
+          task: overallTask,
+          result: args.result,
+        });
+        return {
+          workItemId: WORK_ITEM_ID,
+          workItemRevision: 9,
+          status: 'OVERALL_CANDIDATE_READY',
+          overallSynthesis: {
+            status: 'CANDIDATE_ONLY',
+            authorityLevel: 'candidate_only',
+            externalDiscoveryIsEvidence: false,
+          },
+        };
+      }
+      if (name === 'get_deep_link') {
+        return { workItemId: WORK_ITEM_ID, deepLink: '/work-item/fixture' };
+      }
+      throw new Error(`UNEXPECTED_TOOL:${name}`);
+    },
+    synthesizeOverall: async () => {
+      overallModelCalls += 1;
+      return { output: overallOutput, provenance: provenance() };
+    },
+  });
+  assert.equal(overall.outcome, 'CANDIDATE_ONLY');
+  assert.equal(overallModelCalls, 1);
+  assert.equal(overallOutput.applicabilityStatus, 'UNKNOWN/WAITING_INPUT');
+  assert.match(overallOutput.overallCandidate, /初步工程综合候选/u);
+  assert.match(overallOutput.overallCandidate, /不得最终批准或发布/u);
+});
+
 test('recovers COMMITTING applicability once by generic attempt status hash', async () => {
   const input = await readJson(APPLICABILITY_TASK_FIXTURE_URL);
   const astCandidate = await readJson(APPLICABILITY_AST_FIXTURE_URL);
@@ -1325,6 +1493,19 @@ function synthesisInput() {
       effective: [],
     },
     externalDiscoveryResults: [],
+    selectiveResynthesis: {
+      mode: 'INITIAL',
+      criterionSetId: 'criterion-set-fixture',
+      baseRuleRevision: 1,
+      baseRuleArtifactSha256: `sha256:${'e'.repeat(64)}`,
+      staleOverallRevision: null,
+      targetOverallRevision: 1,
+      priorEngineerReviewRevision: null,
+      currentEngineerReviewRevision: null,
+      affectedCriterionIds: [],
+      reusedCriterionIds: [],
+      adoptedEvidenceSourceRefIds: [],
+    },
   };
 }
 

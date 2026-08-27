@@ -120,6 +120,8 @@ expressions[{expressionId,sourceRefIds,extractionStatus=extracted,expressionAst}
 Skill 从 Host modelInput 组装 `wiselink.3_1.applicability_candidate.v1`；模型不输出 target level/contentRef、Fleet
 decision 或 current。Host commit 使用唯一 FleetMasterData + Kleene evaluator，并负责 ResultGate、actual bytes、
 CAS/current。Host 已冻结 missing input 时，ResultEnvelope 为 WAITING_INPUT、`modelOutput=null`，missing 原样传播。
+该 WAITING_INPUT 只终结 applicability ActionAttempt；INITIAL_ANALYSIS 继续使用 Host 后续 begin 返回的受控输入运行
+Dynamic N/N、Job-Aid 与 overall，UNKNOWN 不得改写成 TRUE/FALSE。
 
 ## Reader
 
@@ -173,6 +175,7 @@ unifiedSourceContext（同一 frozen.2 + SourceRefs）
 adoptedDocumentVersions
 engineerReviewContext{revision,artifactSha256,reviewCount,history,effective}
 externalDiscoveryResults
+selectiveResynthesis（Host 现有选择性重综合摘要）
 ```
 
 同 criterion 多条 engineer review 必须保留连续 history，effective 为最后一条。它们是受控人工输入，不自动
@@ -190,7 +193,8 @@ engineeringReviewRequired=true
 ```
 
 并返回 overallCandidate、findings、missingInputs、applicabilityStatus、provider status 和计数。缺 FleetFacts/
-predicates 时 applicability 保持 `UNKNOWN/WAITING_INPUT`。
+predicates 时 applicability 保持 `UNKNOWN/WAITING_INPUT`，但仍形成初步工程综合候选。飞机身份/机型已知而
+AIMS-2 构型数据未接入时，候选必须明确说明条件性未知、需工程师或后续受控数据确认，且不得最终批准或发布。
 
 ## INTERACTIVE_REVIEW task
 

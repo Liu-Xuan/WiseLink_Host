@@ -111,6 +111,9 @@ overall 中的文字解释成适用性结果。
   FleetMasterData、Kleene evaluator、ResultGate、实际字节 readback、CAS/current。
 - Host 冻结 `hostResolvedMissingInputs` 时不调用模型，只原样提交 WAITING_INPUT；不得补造、删减或改写 missing/
   conflict。
+- Applicability 的 WAITING_INPUT 只终结当前 applicability ActionAttempt，不终结整个 INITIAL_ANALYSIS。保持
+  UNKNOWN 后继续 Host 授权的 Dynamic N/N、Job-Aid 与 overall；不得把 UNKNOWN 改成 TRUE/FALSE，也不得用
+  dynamic/overall 文字冒充 applicability 结论。
 
 ### Reader 与 SourceRef
 
@@ -124,7 +127,9 @@ overall 中的文字解释成适用性结果。
 
 - 先确认 Host 已落账完整 dynamic N/N，再以 `providers=[]` 运行无 discovery overall。
 - 输入必须包含同一 frozen.2 package、完整 N/N、当前 adopted DocumentVersions、脱敏 engineer-review
-  timeline/effective 和 Unified SourceRefs。
+  timeline/effective、Host `selectiveResynthesis` 摘要和 Unified SourceRefs。
+- 若飞机身份/机型已知但 AIMS-2 等受控构型事实未接入，仍执行 overall 模型并形成初步工程综合候选；候选必须
+  明示构型数据未接入、适用性为条件性 UNKNOWN、需要工程师或后续受控数据确认，且不得形成最终批准或发布。
 - 工程师 review 的同 criterion 多次记录由 Host 保留 history，并以最后一条为 effective；Skill 不重写
   ledger 或把 review 自动升级为批准。
 - 只在一个明确 gap 需要外部事实时，选择直接相关且已实现的官方 provider；不固定遍历三家 OEM。
