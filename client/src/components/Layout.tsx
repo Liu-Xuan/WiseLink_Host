@@ -2,6 +2,7 @@ import { ChevronRight, FileSearch2 } from 'lucide-react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 
 import CurrentUserControl from '@client/src/components/CurrentUserControl';
+import VisualModeControl from '@client/src/components/VisualModeControl';
 import FloatingDock from '@client/src/features/navigation/FloatingDock';
 import './app-shell.css';
 
@@ -61,6 +62,7 @@ const Layout = () => {
               资料与结果按权限显示
             </span>
           )}
+          <VisualModeControl />
           <CurrentUserControl />
         </div>
       </header>

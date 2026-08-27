@@ -42,6 +42,7 @@ import ReviewImpactPreview from '@client/src/features/review/ReviewImpactPreview
 import RevisionTimeline from '@client/src/features/review/RevisionTimeline';
 import TaskPills from '@client/src/features/review/TaskPills';
 import WorkbenchShell from '@client/src/features/workbench/WorkbenchShell';
+import type { QuickOpenItem } from '@client/src/features/workbench/QuickOpen';
 import OverallAssessmentHero from '@client/src/features/workitem/OverallAssessmentHero';
 import AuthorityStrip from '@client/src/features/workitem/AuthorityStrip';
 import {
@@ -50,16 +51,17 @@ import {
 } from '@client/src/services/viewModelMappers';
 import EvidencePanel from '@client/src/features/workbench/EvidencePanel';
 import NavigatorTree from '@client/src/features/navigation/NavigatorTree';
-import type {
-  NavigationNodeView,
-  NavigatorMode,
+import {
+  buildDocumentTree,
+  humanState,
+  type NavigationNodeView,
+  type NavigatorMode,
 } from '@client/src/features/navigation/treeMappers';
 import {
   buildAssessmentBusinessContent,
   getReaderViewMode,
   type ReaderViewMode,
 } from './workbench-projection';
-import { humanState } from '@client/src/features/navigation/treeMappers';
 import { runCanonicalDocumentParsingLoad } from './document-parsing-load';
 import './document-parsing.css';
 import './pdf-source-pane.css';
@@ -177,6 +179,15 @@ function getWorkbenchNode(value: string | null): WorkbenchNode {
   }
   /* §4.1/§4.2：选择文档或事项后默认先显示综合评估意见 */
   return 'assessment';
+}
+
+function flattenNavigationTree(
+  nodes: NavigationNodeView[],
+): NavigationNodeView[] {
+  return nodes.flatMap((node) => [
+    node,
+    ...flattenNavigationTree(node.children ?? []),
+  ]);
 }
 
 export default function DocumentParsingPage() {
@@ -477,9 +488,35 @@ export default function DocumentParsingPage() {
     });
   }
 
+  const quickOpenItems: QuickOpenItem[] = [
+    ...WORKBENCH_TABS.filter((tab) => tab.key !== 'aeo' || Boolean(aeo)).map(
+      (tab) => ({
+        id: `view:${tab.key}`,
+        label: tab.label,
+        description: '切换当前工程分析工作台视图',
+        keywords: tab.mobileLabel,
+        group: '工作台视图',
+        icon: tab.icon,
+        onSelect: () => handleTabChange(tab.key),
+      }),
+    ),
+    ...flattenNavigationTree(buildDocumentTree(data.libraryIndex.nodes))
+      .filter((node) => node.selectable && Boolean(node.targetNode))
+      .map((node) => ({
+        id: `source:${node.id}`,
+        label: node.label,
+        description: node.subtitle ?? '当前资料',
+        keywords: node.badge,
+        group: '当前资料',
+        icon: <FileText aria-hidden="true" />,
+        onSelect: () => handleNavigatorSelect(node),
+      })),
+  ];
+
   return (
     <main className="parse-shell parse-shell--workbench wl-workbench-enter">
       <WorkbenchShell
+        contextLabel={`${pkg?.documentIdentity?.documentCode ?? fileLabel} · ${WORKBENCH_TABS.find((tab) => tab.key === activeNode)?.label ?? '综合评估'}`}
         navigator={
           <NavigatorTree
             nodes={data.libraryIndex.nodes}
@@ -500,6 +537,7 @@ export default function DocumentParsingPage() {
           />
         }
         evidenceSignal={evidenceSignal}
+        quickOpenItems={quickOpenItems}
         tabs={WORKBENCH_TABS}
         activeTab={activeNode}
         mobileActiveTab={

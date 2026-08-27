@@ -1,5 +1,5 @@
 /* ============================================================
- * WiseLink 3.1 · Glass Material Layers (R05.1)
+ * WiseLink 3.1 · Glass Material Layers (R05.5)
  * G0 环境背景 → G4 实体内容面，五级材质体系。
  * 性能约束：桌面同时可见 backdrop-filter ≤4，移动端 ≤2。
  * ============================================================ */
@@ -138,8 +138,9 @@
     inset 0 -1px 0 var(--wl-g1-thickness),
     0 18px 46px var(--wl-g1-shadow);
   /* 前缀声明在前，避免构建压缩把标准属性误判为重复项而丢弃。 */
-  -webkit-backdrop-filter: blur(var(--wl-blur-nav)) saturate(158%);
-  backdrop-filter: blur(var(--wl-blur-nav)) saturate(158%);
+  -webkit-backdrop-filter: blur(var(--wl-blur-nav))
+    saturate(var(--wl-saturation-nav));
+  backdrop-filter: blur(var(--wl-blur-nav)) saturate(var(--wl-saturation-nav));
 }
 
 /* ── G2 导航与目录玻璃：目录树、证据栏、活动栏 ── */
@@ -161,8 +162,71 @@
     inset 0 1px 0 color-mix(in srgb, var(--wl-g2-highlight) 62%, transparent),
     inset 0 -1px 0 color-mix(in srgb, var(--wl-border-strong) 38%, transparent),
     0 12px 30px var(--wl-g2-shadow);
-  -webkit-backdrop-filter: blur(var(--wl-blur-panel)) saturate(134%);
-  backdrop-filter: blur(var(--wl-blur-panel)) saturate(134%);
+  -webkit-backdrop-filter: blur(var(--wl-blur-panel))
+    saturate(var(--wl-saturation-panel));
+  backdrop-filter: blur(var(--wl-blur-panel))
+    saturate(var(--wl-saturation-panel));
+}
+
+/* Refined Ultra 只增强功能玻璃的光学采样；G3/G4 始终无 blur。 */
+html[data-wl-visual-mode='ultra'] .wl-glass-nav {
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--wl-g1-highlight) 78%, transparent),
+    inset 0 -1px 0 var(--wl-g1-thickness),
+    0 4px 12px var(--wl-g1-contact-shadow),
+    0 22px 58px var(--wl-g1-space-shadow);
+  -webkit-backdrop-filter: blur(var(--wl-blur-nav))
+    saturate(var(--wl-saturation-nav)) brightness(1.04);
+  backdrop-filter: blur(var(--wl-blur-nav)) saturate(var(--wl-saturation-nav))
+    brightness(1.04);
+}
+
+html[data-wl-visual-mode='ultra']
+  :is(
+    .wl-glass-panel,
+    .wl-navigator,
+    .library-tree-panel,
+    .library-graph-panel,
+    .wl-side-panel,
+    .wl-workbench-evidence,
+    .discovery-boundary
+  ) {
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--wl-g2-highlight) 64%, transparent),
+    0 3px 10px var(--wl-g2-contact-shadow),
+    0 14px 34px var(--wl-g2-space-shadow);
+}
+
+/* Ultra 只保留一组缓慢冷光；暖顶光与青紫反射保持静态。 */
+html[data-wl-visual-mode='ultra'] .wl-light--cold {
+  animation-duration: 22s;
+}
+
+html[data-wl-visual-mode='ultra'] :is(.wl-light--warm, .wl-light--reflect) {
+  animation: none;
+}
+
+/* 兼容模式不是空白后台皮肤：保留边缘、圆角和阴影，只关闭采样。 */
+html[data-wl-visual-mode='compatible']
+  :is(
+    .wl-glass-nav,
+    .wl-glass-panel,
+    .wl-navigator,
+    .library-tree-panel,
+    .library-graph-panel,
+    .wl-side-panel,
+    .wl-workbench-evidence,
+    .wl-workbench-mobilebar,
+    .discovery-boundary,
+    .wl-visual-mode-menu,
+    .wl-quick-open-dialog
+  ) {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+html[data-wl-visual-mode='compatible'] .wl-light {
+  animation: none;
 }
 
 /* ── G3 专业内容面：综合意见、解析结果、表格、复核表单 ── */
@@ -215,12 +279,16 @@
   (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))
 ) {
   .wl-glass-nav,
-  .wl-glass-panel {
-    background: var(--wl-reduced-g1);
+  .wl-glass-panel,
+  .wl-visual-mode-menu,
+  .wl-quick-open-dialog {
+    background: var(--wl-reduced-g1) !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
   }
 
   .wl-glass-panel {
-    background: var(--wl-reduced-g2);
+    background: var(--wl-reduced-g2) !important;
   }
 }
 
@@ -235,7 +303,9 @@ html[data-wl-transparency='reduced']
     .wl-side-panel,
     .wl-workbench-evidence,
     .wl-workbench-mobilebar,
-    .discovery-boundary
+    .discovery-boundary,
+    .wl-visual-mode-menu,
+    .wl-quick-open-dialog
   ) {
   background: var(--wl-reduced-g2) !important;
   -webkit-backdrop-filter: none !important;
@@ -265,7 +335,9 @@ html[data-wl-transparency='reduced'] .wl-workbench-drawer-scrim {
     .wl-side-panel,
     .wl-workbench-evidence,
     .wl-workbench-mobilebar,
-    .discovery-boundary
+    .discovery-boundary,
+    .wl-visual-mode-menu,
+    .wl-quick-open-dialog
   ) {
     background: var(--wl-reduced-g2) !important;
     -webkit-backdrop-filter: none !important;
@@ -295,7 +367,9 @@ html[data-wl-transparency='reduced'] .wl-workbench-drawer-scrim {
     .wl-side-panel,
     .wl-workbench-evidence,
     .wl-workbench-mobilebar,
-    .discovery-boundary
+    .discovery-boundary,
+    .wl-visual-mode-menu,
+    .wl-quick-open-dialog
   ) {
     border-color: var(--wl-border-strong);
     background: var(--wl-reduced-g2);
@@ -329,6 +403,9 @@ html[data-wl-transparency='reduced'] .wl-workbench-drawer-scrim {
   .wl-workbench-evidence,
   .wl-workbench-mobilebar,
   .discovery-boundary,
+  .wl-visual-mode-menu,
+  .wl-quick-open-dialog,
+  .wl-workbench-more-menu,
   .hosted-intake,
   .library-query-band,
   .library-empty-stage {

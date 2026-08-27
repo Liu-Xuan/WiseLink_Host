@@ -10,15 +10,31 @@ import {
 } from 'react';
 import {
   Contrast,
+  Focus,
   Maximize2,
+  MoreHorizontal,
   Minimize2,
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
+  Search,
 } from 'lucide-react';
 
 import { useWlTheme } from '@client/src/app/providers/ThemeProvider';
+import VisualModeControl from '@client/src/components/VisualModeControl';
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@client/src/components/ui/dropdown-menu';
+import QuickOpen, {
+  type QuickOpenItem,
+} from '@client/src/features/workbench/QuickOpen';
 
 import './workbench-shell.css';
 
@@ -35,6 +51,8 @@ export interface WorkbenchTab {
 export interface WorkbenchShellProps {
   /** 左侧导航树 */
   navigator?: ReactNode;
+  /** 专注模式与窄屏工具栏使用的用户可读资料上下文。 */
+  contextLabel?: string;
   /** 右侧证据面板 */
   evidencePanel?: ReactNode;
   /** 主内容中点击证据引用时递增；面板自动展开（§4.2 折叠策略） */
@@ -43,6 +61,8 @@ export interface WorkbenchShellProps {
   activeTab: string;
   /** 窄屏四项底栏的语义归组；例如解析结果归入「原文」。 */
   mobileActiveTab?: string;
+  /** Quick Open 只接入当前 Host 已返回、当前用户可读取的真实对象。 */
+  quickOpenItems?: QuickOpenItem[];
   onTabChange: (key: string) => void;
   children: ReactNode;
 }
@@ -133,11 +153,13 @@ function writeLayoutPrefs(prefs: WorkbenchLayoutPrefs): void {
  */
 export default function WorkbenchShell({
   navigator,
+  contextLabel = '当前工程资料',
   evidencePanel,
   evidenceSignal = 0,
   tabs,
   activeTab,
   mobileActiveTab,
+  quickOpenItems = [],
   onTabChange,
   children,
 }: WorkbenchShellProps) {
@@ -154,6 +176,8 @@ export default function WorkbenchShell({
     initialPrefs.evidenceWidth ?? EVIDENCE_DEFAULT,
   );
   const [immersive, setImmersive] = useState(false);
+  const [focusMode, setFocusMode] = useState(false);
+  const [quickOpen, setQuickOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isCompact, setIsCompact] = useState(defaultCompactViewport);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -165,16 +189,22 @@ export default function WorkbenchShell({
   const evidenceTriggerRef = useRef<HTMLButtonElement>(null);
   const navDrawerRef = useRef<HTMLElement>(null);
   const evidenceDrawerRef = useRef<HTMLElement>(null);
+  const focusRestoreRef = useRef({
+    navCollapsed: initialPrefs.navCollapsed ?? false,
+    evidenceOpen: initialPrefs.evidenceOpen ?? defaultEvidenceOpen(),
+    immersive: false,
+  });
 
   /* ── §4.2 布局偏好持久化：仅界面偏好，不保存 WorkItem/current ── */
   useEffect(() => {
+    if (focusMode) return;
     writeLayoutPrefs({
       treeWidth: navWidth,
       evidenceWidth,
       evidenceOpen,
       navCollapsed,
     });
-  }, [navWidth, evidenceWidth, evidenceOpen, navCollapsed]);
+  }, [navWidth, evidenceWidth, evidenceOpen, focusMode, navCollapsed]);
 
   /* ── 拖拽分栏 ── */
   const startDrag = useCallback(
@@ -273,6 +303,29 @@ export default function WorkbenchShell({
       void shellRef.current.requestFullscreen();
     }
   }, []);
+
+  const toggleFocusMode = useCallback(() => {
+    if (focusMode) {
+      const previous = focusRestoreRef.current;
+      setNavCollapsed(previous.navCollapsed);
+      setEvidenceOpen(previous.evidenceOpen);
+      setImmersive(previous.immersive);
+      setFocusMode(false);
+      return;
+    }
+
+    focusRestoreRef.current = {
+      navCollapsed,
+      evidenceOpen,
+      immersive,
+    };
+    setMobileNavOpen(false);
+    setMobileEvidenceOpen(false);
+    setNavCollapsed(true);
+    setEvidenceOpen(false);
+    setImmersive(true);
+    setFocusMode(true);
+  }, [evidenceOpen, focusMode, immersive, navCollapsed]);
 
   /* 沉浸模式只隐藏应用外壳，不隐藏工作台的资料目录与证据栏。 */
   const navVisible = isCompact ? mobileNavOpen : !navCollapsed;
@@ -394,10 +447,69 @@ export default function WorkbenchShell({
     onTabChange(key);
   };
 
+  const resolvedQuickOpenItems: QuickOpenItem[] = [
+    ...quickOpenItems,
+    {
+      id: 'workbench:focus',
+      label: focusMode ? '退出专注阅读' : '进入专注阅读',
+      description: focusMode
+        ? '恢复进入专注模式前的目录与证据布局'
+        : '收起全局外壳、目录与证据，保留当前专业内容',
+      keywords: 'focus mode 专注 聚焦 阅读',
+      group: '工作台操作',
+      icon: <Focus aria-hidden="true" />,
+      onSelect: toggleFocusMode,
+    },
+    {
+      id: 'workbench:navigator',
+      label: navVisible ? '收起资料目录' : '展开资料目录',
+      description: '切换当前资料的目录树',
+      keywords: '目录 tree navigator',
+      group: '工作台操作',
+      icon: navVisible ? (
+        <PanelLeftClose aria-hidden="true" />
+      ) : (
+        <PanelLeftOpen aria-hidden="true" />
+      ),
+      onSelect: () => {
+        if (isCompact) {
+          setMobileEvidenceOpen(false);
+          setMobileNavOpen((open) => !open);
+        } else {
+          setNavCollapsed((collapsed) => !collapsed);
+        }
+      },
+    },
+    ...(evidencePanel
+      ? [
+          {
+            id: 'workbench:evidence',
+            label: evidenceVisible ? '收起原文依据' : '展开原文依据',
+            description: '查看当前结果绑定的来源与定位',
+            keywords: '证据 来源 SourceRef evidence',
+            group: '工作台操作',
+            icon: evidenceVisible ? (
+              <PanelRightClose aria-hidden="true" />
+            ) : (
+              <PanelRightOpen aria-hidden="true" />
+            ),
+            onSelect: () => {
+              if (isCompact) {
+                setMobileNavOpen(false);
+                setMobileEvidenceOpen((open) => !open);
+              } else {
+                setEvidenceOpen((open) => !open);
+              }
+            },
+          } satisfies QuickOpenItem,
+        ]
+      : []),
+  ];
+
   return (
     <div
       ref={shellRef}
-      className={`wl-workbench-shell${immersive ? ' is-immersive' : ''}${isCompact ? ' is-compact' : ''}`}
+      className={`wl-workbench-shell${immersive ? ' is-immersive' : ''}${focusMode ? ' is-focus-mode' : ''}${isCompact ? ' is-compact' : ''}`}
       onPointerMove={(event) => {
         onDragMove(event);
         evidenceDragMove(event);
@@ -405,6 +517,12 @@ export default function WorkbenchShell({
       onPointerUp={endDrag}
       onPointerCancel={endDrag}
     >
+      <QuickOpen
+        open={quickOpen}
+        onOpenChange={setQuickOpen}
+        items={resolvedQuickOpenItems}
+      />
+
       {/* ── 顶部工具条 ── */}
       <div
         className="wl-workbench-toolbar wl-glass-nav"
@@ -429,6 +547,11 @@ export default function WorkbenchShell({
         >
           {navVisible ? <PanelLeftClose /> : <PanelLeftOpen />}
         </button>
+
+        <span className="wl-workbench-context-title">
+          <strong>WiseLink</strong>
+          <span>{contextLabel}</span>
+        </span>
 
         <div
           className="wl-workbench-tabs"
@@ -461,14 +584,15 @@ export default function WorkbenchShell({
         <div className="wl-workbench-toolbar-actions">
           <button
             type="button"
-            className="wl-workbench-tool-btn wl-workbench-transparency-toggle"
-            onClick={toggleTransparency}
-            title={reduceTransparency ? '恢复玻璃效果' : '降低透明效果'}
-            aria-label={reduceTransparency ? '恢复玻璃效果' : '降低透明效果'}
-            aria-pressed={reduceTransparency}
+            className="wl-workbench-tool-btn wl-workbench-quick-open-trigger"
+            onClick={() => setQuickOpen(true)}
+            title="快速打开（Command 或 Control + K）"
+            aria-label="快速打开"
           >
-            <Contrast aria-hidden="true" />
+            <Search aria-hidden="true" />
+            <kbd>⌘K</kbd>
           </button>
+          <VisualModeControl />
           <button
             ref={evidenceTriggerRef}
             type="button"
@@ -489,24 +613,58 @@ export default function WorkbenchShell({
           </button>
           <button
             type="button"
-            className="wl-workbench-tool-btn"
-            onClick={() => setImmersive((v) => !v)}
-            title={immersive ? '退出沉浸模式' : '进入沉浸模式'}
-            aria-label={immersive ? '退出沉浸模式' : '进入沉浸模式'}
-            aria-pressed={immersive}
+            className="wl-workbench-tool-btn wl-workbench-focus-trigger"
+            onClick={toggleFocusMode}
+            title={focusMode ? '退出专注阅读' : '进入专注阅读'}
+            aria-label={focusMode ? '退出专注阅读' : '进入专注阅读'}
+            aria-pressed={focusMode}
           >
-            <Minimize2 className="wl-icon-exit" />
-            <Maximize2 className="wl-icon-enter" />
+            <Focus aria-hidden="true" />
+            <span>{focusMode ? '退出专注' : '专注阅读'}</span>
           </button>
-          <button
-            type="button"
-            className="wl-workbench-tool-btn"
-            onClick={toggleFullscreen}
-            title={isFullscreen ? '退出全屏' : '原生全屏'}
-            aria-label={isFullscreen ? '退出全屏' : '原生全屏'}
-          >
-            <Maximize2 />
-          </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="wl-workbench-tool-btn"
+                title="更多工作台设置"
+                aria-label="更多工作台设置"
+              >
+                <MoreHorizontal aria-hidden="true" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="end"
+              sideOffset={8}
+              className="wl-workbench-more-menu"
+            >
+              <DropdownMenuLabel>工作台显示</DropdownMenuLabel>
+              <DropdownMenuCheckboxItem
+                checked={reduceTransparency}
+                onCheckedChange={toggleTransparency}
+                className="wl-workbench-transparency-toggle"
+              >
+                <Contrast aria-hidden="true" />
+                降低透明效果
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem
+                checked={immersive}
+                onCheckedChange={() => setImmersive((value) => !value)}
+              >
+                {immersive ? (
+                  <Minimize2 aria-hidden="true" />
+                ) : (
+                  <Maximize2 aria-hidden="true" />
+                )}
+                仅隐藏应用外壳
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={toggleFullscreen}>
+                <Maximize2 aria-hidden="true" />
+                {isFullscreen ? '退出系统全屏' : '进入系统全屏'}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 

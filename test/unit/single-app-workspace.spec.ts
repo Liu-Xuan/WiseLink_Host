@@ -27,6 +27,8 @@ describe('single canonical app workspace', () => {
       reasoningTrail,
       reader,
       workbenchStyles,
+      visualModeControl,
+      quickOpen,
     ] = await Promise.all([
       source('client/src/app.tsx'),
       source('client/src/components/Layout.tsx'),
@@ -55,6 +57,8 @@ describe('single canonical app workspace', () => {
         'client/src/pages/DocumentParsingPage/DocumentReaderWorkspace.tsx',
       ),
       source('client/src/features/workbench/workbench-shell.css'),
+      source('client/src/components/VisualModeControl.tsx'),
+      source('client/src/features/workbench/QuickOpen.tsx'),
     ]);
 
     expect(routes).toContain('WorkspaceHomePage');
@@ -119,16 +123,26 @@ describe('single canonical app workspace', () => {
     );
     expect(taskPills).toContain('wl-status-dot');
     expect(themeProvider).toContain('wiselink.ui.reduce-transparency');
+    expect(themeProvider).toContain('wiselink.ui.visual-mode');
+    expect(themeProvider).toContain('wlVisualMode');
+    expect(visualModeControl).toContain('默认效果');
+    expect(visualModeControl).toContain('极致效果');
+    expect(visualModeControl).toContain('兼容效果');
+    expect(quickOpen).toContain('event.metaKey || event.ctrlKey');
+    expect(quickOpen).toContain('仅显示当前账户可读取的数据');
+    expect(quickOpen).not.toContain('mock');
     expect(glass).toContain('@media (prefers-reduced-transparency: reduce)');
     expect(glass).toContain('@media (prefers-contrast: more)');
     expect(glass).toContain('@media (forced-colors: active)');
     expect(glass).toMatch(
-      /-webkit-backdrop-filter: blur\(var\(--wl-blur-nav\)\) saturate\(158%\);\s+backdrop-filter: blur\(var\(--wl-blur-nav\)\) saturate\(158%\);/,
+      /-webkit-backdrop-filter: blur\(var\(--wl-blur-nav\)\)\s+saturate\(var\(--wl-saturation-nav\)\);\s+backdrop-filter: blur\(var\(--wl-blur-nav\)\)\s+saturate\(var\(--wl-saturation-nav\)\);/,
     );
     expect(glass).toMatch(
       /-webkit-backdrop-filter: none !important;\s+backdrop-filter: none !important;/,
     );
     expect(glass).not.toContain('brightness(1.035)');
+    expect(glass).toContain("data-wl-visual-mode='compatible'");
+    expect(glass).toContain('brightness(1.04)');
     expect(indexStyles).toContain('#root');
     expect(indexStyles).toContain('min-height: 100dvh');
     expect(homeStyles).toContain('.library-tree-panel .wl-navigator');
@@ -145,6 +159,10 @@ describe('single canonical app workspace', () => {
     expect(reader).not.toContain('PDF_PREVIEW_PROJECTION_MISSING');
     expect(reader).not.toContain('SOURCE_REF_NOT_IN_CURRENT_QUERY');
     expect(page).toContain('onSourceRefSelect={locateSourceRef}');
+    expect(page).toContain('quickOpenItems={quickOpenItems}');
+    expect(page).toContain('buildDocumentTree(data.libraryIndex.nodes)');
+    expect(shell).toContain('focusRestoreRef');
+    expect(shell).toContain('进入专注阅读');
     expect(workbenchStyles).toMatch(
       /\.wl-workbench-body\s*\{\s*position: relative;/,
     );
