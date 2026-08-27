@@ -105,13 +105,13 @@ describe('CanonicalHostOpenClawDynamicEvaluationService', () => {
     });
   });
 
-  it('rejects wrong unified runtime provenance before prepareCommit, artifact persistence, or CAS', async () => {
+  it('rejects discontinued model before prepareCommit, artifact persistence, or CAS', async () => {
     const harness = createHarness();
     const valid = dynamicResult();
     const { contentHash: _contentHash, ...unsealed } = valid;
     const result = sealResultEnvelope({
       ...unsealed,
-      skillVersion: 'wiselink-research-and-synthesize@r09.c3',
+      modelVersion: 'GLM-5.1',
     });
 
     await expect(

@@ -64,7 +64,7 @@
   "executionPolicy": {
     "runtimeAppId": "app_17c3zn24kv2",
     "profileRef": "wiselink-engineering",
-    "modelPolicyRef": "GLM-5.1",
+    "modelPolicyRef": "GLM-5.3",
     "skillPolicyRef": "wiselink-research-and-synthesize@r09.c4",
     "toolPolicyRef": "wiselink-openclaw-engineering-assessment@1.2.0#interactive-review-c2"
   }

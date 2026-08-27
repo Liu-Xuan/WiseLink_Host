@@ -55,7 +55,7 @@ Task artifact allowlist 子集。
 当前 provenance policy：
 
 ```text
-modelVersion = GLM-5.1
+modelVersion = GLM-5.3
 skillVersion = wiselink-research-and-synthesize@r09.c4
 toolVersions.wiselink-openclaw-engineering-assessment = 1.2.0
 promptVersion = 当前实际运行非空版本

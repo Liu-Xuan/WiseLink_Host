@@ -230,7 +230,7 @@ function candidate(attemptRef, resultContentHash) {
     provenance: {
       runtimeAppId: 'app_17c3zn24kv2',
       profileRef: 'wiselink-engineering',
-      modelVersion: 'GLM-5.1',
+      modelVersion: 'GLM-5.3',
       promptVersion: 'review-prompt.v1',
       skillVersion:
         'wiselink-research-and-synthesize@r09.interactive-review.c2',

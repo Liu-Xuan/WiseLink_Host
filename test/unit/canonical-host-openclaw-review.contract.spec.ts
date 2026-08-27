@@ -213,7 +213,7 @@ function reviewResult(
     missingInputs: [],
     conflicts: [],
     warnings: [],
-    modelVersion: 'GLM-5.1',
+    modelVersion: 'GLM-5.3',
     promptVersion: 'review-prompt.v1',
     skillVersion,
     toolVersions,

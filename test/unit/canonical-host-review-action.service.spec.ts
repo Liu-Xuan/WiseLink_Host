@@ -188,7 +188,7 @@ function target(
     provenance: {
       runtimeAppId: 'app_17c3zn24kv2' as const,
       profileRef: 'wiselink-engineering' as const,
-      modelVersion: 'GLM-5.1',
+      modelVersion: 'GLM-5.3',
       promptVersion: 'review-prompt.v1',
       skillVersion: 'skill-v1',
       toolVersions: {},
@@ -442,7 +442,7 @@ function integratedTarget() {
       provenance: {
         runtimeAppId: 'app_17c3zn24kv2' as const,
         profileRef: 'wiselink-engineering' as const,
-        modelVersion: 'GLM-5.1',
+        modelVersion: 'GLM-5.3',
         promptVersion: 'review-prompt.v1',
         skillVersion: 'review-skill-C7',
         toolVersions: {},

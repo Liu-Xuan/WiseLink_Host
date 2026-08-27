@@ -8,7 +8,7 @@ export const WISELINK_SKILL_VERSION = 'wiselink-research-and-synthesize@r09.c4';
 export const WISELINK_HOST_MCP_NAME =
   'wiselink-openclaw-engineering-assessment';
 export const WISELINK_HOST_MCP_VERSION = '1.2.0';
-export const WISELINK_MODEL_VERSION = 'GLM-5.1';
+export const WISELINK_MODEL_VERSION = 'GLM-5.3';
 export const WISELINK_RUNTIME_APP_ID = 'app_17c3zn24kv2';
 export const WISELINK_PROFILE_REF = 'wiselink-engineering';
 export const WISELINK_APPLICABILITY_PROMPT_VERSION =

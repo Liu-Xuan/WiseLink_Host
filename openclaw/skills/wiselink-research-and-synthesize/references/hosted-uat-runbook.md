@@ -9,7 +9,7 @@
 
 1. app 精确为 `app_17c3zn24kv2`；
 2. 唯一逻辑 profile 为 `wiselink-engineering`；
-3. 当前实际模型策略为 `GLM-5.1`，智能选择/fallback 关闭或逐 turn 可见；
+3. 当前实际模型策略为 `GLM-5.3`，智能选择/fallback 关闭或逐 turn 可见；
 4. 同名 Skill 只有一个，安装版本精确
    `wiselink-research-and-synthesize@r09.c4`；
 5. Host MCP package/version 为
@@ -27,7 +27,7 @@
 
 1. Host 创建 INITIAL_ANALYSIS Session/ActionAttempt；记录 Session key 的 Host-side binding，但不暴露 tenant/actor。
 2. 观察 `begin_translation` 返回 RUNNING、TaskEnvelope exact inputHash/artifact ref+SHA/current revision。
-3. 执行一次托管 GLM-5.1，记录实际 model/prompt/Skill/tool versions 和 run metrics。
+3. 执行一次托管 GLM-5.3，记录实际 model/prompt/Skill/tool versions 和 run metrics。
 4. 验证 translation pair 与完整 ResultEnvelope；单次 commit。
 5. Host 读回 bilingual actual bytes、rule-set validation、candidate-only projection、same DocumentVersion/currentness。
 
@@ -42,7 +42,7 @@
 
 1. 使用 Host 生成的 opaque `applicabilityContextRef + requestId` 调 dedicated begin；核对模型只收到 frozen
    SourceExpressions/SourceRefs、bilingual SourceUnits 与窄受控 aircraft facts。
-2. GLM-5.1 只生成 source-condition AST candidate，不输出 target level/contentRef 或飞机适用结论。
+2. GLM-5.3 只生成 source-condition AST candidate，不输出 target level/contentRef 或飞机适用结论。
 3. 单次 full ResultEnvelope commit；Host 读回 target binding、Fleet/Kleene 结果、actual bytes 与 current
    applicability candidate。
 4. 选择一个 Host 缺事实样本，确认零模型调用、missing 原样 WAITING_INPUT。
@@ -109,5 +109,5 @@ authenticated user。
 ## Non-claims
 
 本地 tests/lint/commit 只能证明 Skill 包合同。没有以上真实读回时，不宣称：Skill 已安装/发布、官方 profile 已
-使用此版本、20 tools 已在托管 UI 可见、Session create/resume 已跑通、GLM-5.1 每轮实际执行/no fallback、
+使用此版本、20 tools 已在托管 UI 可见、Session create/resume 已跑通、GLM-5.3 每轮实际执行/no fallback、
 Applicability 端到端 Host/Hosted 路径、附件/search/compare/reevaluate/resynthesize 或端到端 UAT 完成。
