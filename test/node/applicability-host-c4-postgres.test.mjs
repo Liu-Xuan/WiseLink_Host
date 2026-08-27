@@ -43,7 +43,6 @@ const {
 const {
   APPLICABILITY_MCP_SERVER_NAME,
   APPLICABILITY_MCP_SERVER_VERSION,
-  APPLICABILITY_MODEL_VERSION,
   APPLICABILITY_PROMPT_VERSION,
   APPLICABILITY_SKILL_VERSION,
   applicabilityRuntimePolicy,
@@ -148,7 +147,7 @@ test(
         missingInputs: [],
         conflicts: [],
         warnings: [],
-        modelVersion: APPLICABILITY_MODEL_VERSION,
+        modelVersion: 'GLM-5.3',
         promptVersion: APPLICABILITY_PROMPT_VERSION,
         skillVersion: APPLICABILITY_SKILL_VERSION,
         toolVersions: {
@@ -1356,7 +1355,7 @@ function resultFor(begin) {
     missingInputs: [],
     conflicts: [],
     warnings: [],
-    modelVersion: APPLICABILITY_MODEL_VERSION,
+    modelVersion: 'GLM-5.3',
     promptVersion: APPLICABILITY_PROMPT_VERSION,
     skillVersion: APPLICABILITY_SKILL_VERSION,
     toolVersions: {

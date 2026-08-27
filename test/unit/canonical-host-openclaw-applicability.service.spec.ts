@@ -22,7 +22,6 @@ import type {
 import {
   APPLICABILITY_MCP_SERVER_NAME,
   APPLICABILITY_MCP_SERVER_VERSION,
-  APPLICABILITY_MODEL_VERSION,
   APPLICABILITY_PROMPT_VERSION,
   APPLICABILITY_SKILL_VERSION,
   applicabilityRuntimePolicy,
@@ -612,7 +611,7 @@ describe('CanonicalHostOpenClawApplicabilityService', () => {
     const provenance = applicabilityHarness();
     const begin = await provenance.begin();
     const wrong = provenance.resultFor(candidateFor(begin), {
-      modelVersion: 'GLM-5.1',
+      modelVersion: 'unknown',
     });
     await expect(
       provenance.service.commit(
@@ -1048,7 +1047,7 @@ function applicabilityHarness(
         missingInputs: [],
         conflicts: [],
         warnings: [],
-        modelVersion: APPLICABILITY_MODEL_VERSION,
+        modelVersion: 'GLM-5.3',
         promptVersion: APPLICABILITY_PROMPT_VERSION,
         skillVersion: APPLICABILITY_SKILL_VERSION,
         toolVersions: {

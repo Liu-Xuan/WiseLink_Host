@@ -5,7 +5,7 @@ import test from 'node:test';
 import {
   WISELINK_HOST_MCP_NAME,
   WISELINK_HOST_MCP_VERSION,
-  WISELINK_MODEL_VERSION,
+  WISELINK_MODEL_POLICY_REF,
   WISELINK_APPLICABILITY_PROMPT_VERSION,
   WISELINK_SKILL_VERSION,
   buildApplicabilityCandidate,
@@ -75,7 +75,7 @@ test('pins exact20 MCP 1.2, five review tools, and hosted provenance', () => {
     WISELINK_SKILL_VERSION,
     'wiselink-research-and-synthesize@r09.c4',
   );
-  assert.equal(WISELINK_MODEL_VERSION, 'GLM-5.3');
+  assert.equal(WISELINK_MODEL_POLICY_REF, 'official-hosted-profile-config');
   assert.equal(WISELINK_HOST_MCP_VERSION, '1.2.0');
 });
 
@@ -553,7 +553,7 @@ test('reads resultCount/results without inventing applicability', () => {
   });
 });
 
-test('seals exact full ResultEnvelope and rejects self-reported version drift', () => {
+test('seals actual model provenance without binding the Skill to one model version', () => {
   const task = makeTask('OPENCLAW_TRANSLATE', translationInput());
   const result = sealResultEnvelope({
     task,
@@ -568,6 +568,16 @@ test('seals exact full ResultEnvelope and rejects self-reported version drift', 
     result.toolVersions[WISELINK_HOST_MCP_NAME],
     WISELINK_HOST_MCP_VERSION,
   );
+  assert.equal(
+    sealResultEnvelope({
+      task,
+      modelOutput: translationOutput(),
+      provenance: provenance({
+        modelVersion: 'official-provider/model-release-2',
+      }),
+    }).modelVersion,
+    'official-provider/model-release-2',
+  );
 
   assert.throws(
     () =>
@@ -578,15 +588,17 @@ test('seals exact full ResultEnvelope and rejects self-reported version drift', 
       }),
     /RUNTIME_SKILL_VERSION_POLICY_MISMATCH/u,
   );
-  assert.throws(
-    () =>
-      sealResultEnvelope({
-        task,
-        modelOutput: translationOutput(),
-        provenance: provenance({ modelVersion: 'GLM-5.1' }),
-      }),
-    /RUNTIME_MODEL_VERSION_POLICY_MISMATCH/u,
-  );
+  for (const modelVersion of ['', 'fallback', 'unknown']) {
+    assert.throws(
+      () =>
+        sealResultEnvelope({
+          task,
+          modelOutput: translationOutput(),
+          provenance: provenance({ modelVersion }),
+        }),
+      /RUNTIME_MODEL_PROVENANCE_(?:REQUIRED|UNREADABLE)/u,
+    );
+  }
 });
 
 test('runs translation with fresh status and full fenced ResultEnvelope', async () => {
@@ -1217,7 +1229,7 @@ test('rejects actor identity key forms before respond', async (t) => {
 
 function provenance(overrides = {}) {
   return {
-    modelVersion: WISELINK_MODEL_VERSION,
+    modelVersion: 'GLM-5.3',
     promptVersion: 'r09.prompt.fixture.1',
     skillVersion: WISELINK_SKILL_VERSION,
     toolVersions: {

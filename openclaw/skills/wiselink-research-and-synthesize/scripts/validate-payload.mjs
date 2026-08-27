@@ -8,7 +8,7 @@ export const WISELINK_SKILL_VERSION = 'wiselink-research-and-synthesize@r09.c4';
 export const WISELINK_HOST_MCP_NAME =
   'wiselink-openclaw-engineering-assessment';
 export const WISELINK_HOST_MCP_VERSION = '1.2.0';
-export const WISELINK_MODEL_VERSION = 'GLM-5.3';
+export const WISELINK_MODEL_POLICY_REF = 'official-hosted-profile-config';
 export const WISELINK_RUNTIME_APP_ID = 'app_17c3zn24kv2';
 export const WISELINK_PROFILE_REF = 'wiselink-engineering';
 export const WISELINK_APPLICABILITY_PROMPT_VERSION =
@@ -2228,7 +2228,7 @@ function validateApplicabilityRuntimePolicy(value) {
     [
       'runtimeAppId',
       'profileRef',
-      'modelVersion',
+      'modelPolicyRef',
       'promptVersion',
       'skillVersion',
       'mcpServerName',
@@ -2248,8 +2248,8 @@ function validateApplicabilityRuntimePolicy(value) {
     'APPLICABILITY_PROFILE_MISMATCH',
   );
   equal(
-    value.modelVersion,
-    WISELINK_MODEL_VERSION,
+    value.modelPolicyRef,
+    WISELINK_MODEL_POLICY_REF,
     'APPLICABILITY_MODEL_POLICY_MISMATCH',
   );
   equal(
@@ -2644,11 +2644,15 @@ export function validateRuntimeProvenance(value) {
     [],
     'runtime provenance',
   );
-  equal(
-    value.modelVersion,
-    WISELINK_MODEL_VERSION,
-    'RUNTIME_MODEL_VERSION_POLICY_MISMATCH',
-  );
+  nonEmpty(value.modelVersion, 'RUNTIME_MODEL_PROVENANCE_REQUIRED');
+  const normalizedModelVersion = value.modelVersion.trim().toLowerCase();
+  if (
+    normalizedModelVersion === 'fallback' ||
+    normalizedModelVersion === 'unknown' ||
+    normalizedModelVersion === WISELINK_MODEL_POLICY_REF
+  ) {
+    fail('RUNTIME_MODEL_PROVENANCE_UNREADABLE');
+  }
   nonEmpty(value.promptVersion, 'RUNTIME_PROMPT_VERSION_REQUIRED');
   equal(
     value.skillVersion,
@@ -2905,7 +2909,7 @@ export function validateReviewTask(value) {
   );
   equal(
     value.executionPolicy.modelPolicyRef,
-    WISELINK_MODEL_VERSION,
+    WISELINK_MODEL_POLICY_REF,
     'REVIEW_TASK_MODEL_POLICY_INVALID',
   );
   equal(

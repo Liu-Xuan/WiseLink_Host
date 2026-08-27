@@ -22,8 +22,8 @@ export const APPLICABILITY_RUNTIME_APP_ID =
   CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.runtimeAppId;
 export const APPLICABILITY_PROFILE_REF =
   CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.profileRef;
-export const APPLICABILITY_MODEL_VERSION =
-  CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.modelVersion;
+export const APPLICABILITY_MODEL_POLICY_REF =
+  CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.modelPolicyRef;
 export const APPLICABILITY_PROMPT_VERSION =
   CANONICAL_HOST_OPENCLAW_APPLICABILITY_PROMPT_VERSION;
 export const APPLICABILITY_SKILL_VERSION =
@@ -92,7 +92,7 @@ export interface ApplicabilityTaskContract {
   }>;
   sourceExpressions: ApplicabilityTaskSourceExpression[];
   bilingualSourceUnits: ApplicabilityTaskBilingualSourceUnit[];
-  runtimePolicy: ApplicabilityRuntimeProvenance;
+  runtimePolicy: ApplicabilityRuntimePolicy;
   authority: {
     candidateOnly: true;
     documentTextDoesNotProveFleetApplicability: true;
@@ -100,10 +100,10 @@ export interface ApplicabilityTaskContract {
   };
 }
 
-export interface ApplicabilityRuntimeProvenance {
+export interface ApplicabilityRuntimePolicy {
   runtimeAppId: typeof APPLICABILITY_RUNTIME_APP_ID;
   profileRef: typeof APPLICABILITY_PROFILE_REF;
-  modelVersion: typeof APPLICABILITY_MODEL_VERSION;
+  modelPolicyRef: typeof APPLICABILITY_MODEL_POLICY_REF;
   promptVersion: typeof APPLICABILITY_PROMPT_VERSION;
   skillVersion: typeof APPLICABILITY_SKILL_VERSION;
   mcpServerName: typeof APPLICABILITY_MCP_SERVER_NAME;
@@ -128,7 +128,7 @@ export interface ApplicabilityCandidateContract {
   aircraft: ApplicabilityTaskContract['aircraft'];
   fleetBinding: ApplicabilityTaskContract['fleetBinding'];
   expressions: ApplicabilityCandidateExpression[];
-  runtime: ApplicabilityRuntimeProvenance;
+  runtime: ApplicabilityRuntimePolicy;
   authority: {
     candidateOnly: true;
     createsEvidenceRef: false;
@@ -138,11 +138,11 @@ export interface ApplicabilityCandidateContract {
   };
 }
 
-export function applicabilityRuntimePolicy(): ApplicabilityRuntimeProvenance {
+export function applicabilityRuntimePolicy(): ApplicabilityRuntimePolicy {
   return {
     runtimeAppId: APPLICABILITY_RUNTIME_APP_ID,
     profileRef: APPLICABILITY_PROFILE_REF,
-    modelVersion: APPLICABILITY_MODEL_VERSION,
+    modelPolicyRef: APPLICABILITY_MODEL_POLICY_REF,
     promptVersion: APPLICABILITY_PROMPT_VERSION,
     skillVersion: APPLICABILITY_SKILL_VERSION,
     mcpServerName: APPLICABILITY_MCP_SERVER_NAME,
@@ -490,12 +490,12 @@ function parseFleetBinding(
   };
 }
 
-function parseRuntime(value: unknown): ApplicabilityRuntimeProvenance {
+function parseRuntime(value: unknown): ApplicabilityRuntimePolicy {
   const item = record(value, 'APPLICABILITY_RUNTIME_INVALID');
   exactKeys(item, [
     'runtimeAppId',
     'profileRef',
-    'modelVersion',
+    'modelPolicyRef',
     'promptVersion',
     'skillVersion',
     'mcpServerName',

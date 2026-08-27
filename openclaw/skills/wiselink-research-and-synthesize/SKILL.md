@@ -11,14 +11,15 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
-- model policy：`GLM-5.3`
+- model policy：`official-hosted-profile-config`（官方 profile 当前可选 `GLM-5.3`，Skill 不绑定具体模型）
 - Skill：`wiselink-research-and-synthesize@r09.c4`
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（exact 20 tools）
 - Host baseline：`df4bd1a5c0698c5fd56912fba1329a9283d990c6`
 
-上述值是执行合同，不是允许模型自报的标签。每次执行必须从托管运行时取得实际
+app/profile/Skill/MCP 是执行合同，不是允许模型自报的标签。具体模型由官方托管 profile/config 选择；每次执行必须从托管运行时取得实际
 `modelVersion`、`promptVersion`、`skillVersion` 和 `toolVersions`，由 validator 校验后写入完整
-ResultEnvelope。任何值缺失、fallback 不可见或与固定策略不符，都停止 commit。
+ResultEnvelope。实际 `modelVersion` 缺失、为空，或只读回 `fallback`/`unknown`/策略引用而无法识别实际模型时停止
+commit；Skill 不维护模型版本 allowlist。
 
 ## 不变边界
 
@@ -58,7 +59,8 @@ overall 中的文字解释成适用性结果。
 3. 若 status 为 `COMMITTING`，只调用一次 `get_action_attempt_status`，校验 Host 已持久化
    `recoveryResult.contentHash == resultContentHash` 后返回；不调用模型、不再次 commit。
 4. 若 status 为 `RUNNING`，只把 authority-free `modelInput` 交给托管模型。
-5. 模型执行必须返回 `{output, provenance}`；provenance 必须是实际读数并通过固定版本 validator。
+5. 模型执行必须返回 `{output, provenance}`；provenance 必须是实际读数，实际模型非空可读，并通过固定
+   Skill/MCP/prompt validator。
 6. 先验证 operation input/output pair，再构造完整
    `wiselink.3_1.openclaw_result_envelope.v1`。commit 参数精确为：
 
@@ -157,7 +159,7 @@ commit_review_turn_candidate
 begin_review_turn({reviewConversationRef, requestId})
 → get_review_turn_context({attemptRef})
 → read_source_refs({attemptRef, sourceRefIds}) [仅按本轮明确需要]
-→ 托管 GLM-5.3 生成 review_turn_candidate.v1.c2
+→ 托管 profile 当前选定模型生成 review_turn_candidate.v1.c2
 → validator + full ResultEnvelope
 → commit_review_turn_candidate({attemptRef, leaseToken, leaseGeneration, result})
 ```
@@ -203,14 +205,14 @@ tool 版本、run metrics、错误字段和 canonical SHA-256 `contentHash`。
 
 当前 validator 强制：
 
-- `modelVersion=GLM-5.3`
+- `modelVersion` 是官方托管 profile/config 本轮选择后的非空、可读实际模型；不做具体版本等值判断
 - `skillVersion=wiselink-research-and-synthesize@r09.c4`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致
 
-这些字段只证明提交数据符合合同。直到官方托管 UAT 逐轮读回实际执行 provenance 且证明 no-fallback，不能把
-本地测试、UI 模型显示或自报字符串写成 Hosted runtime 已跑通。
+这些字段只证明提交数据符合合同。直到官方托管 UAT 逐轮读回实际执行 provenance，不能把本地测试、UI
+可选模型显示或自报字符串写成 Hosted runtime 已跑通。
 
 ## 本地合同核验
 

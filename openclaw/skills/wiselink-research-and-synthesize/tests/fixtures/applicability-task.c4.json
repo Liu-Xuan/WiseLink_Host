@@ -78,7 +78,7 @@
   "runtimePolicy": {
     "runtimeAppId": "app_17c3zn24kv2",
     "profileRef": "wiselink-engineering",
-    "modelVersion": "GLM-5.3",
+    "modelPolicyRef": "official-hosted-profile-config",
     "promptVersion": "wiselink-applicability-extraction@r09.c4",
     "skillVersion": "wiselink-research-and-synthesize@r09.c4",
     "mcpServerName": "wiselink-openclaw-engineering-assessment",
