@@ -266,21 +266,8 @@ CREATE POLICY canonical_fleet_fact_authenticated_select
     )
   );
 
-GRANT SELECT ON canonical_fleet_source_snapshot TO authenticated;
-GRANT SELECT ON canonical_fleet_scope_head TO authenticated;
-GRANT SELECT ON canonical_fleet_asset_version TO authenticated;
-GRANT SELECT ON canonical_fleet_alias_version TO authenticated;
-GRANT SELECT ON canonical_fleet_configuration_fact_version TO authenticated;
-REVOKE INSERT, UPDATE, DELETE ON canonical_fleet_source_snapshot
-  FROM authenticated;
-REVOKE INSERT, UPDATE, DELETE ON canonical_fleet_scope_head
-  FROM authenticated;
-REVOKE INSERT, UPDATE, DELETE ON canonical_fleet_asset_version
-  FROM authenticated;
-REVOKE INSERT, UPDATE, DELETE ON canonical_fleet_alias_version
-  FROM authenticated;
-REVOKE INSERT, UPDATE, DELETE
-  ON canonical_fleet_configuration_fact_version FROM authenticated;
+-- Miaoda manages table privileges and rejects SQL GRANT/REVOKE statements.
+-- The SELECT-only policies above preserve tenant reads while RLS denies writes.
 
 COMMIT;
 

@@ -41,6 +41,16 @@ test(
     assertSafeIsolatedDatabase(databaseUrl);
     const sql = postgres(databaseUrl, { max: 4 });
     try {
+      await sql.unsafe(`
+        GRANT SELECT ON identity_subject_mapping TO authenticated;
+        GRANT SELECT, INSERT, UPDATE, DELETE ON
+          canonical_fleet_source_snapshot,
+          canonical_fleet_scope_head,
+          canonical_fleet_asset_version,
+          canonical_fleet_alias_version,
+          canonical_fleet_configuration_fact_version
+        TO authenticated
+      `);
       const [counts] = await sql`
         SELECT
           (SELECT count(*)::int FROM canonical_fleet_asset_version
@@ -117,16 +127,75 @@ test(
         `;
         await assert.rejects(
           browserWrite`
-            UPDATE canonical_fleet_scope_head
-            SET authority_revision = authority_revision + 1
-            WHERE tenant_id = 'tenant-local'
+            INSERT INTO canonical_fleet_source_snapshot (
+              tenant_id,
+              source_snapshot_id,
+              source_kind,
+              logical_source_key,
+              source_revision_key,
+              source_content_hash,
+              source_as_of,
+              snapshot_as_of,
+              fleet_snapshot_digest,
+              upstream_lineage_json,
+              aircraft_asset_count,
+              identity_alias_count,
+              configuration_fact_count,
+              imported_by_actor_id
+            ) VALUES (
+              'tenant-local',
+              'FMS-BROWSER-WRITE-DENIED',
+              'test',
+              'test',
+              'test',
+              ${`sha256:${'0'.repeat(64)}`},
+              '2026-08-27',
+              CURRENT_TIMESTAMP,
+              ${'0'.repeat(64)},
+              '{}',
+              1,
+              0,
+              0,
+              'user-local'
+            )
           `,
-          /permission denied/u,
+          /row-level security policy/iu,
         );
+        await browserWrite.unsafe('ROLLBACK');
+        await browserWrite.unsafe('BEGIN');
+        await browserWrite.unsafe('SET LOCAL ROLE authenticated');
+        await browserWrite`
+          SELECT set_config('app.user_id', 'user-local', true)
+        `;
+        const updated = await browserWrite`
+          UPDATE canonical_fleet_scope_head
+          SET authority_revision = authority_revision + 1
+          WHERE tenant_id = 'tenant-local'
+          RETURNING authority_revision
+        `;
+        assert.equal(updated.length, 0);
+        const deleted = await browserWrite`
+          DELETE FROM canonical_fleet_alias_version
+          WHERE tenant_id = 'tenant-local'
+          RETURNING alias_version_id
+        `;
+        assert.equal(deleted.length, 0);
         await browserWrite.unsafe('ROLLBACK');
       } finally {
         browserWrite.release();
       }
+      const [unchanged] = await sql`
+        SELECT
+          authority_revision,
+          (SELECT count(*)::int FROM canonical_fleet_alias_version
+            WHERE tenant_id = 'tenant-local') AS aircraft_identity_aliases
+        FROM canonical_fleet_scope_head
+        WHERE tenant_id = 'tenant-local'
+      `;
+      assert.deepEqual(unchanged, {
+        authority_revision: 1,
+        aircraft_identity_aliases: 2579,
+      });
     } finally {
       await sql.end({ timeout: 5 });
     }
