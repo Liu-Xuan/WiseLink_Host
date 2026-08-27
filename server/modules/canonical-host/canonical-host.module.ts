@@ -30,6 +30,8 @@ import {
   UnavailableCanonicalApplicabilityControlledSelection,
 } from './canonical-host-applicability-input.producer';
 import { CanonicalHostOpenClawReviewService } from './canonical-host-openclaw-review.service';
+import { CanonicalHostReviewActionController } from './canonical-host-review-action.controller';
+import { CanonicalHostReviewActionService } from './canonical-host-review-action.service';
 import { HostOwnedV1TranslationRuleSetPrivateProvider } from './canonical-translation-rule-set-v1.private';
 import { ExternalDiscoveryModule } from '../external-discovery/external-discovery.module';
 import { CanonicalFailureRecordingService } from './canonical-failure-recording.service';
@@ -51,7 +53,6 @@ import {
 } from './canonical-host.constants';
 import type { CanonicalHostBindingState } from './canonical-host.types';
 import { MiaodaCanonicalWorkItemRegistrarAdapter } from '../work-item/miaoda-canonical-work-item-registrar.adapter';
-import { MiaodaDocumentVersionSourceResolver } from '../work-item/miaoda-document-version-source.resolver';
 import { WorkItemRuntimeModule } from '../work-item/work-item-runtime.module';
 import { IdentityModule } from '../identity/identity.module';
 import { ReviewPersistenceModule } from '../review-persistence/review-persistence.module';
@@ -116,6 +117,7 @@ export interface CanonicalHostModuleOptions {
     CanonicalHostMcpOpenApiController,
     CanonicalHostOpenClawMcpOpenApiController,
     OauthSessionDevelopmentWorkItemController,
+    CanonicalHostReviewActionController,
   ],
   providers: [
     CanonicalEntryFacadeService,
@@ -131,9 +133,9 @@ export interface CanonicalHostModuleOptions {
     CanonicalHostOpenClawAttemptStatusService,
     CanonicalHostApplicabilityInputProducer,
     CanonicalHostOpenClawReviewService,
+    CanonicalHostReviewActionService,
     HostOwnedV1TranslationRuleSetPrivateProvider,
     ExactFtdFrozen2PdfProducerAdapter,
-    MiaodaDocumentVersionSourceResolver,
     MiaodaCanonicalWorkItemRegistrarAdapter,
     OrdinaryWorkItemService,
     OrdinaryFailureValidationWriteAuthorizationAdapter,
@@ -270,6 +272,7 @@ export class CanonicalHostModule {
         CanonicalHostMcpOpenApiController,
         CanonicalHostOpenClawMcpOpenApiController,
         OauthSessionDevelopmentWorkItemController,
+        CanonicalHostReviewActionController,
       ],
       providers: [
         workItemRegistrarProvider,
@@ -301,9 +304,9 @@ export class CanonicalHostModule {
         CanonicalHostOpenClawAttemptStatusService,
         CanonicalHostApplicabilityInputProducer,
         CanonicalHostOpenClawReviewService,
+        CanonicalHostReviewActionService,
         HostOwnedV1TranslationRuleSetPrivateProvider,
         ExactFtdFrozen2PdfProducerAdapter,
-        MiaodaDocumentVersionSourceResolver,
         MiaodaCanonicalWorkItemRegistrarAdapter,
         OrdinaryWorkItemService,
         OrdinaryFailureValidationWriteAuthorizationAdapter,

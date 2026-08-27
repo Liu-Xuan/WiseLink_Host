@@ -73,6 +73,37 @@ describe('ReviewConversationController request boundary', () => {
     );
   });
 
+  it('accepts an exact official FileService selection without client authority fields', async () => {
+    const setup = makeController();
+    setup.service.appendTextTurn.mockResolvedValue({ ok: true });
+    await setup.controller.appendTextTurn(
+      'WI-1',
+      'RC-1',
+      {
+        requestId: 'request-attachment-1',
+        userMessage: 'Use the attached engineering note',
+        attachmentSelection: {
+          bucketId: 'default-bucket',
+          filePath: 'official-selection/engineering-note.pdf',
+        },
+      },
+      {} as never,
+    );
+    expect(setup.service.appendTextTurn).toHaveBeenCalledWith(
+      'WI-1',
+      'RC-1',
+      {
+        requestId: 'request-attachment-1',
+        userMessage: 'Use the attached engineering note',
+        attachmentSelection: {
+          bucketId: 'default-bucket',
+          filePath: 'official-selection/engineering-note.pdf',
+        },
+      },
+      expect.anything(),
+    );
+  });
+
   it('rejects self-reported revision and adoption state on append', async () => {
     const setup = makeController();
     await expect(

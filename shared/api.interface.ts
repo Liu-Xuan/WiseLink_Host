@@ -70,7 +70,9 @@ export interface ReviewTurnReadModel {
     inputType: EngineerSuppliedInputType;
     adoptionStatus: EngineerSuppliedInputAdoptionStatus;
     text: string;
+    attachmentRefs: string[];
   };
+  attachmentRefs: string[];
   assistantCandidate: ReviewTurnAssistantCandidate | null;
   createdAt: string;
 }
@@ -107,6 +109,10 @@ export interface CurrentReviewConversationResponse {
 export interface AppendReviewTextTurnRequest {
   requestId: string;
   userMessage: string;
+  attachmentSelection?: {
+    bucketId: string;
+    filePath: string;
+  };
 }
 
 export interface AppendReviewTextTurnResponse {
@@ -118,6 +124,20 @@ export interface AppendReviewTextTurnResponse {
 export interface CloseReviewConversationResponse {
   conversation: ReviewConversationReadModel;
   alreadyClosed: boolean;
+}
+
+export interface ConfirmReviewActionDraftResponse {
+  conversation: ReviewConversationReadModel;
+  turn: ReviewTurnReadModel;
+  reviewAction: {
+    evaluationItemId: string;
+    affectedItemIds: string[];
+    workItemRevision: number;
+    engineerReviewRevision: number;
+    overallStatus: 'STALE' | 'NOT_AVAILABLE';
+    overallRevision: number | null;
+    selectiveResynthesis: 'AFFECTED_ONLY_PENDING';
+  };
 }
 
 export interface UnifiedPackageArtifactDescriptor {

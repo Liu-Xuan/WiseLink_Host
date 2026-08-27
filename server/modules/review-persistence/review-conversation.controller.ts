@@ -13,6 +13,8 @@ import { ReviewConversationService } from './review-conversation.service';
 
 const MAX_MESSAGE_LENGTH = 20_000;
 const MAX_IDENTIFIER_LENGTH = 96;
+const MAX_BUCKET_ID_LENGTH = 255;
+const MAX_FILE_PATH_LENGTH = 1_024;
 
 @NeedLogin()
 @Controller('api')
@@ -95,7 +97,7 @@ export class ReviewConversationController {
 
 function reviewTextBody(body: unknown): AppendReviewTextTurnRequest {
   const value: Record<string, unknown> = objectBody(body);
-  strictKeys(value, ['requestId', 'userMessage']);
+  strictKeys(value, ['requestId', 'userMessage', 'attachmentSelection']);
   const requestId: string = requiredIdentifier(
     value.requestId,
     'REVIEW_TURN_REQUEST_ID_INVALID',
@@ -107,7 +109,29 @@ function reviewTextBody(body: unknown): AppendReviewTextTurnRequest {
   if (userMessage.length === 0 || userMessage.length > MAX_MESSAGE_LENGTH) {
     throw badRequest('REVIEW_TURN_MESSAGE_INVALID');
   }
-  return { requestId, userMessage };
+  if (value.attachmentSelection === undefined) {
+    return { requestId, userMessage };
+  }
+  const selection: Record<string, unknown> = objectBody(
+    value.attachmentSelection,
+  );
+  strictKeys(selection, ['bucketId', 'filePath']);
+  return {
+    requestId,
+    userMessage,
+    attachmentSelection: {
+      bucketId: exactNonEmptyString(
+        selection.bucketId,
+        MAX_BUCKET_ID_LENGTH,
+        'REVIEW_ATTACHMENT_BUCKET_ID_INVALID',
+      ),
+      filePath: exactNonEmptyString(
+        selection.filePath,
+        MAX_FILE_PATH_LENGTH,
+        'REVIEW_ATTACHMENT_FILE_PATH_INVALID',
+      ),
+    },
+  };
 }
 
 function emptyBody(body: unknown): void {
@@ -141,6 +165,23 @@ function requiredIdentifier(value: unknown, code: string): string {
     throw badRequest(code);
   }
   return normalized;
+}
+
+function exactNonEmptyString(
+  value: unknown,
+  maxLength: number,
+  code: string,
+): string {
+  if (
+    typeof value !== 'string' ||
+    value.length === 0 ||
+    value.length > maxLength ||
+    value.trim() !== value ||
+    value.includes('\u0000')
+  ) {
+    throw badRequest(code);
+  }
+  return value;
 }
 
 function badRequest(code: string): Error & {

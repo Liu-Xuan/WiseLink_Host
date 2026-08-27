@@ -42,6 +42,7 @@ export interface DynamicRuleReviewItem {
 export interface OpenClawEngineerReviewItem {
   sequence: number;
   criterionId: string;
+  affectedCriterionIds?: string[];
   baseRuleRevision: number;
   baseRuleArtifactSha256: string;
   actionType: CanonicalReviewActionType;
@@ -131,7 +132,7 @@ export function buildSelectiveOverallResynthesisPlan(input: {
           review.baseRuleRevision === input.baseRuleRevision &&
           review.baseRuleArtifactSha256 === input.baseRuleArtifactSha256,
       )
-      .map((review) => review.criterionId),
+      .flatMap(reviewAffectedCriterionIds),
   );
   if (stale && affectedSet.size === 0) {
     throw new Error('SELECTIVE_RESYNTHESIS_AFFECTED_SET_EMPTY');
@@ -151,7 +152,13 @@ export function buildSelectiveOverallResynthesisPlan(input: {
       reusedCriterionIds.push(item.criterionId);
       return structuredClone(item);
     }
-    const review = effective.get(item.criterionId);
+    const review =
+      effective.get(item.criterionId) ??
+      [...input.engineerReviewContext.history]
+        .reverse()
+        .find((candidate) =>
+          reviewAffectedCriterionIds(candidate).includes(item.criterionId),
+        );
     if (!review) {
       throw new Error(
         `SELECTIVE_RESYNTHESIS_EFFECTIVE_REVIEW_MISSING:${item.criterionId}`,
@@ -161,7 +168,9 @@ export function buildSelectiveOverallResynthesisPlan(input: {
     adoptedEvidenceSourceRefIds.push(
       ...review.evidence.map((value) => value.sourceRefId),
     );
-    return applyReviewAction(item, review);
+    return review.criterionId === item.criterionId
+      ? applyReviewAction(item, review)
+      : markRelatedAffectedItem(item, review);
   });
 
   return {
@@ -178,6 +187,20 @@ export function buildSelectiveOverallResynthesisPlan(input: {
     reusedCriterionIds,
     adoptedEvidenceSourceRefIds: [...new Set(adoptedEvidenceSourceRefIds)],
     items,
+  };
+}
+
+function markRelatedAffectedItem(
+  item: DynamicRuleReviewItem,
+  review: OpenClawEngineerReviewItem,
+): SelectiveJobAidItemCandidate {
+  return {
+    ...structuredClone(item),
+    humanReviewRequired: true,
+    analysisSummary:
+      `${item.analysisSummary}\nAffected by confirmed review action on ` +
+      `${review.criterionId}; selective resynthesis is required.`,
+    effectiveEngineerReview: structuredClone(review),
   };
 }
 
@@ -372,6 +395,7 @@ function assertReviewContext(
     if (
       review.sequence !== index + 1 ||
       !knownCriterionIds.has(review.criterionId) ||
+      !validAffectedCriterionIds(review, knownCriterionIds) ||
       review.baseRuleRevision !== baseRuleRevision ||
       review.baseRuleArtifactSha256 !== baseRuleArtifactSha256 ||
       !review.comment.trim() ||
@@ -392,6 +416,27 @@ function assertReviewContext(
       throw new Error('SELECTIVE_RESYNTHESIS_EFFECTIVE_REVIEW_DRIFT');
     }
   }
+}
+
+function validAffectedCriterionIds(
+  review: OpenClawEngineerReviewItem,
+  knownCriterionIds: Set<string>,
+): boolean {
+  return (
+    reviewAffectedCriterionIds(review).length > 0 &&
+    reviewAffectedCriterionIds(review).includes(review.criterionId) &&
+    new Set(reviewAffectedCriterionIds(review)).size ===
+      reviewAffectedCriterionIds(review).length &&
+    reviewAffectedCriterionIds(review).every((criterionId) =>
+      knownCriterionIds.has(criterionId),
+    )
+  );
+}
+
+function reviewAffectedCriterionIds(
+  review: OpenClawEngineerReviewItem,
+): string[] {
+  return review.affectedCriterionIds ?? [review.criterionId];
 }
 
 function validReviewDetails(review: OpenClawEngineerReviewItem): boolean {

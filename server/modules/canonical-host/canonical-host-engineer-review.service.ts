@@ -7,6 +7,10 @@ import type {
   CanonicalIntegratedAssessmentProjection,
   CanonicalWorkItemProjection,
 } from '@shared/api.interface';
+import {
+  parseReviewAttachmentParsedArtifact,
+  reviewAttachmentEvidenceStatement,
+} from '../review-persistence/review-attachment-artifact';
 import { UNIFIED_ARTIFACT_STORE } from '../unified-reader/unified-reader.constants';
 import type { UnifiedArtifactStorePort } from '../unified-reader/unified-reader.types';
 import { MiaodaWorkItemRepository } from '../work-item/miaoda-work-item.repository';
@@ -42,6 +46,7 @@ type EngineerReviewStatus = 'ENGINEER_CONFIRMED' | 'NEEDS_REVIEW';
 interface EngineerReviewEntry {
   sequence: number;
   criterionId: string;
+  affectedCriterionIds?: string[];
   criterionSetId: string;
   decision: CanonicalEngineerReviewDecision;
   status: EngineerReviewStatus;
@@ -83,6 +88,7 @@ export interface RecordEngineerReviewActionInput {
   workItemId: string;
   expectedRevision: number;
   criterionId: string;
+  affectedCriterionIds?: string[];
   actionType: CanonicalReviewActionType;
   comment: string;
   decision?: CanonicalEngineerReviewDecision;
@@ -129,9 +135,24 @@ export class CanonicalHostEngineerReviewService {
     }
     const integrated = workItem.integratedAssessment!;
     const dynamicItems = await this.readDynamicItems(workItem);
-    if (!dynamicItems.some((item) => item.criterionId === input.criterionId)) {
+    const knownCriterionIds = new Set(
+      dynamicItems.map((item) => item.criterionId),
+    );
+    if (!knownCriterionIds.has(input.criterionId)) {
       throw new Error(`ENGINEER_REVIEW_CRITERION_UNKNOWN:${input.criterionId}`);
     }
+    const affectedCriterionIds = input.affectedCriterionIds ?? [
+      input.criterionId,
+    ];
+    if (
+      !affectedCriterionIds.includes(input.criterionId) ||
+      affectedCriterionIds.some(
+        (criterionId) => !knownCriterionIds.has(criterionId),
+      )
+    ) {
+      throw new Error('ENGINEER_REVIEW_AFFECTED_CRITERION_UNKNOWN');
+    }
+    await this.assertResolvedEvidence(input, workItem);
     const existingLedger = await this.readLedger(workItem);
     const attempt = await this.repository.reserveAssessmentAction({
       workItemId: workItem.workItemId,
@@ -163,6 +184,7 @@ export class CanonicalHostEngineerReviewService {
       const entry: EngineerReviewEntry = {
         sequence: (existingLedger?.reviews.length ?? 0) + 1,
         criterionId: input.criterionId,
+        affectedCriterionIds: [...affectedCriterionIds],
         criterionSetId: integrated.baseRules.criterionSetId,
         decision,
         status,
@@ -322,7 +344,15 @@ export class CanonicalHostEngineerReviewService {
         (item) => item.criterionId,
       ),
     );
-    if (ledger.reviews.some((review) => !known.has(review.criterionId))) {
+    if (
+      ledger.reviews.some(
+        (review) =>
+          !known.has(review.criterionId) ||
+          (review.affectedCriterionIds ?? [review.criterionId]).some(
+            (criterionId) => !known.has(criterionId),
+          ),
+      )
+    ) {
       throw new Error('ENGINEER_REVIEW_CRITERION_SET_DRIFT');
     }
   }
@@ -347,6 +377,11 @@ export class CanonicalHostEngineerReviewService {
     const bytes = await this.artifactStore.readActualBytes(projection.artifact);
     const ledger = parseLedger(bytes);
     assertLedger(ledger, projection, workItem);
+    const attachmentEvidence = ledger.reviews.flatMap((review) =>
+      (review.evidence ?? []).filter(
+        (evidence) => evidence.kind === 'ATTACHMENT',
+      ),
+    );
     await Promise.all(
       ledger.reviews.flatMap((review) =>
         (review.evidence ?? [])
@@ -356,7 +391,43 @@ export class CanonicalHostEngineerReviewService {
           ),
       ),
     );
+    await Promise.all(
+      attachmentEvidence.map(async (evidence) => {
+        const parsed = parseReviewAttachmentParsedArtifact(
+          await this.artifactStore.readActualBytes(evidence.artifact!),
+        );
+        if (
+          parsed.workItemId !== workItem.workItemId ||
+          parsed.attachmentRef !== evidence.locator ||
+          reviewAttachmentEvidenceStatement(parsed) !== evidence.statement
+        ) {
+          throw new Error('ENGINEER_REVIEW_ATTACHMENT_BINDING_INVALID');
+        }
+      }),
+    );
     return ledger;
+  }
+
+  private async assertResolvedEvidence(
+    input: RecordEngineerReviewActionInput,
+    workItem: CanonicalWorkItemProjection,
+  ): Promise<void> {
+    await Promise.all(
+      (input.evidence ?? [])
+        .filter((evidence) => evidence.kind === 'ATTACHMENT')
+        .map(async (evidence) => {
+          const parsed = parseReviewAttachmentParsedArtifact(
+            await this.artifactStore.readActualBytes(evidence.artifact!),
+          );
+          if (
+            parsed.workItemId !== workItem.workItemId ||
+            parsed.attachmentRef !== evidence.locator ||
+            reviewAttachmentEvidenceStatement(parsed) !== evidence.statement
+          ) {
+            throw new Error('ENGINEER_REVIEW_ATTACHMENT_BINDING_INVALID');
+          }
+        }),
+    );
   }
 
   private authorizeAndLoad(workItemId: string, actor: CanonicalHostActor) {
@@ -403,6 +474,15 @@ function validateReviewActionInput(
   ) {
     throw new Error('ENGINEER_REVIEW_EXPECTED_REVISION_INVALID');
   }
+  const affectedCriterionIds = input.affectedCriterionIds ?? [
+    input.criterionId,
+  ];
+  if (
+    !validDistinctTexts(affectedCriterionIds) ||
+    !affectedCriterionIds.includes(input.criterionId)
+  ) {
+    throw new Error('ENGINEER_REVIEW_AFFECTED_CRITERIA_INVALID');
+  }
   if (input.actionType === 'REVISE_JUDGMENT') {
     if (
       !input.decision ||
@@ -416,9 +496,6 @@ function validateReviewActionInput(
     return;
   }
   if (input.actionType === 'SUPPLEMENT_EVIDENCE') {
-    if (input.evidence?.some((value) => value.kind === 'ATTACHMENT')) {
-      throw new Error('ENGINEER_REVIEW_ATTACHMENT_RESOLVER_REQUIRED');
-    }
     if (
       input.decision !== undefined ||
       input.correctedAnalysisDirection !== undefined ||
@@ -434,7 +511,7 @@ function validateReviewActionInput(
             'DOCUMENT_FACT',
             'ATTACHMENT',
           ].includes(value.kind) ||
-          value.artifact !== undefined,
+          (value.kind === 'ATTACHMENT') !== (value.artifact !== undefined),
       ) ||
       !validDistinctTexts(input.resolvedMissingInputs ?? [])
     ) {
@@ -472,6 +549,9 @@ function sanitizedReview(review: EngineerReviewEntry) {
   return {
     sequence: review.sequence,
     criterionId: review.criterionId,
+    affectedCriterionIds: [
+      ...(review.affectedCriterionIds ?? [review.criterionId]),
+    ],
     baseRuleRevision: review.baseRuleRevision,
     baseRuleArtifactSha256: review.baseRuleArtifactSha256,
     actionType: review.actionType ?? 'REVISE_JUDGMENT',
@@ -545,6 +625,7 @@ function validLedgerAction(review: EngineerReviewEntry): boolean {
       workItemId: 'ledger-readback',
       expectedRevision: Math.max(1, review.workItemRevisionBefore),
       criterionId: review.criterionId,
+      affectedCriterionIds: review.affectedCriterionIds ?? [review.criterionId],
       actionType,
       comment: review.comment,
       ...(actionType === 'REVISE_JUDGMENT'

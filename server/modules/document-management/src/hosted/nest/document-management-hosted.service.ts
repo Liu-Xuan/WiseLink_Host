@@ -21,12 +21,17 @@ export interface HostedRequestContext {
   appId: string;
   env: string;
   runtimeIngestAuthority?: {
-    mode: 'HOSTED_OAUTH_SESSION_DEVELOPMENT_RUN';
+    mode:
+      | 'HOSTED_OAUTH_SESSION_DEVELOPMENT_RUN'
+      | 'HOSTED_OAUTH_SESSION_REVIEW_ATTACHMENT';
     actorUserId: string;
     tenantId: string;
     appId: string;
     identityProvenance: 'FEISHU_OAUTH_USER_ACCESS_TOKEN';
     sessionProvenance: 'SERVER_OPAQUE_SESSION';
+    workItemId?: string;
+    expectedRevision?: number;
+    authorizationFingerprint?: string;
   };
 }
 
@@ -52,6 +57,15 @@ export class DocumentManagementHostedService {
   ingestFileServiceSelection(request: unknown, context: HostedRequestContext) {
     assertProductionMiaodaBrowserIdentityAvailable(hostedIdentity(context));
     assertDevelopmentIngestContext(context);
+    return this.core.ingestFileServiceSelection(request, context);
+  }
+
+  ingestReviewAttachmentSelection(
+    request: unknown,
+    context: HostedRequestContext,
+  ) {
+    assertProductionMiaodaBrowserIdentityAvailable(hostedIdentity(context));
+    assertReviewAttachmentIngestContext(context);
     return this.core.ingestFileServiceSelection(request, context);
   }
 
@@ -128,17 +142,46 @@ function assertDevelopmentIngestContext(context: HostedRequestContext): void {
   );
 }
 
+function assertReviewAttachmentIngestContext(
+  context: HostedRequestContext,
+): void {
+  const authority = context.runtimeIngestAuthority;
+  if (
+    ['preview', 'runtime'].includes(context.env) &&
+    context.appId === CANONICAL_MIAODA_APP_ID &&
+    authority?.mode === 'HOSTED_OAUTH_SESSION_REVIEW_ATTACHMENT' &&
+    authority.actorUserId === context.actorUserId &&
+    authority.tenantId === context.tenantId &&
+    authority.appId === context.appId &&
+    authority.identityProvenance === 'FEISHU_OAUTH_USER_ACCESS_TOKEN' &&
+    authority.sessionProvenance === 'SERVER_OPAQUE_SESSION' &&
+    Boolean(authority.workItemId?.trim()) &&
+    Number.isSafeInteger(authority.expectedRevision) &&
+    Number(authority.expectedRevision) >= 0 &&
+    Boolean(authority.authorizationFingerprint?.trim())
+  ) {
+    return;
+  }
+  throw Object.assign(
+    new Error('Review attachment ingestion requires a verified OAuth session.'),
+    {
+      code: 'REVIEW_ATTACHMENT_INGEST_AUTHORITY_REQUIRED',
+      statusCode: 403,
+    },
+  );
+}
+
 function hasOauthSessionDevelopmentRunAuthority(
   context: HostedRequestContext,
 ): boolean {
   const authority = context.runtimeIngestAuthority;
   return Boolean(
     authority &&
-      authority.mode === 'HOSTED_OAUTH_SESSION_DEVELOPMENT_RUN' &&
-      authority.actorUserId === context.actorUserId &&
-      authority.tenantId === context.tenantId &&
-      authority.appId === context.appId &&
-      authority.identityProvenance === 'FEISHU_OAUTH_USER_ACCESS_TOKEN' &&
-      authority.sessionProvenance === 'SERVER_OPAQUE_SESSION',
+    authority.mode === 'HOSTED_OAUTH_SESSION_DEVELOPMENT_RUN' &&
+    authority.actorUserId === context.actorUserId &&
+    authority.tenantId === context.tenantId &&
+    authority.appId === context.appId &&
+    authority.identityProvenance === 'FEISHU_OAUTH_USER_ACCESS_TOKEN' &&
+    authority.sessionProvenance === 'SERVER_OPAQUE_SESSION',
   );
 }

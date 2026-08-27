@@ -44,6 +44,27 @@ function runtimeContext(
   };
 }
 
+function reviewAttachmentContext(
+  overrides: Partial<HostedRequestContext> = {},
+): HostedRequestContext {
+  return {
+    ...creatorContext,
+    roles: [],
+    runtimeIngestAuthority: {
+      mode: 'HOSTED_OAUTH_SESSION_REVIEW_ATTACHMENT',
+      actorUserId: creatorContext.actorUserId,
+      tenantId: creatorContext.tenantId,
+      appId: creatorContext.appId,
+      identityProvenance: 'FEISHU_OAUTH_USER_ACCESS_TOKEN',
+      sessionProvenance: 'SERVER_OPAQUE_SESSION',
+      workItemId: 'WI-REVIEW-1',
+      expectedRevision: 7,
+      authorizationFingerprint: `sha256:${'a'.repeat(64)}`,
+    },
+    ...overrides,
+  };
+}
+
 function binding() {
   return {
     workItemId: 'WI-1',
@@ -216,6 +237,42 @@ describe('ordinary document-management authorization', () => {
     ).rejects.toMatchObject({ code: 'DOCUMENT_ACTION_FORBIDDEN' });
   });
 
+  it('allows only the same OAuth user to ingest a default-bucket review selection', async () => {
+    const path = 'official-selection/engineering-note.pdf';
+    const metadata = {
+      bucketID: 'bucket-default',
+      filePath: path,
+      createdBy: { userID: creatorContext.actorUserId },
+    };
+    const fileService = fileServiceTarget(metadata);
+    const authorizer = new OrdinaryDocumentManagementAuthorizer(
+      {} as never,
+      fileService as never,
+    );
+    const context = reviewAttachmentContext();
+
+    await expect(
+      authorizer.assertCanIngest({
+        actorUserId: context.actorUserId,
+        tenantId: context.tenantId,
+        roles: context.roles,
+        action: 'DOCUMENT_INGEST',
+        selection: { bucketId: 'bucket-default', filePath: path },
+        runtimeIngestAuthority: context.runtimeIngestAuthority,
+      }),
+    ).resolves.toBeUndefined();
+    await expect(
+      authorizer.assertCanIngest({
+        actorUserId: 'another-user',
+        tenantId: context.tenantId,
+        roles: context.roles,
+        action: 'DOCUMENT_INGEST',
+        selection: { bucketId: 'bucket-default', filePath: path },
+        runtimeIngestAuthority: context.runtimeIngestAuthority,
+      }),
+    ).rejects.toMatchObject({ code: 'DOCUMENT_ACTION_FORBIDDEN' });
+  });
+
   it.each(['ingest', 'authorize-ingest', 'read'] as const)(
     'rejects local hosted-service %s before authorizer, Catalog, or FileService I/O',
     async (operation) => {
@@ -321,6 +378,58 @@ describe('ordinary document-management authorization', () => {
       { selection: { bucketId: 'bucket-default', filePath: OWNED_PATH } },
       context,
     );
+  });
+
+  it('keeps review attachment ingestion internal and forwards the exact verified authority to the existing core', async () => {
+    const core = {
+      ingestFileServiceSelection: jest.fn().mockResolvedValue({
+        documentVersionId: 'DV-REVIEW-1',
+      }),
+    };
+    jest
+      .mocked(DocumentManagementHostedCore)
+      .mockImplementationOnce(() => core as never);
+    const service = new DocumentManagementHostedService(
+      {} as never,
+      {} as never,
+      { assertCanIngest: jest.fn(), assertCanRead: jest.fn() },
+    );
+    const context = reviewAttachmentContext();
+    const request = {
+      selection: {
+        bucketId: 'bucket-default',
+        filePath: 'official-selection/engineering-note.pdf',
+      },
+    };
+    const previousSandbox = process.env.SANDBOX_ID;
+    const previousLocal = process.env.MIAODA_LOCAL_DEV;
+    process.env.SANDBOX_ID = 'unit-review-attachment';
+    delete process.env.MIAODA_LOCAL_DEV;
+    try {
+      await expect(
+        service.ingestReviewAttachmentSelection(request, context),
+      ).resolves.toEqual({ documentVersionId: 'DV-REVIEW-1' });
+      expect(core.ingestFileServiceSelection).toHaveBeenCalledWith(
+        request,
+        context,
+      );
+
+      await expect(
+        Promise.resolve().then(() =>
+          service.ingestReviewAttachmentSelection(request, {
+            ...context,
+            actorUserId: 'another-user',
+          }),
+        ),
+      ).rejects.toMatchObject({
+        code: 'REVIEW_ATTACHMENT_INGEST_AUTHORITY_REQUIRED',
+        statusCode: 403,
+      });
+    } finally {
+      restoreProcessEnv('SANDBOX_ID', previousSandbox);
+      restoreProcessEnv('MIAODA_LOCAL_DEV', previousLocal);
+    }
+    expect(core.ingestFileServiceSelection).toHaveBeenCalledTimes(1);
   });
 
   it.each([

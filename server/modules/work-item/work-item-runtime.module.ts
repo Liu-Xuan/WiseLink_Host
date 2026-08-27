@@ -4,6 +4,7 @@ import { CANONICAL_OBJECT_ACCESS } from './canonical-object-access.port';
 import { CanonicalObjectAccessRouter } from './canonical-object-access.router';
 import { MiaodaHostedCanonicalObjectAccessAdapter } from './miaoda-hosted-canonical-object-access.adapter';
 import { MiaodaWorkItemRepository } from './miaoda-work-item.repository';
+import { MiaodaDocumentVersionSourceResolver } from './miaoda-document-version-source.resolver';
 import {
   UnavailableAilyObjectAccessAdapter,
   UnavailableServiceObjectAccessAdapter,
@@ -13,6 +14,7 @@ import {
 @Module({
   providers: [
     MiaodaWorkItemRepository,
+    MiaodaDocumentVersionSourceResolver,
     {
       provide: MiaodaHostedCanonicalObjectAccessAdapter,
       inject: [MiaodaWorkItemRepository],
@@ -48,6 +50,10 @@ import {
       useExisting: CanonicalObjectAccessRouter,
     },
   ],
-  exports: [MiaodaWorkItemRepository, CANONICAL_OBJECT_ACCESS],
+  exports: [
+    MiaodaWorkItemRepository,
+    MiaodaDocumentVersionSourceResolver,
+    CANONICAL_OBJECT_ACCESS,
+  ],
 })
 export class WorkItemRuntimeModule {}

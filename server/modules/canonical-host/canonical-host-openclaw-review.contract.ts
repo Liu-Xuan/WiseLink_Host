@@ -49,7 +49,7 @@ export interface ReviewTurnTaskContract {
   resourceRefs: FrozenReviewSourceRef[];
   allowedEvaluationItemIds: string[];
   allowedAdoptedInputRefs: string[];
-  attachmentRefs: [];
+  attachmentRefs: string[];
   context: Record<string, unknown>;
   executionPolicy: {
     runtimeAppId: typeof REVIEW_RUNTIME_APP_ID;
@@ -163,12 +163,16 @@ export function parseReviewTurnTaskContract(
     'REVIEW_TASK_ADOPTED_INPUTS_INVALID',
   );
   assertUnique(allowedAdoptedInputRefs, 'REVIEW_TASK_ADOPTED_INPUTS_DUPLICATE');
-  if (
-    !Array.isArray(record.attachmentRefs) ||
-    record.attachmentRefs.length !== 0
-  ) {
-    fail('REVIEW_TASK_ATTACHMENTS_OUT_OF_SCOPE');
-  }
+  const attachmentRefs = stringArray(
+    record.attachmentRefs,
+    'REVIEW_TASK_ATTACHMENTS_INVALID',
+  );
+  assertUnique(attachmentRefs, 'REVIEW_TASK_ATTACHMENTS_DUPLICATE');
+  assertSubset(
+    attachmentRefs,
+    resourceRefs.map((item) => item.sourceRefId),
+    'REVIEW_TASK_ATTACHMENT_REF_NOT_ALLOWED',
+  );
   requiredRecord(record.context, 'REVIEW_TASK_CONTEXT_INVALID');
   const executionPolicy = requiredRecord(
     record.executionPolicy,

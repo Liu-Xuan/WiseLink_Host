@@ -19,6 +19,10 @@ import {
   reviewConversation,
   reviewTurn,
 } from '../../database/schema';
+import type {
+  ReviewAttachmentBinding,
+  ReviewEngineerInputPayload,
+} from './review-attachment.types';
 
 const OPENCLAW_AGENT_ID = 'wiselink-engineering';
 const ACTIVE_STATUS = 'ACTIVE';
@@ -26,6 +30,7 @@ const CLOSED_STATUS = 'CLOSED';
 const ENGINEER_TEXT = 'ENGINEER_TEXT';
 const CANDIDATE_UNADOPTED = 'CANDIDATE_UNADOPTED';
 const OFFICIAL_CLIENT_ID = 'cli_aadde8b579f95bc9';
+const ENGINEER_INPUT_PREFIX = 'WLR7:';
 
 export interface PersistedReviewConversation {
   reviewConversationId: string;
@@ -53,6 +58,7 @@ export interface PersistedReviewTurn {
   inputType: string;
   adoptionStatus: string;
   candidateText: string;
+  attachmentBindings: ReviewAttachmentBinding[];
   assistantCandidate: ReviewTurnAssistantCandidate | null;
   createdAt: Date;
 }
@@ -252,19 +258,29 @@ export class ReviewConversationRepository {
     requestId: string;
     userMessage: string;
     currentRevision: number;
+    attachmentBindings?: ReviewAttachmentBinding[];
   }): Promise<{ turn: PersistedReviewTurn; replayed: boolean }> {
     const existing: PersistedReviewTurn | null = await this.loadTurnByRequest(
       input.conversation.reviewConversationId,
       input.requestId,
     );
     if (existing) {
-      assertIdempotentReplay(existing, input.userMessage);
+      assertIdempotentReplay(
+        existing,
+        input.userMessage,
+        input.attachmentBindings ?? [],
+      );
       return { turn: existing, replayed: true };
     }
 
     const now: Date = new Date();
     const reviewTurnId: string = `RT-${randomUUID()}`;
     const engineerSuppliedInputId: string = `ESI-${randomUUID()}`;
+    const storedInput: string = encodeEngineerInput({
+      schemaVersion: 'wiselink.3_1.review_engineer_input.v1.c7',
+      userMessage: input.userMessage,
+      attachments: structuredClone(input.attachmentBindings ?? []),
+    });
     try {
       await this.db.insert(reviewTurn).values({
         reviewTurnId,
@@ -276,7 +292,7 @@ export class ReviewConversationRepository {
         turnNo: 0,
         requestId: input.requestId,
         inputRevision: input.currentRevision,
-        userMessage: input.userMessage,
+        userMessage: storedInput,
         inputType: ENGINEER_TEXT,
         adoptionStatus: CANDIDATE_UNADOPTED,
         createdAt: now,
@@ -291,7 +307,11 @@ export class ReviewConversationRepository {
         input.requestId,
       );
       if (!replay) throw cause;
-      assertIdempotentReplay(replay, input.userMessage);
+      assertIdempotentReplay(
+        replay,
+        input.userMessage,
+        input.attachmentBindings ?? [],
+      );
       return { turn: replay, replayed: true };
     }
 
@@ -303,6 +323,41 @@ export class ReviewConversationRepository {
       throw new Error('REVIEW_TURN_CREATE_READBACK_FAILED');
     }
     return { turn: created, replayed: false };
+  }
+
+  async syncAfterReviewAction(input: {
+    conversation: PersistedReviewConversation;
+    expectedRevision: number;
+    currentRevision: number;
+  }): Promise<PersistedReviewConversationAggregate> {
+    const [updated] = await this.db
+      .update(reviewConversation)
+      .set({
+        lastSyncedRevision: input.currentRevision,
+        lastActiveAt: new Date(),
+      })
+      .where(
+        and(
+          eq(
+            reviewConversation.reviewConversationId,
+            input.conversation.reviewConversationId,
+          ),
+          eq(reviewConversation.tenantId, input.conversation.tenantId),
+          eq(reviewConversation.actorId, input.conversation.actorId),
+          eq(reviewConversation.workItemId, input.conversation.workItemId),
+          eq(reviewConversation.status, ACTIVE_STATUS),
+          eq(reviewConversation.lastSyncedRevision, input.expectedRevision),
+        ),
+      )
+      .returning({
+        reviewConversationId: reviewConversation.reviewConversationId,
+      });
+    if (!updated) {
+      throw reviewPersistenceConflict(
+        'REVIEW_CONVERSATION_REVISION_SYNC_CONFLICT',
+      );
+    }
+    return this.requiredAggregate(input.conversation.reviewConversationId);
   }
 
   async close(input: {
@@ -535,6 +590,15 @@ interface SelectedReviewTurn {
 }
 
 function persistedTurn(row: SelectedReviewTurn): PersistedReviewTurn {
+  const turnInput: ReviewEngineerInputPayload = decodeEngineerInput(
+    row.userMessage,
+  );
+  const suppliedInput: ReviewEngineerInputPayload = decodeEngineerInput(
+    row.candidateText,
+  );
+  if (canonicalJson(turnInput) !== canonicalJson(suppliedInput)) {
+    throw new Error('REVIEW_ENGINEER_INPUT_BINDING_DRIFT');
+  }
   const empty = row.assistantResponse === null;
   return {
     reviewTurnId: row.reviewTurnId,
@@ -543,10 +607,11 @@ function persistedTurn(row: SelectedReviewTurn): PersistedReviewTurn {
     turnNo: row.turnNo,
     requestId: row.requestId,
     inputRevision: row.inputRevision,
-    userMessage: row.userMessage,
+    userMessage: turnInput.userMessage,
     inputType: row.inputType,
     adoptionStatus: row.adoptionStatus,
-    candidateText: row.candidateText,
+    candidateText: suppliedInput.userMessage,
+    attachmentBindings: structuredClone(suppliedInput.attachments),
     assistantCandidate: empty ? null : parseAssistantCandidate(row),
     createdAt: row.createdAt,
   };
@@ -641,14 +706,106 @@ function assertCandidateReplay(
 function assertIdempotentReplay(
   turn: PersistedReviewTurn,
   userMessage: string,
+  attachmentBindings: ReviewAttachmentBinding[],
 ): void {
   if (
     turn.userMessage !== userMessage ||
     turn.candidateText !== userMessage ||
+    canonicalJson(turn.attachmentBindings) !==
+      canonicalJson(attachmentBindings) ||
     turn.inputType !== ENGINEER_TEXT ||
     turn.adoptionStatus !== CANDIDATE_UNADOPTED
   ) {
     throw reviewPersistenceConflict('REVIEW_TURN_IDEMPOTENCY_CONFLICT');
+  }
+}
+
+function encodeEngineerInput(value: ReviewEngineerInputPayload): string {
+  validateEngineerInput(value);
+  return `${ENGINEER_INPUT_PREFIX}${canonicalJson(value)}`;
+}
+
+function decodeEngineerInput(value: string): ReviewEngineerInputPayload {
+  if (!value.startsWith(ENGINEER_INPUT_PREFIX)) {
+    return {
+      schemaVersion: 'wiselink.3_1.review_engineer_input.v1.c7',
+      userMessage: value,
+      attachments: [],
+    };
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value.slice(ENGINEER_INPUT_PREFIX.length)) as unknown;
+  } catch {
+    throw new Error('REVIEW_ENGINEER_INPUT_JSON_INVALID');
+  }
+  validateEngineerInput(parsed);
+  return structuredClone(parsed) as ReviewEngineerInputPayload;
+}
+
+function validateEngineerInput(value: unknown): void {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('REVIEW_ENGINEER_INPUT_JSON_INVALID');
+  }
+  const record: Record<string, unknown> = value as Record<string, unknown>;
+  if (
+    record.schemaVersion !== 'wiselink.3_1.review_engineer_input.v1.c7' ||
+    typeof record.userMessage !== 'string' ||
+    !record.userMessage.trim() ||
+    !Array.isArray(record.attachments) ||
+    record.attachments.length > 1
+  ) {
+    throw new Error('REVIEW_ENGINEER_INPUT_JSON_INVALID');
+  }
+  const refs = new Set<string>();
+  for (const attachment of record.attachments) {
+    validateAttachmentBinding(attachment);
+    refs.add((attachment as ReviewAttachmentBinding).attachmentRef);
+  }
+  if (refs.size !== record.attachments.length) {
+    throw new Error('REVIEW_ENGINEER_INPUT_JSON_INVALID');
+  }
+}
+
+function validateAttachmentBinding(value: unknown): void {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('REVIEW_ENGINEER_INPUT_JSON_INVALID');
+  }
+  const binding: Record<string, unknown> = value as Record<string, unknown>;
+  const artifact: unknown = binding.parsedArtifact;
+  if (
+    typeof binding.attachmentRef !== 'string' ||
+    !binding.attachmentRef.trim() ||
+    typeof binding.documentVersionId !== 'string' ||
+    !binding.documentVersionId.trim() ||
+    typeof binding.fileName !== 'string' ||
+    !binding.fileName.trim() ||
+    binding.mediaType !== 'application/pdf' ||
+    !Number.isSafeInteger(binding.byteLength) ||
+    Number(binding.byteLength) < 1 ||
+    typeof binding.selectionKey !== 'string' ||
+    !binding.selectionKey.trim() ||
+    !artifact ||
+    typeof artifact !== 'object' ||
+    Array.isArray(artifact)
+  ) {
+    throw new Error('REVIEW_ENGINEER_INPUT_JSON_INVALID');
+  }
+  const descriptor: Record<string, unknown> = artifact as Record<
+    string,
+    unknown
+  >;
+  if (
+    descriptor.storeRole !== 'UnifiedArtifactStoreCandidate' ||
+    typeof descriptor.ref !== 'string' ||
+    !descriptor.ref.trim() ||
+    typeof descriptor.sha256 !== 'string' ||
+    !/^[0-9a-f]{64}$/u.test(descriptor.sha256) ||
+    !Number.isSafeInteger(descriptor.byteLength) ||
+    Number(descriptor.byteLength) < 1 ||
+    descriptor.mediaType !== 'application/json'
+  ) {
+    throw new Error('REVIEW_ENGINEER_INPUT_JSON_INVALID');
   }
 }
 

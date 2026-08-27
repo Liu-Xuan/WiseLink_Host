@@ -1,5 +1,9 @@
 import type { CanonicalWorkItemProjection } from '@shared/api.interface';
 import { CanonicalHostEngineerReviewService } from '../../server/modules/canonical-host/canonical-host-engineer-review.service';
+import {
+  encodeReviewAttachmentParsedArtifact,
+  reviewAttachmentEvidenceStatement,
+} from '../../server/modules/review-persistence/review-attachment-artifact';
 
 describe('CanonicalHostEngineerReviewService', () => {
   it('appends repeated criterion reviews, stales overall, clears AEO, and exposes only sanitized model context', async () => {
@@ -133,7 +137,7 @@ describe('CanonicalHostEngineerReviewService', () => {
     expect(serialized).not.toContain('ATT-1');
   });
 
-  it('rejects caller-provided attachment descriptors before artifactStore or ActionAttempt I/O', async () => {
+  it('fails explicitly when a Review attachment descriptor does not resolve to actual bytes', async () => {
     const harness = target();
     await expect(
       harness.service.recordReviewAction(
@@ -161,10 +165,72 @@ describe('CanonicalHostEngineerReviewService', () => {
           roles: [],
         },
       ),
-    ).rejects.toThrow('ENGINEER_REVIEW_ATTACHMENT_RESOLVER_REQUIRED');
-    expect(harness.state.readRefs).toHaveLength(0);
+    ).rejects.toThrow('ARTIFACT_NOT_FOUND');
+    expect(harness.state.readRefs).toContain('artifact://attachment');
     expect(harness.state.attempts).toBe(0);
     expect(harness.state.persisted).toHaveLength(0);
+  });
+
+  it('records an attachment only after resolving and checking its parsed actual bytes', async () => {
+    const harness = target();
+    const parsed = {
+      schemaVersion: 'wiselink.3_1.review_attachment_parse.v1.c7' as const,
+      attachmentRef: 'ATTACHMENT-1',
+      workItemId: 'WI-REVIEW',
+      reviewConversationId: 'RC-1',
+      documentVersionId: 'DV-ATTACHMENT-1',
+      fileName: 'engineering-note.pdf',
+      mediaType: 'application/pdf' as const,
+      byteLength: 321,
+      pageCount: 1,
+      pages: [{ page: 1, text: 'Verified attachment engineering fact.' }],
+    };
+    harness.artifacts.set(
+      'artifact://attachment',
+      encodeReviewAttachmentParsedArtifact(parsed),
+    );
+    const updated = await harness.service.recordReviewAction(
+      {
+        workItemId: 'WI-REVIEW',
+        expectedRevision: 5,
+        criterionId: 'RULE-001',
+        affectedCriterionIds: ['RULE-001'],
+        actionType: 'SUPPLEMENT_EVIDENCE',
+        comment: 'Adopt the Host-resolved attachment evidence.',
+        evidence: [
+          {
+            kind: 'ATTACHMENT',
+            statement: reviewAttachmentEvidenceStatement(parsed),
+            locator: 'ATTACHMENT-1',
+            artifact: attachmentArtifact(),
+          },
+        ],
+        resolvedMissingInputs: [],
+      },
+      {
+        userId: 'engineer-1',
+        tenantId: 'tenant-1',
+        appId: 'app_17bzc551rsg',
+        env: 'development',
+        roles: [],
+      },
+    );
+
+    expect(updated.revision).toBe(6);
+    expect(updated.integratedAssessment?.overallSynthesis).toMatchObject({
+      status: 'STALE',
+      staleReason: 'ENGINEER_REVIEW_CHANGED',
+    });
+    const context = await harness.service.modelContext(updated);
+    expect(context.effective[0]).toMatchObject({
+      affectedCriterionIds: ['RULE-001'],
+      evidence: [
+        expect.objectContaining({
+          kind: 'ATTACHMENT',
+          locator: 'ATTACHMENT-1',
+        }),
+      ],
+    });
   });
 
   it('fails stale expectedRevision before reserving an ActionAttempt', async () => {
@@ -273,7 +339,7 @@ function target() {
       failAssessmentAction: async () => undefined,
     } as never,
   );
-  return { service, state };
+  return { service, state, artifacts };
 }
 
 function attachmentArtifact() {
@@ -282,7 +348,7 @@ function attachmentArtifact() {
     ref: 'artifact://attachment',
     sha256: 'e'.repeat(64),
     byteLength: 15,
-    mediaType: 'application/pdf' as const,
+    mediaType: 'application/json' as const,
   };
 }
 
