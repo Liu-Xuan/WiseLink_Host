@@ -21,6 +21,7 @@ import { canonicalHost } from '@client/src/api';
 import type {
   CanonicalEngineerReviewDecision,
   CanonicalDocumentParsingPageResponse,
+  ConfirmReviewActionDraftResponse,
 } from '@shared/api.interface';
 import { Button } from '@client/src/components/ui/button';
 import {
@@ -39,9 +40,11 @@ import { AssessmentSemanticsOverview } from './AssessmentSemanticsOverview';
 import { DocumentReaderWorkspace } from './DocumentReaderWorkspace';
 import PdfSourcePane from './PdfSourcePane';
 import ReviewImpactPreview from '@client/src/features/review/ReviewImpactPreview';
+import ContinuousReviewPanel from '@client/src/features/review/ContinuousReviewPanel';
 import RevisionTimeline from '@client/src/features/review/RevisionTimeline';
 import TaskPills from '@client/src/features/review/TaskPills';
 import WorkbenchShell from '@client/src/features/workbench/WorkbenchShell';
+import type { QuickOpenItem } from '@client/src/features/workbench/QuickOpen';
 import OverallAssessmentHero from '@client/src/features/workitem/OverallAssessmentHero';
 import AuthorityStrip from '@client/src/features/workitem/AuthorityStrip';
 import {
@@ -50,16 +53,17 @@ import {
 } from '@client/src/services/viewModelMappers';
 import EvidencePanel from '@client/src/features/workbench/EvidencePanel';
 import NavigatorTree from '@client/src/features/navigation/NavigatorTree';
-import type {
-  NavigationNodeView,
-  NavigatorMode,
+import {
+  buildDocumentTree,
+  humanState,
+  type NavigationNodeView,
+  type NavigatorMode,
 } from '@client/src/features/navigation/treeMappers';
 import {
   buildAssessmentBusinessContent,
   getReaderViewMode,
   type ReaderViewMode,
 } from './workbench-projection';
-import { humanState } from '@client/src/features/navigation/treeMappers';
 import { runCanonicalDocumentParsingLoad } from './document-parsing-load';
 import './document-parsing.css';
 import './pdf-source-pane.css';
@@ -179,6 +183,15 @@ function getWorkbenchNode(value: string | null): WorkbenchNode {
   return 'assessment';
 }
 
+function flattenNavigationTree(
+  nodes: NavigationNodeView[],
+): NavigationNodeView[] {
+  return nodes.flatMap((node) => [
+    node,
+    ...flattenNavigationTree(node.children ?? []),
+  ]);
+}
+
 export default function DocumentParsingPage() {
   const currentUser = useCurrentUserProfile();
   const navigate = useNavigate();
@@ -210,6 +223,9 @@ export default function DocumentParsingPage() {
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
   /** 保存前影响预览开关（§4.3 先显示影响预览，再写入） */
   const [reviewPreviewOpen, setReviewPreviewOpen] = useState(false);
+  const [continuousReviewReceipt, setContinuousReviewReceipt] = useState<
+    ConfirmReviewActionDraftResponse['reviewAction'] | null
+  >(null);
   /** 版本冲突反馈（§4.3 冲突不自动覆盖，提供刷新） */
   const [conflictMessage, setConflictMessage] = useState<string | null>(null);
   const [treeMode, setTreeMode] = useState<NavigatorMode>('document');
@@ -296,6 +312,10 @@ export default function DocumentParsingPage() {
       loadEpochRef.current += 1;
     };
   }, [workItemId, activeQuery, actorSignal]);
+
+  useEffect(() => {
+    setContinuousReviewReceipt(null);
+  }, [workItemId]);
 
   const data: CanonicalDocumentParsingPageResponse | null =
     pageActorSignal === actorSignal ? pageData : null;
@@ -477,9 +497,35 @@ export default function DocumentParsingPage() {
     });
   }
 
+  const quickOpenItems: QuickOpenItem[] = [
+    ...WORKBENCH_TABS.filter((tab) => tab.key !== 'aeo' || Boolean(aeo)).map(
+      (tab) => ({
+        id: `view:${tab.key}`,
+        label: tab.label,
+        description: '切换当前工程分析工作台视图',
+        keywords: tab.mobileLabel,
+        group: '工作台视图',
+        icon: tab.icon,
+        onSelect: () => handleTabChange(tab.key),
+      }),
+    ),
+    ...flattenNavigationTree(buildDocumentTree(data.libraryIndex.nodes))
+      .filter((node) => node.selectable && Boolean(node.targetNode))
+      .map((node) => ({
+        id: `source:${node.id}`,
+        label: node.label,
+        description: node.subtitle ?? '当前资料',
+        keywords: node.badge,
+        group: '当前资料',
+        icon: <FileText aria-hidden="true" />,
+        onSelect: () => handleNavigatorSelect(node),
+      })),
+  ];
+
   return (
     <main className="parse-shell parse-shell--workbench wl-workbench-enter">
       <WorkbenchShell
+        contextLabel={`${pkg?.documentIdentity?.documentCode ?? fileLabel} · ${WORKBENCH_TABS.find((tab) => tab.key === activeNode)?.label ?? '综合评估'}`}
         navigator={
           <NavigatorTree
             nodes={data.libraryIndex.nodes}
@@ -500,6 +546,7 @@ export default function DocumentParsingPage() {
           />
         }
         evidenceSignal={evidenceSignal}
+        quickOpenItems={quickOpenItems}
         tabs={WORKBENCH_TABS}
         activeTab={activeNode}
         mobileActiveTab={
@@ -1403,6 +1450,17 @@ export default function DocumentParsingPage() {
               <p>当前资料尚未提供可复核的逐项内容。</p>
             </div>
           )
+        ) : null}
+
+        {activeNode === 'review' ? (
+          <ContinuousReviewPanel
+            workItemId={workItemId}
+            workItemRevision={data.workItem.revision}
+            confirmationReceipt={continuousReviewReceipt}
+            onConfirmationReceipt={setContinuousReviewReceipt}
+            onLocateSourceRef={(sourceRef) => locateSourceRef(null, sourceRef)}
+            onWorkItemRefresh={() => load(activeQuery)}
+          />
         ) : null}
 
         {activeNode === 'overall' ? (

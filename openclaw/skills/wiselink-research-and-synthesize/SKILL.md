@@ -1,6 +1,6 @@
 ---
 name: wiselink-research-and-synthesize
-description: Orchestrate the single official hosted WiseLink engineering profile through the canonical Host MCP for INITIAL_ANALYSIS and INTERACTIVE_REVIEW. Preserve dynamic N/N tri-state semantics, SourceRef/currentness bindings, candidate-only authority, full fenced ResultEnvelope commits, and exact hosted provenance. Fail closed for missing applicability, attachment, search, compare, reevaluation, or resynthesis tools.
+description: Orchestrate the single official hosted WiseLink engineering profile through the canonical Host MCP for INITIAL_ANALYSIS and INTERACTIVE_REVIEW. Preserve applicability AST extraction, dynamic N/N tri-state semantics, SourceRef/currentness bindings, candidate-only authority, full fenced ResultEnvelope commits, and exact hosted provenance. Fail closed for missing attachment, search, compare, reevaluation, or resynthesis tools.
 ---
 
 # WiseLink R09 工程分析与交互复核
@@ -12,9 +12,9 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`GLM-5.1`
-- Skill：`wiselink-research-and-synthesize@r09.interactive-review.c2`
-- Host MCP：`wiselink-openclaw-engineering-assessment@1.1.0`
-- Host baseline：`00b8febe927b7bbfbdb43ced36863e5188464a76`
+- Skill：`wiselink-research-and-synthesize@r09.c4`
+- Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（exact 20 tools）
+- Host baseline：`df4bd1a5c0698c5fd56912fba1329a9283d990c6`
 
 上述值是执行合同，不是允许模型自报的标签。每次执行必须从托管运行时取得实际
 `modelVersion`、`promptVersion`、`skillVersion` 和 `toolVersions`，由 validator 校验后写入完整
@@ -40,24 +40,23 @@ ResultEnvelope。任何值缺失、fallback 不可见或与固定策略不符，
 
 每次只路由一个 Host 授权 operation：
 
-| Operation               | 当前工具路径                                                                                | 状态        |
-| ----------------------- | ------------------------------------------------------------------------------------------- | ----------- |
-| `TRANSLATE`             | `begin_translation` → model → `commit_translation_candidate`                                | 可执行      |
-| `EXTRACT_APPLICABILITY` | 无专用 begin/commit                                                                         | **BLOCKED** |
-| `EVALUATE_JOBAID`       | `begin_dynamic_evaluation` → model → `commit_dynamic_evaluation_candidate`                  | 可执行      |
-| `SYNTHESIZE_OVERALL`    | `begin_overall_synthesis` / `resume_overall_synthesis` → model → `commit_overall_candidate` | 可执行      |
+| Operation               | 当前工具路径                                                                                | 状态   |
+| ----------------------- | ------------------------------------------------------------------------------------------- | ------ |
+| `TRANSLATE`             | `begin_translation` → model → `commit_translation_candidate`                                | 可执行 |
+| `EXTRACT_APPLICABILITY` | `begin_applicability_evaluation` → AST model → `commit_applicability_candidate`             | 可执行 |
+| `EVALUATE_JOBAID`       | `begin_dynamic_evaluation` → model → `commit_dynamic_evaluation_candidate`                  | 可执行 |
+| `SYNTHESIZE_OVERALL`    | `begin_overall_synthesis` / `resume_overall_synthesis` → model → `commit_overall_candidate` | 可执行 |
 
-禁止把 `EVALUATE_JOBAID`、Reader 命中或 overall 中的文字解释成
-`EXTRACT_APPLICABILITY` 已完成。调用该 operation 必须返回
-`INITIAL_ANALYSIS_EXTRACT_APPLICABILITY_HOST_MCP_UNAVAILABLE`。
+`EXTRACT_APPLICABILITY` 只能走专用 applicability begin/commit；禁止把 `EVALUATE_JOBAID`、Reader 命中或
+overall 中的文字解释成适用性结果。
 
 ### 通用 begin / commit
 
 1. `get_parse_status({workItemId})` fresh-read 当前状态。
 2. 调对应 `begin_*`。校验 TaskEnvelope 的 schema、`inputHash`、taskType、operationRef、actual artifact
    ref/SHA、baseRevision 和 deadline。
-3. 若 status 为 `COMMITTING`，只校验并读取 Host 已持久化的 `recoveryResult`，再做一次只读 status
-   readback；不调用模型、不再次 commit。
+3. 若 status 为 `COMMITTING`，只调用一次 `get_action_attempt_status`，校验 Host 已持久化
+   `recoveryResult.contentHash == resultContentHash` 后返回；不调用模型、不再次 commit。
 4. 若 status 为 `RUNNING`，只把 authority-free `modelInput` 交给托管模型。
 5. 模型执行必须返回 `{output, provenance}`；provenance 必须是实际读数并通过固定版本 validator。
 6. 先验证 operation input/output pair，再构造完整
@@ -74,9 +73,9 @@ ResultEnvelope。任何值缺失、fallback 不可见或与固定策略不符，
 
 7. commit 后 fresh-read `get_parse_status`。Host 才负责 ResultGate、实际字节 persist/readback 和 WorkItem
    CAS；Skill 不声称这些步骤由模型完成。
-8. commit 响应未知时只做一次只读 readback，绝不 blind retry。只有 readback 能精确绑定同一
-   correlationRef 才可确认 dynamic/overall；translation 当前没有足够的精确 readback 字段，因此保持
-   `HOST_MCP_TRANSLATION_COMMIT_OUTCOME_UNKNOWN`。
+8. commit 响应未知时只调用一次 `get_action_attempt_status`。仅当同一 attempt 的
+   `resultContentHash` 与本次 sealed ResultEnvelope `contentHash` 精确一致时返回只读恢复；否则 outcome unknown，
+   绝不 blind retry。
 
 ### Translation
 
@@ -100,20 +99,37 @@ ResultEnvelope。任何值缺失、fallback 不可见或与固定策略不符，
 - `authorityLevel=candidate_only`、`engineeringConclusion=null`，不在此步骤产生 overall。
 - 完整输出目标小于 28,000 UTF-8 bytes；不能在保持 N/N 与语义的前提下满足时 fail closed。
 
-### Reader、适用性与 SourceRef
+### Applicability AST + Host evaluator
+
+- 入口只接收 Host opaque `applicabilityContextRef + requestId`；Host 派生 tenant/WorkItem/ACL 并冻结 current
+  DocumentVersion、frozen.2 SourceExpressions/SourceRefs、current bilingual SourceUnits、飞机号/asOf 与窄受控
+  Fleet facts。
+- begin 后只使用 Host `modelInput`；TaskEnvelope 中的 tenant/workItem/lease 等控制面字段不进入模型。
+- 模型只返回 `applicability_ast_candidate.v1` 的 `expressionId + sourceRefIds + expressionAst`；不返回
+  `applicabilityLevel`、`contentRef`、飞机匹配结论或 current。
+- Skill 用 Host modelInput 组装专属 `applicability_candidate.v1`；Host 才负责 target level/contentRef、唯一
+  FleetMasterData、Kleene evaluator、ResultGate、实际字节 readback、CAS/current。
+- Host 冻结 `hostResolvedMissingInputs` 时不调用模型，只原样提交 WAITING_INPUT；不得补造、删减或改写 missing/
+  conflict。
+- Applicability 的 WAITING_INPUT 只终结当前 applicability ActionAttempt，不终结整个 INITIAL_ANALYSIS。保持
+  UNKNOWN 后继续 Host 授权的 Dynamic N/N、Job-Aid 与 overall；不得把 UNKNOWN 改成 TRUE/FALSE，也不得用
+  dynamic/overall 文字冒充 applicability 结论。
+
+### Reader 与 SourceRef
 
 `query_parsed_package` 当前使用顶层 `resultCount` 与 `results[]`；每条至少含 `unitId`、`kind`、`text`、
 `sourceRefIds[]`。Reader/source-bound 命中仅是定位，不是 applicability assignment。
 
-即使出现 `737-8`、`737-9`、`737-8200` 或大量匹配，只有 Host 明确提供的非空
-`sourceExpressions`、`normalizedCandidates`、`assignments`、FleetFacts 或受控 predicates 才能改变
-适用性。缺失时保持 `UNKNOWN/WAITING_INPUT`。
+即使出现 `737-8`、`737-9`、`737-8200` 或大量命中，也只有专用 Applicability Host 路径能形成候选；Reader
+结果、dynamic 或 overall 文字不能替代它。
 
 ### Overall 与 gap-driven discovery
 
 - 先确认 Host 已落账完整 dynamic N/N，再以 `providers=[]` 运行无 discovery overall。
 - 输入必须包含同一 frozen.2 package、完整 N/N、当前 adopted DocumentVersions、脱敏 engineer-review
-  timeline/effective 和 Unified SourceRefs。
+  timeline/effective、Host `selectiveResynthesis` 摘要和 Unified SourceRefs。
+- 若飞机身份/机型已知但 AIMS-2 等受控构型事实未接入，仍执行 overall 模型并形成初步工程综合候选；候选必须
+  明示构型数据未接入、适用性为条件性 UNKNOWN、需要工程师或后续受控数据确认，且不得形成最终批准或发布。
 - 工程师 review 的同 criterion 多次记录由 Host 保留 history，并以最后一条为 effective；Skill 不重写
   ledger 或把 review 自动升级为批准。
 - 只在一个明确 gap 需要外部事实时，选择直接相关且已实现的官方 provider；不固定遍历三家 OEM。
@@ -188,8 +204,8 @@ tool 版本、run metrics、错误字段和 canonical SHA-256 `contentHash`。
 当前 validator 强制：
 
 - `modelVersion=GLM-5.1`
-- `skillVersion=wiselink-research-and-synthesize@r09.interactive-review.c2`
-- `toolVersions.wiselink-openclaw-engineering-assessment=1.1.0`
+- `skillVersion=wiselink-research-and-synthesize@r09.c4`
+- `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致
 
@@ -200,6 +216,8 @@ tool 版本、run metrics、错误字段和 canonical SHA-256 `contentHash`。
 
 ```bash
 node scripts/validate-payload.mjs dynamic-rules-input tests/fixtures/dynamic-rules-evaluation-737.input.json
+node scripts/validate-payload.mjs applicability-input tests/fixtures/applicability-task.c4.json
+node scripts/validate-payload.mjs applicability-ast-candidate tests/fixtures/applicability-ast-candidate.c4.json
 node scripts/validate-payload.mjs discovery-output references/discovery-access-denied.example.json
 node scripts/validate-payload.mjs synthesis-output references/synthesis-output.example.json
 node scripts/validate-payload.mjs review-task tests/fixtures/review-turn-task.c2.json

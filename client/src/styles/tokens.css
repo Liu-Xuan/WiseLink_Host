@@ -36,6 +36,8 @@
   --wl-g1-warm-rim: rgb(255 191 119 / 48%);
   --wl-g1-thickness: rgb(66 110 174 / 16%);
   --wl-g1-shadow: rgb(30 59 105 / 16%);
+  --wl-g1-contact-shadow: rgb(30 59 105 / 12%);
+  --wl-g1-space-shadow: rgb(30 59 105 / 17%);
 
   /* G2：比 G1 更稳、更远；内部子面不再 backdrop blur */
   --wl-g2-tint: rgb(249 252 255 / 74%);
@@ -44,6 +46,8 @@
   --wl-g2-cold-rim: rgb(93 151 232 / 34%);
   --wl-g2-warm-rim: rgb(240 177 111 / 24%);
   --wl-g2-shadow: rgb(42 67 108 / 11%);
+  --wl-g2-contact-shadow: rgb(42 67 108 / 8%);
+  --wl-g2-space-shadow: rgb(42 67 108 / 12%);
 
   /* G3/G4：不采样背景 */
   --wl-g3-highlight: rgb(255 255 255 / 68%);
@@ -75,6 +79,10 @@
   /* 模糊 */
   --wl-blur-nav: 28px;
   --wl-blur-panel: 20px;
+  --wl-blur-mobile: 24px;
+  --wl-saturation-nav: 158%;
+  --wl-saturation-panel: 134%;
+  --wl-saturation-mobile: 152%;
 
   /* 圆角 */
   --wl-radius-shell: 30px;
@@ -135,6 +143,8 @@ html[data-wl-theme='dark'] {
   --wl-g1-warm-rim: rgb(236 163 98 / 31%);
   --wl-g1-thickness: rgb(0 0 0 / 42%);
   --wl-g1-shadow: rgb(0 0 0 / 42%);
+  --wl-g1-contact-shadow: rgb(0 0 0 / 30%);
+  --wl-g1-space-shadow: rgb(0 0 0 / 44%);
 
   --wl-g2-tint: rgb(20 31 48 / 74%);
   --wl-g2-tint-strong: rgb(28 42 61 / 78%);
@@ -142,6 +152,8 @@ html[data-wl-theme='dark'] {
   --wl-g2-cold-rim: rgb(76 139 232 / 31%);
   --wl-g2-warm-rim: rgb(221 151 91 / 19%);
   --wl-g2-shadow: rgb(0 0 0 / 30%);
+  --wl-g2-contact-shadow: rgb(0 0 0 / 20%);
+  --wl-g2-space-shadow: rgb(0 0 0 / 32%);
 
   --wl-g3-highlight: rgb(220 236 255 / 12%);
   --wl-g3-shadow: rgb(0 0 0 / 28%);
@@ -157,4 +169,55 @@ html[data-wl-theme='dark'] {
 
   --wl-shadow-1: 0 16px 38px var(--wl-g3-shadow);
   --wl-shadow-2: 0 30px 86px rgb(0 0 0 / 40%);
+}
+
+/* R05.5 Refined Ultra：更精细的材质，不改变页面结构或内容密度。 */
+html[data-wl-visual-mode='ultra'] {
+  --wl-blur-nav: 32px;
+  --wl-blur-panel: 21px;
+  --wl-blur-mobile: 28px;
+  --wl-saturation-nav: 168%;
+  --wl-saturation-panel: 138%;
+  --wl-saturation-mobile: 162%;
+  --wl-g1-tint: rgb(250 252 255 / 54%);
+  --wl-g1-tint-strong: rgb(255 255 255 / 70%);
+  --wl-g1-highlight: rgb(255 255 255 / 96%);
+  --wl-g1-cold-rim: rgb(70 146 255 / 72%);
+  --wl-g1-warm-rim: rgb(255 181 102 / 57%);
+  --wl-g1-thickness: rgb(53 98 168 / 22%);
+  --wl-g1-contact-shadow: rgb(35 71 126 / 15%);
+  --wl-g1-space-shadow: rgb(31 68 125 / 22%);
+  --wl-g2-tint: rgb(249 252 255 / 78%);
+  --wl-g2-tint-strong: rgb(255 255 255 / 84%);
+  --wl-g2-highlight: rgb(255 255 255 / 70%);
+  --wl-g2-contact-shadow: rgb(42 67 108 / 8%);
+  --wl-g2-space-shadow: rgb(42 67 108 / 13%);
+}
+
+html[data-wl-theme='dark'][data-wl-visual-mode='ultra'] {
+  --wl-g1-tint: rgb(14 24 40 / 58%);
+  --wl-g1-tint-strong: rgb(35 49 70 / 69%);
+  --wl-g1-highlight: rgb(232 244 255 / 40%);
+  --wl-g1-cold-rim: rgb(65 143 255 / 62%);
+  --wl-g1-warm-rim: rgb(242 158 89 / 40%);
+  --wl-g1-thickness: rgb(0 0 0 / 54%);
+  --wl-g1-contact-shadow: rgb(0 0 0 / 38%);
+  --wl-g1-space-shadow: rgb(0 0 0 / 54%);
+  --wl-g2-tint: rgb(18 29 46 / 77%);
+  --wl-g2-tint-strong: rgb(31 45 65 / 82%);
+  --wl-g2-highlight: rgb(220 237 255 / 26%);
+  --wl-g2-contact-shadow: rgb(0 0 0 / 24%);
+  --wl-g2-space-shadow: rgb(0 0 0 / 36%);
+}
+
+/* 兼容模式保留同一色彩、圆角和景深，但不采样背景。 */
+html[data-wl-visual-mode='compatible'] {
+  --wl-g1-tint: var(--wl-reduced-g1);
+  --wl-g1-tint-strong: var(--wl-reduced-g1);
+  --wl-g2-tint: var(--wl-reduced-g2);
+  --wl-g2-tint-strong: var(--wl-reduced-g2);
+  --wl-g1-contact-shadow: rgb(30 59 105 / 8%);
+  --wl-g1-space-shadow: rgb(30 59 105 / 13%);
+  --wl-g2-contact-shadow: rgb(42 67 108 / 6%);
+  --wl-g2-space-shadow: rgb(42 67 108 / 9%);
 }

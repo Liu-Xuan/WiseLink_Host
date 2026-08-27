@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import type { Request } from 'express';
 
 import type {
+  AppendReviewTextTurnRequest,
   AppendReviewTextTurnResponse,
   CloseReviewConversationResponse,
   CreateOrResumeReviewConversationResponse,
@@ -22,6 +23,8 @@ import {
   type PersistedReviewConversationAggregate,
   type PersistedReviewTurn,
 } from './review-conversation.repository';
+import { ReviewAttachmentService } from './review-attachment.service';
+import type { ReviewAttachmentBinding } from './review-attachment.types';
 
 @Injectable()
 export class ReviewConversationService {
@@ -30,6 +33,7 @@ export class ReviewConversationService {
     @Inject(CANONICAL_OBJECT_ACCESS)
     private readonly objectAccess: CanonicalObjectAccessPort,
     private readonly conversations: ReviewConversationRepository,
+    private readonly attachments: ReviewAttachmentService,
   ) {}
 
   async createOrResume(
@@ -48,7 +52,7 @@ export class ReviewConversationService {
       currentRevision: authorized.grant.workItemRevision,
     });
     return {
-      conversation: readModel(
+      conversation: reviewConversationReadModel(
         result.aggregate,
         authorized.grant.workItemRevision,
       ),
@@ -73,7 +77,10 @@ export class ReviewConversationService {
       });
     return {
       conversation: aggregate
-        ? readModel(aggregate, authorized.grant.workItemRevision)
+        ? reviewConversationReadModel(
+            aggregate,
+            authorized.grant.workItemRevision,
+          )
         : null,
       currentWorkItemRevision: authorized.grant.workItemRevision,
     };
@@ -82,7 +89,7 @@ export class ReviewConversationService {
   async appendTextTurn(
     workItemId: string,
     reviewConversationId: string,
-    input: { requestId: string; userMessage: string },
+    input: AppendReviewTextTurnRequest,
     request: Request,
   ): Promise<AppendReviewTextTurnResponse> {
     const authorized: AuthorizedReviewAccess = await this.authorize(
@@ -97,17 +104,82 @@ export class ReviewConversationService {
       throw reviewConflict('REVIEW_CONVERSATION_CLOSED');
     }
 
-    const appended = await this.conversations.appendTextTurn({
+    const replay: PersistedReviewTurn | undefined = existing.turns.find(
+      (turn: PersistedReviewTurn) => turn.requestId === input.requestId,
+    );
+    if (replay) {
+      assertAttachmentReplay(replay, input.attachmentSelection);
+      return this.appendAndReadback({
+        authorized,
+        conversation: existing.conversation,
+        requestId: input.requestId,
+        userMessage: input.userMessage,
+        attachmentBindings: replay.attachmentBindings,
+      });
+    }
+
+    let attachmentBindings: ReviewAttachmentBinding[] = [];
+    if (input.attachmentSelection) {
+      const attachmentGrant: AuthorizedReviewAccess =
+        await this.authorizeAttachment(
+          authorized.session,
+          workItemId,
+          authorized.grant.workItemRevision,
+        );
+      assertSameGrant(authorized, attachmentGrant);
+      const attachment: ReviewAttachmentBinding = await this.attachments.ingest(
+        {
+          selection: input.attachmentSelection,
+          requestId: input.requestId,
+          conversation: existing.conversation,
+          session: authorized.session,
+          grant: attachmentGrant.grant,
+        },
+      );
+      const afterIngest: AuthorizedReviewAccess = await this.authorize(
+        request,
+        workItemId,
+        'RECORD_ENGINEER_REVIEW',
+      );
+      assertSameGrant(authorized, afterIngest);
+      if (
+        afterIngest.grant.workItemRevision !== authorized.grant.workItemRevision
+      ) {
+        throw reviewConflict('REVIEW_ATTACHMENT_WORK_ITEM_STALE');
+      }
+      attachmentBindings = [attachment];
+    }
+    return this.appendAndReadback({
+      authorized,
       conversation: existing.conversation,
       requestId: input.requestId,
       userMessage: input.userMessage,
-      currentRevision: authorized.grant.workItemRevision,
+      attachmentBindings,
+    });
+  }
+
+  private async appendAndReadback(input: {
+    authorized: AuthorizedReviewAccess;
+    conversation: PersistedReviewConversation;
+    requestId: string;
+    userMessage: string;
+    attachmentBindings: ReviewAttachmentBinding[];
+  }): Promise<AppendReviewTextTurnResponse> {
+    const appended = await this.conversations.appendTextTurn({
+      conversation: input.conversation,
+      requestId: input.requestId,
+      userMessage: input.userMessage,
+      currentRevision: input.authorized.grant.workItemRevision,
+      attachmentBindings: input.attachmentBindings,
     });
     const aggregate: PersistedReviewConversationAggregate =
-      await this.requiredConversation(reviewConversationId);
+      await this.requiredConversation(input.conversation.reviewConversationId);
     return {
-      conversation: readModel(aggregate, authorized.grant.workItemRevision),
-      turn: turnReadModel(appended.turn),
+      conversation: reviewConversationReadModel(
+        aggregate,
+        input.authorized.grant.workItemRevision,
+      ),
+      turn: reviewTurnReadModel(appended.turn),
       replayed: appended.replayed,
     };
   }
@@ -130,7 +202,7 @@ export class ReviewConversationService {
       currentRevision: authorized.grant.workItemRevision,
     });
     return {
-      conversation: readModel(
+      conversation: reviewConversationReadModel(
         closed.aggregate,
         authorized.grant.workItemRevision,
       ),
@@ -178,6 +250,35 @@ export class ReviewConversationService {
     }
     return { session, grant: result };
   }
+
+  private async authorizeAttachment(
+    session: ResolvedSession,
+    workItemId: string,
+    expectedWorkItemRevision: number,
+  ): Promise<AuthorizedReviewAccess> {
+    const result = await this.objectAccess.freshRead({
+      actor: session.actor,
+      action: 'INGEST_ATTACHMENT_SINGLE_REQUEST',
+      accessRoot: { kind: 'WORK_ITEM', id: workItemId },
+      expectedWorkItemRevision,
+    });
+    if (result.allowed === false) {
+      throw Object.assign(new Error(result.code), {
+        code: result.code,
+        statusCode: result.statusCode,
+      });
+    }
+    if (
+      result.action !== 'INGEST_ATTACHMENT_SINGLE_REQUEST' ||
+      result.workItemId !== workItemId ||
+      result.tenantId !== session.actor.tenantId ||
+      result.actorUserId !== session.actor.canonicalSubject.id ||
+      result.workItemRevision !== expectedWorkItemRevision
+    ) {
+      throw reviewNotFound();
+    }
+    return { session, grant: result };
+  }
 }
 
 interface AuthorizedReviewAccess {
@@ -199,7 +300,7 @@ function assertConversationBinding(
   }
 }
 
-function readModel(
+export function reviewConversationReadModel(
   aggregate: PersistedReviewConversationAggregate,
   currentWorkItemRevision: number,
 ): ReviewConversationReadModel {
@@ -218,12 +319,17 @@ function readModel(
     lastActiveAt: conversation.lastActiveAt.toISOString(),
     closedAt: conversation.closedAt?.toISOString() ?? null,
     turns: aggregate.turns.map((turn: PersistedReviewTurn) =>
-      turnReadModel(turn),
+      reviewTurnReadModel(turn),
     ),
   };
 }
 
-function turnReadModel(turn: PersistedReviewTurn): ReviewTurnReadModel {
+export function reviewTurnReadModel(
+  turn: PersistedReviewTurn,
+): ReviewTurnReadModel {
+  const attachmentRefs: string[] = (turn.attachmentBindings ?? []).map(
+    (attachment: ReviewAttachmentBinding) => attachment.attachmentRef,
+  );
   return {
     reviewTurnId: turn.reviewTurnId,
     turnNo: turn.turnNo,
@@ -235,12 +341,43 @@ function turnReadModel(turn: PersistedReviewTurn): ReviewTurnReadModel {
       inputType: 'ENGINEER_TEXT',
       adoptionStatus: 'CANDIDATE_UNADOPTED',
       text: turn.candidateText,
+      attachmentRefs: [...attachmentRefs],
     },
+    attachmentRefs,
     assistantCandidate: turn.assistantCandidate
       ? structuredClone(turn.assistantCandidate)
       : null,
     createdAt: turn.createdAt.toISOString(),
   };
+}
+
+function assertAttachmentReplay(
+  turn: PersistedReviewTurn,
+  selection: AppendReviewTextTurnRequest['attachmentSelection'],
+): void {
+  const selectedKeys: string[] = selection
+    ? [`${selection.bucketId}\n${selection.filePath}`]
+    : [];
+  const storedKeys: string[] = turn.attachmentBindings.map(
+    (attachment: ReviewAttachmentBinding) => attachment.selectionKey,
+  );
+  if (JSON.stringify(selectedKeys) !== JSON.stringify(storedKeys)) {
+    throw reviewConflict('REVIEW_TURN_IDEMPOTENCY_CONFLICT');
+  }
+}
+
+function assertSameGrant(
+  expected: AuthorizedReviewAccess,
+  actual: AuthorizedReviewAccess,
+): void {
+  if (
+    expected.grant.workItemId !== actual.grant.workItemId ||
+    expected.grant.tenantId !== actual.grant.tenantId ||
+    expected.grant.actorUserId !== actual.grant.actorUserId ||
+    expected.session.session.id !== actual.session.session.id
+  ) {
+    throw reviewNotFound();
+  }
 }
 
 function sessionRequired(): Error & { code: string; statusCode: number } {

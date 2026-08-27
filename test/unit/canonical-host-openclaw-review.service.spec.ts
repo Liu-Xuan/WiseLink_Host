@@ -16,6 +16,7 @@ import type {
 } from '../../server/modules/action-attempt/action-attempt.types';
 import { REVIEW_SKILL_POLICY_REF } from '../../server/modules/canonical-host/canonical-host-openclaw-review.contract';
 import { CanonicalHostOpenClawReviewService } from '../../server/modules/canonical-host/canonical-host-openclaw-review.service';
+import { encodeReviewAttachmentParsedArtifact } from '../../server/modules/review-persistence/review-attachment-artifact';
 
 describe('CanonicalHostOpenClawReviewService', () => {
   it('derives the user/work item/revision from C1 persistence and freezes exact SourceRefs', async () => {
@@ -62,26 +63,40 @@ describe('CanonicalHostOpenClawReviewService', () => {
     });
   });
 
-  it('returns the durable COMMITTING recovery envelope without a currentness write', async () => {
-    const harness = reviewHarness();
+  it('binds parsed attachment actual bytes and current EngineerSuppliedInput into the C2 task', async () => {
+    const harness = reviewHarness(true);
     const begin = await harness.service.begin('RC-1', 'request-1');
-    const result = harness.result(begin.task, {
-      'wiselink-openclaw-engineering-assessment': '1.1.0',
+    expect(begin.task.modelInput).toMatchObject({
+      attachmentRefs: ['ATTACHMENT-1'],
+      allowedAdoptedInputRefs: expect.arrayContaining([
+        'engineer-input:ESI-1',
+        'ATTACHMENT-1',
+      ]),
+      context: {
+        engineerInput: {
+          inputRef: 'engineer-input:ESI-1',
+          text: 'Please review rule 1.',
+          attachmentRefs: ['ATTACHMENT-1'],
+        },
+      },
     });
-    harness.setCommittingRecovery(result);
-
-    await expect(
-      harness.service.status(begin.attemptRef),
-    ).resolves.toMatchObject({
-      attemptRef: 'AQ-REVIEW-1',
-      status: 'COMMITTING',
-      recoveryAvailable: true,
-      projectionApplied: false,
-      recoveryResult: result,
+    const attachmentSource = (
+      begin.task.modelInput.resourceRefs as Array<Record<string, unknown>>
+    ).find((ref) => ref.sourceRefId === 'ATTACHMENT-1');
+    expect(attachmentSource).toMatchObject({
+      value: {
+        kind: 'ENGINEER_ATTACHMENT',
+        fileName: 'engineering-note.pdf',
+        pages: [{ page: 1, text: 'Parsed engineering attachment.' }],
+      },
     });
-    expect(harness.workItems.loadTenantScopedProjection).toHaveBeenCalledTimes(
-      1,
+    expect(JSON.stringify(begin.task.modelInput)).not.toContain(
+      'official-selection/',
     );
+    expect(begin.task.sourceRefs).toContainEqual({
+      ref: 'artifact://review-attachment',
+      sha256: 'e'.repeat(64),
+    });
   });
 
   it('rejects missing actual provenance before ActionAttempt or review mutation', async () => {
@@ -96,7 +111,7 @@ describe('CanonicalHostOpenClawReviewService', () => {
         begin.leaseGeneration,
         result,
       ),
-    ).rejects.toThrow('REVIEW_RESULT_PROVENANCE_INVALID');
+    ).rejects.toThrow('OPENCLAW_RESULT_RUNTIME_POLICY_MISMATCH');
     expect(harness.attempts.prepareCommit).not.toHaveBeenCalled();
     expect(
       harness.conversations.persistAssistantCandidate,
@@ -108,7 +123,7 @@ describe('CanonicalHostOpenClawReviewService', () => {
     const begin = await harness.service.begin('RC-1', 'request-1');
     const result = harness.result(
       begin.task,
-      { 'wiselink-openclaw-engineering-assessment': '1.1.0' },
+      { 'wiselink-openclaw-engineering-assessment': '1.2.0' },
       'wiselink-research-and-synthesize.v1',
     );
 
@@ -119,7 +134,7 @@ describe('CanonicalHostOpenClawReviewService', () => {
         begin.leaseGeneration,
         result,
       ),
-    ).rejects.toThrow('REVIEW_RESULT_PROVENANCE_INVALID');
+    ).rejects.toThrow('OPENCLAW_RESULT_RUNTIME_POLICY_MISMATCH');
     expect(harness.attempts.prepareCommit).not.toHaveBeenCalled();
     expect(
       harness.conversations.persistAssistantCandidate,
@@ -130,7 +145,7 @@ describe('CanonicalHostOpenClawReviewService', () => {
     const harness = reviewHarness();
     const begin = await harness.service.begin('RC-1', 'request-1');
     const result = harness.result(begin.task, {
-      'wiselink-openclaw-engineering-assessment': '1.1.0',
+      'wiselink-openclaw-engineering-assessment': '1.2.0',
     });
 
     const committed = await harness.service.commit(
@@ -165,7 +180,7 @@ describe('CanonicalHostOpenClawReviewService', () => {
     const begin = await harness.service.begin('RC-1', 'request-1');
     harness.expireLease();
     const result = harness.result(begin.task, {
-      'wiselink-openclaw-engineering-assessment': '1.1.0',
+      'wiselink-openclaw-engineering-assessment': '1.2.0',
     });
 
     await expect(
@@ -183,7 +198,7 @@ describe('CanonicalHostOpenClawReviewService', () => {
   });
 });
 
-function reviewHarness() {
+function reviewHarness(withAttachment = false) {
   const workItem = parsedWorkItem();
   const conversation = {
     reviewConversationId: 'RC-1',
@@ -210,6 +225,26 @@ function reviewHarness() {
     inputType: 'ENGINEER_TEXT',
     adoptionStatus: 'CANDIDATE_UNADOPTED',
     candidateText: 'Please review rule 1.',
+    attachmentBindings: withAttachment
+      ? [
+          {
+            attachmentRef: 'ATTACHMENT-1',
+            documentVersionId: 'DV-ATTACHMENT-1',
+            fileName: 'engineering-note.pdf',
+            mediaType: 'application/pdf',
+            byteLength: 321,
+            selectionKey:
+              'default-bucket\nofficial-selection/engineering-note.pdf',
+            parsedArtifact: {
+              storeRole: 'UnifiedArtifactStoreCandidate',
+              ref: 'artifact://review-attachment',
+              sha256: 'e'.repeat(64),
+              byteLength: 200,
+              mediaType: 'application/json',
+            },
+          },
+        ]
+      : [],
     assistantCandidate: null,
     createdAt: new Date('2026-08-26T10:01:00.000Z'),
   };
@@ -322,15 +357,28 @@ function reviewHarness() {
     projectTerminal: jest.fn(),
   };
   const artifactStore = {
-    readActualBytes: jest.fn(async () =>
-      new TextEncoder().encode(
-        JSON.stringify({
-          sourceRefs: [
-            { sourceRefId: 'SRC-1', pageStart: 1, pageEnd: 1 },
-            { sourceRefId: 'SRC-UNUSED', pageStart: 2, pageEnd: 2 },
-          ],
-        }),
-      ),
+    readActualBytes: jest.fn(async (artifact: { ref: string }) =>
+      artifact.ref === 'artifact://review-attachment'
+        ? encodeReviewAttachmentParsedArtifact({
+            schemaVersion: 'wiselink.3_1.review_attachment_parse.v1.c7',
+            attachmentRef: 'ATTACHMENT-1',
+            workItemId: 'WI-1',
+            reviewConversationId: 'RC-1',
+            documentVersionId: 'DV-ATTACHMENT-1',
+            fileName: 'engineering-note.pdf',
+            mediaType: 'application/pdf',
+            byteLength: 321,
+            pageCount: 1,
+            pages: [{ page: 1, text: 'Parsed engineering attachment.' }],
+          })
+        : new TextEncoder().encode(
+            JSON.stringify({
+              sourceRefs: [
+                { sourceRefId: 'SRC-1', pageStart: 1, pageEnd: 1 },
+                { sourceRefId: 'SRC-UNUSED', pageStart: 2, pageEnd: 2 },
+              ],
+            }),
+          ),
     ),
   };
   const serviceScope = {
@@ -357,15 +405,6 @@ function reviewHarness() {
       row = {
         ...row!,
         leaseExpiresAt: new Date('2020-01-01T00:00:00.000Z'),
-      };
-    },
-    setCommittingRecovery(result: OpenClawResultEnvelope) {
-      row = {
-        ...row!,
-        status: 'COMMITTING',
-        resultEnvelopeJson: JSON.stringify(result),
-        resultContentHash: result.contentHash,
-        commitStartedAt: new Date('2026-08-26T10:02:00.000Z'),
       };
     },
     result(

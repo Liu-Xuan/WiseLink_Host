@@ -6,17 +6,20 @@ import {
   WISELINK_HOST_MCP_NAME,
   WISELINK_HOST_MCP_VERSION,
   WISELINK_MODEL_VERSION,
+  WISELINK_APPLICABILITY_PROMPT_VERSION,
   WISELINK_SKILL_VERSION,
+  buildApplicabilityCandidate,
   canonicalSha256,
   sealResultEnvelope,
   validatePayload,
   validateReviewCandidate,
 } from '../scripts/validate-payload.mjs';
 import {
-  EXTRACT_APPLICABILITY_BLOCKER,
+  HOST_MCP_TOOLS,
   INITIAL_ANALYSIS_OPERATIONS,
   INTERACTIVE_REVIEW_TOOLS,
   runDynamicEvaluation,
+  runApplicabilityEvaluation,
   runInitialAnalysis,
   runInteractiveReviewTurn,
   runOverallSynthesis,
@@ -36,13 +39,21 @@ const REVIEW_CANDIDATE_FIXTURE_URL = new URL(
   './fixtures/review-turn-candidate.c2.json',
   import.meta.url,
 );
+const APPLICABILITY_TASK_FIXTURE_URL = new URL(
+  './fixtures/applicability-task.c4.json',
+  import.meta.url,
+);
+const APPLICABILITY_AST_FIXTURE_URL = new URL(
+  './fixtures/applicability-ast-candidate.c4.json',
+  import.meta.url,
+);
 
 const ARTIFACT_REF = 'artifact://fixture/frozen-package';
 const ARTIFACT_SHA = 'b'.repeat(64);
 const LEASE_TOKEN = '9bc7de9d-1e86-4c12-8e78-e27cce3aa0d4';
 const WORK_ITEM_ID = 'WI-CONTROL-001';
 
-test('pins exact C2 modes, five review tools, and hosted provenance', () => {
+test('pins exact20 MCP 1.2, five review tools, and hosted provenance', () => {
   assert.deepEqual(INITIAL_ANALYSIS_OPERATIONS, [
     'TRANSLATE',
     'EXTRACT_APPLICABILITY',
@@ -56,21 +67,397 @@ test('pins exact C2 modes, five review tools, and hosted provenance', () => {
     'get_action_attempt_status',
     'commit_review_turn_candidate',
   ]);
+  assert.equal(HOST_MCP_TOOLS.length, 20);
+  assert.equal(new Set(HOST_MCP_TOOLS).size, 20);
+  assert.ok(HOST_MCP_TOOLS.includes('begin_applicability_evaluation'));
+  assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.interactive-review.c2',
+    'wiselink-research-and-synthesize@r09.c4',
   );
   assert.equal(WISELINK_MODEL_VERSION, 'GLM-5.1');
-  assert.equal(WISELINK_HOST_MCP_VERSION, '1.1.0');
+  assert.equal(WISELINK_HOST_MCP_VERSION, '1.2.0');
 });
 
-test('keeps EXTRACT_APPLICABILITY as an explicit fail-closed blocker', async () => {
-  await assert.rejects(
-    runInitialAnalysis({
-      mode: 'INITIAL_ANALYSIS',
-      operation: 'EXTRACT_APPLICABILITY',
+test('runs real applicability AST extraction through dedicated begin/commit', async () => {
+  const input = await readJson(APPLICABILITY_TASK_FIXTURE_URL);
+  const astCandidate = await readJson(APPLICABILITY_AST_FIXTURE_URL);
+  const task = makeTask('OPENCLAW_APPLICABILITY_EVALUATION', input);
+  const begin = runningBegin(task, { modelInput: input });
+  const calls = [];
+  let modelInput;
+  const callTool = async (name, args) => {
+    calls.push({ name, args });
+    if (name === 'begin_applicability_evaluation') return begin;
+    if (name === 'get_parse_status') return status(WORK_ITEM_ID);
+    if (name === 'commit_applicability_candidate') {
+      validatePayload('result-envelope', { task, result: args.result });
+      const candidate = JSON.parse(args.result.modelOutput);
+      assert.equal(
+        candidate.schemaVersion,
+        'wiselink.3_1.applicability_candidate.v1',
+      );
+      assert.equal(candidate.expressions.length, 1);
+      assert.equal(
+        Object.hasOwn(candidate.expressions[0], 'applicabilityLevel'),
+        false,
+      );
+      assert.equal(
+        Object.hasOwn(candidate.expressions[0], 'contentRef'),
+        false,
+      );
+      assert.equal(args.attemptRef, task.operationRef);
+      assert.equal(args.leaseToken, LEASE_TOKEN);
+      assert.equal(args.leaseGeneration, 3);
+      return {
+        workItemId: WORK_ITEM_ID,
+        workItemRevision: 8,
+        status: 'CANDIDATE_ONLY',
+        applicability: {
+          status: 'CANDIDATE_ONLY',
+          actionAttemptId: task.actionAttemptId,
+        },
+      };
+    }
+    if (name === 'get_deep_link') {
+      return { workItemId: WORK_ITEM_ID, deepLink: '/work-item/fixture' };
+    }
+    throw new Error(`UNEXPECTED_TOOL:${name}`);
+  };
+  const result = await runInitialAnalysis({
+    mode: 'INITIAL_ANALYSIS',
+    operation: 'EXTRACT_APPLICABILITY',
+    applicabilityContextRef: input.applicabilityContextRef,
+    requestId: 'REQ-applicability-001',
+    callTool,
+    extractApplicability: async (value) => {
+      modelInput = value;
+      return {
+        output: astCandidate,
+        provenance: applicabilityProvenance(),
+      };
+    },
+  });
+  assert.equal(result.outcome, 'CANDIDATE_ONLY');
+  assert.equal(Object.hasOwn(modelInput, 'tenantId'), false);
+  assert.equal(Object.hasOwn(modelInput, 'workItemId'), false);
+  assert.deepEqual(
+    calls.map(({ name }) => name),
+    [
+      'begin_applicability_evaluation',
+      'get_parse_status',
+      'commit_applicability_candidate',
+      'get_parse_status',
+      'get_deep_link',
+    ],
+  );
+});
+
+test('propagates only Host-frozen applicability missing input without a model call', async () => {
+  const input = await readJson(APPLICABILITY_TASK_FIXTURE_URL);
+  const missingInputs = [
+    {
+      code: 'FLEET_MISSING_CONTROLLED_FACT_fixture',
+      message: 'Controlled aircraft fact is missing.',
+    },
+  ];
+  const task = makeTask(
+    'OPENCLAW_APPLICABILITY_EVALUATION',
+    input,
+    missingInputs,
+  );
+  const begin = runningBegin(task, { modelInput: input });
+  let modelCallCount = 0;
+  const calls = [];
+  const callTool = async (name, args) => {
+    calls.push(name);
+    if (name === 'begin_applicability_evaluation') return begin;
+    if (name === 'get_parse_status') return status(WORK_ITEM_ID);
+    if (name === 'commit_applicability_candidate') {
+      assert.equal(args.result.status, 'WAITING_INPUT');
+      assert.deepEqual(args.result.missingInputs, missingInputs);
+      assert.deepEqual(args.result.conflicts, []);
+      assert.equal(args.result.modelOutput, null);
+      return {
+        attemptRef: task.operationRef,
+        status: 'WAITING_INPUT',
+        projectionApplied: false,
+        terminalReason: 'HOST_RESOLVED_MISSING_INPUT',
+      };
+    }
+    if (name === 'get_deep_link') return { deepLink: '/work-item/fixture' };
+    throw new Error(`UNEXPECTED_TOOL:${name}`);
+  };
+  const result = await runApplicabilityEvaluation({
+    applicabilityContextRef: input.applicabilityContextRef,
+    requestId: 'REQ-applicability-waiting',
+    callTool,
+    extractApplicability: async () => {
+      modelCallCount += 1;
+      throw new Error('MODEL_MUST_NOT_RUN');
+    },
+    runtimeProvenance: applicabilityProvenance({
+      runMetrics: { durationMs: 0, inputUnits: 0, outputUnits: 0 },
     }),
-    new RegExp(EXTRACT_APPLICABILITY_BLOCKER, 'u'),
+  });
+  assert.equal(result.outcome, 'WAITING_INPUT');
+  assert.equal(modelCallCount, 0);
+  assert.equal(
+    calls.filter((name) => name === 'commit_applicability_candidate').length,
+    1,
+  );
+});
+
+test('continues INITIAL_ANALYSIS from AIMS-2 WAITING to preliminary overall', async () => {
+  const applicabilityInput = await readJson(APPLICABILITY_TASK_FIXTURE_URL);
+  const missingInputs = [
+    {
+      code: 'FLEET_MISSING_CONTROLLED_FACT_EQUIPMENTMODELINSTALLED_AIMS2',
+      message:
+        'Controlled Fleet fact equipmentModelInstalled[AIMS2] is unavailable for aircraft B-1266 as of 2026-08-27.',
+    },
+  ];
+  const applicabilityTask = makeTask(
+    'OPENCLAW_APPLICABILITY_EVALUATION',
+    applicabilityInput,
+    missingInputs,
+  );
+  let applicabilityModelCalls = 0;
+  const applicability = await runInitialAnalysis({
+    mode: 'INITIAL_ANALYSIS',
+    operation: 'EXTRACT_APPLICABILITY',
+    applicabilityContextRef: applicabilityInput.applicabilityContextRef,
+    requestId: 'REQ-applicability-aims2-waiting',
+    callTool: async (name, args) => {
+      if (name === 'begin_applicability_evaluation') {
+        return runningBegin(applicabilityTask, {
+          modelInput: applicabilityInput,
+        });
+      }
+      if (name === 'get_parse_status') return status(WORK_ITEM_ID);
+      if (name === 'commit_applicability_candidate') {
+        validatePayload('result-envelope', {
+          task: applicabilityTask,
+          result: args.result,
+        });
+        return {
+          attemptRef: applicabilityTask.operationRef,
+          status: 'WAITING_INPUT',
+          projectionApplied: false,
+          terminalReason: 'HOST_RESOLVED_MISSING_INPUT',
+        };
+      }
+      if (name === 'get_deep_link') {
+        return { workItemId: WORK_ITEM_ID, deepLink: '/work-item/fixture' };
+      }
+      throw new Error(`UNEXPECTED_TOOL:${name}`);
+    },
+    extractApplicability: async () => {
+      applicabilityModelCalls += 1;
+      throw new Error('MODEL_MUST_NOT_RUN');
+    },
+    runtimeProvenance: applicabilityProvenance({
+      runMetrics: { durationMs: 0, inputUnits: 0, outputUnits: 0 },
+    }),
+  });
+  assert.equal(applicability.ok, true);
+  assert.equal(applicability.outcome, 'WAITING_INPUT');
+  assert.equal(applicabilityModelCalls, 0);
+
+  const dynamicInput = await readJson(DYNAMIC_FIXTURE_URL);
+  const dynamicOutput = buildDynamicRulesOutput(dynamicInput);
+  const dynamicTask = makeTask('OPENCLAW_DYNAMIC_EVALUATION', dynamicInput);
+  let dynamicModelCalls = 0;
+  const dynamic = await runInitialAnalysis({
+    mode: 'INITIAL_ANALYSIS',
+    operation: 'EVALUATE_JOBAID',
+    workItemId: WORK_ITEM_ID,
+    callTool: async (name, args) => {
+      if (name === 'get_parse_status') return status(WORK_ITEM_ID);
+      if (name === 'begin_dynamic_evaluation') {
+        return runningBegin(dynamicTask, { modelInput: dynamicInput });
+      }
+      if (name === 'commit_dynamic_evaluation_candidate') {
+        validatePayload('result-envelope', {
+          task: dynamicTask,
+          result: args.result,
+        });
+        return {
+          workItemId: WORK_ITEM_ID,
+          workItemRevision: 8,
+          status: 'BASE_RULE_CANDIDATE_READY',
+        };
+      }
+      if (name === 'get_deep_link') {
+        return { workItemId: WORK_ITEM_ID, deepLink: '/work-item/fixture' };
+      }
+      throw new Error(`UNEXPECTED_TOOL:${name}`);
+    },
+    evaluateDynamicRules: async () => {
+      dynamicModelCalls += 1;
+      return { output: dynamicOutput, provenance: provenance() };
+    },
+  });
+  assert.equal(dynamic.outcome, 'CANDIDATE_ONLY');
+  assert.equal(dynamicModelCalls, 1);
+
+  const overallInput = synthesisInput();
+  overallInput.baseRuleResult.items[0].missingInputs = [
+    missingInputs[0].message,
+  ];
+  const overallOutput = synthesisOutput(overallInput);
+  overallOutput.gap = 'AIMS-2 configuration data is not connected.';
+  overallOutput.overallCandidate =
+    '飞机身份和机型已知；AIMS-2 构型数据未接入，适用性保持条件性未知，需工程师或后续受控数据确认；当前可形成初步工程综合候选，但不得最终批准或发布。';
+  overallOutput.findings[0] = {
+    finding: '飞机身份和机型已知，AIMS-2 构型状态未知。',
+    basis: 'Dynamic N/N and frozen.2 SourceRef',
+    sourceRefIds: [overallInput.unifiedSourceContext.sourceRefs[0].sourceRefId],
+    assumptions: [],
+    uncertainty: 'AIMS-2 构型数据未接入，适用性需人工或后续数据确认。',
+  };
+  overallOutput.missingInputs = [missingInputs[0].message];
+  const overallTask = makeTask('OPENCLAW_OVERALL_SYNTHESIS', {
+    modelInput: overallInput,
+    selectedDiscoveryRefs: [],
+    providerCodes: [],
+  });
+  let overallStatusReads = 0;
+  let overallModelCalls = 0;
+  const overall = await runInitialAnalysis({
+    mode: 'INITIAL_ANALYSIS',
+    operation: 'SYNTHESIZE_OVERALL',
+    workItemId: WORK_ITEM_ID,
+    providers: [],
+    callTool: async (name, args) => {
+      if (name === 'get_parse_status') {
+        overallStatusReads += 1;
+        return overallStatusReads === 1
+          ? statusWithDynamic(WORK_ITEM_ID, 'REQ-DYNAMIC')
+          : statusWithOverall(WORK_ITEM_ID, overallInput.outputCorrelationRef);
+      }
+      if (name === 'begin_overall_synthesis') {
+        return runningBegin(overallTask, {
+          modelInput: overallInput,
+          selectedDiscoveryRefs: [],
+        });
+      }
+      if (name === 'commit_overall_candidate') {
+        validatePayload('result-envelope', {
+          task: overallTask,
+          result: args.result,
+        });
+        return {
+          workItemId: WORK_ITEM_ID,
+          workItemRevision: 9,
+          status: 'OVERALL_CANDIDATE_READY',
+          overallSynthesis: {
+            status: 'CANDIDATE_ONLY',
+            authorityLevel: 'candidate_only',
+            externalDiscoveryIsEvidence: false,
+          },
+        };
+      }
+      if (name === 'get_deep_link') {
+        return { workItemId: WORK_ITEM_ID, deepLink: '/work-item/fixture' };
+      }
+      throw new Error(`UNEXPECTED_TOOL:${name}`);
+    },
+    synthesizeOverall: async () => {
+      overallModelCalls += 1;
+      return { output: overallOutput, provenance: provenance() };
+    },
+  });
+  assert.equal(overall.outcome, 'CANDIDATE_ONLY');
+  assert.equal(overallModelCalls, 1);
+  assert.equal(overallOutput.applicabilityStatus, 'UNKNOWN/WAITING_INPUT');
+  assert.match(overallOutput.overallCandidate, /初步工程综合候选/u);
+  assert.match(overallOutput.overallCandidate, /不得最终批准或发布/u);
+});
+
+test('recovers COMMITTING applicability once by generic attempt status hash', async () => {
+  const input = await readJson(APPLICABILITY_TASK_FIXTURE_URL);
+  const astCandidate = await readJson(APPLICABILITY_AST_FIXTURE_URL);
+  const task = makeTask('OPENCLAW_APPLICABILITY_EVALUATION', input);
+  const recoveryResult = sealResultEnvelope({
+    task,
+    modelOutput: buildApplicabilityCandidate(input, astCandidate),
+    provenance: applicabilityProvenance(),
+    factsConsidered: input.controlledFacts.map(({ factId }) => factId),
+  });
+  const calls = [];
+  const callTool = async (name) => {
+    calls.push(name);
+    if (name === 'begin_applicability_evaluation') {
+      return {
+        ...runningBegin(task, { modelInput: input }),
+        status: 'COMMITTING',
+        recoveryResult,
+      };
+    }
+    if (name === 'get_parse_status') return status(WORK_ITEM_ID);
+    if (name === 'get_action_attempt_status') {
+      return attemptStatus(task, 'COMMITTING', recoveryResult);
+    }
+    throw new Error(`UNEXPECTED_TOOL:${name}`);
+  };
+  let modelCallCount = 0;
+  const result = await runApplicabilityEvaluation({
+    applicabilityContextRef: input.applicabilityContextRef,
+    requestId: 'REQ-applicability-committing',
+    callTool,
+    extractApplicability: async () => {
+      modelCallCount += 1;
+      throw new Error('MODEL_MUST_NOT_RUN');
+    },
+  });
+  assert.equal(result.outcome, 'COMMITTING_RECOVERY_READ_ONLY');
+  assert.equal(modelCallCount, 0);
+  assert.deepEqual(calls, [
+    'begin_applicability_evaluation',
+    'get_parse_status',
+    'get_action_attempt_status',
+  ]);
+});
+
+test('recovers applicability commit response loss once and never retries commit', async () => {
+  const input = await readJson(APPLICABILITY_TASK_FIXTURE_URL);
+  const astCandidate = await readJson(APPLICABILITY_AST_FIXTURE_URL);
+  const task = makeTask('OPENCLAW_APPLICABILITY_EVALUATION', input);
+  const calls = [];
+  let submittedResult;
+  const callTool = async (name, args) => {
+    calls.push(name);
+    if (name === 'begin_applicability_evaluation') {
+      return runningBegin(task, { modelInput: input });
+    }
+    if (name === 'get_parse_status') return status(WORK_ITEM_ID);
+    if (name === 'commit_applicability_candidate') {
+      submittedResult = args.result;
+      throw new Error('TRANSPORT_RESPONSE_LOST');
+    }
+    if (name === 'get_action_attempt_status') {
+      return attemptStatus(task, 'SUCCEEDED', submittedResult);
+    }
+    throw new Error(`UNEXPECTED_TOOL:${name}`);
+  };
+  const result = await runApplicabilityEvaluation({
+    applicabilityContextRef: input.applicabilityContextRef,
+    requestId: 'REQ-applicability-response-loss',
+    callTool,
+    extractApplicability: async () => ({
+      output: astCandidate,
+      provenance: applicabilityProvenance(),
+    }),
+  });
+  assert.equal(result.outcome, 'COMMIT_RESPONSE_LOSS_RECOVERED_READ_ONLY');
+  assert.equal(
+    calls.filter((name) => name === 'commit_applicability_candidate').length,
+    1,
+  );
+  assert.equal(
+    calls.filter((name) => name === 'get_action_attempt_status').length,
+    1,
   );
 });
 
@@ -403,28 +790,26 @@ test('runs dynamic N/N and never uses old {attemptRef, output}', async () => {
   );
 });
 
-test('does one exact dynamic readback after unknown commit and never retries', async () => {
+test('does one generic dynamic status recovery after commit response loss', async () => {
   const input = await readJson(DYNAMIC_FIXTURE_URL);
   const output = buildDynamicRulesOutput(input);
   const task = makeTask('OPENCLAW_DYNAMIC_EVALUATION', input);
   const calls = [];
-  let statusReads = 0;
-  const callTool = async (name) => {
+  let submittedResult;
+  const callTool = async (name, args) => {
     calls.push(name);
     if (name === 'get_parse_status') {
-      statusReads += 1;
-      return statusReads === 1
-        ? status(WORK_ITEM_ID)
-        : statusWithDynamic(WORK_ITEM_ID, input.callerCorrelationRef);
+      return status(WORK_ITEM_ID);
     }
     if (name === 'begin_dynamic_evaluation') {
       return runningBegin(task, { modelInput: input });
     }
     if (name === 'commit_dynamic_evaluation_candidate') {
+      submittedResult = args.result;
       throw new Error('TRANSPORT_RESPONSE_LOST');
     }
-    if (name === 'get_deep_link') {
-      return { workItemId: WORK_ITEM_ID, deepLink: '/work-item/fixture' };
+    if (name === 'get_action_attempt_status') {
+      return attemptStatus(task, 'SUCCEEDED', submittedResult);
     }
     throw new Error(`UNEXPECTED_TOOL:${name}`);
   };
@@ -433,13 +818,17 @@ test('does one exact dynamic readback after unknown commit and never retries', a
     callTool,
     evaluateDynamicRules: async () => ({ output, provenance: provenance() }),
   });
-  assert.equal(result.commitRecoveredByReadback, true);
+  assert.equal(result.outcome, 'COMMIT_RESPONSE_LOSS_RECOVERED_READ_ONLY');
   assert.equal(
     calls.filter((name) => name === 'commit_dynamic_evaluation_candidate')
       .length,
     1,
   );
-  assert.equal(calls.filter((name) => name === 'get_parse_status').length, 2);
+  assert.equal(calls.filter((name) => name === 'get_parse_status').length, 1);
+  assert.equal(
+    calls.filter((name) => name === 'get_action_attempt_status').length,
+    1,
+  );
 });
 
 test('runs no-discovery overall from complete persisted dynamic N', async () => {
@@ -603,7 +992,7 @@ test('uses read-only status recovery for COMMITTING review attempts', async () =
       };
     }
     if (name === 'get_action_attempt_status') {
-      return reviewStatus(task.operationRef, recoveryResult);
+      return attemptStatus(task, 'COMMITTING', recoveryResult);
     }
     throw new Error(`UNEXPECTED_TOOL:${name}`);
   };
@@ -623,12 +1012,13 @@ test('uses read-only status recovery for COMMITTING review attempts', async () =
   assert.deepEqual(calls, ['begin_review_turn', 'get_action_attempt_status']);
 });
 
-test('does one status read and no blind retry after unknown review commit', async () => {
+test('recovers review commit response loss by matching the sealed result hash', async () => {
   const reviewTask = await readJson(REVIEW_TASK_FIXTURE_URL);
   const candidate = await readJson(REVIEW_CANDIDATE_FIXTURE_URL);
   const task = makeTask('OPENCLAW_INTERACTIVE_REVIEW', reviewTask);
   const calls = [];
-  const callTool = async (name) => {
+  let submittedResult;
+  const callTool = async (name, args) => {
     calls.push(name);
     if (name === 'begin_review_turn') return runningBegin(task);
     if (name === 'get_review_turn_context') {
@@ -648,30 +1038,25 @@ test('does one status read and no blind retry after unknown review commit', asyn
       };
     }
     if (name === 'commit_review_turn_candidate') {
+      submittedResult = args.result;
       throw new Error('TRANSPORT_RESPONSE_LOST');
     }
     if (name === 'get_action_attempt_status') {
-      return {
-        ...reviewStatus(task.operationRef, null),
-        status: 'SUCCEEDED',
-        recoveryAvailable: false,
-      };
+      return attemptStatus(task, 'SUCCEEDED', submittedResult);
     }
     throw new Error(`UNEXPECTED_TOOL:${name}`);
   };
-  await assert.rejects(
-    runInteractiveReviewTurn({
-      mode: 'INTERACTIVE_REVIEW',
-      reviewConversationRef: reviewTask.reviewConversationRef,
-      requestId: reviewTask.requestId,
-      callTool,
-      respond: async ({ readSourceRefs }) => {
-        await readSourceRefs([reviewTask.resourceRefs[0].sourceRefId]);
-        return { output: candidate, provenance: provenance() };
-      },
-    }),
-    /HOST_MCP_REVIEW_COMMIT_OUTCOME_UNKNOWN/u,
-  );
+  const result = await runInteractiveReviewTurn({
+    mode: 'INTERACTIVE_REVIEW',
+    reviewConversationRef: reviewTask.reviewConversationRef,
+    requestId: reviewTask.requestId,
+    callTool,
+    respond: async ({ readSourceRefs }) => {
+      await readSourceRefs([reviewTask.resourceRefs[0].sourceRefId]);
+      return { output: candidate, provenance: provenance() };
+    },
+  });
+  assert.equal(result.outcome, 'COMMIT_RESPONSE_LOSS_RECOVERED_READ_ONLY');
   assert.equal(
     calls.filter((name) => name === 'commit_review_turn_candidate').length,
     1,
@@ -847,7 +1232,14 @@ function provenance(overrides = {}) {
   };
 }
 
-function makeTask(taskType, modelInput) {
+function applicabilityProvenance(overrides = {}) {
+  return provenance({
+    promptVersion: WISELINK_APPLICABILITY_PROMPT_VERSION,
+    ...overrides,
+  });
+}
+
+function makeTask(taskType, modelInput, hostResolvedMissingInputs = []) {
   const unsealed = {
     schemaVersion: 'wiselink.3_1.openclaw_task_envelope.v1',
     actionAttemptId: `ATT-${taskType}`,
@@ -861,7 +1253,7 @@ function makeTask(taskType, modelInput) {
     documentVersionId: 'DV-fixture-001',
     sourceRefs: [{ ref: ARTIFACT_REF, sha256: ARTIFACT_SHA }],
     allowedConnectors: [],
-    hostResolvedMissingInputs: [],
+    hostResolvedMissingInputs: structuredClone(hostResolvedMissingInputs),
     modelInput: structuredClone(modelInput),
     deadline: '2026-08-27T12:00:00.000Z',
     idempotencyKey: `fixture:${taskType}`,
@@ -1100,6 +1492,19 @@ function synthesisInput() {
       effective: [],
     },
     externalDiscoveryResults: [],
+    selectiveResynthesis: {
+      mode: 'INITIAL',
+      criterionSetId: 'criterion-set-fixture',
+      baseRuleRevision: 1,
+      baseRuleArtifactSha256: `sha256:${'e'.repeat(64)}`,
+      staleOverallRevision: null,
+      targetOverallRevision: 1,
+      priorEngineerReviewRevision: null,
+      currentEngineerReviewRevision: null,
+      affectedCriterionIds: [],
+      reusedCriterionIds: [],
+      adoptedEvidenceSourceRefIds: [],
+    },
   };
 }
 
@@ -1216,18 +1621,23 @@ function reviewCommit(attemptRef) {
   };
 }
 
-function reviewStatus(attemptRef, recoveryResult) {
+function attemptStatus(task, statusValue, result) {
+  const committing = statusValue === 'COMMITTING';
+  const terminal = ['SUCCEEDED', 'WAITING_INPUT', 'FAILED'].includes(
+    statusValue,
+  );
   return {
-    schemaVersion: 'wiselink.3_1.review_action_attempt_status.v1.c2',
-    attemptRef,
-    status: 'COMMITTING',
-    recoveryAvailable: recoveryResult !== null,
+    attemptRef: task.operationRef,
+    taskType: task.taskType,
+    status: statusValue,
+    recoveryAvailable: committing,
     commitStartedAt: '2026-08-27T10:00:00.000Z',
-    leaseGeneration: 3,
-    leaseExpiresAt: '2026-08-27T11:00:00.000Z',
-    terminalReason: null,
-    projectionApplied: false,
-    ...(recoveryResult ? { recoveryResult } : {}),
+    terminalReason: terminal ? 'FIXTURE_TERMINAL' : null,
+    projectionApplied:
+      statusValue === 'SUCCEEDED' &&
+      task.taskType !== 'OPENCLAW_INTERACTIVE_REVIEW',
+    resultContentHash: result?.contentHash ?? null,
+    ...(committing ? { recoveryResult: result } : {}),
   };
 }
 

@@ -109,6 +109,108 @@
   white-space: nowrap;
 }
 
+.wiselink-account-control,
+.wiselink-account-state {
+  min-height: 34px;
+  border: 1px solid var(--wl-border);
+  border-radius: var(--wl-radius-md);
+  color: var(--wl-ink);
+  background: var(--wl-glass-soft);
+  box-shadow: inset 0 1px 0
+    color-mix(in srgb, var(--wl-g3-highlight) 42%, transparent);
+}
+
+.wiselink-account-control {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 4px 3px 5px;
+}
+
+.wiselink-account-display {
+  min-width: 0;
+  flex-wrap: nowrap;
+}
+
+.wiselink-account-display > div,
+.wiselink-account-display > div > div {
+  min-width: 0;
+}
+
+.wiselink-account-display > div > div {
+  max-width: 130px;
+  background: transparent;
+}
+
+.wiselink-account-menu-trigger {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 26px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 10px;
+  color: var(--wl-muted);
+  background: transparent;
+  cursor: pointer;
+  transition:
+    color var(--wl-motion-fast) ease,
+    background-color var(--wl-motion-fast) ease;
+}
+
+.wiselink-account-menu-trigger:hover,
+.wiselink-account-menu-trigger[data-state='open'] {
+  color: var(--wl-accent);
+  background: var(--wl-accent-soft);
+}
+
+.wiselink-account-menu-trigger svg {
+  width: 14px;
+  height: 14px;
+}
+
+.wiselink-account-menu {
+  min-width: 188px;
+  border-color: var(--wl-border);
+  border-radius: var(--wl-radius-md);
+  color: var(--wl-ink);
+  background: var(--wl-surface-solid);
+  box-shadow: 0 16px 38px var(--wl-g3-shadow);
+}
+
+.wiselink-account-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  font-family: var(--wl-font);
+  font-size: 11px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+button.wiselink-account-state {
+  cursor: pointer;
+}
+
+.wiselink-account-state.is-action:hover {
+  color: var(--wl-accent);
+  border-color: color-mix(in srgb, var(--wl-accent) 28%, var(--wl-border));
+  background: var(--wl-accent-soft);
+}
+
+.wiselink-account-state.is-warning {
+  color: var(--wl-amber);
+}
+
+.wiselink-account-state svg:last-child:not(:first-child) {
+  width: 12px;
+  height: 12px;
+  color: var(--wl-faint);
+}
+
 .wiselink-app-work-item {
   display: inline-flex;
   min-width: 0;
@@ -287,6 +389,10 @@ select:focus-visible {
     margin-left: 16px;
     padding: 0 16px;
   }
+
+  .wiselink-app-context-note {
+    display: none;
+  }
 }
 
 @media (max-width: 680px) {
@@ -320,7 +426,16 @@ select:focus-visible {
     min-width: 0;
   }
 
+  .wiselink-app-page-label {
+    display: none;
+  }
+
   .wiselink-app-context {
+    display: flex;
+  }
+
+  .wiselink-app-work-item,
+  .wiselink-app-context-note {
     display: none;
   }
 
@@ -369,5 +484,18 @@ select:focus-visible {
 
   .wiselink-app-page-label {
     font-size: 12px;
+  }
+
+  .wiselink-account-display > div > div {
+    max-width: 30px;
+    padding-right: 2px;
+  }
+
+  .wiselink-account-display [data-slot='avatar'] + span {
+    display: none;
+  }
+
+  .wiselink-account-state > span {
+    display: none;
   }
 }

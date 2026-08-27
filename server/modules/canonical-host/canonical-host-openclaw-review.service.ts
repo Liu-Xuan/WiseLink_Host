@@ -7,7 +7,6 @@ import type {
 } from '@shared/api.interface';
 import {
   canonicalSha256,
-  parseResultEnvelope,
   parseTaskEnvelope,
 } from '../action-attempt/action-attempt-envelope';
 import { ActionAttemptLifecycleService } from '../action-attempt/action-attempt-lifecycle.service';
@@ -24,11 +23,14 @@ import {
   type PersistedReviewConversation,
   type PersistedReviewTurn,
 } from '../review-persistence/review-conversation.repository';
+import { parseReviewAttachmentParsedArtifact } from '../review-persistence/review-attachment-artifact';
+import type { ReviewAttachmentBinding } from '../review-persistence/review-attachment.types';
 import { UNIFIED_ARTIFACT_STORE } from '../unified-reader/unified-reader.constants';
 import type { UnifiedArtifactStorePort } from '../unified-reader/unified-reader.types';
 import { assertNoDuplicateJsonKeys } from '../unified-reader/unified-reader.utils';
 import { MiaodaWorkItemRepository } from '../work-item/miaoda-work-item.repository';
 import { CanonicalHostEngineerReviewService } from './canonical-host-engineer-review.service';
+import { preflightCanonicalHostOpenClawResult } from './canonical-host-openclaw-runtime-policy';
 import { parseBilingualTranslationArtifact } from './canonical-host-openclaw-translation.service';
 import {
   parseReviewTurnCandidateContract,
@@ -87,19 +89,6 @@ export interface ReviewSourceRefsResult {
   sourceRefs: Array<Record<string, unknown>>;
 }
 
-export interface ReviewAttemptStatusResult {
-  schemaVersion: 'wiselink.3_1.review_action_attempt_status.v1.c2';
-  attemptRef: string;
-  status: string;
-  recoveryAvailable: boolean;
-  commitStartedAt: string | null;
-  leaseGeneration: number;
-  leaseExpiresAt: string | null;
-  terminalReason: string | null;
-  projectionApplied: false;
-  recoveryResult?: OpenClawResultEnvelope;
-}
-
 export interface CommitReviewTurnResult {
   schemaVersion: 'wiselink.3_1.review_turn_commit.v1.c2';
   attemptRef: string;
@@ -153,7 +142,7 @@ export class CanonicalHostOpenClawReviewService {
       inputRevision: binding.turn.inputRevision,
       baseRevision: binding.turn.inputRevision,
       idempotencyKey: reviewIdempotencyKey(binding),
-      sourceRefs: taskArtifactRefs(workItem),
+      sourceRefs: taskArtifactRefs(workItem, binding.turn),
       allowedConnectors: [],
       buildModelInput: async () =>
         structuredClone(taskContract) as unknown as Record<string, unknown>,
@@ -222,35 +211,6 @@ export class CanonicalHostOpenClawReviewService {
     };
   }
 
-  async status(attemptRef: string): Promise<ReviewAttemptStatusResult> {
-    const attempt = await this.requiredReviewAttempt(
-      attemptRef,
-      'GET_REVIEW_ATTEMPT_STATUS',
-      false,
-    );
-    const recoveryResult =
-      attempt.row.status === 'COMMITTING' && attempt.row.resultEnvelopeJson
-        ? parseResultEnvelope({
-            value: JSON.parse(attempt.row.resultEnvelopeJson) as unknown,
-            task: attempt.task,
-          })
-        : undefined;
-    return {
-      schemaVersion: 'wiselink.3_1.review_action_attempt_status.v1.c2',
-      attemptRef,
-      status: attempt.row.status,
-      recoveryAvailable: recoveryResult !== undefined,
-      commitStartedAt: attempt.row.commitStartedAt?.toISOString() ?? null,
-      leaseGeneration: attempt.row.leaseGeneration,
-      leaseExpiresAt: attempt.row.leaseExpiresAt?.toISOString() ?? null,
-      terminalReason: attempt.row.terminalReason,
-      projectionApplied: false,
-      ...(recoveryResult
-        ? { recoveryResult: structuredClone(recoveryResult) }
-        : {}),
-    };
-  }
-
   async commit(
     attemptRef: string,
     leaseToken: string,
@@ -261,9 +221,9 @@ export class CanonicalHostOpenClawReviewService {
       attemptRef,
       'COMMIT_REVIEW',
     );
-    const result = parseResultEnvelope({
-      value: resultEnvelope,
-      task: authorized.task,
+    const { result } = preflightCanonicalHostOpenClawResult({
+      row: authorized.row,
+      result: resultEnvelope,
     });
     const candidate = parseReviewTurnCandidateContract({
       result,
@@ -377,7 +337,6 @@ export class CanonicalHostOpenClawReviewService {
     operation:
       | 'GET_REVIEW_CONTEXT'
       | 'READ_REVIEW_SOURCE_REFS'
-      | 'GET_REVIEW_ATTEMPT_STATUS'
       | 'COMMIT_REVIEW',
     requireCurrent = true,
   ): Promise<AuthorizedReviewAttempt> {
@@ -449,13 +408,19 @@ export class CanonicalHostOpenClawReviewService {
     binding: ReviewBinding,
     workItem: CanonicalWorkItemProjection,
   ): Promise<ReviewTurnTaskContract> {
-    const [pageContext, adoptedContext, packageBytes, bilingual] =
-      await Promise.all([
-        this.engineerReviews.pageContext(workItem),
-        this.engineerReviews.modelContext(workItem),
-        this.artifactStore.readActualBytes(workItem.package!.artifact),
-        this.readBilingualContext(workItem),
-      ]);
+    const [
+      pageContext,
+      adoptedContext,
+      packageBytes,
+      bilingual,
+      attachmentContext,
+    ] = await Promise.all([
+      this.engineerReviews.pageContext(workItem),
+      this.engineerReviews.modelContext(workItem),
+      this.artifactStore.readActualBytes(workItem.package!.artifact),
+      this.readBilingualContext(workItem),
+      this.readAttachmentContext(binding),
+    ]);
     if (!pageContext)
       throw reviewConflict('REVIEW_EVALUATION_CONTEXT_REQUIRED');
     const packageResourceRefs = frozenPackageResourceRefs(
@@ -483,13 +448,17 @@ export class CanonicalHostOpenClawReviewService {
     const resourceRefs = mergeResourceRefs(
       packageResourceRefs,
       adoptedEvidenceResourceRefs(workItem, adoptedInputs),
+      attachmentContext.resourceRefs,
     );
     const allowedEvaluationItemIds = pageContext.items.map(
       (item) => item.criterionId,
     );
-    const allowedAdoptedInputRefs = adoptedInputs.map(
-      (input) => input.adoptedInputRef,
-    );
+    const engineerInputRef = `engineer-input:${binding.turn.engineerSuppliedInputId}`;
+    const allowedAdoptedInputRefs = [
+      ...adoptedInputs.map((input) => input.adoptedInputRef),
+      engineerInputRef,
+      ...attachmentContext.attachmentRefs,
+    ];
     const context: Record<string, unknown> = {
       workItem: {
         workItemId: workItem.workItemId,
@@ -520,6 +489,11 @@ export class CanonicalHostOpenClawReviewService {
         inferredFromDocumentPresence: false,
       },
       adoptedInputs,
+      engineerInput: {
+        inputRef: engineerInputRef,
+        text: binding.turn.candidateText,
+        attachmentRefs: [...attachmentContext.attachmentRefs],
+      },
     };
     return parseReviewTurnTaskContract({
       schemaVersion: 'wiselink.3_1.review_turn_task.v1.c2',
@@ -535,7 +509,7 @@ export class CanonicalHostOpenClawReviewService {
       resourceRefs,
       allowedEvaluationItemIds,
       allowedAdoptedInputRefs,
-      attachmentRefs: [],
+      attachmentRefs: [...attachmentContext.attachmentRefs],
       context,
       executionPolicy: {
         runtimeAppId: REVIEW_RUNTIME_APP_ID,
@@ -545,6 +519,53 @@ export class CanonicalHostOpenClawReviewService {
         toolPolicyRef: REVIEW_TOOL_POLICY_REF,
       },
     });
+  }
+
+  private async readAttachmentContext(binding: ReviewBinding): Promise<{
+    attachmentRefs: string[];
+    resourceRefs: FrozenReviewSourceRef[];
+  }> {
+    const resources = await Promise.all(
+      (binding.turn.attachmentBindings ?? []).map(
+        async (attachment: ReviewAttachmentBinding) => {
+          const parsed = parseReviewAttachmentParsedArtifact(
+            await this.artifactStore.readActualBytes(attachment.parsedArtifact),
+          );
+          if (
+            parsed.attachmentRef !== attachment.attachmentRef ||
+            parsed.workItemId !== binding.conversation.workItemId ||
+            parsed.reviewConversationId !==
+              binding.conversation.reviewConversationId ||
+            parsed.documentVersionId !== attachment.documentVersionId ||
+            parsed.fileName !== attachment.fileName ||
+            parsed.mediaType !== attachment.mediaType ||
+            parsed.byteLength !== attachment.byteLength
+          ) {
+            throw new Error('REVIEW_ATTACHMENT_BINDING_MISMATCH');
+          }
+          return {
+            sourceRefId: attachment.attachmentRef,
+            resourceArtifactRef: attachment.parsedArtifact.ref,
+            resourceArtifactSha256: attachment.parsedArtifact.sha256,
+            value: {
+              sourceRefId: attachment.attachmentRef,
+              kind: 'ENGINEER_ATTACHMENT',
+              fileName: parsed.fileName,
+              mediaType: parsed.mediaType,
+              byteLength: parsed.byteLength,
+              pageCount: parsed.pageCount,
+              pages: parsed.pages,
+            },
+          } satisfies FrozenReviewSourceRef;
+        },
+      ),
+    );
+    return {
+      attachmentRefs: (binding.turn.attachmentBindings ?? []).map(
+        (attachment: ReviewAttachmentBinding) => attachment.attachmentRef,
+      ),
+      resourceRefs: resources,
+    };
   }
 
   private async readBilingualContext(
@@ -676,11 +697,10 @@ function adoptedEvidenceResourceRefs(
 }
 
 function mergeResourceRefs(
-  packageRefs: FrozenReviewSourceRef[],
-  adoptedRefs: FrozenReviewSourceRef[],
+  ...groups: FrozenReviewSourceRef[][]
 ): FrozenReviewSourceRef[] {
   const result = new Map<string, FrozenReviewSourceRef>();
-  for (const ref of [...packageRefs, ...adoptedRefs]) {
+  for (const ref of groups.flat()) {
     if (result.has(ref.sourceRefId)) {
       throw new Error('REVIEW_RESOURCE_REF_COLLISION');
     }
@@ -691,6 +711,7 @@ function mergeResourceRefs(
 
 function taskArtifactRefs(
   workItem: CanonicalWorkItemProjection,
+  turn: PersistedReviewTurn,
 ): OpenClawTaskEnvelope['sourceRefs'] {
   const artifacts = [
     workItem.package?.artifact,
@@ -698,6 +719,9 @@ function taskArtifactRefs(
     workItem.integratedAssessment?.baseRules.artifact,
     workItem.integratedAssessment?.engineerReviews?.artifact,
     workItem.integratedAssessment?.overallSynthesis?.artifact,
+    ...(turn.attachmentBindings ?? []).map(
+      (attachment: ReviewAttachmentBinding) => attachment.parsedArtifact,
+    ),
   ].filter((value) => value !== undefined);
   const result = new Map<string, string>();
   for (const artifact of artifacts) {

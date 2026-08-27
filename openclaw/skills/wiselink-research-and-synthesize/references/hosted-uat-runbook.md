@@ -1,6 +1,6 @@
-# 官方托管 C3 UAT runbook
+# 官方托管 R09 c4 UAT runbook
 
-本 runbook 只定义 C2 accepted/deployed 后的真实验证顺序；本地实现不执行安装、发布、Session 创建、模型调用或
+本 runbook 只定义 Host C4+C5 accepted 后的真实验证顺序；本地实现不执行安装、发布、Session 创建、模型调用或
 云配置修改。
 
 ## 前置读回
@@ -11,9 +11,9 @@
 2. 唯一逻辑 profile 为 `wiselink-engineering`；
 3. 当前实际模型策略为 `GLM-5.1`，智能选择/fallback 关闭或逐 turn 可见；
 4. 同名 Skill 只有一个，安装版本精确
-   `wiselink-research-and-synthesize@r09.interactive-review.c2`；
+   `wiselink-research-and-synthesize@r09.c4`；
 5. Host MCP package/version 为
-   `wiselink-openclaw-engineering-assessment@1.1.0`，18 tools 可见；
+   `wiselink-openclaw-engineering-assessment@1.2.0`，exact 20 tools 可见；
 6. C2 successor 已进入 current Hosted release；只凭 Git commit 不等于 deployed readback；
 7. 凭据已轮换，托管日志/trace 不回显 Bearer、cookie、token、API key 或 FileService locator。
 
@@ -38,19 +38,30 @@
 3. validator 确认 N/N、同序唯一、criterion-local SourceRefs、gap checklist、28KB transport target。
 4. 单次 full ResultEnvelope commit；Host 读回 actual bytes、N/N projection 与 current revision。
 
+### Positive：EXTRACT_APPLICABILITY
+
+1. 使用 Host 生成的 opaque `applicabilityContextRef + requestId` 调 dedicated begin；核对模型只收到 frozen
+   SourceExpressions/SourceRefs、bilingual SourceUnits 与窄受控 aircraft facts。
+2. GLM-5.1 只生成 source-condition AST candidate，不输出 target level/contentRef 或飞机适用结论。
+3. 单次 full ResultEnvelope commit；Host 读回 target binding、Fleet/Kleene 结果、actual bytes 与 current
+   applicability candidate。
+4. 选择一个 Host 缺事实样本，确认零模型调用、missing 原样 WAITING_INPUT。
+5. 确认该 WAITING_INPUT 不终止 INITIAL_ANALYSIS，随后 Dynamic N/N、Job-Aid 与 overall 仍实际执行。
+
 ### Positive：SYNTHESIZE_OVERALL
 
 1. fresh-read dynamic N/N 已持久；先 `providers=[]`。
-2. overall input 绑定 frozen.2、完整 N/N、adopted DVs、review history/effective 和 SourceRefs。
-3. 输出保持 candidate-only、external discovery non-evidence、适用性缺事实时 UNKNOWN。
+2. overall input 绑定 frozen.2、完整 N/N、adopted DVs、review history/effective、Host
+   `selectiveResynthesis` 和 SourceRefs。
+3. 输出保持 candidate-only、external discovery non-evidence；飞机身份/机型已知但 AIMS-2 构型未接入时，仍给出
+   初步工程综合，并明确条件性 UNKNOWN、人工/后续数据确认要求和不可最终批准/发布。
 4. 单次 commit；Host 读回 actual bytes/current overall r1。
 
 ### Required negative
 
-- `EXTRACT_APPLICABILITY` 返回 exact blocker，且零 dynamic/overall/applicability mutation。
 - Task hash、artifact SHA、baseRevision、leaseGeneration 或 SourceRef 任一漂移，Host fail closed。
-- commit response unknown：只读一次；不重复 commit。
-- COMMITTING：只读 recovery，不第二次调用模型。
+- commit response unknown：只读一次通用 status，匹配 resultContentHash，不重复 commit。
+- COMMITTING：只读一次通用 status 并匹配 recoveryResult/contentHash，不第二次调用模型。
 - 非 owner/跨 tenant/旧 revision/过期 lease：统一 fail closed，不泄露对象存在性。
 
 ## INTERACTIVE_REVIEW UAT
@@ -98,5 +109,5 @@ authenticated user。
 ## Non-claims
 
 本地 tests/lint/commit 只能证明 Skill 包合同。没有以上真实读回时，不宣称：Skill 已安装/发布、官方 profile 已
-使用此版本、18 tools 已在托管 UI 可见、Session create/resume 已跑通、GLM-5.1 每轮实际执行/no fallback、
-EXTRACT_APPLICABILITY、附件/search/compare/reevaluate/resynthesize 或端到端 UAT 完成。
+使用此版本、20 tools 已在托管 UI 可见、Session create/resume 已跑通、GLM-5.1 每轮实际执行/no fallback、
+Applicability 端到端 Host/Hosted 路径、附件/search/compare/reevaluate/resynthesize 或端到端 UAT 完成。

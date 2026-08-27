@@ -11,6 +11,7 @@ class LocalScopedFileService {
   readonly files = new Map<string, StoredFile>();
   uploadCount = 0;
   downloadCount = 0;
+  removeCount = 0;
 
   constructor(private readonly bucketId: string) {}
 
@@ -57,6 +58,11 @@ class LocalScopedFileService {
       metadata: { id: stored.id },
     };
   }
+
+  async remove(filePaths: string[]) {
+    this.removeCount += 1;
+    for (const filePath of filePaths) this.files.delete(filePath);
+  }
 }
 
 describe('MiaodaOrdinaryArtifactStoreAdapter', () => {
@@ -81,6 +87,37 @@ describe('MiaodaOrdinaryArtifactStoreAdapter', () => {
     expect(scoped.uploadCount).toBe(1);
   });
 
+  it('finalizes an attempt-owned stable descriptor before publication and discards with verified absence', async () => {
+    const scoped = new LocalScopedFileService('bucket-stage-local');
+    const adapter = new MiaodaOrdinaryArtifactStoreAdapter({
+      getDefaultBucket: async () => 'bucket-stage-local',
+      from: () => scoped,
+    } as never);
+    const bytes = new TextEncoder().encode('{"candidate":true}\n');
+
+    const staged = await adapter.stageCandidateAndReadback({
+      bytes,
+      ownerRef: 'ATT-APP-STAGE-1',
+    });
+    expect(staged.artifact.ref).toMatch(
+      /\/applicability-candidate\/[0-9a-f]{64}\/[0-9a-f]{64}$/u,
+    );
+    expect(scoped.files.size).toBe(1);
+    const finalized = await adapter.finalizeStagedCandidate(staged);
+    expect(finalized).toMatchObject({
+      schemaVersion: 'wiselink.3_1.finalized_candidate_artifact.v1',
+      artifact: staged.artifact,
+      bytes,
+    });
+
+    await adapter.discardCandidateArtifact(finalized);
+    expect(scoped.removeCount).toBe(1);
+    expect(scoped.files.size).toBe(0);
+    await expect(adapter.readActualBytes(staged.artifact)).rejects.toThrow(
+      'ARTIFACT_READBACK_MISMATCH:METADATA',
+    );
+  });
+
   it('treats a hosted metadata 404 as an absent object before upload', async () => {
     const bytes = new TextEncoder().encode('{"package":true}\n');
     const digest = sha256Raw(bytes);
@@ -102,9 +139,11 @@ describe('MiaodaOrdinaryArtifactStoreAdapter', () => {
             mimeType: 'application/json',
           },
         }),
-      upload: jest.fn(async (_bytes: Uint8Array, options: { filePath: string }) => ({
-        filePath: options.filePath,
-      })),
+      upload: jest.fn(
+        async (_bytes: Uint8Array, options: { filePath: string }) => ({
+          filePath: options.filePath,
+        }),
+      ),
       download: jest.fn(async () => ({
         content: bytes,
         metadata: { id: 'hosted-file-1' },

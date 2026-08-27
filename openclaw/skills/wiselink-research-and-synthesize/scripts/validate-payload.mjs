@@ -4,21 +4,28 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
-export const WISELINK_SKILL_VERSION =
-  'wiselink-research-and-synthesize@r09.interactive-review.c2';
+export const WISELINK_SKILL_VERSION = 'wiselink-research-and-synthesize@r09.c4';
 export const WISELINK_HOST_MCP_NAME =
   'wiselink-openclaw-engineering-assessment';
-export const WISELINK_HOST_MCP_VERSION = '1.1.0';
+export const WISELINK_HOST_MCP_VERSION = '1.2.0';
 export const WISELINK_MODEL_VERSION = 'GLM-5.1';
 export const WISELINK_RUNTIME_APP_ID = 'app_17c3zn24kv2';
 export const WISELINK_PROFILE_REF = 'wiselink-engineering';
+export const WISELINK_APPLICABILITY_PROMPT_VERSION =
+  'wiselink-applicability-extraction@r09.c4';
 
 const TASK_ENVELOPE_SCHEMA = 'wiselink.3_1.openclaw_task_envelope.v1';
 const RESULT_ENVELOPE_SCHEMA = 'wiselink.3_1.openclaw_result_envelope.v1';
 const REVIEW_TASK_SCHEMA = 'wiselink.3_1.review_turn_task.v1.c2';
 const REVIEW_CANDIDATE_SCHEMA = 'wiselink.3_1.review_turn_candidate.v1.c2';
+const APPLICABILITY_TASK_SCHEMA = 'wiselink.3_1.applicability_task.v1';
+const APPLICABILITY_AST_CANDIDATE_SCHEMA =
+  'wiselink.3_1.applicability_ast_candidate.v1';
+const APPLICABILITY_CANDIDATE_SCHEMA =
+  'wiselink.3_1.applicability_candidate.v1';
 const BARE_SHA256 = /^[a-f0-9]{64}$/u;
 const TASK_TYPES = new Set([
+  'OPENCLAW_APPLICABILITY_EVALUATION',
   'OPENCLAW_DYNAMIC_EVALUATION',
   'OPENCLAW_INTERACTIVE_REVIEW',
   'OPENCLAW_OVERALL_SYNTHESIS',
@@ -140,6 +147,17 @@ export function validatePayload(kind, value) {
     case 'translation-pair':
       exactKeys(value, ['input', 'output'], [], 'translation pair');
       validateTranslationPair(value.input, value.output);
+      break;
+    case 'applicability-input':
+      validateApplicabilityModelInput(value);
+      break;
+    case 'applicability-ast-candidate':
+      validateApplicabilityAstCandidate(value);
+      break;
+    case 'applicability-pair':
+      exactKeys(value, ['input', 'output'], [], 'applicability pair');
+      validateApplicabilityModelInput(value.input);
+      validateApplicabilityAstCandidate(value.output, value.input);
       break;
     case 'review-task':
       validateReviewTask(value);
@@ -1280,6 +1298,7 @@ function validateSynthesisInput(input) {
       'adoptedDocumentVersions',
       'externalDiscoveryResults',
       'engineerReviewContext',
+      'selectiveResynthesis',
     ],
     [],
     'synthesis input',
@@ -1294,6 +1313,7 @@ function validateSynthesisInput(input) {
   validateUnifiedSourceContext(input.unifiedSourceContext);
   validateAdoptedDocumentVersions(input.adoptedDocumentVersions);
   validateEngineerReviewContext(input.engineerReviewContext);
+  assertObject(input.selectiveResynthesis, 'selective resynthesis');
   array(input.externalDiscoveryResults, 'SYNTHESIS_DISCOVERY_RESULTS_INVALID');
   for (const result of input.externalDiscoveryResults)
     validateDiscoveryOutput(result);
@@ -1816,6 +1836,481 @@ function validateDiscoveryProviderSummaries(value) {
   }
 }
 
+export function validateApplicabilityModelInput(input) {
+  exactKeys(
+    input,
+    [
+      'schemaVersion',
+      'operation',
+      'applicabilityContextRef',
+      'inputRevision',
+      'documentVersionRef',
+      'sourcePackage',
+      'bilingualBinding',
+      'aircraft',
+      'fleetBinding',
+      'controlledAircraft',
+      'controlledFacts',
+      'sourceExpressions',
+      'bilingualSourceUnits',
+      'runtimePolicy',
+      'authority',
+    ],
+    [],
+    'applicability input',
+  );
+  equal(
+    input.schemaVersion,
+    APPLICABILITY_TASK_SCHEMA,
+    'APPLICABILITY_TASK_SCHEMA_UNSUPPORTED',
+  );
+  equal(
+    input.operation,
+    'EXTRACT_APPLICABILITY',
+    'APPLICABILITY_TASK_OPERATION_INVALID',
+  );
+  nonEmpty(input.applicabilityContextRef, 'APPLICABILITY_CONTEXT_REF_REQUIRED');
+  integerInRange(
+    input.inputRevision,
+    0,
+    Number.MAX_SAFE_INTEGER,
+    'APPLICABILITY_INPUT_REVISION_INVALID',
+  );
+  nonEmpty(input.documentVersionRef, 'APPLICABILITY_DOCUMENT_VERSION_REQUIRED');
+  validateApplicabilitySourcePackage(input.sourcePackage);
+  validateApplicabilityBilingualBinding(input.bilingualBinding);
+  validateApplicabilityAircraft(input.aircraft);
+  validateApplicabilityFleetBinding(input.fleetBinding);
+  validateApplicabilityControlledAircraft(input.controlledAircraft);
+  validateApplicabilityControlledFacts(input.controlledFacts);
+  validateApplicabilitySourceExpressions(input.sourceExpressions);
+  validateApplicabilityBilingualUnits(input.bilingualSourceUnits);
+  validateApplicabilityRuntimePolicy(input.runtimePolicy);
+  exactKeys(
+    input.authority,
+    [
+      'candidateOnly',
+      'documentTextDoesNotProveFleetApplicability',
+      'hostDeterministicEvaluationRequired',
+    ],
+    [],
+    'applicability authority',
+  );
+  equal(input.authority.candidateOnly, true, 'APPLICABILITY_AUTHORITY_INVALID');
+  equal(
+    input.authority.documentTextDoesNotProveFleetApplicability,
+    true,
+    'APPLICABILITY_AUTHORITY_INVALID',
+  );
+  equal(
+    input.authority.hostDeterministicEvaluationRequired,
+    true,
+    'APPLICABILITY_AUTHORITY_INVALID',
+  );
+  return input;
+}
+
+export function validateApplicabilityAstCandidate(output, input) {
+  exactKeys(
+    output,
+    ['schemaVersion', 'expressions'],
+    [],
+    'applicability AST candidate',
+  );
+  equal(
+    output.schemaVersion,
+    APPLICABILITY_AST_CANDIDATE_SCHEMA,
+    'APPLICABILITY_AST_CANDIDATE_SCHEMA_UNSUPPORTED',
+  );
+  array(output.expressions, 'APPLICABILITY_AST_EXPRESSIONS_INVALID');
+  const expected = input
+    ? new Map(
+        input.sourceExpressions.map((expression) => [
+          expression.expressionId,
+          expression,
+        ]),
+      )
+    : null;
+  if (
+    output.expressions.length < 1 ||
+    output.expressions.length > 200 ||
+    (expected && output.expressions.length !== expected.size)
+  ) {
+    fail('APPLICABILITY_AST_EXPRESSIONS_INVALID');
+  }
+  const seen = new Set();
+  output.expressions.forEach((expression, index) => {
+    assertObject(expression, `applicability AST expression ${index}`);
+    exactKeys(
+      expression,
+      ['expressionId', 'sourceRefIds', 'extractionStatus', 'expressionAst'],
+      [],
+      `applicability AST expression ${index}`,
+    );
+    nonEmpty(
+      expression.expressionId,
+      'APPLICABILITY_AST_EXPRESSION_ID_REQUIRED',
+    );
+    if (seen.has(expression.expressionId)) {
+      fail('APPLICABILITY_AST_EXPRESSION_DUPLICATE');
+    }
+    seen.add(expression.expressionId);
+    uniqueTextArray(
+      expression.sourceRefIds,
+      'APPLICABILITY_AST_SOURCE_REFS_INVALID',
+    );
+    equal(
+      expression.extractionStatus,
+      'extracted',
+      'APPLICABILITY_AST_EXTRACTION_STATUS_INVALID',
+    );
+    const expectedExpression = expected?.get(expression.expressionId);
+    if (
+      expected &&
+      (!expectedExpression ||
+        canonicalJson(expression.sourceRefIds) !==
+          canonicalJson(expectedExpression.sourceRefIds))
+    ) {
+      fail('APPLICABILITY_AST_SOURCE_BINDING_MISMATCH');
+    }
+    validateApplicabilityAstNode(expression.expressionAst);
+  });
+  return output;
+}
+
+export function buildApplicabilityCandidate(input, astCandidate) {
+  validateApplicabilityModelInput(input);
+  validateApplicabilityAstCandidate(astCandidate, input);
+  return {
+    schemaVersion: APPLICABILITY_CANDIDATE_SCHEMA,
+    operation: 'EXTRACT_APPLICABILITY',
+    candidateStatus: 'CANDIDATE',
+    inputRevision: input.inputRevision,
+    documentVersionRef: input.documentVersionRef,
+    sourcePackage: structuredClone(input.sourcePackage),
+    bilingualBinding: structuredClone(input.bilingualBinding),
+    aircraft: structuredClone(input.aircraft),
+    fleetBinding: structuredClone(input.fleetBinding),
+    expressions: structuredClone(astCandidate.expressions),
+    runtime: structuredClone(input.runtimePolicy),
+    authority: {
+      candidateOnly: true,
+      createsEvidenceRef: false,
+      createsClosureDecision: false,
+      createsActionReadiness: false,
+      createsAirworthinessConclusion: false,
+    },
+  };
+}
+
+function validateApplicabilitySourcePackage(value) {
+  exactKeys(
+    value,
+    ['packageId', 'contentHash'],
+    [],
+    'applicability source package',
+  );
+  nonEmpty(value.packageId, 'APPLICABILITY_PACKAGE_ID_REQUIRED');
+  nonEmpty(value.contentHash, 'APPLICABILITY_PACKAGE_HASH_REQUIRED');
+}
+
+function validateApplicabilityBilingualBinding(value) {
+  if (value === null) return;
+  exactKeys(
+    value,
+    ['actionAttemptId', 'artifactSha256'],
+    [],
+    'applicability bilingual binding',
+  );
+  nonEmpty(value.actionAttemptId, 'APPLICABILITY_TRANSLATION_ATTEMPT_REQUIRED');
+  nonEmpty(value.artifactSha256, 'APPLICABILITY_TRANSLATION_HASH_REQUIRED');
+}
+
+function validateApplicabilityAircraft(value) {
+  exactKeys(
+    value,
+    ['aircraftNumber', 'assessmentAsOf'],
+    [],
+    'applicability aircraft',
+  );
+  nonEmpty(value.aircraftNumber, 'APPLICABILITY_AIRCRAFT_NUMBER_REQUIRED');
+  match(
+    value.assessmentAsOf,
+    /^\d{4}-\d{2}-\d{2}$/u,
+    'APPLICABILITY_AS_OF_INVALID',
+  );
+}
+
+function validateApplicabilityFleetBinding(value) {
+  exactKeys(
+    value,
+    [
+      'bindingRevision',
+      'selectionRevision',
+      'sourceSnapshotId',
+      'sourceRevisionKey',
+      'authorityRevision',
+      'sourceAsOf',
+    ],
+    [],
+    'applicability fleet binding',
+  );
+  nonEmpty(value.bindingRevision, 'APPLICABILITY_BINDING_REVISION_REQUIRED');
+  nonEmpty(
+    value.selectionRevision,
+    'APPLICABILITY_SELECTION_REVISION_REQUIRED',
+  );
+  nullableText(value.sourceSnapshotId, 'APPLICABILITY_SNAPSHOT_ID_INVALID');
+  nullableText(
+    value.sourceRevisionKey,
+    'APPLICABILITY_SOURCE_REVISION_INVALID',
+  );
+  nullableText(
+    value.authorityRevision,
+    'APPLICABILITY_AUTHORITY_REVISION_INVALID',
+  );
+  nullableText(value.sourceAsOf, 'APPLICABILITY_SOURCE_AS_OF_INVALID');
+}
+
+function validateApplicabilityControlledAircraft(value) {
+  if (value === null) return;
+  exactKeys(
+    value,
+    [
+      'assetId',
+      'assetVersionId',
+      'aircraftNumber',
+      'fleetFamily',
+      'aircraftModel',
+      'series',
+      'msn',
+      'lineNumber',
+      'deliveryDate',
+      'recordHash',
+    ],
+    [],
+    'controlled aircraft',
+  );
+  nonEmpty(value.assetId, 'APPLICABILITY_ASSET_ID_REQUIRED');
+  nonEmpty(value.assetVersionId, 'APPLICABILITY_ASSET_VERSION_REQUIRED');
+  nonEmpty(value.aircraftNumber, 'APPLICABILITY_ASSET_NUMBER_REQUIRED');
+  for (const key of [
+    'fleetFamily',
+    'aircraftModel',
+    'series',
+    'msn',
+    'deliveryDate',
+  ]) {
+    nullableText(value[key], 'APPLICABILITY_ASSET_FIELD_INVALID');
+  }
+  if (
+    value.lineNumber !== null &&
+    (!Number.isFinite(value.lineNumber) || value.lineNumber < 0)
+  ) {
+    fail('APPLICABILITY_ASSET_LINE_NUMBER_INVALID');
+  }
+  nonEmpty(value.recordHash, 'APPLICABILITY_ASSET_HASH_REQUIRED');
+}
+
+function validateApplicabilityControlledFacts(values) {
+  array(values, 'APPLICABILITY_CONTROLLED_FACTS_INVALID');
+  const ids = new Set();
+  values.forEach((value, index) => {
+    exactKeys(
+      value,
+      [
+        'factId',
+        'factType',
+        'property',
+        'qualifier',
+        'value',
+        'validAsOf',
+        'recordHash',
+      ],
+      [],
+      `controlled fact ${index}`,
+    );
+    nonEmpty(value.factId, 'APPLICABILITY_FACT_ID_REQUIRED');
+    if (ids.has(value.factId)) fail('APPLICABILITY_FACT_ID_DUPLICATE');
+    ids.add(value.factId);
+    nonEmpty(value.factType, 'APPLICABILITY_FACT_TYPE_REQUIRED');
+    nonEmpty(value.property, 'APPLICABILITY_FACT_PROPERTY_REQUIRED');
+    nullableText(value.qualifier, 'APPLICABILITY_FACT_QUALIFIER_INVALID');
+    nullableText(value.validAsOf, 'APPLICABILITY_FACT_AS_OF_INVALID');
+    nonEmpty(value.recordHash, 'APPLICABILITY_FACT_HASH_REQUIRED');
+  });
+}
+
+function validateApplicabilitySourceExpressions(values) {
+  array(values, 'APPLICABILITY_SOURCE_EXPRESSIONS_INVALID');
+  if (values.length < 1 || values.length > 200) {
+    fail('APPLICABILITY_SOURCE_EXPRESSIONS_INVALID');
+  }
+  const ids = new Set();
+  values.forEach((value, index) => {
+    exactKeys(
+      value,
+      [
+        'expressionId',
+        'text',
+        'sourceRefIds',
+        'assignmentId',
+        'targetKind',
+        'targetId',
+        'targetSourceRefIds',
+        'applicabilityLevel',
+        'contentRef',
+      ],
+      [],
+      `applicability source expression ${index}`,
+    );
+    nonEmpty(value.expressionId, 'APPLICABILITY_EXPRESSION_ID_REQUIRED');
+    if (ids.has(value.expressionId)) {
+      fail('APPLICABILITY_EXPRESSION_ID_DUPLICATE');
+    }
+    ids.add(value.expressionId);
+    nonEmpty(value.text, 'APPLICABILITY_EXPRESSION_TEXT_REQUIRED');
+    uniqueTextArray(
+      value.sourceRefIds,
+      'APPLICABILITY_EXPRESSION_SOURCE_REFS_INVALID',
+    );
+    nonEmpty(value.assignmentId, 'APPLICABILITY_ASSIGNMENT_ID_REQUIRED');
+    if (
+      !['module', 'content_unit', 'source_element'].includes(value.targetKind)
+    ) {
+      fail('APPLICABILITY_TARGET_KIND_INVALID');
+    }
+    nullableText(value.targetId, 'APPLICABILITY_TARGET_ID_INVALID');
+    uniqueTextArray(
+      value.targetSourceRefIds,
+      'APPLICABILITY_TARGET_SOURCE_REFS_INVALID',
+    );
+    if (
+      !['document_effectivity', 'inline'].includes(value.applicabilityLevel)
+    ) {
+      fail('APPLICABILITY_LEVEL_INVALID');
+    }
+    nullableText(value.contentRef, 'APPLICABILITY_CONTENT_REF_INVALID');
+  });
+}
+
+function validateApplicabilityBilingualUnits(values) {
+  array(values, 'APPLICABILITY_BILINGUAL_UNITS_INVALID');
+  const ids = new Set();
+  values.forEach((value, index) => {
+    exactKeys(
+      value,
+      ['unitId', 'kind', 'sourceText', 'translatedText', 'sourceRefIds'],
+      [],
+      `applicability bilingual unit ${index}`,
+    );
+    nonEmpty(value.unitId, 'APPLICABILITY_BILINGUAL_UNIT_ID_REQUIRED');
+    if (ids.has(value.unitId)) {
+      fail('APPLICABILITY_BILINGUAL_UNIT_ID_DUPLICATE');
+    }
+    ids.add(value.unitId);
+    nonEmpty(value.kind, 'APPLICABILITY_BILINGUAL_KIND_REQUIRED');
+    nonEmpty(value.sourceText, 'APPLICABILITY_BILINGUAL_SOURCE_REQUIRED');
+    nonEmpty(
+      value.translatedText,
+      'APPLICABILITY_BILINGUAL_TRANSLATION_REQUIRED',
+    );
+    uniqueTextArray(
+      value.sourceRefIds,
+      'APPLICABILITY_BILINGUAL_SOURCE_REFS_INVALID',
+    );
+  });
+}
+
+function validateApplicabilityRuntimePolicy(value) {
+  exactKeys(
+    value,
+    [
+      'runtimeAppId',
+      'profileRef',
+      'modelVersion',
+      'promptVersion',
+      'skillVersion',
+      'mcpServerName',
+      'mcpServerVersion',
+    ],
+    [],
+    'applicability runtime policy',
+  );
+  equal(
+    value.runtimeAppId,
+    WISELINK_RUNTIME_APP_ID,
+    'APPLICABILITY_RUNTIME_APP_MISMATCH',
+  );
+  equal(
+    value.profileRef,
+    WISELINK_PROFILE_REF,
+    'APPLICABILITY_PROFILE_MISMATCH',
+  );
+  equal(
+    value.modelVersion,
+    WISELINK_MODEL_VERSION,
+    'APPLICABILITY_MODEL_POLICY_MISMATCH',
+  );
+  equal(
+    value.promptVersion,
+    WISELINK_APPLICABILITY_PROMPT_VERSION,
+    'APPLICABILITY_PROMPT_POLICY_MISMATCH',
+  );
+  equal(
+    value.skillVersion,
+    WISELINK_SKILL_VERSION,
+    'APPLICABILITY_SKILL_POLICY_MISMATCH',
+  );
+  equal(
+    value.mcpServerName,
+    WISELINK_HOST_MCP_NAME,
+    'APPLICABILITY_MCP_NAME_MISMATCH',
+  );
+  equal(
+    value.mcpServerVersion,
+    WISELINK_HOST_MCP_VERSION,
+    'APPLICABILITY_MCP_VERSION_MISMATCH',
+  );
+}
+
+function validateApplicabilityAstNode(value) {
+  assertObject(value, 'applicability AST node');
+  nonEmpty(value.type, 'APPLICABILITY_AST_TYPE_REQUIRED');
+  if (value.type === 'literal') {
+    exactKeys(value, ['type', 'value'], [], 'applicability AST literal');
+    boolean(value.value, 'APPLICABILITY_AST_LITERAL_INVALID');
+    return;
+  }
+  if (value.type === 'assert') {
+    exactKeys(
+      value,
+      ['type', 'property', 'operator', 'value'],
+      ['qualifier'],
+      'applicability AST assert',
+    );
+    nonEmpty(value.property, 'APPLICABILITY_AST_PROPERTY_REQUIRED');
+    nonEmpty(value.operator, 'APPLICABILITY_AST_OPERATOR_REQUIRED');
+    if (Object.hasOwn(value, 'qualifier')) {
+      nullableText(value.qualifier, 'APPLICABILITY_AST_QUALIFIER_INVALID');
+    }
+    return;
+  }
+  if (value.type === 'and' || value.type === 'or') {
+    exactKeys(value, ['type', 'children'], [], 'applicability AST group');
+    array(value.children, 'APPLICABILITY_AST_CHILDREN_INVALID');
+    if (value.children.length < 1) fail('APPLICABILITY_AST_CHILDREN_INVALID');
+    value.children.forEach(validateApplicabilityAstNode);
+    return;
+  }
+  if (value.type === 'not') {
+    exactKeys(value, ['type', 'child'], [], 'applicability AST not');
+    validateApplicabilityAstNode(value.child);
+    return;
+  }
+  fail('APPLICABILITY_AST_TYPE_UNSUPPORTED');
+}
+
 export function canonicalJson(value) {
   return JSON.stringify(sortJsonValue(value));
 }
@@ -1855,6 +2350,42 @@ export function sealResultEnvelope({
     missingInputs: [],
     conflicts: [],
     warnings: [...warnings],
+    modelVersion: provenance.modelVersion,
+    promptVersion: provenance.promptVersion,
+    skillVersion: provenance.skillVersion,
+    toolVersions: structuredClone(provenance.toolVersions),
+    runMetrics: structuredClone(provenance.runMetrics),
+    errorCode: null,
+    errorDetail: null,
+  };
+  const sealed = { ...envelope, contentHash: canonicalSha256(envelope) };
+  validateResultEnvelope(task, sealed);
+  return sealed;
+}
+
+export function sealWaitingInputResultEnvelope({ task, provenance }) {
+  validateTaskEnvelope(task);
+  validateRuntimeProvenance(provenance);
+  if (task.hostResolvedMissingInputs.length === 0) {
+    fail('RESULT_ENVELOPE_HOST_MISSING_INPUT_REQUIRED');
+  }
+  const envelope = {
+    schemaVersion: RESULT_ENVELOPE_SCHEMA,
+    actionAttemptId: task.actionAttemptId,
+    operationRef: task.operationRef,
+    taskType: task.taskType,
+    workItemId: task.workItemId,
+    baseRevision: task.baseRevision,
+    status: 'WAITING_INPUT',
+    businessOutcome: 'WAITING_INPUT',
+    candidateStatus: 'WAITING_INPUT',
+    modelOutput: null,
+    outputArtifactRefs: [],
+    sourceRefs: structuredClone(task.sourceRefs),
+    factsConsidered: [],
+    missingInputs: structuredClone(task.hostResolvedMissingInputs),
+    conflicts: [],
+    warnings: [],
     modelVersion: provenance.modelVersion,
     promptVersion: provenance.promptVersion,
     skillVersion: provenance.skillVersion,

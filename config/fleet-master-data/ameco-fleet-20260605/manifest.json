@@ -1,0 +1,40 @@
+{
+  "schemaVersion": "wiselink.3_1.canonical_fleet_import_asset.v1",
+  "migrationSourceSchemaVersion": "wiselink.0_10.fleet_master_data_authority_migration_contract.v1",
+  "sourceSnapshotId": "FMS-1dc404288ff1e05218d5eac81e2e9327c1bf9c06ddbaa6450b7bfa6267eae36e",
+  "sourceKind": "legacy_object_layer_canonical_export",
+  "logicalSourceKey": "ameco-engineering-service-fleet",
+  "sourceRevisionKey": "legacy-object-layer-export-2026-06-05T20-28-49-064Z",
+  "sourceContentHash": "sha256:752952d36a7f40cc93a60276631f11f6f2afc7d6365aefa2b0c2553e4d5fc691",
+  "sourceAsOf": "2026-06-05",
+  "snapshotAsOf": "2026-06-05T20:28:49.064Z",
+  "fleetSnapshotDigest": "faa881727a10e5bad79cf653f888048a597984cf3c10bd3e0fa31f9b8aa7884b",
+  "sourceScope": {
+    "scopeKind": "workspace",
+    "tenantId": "local-default",
+    "workspaceId": "wiselink-0-10-local"
+  },
+  "upstreamLineage": {
+    "workbook": {
+      "logicalSourceKey": "ameco-engineering-service-fleet-workbook",
+      "role": "historical_import_lineage_and_semantic_parity_only",
+      "runtimeAuthority": false,
+      "runtimeReadAllowed": false,
+      "sourceContentHash": "sha256:53b69f7b03e0124daf6fca24f1ea2f21f60887336464bc8deef1bce7dc6b51b6",
+      "sourceRef": "Docs/uploads/Ameco工程部工程服务机队信息表2026年2月6日.xlsx",
+      "sourceRevisionKey": "fleet-snapshot-2026-02-06"
+    }
+  },
+  "counts": {
+    "aircraftAssets": 587,
+    "aircraftIdentityAliases": 2579,
+    "configurationFacts": 0
+  },
+  "files": {
+    "assets": "assets.ndjson",
+    "aliases": "aliases.ndjson",
+    "configurationFacts": "configuration-facts.ndjson"
+  },
+  "runtimeReadsLegacySource": false,
+  "aircraftConfigSnapshotsClaimed": false
+}

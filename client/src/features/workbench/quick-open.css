@@ -1,0 +1,179 @@
+.wl-quick-open-dialog {
+  width: min(620px, calc(100vw - 28px));
+  max-width: none;
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: var(--wl-radius-xl);
+  color: var(--wl-ink);
+  background:
+    linear-gradient(145deg, var(--wl-g1-tint-strong), var(--wl-g1-tint))
+      padding-box,
+    linear-gradient(
+        132deg,
+        var(--wl-g1-highlight),
+        color-mix(in srgb, var(--wl-g1-cold-rim) 48%, transparent) 56%,
+        color-mix(in srgb, var(--wl-g1-warm-rim) 54%, transparent)
+      )
+      border-box;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--wl-g1-highlight) 72%, transparent),
+    inset 0 -1px 0 var(--wl-g1-thickness),
+    0 7px 18px var(--wl-g1-contact-shadow),
+    0 32px 90px var(--wl-g1-space-shadow);
+  -webkit-backdrop-filter: blur(var(--wl-blur-nav))
+    saturate(var(--wl-saturation-nav));
+  backdrop-filter: blur(var(--wl-blur-nav)) saturate(var(--wl-saturation-nav));
+}
+
+.wl-quick-open-dialog [data-slot='command'] {
+  color: var(--wl-ink);
+  background: transparent;
+  border-radius: inherit;
+}
+
+.wl-quick-open-heading {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px 2px;
+  color: var(--wl-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.wl-quick-open-heading kbd {
+  padding: 3px 7px;
+  border: 1px solid var(--wl-border);
+  border-radius: 7px;
+  color: var(--wl-faint);
+  background: var(--wl-glass-soft);
+  font: 600 9px/1 var(--wl-font);
+}
+
+.wl-quick-open-dialog [data-slot='command-input-wrapper'] {
+  min-height: 54px;
+  margin: 0 12px 8px;
+  padding: 0 14px;
+  border: 1px solid var(--wl-border);
+  border-radius: var(--wl-radius-md);
+  background: var(--wl-surface-solid);
+  box-shadow: inset 0 1px 0
+    color-mix(in srgb, var(--wl-g3-highlight) 42%, transparent);
+}
+
+.wl-quick-open-dialog [data-slot='command-input'] {
+  color: var(--wl-ink);
+  font-family: var(--wl-font);
+  font-size: 13px;
+}
+
+.wl-quick-open-list {
+  max-height: min(430px, 62vh);
+  padding: 0 8px 6px;
+}
+
+.wl-quick-open-dialog [cmdk-group-heading] {
+  color: var(--wl-muted);
+  font-family: var(--wl-font);
+  font-size: 10px;
+  letter-spacing: 0;
+}
+
+.wl-quick-open-item {
+  min-height: 58px;
+  margin: 2px 0;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--wl-radius-md);
+}
+
+.wl-quick-open-item[data-selected='true'] {
+  color: var(--wl-ink);
+  border-color: color-mix(in srgb, var(--wl-accent) 24%, var(--wl-border));
+  background: color-mix(in srgb, var(--wl-accent-soft) 74%, transparent);
+}
+
+.wl-quick-open-icon {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  place-items: center;
+  border: 1px solid var(--wl-border);
+  border-radius: 12px;
+  color: var(--wl-accent);
+  background: var(--wl-glass-soft);
+}
+
+.wl-quick-open-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.wl-quick-open-copy {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 3px;
+}
+
+.wl-quick-open-copy strong,
+.wl-quick-open-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wl-quick-open-copy strong {
+  color: var(--wl-ink);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.wl-quick-open-copy small {
+  color: var(--wl-muted);
+  font-size: 10px;
+}
+
+.wl-quick-open-item [data-slot='command-shortcut'] svg {
+  width: 13px;
+  height: 13px;
+}
+
+.wl-quick-open-footnote {
+  margin: 0;
+  padding: 9px 16px 12px;
+  border-top: 1px solid var(--wl-border);
+  color: var(--wl-faint);
+  font-size: 9px;
+  text-align: right;
+}
+
+html[data-wl-visual-mode='ultra'] .wl-quick-open-dialog {
+  -webkit-backdrop-filter: blur(var(--wl-blur-nav))
+    saturate(var(--wl-saturation-nav)) brightness(1.04);
+  backdrop-filter: blur(var(--wl-blur-nav)) saturate(var(--wl-saturation-nav))
+    brightness(1.04);
+}
+
+html[data-wl-visual-mode='compatible'] .wl-quick-open-dialog,
+html[data-wl-transparency='reduced'] .wl-quick-open-dialog {
+  background: var(--wl-reduced-g1);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+@media (max-width: 560px) {
+  .wl-quick-open-dialog {
+    top: max(14px, env(safe-area-inset-top));
+    width: calc(100vw - 20px);
+    max-height: calc(100dvh - 28px - env(safe-area-inset-top));
+    translate: -50% 0;
+    transform: none;
+  }
+
+  .wl-quick-open-list {
+    max-height: calc(100dvh - 220px);
+  }
+}

@@ -7,6 +7,7 @@ import {
 } from '../../server/modules/action-attempt/action-attempt-envelope';
 import type { ActionAttemptRow } from '../../server/modules/action-attempt/action-attempt.types';
 import { CanonicalHostOpenClawOverallService } from '../../server/modules/canonical-host/canonical-host-openclaw-overall.service';
+import { CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY } from '../../server/modules/canonical-host/canonical-host-openclaw-runtime-policy';
 
 const WORK_ITEM_ID = 'WI-OVERALL-REAL';
 const ATTEMPT_ID = 'ATT-OVERALL-REAL';
@@ -116,6 +117,25 @@ describe('CanonicalHostOpenClawOverallService', () => {
         actionAttemptId: ATTEMPT_ID,
       },
     });
+  });
+
+  it('rejects wrong unified runtime provenance before prepareCommit, artifact persistence, or CAS', async () => {
+    const harness = createHarness();
+    const valid = overallResult();
+    const { contentHash: _contentHash, ...unsealed } = valid;
+    const result = sealResultEnvelope({
+      ...unsealed,
+      toolVersions: {
+        [CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.mcpServerName]: '1.1.0',
+      },
+    });
+
+    await expect(
+      harness.service.commit(ATTEMPT_REF, LEASE_TOKEN, 1, result),
+    ).rejects.toThrow('OPENCLAW_RESULT_RUNTIME_POLICY_MISMATCH');
+    expect(harness.attempts.prepareCommit).not.toHaveBeenCalled();
+    expect(harness.artifactStore.persistAndReadback).not.toHaveBeenCalled();
+    expect(harness.registrar.compareAndSet).not.toHaveBeenCalled();
   });
 
   it('reconciles a Host 5xx after CAS from the exact WorkItem projection', async () => {
@@ -450,10 +470,13 @@ function overallResult(
     missingInputs: [],
     conflicts: [],
     warnings: [],
-    modelVersion: 'openclaw-real',
+    modelVersion: CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.modelVersion,
     promptVersion: 'overall-prompt-v1',
-    skillVersion: 'overall-skill-v1',
-    toolVersions: { host: '006146b' },
+    skillVersion: CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.skillVersion,
+    toolVersions: {
+      [CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.mcpServerName]:
+        CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.mcpServerVersion,
+    },
     runMetrics: { durationMs: 1, inputUnits: 1, outputUnits: 1 },
     errorCode: null,
     errorDetail: null,

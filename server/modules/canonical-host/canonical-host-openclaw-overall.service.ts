@@ -43,6 +43,7 @@ import {
   type OpenClawOverallSynthesisInput,
 } from './openclaw-overall-synthesis.processor';
 import { assertLatestOverallCandidate } from './selective-overall-resynthesis';
+import { preflightCanonicalHostOpenClawResult } from './canonical-host-openclaw-runtime-policy';
 
 const OPENCLAW_SERVICE_USER_ID = 'service:openclaw-main';
 const CANONICAL_APP_ID = 'app_17bzc551rsg';
@@ -195,6 +196,20 @@ export class CanonicalHostOpenClawOverallService {
       attemptRef,
     });
     assertAttemptScope(scope, attemptRef);
+    const preflightRow = await this.attempts.readScoped({
+      attemptRef,
+      tenantId: scope.tenantId,
+      workItemId: scope.workItemId,
+    });
+    const preflight = preflightCanonicalHostOpenClawResult({
+      row: preflightRow,
+      result: resultEnvelope,
+    });
+    assertAttemptBinding(
+      scope,
+      overallAttemptFromRow(preflightRow),
+      attemptRef,
+    );
     const prepared = await this.attempts.prepareCommit({
       attemptRef,
       tenantId: scope.tenantId,
@@ -202,7 +217,7 @@ export class CanonicalHostOpenClawOverallService {
       principalId: scope.principalId,
       leaseToken,
       leaseGeneration,
-      result: resultEnvelope,
+      result: preflight.result,
     });
     const attempt = overallAttemptFromRow(prepared.row);
     assertAttemptBinding(scope, attempt, attemptRef);

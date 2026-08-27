@@ -9,13 +9,17 @@ import {
 } from 'react';
 
 export type WlTheme = 'light' | 'dark';
+export type WlVisualMode = 'default' | 'ultra' | 'compatible';
 
 const THEME_STORAGE_KEY = 'wiselink.ui.theme';
 const TRANSPARENCY_STORAGE_KEY = 'wiselink.ui.reduce-transparency';
+const VISUAL_MODE_STORAGE_KEY = 'wiselink.ui.visual-mode';
 
 interface WlThemeContextValue {
   theme: WlTheme;
+  visualMode: WlVisualMode;
   reduceTransparency: boolean;
+  setVisualMode: (mode: WlVisualMode) => void;
   toggleTheme: () => void;
   toggleTransparency: () => void;
 }
@@ -46,8 +50,23 @@ function readInitialTransparency(): boolean {
   }
 }
 
+function readInitialVisualMode(): WlVisualMode {
+  try {
+    const stored = window.localStorage.getItem(VISUAL_MODE_STORAGE_KEY);
+    if (stored === 'default' || stored === 'ultra' || stored === 'compatible') {
+      return stored;
+    }
+  } catch {
+    /* localStorage 不可用时回退正式生产基线 */
+  }
+  return 'default';
+}
+
 export function WlThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<WlTheme>(readInitialTheme);
+  const [visualMode, setVisualMode] = useState<WlVisualMode>(
+    readInitialVisualMode,
+  );
   const [reduceTransparency, setReduceTransparency] = useState(
     readInitialTransparency,
   );
@@ -60,6 +79,15 @@ export function WlThemeProvider({ children }: { children: ReactNode }) {
       /* 仅偏好持久化失败，不影响当前会话 */
     }
   }, [theme]);
+
+  useEffect(() => {
+    document.documentElement.dataset.wlVisualMode = visualMode;
+    try {
+      window.localStorage.setItem(VISUAL_MODE_STORAGE_KEY, visualMode);
+    } catch {
+      /* 仅视觉偏好持久化失败，不影响当前会话 */
+    }
+  }, [visualMode]);
 
   useEffect(() => {
     document.documentElement.dataset.wlTransparency = reduceTransparency
@@ -84,8 +112,15 @@ export function WlThemeProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ theme, reduceTransparency, toggleTheme, toggleTransparency }),
-    [reduceTransparency, theme, toggleTheme, toggleTransparency],
+    () => ({
+      theme,
+      visualMode,
+      reduceTransparency,
+      setVisualMode,
+      toggleTheme,
+      toggleTransparency,
+    }),
+    [reduceTransparency, theme, toggleTheme, toggleTransparency, visualMode],
   );
 
   return (

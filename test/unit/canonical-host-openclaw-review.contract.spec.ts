@@ -65,7 +65,7 @@ describe('interactive review C2 task/result contract', () => {
       const result = reviewResult(
         task,
         {},
-        { 'wiselink-openclaw-engineering-assessment': '1.1.0' },
+        { 'wiselink-openclaw-engineering-assessment': '1.2.0' },
         skillVersion,
       );
       expect(() => parseReviewTurnCandidateContract({ result, task })).toThrow(
@@ -174,7 +174,7 @@ function reviewResult(
   task: ReturnType<typeof reviewTask>,
   overrides: Record<string, unknown> = {},
   toolVersions: Record<string, string> = {
-    'wiselink-openclaw-engineering-assessment': '1.1.0',
+    'wiselink-openclaw-engineering-assessment': '1.2.0',
   },
   skillVersion: string = REVIEW_SKILL_POLICY_REF,
 ) {

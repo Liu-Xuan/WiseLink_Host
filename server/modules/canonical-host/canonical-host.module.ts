@@ -23,7 +23,19 @@ import { CanonicalHostOpenClawDynamicEvaluationService } from './canonical-host-
 import { CanonicalHostOpenClawDiscoveryService } from './canonical-host-openclaw-discovery.service';
 import { CanonicalHostOpenClawOverallService } from './canonical-host-openclaw-overall.service';
 import { CanonicalHostOpenClawTranslationService } from './canonical-host-openclaw-translation.service';
+import { CanonicalHostOpenClawApplicabilityService } from './canonical-host-openclaw-applicability.service';
+import { CanonicalHostOpenClawAttemptStatusService } from './canonical-host-openclaw-attempt-status.service';
+import {
+  CanonicalHostApplicabilityInputProducer,
+  UnavailableCanonicalApplicabilityControlledSelection,
+} from './canonical-host-applicability-input.producer';
+import { CanonicalHostApplicabilitySelectionController } from './canonical-host-applicability-selection.controller';
+import { CanonicalHostApplicabilitySelectionService } from './canonical-host-applicability-selection.service';
+import { CanonicalFleetMasterDataRepository } from './canonical-fleet-master-data.repository';
+import { MiaodaApplicabilityControlledSelectionAdapter } from './miaoda-applicability-controlled-selection.adapter';
 import { CanonicalHostOpenClawReviewService } from './canonical-host-openclaw-review.service';
+import { CanonicalHostReviewActionController } from './canonical-host-review-action.controller';
+import { CanonicalHostReviewActionService } from './canonical-host-review-action.service';
 import { HostOwnedV1TranslationRuleSetPrivateProvider } from './canonical-translation-rule-set-v1.private';
 import { ExternalDiscoveryModule } from '../external-discovery/external-discovery.module';
 import { CanonicalFailureRecordingService } from './canonical-failure-recording.service';
@@ -31,6 +43,7 @@ import { ExactFtdFrozen2PdfProducerAdapter } from './exact-ftd-frozen2-pdf-produ
 import { OrdinaryFailureValidationWriteAuthorizationAdapter } from './ordinary-failure-validation-write-authorization.adapter';
 import {
   CANONICAL_AUTHORIZATION,
+  CANONICAL_APPLICABILITY_CONTROLLED_SELECTION,
   CANONICAL_BASE_RULE_RESULT_PROVIDER,
   CANONICAL_FAILURE_VALIDATION_WRITE_AUTHORIZATION,
   CANONICAL_HOST_BINDING,
@@ -44,7 +57,6 @@ import {
 } from './canonical-host.constants';
 import type { CanonicalHostBindingState } from './canonical-host.types';
 import { MiaodaCanonicalWorkItemRegistrarAdapter } from '../work-item/miaoda-canonical-work-item-registrar.adapter';
-import { MiaodaDocumentVersionSourceResolver } from '../work-item/miaoda-document-version-source.resolver';
 import { WorkItemRuntimeModule } from '../work-item/work-item-runtime.module';
 import { IdentityModule } from '../identity/identity.module';
 import { ReviewPersistenceModule } from '../review-persistence/review-persistence.module';
@@ -90,6 +102,7 @@ export interface CanonicalHostModuleOptions {
   openClawOverallProvider?: Provider;
   serviceScopeAuthorizationProvider?: Provider;
   professionalArtifactCorrelationProvider?: Provider;
+  applicabilityControlledSelectionProvider?: Provider;
 }
 
 @Module({
@@ -108,6 +121,8 @@ export interface CanonicalHostModuleOptions {
     CanonicalHostMcpOpenApiController,
     CanonicalHostOpenClawMcpOpenApiController,
     OauthSessionDevelopmentWorkItemController,
+    CanonicalHostReviewActionController,
+    CanonicalHostApplicabilitySelectionController,
   ],
   providers: [
     CanonicalEntryFacadeService,
@@ -119,10 +134,16 @@ export interface CanonicalHostModuleOptions {
     CanonicalHostOpenClawDiscoveryService,
     CanonicalHostOpenClawOverallService,
     CanonicalHostOpenClawTranslationService,
+    CanonicalHostOpenClawApplicabilityService,
+    CanonicalHostOpenClawAttemptStatusService,
+    CanonicalHostApplicabilityInputProducer,
+    CanonicalHostApplicabilitySelectionService,
+    CanonicalFleetMasterDataRepository,
+    MiaodaApplicabilityControlledSelectionAdapter,
     CanonicalHostOpenClawReviewService,
+    CanonicalHostReviewActionService,
     HostOwnedV1TranslationRuleSetPrivateProvider,
     ExactFtdFrozen2PdfProducerAdapter,
-    MiaodaDocumentVersionSourceResolver,
     MiaodaCanonicalWorkItemRegistrarAdapter,
     OrdinaryWorkItemService,
     OrdinaryFailureValidationWriteAuthorizationAdapter,
@@ -132,6 +153,7 @@ export interface CanonicalHostModuleOptions {
     CanonicalHostLibraryIndexService,
     CanonicalHostAeoService,
     UnavailableCanonicalServiceScopeAuthorization,
+    UnavailableCanonicalApplicabilityControlledSelection,
     UnavailableScopedProfessionalArtifactCorrelationAdapter,
     MiaodaScopedProfessionalArtifactCorrelationAdapter,
     {
@@ -145,6 +167,10 @@ export interface CanonicalHostModuleOptions {
     {
       provide: CANONICAL_SERVICE_SCOPE_AUTHORIZATION,
       useExisting: CANONICAL_EXECUTOR_SERVICE_SCOPE_AUTHORIZATION,
+    },
+    {
+      provide: CANONICAL_APPLICABILITY_CONTROLLED_SELECTION,
+      useExisting: UnavailableCanonicalApplicabilityControlledSelection,
     },
   ],
 })
@@ -210,6 +236,12 @@ export class CanonicalHostModule {
       MiaodaScopedProfessionalArtifactCorrelationAdapter,
       'SCOPED_PROFESSIONAL_ARTIFACT_CORRELATION_PROVIDER_INVALID',
     );
+    const applicabilityControlledSelectionProvider = resolveProvider(
+      options.applicabilityControlledSelectionProvider,
+      CANONICAL_APPLICABILITY_CONTROLLED_SELECTION,
+      UnavailableCanonicalApplicabilityControlledSelection,
+      'CANONICAL_APPLICABILITY_CONTROLLED_SELECTION_PROVIDER_INVALID',
+    );
     const binding: CanonicalHostBindingState = {
       mode:
         options.workItemRegistrarProvider &&
@@ -248,6 +280,8 @@ export class CanonicalHostModule {
         CanonicalHostMcpOpenApiController,
         CanonicalHostOpenClawMcpOpenApiController,
         OauthSessionDevelopmentWorkItemController,
+        CanonicalHostReviewActionController,
+        CanonicalHostApplicabilitySelectionController,
       ],
       providers: [
         workItemRegistrarProvider,
@@ -260,6 +294,7 @@ export class CanonicalHostModule {
         openClawOverallProvider,
         serviceScopeAuthorizationProvider,
         professionalArtifactCorrelationProvider,
+        applicabilityControlledSelectionProvider,
         {
           provide: CANONICAL_HOST_CLOCK,
           useClass: SystemCanonicalHostClockAdapter,
@@ -274,10 +309,16 @@ export class CanonicalHostModule {
         CanonicalHostOpenClawDiscoveryService,
         CanonicalHostOpenClawOverallService,
         CanonicalHostOpenClawTranslationService,
+        CanonicalHostOpenClawApplicabilityService,
+        CanonicalHostOpenClawAttemptStatusService,
+        CanonicalHostApplicabilityInputProducer,
+        CanonicalHostApplicabilitySelectionService,
+        CanonicalFleetMasterDataRepository,
+        MiaodaApplicabilityControlledSelectionAdapter,
         CanonicalHostOpenClawReviewService,
+        CanonicalHostReviewActionService,
         HostOwnedV1TranslationRuleSetPrivateProvider,
         ExactFtdFrozen2PdfProducerAdapter,
-        MiaodaDocumentVersionSourceResolver,
         MiaodaCanonicalWorkItemRegistrarAdapter,
         OrdinaryWorkItemService,
         OrdinaryFailureValidationWriteAuthorizationAdapter,
@@ -299,6 +340,7 @@ export class CanonicalHostModule {
         CanonicalHostEngineerReviewService,
         CanonicalHostLibraryIndexService,
         CanonicalHostAeoService,
+        CanonicalHostApplicabilityInputProducer,
         CANONICAL_HOST_BINDING,
       ],
     };

@@ -4,15 +4,20 @@ import type {
 } from '@shared/api.interface';
 import { assertNoDuplicateJsonKeys } from '../unified-reader/unified-reader.utils';
 import type { OpenClawResultEnvelope } from '../action-attempt/action-attempt-envelope.types';
+import { CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY } from './canonical-host-openclaw-runtime-policy';
 
-export const REVIEW_RUNTIME_APP_ID = 'app_17c3zn24kv2' as const;
-export const REVIEW_PROFILE_REF = 'wiselink-engineering' as const;
-export const REVIEW_MODEL_POLICY_REF = 'GLM-5.1' as const;
+export const REVIEW_RUNTIME_APP_ID =
+  CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.runtimeAppId;
+export const REVIEW_PROFILE_REF =
+  CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.profileRef;
+export const REVIEW_MODEL_POLICY_REF =
+  CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.modelVersion;
 export const REVIEW_SKILL_POLICY_REF =
-  'wiselink-research-and-synthesize@r09.interactive-review.c2' as const;
+  CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.skillVersion;
 export const REVIEW_TOOL_POLICY_REF =
-  'wiselink-openclaw-engineering-assessment@1.1.0#interactive-review-c2' as const;
-export const REVIEW_MCP_PACKAGE_VERSION = '1.1.0' as const;
+  'wiselink-openclaw-engineering-assessment@1.2.0#interactive-review-c2' as const;
+export const REVIEW_MCP_PACKAGE_VERSION =
+  CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.mcpServerVersion;
 
 export const REVIEW_ALLOWED_OPERATIONS = [
   'GET_WORKITEM_CONTEXT',
@@ -44,7 +49,7 @@ export interface ReviewTurnTaskContract {
   resourceRefs: FrozenReviewSourceRef[];
   allowedEvaluationItemIds: string[];
   allowedAdoptedInputRefs: string[];
-  attachmentRefs: [];
+  attachmentRefs: string[];
   context: Record<string, unknown>;
   executionPolicy: {
     runtimeAppId: typeof REVIEW_RUNTIME_APP_ID;
@@ -158,12 +163,16 @@ export function parseReviewTurnTaskContract(
     'REVIEW_TASK_ADOPTED_INPUTS_INVALID',
   );
   assertUnique(allowedAdoptedInputRefs, 'REVIEW_TASK_ADOPTED_INPUTS_DUPLICATE');
-  if (
-    !Array.isArray(record.attachmentRefs) ||
-    record.attachmentRefs.length !== 0
-  ) {
-    fail('REVIEW_TASK_ATTACHMENTS_OUT_OF_SCOPE');
-  }
+  const attachmentRefs = stringArray(
+    record.attachmentRefs,
+    'REVIEW_TASK_ATTACHMENTS_INVALID',
+  );
+  assertUnique(attachmentRefs, 'REVIEW_TASK_ATTACHMENTS_DUPLICATE');
+  assertSubset(
+    attachmentRefs,
+    resourceRefs.map((item) => item.sourceRefId),
+    'REVIEW_TASK_ATTACHMENT_REF_NOT_ALLOWED',
+  );
   requiredRecord(record.context, 'REVIEW_TASK_CONTEXT_INVALID');
   const executionPolicy = requiredRecord(
     record.executionPolicy,

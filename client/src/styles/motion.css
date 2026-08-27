@@ -114,8 +114,7 @@
   border: 1px solid color-mix(in srgb, var(--wl-accent) 52%, transparent);
   border-radius: inherit;
   background: color-mix(in srgb, var(--wl-accent-soft) 34%, transparent);
-  box-shadow: 0 0 0 3px
-    color-mix(in srgb, var(--wl-accent) 12%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--wl-accent) 12%, transparent);
   opacity: 0;
   pointer-events: none;
   animation: wl-source-locate 900ms ease-out 1;
@@ -193,6 +192,57 @@
 /* 任务进度条：缓慢平滑填充 */
 .wl-progress-bar {
   transition: width var(--wl-motion-slow) ease;
+}
+
+/* R05.5 三档动效预算：Ultra 仅一组环境光与唯一 Hero 呼吸。 */
+html[data-wl-visual-mode='ultra'] .wl-focus-card[data-active='true']::after {
+  animation-duration: 6s;
+}
+
+html[data-wl-visual-mode='ultra'] .wl-status-dot[data-pulse='true']::after {
+  animation: none;
+  opacity: 0.28;
+  transform: none;
+}
+
+html[data-wl-visual-mode='ultra']
+  :is(
+    .wl-task-pill.is-running svg,
+    .library-spin,
+    .wl-spin,
+    .animate-spin,
+    .skeleton-line,
+    .skeleton-block
+  ) {
+  animation: none;
+}
+
+html[data-wl-visual-mode='ultra'] .wl-source-flash::after {
+  animation-duration: 820ms;
+}
+
+html[data-wl-visual-mode='ultra'] .wl-workbench-enter,
+html[data-wl-visual-mode='ultra'] .wl-workbench-main {
+  animation-duration: 280ms;
+}
+
+html[data-wl-visual-mode='compatible']
+  :is(
+    .wl-light,
+    .wl-focus-card[data-active='true']::after,
+    .wl-status-dot[data-pulse='true']::after,
+    .wl-task-pill.is-running svg,
+    .library-spin,
+    .wl-spin,
+    .animate-spin,
+    .skeleton-line,
+    .skeleton-block,
+    .wl-source-flash::after,
+    .wl-stale-flash::after,
+    .wl-workbench-enter,
+    .wl-workbench-main
+  ) {
+  animation: none;
 }
 
 /* ── reduced-motion 全局降级（§6 / §10.2） ── */

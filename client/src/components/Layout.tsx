@@ -1,6 +1,8 @@
 import { ChevronRight, FileSearch2 } from 'lucide-react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 
+import CurrentUserControl from '@client/src/components/CurrentUserControl';
+import VisualModeControl from '@client/src/components/VisualModeControl';
 import FloatingDock from '@client/src/features/navigation/FloatingDock';
 import './app-shell.css';
 
@@ -32,7 +34,7 @@ const Layout = () => {
       <FloatingDock workItemId={workItemId} />
 
       <header className="wiselink-app-header wl-glass-nav" role="banner">
-        <NavLink className="wiselink-app-brand" to="/">
+        <NavLink className="wiselink-app-brand" to="/library">
           <span className="wiselink-app-mark" aria-hidden="true">
             W
           </span>
@@ -60,6 +62,8 @@ const Layout = () => {
               资料与结果按权限显示
             </span>
           )}
+          <VisualModeControl />
+          <CurrentUserControl />
         </div>
       </header>
 
@@ -104,18 +108,15 @@ function deriveBreadcrumbs(
   pathname: string,
   workItemId: string,
 ): Array<{ label: string; to?: string }> {
-  if (pathname === '/') {
-    return [{ label: '总览' }];
+  if (pathname === '/' || pathname === '/library') {
+    return [{ label: '资料库' }];
   }
 
   const crumbs: Array<{ label: string; to?: string }> = [
-    { label: '总览', to: '/' },
+    { label: '资料库', to: '/library' },
   ];
 
-  if (pathname === '/library') {
-    crumbs.push({ label: '资料库' });
-  } else if (pathname.startsWith('/work-items/') && workItemId) {
-    crumbs.push({ label: '资料库', to: '/library' });
+  if (pathname.startsWith('/work-items/') && workItemId) {
     crumbs.push({ label: '当前工程事项' });
   } else if (pathname === '/external-discovery') {
     crumbs.push({ label: '补充资料' });

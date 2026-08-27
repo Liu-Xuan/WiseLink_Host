@@ -5,12 +5,16 @@ import {
   WISELINK_PROFILE_REF,
   WISELINK_RUNTIME_APP_ID,
   WISELINK_SKILL_VERSION,
+  WISELINK_APPLICABILITY_PROMPT_VERSION,
+  buildApplicabilityCandidate,
   canonicalJson,
   isForbiddenAuthorityInputKey,
   normalizeAuthorityInputKey,
   sealResultEnvelope,
+  sealWaitingInputResultEnvelope,
   serializeDynamicRulesCommitOutput,
   validatePayload,
+  validateApplicabilityAstCandidate,
   validateResultEnvelope,
   validateReviewCandidate,
   validateReviewTask,
@@ -38,8 +42,28 @@ export const INTERACTIVE_REVIEW_TOOLS = [
   'commit_review_turn_candidate',
 ];
 
-export const EXTRACT_APPLICABILITY_BLOCKER =
-  'INITIAL_ANALYSIS_EXTRACT_APPLICABILITY_HOST_MCP_UNAVAILABLE';
+export const HOST_MCP_TOOLS = [
+  'get_parse_status',
+  'query_parsed_package',
+  'get_deep_link',
+  'begin_translation',
+  'commit_translation_candidate',
+  'begin_applicability_evaluation',
+  'commit_applicability_candidate',
+  'begin_dynamic_evaluation',
+  'commit_dynamic_evaluation_candidate',
+  'record_oem_discovery_run',
+  'begin_overall_synthesis',
+  'resume_overall_synthesis',
+  'commit_overall_candidate',
+  'begin_review_turn',
+  'get_review_turn_context',
+  'read_source_refs',
+  'get_action_attempt_status',
+  'commit_review_turn_candidate',
+  'heartbeat_action_attempt',
+  'cancel_action_attempt',
+];
 
 const DYNAMIC_COMMIT_STATUSES = new Set([
   'BASE_RULE_CANDIDATE_READY',
@@ -47,9 +71,9 @@ const DYNAMIC_COMMIT_STATUSES = new Set([
 ]);
 
 /**
- * Route one Host-authorized INITIAL_ANALYSIS operation. There is deliberately
- * no synthetic "run all" success path: EXTRACT_APPLICABILITY lacks a
- * dedicated begin/commit pair in Host MCP 1.1.0 and remains a blocker.
+ * Route one Host-authorized INITIAL_ANALYSIS operation. Each operation keeps
+ * its dedicated Host begin/commit lifecycle; dynamic evaluation never stands
+ * in for applicability.
  */
 export async function runInitialAnalysis(input) {
   if (input?.mode !== 'INITIAL_ANALYSIS') {
@@ -59,7 +83,7 @@ export async function runInitialAnalysis(input) {
     case 'TRANSLATE':
       return runTranslation(input);
     case 'EXTRACT_APPLICABILITY':
-      throw new Error(EXTRACT_APPLICABILITY_BLOCKER);
+      return runApplicabilityEvaluation(input);
     case 'EVALUATE_JOBAID':
       return runDynamicEvaluation(input);
     case 'SYNTHESIZE_OVERALL':
@@ -105,18 +129,118 @@ export async function runTranslation({ workItemId, callTool, translate }) {
     );
     assertTranslationCommit(committed, workItemId);
   } catch (error) {
-    const readback = await singleStatusReadback(callTool, workItemId, error);
-    throw outcomeUnknown(
-      'HOST_MCP_TRANSLATION_COMMIT_OUTCOME_UNKNOWN',
-      error,
-      readback,
-    );
+    return recoverCommitResponseLoss({
+      mode: 'INITIAL_ANALYSIS',
+      operation: 'TRANSLATE',
+      before,
+      begin,
+      result,
+      callTool,
+      cause: error,
+    });
   }
   const after = await callTool('get_parse_status', { workItemId });
   const deepLink = await callTool('get_deep_link', { workItemId });
   return completedResult({
     mode: 'INITIAL_ANALYSIS',
     operation: 'TRANSLATE',
+    before,
+    committed,
+    after,
+    deepLink,
+    result,
+  });
+}
+
+export async function runApplicabilityEvaluation({
+  applicabilityContextRef,
+  requestId,
+  callTool,
+  extractApplicability,
+  runtimeProvenance,
+}) {
+  requiredText(
+    applicabilityContextRef,
+    'HOST_MCP_APPLICABILITY_CONTEXT_REF_REQUIRED',
+  );
+  requiredText(requestId, 'HOST_MCP_APPLICABILITY_REQUEST_ID_REQUIRED');
+  if (typeof callTool !== 'function') {
+    throw new Error('HOST_MCP_CALLBACK_REQUIRED');
+  }
+  const begin = await callTool('begin_applicability_evaluation', {
+    applicabilityContextRef,
+    requestId,
+  });
+  assertBegin(begin, 'OPENCLAW_APPLICABILITY_EVALUATION');
+  validatePayload('applicability-input', begin.modelInput);
+  const workItemId = begin.task.workItemId;
+  const before = await callTool('get_parse_status', { workItemId });
+  if (begin.status === 'COMMITTING') {
+    return recoverInitialCommitting({
+      stage: 'EXTRACT_APPLICABILITY',
+      before,
+      begin,
+      callTool,
+    });
+  }
+
+  let result;
+  if (begin.task.hostResolvedMissingInputs.length > 0) {
+    result = sealWaitingInputResultEnvelope({
+      task: begin.task,
+      provenance: normalizeApplicabilityProvenance(runtimeProvenance),
+    });
+  } else {
+    if (typeof extractApplicability !== 'function') {
+      throw new Error('HOST_MCP_APPLICABILITY_MODEL_CALLBACK_REQUIRED');
+    }
+    const execution = normalizeExecution(
+      await extractApplicability(structuredClone(begin.modelInput)),
+    );
+    assertApplicabilityPromptVersion(execution.provenance);
+    const astCandidate = validateApplicabilityAstCandidate(
+      execution.output,
+      begin.modelInput,
+    );
+    const candidate = buildApplicabilityCandidate(
+      begin.modelInput,
+      astCandidate,
+    );
+    result = sealResultEnvelope({
+      task: begin.task,
+      modelOutput: candidate,
+      provenance: execution.provenance,
+      factsConsidered: begin.modelInput.controlledFacts.map(
+        ({ factId }) => factId,
+      ),
+    });
+  }
+
+  let committed;
+  try {
+    committed = await callTool(
+      'commit_applicability_candidate',
+      commitArgs(begin, result),
+    );
+    assertApplicabilityCommit(committed, begin, result);
+  } catch (error) {
+    return recoverCommitResponseLoss({
+      mode: 'INITIAL_ANALYSIS',
+      operation: 'EXTRACT_APPLICABILITY',
+      before,
+      begin,
+      result,
+      callTool,
+      cause: error,
+    });
+  }
+  const after = await callTool('get_parse_status', { workItemId });
+  const deepLink = await callTool('get_deep_link', { workItemId });
+  return completedResult({
+    mode: 'INITIAL_ANALYSIS',
+    operation: 'EXTRACT_APPLICABILITY',
+    outcome:
+      result.status === 'WAITING_INPUT' ? 'WAITING_INPUT' : 'CANDIDATE_ONLY',
     before,
     committed,
     after,
@@ -160,7 +284,6 @@ export async function runDynamicEvaluation({
   });
   let committed = null;
   let after = null;
-  let commitRecoveredByReadback = false;
   try {
     committed = await callTool(
       'commit_dynamic_evaluation_candidate',
@@ -168,21 +291,15 @@ export async function runDynamicEvaluation({
     );
     assertDynamicCommit(committed, workItemId);
   } catch (error) {
-    after = await singleStatusReadback(callTool, workItemId, error);
-    if (
-      !dynamicCommitPresent(
-        after,
-        begin.modelInput.callerCorrelationRef,
-        workItemId,
-      )
-    ) {
-      throw outcomeUnknown(
-        'HOST_MCP_DYNAMIC_COMMIT_OUTCOME_UNKNOWN',
-        error,
-        after,
-      );
-    }
-    commitRecoveredByReadback = true;
+    return recoverCommitResponseLoss({
+      mode: 'INITIAL_ANALYSIS',
+      operation: 'EVALUATE_JOBAID',
+      before,
+      begin,
+      result,
+      callTool,
+      cause: error,
+    });
   }
   after ??= await callTool('get_parse_status', { workItemId });
   const parsed =
@@ -205,7 +322,7 @@ export async function runDynamicEvaluation({
       deepLink,
       result,
     }),
-    commitRecoveredByReadback,
+    commitRecoveredByReadback: false,
     parsed,
     parsedReaderSummary,
   };
@@ -292,7 +409,6 @@ async function completeOverall({
   });
   let committed = null;
   let after = null;
-  let commitRecoveredByReadback = false;
   try {
     committed = await callTool(
       'commit_overall_candidate',
@@ -300,21 +416,15 @@ async function completeOverall({
     );
     assertOverallCommit(committed, workItemId);
   } catch (error) {
-    after = await singleStatusReadback(callTool, workItemId, error);
-    if (
-      !overallCommitPresent(
-        after,
-        begin.modelInput.outputCorrelationRef,
-        workItemId,
-      )
-    ) {
-      throw outcomeUnknown(
-        'HOST_MCP_OVERALL_COMMIT_OUTCOME_UNKNOWN',
-        error,
-        after,
-      );
-    }
-    commitRecoveredByReadback = true;
+    return recoverCommitResponseLoss({
+      mode: 'INITIAL_ANALYSIS',
+      operation: 'SYNTHESIZE_OVERALL',
+      before,
+      begin,
+      result,
+      callTool,
+      cause: error,
+    });
   }
   after ??= await callTool('get_parse_status', { workItemId });
   const deepLink = await callTool('get_deep_link', { workItemId });
@@ -330,7 +440,7 @@ async function completeOverall({
     }),
     resumed,
     selectedDiscoveryRefs: [...begin.selectedDiscoveryRefs],
-    commitRecoveredByReadback,
+    commitRecoveredByReadback: false,
   };
 }
 
@@ -401,19 +511,15 @@ export async function runInteractiveReviewTurn({
       commitArgs(begin, result),
     );
   } catch (error) {
-    const readback = await singleReviewStatusReadback(
+    return recoverCommitResponseLoss({
+      mode: 'INTERACTIVE_REVIEW',
+      operation: 'REVIEW_TURN',
+      before: contextResult,
+      begin,
+      result,
       callTool,
-      begin.attemptRef,
-      error,
-    );
-    if (readback.recoveryResult) {
-      validateResultEnvelope(begin.task, readback.recoveryResult);
-    }
-    throw outcomeUnknown(
-      'HOST_MCP_REVIEW_COMMIT_OUTCOME_UNKNOWN',
-      error,
-      readback,
-    );
+      cause: error,
+    });
   }
   assertReviewCommit(committed, begin.attemptRef);
   return completedResult({
@@ -428,46 +534,104 @@ export async function runInteractiveReviewTurn({
 }
 
 async function recoverReviewCommitting(begin, callTool) {
+  return recoverCommitting({
+    mode: 'INTERACTIVE_REVIEW',
+    operation: 'REVIEW_TURN',
+    before: null,
+    begin,
+    callTool,
+  });
+}
+
+async function recoverInitialCommitting({ stage, before, begin, callTool }) {
+  return recoverCommitting({
+    mode: 'INITIAL_ANALYSIS',
+    operation: stage,
+    before,
+    begin,
+    callTool,
+  });
+}
+
+async function recoverCommitting({ mode, operation, before, begin, callTool }) {
+  if (!begin.recoveryResult) {
+    throw new Error('HOST_MCP_COMMITTING_RECOVERY_UNAVAILABLE');
+  }
+  validateResultEnvelope(begin.task, begin.recoveryResult);
   const status = await callTool('get_action_attempt_status', {
     attemptRef: begin.attemptRef,
   });
-  assertReviewStatus(status, begin.attemptRef);
-  if (status.status !== 'COMMITTING' || !status.recoveryResult) {
-    throw new Error('HOST_MCP_REVIEW_COMMITTING_RECOVERY_UNAVAILABLE');
+  assertGenericAttemptStatus(status, begin);
+  if (
+    status.status !== 'COMMITTING' ||
+    status.recoveryAvailable !== true ||
+    !status.recoveryResult
+  ) {
+    throw new Error('HOST_MCP_COMMITTING_RECOVERY_UNAVAILABLE');
   }
   validateResultEnvelope(begin.task, status.recoveryResult);
+  if (
+    status.resultContentHash !== begin.recoveryResult.contentHash ||
+    status.recoveryResult.contentHash !== begin.recoveryResult.contentHash
+  ) {
+    throw new Error('HOST_MCP_COMMITTING_RESULT_HASH_MISMATCH');
+  }
   return {
     ok: false,
-    mode: 'INTERACTIVE_REVIEW',
-    operation: 'REVIEW_TURN',
+    mode,
+    operation,
     outcome: 'COMMITTING_RECOVERY_READ_ONLY',
     attemptRef: begin.attemptRef,
+    before,
     status,
     provenance: resultProvenance(status.recoveryResult),
   };
 }
 
-async function recoverInitialCommitting({
-  stage,
-  workItemId,
+async function recoverCommitResponseLoss({
+  mode,
+  operation,
   before,
   begin,
+  result,
   callTool,
+  cause,
 }) {
-  if (!begin.recoveryResult) {
-    throw new Error('HOST_MCP_COMMITTING_RECOVERY_UNAVAILABLE');
+  let status;
+  try {
+    status = await callTool('get_action_attempt_status', {
+      attemptRef: begin.attemptRef,
+    });
+    assertGenericAttemptStatus(status, begin);
+  } catch {
+    throw outcomeUnknown('HOST_MCP_COMMIT_READBACK_FAILED', cause, null);
   }
-  validateResultEnvelope(begin.task, begin.recoveryResult);
-  const after = await callTool('get_parse_status', { workItemId });
+  if (
+    !['COMMITTING', 'SUCCEEDED', 'WAITING_INPUT', 'FAILED'].includes(
+      status.status,
+    ) ||
+    status.resultContentHash !== result.contentHash
+  ) {
+    throw outcomeUnknown('HOST_MCP_COMMIT_OUTCOME_UNKNOWN', cause, status);
+  }
+  if (status.status === 'COMMITTING') {
+    if (status.recoveryAvailable !== true || !status.recoveryResult) {
+      throw outcomeUnknown('HOST_MCP_COMMIT_OUTCOME_UNKNOWN', cause, status);
+    }
+    validateResultEnvelope(begin.task, status.recoveryResult);
+    if (status.recoveryResult.contentHash !== result.contentHash) {
+      throw outcomeUnknown('HOST_MCP_COMMIT_OUTCOME_UNKNOWN', cause, status);
+    }
+  }
   return {
-    ok: false,
-    mode: 'INITIAL_ANALYSIS',
-    operation: stage,
-    outcome: 'COMMITTING_RECOVERY_READ_ONLY',
+    ok: status.status === 'SUCCEEDED',
+    mode,
+    operation,
+    outcome: 'COMMIT_RESPONSE_LOSS_RECOVERED_READ_ONLY',
     attemptRef: begin.attemptRef,
     before,
-    after,
-    provenance: resultProvenance(begin.recoveryResult),
+    status,
+    provenance: resultProvenance(result),
   };
 }
 
@@ -661,6 +825,18 @@ function normalizeExecution(value) {
   return value;
 }
 
+function normalizeApplicabilityProvenance(value) {
+  validateRuntimeProvenance(value);
+  assertApplicabilityPromptVersion(value);
+  return structuredClone(value);
+}
+
+function assertApplicabilityPromptVersion(provenance) {
+  if (provenance.promptVersion !== WISELINK_APPLICABILITY_PROMPT_VERSION) {
+    throw new Error('APPLICABILITY_PROMPT_POLICY_MISMATCH');
+  }
+}
+
 function commitArgs(begin, result) {
   return {
     attemptRef: begin.attemptRef,
@@ -673,6 +849,7 @@ function commitArgs(begin, result) {
 function completedResult({
   mode,
   operation,
+  outcome = 'CANDIDATE_ONLY',
   before,
   committed,
   after,
@@ -683,7 +860,7 @@ function completedResult({
     ok: true,
     mode,
     operation,
-    outcome: 'CANDIDATE_ONLY',
+    outcome,
     before,
     committed,
     after,
@@ -712,6 +889,33 @@ function assertTranslationCommit(value, workItemId) {
     value.translation?.status !== 'CANDIDATE_ONLY'
   ) {
     throw new Error('HOST_MCP_TRANSLATION_COMMIT_RESULT_INVALID');
+  }
+}
+
+function assertApplicabilityCommit(value, begin, result) {
+  if (result.status === 'WAITING_INPUT') {
+    if (
+      !value ||
+      typeof value !== 'object' ||
+      Array.isArray(value) ||
+      value.attemptRef !== begin.attemptRef ||
+      value.status !== 'WAITING_INPUT'
+    ) {
+      throw new Error('HOST_MCP_APPLICABILITY_WAITING_RESULT_INVALID');
+    }
+    return;
+  }
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    Array.isArray(value) ||
+    value.workItemId !== begin.task.workItemId ||
+    !Number.isSafeInteger(value.workItemRevision) ||
+    value.status !== 'CANDIDATE_ONLY' ||
+    value.applicability?.status !== 'CANDIDATE_ONLY' ||
+    value.applicability?.actionAttemptId !== begin.task.actionAttemptId
+  ) {
+    throw new Error('HOST_MCP_APPLICABILITY_COMMIT_RESULT_INVALID');
   }
 }
 
@@ -900,17 +1104,24 @@ function assertReviewSourcesWereRead(candidate, readSourceRefIds) {
   }
 }
 
-function assertReviewStatus(value, attemptRef) {
+function assertGenericAttemptStatus(value, begin) {
   if (
     !value ||
     typeof value !== 'object' ||
     Array.isArray(value) ||
-    value.schemaVersion !== 'wiselink.3_1.review_action_attempt_status.v1.c2' ||
-    value.attemptRef !== attemptRef ||
+    value.attemptRef !== begin.attemptRef ||
+    value.taskType !== begin.task.taskType ||
     typeof value.status !== 'string' ||
-    value.projectionApplied !== false
+    typeof value.recoveryAvailable !== 'boolean' ||
+    typeof value.projectionApplied !== 'boolean' ||
+    (value.commitStartedAt !== null &&
+      typeof value.commitStartedAt !== 'string') ||
+    (value.terminalReason !== null &&
+      typeof value.terminalReason !== 'string') ||
+    (value.resultContentHash !== null &&
+      typeof value.resultContentHash !== 'string')
   ) {
-    throw new Error('HOST_MCP_REVIEW_STATUS_INVALID');
+    throw new Error('HOST_MCP_ACTION_ATTEMPT_STATUS_INVALID');
   }
 }
 
@@ -930,54 +1141,6 @@ function assertReviewCommit(value, attemptRef) {
   ) {
     throw new Error('HOST_MCP_REVIEW_COMMIT_RESULT_INVALID');
   }
-}
-
-async function singleStatusReadback(callTool, workItemId, error) {
-  try {
-    return await callTool('get_parse_status', { workItemId });
-  } catch {
-    throw outcomeUnknown('HOST_MCP_COMMIT_READBACK_FAILED', error, null);
-  }
-}
-
-async function singleReviewStatusReadback(callTool, attemptRef, error) {
-  try {
-    const status = await callTool('get_action_attempt_status', { attemptRef });
-    assertReviewStatus(status, attemptRef);
-    return status;
-  } catch {
-    throw outcomeUnknown('HOST_MCP_REVIEW_COMMIT_READBACK_FAILED', error, null);
-  }
-}
-
-function dynamicCommitPresent(status, correlationRef, workItemId) {
-  const summary = status?.integratedAssessmentSummary;
-  const dynamicRules = summary?.baseRules;
-  return (
-    statusWorkItemId(status) === workItemId &&
-    DYNAMIC_COMMIT_STATUSES.has(summary?.status) &&
-    dynamicRules?.status === 'CANDIDATE_ONLY' &&
-    dynamicRules.sourceResultId === `openclaw-dynamic://${correlationRef}` &&
-    Number.isSafeInteger(dynamicRules.criterionCount) &&
-    dynamicRules.criterionCount > 0 &&
-    dynamicRules.evaluationItemCount === dynamicRules.criterionCount
-  );
-}
-
-function overallCommitPresent(status, correlationRef, workItemId) {
-  const summary = status?.integratedAssessmentSummary;
-  return (
-    statusWorkItemId(status) === workItemId &&
-    summary?.status === 'OVERALL_CANDIDATE_READY' &&
-    summary?.overallSynthesis?.status === 'CANDIDATE_ONLY' &&
-    summary.overallSynthesis.sourceResultId === correlationRef &&
-    summary.overallSynthesis.authorityLevel === 'candidate_only' &&
-    summary.overallSynthesis.externalDiscoveryIsEvidence === false
-  );
-}
-
-function statusWorkItemId(status) {
-  return status?.entry?.workItemId ?? status?.workItemId ?? null;
 }
 
 function publicDiscoveryResult(value) {

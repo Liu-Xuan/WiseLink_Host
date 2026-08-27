@@ -13,8 +13,10 @@ import {
   type PublicHostedDiscoveryResult,
 } from './canonical-host-openclaw-discovery.service';
 import { CanonicalHostOpenClawOverallService } from './canonical-host-openclaw-overall.service';
+import { CanonicalHostOpenClawAttemptStatusService } from './canonical-host-openclaw-attempt-status.service';
 import { CanonicalHostOpenClawReviewService } from './canonical-host-openclaw-review.service';
 import { CanonicalHostOpenClawTranslationService } from './canonical-host-openclaw-translation.service';
+import { CanonicalHostOpenClawApplicabilityService } from './canonical-host-openclaw-applicability.service';
 import {
   mcpWorkItemId,
   registerCanonicalHostReadonlyMcpTools,
@@ -33,6 +35,8 @@ const resultEnvelope = z.record(z.string(), z.unknown());
 const reviewConversationRef = z.string().trim().min(1).max(96);
 const reviewRequestId = z.string().trim().min(1).max(96);
 const reviewSourceRefId = z.string().trim().min(1).max(512);
+const applicabilityContextRef = z.string().trim().min(1).max(160);
+const applicabilityRequestId = z.string().trim().min(1).max(96);
 const discoveryCandidate = z
   .object({
     title: z.string().trim().min(1).max(1000),
@@ -103,7 +107,9 @@ export class CanonicalHostOpenClawMcpService {
     private readonly discovery: CanonicalHostOpenClawDiscoveryService,
     private readonly overall: CanonicalHostOpenClawOverallService,
     private readonly translation: CanonicalHostOpenClawTranslationService,
+    private readonly applicability: CanonicalHostOpenClawApplicabilityService,
     private readonly review: CanonicalHostOpenClawReviewService,
+    private readonly attemptStatus: CanonicalHostOpenClawAttemptStatusService,
     private readonly attempts: ActionAttemptLifecycleService,
     @Inject(CANONICAL_SERVICE_SCOPE_AUTHORIZATION)
     private readonly serviceScope: CanonicalServiceScopeAuthorizationPort,
@@ -129,7 +135,7 @@ export class CanonicalHostOpenClawMcpService {
   private createServer(): McpServer {
     const server = new McpServer({
       name: 'wiselink-openclaw-engineering-assessment',
-      version: '1.1.0',
+      version: '1.2.0',
     });
 
     registerCanonicalHostReadonlyMcpTools(
@@ -175,6 +181,56 @@ export class CanonicalHostOpenClawMcpService {
       }) =>
         textResult(
           await this.translation.commit(
+            selectedAttemptRef,
+            selectedLeaseToken,
+            selectedLeaseGeneration,
+            result,
+          ),
+        ),
+    );
+
+    server.registerTool(
+      'begin_applicability_evaluation',
+      {
+        title: '开始飞机号适用性条件提取与候选评估',
+        description:
+          '输入仅含 Host opaque applicabilityContextRef 与幂等 requestId。Host 派生 tenant/WorkItem/ACL，fresh-read current DV、飞机号+asOf、受控 FleetMasterData、frozen.2 SourceExpressions/SourceRefs 和 current bilingual SourceUnits，冻结专属 durable ActionAttempt；不发送原始 PDF、FileService locator 或完整 Fleet。',
+        inputSchema: z
+          .object({
+            applicabilityContextRef,
+            requestId: applicabilityRequestId,
+          })
+          .strict(),
+        annotations: beginAnnotations,
+      },
+      async ({ applicabilityContextRef: contextRef, requestId }) =>
+        textResult(await this.applicability.begin(contextRef, requestId)),
+    );
+
+    server.registerTool(
+      'commit_applicability_candidate',
+      {
+        title: '提交飞机号适用性提取候选',
+        description:
+          '仅接受专属 CANDIDATE applicability 输出与完整 fenced ResultEnvelope。Host 校验 exact DV/revision/SourceRef/aircraft/asOf/fact versions/actual runtime provenance，再调用唯一 FleetMasterData+Kleene evaluator，实际字节 readback 后 CAS 写回；FALSE 永远是 NOT_APPLICABLE/pass=false，只有 Host 缺失受控事实可形成 UNKNOWN/WAITING_INPUT。',
+        inputSchema: z
+          .object({
+            attemptRef,
+            leaseToken,
+            leaseGeneration,
+            result: resultEnvelope,
+          })
+          .strict(),
+        annotations: commitAnnotations,
+      },
+      async ({
+        attemptRef: selectedAttemptRef,
+        leaseToken: selectedLeaseToken,
+        leaseGeneration: selectedLeaseGeneration,
+        result,
+      }) =>
+        textResult(
+          await this.applicability.commit(
             selectedAttemptRef,
             selectedLeaseToken,
             selectedLeaseGeneration,
@@ -368,14 +424,14 @@ export class CanonicalHostOpenClawMcpService {
     server.registerTool(
       'get_action_attempt_status',
       {
-        title: '读取交互评审 ActionAttempt 状态',
+        title: '读取通用 ActionAttempt 状态',
         description:
-          '只读返回 exact review attempt 的 RUNNING/COMMITTING/terminal 状态；COMMITTING 时返回 Host 已持久化的 recovery ResultEnvelope，供原样恢复，不触发模型或业务写入。',
+          '先授权再按 tenant/WorkItem scope 只读返回五类 exact ActionAttempt 的 RUNNING/COMMITTING/terminal 状态；仅 COMMITTING 返回经 Host policy 校验的 recovery ResultEnvelope，不触发模型或业务写入。',
         inputSchema: z.object({ attemptRef }).strict(),
         annotations: resumeAnnotations,
       },
       async ({ attemptRef: selectedAttemptRef }) =>
-        textResult(await this.review.status(selectedAttemptRef)),
+        textResult(await this.attemptStatus.status(selectedAttemptRef)),
     );
 
     server.registerTool(

@@ -5,6 +5,7 @@ import { Injectable } from '@nestjs/common';
 import {
   canonicalServiceScopeUnavailable,
   type CanonicalServiceScopeAuthorizationPort,
+  type CanonicalVerifiedApplicabilityContextScope,
   type CanonicalVerifiedDevelopmentCreateScope,
   type CanonicalVerifiedOpenClawAttemptScope,
   type CanonicalVerifiedServiceScope,
@@ -83,15 +84,37 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
     return exactWorkItemScope(requiredConfig(), input.workItemId);
   }
 
+  async authorizeOpenClawApplicabilityContext(input: {
+    operation: 'BEGIN_APPLICABILITY';
+    applicabilityContextRef: string;
+    requestId: string;
+  }): Promise<CanonicalVerifiedApplicabilityContextScope> {
+    const config = requiredConfig();
+    const expectedRef = process.env.WL_OPENCLAW_APPLICABILITY_CONTEXT_REF;
+    if (
+      !expectedRef?.trim() ||
+      input.applicabilityContextRef !== expectedRef ||
+      !input.requestId.trim()
+    ) {
+      throw scopeNotFound();
+    }
+    return {
+      ...exactWorkItemScope(config, config.workItemId),
+      applicabilityContextRef: expectedRef,
+      requestId: input.requestId,
+    };
+  }
+
   async authorizeOpenClawAttempt(input: {
     operation:
       | 'COMMIT_DYNAMIC'
       | 'RESUME_OVERALL'
       | 'COMMIT_OVERALL'
       | 'COMMIT_TRANSLATE'
+      | 'COMMIT_APPLICABILITY'
       | 'GET_REVIEW_CONTEXT'
       | 'READ_REVIEW_SOURCE_REFS'
-      | 'GET_REVIEW_ATTEMPT_STATUS'
+      | 'GET_ACTION_ATTEMPT_STATUS'
       | 'COMMIT_REVIEW'
       | 'HEARTBEAT_ATTEMPT'
       | 'CANCEL_ATTEMPT';
@@ -160,8 +183,7 @@ function requiredDevelopmentCreateConfig(): DevelopmentCreateScopeConfig {
   const base = requiredBaseConfig();
   const documentVersionId =
     process.env.WL_OPENCLAW_DEVELOPMENT_DOCUMENT_VERSION_ID;
-  const developmentRunToken =
-    process.env.WL_OPENCLAW_DEVELOPMENT_RUN_TOKEN;
+  const developmentRunToken = process.env.WL_OPENCLAW_DEVELOPMENT_RUN_TOKEN;
   if (
     process.env.WL_OPENCLAW_DEVELOPMENT_CREATE_ENABLED !== '1' ||
     !documentVersionId?.trim() ||

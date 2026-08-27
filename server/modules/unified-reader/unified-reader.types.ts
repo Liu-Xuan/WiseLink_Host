@@ -18,6 +18,29 @@ export interface ImmutableArtifactPersistResult {
 }
 
 /**
+ * Attempt-private bytes which exist in the existing artifact owner but are not
+ * published until a WorkItem CAS stores this exact descriptor. The ownerRef is
+ * hashed by the adapter and is never exposed as a FileService locator.
+ */
+export interface StagedCandidateArtifactPersistResult extends ImmutableArtifactPersistResult {
+  schemaVersion: 'wiselink.3_1.staged_candidate_artifact.v1';
+  ownerRefHash: string;
+}
+
+/**
+ * Attempt-owned immutable bytes which have completed the ordinary FileService
+ * durability/readback boundary and are safe for the WorkItem CAS to publish.
+ */
+export interface FinalizedCandidateArtifactPersistResult extends ImmutableArtifactPersistResult {
+  schemaVersion: 'wiselink.3_1.finalized_candidate_artifact.v1';
+  ownerRefHash: string;
+}
+
+export type CandidateArtifactPersistResult =
+  | StagedCandidateArtifactPersistResult
+  | FinalizedCandidateArtifactPersistResult;
+
+/**
  * Exact host roles required by the official FileService adapter.  The host
  * supplies this binding; requests cannot choose any of these identities.
  */
@@ -41,6 +64,24 @@ export interface UnifiedArtifactStorePort {
   readActualBytes(
     artifact: UnifiedPackageArtifactDescriptor,
   ): Promise<Uint8Array>;
+}
+
+/**
+ * Optional capability of the canonical ordinary artifact owner. Applicability
+ * requires this capability so a failed WorkItem CAS cannot leave a published
+ * orphan. This remains the same store/owner; it is not a second repository.
+ */
+export interface UnifiedCandidateArtifactStagingPort extends UnifiedArtifactStorePort {
+  stageCandidateAndReadback(input: {
+    bytes: Uint8Array;
+    ownerRef: string;
+  }): Promise<StagedCandidateArtifactPersistResult>;
+  finalizeStagedCandidate(
+    staged: StagedCandidateArtifactPersistResult,
+  ): Promise<FinalizedCandidateArtifactPersistResult>;
+  discardCandidateArtifact(
+    candidate: CandidateArtifactPersistResult,
+  ): Promise<void>;
 }
 
 export interface ImmutableAcceptanceReceiptOwnerPort {

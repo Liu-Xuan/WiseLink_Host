@@ -124,6 +124,13 @@ export class DocumentManagementHostedCore {
       roles: Array.isArray(serverContext.roles) ? [...serverContext.roles] : [],
       action: 'DOCUMENT_INGEST',
       selection,
+      ...(serverContext.runtimeIngestAuthority
+        ? {
+            runtimeIngestAuthority: structuredClone(
+              serverContext.runtimeIngestAuthority,
+            ),
+          }
+        : {}),
     });
 
     const existingIngestion = await this.catalog.findIngestionByIdempotency({

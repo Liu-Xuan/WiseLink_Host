@@ -48,6 +48,9 @@ import type { UnifiedPackageArtifactDescriptor } from '@shared/api.interface';
 
 import { ExactFtdFrozen2PdfProducerAdapter } from '../../../server/modules/canonical-host/exact-ftd-frozen2-pdf-producer.adapter';
 import { scopedProfessionalArtifactRef } from '../../../server/modules/canonical-host/scoped-professional-artifact-correlation.port';
+import { runProfessionalInputPipeline } from '../../../server/modules/professional-input/builders/professional-input-pipeline';
+import { PdfjsDistLayoutExtractor } from '../../../server/modules/professional-input/parser/pdfjs-dist-layout-extractor.adapter';
+import type { StructuredApplicability } from '../../../server/modules/professional-input/pure/professional-input-pure.types';
 import { Frozen2CandidateReaderService } from '../../../server/modules/unified-reader/frozen2-candidate-reader.service';
 import { PythonU0FullPackageValidatorAdapter } from '../../../server/modules/unified-reader/python-u0-full-package-validator.adapter';
 import { U0FullValidationService } from '../../../server/modules/unified-reader/u0-full-validation.service';
@@ -62,7 +65,11 @@ const FIXTURE_PATH = process.env.WL31_REAL_FTD_FIXTURE?.trim();
 const EXPECTED_SOURCE_SHA256 =
   'b1b5c198df4a3d42925218f48d70ddc361563c65692be35dac4c81e0d8367a3c';
 const EXPECTED_PACKAGE_ID =
-  'urn:techpub:package:v1:sha256:e667e64d21472f26233d617000b6ee540196f9201ef3a28478e175891562edbd';
+  'urn:techpub:package:v1:sha256:514ee9f631ca3a124a9c55be76ff63ac09e9875373eff57703af06a9271e9fdc';
+const EXPECTED_APPLICABILITY_TEXT =
+  'All777modelsequippedwithAirplaneInformationManagementSystem2(AIMS-2)Platform.';
+const EXPECTED_APPLICABILITY_SOURCE_REF =
+  'urn:techpub:source-ref:v1:sha256:0893eb82455c0d193bc56b18c67f344c515c97be35248b461c701fd06e316dcf';
 const U0_CONTRACT_COMMIT = 'fa69ada08265934951df53c7a61a3ccdb8cb2900' as const;
 const CVE_2024_4367_FIRST_FIXED = '4.2.67';
 
@@ -98,6 +105,55 @@ describe('professional-input PDF runtime security pin', () => {
     expect(runnerSource).not.toMatch(/\.render\s*\(/u);
     expect(runnerSource).not.toContain('getViewport(');
     expect(runnerSource).not.toContain('canvasContext');
+  });
+});
+
+describe('professional-input deterministic applicability recognition', () => {
+  jest.setTimeout(120_000);
+
+  it('keeps frozen.2 applicability empty for actual PDF bytes with no recognized observation', async () => {
+    const fixturePath = resolve(
+      process.cwd(),
+      'server/runtime-assets/technical-publication-parsed-package/v1-frozen-2/fixtures/source/minimal-pdf.pdf',
+    );
+    const pdfBytes = await readFile(fixturePath);
+    expect(sha256Raw(pdfBytes)).toBe(
+      'c7a1f296066a1147a7fc5c9ba7f0e16289ab18aeb14715594ccf8733807f39d1',
+    );
+    const pipeline = runProfessionalInputPipeline(
+      {
+        pdfBytes,
+        artifact: {
+          artifactRef: 'fixture://professional-input/minimal-pdf.pdf',
+          normalizedPath: 'fixtures/source/minimal-pdf.pdf',
+        },
+        document: {
+          documentCode: 'MINIMAL-PDF',
+          documentType: 'service_bulletin',
+          language: 'en',
+        },
+        lineage: {
+          generatedAt: '2026-08-27T00:00:00.000Z',
+          producerName: 'professional-input-no-applicability-test',
+          producerVersion: '1.0.0',
+        },
+      },
+      { extractor: new PdfjsDistLayoutExtractor() },
+    );
+
+    expect(pipeline.pkg.applicability).toEqual({
+      sourceExpressions: [],
+      normalizedCandidates: [],
+      assignments: [],
+    });
+    await expect(
+      createFullValidator('professional-input-no-applicability-test').validate(
+        pipeline.u0Input,
+      ),
+    ).resolves.toMatchObject({
+      status: 'FULL_STRICT_VALIDATOR_PASSED',
+      packageId: pipeline.pkg.packageId,
+    });
   });
 });
 
@@ -173,8 +229,7 @@ describeRealFtd('Host-native professional input with actual FTD bytes', () => {
               bucketId: fileMetadata.bucketID,
               filePath: professionalFilePath,
               providerObjectId: 'provider-object-real-ftd-professional-test',
-              providerVersionId:
-                'provider-object-real-ftd-professional-test',
+              providerVersionId: 'provider-object-real-ftd-professional-test',
               providerUpdatedAt: fileMetadata.updatedAt,
               fileName: 'real-ftd-test.json',
               mediaType: 'application/json',
@@ -244,16 +299,8 @@ describeRealFtd('Host-native professional input with actual FTD bytes', () => {
       },
     }));
 
-    const fullValidator = new U0FullValidationService(
-      new PythonU0FullPackageValidatorAdapter({
-        pythonExecutable: process.env.WL31_U0_PYTHON?.trim() || 'python3',
-        contractRoot: resolve(
-          process.cwd(),
-          'server/runtime-assets/technical-publication-parsed-package/v1-frozen-2',
-        ),
-        contractCommit: U0_CONTRACT_COMMIT,
-        validatorRevision: 'professional-input-real-ftd-test',
-      }),
+    const fullValidator = createFullValidator(
+      'professional-input-real-ftd-test',
     );
     const producer = new ExactFtdFrozen2PdfProducerAdapter(
       fileService as never,
@@ -294,8 +341,7 @@ describeRealFtd('Host-native professional input with actual FTD bytes', () => {
               fileServiceLocator: {
                 bucketId: fileMetadata.bucketID,
                 filePath: professionalFilePath,
-                providerObjectId:
-                  'provider-object-real-ftd-professional-test',
+                providerObjectId: 'provider-object-real-ftd-professional-test',
               },
             },
             lineage: { ...produced.lineage },
@@ -353,13 +399,71 @@ describeRealFtd('Host-native professional input with actual FTD bytes', () => {
     });
 
     const pkg = JSON.parse(Buffer.from(produced.bytes).toString('utf8')) as {
-      sourceRefs: unknown[];
+      modules: Array<{ moduleId: string }>;
+      sourceRefs: Array<{ sourceRefId: string; quote: string }>;
       sourceSegments: unknown[];
       contentUnits: unknown[];
+      applicability: StructuredApplicability;
     };
     expect(pkg.sourceRefs).toHaveLength(197);
     expect(pkg.sourceSegments).toHaveLength(197);
     expect(pkg.contentUnits).toHaveLength(196);
+    expect(pkg.modules).toHaveLength(1);
+    expect(pkg.applicability.sourceExpressions).toHaveLength(1);
+    expect(pkg.applicability.normalizedCandidates).toHaveLength(1);
+    expect(pkg.applicability.assignments).toHaveLength(1);
+
+    const sourceExpression = pkg.applicability.sourceExpressions[0];
+    const normalizedCandidate = pkg.applicability.normalizedCandidates[0];
+    const assignment = pkg.applicability.assignments[0];
+    expect(sourceExpression).toMatchObject({
+      text: EXPECTED_APPLICABILITY_TEXT,
+      form: 'logical_expression',
+      authority: 'source_asserted',
+      sourceRefIds: [EXPECTED_APPLICABILITY_SOURCE_REF],
+    });
+    expect(normalizedCandidate).toMatchObject({
+      language: 'techpub-applicability-expr.v1',
+      confidence: 'deterministic',
+      sourceExpressionIds: [sourceExpression.expressionId],
+      expression: {
+        operator: 'all',
+        children: [
+          {
+            operator: 'predicate',
+            predicate: {
+              property: 'model',
+              comparator: 'eq',
+              values: ['777'],
+            },
+          },
+          {
+            operator: 'predicate',
+            predicate: {
+              property: 'equipmentModelInstalled',
+              comparator: 'eq',
+              values: ['AIMS-2'],
+            },
+          },
+        ],
+      },
+      authority: 'parser_candidate',
+    });
+    expect(assignment).toMatchObject({
+      expressionId: sourceExpression.expressionId,
+      target: {
+        kind: 'module',
+        targetId: pkg.modules[0].moduleId,
+        sourceRefIds: [EXPECTED_APPLICABILITY_SOURCE_REF],
+      },
+      authority: 'source_asserted',
+    });
+    expect(
+      pkg.sourceRefs.find(
+        (sourceRef) =>
+          sourceRef.sourceRefId === EXPECTED_APPLICABILITY_SOURCE_REF,
+      ),
+    ).toMatchObject({ quote: EXPECTED_APPLICABILITY_TEXT });
 
     const reader = new UnifiedReaderService(
       new InMemoryArtifactStore(),
@@ -382,7 +486,7 @@ describeRealFtd('Host-native professional input with actual FTD bytes', () => {
       packageId: produced.packageId,
       contractId: produced.contractId,
       contractRevision: produced.contractRevision,
-      query: '777-FTD-31-21002',
+      query: 'AIMS-2',
     });
     expect(readback).toMatchObject({
       status: 'CANDIDATE_READBACK_VERIFIED',
@@ -412,8 +516,37 @@ describeRealFtd('Host-native professional input with actual FTD bytes', () => {
     expect(
       readback.queryResults.every((result) => result.sourceRefIds.length > 0),
     ).toBe(true);
+    const applicabilityReadback = readback.queryResults.find(
+      (result) => result.text === EXPECTED_APPLICABILITY_TEXT,
+    );
+    expect(applicabilityReadback).toMatchObject({
+      sourceRefIds: [EXPECTED_APPLICABILITY_SOURCE_REF],
+      sourceLocators: [
+        {
+          sourceRefId: EXPECTED_APPLICABILITY_SOURCE_REF,
+          kind: 'pdf',
+          quote: EXPECTED_APPLICABILITY_TEXT,
+        },
+      ],
+    });
   });
 });
+
+function createFullValidator(
+  validatorRevision: string,
+): U0FullValidationService {
+  return new U0FullValidationService(
+    new PythonU0FullPackageValidatorAdapter({
+      pythonExecutable: process.env.WL31_U0_PYTHON?.trim() || 'python3',
+      contractRoot: resolve(
+        process.cwd(),
+        'server/runtime-assets/technical-publication-parsed-package/v1-frozen-2',
+      ),
+      contractCommit: U0_CONTRACT_COMMIT,
+      validatorRevision,
+    }),
+  );
+}
 
 function versionAtLeast(actual: string, minimum: string): boolean {
   const actualParts = actual.split('.').map(Number);

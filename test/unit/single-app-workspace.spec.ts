@@ -8,7 +8,9 @@ describe('single canonical app workspace', () => {
     const [
       routes,
       layout,
+      currentUser,
       floatingDock,
+      home,
       page,
       tree,
       dock,
@@ -18,16 +20,21 @@ describe('single canonical app workspace', () => {
       taskPills,
       themeProvider,
       glass,
+      indexStyles,
       homeStyles,
       motion,
       overallHero,
       reasoningTrail,
       reader,
       workbenchStyles,
+      visualModeControl,
+      quickOpen,
     ] = await Promise.all([
       source('client/src/app.tsx'),
       source('client/src/components/Layout.tsx'),
+      source('client/src/components/CurrentUserControl.tsx'),
       source('client/src/features/navigation/FloatingDock.tsx'),
+      source('client/src/pages/WorkspaceHomePage/WorkspaceHomePage.tsx'),
       source('client/src/pages/DocumentParsingPage/DocumentParsingPage.tsx'),
       source('client/src/pages/DocumentParsingPage/WorkItemContextTree.tsx'),
       source('client/src/pages/DocumentParsingPage/WorkItemContextDock.tsx'),
@@ -39,6 +46,7 @@ describe('single canonical app workspace', () => {
       source('client/src/features/review/TaskPills.tsx'),
       source('client/src/app/providers/ThemeProvider.tsx'),
       source('client/src/styles/glass.css'),
+      source('client/src/index.css'),
       source('client/src/pages/WorkspaceHomePage/workspace-home.css'),
       source('client/src/styles/motion.css'),
       source('client/src/features/workitem/OverallAssessmentHero.tsx'),
@@ -49,9 +57,15 @@ describe('single canonical app workspace', () => {
         'client/src/pages/DocumentParsingPage/DocumentReaderWorkspace.tsx',
       ),
       source('client/src/features/workbench/workbench-shell.css'),
+      source('client/src/components/VisualModeControl.tsx'),
+      source('client/src/features/workbench/QuickOpen.tsx'),
     ]);
 
     expect(routes).toContain('WorkspaceHomePage');
+    expect(routes).toContain('<LibraryIndexRedirect />');
+    expect(routes).toContain("pathname: '/library'");
+    expect(routes).toContain('search: location.search');
+    expect(routes.split('element={<WorkspaceHomePage />}')).toHaveLength(2);
     expect(routes).toContain('work-items/:workItemId/documents');
     expect(routes).not.toContain('ailyCardsPreviewRoute');
     expect(routes).not.toContain('AilyCardsPreview');
@@ -68,6 +82,15 @@ describe('single canonical app workspace', () => {
     expect(layout).not.toContain('任务总览');
     expect(layout).not.toContain('唯一妙搭应用');
     expect(layout).not.toContain('CANONICAL HOST');
+    expect(layout).toContain('<CurrentUserControl />');
+    expect(currentUser).toContain('useCurrentUserProfile');
+    expect(currentUser).toContain('.getUserInfo()');
+    expect(currentUser).toContain('authClient.session.redirectToLogin()');
+    expect(currentUser).toContain('authClient.session.signOut()');
+    expect(currentUser).toContain('<UserDisplay');
+    expect(currentUser).toContain('退出登录');
+    expect(home).toContain('尚无最近资料');
+    expect(home).not.toContain('developmentIntakeAvailable ? null');
     expect(page).toContain('WorkbenchShell');
     expect(page).toContain('WorkItemContextTree');
     expect(page).toContain('EvidencePanel');
@@ -100,16 +123,28 @@ describe('single canonical app workspace', () => {
     );
     expect(taskPills).toContain('wl-status-dot');
     expect(themeProvider).toContain('wiselink.ui.reduce-transparency');
+    expect(themeProvider).toContain('wiselink.ui.visual-mode');
+    expect(themeProvider).toContain('wlVisualMode');
+    expect(visualModeControl).toContain('默认效果');
+    expect(visualModeControl).toContain('极致效果');
+    expect(visualModeControl).toContain('兼容效果');
+    expect(quickOpen).toContain('event.metaKey || event.ctrlKey');
+    expect(quickOpen).toContain('仅显示当前账户可读取的数据');
+    expect(quickOpen).not.toContain('mock');
     expect(glass).toContain('@media (prefers-reduced-transparency: reduce)');
     expect(glass).toContain('@media (prefers-contrast: more)');
     expect(glass).toContain('@media (forced-colors: active)');
     expect(glass).toMatch(
-      /-webkit-backdrop-filter: blur\(var\(--wl-blur-nav\)\) saturate\(158%\);\s+backdrop-filter: blur\(var\(--wl-blur-nav\)\) saturate\(158%\);/,
+      /-webkit-backdrop-filter: blur\(var\(--wl-blur-nav\)\)\s+saturate\(var\(--wl-saturation-nav\)\);\s+backdrop-filter: blur\(var\(--wl-blur-nav\)\)\s+saturate\(var\(--wl-saturation-nav\)\);/,
     );
     expect(glass).toMatch(
       /-webkit-backdrop-filter: none !important;\s+backdrop-filter: none !important;/,
     );
     expect(glass).not.toContain('brightness(1.035)');
+    expect(glass).toContain("data-wl-visual-mode='compatible'");
+    expect(glass).toContain('brightness(1.04)');
+    expect(indexStyles).toContain('#root');
+    expect(indexStyles).toContain('min-height: 100dvh');
     expect(homeStyles).toContain('.library-tree-panel .wl-navigator');
     expect(homeStyles).toContain('避免 glass-on-glass');
     expect(motion).toContain('@keyframes wl-drift-cold');
@@ -124,6 +159,10 @@ describe('single canonical app workspace', () => {
     expect(reader).not.toContain('PDF_PREVIEW_PROJECTION_MISSING');
     expect(reader).not.toContain('SOURCE_REF_NOT_IN_CURRENT_QUERY');
     expect(page).toContain('onSourceRefSelect={locateSourceRef}');
+    expect(page).toContain('quickOpenItems={quickOpenItems}');
+    expect(page).toContain('buildDocumentTree(data.libraryIndex.nodes)');
+    expect(shell).toContain('focusRestoreRef');
+    expect(shell).toContain('进入专注阅读');
     expect(workbenchStyles).toMatch(
       /\.wl-workbench-body\s*\{\s*position: relative;/,
     );

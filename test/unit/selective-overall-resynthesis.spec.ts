@@ -67,6 +67,36 @@ describe('selective overall resynthesis', () => {
     ).toThrow('SELECTIVE_RESYNTHESIS_RESOLVED_INPUT_UNKNOWN:RULE-A');
   });
 
+  it('resynthesizes exactly the draft-confirmed affected set and does not reuse a related item', () => {
+    const context = supplementalContext();
+    context.history[0].affectedCriterionIds = ['RULE-A', 'RULE-B'];
+    context.effective[0].affectedCriterionIds = ['RULE-A', 'RULE-B'];
+    const plan = buildSelectiveOverallResynthesisPlan({
+      criterionSetId: 'JACS-TWO',
+      criterionCount: 2,
+      baseRuleRevision: 3,
+      baseRuleArtifactSha256: BASE_SHA,
+      staleOverall: staleOverall(),
+      engineerReviewProjection: reviewProjection(),
+      engineerReviewContext: context,
+      items: baseItems(),
+    });
+
+    expect(plan.affectedCriterionIds).toEqual(['RULE-A', 'RULE-B']);
+    expect(plan.reusedCriterionIds).toEqual([]);
+    expect(plan.items[1]).toMatchObject({
+      criterionId: 'RULE-B',
+      humanReviewRequired: true,
+      effectiveEngineerReview: {
+        criterionId: 'RULE-A',
+        affectedCriterionIds: ['RULE-A', 'RULE-B'],
+      },
+    });
+    expect(plan.items[1].analysisSummary).toContain(
+      'Affected by confirmed review action on RULE-A',
+    );
+  });
+
   it('does not misclassify a base-rule change as an engineer-review affected-only run', () => {
     expect(() =>
       buildSelectiveOverallResynthesisPlan({

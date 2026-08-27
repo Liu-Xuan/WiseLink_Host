@@ -1,0 +1,163 @@
+.wl-visual-mode-trigger {
+  display: inline-flex;
+  min-width: 118px;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 3px 9px 3px 5px;
+  border: 1px solid var(--wl-border);
+  border-radius: var(--wl-radius-md);
+  color: var(--wl-ink);
+  background: var(--wl-glass-soft);
+  box-shadow: inset 0 1px 0
+    color-mix(in srgb, var(--wl-g3-highlight) 42%, transparent);
+  font: 650 11px/1 var(--wl-font);
+  cursor: pointer;
+  transition:
+    color var(--wl-motion-fast) ease,
+    border-color var(--wl-motion-fast) ease,
+    background-color var(--wl-motion-fast) ease;
+}
+
+.wl-visual-mode-trigger:hover,
+.wl-visual-mode-trigger[data-state='open'] {
+  color: var(--wl-accent);
+  border-color: color-mix(in srgb, var(--wl-accent) 28%, var(--wl-border));
+  background: var(--wl-accent-soft);
+}
+
+.wl-visual-mode-trigger.is-compact {
+  min-width: 34px;
+  width: 34px;
+  padding: 3px;
+}
+
+.wl-visual-mode-trigger.is-compact .wl-visual-mode-label,
+.wl-visual-mode-trigger.is-compact .wl-visual-mode-chevron {
+  display: none;
+}
+
+.wl-visual-mode-orb {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--wl-accent) 22%, transparent);
+  border-radius: 999px;
+  color: var(--wl-accent);
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--wl-accent-soft) 72%, transparent),
+    color-mix(in srgb, var(--wl-ambient-reflect) 22%, transparent)
+  );
+}
+
+.wl-visual-mode-orb svg {
+  width: 13px;
+  height: 13px;
+}
+
+.wl-visual-mode-chevron {
+  width: 12px;
+  height: 12px;
+  color: var(--wl-faint);
+  transition: transform var(--wl-motion-fast) ease;
+}
+
+.wl-visual-mode-trigger[data-state='open'] .wl-visual-mode-chevron {
+  transform: rotate(180deg);
+}
+
+.wl-visual-mode-menu {
+  z-index: 120;
+  width: 278px;
+  padding: 8px;
+  border: 1px solid transparent;
+  border-radius: var(--wl-radius-lg);
+  color: var(--wl-ink);
+  background:
+    linear-gradient(145deg, var(--wl-g1-tint-strong), var(--wl-g1-tint))
+      padding-box,
+    linear-gradient(
+        135deg,
+        var(--wl-g1-highlight),
+        color-mix(in srgb, var(--wl-g1-cold-rim) 44%, transparent) 56%,
+        color-mix(in srgb, var(--wl-g1-warm-rim) 52%, transparent)
+      )
+      border-box;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--wl-g1-highlight) 70%, transparent),
+    inset 0 -1px 0 var(--wl-g1-thickness),
+    0 5px 14px var(--wl-g1-contact-shadow),
+    0 24px 64px var(--wl-g1-space-shadow);
+  -webkit-backdrop-filter: blur(var(--wl-blur-nav))
+    saturate(var(--wl-saturation-nav));
+  backdrop-filter: blur(var(--wl-blur-nav)) saturate(var(--wl-saturation-nav));
+}
+
+.wl-visual-mode-hint {
+  margin: -2px 8px 7px;
+  color: var(--wl-muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.wl-visual-mode-option {
+  min-height: 54px;
+  padding-top: 7px;
+  padding-bottom: 7px;
+  border-radius: var(--wl-radius-sm);
+}
+
+.wl-visual-mode-option > span:last-child {
+  display: grid;
+  gap: 4px;
+}
+
+.wl-visual-mode-option strong {
+  color: var(--wl-ink);
+  font-size: 12px;
+}
+
+.wl-visual-mode-option small {
+  color: var(--wl-muted);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+html[data-wl-visual-mode='compatible'] .wl-visual-mode-menu,
+html[data-wl-transparency='reduced'] .wl-visual-mode-menu {
+  background: var(--wl-reduced-g1);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+html[data-wl-visual-mode='ultra']:not([data-wl-transparency='reduced'])
+  .wl-visual-mode-menu {
+  -webkit-backdrop-filter: blur(var(--wl-blur-nav))
+    saturate(var(--wl-saturation-nav)) brightness(1.04);
+  backdrop-filter: blur(var(--wl-blur-nav)) saturate(var(--wl-saturation-nav))
+    brightness(1.04);
+}
+
+@media (max-width: 680px) {
+  .wiselink-app-header .wl-visual-mode-trigger {
+    min-width: 34px;
+    width: 34px;
+    padding: 3px;
+  }
+
+  .wiselink-app-header .wl-visual-mode-label,
+  .wiselink-app-header .wl-visual-mode-chevron {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wl-visual-mode-chevron {
+    transition: none;
+  }
+}

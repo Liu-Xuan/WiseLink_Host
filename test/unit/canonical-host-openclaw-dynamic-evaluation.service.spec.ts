@@ -6,6 +6,7 @@ import {
 } from '../../server/modules/action-attempt/action-attempt-envelope';
 import type { ActionAttemptRow } from '../../server/modules/action-attempt/action-attempt.types';
 import { CanonicalHostOpenClawDynamicEvaluationService } from '../../server/modules/canonical-host/canonical-host-openclaw-dynamic-evaluation.service';
+import { CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY } from '../../server/modules/canonical-host/canonical-host-openclaw-runtime-policy';
 
 const WORK_ITEM_ID = 'WI-DYNAMIC-150';
 const ATTEMPT_ID = 'ATT-DYNAMIC-REAL';
@@ -102,6 +103,23 @@ describe('CanonicalHostOpenClawDynamicEvaluationService', () => {
         actionAttemptId: ATTEMPT_ID,
       },
     });
+  });
+
+  it('rejects wrong unified runtime provenance before prepareCommit, artifact persistence, or CAS', async () => {
+    const harness = createHarness();
+    const valid = dynamicResult();
+    const { contentHash: _contentHash, ...unsealed } = valid;
+    const result = sealResultEnvelope({
+      ...unsealed,
+      skillVersion: 'wiselink-research-and-synthesize@r09.c3',
+    });
+
+    await expect(
+      harness.service.commit(ATTEMPT_REF, LEASE_TOKEN, 1, result),
+    ).rejects.toThrow('OPENCLAW_RESULT_RUNTIME_POLICY_MISMATCH');
+    expect(harness.attempts.prepareCommit).not.toHaveBeenCalled();
+    expect(harness.artifactStore.persistAndReadback).not.toHaveBeenCalled();
+    expect(harness.registrar.compareAndSet).not.toHaveBeenCalled();
   });
 
   it('fails closed if a rebuilt private request drifts from the sealed TaskEnvelope input', async () => {
@@ -246,6 +264,7 @@ function createHarness() {
         };
       },
     ),
+    readScoped: jest.fn(async () => row),
     prepareCommit: jest.fn(async () => prepared),
     finishProjectionSuccess: jest.fn(async () => ({
       attemptRef: ATTEMPT_REF,
@@ -407,10 +426,13 @@ function dynamicResult(task = taskEnvelope(workItemProjection())) {
     missingInputs: [],
     conflicts: [],
     warnings: [],
-    modelVersion: 'openclaw-real',
+    modelVersion: CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.modelVersion,
     promptVersion: 'dynamic-prompt-v1',
-    skillVersion: 'dynamic-skill-v1',
-    toolVersions: { host: '006146b' },
+    skillVersion: CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.skillVersion,
+    toolVersions: {
+      [CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.mcpServerName]:
+        CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.mcpServerVersion,
+    },
     runMetrics: { durationMs: 1, inputUnits: 1, outputUnits: 1 },
     errorCode: null,
     errorDetail: null,

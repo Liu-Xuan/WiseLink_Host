@@ -23,7 +23,22 @@ jest.mock('@lark-apaas/fullstack-nestjs-core', () => {
   return { ...actual, NeedLogin: () => () => undefined };
 });
 
+jest.mock(
+  '../../server/modules/document-management/src/hosted/documentManagementHostedCore.js',
+  () => ({ DocumentManagementHostedCore: jest.fn() }),
+);
+jest.mock(
+  '../../server/modules/document-management/src/hosted/miaodaFileServiceArtifactStore.js',
+  () => ({ MiaodaFileServiceArtifactStore: jest.fn() }),
+);
+jest.mock(
+  '../../server/modules/document-management/src/hosted/nest/miaoda-hosted-document-catalog',
+  () => ({ MiaodaHostedDocumentCatalog: class MiaodaHostedDocumentCatalog {} }),
+);
+
+import { DocumentManagementRuntimeModule } from '../../server/modules/document-management-runtime/document-management-runtime.module';
 import { IdentityModule } from '../../server/modules/identity/identity.module';
+import { ReviewAttachmentService } from '../../server/modules/review-persistence/review-attachment.service';
 import { ReviewConversationController } from '../../server/modules/review-persistence/review-conversation.controller';
 import { ReviewConversationRepository } from '../../server/modules/review-persistence/review-conversation.repository';
 import { ReviewConversationService } from '../../server/modules/review-persistence/review-conversation.service';
@@ -39,13 +54,18 @@ describe('ReviewPersistenceModule composition', () => {
     );
     const providers = Reflect.getMetadata('providers', ReviewPersistenceModule);
     expect(imports).toEqual(
-      expect.arrayContaining([IdentityModule, WorkItemRuntimeModule]),
+      expect.arrayContaining([
+        IdentityModule,
+        WorkItemRuntimeModule,
+        DocumentManagementRuntimeModule,
+      ]),
     );
     expect(controllers).toContain(ReviewConversationController);
     expect(providers).toEqual(
       expect.arrayContaining([
         ReviewConversationRepository,
         ReviewConversationService,
+        ReviewAttachmentService,
       ]),
     );
   });

@@ -7,7 +7,7 @@ const actor = {
   tenantId: 'tenant-1',
   sessionProvenance: 'SERVER_OPAQUE_SESSION',
 };
-const session = { actor };
+const session = { actor, session: { id: 'session-1' } };
 const grant = {
   allowed: true,
   action: 'RECORD_ENGINEER_REVIEW',
@@ -41,6 +41,8 @@ const turn = {
   inputType: 'ENGINEER_TEXT',
   adoptionStatus: 'CANDIDATE_UNADOPTED',
   candidateText: 'Engineer supplied context',
+  attachmentBindings: [],
+  assistantCandidate: null,
   createdAt: new Date('2026-08-26T01:02:00.000Z'),
 };
 
@@ -191,6 +193,7 @@ describe('ReviewConversationService session and ACL boundary', () => {
       requestId: 'request-1',
       userMessage: 'Engineer supplied context',
       currentRevision: 7,
+      attachmentBindings: [],
     });
     expect(setup.sessions.resolve.mock.invocationCallOrder[0]).toBeLessThan(
       setup.objectAccess.freshRead.mock.invocationCallOrder[0],
@@ -208,6 +211,71 @@ describe('ReviewConversationService session and ACL boundary', () => {
       },
     });
     expect(JSON.stringify(result)).not.toContain('openClawSessionKey');
+  });
+
+  it('authorizes, ingests and publicly redacts an official-selection attachment', async () => {
+    const setup = makeService();
+    const attachment = {
+      attachmentRef: 'ATTACHMENT-1',
+      documentVersionId: 'DV-ATT-1',
+      fileName: 'engineering-note.pdf',
+      mediaType: 'application/pdf',
+      byteLength: 321,
+      selectionKey: 'default-bucket\nofficial-selection/engineering-note.pdf',
+      parsedArtifact: {
+        storeRole: 'UnifiedArtifactStoreCandidate',
+        ref: 'artifact-internal-ref',
+        sha256: 'a'.repeat(64),
+        byteLength: 100,
+      },
+    };
+    const attachedTurn = { ...turn, attachmentBindings: [attachment] };
+    setup.objectAccess.freshRead
+      .mockResolvedValueOnce(grant)
+      .mockResolvedValueOnce({
+        ...grant,
+        action: 'INGEST_ATTACHMENT_SINGLE_REQUEST',
+      })
+      .mockResolvedValueOnce(grant);
+    setup.conversations.loadById
+      .mockResolvedValueOnce({ conversation, turns: [] })
+      .mockResolvedValueOnce({ conversation, turns: [attachedTurn] });
+    setup.attachments.ingest.mockResolvedValue(attachment);
+    setup.conversations.appendTextTurn.mockResolvedValue({
+      turn: attachedTurn,
+      replayed: false,
+    });
+
+    const result = await setup.service.appendTextTurn(
+      'WI-1',
+      'RC-1',
+      {
+        requestId: 'request-1',
+        userMessage: 'Engineer supplied context',
+        attachmentSelection: {
+          bucketId: 'default-bucket',
+          filePath: 'official-selection/engineering-note.pdf',
+        },
+      },
+      {} as never,
+    );
+
+    expect(setup.objectAccess.freshRead).toHaveBeenNthCalledWith(2, {
+      actor,
+      action: 'INGEST_ATTACHMENT_SINGLE_REQUEST',
+      accessRoot: { kind: 'WORK_ITEM', id: 'WI-1' },
+      expectedWorkItemRevision: 7,
+    });
+    expect(setup.attachments.ingest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requestId: 'request-1',
+        conversation,
+        session,
+      }),
+    );
+    expect(result.turn.attachmentRefs).toEqual(['ATTACHMENT-1']);
+    expect(JSON.stringify(result)).not.toContain('official-selection');
+    expect(JSON.stringify(result)).not.toContain('artifact-internal-ref');
   });
 
   it('rejects append after close and performs no turn write', async () => {
@@ -275,14 +343,17 @@ function makeService() {
     appendTextTurn: jest.fn(),
     close: jest.fn(),
   };
+  const attachments = { ingest: jest.fn() };
   return {
     service: new ReviewConversationService(
       sessions as never,
       objectAccess as never,
       conversations as never,
+      attachments as never,
     ),
     sessions,
     objectAccess,
     conversations,
+    attachments,
   };
 }

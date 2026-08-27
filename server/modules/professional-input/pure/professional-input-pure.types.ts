@@ -109,6 +109,69 @@ export interface SourceUnitSet {
   units: readonly SourceUnit[];
 }
 
+export type StructuredApplicabilityExpression =
+  | {
+      readonly operator: 'predicate';
+      readonly predicate: {
+        readonly property: string;
+        readonly comparator:
+          | 'eq'
+          | 'neq'
+          | 'in'
+          | 'not_in'
+          | 'range'
+          | 'contains';
+        readonly values: readonly (string | number | boolean)[];
+      };
+    }
+  | {
+      readonly operator: 'all' | 'any' | 'not';
+      readonly children: readonly StructuredApplicabilityExpression[];
+    };
+
+export interface StructuredApplicabilitySourceExpression {
+  readonly expressionId: string;
+  readonly text: string;
+  readonly form:
+    | 'logical_expression'
+    | 'external_identity_reference'
+    | 'display_text';
+  readonly authority: 'source_asserted';
+  readonly sourceRefIds: readonly string[];
+}
+
+export interface StructuredApplicabilityNormalizedCandidate {
+  readonly candidateId: string;
+  readonly language: 'techpub-applicability-expr.v1';
+  readonly confidence:
+    | 'deterministic'
+    | 'high'
+    | 'medium'
+    | 'low'
+    | 'needs_review';
+  readonly sourceExpressionIds: readonly string[];
+  readonly expression: StructuredApplicabilityExpression;
+  readonly authority: 'parser_candidate';
+}
+
+export interface StructuredApplicabilityAssignment {
+  readonly assignmentId: string;
+  readonly expressionId: string;
+  readonly target: {
+    readonly kind: 'module' | 'content_unit' | 'source_element';
+    readonly targetId?: string;
+    readonly sourceRefIds: readonly string[];
+  };
+  readonly sourceReferenceId?: string;
+  readonly authority: 'source_asserted';
+}
+
+export interface StructuredApplicability {
+  readonly sourceExpressions: readonly StructuredApplicabilitySourceExpression[];
+  readonly normalizedCandidates: readonly StructuredApplicabilityNormalizedCandidate[];
+  readonly assignments: readonly StructuredApplicabilityAssignment[];
+}
+
 /* ------------------------------------------------------------------ *
  * Stage 3 output: StructuredParsePackage — the frozen.2 package value
  * (CANDIDATE_ONLY until U0 strict validation passes).
@@ -146,7 +209,7 @@ export interface StructuredParsePackage {
   readonly contentUnits: readonly unknown[];
   readonly references: readonly unknown[];
   readonly assets: readonly unknown[];
-  readonly applicability: Readonly<Record<string, unknown>>;
+  readonly applicability: StructuredApplicability;
   readonly coverage: Readonly<Record<string, unknown>>;
   readonly findings: readonly unknown[];
   readonly extensions: readonly unknown[];

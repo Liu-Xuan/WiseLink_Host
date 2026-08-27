@@ -7,6 +7,7 @@ const KEYS = [
   'WL_OPENCLAW_SERVICE_PRINCIPAL_ID',
   'WL_OPENCLAW_SERVICE_TENANT_ID',
   'WL_OPENCLAW_SERVICE_WORK_ITEM_ID',
+  'WL_OPENCLAW_APPLICABILITY_CONTEXT_REF',
   'WL_OPENCLAW_DEVELOPMENT_CREATE_ENABLED',
   'WL_OPENCLAW_DEVELOPMENT_DOCUMENT_VERSION_ID',
   'WL_OPENCLAW_DEVELOPMENT_RUN_TOKEN',
@@ -90,6 +91,41 @@ describe('ConfiguredDevelopmentCanonicalServiceScopeAuthorization', () => {
     });
   });
 
+  it('resolves only the configured opaque applicability context and never accepts a caller WorkItem', async () => {
+    configure();
+    const service =
+      new ConfiguredDevelopmentCanonicalServiceScopeAuthorization();
+
+    await expect(
+      service.authorizeOpenClawApplicabilityContext({
+        operation: 'BEGIN_APPLICABILITY',
+        applicabilityContextRef: 'APCTX-DEV-OPAQUE',
+        requestId: 'request-1',
+      }),
+    ).resolves.toMatchObject({
+      workItemId: 'WI-DEV-ISOLATED',
+      tenantId: 'tenant-dev',
+      applicabilityContextRef: 'APCTX-DEV-OPAQUE',
+      requestId: 'request-1',
+    });
+    await expect(
+      service.authorizeOpenClawApplicabilityContext({
+        operation: 'BEGIN_APPLICABILITY',
+        applicabilityContextRef: 'APCTX-FORGED',
+        requestId: 'request-1',
+      }),
+    ).rejects.toMatchObject({ code: 'CANONICAL_WORK_ITEM_NOT_FOUND' });
+    await expect(
+      service.authorizeOpenClawAttempt({
+        operation: 'COMMIT_APPLICABILITY',
+        attemptRef: 'AQ-APP-1',
+      }),
+    ).resolves.toMatchObject({
+      workItemId: 'WI-DEV-ISOLATED',
+      attemptRef: 'AQ-APP-1',
+    });
+  });
+
   it('authorizes one exact DocumentVersion and run token for development creation', async () => {
     configure();
     const service =
@@ -123,6 +159,7 @@ function configure(): void {
   process.env.WL_OPENCLAW_SERVICE_PRINCIPAL_ID = 'service:openclaw-dev-real';
   process.env.WL_OPENCLAW_SERVICE_TENANT_ID = 'tenant-dev';
   process.env.WL_OPENCLAW_SERVICE_WORK_ITEM_ID = 'WI-DEV-ISOLATED';
+  process.env.WL_OPENCLAW_APPLICABILITY_CONTEXT_REF = 'APCTX-DEV-OPAQUE';
   process.env.WL_OPENCLAW_DEVELOPMENT_CREATE_ENABLED = '1';
   process.env.WL_OPENCLAW_DEVELOPMENT_DOCUMENT_VERSION_ID =
     'document-version-dev-current';

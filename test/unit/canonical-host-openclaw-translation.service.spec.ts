@@ -19,11 +19,19 @@ import type {
   ReserveAndClaimInput,
 } from '../../server/modules/action-attempt/action-attempt.types';
 import { CanonicalHostOpenClawTranslationService } from '../../server/modules/canonical-host/canonical-host-openclaw-translation.service';
+import { CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY } from '../../server/modules/canonical-host/canonical-host-openclaw-runtime-policy';
 import {
   TRANSLATION_RESULT_SCHEMA_VERSION,
   type TranslationTaskContract,
 } from '../../server/modules/canonical-host/canonical-translation-rule-contract';
 import { HostOwnedV1TranslationRuleSetPrivateProvider } from '../../server/modules/canonical-host/canonical-translation-rule-set-v1.private';
+
+type RuntimeProvenanceOverrides = Partial<
+  Pick<
+    OpenClawResultEnvelope,
+    'modelVersion' | 'promptVersion' | 'skillVersion' | 'toolVersions'
+  >
+>;
 
 describe('CanonicalHostOpenClawTranslationService', () => {
   it('freezes Reader units and exact rules, validates, persists readback bytes, and CAS-projects candidate-only bilingual output', async () => {
@@ -201,6 +209,43 @@ describe('CanonicalHostOpenClawTranslationService', () => {
     expect(harness.artifactStore.persistAndReadback).not.toHaveBeenCalled();
     expect(harness.registrar.compareAndSet).not.toHaveBeenCalled();
   });
+
+  it.each<[string, RuntimeProvenanceOverrides]>([
+    ['wrong model', { modelVersion: 'GPT-5' }],
+    ['fallback model', { modelVersion: 'GLM-5.1/fallback' }],
+    [
+      'wrong skill',
+      { skillVersion: 'wiselink-research-and-synthesize@r09.c3' },
+    ],
+    [
+      'wrong MCP',
+      {
+        toolVersions: {
+          [CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.mcpServerName]: '1.1.0',
+        },
+      },
+    ],
+    ['empty prompt', { promptVersion: '' }],
+  ])(
+    'rejects %s before prepareCommit, artifact persistence, or CAS',
+    async (_caseName, overrides) => {
+      const harness = harnessForTranslation();
+      const begin = await harness.service.begin(harness.workItem.workItemId);
+      harness.prepare('{}', overrides);
+
+      await expect(
+        harness.service.commit(
+          begin.attemptRef,
+          begin.leaseToken,
+          begin.leaseGeneration,
+          harness.result,
+        ),
+      ).rejects.toThrow();
+      expect(harness.attempts.prepareCommit).not.toHaveBeenCalled();
+      expect(harness.artifactStore.persistAndReadback).not.toHaveBeenCalled();
+      expect(harness.registrar.compareAndSet).not.toHaveBeenCalled();
+    },
+  );
 });
 
 function harnessForTranslation() {
@@ -283,6 +328,7 @@ function harnessForTranslation() {
         triggerRequestId: identity.triggerRequestId,
       };
     }),
+    readScoped: jest.fn(async () => preparedCommit(task!, result!).row),
     prepareCommit: jest.fn(async () => preparedCommit(task!, result!)),
     finishProjectionSuccess: jest.fn(async () => ({
       attemptRef: 'TRN-TRANSLATE-1',
@@ -323,7 +369,7 @@ function harnessForTranslation() {
     get result() {
       return result!;
     },
-    prepare(modelOutput: string) {
+    prepare(modelOutput: string, overrides: RuntimeProvenanceOverrides = {}) {
       result = sealResultEnvelope({
         schemaVersion: 'wiselink.3_1.openclaw_result_envelope.v1',
         actionAttemptId: task!.actionAttemptId,
@@ -341,13 +387,21 @@ function harnessForTranslation() {
         missingInputs: [],
         conflicts: [],
         warnings: [],
-        modelVersion: 'wiselink/wiselink-direct-llm',
-        promptVersion: 'wiselink.3_1.openclaw_translation_prompt.v1',
-        skillVersion: 'wiselink-openclaw-action-attempt-worker.v1',
-        toolVersions: {
-          openclaw: 'gateway-http-chat-completions',
-          mcp: 'streamable-http',
-        },
+        modelVersion:
+          overrides.modelVersion ??
+          CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.modelVersion,
+        promptVersion:
+          overrides.promptVersion ??
+          'wiselink.3_1.openclaw_translation_prompt.v1',
+        skillVersion:
+          overrides.skillVersion ??
+          CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.skillVersion,
+        toolVersions:
+          overrides.toolVersions ??
+          ({
+            [CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.mcpServerName]:
+              CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.mcpServerVersion,
+          } as Record<string, string>),
         runMetrics: { durationMs: 10, inputUnits: 100, outputUnits: 100 },
         errorCode: null,
         errorDetail: null,
