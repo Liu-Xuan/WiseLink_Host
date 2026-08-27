@@ -24,6 +24,7 @@ import { CanonicalHostOpenClawDiscoveryService } from './canonical-host-openclaw
 import { CanonicalHostOpenClawOverallService } from './canonical-host-openclaw-overall.service';
 import { CanonicalHostOpenClawTranslationService } from './canonical-host-openclaw-translation.service';
 import { CanonicalHostOpenClawApplicabilityService } from './canonical-host-openclaw-applicability.service';
+import { CanonicalHostOpenClawAttemptStatusService } from './canonical-host-openclaw-attempt-status.service';
 import {
   CanonicalHostApplicabilityInputProducer,
   UnavailableCanonicalApplicabilityControlledSelection,
@@ -127,6 +128,7 @@ export interface CanonicalHostModuleOptions {
     CanonicalHostOpenClawOverallService,
     CanonicalHostOpenClawTranslationService,
     CanonicalHostOpenClawApplicabilityService,
+    CanonicalHostOpenClawAttemptStatusService,
     CanonicalHostApplicabilityInputProducer,
     CanonicalHostOpenClawReviewService,
     HostOwnedV1TranslationRuleSetPrivateProvider,
@@ -296,6 +298,7 @@ export class CanonicalHostModule {
         CanonicalHostOpenClawOverallService,
         CanonicalHostOpenClawTranslationService,
         CanonicalHostOpenClawApplicabilityService,
+        CanonicalHostOpenClawAttemptStatusService,
         CanonicalHostApplicabilityInputProducer,
         CanonicalHostOpenClawReviewService,
         HostOwnedV1TranslationRuleSetPrivateProvider,

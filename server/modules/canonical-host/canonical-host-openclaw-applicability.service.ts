@@ -11,7 +11,6 @@ import type {
 import {
   canonicalJson,
   canonicalSha256,
-  parseResultEnvelope,
   parseTaskEnvelope,
 } from '../action-attempt/action-attempt-envelope';
 import { ActionAttemptLifecycleService } from '../action-attempt/action-attempt-lifecycle.service';
@@ -50,11 +49,6 @@ import { CanonicalHostApplicabilityInputProducer } from './canonical-host-applic
 import { readFrozenApplicabilitySourceBinding } from './canonical-host-applicability-source';
 import {
   APPLICABILITY_ARTIFACT_SCHEMA_VERSION,
-  APPLICABILITY_MCP_SERVER_NAME,
-  APPLICABILITY_MCP_SERVER_VERSION,
-  APPLICABILITY_MODEL_VERSION,
-  APPLICABILITY_PROMPT_VERSION,
-  APPLICABILITY_SKILL_VERSION,
   APPLICABILITY_TASK_SCHEMA_VERSION,
   applicabilityRuntimePolicy,
   parseApplicabilityCandidate,
@@ -64,6 +58,7 @@ import {
   type ApplicabilityTaskSourceExpression,
 } from './canonical-host-openclaw-applicability.contract';
 import { parseBilingualTranslationArtifact } from './canonical-host-openclaw-translation.service';
+import { preflightCanonicalHostOpenClawResult } from './canonical-host-openclaw-runtime-policy';
 import {
   CANONICAL_TRANSLATION_RULE_SET_V1_ID,
   CANONICAL_TRANSLATION_RULE_SET_V1_VERSION,
@@ -249,9 +244,11 @@ export class CanonicalHostOpenClawApplicabilityService {
       workItemId: scope.workItemId,
     });
     assertApplicabilityAttempt(row, scope, attemptRef);
-    const task = requiredApplicabilityTask(row);
-    const result = parseResultEnvelope({ value: resultEnvelope, task });
-    assertResultProvenance(result, task);
+    const { task, result } = preflightCanonicalHostOpenClawResult({
+      row,
+      result: resultEnvelope,
+    });
+    assertApplicabilityResultBinding(result, task);
 
     const applicabilityContextRef = requiredApplicabilityContextRef(
       task.modelInput,
@@ -1168,19 +1165,10 @@ function assertOnlyHostFactUnknown(evaluation: ApplicabilityEvaluation): void {
   }
 }
 
-function assertResultProvenance(
+function assertApplicabilityResultBinding(
   result: OpenClawResultEnvelope,
   task: OpenClawTaskEnvelope,
 ): void {
-  if (
-    result.modelVersion !== APPLICABILITY_MODEL_VERSION ||
-    result.promptVersion !== APPLICABILITY_PROMPT_VERSION ||
-    result.skillVersion !== APPLICABILITY_SKILL_VERSION ||
-    result.toolVersions[APPLICABILITY_MCP_SERVER_NAME] !==
-      APPLICABILITY_MCP_SERVER_VERSION
-  ) {
-    throw new Error('APPLICABILITY_RESULT_PROVENANCE_MISMATCH');
-  }
   if (canonicalJson(result.sourceRefs) !== canonicalJson(task.sourceRefs)) {
     throw new Error('APPLICABILITY_RESULT_RESOURCE_BINDING_MISMATCH');
   }

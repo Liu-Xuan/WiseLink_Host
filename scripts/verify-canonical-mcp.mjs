@@ -23,6 +23,7 @@ const orchestratorCalls = [];
 const translationCalls = [];
 const applicabilityCalls = [];
 const reviewCalls = [];
+const statusCalls = [];
 const attemptCalls = [];
 const methods = [];
 const leaseToken = '00000000-0000-4000-8000-000000000001';
@@ -318,17 +319,6 @@ const review = {
       sourceRefs: [{ sourceRefId: sourceRefIds[0] }],
     };
   },
-  status: async (selectedAttemptRef) => {
-    reviewCalls.push({
-      tool: 'get_action_attempt_status',
-      attemptRef: selectedAttemptRef,
-    });
-    return {
-      attemptRef: selectedAttemptRef,
-      status: 'COMMITTING',
-      recoveryAvailable: true,
-    };
-  },
   commit: async (
     selectedAttemptRef,
     selectedLeaseToken,
@@ -345,6 +335,24 @@ const review = {
     return { attemptRef: selectedAttemptRef, status: 'SUCCEEDED' };
   },
 };
+const attemptStatus = {
+  status: async (selectedAttemptRef) => {
+    statusCalls.push({
+      tool: 'get_action_attempt_status',
+      attemptRef: selectedAttemptRef,
+    });
+    return {
+      attemptRef: selectedAttemptRef,
+      taskType: 'OPENCLAW_INTERACTIVE_REVIEW',
+      status: 'RUNNING',
+      recoveryAvailable: false,
+      commitStartedAt: null,
+      projectionApplied: false,
+      terminalReason: null,
+      resultContentHash: null,
+    };
+  },
+};
 const openClawMcp = new CanonicalHostOpenClawMcpService(
   vertical,
   dynamicEvaluation,
@@ -353,6 +361,7 @@ const openClawMcp = new CanonicalHostOpenClawMcpService(
   translation,
   applicability,
   review,
+  attemptStatus,
   attempts,
   serviceScope,
 );
@@ -724,10 +733,24 @@ try {
       name: 'read_source_refs',
       arguments: { attemptRef: 'AQ-REVIEW', sourceRefIds: ['SRC-1'] },
     });
-    await openClawClient.callTool({
-      name: 'get_action_attempt_status',
-      arguments: { attemptRef: 'AQ-REVIEW' },
-    });
+    assert.deepEqual(
+      resultJson(
+        await openClawClient.callTool({
+          name: 'get_action_attempt_status',
+          arguments: { attemptRef: 'AQ-REVIEW' },
+        }),
+      ),
+      {
+        attemptRef: 'AQ-REVIEW',
+        taskType: 'OPENCLAW_INTERACTIVE_REVIEW',
+        status: 'RUNNING',
+        recoveryAvailable: false,
+        commitStartedAt: null,
+        projectionApplied: false,
+        terminalReason: null,
+        resultContentHash: null,
+      },
+    );
     await openClawClient.callTool({
       name: 'commit_review_turn_candidate',
       arguments: {
@@ -743,10 +766,12 @@ try {
         'begin_review_turn',
         'get_review_turn_context',
         'read_source_refs',
-        'get_action_attempt_status',
         'commit_review_turn_candidate',
       ],
     );
+    assert.deepEqual(statusCalls, [
+      { tool: 'get_action_attempt_status', attemptRef: 'AQ-REVIEW' },
+    ]);
     assert.deepEqual(
       resultJson(
         await openClawClient.callTool({

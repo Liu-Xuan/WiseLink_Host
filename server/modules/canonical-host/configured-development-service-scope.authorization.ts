@@ -114,7 +114,7 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
       | 'COMMIT_APPLICABILITY'
       | 'GET_REVIEW_CONTEXT'
       | 'READ_REVIEW_SOURCE_REFS'
-      | 'GET_REVIEW_ATTEMPT_STATUS'
+      | 'GET_ACTION_ATTEMPT_STATUS'
       | 'COMMIT_REVIEW'
       | 'HEARTBEAT_ATTEMPT'
       | 'CANCEL_ATTEMPT';

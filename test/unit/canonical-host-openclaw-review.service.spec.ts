@@ -62,28 +62,6 @@ describe('CanonicalHostOpenClawReviewService', () => {
     });
   });
 
-  it('returns the durable COMMITTING recovery envelope without a currentness write', async () => {
-    const harness = reviewHarness();
-    const begin = await harness.service.begin('RC-1', 'request-1');
-    const result = harness.result(begin.task, {
-      'wiselink-openclaw-engineering-assessment': '1.1.0',
-    });
-    harness.setCommittingRecovery(result);
-
-    await expect(
-      harness.service.status(begin.attemptRef),
-    ).resolves.toMatchObject({
-      attemptRef: 'AQ-REVIEW-1',
-      status: 'COMMITTING',
-      recoveryAvailable: true,
-      projectionApplied: false,
-      recoveryResult: result,
-    });
-    expect(harness.workItems.loadTenantScopedProjection).toHaveBeenCalledTimes(
-      1,
-    );
-  });
-
   it('rejects missing actual provenance before ActionAttempt or review mutation', async () => {
     const harness = reviewHarness();
     const begin = await harness.service.begin('RC-1', 'request-1');
@@ -96,7 +74,7 @@ describe('CanonicalHostOpenClawReviewService', () => {
         begin.leaseGeneration,
         result,
       ),
-    ).rejects.toThrow('REVIEW_RESULT_PROVENANCE_INVALID');
+    ).rejects.toThrow('OPENCLAW_RESULT_RUNTIME_POLICY_MISMATCH');
     expect(harness.attempts.prepareCommit).not.toHaveBeenCalled();
     expect(
       harness.conversations.persistAssistantCandidate,
@@ -108,7 +86,7 @@ describe('CanonicalHostOpenClawReviewService', () => {
     const begin = await harness.service.begin('RC-1', 'request-1');
     const result = harness.result(
       begin.task,
-      { 'wiselink-openclaw-engineering-assessment': '1.1.0' },
+      { 'wiselink-openclaw-engineering-assessment': '1.2.0' },
       'wiselink-research-and-synthesize.v1',
     );
 
@@ -119,7 +97,7 @@ describe('CanonicalHostOpenClawReviewService', () => {
         begin.leaseGeneration,
         result,
       ),
-    ).rejects.toThrow('REVIEW_RESULT_PROVENANCE_INVALID');
+    ).rejects.toThrow('OPENCLAW_RESULT_RUNTIME_POLICY_MISMATCH');
     expect(harness.attempts.prepareCommit).not.toHaveBeenCalled();
     expect(
       harness.conversations.persistAssistantCandidate,
@@ -130,7 +108,7 @@ describe('CanonicalHostOpenClawReviewService', () => {
     const harness = reviewHarness();
     const begin = await harness.service.begin('RC-1', 'request-1');
     const result = harness.result(begin.task, {
-      'wiselink-openclaw-engineering-assessment': '1.1.0',
+      'wiselink-openclaw-engineering-assessment': '1.2.0',
     });
 
     const committed = await harness.service.commit(
@@ -165,7 +143,7 @@ describe('CanonicalHostOpenClawReviewService', () => {
     const begin = await harness.service.begin('RC-1', 'request-1');
     harness.expireLease();
     const result = harness.result(begin.task, {
-      'wiselink-openclaw-engineering-assessment': '1.1.0',
+      'wiselink-openclaw-engineering-assessment': '1.2.0',
     });
 
     await expect(
@@ -357,15 +335,6 @@ function reviewHarness() {
       row = {
         ...row!,
         leaseExpiresAt: new Date('2020-01-01T00:00:00.000Z'),
-      };
-    },
-    setCommittingRecovery(result: OpenClawResultEnvelope) {
-      row = {
-        ...row!,
-        status: 'COMMITTING',
-        resultEnvelopeJson: JSON.stringify(result),
-        resultContentHash: result.contentHash,
-        commitStartedAt: new Date('2026-08-26T10:02:00.000Z'),
       };
     },
     result(

@@ -24,6 +24,7 @@ import { UnifiedReaderService } from '../unified-reader/unified-reader.service';
 import type { UnifiedArtifactStorePort } from '../unified-reader/unified-reader.types';
 import { assertNoDuplicateJsonKeys } from '../unified-reader/unified-reader.utils';
 import { CANONICAL_WORK_ITEM_REGISTRAR } from './canonical-host.constants';
+import { preflightCanonicalHostOpenClawResult } from './canonical-host-openclaw-runtime-policy';
 import type { CanonicalWorkItemRegistrarPort } from './canonical-host.types';
 import type { CanonicalTranslationConsumptionBinding } from './canonical-reader-consumption';
 import {
@@ -178,6 +179,20 @@ export class CanonicalHostOpenClawTranslationService {
       attemptRef,
     });
     assertAttemptScope(scope, attemptRef);
+    const preflightRow = await this.attempts.readScoped({
+      attemptRef,
+      tenantId: scope.tenantId,
+      workItemId: scope.workItemId,
+    });
+    const preflight = preflightCanonicalHostOpenClawResult({
+      row: preflightRow,
+      result: resultEnvelope,
+    });
+    assertAttemptBinding(
+      scope,
+      translationAttemptFromRow(preflightRow),
+      attemptRef,
+    );
     const prepared = await this.attempts.prepareCommit({
       attemptRef,
       tenantId: scope.tenantId,
@@ -185,7 +200,7 @@ export class CanonicalHostOpenClawTranslationService {
       principalId: scope.principalId,
       leaseToken,
       leaseGeneration,
-      result: resultEnvelope,
+      result: preflight.result,
     });
     const attempt = translationAttemptFromRow(prepared.row);
     assertAttemptBinding(scope, attempt, attemptRef);

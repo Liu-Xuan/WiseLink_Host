@@ -3,6 +3,10 @@ import {
   getRegistry,
   type ApplicabilityPropertyDefinition,
 } from '../assessment-workbench/applicability-fleet/applicabilityPropertyRegistry';
+import {
+  CANONICAL_HOST_OPENCLAW_APPLICABILITY_PROMPT_VERSION,
+  CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY,
+} from './canonical-host-openclaw-runtime-policy';
 
 export const APPLICABILITY_TASK_SCHEMA_VERSION =
   'wiselink.3_1.applicability_task.v1' as const;
@@ -11,15 +15,19 @@ export const APPLICABILITY_CANDIDATE_SCHEMA_VERSION =
 export const APPLICABILITY_ARTIFACT_SCHEMA_VERSION =
   'wiselink.3_1.applicability_candidate_artifact.v1' as const;
 export const APPLICABILITY_MCP_SERVER_NAME =
-  'wiselink-openclaw-engineering-assessment' as const;
-export const APPLICABILITY_MCP_SERVER_VERSION = '1.2.0' as const;
-export const APPLICABILITY_RUNTIME_APP_ID = 'app_17c3zn24kv2' as const;
-export const APPLICABILITY_PROFILE_REF = 'wiselink-engineering' as const;
-export const APPLICABILITY_MODEL_VERSION = 'GLM-5.1' as const;
+  CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.mcpServerName;
+export const APPLICABILITY_MCP_SERVER_VERSION =
+  CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.mcpServerVersion;
+export const APPLICABILITY_RUNTIME_APP_ID =
+  CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.runtimeAppId;
+export const APPLICABILITY_PROFILE_REF =
+  CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.profileRef;
+export const APPLICABILITY_MODEL_VERSION =
+  CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.modelVersion;
 export const APPLICABILITY_PROMPT_VERSION =
-  'wiselink-applicability-extraction@r09.c4' as const;
+  CANONICAL_HOST_OPENCLAW_APPLICABILITY_PROMPT_VERSION;
 export const APPLICABILITY_SKILL_VERSION =
-  'wiselink-research-and-synthesize@r09.applicability.c4' as const;
+  CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.skillVersion;
 
 export interface ApplicabilityTaskSourceExpression {
   expressionId: string;

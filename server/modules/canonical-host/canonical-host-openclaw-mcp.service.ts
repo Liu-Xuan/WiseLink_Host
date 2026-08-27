@@ -13,6 +13,7 @@ import {
   type PublicHostedDiscoveryResult,
 } from './canonical-host-openclaw-discovery.service';
 import { CanonicalHostOpenClawOverallService } from './canonical-host-openclaw-overall.service';
+import { CanonicalHostOpenClawAttemptStatusService } from './canonical-host-openclaw-attempt-status.service';
 import { CanonicalHostOpenClawReviewService } from './canonical-host-openclaw-review.service';
 import { CanonicalHostOpenClawTranslationService } from './canonical-host-openclaw-translation.service';
 import { CanonicalHostOpenClawApplicabilityService } from './canonical-host-openclaw-applicability.service';
@@ -108,6 +109,7 @@ export class CanonicalHostOpenClawMcpService {
     private readonly translation: CanonicalHostOpenClawTranslationService,
     private readonly applicability: CanonicalHostOpenClawApplicabilityService,
     private readonly review: CanonicalHostOpenClawReviewService,
+    private readonly attemptStatus: CanonicalHostOpenClawAttemptStatusService,
     private readonly attempts: ActionAttemptLifecycleService,
     @Inject(CANONICAL_SERVICE_SCOPE_AUTHORIZATION)
     private readonly serviceScope: CanonicalServiceScopeAuthorizationPort,
@@ -422,14 +424,14 @@ export class CanonicalHostOpenClawMcpService {
     server.registerTool(
       'get_action_attempt_status',
       {
-        title: '读取交互评审 ActionAttempt 状态',
+        title: '读取通用 ActionAttempt 状态',
         description:
-          '只读返回 exact review attempt 的 RUNNING/COMMITTING/terminal 状态；COMMITTING 时返回 Host 已持久化的 recovery ResultEnvelope，供原样恢复，不触发模型或业务写入。',
+          '先授权再按 tenant/WorkItem scope 只读返回五类 exact ActionAttempt 的 RUNNING/COMMITTING/terminal 状态；仅 COMMITTING 返回经 Host policy 校验的 recovery ResultEnvelope，不触发模型或业务写入。',
         inputSchema: z.object({ attemptRef }).strict(),
         annotations: resumeAnnotations,
       },
       async ({ attemptRef: selectedAttemptRef }) =>
-        textResult(await this.review.status(selectedAttemptRef)),
+        textResult(await this.attemptStatus.status(selectedAttemptRef)),
     );
 
     server.registerTool(

@@ -537,8 +537,23 @@ describe('CanonicalHostOpenClawApplicabilityService', () => {
         begin.leaseGeneration,
         wrong,
       ),
-    ).rejects.toThrow('APPLICABILITY_RESULT_PROVENANCE_MISMATCH');
+    ).rejects.toThrow('OPENCLAW_RESULT_RUNTIME_POLICY_MISMATCH');
     expectNoCommitMutation(provenance);
+
+    const prompt = applicabilityHarness();
+    const promptBegin = await prompt.begin();
+    const wrongPrompt = prompt.resultFor(candidateFor(promptBegin), {
+      promptVersion: 'wiselink-applicability-extraction@r09.c3',
+    });
+    await expect(
+      prompt.service.commit(
+        promptBegin.attemptRef,
+        promptBegin.leaseToken,
+        promptBegin.leaseGeneration,
+        wrongPrompt,
+      ),
+    ).rejects.toThrow('OPENCLAW_APPLICABILITY_PROMPT_POLICY_MISMATCH');
+    expectNoCommitMutation(prompt);
 
     const damaged = applicabilityHarness();
     const damagedBegin = await damaged.begin();

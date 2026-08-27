@@ -24,6 +24,7 @@ import { UNIFIED_ARTIFACT_STORE } from '../unified-reader/unified-reader.constan
 import type { UnifiedArtifactStorePort } from '../unified-reader/unified-reader.types';
 import type { DynamicEvaluationActionAttempt } from '../work-item/miaoda-work-item.repository';
 import { CANONICAL_WORK_ITEM_REGISTRAR } from './canonical-host.constants';
+import { preflightCanonicalHostOpenClawResult } from './canonical-host-openclaw-runtime-policy';
 import { CanonicalHostAssessmentService } from './canonical-host-assessment.service';
 import { CanonicalHostEngineerReviewService } from './canonical-host-engineer-review.service';
 import type {
@@ -129,14 +130,26 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
     leaseToken: string,
     leaseGeneration: number,
     resultEnvelope: unknown,
-  ): Promise<
-    CommitDynamicEvaluationResult | ActionAttemptTerminalProjection
-  > {
+  ): Promise<CommitDynamicEvaluationResult | ActionAttemptTerminalProjection> {
     const scope = await this.serviceScope.authorizeOpenClawAttempt({
       operation: 'COMMIT_DYNAMIC',
       attemptRef,
     });
     assertAttemptScope(scope, attemptRef);
+    const preflightRow = await this.attempts.readScoped({
+      attemptRef,
+      tenantId: scope.tenantId,
+      workItemId: scope.workItemId,
+    });
+    const preflight = preflightCanonicalHostOpenClawResult({
+      row: preflightRow,
+      result: resultEnvelope,
+    });
+    assertAttemptBinding(
+      scope,
+      dynamicAttemptFromRow(preflightRow),
+      attemptRef,
+    );
     const prepared = await this.attempts.prepareCommit({
       attemptRef,
       tenantId: scope.tenantId,
@@ -144,7 +157,7 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
       principalId: scope.principalId,
       leaseToken,
       leaseGeneration,
-      result: resultEnvelope,
+      result: preflight.result,
     });
     const attempt = dynamicAttemptFromRow(prepared.row);
     assertAttemptBinding(scope, attempt, attemptRef);

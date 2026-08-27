@@ -7,7 +7,6 @@ import type {
 } from '@shared/api.interface';
 import {
   canonicalSha256,
-  parseResultEnvelope,
   parseTaskEnvelope,
 } from '../action-attempt/action-attempt-envelope';
 import { ActionAttemptLifecycleService } from '../action-attempt/action-attempt-lifecycle.service';
@@ -29,6 +28,7 @@ import type { UnifiedArtifactStorePort } from '../unified-reader/unified-reader.
 import { assertNoDuplicateJsonKeys } from '../unified-reader/unified-reader.utils';
 import { MiaodaWorkItemRepository } from '../work-item/miaoda-work-item.repository';
 import { CanonicalHostEngineerReviewService } from './canonical-host-engineer-review.service';
+import { preflightCanonicalHostOpenClawResult } from './canonical-host-openclaw-runtime-policy';
 import { parseBilingualTranslationArtifact } from './canonical-host-openclaw-translation.service';
 import {
   parseReviewTurnCandidateContract,
@@ -85,19 +85,6 @@ export interface ReviewSourceRefsResult {
   schemaVersion: 'wiselink.3_1.review_source_refs.v1.c2';
   attemptRef: string;
   sourceRefs: Array<Record<string, unknown>>;
-}
-
-export interface ReviewAttemptStatusResult {
-  schemaVersion: 'wiselink.3_1.review_action_attempt_status.v1.c2';
-  attemptRef: string;
-  status: string;
-  recoveryAvailable: boolean;
-  commitStartedAt: string | null;
-  leaseGeneration: number;
-  leaseExpiresAt: string | null;
-  terminalReason: string | null;
-  projectionApplied: false;
-  recoveryResult?: OpenClawResultEnvelope;
 }
 
 export interface CommitReviewTurnResult {
@@ -222,35 +209,6 @@ export class CanonicalHostOpenClawReviewService {
     };
   }
 
-  async status(attemptRef: string): Promise<ReviewAttemptStatusResult> {
-    const attempt = await this.requiredReviewAttempt(
-      attemptRef,
-      'GET_REVIEW_ATTEMPT_STATUS',
-      false,
-    );
-    const recoveryResult =
-      attempt.row.status === 'COMMITTING' && attempt.row.resultEnvelopeJson
-        ? parseResultEnvelope({
-            value: JSON.parse(attempt.row.resultEnvelopeJson) as unknown,
-            task: attempt.task,
-          })
-        : undefined;
-    return {
-      schemaVersion: 'wiselink.3_1.review_action_attempt_status.v1.c2',
-      attemptRef,
-      status: attempt.row.status,
-      recoveryAvailable: recoveryResult !== undefined,
-      commitStartedAt: attempt.row.commitStartedAt?.toISOString() ?? null,
-      leaseGeneration: attempt.row.leaseGeneration,
-      leaseExpiresAt: attempt.row.leaseExpiresAt?.toISOString() ?? null,
-      terminalReason: attempt.row.terminalReason,
-      projectionApplied: false,
-      ...(recoveryResult
-        ? { recoveryResult: structuredClone(recoveryResult) }
-        : {}),
-    };
-  }
-
   async commit(
     attemptRef: string,
     leaseToken: string,
@@ -261,9 +219,9 @@ export class CanonicalHostOpenClawReviewService {
       attemptRef,
       'COMMIT_REVIEW',
     );
-    const result = parseResultEnvelope({
-      value: resultEnvelope,
-      task: authorized.task,
+    const { result } = preflightCanonicalHostOpenClawResult({
+      row: authorized.row,
+      result: resultEnvelope,
     });
     const candidate = parseReviewTurnCandidateContract({
       result,
@@ -377,7 +335,6 @@ export class CanonicalHostOpenClawReviewService {
     operation:
       | 'GET_REVIEW_CONTEXT'
       | 'READ_REVIEW_SOURCE_REFS'
-      | 'GET_REVIEW_ATTEMPT_STATUS'
       | 'COMMIT_REVIEW',
     requireCurrent = true,
   ): Promise<AuthorizedReviewAttempt> {
