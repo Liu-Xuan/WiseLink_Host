@@ -36,6 +36,7 @@ import { useCurrentUserProfile } from '@lark-apaas/client-toolkit/hooks/useCurre
 import { type WorkbenchNode } from './WorkItemContextTree';
 import { EngineeringReasoningTrail } from './EngineeringReasoningTrail';
 import { AeoAuthoringWorkspace } from './AeoAuthoringWorkspace';
+import ApplicabilitySelectionPanel from './ApplicabilitySelectionPanel';
 import { AssessmentSemanticsOverview } from './AssessmentSemanticsOverview';
 import { DocumentReaderWorkspace } from './DocumentReaderWorkspace';
 import PdfSourcePane from './PdfSourcePane';
@@ -798,10 +799,18 @@ export default function DocumentParsingPage() {
         ) : null}
 
         {activeNode === 'assessment' ? (
+          <ApplicabilitySelectionPanel
+            key={workItemId}
+            workItemId={workItemId}
+            onRefreshWorkspace={() => void load(activeQuery)}
+          />
+        ) : null}
+
+        {activeNode === 'assessment' ? (
           assessmentEligible ? (
             <section
               className="parse-assessment-panel parse-assessment-workspace"
-              id="workspace-assessment"
+              id="workspace-assessment-results"
               aria-label="工程评估工作台"
             >
               <div className="parse-panel-label">
@@ -1159,7 +1168,7 @@ export default function DocumentParsingPage() {
           ) : (
             <section
               className="parse-assessment-panel parse-assessment-workspace"
-              id="workspace-assessment"
+              id="workspace-assessment-results"
               aria-label="工程评估工作台"
             >
               <div className="parse-panel-label">

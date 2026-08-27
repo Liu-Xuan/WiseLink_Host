@@ -11,10 +11,12 @@ jest.mock('@lark-apaas/client-toolkit/logger', () => ({
 import {
   appendReviewTextTurn,
   closeReviewConversation,
+  configureApplicabilitySelection,
   confirmReviewActionDraft,
   confirmIntegratedOverallForAeo,
   createOrResumeReviewConversation,
   generateAeoCandidate,
+  getApplicabilitySelection,
   getCurrentReviewConversation,
   getDocumentParsingPage,
   getLibraryIndex,
@@ -93,6 +95,77 @@ describe('canonical host assessment client', () => {
       method: 'GET',
       params: { query: 'sourceRef APP-001' },
     });
+  });
+
+  it('fresh-reads the authenticated Host applicability selection', async () => {
+    request.mockResolvedValue({
+      status: 200,
+      data: {
+        workItemId: 'WI-SB/1001',
+        aircraftIdentifier: 'B-TEST',
+        currentness: 'CURRENT',
+      },
+    });
+
+    await expect(
+      getApplicabilitySelection('WI-SB/1001'),
+    ).resolves.toMatchObject({
+      currentness: 'CURRENT',
+    });
+    expect(request).toHaveBeenCalledWith({
+      url: '/api/work-items/WI-SB%2F1001/applicability-selection',
+      method: 'GET',
+    });
+  });
+
+  it('configures only aircraft and as-of, then requires a fresh GET readback', async () => {
+    request
+      .mockResolvedValueOnce({
+        status: 200,
+        data: { selectionRevision: 'mutation-response' },
+      })
+      .mockResolvedValueOnce({
+        status: 200,
+        data: {
+          selectionRevision: 'fresh-readback',
+          aircraftIdentifier: 'B-TEST',
+          asOf: '2026-01-02',
+        },
+      });
+
+    await expect(
+      configureApplicabilitySelection('WI-SB-1001', {
+        aircraftIdentifier: 'B-TEST',
+        asOf: '2026-01-02',
+      }),
+    ).resolves.toMatchObject({ selectionRevision: 'fresh-readback' });
+    expect(request).toHaveBeenNthCalledWith(1, {
+      url: '/api/work-items/WI-SB-1001/applicability-selection',
+      method: 'PUT',
+      data: {
+        aircraftIdentifier: 'B-TEST',
+        asOf: '2026-01-02',
+      },
+    });
+    expect(request).toHaveBeenNthCalledWith(2, {
+      url: '/api/work-items/WI-SB-1001/applicability-selection',
+      method: 'GET',
+    });
+  });
+
+  it('preserves the Host unconfigured code from a rejected 409 response', async () => {
+    request.mockRejectedValue({
+      response: {
+        status: 409,
+        data: {
+          message: 'APPLICABILITY_CONTROLLED_SELECTION_NOT_CONFIGURED',
+        },
+      },
+    });
+
+    await expect(getApplicabilitySelection('WI-SB-1001')).rejects.toThrow(
+      'APPLICABILITY_CONTROLLED_SELECTION_NOT_CONFIGURED',
+    );
   });
 
   it('normalizes a fulfilled 403 without exposing object existence', async () => {
