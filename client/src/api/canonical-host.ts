@@ -1,4 +1,6 @@
 import type {
+  AppendReviewTextTurnRequest,
+  AppendReviewTextTurnResponse,
   CanonicalDocumentParsingPageResponse,
   CanonicalAeoCandidateRunResponse,
   CanonicalEntryQueryRequest,
@@ -8,6 +10,10 @@ import type {
   CanonicalLibraryIndexReadResponse,
   CanonicalDevelopmentWorkItemRunRequest,
   CanonicalOrdinaryWorkItemRunResponse,
+  CloseReviewConversationResponse,
+  ConfirmReviewActionDraftResponse,
+  CreateOrResumeReviewConversationResponse,
+  CurrentReviewConversationResponse,
 } from '@shared/api.interface';
 
 import { logger } from '@lark-apaas/client-toolkit/logger';
@@ -165,6 +171,117 @@ export async function getDocumentParsingPage(
     logger.error('读取文档与解析 fresh projection 失败', error);
     throw normalizedDirectObjectError(error);
   }
+}
+
+export async function createOrResumeReviewConversation(
+  workItemId: string,
+): Promise<CreateOrResumeReviewConversationResponse> {
+  return reviewConversationRequest<CreateOrResumeReviewConversationResponse>({
+    url: reviewConversationCurrentUrl(workItemId),
+    method: 'POST',
+    data: {},
+    operation: '开始或继续工程复核讨论',
+  });
+}
+
+export async function getCurrentReviewConversation(
+  workItemId: string,
+): Promise<CurrentReviewConversationResponse> {
+  return reviewConversationRequest<CurrentReviewConversationResponse>({
+    url: reviewConversationCurrentUrl(workItemId),
+    method: 'GET',
+    operation: '读取当前工程复核讨论',
+  });
+}
+
+/**
+ * A named fresh read keeps UI reload actions explicit without introducing a
+ * second client-side conversation store.
+ */
+export async function reloadReviewConversation(
+  workItemId: string,
+): Promise<CurrentReviewConversationResponse> {
+  return getCurrentReviewConversation(workItemId);
+}
+
+export async function appendReviewTextTurn(
+  workItemId: string,
+  reviewConversationId: string,
+  input: AppendReviewTextTurnRequest,
+): Promise<AppendReviewTextTurnResponse> {
+  return reviewConversationRequest<AppendReviewTextTurnResponse>({
+    url: `${reviewConversationUrl(workItemId, reviewConversationId)}/turns`,
+    method: 'POST',
+    data: input,
+    operation: '追加工程复核输入',
+  });
+}
+
+export async function closeReviewConversation(
+  workItemId: string,
+  reviewConversationId: string,
+): Promise<CloseReviewConversationResponse> {
+  return reviewConversationRequest<CloseReviewConversationResponse>({
+    url: `${reviewConversationUrl(workItemId, reviewConversationId)}/close`,
+    method: 'POST',
+    data: {},
+    operation: '结束当前工程复核讨论',
+  });
+}
+
+export async function confirmReviewActionDraft(
+  workItemId: string,
+  reviewConversationId: string,
+  reviewTurnId: string,
+): Promise<ConfirmReviewActionDraftResponse> {
+  return reviewConversationRequest<ConfirmReviewActionDraftResponse>({
+    url: `${reviewConversationUrl(workItemId, reviewConversationId)}/turns/${encodeURIComponent(reviewTurnId)}/confirm-draft`,
+    method: 'POST',
+    data: {},
+    operation: '确认工程复核草稿',
+  });
+}
+
+async function reviewConversationRequest<T>(input: {
+  url: string;
+  method: 'GET' | 'POST';
+  data?: Record<string, never> | AppendReviewTextTurnRequest;
+  operation: string;
+}): Promise<T> {
+  try {
+    const response = await axiosForBackend<T>({
+      url: input.url,
+      method: input.method,
+      ...(input.data === undefined ? {} : { data: input.data }),
+    });
+    if (response.status === 401) {
+      throw new Error('REVIEW_CONVERSATION_LOGIN_REQUIRED');
+    }
+    if (response.status === 403 || response.status === 404) {
+      throw canonicalObjectNotFound();
+    }
+    if (response.status < 200 || response.status >= 300) {
+      throw backendResponseError(
+        response.data,
+        'REVIEW_CONVERSATION_UNAVAILABLE',
+      );
+    }
+    return response.data;
+  } catch (error) {
+    logger.error(`${input.operation}失败`, error);
+    throw normalizedDirectObjectError(error);
+  }
+}
+
+function reviewConversationCurrentUrl(workItemId: string): string {
+  return `/api/work-items/${encodeURIComponent(workItemId)}/review-conversations/current`;
+}
+
+function reviewConversationUrl(
+  workItemId: string,
+  reviewConversationId: string,
+): string {
+  return `/api/work-items/${encodeURIComponent(workItemId)}/review-conversations/${encodeURIComponent(reviewConversationId)}`;
 }
 
 function normalizedDirectObjectError(error: unknown): unknown {

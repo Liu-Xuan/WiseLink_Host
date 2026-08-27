@@ -21,6 +21,7 @@ import { canonicalHost } from '@client/src/api';
 import type {
   CanonicalEngineerReviewDecision,
   CanonicalDocumentParsingPageResponse,
+  ConfirmReviewActionDraftResponse,
 } from '@shared/api.interface';
 import { Button } from '@client/src/components/ui/button';
 import {
@@ -39,6 +40,7 @@ import { AssessmentSemanticsOverview } from './AssessmentSemanticsOverview';
 import { DocumentReaderWorkspace } from './DocumentReaderWorkspace';
 import PdfSourcePane from './PdfSourcePane';
 import ReviewImpactPreview from '@client/src/features/review/ReviewImpactPreview';
+import ContinuousReviewPanel from '@client/src/features/review/ContinuousReviewPanel';
 import RevisionTimeline from '@client/src/features/review/RevisionTimeline';
 import TaskPills from '@client/src/features/review/TaskPills';
 import WorkbenchShell from '@client/src/features/workbench/WorkbenchShell';
@@ -221,6 +223,9 @@ export default function DocumentParsingPage() {
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
   /** 保存前影响预览开关（§4.3 先显示影响预览，再写入） */
   const [reviewPreviewOpen, setReviewPreviewOpen] = useState(false);
+  const [continuousReviewReceipt, setContinuousReviewReceipt] = useState<
+    ConfirmReviewActionDraftResponse['reviewAction'] | null
+  >(null);
   /** 版本冲突反馈（§4.3 冲突不自动覆盖，提供刷新） */
   const [conflictMessage, setConflictMessage] = useState<string | null>(null);
   const [treeMode, setTreeMode] = useState<NavigatorMode>('document');
@@ -307,6 +312,10 @@ export default function DocumentParsingPage() {
       loadEpochRef.current += 1;
     };
   }, [workItemId, activeQuery, actorSignal]);
+
+  useEffect(() => {
+    setContinuousReviewReceipt(null);
+  }, [workItemId]);
 
   const data: CanonicalDocumentParsingPageResponse | null =
     pageActorSignal === actorSignal ? pageData : null;
@@ -1441,6 +1450,17 @@ export default function DocumentParsingPage() {
               <p>当前资料尚未提供可复核的逐项内容。</p>
             </div>
           )
+        ) : null}
+
+        {activeNode === 'review' ? (
+          <ContinuousReviewPanel
+            workItemId={workItemId}
+            workItemRevision={data.workItem.revision}
+            confirmationReceipt={continuousReviewReceipt}
+            onConfirmationReceipt={setContinuousReviewReceipt}
+            onLocateSourceRef={(sourceRef) => locateSourceRef(null, sourceRef)}
+            onWorkItemRefresh={() => load(activeQuery)}
+          />
         ) : null}
 
         {activeNode === 'overall' ? (

@@ -9,13 +9,19 @@ jest.mock('@lark-apaas/client-toolkit/logger', () => ({
 }));
 
 import {
+  appendReviewTextTurn,
+  closeReviewConversation,
+  confirmReviewActionDraft,
   confirmIntegratedOverallForAeo,
+  createOrResumeReviewConversation,
   generateAeoCandidate,
+  getCurrentReviewConversation,
   getDocumentParsingPage,
   getLibraryIndex,
   isCanonicalObjectNotFound,
   queryParsedUnits,
   recordEngineerReview,
+  reloadReviewConversation,
   requireOfficialOauthSession,
 } from '../../client/src/api/canonical-host';
 
@@ -198,6 +204,98 @@ describe('canonical host assessment client', () => {
     });
     expect(request).toHaveBeenCalledWith({
       url: '/api/canonical-host/work-items/WI-SB-1001/aeo/candidate',
+      method: 'POST',
+      data: {},
+    });
+  });
+
+  it('creates or resumes the single current review conversation with an empty body', async () => {
+    request.mockResolvedValue({
+      status: 200,
+      data: { conversation: { status: 'ACTIVE' }, resumed: true },
+    });
+
+    await expect(
+      createOrResumeReviewConversation('WI-SB-1001'),
+    ).resolves.toMatchObject({ resumed: true });
+    expect(request).toHaveBeenCalledWith({
+      url: '/api/work-items/WI-SB-1001/review-conversations/current',
+      method: 'POST',
+      data: {},
+    });
+  });
+
+  it('fresh-reads the current review conversation without creating browser state', async () => {
+    request.mockResolvedValue({
+      status: 200,
+      data: { conversation: null, currentWorkItemRevision: 12 },
+    });
+
+    await expect(
+      getCurrentReviewConversation('WI-SB-1001'),
+    ).resolves.toMatchObject({ currentWorkItemRevision: 12 });
+    await expect(reloadReviewConversation('WI-SB-1001')).resolves.toMatchObject(
+      { currentWorkItemRevision: 12 },
+    );
+    expect(request).toHaveBeenNthCalledWith(1, {
+      url: '/api/work-items/WI-SB-1001/review-conversations/current',
+      method: 'GET',
+    });
+    expect(request).toHaveBeenNthCalledWith(2, {
+      url: '/api/work-items/WI-SB-1001/review-conversations/current',
+      method: 'GET',
+    });
+  });
+
+  it('preserves the caller requestId and exact official attachment selection for append replay', async () => {
+    request.mockResolvedValue({
+      status: 200,
+      data: { conversation: {}, turn: {}, replayed: false },
+    });
+    const input = {
+      requestId: 'req-review-001',
+      userMessage: '请核对新增并行要求。',
+      attachmentSelection: {
+        bucketId: 'official-bucket',
+        filePath: 'wiselink/review-input/req-review-001/input.pdf',
+      },
+    };
+
+    await expect(
+      appendReviewTextTurn('WI-SB-1001', 'RC-001', input),
+    ).resolves.toMatchObject({ replayed: false });
+    expect(request).toHaveBeenCalledWith({
+      url: '/api/work-items/WI-SB-1001/review-conversations/RC-001/turns',
+      method: 'POST',
+      data: input,
+    });
+  });
+
+  it('closes and confirms only by bound path with no client-resubmitted draft', async () => {
+    request
+      .mockResolvedValueOnce({
+        status: 200,
+        data: { conversation: { status: 'CLOSED' }, alreadyClosed: false },
+      })
+      .mockResolvedValueOnce({
+        status: 200,
+        data: {
+          conversation: {},
+          turn: {},
+          reviewAction: { workItemRevision: 13, overallStatus: 'STALE' },
+        },
+      });
+
+    await closeReviewConversation('WI-SB-1001', 'RC-001');
+    await confirmReviewActionDraft('WI-SB-1001', 'RC-001', 'RT-004');
+
+    expect(request).toHaveBeenNthCalledWith(1, {
+      url: '/api/work-items/WI-SB-1001/review-conversations/RC-001/close',
+      method: 'POST',
+      data: {},
+    });
+    expect(request).toHaveBeenNthCalledWith(2, {
+      url: '/api/work-items/WI-SB-1001/review-conversations/RC-001/turns/RT-004/confirm-draft',
       method: 'POST',
       data: {},
     });
