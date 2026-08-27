@@ -8,7 +8,9 @@ describe('single canonical app workspace', () => {
     const [
       routes,
       layout,
+      currentUser,
       floatingDock,
+      home,
       page,
       tree,
       dock,
@@ -18,6 +20,7 @@ describe('single canonical app workspace', () => {
       taskPills,
       themeProvider,
       glass,
+      indexStyles,
       homeStyles,
       motion,
       overallHero,
@@ -27,7 +30,9 @@ describe('single canonical app workspace', () => {
     ] = await Promise.all([
       source('client/src/app.tsx'),
       source('client/src/components/Layout.tsx'),
+      source('client/src/components/CurrentUserControl.tsx'),
       source('client/src/features/navigation/FloatingDock.tsx'),
+      source('client/src/pages/WorkspaceHomePage/WorkspaceHomePage.tsx'),
       source('client/src/pages/DocumentParsingPage/DocumentParsingPage.tsx'),
       source('client/src/pages/DocumentParsingPage/WorkItemContextTree.tsx'),
       source('client/src/pages/DocumentParsingPage/WorkItemContextDock.tsx'),
@@ -39,6 +44,7 @@ describe('single canonical app workspace', () => {
       source('client/src/features/review/TaskPills.tsx'),
       source('client/src/app/providers/ThemeProvider.tsx'),
       source('client/src/styles/glass.css'),
+      source('client/src/index.css'),
       source('client/src/pages/WorkspaceHomePage/workspace-home.css'),
       source('client/src/styles/motion.css'),
       source('client/src/features/workitem/OverallAssessmentHero.tsx'),
@@ -52,6 +58,10 @@ describe('single canonical app workspace', () => {
     ]);
 
     expect(routes).toContain('WorkspaceHomePage');
+    expect(routes).toContain('<LibraryIndexRedirect />');
+    expect(routes).toContain("pathname: '/library'");
+    expect(routes).toContain('search: location.search');
+    expect(routes.split('element={<WorkspaceHomePage />}')).toHaveLength(2);
     expect(routes).toContain('work-items/:workItemId/documents');
     expect(routes).not.toContain('ailyCardsPreviewRoute');
     expect(routes).not.toContain('AilyCardsPreview');
@@ -68,6 +78,15 @@ describe('single canonical app workspace', () => {
     expect(layout).not.toContain('任务总览');
     expect(layout).not.toContain('唯一妙搭应用');
     expect(layout).not.toContain('CANONICAL HOST');
+    expect(layout).toContain('<CurrentUserControl />');
+    expect(currentUser).toContain('useCurrentUserProfile');
+    expect(currentUser).toContain('.getUserInfo()');
+    expect(currentUser).toContain('authClient.session.redirectToLogin()');
+    expect(currentUser).toContain('authClient.session.signOut()');
+    expect(currentUser).toContain('<UserDisplay');
+    expect(currentUser).toContain('退出登录');
+    expect(home).toContain('尚无最近资料');
+    expect(home).not.toContain('developmentIntakeAvailable ? null');
     expect(page).toContain('WorkbenchShell');
     expect(page).toContain('WorkItemContextTree');
     expect(page).toContain('EvidencePanel');
@@ -110,6 +129,8 @@ describe('single canonical app workspace', () => {
       /-webkit-backdrop-filter: none !important;\s+backdrop-filter: none !important;/,
     );
     expect(glass).not.toContain('brightness(1.035)');
+    expect(indexStyles).toContain('#root');
+    expect(indexStyles).toContain('min-height: 100dvh');
     expect(homeStyles).toContain('.library-tree-panel .wl-navigator');
     expect(homeStyles).toContain('避免 glass-on-glass');
     expect(motion).toContain('@keyframes wl-drift-cold');

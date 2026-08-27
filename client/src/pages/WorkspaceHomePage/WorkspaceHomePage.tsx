@@ -499,7 +499,7 @@ export default function WorkspaceHomePage() {
         </div>
       ) : null}
 
-      {loading || projection || recentWorkItems.length > 0 ? (
+      <>
         <section
           className={`library-surface${projection ? ' has-projection' : ''}${!projection && !loading ? ' is-catalog-only' : ''}`}
           aria-label="资料库目录与预览"
@@ -584,9 +584,11 @@ export default function WorkspaceHomePage() {
                 ) : (
                   <div className="library-tree-empty">
                     <FileBox aria-hidden="true" />
-                    <strong>从一个资料入口开始</strong>
+                    <strong>尚无最近资料</strong>
                     <p>
-                      从团队工作伙伴的任务链接进入一次后，资料会出现在这里；后续点击资料即可回到同一工作台。
+                      {developmentIntakeAvailable
+                        ? '粘贴已有工作链接，或在上方上传 PDF 创建工程事项；打开过的资料会按当前用户显示在这里。'
+                        : '粘贴团队共享的工作链接打开资料；最近访问只用于当前用户的导航。'}
                     </p>
                   </div>
                 )}
@@ -877,18 +879,7 @@ export default function WorkspaceHomePage() {
             </aside>
           ) : null}
         </section>
-      ) : developmentIntakeAvailable ? null : (
-        <section
-          className="library-empty-stage"
-          aria-labelledby="library-empty-title"
-        >
-          <FileText aria-hidden="true" />
-          <div>
-            <h2 id="library-empty-title">选择一份工程资料开始</h2>
-            <p>从团队共享的工作链接进入，或在上方打开已有资料。</p>
-          </div>
-        </section>
-      )}
+      </>
     </main>
   );
 }

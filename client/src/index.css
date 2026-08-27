@@ -8,3 +8,21 @@
 
 @source "../../node_modules/streamdown/dist/*.js";
 @config "../../tailwind.config.ts";
+
+html,
+body,
+#root {
+  min-width: 100%;
+  min-height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  background-color: var(--wl-bg);
+}
+
+#root {
+  min-height: 100dvh;
+}
