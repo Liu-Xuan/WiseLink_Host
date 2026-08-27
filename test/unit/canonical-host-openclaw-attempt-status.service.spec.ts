@@ -298,7 +298,7 @@ function resultEnvelope(task: OpenClawTaskEnvelope): OpenClawResultEnvelope {
     missingInputs: [],
     conflicts: [],
     warnings: [],
-    modelVersion: policy.modelVersion,
+    modelVersion: 'GLM-5.3',
     promptVersion:
       task.taskType === 'OPENCLAW_APPLICABILITY_EVALUATION'
         ? CANONICAL_HOST_OPENCLAW_APPLICABILITY_PROMPT_VERSION

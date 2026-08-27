@@ -119,13 +119,13 @@ describe('CanonicalHostOpenClawOverallService', () => {
     });
   });
 
-  it('rejects discontinued model before prepareCommit, artifact persistence, or CAS', async () => {
+  it('rejects unreadable model provenance before prepareCommit, artifact persistence, or CAS', async () => {
     const harness = createHarness();
     const valid = overallResult();
     const { contentHash: _contentHash, ...unsealed } = valid;
     const result = sealResultEnvelope({
       ...unsealed,
-      modelVersion: 'GLM-5.1',
+      modelVersion: 'fallback',
     });
 
     await expect(
@@ -468,7 +468,7 @@ function overallResult(
     missingInputs: [],
     conflicts: [],
     warnings: [],
-    modelVersion: CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.modelVersion,
+    modelVersion: 'GLM-5.3',
     promptVersion: 'overall-prompt-v1',
     skillVersion: CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.skillVersion,
     toolVersions: {

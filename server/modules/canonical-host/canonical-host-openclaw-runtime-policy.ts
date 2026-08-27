@@ -12,7 +12,7 @@ import type { ActionAttemptRow } from '../action-attempt/action-attempt.types';
 export const CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY = {
   runtimeAppId: 'app_17c3zn24kv2',
   profileRef: 'wiselink-engineering',
-  modelVersion: 'GLM-5.3',
+  modelPolicyRef: 'official-hosted-profile-config',
   skillVersion: 'wiselink-research-and-synthesize@r09.c4',
   mcpServerName: 'wiselink-openclaw-engineering-assessment',
   mcpServerVersion: '1.2.0',
@@ -84,7 +84,7 @@ export function assertCanonicalHostOpenClawRuntimePolicy(
 ): void {
   const policy = CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY;
   if (
-    result.modelVersion !== policy.modelVersion ||
+    !hasReadableActualModelProvenance(result.modelVersion) ||
     result.skillVersion !== policy.skillVersion ||
     result.toolVersions[policy.mcpServerName] !== policy.mcpServerVersion ||
     !result.promptVersion.trim()
@@ -98,6 +98,16 @@ export function assertCanonicalHostOpenClawRuntimePolicy(
   ) {
     throw policyError('OPENCLAW_APPLICABILITY_PROMPT_POLICY_MISMATCH');
   }
+}
+
+function hasReadableActualModelProvenance(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  return (
+    normalized !== '' &&
+    normalized !== 'fallback' &&
+    normalized !== 'unknown' &&
+    normalized !== CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.modelPolicyRef
+  );
 }
 
 export class CanonicalHostOpenClawRuntimePolicyError extends Error {

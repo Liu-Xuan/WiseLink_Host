@@ -11,7 +11,7 @@ export const REVIEW_RUNTIME_APP_ID =
 export const REVIEW_PROFILE_REF =
   CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.profileRef;
 export const REVIEW_MODEL_POLICY_REF =
-  CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.modelVersion;
+  CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.modelPolicyRef;
 export const REVIEW_SKILL_POLICY_REF =
   CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.skillVersion;
 export const REVIEW_TOOL_POLICY_REF =
@@ -333,7 +333,6 @@ export function parseReviewTurnCandidateContract(input: {
   if (
     runtime.runtimeAppId !== REVIEW_RUNTIME_APP_ID ||
     runtime.profileRef !== REVIEW_PROFILE_REF ||
-    result.modelVersion !== REVIEW_MODEL_POLICY_REF ||
     result.toolVersions['wiselink-openclaw-engineering-assessment'] !==
       REVIEW_MCP_PACKAGE_VERSION ||
     !result.promptVersion.trim() ||

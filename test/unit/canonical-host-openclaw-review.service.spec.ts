@@ -16,6 +16,7 @@ import type {
 } from '../../server/modules/action-attempt/action-attempt.types';
 import {
   REVIEW_MODEL_POLICY_REF,
+  REVIEW_PROFILE_REF,
   REVIEW_SKILL_POLICY_REF,
 } from '../../server/modules/canonical-host/canonical-host-openclaw-review.contract';
 import { CanonicalHostOpenClawReviewService } from '../../server/modules/canonical-host/canonical-host-openclaw-review.service';
@@ -102,14 +103,15 @@ describe('CanonicalHostOpenClawReviewService', () => {
     });
   });
 
-  it('rejects discontinued model before ActionAttempt or review mutation', async () => {
+  it('rejects a non-official hosted profile before ActionAttempt or review mutation', async () => {
     const harness = reviewHarness();
     const begin = await harness.service.begin('RC-1', 'request-1');
     const result = harness.result(
       begin.task,
       { 'wiselink-openclaw-engineering-assessment': '1.2.0' },
       REVIEW_SKILL_POLICY_REF,
-      'GLM-5.1',
+      'GLM-5.3',
+      'unofficial-profile',
     );
 
     await expect(
@@ -119,7 +121,7 @@ describe('CanonicalHostOpenClawReviewService', () => {
         begin.leaseGeneration,
         result,
       ),
-    ).rejects.toThrow('OPENCLAW_RESULT_RUNTIME_POLICY_MISMATCH');
+    ).rejects.toThrow('REVIEW_RESULT_PROVENANCE_INVALID');
     expect(harness.attempts.prepareCommit).not.toHaveBeenCalled();
     expect(
       harness.conversations.persistAssistantCandidate,
@@ -419,7 +421,8 @@ function reviewHarness(withAttachment = false) {
       selectedTask: OpenClawTaskEnvelope,
       toolVersions: Record<string, string>,
       skillVersion: string = REVIEW_SKILL_POLICY_REF,
-      modelVersion: string = REVIEW_MODEL_POLICY_REF,
+      modelVersion: string = 'GLM-5.3',
+      profileRef: string = REVIEW_PROFILE_REF,
     ): OpenClawResultEnvelope {
       return sealResultEnvelope({
         schemaVersion: 'wiselink.3_1.openclaw_result_envelope.v1',
@@ -446,7 +449,7 @@ function reviewHarness(withAttachment = false) {
           warnings: [],
           runtime: {
             runtimeAppId: 'app_17c3zn24kv2',
-            profileRef: 'wiselink-engineering',
+            profileRef,
           },
         }),
         outputArtifactRefs: [],

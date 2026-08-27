@@ -211,8 +211,9 @@ describe('CanonicalHostOpenClawTranslationService', () => {
   });
 
   it.each<[string, RuntimeProvenanceOverrides]>([
-    ['discontinued model', { modelVersion: 'GLM-5.1' }],
-    ['fallback model', { modelVersion: 'GLM-5.3/fallback' }],
+    ['missing model provenance', { modelVersion: '' }],
+    ['unreadable fallback provenance', { modelVersion: 'fallback' }],
+    ['unreadable unknown provenance', { modelVersion: 'unknown' }],
     [
       'wrong skill',
       { skillVersion: 'wiselink-research-and-synthesize@r09.c3' },
@@ -387,9 +388,7 @@ function harnessForTranslation() {
         missingInputs: [],
         conflicts: [],
         warnings: [],
-        modelVersion:
-          overrides.modelVersion ??
-          CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.modelVersion,
+        modelVersion: overrides.modelVersion ?? 'GLM-5.3',
         promptVersion:
           overrides.promptVersion ??
           'wiselink.3_1.openclaw_translation_prompt.v1',

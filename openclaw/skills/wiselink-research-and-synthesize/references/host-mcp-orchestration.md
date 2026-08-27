@@ -79,7 +79,7 @@ ResultEnvelope `contentHash` 才返回恢复，禁止自动 retry。
 ```text
 begin_applicability_evaluation(applicabilityContextRef, requestId)
 → Host modelInput（frozen SourceExpressions/SourceRefs + bilingual SourceUnits + controlled aircraft facts）
-→ GLM-5.3 只生成 source-condition AST candidate
+→ 官方托管 profile 当前选定模型只生成 source-condition AST candidate
 → Skill 组装完整 applicability_candidate.v1 + ResultEnvelope
 → commit_applicability_candidate(attemptRef, leaseToken, leaseGeneration, result)
 → Host target binding + Fleet/Kleene + ResultGate + actual bytes + CAS/current

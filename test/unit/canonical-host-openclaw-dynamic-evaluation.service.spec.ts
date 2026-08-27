@@ -105,13 +105,13 @@ describe('CanonicalHostOpenClawDynamicEvaluationService', () => {
     });
   });
 
-  it('rejects discontinued model before prepareCommit, artifact persistence, or CAS', async () => {
+  it('rejects unreadable model provenance before prepareCommit, artifact persistence, or CAS', async () => {
     const harness = createHarness();
     const valid = dynamicResult();
     const { contentHash: _contentHash, ...unsealed } = valid;
     const result = sealResultEnvelope({
       ...unsealed,
-      modelVersion: 'GLM-5.1',
+      modelVersion: 'unknown',
     });
 
     await expect(
@@ -426,7 +426,7 @@ function dynamicResult(task = taskEnvelope(workItemProjection())) {
     missingInputs: [],
     conflicts: [],
     warnings: [],
-    modelVersion: CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.modelVersion,
+    modelVersion: 'official-provider/model-release-2',
     promptVersion: 'dynamic-prompt-v1',
     skillVersion: CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.skillVersion,
     toolVersions: {

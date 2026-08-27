@@ -52,14 +52,18 @@ errorDetail=null
 绑定必须与 Task 的 actionAttemptId/operationRef/taskType/workItemId/baseRevision 精确一致，sourceRefs 必须是
 Task artifact allowlist 子集。
 
-当前 provenance policy：
+当前 task runtime policy 与 result provenance：
 
 ```text
-modelVersion = GLM-5.3
+runtimePolicy.modelPolicyRef = official-hosted-profile-config
+ResultEnvelope.modelVersion = 官方托管 profile/config 本轮选择后的非空、可读实际模型
 skillVersion = wiselink-research-and-synthesize@r09.c4
 toolVersions.wiselink-openclaw-engineering-assessment = 1.2.0
 promptVersion = 当前实际运行非空版本
 ```
+
+官方 profile 当前可选 `GLM-5.3`，但 Skill 不维护具体模型 allowlist，也不把 task policy ref 冒充实际
+`modelVersion`。缺失、空、仅 `fallback`/`unknown` 或只回显 policy ref 的模型 provenance 不能 commit。
 
 ## Translation
 

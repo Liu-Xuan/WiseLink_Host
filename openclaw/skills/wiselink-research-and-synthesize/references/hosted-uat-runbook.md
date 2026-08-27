@@ -9,7 +9,8 @@
 
 1. app 精确为 `app_17c3zn24kv2`；
 2. 唯一逻辑 profile 为 `wiselink-engineering`；
-3. 当前实际模型策略为 `GLM-5.3`，智能选择/fallback 关闭或逐 turn 可见；
+3. 模型由官方托管 profile/config 选择，当前 UI 可选 `GLM-5.3`；每个 turn 必须读回非空、可识别的实际
+   `modelVersion`，智能选择/fallback 只有在实际模型仍逐 turn 可见时才可继续；
 4. 同名 Skill 只有一个，安装版本精确
    `wiselink-research-and-synthesize@r09.c4`；
 5. Host MCP package/version 为
@@ -27,7 +28,7 @@
 
 1. Host 创建 INITIAL_ANALYSIS Session/ActionAttempt；记录 Session key 的 Host-side binding，但不暴露 tenant/actor。
 2. 观察 `begin_translation` 返回 RUNNING、TaskEnvelope exact inputHash/artifact ref+SHA/current revision。
-3. 执行一次托管 GLM-5.3，记录实际 model/prompt/Skill/tool versions 和 run metrics。
+3. 执行一次托管 profile 当前选定模型，记录实际 model/prompt/Skill/tool versions 和 run metrics。
 4. 验证 translation pair 与完整 ResultEnvelope；单次 commit。
 5. Host 读回 bilingual actual bytes、rule-set validation、candidate-only projection、same DocumentVersion/currentness。
 
@@ -42,7 +43,7 @@
 
 1. 使用 Host 生成的 opaque `applicabilityContextRef + requestId` 调 dedicated begin；核对模型只收到 frozen
    SourceExpressions/SourceRefs、bilingual SourceUnits 与窄受控 aircraft facts。
-2. GLM-5.3 只生成 source-condition AST candidate，不输出 target level/contentRef 或飞机适用结论。
+2. profile 当前选定模型只生成 source-condition AST candidate，不输出 target level/contentRef 或飞机适用结论。
 3. 单次 full ResultEnvelope commit；Host 读回 target binding、Fleet/Kleene 结果、actual bytes 与 current
    applicability candidate。
 4. 选择一个 Host 缺事实样本，确认零模型调用、missing 原样 WAITING_INPUT。
@@ -87,7 +88,8 @@ authenticated user。
 ### Required negative
 
 - 错 conversation/request、cross actor/tenant/workItem、closed conversation、旧 revision：not-found/conflict 且零 mutation。
-- 未 read 的 SourceRef、越界 item/adopted ref、错误 Skill/model/tool version、hash drift：commit 前或 Host gate 拒绝。
+- 未 read 的 SourceRef、越界 item/adopted ref、错误 Skill/tool version、空或不可读实际模型 provenance、非官方
+  runtime/profile、hash drift：commit 前或 Host gate 拒绝。
 - attachment/search/compare/reevaluate/resynthesize：明确 unsupported，零伪造工具调用。
 - COMMITTING：只调用 status，模型调用数 0、commit 数 0。
 - commit 响应丢失：status 只读一次，commit 数仍为 1，不把 terminal status 冒充 exact candidate readback。
@@ -109,5 +111,6 @@ authenticated user。
 ## Non-claims
 
 本地 tests/lint/commit 只能证明 Skill 包合同。没有以上真实读回时，不宣称：Skill 已安装/发布、官方 profile 已
-使用此版本、20 tools 已在托管 UI 可见、Session create/resume 已跑通、GLM-5.3 每轮实际执行/no fallback、
-Applicability 端到端 Host/Hosted 路径、附件/search/compare/reevaluate/resynthesize 或端到端 UAT 完成。
+使用此版本、20 tools 已在托管 UI 可见、Session create/resume 已跑通、profile 实际选择了哪个模型、fallback
+路径是否仍提供可读实际 provenance、Applicability 端到端 Host/Hosted 路径、附件/search/compare/reevaluate/
+resynthesize 或端到端 UAT 完成。
