@@ -195,6 +195,8 @@ ALTER TABLE canonical_fleet_alias_version ENABLE ROW LEVEL SECURITY;
 ALTER TABLE canonical_fleet_configuration_fact_version
   ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS canonical_fleet_source_snapshot_authenticated_select
+  ON canonical_fleet_source_snapshot;
 CREATE POLICY canonical_fleet_source_snapshot_authenticated_select
   ON canonical_fleet_source_snapshot FOR SELECT TO authenticated
   USING (
@@ -209,6 +211,8 @@ CREATE POLICY canonical_fleet_source_snapshot_authenticated_select
     )
   );
 
+DROP POLICY IF EXISTS canonical_fleet_scope_head_authenticated_select
+  ON canonical_fleet_scope_head;
 CREATE POLICY canonical_fleet_scope_head_authenticated_select
   ON canonical_fleet_scope_head FOR SELECT TO authenticated
   USING (
@@ -223,6 +227,8 @@ CREATE POLICY canonical_fleet_scope_head_authenticated_select
     )
   );
 
+DROP POLICY IF EXISTS canonical_fleet_asset_authenticated_select
+  ON canonical_fleet_asset_version;
 CREATE POLICY canonical_fleet_asset_authenticated_select
   ON canonical_fleet_asset_version FOR SELECT TO authenticated
   USING (
@@ -237,6 +243,8 @@ CREATE POLICY canonical_fleet_asset_authenticated_select
     )
   );
 
+DROP POLICY IF EXISTS canonical_fleet_alias_authenticated_select
+  ON canonical_fleet_alias_version;
 CREATE POLICY canonical_fleet_alias_authenticated_select
   ON canonical_fleet_alias_version FOR SELECT TO authenticated
   USING (
@@ -251,6 +259,8 @@ CREATE POLICY canonical_fleet_alias_authenticated_select
     )
   );
 
+DROP POLICY IF EXISTS canonical_fleet_fact_authenticated_select
+  ON canonical_fleet_configuration_fact_version;
 CREATE POLICY canonical_fleet_fact_authenticated_select
   ON canonical_fleet_configuration_fact_version
   FOR SELECT TO authenticated

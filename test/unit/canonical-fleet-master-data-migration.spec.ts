@@ -24,6 +24,11 @@ describe('R09 canonical FleetMasterData migration', () => {
     expect(
       migration.match(/CREATE POLICY canonical_fleet_\S+_authenticated_select/gu),
     ).toHaveLength(5);
+    expect(
+      migration.match(
+        /DROP POLICY IF EXISTS canonical_fleet_\S+_authenticated_select/gu,
+      ),
+    ).toHaveLength(5);
     expect(migration.match(/FOR SELECT TO authenticated/gu)).toHaveLength(5);
     expect(migration).not.toMatch(
       /FOR\s+(?:INSERT|UPDATE|DELETE|ALL)\s+TO\s+authenticated/iu,
