@@ -1,5 +1,6 @@
 import {
   canonicalJson,
+  sealResultEnvelope,
   sealTaskEnvelope,
 } from '../../server/modules/action-attempt/action-attempt-envelope';
 import type { OpenClawLeaseClaim } from '../../server/modules/action-attempt/action-attempt-envelope.types';
@@ -56,6 +57,50 @@ describe('OpenClaw translation delivery', () => {
     expect(text).not.toContain('session-key-secret');
     expect(text).not.toContain('raw-pdf-secret');
     expect(text).not.toContain('full-fleet-secret');
+  });
+
+  it('binds COMMITTING recovery by hash and leaves the full result on status', () => {
+    const running = actualRunShapedTranslationClaim();
+    const recoveryResult = sealResultEnvelope({
+      schemaVersion: 'wiselink.3_1.openclaw_result_envelope.v1',
+      actionAttemptId: running.task.actionAttemptId,
+      operationRef: running.task.operationRef,
+      taskType: running.task.taskType,
+      workItemId: running.task.workItemId,
+      baseRevision: running.task.baseRevision,
+      status: 'SUCCEEDED',
+      businessOutcome: 'CANDIDATE_READY',
+      candidateStatus: null,
+      modelOutput: '{"candidate":true}',
+      outputArtifactRefs: [],
+      sourceRefs: [],
+      factsConsidered: [],
+      missingInputs: [],
+      conflicts: [],
+      warnings: [],
+      modelVersion: 'GLM-5.3',
+      promptVersion: 'r09.prompt.fixture.1',
+      skillVersion: 'wiselink-research-and-synthesize@r09.c4',
+      toolVersions: {
+        'wiselink-openclaw-engineering-assessment': '1.2.0',
+      },
+      runMetrics: { durationMs: 1, inputUnits: 1, outputUnits: 1 },
+      errorCode: null,
+      errorDetail: null,
+    });
+    const committing: OpenClawLeaseClaim = {
+      ...running,
+      status: 'COMMITTING',
+      recoveryResult,
+    };
+
+    const delivery = buildOpenClawTranslationDelivery(committing);
+
+    expect(delivery.recoveryResultContentHash).toBe(recoveryResult.contentHash);
+    expect(delivery).not.toHaveProperty('recoveryResult');
+    expect(serializedToolResultBytes(delivery)).toBeLessThanOrEqual(
+      OPENCLAW_TRANSLATION_DELIVERY_MAX_UTF8_BYTES,
+    );
   });
 });
 

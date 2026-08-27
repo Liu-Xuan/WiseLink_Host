@@ -26,6 +26,7 @@ task 中的 actorContextRef 和 context 中的 workItemId。
 
 ```text
 attemptRef/status/leaseToken/leaseGeneration/leaseExpiresAt
+recoveryResultContentHash?（仅 COMMITTING）
 taskBinding{actionAttemptId,operationRef,taskType,workItemId,revisions,documentVersionId,deadline,inputHash,sourceArtifactSha256}
 delivery{partIndex,partCount,sourceUnitStartIndex,sourceUnitEndExclusive,sourceUnitCount,modelInputBase?,sourceUnits[]}
 ```
@@ -35,6 +36,9 @@ delivery{partIndex,partCount,sourceUnitStartIndex,sourceUnitEndExclusive,sourceU
 `JSON.stringify` 后的 UTF-8 bytes 验证不超过 14,000，
 不是按固定 unit 数猜测。translation input 中没有 tenant/actor/credential/sessionKey/FileService locator/raw PDF/full
 Fleet；无需 shell、Node、解压或本地脚本。
+
+COMMITTING begin 不重复返回可能较大的完整 `recoveryResult`，只返回其 `contentHash`。编排器随后只读一次
+`get_action_attempt_status`，并要求 begin hash、status `resultContentHash` 与 status `recoveryResult.contentHash` 三者一致。
 
 ## ResultEnvelope
 

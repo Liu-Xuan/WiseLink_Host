@@ -47,6 +47,8 @@ Attempt 控制面：
 和完整 TaskEnvelope。Translation 的同一 begin 工具按实际序列化响应大小返回可读
 `wiselink.3_1.openclaw_translation_delivery.v1` 批次：第 0 批含脱敏 taskBinding、modelInputBase 和 SourceUnits，
 后续批只含同一绑定下的连续 SourceUnits。官方 Hosted Agent 直接逐批读取，不执行 shell/Node 解码。
+COMMITTING 批次另含有界 `recoveryResultContentHash`；完整 recoveryResult 仍只从通用 status 读取并做三方 hash
+一致性校验。
 `attemptRef` 必须等于 TaskEnvelope `operationRef`。TaskEnvelope 自带：
 
 - Host internal `actionAttemptId` 与 opaque operationRef；
@@ -183,7 +185,7 @@ COMMITTING：
 ```text
 begin/status = COMMITTING
 → get_action_attempt_status({attemptRef})
-→ validate recoveryResult.contentHash == resultContentHash
+→ validate begin.recoveryResultContentHash == recoveryResult.contentHash == resultContentHash
 → return COMMITTING_RECOVERY_READ_ONLY
 ```
 

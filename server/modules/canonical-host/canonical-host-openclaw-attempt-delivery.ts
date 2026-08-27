@@ -1,4 +1,7 @@
-import type { OpenClawTaskEnvelope } from '../action-attempt/action-attempt-envelope.types';
+import type {
+  OpenClawResultEnvelope,
+  OpenClawTaskEnvelope,
+} from '../action-attempt/action-attempt-envelope.types';
 import type { TranslationTaskContract } from './canonical-translation-rule-contract';
 
 export const OPENCLAW_TRANSLATION_DELIVERY_SCHEMA =
@@ -12,6 +15,7 @@ export interface OpenClawTranslationDeliveryClaim {
   leaseGeneration: number;
   leaseExpiresAt: string;
   task: OpenClawTaskEnvelope;
+  recoveryResult?: OpenClawResultEnvelope;
 }
 
 export interface OpenClawTranslationDeliveryResult {
@@ -21,6 +25,7 @@ export interface OpenClawTranslationDeliveryResult {
   leaseToken: string;
   leaseGeneration: number;
   leaseExpiresAt: string;
+  recoveryResultContentHash?: string;
   taskBinding: {
     actionAttemptId: string;
     operationRef: string;
@@ -139,6 +144,7 @@ function deliveryResponse(
   partIndex: number,
   conservativePartCount?: number,
 ): OpenClawTranslationDeliveryResult {
+  const recoveryResultContentHash = recoveryHash(claim);
   const sourceUnitStartIndex = batches
     .slice(0, partIndex)
     .reduce((count, batch) => count + batch.length, 0);
@@ -151,6 +157,7 @@ function deliveryResponse(
     leaseToken: claim.leaseToken,
     leaseGeneration: claim.leaseGeneration,
     leaseExpiresAt: claim.leaseExpiresAt,
+    ...(recoveryResultContentHash ? { recoveryResultContentHash } : {}),
     taskBinding: {
       actionAttemptId: claim.task.actionAttemptId,
       operationRef: claim.task.operationRef,
@@ -175,6 +182,17 @@ function deliveryResponse(
       sourceUnits: structuredClone(sourceUnits),
     },
   };
+}
+
+function recoveryHash(
+  claim: OpenClawTranslationDeliveryClaim,
+): string | undefined {
+  if (claim.status === 'RUNNING') return undefined;
+  const contentHash = claim.recoveryResult?.contentHash;
+  if (typeof contentHash !== 'string' || !/^[a-f0-9]{64}$/u.test(contentHash)) {
+    throw deliveryError('OPENCLAW_TRANSLATION_COMMITTING_RECOVERY_REQUIRED');
+  }
+  return contentHash;
 }
 
 function translationTask(value: unknown): TranslationTaskContract {

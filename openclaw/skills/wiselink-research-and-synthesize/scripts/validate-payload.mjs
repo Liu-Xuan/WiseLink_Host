@@ -2363,6 +2363,48 @@ export function sealResultEnvelope({
   return sealed;
 }
 
+export function sealTranslationDeliveryResultEnvelope({
+  taskBinding,
+  modelOutput,
+  provenance,
+  factsConsidered = [],
+  warnings = [],
+}) {
+  validateTranslationDeliveryTaskBinding(taskBinding);
+  validateRuntimeProvenance(provenance);
+  const serializedModelOutput =
+    typeof modelOutput === 'string' ? modelOutput : canonicalJson(modelOutput);
+  nonEmpty(serializedModelOutput, 'RESULT_ENVELOPE_MODEL_OUTPUT_REQUIRED');
+  const envelope = {
+    schemaVersion: RESULT_ENVELOPE_SCHEMA,
+    actionAttemptId: taskBinding.actionAttemptId,
+    operationRef: taskBinding.operationRef,
+    taskType: taskBinding.taskType,
+    workItemId: taskBinding.workItemId,
+    baseRevision: taskBinding.baseRevision,
+    status: 'SUCCEEDED',
+    businessOutcome: 'CANDIDATE_READY',
+    candidateStatus: null,
+    modelOutput: serializedModelOutput,
+    outputArtifactRefs: [],
+    sourceRefs: [],
+    factsConsidered: [...factsConsidered],
+    missingInputs: [],
+    conflicts: [],
+    warnings: [...warnings],
+    modelVersion: provenance.modelVersion,
+    promptVersion: provenance.promptVersion,
+    skillVersion: provenance.skillVersion,
+    toolVersions: structuredClone(provenance.toolVersions),
+    runMetrics: structuredClone(provenance.runMetrics),
+    errorCode: null,
+    errorDetail: null,
+  };
+  const sealed = { ...envelope, contentHash: canonicalSha256(envelope) };
+  validateTranslationDeliveryResultEnvelope(taskBinding, sealed);
+  return sealed;
+}
+
 export function sealWaitingInputResultEnvelope({ task, provenance }) {
   validateTaskEnvelope(task);
   validateRuntimeProvenance(provenance);
@@ -2469,6 +2511,98 @@ export function validateTaskEnvelope(value) {
 
 export function validateResultEnvelope(task, result) {
   validateTaskEnvelope(task);
+  validateResultEnvelopeBinding(task, result);
+  assertEnvelopeSourceSubset(task.sourceRefs, result.sourceRefs);
+  const requiredMissing = new Set(
+    task.hostResolvedMissingInputs.map(({ code }) => code),
+  );
+  const returnedMissing = new Set(result.missingInputs.map(({ code }) => code));
+  if (requiredMissing.size > 0 && result.status !== 'WAITING_INPUT') {
+    fail('RESULT_ENVELOPE_HOST_MISSING_INPUT_MUST_WAIT');
+  }
+  for (const code of requiredMissing) {
+    if (!returnedMissing.has(code)) {
+      fail('RESULT_ENVELOPE_HOST_MISSING_INPUT_DROPPED');
+    }
+  }
+  return result;
+}
+
+export function validateTranslationDeliveryTaskBinding(value) {
+  exactKeys(
+    value,
+    [
+      'actionAttemptId',
+      'operationRef',
+      'taskType',
+      'workItemId',
+      'inputRevision',
+      'baseRevision',
+      'documentVersionId',
+      'deadline',
+      'inputHash',
+      'sourceArtifactSha256',
+    ],
+    [],
+    'translation delivery task binding',
+  );
+  nonEmpty(
+    value.actionAttemptId,
+    'TRANSLATION_DELIVERY_ACTION_ATTEMPT_REQUIRED',
+  );
+  nonEmpty(value.operationRef, 'TRANSLATION_DELIVERY_OPERATION_REF_REQUIRED');
+  equal(
+    value.taskType,
+    'OPENCLAW_TRANSLATE',
+    'TRANSLATION_DELIVERY_TASK_TYPE_INVALID',
+  );
+  nonEmpty(value.workItemId, 'TRANSLATION_DELIVERY_WORKITEM_REQUIRED');
+  integerInRange(
+    value.inputRevision,
+    0,
+    Number.MAX_SAFE_INTEGER,
+    'TRANSLATION_DELIVERY_INPUT_REVISION_INVALID',
+  );
+  integerInRange(
+    value.baseRevision,
+    0,
+    Number.MAX_SAFE_INTEGER,
+    'TRANSLATION_DELIVERY_BASE_REVISION_INVALID',
+  );
+  nonEmpty(
+    value.documentVersionId,
+    'TRANSLATION_DELIVERY_DOCUMENT_VERSION_REQUIRED',
+  );
+  isoDate(value.deadline, 'TRANSLATION_DELIVERY_DEADLINE_INVALID');
+  match(
+    value.inputHash,
+    BARE_SHA256,
+    'TRANSLATION_DELIVERY_INPUT_HASH_INVALID',
+  );
+  arrayOfText(
+    value.sourceArtifactSha256,
+    'TRANSLATION_DELIVERY_SOURCE_ARTIFACT_SHA_INVALID',
+  );
+  value.sourceArtifactSha256.forEach((sha) =>
+    match(sha, BARE_SHA256, 'TRANSLATION_DELIVERY_SOURCE_ARTIFACT_SHA_INVALID'),
+  );
+  return value;
+}
+
+export function validateTranslationDeliveryResultEnvelope(taskBinding, result) {
+  validateTranslationDeliveryTaskBinding(taskBinding);
+  validateResultEnvelopeBinding(taskBinding, result);
+  if (
+    result.sourceRefs.some(
+      ({ sha256 }) => !taskBinding.sourceArtifactSha256.includes(sha256),
+    )
+  ) {
+    fail('RESULT_ENVELOPE_SOURCE_REF_UNAUTHORIZED');
+  }
+  return result;
+}
+
+function validateResultEnvelopeBinding(task, result) {
   exactKeys(
     result,
     [
@@ -2550,7 +2684,6 @@ export function validateResultEnvelope(task, result) {
     result.sourceRefs,
     'RESULT_ENVELOPE_SOURCE_REFS_INVALID',
   );
-  assertEnvelopeSourceSubset(task.sourceRefs, result.sourceRefs);
   arrayOfText(result.factsConsidered, 'RESULT_ENVELOPE_FACTS_INVALID');
   validateEnvelopeMissingInputs(
     result.missingInputs,
@@ -2604,18 +2737,6 @@ export function validateResultEnvelope(task, result) {
     result.errorCode.trim() === ''
   ) {
     fail('RESULT_ENVELOPE_FAILURE_SEMANTICS_INVALID');
-  }
-  const requiredMissing = new Set(
-    task.hostResolvedMissingInputs.map(({ code }) => code),
-  );
-  const returnedMissing = new Set(result.missingInputs.map(({ code }) => code));
-  if (requiredMissing.size > 0 && result.status !== 'WAITING_INPUT') {
-    fail('RESULT_ENVELOPE_HOST_MISSING_INPUT_MUST_WAIT');
-  }
-  for (const code of requiredMissing) {
-    if (!returnedMissing.has(code)) {
-      fail('RESULT_ENVELOPE_HOST_MISSING_INPUT_DROPPED');
-    }
   }
   match(
     result.contentHash,

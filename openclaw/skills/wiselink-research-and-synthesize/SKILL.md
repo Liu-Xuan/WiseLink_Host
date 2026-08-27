@@ -61,7 +61,8 @@ overall 中的文字解释成适用性结果。
    顺序读取剩余可读 SourceUnits。每个完整 MCP tool result 按实际 JSON UTF-8 bytes 限在 14,000 内，不从托管
    日志恢复截断 JSON。
 3. 若 status 为 `COMMITTING`，只调用一次 `get_action_attempt_status`，校验 Host 已持久化
-   `recoveryResult.contentHash == resultContentHash` 后返回；不调用模型、不再次 commit。
+   `recoveryResult.contentHash == resultContentHash == begin.recoveryResultContentHash` 后返回；不调用模型、不再次
+   commit。begin 只返回该有界 hash，完整 recoveryResult 由既有 status 工具读取。
 4. 若 status 为 `RUNNING`，只使用 `delivery.modelInputBase + delivery.sourceUnits` 组成的 authority-free translation
    输入；attempt control/taskBinding 不混入翻译输入。收齐输入后 heartbeat，生成完成、commit 前再 heartbeat；生成期间
    不要求短周期回调，Host 的长租约覆盖该段运行。

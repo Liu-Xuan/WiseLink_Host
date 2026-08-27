@@ -151,7 +151,7 @@ export class CanonicalHostOpenClawMcpService {
       {
         title: '开始来源绑定的中英文候选翻译',
         description:
-          'Host fresh-read 同一 WorkItem，冻结 frozen.2 SourceUnits、SourceRefs 与 exact versioned TranslationRuleSet，创建 durable TRANSLATE ActionAttempt；按实际序列化字节上限返回可读 SourceUnit 批次，重复 part 读取只恢复同一未完成 attempt。',
+          'Host fresh-read 同一 WorkItem，冻结 frozen.2 SourceUnits、SourceRefs 与 exact versioned TranslationRuleSet，创建 durable TRANSLATE ActionAttempt；按实际序列化字节上限返回可读 SourceUnit 批次，重复 part 读取只恢复同一未完成 attempt；COMMITTING 只返回 recoveryResultContentHash，完整结果从通用 status 只读恢复。',
         inputSchema: z
           .object({ workItemId: mcpWorkItemId, deliveryPart })
           .strict(),
