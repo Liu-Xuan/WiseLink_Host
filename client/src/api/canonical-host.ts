@@ -1,6 +1,7 @@
 import type {
   AppendReviewTextTurnRequest,
   AppendReviewTextTurnResponse,
+  CanonicalApplicabilitySelectionReadModel,
   CanonicalDocumentParsingPageResponse,
   CanonicalAeoCandidateRunResponse,
   CanonicalEntryQueryRequest,
@@ -14,6 +15,7 @@ import type {
   ConfirmReviewActionDraftResponse,
   CreateOrResumeReviewConversationResponse,
   CurrentReviewConversationResponse,
+  ConfigureCanonicalApplicabilitySelectionRequest,
 } from '@shared/api.interface';
 
 import { logger } from '@lark-apaas/client-toolkit/logger';
@@ -173,6 +175,65 @@ export async function getDocumentParsingPage(
   }
 }
 
+export async function getApplicabilitySelection(
+  workItemId: string,
+): Promise<CanonicalApplicabilitySelectionReadModel> {
+  return applicabilitySelectionRequest({
+    workItemId,
+    method: 'GET',
+    operation: '读取当前飞机适用性选择',
+  });
+}
+
+/**
+ * The PUT response is deliberately followed by a fresh GET. The browser only
+ * presents a saved selection after the authenticated Host readback succeeds.
+ */
+export async function configureApplicabilitySelection(
+  workItemId: string,
+  input: ConfigureCanonicalApplicabilitySelectionRequest,
+): Promise<CanonicalApplicabilitySelectionReadModel> {
+  await applicabilitySelectionRequest({
+    workItemId,
+    method: 'PUT',
+    data: input,
+    operation: '保存飞机适用性选择',
+  });
+  return getApplicabilitySelection(workItemId);
+}
+
+async function applicabilitySelectionRequest(input: {
+  workItemId: string;
+  method: 'GET' | 'PUT';
+  data?: ConfigureCanonicalApplicabilitySelectionRequest;
+  operation: string;
+}): Promise<CanonicalApplicabilitySelectionReadModel> {
+  try {
+    const response =
+      await axiosForBackend<CanonicalApplicabilitySelectionReadModel>({
+        url: `/api/work-items/${encodeURIComponent(input.workItemId)}/applicability-selection`,
+        method: input.method,
+        ...(input.data === undefined ? {} : { data: input.data }),
+      });
+    if (response.status === 401) {
+      throw new Error('APPLICABILITY_SELECTION_LOGIN_REQUIRED');
+    }
+    if (response.status === 403 || response.status === 404) {
+      throw canonicalObjectNotFound();
+    }
+    if (response.status < 200 || response.status >= 300) {
+      throw backendResponseError(
+        response.data,
+        'APPLICABILITY_SELECTION_UNAVAILABLE',
+      );
+    }
+    return response.data;
+  } catch (error) {
+    logger.error(`${input.operation}失败`, error);
+    throw normalizedApplicabilitySelectionError(error);
+  }
+}
+
 export async function createOrResumeReviewConversation(
   workItemId: string,
 ): Promise<CreateOrResumeReviewConversationResponse> {
@@ -288,6 +349,17 @@ function normalizedDirectObjectError(error: unknown): unknown {
   const status = responseStatus(error);
   if (status === 403 || status === 404) return canonicalObjectNotFound();
   return error;
+}
+
+function normalizedApplicabilitySelectionError(error: unknown): unknown {
+  const normalized = normalizedDirectObjectError(error);
+  if (normalized !== error || !isRecord(error)) return normalized;
+  const response = error.response;
+  if (!isRecord(response)) return error;
+  return backendResponseError(
+    response.data,
+    'APPLICABILITY_SELECTION_UNAVAILABLE',
+  );
 }
 
 export function isCanonicalObjectNotFound(error: unknown): boolean {
