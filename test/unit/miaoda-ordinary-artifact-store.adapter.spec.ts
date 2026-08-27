@@ -87,6 +87,39 @@ describe('MiaodaOrdinaryArtifactStoreAdapter', () => {
     expect(scoped.uploadCount).toBe(1);
   });
 
+  it('replays an identical attempt-owned result part without uploading twice and rejects conflicting bytes', async () => {
+    const scoped = new LocalScopedFileService('bucket-result-parts');
+    const adapter = new MiaodaOrdinaryArtifactStoreAdapter({
+      getDefaultBucket: async () => 'bucket-result-parts',
+      from: () => scoped,
+    } as never);
+    const ownerRef = 'openclaw-translation-result-v1:ATT-1:TRN-1:1:hash:12';
+    const bytes = new TextEncoder().encode('{"part":0}');
+
+    const first = await adapter.stageResultEnvelopePartAndReadback({
+      ownerRef,
+      partIndex: 0,
+      bytes,
+    });
+    const replay = await adapter.stageResultEnvelopePartAndReadback({
+      ownerRef,
+      partIndex: 0,
+      bytes,
+    });
+
+    expect(first.reused).toBe(false);
+    expect(replay).toEqual({ ...first, reused: true });
+    expect(scoped.uploadCount).toBe(1);
+    await expect(
+      adapter.stageResultEnvelopePartAndReadback({
+        ownerRef,
+        partIndex: 0,
+        bytes: new TextEncoder().encode('{"part":"conflict"}'),
+      }),
+    ).rejects.toThrow('RESULT_ENVELOPE_PART_READBACK_MISMATCH:METADATA');
+    expect(scoped.uploadCount).toBe(1);
+  });
+
   it('finalizes an attempt-owned stable descriptor before publication and discards with verified absence', async () => {
     const scoped = new LocalScopedFileService('bucket-stage-local');
     const adapter = new MiaodaOrdinaryArtifactStoreAdapter({

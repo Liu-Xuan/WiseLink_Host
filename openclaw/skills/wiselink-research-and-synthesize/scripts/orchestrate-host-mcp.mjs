@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises';
+
 import {
   WISELINK_HOST_MCP_NAME,
   WISELINK_HOST_MCP_VERSION,
@@ -72,6 +74,9 @@ const DYNAMIC_COMMIT_STATUSES = new Set([
   'BASE_RULE_CANDIDATE_READY',
   'OVERALL_CANDIDATE_STALE',
 ]);
+export const TRANSLATION_COMMIT_PART_BYTES = 6_144;
+const TRANSLATION_COMMIT_ARGUMENT_MAX_BYTES = 12_000;
+const TRANSLATION_COMMIT_PART_MAX_COUNT = 64;
 
 /**
  * Route one Host-authorized INITIAL_ANALYSIS operation. Each operation keeps
@@ -127,10 +132,11 @@ export async function runTranslation({ workItemId, callTool, translate }) {
   });
   let committed;
   try {
-    committed = await callTool(
-      'commit_translation_candidate',
-      commitArgs(begin, result),
-    );
+    committed = await commitTranslationResultParts({
+      begin,
+      result,
+      callTool,
+    });
     assertTranslationCommit(committed, workItemId);
   } catch (error) {
     return recoverCommitResponseLoss({
@@ -154,6 +160,89 @@ export async function runTranslation({ workItemId, callTool, translate }) {
     deepLink,
     result,
   });
+}
+
+/**
+ * Commit a locally sealed translation payload without copying its full JSON
+ * into one model-authored MCP argument. The file may contain the ResultEnvelope
+ * itself or the former {attemptRef, leaseToken, leaseGeneration, result}
+ * wrapper; wrapper fences must match the live begin result exactly.
+ */
+export async function commitTranslationPayloadFile({
+  begin,
+  payloadPath,
+  callTool,
+}) {
+  if (typeof callTool !== 'function') {
+    throw new Error('HOST_MCP_CALLBACK_REQUIRED');
+  }
+  const path = requiredText(
+    payloadPath,
+    'HOST_MCP_TRANSLATION_PAYLOAD_PATH_REQUIRED',
+  );
+  let parsed;
+  try {
+    parsed = JSON.parse(await readFile(path, 'utf8'));
+  } catch {
+    throw new Error('HOST_MCP_TRANSLATION_PAYLOAD_FILE_INVALID');
+  }
+  const result = extractTranslationPayloadFileResult(parsed, begin);
+  return commitTranslationResultParts({ begin, result, callTool });
+}
+
+export async function commitTranslationResultParts({
+  begin,
+  result,
+  callTool,
+}) {
+  validateTranslationDeliveryResultEnvelope(begin.taskBinding, result);
+  const bytes = new TextEncoder().encode(canonicalJson(result));
+  const partCount = Math.ceil(bytes.byteLength / TRANSLATION_COMMIT_PART_BYTES);
+  if (partCount < 1 || partCount > TRANSLATION_COMMIT_PART_MAX_COUNT) {
+    throw new Error('HOST_MCP_TRANSLATION_PAYLOAD_PART_COUNT_UNSUPPORTED');
+  }
+  const parts = [];
+  for (let partIndex = 0; partIndex < partCount; partIndex += 1) {
+    const start = partIndex * TRANSLATION_COMMIT_PART_BYTES;
+    const payloadBase64 = Buffer.from(
+      bytes.subarray(start, start + TRANSLATION_COMMIT_PART_BYTES),
+    ).toString('base64');
+    const args = {
+      attemptRef: begin.attemptRef,
+      leaseToken: begin.leaseToken,
+      leaseGeneration: begin.leaseGeneration,
+      phase: 'UPLOAD_PART',
+      resultContentHash: result.contentHash,
+      partIndex,
+      partCount,
+      payloadBase64,
+    };
+    assertTranslationCommitArgumentSize(args);
+    const receipt = await callTool('commit_translation_candidate', args);
+    parts.push(
+      validateTranslationPartReceipt(receipt, {
+        begin,
+        resultContentHash: result.contentHash,
+        partIndex,
+        partCount,
+        byteLength: Math.min(
+          TRANSLATION_COMMIT_PART_BYTES,
+          bytes.byteLength - start,
+        ),
+      }),
+    );
+  }
+  const finalizeArgs = {
+    attemptRef: begin.attemptRef,
+    leaseToken: begin.leaseToken,
+    leaseGeneration: begin.leaseGeneration,
+    phase: 'FINALIZE',
+    resultContentHash: result.contentHash,
+    partCount,
+    parts,
+  };
+  assertTranslationCommitArgumentSize(finalizeArgs);
+  return callTool('commit_translation_candidate', finalizeArgs);
 }
 
 export async function runApplicabilityEvaluation({
@@ -1049,6 +1138,76 @@ function commitArgs(begin, result) {
     leaseGeneration: begin.leaseGeneration,
     result,
   };
+}
+
+function extractTranslationPayloadFileResult(value, begin) {
+  if (!isRecord(value)) {
+    throw new Error('HOST_MCP_TRANSLATION_PAYLOAD_FILE_INVALID');
+  }
+  if (!Object.hasOwn(value, 'result')) return value;
+  assertExactKeys(
+    value,
+    ['attemptRef', 'leaseToken', 'leaseGeneration', 'result'],
+    [],
+    'HOST_MCP_TRANSLATION_PAYLOAD_FILE',
+  );
+  if (
+    value.attemptRef !== begin.attemptRef ||
+    value.leaseToken !== begin.leaseToken ||
+    value.leaseGeneration !== begin.leaseGeneration ||
+    !isRecord(value.result)
+  ) {
+    throw new Error('HOST_MCP_TRANSLATION_PAYLOAD_FENCE_MISMATCH');
+  }
+  return value.result;
+}
+
+function validateTranslationPartReceipt(
+  value,
+  { begin, resultContentHash, partIndex, partCount, byteLength },
+) {
+  if (!isRecord(value)) {
+    throw new Error('HOST_MCP_TRANSLATION_PART_RECEIPT_INVALID');
+  }
+  assertExactKeys(
+    value,
+    [
+      'schemaVersion',
+      'attemptRef',
+      'resultContentHash',
+      'partIndex',
+      'partCount',
+      'sha256',
+      'byteLength',
+      'replayed',
+    ],
+    [],
+    'HOST_MCP_TRANSLATION_PART_RECEIPT',
+  );
+  if (
+    value.schemaVersion !== 'wiselink.3_1.translation_result_part_receipt.v1' ||
+    value.attemptRef !== begin.attemptRef ||
+    value.resultContentHash !== resultContentHash ||
+    value.partIndex !== partIndex ||
+    value.partCount !== partCount ||
+    value.byteLength !== byteLength ||
+    !/^[0-9a-f]{64}$/u.test(value.sha256) ||
+    typeof value.replayed !== 'boolean'
+  ) {
+    throw new Error('HOST_MCP_TRANSLATION_PART_RECEIPT_INVALID');
+  }
+  return {
+    partIndex: value.partIndex,
+    sha256: value.sha256,
+    byteLength: value.byteLength,
+  };
+}
+
+function assertTranslationCommitArgumentSize(value) {
+  const byteLength = new TextEncoder().encode(canonicalJson(value)).byteLength;
+  if (byteLength >= TRANSLATION_COMMIT_ARGUMENT_MAX_BYTES) {
+    throw new Error('HOST_MCP_TRANSLATION_COMMIT_ARGUMENT_TOO_LARGE');
+  }
 }
 
 function completedResult({

@@ -15,7 +15,7 @@ Endpoint 仍是 Host 提供的 `POST /openapi/wiselink/openclaw-mcp`；Skill 不
 INITIAL_ANALYSIS：
 
 4. `begin_translation({workItemId, deliveryPart?})`
-5. `commit_translation_candidate({attemptRef, leaseToken, leaseGeneration, result})`
+5. `commit_translation_candidate(...)`（小结果兼容 direct result；大结果为 `UPLOAD_PART` / `FINALIZE`）
 6. `begin_applicability_evaluation({applicabilityContextRef, requestId})`
 7. `commit_applicability_candidate({attemptRef, leaseToken, leaseGeneration, result})`
 8. `begin_dynamic_evaluation({workItemId})`
@@ -65,8 +65,8 @@ RUNNING attempt 的默认 deadline 为 60 分钟、lease 为 30 分钟。INITIAL
 调用 heartbeat；模型生成期间不要求短周期回调。WAITING_INPUT 零模型路径、COMMITTING 只读恢复与 review 五工具
 路径不插入 heartbeat。
 
-所有 commit 使用 Host 返回的 exact attemptRef、leaseToken、leaseGeneration 和完整 ResultEnvelope。旧
-`{attemptRef, output}` 已废止。
+所有 commit 使用 Host 返回的 exact attemptRef、leaseToken、leaseGeneration 和逻辑完整 ResultEnvelope。旧
+`{attemptRef, output}` 已废止。Translation 大 ResultEnvelope 使用同一工具分块传输；工具总数仍为 exact20。
 
 ## INITIAL_ANALYSIS
 
@@ -79,17 +79,20 @@ get_parse_status
 → 官方 Hosted Agent 按 modelInputBase + 连续 SourceUnits 执行翻译
 → heartbeat
 → translation-pair validator
-→ full ResultEnvelope
-→ commit_translation_candidate
+→ sealed ResultEnvelope 写入本轮本地 commit-payload.json
+→ commit_translation_candidate(UPLOAD_PART × N，每 part 6144 raw bytes)
+→ commit_translation_candidate(FINALIZE, receipts)
 → get_parse_status + get_deep_link
 ```
 
-Host commit 才执行 exact TranslationRuleSet deterministic ResultGate、FileService actual bytes readback 与 CAS。
-commit 响应丢失时只读一次通用 ActionAttempt status；仅当 `resultContentHash` 精确等于本次 sealed
-ResultEnvelope `contentHash` 才返回恢复，禁止自动 retry。
+Skill helper 从文件按 canonical UTF-8 bytes 读取，Base64 后每次 arguments 小于 12,000 bytes。Host 对每一 part
+重新校验 owner/attempt/lease fence 与当前 WorkItem revision/DocumentVersion，并用同一 FileService owner 的确定性
+attempt path 做 actual-byte readback；相同 part 精确重放，冲突 bytes 明确失败。UPLOAD_PART 不改 WorkItem/current、
+不产生可见 candidate。FINALIZE 要求 0..N-1 receipt 完整唯一，组装后才进入既有 exact TranslationRuleSet
+deterministic ResultGate、final artifact actual bytes readback 与一次 CAS。
 
-当前真实失败只证明 begin observation 截断；`commit_translation_candidate` 仍使用现有完整 ResultEnvelope，未预建
-推测性的 upload/staging 合同。真实 Hosted UAT 到达 commit 后再按实际证据决定是否需要后续收窄。
+任一明确失败停止；part/finalize 响应未知或 attempt 已为 COMMITTING 时只读一次通用 ActionAttempt status。仅当
+`resultContentHash` 精确等于本次 sealed ResultEnvelope `contentHash` 才返回恢复，禁止自动 retry finalize。
 
 ### Applicability
 

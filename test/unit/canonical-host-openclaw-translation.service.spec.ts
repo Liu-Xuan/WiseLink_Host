@@ -6,6 +6,7 @@ import type {
   UnifiedReaderQueryResult,
 } from '../../shared/api.interface';
 import {
+  canonicalJson,
   sealResultEnvelope,
   sealTaskEnvelope,
 } from '../../server/modules/action-attempt/action-attempt-envelope';
@@ -140,6 +141,150 @@ describe('CanonicalHostOpenClawTranslationService', () => {
     ).toEqual(['UNIT-1', 'UNIT-2']);
   });
 
+  it('uploads and finalizes an approximately 67KB 196-unit result with exact replay and one candidate publication', async () => {
+    const units = sourceUnits196();
+    const harness = harnessForTranslation(units);
+    const begin = await harness.service.begin(harness.workItem.workItemId);
+    const taskContract = begin.task
+      .modelInput as unknown as TranslationTaskContract;
+    const filler =
+      '完成驾驶舱显示系统构型核对并保留所有警告注意步骤与件号单位。'.repeat(2) +
+      '严格复核完成并确认';
+    harness.prepare(
+      JSON.stringify({
+        schemaVersion: TRANSLATION_RESULT_SCHEMA_VERSION,
+        rulePackId: taskContract.rulePack.meta.rulePackId,
+        rulePackVersion: taskContract.rulePack.meta.rulePackVersion,
+        taskStartBinding: taskContract.taskStartBinding,
+        candidateUnits: units.map((unit) => ({
+          unitKey: unit.unitId,
+          text: `警告 飞机 AIMS-2 P/N 123-ABC 5 kg。 ${filler}`,
+          sourceRefIds: [...unit.sourceRefIds],
+          engineerRevision: null,
+        })),
+      }),
+    );
+    const payload = new TextEncoder().encode(canonicalJson(harness.result));
+    expect(payload.byteLength).toBeGreaterThanOrEqual(65_000);
+    expect(payload.byteLength).toBeLessThanOrEqual(75_000);
+    const chunks = chunkBytes(payload, 6_144);
+    const receipts = [];
+    for (let partIndex = 0; partIndex < chunks.length; partIndex += 1) {
+      const args = {
+        resultContentHash: harness.result.contentHash,
+        partIndex,
+        partCount: chunks.length,
+        payloadBase64: Buffer.from(chunks[partIndex]).toString('base64'),
+      };
+      expect(
+        new TextEncoder().encode(JSON.stringify(args)).byteLength,
+      ).toBeLessThan(12_000);
+      receipts.push(
+        await harness.service.uploadResultPart(
+          begin.attemptRef,
+          begin.leaseToken,
+          begin.leaseGeneration,
+          args,
+        ),
+      );
+    }
+    const replay = await harness.service.uploadResultPart(
+      begin.attemptRef,
+      begin.leaseToken,
+      begin.leaseGeneration,
+      {
+        resultContentHash: harness.result.contentHash,
+        partIndex: 0,
+        partCount: chunks.length,
+        payloadBase64: Buffer.from(chunks[0]).toString('base64'),
+      },
+    );
+    expect(replay.replayed).toBe(true);
+    const { replayed: _firstReplay, ...firstReceipt } = receipts[0];
+    expect(replay).toMatchObject(firstReceipt);
+    expect(harness.registrar.compareAndSet).not.toHaveBeenCalled();
+    expect(harness.artifactStore.persistAndReadback).not.toHaveBeenCalled();
+    expect(harness.currentRevision()).toBe(7);
+
+    const committed = await harness.service.finalizeResultParts(
+      begin.attemptRef,
+      begin.leaseToken,
+      begin.leaseGeneration,
+      {
+        resultContentHash: harness.result.contentHash,
+        partCount: chunks.length,
+        parts: receipts
+          .map(({ partIndex, sha256, byteLength }) => ({
+            partIndex,
+            sha256,
+            byteLength,
+          }))
+          .reverse(),
+      },
+    );
+
+    expect(payload.byteLength).toBeGreaterThan(67_000);
+    expect(chunks).toHaveLength(12);
+    expect(harness.attempts.finishResultGateFailure).not.toHaveBeenCalled();
+    expect(committed).toMatchObject({
+      workItemRevision: 8,
+      status: 'CANDIDATE_ONLY',
+      translation: {
+        sourceUnitCount: 196,
+        translatedUnitCount: 196,
+      },
+    });
+    expect(harness.registrar.compareAndSet).toHaveBeenCalledTimes(1);
+    expect(harness.artifactStore.persistAndReadback).toHaveBeenCalledTimes(1);
+    expect(harness.currentRevision()).toBe(8);
+    const artifact = JSON.parse(
+      new TextDecoder().decode(harness.persistedBytes()),
+    ) as { units: unknown[] };
+    expect(artifact.units).toHaveLength(196);
+  });
+
+  it('rejects finalize with a missing part before ResultGate, artifact persistence, or WorkItem mutation', async () => {
+    const harness = harnessForTranslation();
+    const begin = await harness.service.begin(harness.workItem.workItemId);
+    harness.prepare('{}');
+    const payload = new TextEncoder().encode(canonicalJson(harness.result));
+    const chunks = chunkBytes(payload, Math.ceil(payload.byteLength / 2));
+    const first = await harness.service.uploadResultPart(
+      begin.attemptRef,
+      begin.leaseToken,
+      begin.leaseGeneration,
+      {
+        resultContentHash: harness.result.contentHash,
+        partIndex: 0,
+        partCount: chunks.length,
+        payloadBase64: Buffer.from(chunks[0]).toString('base64'),
+      },
+    );
+
+    await expect(
+      harness.service.finalizeResultParts(
+        begin.attemptRef,
+        begin.leaseToken,
+        begin.leaseGeneration,
+        {
+          resultContentHash: harness.result.contentHash,
+          partCount: chunks.length,
+          parts: [
+            {
+              partIndex: first.partIndex,
+              sha256: first.sha256,
+              byteLength: first.byteLength,
+            },
+          ],
+        },
+      ),
+    ).rejects.toThrow('TRANSLATION_RESULT_PARTS_INCOMPLETE');
+    expect(harness.attempts.prepareCommit).not.toHaveBeenCalled();
+    expect(harness.artifactStore.persistAndReadback).not.toHaveBeenCalled();
+    expect(harness.registrar.compareAndSet).not.toHaveBeenCalled();
+    expect(harness.currentRevision()).toBe(7);
+  });
+
   it('fails ResultGate and performs no artifact or projection write when a number changes', async () => {
     const harness = harnessForTranslation();
     const begin = await harness.service.begin(harness.workItem.workItemId);
@@ -268,12 +413,13 @@ describe('CanonicalHostOpenClawTranslationService', () => {
   );
 });
 
-function harnessForTranslation() {
-  const workItem = parsedWorkItem();
+function harnessForTranslation(selectedSourceUnits = sourceUnits()) {
+  const workItem = parsedWorkItem(selectedSourceUnits.length);
   let current = structuredClone(workItem);
   let task: OpenClawTaskEnvelope | null = null;
   let result: OpenClawResultEnvelope | null = null;
   let persisted: Uint8Array | null = null;
+  const stagedParts = new Map<string, Uint8Array>();
   const registrar = {
     getTenantScopedByWorkItemId: jest.fn(async () => structuredClone(current)),
     compareAndSet: jest.fn(
@@ -293,7 +439,9 @@ function harnessForTranslation() {
     ),
   };
   const reader = {
-    readAllSourceUnits: jest.fn(async () => sourceUnits()),
+    readAllSourceUnits: jest.fn(async () =>
+      structuredClone(selectedSourceUnits),
+    ),
   };
   const artifactStore = {
     persistAndReadback: jest.fn(async (bytes: Uint8Array) => {
@@ -307,6 +455,49 @@ function harnessForTranslation() {
       };
       return { artifact, bytes: bytes.slice(), reused: false };
     }),
+    stageResultEnvelopePartAndReadback: jest.fn(
+      async (input: {
+        bytes: Uint8Array;
+        ownerRef: string;
+        partIndex: number;
+      }) => {
+        const key = `${input.ownerRef}:${input.partIndex}`;
+        const existing = stagedParts.get(key);
+        if (
+          existing &&
+          !Buffer.from(existing).equals(Buffer.from(input.bytes))
+        ) {
+          throw new Error('RESULT_ENVELOPE_PART_REPLAY_MISMATCH');
+        }
+        stagedParts.set(key, existing ?? input.bytes.slice());
+        return {
+          schemaVersion: 'wiselink.3_1.staged_result_envelope_part.v1' as const,
+          ownerRefHash: sha256(new TextEncoder().encode(input.ownerRef)),
+          partIndex: input.partIndex,
+          sha256: sha256(input.bytes),
+          byteLength: input.bytes.byteLength,
+          reused: existing !== undefined,
+        };
+      },
+    ),
+    readStagedResultEnvelopePart: jest.fn(
+      async (input: {
+        ownerRef: string;
+        part: { partIndex: number; sha256: string; byteLength: number };
+      }) => {
+        const bytes = stagedParts.get(
+          `${input.ownerRef}:${input.part.partIndex}`,
+        );
+        if (
+          !bytes ||
+          bytes.byteLength !== input.part.byteLength ||
+          sha256(bytes) !== input.part.sha256
+        ) {
+          throw new Error('RESULT_ENVELOPE_PART_READBACK_MISMATCH');
+        }
+        return bytes.slice();
+      },
+    ),
     readActualBytes: jest.fn(),
   };
   const attempts = {
@@ -360,8 +551,13 @@ function harnessForTranslation() {
         triggerRequestId: identity.triggerRequestId,
       };
     }),
-    readScoped: jest.fn(async () => preparedCommit(task!, result!).row),
-    prepareCommit: jest.fn(async () => preparedCommit(task!, result!)),
+    readScoped: jest.fn(async () => actionAttemptRow(task!, 'RUNNING', null)),
+    prepareCommit: jest.fn(
+      async (input: { result: OpenClawResultEnvelope }) => {
+        result = input.result;
+        return preparedCommit(task!, input.result);
+      },
+    ),
     finishProjectionSuccess: jest.fn(async () => ({
       attemptRef: 'TRN-TRANSLATE-1',
       status: 'SUCCEEDED',
@@ -441,6 +637,9 @@ function harnessForTranslation() {
     persistedBytes() {
       return persisted!;
     },
+    currentRevision() {
+      return current.revision;
+    },
   };
 }
 
@@ -449,55 +648,64 @@ function preparedCommit(
   result: OpenClawResultEnvelope,
 ): PreparedActionAttemptCommit {
   return {
-    row: {
-      attemptId: task.actionAttemptId,
-      operationRef: task.operationRef,
-      triggerRequestId: 'REQ-TRANSLATE-1',
-      workItemId: task.workItemId,
-      actionType: 'OPENCLAW_TRANSLATE',
-      attemptNo: 1,
-      status: 'COMMITTING',
-      requestOrigin: 'OPENCLAW_MCP_V1',
-      tenantId: task.tenantId,
-      actorUserId: 'service:openclaw-main',
-      priority: 100,
-      inputRevision: task.inputRevision,
-      baseRevision: task.baseRevision,
-      documentVersionId: task.documentVersionId,
-      taskEnvelopeJson: JSON.stringify(task),
-      taskInputHash: task.inputHash,
-      resultEnvelopeJson: JSON.stringify(result),
-      resultContentHash: result.contentHash,
-      idempotencyKey: task.idempotencyKey,
-      claimCount: 1,
-      retryCount: 0,
-      maxAttempts: 3,
-      leaseOwner: 'service:openclaw-main',
-      leaseToken: '00000000-0000-4000-8000-000000000001',
-      leaseGeneration: 1,
-      leaseExpiresAt: new Date('2026-08-26T10:01:00.000Z'),
-      lastHeartbeatAt: new Date('2026-08-26T10:00:30.000Z'),
-      nextAttemptAt: null,
-      deadlineAt: new Date('2026-08-26T10:10:00.000Z'),
-      cancelRequestedAt: null,
-      cancelReason: null,
-      terminalReason: null,
-      projectionApplied: false,
-      executorSessionKey: `wiselink:${task.tenantId}:${task.workItemId}:${task.actionAttemptId}`,
-      commitStartedAt: new Date('2026-08-26T10:00:40.000Z'),
-      leaseSlot: 0,
-      startedAt: new Date('2026-08-26T10:00:00.000Z'),
-      completedAt: null,
-      createdAt: new Date('2026-08-26T10:00:00.000Z'),
-      updatedAt: new Date('2026-08-26T10:00:40.000Z'),
-    } satisfies ActionAttemptRow,
+    row: actionAttemptRow(task, 'COMMITTING', result),
     task,
     result,
     recovery: false,
   };
 }
 
-function parsedWorkItem(): CanonicalWorkItemProjection {
+function actionAttemptRow(
+  task: OpenClawTaskEnvelope,
+  status: 'RUNNING' | 'COMMITTING',
+  result: OpenClawResultEnvelope | null,
+): ActionAttemptRow {
+  return {
+    attemptId: task.actionAttemptId,
+    operationRef: task.operationRef,
+    triggerRequestId: 'REQ-TRANSLATE-1',
+    workItemId: task.workItemId,
+    actionType: 'OPENCLAW_TRANSLATE',
+    attemptNo: 1,
+    status,
+    requestOrigin: 'OPENCLAW_MCP_V1',
+    tenantId: task.tenantId,
+    actorUserId: 'service:openclaw-main',
+    priority: 100,
+    inputRevision: task.inputRevision,
+    baseRevision: task.baseRevision,
+    documentVersionId: task.documentVersionId,
+    taskEnvelopeJson: JSON.stringify(task),
+    taskInputHash: task.inputHash,
+    resultEnvelopeJson: result ? JSON.stringify(result) : null,
+    resultContentHash: result?.contentHash ?? null,
+    idempotencyKey: task.idempotencyKey,
+    claimCount: 1,
+    retryCount: 0,
+    maxAttempts: 3,
+    leaseOwner: 'service:openclaw-main',
+    leaseToken: '00000000-0000-4000-8000-000000000001',
+    leaseGeneration: 1,
+    leaseExpiresAt: new Date('2099-08-26T10:01:00.000Z'),
+    lastHeartbeatAt: new Date('2026-08-26T10:00:30.000Z'),
+    nextAttemptAt: null,
+    deadlineAt: new Date('2099-08-26T10:10:00.000Z'),
+    cancelRequestedAt: null,
+    cancelReason: null,
+    terminalReason: null,
+    projectionApplied: false,
+    executorSessionKey: `wiselink:${task.tenantId}:${task.workItemId}:${task.actionAttemptId}`,
+    commitStartedAt:
+      status === 'COMMITTING' ? new Date('2026-08-26T10:00:40.000Z') : null,
+    leaseSlot: 0,
+    startedAt: new Date('2026-08-26T10:00:00.000Z'),
+    completedAt: null,
+    createdAt: new Date('2026-08-26T10:00:00.000Z'),
+    updatedAt: new Date('2026-08-26T10:00:40.000Z'),
+  };
+}
+
+function parsedWorkItem(contentUnitCount = 2): CanonicalWorkItemProjection {
   return {
     schemaVersion: 'wiselink.3_1.canonical_work_item_projection.v0.candidate',
     workItemId: 'WI-TRANSLATE-1',
@@ -548,8 +756,8 @@ function parsedWorkItem(): CanonicalWorkItemProjection {
       coverageHash: 'sha256:coverage',
       resultStatus: 'complete',
       title: 'FTD test',
-      contentUnitCount: 2,
-      sourceRefCount: 2,
+      contentUnitCount,
+      sourceRefCount: contentUnitCount,
       readerReceiptId: 'READER-1',
       fullValidatorProof: {} as never,
       acceptanceReceipt: {} as never,
@@ -574,6 +782,26 @@ function sourceUnits(): UnifiedReaderQueryResult[] {
       sourceRefIds: ['SRC-2'],
     },
   ];
+}
+
+function sourceUnits196(): UnifiedReaderQueryResult[] {
+  return Array.from({ length: 196 }, (_, index) => {
+    const suffix = String(index + 1).padStart(3, '0');
+    return {
+      unitId: `UNIT-${suffix}`,
+      kind: index % 17 === 0 ? 'warning' : 'paragraph',
+      text: 'WARNING airplane AIMS-2 P/N 123-ABC 5 kg.',
+      sourceRefIds: [`SRC-${suffix}`],
+    };
+  });
+}
+
+function chunkBytes(bytes: Uint8Array, partBytes: number): Uint8Array[] {
+  const parts: Uint8Array[] = [];
+  for (let offset = 0; offset < bytes.byteLength; offset += partBytes) {
+    parts.push(bytes.slice(offset, offset + partBytes));
+  }
+  return parts;
 }
 
 function verifiedScope() {

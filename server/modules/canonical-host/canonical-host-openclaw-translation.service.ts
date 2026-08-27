@@ -21,8 +21,15 @@ import type {
 } from '../action-attempt/action-attempt.types';
 import { UNIFIED_ARTIFACT_STORE } from '../unified-reader/unified-reader.constants';
 import { UnifiedReaderService } from '../unified-reader/unified-reader.service';
-import type { UnifiedArtifactStorePort } from '../unified-reader/unified-reader.types';
-import { assertNoDuplicateJsonKeys } from '../unified-reader/unified-reader.utils';
+import type {
+  StagedResultEnvelopePart,
+  UnifiedArtifactStorePort,
+  UnifiedResultEnvelopePartStagingPort,
+} from '../unified-reader/unified-reader.types';
+import {
+  assertNoDuplicateJsonKeys,
+  sha256Raw,
+} from '../unified-reader/unified-reader.utils';
 import { CANONICAL_WORK_ITEM_REGISTRAR } from './canonical-host.constants';
 import { preflightCanonicalHostOpenClawResult } from './canonical-host-openclaw-runtime-policy';
 import type { CanonicalWorkItemRegistrarPort } from './canonical-host.types';
@@ -54,6 +61,10 @@ const SOURCE_LOCALE = 'en';
 const TARGET_LOCALE = 'zh-CN';
 const BILINGUAL_ARTIFACT_SCHEMA =
   'wiselink.3_1.bilingual_translation_artifact.v1';
+export const TRANSLATION_RESULT_PART_MAX_BYTES = 6_144;
+export const TRANSLATION_RESULT_PART_MAX_COUNT = 64;
+const TRANSLATION_RESULT_PART_RECEIPT_SCHEMA =
+  'wiselink.3_1.translation_result_part_receipt.v1';
 
 interface TranslationAttempt {
   attemptId: string;
@@ -104,6 +115,33 @@ export interface CommitTranslationResult {
   workItemRevision: number;
   status: CanonicalTranslationCandidateProjection['status'];
   translation: CanonicalTranslationCandidateProjection;
+}
+
+export interface TranslationResultPartBinding {
+  partIndex: number;
+  sha256: string;
+  byteLength: number;
+}
+
+export interface UploadTranslationResultPartInput {
+  resultContentHash: string;
+  partIndex: number;
+  partCount: number;
+  payloadBase64: string;
+}
+
+export interface UploadTranslationResultPartResult extends TranslationResultPartBinding {
+  schemaVersion: typeof TRANSLATION_RESULT_PART_RECEIPT_SCHEMA;
+  attemptRef: string;
+  resultContentHash: string;
+  partCount: number;
+  replayed: boolean;
+}
+
+export interface FinalizeTranslationResultPartsInput {
+  resultContentHash: string;
+  partCount: number;
+  parts: TranslationResultPartBinding[];
 }
 
 @Injectable()
@@ -303,6 +341,114 @@ export class CanonicalHostOpenClawTranslationService {
     }
   }
 
+  async uploadResultPart(
+    attemptRef: string,
+    leaseToken: string,
+    leaseGeneration: number,
+    input: UploadTranslationResultPartInput,
+  ): Promise<UploadTranslationResultPartResult> {
+    const scope = await this.serviceScope.authorizeOpenClawAttempt({
+      operation: 'COMMIT_TRANSLATE',
+      attemptRef,
+    });
+    assertAttemptScope(scope, attemptRef);
+    const row = await this.attempts.readScoped({
+      attemptRef,
+      tenantId: scope.tenantId,
+      workItemId: scope.workItemId,
+    });
+    assertTranslationResultPartFence({
+      row,
+      scope,
+      attemptRef,
+      leaseToken,
+      leaseGeneration,
+    });
+    const bytes = decodeTranslationResultPart(input);
+    const workItem = await this.requiredParsedWorkItem(
+      scope.workItemId,
+      scope.tenantId,
+    );
+    assertTranslationResultPartWorkItem(row, workItem);
+    const store = requiredResultEnvelopePartStore(this.artifactStore);
+    const ownerRef = translationResultPartOwnerRef(
+      row,
+      input.resultContentHash,
+      input.partCount,
+    );
+    const staged = await store.stageResultEnvelopePartAndReadback({
+      bytes,
+      ownerRef,
+      partIndex: input.partIndex,
+    });
+    return {
+      schemaVersion: TRANSLATION_RESULT_PART_RECEIPT_SCHEMA,
+      attemptRef,
+      resultContentHash: input.resultContentHash,
+      partIndex: staged.partIndex,
+      partCount: input.partCount,
+      sha256: staged.sha256,
+      byteLength: staged.byteLength,
+      replayed: staged.reused,
+    };
+  }
+
+  async finalizeResultParts(
+    attemptRef: string,
+    leaseToken: string,
+    leaseGeneration: number,
+    input: FinalizeTranslationResultPartsInput,
+  ): Promise<CommitTranslationResult | ActionAttemptTerminalProjection> {
+    const scope = await this.serviceScope.authorizeOpenClawAttempt({
+      operation: 'COMMIT_TRANSLATE',
+      attemptRef,
+    });
+    assertAttemptScope(scope, attemptRef);
+    const row = await this.attempts.readScoped({
+      attemptRef,
+      tenantId: scope.tenantId,
+      workItemId: scope.workItemId,
+    });
+    assertTranslationResultPartFence({
+      row,
+      scope,
+      attemptRef,
+      leaseToken,
+      leaseGeneration,
+    });
+    const parts = validateTranslationResultPartManifest(input);
+    const workItem = await this.requiredParsedWorkItem(
+      scope.workItemId,
+      scope.tenantId,
+    );
+    assertTranslationResultPartWorkItem(row, workItem);
+    const store = requiredResultEnvelopePartStore(this.artifactStore);
+    const ownerRef = translationResultPartOwnerRef(
+      row,
+      input.resultContentHash,
+      input.partCount,
+    );
+    const stagedBytes: Uint8Array[] = [];
+    for (const part of parts) {
+      const descriptor: Omit<StagedResultEnvelopePart, 'reused'> = {
+        schemaVersion: 'wiselink.3_1.staged_result_envelope_part.v1',
+        ownerRefHash: sha256Raw(new TextEncoder().encode(ownerRef)),
+        ...part,
+      };
+      stagedBytes.push(
+        await store.readStagedResultEnvelopePart({
+          ownerRef,
+          part: descriptor,
+        }),
+      );
+    }
+    const result = parseStagedTranslationResultEnvelope(
+      concatenateBytes(stagedBytes),
+      input.resultContentHash,
+    );
+    return this.commit(attemptRef, leaseToken, leaseGeneration, result);
+  }
+
   private async recoverPreparedCommit(
     prepared: PreparedActionAttemptCommit,
   ): Promise<CommitTranslationResult | ActionAttemptTerminalProjection | null> {
@@ -402,6 +548,233 @@ export function parseBilingualTranslationArtifact(
   }
   const units = value.units.map(parseBilingualUnit);
   return { ...(value as unknown as BilingualTranslationArtifact), units };
+}
+
+function decodeTranslationResultPart(
+  input: UploadTranslationResultPartInput,
+): Uint8Array {
+  assertTranslationResultPartHeader(input);
+  if (
+    typeof input.payloadBase64 !== 'string' ||
+    input.payloadBase64.length < 4 ||
+    input.payloadBase64.length >
+      Math.ceil(TRANSLATION_RESULT_PART_MAX_BYTES / 3) * 4 ||
+    input.payloadBase64.length % 4 !== 0 ||
+    !/^[A-Za-z0-9+/]+={0,2}$/u.test(input.payloadBase64)
+  ) {
+    throw translationResultPartBadRequest(
+      'TRANSLATION_RESULT_PART_BASE64_INVALID',
+    );
+  }
+  const bytes = Uint8Array.from(Buffer.from(input.payloadBase64, 'base64'));
+  if (
+    bytes.byteLength < 1 ||
+    bytes.byteLength > TRANSLATION_RESULT_PART_MAX_BYTES ||
+    Buffer.from(bytes).toString('base64') !== input.payloadBase64
+  ) {
+    throw translationResultPartBadRequest(
+      'TRANSLATION_RESULT_PART_BASE64_INVALID',
+    );
+  }
+  return bytes;
+}
+
+function validateTranslationResultPartManifest(
+  input: FinalizeTranslationResultPartsInput,
+): TranslationResultPartBinding[] {
+  assertTranslationResultPartHeader(input);
+  if (!Array.isArray(input.parts) || input.parts.length !== input.partCount) {
+    throw translationResultPartBadRequest(
+      'TRANSLATION_RESULT_PARTS_INCOMPLETE',
+    );
+  }
+  const parts = input.parts.map((part) => {
+    if (
+      !isRecord(part) ||
+      !Number.isSafeInteger(part.partIndex) ||
+      part.partIndex < 0 ||
+      part.partIndex >= input.partCount ||
+      typeof part.sha256 !== 'string' ||
+      !/^[0-9a-f]{64}$/u.test(part.sha256) ||
+      !Number.isSafeInteger(part.byteLength) ||
+      part.byteLength < 1 ||
+      part.byteLength > TRANSLATION_RESULT_PART_MAX_BYTES
+    ) {
+      throw translationResultPartBadRequest(
+        'TRANSLATION_RESULT_PART_RECEIPT_INVALID',
+      );
+    }
+    return {
+      partIndex: part.partIndex,
+      sha256: part.sha256,
+      byteLength: part.byteLength,
+    };
+  });
+  parts.sort((left, right) => left.partIndex - right.partIndex);
+  if (parts.some((part, index) => part.partIndex !== index)) {
+    throw translationResultPartBadRequest(
+      'TRANSLATION_RESULT_PARTS_INCOMPLETE',
+    );
+  }
+  return parts;
+}
+
+function assertTranslationResultPartHeader(input: {
+  resultContentHash: string;
+  partCount: number;
+  partIndex?: number;
+}): void {
+  if (
+    typeof input.resultContentHash !== 'string' ||
+    !/^[0-9a-f]{64}$/u.test(input.resultContentHash) ||
+    !Number.isSafeInteger(input.partCount) ||
+    input.partCount < 1 ||
+    input.partCount > TRANSLATION_RESULT_PART_MAX_COUNT ||
+    (input.partIndex !== undefined &&
+      (!Number.isSafeInteger(input.partIndex) ||
+        input.partIndex < 0 ||
+        input.partIndex >= input.partCount))
+  ) {
+    throw translationResultPartBadRequest(
+      'TRANSLATION_RESULT_PART_HEADER_INVALID',
+    );
+  }
+}
+
+function assertTranslationResultPartFence(input: {
+  row: ActionAttemptRow;
+  scope: CanonicalVerifiedOpenClawAttemptScope;
+  attemptRef: string;
+  leaseToken: string;
+  leaseGeneration: number;
+}): void {
+  const { row, scope } = input;
+  assertAttemptBinding(scope, translationAttemptFromRow(row), input.attemptRef);
+  if (row.operationRef !== input.attemptRef) {
+    throw scopeNotFound();
+  }
+  if (row.status !== 'RUNNING') {
+    throw translationResultPartConflict('ACTION_ATTEMPT_NOT_RUNNING');
+  }
+  if (
+    row.leaseOwner !== scope.principalId ||
+    row.leaseToken !== input.leaseToken ||
+    row.leaseGeneration !== input.leaseGeneration
+  ) {
+    throw translationResultPartConflict('ACTION_ATTEMPT_LEASE_FENCE_REJECTED');
+  }
+  const now = new Date();
+  if (!row.leaseExpiresAt || row.leaseExpiresAt <= now) {
+    throw translationResultPartConflict('ACTION_ATTEMPT_LEASE_EXPIRED');
+  }
+  if (row.deadlineAt && row.deadlineAt <= now) {
+    throw translationResultPartConflict('ACTION_ATTEMPT_DEADLINE_EXCEEDED');
+  }
+  if (row.cancelRequestedAt) {
+    throw translationResultPartConflict('ACTION_ATTEMPT_CANCELLED');
+  }
+}
+
+function assertTranslationResultPartWorkItem(
+  row: ActionAttemptRow,
+  workItem: CanonicalWorkItemProjection,
+): void {
+  if (
+    row.baseRevision === null ||
+    workItem.revision !== row.baseRevision ||
+    row.documentVersionId === null ||
+    workItem.source.documentVersionId !== row.documentVersionId
+  ) {
+    throw translationResultPartConflict(
+      'TRANSLATION_RESULT_PART_WORK_ITEM_STALE',
+    );
+  }
+}
+
+function requiredResultEnvelopePartStore(
+  store: UnifiedArtifactStorePort,
+): UnifiedResultEnvelopePartStagingPort {
+  const candidate = store as Partial<UnifiedResultEnvelopePartStagingPort>;
+  if (
+    typeof candidate.stageResultEnvelopePartAndReadback !== 'function' ||
+    typeof candidate.readStagedResultEnvelopePart !== 'function'
+  ) {
+    throw new Error('RESULT_ENVELOPE_PART_STAGING_UNAVAILABLE');
+  }
+  return candidate as UnifiedResultEnvelopePartStagingPort;
+}
+
+function translationResultPartOwnerRef(
+  row: ActionAttemptRow,
+  resultContentHash: string,
+  partCount: number,
+): string {
+  return [
+    'openclaw-translation-result-v1',
+    row.attemptId,
+    row.operationRef,
+    row.leaseGeneration,
+    resultContentHash,
+    partCount,
+  ].join(':');
+}
+
+function concatenateBytes(parts: readonly Uint8Array[]): Uint8Array {
+  const byteLength = parts.reduce((total, part) => total + part.byteLength, 0);
+  const joined = new Uint8Array(byteLength);
+  let offset = 0;
+  for (const part of parts) {
+    joined.set(part, offset);
+    offset += part.byteLength;
+  }
+  return joined;
+}
+
+function parseStagedTranslationResultEnvelope(
+  bytes: Uint8Array,
+  resultContentHash: string,
+): unknown {
+  let text: string;
+  try {
+    text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch {
+    throw translationResultPartBadRequest(
+      'TRANSLATION_RESULT_ENVELOPE_UTF8_INVALID',
+    );
+  }
+  try {
+    assertNoDuplicateJsonKeys(text);
+  } catch {
+    throw translationResultPartBadRequest(
+      'TRANSLATION_RESULT_ENVELOPE_JSON_DUPLICATE_KEY',
+    );
+  }
+  let result: unknown;
+  try {
+    result = JSON.parse(text) as unknown;
+  } catch {
+    throw translationResultPartBadRequest(
+      'TRANSLATION_RESULT_ENVELOPE_JSON_INVALID',
+    );
+  }
+  if (!isRecord(result) || result.contentHash !== resultContentHash) {
+    throw translationResultPartBadRequest(
+      'TRANSLATION_RESULT_ENVELOPE_CONTENT_HASH_MISMATCH',
+    );
+  }
+  return result;
+}
+
+function translationResultPartBadRequest(
+  code: string,
+): Error & { code: string; statusCode: number } {
+  return Object.assign(new Error(code), { code, statusCode: 400 });
+}
+
+function translationResultPartConflict(
+  code: string,
+): Error & { code: string; statusCode: number } {
+  return Object.assign(new Error(code), { code, statusCode: 409 });
 }
 
 function resultContract(

@@ -42,7 +42,8 @@ COMMITTING begin 不重复返回可能较大的完整 `recoveryResult`，只返�
 
 ## ResultEnvelope
 
-所有 commit 使用完整 `wiselink.3_1.openclaw_result_envelope.v1`：
+所有 commit 的逻辑输入都是完整 `wiselink.3_1.openclaw_result_envelope.v1`；Translation 的物理传输先分块再由
+Host 组装，其他 operation 仍直接提交：
 
 ```text
 schemaVersion
@@ -83,6 +84,30 @@ promptVersion = 当前实际运行非空版本
 
 官方 profile 当前可选 `GLM-5.3`，但 Skill 不维护具体模型 allowlist，也不把 task policy ref 冒充实际
 `modelVersion`。缺失、空、仅 `fallback`/`unknown` 或只回显 policy ref 的模型 provenance 不能 commit。
+
+### Translation ResultEnvelope 分块传输
+
+sealed ResultEnvelope 先写入本轮本地 `commit-payload.json`。Skill helper 解析 direct ResultEnvelope 或旧
+`{attemptRef,leaseToken,leaseGeneration,result}` wrapper；wrapper fence 必须与 begin 精确一致。helper 对 ResultEnvelope
+做 canonical JSON UTF-8 序列化，以 6144 原始 bytes 分块并 Base64；每个
+`commit_translation_candidate(phase=UPLOAD_PART)` arguments 必须小于 12,000 UTF-8 bytes，partCount 为 1–64。
+
+Host receipt 精确为：
+
+```text
+schemaVersion=wiselink.3_1.translation_result_part_receipt.v1
+attemptRef/resultContentHash/partIndex/partCount
+sha256/byteLength/replayed
+```
+
+同一 attempt、lease generation、resultContentHash、partCount、partIndex 的相同 actual bytes 重放返回
+`replayed=true`；不同 bytes fail closed。上传阶段不调用 ResultGate、不产生 candidate、不改变 WorkItem/current。
+
+收齐全部 receipt 后，同一工具使用
+`phase=FINALIZE + resultContentHash + partCount + parts[{partIndex,sha256,byteLength}]`。Host 接受 receipt 乱序但要求
+排序后索引完整且唯一，从 FileService readback actual bytes 后组装并验证 UTF-8/JSON/contentHash，再把完整对象交给
+原有 ResultEnvelope preflight、TranslationRuleSet ResultGate、final artifact actual-byte readback 和 CAS。缺 part 在
+prepareCommit 前明确失败。
 
 ## Translation
 
