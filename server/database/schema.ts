@@ -679,6 +679,134 @@ export const externalDiscoveryCandidate = pgTable("external_discovery_candidate"
   )`),
 ]);
 
+export const canonicalFleetSourceSnapshot = pgTable("canonical_fleet_source_snapshot", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: varchar("tenant_id", { length: 128 }).notNull(),
+  sourceSnapshotId: varchar("source_snapshot_id", { length: 96 }).notNull(),
+  sourceKind: varchar("source_kind", { length: 96 }).notNull(),
+  logicalSourceKey: varchar("logical_source_key", { length: 160 }).notNull(),
+  sourceRevisionKey: varchar("source_revision_key", { length: 255 }).notNull(),
+  sourceContentHash: varchar("source_content_hash", { length: 71 }).notNull(),
+  sourceAsOf: varchar("source_as_of", { length: 10 }).notNull(),
+  snapshotAsOf: customTimestamptz("snapshot_as_of", { precision: 3 }).notNull(),
+  fleetSnapshotDigest: varchar("fleet_snapshot_digest", { length: 64 }).notNull(),
+  upstreamLineageJson: text("upstream_lineage_json").notNull(),
+  aircraftAssetCount: integer("aircraft_asset_count").notNull(),
+  identityAliasCount: integer("identity_alias_count").notNull(),
+  configurationFactCount: integer("configuration_fact_count").notNull().default(0),
+  importedByActorId: varchar("imported_by_actor_id", { length: 255 }).notNull(),
+  importedAt: customTimestamptz("imported_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("uk_canonical_fleet_source_snapshot").on(table.tenantId, table.sourceSnapshotId),
+  check("ck_canonical_fleet_source_content_hash", sql`${table.sourceContentHash} ~ '^sha256:[0-9a-f]{64}$'`),
+  check("ck_canonical_fleet_snapshot_digest", sql`${table.fleetSnapshotDigest} ~ '^[0-9a-f]{64}$'`),
+  check("ck_canonical_fleet_source_as_of", sql`${table.sourceAsOf} ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'`),
+  check("ck_canonical_fleet_source_counts", sql`${table.aircraftAssetCount} > 0 AND ${table.identityAliasCount} >= 0 AND ${table.configurationFactCount} >= 0`),
+]);
+
+export const canonicalFleetScopeHead = pgTable("canonical_fleet_scope_head", {
+  tenantId: varchar("tenant_id", { length: 128 }).primaryKey(),
+  currentSourceSnapshotId: varchar("current_source_snapshot_id", { length: 96 }).notNull(),
+  authorityRevision: integer("authority_revision").notNull(),
+  updatedAt: customTimestamptz("updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  foreignKey({
+    columns: [table.tenantId, table.currentSourceSnapshotId],
+    foreignColumns: [canonicalFleetSourceSnapshot.tenantId, canonicalFleetSourceSnapshot.sourceSnapshotId],
+    name: "fk_canonical_fleet_scope_head_snapshot",
+  }),
+  check("ck_canonical_fleet_authority_revision", sql`${table.authorityRevision} > 0`),
+]);
+
+export const canonicalFleetAssetVersion = pgTable("canonical_fleet_asset_version", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: varchar("tenant_id", { length: 128 }).notNull(),
+  sourceSnapshotId: varchar("source_snapshot_id", { length: 96 }).notNull(),
+  assetId: varchar("asset_id", { length: 96 }).notNull(),
+  assetVersionId: varchar("asset_version_id", { length: 96 }).notNull(),
+  aircraftNumber: varchar("aircraft_number", { length: 64 }).notNull(),
+  fleetFamily: varchar("fleet_family", { length: 64 }),
+  aircraftModel: varchar("aircraft_model", { length: 64 }),
+  series: varchar("series", { length: 64 }),
+  msn: varchar("msn", { length: 64 }),
+  lineNumber: integer("line_number"),
+  deliveryDate: varchar("delivery_date", { length: 10 }),
+  validFrom: customTimestamptz("valid_from", { precision: 3 }).notNull(),
+  validTo: customTimestamptz("valid_to", { precision: 3 }),
+  status: varchar("status", { length: 32 }).notNull(),
+  sourceRecordId: varchar("source_record_id", { length: 128 }).notNull(),
+  recordHash: varchar("record_hash", { length: 71 }).notNull(),
+  sourceRecordHash: varchar("source_record_hash", { length: 71 }).notNull(),
+}, (table) => [
+  uniqueIndex("uk_canonical_fleet_asset_version").on(table.tenantId, table.assetVersionId),
+  uniqueIndex("uk_canonical_fleet_asset_snapshot").on(table.tenantId, table.sourceSnapshotId, table.assetId),
+  index("idx_canonical_fleet_asset_identifier").on(table.tenantId, table.sourceSnapshotId, table.aircraftNumber),
+  foreignKey({
+    columns: [table.tenantId, table.sourceSnapshotId],
+    foreignColumns: [canonicalFleetSourceSnapshot.tenantId, canonicalFleetSourceSnapshot.sourceSnapshotId],
+    name: "fk_canonical_fleet_asset_snapshot",
+  }),
+  check("ck_canonical_fleet_asset_status", sql`${table.status} IN ('ACTIVE', 'INACTIVE')`),
+  check("ck_canonical_fleet_asset_record_hash", sql`${table.recordHash} ~ '^sha256:[0-9a-f]{64}$'`),
+  check("ck_canonical_fleet_asset_source_record_hash", sql`${table.sourceRecordHash} ~ '^sha256:[0-9a-f]{64}$'`),
+  check("ck_canonical_fleet_asset_delivery_date", sql`${table.deliveryDate} IS NULL OR ${table.deliveryDate} ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'`),
+  check("ck_canonical_fleet_asset_validity", sql`${table.validTo} IS NULL OR ${table.validTo} > ${table.validFrom}`),
+]);
+
+export const canonicalFleetAliasVersion = pgTable("canonical_fleet_alias_version", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: varchar("tenant_id", { length: 128 }).notNull(),
+  sourceSnapshotId: varchar("source_snapshot_id", { length: 96 }).notNull(),
+  aliasVersionId: varchar("alias_version_id", { length: 96 }).notNull(),
+  aliasId: varchar("alias_id", { length: 96 }).notNull(),
+  assetId: varchar("asset_id", { length: 96 }).notNull(),
+  aliasType: varchar("alias_type", { length: 64 }).notNull(),
+  aliasValue: varchar("alias_value", { length: 128 }).notNull(),
+  status: varchar("status", { length: 32 }).notNull(),
+  recordHash: varchar("record_hash", { length: 71 }).notNull(),
+}, (table) => [
+  uniqueIndex("uk_canonical_fleet_alias_version").on(table.tenantId, table.aliasVersionId),
+  uniqueIndex("uk_canonical_fleet_alias_snapshot").on(table.tenantId, table.sourceSnapshotId, table.aliasId),
+  index("idx_canonical_fleet_alias_identifier").on(table.tenantId, table.sourceSnapshotId, table.aliasValue),
+  foreignKey({
+    columns: [table.tenantId, table.sourceSnapshotId, table.assetId],
+    foreignColumns: [canonicalFleetAssetVersion.tenantId, canonicalFleetAssetVersion.sourceSnapshotId, canonicalFleetAssetVersion.assetId],
+    name: "fk_canonical_fleet_alias_asset",
+  }),
+  check("ck_canonical_fleet_alias_status", sql`${table.status} IN ('ACTIVE', 'INACTIVE')`),
+  check("ck_canonical_fleet_alias_record_hash", sql`${table.recordHash} ~ '^sha256:[0-9a-f]{64}$'`),
+]);
+
+export const canonicalFleetConfigurationFactVersion = pgTable("canonical_fleet_configuration_fact_version", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: varchar("tenant_id", { length: 128 }).notNull(),
+  sourceSnapshotId: varchar("source_snapshot_id", { length: 96 }).notNull(),
+  factId: varchar("fact_id", { length: 96 }).notNull(),
+  factVersionId: varchar("fact_version_id", { length: 96 }).notNull(),
+  assetId: varchar("asset_id", { length: 96 }).notNull(),
+  factType: varchar("fact_type", { length: 64 }).notNull(),
+  property: varchar("property", { length: 96 }).notNull(),
+  qualifier: varchar("qualifier", { length: 255 }),
+  valueJson: text("value_json").notNull(),
+  validAsOf: varchar("valid_as_of", { length: 10 }),
+  status: varchar("status", { length: 32 }).notNull(),
+  sourceRecordId: varchar("source_record_id", { length: 128 }).notNull(),
+  recordHash: varchar("record_hash", { length: 71 }).notNull(),
+}, (table) => [
+  uniqueIndex("uk_canonical_fleet_fact_version").on(table.tenantId, table.factVersionId),
+  uniqueIndex("uk_canonical_fleet_fact_snapshot").on(table.tenantId, table.sourceSnapshotId, table.factId),
+  index("idx_canonical_fleet_fact_lookup").on(table.tenantId, table.sourceSnapshotId, table.assetId, table.property, table.qualifier),
+  foreignKey({
+    columns: [table.tenantId, table.sourceSnapshotId, table.assetId],
+    foreignColumns: [canonicalFleetAssetVersion.tenantId, canonicalFleetAssetVersion.sourceSnapshotId, canonicalFleetAssetVersion.assetId],
+    name: "fk_canonical_fleet_fact_asset",
+  }),
+  check("ck_canonical_fleet_fact_type", sql`${table.factType} IN ('fleet_configuration', 'sb_incorporation', 'data_quality_issue')`),
+  check("ck_canonical_fleet_fact_status", sql`${table.status} IN ('ACTIVE', 'INACTIVE')`),
+  check("ck_canonical_fleet_fact_valid_as_of", sql`${table.validAsOf} IS NULL OR ${table.validAsOf} ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'`),
+  check("ck_canonical_fleet_fact_record_hash", sql`${table.recordHash} ~ '^sha256:[0-9a-f]{64}$'`),
+]);
+
 /** Host-owned Feishu OAuth subject -> canonical Miaoda subject mapping. */
 export const identitySubjectMapping = pgTable("identity_subject_mapping", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -747,6 +875,11 @@ export const identitySession = pgTable("identity_session", {
 
 // table aliases
 export const actionAttemptTable = actionAttempt;
+export const canonicalFleetAliasVersionTable = canonicalFleetAliasVersion;
+export const canonicalFleetAssetVersionTable = canonicalFleetAssetVersion;
+export const canonicalFleetConfigurationFactVersionTable = canonicalFleetConfigurationFactVersion;
+export const canonicalFleetScopeHeadTable = canonicalFleetScopeHead;
+export const canonicalFleetSourceSnapshotTable = canonicalFleetSourceSnapshot;
 export const dmAcquisitionTable = dmAcquisition;
 export const dmCurrentnessDecisionTable = dmCurrentnessDecision;
 export const dmDocumentTable = dmDocument;

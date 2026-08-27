@@ -23,7 +23,7 @@ import {
   CANONICAL_PERMISSION_SNAPSHOT,
   CANONICAL_WORK_ITEM_REGISTRAR,
 } from './modules/canonical-host/canonical-host.constants';
-import { HostConfiguredApplicabilityControlledSelectionAdapter } from './modules/canonical-host/host-configured-applicability-controlled-selection.adapter';
+import { MiaodaApplicabilityControlledSelectionAdapter } from './modules/canonical-host/miaoda-applicability-controlled-selection.adapter';
 import { OrdinaryFailureValidationWriteAuthorizationAdapter } from './modules/canonical-host/ordinary-failure-validation-write-authorization.adapter';
 import { UNIFIED_ARTIFACT_STORE } from './modules/unified-reader/unified-reader.constants';
 import { MiaodaOrdinaryArtifactStoreAdapter } from './modules/unified-reader/miaoda-ordinary-artifact-store.adapter';
@@ -72,7 +72,7 @@ import { ReviewPersistenceModule } from './modules/review-persistence/review-per
       },
       applicabilityControlledSelectionProvider: {
         provide: CANONICAL_APPLICABILITY_CONTROLLED_SELECTION,
-        useExisting: HostConfiguredApplicabilityControlledSelectionAdapter,
+        useExisting: MiaodaApplicabilityControlledSelectionAdapter,
       },
       unifiedReader: {
         artifactStoreProvider: {

@@ -17,10 +17,8 @@ import {
 } from '../work-item/canonical-object-access.port';
 import { CANONICAL_WORK_ITEM_REGISTRAR } from './canonical-host.constants';
 import type { CanonicalWorkItemRegistrarPort } from './canonical-host.types';
-import {
-  CanonicalHostFleetMasterDataConfiguration,
-  selectionMatchesFleet,
-} from './host-configured-applicability-controlled-selection.adapter';
+import { CanonicalFleetMasterDataRepository } from './canonical-fleet-master-data.repository';
+import { selectionMatchesFleet } from './miaoda-applicability-controlled-selection.adapter';
 
 @Injectable()
 export class CanonicalHostApplicabilitySelectionService {
@@ -30,7 +28,7 @@ export class CanonicalHostApplicabilitySelectionService {
     private readonly objectAccess: CanonicalObjectAccessPort,
     @Inject(CANONICAL_WORK_ITEM_REGISTRAR)
     private readonly registrar: CanonicalWorkItemRegistrarPort,
-    private readonly fleetConfiguration: CanonicalHostFleetMasterDataConfiguration,
+    private readonly fleetRepository: CanonicalFleetMasterDataRepository,
   ) {}
 
   async read(
@@ -41,7 +39,11 @@ export class CanonicalHostApplicabilitySelectionService {
     const grant = await this.authorize(session, workItemId, 'READ_WORK_ITEM');
     const workItem = await this.freshWorkItem(session, grant);
     const selection = requiredSelection(workItem);
-    const fleet = this.fleetConfiguration.readCurrent();
+    const fleet = await this.fleetRepository.readCurrentForAircraft({
+      tenantId: session.actor.tenantId,
+      aircraftIdentifier: selection.aircraftIdentifier,
+      asOf: selection.asOf,
+    });
     return readModel(workItem, selection, fleet);
   }
 
@@ -58,11 +60,15 @@ export class CanonicalHostApplicabilitySelectionService {
     );
     const workItem = await this.freshWorkItem(session, grant);
     assertParsedWorkItem(workItem);
-    const fleet = this.fleetConfiguration.readCurrent();
     const aircraftIdentifier = normalizeAircraftIdentifier(
       input.aircraftIdentifier,
     );
     const asOf = requiredIsoDate(input.asOf);
+    const fleet = await this.fleetRepository.readCurrentForAircraft({
+      tenantId: session.actor.tenantId,
+      aircraftIdentifier,
+      asOf,
+    });
     assertControlledAircraft(fleet, aircraftIdentifier);
     if (!fleet.sourceAsOf || fleet.sourceAsOf > asOf) {
       throw conflict('APPLICABILITY_FLEET_SOURCE_AS_OF_AFTER_SELECTION');

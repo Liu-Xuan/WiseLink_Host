@@ -31,10 +31,8 @@ import {
 } from './canonical-host-applicability-input.producer';
 import { CanonicalHostApplicabilitySelectionController } from './canonical-host-applicability-selection.controller';
 import { CanonicalHostApplicabilitySelectionService } from './canonical-host-applicability-selection.service';
-import {
-  CanonicalHostFleetMasterDataConfiguration,
-  HostConfiguredApplicabilityControlledSelectionAdapter,
-} from './host-configured-applicability-controlled-selection.adapter';
+import { CanonicalFleetMasterDataRepository } from './canonical-fleet-master-data.repository';
+import { MiaodaApplicabilityControlledSelectionAdapter } from './miaoda-applicability-controlled-selection.adapter';
 import { CanonicalHostOpenClawReviewService } from './canonical-host-openclaw-review.service';
 import { CanonicalHostReviewActionController } from './canonical-host-review-action.controller';
 import { CanonicalHostReviewActionService } from './canonical-host-review-action.service';
@@ -140,8 +138,8 @@ export interface CanonicalHostModuleOptions {
     CanonicalHostOpenClawAttemptStatusService,
     CanonicalHostApplicabilityInputProducer,
     CanonicalHostApplicabilitySelectionService,
-    CanonicalHostFleetMasterDataConfiguration,
-    HostConfiguredApplicabilityControlledSelectionAdapter,
+    CanonicalFleetMasterDataRepository,
+    MiaodaApplicabilityControlledSelectionAdapter,
     CanonicalHostOpenClawReviewService,
     CanonicalHostReviewActionService,
     HostOwnedV1TranslationRuleSetPrivateProvider,
@@ -315,8 +313,8 @@ export class CanonicalHostModule {
         CanonicalHostOpenClawAttemptStatusService,
         CanonicalHostApplicabilityInputProducer,
         CanonicalHostApplicabilitySelectionService,
-        CanonicalHostFleetMasterDataConfiguration,
-        HostConfiguredApplicabilityControlledSelectionAdapter,
+        CanonicalFleetMasterDataRepository,
+        MiaodaApplicabilityControlledSelectionAdapter,
         CanonicalHostOpenClawReviewService,
         CanonicalHostReviewActionService,
         HostOwnedV1TranslationRuleSetPrivateProvider,

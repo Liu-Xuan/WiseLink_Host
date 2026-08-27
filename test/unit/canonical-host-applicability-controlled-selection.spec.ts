@@ -3,7 +3,7 @@ import type { Request } from 'express';
 import type { CanonicalWorkItemProjection } from '../../shared/api.interface';
 import type { FleetMasterDataSource } from '../../server/modules/assessment-workbench/applicability-fleet/fleetMasterData';
 import { CanonicalHostApplicabilitySelectionService } from '../../server/modules/canonical-host/canonical-host-applicability-selection.service';
-import { HostConfiguredApplicabilityControlledSelectionAdapter } from '../../server/modules/canonical-host/host-configured-applicability-controlled-selection.adapter';
+import { MiaodaApplicabilityControlledSelectionAdapter } from '../../server/modules/canonical-host/miaoda-applicability-controlled-selection.adapter';
 
 describe('production applicability controlled selection', () => {
   it('persists only server-derived selection/Fleet revisions and exposes the real 0/0 frozen-source blocker', async () => {
@@ -46,9 +46,9 @@ describe('production applicability controlled selection', () => {
     expect(JSON.stringify(selected)).not.toContain('sourceTable');
     expect(JSON.stringify(selected)).not.toContain('recordHash');
 
-    const provider = new HostConfiguredApplicabilityControlledSelectionAdapter(
+    const provider = new MiaodaApplicabilityControlledSelectionAdapter(
       harness.registrar,
-      harness.fleetConfiguration,
+      harness.fleetRepository,
     );
     await expect(
       provider.readCurrent({
@@ -72,9 +72,9 @@ describe('production applicability controlled selection', () => {
       normalizedCandidateCount: 1,
       assignmentCount: 1,
     };
-    const provider = new HostConfiguredApplicabilityControlledSelectionAdapter(
+    const provider = new MiaodaApplicabilityControlledSelectionAdapter(
       harness.registrar,
-      harness.fleetConfiguration,
+      harness.fleetRepository,
     );
 
     await expect(
@@ -156,8 +156,8 @@ function selectionHarness(options: { deny?: boolean } = {}) {
     ),
   };
   const fleet = fleetMasterData();
-  const fleetConfiguration = {
-    readCurrent: jest.fn(() => structuredClone(fleet)),
+  const fleetRepository = {
+    readCurrentForAircraft: jest.fn(async () => structuredClone(fleet)),
   };
   const sessions = {
     resolve: jest.fn(async () => ({ actor })),
@@ -166,12 +166,12 @@ function selectionHarness(options: { deny?: boolean } = {}) {
     sessions as never,
     objectAccess as never,
     registrar as never,
-    fleetConfiguration as never,
+    fleetRepository as never,
   );
   return {
     service,
     registrar,
-    fleetConfiguration: fleetConfiguration as never,
+    fleetRepository: fleetRepository as never,
     get current(): CanonicalWorkItemProjection {
       return current;
     },
