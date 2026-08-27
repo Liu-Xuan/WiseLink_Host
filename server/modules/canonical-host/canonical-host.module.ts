@@ -29,6 +29,12 @@ import {
   CanonicalHostApplicabilityInputProducer,
   UnavailableCanonicalApplicabilityControlledSelection,
 } from './canonical-host-applicability-input.producer';
+import { CanonicalHostApplicabilitySelectionController } from './canonical-host-applicability-selection.controller';
+import { CanonicalHostApplicabilitySelectionService } from './canonical-host-applicability-selection.service';
+import {
+  CanonicalHostFleetMasterDataConfiguration,
+  HostConfiguredApplicabilityControlledSelectionAdapter,
+} from './host-configured-applicability-controlled-selection.adapter';
 import { CanonicalHostOpenClawReviewService } from './canonical-host-openclaw-review.service';
 import { CanonicalHostReviewActionController } from './canonical-host-review-action.controller';
 import { CanonicalHostReviewActionService } from './canonical-host-review-action.service';
@@ -118,6 +124,7 @@ export interface CanonicalHostModuleOptions {
     CanonicalHostOpenClawMcpOpenApiController,
     OauthSessionDevelopmentWorkItemController,
     CanonicalHostReviewActionController,
+    CanonicalHostApplicabilitySelectionController,
   ],
   providers: [
     CanonicalEntryFacadeService,
@@ -132,6 +139,9 @@ export interface CanonicalHostModuleOptions {
     CanonicalHostOpenClawApplicabilityService,
     CanonicalHostOpenClawAttemptStatusService,
     CanonicalHostApplicabilityInputProducer,
+    CanonicalHostApplicabilitySelectionService,
+    CanonicalHostFleetMasterDataConfiguration,
+    HostConfiguredApplicabilityControlledSelectionAdapter,
     CanonicalHostOpenClawReviewService,
     CanonicalHostReviewActionService,
     HostOwnedV1TranslationRuleSetPrivateProvider,
@@ -273,6 +283,7 @@ export class CanonicalHostModule {
         CanonicalHostOpenClawMcpOpenApiController,
         OauthSessionDevelopmentWorkItemController,
         CanonicalHostReviewActionController,
+        CanonicalHostApplicabilitySelectionController,
       ],
       providers: [
         workItemRegistrarProvider,
@@ -303,6 +314,9 @@ export class CanonicalHostModule {
         CanonicalHostOpenClawApplicabilityService,
         CanonicalHostOpenClawAttemptStatusService,
         CanonicalHostApplicabilityInputProducer,
+        CanonicalHostApplicabilitySelectionService,
+        CanonicalHostFleetMasterDataConfiguration,
+        HostConfiguredApplicabilityControlledSelectionAdapter,
         CanonicalHostOpenClawReviewService,
         CanonicalHostReviewActionService,
         HostOwnedV1TranslationRuleSetPrivateProvider,

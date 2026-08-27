@@ -15,6 +15,7 @@ import {
 } from './modules/canonical-host/ordinary-canonical-authorization.adapter';
 import { OrdinaryMiaodaAppBindingAdapter } from './modules/canonical-host/ordinary-miaoda-app-binding.adapter';
 import {
+  CANONICAL_APPLICABILITY_CONTROLLED_SELECTION,
   CANONICAL_AUTHORIZATION,
   CANONICAL_FAILURE_VALIDATION_WRITE_AUTHORIZATION,
   CANONICAL_MIAODA_APP_BINDING,
@@ -22,6 +23,7 @@ import {
   CANONICAL_PERMISSION_SNAPSHOT,
   CANONICAL_WORK_ITEM_REGISTRAR,
 } from './modules/canonical-host/canonical-host.constants';
+import { HostConfiguredApplicabilityControlledSelectionAdapter } from './modules/canonical-host/host-configured-applicability-controlled-selection.adapter';
 import { OrdinaryFailureValidationWriteAuthorizationAdapter } from './modules/canonical-host/ordinary-failure-validation-write-authorization.adapter';
 import { UNIFIED_ARTIFACT_STORE } from './modules/unified-reader/unified-reader.constants';
 import { MiaodaOrdinaryArtifactStoreAdapter } from './modules/unified-reader/miaoda-ordinary-artifact-store.adapter';
@@ -67,6 +69,10 @@ import { ReviewPersistenceModule } from './modules/review-persistence/review-per
       serviceScopeAuthorizationProvider: {
         provide: CANONICAL_EXECUTOR_SERVICE_SCOPE_AUTHORIZATION,
         useClass: ConfiguredDevelopmentCanonicalServiceScopeAuthorization,
+      },
+      applicabilityControlledSelectionProvider: {
+        provide: CANONICAL_APPLICABILITY_CONTROLLED_SELECTION,
+        useExisting: HostConfiguredApplicabilityControlledSelectionAdapter,
       },
       unifiedReader: {
         artifactStoreProvider: {

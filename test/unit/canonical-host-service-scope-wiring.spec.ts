@@ -11,6 +11,7 @@ jest.mock('@nestjs/common', () => {
     HttpCode: noOpDecorator,
     Param: noOpDecorator,
     Post: noOpDecorator,
+    Put: noOpDecorator,
     Query: noOpDecorator,
     Req: noOpDecorator,
     Res: noOpDecorator,

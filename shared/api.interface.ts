@@ -570,6 +570,51 @@ export interface CanonicalApplicabilityFleetFact {
 }
 
 /**
+ * Host-owned engineer selection persisted inside the canonical WorkItem
+ * projection. Fleet facts are deliberately not stored here: they are read
+ * from the server-private Host FleetMasterData configuration at use time.
+ */
+export interface CanonicalApplicabilityControlledSelectionProjection {
+  schemaVersion: 'wiselink.3_1.controlled_applicability_selection.v1';
+  selectionRevision: string;
+  currentness: 'CURRENT';
+  documentVersionId: string;
+  aircraftIdentifier: string;
+  asOf: string;
+  fleetSourceSnapshotId: string;
+  fleetSourceRevisionKey: string;
+  fleetAuthorityRevision: string;
+  fleetSourceAsOf: string;
+}
+
+export interface ConfigureCanonicalApplicabilitySelectionRequest {
+  aircraftIdentifier: string;
+  asOf: string;
+}
+
+/** Public, credential-free read model for the current WorkItem selection. */
+export interface CanonicalApplicabilitySelectionReadModel {
+  schemaVersion: 'wiselink.3_1.applicability_selection_read_model.v1';
+  workItemId: string;
+  workItemRevision: number;
+  documentVersionId: string;
+  aircraftIdentifier: string;
+  asOf: string;
+  selectionRevision: string;
+  currentness: 'CURRENT' | 'STALE';
+  fleetSource: {
+    sourceRevisionKey: string;
+    authorityRevision: string;
+    sourceAsOf: string;
+  };
+  frozenSourceBinding: {
+    status: 'READY' | 'MISSING';
+    sourceExpressionCount: number;
+    assignmentCount: number;
+  };
+}
+
+/**
  * Host-owned current aircraft selection and controlled fact snapshot.
  * OpenClaw cannot create or update this projection. The opaque context ref is
  * resolved by service authorization before the WorkItem is fresh-read.
@@ -1013,6 +1058,7 @@ export interface CanonicalWorkItemProjection {
   classification: CanonicalClassificationSelection;
   package: CanonicalWorkItemPackageProjection | null;
   translation?: CanonicalTranslationCandidateProjection | null;
+  applicabilityControlledSelection?: CanonicalApplicabilityControlledSelectionProjection | null;
   applicabilityInput?: CanonicalApplicabilityInputProjection | null;
   applicability?: CanonicalApplicabilityCandidateProjection | null;
   assessment?: CanonicalAssessmentCandidateProjection | null;
