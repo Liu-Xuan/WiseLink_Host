@@ -28,6 +28,9 @@ const {
   UNKNOWN,
   evaluateApplicabilityFragmentSetWithTrace,
 } = require('../../server/modules/assessment-workbench/applicability-fleet/applicabilityKleeneEngine.ts');
+const {
+  readFrozenApplicabilitySourceBinding,
+} = require('../../server/modules/canonical-host/canonical-host-applicability-source.ts');
 
 const databaseUrl = process.env.CANONICAL_FLEET_TEST_DATABASE_URL;
 
@@ -226,27 +229,41 @@ async function assertSelectionAndKleeneUnknown(fleetRepository) {
   });
   assert.equal(resolution.status, 'RESOLVED');
   assert.equal(resolution.snapshot.properties.model, 'B777-39L');
-  const trace = evaluateApplicabilityFragmentSetWithTrace(
-    [
+  const sourceBinding = readFrozenApplicabilitySourceBinding({
+    bytes: frozen777ApplicabilityBytes(),
+    workItem: current,
+    sourceUnits: [
       {
-        ruleFragmentId: 'EXP-777-AIMS2',
-        extractionStatus: 'extracted',
-        applicabilityLevel: 'document_effectivity',
-        expressionAst: {
-          type: 'and',
-          children: [
-            { type: 'assert', property: 'model', operator: 'eq', value: '777' },
-            {
-              type: 'assert',
-              property: 'equipmentModelInstalled',
-              operator: 'eq',
-              value: true,
-              qualifier: 'AIMS-2',
-            },
-          ],
-        },
+        unitId: 'UNIT-777-AIMS2',
+        kind: 'paragraph',
+        text: 'MODEL 777 WITH AIMS-2 INSTALLED',
+        sourceRefIds: ['SRC-777-AIMS2'],
       },
     ],
+  });
+  assert.deepEqual(sourceBinding.deterministicFragments, [
+    {
+      ruleFragmentId: 'EXP-777-AIMS2',
+      extractionStatus: 'extracted',
+      applicabilityLevel: 'document_effectivity',
+      contentRef: null,
+      expressionAst: {
+        type: 'and',
+        children: [
+          { type: 'assert', property: 'model', operator: 'eq', value: '777' },
+          {
+            type: 'assert',
+            property: 'equipmentModelInstalled',
+            operator: 'eq',
+            value: true,
+            qualifier: 'AIMS-2',
+          },
+        ],
+      },
+    },
+  ]);
+  const trace = evaluateApplicabilityFragmentSetWithTrace(
+    sourceBinding.deterministicFragments,
     resolution.snapshot,
   );
   assert.equal(trace.result, UNKNOWN);
@@ -265,6 +282,68 @@ async function assertSelectionAndKleeneUnknown(fleetRepository) {
         assetId: 'AIRCRAFT:MODEL_MSN:B777_39L_65300',
       },
     ],
+  );
+}
+
+function frozen777ApplicabilityBytes() {
+  return new TextEncoder().encode(
+    JSON.stringify({
+      sourceRefs: [{ sourceRefId: 'SRC-777-AIMS2' }],
+      modules: [{ moduleId: 'MODULE-777' }],
+      applicability: {
+        sourceExpressions: [
+          {
+            expressionId: 'EXP-777-AIMS2',
+            text: 'MODEL 777 WITH AIMS-2 INSTALLED',
+            form: 'logical_expression',
+            authority: 'source_asserted',
+            sourceRefIds: ['SRC-777-AIMS2'],
+          },
+        ],
+        normalizedCandidates: [
+          {
+            candidateId: 'CANDIDATE-777-AIMS2',
+            language: 'techpub-applicability-expr.v1',
+            confidence: 'deterministic',
+            sourceExpressionIds: ['EXP-777-AIMS2'],
+            expression: {
+              operator: 'all',
+              children: [
+                {
+                  operator: 'predicate',
+                  predicate: {
+                    property: 'model',
+                    comparator: 'eq',
+                    values: ['777'],
+                  },
+                },
+                {
+                  operator: 'predicate',
+                  predicate: {
+                    property: 'equipmentModelInstalled',
+                    comparator: 'eq',
+                    values: ['AIMS-2'],
+                  },
+                },
+              ],
+            },
+            authority: 'parser_candidate',
+          },
+        ],
+        assignments: [
+          {
+            assignmentId: 'ASSIGN-777-AIMS2',
+            expressionId: 'EXP-777-AIMS2',
+            authority: 'source_asserted',
+            target: {
+              kind: 'module',
+              targetId: 'MODULE-777',
+              sourceRefIds: ['SRC-777-AIMS2'],
+            },
+          },
+        ],
+      },
+    }),
   );
 }
 

@@ -829,6 +829,33 @@ export class CanonicalHostOpenClawApplicabilityService {
     }
     if (resolution.status === 'WAITING_INPUT') {
       missingInputs.push(...fleetResolutionMissingInputs(resolution));
+    } else if (
+      resolution.snapshot &&
+      sourceBinding.deterministicFragments.length > 0
+    ) {
+      const trace = evaluateApplicabilityFragmentSetWithTrace(
+        sourceBinding.deterministicFragments,
+        resolution.snapshot,
+      );
+      if (trace.result === UNKNOWN) {
+        if (
+          trace.blockingUnknowns.length === 0 ||
+          trace.blockingUnknowns.some(
+            (unknown) => unknown.kind !== 'fact_unknown',
+          )
+        ) {
+          throw new Error(
+            'APPLICABILITY_DETERMINISTIC_PREFLIGHT_INTERPRETATION_UNKNOWN',
+          );
+        }
+        missingInputs.push(
+          ...fleetFactMissingInputs(
+            trace.blockingUnknowns,
+            applicabilityInput.aircraftNumber,
+            applicabilityInput.assessmentAsOf,
+          ),
+        );
+      }
     }
 
     const assetId = resolution.provenance?.assetId ?? null;
@@ -1487,6 +1514,34 @@ function fleetResolutionMissingInputs(
     })),
   ];
   return values.sort((left, right) => left.code.localeCompare(right.code));
+}
+
+function fleetFactMissingInputs(
+  blockingUnknowns: BlockingUnknown[],
+  aircraftNumber: string,
+  assessmentAsOf: string,
+): OpenClawTaskEnvelope['hostResolvedMissingInputs'] {
+  return blockingUnknowns
+    .map((item) => {
+      const property = requiredText(
+        item.property,
+        'APPLICABILITY_MISSING_FACT_PROPERTY_REQUIRED',
+      );
+      const qualifier =
+        typeof item.qualifier === 'string' && item.qualifier.trim()
+          ? item.qualifier.trim()
+          : null;
+      const factKey = qualifier ? `${property}[${qualifier}]` : property;
+      return {
+        code: `FLEET_MISSING_CONTROLLED_FACT_${missingFactCodePart(property)}_${missingFactCodePart(qualifier ?? 'UNQUALIFIED')}`,
+        message: `Controlled Fleet fact ${factKey} is unavailable for aircraft ${aircraftNumber} as of ${assessmentAsOf}.`,
+      };
+    })
+    .sort((left, right) => left.code.localeCompare(right.code));
+}
+
+function missingFactCodePart(value: string): string {
+  return value.replace(/[^A-Za-z0-9]+/gu, '_').toUpperCase();
 }
 
 function normalizeAircraftNumber(value: string): string {

@@ -246,6 +246,90 @@ describe('CanonicalHostOpenClawApplicabilityService', () => {
     expect(harness.registrar.compareAndSet).not.toHaveBeenCalled();
   });
 
+  it('preflights frozen deterministic AIMS-2 against Host Fleet facts and skips the applicability model', async () => {
+    const harness = applicabilityHarness({
+      packageNormalizedCandidates: [
+        {
+          candidateId: 'CANDIDATE-777-AIMS2',
+          language: 'techpub-applicability-expr.v1',
+          confidence: 'deterministic',
+          sourceExpressionIds: ['EXP-1'],
+          expression: {
+            operator: 'all',
+            children: [
+              {
+                operator: 'predicate',
+                predicate: {
+                  property: 'model',
+                  comparator: 'eq',
+                  values: ['777'],
+                },
+              },
+              {
+                operator: 'predicate',
+                predicate: {
+                  property: 'equipmentModelInstalled',
+                  comparator: 'eq',
+                  values: ['AIMS-2'],
+                },
+              },
+            ],
+          },
+          authority: 'parser_candidate',
+        },
+      ],
+    });
+    harness.mutateCurrent((current) => {
+      current.applicabilityInput!.aircraftNumber = 'B-1266';
+      current.applicabilityInput!.fleetMasterData.assets = [
+        {
+          assetId: 'AIRCRAFT:MODEL_MSN:B777_39L_65300',
+          assetVersionId: 'AIRCRAFT-VERSION:B1266',
+          aircraftNumber: 'B-1266',
+          fleetFamily: 'B777',
+          aircraftModel: 'B777-39L',
+          series: '777-300ER',
+          sourceRef: {
+            sourceTable: 'canonical_fleet_aircraft_asset_version',
+            sourceRecordId: 'AIRCRAFT:MODEL_MSN:B777_39L_65300',
+          },
+          recordHash: 'asset-record-hash-b1266',
+        },
+      ];
+      current.applicabilityInput!.fleetMasterData.facts = [];
+    });
+
+    const begin = await harness.begin();
+    expect(begin.task.hostResolvedMissingInputs).toEqual([
+      {
+        code: 'FLEET_MISSING_CONTROLLED_FACT_EQUIPMENTMODELINSTALLED_AIMS2',
+        message:
+          'Controlled Fleet fact equipmentModelInstalled[AIMS2] is unavailable for aircraft B-1266 as of 2026-08-27.',
+      },
+    ]);
+    const waiting = harness.resultFor(candidateFor(begin), {
+      status: 'WAITING_INPUT',
+      businessOutcome: 'WAITING_INPUT',
+      candidateStatus: 'WAITING_INPUT',
+      modelOutput: null,
+      factsConsidered: [],
+      missingInputs: structuredClone(begin.task.hostResolvedMissingInputs),
+    });
+
+    await expect(
+      harness.service.commit(
+        begin.attemptRef,
+        begin.leaseToken,
+        begin.leaseGeneration,
+        waiting,
+      ),
+    ).resolves.toMatchObject({ status: 'WAITING_INPUT' });
+    expect(
+      harness.artifactStore.stageCandidateAndReadback,
+    ).not.toHaveBeenCalled();
+    expect(harness.registrar.compareAndSet).not.toHaveBeenCalled();
+  });
+
   it('rejects model-invented WAIT/MODEL_AST_UNSUPPORTED with zero mutation', async () => {
     const harness = applicabilityHarness();
     const begin = await harness.begin();
@@ -635,6 +719,7 @@ function applicabilityHarness(
     expiredLease?: boolean;
     expectedGeneration?: number;
     packageAssignments?: unknown[];
+    packageNormalizedCandidates?: unknown[];
     afterPrepare?: (
       current: CanonicalWorkItemProjection,
       row: ActionAttemptRow,
@@ -671,6 +756,7 @@ function applicabilityHarness(
             sourceRefIds: ['SRC-1'],
           },
         ],
+        normalizedCandidates: options.packageNormalizedCandidates ?? [],
         assignments: packageAssignments,
       },
     }),
@@ -705,7 +791,11 @@ function applicabilityHarness(
       execution: { actionAttemptId: 'ATT-TRANSLATE-1' },
     }),
   );
-  let current = parsedWorkItem(packageBytes, bilingualBytes);
+  let current = parsedWorkItem(
+    packageBytes,
+    bilingualBytes,
+    options.packageNormalizedCandidates?.length ?? 0,
+  );
   let ownerInput = structuredClone(current.applicabilityInput!);
   let task: OpenClawTaskEnvelope | null = null;
   let row: ActionAttemptRow | null = null;
@@ -1030,6 +1120,7 @@ function candidateFor(begin: {
 function parsedWorkItem(
   packageBytes: Uint8Array,
   bilingualBytes: Uint8Array,
+  normalizedCandidateCount = 0,
 ): CanonicalWorkItemProjection {
   return {
     schemaVersion: 'wiselink.3_1.canonical_work_item_projection.v0.candidate',
@@ -1083,7 +1174,7 @@ function parsedWorkItem(
         qualityStatus: 'PASS',
         applicability: {
           sourceExpressionCount: 1,
-          normalizedCandidateCount: 0,
+          normalizedCandidateCount,
           assignmentCount: 1,
         },
         assessmentAutoAdoptionAllowed: false,

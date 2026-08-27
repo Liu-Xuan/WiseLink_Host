@@ -1151,6 +1151,7 @@ function buildFixture() {
             sourceRefIds: ['SRC-C4'],
           },
         ],
+        normalizedCandidates: [],
         assignments: [
           {
             assignmentId: 'ASSIGN-C4',

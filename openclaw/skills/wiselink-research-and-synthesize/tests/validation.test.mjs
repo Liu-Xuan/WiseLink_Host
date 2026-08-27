@@ -212,8 +212,9 @@ test('continues INITIAL_ANALYSIS from AIMS-2 WAITING to preliminary overall', as
   const applicabilityInput = await readJson(APPLICABILITY_TASK_FIXTURE_URL);
   const missingInputs = [
     {
-      code: 'FLEET_MISSING_CONTROLLED_FACT_equipmentModelInstalled',
-      message: 'Controlled AIMS-2 configuration fact is not connected.',
+      code: 'FLEET_MISSING_CONTROLLED_FACT_EQUIPMENTMODELINSTALLED_AIMS2',
+      message:
+        'Controlled Fleet fact equipmentModelInstalled[AIMS2] is unavailable for aircraft B-1266 as of 2026-08-27.',
     },
   ];
   const applicabilityTask = makeTask(
@@ -302,7 +303,7 @@ test('continues INITIAL_ANALYSIS from AIMS-2 WAITING to preliminary overall', as
 
   const overallInput = synthesisInput();
   overallInput.baseRuleResult.items[0].missingInputs = [
-    'Controlled AIMS-2 configuration fact is not connected.',
+    missingInputs[0].message,
   ];
   const overallOutput = synthesisOutput(overallInput);
   overallOutput.gap = 'AIMS-2 configuration data is not connected.';
@@ -315,9 +316,7 @@ test('continues INITIAL_ANALYSIS from AIMS-2 WAITING to preliminary overall', as
     assumptions: [],
     uncertainty: 'AIMS-2 构型数据未接入，适用性需人工或后续数据确认。',
   };
-  overallOutput.missingInputs = [
-    'Controlled AIMS-2 configuration fact is not connected.',
-  ];
+  overallOutput.missingInputs = [missingInputs[0].message];
   const overallTask = makeTask('OPENCLAW_OVERALL_SYNTHESIS', {
     modelInput: overallInput,
     selectedDiscoveryRefs: [],

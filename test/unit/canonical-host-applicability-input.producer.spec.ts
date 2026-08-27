@@ -127,6 +127,7 @@ function producerHarness() {
             sourceRefIds: ['SRC-1'],
           },
         ],
+        normalizedCandidates: [],
         assignments: [
           {
             assignmentId: 'ASSIGN-1',

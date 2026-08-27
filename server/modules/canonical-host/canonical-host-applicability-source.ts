@@ -3,18 +3,26 @@ import type {
   UnifiedReaderQueryResult,
 } from '@shared/api.interface';
 import { canonicalSha256 } from '../action-attempt/action-attempt-envelope';
+import type {
+  ApplicabilityAstNode,
+  ApplicabilityFragment,
+} from '../assessment-workbench/applicability-fleet/applicabilityKleeneEngine';
+import { getRegistry } from '../assessment-workbench/applicability-fleet/applicabilityPropertyRegistry';
 import { assertNoDuplicateJsonKeys } from '../unified-reader/unified-reader.utils';
 import type { ApplicabilityTaskSourceExpression } from './canonical-host-openclaw-applicability.contract';
 
 export interface CanonicalFrozenApplicabilitySourceBinding {
   sourceExpressions: ApplicabilityTaskSourceExpression[];
+  deterministicFragments: ApplicabilityFragment[];
   targetBindingHash: string;
 }
 
 /**
  * Parses the already full-validated frozen.2 package into the one Host-owned
- * expression-to-target binding used by EXTRACT_APPLICABILITY. This is a
- * binding reader only; it does not parse or evaluate applicability predicates.
+ * expression-to-target binding used by EXTRACT_APPLICABILITY. Deterministic
+ * normalized candidates already produced inside frozen.2 are mapped onto the
+ * existing Host evaluator AST; this reader neither extracts source text nor
+ * evaluates Fleet facts.
  */
 export function readFrozenApplicabilitySourceBinding(input: {
   bytes: Uint8Array;
@@ -58,10 +66,16 @@ export function readFrozenApplicabilitySourceBinding(input: {
     applicability.assignments,
     'APPLICABILITY_ASSIGNMENTS_INVALID',
   );
+  const normalizedCandidateRows = array(
+    applicability.normalizedCandidates,
+    'APPLICABILITY_NORMALIZED_CANDIDATES_INVALID',
+  );
   const expected = input.workItem.package?.usagePolicy?.applicability;
   if (
     (expected?.sourceExpressionCount !== undefined &&
       expected.sourceExpressionCount !== expressionRows.length) ||
+    (expected?.normalizedCandidateCount !== undefined &&
+      expected.normalizedCandidateCount !== normalizedCandidateRows.length) ||
     (expected?.assignmentCount !== undefined &&
       expected.assignmentCount !== assignmentRows.length)
   ) {
@@ -180,8 +194,59 @@ export function readFrozenApplicabilitySourceBinding(input: {
   ) {
     throw new Error('APPLICABILITY_EXPRESSION_TARGET_MAPPING_REQUIRED');
   }
+  const sourceExpressionById = new Map(
+    sourceExpressions.map((expression) => [
+      expression.expressionId,
+      expression,
+    ]),
+  );
+  const deterministicExpressionIds = new Set<string>();
+  const deterministicFragments = normalizedCandidateRows.flatMap((value) => {
+    const candidate = record(
+      value,
+      'APPLICABILITY_NORMALIZED_CANDIDATE_INVALID',
+    );
+    requiredText(
+      candidate.candidateId,
+      'APPLICABILITY_NORMALIZED_CANDIDATE_ID_REQUIRED',
+    );
+    if (
+      candidate.language !== 'techpub-applicability-expr.v1' ||
+      candidate.authority !== 'parser_candidate'
+    ) {
+      throw new Error('APPLICABILITY_NORMALIZED_CANDIDATE_INVALID');
+    }
+    const sourceExpressionIds = requiredStringArray(
+      candidate.sourceExpressionIds,
+      'APPLICABILITY_NORMALIZED_CANDIDATE_SOURCE_IDS_INVALID',
+    );
+    if (
+      sourceExpressionIds.some(
+        (expressionId) => !sourceExpressionById.has(expressionId),
+      )
+    ) {
+      throw new Error('APPLICABILITY_NORMALIZED_CANDIDATE_BINDING_INVALID');
+    }
+    if (candidate.confidence !== 'deterministic') return [];
+    const expressionAst = deterministicExpressionAst(candidate.expression);
+    return sourceExpressionIds.map((expressionId) => {
+      if (deterministicExpressionIds.has(expressionId)) {
+        throw new Error('APPLICABILITY_DETERMINISTIC_CANDIDATE_NOT_UNIQUE');
+      }
+      deterministicExpressionIds.add(expressionId);
+      const sourceExpression = sourceExpressionById.get(expressionId)!;
+      return {
+        ruleFragmentId: expressionId,
+        extractionStatus: 'extracted',
+        applicabilityLevel: sourceExpression.applicabilityLevel,
+        contentRef: sourceExpression.contentRef,
+        expressionAst: structuredClone(expressionAst),
+      } satisfies ApplicabilityFragment;
+    });
+  });
   return {
     sourceExpressions,
+    deterministicFragments,
     targetBindingHash: canonicalSha256(
       sourceExpressions.map((expression) => ({
         expressionId: expression.expressionId,
@@ -195,6 +260,99 @@ export function readFrozenApplicabilitySourceBinding(input: {
       })),
     ),
   };
+}
+
+function deterministicExpressionAst(value: unknown): ApplicabilityAstNode {
+  const expression = record(
+    value,
+    'APPLICABILITY_DETERMINISTIC_EXPRESSION_INVALID',
+  );
+  if (expression.operator === 'predicate') {
+    return deterministicPredicateAst(expression.predicate);
+  }
+  const children = array(
+    expression.children,
+    'APPLICABILITY_DETERMINISTIC_EXPRESSION_CHILDREN_INVALID',
+  );
+  if (expression.operator === 'not') {
+    if (children.length !== 1) {
+      throw new Error('APPLICABILITY_DETERMINISTIC_NOT_ARITY_INVALID');
+    }
+    return { type: 'not', child: deterministicExpressionAst(children[0]) };
+  }
+  if (
+    !['all', 'any'].includes(String(expression.operator)) ||
+    children.length === 0
+  ) {
+    throw new Error('APPLICABILITY_DETERMINISTIC_OPERATOR_UNSUPPORTED');
+  }
+  return {
+    type: expression.operator === 'all' ? 'and' : 'or',
+    children: children.map(deterministicExpressionAst),
+  };
+}
+
+function deterministicPredicateAst(value: unknown): ApplicabilityAstNode {
+  const predicate = record(
+    value,
+    'APPLICABILITY_DETERMINISTIC_PREDICATE_INVALID',
+  );
+  const property = requiredText(
+    predicate.property,
+    'APPLICABILITY_DETERMINISTIC_PROPERTY_REQUIRED',
+  );
+  const operator = requiredText(
+    predicate.comparator,
+    'APPLICABILITY_DETERMINISTIC_COMPARATOR_REQUIRED',
+  );
+  const values = array(
+    predicate.values,
+    'APPLICABILITY_DETERMINISTIC_VALUES_INVALID',
+  );
+  const definition = getRegistry().properties.find(
+    (entry) => entry.property === property,
+  );
+  if (!definition || !definition.supportedOperators.includes(operator)) {
+    throw new Error('APPLICABILITY_DETERMINISTIC_PREDICATE_UNSUPPORTED');
+  }
+  if (definition.qualifierNormalizer !== null) {
+    if (
+      definition.valueType !== 'boolean' ||
+      !['eq', 'neq'].includes(operator) ||
+      values.length !== 1 ||
+      typeof values[0] !== 'string' ||
+      !values[0].trim()
+    ) {
+      throw new Error('APPLICABILITY_DETERMINISTIC_QUALIFIER_INVALID');
+    }
+    return {
+      type: 'assert',
+      property,
+      operator,
+      value: true,
+      qualifier: values[0],
+    };
+  }
+  let expectedValue: unknown;
+  if (['eq', 'neq', 'gte', 'lte'].includes(operator)) {
+    if (values.length !== 1) {
+      throw new Error('APPLICABILITY_DETERMINISTIC_VALUE_ARITY_INVALID');
+    }
+    [expectedValue] = values;
+  } else if (['in', 'not_in'].includes(operator)) {
+    if (values.length === 0) {
+      throw new Error('APPLICABILITY_DETERMINISTIC_VALUE_ARITY_INVALID');
+    }
+    expectedValue = [...values];
+  } else if (operator === 'range') {
+    if (values.length !== 2) {
+      throw new Error('APPLICABILITY_DETERMINISTIC_VALUE_ARITY_INVALID');
+    }
+    expectedValue = { min: values[0], max: values[1] };
+  } else {
+    throw new Error('APPLICABILITY_DETERMINISTIC_PREDICATE_UNSUPPORTED');
+  }
+  return { type: 'assert', property, operator, value: expectedValue };
 }
 
 function requiredTargetKind(
