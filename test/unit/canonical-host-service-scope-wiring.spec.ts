@@ -8,6 +8,8 @@ jest.mock('@nestjs/common', () => {
     Body: noOpDecorator,
     Controller: noOpDecorator,
     Get: noOpDecorator,
+    Head: noOpDecorator,
+    Headers: noOpDecorator,
     HttpCode: noOpDecorator,
     Param: noOpDecorator,
     Post: noOpDecorator,

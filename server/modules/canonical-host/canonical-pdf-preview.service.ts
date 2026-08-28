@@ -1,5 +1,3 @@
-import { randomBytes } from 'node:crypto';
-
 import { FileService } from '@lark-apaas/fullstack-nestjs-core';
 import { Inject, Injectable } from '@nestjs/common';
 
@@ -22,25 +20,15 @@ import type {
   CanonicalPermissionSnapshotPort,
   CanonicalWorkItemRegistrarPort,
 } from './canonical-host.types';
+import {
+  CANONICAL_PDF_PREVIEW_LOCATOR_CODEC,
+  PDF_PREVIEW_LOCATOR_TTL_MS,
+  PDF_PREVIEW_MAX_SOURCE_BYTES,
+  type CanonicalPdfPreviewGrant,
+  type CanonicalPdfPreviewLocatorCodec,
+} from './canonical-pdf-preview-locator.codec';
 
 const PDF_MEDIA_TYPE = 'application/pdf' as const;
-const PREVIEW_TTL_MS = 12 * 60 * 1000;
-const PREVIEW_MAX_BYTES = 25 * 1024 * 1024;
-const PREVIEW_MAX_GRANTS = 2_048;
-
-interface CanonicalPdfPreviewGrant {
-  actorUserId: string;
-  tenantId: string;
-  workItemId: string;
-  requestId: string;
-  workItemRevision: number;
-  documentVersionId: string;
-  sourceArtifactId: string;
-  sourceSha256: string;
-  sourceByteLength: number;
-  providerObjectId: string;
-  expiresAtMs: number;
-}
 
 interface BoundPdfSource {
   projection: CanonicalWorkItemProjection;
@@ -64,7 +52,6 @@ export type CanonicalPdfPreviewReadResult =
 
 @Injectable()
 export class CanonicalPdfPreviewService {
-  private readonly grants = new Map<string, CanonicalPdfPreviewGrant>();
   private readonly sources: MiaodaFileServiceArtifactStore;
 
   constructor(
@@ -75,10 +62,12 @@ export class CanonicalPdfPreviewService {
     @Inject(CANONICAL_PERMISSION_SNAPSHOT)
     private readonly permissionSnapshots: CanonicalPermissionSnapshotPort,
     private readonly documentVersions: MiaodaDocumentVersionSourceResolver,
+    @Inject(CANONICAL_PDF_PREVIEW_LOCATOR_CODEC)
+    private readonly locatorCodec: CanonicalPdfPreviewLocatorCodec,
     fileService: FileService,
   ) {
     this.sources = new MiaodaFileServiceArtifactStore(fileService, {
-      maxBytes: PREVIEW_MAX_BYTES,
+      maxBytes: PDF_PREVIEW_MAX_SOURCE_BYTES,
     });
   }
 
@@ -86,7 +75,10 @@ export class CanonicalPdfPreviewService {
     projection: CanonicalWorkItemProjection,
     actor: CanonicalHostActor,
   ): Promise<CanonicalPdfPreviewProjection> {
-    if (projection.source.sourceByteLength > PREVIEW_MAX_BYTES) {
+    if (!this.locatorCodec.configured) {
+      return unavailable('PDF_PREVIEW_NOT_CONFIGURED', false);
+    }
+    if (projection.source.sourceByteLength > PDF_PREVIEW_MAX_SOURCE_BYTES) {
       return unavailable('PDF_PREVIEW_SOURCE_TOO_LARGE', false);
     }
     try {
@@ -107,13 +99,14 @@ export class CanonicalPdfPreviewService {
         return unavailable('PDF_PREVIEW_SOURCE_IDENTITY_INVALID', false);
       }
 
-      const nowMs: number = Date.now();
-      this.prune(nowMs);
-      const opaqueLocator: string = this.newLocator();
-      const expiresAtMs: number = nowMs + PREVIEW_TTL_MS;
-      this.grants.set(opaqueLocator, {
+      const issuedAtMs: number = Date.now();
+      const expiresAtMs: number = issuedAtMs + PDF_PREVIEW_LOCATOR_TTL_MS;
+      const opaqueLocator: string = this.locatorCodec.encode({
+        version: 1,
         actorUserId: actor.userId,
         tenantId: actor.tenantId,
+        appId: actor.appId,
+        env: actor.env,
         workItemId: projection.workItemId,
         requestId: projection.requestId,
         workItemRevision: projection.revision,
@@ -122,6 +115,7 @@ export class CanonicalPdfPreviewService {
         sourceSha256: projection.source.sourceFileSha256,
         sourceByteLength: projection.source.sourceByteLength,
         providerObjectId: source.artifact.providerObjectId,
+        issuedAtMs,
         expiresAtMs,
       });
       return {
@@ -193,20 +187,22 @@ export class CanonicalPdfPreviewService {
     workItemId: string;
     opaqueLocator: string;
   }): CanonicalPdfPreviewGrant {
-    const locator: string = input.opaqueLocator.trim();
-    const grant: CanonicalPdfPreviewGrant | undefined =
-      this.grants.get(locator);
-    if (
-      !grant ||
-      grant.workItemId !== input.workItemId ||
-      grant.actorUserId !== input.actor.userId ||
-      grant.tenantId !== input.actor.tenantId
-    ) {
+    const decoded = this.locatorCodec.decode(input.opaqueLocator, Date.now());
+    if (decoded.status === 'EXPIRED') {
+      throw previewError('PDF_PREVIEW_LOCATOR_EXPIRED', 410);
+    }
+    if (decoded.status !== 'VALID') {
       throw previewError('PDF_PREVIEW_NOT_FOUND', 404);
     }
-    if (Date.now() >= grant.expiresAtMs) {
-      this.grants.delete(locator);
-      throw previewError('PDF_PREVIEW_LOCATOR_EXPIRED', 410);
+    const grant: CanonicalPdfPreviewGrant = decoded.grant;
+    if (
+      grant.workItemId !== input.workItemId ||
+      grant.actorUserId !== input.actor.userId ||
+      grant.tenantId !== input.actor.tenantId ||
+      grant.appId !== input.actor.appId ||
+      grant.env !== input.actor.env
+    ) {
+      throw previewError('PDF_PREVIEW_NOT_FOUND', 404);
     }
     return grant;
   }
@@ -300,25 +296,6 @@ export class CanonicalPdfPreviewService {
       }
       if (status === 404) throw previewError('PDF_PREVIEW_NOT_FOUND', 404);
       throw previewError('PDF_PREVIEW_SERVICE_UNAVAILABLE', 503);
-    }
-  }
-
-  private newLocator(): string {
-    let locator: string;
-    do {
-      locator = randomBytes(32).toString('base64url');
-    } while (this.grants.has(locator));
-    return locator;
-  }
-
-  private prune(nowMs: number): void {
-    for (const [locator, grant] of this.grants) {
-      if (grant.expiresAtMs <= nowMs) this.grants.delete(locator);
-    }
-    while (this.grants.size >= PREVIEW_MAX_GRANTS) {
-      const oldest: string | undefined = this.grants.keys().next().value;
-      if (!oldest) break;
-      this.grants.delete(oldest);
     }
   }
 }

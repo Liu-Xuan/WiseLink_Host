@@ -15,6 +15,7 @@ import { CanonicalHostVerticalService } from './canonical-host-vertical.service'
 import { CanonicalHostController } from './canonical-host.controller';
 import { CanonicalPdfPreviewController } from './canonical-pdf-preview.controller';
 import { CanonicalPdfPreviewService } from './canonical-pdf-preview.service';
+import { canonicalPdfPreviewLocatorCodecProvider } from './canonical-pdf-preview-locator.codec';
 import { CanonicalHostOpenApiController } from './canonical-host.openapi.controller';
 import { CanonicalHostMcpOpenApiController } from './canonical-host-mcp.openapi.controller';
 import { CanonicalHostMcpService } from './canonical-host-mcp.service';
@@ -131,6 +132,7 @@ export interface CanonicalHostModuleOptions {
     CanonicalEntryFacadeService,
     CanonicalFailureRecordingService,
     CanonicalHostVerticalService,
+    canonicalPdfPreviewLocatorCodecProvider(),
     CanonicalPdfPreviewService,
     CanonicalHostMcpService,
     CanonicalHostOpenClawMcpService,
@@ -308,6 +310,7 @@ export class CanonicalHostModule {
         CanonicalEntryFacadeService,
         CanonicalFailureRecordingService,
         CanonicalHostVerticalService,
+        canonicalPdfPreviewLocatorCodecProvider(),
         CanonicalPdfPreviewService,
         CanonicalHostMcpService,
         CanonicalHostOpenClawMcpService,

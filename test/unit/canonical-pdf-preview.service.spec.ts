@@ -9,6 +9,7 @@ jest.mock(
 
 import type { CanonicalWorkItemProjection } from '@shared/api.interface';
 
+import { createCanonicalPdfPreviewLocatorCodec } from '../../server/modules/canonical-host/canonical-pdf-preview-locator.codec';
 import { CanonicalPdfPreviewService } from '../../server/modules/canonical-host/canonical-pdf-preview.service';
 import type { CanonicalHostActor } from '../../server/modules/canonical-host/canonical-host.types';
 import { MiaodaFileServiceArtifactStore } from '../../server/modules/document-management/src/hosted/miaodaFileServiceArtifactStore.js';
@@ -20,6 +21,8 @@ const PDF_BYTES = readFileSync(
   ),
 );
 const PDF_SHA256 = createHash('sha256').update(PDF_BYTES).digest('hex');
+const LOCATOR_KEY = Buffer.alloc(32, 0x31).toString('base64url');
+const OTHER_LOCATOR_KEY = Buffer.alloc(32, 0x72).toString('base64url');
 const ACTOR: CanonicalHostActor = {
   userId: 'engineer-1001',
   tenantId: 'tenant-2001',
@@ -109,7 +112,7 @@ function resolvedSource(value: CanonicalWorkItemProjection) {
   };
 }
 
-function target(): TestTarget {
+function target(options: { locatorKey?: string | null } = {}): TestTarget {
   const value: CanonicalWorkItemProjection = projection();
   const authorization = {
     authorize: jest.fn().mockResolvedValue({
@@ -156,6 +159,11 @@ function target(): TestTarget {
       authorization as never,
       permissionSnapshots as never,
       resolver as never,
+      createCanonicalPdfPreviewLocatorCodec(
+        options.locatorKey === null
+          ? undefined
+          : (options.locatorKey ?? LOCATOR_KEY),
+      ),
       {} as never,
     ),
   };
@@ -187,7 +195,7 @@ describe('CanonicalPdfPreviewService', () => {
       supportsRange: false,
       navigation: 'PAGE_START',
     });
-    expect(preview.opaqueLocator).toMatch(/^[A-Za-z0-9_-]{43}$/u);
+    expect(preview.opaqueLocator).toMatch(/^v1\.[A-Za-z0-9_-]+$/u);
     for (const secret of [
       'DOC-INTERNAL-1001',
       'REQ-PDF-1001',
@@ -197,6 +205,8 @@ describe('CanonicalPdfPreviewService', () => {
       'BUCKET-INTERNAL-1001',
       '/controlled/internal/source.pdf',
       'PROVIDER-INTERNAL-1001',
+      PDF_SHA256,
+      LOCATOR_KEY,
     ]) {
       expect(serialized).not.toContain(secret);
     }
@@ -229,19 +239,108 @@ describe('CanonicalPdfPreviewService', () => {
     );
   });
 
-  it('returns 404 for a locator presented by another user', async () => {
-    const testTarget: TestTarget = target();
-    const preview = await availablePreview(testTarget);
+  it('reads a locator issued by another service instance configured with the same key', async () => {
+    const issuer: TestTarget = target();
+    const reader: TestTarget = target();
+    const preview = await availablePreview(issuer);
 
     await expect(
-      testTarget.service.read({
-        actor: { ...ACTOR, userId: 'engineer-2002' },
-        workItemId: testTarget.projection.workItemId,
+      reader.service.read({
+        actor: ACTOR,
+        workItemId: reader.projection.workItemId,
         opaqueLocator: preview.opaqueLocator,
         method: 'GET',
         range: null,
       }),
-    ).rejects.toMatchObject({ code: 'PDF_PREVIEW_NOT_FOUND', statusCode: 404 });
+    ).resolves.toEqual({
+      kind: 'FULL',
+      byteLength: PDF_BYTES.byteLength,
+      bytes: PDF_BYTES,
+    });
+    expect(reader.authorization.authorize).toHaveBeenCalledTimes(1);
+    expect(reader.sourceStore.readSelection).toHaveBeenCalledTimes(1);
+  });
+
+  it('uniformly returns 404 for another key, a tampered locator, and an unknown version', async () => {
+    const issuer: TestTarget = target();
+    const preview = await availablePreview(issuer);
+    const readers: Array<{ target: TestTarget; locator: string }> = [
+      {
+        target: target({ locatorKey: OTHER_LOCATOR_KEY }),
+        locator: preview.opaqueLocator,
+      },
+      {
+        target: target(),
+        locator: `${preview.opaqueLocator.slice(0, -1)}${
+          preview.opaqueLocator.endsWith('A') ? 'B' : 'A'
+        }`,
+      },
+      {
+        target: target(),
+        locator: preview.opaqueLocator.replace(/^v1\./u, 'v2.'),
+      },
+    ];
+
+    for (const reader of readers) {
+      await expect(
+        reader.target.service.read({
+          actor: ACTOR,
+          workItemId: reader.target.projection.workItemId,
+          opaqueLocator: reader.locator,
+          method: 'GET',
+          range: null,
+        }),
+      ).rejects.toMatchObject({
+        code: 'PDF_PREVIEW_NOT_FOUND',
+        message: 'PDF_PREVIEW_NOT_FOUND',
+        statusCode: 404,
+      });
+      expect(reader.target.authorization.authorize).not.toHaveBeenCalled();
+      expect(reader.target.sourceStore.readSelection).not.toHaveBeenCalled();
+    }
+  });
+
+  it('keeps preview unavailable when the dedicated key is missing or invalid', async () => {
+    for (const testTarget of [
+      target({ locatorKey: null }),
+      target({ locatorKey: 'not-a-32-byte-key' }),
+      target({ locatorKey: ` ${LOCATOR_KEY}` }),
+    ]) {
+      await expect(
+        testTarget.service.issue(testTarget.projection, ACTOR),
+      ).resolves.toEqual({
+        status: 'UNAVAILABLE',
+        reason: 'PDF_PREVIEW_NOT_CONFIGURED',
+        retryable: false,
+      });
+      expect(testTarget.resolver.resolve).not.toHaveBeenCalled();
+    }
+  });
+
+  it('returns 404 before authorization when any actor scope binding differs', async () => {
+    const testTarget: TestTarget = target();
+    const preview = await availablePreview(testTarget);
+    const mismatchedActors: CanonicalHostActor[] = [
+      { ...ACTOR, userId: 'engineer-2002' },
+      { ...ACTOR, tenantId: 'tenant-2002' },
+      { ...ACTOR, appId: 'app_wrong' },
+      { ...ACTOR, env: 'runtime' },
+    ];
+
+    for (const actor of mismatchedActors) {
+      await expect(
+        testTarget.service.read({
+          actor,
+          workItemId: testTarget.projection.workItemId,
+          opaqueLocator: preview.opaqueLocator,
+          method: 'GET',
+          range: null,
+        }),
+      ).rejects.toMatchObject({
+        code: 'PDF_PREVIEW_NOT_FOUND',
+        statusCode: 404,
+      });
+    }
     expect(testTarget.authorization.authorize).not.toHaveBeenCalled();
   });
 
