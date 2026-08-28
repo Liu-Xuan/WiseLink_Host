@@ -166,7 +166,11 @@ test('R09 C7 official FileService actual PDF bytes -> DM binding -> parsed artif
 
 test('legacy unresolved Review residual recovers only under exact new-request scope and actual bytes', async () => {
   const bucketId = 'bucket-review-c7-residual';
-  const selectionPath = 'official-selection/residual-note.pdf';
+  const selectionPath = [
+    'wiselink/dev-intake',
+    '00000000-0000-4000-8000-000000000001',
+    'residual-note.pdf',
+  ].join('/');
   const pdfBytes = Uint8Array.from(
     readFileSync(
       resolve(
@@ -205,6 +209,55 @@ test('legacy unresolved Review residual recovers only under exact new-request sc
   assert.equal(immutable.readbackVerified, true);
 
   const catalog = new InMemoryHostedDocumentCatalog();
+  const documentManagement = new DocumentManagementHostedService(
+    fileService,
+    catalog,
+    new OrdinaryDocumentManagementAuthorizer({}, fileService),
+  );
+  const previousOrdinarySandboxId = process.env.SANDBOX_ID;
+  const previousOrdinaryLocalDev = process.env.MIAODA_LOCAL_DEV;
+  process.env.SANDBOX_ID = 'review-attachment-ordinary-companion';
+  delete process.env.MIAODA_LOCAL_DEV;
+  let ordinaryBinding;
+  try {
+    ordinaryBinding = await documentManagement.ingestFileServiceSelection(
+      {
+        selection: { bucketId, filePath: selectionPath },
+        sourceChannel: 'canonical_miaoda_document_selection',
+        sourceRef: 'ordinary:completed-lineage',
+        idempotencyKey: 'ordinary:completed-lineage',
+        descriptor: {
+          documentCode: 'ORDINARY-RESIDUAL-COMPANION',
+          documentFamily: 'OEM_REFERENCE',
+          issuer: 'BOEING',
+          businessRevision: '1',
+          revisionDate: '2026-08-27',
+          sourceGeneratedDate: '2026-08-27',
+          documentCodeProvenance: {
+            schemaVersion: 'wiselink.document_code_provenance.v1',
+            source: 'controlled_metadata',
+            candidates: ['ORDINARY-RESIDUAL-COMPANION'],
+            inspectedSha256: actualSha256,
+            conflict: false,
+          },
+        },
+      },
+      {
+        actorUserId: 'actor-C7',
+        tenantId: 'tenant-C7',
+        roles: ['wiselink_development'],
+        appId: 'app_17bzc551rsg',
+        env: 'preview',
+      },
+    );
+  } finally {
+    restoreProcessEnv('SANDBOX_ID', previousOrdinarySandboxId);
+    restoreProcessEnv('MIAODA_LOCAL_DEV', previousOrdinaryLocalDev);
+  }
+  assert.equal(catalog.versionCount, 1);
+  assert.equal(catalog.acquisitionCount, 1);
+  assert.equal(catalog.commitCount, 1);
+
   const legacyRequestRef = 'legacy-request-C7';
   const legacySourceRef = `ATTACHMENT:RC-C7:${legacyRequestRef}`;
   const legacyIdempotencyKey =
@@ -265,6 +318,13 @@ test('legacy unresolved Review residual recovers only under exact new-request sc
     actorUserId: 'actor-C7',
     workItemId: 'WI-C7',
     revision: 7,
+    sourceArtifactId,
+    documentId: ordinaryBinding.documentId,
+    documentVersionId: ordinaryBinding.documentVersionId,
+  });
+  catalog.seedActionAttempt({
+    attemptId: 'ATTEMPT-ORDINARY-C7',
+    workItemId: 'WI-C7',
   });
   catalog.seedLegacyReviewResidual({
     sourceArtifact: {
@@ -344,6 +404,13 @@ test('legacy unresolved Review residual recovers only under exact new-request sc
     workItemId: 'WI-C7',
     expectedRevision: 7,
   };
+  assert.equal(
+    classifyReviewAttachmentResidualReuseState(
+      { ...reuseInput, serverBoundReviewAttachmentScope },
+      residualState,
+    ).disposition,
+    'REVIEW_ATTACHMENT_RESIDUAL_RECOVERY_ALLOWED',
+  );
   assert.throws(
     () => classifyReviewAttachmentResidualReuseState(
       {
@@ -356,6 +423,37 @@ test('legacy unresolved Review residual recovers only under exact new-request sc
       residualState,
     ),
     (error) => error?.code === 'REVIEW_ATTACHMENT_RESIDUAL_SCOPE_CONFLICT',
+  );
+  assert.throws(
+    () => classifyReviewAttachmentResidualReuseState(
+      {
+        ...reuseInput,
+        serverBoundReviewAttachmentScope: {
+          ...serverBoundReviewAttachmentScope,
+          workItemId: 'WI-OTHER',
+        },
+      },
+      residualState,
+    ),
+    (error) => error?.code === 'REVIEW_ATTACHMENT_RESIDUAL_SCOPE_CONFLICT',
+  );
+  assert.throws(
+    () => classifyReviewAttachmentResidualReuseState(
+      { ...reuseInput, serverBoundReviewAttachmentScope },
+      {
+        ...residualState,
+        versions: [
+          ...residualState.versions,
+          {
+            sourceArtifactId,
+            acquisitionId: legacyAcquisitionId,
+            documentVersionId: 'DV-RESIDUAL-C7',
+          },
+        ],
+      },
+    ),
+    (error) =>
+      error?.code === 'REVIEW_ATTACHMENT_RESIDUAL_DOWNSTREAM_PRESENT',
   );
   assert.throws(
     () => classifyReviewAttachmentResidualReuseState(
@@ -373,18 +471,67 @@ test('legacy unresolved Review residual recovers only under exact new-request sc
       { ...reuseInput, serverBoundReviewAttachmentScope },
       {
         ...residualState,
-        downstreamWorkItems: [{ workItemId: 'WI-DOWNSTREAM' }],
+        downstreamWorkItems: [
+          ...residualState.downstreamWorkItems,
+          {
+            workItemId: 'WI-DOWNSTREAM',
+            sourceArtifactId,
+            documentId: 'DOCUMENT-DOWNSTREAM',
+            documentVersionId: 'DV-DOWNSTREAM',
+          },
+        ],
       },
     ),
     (error) =>
       error?.code === 'REVIEW_ATTACHMENT_RESIDUAL_DOWNSTREAM_PRESENT',
   );
-
-  const documentManagement = new DocumentManagementHostedService(
-    fileService,
-    catalog,
-    new OrdinaryDocumentManagementAuthorizer({}, fileService),
+  assert.throws(
+    () => classifyReviewAttachmentResidualReuseState(
+      { ...reuseInput, serverBoundReviewAttachmentScope },
+      {
+        ...residualState,
+        actionAttempts: [
+          ...residualState.actionAttempts,
+          {
+            attemptId: 'ATTEMPT-UNPROVEN-C7',
+            workItemId: 'WI-DOWNSTREAM',
+            documentVersionId: ordinaryBinding.documentVersionId,
+          },
+        ],
+      },
+    ),
+    (error) =>
+      error?.code === 'REVIEW_ATTACHMENT_RESIDUAL_DOWNSTREAM_PRESENT',
   );
+  const ordinaryAcquisition = residualState.acquisitions.find(
+    (row) => row.acquisitionId !== legacyAcquisitionId,
+  );
+  assert.ok(ordinaryAcquisition);
+  assert.throws(
+    () => classifyReviewAttachmentResidualReuseState(
+      { ...reuseInput, serverBoundReviewAttachmentScope },
+      {
+        ...residualState,
+        acquisitions: residualState.acquisitions.map((row) =>
+          row.acquisitionId === ordinaryAcquisition.acquisitionId
+            ? {
+                ...row,
+                documentVersionId: null,
+                status: 'ACQUIRED_READBACK_VERIFIED',
+              }
+            : row,
+        ),
+        preflights: residualState.preflights.map((row) =>
+          row.acquisitionId === ordinaryAcquisition.acquisitionId
+            ? { ...row, documentVersionId: null, status: 'READY' }
+            : row,
+        ),
+        versions: [],
+      },
+    ),
+    (error) => error?.code === 'IMMUTABLE_SOURCE_REUSE_DB_PARTIAL',
+  );
+
   const service = new ReviewAttachmentService(
     fileService,
     documentManagement,
@@ -466,11 +613,12 @@ test('legacy unresolved Review residual recovers only under exact new-request sc
   }
 
   assert.equal(catalog.versionCount, 1);
+  assert.equal(binding.documentVersionId, ordinaryBinding.documentVersionId);
   assert.equal(binding.documentVersionId, safeReuseBinding.documentVersionId);
-  assert.equal(catalog.acquisitionCount, 3);
+  assert.equal(catalog.acquisitionCount, 4);
   assert.equal(catalog.legacyResidualCount, 1);
   assert.equal(catalog.commitCount, 1);
-  assert.equal(catalog.exactLinkCount, 1);
+  assert.equal(catalog.exactLinkCount, 2);
   const source = await catalog.resolveDocumentVersionSource(
     binding.documentVersionId,
     { expectedCreatorUserId: 'actor-C7' },
@@ -588,6 +736,9 @@ class InMemoryHostedDocumentCatalog {
     actorUserId,
     workItemId,
     revision,
+    sourceArtifactId,
+    documentId,
+    documentVersionId,
   }) {
     this.#scopeConversations.set(reviewConversationId, {
       reviewConversationId,
@@ -596,12 +747,23 @@ class InMemoryHostedDocumentCatalog {
       workItemId,
       status: 'ACTIVE',
     });
-    this.#scopeWorkItems.set(workItemId, {
+    const scopedWorkItem = {
       workItemId,
       tenantId,
       requestedByUserId: actorUserId,
       revision,
-    });
+      sourceArtifactId,
+      documentId,
+      documentVersionId,
+    };
+    this.#scopeWorkItems.set(workItemId, scopedWorkItem);
+    if (sourceArtifactId && documentId && documentVersionId) {
+      this.#downstreamWorkItems.push(scopedWorkItem);
+    }
+  }
+
+  seedActionAttempt({ attemptId, workItemId }) {
+    this.#actionAttempts.push({ attemptId, workItemId });
   }
 
   seedLegacyReviewResidual({ sourceArtifact, acquisition, preflight }) {
