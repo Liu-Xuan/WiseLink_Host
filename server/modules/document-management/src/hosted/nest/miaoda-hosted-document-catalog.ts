@@ -14,8 +14,14 @@ import {
   dmIngressPreflight,
   dmPublicationFamily,
   dmSourceArtifact,
+  reviewConversation,
   workItem,
 } from '@server/database/schema';
+
+const REVIEW_ATTACHMENT_SOURCE_CHANNEL =
+  'canonical_review_attachment_selection';
+const LEGACY_REVIEW_ATTACHMENT_DECISION =
+  'DOCUMENT_IDENTITY_UNRESOLVED';
 
 function fail(code: string, message: string, details: Record<string, unknown> = {}) {
   throw Object.assign(new Error(message), { code, details });
@@ -45,6 +51,15 @@ type ImmutableSourceReuseInput = {
   filePath: string;
   providerObjectId: string;
   providerVersionId: string;
+  serverBoundReviewAttachmentScope?: {
+    sourceChannel: string;
+    reviewConversationId: string;
+    requestRef: string;
+    actorUserId: string;
+    tenantId: string;
+    workItemId: string;
+    expectedRevision: number;
+  };
 };
 
 type ImmutableSourceReuseState = {
@@ -52,6 +67,14 @@ type ImmutableSourceReuseState = {
   acquisitions: Array<typeof dmAcquisition.$inferSelect>;
   preflights: Array<typeof dmIngressPreflight.$inferSelect>;
   versions: Array<typeof dmDocumentVersion.$inferSelect>;
+};
+
+type ReviewAttachmentResidualReuseState = ImmutableSourceReuseState & {
+  currentness: Array<typeof dmCurrentnessDecision.$inferSelect>;
+  downstreamWorkItems: Array<typeof workItem.$inferSelect>;
+  actionAttempts: unknown[];
+  scopeConversations: Array<typeof reviewConversation.$inferSelect>;
+  scopeWorkItems: Array<typeof workItem.$inferSelect>;
 };
 
 type IncompleteIngestionRecoveryInput = {
@@ -107,6 +130,75 @@ function stableJson(value: unknown): string {
     return `{${entries.map(([key, child]) => `${JSON.stringify(key)}:${stableJson(child)}`).join(',')}}`;
   }
   return JSON.stringify(value);
+}
+
+function recordJson(value: string): Record<string, unknown> {
+  try {
+    const parsed: unknown = parseJson(value);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function recordValue(
+  value: Record<string, unknown>,
+  key: string,
+): Record<string, unknown> {
+  const selected: unknown = value[key];
+  return selected && typeof selected === 'object' && !Array.isArray(selected)
+    ? selected as Record<string, unknown>
+    : {};
+}
+
+function reviewConversationIdFromSourceRef(value: string): string {
+  const prefix = 'ATTACHMENT:';
+  const refBody: string = value.startsWith(prefix)
+    ? value.slice(prefix.length)
+    : '';
+  const separatorIndex: number = refBody.indexOf(':');
+  return separatorIndex > 0 ? refBody.slice(0, separatorIndex).trim() : '';
+}
+
+function reviewRequestRefFromSourceRef(value: string): string {
+  const prefix = 'ATTACHMENT:';
+  const refBody: string = value.startsWith(prefix)
+    ? value.slice(prefix.length)
+    : '';
+  const separatorIndex: number = refBody.indexOf(':');
+  return separatorIndex > 0 ? refBody.slice(separatorIndex + 1).trim() : '';
+}
+
+function assertExactImmutableSource(
+  input: ImmutableSourceReuseInput,
+  artifacts: Array<typeof dmSourceArtifact.$inferSelect>,
+): typeof dmSourceArtifact.$inferSelect {
+  if (artifacts.length !== 1) {
+    fail(
+      'IMMUTABLE_SOURCE_REUSE_DB_PARTIAL',
+      'Existing immutable bytes do not have one exact Catalog source identity.',
+    );
+  }
+  const artifact = artifacts[0];
+  if (
+    artifact.sourceArtifactId !== input.sourceArtifactId
+    || artifact.sha256 !== input.sha256
+    || Number(artifact.byteLength) !== Number(input.byteLength)
+    || artifact.mediaType !== input.mediaType
+    || artifact.bucketId !== input.bucketId
+    || artifact.filePath !== input.filePath
+    || artifact.providerObjectId !== input.providerObjectId
+    || artifact.providerVersionId !== input.providerVersionId
+    || artifact.readbackVerified !== true
+  ) {
+    fail(
+      'IMMUTABLE_SOURCE_REUSE_DB_CONFLICT',
+      'Existing Catalog source identity differs from the verified immutable object.',
+    );
+  }
+  return artifact;
 }
 
 function withoutGeneratedAt(value: Record<string, unknown>) {
@@ -282,6 +374,204 @@ export function classifyImmutableSourceReuseState(
   return { disposition: 'CATALOGED_SOURCE_REUSE_ALLOWED' };
 }
 
+export function classifyReviewAttachmentResidualReuseState(
+  input: ImmutableSourceReuseInput,
+  state: ReviewAttachmentResidualReuseState,
+) {
+  const scope = input.serverBoundReviewAttachmentScope;
+  if (
+    !scope
+    || scope.sourceChannel !== REVIEW_ATTACHMENT_SOURCE_CHANNEL
+    || !scope.reviewConversationId
+    || !scope.requestRef
+    || !scope.actorUserId
+    || !scope.tenantId
+    || !scope.workItemId
+    || !Number.isSafeInteger(scope.expectedRevision)
+    || scope.expectedRevision < 0
+  ) {
+    fail(
+      'REVIEW_ATTACHMENT_RESIDUAL_SCOPE_INVALID',
+      'Residual recovery requires one complete server-bound Review attachment scope.',
+    );
+  }
+  const artifact = assertExactImmutableSource(input, state.artifacts ?? []);
+  const acquisitions = state.acquisitions ?? [];
+  const preflights = state.preflights ?? [];
+  const residualAcquisitions = acquisitions.filter((row) => (
+    row.sourceChannel === REVIEW_ATTACHMENT_SOURCE_CHANNEL
+    && row.status === 'ACQUIRED_READBACK_VERIFIED'
+    && row.documentVersionId === null
+  ));
+  if (residualAcquisitions.length !== 1) {
+    fail(
+      'REVIEW_ATTACHMENT_RESIDUAL_SHAPE_MISMATCH',
+      'Residual recovery requires exactly one unlinked legacy Review Acquisition.',
+    );
+  }
+  const acquisition = residualAcquisitions[0];
+  const residualPreflights = preflights.filter(
+    (row) => row.acquisitionId === acquisition.acquisitionId,
+  );
+  if (residualPreflights.length !== 1) {
+    fail(
+      'REVIEW_ATTACHMENT_RESIDUAL_SHAPE_MISMATCH',
+      'Residual recovery requires exactly one legacy Review preflight.',
+    );
+  }
+  const preflight = residualPreflights[0];
+  if (
+    (state.versions ?? []).some(
+      (row) => row.acquisitionId === acquisition.acquisitionId,
+    )
+    || (state.currentness ?? []).some(
+      (row) => row.preflightId === preflight.preflightId,
+    )
+    || (state.downstreamWorkItems ?? []).length > 0
+    || (state.actionAttempts ?? []).length > 0
+  ) {
+    fail(
+      'REVIEW_ATTACHMENT_RESIDUAL_DOWNSTREAM_PRESENT',
+      'Residual recovery is forbidden when the residual has a DocumentVersion or currentness link, or the source has a downstream WorkItem or ActionAttempt binding.',
+    );
+  }
+  if (
+    (state.scopeConversations ?? []).length !== 1
+    || (state.scopeWorkItems ?? []).length !== 1
+  ) {
+    fail(
+      'REVIEW_ATTACHMENT_RESIDUAL_SCOPE_NOT_FOUND',
+      'Residual recovery requires one fresh Review conversation and WorkItem scope.',
+    );
+  }
+  const conversation = state.scopeConversations[0];
+  const controlledWorkItem = state.scopeWorkItems[0];
+  if (
+    conversation.reviewConversationId !== scope.reviewConversationId
+    || conversation.tenantId !== scope.tenantId
+    || conversation.actorId !== scope.actorUserId
+    || conversation.workItemId !== scope.workItemId
+    || conversation.status !== 'ACTIVE'
+    || controlledWorkItem.workItemId !== scope.workItemId
+    || controlledWorkItem.tenantId !== scope.tenantId
+    || controlledWorkItem.requestedByUserId !== scope.actorUserId
+    || controlledWorkItem.revision !== scope.expectedRevision
+  ) {
+    fail(
+      'REVIEW_ATTACHMENT_RESIDUAL_SCOPE_CONFLICT',
+      'Residual Review attachment is outside the fresh server-bound conversation or WorkItem scope.',
+    );
+  }
+
+  const legacyConversationId = reviewConversationIdFromSourceRef(
+    acquisition.sourceRef,
+  );
+  const legacyRequestRef = reviewRequestRefFromSourceRef(acquisition.sourceRef);
+  const expectedLegacyDocumentCode = [
+    'REVIEW',
+    legacyConversationId,
+    legacyRequestRef,
+  ].join('-').toUpperCase();
+  const sourceDescriptor = recordJson(acquisition.sourceDescriptorJson);
+  if (
+    acquisition.sourceArtifactId !== artifact.sourceArtifactId
+    || acquisition.documentVersionId !== null
+    || acquisition.sourceChannel !== REVIEW_ATTACHMENT_SOURCE_CHANNEL
+    || legacyConversationId !== scope.reviewConversationId
+    || !legacyRequestRef
+    || legacyRequestRef === scope.requestRef
+    || acquisition.acquiredBy !== scope.actorUserId
+    || acquisition.idempotencyKey !== [
+      'review-attachment',
+      legacyConversationId,
+      legacyRequestRef,
+    ].join(':')
+    || acquisition.status !== 'ACQUIRED_READBACK_VERIFIED'
+    || sourceDescriptor.sourceKind !== REVIEW_ATTACHMENT_SOURCE_CHANNEL
+    || sourceDescriptor.sourceStorageKey
+      !== `${input.bucketId}:${input.filePath}`
+    || sourceDescriptor.sha256 !== input.sha256
+    || Number(sourceDescriptor.sizeBytes) !== Number(input.byteLength)
+    || sourceDescriptor.mediaType !== input.mediaType
+    || sourceDescriptor.documentFamily !== 'OEM_REFERENCE'
+    || sourceDescriptor.documentCode !== expectedLegacyDocumentCode
+  ) {
+    fail(
+      'REVIEW_ATTACHMENT_RESIDUAL_ACQUISITION_CONFLICT',
+      'Residual Acquisition is not the exact legacy Review attachment state for these immutable bytes and scope.',
+    );
+  }
+
+  const normalizedDescriptor = recordJson(preflight.normalizedDescriptorJson);
+  const decisionPayload = recordJson(preflight.decisionPayloadJson);
+  const incoming = recordValue(decisionPayload, 'incoming');
+  const provenance = recordValue(incoming, 'documentCodeProvenance');
+  const identityIssues: unknown = incoming.identityIssues;
+  if (
+    preflight.acquisitionId !== acquisition.acquisitionId
+    || preflight.decision !== LEGACY_REVIEW_ATTACHMENT_DECISION
+    || preflight.branch !== 'REVIEW'
+    || preflight.executionAuthorized !== false
+    || preflight.status !== 'READY'
+    || preflight.documentVersionId !== null
+    || preflight.commitIdempotencyKey !== null
+    || normalizedDescriptor.sha256 !== input.sha256
+    || Number(normalizedDescriptor.sizeBytes) !== Number(input.byteLength)
+    || normalizedDescriptor.sourceKind !== REVIEW_ATTACHMENT_SOURCE_CHANNEL
+    || normalizedDescriptor.canonicalDocumentFamily !== 'OEM_REFERENCE'
+    || normalizedDescriptor.documentCode !== expectedLegacyDocumentCode
+    || decisionPayload.decision !== LEGACY_REVIEW_ATTACHMENT_DECISION
+    || decisionPayload.branch !== 'REVIEW'
+    || decisionPayload.executionAuthorized !== false
+    || incoming.identityResolved !== false
+    || incoming.sha256 !== input.sha256
+    || Number(incoming.sizeBytes) !== Number(input.byteLength)
+    || incoming.documentCode !== expectedLegacyDocumentCode
+    || provenance.sourceVerified !== false
+    || !Array.isArray(identityIssues)
+    || !identityIssues.includes('DOCUMENT_CODE_PROVENANCE_UNVERIFIED')
+  ) {
+    fail(
+      'REVIEW_ATTACHMENT_RESIDUAL_PREFLIGHT_CONFLICT',
+      'Residual preflight is not the exact unresolved legacy Review attachment decision.',
+    );
+  }
+  const completedAcquisitions = acquisitions.filter(
+    (row) => row.acquisitionId !== acquisition.acquisitionId,
+  );
+  const completedPreflights = preflights.filter(
+    (row) => row.acquisitionId !== acquisition.acquisitionId,
+  );
+  if (
+    completedPreflights.length !== completedAcquisitions.length
+    || completedPreflights.some((row) => !completedAcquisitions.some(
+      (candidate) => candidate.acquisitionId === row.acquisitionId,
+    ))
+  ) {
+    fail(
+      'REVIEW_ATTACHMENT_RESIDUAL_COMPANION_STATE_INVALID',
+      'Only complete ordinary Catalog lineage may coexist with the legacy Review residual.',
+    );
+  }
+  if (
+    completedAcquisitions.length > 0
+    || completedPreflights.length > 0
+    || (state.versions ?? []).length > 0
+  ) {
+    classifyImmutableSourceReuseState(input, {
+      artifacts: state.artifacts,
+      acquisitions: completedAcquisitions,
+      preflights: completedPreflights,
+      versions: state.versions,
+    });
+  }
+  return {
+    disposition: 'REVIEW_ATTACHMENT_RESIDUAL_RECOVERY_ALLOWED',
+    residualAcquisitionId: acquisition.acquisitionId,
+    residualPreflightId: preflight.preflightId,
+  };
+}
+
 @Injectable()
 // Registered by DocumentManagementHostedModule.register().
 // eslint-disable-next-line @darraghor/nestjs-typed/injectable-should-be-provided
@@ -413,6 +703,51 @@ export class MiaodaHostedDocumentCatalog {
       eq(dmDocumentVersion.sourceArtifactId, input.sourceArtifactId),
       eq(dmDocumentVersion.acquisitionId, input.acquisitionId),
     )).limit(100);
+    const hasIncompleteState = acquisitions.some((row) => (
+      !row.documentVersionId || !COMPLETE_ACQUISITION_STATUSES.has(row.status)
+    )) || preflights.some((row) => (
+      row.status !== 'COMMITTED' || !row.documentVersionId
+    ));
+    if (input.serverBoundReviewAttachmentScope && hasIncompleteState) {
+      const preflightIds = preflights.map((row) => row.preflightId);
+      const currentness = preflightIds.length > 0
+        ? await this.db.select().from(dmCurrentnessDecision).where(
+          inArray(dmCurrentnessDecision.preflightId, preflightIds),
+        ).limit(100)
+        : [];
+      const downstreamWorkItems = await this.db.select().from(workItem).where(
+        eq(workItem.sourceArtifactId, input.sourceArtifactId),
+      ).limit(100);
+      const actionAttempts = await this.db.select({
+        attemptId: actionAttempt.attemptId,
+      }).from(actionAttempt).innerJoin(
+        workItem,
+        eq(workItem.workItemId, actionAttempt.workItemId),
+      ).where(
+        eq(workItem.sourceArtifactId, input.sourceArtifactId),
+      ).limit(100);
+      const scope = input.serverBoundReviewAttachmentScope;
+      const scopeConversations = await this.db.select()
+        .from(reviewConversation)
+        .where(eq(
+          reviewConversation.reviewConversationId,
+          scope.reviewConversationId,
+        )).limit(2);
+      const scopeWorkItems = await this.db.select().from(workItem).where(
+        eq(workItem.workItemId, scope.workItemId),
+      ).limit(2);
+      return classifyReviewAttachmentResidualReuseState(input, {
+        artifacts,
+        acquisitions,
+        preflights,
+        versions,
+        currentness,
+        downstreamWorkItems,
+        actionAttempts,
+        scopeConversations,
+        scopeWorkItems,
+      });
+    }
     return classifyImmutableSourceReuseState(input, {
       artifacts,
       acquisitions,

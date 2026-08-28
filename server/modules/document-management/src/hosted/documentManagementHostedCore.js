@@ -70,8 +70,8 @@ function rejectSelfReportedAuthority(request) {
   }
 }
 
-function assertReservedSourceChannelAuthority(request, serverContext) {
-  if (request.sourceChannel !== REVIEW_ATTACHMENT_SOURCE_CHANNEL) return;
+function serverBoundReviewAttachmentScope(request, serverContext) {
+  if (request.sourceChannel !== REVIEW_ATTACHMENT_SOURCE_CHANNEL) return null;
   const reviewAuthority = serverContext.runtimeIngestAuthority;
   if (
     reviewAuthority?.mode !== 'HOSTED_OAUTH_SESSION_REVIEW_ATTACHMENT' ||
@@ -86,6 +86,37 @@ function assertReservedSourceChannelAuthority(request, serverContext) {
       'The reserved Review attachment source channel requires server-bound authority.',
     );
   }
+  const sourceRef = required(request.sourceRef, 'request.sourceRef');
+  const prefix = 'ATTACHMENT:';
+  const refBody = sourceRef.startsWith(prefix)
+    ? sourceRef.slice(prefix.length)
+    : '';
+  const separatorIndex = refBody.indexOf(':');
+  const reviewConversationId =
+    separatorIndex > 0 ? refBody.slice(0, separatorIndex).trim() : '';
+  const requestRef =
+    separatorIndex > 0 ? refBody.slice(separatorIndex + 1).trim() : '';
+  if (
+    !reviewConversationId ||
+    !requestRef ||
+    !String(reviewAuthority.workItemId || '').trim() ||
+    !Number.isSafeInteger(reviewAuthority.expectedRevision) ||
+    Number(reviewAuthority.expectedRevision) < 0
+  ) {
+    fail(
+      'REVIEW_ATTACHMENT_SOURCE_SCOPE_INVALID',
+      'Review attachment source scope is incomplete or malformed.',
+    );
+  }
+  return {
+    sourceChannel: REVIEW_ATTACHMENT_SOURCE_CHANNEL,
+    reviewConversationId,
+    requestRef,
+    actorUserId: serverContext.actorUserId,
+    tenantId: serverContext.tenantId,
+    workItemId: reviewAuthority.workItemId.trim(),
+    expectedRevision: Number(reviewAuthority.expectedRevision),
+  };
 }
 
 function issuerFor(normalizedDescriptor) {
@@ -190,7 +221,10 @@ export class DocumentManagementHostedCore {
         'request.selection.filePath',
       ),
     };
-    assertReservedSourceChannelAuthority(request, serverContext);
+    const reviewAttachmentScope = serverBoundReviewAttachmentScope(
+      request,
+      serverContext,
+    );
     await this.authorizer.assertCanIngest({
       actorUserId,
       tenantId,
@@ -284,10 +318,15 @@ export class DocumentManagementHostedCore {
         filePath: immutable.filePath,
         providerObjectId: immutable.providerObjectId,
         providerVersionId: immutable.providerVersionId,
+        ...(reviewAttachmentScope
+          ? { serverBoundReviewAttachmentScope: reviewAttachmentScope }
+          : {}),
       });
       if (
         reuse?.disposition !== 'ORPHAN_RECOVERY_ALLOWED' &&
-        reuse?.disposition !== 'CATALOGED_SOURCE_REUSE_ALLOWED'
+        reuse?.disposition !== 'CATALOGED_SOURCE_REUSE_ALLOWED' &&
+        reuse?.disposition !==
+          'REVIEW_ATTACHMENT_RESIDUAL_RECOVERY_ALLOWED'
       ) {
         fail(
           'IMMUTABLE_SOURCE_REUSE_STATE_INVALID',
