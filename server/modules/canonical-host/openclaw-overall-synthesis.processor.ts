@@ -45,6 +45,7 @@ const OUTPUT_KEYS = [
   'authorityLevel',
   'externalDiscoveryIsEvidence',
   'overallCandidate',
+  'engineeringSummary',
   'findings',
   'missingInputs',
   'applicabilityStatus',
@@ -89,15 +90,15 @@ export function buildOpenClawOverallSynthesisInput(input: {
     return {
       sourceRefId: id,
       locator: `page ${integer(ref.pageStart, 'SOURCE_PAGE_INVALID')}-${integer(ref.pageEnd, 'SOURCE_PAGE_INVALID')}`,
-      excerpt: null,
+      excerpt: sourceExcerpt(ref.quote),
     };
   });
-  const sourceRefs = [
-    ...packageSourceRefs,
-    ...supplementalSourceRefs(input.engineerReviewContext),
-  ];
-  const knownRefs = new Set(sourceRefs.map(({ sourceRefId }) => sourceRefId));
-  if (knownRefs.size !== sourceRefs.length) {
+  const supplementalRefs = supplementalSourceRefs(input.engineerReviewContext);
+  const knownRefs = new Set([
+    ...packageSourceRefs.map(({ sourceRefId }) => sourceRefId),
+    ...supplementalRefs.map(({ sourceRefId }) => sourceRefId),
+  ]);
+  if (knownRefs.size !== packageSourceRefs.length + supplementalRefs.length) {
     throw new Error('SOURCE_CONTEXT_DUPLICATE_REF');
   }
   const candidateRefs = sourceEvidenceCandidateRefs(
@@ -156,6 +157,13 @@ export function buildOpenClawOverallSynthesisInput(input: {
   ) {
     throw new Error('BASE_RULE_RESULT_SUMMARY_MISMATCH');
   }
+  // Overall synthesis answers a document-level engineering question. Base-rule
+  // citations alone are not a sufficient source corpus: they can omit the
+  // failure mechanism, implementation prerequisites, effectivity detail, or
+  // operational impact. The full current DocumentVersion SourceRef corpus is
+  // bounded parsed-package text (not PDF bytes) and remains individually
+  // verified on output below.
+  const sourceRefs = [...packageSourceRefs, ...supplementalRefs];
   const plan = buildSelectiveOverallResynthesisPlan({
     criterionSetId: input.baseRules.criterionSetId,
     criterionCount: input.baseRules.criterionCount,
@@ -198,6 +206,9 @@ export function buildOpenClawOverallSynthesisInput(input: {
       contractRevision: input.workItem.package?.contractRevision,
       contentUnitCount: input.workItem.package?.contentUnitCount,
       sourceRefCount: sourceRefs.length,
+      currentDocumentSourceRefIds: packageSourceRefs.map(
+        ({ sourceRefId }) => sourceRefId,
+      ),
       sourceRefs,
     },
     adoptedDocumentVersions: [
@@ -362,6 +373,22 @@ export function consumeOpenClawOverallSynthesisOutput(
       ),
     ),
   );
+  const currentDocumentRefs = new Set(
+    textArray(
+      input.unifiedSourceContext.currentDocumentSourceRefIds,
+      'CURRENT_DOCUMENT_SOURCE_REFS_INVALID',
+    ),
+  );
+  const engineeringSummary = validateEngineeringSummary(
+    parsed.engineeringSummary,
+    knownRefs,
+    currentDocumentRefs,
+  );
+  same(
+    parsed.overallCandidate,
+    object(engineeringSummary.conclusion, 'OVERALL_CONCLUSION_INVALID').text,
+    'OVERALL_CONCLUSION_CANDIDATE_MISMATCH',
+  );
   findings.forEach((value) => {
     const finding = object(value, 'OVERALL_FINDING_INVALID');
     exactKeys(
@@ -415,7 +442,7 @@ export function consumeOpenClawOverallSynthesisOutput(
     JSON.stringify(providerSummaries(input.externalDiscoveryResults)),
     'OVERALL_PROVIDER_SUMMARY_MISMATCH',
   );
-  rejectAuthoritativeNarrative(parsed, findings);
+  rejectAuthoritativeNarrative(parsed, findings, engineeringSummary);
   count(parsed.unresolvedCount, 'OVERALL_UNRESOLVED_COUNT_INVALID');
   same(
     parsed.unresolvedCount,
@@ -482,6 +509,161 @@ function supplementalSourceRefs(context: OpenClawEngineerReviewContext) {
   );
 }
 
+function sourceExcerpt(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const excerpt = value.trim();
+  if (!excerpt) return null;
+  return excerpt.length <= 6_000 ? excerpt : `${excerpt.slice(0, 6_000)}…`;
+}
+
+function validateEngineeringSummary(
+  value: unknown,
+  knownRefs: Set<string>,
+  currentDocumentRefs: Set<string>,
+): Record<string, unknown> {
+  const summary = object(value, 'OVERALL_ENGINEERING_SUMMARY_INVALID');
+  exactKeys(
+    summary,
+    [
+      'schemaVersion',
+      'conclusion',
+      'whyItMatters',
+      'applicability',
+      'implementationImpact',
+      'dispositionPriority',
+      'nextActions',
+    ],
+    'OVERALL_ENGINEERING_SUMMARY',
+  );
+  same(
+    summary.schemaVersion,
+    'wiselink.3_1.overall_engineering_summary.v1',
+    'OVERALL_ENGINEERING_SUMMARY_VERSION_INVALID',
+  );
+  validateEngineeringStatement(
+    summary.conclusion,
+    knownRefs,
+    currentDocumentRefs,
+    'OVERALL_CONCLUSION',
+  );
+  validateEngineeringStatementArray(
+    summary.whyItMatters,
+    knownRefs,
+    currentDocumentRefs,
+    'OVERALL_WHY_IT_MATTERS',
+    1,
+  );
+  const applicability = object(
+    summary.applicability,
+    'OVERALL_APPLICABILITY_SUMMARY_INVALID',
+  );
+  exactKeys(
+    applicability,
+    ['sourceScope', 'fleetMatch', 'requiredFacts'],
+    'OVERALL_APPLICABILITY_SUMMARY',
+  );
+  validateEngineeringStatement(
+    applicability.sourceScope,
+    knownRefs,
+    currentDocumentRefs,
+    'OVERALL_SOURCE_SCOPE',
+  );
+  validateEngineeringStatement(
+    applicability.fleetMatch,
+    knownRefs,
+    currentDocumentRefs,
+    'OVERALL_FLEET_MATCH',
+  );
+  validateEngineeringStatementArray(
+    applicability.requiredFacts,
+    knownRefs,
+    currentDocumentRefs,
+    'OVERALL_REQUIRED_FACTS',
+    0,
+  );
+  validateEngineeringStatementArray(
+    summary.implementationImpact,
+    knownRefs,
+    currentDocumentRefs,
+    'OVERALL_IMPLEMENTATION_IMPACT',
+    1,
+  );
+  validateEngineeringStatementArray(
+    summary.dispositionPriority,
+    knownRefs,
+    currentDocumentRefs,
+    'OVERALL_DISPOSITION_PRIORITY',
+    1,
+  );
+  validateEngineeringStatementArray(
+    summary.nextActions,
+    knownRefs,
+    currentDocumentRefs,
+    'OVERALL_NEXT_ACTIONS',
+    1,
+    3,
+  );
+  return summary;
+}
+
+function validateEngineeringStatementArray(
+  value: unknown,
+  knownRefs: Set<string>,
+  currentDocumentRefs: Set<string>,
+  code: string,
+  minimum: number,
+  maximum = Number.MAX_SAFE_INTEGER,
+): void {
+  const statements = requiredArray(value, `${code}_INVALID`);
+  if (statements.length < minimum || statements.length > maximum) {
+    throw new Error(`${code}_COUNT_INVALID`);
+  }
+  statements.forEach((statement, index) =>
+    validateEngineeringStatement(
+      statement,
+      knownRefs,
+      currentDocumentRefs,
+      `${code}_${index}`,
+    ),
+  );
+}
+
+function validateEngineeringStatement(
+  value: unknown,
+  knownRefs: Set<string>,
+  currentDocumentRefs: Set<string>,
+  code: string,
+): void {
+  const statement = object(value, `${code}_INVALID`);
+  exactKeys(statement, ['text', 'basis', 'sourceRefIds'], code);
+  text(statement.text, `${code}_TEXT_INVALID`);
+  if (
+    !['SOURCE_FACT', 'CONDITIONAL_INFERENCE'].includes(String(statement.basis))
+  ) {
+    throw new Error(`${code}_BASIS_INVALID`);
+  }
+  const sourceRefIds = textArray(
+    statement.sourceRefIds,
+    `${code}_SOURCE_REFS_INVALID`,
+  );
+  if (
+    sourceRefIds.length === 0 ||
+    new Set(sourceRefIds).size !== sourceRefIds.length
+  ) {
+    throw new Error(`${code}_SOURCE_REFS_INVALID`);
+  }
+  sourceRefIds.forEach((sourceRefId) => {
+    if (!knownRefs.has(sourceRefId)) {
+      throw new Error(`OVERALL_UNKNOWN_SOURCE_REF:${sourceRefId}`);
+    }
+  });
+  if (
+    !sourceRefIds.some((sourceRefId) => currentDocumentRefs.has(sourceRefId))
+  ) {
+    throw new Error(`${code}_CURRENT_DOCUMENT_SOURCE_REF_REQUIRED`);
+  }
+}
+
 function overallModelItem(
   item: SelectiveJobAidItemCandidate,
 ): Record<string, unknown> {
@@ -495,13 +677,6 @@ function overallModelItem(
     missingInputs: [...item.missingInputs],
     humanReviewRequired: item.humanReviewRequired,
     authorityLevel: 'candidate_only',
-    ...(item.effectiveEngineerReview
-      ? {
-          effectiveEngineerReview: structuredClone(
-            item.effectiveEngineerReview,
-          ),
-        }
-      : {}),
   };
 }
 
@@ -638,9 +813,11 @@ function rejectPrivateAuthority(value: unknown): void {
 function rejectAuthoritativeNarrative(
   output: Record<string, unknown>,
   findings: unknown[],
+  engineeringSummary: Record<string, unknown>,
 ): void {
   const narrative = [
     output.overallCandidate,
+    ...engineeringSummaryStatements(engineeringSummary),
     ...findings.flatMap((value) => {
       const finding = object(value, 'OVERALL_FINDING_INVALID');
       return [
@@ -660,6 +837,40 @@ function rejectAuthoritativeNarrative(
   ) {
     throw new Error('OVERALL_AUTHORITATIVE_NARRATIVE_FORBIDDEN');
   }
+}
+
+function engineeringSummaryStatements(
+  summary: Record<string, unknown>,
+): string[] {
+  const applicability = object(
+    summary.applicability,
+    'OVERALL_APPLICABILITY_SUMMARY_INVALID',
+  );
+  const statements = [
+    summary.conclusion,
+    ...requiredArray(summary.whyItMatters, 'OVERALL_WHY_IT_MATTERS_INVALID'),
+    applicability.sourceScope,
+    applicability.fleetMatch,
+    ...requiredArray(
+      applicability.requiredFacts,
+      'OVERALL_REQUIRED_FACTS_INVALID',
+    ),
+    ...requiredArray(
+      summary.implementationImpact,
+      'OVERALL_IMPLEMENTATION_IMPACT_INVALID',
+    ),
+    ...requiredArray(
+      summary.dispositionPriority,
+      'OVERALL_DISPOSITION_PRIORITY_INVALID',
+    ),
+    ...requiredArray(summary.nextActions, 'OVERALL_NEXT_ACTIONS_INVALID'),
+  ];
+  return statements.map((statement) =>
+    text(
+      object(statement, 'OVERALL_ENGINEERING_STATEMENT_INVALID').text,
+      'OVERALL_ENGINEERING_STATEMENT_TEXT_INVALID',
+    ),
+  );
 }
 
 function parseObject(bytes: Uint8Array, code: string): Record<string, unknown> {

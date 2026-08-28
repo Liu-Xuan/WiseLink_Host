@@ -942,6 +942,31 @@ export interface CanonicalBaseRuleCandidateProjection {
   actionAttemptId: string;
 }
 
+export type CanonicalEngineeringStatementBasis =
+  | 'SOURCE_FACT'
+  | 'CONDITIONAL_INFERENCE';
+
+export interface CanonicalSourceBoundEngineeringStatement {
+  text: string;
+  basis: CanonicalEngineeringStatementBasis;
+  /** Every statement remains bound to the current DocumentVersion. */
+  sourceRefIds: string[];
+}
+
+export interface CanonicalOverallEngineeringSummary {
+  schemaVersion: 'wiselink.3_1.overall_engineering_summary.v1';
+  conclusion: CanonicalSourceBoundEngineeringStatement;
+  whyItMatters: CanonicalSourceBoundEngineeringStatement[];
+  applicability: {
+    sourceScope: CanonicalSourceBoundEngineeringStatement;
+    fleetMatch: CanonicalSourceBoundEngineeringStatement;
+    requiredFacts: CanonicalSourceBoundEngineeringStatement[];
+  };
+  implementationImpact: CanonicalSourceBoundEngineeringStatement[];
+  dispositionPriority: CanonicalSourceBoundEngineeringStatement[];
+  nextActions: CanonicalSourceBoundEngineeringStatement[];
+}
+
 export interface CanonicalOpenClawOverallProjection {
   status: 'CANDIDATE_ONLY' | 'STALE';
   revision: number;
@@ -962,6 +987,8 @@ export interface CanonicalOpenClawOverallProjection {
   staleReason: 'BASE_RULE_RESULT_CHANGED' | 'ENGINEER_REVIEW_CHANGED' | null;
   /** Business-readable candidate content copied from the verified overall artifact. */
   overallCandidate?: string;
+  /** Source-bound engineering synthesis for the user-visible Overall view. */
+  engineeringSummary?: CanonicalOverallEngineeringSummary;
   findings?: Array<{
     finding: string;
     basis: string;
@@ -973,6 +1000,11 @@ export interface CanonicalOpenClawOverallProjection {
   applicabilityStatus?: string;
   engineeringReviewRequired?: boolean;
   providers?: Record<string, unknown>;
+  /** Verified per-turn runtime provenance; absent on projections created before R09. */
+  modelVersion?: string;
+  promptVersion?: string;
+  skillVersion?: string;
+  toolVersions?: Record<string, string>;
 }
 
 export type CanonicalEngineerReviewDecision =

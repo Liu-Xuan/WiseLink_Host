@@ -395,6 +395,7 @@ function overallModelInput() {
       contractRevision: 'frozen.2',
       contentUnitCount: 1,
       sourceRefCount: 1,
+      currentDocumentSourceRefIds: ['SRC-001'],
       sourceRefs: [
         { sourceRefId: 'SRC-001', locator: 'page 1-1', excerpt: null },
       ],
@@ -482,6 +483,12 @@ function overallResult(
 }
 
 function validOutput(): string {
+  const overallCandidate =
+    '候选工程结论：按当前来源完成技术处置准备，并进入最终工程批准。';
+  const statement = (
+    text: string,
+    basis: 'SOURCE_FACT' | 'CONDITIONAL_INFERENCE' = 'CONDITIONAL_INFERENCE',
+  ) => ({ text, basis, sourceRefIds: ['SRC-001'] });
   return JSON.stringify({
     sourceResultId: TRIGGER_REF,
     documentVersionId: 'DV-737',
@@ -497,7 +504,22 @@ function validOutput(): string {
     unresolvedCount: 0,
     authorityLevel: 'candidate_only',
     externalDiscoveryIsEvidence: false,
-    overallCandidate: '候选综合：仍需工程师复核。',
+    overallCandidate,
+    engineeringSummary: {
+      schemaVersion: 'wiselink.3_1.overall_engineering_summary.v1',
+      conclusion: statement(overallCandidate),
+      whyItMatters: [
+        statement('来源说明了需要处置的技术问题。', 'SOURCE_FACT'),
+      ],
+      applicability: {
+        sourceScope: statement('来源适用范围以当前文件为准。', 'SOURCE_FACT'),
+        fleetMatch: statement('当前机队匹配仍需受控事实确认。'),
+        requiredFacts: [statement('核对来源适用范围要求的飞机事实。')],
+      },
+      implementationImpact: [statement('实施前需按来源准备部件和测试。')],
+      dispositionPriority: [statement('按来源时限和建议安排计划。')],
+      nextActions: [statement('核对当前飞机事实并准备实施条件。')],
+    },
     findings: [
       {
         finding: '候选发现',

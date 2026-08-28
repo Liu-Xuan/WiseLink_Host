@@ -2,7 +2,7 @@ import type { WlCardTemplate } from '../types';
 
 /* ============================================================
  * WL-CARD-02 · 综合评估意见卡（Aily 最重要的卡片）
- * 顺序固定：当前结论 → 适用范围 → 主要依据 → 未解决问题 → 建议复核动作 → 打开工作台。
+ * 顺序固定：工程结论 → 适用范围 → 来源约束的理解/影响 → 待确认事实 → 下一步 → 打开工作台。
  * ============================================================ */
 
 export const wlCard02OverallAssessment: WlCardTemplate = {
@@ -52,7 +52,7 @@ export const wlCard02OverallAssessment: WlCardTemplate = {
     config: { update_multi: true },
     header: {
       title: { tag: 'plain_text', content: '${synthesisTitle}' },
-      subtitle: { tag: 'plain_text', content: '候选意见 · 等待工程师复核' },
+      subtitle: { tag: 'plain_text', content: '工程候选 · 待最终批准' },
       template: 'blue',
     },
     body: {
@@ -69,21 +69,24 @@ export const wlCard02OverallAssessment: WlCardTemplate = {
               elements: [
                 {
                   tag: 'markdown',
-                  content: '**当前结论**\n${currentJudgment}',
+                  content: '**工程结论**\n${currentJudgment}',
                 },
               ],
             },
           ],
         },
         { tag: 'markdown', content: '**适用范围**\n${applicabilitySummary}' },
-        { tag: 'markdown', content: '**主要依据**\n${keyEvidenceList}' },
         {
           tag: 'markdown',
-          content: '**未解决问题**\n${unresolvedQuestionsList}',
+          content: '**为什么重要与实施影响**\n${keyEvidenceList}',
         },
         {
           tag: 'markdown',
-          content: '**建议复核动作**\n${reviewRecommendationsList}',
+          content: '**待确认的适用性事实**\n${unresolvedQuestionsList}',
+        },
+        {
+          tag: 'markdown',
+          content: '**下一步动作**\n${reviewRecommendationsList}',
         },
         { tag: 'hr' },
         {
@@ -91,7 +94,7 @@ export const wlCard02OverallAssessment: WlCardTemplate = {
           elements: [
             {
               tag: 'plain_text',
-              content: '以上为候选综合意见，正式使用前需完成工程师复核',
+              content: '以上为来源约束的工程候选，异常项处理后仍需最终工程批准',
             },
           ],
         },

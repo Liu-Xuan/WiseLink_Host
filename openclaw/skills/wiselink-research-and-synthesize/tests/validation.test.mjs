@@ -217,7 +217,7 @@ test('propagates only Host-frozen applicability missing input without a model ca
   );
 });
 
-test('continues INITIAL_ANALYSIS from AIMS-2 WAITING to preliminary overall', async () => {
+test('keeps the real 777 FTD AIMS-2 condition in its own preliminary overall', async () => {
   const applicabilityInput = await readJson(APPLICABILITY_TASK_FIXTURE_URL);
   const missingInputs = [
     {
@@ -321,6 +321,16 @@ test('continues INITIAL_ANALYSIS from AIMS-2 WAITING to preliminary overall', as
   overallOutput.gap = 'AIMS-2 configuration data is not connected.';
   overallOutput.overallCandidate =
     '飞机身份和机型已知；AIMS-2 构型数据未接入，适用性保持条件性未知，需工程师或后续受控数据确认；当前可形成初步工程综合候选，但不得最终批准或发布。';
+  overallOutput.engineeringSummary.conclusion.text =
+    overallOutput.overallCandidate;
+  overallOutput.engineeringSummary.applicability.sourceScope.text =
+    '当前 777 FTD 的来源适用范围要求飞机装有 AIMS-2 平台。';
+  overallOutput.engineeringSummary.applicability.fleetMatch.text =
+    '所选飞机的 AIMS-2 受控构型事实缺失，因此当前匹配保持条件性未知。';
+  overallOutput.engineeringSummary.applicability.requiredFacts[0].text =
+    missingInputs[0].message;
+  overallOutput.engineeringSummary.nextActions[0].text =
+    '核对所选 777 飞机是否装有 AIMS-2 平台的受控构型事实。';
   overallOutput.findings[0] = {
     finding: '飞机身份和机型已知，AIMS-2 构型状态未知。',
     basis: 'Dynamic N/N and frozen.2 SourceRef',
@@ -1873,6 +1883,7 @@ function synthesisInput() {
           analysis: 'Controlled dynamic candidate.',
           candidateConclusion: 'UNKNOWN/WAITING_INPUT',
           missingInputs: ['Controlled FleetFacts'],
+          humanReviewRequired: true,
           authorityLevel: 'candidate_only',
         },
       ],
@@ -1884,6 +1895,7 @@ function synthesisInput() {
       contractRevision: 'frozen.2',
       contentUnitCount: 1,
       sourceRefCount: 1,
+      currentDocumentSourceRefIds: [sourceRefId],
       sourceRefs: [
         {
           sourceRefId,
@@ -1927,6 +1939,14 @@ function synthesisInput() {
 }
 
 function synthesisOutput(input) {
+  const sourceRefId = input.unifiedSourceContext.sourceRefs[0].sourceRefId;
+  const overallCandidate =
+    'Candidate only; applicability remains unknown pending the source-required fleet facts.';
+  const statement = (text, basis = 'CONDITIONAL_INFERENCE') => ({
+    text,
+    basis,
+    sourceRefIds: [sourceRefId],
+  });
   return {
     sourceResultId: input.outputCorrelationRef,
     documentVersionId: input.baseRuleResult.documentVersionId,
@@ -1945,12 +1965,43 @@ function synthesisOutput(input) {
     adopted: false,
     usableAsEvidence: false,
     providers: {},
-    overallCandidate: 'Candidate only; applicability remains unknown.',
+    overallCandidate,
+    engineeringSummary: {
+      schemaVersion: 'wiselink.3_1.overall_engineering_summary.v1',
+      conclusion: statement(overallCandidate),
+      whyItMatters: [
+        statement(
+          'The current source contains an applicability condition that must be matched.',
+          'SOURCE_FACT',
+        ),
+      ],
+      applicability: {
+        sourceScope: statement(
+          'The source scope is limited to the effectivity stated in the current document.',
+          'SOURCE_FACT',
+        ),
+        fleetMatch: statement(
+          'The fleet match remains unknown until the source-required facts are available.',
+        ),
+        requiredFacts: [
+          statement('Obtain the controlled facts required by source effectivity.'),
+        ],
+      },
+      implementationImpact: [
+        statement('Plan implementation only after applicability is matched.'),
+      ],
+      dispositionPriority: [
+        statement('Close the applicability fact gap before release planning.'),
+      ],
+      nextActions: [
+        statement('Check the source-required controlled fleet facts.'),
+      ],
+    },
     findings: [
       {
         finding: 'Controlled applicability facts are missing.',
         basis: 'Dynamic N/N and frozen.2 SourceRef',
-        sourceRefIds: [input.unifiedSourceContext.sourceRefs[0].sourceRefId],
+        sourceRefIds: [sourceRefId],
         assumptions: [],
         uncertainty: 'Fleet applicability is not established.',
       },

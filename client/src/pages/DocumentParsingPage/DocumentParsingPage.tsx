@@ -370,8 +370,18 @@ export default function DocumentParsingPage() {
       reviewContext,
       selectedReviewCriterion,
     );
+  const overallEngineeringSummary =
+    overallCandidate?.engineeringSummary ?? null;
+  const overallEngineeringStatements = overallEngineeringSummary
+    ? [
+        ...overallEngineeringSummary.whyItMatters,
+        ...overallEngineeringSummary.implementationImpact,
+        ...overallEngineeringSummary.dispositionPriority,
+        ...overallEngineeringSummary.nextActions,
+      ]
+    : [];
   const fileLabel: string = `${data.workItem.classification.normalizedFamily} 工程资料`;
-  /* §4.1 综合评估六要素视图：当前判断/适用范围/关键依据/未决问题/风险与影响/复核建议 */
+  /* §4.1 来源约束的工程摘要：结论/重要性/适用性/实施影响/优先级/下一步。 */
   const workItemView = toWorkItemView(data);
 
   function submitReaderQuery(): void {
@@ -605,39 +615,40 @@ export default function DocumentParsingPage() {
               }}
             >
               <Sparkles aria-hidden="true" />
-              <span>综合评估摘要</span>
+              <span>工程摘要</span>
               <strong>
-                {humanState(
-                  overallCandidate?.applicabilityStatus ??
-                    overallCandidate?.status ??
-                    integratedAssessment.overallSynthesis?.status,
-                ) ?? '等待综合意见'}
                 {overallCandidate?.status === 'STALE' ||
                 integratedAssessment.overallSynthesis?.staleReason
-                  ? ' · 需更新'
-                  : ''}
+                  ? '结论需更新'
+                  : overallEngineeringSummary
+                    ? '已绑定原文依据'
+                    : '等待重新生成'}
               </strong>
-              <small title={overallCandidate?.overallCandidate ?? ''}>
-                {overallCandidate?.overallCandidate ??
-                  '综合意见尚未形成；完成必要评估后会在这里显示'}
+              <small title={overallEngineeringSummary?.conclusion.text ?? ''}>
+                {overallEngineeringSummary?.conclusion.text ??
+                  '当前候选缺少逐结论原文绑定，需重新生成工程摘要'}
               </small>
               <ChevronDown aria-hidden="true" />
             </summary>
-            {overallCandidate?.findings?.length ? (
+            {overallEngineeringStatements.length > 0 ? (
               <ul className="parse-overall-bar-findings">
-                {overallCandidate.findings.map((finding, index) => (
-                  <li key={`${finding.finding}-${index}`}>
-                    <strong>{finding.finding}</strong>
-                    <span>{finding.basis}</span>
-                    {finding.sourceRefIds.length ? (
+                {overallEngineeringStatements.map((statement, index) => (
+                  <li key={`${statement.text}-${index}`}>
+                    <strong>{statement.text}</strong>
+                    <span>
+                      {statement.basis === 'SOURCE_FACT'
+                        ? '来源事实'
+                        : '条件性推断'}
+                    </span>
+                    {statement.sourceRefIds.length ? (
                       <button
                         type="button"
                         onClick={() =>
-                          locateSourceRef(null, finding.sourceRefIds[0])
+                          locateSourceRef(null, statement.sourceRefIds[0])
                         }
                       >
                         <LocateFixed aria-hidden="true" />
-                        {finding.sourceRefIds.length} 条依据
+                        {statement.sourceRefIds.length} 条依据
                       </button>
                     ) : null}
                   </li>
@@ -645,7 +656,7 @@ export default function DocumentParsingPage() {
               </ul>
             ) : (
               <p className="parse-overall-bar-empty">
-                综合意见尚未形成。完成必要评估并补齐信息后，系统会在此显示可复核的候选意见。
+                当前候选没有逐结论绑定当前文件版本的原文依据，不能作为工程摘要展示。
               </p>
             )}
           </details>
@@ -855,143 +866,8 @@ export default function DocumentParsingPage() {
                   })
                 }
               />
-              <AssessmentSemanticsOverview data={data} />
               {integratedAssessment ? (
                 <>
-                  {overallCandidate &&
-                  (overallCandidate.overallCandidate ||
-                    overallCandidate.findings?.length ||
-                    overallCandidate.missingInputs?.length) ? (
-                    <section
-                      className="parse-business-candidate"
-                      aria-label="整体业务候选"
-                    >
-                      <header>
-                        <div>
-                          <span>AI 初步综合意见 · 待工程师确认</span>
-                          <h3>判断、依据与待补信息</h3>
-                        </div>
-                        <strong>
-                          {humanState(
-                            overallCandidate.applicabilityStatus ??
-                              overallCandidate.status,
-                          ) ?? '候选意见'}
-                          {overallCandidate.status === 'STALE'
-                            ? ' · 需更新'
-                            : ''}
-                        </strong>
-                      </header>
-                      {overallCandidate.overallCandidate ? (
-                        <p>{overallCandidate.overallCandidate}</p>
-                      ) : null}
-                      {overallCandidate.findings?.length ? (
-                        <div className="parse-business-findings">
-                          {overallCandidate.findings.map((finding, index) => (
-                            <article key={`${finding.finding}-${index}`}>
-                              <h4>{finding.finding}</h4>
-                              <dl>
-                                <div>
-                                  <dt>依据</dt>
-                                  <dd>{finding.basis}</dd>
-                                </div>
-                                <div>
-                                  <dt>假设</dt>
-                                  <dd>
-                                    {finding.assumptions.join('；') ||
-                                      '无额外假设'}
-                                  </dd>
-                                </div>
-                                <div>
-                                  <dt>不确定性</dt>
-                                  <dd>{finding.uncertainty}</dd>
-                                </div>
-                              </dl>
-                              {finding.sourceRefIds.length ? (
-                                <div className="parse-finding-sources">
-                                  <span>来源定位</span>
-                                  {finding.sourceRefIds.map(
-                                    (sourceRef, index) => (
-                                      <button
-                                        type="button"
-                                        key={sourceRef}
-                                        onClick={() =>
-                                          updateDeepLink({
-                                            node: 'reader',
-                                            tab: 'reader',
-                                            readerMode: 'structured',
-                                            unit: null,
-                                            sourceRef,
-                                          })
-                                        }
-                                      >
-                                        依据 {index + 1}
-                                      </button>
-                                    ),
-                                  )}
-                                </div>
-                              ) : null}
-                            </article>
-                          ))}
-                        </div>
-                      ) : null}
-                      {overallCandidate.missingInputs?.length ? (
-                        <div className="parse-business-next">
-                          <strong>会改变结论的缺口 / 建议补证</strong>
-                          <ul>
-                            {overallCandidate.missingInputs.map((item) => (
-                              <li key={item}>{item}</li>
-                            ))}
-                          </ul>
-                          <small>
-                            系统只会针对明确缺口查询已授权资料；未读取、未采纳的资料不会被当作依据。
-                          </small>
-                        </div>
-                      ) : null}
-                    </section>
-                  ) : null}
-                  <div className="parse-assessment-grid">
-                    <div>
-                      <strong>
-                        {integratedAssessment.baseRules.criterionCount}
-                      </strong>
-                      <span>逐项评估 · 数量由当前评估规则决定</span>
-                    </div>
-                    <div>
-                      <strong>
-                        {humanState(integratedAssessment.baseRules.status) ??
-                          '待评估'}
-                      </strong>
-                      <span>
-                        {integratedAssessment.baseRules.unresolvedCount}{' '}
-                        项未闭合
-                      </span>
-                    </div>
-                    <div>
-                      <strong>
-                        {humanState(
-                          integratedAssessment.overallSynthesis?.status,
-                        ) ?? '等待综合意见'}
-                      </strong>
-                      <span>
-                        {integratedAssessment.overallSynthesis
-                          ? `${integratedAssessment.overallSynthesis.findingCount} 项判断 · ${integratedAssessment.overallSynthesis.candidateRefCount} 条依据`
-                          : '完成逐项评估后形成综合意见'}
-                      </span>
-                    </div>
-                  </div>
-                  {integratedAssessment.overallSynthesis ? (
-                    <p>
-                      资料调查：
-                      {humanState(
-                        integratedAssessment.overallSynthesis.discoveryStatus,
-                      ) ?? '状态待确认'}
-                      。仅已读取并采纳的资料可作为本次判断依据。
-                    </p>
-                  ) : (
-                    <p>
-                      综合意见尚未形成。完成逐项评估与必要补充后，系统会在此显示可解释、可追溯的候选意见。
-                    </p>
-                  )}
                   <details className="parse-assessment-audit-details">
                     <summary>查看评估过程与版本详情</summary>
                     <div

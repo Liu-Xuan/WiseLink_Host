@@ -1113,6 +1113,11 @@ export function validateSynthesisPair(input, output) {
         fail(`OVERALL_UNKNOWN_SOURCE_REF:${sourceRefId}`);
     }
   }
+  validateEngineeringSummaryBindings(
+    output.engineeringSummary,
+    knownRefs,
+    new Set(context.currentDocumentSourceRefIds),
+  );
   const candidateRefCount = input.externalDiscoveryResults.reduce(
     (count, result) => count + result.candidates.length,
     0,
@@ -1519,6 +1524,7 @@ function validateBaseRuleResult(base) {
         'analysis',
         'candidateConclusion',
         'missingInputs',
+        'humanReviewRequired',
         'authorityLevel',
       ],
       [],
@@ -1536,6 +1542,7 @@ function validateBaseRuleResult(base) {
     nonEmpty(item.analysis, 'BASE_ITEM_ANALYSIS_INVALID');
     nonEmpty(item.candidateConclusion, 'BASE_ITEM_CONCLUSION_INVALID');
     arrayOfText(item.missingInputs, 'BASE_ITEM_MISSING_INPUTS_INVALID');
+    boolean(item.humanReviewRequired, 'BASE_ITEM_HUMAN_REVIEW_INVALID');
     equal(item.authorityLevel, 'candidate_only', 'BASE_ITEM_AUTHORITY_INVALID');
     if (item.missingInputs.length > 0) derivedUnresolved += 1;
     if (item.sourceRefIds.length > 0) derivedSourceBound += 1;
@@ -1557,6 +1564,7 @@ function validateUnifiedSourceContext(context) {
       'contractRevision',
       'contentUnitCount',
       'sourceRefCount',
+      'currentDocumentSourceRefIds',
       'sourceRefs',
     ],
     [],
@@ -1583,6 +1591,13 @@ function validateUnifiedSourceContext(context) {
   array(context.sourceRefs, 'SOURCE_CONTEXT_REFS_INVALID');
   if (context.sourceRefs.length !== context.sourceRefCount)
     fail('SOURCE_CONTEXT_REF_COUNT_MISMATCH');
+  arrayOfText(
+    context.currentDocumentSourceRefIds,
+    'CURRENT_DOCUMENT_SOURCE_REFS_INVALID',
+  );
+  if (context.currentDocumentSourceRefIds.length === 0) {
+    fail('CURRENT_DOCUMENT_SOURCE_REF_REQUIRED');
+  }
   const seen = new Set();
   for (const sourceRef of context.sourceRefs) {
     assertObject(sourceRef, 'source ref');
@@ -1602,6 +1617,19 @@ function validateUnifiedSourceContext(context) {
     seen.add(sourceRef.sourceRefId);
     nonEmpty(sourceRef.locator, 'SOURCE_CONTEXT_LOCATOR_INVALID');
     nullableText(sourceRef.excerpt, 'SOURCE_CONTEXT_EXCERPT_INVALID');
+  }
+  const knownRefs = new Set(context.sourceRefs.map((item) => item.sourceRefId));
+  for (const sourceRefId of context.currentDocumentSourceRefIds) {
+    match(sourceRefId, SOURCE_REF_ID, 'CURRENT_DOCUMENT_SOURCE_REF_INVALID');
+    if (!knownRefs.has(sourceRefId)) {
+      fail(`CURRENT_DOCUMENT_SOURCE_REF_UNKNOWN:${sourceRefId}`);
+    }
+  }
+  if (
+    new Set(context.currentDocumentSourceRefIds).size !==
+    context.currentDocumentSourceRefIds.length
+  ) {
+    fail('CURRENT_DOCUMENT_SOURCE_REF_DUPLICATE');
   }
 }
 
@@ -1656,6 +1684,7 @@ function validateSynthesisOutput(output) {
       'authorityLevel',
       'externalDiscoveryIsEvidence',
       'overallCandidate',
+      'engineeringSummary',
       'findings',
       'missingInputs',
       'applicabilityStatus',
@@ -1724,6 +1753,12 @@ function validateSynthesisOutput(output) {
   );
   validateDiscoveryProviderSummaries(output.providers);
   nonEmpty(output.overallCandidate, 'OVERALL_CANDIDATE_INVALID');
+  validateEngineeringSummary(output.engineeringSummary);
+  equal(
+    output.overallCandidate,
+    output.engineeringSummary.conclusion.text,
+    'OVERALL_CONCLUSION_CANDIDATE_MISMATCH',
+  );
   array(output.findings, 'OVERALL_FINDINGS_INVALID');
   if (output.findings.length !== output.findingCount)
     fail('OVERALL_FINDING_COUNT_MISMATCH');
@@ -1757,6 +1792,145 @@ function validateSynthesisOutput(output) {
     'OVERALL_ENGINEER_REVIEW_REQUIRED',
   );
   rejectAuthoritativeNarrative(output);
+}
+
+function validateEngineeringSummary(summary) {
+  assertObject(summary, 'engineering summary');
+  exactKeys(
+    summary,
+    [
+      'schemaVersion',
+      'conclusion',
+      'whyItMatters',
+      'applicability',
+      'implementationImpact',
+      'dispositionPriority',
+      'nextActions',
+    ],
+    [],
+    'engineering summary',
+  );
+  equal(
+    summary.schemaVersion,
+    'wiselink.3_1.overall_engineering_summary.v1',
+    'OVERALL_ENGINEERING_SUMMARY_VERSION_INVALID',
+  );
+  validateEngineeringStatement(summary.conclusion, 'OVERALL_CONCLUSION');
+  validateEngineeringStatementArray(
+    summary.whyItMatters,
+    'OVERALL_WHY_IT_MATTERS',
+    1,
+  );
+  assertObject(summary.applicability, 'engineering applicability summary');
+  exactKeys(
+    summary.applicability,
+    ['sourceScope', 'fleetMatch', 'requiredFacts'],
+    [],
+    'engineering applicability summary',
+  );
+  validateEngineeringStatement(
+    summary.applicability.sourceScope,
+    'OVERALL_SOURCE_SCOPE',
+  );
+  validateEngineeringStatement(
+    summary.applicability.fleetMatch,
+    'OVERALL_FLEET_MATCH',
+  );
+  validateEngineeringStatementArray(
+    summary.applicability.requiredFacts,
+    'OVERALL_REQUIRED_FACTS',
+    0,
+  );
+  validateEngineeringStatementArray(
+    summary.implementationImpact,
+    'OVERALL_IMPLEMENTATION_IMPACT',
+    1,
+  );
+  validateEngineeringStatementArray(
+    summary.dispositionPriority,
+    'OVERALL_DISPOSITION_PRIORITY',
+    1,
+  );
+  validateEngineeringStatementArray(
+    summary.nextActions,
+    'OVERALL_NEXT_ACTIONS',
+    1,
+    3,
+  );
+}
+
+function validateEngineeringStatementArray(
+  statements,
+  code,
+  minimum,
+  maximum = Number.MAX_SAFE_INTEGER,
+) {
+  array(statements, `${code}_INVALID`);
+  if (statements.length < minimum || statements.length > maximum) {
+    fail(`${code}_COUNT_INVALID`);
+  }
+  statements.forEach((statement, index) =>
+    validateEngineeringStatement(statement, `${code}_${index}`),
+  );
+}
+
+function validateEngineeringStatement(statement, code) {
+  assertObject(statement, 'engineering statement');
+  exactKeys(
+    statement,
+    ['text', 'basis', 'sourceRefIds'],
+    [],
+    'engineering statement',
+  );
+  nonEmpty(statement.text, `${code}_TEXT_INVALID`);
+  if (!['SOURCE_FACT', 'CONDITIONAL_INFERENCE'].includes(statement.basis)) {
+    fail(`${code}_BASIS_INVALID`);
+  }
+  arrayOfText(statement.sourceRefIds, `${code}_SOURCE_REFS_INVALID`);
+  if (statement.sourceRefIds.length === 0) {
+    fail(`${code}_SOURCE_REF_REQUIRED`);
+  }
+  if (new Set(statement.sourceRefIds).size !== statement.sourceRefIds.length) {
+    fail(`${code}_SOURCE_REF_DUPLICATE`);
+  }
+  statement.sourceRefIds.forEach((sourceRefId) =>
+    match(sourceRefId, SOURCE_REF_ID, `${code}_SOURCE_REF_INVALID`),
+  );
+}
+
+function validateEngineeringSummaryBindings(
+  summary,
+  knownRefs,
+  currentDocumentRefs,
+) {
+  const statements = engineeringSummaryStatements(summary);
+  statements.forEach((statement, index) => {
+    statement.sourceRefIds.forEach((sourceRefId) => {
+      if (!knownRefs.has(sourceRefId)) {
+        fail(`OVERALL_UNKNOWN_SOURCE_REF:${sourceRefId}`);
+      }
+    });
+    if (
+      !statement.sourceRefIds.some((sourceRefId) =>
+        currentDocumentRefs.has(sourceRefId),
+      )
+    ) {
+      fail(`OVERALL_STATEMENT_CURRENT_DOCUMENT_SOURCE_REF_REQUIRED:${index}`);
+    }
+  });
+}
+
+function engineeringSummaryStatements(summary) {
+  return [
+    summary.conclusion,
+    ...summary.whyItMatters,
+    summary.applicability.sourceScope,
+    summary.applicability.fleetMatch,
+    ...summary.applicability.requiredFacts,
+    ...summary.implementationImpact,
+    ...summary.dispositionPriority,
+    ...summary.nextActions,
+  ];
 }
 
 function canonicalDiscoveryStatus(results) {
@@ -3410,6 +3584,9 @@ export function isForbiddenAuthorityInputKey(key) {
 function rejectAuthoritativeNarrative(output) {
   const text = [
     output.overallCandidate,
+    ...engineeringSummaryStatements(output.engineeringSummary).map(
+      (statement) => statement.text,
+    ),
     ...output.findings.flatMap((finding) => [
       finding.finding,
       finding.basis,

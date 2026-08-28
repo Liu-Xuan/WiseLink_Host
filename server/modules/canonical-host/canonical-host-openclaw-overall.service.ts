@@ -1,8 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 
 import type {
+  CanonicalOverallEngineeringSummary,
   CanonicalIntegratedAssessmentProjection,
   CanonicalOpenClawOverallProjection,
+  CanonicalSourceBoundEngineeringStatement,
   CanonicalWorkItemProjection,
 } from '@shared/api.interface';
 import { ActionAttemptLifecycleService } from '../action-attempt/action-attempt-lifecycle.service';
@@ -289,11 +291,18 @@ export class CanonicalHostOpenClawOverallService {
         actionAttemptId: attempt.attemptId,
         staleReason: null,
         overallCandidate: requiredText(parsed.overallCandidate),
+        engineeringSummary: overallEngineeringSummary(
+          parsed.engineeringSummary,
+        ),
         findings: overallFindings(parsed.findings),
         missingInputs: requiredTextArray(parsed.missingInputs),
         applicabilityStatus: requiredText(parsed.applicabilityStatus),
         engineeringReviewRequired: parsed.engineeringReviewRequired === true,
         providers: requiredObject(parsed.providers),
+        modelVersion: requiredText(prepared.result.modelVersion),
+        promptVersion: requiredText(prepared.result.promptVersion),
+        skillVersion: requiredText(prepared.result.skillVersion),
+        toolVersions: requiredTextRecord(prepared.result.toolVersions),
       };
       assertLatestOverallCandidate(modelInput.selectiveResynthesis, overall);
       const integratedAssessment: CanonicalIntegratedAssessmentProjection = {
@@ -731,6 +740,72 @@ function requiredObject(value: unknown): Record<string, unknown> {
     throw new Error('OPENCLAW_OVERALL_RESULT_OBJECT_INVALID');
   }
   return value as Record<string, unknown>;
+}
+function requiredTextRecord(value: unknown): Record<string, string> {
+  const record = requiredObject(value);
+  if (
+    Object.keys(record).length === 0 ||
+    Object.values(record).some(
+      (item: unknown): boolean => typeof item !== 'string' || !item.trim(),
+    )
+  ) {
+    throw new Error('OPENCLAW_OVERALL_RESULT_TEXT_RECORD_INVALID');
+  }
+  return Object.fromEntries(
+    Object.entries(record).map(([key, item]) => [key, requiredText(item)]),
+  );
+}
+function sourceBoundEngineeringStatement(
+  value: unknown,
+): CanonicalSourceBoundEngineeringStatement {
+  const statement = requiredObject(value);
+  const basis = requiredText(statement.basis);
+  if (basis !== 'SOURCE_FACT' && basis !== 'CONDITIONAL_INFERENCE') {
+    throw new Error('OPENCLAW_OVERALL_ENGINEERING_BASIS_INVALID');
+  }
+  return {
+    text: requiredText(statement.text),
+    basis,
+    sourceRefIds: requiredTextArray(statement.sourceRefIds),
+  };
+}
+function sourceBoundEngineeringStatements(
+  value: unknown,
+): CanonicalSourceBoundEngineeringStatement[] {
+  if (!Array.isArray(value)) {
+    throw new Error('OPENCLAW_OVERALL_ENGINEERING_STATEMENTS_INVALID');
+  }
+  return value.map((item: unknown) => sourceBoundEngineeringStatement(item));
+}
+function overallEngineeringSummary(
+  value: unknown,
+): CanonicalOverallEngineeringSummary {
+  const summary = requiredObject(value);
+  const applicability = requiredObject(summary.applicability);
+  if (
+    summary.schemaVersion !== 'wiselink.3_1.overall_engineering_summary.v1'
+  ) {
+    throw new Error('OPENCLAW_OVERALL_ENGINEERING_SUMMARY_VERSION_INVALID');
+  }
+  return {
+    schemaVersion: 'wiselink.3_1.overall_engineering_summary.v1',
+    conclusion: sourceBoundEngineeringStatement(summary.conclusion),
+    whyItMatters: sourceBoundEngineeringStatements(summary.whyItMatters),
+    applicability: {
+      sourceScope: sourceBoundEngineeringStatement(applicability.sourceScope),
+      fleetMatch: sourceBoundEngineeringStatement(applicability.fleetMatch),
+      requiredFacts: sourceBoundEngineeringStatements(
+        applicability.requiredFacts,
+      ),
+    },
+    implementationImpact: sourceBoundEngineeringStatements(
+      summary.implementationImpact,
+    ),
+    dispositionPriority: sourceBoundEngineeringStatements(
+      summary.dispositionPriority,
+    ),
+    nextActions: sourceBoundEngineeringStatements(summary.nextActions),
+  };
 }
 function overallFindings(value: unknown): Array<{
   finding: string;

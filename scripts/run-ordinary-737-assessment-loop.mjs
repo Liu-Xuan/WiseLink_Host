@@ -97,6 +97,12 @@ class LocalRegistrar {
     assert.equal(this.projection?.workItemId, workItemId);
     return structuredClone(this.projection);
   }
+
+  async getTenantScopedByWorkItemId({ workItemId, tenantId }) {
+    assert.equal(this.projection?.workItemId, workItemId);
+    assert.equal(tenantId, 'local-assessment-tenant');
+    return structuredClone(this.projection);
+  }
 }
 
 class LocalWorkItemRepository {
@@ -153,6 +159,7 @@ class LocalWorkItemRepository {
 const [
   { PHASE5_737_34_3830_HANDOFF },
   { ExactFtdFrozen2PdfProducerAdapter },
+  { MiaodaScopedProfessionalArtifactCorrelationAdapter },
   { OrdinaryCanonicalAuthorizationAdapter, OrdinaryCanonicalPermissionSnapshotAdapter },
   { OrdinaryMiaodaAppBindingAdapter },
   { CanonicalEntryFacadeService },
@@ -174,6 +181,7 @@ const [
 ] = await Promise.all([
   importBuilt('modules/document-management/src/hosted/phase5BoeingSbHandoff.js'),
   importBuilt('modules/canonical-host/exact-ftd-frozen2-pdf-producer.adapter.js'),
+  importBuilt('modules/canonical-host/scoped-professional-artifact-correlation.port.js'),
   importBuilt('modules/canonical-host/ordinary-canonical-authorization.adapter.js'),
   importBuilt('modules/canonical-host/ordinary-miaoda-app-binding.adapter.js'),
   importBuilt('modules/canonical-host/canonical-entry-facade.service.js'),
@@ -194,10 +202,13 @@ const [
   importBuilt('modules/assessment-workbench/job-aid-runtime/criterionSet.js'),
 ]);
 
-const sourcePath = resolve(
-  root,
-  '../../../../Docs/uploads/SB/机身/BOEING/2026/202605/737-34-3830 Original.pdf',
-);
+const configuredSourcePath = process.env.WL31_REAL_737_SB_PDF_PATH?.trim();
+if (!configuredSourcePath) {
+  throw new Error(
+    'WL31_REAL_737_SB_PDF_PATH_REQUIRED: set the absolute path of the controlled 737-34-3830 Original.pdf fixture',
+  );
+}
+const sourcePath = resolve(configuredSourcePath);
 const sourceBytes = await readFile(sourcePath);
 assert.equal(sourceBytes.byteLength, PHASE5_737_34_3830_HANDOFF.source.byteLength);
 assert.equal(sha256(sourceBytes), PHASE5_737_34_3830_HANDOFF.source.sha256);
@@ -205,7 +216,7 @@ assert.equal(sha256(sourceBytes), PHASE5_737_34_3830_HANDOFF.source.sha256);
 const fileService = new LocalFileService('local-phase5-bucket');
 const sourceSelection = {
   bucketId: 'local-phase5-bucket',
-  filePath: '/selection/737-34-3830-original.pdf',
+  filePath: `/drive/Canonical/${PHASE5_737_34_3830_HANDOFF.source.sha256}.pdf`,
 };
 fileService.seed({
   ...sourceSelection,
@@ -242,15 +253,24 @@ const resolved = {
     sourceArtifactId: 'source_artifact_phase5_local_actual_bytes',
     pdfSha256: PHASE5_737_34_3830_HANDOFF.source.sha256,
     byteLength: PHASE5_737_34_3830_HANDOFF.source.byteLength,
+    originalFilename: PHASE5_737_34_3830_HANDOFF.descriptor.originalFilename,
+    businessRevision: PHASE5_737_34_3830_HANDOFF.descriptor.businessRevision,
+    committedAt: '2026-08-13T03:00:00.000Z',
   },
   family: {
     documentFamily: 'SB',
+    canonicalDocumentNumber: PHASE5_737_34_3830_HANDOFF.descriptor.documentCode,
   },
   artifact: {
+    sourceArtifactId: 'source_artifact_phase5_local_actual_bytes',
     bucketId: sourceSelection.bucketId,
     filePath: sourceSelection.filePath,
     providerObjectId: sourceMetadata.id,
     providerVersionId: sourceMetadata.id,
+    sha256: PHASE5_737_34_3830_HANDOFF.source.sha256,
+    byteLength: PHASE5_737_34_3830_HANDOFF.source.byteLength,
+    mediaType: PHASE5_737_34_3830_HANDOFF.source.mediaType,
+    readbackVerified: true,
   },
 };
 const resolver = {
@@ -290,13 +310,35 @@ const reader = new UnifiedReaderService(
 );
 const registrar = new LocalRegistrar();
 const repository = new LocalWorkItemRepository();
-const authorization = new OrdinaryCanonicalAuthorizationAdapter();
-const permissionSnapshots = new OrdinaryCanonicalPermissionSnapshotAdapter();
+const localObjectAccess = {
+  async freshRead({ action, accessRoot }) {
+    const projection = registrar.projection;
+    assert.ok(projection);
+    assert.deepEqual(accessRoot, { kind: 'WORK_ITEM', id: projection.workItemId });
+    return {
+      allowed: true,
+      action,
+      accessRoot,
+      workItemId: projection.workItemId,
+      workItemRevision: projection.revision,
+      requestId: projection.requestId,
+      documentVersionId: projection.source.documentVersionId,
+      actorFingerprint: `sha256:${sha256(Buffer.from(
+        'app_17bzc551rsg\nservice:local-assessment-engineer\nlocal-assessment-tenant',
+      ))}`,
+      accessRevision: `work-item:${projection.revision}:creator-only.v1`,
+      authorizationFingerprint: `sha256:${'c'.repeat(64)}`,
+    };
+  },
+};
+const authorization = new OrdinaryCanonicalAuthorizationAdapter(localObjectAccess);
+const permissionSnapshots = new OrdinaryCanonicalPermissionSnapshotAdapter(localObjectAccess);
 const entry = new CanonicalEntryFacadeService(new OrdinaryMiaodaAppBindingAdapter());
 const producer = new ExactFtdFrozen2PdfProducerAdapter(
   fileService,
   resolver,
   validator,
+  new MiaodaScopedProfessionalArtifactCorrelationAdapter(fileService),
 );
 const vertical = new CanonicalHostVerticalService(
   registrar,
@@ -322,25 +364,38 @@ const workItems = new OrdinaryWorkItemService(
   vertical,
   fileService,
 );
+const developmentRunToken = '73738300-0000-4000-8000-000000000001';
 const actor = {
-  userId: 'local-assessment-engineer',
+  userId: 'service:local-assessment-engineer',
   tenantId: 'local-assessment-tenant',
   appId: 'app_17bzc551rsg',
   roles: ['authenticated', 'DOCUMENT_INGEST', 'ASSESSMENT_CANDIDATE'],
-  env: 'local',
+  env: 'dev',
 };
-const parsed = await workItems.parsePdf(
-  { selection: sourceSelection, query: 'applicability' },
-  actor,
+const parsed = await workItems.createDevelopmentAcceptanceRun(
+  {
+    documentVersionId: PHASE5_737_34_3830_HANDOFF.catalogIdentity.documentVersionId,
+    developmentRunToken,
+    query: 'applicability',
+  },
+  {
+    principalId: actor.userId,
+    appId: actor.appId,
+    tenantId: actor.tenantId,
+    environment: 'DEV',
+    documentVersionId: PHASE5_737_34_3830_HANDOFF.catalogIdentity.documentVersionId,
+    developmentRunToken,
+    authorizationFingerprint: `sha256:${'c'.repeat(64)}`,
+  },
 );
 assert.equal(parsed.result.status, 'CANDIDATE_VERTICAL_VERIFIED');
 assert.equal(parsed.result.workItem.source.documentVersionId,
   'document_version_f4813607b91ee1a20e754e2d');
-assert.equal(parsed.result.workItem.package.packageId,
-  PHASE5_737_34_3830_HANDOFF.parsedPackageImport.packageId);
-assert.equal(parsed.result.workItem.package.artifact.byteLength, 273349);
-assert.equal(parsed.result.workItem.package.artifact.sha256,
-  PHASE5_737_34_3830_HANDOFF.parsedPackageImport.artifactSha256.replace(/^sha256:/u, ''));
+assert.equal(parsed.result.workItem.package.contractRevision, 'frozen.2');
+assert.match(parsed.result.workItem.package.packageId,
+  /^urn:techpub:package:v1:sha256:[0-9a-f]{64}$/u);
+assert.equal(parsed.result.workItem.package.artifact.byteLength > 0, true);
+assert.match(parsed.result.workItem.package.artifact.sha256, /^[0-9a-f]{64}$/u);
 
 const assessmentConsumer = new AssessmentHostConsumerService();
 const assessment = new CanonicalHostAssessmentService(
@@ -355,6 +410,11 @@ const assessment = new CanonicalHostAssessmentService(
 const packageBytes = await artifactStore.readActualBytes(
   parsed.result.workItem.package.artifact,
 );
+const actualPackage = JSON.parse(new TextDecoder().decode(packageBytes));
+assert.equal(actualPackage.packageId, parsed.result.workItem.package.packageId);
+assert.equal(actualPackage.contractRevision, 'frozen.2');
+assert.equal(actualPackage.source.sourcePackageHash,
+  `sha256:${PHASE5_737_34_3830_HANDOFF.source.sha256}`);
 const ruleBytes = await readFile(resolve(
   root,
   'dist/server/runtime-assets/assessment-host/job-aid/rule-pack-0.2.json',
@@ -558,6 +618,10 @@ consumeOpenClawOverallSynthesisOutput(overallAInput, JSON.stringify(overallA));
 consumeOpenClawOverallSynthesisOutput(overallBInput, JSON.stringify(overallB));
 const overallABytes = Buffer.from(JSON.stringify(overallA));
 const overallAPersisted = await artifactStore.persistAndReadback(overallABytes);
+const overallAReadback = JSON.parse(new TextDecoder().decode(
+  await artifactStore.readActualBytes(overallAPersisted.artifact)));
+assert.deepEqual(overallAReadback.engineeringSummary, overallA.engineeringSummary);
+assert.equal(/AIMS[ -]?2/iu.test(JSON.stringify(overallAReadback)), false);
 const fast61 = await readFastReceipt('61', reader, artifactStore);
 const fast62 = await readFastReceipt('62', reader, artifactStore);
 const fast61Manifest = reviewedFastManifest(preview, fast61);
@@ -760,6 +824,13 @@ const withIntegrated = await registrar.compareAndSet({
         artifact: overallAPersisted.artifact,
         actionAttemptId: 'ATT-LOCAL-OPENCLAW-OVERALL-A',
         staleReason: null,
+        overallCandidate: overallA.overallCandidate,
+        engineeringSummary: structuredClone(overallA.engineeringSummary),
+        findings: structuredClone(overallA.findings),
+        missingInputs: [...overallA.missingInputs],
+        applicabilityStatus: overallA.applicabilityStatus,
+        engineeringReviewRequired: overallA.engineeringReviewRequired,
+        providers: structuredClone(overallA.providers),
       },
       overallForAeoConfirmation: {
         status: 'HUMAN_CONFIRMED',
@@ -812,8 +883,15 @@ const page = await vertical.page(
   { workItemId: secondResynthesis.workItemId, query: 'applicability' },
   actor,
 );
-const openApi = await vertical.openApiStatus(secondResynthesis.workItemId);
-const deepLink = await vertical.openApiDeepLink(secondResynthesis.workItemId);
+const openApiScope = {
+  principalId: actor.userId,
+  appId: actor.appId,
+  tenantId: actor.tenantId,
+  workItemId: secondResynthesis.workItemId,
+  authorizationFingerprint: `sha256:${'c'.repeat(64)}`,
+};
+const openApi = await vertical.openApiStatus(secondResynthesis.workItemId, openApiScope);
+const deepLink = await vertical.openApiDeepLink(secondResynthesis.workItemId, openApiScope);
 assert.equal(page.workItem.assessment.criterionCount, 150);
 assert.equal(openApi.assessmentSummary.criterionCount, 150);
 assert.equal(openApi.assessmentSummary.artifact.sha256,
@@ -823,7 +901,7 @@ assert.equal(openApi.integratedAssessmentSummary.overallSynthesis.status,
   'CANDIDATE_ONLY');
 assert.equal(page.workItem.aeo.status, 'CANDIDATE_WORD_EXPORTED');
 assert.equal(deepLink.deepLink, page.entry.deepLinkPath);
-assert.equal(ingestCalls, 1);
+assert.equal(ingestCalls, 0);
 assert.equal(repository.parseReservation.workItemId, secondResynthesis.workItemId);
 assert.equal(baseAiCallCount, 0);
 
@@ -871,6 +949,10 @@ process.stdout.write(`${JSON.stringify({
     secCandidatesMappedToUnifiedSourceRefs: true,
     candidateRefCount: overallB.candidateRefCount,
     candidateOnly: true,
+    engineeringSummary: overallAReadback.engineeringSummary,
+    aims2AbsentFrom737InputAndReadback:
+      !/AIMS[ -]?2/iu.test(JSON.stringify(overallAInput))
+      && !/AIMS[ -]?2/iu.test(JSON.stringify(overallAReadback)),
   },
   aeo: {
     status: aeoRun.aeo.status,
@@ -917,6 +999,88 @@ function providerSummary(status, direct, accessRestricted, candidateCount, failu
 }
 
 function localOverallOutput(input, discoveryStatus, providers, candidateRefCount) {
+  const backgroundRef = currentSourceRefByExcerpt(input, '0x1009 fault code');
+  const effectivityRef = currentSourceRefByExcerpt(
+    input, '737-8200 without Extended Range Twin Engine Operations');
+  const detailedEffectivityRef = currentSourceRefByExcerpt(input, 'line number(s) 5602');
+  const softwareRef = currentSourceRefByExcerpt(
+    input, 'Installation of the FMC OPS will erase all existing');
+  const sourceFact = (text, ...sourceRefIds) => ({
+    text, basis: 'SOURCE_FACT', sourceRefIds: [...new Set(sourceRefIds)],
+  });
+  const inference = (text, ...sourceRefIds) => ({
+    text, basis: 'CONDITIONAL_INFERENCE', sourceRefIds: [...new Set(sourceRefIds)],
+  });
+  const conclusion = sourceFact(
+    '737-34-3830 针对 GE FMC 易受大气辐射影响的旧 SRAM 引发空中重启问题，当前建议对适用飞机更换两台旧 FMC 为新构型并完成 FMC operational test。',
+    backgroundRef, effectivityRef, softwareRef,
+  );
+  const engineeringSummary = {
+    schemaVersion: 'wiselink.3_1.overall_engineering_summary.v1',
+    conclusion,
+    whyItMatters: [sourceFact(
+      '旧 SRAM 的多位错误会触发 0x1009 cold restart，清空 SRAM、丢失 flight plan data，并使重启时间长于 warm restart，影响运行可靠性。',
+      backgroundRef,
+    )],
+    applicability: {
+      sourceScope: sourceFact(
+        '源文件适用于 effectivity 清单内的 737-8、737-8200 non-ETOPS 和 737-9，并针对装有旧 GE FMC 构型的飞机。',
+        effectivityRef, detailedEffectivityRef, softwareRef,
+      ),
+      fleetMatch: inference(
+        '当前输入没有本机队 Variable/Line Number 与现装 FMC P/N，不能判定具体飞机适用或不适用。',
+        detailedEffectivityRef, softwareRef,
+      ),
+      requiredFacts: [
+        inference(
+          '取得每架候选飞机的 Variable/Line Number，并与源文件 effectivity 清单核对。',
+          detailedEffectivityRef,
+        ),
+        inference(
+          '核实现装 FMC 是否为 10-62225-004 / GE 2907C1 / 176200-01-01。',
+          softwareRef,
+        ),
+      ],
+    },
+    implementationImpact: [
+      sourceFact(
+        '实施前飞机必须已安装 ONS OS 9.1；新 FMC 仅允许 FMC OPS U14 或 U14.1。',
+        backgroundRef, softwareRef,
+      ),
+      sourceFact(
+        'OPS 安装会擦除现有 OFP，之后需恢复 OPC、MEDB、NDB、LDDB、ATN 与 ACARS ADDB；装有 HUD 的飞机需向 STC holder 确认兼容。',
+        softwareRef,
+      ),
+      sourceFact(
+        '每架需运营人提供两台新 FMC，无 kit、无特殊工具、无重量或电气负载变化，但 publications 与 flight operations 受影响。',
+        backgroundRef, effectivityRef, softwareRef,
+      ),
+    ],
+    dispositionPriority: [
+      sourceFact(
+        '源文件未给强制 compliance time，且明确为非 AD related；Boeing 建议实施以引入可靠性改进。',
+        backgroundRef, effectivityRef,
+      ),
+      inference(
+        '完成机队适用性和软件/HUD 前置条件核对后，可按可靠性改进纳入计划维修，无需按法规时限立即执行。',
+        backgroundRef, effectivityRef, softwareRef,
+      ),
+    ],
+    nextActions: [
+      inference(
+        '批量核对候选飞机的 Variable/Line Number 与现装 FMC P/N，形成适用飞机清单和异常项。',
+        detailedEffectivityRef, softwareRef,
+      ),
+      inference(
+        '对适用飞机确认 ONS OS 9.1，并准备 U14/U14.1 与 OFP 数据恢复包。',
+        backgroundRef, softwareRef,
+      ),
+      inference(
+        '仅对装有 HUD 的适用飞机取得 STC holder 兼容性确认。',
+        softwareRef,
+      ),
+    ],
+  };
   return {
     sourceResultId: input.outputCorrelationRef,
     documentVersionId: input.baseRuleResult.documentVersionId,
@@ -926,13 +1090,39 @@ function localOverallOutput(input, discoveryStatus, providers, candidateRefCount
     engineerReviewRevision: input.engineerReviewContext.revision,
     engineerReviewArtifactSha256: input.engineerReviewContext.artifactSha256,
     discoveryStatus, gap: discoveryStatus === 'NO_DISCOVERY' ? null : 'Discovery remains non-evidence.',
-    candidateRefCount, findingCount: 0, unresolvedCount: 150,
+    candidateRefCount, findingCount: 1,
+    unresolvedCount: input.baseRuleResult.unresolvedCount,
     authorityLevel: 'candidate_only', externalDiscoveryIsEvidence: false,
-    overallCandidate: 'Controlled inputs remain incomplete; engineer review is required.',
-    findings: [], missingInputs: ['controlled FleetFacts'],
+    overallCandidate: conclusion.text,
+    engineeringSummary,
+    findings: [{
+      finding: conclusion.text,
+      basis: '当前 DocumentVersion 的 SB 原文',
+      sourceRefIds: conclusion.sourceRefIds,
+      assumptions: [],
+      uncertainty: '具体机队适用性仍受 Variable/Line Number 与现装 FMC P/N 约束',
+    }],
+    missingInputs: ['候选飞机 Variable/Line Number', '候选飞机现装 FMC P/N'],
     applicabilityStatus: 'UNKNOWN/WAITING_INPUT', engineeringReviewRequired: true,
     adopted: false, usableAsEvidence: false, providers,
   };
+}
+
+function currentSourceRefByExcerpt(input, fragment) {
+  const normalizedFragment = normalizeWhitespace(fragment).toLowerCase();
+  const sourceRef = input.unifiedSourceContext.sourceRefs.find((candidate) =>
+    typeof candidate.excerpt === 'string'
+    && normalizeWhitespace(candidate.excerpt).toLowerCase().includes(normalizedFragment));
+  if (!sourceRef) {
+    throw new Error(`REAL_737_OVERALL_SOURCE_REF_NOT_EXPOSED:${fragment}`);
+  }
+  assert.equal(input.unifiedSourceContext.currentDocumentSourceRefIds.includes(
+    sourceRef.sourceRefId), true);
+  return sourceRef.sourceRefId;
+}
+
+function normalizeWhitespace(value) {
+  return String(value).replace(/\s+/gu, ' ').trim();
 }
 
 function assessmentOptions(workItem, artifactBytes, rulePack, ruleDigest, criterionSet) {
