@@ -69,10 +69,18 @@ type ImmutableSourceReuseState = {
   versions: Array<typeof dmDocumentVersion.$inferSelect>;
 };
 
+type DownstreamWorkItemLineage = Pick<
+  typeof workItem.$inferSelect,
+  'workItemId' | 'sourceArtifactId' | 'documentId' | 'documentVersionId'
+>;
+
 type ReviewAttachmentResidualReuseState = ImmutableSourceReuseState & {
   currentness: Array<typeof dmCurrentnessDecision.$inferSelect>;
-  downstreamWorkItems: Array<typeof workItem.$inferSelect>;
-  actionAttempts: unknown[];
+  downstreamWorkItems: DownstreamWorkItemLineage[];
+  actionAttempts: Array<Pick<
+    typeof actionAttempt.$inferSelect,
+    'attemptId' | 'workItemId' | 'documentVersionId'
+  >>;
   scopeConversations: Array<typeof reviewConversation.$inferSelect>;
   scopeWorkItems: Array<typeof workItem.$inferSelect>;
 };
@@ -199,6 +207,48 @@ function assertExactImmutableSource(
     );
   }
   return artifact;
+}
+
+function assertCompletedOrdinaryDownstreamLineage(
+  input: ImmutableSourceReuseInput,
+  completedVersions: Array<typeof dmDocumentVersion.$inferSelect>,
+  downstreamWorkItems: DownstreamWorkItemLineage[],
+  actionAttempts: ReviewAttachmentResidualReuseState['actionAttempts'],
+): void {
+  const completedVersionById: Map<
+    string,
+    typeof dmDocumentVersion.$inferSelect
+  > = new Map(completedVersions.map((row) => [row.documentVersionId, row]));
+  const workItemVersionById: Map<string, string> = new Map();
+  const hasUnprovenWorkItem: boolean = downstreamWorkItems.some((row) => {
+    const version: typeof dmDocumentVersion.$inferSelect | undefined =
+      completedVersionById.get(row.documentVersionId);
+    if (
+      row.sourceArtifactId !== input.sourceArtifactId
+      || !version
+      || version.sourceArtifactId !== input.sourceArtifactId
+      || row.documentId !== version.documentId
+    ) {
+      return true;
+    }
+    workItemVersionById.set(row.workItemId, row.documentVersionId);
+    return false;
+  });
+  const hasUnprovenActionAttempt: boolean = actionAttempts.some((row) => {
+    const documentVersionId: string | undefined = workItemVersionById.get(
+      row.workItemId,
+    );
+    return !documentVersionId || Boolean(
+      row.documentVersionId
+      && row.documentVersionId !== documentVersionId,
+    );
+  });
+  if (hasUnprovenWorkItem || hasUnprovenActionAttempt) {
+    fail(
+      'REVIEW_ATTACHMENT_RESIDUAL_DOWNSTREAM_PRESENT',
+      'Residual recovery is forbidden when downstream WorkItem or ActionAttempt bindings cannot be proven to belong to complete ordinary Catalog lineage.',
+    );
+  }
 }
 
 function withoutGeneratedAt(value: Record<string, unknown>) {
@@ -427,12 +477,10 @@ export function classifyReviewAttachmentResidualReuseState(
     || (state.currentness ?? []).some(
       (row) => row.preflightId === preflight.preflightId,
     )
-    || (state.downstreamWorkItems ?? []).length > 0
-    || (state.actionAttempts ?? []).length > 0
   ) {
     fail(
       'REVIEW_ATTACHMENT_RESIDUAL_DOWNSTREAM_PRESENT',
-      'Residual recovery is forbidden when the residual has a DocumentVersion or currentness link, or the source has a downstream WorkItem or ActionAttempt binding.',
+      'Residual recovery is forbidden when the residual has a DocumentVersion or currentness link.',
     );
   }
   if (
@@ -565,6 +613,12 @@ export function classifyReviewAttachmentResidualReuseState(
       versions: state.versions,
     });
   }
+  assertCompletedOrdinaryDownstreamLineage(
+    input,
+    state.versions ?? [],
+    state.downstreamWorkItems ?? [],
+    state.actionAttempts ?? [],
+  );
   return {
     disposition: 'REVIEW_ATTACHMENT_RESIDUAL_RECOVERY_ALLOWED',
     residualAcquisitionId: acquisition.acquisitionId,
@@ -715,17 +769,24 @@ export class MiaodaHostedDocumentCatalog {
           inArray(dmCurrentnessDecision.preflightId, preflightIds),
         ).limit(100)
         : [];
-      const downstreamWorkItems = await this.db.select().from(workItem).where(
+      const downstreamWorkItems = await this.db.select({
+        workItemId: workItem.workItemId,
+        sourceArtifactId: workItem.sourceArtifactId,
+        documentId: workItem.documentId,
+        documentVersionId: workItem.documentVersionId,
+      }).from(workItem).where(
         eq(workItem.sourceArtifactId, input.sourceArtifactId),
-      ).limit(100);
+      );
       const actionAttempts = await this.db.select({
         attemptId: actionAttempt.attemptId,
+        workItemId: actionAttempt.workItemId,
+        documentVersionId: actionAttempt.documentVersionId,
       }).from(actionAttempt).innerJoin(
         workItem,
         eq(workItem.workItemId, actionAttempt.workItemId),
       ).where(
         eq(workItem.sourceArtifactId, input.sourceArtifactId),
-      ).limit(100);
+      );
       const scope = input.serverBoundReviewAttachmentScope;
       const scopeConversations = await this.db.select()
         .from(reviewConversation)
