@@ -1,5 +1,8 @@
 import { getDocumentFamilyAdapter } from '../migrated/adapters/documentFamilyAdapterRegistry.js';
-import { buildGovernedDocumentIngressPreflightDecision } from '../migrated/ingress/documentIngressPreflight.js';
+import {
+  buildGovernedDocumentIngressPreflightDecision,
+  documentIngressCodeFromFilename,
+} from '../migrated/ingress/documentIngressPreflight.js';
 import { normalizeUploadDescriptor } from '../migrated/ingress/uploadDescriptor.js';
 import { deterministicId, sha256Hex } from '../runtime/valueTools.js';
 
@@ -11,6 +14,8 @@ const EXACT_LINK_DECISIONS = new Set([
   'REUSE_EXACT',
   'RESUME_EXISTING_PROCESS',
 ]);
+const REVIEW_ATTACHMENT_SOURCE_CHANNEL =
+  'canonical_review_attachment_selection';
 
 function fail(code, message, details = {}) {
   throw Object.assign(new Error(message), { code, details });
@@ -65,6 +70,24 @@ function rejectSelfReportedAuthority(request) {
   }
 }
 
+function assertReservedSourceChannelAuthority(request, serverContext) {
+  if (request.sourceChannel !== REVIEW_ATTACHMENT_SOURCE_CHANNEL) return;
+  const reviewAuthority = serverContext.runtimeIngestAuthority;
+  if (
+    reviewAuthority?.mode !== 'HOSTED_OAUTH_SESSION_REVIEW_ATTACHMENT' ||
+    reviewAuthority.actorUserId !== serverContext.actorUserId ||
+    reviewAuthority.tenantId !== serverContext.tenantId ||
+    reviewAuthority.identityProvenance !==
+      'FEISHU_OAUTH_USER_ACCESS_TOKEN' ||
+    reviewAuthority.sessionProvenance !== 'SERVER_OPAQUE_SESSION'
+  ) {
+    fail(
+      'REVIEW_ATTACHMENT_INGEST_AUTHORITY_REQUIRED',
+      'The reserved Review attachment source channel requires server-bound authority.',
+    );
+  }
+}
+
 function issuerFor(normalizedDescriptor) {
   const explicit = String(normalizedDescriptor.issuer || '').trim();
   if (explicit) return explicit.toUpperCase();
@@ -76,6 +99,55 @@ function issuerFor(normalizedDescriptor) {
       .trim()
       .toUpperCase() || 'UNKNOWN'
   );
+}
+
+function sourceDescriptorForSelection({
+  request,
+  selected,
+  immutable,
+  actualSha256,
+}) {
+  const sourceDescriptor = {
+    ...(request.descriptor || {}),
+    originalFilename:
+      request.descriptor?.originalFilename || selected.fileName,
+    mediaType: 'application/pdf',
+    sha256: actualSha256,
+    sizeBytes: selected.bytes.byteLength,
+    sourceKind: request.sourceChannel || 'miaoda_file_service_selection',
+    sourceStorageKey: `${immutable.bucketId}:${immutable.filePath}`,
+    providerUpdatedAt: selected.providerUpdatedAt || null,
+  };
+  if (request.sourceChannel !== REVIEW_ATTACHMENT_SOURCE_CHANNEL) {
+    return sourceDescriptor;
+  }
+
+  const filenameDocumentCode = documentIngressCodeFromFilename(
+    selected.fileName,
+  );
+  // Review attachments have no caller-authoritative publication identity. Bind
+  // their fallback identity to the FileService bytes after actual-byte
+  // verification; retain a recognized controlled filename code when present.
+  const documentCode =
+    filenameDocumentCode ||
+    `REVIEW-ATTACHMENT-${actualSha256}`.toUpperCase();
+  return {
+    ...sourceDescriptor,
+    originalFilename: selected.fileName,
+    documentCode,
+    documentFamily: 'OEM_REFERENCE',
+    sourceType: 'oem_reference',
+    businessRevision: 'R1',
+    revisionDate: undefined,
+    sourceGeneratedDate: undefined,
+    documentCodeProvenance: {
+      schemaVersion: 'wiselink.document_code_provenance.v1',
+      source: 'controlled_metadata',
+      candidates: [documentCode],
+      inspectedSha256: actualSha256,
+      conflict: false,
+    },
+  };
 }
 
 export class DocumentManagementHostedCore {
@@ -118,6 +190,7 @@ export class DocumentManagementHostedCore {
         'request.selection.filePath',
       ),
     };
+    assertReservedSourceChannelAuthority(request, serverContext);
     await this.authorizer.assertCanIngest({
       actorUserId,
       tenantId,
@@ -224,17 +297,12 @@ export class DocumentManagementHostedCore {
     }
 
     const acquiredAt = this.now();
-    const sourceDescriptor = {
-      ...(request.descriptor || {}),
-      originalFilename:
-        request.descriptor?.originalFilename || selected.fileName,
-      mediaType: 'application/pdf',
-      sha256: actualSha256,
-      sizeBytes: selected.bytes.byteLength,
-      sourceKind: request.sourceChannel || 'miaoda_file_service_selection',
-      sourceStorageKey: `${immutable.bucketId}:${immutable.filePath}`,
-      providerUpdatedAt: selected.providerUpdatedAt || null,
-    };
+    const sourceDescriptor = sourceDescriptorForSelection({
+      request,
+      selected,
+      immutable,
+      actualSha256,
+    });
     const sourceArtifactRecord = {
       sourceArtifactId,
       sha256: actualSha256,

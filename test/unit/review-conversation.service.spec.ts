@@ -278,6 +278,99 @@ describe('ReviewConversationService session and ACL boundary', () => {
     expect(JSON.stringify(result)).not.toContain('artifact-internal-ref');
   });
 
+  it('keeps ReviewTurn and EngineerSuppliedInput at zero writes when DM attachment ingestion fails', async () => {
+    const setup = makeService();
+    setup.objectAccess.freshRead
+      .mockResolvedValueOnce(grant)
+      .mockResolvedValueOnce({
+        ...grant,
+        action: 'INGEST_ATTACHMENT_SINGLE_REQUEST',
+      });
+    setup.conversations.loadById.mockResolvedValue({
+      conversation,
+      turns: [],
+    });
+    setup.attachments.ingest.mockRejectedValue(
+      Object.assign(new Error('Document identity is unresolved.'), {
+        code: 'DOCUMENT_IDENTITY_UNRESOLVED',
+      }),
+    );
+
+    await expect(
+      setup.service.appendTextTurn(
+        'WI-1',
+        'RC-1',
+        {
+          requestId: 'request-attachment-failed',
+          userMessage: 'Must not persist without an immutable version.',
+          attachmentSelection: {
+            bucketId: 'default-bucket',
+            filePath: 'official-selection/engineering-note.pdf',
+          },
+        },
+        {} as never,
+      ),
+    ).rejects.toMatchObject({ code: 'DOCUMENT_IDENTITY_UNRESOLVED' });
+
+    expect(setup.attachments.ingest).toHaveBeenCalledTimes(1);
+    expect(setup.conversations.appendTextTurn).not.toHaveBeenCalled();
+  });
+
+  it('keeps ReviewTurn and EngineerSuppliedInput at zero writes when post-ingest ACL reauthorization is denied', async () => {
+    const setup = makeService();
+    setup.objectAccess.freshRead
+      .mockResolvedValueOnce(grant)
+      .mockResolvedValueOnce({
+        ...grant,
+        action: 'INGEST_ATTACHMENT_SINGLE_REQUEST',
+      })
+      .mockResolvedValueOnce({
+        allowed: false,
+        code: 'CANONICAL_WORK_ITEM_NOT_FOUND',
+        statusCode: 404,
+      });
+    setup.conversations.loadById.mockResolvedValue({
+      conversation,
+      turns: [],
+    });
+    setup.attachments.ingest.mockResolvedValue({
+      attachmentRef: 'ATTACHMENT-POST-ACL',
+      documentVersionId: 'DV-POST-ACL',
+      fileName: 'engineering-note.pdf',
+      mediaType: 'application/pdf',
+      byteLength: 321,
+      selectionKey: 'default-bucket\nofficial-selection/engineering-note.pdf',
+      parsedArtifact: {
+        storeRole: 'UnifiedArtifactStoreCandidate',
+        ref: 'artifact-internal-ref',
+        sha256: 'a'.repeat(64),
+        byteLength: 100,
+      },
+    });
+
+    await expect(
+      setup.service.appendTextTurn(
+        'WI-1',
+        'RC-1',
+        {
+          requestId: 'request-post-ingest-denied',
+          userMessage: 'Must reauthorize before persistence.',
+          attachmentSelection: {
+            bucketId: 'default-bucket',
+            filePath: 'official-selection/engineering-note.pdf',
+          },
+        },
+        {} as never,
+      ),
+    ).rejects.toMatchObject({
+      code: 'CANONICAL_WORK_ITEM_NOT_FOUND',
+      statusCode: 404,
+    });
+
+    expect(setup.attachments.ingest).toHaveBeenCalledTimes(1);
+    expect(setup.conversations.appendTextTurn).not.toHaveBeenCalled();
+  });
+
   it('rejects append after close and performs no turn write', async () => {
     const setup = makeService();
     setup.conversations.loadById.mockResolvedValue({
