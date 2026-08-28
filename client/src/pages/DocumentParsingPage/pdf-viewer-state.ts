@@ -14,3 +14,34 @@ export function visiblePdfPages(
     (page: number) => page >= 1 && page <= pageCount,
   );
 }
+
+/** Accepts only a positive base-10 page number from a browser deep link. */
+export function parsePdfTargetPage(value: string | null): number | null {
+  const normalized: string = value?.trim() ?? '';
+  if (!/^[1-9]\d*$/u.test(normalized)) return null;
+  const page: number = Number(normalized);
+  return Number.isSafeInteger(page) ? page : null;
+}
+
+/** An explicit structured-content page survives even when Reader query units are empty. */
+export function resolvePdfTargetPage(
+  explicitTargetPage: number | null,
+  queriedUnitPageStart: number | null | undefined,
+): number | null {
+  if (
+    explicitTargetPage !== null &&
+    Number.isSafeInteger(explicitTargetPage) &&
+    explicitTargetPage > 0
+  ) {
+    return explicitTargetPage;
+  }
+  if (
+    queriedUnitPageStart !== null &&
+    queriedUnitPageStart !== undefined &&
+    Number.isSafeInteger(queriedUnitPageStart) &&
+    queriedUnitPageStart > 0
+  ) {
+    return queriedUnitPageStart;
+  }
+  return null;
+}

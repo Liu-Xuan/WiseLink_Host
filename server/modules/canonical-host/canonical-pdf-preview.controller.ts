@@ -81,12 +81,13 @@ export class CanonicalPdfPreviewController {
       setPrivatePreviewHeaders(input.response);
       throw error;
     }
-    setPdfHeaders(input.response, result.byteLength);
     if (result.kind === 'RANGE_UNSUPPORTED') {
+      setPdfHeaders(input.response, 0);
       input.response.setHeader('Content-Range', `bytes */${result.byteLength}`);
       input.response.status(416).end();
       return;
     }
+    setPdfHeaders(input.response, result.byteLength);
     if (result.kind === 'HEAD') {
       input.response.status(200).end();
       return;

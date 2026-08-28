@@ -38,11 +38,14 @@ interface TestTarget {
   sourceStore: { readSelection: jest.Mock };
 }
 
-function projection(revision = 7): CanonicalWorkItemProjection {
+function projection(
+  revision = 7,
+  requestId = 'REQ-PDF-1001',
+): CanonicalWorkItemProjection {
   return {
     schemaVersion: 'wiselink.3_1.canonical_work_item_projection.v0.candidate',
     workItemId: 'WI-PDF-1001',
-    requestId: 'REQ-PDF-1001',
+    requestId,
     revision,
     phase: 'CANDIDATE_READBACK_VERIFIED',
     permissionSnapshotVersion: 'permission:test',
@@ -187,6 +190,7 @@ describe('CanonicalPdfPreviewService', () => {
     expect(preview.opaqueLocator).toMatch(/^[A-Za-z0-9_-]{43}$/u);
     for (const secret of [
       'DOC-INTERNAL-1001',
+      'REQ-PDF-1001',
       'DV-INTERNAL-1001',
       'SOURCE-INTERNAL-1001',
       'DRIVE-TOKEN-INTERNAL',
@@ -213,6 +217,13 @@ describe('CanonicalPdfPreviewService', () => {
     expect(testTarget.authorization.authorize).toHaveBeenCalledWith(
       expect.objectContaining({
         action: 'READ_DOCUMENT_PARSING',
+        requestId: 'REQ-PDF-1001',
+        documentVersionId: 'DV-INTERNAL-1001',
+      }),
+    );
+    expect(testTarget.permissionSnapshots.freshRead).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requestId: 'REQ-PDF-1001',
         documentVersionId: 'DV-INTERNAL-1001',
       }),
     );
@@ -274,6 +285,29 @@ describe('CanonicalPdfPreviewService', () => {
       code: 'PDF_PREVIEW_SOURCE_DRIFT',
       statusCode: 409,
     });
+  });
+
+  it('returns 409 when the fresh WorkItem requestId drifts', async () => {
+    const testTarget: TestTarget = target();
+    const preview = await availablePreview(testTarget);
+    testTarget.registrar.getTenantScopedByWorkItemId.mockResolvedValue(
+      projection(testTarget.projection.revision, 'REQ-PDF-DRIFTED'),
+    );
+
+    await expect(
+      testTarget.service.read({
+        actor: ACTOR,
+        workItemId: testTarget.projection.workItemId,
+        opaqueLocator: preview.opaqueLocator,
+        method: 'GET',
+        range: null,
+      }),
+    ).rejects.toMatchObject({
+      code: 'PDF_PREVIEW_SOURCE_DRIFT',
+      statusCode: 409,
+    });
+    expect(testTarget.resolver.resolve).toHaveBeenCalledTimes(1);
+    expect(testTarget.sourceStore.readSelection).not.toHaveBeenCalled();
   });
 
   it('sanitizes fresh authorization and registrar failures', async () => {

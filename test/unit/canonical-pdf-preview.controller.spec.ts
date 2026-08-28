@@ -177,6 +177,7 @@ describe('CanonicalPdfPreviewController', () => {
     expect(target.headers).toMatchObject({
       'Accept-Ranges': 'none',
       'Content-Range': 'bytes */1060204',
+      'Content-Length': '0',
     });
   });
 

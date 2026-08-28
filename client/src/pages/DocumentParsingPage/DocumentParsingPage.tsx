@@ -47,6 +47,7 @@ import { AssessmentSemanticsOverview } from './AssessmentSemanticsOverview';
 import { DocumentReaderWorkspace } from './DocumentReaderWorkspace';
 import PdfSourcePane from './PdfSourcePane';
 import { StructuredContentBrowser } from './StructuredContentBrowser';
+import { parsePdfTargetPage } from './pdf-viewer-state';
 import ReviewImpactPreview from '@client/src/features/review/ReviewImpactPreview';
 import ContinuousReviewPanel from '@client/src/features/review/ContinuousReviewPanel';
 import RevisionTimeline from '@client/src/features/review/RevisionTimeline';
@@ -339,6 +340,9 @@ export default function DocumentParsingPage() {
   const requestedReaderUnit: string = searchParams.get('unit')?.trim() ?? '';
   const requestedSourceRef: string =
     searchParams.get('sourceRef')?.trim() ?? '';
+  const requestedPdfTargetPage: number | null = parsePdfTargetPage(
+    searchParams.get('page'),
+  );
   const selectedReaderResult = results.find(
     (result) =>
       (requestedReaderUnit === '' || result.unitId === requestedReaderUnit) &&
@@ -461,7 +465,7 @@ export default function DocumentParsingPage() {
   function locateSourceRef(
     unitId: string | null,
     sourceRef: string,
-    intent: ReaderViewMode = 'structured',
+    intent: ReaderViewMode = 'source',
   ): void {
     setStructuredSourceLocator(null);
     setEvidenceSignal((v) => v + 1);
@@ -752,6 +756,7 @@ export default function DocumentParsingPage() {
                   data={data}
                   requestedSourceRef={requestedSourceRef}
                   structuredLocator={structuredSourceLocator}
+                  explicitTargetPage={requestedPdfTargetPage}
                   locateSignal={evidenceSignal}
                   onLocate={locatePdfQuerySourceRef}
                   onReturnStructured={() =>
@@ -808,6 +813,7 @@ export default function DocumentParsingPage() {
               data={data}
               requestedSourceRef={requestedSourceRef}
               structuredLocator={structuredSourceLocator}
+              explicitTargetPage={requestedPdfTargetPage}
               locateSignal={evidenceSignal}
               onLocate={locatePdfQuerySourceRef}
               onReturnStructured={returnToStructuredReader}

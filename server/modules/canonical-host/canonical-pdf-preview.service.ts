@@ -32,6 +32,7 @@ interface CanonicalPdfPreviewGrant {
   actorUserId: string;
   tenantId: string;
   workItemId: string;
+  requestId: string;
   workItemRevision: number;
   documentVersionId: string;
   sourceArtifactId: string;
@@ -114,6 +115,7 @@ export class CanonicalPdfPreviewService {
         actorUserId: actor.userId,
         tenantId: actor.tenantId,
         workItemId: projection.workItemId,
+        requestId: projection.requestId,
         workItemRevision: projection.revision,
         documentVersionId: projection.source.documentVersionId,
         sourceArtifactId: projection.source.sourceArtifactId,
@@ -228,6 +230,7 @@ export class CanonicalPdfPreviewService {
     }
     if (
       projection.revision !== grant.workItemRevision ||
+      projection.requestId !== grant.requestId ||
       projection.source.documentVersionId !== grant.documentVersionId ||
       projection.source.sourceArtifactId !== grant.sourceArtifactId ||
       projection.source.sourceFileSha256 !== grant.sourceSha256 ||
@@ -269,6 +272,7 @@ export class CanonicalPdfPreviewService {
           actor,
           action: 'READ_DOCUMENT_PARSING',
           workItemId,
+          requestId: grant.requestId,
           documentVersionId: grant.documentVersionId,
         });
       if (
@@ -281,6 +285,7 @@ export class CanonicalPdfPreviewService {
         actor,
         decision,
         workItemId,
+        requestId: grant.requestId,
         documentVersionId: grant.documentVersionId,
       });
       if (

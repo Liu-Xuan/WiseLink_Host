@@ -7,6 +7,7 @@ import type {
 } from '@shared/api.interface';
 
 import PdfDocumentViewer from './PdfDocumentViewer';
+import { resolvePdfTargetPage } from './pdf-viewer-state';
 import './pdf-source-pane.css';
 
 export interface PdfSourcePaneProps {
@@ -18,6 +19,8 @@ export interface PdfSourcePaneProps {
   requestedSourceRef: string;
   /** Sanitized locator supplied by full-content browsing when no query is active. */
   structuredLocator?: CanonicalStructuredContentSourceLocator | null;
+  /** 结构化浏览器投影到 URL 的 browser-safe pageStart。 */
+  explicitTargetPage: number | null;
   /** 同一 SourceRef 再次被定位时也触发一次页码高亮 */
   locateSignal: number;
   /** 点击页码定位：跳回 Reader 结构化视图 */
@@ -41,6 +44,7 @@ export default function PdfSourcePane({
   data,
   requestedSourceRef,
   structuredLocator = null,
+  explicitTargetPage,
   locateSignal,
   onLocate,
   onReturnStructured,
@@ -77,6 +81,10 @@ export default function PdfSourcePane({
             },
           ]
         : [];
+  const targetPage: number | null = resolvePdfTargetPage(
+    explicitTargetPage,
+    locatedPages[0]?.pageStart,
+  );
 
   /* §06 原文定位：SourceRef 点击后 PDF 区域一次性淡入高亮 900ms。
    * 定位信号变化时重新触发一次动画（remove → reflow → add）。 */
@@ -164,7 +172,7 @@ export default function PdfSourcePane({
         <PdfDocumentViewer
           workItemId={data.workItem.workItemId}
           preview={pdfPreview}
-          targetPage={locatedPages[0]?.pageStart ?? null}
+          targetPage={targetPage}
           targetSignal={
             requestedSourceRef ? `${requestedSourceRef}:${locateSignal}` : ''
           }
