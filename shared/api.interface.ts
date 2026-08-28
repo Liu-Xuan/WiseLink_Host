@@ -1024,6 +1024,10 @@ export interface CanonicalEngineerReviewLedgerProjection {
 
 export interface CanonicalEngineerReviewPageItem {
   criterionId: string;
+  criterionName?: string;
+  evaluationQuestion?: string;
+  decisionRule?: string;
+  appliesWhen?: string;
   dynamicResult: string;
   candidateConclusion: string;
   humanReviewRequired: boolean;

@@ -1,11 +1,36 @@
 import type { CanonicalWorkItemProjection } from '@shared/api.interface';
 import { CanonicalHostEngineerReviewService } from '../../server/modules/canonical-host/canonical-host-engineer-review.service';
+import { CANONICAL_ACTIVE_JOB_AID_CRITERION_SET_ID } from '../../server/modules/canonical-host/canonical-job-aid-browser-rules';
 import {
   encodeReviewAttachmentParsedArtifact,
   reviewAttachmentEvidenceStatement,
 } from '../../server/modules/review-persistence/review-attachment-artifact';
 
 describe('CanonicalHostEngineerReviewService', () => {
+  it('projects the active JobAid rule text for browser review without internal rule metadata', async () => {
+    const harness = target();
+    harness.state.workItem.integratedAssessment!.baseRules!.criterionSetId =
+      CANONICAL_ACTIVE_JOB_AID_CRITERION_SET_ID;
+    harness.artifacts.set('artifact://dynamic', dynamicBytes('GOV-001'));
+
+    const context = await harness.service.pageContext(harness.state.workItem);
+
+    expect(context?.items).toEqual([
+      expect.objectContaining({
+        criterionId: 'GOV-001',
+        criterionName: '程序手册优先级与冲突检查',
+        evaluationQuestion:
+          '本次评估所采用的 JA 规则是否与现行有效程序手册冲突？',
+        appliesWhen: '所有使用本规则包的评估。',
+        decisionRule: expect.stringContaining('现行有效程序手册为准'),
+      }),
+    ]);
+    const serialized = JSON.stringify(context);
+    expect(serialized).not.toContain('criterionHash');
+    expect(serialized).not.toContain('criterionVersion');
+    expect(serialized).not.toContain('ruleArtifact');
+  });
+
   it('appends repeated criterion reviews, stales overall, clears AEO, and exposes only sanitized model context', async () => {
     const harness = target();
     const actor = {
@@ -429,7 +454,7 @@ function workItem(): CanonicalWorkItemProjection {
   };
 }
 
-function dynamicBytes() {
+function dynamicBytes(criterionId = 'RULE-001') {
   return new TextEncoder().encode(
     JSON.stringify({
       ruleResults: {
@@ -446,7 +471,7 @@ function dynamicBytes() {
         ],
         rows: [
           [
-            'RULE-001',
+            criterionId,
             'PASS',
             ['fact'],
             'rule application',
