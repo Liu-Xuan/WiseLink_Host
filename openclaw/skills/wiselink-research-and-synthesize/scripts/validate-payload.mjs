@@ -62,6 +62,8 @@ const DISCOVERY_STATUSES = new Set([
 const SHA256 = /^sha256:[a-f0-9]{64}$/u;
 const PACKAGE_ID = /^urn:techpub:package:v1:sha256:[a-f0-9]{64}$/u;
 const SOURCE_REF_ID = /^urn:techpub:source-ref:v1:sha256:[a-f0-9]{64}$/u;
+/** Keep these two patterns aligned with the current Host ResultGate. */
+const ATA_CHAPTER_PATTERN = /\b\d{2,3}(?:-\d{2,3})?\b/;
 export const DYNAMIC_RULES_TRANSPORT_TARGET_MAX_UTF8_BYTES = 28_000;
 const DYNAMIC_RULE_RESULT_FIELDS = [
   'ruleId',
@@ -2819,10 +2821,19 @@ export function validateTranslationModelInput(input) {
   );
   assertObject(input.rulePack, 'translation rule pack');
   assertObject(input.rulePack.meta, 'translation rule pack meta');
+  assertObject(input.rulePack.deterministic, 'translation deterministic rules');
   nonEmpty(input.rulePack.meta.rulePackId, 'TRANSLATION_RULE_PACK_ID_REQUIRED');
   nonEmpty(
     input.rulePack.meta.rulePackVersion,
     'TRANSLATION_RULE_PACK_VERSION_REQUIRED',
+  );
+  boolean(
+    input.rulePack.deterministic.numericFidelity,
+    'TRANSLATION_NUMERIC_FIDELITY_RULE_INVALID',
+  );
+  boolean(
+    input.rulePack.deterministic.preserveAtaChapterNumbers,
+    'TRANSLATION_ATA_PRESERVATION_RULE_INVALID',
   );
   assertObject(input.taskStartBinding, 'translation task binding');
   array(input.sourceUnits, 'TRANSLATION_SOURCE_UNITS_INVALID');
@@ -2884,6 +2895,7 @@ export function validateTranslationPair(input, output) {
     'TRANSLATION_UNIT_COUNT_MISMATCH',
   );
   const sourceKeys = new Set();
+  const fidelityFindings = [];
   input.sourceUnits.forEach((source, index) => {
     if (sourceKeys.has(source.unitKey))
       fail('TRANSLATION_SOURCE_UNIT_DUPLICATE');
@@ -2907,11 +2919,97 @@ export function validateTranslationPair(input, output) {
       canonicalJson(source.sourceRefIds),
       'TRANSLATION_SOURCE_REF_MISMATCH',
     );
+    fidelityFindings.push(
+      ...translationFidelityFindings({
+        unitKey: source.unitKey,
+        sourceText: source.text,
+        candidateText: candidate.text,
+        deterministic: input.rulePack.deterministic,
+      }),
+    );
     if (candidate.engineerRevision !== null) {
       assertObject(candidate.engineerRevision, 'translation engineer revision');
     }
   });
+  if (fidelityFindings.length > 0) {
+    fail(
+      `TRANSLATION_RULE_PREFLIGHT_REJECTED:${canonicalJson({
+        findingCount: fidelityFindings.length,
+        findings: fidelityFindings,
+      })}`,
+    );
+  }
   return output;
+}
+
+function translationFidelityFindings({
+  unitKey,
+  sourceText,
+  candidateText,
+  deterministic,
+}) {
+  const findings = [];
+  if (deterministic.numericFidelity) {
+    // Exact Host semantics: token occurrence multiset equality catches
+    // missing, changed, extra, and wrongly duplicated numeric tokens.
+    const sourceCounts = numberMultiset(sourceNumbers(sourceText));
+    const targetCounts = numberMultiset(sourceNumbers(candidateText));
+    for (const [token, sourceCount] of sourceCounts) {
+      const targetCount = targetCounts.get(token) ?? 0;
+      if (targetCount < sourceCount) {
+        findings.push({
+          ruleId: 'number.fidelity',
+          code: 'NUMBER_NOT_PRESERVED',
+          unitKey,
+          message: `number "${token}" appears ${String(sourceCount)}x in the source but only ${String(targetCount)}x in the translation`,
+        });
+      }
+    }
+    for (const [token, targetCount] of targetCounts) {
+      const sourceCount = sourceCounts.get(token) ?? 0;
+      if (targetCount > sourceCount) {
+        findings.push({
+          ruleId: 'number.fidelity',
+          code: 'NUMBER_NOT_PRESERVED',
+          unitKey,
+          message: `number "${token}" appears ${String(targetCount)}x in the translation but only ${String(sourceCount)}x in the source (extra/changed)`,
+        });
+      }
+    }
+  }
+
+  if (deterministic.preserveAtaChapterNumbers) {
+    const ataMatches = sourceText.match(ATA_CHAPTER_PATTERN) ?? [];
+    for (const ata of ataMatches) {
+      if (!candidateText.includes(ata)) {
+        findings.push({
+          ruleId: 'ata.preserve',
+          code: 'ATA_CHAPTER_NOT_PRESERVED',
+          unitKey,
+          message: `ATA chapter "${ata}" must be preserved verbatim`,
+        });
+      }
+    }
+  }
+  return findings;
+}
+
+function sourceNumbers(text) {
+  // A sign is semantic only at a token boundary. In A-12 or 2026-08-28 the
+  // hyphen is an identifier/date connector, so the following number is unsigned.
+  return (
+    text.match(
+      /(?<![\p{L}\p{N}_])[+-]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?/gu,
+    ) ?? []
+  );
+}
+
+function numberMultiset(tokens) {
+  const counts = new Map();
+  for (const token of tokens) {
+    counts.set(token, (counts.get(token) ?? 0) + 1);
+  }
+  return counts;
 }
 
 export function validateReviewTask(value) {
