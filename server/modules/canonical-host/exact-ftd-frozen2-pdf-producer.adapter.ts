@@ -326,8 +326,22 @@ function matchesResolvedExactSource(
     Number(resolved.artifact.byteLength) === profile.exactSource.byteLength &&
     resolved.family.canonicalDocumentNumber ===
       profile.exactSource.documentCode &&
-    resolved.version.businessRevision === profile.exactSource.businessRevision
+    normalizeBusinessRevisionForComparison(
+      resolved.version.businessRevision,
+    ) ===
+      normalizeBusinessRevisionForComparison(
+        profile.exactSource.businessRevision,
+      )
   );
+}
+
+function normalizeBusinessRevisionForComparison(
+  value: string | null | undefined,
+): string {
+  return String(value ?? '')
+    .trim()
+    .replace(/\s+/gu, ' ')
+    .toUpperCase();
 }
 
 function failureSignal(
