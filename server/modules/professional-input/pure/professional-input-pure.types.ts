@@ -85,6 +85,9 @@ export interface PdfSourceRefValue {
   pageStart: number;
   pageEnd: number;
   bbox: readonly [number, number, number, number];
+  charStart?: number;
+  charEnd?: number;
+  charOffsetUnit?: 'unicode_scalar_value';
   quote: string;
   anchorTextHash: string;
 }

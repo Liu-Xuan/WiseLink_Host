@@ -327,6 +327,13 @@ export function buildStructuredParsePackage(input: {
       pageStart: ref.pageStart,
       pageEnd: ref.pageEnd,
       bbox: [...ref.bbox],
+      ...(ref.charStart === undefined
+        ? {}
+        : {
+            charStart: ref.charStart,
+            charEnd: ref.charEnd,
+            charOffsetUnit: ref.charOffsetUnit,
+          }),
       quote: ref.quote,
       anchorTextHash: ref.anchorTextHash,
     })),

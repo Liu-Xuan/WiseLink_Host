@@ -617,6 +617,49 @@ describe('translation rule contract on the real frozen FTD package (WL31 owner/r
     );
   });
 
+  it('ACCEPTS identifier and date connector boundary changes when the absolute numbers are preserved', () => {
+    const numericOnlyRulePack: TranslationRulePack = {
+      ...FTD_RULE_PACK,
+      terms: [],
+      noTranslate: [],
+      deterministic: {
+        ...FTD_RULE_PACK.deterministic,
+        preservedIdentifierPatterns: [],
+        preservedUnits: [],
+        preserveAtaChapterNumbers: false,
+        preservePartNumbers: false,
+        preserveCitations: false,
+      },
+    };
+    const sourceUnits: TranslationSourceUnit[] = [
+      {
+        unitKey: 'anonymous-connector-unit',
+        kind: 'paragraph',
+        text: 'Marker A-12 was recorded on 2026-08-28.',
+        sourceRefIds: ['anonymous-source-ref'],
+      },
+    ];
+    const result = validateTranslationCandidate({
+      rulePack: numericOnlyRulePack,
+      rulePackId: numericOnlyRulePack.meta.rulePackId,
+      rulePackVersion: numericOnlyRulePack.meta.rulePackVersion,
+      sourceUnits,
+      candidateUnits: [
+        {
+          unitKey: 'anonymous-connector-unit',
+          text: '标记 A（12）记录于 2026 年 08 月 28 日。',
+          sourceRefIds: ['anonymous-source-ref'],
+          engineerRevision: null,
+        },
+      ],
+      taskStartBinding: FTD_BINDING,
+      validationTimeBinding: FTD_BINDING,
+    });
+
+    expect(result.verdict).toBe('ACCEPTED');
+    expect(result.findings).toEqual([]);
+  });
+
   it('REJECTS loss of the real technical unit FL285 (flight level)', () => {
     const candidates = candidateFor(SOURCE_UNITS).map((candidate) => ({
       ...candidate,

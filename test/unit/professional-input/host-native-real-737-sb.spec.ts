@@ -52,6 +52,13 @@ jest.mock(
 
 import type { UnifiedPackageArtifactDescriptor } from '@shared/api.interface';
 
+import {
+  TRANSLATION_RULE_PACK_SCHEMA_VERSION,
+  validateTranslationCandidate,
+  type TranslationRulePack,
+  type TranslationSourceUnit,
+} from '../../../server/modules/canonical-host/canonical-translation-rule-contract';
+import { buildUnifiedSbJobAidAssessmentInput } from '../../../server/modules/assessment-workbench/unified-assessment-input';
 import { ExactFtdFrozen2PdfProducerAdapter } from '../../../server/modules/canonical-host/exact-ftd-frozen2-pdf-producer.adapter';
 import { scopedProfessionalArtifactRef } from '../../../server/modules/canonical-host/scoped-professional-artifact-correlation.port';
 import { Frozen2CandidateReaderService } from '../../../server/modules/unified-reader/frozen2-candidate-reader.service';
@@ -70,6 +77,19 @@ const EXPECTED_SOURCE_SHA256 =
 const EXPECTED_SOURCE_BYTE_LENGTH = 1_060_204;
 const U0_CONTRACT_COMMIT = 'fa69ada08265934951df53c7a61a3ccdb8cb2900' as const;
 const describeRealSb = FIXTURE_PATH ? describe : describe.skip;
+const TRANSLATION_UNIT_KINDS = new Set<TranslationSourceUnit['kind']>([
+  'paragraph',
+  'heading',
+  'text_block',
+  'table',
+  'preserved_source',
+  'step',
+  'list_item',
+  'warning',
+  'caution',
+  'note',
+  'figure',
+]);
 
 class InMemoryArtifactStore implements UnifiedArtifactStorePort {
   private readonly values = new Map<string, Uint8Array>();
@@ -331,8 +351,21 @@ describeRealSb(
           sha256: string;
           byteLength: number;
         }>;
-        sourceRefs: unknown[];
-        contentUnits: unknown[];
+        sourceRefs: Array<{
+          sourceRefId: string;
+          pageStart: number;
+          pageEnd: number;
+          bbox?: number[];
+          charStart?: number;
+          charEnd?: number;
+          charOffsetUnit?: string;
+          quote: string;
+          anchorTextHash: string;
+        }>;
+        contentUnits: Array<{
+          sourceRefIds: string[];
+          payload: { text: string };
+        }>;
       };
       expect(pkg.source.sourcePackageHash).toBe(
         `sha256:${EXPECTED_SOURCE_SHA256}`,
@@ -345,11 +378,47 @@ describeRealSb(
         sha256: `sha256:${EXPECTED_SOURCE_SHA256}`,
         byteLength: EXPECTED_SOURCE_BYTE_LENGTH,
       });
-      expect(pkg.sourceRefs.length).toBeGreaterThan(0);
-      expect(pkg.contentUnits.length).toBeGreaterThan(0);
+      expect(pkg.sourceRefs).toHaveLength(600);
+      expect(pkg.contentUnits).toHaveLength(599);
+      const wholePageRefs = pkg.sourceRefs.filter(
+        (ref) =>
+          ref.pageStart === ref.pageEnd &&
+          ref.charStart === 0 &&
+          ref.bbox?.join(',') === '0,0,1000000,1000000',
+      );
+      expect(wholePageRefs).toHaveLength(22);
+      expect(wholePageRefs.map((ref) => ref.pageStart)).toEqual(
+        Array.from({ length: 22 }, (_, index) => index + 1),
+      );
+      expect(
+        wholePageRefs.every(
+          (ref) =>
+            ref.charEnd === [...ref.quote].length &&
+            ref.charOffsetUnit === 'unicode_scalar_value' &&
+            ref.anchorTextHash === `sha256:${sha256Raw(ref.quote)}` &&
+            ref.quote !== 'Untitled',
+        ),
+      ).toBe(true);
+      expect(wholePageRefs.find((ref) => ref.pageStart === 6)?.quote).toMatch(
+        /No compliance time is given/u,
+      );
+      expect(wholePageRefs.find((ref) => ref.pageStart === 14)?.quote).toMatch(
+        /Boeing recommends this service bulletin/u,
+      );
+      const sourceRefsById = new Map(
+        pkg.sourceRefs.map((ref) => [ref.sourceRefId, ref]),
+      );
+      expect(
+        pkg.contentUnits.every((unit) =>
+          unit.sourceRefIds.every((sourceRefId) =>
+            sourceRefsById.get(sourceRefId)?.quote.includes(unit.payload.text),
+          ),
+        ),
+      ).toBe(true);
 
+      const artifactStore = new InMemoryArtifactStore();
       const reader = new UnifiedReaderService(
-        new InMemoryArtifactStore(),
+        artifactStore,
         new Frozen2CandidateReaderService(),
         fullValidator,
         {
@@ -395,6 +464,139 @@ describeRealSb(
       expect(
         readback.queryResults.every((result) => result.sourceRefIds.length > 0),
       ).toBe(true);
+
+      const actualSourceUnits = await reader.readAllSourceUnits({
+        artifact: readback.artifact,
+        packageId: readback.package.packageId,
+      });
+      expect(actualSourceUnits.length).toBe(pkg.contentUnits.length);
+      const connectorUnit = actualSourceUnits.find(
+        (unit) =>
+          TRANSLATION_UNIT_KINDS.has(
+            unit.kind as TranslationSourceUnit['kind'],
+          ) && /[\p{L}\p{N}_]-\d/u.test(unit.text),
+      );
+      expect(connectorUnit).toBeDefined();
+      if (!connectorUnit) throw new Error('CONNECTOR_UNIT_NOT_FOUND');
+
+      const boundaryChangedText = connectorUnit.text.replace(
+        /(?<=[\p{L}\p{N}_])-(?=\d)/gu,
+        '、',
+      );
+      expect(boundaryChangedText).not.toBe(connectorUnit.text);
+      const numericOnlyRulePack: TranslationRulePack = {
+        meta: {
+          schemaVersion: TRANSLATION_RULE_PACK_SCHEMA_VERSION,
+          rulePackId: 'test.numeric-fidelity-only',
+          rulePackVersion: 'test-only',
+          label: 'Numeric fidelity only',
+          targetLocale: 'zh-CN',
+          sourceLocales: ['en-US'],
+        },
+        terms: [],
+        noTranslate: [],
+        deterministic: {
+          preservedIdentifierPatterns: [],
+          numericFidelity: true,
+          preservedUnits: [],
+          preserveAtaChapterNumbers: false,
+          preservePartNumbers: false,
+          segmentAlignment: true,
+          tableAlignment: false,
+          preserveCitations: false,
+        },
+      };
+      const sourceBinding = {
+        documentId,
+        revisionId: readback.package.contentHash,
+        sbdPackageId: readback.package.packageId,
+        sbdContentHash: readback.package.contentHash,
+        tcpPackageId: null,
+        tcpContentHash: null,
+      };
+      const resultGate = validateTranslationCandidate({
+        rulePack: numericOnlyRulePack,
+        rulePackId: numericOnlyRulePack.meta.rulePackId,
+        rulePackVersion: numericOnlyRulePack.meta.rulePackVersion,
+        sourceUnits: [
+          {
+            unitKey: connectorUnit.unitId,
+            kind: connectorUnit.kind as TranslationSourceUnit['kind'],
+            text: connectorUnit.text,
+            sourceRefIds: connectorUnit.sourceRefIds,
+          },
+        ],
+        candidateUnits: [
+          {
+            unitKey: connectorUnit.unitId,
+            text: boundaryChangedText,
+            sourceRefIds: connectorUnit.sourceRefIds,
+            engineerRevision: null,
+          },
+        ],
+        taskStartBinding: sourceBinding,
+        validationTimeBinding: sourceBinding,
+      });
+      expect(resultGate.verdict).toBe('ACCEPTED');
+      expect(resultGate.findings).toEqual([]);
+
+      const assessmentInput = buildUnifiedSbJobAidAssessmentInput({
+        documentVersionBinding: {
+          documentId,
+          documentVersionId,
+          artifactRecord: {
+            $schema: 'urn:techpub:schema:v1:artifact-record:frozen-2',
+            schemaVersion: 'techpub.artifact-record.v1',
+            contractRevision: 'frozen.2',
+            artifactRef: readback.artifact.ref,
+            mediaType: 'application/json',
+            byteLength: readback.artifact.byteLength,
+            artifactHash: `sha256:${readback.artifact.sha256}`,
+            packageId: readback.package.packageId,
+            contentHash: readback.package.contentHash,
+          },
+          lifecycleStatus: 'FROZEN',
+          selectionStatus: 'SELECTED',
+          isCurrent: true,
+          classification: {
+            schemaVersion: 'wiselink.v3_1.document_classification_envelope.v1',
+            classificationId: 'CLS-F87850CDDC741F2969280DB0',
+            classificationHash:
+              'sha256:f87850cddc741f2969280db07d775125315d0f1b61ae2beb7bb14584176a2663',
+            status: 'CONFIRMED',
+            normalizedFamily: 'SB',
+            issuer: 'BOEING',
+            subtype: 'service_bulletin',
+            profileId:
+              'document-family-profile:issuer.boeing.service_bulletin@1.0.0',
+            nativeParseProfileId: 'boeing.sb',
+          },
+        },
+        artifactBytes: produced.bytes,
+        assessmentAsOf: '2026-08-28T00:00:00.000Z',
+      }) as {
+        upstreamBinding: {
+          unifiedParsedPackage: { currentness: string };
+        };
+        publicPackageObservation: {
+          contentUnitCount: number;
+          sourceRefCount: number;
+          pageSourceRefs: Array<{ pageStart: number; quote: string }>;
+        };
+      };
+      expect(
+        assessmentInput.upstreamBinding.unifiedParsedPackage.currentness,
+      ).toBe('current');
+      expect(assessmentInput.publicPackageObservation).toMatchObject({
+        contentUnitCount: 599,
+        sourceRefCount: 600,
+      });
+      expect(
+        assessmentInput.publicPackageObservation.pageSourceRefs,
+      ).toHaveLength(22);
+      expect(
+        assessmentInput.publicPackageObservation.pageSourceRefs[0].quote,
+      ).not.toBe('Untitled');
     });
   },
 );

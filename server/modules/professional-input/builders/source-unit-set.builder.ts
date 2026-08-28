@@ -19,9 +19,11 @@ import type {
  *
  * Segmentation is line-based: text runs are clustered per page by baseline
  * y-coordinate, joined left-to-right into lines, and every non-blank line
- * becomes exactly one source unit anchored by its own PDF source ref. No
- * unit is dropped, no text is synthesized, and identities are pure hashes of
- * content — the count of units is driven by the bytes, never hardcoded.
+ * becomes exactly one source unit anchored by a PDF source ref. The first
+ * text unit on each non-blank page carries that page's actual extracted text
+ * context; later units retain granular line locators. No unit is dropped, no
+ * text is synthesized, and identities are pure hashes of content — the count
+ * of units is driven by the bytes, never hardcoded.
  */
 
 export const SEGMENTATION_PROFILE_ID =
@@ -62,6 +64,7 @@ export function buildSourceUnitSet(
     },
   );
   const lines = collectLines(layout);
+  const wholePageQuotes = buildWholePageQuotes(lines);
   const sourcePackageId = pdfSourcePackageId(
     options.documentCode,
     layout.sourceSha256,
@@ -96,6 +99,7 @@ export function buildSourceUnitSet(
   let headingSequence = 0;
   let textSequence = 0;
   let order = 1;
+  const pageContextRefsBuilt = new Set<number>();
   for (const line of lines) {
     const text = line.text.trim();
     if (text.length === 0) continue;
@@ -121,7 +125,15 @@ export function buildSourceUnitSet(
       kind = 'text_block';
       semantic = 'text';
     }
-    const sourceRef = buildRunAnchorSourceRef(artifactId, layout, line);
+    const sourceRef = pageContextRefsBuilt.has(line.page)
+      ? buildRunAnchorSourceRef(artifactId, layout, line)
+      : buildWholePageSourceRef(
+          artifactId,
+          layout,
+          line.page,
+          wholePageQuotes.get(line.page)!,
+        );
+    pageContextRefsBuilt.add(line.page);
     sourceRefs.push(sourceRef);
     units.push(
       buildUnit({
@@ -150,6 +162,26 @@ export function buildSourceUnitSet(
     sourceRefs,
     units,
   };
+}
+
+function buildWholePageQuotes(
+  lines: readonly ParsedLine[],
+): ReadonlyMap<number, string> {
+  const linesByPage = new Map<number, string[]>();
+  for (const line of lines) {
+    const text = line.text.trim();
+    if (text.length === 0) continue;
+    const pageLines = linesByPage.get(line.page) ?? [];
+    pageLines.push(text);
+    linesByPage.set(line.page, pageLines);
+  }
+
+  const quotes = new Map<number, string>();
+  for (const [page, pageLines] of linesByPage) {
+    const quote = pageLines.join('\n');
+    quotes.set(page, quote);
+  }
+  return quotes;
 }
 
 /* ------------------------------ line clustering ---------------------- */
@@ -346,6 +378,50 @@ function buildRunAnchorSourceRef(
     pageStart: line.page,
     pageEnd: line.page,
     bbox,
+    quote,
+    anchorTextHash,
+  };
+}
+
+function buildWholePageSourceRef(
+  artifactId: string,
+  layout: ParsedPdfLayout,
+  page: number,
+  quote: string,
+): PdfSourceRefValue {
+  const bbox = fullPageBbox(layout, page);
+  const charStart = 0;
+  const charEnd = [...quote].length;
+  const charOffsetUnit = 'unicode_scalar_value' as const;
+  const anchorTextHash = `sha256:${sha256Hex(quote)}`;
+  const sourceRefId = techpubEntityId(
+    'source-ref',
+    sha256Hex(
+      jcsCanonicalize({
+        namespace: 'techpub-source-ref-id-v1',
+        kind: 'pdf',
+        artifactId,
+        pageStart: page,
+        pageEnd: page,
+        bbox,
+        charStart,
+        charEnd,
+        charOffsetUnit,
+        quote,
+        anchorTextHash,
+      }),
+    ),
+  );
+  return {
+    sourceRefId,
+    kind: 'pdf',
+    artifactId,
+    pageStart: page,
+    pageEnd: page,
+    bbox,
+    charStart,
+    charEnd,
+    charOffsetUnit,
     quote,
     anchorTextHash,
   };
