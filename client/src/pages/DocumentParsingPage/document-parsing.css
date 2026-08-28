@@ -752,6 +752,33 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
   margin: 0;
 }
 
+/* 0.1 workbench IA adapted to the current Host: structured content and
+ * PDF occupy the central professional workspace; global navigation/evidence
+ * remain owned by WorkbenchShell. */
+.parse-structured-split {
+  display: grid;
+  width: min(1440px, 100%);
+  margin: 0 auto 14px;
+  grid-template-columns: minmax(460px, 1.38fr) minmax(300px, 0.62fr);
+  align-items: start;
+  gap: 14px;
+}
+
+.parse-structured-primary,
+.parse-structured-pdf {
+  min-width: 0;
+}
+
+.parse-mobile-source-switch {
+  display: none;
+}
+
+@media (max-width: 1100px) {
+  .parse-structured-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .parse-hero-grid,
 .parse-lower-grid {
   display: grid;
@@ -2645,6 +2672,51 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
 
   .parse-shell {
     padding: 22px 12px 46px;
+  }
+
+  .parse-structured-pdf {
+    display: none;
+  }
+
+  .parse-reader-split > .parse-pdf-pane {
+    display: none;
+  }
+
+  .parse-mobile-source-switch {
+    display: grid;
+    margin-bottom: 10px;
+    padding: 3px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 3px;
+    border: 1px solid var(--wl-border);
+    border-radius: var(--wl-radius-md);
+    background: var(--wl-glass-panel);
+  }
+
+  .parse-mobile-source-switch button {
+    display: inline-flex;
+    min-height: 38px;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    border: 0;
+    border-radius: var(--wl-radius-sm);
+    color: var(--wl-muted);
+    background: transparent;
+    font: inherit;
+    font-size: 11px;
+    cursor: pointer;
+  }
+
+  .parse-mobile-source-switch button[aria-selected='true'] {
+    color: var(--wl-accent);
+    background: var(--wl-surface-solid);
+    box-shadow: var(--wl-shadow-1);
+  }
+
+  .parse-mobile-source-switch svg {
+    width: 15px;
+    height: 15px;
   }
 
   .workitem-workbench-layout {

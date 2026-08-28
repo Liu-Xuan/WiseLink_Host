@@ -76,13 +76,41 @@ export class CanonicalHostController {
   @Get('work-items/:workItemId/document-parsing')
   page(
     @Param('workItemId') workItemId: string,
-    @Query('query') query: string,
+    @Query('query') query: string | undefined,
     @Req() httpRequest: Request,
   ) {
     return this.pageWithEngineerReviews(
       {
         workItemId,
         query,
+      },
+      hostActor(httpRequest),
+    );
+  }
+
+  @Get('work-items/:workItemId/structured-content')
+  structuredContent(
+    @Param('workItemId') workItemId: string,
+    @Query('cursor') cursor: string | undefined,
+    @Query('limit') limitValue: string | undefined,
+    @Query('expectedRevision') expectedRevisionValue: string | undefined,
+    @Req() httpRequest: Request,
+  ) {
+    return this.service.browseStructuredContent(
+      {
+        workItemId: requiredText(workItemId, 'workItemId'),
+        ...(cursor?.trim() ? { cursor: cursor.trim() } : {}),
+        ...(limitValue === undefined
+          ? {}
+          : { limit: optionalSafeInteger(limitValue, 'limit') }),
+        ...(expectedRevisionValue === undefined
+          ? {}
+          : {
+              expectedRevision: optionalSafeInteger(
+                expectedRevisionValue,
+                'expectedRevision',
+              ),
+            }),
       },
       hostActor(httpRequest),
     );
@@ -272,6 +300,17 @@ function requiredRevision(value: unknown): number {
     throw badRequest('ASSESSMENT_EXPECTEDREVISION_INVALID');
   }
   return Number(value);
+}
+
+function optionalSafeInteger(value: string, field: string): number {
+  if (!/^[1-9][0-9]*$/u.test(value)) {
+    throw badRequest(`STRUCTURED_CONTENT_${field.toUpperCase()}_INVALID`);
+  }
+  const parsed: number = Number(value);
+  if (!Number.isSafeInteger(parsed)) {
+    throw badRequest(`STRUCTURED_CONTENT_${field.toUpperCase()}_INVALID`);
+  }
+  return parsed;
 }
 
 function badRequest(code: string): BadRequestException {

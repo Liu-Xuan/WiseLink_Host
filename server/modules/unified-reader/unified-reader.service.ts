@@ -20,6 +20,7 @@ import type {
   ImmutableArtifactPersistResult,
   UnifiedArtifactStorePort,
   UnifiedReaderHostBindingState,
+  UnifiedReaderPackageInspection,
   UnifiedReaderPackageSummary,
 } from './unified-reader.types';
 import {
@@ -105,6 +106,21 @@ export class UnifiedReaderService {
     return this.reader.readAllSourceUnits(input.artifact, bytes);
   }
 
+  async inspectSourcePackage(input: {
+    artifact: UnifiedPackageArtifactDescriptor;
+    packageId: string;
+  }): Promise<UnifiedReaderPackageInspection> {
+    const bytes: Uint8Array = await this.artifactStore.readActualBytes(
+      input.artifact,
+    );
+    await this.fullValidator.validate({
+      artifact: input.artifact,
+      bytes,
+      packageId: input.packageId,
+    });
+    return this.reader.inspect(input.artifact, bytes);
+  }
+
   async persistAndReadback(
     bytes: Uint8Array,
     context: Omit<UnifiedPackageReadbackRequest, 'package'> & {
@@ -136,7 +152,8 @@ export class UnifiedReaderService {
   ): Promise<UnifiedPackageReadbackResponse> {
     this.validateRequest(request);
     const artifact: UnifiedPackageArtifactDescriptor = request.package.artifact;
-    const bytes: Uint8Array = await this.artifactStore.readActualBytes(artifact);
+    const bytes: Uint8Array =
+      await this.artifactStore.readActualBytes(artifact);
     const fullValidatorProof = await this.fullValidator.validate({
       artifact,
       bytes,
@@ -242,9 +259,7 @@ export class UnifiedReaderService {
         packageArtifactSha256: artifact.sha256,
         summaryHash: summary.summaryHash,
         query,
-        resultIds: summary.queryResults.map(
-          (result) => result.unitId,
-        ),
+        resultIds: summary.queryResults.map((result) => result.unitId),
       }),
     ).slice('sha256:'.length, 'sha256:'.length + 32);
     return {

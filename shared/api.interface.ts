@@ -269,6 +269,54 @@ export interface CanonicalReaderProjection {
   translation: CanonicalReaderTranslationProjection;
 }
 
+/**
+ * Browser-safe SourceRef locator for structured-content browsing. Artifact
+ * identities stay inside the Host; the browser receives only the coordinates
+ * needed to navigate the current controlled document.
+ */
+export interface CanonicalStructuredContentSourceLocator {
+  sourceRefId: string;
+  kind: string;
+  pageStart: number | null;
+  pageEnd: number | null;
+  /** Browser-safe excerpt, bounded by the Host. */
+  quote: string | null;
+}
+
+export interface CanonicalStructuredContentUnit {
+  /** One-based position in the current frozen.2 contentUnits sequence. */
+  ordinal: number;
+  displayKind: 'section' | 'body' | 'unavailable';
+  /** Explicit browser outline semantics; the UI never infers this from source kind. */
+  outlineKind: 'SECTION' | 'NONE';
+  sectionTitle: string | null;
+  /** Browser-safe engineering text or an honest typed summary, never raw JSON. */
+  displayText: string;
+  sourceRefIds: string[];
+  sourceLocators: CanonicalStructuredContentSourceLocator[];
+}
+
+export interface CanonicalStructuredContentPageResponse {
+  schemaVersion: 'wiselink.3_1.structured_content_page.v1';
+  status: 'FRESH_READ';
+  mode: 'BROWSE';
+  /** Current WorkItem revision; the client must echo it for continuation. */
+  revision: number;
+  resultStatus: 'complete' | 'partial';
+  qualityStatus: 'PASS' | 'NEEDS_REVIEW';
+  /** All source contentUnits in the exact current frozen.2 package. */
+  totalSourceUnitCount: number;
+  /** Units represented in browser pagination after non-content metadata omission. */
+  totalDisplayUnitCount: number;
+  omittedUnitCount: number;
+  sourceRefCount: number;
+  returnedUnitCount: number;
+  cursor: string | null;
+  nextCursor: string | null;
+  hasMore: boolean;
+  units: CanonicalStructuredContentUnit[];
+}
+
 export interface UnifiedReaderCandidateReceipt {
   schemaVersion: 'wiselink.3_1.reader_candidate_receipt.v0.candidate';
   readerReceiptId: string;

@@ -1107,6 +1107,24 @@ describe('CanonicalHostVerticalService', () => {
       },
     });
     expect(page.queryResults.length).toBeGreaterThan(0);
+    expect(JSON.stringify(page.queryResults)).not.toMatch(
+      /observationType|authority|candidateOnly|windowId|artifact:\/\//iu,
+    );
+    expect(
+      page.queryResults.flatMap((result) => result.sourceLocators ?? []),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          artifactId: null,
+          normalizedPath: null,
+          xpath: null,
+          elementId: null,
+          charStart: null,
+          charEnd: null,
+          bbox: null,
+        }),
+      ]),
+    );
     expect(page.readerProjection).toMatchObject({
       structuredUnitCount: 311,
       sourceRefCount: 239,
@@ -1122,6 +1140,81 @@ describe('CanonicalHostVerticalService', () => {
     expect(authorizeSpy).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'READ_DOCUMENT_PARSING' }),
     );
+
+    const browseOnly = await service.page(
+      { workItemId: request.workItemId },
+      TEST_ACTOR,
+    );
+    expect(browseOnly.queryResults).toEqual([]);
+    expect(browseOnly.readerProjection).toMatchObject({ query: '', units: [] });
+
+    const firstStructuredPage = await service.browseStructuredContent(
+      {
+        workItemId: request.workItemId,
+        expectedRevision: page.workItem.revision,
+        limit: 24,
+      },
+      TEST_ACTOR,
+    );
+    expect(firstStructuredPage).toMatchObject({
+      status: 'FRESH_READ',
+      mode: 'BROWSE',
+      revision: 3,
+      resultStatus: 'partial',
+      totalSourceUnitCount: 311,
+      totalDisplayUnitCount: 301,
+      omittedUnitCount: 10,
+      returnedUnitCount: 24,
+      cursor: null,
+      nextCursor: '24',
+      hasMore: true,
+    });
+    expect(firstStructuredPage.units[0]).toMatchObject({
+      ordinal: 1,
+      displayKind: 'section',
+      sectionTitle: 'revision description',
+    });
+    expect(JSON.stringify(firstStructuredPage.units)).not.toMatch(
+      /observationType|authority|candidateOnly|windowId/iu,
+    );
+
+    const secondStructuredPage = await service.browseStructuredContent(
+      {
+        workItemId: request.workItemId,
+        cursor: firstStructuredPage.nextCursor ?? undefined,
+        expectedRevision: firstStructuredPage.revision,
+        limit: 24,
+      },
+      TEST_ACTOR,
+    );
+    expect(secondStructuredPage).toMatchObject({
+      cursor: '24',
+      nextCursor: '48',
+      returnedUnitCount: 24,
+    });
+    expect(secondStructuredPage.units[0].ordinal).toBeGreaterThan(
+      firstStructuredPage.units.at(-1)?.ordinal ?? 0,
+    );
+    expect(authorizeSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'READ_DOCUMENT_PARSING',
+        workItemId: request.workItemId,
+        requestId: request.requestId,
+        documentVersionId: request.source.documentVersionId,
+      }),
+    );
+    await expect(
+      service.browseStructuredContent(
+        {
+          workItemId: request.workItemId,
+          cursor: secondStructuredPage.nextCursor ?? undefined,
+        },
+        TEST_ACTOR,
+      ),
+    ).rejects.toMatchObject({
+      code: 'STRUCTURED_CONTENT_EXPECTED_REVISION_REQUIRED',
+      statusCode: 400,
+    });
   });
 
   it('derives two-axis translation projection from a configured owner observation', async () => {

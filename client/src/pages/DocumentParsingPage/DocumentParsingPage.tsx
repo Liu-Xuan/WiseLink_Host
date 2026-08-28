@@ -21,6 +21,7 @@ import { canonicalHost } from '@client/src/api';
 import type {
   CanonicalEngineerReviewDecision,
   CanonicalDocumentParsingPageResponse,
+  CanonicalStructuredContentSourceLocator,
   ConfirmReviewActionDraftResponse,
 } from '@shared/api.interface';
 import { Button } from '@client/src/components/ui/button';
@@ -34,12 +35,18 @@ import { forgetRecentWorkItem } from '@client/src/utils/recent-work-items';
 import { useCurrentUserProfile } from '@lark-apaas/client-toolkit/hooks/useCurrentUserProfile';
 
 import { type WorkbenchNode } from './WorkItemContextTree';
+import {
+  getWorkbenchNode,
+  structuredSourceDeepLink,
+  WORKBENCH_TAB_DEFINITIONS,
+} from './document-parsing-navigation';
 import { EngineeringReasoningTrail } from './EngineeringReasoningTrail';
 import { AeoAuthoringWorkspace } from './AeoAuthoringWorkspace';
 import ApplicabilitySelectionPanel from './ApplicabilitySelectionPanel';
 import { AssessmentSemanticsOverview } from './AssessmentSemanticsOverview';
 import { DocumentReaderWorkspace } from './DocumentReaderWorkspace';
 import PdfSourcePane from './PdfSourcePane';
+import { StructuredContentBrowser } from './StructuredContentBrowser';
 import ReviewImpactPreview from '@client/src/features/review/ReviewImpactPreview';
 import ContinuousReviewPanel from '@client/src/features/review/ContinuousReviewPanel';
 import RevisionTimeline from '@client/src/features/review/RevisionTimeline';
@@ -96,8 +103,6 @@ function actionErrorLabel(reason: unknown): string {
   return '操作未完成，请刷新当前事项后重试。';
 }
 
-const DEFAULT_READER_QUERY = 'applicability';
-
 const REVIEW_DECISION_LABELS: Record<CanonicalEngineerReviewDecision, string> =
   {
     confirmed_pass: '确认通过',
@@ -126,63 +131,22 @@ const NODE_TABS: Record<WorkbenchNode, string> = {
   aeo: 'aeo',
 };
 
-/** Spec R01 §4.2：顶部工作台标签默认顺序固定为
- *  综合评估、解析结果、PDF 原文、分析过程、复核意见；
+/** Spec R01 §4.2：顶部工作台标签顺序为
+ *  综合评估、结构化内容、PDF 原文、分析过程、复核意见；
  *  AEO 候选作为后续扩展入口追加在末尾（需先确认整体综合）。 */
-const WORKBENCH_TABS: Array<{
-  key: WorkbenchNode;
-  label: string;
-  mobileLabel?: string;
-  mobileOrder?: number;
-  icon?: ReactNode;
-}> = [
-  {
-    key: 'assessment',
-    label: '综合评估',
-    mobileLabel: '总体',
-    mobileOrder: 1,
-    icon: <Sparkles aria-hidden="true" />,
-  },
-  { key: 'package', label: '解析结果', icon: <Waypoints aria-hidden="true" /> },
-  {
-    key: 'reader',
-    label: 'PDF 原文',
-    mobileLabel: '原文',
-    mobileOrder: 2,
-    icon: <FileText aria-hidden="true" />,
-  },
-  {
-    key: 'overall',
-    label: '分析过程',
-    mobileLabel: '动态',
-    mobileOrder: 4,
-    icon: <Activity aria-hidden="true" />,
-  },
-  {
-    key: 'review',
-    label: '复核意见',
-    mobileLabel: '复核',
-    mobileOrder: 3,
-    icon: <ClipboardCheck aria-hidden="true" />,
-  },
-  { key: 'aeo', label: 'AEO 候选', icon: <FileText aria-hidden="true" /> },
-];
+const WORKBENCH_TAB_ICONS: Partial<Record<WorkbenchNode, ReactNode>> = {
+  assessment: <Sparkles aria-hidden="true" />,
+  package: <Waypoints aria-hidden="true" />,
+  reader: <FileText aria-hidden="true" />,
+  overall: <Activity aria-hidden="true" />,
+  review: <ClipboardCheck aria-hidden="true" />,
+  aeo: <FileText aria-hidden="true" />,
+};
 
-function getWorkbenchNode(value: string | null): WorkbenchNode {
-  if (
-    value === 'document' ||
-    value === 'package' ||
-    value === 'reader' ||
-    value === 'assessment' ||
-    value === 'review' ||
-    value === 'overall' ||
-    value === 'aeo'
-  ) {
-    return value;
-  }
-  /* §4.1/§4.2：选择文档或事项后默认先显示综合评估意见 */
-  return 'assessment';
-}
+const WORKBENCH_TABS = WORKBENCH_TAB_DEFINITIONS.map((tab) => ({
+  ...tab,
+  icon: WORKBENCH_TAB_ICONS[tab.key],
+}));
 
 function flattenNavigationTree(
   nodes: NavigationNodeView[],
@@ -203,8 +167,7 @@ export default function DocumentParsingPage() {
   const { workItemId = '' } = useParams<{ workItemId: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const activeNode: WorkbenchNode = getWorkbenchNode(searchParams.get('node'));
-  const activeQuery: string =
-    searchParams.get('q')?.trim() || DEFAULT_READER_QUERY;
+  const activeQuery: string = searchParams.get('q')?.trim() ?? '';
   const readerMode: ReaderViewMode = getReaderViewMode(
     searchParams.get('readerMode'),
   );
@@ -235,6 +198,8 @@ export default function DocumentParsingPage() {
   );
   /** 点击主内容中的来源引用时递增，驱动右侧证据栏自动展开（§4.2） */
   const [evidenceSignal, setEvidenceSignal] = useState(0);
+  const [structuredSourceLocator, setStructuredSourceLocator] =
+    useState<CanonicalStructuredContentSourceLocator | null>(null);
 
   function updateDeepLink(
     changes: Record<string, string | null>,
@@ -316,6 +281,7 @@ export default function DocumentParsingPage() {
 
   useEffect(() => {
     setContinuousReviewReceipt(null);
+    setStructuredSourceLocator(null);
   }, [workItemId]);
 
   const data: CanonicalDocumentParsingPageResponse | null =
@@ -405,7 +371,8 @@ export default function DocumentParsingPage() {
   const workItemView = toWorkItemView(data);
 
   function submitReaderQuery(): void {
-    const nextQuery: string = query.trim() || DEFAULT_READER_QUERY;
+    const nextQuery: string = query.trim();
+    if (nextQuery.length < 2) return;
     updateDeepLink({
       q: nextQuery,
       node: 'reader',
@@ -478,7 +445,11 @@ export default function DocumentParsingPage() {
 
   function handleTabChange(key: string): void {
     const node = getWorkbenchNode(key);
-    updateDeepLink({ node, tab: NODE_TABS[node] });
+    updateDeepLink({
+      node,
+      tab: NODE_TABS[node],
+      ...(node === 'reader' ? { readerMode: 'source' } : {}),
+    });
   }
 
   function handleNavigatorSelect(node: NavigationNodeView): void {
@@ -487,15 +458,30 @@ export default function DocumentParsingPage() {
     updateDeepLink({ node: target, tab: NODE_TABS[target] });
   }
 
-  function locateSourceRef(unitId: string | null, sourceRef: string): void {
+  function locateSourceRef(
+    unitId: string | null,
+    sourceRef: string,
+    intent: ReaderViewMode = 'structured',
+  ): void {
+    setStructuredSourceLocator(null);
     setEvidenceSignal((v) => v + 1);
     updateDeepLink({
       node: 'reader',
       tab: 'reader',
       unit: unitId,
       sourceRef,
-      readerMode: 'structured',
+      readerMode: intent,
+      page: null,
     });
+  }
+
+  function locateStructuredSourceRef(
+    sourceRef: string,
+    locator: CanonicalStructuredContentSourceLocator | undefined,
+  ): void {
+    setStructuredSourceLocator(locator ?? null);
+    setEvidenceSignal((value: number) => value + 1);
+    updateDeepLink(structuredSourceDeepLink(sourceRef, locator?.pageStart));
   }
 
   const quickOpenItems: QuickOpenItem[] = [
@@ -542,8 +528,12 @@ export default function DocumentParsingPage() {
             data={data}
             activeSourceRef={requestedSourceRef}
             activeReaderUnit={requestedReaderUnit}
+            activeStructuredLocator={structuredSourceLocator}
             onLocate={locateSourceRef}
-            onClear={() => updateDeepLink({ unit: null, sourceRef: null })}
+            onClear={() => {
+              setStructuredSourceLocator(null);
+              updateDeepLink({ unit: null, sourceRef: null, page: null });
+            }}
           />
         }
         evidenceSignal={evidenceSignal}
@@ -702,70 +692,74 @@ export default function DocumentParsingPage() {
               <p>
                 结果状态：
                 {usagePolicy?.qualityStatus === 'NEEDS_REVIEW'
-                  ? '需要人工核对'
-                  : pkg?.resultStatus === 'complete'
-                    ? '解析结果完整'
-                    : (humanState(data.workItem.phase) ?? '待确认')}
+                  ? '存在质量阻断，需人工处理'
+                  : pkg?.resultStatus === 'partial'
+                    ? '部分完成，需人工处理'
+                    : pkg?.resultStatus === 'complete'
+                      ? '解析结果完整'
+                      : (humanState(data.workItem.phase) ?? '待确认')}
               </p>
             </article>
           </section>
         ) : null}
 
         {activeNode === 'package' ? (
-          <article
-            className="parse-panel parse-package-card"
-            id="workspace-package"
-          >
-            <div className="parse-panel-label">
-              <Fingerprint /> 解析结果
-            </div>
-            <h3>{pkg ? '结构化内容已形成' : '解析结果尚未形成'}</h3>
-            {pkg ? (
-              <div className="parse-hash-stack">
-                <p>
-                  <span>内容单元</span>
-                  {pkg.contentUnitCount.toLocaleString('zh-CN')} 项
-                </p>
-                <p>
-                  <span>来源依据</span>
-                  {pkg.sourceRefCount.toLocaleString('zh-CN')} 条
-                </p>
-                <p>
-                  <span>解析状态</span>
-                  {pkg.resultStatus === 'complete' ? '完整' : '部分完成'}
-                </p>
-                <p>
-                  <span>质量核对</span>
-                  {usagePolicy?.qualityStatus === 'NEEDS_REVIEW'
-                    ? '需要人工核对'
-                    : '当前无阻断'}
-                </p>
+          pkg ? (
+            <div className="parse-structured-split" id="workspace-package">
+              <div className="parse-structured-primary">
+                <div
+                  className="parse-mobile-source-switch"
+                  role="tablist"
+                  aria-label="原文视图"
+                >
+                  <button type="button" role="tab" aria-selected="true">
+                    <Waypoints aria-hidden="true" /> 结构化内容
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected="false"
+                    onClick={() => handleTabChange('reader')}
+                  >
+                    <FileText aria-hidden="true" /> PDF 原文
+                  </button>
+                </div>
+                <StructuredContentBrowser
+                  workItemId={workItemId}
+                  workItemRevision={data.workItem.revision}
+                  query={query}
+                  requestedSourceRef={requestedSourceRef}
+                  onQueryChange={setQuery}
+                  onQuerySubmit={submitReaderQuery}
+                  onLocateSourceRef={locateStructuredSourceRef}
+                  onRefresh={() => void load(activeQuery)}
+                />
               </div>
-            ) : (
+              <div className="parse-structured-pdf" aria-label="PDF 与原文定位">
+                <PdfSourcePane
+                  data={data}
+                  requestedSourceRef={requestedSourceRef}
+                  structuredLocator={structuredSourceLocator}
+                  onLocate={locateSourceRef}
+                />
+              </div>
+            </div>
+          ) : (
+            <article
+              className="parse-panel parse-package-card"
+              id="workspace-package"
+            >
+              <div className="parse-panel-label">
+                <Fingerprint /> 结构化内容
+              </div>
+              <h3>结构化内容尚未形成</h3>
               <p className="parse-empty">
                 {data.workItem.failure || data.workItem.recordingFailure
                   ? '解析未完成，请刷新或联系支持人员。'
                   : '文件正在等待解析。'}
               </p>
-            )}
-            <div className="parse-candidate-warning">
-              <AlertTriangle />{' '}
-              当前为候选解析结果，需工程师核对；不会自动生成或发布正式工程结论。
-            </div>
-            {referenceOnly && usagePolicy ? (
-              <div className="parse-reference-boundary">
-                <strong>仅供参考 · 不自动采纳</strong>
-                <p>
-                  已识别 {usagePolicy.applicability.sourceExpressionCount}{' '}
-                  条适用性表达，形成{' '}
-                  {usagePolicy.applicability.normalizedCandidateCount}{' '}
-                  条候选，其中 {usagePolicy.applicability.assignmentCount}{' '}
-                  条已有受控关联。
-                </p>
-                <small>评估与后续编写均需工程师确认。</small>
-              </div>
-            ) : null}
-          </article>
+            </article>
+          )
         ) : null}
 
         {activeNode === 'reader' ? (
@@ -787,7 +781,7 @@ export default function DocumentParsingPage() {
               }
               onSourceRefSelect={locateSourceRef}
               onClearSourceRef={() =>
-                updateDeepLink({ unit: null, sourceRef: null })
+                updateDeepLink({ unit: null, sourceRef: null, page: null })
               }
             />
             <PdfSourcePane

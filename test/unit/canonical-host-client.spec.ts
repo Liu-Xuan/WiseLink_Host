@@ -19,6 +19,7 @@ import {
   getApplicabilitySelection,
   getCurrentReviewConversation,
   getDocumentParsingPage,
+  getStructuredContentPage,
   getLibraryIndex,
   isCanonicalObjectNotFound,
   queryParsedUnits,
@@ -58,7 +59,7 @@ describe('canonical host assessment client', () => {
     );
   });
 
-  it('uses the default Reader query for an empty document parsing request', async () => {
+  it('keeps empty document parsing reads separate from Reader search', async () => {
     request.mockResolvedValue({ status: 200, data: { workItem: {} } });
 
     await expect(getDocumentParsingPage('WI-SB-1001', '')).resolves.toEqual({
@@ -67,11 +68,10 @@ describe('canonical host assessment client', () => {
     expect(request).toHaveBeenCalledWith({
       url: '/api/canonical-host/work-items/WI-SB-1001/document-parsing',
       method: 'GET',
-      params: { query: 'applicability' },
     });
   });
 
-  it('uses the default Reader query for a whitespace document parsing request', async () => {
+  it('keeps whitespace document parsing reads separate from Reader search', async () => {
     request.mockResolvedValue({ status: 200, data: { workItem: {} } });
 
     await expect(getDocumentParsingPage('WI-SB-1001', '   ')).resolves.toEqual({
@@ -80,7 +80,26 @@ describe('canonical host assessment client', () => {
     expect(request).toHaveBeenCalledWith({
       url: '/api/canonical-host/work-items/WI-SB-1001/document-parsing',
       method: 'GET',
-      params: { query: 'applicability' },
+    });
+  });
+
+  it('forwards only controlled browse pagination inputs', async () => {
+    request.mockResolvedValue({
+      status: 200,
+      data: { status: 'FRESH_READ', units: [] },
+    });
+
+    await expect(
+      getStructuredContentPage('WI-SB/1001', {
+        cursor: '24',
+        limit: 24,
+        expectedRevision: 7,
+      }),
+    ).resolves.toMatchObject({ status: 'FRESH_READ' });
+    expect(request).toHaveBeenCalledWith({
+      url: '/api/canonical-host/work-items/WI-SB%2F1001/structured-content',
+      method: 'GET',
+      params: { cursor: '24', limit: 24, expectedRevision: 7 },
     });
   });
 

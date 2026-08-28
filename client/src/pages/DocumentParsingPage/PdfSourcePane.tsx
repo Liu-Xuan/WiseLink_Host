@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { FileSearch, LocateFixed } from 'lucide-react';
 
-import type { CanonicalDocumentParsingPageResponse } from '@shared/api.interface';
+import type {
+  CanonicalDocumentParsingPageResponse,
+  CanonicalStructuredContentSourceLocator,
+} from '@shared/api.interface';
 
 import './pdf-source-pane.css';
 
@@ -12,6 +15,8 @@ export interface PdfSourcePaneProps {
   >;
   /** 当前定位的 sourceRef（来自深链） */
   requestedSourceRef: string;
+  /** Sanitized locator supplied by full-content browsing when no query is active. */
+  structuredLocator?: CanonicalStructuredContentSourceLocator | null;
   /** 点击页码定位：跳回 Reader 结构化视图 */
   onLocate: (unitId: string, sourceRef: string) => void;
 }
@@ -30,6 +35,7 @@ function fileSizeLabel(bytes: number): string {
 export default function PdfSourcePane({
   data,
   requestedSourceRef,
+  structuredLocator = null,
   onLocate,
 }: PdfSourcePaneProps) {
   const pdfPreview = data.readerProjection?.pdfPreview ?? null;
@@ -37,7 +43,7 @@ export default function PdfSourcePane({
   const units = data.readerProjection?.units ?? [];
 
   // 当前定位 sourceRef 对应的页码 locators（用于「PDF 定位到正确页码」）
-  const locatedPages = requestedSourceRef
+  const queryLocatedPages = requestedSourceRef
     ? units.flatMap((unit) =>
         unit.sourceLocators
           .filter((locator) => locator.sourceRefId === requestedSourceRef)
@@ -50,6 +56,20 @@ export default function PdfSourcePane({
           })),
       )
     : [];
+  const locatedPages =
+    queryLocatedPages.length > 0
+      ? queryLocatedPages
+      : structuredLocator?.sourceRefId === requestedSourceRef
+        ? [
+            {
+              unitId: '',
+              sourceRefId: structuredLocator.sourceRefId,
+              pageStart: structuredLocator.pageStart,
+              pageEnd: structuredLocator.pageEnd,
+              quote: structuredLocator.quote,
+            },
+          ]
+        : [];
 
   /* §06 原文定位：SourceRef 点击后 PDF 区域一次性淡入高亮 900ms。
    * 定位目标变化时重新触发一次动画（remove → reflow → add）。 */
@@ -151,17 +171,19 @@ export default function PdfSourcePane({
         </small>
       ) : null}
 
-      {locatedPages.length > 0 ? (
+      {locatedPages.some((location) => location.unitId !== '') ? (
         <footer className="parse-pdf-located-actions">
-          {locatedPages.map((loc, index) => (
-            <button
-              type="button"
-              key={`${loc.unitId}-${loc.sourceRefId}`}
-              onClick={() => onLocate(loc.unitId, loc.sourceRefId)}
-            >
-              在结构化原文中查看依据 {index + 1}
-            </button>
-          ))}
+          {locatedPages
+            .filter((location) => location.unitId !== '')
+            .map((loc, index) => (
+              <button
+                type="button"
+                key={`${loc.unitId}-${loc.sourceRefId}`}
+                onClick={() => onLocate(loc.unitId, loc.sourceRefId)}
+              >
+                在结构化原文中查看依据 {index + 1}
+              </button>
+            ))}
         </footer>
       ) : null}
     </article>

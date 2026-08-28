@@ -156,7 +156,14 @@ export interface CanonicalStatusInput {
 
 export interface CanonicalPageInput {
   workItemId: string;
-  query: string;
+  query?: string;
+}
+
+export interface CanonicalStructuredContentBrowseInput {
+  workItemId: string;
+  cursor?: string;
+  limit?: number;
+  expectedRevision?: number;
 }
 
 export type CanonicalQueryInput = CanonicalEntryQueryRequest;
