@@ -5,12 +5,19 @@ const clientSourceRoot = resolve(__dirname, '../../client/src');
 
 describe('canonical Host production client boundary', () => {
   it('exposes only the hosted DEV FileService upload/create/readback entry', async () => {
-    const [api, intake, home] = await Promise.all([
+    const [api, intake, reparse, home] = await Promise.all([
       readFile(resolve(clientSourceRoot, 'api/canonical-host.ts'), 'utf8'),
       readFile(
         resolve(
           clientSourceRoot,
           'pages/WorkspaceHomePage/HostedDevelopmentIntake.tsx',
+        ),
+        'utf8',
+      ),
+      readFile(
+        resolve(
+          clientSourceRoot,
+          'pages/WorkspaceHomePage/reparse-completed-work-item.ts',
         ),
         'utf8',
       ),
@@ -39,8 +46,12 @@ describe('canonical Host production client boundary', () => {
     expect(intake).toContain('sourceByteLength');
     expect(home).toContain('HostedDevelopmentIntake');
     expect(home).toContain('retryDevelopmentWorkItem');
-    expect(home).toContain("failureCode === 'SOURCE_BINDING_FAILED'");
-    expect(home).toContain("projection?.phase === 'PARSE_REQUESTED'");
+    expect(reparse).toContain("failureCode === 'SOURCE_BINDING_FAILED'");
+    expect(reparse).toContain("projection.phase === 'PARSE_REQUESTED'");
+    expect(reparse).toContain(
+      "projection.phase === 'CANDIDATE_READBACK_VERIFIED'",
+    );
+    expect(reparse).toContain('assertSameWorkItemReparseReadback');
     expect(home).toContain('继续解析');
     expect(home).toContain('重新解析');
     expect(home).not.toContain('localStorage');

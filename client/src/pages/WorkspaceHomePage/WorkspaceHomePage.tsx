@@ -49,6 +49,12 @@ import {
 
 import './workspace-home.css';
 import { HostedDevelopmentIntake } from './HostedDevelopmentIntake';
+import {
+  assertSameWorkItemReparseReadback,
+  assertSameWorkItemReparseRun,
+  availableParseAction,
+  parseActionLabel,
+} from './reparse-completed-work-item';
 
 type LibrarySelection = string;
 
@@ -269,13 +275,10 @@ export default function WorkspaceHomePage() {
     ? PHASE_LABELS[projection.phase]
     : '尚未选择工程事项';
   const tone = projection ? phaseTone(projection.phase) : 'muted';
-  const retryableSourceBindingFailure =
-    developmentIntakeAvailable &&
-    projection?.phase === 'FAILED' &&
-    projection.failure?.failureCode === 'SOURCE_BINDING_FAILED';
-  const resumablePendingRetry =
-    developmentIntakeAvailable && projection?.phase === 'PARSE_REQUESTED';
-  const canResumeParse = retryableSourceBindingFailure || resumablePendingRetry;
+  const parseAction = availableParseAction(
+    developmentIntakeAvailable,
+    projection,
+  );
   const nodes = useMemo(() => {
     if (!data) return [];
     return data.libraryIndex.nodes;
@@ -383,38 +386,25 @@ export default function WorkspaceHomePage() {
   }
 
   async function retryExistingWorkItem(): Promise<void> {
-    if (!projection || !canResumeParse || retrying) return;
-    const expectedWorkItemId = projection.workItemId;
-    const expectedDocumentVersionId = projection.source.documentVersionId;
+    if (!projection || parseAction === null || retrying) return;
+    const expected = {
+      workItemId: projection.workItemId,
+      documentVersionId: projection.source.documentVersionId,
+    };
     setRetryError(null);
     setRetrying(true);
     try {
       await requireOfficialOauthSession();
-      const retried = await retryDevelopmentWorkItem(expectedWorkItemId);
-      if (
-        retried.workItemCreated ||
-        !retried.workItemReused ||
-        retried.result.status !== 'CANDIDATE_VERTICAL_VERIFIED' ||
-        retried.result.workItem.workItemId !== expectedWorkItemId ||
-        retried.result.workItem.source.documentVersionId !==
-          expectedDocumentVersionId
-      ) {
-        throw new Error('CANONICAL_SAME_WORK_ITEM_RETRY_MISMATCH');
-      }
+      const retried = await retryDevelopmentWorkItem(expected.workItemId);
+      assertSameWorkItemReparseRun(retried, expected);
       const readback = await getDocumentParsingPage(
-        expectedWorkItemId,
+        expected.workItemId,
         'applicability',
       );
-      if (
-        readback.workItem.phase !== 'CANDIDATE_READBACK_VERIFIED' ||
-        readback.workItem.workItemId !== expectedWorkItemId ||
-        readback.workItem.source.documentVersionId !== expectedDocumentVersionId
-      ) {
-        throw new Error('CANONICAL_SAME_WORK_ITEM_READBACK_MISMATCH');
-      }
+      assertSameWorkItemReparseReadback(readback, expected);
       setData(readback);
       navigate(
-        `/work-items/${encodeURIComponent(expectedWorkItemId)}/documents?node=document&tab=source`,
+        `/work-items/${encodeURIComponent(expected.workItemId)}/documents?node=document&tab=source`,
       );
     } catch {
       setRetryError('重新解析未完成；原文件与事项已保留，请稍后再试。');
@@ -675,7 +665,7 @@ export default function WorkspaceHomePage() {
                     </p>
                   </div>
                   <div className="library-preview-actions">
-                    {canResumeParse ? (
+                    {parseAction !== null ? (
                       <Button
                         type="button"
                         size="sm"
@@ -687,10 +677,10 @@ export default function WorkspaceHomePage() {
                           aria-hidden="true"
                         />
                         {retrying
-                          ? '继续解析中…'
-                          : resumablePendingRetry
-                            ? '继续解析'
-                            : '重新解析'}
+                          ? parseAction === 'RESUME_PENDING'
+                            ? '继续解析中…'
+                            : '重新解析中…'
+                          : parseActionLabel(parseAction)}
                       </Button>
                     ) : null}
                     <Button

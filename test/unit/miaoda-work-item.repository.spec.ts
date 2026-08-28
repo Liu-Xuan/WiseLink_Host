@@ -185,6 +185,85 @@ describe('MiaodaWorkItemRepository parse retry recovery', () => {
 
     expect(fixture.insert).not.toHaveBeenCalled();
   });
+
+  it('reopens a completed candidate on the same WorkItem and DV with a new Attempt while retaining the old artifact', async () => {
+    const fixture = completedReparseRepository();
+
+    const result = await fixture.target.reopenCompletedParse({
+      ...retryIdentity(),
+      expectedRevision: 4,
+      authorization,
+    });
+
+    expect(result).toMatchObject({ attemptNo: 2 });
+    expect(result?.attemptId).toMatch(/^ATT-/u);
+    const persisted = JSON.parse(
+      fixture.set.mock.calls[0][0].projectionJson,
+    ) as CanonicalWorkItemProjection;
+    expect(persisted).toMatchObject({
+      workItemId: 'WI-RETRY-1',
+      revision: 5,
+      phase: 'PARSE_REQUESTED',
+      source: { documentVersionId: 'document-version-retry' },
+      package: {
+        packageId: 'PKG-OLD',
+        artifact: {
+          ref: 'artifact://old-package',
+          sha256: 'b'.repeat(64),
+        },
+      },
+      parseAuthorization: authorization,
+    });
+    expect(fixture.set.mock.calls[0][0]).toMatchObject({
+      packageId: 'PKG-OLD',
+      packageArtifactRef: 'artifact://old-package',
+      packageArtifactSha256: 'b'.repeat(64),
+    });
+    expect(fixture.insertValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workItemId: 'WI-RETRY-1',
+        actionType: 'PARSE_PDF',
+        attemptNo: 2,
+        status: 'PENDING',
+        actorUserId: 'user-retry',
+        tenantId: 'tenant-retry',
+        inputRevision: 4,
+        baseRevision: 4,
+        documentVersionId: 'document-version-retry',
+      }),
+    );
+  });
+
+  it('creates no reparse Attempt when the completed WorkItem revision drifts', async () => {
+    const fixture = completedReparseRepository({ updatedRows: [] });
+
+    await expect(
+      fixture.target.reopenCompletedParse({
+        ...retryIdentity(),
+        expectedRevision: 4,
+        authorization,
+      }),
+    ).resolves.toBeNull();
+
+    expect(fixture.insert).not.toHaveBeenCalled();
+  });
+
+  it('creates no reparse Attempt when the projection is not bound to the current DV', async () => {
+    const fixture = completedReparseRepository({
+      projectionDocumentVersionId: 'document-version-drifted',
+    });
+
+    await expect(
+      fixture.target.reopenCompletedParse({
+        ...retryIdentity(),
+        expectedRevision: 4,
+        authorization,
+      }),
+    ).resolves.toBeNull();
+
+    expect(fixture.update).not.toHaveBeenCalled();
+    expect(fixture.insert).not.toHaveBeenCalled();
+  });
 });
 
 function retryIdentity() {
@@ -286,6 +365,105 @@ function pendingRetryRepository(input: {
   return {
     target: new MiaodaWorkItemRepository(db as never),
     insert,
+    update,
+    set,
+  };
+}
+
+function completedReparseRepository(input?: {
+  updatedRows?: Array<{ workItemId: string }>;
+  projectionDocumentVersionId?: string;
+}) {
+  const projection: CanonicalWorkItemProjection = {
+    schemaVersion: 'wiselink.3_1.canonical_work_item_projection.v0.candidate',
+    workItemId: 'WI-RETRY-1',
+    requestId: 'REQ-RETRY-1',
+    revision: 4,
+    phase: 'CANDIDATE_READBACK_VERIFIED',
+    permissionSnapshotVersion: `sha256:${'0'.repeat(64)}`,
+    parseAuthorization: {
+      action: 'PARSE_PDF',
+      actorFingerprint: `sha256:${'9'.repeat(64)}`,
+      decisionId: 'decision-original-development-run',
+      decisionHash: `sha256:${'8'.repeat(64)}`,
+      permissionSnapshotVersion: `sha256:${'0'.repeat(64)}`,
+    },
+    source: {
+      documentVersionId:
+        input?.projectionDocumentVersionId ?? 'document-version-retry',
+    } as never,
+    classification: {
+      status: 'CANDIDATE',
+      normalizedFamily: 'FTD',
+    } as never,
+    package: {
+      packageId: 'PKG-OLD',
+      artifact: {
+        ref: 'artifact://old-package',
+        sha256: 'b'.repeat(64),
+      },
+    } as never,
+    integratedAssessment: null,
+    failure: null,
+    recordingFailure: null,
+  };
+  const workItemRow = {
+    workItemId: 'WI-RETRY-1',
+    tenantId: 'tenant-retry',
+    requestId: 'REQ-RETRY-1',
+    documentId: 'document-retry',
+    documentVersionId: 'document-version-retry',
+    sourceArtifactId: 'artifact-retry',
+    sourceFileSha256: 'a'.repeat(64),
+    sourceByteLength: 25556,
+    normalizedFamily: 'FTD',
+    requestedByUserId: 'user-retry',
+    runKey: 'dev:22222222-2222-4222-8222-222222222222',
+    revision: 4,
+    projectionJson: JSON.stringify(projection),
+  };
+  const attemptRow = {
+    attemptId: 'ATT-SUCCEEDED-1',
+    attemptNo: 1,
+    status: 'SUCCEEDED',
+    startedAt: new Date('2026-08-26T00:59:00.000Z'),
+    completedAt: new Date('2026-08-26T01:00:00.000Z'),
+    errorCode: null,
+    packageArtifactRef: 'artifact://old-package',
+    packageArtifactSha256: 'b'.repeat(64),
+  };
+  let selectNo = 0;
+  const select = jest.fn().mockImplementation(() => {
+    const rows = selectNo++ === 0 ? [workItemRow] : [attemptRow];
+    const limit = jest.fn().mockResolvedValue(rows);
+    const where = jest.fn().mockReturnValue({
+      limit,
+      orderBy: jest.fn().mockReturnValue({ limit }),
+    });
+    return { from: jest.fn().mockReturnValue({ where }) };
+  });
+  const returning = jest
+    .fn()
+    .mockResolvedValue(input?.updatedRows ?? [{ workItemId: 'WI-RETRY-1' }]);
+  const where = jest.fn().mockReturnValue({ returning });
+  const set = jest.fn().mockReturnValue({ where });
+  const update = jest.fn().mockReturnValue({ set });
+  const insertReturning = jest.fn().mockResolvedValue([{ attemptId: 'new' }]);
+  const insertValues = jest
+    .fn()
+    .mockReturnValue({ returning: insertReturning });
+  const insert = jest.fn().mockReturnValue({ values: insertValues });
+  const transaction = { select, update, insert };
+  const db = {
+    transaction: jest.fn(
+      async (operation: (value: typeof transaction) => unknown) =>
+        operation(transaction),
+    ),
+  };
+  return {
+    target: new MiaodaWorkItemRepository(db as never),
+    insert,
+    insertValues,
     update,
     set,
   };

@@ -463,6 +463,116 @@ describe('CanonicalHostVerticalService', () => {
     expect(producer.producePdf).toHaveBeenCalledTimes(1);
   });
 
+  it('switches a completed reparse to a new immutable package only after CAS and retains the old artifact', async () => {
+    const request = { ...(await realRequest()), query: 'technical' };
+    const firstBytes = await realPackageBytes();
+    const replacementBytes = await replacementPackageBytes();
+    const firstPackageId =
+      'urn:techpub:package:v1:sha256:9e734a0de1c37c368b954662e9bb11036cc24b430468a073b31da127380df622';
+    const replacementPackageId =
+      'urn:techpub:package:v1:sha256:bd7d7f707b6ac6518d99de187c1f1295f70df5d12714d4eab000f6025cb354a2';
+    const producer: CanonicalPdfProducerPort = {
+      producePdf: jest
+        .fn()
+        .mockResolvedValueOnce({
+          kind: 'PACKAGE',
+          packageId: firstPackageId,
+          contractId: 'techpub.parsed-package.v1',
+          contractRevision: 'frozen.2',
+          bytes: firstBytes,
+          strictReaderValidated: true,
+          executionRoute: 'initial-real-package',
+        })
+        .mockResolvedValueOnce({
+          kind: 'PACKAGE',
+          packageId: replacementPackageId,
+          contractId: 'techpub.parsed-package.v1',
+          contractRevision: 'frozen.2',
+          bytes: replacementBytes,
+          strictReaderValidated: true,
+          executionRoute: 'explicit-reparse-package',
+        }),
+    };
+    const registrar = new InMemoryRegistrar();
+    const store = new InMemoryArtifactStore();
+    const reader = new UnifiedReaderService(
+      store,
+      new Frozen2CandidateReaderService(),
+      fullValidator(),
+      {
+        mode: 'HOST_CONFIGURED',
+        artifactStoreConfigured: true,
+        fullU0ValidatorConfigured: true,
+        aeoSpecialistReaderConfigured: false,
+        authority: 'COMPOSITION_STATE_NOT_ACTIVATION_NOT_WRITE_AUTHORIZATION',
+      },
+    );
+    const service = new CanonicalHostVerticalService(
+      registrar,
+      producer,
+      authorization(),
+      permissionSnapshots(),
+      store,
+      reader,
+      entryFacade(),
+      failureReports(store, fullValidator()),
+    );
+
+    const initial = await service.runPdf(request, TEST_ACTOR);
+    const oldArtifact = initial.workItem.package!.artifact;
+    const { revision: initialRevision, ...initialProjection } =
+      initial.workItem;
+    const completedWithDerived = await registrar.compareAndSet({
+      workItemId: request.workItemId,
+      expectedRevision: initialRevision,
+      next: {
+        ...initialProjection,
+        translation: { status: 'CANDIDATE_ONLY' } as never,
+        assessment: { status: 'CANDIDATE_ONLY' } as never,
+      },
+    });
+    const { revision: completedRevision, ...completedProjection } =
+      completedWithDerived;
+    const reopened = await registrar.compareAndSet({
+      workItemId: request.workItemId,
+      expectedRevision: completedRevision,
+      next: {
+        ...completedProjection,
+        phase: 'PARSE_REQUESTED',
+      },
+    });
+    expect(reopened.package?.artifact).toEqual(oldArtifact);
+
+    const decision = await authorization().authorize({
+      actor: TEST_ACTOR,
+      action: 'PARSE_PDF',
+    });
+    const reparsed = await service.runPdfWithExistingAuthorization(request, {
+      actor: TEST_ACTOR,
+      decision,
+    });
+
+    expect(reparsed).toMatchObject({
+      status: 'CANDIDATE_VERTICAL_VERIFIED',
+      workItem: {
+        workItemId: request.workItemId,
+        phase: 'CANDIDATE_READBACK_VERIFIED',
+        source: { documentVersionId: request.source.documentVersionId },
+        package: { packageId: replacementPackageId },
+        translation: null,
+        assessment: null,
+      },
+    });
+    expect(reparsed.workItem.package?.artifact.ref).not.toBe(oldArtifact.ref);
+    await expect(store.readActualBytes(oldArtifact)).resolves.toEqual(
+      firstBytes,
+    );
+    await expect(
+      store.readActualBytes(reparsed.workItem.package!.artifact),
+    ).resolves.toEqual(replacementBytes);
+    expect(producer.producePdf).toHaveBeenCalledTimes(2);
+  });
+
   it('persists an explicit FailureReport and leaves query unavailable', async () => {
     const request = await realRequest();
     const producer: CanonicalPdfProducerPort = {
@@ -1353,6 +1463,16 @@ async function realPackageBytes(): Promise<Uint8Array> {
   return new Uint8Array(
     await readFile(
       resolve('test/fixtures/real-ftd-frozen2.unified-package.json'),
+    ),
+  );
+}
+
+async function replacementPackageBytes(): Promise<Uint8Array> {
+  return new Uint8Array(
+    await readFile(
+      resolve(
+        'test/fixtures/airbus-fast62-oem-reference.frozen2.unified-package.json',
+      ),
     ),
   );
 }
