@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
+import { resolve } from 'node:path';
 import test from 'node:test';
 
 import postgres from 'postgres';
@@ -35,22 +38,15 @@ const {
 const databaseUrl = process.env.CANONICAL_FLEET_TEST_DATABASE_URL;
 
 test(
-  'R09 Fleet DB owner reads the imported real 777 and enforces authenticated tenant isolation',
+  'R09 Fleet DB serial migrations allow service reads and keep writes closed',
   { skip: !databaseUrl, concurrency: false },
   async () => {
     assertSafeIsolatedDatabase(databaseUrl);
     const sql = postgres(databaseUrl, { max: 4 });
     try {
-      await sql.unsafe(`
-        GRANT SELECT ON identity_subject_mapping TO authenticated;
-        GRANT SELECT, INSERT, UPDATE, DELETE ON
-          canonical_fleet_source_snapshot,
-          canonical_fleet_scope_head,
-          canonical_fleet_asset_version,
-          canonical_fleet_alias_version,
-          canonical_fleet_configuration_fact_version
-        TO authenticated
-      `);
+      await resetDatabase(sql);
+      await importRealFleet(databaseUrl);
+      await assertFleetPolicyReadback(sql);
       const [counts] = await sql`
         SELECT
           (SELECT count(*)::int FROM canonical_fleet_asset_version
@@ -84,6 +80,42 @@ test(
         }),
       );
       await assertSelectionAndKleeneUnknown(ownerRepository);
+
+      const service = await sql.reserve();
+      try {
+        await service.unsafe('BEGIN');
+        await service.unsafe('SET LOCAL ROLE service_role');
+        const [context] = await service`
+          SELECT current_setting('app.user_id', true) AS user_id
+        `;
+        assert.ok(context.user_id === null || context.user_id === '');
+        service.options = sql.options;
+        const repository = new CanonicalFleetMasterDataRepository(
+          drizzle(service),
+        );
+        assertRealB1266(
+          await repository.readCurrentForAircraft({
+            tenantId: 'tenant-local',
+            aircraftIdentifier: 'B-1266',
+            asOf: '2026-08-27',
+          }),
+        );
+        await assert.rejects(
+          repository.readCurrentForAircraft({
+            tenantId: 'tenant-other',
+            aircraftIdentifier: 'B-1266',
+            asOf: '2026-08-27',
+          }),
+          (error) =>
+            error?.code === 'APPLICABILITY_FLEET_DATABASE_UNAVAILABLE' &&
+            error?.statusCode === 503,
+        );
+        await service.unsafe('COMMIT');
+      } finally {
+        service.release();
+      }
+
+      await assertServiceWriteDenials(sql);
 
       const authenticated = await sql.reserve();
       try {
@@ -202,6 +234,224 @@ test(
   },
 );
 
+async function resetDatabase(sql) {
+  const [fleetMigration, serviceMigration] = await Promise.all([
+    readFile(
+      resolve(process.cwd(), 'migrations/0011_canonical_fleet_master_data.sql'),
+      'utf8',
+    ),
+    readFile(
+      resolve(
+        process.cwd(),
+        'migrations/0012_canonical_fleet_service_role_select.sql',
+      ),
+      'utf8',
+    ),
+  ]);
+  await sql.unsafe('DROP SCHEMA public CASCADE');
+  await sql.unsafe('CREATE SCHEMA public');
+  await sql.unsafe(`
+    DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated')
+      THEN CREATE ROLE authenticated NOLOGIN;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role')
+      THEN CREATE ROLE service_role NOLOGIN;
+      END IF;
+    END $$
+  `);
+  await sql.unsafe(`
+    CREATE TABLE identity_subject_mapping (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      miaoda_user_id varchar(255) NOT NULL,
+      miaoda_tenant_id varchar(128) NOT NULL,
+      expected_client_id varchar(128) NOT NULL,
+      status varchar(32) NOT NULL
+    )
+  `);
+  await sql.unsafe(
+    'ALTER TABLE identity_subject_mapping ENABLE ROW LEVEL SECURITY',
+  );
+  await sql.unsafe(`
+    CREATE POLICY identity_subject_mapping_authenticated_read
+    ON identity_subject_mapping FOR SELECT TO authenticated
+    USING (
+      miaoda_user_id = current_setting('app.user_id', true)
+      AND status = 'ACTIVE'
+    )
+  `);
+  const migrationSql = await sql.reserve();
+  try {
+    await migrationSql.unsafe(fleetMigration);
+    await migrationSql.unsafe(serviceMigration);
+  } finally {
+    migrationSql.release();
+  }
+  await sql.unsafe(
+    'GRANT USAGE ON SCHEMA public TO authenticated, service_role',
+  );
+  await sql.unsafe('GRANT SELECT ON identity_subject_mapping TO authenticated');
+  await sql.unsafe(`
+    GRANT SELECT, INSERT, UPDATE, DELETE ON
+      canonical_fleet_source_snapshot,
+      canonical_fleet_scope_head,
+      canonical_fleet_asset_version,
+      canonical_fleet_alias_version,
+      canonical_fleet_configuration_fact_version
+    TO authenticated, service_role
+  `);
+  await sql.unsafe(`
+    INSERT INTO identity_subject_mapping (
+      miaoda_user_id,
+      miaoda_tenant_id,
+      expected_client_id,
+      status
+    ) VALUES
+      ('user-local', 'tenant-local', 'cli_aadde8b579f95bc9', 'ACTIVE'),
+      ('user-other', 'tenant-other', 'cli_aadde8b579f95bc9', 'ACTIVE')
+  `);
+}
+
+async function importRealFleet(value) {
+  const result = spawnSync(
+    process.execPath,
+    [
+      resolve(process.cwd(), 'scripts/import-canonical-fleet-master-data.mjs'),
+      '--tenant-id',
+      'tenant-local',
+      '--actor-id',
+      'system:canonical-fleet-postgres-test',
+      '--apply',
+    ],
+    {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        CANONICAL_FLEET_IMPORT_DATABASE_URL: value,
+      },
+      maxBuffer: 16 * 1024 * 1024,
+    },
+  );
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const imported = JSON.parse(result.stdout);
+  assert.equal(imported.status, 'applied');
+  assert.deepEqual(imported.readback, {
+    aircraftAssets: 587,
+    aircraftIdentityAliases: 2579,
+    configurationFacts: 0,
+  });
+}
+
+async function assertFleetPolicyReadback(sql) {
+  const policies = await sql`
+    SELECT
+      tablename,
+      policyname,
+      roles::text AS roles,
+      cmd,
+      qual,
+      with_check AS "withCheck"
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename IN (
+        'canonical_fleet_source_snapshot',
+        'canonical_fleet_scope_head',
+        'canonical_fleet_asset_version',
+        'canonical_fleet_alias_version',
+        'canonical_fleet_configuration_fact_version'
+      )
+    ORDER BY tablename, policyname
+  `;
+  assert.equal(policies.length, 10);
+  const servicePolicies = policies.filter((policy) =>
+    policy.roles.includes('service_role'),
+  );
+  assert.equal(servicePolicies.length, 5);
+  for (const policy of servicePolicies) {
+    assert.equal(policy.cmd, 'SELECT');
+    assert.equal(normalizePolicyExpression(policy.qual), 'true');
+    assert.equal(policy.withCheck, null);
+  }
+  const authenticatedPolicies = policies.filter((policy) =>
+    policy.roles.includes('authenticated'),
+  );
+  assert.equal(authenticatedPolicies.length, 5);
+  assert.equal(
+    authenticatedPolicies.every((policy) => policy.cmd === 'SELECT'),
+    true,
+  );
+}
+
+function normalizePolicyExpression(expression) {
+  return String(expression ?? '')
+    .replace(/[()]/gu, '')
+    .trim()
+    .toLowerCase();
+}
+
+async function assertServiceWriteDenials(sql) {
+  const serviceWrite = await sql.reserve();
+  try {
+    await serviceWrite.unsafe('BEGIN');
+    await serviceWrite.unsafe('SET LOCAL ROLE service_role');
+    await assert.rejects(
+      serviceWrite`
+        INSERT INTO canonical_fleet_source_snapshot (
+          tenant_id,
+          source_snapshot_id,
+          source_kind,
+          logical_source_key,
+          source_revision_key,
+          source_content_hash,
+          source_as_of,
+          snapshot_as_of,
+          fleet_snapshot_digest,
+          upstream_lineage_json,
+          aircraft_asset_count,
+          identity_alias_count,
+          configuration_fact_count,
+          imported_by_actor_id
+        ) VALUES (
+          'tenant-local',
+          'FMS-SERVICE-WRITE-DENIED',
+          'test',
+          'test',
+          'test',
+          ${`sha256:${'0'.repeat(64)}`},
+          '2026-08-27',
+          CURRENT_TIMESTAMP,
+          ${'0'.repeat(64)},
+          '{}',
+          1,
+          0,
+          0,
+          'service-role'
+        )
+      `,
+      /row-level security policy/iu,
+    );
+    await serviceWrite.unsafe('ROLLBACK');
+    await serviceWrite.unsafe('BEGIN');
+    await serviceWrite.unsafe('SET LOCAL ROLE service_role');
+    const updated = await serviceWrite`
+      UPDATE canonical_fleet_scope_head
+      SET authority_revision = authority_revision + 1
+      WHERE tenant_id = 'tenant-local'
+      RETURNING authority_revision
+    `;
+    assert.equal(updated.length, 0);
+    const deleted = await serviceWrite`
+      DELETE FROM canonical_fleet_alias_version
+      WHERE tenant_id = 'tenant-local'
+      RETURNING alias_version_id
+    `;
+    assert.equal(deleted.length, 0);
+    await serviceWrite.unsafe('ROLLBACK');
+  } finally {
+    serviceWrite.release();
+  }
+}
+
 function assertRealB1266(source) {
   assert.equal(
     source.sourceSnapshotId,
@@ -215,6 +465,11 @@ function assertRealB1266(source) {
   assert.equal(source.sourceAsOf, '2026-06-05');
   assert.equal(source.assets.length, 1);
   assert.deepEqual(source.facts, []);
+  assert.equal(source.assets[0].aliases.length, 5);
+  assert.equal(
+    source.assets[0].aliases.some(({ aliasValue }) => aliasValue === 'B-1266'),
+    true,
+  );
   assert.deepEqual(
     {
       aircraftNumber: source.assets[0].aircraftNumber,
