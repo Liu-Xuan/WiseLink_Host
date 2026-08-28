@@ -158,7 +158,7 @@ describe('ExactFtdFrozen2PdfProducerAdapter scoped professional correlation', ()
     expect(validator.validate).not.toHaveBeenCalled();
   });
 
-  it('accepts only the controlled exact 737 SB profile before requiring Host correlation', async () => {
+  it('accepts the exact 737 SB when business revision differs only by case and whitespace', async () => {
     const readSelection = jest.fn().mockResolvedValue({
       readbackVerified: true,
       sha256: EXACT_737_SB_SHA256,
@@ -176,7 +176,7 @@ describe('ExactFtdFrozen2PdfProducerAdapter scoped professional correlation', ()
           sourceArtifactId: exactSbRequest.source.sourceArtifactId,
           pdfSha256: EXACT_737_SB_SHA256,
           byteLength: exactSbRequest.source.sourceByteLength,
-          businessRevision: 'Original Issue',
+          businessRevision: '  ORIGINAL   ISSUE  ',
         },
         family: {
           documentFamily: 'SB',
@@ -214,6 +214,49 @@ describe('ExactFtdFrozen2PdfProducerAdapter scoped professional correlation', ()
       filePath: '/source/exact-737-sb.pdf',
     });
     expect(validator.validate).not.toHaveBeenCalled();
+  });
+
+  it('rejects the exact 737 SB when the actual business revision differs', async () => {
+    const readSelection = jest.fn();
+    jest
+      .mocked(MiaodaFileServiceArtifactStore)
+      .mockImplementation(() => ({ readSelection }) as never);
+    const resolver = {
+      resolve: jest.fn().mockResolvedValue({
+        version: {
+          documentId: exactSbRequest.source.documentId,
+          documentVersionId: exactSbRequest.source.documentVersionId,
+          sourceArtifactId: exactSbRequest.source.sourceArtifactId,
+          pdfSha256: EXACT_737_SB_SHA256,
+          byteLength: exactSbRequest.source.sourceByteLength,
+          businessRevision: 'Revision 1',
+        },
+        family: {
+          documentFamily: 'SB',
+          canonicalDocumentNumber: '737-34-3830',
+        },
+        artifact: {
+          sourceArtifactId: exactSbRequest.source.sourceArtifactId,
+          bucketId: 'bucket-source-exact-737-sb',
+          filePath: '/source/exact-737-sb.pdf',
+          providerObjectId: 'provider-source-exact-737-sb',
+          mediaType: 'application/pdf',
+          sha256: EXACT_737_SB_SHA256,
+          byteLength: exactSbRequest.source.sourceByteLength,
+        },
+      }),
+    };
+    const adapter = new ExactFtdFrozen2PdfProducerAdapter(
+      {} as never,
+      resolver as never,
+      { validate: jest.fn() } as never,
+      new UnavailableScopedProfessionalArtifactCorrelationAdapter(),
+    );
+
+    await expect(adapter.producePdf(exactSbRequest)).rejects.toThrow(
+      'PDF_PRODUCER_DOCUMENT_VERSION_READBACK_MISMATCH',
+    );
+    expect(readSelection).not.toHaveBeenCalled();
   });
 
   it('fails closed before readback for every other SB source', async () => {

@@ -180,7 +180,7 @@ describeRealSb(
           pdfSha256: EXPECTED_SOURCE_SHA256,
           byteLength: sourceBytes.byteLength,
           committedAt: '2026-08-26T00:00:00.000Z',
-          businessRevision: 'Original Issue',
+          businessRevision: 'ORIGINAL ISSUE',
         },
         family: {
           familyId: 'publication_family_real_737_sb_test',
@@ -313,7 +313,7 @@ describeRealSb(
         strictReaderValidated: true,
         documentIdentity: {
           documentCode: '737-34-3830',
-          businessRevision: 'Original Issue',
+          businessRevision: 'ORIGINAL ISSUE',
         },
         usagePolicy: {
           presentationMode: 'ENGINEERING_DOCUMENT',
