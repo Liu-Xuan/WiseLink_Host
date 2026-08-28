@@ -293,7 +293,6 @@ export class MiaodaWorkItemRepository {
         ...projection,
         revision: projection.revision + 1,
         phase: 'PARSE_REQUESTED',
-        package: null,
         failure: null,
         recordingFailure: null,
       };
@@ -306,9 +305,9 @@ export class MiaodaWorkItemRepository {
           projectionJson: JSON.stringify(next),
           status: next.phase,
           revision: next.revision,
-          packageId: null,
-          packageArtifactRef: null,
-          packageArtifactSha256: null,
+          packageId: next.package?.packageId ?? null,
+          packageArtifactRef: next.package?.artifact.ref ?? null,
+          packageArtifactSha256: next.package?.artifact.sha256 ?? null,
           failureCode: null,
           failureArtifactRef: null,
           failureArtifactSha256: null,
@@ -341,6 +340,119 @@ export class MiaodaWorkItemRepository {
         .returning({ attemptId: actionAttempt.attemptId });
       if (inserted.length !== 1) {
         throw new Error('ACTION_ATTEMPT_RETRY_INSERT_FAILED');
+      }
+      return { attemptId, attemptNo };
+    });
+  }
+
+  async reopenCompletedParse(
+    input: WorkItemReservationInput & {
+      workItemId: string;
+      requestId: string;
+      expectedRevision: number;
+      authorization: CanonicalParseAuthorizationProjection;
+    },
+  ): Promise<ParseRetryReservation | null> {
+    return this.db.transaction(async (transaction) => {
+      const [stored] = await transaction
+        .select()
+        .from(workItem)
+        .where(eq(workItem.workItemId, input.workItemId))
+        .limit(1);
+      if (!stored) throw new Error('WORK_ITEM_NOT_FOUND');
+      assertRetryIdentity(stored, input);
+
+      const projection = parseProjection(stored.projectionJson);
+      if (
+        stored.revision !== input.expectedRevision ||
+        projection?.revision !== input.expectedRevision ||
+        projection.phase !== 'CANDIDATE_READBACK_VERIFIED' ||
+        projection.package === null ||
+        projection.source.documentVersionId !== input.documentVersionId
+      ) {
+        return null;
+      }
+
+      const [latestAttempt] = await transaction
+        .select()
+        .from(actionAttempt)
+        .where(
+          and(
+            eq(actionAttempt.workItemId, stored.workItemId),
+            eq(actionAttempt.actionType, ACTION_TYPE),
+          ),
+        )
+        .orderBy(desc(actionAttempt.attemptNo))
+        .limit(1);
+      if (
+        !latestAttempt ||
+        latestAttempt.status !== 'SUCCEEDED' ||
+        latestAttempt.completedAt === null ||
+        latestAttempt.packageArtifactRef !== projection.package.artifact.ref ||
+        latestAttempt.packageArtifactSha256 !==
+          projection.package.artifact.sha256
+      ) {
+        return null;
+      }
+
+      const now = new Date();
+      const attemptId = `ATT-${randomUUID()}`;
+      const attemptNo = latestAttempt.attemptNo + 1;
+      const reopened = withRetryAuthorization(
+        {
+          ...projection,
+          revision: projection.revision + 1,
+          phase: 'PARSE_REQUESTED',
+          failure: null,
+          recordingFailure: null,
+        },
+        input.authorization,
+        false,
+      );
+      const updated = await transaction
+        .update(workItem)
+        .set({
+          projectionJson: JSON.stringify(reopened),
+          status: reopened.phase,
+          revision: reopened.revision,
+          packageId: projection.package.packageId,
+          packageArtifactRef: projection.package.artifact.ref,
+          packageArtifactSha256: projection.package.artifact.sha256,
+          failureCode: null,
+          failureArtifactRef: null,
+          failureArtifactSha256: null,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(workItem.workItemId, stored.workItemId),
+            eq(workItem.revision, input.expectedRevision),
+          ),
+        )
+        .returning({ workItemId: workItem.workItemId });
+      if (updated.length !== 1) return null;
+
+      const inserted = await transaction
+        .insert(actionAttempt)
+        .values({
+          attemptId,
+          workItemId: stored.workItemId,
+          actionType: ACTION_TYPE,
+          attemptNo,
+          triggerRequestId: stored.requestId,
+          requestOrigin: input.requestOrigin,
+          status: 'PENDING',
+          actorUserId: input.actorUserId,
+          tenantId: input.tenantId,
+          inputRevision: projection.revision,
+          baseRevision: projection.revision,
+          documentVersionId: input.documentVersionId,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .returning({ attemptId: actionAttempt.attemptId });
+      if (inserted.length !== 1) {
+        throw new Error('ACTION_ATTEMPT_REPARSE_INSERT_FAILED');
       }
       return { attemptId, attemptNo };
     });
@@ -1020,8 +1132,14 @@ export class MiaodaWorkItemRepository {
             ? 'SUCCEEDED'
             : projection.phase
           : projection.phase,
-        packageArtifactRef: projection.package?.artifact.ref ?? null,
-        packageArtifactSha256: projection.package?.artifact.sha256 ?? null,
+        packageArtifactRef:
+          projection.phase === 'CANDIDATE_READBACK_VERIFIED'
+            ? (projection.package?.artifact.ref ?? null)
+            : null,
+        packageArtifactSha256:
+          projection.phase === 'CANDIDATE_READBACK_VERIFIED'
+            ? (projection.package?.artifact.sha256 ?? null)
+            : null,
         failureArtifactRef: projection.failure?.artifact.ref ?? null,
         failureArtifactSha256: projection.failure?.artifact.sha256 ?? null,
         errorCode:

@@ -148,6 +148,7 @@ function target() {
       created: true,
     }),
     reopenRetryableParseFailure: jest.fn().mockResolvedValue(null),
+    reopenCompletedParse: jest.fn().mockResolvedValue(null),
     reserveAssessmentAction: jest.fn(),
     reserveDynamicEvaluationAction: jest.fn(),
     reserveOverallSynthesisAction: jest.fn(),
@@ -591,12 +592,6 @@ describe('OrdinaryWorkItemService run identity', () => {
         failure: { failureCode: 'SOURCE_BINDING_FAILED' },
       },
     });
-    targetValue.repository.reserve.mockResolvedValue({
-      workItemId: 'WI-NEW-SB',
-      requestId: 'REQ-NEW-SB',
-      attemptId: 'ATT-FIRST-FAILED',
-      created: false,
-    });
     targetValue.repository.reopenRetryableParseFailure.mockResolvedValue({
       attemptId: 'ATT-RETRY-2',
       attemptNo: 2,
@@ -634,15 +629,145 @@ describe('OrdinaryWorkItemService run identity', () => {
     expect(
       targetValue.documentManagement.ingestFileServiceSelection,
     ).not.toHaveBeenCalled();
-    expect(targetValue.repository.reserve).toHaveBeenCalledWith(
-      expect.objectContaining({
-        documentVersionId: 'document-version-sb',
-        runKey: 'dev:22222222-2222-4222-8222-222222222222',
-      }),
-    );
+    expect(targetValue.repository.reserve).not.toHaveBeenCalled();
     expect(
       targetValue.vertical.runPdfWithExistingAuthorization,
     ).toHaveBeenCalledWith(expect.any(Object), EXISTING_PARSE_AUTHORIZATION);
+  });
+
+  it('explicitly reparses a completed candidate on the same WorkItem and current DV with a new Attempt', async () => {
+    const targetValue = target();
+    targetValue.repository.loadAuthorizationBinding.mockResolvedValue({
+      workItemId: 'WI-NEW-SB',
+      requestId: 'REQ-NEW-SB',
+      documentVersionId: 'document-version-sb',
+      runKey: 'dev:22222222-2222-4222-8222-222222222222',
+    });
+    targetValue.repository.loadTenantScopedProjection.mockResolvedValue({
+      row: { workItemId: 'WI-NEW-SB' },
+      projection: {
+        revision: 7,
+        phase: 'CANDIDATE_READBACK_VERIFIED',
+        package: { packageId: 'PKG-OLD' },
+      },
+    });
+    targetValue.repository.reopenCompletedParse.mockResolvedValue({
+      attemptId: 'ATT-REPARSE-2',
+      attemptNo: 2,
+    });
+
+    await expect(
+      targetValue.service.retryOauthSessionDevelopmentRun(
+        'WI-NEW-SB',
+        OAUTH_SESSION_ACTOR,
+        GATEWAY_ACTOR,
+      ),
+    ).resolves.toMatchObject({
+      workItemCreated: false,
+      workItemReused: true,
+      actionAttemptId: 'ATT-REPARSE-2',
+    });
+
+    expect(targetValue.resolver.resolve).toHaveBeenCalledWith(
+      'document-version-sb',
+      {
+        requireCurrent: true,
+        expectedCreatorUserId: ACTOR.userId,
+      },
+    );
+    expect(targetValue.repository.reopenCompletedParse).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workItemId: 'WI-NEW-SB',
+        requestId: 'REQ-NEW-SB',
+        documentVersionId: 'document-version-sb',
+        expectedRevision: 7,
+        actorUserId: ACTOR.userId,
+        tenantId: ACTOR.tenantId,
+        authorization: expect.objectContaining({
+          decisionId: EXISTING_PARSE_AUTHORIZATION.decision.decisionId,
+        }),
+      }),
+    );
+    expect(
+      targetValue.repository.reopenRetryableParseFailure,
+    ).not.toHaveBeenCalled();
+    expect(targetValue.repository.reserve).not.toHaveBeenCalled();
+    expect(
+      targetValue.vertical.runPdfWithExistingAuthorization,
+    ).toHaveBeenCalledWith(expect.any(Object), EXISTING_PARSE_AUTHORIZATION);
+  });
+
+  it('creates no reparse Attempt when the bound DocumentVersion is no longer current', async () => {
+    const targetValue = target();
+    targetValue.repository.loadAuthorizationBinding.mockResolvedValue({
+      workItemId: 'WI-NEW-SB',
+      requestId: 'REQ-NEW-SB',
+      documentVersionId: 'document-version-sb',
+      runKey: 'dev:22222222-2222-4222-8222-222222222222',
+    });
+    targetValue.repository.loadTenantScopedProjection.mockResolvedValue({
+      row: { workItemId: 'WI-NEW-SB' },
+      projection: {
+        revision: 7,
+        phase: 'CANDIDATE_READBACK_VERIFIED',
+        package: { packageId: 'PKG-OLD' },
+      },
+    });
+    targetValue.resolver.resolve.mockRejectedValue(
+      Object.assign(new Error('DOCUMENT_VERSION_NOT_CURRENT'), {
+        code: 'DOCUMENT_VERSION_NOT_CURRENT',
+        statusCode: 409,
+      }),
+    );
+
+    await expect(
+      targetValue.service.retryOauthSessionDevelopmentRun(
+        'WI-NEW-SB',
+        OAUTH_SESSION_ACTOR,
+        GATEWAY_ACTOR,
+      ),
+    ).rejects.toMatchObject({ code: 'DOCUMENT_VERSION_NOT_CURRENT' });
+
+    expect(targetValue.repository.reserve).not.toHaveBeenCalled();
+    expect(targetValue.repository.reopenCompletedParse).not.toHaveBeenCalled();
+    expect(
+      targetValue.vertical.runPdfWithExistingAuthorization,
+    ).not.toHaveBeenCalled();
+  });
+
+  it('creates no reparse Attempt or producer run after a completed-candidate CAS drift', async () => {
+    const targetValue = target();
+    targetValue.repository.loadAuthorizationBinding.mockResolvedValue({
+      workItemId: 'WI-NEW-SB',
+      requestId: 'REQ-NEW-SB',
+      documentVersionId: 'document-version-sb',
+      runKey: 'dev:22222222-2222-4222-8222-222222222222',
+    });
+    targetValue.repository.loadTenantScopedProjection.mockResolvedValue({
+      row: { workItemId: 'WI-NEW-SB' },
+      projection: {
+        revision: 7,
+        phase: 'CANDIDATE_READBACK_VERIFIED',
+        package: { packageId: 'PKG-OLD' },
+      },
+    });
+    targetValue.repository.reopenCompletedParse.mockResolvedValue(null);
+
+    await expect(
+      targetValue.service.retryOauthSessionDevelopmentRun(
+        'WI-NEW-SB',
+        OAUTH_SESSION_ACTOR,
+        GATEWAY_ACTOR,
+      ),
+    ).rejects.toMatchObject({
+      code: 'WORK_ITEM_RETRY_NOT_AVAILABLE',
+      statusCode: 409,
+    });
+
+    expect(
+      targetValue.vertical.runPdfWithExistingAuthorization,
+    ).not.toHaveBeenCalled();
+    expect(targetValue.repository.reserve).not.toHaveBeenCalled();
   });
 
   it('resumes the exact pending retry attempt after a pre-parse authorization collision', async () => {
@@ -656,12 +781,6 @@ describe('OrdinaryWorkItemService run identity', () => {
     targetValue.repository.loadTenantScopedProjection.mockResolvedValue({
       row: { workItemId: 'WI-NEW-SB' },
       projection: { phase: 'PARSE_REQUESTED', failure: null },
-    });
-    targetValue.repository.reserve.mockResolvedValue({
-      workItemId: 'WI-NEW-SB',
-      requestId: 'REQ-NEW-SB',
-      attemptId: 'ATT-FIRST-FAILED',
-      created: false,
     });
     targetValue.repository.reopenRetryableParseFailure.mockResolvedValue({
       attemptId: 'ATT-RETRY-2',
@@ -701,6 +820,7 @@ describe('OrdinaryWorkItemService run identity', () => {
     expect(
       targetValue.documentManagement.ingestFileServiceSelection,
     ).not.toHaveBeenCalled();
+    expect(targetValue.repository.reserve).not.toHaveBeenCalled();
   });
 
   it('hides a retry target that is not owned by the current session actor', async () => {

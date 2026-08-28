@@ -141,6 +141,7 @@ export class CanonicalHostVerticalService {
     if (projection.phase !== 'PARSE_REQUESTED') {
       throw new Error(`WORK_ITEM_NOT_RUNNABLE:${projection.phase}`);
     }
+    const replacesCompletedPackage = projection.package !== null;
     projection = await this.registrar.compareAndSet({
       workItemId: request.workItemId,
       expectedRevision: projection.revision,
@@ -187,6 +188,7 @@ export class CanonicalHostVerticalService {
         expectedRevision: projection.revision,
         next: {
           ...withoutRevision(projection),
+          ...(replacesCompletedPackage ? clearedDerivedCandidates() : {}),
           phase: 'CANDIDATE_READBACK_VERIFIED',
           package: packageProjection(
             readback,
@@ -533,7 +535,7 @@ export class CanonicalHostVerticalService {
       next: {
         ...withoutRevision(running),
         phase: 'FAILED',
-        package: null,
+        package: running.package,
         failure: {
           failureCode: frozen.receipt.taxonomy.stableErrorCode,
           message: frozen.report.message,
@@ -589,7 +591,7 @@ export class CanonicalHostVerticalService {
         next: {
           ...withoutRevision(running),
           phase: 'FAILED',
-          package: null,
+          package: running.package,
           failure: {
             failureCode: frozen.receipt.taxonomy.stableErrorCode,
             message: frozen.report.message,
@@ -609,7 +611,7 @@ export class CanonicalHostVerticalService {
           next: {
             ...withoutRevision(running),
             phase: 'RECORDING_FAILED',
-            package: null,
+            package: running.package,
             failure: null,
             recordingFailure: {
               failureCode: 'FAILURE_REPORT_RECORDING_FAILED',
@@ -973,6 +975,27 @@ function withoutRevision(
 ): Omit<CanonicalWorkItemProjection, 'revision'> {
   const { revision: _revision, ...rest } = value;
   return rest;
+}
+
+function clearedDerivedCandidates(): Pick<
+  CanonicalWorkItemProjection,
+  | 'translation'
+  | 'applicabilityControlledSelection'
+  | 'applicabilityInput'
+  | 'applicability'
+  | 'assessment'
+  | 'integratedAssessment'
+  | 'aeo'
+> {
+  return {
+    translation: null,
+    applicabilityControlledSelection: null,
+    applicabilityInput: null,
+    applicability: null,
+    assessment: null,
+    integratedAssessment: null,
+    aeo: null,
+  };
 }
 
 function packageProjection(

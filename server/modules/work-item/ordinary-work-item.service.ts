@@ -65,6 +65,13 @@ export interface OrdinaryPdfParseInput {
   query?: unknown;
 }
 
+interface ExistingParseRunTarget {
+  workItemId: string;
+  requestId: string;
+  mode: 'RETRY_FAILURE' | 'EXPLICIT_REPARSE';
+  expectedRevision: number;
+}
+
 const DEVELOPMENT_RUN_TOKEN_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const CANONICAL_APP_ID = 'app_17bzc551rsg';
@@ -166,7 +173,11 @@ export class OrdinaryWorkItemService {
     const retryableFailure =
       fresh?.projection?.phase === 'FAILED' &&
       fresh.projection.failure?.failureCode === 'SOURCE_BINDING_FAILED';
-    if (!retryableFailure && fresh?.projection?.phase !== 'PARSE_REQUESTED') {
+    const resumableRetry = fresh?.projection?.phase === 'PARSE_REQUESTED';
+    const explicitReparse =
+      fresh?.projection?.phase === 'CANDIDATE_READBACK_VERIFIED' &&
+      fresh.projection.package !== null;
+    if (!retryableFailure && !resumableRetry && !explicitReparse) {
       throw workItemRetryNotAvailable();
     }
     return this.runPdf(
@@ -183,6 +194,8 @@ export class OrdinaryWorkItemService {
       {
         workItemId: binding.workItemId,
         requestId: binding.requestId,
+        mode: explicitReparse ? 'EXPLICIT_REPARSE' : 'RETRY_FAILURE',
+        expectedRevision: fresh.projection.revision,
       },
       actionContext,
     );
@@ -216,7 +229,7 @@ export class OrdinaryWorkItemService {
     requireCurrentDocumentVersion = false,
     developmentScope?: CanonicalVerifiedDevelopmentCreateScope,
     oauthSessionCreate = false,
-    retryTarget?: { workItemId: string; requestId: string },
+    retryTarget?: ExistingParseRunTarget,
     existingAuthorization?: CanonicalHostActionContext,
   ): Promise<CanonicalOrdinaryWorkItemRunResponse> {
     const context = hostedRequestContext(actor, oauthSessionCreate);
@@ -258,15 +271,14 @@ export class OrdinaryWorkItemService {
       requestOrigin: origin,
       runKey,
     };
-    const reservation = await this.repository.reserve(reservationInput);
-    if (
-      retryTarget &&
-      (reservation.created ||
-        reservation.workItemId !== retryTarget.workItemId ||
-        reservation.requestId !== retryTarget.requestId)
-    ) {
-      throw workItemRetryNotAvailable();
-    }
+    const reservation = retryTarget
+      ? {
+          workItemId: retryTarget.workItemId,
+          requestId: retryTarget.requestId,
+          attemptId: '',
+          created: false,
+        }
+      : await this.repository.reserve(reservationInput);
     let retryAuthorization = existingAuthorization;
     if (!reservation.created && !developmentScope && !retryAuthorization) {
       const retryState = await this.repository.loadTenantScopedProjection(
@@ -286,23 +298,34 @@ export class OrdinaryWorkItemService {
         });
       }
     }
+    const retryAuthorizationProjection = retryAuthorization
+      ? {
+          action: 'PARSE_PDF' as const,
+          actorFingerprint: retryAuthorization.decision.actorFingerprint,
+          decisionId: retryAuthorization.decision.decisionId,
+          decisionHash: retryAuthorization.decision.decisionHash,
+          permissionSnapshotVersion:
+            retryAuthorization.decision.permissionSnapshotVersion,
+        }
+      : undefined;
     const retry = reservation.created
       ? null
-      : await this.repository.reopenRetryableParseFailure({
-          ...reservationInput,
-          workItemId: reservation.workItemId,
-          requestId: reservation.requestId,
-          authorization: retryAuthorization
-            ? {
-                action: 'PARSE_PDF',
-                actorFingerprint: retryAuthorization.decision.actorFingerprint,
-                decisionId: retryAuthorization.decision.decisionId,
-                decisionHash: retryAuthorization.decision.decisionHash,
-                permissionSnapshotVersion:
-                  retryAuthorization.decision.permissionSnapshotVersion,
-              }
-            : undefined,
-        });
+      : retryTarget?.mode === 'EXPLICIT_REPARSE'
+        ? retryAuthorizationProjection
+          ? await this.repository.reopenCompletedParse({
+              ...reservationInput,
+              workItemId: reservation.workItemId,
+              requestId: reservation.requestId,
+              expectedRevision: retryTarget.expectedRevision,
+              authorization: retryAuthorizationProjection,
+            })
+          : null
+        : await this.repository.reopenRetryableParseFailure({
+            ...reservationInput,
+            workItemId: reservation.workItemId,
+            requestId: reservation.requestId,
+            authorization: retryAuthorizationProjection,
+          });
     if (retryTarget && !retry) throw workItemRetryNotAvailable();
     const request: CanonicalPdfVerticalRunRequest = {
       schemaVersion: 'wiselink.3_1.canonical_pdf_vertical_request.v0.candidate',
