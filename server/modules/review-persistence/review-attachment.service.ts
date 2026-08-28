@@ -46,7 +46,6 @@ export class ReviewAttachmentService {
       input.conversation.reviewConversationId,
       input.requestId,
     ].join(':');
-    const date: string = new Date().toISOString().slice(0, 10);
     const ingested: unknown =
       await this.documentManagement.ingestReviewAttachmentSelection(
         {
@@ -59,14 +58,7 @@ export class ReviewAttachmentService {
             input.requestId,
           ].join(':'),
           descriptor: {
-            documentCode: reviewAttachmentDocumentCode(
-              input.conversation.reviewConversationId,
-              input.requestId,
-            ),
             documentFamily: 'OEM_REFERENCE',
-            businessRevision: '1',
-            revisionDate: date,
-            sourceGeneratedDate: date,
             sourceKind: 'canonical_review_attachment_selection',
           },
         },
@@ -174,13 +166,6 @@ function parsedPages(
     page: index + 1,
     text: values.join(' '),
   }));
-}
-
-function reviewAttachmentDocumentCode(
-  reviewConversationId: string,
-  requestId: string,
-): string {
-  return `REVIEW-${reviewConversationId}-${requestId}`.toUpperCase();
 }
 
 function requiredResultText(value: unknown, key: string, code: string): string {
