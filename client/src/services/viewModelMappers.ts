@@ -50,19 +50,8 @@ export interface OverallAssessmentView {
   sourceCount: number;
   staleReason: 'BASE_RULE_RESULT_CHANGED' | 'ENGINEER_REVIEW_CHANGED' | null;
   technicalDetails: {
-    candidateStatus: string;
-    authorityLevel: string;
-    workItemRevision: number;
-    overallRevision: number;
-    documentVersion: string;
     translationProgress: string | null;
     evaluationProgress: string;
-    applicabilityStatus: string | null;
-    findingCount: number;
-    unresolvedCount: number;
-    modelVersion: string | null;
-    promptVersion: string | null;
-    skillVersion: string | null;
   };
 }
 
@@ -111,11 +100,11 @@ function documentLabelOf(workItem: CanonicalWorkItemProjection): {
 } {
   const code = workItem.package?.documentIdentity?.documentCode;
   const title = workItem.package?.title;
+  const businessRevision =
+    workItem.package?.documentIdentity?.businessRevision?.trim();
   return {
     label: code ?? title ?? '未命名工程资料',
-    version:
-      workItem.package?.documentIdentity?.businessRevision ??
-      workItem.source.documentVersionId,
+    version: businessRevision || '版本未标注',
   };
 }
 
@@ -157,7 +146,9 @@ export function toWorkItemView(
         [engineeringStatementView(engineeringSummary.conclusion)],
         engineeringSummary.whyItMatters.map(engineeringStatementView),
         [
-          engineeringStatementView(engineeringSummary.applicability.sourceScope),
+          engineeringStatementView(
+            engineeringSummary.applicability.sourceScope,
+          ),
           engineeringStatementView(engineeringSummary.applicability.fleetMatch),
           ...engineeringSummary.applicability.requiredFacts.map(
             engineeringStatementView,
@@ -190,7 +181,8 @@ export function toWorkItemView(
             ? engineeringStatementView(engineeringSummary.conclusion)
             : null,
           whyItMatters:
-            engineeringSummary?.whyItMatters.map(engineeringStatementView) ?? [],
+            engineeringSummary?.whyItMatters.map(engineeringStatementView) ??
+            [],
           applicability: {
             sourceScope: engineeringSummary
               ? engineeringStatementView(
@@ -220,21 +212,10 @@ export function toWorkItemView(
           sourceCount,
           staleReason: overall.staleReason,
           technicalDetails: {
-            candidateStatus: overall.status,
-            authorityLevel: overall.authorityLevel,
-            workItemRevision: workItem.revision,
-            overallRevision: overall.revision,
-            documentVersion: workItem.source.documentVersionId,
             translationProgress: workItem.translation
               ? `${workItem.translation.translatedUnitCount}/${workItem.translation.sourceUnitCount}`
               : null,
             evaluationProgress: `${workItem.integratedAssessment!.baseRules.evaluationItemCount}/${workItem.integratedAssessment!.baseRules.criterionCount}`,
-            applicabilityStatus: overall.applicabilityStatus ?? null,
-            findingCount: overall.findingCount,
-            unresolvedCount: overall.unresolvedCount,
-            modelVersion: overall.modelVersion ?? null,
-            promptVersion: overall.promptVersion ?? null,
-            skillVersion: overall.skillVersion ?? null,
           },
         }
       : null,

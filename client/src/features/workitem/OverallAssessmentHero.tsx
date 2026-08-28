@@ -15,7 +15,11 @@ import type {
   EngineeringStatementView,
   WorkItemView,
 } from '@client/src/services/viewModelMappers';
-import { staleReasonLabel } from '@client/src/services/viewModelMappers';
+import {
+  AUTHORITY_LABELS,
+  FRESHNESS_LABELS,
+  staleReasonLabel,
+} from '@client/src/services/viewModelMappers';
 
 import './workitem-overview.css';
 
@@ -282,22 +286,19 @@ export default function OverallAssessmentHero({
         </summary>
         <dl>
           <div>
-            <dt>候选状态 / 权威级别</dt>
+            <dt>当前阶段</dt>
+            <dd>{AUTHORITY_LABELS[view.authority]}</dd>
+          </div>
+          <div>
+            <dt>结论状态</dt>
             <dd>
-              {overall.technicalDetails.candidateStatus} /{' '}
-              {overall.technicalDetails.authorityLevel}
+              {FRESHNESS_LABELS[view.freshness]}
+              {staleLabel ? `（${staleLabel}）` : ''}
             </dd>
           </div>
           <div>
-            <dt>WorkItem / Overall 修订</dt>
-            <dd>
-              {overall.technicalDetails.workItemRevision} /{' '}
-              {overall.technicalDetails.overallRevision}
-            </dd>
-          </div>
-          <div>
-            <dt>DocumentVersion</dt>
-            <dd>{overall.technicalDetails.documentVersion}</dd>
+            <dt>受控文件版本</dt>
+            <dd>{view.documentVersion}</dd>
           </div>
           <div>
             <dt>翻译 / 评估进度</dt>
@@ -307,25 +308,9 @@ export default function OverallAssessmentHero({
             </dd>
           </div>
           <div>
-            <dt>适用性 / 原文依据</dt>
+            <dt>原文依据 / 待补事实</dt>
             <dd>
-              {overall.technicalDetails.applicabilityStatus ?? '未返回'} /{' '}
-              {overall.sourceCount}
-            </dd>
-          </div>
-          <div>
-            <dt>Findings / 未决项</dt>
-            <dd>
-              {overall.technicalDetails.findingCount} /{' '}
-              {overall.technicalDetails.unresolvedCount}
-            </dd>
-          </div>
-          <div>
-            <dt>模型 / Prompt / Skill</dt>
-            <dd>
-              {overall.technicalDetails.modelVersion ?? '未返回'} /{' '}
-              {overall.technicalDetails.promptVersion ?? '未返回'} /{' '}
-              {overall.technicalDetails.skillVersion ?? '未返回'}
+              {overall.sourceCount} 条 / {requiredFactCount} 项
             </dd>
           </div>
         </dl>
