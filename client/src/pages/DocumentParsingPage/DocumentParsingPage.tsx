@@ -43,6 +43,11 @@ import {
 import { EngineeringReasoningTrail } from './EngineeringReasoningTrail';
 import { AeoAuthoringWorkspace } from './AeoAuthoringWorkspace';
 import ApplicabilitySelectionPanel from './ApplicabilitySelectionPanel';
+import AssessmentRuleWorkspace from './AssessmentRuleWorkspace';
+import {
+  assessmentRuleName,
+  buildAssessmentRulePresentations,
+} from './assessment-rule-presentation';
 import { AssessmentSemanticsOverview } from './AssessmentSemanticsOverview';
 import { DocumentReaderWorkspace } from './DocumentReaderWorkspace';
 import PdfSourcePane from './PdfSourcePane';
@@ -357,12 +362,17 @@ export default function DocumentParsingPage() {
   )
     ? requestedReviewCriterion
     : reviewContext?.items[0]?.criterionId || '';
+  const reviewRulePresentations = buildAssessmentRulePresentations(
+    reviewContext?.items ?? [],
+  );
   const reviewCriterionLabel = (criterionId: string): string => {
     const index =
       reviewContext?.items.findIndex(
         (item) => item.criterionId === criterionId,
       ) ?? -1;
-    return index >= 0 ? `评估项 ${index + 1}` : '当前评估项';
+    return index >= 0 && reviewContext
+      ? assessmentRuleName(reviewContext.items[index], index)
+      : '当前判断规则';
   };
   const { overall: overallCandidate, selectedReviewItem } =
     buildAssessmentBusinessContent(
@@ -1131,227 +1141,140 @@ export default function DocumentParsingPage() {
         {activeNode === 'review' ? (
           reviewContext ? (
             <>
-              <section
-                className="parse-criterion-list"
-                id="workspace-review"
-                aria-label="当前逐项评估"
+              <AssessmentRuleWorkspace
+                key={`${workItemId}:${data.workItem.revision}:${requestedReviewCriterion}`}
+                items={reviewContext.items}
+                selectedCriterionId={selectedReviewCriterion}
+                preferSelectedOnLoad={requestedReviewCriterion !== ''}
+                onSelectCriterion={(criterionId: string) =>
+                  updateDeepLink({
+                    criterion: criterionId,
+                    node: 'review',
+                    tab: 'review',
+                  })
+                }
+                onLocateSourceRef={(sourceRef: string) =>
+                  updateDeepLink({
+                    node: 'reader',
+                    tab: 'reader',
+                    readerMode: 'structured',
+                    unit: null,
+                    sourceRef,
+                  })
+                }
+              />
+              <details
+                className="parse-engineer-review"
+                aria-label="记录必要的工程师修订"
               >
-                <header>
+                <summary className="parse-engineer-review-summary">
                   <div>
-                    <span>当前逐项评估</span>
-                    <h3>判断、依据与复核</h3>
+                    <span>可选 · 仅在需要修正时使用</span>
+                    <strong>记录必要的工程师修订</strong>
                   </div>
-                  <strong>{reviewContext.items.length} 项</strong>
-                </header>
-                <div className="parse-criterion-grid">
-                  {reviewContext.items.map((item, index) => {
-                    const selected =
-                      item.criterionId === selectedReviewCriterion;
-                    const reviewState =
-                      item.latestReview?.status ?? 'NEEDS_REVIEW';
-                    return (
-                      <button
-                        type="button"
-                        className={`parse-criterion-card${selected ? ' is-selected' : ''}`}
-                        key={item.criterionId}
-                        aria-current={selected ? 'true' : undefined}
-                        onClick={() =>
+                  <small>
+                    {reviewContext.ledger?.reviewCount ?? 0} 条历史意见
+                  </small>
+                </summary>
+                <div className="parse-engineer-review-body">
+                  <p>
+                    保存只记录工程师判断，不运行模型，也不会直接改写逐项评估结果。
+                    只有发现判断方向、依据或输入需要修正时才记录，无需逐项确认。
+                  </p>
+                  <p className="parse-review-mobile-hint" role="note">
+                    复杂修订建议使用桌面端全屏工作台。
+                  </p>
+                  <div className="parse-engineer-review-form">
+                    <label>
+                      规则项
+                      <NativeSelect
+                        value={selectedReviewCriterion}
+                        onChange={(event) =>
                           updateDeepLink({
-                            criterion: item.criterionId,
+                            criterion: event.target.value,
                             node: 'review',
                             tab: 'review',
                           })
                         }
                       >
-                        <span className="parse-criterion-card-id">
-                          评估项 {index + 1}
-                        </span>
-                        <strong>
-                          {humanState(item.dynamicResult) ?? '状态待确认'}
-                        </strong>
-                        <p>{item.candidateConclusion}</p>
-                        <small>
-                          {item.humanReviewRequired
-                            ? '需人工复核'
-                            : '当前无人工复核标记'}{' '}
-                          · {humanState(reviewState) ?? '待复核'}
-                        </small>
-                      </button>
-                    );
-                  })}
-                </div>
-                {selectedReviewItem ? (
-                  <article className="parse-criterion-detail">
-                    <header>
-                      <div>
-                        <span>当前初步判断</span>
-                        <h4>
-                          {reviewCriterionLabel(selectedReviewItem.criterionId)}
-                        </h4>
-                      </div>
-                      <strong>{selectedReviewItem.candidateConclusion}</strong>
-                    </header>
-                    <dl>
-                      <div>
-                        <dt>已知事实</dt>
-                        <dd>
-                          {selectedReviewItem.factsConsidered?.join('；') ||
-                            '当前尚无可引用的受控事实'}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>规则如何作用</dt>
-                        <dd>
-                          {selectedReviewItem.ruleApplication ||
-                            '尚未形成可解释的规则应用'}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>分析与影响</dt>
-                        <dd>
-                          {selectedReviewItem.analysisSummary ||
-                            '尚未形成可解释的业务分析'}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>仍缺什么</dt>
-                        <dd>
-                          {selectedReviewItem.missingInputs?.join('；') ||
-                            '当前没有明确缺口'}
-                        </dd>
-                      </div>
-                    </dl>
-                    {selectedReviewItem.sourceRefs?.length ? (
-                      <div className="parse-criterion-sources">
-                        <span>来源定位</span>
-                        {selectedReviewItem.sourceRefs.map(
-                          (sourceRef, index) => (
-                            <button
-                              type="button"
-                              key={sourceRef}
-                              onClick={() =>
-                                updateDeepLink({
-                                  node: 'reader',
-                                  tab: 'reader',
-                                  readerMode: 'structured',
-                                  unit: null,
-                                  sourceRef,
-                                })
-                              }
-                            >
-                              原文依据 {index + 1}
-                            </button>
-                          ),
-                        )}
-                      </div>
-                    ) : null}
-                  </article>
-                ) : null}
-              </section>
-              <section
-                className="parse-engineer-review"
-                aria-label="工程师逐项复核"
-              >
-                <header>
-                  <div>
-                    <span>工程师复核 · 仅追加记录</span>
-                    <h3>记录逐项意见</h3>
-                  </div>
-                  <strong>
-                    {reviewContext.ledger?.reviewCount ?? 0} 条历史意见
-                  </strong>
-                </header>
-                <p>
-                  保存只记录工程师判断，不运行模型，也不会直接改写逐项评估结果。
-                  保存后当前整体候选会标记为需更新，再由分析任务明确重新综合。
-                </p>
-                <p className="parse-review-mobile-hint" role="note">
-                  复杂批量复核建议使用桌面端全屏工作台。
-                </p>
-                <div className="parse-engineer-review-form">
-                  <label>
-                    规则项
-                    <NativeSelect
-                      value={selectedReviewCriterion}
-                      onChange={(event) =>
-                        updateDeepLink({
-                          criterion: event.target.value,
-                          node: 'review',
-                          tab: 'review',
-                        })
-                      }
-                    >
-                      {reviewContext.items.map((item, index) => (
-                        <NativeSelectOption
-                          key={item.criterionId}
-                          value={item.criterionId}
-                        >
-                          评估项 {index + 1} ·{' '}
-                          {humanState(item.dynamicResult) ?? '状态待确认'}
+                        {reviewContext.items.map((item, index) => (
+                          <NativeSelectOption
+                            key={item.criterionId}
+                            value={item.criterionId}
+                          >
+                            {reviewRulePresentations[index]?.criterionName ??
+                              `判断规则 ${index + 1}`}{' '}
+                            · {humanState(item.dynamicResult) ?? '状态待确认'}
+                          </NativeSelectOption>
+                        ))}
+                      </NativeSelect>
+                    </label>
+                    <label>
+                      处理意见
+                      <NativeSelect
+                        value={reviewDecision}
+                        onChange={(event) =>
+                          setReviewDecision(
+                            event.target
+                              .value as CanonicalEngineerReviewDecision,
+                          )
+                        }
+                      >
+                        <NativeSelectOption value="confirmed_pass">
+                          确认通过
                         </NativeSelectOption>
-                      ))}
-                    </NativeSelect>
-                  </label>
-                  <label>
-                    处理意见
-                    <NativeSelect
-                      value={reviewDecision}
-                      onChange={(event) =>
-                        setReviewDecision(
-                          event.target.value as CanonicalEngineerReviewDecision,
-                        )
-                      }
+                        <NativeSelectOption value="confirmed_fail">
+                          确认不通过
+                        </NativeSelectOption>
+                        <NativeSelectOption value="returned_for_rework">
+                          退回补充
+                        </NativeSelectOption>
+                        <NativeSelectOption value="deferred">
+                          暂缓判断
+                        </NativeSelectOption>
+                      </NativeSelect>
+                    </label>
+                    <label className="parse-engineer-review-comment">
+                      说明
+                      <Textarea
+                        value={reviewComment}
+                        onChange={(event) =>
+                          setReviewComment(event.target.value)
+                        }
+                        placeholder="说明依据、异议或仍需补齐的输入"
+                        maxLength={4000}
+                      />
+                    </label>
+                    <Button
+                      type="button"
+                      disabled={reviewSubmitting}
+                      onClick={() => {
+                        if (!selectedReviewCriterion || !reviewComment.trim()) {
+                          setAssessmentError('请选择评估项并填写说明。');
+                          return;
+                        }
+                        setAssessmentError(null);
+                        setReviewPreviewOpen(true);
+                      }}
                     >
-                      <NativeSelectOption value="confirmed_pass">
-                        确认通过
-                      </NativeSelectOption>
-                      <NativeSelectOption value="confirmed_fail">
-                        确认不通过
-                      </NativeSelectOption>
-                      <NativeSelectOption value="returned_for_rework">
-                        退回补充
-                      </NativeSelectOption>
-                      <NativeSelectOption value="deferred">
-                        暂缓判断
-                      </NativeSelectOption>
-                    </NativeSelect>
-                  </label>
-                  <label className="parse-engineer-review-comment">
-                    说明
-                    <Textarea
-                      value={reviewComment}
-                      onChange={(event) => setReviewComment(event.target.value)}
-                      placeholder="说明依据、异议或仍需补齐的输入"
-                      maxLength={4000}
-                    />
-                  </label>
-                  <Button
-                    type="button"
-                    disabled={reviewSubmitting}
-                    onClick={() => {
-                      if (!selectedReviewCriterion || !reviewComment.trim()) {
-                        setAssessmentError('请选择评估项并填写说明。');
-                        return;
-                      }
-                      setAssessmentError(null);
-                      setReviewPreviewOpen(true);
-                    }}
-                  >
-                    {reviewSubmitting
-                      ? '正在保存…'
-                      : '预览影响并保存工程师意见'}
-                  </Button>
+                      {reviewSubmitting
+                        ? '正在保存…'
+                        : '预览影响并保存工程师意见'}
+                    </Button>
+                  </div>
+                  {reviewContext.items
+                    .filter((item) => item.latestReview)
+                    .map((item) => (
+                      <p key={item.criterionId} className="parse-review-latest">
+                        <strong>
+                          {reviewCriterionLabel(item.criterionId)}
+                        </strong>{' '}
+                        · {REVIEW_DECISION_LABELS[item.latestReview!.decision]}{' '}
+                        · {item.latestReview!.comment}
+                      </p>
+                    ))}
                 </div>
-                {reviewContext.items
-                  .filter((item) => item.latestReview)
-                  .map((item) => (
-                    <p key={item.criterionId} className="parse-review-latest">
-                      <strong>{reviewCriterionLabel(item.criterionId)}</strong>{' '}
-                      · {REVIEW_DECISION_LABELS[item.latestReview!.decision]} ·{' '}
-                      {item.latestReview!.comment}
-                    </p>
-                  ))}
-              </section>
+              </details>
             </>
           ) : (
             <div className="parse-assessment-empty" id="workspace-review">
