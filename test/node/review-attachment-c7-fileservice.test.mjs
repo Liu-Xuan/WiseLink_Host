@@ -17,6 +17,26 @@ const {
 const {
   parseReviewAttachmentParsedArtifact,
 } = require('../../dist/server/modules/review-persistence/review-attachment-artifact.js');
+const {
+  MiaodaFileServiceArtifactStore,
+} = require('../../dist/server/modules/document-management/src/hosted/miaodaFileServiceArtifactStore.js');
+const {
+  classifyImmutableSourceReuseState,
+  classifyReviewAttachmentResidualReuseState,
+} = require('../../dist/server/modules/document-management/src/hosted/nest/miaoda-hosted-document-catalog.js');
+const {
+  buildGovernedDocumentIngressPreflightDecision,
+} = require('../../dist/server/modules/document-management/src/migrated/ingress/documentIngressPreflight.js');
+const {
+  normalizeUploadDescriptor,
+} = require('../../dist/server/modules/document-management/src/migrated/ingress/uploadDescriptor.js');
+const {
+  deterministicId,
+  sha256Hex,
+} = require('../../dist/server/modules/document-management/src/runtime/valueTools.js');
+
+const REVIEW_ATTACHMENT_SOURCE_CHANNEL =
+  'canonical_review_attachment_selection';
 
 test('R09 C7 official FileService actual PDF bytes -> DM binding -> parsed artifact readback', async () => {
   const bucketId = 'bucket-review-c7';
@@ -144,6 +164,326 @@ test('R09 C7 official FileService actual PDF bytes -> DM binding -> parsed artif
   }
 });
 
+test('legacy unresolved Review residual recovers only under exact new-request scope and actual bytes', async () => {
+  const bucketId = 'bucket-review-c7-residual';
+  const selectionPath = 'official-selection/residual-note.pdf';
+  const pdfBytes = Uint8Array.from(
+    readFileSync(
+      resolve(
+        process.cwd(),
+        'server/runtime-assets/technical-publication-parsed-package/v1-frozen-2/fixtures/source/minimal-pdf.pdf',
+      ),
+    ),
+  );
+  const scoped = new LocalScopedFileService(bucketId);
+  scoped.seed(
+    selectionPath,
+    pdfBytes,
+    'residual-note.pdf',
+    'application/pdf',
+  );
+  const fileService = {
+    getDefaultBucket: async () => bucketId,
+    from: (requestedBucketId) => {
+      assert.equal(requestedBucketId, bucketId);
+      return scoped;
+    },
+  };
+  const artifactStore = new MiaodaFileServiceArtifactStore(fileService);
+  const selected = await artifactStore.readSelection({
+    bucketId,
+    filePath: selectionPath,
+  });
+  const actualSha256 = sha256Hex(selected.bytes);
+  const immutable = await artifactStore.persistImmutableSource({
+    bytes: selected.bytes,
+    sha256: actualSha256,
+    byteLength: selected.byteLength,
+    mediaType: 'application/pdf',
+  });
+  assert.equal(immutable.reusedExisting, false);
+  assert.equal(immutable.readbackVerified, true);
+
+  const catalog = new InMemoryHostedDocumentCatalog();
+  const legacyRequestRef = 'legacy-request-C7';
+  const legacySourceRef = `ATTACHMENT:RC-C7:${legacyRequestRef}`;
+  const legacyIdempotencyKey =
+    `review-attachment:RC-C7:${legacyRequestRef}`;
+  const sourceArtifactId = deterministicId(
+    'source_artifact',
+    actualSha256,
+    selected.byteLength,
+  );
+  const legacyAcquisitionId = deterministicId(
+    'acquisition',
+    'tenant-C7',
+    legacyIdempotencyKey,
+  );
+  const legacyDocumentCode =
+    `REVIEW-RC-C7-${legacyRequestRef}`.toUpperCase();
+  const legacyDescriptor = {
+    documentCode: legacyDocumentCode,
+    documentFamily: 'OEM_REFERENCE',
+    businessRevision: '1',
+    revisionDate: '2026-08-27',
+    sourceGeneratedDate: '2026-08-27',
+    sourceKind: REVIEW_ATTACHMENT_SOURCE_CHANNEL,
+    originalFilename: selected.fileName,
+    mediaType: 'application/pdf',
+    sha256: actualSha256,
+    sizeBytes: selected.byteLength,
+    sourceStorageKey: `${immutable.bucketId}:${immutable.filePath}`,
+    providerUpdatedAt: selected.providerUpdatedAt,
+  };
+  const legacyNormalizedDescriptor =
+    normalizeUploadDescriptor(legacyDescriptor);
+  const legacyDecision = buildGovernedDocumentIngressPreflightDecision({
+    generatedAt: '2026-08-27T00:00:00.000Z',
+    documents: [],
+    rawDescriptor: legacyDescriptor,
+    normalizedDescriptor: legacyNormalizedDescriptor,
+  });
+  assert.equal(legacyDecision.decision, 'DOCUMENT_IDENTITY_UNRESOLVED');
+  assert.equal(legacyDecision.branch, 'REVIEW');
+  assert.equal(legacyDecision.requiresUserConfirmation, true);
+  assert.equal(legacyDecision.incoming.identityResolved, false);
+  assert.ok(
+    legacyDecision.incoming.identityIssues.includes(
+      'DOCUMENT_CODE_PROVENANCE_UNVERIFIED',
+    ),
+  );
+  const legacyPreflightId = deterministicId(
+    'preflight',
+    legacyAcquisitionId,
+    legacyDecision.decision,
+    0,
+    'none',
+  );
+  catalog.seedReviewScope({
+    reviewConversationId: 'RC-C7',
+    tenantId: 'tenant-C7',
+    actorUserId: 'actor-C7',
+    workItemId: 'WI-C7',
+    revision: 7,
+  });
+  catalog.seedLegacyReviewResidual({
+    sourceArtifact: {
+      sourceArtifactId,
+      sha256: actualSha256,
+      byteLength: selected.byteLength,
+      mediaType: 'application/pdf',
+      bucketId: immutable.bucketId,
+      filePath: immutable.filePath,
+      providerObjectId: immutable.providerObjectId,
+      providerVersionId: immutable.providerVersionId,
+      readbackVerified: true,
+      createdAt: '2026-08-27T00:00:00.000Z',
+    },
+    acquisition: {
+      acquisitionId: legacyAcquisitionId,
+      sourceArtifactId,
+      documentVersionId: null,
+      sourceChannel: REVIEW_ATTACHMENT_SOURCE_CHANNEL,
+      sourceRef: legacySourceRef,
+      selectionBucketId: selected.bucketId,
+      selectionFilePath: selected.filePath,
+      providerObjectId: selected.providerObjectId,
+      providerVersionId: selected.providerVersionId,
+      acquiredBy: 'actor-C7',
+      acquiredAt: '2026-08-27T00:00:00.000Z',
+      idempotencyKey: legacyIdempotencyKey,
+      sourceDescriptor: legacyDescriptor,
+      status: 'ACQUIRED_READBACK_VERIFIED',
+    },
+    preflight: {
+      preflightId: legacyPreflightId,
+      acquisitionId: legacyAcquisitionId,
+      decision: legacyDecision.decision,
+      branch: legacyDecision.branch,
+      executionAuthorized: false,
+      observedCurrentGeneration: 0,
+      observedCurrentDocumentVersionId: null,
+      normalizedDescriptor: legacyNormalizedDescriptor,
+      decisionPayload: legacyDecision,
+      status: 'READY',
+      documentVersionId: null,
+      commitIdempotencyKey: null,
+      createdAt: '2026-08-27T00:00:00.000Z',
+    },
+  });
+
+  const newRequestRef = 'new-request-C7';
+  const newIdempotencyKey = `review-attachment:RC-C7:${newRequestRef}`;
+  const reuseInput = {
+    sourceArtifactId,
+    acquisitionId: deterministicId(
+      'acquisition',
+      'tenant-C7',
+      newIdempotencyKey,
+    ),
+    idempotencyKey: newIdempotencyKey,
+    sha256: actualSha256,
+    byteLength: selected.byteLength,
+    mediaType: 'application/pdf',
+    bucketId: immutable.bucketId,
+    filePath: immutable.filePath,
+    providerObjectId: immutable.providerObjectId,
+    providerVersionId: immutable.providerVersionId,
+  };
+  const residualState = catalog.residualClassificationState();
+  assert.throws(
+    () => classifyImmutableSourceReuseState(reuseInput, residualState),
+    (error) => error?.code === 'IMMUTABLE_SOURCE_REUSE_DB_PARTIAL',
+  );
+  const serverBoundReviewAttachmentScope = {
+    sourceChannel: REVIEW_ATTACHMENT_SOURCE_CHANNEL,
+    reviewConversationId: 'RC-C7',
+    requestRef: newRequestRef,
+    actorUserId: 'actor-C7',
+    tenantId: 'tenant-C7',
+    workItemId: 'WI-C7',
+    expectedRevision: 7,
+  };
+  assert.throws(
+    () => classifyReviewAttachmentResidualReuseState(
+      {
+        ...reuseInput,
+        serverBoundReviewAttachmentScope: {
+          ...serverBoundReviewAttachmentScope,
+          tenantId: 'tenant-other',
+        },
+      },
+      residualState,
+    ),
+    (error) => error?.code === 'REVIEW_ATTACHMENT_RESIDUAL_SCOPE_CONFLICT',
+  );
+  assert.throws(
+    () => classifyReviewAttachmentResidualReuseState(
+      { ...reuseInput, serverBoundReviewAttachmentScope },
+      {
+        ...residualState,
+        currentness: [{ preflightId: legacyPreflightId }],
+      },
+    ),
+    (error) =>
+      error?.code === 'REVIEW_ATTACHMENT_RESIDUAL_DOWNSTREAM_PRESENT',
+  );
+  assert.throws(
+    () => classifyReviewAttachmentResidualReuseState(
+      { ...reuseInput, serverBoundReviewAttachmentScope },
+      {
+        ...residualState,
+        downstreamWorkItems: [{ workItemId: 'WI-DOWNSTREAM' }],
+      },
+    ),
+    (error) =>
+      error?.code === 'REVIEW_ATTACHMENT_RESIDUAL_DOWNSTREAM_PRESENT',
+  );
+
+  const documentManagement = new DocumentManagementHostedService(
+    fileService,
+    catalog,
+    new OrdinaryDocumentManagementAuthorizer({}, fileService),
+  );
+  const service = new ReviewAttachmentService(
+    fileService,
+    documentManagement,
+    {
+      resolve: (documentVersionId, options) =>
+        catalog.resolveDocumentVersionSource(documentVersionId, options),
+    },
+  );
+  const previousSandboxId = process.env.SANDBOX_ID;
+  const previousLocalDev = process.env.MIAODA_LOCAL_DEV;
+  process.env.SANDBOX_ID = 'review-attachment-c7-residual-core-catalog';
+  delete process.env.MIAODA_LOCAL_DEV;
+  let binding;
+  let safeReuseBinding;
+  try {
+    binding = await service.ingest({
+      selection: { bucketId, filePath: selectionPath },
+      requestId: newRequestRef,
+      conversation: {
+        reviewConversationId: 'RC-C7',
+        tenantId: 'tenant-C7',
+        actorId: 'actor-C7',
+        workItemId: 'WI-C7',
+      },
+      session: {
+        actor: {
+          canonicalSubject: { id: 'actor-C7' },
+          tenantId: 'tenant-C7',
+          applicationScopeId: 'app_17bzc551rsg',
+          platformRoles: [],
+          env: 'preview',
+          identityProvenance: 'FEISHU_OAUTH_USER_ACCESS_TOKEN',
+          sessionProvenance: 'SERVER_OPAQUE_SESSION',
+        },
+      },
+      grant: {
+        allowed: true,
+        action: 'INGEST_ATTACHMENT_SINGLE_REQUEST',
+        workItemId: 'WI-C7',
+        workItemRevision: 7,
+        tenantId: 'tenant-C7',
+        actorUserId: 'actor-C7',
+        authorizationFingerprint: `sha256:${'b'.repeat(64)}`,
+      },
+    });
+    safeReuseBinding = await service.ingest({
+      selection: { bucketId, filePath: selectionPath },
+      requestId: 'safe-reuse-request-C7',
+      conversation: {
+        reviewConversationId: 'RC-C7',
+        tenantId: 'tenant-C7',
+        actorId: 'actor-C7',
+        workItemId: 'WI-C7',
+      },
+      session: {
+        actor: {
+          canonicalSubject: { id: 'actor-C7' },
+          tenantId: 'tenant-C7',
+          applicationScopeId: 'app_17bzc551rsg',
+          platformRoles: [],
+          env: 'preview',
+          identityProvenance: 'FEISHU_OAUTH_USER_ACCESS_TOKEN',
+          sessionProvenance: 'SERVER_OPAQUE_SESSION',
+        },
+      },
+      grant: {
+        allowed: true,
+        action: 'INGEST_ATTACHMENT_SINGLE_REQUEST',
+        workItemId: 'WI-C7',
+        workItemRevision: 7,
+        tenantId: 'tenant-C7',
+        actorUserId: 'actor-C7',
+        authorizationFingerprint: `sha256:${'c'.repeat(64)}`,
+      },
+    });
+  } finally {
+    restoreProcessEnv('SANDBOX_ID', previousSandboxId);
+    restoreProcessEnv('MIAODA_LOCAL_DEV', previousLocalDev);
+  }
+
+  assert.equal(catalog.versionCount, 1);
+  assert.equal(binding.documentVersionId, safeReuseBinding.documentVersionId);
+  assert.equal(catalog.acquisitionCount, 3);
+  assert.equal(catalog.legacyResidualCount, 1);
+  assert.equal(catalog.commitCount, 1);
+  assert.equal(catalog.exactLinkCount, 1);
+  const source = await catalog.resolveDocumentVersionSource(
+    binding.documentVersionId,
+    { expectedCreatorUserId: 'actor-C7' },
+  );
+  const actualReadback = await artifactStore.readSelection({
+    bucketId: source.artifact.bucketId,
+    filePath: source.artifact.filePath,
+  });
+  assert.equal(actualReadback.sha256, actualSha256);
+  assert.equal(actualReadback.byteLength, pdfBytes.byteLength);
+  assert.deepEqual(actualReadback.bytes, Buffer.from(pdfBytes));
+});
+
 class InMemoryHostedDocumentCatalog {
   #sourceArtifacts = new Map();
   #acquisitions = new Map();
@@ -152,6 +492,11 @@ class InMemoryHostedDocumentCatalog {
   #families = new Map();
   #documents = new Map();
   #versions = new Map();
+  #currentness = [];
+  #downstreamWorkItems = [];
+  #actionAttempts = [];
+  #scopeConversations = new Map();
+  #scopeWorkItems = new Map();
   #commitCount = 0;
   #exactLinkCount = 0;
 
@@ -169,6 +514,14 @@ class InMemoryHostedDocumentCatalog {
 
   get exactLinkCount() {
     return this.#exactLinkCount;
+  }
+
+  get legacyResidualCount() {
+    return [...this.#acquisitions.values()].filter(
+      (value) =>
+        value.status === 'ACQUIRED_READBACK_VERIFIED'
+        && value.documentVersionId === null,
+    ).length;
   }
 
   get preflightDecisions() {
@@ -212,10 +565,103 @@ class InMemoryHostedDocumentCatalog {
   }
 
   async assertImmutableSourceReuseSafe(input) {
-    const artifact = this.#sourceArtifacts.get(input.sourceArtifactId);
-    assert.equal(artifact.sha256, input.sha256);
-    assert.equal(artifact.byteLength, input.byteLength);
-    return { disposition: 'CATALOGED_SOURCE_REUSE_ALLOWED' };
+    const state = this.residualClassificationState(input);
+    const hasIncompleteState = state.acquisitions.some(
+      (row) =>
+        !row.documentVersionId
+        || ![
+          'COMMITTED_CANONICAL',
+          'LINKED_EXACT_DOCUMENT_VERSION',
+        ].includes(row.status),
+    ) || state.preflights.some(
+      (row) => row.status !== 'COMMITTED' || !row.documentVersionId,
+    );
+    if (input.serverBoundReviewAttachmentScope && hasIncompleteState) {
+      return classifyReviewAttachmentResidualReuseState(input, state);
+    }
+    return classifyImmutableSourceReuseState(input, state);
+  }
+
+  seedReviewScope({
+    reviewConversationId,
+    tenantId,
+    actorUserId,
+    workItemId,
+    revision,
+  }) {
+    this.#scopeConversations.set(reviewConversationId, {
+      reviewConversationId,
+      tenantId,
+      actorId: actorUserId,
+      workItemId,
+      status: 'ACTIVE',
+    });
+    this.#scopeWorkItems.set(workItemId, {
+      workItemId,
+      tenantId,
+      requestedByUserId: actorUserId,
+      revision,
+    });
+  }
+
+  seedLegacyReviewResidual({ sourceArtifact, acquisition, preflight }) {
+    this.#sourceArtifacts.set(sourceArtifact.sourceArtifactId, sourceArtifact);
+    this.#acquisitions.set(acquisition.acquisitionId, {
+      ...acquisition,
+      sourceDescriptorJson: JSON.stringify(acquisition.sourceDescriptor),
+    });
+    this.#acquisitionsByIdempotency.set(
+      acquisition.idempotencyKey,
+      acquisition.acquisitionId,
+    );
+    this.#preflights.set(preflight.preflightId, {
+      ...preflight,
+      normalizedDescriptorJson: JSON.stringify(
+        preflight.normalizedDescriptor,
+      ),
+      decisionPayloadJson: JSON.stringify(preflight.decisionPayload),
+    });
+  }
+
+  residualClassificationState(input = {}) {
+    const acquisitions = [...this.#acquisitions.values()].filter(
+      (row) =>
+        row.sourceArtifactId === input.sourceArtifactId
+        || row.acquisitionId === input.acquisitionId
+        || row.idempotencyKey === input.idempotencyKey
+        || !input.sourceArtifactId,
+    );
+    const acquisitionIds = new Set(
+      acquisitions.map((row) => row.acquisitionId),
+    );
+    const scope = input.serverBoundReviewAttachmentScope;
+    return {
+      artifacts: [...this.#sourceArtifacts.values()].filter(
+        (row) =>
+          row.sourceArtifactId === input.sourceArtifactId
+          || !input.sourceArtifactId,
+      ),
+      acquisitions,
+      preflights: [...this.#preflights.values()].filter(
+        (row) => acquisitionIds.has(row.acquisitionId),
+      ),
+      versions: [...this.#versions.values()].filter(
+        (row) =>
+          row.sourceArtifactId === input.sourceArtifactId
+          || acquisitionIds.has(row.acquisitionId)
+          || !input.sourceArtifactId,
+      ),
+      currentness: [...this.#currentness],
+      downstreamWorkItems: [...this.#downstreamWorkItems],
+      actionAttempts: [...this.#actionAttempts],
+      scopeConversations: scope
+        ? [this.#scopeConversations.get(scope.reviewConversationId)]
+          .filter(Boolean)
+        : [...this.#scopeConversations.values()],
+      scopeWorkItems: scope
+        ? [this.#scopeWorkItems.get(scope.workItemId)].filter(Boolean)
+        : [...this.#scopeWorkItems.values()],
+    };
   }
 
   async recordAcquisition({ sourceArtifact, acquisition }) {
@@ -231,6 +677,8 @@ class InMemoryHostedDocumentCatalog {
     this.#acquisitions.set(acquisition.acquisitionId, {
       ...acquisition,
       documentVersionId: null,
+      sourceDescriptorJson: JSON.stringify(acquisition.sourceDescriptor),
+      status: 'ACQUIRED_READBACK_VERIFIED',
     });
     this.#acquisitionsByIdempotency.set(
       acquisition.idempotencyKey,
@@ -286,7 +734,15 @@ class InMemoryHostedDocumentCatalog {
   }
 
   async recordPreflight(preflight) {
-    this.#preflights.set(preflight.preflightId, preflight);
+    this.#preflights.set(preflight.preflightId, {
+      ...preflight,
+      documentVersionId: null,
+      commitIdempotencyKey: null,
+      normalizedDescriptorJson: JSON.stringify(
+        preflight.normalizedDescriptor,
+      ),
+      decisionPayloadJson: JSON.stringify(preflight.decisionPayload),
+    });
     return preflight;
   }
 
@@ -308,6 +764,7 @@ class InMemoryHostedDocumentCatalog {
     this.#exactLinkCount += 1;
     const acquisition = this.#acquisitions.get(acquisitionId);
     acquisition.documentVersionId = documentVersionId;
+    acquisition.status = 'LINKED_EXACT_DOCUMENT_VERSION';
     const preflight = this.#preflights.get(preflightId);
     preflight.documentVersionId = documentVersionId;
     preflight.status = 'COMMITTED';
@@ -331,6 +788,7 @@ class InMemoryHostedDocumentCatalog {
       command.documentVersion.acquisitionId,
     );
     acquisition.documentVersionId = command.documentVersion.documentVersionId;
+    acquisition.status = 'COMMITTED_CANONICAL';
     const preflight = this.#preflights.get(command.preflightId);
     preflight.documentVersionId = command.documentVersion.documentVersionId;
     preflight.status = 'COMMITTED';
