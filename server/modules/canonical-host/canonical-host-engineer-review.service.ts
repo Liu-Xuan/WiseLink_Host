@@ -31,6 +31,7 @@ import {
   readDynamicRuleReviewItems,
   type OpenClawEngineerReviewContext,
 } from './openclaw-overall-synthesis.processor';
+import { readActiveJobAidBrowserRules } from './canonical-job-aid-browser-rules';
 import { authorizeAndLoadCanonicalWorkItem } from './canonical-authorized-work-item-reader';
 import type {
   CanonicalReviewActionType,
@@ -289,6 +290,9 @@ export class CanonicalHostEngineerReviewService {
   ): Promise<CanonicalEngineerReviewPageContext | null> {
     if (!workItem.integratedAssessment?.baseRules) return null;
     const items = await this.readDynamicItems(workItem);
+    const rules = await readActiveJobAidBrowserRules(
+      workItem.integratedAssessment.baseRules.criterionSetId,
+    );
     const ledger = await this.readLedger(workItem);
     const effective = effectiveReviews(ledger?.reviews ?? []);
     return {
@@ -297,8 +301,15 @@ export class CanonicalHostEngineerReviewService {
       ledger: workItem.integratedAssessment.engineerReviews ?? null,
       items: items.map((item) => {
         const latest = effective.get(item.criterionId) ?? null;
+        const rule = rules.get(item.criterionId);
+        if (!rule) {
+          throw new Error(
+            `ENGINEER_REVIEW_CRITERION_UNKNOWN:${item.criterionId}`,
+          );
+        }
         return {
           ...item,
+          ...rule,
           latestReview: latest
             ? {
                 decision: latest.decision,

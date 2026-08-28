@@ -27,6 +27,77 @@
     }
   },
   "overallCandidate": "现有来源候选支持继续工程师复核，但缺少受控机队事实，不能判定适用性或形成批准。",
+  "engineeringSummary": {
+    "schemaVersion": "wiselink.3_1.overall_engineering_summary.v1",
+    "conclusion": {
+      "text": "现有来源候选支持继续工程师复核，但缺少受控机队事实，不能判定适用性或形成批准。",
+      "basis": "CONDITIONAL_INFERENCE",
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:d110e9fafc621a7d6c2cabdda16ede232fcd70a8707d56ecd6f09b75288c7d8a"
+      ]
+    },
+    "whyItMatters": [
+      {
+        "text": "来源文件包含需要进一步匹配的适用性条件。",
+        "basis": "SOURCE_FACT",
+        "sourceRefIds": [
+          "urn:techpub:source-ref:v1:sha256:d110e9fafc621a7d6c2cabdda16ede232fcd70a8707d56ecd6f09b75288c7d8a"
+        ]
+      }
+    ],
+    "applicability": {
+      "sourceScope": {
+        "text": "适用范围以当前来源文件列出的条件为准。",
+        "basis": "SOURCE_FACT",
+        "sourceRefIds": [
+          "urn:techpub:source-ref:v1:sha256:d110e9fafc621a7d6c2cabdda16ede232fcd70a8707d56ecd6f09b75288c7d8a"
+        ]
+      },
+      "fleetMatch": {
+        "text": "当前没有足够的受控机队事实完成本机队匹配。",
+        "basis": "CONDITIONAL_INFERENCE",
+        "sourceRefIds": [
+          "urn:techpub:source-ref:v1:sha256:d110e9fafc621a7d6c2cabdda16ede232fcd70a8707d56ecd6f09b75288c7d8a"
+        ]
+      },
+      "requiredFacts": [
+        {
+          "text": "补充来源适用性条件要求的受控机队事实。",
+          "basis": "CONDITIONAL_INFERENCE",
+          "sourceRefIds": [
+            "urn:techpub:source-ref:v1:sha256:d110e9fafc621a7d6c2cabdda16ede232fcd70a8707d56ecd6f09b75288c7d8a"
+          ]
+        }
+      ]
+    },
+    "implementationImpact": [
+      {
+        "text": "实施影响只能在确认适用飞机和当前构型后进一步计划。",
+        "basis": "CONDITIONAL_INFERENCE",
+        "sourceRefIds": [
+          "urn:techpub:source-ref:v1:sha256:d110e9fafc621a7d6c2cabdda16ede232fcd70a8707d56ecd6f09b75288c7d8a"
+        ]
+      }
+    ],
+    "dispositionPriority": [
+      {
+        "text": "先关闭适用性事实缺口，再形成实施计划。",
+        "basis": "CONDITIONAL_INFERENCE",
+        "sourceRefIds": [
+          "urn:techpub:source-ref:v1:sha256:d110e9fafc621a7d6c2cabdda16ede232fcd70a8707d56ecd6f09b75288c7d8a"
+        ]
+      }
+    ],
+    "nextActions": [
+      {
+        "text": "核对当前来源适用性条件所需的受控机队事实。",
+        "basis": "CONDITIONAL_INFERENCE",
+        "sourceRefIds": [
+          "urn:techpub:source-ref:v1:sha256:d110e9fafc621a7d6c2cabdda16ede232fcd70a8707d56ecd6f09b75288c7d8a"
+        ]
+      }
+    ]
+  },
   "findings": [
     {
       "finding": "Parsed package contains source-bound applicability-related text candidates.",

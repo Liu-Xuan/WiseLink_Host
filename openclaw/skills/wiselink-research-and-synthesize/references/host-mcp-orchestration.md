@@ -148,8 +148,9 @@ get_parse_status（dynamic N/N 已持久）
 
 未知 overall commit 同样只按通用 ActionAttempt `resultContentHash` 一次恢复。
 
-若 Host 输入表明飞机身份/机型已知、AIMS-2 构型事实未接入，仍调用 overall 模型形成 candidate-only 初步工程
-综合；输出明确保持 `UNKNOWN/WAITING_INPUT`、列出缺口和人工/后续数据确认要求，不得最终批准或发布。
+若 Host 输入表明当前文档的 source-bound 适用性条件缺少受控构型事实，仍调用 overall 模型形成 candidate-only
+初步工程综合；输出明确保持 `UNKNOWN/WAITING_INPUT`，只列当前 SourceRef/effectivity 所需缺口和人工/后续
+数据确认要求，不得带入其它文档的设备/软件名称，也不得最终批准或发布。
 
 ### Gap-driven discovery
 

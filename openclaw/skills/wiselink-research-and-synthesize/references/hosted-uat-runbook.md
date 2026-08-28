@@ -61,8 +61,9 @@
 1. fresh-read dynamic N/N 已持久；先 `providers=[]`。
 2. overall input 绑定 frozen.2、完整 N/N、adopted DVs、review history/effective、Host
    `selectiveResynthesis` 和 SourceRefs。
-3. 输出保持 candidate-only、external discovery non-evidence；飞机身份/机型已知但 AIMS-2 构型未接入时，仍给出
-   初步工程综合，并明确条件性 UNKNOWN、人工/后续数据确认要求和不可最终批准/发布。
+3. 输出保持 candidate-only、external discovery non-evidence；当前文档适用性所需构型事实未接入时，仍给出
+   source-bound 初步工程综合，只列本资料实际需要的事实，并明确条件性 UNKNOWN、人工/后续数据确认要求和不可
+   最终批准/发布。
 4. 单次 commit；Host 读回 actual bytes/current overall r1。
 
 ### Required negative

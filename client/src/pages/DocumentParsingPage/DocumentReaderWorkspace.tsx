@@ -118,11 +118,7 @@ export function DocumentReaderWorkspace({
       <div className="parse-panel-label">
         <FileSearch aria-hidden="true" /> 原文与解析
       </div>
-      <div
-        className="parse-reader-modes"
-        role="tablist"
-        aria-label="原文视图"
-      >
+      <div className="parse-reader-modes" role="tablist" aria-label="原文视图">
         {capabilities.map((capability: ReaderCapability) => {
           const Icon =
             capability.mode === 'source'
@@ -143,9 +139,7 @@ export function DocumentReaderWorkspace({
               }`}
               key={capability.mode}
               onClick={() => onReaderModeChange(capability.mode)}
-              onKeyDown={(event) =>
-                handleModeKeyDown(event, capability.mode)
-              }
+              onKeyDown={(event) => handleModeKeyDown(event, capability.mode)}
             >
               <Icon aria-hidden="true" />
               <span>{capability.label}</span>
@@ -169,20 +163,26 @@ export function DocumentReaderWorkspace({
           <div>
             <span>受控文件来源</span>
             <strong>已绑定当前文件版本</strong>
-            <p>
-              {fileSizeLabel(data.workItem.source.sourceByteLength)}
-            </p>
+            <p>{fileSizeLabel(data.workItem.source.sourceByteLength)}</p>
           </div>
-          <div className="parse-reader-missing-state">
+          <div
+            className={
+              data.readerProjection?.pdfPreview.status === 'AVAILABLE'
+                ? 'parse-reader-source-ready'
+                : 'parse-reader-missing-state'
+            }
+          >
             <FileSearch aria-hidden="true" />
             <div>
               <strong>
-                {data.readerProjection?.pdfPreview.status === 'UNAVAILABLE'
-                  ? '暂不能预览 PDF 页面'
-                  : 'PDF 原文预览状态未知'}
+                {data.readerProjection?.pdfPreview.status === 'AVAILABLE'
+                  ? 'PDF 原文已通过受控读取链打开'
+                  : '暂不能预览 PDF 页面'}
               </strong>
               <p>
-                当前受控读取链尚未提供 PDF 页面画布。你仍可使用结构化原文和页码定位。
+                {data.readerProjection?.pdfPreview.status === 'AVAILABLE'
+                  ? '画布显示在 PDF 原文面板；点击来源依据会跳转到对应页码。'
+                  : '当前受控读取链尚未提供 PDF 页面画布。你仍可使用结构化原文和页码定位。'}
               </p>
             </div>
           </div>
@@ -199,10 +199,7 @@ export function DocumentReaderWorkspace({
           <Languages aria-hidden="true" />
           <div>
             <strong>{translationView?.headline ?? '中英文对照暂不可用'}</strong>
-            <p>
-              {translationView?.detail ??
-                '当前事项尚无可核验的译文。'}
-            </p>
+            <p>{translationView?.detail ?? '当前事项尚无可核验的译文。'}</p>
           </div>
         </section>
       ) : null}
@@ -318,7 +315,9 @@ export function DocumentReaderWorkspace({
                               ? `页 ${locator.pageStart}${locator.pageEnd && locator.pageEnd !== locator.pageStart ? `-${locator.pageEnd}` : ''}`
                               : '页码未投影'}
                           </p>
-                          <small>{locator.quote ?? '当前来源未返回可展示引文'}</small>
+                          <small>
+                            {locator.quote ?? '当前来源未返回可展示引文'}
+                          </small>
                         </div>
                       ))}
                     </div>

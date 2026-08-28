@@ -250,6 +250,27 @@ export interface CanonicalReaderBilingualUnit {
   engineerRevisionId: string | null;
 }
 
+export type CanonicalPdfPreviewProjection =
+  | {
+      status: 'AVAILABLE';
+      opaqueLocator: string;
+      expiresAt: string;
+      mediaType: 'application/pdf';
+      byteLength: number;
+      supportsRange: boolean;
+      navigation: 'PAGE_START';
+    }
+  | {
+      status: 'UNAVAILABLE';
+      reason:
+        | 'PDF_PREVIEW_NOT_CONFIGURED'
+        | 'PDF_PREVIEW_SOURCE_NOT_PDF'
+        | 'PDF_PREVIEW_SOURCE_IDENTITY_INVALID'
+        | 'PDF_PREVIEW_SOURCE_TOO_LARGE'
+        | 'PDF_PREVIEW_SERVICE_UNAVAILABLE';
+      retryable: boolean;
+    };
+
 export interface CanonicalReaderProjection {
   sourceKind: UnifiedPackageSourceKind;
   structuredUnitCount: number;
@@ -262,11 +283,56 @@ export interface CanonicalReaderProjection {
     sourceRefIds: string[];
     sourceLocators: UnifiedReaderSourceLocator[];
   }>;
-  pdfPreview: {
-    status: 'UNAVAILABLE';
-    reason: 'PDF_PREVIEW_NOT_CONFIGURED';
-  };
+  pdfPreview: CanonicalPdfPreviewProjection;
   translation: CanonicalReaderTranslationProjection;
+}
+
+/**
+ * Browser-safe SourceRef locator for structured-content browsing. Artifact
+ * identities stay inside the Host; the browser receives only the coordinates
+ * needed to navigate the current controlled document.
+ */
+export interface CanonicalStructuredContentSourceLocator {
+  sourceRefId: string;
+  kind: string;
+  pageStart: number | null;
+  pageEnd: number | null;
+  /** Browser-safe excerpt, bounded by the Host. */
+  quote: string | null;
+}
+
+export interface CanonicalStructuredContentUnit {
+  /** One-based position in the current frozen.2 contentUnits sequence. */
+  ordinal: number;
+  displayKind: 'section' | 'body' | 'unavailable';
+  /** Explicit browser outline semantics; the UI never infers this from source kind. */
+  outlineKind: 'SECTION' | 'NONE';
+  sectionTitle: string | null;
+  /** Browser-safe engineering text or an honest typed summary, never raw JSON. */
+  displayText: string;
+  sourceRefIds: string[];
+  sourceLocators: CanonicalStructuredContentSourceLocator[];
+}
+
+export interface CanonicalStructuredContentPageResponse {
+  schemaVersion: 'wiselink.3_1.structured_content_page.v1';
+  status: 'FRESH_READ';
+  mode: 'BROWSE';
+  /** Current WorkItem revision; the client must echo it for continuation. */
+  revision: number;
+  resultStatus: 'complete' | 'partial';
+  qualityStatus: 'PASS' | 'NEEDS_REVIEW';
+  /** All source contentUnits in the exact current frozen.2 package. */
+  totalSourceUnitCount: number;
+  /** Units represented in browser pagination after non-content metadata omission. */
+  totalDisplayUnitCount: number;
+  omittedUnitCount: number;
+  sourceRefCount: number;
+  returnedUnitCount: number;
+  cursor: string | null;
+  nextCursor: string | null;
+  hasMore: boolean;
+  units: CanonicalStructuredContentUnit[];
 }
 
 export interface UnifiedReaderCandidateReceipt {
@@ -876,6 +942,31 @@ export interface CanonicalBaseRuleCandidateProjection {
   actionAttemptId: string;
 }
 
+export type CanonicalEngineeringStatementBasis =
+  | 'SOURCE_FACT'
+  | 'CONDITIONAL_INFERENCE';
+
+export interface CanonicalSourceBoundEngineeringStatement {
+  text: string;
+  basis: CanonicalEngineeringStatementBasis;
+  /** Every statement remains bound to the current DocumentVersion. */
+  sourceRefIds: string[];
+}
+
+export interface CanonicalOverallEngineeringSummary {
+  schemaVersion: 'wiselink.3_1.overall_engineering_summary.v1';
+  conclusion: CanonicalSourceBoundEngineeringStatement;
+  whyItMatters: CanonicalSourceBoundEngineeringStatement[];
+  applicability: {
+    sourceScope: CanonicalSourceBoundEngineeringStatement;
+    fleetMatch: CanonicalSourceBoundEngineeringStatement;
+    requiredFacts: CanonicalSourceBoundEngineeringStatement[];
+  };
+  implementationImpact: CanonicalSourceBoundEngineeringStatement[];
+  dispositionPriority: CanonicalSourceBoundEngineeringStatement[];
+  nextActions: CanonicalSourceBoundEngineeringStatement[];
+}
+
 export interface CanonicalOpenClawOverallProjection {
   status: 'CANDIDATE_ONLY' | 'STALE';
   revision: number;
@@ -896,6 +987,8 @@ export interface CanonicalOpenClawOverallProjection {
   staleReason: 'BASE_RULE_RESULT_CHANGED' | 'ENGINEER_REVIEW_CHANGED' | null;
   /** Business-readable candidate content copied from the verified overall artifact. */
   overallCandidate?: string;
+  /** Source-bound engineering synthesis for the user-visible Overall view. */
+  engineeringSummary?: CanonicalOverallEngineeringSummary;
   findings?: Array<{
     finding: string;
     basis: string;
@@ -907,6 +1000,11 @@ export interface CanonicalOpenClawOverallProjection {
   applicabilityStatus?: string;
   engineeringReviewRequired?: boolean;
   providers?: Record<string, unknown>;
+  /** Verified per-turn runtime provenance; absent on projections created before R09. */
+  modelVersion?: string;
+  promptVersion?: string;
+  skillVersion?: string;
+  toolVersions?: Record<string, string>;
 }
 
 export type CanonicalEngineerReviewDecision =
@@ -926,6 +1024,10 @@ export interface CanonicalEngineerReviewLedgerProjection {
 
 export interface CanonicalEngineerReviewPageItem {
   criterionId: string;
+  criterionName?: string;
+  evaluationQuestion?: string;
+  decisionRule?: string;
+  appliesWhen?: string;
   dynamicResult: string;
   candidateConclusion: string;
   humanReviewRequired: boolean;

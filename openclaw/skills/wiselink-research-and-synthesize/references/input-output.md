@@ -242,9 +242,12 @@ usableAsEvidence=false
 engineeringReviewRequired=true
 ```
 
-并返回 overallCandidate、findings、missingInputs、applicabilityStatus、provider status 和计数。缺 FleetFacts/
-predicates 时 applicability 保持 `UNKNOWN/WAITING_INPUT`，但仍形成初步工程综合候选。飞机身份/机型已知而
-AIMS-2 构型数据未接入时，候选必须明确说明条件性未知、需工程师或后续受控数据确认，且不得最终批准或发布。
+并返回 overallCandidate、engineeringSummary、findings、missingInputs、applicabilityStatus、provider status 和
+计数。`engineeringSummary` 包含一句话工程结论、whyItMatters、applicability.sourceScope/fleetMatch/requiredFacts、
+implementationImpact、dispositionPriority 和 1–3 个 nextActions。每个陈述必须带至少一个当前 DocumentVersion
+SourceRef，并标明 `SOURCE_FACT` 或 `CONDITIONAL_INFERENCE`。缺 FleetFacts/predicates 时 applicability 保持
+`UNKNOWN/WAITING_INPUT`，但仍形成初步工程综合候选；只列当前来源条件实际要求的缺失事实，不从其它文档带入
+设备、软件或构型名称，不得最终批准或发布。
 
 ## INTERACTIVE_REVIEW task
 

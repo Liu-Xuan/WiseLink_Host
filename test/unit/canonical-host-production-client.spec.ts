@@ -77,7 +77,7 @@ describe('canonical Host production client boundary', () => {
   });
 
   it('composes P1-P4 from canonical Host read projections only', async () => {
-    const [home, reader, workbench] = await Promise.all([
+    const [home, reader, workbench, assessmentRules] = await Promise.all([
       readFile(
         resolve(
           clientSourceRoot,
@@ -99,6 +99,13 @@ describe('canonical Host production client boundary', () => {
         ),
         'utf8',
       ),
+      readFile(
+        resolve(
+          clientSourceRoot,
+          'pages/DocumentParsingPage/AssessmentRuleWorkspace.tsx',
+        ),
+        'utf8',
+      ),
     ]);
 
     expect(home).toContain('data.libraryIndex.nodes');
@@ -107,13 +114,14 @@ describe('canonical Host production client boundary', () => {
     expect(reader).toContain('result.sourceLocators');
     expect(reader).toContain('locator.pageStart');
     expect(reader).not.toContain('data.queryResults');
-    expect(workbench).toContain('overallCandidate.overallCandidate');
-    expect(workbench).toContain('overallCandidate.findings');
-    expect(workbench).toContain('selectedReviewItem.factsConsidered');
-    expect(workbench).toContain('selectedReviewItem.ruleApplication');
-    expect(workbench).toContain('selectedReviewItem.analysisSummary');
-    expect(workbench).toContain('selectedReviewItem.sourceRefs');
-    expect(workbench).toContain('selectedReviewItem.missingInputs');
+    expect(workbench).toContain('overallCandidate?.engineeringSummary');
+    expect(workbench).toContain('overallEngineeringSummary?.conclusion.text');
+    expect(workbench).not.toContain('overallCandidate.overallCandidate');
+    expect(assessmentRules).toContain('selected.item.factsConsidered');
+    expect(assessmentRules).toContain('selected.item.ruleApplication');
+    expect(assessmentRules).toContain('selected.item.analysisSummary');
+    expect(assessmentRules).toContain('selected.item.sourceRefs');
+    expect(assessmentRules).toContain('selected.item.missingInputs');
     expect(workbench).toContain("readerMode: 'structured'");
     expect(workbench).toContain('unit: null');
   });

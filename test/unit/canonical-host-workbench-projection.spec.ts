@@ -11,8 +11,36 @@ import {
   describeTranslationProjection,
   getReaderViewMode,
 } from '../../client/src/pages/DocumentParsingPage/workbench-projection';
+import {
+  getWorkbenchNode,
+  structuredSourceDeepLink,
+  WORKBENCH_TAB_DEFINITIONS,
+} from '../../client/src/pages/DocumentParsingPage/document-parsing-navigation';
 
 describe('canonical Host workbench projection', () => {
+  it('keeps assessment-first navigation and the four R05.5 mobile tabs', () => {
+    expect(getWorkbenchNode(null)).toBe('assessment');
+    expect(getWorkbenchNode('unknown')).toBe('assessment');
+    expect(
+      WORKBENCH_TAB_DEFINITIONS.filter((tab) => tab.mobileLabel)
+        .sort(
+          (left, right) => (left.mobileOrder ?? 99) - (right.mobileOrder ?? 99),
+        )
+        .map((tab) => tab.mobileLabel),
+    ).toEqual(['总体', '原文', '复核', '动态']);
+  });
+
+  it('routes a structured page locator to the source reader intent', () => {
+    expect(structuredSourceDeepLink('SOURCE-REF-1', 22)).toEqual({
+      node: 'reader',
+      tab: 'reader',
+      unit: null,
+      sourceRef: 'SOURCE-REF-1',
+      readerMode: 'source',
+      page: '22',
+    });
+  });
+
   it('keeps PDF and bilingual modes explicit when Host data is absent', () => {
     const capabilities = buildReaderCapabilities({
       readerProjection: null,
@@ -43,6 +71,29 @@ describe('canonical Host workbench projection', () => {
     );
     expect(capabilities[1].note).toContain('2 个内容单元');
     expect(capabilities[1].note).toContain('2 个可定位到原文页码');
+  });
+
+  it('reports a full-download PDF capability without claiming Range', () => {
+    const projection = readerProjection();
+    projection.pdfPreview = {
+      status: 'AVAILABLE',
+      opaqueLocator: 'opaque-test-locator',
+      expiresAt: '2026-08-28T18:00:00.000Z',
+      mediaType: 'application/pdf',
+      byteLength: 1_060_204,
+      supportsRange: false,
+      navigation: 'PAGE_START',
+    };
+
+    const capabilities = buildReaderCapabilities({
+      readerProjection: projection,
+    });
+
+    expect(capabilities[0]).toEqual(
+      expect.objectContaining({ mode: 'source', status: 'AVAILABLE' }),
+    );
+    expect(capabilities[0].note).toContain('完整读取');
+    expect(capabilities[0].note).not.toContain('按页加载');
   });
 
   it('uses Host Reader locators and business assessment content without a second source', () => {
@@ -251,6 +302,7 @@ function readerProjection(): CanonicalReaderProjection {
     pdfPreview: {
       status: 'UNAVAILABLE',
       reason: 'PDF_PREVIEW_NOT_CONFIGURED',
+      retryable: false,
     },
     translation: {
       status: 'UNAVAILABLE',

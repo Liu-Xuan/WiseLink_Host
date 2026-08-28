@@ -1,28 +1,88 @@
 import {
+  ChevronDown,
+  CircleAlert,
+  ClipboardCheck,
   FileSearch2,
+  Gauge,
   Link2,
   ListChecks,
-  MessageCircleQuestion,
-  ShieldAlert,
   Sparkles,
   Target,
+  Wrench,
 } from 'lucide-react';
 
-import type { WorkItemView } from '@client/src/services/viewModelMappers';
-import { staleReasonLabel } from '@client/src/services/viewModelMappers';
+import type {
+  EngineeringStatementView,
+  WorkItemView,
+} from '@client/src/services/viewModelMappers';
+import {
+  AUTHORITY_LABELS,
+  FRESHNESS_LABELS,
+  staleReasonLabel,
+} from '@client/src/services/viewModelMappers';
 
 import './workitem-overview.css';
 
+function SourceBoundStatement({
+  statement,
+  judgment = false,
+  onViewEvidence,
+}: {
+  statement: EngineeringStatementView;
+  judgment?: boolean;
+  onViewEvidence?: (sourceRefId?: string) => void;
+}) {
+  return (
+    <li className="wl-engineering-statement" data-judgment={judgment}>
+      <p className="wl-engineering-statement-text">{statement.text}</p>
+      <div className="wl-engineering-statement-meta">
+        <span className="wl-statement-basis" data-basis={statement.basis}>
+          {statement.basis === 'SOURCE_FACT' ? '来源事实' : '条件性推断'}
+        </span>
+        <button
+          type="button"
+          className="wl-source-ref-button"
+          onClick={() => onViewEvidence?.(statement.sourceRefIds[0])}
+          disabled={!onViewEvidence}
+        >
+          <Link2 aria-hidden="true" />
+          {statement.sourceRefIds.length} 条原文依据
+        </button>
+      </div>
+    </li>
+  );
+}
+
+function StatementList({
+  statements,
+  onViewEvidence,
+}: {
+  statements: EngineeringStatementView[];
+  onViewEvidence?: (sourceRefId?: string) => void;
+}) {
+  return (
+    <ul className="wl-engineering-list">
+      {statements.map((statement, index) => (
+        <SourceBoundStatement
+          key={`${statement.text}-${index}`}
+          statement={statement}
+          onViewEvidence={onViewEvidence}
+        />
+      ))}
+    </ul>
+  );
+}
+
 /**
- * 综合评估主卡（Spec R01 §4.1 / §7 OverallAssessmentHero）。
- * 默认第一屏；候选标识 + 生成信息 + 六区块；技术详情可折叠。
- * 顶部始终显示“AI 生成于何时、基于哪个文件版本、当前是否仍有效”。
+ * 综合评估主卡。
+ * 第一屏只呈现有当前 DocumentVersion SourceRef 支撑的工程结论、影响与动作；
+ * 候选状态、版本、模型与计数统一收进折叠技术详情。
  */
 export default function OverallAssessmentHero({
   view,
   onOpenWorkbench,
   onViewEvidence,
-  primaryActionLabel = '开始复核',
+  primaryActionLabel = '处理异常并完成批准',
 }: {
   view: WorkItemView;
   onOpenWorkbench: () => void;
@@ -30,6 +90,7 @@ export default function OverallAssessmentHero({
   primaryActionLabel?: string;
 }) {
   const overall = view.overall;
+  const requiredFactCount = overall?.applicability.requiredFacts.length ?? 0;
   const heroState =
     view.freshness === 'superseded'
       ? 'obsolete'
@@ -37,35 +98,22 @@ export default function OverallAssessmentHero({
         ? 'formal'
         : view.freshness === 'needs_update'
           ? 'stale'
-          : overall && overall.missingInputs.length > 0
+          : requiredFactCount > 0
             ? 'waiting'
             : view.authority === 'engineer_confirmed'
               ? 'engineer-confirmed'
               : 'candidate';
-  const heroBreathes =
-    heroState === 'candidate' || heroState === 'engineer-confirmed';
-  const staleLabel = staleReasonLabel(
-    (
-      overall as never as {
-        staleReason?:
-          | 'BASE_RULE_RESULT_CHANGED'
-          | 'ENGINEER_REVIEW_CHANGED'
-          | null;
-      }
-    )?.staleReason ?? null,
-  );
+  const staleLabel = staleReasonLabel(overall?.staleReason ?? null);
   const authorityLabel =
     heroState === 'obsolete'
       ? '历史意见 · 已被新版本替代'
       : heroState === 'stale'
-        ? 'AI 初步意见 · 当前结论需更新'
-        : heroState === 'waiting'
-          ? `AI 初步意见 · 等待补充 ${overall?.missingInputs.length ?? 0} 项资料`
-          : view.authority === 'engineer_confirmed'
-            ? 'AI 初步意见 · 人工确认已记录'
-            : view.authority === 'formal_readback'
-              ? '正式系统回读结果'
-              : 'AI 初步意见 · 待工程师复核';
+        ? '工程候选 · 当前结论需更新'
+        : view.authority === 'engineer_confirmed'
+          ? '工程候选 · 人工确认已记录'
+          : view.authority === 'formal_readback'
+            ? '正式系统回读结果'
+            : '工程候选 · 待最终批准';
 
   if (!overall) {
     return (
@@ -78,9 +126,7 @@ export default function OverallAssessmentHero({
           <Sparkles className="wl-overall-empty-icon" />
         </span>
         <h2>综合评估尚未形成</h2>
-        <p>
-          当前尚无综合候选意见。可先核对原文与解析结果；形成候选后仍需工程师复核。
-        </p>
+        <p>当前没有可用的综合工程候选。可先查看原文与解析状态。</p>
         <button
           type="button"
           className="wl-btn wl-btn-primary"
@@ -92,11 +138,36 @@ export default function OverallAssessmentHero({
     );
   }
 
+  if (!overall.conclusion) {
+    return (
+      <section
+        className="wl-overall-hero wl-glass-content wl-overall-structure-missing"
+        data-state="waiting"
+        aria-live="polite"
+      >
+        <span className="wl-overall-empty-mark" aria-hidden="true">
+          <CircleAlert className="wl-overall-empty-icon" />
+        </span>
+        <h2>需要重新生成工程摘要</h2>
+        <p>
+          历史候选没有逐结论绑定当前文件版本原文依据，不能作为当前工程判断展示。
+        </p>
+        <button
+          type="button"
+          className="wl-btn wl-btn-primary"
+          onClick={onOpenWorkbench}
+        >
+          <FileSearch2 aria-hidden="true" /> 查看详情并重新生成
+        </button>
+      </section>
+    );
+  }
+
   return (
     <section
       className="wl-overall-hero wl-glass-content wl-focus-card"
       data-state={heroState}
-      data-active={heroBreathes ? 'true' : 'false'}
+      data-active={heroState === 'candidate' ? 'true' : 'false'}
     >
       <header className="wl-overall-head">
         <div>
@@ -109,135 +180,85 @@ export default function OverallAssessmentHero({
           <span>基于当前受控文件版本</span>
           <span>
             {view.freshness === 'needs_update'
-              ? `当前结论需更新${staleLabel ? `（${staleLabel}）` : ''}`
-              : view.authority === 'formal_readback'
-                ? '正式回读当前有效'
-                : '当前候选基于最新资料'}
+              ? `结论需更新${staleLabel ? `（${staleLabel}）` : ''}`
+              : requiredFactCount > 0
+                ? `待确认 ${requiredFactCount} 项适用性事实`
+                : '工程摘要已绑定原文依据'}
           </span>
         </div>
       </header>
 
       <div className="wl-overall-judgment">
         <h3>
-          <Target aria-hidden="true" /> 当前判断
+          <Target aria-hidden="true" /> 工程结论
         </h3>
-        <p>{overall.currentJudgment}</p>
+        <ul className="wl-engineering-list">
+          <SourceBoundStatement
+            statement={overall.conclusion}
+            judgment
+            onViewEvidence={onViewEvidence}
+          />
+        </ul>
       </div>
 
       <div className="wl-overall-grid">
-        <div className="wl-overall-block">
+        <section className="wl-overall-block">
           <h3>
-            <Target aria-hidden="true" /> 适用范围
+            <CircleAlert aria-hidden="true" /> 为什么重要
           </h3>
-          <p>{overall.applicabilitySummary}</p>
-        </div>
+          <StatementList
+            statements={overall.whyItMatters}
+            onViewEvidence={onViewEvidence}
+          />
+        </section>
 
-        <div className="wl-overall-block">
+        <section className="wl-overall-block is-wide">
           <h3>
-            <ListChecks aria-hidden="true" /> 关键依据（{overall.sourceCount}{' '}
-            条来源）
+            <Target aria-hidden="true" /> 适用飞机与当前机队匹配
           </h3>
-          {overall.keyEvidence.length > 0 ? (
-            <ul>
-              {overall.keyEvidence.map((evidence) => (
-                <li key={evidence.id}>
-                  <button
-                    type="button"
-                    className="wl-overall-evidence"
-                    onClick={() => onViewEvidence?.(evidence.sourceRefId)}
-                  >
-                    <Link2 aria-hidden="true" />
-                    <span>{evidence.label}</span>
-                    {evidence.documentLabel ? (
-                      <small>{evidence.documentLabel}</small>
-                    ) : null}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="wl-overall-empty-note">
-              当前结果尚未关联逐条原文依据，可先查看解析结果。
-            </p>
-          )}
-        </div>
+          <StatementList
+            statements={[
+              ...(overall.applicability.sourceScope
+                ? [overall.applicability.sourceScope]
+                : []),
+              ...(overall.applicability.fleetMatch
+                ? [overall.applicability.fleetMatch]
+                : []),
+              ...overall.applicability.requiredFacts,
+            ]}
+            onViewEvidence={onViewEvidence}
+          />
+        </section>
 
-        <div className="wl-overall-block">
+        <section className="wl-overall-block">
           <h3>
-            <MessageCircleQuestion aria-hidden="true" /> 未决问题（
-            {overall.unresolvedQuestions.length}）
+            <Wrench aria-hidden="true" /> 实施影响
           </h3>
-          {overall.unresolvedQuestions.length > 0 ? (
-            <ul className="wl-overall-plain-list">
-              {overall.unresolvedQuestions.map((question) => (
-                <li key={question.id}>
-                  <strong>{question.label}</strong>
-                  {question.impact ? (
-                    <small>影响：{question.impact}</small>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="wl-overall-empty-note">当前没有未决问题。</p>
-          )}
-        </div>
+          <StatementList
+            statements={overall.implementationImpact}
+            onViewEvidence={onViewEvidence}
+          />
+        </section>
 
-        <div className="wl-overall-block">
+        <section className="wl-overall-block">
           <h3>
-            <ShieldAlert aria-hidden="true" /> 风险与影响
+            <Gauge aria-hidden="true" /> 处置优先级
           </h3>
-          {overall.riskAndImpact.length > 0 ? (
-            <ul className="wl-overall-plain-list">
-              {overall.riskAndImpact.map((risk, index) => (
-                <li key={index}>{risk}</li>
-              ))}
-            </ul>
-          ) : (
-            <p className="wl-overall-empty-note">
-              目前没有证据支持的候选风险项。
-            </p>
-          )}
-        </div>
+          <StatementList
+            statements={overall.dispositionPriority}
+            onViewEvidence={onViewEvidence}
+          />
+        </section>
 
-        <div className="wl-overall-block">
+        <section className="wl-overall-block is-wide">
           <h3>
-            <FileSearch2 aria-hidden="true" /> 待补资料（
-            {overall.missingInputs.length}）
+            <ClipboardCheck aria-hidden="true" /> 下一步
           </h3>
-          {overall.missingInputs.length > 0 ? (
-            <ul className="wl-overall-plain-list">
-              {overall.missingInputs.map((input, index) => (
-                <li key={index}>
-                  <strong>{input.label}</strong>
-                  {input.impact ? <small>影响：{input.impact}</small> : null}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="wl-overall-empty-note">当前没有待补资料。</p>
-          )}
-        </div>
-
-        <div className="wl-overall-block">
-          <h3>
-            <ListChecks aria-hidden="true" /> 复核建议
-          </h3>
-          {overall.reviewRecommendations.length > 0 ? (
-            <ul className="wl-overall-plain-list">
-              {overall.reviewRecommendations.map((item, index) => (
-                <li key={index}>
-                  <strong>{item.label}</strong>
-                  {item.detail ? <small>{item.detail}</small> : null}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="wl-overall-empty-note">
-              系统尚未给出复核建议；可从关键依据开始核对。
-            </p>
-          )}
-        </div>
+          <StatementList
+            statements={overall.nextActions}
+            onViewEvidence={onViewEvidence}
+          />
+        </section>
       </div>
 
       <footer className="wl-overall-actions">
@@ -246,7 +267,7 @@ export default function OverallAssessmentHero({
           className="wl-btn wl-btn-primary"
           onClick={onOpenWorkbench}
         >
-          <FileSearch2 aria-hidden="true" /> {primaryActionLabel}
+          <ListChecks aria-hidden="true" /> {primaryActionLabel}
         </button>
         {onViewEvidence ? (
           <button
@@ -254,10 +275,46 @@ export default function OverallAssessmentHero({
             className="wl-btn"
             onClick={() => onViewEvidence()}
           >
-            <Link2 aria-hidden="true" /> 查看依据
+            <Link2 aria-hidden="true" /> 查看全部依据
           </button>
         ) : null}
       </footer>
+
+      <details className="wl-overall-tech">
+        <summary>
+          <ChevronDown aria-hidden="true" /> 技术详情
+        </summary>
+        <dl>
+          <div>
+            <dt>当前阶段</dt>
+            <dd>{AUTHORITY_LABELS[view.authority]}</dd>
+          </div>
+          <div>
+            <dt>结论状态</dt>
+            <dd>
+              {FRESHNESS_LABELS[view.freshness]}
+              {staleLabel ? `（${staleLabel}）` : ''}
+            </dd>
+          </div>
+          <div>
+            <dt>受控文件版本</dt>
+            <dd>{view.documentVersion}</dd>
+          </div>
+          <div>
+            <dt>翻译 / 评估进度</dt>
+            <dd>
+              {overall.technicalDetails.translationProgress ?? '未返回'} /{' '}
+              {overall.technicalDetails.evaluationProgress}
+            </dd>
+          </div>
+          <div>
+            <dt>原文依据 / 待补事实</dt>
+            <dd>
+              {overall.sourceCount} 条 / {requiredFactCount} 项
+            </dd>
+          </div>
+        </dl>
+      </details>
     </section>
   );
 }

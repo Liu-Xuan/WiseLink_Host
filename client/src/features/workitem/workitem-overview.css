@@ -355,6 +355,10 @@ html[data-wl-visual-mode='compatible'] .wl-overall-hero {
   background: var(--wl-glass-soft);
 }
 
+.wl-overall-block.is-wide {
+  grid-column: span 2;
+}
+
 .wl-overall-block > p {
   margin: 0;
   color: var(--wl-ink);
@@ -368,6 +372,100 @@ html[data-wl-visual-mode='compatible'] .wl-overall-hero {
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+.wl-engineering-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.wl-engineering-statement {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--wl-border) 82%, transparent);
+  border-radius: var(--wl-radius-sm);
+  background: color-mix(in srgb, var(--wl-surface-solid) 74%, transparent);
+}
+
+.wl-engineering-statement[data-judgment='true'] {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.wl-engineering-statement-text {
+  margin: 0;
+  color: var(--wl-ink);
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+
+.wl-engineering-statement[data-judgment='true']
+  .wl-engineering-statement-text {
+  font-size: 15px;
+  line-height: 1.75;
+}
+
+.wl-engineering-statement-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.wl-statement-basis {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--wl-green-soft);
+  color: var(--wl-green);
+  font-size: 10.5px;
+  font-weight: 700;
+}
+
+.wl-statement-basis[data-basis='CONDITIONAL_INFERENCE'] {
+  background: var(--wl-amber-soft);
+  color: var(--wl-amber);
+}
+
+.wl-source-ref-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 4px;
+  border: 0;
+  background: transparent;
+  color: var(--wl-accent);
+  font-size: 10.5px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.wl-source-ref-button:disabled {
+  color: var(--wl-faint);
+  cursor: default;
+}
+
+.wl-source-ref-button svg {
+  width: 11px;
+  height: 11px;
+}
+
+.wl-overall-structure-missing {
+  display: grid;
+  justify-items: start;
+  gap: 12px;
+}
+
+.wl-overall-structure-missing h2,
+.wl-overall-structure-missing p {
+  margin: 0;
 }
 
 .wl-overall-evidence {
@@ -703,6 +801,10 @@ html[data-wl-visual-mode='compatible'] .wl-overall-hero {
   .wl-overall-grid,
   .wl-overview-side {
     grid-template-columns: 1fr;
+  }
+
+  .wl-overall-block.is-wide {
+    grid-column: auto;
   }
 
   .wl-authority-meta {

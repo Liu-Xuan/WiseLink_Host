@@ -67,8 +67,9 @@ export interface WorkbenchShellProps {
   children: ReactNode;
 }
 
-const NAV_MIN = 180;
-const NAV_MAX = 420;
+const NAV_MIN = 232;
+const NAV_MAX = 440;
+const NAV_DEFAULT = 304;
 /** Spec R01 §4.2：右侧证据栏 280–360px */
 const EVIDENCE_MIN = 280;
 const EVIDENCE_MAX = 360;
@@ -119,7 +120,7 @@ function readLayoutPrefs(): Partial<WorkbenchLayoutPrefs> {
     if (typeof parsed !== 'object' || parsed === null) return {};
     const record = parsed as Record<string, unknown>;
     return {
-      treeWidth: clampNumber(record.treeWidth, NAV_MIN, NAV_MAX, 272),
+      treeWidth: clampNumber(record.treeWidth, NAV_MIN, NAV_MAX, NAV_DEFAULT),
       evidenceWidth: clampNumber(
         record.evidenceWidth,
         EVIDENCE_MIN,
@@ -165,7 +166,9 @@ export default function WorkbenchShell({
 }: WorkbenchShellProps) {
   const { reduceTransparency, toggleTransparency } = useWlTheme();
   const [initialPrefs] = useState(readLayoutPrefs);
-  const [navWidth, setNavWidth] = useState(initialPrefs.treeWidth ?? 272);
+  const [navWidth, setNavWidth] = useState(
+    initialPrefs.treeWidth ?? NAV_DEFAULT,
+  );
   const [navCollapsed, setNavCollapsed] = useState(
     initialPrefs.navCollapsed ?? false,
   );
@@ -745,16 +748,22 @@ export default function WorkbenchShell({
               aria-valuemin={NAV_MIN}
               aria-valuemax={NAV_MAX}
               aria-valuenow={navWidth}
+              title="拖动或使用方向键调整目录宽度；双击恢复推荐宽度"
               tabIndex={0}
               onPointerDown={startDrag('nav')}
+              onDoubleClick={() => setNavWidth(NAV_DEFAULT)}
               onKeyDown={(event) => {
                 if (event.key === 'ArrowLeft') {
+                  event.preventDefault();
                   setNavWidth((w) => Math.max(NAV_MIN, w - 16));
                 } else if (event.key === 'ArrowRight') {
+                  event.preventDefault();
                   setNavWidth((w) => Math.min(NAV_MAX, w + 16));
                 } else if (event.key === 'Home') {
+                  event.preventDefault();
                   setNavWidth(NAV_MIN);
                 } else if (event.key === 'End') {
+                  event.preventDefault();
                   setNavWidth(NAV_MAX);
                 }
               }}

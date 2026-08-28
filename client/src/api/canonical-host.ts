@@ -3,6 +3,7 @@ import type {
   AppendReviewTextTurnResponse,
   CanonicalApplicabilitySelectionReadModel,
   CanonicalDocumentParsingPageResponse,
+  CanonicalStructuredContentPageResponse,
   CanonicalAeoCandidateRunResponse,
   CanonicalEntryQueryRequest,
   CanonicalEntryQueryResponse,
@@ -20,8 +21,6 @@ import type {
 
 import { logger } from '@lark-apaas/client-toolkit/logger';
 import { axiosForBackend } from '@lark-apaas/client-toolkit/utils/getAxiosForBackend';
-
-const DEFAULT_DOCUMENT_PARSING_QUERY = 'applicability';
 
 export interface CanonicalHostIdentityContext {
   userId: string;
@@ -149,12 +148,14 @@ export async function getDocumentParsingPage(
   query: string,
 ): Promise<CanonicalDocumentParsingPageResponse> {
   try {
-    const normalizedQuery = query.trim() || DEFAULT_DOCUMENT_PARSING_QUERY;
+    const normalizedQuery: string = query.trim();
     const response =
       await axiosForBackend<CanonicalDocumentParsingPageResponse>({
         url: `/api/canonical-host/work-items/${encodeURIComponent(workItemId)}/document-parsing`,
         method: 'GET',
-        params: { query: normalizedQuery },
+        ...(normalizedQuery === ''
+          ? {}
+          : { params: { query: normalizedQuery } }),
       });
     if (response.status === 401) {
       throw new Error('CANONICAL_PAGE_LOGIN_REQUIRED');
@@ -173,6 +174,60 @@ export async function getDocumentParsingPage(
     logger.error('读取文档与解析 fresh projection 失败', error);
     throw normalizedDirectObjectError(error);
   }
+}
+
+export async function getStructuredContentPage(
+  workItemId: string,
+  input: {
+    cursor?: string;
+    limit?: number;
+    expectedRevision?: number;
+  } = {},
+): Promise<CanonicalStructuredContentPageResponse> {
+  try {
+    const params: Record<string, string | number> = {};
+    if (input.cursor) params.cursor = input.cursor;
+    if (input.limit !== undefined) params.limit = input.limit;
+    if (input.expectedRevision !== undefined) {
+      params.expectedRevision = input.expectedRevision;
+    }
+    const response =
+      await axiosForBackend<CanonicalStructuredContentPageResponse>({
+        url: `/api/canonical-host/work-items/${encodeURIComponent(workItemId)}/structured-content`,
+        method: 'GET',
+        ...(Object.keys(params).length === 0 ? {} : { params }),
+      });
+    if (response.status === 401) {
+      throw new Error('STRUCTURED_CONTENT_LOGIN_REQUIRED');
+    }
+    if (response.status === 403 || response.status === 404) {
+      throw canonicalObjectNotFound();
+    }
+    if (response.status < 200 || response.status >= 300) {
+      throw backendResponseError(
+        response.data,
+        'STRUCTURED_CONTENT_UNAVAILABLE',
+      );
+    }
+    return response.data;
+  } catch (error) {
+    logger.error('读取结构化内容分页失败', error);
+    throw normalizedDirectObjectError(error);
+  }
+}
+
+export function canonicalPdfPreviewUrl(
+  workItemId: string,
+  opaqueLocator: string,
+): string {
+  const normalizedWorkItemId: string = workItemId.trim();
+  const normalizedLocator: string = opaqueLocator.trim();
+  if (!normalizedWorkItemId || !normalizedLocator) {
+    throw new Error('CANONICAL_PDF_PREVIEW_LOCATOR_INVALID');
+  }
+  return `/api/canonical-host/work-items/${encodeURIComponent(
+    normalizedWorkItemId,
+  )}/pdf-preview/${encodeURIComponent(normalizedLocator)}`;
 }
 
 export async function getApplicabilitySelection(

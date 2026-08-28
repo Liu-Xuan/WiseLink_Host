@@ -173,8 +173,12 @@ CAS；Skill 不声称这些步骤由模型完成。8. commit 响应未知时只�
 - 先确认 Host 已落账完整 dynamic N/N，再以 `providers=[]` 运行无 discovery overall。
 - 输入必须包含同一 frozen.2 package、完整 N/N、当前 adopted DocumentVersions、脱敏 engineer-review
   timeline/effective、Host `selectiveResynthesis` 摘要和 Unified SourceRefs。
-- 若飞机身份/机型已知但 AIMS-2 等受控构型事实未接入，仍执行 overall 模型并形成初步工程综合候选；候选必须
-  明示构型数据未接入、适用性为条件性 UNKNOWN、需要工程师或后续受控数据确认，且不得形成最终批准或发布。
+- 若当前文档的 source-bound 适用性条件缺少受控机队事实，仍执行 overall 模型并形成初步工程综合候选；只允许
+  列出当前 SourceRef/effectivity 实际要求的缺失事实，保持适用性为条件性 UNKNOWN，并说明需要工程师或后续受控
+  数据确认。不得引入当前文档、dynamic 缺口和 Host missingInputs 中不存在的设备、软件或构型名称。
+- 输出 `engineeringSummary` 必须回答一句话工程结论、为什么重要、来源适用范围与当前机队匹配、实施影响、处置
+  优先级和 1–3 个下一步动作；每个陈述至少引用一个 `currentDocumentSourceRefIds` 内的 SourceRef，并用
+  `SOURCE_FACT` / `CONDITIONAL_INFERENCE` 区分来源事实与条件性推断。状态、版本、模型与计数不是工程结论。
 - 工程师 review 的同 criterion 多次记录由 Host 保留 history，并以最后一条为 effective；Skill 不重写
   ledger 或把 review 自动升级为批准。
 - 只在一个明确 gap 需要外部事实时，选择直接相关且已实现的官方 provider；不固定遍历三家 OEM。

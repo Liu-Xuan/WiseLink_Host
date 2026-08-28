@@ -29,12 +29,14 @@ export function toCurrentFocusCard(
     workItemId: view.id,
     expectedRevision: view.revision,
     workItemTitle: view.title,
-    focusLine: overall ? '候选评估已形成，等待复核' : '正在整理当前事项',
-    currentJudgment: overall?.currentJudgment ?? '暂未形成候选结论',
-    impactSummary: overall
-      ? `依据 ${overall.sourceCount} 项 · ${view.aircraftFamily} 适用性待确认`
-      : '影响范围待评估完成后同步',
-    pendingItems: (overall?.unresolvedQuestions ?? []).map((q) => q.label),
+    focusLine: overall?.conclusion
+      ? '工程摘要已形成，等待处理异常项与最终批准'
+      : '正在整理当前事项',
+    currentJudgment: overall?.conclusion?.text ?? '暂未形成工程摘要',
+    impactSummary: overall?.whyItMatters[0]?.text ?? '影响范围待评估完成后同步',
+    pendingItems:
+      overall?.applicability.requiredFacts.map((statement) => statement.text) ??
+      [],
   };
 }
 
@@ -47,18 +49,24 @@ export function toOverallAssessmentCard(
     workItemId: view.id,
     expectedRevision: view.revision,
     synthesisTitle: `${view.title} · 综合评估意见`,
-    currentJudgment: overall?.currentJudgment ?? '暂未形成候选结论',
+    currentJudgment: overall?.conclusion?.text ?? '暂未形成工程摘要',
     applicabilitySummary:
-      overall?.applicabilitySummary ?? '适用范围待评估完成后同步',
-    keyEvidenceList: (overall?.keyEvidence ?? []).map((e) =>
-      e.documentLabel ? `${e.label}（${e.documentLabel}）` : e.label,
-    ),
-    unresolvedQuestionsList: (overall?.unresolvedQuestions ?? []).map(
-      (q) => q.label,
-    ),
-    reviewRecommendationsList: (overall?.reviewRecommendations ?? []).map(
-      (r) => r.label,
-    ),
+      overall?.applicability.sourceScope?.text ?? '适用范围待评估完成后同步',
+    keyEvidenceList: overall
+      ? [
+          ...overall.whyItMatters,
+          ...overall.implementationImpact,
+          ...overall.dispositionPriority,
+        ].map(
+          (statement) =>
+            `${statement.text}（${statement.sourceRefIds.length} 条原文依据）`,
+        )
+      : [],
+    unresolvedQuestionsList:
+      overall?.applicability.requiredFacts.map((statement) => statement.text) ??
+      [],
+    reviewRecommendationsList:
+      overall?.nextActions.map((statement) => statement.text) ?? [],
   };
 }
 
@@ -71,10 +79,12 @@ export function toWaitingInputCard(
     workItemId: view.id,
     expectedRevision: view.revision,
     workItemTitle: view.title,
-    waitingReason: '缺少以下资料，评估暂时无法继续',
-    missingInputsList: (overall?.missingInputs ?? []).map((m) => m.label),
+    waitingReason: '缺少以下适用性事实，暂不能判定具体飞机',
+    missingInputsList:
+      overall?.applicability.requiredFacts.map((statement) => statement.text) ??
+      [],
     impactHint:
-      (overall?.missingInputs ?? []).length > 0
+      (overall?.applicability.requiredFacts.length ?? 0) > 0
         ? '缺少的资料会影响最终适用性判断'
         : undefined,
   };
@@ -90,12 +100,13 @@ export function toReviewSuggestionCard(
     expectedRevision: view.revision,
     workItemTitle: view.title,
     reviewSummary: overall
-      ? '候选综合意见需要工程师复核后再用于后续工作'
+      ? (overall.conclusion?.text ?? '历史候选需要重新生成工程摘要')
       : '本事项尚未形成候选意见',
-    recommendationList: (overall?.reviewRecommendations ?? []).map(
-      (r) => r.label,
-    ),
-    riskHint: '候选结论当前仅基于受控文件与已记录的评估，未经人工确认',
+    recommendationList:
+      overall?.nextActions.map((statement) => statement.text) ?? [],
+    riskHint:
+      overall?.dispositionPriority[0]?.text ??
+      '候选结论需完成异常项处置与最终工程批准',
   };
 }
 

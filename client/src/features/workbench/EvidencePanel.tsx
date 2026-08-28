@@ -4,6 +4,7 @@ import { FileSearch2, Link2, LocateFixed, PanelTop } from 'lucide-react';
 import type {
   CanonicalDocumentParsingPageResponse,
   CanonicalReaderProjection,
+  CanonicalStructuredContentSourceLocator,
 } from '@shared/api.interface';
 
 import './evidence-panel.css';
@@ -14,6 +15,7 @@ export interface EvidencePanelProps {
   activeSourceRef: string;
   /** 深链中的 unit */
   activeReaderUnit: string;
+  activeStructuredLocator?: CanonicalStructuredContentSourceLocator | null;
   /** 点击证据：跳转到 Reader 定位 */
   onLocate: (unitId: string, sourceRef: string) => void;
   /** 清除定位 */
@@ -29,6 +31,7 @@ export default function EvidencePanel({
   data,
   activeSourceRef,
   activeReaderUnit,
+  activeStructuredLocator = null,
   onLocate,
   onClear,
 }: EvidencePanelProps) {
@@ -64,8 +67,15 @@ export default function EvidencePanel({
         sum + unit.sourceRefIds.length,
       0,
     );
-    return { unitCount: units.length, refCount };
-  }, [units]);
+    return {
+      unitCount:
+        units.length === 0 && activeStructuredLocator !== null
+          ? 1
+          : units.length,
+      refCount:
+        units.length === 0 && activeStructuredLocator !== null ? 1 : refCount,
+    };
+  }, [activeStructuredLocator, units]);
 
   return (
     <div className="wl-evidence-panel">
@@ -88,10 +98,27 @@ export default function EvidencePanel({
       </header>
 
       <div className="wl-evidence-list" ref={listRef}>
-        {units.length === 0 ? (
-          <p className="wl-evidence-empty">
-            当前尚无可定位的原文依据。
-          </p>
+        {units.length === 0 && activeStructuredLocator ? (
+          <article
+            className="wl-evidence-item is-target-unit"
+            data-evidence-ref={activeStructuredLocator.sourceRefId}
+          >
+            <header>
+              <FileSearch2 aria-hidden="true" />
+              <strong>结构化内容来源</strong>
+              <span>
+                {activeStructuredLocator.pageStart === null
+                  ? '原文定位'
+                  : `PDF 第 ${activeStructuredLocator.pageStart} 页`}
+              </span>
+            </header>
+            <p>
+              {activeStructuredLocator.quote ??
+                '当前来源已绑定到受控文件版本。'}
+            </p>
+          </article>
+        ) : units.length === 0 ? (
+          <p className="wl-evidence-empty">当前尚无可定位的原文依据。</p>
         ) : (
           units.map((unit, unitIndex) => {
             const isTargetUnit = unit.unitId === activeReaderUnit;

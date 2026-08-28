@@ -1,6 +1,8 @@
 import type {
   CanonicalDocumentParsingPageResponse,
+  CanonicalEngineeringStatementBasis,
   CanonicalOpenClawOverallProjection,
+  CanonicalSourceBoundEngineeringStatement,
   CanonicalTimelineEvent,
   CanonicalWorkItemProjection,
 } from '@shared/api.interface';
@@ -23,36 +25,10 @@ export type FreshnessState =
   | 'superseded'
   | 'unavailable';
 
-export interface EvidenceSummaryView {
-  id: string;
-  label: string;
-  sourceType:
-    | 'original'
-    | 'controlled_fact'
-    | 'adopted_material'
-    | 'historical';
-  documentLabel?: string;
-  page?: number;
-  /** 仅用于精确定位，不在用户界面显示内部引用值。 */
-  sourceRefId?: string;
-  accessState: 'available' | 'denied' | 'unknown';
-  adopted: boolean;
-}
-
-export interface UnresolvedQuestionView {
-  id: string;
-  label: string;
-  impact?: string;
-}
-
-export interface MissingInputView {
-  label: string;
-  impact?: string;
-}
-
-export interface ReviewRecommendationView {
-  label: string;
-  detail?: string;
+export interface EngineeringStatementView {
+  text: string;
+  basis: CanonicalEngineeringStatementBasis;
+  sourceRefIds: string[];
 }
 
 export interface OverallAssessmentView {
@@ -60,22 +36,23 @@ export interface OverallAssessmentView {
   revision: number;
   /** 生成时间：Host 未提供时为 undefined，UI 显示“时间未返回” */
   generatedAt?: string;
-  /** 当前判断（候选结论人话） */
-  currentJudgment: string;
-  /** 适用范围 */
-  applicabilitySummary: string;
-  /** 关键依据 */
-  keyEvidence: EvidenceSummaryView[];
-  /** 未决问题 */
-  unresolvedQuestions: UnresolvedQuestionView[];
-  /** 风险与影响 */
-  riskAndImpact: string[];
-  /** 复核建议 */
-  reviewRecommendations: ReviewRecommendationView[];
-  /** 待补资料 */
-  missingInputs: MissingInputView[];
-  /** 依据数量 */
+  conclusion: EngineeringStatementView | null;
+  whyItMatters: EngineeringStatementView[];
+  applicability: {
+    sourceScope: EngineeringStatementView | null;
+    fleetMatch: EngineeringStatementView | null;
+    requiredFacts: EngineeringStatementView[];
+  };
+  implementationImpact: EngineeringStatementView[];
+  dispositionPriority: EngineeringStatementView[];
+  nextActions: EngineeringStatementView[];
+  /** 当前结构化工程摘要使用的唯一 SourceRef 数量。 */
   sourceCount: number;
+  staleReason: 'BASE_RULE_RESULT_CHANGED' | 'ENGINEER_REVIEW_CHANGED' | null;
+  technicalDetails: {
+    translationProgress: string | null;
+    evaluationProgress: string;
+  };
 }
 
 export interface WorkItemView {
@@ -123,24 +100,22 @@ function documentLabelOf(workItem: CanonicalWorkItemProjection): {
 } {
   const code = workItem.package?.documentIdentity?.documentCode;
   const title = workItem.package?.title;
+  const businessRevision =
+    workItem.package?.documentIdentity?.businessRevision?.trim();
   return {
     label: code ?? title ?? '未命名工程资料',
-    version:
-      workItem.package?.documentIdentity?.businessRevision ??
-      workItem.source.documentVersionId,
+    version: businessRevision || '版本未标注',
   };
 }
 
-function applicabilityLabel(value: string | null | undefined): string {
-  const labels: Record<string, string> = {
-    APPLICABLE: '适用',
-    APPLICABLE_WITH_GAPS: '有条件适用，仍需补齐信息',
-    NOT_APPLICABLE: '不适用',
-    NEEDS_REVIEW: '适用范围待工程师复核',
-    UNDETERMINED: '适用范围待确认',
+function engineeringStatementView(
+  statement: CanonicalSourceBoundEngineeringStatement,
+): EngineeringStatementView {
+  return {
+    text: statement.text,
+    basis: statement.basis,
+    sourceRefIds: [...statement.sourceRefIds],
   };
-  const normalized = value?.trim() ?? '';
-  return labels[normalized] ?? '适用范围待确认';
 }
 
 function timelineEventLabel(kind: CanonicalTimelineEvent['kind']): string {
@@ -164,43 +139,29 @@ export function toWorkItemView(
 ): WorkItemView {
   const workItem = page.workItem;
   const overall = workItem.integratedAssessment?.overallSynthesis ?? null;
-  const findings = overall?.findings ?? [];
-  const missingInputs = overall?.missingInputs ?? [];
+  const engineeringSummary = overall?.engineeringSummary ?? null;
   const doc = documentLabelOf(workItem);
-
-  const keyEvidence: EvidenceSummaryView[] = findings
-    .slice(0, 5)
-    .map((finding, index) => ({
-      id: `${overall?.sourceResultId ?? 'overall'}-evidence-${index}`,
-      label: finding.finding,
-      sourceType: 'original' as const,
-      documentLabel: doc.label,
-      sourceRefId: finding.sourceRefIds[0],
-      accessState: 'available' as const,
-      adopted: false,
-    }));
-
-  const unresolvedQuestions: UnresolvedQuestionView[] = findings
-    .filter((f) => f.uncertainty?.trim())
-    .map((f, index) => ({
-      id: `unresolved-${index}`,
-      label: f.uncertainty,
-      impact: f.basis,
-    }));
-
-  const reviewRecommendations: ReviewRecommendationView[] = [];
-  if (overall?.engineeringReviewRequired) {
-    reviewRecommendations.push({
-      label: '本综合意见需要工程师复核后再用于后续工作',
-      detail: '候选结论当前仅基于受控文件与已记录的评估，未经人工确认。',
-    });
-  }
-  if (missingInputs.length > 0) {
-    reviewRecommendations.push({
-      label: `优先补充 ${missingInputs.length} 项待补资料`,
-      detail: '缺少的资料会影响最终适用性判断。',
-    });
-  }
+  const statementGroups: EngineeringStatementView[][] = engineeringSummary
+    ? [
+        [engineeringStatementView(engineeringSummary.conclusion)],
+        engineeringSummary.whyItMatters.map(engineeringStatementView),
+        [
+          engineeringStatementView(
+            engineeringSummary.applicability.sourceScope,
+          ),
+          engineeringStatementView(engineeringSummary.applicability.fleetMatch),
+          ...engineeringSummary.applicability.requiredFacts.map(
+            engineeringStatementView,
+          ),
+        ],
+        engineeringSummary.implementationImpact.map(engineeringStatementView),
+        engineeringSummary.dispositionPriority.map(engineeringStatementView),
+        engineeringSummary.nextActions.map(engineeringStatementView),
+      ]
+    : [];
+  const sourceCount = new Set(
+    statementGroups.flat(2).flatMap((statement) => statement.sourceRefIds),
+  ).size;
 
   return {
     id: workItem.workItemId,
@@ -216,22 +177,46 @@ export function toWorkItemView(
       ? {
           revision: overall.revision,
           generatedAt: undefined,
-          currentJudgment:
-            overall.overallCandidate?.trim() ||
-            '综合候选意见尚未返回正文内容；请查看下方关键判断与依据。',
-          applicabilitySummary: applicabilityLabel(overall.applicabilityStatus),
-          keyEvidence,
-          unresolvedQuestions,
-          riskAndImpact: findings
-            .map((f) => f.finding)
-            .filter((text) => /影响|风险|不适|冲突/.test(text))
-            .slice(0, 5),
-          reviewRecommendations,
-          missingInputs: missingInputs.map((label, index) => ({
-            label,
-            impact: index === 0 ? '决定最终适用性判断' : undefined,
-          })),
-          sourceCount: overall.candidateRefCount,
+          conclusion: engineeringSummary
+            ? engineeringStatementView(engineeringSummary.conclusion)
+            : null,
+          whyItMatters:
+            engineeringSummary?.whyItMatters.map(engineeringStatementView) ??
+            [],
+          applicability: {
+            sourceScope: engineeringSummary
+              ? engineeringStatementView(
+                  engineeringSummary.applicability.sourceScope,
+                )
+              : null,
+            fleetMatch: engineeringSummary
+              ? engineeringStatementView(
+                  engineeringSummary.applicability.fleetMatch,
+                )
+              : null,
+            requiredFacts:
+              engineeringSummary?.applicability.requiredFacts.map(
+                engineeringStatementView,
+              ) ?? [],
+          },
+          implementationImpact:
+            engineeringSummary?.implementationImpact.map(
+              engineeringStatementView,
+            ) ?? [],
+          dispositionPriority:
+            engineeringSummary?.dispositionPriority.map(
+              engineeringStatementView,
+            ) ?? [],
+          nextActions:
+            engineeringSummary?.nextActions.map(engineeringStatementView) ?? [],
+          sourceCount,
+          staleReason: overall.staleReason,
+          technicalDetails: {
+            translationProgress: workItem.translation
+              ? `${workItem.translation.translatedUnitCount}/${workItem.translation.sourceUnitCount}`
+              : null,
+            evaluationProgress: `${workItem.integratedAssessment!.baseRules.evaluationItemCount}/${workItem.integratedAssessment!.baseRules.criterionCount}`,
+          },
         }
       : null,
     lastEvents: page.timeline.events

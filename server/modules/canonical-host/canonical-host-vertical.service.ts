@@ -11,7 +11,9 @@ import type {
   CanonicalEntryQueryResponse,
   CanonicalPdfVerticalRunRequest,
   CanonicalPdfVerticalRunResponse,
+  CanonicalStructuredContentPageResponse,
   CanonicalWorkItemProjection,
+  CanonicalPdfPreviewProjection,
   CanonicalReaderProjection,
   UnifiedPackageSourceKind,
   UnifiedPackageReadbackResponse,
@@ -33,6 +35,10 @@ import {
   CANONICAL_WORK_ITEM_REGISTRAR,
 } from './canonical-host.constants';
 import { buildCanonicalPageProjections } from './canonical-host-page-projections';
+import {
+  projectCanonicalBrowserQueryResult,
+  projectCanonicalStructuredContentUnit,
+} from './canonical-structured-content-projection';
 import { CanonicalEntryFacadeService } from './canonical-entry-facade.service';
 import { CanonicalFailureRecordingService } from './canonical-failure-recording.service';
 import {
@@ -50,10 +56,12 @@ import type {
   CanonicalPdfProducerResult,
   CanonicalPermissionSnapshotPort,
   CanonicalStatusInput,
+  CanonicalStructuredContentBrowseInput,
   CanonicalWorkItemRegistrarPort,
 } from './canonical-host.types';
 import type { CanonicalTranslationOwnerObservationPort } from './canonical-translation-owner-observation.port';
 import { parseBilingualTranslationArtifact } from './canonical-host-openclaw-translation.service';
+import { CanonicalPdfPreviewService } from './canonical-pdf-preview.service';
 import {
   CANONICAL_TRANSLATION_RULE_SET_V1_ID,
   CANONICAL_TRANSLATION_RULE_SET_V1_VERSION,
@@ -82,6 +90,8 @@ export class CanonicalHostVerticalService {
     @Optional()
     @Inject(CANONICAL_TRANSLATION_OWNER_OBSERVATION)
     private readonly translationOwnerObservation: CanonicalTranslationOwnerObservationPort | null,
+    @Optional()
+    private readonly pdfPreviews?: CanonicalPdfPreviewService,
   ) {}
 
   async runPdf(
@@ -333,19 +343,40 @@ export class CanonicalHostVerticalService {
       });
     let queryResults: UnifiedPackageReadbackResponse['queryResults'] = [];
     let readerSourceKind: UnifiedPackageSourceKind | null = null;
+    const query: string = optionalReaderQuery(input.query);
     if (
       projection.phase === 'CANDIDATE_READBACK_VERIFIED' &&
       projection.package !== null
     ) {
-      const readback: UnifiedPackageReadbackResponse = await this.readPackage(
-        projection,
-        actionContext.decision.permissionSnapshotVersion,
-        input.query,
-      );
-      queryResults = readback.queryResults;
-      readerSourceKind = readback.package.sourceKind;
+      const inspection = await this.reader.inspectSourcePackage({
+        artifact: projection.package.artifact,
+        packageId: projection.package.packageId,
+      });
+      readerSourceKind = inspection.sourceKind;
+      if (query !== '') {
+        const readback: UnifiedPackageReadbackResponse = await this.readPackage(
+          projection,
+          actionContext.decision.permissionSnapshotVersion,
+          query,
+        );
+        queryResults = readback.queryResults
+          .map((result, index) =>
+            projectCanonicalBrowserQueryResult(result, index + 1),
+          )
+          .filter((result) => result !== null);
+      }
     }
     const translation = await this.readTranslationConsumptionAxes(projection);
+    const pdfPreview: CanonicalPdfPreviewProjection =
+      projection.package !== null &&
+      readerSourceKind !== null &&
+      this.pdfPreviews
+        ? await this.pdfPreviews.issue(projection, actor)
+        : {
+            status: 'UNAVAILABLE',
+            reason: 'PDF_PREVIEW_NOT_CONFIGURED',
+            retryable: false,
+          };
     return {
       schemaVersion: CANONICAL_HOST.documentParsingPageSchemaVersion,
       status: 'FRESH_READ',
@@ -355,9 +386,10 @@ export class CanonicalHostVerticalService {
       readerProjection: buildReaderProjection(
         projection,
         queryResults,
-        input.query,
+        query,
         readerSourceKind,
         translation,
+        pdfPreview,
       ),
       ...buildCanonicalPageProjections({
         workItem: projection,
@@ -370,6 +402,97 @@ export class CanonicalHostVerticalService {
         permissionSnapshotVersion:
           actionContext.decision.permissionSnapshotVersion,
       },
+    };
+  }
+
+  async browseStructuredContent(
+    input: CanonicalStructuredContentBrowseInput,
+    actor: CanonicalHostActor,
+  ): Promise<CanonicalStructuredContentPageResponse> {
+    await this.authorizeAction({
+      actor,
+      action: 'READ_DOCUMENT_PARSING',
+      workItemId: input.workItemId,
+    });
+    const firstRead: CanonicalWorkItemProjection =
+      await this.registrar.getTenantScopedByWorkItemId({
+        workItemId: input.workItemId,
+        tenantId: actor.tenantId,
+      });
+    assertStructuredContentReady(firstRead);
+
+    await this.authorizeAction({
+      actor,
+      action: 'READ_DOCUMENT_PARSING',
+      workItemId: firstRead.workItemId,
+      requestId: firstRead.requestId,
+      documentVersionId: firstRead.source.documentVersionId,
+    });
+    const projection: CanonicalWorkItemProjection =
+      await this.registrar.getTenantScopedByWorkItemId({
+        workItemId: input.workItemId,
+        tenantId: actor.tenantId,
+      });
+    assertStructuredContentReady(projection);
+    if (
+      projection.revision !== firstRead.revision ||
+      projection.source.documentVersionId !== firstRead.source.documentVersionId
+    ) {
+      throw structuredContentConflict('STRUCTURED_CONTENT_REVISION_CHANGED');
+    }
+    if (
+      input.expectedRevision !== undefined &&
+      input.expectedRevision !== projection.revision
+    ) {
+      throw structuredContentConflict('STRUCTURED_CONTENT_REVISION_STALE');
+    }
+    if (input.cursor !== undefined && input.expectedRevision === undefined) {
+      throw structuredContentBadRequest(
+        'STRUCTURED_CONTENT_EXPECTED_REVISION_REQUIRED',
+      );
+    }
+
+    const pkg = projection.package;
+    if (pkg === null) {
+      throw new Error('WORK_ITEM_CORRUPT:PACKAGE_REQUIRED');
+    }
+    const allUnits = await this.reader.readAllSourceUnits({
+      artifact: pkg.artifact,
+      packageId: pkg.packageId,
+    });
+    if (allUnits.length !== pkg.contentUnitCount) {
+      throw new Error('STRUCTURED_CONTENT_COUNT_MISMATCH');
+    }
+    const browserUnits = allUnits
+      .map((unit, index) =>
+        projectCanonicalStructuredContentUnit(unit, index + 1),
+      )
+      .filter((unit) => unit !== null);
+    const offset: number = structuredContentOffset(
+      input.cursor,
+      browserUnits.length,
+    );
+    const limit: number = structuredContentLimit(input.limit);
+    const pageUnits = browserUnits.slice(offset, offset + limit);
+    const nextOffset: number = offset + pageUnits.length;
+    const hasMore: boolean = nextOffset < browserUnits.length;
+
+    return {
+      schemaVersion: 'wiselink.3_1.structured_content_page.v1',
+      status: 'FRESH_READ',
+      mode: 'BROWSE',
+      revision: projection.revision,
+      resultStatus: pkg.resultStatus,
+      qualityStatus: pkg.usagePolicy?.qualityStatus ?? 'PASS',
+      totalSourceUnitCount: allUnits.length,
+      totalDisplayUnitCount: browserUnits.length,
+      omittedUnitCount: allUnits.length - browserUnits.length,
+      sourceRefCount: pkg.sourceRefCount,
+      returnedUnitCount: pageUnits.length,
+      cursor: offset === 0 ? null : String(offset),
+      nextCursor: hasMore ? String(nextOffset) : null,
+      hasMore,
+      units: pageUnits,
     };
   }
 
@@ -895,6 +1018,7 @@ function buildReaderProjection(
   query: string,
   sourceKind: UnifiedPackageSourceKind | null,
   translation: CanonicalReaderProjection['translation'],
+  pdfPreview: CanonicalPdfPreviewProjection,
 ): CanonicalReaderProjection | null {
   if (!workItem.package || sourceKind === null) return null;
   return {
@@ -912,12 +1036,69 @@ function buildReaderProjection(
         bbox: locator.bbox ? [...locator.bbox] : null,
       })),
     })),
-    pdfPreview: {
-      status: 'UNAVAILABLE',
-      reason: 'PDF_PREVIEW_NOT_CONFIGURED',
-    },
+    pdfPreview,
     translation,
   };
+}
+
+function optionalReaderQuery(value: string | undefined): string {
+  if (value === undefined) return '';
+  if (typeof value !== 'string') {
+    throw structuredContentBadRequest('READER_QUERY_INVALID');
+  }
+  const normalized: string = value.trim().normalize('NFC');
+  if (normalized.length > 200) {
+    throw structuredContentBadRequest('READER_QUERY_INVALID');
+  }
+  return normalized;
+}
+
+function assertStructuredContentReady(
+  projection: CanonicalWorkItemProjection,
+): void {
+  if (
+    projection.phase !== 'CANDIDATE_READBACK_VERIFIED' ||
+    projection.package === null
+  ) {
+    throw structuredContentConflict(
+      `STRUCTURED_CONTENT_NOT_READY:${projection.phase}`,
+    );
+  }
+}
+
+function structuredContentOffset(
+  cursor: string | undefined,
+  totalUnitCount: number,
+): number {
+  if (cursor === undefined || cursor === '') return 0;
+  if (!/^(0|[1-9][0-9]*)$/u.test(cursor)) {
+    throw structuredContentBadRequest('STRUCTURED_CONTENT_CURSOR_INVALID');
+  }
+  const offset: number = Number(cursor);
+  if (!Number.isSafeInteger(offset) || offset < 0 || offset >= totalUnitCount) {
+    throw structuredContentBadRequest('STRUCTURED_CONTENT_CURSOR_INVALID');
+  }
+  return offset;
+}
+
+function structuredContentLimit(limit: number | undefined): number {
+  if (limit === undefined) return 24;
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50) {
+    throw structuredContentBadRequest('STRUCTURED_CONTENT_LIMIT_INVALID');
+  }
+  return limit;
+}
+
+function structuredContentBadRequest(
+  code: string,
+): Error & { code: string; statusCode: number } {
+  return Object.assign(new Error(code), { code, statusCode: 400 });
+}
+
+function structuredContentConflict(
+  code: string,
+): Error & { code: string; statusCode: number } {
+  return Object.assign(new Error(code), { code, statusCode: 409 });
 }
 
 function requiredOpenApiText(

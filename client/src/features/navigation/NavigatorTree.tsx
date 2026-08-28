@@ -222,9 +222,7 @@ export default function NavigatorTree({
     if (nextIndex >= 0 && nextIndex < flatVisible.length) {
       // 键盘导航越过已渲染窗口时，同步扩容渐进渲染（§10.3）
       if (nextIndex >= renderLimit - 1) {
-        setRenderLimit((limit) =>
-          Math.max(limit, nextIndex + RENDER_BATCH),
-        );
+        setRenderLimit((limit) => Math.max(limit, nextIndex + RENDER_BATCH));
       }
       const next = flatVisible[nextIndex];
       setFocusId(next.node.id);
@@ -240,9 +238,7 @@ export default function NavigatorTree({
     }
     event.preventDefault();
     const nextMode: NavigatorMode =
-      event.key === 'ArrowLeft' || event.key === 'Home'
-        ? 'document'
-        : 'matter';
+      event.key === 'ArrowLeft' || event.key === 'Home' ? 'document' : 'matter';
     if (nextMode !== currentMode) onModeChange(nextMode);
     window.requestAnimationFrame(() => {
       document.getElementById(`${idPrefix}-${nextMode}-mode`)?.focus();
@@ -251,6 +247,16 @@ export default function NavigatorTree({
 
   return (
     <div className="wl-navigator">
+      <div className="wl-navigator-heading">
+        <div>
+          <strong>资料目录</strong>
+          <small>按层级浏览当前受控内容</small>
+        </div>
+        <span aria-label={`当前显示 ${flatVisible.length} 个目录节点`}>
+          {flatVisible.length} 项
+        </span>
+      </div>
+
       <div
         className="wl-navigator-mode"
         role="tablist"
@@ -342,47 +348,60 @@ export default function NavigatorTree({
                 ]
                   .filter(Boolean)
                   .join(' ')}
-                style={{ '--node-depth': depth } as React.CSSProperties}
+                style={
+                  {
+                    '--node-depth': depth,
+                    '--node-depth-capped': Math.min(depth, 4),
+                  } as React.CSSProperties
+                }
+                title={node.label}
                 onClick={() => {
                   setFocusId(node.id);
                   if (node.selectable) onSelect(node);
                   else if (hasChildren) toggleCollapse(node.id);
                 }}
               >
-                {hasChildren ? (
-                  <span
-                    className="wl-navigator-caret"
-                    aria-hidden="true"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleCollapse(node.id);
-                    }}
-                  >
-                    <ChevronRight
-                      style={{
-                        transform: isCollapsed ? undefined : 'rotate(90deg)',
+                {depth > 0 ? (
+                  <span className="wl-navigator-guide" aria-hidden="true" />
+                ) : null}
+                <span className="wl-navigator-leading" aria-hidden="true">
+                  {hasChildren ? (
+                    <span
+                      className="wl-navigator-caret"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        toggleCollapse(node.id);
                       }}
-                    />
-                  </span>
-                ) : (
-                  <span
-                    className="wl-navigator-caret-spacer"
-                    aria-hidden="true"
-                  />
-                )}
-                <Icon aria-hidden="true" />
+                    >
+                      <ChevronRight
+                        style={{
+                          transform: isCollapsed ? undefined : 'rotate(90deg)',
+                        }}
+                      />
+                    </span>
+                  ) : (
+                    <span className="wl-navigator-caret-spacer" />
+                  )}
+                  <Icon />
+                </span>
                 <span className="wl-navigator-copy">
                   <strong>{node.label}</strong>
                   {node.subtitle ? <small>{node.subtitle}</small> : null}
                 </span>
-                {typeof node.count === 'number' ? (
-                  <span className="wl-navigator-count">{node.count}</span>
-                ) : null}
-                {node.badge ? (
-                  <span
-                    className={`wl-navigator-badge is-${node.badgeTone ?? 'muted'}`}
-                  >
-                    {node.badge}
+                {typeof node.count === 'number' || node.badge ? (
+                  <span className="wl-navigator-meta">
+                    {typeof node.count === 'number' ? (
+                      <span className="wl-navigator-count">
+                        {node.count} 项
+                      </span>
+                    ) : null}
+                    {node.badge ? (
+                      <span
+                        className={`wl-navigator-badge is-${node.badgeTone ?? 'muted'}`}
+                      >
+                        {node.badge}
+                      </span>
+                    ) : null}
                   </span>
                 ) : null}
               </button>
