@@ -52,6 +52,12 @@ jest.mock(
 
 import type { UnifiedPackageArtifactDescriptor } from '@shared/api.interface';
 
+import {
+  TRANSLATION_RULE_PACK_SCHEMA_VERSION,
+  validateTranslationCandidate,
+  type TranslationRulePack,
+  type TranslationSourceUnit,
+} from '../../../server/modules/canonical-host/canonical-translation-rule-contract';
 import { ExactFtdFrozen2PdfProducerAdapter } from '../../../server/modules/canonical-host/exact-ftd-frozen2-pdf-producer.adapter';
 import { scopedProfessionalArtifactRef } from '../../../server/modules/canonical-host/scoped-professional-artifact-correlation.port';
 import { Frozen2CandidateReaderService } from '../../../server/modules/unified-reader/frozen2-candidate-reader.service';
@@ -70,6 +76,19 @@ const EXPECTED_SOURCE_SHA256 =
 const EXPECTED_SOURCE_BYTE_LENGTH = 1_060_204;
 const U0_CONTRACT_COMMIT = 'fa69ada08265934951df53c7a61a3ccdb8cb2900' as const;
 const describeRealSb = FIXTURE_PATH ? describe : describe.skip;
+const TRANSLATION_UNIT_KINDS = new Set<TranslationSourceUnit['kind']>([
+  'paragraph',
+  'heading',
+  'text_block',
+  'table',
+  'preserved_source',
+  'step',
+  'list_item',
+  'warning',
+  'caution',
+  'note',
+  'figure',
+]);
 
 class InMemoryArtifactStore implements UnifiedArtifactStorePort {
   private readonly values = new Map<string, Uint8Array>();
@@ -348,8 +367,9 @@ describeRealSb(
       expect(pkg.sourceRefs.length).toBeGreaterThan(0);
       expect(pkg.contentUnits.length).toBeGreaterThan(0);
 
+      const artifactStore = new InMemoryArtifactStore();
       const reader = new UnifiedReaderService(
-        new InMemoryArtifactStore(),
+        artifactStore,
         new Frozen2CandidateReaderService(),
         fullValidator,
         {
@@ -395,6 +415,81 @@ describeRealSb(
       expect(
         readback.queryResults.every((result) => result.sourceRefIds.length > 0),
       ).toBe(true);
+
+      const actualSourceUnits = await reader.readAllSourceUnits({
+        artifact: readback.artifact,
+        packageId: readback.package.packageId,
+      });
+      expect(actualSourceUnits.length).toBe(pkg.contentUnits.length);
+      const connectorUnit = actualSourceUnits.find(
+        (unit) =>
+          TRANSLATION_UNIT_KINDS.has(
+            unit.kind as TranslationSourceUnit['kind'],
+          ) && /[\p{L}\p{N}_]-\d/u.test(unit.text),
+      );
+      expect(connectorUnit).toBeDefined();
+      if (!connectorUnit) throw new Error('CONNECTOR_UNIT_NOT_FOUND');
+
+      const boundaryChangedText = connectorUnit.text.replace(
+        /(?<=[\p{L}\p{N}_])-(?=\d)/gu,
+        '、',
+      );
+      expect(boundaryChangedText).not.toBe(connectorUnit.text);
+      const numericOnlyRulePack: TranslationRulePack = {
+        meta: {
+          schemaVersion: TRANSLATION_RULE_PACK_SCHEMA_VERSION,
+          rulePackId: 'test.numeric-fidelity-only',
+          rulePackVersion: 'test-only',
+          label: 'Numeric fidelity only',
+          targetLocale: 'zh-CN',
+          sourceLocales: ['en-US'],
+        },
+        terms: [],
+        noTranslate: [],
+        deterministic: {
+          preservedIdentifierPatterns: [],
+          numericFidelity: true,
+          preservedUnits: [],
+          preserveAtaChapterNumbers: false,
+          preservePartNumbers: false,
+          segmentAlignment: true,
+          tableAlignment: false,
+          preserveCitations: false,
+        },
+      };
+      const sourceBinding = {
+        documentId,
+        revisionId: readback.package.contentHash,
+        sbdPackageId: readback.package.packageId,
+        sbdContentHash: readback.package.contentHash,
+        tcpPackageId: null,
+        tcpContentHash: null,
+      };
+      const resultGate = validateTranslationCandidate({
+        rulePack: numericOnlyRulePack,
+        rulePackId: numericOnlyRulePack.meta.rulePackId,
+        rulePackVersion: numericOnlyRulePack.meta.rulePackVersion,
+        sourceUnits: [
+          {
+            unitKey: connectorUnit.unitId,
+            kind: connectorUnit.kind as TranslationSourceUnit['kind'],
+            text: connectorUnit.text,
+            sourceRefIds: connectorUnit.sourceRefIds,
+          },
+        ],
+        candidateUnits: [
+          {
+            unitKey: connectorUnit.unitId,
+            text: boundaryChangedText,
+            sourceRefIds: connectorUnit.sourceRefIds,
+            engineerRevision: null,
+          },
+        ],
+        taskStartBinding: sourceBinding,
+        validationTimeBinding: sourceBinding,
+      });
+      expect(resultGate.verdict).toBe('ACCEPTED');
+      expect(resultGate.findings).toEqual([]);
     });
   },
 );

@@ -561,7 +561,13 @@ const PART_NUMBER_PATTERN =
 const CITATION_PATTERN = /\b\d{3}-FTD-\d{2,3}-\d{3,6}\b/;
 
 function sourceNumbers(text: string): string[] {
-  return text.match(/[+-]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?/g) ?? [];
+  // A sign is semantic only at a token boundary. In A-12 or 2026-08-28 the
+  // hyphen is an identifier/date connector, so the following number is unsigned.
+  return (
+    text.match(
+      /(?<![\p{L}\p{N}_])[+-]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?/gu,
+    ) ?? []
+  );
 }
 
 /** Numeric token multiset: token -> occurrence count. */
