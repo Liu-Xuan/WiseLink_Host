@@ -107,8 +107,9 @@ describe('canonical Host production client boundary', () => {
     expect(reader).toContain('result.sourceLocators');
     expect(reader).toContain('locator.pageStart');
     expect(reader).not.toContain('data.queryResults');
-    expect(workbench).toContain('overallCandidate.overallCandidate');
-    expect(workbench).toContain('overallCandidate.findings');
+    expect(workbench).toContain('overallCandidate?.engineeringSummary');
+    expect(workbench).toContain('overallEngineeringSummary?.conclusion.text');
+    expect(workbench).not.toContain('overallCandidate.overallCandidate');
     expect(workbench).toContain('selectedReviewItem.factsConsidered');
     expect(workbench).toContain('selectedReviewItem.ruleApplication');
     expect(workbench).toContain('selectedReviewItem.analysisSummary');

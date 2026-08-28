@@ -49,8 +49,9 @@ describe('WlCardPreview renderer smoke', () => {
     const html = renderToString(createElement(WlCardPreview, { card }));
     expect(html).toContain('wl-preview-columns');
     expect(html).toContain('wl-preview-note');
-    expect(html).toContain('主要依据');
-    expect(html).toContain('未解决问题');
-    expect(html).toContain('建议复核动作');
+    expect(html).toContain('工程结论');
+    expect(html).toContain('为什么重要与实施影响');
+    expect(html).toContain('待确认的适用性事实');
+    expect(html).toContain('下一步动作');
   });
 });
