@@ -124,8 +124,10 @@ prepareCommit 前明确失败。
 - `candidateUnits[]` 与 source units 数量、顺序、unitKey、SourceRef 集精确一致；
 - translated text 和可空 engineerRevision metadata。
 
-Skill 做结构和绑定预检；Host 继续拥有术语、编号、数值、单位、ATA/件号、表格/警示层级和 currentness 的
-确定性 ResultGate、actual-byte persist/readback 与 CAS。
+Skill 做结构和绑定预检，并在封印/分块提交前依据同一 Host-frozen rulePack 镜像数字 token occurrence
+multiset 与 ATA token 逐字保真检查，失败诊断包含 `unitKey`；它不自动改写候选。Host 继续拥有术语、编号、
+数值、单位、ATA/件号、表格/警示层级和 currentness 的最终确定性 ResultGate、actual-byte persist/readback
+与 CAS。
 
 ## Dynamic N/N
 

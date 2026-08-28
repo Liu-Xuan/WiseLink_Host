@@ -619,6 +619,106 @@ test('seals actual model provenance without binding the Skill to one model versi
   }
 });
 
+test('rejects Host-incompatible numeric tokenization with unit diagnostics', () => {
+  const cases = [
+    {
+      label: 'letter-glued digits split into an extra standalone token',
+      unitKey: 'SYNTH-GLUED-DIGITS',
+      sourceText: 'Retain OCRX123.',
+      translatedText: '保留 OCRX 123。',
+    },
+    {
+      label: 'leading-zero token split',
+      unitKey: 'SYNTH-LEADING-ZERO',
+      sourceText: 'Retain 007.',
+      translatedText: '保留 00 7。',
+    },
+    {
+      label: 'concatenated decimal table string reordered',
+      unitKey: 'SYNTH-DECIMAL-TABLE',
+      sourceText: 'Retain 40.512.7.',
+      translatedText: '保留 40.5 12.7。',
+    },
+  ];
+  for (const { label, unitKey, sourceText, translatedText } of cases) {
+    const input = translationInput();
+    const output = translationOutput();
+    input.sourceUnits[0].unitKey = unitKey;
+    output.candidateUnits[0].unitKey = unitKey;
+    input.sourceUnits[0].text = sourceText;
+    output.candidateUnits[0].text = translatedText;
+    assert.throws(
+      () => validatePayload('translation-pair', { input, output }),
+      (error) => {
+        assert.match(error.message, /TRANSLATION_RULE_PREFLIGHT_REJECTED/u);
+        assert.match(error.message, /NUMBER_NOT_PRESERVED/u);
+        assert.match(error.message, new RegExp(unitKey, 'u'));
+        return true;
+      },
+      label,
+    );
+  }
+});
+
+test('rejects a missing ATA token after the numeric multiset still matches', () => {
+  const input = translationInput();
+  const output = translationOutput();
+  input.sourceUnits[0].unitKey = 'SYNTH-ATA';
+  output.candidateUnits[0].unitKey = 'SYNTH-ATA';
+  input.sourceUnits[0].text = 'Retain ATA 31-21 with marker 8.';
+  output.candidateUnits[0].text = '保留 ATA 31 和 21，并保留标记 8。';
+  assert.throws(
+    () => validatePayload('translation-pair', { input, output }),
+    (error) => {
+      assert.match(error.message, /TRANSLATION_RULE_PREFLIGHT_REJECTED/u);
+      assert.match(error.message, /ATA_CHAPTER_NOT_PRESERVED/u);
+      assert.match(error.message, /SYNTH-ATA/u);
+      return true;
+    },
+  );
+});
+
+test('accepts a normal Chinese translation with Host tokens preserved', () => {
+  const input = translationInput();
+  const output = translationOutput();
+  input.sourceUnits[0].text = 'Retain OCRX123, 007, 40.512.7, and ATA 31-21.';
+  output.candidateUnits[0].text = '保留 OCRX123、007、40.512.7 和 ATA 31-21。';
+  validatePayload('translation-pair', { input, output });
+});
+
+test('stops invalid translation before seal, post-model heartbeat, or upload', async () => {
+  const input = translationInput();
+  input.sourceUnits[0].unitKey = 'SYNTH-PRECOMMIT';
+  input.sourceUnits[0].text = 'Retain OCRX123.';
+  const output = translationOutput();
+  output.candidateUnits[0].unitKey = 'SYNTH-PRECOMMIT';
+  output.candidateUnits[0].text = '保留 OCRX 123。';
+  const task = makeTask('OPENCLAW_TRANSLATE', input);
+  const [begin] = translationDeliveryParts(task, input);
+  const calls = [];
+  await assert.rejects(
+    runTranslation({
+      workItemId: WORK_ITEM_ID,
+      callTool: async (name, args) => {
+        calls.push(name);
+        if (name === 'get_parse_status') return status(WORK_ITEM_ID);
+        if (name === 'begin_translation') return begin;
+        if (name === 'heartbeat_action_attempt') {
+          return heartbeatResult(task, args);
+        }
+        throw new Error(`UNEXPECTED_TOOL:${name}`);
+      },
+      translate: async () => ({ output, provenance: provenance() }),
+    }),
+    /NUMBER_NOT_PRESERVED.*SYNTH-PRECOMMIT|SYNTH-PRECOMMIT.*NUMBER_NOT_PRESERVED/u,
+  );
+  assert.deepEqual(calls, [
+    'get_parse_status',
+    'begin_translation',
+    'heartbeat_action_attempt',
+  ]);
+});
+
 test('runs translation with fresh status and full fenced ResultEnvelope', async () => {
   const input = translationInput();
   input.sourceUnits.push({
@@ -1610,7 +1710,10 @@ function translationInput() {
       },
       terms: [],
       noTranslate: [],
-      deterministic: {},
+      deterministic: {
+        numericFidelity: true,
+        preserveAtaChapterNumbers: true,
+      },
     },
     taskStartBinding: {
       documentId: 'DOC-fixture',

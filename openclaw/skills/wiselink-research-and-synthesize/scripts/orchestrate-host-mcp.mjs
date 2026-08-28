@@ -119,11 +119,11 @@ export async function runTranslation({ workItemId, callTool, translate }) {
   const execution = normalizeExecution(
     await translate(structuredClone(begin.modelInput)),
   );
-  await heartbeatAttempt(begin, callTool);
-  validatePayload('translation-pair', {
+  validateTranslationBeforeCommit({
     input: begin.modelInput,
     output: execution.output,
   });
+  await heartbeatAttempt(begin, callTool);
   const result = sealTranslationDeliveryResultEnvelope({
     taskBinding: begin.taskBinding,
     modelOutput: execution.output,
@@ -160,6 +160,12 @@ export async function runTranslation({ workItemId, callTool, translate }) {
     deepLink,
     result,
   });
+}
+
+function validateTranslationBeforeCommit({ input, output }) {
+  // Fail with unit diagnostics before sealing or the first UPLOAD_PART. Host
+  // remains the final authority and repeats these deterministic checks.
+  validatePayload('translation-pair', { input, output });
 }
 
 /**

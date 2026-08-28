@@ -99,8 +99,14 @@ CAS；Skill 不声称这些步骤由模型完成。8. commit 响应未知时只�
   `wiselink.3_1.translation_task.v0.candidate` 与
   `wiselink.3_1.translation_result.v0.candidate`。
 - `rulePackId + rulePackVersion`、taskStartBinding、unit 数量/顺序、unitKey 与 SourceRef 集必须逐项一致。
-- 编号、数值、单位、ATA/件号、表格和警示层级的最终确定性校验由 Host TranslationRuleSet ResultGate
-  执行；Skill 不绕过或复制成第二规则真源。
+- Host TranslationRuleSet ResultGate 仍是编号、数值、单位、ATA/件号、表格和警示层级的最终权威。模型
+  生成后、封印或上传前，Skill validator 读取同一 Host-frozen rulePack：`numericFidelity` 使用与 Host 相同的
+  数字 token occurrence multiset，`preserveAtaChapterNumbers` 使用与 Host 相同的 ATA 逐字规则。失败时返回
+  包含 `unitKey` 和具体 finding 的本地诊断并停止，不等待 Host 拒绝后再修；该预检不取代 Host ResultGate。
+- 翻译必须原样保留 Host 识别的数字 token 及出现次数，并逐字保留匹配的 ATA token。不得把字母或 OCR
+  连写中的数字拆成新的独立数字（如把 `OCRX123` 改为 `OCRX 123`），不得拆分 leading-zero token（如
+  `007`），也不得“修复”、分隔或重排会改变 Host tokenization 的 OCR 连写 decimal/table 字符串（如
+  `40.512.7`）。不自动改写模型译文；预检失败后按 `unitKey` 重新生成候选。
 - 校验与封印成功后，将 ResultEnvelope（或旧 fenced wrapper）写入本轮本地 `commit-payload.json`，调用
   `commitTranslationPayloadFile({begin,payloadPath,callTool})`。helper 使用 canonical UTF-8 bytes，每 6144 bytes
   一个 part；Base64 后每次 MCP arguments 明显小于 12,000 bytes，最大 64 parts。
