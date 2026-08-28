@@ -19,10 +19,7 @@ import type {
 } from '@shared/api.interface';
 
 import { OrdinaryWorkItemService } from '../work-item/ordinary-work-item.service';
-import {
-  miaodaHostedFinalUserActor,
-  ProductionMiaodaBrowserObjectIngressGuard,
-} from '../work-item/production-miaoda-browser-ingress';
+import { ProductionMiaodaBrowserObjectIngressGuard } from '../work-item/production-miaoda-browser-ingress';
 import { CANONICAL_DEVELOPMENT_ROLE_ID } from './canonical-host.constants';
 import { CanonicalHostAeoService } from './canonical-host-aeo.service';
 import { CanonicalHostEngineerReviewService } from './canonical-host-engineer-review.service';
@@ -31,6 +28,7 @@ import { buildCanonicalPageProjections } from './canonical-host-page-projections
 import { CanonicalHostVerticalService } from './canonical-host-vertical.service';
 import { CanonicalHostLibraryIndexService } from './canonical-host-library-index.service';
 import type { CanonicalHostActor } from './canonical-host.types';
+import { hostActor } from './canonical-host-request-actor';
 
 const ENGINEER_DECISIONS = new Set<CanonicalEngineerReviewDecision>([
   'confirmed_pass',
@@ -212,18 +210,6 @@ export class CanonicalHostController {
       }),
     };
   }
-}
-
-function hostActor(request: Request): CanonicalHostActor {
-  const identity = miaodaHostedFinalUserActor(request.userContext);
-  return {
-    userId: identity.canonicalSubject.id,
-    tenantId: identity.tenantId,
-    appId: identity.applicationScopeId,
-    roles: [...identity.platformRoles],
-    env: identity.env,
-    objectAccessActor: identity,
-  };
 }
 
 function integratedAssessmentActionBody(body: unknown): void {

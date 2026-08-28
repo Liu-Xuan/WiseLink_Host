@@ -13,6 +13,8 @@ import { ActionAttemptModule } from '../action-attempt/action-attempt.module';
 import { CanonicalEntryFacadeService } from './canonical-entry-facade.service';
 import { CanonicalHostVerticalService } from './canonical-host-vertical.service';
 import { CanonicalHostController } from './canonical-host.controller';
+import { CanonicalPdfPreviewController } from './canonical-pdf-preview.controller';
+import { CanonicalPdfPreviewService } from './canonical-pdf-preview.service';
 import { CanonicalHostOpenApiController } from './canonical-host.openapi.controller';
 import { CanonicalHostMcpOpenApiController } from './canonical-host-mcp.openapi.controller';
 import { CanonicalHostMcpService } from './canonical-host-mcp.service';
@@ -117,6 +119,7 @@ export interface CanonicalHostModuleOptions {
   ],
   controllers: [
     CanonicalHostController,
+    CanonicalPdfPreviewController,
     CanonicalHostOpenApiController,
     CanonicalHostMcpOpenApiController,
     CanonicalHostOpenClawMcpOpenApiController,
@@ -128,6 +131,7 @@ export interface CanonicalHostModuleOptions {
     CanonicalEntryFacadeService,
     CanonicalFailureRecordingService,
     CanonicalHostVerticalService,
+    CanonicalPdfPreviewService,
     CanonicalHostMcpService,
     CanonicalHostOpenClawMcpService,
     CanonicalHostOpenClawDynamicEvaluationService,
@@ -276,6 +280,7 @@ export class CanonicalHostModule {
       ],
       controllers: [
         CanonicalHostController,
+        CanonicalPdfPreviewController,
         CanonicalHostOpenApiController,
         CanonicalHostMcpOpenApiController,
         CanonicalHostOpenClawMcpOpenApiController,
@@ -303,6 +308,7 @@ export class CanonicalHostModule {
         CanonicalEntryFacadeService,
         CanonicalFailureRecordingService,
         CanonicalHostVerticalService,
+        CanonicalPdfPreviewService,
         CanonicalHostMcpService,
         CanonicalHostOpenClawMcpService,
         CanonicalHostOpenClawDynamicEvaluationService,

@@ -174,9 +174,12 @@ function buildReaderCapabilities(
       mode: 'source',
       label: 'PDF 原文',
       status: projection ? projection.pdfPreview.status : 'UNAVAILABLE',
-      note: projection
-        ? '当前受控读取链尚未提供 PDF 页面画布，可继续使用结构化原文与页码定位。'
-        : '当前事项尚无可用的 PDF 页面预览。',
+      note:
+        projection?.pdfPreview.status === 'AVAILABLE'
+          ? projection.pdfPreview.supportsRange
+            ? '受控 PDF 原文可用，支持按页加载、缩放与来源定位。'
+            : '受控 PDF 原文可用；当前文件将完整读取后在本页按页显示。'
+          : '当前 PDF 页面预览尚不可用，可继续使用结构化原文与页码定位。',
     },
     {
       mode: 'structured',

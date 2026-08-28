@@ -250,6 +250,27 @@ export interface CanonicalReaderBilingualUnit {
   engineerRevisionId: string | null;
 }
 
+export type CanonicalPdfPreviewProjection =
+  | {
+      status: 'AVAILABLE';
+      opaqueLocator: string;
+      expiresAt: string;
+      mediaType: 'application/pdf';
+      byteLength: number;
+      supportsRange: boolean;
+      navigation: 'PAGE_START';
+    }
+  | {
+      status: 'UNAVAILABLE';
+      reason:
+        | 'PDF_PREVIEW_NOT_CONFIGURED'
+        | 'PDF_PREVIEW_SOURCE_NOT_PDF'
+        | 'PDF_PREVIEW_SOURCE_IDENTITY_INVALID'
+        | 'PDF_PREVIEW_SOURCE_TOO_LARGE'
+        | 'PDF_PREVIEW_SERVICE_UNAVAILABLE';
+      retryable: boolean;
+    };
+
 export interface CanonicalReaderProjection {
   sourceKind: UnifiedPackageSourceKind;
   structuredUnitCount: number;
@@ -262,10 +283,7 @@ export interface CanonicalReaderProjection {
     sourceRefIds: string[];
     sourceLocators: UnifiedReaderSourceLocator[];
   }>;
-  pdfPreview: {
-    status: 'UNAVAILABLE';
-    reason: 'PDF_PREVIEW_NOT_CONFIGURED';
-  };
+  pdfPreview: CanonicalPdfPreviewProjection;
   translation: CanonicalReaderTranslationProjection;
 }
 

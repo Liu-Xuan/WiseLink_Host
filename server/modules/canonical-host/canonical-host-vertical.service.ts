@@ -13,6 +13,7 @@ import type {
   CanonicalPdfVerticalRunResponse,
   CanonicalStructuredContentPageResponse,
   CanonicalWorkItemProjection,
+  CanonicalPdfPreviewProjection,
   CanonicalReaderProjection,
   UnifiedPackageSourceKind,
   UnifiedPackageReadbackResponse,
@@ -60,6 +61,7 @@ import type {
 } from './canonical-host.types';
 import type { CanonicalTranslationOwnerObservationPort } from './canonical-translation-owner-observation.port';
 import { parseBilingualTranslationArtifact } from './canonical-host-openclaw-translation.service';
+import { CanonicalPdfPreviewService } from './canonical-pdf-preview.service';
 import {
   CANONICAL_TRANSLATION_RULE_SET_V1_ID,
   CANONICAL_TRANSLATION_RULE_SET_V1_VERSION,
@@ -88,6 +90,8 @@ export class CanonicalHostVerticalService {
     @Optional()
     @Inject(CANONICAL_TRANSLATION_OWNER_OBSERVATION)
     private readonly translationOwnerObservation: CanonicalTranslationOwnerObservationPort | null,
+    @Optional()
+    private readonly pdfPreviews?: CanonicalPdfPreviewService,
   ) {}
 
   async runPdf(
@@ -363,6 +367,16 @@ export class CanonicalHostVerticalService {
       }
     }
     const translation = await this.readTranslationConsumptionAxes(projection);
+    const pdfPreview: CanonicalPdfPreviewProjection =
+      projection.package !== null &&
+      readerSourceKind !== null &&
+      this.pdfPreviews
+        ? await this.pdfPreviews.issue(projection, actor)
+        : {
+            status: 'UNAVAILABLE',
+            reason: 'PDF_PREVIEW_NOT_CONFIGURED',
+            retryable: false,
+          };
     return {
       schemaVersion: CANONICAL_HOST.documentParsingPageSchemaVersion,
       status: 'FRESH_READ',
@@ -375,6 +389,7 @@ export class CanonicalHostVerticalService {
         query,
         readerSourceKind,
         translation,
+        pdfPreview,
       ),
       ...buildCanonicalPageProjections({
         workItem: projection,
@@ -1003,6 +1018,7 @@ function buildReaderProjection(
   query: string,
   sourceKind: UnifiedPackageSourceKind | null,
   translation: CanonicalReaderProjection['translation'],
+  pdfPreview: CanonicalPdfPreviewProjection,
 ): CanonicalReaderProjection | null {
   if (!workItem.package || sourceKind === null) return null;
   return {
@@ -1020,10 +1036,7 @@ function buildReaderProjection(
         bbox: locator.bbox ? [...locator.bbox] : null,
       })),
     })),
-    pdfPreview: {
-      status: 'UNAVAILABLE',
-      reason: 'PDF_PREVIEW_NOT_CONFIGURED',
-    },
+    pdfPreview,
     translation,
   };
 }

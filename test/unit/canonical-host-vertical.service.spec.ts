@@ -1056,6 +1056,17 @@ describe('CanonicalHostVerticalService', () => {
     const store = new InMemoryArtifactStore();
     const authorize = authorization();
     const authorizeSpy = jest.spyOn(authorize, 'authorize');
+    const pdfPreviews = {
+      issue: jest.fn().mockResolvedValue({
+        status: 'AVAILABLE',
+        opaqueLocator: 'opaque-test-locator',
+        expiresAt: '2026-08-28T18:00:00.000Z',
+        mediaType: 'application/pdf',
+        byteLength: request.source.sourceByteLength,
+        supportsRange: false,
+        navigation: 'PAGE_START',
+      }),
+    };
     const service = new CanonicalHostVerticalService(
       registrar,
       {
@@ -1087,6 +1098,8 @@ describe('CanonicalHostVerticalService', () => {
       ),
       entryFacade(),
       failureReports(store, fullValidator()),
+      null,
+      pdfPreviews as never,
     );
     await service.runPdf(request, TEST_ACTOR);
 
@@ -1129,8 +1142,9 @@ describe('CanonicalHostVerticalService', () => {
       structuredUnitCount: 311,
       sourceRefCount: 239,
       pdfPreview: {
-        status: 'UNAVAILABLE',
-        reason: 'PDF_PREVIEW_NOT_CONFIGURED',
+        status: 'AVAILABLE',
+        opaqueLocator: 'opaque-test-locator',
+        supportsRange: false,
       },
       translation: {
         status: 'UNAVAILABLE',
@@ -1140,7 +1154,6 @@ describe('CanonicalHostVerticalService', () => {
     expect(authorizeSpy).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'READ_DOCUMENT_PARSING' }),
     );
-
     const browseOnly = await service.page(
       { workItemId: request.workItemId },
       TEST_ACTOR,
@@ -1215,6 +1228,10 @@ describe('CanonicalHostVerticalService', () => {
       code: 'STRUCTURED_CONTENT_EXPECTED_REVISION_REQUIRED',
       statusCode: 400,
     });
+    expect(pdfPreviews.issue).toHaveBeenCalledWith(
+      expect.objectContaining({ workItemId: request.workItemId }),
+      TEST_ACTOR,
+    );
   });
 
   it('derives two-axis translation projection from a configured owner observation', async () => {

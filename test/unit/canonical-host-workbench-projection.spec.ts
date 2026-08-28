@@ -73,6 +73,29 @@ describe('canonical Host workbench projection', () => {
     expect(capabilities[1].note).toContain('2 个可定位到原文页码');
   });
 
+  it('reports a full-download PDF capability without claiming Range', () => {
+    const projection = readerProjection();
+    projection.pdfPreview = {
+      status: 'AVAILABLE',
+      opaqueLocator: 'opaque-test-locator',
+      expiresAt: '2026-08-28T18:00:00.000Z',
+      mediaType: 'application/pdf',
+      byteLength: 1_060_204,
+      supportsRange: false,
+      navigation: 'PAGE_START',
+    };
+
+    const capabilities = buildReaderCapabilities({
+      readerProjection: projection,
+    });
+
+    expect(capabilities[0]).toEqual(
+      expect.objectContaining({ mode: 'source', status: 'AVAILABLE' }),
+    );
+    expect(capabilities[0].note).toContain('完整读取');
+    expect(capabilities[0].note).not.toContain('按页加载');
+  });
+
   it('uses Host Reader locators and business assessment content without a second source', () => {
     const projection = readerProjection();
     expect(projection.units[0].sourceLocators[0]).toMatchObject({
@@ -279,6 +302,7 @@ function readerProjection(): CanonicalReaderProjection {
     pdfPreview: {
       status: 'UNAVAILABLE',
       reason: 'PDF_PREVIEW_NOT_CONFIGURED',
+      retryable: false,
     },
     translation: {
       status: 'UNAVAILABLE',

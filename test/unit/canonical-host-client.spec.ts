@@ -10,6 +10,7 @@ jest.mock('@lark-apaas/client-toolkit/logger', () => ({
 
 import {
   appendReviewTextTurn,
+  canonicalPdfPreviewUrl,
   closeReviewConversation,
   configureApplicabilitySelection,
   confirmReviewActionDraft,
@@ -114,6 +115,15 @@ describe('canonical host assessment client', () => {
       method: 'GET',
       params: { query: 'sourceRef APP-001' },
     });
+  });
+
+  it('builds only the same-origin Host URL from the opaque locator', () => {
+    expect(canonicalPdfPreviewUrl('WI-SB/1001', 'opaque/+locator')).toBe(
+      '/api/canonical-host/work-items/WI-SB%2F1001/pdf-preview/opaque%2F%2Blocator',
+    );
+    expect(() => canonicalPdfPreviewUrl('WI-SB-1001', '  ')).toThrow(
+      'CANONICAL_PDF_PREVIEW_LOCATOR_INVALID',
+    );
   });
 
   it('fresh-reads the authenticated Host applicability selection', async () => {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { FileSearch, LocateFixed } from 'lucide-react';
 
 import type {
@@ -6,6 +6,7 @@ import type {
   CanonicalStructuredContentSourceLocator,
 } from '@shared/api.interface';
 
+import PdfDocumentViewer from './PdfDocumentViewer';
 import './pdf-source-pane.css';
 
 export interface PdfSourcePaneProps {
@@ -17,8 +18,12 @@ export interface PdfSourcePaneProps {
   requestedSourceRef: string;
   /** Sanitized locator supplied by full-content browsing when no query is active. */
   structuredLocator?: CanonicalStructuredContentSourceLocator | null;
+  /** 同一 SourceRef 再次被定位时也触发一次页码高亮 */
+  locateSignal: number;
   /** 点击页码定位：跳回 Reader 结构化视图 */
   onLocate: (unitId: string, sourceRef: string) => void;
+  /** 390px 单面板下返回结构化原文 */
+  onReturnStructured: () => void;
 }
 
 function fileSizeLabel(bytes: number): string {
@@ -36,7 +41,9 @@ export default function PdfSourcePane({
   data,
   requestedSourceRef,
   structuredLocator = null,
+  locateSignal,
   onLocate,
+  onReturnStructured,
 }: PdfSourcePaneProps) {
   const pdfPreview = data.readerProjection?.pdfPreview ?? null;
   const translation = data.readerProjection?.translation ?? null;
@@ -72,11 +79,10 @@ export default function PdfSourcePane({
         : [];
 
   /* §06 原文定位：SourceRef 点击后 PDF 区域一次性淡入高亮 900ms。
-   * 定位目标变化时重新触发一次动画（remove → reflow → add）。 */
+   * 定位信号变化时重新触发一次动画（remove → reflow → add）。 */
   const locateCardRef = useRef<HTMLDivElement | null>(null);
-  const prevSourceRefRef = useRef<string>('');
   useEffect(() => {
-    if (requestedSourceRef && requestedSourceRef !== prevSourceRefRef.current) {
+    if (requestedSourceRef) {
       const card = locateCardRef.current;
       if (card) {
         card.classList.remove('wl-source-flash');
@@ -85,8 +91,7 @@ export default function PdfSourcePane({
         card.classList.add('wl-source-flash');
       }
     }
-    prevSourceRefRef.current = requestedSourceRef;
-  }, [requestedSourceRef]);
+  }, [locateSignal, requestedSourceRef]);
 
   // §10.2 屏幕阅读器播报：已定位到第 N 页 + 引文
   const locateAnnouncement =
@@ -109,6 +114,13 @@ export default function PdfSourcePane({
     <article className="parse-panel parse-pdf-pane" aria-label="PDF 原文与定位">
       <div className="parse-panel-label">
         <FileSearch aria-hidden="true" /> PDF 原文
+        <button
+          type="button"
+          className="parse-pdf-mobile-return"
+          onClick={onReturnStructured}
+        >
+          返回结构化原文
+        </button>
       </div>
 
       <div className="parse-pdf-binding">
@@ -148,20 +160,28 @@ export default function PdfSourcePane({
         </p>
       ) : null}
 
-      <div className="parse-pdf-canvas" role="note">
-        <FileSearch aria-hidden="true" />
-        <div>
-          <strong>
-            {pdfPreview?.status === 'UNAVAILABLE'
-              ? '暂不能预览 PDF 页面'
-              : 'PDF 页面预览尚未提供'}
-          </strong>
-          <p>
-            当前受控读取链尚未提供可连续滚动与缩放的 PDF 页面画布。
-            可先使用左侧结构化原文和页码定位。
-          </p>
+      {pdfPreview?.status === 'AVAILABLE' ? (
+        <PdfDocumentViewer
+          workItemId={data.workItem.workItemId}
+          preview={pdfPreview}
+          targetPage={locatedPages[0]?.pageStart ?? null}
+          targetSignal={
+            requestedSourceRef ? `${requestedSourceRef}:${locateSignal}` : ''
+          }
+        />
+      ) : (
+        <div className="parse-pdf-canvas" role="note">
+          <FileSearch aria-hidden="true" />
+          <div>
+            <strong>暂不能预览 PDF 页面</strong>
+            <p>
+              {pdfPreview?.reason === 'PDF_PREVIEW_SOURCE_TOO_LARGE'
+                ? '当前受控文件超过在线预览上限，可继续使用结构化原文和页码定位。'
+                : '当前受控读取链暂未提供 PDF 页面画布，可继续使用结构化原文和页码定位。'}
+            </p>
+          </div>
         </div>
-      </div>
+      )}
 
       {translation ? (
         <small className="parse-pdf-translation">

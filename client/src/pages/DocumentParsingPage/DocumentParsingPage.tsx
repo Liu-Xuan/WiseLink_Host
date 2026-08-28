@@ -475,6 +475,18 @@ export default function DocumentParsingPage() {
     });
   }
 
+  function locatePdfQuerySourceRef(unitId: string, sourceRef: string): void {
+    locateSourceRef(unitId, sourceRef, 'structured');
+  }
+
+  function returnToStructuredReader(): void {
+    updateDeepLink({
+      node: 'reader',
+      tab: 'reader',
+      readerMode: 'structured',
+    });
+  }
+
   function locateStructuredSourceRef(
     sourceRef: string,
     locator: CanonicalStructuredContentSourceLocator | undefined,
@@ -740,7 +752,11 @@ export default function DocumentParsingPage() {
                   data={data}
                   requestedSourceRef={requestedSourceRef}
                   structuredLocator={structuredSourceLocator}
-                  onLocate={locateSourceRef}
+                  locateSignal={evidenceSignal}
+                  onLocate={locatePdfQuerySourceRef}
+                  onReturnStructured={() =>
+                    updateDeepLink({ node: 'package', tab: 'package' })
+                  }
                 />
               </div>
             </div>
@@ -763,7 +779,11 @@ export default function DocumentParsingPage() {
         ) : null}
 
         {activeNode === 'reader' ? (
-          <div className="parse-reader-split">
+          <div
+            className={`parse-reader-split${
+              readerMode === 'source' ? ' is-pdf-active' : ''
+            }`}
+          >
             <DocumentReaderWorkspace
               data={data}
               query={query}
@@ -787,7 +807,10 @@ export default function DocumentParsingPage() {
             <PdfSourcePane
               data={data}
               requestedSourceRef={requestedSourceRef}
-              onLocate={locateSourceRef}
+              structuredLocator={structuredSourceLocator}
+              locateSignal={evidenceSignal}
+              onLocate={locatePdfQuerySourceRef}
+              onReturnStructured={returnToStructuredReader}
             />
           </div>
         ) : null}

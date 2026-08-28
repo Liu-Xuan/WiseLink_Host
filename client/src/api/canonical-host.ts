@@ -216,6 +216,20 @@ export async function getStructuredContentPage(
   }
 }
 
+export function canonicalPdfPreviewUrl(
+  workItemId: string,
+  opaqueLocator: string,
+): string {
+  const normalizedWorkItemId: string = workItemId.trim();
+  const normalizedLocator: string = opaqueLocator.trim();
+  if (!normalizedWorkItemId || !normalizedLocator) {
+    throw new Error('CANONICAL_PDF_PREVIEW_LOCATOR_INVALID');
+  }
+  return `/api/canonical-host/work-items/${encodeURIComponent(
+    normalizedWorkItemId,
+  )}/pdf-preview/${encodeURIComponent(normalizedLocator)}`;
+}
+
 export async function getApplicabilitySelection(
   workItemId: string,
 ): Promise<CanonicalApplicabilitySelectionReadModel> {
