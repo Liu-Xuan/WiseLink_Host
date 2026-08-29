@@ -67,6 +67,7 @@ import {
   toWorkItemView,
 } from '@client/src/services/viewModelMappers';
 import EvidencePanel from '@client/src/features/workbench/EvidencePanel';
+import { summarizeWorkbenchEvidence } from '@client/src/features/workbench/evidence-summary';
 import NavigatorTree from '@client/src/features/navigation/NavigatorTree';
 import {
   buildDocumentTree,
@@ -350,6 +351,10 @@ export default function DocumentParsingPage() {
   const requestedReaderUnit: string = searchParams.get('unit')?.trim() ?? '';
   const requestedSourceRef: string =
     searchParams.get('sourceRef')?.trim() ?? '';
+  const evidenceSummary = summarizeWorkbenchEvidence(
+    results,
+    structuredSourceLocator,
+  );
   const requestedPdfTargetPage: number | null = parsePdfTargetPage(
     searchParams.get('page'),
   );
@@ -577,6 +582,8 @@ export default function DocumentParsingPage() {
             }}
           />
         }
+        evidenceContentCount={evidenceSummary.contentCount}
+        evidenceActive={requestedSourceRef !== ''}
         evidenceSignal={evidenceSignal}
         quickOpenItems={quickOpenItems}
         tabs={WORKBENCH_TABS}

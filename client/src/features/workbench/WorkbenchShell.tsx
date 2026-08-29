@@ -36,7 +36,10 @@ import {
 import QuickOpen, {
   type QuickOpenItem,
 } from '@client/src/features/workbench/QuickOpen';
-import { resolveWorkbenchAdaptiveLayout } from '@client/src/features/workbench/workbench-layout';
+import {
+  resolveWorkbenchAdaptiveLayout,
+  resolveWorkbenchEvidenceVisibility,
+} from '@client/src/features/workbench/workbench-layout';
 
 import './workbench-shell.css';
 
@@ -57,6 +60,10 @@ export interface WorkbenchShellProps {
   contextLabel?: string;
   /** 右侧证据面板 */
   evidencePanel?: ReactNode;
+  /** 当前证据面板实际可呈现的内容单元与来源引用总数。 */
+  evidenceContentCount?: number;
+  /** 当前深链是否带有 active SourceRef。 */
+  evidenceActive?: boolean;
   /** 主内容中点击证据引用时递增；面板自动展开（§4.2 折叠策略） */
   evidenceSignal?: number;
   tabs: WorkbenchTab[];
@@ -153,6 +160,8 @@ export default function WorkbenchShell({
   navigator,
   contextLabel = '当前工程资料',
   evidencePanel,
+  evidenceContentCount = 0,
+  evidenceActive = false,
   evidenceSignal = 0,
   tabs,
   activeTab,
@@ -172,6 +181,7 @@ export default function WorkbenchShell({
   const [evidenceOpen, setEvidenceOpen] = useState(
     initialPrefs.evidenceOpen ?? defaultEvidenceOpen(),
   );
+  const [evidenceRequested, setEvidenceRequested] = useState(false);
   const [evidenceWidth, setEvidenceWidth] = useState(
     initialPrefs.evidenceWidth ?? EVIDENCE_DEFAULT,
   );
@@ -281,6 +291,7 @@ export default function WorkbenchShell({
   /* ── 点证据自动展开（§4.2）：主内容中点击来源引用时展开证据栏 ── */
   useEffect(() => {
     if (evidenceSignal <= 0) return;
+    setEvidenceRequested(true);
     if (isCompact) {
       setMobileNavOpen(false);
       setMobileEvidenceOpen(true);
@@ -297,6 +308,7 @@ export default function WorkbenchShell({
       if (!media.matches) {
         setMobileNavOpen(false);
         setMobileEvidenceOpen(false);
+        setEvidenceRequested(false);
       }
     };
     sync();
@@ -362,6 +374,9 @@ export default function WorkbenchShell({
     isCompact,
     navigatorAvailable: Boolean(navigator),
     evidenceAvailable: Boolean(evidencePanel),
+    evidenceContentCount,
+    evidenceActive,
+    evidenceRequested,
   });
 
   /* 沉浸模式只隐藏应用外壳，不隐藏工作台的资料目录与证据栏。 */
@@ -371,8 +386,13 @@ export default function WorkbenchShell({
     : Boolean(navigator) &&
       !navCollapsed &&
       !adaptiveLayout.autoCollapseNavigator;
-  const evidenceVisible =
-    Boolean(evidencePanel) && (isCompact ? mobileEvidenceOpen : evidenceOpen);
+  const evidenceVisible = resolveWorkbenchEvidenceVisibility({
+    evidenceAvailable: Boolean(evidencePanel),
+    isCompact,
+    desktopOpen: evidenceOpen,
+    mobileOpen: mobileEvidenceOpen,
+    suppressEmptyEvidence: adaptiveLayout.suppressEmptyEvidence,
+  });
   const navToggleLabel = navVisible
     ? '收起资料目录'
     : adaptiveLayout.autoCollapseNavigator
@@ -386,12 +406,27 @@ export default function WorkbenchShell({
       return;
     }
     if (adaptiveLayout.autoCollapseNavigator && evidenceOpen) {
+      setEvidenceRequested(false);
       setEvidenceOpen(false);
       setNavCollapsed(false);
       return;
     }
     setNavCollapsed((collapsed) => !collapsed);
   }, [adaptiveLayout.autoCollapseNavigator, evidenceOpen, isCompact]);
+
+  const toggleEvidence = useCallback((): void => {
+    if (isCompact) {
+      const nextOpen: boolean = !mobileEvidenceOpen;
+      setMobileNavOpen(false);
+      setMobileEvidenceOpen(nextOpen);
+      setEvidenceRequested(nextOpen);
+      return;
+    }
+
+    const nextOpen: boolean = !evidenceVisible;
+    setEvidenceOpen(nextOpen);
+    setEvidenceRequested(nextOpen);
+  }, [evidenceVisible, isCompact, mobileEvidenceOpen]);
 
   const mobileTabs = tabs
     .filter((tab) => tab.mobileLabel)
@@ -447,13 +482,14 @@ export default function WorkbenchShell({
       const trigger = mobileNavOpen
         ? navTriggerRef.current
         : evidenceTriggerRef.current;
+      if (mobileEvidenceOpen) setEvidenceRequested(false);
       setMobileNavOpen(false);
       setMobileEvidenceOpen(false);
       if (restoreFocus) {
         window.requestAnimationFrame(() => trigger?.focus());
       }
     },
-    [mobileNavOpen],
+    [mobileEvidenceOpen, mobileNavOpen],
   );
 
   const trapDrawerFocus = (event: ReactKeyboardEvent<HTMLElement>): void => {
@@ -503,6 +539,7 @@ export default function WorkbenchShell({
     return () => document.removeEventListener('keydown', handleEscape);
   }, [closeMobileDrawers, mobileEvidenceOpen, mobileNavOpen]);
   const activateTab = (key: string) => {
+    if (mobileEvidenceOpen) setEvidenceRequested(false);
     setMobileNavOpen(false);
     setMobileEvidenceOpen(false);
     onTabChange(key);
@@ -547,14 +584,7 @@ export default function WorkbenchShell({
             ) : (
               <PanelRightOpen aria-hidden="true" />
             ),
-            onSelect: () => {
-              if (isCompact) {
-                setMobileNavOpen(false);
-                setMobileEvidenceOpen((open) => !open);
-              } else {
-                setEvidenceOpen((open) => !open);
-              }
-            },
+            onSelect: toggleEvidence,
           } satisfies QuickOpenItem,
         ]
       : []),
@@ -644,14 +674,7 @@ export default function WorkbenchShell({
             ref={evidenceTriggerRef}
             type="button"
             className="wl-workbench-tool-btn"
-            onClick={() => {
-              if (isCompact) {
-                setMobileNavOpen(false);
-                setMobileEvidenceOpen((open) => !open);
-              } else {
-                setEvidenceOpen((open) => !open);
-              }
-            }}
+            onClick={toggleEvidence}
             title={evidenceVisible ? '收起原文依据' : '展开原文依据'}
             aria-label={evidenceVisible ? '收起原文依据' : '展开原文依据'}
             aria-pressed={evidenceVisible}

@@ -3,9 +3,10 @@ import { FileSearch2, Link2, LocateFixed, PanelTop } from 'lucide-react';
 
 import type {
   CanonicalDocumentParsingPageResponse,
-  CanonicalReaderProjection,
   CanonicalStructuredContentSourceLocator,
 } from '@shared/api.interface';
+
+import { summarizeWorkbenchEvidence } from './evidence-summary';
 
 import './evidence-panel.css';
 
@@ -61,21 +62,10 @@ export default function EvidencePanel({
     }
   }, [activeSourceRef, activeReaderUnit, units.length]);
 
-  const stats = useMemo(() => {
-    const refCount = units.reduce(
-      (sum: number, unit: CanonicalReaderProjection['units'][number]) =>
-        sum + unit.sourceRefIds.length,
-      0,
-    );
-    return {
-      unitCount:
-        units.length === 0 && activeStructuredLocator !== null
-          ? 1
-          : units.length,
-      refCount:
-        units.length === 0 && activeStructuredLocator !== null ? 1 : refCount,
-    };
-  }, [activeStructuredLocator, units]);
+  const stats = useMemo(
+    () => summarizeWorkbenchEvidence(units, activeStructuredLocator),
+    [activeStructuredLocator, units],
+  );
 
   return (
     <div className="wl-evidence-panel">
@@ -84,7 +74,7 @@ export default function EvidencePanel({
           <PanelTop aria-hidden="true" />
           <strong>原文依据</strong>
           <span>
-            {stats.unitCount} 个内容单元 · {stats.refCount} 条来源引用
+            {stats.unitCount} 个内容单元 · {stats.referenceCount} 条来源引用
           </span>
         </div>
         {activeSourceRef ? (
