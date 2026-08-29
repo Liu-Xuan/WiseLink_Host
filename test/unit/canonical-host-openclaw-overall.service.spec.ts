@@ -122,6 +122,7 @@ describe('CanonicalHostOpenClawOverallService', () => {
     expect(reservation).toMatchObject({
       baseRevision: 5,
       allowedConnectors: [],
+      allowExpiredUnclaimedDeadlineRefresh: true,
       idempotencyKey:
         `openclaw-v1:overall:${WORK_ITEM_ID}:5:` +
         'USER_REQUESTED_REGENERATION:REQ-USER-REGEN',

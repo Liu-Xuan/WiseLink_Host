@@ -21,9 +21,9 @@
 
 .wl-dock-item {
   display: grid;
-  width: 44px;
-  height: 44px;
-  flex: 0 0 44px;
+  width: var(--wl-touch-target);
+  height: var(--wl-touch-target);
+  flex: 0 0 var(--wl-touch-target);
   place-items: center;
   border: 1px solid transparent;
   border-radius: var(--wl-radius-md);
@@ -58,12 +58,11 @@
 
 .wl-dock-item.is-active {
   color: var(--wl-accent);
-  background:
-    linear-gradient(
-      145deg,
-      color-mix(in srgb, var(--wl-g1-highlight) 42%, transparent),
-      var(--wl-accent-soft)
-    );
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--wl-g1-highlight) 42%, transparent),
+    var(--wl-accent-soft)
+  );
   border-color: color-mix(in srgb, var(--wl-accent) 24%, transparent);
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, var(--wl-g1-highlight) 52%, transparent),
@@ -112,7 +111,7 @@
     overflow: visible;
     clip-path: none;
     color: currentColor;
-    font-size: 9px;
+    font-size: var(--wl-text-caption);
     font-weight: 650;
   }
 }

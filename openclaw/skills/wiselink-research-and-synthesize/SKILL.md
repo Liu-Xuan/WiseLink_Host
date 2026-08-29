@@ -1,6 +1,6 @@
 ---
 name: wiselink-research-and-synthesize
-description: Orchestrate the single official hosted WiseLink engineering profile through the canonical Host MCP for INITIAL_ANALYSIS and INTERACTIVE_REVIEW. Preserve applicability AST extraction, dynamic N/N tri-state semantics, SourceRef/currentness bindings, candidate-only authority, fenced ResultEnvelope commits including bounded Translation parts, and exact hosted provenance. Fail closed for missing attachment, search, compare, reevaluation, or resynthesis tools.
+description: Orchestrate the single official hosted WiseLink engineering profile through the canonical Host MCP for INITIAL_ANALYSIS and INTERACTIVE_REVIEW. Preserve applicability AST extraction, dynamic N/N tri-state semantics, SourceRef/currentness bindings, candidate-only authority, fenced ResultEnvelope commits including bounded Translation parts, and exact hosted provenance. Read Host-authorized parsed attachments only through the C2 SourceRef path, and fail closed for unavailable search, compare, reevaluation, or resynthesis tools.
 ---
 
 # WiseLink R09 工程分析与交互复核
@@ -219,12 +219,16 @@ begin_review_turn({reviewConversationRef, requestId})
   `READ_SOURCE_REFS`、`DRAFT_REVIEW_ACTION`、`PREVIEW_AFFECTED_ITEMS`、`GET_OPERATION_STATUS`。
 - candidate 使用的每个 SourceRef 必须属于 Task allowlist，并在本轮实际通过 `read_source_refs` 读取；外层
   ResultEnvelope 绑定其 actual resource artifact ref/SHA。
+- `attachmentRefs` 可以非空，但每项必须是非空唯一字符串且属于同一 Task `resourceRefs`。附件正文只能按
+  `read_source_refs` 读取 Host 已解析、已脱敏的 value；不得读取或推导 raw FileService locator/bytes，也不得把
+  Task 中的 resource artifact ref/SHA 送给模型。
 - 只允许 answer、clarifying question、source link、candidate evidence、ReviewActionDraft candidate、
   affected-items preview 与 task status。所有输出仍为候选。
 - Host commit 只追加 assistant candidate、candidateEvidence 和 ReviewActionDraft；不执行 ReviewAction，
   不改 revision/current/STALE。
-- attachment、knowledge search、revision compare、affected reevaluation 和 overall resynthesis 当前没有
-  C2 工具授权；请求这些能力必须 fail closed，不虚构调用或结果。
+- 独立 `ANALYZE_ATTACHMENT` operation/tool、附件上传、knowledge search、revision compare、affected
+  reevaluation 和 overall resynthesis 当前没有 C2 工具授权；请求这些扩展能力必须 fail closed，不虚构调用或
+  结果。Host 已在当前 ReviewTurn 授权并解析的附件仍可按上一条 SourceRef 路径读取和形成候选分析。
 - begin/status 为 `COMMITTING` 时只调用 `get_action_attempt_status` 读取 recovery ResultEnvelope；不调用模型、
   不重放 commit。commit 响应未知时也只读 status 一次，不因 status=SUCCEEDED 就猜测 exact candidate 已落账。
 
@@ -270,6 +274,7 @@ node scripts/validate-payload.mjs applicability-ast-candidate tests/fixtures/app
 node scripts/validate-payload.mjs discovery-output references/discovery-access-denied.example.json
 node scripts/validate-payload.mjs synthesis-output references/synthesis-output.example.json
 node scripts/validate-payload.mjs review-task tests/fixtures/review-turn-task.c2.json
+node scripts/validate-payload.mjs review-task tests/fixtures/review-turn-task-attachment.c2.json
 node --test tests/validation.test.mjs
 ```
 

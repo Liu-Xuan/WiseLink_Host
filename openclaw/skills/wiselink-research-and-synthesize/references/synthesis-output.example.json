@@ -72,7 +72,7 @@
     },
     "implementationImpact": [
       {
-        "text": "实施影响只能在确认适用飞机和当前构型后进一步计划。",
+        "text": "实施影响只能在取得飞机适用性和当前构型的受控结论后进一步计划。",
         "basis": "CONDITIONAL_INFERENCE",
         "sourceRefIds": [
           "urn:techpub:source-ref:v1:sha256:d110e9fafc621a7d6c2cabdda16ede232fcd70a8707d56ecd6f09b75288c7d8a"

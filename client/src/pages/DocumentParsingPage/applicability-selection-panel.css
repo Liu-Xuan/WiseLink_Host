@@ -62,7 +62,7 @@
 .applicability-selection-heading span:not(.applicability-selection-icon),
 .applicability-selection-readback-title span {
   color: var(--wl-accent);
-  font-size: 10px;
+  font-size: var(--wl-text-caption);
   font-weight: 750;
   letter-spacing: 0.06em;
 }
@@ -140,7 +140,7 @@
 
 .applicability-selection-controls small {
   color: var(--wl-faint);
-  font-size: 10px;
+  font-size: var(--wl-text-caption);
   line-height: 1.45;
 }
 
@@ -185,7 +185,7 @@
 
 .applicability-selection-notice code {
   margin-left: 5px;
-  font-size: 10px;
+  font-size: var(--wl-text-caption);
 }
 
 .applicability-selection-notice.is-warning {
@@ -253,7 +253,7 @@
 
 .applicability-selection-readback dt {
   color: var(--wl-faint);
-  font-size: 9px;
+  font-size: var(--wl-text-caption);
   font-weight: 700;
   letter-spacing: 0.04em;
 }
@@ -262,14 +262,14 @@
   margin: 0;
   overflow-wrap: anywhere;
   color: var(--wl-ink);
-  font-size: 10.5px;
+  font-size: var(--wl-text-meta);
   line-height: 1.5;
 }
 
 .applicability-selection-readback > p {
   margin: 0;
   color: var(--wl-muted);
-  font-size: 10.5px;
+  font-size: var(--wl-text-meta);
   line-height: 1.55;
 }
 

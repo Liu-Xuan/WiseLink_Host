@@ -49,6 +49,113 @@ describe('ActionAttemptLifecycleService', () => {
     expect(builds).toBe(1);
   });
 
+  it('atomically refreshes and claims the same expired unstarted user-regeneration attempt', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-29T10:00:00.000Z'));
+    try {
+      const repository = new MemoryActionAttemptRepository();
+      const service = new ActionAttemptLifecycleService(repository as never);
+      const input: ReserveAndClaimInput = {
+        ...reservationInput(async () => ({ controlled: true })),
+        taskType: 'OPENCLAW_OVERALL_SYNTHESIS',
+        idempotencyKey:
+          'openclaw-v1:overall:WI-test:7:USER_REQUESTED_REGENERATION:REQ-1',
+        allowExpiredUnclaimedDeadlineRefresh: true,
+      };
+      const liveRepository = new MemoryActionAttemptRepository();
+      const liveService = new ActionAttemptLifecycleService(
+        liveRepository as never,
+      );
+      const liveReservation = await liveService.reserve(input);
+      const liveClaim = await liveService.reserveAndClaim(input);
+      expect(liveClaim.task.inputHash).toBe(liveReservation.task.inputHash);
+      expect(liveClaim.task.deadline).toBe(liveReservation.task.deadline);
+
+      const reserved = await service.reserve(input);
+      const originalAttemptId = reserved.row.attemptId;
+      const originalInputHash = reserved.task.inputHash;
+
+      jest.setSystemTime(new Date('2026-08-29T11:00:01.000Z'));
+      const claimed = await service.reserveAndClaim(input);
+
+      expect(claimed).toMatchObject({
+        created: false,
+        attemptRef: reserved.task.operationRef,
+        triggerRequestId: reserved.row.triggerRequestId,
+        status: 'RUNNING',
+        leaseGeneration: 1,
+      });
+      expect(repository.row).toMatchObject({
+        attemptId: originalAttemptId,
+        attemptNo: 1,
+        status: 'RUNNING',
+        claimCount: 1,
+        retryCount: 0,
+      });
+      expect(claimed.task.inputHash).not.toBe(originalInputHash);
+      expect(claimed.task.inputHash).toBe(repository.row?.taskInputHash);
+      expect(claimed.task.deadline).toBe('2026-08-29T12:00:01.000Z');
+      expect(claimed.task).toMatchObject({
+        actionAttemptId: reserved.task.actionAttemptId,
+        operationRef: reserved.task.operationRef,
+        taskType: reserved.task.taskType,
+        tenantId: reserved.task.tenantId,
+        workItemId: reserved.task.workItemId,
+        inputRevision: reserved.task.inputRevision,
+        baseRevision: reserved.task.baseRevision,
+        documentVersionId: reserved.task.documentVersionId,
+        idempotencyKey: reserved.task.idempotencyKey,
+        modelInput: reserved.task.modelInput,
+      });
+      expect(repository.row?.deadlineAt.toISOString()).toBe(
+        claimed.task.deadline,
+      );
+      expect(repository.transitions).toEqual(['QUEUED', 'RUNNING']);
+
+      const driftRepository = new MemoryActionAttemptRepository();
+      const driftService = new ActionAttemptLifecycleService(
+        driftRepository as never,
+      );
+      jest.setSystemTime(new Date('2026-08-29T12:30:00.000Z'));
+      const driftReservation = await driftService.reserve(input);
+      const driftInputHash = driftReservation.task.inputHash;
+      jest.setSystemTime(new Date('2026-08-29T13:30:01.000Z'));
+      driftRepository.beforeExpiredUnstartedClaim = () => {
+        driftRepository.binding.revision += 1;
+      };
+      await expect(driftService.reserveAndClaim(input)).rejects.toMatchObject({
+        code: 'ACTION_ATTEMPT_CONCURRENCY_SLOTS_EXHAUSTED',
+      });
+      expect(driftRepository.row).toMatchObject({
+        attemptId: driftReservation.row.attemptId,
+        status: 'QUEUED',
+        claimCount: 0,
+        leaseGeneration: 0,
+        taskInputHash: driftInputHash,
+      });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('keeps the default fail-closed timeout for expired queues without an explicit refresh grant', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-29T10:00:00.000Z'));
+    try {
+      const repository = new MemoryActionAttemptRepository();
+      const service = new ActionAttemptLifecycleService(repository as never);
+      const input = reservationInput(async () => ({ controlled: true }));
+      await service.reserve(input);
+
+      jest.setSystemTime(new Date('2026-08-29T11:00:01.000Z'));
+      await expect(service.reserveAndClaim(input)).rejects.toMatchObject({
+        code: 'ACTION_ATTEMPT_TIMED_OUT',
+      });
+      expect(repository.row?.status).toBe('TIMED_OUT');
+      expect(repository.transitions).toEqual(['QUEUED', 'TIMED_OUT']);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('persists QUEUED before claim and replays the same live fence', async () => {
     const repository = new MemoryActionAttemptRepository();
     const service = new ActionAttemptLifecycleService(repository as never);
@@ -493,6 +600,7 @@ class MemoryActionAttemptRepository {
   };
   row: ActionAttemptRow | null = null;
   transitions: string[] = [];
+  beforeExpiredUnstartedClaim: (() => void) | null = null;
 
   async readWorkItemBinding() {
     return structuredClone(this.binding);
@@ -558,6 +666,95 @@ class MemoryActionAttemptRepository {
       lastHeartbeatAt: input.now,
       nextAttemptAt: null,
       startedAt: row.startedAt ?? input.now,
+      updatedAt: input.now,
+    };
+    this.transitions.push('RUNNING');
+    return this.row;
+  }
+
+  async claimExpiredUnstartedExact(input: {
+    attemptId: string;
+    attemptNo: number;
+    triggerRequestId: string;
+    tenantId: string;
+    baseRevision: number;
+    documentVersionId: string;
+    idempotencyKey: string;
+    expectedTaskInputHash: string;
+    expectedClaimCount: number;
+    expectedRetryCount: number;
+    expectedLeaseGeneration: number;
+    operationRef: string;
+    leaseOwner: string;
+    leaseSlot: number;
+    now: Date;
+    leaseMs: number;
+    refreshedDeadlineAt: Date;
+    taskEnvelopeJson: string;
+    taskInputHash: string;
+  }) {
+    this.beforeExpiredUnstartedClaim?.();
+    this.beforeExpiredUnstartedClaim = null;
+    const row = this.requiredRow();
+    if (
+      row.attemptId !== input.attemptId ||
+      row.attemptNo !== input.attemptNo ||
+      row.triggerRequestId !== input.triggerRequestId ||
+      row.status !== 'QUEUED' ||
+      row.actionType !== 'OPENCLAW_OVERALL_SYNTHESIS' ||
+      row.tenantId !== input.tenantId ||
+      row.baseRevision !== input.baseRevision ||
+      row.inputRevision !== input.baseRevision ||
+      row.documentVersionId !== input.documentVersionId ||
+      row.idempotencyKey !== input.idempotencyKey ||
+      row.taskInputHash !== input.expectedTaskInputHash ||
+      this.binding.tenantId !== input.tenantId ||
+      this.binding.revision !== input.baseRevision ||
+      this.binding.documentVersionId !== input.documentVersionId ||
+      row.claimCount !== input.expectedClaimCount ||
+      row.retryCount !== input.expectedRetryCount ||
+      row.leaseGeneration !== input.expectedLeaseGeneration ||
+      row.operationRef !== input.operationRef ||
+      row.startedAt !== null ||
+      row.leaseOwner !== null ||
+      row.leaseToken !== null ||
+      row.leaseExpiresAt !== null ||
+      row.lastHeartbeatAt !== null ||
+      row.leaseSlot !== null ||
+      row.executorSessionKey !== null ||
+      row.commitStartedAt !== null ||
+      row.resultEnvelopeJson !== null ||
+      row.resultContentHash !== null ||
+      row.completedAt !== null ||
+      row.terminalReason !== null ||
+      (row.errorCode ?? null) !== null ||
+      (row.errorMessage ?? null) !== null ||
+      row.projectionApplied ||
+      row.cancelRequestedAt !== null ||
+      row.cancelReason !== null ||
+      !row.deadlineAt ||
+      row.deadlineAt > input.now
+    ) {
+      return null;
+    }
+    this.row = {
+      ...row,
+      status: 'RUNNING',
+      claimCount: row.claimCount + 1,
+      leaseOwner: input.leaseOwner,
+      leaseToken: `00000000-0000-4000-8000-${String(row.leaseGeneration + 1).padStart(12, '0')}`,
+      leaseGeneration: row.leaseGeneration + 1,
+      leaseSlot: input.leaseSlot,
+      executorSessionKey: `g2-action-attempt:${row.operationRef}`,
+      leaseExpiresAt: new Date(input.now.getTime() + input.leaseMs),
+      lastHeartbeatAt: input.now,
+      nextAttemptAt: null,
+      startedAt: input.now,
+      deadlineAt: input.refreshedDeadlineAt,
+      taskEnvelopeJson: input.taskEnvelopeJson,
+      taskInputHash: input.taskInputHash,
+      errorCode: null,
+      errorMessage: null,
       updatedAt: input.now,
     };
     this.transitions.push('RUNNING');

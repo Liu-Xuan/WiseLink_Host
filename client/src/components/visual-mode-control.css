@@ -100,7 +100,7 @@
 .wl-visual-mode-hint {
   margin: -2px 8px 7px;
   color: var(--wl-muted);
-  font-size: 10px;
+  font-size: var(--wl-text-caption);
   line-height: 1.5;
 }
 
@@ -123,7 +123,7 @@
 
 .wl-visual-mode-option small {
   color: var(--wl-muted);
-  font-size: 10px;
+  font-size: var(--wl-text-caption);
   font-weight: 500;
   line-height: 1.35;
 }
@@ -145,8 +145,9 @@ html[data-wl-visual-mode='ultra']:not([data-wl-transparency='reduced'])
 
 @media (max-width: 680px) {
   .wiselink-app-header .wl-visual-mode-trigger {
-    min-width: 34px;
-    width: 34px;
+    min-width: var(--wl-touch-target);
+    width: var(--wl-touch-target);
+    min-height: var(--wl-touch-target);
     padding: 3px;
   }
 

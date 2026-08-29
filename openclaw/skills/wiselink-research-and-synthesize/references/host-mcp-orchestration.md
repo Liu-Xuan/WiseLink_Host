@@ -173,12 +173,16 @@ tenant、WorkItem、session binding 与 opaque actorContextRef。调用方不能
 
 RUNNING 正常路径：
 
-1. `get_review_turn_context({attemptRef})`；校验 conversation/turn/revision/allowedOperations/executionPolicy 与
-   Task 完全一致。
+1. begin Task 的 `attachmentRefs` 允许为空或非空；非空时必须全部是非空唯一字符串，且是同一 Task
+   `resourceRefs.sourceRefId` 的子集。随后 `get_review_turn_context({attemptRef})`，校验
+   conversation/turn/revision/allowedOperations/executionPolicy 与 Task 完全一致，并精确核对 context 返回的
+   resource metadata；跨 resource、重复或未知附件引用在模型前停止。
 2. 仅对本轮明确需要且属于 Task allowlist 的 IDs 调
-   `read_source_refs({attemptRef, sourceRefIds})`；每批 1–100，去重。
+   `read_source_refs({attemptRef, sourceRefIds})`；每批 1–100，去重。Host 授权的 current-turn attachment ref 也只走
+   这条路径，返回 Host 已从 actual bytes 绑定并解析的 `ENGINEER_ATTACHMENT` value，不直接读取附件 locator/bytes。
 3. 模型只能看到移除 workItemId 后的最小 context、用户消息、允许的 operation/item/input/source IDs 和
-   executionPolicy；看不到 actorContextRef、tenant、ACL 或 FileService locator。
+   executionPolicy；附件只额外暴露 opaque `attachmentRefs` 与按需读取的 parsed value。模型看不到
+   actorContextRef、tenant、ACL、resource artifact ref/SHA、FileService locator 或 raw bytes。
 4. review candidate 只能引用本轮实际 read 的 SourceRefs。其外层 ResultEnvelope sourceRefs 绑定对应 resource
    artifact ref/SHA。
 5. 单次 `commit_review_turn_candidate`。成功回执必须显示 candidate persisted，同时五个 authority flag 精确：
@@ -198,8 +202,8 @@ sealed ResultEnvelope 的 `contentHash` 才能返回恢复。
 
 ## 当前未授权 review operations
 
-附件、knowledge search、revision compare、affected reevaluation、overall resynthesis 在 R09 目标合同中存在，
-但 C2 没有对应 MCP 工具，且 Task attachmentRefs 固定为空。因此当前全部 fail closed：
+独立 attachment analysis operation、knowledge search、revision compare、affected reevaluation、overall
+resynthesis 在 R09 目标合同中存在，但 C2 没有对应 MCP 工具。因此以下扩展 operation 仍全部 fail closed：
 
 - `ANALYZE_ATTACHMENT`
 - `SEARCH_ALLOWED_KNOWLEDGE`
@@ -208,3 +212,7 @@ sealed ResultEnvelope 的 `contentHash` 才能返回恢复。
 - `RESYNTHESIZE_OVERALL`
 
 不得把 `read_source_refs`、dynamic 或普通 app OpenAPI 冒充这些能力。
+
+这不禁止读取 Host 已授权、已解析的 current-turn attachment。该窄路径仍属于现有 `READ_SOURCE_REFS`：
+`attachmentRefs ⊆ resourceRefs.sourceRefId`，模型只能通过 `read_source_refs` 获取 parsed value，并且输出保持
+candidate-only。它不增加附件上传、搜索、raw FileService 读取或 ReviewAction 直写能力。

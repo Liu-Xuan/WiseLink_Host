@@ -11,6 +11,7 @@
   gap: 10px;
   padding: 14px 12px;
   isolation: isolate;
+  font-family: var(--wl-font);
   border: 1px solid transparent;
   border-radius: var(--wl-radius-panel);
   background:
@@ -58,7 +59,7 @@
 .wl-navigator-heading small {
   overflow: hidden;
   color: var(--wl-muted);
-  font-size: 10.5px;
+  font-size: var(--wl-text-caption);
   line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -71,7 +72,7 @@
   border-radius: 999px;
   color: var(--wl-muted);
   background: var(--wl-glass-soft);
-  font-size: 10px;
+  font-size: var(--wl-text-caption);
   font-weight: 700;
   line-height: 1.2;
 }
@@ -296,12 +297,13 @@
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .wl-navigator-copy small {
   overflow: hidden;
   color: var(--wl-muted);
-  font-size: 10.5px;
+  font-size: var(--wl-text-caption);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -322,7 +324,7 @@
   background: var(--wl-glass-soft);
   border: 1px solid var(--wl-border);
   color: var(--wl-muted);
-  font-size: 10px;
+  font-size: var(--wl-text-caption);
   font-weight: 700;
 }
 
@@ -332,7 +334,7 @@
   padding: 2px 7px;
   border-radius: 999px;
   border: 1px solid var(--wl-border);
-  font-size: 10px;
+  font-size: var(--wl-text-caption);
   font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -374,12 +376,18 @@
 
 .wl-navigator-footer {
   display: flex;
+  min-width: 0;
   align-items: center;
   gap: 6px;
   padding-top: 10px;
   border-top: 1px solid var(--wl-border);
   color: var(--wl-faint);
-  font-size: 10.5px;
+  font-size: var(--wl-text-caption);
+}
+
+.wl-navigator-footer span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 /* §10.3 渐进渲染哨兵：接近视口时触发追加下一批节点 */

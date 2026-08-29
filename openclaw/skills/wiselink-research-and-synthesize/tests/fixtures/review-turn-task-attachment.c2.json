@@ -1,0 +1,98 @@
+{
+  "schemaVersion": "wiselink.3_1.review_turn_task.v1.c2",
+  "mode": "INTERACTIVE_REVIEW",
+  "reviewConversationRef": "RC-fixture-attachment-001",
+  "reviewTurnRef": "RT-fixture-attachment-001",
+  "requestId": "REQ-fixture-attachment-001",
+  "actorContextRef": "ACTX-opaque-attachment-fixture",
+  "inputRevision": 7,
+  "selectedEvaluationItemId": "criterion-001",
+  "userMessage": "请读取本轮附件，并给出候选分析。",
+  "allowedOperations": [
+    "GET_WORKITEM_CONTEXT",
+    "GET_EVALUATION_ITEM",
+    "READ_SOURCE_REFS",
+    "DRAFT_REVIEW_ACTION",
+    "PREVIEW_AFFECTED_ITEMS",
+    "GET_OPERATION_STATUS"
+  ],
+  "resourceRefs": [
+    {
+      "sourceRefId": "urn:techpub:source-ref:v1:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "resourceArtifactRef": "artifact://fixture/frozen-package",
+      "resourceArtifactSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "value": {
+        "sourceRefId": "urn:techpub:source-ref:v1:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "kind": "page",
+        "statement": "Fixture-only source-bound statement."
+      }
+    },
+    {
+      "sourceRefId": "ATTACHMENT-fixture-001",
+      "resourceArtifactRef": "artifact://fixture/review-attachment",
+      "resourceArtifactSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "value": {
+        "sourceRefId": "ATTACHMENT-fixture-001",
+        "kind": "ENGINEER_ATTACHMENT",
+        "fileName": "engineering-note.pdf",
+        "mediaType": "application/pdf",
+        "byteLength": 128,
+        "pageCount": 1,
+        "pages": [
+          {
+            "page": 1,
+            "text": "Parsed engineering attachment fixture."
+          }
+        ]
+      }
+    }
+  ],
+  "allowedEvaluationItemIds": ["criterion-001"],
+  "allowedAdoptedInputRefs": [
+    "engineer-input:ESI-fixture-001",
+    "ATTACHMENT-fixture-001"
+  ],
+  "attachmentRefs": ["ATTACHMENT-fixture-001"],
+  "context": {
+    "workItem": {
+      "workItemId": "WI-control-plane-only",
+      "documentVersionId": "DV-fixture-001",
+      "packageId": "PKG-fixture-001",
+      "title": "Fixture package"
+    },
+    "evaluation": {
+      "criterionSetId": "CS-fixture",
+      "baseRuleRevision": 1,
+      "items": [
+        {
+          "criterionId": "criterion-001",
+          "candidateConclusion": "UNKNOWN/WAITING_INPUT",
+          "sourceRefs": [
+            "urn:techpub:source-ref:v1:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          ]
+        }
+      ]
+    },
+    "bilingual": {
+      "status": "BILINGUAL_READING_AID_AVAILABLE",
+      "units": []
+    },
+    "applicability": {
+      "candidateStatus": "UNKNOWN/WAITING_INPUT",
+      "inferredFromDocumentPresence": false
+    },
+    "adoptedInputs": [],
+    "engineerInput": {
+      "inputRef": "engineer-input:ESI-fixture-001",
+      "text": "请读取本轮附件，并给出候选分析。",
+      "attachmentRefs": ["ATTACHMENT-fixture-001"]
+    }
+  },
+  "executionPolicy": {
+    "runtimeAppId": "app_17c3zn24kv2",
+    "profileRef": "wiselink-engineering",
+    "modelPolicyRef": "official-hosted-profile-config",
+    "skillPolicyRef": "wiselink-research-and-synthesize@r09.c4",
+    "toolPolicyRef": "wiselink-openclaw-engineering-assessment@1.2.0#interactive-review-c2"
+  }
+}

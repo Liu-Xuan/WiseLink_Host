@@ -199,6 +199,7 @@ export default function AssessmentRuleWorkspace({
                   }`}
                   key={rule.item.criterionId}
                   aria-current={isSelected ? 'true' : undefined}
+                  aria-label={`规则 ${rule.sequence}，${rule.criterionName}，${rule.conclusion}`}
                   onClick={() => onSelectCriterion(rule.item.criterionId)}
                 >
                   <CategoryIcon category={rule.category} />
@@ -206,8 +207,10 @@ export default function AssessmentRuleWorkspace({
                     <small>
                       规则 {rule.sequence} · {categoryLabel(rule.category)}
                     </small>
-                    <strong>{rule.criterionName}</strong>
-                    <em>{rule.conclusion}</em>
+                    <strong title={rule.criterionName}>
+                      {rule.criterionName}
+                    </strong>
+                    <em title={rule.conclusion}>{rule.conclusion}</em>
                   </span>
                 </button>
               );

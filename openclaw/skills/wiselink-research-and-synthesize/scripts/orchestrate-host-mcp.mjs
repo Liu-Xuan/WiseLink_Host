@@ -1328,6 +1328,7 @@ function assertReviewContext(value, begin, task) {
     value.reviewConversationRef !== task.reviewConversationRef ||
     value.reviewTurnRef !== task.reviewTurnRef ||
     value.mode !== 'INTERACTIVE_REVIEW' ||
+    value.selectedEvaluationItemId !== task.selectedEvaluationItemId ||
     value.inputRevision !== task.inputRevision ||
     canonicalJson(value.allowedOperations) !==
       canonicalJson(task.allowedOperations) ||
@@ -1339,6 +1340,38 @@ function assertReviewContext(value, begin, task) {
     Array.isArray(value.context)
   ) {
     throw new Error('HOST_MCP_REVIEW_CONTEXT_INVALID');
+  }
+  const expectedResourceRefs = task.resourceRefs.map(
+    ({ sourceRefId, resourceArtifactRef, resourceArtifactSha256 }) => ({
+      sourceRefId,
+      resourceArtifactRef,
+      resourceArtifactSha256,
+    }),
+  );
+  if (
+    canonicalJson(value.resourceRefs) !== canonicalJson(expectedResourceRefs)
+  ) {
+    throw new Error('HOST_MCP_REVIEW_CONTEXT_RESOURCE_REFS_MISMATCH');
+  }
+  const engineerInput = value.context.engineerInput;
+  if (
+    task.attachmentRefs.length > 0 &&
+    (!engineerInput ||
+      typeof engineerInput !== 'object' ||
+      Array.isArray(engineerInput))
+  ) {
+    throw new Error('HOST_MCP_REVIEW_CONTEXT_ATTACHMENT_REFS_MISMATCH');
+  }
+  if (
+    engineerInput &&
+    typeof engineerInput === 'object' &&
+    !Array.isArray(engineerInput) &&
+    (Object.hasOwn(engineerInput, 'attachmentRefs') ||
+      task.attachmentRefs.length > 0) &&
+    canonicalJson(engineerInput.attachmentRefs) !==
+      canonicalJson(task.attachmentRefs)
+  ) {
+    throw new Error('HOST_MCP_REVIEW_CONTEXT_ATTACHMENT_REFS_MISMATCH');
   }
 }
 
@@ -1356,6 +1389,7 @@ function buildReviewModelInput(task, contextResult) {
     allowedOperations: [...task.allowedOperations],
     allowedEvaluationItemIds: [...task.allowedEvaluationItemIds],
     allowedAdoptedInputRefs: [...task.allowedAdoptedInputRefs],
+    attachmentRefs: [...task.attachmentRefs],
     availableSourceRefIds: task.resourceRefs.map(
       ({ sourceRefId }) => sourceRefId,
     ),

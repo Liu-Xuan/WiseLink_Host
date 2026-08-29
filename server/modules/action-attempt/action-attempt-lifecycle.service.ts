@@ -592,10 +592,16 @@ export class ActionAttemptLifecycleService {
   ): Promise<OpenClawLeaseClaim> {
     let row = initial;
     assertReplay(row, input);
+    const refreshExpiredUnclaimedDeadline = canRefreshExpiredUnclaimedDeadline(
+      row,
+      input,
+      now,
+    );
     if (
       row.deadlineAt &&
       row.deadlineAt <= now &&
-      ['QUEUED', 'RUNNING', 'RETRY_SCHEDULED'].includes(row.status)
+      ['QUEUED', 'RUNNING', 'RETRY_SCHEDULED'].includes(row.status) &&
+      !refreshExpiredUnclaimedDeadline
     ) {
       const timedOut = await this.repository.finishTerminal({
         attemptId: row.attemptId,
@@ -666,6 +672,61 @@ export class ActionAttemptLifecycleService {
       });
       throw conflict(`ACTION_ATTEMPT_${status}`);
     }
+    if (refreshExpiredUnclaimedDeadline) {
+      const refreshedDeadlineAt = new Date(
+        now.getTime() + ACTION_ATTEMPT_DEFAULT_DEADLINE_MS,
+      );
+      const { inputHash: _previousInputHash, ...unsealedTask } = task;
+      const refreshedTask = parseTaskEnvelope(
+        canonicalJson(
+          sealTaskEnvelope({
+            ...unsealedTask,
+            deadline: refreshedDeadlineAt.toISOString(),
+          }),
+        ),
+      );
+      for (
+        let leaseSlot = 0;
+        leaseSlot < ACTION_ATTEMPT_MAX_PARALLEL;
+        leaseSlot += 1
+      ) {
+        const claimed = await this.repository.claimExpiredUnstartedExact({
+          attemptId: row.attemptId,
+          attemptNo: row.attemptNo,
+          triggerRequestId: row.triggerRequestId,
+          tenantId: task.tenantId,
+          baseRevision: task.baseRevision,
+          documentVersionId: task.documentVersionId,
+          idempotencyKey: task.idempotencyKey,
+          expectedTaskInputHash: task.inputHash,
+          expectedClaimCount: row.claimCount,
+          expectedRetryCount: row.retryCount,
+          expectedLeaseGeneration: row.leaseGeneration,
+          operationRef: requiredOperationRef(row),
+          leaseOwner: input.leaseOwner,
+          leaseSlot,
+          now,
+          leaseMs: ACTION_ATTEMPT_LEASE_MS,
+          refreshedDeadlineAt,
+          taskEnvelopeJson: canonicalJson(refreshedTask),
+          taskInputHash: refreshedTask.inputHash,
+        });
+        if (claimed) return leaseClaim(claimed);
+      }
+      const readback = requiredRow(
+        await this.repository.readByAttemptId(row.attemptId),
+      );
+      if (
+        readback.status === 'RUNNING' &&
+        readback.leaseOwner === input.leaseOwner &&
+        readback.leaseToken &&
+        readback.leaseExpiresAt &&
+        readback.leaseExpiresAt > now
+      ) {
+        return leaseClaim(readback);
+      }
+      throw concurrencySlotsExhausted();
+    }
     for (
       let leaseSlot = 0;
       leaseSlot < ACTION_ATTEMPT_MAX_PARALLEL;
@@ -697,13 +758,7 @@ export class ActionAttemptLifecycleService {
     ) {
       return leaseClaim(readback);
     }
-    throw Object.assign(
-      new Error('All OpenClaw execution slots are occupied.'),
-      {
-        code: 'ACTION_ATTEMPT_CONCURRENCY_SLOTS_EXHAUSTED',
-        statusCode: 503,
-      },
-    );
+    throw concurrencySlotsExhausted();
   }
 
   private async terminalizeRevisionDrift(
@@ -841,6 +896,55 @@ function assertReplay(
   ) {
     throw conflict('ACTION_ATTEMPT_IDEMPOTENCY_PAYLOAD_MISMATCH');
   }
+}
+
+function canRefreshExpiredUnclaimedDeadline(
+  row: ActionAttemptRow,
+  input: ReserveAndClaimInput,
+  now: Date,
+): boolean {
+  return Boolean(
+    input.allowExpiredUnclaimedDeadlineRefresh === true &&
+    input.deadlineAt === undefined &&
+    row.actionType === 'OPENCLAW_OVERALL_SYNTHESIS' &&
+    row.idempotencyKey?.includes(':USER_REQUESTED_REGENERATION:') === true &&
+    row.status === 'QUEUED' &&
+    row.deadlineAt &&
+    row.deadlineAt <= now &&
+    row.claimCount === 0 &&
+    row.retryCount === 0 &&
+    row.leaseGeneration === 0 &&
+    row.startedAt === null &&
+    row.leaseOwner === null &&
+    row.leaseToken === null &&
+    row.leaseExpiresAt === null &&
+    row.lastHeartbeatAt === null &&
+    row.leaseSlot === null &&
+    row.executorSessionKey === null &&
+    row.commitStartedAt === null &&
+    row.resultEnvelopeJson === null &&
+    row.resultContentHash === null &&
+    row.completedAt === null &&
+    row.terminalReason === null &&
+    (row.errorCode ?? null) === null &&
+    (row.errorMessage ?? null) === null &&
+    row.projectionApplied === false &&
+    row.cancelRequestedAt === null &&
+    row.cancelReason === null,
+  );
+}
+
+function concurrencySlotsExhausted(): Error & {
+  code: string;
+  statusCode: number;
+} {
+  return Object.assign(
+    new Error('All OpenClaw execution slots are occupied.'),
+    {
+      code: 'ACTION_ATTEMPT_CONCURRENCY_SLOTS_EXHAUSTED',
+      statusCode: 503,
+    },
+  );
 }
 
 function validatedTask(row: ActionAttemptRow): OpenClawTaskEnvelope {

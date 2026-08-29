@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -35,6 +36,7 @@ import {
 import QuickOpen, {
   type QuickOpenItem,
 } from '@client/src/features/workbench/QuickOpen';
+import { resolveWorkbenchAdaptiveLayout } from '@client/src/features/workbench/workbench-layout';
 
 import './workbench-shell.css';
 
@@ -74,8 +76,6 @@ const NAV_DEFAULT = 304;
 const EVIDENCE_MIN = 280;
 const EVIDENCE_MAX = 360;
 const EVIDENCE_DEFAULT = 320;
-/** 1440px 设计视口优先保证结构化结果与 PDF 并排；证据栏改为按需浮层。 */
-const EVIDENCE_INLINE_BREAKPOINT = 1480;
 /** Spec R01 §4.2：仅保存布局偏好，不保存 WorkItem/current（禁止平行真源） */
 const LAYOUT_PREFS_KEY = 'wiselink.layout.workbench';
 
@@ -98,10 +98,7 @@ function clampNumber(
 }
 
 function defaultEvidenceOpen(): boolean {
-  return (
-    typeof window === 'undefined' ||
-    window.innerWidth > EVIDENCE_INLINE_BREAKPOINT
-  );
+  return typeof window === 'undefined' || window.innerWidth > 1360;
 }
 
 function defaultCompactViewport(): boolean {
@@ -185,8 +182,10 @@ export default function WorkbenchShell({
   const [isCompact, setIsCompact] = useState(defaultCompactViewport);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [mobileEvidenceOpen, setMobileEvidenceOpen] = useState(false);
+  const [bodyWidth, setBodyWidth] = useState(0);
   const tabIdPrefix = useId().replace(/:/gu, '');
   const shellRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef<'nav' | 'evidence' | null>(null);
   const navTriggerRef = useRef<HTMLButtonElement>(null);
   const evidenceTriggerRef = useRef<HTMLButtonElement>(null);
@@ -208,6 +207,31 @@ export default function WorkbenchShell({
       navCollapsed,
     });
   }, [navWidth, evidenceWidth, evidenceOpen, focusMode, navCollapsed]);
+
+  /* Host 顶栏、Dock 与容器留白会改变真实可用宽度，不能只依赖 viewport media query。 */
+  useLayoutEffect(() => {
+    const body = bodyRef.current;
+    if (!body) return;
+
+    const updateWidth = (width = body.getBoundingClientRect().width) => {
+      const nextWidth = Math.round(width);
+      setBodyWidth((current) => (current === nextWidth ? current : nextWidth));
+    };
+    updateWidth();
+
+    if (typeof ResizeObserver === 'undefined') {
+      const handleResize = () => updateWidth();
+      window.addEventListener('resize', handleResize);
+      return () => window.removeEventListener('resize', handleResize);
+    }
+
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry) updateWidth(entry.contentRect.width);
+    });
+    observer.observe(body);
+    return () => observer.disconnect();
+  }, []);
 
   /* ── 拖拽分栏 ── */
   const startDrag = useCallback(
@@ -330,10 +354,44 @@ export default function WorkbenchShell({
     setFocusMode(true);
   }, [evidenceOpen, focusMode, immersive, navCollapsed]);
 
+  const adaptiveLayout = resolveWorkbenchAdaptiveLayout({
+    bodyWidth,
+    navWidth,
+    evidenceWidth,
+    evidenceOpen,
+    isCompact,
+    navigatorAvailable: Boolean(navigator),
+    evidenceAvailable: Boolean(evidencePanel),
+  });
+
   /* 沉浸模式只隐藏应用外壳，不隐藏工作台的资料目录与证据栏。 */
-  const navVisible = isCompact ? mobileNavOpen : !navCollapsed;
+  /* 自适应收起只保护中心内容宽度，不写入用户的目录偏好。 */
+  const navVisible = isCompact
+    ? mobileNavOpen
+    : Boolean(navigator) &&
+      !navCollapsed &&
+      !adaptiveLayout.autoCollapseNavigator;
   const evidenceVisible =
     Boolean(evidencePanel) && (isCompact ? mobileEvidenceOpen : evidenceOpen);
+  const navToggleLabel = navVisible
+    ? '收起资料目录'
+    : adaptiveLayout.autoCollapseNavigator
+      ? '展开资料目录并收起原文依据'
+      : '展开资料目录';
+
+  const toggleNavigator = useCallback(() => {
+    if (isCompact) {
+      setMobileEvidenceOpen(false);
+      setMobileNavOpen((open) => !open);
+      return;
+    }
+    if (adaptiveLayout.autoCollapseNavigator && evidenceOpen) {
+      setEvidenceOpen(false);
+      setNavCollapsed(false);
+      return;
+    }
+    setNavCollapsed((collapsed) => !collapsed);
+  }, [adaptiveLayout.autoCollapseNavigator, evidenceOpen, isCompact]);
 
   const mobileTabs = tabs
     .filter((tab) => tab.mobileLabel)
@@ -465,7 +523,7 @@ export default function WorkbenchShell({
     },
     {
       id: 'workbench:navigator',
-      label: navVisible ? '收起资料目录' : '展开资料目录',
+      label: navToggleLabel,
       description: '切换当前资料的目录树',
       keywords: '目录 tree navigator',
       group: '工作台操作',
@@ -474,14 +532,7 @@ export default function WorkbenchShell({
       ) : (
         <PanelLeftOpen aria-hidden="true" />
       ),
-      onSelect: () => {
-        if (isCompact) {
-          setMobileEvidenceOpen(false);
-          setMobileNavOpen((open) => !open);
-        } else {
-          setNavCollapsed((collapsed) => !collapsed);
-        }
-      },
+      onSelect: toggleNavigator,
     },
     ...(evidencePanel
       ? [
@@ -536,16 +587,9 @@ export default function WorkbenchShell({
           ref={navTriggerRef}
           type="button"
           className="wl-workbench-tool-btn"
-          onClick={() => {
-            if (isCompact) {
-              setMobileEvidenceOpen(false);
-              setMobileNavOpen((open) => !open);
-            } else {
-              setNavCollapsed((collapsed) => !collapsed);
-            }
-          }}
-          title={navVisible ? '收起资料目录' : '展开资料目录'}
-          aria-label={navVisible ? '收起资料目录' : '展开资料目录'}
+          onClick={toggleNavigator}
+          title={navToggleLabel}
+          aria-label={navToggleLabel}
           aria-pressed={navVisible}
         >
           {navVisible ? <PanelLeftClose /> : <PanelLeftOpen />}
@@ -716,7 +760,10 @@ export default function WorkbenchShell({
       ) : null}
 
       {/* ── 主体：左目录树 · 中内容 · 右证据栏并排（§4.2 1440×900 可并排复核） ── */}
-      <div className="wl-workbench-body">
+      <div
+        ref={bodyRef}
+        className={`wl-workbench-body${adaptiveLayout.useEvidenceOverlay ? ' is-evidence-overlay' : ''}`}
+      >
         {navVisible ? (
           <>
             <aside
@@ -796,12 +843,16 @@ export default function WorkbenchShell({
               onPointerDown={startDrag('evidence')}
               onKeyDown={(event) => {
                 if (event.key === 'ArrowLeft') {
+                  event.preventDefault();
                   setEvidenceWidth((w) => Math.min(EVIDENCE_MAX, w + 16));
                 } else if (event.key === 'ArrowRight') {
+                  event.preventDefault();
                   setEvidenceWidth((w) => Math.max(EVIDENCE_MIN, w - 16));
                 } else if (event.key === 'Home') {
+                  event.preventDefault();
                   setEvidenceWidth(EVIDENCE_MIN);
                 } else if (event.key === 'End') {
+                  event.preventDefault();
                   setEvidenceWidth(EVIDENCE_MAX);
                 }
               }}

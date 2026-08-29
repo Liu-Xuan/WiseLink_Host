@@ -101,6 +101,14 @@
   --wl-space-6: 24px;
   --wl-space-8: 32px;
 
+  /* 语义尺寸：正文、元信息与触控目标由同一层管理，页面不再各自发明尺寸。 */
+  --wl-text-caption: 11px;
+  --wl-text-meta: 12px;
+  --wl-text-body-sm: 12.5px;
+  --wl-text-body: 14px;
+  --wl-control-target: 36px;
+  --wl-touch-target: 44px;
+
   /* 动效时长 */
   --wl-motion-fast: 160ms;
   --wl-motion-base: 260ms;

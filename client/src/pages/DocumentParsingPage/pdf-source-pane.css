@@ -28,7 +28,7 @@
 
 .parse-pdf-binding span {
   color: var(--wl-faint);
-  font-size: 9.5px;
+  font-size: var(--wl-text-caption);
   font-weight: 700;
   letter-spacing: 0.02em;
 }
@@ -68,7 +68,7 @@
 
 .parse-pdf-located span {
   color: var(--wl-faint);
-  font-size: 9.5px;
+  font-size: var(--wl-text-caption);
   font-weight: 700;
   letter-spacing: 0.02em;
 }
@@ -123,7 +123,7 @@
 
 .parse-pdf-toolbar {
   display: flex;
-  min-height: 44px;
+  min-height: var(--wl-touch-target);
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -221,7 +221,7 @@
   top: 6px;
   left: 10px;
   color: #66758a;
-  font-size: 9.5px;
+  font-size: var(--wl-text-caption);
   font-weight: 700;
 }
 
@@ -293,7 +293,7 @@
 
 .parse-pdf-translation {
   color: var(--wl-faint);
-  font-size: 10.5px;
+  font-size: var(--wl-text-caption);
 }
 
 .parse-pdf-located-actions {
@@ -353,7 +353,7 @@ html[data-wl-transparency='reduced'] .parse-pdf-toolbar {
 
   .parse-pdf-mobile-return {
     display: inline-flex;
-    min-height: 44px;
+    min-height: var(--wl-touch-target);
     align-items: center;
     padding: 0 12px;
     border: 1px solid var(--wl-border);
@@ -386,13 +386,17 @@ html[data-wl-transparency='reduced'] .parse-pdf-toolbar {
   }
 
   .parse-pdf-toolbar button {
-    width: 44px;
-    height: 44px;
+    width: var(--wl-touch-target);
+    height: var(--wl-touch-target);
   }
 
   .parse-pdf-page-controls input {
     width: 52px;
-    height: 42px;
+    height: var(--wl-touch-target);
+  }
+
+  .parse-pdf-located-actions button {
+    min-height: var(--wl-touch-target);
   }
 
   .parse-pdf-pages {

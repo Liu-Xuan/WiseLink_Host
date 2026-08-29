@@ -42,7 +42,7 @@
 .wl-review-impact-dialog > header span {
   display: block;
   color: var(--wl-faint);
-  font-size: 9.5px;
+  font-size: var(--wl-text-caption);
   font-weight: 700;
   letter-spacing: 0.02em;
 }
@@ -167,7 +167,7 @@
 
 .parse-task-strip-label {
   color: var(--wl-faint);
-  font-size: 9.5px;
+  font-size: var(--wl-text-caption);
   font-weight: 700;
   letter-spacing: 0.02em;
 }
@@ -246,7 +246,7 @@
 .wl-revision-timeline-card > header span {
   display: block;
   color: var(--wl-faint);
-  font-size: 9.5px;
+  font-size: var(--wl-text-caption);
   font-weight: 700;
   letter-spacing: 0.02em;
 }
@@ -261,7 +261,7 @@
   max-width: 46%;
   overflow: hidden;
   color: var(--wl-faint);
-  font-size: 10px;
+  font-size: var(--wl-text-caption);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -306,7 +306,7 @@
   border-radius: 999px;
   background: var(--wl-surface-solid);
   color: var(--wl-muted);
-  font-size: 10px;
+  font-size: var(--wl-text-caption);
   font-weight: 700;
   font-family: var(--wl-mono);
 }
@@ -344,14 +344,14 @@
   border: 1px solid var(--wl-border);
   border-radius: 999px;
   color: var(--wl-faint);
-  font-size: 9.5px;
+  font-size: var(--wl-text-caption);
   font-family: var(--wl-font);
 }
 
 .wl-revision-timeline-body header small {
   margin-left: auto;
   color: var(--wl-faint);
-  font-size: 10px;
+  font-size: var(--wl-text-caption);
   white-space: nowrap;
 }
 
