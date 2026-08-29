@@ -13,6 +13,20 @@ export interface PdfDocumentRequestParameters {
   stopAtErrors: true;
 }
 
+export function resolvePdfWorkerUrl(
+  workerAssetUrl: string,
+  currentModuleUrl: string,
+): string {
+  const assetMarker = '/assets/';
+  const assetMarkerIndex: number = workerAssetUrl.lastIndexOf(assetMarker);
+  if (assetMarkerIndex < 0) return workerAssetUrl;
+
+  const workerFileName: string = workerAssetUrl.slice(
+    assetMarkerIndex + assetMarker.length,
+  );
+  return new URL(workerFileName, currentModuleUrl).toString();
+}
+
 export function buildPdfDocumentRequest(
   url: string,
   supportsRange: boolean,

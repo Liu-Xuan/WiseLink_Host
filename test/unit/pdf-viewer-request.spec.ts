@@ -4,11 +4,35 @@ jest.mock('@lark-apaas/client-toolkit', () => ({
   getCsrfToken,
 }));
 
-import { buildPdfDocumentRequest } from '../../client/src/pages/DocumentParsingPage/pdf-viewer-request';
+import {
+  buildPdfDocumentRequest,
+  resolvePdfWorkerUrl,
+} from '../../client/src/pages/DocumentParsingPage/pdf-viewer-request';
 
 describe('PDF.js controlled request parameters', () => {
   beforeEach(() => {
     getCsrfToken.mockReset();
+  });
+
+  it('resolves the emitted worker beside the Hosted main chunk', () => {
+    expect(
+      resolvePdfWorkerUrl(
+        '/assets/pdf.worker.min-HASH.js',
+        'https://static.example/runtime/release/index-HASH.js',
+      ),
+    ).toBe('https://static.example/runtime/release/pdf.worker.min-HASH.js');
+  });
+
+  it('preserves the Vite development worker URL', () => {
+    const developmentWorkerUrl =
+      '/node_modules/.vite/deps/pdf.worker.js?worker_file&type=module';
+
+    expect(
+      resolvePdfWorkerUrl(
+        developmentWorkerUrl,
+        'http://localhost:5173/client/src/index.tsx',
+      ),
+    ).toBe(developmentWorkerUrl);
   });
 
   it('adds only the official CSRF header without changing a Hosted URL', () => {
