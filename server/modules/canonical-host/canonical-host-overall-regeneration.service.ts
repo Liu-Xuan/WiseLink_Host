@@ -28,6 +28,7 @@ import {
   overallUserRegenerationIdempotencyKey,
 } from './canonical-host-openclaw-overall.service';
 import { projectCanonicalHostOpenClawAttemptStatus } from './canonical-host-openclaw-attempt-status.service';
+import { canonicalHostBareSha256 } from './canonical-host-sha256';
 import type {
   CanonicalHostClockPort,
   CanonicalWorkItemRegistrarPort,
@@ -68,11 +69,11 @@ export class CanonicalHostOverallRegenerationService {
     input: RequestCanonicalOverallRegenerationRequest,
     httpRequest: Request,
   ): Promise<RequestCanonicalOverallRegenerationResponse> {
-    validateRequest(workItemId, input);
+    const normalizedInput = validateRequest(workItemId, input);
     const authorized = await this.authorizeAndLoad(workItemId, httpRequest);
     const previousRequest = authorized.workItem.overallRegenerationRequest;
-    if (previousRequest?.requestId === input.requestId) {
-      assertReplay(previousRequest, input);
+    if (previousRequest?.requestId === normalizedInput.requestId) {
+      assertReplay(previousRequest, normalizedInput);
       const attempt = await this.ensureAttempt(authorized);
       return {
         regeneration: regenerationReadModel(
@@ -85,24 +86,30 @@ export class CanonicalHostOverallRegenerationService {
     }
 
     const workItem = requiredCurrentOverallCandidate(authorized.workItem);
-    if (workItem.revision !== input.expectedRevision) {
+    if (workItem.revision !== normalizedInput.expectedRevision) {
       throw regenerationConflict('WORK_ITEM_CAS_CONFLICT');
     }
-    assertSourceIdentity(workItem, input.sourceIdentity);
+    assertSourceIdentity(workItem, normalizedInput.sourceIdentity);
     const overall = workItem.integratedAssessment!.overallSynthesis!;
+    const sourceOverallSha256 = canonicalHostBareSha256(
+      overall.artifact.sha256,
+    );
+    if (!sourceOverallSha256) {
+      throw regenerationConflict('OVERALL_REGENERATION_SOURCE_CHANGED');
+    }
     const marker: CanonicalOverallRegenerationRequestProjection = {
       schemaVersion: 'wiselink.3_1.overall_regeneration_request.v1',
-      requestId: input.requestId,
+      requestId: normalizedInput.requestId,
       requestedByUserId: authorized.session.actor.canonicalSubject.id,
       requestedAt: this.clock.nowIso(),
       requestedFromRevision: workItem.revision,
       executionRevision: workItem.revision + 1,
       staleReason: 'USER_REQUESTED_REGENERATION',
-      sourceIdentity: structuredClone(input.sourceIdentity),
+      sourceIdentity: structuredClone(normalizedInput.sourceIdentity),
       sourceOverall: {
         revision: overall.revision,
         actionAttemptId: overall.actionAttemptId,
-        artifactSha256: overall.artifact.sha256,
+        artifactSha256: sourceOverallSha256,
       },
     };
     const updated = await this.registrar.compareAndSet({
@@ -274,7 +281,7 @@ function requiredCurrentOverallCandidate(
 function validateRequest(
   workItemId: string,
   input: RequestCanonicalOverallRegenerationRequest,
-): void {
+): RequestCanonicalOverallRegenerationRequest {
   requiredIdentifier(workItemId, 'OVERALL_REGENERATION_WORK_ITEM_ID_INVALID');
   if (!input || typeof input !== 'object') {
     throw regenerationBadRequest('OVERALL_REGENERATION_BODY_INVALID');
@@ -301,6 +308,24 @@ function validateRequest(
       throw regenerationBadRequest('OVERALL_REGENERATION_SOURCE_INVALID');
     }
   }
+  const sourceFileSha256 = canonicalHostBareSha256(
+    input.sourceIdentity.sourceFileSha256,
+  );
+  const packageArtifactSha256 = canonicalHostBareSha256(
+    input.sourceIdentity.packageArtifactSha256,
+  );
+  if (!sourceFileSha256 || !packageArtifactSha256) {
+    throw regenerationBadRequest('OVERALL_REGENERATION_SOURCE_INVALID');
+  }
+  return {
+    requestId: input.requestId,
+    expectedRevision: input.expectedRevision,
+    sourceIdentity: {
+      ...input.sourceIdentity,
+      sourceFileSha256,
+      packageArtifactSha256,
+    },
+  };
 }
 
 function assertReplay(
@@ -333,12 +358,21 @@ function assertSourceIdentity(
   workItem: CanonicalWorkItemProjection,
   source: CanonicalOverallRegenerationSourceIdentity,
 ): void {
+  const currentSourceSha256 = canonicalHostBareSha256(
+    workItem.source.sourceFileSha256,
+  );
+  const currentPackageSha256 = canonicalHostBareSha256(
+    workItem.package?.artifact.sha256,
+  );
   if (
     source.documentVersionId !== workItem.source.documentVersionId ||
     source.sourceArtifactId !== workItem.source.sourceArtifactId ||
-    source.sourceFileSha256 !== workItem.source.sourceFileSha256 ||
+    canonicalHostBareSha256(source.sourceFileSha256) !== currentSourceSha256 ||
+    currentSourceSha256 === null ||
     source.packageId !== workItem.package?.packageId ||
-    source.packageArtifactSha256 !== workItem.package?.artifact.sha256
+    canonicalHostBareSha256(source.packageArtifactSha256) !==
+      currentPackageSha256 ||
+    currentPackageSha256 === null
   ) {
     throw regenerationConflict('OVERALL_REGENERATION_SOURCE_CHANGED');
   }
@@ -348,12 +382,16 @@ function sameSourceIdentity(
   left: CanonicalOverallRegenerationSourceIdentity,
   right: CanonicalOverallRegenerationSourceIdentity,
 ): boolean {
+  const leftSourceSha256 = canonicalHostBareSha256(left.sourceFileSha256);
+  const leftPackageSha256 = canonicalHostBareSha256(left.packageArtifactSha256);
   return (
     left.documentVersionId === right.documentVersionId &&
     left.sourceArtifactId === right.sourceArtifactId &&
-    left.sourceFileSha256 === right.sourceFileSha256 &&
+    leftSourceSha256 !== null &&
+    leftSourceSha256 === canonicalHostBareSha256(right.sourceFileSha256) &&
     left.packageId === right.packageId &&
-    left.packageArtifactSha256 === right.packageArtifactSha256
+    leftPackageSha256 !== null &&
+    leftPackageSha256 === canonicalHostBareSha256(right.packageArtifactSha256)
   );
 }
 
@@ -372,12 +410,10 @@ function regenerationReadModel(
     schemaVersion: 'wiselink.3_1.overall_regeneration_read.v1',
     workItemId: workItem.workItemId,
     requestId: marker.requestId,
-    requestedByUserId: marker.requestedByUserId,
     requestedAt: marker.requestedAt,
     requestedFromRevision: marker.requestedFromRevision,
     executionRevision: marker.executionRevision,
     currentWorkItemRevision: workItem.revision,
-    sourceIdentity: structuredClone(marker.sourceIdentity),
     staleReason: 'USER_REQUESTED_REGENERATION',
     status,
     attemptRef: attempt?.attemptRef ?? null,

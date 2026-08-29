@@ -112,7 +112,7 @@ describe('CanonicalHostOpenClawOverallService', () => {
     harness.workItem.source = {
       ...harness.workItem.source,
       sourceArtifactId: 'SRC-737',
-      sourceFileSha256: 'e'.repeat(64),
+      sourceFileSha256: `sha256:${'e'.repeat(64)}`,
     };
 
     await expect(

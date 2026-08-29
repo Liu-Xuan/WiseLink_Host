@@ -1061,12 +1061,10 @@ export interface CanonicalOverallRegenerationReadModel {
   schemaVersion: 'wiselink.3_1.overall_regeneration_read.v1';
   workItemId: string;
   requestId: string;
-  requestedByUserId: string;
   requestedAt: string;
   requestedFromRevision: number;
   executionRevision: number;
   currentWorkItemRevision: number;
-  sourceIdentity: CanonicalOverallRegenerationSourceIdentity;
   staleReason: 'USER_REQUESTED_REGENERATION';
   status: CanonicalOverallRegenerationExecutionStatus;
   attemptRef: string | null;

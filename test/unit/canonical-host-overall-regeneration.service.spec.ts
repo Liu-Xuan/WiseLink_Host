@@ -9,12 +9,14 @@ import {
 import type { ActionAttemptRow } from '../../server/modules/action-attempt/action-attempt.types';
 import { CanonicalHostOverallRegenerationService } from '../../server/modules/canonical-host/canonical-host-overall-regeneration.service';
 
+const SOURCE_DIGEST = '1'.repeat(64);
+const PACKAGE_DIGEST = '2'.repeat(64);
 const SOURCE_IDENTITY: CanonicalOverallRegenerationSourceIdentity = {
   documentVersionId: 'DV-1',
   sourceArtifactId: 'SRC-ART-1',
-  sourceFileSha256: '1'.repeat(64),
+  sourceFileSha256: SOURCE_DIGEST,
   packageId: 'PKG-1',
-  packageArtifactSha256: '2'.repeat(64),
+  packageArtifactSha256: PACKAGE_DIGEST,
 };
 
 describe('CanonicalHostOverallRegenerationService', () => {
@@ -23,7 +25,11 @@ describe('CanonicalHostOverallRegenerationService', () => {
     const input = {
       requestId: 'REQ-USER-REGEN-1',
       expectedRevision: 12,
-      sourceIdentity: SOURCE_IDENTITY,
+      sourceIdentity: {
+        ...SOURCE_IDENTITY,
+        sourceFileSha256: `sha256:${SOURCE_DIGEST}`,
+        packageArtifactSha256: `sha256:${PACKAGE_DIGEST}`,
+      },
     };
 
     const first = await harness.service.request('WI-1', input, {} as never);
@@ -32,7 +38,6 @@ describe('CanonicalHostOverallRegenerationService', () => {
       replayed: false,
       regeneration: {
         requestId: 'REQ-USER-REGEN-1',
-        requestedByUserId: 'USER-1',
         requestedFromRevision: 12,
         executionRevision: 13,
         currentWorkItemRevision: 13,
@@ -46,6 +51,11 @@ describe('CanonicalHostOverallRegenerationService', () => {
           documentCurrentnessChanged: false,
         },
       },
+    });
+    expect(harness.current.overallRegenerationRequest).toMatchObject({
+      requestedByUserId: 'USER-1',
+      sourceIdentity: SOURCE_IDENTITY,
+      sourceOverall: { artifactSha256: '6'.repeat(64) },
     });
     expect(harness.current.integratedAssessment).toMatchObject({
       status: 'OVERALL_CANDIDATE_STALE',
@@ -65,7 +75,37 @@ describe('CanonicalHostOverallRegenerationService', () => {
       harness.overall.enqueueUserRequestedRegeneration,
     ).toHaveBeenCalledTimes(1);
 
-    const replay = await harness.service.request('WI-1', input, {} as never);
+    const polled = await harness.service.status(
+      'WI-1',
+      input.requestId,
+      {} as never,
+    );
+    for (const browserModel of [first.regeneration, polled]) {
+      const browserJson = JSON.stringify(browserModel);
+      for (const forbidden of [
+        'requestedByUserId',
+        'sourceIdentity',
+        'tenantId',
+        'USER-1',
+        'TENANT-1',
+        'DV-1',
+        'SRC-ART-1',
+        'PKG-1',
+        SOURCE_DIGEST,
+        PACKAGE_DIGEST,
+        'leaseToken',
+        'taskEnvelopeJson',
+        'modelInput',
+      ]) {
+        expect(browserJson).not.toContain(forbidden);
+      }
+    }
+
+    const replay = await harness.service.request(
+      'WI-1',
+      { ...input, sourceIdentity: SOURCE_IDENTITY },
+      {} as never,
+    );
     expect(replay.replayed).toBe(true);
     expect(replay.regeneration.attemptRef).toBe('AQ-OVERALL-REGEN-1');
     expect(
@@ -220,7 +260,7 @@ function legacyWorkItem(): CanonicalWorkItemProjection {
       documentVersionId: SOURCE_IDENTITY.documentVersionId,
       parserRequestId: 'REQ-PARSER-1',
       sourceArtifactId: SOURCE_IDENTITY.sourceArtifactId,
-      sourceFileSha256: SOURCE_IDENTITY.sourceFileSha256,
+      sourceFileSha256: `sha256:${SOURCE_DIGEST}`,
       sourceByteLength: 100,
       driveFileToken: 'DRIVE-1',
       driveSourceVersion: '1',

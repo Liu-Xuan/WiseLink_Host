@@ -47,6 +47,7 @@ import {
 } from './openclaw-overall-synthesis.processor';
 import { assertLatestOverallCandidate } from './selective-overall-resynthesis';
 import { preflightCanonicalHostOpenClawResult } from './canonical-host-openclaw-runtime-policy';
+import { canonicalHostBareSha256 } from './canonical-host-sha256';
 
 const OPENCLAW_SERVICE_USER_ID = 'service:openclaw-main';
 const CANONICAL_APP_ID = 'app_17bzc551rsg';
@@ -538,15 +539,29 @@ function assertUserRequestedRegenerationBinding(
     overall.staleReason !== null ||
     request.sourceOverall.revision !== overall.revision ||
     request.sourceOverall.actionAttemptId !== overall.actionAttemptId ||
-    request.sourceOverall.artifactSha256 !== overall.artifact.sha256 ||
+    !sameBoundSha256(
+      request.sourceOverall.artifactSha256,
+      overall.artifact.sha256,
+    ) ||
     source.documentVersionId !== workItem.source.documentVersionId ||
     source.sourceArtifactId !== workItem.source.sourceArtifactId ||
-    source.sourceFileSha256 !== workItem.source.sourceFileSha256 ||
+    !sameBoundSha256(
+      source.sourceFileSha256,
+      workItem.source.sourceFileSha256,
+    ) ||
     source.packageId !== workItem.package?.packageId ||
-    source.packageArtifactSha256 !== workItem.package?.artifact.sha256
+    !sameBoundSha256(
+      source.packageArtifactSha256,
+      workItem.package?.artifact.sha256,
+    )
   ) {
     throw new Error('OVERALL_REGENERATION_WORK_ITEM_BINDING_INVALID');
   }
+}
+
+function sameBoundSha256(left: unknown, right: unknown): boolean {
+  const leftDigest = canonicalHostBareSha256(left);
+  return leftDigest !== null && leftDigest === canonicalHostBareSha256(right);
 }
 
 function assertUserRegenerationProviders(

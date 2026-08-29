@@ -9,6 +9,7 @@ import type {
   RequestCanonicalOverallRegenerationResponse,
 } from '@shared/api.interface';
 import { CanonicalHostOverallRegenerationService } from './canonical-host-overall-regeneration.service';
+import { canonicalHostBareSha256 } from './canonical-host-sha256';
 
 const MAX_IDENTIFIER_LENGTH = 96;
 
@@ -134,9 +135,9 @@ function requiredIdentifier(value: unknown, code: string): string {
 }
 
 function requiredHash(value: unknown, code: string): string {
-  const text = requiredText(value, code);
-  if (!/^[0-9a-f]{64}$/u.test(text)) throw badRequest(code);
-  return text;
+  const digest = canonicalHostBareSha256(value);
+  if (!digest) throw badRequest(code);
+  return digest;
 }
 
 function requiredText(value: unknown, code: string): string {
