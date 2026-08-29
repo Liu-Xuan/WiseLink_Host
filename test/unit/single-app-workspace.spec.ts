@@ -127,6 +127,14 @@ describe('single canonical app workspace', () => {
     );
     expect(shell).not.toContain('!immersive &&');
     expect(shell).toContain('wl-workbench-transparency-toggle');
+    expect(shell).toContain('移动端快捷操作');
+    expect(shell).toContain('moreTriggerRef');
+    expect(shell).toMatch(
+      /\{!isCompact \? \(\s*<button[\s\S]*?wl-workbench-quick-open-trigger/,
+    );
+    expect(shell).toMatch(
+      /\{!isCompact \? \(\s*<>[\s\S]*?ref=\{evidenceTriggerRef\}[\s\S]*?wl-workbench-focus-trigger/,
+    );
     expect(intake).toContain(
       'navigate(`/work-items/${encodeURIComponent(workItemId)}`)',
     );
@@ -227,6 +235,9 @@ describe('single canonical app workspace', () => {
     );
     expect(workbenchStyles).toMatch(
       /\.wl-workbench-toolbar\s+\.wl-visual-mode-trigger\s*\{\s*width:\s*var\(--wl-touch-target\);\s*height:\s*var\(--wl-touch-target\);\s*min-width:\s*var\(--wl-touch-target\);\s*min-height:\s*var\(--wl-touch-target\);/,
+    );
+    expect(workbenchStyles).toMatch(
+      /@media \(max-width: 720px\)[\s\S]*?\.wl-workbench-context-title\s*\{[\s\S]*?overflow:\s*hidden;[\s\S]*?\.wl-workbench-context-title strong\s*\{\s*display:\s*none;[\s\S]*?\.wl-workbench-context-title span\s*\{\s*display:\s*block;\s*min-width:\s*0;/,
     );
     expect(workbenchStyles).toMatch(
       /\.wl-workbench-drawer-close\s*\{[\s\S]*?min-height:\s*var\(--wl-touch-target\);/,

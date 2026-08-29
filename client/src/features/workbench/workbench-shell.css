@@ -421,10 +421,17 @@
 
   .wl-workbench-context-title {
     display: flex;
+    overflow: hidden;
+  }
+
+  .wl-workbench-context-title strong {
+    display: none;
   }
 
   .wl-workbench-context-title span {
-    display: none;
+    display: block;
+    min-width: 0;
+    max-width: 100%;
   }
 
   .wl-workbench-mobilebar {

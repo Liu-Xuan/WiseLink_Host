@@ -199,6 +199,7 @@ export default function WorkbenchShell({
   const draggingRef = useRef<'nav' | 'evidence' | null>(null);
   const navTriggerRef = useRef<HTMLButtonElement>(null);
   const evidenceTriggerRef = useRef<HTMLButtonElement>(null);
+  const moreTriggerRef = useRef<HTMLButtonElement>(null);
   const navDrawerRef = useRef<HTMLElement>(null);
   const evidenceDrawerRef = useRef<HTMLElement>(null);
   const focusRestoreRef = useRef({
@@ -481,7 +482,7 @@ export default function WorkbenchShell({
     (restoreFocus: boolean): void => {
       const trigger = mobileNavOpen
         ? navTriggerRef.current
-        : evidenceTriggerRef.current;
+        : (evidenceTriggerRef.current ?? moreTriggerRef.current);
       if (mobileEvidenceOpen) setEvidenceRequested(false);
       setMobileNavOpen(false);
       setMobileEvidenceOpen(false);
@@ -627,7 +628,7 @@ export default function WorkbenchShell({
 
         <span className="wl-workbench-context-title">
           <strong>WiseLink</strong>
-          <span>{contextLabel}</span>
+          <span title={contextLabel}>{contextLabel}</span>
         </span>
 
         <div
@@ -659,42 +660,49 @@ export default function WorkbenchShell({
         </div>
 
         <div className="wl-workbench-toolbar-actions">
-          <button
-            type="button"
-            className="wl-workbench-tool-btn wl-workbench-quick-open-trigger"
-            onClick={() => setQuickOpen(true)}
-            title="快速打开（Command 或 Control + K）"
-            aria-label="快速打开"
-          >
-            <Search aria-hidden="true" />
-            <kbd>⌘K</kbd>
-          </button>
+          {!isCompact ? (
+            <button
+              type="button"
+              className="wl-workbench-tool-btn wl-workbench-quick-open-trigger"
+              onClick={() => setQuickOpen(true)}
+              title="快速打开（Command 或 Control + K）"
+              aria-label="快速打开"
+            >
+              <Search aria-hidden="true" />
+              <kbd>⌘K</kbd>
+            </button>
+          ) : null}
           <VisualModeControl />
-          <button
-            ref={evidenceTriggerRef}
-            type="button"
-            className="wl-workbench-tool-btn"
-            onClick={toggleEvidence}
-            title={evidenceVisible ? '收起原文依据' : '展开原文依据'}
-            aria-label={evidenceVisible ? '收起原文依据' : '展开原文依据'}
-            aria-pressed={evidenceVisible}
-          >
-            {evidenceVisible ? <PanelRightClose /> : <PanelRightOpen />}
-          </button>
-          <button
-            type="button"
-            className="wl-workbench-tool-btn wl-workbench-focus-trigger"
-            onClick={toggleFocusMode}
-            title={focusMode ? '退出专注阅读' : '进入专注阅读'}
-            aria-label={focusMode ? '退出专注阅读' : '进入专注阅读'}
-            aria-pressed={focusMode}
-          >
-            <Focus aria-hidden="true" />
-            <span>{focusMode ? '退出专注' : '专注阅读'}</span>
-          </button>
+          {!isCompact ? (
+            <>
+              <button
+                ref={evidenceTriggerRef}
+                type="button"
+                className="wl-workbench-tool-btn"
+                onClick={toggleEvidence}
+                title={evidenceVisible ? '收起原文依据' : '展开原文依据'}
+                aria-label={evidenceVisible ? '收起原文依据' : '展开原文依据'}
+                aria-pressed={evidenceVisible}
+              >
+                {evidenceVisible ? <PanelRightClose /> : <PanelRightOpen />}
+              </button>
+              <button
+                type="button"
+                className="wl-workbench-tool-btn wl-workbench-focus-trigger"
+                onClick={toggleFocusMode}
+                title={focusMode ? '退出专注阅读' : '进入专注阅读'}
+                aria-label={focusMode ? '退出专注阅读' : '进入专注阅读'}
+                aria-pressed={focusMode}
+              >
+                <Focus aria-hidden="true" />
+                <span>{focusMode ? '退出专注' : '专注阅读'}</span>
+              </button>
+            </>
+          ) : null}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
+                ref={moreTriggerRef}
                 type="button"
                 className="wl-workbench-tool-btn"
                 title="更多工作台设置"
@@ -708,6 +716,34 @@ export default function WorkbenchShell({
               sideOffset={8}
               className="wl-workbench-more-menu"
             >
+              {isCompact ? (
+                <>
+                  <DropdownMenuLabel>移动端快捷操作</DropdownMenuLabel>
+                  <DropdownMenuItem onSelect={() => setQuickOpen(true)}>
+                    <Search aria-hidden="true" />
+                    快速打开
+                  </DropdownMenuItem>
+                  <DropdownMenuCheckboxItem
+                    checked={evidenceVisible}
+                    onCheckedChange={() => toggleEvidence()}
+                  >
+                    {evidenceVisible ? (
+                      <PanelRightClose aria-hidden="true" />
+                    ) : (
+                      <PanelRightOpen aria-hidden="true" />
+                    )}
+                    {evidenceVisible ? '收起原文依据' : '展开原文依据'}
+                  </DropdownMenuCheckboxItem>
+                  <DropdownMenuCheckboxItem
+                    checked={focusMode}
+                    onCheckedChange={() => toggleFocusMode()}
+                  >
+                    <Focus aria-hidden="true" />
+                    {focusMode ? '退出专注阅读' : '进入专注阅读'}
+                  </DropdownMenuCheckboxItem>
+                  <DropdownMenuSeparator />
+                </>
+              ) : null}
               <DropdownMenuLabel>工作台显示</DropdownMenuLabel>
               <DropdownMenuCheckboxItem
                 checked={reduceTransparency}
