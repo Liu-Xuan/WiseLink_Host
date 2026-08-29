@@ -12,11 +12,11 @@ use FileService, DocumentVersion/SourceArtifact resolver, and correlation-port
 doubles with realistic identities. They do not prove that production Hosted
 Core ingested and persisted that same file into the real DV/SA owner chain.
 
-The controller's newer integration baseline is
-`72392eb18930924b34f8f6b4bbff9402f14f558f`; both ordinary commits from this
-candidate must be migrated serially. That integration must retain 72392's
-accepted FTD packageId correction and consume the OCR owner's authoritative
-page-level failure contract.
+The controller now reports post-OCR integration current `93860a3d…`, which
+already contains the accepted first family slice and OCR owner changes. This
+successor remains based on `ea557b107…` / b964 and must be replayed semantically
+onto that current state. The replay must retain the current FTD packageId
+correction and the OCR owner's authoritative page-level failure contract.
 
 Profile recognition uses the controlled Document Management family plus actual
 PDF title/text and the existing `DocumentFamilyAdapterRegistry`. Subtypes added
