@@ -397,9 +397,9 @@ select:focus-visible {
 
 @media (max-width: 680px) {
   .wiselink-account-menu-trigger {
-    width: 44px;
-    height: 44px;
-    flex-basis: 44px;
+    width: var(--wl-touch-target);
+    height: var(--wl-touch-target);
+    flex-basis: var(--wl-touch-target);
   }
 
   .wiselink-breadcrumb {

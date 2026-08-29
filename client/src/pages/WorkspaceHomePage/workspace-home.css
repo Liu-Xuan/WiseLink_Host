@@ -128,7 +128,7 @@
 .library-entry-grid.has-intake .hosted-intake-action > button {
   width: 100%;
   min-width: 0;
-  min-height: 44px;
+  min-height: var(--wl-touch-target);
   border-radius: var(--wl-radius-md);
 }
 
@@ -586,7 +586,7 @@
   overflow: hidden;
   color: #6684a6;
   font-family: var(--wl-font);
-  font-size: 8px;
+  font-size: var(--wl-text-caption);
   font-style: normal;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1047,7 +1047,7 @@
 }
 .library-graph-edge span {
   font-family: var(--wl-font);
-  font-size: 8px;
+  font-size: var(--wl-text-caption);
 }
 .library-graph-edge svg {
   width: 13px;
@@ -1506,7 +1506,7 @@
 }
 
 .library-query-input {
-  min-height: 44px;
+  min-height: var(--wl-touch-target);
   border-color: var(--wl-border-strong);
   border-radius: var(--wl-radius-md);
   background: var(--wl-surface-solid);
@@ -2109,9 +2109,9 @@
   }
 
   .library-recent-preview {
-    width: 44px;
-    min-width: 44px;
-    flex-basis: 44px;
+    width: var(--wl-touch-target);
+    min-width: var(--wl-touch-target);
+    flex-basis: var(--wl-touch-target);
   }
 
   .library-tree-panel,

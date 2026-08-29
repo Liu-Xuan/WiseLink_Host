@@ -411,11 +411,11 @@ html[data-wl-transparency='reduced'] .structured-browser-unit {
   .structured-browser input,
   .structured-browser summary,
   .structured-browser a {
-    min-height: 44px;
+    min-height: var(--wl-touch-target);
   }
 
   .structured-browser button {
-    min-width: 44px;
+    min-width: var(--wl-touch-target);
   }
 
   .structured-browser-mobile-outline summary,

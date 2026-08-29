@@ -30,7 +30,7 @@
 
 .assessment-rule-header span {
   color: var(--wl-accent);
-  font-size: 11px;
+  font-size: var(--wl-text-caption);
   font-weight: 720;
 }
 
@@ -45,7 +45,7 @@
   max-width: 720px;
   margin: 2px 0 0;
   color: var(--wl-muted);
-  font-size: 12px;
+  font-size: var(--wl-text-meta);
   line-height: 1.6;
   overflow-wrap: anywhere;
 }
@@ -57,7 +57,7 @@
   border-radius: 999px;
   color: var(--wl-muted);
   background: var(--wl-glass-soft);
-  font-size: 11px;
+  font-size: var(--wl-text-caption);
 }
 
 .assessment-rule-filters {
@@ -75,14 +75,14 @@
 }
 
 .assessment-rule-filters button {
-  min-height: 34px;
+  min-height: var(--wl-control-target);
   padding: 0 10px;
   border: 1px solid var(--wl-border);
   border-radius: 999px;
   color: var(--wl-muted);
   background: var(--wl-surface-solid);
   font: inherit;
-  font-size: 11px;
+  font-size: var(--wl-text-caption);
   cursor: pointer;
 }
 
@@ -160,13 +160,13 @@
 
 .assessment-rule-list-item small {
   color: var(--wl-faint);
-  font-size: 9.5px;
+  font-size: var(--wl-text-caption);
 }
 
 .assessment-rule-list-item strong {
   overflow: hidden;
   display: -webkit-box;
-  font-size: 12.5px;
+  font-size: var(--wl-text-body-sm);
   line-height: 1.45;
   text-overflow: ellipsis;
   -webkit-box-orient: vertical;
@@ -179,7 +179,7 @@
   overflow: hidden;
   display: -webkit-box;
   color: var(--wl-muted);
-  font-size: 10.5px;
+  font-size: var(--wl-text-caption);
   font-style: normal;
   line-height: 1.45;
   -webkit-box-orient: vertical;
@@ -220,19 +220,19 @@
   margin: 0;
   padding: 28px 12px;
   color: var(--wl-muted);
-  font-size: 12px;
+  font-size: var(--wl-text-meta);
   text-align: center;
 }
 
 .assessment-rule-more {
   width: 100%;
-  min-height: 38px;
+  min-height: var(--wl-control-target);
   margin-top: 6px;
   border: 1px dashed var(--wl-border-strong);
   border-radius: 10px;
   color: var(--wl-muted);
   background: transparent;
-  font-size: 11px;
+  font-size: var(--wl-text-caption);
   cursor: pointer;
 }
 
@@ -257,7 +257,7 @@
   justify-content: space-between;
   gap: 12px;
   color: var(--wl-muted);
-  font-size: 10.5px;
+  font-size: var(--wl-text-caption);
 }
 
 .assessment-rule-source > header span {
@@ -281,7 +281,7 @@
   border-radius: 0 var(--wl-radius-sm) var(--wl-radius-sm) 0;
   color: var(--wl-ink);
   background: var(--wl-accent-soft);
-  font-size: 14px;
+  font-size: var(--wl-text-body);
   font-weight: 650;
   line-height: 1.65;
   overflow-wrap: anywhere;
@@ -293,7 +293,7 @@
   margin: 12px 0 0;
   gap: 4px;
   color: var(--wl-muted);
-  font-size: 11.5px;
+  font-size: var(--wl-text-meta);
   line-height: 1.6;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
@@ -301,7 +301,7 @@
 
 .assessment-rule-source > p strong {
   color: var(--wl-ink);
-  font-size: 10.5px;
+  font-size: var(--wl-text-caption);
 }
 
 .assessment-rule-source .assessment-rule-source-missing {
@@ -328,7 +328,7 @@
 
 .assessment-rule-conclusion > span {
   color: var(--wl-accent);
-  font-size: 10.5px;
+  font-size: var(--wl-text-caption);
   font-weight: 720;
 }
 
@@ -340,7 +340,7 @@
 .assessment-rule-conclusion p {
   margin: 8px 0 0;
   color: var(--wl-ink);
-  font-size: 14px;
+  font-size: var(--wl-text-body);
   font-weight: 650;
   line-height: 1.7;
   overflow-wrap: anywhere;
@@ -351,7 +351,7 @@
   display: block;
   margin-top: 8px;
   color: var(--wl-faint);
-  font-size: 10.5px;
+  font-size: var(--wl-text-caption);
   line-height: 1.55;
   overflow-wrap: anywhere;
 }
@@ -411,13 +411,13 @@
 
 .assessment-rule-details dt {
   color: var(--wl-faint);
-  font-size: 10px;
+  font-size: var(--wl-text-caption);
 }
 
 .assessment-rule-details dd {
   margin: 5px 0 0;
   color: var(--wl-muted);
-  font-size: 11.5px;
+  font-size: var(--wl-text-meta);
   line-height: 1.6;
   overflow-wrap: anywhere;
 }
@@ -432,17 +432,17 @@
 
 .assessment-rule-sources > span {
   color: var(--wl-faint);
-  font-size: 10px;
+  font-size: var(--wl-text-caption);
 }
 
 .assessment-rule-sources button {
-  min-height: 34px;
+  min-height: var(--wl-control-target);
   padding: 0 10px;
   border: 1px solid color-mix(in srgb, var(--wl-accent) 28%, var(--wl-border));
   border-radius: 999px;
   color: var(--wl-accent);
   background: var(--wl-accent-soft);
-  font-size: 10.5px;
+  font-size: var(--wl-text-caption);
   cursor: pointer;
 }
 
@@ -468,7 +468,7 @@
 .parse-engineer-review-summary span,
 .parse-engineer-review-summary small {
   color: var(--wl-muted);
-  font-size: 10px;
+  font-size: var(--wl-text-caption);
 }
 
 .parse-engineer-review-summary strong {
@@ -484,7 +484,7 @@
 
 .parse-engineer-review-body > p {
   color: var(--wl-muted);
-  font-size: 11.5px;
+  font-size: var(--wl-text-meta);
   line-height: 1.6;
 }
 
@@ -527,7 +527,7 @@
   }
 
   .assessment-rule-filters button {
-    min-height: 44px;
+    min-height: var(--wl-touch-target);
   }
 
   .assessment-rule-list {
@@ -537,7 +537,7 @@
   .assessment-rule-list-item,
   .assessment-rule-more,
   .assessment-rule-sources button {
-    min-height: 44px;
+    min-height: var(--wl-touch-target);
   }
 
   .assessment-rule-reading {
@@ -555,7 +555,7 @@
   }
 
   .parse-engineer-review > .parse-engineer-review-summary {
-    min-height: 44px;
+    min-height: var(--wl-touch-target);
   }
 }
 

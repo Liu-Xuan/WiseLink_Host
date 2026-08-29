@@ -18,9 +18,9 @@
 
 .parse-shell--workbench {
   display: flex;
-  height: calc(100vh - 96px);
-  min-height: 480px;
-  padding: 12px 0 0;
+  height: 100%;
+  min-height: 0;
+  padding: 8px 0 0;
   overflow: hidden;
 }
 
@@ -194,7 +194,7 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
 .parse-rail-step {
   display: flex;
   min-width: 0;
-  min-height: 44px;
+  min-height: var(--wl-touch-target);
   padding: 0 12px;
   align-items: center;
   gap: 9px;
@@ -2706,12 +2706,6 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
 }
 
 @media (max-width: 720px) {
-  .parse-shell.parse-shell--workbench {
-    height: calc(100dvh - 118px);
-    min-height: 620px;
-    padding: 8px 0 0;
-  }
-
   .parse-shell {
     padding: 22px 12px 46px;
   }
@@ -2737,7 +2731,7 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
 
   .parse-mobile-source-switch button {
     display: inline-flex;
-    min-height: 38px;
+    min-height: var(--wl-touch-target);
     align-items: center;
     justify-content: center;
     gap: 7px;
@@ -2746,7 +2740,7 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
     color: var(--wl-muted);
     background: transparent;
     font: inherit;
-    font-size: 11px;
+    font-size: var(--wl-text-meta);
     cursor: pointer;
   }
 
@@ -2993,12 +2987,6 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
 }
 
 /* ── Apple Glass R05.1：专业工作台使用稳定 G3，PDF/输入保持 G4 实底 ── */
-.parse-shell.parse-shell--workbench {
-  height: 100%;
-  min-height: 0;
-  padding: 8px 0 0;
-}
-
 .parse-overall-bar,
 .parse-panel,
 .parse-assessment-panel,

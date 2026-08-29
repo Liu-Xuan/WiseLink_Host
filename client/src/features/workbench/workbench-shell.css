@@ -90,7 +90,7 @@
 
 .wl-workbench-context-title span {
   color: var(--wl-muted);
-  font-size: 10px;
+  font-size: var(--wl-text-caption);
 }
 
 .wl-workbench-shell.is-focus-mode .wl-workbench-context-title {
@@ -183,7 +183,7 @@
 
 .wl-workbench-quick-open-trigger kbd {
   color: var(--wl-faint);
-  font: 600 9px/1 var(--wl-font);
+  font: 600 var(--wl-text-caption) / 1 var(--wl-mono);
 }
 
 .wl-workbench-focus-trigger {
@@ -195,7 +195,7 @@
 }
 
 .wl-workbench-focus-trigger span {
-  font-size: 10px;
+  font-size: var(--wl-text-caption);
   font-weight: 650;
   white-space: nowrap;
 }
@@ -309,7 +309,9 @@
 }
 
 .wl-workbench-divider:focus-visible {
-  outline: none;
+  outline: 2px solid var(--wl-accent);
+  outline-offset: -2px;
+  border-radius: 999px;
 }
 
 /* ── 底部证据面板 ── */
@@ -351,24 +353,24 @@
   box-shadow: none;
 }
 
-/* 1440px 设计视口保留目录、主内容与证据栏并排；更窄窗口才按需浮出。 */
-@media (max-width: 1360px) {
-  .wl-workbench-main + .wl-workbench-divider {
-    display: none;
-  }
+/* 容器宽度不足以保留实体内容时，证据才按需浮出；判断由 ResizeObserver 驱动。 */
+.wl-workbench-body.is-evidence-overlay
+  > .wl-workbench-main
+  + .wl-workbench-divider {
+  display: none;
+}
 
-  .wl-workbench-evidence {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    bottom: 8px;
-    z-index: 40;
-    max-width: min(360px, calc(100% - 16px));
-    border: 1px solid var(--wl-border-strong);
-    border-radius: var(--wl-radius-panel);
-    background: color-mix(in srgb, var(--wl-surface-solid) 94%, transparent);
-    box-shadow: -12px 0 32px rgb(15 23 42 / 14%);
-  }
+.wl-workbench-body.is-evidence-overlay > .wl-workbench-evidence {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  bottom: 8px;
+  z-index: 40;
+  max-width: min(360px, calc(100% - 16px));
+  border: 1px solid var(--wl-border-strong);
+  border-radius: var(--wl-radius-panel);
+  background: color-mix(in srgb, var(--wl-surface-solid) 94%, transparent);
+  box-shadow: -12px 0 32px rgb(15 23 42 / 14%);
 }
 
 /* ── 响应式：平板先收纳目录，手机切换为单活动面板（§10.1） ── */
@@ -409,7 +411,7 @@
   }
 
   .wl-workbench-toolbar {
-    min-height: 44px;
+    min-height: var(--wl-touch-target);
     padding: 0 8px;
   }
 
@@ -493,7 +495,7 @@
   .wl-workbench-drawer-close {
     display: inline-flex;
     width: 100%;
-    min-height: 44px;
+    min-height: var(--wl-touch-target);
     flex: 0 0 auto;
     align-items: center;
     justify-content: center;
@@ -536,8 +538,8 @@
 
   .wl-workbench-mobile-tab {
     display: flex;
-    min-width: 44px;
-    min-height: 44px;
+    min-width: var(--wl-touch-target);
+    min-height: var(--wl-touch-target);
     flex: 1;
     flex-direction: column;
     align-items: center;
@@ -547,7 +549,7 @@
     border-radius: var(--wl-radius-sm);
     background: transparent;
     color: var(--wl-muted);
-    font-size: 10px;
+    font-size: var(--wl-text-caption);
     cursor: pointer;
   }
 
@@ -599,18 +601,18 @@ html[data-wl-visual-mode='compatible'] .wl-workbench-mobilebar {
 
 @media (max-width: 720px) {
   .wl-workbench-toolbar .wl-workbench-tool-btn {
-    width: 44px;
-    height: 44px;
-    min-width: 44px;
-    flex-basis: 44px;
+    width: var(--wl-touch-target);
+    height: var(--wl-touch-target);
+    min-width: var(--wl-touch-target);
+    flex-basis: var(--wl-touch-target);
     padding: 0;
   }
 
   .wl-workbench-toolbar .wl-visual-mode-trigger {
-    width: 44px;
-    height: 44px;
-    min-width: 44px;
-    min-height: 44px;
+    width: var(--wl-touch-target);
+    height: var(--wl-touch-target);
+    min-width: var(--wl-touch-target);
+    min-height: var(--wl-touch-target);
     padding: 3px;
   }
 }

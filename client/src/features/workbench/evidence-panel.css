@@ -44,11 +44,12 @@
 
 .wl-evidence-title span {
   color: var(--wl-muted);
-  font-size: 11.5px;
+  font-size: var(--wl-text-meta);
 }
 
 .wl-evidence-clear {
   display: inline-flex;
+  min-height: var(--wl-control-target);
   align-items: center;
   gap: 6px;
   padding: 5px 11px;
@@ -56,7 +57,7 @@
   border-radius: 999px;
   background: var(--wl-accent-soft);
   color: var(--wl-accent);
-  font-size: 11px;
+  font-size: var(--wl-text-meta);
   font-weight: 650;
   font-family: var(--wl-font);
   cursor: pointer;
@@ -117,7 +118,7 @@
   overflow: hidden;
   color: var(--wl-muted);
   font-family: var(--wl-font);
-  font-size: 10.5px;
+  font-size: var(--wl-text-caption);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -129,7 +130,7 @@
   border: 1px solid var(--wl-border);
   border-radius: 999px;
   color: var(--wl-faint);
-  font-size: 9.5px;
+  font-size: var(--wl-text-caption);
   font-weight: 700;
   letter-spacing: 0.01em;
   white-space: nowrap;
@@ -140,7 +141,7 @@
   margin: 0;
   color: var(--wl-ink);
   font-family: var(--wl-font);
-  font-size: 12.5px;
+  font-size: var(--wl-text-body-sm);
   line-height: 1.7;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
@@ -155,6 +156,7 @@
 
 .wl-evidence-ref {
   display: inline-flex;
+  min-height: var(--wl-control-target);
   align-items: center;
   gap: 5px;
   max-width: 100%;
@@ -164,7 +166,7 @@
   background: var(--wl-surface-solid);
   color: var(--wl-muted);
   font-family: var(--wl-font);
-  font-size: 10px;
+  font-size: var(--wl-text-meta);
   cursor: pointer;
   transition:
     color var(--wl-motion-fast) ease,
@@ -199,16 +201,23 @@
 
 .wl-evidence-no-ref {
   color: var(--wl-faint);
-  font-size: 10.5px;
+  font-size: var(--wl-text-caption);
 }
 
 .wl-evidence-empty {
   margin: 0;
   padding: 20px;
   color: var(--wl-muted);
-  font-size: 12px;
+  font-size: var(--wl-text-meta);
   text-align: center;
   line-height: 1.7;
+}
+
+@media (max-width: 720px) {
+  .wl-evidence-clear,
+  .wl-evidence-ref {
+    min-height: var(--wl-touch-target);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

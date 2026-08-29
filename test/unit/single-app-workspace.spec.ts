@@ -19,6 +19,7 @@ describe('single canonical app workspace', () => {
       intake,
       taskPills,
       themeProvider,
+      tokens,
       glass,
       indexStyles,
       homeStyles,
@@ -51,6 +52,7 @@ describe('single canonical app workspace', () => {
       source('client/src/pages/WorkspaceHomePage/HostedDevelopmentIntake.tsx'),
       source('client/src/features/review/TaskPills.tsx'),
       source('client/src/app/providers/ThemeProvider.tsx'),
+      source('client/src/styles/tokens.css'),
       source('client/src/styles/glass.css'),
       source('client/src/index.css'),
       source('client/src/pages/WorkspaceHomePage/workspace-home.css'),
@@ -139,6 +141,9 @@ describe('single canonical app workspace', () => {
     expect(themeProvider).toContain('wiselink.ui.reduce-transparency');
     expect(themeProvider).toContain('wiselink.ui.visual-mode');
     expect(themeProvider).toContain('wlVisualMode');
+    expect(tokens).toContain('--wl-text-caption: 11px');
+    expect(tokens).toContain('--wl-text-meta: 12px');
+    expect(tokens).toContain('--wl-touch-target: 44px');
     expect(visualModeControl).toContain('默认效果');
     expect(visualModeControl).toContain('极致效果');
     expect(visualModeControl).toContain('兼容效果');
@@ -181,22 +186,26 @@ describe('single canonical app workspace', () => {
     expect(workbenchStyles).toMatch(
       /\.wl-workbench-body\s*\{\s*position: relative;/,
     );
-    expect(shell).toContain('const EVIDENCE_INLINE_BREAKPOINT = 1360');
-    expect(workbenchStyles).toContain('@media (max-width: 1360px)');
+    expect(shell).toContain('resolveWorkbenchAdaptiveLayout');
+    expect(shell).toContain('ResizeObserver');
+    expect(shell).toContain('is-evidence-overlay');
+    expect(shell).toContain('展开资料目录并收起原文依据');
+    expect(workbenchStyles).toContain('.wl-workbench-body.is-evidence-overlay');
+    expect(workbenchStyles).not.toContain('@media (max-width: 1360px)');
     expect(workbenchStyles).not.toContain('@media (max-width: 1480px)');
     expect(evidenceStyles).toContain('grid-template-columns: minmax(0, 1fr)');
     expect(homeStyles).toContain(
       '.library-entry-grid.has-intake .hosted-intake-action',
     );
     expect(homeStyles).toMatch(
-      /\.library-recent-preview\s*\{\s*width:\s*44px;\s*min-width:\s*44px;/,
+      /\.library-recent-preview\s*\{\s*width:\s*var\(--wl-touch-target\);\s*min-width:\s*var\(--wl-touch-target\);/,
     );
     expect(appShellStyles).toMatch(
-      /\.wiselink-account-menu-trigger\s*\{\s*width:\s*44px;\s*height:\s*44px;/,
+      /\.wiselink-account-menu-trigger\s*\{\s*width:\s*var\(--wl-touch-target\);\s*height:\s*var\(--wl-touch-target\);/,
     );
     expect(appShellStyles).not.toContain('font-size: 8px');
     expect(visualModeStyles).toMatch(
-      /\.wiselink-app-header\s+\.wl-visual-mode-trigger\s*\{\s*min-width:\s*44px;\s*width:\s*44px;\s*min-height:\s*44px;/,
+      /\.wiselink-app-header\s+\.wl-visual-mode-trigger\s*\{\s*min-width:\s*var\(--wl-touch-target\);\s*width:\s*var\(--wl-touch-target\);\s*min-height:\s*var\(--wl-touch-target\);/,
     );
     expect(workbenchStyles).toContain(
       'padding-bottom: var(--wl-workbench-mobilebar-height)',
@@ -208,25 +217,25 @@ describe('single canonical app workspace', () => {
       'inset: 45px 0 var(--wl-workbench-mobilebar-height)',
     );
     expect(workbenchStyles).toMatch(
-      /\.wl-workbench-toolbar\s+\.wl-workbench-tool-btn\s*\{\s*width:\s*44px;\s*height:\s*44px;\s*min-width:\s*44px;/,
+      /\.wl-workbench-toolbar\s+\.wl-workbench-tool-btn\s*\{\s*width:\s*var\(--wl-touch-target\);\s*height:\s*var\(--wl-touch-target\);\s*min-width:\s*var\(--wl-touch-target\);/,
     );
     expect(workbenchStyles).toMatch(
-      /\.wl-workbench-toolbar\s+\.wl-visual-mode-trigger\s*\{\s*width:\s*44px;\s*height:\s*44px;\s*min-width:\s*44px;\s*min-height:\s*44px;/,
+      /\.wl-workbench-toolbar\s+\.wl-visual-mode-trigger\s*\{\s*width:\s*var\(--wl-touch-target\);\s*height:\s*var\(--wl-touch-target\);\s*min-width:\s*var\(--wl-touch-target\);\s*min-height:\s*var\(--wl-touch-target\);/,
     );
     expect(workbenchStyles).toMatch(
-      /\.wl-workbench-drawer-close\s*\{[\s\S]*?min-height:\s*44px;/,
+      /\.wl-workbench-drawer-close\s*\{[\s\S]*?min-height:\s*var\(--wl-touch-target\);/,
     );
     expect(workbenchStyles).toMatch(
-      /\.wl-workbench-mobile-tab\s*\{\s*display:\s*flex;\s*min-width:\s*44px;\s*min-height:\s*44px;/,
+      /\.wl-workbench-mobile-tab\s*\{\s*display:\s*flex;\s*min-width:\s*var\(--wl-touch-target\);\s*min-height:\s*var\(--wl-touch-target\);/,
     );
     expect(pdfSourceStyles).toMatch(
-      /\.parse-pdf-toolbar button\s*\{\s*width:\s*44px;\s*height:\s*44px;/,
+      /\.parse-pdf-toolbar button\s*\{\s*width:\s*var\(--wl-touch-target\);\s*height:\s*var\(--wl-touch-target\);/,
     );
     expect(pdfSourceStyles).toMatch(
-      /\.parse-pdf-page-controls input\s*\{\s*width:\s*52px;\s*height:\s*44px;/,
+      /\.parse-pdf-page-controls input\s*\{\s*width:\s*52px;\s*height:\s*var\(--wl-touch-target\);/,
     );
     expect(structuredBrowserStyles).toMatch(
-      /\.structured-browser button,\s*\.structured-browser input,\s*\.structured-browser summary,\s*\.structured-browser a\s*\{\s*min-height:\s*44px;/,
+      /\.structured-browser button,\s*\.structured-browser input,\s*\.structured-browser summary,\s*\.structured-browser a\s*\{\s*min-height:\s*var\(--wl-touch-target\);/,
     );
     expect(documentParsingStyles).toMatch(
       /\.parse-reader-split\.is-pdf-active\s*>\s*\.parse-pdf-pane\s*\{\s*display:\s*flex;/,
