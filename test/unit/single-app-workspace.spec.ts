@@ -27,6 +27,7 @@ describe('single canonical app workspace', () => {
       reasoningTrail,
       reader,
       workbenchStyles,
+      documentParsingStyles,
       visualModeControl,
       quickOpen,
     ] = await Promise.all([
@@ -57,6 +58,7 @@ describe('single canonical app workspace', () => {
         'client/src/pages/DocumentParsingPage/DocumentReaderWorkspace.tsx',
       ),
       source('client/src/features/workbench/workbench-shell.css'),
+      source('client/src/pages/DocumentParsingPage/document-parsing.css'),
       source('client/src/components/VisualModeControl.tsx'),
       source('client/src/features/workbench/QuickOpen.tsx'),
     ]);
@@ -165,6 +167,15 @@ describe('single canonical app workspace', () => {
     expect(shell).toContain('进入专注阅读');
     expect(workbenchStyles).toMatch(
       /\.wl-workbench-body\s*\{\s*position: relative;/,
+    );
+    expect(documentParsingStyles).toMatch(
+      /\.parse-reader-split\.is-pdf-active\s*>\s*\.parse-pdf-pane\s*\{\s*display:\s*flex;/,
+    );
+    expect(documentParsingStyles).not.toMatch(
+      /\.parse-reader-split\s*>\s*\.parse-pdf-pane\s*\{\s*display:\s*none;/,
+    );
+    expect(documentParsingStyles).toMatch(
+      /\.parse-structured-pdf\s*\{\s*display:\s*none;/,
     );
   });
 
