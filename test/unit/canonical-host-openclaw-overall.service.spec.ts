@@ -62,6 +62,75 @@ describe('CanonicalHostOpenClawOverallService', () => {
     });
   });
 
+  it('lets a Host-marked user regeneration reach the same begin path without discovery', async () => {
+    const harness = createHarness();
+    const priorOverall = {
+      status: 'STALE' as const,
+      revision: 1,
+      sourceResultId: 'openclaw-overall://PRIOR',
+      basedOnBaseRuleRevision: 1,
+      basedOnBaseRuleArtifactSha256: BASE_SHA,
+      basedOnEngineerReviewRevision: null,
+      basedOnEngineerReviewArtifactSha256: null,
+      discoveryStatus: 'NO_DISCOVERY',
+      gap: null,
+      candidateRefCount: 0,
+      findingCount: 1,
+      unresolvedCount: 0,
+      authorityLevel: 'candidate_only' as const,
+      externalDiscoveryIsEvidence: false as const,
+      artifact: artifact('artifact://prior-overall', 'd'.repeat(64)),
+      actionAttemptId: 'ATT-PRIOR-OVERALL',
+      staleReason: null,
+    };
+    harness.workItem.integratedAssessment = {
+      ...harness.workItem.integratedAssessment!,
+      status: 'OVERALL_CANDIDATE_STALE',
+      overallSynthesis: priorOverall,
+    };
+    harness.workItem.overallRegenerationRequest = {
+      schemaVersion: 'wiselink.3_1.overall_regeneration_request.v1',
+      requestId: 'REQ-USER-REGEN',
+      requestedByUserId: 'USER-1',
+      requestedAt: '2026-08-29T05:00:00.000Z',
+      requestedFromRevision: 4,
+      executionRevision: 5,
+      staleReason: 'USER_REQUESTED_REGENERATION',
+      sourceIdentity: {
+        documentVersionId: 'DV-737',
+        sourceArtifactId: 'SRC-737',
+        sourceFileSha256: 'e'.repeat(64),
+        packageId: 'PKG-737',
+        packageArtifactSha256: 'b'.repeat(64),
+      },
+      sourceOverall: {
+        revision: 1,
+        actionAttemptId: 'ATT-PRIOR-OVERALL',
+        artifactSha256: 'd'.repeat(64),
+      },
+    };
+    harness.workItem.source = {
+      ...harness.workItem.source,
+      sourceArtifactId: 'SRC-737',
+      sourceFileSha256: 'e'.repeat(64),
+    };
+
+    await expect(
+      harness.service.begin(WORK_ITEM_ID, []),
+    ).resolves.toMatchObject({ attemptRef: ATTEMPT_REF, status: 'RUNNING' });
+    const reservation = harness.attempts.reserveAndClaim.mock.calls.at(-1)?.[0];
+    expect(reservation).toMatchObject({
+      baseRevision: 5,
+      allowedConnectors: [],
+      idempotencyKey:
+        `openclaw-v1:overall:${WORK_ITEM_ID}:5:` +
+        'USER_REQUESTED_REGENERATION:REQ-USER-REGEN',
+    });
+    await expect(
+      harness.service.begin(WORK_ITEM_ID, ['BOEING']),
+    ).rejects.toThrow('OVERALL_REGENERATION_DISCOVERY_PROVIDERS_FORBIDDEN');
+  });
+
   it('resumes only the same live principal lease without rebuilding input', async () => {
     jest.useFakeTimers().setSystemTime(new Date('2026-08-24T10:30:00.000Z'));
     try {

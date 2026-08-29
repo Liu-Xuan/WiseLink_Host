@@ -15,6 +15,40 @@ import {
 } from '../../server/modules/action-attempt/action-attempt.types';
 
 describe('ActionAttemptLifecycleService', () => {
+  it('reserves once as QUEUED and lets the existing begin path claim the same task', async () => {
+    const repository = new MemoryActionAttemptRepository();
+    const service = new ActionAttemptLifecycleService(repository as never);
+    let builds = 0;
+    const input = reservationInput(async () => {
+      builds += 1;
+      return { controlled: true };
+    });
+
+    const reserved = await service.reserve(input);
+    const reread = await service.readExactIdempotency({
+      tenantId: 'tenant-test',
+      workItemId: 'WI-test',
+      taskType: 'OPENCLAW_DYNAMIC_EVALUATION',
+      baseRevision: 7,
+      documentVersionId: 'DV-test',
+      idempotencyKey: 'openclaw-v1:test',
+    });
+    const claimed = await service.reserveAndClaim(input);
+
+    expect(reserved).toMatchObject({
+      created: true,
+      row: { status: 'QUEUED' },
+    });
+    expect(claimed).toMatchObject({
+      created: false,
+      attemptRef: reserved.task.operationRef,
+      status: 'RUNNING',
+    });
+    expect(reread?.operationRef).toBe(reserved.task.operationRef);
+    expect(repository.transitions).toEqual(['QUEUED', 'RUNNING']);
+    expect(builds).toBe(1);
+  });
+
   it('persists QUEUED before claim and replays the same live fence', async () => {
     const repository = new MemoryActionAttemptRepository();
     const service = new ActionAttemptLifecycleService(repository as never);
@@ -475,6 +509,10 @@ class MemoryActionAttemptRepository {
       )
       ? this.row
       : null;
+  }
+
+  async readLatestByExactIdempotency(input: { idempotencyKey: string }) {
+    return this.row?.idempotencyKey === input.idempotencyKey ? this.row : null;
   }
 
   async readByOperationRef(operationRef: string) {

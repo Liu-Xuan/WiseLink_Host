@@ -1007,6 +1007,85 @@ export interface CanonicalOpenClawOverallProjection {
   toolVersions?: Record<string, string>;
 }
 
+export interface CanonicalOverallRegenerationSourceIdentity {
+  documentVersionId: string;
+  sourceArtifactId: string;
+  sourceFileSha256: string;
+  packageId: string;
+  packageArtifactSha256: string;
+}
+
+export interface RequestCanonicalOverallRegenerationRequest {
+  requestId: string;
+  expectedRevision: number;
+  sourceIdentity: CanonicalOverallRegenerationSourceIdentity;
+}
+
+/**
+ * Host-owned request marker retained on the WorkItem after the replacement
+ * candidate is committed. It links a browser request to the existing overall
+ * ActionAttempt runtime without exposing a lease or task envelope. The actor
+ * is resolved by the Host and is never accepted from the browser request.
+ */
+export interface CanonicalOverallRegenerationRequestProjection {
+  schemaVersion: 'wiselink.3_1.overall_regeneration_request.v1';
+  requestId: string;
+  requestedByUserId: string;
+  requestedAt: string;
+  requestedFromRevision: number;
+  executionRevision: number;
+  staleReason: 'USER_REQUESTED_REGENERATION';
+  sourceIdentity: CanonicalOverallRegenerationSourceIdentity;
+  sourceOverall: {
+    revision: number;
+    actionAttemptId: string;
+    artifactSha256: string;
+  };
+}
+
+export type CanonicalOverallRegenerationExecutionStatus =
+  | 'REQUESTED'
+  | 'QUEUED'
+  | 'RUNNING'
+  | 'RETRY_SCHEDULED'
+  | 'COMMITTING'
+  | 'SUCCEEDED'
+  | 'WAITING_INPUT'
+  | 'FAILED'
+  | 'TIMED_OUT'
+  | 'CANCELLED'
+  | 'CONFLICT'
+  | 'OBSOLETE';
+
+export interface CanonicalOverallRegenerationReadModel {
+  schemaVersion: 'wiselink.3_1.overall_regeneration_read.v1';
+  workItemId: string;
+  requestId: string;
+  requestedByUserId: string;
+  requestedAt: string;
+  requestedFromRevision: number;
+  executionRevision: number;
+  currentWorkItemRevision: number;
+  sourceIdentity: CanonicalOverallRegenerationSourceIdentity;
+  staleReason: 'USER_REQUESTED_REGENERATION';
+  status: CanonicalOverallRegenerationExecutionStatus;
+  attemptRef: string | null;
+  projectionApplied: boolean;
+  terminalReason: string | null;
+  terminalErrorCode: string | null;
+  authority: {
+    candidateOnly: true;
+    reviewActionCreated: false;
+    engineeringApprovalChanged: false;
+    documentCurrentnessChanged: false;
+  };
+}
+
+export interface RequestCanonicalOverallRegenerationResponse {
+  regeneration: CanonicalOverallRegenerationReadModel;
+  replayed: boolean;
+}
+
 export type CanonicalEngineerReviewDecision =
   | 'confirmed_pass'
   | 'confirmed_fail'
@@ -1165,6 +1244,7 @@ export interface CanonicalWorkItemProjection {
   applicability?: CanonicalApplicabilityCandidateProjection | null;
   assessment?: CanonicalAssessmentCandidateProjection | null;
   integratedAssessment?: CanonicalIntegratedAssessmentProjection | null;
+  overallRegenerationRequest?: CanonicalOverallRegenerationRequestProjection | null;
   aeo?: CanonicalAeoCandidateProjection | null;
   failure: CanonicalWorkItemFailureProjection | null;
   recordingFailure: CanonicalWorkItemRecordingFailureProjection | null;

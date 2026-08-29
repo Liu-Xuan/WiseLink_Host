@@ -7,6 +7,7 @@ import {
 } from '@lark-apaas/fullstack-nestjs-core';
 import {
   and,
+  desc,
   eq,
   gt,
   inArray,
@@ -120,6 +121,24 @@ export class ActionAttemptRepository {
       .select()
       .from(actionAttempt)
       .where(eq(actionAttempt.attemptId, attemptId))
+      .limit(1);
+    return (row as ActionAttemptRow | undefined) ?? null;
+  }
+
+  async readLatestByExactIdempotency(input: {
+    tenantId: string;
+    idempotencyKey: string;
+  }): Promise<ActionAttemptRow | null> {
+    const [row] = await this.db
+      .select()
+      .from(actionAttempt)
+      .where(
+        and(
+          eq(actionAttempt.tenantId, input.tenantId),
+          eq(actionAttempt.idempotencyKey, input.idempotencyKey),
+        ),
+      )
+      .orderBy(desc(actionAttempt.attemptNo))
       .limit(1);
     return (row as ActionAttemptRow | undefined) ?? null;
   }

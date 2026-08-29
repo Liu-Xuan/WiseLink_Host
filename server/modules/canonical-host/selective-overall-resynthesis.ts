@@ -68,7 +68,7 @@ export interface SelectiveJobAidItemCandidate extends DynamicRuleReviewItem {
 }
 
 export interface SelectiveOverallResynthesisPlan {
-  mode: 'INITIAL' | 'AFFECTED_ONLY';
+  mode: 'INITIAL' | 'AFFECTED_ONLY' | 'FULL_REGENERATION';
   criterionSetId: string;
   baseRuleRevision: number;
   baseRuleArtifactSha256: string;
@@ -93,6 +93,7 @@ export function buildSelectiveOverallResynthesisPlan(input: {
   baseRuleRevision: number;
   baseRuleArtifactSha256: string;
   staleOverall: CanonicalOpenClawOverallProjection | null;
+  regenerationReason?: 'USER_REQUESTED_REGENERATION' | null;
   engineerReviewProjection: CanonicalEngineerReviewLedgerProjection | null;
   engineerReviewContext: OpenClawEngineerReviewContext;
   items: DynamicRuleReviewItem[];
@@ -110,17 +111,28 @@ export function buildSelectiveOverallResynthesisPlan(input: {
   const stale = input.staleOverall;
   const currentReviewRevision = input.engineerReviewContext.revision;
   let priorEngineerReviewRevision: number | null = null;
-  let priorReviewSequence = 0;
+  let reviewSequenceFloor = 0;
+  const userRequestedRegeneration =
+    input.regenerationReason === 'USER_REQUESTED_REGENERATION';
+  if (userRequestedRegeneration && !stale) {
+    throw new Error('SELECTIVE_RESYNTHESIS_STALE_OVERALL_REQUIRED');
+  }
   if (stale) {
-    assertEngineerReviewStale(stale, input);
-    const current = requiredPositiveRevision(
-      currentReviewRevision,
-      'SELECTIVE_RESYNTHESIS_REVIEW_REVISION_REQUIRED',
-    );
+    assertSupportedStaleOverall(stale, input, userRequestedRegeneration);
     priorEngineerReviewRevision = stale.basedOnEngineerReviewRevision;
-    priorReviewSequence = priorEngineerReviewRevision ?? 0;
-    if (current <= priorReviewSequence) {
-      throw new Error('SELECTIVE_RESYNTHESIS_NEW_REVIEW_REQUIRED');
+    if (userRequestedRegeneration) {
+      if (currentReviewRevision !== priorEngineerReviewRevision) {
+        throw new Error('SELECTIVE_RESYNTHESIS_REVIEW_BINDING_DRIFT');
+      }
+    } else {
+      const current = requiredPositiveRevision(
+        currentReviewRevision,
+        'SELECTIVE_RESYNTHESIS_REVIEW_REVISION_REQUIRED',
+      );
+      reviewSequenceFloor = priorEngineerReviewRevision ?? 0;
+      if (current <= reviewSequenceFloor) {
+        throw new Error('SELECTIVE_RESYNTHESIS_NEW_REVIEW_REQUIRED');
+      }
     }
   }
 
@@ -128,13 +140,13 @@ export function buildSelectiveOverallResynthesisPlan(input: {
     input.engineerReviewContext.history
       .filter(
         (review) =>
-          review.sequence > priorReviewSequence &&
+          review.sequence > reviewSequenceFloor &&
           review.baseRuleRevision === input.baseRuleRevision &&
           review.baseRuleArtifactSha256 === input.baseRuleArtifactSha256,
       )
       .flatMap(reviewAffectedCriterionIds),
   );
-  if (stale && affectedSet.size === 0) {
+  if (stale && !userRequestedRegeneration && affectedSet.size === 0) {
     throw new Error('SELECTIVE_RESYNTHESIS_AFFECTED_SET_EMPTY');
   }
 
@@ -174,8 +186,11 @@ export function buildSelectiveOverallResynthesisPlan(input: {
   });
 
   return {
-    mode:
-      stale || affectedCriterionIds.length > 0 ? 'AFFECTED_ONLY' : 'INITIAL',
+    mode: userRequestedRegeneration
+      ? 'FULL_REGENERATION'
+      : stale || affectedCriterionIds.length > 0
+        ? 'AFFECTED_ONLY'
+        : 'INITIAL',
     criterionSetId: input.criterionSetId,
     baseRuleRevision: input.baseRuleRevision,
     baseRuleArtifactSha256: input.baseRuleArtifactSha256,
@@ -463,13 +478,16 @@ function validReviewDetails(review: OpenClawEngineerReviewItem): boolean {
   );
 }
 
-function assertEngineerReviewStale(
+function assertSupportedStaleOverall(
   stale: CanonicalOpenClawOverallProjection,
   input: { baseRuleRevision: number; baseRuleArtifactSha256: string },
+  userRequestedRegeneration: boolean,
 ): void {
   if (
     stale.status !== 'STALE' ||
-    stale.staleReason !== 'ENGINEER_REVIEW_CHANGED'
+    (userRequestedRegeneration
+      ? stale.staleReason !== null
+      : stale.staleReason !== 'ENGINEER_REVIEW_CHANGED')
   ) {
     throw new Error('SELECTIVE_RESYNTHESIS_STALE_REASON_UNSUPPORTED');
   }

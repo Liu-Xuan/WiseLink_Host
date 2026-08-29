@@ -115,6 +115,45 @@ describe('selective overall resynthesis', () => {
     ).toThrow('SELECTIVE_RESYNTHESIS_STALE_REASON_UNSUPPORTED');
   });
 
+  it('allows a Host-marked user regeneration to rebuild a legacy overall without inventing a review', () => {
+    const legacy = {
+      ...staleOverall(),
+      staleReason: null,
+      basedOnEngineerReviewRevision: null,
+      basedOnEngineerReviewArtifactSha256: null,
+      engineeringSummary: undefined,
+    };
+    const emptyReviewContext: OpenClawEngineerReviewContext = {
+      revision: null,
+      artifactSha256: null,
+      reviewCount: 0,
+      history: [],
+      effective: [],
+    };
+
+    const plan = buildSelectiveOverallResynthesisPlan({
+      criterionSetId: 'JACS-TWO',
+      criterionCount: 2,
+      baseRuleRevision: 3,
+      baseRuleArtifactSha256: BASE_SHA,
+      staleOverall: legacy,
+      regenerationReason: 'USER_REQUESTED_REGENERATION',
+      engineerReviewProjection: null,
+      engineerReviewContext: emptyReviewContext,
+      items: baseItems(),
+    });
+
+    expect(plan).toMatchObject({
+      mode: 'FULL_REGENERATION',
+      staleOverallRevision: 1,
+      targetOverallRevision: 2,
+      priorEngineerReviewRevision: null,
+      currentEngineerReviewRevision: null,
+      affectedCriterionIds: [],
+      reusedCriterionIds: ['RULE-A', 'RULE-B'],
+    });
+  });
+
   it('rejects review history bound to a different base artifact', () => {
     const context = supplementalContext();
     context.history[0].baseRuleArtifactSha256 = 'b'.repeat(64);

@@ -170,6 +170,11 @@ export function buildOpenClawOverallSynthesisInput(input: {
     baseRuleRevision: input.baseRules.revision,
     baseRuleArtifactSha256: input.baseRules.artifact.sha256,
     staleOverall: input.workItem.integratedAssessment?.overallSynthesis ?? null,
+    regenerationReason:
+      input.workItem.overallRegenerationRequest?.executionRevision ===
+      input.workItem.revision
+        ? input.workItem.overallRegenerationRequest.staleReason
+        : null,
     engineerReviewProjection:
       input.workItem.integratedAssessment?.engineerReviews ?? null,
     engineerReviewContext: input.engineerReviewContext,
