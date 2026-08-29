@@ -64,7 +64,7 @@ function projection(
       documentVersionId: 'DV-INTERNAL-1001',
       parserRequestId: 'PARSER-REQUEST-1001',
       sourceArtifactId: 'SOURCE-INTERNAL-1001',
-      sourceFileSha256: PDF_SHA256,
+      sourceFileSha256: `sha256:${PDF_SHA256}`,
       sourceByteLength: PDF_BYTES.byteLength,
       driveFileToken: 'DRIVE-TOKEN-INTERNAL',
       driveSourceVersion: 'DRIVE-VERSION-INTERNAL',
@@ -89,7 +89,7 @@ function resolvedSource(value: CanonicalWorkItemProjection) {
     version: {
       documentVersionId: value.source.documentVersionId,
       sourceArtifactId: value.source.sourceArtifactId,
-      pdfSha256: value.source.sourceFileSha256,
+      pdfSha256: PDF_SHA256,
       byteLength: value.source.sourceByteLength,
       mediaType: 'application/pdf',
       lifecycleStatus: 'COMMITTED_IMMUTABLE',
@@ -97,7 +97,7 @@ function resolvedSource(value: CanonicalWorkItemProjection) {
     },
     artifact: {
       sourceArtifactId: value.source.sourceArtifactId,
-      sha256: value.source.sourceFileSha256,
+      sha256: PDF_SHA256,
       byteLength: value.source.sourceByteLength,
       mediaType: 'application/pdf',
       bucketId: 'BUCKET-INTERNAL-1001',
@@ -237,6 +237,20 @@ describe('CanonicalPdfPreviewService', () => {
         documentVersionId: 'DV-INTERNAL-1001',
       }),
     );
+  });
+
+  it('fails closed when the projection source SHA is not canonical', async () => {
+    const testTarget: TestTarget = target();
+    testTarget.projection.source.sourceFileSha256 =
+      `sha256:${PDF_SHA256.toUpperCase()}`;
+
+    await expect(
+      testTarget.service.issue(testTarget.projection, ACTOR),
+    ).resolves.toEqual({
+      status: 'UNAVAILABLE',
+      reason: 'PDF_PREVIEW_SOURCE_IDENTITY_INVALID',
+      retryable: false,
+    });
   });
 
   it('reads a locator issued by another service instance configured with the same key', async () => {
