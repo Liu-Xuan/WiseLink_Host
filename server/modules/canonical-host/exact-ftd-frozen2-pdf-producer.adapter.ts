@@ -8,9 +8,11 @@ import type {
 import { MiaodaFileServiceArtifactStore } from '../document-management/src/hosted/miaodaFileServiceArtifactStore.js';
 import { runProfessionalInputPipelineFromLayout } from '../professional-input/builders/professional-input-pipeline';
 import { PdfjsDistLayoutExtractor } from '../professional-input/parser/pdfjs-dist-layout-extractor.adapter';
+import { ProfessionalInputPureError } from '../professional-input/pure/professional-input-pure.error';
 import { MiaodaDocumentVersionSourceResolver } from '../work-item/miaoda-document-version-source.resolver';
 import { U0FullValidationService } from '../unified-reader/u0-full-validation.service';
 import type {
+  CanonicalPdfFailureParameter,
   CanonicalPdfProducerPort,
   CanonicalPdfProducerResult,
 } from './canonical-host.types';
@@ -103,22 +105,38 @@ export class HostNativeDocumentFamilyPdfProducerAdapter implements CanonicalPdfP
       );
     }
 
-    const pipeline = runProfessionalInputPipelineFromLayout(layout, {
-      artifact: {
-        artifactRef: `artifact://CanonicalArtifactStore/${resolved.artifact.filePath.replace(/^\/+/, '')}`,
-        normalizedPath: resolved.version.originalFilename,
-      },
-      document: {
-        documentCode: resolved.family.canonicalDocumentNumber,
-        documentType: profile.documentType,
-        language: 'en-US',
-      },
-      lineage: {
-        generatedAt: new Date(resolved.version.committedAt).toISOString(),
-        producerName: 'WiseLinkCanonicalHostProfessionalInput',
-        producerVersion: 'professional-input-pure.v1.candidate.1',
-      },
-    });
+    let pipeline: ReturnType<typeof runProfessionalInputPipelineFromLayout>;
+    try {
+      pipeline = runProfessionalInputPipelineFromLayout(layout, {
+        artifact: {
+          artifactRef: `artifact://CanonicalArtifactStore/${resolved.artifact.filePath.replace(/^\/+/, '')}`,
+          normalizedPath: resolved.version.originalFilename,
+        },
+        document: {
+          documentCode: resolved.family.canonicalDocumentNumber,
+          documentType: profile.documentType,
+          language: 'en-US',
+        },
+        lineage: {
+          generatedAt: new Date(resolved.version.committedAt).toISOString(),
+          producerName: 'WiseLinkCanonicalHostProfessionalInput',
+          producerVersion: 'professional-input-pure.v1.candidate.1',
+        },
+      });
+    } catch (error) {
+      if (
+        error instanceof ProfessionalInputPureError &&
+        error.code === 'PDF_OCR_REQUIRED_UNSUPPORTED'
+      ) {
+        return failureSignal(
+          error.code,
+          error.message,
+          'file_service_source->host_native_pdf_layout_provider->ocr_provider_unavailable',
+          toCanonicalFailureParameters(error.diagnostic),
+        );
+      }
+      throw error;
+    }
     await this.validator.validate(pipeline.u0Input);
 
     const correlationRequest = {
@@ -238,8 +256,31 @@ function failureSignal(
   failureCode: string,
   message: string,
   executionRoute: string,
+  parameters?: Record<string, CanonicalPdfFailureParameter>,
 ): CanonicalPdfProducerResult {
-  return { kind: 'FAILURE_SIGNAL', failureCode, message, executionRoute };
+  return {
+    kind: 'FAILURE_SIGNAL',
+    failureCode,
+    message,
+    executionRoute,
+    ...(parameters ? { parameters } : {}),
+  };
+}
+
+function toCanonicalFailureParameters(
+  diagnostic: Readonly<
+    Record<
+      string,
+      string | number | boolean | readonly string[] | readonly number[]
+    >
+  >,
+): Record<string, CanonicalPdfFailureParameter> {
+  return Object.fromEntries(
+    Object.entries(diagnostic).map(([key, value]) => [
+      key,
+      Array.isArray(value) ? value.map(String) : value,
+    ]),
+  ) as Record<string, CanonicalPdfFailureParameter>;
 }
 
 function assertCorrelationProducedByHostNativePipeline(

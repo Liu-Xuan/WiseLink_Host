@@ -27,6 +27,7 @@ import {
 import type {
   CanonicalFailureValidationWriteAuthorizationPort,
   CanonicalHostClockPort,
+  CanonicalPdfFailureParameter,
 } from './canonical-host.types';
 
 interface PackageAttempt {
@@ -74,6 +75,7 @@ export class CanonicalFailureRecordingService {
     request: CanonicalPdfVerticalRunRequest;
     permissionSnapshotVersion: string;
     error: unknown;
+    failureParameters?: Record<string, CanonicalPdfFailureParameter>;
     executionRoute: string;
     packageAttempt: PackageAttempt | null;
   }): Promise<CanonicalFailureRecordingResult> {
@@ -109,6 +111,7 @@ export class CanonicalFailureRecordingService {
     request: CanonicalPdfVerticalRunRequest;
     permissionSnapshotVersion: string;
     error: unknown;
+    failureParameters?: Record<string, CanonicalPdfFailureParameter>;
     executionRoute: string;
     packageAttempt: PackageAttempt | null;
   }): U0Frozen2FailureAdapterInput {
@@ -125,6 +128,9 @@ export class CanonicalFailureRecordingService {
           input.error instanceof Error
             ? input.error.constructor.name
             : 'NonErrorThrown',
+        ...(input.failureParameters
+          ? { parameters: input.failureParameters }
+          : {}),
       },
       source: {
         sourceKind: 'pdf',

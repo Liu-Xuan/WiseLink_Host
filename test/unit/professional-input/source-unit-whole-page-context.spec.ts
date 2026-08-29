@@ -90,6 +90,31 @@ function pdfLayout(textRuns: ParsedPdfLayout['textRuns']): ParsedPdfLayout {
     ],
     metadata: { title: null },
     textRuns,
+    pageTextLayerDiagnostics: [1, 2].map((page) => {
+      const pageRuns = textRuns.filter((run) => run.page === page);
+      const nonWhitespaceCharacterCount = pageRuns.reduce(
+        (count, run) => count + run.text.replace(/\s/gu, '').length,
+        0,
+      );
+      return {
+        page,
+        status:
+          nonWhitespaceCharacterCount > 0
+            ? ('PRESENT' as const)
+            : ('EMPTY' as const),
+        textRunCount: pageRuns.length,
+        nonWhitespaceCharacterCount,
+        rasterVisualCoverage: {
+          status: 'NO_MATERIAL_RASTER' as const,
+          materialUnverifiedRasterPageFraction: 0.25,
+          rasterRegionCount: 0,
+          rasterPageAreaRatio: 0,
+          unverifiedRasterRegionCount: 0,
+          unverifiedRasterPageAreaRatio: 0,
+          unverifiedRasterRegions: [],
+        },
+      };
+    }),
     sourceSha256: 'a'.repeat(64),
     sourceByteLength: 100,
   };

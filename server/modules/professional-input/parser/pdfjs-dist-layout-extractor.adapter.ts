@@ -9,6 +9,9 @@ import { ProfessionalInputPureError } from '../pure/professional-input-pure.erro
 import type {
   ParsedPdfLayout,
   ParsedPdfPageBox,
+  ParsedPdfPageTextLayerDiagnostic,
+  ParsedPdfRasterRegionDiagnostic,
+  ParsedPdfRasterVisualCoverageDiagnostic,
   ParsedPdfTextRun,
 } from '../pure/professional-input-pure.types';
 import type { PdfLayoutExtractorPort } from './pdf-layout.extractor.port';
@@ -88,6 +91,7 @@ export class PdfjsDistLayoutExtractor implements PdfLayoutExtractorPort {
         );
       }
       const layout = parseRunnerPayload(result.stdout.toString('utf8'));
+      assertProductionTextLayerCoverage(layout);
       return {
         kind: 'pdf',
         pdfVersion: layout.pdfVersion,
@@ -95,6 +99,7 @@ export class PdfjsDistLayoutExtractor implements PdfLayoutExtractorPort {
         pageBoxes: layout.pageBoxes,
         metadata: layout.metadata,
         textRuns: layout.textRuns,
+        pageTextLayerDiagnostics: layout.pageTextLayerDiagnostics,
         sourceSha256: `sha256:${sourceSha256Hex(bytes)}`,
         sourceByteLength: bytes.byteLength,
       };
@@ -128,6 +133,7 @@ interface RunnerPayload {
   pageBoxes: unknown;
   metadata: unknown;
   textRuns: unknown;
+  pageTextLayerDiagnostics: unknown;
 }
 
 const RUNNER_PAYLOAD_BEGIN = '<<<PDFJS-LAYOUT-JSON-BEGIN>>>';
@@ -139,6 +145,7 @@ function parseRunnerPayload(raw: string): {
   pageBoxes: readonly ParsedPdfPageBox[];
   metadata: { title: string | null };
   textRuns: readonly ParsedPdfTextRun[];
+  pageTextLayerDiagnostics: readonly ParsedPdfPageTextLayerDiagnostic[];
 } {
   const beginIndex = raw.indexOf(RUNNER_PAYLOAD_BEGIN);
   const endIndex = raw.lastIndexOf(RUNNER_PAYLOAD_END);
@@ -167,7 +174,9 @@ function parseRunnerPayload(raw: string): {
     value.pageCount < 1 ||
     !Array.isArray(value.pageBoxes) ||
     !Array.isArray(value.textRuns) ||
-    value.pageBoxes.length !== value.pageCount
+    !Array.isArray(value.pageTextLayerDiagnostics) ||
+    value.pageBoxes.length !== value.pageCount ||
+    value.pageTextLayerDiagnostics.length !== value.pageCount
   ) {
     throw new ProfessionalInputPureError(
       'PDFJS_LAYOUT_RUNNER_PAYLOAD_INVALID',
@@ -197,6 +206,51 @@ function parseRunnerPayload(raw: string): {
       text: String(run.text),
     }),
   );
+  const pageTextLayerDiagnostics = value.pageTextLayerDiagnostics.map(
+    (
+      diagnostic: Record<string, unknown>,
+      index: number,
+    ): ParsedPdfPageTextLayerDiagnostic => {
+      const page = Number(diagnostic.page);
+      const textRunCount = Number(diagnostic.textRunCount);
+      const nonWhitespaceCharacterCount = Number(
+        diagnostic.nonWhitespaceCharacterCount,
+      );
+      const status = diagnostic.status;
+      const rasterVisualCoverage = parseRasterVisualCoverage(
+        diagnostic.rasterVisualCoverage,
+      );
+      if (
+        page !== index + 1 ||
+        !Number.isSafeInteger(textRunCount) ||
+        textRunCount < 0 ||
+        !Number.isSafeInteger(nonWhitespaceCharacterCount) ||
+        nonWhitespaceCharacterCount < 0 ||
+        (status !== 'PRESENT' &&
+          status !== 'EMPTY' &&
+          status !== 'VISUAL_TEXT_UNVERIFIED') ||
+        (status === 'PRESENT' &&
+          (nonWhitespaceCharacterCount === 0 ||
+            rasterVisualCoverage.status === 'UNVERIFIED')) ||
+        (status === 'EMPTY' && nonWhitespaceCharacterCount !== 0) ||
+        (status === 'VISUAL_TEXT_UNVERIFIED' &&
+          (nonWhitespaceCharacterCount === 0 ||
+            rasterVisualCoverage.status !== 'UNVERIFIED'))
+      ) {
+        throw new ProfessionalInputPureError(
+          'PDFJS_LAYOUT_RUNNER_PAYLOAD_INVALID',
+          'Runner page text-layer diagnostics failed structural validation.',
+        );
+      }
+      return {
+        page,
+        status,
+        textRunCount,
+        nonWhitespaceCharacterCount,
+        rasterVisualCoverage,
+      };
+    },
+  );
   return {
     pdfVersion: value.pdfVersion,
     pageCount: value.pageCount,
@@ -209,5 +263,221 @@ function parseRunnerPayload(raw: string): {
           : null,
     },
     textRuns,
+    pageTextLayerDiagnostics,
   };
+}
+
+function parseRasterVisualCoverage(
+  raw: unknown,
+): ParsedPdfRasterVisualCoverageDiagnostic {
+  const value = raw as Record<string, unknown>;
+  const status = value?.status;
+  const materialUnverifiedRasterPageFraction = Number(
+    value?.materialUnverifiedRasterPageFraction,
+  );
+  const rasterRegionCount = Number(value?.rasterRegionCount);
+  const rasterPageAreaRatio = Number(value?.rasterPageAreaRatio);
+  const unverifiedRasterRegionCount = Number(
+    value?.unverifiedRasterRegionCount,
+  );
+  const unverifiedRasterPageAreaRatio = Number(
+    value?.unverifiedRasterPageAreaRatio,
+  );
+  if (
+    (status !== 'NO_MATERIAL_RASTER' &&
+      status !== 'TEXT_LAYER_OVERLAP_PRESENT' &&
+      status !== 'UNVERIFIED') ||
+    materialUnverifiedRasterPageFraction !== 0.25 ||
+    !isNonNegativeSafeInteger(rasterRegionCount) ||
+    !isUnitRatio(rasterPageAreaRatio) ||
+    !isNonNegativeSafeInteger(unverifiedRasterRegionCount) ||
+    unverifiedRasterRegionCount > rasterRegionCount ||
+    !isUnitRatio(unverifiedRasterPageAreaRatio) ||
+    unverifiedRasterPageAreaRatio > rasterPageAreaRatio ||
+    !Array.isArray(value?.unverifiedRasterRegions) ||
+    value.unverifiedRasterRegions.length !== unverifiedRasterRegionCount ||
+    (status === 'NO_MATERIAL_RASTER' && rasterPageAreaRatio >= 0.25) ||
+    (status === 'TEXT_LAYER_OVERLAP_PRESENT' &&
+      (rasterPageAreaRatio < 0.25 || unverifiedRasterPageAreaRatio >= 0.25)) ||
+    (status === 'UNVERIFIED' && unverifiedRasterPageAreaRatio < 0.25)
+  ) {
+    throw invalidRasterDiagnostic();
+  }
+  const unverifiedRasterRegions = value.unverifiedRasterRegions.map(
+    (region) => parseRasterRegion(region),
+  );
+  return {
+    status,
+    materialUnverifiedRasterPageFraction,
+    rasterRegionCount,
+    rasterPageAreaRatio,
+    unverifiedRasterRegionCount,
+    unverifiedRasterPageAreaRatio,
+    unverifiedRasterRegions,
+  };
+}
+
+function parseRasterRegion(raw: unknown): ParsedPdfRasterRegionDiagnostic {
+  const value = raw as Record<string, unknown>;
+  const bbox = Array.isArray(value?.bbox) ? value.bbox.map(Number) : [];
+  const displayedPageAreaRatio = Number(value?.displayedPageAreaRatio);
+  const sourcePixelWidth = nullablePositiveSafeInteger(value?.sourcePixelWidth);
+  const sourcePixelHeight = nullablePositiveSafeInteger(
+    value?.sourcePixelHeight,
+  );
+  const textLayerOverlapRunCount = Number(value?.textLayerOverlapRunCount);
+  const textLayerOverlapNonWhitespaceCharacterCount = Number(
+    value?.textLayerOverlapNonWhitespaceCharacterCount,
+  );
+  if (
+    bbox.length !== 4 ||
+    !bbox.every(Number.isFinite) ||
+    !(Number(bbox[2]) > Number(bbox[0])) ||
+    !(Number(bbox[3]) > Number(bbox[1])) ||
+    !isUnitRatio(displayedPageAreaRatio) ||
+    sourcePixelWidth === undefined ||
+    sourcePixelHeight === undefined ||
+    !isNonNegativeSafeInteger(textLayerOverlapRunCount) ||
+    !isNonNegativeSafeInteger(
+      textLayerOverlapNonWhitespaceCharacterCount,
+    ) ||
+    textLayerOverlapRunCount !== 0 ||
+    textLayerOverlapNonWhitespaceCharacterCount !== 0
+  ) {
+    throw invalidRasterDiagnostic();
+  }
+  return {
+    bbox: [
+      Number(bbox[0]),
+      Number(bbox[1]),
+      Number(bbox[2]),
+      Number(bbox[3]),
+    ],
+    displayedPageAreaRatio,
+    sourcePixelWidth,
+    sourcePixelHeight,
+    textLayerOverlapRunCount,
+    textLayerOverlapNonWhitespaceCharacterCount,
+  };
+}
+
+function nullablePositiveSafeInteger(value: unknown): number | null | undefined {
+  if (value === null) return null;
+  const numeric = Number(value);
+  return Number.isSafeInteger(numeric) && numeric > 0 ? numeric : undefined;
+}
+
+function isNonNegativeSafeInteger(value: number): boolean {
+  return Number.isSafeInteger(value) && value >= 0;
+}
+
+function isUnitRatio(value: number): boolean {
+  return Number.isFinite(value) && value >= 0 && value <= 1;
+}
+
+function invalidRasterDiagnostic(): ProfessionalInputPureError {
+  return new ProfessionalInputPureError(
+    'PDFJS_LAYOUT_RUNNER_PAYLOAD_INVALID',
+    'Runner raster visual-coverage diagnostics failed structural validation.',
+  );
+}
+
+function assertProductionTextLayerCoverage(layout: {
+  pageCount: number;
+  pageTextLayerDiagnostics: readonly ParsedPdfPageTextLayerDiagnostic[];
+}): void {
+  const emptyTextLayerPages = layout.pageTextLayerDiagnostics
+    .filter((diagnostic) => diagnostic.status === 'EMPTY')
+    .map((diagnostic) => diagnostic.page);
+  const visualTextUnverifiedDiagnostics = layout.pageTextLayerDiagnostics.filter(
+    (diagnostic) =>
+      diagnostic.rasterVisualCoverage.status === 'UNVERIFIED',
+  );
+  const visualTextUnverifiedPages = visualTextUnverifiedDiagnostics.map(
+    (diagnostic) => diagnostic.page,
+  );
+  const visualOnlyUnverifiedPageCount = layout.pageTextLayerDiagnostics.filter(
+    (diagnostic) => diagnostic.status === 'VISUAL_TEXT_UNVERIFIED',
+  ).length;
+  const ocrRequiredPages = [
+    ...new Set([...emptyTextLayerPages, ...visualTextUnverifiedPages]),
+  ].sort((left, right) => left - right);
+  if (ocrRequiredPages.length === 0) return;
+
+  const textLayerStatus =
+    emptyTextLayerPages.length === 0
+      ? 'PRESENT'
+      : emptyTextLayerPages.length === layout.pageCount
+        ? 'EMPTY'
+        : 'PARTIAL';
+  const ocrRequirementKind =
+    emptyTextLayerPages.length > 0 && visualOnlyUnverifiedPageCount > 0
+      ? 'TEXT_LAYER_EMPTY_AND_VISUAL_TEXT_UNVERIFIED'
+      : emptyTextLayerPages.length > 0
+        ? 'TEXT_LAYER_EMPTY'
+        : 'VISUAL_TEXT_UNVERIFIED';
+  throw new ProfessionalInputPureError(
+    'PDF_OCR_REQUIRED_UNSUPPORTED',
+    `PDF pages ${formatPageRanges(ocrRequiredPages)} of ${layout.pageCount} require OCR. Empty text-layer pages: ${formatPageRangesOrNone(emptyTextLayerPages)}. Visual-text-unverified raster pages: ${formatPageRangesOrNone(visualTextUnverifiedPages)}. No production-safe OCR layout provider is bound.`,
+    {
+      diagnosticKind: 'PDF_PAGE_TEXT_LAYER_COVERAGE',
+      visualCoveragePolicy:
+        'PDFJS_OPERATOR_RASTER_UNION_WITHOUT_TEXT_LAYER_OVERLAP',
+      ocrRequirementKind,
+      textLayerStatus,
+      visualTextStatus:
+        visualTextUnverifiedPages.length > 0 ? 'UNVERIFIED' : 'NOT_DETECTED',
+      pageCount: layout.pageCount,
+      ocrRequiredPages,
+      ocrRequiredPageRanges: formatPageRanges(ocrRequiredPages),
+      ocrRequiredPageCount: ocrRequiredPages.length,
+      emptyTextLayerPages,
+      emptyTextLayerPageRanges: formatPageRangesOrNone(emptyTextLayerPages),
+      emptyTextLayerPageCount: emptyTextLayerPages.length,
+      visualTextUnverifiedPages,
+      visualTextUnverifiedPageRanges: formatPageRangesOrNone(
+        visualTextUnverifiedPages,
+      ),
+      visualTextUnverifiedPageCount: visualTextUnverifiedPages.length,
+      visualTextUnverifiedRasterPageAreaRatios:
+        visualTextUnverifiedDiagnostics.map(
+          (diagnostic) =>
+            diagnostic.rasterVisualCoverage.unverifiedRasterPageAreaRatio,
+        ),
+      visualTextUnverifiedPageDetails: visualTextUnverifiedDiagnostics.map(
+        (diagnostic) =>
+          `${diagnostic.page}:textChars=${diagnostic.nonWhitespaceCharacterCount};unverifiedRasterPageAreaRatio=${diagnostic.rasterVisualCoverage.unverifiedRasterPageAreaRatio};regions=${diagnostic.rasterVisualCoverage.unverifiedRasterRegionCount}`,
+      ),
+      materialUnverifiedRasterPagePercent: 25,
+      ocrProviderStatus: 'UNAVAILABLE_CURRENT_PRODUCTION',
+      requiredProvider: 'HOST_BUNDLED_PAGE_OCR_LAYOUT_PROVIDER',
+    },
+  );
+}
+
+function formatPageRangesOrNone(pages: readonly number[]): string {
+  return pages.length === 0 ? 'none' : formatPageRanges(pages);
+}
+
+function formatPageRanges(pages: readonly number[]): string {
+  const ranges: string[] = [];
+  let rangeStart = pages[0];
+  let rangeEnd = pages[0];
+  for (const page of pages.slice(1)) {
+    if (page === Number(rangeEnd) + 1) {
+      rangeEnd = page;
+      continue;
+    }
+    ranges.push(
+      rangeStart === rangeEnd
+        ? String(rangeStart)
+        : `${rangeStart}-${rangeEnd}`,
+    );
+    rangeStart = page;
+    rangeEnd = page;
+  }
+  ranges.push(
+    rangeStart === rangeEnd ? String(rangeStart) : `${rangeStart}-${rangeEnd}`,
+  );
+  return ranges.join(',');
 }

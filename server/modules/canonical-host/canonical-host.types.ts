@@ -11,6 +11,8 @@ import type {
 } from '../unified-reader/unified-reader.types';
 import type { CanonicalMiaodaFinalUserActorContext } from '../work-item/canonical-object-access.port';
 
+export type CanonicalPdfFailureParameter = string | number | boolean | string[];
+
 export interface CanonicalHostActor {
   userId: string;
   tenantId: string;
@@ -68,6 +70,8 @@ export type CanonicalPdfProducerResult =
       failureCode: string;
       message: string;
       executionRoute: string;
+      /** Browser/server-safe diagnostics copied into frozen.2 FailureReport.parameters. */
+      parameters?: Record<string, CanonicalPdfFailureParameter>;
     };
 
 export interface CanonicalPdfProducerPort {

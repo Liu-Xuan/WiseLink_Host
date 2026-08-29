@@ -27,6 +27,9 @@ supplied to `test:professional-input:real-ftd` through
 
 ## Authority and non-claims
 
+The page-level OCR decision and exact production-provider blocker are recorded
+in [PDF_OCR_PRODUCTION_DECISION.md](./PDF_OCR_PRODUCTION_DECISION.md).
+
 - Output is frozen.2 `CANDIDATE_ONLY`; it is not an engineering conclusion,
   release approval, publication, compliance sign-off, or airworthiness
   approval.
