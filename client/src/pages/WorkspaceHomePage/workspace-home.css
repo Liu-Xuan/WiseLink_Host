@@ -901,7 +901,7 @@
 }
 .library-block-heading strong {
   color: #8b99a9;
-  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--wl-font);
   font-size: 10px;
   font-weight: 500;
   letter-spacing: 0;

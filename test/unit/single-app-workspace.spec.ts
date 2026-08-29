@@ -155,6 +155,7 @@ describe('single canonical app workspace', () => {
     expect(indexStyles).toContain('min-height: 100dvh');
     expect(homeStyles).toContain('.library-tree-panel .wl-navigator');
     expect(homeStyles).toContain('避免 glass-on-glass');
+    expect(homeStyles).not.toContain('font-family: ui-sans-serif');
     expect(motion).toContain('@keyframes wl-drift-cold');
     expect(motion).toContain(".wl-focus-card[data-active='true']::after");
     expect(motion).toContain('.wl-spin');
@@ -187,6 +188,7 @@ describe('single canonical app workspace', () => {
     expect(appShellStyles).toMatch(
       /\.wiselink-account-menu-trigger\s*\{\s*width:\s*44px;\s*height:\s*44px;/,
     );
+    expect(appShellStyles).not.toContain('font-size: 8px');
     expect(visualModeStyles).toMatch(
       /\.wiselink-app-header\s+\.wl-visual-mode-trigger\s*\{\s*min-width:\s*44px;\s*width:\s*44px;\s*min-height:\s*44px;/,
     );
