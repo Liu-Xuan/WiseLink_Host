@@ -47,7 +47,7 @@
   gap: 7px;
   margin-top: 12px;
   color: #33724c;
-  font-size: 10px;
+  font-size: var(--wl-text-meta);
 }
 
 .hosted-intake-boundary svg,
@@ -113,7 +113,7 @@
 
 .hosted-intake-drop span {
   color: #8293a5;
-  font-size: 9px;
+  font-size: var(--wl-text-caption);
 }
 
 .hosted-intake-action > button {
@@ -144,7 +144,7 @@
   gap: 6px;
   margin: 0;
   color: #a24747;
-  font-size: 10px;
+  font-size: var(--wl-text-meta);
   line-height: 1.5;
 }
 
@@ -198,7 +198,7 @@
   gap: 7px;
   margin: 0;
   color: #47709f;
-  font-size: 10px;
+  font-size: var(--wl-text-caption);
   font-weight: 750;
 }
 
@@ -256,12 +256,12 @@
 
 .library-read-state strong {
   color: #304256;
-  font-size: 10px;
+  font-size: var(--wl-text-meta);
 }
 
 .library-read-state span {
   color: #8090a4;
-  font-size: 10px;
+  font-size: var(--wl-text-meta);
   letter-spacing: 0;
 }
 
@@ -485,7 +485,7 @@
 .library-tree-root > span {
   color: #7e8da1;
   font-family: var(--wl-font);
-  font-size: 9px;
+  font-size: var(--wl-text-caption);
 }
 .library-tree-search {
   display: flex;
@@ -510,7 +510,7 @@
   outline: 0;
   background: transparent;
   box-shadow: none;
-  font-size: 10px;
+  font-size: var(--wl-text-meta);
 }
 
 .library-tree-list {
@@ -577,7 +577,7 @@
 .library-tree-copy small {
   overflow: hidden;
   color: #8291a3;
-  font-size: 10px;
+  font-size: var(--wl-text-caption);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -640,7 +640,7 @@
   gap: 6px;
   padding: 8px 4px 5px;
   color: #6d8198;
-  font-size: 10px;
+  font-size: var(--wl-text-caption);
   font-weight: 700;
 }
 .library-recent-heading svg {
@@ -658,7 +658,7 @@
   gap: 5px;
   margin: 7px 4px 2px;
   color: #72869c;
-  font-size: 9px;
+  font-size: var(--wl-text-caption);
   font-weight: 750;
   letter-spacing: 0.04em;
   text-transform: none;
@@ -715,14 +715,14 @@
   overflow: hidden;
   color: #3b536e;
   font-family: var(--wl-font);
-  font-size: 10px;
+  font-size: var(--wl-text-body-sm);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .library-recent-open small {
   overflow: hidden;
   color: #8a99a9;
-  font-size: 9px;
+  font-size: var(--wl-text-caption);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -749,7 +749,7 @@
 .library-recent-no-result {
   margin: 8px 4px 0;
   color: #8c99a8;
-  font-size: 9px;
+  font-size: var(--wl-text-caption);
   line-height: 1.5;
 }
 
@@ -758,7 +758,7 @@
   margin-top: auto;
   padding-top: 15px;
   color: #8b9aab;
-  font-size: 10px;
+  font-size: var(--wl-text-caption);
   line-height: 1.5;
 }
 .library-tree-footer svg {
@@ -777,7 +777,7 @@
   padding: 0 8px;
   border-radius: var(--wl-radius-sm);
   font-family: var(--wl-font);
-  font-size: 9px;
+  font-size: var(--wl-text-caption);
   letter-spacing: 0.04em;
 }
 .library-phase--ready {
@@ -839,7 +839,7 @@
   margin: 0;
   color: #8190a1;
   font-family: var(--wl-font);
-  font-size: 10px;
+  font-size: var(--wl-text-meta);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -870,7 +870,7 @@
   align-items: center;
   gap: 5px;
   color: #7d8da0;
-  font-size: 10px;
+  font-size: var(--wl-text-caption);
 }
 .library-facts dt svg {
   width: 13px;
@@ -897,12 +897,12 @@
   gap: 12px;
   padding: 13px 0 10px;
   color: #6680a0;
-  font-size: 9px;
+  font-size: var(--wl-text-caption);
 }
 .library-block-heading strong {
   color: #8b99a9;
   font-family: var(--wl-font);
-  font-size: 10px;
+  font-size: var(--wl-text-caption);
   font-weight: 500;
   letter-spacing: 0;
 }
@@ -923,11 +923,11 @@
 .library-content-list article strong {
   color: #496683;
   font-family: var(--wl-font);
-  font-size: 10px;
+  font-size: var(--wl-text-body-sm);
 }
 .library-content-list article span {
   color: #8797a8;
-  font-size: 10px;
+  font-size: var(--wl-text-meta);
 }
 .library-content-list article p {
   display: -webkit-box;
@@ -942,7 +942,7 @@
 .library-content-list article small {
   color: #8a99a9;
   font-family: var(--wl-font);
-  font-size: 9px;
+  font-size: var(--wl-text-caption);
 }
 .library-inline-empty {
   margin: 0;
@@ -965,7 +965,7 @@
   border-radius: var(--wl-radius-sm);
   color: #687c91;
   background: #fff;
-  font-size: 10px;
+  font-size: var(--wl-text-meta);
   line-height: 1.55;
 }
 .library-graph-note svg {
@@ -1019,7 +1019,7 @@
 .library-graph-node small {
   overflow: hidden;
   color: #8797a8;
-  font-size: 9px;
+  font-size: var(--wl-text-caption);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1060,7 +1060,7 @@
   padding-top: 12px;
   border-top: 1px solid #dfe6ed;
   color: #8a6f44;
-  font-size: 10px;
+  font-size: var(--wl-text-caption);
   line-height: 1.55;
 }
 .library-graph-boundary svg {
@@ -1076,7 +1076,7 @@
   gap: 16px;
   margin-top: 13px;
   color: #8492a2;
-  font-size: 9px;
+  font-size: var(--wl-text-caption);
   letter-spacing: 0.02em;
 }
 .library-home-footer span {
@@ -1249,7 +1249,7 @@
 .library-skeleton-hint {
   color: #8b97a7;
   font-family: var(--wl-font);
-  font-size: 10px;
+  font-size: var(--wl-text-meta);
 }
 
 @keyframes skeleton-pulse {
@@ -1270,7 +1270,7 @@
   border-radius: var(--wl-radius-sm);
   color: #a56120;
   background: #fff8ed;
-  font-size: 9px;
+  font-size: var(--wl-text-caption);
   font-weight: 700;
   letter-spacing: 0.04em;
 }
@@ -1469,7 +1469,7 @@
 
 .hosted-intake-drop span {
   color: var(--wl-faint);
-  font-size: 10px;
+  font-size: var(--wl-text-caption);
 }
 
 .hosted-intake-action > button,
@@ -1795,7 +1795,7 @@
 
 .library-technical-details dt {
   color: var(--wl-faint);
-  font-size: 10px;
+  font-size: var(--wl-text-caption);
 }
 
 .library-technical-details dd {
@@ -1803,7 +1803,7 @@
   overflow: hidden;
   color: var(--wl-ink);
   font-family: var(--wl-mono);
-  font-size: 10px;
+  font-size: var(--wl-text-meta);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1945,7 +1945,7 @@
 
   .library-mobile-relations span {
     color: var(--wl-muted);
-    font-size: 10.5px;
+    font-size: var(--wl-text-caption);
   }
 }
 
@@ -2039,7 +2039,7 @@
 
   .library-home-eyebrow,
   .library-section-label {
-    font-size: 10px;
+    font-size: var(--wl-text-caption);
   }
 
   .hosted-intake,

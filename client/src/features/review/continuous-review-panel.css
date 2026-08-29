@@ -185,7 +185,7 @@
 
 .continuous-review-turn header > span {
   color: var(--wl-faint);
-  font-size: 10px;
+  font-size: var(--wl-text-caption);
 }
 
 .continuous-review-input p,
@@ -358,7 +358,7 @@
 
 .continuous-review-composer > label span {
   color: var(--wl-muted);
-  font-size: 10px;
+  font-size: var(--wl-text-caption);
   font-weight: 400;
 }
 

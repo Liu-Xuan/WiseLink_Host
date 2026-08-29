@@ -26,7 +26,7 @@
   display: block;
   margin-bottom: 6px;
   color: var(--wl-accent);
-  font-size: 10px;
+  font-size: var(--wl-text-caption);
   font-weight: 760;
   letter-spacing: 0.08em;
 }
@@ -71,7 +71,7 @@
 .structured-browser-status small {
   margin-top: 4px;
   color: var(--wl-muted);
-  font-size: 10px;
+  font-size: var(--wl-text-caption);
 }
 
 .structured-browser-search {
@@ -118,7 +118,7 @@
 .structured-browser-search small {
   grid-column: 3 / -1;
   color: var(--wl-muted);
-  font-size: 10px;
+  font-size: var(--wl-text-meta);
   line-height: 1.45;
 }
 
@@ -238,13 +238,13 @@
   border-radius: 999px;
   color: var(--wl-accent);
   background: var(--wl-accent-soft);
-  font-size: 10px;
+  font-size: var(--wl-text-caption);
   font-weight: 720;
 }
 
 .structured-browser-unit-meta small {
   color: var(--wl-muted);
-  font-size: 10px;
+  font-size: var(--wl-text-caption);
 }
 
 .structured-browser-unit > p {
@@ -283,7 +283,7 @@
   color: var(--wl-muted);
   background: transparent;
   font: inherit;
-  font-size: 10px;
+  font-size: var(--wl-text-meta);
   cursor: pointer;
   max-width: 100%;
   overflow-wrap: anywhere;

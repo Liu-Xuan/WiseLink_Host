@@ -28,7 +28,7 @@
 
 .parse-pdf-binding span {
   color: var(--wl-faint);
-  font-size: 9.5px;
+  font-size: var(--wl-text-caption);
   font-weight: 700;
   letter-spacing: 0.02em;
 }
@@ -68,7 +68,7 @@
 
 .parse-pdf-located span {
   color: var(--wl-faint);
-  font-size: 9.5px;
+  font-size: var(--wl-text-caption);
   font-weight: 700;
   letter-spacing: 0.02em;
 }
@@ -221,7 +221,7 @@
   top: 6px;
   left: 10px;
   color: #66758a;
-  font-size: 9.5px;
+  font-size: var(--wl-text-caption);
   font-weight: 700;
 }
 
@@ -293,7 +293,7 @@
 
 .parse-pdf-translation {
   color: var(--wl-faint);
-  font-size: 10.5px;
+  font-size: var(--wl-text-caption);
 }
 
 .parse-pdf-located-actions {

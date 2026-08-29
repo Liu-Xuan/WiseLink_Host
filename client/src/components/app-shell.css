@@ -50,7 +50,7 @@
 .wiselink-app-brand small {
   overflow: hidden;
   color: var(--wl-muted);
-  font-size: 10px;
+  font-size: var(--wl-text-caption);
   font-weight: 550;
   letter-spacing: 0.02em;
   text-overflow: ellipsis;
@@ -224,7 +224,7 @@ button.wiselink-account-state {
   color: var(--wl-ink);
   background: var(--wl-glass-soft);
   font-family: var(--wl-font);
-  font-size: 10px;
+  font-size: var(--wl-text-caption);
   text-decoration: none;
   transition:
     color var(--wl-motion-fast) ease,
@@ -477,7 +477,7 @@ select:focus-visible {
   }
 
   .wiselink-breadcrumb-item {
-    font-size: 10px;
+    font-size: var(--wl-text-caption);
   }
 
   .wiselink-app-brand strong {
@@ -485,7 +485,7 @@ select:focus-visible {
   }
 
   .wiselink-app-brand small {
-    font-size: 10px;
+    font-size: var(--wl-text-caption);
   }
 
   .wiselink-app-page-label {

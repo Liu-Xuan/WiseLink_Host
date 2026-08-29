@@ -100,7 +100,7 @@
 .wl-visual-mode-hint {
   margin: -2px 8px 7px;
   color: var(--wl-muted);
-  font-size: 10px;
+  font-size: var(--wl-text-caption);
   line-height: 1.5;
 }
 
@@ -123,7 +123,7 @@
 
 .wl-visual-mode-option small {
   color: var(--wl-muted);
-  font-size: 10px;
+  font-size: var(--wl-text-caption);
   font-weight: 500;
   line-height: 1.35;
 }
