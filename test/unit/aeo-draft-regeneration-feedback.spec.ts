@@ -34,7 +34,11 @@ describe('AEO draft regeneration feedback versions', () => {
     const regenerated: AeoDraftAssistanceCandidate =
       regenerateAeoDraftSelection(
         decided,
-        { ...request(knowledge), selectedUnitIds: ['ACTION-002'] },
+        {
+          ...request(knowledge),
+          selectedUnitIds: ['ACTION-002'],
+          expectedGenerationRevision: 1,
+        },
         'Refresh the selected candidate after engineer feedback.',
       );
     const learning = buildAeoDraftLearningInput(regenerated);
@@ -80,7 +84,11 @@ describe('AEO draft regeneration feedback versions', () => {
 
     const replayed: AeoDraftAssistanceCandidate = regenerateAeoDraftSelection(
       reusedId,
-      { ...request(knowledge), selectedUnitIds: ['ACTION-002'] },
+      {
+        ...request(knowledge),
+        selectedUnitIds: ['ACTION-002'],
+        expectedGenerationRevision: 2,
+      },
       'Replay the selected rejected candidate.',
     );
     expect(suggestion(replayed, 'ACTION-002').reviewStatus).toBe(
@@ -104,14 +112,18 @@ describe('AEO draft regeneration feedback versions', () => {
     const current: AeoDraftAssistanceCandidate =
       createAeoDraftAssistanceCandidate(request(original));
     const revised: AeoEditingKnowledgeCandidate = sampleKnowledge(
-      'R01',
+      'R00',
       'SRC-AEO-R01',
       1200,
       'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
     );
     const compatible: AeoDraftAssistanceCandidate = regenerateAeoDraftSelection(
       current,
-      { ...request(revised), selectedUnitIds: ['ACTION-002'] },
+      {
+        ...request(revised),
+        selectedUnitIds: ['ACTION-002'],
+        expectedGenerationRevision: 1,
+      },
       'Regenerate one unit from a separately identified revision source.',
     );
     expect(compatible.sources.map((source) => source.sourceId)).toEqual([
@@ -122,21 +134,71 @@ describe('AEO draft regeneration feedback versions', () => {
     expect(sourceArtifact(compatible, 'ACTION-002')).toContain('R01');
 
     const driftingIdentity: AeoEditingKnowledgeCandidate = sampleKnowledge(
-      'R01',
+      'R00',
       'SRC-AEO-R00',
       1200,
       'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
     );
+    const beforeConflict: string = JSON.stringify(current);
     expect(() =>
       regenerateAeoDraftSelection(
         current,
         {
           ...request(driftingIdentity),
-          selectedUnitIds: ['ACTION-002'],
+          selectedUnitIds: current.suggestions.map(
+            (item: AeoDraftSuggestion) => item.sourceUnitId,
+          ),
+          expectedGenerationRevision: 1,
         },
         'Attempt reuse of a source ID whose actual identity changed.',
       ),
     ).toThrow('AEO_DRAFT_REGENERATION_SOURCE_IDENTITY_CONFLICT: SRC-AEO-R00');
+    expect(JSON.stringify(current)).toBe(beforeConflict);
+  });
+
+  it('rejects stale generations and cross-matter reuse of the same draftKey', () => {
+    const original: AeoEditingKnowledgeCandidate = sampleKnowledge();
+    const current: AeoDraftAssistanceCandidate =
+      createAeoDraftAssistanceCandidate(request(original));
+    const before: string = JSON.stringify(current);
+    expect(() =>
+      regenerateAeoDraftSelection(
+        current,
+        {
+          ...request(original),
+          selectedUnitIds: ['ACTION-001'],
+          expectedGenerationRevision: 0,
+        },
+        'A stale caller cannot regenerate.',
+      ),
+    ).toThrow('AEO_DRAFT_REGENERATION_GENERATION_CONFLICT');
+
+    const otherMatter: AeoEditingKnowledgeCandidate = {
+      ...original,
+      documentIdentity: {
+        ...original.documentIdentity,
+        aeoNumber: 'AEO-B787-45-OTHER',
+        expectedHeader: 'AEO-B787-45-OTHER-R00',
+        observedHeader: 'AEO-B787-45-OTHER-R00',
+      },
+      sources: original.sources.map((source) => ({
+        ...source,
+        observedIdentity: 'AEO-B787-45-OTHER-R00',
+      })),
+      knowledgeVersion: 'knowledge:other-matter:R00',
+    };
+    expect(() =>
+      regenerateAeoDraftSelection(
+        current,
+        {
+          ...request(otherMatter),
+          selectedUnitIds: ['ACTION-001'],
+          expectedGenerationRevision: 1,
+        },
+        'A different AEO cannot reuse this draft identity.',
+      ),
+    ).toThrow('AEO_DRAFT_REGENERATION_MATTER_IDENTITY_MISMATCH');
+    expect(JSON.stringify(current)).toBe(before);
   });
 });
 
@@ -185,6 +247,9 @@ function modify(
     note: 'Engineer revision remains candidate-only.',
     revisedBodyZh,
     revisionSourceRefs: target.sourceRefs,
+    semanticField: 'BODY',
+    reasonCode: 'SOURCE_MISMATCH',
+    learningDisposition: 'SERIES_PATTERN_CANDIDATE',
   };
 }
 
@@ -198,6 +263,9 @@ function reject(
     decision: 'REJECT',
     engineerDecisionRef: `ENG-${feedbackId}`,
     note: 'Engineer rejected this candidate suggestion.',
+    semanticField: 'SUGGESTION',
+    reasonCode: 'APPLICABILITY',
+    learningDisposition: 'SERIES_PATTERN_CANDIDATE',
   };
 }
 
@@ -279,7 +347,7 @@ function sampleKnowledge(
       {
         sourceId,
         role: 'AEO_ISSUED_OR_CONTROLLED_SAMPLE',
-        artifactRef: `artifact://historical/${header}.docx`,
+        artifactRef: `artifact://historical/${sourceId}-${header}.docx`,
         actualBytes,
         sha256,
         observedIdentity: header,
@@ -299,6 +367,14 @@ function sampleKnowledge(
     companyStepCandidateUnitIds: ['ACTION-002', 'ACTION-003'],
     missingInputs: [],
     conflicts: [],
+    producerEvidence: {
+      sourceSelection: null,
+      figureUnits: [],
+      reviewFlags: [],
+      companyAddedOrSpecializedControls: [],
+      sourceCandidatesRequiringDecision: [],
+      nonGeneralizable: [],
+    },
     sampleSupport: {
       sampleCount: 1,
       inferenceRule: 'FREQUENCY_NEVER_ESTABLISHES_ENGINEERING_REQUIREMENT',

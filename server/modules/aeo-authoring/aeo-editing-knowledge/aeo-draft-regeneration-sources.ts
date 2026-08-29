@@ -1,7 +1,43 @@
 import type {
+  AeoDraftAssistanceCandidate,
+  AeoDraftRegenerationRequest,
   AeoDraftSuggestion,
+  AeoEditingDocumentIdentity,
   AeoEditingSourceIdentity,
 } from './aeo-editing-knowledge.types';
+
+export function assertAeoDraftRegenerationContext(
+  current: AeoDraftAssistanceCandidate,
+  request: AeoDraftRegenerationRequest,
+  reason: string,
+): void {
+  if (current.draftKey !== request.draftKey) {
+    throw new Error('AEO_DRAFT_REGENERATION_WORK_ITEM_MISMATCH');
+  }
+  if (current.generationRevision !== request.expectedGenerationRevision) {
+    throw new Error(
+      `AEO_DRAFT_REGENERATION_GENERATION_CONFLICT: expected ${String(
+        request.expectedGenerationRevision,
+      )}, current ${String(current.generationRevision)}`,
+    );
+  }
+  if (!reason.trim()) {
+    throw new Error('AEO_DRAFT_REGENERATION_REASON_REQUIRED');
+  }
+  const currentIdentity: AeoEditingDocumentIdentity =
+    current.knowledgeDocumentIdentity;
+  const requestedIdentity: AeoEditingDocumentIdentity =
+    request.knowledge.documentIdentity;
+  if (
+    currentIdentity.aeoNumber !== requestedIdentity.aeoNumber ||
+    currentIdentity.revision !== requestedIdentity.revision ||
+    currentIdentity.title !== requestedIdentity.title ||
+    currentIdentity.category !== requestedIdentity.category ||
+    currentIdentity.expectedHeader !== requestedIdentity.expectedHeader
+  ) {
+    throw new Error('AEO_DRAFT_REGENERATION_MATTER_IDENTITY_MISMATCH');
+  }
+}
 
 export function resolveAeoDraftRegenerationSources(
   currentSources: AeoEditingSourceIdentity[],
@@ -25,6 +61,20 @@ export function resolveAeoDraftRegenerationSources(
       suggestion.sourceRefs.map((ref) => ref.sourceId),
     ),
   );
+  requestedById.forEach(
+    (requestedSource: AeoEditingSourceIdentity, sourceId: string) => {
+      const currentSource: AeoEditingSourceIdentity | undefined =
+        currentById.get(sourceId);
+      if (
+        currentSource &&
+        !sameSourceIdentity(currentSource, requestedSource)
+      ) {
+        throw new Error(
+          `AEO_DRAFT_REGENERATION_SOURCE_IDENTITY_CONFLICT: ${sourceId}`,
+        );
+      }
+    },
+  );
   const retainedSources: AeoEditingSourceIdentity[] = [];
   requiredSourceIds.forEach((sourceId: string) => {
     const currentSource: AeoEditingSourceIdentity | undefined =
@@ -36,14 +86,6 @@ export function resolveAeoDraftRegenerationSources(
     }
     const requestedSource: AeoEditingSourceIdentity | undefined =
       requestedById.get(sourceId);
-    if (
-      requestedSource &&
-      !sameSourceIdentity(currentSource, requestedSource)
-    ) {
-      throw new Error(
-        `AEO_DRAFT_REGENERATION_SOURCE_IDENTITY_CONFLICT: ${sourceId}`,
-      );
-    }
     if (!requestedSource) {
       retainedSources.push(currentSource);
     }

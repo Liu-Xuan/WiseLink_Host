@@ -11,6 +11,8 @@ import {
   type AeoEditingValidationResult,
 } from './aeo-editing-knowledge.types';
 import { validateAeoEditingInput } from './aeo-editing-knowledge.validator';
+import { normalizeAeoCurrentProducer } from './aeo-current-producer.normalizer';
+import { isAeoCurrentProducerInput } from './aeo-current-producer.validator';
 import {
   array,
   arrayOrEmpty,
@@ -19,7 +21,9 @@ import {
   compactStrings,
   companyScopeMissing,
   dependencyMissingMessages,
+  emptyProducerEvidence,
   inspectionFallbackBody,
+  isCompanyStepDisposition,
   knowledgeVersion,
   missingLike,
   nestedSourceRefs,
@@ -48,7 +52,10 @@ export function normalizeAeoEditingKnowledge(
   value: unknown,
   provenance?: unknown,
 ): AeoEditingKnowledgeCandidate {
-  const validation: AeoEditingValidationResult = validateAeoEditingInput(value);
+  const validation: AeoEditingValidationResult = validateAeoEditingInput(
+    value,
+    provenance,
+  );
   if (!validation.valid) {
     throw new Error(
       `AEO_EDITING_INPUT_INVALID: ${validation.findings
@@ -59,6 +66,12 @@ export function normalizeAeoEditingKnowledge(
   const record: Record<string, unknown> = object(value, 'knowledge');
   const recordType: string = string(record.recordType, 'recordType');
   if (recordType === 'local-aeo-editing-knowledge') {
+    if (isAeoCurrentProducerInput(record)) {
+      return normalizeAeoCurrentProducer(
+        record,
+        object(provenance, 'provenance'),
+      );
+    }
     return normalizeEditingV0(record);
   }
   if (recordType === 'local-aeo-inspection-editing-knowledge') {
@@ -141,16 +154,17 @@ function normalizeEditingV0(
     applicableTemplateCandidateUnitIds: actions
       .filter(
         (action: AeoEditingActionUnit) =>
-          !action.sourceDisposition.includes('COMPANY'),
+          !isCompanyStepDisposition(action.sourceDisposition),
       )
       .map((action: AeoEditingActionUnit) => action.unitId),
     companyStepCandidateUnitIds: actions
       .filter((action: AeoEditingActionUnit) =>
-        action.sourceDisposition.includes('COMPANY'),
+        isCompanyStepDisposition(action.sourceDisposition),
       )
       .map((action: AeoEditingActionUnit) => action.unitId),
     missingInputs,
     conflicts,
+    producerEvidence: emptyProducerEvidence(),
     sampleSupport: {
       sampleCount: 1,
       inferenceRule: 'FREQUENCY_NEVER_ESTABLISHES_ENGINEERING_REQUIREMENT',
@@ -315,12 +329,12 @@ function normalizeInspection(
     applicableTemplateCandidateUnitIds: actions
       .filter(
         (action: AeoEditingActionUnit) =>
-          !action.sourceDisposition.includes('COMPANY'),
+          !isCompanyStepDisposition(action.sourceDisposition),
       )
       .map((action: AeoEditingActionUnit) => action.unitId),
     companyStepCandidateUnitIds: actions
       .filter((action: AeoEditingActionUnit) =>
-        action.sourceDisposition.includes('COMPANY'),
+        isCompanyStepDisposition(action.sourceDisposition),
       )
       .map((action: AeoEditingActionUnit) => action.unitId),
     missingInputs: unique([
@@ -333,6 +347,7 @@ function normalizeInspection(
     conflicts: normalizeReviewMessages(
       record.manufacturerToCompanyTransformations,
     ),
+    producerEvidence: emptyProducerEvidence(),
     sampleSupport: {
       sampleCount: 1,
       inferenceRule: 'FREQUENCY_NEVER_ESTABLISHES_ENGINEERING_REQUIREMENT',

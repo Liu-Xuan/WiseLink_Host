@@ -2,6 +2,7 @@ import type {
   AeoEditingActionUnit,
   AeoEditingCategory,
   AeoEditingDocumentIdentity,
+  AeoEditingKnowledgeCandidate,
   AeoEditingSourceRef,
 } from './aeo-editing-knowledge.types';
 
@@ -16,16 +17,18 @@ export function normalizeRefs(value: unknown): AeoEditingSourceRef[] {
 }
 
 export function normalizeCompactRefs(value: unknown): AeoEditingSourceRef[] {
-  return normalizeStrings(value).map((ref: string) => {
-    const separator: number = ref.indexOf('#');
-    if (separator <= 0 || separator === ref.length - 1) {
-      throw new Error(`AEO_EDITING_SOURCE_REF_INVALID: ${ref}`);
-    }
-    return {
-      sourceId: ref.slice(0, separator),
-      locator: ref.slice(separator + 1),
-    };
-  });
+  return uniqueRefs(
+    normalizeStrings(value).map((ref: string) => {
+      const separator: number = ref.indexOf('#');
+      if (separator <= 0 || separator === ref.length - 1) {
+        throw new Error(`AEO_EDITING_SOURCE_REF_INVALID: ${ref}`);
+      }
+      return {
+        sourceId: ref.slice(0, separator),
+        locator: ref.slice(separator + 1),
+      };
+    }),
+  );
 }
 
 export function nestedSourceRefs(values: unknown[]): AeoEditingSourceRef[] {
@@ -261,4 +264,24 @@ export function uniqueRefs(
 
 export function missingLike(message: string): boolean {
   return /missing|unestablished|not present|not established/iu.test(message);
+}
+
+export function isCompanyStepDisposition(disposition: string): boolean {
+  return (
+    disposition.startsWith('COMPANY_ADDED') ||
+    disposition === 'COMPANY_ADDITION' ||
+    disposition === 'COMPANY_EXECUTION_CLOSEOUT' ||
+    disposition === 'OPERATOR_DEFINED_STAGING_IMPLEMENTATION'
+  );
+}
+
+export function emptyProducerEvidence(): AeoEditingKnowledgeCandidate['producerEvidence'] {
+  return {
+    sourceSelection: null,
+    figureUnits: [],
+    reviewFlags: [],
+    companyAddedOrSpecializedControls: [],
+    sourceCandidatesRequiringDecision: [],
+    nonGeneralizable: [],
+  };
 }

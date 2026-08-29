@@ -8,21 +8,31 @@ import type {
 } from './aeo-editing-knowledge.types';
 import {
   add,
+  isRecord,
   normalizeText,
+  recordArray,
+  recordValue,
   result,
+  text,
   validateInputAuthorityBoundary,
 } from './aeo-editing-knowledge.validation.utils';
+import {
+  isAeoCurrentProducerInput,
+  validateAeoCurrentProducerInput,
+} from './aeo-current-producer.validator';
 
 export function validateAeoEditingInput(
   value: unknown,
+  provenance?: unknown,
 ): AeoEditingValidationResult {
   const findings: AeoEditingValidationFinding[] = [];
   if (!isRecord(value)) {
     add(findings, 'RECORD_NOT_OBJECT', '$', 'Input must be an object.');
     return result(findings);
   }
+  const currentProducer: boolean = isAeoCurrentProducerInput(value);
   const lifecycle: unknown =
-    value.recordType === 'local-aeo-editing-knowledge'
+    value.recordType === 'local-aeo-editing-knowledge' && !currentProducer
       ? value.lifecycleStatus
       : value.status;
   if (lifecycle !== 'CANDIDATE_ONLY') {
@@ -34,6 +44,10 @@ export function validateAeoEditingInput(
     );
   }
   validateInputAuthorityBoundary(value, findings);
+  if (currentProducer) {
+    validateAeoCurrentProducerInput(value, provenance, findings);
+    return result(findings);
+  }
   if (value.recordType !== 'local-aeo-editing-knowledge') {
     return result(findings);
   }
@@ -473,22 +487,6 @@ function walkSourceRefs(
   });
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-}
-
-function recordValue(value: unknown): Record<string, unknown> {
-  return isRecord(value) ? value : {};
-}
-
 function arrayValue(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
-}
-
-function recordArray(value: unknown): Record<string, unknown>[] {
-  return arrayValue(value).filter(isRecord);
-}
-
-function text(value: unknown): string {
-  return typeof value === 'string' ? value.trim() : '';
 }

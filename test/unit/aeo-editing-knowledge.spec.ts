@@ -57,8 +57,23 @@ describe('AEO editing knowledge and draft assistance', () => {
     const learning = buildAeoDraftLearningInput(decided);
     expect(learning.accepted).toHaveLength(1);
     expect(learning.modified).toHaveLength(1);
-    expect(learning.rejected).toHaveLength(1);
-    expect(learning.companyStepFeedback).toHaveLength(2);
+    expect(learning.rejected).toHaveLength(0);
+    expect(learning.companyStepFeedback).toHaveLength(1);
+    expect(learning.excludedFromLearning).toEqual([
+      expect.objectContaining({
+        feedbackId: 'FDBK-3',
+        learningDisposition: 'DO_NOT_LEARN',
+      }),
+    ]);
+    expect(learning.modified[0]).toMatchObject({
+      semanticTarget: {
+        sourceUnitId: 'ACTION-002',
+        field: 'BODY',
+      },
+      before: { bodyZh: '装载软件件号。' },
+      after: { bodyZh: '按当前受控源装载软件件号。' },
+      reasonCode: 'SOURCE_MISMATCH',
+    });
     expect(decided.editorBlocks).toHaveLength(2);
     expect(decided.suggestions[1]?.bodyZh).toBe('按当前受控源装载软件件号。');
     expect(replayAeoDraftFeedback(base, feedback).suggestions).toEqual(
@@ -121,27 +136,46 @@ describe('AEO editing knowledge and draft assistance', () => {
     const base: AeoDraftAssistanceCandidate = createAeoDraftAssistanceCandidate(
       draftRequest(original),
     );
+    expect(() =>
+      regenerateAeoDraftSelection(
+        base,
+        {
+          ...draftRequest(revised),
+          selectedUnitIds: ['ACTION-002'],
+          expectedGenerationRevision: 1,
+        },
+        'A different issued revision cannot partially replace this draft.',
+      ),
+    ).toThrow('AEO_DRAFT_REGENERATION_MATTER_IDENTITY_MISMATCH');
+    const sameRevisionUpdate: AeoEditingKnowledgeCandidate = {
+      ...original,
+      actionUnits: original.actionUnits.map((unit) =>
+        unit.unitId === 'ACTION-002'
+          ? { ...unit, bodyZh: '按 R00 当前受控源装载软件件号。' }
+          : unit,
+      ),
+    };
     const regenerated = regenerateAeoDraftSelection(
       base,
       {
-        ...draftRequest(revised),
+        ...draftRequest(sameRevisionUpdate),
         selectedUnitIds: ['ACTION-002'],
+        expectedGenerationRevision: 1,
       },
-      'R01 changed the controlled software expression.',
+      'R00 candidate wording was corrected against the same source identity.',
     );
     expect(regenerated.generationRevision).toBe(2);
     expect(regenerated.regenerationHistory[0]).toMatchObject({
       regeneratedUnitIds: ['ACTION-002'],
     });
     expect(regenerated.sources.map((source) => source.sourceId)).toEqual([
-      'SRC-AEO-R01-DOCX',
       'SRC-AEO-R00-DOCX',
     ]);
     expect(
       regenerated.suggestions.find(
         (suggestion) => suggestion.sourceUnitId === 'ACTION-002',
       )?.bodyZh,
-    ).toContain('R01');
+    ).toContain('R00');
   });
 
   it('normalizes inspectionDetail and preserves explicit missing evidence', () => {
@@ -214,6 +248,9 @@ function feedbackFor(
       decision: 'ACCEPT',
       engineerDecisionRef: 'ENG-DEC-1',
       note: 'Accepted for the current editable candidate.',
+      semanticField: 'SUGGESTION',
+      reasonCode: 'EXECUTABILITY',
+      learningDisposition: 'CATEGORY_PATTERN_CANDIDATE',
     },
     {
       feedbackId: 'FDBK-2',
@@ -225,6 +262,9 @@ function feedbackFor(
       revisedBodyEn:
         'Load the software part number from the current controlled source.',
       revisionSourceRefs: draft.suggestions[1]!.sourceRefs,
+      semanticField: 'BODY',
+      reasonCode: 'SOURCE_MISMATCH',
+      learningDisposition: 'SERIES_PATTERN_CANDIDATE',
     },
     {
       feedbackId: 'FDBK-3',
@@ -232,6 +272,9 @@ function feedbackFor(
       decision: 'REJECT',
       engineerDecisionRef: 'ENG-DEC-3',
       note: 'The closeout is not applicable to this candidate.',
+      semanticField: 'SUGGESTION',
+      reasonCode: 'APPLICABILITY',
+      learningDisposition: 'DO_NOT_LEARN',
     },
   ];
 }

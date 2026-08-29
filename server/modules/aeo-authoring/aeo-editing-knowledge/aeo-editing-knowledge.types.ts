@@ -1,7 +1,7 @@
 import type { AeoContentBlock } from '../../../../shared/aeo-editor';
 
 export const AEO_EDITING_KNOWLEDGE_VERSION =
-  'wiselink.aeo_editing_knowledge.v0.candidate.1' as const;
+  'wiselink.aeo_editing_knowledge.v0.candidate.2' as const;
 export const AEO_DRAFT_ASSISTANCE_VERSION =
   'wiselink.aeo_draft_assistance.v0.candidate.2' as const;
 
@@ -102,6 +102,14 @@ export interface AeoEditingKnowledgeCandidate {
   companyStepCandidateUnitIds: string[];
   missingInputs: string[];
   conflicts: string[];
+  producerEvidence: {
+    sourceSelection: Record<string, unknown> | null;
+    figureUnits: unknown[];
+    reviewFlags: unknown[];
+    companyAddedOrSpecializedControls: unknown[];
+    sourceCandidatesRequiringDecision: unknown[];
+    nonGeneralizable: string[];
+  };
   sampleSupport: {
     sampleCount: number;
     inferenceRule: 'FREQUENCY_NEVER_ESTABLISHES_ENGINEERING_REQUIREMENT';
@@ -155,6 +163,10 @@ export interface AeoDraftAssistanceRequest {
   currentSourceRefs: AeoEditingSourceRef[];
 }
 
+export interface AeoDraftRegenerationRequest extends AeoDraftAssistanceRequest {
+  expectedGenerationRevision: number;
+}
+
 export interface AeoDraftFeedback {
   feedbackId: string;
   suggestionId: string;
@@ -164,7 +176,46 @@ export interface AeoDraftFeedback {
   revisedBodyZh: string | null;
   revisedBodyEn: string | null;
   revisionSourceRefs: AeoEditingSourceRef[];
+  semanticTarget: {
+    suggestionId: string;
+    sourceUnitId: string;
+    section: string;
+    field: string;
+  };
+  before: AeoDraftFeedbackSuggestionSnapshot;
+  after: AeoDraftFeedbackSuggestionSnapshot;
+  reasonCode: AeoDraftFeedbackReasonCode;
+  learningDisposition: AeoDraftFeedbackLearningDisposition;
 }
+
+export interface AeoDraftFeedbackSuggestionSnapshot {
+  bodyZh: string | null;
+  bodyEn: string | null;
+  sourceRefs: AeoEditingSourceRef[];
+  reviewStatus: AeoDraftSuggestion['reviewStatus'];
+  engineerDecisionRef: string | null;
+}
+
+export type AeoDraftFeedbackReasonCode =
+  | 'SOURCE_MISMATCH'
+  | 'APPLICABILITY'
+  | 'COMPANY_PROCESS'
+  | 'EXECUTABILITY'
+  | 'SAFETY'
+  | 'DUPLICATE'
+  | 'SUPERSEDED'
+  | 'TERMINOLOGY'
+  | 'LAYOUT'
+  | 'ROLE'
+  | 'TEST_OR_ACCEPTANCE'
+  | 'RESTORATION'
+  | 'OTHER';
+
+export type AeoDraftFeedbackLearningDisposition =
+  | 'THIS_DRAFT_ONLY'
+  | 'SERIES_PATTERN_CANDIDATE'
+  | 'CATEGORY_PATTERN_CANDIDATE'
+  | 'DO_NOT_LEARN';
 
 export interface AeoSupersededDraftFeedback {
   feedback: AeoDraftFeedback;
@@ -210,6 +261,9 @@ export interface AeoDraftFeedbackInput {
   revisedBodyZh?: string | null;
   revisedBodyEn?: string | null;
   revisionSourceRefs?: AeoEditingSourceRef[];
+  semanticField: string;
+  reasonCode: AeoDraftFeedbackReasonCode;
+  learningDisposition: AeoDraftFeedbackLearningDisposition;
 }
 
 export interface AeoDraftLearningInput {
@@ -218,6 +272,7 @@ export interface AeoDraftLearningInput {
   accepted: AeoDraftFeedback[];
   modified: AeoDraftFeedback[];
   rejected: AeoDraftFeedback[];
+  excludedFromLearning: AeoDraftFeedback[];
   boundary: 'FEEDBACK_INPUT_NOT_AUTOMATIC_RULE_NOT_AUTHORITY';
 }
 

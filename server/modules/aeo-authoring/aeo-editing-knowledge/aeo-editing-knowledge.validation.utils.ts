@@ -50,3 +50,19 @@ export function validateInputAuthorityBoundary(
     }
   });
 }
+
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+export function recordValue(value: unknown): Record<string, unknown> {
+  return isRecord(value) ? value : {};
+}
+
+export function recordArray(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value) ? value.filter(isRecord) : [];
+}
+
+export function text(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}

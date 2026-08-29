@@ -90,6 +90,39 @@ function diffAction(
     ]),
     reasons,
   );
+  compareStructuredField('conditions', from.conditions, to.conditions, reasons);
+  compareStructuredField(
+    'verifications',
+    from.verifications,
+    to.verifications,
+    reasons,
+  );
+  compareStructuredField('closeout', from.closeout, to.closeout, reasons);
+  compareStructuredField(
+    'safety notes',
+    from.safetyNotes,
+    to.safetyNotes,
+    reasons,
+  );
+  compareStructuredField(
+    'inspection detail',
+    from.inspectionDetail,
+    to.inspectionDetail,
+    reasons,
+  );
+  compareStructuredField(
+    'source references',
+    from.sourceRefs,
+    to.sourceRefs,
+    reasons,
+  );
+  compareField(
+    'source disposition',
+    from.sourceDisposition,
+    to.sourceDisposition,
+    reasons,
+  );
+  compareField('review status', from.reviewStatus, to.reviewStatus, reasons);
   return {
     unitId,
     change: reasons.length === 0 ? 'UNCHANGED' : 'CHANGED',
@@ -97,6 +130,15 @@ function diffAction(
     fromSourceRefs: from.sourceRefs,
     toSourceRefs: to.sourceRefs,
   };
+}
+
+function compareStructuredField(
+  label: string,
+  from: unknown,
+  to: unknown,
+  reasons: string[],
+): void {
+  compareField(label, JSON.stringify(from), JSON.stringify(to), reasons);
 }
 
 function compareField(

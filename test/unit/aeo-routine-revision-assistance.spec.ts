@@ -72,6 +72,13 @@ describe('AEO routine parameter revision assistance', () => {
     const decided: AeoRoutineRevisionReplayCandidate =
       recordAeoRoutineRevisionFeedback(partial, projection, projection.example);
     expect(decided.feedbackEvents).toHaveLength(1);
+    expect(decided.feedbackEvents[0]).toMatchObject({
+      targetLocator: expect.objectContaining({ field: 'oldLspToDelete' }),
+      before: { value: '316F-BFT-00N-G4' },
+      after: { value: '310E-BFT-00P-84', state: 'CANDIDATE_ONLY' },
+      reasonCode: 'SOURCE_MISMATCH',
+      learningDisposition: 'SERIES_PATTERN_CANDIDATE',
+    });
     expect(
       decided.slotEdits.find((edit) => edit.slot === 'step4OldLsp'),
     ).toMatchObject({

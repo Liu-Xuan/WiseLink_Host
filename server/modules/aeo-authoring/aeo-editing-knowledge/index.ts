@@ -3,6 +3,7 @@ export * from './aeo-editing-knowledge.normalizer';
 export * from './aeo-editing-knowledge.validator';
 export * from './aeo-editing-knowledge.diff';
 export * from './aeo-draft-assistance';
+export * from './aeo-draft-feedback-learning';
 export * from './aeo-routine-revision-assistance';
 
 import type { AeoEditingKnowledgeCandidate } from './aeo-editing-knowledge.types';

@@ -10,7 +10,7 @@ import {
   type AeoDraftAssistanceRequest,
   type AeoDraftFeedback,
   type AeoDraftFeedbackInput,
-  type AeoDraftLearningInput,
+  type AeoDraftRegenerationRequest,
   type AeoDraftSuggestion,
   type AeoEditingActionUnit,
   type AeoEditingKnowledgeCandidate,
@@ -18,7 +18,11 @@ import {
   type AeoEditingSourceRef,
   type AeoSupersededDraftFeedback,
 } from './aeo-editing-knowledge.types';
-import { resolveAeoDraftRegenerationSources } from './aeo-draft-regeneration-sources';
+import { buildAeoDraftFeedbackEvent } from './aeo-draft-feedback-learning';
+import {
+  assertAeoDraftRegenerationContext,
+  resolveAeoDraftRegenerationSources,
+} from './aeo-draft-regeneration-sources';
 import { assertAeoEditingKnowledgeCandidate } from './aeo-editing-knowledge.validator';
 
 const DRAFT_NON_CLAIMS: string[] = [
@@ -52,7 +56,7 @@ export function createAeoDraftAssistanceCandidate(
     knowledgeDocumentIdentity: request.knowledge.documentIdentity,
     knowledgeDocumentState: request.knowledge.documentState,
     sources: request.knowledge.sources,
-    currentSourceRefs: request.currentSourceRefs,
+    currentSourceRefs: uniqueRefs(request.currentSourceRefs),
     suggestions,
     editorBlocks: suggestions.map(
       (suggestion: AeoDraftSuggestion, index: number) =>
@@ -69,15 +73,10 @@ export function createAeoDraftAssistanceCandidate(
 
 export function regenerateAeoDraftSelection(
   current: AeoDraftAssistanceCandidate,
-  request: AeoDraftAssistanceRequest,
+  request: AeoDraftRegenerationRequest,
   reason: string,
 ): AeoDraftAssistanceCandidate {
-  if (current.draftKey !== request.draftKey) {
-    throw new Error('AEO_DRAFT_REGENERATION_WORK_ITEM_MISMATCH');
-  }
-  if (!reason.trim()) {
-    throw new Error('AEO_DRAFT_REGENERATION_REASON_REQUIRED');
-  }
+  assertAeoDraftRegenerationContext(current, request, reason);
   const replacement: AeoDraftAssistanceCandidate =
     createAeoDraftAssistanceCandidate(request);
   const replacedUnitIds: Set<string> = new Set<string>(request.selectedUnitIds);
@@ -143,7 +142,7 @@ export function regenerateAeoDraftSelection(
     knowledgeDocumentIdentity: request.knowledge.documentIdentity,
     knowledgeDocumentState: request.knowledge.documentState,
     sources,
-    currentSourceRefs: request.currentSourceRefs,
+    currentSourceRefs: uniqueRefs(request.currentSourceRefs),
     suggestions: ordered,
     editorBlocks: ordered
       .filter(
@@ -191,8 +190,9 @@ export function recordAeoDraftFeedback(
   if (!suggestion) {
     throw new Error(`AEO_DRAFT_SUGGESTION_NOT_FOUND: ${input.suggestionId}`);
   }
-  const revisionSourceRefs: AeoEditingSourceRef[] =
-    input.revisionSourceRefs ?? [];
+  const revisionSourceRefs: AeoEditingSourceRef[] = uniqueRefs(
+    input.revisionSourceRefs ?? [],
+  );
   if (input.decision === 'MODIFY') {
     if (!input.revisedBodyZh && !input.revisedBodyEn) {
       throw new Error('AEO_DRAFT_MODIFIED_BODY_REQUIRED');
@@ -205,19 +205,16 @@ export function recordAeoDraftFeedback(
   if (!input.engineerDecisionRef.trim() || !input.note.trim()) {
     throw new Error('AEO_DRAFT_ENGINEER_DECISION_AND_REASON_REQUIRED');
   }
-  const feedback: AeoDraftFeedback = {
-    feedbackId: input.feedbackId,
-    suggestionId: input.suggestionId,
-    decision: input.decision,
-    engineerDecisionRef: input.engineerDecisionRef.trim(),
-    note: input.note.trim(),
-    revisedBodyZh: input.revisedBodyZh ?? null,
-    revisedBodyEn: input.revisedBodyEn ?? null,
-    revisionSourceRefs,
-  };
   const updatedSuggestion: AeoDraftSuggestion = applyFeedbackToSuggestion(
     suggestion,
-    feedback,
+    input,
+    revisionSourceRefs,
+  );
+  const feedback: AeoDraftFeedback = buildAeoDraftFeedbackEvent(
+    suggestion,
+    updatedSuggestion,
+    input,
+    revisionSourceRefs,
   );
   const nextSuggestions: AeoDraftSuggestion[] = current.suggestions.map(
     (item: AeoDraftSuggestion) =>
@@ -245,35 +242,6 @@ export function replayAeoDraftFeedback(
       recordAeoDraftFeedback(current, input),
     base,
   );
-}
-
-export function buildAeoDraftLearningInput(
-  draft: AeoDraftAssistanceCandidate,
-): AeoDraftLearningInput {
-  const byKind = (kind: AeoDraftSuggestion['kind']): AeoDraftFeedback[] => {
-    const ids: Set<string> = new Set(
-      draft.suggestions
-        .filter((suggestion: AeoDraftSuggestion) => suggestion.kind === kind)
-        .map((suggestion: AeoDraftSuggestion) => suggestion.suggestionId),
-    );
-    return draft.feedback.filter((feedback: AeoDraftFeedback) =>
-      ids.has(feedback.suggestionId),
-    );
-  };
-  return {
-    applicableTemplateFeedback: byKind('APPLICABLE_TEMPLATE_CANDIDATE'),
-    companyStepFeedback: byKind('COMPANY_STEP_CANDIDATE'),
-    accepted: draft.feedback.filter(
-      (feedback: AeoDraftFeedback) => feedback.decision === 'ACCEPT',
-    ),
-    modified: draft.feedback.filter(
-      (feedback: AeoDraftFeedback) => feedback.decision === 'MODIFY',
-    ),
-    rejected: draft.feedback.filter(
-      (feedback: AeoDraftFeedback) => feedback.decision === 'REJECT',
-    ),
-    boundary: 'FEEDBACK_INPUT_NOT_AUTOMATIC_RULE_NOT_AUTHORITY',
-  };
 }
 
 function suggestionFromUnit(
@@ -381,7 +349,8 @@ function editorBlock(
 
 function applyFeedbackToSuggestion(
   suggestion: AeoDraftSuggestion,
-  feedback: AeoDraftFeedback,
+  feedback: AeoDraftFeedbackInput,
+  revisionSourceRefs: AeoEditingSourceRef[],
 ): AeoDraftSuggestion {
   return {
     ...suggestion,
@@ -395,7 +364,7 @@ function applyFeedbackToSuggestion(
         : suggestion.bodyEn,
     sourceRefs:
       feedback.decision === 'MODIFY'
-        ? uniqueRefs([...suggestion.sourceRefs, ...feedback.revisionSourceRefs])
+        ? uniqueRefs([...suggestion.sourceRefs, ...revisionSourceRefs])
         : suggestion.sourceRefs,
     reviewStatus:
       feedback.decision === 'ACCEPT'
