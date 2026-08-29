@@ -757,6 +757,7 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
 
 .parse-reader-split .parse-reader-workspace {
   margin: 0;
+  font-family: var(--wl-font);
 }
 
 /* 0.1 workbench IA adapted to the current Host: structured content and
@@ -1071,7 +1072,9 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
   color: #58789f;
   background: var(--wl-surface-solid);
   font-family: var(--wl-font);
-  font-size: 8px;
+  font-size: 10px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
   cursor: pointer;
 }
 
@@ -1122,16 +1125,18 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
 .parse-reader-focus small {
   color: inherit;
   font-family: var(--wl-font);
-  font-size: 8px;
+  font-size: 10px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .parse-reader-focus strong {
-  overflow: hidden;
   color: var(--parse-heading);
   font-family: var(--wl-font);
-  font-size: 9px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .parse-reader-focus button {
@@ -1177,17 +1182,18 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
 }
 
 .parse-reader-mode span {
-  overflow: hidden;
   font-size: 10px;
   font-weight: 700;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .parse-reader-mode small {
   color: #8a98aa;
   font-family: var(--wl-font);
-  font-size: 8px;
+  font-size: 10px;
+  line-height: 1.4;
   white-space: nowrap;
 }
 
@@ -1205,16 +1211,21 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
 }
 
 .parse-reader-capability-strip strong {
+  min-width: 0;
   color: #52647a;
   font-size: 10px;
   font-weight: 500;
   line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .parse-reader-capability-strip span {
+  min-width: 0;
   color: #8b97a7;
   font-family: var(--wl-font);
-  font-size: 8px;
+  font-size: 10px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .parse-reader-query-form {
@@ -1248,7 +1259,9 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
 .parse-reader-source-view span {
   color: #7186a1;
   font-family: var(--wl-font);
-  font-size: 8px;
+  font-size: 10px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .parse-reader-source-view strong {
@@ -1327,7 +1340,9 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
 .parse-reader-locator > span {
   color: #456b99;
   font-family: var(--wl-font);
-  font-size: 8px;
+  font-size: 10px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .parse-reader-locator p,

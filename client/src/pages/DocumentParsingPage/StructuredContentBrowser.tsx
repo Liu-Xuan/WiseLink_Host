@@ -296,7 +296,10 @@ export function StructuredContentBrowser({
                   <span>{unitKindLabel(unit.displayKind)}</span>
                   <small>内容 {unit.ordinal}</small>
                 </div>
-                <p className={expanded ? 'is-expanded' : ''}>
+                <p
+                  id={`structured-unit-text-${unit.ordinal}`}
+                  className={longText && !expanded ? 'is-collapsed' : undefined}
+                >
                   {unit.displayText}
                 </p>
                 <div className="structured-browser-unit-actions">
@@ -306,6 +309,7 @@ export function StructuredContentBrowser({
                       className="structured-browser-expand"
                       onClick={() => toggleExpanded(unit.ordinal)}
                       aria-expanded={expanded}
+                      aria-controls={`structured-unit-text-${unit.ordinal}`}
                     >
                       {expanded ? (
                         <ChevronDown aria-hidden="true" />
@@ -387,7 +391,11 @@ function OutlineList({
   return (
     <nav>
       {units.map((unit: CanonicalStructuredContentUnit) => (
-        <a href={`#structured-unit-${unit.ordinal}`} key={unit.ordinal}>
+        <a
+          href={`#structured-unit-${unit.ordinal}`}
+          key={unit.ordinal}
+          title={unit.sectionTitle ?? undefined}
+        >
           <span>{unit.sectionTitle}</span>
           <small>{unit.ordinal}</small>
         </a>

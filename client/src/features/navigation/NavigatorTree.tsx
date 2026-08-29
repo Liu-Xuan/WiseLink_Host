@@ -348,13 +348,20 @@ export default function NavigatorTree({
                 ]
                   .filter(Boolean)
                   .join(' ')}
+                aria-label={`${node.label}${
+                  node.subtitle ? `，${node.subtitle}` : ''
+                }${node.badge ? `，${node.badge}` : ''}`}
                 style={
                   {
                     '--node-depth': depth,
                     '--node-depth-capped': Math.min(depth, 4),
                   } as React.CSSProperties
                 }
-                title={node.label}
+                title={
+                  node.subtitle
+                    ? `${node.label} — ${node.subtitle}`
+                    : node.label
+                }
                 onClick={() => {
                   setFocusId(node.id);
                   if (node.selectable) onSelect(node);
@@ -386,7 +393,9 @@ export default function NavigatorTree({
                 </span>
                 <span className="wl-navigator-copy">
                   <strong>{node.label}</strong>
-                  {node.subtitle ? <small>{node.subtitle}</small> : null}
+                  {node.subtitle ? (
+                    <small title={node.subtitle}>{node.subtitle}</small>
+                  ) : null}
                 </span>
                 {typeof node.count === 'number' || node.badge ? (
                   <span className="wl-navigator-meta">
@@ -398,6 +407,7 @@ export default function NavigatorTree({
                     {node.badge ? (
                       <span
                         className={`wl-navigator-badge is-${node.badgeTone ?? 'muted'}`}
+                        title={node.badge}
                       >
                         {node.badge}
                       </span>

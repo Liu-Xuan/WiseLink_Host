@@ -5,6 +5,7 @@
   border: 1px solid var(--wl-border);
   border-radius: var(--wl-radius-panel);
   color: var(--wl-ink);
+  font-family: var(--wl-font);
   background: var(--wl-glass-content);
   box-shadow: var(--wl-shadow-1);
 }
@@ -37,6 +38,7 @@
   margin: 0;
   font-size: clamp(18px, 2vw, 24px);
   line-height: 1.25;
+  overflow-wrap: anywhere;
 }
 
 .assessment-rule-header p {
@@ -45,6 +47,7 @@
   color: var(--wl-muted);
   font-size: 12px;
   line-height: 1.6;
+  overflow-wrap: anywhere;
 }
 
 .assessment-rule-header > strong {
@@ -105,6 +108,7 @@
 
 .assessment-rule-layout {
   display: grid;
+  min-width: 0;
   min-height: 520px;
   margin-top: 14px;
   grid-template-columns: minmax(250px, 0.72fr) minmax(0, 1.6fr);
@@ -161,10 +165,14 @@
 
 .assessment-rule-list-item strong {
   overflow: hidden;
+  display: -webkit-box;
   font-size: 12.5px;
-  line-height: 1.35;
+  line-height: 1.45;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .assessment-rule-list-item em {
@@ -176,6 +184,8 @@
   line-height: 1.45;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .assessment-rule-list-item:hover,
@@ -260,6 +270,7 @@
   margin: 8px 0 0;
   font-size: 16px;
   line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
 .assessment-rule-source blockquote {
@@ -273,6 +284,8 @@
   font-size: 14px;
   font-weight: 650;
   line-height: 1.65;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .assessment-rule-source > p {
@@ -282,6 +295,8 @@
   color: var(--wl-muted);
   font-size: 11.5px;
   line-height: 1.6;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .assessment-rule-source > p strong {
@@ -328,6 +343,8 @@
   font-size: 14px;
   font-weight: 650;
   line-height: 1.7;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .assessment-rule-conclusion small {
@@ -336,6 +353,7 @@
   color: var(--wl-faint);
   font-size: 10.5px;
   line-height: 1.55;
+  overflow-wrap: anywhere;
 }
 
 .assessment-rule-reading.is-unavailable .assessment-rule-conclusion p,
@@ -437,7 +455,8 @@
   list-style: none;
 }
 
-.parse-engineer-review > .parse-engineer-review-summary::-webkit-details-marker {
+.parse-engineer-review
+  > .parse-engineer-review-summary::-webkit-details-marker {
   display: none;
 }
 

@@ -3,6 +3,7 @@
   min-width: 0;
   gap: 14px;
   color: var(--wl-ink);
+  font-family: var(--wl-font);
 }
 
 .structured-browser-header {
@@ -35,6 +36,7 @@
   color: var(--wl-ink);
   font-size: clamp(18px, 2vw, 24px);
   line-height: 1.2;
+  overflow-wrap: anywhere;
 }
 
 .structured-browser-header p {
@@ -43,6 +45,7 @@
   color: var(--wl-muted);
   font-size: 13px;
   line-height: 1.65;
+  overflow-wrap: anywhere;
 }
 
 .structured-browser-status {
@@ -179,9 +182,10 @@
 
 .structured-browser-outline a span,
 .structured-browser-mobile-outline a span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-width: 0;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .structured-browser-outline a small,
@@ -244,22 +248,22 @@
 }
 
 .structured-browser-unit > p {
-  display: -webkit-box;
+  display: block;
   margin: 0;
-  overflow: hidden;
+  overflow: visible;
   color: var(--wl-ink);
   font-family: var(--wl-font);
   font-size: 13px;
   line-height: 1.72;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 7;
 }
 
-.structured-browser-unit > p.is-expanded {
-  display: block;
-  overflow: visible;
+.structured-browser-unit > p.is-collapsed {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 7;
 }
 
 .structured-browser-unit-actions {
@@ -281,6 +285,8 @@
   font: inherit;
   font-size: 10px;
   cursor: pointer;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .structured-browser-unit-actions button:hover,
@@ -448,7 +454,7 @@ html[data-wl-transparency='reduced'] .structured-browser-unit {
     padding: 12px;
   }
 
-  .structured-browser-unit > p {
+  .structured-browser-unit > p.is-collapsed {
     -webkit-line-clamp: 6;
   }
 }
