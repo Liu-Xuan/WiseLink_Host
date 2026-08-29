@@ -4,14 +4,12 @@ import type {
   InstallationEventSourceRecord,
 } from './get-installation-events.port';
 import {
-  addAssertionSupportBindings,
   conflictAssertion,
   currentTargetIdentity,
   eventId,
   evidenceId,
   markConflictBindings,
   markEventsConflict,
-  supportedAssertion,
   unresolvedAssertion,
   type CurrentTargetIdentity,
   type MappedEventCandidate,
@@ -21,9 +19,12 @@ import {
   authoritySupportsEvent,
   eventScope,
   evidenceRole,
-  type EventEffect,
   type EventScopeResult,
 } from './installation-event-evidence.relations';
+import {
+  closeCurrentAssertion,
+  createMappedEventCandidates,
+} from './installation-event-evidence.state-replay';
 import {
   addDiagnostic,
   appendRecordDiagnostics,
@@ -105,7 +106,7 @@ export function mapInstallationEventEvidence(input: {
 
   for (const indexed of collected.records) {
     const mapped: {
-      candidate: MappedEventCandidate | null;
+      candidates: MappedEventCandidate[];
       targetMismatch: boolean;
       eventConflict: boolean;
     } = mapSourceRecord({
@@ -121,7 +122,7 @@ export function mapInstallationEventEvidence(input: {
     });
     recordSetInvalid = recordSetInvalid || mapped.targetMismatch;
     sourceConflict = sourceConflict || mapped.eventConflict;
-    if (mapped.candidate) mappedCandidates.push(mapped.candidate);
+    mappedCandidates.push(...mapped.candidates);
   }
 
   let currentAssertion: CurrentConfigurationAssertionCandidate =
@@ -187,7 +188,7 @@ function mapSourceRecord(input: {
   configEvents: ConfigEventEvidenceProjection[];
   bindings: ConfigurationEventEvidenceBinding[];
 }): {
-  candidate: MappedEventCandidate | null;
+  candidates: MappedEventCandidate[];
   targetMismatch: boolean;
   eventConflict: boolean;
 } {
@@ -265,19 +266,16 @@ function mapSourceRecord(input: {
     record,
   });
 
-  const candidate: MappedEventCandidate | null =
-    scope.effect === 'NONE'
-      ? null
-      : {
-          evidenceRecordId,
-          configEventId,
-          effectiveAt: record.effectiveAt,
-          effect: scope.effect,
-          value: candidateValue(record, scope.effect),
-          canCloseCurrentState,
-        };
+  const candidates: MappedEventCandidate[] = createMappedEventCandidates({
+    query: input.query,
+    record,
+    scope,
+    evidenceRecordId,
+    configEventId,
+    canCloseCurrentState,
+  });
   return {
-    candidate,
+    candidates,
     targetMismatch: !scope.inScope,
     eventConflict,
   };
@@ -343,84 +341,6 @@ function mapConfigEvent(input: {
     recordedAt: input.record.recordedAt,
     event: structuredClone(input.record.event),
   };
-}
-
-function closeCurrentAssertion(input: {
-  query: GetInstallationEventsQuery;
-  targetIdentity: CurrentTargetIdentity;
-  mappedCandidates: MappedEventCandidate[];
-  configEvents: ConfigEventEvidenceProjection[];
-  bindings: ConfigurationEventEvidenceBinding[];
-  diagnostics: ConfigurationEvidenceDiagnostic[];
-}): CurrentConfigurationAssertionCandidate {
-  const latestEffectiveAt: string = input.mappedCandidates.reduce(
-    (latest: string, candidate: MappedEventCandidate) =>
-      candidate.effectiveAt > latest ? candidate.effectiveAt : latest,
-    input.mappedCandidates[0].effectiveAt,
-  );
-  const latestCandidates: MappedEventCandidate[] =
-    input.mappedCandidates.filter(
-      (candidate: MappedEventCandidate) =>
-        candidate.effectiveAt === latestEffectiveAt,
-    );
-  const latestEffects: Set<EventEffect> = new Set<EventEffect>(
-    latestCandidates.map((candidate: MappedEventCandidate) => candidate.effect),
-  );
-  const latestValues: Set<string> = new Set<string>(
-    latestCandidates.map((candidate: MappedEventCandidate) =>
-      JSON.stringify(candidate.value),
-    ),
-  );
-  if (
-    latestEffects.size !== 1 ||
-    latestEffects.has('CONFLICT') ||
-    latestValues.size !== 1
-  ) {
-    addDiagnostic(
-      input.diagnostics,
-      'EVENT_STATE_CONFLICT',
-      null,
-      latestEffectiveAt,
-    );
-    const assertion: CurrentConfigurationAssertionCandidate = conflictAssertion(
-      input.query,
-      input.targetIdentity,
-    );
-    markEventsConflict(latestCandidates, input.configEvents);
-    markConflictBindings(assertion, latestCandidates, input.bindings);
-    return assertion;
-  }
-  const truth: 'TRUE' | 'FALSE' = latestEffects.has('TRUE') ? 'TRUE' : 'FALSE';
-  const value: boolean | string | null = latestCandidates[0].value;
-  if (value === null) {
-    addDiagnostic(
-      input.diagnostics,
-      'EVENT_STATE_CONFLICT',
-      null,
-      `${latestEffectiveAt}:missing-current-value`,
-    );
-    return conflictAssertion(input.query, input.targetIdentity);
-  }
-  const assertion: CurrentConfigurationAssertionCandidate = supportedAssertion(
-    input.query,
-    input.targetIdentity,
-    truth,
-    value,
-    latestCandidates,
-  );
-  addAssertionSupportBindings(assertion, latestCandidates, input.bindings);
-  return assertion;
-}
-
-function candidateValue(
-  record: InstallationEventSourceRecord,
-  effect: EventEffect,
-): boolean | string | null {
-  if (effect === 'FALSE') return false;
-  if (effect !== 'TRUE') return null;
-  return record.event.kind === 'SOFTWARE_LOAD'
-    ? record.event.softwareLoad.softwareLoadId
-    : true;
 }
 
 function applySourceStatusDiagnostics(input: {

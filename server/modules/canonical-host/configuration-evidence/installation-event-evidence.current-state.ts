@@ -17,6 +17,7 @@ export interface MappedEventCandidate {
   effectiveAt: string;
   effect: 'TRUE' | 'FALSE' | 'CONFLICT';
   value: boolean | string | null;
+  stateKey: string;
   canCloseCurrentState: boolean;
 }
 
@@ -60,16 +61,18 @@ export function supportedAssertion(
   value: boolean | string,
   candidates: MappedEventCandidate[],
 ): CurrentConfigurationAssertionCandidate {
+  const supportedCandidates: MappedEventCandidate[] =
+    uniqueEventCandidates(candidates);
   return {
     ...assertionBase(query, target),
     truth,
     value,
     status: 'SUPPORTED',
     authority: 'CONTROLLED_SOURCE',
-    supportingEvidenceRecordIds: candidates.map(
+    supportingEvidenceRecordIds: supportedCandidates.map(
       (candidate: MappedEventCandidate) => candidate.evidenceRecordId,
     ),
-    derivedConfigEventIds: candidates.map(
+    derivedConfigEventIds: supportedCandidates.map(
       (candidate: MappedEventCandidate) => candidate.configEventId,
     ),
   };
@@ -110,7 +113,9 @@ export function addAssertionSupportBindings(
   candidates: MappedEventCandidate[],
   bindings: ConfigurationEventEvidenceBinding[],
 ): void {
-  for (const candidate of candidates) {
+  const supportedCandidates: MappedEventCandidate[] =
+    uniqueEventCandidates(candidates);
+  for (const candidate of supportedCandidates) {
     appendBinding(
       bindings,
       'SUPPORTS',
@@ -133,7 +138,9 @@ export function markConflictBindings(
   candidates: MappedEventCandidate[],
   bindings: ConfigurationEventEvidenceBinding[],
 ): void {
-  for (const candidate of candidates) {
+  const conflictCandidates: MappedEventCandidate[] =
+    uniqueEventCandidates(candidates);
+  for (const candidate of conflictCandidates) {
     appendBinding(
       bindings,
       'AFFECTED_BY',
@@ -185,6 +192,21 @@ export function evidenceId(
 
 export function eventId(evidenceRecordId: string): string {
   return `CONFIGURATION-EVENT:${evidenceRecordId}`;
+}
+
+function uniqueEventCandidates(
+  candidates: MappedEventCandidate[],
+): MappedEventCandidate[] {
+  const byEventId: Map<string, MappedEventCandidate> = new Map<
+    string,
+    MappedEventCandidate
+  >();
+  for (const candidate of candidates) {
+    if (!byEventId.has(candidate.configEventId)) {
+      byEventId.set(candidate.configEventId, candidate);
+    }
+  }
+  return [...byEventId.values()];
 }
 
 function assertionBase(
