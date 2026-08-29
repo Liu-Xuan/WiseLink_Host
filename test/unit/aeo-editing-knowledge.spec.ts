@@ -79,14 +79,28 @@ describe('AEO editing knowledge and draft assistance', () => {
     identity.revision = 'R01';
     identity.expectedHeader = 'AEO-B787-45-0002-R01';
     identity.observedHeader = 'AEO-B787-45-0002-R01';
+    identity.primarySourceId = 'SRC-AEO-R01-DOCX';
     const sources = revisedInput.sources as Array<Record<string, unknown>>;
     sources[0] = {
       ...sources[0],
+      sourceId: 'SRC-AEO-R01-DOCX',
+      location: 'artifact://historical/AEO-B787-45-0002-R01.docx',
       actualBytes: 1694000,
+      sha256:
+        '6165a9d7695603d93e60f87fc63eafcdde99197272695398af568518277e815c',
       observedIdentity: 'AEO-B787-45-0002-R01',
     };
     identity.actualBytes = 1694000;
     const actions = revisedInput.actions as Array<Record<string, unknown>>;
+    actions.forEach((action) => {
+      const disposition = action.sourceDisposition as Record<string, unknown>;
+      disposition.sourceRefs = [
+        {
+          sourceId: 'SRC-AEO-R01-DOCX',
+          locator: `main-row-${Number(action.sequence) + 1}`,
+        },
+      ];
+    });
     actions[1] = {
       ...actions[1],
       text: {
@@ -119,6 +133,10 @@ describe('AEO editing knowledge and draft assistance', () => {
     expect(regenerated.regenerationHistory[0]).toMatchObject({
       regeneratedUnitIds: ['ACTION-002'],
     });
+    expect(regenerated.sources.map((source) => source.sourceId)).toEqual([
+      'SRC-AEO-R01-DOCX',
+      'SRC-AEO-R00-DOCX',
+    ]);
     expect(
       regenerated.suggestions.find(
         (suggestion) => suggestion.sourceUnitId === 'ACTION-002',

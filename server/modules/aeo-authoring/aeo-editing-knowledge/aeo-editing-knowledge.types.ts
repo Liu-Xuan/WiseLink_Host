@@ -3,7 +3,7 @@ import type { AeoContentBlock } from '../../../../shared/aeo-editor';
 export const AEO_EDITING_KNOWLEDGE_VERSION =
   'wiselink.aeo_editing_knowledge.v0.candidate.1' as const;
 export const AEO_DRAFT_ASSISTANCE_VERSION =
-  'wiselink.aeo_draft_assistance.v0.candidate.1' as const;
+  'wiselink.aeo_draft_assistance.v0.candidate.2' as const;
 
 export type AeoEditingCategory =
   | 'SOFTWARE_INSTALLATION_UPDATE'
@@ -166,6 +166,14 @@ export interface AeoDraftFeedback {
   revisionSourceRefs: AeoEditingSourceRef[];
 }
 
+export interface AeoSupersededDraftFeedback {
+  feedback: AeoDraftFeedback;
+  sourceUnitId: string;
+  activeThroughGenerationRevision: number;
+  supersededAtGenerationRevision: number;
+  reason: 'SELECTED_UNIT_REGENERATED';
+}
+
 export interface AeoDraftAssistanceCandidate {
   schemaVersion: typeof AEO_DRAFT_ASSISTANCE_VERSION;
   lifecycleStatus: 'CANDIDATE_ONLY';
@@ -181,7 +189,10 @@ export interface AeoDraftAssistanceCandidate {
   editorBlocks: AeoContentBlock[];
   missingInputs: string[];
   conflicts: string[];
+  /** Feedback that is active for the current suggestion generations only. */
   feedback: AeoDraftFeedback[];
+  /** Prior-generation feedback retained for audit, never active learning input. */
+  supersededFeedback: AeoSupersededDraftFeedback[];
   regenerationHistory: Array<{
     generationRevision: number;
     regeneratedUnitIds: string[];

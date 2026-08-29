@@ -16,7 +16,9 @@ import {
   type AeoEditingKnowledgeCandidate,
   type AeoEditingSourceIdentity,
   type AeoEditingSourceRef,
+  type AeoSupersededDraftFeedback,
 } from './aeo-editing-knowledge.types';
+import { resolveAeoDraftRegenerationSources } from './aeo-draft-regeneration-sources';
 import { assertAeoEditingKnowledgeCandidate } from './aeo-editing-knowledge.validator';
 
 const DRAFT_NON_CLAIMS: string[] = [
@@ -59,6 +61,7 @@ export function createAeoDraftAssistanceCandidate(
     missingInputs: request.knowledge.missingInputs,
     conflicts: request.knowledge.conflicts,
     feedback: [],
+    supersededFeedback: [],
     regenerationHistory: [],
     nonClaims: unique([...request.knowledge.nonClaims, ...DRAFT_NON_CLAIMS]),
   };
@@ -78,11 +81,19 @@ export function regenerateAeoDraftSelection(
   const replacement: AeoDraftAssistanceCandidate =
     createAeoDraftAssistanceCandidate(request);
   const replacedUnitIds: Set<string> = new Set<string>(request.selectedUnitIds);
-  const suggestions: AeoDraftSuggestion[] = [
-    ...current.suggestions.filter(
+  const unselectedSuggestions: AeoDraftSuggestion[] =
+    current.suggestions.filter(
       (suggestion: AeoDraftSuggestion) =>
         !replacedUnitIds.has(suggestion.sourceUnitId),
-    ),
+    );
+  const sources: AeoEditingSourceIdentity[] =
+    resolveAeoDraftRegenerationSources(
+      current.sources,
+      request.knowledge.sources,
+      unselectedSuggestions,
+    );
+  const suggestions: AeoDraftSuggestion[] = [
+    ...unselectedSuggestions,
     ...replacement.suggestions,
   ];
   const ordered: AeoDraftSuggestion[] = orderSuggestions(
@@ -90,13 +101,48 @@ export function regenerateAeoDraftSelection(
     request.knowledge,
   );
   const generationRevision: number = current.generationRevision + 1;
+  const replacedSuggestionUnits: Map<string, string> = new Map(
+    current.suggestions
+      .filter((suggestion: AeoDraftSuggestion) =>
+        replacedUnitIds.has(suggestion.sourceUnitId),
+      )
+      .map((suggestion: AeoDraftSuggestion) => [
+        suggestion.suggestionId,
+        suggestion.sourceUnitId,
+      ]),
+  );
+  const replacedSuggestionIds: Set<string> = new Set(
+    replacedSuggestionUnits.keys(),
+  );
+  const supersededFeedback: AeoSupersededDraftFeedback[] = current.feedback
+    .filter((feedback: AeoDraftFeedback) =>
+      replacedSuggestionIds.has(feedback.suggestionId),
+    )
+    .map((feedback: AeoDraftFeedback) => {
+      const sourceUnitId: string | undefined = replacedSuggestionUnits.get(
+        feedback.suggestionId,
+      );
+      if (!sourceUnitId) {
+        throw new Error(
+          `AEO_DRAFT_REGENERATION_FEEDBACK_SUGGESTION_MISSING: ${feedback.suggestionId}`,
+        );
+      }
+      return {
+        feedback,
+        sourceUnitId,
+        activeThroughGenerationRevision: current.generationRevision,
+        supersededAtGenerationRevision: generationRevision,
+        reason: 'SELECTED_UNIT_REGENERATED',
+      };
+    });
   return {
     ...current,
+    schemaVersion: AEO_DRAFT_ASSISTANCE_VERSION,
     title: request.title,
     generationRevision,
     knowledgeDocumentIdentity: request.knowledge.documentIdentity,
     knowledgeDocumentState: request.knowledge.documentState,
-    sources: request.knowledge.sources,
+    sources,
     currentSourceRefs: request.currentSourceRefs,
     suggestions: ordered,
     editorBlocks: ordered
@@ -105,10 +151,18 @@ export function regenerateAeoDraftSelection(
           suggestion.reviewStatus !== 'REJECTED_CANDIDATE',
       )
       .map((suggestion: AeoDraftSuggestion, index: number) =>
-        editorBlock(suggestion, request.knowledge.sources, index),
+        editorBlock(suggestion, sources, index),
       ),
     missingInputs: request.knowledge.missingInputs,
     conflicts: request.knowledge.conflicts,
+    feedback: current.feedback.filter(
+      (feedback: AeoDraftFeedback) =>
+        !replacedSuggestionIds.has(feedback.suggestionId),
+    ),
+    supersededFeedback: [
+      ...(current.supersededFeedback ?? []),
+      ...supersededFeedback,
+    ],
     regenerationHistory: [
       ...current.regenerationHistory,
       {
