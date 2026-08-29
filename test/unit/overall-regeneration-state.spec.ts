@@ -87,8 +87,35 @@ describe('overall regeneration client state', () => {
       polling: false,
     };
 
-    expect(reusableOverallRegenerationRequest(stable, 'WI-A')).toBe(stable);
-    expect(reusableOverallRegenerationRequest(stable, 'WI-B')).toBeNull();
+    expect(reusableOverallRegenerationRequest(stable, 'WI-A', 'post')).toBe(
+      stable,
+    );
+    expect(
+      reusableOverallRegenerationRequest(stable, 'WI-B', 'post'),
+    ).toBeNull();
+  });
+
+  it('creates a new revision-bound action after a conflict and fresh reload', () => {
+    const first = {
+      workItemId: 'WI-CURRENT',
+      input: overallRegenerationInput(freshPage(12), 'request-12'),
+      polling: false,
+    };
+    const conflict = overallRegenerationPresentation(readModel('CONFLICT'));
+
+    expect(conflict.retryMode).toBe('new');
+    expect(
+      reusableOverallRegenerationRequest(
+        first,
+        'WI-CURRENT',
+        conflict.retryMode,
+      ),
+    ).toBeNull();
+
+    const next = overallRegenerationInput(freshPage(13), 'request-13');
+    expect(next.expectedRevision).toBe(13);
+    expect(next.requestId).toBe('request-13');
+    expect(next.requestId).not.toBe(first.input.requestId);
   });
 
   it('restores an idle, runnable view when routing away from a disabled terminal state', () => {
@@ -111,11 +138,13 @@ describe('overall regeneration client state', () => {
   });
 });
 
-function freshPage(): CanonicalDocumentParsingPageResponse {
+function freshPage(
+  revision: number = 12,
+): CanonicalDocumentParsingPageResponse {
   return {
     workItem: {
       workItemId: 'WI-CURRENT',
-      revision: 12,
+      revision,
       source: {
         documentVersionId: 'DV-CURRENT',
         sourceArtifactId: 'SOURCE-CURRENT',

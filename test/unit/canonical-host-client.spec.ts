@@ -104,6 +104,42 @@ describe('canonical host assessment client', () => {
     });
   });
 
+  it('bypasses browser and platform caches only for mutation preflights', async () => {
+    request
+      .mockResolvedValueOnce({
+        status: 200,
+        data: { workItem: { revision: 12 } },
+      })
+      .mockResolvedValueOnce({
+        status: 200,
+        data: { workItem: { revision: 13 } },
+      });
+
+    await expect(
+      getDocumentParsingPage('WI-SB-1001', '', {
+        freshness: 'mutation',
+      }),
+    ).resolves.toMatchObject({ workItem: { revision: 12 } });
+    await expect(
+      getDocumentParsingPage('WI-SB-1001', '', {
+        freshness: 'mutation',
+      }),
+    ).resolves.toMatchObject({ workItem: { revision: 13 } });
+
+    const firstConfig = request.mock.calls[0][0];
+    const secondConfig = request.mock.calls[1][0];
+    expect(firstConfig).toMatchObject({
+      url: '/api/canonical-host/work-items/WI-SB-1001/document-parsing',
+      method: 'GET',
+      params: { _fresh: expect.any(String) },
+      headers: {
+        'Cache-Control': 'no-cache',
+        Pragma: 'no-cache',
+      },
+    });
+    expect(secondConfig.params._fresh).not.toBe(firstConfig.params._fresh);
+  });
+
   it('forwards only controlled browse pagination inputs', async () => {
     request.mockResolvedValue({
       status: 200,
