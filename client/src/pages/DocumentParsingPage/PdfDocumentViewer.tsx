@@ -13,15 +13,21 @@ import {
 } from 'pdfjs-dist';
 // Vite resolves this asset query to the bundled pdf.js worker URL.
 // eslint-disable-next-line import/no-unresolved
-import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?worker&url';
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 
 import { canonicalPdfPreviewUrl } from '@client/src/api/canonical-host';
 import type { CanonicalPdfPreviewProjection } from '@shared/api.interface';
-import { buildPdfDocumentRequest } from './pdf-viewer-request';
+import {
+  buildPdfDocumentRequest,
+  resolvePdfWorkerUrl,
+} from './pdf-viewer-request';
 import { clampPdfPage, visiblePdfPages } from './pdf-viewer-state';
 
-GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+GlobalWorkerOptions.workerSrc = resolvePdfWorkerUrl(
+  pdfWorkerUrl,
+  import.meta.url,
+);
 
 interface PdfDocumentViewerProps {
   workItemId: string;
