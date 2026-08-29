@@ -11,12 +11,15 @@ import type {
   CanonicalEngineerReviewDecision,
   CanonicalLibraryIndexReadResponse,
   CanonicalDevelopmentWorkItemRunRequest,
+  CanonicalOverallRegenerationReadModel,
   CanonicalOrdinaryWorkItemRunResponse,
   CloseReviewConversationResponse,
   ConfirmReviewActionDraftResponse,
   CreateOrResumeReviewConversationResponse,
   CurrentReviewConversationResponse,
   ConfigureCanonicalApplicabilitySelectionRequest,
+  RequestCanonicalOverallRegenerationRequest,
+  RequestCanonicalOverallRegenerationResponse,
 } from '@shared/api.interface';
 
 import { logger } from '@lark-apaas/client-toolkit/logger';
@@ -175,6 +178,71 @@ export async function getDocumentParsingPage(
     logger.error('读取文档与解析 fresh projection 失败', error);
     throw normalizedDirectObjectError(error);
   }
+}
+
+export async function requestOverallRegeneration(
+  workItemId: string,
+  input: RequestCanonicalOverallRegenerationRequest,
+): Promise<RequestCanonicalOverallRegenerationResponse> {
+  return overallRegenerationRequest<RequestCanonicalOverallRegenerationResponse>(
+    {
+      url: overallRegenerationUrl(workItemId),
+      method: 'POST',
+      data: input,
+      operation: '请求重新生成工程摘要',
+    },
+  );
+}
+
+export async function getOverallRegenerationStatus(
+  workItemId: string,
+  requestId: string,
+): Promise<CanonicalOverallRegenerationReadModel> {
+  return overallRegenerationRequest<CanonicalOverallRegenerationReadModel>({
+    url: `${overallRegenerationUrl(workItemId)}/${encodeURIComponent(
+      requestId,
+    )}`,
+    method: 'GET',
+    operation: '读取工程摘要生成进度',
+  });
+}
+
+async function overallRegenerationRequest<T>(input: {
+  url: string;
+  method: 'GET' | 'POST';
+  data?: RequestCanonicalOverallRegenerationRequest;
+  operation: string;
+}): Promise<T> {
+  try {
+    const response = await axiosForBackend<T>({
+      url: input.url,
+      method: input.method,
+      ...(input.data === undefined ? {} : { data: input.data }),
+    });
+    if (response.status === 401) {
+      throw new Error('OVERALL_REGENERATION_LOGIN_REQUIRED');
+    }
+    if (response.status === 403 || response.status === 404) {
+      throw canonicalObjectNotFound();
+    }
+    if (response.status === 409) throw overallRegenerationConflict();
+    if (response.status < 200 || response.status >= 300) {
+      throw backendResponseError(
+        response.data,
+        'OVERALL_REGENERATION_UNAVAILABLE',
+      );
+    }
+    return response.data;
+  } catch (error) {
+    logger.error(`${input.operation}失败`, error);
+    throw normalizedOverallRegenerationError(error);
+  }
+}
+
+function overallRegenerationUrl(workItemId: string): string {
+  return `/api/canonical-host/work-items/${encodeURIComponent(
+    workItemId,
+  )}/integrated-assessment/overall-regeneration-requests`;
 }
 
 export async function getStructuredContentPage(
@@ -420,6 +488,13 @@ function normalizedApplicabilitySelectionError(error: unknown): unknown {
   );
 }
 
+function normalizedOverallRegenerationError(error: unknown): unknown {
+  const normalized = normalizedDirectObjectError(error);
+  if (normalized !== error) return normalized;
+  if (responseStatus(error) === 409) return overallRegenerationConflict();
+  return error;
+}
+
 export function isCanonicalObjectNotFound(error: unknown): boolean {
   return isRecord(error) && error.code === 'CANONICAL_WORK_ITEM_NOT_FOUND';
 }
@@ -438,6 +513,16 @@ function canonicalObjectNotFound(): Error & {
   return Object.assign(new Error('CANONICAL_WORK_ITEM_NOT_FOUND'), {
     code: 'CANONICAL_WORK_ITEM_NOT_FOUND',
     statusCode: 404,
+  });
+}
+
+function overallRegenerationConflict(): Error & {
+  code: string;
+  statusCode: number;
+} {
+  return Object.assign(new Error('OVERALL_REGENERATION_CONFLICT'), {
+    code: 'OVERALL_REGENERATION_CONFLICT',
+    statusCode: 409,
   });
 }
 

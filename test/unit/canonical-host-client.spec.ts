@@ -28,10 +28,12 @@ import {
   getDocumentParsingPage,
   getStructuredContentPage,
   getLibraryIndex,
+  getOverallRegenerationStatus,
   isCanonicalObjectNotFound,
   queryParsedUnits,
   recordEngineerReview,
   reloadReviewConversation,
+  requestOverallRegeneration,
   requireOfficialOauthSession,
 } from '../../client/src/api/canonical-host';
 
@@ -132,6 +134,64 @@ describe('canonical host assessment client', () => {
       url: '/api/canonical-host/work-items/WI-SB-1001/document-parsing',
       method: 'GET',
       params: { query: 'sourceRef APP-001' },
+    });
+  });
+
+  it('posts only the Host-owned overall regeneration request contract', async () => {
+    const input = {
+      requestId: 'ce59df8f-6984-40a8-98b9-05dde4ef233f',
+      expectedRevision: 12,
+      sourceIdentity: {
+        documentVersionId: 'DV-12',
+        sourceArtifactId: 'SA-12',
+        sourceFileSha256: 'source-sha',
+        packageId: 'package-12',
+        packageArtifactSha256: 'package-sha',
+      },
+    };
+    request.mockResolvedValue({
+      status: 202,
+      data: { regeneration: { status: 'REQUESTED' }, replayed: false },
+    });
+
+    await expect(
+      requestOverallRegeneration('WI-SB/1001', input),
+    ).resolves.toMatchObject({ replayed: false });
+    expect(request).toHaveBeenCalledWith({
+      url: '/api/canonical-host/work-items/WI-SB%2F1001/integrated-assessment/overall-regeneration-requests',
+      method: 'POST',
+      data: input,
+    });
+    expect(request.mock.calls[0][0].data).not.toHaveProperty('staleReason');
+    expect(request.mock.calls[0][0].data).not.toHaveProperty('actor');
+    expect(request.mock.calls[0][0].data).not.toHaveProperty('tenant');
+  });
+
+  it('polls the encoded regeneration request without exposing it in the UI contract', async () => {
+    request.mockResolvedValue({
+      status: 200,
+      data: { status: 'RUNNING', attemptRef: 'internal-attempt' },
+    });
+
+    await expect(
+      getOverallRegenerationStatus('WI-SB/1001', 'request/one'),
+    ).resolves.toMatchObject({ status: 'RUNNING' });
+    expect(request).toHaveBeenCalledWith({
+      url: '/api/canonical-host/work-items/WI-SB%2F1001/integrated-assessment/overall-regeneration-requests/request%2Fone',
+      method: 'GET',
+    });
+  });
+
+  it('normalizes an overall regeneration conflict for business-language handling', async () => {
+    request.mockRejectedValue({
+      response: { status: 409, data: { message: 'internal CAS detail' } },
+    });
+
+    await expect(
+      getOverallRegenerationStatus('WI-SB-1001', 'request-one'),
+    ).rejects.toMatchObject({
+      code: 'OVERALL_REGENERATION_CONFLICT',
+      statusCode: 409,
     });
   });
 

@@ -6,6 +6,8 @@ import {
   Gauge,
   Link2,
   ListChecks,
+  LoaderCircle,
+  RefreshCw,
   Sparkles,
   Target,
   Wrench,
@@ -20,6 +22,7 @@ import {
   FRESHNESS_LABELS,
   staleReasonLabel,
 } from '@client/src/services/viewModelMappers';
+import type { OverallRegenerationControl } from './useOverallRegeneration';
 
 import './workitem-overview.css';
 
@@ -82,11 +85,13 @@ export default function OverallAssessmentHero({
   view,
   onOpenWorkbench,
   onViewEvidence,
+  regeneration,
   primaryActionLabel = '处理异常并完成批准',
 }: {
   view: WorkItemView;
   onOpenWorkbench: () => void;
   onViewEvidence?: (sourceRefId?: string) => void;
+  regeneration?: OverallRegenerationControl;
   primaryActionLabel?: string;
 }) {
   const overall = view.overall;
@@ -154,11 +159,32 @@ export default function OverallAssessmentHero({
         </p>
         <button
           type="button"
-          className="wl-btn wl-btn-primary"
-          onClick={onOpenWorkbench}
+          className="wl-btn wl-btn-primary wl-regeneration-button"
+          onClick={regeneration?.run ?? onOpenWorkbench}
+          disabled={regeneration?.disabled}
+          aria-busy={regeneration?.busy || undefined}
+          data-busy={regeneration?.busy || undefined}
         >
-          <FileSearch2 aria-hidden="true" /> 查看详情并重新生成
+          {regeneration ? (
+            regeneration.busy ? (
+              <LoaderCircle className="wl-spin" aria-hidden="true" />
+            ) : (
+              <RefreshCw aria-hidden="true" />
+            )
+          ) : (
+            <FileSearch2 aria-hidden="true" />
+          )}
+          {regeneration?.label ?? '查看详情'}
         </button>
+        {regeneration?.message ? (
+          <p
+            className="wl-regeneration-status"
+            data-tone={regeneration.tone}
+            role={regeneration.tone === 'error' ? 'alert' : 'status'}
+          >
+            {regeneration.message}
+          </p>
+        ) : null}
       </section>
     );
   }

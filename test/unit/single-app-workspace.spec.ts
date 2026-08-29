@@ -192,6 +192,9 @@ describe('single canonical app workspace', () => {
     expect(api).not.toContain('persistIntegratedOpenClawOverall');
     expect(api).not.toContain('evaluateAssessment');
     expect(api).not.toContain('resynthesizeAssessment');
+    expect(page).toContain('regeneration={overallRegeneration}');
+    expect(api).toContain('requestOverallRegeneration');
+    expect(api).toContain('getOverallRegenerationStatus');
     expect(page).toContain(
       '保存只记录工程师判断，不运行模型，也不会直接改写逐项评估结果',
     );

@@ -58,6 +58,34 @@ describe('OverallAssessmentHero user-visible technical details', () => {
     expect(html).toContain('版本未标注');
     expect(html.toUpperCase()).not.toContain('DOCUMENT_VERSION_');
   });
+
+  it('turns the structure-missing CTA into a real regeneration action', () => {
+    const page = pageWithInternalTransportDetails();
+    if (page.workItem.integratedAssessment?.overallSynthesis) {
+      page.workItem.integratedAssessment.overallSynthesis.engineeringSummary =
+        undefined;
+    }
+    const html = renderToStaticMarkup(
+      createElement(OverallAssessmentHero, {
+        view: toWorkItemView(page),
+        onOpenWorkbench: () => undefined,
+        regeneration: {
+          label: '重新生成工程摘要',
+          message: '正在结合当前原文依据生成工程摘要…',
+          tone: 'progress',
+          busy: true,
+          disabled: true,
+          retryMode: 'none',
+          run: () => undefined,
+        },
+      }),
+    );
+
+    expect(html).toContain('重新生成工程摘要');
+    expect(html).toContain('正在结合当前原文依据生成工程摘要');
+    expect(html).toContain('aria-busy="true"');
+    expect(html).not.toContain('查看详情并重新生成');
+  });
 });
 
 function pageWithInternalTransportDetails(
