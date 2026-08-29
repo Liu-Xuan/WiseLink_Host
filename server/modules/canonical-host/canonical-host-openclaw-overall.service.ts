@@ -18,6 +18,7 @@ import type {
   ActionAttemptTerminalProjection,
   NewActionAttemptIdentity,
   PreparedActionAttemptCommit,
+  ReserveActionAttemptInput,
 } from '../action-attempt/action-attempt.types';
 import { ExternalDiscoveryService } from '../external-discovery/external-discovery.service';
 import { UNIFIED_ARTIFACT_STORE } from '../unified-reader/unified-reader.constants';
@@ -46,6 +47,7 @@ import {
 } from './openclaw-overall-synthesis.processor';
 import { assertLatestOverallCandidate } from './selective-overall-resynthesis';
 import { preflightCanonicalHostOpenClawResult } from './canonical-host-openclaw-runtime-policy';
+import { canonicalHostBareSha256 } from './canonical-host-sha256';
 
 const OPENCLAW_SERVICE_USER_ID = 'service:openclaw-main';
 const CANONICAL_APP_ID = 'app_17bzc551rsg';
@@ -86,45 +88,27 @@ export class CanonicalHostOpenClawOverallService {
     });
     assertWorkItemScope(scope, workItemId);
     const workItem = await this.requiredBaseRules(workItemId, scope.tenantId);
-    const actor = serviceActor(scope.tenantId);
+    if (
+      workItem.overallRegenerationRequest?.executionRevision ===
+      workItem.revision
+    ) {
+      assertUserRequestedRegenerationBinding(workItem);
+    }
+    assertUserRegenerationProviders(workItem, providers);
     const permissionSnapshotVersion = servicePermissionSnapshot(
       workItem,
       scope,
     );
     const providerCodes = providerCodesFor(providers);
     const claim = await this.attempts.reserveAndClaim({
-      workItemId: workItem.workItemId,
-      taskType: 'OPENCLAW_OVERALL_SYNTHESIS',
-      actorUserId: actor.userId,
-      tenantId: actor.tenantId,
+      ...this.reservationInput(
+        workItem,
+        scope.tenantId,
+        providers,
+        providerCodes,
+        permissionSnapshotVersion,
+      ),
       leaseOwner: scope.principalId,
-      documentVersionId: workItem.source.documentVersionId,
-      inputRevision: workItem.revision,
-      baseRevision: workItem.revision,
-      idempotencyKey: overallIdempotencyKey(workItem, providerCodes),
-      sourceRefs: [
-        {
-          ref: workItem.package!.artifact.ref,
-          sha256: workItem.package!.artifact.sha256,
-        },
-        {
-          ref: workItem.integratedAssessment!.baseRules.artifact.ref,
-          sha256: workItem.integratedAssessment!.baseRules.artifact.sha256,
-        },
-      ],
-      allowedConnectors: providers,
-      buildModelInput: async (identity) => {
-        const packet = await this.buildPacket(
-          workItem,
-          overallAttempt(identity, workItem, actor, providerCodes),
-          permissionSnapshotVersion,
-        );
-        return {
-          modelInput: structuredClone(packet.modelInput),
-          selectedDiscoveryRefs: [...packet.selectedDiscoveryRefs],
-          providerCodes: [...providerCodes],
-        };
-      },
     });
     const storedInput = storedOverallInput(claim.task.modelInput);
     return {
@@ -139,6 +123,34 @@ export class CanonicalHostOpenClawOverallService {
         : {}),
       selectedDiscoveryRefs: storedInput.selectedDiscoveryRefs,
       modelInput: storedInput.modelInput,
+    };
+  }
+
+  async enqueueUserRequestedRegeneration(input: {
+    workItemId: string;
+    tenantId: string;
+    permissionSnapshotVersion: string;
+  }): Promise<{ attemptRef: string; created: boolean }> {
+    if (!input.permissionSnapshotVersion.trim()) {
+      throw new Error('OVERALL_REGENERATION_PERMISSION_SNAPSHOT_REQUIRED');
+    }
+    const workItem = await this.requiredBaseRules(
+      input.workItemId,
+      input.tenantId,
+    );
+    assertUserRequestedRegenerationBinding(workItem);
+    const reservation = await this.attempts.reserve(
+      this.reservationInput(
+        workItem,
+        input.tenantId,
+        [],
+        [],
+        input.permissionSnapshotVersion,
+      ),
+    );
+    return {
+      attemptRef: reservation.task.operationRef,
+      created: reservation.created,
     };
   }
 
@@ -432,6 +444,49 @@ export class CanonicalHostOpenClawOverallService {
     };
   }
 
+  private reservationInput(
+    workItem: CanonicalWorkItemProjection,
+    tenantId: string,
+    providers: string[],
+    providerCodes: string[],
+    permissionSnapshotVersion: string,
+  ): ReserveActionAttemptInput {
+    const actor = serviceActor(tenantId);
+    return {
+      workItemId: workItem.workItemId,
+      taskType: 'OPENCLAW_OVERALL_SYNTHESIS',
+      actorUserId: actor.userId,
+      tenantId: actor.tenantId,
+      documentVersionId: workItem.source.documentVersionId,
+      inputRevision: workItem.revision,
+      baseRevision: workItem.revision,
+      idempotencyKey: overallIdempotencyKey(workItem, providerCodes),
+      sourceRefs: [
+        {
+          ref: workItem.package!.artifact.ref,
+          sha256: workItem.package!.artifact.sha256,
+        },
+        {
+          ref: workItem.integratedAssessment!.baseRules.artifact.ref,
+          sha256: workItem.integratedAssessment!.baseRules.artifact.sha256,
+        },
+      ],
+      allowedConnectors: providers,
+      buildModelInput: async (identity) => {
+        const packet = await this.buildPacket(
+          workItem,
+          overallAttempt(identity, workItem, actor, providerCodes),
+          permissionSnapshotVersion,
+        );
+        return {
+          modelInput: structuredClone(packet.modelInput),
+          selectedDiscoveryRefs: [...packet.selectedDiscoveryRefs],
+          providerCodes: [...providerCodes],
+        };
+      },
+    };
+  }
+
   private async requiredBaseRules(
     workItemId: string,
     tenantId: string,
@@ -464,6 +519,63 @@ export class CanonicalHostOpenClawOverallService {
       throw new Error('OPENCLAW_OVERALL_DYNAMIC_N_ATTEMPT_MISMATCH');
     }
     return workItem;
+  }
+}
+
+function assertUserRequestedRegenerationBinding(
+  workItem: CanonicalWorkItemProjection,
+): void {
+  const request = workItem.overallRegenerationRequest;
+  const overall = workItem.integratedAssessment?.overallSynthesis;
+  const source = request?.sourceIdentity;
+  if (
+    !request ||
+    request.staleReason !== 'USER_REQUESTED_REGENERATION' ||
+    !request.requestedByUserId.trim() ||
+    request.executionRevision !== workItem.revision ||
+    workItem.integratedAssessment?.status !== 'OVERALL_CANDIDATE_STALE' ||
+    !overall ||
+    overall.status !== 'STALE' ||
+    overall.staleReason !== null ||
+    request.sourceOverall.revision !== overall.revision ||
+    request.sourceOverall.actionAttemptId !== overall.actionAttemptId ||
+    !sameBoundSha256(
+      request.sourceOverall.artifactSha256,
+      overall.artifact.sha256,
+    ) ||
+    source.documentVersionId !== workItem.source.documentVersionId ||
+    source.sourceArtifactId !== workItem.source.sourceArtifactId ||
+    !sameBoundSha256(
+      source.sourceFileSha256,
+      workItem.source.sourceFileSha256,
+    ) ||
+    source.packageId !== workItem.package?.packageId ||
+    !sameBoundSha256(
+      source.packageArtifactSha256,
+      workItem.package?.artifact.sha256,
+    )
+  ) {
+    throw new Error('OVERALL_REGENERATION_WORK_ITEM_BINDING_INVALID');
+  }
+}
+
+function sameBoundSha256(left: unknown, right: unknown): boolean {
+  const leftDigest = canonicalHostBareSha256(left);
+  return leftDigest !== null && leftDigest === canonicalHostBareSha256(right);
+}
+
+function assertUserRegenerationProviders(
+  workItem: CanonicalWorkItemProjection,
+  providers: string[],
+): void {
+  if (
+    workItem.overallRegenerationRequest?.executionRevision ===
+      workItem.revision &&
+    workItem.overallRegenerationRequest.staleReason ===
+      'USER_REQUESTED_REGENERATION' &&
+    providers.length > 0
+  ) {
+    throw new Error('OVERALL_REGENERATION_DISCOVERY_PROVIDERS_FORBIDDEN');
   }
 }
 
@@ -585,12 +697,38 @@ function overallIdempotencyKey(
   workItem: CanonicalWorkItemProjection,
   providerCodes: string[],
 ): string {
+  const request = workItem.overallRegenerationRequest;
+  if (
+    request?.executionRevision === workItem.revision &&
+    request.staleReason === 'USER_REQUESTED_REGENERATION'
+  ) {
+    return overallUserRegenerationIdempotencyKey(
+      workItem.workItemId,
+      workItem.revision,
+      request.requestId,
+    );
+  }
   return [
     'openclaw-v1',
     'overall',
     workItem.workItemId,
     workItem.revision,
     providerCodes.length === 0 ? 'NONE' : providerCodes.join(''),
+  ].join(':');
+}
+
+export function overallUserRegenerationIdempotencyKey(
+  workItemId: string,
+  executionRevision: number,
+  requestId: string,
+): string {
+  return [
+    'openclaw-v1',
+    'overall',
+    workItemId,
+    executionRevision,
+    'USER_REQUESTED_REGENERATION',
+    requestId,
   ].join(':');
 }
 

@@ -19,6 +19,7 @@ export type CanonicalObjectAccessAction =
   | CanonicalLegacyObjectAccessAction
   | 'READ_WORK_ITEM'
   | 'CONFIGURE_APPLICABILITY_SELECTION'
+  | 'REQUEST_OVERALL_REGENERATION'
   | 'REQUEST_RESEARCH'
   | 'READ_SOURCE_REFS'
   | 'READ_ATTACHMENT'

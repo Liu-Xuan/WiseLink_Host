@@ -28,6 +28,8 @@ import {
   type ActionAttemptTerminalProjection,
   type NewActionAttemptIdentity,
   type PreparedActionAttemptCommit,
+  type ReserveActionAttemptInput,
+  type ReserveActionAttemptResult,
   type ReserveAndClaimInput,
   type ReserveAndClaimResult,
 } from './action-attempt.types';
@@ -39,11 +41,17 @@ const DEFAULT_MAX_ATTEMPTS = 3;
 export class ActionAttemptLifecycleService {
   constructor(private readonly repository: ActionAttemptRepository) {}
 
-  async reserveAndClaim(
-    input: ReserveAndClaimInput,
-  ): Promise<ReserveAndClaimResult> {
+  async reserve(
+    input: ReserveActionAttemptInput,
+  ): Promise<ReserveActionAttemptResult> {
+    return this.reserveAt(input, new Date());
+  }
+
+  private async reserveAt(
+    input: ReserveActionAttemptInput,
+    now: Date,
+  ): Promise<ReserveActionAttemptResult> {
     assertReservationInput(input);
-    const now = new Date();
     const binding = await this.repository.readWorkItemBinding({
       workItemId: input.workItemId,
       tenantId: input.tenantId,
@@ -62,11 +70,11 @@ export class ActionAttemptLifecycleService {
       idempotencyKey: input.idempotencyKey,
     });
     if (existing) {
-      const claimed = await this.claimExisting(existing, input, now);
+      assertReplay(existing, input);
       return {
-        ...claimed,
+        row: existing,
+        task: validatedTask(existing),
         created: false,
-        triggerRequestId: existing.triggerRequestId,
       };
     }
 
@@ -134,16 +142,66 @@ export class ActionAttemptLifecycleService {
       createdAt: now,
       updatedAt: now,
     } satisfies typeof actionAttempt.$inferInsert);
-    const claimed = await this.claimExisting(
-      reservation.row,
-      input,
-      new Date(),
-    );
+    assertReplay(reservation.row, input);
+    return {
+      row: reservation.row,
+      task: validatedTask(reservation.row),
+      created: reservation.created,
+    };
+  }
+
+  async reserveAndClaim(
+    input: ReserveAndClaimInput,
+  ): Promise<ReserveAndClaimResult> {
+    if (!input.leaseOwner.trim()) {
+      throw new Error('ACTION_ATTEMPT_RESERVATION_INPUT_INVALID');
+    }
+    const now = new Date();
+    const reservation = await this.reserveAt(input, now);
+    const claimed = await this.claimExisting(reservation.row, input, now);
     return {
       ...claimed,
       created: reservation.created,
       triggerRequestId: reservation.row.triggerRequestId,
     };
+  }
+
+  async readExactIdempotency(input: {
+    tenantId: string;
+    workItemId: string;
+    taskType: OpenClawTaskEnvelope['taskType'];
+    baseRevision: number;
+    documentVersionId: string;
+    idempotencyKey: string;
+  }): Promise<ActionAttemptRow | null> {
+    if (
+      !input.tenantId.trim() ||
+      !input.workItemId.trim() ||
+      !input.documentVersionId.trim() ||
+      !input.idempotencyKey.trim() ||
+      input.idempotencyKey.trim() !== input.idempotencyKey ||
+      input.idempotencyKey.length > 255 ||
+      !Number.isSafeInteger(input.baseRevision) ||
+      input.baseRevision < 0
+    ) {
+      throw new Error('ACTION_ATTEMPT_READ_INPUT_INVALID');
+    }
+    const row = await this.repository.readLatestByExactIdempotency({
+      tenantId: input.tenantId,
+      idempotencyKey: input.idempotencyKey,
+    });
+    if (!row) return null;
+    const task = validatedTask(row);
+    if (
+      row.workItemId !== input.workItemId ||
+      row.actionType !== input.taskType ||
+      row.baseRevision !== input.baseRevision ||
+      row.documentVersionId !== input.documentVersionId ||
+      task.idempotencyKey !== input.idempotencyKey
+    ) {
+      throw conflict('ACTION_ATTEMPT_IDEMPOTENCY_BINDING_INVALID');
+    }
+    return row;
   }
 
   async heartbeat(
@@ -715,12 +773,11 @@ export class ActionAttemptLifecycleService {
   }
 }
 
-function assertReservationInput(input: ReserveAndClaimInput): void {
+function assertReservationInput(input: ReserveActionAttemptInput): void {
   for (const value of [
     input.workItemId,
     input.tenantId,
     input.actorUserId,
-    input.leaseOwner,
     input.documentVersionId,
     input.idempotencyKey,
   ]) {
@@ -757,7 +814,7 @@ function assertReservationInput(input: ReserveAndClaimInput): void {
 
 function assertReplay(
   row: ActionAttemptRow,
-  input: ReserveAndClaimInput,
+  input: ReserveActionAttemptInput,
 ): void {
   const task = validatedTask(row);
   if (

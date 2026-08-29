@@ -74,25 +74,33 @@ export class CanonicalHostOpenClawAttemptStatusService {
       tenantId: scope.tenantId,
       workItemId: scope.workItemId,
     });
-    const task = parseCanonicalHostOpenClawAttemptTask(row);
-    const taskType = explicitTaskType(row, task);
-    const status = actionAttemptStatus(row.status);
-    const recoveryResult = readRecoveryResult(row, task, status);
-    assertStatusSemantics(row, taskType, status, recoveryResult);
-    return {
-      attemptRef,
-      taskType,
-      status,
-      recoveryAvailable: recoveryResult !== undefined,
-      commitStartedAt: row.commitStartedAt?.toISOString() ?? null,
-      projectionApplied: row.projectionApplied,
-      terminalReason: row.terminalReason,
-      resultContentHash: row.resultContentHash,
-      ...(recoveryResult
-        ? { recoveryResult: structuredClone(recoveryResult) }
-        : {}),
-    };
+    const result = projectCanonicalHostOpenClawAttemptStatus(row);
+    if (result.attemptRef !== attemptRef) throw statusNotFound();
+    return result;
   }
+}
+
+export function projectCanonicalHostOpenClawAttemptStatus(
+  row: ActionAttemptRow,
+): CanonicalHostOpenClawAttemptStatusResult {
+  const task = parseCanonicalHostOpenClawAttemptTask(row);
+  const taskType = explicitTaskType(row, task);
+  const status = actionAttemptStatus(row.status);
+  const recoveryResult = readRecoveryResult(row, task, status);
+  assertStatusSemantics(row, taskType, status, recoveryResult);
+  return {
+    attemptRef: task.operationRef,
+    taskType,
+    status,
+    recoveryAvailable: recoveryResult !== undefined,
+    commitStartedAt: row.commitStartedAt?.toISOString() ?? null,
+    projectionApplied: row.projectionApplied,
+    terminalReason: row.terminalReason,
+    resultContentHash: row.resultContentHash,
+    ...(recoveryResult
+      ? { recoveryResult: structuredClone(recoveryResult) }
+      : {}),
+  };
 }
 
 function explicitTaskType(

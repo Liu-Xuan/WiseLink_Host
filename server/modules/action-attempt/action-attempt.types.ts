@@ -20,12 +20,11 @@ export interface NewActionAttemptIdentity {
   createdAt: Date;
 }
 
-export interface ReserveAndClaimInput {
+export interface ReserveActionAttemptInput {
   workItemId: string;
   taskType: OpenClawActionTaskType;
   tenantId: string;
   actorUserId: string;
-  leaseOwner: string;
   documentVersionId: string;
   inputRevision: number;
   baseRevision: number;
@@ -39,6 +38,16 @@ export interface ReserveAndClaimInput {
   buildModelInput(
     identity: NewActionAttemptIdentity,
   ): Promise<Record<string, unknown>>;
+}
+
+export interface ReserveAndClaimInput extends ReserveActionAttemptInput {
+  leaseOwner: string;
+}
+
+export interface ReserveActionAttemptResult {
+  row: ActionAttemptRow;
+  task: OpenClawTaskEnvelope;
+  created: boolean;
 }
 
 export type ReserveAndClaimResult = OpenClawLeaseClaim & {
@@ -107,6 +116,8 @@ export interface ActionAttemptRow {
   cancelRequestedAt: Date | null;
   cancelReason: string | null;
   terminalReason: string | null;
+  errorCode?: string | null;
+  errorMessage?: string | null;
   projectionApplied: boolean;
   executorSessionKey: string | null;
   commitStartedAt: Date | null;

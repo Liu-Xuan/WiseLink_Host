@@ -25,6 +25,8 @@ import { CanonicalHostOpenClawMcpService } from './canonical-host-openclaw-mcp.s
 import { CanonicalHostOpenClawDynamicEvaluationService } from './canonical-host-openclaw-dynamic-evaluation.service';
 import { CanonicalHostOpenClawDiscoveryService } from './canonical-host-openclaw-discovery.service';
 import { CanonicalHostOpenClawOverallService } from './canonical-host-openclaw-overall.service';
+import { CanonicalHostOverallRegenerationController } from './canonical-host-overall-regeneration.controller';
+import { CanonicalHostOverallRegenerationService } from './canonical-host-overall-regeneration.service';
 import { CanonicalHostOpenClawTranslationService } from './canonical-host-openclaw-translation.service';
 import { CanonicalHostOpenClawApplicabilityService } from './canonical-host-openclaw-applicability.service';
 import { CanonicalHostOpenClawAttemptStatusService } from './canonical-host-openclaw-attempt-status.service';
@@ -127,6 +129,7 @@ export interface CanonicalHostModuleOptions {
     OauthSessionDevelopmentWorkItemController,
     CanonicalHostReviewActionController,
     CanonicalHostApplicabilitySelectionController,
+    CanonicalHostOverallRegenerationController,
   ],
   providers: [
     CanonicalEntryFacadeService,
@@ -139,6 +142,7 @@ export interface CanonicalHostModuleOptions {
     CanonicalHostOpenClawDynamicEvaluationService,
     CanonicalHostOpenClawDiscoveryService,
     CanonicalHostOpenClawOverallService,
+    CanonicalHostOverallRegenerationService,
     CanonicalHostOpenClawTranslationService,
     CanonicalHostOpenClawApplicabilityService,
     CanonicalHostOpenClawAttemptStatusService,
@@ -289,6 +293,7 @@ export class CanonicalHostModule {
         OauthSessionDevelopmentWorkItemController,
         CanonicalHostReviewActionController,
         CanonicalHostApplicabilitySelectionController,
+        CanonicalHostOverallRegenerationController,
       ],
       providers: [
         workItemRegistrarProvider,
@@ -317,6 +322,7 @@ export class CanonicalHostModule {
         CanonicalHostOpenClawDynamicEvaluationService,
         CanonicalHostOpenClawDiscoveryService,
         CanonicalHostOpenClawOverallService,
+        CanonicalHostOverallRegenerationService,
         CanonicalHostOpenClawTranslationService,
         CanonicalHostOpenClawApplicabilityService,
         CanonicalHostOpenClawAttemptStatusService,

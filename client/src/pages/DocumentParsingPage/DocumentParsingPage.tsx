@@ -60,6 +60,7 @@ import TaskPills from '@client/src/features/review/TaskPills';
 import WorkbenchShell from '@client/src/features/workbench/WorkbenchShell';
 import type { QuickOpenItem } from '@client/src/features/workbench/QuickOpen';
 import OverallAssessmentHero from '@client/src/features/workitem/OverallAssessmentHero';
+import { useOverallRegeneration } from '@client/src/features/workitem/useOverallRegeneration';
 import AuthorityStrip from '@client/src/features/workitem/AuthorityStrip';
 import {
   staleReasonLabel,
@@ -206,6 +207,10 @@ export default function DocumentParsingPage() {
   const [evidenceSignal, setEvidenceSignal] = useState(0);
   const [structuredSourceLocator, setStructuredSourceLocator] =
     useState<CanonicalStructuredContentSourceLocator | null>(null);
+  const overallRegeneration = useOverallRegeneration({
+    workItemId,
+    onSucceeded: async () => load(activeQuery),
+  });
 
   function updateDeepLink(
     changes: Record<string, string | null>,
@@ -863,6 +868,7 @@ export default function DocumentParsingPage() {
               </div>
               <OverallAssessmentHero
                 view={workItemView}
+                regeneration={overallRegeneration}
                 onOpenWorkbench={() =>
                   updateDeepLink({ node: 'review', tab: 'review' })
                 }
@@ -1086,6 +1092,7 @@ export default function DocumentParsingPage() {
               </div>
               <OverallAssessmentHero
                 view={workItemView}
+                regeneration={overallRegeneration}
                 primaryActionLabel="核对原文依据"
                 onOpenWorkbench={() =>
                   updateDeepLink({

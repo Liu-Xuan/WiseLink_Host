@@ -15,6 +15,7 @@ import {
   isCanonicalObjectNotFound,
 } from '@client/src/api/canonical-host';
 import OverallAssessmentHero from '@client/src/features/workitem/OverallAssessmentHero';
+import { useOverallRegeneration } from '@client/src/features/workitem/useOverallRegeneration';
 import AuthorityStrip from '@client/src/features/workitem/AuthorityStrip';
 import type { WorkItemView } from '@client/src/services/viewModelMappers';
 import { toWorkItemView } from '@client/src/services/viewModelMappers';
@@ -34,6 +35,13 @@ export default function WorkItemOverviewPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadSignal, setReloadSignal] = useState(0);
+  const overallRegeneration = useOverallRegeneration({
+    workItemId,
+    onSucceeded: (fresh) => {
+      setView(toWorkItemView(fresh));
+      setError(null);
+    },
+  });
 
   useEffect(() => {
     if (!workItemId) return;
@@ -127,6 +135,7 @@ export default function WorkItemOverviewPage() {
         view={view}
         onOpenWorkbench={openWorkbench}
         onViewEvidence={viewEvidence}
+        regeneration={overallRegeneration}
       />
 
       <div className="wl-overview-side">
@@ -150,9 +159,7 @@ export default function WorkItemOverviewPage() {
               </small>
             </li>
           </ul>
-          <p className="wl-side-empty">
-            关联资料以当前事项返回为准。
-          </p>
+          <p className="wl-side-empty">关联资料以当前事项返回为准。</p>
         </section>
 
         <section className="wl-side-panel" aria-label="最近变化">

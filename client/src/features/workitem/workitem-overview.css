@@ -404,8 +404,7 @@ html[data-wl-visual-mode='compatible'] .wl-overall-hero {
   line-height: 1.7;
 }
 
-.wl-engineering-statement[data-judgment='true']
-  .wl-engineering-statement-text {
+.wl-engineering-statement[data-judgment='true'] .wl-engineering-statement-text {
   font-size: 15px;
   line-height: 1.75;
 }
@@ -466,6 +465,52 @@ html[data-wl-visual-mode='compatible'] .wl-overall-hero {
 .wl-overall-structure-missing h2,
 .wl-overall-structure-missing p {
   margin: 0;
+}
+
+.wl-regeneration-status {
+  max-width: 620px;
+  padding: 9px 12px;
+  border: 1px solid var(--wl-border);
+  border-radius: var(--wl-radius-md);
+  background: var(--wl-surface-solid);
+  color: var(--wl-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.wl-regeneration-status[data-tone='progress'] {
+  border-color: color-mix(in srgb, var(--wl-accent) 32%, var(--wl-border));
+  color: var(--wl-accent);
+}
+
+.wl-regeneration-status[data-tone='warning'] {
+  border-color: color-mix(in srgb, var(--wl-amber) 34%, var(--wl-border));
+  color: var(--wl-amber-ink);
+}
+
+.wl-regeneration-status[data-tone='error'] {
+  border-color: color-mix(in srgb, var(--wl-red) 32%, var(--wl-border));
+  color: var(--wl-red);
+}
+
+.wl-regeneration-status[data-tone='success'] {
+  border-color: color-mix(in srgb, var(--wl-accent) 28%, var(--wl-border));
+  color: var(--wl-ink);
+}
+
+.wl-regeneration-button:disabled {
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+  opacity: 0.72;
+}
+
+.wl-regeneration-button[data-busy='true'] {
+  cursor: progress;
+}
+
+.wl-btn .wl-spin {
+  animation: wl-spin 1s linear infinite;
 }
 
 .wl-overall-evidence {
