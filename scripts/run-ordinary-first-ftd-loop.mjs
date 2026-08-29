@@ -3,11 +3,13 @@ import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+import {
+  InMemoryHostedDocumentCatalog,
+  LocalMiaodaFileServiceDouble,
+  resolveRealFtdFixturePath,
+} from '../test/support/document-management-hosted-test-support.mjs';
+
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const ownerRoot = resolve(
-  root,
-  '../../../../../../CodexHome/worktrees/d415/WiseLink/private/runtime/miaoda-app-repos/document-management-app-q2d',
-);
 const importBuilt = (relativePath) =>
   import(pathToFileURL(resolve(root, 'dist/server', relativePath)));
 
@@ -53,13 +55,6 @@ class LocalProjectionRegistrar {
   }
 }
 const [
-  { InMemoryHostedDocumentCatalog },
-  { LocalMiaodaFileServiceDouble },
-] = await Promise.all([
-  import(pathToFileURL(resolve(ownerRoot, 'src/hosted/inMemoryHostedDocumentCatalog.js'))),
-  import(pathToFileURL(resolve(ownerRoot, 'src/hosted/testing/localFileServiceDouble.js'))),
-]);
-const [
   { DocumentManagementHostedCore },
   { MiaodaFileServiceArtifactStore },
   { classifyImmutableSourceReuseState, classifyIncompleteIngestionRecoveryState },
@@ -97,7 +92,7 @@ const [
   importBuilt('modules/unified-reader/unified-reader.service.js'),
 ]);
 
-const pdfPath = resolve(root, '../../../../Docs/uploads/FTD/777-FTD-31-21002_Doc_09262025.pdf');
+const pdfPath = await resolveRealFtdFixturePath({ repoRoot: root });
 const pdfBytes = await readFile(pdfPath);
 const fileService = new LocalMiaodaFileServiceDouble();
 const selectionBucket = 'local-drive-like-selection';

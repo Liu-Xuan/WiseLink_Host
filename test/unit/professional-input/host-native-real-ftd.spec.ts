@@ -65,7 +65,7 @@ const FIXTURE_PATH = process.env.WL31_REAL_FTD_FIXTURE?.trim();
 const EXPECTED_SOURCE_SHA256 =
   'b1b5c198df4a3d42925218f48d70ddc361563c65692be35dac4c81e0d8367a3c';
 const EXPECTED_PACKAGE_ID =
-  'urn:techpub:package:v1:sha256:514ee9f631ca3a124a9c55be76ff63ac09e9875373eff57703af06a9271e9fdc';
+  'urn:techpub:package:v1:sha256:5463009173acc1cf7f944f6b4dcd4c247cc36ab0c86395530bcbcdfc99fda5f2';
 const EXPECTED_APPLICABILITY_TEXT =
   'All777modelsequippedwithAirplaneInformationManagementSystem2(AIMS-2)Platform.';
 const EXPECTED_APPLICABILITY_SOURCE_REF =
