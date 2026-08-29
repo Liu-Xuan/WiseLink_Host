@@ -2705,8 +2705,8 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
     display: none;
   }
 
-  .parse-reader-split > .parse-pdf-pane {
-    display: none;
+  .parse-reader-split.is-pdf-active > .parse-pdf-pane {
+    display: flex;
   }
 
   .parse-mobile-source-switch {
