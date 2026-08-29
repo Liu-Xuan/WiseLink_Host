@@ -10,6 +10,7 @@ import {
   getOverallRegenerationStatus,
   requestOverallRegeneration,
 } from '@client/src/api/canonical-host';
+import { createRequestCorrelationId } from '@client/src/utils/request-correlation-id';
 
 import {
   isOverallRegenerationActive,
@@ -209,7 +210,11 @@ export function useOverallRegeneration({
       if (epochRef.current !== epoch) return;
       const next: StableOverallRegenerationRequest = {
         workItemId,
-        input: overallRegenerationInput(fresh, randomUuid(), workItemId),
+        input: overallRegenerationInput(
+          fresh,
+          createRequestCorrelationId(),
+          workItemId,
+        ),
         polling: false,
       };
       await submit(next, epoch);
@@ -236,13 +241,6 @@ function clientFailure(
     ),
     sourceUnavailable: /SOURCE_NOT_READY|PACKAGE|PARSE/iu.test(message),
   });
-}
-
-function randomUuid(): string {
-  if (typeof crypto.randomUUID !== 'function') {
-    throw new Error('BROWSER_RANDOM_UUID_UNAVAILABLE');
-  }
-  return crypto.randomUUID().toLowerCase();
 }
 
 function wait(durationMs: number): Promise<void> {

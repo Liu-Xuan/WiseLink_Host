@@ -1,6 +1,10 @@
 const request = jest.fn();
 const resolveAppUrl = jest.fn();
 const originalClientBasePath = process.env.CLIENT_BASE_PATH;
+const originalCryptoDescriptor = Object.getOwnPropertyDescriptor(
+  globalThis,
+  'crypto',
+);
 
 jest.mock('@lark-apaas/client-toolkit/utils/getAxiosForBackend', () => ({
   axiosForBackend: request,
@@ -36,6 +40,7 @@ import {
   requestOverallRegeneration,
   requireOfficialOauthSession,
 } from '../../client/src/api/canonical-host';
+import { createRequestCorrelationId } from '../../client/src/utils/request-correlation-id';
 
 describe('canonical host assessment client', () => {
   beforeEach(() => {
@@ -45,6 +50,7 @@ describe('canonical host assessment client', () => {
   });
 
   afterEach(() => {
+    restoreGlobalCrypto();
     if (originalClientBasePath === undefined) {
       delete process.env.CLIENT_BASE_PATH;
     } else {
@@ -105,6 +111,7 @@ describe('canonical host assessment client', () => {
   });
 
   it('bypasses browser and platform caches only for mutation preflights', async () => {
+    setGlobalCrypto(undefined);
     request
       .mockResolvedValueOnce({
         status: 200,
@@ -113,6 +120,10 @@ describe('canonical host assessment client', () => {
       .mockResolvedValueOnce({
         status: 200,
         data: { workItem: { revision: 13 } },
+      })
+      .mockResolvedValueOnce({
+        status: 202,
+        data: { regeneration: { status: 'REQUESTED' }, replayed: false },
       });
 
     await expect(
@@ -138,6 +149,23 @@ describe('canonical host assessment client', () => {
       },
     });
     expect(secondConfig.params._fresh).not.toBe(firstConfig.params._fresh);
+
+    const requestId = createRequestCorrelationId();
+    await expect(
+      requestOverallRegeneration('WI-SB-1001', {
+        requestId,
+        expectedRevision: 13,
+        sourceIdentity: {
+          documentVersionId: 'DV-13',
+          sourceArtifactId: 'SOURCE-13',
+          sourceFileSha256: 'source-sha-13',
+          packageId: 'PACKAGE-13',
+          packageArtifactSha256: 'package-sha-13',
+        },
+      }),
+    ).resolves.toMatchObject({ replayed: false });
+    expect(request.mock.calls[2][0].data.requestId).toBe(requestId);
+    expect(requestId).toMatch(/^wl_[A-Za-z0-9_-]+$/u);
   });
 
   it('forwards only controlled browse pagination inputs', async () => {
@@ -535,3 +563,18 @@ describe('canonical host assessment client', () => {
     });
   });
 });
+
+function setGlobalCrypto(value: unknown): void {
+  Object.defineProperty(globalThis, 'crypto', {
+    configurable: true,
+    value,
+  });
+}
+
+function restoreGlobalCrypto(): void {
+  if (originalCryptoDescriptor) {
+    Object.defineProperty(globalThis, 'crypto', originalCryptoDescriptor);
+    return;
+  }
+  Reflect.deleteProperty(globalThis, 'crypto');
+}

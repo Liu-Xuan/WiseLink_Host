@@ -15,6 +15,7 @@ import { canonicalHost } from '@client/src/api';
 import { uploadFile } from '@client/src/components/business-ui/api/files/service';
 import { Button } from '@client/src/components/ui/button';
 import { Textarea } from '@client/src/components/ui/textarea';
+import { createRequestCorrelationId } from '@client/src/utils/request-correlation-id';
 import type {
   ConfirmReviewActionDraftResponse,
   ReviewConversationReadModel,
@@ -149,7 +150,7 @@ export default function ContinuousReviewPanel({
     setBusyAction('append');
     setError(null);
     try {
-      const requestId = requestIdRef.current ?? randomUuid();
+      const requestId = requestIdRef.current ?? createRequestCorrelationId();
       requestIdRef.current = requestId;
       let selection = uploadedSelection;
       if (file && !selection) {
@@ -444,13 +445,6 @@ export default function ContinuousReviewPanel({
       ) : null}
     </section>
   );
-}
-
-function randomUuid(): string {
-  if (typeof crypto.randomUUID !== 'function') {
-    throw new Error('BROWSER_RANDOM_UUID_UNAVAILABLE');
-  }
-  return crypto.randomUUID().toLowerCase();
 }
 
 function safePdfName(fileName: string): string {

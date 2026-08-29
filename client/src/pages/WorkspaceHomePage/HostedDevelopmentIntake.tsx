@@ -17,6 +17,7 @@ import {
 } from '@client/src/api/canonical-host';
 import { uploadFile } from '@client/src/components/business-ui/api/files/service';
 import { Button } from '@client/src/components/ui/button';
+import { createRequestCorrelationId } from '@client/src/utils/request-correlation-id';
 
 const MAX_PDF_BYTES = 100 * 1024 * 1024;
 
@@ -78,7 +79,7 @@ export function HostedDevelopmentIntake() {
       let selection = uploaded;
       if (!selection) {
         setPhase('uploading');
-        const uploadId = randomUuid();
+        const uploadId = createRequestCorrelationId();
         const uploadedFile = await uploadFile(file, {
           filePath: `wiselink/dev-intake/${uploadId}/${safePdfName(file.name)}`,
           contentType: 'application/pdf',
@@ -87,7 +88,7 @@ export function HostedDevelopmentIntake() {
         selection = {
           bucketId: uploadedFile.bucketId,
           filePath: uploadedFile.filePath,
-          developmentRunToken: randomUuid(),
+          developmentRunToken: createRequestCorrelationId(),
         };
         setUploaded(selection);
       }
@@ -194,13 +195,6 @@ export function HostedDevelopmentIntake() {
       </div>
     </section>
   );
-}
-
-function randomUuid(): string {
-  if (typeof crypto.randomUUID !== 'function') {
-    throw new Error('BROWSER_RANDOM_UUID_UNAVAILABLE');
-  }
-  return crypto.randomUUID().toLowerCase();
 }
 
 async function sha256File(file: File): Promise<string> {
