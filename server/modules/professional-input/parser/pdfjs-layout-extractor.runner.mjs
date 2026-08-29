@@ -201,12 +201,18 @@ function analyzeRasterVisualCoverage({
   const unverifiedRegions = annotatedRegions.filter(
     (region) => region.textLayerOverlapNonWhitespaceCharacterCount === 0,
   );
+  const unverifiedRasterBounds = rasterRegions
+    .filter(
+      (_region, index) =>
+        annotatedRegions[index]
+          .textLayerOverlapNonWhitespaceCharacterCount === 0,
+    )
+    .map((region) => region.bounds);
   const rasterPageAreaRatio = roundRatio(
     rectangleUnionArea(rasterRegions.map((region) => region.bounds)) / pageArea,
   );
   const unverifiedRasterPageAreaRatio = roundRatio(
-    rectangleUnionArea(unverifiedRegions.map((region) => region.bbox)) /
-      pageArea,
+    rectangleUnionArea(unverifiedRasterBounds) / pageArea,
   );
   const hasMaterialRaster =
     rasterPageAreaRatio >= MATERIAL_UNVERIFIED_RASTER_PAGE_FRACTION;

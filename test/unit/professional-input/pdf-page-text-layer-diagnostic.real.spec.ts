@@ -15,6 +15,9 @@ const MIXED_PATH =
   `${UPLOADS_ROOT}/AD/AD2020-24-02/` +
   'Airworthiness+Directive+Status+Letter+Delivery+07+26 226A.pdf';
 const LOW_TEXT_RASTER_PATH = `${UPLOADS_ROOT}/AD/AD2020-24-02/AD2020-24-02.pdf`;
+const BOEING_RASTER_ROUNDING_PATH =
+  `${UPLOADS_ROOT}/SB/机身/BOEING/2026/202605/` +
+  '737-34-3830 Original.pdf';
 const DIGITAL_PATH = `${UPLOADS_ROOT}/FTD/777-FTD-31-21002_Doc_09262025.pdf`;
 const describeActualPdf =
   process.env.WL31_RUN_REAL_PDF_TEXT_LAYER_DIAGNOSTICS === '1'
@@ -98,6 +101,33 @@ describeActualPdf('actual PDF page text-layer diagnostics', () => {
     expect(details).toEqual(
       expect.arrayContaining([
         expect.stringMatching(/^48:textChars=2;/u),
+      ]),
+    );
+  });
+
+  it('uses one raw-coordinate union basis for real Boeing raster pages', async () => {
+    const bytes = await actualBytes(
+      BOEING_RASTER_ROUNDING_PATH,
+      'add32c7d4192d35c59162f15eb57f08247427135d5912438501ec9267fa4d41a',
+    );
+
+    const error = capturePipelineFailure(bytes, '737-34-3830');
+    const ocrRequiredPages = error.diagnostic
+      .ocrRequiredPages as readonly number[];
+    const details = error.diagnostic
+      .visualTextUnverifiedPageDetails as readonly string[];
+
+    expect(error.code).toBe('PDF_OCR_REQUIRED_UNSUPPORTED');
+    expect(error.diagnostic).toMatchObject({
+      pageCount: 22,
+      visualTextStatus: 'UNVERIFIED',
+      ocrProviderStatus: 'UNAVAILABLE_CURRENT_PRODUCTION',
+    });
+    expect(ocrRequiredPages).toEqual(expect.arrayContaining([7, 21]));
+    expect(details).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/^7:textChars=/u),
+        expect.stringMatching(/^21:textChars=/u),
       ]),
     );
   });
