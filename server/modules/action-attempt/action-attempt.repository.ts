@@ -234,6 +234,106 @@ export class ActionAttemptRepository {
     }
   }
 
+  async claimExpiredUnstartedExact(input: {
+    attemptId: string;
+    attemptNo: number;
+    triggerRequestId: string;
+    tenantId: string;
+    baseRevision: number;
+    documentVersionId: string;
+    idempotencyKey: string;
+    expectedTaskInputHash: string;
+    expectedClaimCount: number;
+    expectedRetryCount: number;
+    expectedLeaseGeneration: number;
+    operationRef: string;
+    leaseOwner: string;
+    leaseSlot: number;
+    now: Date;
+    leaseMs: number;
+    refreshedDeadlineAt: Date;
+    taskEnvelopeJson: string;
+    taskInputHash: string;
+  }): Promise<ActionAttemptRow | null> {
+    try {
+      const [claimed] = await this.db
+        .update(actionAttempt)
+        .set({
+          status: 'RUNNING',
+          claimCount: input.expectedClaimCount + 1,
+          leaseOwner: input.leaseOwner,
+          leaseToken: randomUUID(),
+          leaseGeneration: input.expectedLeaseGeneration + 1,
+          leaseSlot: input.leaseSlot,
+          executorSessionKey: `g2-action-attempt:${input.operationRef}`,
+          leaseExpiresAt: new Date(input.now.getTime() + input.leaseMs),
+          lastHeartbeatAt: input.now,
+          nextAttemptAt: null,
+          startedAt: input.now,
+          deadlineAt: input.refreshedDeadlineAt,
+          taskEnvelopeJson: input.taskEnvelopeJson,
+          taskInputHash: input.taskInputHash,
+          errorCode: null,
+          errorMessage: null,
+          updatedAt: input.now,
+        })
+        .where(
+          and(
+            eq(actionAttempt.attemptId, input.attemptId),
+            eq(actionAttempt.attemptNo, input.attemptNo),
+            eq(actionAttempt.triggerRequestId, input.triggerRequestId),
+            eq(actionAttempt.tenantId, input.tenantId),
+            eq(actionAttempt.baseRevision, input.baseRevision),
+            eq(actionAttempt.inputRevision, input.baseRevision),
+            eq(actionAttempt.documentVersionId, input.documentVersionId),
+            eq(actionAttempt.status, 'QUEUED'),
+            eq(actionAttempt.actionType, 'OPENCLAW_OVERALL_SYNTHESIS'),
+            eq(actionAttempt.claimCount, input.expectedClaimCount),
+            eq(actionAttempt.retryCount, input.expectedRetryCount),
+            eq(actionAttempt.leaseGeneration, input.expectedLeaseGeneration),
+            eq(actionAttempt.operationRef, input.operationRef),
+            eq(actionAttempt.idempotencyKey, input.idempotencyKey),
+            eq(actionAttempt.taskInputHash, input.expectedTaskInputHash),
+            isNull(actionAttempt.startedAt),
+            isNull(actionAttempt.leaseOwner),
+            isNull(actionAttempt.leaseToken),
+            isNull(actionAttempt.leaseExpiresAt),
+            isNull(actionAttempt.lastHeartbeatAt),
+            isNull(actionAttempt.leaseSlot),
+            isNull(actionAttempt.executorSessionKey),
+            isNull(actionAttempt.commitStartedAt),
+            isNull(actionAttempt.resultEnvelopeJson),
+            isNull(actionAttempt.resultContentHash),
+            isNull(actionAttempt.completedAt),
+            isNull(actionAttempt.terminalReason),
+            isNull(actionAttempt.errorCode),
+            isNull(actionAttempt.errorMessage),
+            eq(actionAttempt.projectionApplied, false),
+            lte(actionAttempt.deadlineAt, input.now),
+            or(
+              isNull(actionAttempt.nextAttemptAt),
+              lte(actionAttempt.nextAttemptAt, input.now),
+            ),
+            isNull(actionAttempt.cancelRequestedAt),
+            isNull(actionAttempt.cancelReason),
+            sql`EXISTS (
+              SELECT 1
+              FROM ${workItem}
+              WHERE ${workItem.workItemId} = ${actionAttempt.workItemId}
+                AND ${workItem.tenantId} = ${input.tenantId}
+                AND ${workItem.revision} = ${input.baseRevision}
+                AND ${workItem.documentVersionId} = ${input.documentVersionId}
+            )`,
+          ),
+        )
+        .returning();
+      return (claimed as ActionAttemptRow | undefined) ?? null;
+    } catch (cause) {
+      if (isLeaseSlotConflict(cause)) return null;
+      throw cause;
+    }
+  }
+
   async heartbeat(input: {
     attemptId: string;
     leaseToken: string;

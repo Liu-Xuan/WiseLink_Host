@@ -100,6 +100,11 @@ export class CanonicalHostOpenClawOverallService {
       scope,
     );
     const providerCodes = providerCodesFor(providers);
+    const isQueuedUserRegeneration =
+      workItem.overallRegenerationRequest?.executionRevision ===
+        workItem.revision &&
+      workItem.overallRegenerationRequest.staleReason ===
+        'USER_REQUESTED_REGENERATION';
     const claim = await this.attempts.reserveAndClaim({
       ...this.reservationInput(
         workItem,
@@ -109,6 +114,9 @@ export class CanonicalHostOpenClawOverallService {
         permissionSnapshotVersion,
       ),
       leaseOwner: scope.principalId,
+      ...(isQueuedUserRegeneration
+        ? { allowExpiredUnclaimedDeadlineRefresh: true }
+        : {}),
     });
     const storedInput = storedOverallInput(claim.task.modelInput);
     return {

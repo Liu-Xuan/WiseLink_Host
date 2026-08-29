@@ -42,6 +42,12 @@ export interface ReserveActionAttemptInput {
 
 export interface ReserveAndClaimInput extends ReserveActionAttemptInput {
   leaseOwner: string;
+  /**
+   * User-requested overall regeneration is queued before an external hosted
+   * session is woken. Allow that session's first claim to atomically refresh
+   * an elapsed default deadline when the attempt has never started.
+   */
+  allowExpiredUnclaimedDeadlineRefresh?: boolean;
 }
 
 export interface ReserveActionAttemptResult {
