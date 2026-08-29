@@ -112,7 +112,7 @@ export class CanonicalPdfPreviewService {
         workItemRevision: projection.revision,
         documentVersionId: projection.source.documentVersionId,
         sourceArtifactId: projection.source.sourceArtifactId,
-        sourceSha256: projection.source.sourceFileSha256,
+        sourceSha256: source.version.pdfSha256,
         sourceByteLength: projection.source.sourceByteLength,
         providerObjectId: source.artifact.providerObjectId,
         issuedAtMs,
@@ -229,7 +229,8 @@ export class CanonicalPdfPreviewService {
       projection.requestId !== grant.requestId ||
       projection.source.documentVersionId !== grant.documentVersionId ||
       projection.source.sourceArtifactId !== grant.sourceArtifactId ||
-      projection.source.sourceFileSha256 !== grant.sourceSha256 ||
+      rawSourceSha256(projection.source.sourceFileSha256) !==
+        grant.sourceSha256 ||
       projection.source.sourceByteLength !== grant.sourceByteLength
     ) {
       throw previewError('PDF_PREVIEW_SOURCE_DRIFT', 409);
@@ -304,16 +305,26 @@ function sourceMatchesProjection(
   source: Awaited<ReturnType<MiaodaDocumentVersionSourceResolver['resolve']>>,
   projection: CanonicalWorkItemProjection,
 ): boolean {
+  const projectionSha256: string | null = rawSourceSha256(
+    projection.source.sourceFileSha256,
+  );
   return (
+    projectionSha256 !== null &&
     source.version.documentVersionId === projection.source.documentVersionId &&
     source.version.sourceArtifactId === projection.source.sourceArtifactId &&
     source.artifact.sourceArtifactId === projection.source.sourceArtifactId &&
-    source.version.pdfSha256 === projection.source.sourceFileSha256 &&
-    source.artifact.sha256 === projection.source.sourceFileSha256 &&
+    source.version.pdfSha256 === projectionSha256 &&
+    source.artifact.sha256 === projectionSha256 &&
     Number(source.version.byteLength) === projection.source.sourceByteLength &&
     Number(source.artifact.byteLength) === projection.source.sourceByteLength &&
     source.artifact.readbackVerified === true
   );
+}
+
+function rawSourceSha256(value: string): string | null {
+  const match: RegExpExecArray | null =
+    /^(?:sha256:)?([0-9a-f]{64})$/u.exec(value);
+  return match?.[1] ?? null;
 }
 
 function unavailable(
