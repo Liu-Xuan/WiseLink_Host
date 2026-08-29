@@ -54,6 +54,7 @@ interface RealFamilyCase {
   businessRevision: string;
   expectedParserProfileId: string;
   expectedDocumentType: HostNativePdfDocumentType;
+  expectedOcrRequiredPages?: readonly number[];
 }
 
 const REAL_FAMILY_CASES: RealFamilyCase[] = [
@@ -116,6 +117,7 @@ const REAL_FAMILY_CASES: RealFamilyCase[] = [
     businessRevision: 'Revision 3',
     expectedParserProfileId: 'parser-profile:boeing.maintenance_tip@1.0.0',
     expectedDocumentType: 'maintenance_tip',
+    expectedOcrRequiredPages: [2],
   },
   {
     key: 'airbus-ril',
@@ -142,6 +144,7 @@ const REAL_FAMILY_CASES: RealFamilyCase[] = [
     expectedParserProfileId:
       'parser-profile:airbus.operator_transmission@1.0.0',
     expectedDocumentType: 'operator_transmission',
+    expectedOcrRequiredPages: [4, 27, 28, 37, 38, 42],
   },
   {
     key: 'airbus-oit',
@@ -240,6 +243,7 @@ const REAL_UNAVAILABLE_CASES = [
     key: 'airbus-concession-support-document',
     path: process.env.WL31_REAL_AIRBUS_CONCESSION_PDF_PATH?.trim(),
     expectedFamily: 'GENERIC',
+    expectedOcrRequiredPages: [5],
   },
 ] as const;
 
@@ -327,22 +331,37 @@ describeRealUnavailable(
     jest.setTimeout(120_000);
 
     it.each(REAL_UNAVAILABLE_CASES)(
-      '$key remains PROFILE_NOT_AVAILABLE despite a complete text layer',
+      '$key preserves its current unavailable or OCR-required boundary',
       async (fixture) => {
         const sourceBytes = await readFile(fixture.path as string);
-        const layout = new PdfjsDistLayoutExtractor().extractLayout(
-          sourceBytes,
-        );
-        const pagesWithText = new Set(
-          layout.textRuns
-            .filter((run) => run.text.trim().length > 0)
-            .map((run) => run.page),
-        );
+        try {
+          const layout = new PdfjsDistLayoutExtractor().extractLayout(
+            sourceBytes,
+          );
+          if ('expectedOcrRequiredPages' in fixture) {
+            throw new Error('EXPECTED_PDF_OCR_REQUIRED_UNSUPPORTED');
+          }
+          const pagesWithText = new Set(
+            layout.textRuns
+              .filter((run) => run.text.trim().length > 0)
+              .map((run) => run.page),
+          );
 
-        expect(pagesWithText.size).toBe(layout.pageCount);
-        expect(
-          recognizeHostNativePdfProfile(layout, fixture.expectedFamily),
-        ).toBeNull();
+          expect(pagesWithText.size).toBe(layout.pageCount);
+          expect(
+            recognizeHostNativePdfProfile(layout, fixture.expectedFamily),
+          ).toBeNull();
+        } catch (error) {
+          if (!('expectedOcrRequiredPages' in fixture)) throw error;
+          expect(error).toMatchObject({
+            code: 'PDF_OCR_REQUIRED_UNSUPPORTED',
+            diagnostic: expect.objectContaining({
+              ocrRequiredPages: fixture.expectedOcrRequiredPages,
+              visualTextUnverifiedPages: fixture.expectedOcrRequiredPages,
+              ocrProviderStatus: 'UNAVAILABLE_CURRENT_PRODUCTION',
+            }),
+          });
+        }
       },
     );
   },
@@ -545,6 +564,19 @@ describeRealFamilies(
         expect(resolveCurrent).toHaveBeenCalledWith(documentVersionId, {
           requireCurrent: true,
         });
+        if (fixture.expectedOcrRequiredPages) {
+          expect(produced).toMatchObject({
+            kind: 'FAILURE_SIGNAL',
+            failureCode: 'PDF_OCR_REQUIRED_UNSUPPORTED',
+            parameters: {
+              ocrRequiredPages: fixture.expectedOcrRequiredPages.map(String),
+              visualTextUnverifiedPages:
+                fixture.expectedOcrRequiredPages.map(String),
+            },
+          });
+          expect(professionalBytes).toBeNull();
+          return;
+        }
         if (produced.kind !== 'PACKAGE') {
           throw new Error(`${produced.failureCode}: ${produced.message}`);
         }
