@@ -51,6 +51,7 @@ export function buildAeoDraftFeedbackEvent(
   return {
     feedbackId: input.feedbackId,
     suggestionId: input.suggestionId,
+    targetGenerationRevision: input.expectedGenerationRevision,
     decision: input.decision,
     engineerDecisionRef: input.engineerDecisionRef.trim(),
     note: input.note.trim(),

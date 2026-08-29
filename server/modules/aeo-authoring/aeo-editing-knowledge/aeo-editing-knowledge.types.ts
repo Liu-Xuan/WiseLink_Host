@@ -170,6 +170,7 @@ export interface AeoDraftRegenerationRequest extends AeoDraftAssistanceRequest {
 export interface AeoDraftFeedback {
   feedbackId: string;
   suggestionId: string;
+  targetGenerationRevision: number;
   decision: 'ACCEPT' | 'MODIFY' | 'REJECT';
   engineerDecisionRef: string;
   note: string;
@@ -255,6 +256,7 @@ export interface AeoDraftAssistanceCandidate {
 export interface AeoDraftFeedbackInput {
   feedbackId: string;
   suggestionId: string;
+  expectedGenerationRevision: number;
   decision: AeoDraftFeedback['decision'];
   engineerDecisionRef: string;
   note: string;

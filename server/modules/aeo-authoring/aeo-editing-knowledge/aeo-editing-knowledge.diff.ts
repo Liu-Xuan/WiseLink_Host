@@ -59,11 +59,18 @@ function diffAction(
     throw new Error('AEO_KNOWLEDGE_DIFF_INTERNAL_ERROR');
   }
   const reasons: string[] = [];
+  compareStructuredField('sequence', from.sequence, to.sequence, reasons);
   compareField('phase', from.phase, to.phase, reasons);
   compareField('operation', from.operation, to.operation, reasons);
   compareField('object', from.object, to.object, reasons);
   compareField('Chinese text', from.bodyZh, to.bodyZh, reasons);
   compareField('English text', from.bodyEn, to.bodyEn, reasons);
+  compareStructuredField(
+    'dependencies',
+    from.dependencies,
+    to.dependencies,
+    reasons,
+  );
   compareField(
     'parameters',
     JSON.stringify(from.parameters),

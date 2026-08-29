@@ -66,6 +66,7 @@ describe('AEO editing knowledge and draft assistance', () => {
       }),
     ]);
     expect(learning.modified[0]).toMatchObject({
+      targetGenerationRevision: 1,
       semanticTarget: {
         sourceUnitId: 'ACTION-002',
         field: 'BODY',
@@ -245,6 +246,7 @@ function feedbackFor(
     {
       feedbackId: 'FDBK-1',
       suggestionId: draft.suggestions[0]!.suggestionId,
+      expectedGenerationRevision: draft.generationRevision,
       decision: 'ACCEPT',
       engineerDecisionRef: 'ENG-DEC-1',
       note: 'Accepted for the current editable candidate.',
@@ -255,6 +257,7 @@ function feedbackFor(
     {
       feedbackId: 'FDBK-2',
       suggestionId: draft.suggestions[1]!.suggestionId,
+      expectedGenerationRevision: draft.generationRevision,
       decision: 'MODIFY',
       engineerDecisionRef: 'ENG-DEC-2',
       note: 'Use the current controlled-source wording.',
@@ -269,6 +272,7 @@ function feedbackFor(
     {
       feedbackId: 'FDBK-3',
       suggestionId: draft.suggestions[2]!.suggestionId,
+      expectedGenerationRevision: draft.generationRevision,
       decision: 'REJECT',
       engineerDecisionRef: 'ENG-DEC-3',
       note: 'The closeout is not applicable to this candidate.',

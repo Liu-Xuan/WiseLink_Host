@@ -177,6 +177,13 @@ export function recordAeoDraftFeedback(
   current: AeoDraftAssistanceCandidate,
   input: AeoDraftFeedbackInput,
 ): AeoDraftAssistanceCandidate {
+  if (current.generationRevision !== input.expectedGenerationRevision) {
+    throw new Error(
+      `AEO_DRAFT_FEEDBACK_GENERATION_CONFLICT: expected ${String(
+        input.expectedGenerationRevision,
+      )}, current ${String(current.generationRevision)}`,
+    );
+  }
   if (
     current.feedback.some(
       (feedback: AeoDraftFeedback) => feedback.feedbackId === input.feedbackId,

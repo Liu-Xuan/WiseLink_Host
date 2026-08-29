@@ -73,12 +73,12 @@ describe('AEO draft regeneration feedback versions', () => {
 
     const reusedId: AeoDraftAssistanceCandidate = recordAeoDraftFeedback(
       regenerated,
-      reject('FDBK-2', suggestion(regenerated, 'ACTION-002')),
+      reject('FDBK-2', suggestion(regenerated, 'ACTION-002'), 2),
     );
     expect(() =>
       recordAeoDraftFeedback(
         reusedId,
-        reject('FDBK-2', suggestion(reusedId, 'ACTION-002')),
+        reject('FDBK-2', suggestion(reusedId, 'ACTION-002'), 2),
       ),
     ).toThrow('AEO_DRAFT_FEEDBACK_ID_DUPLICATE: FDBK-2');
 
@@ -101,10 +101,65 @@ describe('AEO draft regeneration feedback versions', () => {
       ),
     ).toEqual(['FDBK-3']);
     expect(
-      replayed.supersededFeedback.filter(
-        (item) => item.feedback.feedbackId === 'FDBK-2',
+      replayed.supersededFeedback
+        .filter((item) => item.feedback.feedbackId === 'FDBK-2')
+        .map((item) => item.feedback.targetGenerationRevision),
+    ).toEqual([1, 2]);
+  });
+
+  it('rejects stale feedback before it can overwrite a regenerated unit', () => {
+    const knowledge: AeoEditingKnowledgeCandidate = sampleKnowledge();
+    const base: AeoDraftAssistanceCandidate = createAeoDraftAssistanceCandidate(
+      request(knowledge),
+    );
+    const staleModify: AeoDraftFeedbackInput = modify(
+      'FDBK-STALE',
+      suggestion(base, 'ACTION-002'),
+      '来自 generation 1 的过期正文。',
+      1,
+    );
+    const regenerated: AeoDraftAssistanceCandidate =
+      regenerateAeoDraftSelection(
+        base,
+        {
+          ...request(knowledge),
+          selectedUnitIds: ['ACTION-002'],
+          expectedGenerationRevision: 1,
+        },
+        'Regenerate before delayed engineer feedback arrives.',
+      );
+    const beforeStaleAttempt: string = JSON.stringify(regenerated);
+
+    expect(() => recordAeoDraftFeedback(regenerated, staleModify)).toThrow(
+      'AEO_DRAFT_FEEDBACK_GENERATION_CONFLICT: expected 1, current 2',
+    );
+    expect(JSON.stringify(regenerated)).toBe(beforeStaleAttempt);
+    expect(buildAeoDraftLearningInput(regenerated).modified).toEqual([]);
+    expect(blockBody(regenerated, 'ACTION-002')).toBe('候选步骤 2。');
+
+    const currentModify: AeoDraftAssistanceCandidate = recordAeoDraftFeedback(
+      regenerated,
+      modify(
+        'FDBK-GEN2',
+        suggestion(regenerated, 'ACTION-002'),
+        'generation 2 工程师修订。',
+        2,
       ),
-    ).toHaveLength(2);
+    );
+    expect(currentModify.feedback).toEqual([
+      expect.objectContaining({
+        feedbackId: 'FDBK-GEN2',
+        targetGenerationRevision: 2,
+      }),
+    ]);
+    expect(
+      buildAeoDraftLearningInput(currentModify).modified.map(
+        (item) => item.feedbackId,
+      ),
+    ).toEqual(['FDBK-GEN2']);
+    expect(blockBody(currentModify, 'ACTION-002')).toBe(
+      'generation 2 工程师修订。',
+    );
   });
 
   it('retains distinct old sources and rejects a reused drifting sourceId', () => {
@@ -238,10 +293,12 @@ function modify(
   feedbackId: string,
   target: AeoDraftSuggestion,
   revisedBodyZh: string,
+  expectedGenerationRevision = 1,
 ): AeoDraftFeedbackInput {
   return {
     feedbackId,
     suggestionId: target.suggestionId,
+    expectedGenerationRevision,
     decision: 'MODIFY',
     engineerDecisionRef: `ENG-${feedbackId}`,
     note: 'Engineer revision remains candidate-only.',
@@ -256,10 +313,12 @@ function modify(
 function reject(
   feedbackId: string,
   target: AeoDraftSuggestion,
+  expectedGenerationRevision = 1,
 ): AeoDraftFeedbackInput {
   return {
     feedbackId,
     suggestionId: target.suggestionId,
+    expectedGenerationRevision,
     decision: 'REJECT',
     engineerDecisionRef: `ENG-${feedbackId}`,
     note: 'Engineer rejected this candidate suggestion.',

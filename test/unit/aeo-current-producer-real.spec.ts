@@ -8,6 +8,7 @@ import {
   validateAeoEditingKnowledgeCandidate,
   type AeoEditingActionUnit,
   type AeoEditingKnowledgeCandidate,
+  type AeoEditingKnowledgeVersionDiff,
   type AeoEditingSourceRef,
   type AeoRoutineRevisionReplayCandidate,
 } from '../../server/modules/aeo-authoring/aeo-editing-knowledge';
@@ -161,6 +162,52 @@ describe('AEO current producer real artifacts', () => {
         'review status changed.',
       ]),
     );
+  });
+
+  it('detects sequence and dependency-only changes in a real B787 candidate', () => {
+    const directory = 'AEO-B787-45-0002-R00';
+    const original: AeoEditingKnowledgeCandidate =
+      ingestAeoEditingKnowledgeCandidate(
+        json(`${REAL_AEO_ROOT}/${directory}/knowledge-units.json`),
+        json(`${REAL_AEO_ROOT}/${directory}/source-manifest.json`),
+      );
+    const changed: AeoEditingKnowledgeCandidate = JSON.parse(
+      JSON.stringify(original),
+    ) as AeoEditingKnowledgeCandidate;
+    const unit: AeoEditingActionUnit = changed.actionUnits[0]!;
+    const dependencyTarget: AeoEditingActionUnit = changed.actionUnits[1]!;
+    unit.sequence =
+      Math.max(
+        ...changed.actionUnits.map(
+          (action: AeoEditingActionUnit) => action.sequence,
+        ),
+      ) + 1;
+    unit.dependencies = [
+      {
+        sourceUnitId: dependencyTarget.unitId,
+        relationship: 'AFTER',
+      },
+    ];
+
+    const diff: AeoEditingKnowledgeVersionDiff =
+      diffAeoEditingKnowledgeVersions(original, changed);
+    expect(
+      diff.changes.find(
+        (change: AeoEditingKnowledgeVersionDiff['changes'][number]) =>
+          change.unitId === unit.unitId,
+      ),
+    ).toEqual(
+      expect.objectContaining({
+        change: 'CHANGED',
+        reasons: ['sequence changed.', 'dependencies changed.'],
+      }),
+    );
+    expect(
+      diff.changes.filter(
+        (change: AeoEditingKnowledgeVersionDiff['changes'][number]) =>
+          change.change !== 'UNCHANGED',
+      ),
+    ).toHaveLength(1);
   });
 
   it('keeps the real inspection and both routine revision transitions valid', () => {
