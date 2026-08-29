@@ -25,6 +25,7 @@ import type {
 import { logger } from '@lark-apaas/client-toolkit/logger';
 import { axiosForBackend } from '@lark-apaas/client-toolkit/utils/getAxiosForBackend';
 import { resolveAppUrl } from '@lark-apaas/client-toolkit/utils/resolveAppUrl';
+import { createRequestCorrelationId } from '../utils/request-correlation-id';
 
 export interface CanonicalHostIdentityContext {
   userId: string;
@@ -157,7 +158,7 @@ export async function getDocumentParsingPage(
     const mutationFreshRead: boolean = options.freshness === 'mutation';
     const params: Record<string, string> = {};
     if (normalizedQuery !== '') params.query = normalizedQuery;
-    if (mutationFreshRead) params._fresh = crypto.randomUUID();
+    if (mutationFreshRead) params._fresh = createRequestCorrelationId();
     const response =
       await axiosForBackend<CanonicalDocumentParsingPageResponse>({
         url: `/api/canonical-host/work-items/${encodeURIComponent(workItemId)}/document-parsing`,

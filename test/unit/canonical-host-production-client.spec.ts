@@ -76,6 +76,35 @@ describe('canonical Host production client boundary', () => {
     expect(app).toContain('work-items/:workItemId/documents');
   });
 
+  it('uses one browser-compatible correlation id helper for hosted writes', async () => {
+    const sources = await Promise.all([
+      readFile(resolve(clientSourceRoot, 'api/canonical-host.ts'), 'utf8'),
+      readFile(
+        resolve(
+          clientSourceRoot,
+          'features/workitem/useOverallRegeneration.ts',
+        ),
+        'utf8',
+      ),
+      readFile(
+        resolve(clientSourceRoot, 'features/review/ContinuousReviewPanel.tsx'),
+        'utf8',
+      ),
+      readFile(
+        resolve(
+          clientSourceRoot,
+          'pages/WorkspaceHomePage/HostedDevelopmentIntake.tsx',
+        ),
+        'utf8',
+      ),
+    ]);
+
+    for (const source of sources) {
+      expect(source).toContain('createRequestCorrelationId');
+      expect(source).not.toContain('crypto.randomUUID');
+    }
+  });
+
   it('composes P1-P4 from canonical Host read projections only', async () => {
     const [home, reader, workbench, assessmentRules] = await Promise.all([
       readFile(
