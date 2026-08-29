@@ -3244,8 +3244,10 @@ export function validateReviewTask(value) {
     value.allowedAdoptedInputRefs,
     'REVIEW_TASK_ADOPTED_INPUTS_INVALID',
   );
-  array(value.attachmentRefs, 'REVIEW_TASK_ATTACHMENTS_INVALID');
-  equal(value.attachmentRefs.length, 0, 'REVIEW_TASK_ATTACHMENTS_OUT_OF_SCOPE');
+  arrayOfText(value.attachmentRefs, 'REVIEW_TASK_ATTACHMENTS_INVALID');
+  if (new Set(value.attachmentRefs).size !== value.attachmentRefs.length) {
+    fail('REVIEW_TASK_ATTACHMENTS_DUPLICATE');
+  }
   assertObject(value.context, 'review task context');
   array(value.resourceRefs, 'REVIEW_TASK_RESOURCE_REFS_INVALID');
   const resourceIds = new Set();
@@ -3278,6 +3280,11 @@ export function validateReviewTask(value) {
       'REVIEW_TASK_RESOURCE_BINDING_INVALID',
     );
   });
+  assertSubsetOf(
+    value.attachmentRefs,
+    resourceIds,
+    'REVIEW_TASK_ATTACHMENT_REF_NOT_ALLOWED',
+  );
   exactKeys(
     value.executionPolicy,
     [

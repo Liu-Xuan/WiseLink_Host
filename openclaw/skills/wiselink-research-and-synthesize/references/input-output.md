@@ -261,13 +261,18 @@ inputRevision / selectedEvaluationItemId / userMessage
 allowedOperations（exact C2 six）
 resourceRefs[{sourceRefId,resourceArtifactRef,resourceArtifactSha256,value}]
 allowedEvaluationItemIds / allowedAdoptedInputRefs
-attachmentRefs=[]
+attachmentRefs[]（非空唯一字符串，且 attachmentRefs ⊆ resourceRefs.sourceRefId）
 context
 executionPolicy{runtimeAppId,profileRef,modelPolicyRef,skillPolicyRef,toolPolicyRef}
 ```
 
 `get_review_turn_context` 返回不含 actorContextRef 的最小 context 和 resource metadata；模型实际输入再移除
-workItemId，只保留本轮必要业务内容。`read_source_refs` 只按 task allowlist 读取 exact values。
+workItemId，只保留本轮必要业务内容。无附件时 `attachmentRefs=[]`，保持既有路径兼容。Host 已对当前
+ReviewTurn 完成 DM/DV/FileService actual-byte 绑定与解析时，可把对应 opaque attachment ref 同时放入
+`attachmentRefs` 和 `resourceRefs.sourceRefId`；Skill 先校验唯一性与子集关系，再只通过
+`read_source_refs({attemptRef,sourceRefIds})` 读取其 `ENGINEER_ATTACHMENT` parsed value。模型只看到 opaque ref、
+文件显示 metadata 与解析页内容，不接触 raw FileService locator/bytes、actor、tenant 或 sessionKey；Task 中的
+resource artifact ref/SHA 也不进入模型输入。
 
 ## INTERACTIVE_REVIEW candidate
 

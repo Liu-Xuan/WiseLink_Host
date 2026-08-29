@@ -39,6 +39,10 @@ const REVIEW_TASK_FIXTURE_URL = new URL(
   './fixtures/review-turn-task.c2.json',
   import.meta.url,
 );
+const REVIEW_ATTACHMENT_TASK_FIXTURE_URL = new URL(
+  './fixtures/review-turn-task-attachment.c2.json',
+  import.meta.url,
+);
 const REVIEW_CANDIDATE_FIXTURE_URL = new URL(
   './fixtures/review-turn-candidate.c2.json',
   import.meta.url,
@@ -1199,8 +1203,10 @@ test('runs no-discovery overall from complete persisted dynamic N', async () => 
 
 test('validates the exact C2 review task and candidate fixtures', async () => {
   const task = await readJson(REVIEW_TASK_FIXTURE_URL);
+  const attachmentTask = await readJson(REVIEW_ATTACHMENT_TASK_FIXTURE_URL);
   const candidate = await readJson(REVIEW_CANDIDATE_FIXTURE_URL);
   validatePayload('review-task', task);
+  validatePayload('review-task', attachmentTask);
   validatePayload('review-candidate', { task, candidate });
 });
 
@@ -1280,6 +1286,104 @@ test('runs INTERACTIVE_REVIEW through only the five-tool C2 contract', async () 
     ],
   );
   assert.ok(calls.every(({ name }) => INTERACTIVE_REVIEW_TOOLS.includes(name)));
+});
+
+test('reads a Host-authorized attachment through the C2 SourceRef path', async () => {
+  const reviewTask = await readJson(REVIEW_ATTACHMENT_TASK_FIXTURE_URL);
+  const baseCandidate = await readJson(REVIEW_CANDIDATE_FIXTURE_URL);
+  const attachmentRef = reviewTask.attachmentRefs[0];
+  const attachmentResource = reviewTask.resourceRefs.find(
+    ({ sourceRefId }) => sourceRefId === attachmentRef,
+  );
+  const candidate = {
+    ...baseCandidate,
+    reviewConversationRef: reviewTask.reviewConversationRef,
+    reviewTurnRef: reviewTask.reviewTurnRef,
+    responseType: 'CANDIDATE_EVIDENCE',
+    answer: '本候选仅分析 Host 本轮授权并解析后的附件内容。',
+    sourceRefs: [attachmentRef],
+    missingInputs: [],
+    candidateEvidenceRefs: [attachmentRef],
+  };
+  const task = makeTask(
+    'OPENCLAW_INTERACTIVE_REVIEW',
+    reviewTask,
+    [],
+    reviewTask.resourceRefs.map(
+      ({ resourceArtifactRef, resourceArtifactSha256 }) => ({
+        ref: resourceArtifactRef,
+        sha256: resourceArtifactSha256,
+      }),
+    ),
+  );
+  const begin = runningBegin(task);
+  const calls = [];
+  let modelInput;
+  const callTool = async (name, args) => {
+    calls.push({ name, args });
+    if (name === 'begin_review_turn') return begin;
+    if (name === 'get_review_turn_context') {
+      return reviewContext(task, reviewTask);
+    }
+    if (name === 'read_source_refs') {
+      return {
+        schemaVersion: 'wiselink.3_1.review_source_refs.v1.c2',
+        attemptRef: task.operationRef,
+        sourceRefs: args.sourceRefIds.map((sourceRefId) =>
+          structuredClone(
+            reviewTask.resourceRefs.find(
+              (resource) => resource.sourceRefId === sourceRefId,
+            ).value,
+          ),
+        ),
+      };
+    }
+    if (name === 'commit_review_turn_candidate') {
+      validatePayload('result-envelope', { task, result: args.result });
+      assert.deepEqual(args.result.sourceRefs, [
+        {
+          ref: attachmentResource.resourceArtifactRef,
+          sha256: attachmentResource.resourceArtifactSha256,
+        },
+      ]);
+      return reviewCommit(task.operationRef);
+    }
+    throw new Error(`UNEXPECTED_TOOL:${name}`);
+  };
+  const result = await runInteractiveReviewTurn({
+    mode: 'INTERACTIVE_REVIEW',
+    reviewConversationRef: reviewTask.reviewConversationRef,
+    requestId: reviewTask.requestId,
+    callTool,
+    respond: async ({ input, readSourceRefs }) => {
+      modelInput = input;
+      const refs = await readSourceRefs([attachmentRef]);
+      assert.deepEqual(refs, [attachmentResource.value]);
+      return { output: candidate, provenance: provenance() };
+    },
+  });
+  assert.equal(result.outcome, 'CANDIDATE_ONLY');
+  assert.deepEqual(modelInput.attachmentRefs, [attachmentRef]);
+  assert.ok(modelInput.availableSourceRefIds.includes(attachmentRef));
+  assert.equal(
+    JSON.stringify(modelInput).includes(attachmentResource.resourceArtifactRef),
+    false,
+  );
+  assert.equal(
+    JSON.stringify(modelInput).includes(
+      attachmentResource.resourceArtifactSha256,
+    ),
+    false,
+  );
+  assert.deepEqual(
+    calls.map(({ name }) => name),
+    [
+      'begin_review_turn',
+      'get_review_turn_context',
+      'read_source_refs',
+      'commit_review_turn_candidate',
+    ],
+  );
 });
 
 test('uses read-only status recovery for COMMITTING review attempts', async () => {
@@ -1378,7 +1482,7 @@ test('recovers review commit response loss by matching the sealed result hash', 
   );
 });
 
-test('fails closed for attachment, search, compare, and resynthesis expansion', async () => {
+test('fails closed for invalid attachment relations and unavailable expansion', async () => {
   const task = await readJson(REVIEW_TASK_FIXTURE_URL);
   const candidate = await readJson(REVIEW_CANDIDATE_FIXTURE_URL);
 
@@ -1386,9 +1490,28 @@ test('fails closed for attachment, search, compare, and resynthesis expansion', 
     () =>
       validatePayload('review-task', {
         ...task,
-        attachmentRefs: ['attachment://unavailable'],
+        attachmentRefs: ['ATTACHMENT-not-in-resource-refs'],
       }),
-    /REVIEW_TASK_ATTACHMENTS_OUT_OF_SCOPE/u,
+    /REVIEW_TASK_ATTACHMENT_REF_NOT_ALLOWED/u,
+  );
+  assert.throws(
+    () =>
+      validatePayload('review-task', {
+        ...task,
+        attachmentRefs: [
+          task.resourceRefs[0].sourceRefId,
+          task.resourceRefs[0].sourceRefId,
+        ],
+      }),
+    /REVIEW_TASK_ATTACHMENTS_DUPLICATE/u,
+  );
+  assert.throws(
+    () =>
+      validatePayload('review-task', {
+        ...task,
+        attachmentRefs: [''],
+      }),
+    /REVIEW_TASK_ATTACHMENTS_INVALID/u,
   );
   assert.throws(
     () =>
@@ -1411,6 +1534,87 @@ test('fails closed for attachment, search, compare, and resynthesis expansion', 
   );
   assert.equal(task.allowedOperations.includes('COMPARE_REVISIONS'), false);
   assert.equal(task.allowedOperations.includes('REEVALUATE_AFFECTED'), false);
+});
+
+test('rejects duplicate or unknown attachment refs before context and model', async (t) => {
+  const reviewTask = await readJson(REVIEW_ATTACHMENT_TASK_FIXTURE_URL);
+  const attachmentRef = reviewTask.attachmentRefs[0];
+  const cases = [
+    {
+      name: 'duplicate',
+      attachmentRefs: [attachmentRef, attachmentRef],
+      error: /REVIEW_TASK_ATTACHMENTS_DUPLICATE/u,
+    },
+    {
+      name: 'unknown',
+      attachmentRefs: ['ATTACHMENT-from-another-resource'],
+      error: /REVIEW_TASK_ATTACHMENT_REF_NOT_ALLOWED/u,
+    },
+  ];
+
+  for (const testCase of cases) {
+    await t.test(testCase.name, async () => {
+      const invalidReviewTask = {
+        ...structuredClone(reviewTask),
+        attachmentRefs: testCase.attachmentRefs,
+      };
+      const task = makeTask('OPENCLAW_INTERACTIVE_REVIEW', invalidReviewTask);
+      const calls = [];
+      let respondCallCount = 0;
+      const callTool = async (name) => {
+        calls.push(name);
+        if (name === 'begin_review_turn') return runningBegin(task);
+        throw new Error(`UNEXPECTED_TOOL:${name}`);
+      };
+      await assert.rejects(
+        runInteractiveReviewTurn({
+          mode: 'INTERACTIVE_REVIEW',
+          reviewConversationRef: reviewTask.reviewConversationRef,
+          requestId: reviewTask.requestId,
+          callTool,
+          respond: async () => {
+            respondCallCount += 1;
+            throw new Error('MODEL_MUST_NOT_RUN');
+          },
+        }),
+        testCase.error,
+      );
+      assert.deepEqual(calls, ['begin_review_turn']);
+      assert.equal(respondCallCount, 0);
+    });
+  }
+});
+
+test('rejects cross-resource review context before model execution', async () => {
+  const reviewTask = await readJson(REVIEW_ATTACHMENT_TASK_FIXTURE_URL);
+  const task = makeTask('OPENCLAW_INTERACTIVE_REVIEW', reviewTask);
+  const calls = [];
+  let respondCallCount = 0;
+  const callTool = async (name) => {
+    calls.push(name);
+    if (name === 'begin_review_turn') return runningBegin(task);
+    if (name === 'get_review_turn_context') {
+      const context = reviewContext(task, reviewTask);
+      context.resourceRefs[1].sourceRefId = 'ATTACHMENT-from-another-resource';
+      return context;
+    }
+    throw new Error(`UNEXPECTED_TOOL:${name}`);
+  };
+  await assert.rejects(
+    runInteractiveReviewTurn({
+      mode: 'INTERACTIVE_REVIEW',
+      reviewConversationRef: reviewTask.reviewConversationRef,
+      requestId: reviewTask.requestId,
+      callTool,
+      respond: async () => {
+        respondCallCount += 1;
+        throw new Error('MODEL_MUST_NOT_RUN');
+      },
+    }),
+    /HOST_MCP_REVIEW_CONTEXT_RESOURCE_REFS_MISMATCH/u,
+  );
+  assert.deepEqual(calls, ['begin_review_turn', 'get_review_turn_context']);
+  assert.equal(respondCallCount, 0);
 });
 
 test('rejects tenant, credential, FileService, raw PDF, or Fleet leakage', async () => {
@@ -1550,7 +1754,12 @@ function applicabilityProvenance(overrides = {}) {
   });
 }
 
-function makeTask(taskType, modelInput, hostResolvedMissingInputs = []) {
+function makeTask(
+  taskType,
+  modelInput,
+  hostResolvedMissingInputs = [],
+  sourceRefs = [{ ref: ARTIFACT_REF, sha256: ARTIFACT_SHA }],
+) {
   const unsealed = {
     schemaVersion: 'wiselink.3_1.openclaw_task_envelope.v1',
     actionAttemptId: `ATT-${taskType}`,
@@ -1562,7 +1771,7 @@ function makeTask(taskType, modelInput, hostResolvedMissingInputs = []) {
     inputRevision: 7,
     baseRevision: 7,
     documentVersionId: 'DV-fixture-001',
-    sourceRefs: [{ ref: ARTIFACT_REF, sha256: ARTIFACT_SHA }],
+    sourceRefs: structuredClone(sourceRefs),
     allowedConnectors: [],
     hostResolvedMissingInputs: structuredClone(hostResolvedMissingInputs),
     modelInput: structuredClone(modelInput),
@@ -1984,7 +2193,9 @@ function synthesisOutput(input) {
           'The fleet match remains unknown until the source-required facts are available.',
         ),
         requiredFacts: [
-          statement('Obtain the controlled facts required by source effectivity.'),
+          statement(
+            'Obtain the controlled facts required by source effectivity.',
+          ),
         ],
       },
       implementationImpact: [
