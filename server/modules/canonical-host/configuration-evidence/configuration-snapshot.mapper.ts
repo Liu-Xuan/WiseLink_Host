@@ -69,16 +69,20 @@ export function mapConfigurationSnapshot(input: {
       throw new Error('CONFIGURATION_SNAPSHOT_DUPLICATE_TARGET');
     }
     seenTargets.add(targetKey);
+    const observationVersion: string =
+      configurationObservationVersion(projection);
 
     const sourceSliceRef: string = configurationSourceSliceRef(
       input.aircraftAssetId,
       input.assessmentAsOf,
       targetKey,
+      observationVersion,
     );
     const factAssertionId: string = configurationSnapshotFactId(
       input.aircraftAssetId,
       input.assessmentAsOf,
       targetKey,
+      observationVersion,
     );
     const sourceSlice: ConfigurationSnapshotSourceSlice = mapSourceSlice(
       projection,
@@ -176,12 +180,37 @@ export function configurationSourceSliceRef(
   aircraftAssetId: string,
   assessmentAsOf: string,
   targetKey: string,
+  observationVersion: string,
 ): string {
   return scopedRef(
     'CONFIGURATION-SNAPSHOT-SOURCE',
     aircraftAssetId,
     assessmentAsOf,
     targetKey,
+    observationVersion,
+  );
+}
+
+export function configurationObservationVersion(
+  projection: InstallationEventEvidenceProjection,
+): string {
+  const sourceSystem: string | null =
+    projection.sourceObservation?.sourceSystem ?? null;
+  const sourceRevision: string | null =
+    projection.sourceObservation?.sourceRevision ?? null;
+  const sourceObservedAt: string | null =
+    projection.sourceObservation?.observedAt ?? null;
+  const evidenceRecordIds: string[] = projection.evidenceRecords
+    .map(
+      (record: InstallationEvidenceRecordProjection) => record.evidenceRecordId,
+    )
+    .sort((left: string, right: string) => left.localeCompare(right));
+  return targetKeyParts(
+    projection.sourceStatus,
+    sourceSystem,
+    sourceRevision,
+    sourceObservedAt,
+    ...evidenceRecordIds,
   );
 }
 
@@ -216,6 +245,7 @@ export function configurationDependencyObservation(
     sourceStatus: projection.sourceStatus,
     sourceSystem: projection.sourceObservation?.sourceSystem ?? null,
     sourceRevision: projection.sourceObservation?.sourceRevision ?? null,
+    sourceObservedAt: projection.sourceObservation?.observedAt ?? null,
     sourceFreshness: projection.sourceObservation?.freshness ?? null,
     sourceErrorCode: projection.sourceError?.code ?? null,
     coverage: structuredClone(projection.coverage),
@@ -563,12 +593,14 @@ function configurationSnapshotFactId(
   aircraftAssetId: string,
   assessmentAsOf: string,
   targetKey: string,
+  observationVersion: string,
 ): string {
   return scopedRef(
     'CONFIGURATION-SNAPSHOT-FACT',
     aircraftAssetId,
     assessmentAsOf,
     targetKey,
+    observationVersion,
   );
 }
 

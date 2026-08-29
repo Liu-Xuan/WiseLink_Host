@@ -1,5 +1,6 @@
 import type {
   ConfigurationEvidenceTarget,
+  GetInstallationEventsCompleteResult,
   GetInstallationEventsQuery,
   InstallationEventPayload,
   InstallationEventSourceRecord,
@@ -306,6 +307,11 @@ describe('configuration snapshot mapper', () => {
         snapshot,
         incomingProjections: [incomingEquipment],
       });
+    const replayedStaleSnapshot: ConfigurationSnapshot =
+      markDependentConfigurationPredicateTracesStale({
+        snapshot: staleSnapshot,
+        incomingProjections: [incomingEquipment],
+      });
     const originalEquipmentTrace: ConfigurationPredicateTrace = traceFor(
       snapshot,
       'EQUIPMENT',
@@ -345,6 +351,99 @@ describe('configuration snapshot mapper', () => {
     expect(
       snapshot.predicateTraces.every((trace) => trace.staleReason === null),
     ).toBe(true);
+    expect(replayedStaleSnapshot).toEqual(staleSnapshot);
+  });
+
+  it('versions same-target same-as-of identities for revised evidence', () => {
+    const query: GetInstallationEventsQuery = aircraftEquipmentQuery();
+    const initialRecord: InstallationEventSourceRecord = equipmentEventRecord(
+      'INSTALL',
+      'COMPONENT:AIMS2:P1',
+      'P1',
+      1,
+    );
+    initialRecord.recordId = 'WORK-ORDER:AIMS2:P1:CURRENT';
+    initialRecord.revision = 'REV-1';
+    const initialResult: GetInstallationEventsCompleteResult = completeResult(
+      query,
+      [initialRecord],
+    );
+    initialResult.source.sourceRevision = 'SOURCE-OBSERVATION-REV-1';
+    initialResult.source.observedAt = '2026-08-29T12:00:00.000Z';
+    const revisedRecord: InstallationEventSourceRecord = equipmentEventRecord(
+      'REMOVE',
+      'COMPONENT:AIMS2:P1',
+      'P1',
+      2,
+    );
+    revisedRecord.recordId = initialRecord.recordId;
+    revisedRecord.revision = 'REV-2';
+    const revisedResult: GetInstallationEventsCompleteResult = completeResult(
+      query,
+      [revisedRecord],
+    );
+    revisedResult.source.sourceRevision = 'SOURCE-OBSERVATION-REV-2';
+    revisedResult.source.observedAt = '2026-08-29T13:00:00.000Z';
+    const initialProjection: InstallationEventEvidenceProjection =
+      mapInstallationEventEvidence({ query, result: initialResult });
+    const revisedProjection: InstallationEventEvidenceProjection =
+      mapInstallationEventEvidence({ query, result: revisedResult });
+
+    const initialSnapshot: ConfigurationSnapshot = snapshotFrom([
+      initialProjection,
+    ]);
+    const revisedSnapshot: ConfigurationSnapshot = snapshotFrom([
+      revisedProjection,
+    ]);
+    const staleInitialSnapshot: ConfigurationSnapshot =
+      markDependentConfigurationPredicateTracesStale({
+        snapshot: initialSnapshot,
+        incomingProjections: [revisedProjection],
+      });
+
+    expect(initialSnapshot.facts[0].truth).toBe('TRUE');
+    expect(revisedSnapshot.facts[0].truth).toBe('FALSE');
+    expect(initialSnapshot.sourceSlices[0].query).toEqual(
+      revisedSnapshot.sourceSlices[0].query,
+    );
+    expect(initialSnapshot.sourceSlices[0].sourceSliceRef).not.toBe(
+      revisedSnapshot.sourceSlices[0].sourceSliceRef,
+    );
+    expect(initialSnapshot.sourceSlices[0].sourceSliceRef).toContain(
+      'SOURCE-OBSERVATION-REV-1',
+    );
+    expect(revisedSnapshot.sourceSlices[0].sourceSliceRef).toContain(
+      'SOURCE-OBSERVATION-REV-2',
+    );
+    expect(initialSnapshot.facts[0].factAssertionId).not.toBe(
+      revisedSnapshot.facts[0].factAssertionId,
+    );
+    expect(initialSnapshot.predicateTraces[0].predicateTraceId).not.toBe(
+      revisedSnapshot.predicateTraces[0].predicateTraceId,
+    );
+    expect(
+      new Set<string>([
+        staleInitialSnapshot.facts[0].factAssertionId,
+        revisedSnapshot.facts[0].factAssertionId,
+      ]).size,
+    ).toBe(2);
+    expect(staleInitialSnapshot.facts[0].truth).toBe('TRUE');
+    expect(staleInitialSnapshot.predicateTraces[0].status).toBe('STALE');
+    expect(
+      staleInitialSnapshot.predicateTraces[0].staleReason
+        ?.incomingSourceSliceRef,
+    ).toBe(revisedSnapshot.sourceSlices[0].sourceSliceRef);
+    expect(
+      revisedSnapshot.predicateTraces[0].dependencyObservation.sourceObservedAt,
+    ).toBe('2026-08-29T13:00:00.000Z');
+    expect(staleInitialSnapshot.evidenceRecordRefs).toEqual(
+      initialSnapshot.evidenceRecordRefs,
+    );
+    expect(revisedSnapshot.evidenceRecordRefs[0]).toMatchObject({
+      recordId: initialRecord.recordId,
+      revision: 'REV-2',
+      evidenceRole: 'REMOVAL_EVENT_EVIDENCE',
+    });
   });
 });
 

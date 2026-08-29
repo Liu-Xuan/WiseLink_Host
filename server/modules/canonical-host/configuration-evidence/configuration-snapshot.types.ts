@@ -111,6 +111,7 @@ export interface ConfigurationPredicateDependencyObservation {
   sourceStatus: GetInstallationEventsResult['status'];
   sourceSystem: string | null;
   sourceRevision: string | null;
+  sourceObservedAt: string | null;
   sourceFreshness: ConfigurationEvidenceFreshness | null;
   sourceErrorCode: string | null;
   coverage: InstallationEventQueryCoverage;

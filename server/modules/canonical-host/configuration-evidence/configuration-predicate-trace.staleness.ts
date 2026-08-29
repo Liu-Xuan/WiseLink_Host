@@ -1,6 +1,7 @@
 import type { InstallationEventEvidenceProjection } from './installation-event-evidence.types';
 import {
   configurationDependencyObservation,
+  configurationObservationVersion,
   configurationSourceSliceRef,
   configurationTargetKey,
 } from './configuration-snapshot.mapper';
@@ -50,11 +51,12 @@ export function markDependentConfigurationPredicateTracesStale(input: {
         status: 'STALE',
         staleReason: {
           code: 'DEPENDENCY_OBSERVATION_CHANGED',
-          previousStatus: trace.status,
+          previousStatus: trace.staleReason?.previousStatus ?? trace.status,
           incomingSourceSliceRef: configurationSourceSliceRef(
             incoming.query.aircraft.assetId,
             incoming.query.assessmentAsOf,
             trace.dependencySelector.targetKey,
+            configurationObservationVersion(incoming),
           ),
           incomingSourceStatus: incoming.sourceStatus,
           incomingSourceSystem:
@@ -90,6 +92,7 @@ function sameObservation(
     left.sourceStatus === right.sourceStatus &&
     left.sourceSystem === right.sourceSystem &&
     left.sourceRevision === right.sourceRevision &&
+    left.sourceObservedAt === right.sourceObservedAt &&
     left.sourceFreshness === right.sourceFreshness &&
     left.sourceErrorCode === right.sourceErrorCode &&
     left.truth === right.truth &&
