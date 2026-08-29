@@ -162,6 +162,12 @@ describe('single canonical app workspace', () => {
     expect(glass).not.toContain('brightness(1.035)');
     expect(glass).toContain("data-wl-visual-mode='compatible'");
     expect(glass).toContain('brightness(1.04)');
+    expect(glass).toMatch(
+      /html\[data-wl-transparency='reduced'\] \.wl-light \{\s+display: none;\s+animation: none !important;\s+\}/,
+    );
+    expect(glass).toMatch(
+      /html\[data-wl-visual-mode='ultra'\] \.wl-light--cold \{\s+animation-duration: 22s;\s+\}/,
+    );
     expect(indexStyles).toContain('#root');
     expect(indexStyles).toContain('min-height: 100dvh');
     expect(homeStyles).toContain('.library-tree-panel .wl-navigator');

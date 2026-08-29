@@ -325,6 +325,11 @@ html[data-wl-transparency='reduced'] .wl-workbench-drawer-scrim {
   backdrop-filter: none !important;
 }
 
+html[data-wl-transparency='reduced'] .wl-light {
+  display: none;
+  animation: none !important;
+}
+
 @media (prefers-reduced-transparency: reduce) {
   :is(
     .wl-glass-nav,
