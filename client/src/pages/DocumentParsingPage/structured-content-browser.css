@@ -401,6 +401,22 @@ html[data-wl-transparency='reduced'] .structured-browser-unit {
 }
 
 @media (max-width: 720px) {
+  .structured-browser button,
+  .structured-browser input,
+  .structured-browser summary,
+  .structured-browser a {
+    min-height: 44px;
+  }
+
+  .structured-browser button {
+    min-width: 44px;
+  }
+
+  .structured-browser-mobile-outline summary,
+  .structured-browser-mobile-outline a {
+    align-items: center;
+  }
+
   .structured-browser-header {
     grid-template-columns: minmax(0, 1fr);
     padding: 14px;

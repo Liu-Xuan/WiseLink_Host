@@ -33,6 +33,8 @@ describe('single canonical app workspace', () => {
       visualModeStyles,
       appShellStyles,
       quickOpen,
+      pdfSourceStyles,
+      structuredBrowserStyles,
     ] = await Promise.all([
       source('client/src/app.tsx'),
       source('client/src/components/Layout.tsx'),
@@ -67,6 +69,10 @@ describe('single canonical app workspace', () => {
       source('client/src/components/visual-mode-control.css'),
       source('client/src/components/app-shell.css'),
       source('client/src/features/workbench/QuickOpen.tsx'),
+      source('client/src/pages/DocumentParsingPage/pdf-source-pane.css'),
+      source(
+        'client/src/pages/DocumentParsingPage/structured-content-browser.css',
+      ),
     ]);
 
     expect(routes).toContain('WorkspaceHomePage');
@@ -191,6 +197,36 @@ describe('single canonical app workspace', () => {
     expect(appShellStyles).not.toContain('font-size: 8px');
     expect(visualModeStyles).toMatch(
       /\.wiselink-app-header\s+\.wl-visual-mode-trigger\s*\{\s*min-width:\s*44px;\s*width:\s*44px;\s*min-height:\s*44px;/,
+    );
+    expect(workbenchStyles).toContain(
+      'padding-bottom: var(--wl-workbench-mobilebar-height)',
+    );
+    expect(workbenchStyles).toContain(
+      '57px + env(safe-area-inset-bottom, 0px)',
+    );
+    expect(workbenchStyles).toContain(
+      'inset: 45px 0 var(--wl-workbench-mobilebar-height)',
+    );
+    expect(workbenchStyles).toMatch(
+      /\.wl-workbench-toolbar\s+\.wl-workbench-tool-btn\s*\{\s*width:\s*44px;\s*height:\s*44px;\s*min-width:\s*44px;/,
+    );
+    expect(workbenchStyles).toMatch(
+      /\.wl-workbench-toolbar\s+\.wl-visual-mode-trigger\s*\{\s*width:\s*44px;\s*height:\s*44px;\s*min-width:\s*44px;\s*min-height:\s*44px;/,
+    );
+    expect(workbenchStyles).toMatch(
+      /\.wl-workbench-drawer-close\s*\{[\s\S]*?min-height:\s*44px;/,
+    );
+    expect(workbenchStyles).toMatch(
+      /\.wl-workbench-mobile-tab\s*\{\s*display:\s*flex;\s*min-width:\s*44px;\s*min-height:\s*44px;/,
+    );
+    expect(pdfSourceStyles).toMatch(
+      /\.parse-pdf-toolbar button\s*\{\s*width:\s*44px;\s*height:\s*44px;/,
+    );
+    expect(pdfSourceStyles).toMatch(
+      /\.parse-pdf-page-controls input\s*\{\s*width:\s*52px;\s*height:\s*44px;/,
+    );
+    expect(structuredBrowserStyles).toMatch(
+      /\.structured-browser button,\s*\.structured-browser input,\s*\.structured-browser summary,\s*\.structured-browser a\s*\{\s*min-height:\s*44px;/,
     );
     expect(documentParsingStyles).toMatch(
       /\.parse-reader-split\.is-pdf-active\s*>\s*\.parse-pdf-pane\s*\{\s*display:\s*flex;/,

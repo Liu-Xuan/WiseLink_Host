@@ -392,7 +392,11 @@ html[data-wl-transparency='reduced'] .parse-pdf-toolbar {
 
   .parse-pdf-page-controls input {
     width: 52px;
-    height: 42px;
+    height: 44px;
+  }
+
+  .parse-pdf-located-actions button {
+    min-height: 44px;
   }
 
   .parse-pdf-pages {
