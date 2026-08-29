@@ -246,7 +246,11 @@ export interface ProfessionalInputSourceArtifactInput {
 
 export interface ProfessionalInputDocumentIdentityInput {
   documentCode: string;
-  documentType: 'service_bulletin' | 'oem_reference';
+  documentType:
+    | 'service_bulletin'
+    | 'service_letter'
+    | 'airworthiness_directive'
+    | 'oem_reference';
   language: string;
 }
 

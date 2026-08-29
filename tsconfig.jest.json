@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.node.json",
+  "compilerOptions": {
+    "allowJs": true,
+    "noEmit": true,
+    "types": ["node", "jest"]
+  },
+  "include": ["server/**/*", "shared/**/*.ts", "test/unit/**/*.ts"],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "client",
+    "source_package",
+    "**/*.e2e-spec.ts"
+  ]
+}

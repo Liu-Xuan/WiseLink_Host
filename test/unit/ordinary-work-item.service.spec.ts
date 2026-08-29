@@ -113,7 +113,7 @@ function target() {
         pdfSha256: 'a'.repeat(64),
         byteLength: 1024,
       },
-      family: { documentFamily: 'SB' },
+      family: { documentFamily: 'SB', issuerAuthority: 'BOEING' },
       artifact: {
         providerObjectId: 'drive-token-sb',
         providerVersionId: 'drive-version-sb',

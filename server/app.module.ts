@@ -7,7 +7,7 @@ import { CanonicalHostModule } from './modules/canonical-host/canonical-host.mod
 import { DocumentManagementRuntimeModule } from './modules/document-management-runtime/document-management-runtime.module';
 import { RuntimeProbeModule } from './modules/runtime-probe/runtime-probe.module';
 import { ExternalDiscoveryModule } from './modules/external-discovery/external-discovery.module';
-import { ExactFtdFrozen2PdfProducerAdapter } from './modules/canonical-host/exact-ftd-frozen2-pdf-producer.adapter';
+import { HostNativeDocumentFamilyPdfProducerAdapter } from './modules/canonical-host/exact-ftd-frozen2-pdf-producer.adapter';
 import { MiaodaCanonicalWorkItemRegistrarAdapter } from './modules/work-item/miaoda-canonical-work-item-registrar.adapter';
 import {
   OrdinaryCanonicalAuthorizationAdapter,
@@ -48,7 +48,7 @@ import { ReviewPersistenceModule } from './modules/review-persistence/review-per
       },
       pdfProducerProvider: {
         provide: CANONICAL_PDF_PRODUCER,
-        useExisting: ExactFtdFrozen2PdfProducerAdapter,
+        useExisting: HostNativeDocumentFamilyPdfProducerAdapter,
       },
       authorizationProvider: {
         provide: CANONICAL_AUTHORIZATION,

@@ -6,8 +6,7 @@ import type {
   CanonicalPdfVerticalRunRequest,
 } from '@shared/api.interface';
 import { MiaodaFileServiceArtifactStore } from '../document-management/src/hosted/miaodaFileServiceArtifactStore.js';
-import { PHASE5_737_34_3830_HANDOFF } from '../document-management/src/hosted/phase5BoeingSbHandoff.js';
-import { runProfessionalInputPipeline } from '../professional-input/builders/professional-input-pipeline';
+import { runProfessionalInputPipelineFromLayout } from '../professional-input/builders/professional-input-pipeline';
 import { PdfjsDistLayoutExtractor } from '../professional-input/parser/pdfjs-dist-layout-extractor.adapter';
 import { MiaodaDocumentVersionSourceResolver } from '../work-item/miaoda-document-version-source.resolver';
 import { U0FullValidationService } from '../unified-reader/u0-full-validation.service';
@@ -21,85 +20,14 @@ import {
   type ScopedProfessionalArtifactCorrelation,
   type ScopedProfessionalArtifactCorrelationPort,
 } from './scoped-professional-artifact-correlation.port';
-
-type HostNativePdfProfile = {
-  family: string;
-  parserProfileId: string;
-  parserProfileHash: string;
-  requiredClassification?: {
-    status: 'CONFIRMED';
-    classifierReleaseId: string;
-    classifierReleaseHash: string;
-    fingerprint: string;
-  };
-  exactSource?: {
-    sha256: string;
-    byteLength: number;
-    documentCode: string;
-    businessRevision: string;
-  };
-  documentType: 'service_bulletin';
-  presentationMode: 'ENGINEERING_DOCUMENT';
-  executionRoute: string;
-};
-
-const FTD_PROFILE: HostNativePdfProfile = {
-  family: 'FTD',
-  parserProfileId: 'parser-profile:boeing.ftd.v1@1.0.0',
-  parserProfileHash:
-    'sha256:c47a7388da23d106c2476b579308c458332127153930ced8c684212f1b431731',
-  documentType: 'service_bulletin',
-  presentationMode: 'ENGINEERING_DOCUMENT',
-  executionRoute:
-    'file_service_source->host_native_pdf_pipeline->host_scoped_professional_artifact->u0_frozen2_strict_validator',
-};
-
-function exact737SbProfile(): HostNativePdfProfile | null {
-  const handoff = PHASE5_737_34_3830_HANDOFF;
-  const source = recordValue(handoff.source);
-  const descriptor = recordValue(handoff.descriptor);
-  const classification = recordValue(handoff.canonicalHostClassification);
-  if (
-    classification.status !== 'CONFIRMED' ||
-    classification.normalizedFamily !== 'SB' ||
-    !isNonEmptyString(classification.classifierReleaseId) ||
-    !isNonEmptyString(classification.classifierReleaseHash) ||
-    !isNonEmptyString(classification.parserProfileId) ||
-    !isNonEmptyString(classification.parserProfileHash) ||
-    !isNonEmptyString(classification.fingerprint) ||
-    !isNonEmptyString(source.sha256) ||
-    !Number.isSafeInteger(source.byteLength) ||
-    Number(source.byteLength) <= 0 ||
-    !isNonEmptyString(descriptor.documentCode) ||
-    !isNonEmptyString(descriptor.businessRevision)
-  ) {
-    return null;
-  }
-  return {
-    family: 'SB',
-    parserProfileId: classification.parserProfileId,
-    parserProfileHash: classification.parserProfileHash,
-    requiredClassification: {
-      status: 'CONFIRMED',
-      classifierReleaseId: classification.classifierReleaseId,
-      classifierReleaseHash: classification.classifierReleaseHash,
-      fingerprint: classification.fingerprint,
-    },
-    exactSource: {
-      sha256: source.sha256,
-      byteLength: Number(source.byteLength),
-      documentCode: descriptor.documentCode,
-      businessRevision: descriptor.businessRevision,
-    },
-    documentType: 'service_bulletin',
-    presentationMode: 'ENGINEERING_DOCUMENT',
-    executionRoute:
-      'file_service_source->host_native_pdf_pipeline->host_scoped_professional_artifact->u0_frozen2_strict_validator',
-  };
-}
+import {
+  matchesHostNativePdfClassification,
+  recognizeHostNativePdfProfile,
+  type HostNativePdfProfile,
+} from './host-native-pdf-profile.registry';
 
 @Injectable()
-export class ExactFtdFrozen2PdfProducerAdapter implements CanonicalPdfProducerPort {
+export class HostNativeDocumentFamilyPdfProducerAdapter implements CanonicalPdfProducerPort {
   constructor(
     private readonly fileService: FileService,
     private readonly resolver: MiaodaDocumentVersionSourceResolver,
@@ -112,14 +40,6 @@ export class ExactFtdFrozen2PdfProducerAdapter implements CanonicalPdfProducerPo
   async producePdf(
     request: CanonicalPdfVerticalRunRequest,
   ): Promise<CanonicalPdfProducerResult> {
-    const profile = selectHostNativePdfProfile(request);
-    if (!profile) {
-      return failureSignal(
-        'PDF_PRODUCER_PROFILE_NOT_AVAILABLE',
-        'No Host-native PDF producer profile matches this classification.',
-        'dm_document_version->host_native_pdf_pipeline',
-      );
-    }
     const resolved = await this.resolver.resolve(
       request.source.documentVersionId,
       { requireCurrent: true },
@@ -131,14 +51,13 @@ export class ExactFtdFrozen2PdfProducerAdapter implements CanonicalPdfProducerPo
       resolved.version.pdfSha256 !== resolved.artifact.sha256 ||
       Number(resolved.version.byteLength) !==
         Number(resolved.artifact.byteLength) ||
-      resolved.family.documentFamily !== profile.family ||
+      resolved.family.documentFamily !==
+        request.classification.normalizedFamily ||
       resolved.artifact.sourceArtifactId !== request.source.sourceArtifactId ||
       resolved.artifact.mediaType !== 'application/pdf' ||
       request.source.sourceFileSha256 !==
         `sha256:${resolved.artifact.sha256}` ||
-      request.source.sourceByteLength !==
-        Number(resolved.artifact.byteLength) ||
-      !matchesResolvedExactSource(profile, resolved)
+      request.source.sourceByteLength !== Number(resolved.artifact.byteLength)
     ) {
       throw new Error('PDF_PRODUCER_DOCUMENT_VERSION_READBACK_MISMATCH');
     }
@@ -157,6 +76,25 @@ export class ExactFtdFrozen2PdfProducerAdapter implements CanonicalPdfProducerPo
       throw new Error('PDF_PRODUCER_SOURCE_READBACK_MISMATCH');
     }
 
+    const layout = new PdfjsDistLayoutExtractor().extractLayout(
+      sourceSelection.bytes,
+    );
+    const profile = recognizeHostNativePdfProfile(
+      layout,
+      resolved.family.documentFamily,
+    );
+    if (
+      !profile ||
+      !matchesHostNativePdfClassification(profile, request.classification) ||
+      !matchesResolvedIssuer(profile, resolved.family.issuerAuthority)
+    ) {
+      return failureSignal(
+        'PDF_PRODUCER_PROFILE_NOT_AVAILABLE',
+        `No content-evidenced Host-native PDF producer profile matches the DM family and request classification (recognized=${profile?.adapterId ?? 'none'}, requested=${request.classification.parserProfileId}, family=${resolved.family.documentFamily}).`,
+        'dm_document_version->host_native_pdf_pipeline',
+      );
+    }
+
     if (!this.professionalCorrelations?.available) {
       return failureSignal(
         'PDF_PRODUCER_CORRELATION_UNAVAILABLE',
@@ -165,26 +103,22 @@ export class ExactFtdFrozen2PdfProducerAdapter implements CanonicalPdfProducerPo
       );
     }
 
-    const pipeline = runProfessionalInputPipeline(
-      {
-        pdfBytes: sourceSelection.bytes,
-        artifact: {
-          artifactRef: `artifact://CanonicalArtifactStore/${resolved.artifact.filePath.replace(/^\/+/, '')}`,
-          normalizedPath: resolved.version.originalFilename,
-        },
-        document: {
-          documentCode: resolved.family.canonicalDocumentNumber,
-          documentType: profile.documentType,
-          language: 'en-US',
-        },
-        lineage: {
-          generatedAt: new Date(resolved.version.committedAt).toISOString(),
-          producerName: 'WiseLinkCanonicalHostProfessionalInput',
-          producerVersion: 'professional-input-pure.v1.candidate.1',
-        },
+    const pipeline = runProfessionalInputPipelineFromLayout(layout, {
+      artifact: {
+        artifactRef: `artifact://CanonicalArtifactStore/${resolved.artifact.filePath.replace(/^\/+/, '')}`,
+        normalizedPath: resolved.version.originalFilename,
       },
-      { extractor: new PdfjsDistLayoutExtractor() },
-    );
+      document: {
+        documentCode: resolved.family.canonicalDocumentNumber,
+        documentType: profile.documentType,
+        language: 'en-US',
+      },
+      lineage: {
+        generatedAt: new Date(resolved.version.committedAt).toISOString(),
+        producerName: 'WiseLinkCanonicalHostProfessionalInput',
+        producerVersion: 'professional-input-pure.v1.candidate.1',
+      },
+    });
     await this.validator.validate(pipeline.u0Input);
 
     const correlationRequest = {
@@ -282,66 +216,22 @@ export class ExactFtdFrozen2PdfProducerAdapter implements CanonicalPdfProducerPo
   }
 }
 
-function selectHostNativePdfProfile(
-  request: CanonicalPdfVerticalRunRequest,
-): HostNativePdfProfile | null {
-  const exactSb = exact737SbProfile();
-  const profiles = exactSb ? [FTD_PROFILE, exactSb] : [FTD_PROFILE];
-  return (
-    profiles.find(
-      (profile) =>
-        request.classification.normalizedFamily === profile.family &&
-        request.classification.parserProfileId === profile.parserProfileId &&
-        request.classification.parserProfileHash ===
-          profile.parserProfileHash &&
-        (!profile.requiredClassification ||
-          (request.classification.status ===
-            profile.requiredClassification.status &&
-            request.classification.classifierReleaseId ===
-              profile.requiredClassification.classifierReleaseId &&
-            request.classification.classifierReleaseHash ===
-              profile.requiredClassification.classifierReleaseHash &&
-            request.classification.fingerprint ===
-              profile.requiredClassification.fingerprint)) &&
-        (!profile.exactSource ||
-          (request.source.sourceFileSha256 ===
-            `sha256:${profile.exactSource.sha256}` &&
-            request.source.sourceByteLength ===
-              profile.exactSource.byteLength)),
-    ) || null
-  );
-}
-
-function matchesResolvedExactSource(
+function matchesResolvedIssuer(
   profile: HostNativePdfProfile,
-  resolved: {
-    version: { businessRevision?: string | null };
-    family: { canonicalDocumentNumber: string };
-    artifact: { sha256: string; byteLength: number };
-  },
+  issuerAuthority: string | null | undefined,
 ): boolean {
-  if (!profile.exactSource) return true;
-  return (
-    resolved.artifact.sha256 === profile.exactSource.sha256 &&
-    Number(resolved.artifact.byteLength) === profile.exactSource.byteLength &&
-    resolved.family.canonicalDocumentNumber ===
-      profile.exactSource.documentCode &&
-    normalizeBusinessRevisionForComparison(
-      resolved.version.businessRevision,
-    ) ===
-      normalizeBusinessRevisionForComparison(
-        profile.exactSource.businessRevision,
-      )
-  );
-}
-
-function normalizeBusinessRevisionForComparison(
-  value: string | null | undefined,
-): string {
-  return String(value ?? '')
+  const normalized = String(issuerAuthority ?? '')
     .trim()
     .replace(/\s+/gu, ' ')
     .toUpperCase();
+  if (!normalized) return false;
+  if (profile.issuerAuthority === 'FAA') {
+    return normalized === 'FAA' || normalized.includes('FEDERAL AVIATION');
+  }
+  if (profile.issuerAuthority === 'CAAC') {
+    return normalized.includes('CAAC') || normalized.includes('中国民用航空局');
+  }
+  return normalized.includes(profile.issuerAuthority);
 }
 
 function failureSignal(
@@ -472,14 +362,4 @@ function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
     left.byteLength === right.byteLength &&
     left.every((value, index) => value === right[index])
   );
-}
-
-function recordValue(value: unknown): Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
-function isNonEmptyString(value: unknown): value is string {
-  return typeof value === 'string' && value.trim().length > 0;
 }

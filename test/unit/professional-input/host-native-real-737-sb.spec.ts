@@ -59,7 +59,7 @@ import {
   type TranslationSourceUnit,
 } from '../../../server/modules/canonical-host/canonical-translation-rule-contract';
 import { buildUnifiedSbJobAidAssessmentInput } from '../../../server/modules/assessment-workbench/unified-assessment-input';
-import { ExactFtdFrozen2PdfProducerAdapter } from '../../../server/modules/canonical-host/exact-ftd-frozen2-pdf-producer.adapter';
+import { HostNativeDocumentFamilyPdfProducerAdapter } from '../../../server/modules/canonical-host/exact-ftd-frozen2-pdf-producer.adapter';
 import { scopedProfessionalArtifactRef } from '../../../server/modules/canonical-host/scoped-professional-artifact-correlation.port';
 import { Frozen2CandidateReaderService } from '../../../server/modules/unified-reader/frozen2-candidate-reader.service';
 import { PythonU0FullPackageValidatorAdapter } from '../../../server/modules/unified-reader/python-u0-full-package-validator.adapter';
@@ -205,6 +205,7 @@ describeRealSb(
         family: {
           familyId: 'publication_family_real_737_sb_test',
           documentFamily: 'SB',
+          issuerAuthority: 'BOEING',
           canonicalDocumentNumber: '737-34-3830',
           currentDocumentVersionId: documentVersionId,
           currentGeneration: 1,
@@ -237,7 +238,7 @@ describeRealSb(
           validatorRevision: 'professional-input-real-737-sb-test',
         }),
       );
-      const producer = new ExactFtdFrozen2PdfProducerAdapter(
+      const producer = new HostNativeDocumentFamilyPdfProducerAdapter(
         fileService as never,
         { resolve: resolveCurrent } as never,
         fullValidator,
@@ -247,8 +248,8 @@ describeRealSb(
             professionalBytes = Uint8Array.from(produced.bytes);
             return {
               schemaVersion:
-                'wiselink.3_1.scoped_professional_artifact_correlation.v1',
-              status: 'HOST_SCOPE_BOUND_IMMUTABLE',
+                'wiselink.3_1.scoped_professional_artifact_correlation.v1' as const,
+              status: 'HOST_SCOPE_BOUND_IMMUTABLE' as const,
               scope: {
                 workItemId: correlationRequest.workItemId,
                 documentVersionId: correlationRequest.documentVersionId,
@@ -395,7 +396,8 @@ describeRealSb(
           (ref) =>
             ref.charEnd === [...ref.quote].length &&
             ref.charOffsetUnit === 'unicode_scalar_value' &&
-            ref.anchorTextHash === `sha256:${sha256Raw(ref.quote)}` &&
+            ref.anchorTextHash ===
+              `sha256:${sha256Raw(new TextEncoder().encode(ref.quote))}` &&
             ref.quote !== 'Untitled',
         ),
       ).toBe(true);

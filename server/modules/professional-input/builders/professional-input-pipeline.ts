@@ -2,7 +2,10 @@ import { sha256Hex } from '../pure/canonical-hash';
 import { ProfessionalInputPureError } from '../pure/professional-input-pure.error';
 import type {
   ParsedPdfLayout,
+  ProfessionalInputDocumentIdentityInput,
   ProfessionalInputPipelineInput,
+  ProfessionalInputLineageInput,
+  ProfessionalInputSourceArtifactInput,
   SourceUnitSet,
   StructuredParsePackage,
   U0StrictValidationInput,
@@ -45,6 +48,31 @@ export function runProfessionalInputPipeline(
 } {
   const extractor = options.extractor ?? new MissingPdfLayoutExtractor();
   const layout = extractor.extractLayout(input.pdfBytes);
+  return runProfessionalInputPipelineFromLayout(layout, {
+    artifact: input.artifact,
+    document: input.document,
+    lineage: input.lineage,
+  });
+}
+
+/**
+ * Continue the single professional-input pipeline from an already extracted
+ * layout. The canonical producer uses this seam so profile recognition and
+ * packaging consume the same pdfjs result rather than parsing the PDF twice.
+ */
+export function runProfessionalInputPipelineFromLayout(
+  layout: ParsedPdfLayout,
+  input: {
+    artifact: ProfessionalInputSourceArtifactInput;
+    document: ProfessionalInputDocumentIdentityInput;
+    lineage: ProfessionalInputLineageInput;
+  },
+): {
+  layout: ParsedPdfLayout;
+  unitSet: SourceUnitSet;
+  pkg: StructuredParsePackage;
+  u0Input: U0StrictValidationInput;
+} {
   const unitSet = buildSourceUnitSet(layout, {
     documentCode: input.document.documentCode,
     artifact: input.artifact,

@@ -44,7 +44,7 @@ import { CanonicalHostReviewActionService } from './canonical-host-review-action
 import { HostOwnedV1TranslationRuleSetPrivateProvider } from './canonical-translation-rule-set-v1.private';
 import { ExternalDiscoveryModule } from '../external-discovery/external-discovery.module';
 import { CanonicalFailureRecordingService } from './canonical-failure-recording.service';
-import { ExactFtdFrozen2PdfProducerAdapter } from './exact-ftd-frozen2-pdf-producer.adapter';
+import { HostNativeDocumentFamilyPdfProducerAdapter } from './exact-ftd-frozen2-pdf-producer.adapter';
 import { OrdinaryFailureValidationWriteAuthorizationAdapter } from './ordinary-failure-validation-write-authorization.adapter';
 import {
   CANONICAL_AUTHORIZATION,
@@ -153,7 +153,7 @@ export interface CanonicalHostModuleOptions {
     CanonicalHostOpenClawReviewService,
     CanonicalHostReviewActionService,
     HostOwnedV1TranslationRuleSetPrivateProvider,
-    ExactFtdFrozen2PdfProducerAdapter,
+    HostNativeDocumentFamilyPdfProducerAdapter,
     MiaodaCanonicalWorkItemRegistrarAdapter,
     OrdinaryWorkItemService,
     OrdinaryFailureValidationWriteAuthorizationAdapter,
@@ -333,7 +333,7 @@ export class CanonicalHostModule {
         CanonicalHostOpenClawReviewService,
         CanonicalHostReviewActionService,
         HostOwnedV1TranslationRuleSetPrivateProvider,
-        ExactFtdFrozen2PdfProducerAdapter,
+        HostNativeDocumentFamilyPdfProducerAdapter,
         MiaodaCanonicalWorkItemRegistrarAdapter,
         OrdinaryWorkItemService,
         OrdinaryFailureValidationWriteAuthorizationAdapter,

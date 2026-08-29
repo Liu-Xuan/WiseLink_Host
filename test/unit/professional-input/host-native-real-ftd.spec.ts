@@ -46,7 +46,7 @@ jest.mock(
 
 import type { UnifiedPackageArtifactDescriptor } from '@shared/api.interface';
 
-import { ExactFtdFrozen2PdfProducerAdapter } from '../../../server/modules/canonical-host/exact-ftd-frozen2-pdf-producer.adapter';
+import { HostNativeDocumentFamilyPdfProducerAdapter } from '../../../server/modules/canonical-host/exact-ftd-frozen2-pdf-producer.adapter';
 import { scopedProfessionalArtifactRef } from '../../../server/modules/canonical-host/scoped-professional-artifact-correlation.port';
 import { runProfessionalInputPipeline } from '../../../server/modules/professional-input/builders/professional-input-pipeline';
 import { PdfjsDistLayoutExtractor } from '../../../server/modules/professional-input/parser/pdfjs-dist-layout-extractor.adapter';
@@ -278,6 +278,7 @@ describeRealFtd('Host-native professional input with actual FTD bytes', () => {
       family: {
         familyId: 'publication_family_actual_ftd_test',
         documentFamily: 'FTD',
+        issuerAuthority: 'BOEING',
         canonicalDocumentNumber: '777-FTD-31-21002',
         currentDocumentVersionId: documentVersionId,
         currentGeneration: 1,
@@ -302,7 +303,7 @@ describeRealFtd('Host-native professional input with actual FTD bytes', () => {
     const fullValidator = createFullValidator(
       'professional-input-real-ftd-test',
     );
-    const producer = new ExactFtdFrozen2PdfProducerAdapter(
+    const producer = new HostNativeDocumentFamilyPdfProducerAdapter(
       fileService as never,
       { resolve: resolveCurrent } as never,
       fullValidator,
@@ -312,8 +313,8 @@ describeRealFtd('Host-native professional input with actual FTD bytes', () => {
           professionalBytes = Uint8Array.from(produced.bytes);
           return {
             schemaVersion:
-              'wiselink.3_1.scoped_professional_artifact_correlation.v1',
-            status: 'HOST_SCOPE_BOUND_IMMUTABLE',
+              'wiselink.3_1.scoped_professional_artifact_correlation.v1' as const,
+            status: 'HOST_SCOPE_BOUND_IMMUTABLE' as const,
             scope: {
               workItemId: correlationRequest.workItemId,
               documentVersionId: correlationRequest.documentVersionId,
@@ -385,8 +386,10 @@ describeRealFtd('Host-native professional input with actual FTD bytes', () => {
       bucketId: fileMetadata.bucketID,
       filePath,
     });
+    if (produced.kind !== 'PACKAGE') {
+      throw new Error(`${produced.failureCode}: ${produced.message}`);
+    }
     expect(produced.kind).toBe('PACKAGE');
-    if (produced.kind !== 'PACKAGE') throw new Error(produced.failureCode);
     expect(produced).toMatchObject({
       packageId: EXPECTED_PACKAGE_ID,
       contractId: 'techpub.parsed-package.v1',
