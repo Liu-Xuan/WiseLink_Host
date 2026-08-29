@@ -16,7 +16,10 @@ import type {
   CanonicalHostActor,
 } from '../canonical-host/canonical-host.types';
 import type { CanonicalVerifiedDevelopmentCreateScope } from '../canonical-host/canonical-service-scope.authorization';
-import { hostNativePdfClassificationFor } from '../canonical-host/host-native-pdf-profile.registry';
+import {
+  hostNativePdfAdapterIdFromDmPreflight,
+  hostNativePdfClassificationFor,
+} from '../canonical-host/host-native-pdf-profile.registry';
 import type { CanonicalMiaodaFinalUserActorContext } from './canonical-object-access.port';
 import {
   DocumentManagementHostedService,
@@ -262,6 +265,7 @@ export class OrdinaryWorkItemService {
     const classification = classificationFor(
       resolved.family.documentFamily,
       resolved.family.issuerAuthority,
+      hostNativePdfAdapterIdFromDmPreflight(resolved.preflight),
     );
     const reservationInput = {
       tenantId: actor.tenantId,
@@ -649,12 +653,14 @@ function requireDevelopmentWorkItemRole(actor: CanonicalHostActor): void {
 function classificationFor(
   family: string,
   issuerAuthority: string,
+  adapterId: string,
 ): CanonicalClassificationSelection {
   if (family === 'FTD') return { ...FTD_CLASSIFICATION };
   if (family === 'OEM_REFERENCE') return { ...OEM_REFERENCE_CLASSIFICATION };
   const classification = hostNativePdfClassificationFor({
     family,
     issuerAuthority,
+    adapterId,
   });
   if (classification) return classification;
   throw Object.assign(

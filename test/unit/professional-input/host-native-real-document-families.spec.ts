@@ -27,6 +27,7 @@ import { HostNativeDocumentFamilyPdfProducerAdapter } from '../../../server/modu
 import {
   hostNativePdfClassificationFor,
   recognizeHostNativePdfProfile,
+  type HostNativePdfDocumentType,
 } from '../../../server/modules/canonical-host/host-native-pdf-profile.registry';
 import { scopedProfessionalArtifactRef } from '../../../server/modules/canonical-host/scoped-professional-artifact-correlation.port';
 import { PdfjsDistLayoutExtractor } from '../../../server/modules/professional-input/parser/pdfjs-dist-layout-extractor.adapter';
@@ -45,17 +46,14 @@ const U0_CONTRACT_COMMIT = 'fa69ada08265934951df53c7a61a3ccdb8cb2900';
 interface RealFamilyCase {
   key: string;
   path: string | undefined;
-  family: 'AD' | 'SB' | 'SL';
+  family: 'AD' | 'MT' | 'SB' | 'SIL' | 'SL';
   issuerAuthority: string;
+  adapterId: string;
   documentCode: string;
   query: string;
   businessRevision: string;
   expectedParserProfileId: string;
-  expectedDocumentType:
-    | 'service_bulletin'
-    | 'service_letter'
-    | 'airworthiness_directive';
-  expectedOcrRequiredPages?: readonly string[];
+  expectedDocumentType: HostNativePdfDocumentType;
 }
 
 const REAL_FAMILY_CASES: RealFamilyCase[] = [
@@ -64,6 +62,7 @@ const REAL_FAMILY_CASES: RealFamilyCase[] = [
     path: process.env.WL31_REAL_BOEING_SB_PDF_PATH?.trim(),
     family: 'SB',
     issuerAuthority: 'BOEING',
+    adapterId: 'issuer.boeing.service_bulletin.v1',
     documentCode: '777-34-0425',
     query: '777-34-0425',
     businessRevision: 'Original Issue',
@@ -75,6 +74,7 @@ const REAL_FAMILY_CASES: RealFamilyCase[] = [
     path: process.env.WL31_REAL_AIRBUS_SB_PDF_PATH?.trim(),
     family: 'SB',
     issuerAuthority: 'AIRBUS',
+    adapterId: 'issuer.airbus.service_bulletin.v1',
     documentCode: 'A320-23-1837',
     query: 'A320-23-1837',
     businessRevision: 'Revision 04',
@@ -82,31 +82,141 @@ const REAL_FAMILY_CASES: RealFamilyCase[] = [
     expectedDocumentType: 'service_bulletin',
   },
   {
-    key: 'boeing-sl',
-    path: process.env.WL31_REAL_BOEING_SL_PDF_PATH?.trim(),
-    family: 'SL',
-    issuerAuthority: 'BOEING',
-    documentCode: '777-SL-45-006',
-    query: '777-SL-45-006',
-    businessRevision: 'Original Issue',
-    expectedParserProfileId: 'parser-profile:boeing.sl@1.0.0',
-    expectedDocumentType: 'service_letter',
-    expectedOcrRequiredPages: ['9'],
-  },
-  {
     key: 'faa-ad',
     path: process.env.WL31_REAL_FAA_AD_PDF_PATH?.trim(),
     family: 'AD',
     issuerAuthority: 'FAA',
+    adapterId: 'issuer.faa.airworthiness_directive.v1',
     documentCode: 'AD-2011-03-14',
     query: '2011-03-14',
     businessRevision: 'Original Issue',
     expectedParserProfileId: 'parser-profile:faa.ad@1.0.0',
     expectedDocumentType: 'airworthiness_directive',
   },
+  {
+    key: 'honeywell-sil',
+    path: process.env.WL31_REAL_HONEYWELL_SIL_PDF_PATH?.trim(),
+    family: 'SIL',
+    issuerAuthority: 'HONEYWELL',
+    adapterId: 'issuer.honeywell.sil.v1',
+    documentCode: 'D201908000037',
+    query: 'service information',
+    businessRevision: 'Revision 4',
+    expectedParserProfileId: 'parser-profile:honeywell.sil@1.0.0',
+    expectedDocumentType: 'service_information_letter',
+  },
+  {
+    key: 'boeing-maintenance-tip',
+    path: process.env.WL31_REAL_BOEING_MT_PDF_PATH?.trim(),
+    family: 'MT',
+    issuerAuthority: 'BOEING',
+    adapterId: 'issuer.boeing.maintenance_tip.v1',
+    documentCode: '787 MT 51-001',
+    query: 'torx-plus',
+    businessRevision: 'Revision 3',
+    expectedParserProfileId: 'parser-profile:boeing.maintenance_tip@1.0.0',
+    expectedDocumentType: 'maintenance_tip',
+  },
+  {
+    key: 'airbus-ril',
+    path: process.env.WL31_REAL_AIRBUS_RIL_PDF_PATH?.trim(),
+    family: 'SB',
+    issuerAuthority: 'AIRBUS',
+    adapterId: 'issuer.airbus.retrofit_information_letter.v1',
+    documentCode: 'V27M24001856',
+    query: 'retrofit',
+    businessRevision: 'Revision 03',
+    expectedParserProfileId:
+      'parser-profile:airbus.retrofit_information_letter@1.0.0',
+    expectedDocumentType: 'retrofit_information_letter',
+  },
+  {
+    key: 'airbus-aot',
+    path: process.env.WL31_REAL_AIRBUS_AOT_PDF_PATH?.trim(),
+    family: 'SB',
+    issuerAuthority: 'AIRBUS',
+    adapterId: 'issuer.airbus.operator_transmission.v1',
+    documentCode: 'A32N033-24',
+    query: 'alert operators transmission',
+    businessRevision: 'Revision 03',
+    expectedParserProfileId:
+      'parser-profile:airbus.operator_transmission@1.0.0',
+    expectedDocumentType: 'operator_transmission',
+  },
+  {
+    key: 'airbus-oit',
+    path: process.env.WL31_REAL_AIRBUS_OIT_PDF_PATH?.trim(),
+    family: 'SB',
+    issuerAuthority: 'AIRBUS',
+    adapterId: 'issuer.airbus.operator_transmission.v1',
+    documentCode: '999.0013/26',
+    query: 'operators information transmission',
+    businessRevision: 'Revision 00',
+    expectedParserProfileId:
+      'parser-profile:airbus.operator_transmission@1.0.0',
+    expectedDocumentType: 'operator_transmission',
+  },
+  {
+    key: 'airbus-fot',
+    path: process.env.WL31_REAL_AIRBUS_FOT_PDF_PATH?.trim(),
+    family: 'SB',
+    issuerAuthority: 'AIRBUS',
+    adapterId: 'issuer.airbus.operator_transmission.v1',
+    documentCode: '999.0062/25',
+    query: 'flight operations transmission',
+    businessRevision: 'Revision 00',
+    expectedParserProfileId:
+      'parser-profile:airbus.operator_transmission@1.0.0',
+    expectedDocumentType: 'operator_transmission',
+  },
+  {
+    key: 'airbus-sbit',
+    path: process.env.WL31_REAL_AIRBUS_SBIT_PDF_PATH?.trim(),
+    family: 'SB',
+    issuerAuthority: 'AIRBUS',
+    adapterId: 'issuer.airbus.operator_transmission.v1',
+    documentCode: '24-0015',
+    query: 'operators information transmission',
+    businessRevision: 'Revision 03',
+    expectedParserProfileId:
+      'parser-profile:airbus.operator_transmission@1.0.0',
+    expectedDocumentType: 'operator_transmission',
+  },
+  {
+    key: 'airbus-als',
+    path: process.env.WL31_REAL_AIRBUS_ALS_PDF_PATH?.trim(),
+    family: 'MT',
+    issuerAuthority: 'AIRBUS',
+    adapterId: 'issuer.airbus.maintenance_programme.v1',
+    documentCode: 'A320-ALS-PART-3-V11.1',
+    query: 'airworthiness limitations',
+    businessRevision: 'Variation 11.1',
+    expectedParserProfileId:
+      'parser-profile:airbus.maintenance_programme@1.0.0',
+    expectedDocumentType: 'maintenance_programme',
+  },
+  {
+    key: 'airbus-etops-cmp',
+    path: process.env.WL31_REAL_AIRBUS_CMP_PDF_PATH?.trim(),
+    family: 'MT',
+    issuerAuthority: 'AIRBUS',
+    adapterId: 'issuer.airbus.maintenance_programme.v1',
+    documentCode: 'A330-ETOPS-CMP',
+    query: 'ETOPS',
+    businessRevision: 'Revision 39',
+    expectedParserProfileId:
+      'parser-profile:airbus.maintenance_programme@1.0.0',
+    expectedDocumentType: 'maintenance_programme',
+  },
 ];
 
 const describeRealFamilies = REAL_FAMILY_CASES.every((item) => item.path)
+  ? describe
+  : describe.skip;
+
+const REAL_OCR_BLOCKED_BOEING_SL_PATH =
+  process.env.WL31_REAL_BOEING_SL_PDF_PATH?.trim();
+const describeRealOcrBlockedBoeingSl = REAL_OCR_BLOCKED_BOEING_SL_PATH
   ? describe
   : describe.skip;
 
@@ -120,6 +230,16 @@ const REAL_UNAVAILABLE_CASES = [
     key: 'amm-linked-response',
     path: process.env.WL31_REAL_AMM_LINKED_RESPONSE_PDF_PATH?.trim(),
     expectedFamily: 'MT',
+  },
+  {
+    key: 'airbus-tfu-support-document',
+    path: process.env.WL31_REAL_AIRBUS_TFU_PDF_PATH?.trim(),
+    expectedFamily: 'GENERIC',
+  },
+  {
+    key: 'airbus-concession-support-document',
+    path: process.env.WL31_REAL_AIRBUS_CONCESSION_PDF_PATH?.trim(),
+    expectedFamily: 'GENERIC',
   },
 ] as const;
 
@@ -165,6 +285,42 @@ class InMemoryArtifactStore implements UnifiedArtifactStorePort {
   }
 }
 
+describeRealOcrBlockedBoeingSl(
+  'Boeing SL profile recognition with the actual OCR-blocked PDF',
+  () => {
+    it('never turns the page-9 visual-text gap into a package-success claim', async () => {
+      const sourceBytes = await readFile(
+        REAL_OCR_BLOCKED_BOEING_SL_PATH as string,
+      );
+      try {
+        const layout = new PdfjsDistLayoutExtractor().extractLayout(
+          sourceBytes,
+        );
+        expect(recognizeHostNativePdfProfile(layout, 'SL')).toMatchObject({
+          adapterId: 'issuer.boeing.service_letter.v1',
+          parserProfileId: 'parser-profile:boeing.sl@1.0.0',
+          documentType: 'service_letter',
+        });
+      } catch (error) {
+        expect(error).toMatchObject({
+          code: 'PDF_OCR_REQUIRED_UNSUPPORTED',
+          diagnostic: expect.objectContaining({
+            ocrRequirementKind: 'VISUAL_TEXT_UNVERIFIED',
+            ocrRequiredPages: [9],
+            visualTextUnverifiedPages: [9],
+            visualTextUnverifiedPageDetails: expect.arrayContaining([
+              expect.stringContaining(
+                '9:textChars=554;unverifiedRasterPageAreaRatio=0.282093;regions=2',
+              ),
+            ]),
+            ocrProviderStatus: 'UNAVAILABLE_CURRENT_PRODUCTION',
+          }),
+        });
+      }
+    });
+  },
+);
+
 describeRealUnavailable(
   'Host-native profile gate with real unsupported engineering PDFs',
   () => {
@@ -205,6 +361,7 @@ describeRealFamilies(
         const classification = hostNativePdfClassificationFor({
           family: fixture.family,
           issuerAuthority: fixture.issuerAuthority,
+          adapterId: fixture.adapterId,
         });
         expect(classification).toMatchObject({
           normalizedFamily: fixture.family,
@@ -280,6 +437,14 @@ describeRealFamilies(
             canonicalDocumentNumber: fixture.documentCode,
             currentDocumentVersionId: documentVersionId,
             currentGeneration: 1,
+          },
+          preflight: {
+            normalizedDescriptorJson: JSON.stringify({
+              adapterRelease: {
+                adapterId: fixture.adapterId,
+                adapterVersion: 'v8.4-document-family-adapter.v1',
+              },
+            }),
           },
           artifact: {
             sourceArtifactId,
@@ -380,16 +545,6 @@ describeRealFamilies(
         expect(resolveCurrent).toHaveBeenCalledWith(documentVersionId, {
           requireCurrent: true,
         });
-        if (fixture.expectedOcrRequiredPages) {
-          expect(produced).toMatchObject({
-            kind: 'FAILURE_SIGNAL',
-            failureCode: 'PDF_OCR_REQUIRED_UNSUPPORTED',
-            parameters: {
-              ocrRequiredPages: fixture.expectedOcrRequiredPages,
-            },
-          });
-          return;
-        }
         if (produced.kind !== 'PACKAGE') {
           throw new Error(`${produced.failureCode}: ${produced.message}`);
         }

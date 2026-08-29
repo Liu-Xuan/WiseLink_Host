@@ -23,6 +23,7 @@ import {
   type ScopedProfessionalArtifactCorrelationPort,
 } from './scoped-professional-artifact-correlation.port';
 import {
+  hostNativePdfAdapterIdFromDmPreflight,
   matchesHostNativePdfClassification,
   recognizeHostNativePdfProfile,
   type HostNativePdfProfile,
@@ -101,14 +102,20 @@ export class HostNativeDocumentFamilyPdfProducerAdapter implements CanonicalPdfP
       layout,
       resolved.family.documentFamily,
     );
+    const dmAdapterId = hostNativePdfAdapterIdFromDmPreflight(
+      resolved.preflight,
+    );
     if (
       !profile ||
       !matchesHostNativePdfClassification(profile, request.classification) ||
-      !matchesResolvedIssuer(profile, resolved.family.issuerAuthority)
+      !matchesResolvedIssuer(profile, resolved.family.issuerAuthority) ||
+      (dmAdapterId
+        ? dmAdapterId !== profile.adapterId
+        : profile.requiresDmAdapterRelease)
     ) {
       return failureSignal(
         'PDF_PRODUCER_PROFILE_NOT_AVAILABLE',
-        `No content-evidenced Host-native PDF producer profile matches the DM family and request classification (recognized=${profile?.adapterId ?? 'none'}, requested=${request.classification.parserProfileId}, family=${resolved.family.documentFamily}).`,
+        `No content-evidenced Host-native PDF producer profile matches the DM family, adapter release, and request classification (recognized=${profile?.adapterId ?? 'none'}, dmAdapter=${dmAdapterId || 'none'}, requested=${request.classification.parserProfileId}, family=${resolved.family.documentFamily}).`,
         'dm_document_version->host_native_pdf_pipeline',
       );
     }

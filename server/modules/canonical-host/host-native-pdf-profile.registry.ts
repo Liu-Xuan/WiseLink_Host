@@ -10,19 +10,25 @@ import {
 import type { ParsedPdfLayout } from '../professional-input/pure/professional-input-pure.types';
 
 export type HostNativePdfDocumentType =
+  | 'airworthiness_directive'
+  | 'maintenance_programme'
+  | 'maintenance_tip'
+  | 'operator_transmission'
+  | 'retrofit_information_letter'
   | 'service_bulletin'
-  | 'service_letter'
-  | 'airworthiness_directive';
+  | 'service_information_letter'
+  | 'service_letter';
 
 export interface HostNativePdfProfile {
   readonly adapterId: string;
   readonly adapterSchemaVersion: string;
-  readonly family: 'AD' | 'FTD' | 'SB' | 'SL';
+  readonly family: 'AD' | 'FTD' | 'MT' | 'SB' | 'SIL' | 'SL';
   readonly issuerAuthority: string;
   readonly parseProfileRef: string;
   readonly parserProfileId: string;
   readonly parserProfileHash: string;
   readonly documentType: HostNativePdfDocumentType;
+  readonly requiresDmAdapterRelease: boolean;
   readonly presentationMode: 'ENGINEERING_DOCUMENT';
   readonly executionRoute: string;
   readonly evidence: {
@@ -39,6 +45,7 @@ interface ActivatedProfileDefinition {
   readonly issuerAuthority: string;
   readonly parseProfileRef: string;
   readonly documentType: HostNativePdfDocumentType;
+  readonly requiresDmAdapterRelease?: boolean;
   readonly parserProfileHashOverride?: string;
 }
 
@@ -107,6 +114,46 @@ const ACTIVATED_PROFILE_DEFINITIONS = [
     parseProfileRef: 'caac.cad',
     documentType: 'airworthiness_directive',
   },
+  {
+    adapterId: 'issuer.honeywell.sil.v1',
+    family: 'SIL',
+    issuerAuthority: 'HONEYWELL',
+    parseProfileRef: 'honeywell.sil',
+    documentType: 'service_information_letter',
+    requiresDmAdapterRelease: true,
+  },
+  {
+    adapterId: 'issuer.boeing.maintenance_tip.v1',
+    family: 'MT',
+    issuerAuthority: 'BOEING',
+    parseProfileRef: 'boeing.maintenance_tip',
+    documentType: 'maintenance_tip',
+    requiresDmAdapterRelease: true,
+  },
+  {
+    adapterId: 'issuer.airbus.retrofit_information_letter.v1',
+    family: 'SB',
+    issuerAuthority: 'AIRBUS',
+    parseProfileRef: 'airbus.retrofit_information_letter',
+    documentType: 'retrofit_information_letter',
+    requiresDmAdapterRelease: true,
+  },
+  {
+    adapterId: 'issuer.airbus.operator_transmission.v1',
+    family: 'SB',
+    issuerAuthority: 'AIRBUS',
+    parseProfileRef: 'airbus.operator_transmission',
+    documentType: 'operator_transmission',
+    requiresDmAdapterRelease: true,
+  },
+  {
+    adapterId: 'issuer.airbus.maintenance_programme.v1',
+    family: 'MT',
+    issuerAuthority: 'AIRBUS',
+    parseProfileRef: 'airbus.maintenance_programme',
+    documentType: 'maintenance_programme',
+    requiresDmAdapterRelease: true,
+  },
 ] as const satisfies readonly ActivatedProfileDefinition[];
 
 const DEFINITIONS_BY_ADAPTER_ID: ReadonlyMap<
@@ -167,6 +214,7 @@ export function recognizeHostNativePdfProfile(
 export function hostNativePdfClassificationFor(input: {
   family: string;
   issuerAuthority: string;
+  adapterId?: string;
 }): CanonicalClassificationSelection | null {
   const definition = classificationDefinitionFor(input);
   if (!definition) return null;
@@ -186,6 +234,18 @@ export function hostNativePdfClassificationFor(input: {
   };
 }
 
+export function hostNativePdfAdapterIdFromDmPreflight(
+  preflight: unknown,
+): string {
+  const row = recordValue(preflight);
+  const descriptor = jsonRecordValue(row.normalizedDescriptorJson);
+  const release = recordValue(descriptor.adapterRelease);
+  if (normalizedText(release.adapterVersion) !== PROFILE_SCHEMA_VERSION) {
+    return '';
+  }
+  return normalizedText(release.adapterId).toLowerCase();
+}
+
 export function matchesHostNativePdfClassification(
   profile: HostNativePdfProfile,
   classification: CanonicalClassificationSelection,
@@ -200,9 +260,19 @@ export function matchesHostNativePdfClassification(
 function classificationDefinitionFor(input: {
   family: string;
   issuerAuthority: string;
+  adapterId?: string;
 }): ActivatedProfileDefinition | null {
   const family = normalizedText(input.family).toUpperCase();
   const issuer = normalizedText(input.issuerAuthority).toUpperCase();
+  const adapterId = normalizedText(input.adapterId).toLowerCase();
+  if (adapterId) {
+    const definition = DEFINITIONS_BY_ADAPTER_ID.get(adapterId);
+    return definition &&
+      definition.family === family &&
+      definitionMatchesIssuer(definition, issuer)
+      ? definition
+      : null;
+  }
   if (family === 'FTD' && issuer.includes('BOEING')) {
     return definitionFor('issuer.boeing.ftd.v1');
   }
@@ -269,6 +339,7 @@ function materializeProfile(
     parserProfileId,
     parserProfileHash,
     documentType: definition.documentType,
+    requiresDmAdapterRelease: definition.requiresDmAdapterRelease === true,
     presentationMode: 'ENGINEERING_DOCUMENT',
     executionRoute: EXECUTION_ROUTE,
     evidence: {
@@ -314,6 +385,29 @@ function recordValue(value: unknown): Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+
+function jsonRecordValue(value: unknown): Record<string, unknown> {
+  if (typeof value !== 'string' || !value.trim()) return {};
+  try {
+    return recordValue(JSON.parse(value));
+  } catch {
+    return {};
+  }
+}
+
+function definitionMatchesIssuer(
+  definition: ActivatedProfileDefinition,
+  issuer: string,
+): boolean {
+  if (!issuer) return false;
+  if (definition.issuerAuthority === 'FAA') {
+    return issuer === 'FAA' || issuer.includes('FEDERAL AVIATION');
+  }
+  if (definition.issuerAuthority === 'CAAC') {
+    return issuer.includes('CAAC') || issuer.includes('中国民用航空局');
+  }
+  return issuer.includes(definition.issuerAuthority);
 }
 
 function registryAdapterHash(

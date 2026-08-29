@@ -1,4 +1,5 @@
 import {
+  hostNativePdfAdapterIdFromDmPreflight,
   hostNativePdfClassificationFor,
   recognizeHostNativePdfProfile,
 } from '../../server/modules/canonical-host/host-native-pdf-profile.registry';
@@ -9,6 +10,23 @@ function layoutWithText(
   text: string,
   sourceSha256 = `sha256:${'a'.repeat(64)}`,
 ): ParsedPdfLayout {
+  const pageTextLayerDiagnostics = [
+    {
+      page: 1,
+      status: 'PRESENT' as const,
+      textRunCount: 1,
+      nonWhitespaceCharacterCount: text.replace(/\s/gu, '').length,
+      rasterVisualCoverage: {
+        status: 'NO_MATERIAL_RASTER' as const,
+        materialUnverifiedRasterPageFraction: 0.25,
+        rasterRegionCount: 0,
+        rasterPageAreaRatio: 0,
+        unverifiedRasterRegionCount: 0,
+        unverifiedRasterPageAreaRatio: 0,
+        unverifiedRasterRegions: [],
+      },
+    },
+  ] as const;
   return {
     kind: 'pdf',
     pdfVersion: '1.7',
@@ -26,25 +44,11 @@ function layoutWithText(
         text,
       },
     ],
-    pageTextLayerDiagnostics: [
-      {
-        page: 1,
-        status: 'PRESENT',
-        textRunCount: 1,
-        nonWhitespaceCharacterCount: text.replace(/\s/gu, '').length,
-        rasterVisualCoverage: {
-          status: 'NO_MATERIAL_RASTER',
-          materialUnverifiedRasterPageFraction: 0.25,
-          rasterRegionCount: 0,
-          rasterPageAreaRatio: 0,
-          unverifiedRasterRegionCount: 0,
-          unverifiedRasterPageAreaRatio: 0,
-          unverifiedRasterRegions: [],
-        },
-      },
-    ],
+    pageTextLayerDiagnostics,
     sourceSha256,
     sourceByteLength: 1_000,
+  } as ParsedPdfLayout & {
+    readonly pageTextLayerDiagnostics: typeof pageTextLayerDiagnostics;
   };
 }
 
@@ -189,5 +193,48 @@ describe('host-native PDF profile registry', () => {
         issuerAuthority: 'UNKNOWN',
       }),
     ).toBeNull();
+  });
+
+  it('binds subtype profiles to the controlled DM preflight adapter release', () => {
+    expect(
+      hostNativePdfAdapterIdFromDmPreflight({
+        normalizedDescriptorJson: JSON.stringify({
+          adapterRelease: {
+            adapterId: 'issuer.airbus.retrofit_information_letter.v1',
+            adapterVersion: 'v8.4-document-family-adapter.v1',
+          },
+        }),
+      }),
+    ).toBe('issuer.airbus.retrofit_information_letter.v1');
+    expect(
+      hostNativePdfClassificationFor({
+        family: 'SB',
+        issuerAuthority: 'AIRBUS',
+        adapterId: 'issuer.airbus.retrofit_information_letter.v1',
+      }),
+    ).toMatchObject({
+      normalizedFamily: 'SB',
+      parserProfileId:
+        'parser-profile:airbus.retrofit_information_letter@1.0.0',
+    });
+    expect(
+      hostNativePdfClassificationFor({
+        family: 'SB',
+        issuerAuthority: 'BOEING',
+        adapterId: 'issuer.airbus.retrofit_information_letter.v1',
+      }),
+    ).toBeNull();
+    expect(
+      hostNativePdfClassificationFor({
+        family: 'SB',
+        issuerAuthority: 'AIRBUS',
+        adapterId: 'issuer.airbus.support_document.v1',
+      }),
+    ).toBeNull();
+    expect(
+      hostNativePdfAdapterIdFromDmPreflight({
+        normalizedDescriptorJson: '{not-json',
+      }),
+    ).toBe('');
   });
 });

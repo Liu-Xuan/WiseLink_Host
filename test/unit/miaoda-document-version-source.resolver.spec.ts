@@ -2,6 +2,7 @@ import {
   dmAcquisition,
   dmCurrentnessDecision,
   dmDocumentVersion,
+  dmIngressPreflight,
   dmPublicationFamily,
   dmSourceArtifact,
 } from '../../server/database/schema';
@@ -47,6 +48,14 @@ function resolvedValue() {
       acquisitionId: 'acquisition-sb',
       acquiredBy: 'miaoda-user-1',
     },
+    preflight: {
+      normalizedDescriptorJson: JSON.stringify({
+        adapterRelease: {
+          adapterId: 'issuer.boeing.service_bulletin.v1',
+          adapterVersion: 'v8.4-document-family-adapter.v1',
+        },
+      }),
+    },
     currentness: {
       familyId: 'family-sb',
       nextDocumentVersionId: 'document-version-sb',
@@ -68,7 +77,7 @@ describe('MiaodaDocumentVersionSourceResolver currentness', () => {
       family: { currentDocumentVersionId: 'document-version-sb' },
       currentness: { nextGeneration: 1 },
     });
-    expect(query.innerJoin).toHaveBeenCalledTimes(3);
+    expect(query.innerJoin).toHaveBeenCalledTimes(4);
     expect(query.leftJoin).toHaveBeenCalledWith(
       dmCurrentnessDecision,
       expect.anything(),
@@ -78,13 +87,16 @@ describe('MiaodaDocumentVersionSourceResolver currentness', () => {
       family: dmPublicationFamily,
       artifact: dmSourceArtifact,
       acquisition: dmAcquisition,
+      preflight: dmIngressPreflight,
       currentness: dmCurrentnessDecision,
     });
   });
 
   it('rejects a current DocumentVersion not acquired and committed by the mapped session user', async () => {
     const { select } = database(resolvedValue());
-    const resolver = new MiaodaDocumentVersionSourceResolver({ select } as never);
+    const resolver = new MiaodaDocumentVersionSourceResolver({
+      select,
+    } as never);
     await expect(
       resolver.resolve('document-version-sb', {
         requireCurrent: true,

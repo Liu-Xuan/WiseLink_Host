@@ -10,7 +10,9 @@ jest.mock(
         const text =
           bytes[0] === 1
             ? '777- FTD-31-21002 Issue Title : Airplane Information Management System update. FLEET TEAM DIGEST BOEING PROPRIETARY.'
-            : 'Commercial Airplanes 737 Service Bulletin BOEING SERVICE BULLETIN 737-34-3830';
+            : bytes[0] === 3
+              ? 'MAINTENANCE TIP BOEING PROPRIETARY 787 MT 51 - 001 - R 3 SUBJECT TORX PLUS FASTENER REMOVAL'
+              : 'Commercial Airplanes 737 Service Bulletin BOEING SERVICE BULLETIN 737-34-3830';
         return {
           kind: 'pdf',
           pdfVersion: '1.7',
@@ -38,6 +40,7 @@ jest.mock(
 
 import { MiaodaFileServiceArtifactStore } from '../../server/modules/document-management/src/hosted/miaodaFileServiceArtifactStore.js';
 import { HostNativeDocumentFamilyPdfProducerAdapter } from '../../server/modules/canonical-host/exact-ftd-frozen2-pdf-producer.adapter';
+import { hostNativePdfClassificationFor } from '../../server/modules/canonical-host/host-native-pdf-profile.registry';
 import { UnavailableScopedProfessionalArtifactCorrelationAdapter } from '../../server/modules/canonical-host/scoped-professional-artifact-correlation.port';
 import type { CanonicalPdfVerticalRunRequest } from '../../shared/api.interface';
 
@@ -351,5 +354,87 @@ describe('HostNativeDocumentFamilyPdfProducerAdapter scoped professional correla
     });
     expect(resolver.resolve).toHaveBeenCalledTimes(2);
     expect(readSelection).toHaveBeenCalledTimes(2);
+  });
+
+  it('requires the committed DM adapter release for a subtype profile', async () => {
+    const sourceSha256 = 'f'.repeat(64);
+    const classification = hostNativePdfClassificationFor({
+      family: 'MT',
+      issuerAuthority: 'BOEING',
+      adapterId: 'issuer.boeing.maintenance_tip.v1',
+    });
+    if (!classification) throw new Error('TEST_MT_PROFILE_NOT_ACTIVATED');
+    const mtRequest: CanonicalPdfVerticalRunRequest = {
+      ...exactSbRequest,
+      source: {
+        ...exactSbRequest.source,
+        documentId: 'document-boeing-mt',
+        documentVersionId: 'document-version-boeing-mt',
+        sourceArtifactId: 'source-artifact-boeing-mt',
+        sourceFileSha256: `sha256:${sourceSha256}`,
+        sourceByteLength: 3,
+      },
+      classification,
+    };
+    const readSelection = jest.fn().mockResolvedValue({
+      readbackVerified: true,
+      sha256: sourceSha256,
+      byteLength: 3,
+      providerObjectId: 'provider-source-boeing-mt',
+      bytes: Uint8Array.of(3, 0, 0),
+    });
+    jest
+      .mocked(MiaodaFileServiceArtifactStore)
+      .mockImplementation(() => ({ readSelection }) as never);
+    const resolved = {
+      version: {
+        documentId: mtRequest.source.documentId,
+        documentVersionId: mtRequest.source.documentVersionId,
+        sourceArtifactId: mtRequest.source.sourceArtifactId,
+        pdfSha256: sourceSha256,
+        byteLength: mtRequest.source.sourceByteLength,
+      },
+      family: {
+        documentFamily: 'MT',
+        issuerAuthority: 'BOEING',
+        canonicalDocumentNumber: '787 MT 51-001',
+      },
+      artifact: {
+        sourceArtifactId: mtRequest.source.sourceArtifactId,
+        bucketId: 'bucket-source-boeing-mt',
+        filePath: '/source/boeing-mt.pdf',
+        providerObjectId: 'provider-source-boeing-mt',
+        mediaType: 'application/pdf',
+        sha256: sourceSha256,
+        byteLength: mtRequest.source.sourceByteLength,
+      },
+    };
+    const resolver = { resolve: jest.fn().mockResolvedValue(resolved) };
+    const adapter = new HostNativeDocumentFamilyPdfProducerAdapter(
+      {} as never,
+      resolver as never,
+      { validate: jest.fn() } as never,
+      new UnavailableScopedProfessionalArtifactCorrelationAdapter(),
+    );
+
+    await expect(adapter.producePdf(mtRequest)).resolves.toMatchObject({
+      kind: 'FAILURE_SIGNAL',
+      failureCode: 'PDF_PRODUCER_PROFILE_NOT_AVAILABLE',
+    });
+    resolver.resolve.mockResolvedValueOnce({
+      ...resolved,
+      preflight: {
+        normalizedDescriptorJson: JSON.stringify({
+          adapterRelease: {
+            adapterId: 'issuer.boeing.maintenance_tip.v1',
+            adapterVersion: 'v8.4-document-family-adapter.v1',
+          },
+        }),
+      },
+    });
+    await expect(adapter.producePdf(mtRequest)).resolves.toMatchObject({
+      kind: 'FAILURE_SIGNAL',
+      failureCode: 'PDF_PRODUCER_CORRELATION_UNAVAILABLE',
+    });
   });
 });

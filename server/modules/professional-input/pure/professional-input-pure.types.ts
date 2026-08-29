@@ -283,10 +283,15 @@ export interface ProfessionalInputSourceArtifactInput {
 export interface ProfessionalInputDocumentIdentityInput {
   documentCode: string;
   documentType:
-    | 'service_bulletin'
-    | 'service_letter'
     | 'airworthiness_directive'
-    | 'oem_reference';
+    | 'maintenance_programme'
+    | 'maintenance_tip'
+    | 'oem_reference'
+    | 'operator_transmission'
+    | 'retrofit_information_letter'
+    | 'service_bulletin'
+    | 'service_information_letter'
+    | 'service_letter';
   language: string;
 }
 
