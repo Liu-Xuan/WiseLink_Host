@@ -1,0 +1,11 @@
+{
+  "$schema": "urn:techpub:schema:v1:artifact-record:frozen-2",
+  "schemaVersion": "techpub.artifact-record.v1",
+  "contractRevision": "frozen.2",
+  "artifactRef": "contract://fixtures/positive/minimal-pdf-complete.json",
+  "mediaType": "application/json",
+  "byteLength": 11004,
+  "artifactHash": "sha256:3fe5404f7292b58d8cf551962eb3fcdec0f4fa19bb48e6a71461c8cb51743871",
+  "packageId": "urn:techpub:package:v1:sha256:f0110dd2b0d990e5589d6c24a503605af7c6928087c5c1014c8ad9bb462b99d9",
+  "contentHash": "sha256:f0110dd2b0d990e5589d6c24a503605af7c6928087c5c1014c8ad9bb462b99d9"
+}

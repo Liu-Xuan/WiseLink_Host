@@ -1,0 +1,11 @@
+{
+  "$schema": "urn:techpub:schema:v1:artifact-record:frozen-2",
+  "schemaVersion": "techpub.artifact-record.v1",
+  "contractRevision": "frozen.2",
+  "artifactRef": "contract://fixtures/positive/minimal-pdf-visual-lineage.json",
+  "mediaType": "application/json",
+  "byteLength": 14658,
+  "artifactHash": "sha256:5f786d602a40d3b9c108969a3a74b5376e9c039cd720018b6e608790605b8beb",
+  "packageId": "urn:techpub:package:v1:sha256:6c16451be41bfa3d66ad12755c542670eda9f261c26c47ba36e7299fcfa9aa42",
+  "contentHash": "sha256:6c16451be41bfa3d66ad12755c542670eda9f261c26c47ba36e7299fcfa9aa42"
+}

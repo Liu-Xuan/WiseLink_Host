@@ -1,0 +1,11 @@
+{
+  "$schema": "urn:techpub:schema:v1:artifact-record:frozen-2",
+  "schemaVersion": "techpub.artifact-record.v1",
+  "contractRevision": "frozen.2",
+  "artifactRef": "contract://fixtures/positive/rich-native-s1000d-issue-4-2.json",
+  "mediaType": "application/json",
+  "byteLength": 91814,
+  "artifactHash": "sha256:f21afda77f3e97102e9c9f725906a791d18bf95cec6e148e0593ada388f3de52",
+  "packageId": "urn:techpub:package:v1:sha256:d9b17b2aa505ee89188eb6d2ddb27b62fd6c559b4eef85a64982fc2d5008edda",
+  "contentHash": "sha256:d9b17b2aa505ee89188eb6d2ddb27b62fd6c559b4eef85a64982fc2d5008edda"
+}

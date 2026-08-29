@@ -77,6 +77,12 @@ describe('Phase 13C production path', () => {
     expect(assets).toContain(
       "'dist/server/runtime-assets/professional-input/pdfjs-dist'",
     );
+    expect(assets).toContain(
+      "'server/runtime-assets/technical-publication-parsed-package/v1-frozen-2'",
+    );
+    expect(assets).toContain(
+      "'dist/server/runtime-assets/technical-publication-parsed-package/v1-frozen-2'",
+    );
     const pdfjsAdapter = await source(
       'server/modules/professional-input/parser/pdfjs-dist-layout-extractor.adapter.ts',
     );

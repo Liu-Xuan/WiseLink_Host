@@ -1,0 +1,96 @@
+{
+  "schemaVersion": "techpub.canonicalization-vectors.v1",
+  "algorithm": "RFC8785-JCS",
+  "digestAlgorithm": "SHA-256",
+  "contractRestriction": "Hash-critical numeric fields are integers within the I-JSON safe integer range; non-integral domain values use strings.",
+  "vectors": [
+    {
+      "name": "core-envelope",
+      "input": {
+        "schemaVersion": "techpub.parsed-package.v1",
+        "text": "警告\nA",
+        "values": [
+          null,
+          true,
+          false,
+          0,
+          17,
+          -3
+        ]
+      },
+      "expectedCanonicalUtf8": "{\"schemaVersion\":\"techpub.parsed-package.v1\",\"text\":\"警告\\nA\",\"values\":[null,true,false,0,17,-3]}",
+      "expectedSha256": "sha256:405aeab6c1cea94bb7f85232c55e154d35507371f635fbd176bdea31435719a1"
+    },
+    {
+      "name": "pdf-locator",
+      "input": {
+        "bbox": [
+          0,
+          125000,
+          1000000,
+          875000
+        ],
+        "page": 42,
+        "quote": "REMOVE THE UNIT"
+      },
+      "expectedCanonicalUtf8": "{\"bbox\":[0,125000,1000000,875000],\"page\":42,\"quote\":\"REMOVE THE UNIT\"}",
+      "expectedSha256": "sha256:f0093428b82553ce334ac658b370d3d54d69254d4d69c750bdf313882c548f44"
+    },
+    {
+      "name": "artifact-manifest",
+      "input": {
+        "artifacts": [
+          {
+            "path": "DM-A.xml",
+            "sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          {
+            "path": "ICN-001.png",
+            "sha256": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+          }
+        ],
+        "kind": "native_s1000d"
+      },
+      "expectedCanonicalUtf8": "{\"artifacts\":[{\"path\":\"DM-A.xml\",\"sha256\":\"sha256:0000000000000000000000000000000000000000000000000000000000000000\"},{\"path\":\"ICN-001.png\",\"sha256\":\"sha256:1111111111111111111111111111111111111111111111111111111111111111\"}],\"kind\":\"native_s1000d\"}",
+      "expectedSha256": "sha256:e5943f23ca8adde6d7d8bd2b7acbc4a94f96798b0ad6e8bdd55b5c21b04d7ca6"
+    },
+    {
+      "name": "utf16-property-order",
+      "input": {
+        "€": "Euro Sign",
+        "\r": "Carriage Return",
+        "דּ": "Hebrew Letter Dalet With Dagesh",
+        "1": "One",
+        "😀": "Emoji: Grinning Face",
+        "": "Control",
+        "ö": "Latin Small Letter O With Diaeresis"
+      },
+      "expectedCanonicalUtf8": "{\"\\r\":\"Carriage Return\",\"1\":\"One\",\"\":\"Control\",\"ö\":\"Latin Small Letter O With Diaeresis\",\"€\":\"Euro Sign\",\"😀\":\"Emoji: Grinning Face\",\"דּ\":\"Hebrew Letter Dalet With Dagesh\"}",
+      "expectedSha256": "sha256:5e321556d22018a9656991a9e94f77ec175fa193e52a2429d312f8419ec8b08c"
+    },
+    {
+      "name": "array-order-a",
+      "input": {
+        "units": [
+          "A",
+          "B",
+          "C"
+        ]
+      },
+      "expectedCanonicalUtf8": "{\"units\":[\"A\",\"B\",\"C\"]}",
+      "expectedSha256": "sha256:44b36fda93d7f88905137c497a7328c13d5682e6cb9f5fb828acd6822fd3348c"
+    },
+    {
+      "name": "array-order-b",
+      "input": {
+        "units": [
+          "C",
+          "B",
+          "A"
+        ]
+      },
+      "expectedCanonicalUtf8": "{\"units\":[\"C\",\"B\",\"A\"]}",
+      "expectedSha256": "sha256:964c09d6643ff7f64cd01ca048dadb991862a1286d13df1a1dcc322ab1747255"
+    }
+  ]
+}

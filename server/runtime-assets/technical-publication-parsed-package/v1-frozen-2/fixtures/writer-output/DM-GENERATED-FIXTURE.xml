@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dmodule xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <identAndStatusSection>
+    <dmAddress>
+      <dmIdent>
+        <dmCode modelIdentCode="FIXTURE" systemDiffCode="A" systemCode="00" subSystemCode="0" subSubSystemCode="0" assyCode="00" disassyCode="00" disassyCodeVariant="A" infoCode="000" infoCodeVariant="A" itemLocationCode="A"/>
+      </dmIdent>
+    </dmAddress>
+  </identAndStatusSection>
+  <content>
+    <description>
+      <title id="u-heading-1">Procedure</title>
+      <para id="u-paragraph-1">Disconnect electrical power.</para>
+    </description>
+  </content>
+</dmodule>

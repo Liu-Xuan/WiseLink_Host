@@ -1,0 +1,216 @@
+{
+  "schemaVersion": "techpub.contract-fixture-manifest.v1",
+  "contractRevision": "frozen.2",
+  "positivePackages": [
+    {
+      "packagePath": "fixtures/positive/minimal-pdf-complete.json",
+      "artifactRecordPath": "fixtures/positive/minimal-pdf-complete.artifact-record.json",
+      "sourceKind": "pdf"
+    },
+    {
+      "packagePath": "fixtures/positive/minimal-native-s1000d-complete.json",
+      "artifactRecordPath": "fixtures/positive/minimal-native-s1000d-complete.artifact-record.json",
+      "sourceKind": "native_s1000d"
+    },
+    {
+      "packagePath": "fixtures/positive/minimal-pdf-visual-lineage.json",
+      "artifactRecordPath": "fixtures/positive/minimal-pdf-visual-lineage.artifact-record.json",
+      "sourceKind": "pdf"
+    },
+    {
+      "packagePath": "fixtures/positive/rich-native-s1000d-issue-4-2.json",
+      "artifactRecordPath": "fixtures/positive/rich-native-s1000d-issue-4-2.artifact-record.json",
+      "sourceKind": "native_s1000d"
+    }
+  ],
+  "supportDocuments": {
+    "parseFailureReport": "fixtures/positive/minimal-parse-failure-report.json",
+    "writerProvenanceManifest": "fixtures/positive/minimal-writer-provenance-manifest.json",
+    "nativeParseFailureReports": [
+      "fixtures/positive/native-local-schema-missing.json",
+      "fixtures/positive/native-unsupported-profile.json",
+      "fixtures/positive/native-unsupported-mapping.json"
+    ]
+  },
+  "negativePackages": [
+    {
+      "name": "schema-extra-property",
+      "packagePath": "fixtures/negative/schema-extra-property.json",
+      "strictErrors": [
+        "SCHEMA.INVALID"
+      ]
+    },
+    {
+      "name": "coverage-false-complete",
+      "packagePath": "fixtures/negative/coverage-false-complete.json",
+      "strictErrors": [
+        "COVERAGE.SUMMARY_MISMATCH",
+        "RESULT.DERIVATION_MISMATCH",
+        "RESULT.STATUS_MISMATCH"
+      ]
+    },
+    {
+      "name": "source-segment-cycle",
+      "packagePath": "fixtures/negative/source-segment-cycle.json",
+      "strictErrors": [
+        "STRUCTURE.SOURCE_SEGMENT_CYCLE"
+      ]
+    },
+    {
+      "name": "mapped-without-target",
+      "packagePath": "fixtures/negative/mapped-without-target.json",
+      "strictErrors": [
+        "COVERAGE.MAPPED_WITHOUT_TARGET"
+      ]
+    },
+    {
+      "name": "artifact-bytes-mismatch",
+      "packagePath": "fixtures/negative/artifact-bytes-mismatch.json",
+      "strictErrors": [
+        "HASH.ARTIFACT_BYTES_MISMATCH",
+        "IDENTITY.ARTIFACT_ID_MISMATCH",
+        "SOURCE.HASH_MISMATCH"
+      ]
+    },
+    {
+      "name": "unknown-extension",
+      "packagePath": "fixtures/negative/unknown-extension.json",
+      "strictErrors": [
+        "EXTENSION.UNKNOWN_SCHEMA"
+      ],
+      "forensicErrors": [],
+      "forensicWarnings": [
+        "EXTENSION.UNKNOWN_SCHEMA"
+      ]
+    },
+    {
+      "name": "known-extension-invalid",
+      "packagePath": "fixtures/negative/known-extension-invalid.json",
+      "strictErrors": [
+        "EXTENSION.PAYLOAD_INVALID"
+      ]
+    },
+    {
+      "name": "native-resolved-reference-target-missing",
+      "packagePath": "fixtures/negative/native-resolved-reference-target-missing.json",
+      "strictErrors": [
+        "REFERENCE.RESOLVED_TARGET_MISSING"
+      ]
+    },
+    {
+      "name": "native-source-artifact-mismatch",
+      "packagePath": "fixtures/negative/native-source-artifact-mismatch.json",
+      "strictErrors": [
+        "HASH.ARTIFACT_BYTES_MISMATCH",
+        "IDENTITY.ARTIFACT_ID_MISMATCH",
+        "SOURCE.HASH_MISMATCH"
+      ]
+    },
+    {
+      "name": "assignment-missing-expression",
+      "packagePath": "fixtures/negative/assignment-missing-expression.json",
+      "strictErrors": [
+        "REFERENCE.MISSING_APPLICABILITY_SOURCE"
+      ]
+    },
+    {
+      "name": "assignment-missing-target",
+      "packagePath": "fixtures/negative/assignment-missing-target.json",
+      "strictErrors": [
+        "REFERENCE.MISSING_APPLICABILITY_TARGET"
+      ]
+    },
+    {
+      "name": "assignment-invalid-target-shape",
+      "packagePath": "fixtures/negative/assignment-invalid-target-shape.json",
+      "strictErrors": [
+        "APPLICABILITY.INVALID_TARGET_SHAPE"
+      ]
+    },
+    {
+      "name": "assignment-missing-source-ref",
+      "packagePath": "fixtures/negative/assignment-missing-source-ref.json",
+      "strictErrors": [
+        "REFERENCE.MISSING_SOURCE_REF"
+      ]
+    },
+    {
+      "name": "candidate-invalid-source-form",
+      "packagePath": "fixtures/negative/candidate-invalid-source-form.json",
+      "strictErrors": [
+        "APPLICABILITY.INVALID_CANDIDATE_SOURCE_FORM"
+      ]
+    },
+    {
+      "name": "table-column-count-mismatch",
+      "packagePath": "fixtures/negative/table-column-count-mismatch.json",
+      "strictErrors": [
+        "TABLE.COLUMN_COUNT_MISMATCH"
+      ]
+    },
+    {
+      "name": "table-column-order-invalid",
+      "packagePath": "fixtures/negative/table-column-order-invalid.json",
+      "strictErrors": [
+        "TABLE.COLUMN_ORDER_INVALID"
+      ]
+    },
+    {
+      "name": "table-grid-bounds-invalid",
+      "packagePath": "fixtures/negative/table-grid-bounds-invalid.json",
+      "strictErrors": [
+        "TABLE.GRID_BOUNDS_INVALID"
+      ]
+    },
+    {
+      "name": "table-grid-conflict",
+      "packagePath": "fixtures/negative/table-grid-conflict.json",
+      "strictErrors": [
+        "TABLE.GRID_CONFLICT"
+      ]
+    },
+    {
+      "name": "schema-package-unbound",
+      "packagePath": "fixtures/negative/schema-package-unbound.json",
+      "strictErrors": [
+        "LINEAGE.SCHEMA_PACKAGE_UNBOUND"
+      ]
+    },
+    {
+      "name": "schema-package-hash-mismatch",
+      "packagePath": "fixtures/negative/schema-package-hash-mismatch.json",
+      "strictErrors": [
+        "HASH.SCHEMA_PACKAGE_MISMATCH"
+      ]
+    },
+    {
+      "name": "issue6-schema-binding-required",
+      "packagePath": "fixtures/negative/issue6-schema-binding-required.json",
+      "strictErrors": [
+        "LINEAGE.SCHEMA_PACKAGE_UNBOUND"
+      ]
+    },
+    {
+      "name": "contract-revision-mismatch",
+      "packagePath": "fixtures/negative/contract-revision-mismatch.json",
+      "strictErrors": [
+        "CONTRACT.REVISION_MISMATCH"
+      ]
+    },
+    {
+      "name": "contract-revision-unsupported",
+      "packagePath": "fixtures/negative/contract-revision-unsupported.json",
+      "strictErrors": [
+        "CONTRACT.REVISION_MISMATCH"
+      ]
+    }
+  ],
+  "rawJsonFailures": [
+    {
+      "name": "duplicate-key",
+      "path": "fixtures/negative/duplicate-key.json",
+      "expectedCode": "JSON.DUPLICATE_KEY"
+    }
+  ],
+  "canonicalizationVectors": "fixtures/canonicalization/jcs-test-vectors.json"
+}
