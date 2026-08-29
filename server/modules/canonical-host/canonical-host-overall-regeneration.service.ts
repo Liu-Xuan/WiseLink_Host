@@ -92,7 +92,7 @@ export class CanonicalHostOverallRegenerationService {
     assertSourceIdentity(workItem, normalizedInput.sourceIdentity);
     const overall = workItem.integratedAssessment!.overallSynthesis!;
     const sourceOverallSha256 = canonicalHostBareSha256(
-      overall.artifact.sha256,
+      overall.artifact?.sha256,
     );
     if (!sourceOverallSha256) {
       throw regenerationConflict('OVERALL_REGENERATION_SOURCE_CHANGED');
@@ -262,14 +262,20 @@ function requiredCurrentOverallCandidate(
 ): CanonicalWorkItemProjection {
   const integrated = workItem.integratedAssessment;
   const overall = integrated?.overallSynthesis;
+  const currentCandidate =
+    integrated?.status === 'OVERALL_CANDIDATE_READY' &&
+    overall?.status === 'CANDIDATE_ONLY';
+  const structureMissingLegacyCandidate =
+    integrated?.status === 'OVERALL_CANDIDATE_STALE' &&
+    overall?.status === 'STALE' &&
+    overall.engineeringSummary === undefined;
   if (
     workItem.phase !== 'CANDIDATE_READBACK_VERIFIED' ||
     !workItem.package ||
     !integrated?.baseRules ||
-    integrated.status !== 'OVERALL_CANDIDATE_READY' ||
     !overall ||
-    overall.status !== 'CANDIDATE_ONLY' ||
-    overall.staleReason !== null
+    overall.staleReason !== null ||
+    (!currentCandidate && !structureMissingLegacyCandidate)
   ) {
     throw regenerationConflict(
       'OVERALL_REGENERATION_CURRENT_CANDIDATE_REQUIRED',

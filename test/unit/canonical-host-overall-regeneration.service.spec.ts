@@ -113,15 +113,174 @@ describe('CanonicalHostOverallRegenerationService', () => {
     ).toHaveBeenCalledTimes(1);
   });
 
+  it('queues a new full regeneration from the current structure-missing legacy stale projection', async () => {
+    const harness = serviceHarness({ workItem: legacyStaleWorkItem() });
+    const input = {
+      requestId: 'REQ-USER-REGEN-3',
+      expectedRevision: 13,
+      sourceIdentity: {
+        ...SOURCE_IDENTITY,
+        sourceFileSha256: `sha256:${SOURCE_DIGEST}`,
+      },
+    };
+
+    const response = await harness.service.request('WI-1', input, {} as never);
+
+    expect(response).toMatchObject({
+      replayed: false,
+      regeneration: {
+        requestId: input.requestId,
+        requestedFromRevision: 13,
+        executionRevision: 14,
+        currentWorkItemRevision: 14,
+        staleReason: 'USER_REQUESTED_REGENERATION',
+        status: 'QUEUED',
+        attemptRef: 'AQ-OVERALL-REGEN-1',
+      },
+    });
+    expect(harness.current.overallRegenerationRequest).toMatchObject({
+      requestId: input.requestId,
+      requestedByUserId: 'USER-1',
+      requestedFromRevision: 13,
+      executionRevision: 14,
+      sourceIdentity: SOURCE_IDENTITY,
+      sourceOverall: {
+        revision: 1,
+        actionAttemptId: 'ATT-OVERALL-1',
+        artifactSha256: '6'.repeat(64),
+      },
+    });
+    expect(harness.current.integratedAssessment).toMatchObject({
+      status: 'OVERALL_CANDIDATE_STALE',
+      overallSynthesis: {
+        status: 'STALE',
+        staleReason: null,
+      },
+      overallForAeoConfirmation: null,
+    });
+    expect(
+      harness.current.integratedAssessment?.overallSynthesis
+        ?.engineeringSummary,
+    ).toBeUndefined();
+    expect(harness.current.aeo).toBeNull();
+    expect(
+      harness.overall.enqueueUserRequestedRegeneration,
+    ).toHaveBeenCalledTimes(1);
+    expect(harness.attempts.readExactIdempotency).toHaveBeenLastCalledWith({
+      tenantId: 'TENANT-1',
+      workItemId: 'WI-1',
+      taskType: 'OPENCLAW_OVERALL_SYNTHESIS',
+      baseRevision: 14,
+      documentVersionId: 'DV-1',
+      idempotencyKey:
+        'openclaw-v1:overall:WI-1:14:' +
+        'USER_REQUESTED_REGENERATION:REQ-USER-REGEN-3',
+    });
+  });
+
+  it.each<[string, (workItem: CanonicalWorkItemProjection) => void, string]>([
+    [
+      'without an overall',
+      (workItem) => {
+        workItem.integratedAssessment!.overallSynthesis = null;
+      },
+      'OVERALL_REGENERATION_CURRENT_CANDIDATE_REQUIRED',
+    ],
+    [
+      'without an overall artifact digest',
+      (workItem) => {
+        workItem.integratedAssessment!.overallSynthesis!.artifact.sha256 = '';
+      },
+      'OVERALL_REGENERATION_SOURCE_CHANGED',
+    ],
+    [
+      'outside the readback-verified phase',
+      (workItem) => {
+        workItem.phase = 'PARSING';
+      },
+      'OVERALL_REGENERATION_CURRENT_CANDIDATE_REQUIRED',
+    ],
+    [
+      'without a package',
+      (workItem) => {
+        workItem.package = null;
+      },
+      'OVERALL_REGENERATION_CURRENT_CANDIDATE_REQUIRED',
+    ],
+    [
+      'without base rules',
+      (workItem) => {
+        workItem.integratedAssessment!.baseRules = null;
+      },
+      'OVERALL_REGENERATION_CURRENT_CANDIDATE_REQUIRED',
+    ],
+    [
+      'with a self-reported stale reason',
+      (workItem) => {
+        workItem.integratedAssessment!.overallSynthesis!.staleReason =
+          'ENGINEER_REVIEW_CHANGED';
+      },
+      'OVERALL_REGENERATION_CURRENT_CANDIDATE_REQUIRED',
+    ],
+  ])(
+    'rejects a legacy stale projection %s before mutation',
+    async (_label, mutate, code) => {
+      const workItem = legacyStaleWorkItem();
+      mutate(workItem);
+      const harness = serviceHarness({ workItem });
+
+      await expect(
+        harness.service.request(
+          'WI-1',
+          {
+            requestId: 'REQ-INVALID-LEGACY',
+            expectedRevision: 13,
+            sourceIdentity: SOURCE_IDENTITY,
+          },
+          {} as never,
+        ),
+      ).rejects.toMatchObject({ code });
+      expect(harness.registrar.compareAndSet).not.toHaveBeenCalled();
+      expect(
+        harness.overall.enqueueUserRequestedRegeneration,
+      ).not.toHaveBeenCalled();
+    },
+  );
+
+  it('rejects source drift on a legacy stale projection before mutation', async () => {
+    const harness = serviceHarness({ workItem: legacyStaleWorkItem() });
+
+    await expect(
+      harness.service.request(
+        'WI-1',
+        {
+          requestId: 'REQ-SOURCE-DRIFT',
+          expectedRevision: 13,
+          sourceIdentity: {
+            ...SOURCE_IDENTITY,
+            documentVersionId: 'DV-DRIFT',
+          },
+        },
+        {} as never,
+      ),
+    ).rejects.toMatchObject({
+      code: 'OVERALL_REGENERATION_SOURCE_CHANGED',
+    });
+    expect(harness.registrar.compareAndSet).not.toHaveBeenCalled();
+    expect(
+      harness.overall.enqueueUserRequestedRegeneration,
+    ).not.toHaveBeenCalled();
+  });
+
   it('rejects a stale revision before CAS or ActionAttempt reservation', async () => {
-    const harness = serviceHarness();
+    const harness = serviceHarness({ workItem: legacyStaleWorkItem() });
 
     await expect(
       harness.service.request(
         'WI-1',
         {
           requestId: 'REQ-STALE',
-          expectedRevision: 11,
+          expectedRevision: 12,
           sourceIdentity: SOURCE_IDENTITY,
         },
         {} as never,
@@ -160,8 +319,13 @@ describe('CanonicalHostOverallRegenerationService', () => {
   });
 });
 
-function serviceHarness(options: { denyAccess?: boolean } = {}) {
-  let current = legacyWorkItem();
+function serviceHarness(
+  options: {
+    denyAccess?: boolean;
+    workItem?: CanonicalWorkItemProjection;
+  } = {},
+) {
+  let current = structuredClone(options.workItem ?? legacyWorkItem());
   let queued = false;
   const sessions = {
     resolve: jest.fn().mockResolvedValue({
@@ -215,8 +379,9 @@ function serviceHarness(options: { denyAccess?: boolean } = {}) {
     }),
   };
   const attempts = {
-    readExactIdempotency: jest.fn(async () =>
-      queued ? queuedAttempt(current.revision) : null,
+    readExactIdempotency: jest.fn(
+      async (input: { baseRevision: number; idempotencyKey: string }) =>
+        queued ? queuedAttempt(input.baseRevision, input.idempotencyKey) : null,
     ),
   };
   const service = new CanonicalHostOverallRegenerationService(
@@ -351,7 +516,44 @@ function legacyWorkItem(): CanonicalWorkItemProjection {
   };
 }
 
-function queuedAttempt(baseRevision: number): ActionAttemptRow {
+function legacyStaleWorkItem(): CanonicalWorkItemProjection {
+  const current = legacyWorkItem();
+  const overall = current.integratedAssessment!.overallSynthesis!;
+  return {
+    ...current,
+    revision: 13,
+    integratedAssessment: {
+      ...current.integratedAssessment!,
+      status: 'OVERALL_CANDIDATE_STALE',
+      overallSynthesis: {
+        ...overall,
+        status: 'STALE',
+        staleReason: null,
+      },
+      overallForAeoConfirmation: null,
+    },
+    overallRegenerationRequest: {
+      schemaVersion: 'wiselink.3_1.overall_regeneration_request.v1',
+      requestId: 'REQ-PREVIOUS-FAILED',
+      requestedByUserId: 'USER-1',
+      requestedAt: '2026-08-29T04:00:00.000Z',
+      requestedFromRevision: 12,
+      executionRevision: 13,
+      staleReason: 'USER_REQUESTED_REGENERATION',
+      sourceIdentity: structuredClone(SOURCE_IDENTITY),
+      sourceOverall: {
+        revision: overall.revision,
+        actionAttemptId: overall.actionAttemptId,
+        artifactSha256: overall.artifact.sha256,
+      },
+    },
+  };
+}
+
+function queuedAttempt(
+  baseRevision: number,
+  idempotencyKey: string,
+): ActionAttemptRow {
   const task = sealTaskEnvelope({
     schemaVersion: 'wiselink.3_1.openclaw_task_envelope.v1',
     actionAttemptId: 'ATT-OVERALL-REGEN-1',
@@ -368,9 +570,7 @@ function queuedAttempt(baseRevision: number): ActionAttemptRow {
     hostResolvedMissingInputs: [],
     modelInput: { operation: 'SYNTHESIZE_OVERALL_CANDIDATE' },
     deadline: '2026-08-29T06:00:00.000Z',
-    idempotencyKey:
-      `openclaw-v1:overall:WI-1:${baseRevision}:` +
-      'USER_REQUESTED_REGENERATION:REQ-USER-REGEN-1',
+    idempotencyKey,
   });
   const now = new Date('2026-08-29T05:00:00.000Z');
   return {
