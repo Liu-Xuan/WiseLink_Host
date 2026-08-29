@@ -1,7 +1,13 @@
 const request = jest.fn();
+const resolveAppUrl = jest.fn();
+const originalClientBasePath = process.env.CLIENT_BASE_PATH;
 
 jest.mock('@lark-apaas/client-toolkit/utils/getAxiosForBackend', () => ({
   axiosForBackend: request,
+}));
+
+jest.mock('@lark-apaas/client-toolkit/utils/resolveAppUrl', () => ({
+  resolveAppUrl,
 }));
 
 jest.mock('@lark-apaas/client-toolkit/logger', () => ({
@@ -30,7 +36,19 @@ import {
 } from '../../client/src/api/canonical-host';
 
 describe('canonical host assessment client', () => {
-  beforeEach(() => request.mockReset());
+  beforeEach(() => {
+    request.mockReset();
+    resolveAppUrl.mockReset();
+    resolveAppUrl.mockImplementation((path: string) => path);
+  });
+
+  afterEach(() => {
+    if (originalClientBasePath === undefined) {
+      delete process.env.CLIENT_BASE_PATH;
+    } else {
+      process.env.CLIENT_BASE_PATH = originalClientBasePath;
+    }
+  });
 
   it('preflights the official opaque session through the Hosted axios bridge', async () => {
     request.mockResolvedValue({
@@ -117,10 +135,28 @@ describe('canonical host assessment client', () => {
     });
   });
 
-  it('builds only the same-origin Host URL from the opaque locator', () => {
+  it('resolves the encoded PDF endpoint under Hosted and local app base paths', () => {
+    const endpoint =
+      '/api/canonical-host/work-items/WI-SB%2F1001/pdf-preview/opaque%2F%2Blocator';
+    resolveAppUrl.mockImplementation((path: string) => {
+      const configuredBasePath = process.env.CLIENT_BASE_PATH ?? '/';
+      const basePath =
+        configuredBasePath === '/'
+          ? ''
+          : configuredBasePath.replace(/\/+$/u, '');
+      return `https://wiselink.example${basePath}${path}`;
+    });
+
+    process.env.CLIENT_BASE_PATH = '/app/app_hosted';
     expect(canonicalPdfPreviewUrl('WI-SB/1001', 'opaque/+locator')).toBe(
-      '/api/canonical-host/work-items/WI-SB%2F1001/pdf-preview/opaque%2F%2Blocator',
+      `https://wiselink.example/app/app_hosted${endpoint}`,
     );
+    process.env.CLIENT_BASE_PATH = '/';
+    expect(canonicalPdfPreviewUrl('WI-SB/1001', 'opaque/+locator')).toBe(
+      `https://wiselink.example${endpoint}`,
+    );
+    expect(resolveAppUrl).toHaveBeenNthCalledWith(1, endpoint);
+    expect(resolveAppUrl).toHaveBeenNthCalledWith(2, endpoint);
     expect(() => canonicalPdfPreviewUrl('WI-SB-1001', '  ')).toThrow(
       'CANONICAL_PDF_PREVIEW_LOCATOR_INVALID',
     );

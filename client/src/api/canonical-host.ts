@@ -21,6 +21,7 @@ import type {
 
 import { logger } from '@lark-apaas/client-toolkit/logger';
 import { axiosForBackend } from '@lark-apaas/client-toolkit/utils/getAxiosForBackend';
+import { resolveAppUrl } from '@lark-apaas/client-toolkit/utils/resolveAppUrl';
 
 export interface CanonicalHostIdentityContext {
   userId: string;
@@ -225,9 +226,11 @@ export function canonicalPdfPreviewUrl(
   if (!normalizedWorkItemId || !normalizedLocator) {
     throw new Error('CANONICAL_PDF_PREVIEW_LOCATOR_INVALID');
   }
-  return `/api/canonical-host/work-items/${encodeURIComponent(
-    normalizedWorkItemId,
-  )}/pdf-preview/${encodeURIComponent(normalizedLocator)}`;
+  return resolveAppUrl(
+    `/api/canonical-host/work-items/${encodeURIComponent(
+      normalizedWorkItemId,
+    )}/pdf-preview/${encodeURIComponent(normalizedLocator)}`,
+  );
 }
 
 export async function getApplicabilitySelection(
