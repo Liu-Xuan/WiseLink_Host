@@ -74,7 +74,7 @@
   min-height: 0;
   overflow: auto;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
   align-content: start;
   padding-bottom: 4px;
@@ -82,6 +82,7 @@
 
 .wl-evidence-item {
   display: flex;
+  min-width: 0;
   flex-direction: column;
   gap: 8px;
   padding: 12px 14px;

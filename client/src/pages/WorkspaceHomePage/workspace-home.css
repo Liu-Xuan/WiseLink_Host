@@ -121,6 +121,17 @@
   border-radius: var(--wl-radius-sm);
 }
 
+.library-entry-grid.has-intake .hosted-intake-action {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.library-entry-grid.has-intake .hosted-intake-action > button {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  border-radius: var(--wl-radius-md);
+}
+
 .hosted-intake-action > button svg {
   width: 16px;
   height: 16px;
@@ -2095,6 +2106,12 @@
   .hosted-intake-action {
     grid-template-columns: 1fr;
     gap: 8px;
+  }
+
+  .library-recent-preview {
+    width: 44px;
+    min-width: 44px;
+    flex-basis: 44px;
   }
 
   .library-tree-panel,

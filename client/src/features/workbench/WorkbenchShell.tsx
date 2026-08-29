@@ -74,8 +74,8 @@ const NAV_DEFAULT = 304;
 const EVIDENCE_MIN = 280;
 const EVIDENCE_MAX = 360;
 const EVIDENCE_DEFAULT = 320;
-/** 1440px 设计视口优先保证结构化结果与 PDF 并排；证据栏改为按需浮层。 */
-const EVIDENCE_INLINE_BREAKPOINT = 1480;
+/** 1440px 设计视口保留目录、主内容与证据栏并排；更窄窗口才改为按需浮层。 */
+const EVIDENCE_INLINE_BREAKPOINT = 1360;
 /** Spec R01 §4.2：仅保存布局偏好，不保存 WorkItem/current（禁止平行真源） */
 const LAYOUT_PREFS_KEY = 'wiselink.layout.workbench';
 

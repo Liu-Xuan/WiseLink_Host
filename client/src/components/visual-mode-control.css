@@ -145,8 +145,9 @@ html[data-wl-visual-mode='ultra']:not([data-wl-transparency='reduced'])
 
 @media (max-width: 680px) {
   .wiselink-app-header .wl-visual-mode-trigger {
-    min-width: 34px;
-    width: 34px;
+    min-width: 44px;
+    width: 44px;
+    min-height: 44px;
     padding: 3px;
   }
 

@@ -27,8 +27,11 @@ describe('single canonical app workspace', () => {
       reasoningTrail,
       reader,
       workbenchStyles,
+      evidenceStyles,
       documentParsingStyles,
       visualModeControl,
+      visualModeStyles,
+      appShellStyles,
       quickOpen,
     ] = await Promise.all([
       source('client/src/app.tsx'),
@@ -58,8 +61,11 @@ describe('single canonical app workspace', () => {
         'client/src/pages/DocumentParsingPage/DocumentReaderWorkspace.tsx',
       ),
       source('client/src/features/workbench/workbench-shell.css'),
+      source('client/src/features/workbench/evidence-panel.css'),
       source('client/src/pages/DocumentParsingPage/document-parsing.css'),
       source('client/src/components/VisualModeControl.tsx'),
+      source('client/src/components/visual-mode-control.css'),
+      source('client/src/components/app-shell.css'),
       source('client/src/features/workbench/QuickOpen.tsx'),
     ]);
 
@@ -167,6 +173,22 @@ describe('single canonical app workspace', () => {
     expect(shell).toContain('进入专注阅读');
     expect(workbenchStyles).toMatch(
       /\.wl-workbench-body\s*\{\s*position: relative;/,
+    );
+    expect(shell).toContain('const EVIDENCE_INLINE_BREAKPOINT = 1360');
+    expect(workbenchStyles).toContain('@media (max-width: 1360px)');
+    expect(workbenchStyles).not.toContain('@media (max-width: 1480px)');
+    expect(evidenceStyles).toContain('grid-template-columns: minmax(0, 1fr)');
+    expect(homeStyles).toContain(
+      '.library-entry-grid.has-intake .hosted-intake-action',
+    );
+    expect(homeStyles).toMatch(
+      /\.library-recent-preview\s*\{\s*width:\s*44px;\s*min-width:\s*44px;/,
+    );
+    expect(appShellStyles).toMatch(
+      /\.wiselink-account-menu-trigger\s*\{\s*width:\s*44px;\s*height:\s*44px;/,
+    );
+    expect(visualModeStyles).toMatch(
+      /\.wiselink-app-header\s+\.wl-visual-mode-trigger\s*\{\s*min-width:\s*44px;\s*width:\s*44px;\s*min-height:\s*44px;/,
     );
     expect(documentParsingStyles).toMatch(
       /\.parse-reader-split\.is-pdf-active\s*>\s*\.parse-pdf-pane\s*\{\s*display:\s*flex;/,
