@@ -55,6 +55,7 @@ interface RealFamilyCase {
     | 'service_bulletin'
     | 'service_letter'
     | 'airworthiness_directive';
+  expectedOcrRequiredPages?: readonly string[];
 }
 
 const REAL_FAMILY_CASES: RealFamilyCase[] = [
@@ -90,6 +91,7 @@ const REAL_FAMILY_CASES: RealFamilyCase[] = [
     businessRevision: 'Original Issue',
     expectedParserProfileId: 'parser-profile:boeing.sl@1.0.0',
     expectedDocumentType: 'service_letter',
+    expectedOcrRequiredPages: ['9'],
   },
   {
     key: 'faa-ad',
@@ -378,6 +380,16 @@ describeRealFamilies(
         expect(resolveCurrent).toHaveBeenCalledWith(documentVersionId, {
           requireCurrent: true,
         });
+        if (fixture.expectedOcrRequiredPages) {
+          expect(produced).toMatchObject({
+            kind: 'FAILURE_SIGNAL',
+            failureCode: 'PDF_OCR_REQUIRED_UNSUPPORTED',
+            parameters: {
+              ocrRequiredPages: fixture.expectedOcrRequiredPages,
+            },
+          });
+          return;
+        }
         if (produced.kind !== 'PACKAGE') {
           throw new Error(`${produced.failureCode}: ${produced.message}`);
         }

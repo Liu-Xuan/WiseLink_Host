@@ -66,7 +66,7 @@ describe('professional-input whole-page source context', () => {
         artifact: ARTIFACT,
         document: {
           documentCode: 'TEST-001',
-          documentType: 'SB',
+          documentType: 'service_bulletin',
           language: 'en-US',
         },
         lineage: {

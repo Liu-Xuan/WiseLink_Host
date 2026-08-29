@@ -326,8 +326,17 @@ describeRealSb(
         bucketId,
         filePath,
       });
-      expect(produced.kind).toBe('PACKAGE');
-      if (produced.kind !== 'PACKAGE') throw new Error(produced.failureCode);
+      if (produced.kind === 'FAILURE_SIGNAL') {
+        expect(produced).toMatchObject({
+          failureCode: 'PDF_OCR_REQUIRED_UNSUPPORTED',
+          parameters: {
+            ocrRequiredPages: expect.arrayContaining(['7', '21']),
+            visualTextUnverifiedPages: expect.arrayContaining(['7', '21']),
+          },
+        });
+        return;
+      }
+      expect(produced.kind).toBe('FAILURE_SIGNAL');
       expect(produced).toMatchObject({
         contractId: 'techpub.parsed-package.v1',
         contractRevision: 'frozen.2',

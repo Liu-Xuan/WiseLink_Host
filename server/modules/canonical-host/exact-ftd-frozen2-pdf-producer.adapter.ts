@@ -78,9 +78,25 @@ export class HostNativeDocumentFamilyPdfProducerAdapter implements CanonicalPdfP
       throw new Error('PDF_PRODUCER_SOURCE_READBACK_MISMATCH');
     }
 
-    const layout = new PdfjsDistLayoutExtractor().extractLayout(
-      sourceSelection.bytes,
-    );
+    let layout: ReturnType<PdfjsDistLayoutExtractor['extractLayout']>;
+    try {
+      layout = new PdfjsDistLayoutExtractor().extractLayout(
+        sourceSelection.bytes,
+      );
+    } catch (error) {
+      if (
+        error instanceof ProfessionalInputPureError &&
+        error.code === 'PDF_OCR_REQUIRED_UNSUPPORTED'
+      ) {
+        return failureSignal(
+          error.code,
+          error.message,
+          'file_service_source->host_native_pdf_layout_provider->ocr_provider_unavailable',
+          toCanonicalFailureParameters(error.diagnostic),
+        );
+      }
+      throw error;
+    }
     const profile = recognizeHostNativePdfProfile(
       layout,
       resolved.family.documentFamily,
