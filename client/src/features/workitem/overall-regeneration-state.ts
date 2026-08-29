@@ -92,7 +92,9 @@ export function isOverallRegenerationActive(
 export function reusableOverallRegenerationRequest(
   stable: StableOverallRegenerationRequest | null,
   workItemId: string,
+  retryMode: OverallRegenerationPresentation['retryMode'],
 ): StableOverallRegenerationRequest | null {
+  if (retryMode !== 'post' && retryMode !== 'poll') return null;
   if (stable?.workItemId !== workItemId) return null;
   return stable;
 }

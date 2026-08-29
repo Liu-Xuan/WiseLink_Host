@@ -150,16 +150,27 @@ export async function getLibraryIndex(
 export async function getDocumentParsingPage(
   workItemId: string,
   query: string,
+  options: { freshness?: 'default' | 'mutation' } = {},
 ): Promise<CanonicalDocumentParsingPageResponse> {
   try {
     const normalizedQuery: string = query.trim();
+    const mutationFreshRead: boolean = options.freshness === 'mutation';
+    const params: Record<string, string> = {};
+    if (normalizedQuery !== '') params.query = normalizedQuery;
+    if (mutationFreshRead) params._fresh = crypto.randomUUID();
     const response =
       await axiosForBackend<CanonicalDocumentParsingPageResponse>({
         url: `/api/canonical-host/work-items/${encodeURIComponent(workItemId)}/document-parsing`,
         method: 'GET',
-        ...(normalizedQuery === ''
-          ? {}
-          : { params: { query: normalizedQuery } }),
+        ...(Object.keys(params).length === 0 ? {} : { params }),
+        ...(mutationFreshRead
+          ? {
+              headers: {
+                'Cache-Control': 'no-cache',
+                Pragma: 'no-cache',
+              },
+            }
+          : {}),
       });
     if (response.status === 401) {
       throw new Error('CANONICAL_PAGE_LOGIN_REQUIRED');

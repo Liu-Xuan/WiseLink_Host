@@ -73,7 +73,9 @@ export function useOverallRegeneration({
     }
     requestRef.current = null;
     try {
-      const fresh = await getDocumentParsingPage(workItemId, '');
+      const fresh = await getDocumentParsingPage(workItemId, '', {
+        freshness: 'mutation',
+      });
       if (epochRef.current !== epoch) return;
       const summary =
         fresh.workItem.integratedAssessment?.overallSynthesis
@@ -174,6 +176,7 @@ export function useOverallRegeneration({
     const stable = reusableOverallRegenerationRequest(
       requestRef.current,
       workItemId,
+      view.retryMode,
     );
     if (!stable) requestRef.current = null;
     if (stable && view.retryMode === 'post') {
@@ -200,7 +203,9 @@ export function useOverallRegeneration({
       disabled: true,
     });
     try {
-      const fresh = await getDocumentParsingPage(workItemId, '');
+      const fresh = await getDocumentParsingPage(workItemId, '', {
+        freshness: 'mutation',
+      });
       if (epochRef.current !== epoch) return;
       const next: StableOverallRegenerationRequest = {
         workItemId,
