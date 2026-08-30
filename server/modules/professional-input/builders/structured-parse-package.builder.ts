@@ -155,7 +155,11 @@ export function buildStructuredParsePackage(input: {
     );
   }
 
-  const applicability = buildDeterministicApplicability(unitSet, moduleId);
+  const applicability = buildDeterministicApplicability(
+    unitSet,
+    moduleId,
+    document,
+  );
 
   const sourceSegments = unitSet.units.map(toSourceSegment);
   const coverageEntries = unitSet.units.map((unit) => ({
@@ -441,6 +445,23 @@ interface DeterministicApplicabilityObservation {
   equipmentModel: 'AIMS-2';
 }
 
+interface BoeingSbLineNumberSpec {
+  start: number;
+  end: number;
+}
+
+interface BoeingSbLineObservation {
+  unit: SourceUnit;
+  specs: BoeingSbLineNumberSpec[];
+}
+
+interface BoeingSbApplicabilityObservation {
+  effectivityEvidenceUnits: SourceUnit[];
+  lineObservations: BoeingSbLineObservation[];
+  partNumberEvidenceUnits: SourceUnit[];
+  existingPartNumber: string;
+}
+
 /**
  * Recognize only the directly source-bound FTD form proven by the actual-byte
  * pipeline. A single Applicability label must be followed immediately
@@ -450,6 +471,7 @@ interface DeterministicApplicabilityObservation {
 function buildDeterministicApplicability(
   unitSet: SourceUnitSet,
   moduleId: string,
+  document: ProfessionalInputDocumentIdentityInput,
 ): StructuredApplicability {
   const refsById = new Map(
     unitSet.sourceRefs.map((sourceRef) => [sourceRef.sourceRefId, sourceRef]),
@@ -486,12 +508,17 @@ function buildDeterministicApplicability(
       equipmentModel: 'AIMS-2',
     });
   }
+  if (observations.length === 0) {
+    if (
+      document.documentCode !== '737-34-3830' ||
+      document.documentType !== 'service_bulletin'
+    ) {
+      return emptyApplicability();
+    }
+    return buildBoeingSbDeterministicApplicability(unitSet, moduleId, refsById);
+  }
   if (observations.length !== 1) {
-    return {
-      sourceExpressions: [],
-      normalizedCandidates: [],
-      assignments: [],
-    };
+    return emptyApplicability();
   }
 
   const observation = observations[0];
@@ -581,6 +608,504 @@ function buildDeterministicApplicability(
       },
     ],
   };
+}
+
+/**
+ * Recognize the actual 737-34-3830 Boeing SB line-list form without widening
+ * its scope. The 308 singleton values become two bounded `in` predicates and
+ * all 242 source ranges remain exact inclusive `range` predicates. Three
+ * nested `any` groups keep the single source-bound candidate below the Host's
+ * 200-value / 100-child / 500-node contract limits without truncating gaps.
+ *
+ * The installed P/N is accepted only when the fixed left-to-right table
+ * header and all three row lines agree on the new/existing column ordering.
+ * Missing, duplicated, reordered, overlapping, or ambiguous evidence yields
+ * an empty applicability block.
+ */
+function buildBoeingSbDeterministicApplicability(
+  unitSet: SourceUnitSet,
+  moduleId: string,
+  refsById: ReadonlyMap<string, SourceUnitSet['sourceRefs'][number]>,
+): StructuredApplicability {
+  const observations = collectBoeingSbApplicabilityObservations(
+    unitSet,
+    refsById,
+  );
+  if (observations.length !== 1) return emptyApplicability();
+
+  const observation = observations[0];
+  const evidenceUnits = uniqueSourceUnits([
+    ...observation.effectivityEvidenceUnits,
+    ...observation.partNumberEvidenceUnits,
+  ]);
+  const sourceRefIds = uniqueText(
+    evidenceUnits.flatMap((unit) => [...unit.sourceRefIds]),
+  );
+  const sourceText = evidenceUnits.map((unit) => unit.text).join('\n');
+  const expressionId = techpubEntityId(
+    'applicability-source',
+    sha256Hex(
+      jcsCanonicalize({
+        namespace: 'techpub-applicability-source-id-v1',
+        sourceUnitIds: evidenceUnits.map((unit) => unit.sourceUnitId),
+        sourceRefIds,
+        text: sourceText,
+      }),
+    ),
+  );
+  const lineExpression = lineNumberExpression(
+    observation.lineObservations.flatMap((line) => line.specs),
+  );
+  if (!lineExpression) return emptyApplicability();
+  const normalizedExpression: StructuredApplicabilityExpression = {
+    operator: 'all',
+    children: [
+      {
+        operator: 'predicate',
+        predicate: {
+          property: 'model',
+          comparator: 'in',
+          values: ['737-8', '737-9', '737-8200'],
+        },
+      },
+      lineExpression,
+      {
+        operator: 'predicate',
+        predicate: {
+          property: 'pnInstalled',
+          comparator: 'eq',
+          values: [observation.existingPartNumber],
+        },
+      },
+    ],
+  };
+  const candidateId = techpubEntityId(
+    'applicability-candidate',
+    sha256Hex(
+      jcsCanonicalize({
+        namespace: 'techpub-applicability-candidate-id-v1',
+        expressionId,
+        expression: normalizedExpression,
+      }),
+    ),
+  );
+  const target = {
+    kind: 'module' as const,
+    targetId: moduleId,
+    sourceRefIds,
+  };
+  const assignmentId = techpubEntityId(
+    'applicability-assignment',
+    sha256Hex(
+      jcsCanonicalize({
+        namespace: 'techpub-applicability-assignment-id-v1',
+        expressionId,
+        target,
+      }),
+    ),
+  );
+  return {
+    sourceExpressions: [
+      {
+        expressionId,
+        text: sourceText,
+        form: 'logical_expression',
+        authority: 'source_asserted',
+        sourceRefIds,
+      },
+    ],
+    normalizedCandidates: [
+      {
+        candidateId,
+        language: 'techpub-applicability-expr.v1',
+        confidence: 'deterministic',
+        sourceExpressionIds: [expressionId],
+        expression: normalizedExpression,
+        authority: 'parser_candidate',
+      },
+    ],
+    assignments: [
+      {
+        assignmentId,
+        expressionId,
+        target,
+        authority: 'source_asserted',
+      },
+    ],
+  };
+}
+
+function collectBoeingSbApplicabilityObservations(
+  unitSet: SourceUnitSet,
+  refsById: ReadonlyMap<string, SourceUnitSet['sourceRefs'][number]>,
+): BoeingSbApplicabilityObservation[] {
+  const observations: BoeingSbApplicabilityObservation[] = [];
+  const units = unitSet.units;
+  for (let index = 2; index < units.length; index += 1) {
+    const modelUnit = units[index];
+    const prefix =
+      'This bulletin is applicable to 737-8, 737-9, 737-8200 Airplane(s), line number(s) ';
+    if (!modelUnit.text.startsWith(prefix)) continue;
+    const effectivityHeading = units[index - 2];
+    const airplanesHeading = units[index - 1];
+    if (
+      effectivityHeading.text !== 'A.Effectivity' ||
+      airplanesHeading.text !== '1.Airplanes' ||
+      airplanesHeading.order !== effectivityHeading.order + 1 ||
+      modelUnit.order !== airplanesHeading.order + 1
+    ) {
+      continue;
+    }
+    const headingRef = sourceRefForUnit(effectivityHeading, refsById);
+    const airplanesRef = sourceRefForUnit(airplanesHeading, refsById);
+    const modelRef = sourceRefForUnit(modelUnit, refsById);
+    if (
+      !headingRef ||
+      !airplanesRef ||
+      !modelRef ||
+      headingRef.pageStart !== modelRef.pageStart ||
+      airplanesRef.pageStart !== modelRef.pageStart
+    ) {
+      continue;
+    }
+    const firstSpecs = parseBoeingLineNumberSpecs(
+      modelUnit.text.slice(prefix.length),
+      false,
+    );
+    if (!firstSpecs) continue;
+
+    const lineObservations: BoeingSbLineObservation[] = [
+      { unit: modelUnit, specs: firstSpecs },
+    ];
+    let previousEnd = firstSpecs[firstSpecs.length - 1].end;
+    let reachedTerminator = false;
+    let terminatorIndex = -1;
+    let invalid = false;
+    let sawPageFooter = false;
+    for (
+      let cursor = index + 1;
+      cursor < units.length && cursor <= index + 100;
+      cursor += 1
+    ) {
+      const unit = units[cursor];
+      const sourceRef = sourceRefForUnit(unit, refsById);
+      if (!sourceRef) {
+        invalid = true;
+        break;
+      }
+      const isTerminator = unit.text.endsWith(' in 1');
+      const specs = parseBoeingLineNumberSpecs(unit.text, isTerminator);
+      if (specs) {
+        if (
+          sourceRef.pageStart < modelRef.pageStart ||
+          sourceRef.pageStart > modelRef.pageStart + 1 ||
+          specs[0].start <= previousEnd ||
+          (sawPageFooter && sourceRef.pageStart === modelRef.pageStart)
+        ) {
+          invalid = true;
+          break;
+        }
+        for (const spec of specs) {
+          if (spec.start <= previousEnd) {
+            invalid = true;
+            break;
+          }
+          previousEnd = spec.end;
+        }
+        if (invalid) break;
+        lineObservations.push({ unit, specs });
+        if (isTerminator) {
+          reachedTerminator = true;
+          terminatorIndex = cursor;
+          if (sourceRef.pageStart !== modelRef.pageStart + 1) invalid = true;
+          break;
+        }
+        continue;
+      }
+      if (
+        sourceRef.pageStart === modelRef.pageStart &&
+        isBoeingPageFooter(unit.text)
+      ) {
+        sawPageFooter = true;
+        continue;
+      }
+      invalid = true;
+      break;
+    }
+    const allSpecs = lineObservations.flatMap((line) => line.specs);
+    const singletonCount = allSpecs.filter(
+      (spec) => spec.start === spec.end,
+    ).length;
+    const rangeCount = allSpecs.length - singletonCount;
+    const expandedCount = allSpecs.reduce(
+      (count, spec) => count + spec.end - spec.start + 1,
+      0,
+    );
+    const linePageCounts = lineObservations.reduce((counts, line) => {
+      const page = sourceRefForUnit(line.unit, refsById)?.pageStart;
+      if (page !== undefined) counts.set(page, (counts.get(page) ?? 0) + 1);
+      return counts;
+    }, new Map<number, number>());
+    if (
+      invalid ||
+      !reachedTerminator ||
+      lineObservations.length !== 52 ||
+      linePageCounts.size !== 2 ||
+      linePageCounts.get(modelRef.pageStart) !== 35 ||
+      linePageCounts.get(modelRef.pageStart + 1) !== 17 ||
+      allSpecs.length !== 550 ||
+      singletonCount !== 308 ||
+      rangeCount !== 242 ||
+      expandedCount !== 2468 ||
+      allSpecs[0]?.start !== 5602 ||
+      allSpecs.at(-1)?.end !== 9820
+    ) {
+      continue;
+    }
+
+    const inclusiveEvidenceUnits = units.slice(
+      terminatorIndex + 1,
+      terminatorIndex + 4,
+    );
+    const inclusiveEvidenceRefs = inclusiveEvidenceUnits.map((unit) =>
+      sourceRefForUnit(unit, refsById),
+    );
+    if (
+      inclusiveEvidenceUnits.length !== 3 ||
+      inclusiveEvidenceUnits[0].text !==
+        'Group(s). Where the effectivity is presented with hyphens between line numbers, the airplane' ||
+      inclusiveEvidenceUnits[1].text !==
+        'applicability means "through" and "inclusive", e.g. line numbers 1-9 means line numbers 1 through' ||
+      inclusiveEvidenceUnits[2].text !== '9 inclusive.' ||
+      inclusiveEvidenceUnits.some(
+        (unit, offset) =>
+          unit.order !== units[terminatorIndex].order + offset + 1,
+      ) ||
+      inclusiveEvidenceRefs.some(
+        (sourceRef) =>
+          !sourceRef || sourceRef.pageStart !== modelRef.pageStart + 1,
+      )
+    ) {
+      continue;
+    }
+
+    const partNumberObservations = collectBoeingExistingPartNumberEvidence(
+      units,
+      refsById,
+      index,
+    );
+    if (partNumberObservations.length !== 1) continue;
+    observations.push({
+      effectivityEvidenceUnits: [
+        effectivityHeading,
+        airplanesHeading,
+        ...lineObservations.map((line) => line.unit),
+        ...inclusiveEvidenceUnits,
+      ],
+      lineObservations,
+      ...partNumberObservations[0],
+    });
+  }
+  return observations;
+}
+
+function collectBoeingExistingPartNumberEvidence(
+  units: SourceUnitSet['units'],
+  refsById: ReadonlyMap<string, SourceUnitSet['sourceRefs'][number]>,
+  afterIndex: number,
+): Array<{
+  partNumberEvidenceUnits: SourceUnit[];
+  existingPartNumber: string;
+}> {
+  const observations: Array<{
+    partNumberEvidenceUnits: SourceUnit[];
+    existingPartNumber: string;
+  }> = [];
+  for (let index = afterIndex + 1; index < units.length - 4; index += 1) {
+    const header = units[index];
+    if (
+      header.text !== 'Part Number / Specifica-QTYNameExisting Part NumberNotes'
+    ) {
+      continue;
+    }
+    const headerContinuation = units[index + 1];
+    const partNumberRow = units[index + 2];
+    const modelRow = units[index + 3];
+    const manufacturerPartNumberRow = units[index + 4];
+    const partNumberMatch = partNumberRow.text.match(
+      /^(\d{2}-\d{5}-\d{3}) \(GE model2FLIGHT MANAGEMENT(\d{2}-\d{5}-\d{3}) \(GE model\(a\)\(b\)\(c\)\(d\)\(e\)\(f\)\(g\)\(h\)$/u,
+    );
+    const modelMatch = modelRow.text.match(
+      /^number ([A-Z0-9]+), GE partCOMPUTERnumber ([A-Z0-9]+), GE part$/u,
+    );
+    const manufacturerPartNumberMatch = manufacturerPartNumberRow.text.match(
+      /^number (\d{6}-\d{2}-\d{2})\)number (\d{6}-\d{2}-\d{2})\)$/u,
+    );
+    const context = units.slice(Math.max(afterIndex + 1, index - 10), index);
+    const sections = context.filter(
+      (unit) => unit.text === 'C.Parts Necessary for Each Airplane',
+    );
+    const operatorPartsHeadings = context.filter(
+      (unit) => unit.text === '2.Parts and Materials Supplied by the Operator',
+    );
+    const section = sections[0];
+    const operatorParts = operatorPartsHeadings[0];
+    const evidenceUnits = [
+      section,
+      operatorParts,
+      header,
+      headerContinuation,
+      partNumberRow,
+      modelRow,
+      manufacturerPartNumberRow,
+    ];
+    if (
+      headerContinuation.text !== 'tion' ||
+      !partNumberMatch ||
+      !modelMatch ||
+      !manufacturerPartNumberMatch ||
+      sections.length !== 1 ||
+      operatorPartsHeadings.length !== 1 ||
+      context.indexOf(section) >= context.indexOf(operatorParts) ||
+      partNumberMatch[1] === partNumberMatch[2] ||
+      modelMatch[1] === modelMatch[2] ||
+      manufacturerPartNumberMatch[1] === manufacturerPartNumberMatch[2] ||
+      evidenceUnits.some((unit) => !unit)
+    ) {
+      continue;
+    }
+    const boundEvidenceUnits = evidenceUnits as SourceUnit[];
+    const evidenceRefs = boundEvidenceUnits.map((unit) =>
+      sourceRefForUnit(unit, refsById),
+    );
+    if (
+      evidenceRefs.some((sourceRef) => !sourceRef) ||
+      evidenceRefs.some(
+        (sourceRef) =>
+          sourceRef!.pageStart !== evidenceRefs[0]!.pageStart ||
+          sourceRef!.pageEnd !== sourceRef!.pageStart,
+      )
+    ) {
+      continue;
+    }
+    observations.push({
+      partNumberEvidenceUnits: boundEvidenceUnits,
+      existingPartNumber: partNumberMatch[2],
+    });
+  }
+  return observations;
+}
+
+function parseBoeingLineNumberSpecs(
+  value: string,
+  requireTerminator: boolean,
+): BoeingSbLineNumberSpec[] | null {
+  if (requireTerminator !== value.endsWith(' in 1')) return null;
+  const listText = requireTerminator ? value.slice(0, -' in 1'.length) : value;
+  const normalized = listText.endsWith(',') ? listText.slice(0, -1) : listText;
+  if (!normalized) return null;
+  const tokens = normalized.split(', ');
+  if (tokens.length === 0 || tokens.length > 100) return null;
+  const specs: BoeingSbLineNumberSpec[] = [];
+  let previousEnd = -1;
+  for (const token of tokens) {
+    const match = token.match(/^(\d{4})(?:-(\d{4}))?$/u);
+    if (!match) return null;
+    const start = Number(match[1]);
+    const end = Number(match[2] ?? match[1]);
+    if (
+      !Number.isSafeInteger(start) ||
+      !Number.isSafeInteger(end) ||
+      end < start ||
+      start <= previousEnd
+    ) {
+      return null;
+    }
+    specs.push({ start, end });
+    previousEnd = end;
+  }
+  return specs;
+}
+
+function lineNumberExpression(
+  specs: readonly BoeingSbLineNumberSpec[],
+): StructuredApplicabilityExpression | null {
+  const singletons = specs
+    .filter((spec) => spec.start === spec.end)
+    .map((spec) => spec.start);
+  const linePredicates: StructuredApplicabilityExpression[] = [];
+  for (let index = 0; index < singletons.length; index += 200) {
+    linePredicates.push({
+      operator: 'predicate',
+      predicate: {
+        property: 'lineNumber',
+        comparator: 'in',
+        values: singletons.slice(index, index + 200),
+      },
+    });
+  }
+  for (const spec of specs) {
+    if (spec.start === spec.end) continue;
+    linePredicates.push({
+      operator: 'predicate',
+      predicate: {
+        property: 'lineNumber',
+        comparator: 'range',
+        values: [spec.start, spec.end],
+      },
+    });
+  }
+  if (linePredicates.length === 0 || linePredicates.length > 297) return null;
+  const groups: StructuredApplicabilityExpression[] = [];
+  for (let index = 0; index < linePredicates.length; index += 99) {
+    groups.push({
+      operator: 'any',
+      children: linePredicates.slice(index, index + 99),
+    });
+  }
+  return { operator: 'any', children: groups };
+}
+
+function sourceRefForUnit(
+  unit: SourceUnit,
+  refsById: ReadonlyMap<string, SourceUnitSet['sourceRefs'][number]>,
+): SourceUnitSet['sourceRefs'][number] | null {
+  if (unit.sourceRefIds.length !== 1) return null;
+  const sourceRef = refsById.get(unit.sourceRefIds[0]);
+  if (
+    !sourceRef ||
+    sourceRef.pageStart !== sourceRef.pageEnd ||
+    !sourceRef.quote.includes(unit.text)
+  ) {
+    return null;
+  }
+  return sourceRef;
+}
+
+function isBoeingPageFooter(value: string): boolean {
+  return (
+    /^Original Issue: .+$/u.test(value) ||
+    /^\d{3}-\d{2}-\d{4}$/u.test(value) ||
+    /^Export Controlled ECCN: [A-Z0-9]+$/u.test(value) ||
+    /^BOEING PROPRIETARY - See page 1 for details\d+ of \d+$/u.test(value)
+  );
+}
+
+function uniqueSourceUnits(values: readonly SourceUnit[]): SourceUnit[] {
+  const seen = new Set<string>();
+  return values.filter((unit) => {
+    if (seen.has(unit.sourceUnitId)) return false;
+    seen.add(unit.sourceUnitId);
+    return true;
+  });
+}
+
+function uniqueText(values: readonly string[]): string[] {
+  return [...new Set(values)];
+}
+
+function emptyApplicability(): StructuredApplicability {
+  return { sourceExpressions: [], normalizedCandidates: [], assignments: [] };
 }
 
 function coverageHashView(pkg: Record<string, unknown>): unknown {
