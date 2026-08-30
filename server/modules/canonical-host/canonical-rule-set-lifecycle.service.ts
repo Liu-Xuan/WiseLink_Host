@@ -45,16 +45,23 @@ interface CriterionSetVersionRuntime {
   [key: string]: unknown;
 }
 
-interface ActiveCriterionSetRuntime extends CriterionSetVersionRuntime {
+export interface ActiveCriterionSetRuntime extends CriterionSetVersionRuntime {
   lifecycleStatus: 'ACTIVE';
 }
 
-export interface ActiveCanonicalRuleSetRuntime {
+export interface CanonicalRuleSetRuntime {
   snapshotId: string;
-  headRevision: number;
   rulePack: Record<string, unknown>;
   rulePackHash: string;
+  rulePackVersion: string;
+  artifactRef: string;
+  artifactDigest: string;
+  artifactVersion: string;
   criterionSet: ActiveCriterionSetRuntime;
+}
+
+export interface ActiveCanonicalRuleSetRuntime extends CanonicalRuleSetRuntime {
+  headRevision: number;
 }
 
 @Injectable()
@@ -136,18 +143,50 @@ export class CanonicalRuleSetLifecycleService {
     const current = await this.repository.currentActivation(tenantId);
     if (!current)
       throw lifecycleError('RULE_SET_ACTIVE_SNAPSHOT_REQUIRED', 503);
-    const snapshot = await this.repository.getSnapshot(
-      tenantId,
-      current.activeCriterionSetId,
+    let runtime: CanonicalRuleSetRuntime;
+    try {
+      runtime = await this.readRuntimeSnapshot(
+        tenantId,
+        current.activeCriterionSetId,
+      );
+    } catch (error) {
+      if (errorCode(error) === 'RULE_SET_RUNTIME_SNAPSHOT_MISSING') {
+        throw lifecycleError('RULE_SET_ACTIVE_SNAPSHOT_MISSING', 500);
+      }
+      throw error;
+    }
+    return {
+      ...runtime,
+      headRevision: current.activationRevision,
+    };
+  }
+
+  async readRuntimeSnapshot(
+    tenantIdValue: string,
+    snapshotIdValue: string,
+  ): Promise<CanonicalRuleSetRuntime> {
+    const tenantId: string = requiredText(
+      tenantIdValue,
+      'RULE_SET_TENANT_ID_REQUIRED',
+      128,
     );
+    const snapshotId: string = requiredText(
+      snapshotIdValue,
+      'RULE_SET_SNAPSHOT_ID_REQUIRED',
+      96,
+    );
+    const snapshot = await this.repository.getSnapshot(tenantId, snapshotId);
     if (!snapshot)
-      throw lifecycleError('RULE_SET_ACTIVE_SNAPSHOT_MISSING', 500);
+      throw lifecycleError('RULE_SET_RUNTIME_SNAPSHOT_MISSING', 500);
     const runtime = verifyRuntimeSnapshot(snapshot);
     return {
       snapshotId: snapshot.criterionSetId,
-      headRevision: current.activationRevision,
       rulePack: runtime.rulePack,
       rulePackHash: snapshot.artifactDigest.slice('sha256:'.length),
+      rulePackVersion: snapshot.rulePackVersion,
+      artifactRef: snapshot.artifactRef,
+      artifactDigest: snapshot.artifactDigest,
+      artifactVersion: snapshot.artifactVersion,
       criterionSet: runtime.criterionSet,
     };
   }
@@ -471,4 +510,10 @@ function lifecycleError(
   statusCode: number,
 ): Error & { code: string; statusCode: number } {
   return Object.assign(new Error(code), { code, statusCode });
+}
+
+function errorCode(error: unknown): string | null {
+  if (!error || typeof error !== 'object') return null;
+  const code = (error as Record<string, unknown>).code;
+  return typeof code === 'string' ? code : null;
 }

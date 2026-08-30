@@ -11,6 +11,9 @@ import { serializeNormalizedBaseOneShotOutput } from '../assessment-workbench/ba
 import { canonicalJson } from '../action-attempt/action-attempt-envelope';
 import { ActionAttemptLifecycleService } from '../action-attempt/action-attempt-lifecycle.service';
 import type {
+  OpenClawDynamicRuleSetBinding,
+  OpenClawDynamicTaskEnvelope,
+  OpenClawDynamicTaskModelInput,
   OpenClawResultEnvelope,
   OpenClawTaskEnvelope,
 } from '../action-attempt/action-attempt-envelope.types';
@@ -27,6 +30,11 @@ import { CANONICAL_WORK_ITEM_REGISTRAR } from './canonical-host.constants';
 import { preflightCanonicalHostOpenClawResult } from './canonical-host-openclaw-runtime-policy';
 import { CanonicalHostAssessmentService } from './canonical-host-assessment.service';
 import { CanonicalHostEngineerReviewService } from './canonical-host-engineer-review.service';
+import {
+  CanonicalRuleSetLifecycleService,
+  type ActiveCanonicalRuleSetRuntime,
+  type CanonicalRuleSetRuntime,
+} from './canonical-rule-set-lifecycle.service';
 import type {
   CanonicalHostActor,
   CanonicalWorkItemRegistrarPort,
@@ -47,9 +55,9 @@ export interface BeginDynamicEvaluationResult {
   leaseToken: string;
   leaseGeneration: number;
   leaseExpiresAt: string;
-  task: OpenClawTaskEnvelope;
+  task: OpenClawDynamicTaskEnvelope;
   recoveryResult?: OpenClawResultEnvelope;
-  modelInput: Record<string, unknown>;
+  modelInput: OpenClawDynamicTaskModelInput;
 }
 
 export interface CommitDynamicEvaluationResult {
@@ -70,6 +78,7 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
     private readonly processor: DynamicRulesEvaluationProcessor,
     private readonly engineerReviews: CanonicalHostEngineerReviewService,
     private readonly attempts: ActionAttemptLifecycleService,
+    private readonly ruleSets: CanonicalRuleSetLifecycleService,
     @Inject(CANONICAL_SERVICE_SCOPE_AUTHORIZATION)
     private readonly serviceScope: CanonicalServiceScopeAuthorizationPort,
   ) {}
@@ -86,6 +95,10 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
       workItem,
       scope,
     );
+    // Resolve and validate current before reservation I/O. A tenant with no
+    // active head must never create or claim an ActionAttempt.
+    const activeRuleSet = await this.ruleSets.readActiveRuntime(actor.tenantId);
+    const ruleSetBinding = dynamicRuleSetBinding(activeRuleSet);
     const claim = await this.attempts.reserveAndClaim({
       workItemId: workItem.workItemId,
       taskType: 'OPENCLAW_DYNAMIC_EVALUATION',
@@ -107,21 +120,24 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
           workItem,
           permissionSnapshotVersion,
           dynamicAttempt(identity, workItem, actor),
+          activeRuleSet,
+          ruleSetBinding,
         );
         return structuredClone(request.modelInput) as Record<string, unknown>;
       },
     });
+    const task = parseDynamicTaskEnvelope(claim.task);
     return {
       attemptRef: claim.attemptRef,
       status: claim.status,
       leaseToken: claim.leaseToken,
       leaseGeneration: claim.leaseGeneration,
       leaseExpiresAt: claim.leaseExpiresAt,
-      task: structuredClone(claim.task),
+      task: structuredClone(task),
       ...(claim.status === 'COMMITTING'
         ? { recoveryResult: structuredClone(claim.recoveryResult) }
         : {}),
-      modelInput: structuredClone(claim.task.modelInput),
+      modelInput: structuredClone(task.modelInput),
     };
   }
 
@@ -145,6 +161,14 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
       row: preflightRow,
       result: resultEnvelope,
     });
+    const ruleSetBinding = parseDynamicRuleSetBinding(
+      preflight.task.modelInput,
+    );
+    const boundRuleSet = await this.ruleSets.readRuntimeSnapshot(
+      scope.tenantId,
+      ruleSetBinding.snapshotId,
+    );
+    assertRuleSetBindingMatchesRuntime(ruleSetBinding, boundRuleSet);
     assertAttemptBinding(
       scope,
       dynamicAttemptFromRow(preflightRow),
@@ -196,6 +220,8 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
         workItem,
         permissionSnapshotVersion,
         attempt,
+        boundRuleSet,
+        ruleSetBinding,
       );
       if (
         canonicalJson(request.modelInput) !==
@@ -319,18 +345,24 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
     workItem: CanonicalWorkItemProjection,
     permissionSnapshotVersion: string,
     attempt: DynamicEvaluationActionAttempt,
+    ruleSet: CanonicalRuleSetRuntime,
+    ruleSetBinding: OpenClawDynamicRuleSetBinding,
   ) {
     const timestamp = attempt.createdAt.toISOString();
-    const candidate = await this.assessment.prepareDynamicRulesCandidate({
-      workItem,
-      tenantId: attempt.tenantId,
-      permissionSnapshotVersion,
-      assessmentAsOf: timestamp,
-      generatedAt: timestamp,
-      externalDiscovery: null,
-      reviewedExternalManifest: null,
-    });
-    return this.processor.buildRequest(
+    const candidate =
+      await this.assessment.prepareDynamicRulesCandidateWithRuleSet(
+        {
+          workItem,
+          tenantId: attempt.tenantId,
+          permissionSnapshotVersion,
+          assessmentAsOf: timestamp,
+          generatedAt: timestamp,
+          externalDiscovery: null,
+          reviewedExternalManifest: null,
+        },
+        ruleSet,
+      );
+    const request = this.processor.buildRequest(
       candidate.dynamicRulesInput,
       candidate.overall.transport,
       {
@@ -342,6 +374,13 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
       },
       attempt.triggerRequestId,
     );
+    return {
+      ...request,
+      modelInput: {
+        ...request.modelInput,
+        ruleSetBinding: structuredClone(ruleSetBinding),
+      },
+    };
   }
 
   private async requiredSbWorkItem(
@@ -475,6 +514,90 @@ function dynamicIdempotencyKey(workItem: CanonicalWorkItemProjection): string {
     workItem.revision,
     workItem.package?.artifact?.sha256,
   ].join(':');
+}
+
+function dynamicRuleSetBinding(
+  runtime: ActiveCanonicalRuleSetRuntime,
+): OpenClawDynamicRuleSetBinding {
+  return {
+    schemaVersion: 'wiselink.3_1.dynamic_rule_set_binding.v1',
+    snapshotId: runtime.snapshotId,
+    criterionSetId: runtime.criterionSet.criterionSetId,
+    criterionSetHash: runtime.criterionSet.criterionSetHash,
+    memberIdentityHash: runtime.criterionSet.memberIdentityHash,
+    criteriaCount: runtime.criterionSet.criteriaCount,
+    rulePackVersion: runtime.rulePackVersion,
+    artifactRef: runtime.artifactRef,
+    artifactDigest: runtime.artifactDigest,
+    artifactVersion: runtime.artifactVersion,
+    activationRevision: runtime.headRevision,
+  };
+}
+
+function parseDynamicRuleSetBinding(
+  modelInput: Record<string, unknown>,
+): OpenClawDynamicRuleSetBinding {
+  const value = modelInput.ruleSetBinding;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('DYNAMIC_EVALUATION_RULE_SET_BINDING_REQUIRED');
+  }
+  const binding = value as Record<string, unknown>;
+  if (
+    binding.schemaVersion !== 'wiselink.3_1.dynamic_rule_set_binding.v1' ||
+    !requiredBindingText(binding.snapshotId, 96) ||
+    !requiredBindingText(binding.criterionSetId, 96) ||
+    !requiredBindingText(binding.criterionSetHash, 71) ||
+    !requiredBindingText(binding.memberIdentityHash, 71) ||
+    !Number.isSafeInteger(binding.criteriaCount) ||
+    Number(binding.criteriaCount) <= 0 ||
+    !requiredBindingText(binding.rulePackVersion, 96) ||
+    !requiredBindingText(binding.artifactRef, 4096) ||
+    !requiredBindingText(binding.artifactDigest, 71) ||
+    !requiredBindingText(binding.artifactVersion, 255) ||
+    !Number.isSafeInteger(binding.activationRevision) ||
+    Number(binding.activationRevision) <= 0
+  ) {
+    throw new Error('DYNAMIC_EVALUATION_RULE_SET_BINDING_INVALID');
+  }
+  return structuredClone(binding as unknown as OpenClawDynamicRuleSetBinding);
+}
+
+function parseDynamicTaskEnvelope(
+  task: OpenClawTaskEnvelope,
+): OpenClawDynamicTaskEnvelope {
+  if (task.taskType !== 'OPENCLAW_DYNAMIC_EVALUATION') {
+    throw new Error('DYNAMIC_EVALUATION_TASK_TYPE_MISMATCH');
+  }
+  parseDynamicRuleSetBinding(task.modelInput);
+  return task as OpenClawDynamicTaskEnvelope;
+}
+
+function requiredBindingText(value: unknown, maxLength: number): boolean {
+  return (
+    typeof value === 'string' &&
+    value.trim() === value &&
+    value.length > 0 &&
+    value.length <= maxLength
+  );
+}
+
+function assertRuleSetBindingMatchesRuntime(
+  binding: OpenClawDynamicRuleSetBinding,
+  runtime: CanonicalRuleSetRuntime,
+): void {
+  if (
+    binding.snapshotId !== runtime.snapshotId ||
+    binding.criterionSetId !== runtime.criterionSet.criterionSetId ||
+    binding.criterionSetHash !== runtime.criterionSet.criterionSetHash ||
+    binding.memberIdentityHash !== runtime.criterionSet.memberIdentityHash ||
+    binding.criteriaCount !== runtime.criterionSet.criteriaCount ||
+    binding.rulePackVersion !== runtime.rulePackVersion ||
+    binding.artifactRef !== runtime.artifactRef ||
+    binding.artifactDigest !== runtime.artifactDigest ||
+    binding.artifactVersion !== runtime.artifactVersion
+  ) {
+    throw new Error('DYNAMIC_EVALUATION_RULE_SET_BINDING_MISMATCH');
+  }
 }
 
 function requiredModelOutput(result: OpenClawResultEnvelope): string {

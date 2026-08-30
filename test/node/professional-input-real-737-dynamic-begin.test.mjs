@@ -45,7 +45,9 @@ test(
       importBuilt(
         'modules/assessment-workbench/dynamic-rules-evaluation.processor.js',
       ),
-      importBuilt('modules/assessment-workbench/job-aid-runtime/criterionSet.js'),
+      importBuilt(
+        'modules/assessment-workbench/job-aid-runtime/criterionSet.js',
+      ),
       importBuilt(
         'modules/canonical-host/canonical-host-assessment.service.js',
       ),
@@ -156,10 +158,14 @@ test(
         return structuredClone(workItem);
       },
     };
-    const rulePackBytes = new Uint8Array(await readFile(resolve(
-      root,
-      'server/runtime-assets/assessment-host/job-aid/rule-pack-0.2.json',
-    )));
+    const rulePackBytes = new Uint8Array(
+      await readFile(
+        resolve(
+          root,
+          'server/runtime-assets/assessment-host/job-aid/rule-pack-0.2.json',
+        ),
+      ),
+    );
     const rulePack = JSON.parse(new TextDecoder().decode(rulePackBytes));
     const rulePackHash = sha256(rulePackBytes);
     const criterionSet = buildJobAidCriterionSetVersion({
@@ -177,6 +183,11 @@ test(
           headRevision: 1,
           rulePack,
           rulePackHash,
+          rulePackVersion: '0.2',
+          artifactRef:
+            'runtime-asset://assessment-host/job-aid/rule-pack-0.2.json',
+          artifactDigest: `sha256:${rulePackHash}`,
+          artifactVersion: '0.2',
           criterionSet,
         };
       },
@@ -219,6 +230,7 @@ test(
       new DynamicRulesEvaluationProcessor(),
       {},
       attempts,
+      ruleSets,
       {
         async authorizeOpenClawWorkItem(input) {
           assert.equal(input.operation, 'BEGIN_DYNAMIC');
@@ -241,6 +253,12 @@ test(
     assert.equal(begun.modelInput.expectedSelfCheck.criterionCount, 150);
     assert.equal(begun.modelInput.expectedSelfCheck.sourcePageCount, 22);
     assert.equal(begun.modelInput.jobAidContext.criterionTable.rowCount, 150);
+    assert.equal(
+      begun.modelInput.ruleSetBinding.snapshotId,
+      criterionSet.criterionSetId,
+    );
+    assert.equal(begun.modelInput.ruleSetBinding.criteriaCount, 150);
+    assert.equal(begun.modelInput.ruleSetBinding.activationRevision, 1);
   },
 );
 

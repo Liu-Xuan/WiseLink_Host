@@ -29,6 +29,26 @@ export interface ActionEnvelopeMissingInput {
 }
 
 /**
+ * Exact Host-owned RuleSet snapshot used to build one dynamic task. The
+ * binding lives inside modelInput, so the existing TaskEnvelope inputHash and
+ * durable ActionAttempt row seal it without introducing another envelope or
+ * current-pointer mechanism.
+ */
+export interface OpenClawDynamicRuleSetBinding {
+  schemaVersion: 'wiselink.3_1.dynamic_rule_set_binding.v1';
+  snapshotId: string;
+  criterionSetId: string;
+  criterionSetHash: string;
+  memberIdentityHash: string;
+  criteriaCount: number;
+  rulePackVersion: string;
+  artifactRef: string;
+  artifactDigest: string;
+  artifactVersion: string;
+  activationRevision: number;
+}
+
+/**
  * Immutable Host-created input delivered to OpenClaw after a successful
  * ActionAttempt lease claim.
  */
@@ -50,6 +70,15 @@ export interface OpenClawTaskEnvelope {
   deadline: string;
   idempotencyKey: string;
   inputHash: string;
+}
+
+export interface OpenClawDynamicTaskModelInput extends Record<string, unknown> {
+  ruleSetBinding: OpenClawDynamicRuleSetBinding;
+}
+
+export interface OpenClawDynamicTaskEnvelope extends OpenClawTaskEnvelope {
+  taskType: 'OPENCLAW_DYNAMIC_EVALUATION';
+  modelInput: OpenClawDynamicTaskModelInput;
 }
 
 export type OpenClawResultBusinessOutcome =

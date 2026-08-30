@@ -34,7 +34,10 @@ import type {
 import { MiaodaWorkItemRepository } from '../work-item/miaoda-work-item.repository';
 import { PHASE5_737_34_3830_HANDOFF } from '../document-management/src/hosted/phase5BoeingSbHandoff.js';
 import { authorizeAndLoadCanonicalWorkItem } from './canonical-authorized-work-item-reader';
-import { CanonicalRuleSetLifecycleService } from './canonical-rule-set-lifecycle.service';
+import {
+  CanonicalRuleSetLifecycleService,
+  type CanonicalRuleSetRuntime,
+} from './canonical-rule-set-lifecycle.service';
 const JOB_AID_SOURCE_MANIFEST_HASH =
   'sha256:550473ef40f3f4347eeceb392c9fd4318566e1bb7b102c10b5ec014f1a102678';
 
@@ -154,19 +157,34 @@ export class CanonicalHostAssessmentService {
     externalDiscovery: HostedOpenClawDiscoveryResult | null;
     reviewedExternalManifest: unknown | null;
   }): Promise<PreparedDynamicRulesCandidate> {
+    const activeRuleSet = await this.ruleSets.readActiveRuntime(input.tenantId);
+    return this.prepareDynamicRulesCandidateWithRuleSet(input, activeRuleSet);
+  }
+
+  async prepareDynamicRulesCandidateWithRuleSet(
+    input: {
+      workItem: CanonicalWorkItemProjection;
+      tenantId: string;
+      permissionSnapshotVersion: string;
+      assessmentAsOf: string;
+      generatedAt: string;
+      externalDiscovery: HostedOpenClawDiscoveryResult | null;
+      reviewedExternalManifest: unknown | null;
+    },
+    ruleSet: CanonicalRuleSetRuntime,
+  ): Promise<PreparedDynamicRulesCandidate> {
     const packageBytes = await this.readAcceptedPackage(
       input.workItem,
       input.permissionSnapshotVersion,
     );
-    const activeRuleSet = await this.ruleSets.readActiveRuntime(input.tenantId);
     const assessmentOptions = {
       workItemId: input.workItem.workItemId,
       documentVersionBinding: assessmentBinding(input.workItem),
       artifactBytes: packageBytes,
       assessmentAsOf: requiredIso(input.assessmentAsOf, 'assessmentAsOf'),
-      rulePack: activeRuleSet.rulePack,
-      rulePackHash: activeRuleSet.rulePackHash,
-      criterionSet: activeRuleSet.criterionSet,
+      rulePack: ruleSet.rulePack,
+      rulePackHash: ruleSet.rulePackHash,
+      criterionSet: ruleSet.criterionSet,
       jobAidSourceIdentity: {
         status: 'SOURCE_IDENTITY_MISMATCH',
         sourceManifestHash: JOB_AID_SOURCE_MANIFEST_HASH,
