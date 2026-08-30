@@ -111,6 +111,14 @@ import { BatchApplicabilityController } from '../batch-applicability/batch-appli
 import { BatchApplicabilityHostService } from '../batch-applicability/batch-applicability-host.service';
 import { BatchApplicabilityRepository } from '../batch-applicability/batch-applicability.repository';
 import { BatchApplicabilitySourceReader } from '../batch-applicability/batch-applicability-source-reader';
+import { ConfigurationEvidenceController } from './configuration-evidence/configuration-evidence.controller';
+import { CONFIGURATION_EVIDENCE_STORE } from './configuration-evidence/configuration-evidence.persistence.types';
+import { MiaodaConfigurationEvidenceStore } from './configuration-evidence/configuration-evidence.repository';
+import { ConfigurationEvidenceService } from './configuration-evidence/configuration-evidence.service';
+import {
+  GET_INSTALLATION_EVENTS,
+  UnconfiguredGetInstallationEventsAdapter,
+} from './configuration-evidence/get-installation-events.port';
 
 export interface CanonicalHostModuleOptions {
   imports?: ModuleMetadata['imports'];
@@ -126,6 +134,7 @@ export interface CanonicalHostModuleOptions {
   serviceScopeAuthorizationProvider?: Provider;
   professionalArtifactCorrelationProvider?: Provider;
   applicabilityControlledSelectionProvider?: Provider;
+  installationEventsProvider?: Provider;
 }
 
 @Module({
@@ -154,6 +163,7 @@ export interface CanonicalHostModuleOptions {
     CanonicalHostAeoEditingController,
     CanonicalTranslationKnowledgeController,
     BatchApplicabilityController,
+    ConfigurationEvidenceController,
   ],
   providers: [
     CanonicalEntryFacadeService,
@@ -198,6 +208,9 @@ export interface CanonicalHostModuleOptions {
     BatchApplicabilityHostService,
     BatchApplicabilityRepository,
     BatchApplicabilitySourceReader,
+    ConfigurationEvidenceService,
+    MiaodaConfigurationEvidenceStore,
+    SystemCanonicalHostClockAdapter,
     UnavailableCanonicalServiceScopeAuthorization,
     UnavailableCanonicalApplicabilityControlledSelection,
     UnavailableScopedProfessionalArtifactCorrelationAdapter,
@@ -217,6 +230,18 @@ export interface CanonicalHostModuleOptions {
     {
       provide: CANONICAL_APPLICABILITY_CONTROLLED_SELECTION,
       useExisting: UnavailableCanonicalApplicabilityControlledSelection,
+    },
+    {
+      provide: CONFIGURATION_EVIDENCE_STORE,
+      useExisting: MiaodaConfigurationEvidenceStore,
+    },
+    {
+      provide: GET_INSTALLATION_EVENTS,
+      useClass: UnconfiguredGetInstallationEventsAdapter,
+    },
+    {
+      provide: CANONICAL_HOST_CLOCK,
+      useExisting: SystemCanonicalHostClockAdapter,
     },
   ],
 })
@@ -288,6 +313,12 @@ export class CanonicalHostModule {
       UnavailableCanonicalApplicabilityControlledSelection,
       'CANONICAL_APPLICABILITY_CONTROLLED_SELECTION_PROVIDER_INVALID',
     );
+    const installationEventsProvider = resolveProvider(
+      options.installationEventsProvider,
+      GET_INSTALLATION_EVENTS,
+      UnconfiguredGetInstallationEventsAdapter,
+      'GET_INSTALLATION_EVENTS_PROVIDER_INVALID',
+    );
     const binding: CanonicalHostBindingState = {
       mode:
         options.workItemRegistrarProvider &&
@@ -336,6 +367,7 @@ export class CanonicalHostModule {
         CanonicalHostAeoEditingController,
         CanonicalTranslationKnowledgeController,
         BatchApplicabilityController,
+        ConfigurationEvidenceController,
       ],
       providers: [
         workItemRegistrarProvider,
@@ -349,6 +381,7 @@ export class CanonicalHostModule {
         serviceScopeAuthorizationProvider,
         professionalArtifactCorrelationProvider,
         applicabilityControlledSelectionProvider,
+        installationEventsProvider,
         {
           provide: CANONICAL_HOST_CLOCK,
           useClass: SystemCanonicalHostClockAdapter,
@@ -395,6 +428,12 @@ export class CanonicalHostModule {
         BatchApplicabilityHostService,
         BatchApplicabilityRepository,
         BatchApplicabilitySourceReader,
+        ConfigurationEvidenceService,
+        MiaodaConfigurationEvidenceStore,
+        {
+          provide: CONFIGURATION_EVIDENCE_STORE,
+          useExisting: MiaodaConfigurationEvidenceStore,
+        },
         {
           provide: CANONICAL_SERVICE_SCOPE_AUTHORIZATION,
           useExisting: CANONICAL_EXECUTOR_SERVICE_SCOPE_AUTHORIZATION,

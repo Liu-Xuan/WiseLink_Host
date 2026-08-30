@@ -21,6 +21,8 @@ export type CanonicalLegacyObjectAccessAction =
 export type CanonicalObjectAccessAction =
   | CanonicalLegacyObjectAccessAction
   | 'READ_WORK_ITEM'
+  | 'READ_CONFIGURATION_EVIDENCE'
+  | 'REFRESH_CONFIGURATION_EVIDENCE'
   | 'CONFIGURE_APPLICABILITY_SELECTION'
   | 'CREATE_BATCH_APPLICABILITY_RUN'
   | 'READ_BATCH_APPLICABILITY_RUN'

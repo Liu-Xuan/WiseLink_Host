@@ -1653,6 +1653,24 @@ export interface CanonicalParseAuthorizationProjection {
   permissionSnapshotVersion: string;
 }
 
+export interface CanonicalConfigurationEvidenceCurrentProjection {
+  schemaVersion: 'wiselink.3_1.configuration_evidence_work_item_current.v1';
+  snapshotId: string;
+  configurationRevision: number;
+  aircraftAssetId: string;
+  assessmentAsOf: string;
+  sourceCompleteness: 'COMPLETE' | 'PARTIAL' | 'UNKNOWN' | 'CONFLICT';
+  truthSummary: {
+    trueCount: number;
+    falseCount: number;
+    unknownCount: number;
+    conflictCount: number;
+  };
+  recordedAt: string;
+  authority: 'WORK_ITEM_CURRENT_EVIDENCE_VIEW';
+  globalAircraftCurrentChanged: false;
+}
+
 export interface CanonicalWorkItemProjection {
   schemaVersion: 'wiselink.3_1.canonical_work_item_projection.v0.candidate';
   workItemId: string;
@@ -1671,6 +1689,7 @@ export interface CanonicalWorkItemProjection {
   assessment?: CanonicalAssessmentCandidateProjection | null;
   integratedAssessment?: CanonicalIntegratedAssessmentProjection | null;
   overallRegenerationRequest?: CanonicalOverallRegenerationRequestProjection | null;
+  configurationEvidenceCurrent?: CanonicalConfigurationEvidenceCurrentProjection | null;
   aeo?: CanonicalAeoCandidateProjection | null;
   aeoEditingInput?: CanonicalAeoEditingInputProjection | null;
   /** Server-only staged current input; never returned by an AEO browser DTO. */

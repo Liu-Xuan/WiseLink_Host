@@ -6,6 +6,8 @@ export type ConfigurationEventKind =
   | 'MODIFICATION_EMBODIMENT'
   | 'REPAIR_ACCOMPLISHMENT';
 
+export const GET_INSTALLATION_EVENTS = Symbol('GET_INSTALLATION_EVENTS');
+
 export type ConfigurationEventAuthorityClass =
   | 'INSTALLATION_EVENT_SOR'
   | 'SOFTWARE_LOAD_EVENT_SOR'
