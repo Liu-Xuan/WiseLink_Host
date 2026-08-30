@@ -19,8 +19,21 @@ import type {
   PreparedActionAttemptCommit,
   ReserveAndClaimInput,
 } from '../../server/modules/action-attempt/action-attempt.types';
-import { CanonicalHostOpenClawTranslationService } from '../../server/modules/canonical-host/canonical-host-openclaw-translation.service';
+import {
+  CanonicalHostOpenClawTranslationService,
+  parseBilingualTranslationArtifact,
+  type BilingualTranslationArtifact,
+} from '../../server/modules/canonical-host/canonical-host-openclaw-translation.service';
 import { CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY } from '../../server/modules/canonical-host/canonical-host-openclaw-runtime-policy';
+import {
+  CanonicalTranslationKnowledgeGovernanceService,
+  type SaveTranslationKnowledgeCandidateResult,
+  type TranslationKnowledgeAggregate,
+  type TranslationKnowledgeCandidateRecord,
+  type TranslationKnowledgeCandidateStore,
+  type TranslationKnowledgeGovernanceEvent,
+  type TranslationKnowledgeIdFactory,
+} from '../../server/modules/canonical-host/canonical-translation-knowledge-governance';
 import {
   TRANSLATION_RESULT_SCHEMA_VERSION,
   type TranslationTaskContract,
@@ -98,6 +111,9 @@ describe('CanonicalHostOpenClawTranslationService', () => {
       begin.leaseGeneration,
       harness.result,
     );
+    if (!('translation' in committed)) {
+      throw new Error('TRANSLATION_COMMIT_NOT_PROJECTED');
+    }
 
     expect(committed).toMatchObject({
       workItemId: harness.workItem.workItemId,
@@ -139,6 +155,211 @@ describe('CanonicalHostOpenClawTranslationService', () => {
     expect(
       artifact.units.map((unit: { unitId: string }) => unit.unitId),
     ).toEqual(['UNIT-1', 'UNIT-2']);
+  });
+
+  it('imports the real service artifact into candidate-only governed memory with dedupe, trace, confirmation, expiry and invalidation readback', async () => {
+    const harness = harnessForTranslation();
+    const begin = await harness.service.begin(harness.workItem.workItemId);
+    const taskContract: TranslationTaskContract = begin.task
+      .modelInput as unknown as TranslationTaskContract;
+    harness.prepare(
+      JSON.stringify({
+        schemaVersion: TRANSLATION_RESULT_SCHEMA_VERSION,
+        rulePackId: taskContract.rulePack.meta.rulePackId,
+        rulePackVersion: taskContract.rulePack.meta.rulePackVersion,
+        taskStartBinding: taskContract.taskStartBinding,
+        candidateUnits: [
+          {
+            unitKey: 'UNIT-1',
+            text: '警告 飞机 AIMS-2 P/N 123-ABC 5 kg。',
+            sourceRefIds: ['SRC-1'],
+            engineerRevision: null,
+          },
+          {
+            unitKey: 'UNIT-2',
+            text: '注 驾驶舱。',
+            sourceRefIds: ['SRC-2'],
+            engineerRevision: null,
+          },
+        ],
+      }),
+    );
+    const committed = await harness.service.commit(
+      begin.attemptRef,
+      begin.leaseToken,
+      begin.leaseGeneration,
+      harness.result,
+    );
+    if (!('translation' in committed)) {
+      throw new Error('TRANSLATION_KNOWLEDGE_COMMIT_NOT_PROJECTED');
+    }
+    const artifact: BilingualTranslationArtifact =
+      parseBilingualTranslationArtifact(harness.persistedBytes());
+    const store = new ReadbackTranslationKnowledgeCandidateStore();
+    let assetSequence = 0;
+    let eventSequence = 0;
+    const idFactory: TranslationKnowledgeIdFactory = (
+      kind: 'ASSET' | 'EVENT',
+    ): string => {
+      if (kind === 'ASSET') {
+        assetSequence += 1;
+        return `TM-CANDIDATE-${assetSequence}`;
+      }
+      eventSequence += 1;
+      return `TM-EVENT-${eventSequence}`;
+    };
+    const governance = new CanonicalTranslationKnowledgeGovernanceService(
+      store,
+      new HostOwnedV1TranslationRuleSetPrivateProvider(),
+      idFactory,
+    );
+    const importInput = {
+      tenantId: 'tenant-1',
+      ownerActorId: 'user:translation-owner',
+      importedByActorId: 'user:translation-owner',
+      sourceArtifact: committed.translation.artifact,
+      artifact,
+      currentBinding: taskContract.taskStartBinding,
+      validFrom: '2026-08-30T00:00:00.000Z',
+      expiresAt: '2026-09-30T00:00:00.000Z',
+      importedAt: '2026-08-30T01:00:00.000Z',
+    };
+
+    const imported = await governance.importBilingualCandidates(importInput);
+    const replayed = await governance.importBilingualCandidates(importInput);
+
+    expect(imported).toEqual({
+      status: 'CANDIDATE_ONLY',
+      createdCount: 2,
+      reusedCount: 0,
+      assetIds: ['TM-CANDIDATE-1', 'TM-CANDIDATE-2'],
+    });
+    expect(replayed).toEqual({
+      status: 'CANDIDATE_ONLY',
+      createdCount: 0,
+      reusedCount: 2,
+      assetIds: ['TM-CANDIDATE-1', 'TM-CANDIDATE-2'],
+    });
+
+    const pending = await governance.readCandidate({
+      tenantId: 'tenant-1',
+      assetId: imported.assetIds[0],
+      asOf: '2026-08-30T02:00:00.000Z',
+      currentBinding: taskContract.taskStartBinding,
+    });
+    expect(pending).toMatchObject({
+      confirmationStatus: 'PENDING_HUMAN_CONFIRMATION',
+      validityStatus: 'CURRENT',
+      sourceCurrentness: 'CURRENT',
+      retrievalEligibility: 'BLOCKED',
+      activeTerminology: false,
+      formalKnowledge: false,
+      candidate: {
+        candidateOnly: true,
+        usagePolicy: 'SUGGESTION_ONLY',
+        ownerActorId: 'user:translation-owner',
+        sourceArtifact: {
+          sha256: committed.translation.artifact.sha256,
+        },
+        sourceBinding: taskContract.taskStartBinding,
+        ruleSet: {
+          ruleSetId: taskContract.rulePack.meta.rulePackId,
+          ruleSetVersion: taskContract.rulePack.meta.rulePackVersion,
+        },
+        unit: {
+          unitId: 'UNIT-1',
+          sourceRefIds: ['SRC-1'],
+        },
+      },
+    });
+    await expect(
+      governance.confirmByHuman({
+        tenantId: 'tenant-1',
+        assetId: imported.assetIds[0],
+        actorKind: 'MODEL',
+        actorId: 'model:GLM-5.3',
+        reason: 'model suggestion',
+        occurredAt: '2026-08-30T03:00:00.000Z',
+        currentBinding: taskContract.taskStartBinding,
+      }),
+    ).rejects.toThrow('KNOWLEDGE_HUMAN_CONFIRMATION_REQUIRED');
+    await expect(
+      governance.confirmByHuman({
+        tenantId: 'tenant-1',
+        assetId: imported.assetIds[0],
+        actorKind: 'HUMAN',
+        actorId: 'user:not-owner',
+        reason: 'unowned review',
+        occurredAt: '2026-08-30T03:01:00.000Z',
+        currentBinding: taskContract.taskStartBinding,
+      }),
+    ).rejects.toThrow('KNOWLEDGE_OWNER_CONFIRMATION_REQUIRED');
+
+    const confirmedFirst = await governance.confirmByHuman({
+      tenantId: 'tenant-1',
+      assetId: imported.assetIds[0],
+      actorKind: 'HUMAN',
+      actorId: 'user:translation-owner',
+      reason: 'source and translation reviewed',
+      occurredAt: '2026-08-31T00:00:00.000Z',
+      currentBinding: taskContract.taskStartBinding,
+    });
+    const confirmedSecond = await governance.confirmByHuman({
+      tenantId: 'tenant-1',
+      assetId: imported.assetIds[1],
+      actorKind: 'HUMAN',
+      actorId: 'user:translation-owner',
+      reason: 'source and translation reviewed',
+      occurredAt: '2026-08-31T00:01:00.000Z',
+      currentBinding: taskContract.taskStartBinding,
+    });
+    expect(confirmedFirst).toMatchObject({
+      governanceRevision: 1,
+      confirmationStatus: 'HUMAN_CONFIRMED',
+      retrievalEligibility: 'SUGGESTION_ONLY',
+      activeTerminology: false,
+      formalKnowledge: false,
+    });
+    expect(confirmedSecond.candidate.unit.sourceRefIds).toEqual(['SRC-2']);
+
+    const invalidated = await governance.invalidateIfSourceStale({
+      tenantId: 'tenant-1',
+      assetId: imported.assetIds[0],
+      invalidatedAt: '2026-09-01T00:00:00.000Z',
+      currentBinding: {
+        ...taskContract.taskStartBinding,
+        revisionId: 'DV-2',
+      },
+    });
+    expect(invalidated).toMatchObject({
+      governanceRevision: 2,
+      confirmationStatus: 'HUMAN_CONFIRMED',
+      validityStatus: 'INVALIDATED',
+      sourceCurrentness: 'STALE',
+      retrievalEligibility: 'BLOCKED',
+      events: [
+        { eventType: 'HUMAN_CONFIRMED', actorKind: 'HUMAN' },
+        {
+          eventType: 'INVALIDATED',
+          actorKind: 'SYSTEM',
+          reason: 'SOURCE_BINDING_CHANGED',
+        },
+      ],
+    });
+
+    const expired = await governance.readCandidate({
+      tenantId: 'tenant-1',
+      assetId: imported.assetIds[1],
+      asOf: '2026-10-01T00:00:00.000Z',
+      currentBinding: taskContract.taskStartBinding,
+    });
+    expect(expired).toMatchObject({
+      confirmationStatus: 'HUMAN_CONFIRMED',
+      validityStatus: 'EXPIRED',
+      retrievalEligibility: 'BLOCKED',
+      activeTerminology: false,
+      formalKnowledge: false,
+    });
   });
 
   it('uploads and finalizes an approximately 67KB 196-unit result with exact replay and one candidate publication', async () => {
@@ -760,7 +981,6 @@ function parsedWorkItem(contentUnitCount = 2): CanonicalWorkItemProjection {
       sourceRefCount: contentUnitCount,
       readerReceiptId: 'READER-1',
       fullValidatorProof: {} as never,
-      acceptanceReceipt: {} as never,
     },
     failure: null,
     recordingFailure: null,
@@ -812,6 +1032,83 @@ function verifiedScope() {
     workItemId: 'WI-TRANSLATE-1',
     authorizationFingerprint: 'scope-fingerprint-1',
   };
+}
+
+class ReadbackTranslationKnowledgeCandidateStore implements TranslationKnowledgeCandidateStore {
+  private readonly candidates = new Map<
+    string,
+    TranslationKnowledgeCandidateRecord
+  >();
+
+  private readonly dedupe = new Map<string, string>();
+
+  private readonly events = new Map<
+    string,
+    TranslationKnowledgeGovernanceEvent[]
+  >();
+
+  async saveCandidate(
+    candidate: TranslationKnowledgeCandidateRecord,
+  ): Promise<SaveTranslationKnowledgeCandidateResult> {
+    const dedupeKey: string = [
+      candidate.tenantId,
+      candidate.sourceArtifact.sha256,
+      candidate.unit.unitId,
+    ].join(':');
+    const existingId: string | undefined = this.dedupe.get(dedupeKey);
+    if (existingId !== undefined) {
+      const existing: TranslationKnowledgeCandidateRecord | undefined =
+        this.candidates.get(existingId);
+      if (existing === undefined) throw new Error('TEST_STORE_CORRUPT');
+      return {
+        candidate: structuredClone(existing),
+        disposition: 'REUSED',
+      };
+    }
+    const stored: TranslationKnowledgeCandidateRecord =
+      structuredClone(candidate);
+    this.candidates.set(stored.assetId, stored);
+    this.dedupe.set(dedupeKey, stored.assetId);
+    this.events.set(stored.assetId, []);
+    return {
+      candidate: structuredClone(stored),
+      disposition: 'CREATED',
+    };
+  }
+
+  async readAggregate(
+    tenantId: string,
+    assetId: string,
+  ): Promise<TranslationKnowledgeAggregate | null> {
+    const candidate: TranslationKnowledgeCandidateRecord | undefined =
+      this.candidates.get(assetId);
+    if (candidate === undefined || candidate.tenantId !== tenantId) return null;
+    return {
+      candidate: structuredClone(candidate),
+      events: structuredClone(this.events.get(assetId) ?? []),
+    };
+  }
+
+  async appendEvent(event: TranslationKnowledgeGovernanceEvent): Promise<void> {
+    const candidate: TranslationKnowledgeCandidateRecord | undefined =
+      this.candidates.get(event.assetId);
+    const events: TranslationKnowledgeGovernanceEvent[] | undefined =
+      this.events.get(event.assetId);
+    if (
+      candidate === undefined ||
+      events === undefined ||
+      candidate.tenantId !== event.tenantId
+    ) {
+      throw new Error('KNOWLEDGE_CANDIDATE_NOT_FOUND');
+    }
+    if (
+      event.expectedRevision !== events.length ||
+      event.resultingRevision !== events.length + 1
+    ) {
+      throw new Error('KNOWLEDGE_GOVERNANCE_CAS_CONFLICT');
+    }
+    events.push(structuredClone(event));
+  }
 }
 
 function sha256(bytes: Uint8Array): string {
