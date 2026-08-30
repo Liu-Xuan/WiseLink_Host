@@ -32,6 +32,8 @@
     "test:canonical:activation": "npm run build:server && node scripts/verify-canonical-activation-deltas.mjs",
     "test:canonical:mcp": "npm run build:server && node scripts/verify-canonical-mcp.mjs",
     "test:canonical:aily-identity-mcp": "npm run build:server && node scripts/verify-aily-identity-mcp.mjs",
+    "test:canonical:pdf-corpus-runner": "node --test test/node/canonical-pdf-corpus-runner.test.mjs",
+    "accept:canonical:pdf-corpus": "npm run build:server && node scripts/run-canonical-pdf-corpus.mjs",
     "test:document-management:composition": "npm run build:server && node scripts/verify-document-management-composition.mjs",
     "test:document-management:real-pdf": "npm run build:server && node scripts/run-document-management-real-pdf-loop.mjs",
     "test:document-management:catalog-insert-shape": "npm run build:server && node scripts/verify-hosted-catalog-insert-select-shape.mjs",

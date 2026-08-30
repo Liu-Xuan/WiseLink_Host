@@ -418,7 +418,19 @@ export class InMemoryHostedDocumentCatalog {
     const acquisition = this.#acquisitions.get(version.acquisitionId);
     const artifact = this.#sourceArtifacts.get(version.sourceArtifactId);
     const family = this.#families.get(version.familyId);
-    if (!acquisition || !artifact || !family) {
+    const preflight = [...this.#preflights.values()].find(
+      (value) =>
+        value.acquisitionId === acquisition?.acquisitionId &&
+        value.documentVersionId === documentVersionId &&
+        value.status === 'COMMITTED',
+    );
+    const currentness = this.#currentness.find(
+      (value) =>
+        value.familyId === family?.familyId &&
+        value.nextDocumentVersionId === documentVersionId &&
+        value.nextGeneration === family?.currentGeneration,
+    );
+    if (!acquisition || !artifact || !family || !preflight) {
       throw new Error('DOCUMENT_VERSION_SOURCE_NOT_FOUND');
     }
     if (
@@ -434,9 +446,19 @@ export class InMemoryHostedDocumentCatalog {
     ) {
       throw new Error('DOCUMENT_VERSION_NOT_CURRENT');
     }
+    if (options.requireCurrent === true && !currentness) {
+      throw new Error('DOCUMENT_VERSION_CURRENTNESS_UNVERIFIED');
+    }
     assert.equal(version.pdfSha256, artifact.sha256);
     assert.equal(version.byteLength, artifact.byteLength);
-    return structuredClone({ version, acquisition, artifact, family });
+    return structuredClone({
+      version,
+      acquisition,
+      artifact,
+      family,
+      preflight,
+      currentness: currentness ?? null,
+    });
   }
 }
 
