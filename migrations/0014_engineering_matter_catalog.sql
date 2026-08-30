@@ -93,15 +93,26 @@ CREATE TABLE IF NOT EXISTS engineering_matter_revision_work_item (
     CHECK (linked_at_work_item_revision >= 0)
 );
 
-ALTER TABLE engineering_matter
-  ADD CONSTRAINT fk_engineering_matter_current_revision
-  FOREIGN KEY (tenant_id, matter_id, current_matter_revision_id)
-  REFERENCES engineering_matter_revision(
-    tenant_id,
-    matter_id,
-    matter_revision_id
-  )
-  DEFERRABLE INITIALLY DEFERRED;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_constraint
+    WHERE conname = 'fk_engineering_matter_current_revision'
+      AND conrelid = 'engineering_matter'::regclass
+  ) THEN
+    ALTER TABLE engineering_matter
+      ADD CONSTRAINT fk_engineering_matter_current_revision
+      FOREIGN KEY (tenant_id, matter_id, current_matter_revision_id)
+      REFERENCES engineering_matter_revision(
+        tenant_id,
+        matter_id,
+        matter_revision_id
+      )
+      DEFERRABLE INITIALLY DEFERRED;
+  END IF;
+END;
+$$;
 
 CREATE INDEX IF NOT EXISTS idx_engineering_matter_owner
   ON engineering_matter(tenant_id, created_by_user_id, updated_at);
@@ -120,11 +131,11 @@ RETURNS boolean
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
-SET search_path = pg_catalog, public
+SET search_path FROM CURRENT
 AS $$
   SELECT EXISTS (
     SELECT 1
-    FROM public.identity_subject_mapping AS current_mapping
+    FROM identity_subject_mapping AS current_mapping
     WHERE current_mapping.miaoda_user_id =
       current_setting('app.user_id', true)
       AND current_mapping.miaoda_tenant_id = target_tenant_id
@@ -141,11 +152,11 @@ RETURNS boolean
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
-SET search_path = pg_catalog, public
+SET search_path FROM CURRENT
 AS $$
   SELECT EXISTS (
     SELECT 1
-    FROM public.engineering_matter AS owned_matter
+    FROM engineering_matter AS owned_matter
     WHERE owned_matter.tenant_id = target_tenant_id
       AND owned_matter.matter_id = target_matter_id
       AND owned_matter.created_by_user_id =
@@ -161,11 +172,11 @@ RETURNS boolean
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
-SET search_path = pg_catalog, public
+SET search_path FROM CURRENT
 AS $$
   SELECT EXISTS (
     SELECT 1
-    FROM public.work_item AS owned_work_item
+    FROM work_item AS owned_work_item
     WHERE owned_work_item.tenant_id = target_tenant_id
       AND owned_work_item.work_item_id = target_work_item_id
       AND owned_work_item.requested_by_user_id =
@@ -182,12 +193,12 @@ RETURNS boolean
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
-SET search_path = pg_catalog, public
+SET search_path FROM CURRENT
 AS $$
   SELECT EXISTS (
     SELECT 1
-    FROM public.engineering_matter_revision AS owned_revision
-    JOIN public.engineering_matter AS owned_matter
+    FROM engineering_matter_revision AS owned_revision
+    JOIN engineering_matter AS owned_matter
       ON owned_matter.matter_id = owned_revision.matter_id
       AND owned_matter.tenant_id = owned_revision.tenant_id
     WHERE owned_revision.tenant_id = target_tenant_id
@@ -208,19 +219,19 @@ RETURNS boolean
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
-SET search_path = pg_catalog, public
+SET search_path FROM CURRENT
 AS $$
   SELECT
     EXISTS (
       SELECT 1
-      FROM public.engineering_matter_revision_work_item AS current_link
+      FROM engineering_matter_revision_work_item AS current_link
       WHERE current_link.tenant_id = target_tenant_id
         AND current_link.matter_revision_id = target_matter_revision_id
     )
     AND NOT EXISTS (
       SELECT 1
-      FROM public.engineering_matter_revision_work_item AS current_link
-      JOIN public.work_item AS linked_work_item
+      FROM engineering_matter_revision_work_item AS current_link
+      JOIN work_item AS linked_work_item
         ON linked_work_item.work_item_id = current_link.work_item_id
       WHERE current_link.tenant_id = target_tenant_id
         AND current_link.matter_revision_id = target_matter_revision_id
@@ -232,40 +243,9 @@ AS $$
     );
 $$;
 
-REVOKE ALL ON FUNCTION engineering_matter_actor_has_tenant(varchar)
-  FROM PUBLIC;
-REVOKE ALL ON FUNCTION engineering_matter_owned_by_actor(varchar, varchar)
-  FROM PUBLIC;
-REVOKE ALL ON FUNCTION engineering_matter_work_item_owned_by_actor(
-  varchar,
-  varchar
-) FROM PUBLIC;
-REVOKE ALL ON FUNCTION engineering_matter_revision_owned_by_actor(
-  varchar,
-  varchar,
-  varchar
-) FROM PUBLIC;
-REVOKE ALL ON FUNCTION engineering_matter_all_links_owned_by_actor(
-  varchar,
-  varchar
-) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION engineering_matter_actor_has_tenant(varchar)
-  TO authenticated;
-GRANT EXECUTE ON FUNCTION engineering_matter_owned_by_actor(varchar, varchar)
-  TO authenticated;
-GRANT EXECUTE ON FUNCTION engineering_matter_work_item_owned_by_actor(
-  varchar,
-  varchar
-) TO authenticated;
-GRANT EXECUTE ON FUNCTION engineering_matter_revision_owned_by_actor(
-  varchar,
-  varchar,
-  varchar
-) TO authenticated;
-GRANT EXECUTE ON FUNCTION engineering_matter_all_links_owned_by_actor(
-  varchar,
-  varchar
-) TO authenticated;
+-- Miaoda manages function and table privileges. The platform rejects SQL
+-- GRANT/REVOKE statements, while the authenticated RLS policies below remain
+-- the browser-facing authorization boundary.
 
 ALTER TABLE engineering_matter ENABLE ROW LEVEL SECURITY;
 ALTER TABLE engineering_matter_revision ENABLE ROW LEVEL SECURITY;
