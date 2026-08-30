@@ -9,9 +9,18 @@
   color: var(--wl-ink);
 }
 
+/* 工作台由 AppShell 单独拥有视口高度；页面只填满剩余轨道。 */
+.wiselink-app-shell.is-workbench-route {
+  display: grid;
+  height: 100dvh;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
 .wiselink-app-header {
   position: sticky;
-  z-index: 40;
+  z-index: var(--wl-z-header);
   top: 12px;
   display: grid;
   min-height: 64px;
@@ -251,14 +260,14 @@ button.wiselink-account-state {
 
 .wiselink-app-body {
   position: relative;
-  z-index: 1;
+  z-index: var(--wl-z-content);
   min-height: calc(100vh - 84px);
   padding: 0 16px 32px 96px;
 }
 
 .wiselink-app-shell.is-workbench-route .wiselink-app-body {
-  height: calc(100dvh - 78px);
-  min-height: 560px;
+  height: auto;
+  min-height: 0;
   overflow: hidden;
   padding-bottom: 0;
 }
@@ -385,6 +394,10 @@ select:focus-visible {
     padding-left: 16px;
   }
 
+  .wiselink-app-shell:not(.is-workbench-route) .wiselink-app-body {
+    padding-bottom: var(--wl-floating-dock-clearance);
+  }
+
   .wiselink-breadcrumb {
     margin-left: 16px;
     padding: 0 16px;
@@ -395,7 +408,7 @@ select:focus-visible {
   }
 }
 
-@media (max-width: 680px) {
+@media (max-width: 720px) {
   .wiselink-account-menu-trigger {
     width: var(--wl-touch-target);
     height: var(--wl-touch-target);
@@ -447,21 +460,17 @@ select:focus-visible {
 
   .wiselink-app-body {
     min-height: calc(100vh - 120px);
-    padding: 0 10px 96px;
+    padding: 0 10px var(--wl-floating-dock-clearance);
   }
 
   .wiselink-app-shell.is-workbench-route .wiselink-app-body {
-    height: calc(100dvh - 70px);
+    height: auto;
     min-height: 0;
     padding: 0 10px;
   }
 
   .wiselink-app-shell.is-workbench-route .wiselink-app-header {
     display: none;
-  }
-
-  .wiselink-app-shell.is-workbench-route .wiselink-app-body {
-    height: 100dvh;
   }
 }
 

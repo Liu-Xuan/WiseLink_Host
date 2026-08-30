@@ -597,6 +597,12 @@ export default function DocumentParsingPage() {
         }
         onTabChange={handleTabChange}
       >
+        {activeNode === 'document' ? null : (
+          <h1 className="wl-visually-hidden">
+            {WORKBENCH_TABS.find((tab) => tab.key === activeNode)?.label ??
+              '工程分析工作台'}
+          </h1>
+        )}
         {activeNode === 'document' ? (
           <header className="parse-masthead">
             <div>

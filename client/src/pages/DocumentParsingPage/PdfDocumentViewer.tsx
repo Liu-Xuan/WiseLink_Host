@@ -149,8 +149,12 @@ export default function PdfDocumentViewer({
   }
 
   return (
-    <section className="parse-pdf-viewer" aria-label="受控 PDF 阅读器">
-      <header className="parse-pdf-toolbar">
+    <section
+      className="parse-pdf-viewer"
+      data-wl-material="g4"
+      aria-label="受控 PDF 阅读器"
+    >
+      <header className="parse-pdf-toolbar" data-wl-material="g3-soft">
         <div className="parse-pdf-page-controls">
           <button
             type="button"

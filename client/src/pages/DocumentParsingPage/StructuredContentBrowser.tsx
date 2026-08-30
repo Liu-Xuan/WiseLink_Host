@@ -211,7 +211,7 @@ export function StructuredContentBrowser({
 
   return (
     <section className="structured-browser" aria-label="结构化内容浏览器">
-      <header className="structured-browser-header">
+      <header className="structured-browser-header" data-wl-material="g3">
         <div>
           <span className="structured-browser-kicker">结构化内容</span>
           <h3>{usable ? '结构化内容可直接使用' : '部分内容需要人工处理'}</h3>
@@ -234,7 +234,11 @@ export function StructuredContentBrowser({
         </div>
       </header>
 
-      <form className="structured-browser-search" onSubmit={handleSearch}>
+      <form
+        className="structured-browser-search"
+        data-wl-material="g3-soft"
+        onSubmit={handleSearch}
+      >
         <Search aria-hidden="true" />
         <label htmlFor="structured-content-search">搜索结构化内容</label>
         <input
@@ -259,7 +263,10 @@ export function StructuredContentBrowser({
         </small>
       </form>
 
-      <details className="structured-browser-mobile-outline">
+      <details
+        className="structured-browser-mobile-outline"
+        data-wl-material="g3-soft"
+      >
         <summary>
           <ListTree aria-hidden="true" /> 已加载章节
         </summary>
@@ -268,6 +275,7 @@ export function StructuredContentBrowser({
 
       <div className="structured-browser-layout">
         <aside
+          data-wl-material="g3-soft"
           className="structured-browser-outline"
           aria-label="已加载内容目录"
         >

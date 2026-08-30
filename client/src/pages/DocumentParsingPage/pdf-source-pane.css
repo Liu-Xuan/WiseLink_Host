@@ -129,11 +129,10 @@
   gap: 12px;
   padding: 7px 10px;
   border-bottom: 1px solid var(--wl-border);
-  background: color-mix(in srgb, var(--wl-g2-tint) 88%, transparent);
-  -webkit-backdrop-filter: blur(var(--wl-blur-panel))
-    saturate(var(--wl-saturation-panel));
-  backdrop-filter: blur(var(--wl-blur-panel))
-    saturate(var(--wl-saturation-panel));
+  border-radius: var(--wl-radius-md) var(--wl-radius-md) 0 0;
+  background: var(--wl-glass-soft);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 .parse-pdf-page-controls,

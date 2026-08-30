@@ -20,6 +20,8 @@ body,
 
 html,
 body {
+  color: var(--wl-ink);
+  font-family: var(--wl-font);
   background-color: var(--wl-bg);
 }
 

@@ -51,7 +51,11 @@ export default function FloatingDock({ workItemId }: { workItemId?: string }) {
   ];
 
   return (
-    <nav className="wl-dock wl-glass-nav" aria-label="WiseLink 主导航">
+    <nav
+      className="wl-dock wl-glass-nav"
+      data-wl-material="g1"
+      aria-label="WiseLink 主导航"
+    >
       {items.map((item) => {
         const Icon = item.icon;
         return (

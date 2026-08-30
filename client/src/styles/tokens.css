@@ -52,6 +52,7 @@
   /* G3/G4：不采样背景 */
   --wl-g3-highlight: rgb(255 255 255 / 68%);
   --wl-g3-shadow: rgb(35 61 101 / 10%);
+  --wl-g4-highlight: rgb(255 255 255 / 82%);
   --wl-g4-shadow: rgb(29 51 83 / 7%);
   --wl-reduced-g1: rgb(248 250 254 / 97%);
   --wl-reduced-g2: rgb(248 250 254 / 95%);
@@ -101,13 +102,32 @@
   --wl-space-6: 24px;
   --wl-space-8: 32px;
 
-  /* 语义尺寸：正文、元信息与触控目标由同一层管理，页面不再各自发明尺寸。 */
-  --wl-text-caption: 11px;
-  --wl-text-meta: 12px;
-  --wl-text-body-sm: 12.5px;
+  /* 语义排版：中文元信息不低于 12px；组件不得再发明半像素字号。 */
+  --wl-text-caption: 12px;
+  --wl-text-meta: 12.5px;
+  --wl-text-body-sm: 13px;
   --wl-text-body: 14px;
-  --wl-control-target: 36px;
+  --wl-line-compact: 1.35;
+  --wl-line-body: 1.6;
+  --wl-control-size-sm: 32px;
+  --wl-control-size: 36px;
+  --wl-control-size-lg: 40px;
+  --wl-control-target: var(--wl-control-size);
   --wl-touch-target: 44px;
+
+  /* AppShell、Dock 与 Workbench 共享同一组占位，不再各自猜高度。 */
+  --wl-app-header-block: 78px;
+  --wl-mobile-navigation-block: calc(57px + env(safe-area-inset-bottom, 0px));
+  --wl-floating-dock-clearance: calc(84px + env(safe-area-inset-bottom, 0px));
+
+  /* 应用内部层级；平台注入层不在应用 z-index 竞争范围内。 */
+  --wl-z-content: 1;
+  --wl-z-toolbar: 30;
+  --wl-z-header: 40;
+  --wl-z-drawer: 56;
+  --wl-z-navigation: 60;
+  --wl-z-popover: 120;
+  --wl-z-modal: 200;
 
   /* 动效时长 */
   --wl-motion-fast: 160ms;
@@ -115,9 +135,10 @@
   --wl-motion-slow: 560ms;
 
   /* 字体 */
-  --wl-font:
+  --wl-font-sans:
     -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text',
     'PingFang SC', 'Microsoft YaHei', 'Segoe UI', sans-serif;
+  --wl-font: var(--wl-font-sans);
   --wl-mono:
     ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
     monospace;
@@ -165,6 +186,7 @@ html[data-wl-theme='dark'] {
 
   --wl-g3-highlight: rgb(220 236 255 / 12%);
   --wl-g3-shadow: rgb(0 0 0 / 28%);
+  --wl-g4-highlight: rgb(220 236 255 / 10%);
   --wl-g4-shadow: rgb(0 0 0 / 22%);
   --wl-reduced-g1: rgb(15 24 38 / 98%);
   --wl-reduced-g2: rgb(17 27 42 / 97%);
@@ -228,4 +250,19 @@ html[data-wl-visual-mode='compatible'] {
   --wl-g1-space-shadow: rgb(30 59 105 / 13%);
   --wl-g2-contact-shadow: rgb(42 67 108 / 6%);
   --wl-g2-space-shadow: rgb(42 67 108 / 9%);
+}
+
+html[data-wl-theme='dark'][data-wl-visual-mode='compatible'] {
+  --wl-g1-contact-shadow: rgb(0 0 0 / 24%);
+  --wl-g1-space-shadow: rgb(0 0 0 / 34%);
+  --wl-g2-contact-shadow: rgb(0 0 0 / 18%);
+  --wl-g2-space-shadow: rgb(0 0 0 / 28%);
+}
+
+@media (max-width: 720px), (pointer: coarse) {
+  :root {
+    --wl-control-size-sm: var(--wl-touch-target);
+    --wl-control-size: var(--wl-touch-target);
+    --wl-control-size-lg: var(--wl-touch-target);
+  }
 }

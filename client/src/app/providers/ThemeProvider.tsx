@@ -2,7 +2,7 @@ import {
   createContext,
   useCallback,
   useContext,
-  useEffect,
+  useLayoutEffect,
   useMemo,
   useState,
   type ReactNode,
@@ -71,8 +71,9 @@ export function WlThemeProvider({ children }: { children: ReactNode }) {
     readInitialTransparency,
   );
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     document.documentElement.dataset.wlTheme = theme;
+    document.documentElement.classList.toggle('dark', theme === 'dark');
     try {
       window.localStorage.setItem(THEME_STORAGE_KEY, theme);
     } catch {
@@ -80,7 +81,7 @@ export function WlThemeProvider({ children }: { children: ReactNode }) {
     }
   }, [theme]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     document.documentElement.dataset.wlVisualMode = visualMode;
     try {
       window.localStorage.setItem(VISUAL_MODE_STORAGE_KEY, visualMode);
@@ -89,7 +90,7 @@ export function WlThemeProvider({ children }: { children: ReactNode }) {
     }
   }, [visualMode]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     document.documentElement.dataset.wlTransparency = reduceTransparency
       ? 'reduced'
       : 'full';

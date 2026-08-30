@@ -202,11 +202,18 @@ export default function WorkbenchShell({
   const moreTriggerRef = useRef<HTMLButtonElement>(null);
   const navDrawerRef = useRef<HTMLElement>(null);
   const evidenceDrawerRef = useRef<HTMLElement>(null);
+  const drawerOriginRef = useRef<HTMLElement | null>(null);
   const focusRestoreRef = useRef({
     navCollapsed: initialPrefs.navCollapsed ?? false,
     evidenceOpen: initialPrefs.evidenceOpen ?? defaultEvidenceOpen(),
     immersive: false,
   });
+
+  const rememberDrawerOrigin = useCallback((): void => {
+    const active = document.activeElement;
+    drawerOriginRef.current =
+      active instanceof HTMLElement && active.isConnected ? active : null;
+  }, []);
 
   /* ── §4.2 布局偏好持久化：仅界面偏好，不保存 WorkItem/current ── */
   useEffect(() => {
@@ -294,12 +301,13 @@ export default function WorkbenchShell({
     if (evidenceSignal <= 0) return;
     setEvidenceRequested(true);
     if (isCompact) {
+      rememberDrawerOrigin();
       setMobileNavOpen(false);
       setMobileEvidenceOpen(true);
     } else {
       setEvidenceOpen(true);
     }
-  }, [evidenceSignal, isCompact]);
+  }, [evidenceSignal, isCompact, rememberDrawerOrigin]);
 
   /* 移动端使用显式抽屉，不继承桌面端“证据栏已展开”的布局偏好。 */
   useEffect(() => {
@@ -310,6 +318,7 @@ export default function WorkbenchShell({
         setMobileNavOpen(false);
         setMobileEvidenceOpen(false);
         setEvidenceRequested(false);
+        drawerOriginRef.current = null;
       }
     };
     sync();
@@ -402,6 +411,7 @@ export default function WorkbenchShell({
 
   const toggleNavigator = useCallback(() => {
     if (isCompact) {
+      if (!mobileNavOpen) rememberDrawerOrigin();
       setMobileEvidenceOpen(false);
       setMobileNavOpen((open) => !open);
       return;
@@ -413,11 +423,18 @@ export default function WorkbenchShell({
       return;
     }
     setNavCollapsed((collapsed) => !collapsed);
-  }, [adaptiveLayout.autoCollapseNavigator, evidenceOpen, isCompact]);
+  }, [
+    adaptiveLayout.autoCollapseNavigator,
+    evidenceOpen,
+    isCompact,
+    mobileNavOpen,
+    rememberDrawerOrigin,
+  ]);
 
   const toggleEvidence = useCallback((): void => {
     if (isCompact) {
       const nextOpen: boolean = !mobileEvidenceOpen;
+      if (nextOpen) rememberDrawerOrigin();
       setMobileNavOpen(false);
       setMobileEvidenceOpen(nextOpen);
       setEvidenceRequested(nextOpen);
@@ -427,7 +444,7 @@ export default function WorkbenchShell({
     const nextOpen: boolean = !evidenceVisible;
     setEvidenceOpen(nextOpen);
     setEvidenceRequested(nextOpen);
-  }, [evidenceVisible, isCompact, mobileEvidenceOpen]);
+  }, [evidenceVisible, isCompact, mobileEvidenceOpen, rememberDrawerOrigin]);
 
   const mobileTabs = tabs
     .filter((tab) => tab.mobileLabel)
@@ -480,14 +497,24 @@ export default function WorkbenchShell({
 
   const closeMobileDrawers = useCallback(
     (restoreFocus: boolean): void => {
-      const trigger = mobileNavOpen
+      const fallbackTrigger = mobileNavOpen
         ? navTriggerRef.current
         : (evidenceTriggerRef.current ?? moreTriggerRef.current);
+      const origin = drawerOriginRef.current;
       if (mobileEvidenceOpen) setEvidenceRequested(false);
       setMobileNavOpen(false);
       setMobileEvidenceOpen(false);
       if (restoreFocus) {
-        window.requestAnimationFrame(() => trigger?.focus());
+        window.requestAnimationFrame(() => {
+          const target =
+            origin?.isConnected && origin.getClientRects().length > 0
+              ? origin
+              : fallbackTrigger;
+          target?.focus();
+          drawerOriginRef.current = null;
+        });
+      } else {
+        drawerOriginRef.current = null;
       }
     },
     [mobileEvidenceOpen, mobileNavOpen],
@@ -595,6 +622,7 @@ export default function WorkbenchShell({
     <div
       ref={shellRef}
       className={`wl-workbench-shell${immersive ? ' is-immersive' : ''}${focusMode ? ' is-focus-mode' : ''}${isCompact ? ' is-compact' : ''}`}
+      data-wl-material="g3"
       onPointerMove={(event) => {
         onDragMove(event);
         evidenceDragMove(event);
@@ -611,6 +639,7 @@ export default function WorkbenchShell({
       {/* ── 顶部工具条 ── */}
       <div
         className="wl-workbench-toolbar wl-glass-nav"
+        data-wl-material="g1"
         role="toolbar"
         aria-label="工作台工具栏"
       >
@@ -919,6 +948,7 @@ export default function WorkbenchShell({
             <section
               ref={evidenceDrawerRef}
               className="wl-workbench-evidence"
+              data-wl-material="g2"
               style={{ width: evidenceWidth }}
               aria-label="证据面板"
               role={isCompact ? 'dialog' : undefined}
