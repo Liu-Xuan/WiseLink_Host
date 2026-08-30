@@ -202,7 +202,12 @@ COMMENT ON COLUMN canonical_rule_set_activation.engineering_owner_user_id IS
 
 COMMIT;
 
--- Required post-apply readback (integration/deploy owner only):
+-- REQUIRED PRE-TRAFFIC STEP (integration/deploy owner only):
+-- npm run bootstrap:canonical:rule-set-v0-2 -- \
+--   --owner-map <exact-existing-tenant-owner-map.json> --apply
+-- Do not serve application traffic until that command returns every existing
+-- tenant with the exact legacy v0.2 snapshot as its read-back active head.
+-- Required post-apply database readback:
 -- SELECT relname, relrowsecurity FROM pg_class
 -- WHERE relname LIKE 'canonical_rule_set_%' ORDER BY relname;
 -- SELECT tenant_id, rule_set_key, max(activation_revision)

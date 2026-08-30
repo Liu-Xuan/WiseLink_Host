@@ -25,6 +25,7 @@
     "test": "jest",
     "test:openclaw:worker": "node --test test/node/openclaw-action-attempt-worker.test.mjs",
     "bootstrap:g2:development-document": "node scripts/bootstrap-g2-development-document-version.mjs",
+    "bootstrap:canonical:rule-set-v0-2": "node scripts/bootstrap-canonical-rule-set-v0-2.mjs",
     "test:watch": "jest --watch",
     "test:e2e": "jest --config test/e2e/jest.config.js",
     "test:unified:composition": "npm run build:server && node scripts/verify-unified-reader-composition.mjs",

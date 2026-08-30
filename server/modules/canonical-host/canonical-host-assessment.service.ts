@@ -36,6 +36,7 @@ import { PHASE5_737_34_3830_HANDOFF } from '../document-management/src/hosted/ph
 import { authorizeAndLoadCanonicalWorkItem } from './canonical-authorized-work-item-reader';
 import {
   CanonicalRuleSetLifecycleService,
+  type ActiveCanonicalRuleSetRuntime,
   type CanonicalRuleSetRuntime,
 } from './canonical-rule-set-lifecycle.service';
 const JOB_AID_SOURCE_MANIFEST_HASH =
@@ -91,6 +92,11 @@ export class CanonicalHostAssessmentService {
     let workItem = requiredSbWorkItem(authorized.workItem);
     const permissionSnapshotVersion = authorized.permissionSnapshotVersion;
     if (workItem.assessment) return workItem;
+    // Resolve and verify the exact ACTIVE runtime before creating the
+    // synchronous attempt. A zero-head tenant must remain a zero-write
+    // failure, and this runtime remains the input for the whole call.
+    const activeRuleSet: ActiveCanonicalRuleSetRuntime =
+      await this.ruleSets.readActiveRuntime(actor.tenantId);
     const attempt = await this.repository.reserveAssessmentAction({
       workItemId: workItem.workItemId,
       actionType: 'EVALUATE_JOB_AID',
@@ -111,15 +117,18 @@ export class CanonicalHostAssessmentService {
       throw new Error('ASSESSMENT_EVALUATE_INCOMPLETE_PRIOR_ATTEMPT');
     }
     try {
-      const result = await this.prepareDynamicRulesCandidate({
-        workItem,
-        tenantId: actor.tenantId,
-        permissionSnapshotVersion,
-        assessmentAsOf: input.assessmentAsOf,
-        generatedAt: input.generatedAt,
-        externalDiscovery: input.externalDiscovery ?? null,
-        reviewedExternalManifest: input.reviewedExternalManifest ?? null,
-      });
+      const result = await this.prepareDynamicRulesCandidateWithRuleSet(
+        {
+          workItem,
+          tenantId: actor.tenantId,
+          permissionSnapshotVersion,
+          assessmentAsOf: input.assessmentAsOf,
+          generatedAt: input.generatedAt,
+          externalDiscovery: input.externalDiscovery ?? null,
+          reviewedExternalManifest: input.reviewedExternalManifest ?? null,
+        },
+        activeRuleSet,
+      );
       const persisted = await this.persistResult(result);
       const projection = assessmentProjection(
         result,
