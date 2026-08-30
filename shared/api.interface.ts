@@ -1518,6 +1518,99 @@ export interface CanonicalLibraryIndexReadResponse {
   };
 }
 
+export interface CreateEngineeringMatterRequest {
+  requestId: string;
+  title: string;
+  primaryWorkItemId: string;
+}
+
+export interface LinkEngineeringMatterWorkItemRequest {
+  requestId: string;
+  expectedMatterRevision: number;
+  workItemId: string;
+  changeSummary?: string;
+}
+
+export type EngineeringMatterWorkItemRole = 'PRIMARY' | 'RELATED';
+
+export interface EngineeringMatterCatalogEntry {
+  workItemId: string;
+  relationRole: EngineeringMatterWorkItemRole;
+  linkedAtWorkItemRevision: number;
+  currentWorkItemRevision: number;
+  workItemChangedSinceLink: boolean;
+  workItemStatus: string;
+  document: {
+    documentId: string;
+    documentVersionId: string;
+    documentCode: string;
+    businessRevision: string;
+    normalizedFamily: string;
+  };
+  documentCurrentness: {
+    familyId: string;
+    currentDocumentVersionId: string | null;
+    currentGeneration: number;
+    selectedVersionIsCurrent: boolean;
+  };
+  sourceNavigation:
+    | {
+        status: 'AVAILABLE';
+        packageId: string;
+        sourceRefCount: number;
+        structuredContentPath: string;
+      }
+    | {
+        status: 'NOT_PARSED';
+        packageId: null;
+        sourceRefCount: 0;
+        structuredContentPath: null;
+      };
+}
+
+/**
+ * Browser-safe cross-WorkItem catalog. It contains no tenant, actor, artifact
+ * locator, file hash, permission fingerprint, or server-side session value.
+ */
+export interface EngineeringMatterReadModel {
+  schemaVersion: 'wiselink.3_1.engineering_matter_catalog.v1';
+  matterId: string;
+  title: string;
+  status: 'ACTIVE';
+  currentRevision: {
+    matterRevisionId: string;
+    revisionNo: number;
+    changeKind: 'CREATED' | 'WORK_ITEM_LINKED';
+    changeSummary: string;
+    createdAt: string;
+  };
+  catalog: {
+    scope: 'CROSS_WORK_ITEM';
+    entries: EngineeringMatterCatalogEntry[];
+  };
+  authorization: {
+    policy: 'ALL_LINKED_WORK_ITEMS_REQUIRED';
+    authorizedWorkItemCount: number;
+  };
+  authority: {
+    workItemCurrentRemainsAuthoritative: true;
+    documentManagementRemainsAuthoritative: true;
+    sourceRefsRemainWorkItemScoped: true;
+    matterCreatesAssessmentCurrent: false;
+  };
+}
+
+export interface CreateEngineeringMatterResponse {
+  matter: EngineeringMatterReadModel;
+  created: boolean;
+}
+
+export interface LinkEngineeringMatterWorkItemResponse {
+  matter: EngineeringMatterReadModel;
+  linked: boolean;
+  replayed: boolean;
+}
+
 export type CanonicalRelatedDocumentRelationRole =
   | 'SELECTED_DOCUMENT_VERSION'
   | 'PRODUCED_PARSED_PACKAGE'

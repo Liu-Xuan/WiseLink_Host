@@ -232,6 +232,89 @@ export const workItem = pgTable("work_item", {
   index("idx_work_item_document").on(table.documentId, table.documentVersionId),
 ]);
 
+export const engineeringMatter = pgTable("engineering_matter", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  matterId: varchar("matter_id", { length: 96 }).notNull().unique(),
+  tenantId: varchar("tenant_id", { length: 128 }).notNull(),
+  title: text("title").notNull(),
+  status: varchar("status", { length: 32 }).notNull().default('ACTIVE'),
+  currentRevisionNo: integer("current_revision_no").notNull(),
+  currentMatterRevisionId: varchar("current_matter_revision_id", { length: 96 }).notNull(),
+  requestId: varchar("request_id", { length: 96 }).notNull(),
+  createdByUserId: varchar("created_by_user_id", { length: 255 }).notNull(),
+  createdAt: customTimestamptz("created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: customTimestamptz("updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("uk_engineering_matter_business_id").on(table.matterId),
+  uniqueIndex("uk_engineering_matter_tenant_identity").on(table.tenantId, table.matterId),
+  uniqueIndex("uk_engineering_matter_create_request").on(table.tenantId, table.createdByUserId, table.requestId),
+  index("idx_engineering_matter_owner").on(table.tenantId, table.createdByUserId, table.updatedAt),
+  check("ck_engineering_matter_title", sql`length(btrim(${table.title})) BETWEEN 1 AND 240`),
+  check("ck_engineering_matter_status", sql`${table.status} = 'ACTIVE'`),
+  check("ck_engineering_matter_revision", sql`${table.currentRevisionNo} > 0`),
+]);
+
+export const engineeringMatterRevision = pgTable("engineering_matter_revision", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  matterRevisionId: varchar("matter_revision_id", { length: 96 }).notNull().unique(),
+  matterId: varchar("matter_id", { length: 96 }).notNull(),
+  tenantId: varchar("tenant_id", { length: 128 }).notNull(),
+  revisionNo: integer("revision_no").notNull(),
+  requestId: varchar("request_id", { length: 96 }).notNull(),
+  changeKind: varchar("change_kind", { length: 32 }).notNull(),
+  changeSummary: text("change_summary").notNull(),
+  changedWorkItemId: varchar("changed_work_item_id", { length: 96 }).notNull(),
+  createdByUserId: varchar("created_by_user_id", { length: 255 }).notNull(),
+  createdAt: customTimestamptz("created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("uk_engineering_matter_revision_business_id").on(table.matterRevisionId),
+  uniqueIndex("uk_engineering_matter_revision_scope").on(table.tenantId, table.matterId, table.matterRevisionId),
+  uniqueIndex("uk_engineering_matter_revision_number").on(table.matterId, table.revisionNo),
+  uniqueIndex("uk_engineering_matter_revision_request").on(table.matterId, table.requestId),
+  index("idx_engineering_matter_revision_history").on(table.matterId, table.revisionNo),
+  foreignKey({
+    columns: [table.tenantId, table.matterId],
+    foreignColumns: [engineeringMatter.tenantId, engineeringMatter.matterId],
+    name: "fk_engineering_matter_revision_matter",
+  }),
+  foreignKey({
+    columns: [table.changedWorkItemId],
+    foreignColumns: [workItem.workItemId],
+    name: "fk_engineering_matter_revision_changed_work_item",
+  }),
+  check("ck_engineering_matter_revision_number", sql`${table.revisionNo} > 0`),
+  check("ck_engineering_matter_revision_kind", sql`${table.changeKind} IN ('CREATED', 'WORK_ITEM_LINKED')`),
+  check("ck_engineering_matter_revision_summary", sql`length(btrim(${table.changeSummary})) BETWEEN 1 AND 1000`),
+]);
+
+export const engineeringMatterRevisionWorkItem = pgTable("engineering_matter_revision_work_item", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  matterRevisionId: varchar("matter_revision_id", { length: 96 }).notNull(),
+  matterId: varchar("matter_id", { length: 96 }).notNull(),
+  tenantId: varchar("tenant_id", { length: 128 }).notNull(),
+  workItemId: varchar("work_item_id", { length: 96 }).notNull(),
+  ordinal: integer("ordinal").notNull(),
+  relationRole: varchar("relation_role", { length: 32 }).notNull(),
+  linkedAtWorkItemRevision: integer("linked_at_work_item_revision").notNull(),
+}, (table) => [
+  uniqueIndex("uk_engineering_matter_revision_work_item").on(table.matterRevisionId, table.workItemId),
+  uniqueIndex("uk_engineering_matter_revision_ordinal").on(table.matterRevisionId, table.ordinal),
+  index("idx_engineering_matter_work_item_lookup").on(table.workItemId, table.matterRevisionId),
+  foreignKey({
+    columns: [table.tenantId, table.matterId, table.matterRevisionId],
+    foreignColumns: [engineeringMatterRevision.tenantId, engineeringMatterRevision.matterId, engineeringMatterRevision.matterRevisionId],
+    name: "fk_engineering_matter_revision_work_item_revision",
+  }),
+  foreignKey({
+    columns: [table.workItemId],
+    foreignColumns: [workItem.workItemId],
+    name: "fk_engineering_matter_revision_work_item_work_item",
+  }),
+  check("ck_engineering_matter_revision_work_item_ordinal", sql`${table.ordinal} > 0`),
+  check("ck_engineering_matter_revision_work_item_role", sql`${table.relationRole} IN ('PRIMARY', 'RELATED')`),
+  check("ck_engineering_matter_revision_work_item_revision", sql`${table.linkedAtWorkItemRevision} >= 0`),
+]);
+
 export const reviewConversation = pgTable("review_conversation", {
   id: uuid("id").primaryKey().defaultRandom(),
   reviewConversationId: varchar("review_conversation_id", { length: 96 }).notNull().unique(),
@@ -958,6 +1041,9 @@ export const dmDocumentVersionTable = dmDocumentVersion;
 export const dmIngressPreflightTable = dmIngressPreflight;
 export const dmPublicationFamilyTable = dmPublicationFamily;
 export const dmSourceArtifactTable = dmSourceArtifact;
+export const engineeringMatterTable = engineeringMatter;
+export const engineeringMatterRevisionTable = engineeringMatterRevision;
+export const engineeringMatterRevisionWorkItemTable = engineeringMatterRevisionWorkItem;
 export const externalDiscoveryCandidateTable = externalDiscoveryCandidate;
 export const externalSearchRunTable = externalSearchRun;
 export const identityOauthStateTable = identityOauthState;

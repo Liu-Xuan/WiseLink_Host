@@ -97,6 +97,9 @@ import { CanonicalRuleSetArtifactReader } from './canonical-rule-set-artifact.re
 import { CanonicalRuleSetLifecycleController } from './canonical-rule-set-lifecycle.controller';
 import { CanonicalRuleSetLifecycleRepository } from './canonical-rule-set-lifecycle.repository';
 import { CanonicalRuleSetLifecycleService } from './canonical-rule-set-lifecycle.service';
+import { EngineeringMatterController } from './engineering-matter.controller';
+import { EngineeringMatterRepository } from './engineering-matter.repository';
+import { EngineeringMatterService } from './engineering-matter.service';
 
 export interface CanonicalHostModuleOptions {
   imports?: ModuleMetadata['imports'];
@@ -135,6 +138,7 @@ export interface CanonicalHostModuleOptions {
     CanonicalHostApplicabilitySelectionController,
     CanonicalHostOverallRegenerationController,
     CanonicalRuleSetLifecycleController,
+    EngineeringMatterController,
   ],
   providers: [
     CanonicalEntryFacadeService,
@@ -170,6 +174,8 @@ export interface CanonicalHostModuleOptions {
     CanonicalRuleSetArtifactReader,
     CanonicalRuleSetLifecycleRepository,
     CanonicalRuleSetLifecycleService,
+    EngineeringMatterRepository,
+    EngineeringMatterService,
     UnavailableCanonicalServiceScopeAuthorization,
     UnavailableCanonicalApplicabilityControlledSelection,
     UnavailableScopedProfessionalArtifactCorrelationAdapter,
@@ -303,6 +309,7 @@ export class CanonicalHostModule {
         CanonicalHostApplicabilitySelectionController,
         CanonicalHostOverallRegenerationController,
         CanonicalRuleSetLifecycleController,
+        EngineeringMatterController,
       ],
       providers: [
         workItemRegistrarProvider,
@@ -354,6 +361,8 @@ export class CanonicalHostModule {
         CanonicalRuleSetArtifactReader,
         CanonicalRuleSetLifecycleRepository,
         CanonicalRuleSetLifecycleService,
+        EngineeringMatterRepository,
+        EngineeringMatterService,
         {
           provide: CANONICAL_SERVICE_SCOPE_AUTHORIZATION,
           useExisting: CANONICAL_EXECUTOR_SERVICE_SCOPE_AUTHORIZATION,
