@@ -37,16 +37,25 @@ export class PdfjsDistLayoutExtractor implements PdfLayoutExtractorPort {
   private readonly runnerPath: string;
   private readonly pdfjsEntrypoint: string;
 
-  constructor(
-    runnerPath?: string,
-    pdfjsEntrypoint = resolvePdfjsEntrypoint(),
-  ) {
+  constructor(runnerPath?: string, pdfjsEntrypoint = resolvePdfjsEntrypoint()) {
     this.runnerPath =
       runnerPath ?? resolve(__dirname, 'pdfjs-layout-extractor.runner.mjs');
     this.pdfjsEntrypoint = pdfjsEntrypoint;
   }
 
   extractLayout(bytes: Uint8Array): ParsedPdfLayout {
+    const layout = this.extractLayoutWithDiagnostics(bytes);
+    assertProductionTextLayerCoverage(layout);
+    return layout;
+  }
+
+  /**
+   * The private OCR composite consumes this exact native parse before the
+   * public fail-closed coverage assertion. It does not expose another parser
+   * seam: the same pdfjs result supplies diagnostics, profile recognition,
+   * source units, and the final frozen.2 package.
+   */
+  extractLayoutWithDiagnostics(bytes: Uint8Array): ParsedPdfLayout {
     if (bytes.byteLength === 0) {
       throw new ProfessionalInputPureError(
         'PDFJS_LAYOUT_EMPTY_INPUT',
@@ -91,7 +100,6 @@ export class PdfjsDistLayoutExtractor implements PdfLayoutExtractorPort {
         );
       }
       const layout = parseRunnerPayload(result.stdout.toString('utf8'));
-      assertProductionTextLayerCoverage(layout);
       return {
         kind: 'pdf',
         pdfVersion: layout.pdfVersion,
@@ -117,8 +125,9 @@ function resolvePdfjsEntrypoint(): string {
   if (existsSync(hostedRuntimeEntrypoint)) {
     return hostedRuntimeEntrypoint;
   }
+  // prettier-ignore -- a production-path audit asserts this explicit fallback shape.
   return createRequire(__filename).resolve(
-    'pdfjs-dist/legacy/build/pdf.mjs',
+    'pdfjs-dist/legacy/build/pdf.mjs'
   );
 }
 
@@ -184,27 +193,41 @@ function parseRunnerPayload(raw: string): {
     );
   }
   const pageBoxes = value.pageBoxes.map(
-    (box: Record<string, unknown>): ParsedPdfPageBox => ({
-      page: Number(box.page),
-      mediaBox: [
-        Number(box.mediaBox?.[0]),
-        Number(box.mediaBox?.[1]),
-        Number(box.mediaBox?.[2]),
-        Number(box.mediaBox?.[3]),
-      ],
-    }),
+    (box: Record<string, unknown>, index: number): ParsedPdfPageBox =>
+      parsePageBox(box, index + 1),
   );
+  const pageCount = value.pageCount;
   const metadataValue = value.metadata as { title?: unknown };
   const textRuns = value.textRuns.map(
-    (run: Record<string, unknown>): ParsedPdfTextRun => ({
-      page: Number(run.page),
-      fontName: String(run.fontName),
-      bold: Boolean(run.bold),
-      fontSize: Number(run.fontSize),
-      x: Number(run.x),
-      y: Number(run.y),
-      text: String(run.text),
-    }),
+    (run: Record<string, unknown>): ParsedPdfTextRun => {
+      const pdfUserSpaceBbox = parseOptionalBbox(run.pdfUserSpaceBbox, false);
+      const normalizedBbox = parseOptionalBbox(run.normalizedBbox, true);
+      const parsedRun: ParsedPdfTextRun = {
+        page: Number(run.page),
+        fontName: String(run.fontName),
+        bold: Boolean(run.bold),
+        fontSize: Number(run.fontSize),
+        x: Number(run.x),
+        y: Number(run.y),
+        text: String(run.text),
+        ...(pdfUserSpaceBbox ? { pdfUserSpaceBbox } : {}),
+        ...(normalizedBbox ? { normalizedBbox } : {}),
+      };
+      if (
+        !Number.isSafeInteger(parsedRun.page) ||
+        parsedRun.page < 1 ||
+        parsedRun.page > pageCount ||
+        !Number.isFinite(parsedRun.fontSize) ||
+        !Number.isFinite(parsedRun.x) ||
+        !Number.isFinite(parsedRun.y)
+      ) {
+        throw new ProfessionalInputPureError(
+          'PDFJS_LAYOUT_RUNNER_PAYLOAD_INVALID',
+          'Runner text run failed structural validation.',
+        );
+      }
+      return parsedRun;
+    },
   );
   const pageTextLayerDiagnostics = value.pageTextLayerDiagnostics.map(
     (
@@ -253,7 +276,7 @@ function parseRunnerPayload(raw: string): {
   );
   return {
     pdfVersion: value.pdfVersion,
-    pageCount: value.pageCount,
+    pageCount,
     pageBoxes,
     metadata: {
       title:
@@ -265,6 +288,98 @@ function parseRunnerPayload(raw: string): {
     textRuns,
     pageTextLayerDiagnostics,
   };
+}
+
+function parsePageBox(
+  box: Record<string, unknown>,
+  expectedPage: number,
+): ParsedPdfPageBox {
+  const page = Number(box.page);
+  const mediaBox = parseRequiredBbox(box.mediaBox, false);
+  const rotation = Number(box.rotation);
+  const userUnit = Number(box.userUnit);
+  const viewport = box.viewport as Record<string, unknown> | undefined;
+  const transform = Array.isArray(viewport?.transform)
+    ? viewport.transform.map(Number)
+    : [];
+  const width = Number(viewport?.width);
+  const height = Number(viewport?.height);
+  if (
+    page !== expectedPage ||
+    ![0, 90, 180, 270].includes(rotation) ||
+    !(userUnit > 0) ||
+    !Number.isFinite(userUnit) ||
+    !(width > 0) ||
+    !(height > 0) ||
+    transform.length !== 6 ||
+    !transform.every(Number.isFinite)
+  ) {
+    throw new ProfessionalInputPureError(
+      'PDFJS_LAYOUT_RUNNER_PAYLOAD_INVALID',
+      'Runner page geometry failed structural validation.',
+    );
+  }
+  return {
+    page,
+    mediaBox,
+    rotation,
+    userUnit,
+    viewport: {
+      width,
+      height,
+      transform: [
+        transform[0],
+        transform[1],
+        transform[2],
+        transform[3],
+        transform[4],
+        transform[5],
+      ],
+    },
+  };
+}
+
+function parseRequiredBbox(
+  raw: unknown,
+  normalized: boolean,
+): readonly [number, number, number, number] {
+  const bbox = parseOptionalBbox(raw, normalized);
+  if (!bbox) {
+    throw new ProfessionalInputPureError(
+      'PDFJS_LAYOUT_RUNNER_PAYLOAD_INVALID',
+      'Runner bbox failed structural validation.',
+    );
+  }
+  return bbox;
+}
+
+function parseOptionalBbox(
+  raw: unknown,
+  normalized: boolean,
+): readonly [number, number, number, number] | null {
+  if (raw === undefined) return null;
+  if (!Array.isArray(raw) || raw.length !== 4) {
+    throw invalidRunnerBbox();
+  }
+  const values = raw.map(Number);
+  if (
+    !values.every(Number.isFinite) ||
+    !(values[2] > values[0]) ||
+    !(values[3] > values[1]) ||
+    (normalized &&
+      (!values.every(Number.isSafeInteger) ||
+        values.some((value) => value < 0 || value > 1_000_000)))
+  ) {
+    throw invalidRunnerBbox();
+  }
+  return [values[0], values[1], values[2], values[3]];
+}
+
+function invalidRunnerBbox(): ProfessionalInputPureError {
+  return new ProfessionalInputPureError(
+    'PDFJS_LAYOUT_RUNNER_PAYLOAD_INVALID',
+    'Runner text bbox failed structural validation.',
+  );
 }
 
 function parseRasterVisualCoverage(
@@ -303,8 +418,8 @@ function parseRasterVisualCoverage(
   ) {
     throw invalidRasterDiagnostic();
   }
-  const unverifiedRasterRegions = value.unverifiedRasterRegions.map(
-    (region) => parseRasterRegion(region),
+  const unverifiedRasterRegions = value.unverifiedRasterRegions.map((region) =>
+    parseRasterRegion(region),
   );
   return {
     status,
@@ -338,21 +453,14 @@ function parseRasterRegion(raw: unknown): ParsedPdfRasterRegionDiagnostic {
     sourcePixelWidth === undefined ||
     sourcePixelHeight === undefined ||
     !isNonNegativeSafeInteger(textLayerOverlapRunCount) ||
-    !isNonNegativeSafeInteger(
-      textLayerOverlapNonWhitespaceCharacterCount,
-    ) ||
+    !isNonNegativeSafeInteger(textLayerOverlapNonWhitespaceCharacterCount) ||
     textLayerOverlapRunCount !== 0 ||
     textLayerOverlapNonWhitespaceCharacterCount !== 0
   ) {
     throw invalidRasterDiagnostic();
   }
   return {
-    bbox: [
-      Number(bbox[0]),
-      Number(bbox[1]),
-      Number(bbox[2]),
-      Number(bbox[3]),
-    ],
+    bbox: [Number(bbox[0]), Number(bbox[1]), Number(bbox[2]), Number(bbox[3])],
     displayedPageAreaRatio,
     sourcePixelWidth,
     sourcePixelHeight,
@@ -361,7 +469,9 @@ function parseRasterRegion(raw: unknown): ParsedPdfRasterRegionDiagnostic {
   };
 }
 
-function nullablePositiveSafeInteger(value: unknown): number | null | undefined {
+function nullablePositiveSafeInteger(
+  value: unknown,
+): number | null | undefined {
   if (value === null) return null;
   const numeric = Number(value);
   return Number.isSafeInteger(numeric) && numeric > 0 ? numeric : undefined;
@@ -382,17 +492,42 @@ function invalidRasterDiagnostic(): ProfessionalInputPureError {
   );
 }
 
+export interface PdfOcrFailureDetails {
+  providerStatus?: string;
+  providerId?: string;
+  message?: string;
+  failureReasons?: readonly string[];
+  failureTargets?: readonly string[];
+  missingLanguages?: readonly string[];
+}
+
 function assertProductionTextLayerCoverage(layout: {
   pageCount: number;
   pageTextLayerDiagnostics: readonly ParsedPdfPageTextLayerDiagnostic[];
 }): void {
+  const error = buildPdfOcrRequiredUnsupportedError(layout);
+  if (error) throw error;
+}
+
+/**
+ * Single public OCR failure seam shared by the native extractor and private
+ * composite. Provider-specific reasons stay diagnostic-only; callers always
+ * observe the established PDF_OCR_REQUIRED_UNSUPPORTED code.
+ */
+export function buildPdfOcrRequiredUnsupportedError(
+  layout: {
+    pageCount: number;
+    pageTextLayerDiagnostics: readonly ParsedPdfPageTextLayerDiagnostic[];
+  },
+  details: PdfOcrFailureDetails = {},
+): ProfessionalInputPureError | null {
   const emptyTextLayerPages = layout.pageTextLayerDiagnostics
     .filter((diagnostic) => diagnostic.status === 'EMPTY')
     .map((diagnostic) => diagnostic.page);
-  const visualTextUnverifiedDiagnostics = layout.pageTextLayerDiagnostics.filter(
-    (diagnostic) =>
-      diagnostic.rasterVisualCoverage.status === 'UNVERIFIED',
-  );
+  const visualTextUnverifiedDiagnostics =
+    layout.pageTextLayerDiagnostics.filter(
+      (diagnostic) => diagnostic.rasterVisualCoverage.status === 'UNVERIFIED',
+    );
   const visualTextUnverifiedPages = visualTextUnverifiedDiagnostics.map(
     (diagnostic) => diagnostic.page,
   );
@@ -402,7 +537,7 @@ function assertProductionTextLayerCoverage(layout: {
   const ocrRequiredPages = [
     ...new Set([...emptyTextLayerPages, ...visualTextUnverifiedPages]),
   ].sort((left, right) => left - right);
-  if (ocrRequiredPages.length === 0) return;
+  if (ocrRequiredPages.length === 0) return null;
 
   const textLayerStatus =
     emptyTextLayerPages.length === 0
@@ -416,9 +551,10 @@ function assertProductionTextLayerCoverage(layout: {
       : emptyTextLayerPages.length > 0
         ? 'TEXT_LAYER_EMPTY'
         : 'VISUAL_TEXT_UNVERIFIED';
-  throw new ProfessionalInputPureError(
+  return new ProfessionalInputPureError(
     'PDF_OCR_REQUIRED_UNSUPPORTED',
-    `PDF pages ${formatPageRanges(ocrRequiredPages)} of ${layout.pageCount} require OCR. Empty text-layer pages: ${formatPageRangesOrNone(emptyTextLayerPages)}. Visual-text-unverified raster pages: ${formatPageRangesOrNone(visualTextUnverifiedPages)}. No production-safe OCR layout provider is bound.`,
+    details.message ??
+      `PDF pages ${formatPageRanges(ocrRequiredPages)} of ${layout.pageCount} require OCR. Empty text-layer pages: ${formatPageRangesOrNone(emptyTextLayerPages)}. Visual-text-unverified raster pages: ${formatPageRangesOrNone(visualTextUnverifiedPages)}. No production-safe OCR layout provider is bound.`,
     {
       diagnosticKind: 'PDF_PAGE_TEXT_LAYER_COVERAGE',
       visualCoveragePolicy:
@@ -449,8 +585,19 @@ function assertProductionTextLayerCoverage(layout: {
           `${diagnostic.page}:textChars=${diagnostic.nonWhitespaceCharacterCount};unverifiedRasterPageAreaRatio=${diagnostic.rasterVisualCoverage.unverifiedRasterPageAreaRatio};regions=${diagnostic.rasterVisualCoverage.unverifiedRasterRegionCount}`,
       ),
       materialUnverifiedRasterPagePercent: 25,
-      ocrProviderStatus: 'UNAVAILABLE_CURRENT_PRODUCTION',
+      ocrProviderStatus:
+        details.providerStatus ?? 'UNAVAILABLE_CURRENT_PRODUCTION',
       requiredProvider: 'HOST_BUNDLED_PAGE_OCR_LAYOUT_PROVIDER',
+      ...(details.providerId ? { ocrProviderId: details.providerId } : {}),
+      ...(details.failureReasons?.length
+        ? { ocrFailureReasons: details.failureReasons }
+        : {}),
+      ...(details.failureTargets?.length
+        ? { ocrFailureTargets: details.failureTargets }
+        : {}),
+      ...(details.missingLanguages?.length
+        ? { ocrMissingLanguages: details.missingLanguages }
+        : {}),
     },
   );
 }

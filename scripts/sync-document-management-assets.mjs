@@ -65,18 +65,71 @@ await access(pdfjsEntrypoint);
 await mkdir(resolve(pdfjsTarget, '..'), { recursive: true });
 await cp(pdfjsSource, pdfjsTarget, { recursive: true, force: true });
 
-process.stdout.write(`${JSON.stringify({
-  source,
-  target,
-  copiedTechnicalPublicationContract: {
-    source: technicalPublicationContractSource,
-    target: technicalPublicationContractTarget,
-  },
-  copiedProducerAssets,
-  copiedPdfjsRuntime: {
-    source: pdfjsSource,
-    target: pdfjsTarget,
-  },
-  copiedForHostedRuntime: true,
-  onlineMutationPerformed: false,
-})}\n`);
+// The OCR executables and language data are deployment assets, not npm
+// dependencies. A deployment that enables scanned-page materialization must
+// supply one complete pinned runtime directory explicitly; an omitted runtime
+// remains observable at Host startup and fails closed only when OCR is needed.
+const ocrRuntimeSource = process.env.WL31_PDF_OCR_RUNTIME_ROOT?.trim();
+const ocrRuntimeTarget = resolve(
+  root,
+  'dist/server/runtime-assets/professional-input/ocr-runtime',
+);
+const ocrRuntimeManifestSource = resolve(
+  root,
+  'server/runtime-assets/professional-input/ocr-runtime',
+);
+let copiedOcrRuntime = null;
+if (ocrRuntimeSource) {
+  const absoluteOcrRuntimeSource = resolve(ocrRuntimeSource);
+  await access(resolve(absoluteOcrRuntimeSource, 'manifest.json'));
+  await access(resolve(absoluteOcrRuntimeSource, 'bin/pdftoppm'));
+  await access(resolve(absoluteOcrRuntimeSource, 'bin/tesseract'));
+  await access(
+    resolve(absoluteOcrRuntimeSource, 'share/tessdata/eng.traineddata'),
+  );
+  await access(
+    resolve(absoluteOcrRuntimeSource, 'share/tessdata/chi_sim.traineddata'),
+  );
+  await rm(ocrRuntimeTarget, { recursive: true, force: true });
+  await mkdir(resolve(ocrRuntimeTarget, '..'), { recursive: true });
+  await cp(absoluteOcrRuntimeSource, ocrRuntimeTarget, {
+    recursive: true,
+    force: true,
+  });
+  copiedOcrRuntime = {
+    source: absoluteOcrRuntimeSource,
+    target: ocrRuntimeTarget,
+  };
+} else {
+  // deleteOutDir is intentionally false for this app. Remove any runtime left
+  // by an earlier enabled build so an unset deployment input can never inherit
+  // stale executables or tessdata and masquerade as configured.
+  await rm(ocrRuntimeTarget, { recursive: true, force: true });
+  await mkdir(resolve(ocrRuntimeTarget, '..'), { recursive: true });
+  await cp(ocrRuntimeManifestSource, ocrRuntimeTarget, {
+    recursive: true,
+    force: true,
+  });
+}
+
+process.stdout.write(
+  `${JSON.stringify({
+    source,
+    target,
+    copiedTechnicalPublicationContract: {
+      source: technicalPublicationContractSource,
+      target: technicalPublicationContractTarget,
+    },
+    copiedProducerAssets,
+    copiedPdfjsRuntime: {
+      source: pdfjsSource,
+      target: pdfjsTarget,
+    },
+    copiedOcrRuntime,
+    ocrRuntimeDeploymentStatus: copiedOcrRuntime
+      ? 'PINNED_RUNTIME_COPIED'
+      : 'NOT_SUPPLIED_FAIL_CLOSED_WHEN_REQUIRED',
+    copiedForHostedRuntime: true,
+    onlineMutationPerformed: false,
+  })}\n`,
+);

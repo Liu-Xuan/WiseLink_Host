@@ -77,6 +77,54 @@ describe('professional-input whole-page source context', () => {
       }),
     ).toThrow('PACKAGE_CONTENT_UNITS_EMPTY');
   });
+
+  it('keeps whole-page context and appends an exact granular ref for the first OCR line', () => {
+    const exactBbox = [123_456, 234_567, 654_321, 345_678] as const;
+    const layout = pdfLayout([
+      {
+        page: 1,
+        fontName: 'OCR_TESSERACT_TSV',
+        bold: false,
+        fontSize: 12,
+        x: 72,
+        y: 600,
+        text: '扫描页 OCR 可追溯内容',
+        origin: 'ocr_tesseract_tsv',
+        readingOrder: 0,
+        pdfUserSpaceBbox: [72, 600, 320, 612],
+        normalizedBbox: exactBbox,
+        confidence: 96.25,
+      },
+    ]);
+
+    const unitSet = buildSourceUnitSet(layout, {
+      documentCode: 'OCR-TEST-001',
+      artifact: ARTIFACT,
+    });
+    const textUnit = unitSet.units.find(
+      (unit) => unit.kind !== 'source_metadata',
+    );
+    expect(textUnit?.sourceRefIds).toHaveLength(2);
+
+    const boundRefs = textUnit?.sourceRefIds.map((sourceRefId) =>
+      unitSet.sourceRefs.find((ref) => ref.sourceRefId === sourceRefId),
+    );
+    expect(boundRefs?.[0]).toMatchObject({
+      pageStart: 1,
+      pageEnd: 1,
+      bbox: [0, 0, 1_000_000, 1_000_000],
+      quote: '扫描页 OCR 可追溯内容',
+      charStart: 0,
+      charEnd: 13,
+      charOffsetUnit: 'unicode_scalar_value',
+    });
+    expect(boundRefs?.[1]).toMatchObject({
+      pageStart: 1,
+      pageEnd: 1,
+      bbox: exactBbox,
+      quote: '扫描页 OCR 可追溯内容',
+    });
+  });
 });
 
 function pdfLayout(textRuns: ParsedPdfLayout['textRuns']): ParsedPdfLayout {

@@ -39,6 +39,16 @@ export interface ParsedPdfTextRun {
   y: number;
   /** Decoded literal text content of the run. */
   text: string;
+  /** Present only for text materialized by the private Host OCR provider. */
+  origin?: 'ocr_tesseract_tsv';
+  /** Provider order within the requested page/region; never inferred by builders. */
+  readingOrder?: number;
+  /** Exact raw PDF default-user-space bounds used for merge diagnostics. */
+  pdfUserSpaceBbox?: readonly [number, number, number, number];
+  /** Exact frozen.2 top-left page-relative bbox for OCR-origin runs. */
+  normalizedBbox?: readonly [number, number, number, number];
+  /** Character-weighted OCR confidence, diagnostic only. */
+  confidence?: number;
 }
 
 export interface ParsedPdfDocumentMetadata {
@@ -48,6 +58,16 @@ export interface ParsedPdfDocumentMetadata {
 export interface ParsedPdfPageBox {
   page: number;
   mediaBox: readonly [number, number, number, number];
+  /** Effective page rotation used by pdfjs and the deployment renderer. */
+  rotation?: number;
+  /** PDF /UserUnit; 1 means default user-space units equal points. */
+  userUnit?: number;
+  /** Scale-1 display viewport used to map raw PDF and top-left coordinates. */
+  viewport?: {
+    width: number;
+    height: number;
+    transform: readonly [number, number, number, number, number, number];
+  };
 }
 
 /** Page-level text-layer and raster-visual coverage from the layout provider. */
@@ -62,10 +82,7 @@ export interface ParsedPdfRasterRegionDiagnostic {
 }
 
 export interface ParsedPdfRasterVisualCoverageDiagnostic {
-  status:
-    | 'NO_MATERIAL_RASTER'
-    | 'TEXT_LAYER_OVERLAP_PRESENT'
-    | 'UNVERIFIED';
+  status: 'NO_MATERIAL_RASTER' | 'TEXT_LAYER_OVERLAP_PRESENT' | 'UNVERIFIED';
   /** General safety policy: unverified raster union covering >= 1/4 page. */
   materialUnverifiedRasterPageFraction: number;
   rasterRegionCount: number;
@@ -82,6 +99,16 @@ export interface ParsedPdfPageTextLayerDiagnostic {
   textRunCount: number;
   nonWhitespaceCharacterCount: number;
   rasterVisualCoverage: ParsedPdfRasterVisualCoverageDiagnostic;
+  /** Observable OCR coverage; never serialized as a second package contract. */
+  ocrCoverage?: {
+    status: 'OCR_COVERED';
+    providerId: string;
+    requiredLanguages: readonly string[];
+    targetCount: number;
+    acceptedLineCount: number;
+    characterWeightedMeanConfidence: number;
+    wordsBelow60Ratio: number;
+  };
 }
 
 export interface ParsedPdfLayout {

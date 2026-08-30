@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "wiselink.host-pdf-ocr-runtime.v1",
+  "renderer": {
+    "executable": "bin/pdftoppm",
+    "version": "25.03.0"
+  },
+  "engine": {
+    "executable": "bin/tesseract",
+    "version": "5.5.0"
+  },
+  "tessdata": {
+    "directory": "share/tessdata",
+    "distribution": "tessdata_fast",
+    "revision": "4.1.0",
+    "requiredLanguages": ["eng", "chi_sim"]
+  }
+}

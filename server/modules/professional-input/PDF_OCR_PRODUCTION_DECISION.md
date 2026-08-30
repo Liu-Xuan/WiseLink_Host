@@ -2,15 +2,22 @@
 
 Decision date: 2026-08-30
 
-Current integration parent: `b964d4bf88a8989dd4b460edde382f5900b873f5`
+Current integration parent: `31a4f42e3e35b6282c4388292bd837ab5c207b96`
 
 ## Decision
 
-The current Canonical Host has no production-safe OCR owner that can satisfy
-the existing `PdfLayoutExtractorPort`. A PDF page without non-whitespace text,
-or with material raster-visual coverage not overlapped by its text layer,
-therefore fails closed with `PDF_OCR_REQUIRED_UNSUPPORTED`; it must not produce
-a `SourceUnitSet`, frozen.2 package, U0 success, or Reader success.
+The Canonical Host now binds one private composite implementation of the
+existing `PdfLayoutExtractorPort`. Native pdfjs parsing remains authoritative;
+only `EMPTY` pages and regions from a page whose existing raster diagnostic is
+`UNVERIFIED` are sent to the deployment-bound OCR provider. Successful TSV
+results are mapped back to the same page geometry and merged into one
+`ParsedPdfLayout`, after which the unchanged SourceUnitSet, frozen.2 SPP, U0,
+artifact-store, and Unified Reader path continues.
+
+If the pinned runtime is unavailable, a required target is empty or malformed,
+confidence is below the accepted evidence threshold, or native/OCR text
+conflicts, the attempt still fails closed with the established
+`PDF_OCR_REQUIRED_UNSUPPORTED` error. It produces no partial package.
 
 This decision applies per page and raster region. A mixed PDF is unsupported
 when even one page/region needs OCR; text elsewhere does not make the document
@@ -46,10 +53,14 @@ uses the actual page operator geometry and text-layer overlap described above.
 
 - Host `FileService` owns selected-file actual bytes and readback. It exposes no
   OCR or layout operation.
-- The bound layout provider is `PdfjsDistLayoutExtractor`. The production build
-  copies its pinned `pdfjs-dist` runtime, but neither `package.json` nor the
-  runtime asset copy contains an OCR engine, OCR language data, or a PDF-page
-  raster-to-OCR adapter.
+- The bound layout provider is `PdfjsOcrCompositeLayoutExtractor`, which wraps
+  the existing `PdfjsDistLayoutExtractor` and a private
+  `TesseractTsvPdfOcrAdapter`. It is not another parser seam.
+- The production build always copies pinned `pdfjs-dist`. OCR deployments must
+  explicitly supply `WL31_PDF_OCR_RUNTIME_ROOT`; the build copies that complete
+  runtime into Host assets after checking the manifest, both executables, and
+  `eng`/`chi_sim` files. An omitted runtime is observable and fail-closed when
+  OCR is required.
 - `CapabilityService` is available as a general plugin invocation surface. The
   current app declares only `@official-plugins/feishu-bitable`; it has no
   `ai-doc-parser` package or capability instance. The official document-parser
@@ -66,28 +77,32 @@ uses the actual page operator geometry and text-layer overlap described above.
   JSON/page/bbox behavior as unverified. These are reuse anchors for
   fail-closed and locator semantics, not current production runtimes.
 
-## Exact blocker
+## Deployment requirement
 
-The missing external input is a Host-owned, Miaoda-deployable OCR/layout
-capability whose supported server contract returns, for requested PDF
-pages/regions:
+The remaining external deployment input is the Host-owned runtime directory.
+Its pinned manifest requires Poppler `pdftoppm` 25.03.0, Tesseract 5.5.0,
+`tessdata_fast` revision 4.1.0, and languages `eng` plus `chi_sim`. Startup
+preflight checks exact executable versions, language filenames, and an actual
+bilingual Tesseract initialization; `--list-langs` or exit code 0 alone is not
+accepted.
+
+For every requested page/region the private provider returns:
 
 1. the same 1-based PDF page identity;
 2. real recognized text plus page-relative bbox coordinates;
 3. a deterministic success/failure result for every requested page;
-4. no external model/provider, local-only service, Docker dependency, or
-   undeclared system binary; and
-5. a production execution budget proven for the 88-page full-scan document,
-   the 97-page mixed document, and mixed text/raster procedure pages.
+4. a deterministic success/failure result for every target; and
+5. no external model/provider, Docker service, second package, or second
+   Reader.
 
-No currently installed/configured Host capability meets that contract. The
-developer machine's Homebrew `pdftoppm` 25.03.0 and Tesseract 5.5.0 are not
-production assets; its Tesseract languages are only `eng`, `osd`, and `snum`,
-so it also lacks `chi_sim` required to qualify the Chinese scan in the corpus.
+The developer machine still lacks `chi_sim` in its Homebrew tessdata. That
+installation is not a production dependency. The real acceptance run used a
+private temporary runtime populated from the exact official 4.1.0 language
+blobs; those validation files are not committed or downloaded at runtime.
 
-## Next adapter boundary
+## Implemented adapter boundary
 
-The selected narrow follow-up is one Host-owned composite adapter behind the
+The implemented boundary is one Host-owned composite adapter behind the
 existing `PdfLayoutExtractorPort`:
 
 ```text
@@ -107,15 +122,23 @@ be part of the Miaoda deployment contract rather than discovered from the
 developer machine. Any missing asset, page OCR failure, empty OCR result, or
 unmapped bbox remains `PDF_OCR_REQUIRED_UNSUPPORTED`/fail-closed.
 
-The adapter must cover all six fully text-layer-empty PDFs, both mixed PDFs,
-and material raster regions on otherwise non-empty pages identified by the
-b964 audit. It must not introduce another parser, store, or Reader. Until
-actual provider bytes pass the same chain, OCR remains unsupported rather than
-simulated.
+Actual-byte acceptance at the pinned runtime materialized the two-page CAAC
+scan, the rotated Chinese Operation Tip, and AD2020 pages 47-53 (including p48:
+38 lines at 94.881352 mean confidence). Operation Tip and AD2020 both passed
+the frozen.2 strict U0 validator and Unified Reader; Reader returned p48 RVSM
+text with page 48, quote, and granular bbox. Digital FTD and FAA AD produced
+zero OCR pages and byte-identical packages versus the native extractor.
+
+TCI p1, 737 p7/p21, Boeing SL p9, Boeing MT p2, Airbus AOT p4/27-28/37-38/42,
+and Airbus Concession p5 remained explicitly fail-closed under the same pinned
+runtime because required targets were empty or below confidence. These are
+observed outcomes, not silent fallback or claims of document completion.
 
 ## Non-claims
 
-- This change does not implement OCR.
+- This change does not deploy the OCR runtime or its language assets.
 - It does not qualify the official document-parser plugin as a layout provider.
 - It does not reuse historical Tesseract/MinerU/Docker runtime as production.
-- It does not make a scan or mixed PDF a successful package.
+- It does not claim the low-confidence documents above are complete.
+- It does not change family registry semantics, client code, DB schema, cloud
+  configuration, publication state, or engineering approval authority.
