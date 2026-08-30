@@ -88,9 +88,23 @@ describe('workbench adaptive layout', () => {
     expect(
       resolveWorkbenchAdaptiveLayout({ ...base, bodyWidth: 1100 }),
     ).toEqual({
-      autoCollapseNavigator: false,
+      autoCollapseNavigator: true,
       useEvidenceOverlay: true,
       suppressEmptyEvidence: false,
+    });
+  });
+
+  it('uses the same container policy between tablet and mobile breakpoints', () => {
+    expect(
+      resolveWorkbenchAdaptiveLayout({
+        ...base,
+        bodyWidth: 900,
+        evidenceContentCount: 0,
+      }),
+    ).toEqual({
+      autoCollapseNavigator: false,
+      useEvidenceOverlay: false,
+      suppressEmptyEvidence: true,
     });
   });
 

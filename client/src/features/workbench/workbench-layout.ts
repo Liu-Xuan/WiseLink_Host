@@ -58,12 +58,16 @@ export function resolveWorkbenchAdaptiveLayout({
 
   if (suppressEmptyEvidence) {
     return {
+      /* 空证据已经释放宽度；目录继续作为主要导航，中心内容自行按
+       * container query 收敛为单列。不能同时静默隐藏两个辅助面板。 */
       autoCollapseNavigator: false,
       useEvidenceOverlay: false,
       suppressEmptyEvidence: true,
     };
   }
 
+  const navigatorInlineMinimum =
+    navWidth + WORKBENCH_MAIN_INLINE_MIN + WORKBENCH_DIVIDER_WIDTH;
   const evidenceInlineMinimum =
     evidenceWidth + WORKBENCH_MAIN_INLINE_MIN + WORKBENCH_DIVIDER_WIDTH;
   const useEvidenceOverlay = bodyWidth < evidenceInlineMinimum;
@@ -71,8 +75,8 @@ export function resolveWorkbenchAdaptiveLayout({
   return {
     autoCollapseNavigator:
       navigatorAvailable &&
-      !useEvidenceOverlay &&
-      bodyWidth < threeColumnMinimum,
+      bodyWidth <
+        (useEvidenceOverlay ? navigatorInlineMinimum : threeColumnMinimum),
     useEvidenceOverlay,
     suppressEmptyEvidence: false,
   };

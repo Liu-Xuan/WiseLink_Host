@@ -875,34 +875,36 @@ export default function WorkbenchShell({
               ) : null}
               {navigator}
             </aside>
-            <div
-              className="wl-workbench-divider wl-workbench-divider--v"
-              role="separator"
-              aria-orientation="vertical"
-              aria-label="调整目录树宽度"
-              aria-valuemin={NAV_MIN}
-              aria-valuemax={NAV_MAX}
-              aria-valuenow={navWidth}
-              title="拖动或使用方向键调整目录宽度；双击恢复推荐宽度"
-              tabIndex={0}
-              onPointerDown={startDrag('nav')}
-              onDoubleClick={() => setNavWidth(NAV_DEFAULT)}
-              onKeyDown={(event) => {
-                if (event.key === 'ArrowLeft') {
-                  event.preventDefault();
-                  setNavWidth((w) => Math.max(NAV_MIN, w - 16));
-                } else if (event.key === 'ArrowRight') {
-                  event.preventDefault();
-                  setNavWidth((w) => Math.min(NAV_MAX, w + 16));
-                } else if (event.key === 'Home') {
-                  event.preventDefault();
-                  setNavWidth(NAV_MIN);
-                } else if (event.key === 'End') {
-                  event.preventDefault();
-                  setNavWidth(NAV_MAX);
-                }
-              }}
-            />
+            {!isCompact ? (
+              <div
+                className="wl-workbench-divider wl-workbench-divider--v"
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="调整目录树宽度"
+                aria-valuemin={NAV_MIN}
+                aria-valuemax={NAV_MAX}
+                aria-valuenow={navWidth}
+                title="拖动或使用方向键调整目录宽度；双击恢复推荐宽度"
+                tabIndex={0}
+                onPointerDown={startDrag('nav')}
+                onDoubleClick={() => setNavWidth(NAV_DEFAULT)}
+                onKeyDown={(event) => {
+                  if (event.key === 'ArrowLeft') {
+                    event.preventDefault();
+                    setNavWidth((w) => Math.max(NAV_MIN, w - 16));
+                  } else if (event.key === 'ArrowRight') {
+                    event.preventDefault();
+                    setNavWidth((w) => Math.min(NAV_MAX, w + 16));
+                  } else if (event.key === 'Home') {
+                    event.preventDefault();
+                    setNavWidth(NAV_MIN);
+                  } else if (event.key === 'End') {
+                    event.preventDefault();
+                    setNavWidth(NAV_MAX);
+                  }
+                }}
+              />
+            ) : null}
           </>
         ) : null}
 
@@ -919,32 +921,34 @@ export default function WorkbenchShell({
 
         {evidenceVisible ? (
           <>
-            <div
-              className="wl-workbench-divider wl-workbench-divider--v"
-              role="separator"
-              aria-orientation="vertical"
-              aria-label="调整证据栏宽度"
-              aria-valuemin={EVIDENCE_MIN}
-              aria-valuemax={EVIDENCE_MAX}
-              aria-valuenow={evidenceWidth}
-              tabIndex={0}
-              onPointerDown={startDrag('evidence')}
-              onKeyDown={(event) => {
-                if (event.key === 'ArrowLeft') {
-                  event.preventDefault();
-                  setEvidenceWidth((w) => Math.min(EVIDENCE_MAX, w + 16));
-                } else if (event.key === 'ArrowRight') {
-                  event.preventDefault();
-                  setEvidenceWidth((w) => Math.max(EVIDENCE_MIN, w - 16));
-                } else if (event.key === 'Home') {
-                  event.preventDefault();
-                  setEvidenceWidth(EVIDENCE_MIN);
-                } else if (event.key === 'End') {
-                  event.preventDefault();
-                  setEvidenceWidth(EVIDENCE_MAX);
-                }
-              }}
-            />
+            {!isCompact && !adaptiveLayout.useEvidenceOverlay ? (
+              <div
+                className="wl-workbench-divider wl-workbench-divider--v"
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="调整证据栏宽度"
+                aria-valuemin={EVIDENCE_MIN}
+                aria-valuemax={EVIDENCE_MAX}
+                aria-valuenow={evidenceWidth}
+                tabIndex={0}
+                onPointerDown={startDrag('evidence')}
+                onKeyDown={(event) => {
+                  if (event.key === 'ArrowLeft') {
+                    event.preventDefault();
+                    setEvidenceWidth((w) => Math.min(EVIDENCE_MAX, w + 16));
+                  } else if (event.key === 'ArrowRight') {
+                    event.preventDefault();
+                    setEvidenceWidth((w) => Math.max(EVIDENCE_MIN, w - 16));
+                  } else if (event.key === 'Home') {
+                    event.preventDefault();
+                    setEvidenceWidth(EVIDENCE_MIN);
+                  } else if (event.key === 'End') {
+                    event.preventDefault();
+                    setEvidenceWidth(EVIDENCE_MAX);
+                  }
+                }}
+              />
+            ) : null}
             <section
               ref={evidenceDrawerRef}
               className="wl-workbench-evidence"

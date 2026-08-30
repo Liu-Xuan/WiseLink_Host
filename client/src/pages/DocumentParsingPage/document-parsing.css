@@ -67,11 +67,6 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
   min-height: 0;
 }
 
-.parse-locked-card {
-  width: min(680px, 100%);
-  padding: 40px;
-}
-
 .parse-locked-card > svg {
   width: 32px;
   height: 32px;
@@ -826,7 +821,6 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
 
 .parse-panel {
   min-width: 0;
-  padding: 20px;
 }
 
 .parse-document-card h2,
@@ -1513,7 +1507,6 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
 .parse-assessment-panel {
   width: min(1440px, 100%);
   margin: 0 auto 14px;
-  padding: 20px;
   border: 1px solid var(--wl-border-strong);
   border-radius: var(--wl-radius-panel);
   background: var(--wl-surface-solid);
@@ -2896,12 +2889,6 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
 }
 
 @media (max-width: 480px) {
-  .parse-panel,
-  .parse-assessment-panel,
-  .engineering-reasoning-trail {
-    padding: 15px;
-  }
-
   .parse-query-card form {
     grid-template-columns: 1fr;
   }
@@ -2943,12 +2930,6 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
 
   .parse-rail-step:last-child {
     border-bottom: 0;
-  }
-
-  .parse-panel,
-  .parse-assessment-panel,
-  .engineering-reasoning-trail {
-    padding: 12px;
   }
 
   .parse-document-card h2,
@@ -3042,6 +3023,12 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
 .parse-panel,
 .parse-assessment-panel {
   padding: clamp(16px, 2vw, 22px);
+}
+
+/* Locked 是普通专业内容面的宽松变体；必须位于共同 padding owner 之后。 */
+.parse-locked-card {
+  width: min(680px, 100%);
+  padding: 40px;
 }
 
 .parse-pdf-pane,
@@ -3511,5 +3498,21 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
   .parse-assessment-panel,
   .engineering-reasoning-trail {
     border-radius: var(--wl-radius-md);
+  }
+}
+
+@media (max-width: 480px) {
+  .parse-panel,
+  .parse-assessment-panel,
+  .engineering-reasoning-trail {
+    padding: 15px;
+  }
+}
+
+@media (max-width: 390px) {
+  .parse-panel,
+  .parse-assessment-panel,
+  .engineering-reasoning-trail {
+    padding: 12px;
   }
 }
