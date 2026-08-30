@@ -146,10 +146,18 @@ export class CanonicalTranslationKnowledgeGovernanceService {
         aggregate.candidate.sourceBinding,
         input.currentBinding,
       );
+    const notYetValid: boolean =
+      Date.parse(input.asOf) < Date.parse(aggregate.candidate.validFrom);
     const expired: boolean =
       Date.parse(input.asOf) >= Date.parse(aggregate.candidate.expiresAt);
     const validityStatus: TranslationKnowledgeCandidateSnapshot['validityStatus'] =
-      invalidated ? 'INVALIDATED' : expired ? 'EXPIRED' : 'CURRENT';
+      notYetValid
+        ? 'NOT_YET_VALID'
+        : invalidated
+          ? 'INVALIDATED'
+          : expired
+            ? 'EXPIRED'
+            : 'CURRENT';
     const eligible: boolean =
       confirmed && validityStatus === 'CURRENT' && sourceCurrent;
 
@@ -180,6 +188,9 @@ export class CanonicalTranslationKnowledgeGovernanceService {
         currentBinding: input.currentBinding,
       });
     assertOwner(before.candidate, input.actorId);
+    if (before.validityStatus === 'NOT_YET_VALID') {
+      throw new Error('KNOWLEDGE_CANDIDATE_NOT_YET_VALID');
+    }
     if (before.validityStatus !== 'CURRENT') {
       throw new Error('KNOWLEDGE_CANDIDATE_NOT_CURRENT');
     }

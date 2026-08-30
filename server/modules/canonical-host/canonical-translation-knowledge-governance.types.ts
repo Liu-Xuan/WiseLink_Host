@@ -114,7 +114,7 @@ export interface TranslationKnowledgeCandidateSnapshot {
   candidate: TranslationKnowledgeCandidateRecord;
   governanceRevision: number;
   confirmationStatus: 'PENDING_HUMAN_CONFIRMATION' | 'HUMAN_CONFIRMED';
-  validityStatus: 'CURRENT' | 'EXPIRED' | 'INVALIDATED';
+  validityStatus: 'NOT_YET_VALID' | 'CURRENT' | 'EXPIRED' | 'INVALIDATED';
   sourceCurrentness: 'CURRENT' | 'STALE';
   retrievalEligibility: 'SUGGESTION_ONLY' | 'BLOCKED';
   activeTerminology: false;

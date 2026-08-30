@@ -350,7 +350,7 @@ describe('CanonicalHostOpenClawTranslationService', () => {
     const expired = await governance.readCandidate({
       tenantId: 'tenant-1',
       assetId: imported.assetIds[1],
-      asOf: '2026-10-01T00:00:00.000Z',
+      asOf: '2026-09-30T00:00:00.000Z',
       currentBinding: taskContract.taskStartBinding,
     });
     expect(expired).toMatchObject({
@@ -360,6 +360,77 @@ describe('CanonicalHostOpenClawTranslationService', () => {
       activeTerminology: false,
       formalKnowledge: false,
     });
+  });
+
+  it('reports NOT_YET_VALID immediately before validFrom and blocks retrieval', async () => {
+    const { governance, candidate } = await knowledgeValidityHarness();
+
+    const snapshot = await governance.readCandidate({
+      tenantId: candidate.tenantId,
+      assetId: candidate.assetId,
+      asOf: '2026-08-29T23:59:59.999Z',
+      currentBinding: candidate.sourceBinding,
+    });
+
+    expect(snapshot.validityStatus).toBe('NOT_YET_VALID');
+    expect(snapshot.retrievalEligibility).toBe('BLOCKED');
+    await expect(
+      governance.confirmByHuman({
+        tenantId: candidate.tenantId,
+        assetId: candidate.assetId,
+        actorKind: 'HUMAN',
+        actorId: candidate.ownerActorId,
+        reason: 'review attempted before validity starts',
+        occurredAt: '2026-08-29T23:59:59.999Z',
+        currentBinding: candidate.sourceBinding,
+      }),
+    ).rejects.toThrow('KNOWLEDGE_CANDIDATE_NOT_YET_VALID');
+  });
+
+  it('treats asOf equal to validFrom as CURRENT and permits owner confirmation', async () => {
+    const { governance, candidate } = await knowledgeValidityHarness();
+
+    const confirmed = await governance.confirmByHuman({
+      tenantId: candidate.tenantId,
+      assetId: candidate.assetId,
+      actorKind: 'HUMAN',
+      actorId: candidate.ownerActorId,
+      reason: 'review at validity start',
+      occurredAt: candidate.validFrom,
+      currentBinding: candidate.sourceBinding,
+    });
+
+    expect(confirmed.validityStatus).toBe('CURRENT');
+    expect(confirmed.confirmationStatus).toBe('HUMAN_CONFIRMED');
+    expect(confirmed.retrievalEligibility).toBe('SUGGESTION_ONLY');
+    expect(confirmed.activeTerminology).toBe(false);
+    expect(confirmed.formalKnowledge).toBe(false);
+  });
+
+  it('treats asOf equal to expiresAt as EXPIRED and blocks retrieval', async () => {
+    const { governance, candidate } = await knowledgeValidityHarness();
+    await governance.confirmByHuman({
+      tenantId: candidate.tenantId,
+      assetId: candidate.assetId,
+      actorKind: 'HUMAN',
+      actorId: candidate.ownerActorId,
+      reason: 'review during validity window',
+      occurredAt: candidate.validFrom,
+      currentBinding: candidate.sourceBinding,
+    });
+
+    const snapshot = await governance.readCandidate({
+      tenantId: candidate.tenantId,
+      assetId: candidate.assetId,
+      asOf: candidate.expiresAt,
+      currentBinding: candidate.sourceBinding,
+    });
+
+    expect(snapshot.validityStatus).toBe('EXPIRED');
+    expect(snapshot.confirmationStatus).toBe('HUMAN_CONFIRMED');
+    expect(snapshot.retrievalEligibility).toBe('BLOCKED');
+    expect(snapshot.activeTerminology).toBe(false);
+    expect(snapshot.formalKnowledge).toBe(false);
   });
 
   it('uploads and finalizes an approximately 67KB 196-unit result with exact replay and one candidate publication', async () => {
@@ -1031,6 +1102,69 @@ function verifiedScope() {
     tenantId: 'tenant-1',
     workItemId: 'WI-TRANSLATE-1',
     authorizationFingerprint: 'scope-fingerprint-1',
+  };
+}
+
+async function knowledgeValidityHarness(): Promise<{
+  governance: CanonicalTranslationKnowledgeGovernanceService;
+  candidate: TranslationKnowledgeCandidateRecord;
+}> {
+  const store = new ReadbackTranslationKnowledgeCandidateStore();
+  const candidate: TranslationKnowledgeCandidateRecord = {
+    schemaVersion: 'wiselink.3_1.translation_knowledge_candidate.v1',
+    assetId: 'TM-VALIDITY-CANDIDATE-1',
+    tenantId: 'tenant-1',
+    knowledgeKind: 'TRANSLATION_MEMORY',
+    candidateOnly: true,
+    usagePolicy: 'SUGGESTION_ONLY',
+    ownerActorId: 'user:translation-owner',
+    importedByActorId: 'user:translation-owner',
+    sourceArtifact: {
+      ref: 'artifact://translation/bilingual-validity-test.json',
+      sha256:
+        'a323aac6cdec5033eef62927853daf59a97044bbc30408c65666c99167c58855',
+    },
+    sourceBinding: {
+      documentId: 'DOC-VALIDITY-1',
+      revisionId: 'REV-VALIDITY-1',
+      sbdPackageId: 'SBD-VALIDITY-1',
+      sbdContentHash: 'sbd-validity-content-hash',
+      tcpPackageId: 'TCP-VALIDITY-1',
+      tcpContentHash: 'tcp-validity-content-hash',
+    },
+    translationExecution: {
+      actionAttemptId: 'AA-VALIDITY-1',
+      resultContentHash: 'translation-result-validity-hash',
+      modelVersion: 'GLM-5.3',
+      promptVersion: 'translation.prompt.v1',
+      skillVersion: 'translation.skill.v1',
+    },
+    ruleSet: {
+      ruleSetId: 'wiselink.host.translation-rules.zh-cn.v1',
+      ruleSetVersion: '1.0.0',
+      sourceLocale: 'en-US',
+      targetLocale: 'zh-CN',
+    },
+    unit: {
+      unitId: 'UNIT-VALIDITY-1',
+      kind: 'paragraph',
+      sourceText: 'Validity boundary source unit.',
+      translatedText: '有效期边界源单元。',
+      sourceRefIds: ['SRC-VALIDITY-1'],
+      engineerRevisionId: null,
+    },
+    validFrom: '2026-08-30T00:00:00.000Z',
+    expiresAt: '2026-09-30T00:00:00.000Z',
+    createdAt: '2026-08-30T00:00:00.000Z',
+  };
+  await store.saveCandidate(candidate);
+  return {
+    governance: new CanonicalTranslationKnowledgeGovernanceService(
+      store,
+      new HostOwnedV1TranslationRuleSetPrivateProvider(),
+      (): string => 'TM-VALIDITY-EVENT-1',
+    ),
+    candidate,
   };
 }
 
