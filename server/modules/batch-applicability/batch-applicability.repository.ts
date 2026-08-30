@@ -3,54 +3,18 @@ import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import { sql } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 
+import {
+  batchApplicabilityConfirmation,
+  batchApplicabilityRun,
+} from '../../database/schema';
 import type {
   CreateBatchApplicabilityConfirmationRecord,
   CreateBatchApplicabilityRunRecord,
   PersistedBatchApplicabilityConfirmation,
   PersistedBatchApplicabilityRun,
 } from './batch-applicability-host.types';
-
-interface RunRow extends Record<string, unknown> {
-  runId: string;
-  tenantId: string;
-  actorId: string;
-  workItemId: string;
-  requestId: string;
-  requestPayloadJson: string;
-  workItemRevision: number;
-  documentVersionId: string;
-  sourcePackageId: string;
-  sourceExpressionId: string;
-  sourceConditionId: string;
-  sourceRefIdsJson: string;
-  fleetSourceSnapshotId: string;
-  fleetSourceRevisionKey: string;
-  fleetAuthorityRevision: string;
-  fleetSourceAsOf: string;
-  hostBindingStatus: PersistedBatchApplicabilityRun['hostBindingStatus'];
-  candidateSetJson: string;
-  createdAt: Date | string;
-}
-
-interface ConfirmationRow extends Record<string, unknown> {
-  receiptId: string;
-  runId: string;
-  tenantId: string;
-  actorId: string;
-  workItemId: string;
-  requestId: string;
-  requestPayloadJson: string;
-  workItemRevision: number;
-  candidateClusterId: string;
-  decision: PersistedBatchApplicabilityConfirmation['decision'];
-  reason: string;
-  confirmedAt: Date | string;
-  validUntil: Date | string;
-  confirmationCandidateJson: string;
-  createdAt: Date | string;
-}
 
 @Injectable()
 export class BatchApplicabilityRepository {
@@ -64,16 +28,19 @@ export class BatchApplicabilityRepository {
     workItemId: string;
     requestId: string;
   }): Promise<PersistedBatchApplicabilityRun | null> {
-    const rows = await this.db.execute<RunRow>(sql`
-      SELECT ${runColumns()}
-      FROM batch_applicability_run
-      WHERE tenant_id = ${input.tenantId}
-        AND actor_id = ${input.actorId}
-        AND work_item_id = ${input.workItemId}
-        AND request_id = ${input.requestId}
-      LIMIT 1
-    `);
-    return rows[0] ? toRun(rows[0]) : null;
+    const [row] = await this.db
+      .select()
+      .from(batchApplicabilityRun)
+      .where(
+        and(
+          eq(batchApplicabilityRun.tenantId, input.tenantId),
+          eq(batchApplicabilityRun.actorId, input.actorId),
+          eq(batchApplicabilityRun.workItemId, input.workItemId),
+          eq(batchApplicabilityRun.requestId, input.requestId),
+        ),
+      )
+      .limit(1);
+    return row ? toRun(row) : null;
   }
 
   async findRun(input: {
@@ -82,50 +49,60 @@ export class BatchApplicabilityRepository {
     workItemId: string;
     runId: string;
   }): Promise<PersistedBatchApplicabilityRun | null> {
-    const rows = await this.db.execute<RunRow>(sql`
-      SELECT ${runColumns()}
-      FROM batch_applicability_run
-      WHERE tenant_id = ${input.tenantId}
-        AND actor_id = ${input.actorId}
-        AND work_item_id = ${input.workItemId}
-        AND run_id = ${input.runId}
-      LIMIT 1
-    `);
-    return rows[0] ? toRun(rows[0]) : null;
+    const [row] = await this.db
+      .select()
+      .from(batchApplicabilityRun)
+      .where(
+        and(
+          eq(batchApplicabilityRun.tenantId, input.tenantId),
+          eq(batchApplicabilityRun.actorId, input.actorId),
+          eq(batchApplicabilityRun.workItemId, input.workItemId),
+          eq(batchApplicabilityRun.runId, input.runId),
+        ),
+      )
+      .limit(1);
+    return row ? toRun(row) : null;
   }
 
   async createRun(
     input: CreateBatchApplicabilityRunRecord,
   ): Promise<{ run: PersistedBatchApplicabilityRun; created: boolean }> {
     const candidate = input.candidateSet;
-    const requestPayloadJson = JSON.stringify(input.request);
-    const candidateSetJson = JSON.stringify(candidate);
-    const sourceRefIdsJson = JSON.stringify(candidate.source.sourceRefIds);
-    const rows = await this.db.execute<RunRow>(sql`
-      INSERT INTO batch_applicability_run (
-        run_id, tenant_id, actor_id, work_item_id, request_id,
-        request_payload_json, work_item_revision, document_version_id,
-        source_package_id, source_expression_id, source_condition_id,
-        source_ref_ids_json, fleet_source_snapshot_id,
-        fleet_source_revision_key, fleet_authority_revision,
-        fleet_source_as_of, host_binding_status, candidate_set_json
-      ) VALUES (
-        ${input.runId}, ${input.tenantId}, ${input.actorId},
-        ${input.workItemId}, ${input.request.requestId},
-        ${requestPayloadJson}, ${candidate.source.workItemRevision},
-        ${candidate.source.documentVersionId}, ${candidate.source.packageId},
-        ${candidate.source.sourceExpressionId},
-        ${candidate.source.sourceConditionId}, ${sourceRefIdsJson},
-        ${candidate.source.hostBinding.frozenFleetHead.sourceSnapshotId},
-        ${candidate.source.hostBinding.frozenFleetHead.sourceRevisionKey},
-        ${candidate.source.hostBinding.frozenFleetHead.authorityRevision},
-        ${candidate.source.hostBinding.frozenFleetHead.sourceAsOf},
-        ${candidate.source.hostBinding.status}, ${candidateSetJson}
-      )
-      ON CONFLICT (tenant_id, work_item_id, request_id) DO NOTHING
-      RETURNING ${runColumns()}
-    `);
-    if (rows[0]) return { run: toRun(rows[0]), created: true };
+    const [inserted] = await this.db
+      .insert(batchApplicabilityRun)
+      .values({
+        runId: input.runId,
+        tenantId: input.tenantId,
+        actorId: input.actorId,
+        workItemId: input.workItemId,
+        requestId: input.request.requestId,
+        requestPayloadJson: JSON.stringify(input.request),
+        workItemRevision: candidate.source.workItemRevision,
+        documentVersionId: candidate.source.documentVersionId,
+        sourcePackageId: candidate.source.packageId,
+        sourceExpressionId: candidate.source.sourceExpressionId,
+        sourceConditionId: candidate.source.sourceConditionId,
+        sourceRefIdsJson: JSON.stringify(candidate.source.sourceRefIds),
+        fleetSourceSnapshotId:
+          candidate.source.hostBinding.frozenFleetHead.sourceSnapshotId,
+        fleetSourceRevisionKey:
+          candidate.source.hostBinding.frozenFleetHead.sourceRevisionKey,
+        fleetAuthorityRevision:
+          candidate.source.hostBinding.frozenFleetHead.authorityRevision,
+        fleetSourceAsOf:
+          candidate.source.hostBinding.frozenFleetHead.sourceAsOf,
+        hostBindingStatus: candidate.source.hostBinding.status,
+        candidateSetJson: JSON.stringify(candidate),
+      })
+      .onConflictDoNothing({
+        target: [
+          batchApplicabilityRun.tenantId,
+          batchApplicabilityRun.workItemId,
+          batchApplicabilityRun.requestId,
+        ],
+      })
+      .returning();
+    if (inserted) return { run: toRun(inserted), created: true };
     const replay = await this.findRunByRequest({
       tenantId: input.tenantId,
       actorId: input.actorId,
@@ -142,15 +119,21 @@ export class BatchApplicabilityRepository {
     workItemId: string;
     runId: string;
   }): Promise<PersistedBatchApplicabilityConfirmation[]> {
-    const rows = await this.db.execute<ConfirmationRow>(sql`
-      SELECT ${confirmationColumns()}
-      FROM batch_applicability_confirmation
-      WHERE tenant_id = ${input.tenantId}
-        AND actor_id = ${input.actorId}
-        AND work_item_id = ${input.workItemId}
-        AND run_id = ${input.runId}
-      ORDER BY created_at, receipt_id
-    `);
+    const rows = await this.db
+      .select()
+      .from(batchApplicabilityConfirmation)
+      .where(
+        and(
+          eq(batchApplicabilityConfirmation.tenantId, input.tenantId),
+          eq(batchApplicabilityConfirmation.actorId, input.actorId),
+          eq(batchApplicabilityConfirmation.workItemId, input.workItemId),
+          eq(batchApplicabilityConfirmation.runId, input.runId),
+        ),
+      )
+      .orderBy(
+        asc(batchApplicabilityConfirmation.createdAt),
+        asc(batchApplicabilityConfirmation.receiptId),
+      );
     return rows.map(toConfirmation);
   }
 
@@ -160,27 +143,29 @@ export class BatchApplicabilityRepository {
     confirmation: PersistedBatchApplicabilityConfirmation;
     created: boolean;
   }> {
-    const requestPayloadJson = JSON.stringify(input.request);
-    const confirmationCandidateJson = JSON.stringify(input.candidate);
-    const rows = await this.db.execute<ConfirmationRow>(sql`
-      INSERT INTO batch_applicability_confirmation (
-        receipt_id, run_id, tenant_id, actor_id, work_item_id, request_id,
-        request_payload_json, work_item_revision, candidate_cluster_id,
-        decision, reason, confirmed_at, valid_until,
-        confirmation_candidate_json
-      ) VALUES (
-        ${input.receiptId}, ${input.run.runId}, ${input.run.tenantId},
-        ${input.actorId}, ${input.run.workItemId}, ${input.request.requestId},
-        ${requestPayloadJson}, ${input.run.workItemRevision},
-        ${input.request.candidateClusterId}, ${input.request.decision},
-        ${input.request.reason}, ${input.candidate.audit.confirmedAt}::timestamptz,
-        ${input.request.validUntil}::timestamptz, ${confirmationCandidateJson}
-      )
-      ON CONFLICT DO NOTHING
-      RETURNING ${confirmationColumns()}
-    `);
-    if (rows[0])
-      return { confirmation: toConfirmation(rows[0]), created: true };
+    const [inserted] = await this.db
+      .insert(batchApplicabilityConfirmation)
+      .values({
+        receiptId: input.receiptId,
+        runId: input.run.runId,
+        tenantId: input.run.tenantId,
+        actorId: input.actorId,
+        workItemId: input.run.workItemId,
+        requestId: input.request.requestId,
+        requestPayloadJson: JSON.stringify(input.request),
+        workItemRevision: input.run.workItemRevision,
+        candidateClusterId: input.request.candidateClusterId,
+        decision: input.request.decision,
+        reason: input.request.reason,
+        confirmedAt: new Date(input.candidate.audit.confirmedAt),
+        validUntil: new Date(input.request.validUntil),
+        confirmationCandidateJson: JSON.stringify(input.candidate),
+      })
+      .onConflictDoNothing()
+      .returning();
+    if (inserted) {
+      return { confirmation: toConfirmation(inserted), created: true };
+    }
     const existing = await this.findConfirmationByRequest({
       tenantId: input.run.tenantId,
       actorId: input.actorId,
@@ -197,83 +182,96 @@ export class BatchApplicabilityRepository {
     workItemId: string;
     requestId: string;
   }): Promise<PersistedBatchApplicabilityConfirmation | null> {
-    const rows = await this.db.execute<ConfirmationRow>(sql`
-      SELECT ${confirmationColumns()}
-      FROM batch_applicability_confirmation
-      WHERE tenant_id = ${input.tenantId}
-        AND actor_id = ${input.actorId}
-        AND work_item_id = ${input.workItemId}
-        AND request_id = ${input.requestId}
-      LIMIT 1
-    `);
-    return rows[0] ? toConfirmation(rows[0]) : null;
+    const [row] = await this.db
+      .select()
+      .from(batchApplicabilityConfirmation)
+      .where(
+        and(
+          eq(batchApplicabilityConfirmation.tenantId, input.tenantId),
+          eq(batchApplicabilityConfirmation.actorId, input.actorId),
+          eq(batchApplicabilityConfirmation.workItemId, input.workItemId),
+          eq(batchApplicabilityConfirmation.requestId, input.requestId),
+        ),
+      )
+      .limit(1);
+    return row ? toConfirmation(row) : null;
   }
 }
 
-function runColumns() {
-  return sql.raw(`
-    run_id AS "runId", tenant_id AS "tenantId", actor_id AS "actorId",
-    work_item_id AS "workItemId", request_id AS "requestId",
-    request_payload_json AS "requestPayloadJson",
-    work_item_revision AS "workItemRevision",
-    document_version_id AS "documentVersionId",
-    source_package_id AS "sourcePackageId",
-    source_expression_id AS "sourceExpressionId",
-    source_condition_id AS "sourceConditionId",
-    source_ref_ids_json AS "sourceRefIdsJson",
-    fleet_source_snapshot_id AS "fleetSourceSnapshotId",
-    fleet_source_revision_key AS "fleetSourceRevisionKey",
-    fleet_authority_revision AS "fleetAuthorityRevision",
-    fleet_source_as_of AS "fleetSourceAsOf",
-    host_binding_status AS "hostBindingStatus",
-    candidate_set_json AS "candidateSetJson", created_at AS "createdAt"
-  `);
-}
-
-function confirmationColumns() {
-  return sql.raw(`
-    receipt_id AS "receiptId", run_id AS "runId",
-    tenant_id AS "tenantId", actor_id AS "actorId",
-    work_item_id AS "workItemId", request_id AS "requestId",
-    request_payload_json AS "requestPayloadJson",
-    work_item_revision AS "workItemRevision",
-    candidate_cluster_id AS "candidateClusterId", decision, reason,
-    confirmed_at AS "confirmedAt", valid_until AS "validUntil",
-    confirmation_candidate_json AS "confirmationCandidateJson",
-    created_at AS "createdAt"
-  `);
-}
-
-function toRun(row: RunRow): PersistedBatchApplicabilityRun {
+function toRun(
+  row: typeof batchApplicabilityRun.$inferSelect,
+): PersistedBatchApplicabilityRun {
   return {
-    ...row,
-    createdAt: date(row.createdAt),
+    runId: row.runId,
+    tenantId: row.tenantId,
+    actorId: row.actorId,
+    workItemId: row.workItemId,
+    requestId: row.requestId,
+    requestPayloadJson: row.requestPayloadJson,
+    workItemRevision: row.workItemRevision,
+    documentVersionId: row.documentVersionId,
+    sourcePackageId: row.sourcePackageId,
+    sourceExpressionId: row.sourceExpressionId,
+    sourceConditionId: row.sourceConditionId,
+    sourceRefIdsJson: row.sourceRefIdsJson,
     fleetHead: {
       sourceSnapshotId: row.fleetSourceSnapshotId,
       sourceRevisionKey: row.fleetSourceRevisionKey,
       authorityRevision: row.fleetAuthorityRevision,
       sourceAsOf: row.fleetSourceAsOf,
     },
+    hostBindingStatus: hostBindingStatus(row.hostBindingStatus),
+    candidateSetJson: row.candidateSetJson,
+    createdAt: row.createdAt,
   };
 }
 
 function toConfirmation(
-  row: ConfirmationRow,
+  row: typeof batchApplicabilityConfirmation.$inferSelect,
 ): PersistedBatchApplicabilityConfirmation {
   return {
-    ...row,
-    confirmedAt: date(row.confirmedAt),
-    validUntil: date(row.validUntil),
-    createdAt: date(row.createdAt),
+    receiptId: row.receiptId,
+    runId: row.runId,
+    tenantId: row.tenantId,
+    actorId: row.actorId,
+    workItemId: row.workItemId,
+    requestId: row.requestId,
+    requestPayloadJson: row.requestPayloadJson,
+    workItemRevision: row.workItemRevision,
+    candidateClusterId: row.candidateClusterId,
+    decision: confirmationDecision(row.decision),
+    reason: row.reason,
+    confirmedAt: row.confirmedAt,
+    validUntil: row.validUntil,
+    confirmationCandidateJson: row.confirmationCandidateJson,
+    createdAt: row.createdAt,
   };
 }
 
-function date(value: Date | string): Date {
-  const parsed = value instanceof Date ? value : new Date(value);
-  if (!Number.isFinite(parsed.valueOf())) {
-    throw new Error('BATCH_PERSISTED_TIMESTAMP_INVALID');
+function hostBindingStatus(
+  value: string,
+): PersistedBatchApplicabilityRun['hostBindingStatus'] {
+  if (
+    value === 'CURRENT' ||
+    value === 'STALE' ||
+    value === 'CONFLICT' ||
+    value === 'UNVERIFIED'
+  ) {
+    return value;
   }
-  return parsed;
+  throw new Error('BATCH_PERSISTED_HOST_BINDING_STATUS_INVALID');
+}
+
+function confirmationDecision(
+  value: string,
+): PersistedBatchApplicabilityConfirmation['decision'] {
+  if (
+    value === 'CONFIRM_CLUSTER_CANDIDATE' ||
+    value === 'REJECT_CLUSTER_CANDIDATE'
+  ) {
+    return value;
+  }
+  throw new Error('BATCH_PERSISTED_CONFIRMATION_DECISION_INVALID');
 }
 
 function conflict(code: string): Error & { code: string; statusCode: number } {

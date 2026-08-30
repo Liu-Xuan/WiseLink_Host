@@ -959,6 +959,82 @@ export const canonicalRuleSetActivation = pgTable("canonical_rule_set_activation
   check("ck_canonical_rule_set_activation_reason", sql`length(btrim(${table.reason})) > 0`),
 ]);
 
+export const batchApplicabilityRun = pgTable("batch_applicability_run", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  runId: varchar("run_id", { length: 96 }).notNull().unique(),
+  tenantId: varchar("tenant_id", { length: 128 }).notNull(),
+  actorId: varchar("actor_id", { length: 255 }).notNull(),
+  workItemId: varchar("work_item_id", { length: 96 }).notNull(),
+  requestId: varchar("request_id", { length: 96 }).notNull(),
+  requestPayloadJson: text("request_payload_json").notNull(),
+  workItemRevision: integer("work_item_revision").notNull(),
+  documentVersionId: varchar("document_version_id", { length: 96 }).notNull(),
+  sourcePackageId: text("source_package_id").notNull(),
+  sourceExpressionId: varchar("source_expression_id", { length: 160 }).notNull(),
+  sourceConditionId: varchar("source_condition_id", { length: 160 }).notNull(),
+  sourceRefIdsJson: text("source_ref_ids_json").notNull(),
+  fleetSourceSnapshotId: varchar("fleet_source_snapshot_id", { length: 96 }).notNull(),
+  fleetSourceRevisionKey: varchar("fleet_source_revision_key", { length: 255 }).notNull(),
+  fleetAuthorityRevision: varchar("fleet_authority_revision", { length: 96 }).notNull(),
+  fleetSourceAsOf: varchar("fleet_source_as_of", { length: 10 }).notNull(),
+  hostBindingStatus: varchar("host_binding_status", { length: 32 }).notNull(),
+  candidateSetJson: text("candidate_set_json").notNull(),
+  createdAt: customTimestamptz("created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("uk_batch_applicability_run_id").on(table.runId),
+  uniqueIndex("uk_batch_applicability_run_request").on(table.tenantId, table.workItemId, table.requestId),
+  index("idx_batch_applicability_run_work_item").on(table.workItemId, table.createdAt.desc()),
+  foreignKey({
+    columns: [table.workItemId],
+    foreignColumns: [workItem.workItemId],
+    name: "fk_batch_applicability_run_work_item",
+  }),
+  check("ck_batch_applicability_run_revision", sql`${table.workItemRevision} >= 0`),
+  check("ck_batch_applicability_run_request", sql`length(btrim(${table.requestId})) > 0`),
+  check("ck_batch_applicability_run_payload", sql`length(btrim(${table.requestPayloadJson})) > 0 AND length(btrim(${table.candidateSetJson})) > 0 AND length(btrim(${table.sourceRefIdsJson})) > 0`),
+  check("ck_batch_applicability_run_fleet_as_of", sql`${table.fleetSourceAsOf} ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'`),
+  check("ck_batch_applicability_run_host_status", sql`${table.hostBindingStatus} IN ('CURRENT', 'STALE', 'CONFLICT', 'UNVERIFIED')`),
+]);
+
+export const batchApplicabilityConfirmation = pgTable("batch_applicability_confirmation", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  receiptId: varchar("receipt_id", { length: 96 }).notNull().unique(),
+  runId: varchar("run_id", { length: 96 }).notNull(),
+  tenantId: varchar("tenant_id", { length: 128 }).notNull(),
+  actorId: varchar("actor_id", { length: 255 }).notNull(),
+  workItemId: varchar("work_item_id", { length: 96 }).notNull(),
+  requestId: varchar("request_id", { length: 96 }).notNull(),
+  requestPayloadJson: text("request_payload_json").notNull(),
+  workItemRevision: integer("work_item_revision").notNull(),
+  candidateClusterId: varchar("candidate_cluster_id", { length: 255 }).notNull(),
+  decision: varchar("decision", { length: 48 }).notNull(),
+  reason: text("reason").notNull(),
+  confirmedAt: customTimestamptz("confirmed_at", { precision: 3 }).notNull(),
+  validUntil: customTimestamptz("valid_until", { precision: 3 }).notNull(),
+  confirmationCandidateJson: text("confirmation_candidate_json").notNull(),
+  createdAt: customTimestamptz("created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("uk_batch_applicability_confirmation_receipt").on(table.receiptId),
+  uniqueIndex("uk_batch_applicability_confirmation_request").on(table.tenantId, table.workItemId, table.requestId),
+  uniqueIndex("uk_batch_applicability_confirmation_cluster").on(table.runId, table.candidateClusterId),
+  index("idx_batch_applicability_confirmation_run").on(table.runId, table.createdAt),
+  foreignKey({
+    columns: [table.runId],
+    foreignColumns: [batchApplicabilityRun.runId],
+    name: "fk_batch_applicability_confirmation_run",
+  }),
+  foreignKey({
+    columns: [table.workItemId],
+    foreignColumns: [workItem.workItemId],
+    name: "fk_batch_applicability_confirmation_work_item",
+  }),
+  check("ck_batch_applicability_confirmation_revision", sql`${table.workItemRevision} >= 0`),
+  check("ck_batch_applicability_confirmation_decision", sql`${table.decision} IN ('CONFIRM_CLUSTER_CANDIDATE', 'REJECT_CLUSTER_CANDIDATE')`),
+  check("ck_batch_applicability_confirmation_reason", sql`length(btrim(${table.reason})) > 0`),
+  check("ck_batch_applicability_confirmation_payload", sql`length(btrim(${table.requestPayloadJson})) > 0 AND length(btrim(${table.confirmationCandidateJson})) > 0`),
+  check("ck_batch_applicability_confirmation_validity", sql`${table.validUntil} > ${table.confirmedAt}`),
+]);
+
 /** Host-owned Feishu OAuth subject -> canonical Miaoda subject mapping. */
 export const identitySubjectMapping = pgTable("identity_subject_mapping", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -1027,6 +1103,8 @@ export const identitySession = pgTable("identity_session", {
 
 // table aliases
 export const actionAttemptTable = actionAttempt;
+export const batchApplicabilityConfirmationTable = batchApplicabilityConfirmation;
+export const batchApplicabilityRunTable = batchApplicabilityRun;
 export const canonicalFleetAliasVersionTable = canonicalFleetAliasVersion;
 export const canonicalFleetAssetVersionTable = canonicalFleetAssetVersion;
 export const canonicalFleetConfigurationFactVersionTable = canonicalFleetConfigurationFactVersion;

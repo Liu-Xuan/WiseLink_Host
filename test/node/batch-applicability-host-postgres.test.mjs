@@ -162,6 +162,7 @@ test(
         ),
         errorCode('BATCH_CLUSTER_NOT_CONFIRMABLE'),
       );
+      await assertDatabaseConfirmationBoundary(sql, created.runId);
       const trueCluster = created.candidateClusters.find(
         (cluster) => cluster.truth === 'TRUE',
       );
@@ -353,6 +354,209 @@ async function assertAccessDenials(harness, runId) {
   await assert.rejects(
     harness.controller.read(CURRENT_WORK_ITEM, runId, { headers: {} }),
     errorCode('SESSION_REQUIRED', 401),
+  );
+}
+
+async function assertDatabaseConfirmationBoundary(sql, targetRunId) {
+  const [stored] = await sql`
+    SELECT candidate_set_json AS "candidateSetJson"
+    FROM batch_applicability_run
+    WHERE run_id = ${targetRunId}
+  `;
+  assert.ok(stored);
+  const base = JSON.parse(stored.candidateSetJson);
+  const evaluatedCluster = base.candidateClusters.find(
+    (cluster) => cluster.truth === 'TRUE',
+  );
+  assert.ok(evaluatedCluster);
+  const evaluatedMember = base.matrix.find(
+    (row) => row.matrixItemId === evaluatedCluster.memberMatrixItemIds[0],
+  );
+  assert.ok(evaluatedMember);
+
+  const otherRunSet = structuredClone(base);
+  otherRunSet.candidateSetId = 'CANDIDATE-SET-DB-OTHER-RUN';
+  otherRunSet.candidateClusters = [
+    {
+      ...structuredClone(evaluatedCluster),
+      candidateClusterId: 'CLUSTER-DB-OTHER-RUN-TRUE',
+      memberMatrixItemIds: ['MATRIX-DB-OTHER-RUN-TRUE'],
+    },
+  ];
+  otherRunSet.matrix = [
+    {
+      ...structuredClone(evaluatedMember),
+      matrixItemId: 'MATRIX-DB-OTHER-RUN-TRUE',
+      candidateClusterId: 'CLUSTER-DB-OTHER-RUN-TRUE',
+    },
+  ];
+  await insertDirectRun(
+    sql,
+    targetRunId,
+    'RUN-DB-OTHER-RUN',
+    'db-boundary-run-other',
+    otherRunSet,
+  );
+  await assertDirectConfirmationRejected(sql, {
+    targetRunId,
+    requestId: 'db-boundary-confirm-other-run',
+    receiptId: 'RECEIPT-DB-OTHER-RUN',
+    candidateSet: otherRunSet,
+    cluster: otherRunSet.candidateClusters[0],
+  });
+
+  const unknownSet = structuredClone(base);
+  unknownSet.candidateSetId = 'CANDIDATE-SET-DB-UNKNOWN';
+  unknownSet.candidateClusters = [
+    {
+      ...structuredClone(evaluatedCluster),
+      candidateClusterId: 'CLUSTER-DB-UNKNOWN',
+      truth: 'UNKNOWN',
+      status: 'EVALUATED',
+      memberMatrixItemIds: ['MATRIX-DB-UNKNOWN'],
+    },
+  ];
+  unknownSet.matrix = [
+    {
+      ...structuredClone(evaluatedMember),
+      matrixItemId: 'MATRIX-DB-UNKNOWN',
+      truth: 'UNKNOWN',
+      status: 'WAITING_INPUT',
+      clusterEligibility: 'EXCLUDED_UNKNOWN',
+      candidateClusterId: 'CLUSTER-DB-UNKNOWN',
+    },
+  ];
+  await insertDirectRun(
+    sql,
+    targetRunId,
+    'RUN-DB-UNKNOWN',
+    'db-boundary-run-unknown',
+    unknownSet,
+  );
+  await assertDirectConfirmationRejected(sql, {
+    targetRunId: 'RUN-DB-UNKNOWN',
+    requestId: 'db-boundary-confirm-unknown',
+    receiptId: 'RECEIPT-DB-UNKNOWN',
+    candidateSet: unknownSet,
+    cluster: unknownSet.candidateClusters[0],
+  });
+
+  const conflictSet = structuredClone(base);
+  conflictSet.candidateSetId = 'CANDIDATE-SET-DB-CONFLICT';
+  conflictSet.candidateClusters = [
+    {
+      ...structuredClone(evaluatedCluster),
+      candidateClusterId: 'CLUSTER-DB-CONFLICT',
+      truth: 'TRUE',
+      status: 'CONFLICT',
+      memberMatrixItemIds: ['MATRIX-DB-CONFLICT'],
+    },
+  ];
+  conflictSet.matrix = [
+    {
+      ...structuredClone(evaluatedMember),
+      matrixItemId: 'MATRIX-DB-CONFLICT',
+      truth: 'UNKNOWN',
+      status: 'CONFLICT',
+      clusterEligibility: 'EXCLUDED_CONFLICT',
+      candidateClusterId: 'CLUSTER-DB-CONFLICT',
+    },
+  ];
+  await insertDirectRun(
+    sql,
+    targetRunId,
+    'RUN-DB-CONFLICT',
+    'db-boundary-run-conflict',
+    conflictSet,
+  );
+  await assertDirectConfirmationRejected(sql, {
+    targetRunId: 'RUN-DB-CONFLICT',
+    requestId: 'db-boundary-confirm-conflict',
+    receiptId: 'RECEIPT-DB-CONFLICT',
+    candidateSet: conflictSet,
+    cluster: conflictSet.candidateClusters[0],
+  });
+
+  const [rejected] = await sql`
+    SELECT count(*)::int AS value
+    FROM batch_applicability_confirmation
+    WHERE request_id LIKE 'db-boundary-confirm-%'
+  `;
+  assert.equal(rejected.value, 0);
+}
+
+async function insertDirectRun(
+  sql,
+  sourceRunId,
+  runId,
+  requestId,
+  candidateSet,
+) {
+  await sql`
+    INSERT INTO batch_applicability_run (
+      run_id, tenant_id, actor_id, work_item_id, request_id,
+      request_payload_json, work_item_revision, document_version_id,
+      source_package_id, source_expression_id, source_condition_id,
+      source_ref_ids_json, fleet_source_snapshot_id,
+      fleet_source_revision_key, fleet_authority_revision,
+      fleet_source_as_of, host_binding_status, candidate_set_json
+    )
+    SELECT ${runId}, tenant_id, actor_id, work_item_id, ${requestId},
+      request_payload_json, work_item_revision, document_version_id,
+      source_package_id, source_expression_id, source_condition_id,
+      source_ref_ids_json, fleet_source_snapshot_id,
+      fleet_source_revision_key, fleet_authority_revision,
+      fleet_source_as_of, host_binding_status, ${JSON.stringify(candidateSet)}
+    FROM batch_applicability_run
+    WHERE run_id = ${sourceRunId}
+  `;
+}
+
+async function assertDirectConfirmationRejected(sql, input) {
+  const candidate = {
+    status: 'HUMAN_CLUSTER_REVIEW_CANDIDATE_READY',
+    candidateSetId: input.candidateSet.candidateSetId,
+    candidateClusterId: input.cluster.candidateClusterId,
+    decision: 'CONFIRM_CLUSTER_CANDIDATE',
+    reviewedCluster: {
+      truth: input.cluster.truth,
+      memberMatrixItemIds: input.cluster.memberMatrixItemIds,
+      aircraftIdentifiers: input.cluster.aircraftIdentifiers,
+      asOfValues: input.cluster.asOfValues,
+    },
+    audit: {
+      workItemId: CURRENT_WORK_ITEM,
+      workItemRevision: 7,
+      documentVersionId: 'DOCUMENT-VERSION-BATCH-HOST',
+      confirmedByActorId: ACTOR,
+      reason: 'Direct SQL boundary negative case.',
+      confirmedAt: '2026-08-30T10:00:00.000Z',
+      validUntil: '2026-09-30T10:00:00.000Z',
+      sourceRefIds: ['SRC-BATCH-737-PN'],
+    },
+  };
+  await assert.rejects(
+    sql`
+      INSERT INTO batch_applicability_confirmation (
+        receipt_id, run_id, tenant_id, actor_id, work_item_id, request_id,
+        request_payload_json, work_item_revision, candidate_cluster_id,
+        decision, reason, confirmed_at, valid_until,
+        confirmation_candidate_json
+      ) VALUES (
+        ${input.receiptId}, ${input.targetRunId}, ${TENANT}, ${ACTOR},
+        ${CURRENT_WORK_ITEM}, ${input.requestId}, '{}', 7,
+        ${input.cluster.candidateClusterId}, 'CONFIRM_CLUSTER_CANDIDATE',
+        'Direct SQL boundary negative case.',
+        '2026-08-30T10:00:00.000Z'::timestamptz,
+        '2026-09-30T10:00:00.000Z'::timestamptz,
+        ${JSON.stringify(candidate)}
+      )
+    `,
+    (error) =>
+      error?.code === 'P0001' &&
+      error?.message.includes(
+        'BATCH_APPLICABILITY_CONFIRMATION_CLUSTER_NOT_CONFIRMABLE',
+      ),
   );
 }
 

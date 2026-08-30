@@ -187,6 +187,119 @@ BEGIN
       ERRCODE = 'P0001',
       MESSAGE = 'BATCH_APPLICABILITY_CONFIRMATION_RUN_NOT_CURRENT';
   END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM batch_applicability_run candidate_run
+    CROSS JOIN LATERAL jsonb_array_elements(
+      CASE
+        WHEN jsonb_typeof(
+          candidate_run.candidate_set_json::jsonb -> 'candidateClusters'
+        ) = 'array'
+        THEN candidate_run.candidate_set_json::jsonb -> 'candidateClusters'
+        ELSE '[]'::jsonb
+      END
+    ) candidate_cluster
+    WHERE candidate_run.run_id = NEW.run_id
+      AND candidate_cluster ->> 'candidateClusterId' =
+        NEW.candidate_cluster_id
+      AND candidate_cluster ->> 'status' = 'EVALUATED'
+      AND candidate_cluster ->> 'truth' IN ('TRUE', 'FALSE')
+      AND jsonb_typeof(
+        candidate_cluster -> 'memberMatrixItemIds'
+      ) = 'array'
+      AND jsonb_array_length(
+        candidate_cluster -> 'memberMatrixItemIds'
+      ) > 0
+      AND (
+        SELECT count(*)
+        FROM jsonb_array_elements(
+          CASE
+            WHEN jsonb_typeof(
+              candidate_run.candidate_set_json::jsonb ->
+                'candidateClusters'
+            ) = 'array'
+            THEN candidate_run.candidate_set_json::jsonb ->
+              'candidateClusters'
+            ELSE '[]'::jsonb
+          END
+        ) cluster_identity
+        WHERE cluster_identity ->> 'candidateClusterId' =
+          NEW.candidate_cluster_id
+      ) = 1
+      AND NEW.confirmation_candidate_json::jsonb ->> 'status' =
+        'HUMAN_CLUSTER_REVIEW_CANDIDATE_READY'
+      AND NEW.confirmation_candidate_json::jsonb ->> 'candidateSetId' =
+        candidate_run.candidate_set_json::jsonb ->> 'candidateSetId'
+      AND NEW.confirmation_candidate_json::jsonb ->> 'candidateClusterId' =
+        NEW.candidate_cluster_id
+      AND NEW.confirmation_candidate_json::jsonb ->> 'decision' =
+        NEW.decision
+      AND NEW.confirmation_candidate_json::jsonb ->
+        'reviewedCluster' ->> 'truth' = candidate_cluster ->> 'truth'
+      AND NEW.confirmation_candidate_json::jsonb ->
+        'reviewedCluster' -> 'memberMatrixItemIds' =
+        candidate_cluster -> 'memberMatrixItemIds'
+      AND NEW.confirmation_candidate_json::jsonb ->
+        'audit' ->> 'workItemId' = NEW.work_item_id
+      AND NEW.confirmation_candidate_json::jsonb ->
+        'audit' ->> 'workItemRevision' = NEW.work_item_revision::text
+      AND NEW.confirmation_candidate_json::jsonb ->
+        'audit' ->> 'confirmedByActorId' = NEW.actor_id
+      AND NOT EXISTS (
+        SELECT 1
+        FROM jsonb_array_elements_text(
+          candidate_cluster -> 'memberMatrixItemIds'
+        ) member_matrix_item(matrix_item_id)
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(
+            CASE
+              WHEN jsonb_typeof(
+                candidate_run.candidate_set_json::jsonb -> 'matrix'
+              ) = 'array'
+              THEN candidate_run.candidate_set_json::jsonb -> 'matrix'
+              ELSE '[]'::jsonb
+            END
+          ) matrix_item
+          WHERE matrix_item ->> 'matrixItemId' =
+              member_matrix_item.matrix_item_id
+            AND matrix_item ->> 'candidateClusterId' =
+              NEW.candidate_cluster_id
+            AND matrix_item ->> 'status' = 'EVALUATED'
+            AND matrix_item ->> 'truth' = candidate_cluster ->> 'truth'
+            AND matrix_item ->> 'truth' IN ('TRUE', 'FALSE')
+            AND matrix_item ->> 'clusterEligibility' =
+              CASE candidate_cluster ->> 'truth'
+                WHEN 'TRUE' THEN 'ELIGIBLE_EVALUATED_TRUE'
+                WHEN 'FALSE' THEN 'ELIGIBLE_EVALUATED_FALSE'
+              END
+        )
+      )
+      AND NOT EXISTS (
+        SELECT 1
+        FROM jsonb_array_elements(
+          CASE
+            WHEN jsonb_typeof(
+              candidate_run.candidate_set_json::jsonb -> 'matrix'
+            ) = 'array'
+            THEN candidate_run.candidate_set_json::jsonb -> 'matrix'
+            ELSE '[]'::jsonb
+          END
+        ) matrix_item
+        WHERE matrix_item ->> 'candidateClusterId' =
+            NEW.candidate_cluster_id
+          AND NOT (
+            candidate_cluster -> 'memberMatrixItemIds' ?
+              (matrix_item ->> 'matrixItemId')
+          )
+      )
+  ) THEN
+    RAISE EXCEPTION USING
+      ERRCODE = 'P0001',
+      MESSAGE =
+        'BATCH_APPLICABILITY_CONFIRMATION_CLUSTER_NOT_CONFIRMABLE';
+  END IF;
   RETURN NEW;
 END;
 $$;
