@@ -605,6 +605,109 @@ export interface CanonicalTranslationCandidateProjection {
   artifact: UnifiedPackageArtifactDescriptor;
 }
 
+export type CanonicalTranslationKnowledgeFeedbackDecision =
+  | 'ADOPTED_AS_CANDIDATE_SUGGESTION'
+  | 'REJECTED';
+
+export interface CanonicalTranslationKnowledgeCandidateSnapshot {
+  schemaVersion: 'wiselink.3_1.translation_knowledge_candidate_snapshot.v1';
+  assetId: string;
+  workItemId: string;
+  snapshotWorkItemRevision: number;
+  governanceRevision: number;
+  knowledgeKind: 'TRANSLATION_MEMORY';
+  usagePolicy: 'SUGGESTION_ONLY';
+  unit: {
+    unitId: string;
+    kind: string;
+    sourceText: string;
+    translatedText: string;
+    sourceRefIds: string[];
+    engineerRevisionId: string | null;
+  };
+  ruleSet: {
+    ruleSetId: string;
+    ruleSetVersion: string;
+    sourceLocale: string;
+    targetLocale: string;
+  };
+  validFrom: string;
+  expiresAt: string;
+  confirmationStatus:
+    | 'PENDING_HUMAN_CONFIRMATION'
+    | 'HUMAN_CONFIRMED'
+    | 'HUMAN_REJECTED';
+  validityStatus: 'NOT_YET_VALID' | 'CURRENT' | 'EXPIRED' | 'INVALIDATED';
+  sourceCurrentness: 'CURRENT' | 'STALE';
+  retrievalEligibility: 'SUGGESTION_ONLY' | 'BLOCKED';
+  latestFeedback: {
+    decision: CanonicalTranslationKnowledgeFeedbackDecision;
+    comment: string;
+    occurredAt: string;
+  } | null;
+  authority: {
+    candidateOnly: true;
+    activeTerminology: false;
+    formalKnowledge: false;
+    companyProcedureActivated: false;
+    engineeringApproved: false;
+    productionPublished: false;
+    translationCurrentChanged: false;
+    frequencyCreatesAuthority: false;
+  };
+}
+
+export interface CreateCanonicalTranslationKnowledgeCandidatesRequest {
+  requestId: string;
+  expectedWorkItemRevision: number;
+  validFrom: string;
+  expiresAt: string;
+}
+
+export interface CreateCanonicalTranslationKnowledgeCandidatesResponse {
+  schemaVersion: 'wiselink.3_1.translation_knowledge_import_receipt.v1';
+  status: 'CANDIDATE_SNAPSHOTS_READY';
+  requestId: string;
+  workItemId: string;
+  snapshotWorkItemRevision: number;
+  createdCount: number;
+  reusedCount: number;
+  replayed: boolean;
+  candidates: CanonicalTranslationKnowledgeCandidateSnapshot[];
+  authority: CanonicalTranslationKnowledgeCandidateSnapshot['authority'];
+}
+
+export interface RecordCanonicalTranslationKnowledgeFeedbackRequest {
+  requestId: string;
+  expectedWorkItemRevision: number;
+  expectedGovernanceRevision: number;
+  decision: CanonicalTranslationKnowledgeFeedbackDecision;
+  comment: string;
+}
+
+export interface CanonicalTranslationKnowledgeAdoptionReceipt {
+  schemaVersion: 'wiselink.3_1.translation_knowledge_adoption_receipt.v1';
+  receiptId: string;
+  requestId: string;
+  workItemId: string;
+  assetId: string;
+  snapshotWorkItemRevision: number;
+  expectedGovernanceRevision: number;
+  resultingGovernanceRevision: number;
+  decision: CanonicalTranslationKnowledgeFeedbackDecision;
+  comment: string;
+  occurredAt: string;
+  replayed: boolean;
+  learningEventRecorded: true;
+  candidateSuggestionAdopted: boolean;
+  authority: CanonicalTranslationKnowledgeCandidateSnapshot['authority'];
+}
+
+export interface RecordCanonicalTranslationKnowledgeFeedbackResponse {
+  receipt: CanonicalTranslationKnowledgeAdoptionReceipt;
+  candidate: CanonicalTranslationKnowledgeCandidateSnapshot;
+}
+
 export interface CanonicalApplicabilityFleetSourceRef {
   sourceTable: string;
   sourceRecordId: string;

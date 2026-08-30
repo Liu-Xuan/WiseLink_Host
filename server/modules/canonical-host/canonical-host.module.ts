@@ -28,6 +28,9 @@ import { CanonicalHostOpenClawOverallService } from './canonical-host-openclaw-o
 import { CanonicalHostOverallRegenerationController } from './canonical-host-overall-regeneration.controller';
 import { CanonicalHostOverallRegenerationService } from './canonical-host-overall-regeneration.service';
 import { CanonicalHostOpenClawTranslationService } from './canonical-host-openclaw-translation.service';
+import { CanonicalTranslationKnowledgeController } from './canonical-translation-knowledge.controller';
+import { CanonicalTranslationKnowledgeProductService } from './canonical-translation-knowledge-product.service';
+import { MiaodaTranslationKnowledgeProductStore } from './miaoda-translation-knowledge-product.store';
 import { CanonicalHostOpenClawApplicabilityService } from './canonical-host-openclaw-applicability.service';
 import { CanonicalHostOpenClawAttemptStatusService } from './canonical-host-openclaw-attempt-status.service';
 import {
@@ -143,6 +146,7 @@ export interface CanonicalHostModuleOptions {
     CanonicalRuleSetLifecycleController,
     EngineeringMatterController,
     CanonicalHostAeoEditingController,
+    CanonicalTranslationKnowledgeController,
   ],
   providers: [
     CanonicalEntryFacadeService,
@@ -157,6 +161,8 @@ export interface CanonicalHostModuleOptions {
     CanonicalHostOpenClawOverallService,
     CanonicalHostOverallRegenerationService,
     CanonicalHostOpenClawTranslationService,
+    CanonicalTranslationKnowledgeProductService,
+    MiaodaTranslationKnowledgeProductStore,
     CanonicalHostOpenClawApplicabilityService,
     CanonicalHostOpenClawAttemptStatusService,
     CanonicalHostApplicabilityInputProducer,
@@ -317,6 +323,7 @@ export class CanonicalHostModule {
         CanonicalRuleSetLifecycleController,
         EngineeringMatterController,
         CanonicalHostAeoEditingController,
+        CanonicalTranslationKnowledgeController,
       ],
       providers: [
         workItemRegistrarProvider,
@@ -347,6 +354,8 @@ export class CanonicalHostModule {
         CanonicalHostOpenClawOverallService,
         CanonicalHostOverallRegenerationService,
         CanonicalHostOpenClawTranslationService,
+        CanonicalTranslationKnowledgeProductService,
+        MiaodaTranslationKnowledgeProductStore,
         CanonicalHostOpenClawApplicabilityService,
         CanonicalHostOpenClawAttemptStatusService,
         CanonicalHostApplicabilityInputProducer,

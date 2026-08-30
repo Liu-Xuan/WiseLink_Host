@@ -28,6 +28,7 @@ export {
   type ReadTranslationKnowledgeCandidateInput,
   type SaveTranslationKnowledgeCandidateResult,
   type TranslationKnowledgeActorKind,
+  type TranslationKnowledgeGovernanceActorKind,
   type TranslationKnowledgeAggregate,
   type TranslationKnowledgeCandidateRecord,
   type TranslationKnowledgeCandidateSnapshot,
@@ -35,6 +36,8 @@ export {
   type TranslationKnowledgeGovernanceEvent,
   type TranslationKnowledgeGovernanceEventType,
   type TranslationKnowledgeIdFactory,
+  type TranslationKnowledgeImportRequestItem,
+  type TranslationKnowledgeProductStore,
   type TranslationKnowledgeReviewInput,
 } from './canonical-translation-knowledge-governance.types';
 
@@ -47,9 +50,9 @@ export {
  * may confirm that a candidate is usable for later candidate suggestions,
  * but confirmation never promotes it beyond SUGGESTION_ONLY.
  *
- * The service is not registered in CanonicalHostModule yet. Its persistence
- * port is paired with migration 0015, while the local acceptance test uses a
- * read-back store implementing the same atomic dedupe/event contract.
+ * Phase2 registers the browser-safe product facade in CanonicalHostModule.
+ * This domain service remains independent of transport and uses the same
+ * persistence port for the PostgreSQL adapter and focused in-memory tests.
  */
 
 const defaultIdFactory: TranslationKnowledgeIdFactory = (
@@ -76,6 +79,8 @@ export class CanonicalTranslationKnowledgeGovernanceService {
         schemaVersion: TRANSLATION_KNOWLEDGE_CANDIDATE_SCHEMA,
         assetId: this.idFactory('ASSET'),
         tenantId: input.tenantId,
+        workItemId: input.workItemId,
+        snapshotWorkItemRevision: input.snapshotWorkItemRevision,
         knowledgeKind: 'TRANSLATION_MEMORY',
         candidateOnly: true,
         usagePolicy: 'SUGGESTION_ONLY',
@@ -97,6 +102,7 @@ export class CanonicalTranslationKnowledgeGovernanceService {
         unit: {
           unitId: unit.unitId,
           kind: unit.kind,
+          sourceUnitCount: input.artifact.units.length,
           sourceText: unit.sourceText,
           translatedText: unit.translatedText,
           sourceRefIds: [...unit.sourceRefIds],
@@ -125,10 +131,19 @@ export class CanonicalTranslationKnowledgeGovernanceService {
     input: ReadTranslationKnowledgeCandidateInput,
   ): Promise<TranslationKnowledgeCandidateSnapshot> {
     assertNonBlank(input.tenantId, 'KNOWLEDGE_TENANT_REQUIRED');
+    assertNonBlank(input.workItemId, 'KNOWLEDGE_WORK_ITEM_REQUIRED');
     assertNonBlank(input.assetId, 'KNOWLEDGE_ASSET_ID_REQUIRED');
+    assertPositiveRevision(
+      input.currentWorkItemRevision,
+      'KNOWLEDGE_WORK_ITEM_REVISION_INVALID',
+    );
     assertTimestamp(input.asOf, 'KNOWLEDGE_AS_OF_INVALID');
     const aggregate: TranslationKnowledgeAggregate =
-      await this.requiredAggregate(input.tenantId, input.assetId);
+      await this.requiredAggregate(
+        input.tenantId,
+        input.workItemId,
+        input.assetId,
+      );
     const events: TranslationKnowledgeGovernanceEvent[] = orderedEvents(
       aggregate.events,
     );
@@ -136,11 +151,33 @@ export class CanonicalTranslationKnowledgeGovernanceService {
       (event: TranslationKnowledgeGovernanceEvent) =>
         event.eventType === 'INVALIDATED',
     );
-    const confirmed: boolean = events.some(
+    const legacyConfirmed: boolean = events.some(
       (event: TranslationKnowledgeGovernanceEvent) =>
         event.eventType === 'HUMAN_CONFIRMED',
     );
+    const latestFeedback: TranslationKnowledgeGovernanceEvent | undefined = [
+      ...events,
+    ]
+      .reverse()
+      .find(
+        (event: TranslationKnowledgeGovernanceEvent) =>
+          event.eventType === 'ENGINEER_ADOPTED' ||
+          event.eventType === 'ENGINEER_REJECTED',
+      );
+    const confirmationStatus: TranslationKnowledgeCandidateSnapshot['confirmationStatus'] =
+      latestFeedback?.eventType === 'ENGINEER_ADOPTED'
+        ? 'HUMAN_CONFIRMED'
+        : latestFeedback?.eventType === 'ENGINEER_REJECTED'
+          ? 'HUMAN_REJECTED'
+          : legacyConfirmed
+            ? 'HUMAN_CONFIRMED'
+            : 'PENDING_HUMAN_CONFIRMATION';
+    const confirmed: boolean = confirmationStatus === 'HUMAN_CONFIRMED';
+    const workItemCurrent: boolean =
+      aggregate.candidate.snapshotWorkItemRevision ===
+      input.currentWorkItemRevision;
     const sourceCurrent: boolean =
+      workItemCurrent &&
       input.currentBinding !== null &&
       translationConsumptionBindingsIdentical(
         aggregate.candidate.sourceBinding,
@@ -164,9 +201,7 @@ export class CanonicalTranslationKnowledgeGovernanceService {
     return {
       candidate: structuredClone(aggregate.candidate),
       governanceRevision: events.length,
-      confirmationStatus: confirmed
-        ? 'HUMAN_CONFIRMED'
-        : 'PENDING_HUMAN_CONFIRMATION',
+      confirmationStatus,
       validityStatus,
       sourceCurrentness: sourceCurrent ? 'CURRENT' : 'STALE',
       retrievalEligibility: eligible ? 'SUGGESTION_ONLY' : 'BLOCKED',
@@ -183,6 +218,8 @@ export class CanonicalTranslationKnowledgeGovernanceService {
     const before: TranslationKnowledgeCandidateSnapshot =
       await this.readCandidate({
         tenantId: input.tenantId,
+        workItemId: input.workItemId,
+        currentWorkItemRevision: input.currentWorkItemRevision,
         assetId: input.assetId,
         asOf: input.occurredAt,
         currentBinding: input.currentBinding,
@@ -200,10 +237,17 @@ export class CanonicalTranslationKnowledgeGovernanceService {
     if (before.confirmationStatus === 'HUMAN_CONFIRMED') return before;
 
     await this.store.appendEvent(
-      this.eventFor(input, before.governanceRevision, 'HUMAN_CONFIRMED'),
+      this.eventFor(
+        input,
+        before.candidate.snapshotWorkItemRevision,
+        before.governanceRevision,
+        'HUMAN_CONFIRMED',
+      ),
     );
     return this.readCandidate({
       tenantId: input.tenantId,
+      workItemId: input.workItemId,
+      currentWorkItemRevision: input.currentWorkItemRevision,
       assetId: input.assetId,
       asOf: input.occurredAt,
       currentBinding: input.currentBinding,
@@ -217,6 +261,8 @@ export class CanonicalTranslationKnowledgeGovernanceService {
     const before: TranslationKnowledgeCandidateSnapshot =
       await this.readCandidate({
         tenantId: input.tenantId,
+        workItemId: input.workItemId,
+        currentWorkItemRevision: input.currentWorkItemRevision,
         assetId: input.assetId,
         asOf: input.occurredAt,
         currentBinding: input.currentBinding,
@@ -225,10 +271,17 @@ export class CanonicalTranslationKnowledgeGovernanceService {
     if (before.validityStatus === 'INVALIDATED') return before;
 
     await this.store.appendEvent(
-      this.eventFor(input, before.governanceRevision, 'INVALIDATED'),
+      this.eventFor(
+        input,
+        before.candidate.snapshotWorkItemRevision,
+        before.governanceRevision,
+        'INVALIDATED',
+      ),
     );
     return this.readCandidate({
       tenantId: input.tenantId,
+      workItemId: input.workItemId,
+      currentWorkItemRevision: input.currentWorkItemRevision,
       assetId: input.assetId,
       asOf: input.occurredAt,
       currentBinding: input.currentBinding,
@@ -242,6 +295,8 @@ export class CanonicalTranslationKnowledgeGovernanceService {
     const before: TranslationKnowledgeCandidateSnapshot =
       await this.readCandidate({
         tenantId: input.tenantId,
+        workItemId: input.workItemId,
+        currentWorkItemRevision: input.currentWorkItemRevision,
         assetId: input.assetId,
         asOf: input.invalidatedAt,
         currentBinding: input.currentBinding,
@@ -259,8 +314,12 @@ export class CanonicalTranslationKnowledgeGovernanceService {
     const event: TranslationKnowledgeGovernanceEvent = {
       eventId: this.idFactory('EVENT'),
       tenantId: input.tenantId,
+      workItemId: input.workItemId,
+      snapshotWorkItemRevision: before.candidate.snapshotWorkItemRevision,
+      requestId: null,
       assetId: input.assetId,
       eventType: 'INVALIDATED',
+      feedbackDecision: null,
       expectedRevision: before.governanceRevision,
       resultingRevision: before.governanceRevision + 1,
       actorKind: 'SYSTEM',
@@ -271,6 +330,8 @@ export class CanonicalTranslationKnowledgeGovernanceService {
     await this.store.appendEvent(event);
     return this.readCandidate({
       tenantId: input.tenantId,
+      workItemId: input.workItemId,
+      currentWorkItemRevision: input.currentWorkItemRevision,
       assetId: input.assetId,
       asOf: input.invalidatedAt,
       currentBinding: input.currentBinding,
@@ -279,17 +340,22 @@ export class CanonicalTranslationKnowledgeGovernanceService {
 
   private eventFor(
     input: TranslationKnowledgeReviewInput,
+    snapshotWorkItemRevision: number,
     expectedRevision: number,
     eventType: TranslationKnowledgeGovernanceEventType,
   ): TranslationKnowledgeGovernanceEvent {
     return {
       eventId: this.idFactory('EVENT'),
       tenantId: input.tenantId,
+      workItemId: input.workItemId,
+      snapshotWorkItemRevision,
+      requestId: null,
       assetId: input.assetId,
       eventType,
+      feedbackDecision: null,
       expectedRevision,
       resultingRevision: expectedRevision + 1,
-      actorKind: input.actorKind,
+      actorKind: 'HUMAN',
       actorId: input.actorId,
       reason: input.reason,
       createdAt: input.occurredAt,
@@ -298,10 +364,11 @@ export class CanonicalTranslationKnowledgeGovernanceService {
 
   private async requiredAggregate(
     tenantId: string,
+    workItemId: string,
     assetId: string,
   ): Promise<TranslationKnowledgeAggregate> {
     const aggregate: TranslationKnowledgeAggregate | null =
-      await this.store.readAggregate(tenantId, assetId);
+      await this.store.readAggregate(tenantId, workItemId, assetId);
     if (aggregate === null) throw new Error('KNOWLEDGE_CANDIDATE_NOT_FOUND');
     return aggregate;
   }
@@ -312,6 +379,11 @@ function validateImport(
   ruleSets: PrivateTranslationRuleSetProvider,
 ): void {
   assertNonBlank(input.tenantId, 'KNOWLEDGE_TENANT_REQUIRED');
+  assertNonBlank(input.workItemId, 'KNOWLEDGE_WORK_ITEM_REQUIRED');
+  assertPositiveRevision(
+    input.snapshotWorkItemRevision,
+    'KNOWLEDGE_WORK_ITEM_REVISION_INVALID',
+  );
   assertNonBlank(input.ownerActorId, 'KNOWLEDGE_OWNER_REQUIRED');
   assertNonBlank(input.importedByActorId, 'KNOWLEDGE_IMPORTER_REQUIRED');
   assertNonBlank(input.sourceArtifact.ref, 'KNOWLEDGE_ARTIFACT_REF_REQUIRED');
@@ -423,7 +495,7 @@ function orderedEvents(
     if (
       event.expectedRevision !== revision ||
       event.resultingRevision !== revision + 1 ||
-      (event.eventType === 'HUMAN_CONFIRMED' && event.actorKind !== 'HUMAN')
+      (event.eventType !== 'INVALIDATED' && event.actorKind !== 'HUMAN')
     ) {
       throw new Error('KNOWLEDGE_GOVERNANCE_EVENT_CHAIN_INVALID');
     }
@@ -436,6 +508,11 @@ function assertHumanOwnerReviewInput(
   input: TranslationKnowledgeReviewInput,
 ): void {
   assertNonBlank(input.tenantId, 'KNOWLEDGE_TENANT_REQUIRED');
+  assertNonBlank(input.workItemId, 'KNOWLEDGE_WORK_ITEM_REQUIRED');
+  assertPositiveRevision(
+    input.currentWorkItemRevision,
+    'KNOWLEDGE_WORK_ITEM_REVISION_INVALID',
+  );
   assertNonBlank(input.assetId, 'KNOWLEDGE_ASSET_ID_REQUIRED');
   assertNonBlank(input.actorId, 'KNOWLEDGE_ACTOR_REQUIRED');
   assertNonBlank(input.reason, 'KNOWLEDGE_REVIEW_REASON_REQUIRED');
@@ -465,4 +542,8 @@ function assertNonBlank(value: string, errorCode: string): void {
   if (typeof value !== 'string' || value.trim().length === 0) {
     throw new Error(errorCode);
   }
+}
+
+function assertPositiveRevision(value: number, errorCode: string): void {
+  if (!Number.isSafeInteger(value) || value < 1) throw new Error(errorCode);
 }

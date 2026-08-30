@@ -215,6 +215,8 @@ describe('CanonicalHostOpenClawTranslationService', () => {
     );
     const importInput = {
       tenantId: 'tenant-1',
+      workItemId: harness.workItem.workItemId,
+      snapshotWorkItemRevision: 8,
       ownerActorId: 'user:translation-owner',
       importedByActorId: 'user:translation-owner',
       sourceArtifact: committed.translation.artifact,
@@ -243,6 +245,8 @@ describe('CanonicalHostOpenClawTranslationService', () => {
 
     const pending = await governance.readCandidate({
       tenantId: 'tenant-1',
+      workItemId: harness.workItem.workItemId,
+      currentWorkItemRevision: 8,
       assetId: imported.assetIds[0],
       asOf: '2026-08-30T02:00:00.000Z',
       currentBinding: taskContract.taskStartBinding,
@@ -275,6 +279,8 @@ describe('CanonicalHostOpenClawTranslationService', () => {
     await expect(
       governance.confirmByHuman({
         tenantId: 'tenant-1',
+        workItemId: harness.workItem.workItemId,
+        currentWorkItemRevision: 8,
         assetId: imported.assetIds[0],
         actorKind: 'MODEL',
         actorId: 'model:GLM-5.3',
@@ -286,6 +292,8 @@ describe('CanonicalHostOpenClawTranslationService', () => {
     await expect(
       governance.confirmByHuman({
         tenantId: 'tenant-1',
+        workItemId: harness.workItem.workItemId,
+        currentWorkItemRevision: 8,
         assetId: imported.assetIds[0],
         actorKind: 'HUMAN',
         actorId: 'user:not-owner',
@@ -297,6 +305,8 @@ describe('CanonicalHostOpenClawTranslationService', () => {
 
     const confirmedFirst = await governance.confirmByHuman({
       tenantId: 'tenant-1',
+      workItemId: harness.workItem.workItemId,
+      currentWorkItemRevision: 8,
       assetId: imported.assetIds[0],
       actorKind: 'HUMAN',
       actorId: 'user:translation-owner',
@@ -306,6 +316,8 @@ describe('CanonicalHostOpenClawTranslationService', () => {
     });
     const confirmedSecond = await governance.confirmByHuman({
       tenantId: 'tenant-1',
+      workItemId: harness.workItem.workItemId,
+      currentWorkItemRevision: 8,
       assetId: imported.assetIds[1],
       actorKind: 'HUMAN',
       actorId: 'user:translation-owner',
@@ -324,6 +336,8 @@ describe('CanonicalHostOpenClawTranslationService', () => {
 
     const invalidated = await governance.invalidateIfSourceStale({
       tenantId: 'tenant-1',
+      workItemId: harness.workItem.workItemId,
+      currentWorkItemRevision: 8,
       assetId: imported.assetIds[0],
       invalidatedAt: '2026-09-01T00:00:00.000Z',
       currentBinding: {
@@ -349,6 +363,8 @@ describe('CanonicalHostOpenClawTranslationService', () => {
 
     const expired = await governance.readCandidate({
       tenantId: 'tenant-1',
+      workItemId: harness.workItem.workItemId,
+      currentWorkItemRevision: 8,
       assetId: imported.assetIds[1],
       asOf: '2026-09-30T00:00:00.000Z',
       currentBinding: taskContract.taskStartBinding,
@@ -367,6 +383,8 @@ describe('CanonicalHostOpenClawTranslationService', () => {
 
     const snapshot = await governance.readCandidate({
       tenantId: candidate.tenantId,
+      workItemId: candidate.workItemId,
+      currentWorkItemRevision: candidate.snapshotWorkItemRevision,
       assetId: candidate.assetId,
       asOf: '2026-08-29T23:59:59.999Z',
       currentBinding: candidate.sourceBinding,
@@ -377,6 +395,8 @@ describe('CanonicalHostOpenClawTranslationService', () => {
     await expect(
       governance.confirmByHuman({
         tenantId: candidate.tenantId,
+        workItemId: candidate.workItemId,
+        currentWorkItemRevision: candidate.snapshotWorkItemRevision,
         assetId: candidate.assetId,
         actorKind: 'HUMAN',
         actorId: candidate.ownerActorId,
@@ -392,6 +412,8 @@ describe('CanonicalHostOpenClawTranslationService', () => {
 
     const confirmed = await governance.confirmByHuman({
       tenantId: candidate.tenantId,
+      workItemId: candidate.workItemId,
+      currentWorkItemRevision: candidate.snapshotWorkItemRevision,
       assetId: candidate.assetId,
       actorKind: 'HUMAN',
       actorId: candidate.ownerActorId,
@@ -411,6 +433,8 @@ describe('CanonicalHostOpenClawTranslationService', () => {
     const { governance, candidate } = await knowledgeValidityHarness();
     await governance.confirmByHuman({
       tenantId: candidate.tenantId,
+      workItemId: candidate.workItemId,
+      currentWorkItemRevision: candidate.snapshotWorkItemRevision,
       assetId: candidate.assetId,
       actorKind: 'HUMAN',
       actorId: candidate.ownerActorId,
@@ -421,6 +445,8 @@ describe('CanonicalHostOpenClawTranslationService', () => {
 
     const snapshot = await governance.readCandidate({
       tenantId: candidate.tenantId,
+      workItemId: candidate.workItemId,
+      currentWorkItemRevision: candidate.snapshotWorkItemRevision,
       assetId: candidate.assetId,
       asOf: candidate.expiresAt,
       currentBinding: candidate.sourceBinding,
@@ -1114,6 +1140,8 @@ async function knowledgeValidityHarness(): Promise<{
     schemaVersion: 'wiselink.3_1.translation_knowledge_candidate.v1',
     assetId: 'TM-VALIDITY-CANDIDATE-1',
     tenantId: 'tenant-1',
+    workItemId: 'WI-VALIDITY-1',
+    snapshotWorkItemRevision: 1,
     knowledgeKind: 'TRANSLATION_MEMORY',
     candidateOnly: true,
     usagePolicy: 'SUGGESTION_ONLY',
@@ -1148,6 +1176,7 @@ async function knowledgeValidityHarness(): Promise<{
     unit: {
       unitId: 'UNIT-VALIDITY-1',
       kind: 'paragraph',
+      sourceUnitCount: 1,
       sourceText: 'Validity boundary source unit.',
       translatedText: '有效期边界源单元。',
       sourceRefIds: ['SRC-VALIDITY-1'],
@@ -1186,6 +1215,8 @@ class ReadbackTranslationKnowledgeCandidateStore implements TranslationKnowledge
   ): Promise<SaveTranslationKnowledgeCandidateResult> {
     const dedupeKey: string = [
       candidate.tenantId,
+      candidate.workItemId,
+      candidate.snapshotWorkItemRevision,
       candidate.sourceArtifact.sha256,
       candidate.unit.unitId,
     ].join(':');
@@ -1212,18 +1243,27 @@ class ReadbackTranslationKnowledgeCandidateStore implements TranslationKnowledge
 
   async readAggregate(
     tenantId: string,
+    workItemId: string,
     assetId: string,
   ): Promise<TranslationKnowledgeAggregate | null> {
     const candidate: TranslationKnowledgeCandidateRecord | undefined =
       this.candidates.get(assetId);
-    if (candidate === undefined || candidate.tenantId !== tenantId) return null;
+    if (
+      candidate === undefined ||
+      candidate.tenantId !== tenantId ||
+      candidate.workItemId !== workItemId
+    ) {
+      return null;
+    }
     return {
       candidate: structuredClone(candidate),
       events: structuredClone(this.events.get(assetId) ?? []),
     };
   }
 
-  async appendEvent(event: TranslationKnowledgeGovernanceEvent): Promise<void> {
+  async appendEvent(
+    event: TranslationKnowledgeGovernanceEvent,
+  ): Promise<TranslationKnowledgeGovernanceEvent> {
     const candidate: TranslationKnowledgeCandidateRecord | undefined =
       this.candidates.get(event.assetId);
     const events: TranslationKnowledgeGovernanceEvent[] | undefined =
@@ -1231,7 +1271,8 @@ class ReadbackTranslationKnowledgeCandidateStore implements TranslationKnowledge
     if (
       candidate === undefined ||
       events === undefined ||
-      candidate.tenantId !== event.tenantId
+      candidate.tenantId !== event.tenantId ||
+      candidate.workItemId !== event.workItemId
     ) {
       throw new Error('KNOWLEDGE_CANDIDATE_NOT_FOUND');
     }
@@ -1242,6 +1283,7 @@ class ReadbackTranslationKnowledgeCandidateStore implements TranslationKnowledge
       throw new Error('KNOWLEDGE_GOVERNANCE_CAS_CONFLICT');
     }
     events.push(structuredClone(event));
+    return structuredClone(event);
   }
 }
 
