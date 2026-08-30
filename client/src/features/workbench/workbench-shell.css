@@ -256,6 +256,21 @@
   background: color-mix(in srgb, var(--wl-glass-content) 96%, transparent);
 }
 
+/* Reader/package 是桌面工作区，不再让主栏与内部 PDF/正文列表争夺滚轮。
+ * flow 页面仍由主栏统一滚动；真正 compact 的单面板继续沿用页面滚动。 */
+@media (min-width: 721px) {
+  .wl-workbench-main.is-workspace {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding-bottom: 16px;
+  }
+
+  .wl-workbench-main.is-workspace > * {
+    flex: 0 0 auto;
+  }
+}
+
 .wl-workbench-drawer-scrim {
   display: none;
 }

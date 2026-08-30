@@ -745,6 +745,48 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
   grid-template-columns: minmax(320px, 1fr) minmax(520px, 1.08fr);
 }
 
+@media (min-width: 721px) {
+  .wl-workbench-main.is-workspace
+    > :is(.parse-reader-split, .parse-structured-split) {
+    height: 100%;
+    min-height: 0;
+    flex: 1 1 auto;
+    margin-bottom: 0;
+    align-items: stretch;
+    overflow: hidden;
+  }
+
+  .wl-workbench-main.is-workspace
+    :is(
+      .parse-reader-workspace,
+      .parse-structured-primary,
+      .parse-structured-pdf,
+      .parse-pdf-pane
+    ) {
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .wl-workbench-main.is-workspace .parse-reader-workspace {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .wl-workbench-main.is-workspace .parse-reader-structured-view {
+    display: flex;
+    min-height: 0;
+    flex: 1;
+    flex-direction: column;
+  }
+
+  .wl-workbench-main.is-workspace .parse-results {
+    max-height: none;
+    min-height: 0;
+    flex: 1;
+  }
+}
+
 /* 以真实主栏宽度而非浏览器 viewport 决定并排；侧栏变化不再误判。 */
 @container wl-workbench-main (max-width: 900px) {
   .parse-reader-split {

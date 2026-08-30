@@ -273,7 +273,11 @@ export function StructuredContentBrowser({
         <OutlineList units={outlineUnits} />
       </details>
 
-      <div className="structured-browser-layout">
+      <div
+        className="structured-browser-layout"
+        tabIndex={0}
+        aria-label="结构化正文与已加载章节"
+      >
         <aside
           data-wl-material="g3-soft"
           className="structured-browser-outline"

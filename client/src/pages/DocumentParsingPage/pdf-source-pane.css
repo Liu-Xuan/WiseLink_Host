@@ -196,6 +196,19 @@
   overscroll-behavior: contain;
 }
 
+@media (min-width: 721px) {
+  .wl-workbench-main.is-workspace .parse-pdf-viewer,
+  .wl-workbench-main.is-workspace .parse-pdf-viewer-state {
+    min-height: 0;
+    flex: 1;
+  }
+
+  .wl-workbench-main.is-workspace .parse-pdf-pages {
+    max-height: none;
+    min-height: 0;
+  }
+}
+
 .parse-pdf-page {
   position: relative;
   display: grid;

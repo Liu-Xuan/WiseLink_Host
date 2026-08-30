@@ -14,7 +14,14 @@ import {
 // Vite resolves this asset query to the bundled pdf.js worker URL.
 // eslint-disable-next-line import/no-unresolved
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?worker&url';
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+} from 'react';
 
 import { canonicalPdfPreviewUrl } from '@client/src/api/canonical-host';
 import type { CanonicalPdfPreviewProjection } from '@shared/api.interface';
@@ -60,6 +67,7 @@ export default function PdfDocumentViewer({
   const [zoom, setZoom] = useState<number>(1);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<boolean>(false);
+  const pagesRef = useRef<HTMLDivElement | null>(null);
   const isMobile: boolean = usePdfMobileViewport();
   const previewUrl: string = useMemo(
     () => canonicalPdfPreviewUrl(workItemId, preview.opaqueLocator),
@@ -115,6 +123,19 @@ export default function PdfDocumentViewer({
   );
   const sourceTargetPage: number | null =
     targetPage === null ? null : clampPdfPage(targetPage, pageCount);
+
+  useLayoutEffect(() => {
+    const container = pagesRef.current;
+    if (!container || pageCount <= 0) return;
+    const target = container.querySelector<HTMLElement>(
+      `[data-pdf-page="${currentPage}"]`,
+    );
+    if (!target) return;
+    container.scrollTo({
+      top: Math.max(0, target.offsetTop - container.offsetTop),
+      behavior: 'auto',
+    });
+  }, [currentPage, pageCount, targetSignal]);
 
   function movePage(offset: number): void {
     const nextPage: number = clampPdfPage(currentPage + offset, pageCount);
@@ -213,7 +234,13 @@ export default function PdfDocumentViewer({
           </button>
         </div>
       </header>
-      <div className="parse-pdf-pages" aria-live="polite">
+      <div
+        ref={pagesRef}
+        className="parse-pdf-pages"
+        aria-live="polite"
+        aria-label="PDF 页面"
+        tabIndex={0}
+      >
         {visiblePages.map((pageNumber: number) => (
           <PdfCanvasPage
             key={`${pageNumber}-${
@@ -301,6 +328,7 @@ function PdfCanvasPage({
     <article
       ref={frameRef}
       className={`parse-pdf-page${highlighted ? ' is-source-target' : ''}`}
+      data-pdf-page={pageNumber}
       aria-label={`PDF 第 ${pageNumber} 页`}
     >
       <span className="parse-pdf-page-number">第 {pageNumber} 页</span>

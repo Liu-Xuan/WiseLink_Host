@@ -68,6 +68,8 @@ export interface WorkbenchShellProps {
   evidenceSignal?: number;
   tabs: WorkbenchTab[];
   activeTab: string;
+  /** 普通页面由主栏滚动；Reader/package 工作区把滚动交给各自内容窗格。 */
+  contentMode?: 'flow' | 'workspace';
   /** 窄屏四项底栏的语义归组；例如解析结果归入「原文」。 */
   mobileActiveTab?: string;
   /** Quick Open 只接入当前 Host 已返回、当前用户可读取的真实对象。 */
@@ -165,6 +167,7 @@ export default function WorkbenchShell({
   evidenceSignal = 0,
   tabs,
   activeTab,
+  contentMode = 'flow',
   mobileActiveTab,
   quickOpenItems = [],
   onTabChange,
@@ -910,11 +913,12 @@ export default function WorkbenchShell({
 
         <div
           id={panelId}
-          className="wl-workbench-main"
+          className={`wl-workbench-main is-${contentMode}`}
+          data-content-mode={contentMode}
           role="tabpanel"
           aria-labelledby={activePanelLabelledBy}
           aria-label={activePanelLabelledBy ? undefined : '当前工作区'}
-          tabIndex={0}
+          tabIndex={contentMode === 'flow' ? 0 : -1}
         >
           {children}
         </div>
