@@ -314,7 +314,12 @@ export function reviewConversationReadModel(
     currentWorkItemRevision,
     currentRevisionSynced:
       conversation.lastSyncedRevision === currentWorkItemRevision,
-    status: conversation.status === 'CLOSED' ? 'CLOSED' : 'ACTIVE',
+    status:
+      conversation.status === 'CLOSED'
+        ? 'CLOSED'
+        : conversation.lastSyncedRevision === currentWorkItemRevision
+          ? 'ACTIVE'
+          : 'STALE_CONTEXT',
     createdAt: conversation.createdAt.toISOString(),
     lastActiveAt: conversation.lastActiveAt.toISOString(),
     closedAt: conversation.closedAt?.toISOString() ?? null,

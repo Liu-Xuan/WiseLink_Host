@@ -129,11 +129,10 @@
   gap: 12px;
   padding: 7px 10px;
   border-bottom: 1px solid var(--wl-border);
-  background: color-mix(in srgb, var(--wl-g2-tint) 88%, transparent);
-  -webkit-backdrop-filter: blur(var(--wl-blur-panel))
-    saturate(var(--wl-saturation-panel));
-  backdrop-filter: blur(var(--wl-blur-panel))
-    saturate(var(--wl-saturation-panel));
+  border-radius: var(--wl-radius-md) var(--wl-radius-md) 0 0;
+  background: var(--wl-glass-soft);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 .parse-pdf-page-controls,
@@ -195,6 +194,19 @@
   padding: 14px;
   background: color-mix(in srgb, var(--wl-bg) 86%, #d8e2ef);
   overscroll-behavior: contain;
+}
+
+@media (min-width: 721px) {
+  .wl-workbench-main.is-workspace .parse-pdf-viewer,
+  .wl-workbench-main.is-workspace .parse-pdf-viewer-state {
+    min-height: 0;
+    flex: 1;
+  }
+
+  .wl-workbench-main.is-workspace .parse-pdf-pages {
+    max-height: none;
+    min-height: 0;
+  }
 }
 
 .parse-pdf-page {
@@ -342,6 +354,25 @@ html[data-wl-transparency='reduced'] .parse-pdf-toolbar {
   }
 }
 
+.wl-workbench-main[data-content-layout='reader-single']
+  .parse-pdf-mobile-return {
+  display: inline-flex;
+  min-height: var(--wl-touch-target);
+  align-items: center;
+  padding: 0 12px;
+  border: 1px solid var(--wl-border);
+  border-radius: var(--wl-radius-sm);
+  background: var(--wl-surface-solid);
+  color: var(--wl-accent);
+  font: inherit;
+}
+
+.wl-workbench-main[data-content-layout='reader-single']
+  .parse-pdf-mobile-return:focus-visible {
+  outline: 2px solid var(--wl-accent);
+  outline-offset: 2px;
+}
+
 @media (max-width: 720px) {
   .parse-pdf-pane {
     padding: 12px;
@@ -349,23 +380,6 @@ html[data-wl-transparency='reduced'] .parse-pdf-toolbar {
 
   .parse-pdf-pane .parse-panel-label {
     justify-content: space-between;
-  }
-
-  .parse-pdf-mobile-return {
-    display: inline-flex;
-    min-height: var(--wl-touch-target);
-    align-items: center;
-    padding: 0 12px;
-    border: 1px solid var(--wl-border);
-    border-radius: var(--wl-radius-sm);
-    background: var(--wl-surface-solid);
-    color: var(--wl-accent);
-    font: inherit;
-  }
-
-  .parse-pdf-mobile-return:focus-visible {
-    outline: 2px solid var(--wl-accent);
-    outline-offset: 2px;
   }
 
   .parse-pdf-viewer {

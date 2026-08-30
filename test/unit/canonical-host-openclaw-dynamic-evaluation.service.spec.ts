@@ -54,11 +54,37 @@ describe('CanonicalHostOpenClawDynamicEvaluationService', () => {
       status: 'RUNNING',
       leaseToken: LEASE_TOKEN,
       leaseGeneration: 1,
-      modelInput: { purpose: 'EVALUATE_DYNAMIC_RULES' },
+      modelInput: {
+        purpose: 'EVALUATE_DYNAMIC_RULES',
+        ruleSetBinding: expect.objectContaining({
+          snapshotId: 'JACS-DYNAMIC-2',
+          criterionSetId: 'JACS-DYNAMIC-2',
+          activationRevision: 1,
+        }),
+      },
     });
     expect(harness.processor.buildRequest.mock.calls[0][2]).toMatchObject({
       expectedRevision: 5,
     });
+  });
+
+  it('reads and validates ACTIVE before reserving, so a zero head creates no attempt', async () => {
+    const harness = createHarness();
+    harness.ruleSets.readActiveRuntime.mockRejectedValueOnce(
+      Object.assign(new Error('RULE_SET_ACTIVE_SNAPSHOT_REQUIRED'), {
+        code: 'RULE_SET_ACTIVE_SNAPSHOT_REQUIRED',
+        statusCode: 503,
+      }),
+    );
+
+    await expect(harness.service.begin(WORK_ITEM_ID)).rejects.toMatchObject({
+      code: 'RULE_SET_ACTIVE_SNAPSHOT_REQUIRED',
+      statusCode: 503,
+    });
+    expect(harness.attempts.reserveAndClaim).not.toHaveBeenCalled();
+    expect(
+      harness.assessment.prepareDynamicRulesCandidateWithRuleSet,
+    ).not.toHaveBeenCalled();
   });
 
   it('consumes only ResultEnvelope.modelOutput, persists actual bytes, CASes, then finalizes', async () => {
@@ -120,6 +146,39 @@ describe('CanonicalHostOpenClawDynamicEvaluationService', () => {
     expect(harness.attempts.prepareCommit).not.toHaveBeenCalled();
     expect(harness.artifactStore.persistAndReadback).not.toHaveBeenCalled();
     expect(harness.registrar.compareAndSet).not.toHaveBeenCalled();
+  });
+
+  it('reads the immutable bound snapshot before moving RUNNING to COMMITTING', async () => {
+    const harness = createHarness();
+    harness.ruleSets.readRuntimeSnapshot.mockRejectedValueOnce(
+      new Error('RULE_SET_RUNTIME_SNAPSHOT_MISSING'),
+    );
+
+    await expect(
+      harness.service.commit(ATTEMPT_REF, LEASE_TOKEN, 1, dynamicResult()),
+    ).rejects.toThrow('RULE_SET_RUNTIME_SNAPSHOT_MISSING');
+    expect(harness.attempts.prepareCommit).not.toHaveBeenCalled();
+    expect(harness.artifactStore.persistAndReadback).not.toHaveBeenCalled();
+  });
+
+  it('rebuilds a COMMITTING recovery from its bound historical snapshot after current changes', async () => {
+    const harness = createHarness();
+    harness.prepared.row.status = 'COMMITTING';
+    harness.ruleSets.readActiveRuntime.mockResolvedValueOnce(
+      ruleSetRuntime('JACS-REPLACEMENT', 2),
+    );
+
+    await expect(
+      harness.service.commit(ATTEMPT_REF, LEASE_TOKEN, 1, dynamicResult()),
+    ).resolves.toMatchObject({ status: 'BASE_RULE_CANDIDATE_READY' });
+    expect(harness.ruleSets.readActiveRuntime).not.toHaveBeenCalled();
+    expect(harness.ruleSets.readRuntimeSnapshot).toHaveBeenCalledWith(
+      'tenant-dynamic',
+      'JACS-DYNAMIC-2',
+    );
+    expect(
+      harness.assessment.prepareDynamicRulesCandidateWithRuleSet,
+    ).toHaveBeenCalledWith(expect.any(Object), RULE_SET_RUNTIME);
   });
 
   it('fails closed if a rebuilt private request drifts from the sealed TaskEnvelope input', async () => {
@@ -216,22 +275,29 @@ function createHarness() {
     })),
   };
   const assessment = {
-    prepareDynamicRulesCandidate: jest.fn(async () => ({
+    prepareDynamicRulesCandidateWithRuleSet: jest.fn(async () => ({
       dynamicRulesInput: {},
       overall: { transport: {} },
     })),
   };
   const processor = {
-    buildRequest: jest.fn(() => ({
-      privateEnvelope: {
-        callerCorrelationRef: 'REQ-DYNAMIC-REAL',
-        correlation: {},
-      },
-      modelInput: {
-        purpose: 'EVALUATE_DYNAMIC_RULES',
-        expectedSelfCheck: { criterionSetId: 'JACS-DYNAMIC-2' },
-      },
-    })),
+    buildRequest: jest.fn(
+      (
+        _dynamicInput: unknown,
+        _transport: unknown,
+        _privateEnvelope: unknown,
+        _triggerRequestId: unknown,
+      ) => ({
+        privateEnvelope: {
+          callerCorrelationRef: 'REQ-DYNAMIC-REAL',
+          correlation: {},
+        },
+        modelInput: {
+          purpose: 'EVALUATE_DYNAMIC_RULES',
+          expectedSelfCheck: { criterionSetId: 'JACS-DYNAMIC-2' },
+        },
+      }),
+    ),
     consumeOutput: jest.fn(() => ({
       ruleResults: [{ sourceRefs: ['SRC-1'] }, { sourceRefs: ['SRC-2'] }],
       overallSelfCheck: { rulesWithMissingInputs: 1 },
@@ -297,6 +363,10 @@ function createHarness() {
       authorizationFingerprint: 'scope:dynamic-real',
     })),
   };
+  const ruleSets = {
+    readActiveRuntime: jest.fn(async () => RULE_SET_RUNTIME),
+    readRuntimeSnapshot: jest.fn(async () => RULE_SET_RUNTIME),
+  };
   const service = new CanonicalHostOpenClawDynamicEvaluationService(
     registrar as never,
     artifactStore as never,
@@ -304,6 +374,7 @@ function createHarness() {
     processor as never,
     { assertLedgerCompatibleWithDynamicBytes: jest.fn() } as never,
     attempts as never,
+    ruleSets as never,
     scope as never,
   );
   return {
@@ -312,8 +383,10 @@ function createHarness() {
     prepared,
     registrar,
     artifactStore,
+    assessment,
     processor,
     attempts,
+    ruleSets,
     scope,
   };
 }
@@ -402,6 +475,7 @@ function taskEnvelope(workItem: CanonicalWorkItemProjection) {
     modelInput: {
       purpose: 'EVALUATE_DYNAMIC_RULES',
       expectedSelfCheck: { criterionSetId: 'JACS-DYNAMIC-2' },
+      ruleSetBinding: ruleSetBinding(RULE_SET_RUNTIME),
     },
     deadline: '2026-08-24T12:00:00.000Z',
     idempotencyKey: 'openclaw-v1:dynamic:test',
@@ -492,5 +566,43 @@ function artifact(ref: string, byteLength = 100) {
     sha256: 'a'.repeat(64),
     byteLength,
     mediaType: 'application/json' as const,
+  };
+}
+
+const RULE_SET_RUNTIME = ruleSetRuntime('JACS-DYNAMIC-2', 1);
+
+function ruleSetRuntime(snapshotId: string, headRevision: number) {
+  return {
+    snapshotId,
+    headRevision,
+    rulePack: { criteria: [] },
+    rulePackHash: '1'.repeat(64),
+    rulePackVersion: '0.2',
+    artifactRef: `artifact://rule-set/${snapshotId}`,
+    artifactDigest: `sha256:${'1'.repeat(64)}`,
+    artifactVersion: `version:${snapshotId}`,
+    criterionSet: {
+      criterionSetId: snapshotId,
+      criterionSetHash: `sha256:${'2'.repeat(64)}`,
+      memberIdentityHash: `sha256:${'3'.repeat(64)}`,
+      criteriaCount: 150,
+      lifecycleStatus: 'ACTIVE' as const,
+    },
+  };
+}
+
+function ruleSetBinding(runtime: ReturnType<typeof ruleSetRuntime>) {
+  return {
+    schemaVersion: 'wiselink.3_1.dynamic_rule_set_binding.v1' as const,
+    snapshotId: runtime.snapshotId,
+    criterionSetId: runtime.criterionSet.criterionSetId,
+    criterionSetHash: runtime.criterionSet.criterionSetHash,
+    memberIdentityHash: runtime.criterionSet.memberIdentityHash,
+    criteriaCount: runtime.criterionSet.criteriaCount,
+    rulePackVersion: runtime.rulePackVersion,
+    artifactRef: runtime.artifactRef,
+    artifactDigest: runtime.artifactDigest,
+    artifactVersion: runtime.artifactVersion,
+    activationRevision: runtime.headRevision,
   };
 }

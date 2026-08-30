@@ -38,6 +38,7 @@ import QuickOpen, {
 } from '@client/src/features/workbench/QuickOpen';
 import {
   resolveWorkbenchAdaptiveLayout,
+  resolveWorkbenchContentLayout,
   resolveWorkbenchEvidenceVisibility,
 } from '@client/src/features/workbench/workbench-layout';
 
@@ -68,6 +69,8 @@ export interface WorkbenchShellProps {
   evidenceSignal?: number;
   tabs: WorkbenchTab[];
   activeTab: string;
+  /** 普通页面由主栏滚动；Reader/package 工作区把滚动交给各自内容窗格。 */
+  contentMode?: 'flow' | 'workspace';
   /** 窄屏四项底栏的语义归组；例如解析结果归入「原文」。 */
   mobileActiveTab?: string;
   /** Quick Open 只接入当前 Host 已返回、当前用户可读取的真实对象。 */
@@ -165,6 +168,7 @@ export default function WorkbenchShell({
   evidenceSignal = 0,
   tabs,
   activeTab,
+  contentMode = 'flow',
   mobileActiveTab,
   quickOpenItems = [],
   onTabChange,
@@ -193,20 +197,29 @@ export default function WorkbenchShell({
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [mobileEvidenceOpen, setMobileEvidenceOpen] = useState(false);
   const [bodyWidth, setBodyWidth] = useState(0);
+  const [mainInlineSize, setMainInlineSize] = useState(0);
   const tabIdPrefix = useId().replace(/:/gu, '');
   const shellRef = useRef<HTMLDivElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
+  const mainRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef<'nav' | 'evidence' | null>(null);
   const navTriggerRef = useRef<HTMLButtonElement>(null);
   const evidenceTriggerRef = useRef<HTMLButtonElement>(null);
   const moreTriggerRef = useRef<HTMLButtonElement>(null);
   const navDrawerRef = useRef<HTMLElement>(null);
   const evidenceDrawerRef = useRef<HTMLElement>(null);
+  const drawerOriginRef = useRef<HTMLElement | null>(null);
   const focusRestoreRef = useRef({
     navCollapsed: initialPrefs.navCollapsed ?? false,
     evidenceOpen: initialPrefs.evidenceOpen ?? defaultEvidenceOpen(),
     immersive: false,
   });
+
+  const rememberDrawerOrigin = useCallback((): void => {
+    const active = document.activeElement;
+    drawerOriginRef.current =
+      active instanceof HTMLElement && active.isConnected ? active : null;
+  }, []);
 
   /* ── §4.2 布局偏好持久化：仅界面偏好，不保存 WorkItem/current ── */
   useEffect(() => {
@@ -241,6 +254,29 @@ export default function WorkbenchShell({
       if (entry) updateWidth(entry.contentRect.width);
     });
     observer.observe(body);
+    return () => observer.disconnect();
+  }, []);
+
+  useLayoutEffect(() => {
+    const main = mainRef.current;
+    if (!main) return;
+    const updateWidth = (width = main.getBoundingClientRect().width) => {
+      const nextWidth = Math.round(width);
+      setMainInlineSize((current) =>
+        current === nextWidth ? current : nextWidth,
+      );
+    };
+    updateWidth();
+    if (typeof ResizeObserver === 'undefined') {
+      const handleResize = () => updateWidth();
+      window.addEventListener('resize', handleResize);
+      return () => window.removeEventListener('resize', handleResize);
+    }
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry) updateWidth(entry.contentRect.width);
+    });
+    observer.observe(main);
     return () => observer.disconnect();
   }, []);
 
@@ -294,12 +330,13 @@ export default function WorkbenchShell({
     if (evidenceSignal <= 0) return;
     setEvidenceRequested(true);
     if (isCompact) {
+      rememberDrawerOrigin();
       setMobileNavOpen(false);
       setMobileEvidenceOpen(true);
     } else {
       setEvidenceOpen(true);
     }
-  }, [evidenceSignal, isCompact]);
+  }, [evidenceSignal, isCompact, rememberDrawerOrigin]);
 
   /* 移动端使用显式抽屉，不继承桌面端“证据栏已展开”的布局偏好。 */
   useEffect(() => {
@@ -310,6 +347,7 @@ export default function WorkbenchShell({
         setMobileNavOpen(false);
         setMobileEvidenceOpen(false);
         setEvidenceRequested(false);
+        drawerOriginRef.current = null;
       }
     };
     sync();
@@ -379,6 +417,10 @@ export default function WorkbenchShell({
     evidenceActive,
     evidenceRequested,
   });
+  const contentLayout = resolveWorkbenchContentLayout(
+    activeTab,
+    mainInlineSize,
+  );
 
   /* 沉浸模式只隐藏应用外壳，不隐藏工作台的资料目录与证据栏。 */
   /* 自适应收起只保护中心内容宽度，不写入用户的目录偏好。 */
@@ -402,6 +444,7 @@ export default function WorkbenchShell({
 
   const toggleNavigator = useCallback(() => {
     if (isCompact) {
+      if (!mobileNavOpen) rememberDrawerOrigin();
       setMobileEvidenceOpen(false);
       setMobileNavOpen((open) => !open);
       return;
@@ -413,11 +456,18 @@ export default function WorkbenchShell({
       return;
     }
     setNavCollapsed((collapsed) => !collapsed);
-  }, [adaptiveLayout.autoCollapseNavigator, evidenceOpen, isCompact]);
+  }, [
+    adaptiveLayout.autoCollapseNavigator,
+    evidenceOpen,
+    isCompact,
+    mobileNavOpen,
+    rememberDrawerOrigin,
+  ]);
 
   const toggleEvidence = useCallback((): void => {
     if (isCompact) {
       const nextOpen: boolean = !mobileEvidenceOpen;
+      if (nextOpen) rememberDrawerOrigin();
       setMobileNavOpen(false);
       setMobileEvidenceOpen(nextOpen);
       setEvidenceRequested(nextOpen);
@@ -427,7 +477,7 @@ export default function WorkbenchShell({
     const nextOpen: boolean = !evidenceVisible;
     setEvidenceOpen(nextOpen);
     setEvidenceRequested(nextOpen);
-  }, [evidenceVisible, isCompact, mobileEvidenceOpen]);
+  }, [evidenceVisible, isCompact, mobileEvidenceOpen, rememberDrawerOrigin]);
 
   const mobileTabs = tabs
     .filter((tab) => tab.mobileLabel)
@@ -480,14 +530,24 @@ export default function WorkbenchShell({
 
   const closeMobileDrawers = useCallback(
     (restoreFocus: boolean): void => {
-      const trigger = mobileNavOpen
+      const fallbackTrigger = mobileNavOpen
         ? navTriggerRef.current
         : (evidenceTriggerRef.current ?? moreTriggerRef.current);
+      const origin = drawerOriginRef.current;
       if (mobileEvidenceOpen) setEvidenceRequested(false);
       setMobileNavOpen(false);
       setMobileEvidenceOpen(false);
       if (restoreFocus) {
-        window.requestAnimationFrame(() => trigger?.focus());
+        window.requestAnimationFrame(() => {
+          const target =
+            origin?.isConnected && origin.getClientRects().length > 0
+              ? origin
+              : fallbackTrigger;
+          target?.focus();
+          drawerOriginRef.current = null;
+        });
+      } else {
+        drawerOriginRef.current = null;
       }
     },
     [mobileEvidenceOpen, mobileNavOpen],
@@ -595,6 +655,7 @@ export default function WorkbenchShell({
     <div
       ref={shellRef}
       className={`wl-workbench-shell${immersive ? ' is-immersive' : ''}${focusMode ? ' is-focus-mode' : ''}${isCompact ? ' is-compact' : ''}`}
+      data-wl-material="g3"
       onPointerMove={(event) => {
         onDragMove(event);
         evidenceDragMove(event);
@@ -611,6 +672,7 @@ export default function WorkbenchShell({
       {/* ── 顶部工具条 ── */}
       <div
         className="wl-workbench-toolbar wl-glass-nav"
+        data-wl-material="g1"
         role="toolbar"
         aria-label="工作台工具栏"
       >
@@ -846,79 +908,87 @@ export default function WorkbenchShell({
               ) : null}
               {navigator}
             </aside>
-            <div
-              className="wl-workbench-divider wl-workbench-divider--v"
-              role="separator"
-              aria-orientation="vertical"
-              aria-label="调整目录树宽度"
-              aria-valuemin={NAV_MIN}
-              aria-valuemax={NAV_MAX}
-              aria-valuenow={navWidth}
-              title="拖动或使用方向键调整目录宽度；双击恢复推荐宽度"
-              tabIndex={0}
-              onPointerDown={startDrag('nav')}
-              onDoubleClick={() => setNavWidth(NAV_DEFAULT)}
-              onKeyDown={(event) => {
-                if (event.key === 'ArrowLeft') {
-                  event.preventDefault();
-                  setNavWidth((w) => Math.max(NAV_MIN, w - 16));
-                } else if (event.key === 'ArrowRight') {
-                  event.preventDefault();
-                  setNavWidth((w) => Math.min(NAV_MAX, w + 16));
-                } else if (event.key === 'Home') {
-                  event.preventDefault();
-                  setNavWidth(NAV_MIN);
-                } else if (event.key === 'End') {
-                  event.preventDefault();
-                  setNavWidth(NAV_MAX);
-                }
-              }}
-            />
+            {!isCompact ? (
+              <div
+                className="wl-workbench-divider wl-workbench-divider--v"
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="调整目录树宽度"
+                aria-valuemin={NAV_MIN}
+                aria-valuemax={NAV_MAX}
+                aria-valuenow={navWidth}
+                title="拖动或使用方向键调整目录宽度；双击恢复推荐宽度"
+                tabIndex={0}
+                onPointerDown={startDrag('nav')}
+                onDoubleClick={() => setNavWidth(NAV_DEFAULT)}
+                onKeyDown={(event) => {
+                  if (event.key === 'ArrowLeft') {
+                    event.preventDefault();
+                    setNavWidth((w) => Math.max(NAV_MIN, w - 16));
+                  } else if (event.key === 'ArrowRight') {
+                    event.preventDefault();
+                    setNavWidth((w) => Math.min(NAV_MAX, w + 16));
+                  } else if (event.key === 'Home') {
+                    event.preventDefault();
+                    setNavWidth(NAV_MIN);
+                  } else if (event.key === 'End') {
+                    event.preventDefault();
+                    setNavWidth(NAV_MAX);
+                  }
+                }}
+              />
+            ) : null}
           </>
         ) : null}
 
         <div
+          ref={mainRef}
           id={panelId}
-          className="wl-workbench-main"
+          className={`wl-workbench-main is-${contentMode}`}
+          data-content-mode={contentMode}
+          data-content-layout={contentLayout}
           role="tabpanel"
           aria-labelledby={activePanelLabelledBy}
           aria-label={activePanelLabelledBy ? undefined : '当前工作区'}
-          tabIndex={0}
+          tabIndex={contentMode === 'flow' ? 0 : -1}
         >
           {children}
         </div>
 
         {evidenceVisible ? (
           <>
-            <div
-              className="wl-workbench-divider wl-workbench-divider--v"
-              role="separator"
-              aria-orientation="vertical"
-              aria-label="调整证据栏宽度"
-              aria-valuemin={EVIDENCE_MIN}
-              aria-valuemax={EVIDENCE_MAX}
-              aria-valuenow={evidenceWidth}
-              tabIndex={0}
-              onPointerDown={startDrag('evidence')}
-              onKeyDown={(event) => {
-                if (event.key === 'ArrowLeft') {
-                  event.preventDefault();
-                  setEvidenceWidth((w) => Math.min(EVIDENCE_MAX, w + 16));
-                } else if (event.key === 'ArrowRight') {
-                  event.preventDefault();
-                  setEvidenceWidth((w) => Math.max(EVIDENCE_MIN, w - 16));
-                } else if (event.key === 'Home') {
-                  event.preventDefault();
-                  setEvidenceWidth(EVIDENCE_MIN);
-                } else if (event.key === 'End') {
-                  event.preventDefault();
-                  setEvidenceWidth(EVIDENCE_MAX);
-                }
-              }}
-            />
+            {!isCompact && !adaptiveLayout.useEvidenceOverlay ? (
+              <div
+                className="wl-workbench-divider wl-workbench-divider--v"
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="调整证据栏宽度"
+                aria-valuemin={EVIDENCE_MIN}
+                aria-valuemax={EVIDENCE_MAX}
+                aria-valuenow={evidenceWidth}
+                tabIndex={0}
+                onPointerDown={startDrag('evidence')}
+                onKeyDown={(event) => {
+                  if (event.key === 'ArrowLeft') {
+                    event.preventDefault();
+                    setEvidenceWidth((w) => Math.min(EVIDENCE_MAX, w + 16));
+                  } else if (event.key === 'ArrowRight') {
+                    event.preventDefault();
+                    setEvidenceWidth((w) => Math.max(EVIDENCE_MIN, w - 16));
+                  } else if (event.key === 'Home') {
+                    event.preventDefault();
+                    setEvidenceWidth(EVIDENCE_MIN);
+                  } else if (event.key === 'End') {
+                    event.preventDefault();
+                    setEvidenceWidth(EVIDENCE_MAX);
+                  }
+                }}
+              />
+            ) : null}
             <section
               ref={evidenceDrawerRef}
               className="wl-workbench-evidence"
+              data-wl-material="g2"
               style={{ width: evidenceWidth }}
               aria-label="证据面板"
               role={isCompact ? 'dialog' : undefined}

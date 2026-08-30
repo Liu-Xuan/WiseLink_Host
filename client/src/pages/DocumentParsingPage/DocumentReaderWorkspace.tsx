@@ -261,7 +261,12 @@ export function DocumentReaderWorkspace({
               </Button>
             </div>
           ) : null}
-          <div className="parse-results" data-ai-section-type="card-list">
+          <div
+            className="parse-results"
+            data-ai-section-type="card-list"
+            tabIndex={0}
+            aria-label="结构化原文结果"
+          >
             {data.readerProjection?.units.length ? (
               data.readerProjection.units.map((result) => (
                 <article

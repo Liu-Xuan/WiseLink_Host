@@ -33,6 +33,7 @@ describe('single canonical app workspace', () => {
       visualModeControl,
       visualModeStyles,
       appShellStyles,
+      tailwindThemeStyles,
       quickOpen,
       pdfSourceStyles,
       structuredBrowserStyles,
@@ -70,6 +71,7 @@ describe('single canonical app workspace', () => {
       source('client/src/components/VisualModeControl.tsx'),
       source('client/src/components/visual-mode-control.css'),
       source('client/src/components/app-shell.css'),
+      source('client/src/tailwind-theme.css'),
       source('client/src/features/workbench/QuickOpen.tsx'),
       source('client/src/pages/DocumentParsingPage/pdf-source-pane.css'),
       source(
@@ -149,9 +151,15 @@ describe('single canonical app workspace', () => {
     expect(themeProvider).toContain('wiselink.ui.reduce-transparency');
     expect(themeProvider).toContain('wiselink.ui.visual-mode');
     expect(themeProvider).toContain('wlVisualMode');
-    expect(tokens).toContain('--wl-text-caption: 11px');
-    expect(tokens).toContain('--wl-text-meta: 12px');
+    expect(tokens).toContain('--wl-text-caption: 12px');
+    expect(tokens).toContain('--wl-text-meta: 12.5px');
     expect(tokens).toContain('--wl-touch-target: 44px');
+    expect(tokens).toContain('--wl-g4-highlight:');
+    expect(themeProvider).toContain("classList.toggle('dark'");
+    expect(themeProvider).toContain('useLayoutEffect');
+    expect(tailwindThemeStyles).toContain('--background: var(--wl-bg)');
+    expect(tailwindThemeStyles).toContain('--popover: var(--wl-surface-solid)');
+    expect(tailwindThemeStyles).toContain('--font-sans: var(--wl-font-sans)');
     expect(visualModeControl).toContain('默认效果');
     expect(visualModeControl).toContain('极致效果');
     expect(visualModeControl).toContain('兼容效果');
@@ -205,6 +213,7 @@ describe('single canonical app workspace', () => {
     expect(shell).toContain('is-evidence-overlay');
     expect(shell).toContain('展开资料目录并收起原文依据');
     expect(workbenchStyles).toContain('.wl-workbench-body.is-evidence-overlay');
+    expect(workbenchStyles).toContain('container-name: wl-workbench-main');
     expect(workbenchStyles).not.toContain('@media (max-width: 1360px)');
     expect(workbenchStyles).not.toContain('@media (max-width: 1480px)');
     expect(evidenceStyles).toContain('grid-template-columns: minmax(0, 1fr)');
@@ -225,7 +234,7 @@ describe('single canonical app workspace', () => {
       'padding-bottom: var(--wl-workbench-mobilebar-height)',
     );
     expect(workbenchStyles).toContain(
-      '57px + env(safe-area-inset-bottom, 0px)',
+      '--wl-workbench-mobilebar-height: var(--wl-mobile-navigation-block)',
     );
     expect(workbenchStyles).toContain(
       'inset: 45px 0 var(--wl-workbench-mobilebar-height)',
@@ -255,13 +264,28 @@ describe('single canonical app workspace', () => {
       /\.structured-browser button,\s*\.structured-browser input,\s*\.structured-browser summary,\s*\.structured-browser a\s*\{\s*min-height:\s*var\(--wl-touch-target\);/,
     );
     expect(documentParsingStyles).toMatch(
-      /\.parse-reader-split\.is-pdf-active\s*>\s*\.parse-pdf-pane\s*\{\s*display:\s*flex;/,
+      /data-content-layout='reader-single'[\s\S]*?\.parse-reader-split\.is-pdf-active[\s\S]*?\.parse-reader-workspace,[\s\S]*?data-content-layout='reader-single'[\s\S]*?\.parse-reader-split:not\(\.is-pdf-active\)[\s\S]*?\.parse-pdf-pane\s*\{\s*display:\s*none;/,
     );
     expect(documentParsingStyles).not.toMatch(
       /\.parse-reader-split\s*>\s*\.parse-pdf-pane\s*\{\s*display:\s*none;/,
     );
     expect(documentParsingStyles).toMatch(
       /\.parse-structured-pdf\s*\{\s*display:\s*none;/,
+    );
+    expect(documentParsingStyles).toContain(
+      ".wl-workbench-main[data-content-layout='package-single']",
+    );
+    expect(documentParsingStyles).not.toContain(
+      '@container wl-workbench-main (max-width:',
+    );
+    expect(documentParsingStyles).not.toContain(
+      "body[data-wl-immersive='true'] .parse-shell--workbench {\n  height: 100vh",
+    );
+    expect(structuredBrowserStyles).not.toContain(
+      'backdrop-filter: blur(18px)',
+    );
+    expect(pdfSourceStyles).not.toContain(
+      'backdrop-filter: blur(var(--wl-blur-panel))',
     );
   });
 

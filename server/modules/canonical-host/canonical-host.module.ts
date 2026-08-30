@@ -93,6 +93,13 @@ import {
   MiaodaScopedProfessionalArtifactCorrelationAdapter,
   UnavailableScopedProfessionalArtifactCorrelationAdapter,
 } from './scoped-professional-artifact-correlation.port';
+import { CanonicalRuleSetArtifactReader } from './canonical-rule-set-artifact.reader';
+import { CanonicalRuleSetLifecycleController } from './canonical-rule-set-lifecycle.controller';
+import { CanonicalRuleSetLifecycleRepository } from './canonical-rule-set-lifecycle.repository';
+import { CanonicalRuleSetLifecycleService } from './canonical-rule-set-lifecycle.service';
+import { EngineeringMatterController } from './engineering-matter.controller';
+import { EngineeringMatterRepository } from './engineering-matter.repository';
+import { EngineeringMatterService } from './engineering-matter.service';
 
 export interface CanonicalHostModuleOptions {
   imports?: ModuleMetadata['imports'];
@@ -130,6 +137,8 @@ export interface CanonicalHostModuleOptions {
     CanonicalHostReviewActionController,
     CanonicalHostApplicabilitySelectionController,
     CanonicalHostOverallRegenerationController,
+    CanonicalRuleSetLifecycleController,
+    EngineeringMatterController,
   ],
   providers: [
     CanonicalEntryFacadeService,
@@ -162,6 +171,11 @@ export interface CanonicalHostModuleOptions {
     CanonicalHostEngineerReviewService,
     CanonicalHostLibraryIndexService,
     CanonicalHostAeoService,
+    CanonicalRuleSetArtifactReader,
+    CanonicalRuleSetLifecycleRepository,
+    CanonicalRuleSetLifecycleService,
+    EngineeringMatterRepository,
+    EngineeringMatterService,
     UnavailableCanonicalServiceScopeAuthorization,
     UnavailableCanonicalApplicabilityControlledSelection,
     UnavailableScopedProfessionalArtifactCorrelationAdapter,
@@ -294,6 +308,8 @@ export class CanonicalHostModule {
         CanonicalHostReviewActionController,
         CanonicalHostApplicabilitySelectionController,
         CanonicalHostOverallRegenerationController,
+        CanonicalRuleSetLifecycleController,
+        EngineeringMatterController,
       ],
       providers: [
         workItemRegistrarProvider,
@@ -342,6 +358,11 @@ export class CanonicalHostModule {
         CanonicalHostEngineerReviewService,
         CanonicalHostLibraryIndexService,
         CanonicalHostAeoService,
+        CanonicalRuleSetArtifactReader,
+        CanonicalRuleSetLifecycleRepository,
+        CanonicalRuleSetLifecycleService,
+        EngineeringMatterRepository,
+        EngineeringMatterService,
         {
           provide: CANONICAL_SERVICE_SCOPE_AUTHORIZATION,
           useExisting: CANONICAL_EXECUTOR_SERVICE_SCOPE_AUTHORIZATION,
@@ -356,6 +377,7 @@ export class CanonicalHostModule {
         CanonicalHostLibraryIndexService,
         CanonicalHostAeoService,
         CanonicalHostApplicabilityInputProducer,
+        CanonicalRuleSetLifecycleService,
         CANONICAL_HOST_BINDING,
       ],
     };

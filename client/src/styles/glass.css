@@ -113,7 +113,7 @@
 }
 
 /* ── G1 功能玻璃：透明 tint + 定向镜面边缘 + 厚度线 ── */
-.wl-glass-nav {
+:is(.wl-glass-nav, [data-wl-material='g1']) {
   position: relative;
   isolation: isolate;
   border: 1px solid transparent;
@@ -144,7 +144,7 @@
 }
 
 /* ── G2 导航与目录玻璃：目录树、证据栏、活动栏 ── */
-.wl-glass-panel {
+:is(.wl-glass-panel, [data-wl-material='g2']) {
   position: relative;
   isolation: isolate;
   border: 1px solid transparent;
@@ -169,7 +169,7 @@
 }
 
 /* Refined Ultra 只增强功能玻璃的光学采样；G3/G4 始终无 blur。 */
-html[data-wl-visual-mode='ultra'] .wl-glass-nav {
+html[data-wl-visual-mode='ultra'] :is(.wl-glass-nav, [data-wl-material='g1']) {
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, var(--wl-g1-highlight) 78%, transparent),
     inset 0 -1px 0 var(--wl-g1-thickness),
@@ -184,6 +184,7 @@ html[data-wl-visual-mode='ultra'] .wl-glass-nav {
 html[data-wl-visual-mode='ultra']
   :is(
     .wl-glass-panel,
+    [data-wl-material='g2'],
     .wl-navigator,
     .library-tree-panel,
     .library-graph-panel,
@@ -211,6 +212,8 @@ html[data-wl-visual-mode='compatible']
   :is(
     .wl-glass-nav,
     .wl-glass-panel,
+    [data-wl-material='g1'],
+    [data-wl-material='g2'],
     .wl-navigator,
     .library-tree-panel,
     .library-graph-panel,
@@ -230,7 +233,7 @@ html[data-wl-visual-mode='compatible'] .wl-light {
 }
 
 /* ── G3 专业内容面：综合意见、解析结果、表格、复核表单 ── */
-.wl-glass-content {
+:is(.wl-glass-content, [data-wl-material='g3']) {
   border: 1px solid transparent;
   border-radius: var(--wl-radius-panel);
   background:
@@ -256,7 +259,7 @@ html[data-wl-visual-mode='compatible'] .wl-light {
 }
 
 /* G3 软填充：嵌套在玻璃面内部的子卡，不再叠加 backdrop-filter（§9.4） */
-.wl-glass-soft {
+:is(.wl-glass-soft, [data-wl-material='g3-soft']) {
   background: var(--wl-glass-soft);
   border: 1px solid var(--wl-border);
   border-radius: var(--wl-radius-md);
@@ -265,7 +268,7 @@ html[data-wl-visual-mode='compatible'] .wl-light {
 }
 
 /* ── G4 原文与关键输入：PDF、代码、长表格、输入框，实体底色 ── */
-.wl-surface-solid {
+:is(.wl-surface-solid, [data-wl-material='g4']) {
   background: var(--wl-surface-solid);
   border: 1px solid var(--wl-border);
   border-radius: var(--wl-radius-md);
@@ -280,6 +283,8 @@ html[data-wl-visual-mode='compatible'] .wl-light {
 ) {
   .wl-glass-nav,
   .wl-glass-panel,
+  [data-wl-material='g1'],
+  [data-wl-material='g2'],
   .wl-visual-mode-menu,
   .wl-quick-open-dialog {
     background: var(--wl-reduced-g1) !important;
@@ -290,6 +295,10 @@ html[data-wl-visual-mode='compatible'] .wl-light {
   .wl-glass-panel {
     background: var(--wl-reduced-g2) !important;
   }
+
+  [data-wl-material='g2'] {
+    background: var(--wl-reduced-g2) !important;
+  }
 }
 
 /* 应用内“降低透明效果”；系统媒体查询只作为渐进增强。 */
@@ -297,6 +306,8 @@ html[data-wl-transparency='reduced']
   :is(
     .wl-glass-nav,
     .wl-glass-panel,
+    [data-wl-material='g1'],
+    [data-wl-material='g2'],
     .wl-navigator,
     .library-tree-panel,
     .library-graph-panel,
@@ -312,7 +323,8 @@ html[data-wl-transparency='reduced']
   backdrop-filter: none !important;
 }
 
-html[data-wl-transparency='reduced'] .wl-glass-nav {
+html[data-wl-transparency='reduced']
+  :is(.wl-glass-nav, [data-wl-material='g1']) {
   background: var(--wl-reduced-g1) !important;
 }
 
@@ -334,6 +346,8 @@ html[data-wl-transparency='reduced'] .wl-light {
   :is(
     .wl-glass-nav,
     .wl-glass-panel,
+    [data-wl-material='g1'],
+    [data-wl-material='g2'],
     .wl-navigator,
     .library-tree-panel,
     .library-graph-panel,
@@ -349,7 +363,7 @@ html[data-wl-transparency='reduced'] .wl-light {
     backdrop-filter: none !important;
   }
 
-  .wl-glass-nav {
+  :is(.wl-glass-nav, [data-wl-material='g1']) {
     background: var(--wl-reduced-g1) !important;
   }
 
@@ -366,6 +380,8 @@ html[data-wl-transparency='reduced'] .wl-light {
   :is(
     .wl-glass-nav,
     .wl-glass-panel,
+    [data-wl-material='g1'],
+    [data-wl-material='g2'],
     .wl-navigator,
     .library-tree-panel,
     .library-graph-panel,
@@ -384,6 +400,7 @@ html[data-wl-transparency='reduced'] .wl-light {
   }
 
   .wl-glass-nav,
+  [data-wl-material='g1'],
   .wl-workbench-mobilebar {
     background: var(--wl-reduced-g1);
   }
@@ -399,6 +416,11 @@ html[data-wl-transparency='reduced'] .wl-light {
   .wl-glass-content,
   .wl-glass-soft,
   .wl-surface-solid,
+  [data-wl-material='g1'],
+  [data-wl-material='g2'],
+  [data-wl-material='g3'],
+  [data-wl-material='g3-soft'],
+  [data-wl-material='g4'],
   .wl-navigator,
   .library-tree-panel,
   .library-graph-panel,
@@ -437,6 +459,20 @@ html[data-wl-transparency='reduced'] .wl-light {
 .wl-environment textarea:focus-visible,
 .wl-environment select:focus-visible,
 .wl-environment [role='treeitem']:focus-visible {
+  outline: 2px solid var(--wl-accent);
+  outline-offset: 2px;
+}
+
+/* Radix Portal 挂到 body 后仍沿用 WiseLink 的焦点语言。 */
+:is(
+  [data-slot='dropdown-menu-item'],
+  [data-slot='dropdown-menu-checkbox-item'],
+  [data-slot='dropdown-menu-radio-item'],
+  [data-slot='select-item'],
+  [role='tab'],
+  [role='option'],
+  [role='combobox']
+):focus-visible {
   outline: 2px solid var(--wl-accent);
   outline-offset: 2px;
 }

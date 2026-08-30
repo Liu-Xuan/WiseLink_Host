@@ -129,6 +129,7 @@ export default function WorkItemOverviewPage() {
 
   return (
     <main className="wl-overview-page wl-workbench-enter">
+      <h1 className="wl-visually-hidden">当前工程事项综合评估</h1>
       <AuthorityStrip view={view} />
 
       <OverallAssessmentHero

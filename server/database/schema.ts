@@ -232,6 +232,89 @@ export const workItem = pgTable("work_item", {
   index("idx_work_item_document").on(table.documentId, table.documentVersionId),
 ]);
 
+export const engineeringMatter = pgTable("engineering_matter", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  matterId: varchar("matter_id", { length: 96 }).notNull().unique(),
+  tenantId: varchar("tenant_id", { length: 128 }).notNull(),
+  title: text("title").notNull(),
+  status: varchar("status", { length: 32 }).notNull().default('ACTIVE'),
+  currentRevisionNo: integer("current_revision_no").notNull(),
+  currentMatterRevisionId: varchar("current_matter_revision_id", { length: 96 }).notNull(),
+  requestId: varchar("request_id", { length: 96 }).notNull(),
+  createdByUserId: varchar("created_by_user_id", { length: 255 }).notNull(),
+  createdAt: customTimestamptz("created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: customTimestamptz("updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("uk_engineering_matter_business_id").on(table.matterId),
+  uniqueIndex("uk_engineering_matter_tenant_identity").on(table.tenantId, table.matterId),
+  uniqueIndex("uk_engineering_matter_create_request").on(table.tenantId, table.createdByUserId, table.requestId),
+  index("idx_engineering_matter_owner").on(table.tenantId, table.createdByUserId, table.updatedAt),
+  check("ck_engineering_matter_title", sql`length(btrim(${table.title})) BETWEEN 1 AND 240`),
+  check("ck_engineering_matter_status", sql`${table.status} = 'ACTIVE'`),
+  check("ck_engineering_matter_revision", sql`${table.currentRevisionNo} > 0`),
+]);
+
+export const engineeringMatterRevision = pgTable("engineering_matter_revision", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  matterRevisionId: varchar("matter_revision_id", { length: 96 }).notNull().unique(),
+  matterId: varchar("matter_id", { length: 96 }).notNull(),
+  tenantId: varchar("tenant_id", { length: 128 }).notNull(),
+  revisionNo: integer("revision_no").notNull(),
+  requestId: varchar("request_id", { length: 96 }).notNull(),
+  changeKind: varchar("change_kind", { length: 32 }).notNull(),
+  changeSummary: text("change_summary").notNull(),
+  changedWorkItemId: varchar("changed_work_item_id", { length: 96 }).notNull(),
+  createdByUserId: varchar("created_by_user_id", { length: 255 }).notNull(),
+  createdAt: customTimestamptz("created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("uk_engineering_matter_revision_business_id").on(table.matterRevisionId),
+  uniqueIndex("uk_engineering_matter_revision_scope").on(table.tenantId, table.matterId, table.matterRevisionId),
+  uniqueIndex("uk_engineering_matter_revision_number").on(table.matterId, table.revisionNo),
+  uniqueIndex("uk_engineering_matter_revision_request").on(table.matterId, table.requestId),
+  index("idx_engineering_matter_revision_history").on(table.matterId, table.revisionNo),
+  foreignKey({
+    columns: [table.tenantId, table.matterId],
+    foreignColumns: [engineeringMatter.tenantId, engineeringMatter.matterId],
+    name: "fk_engineering_matter_revision_matter",
+  }),
+  foreignKey({
+    columns: [table.changedWorkItemId],
+    foreignColumns: [workItem.workItemId],
+    name: "fk_engineering_matter_revision_changed_work_item",
+  }),
+  check("ck_engineering_matter_revision_number", sql`${table.revisionNo} > 0`),
+  check("ck_engineering_matter_revision_kind", sql`${table.changeKind} IN ('CREATED', 'WORK_ITEM_LINKED')`),
+  check("ck_engineering_matter_revision_summary", sql`length(btrim(${table.changeSummary})) BETWEEN 1 AND 1000`),
+]);
+
+export const engineeringMatterRevisionWorkItem = pgTable("engineering_matter_revision_work_item", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  matterRevisionId: varchar("matter_revision_id", { length: 96 }).notNull(),
+  matterId: varchar("matter_id", { length: 96 }).notNull(),
+  tenantId: varchar("tenant_id", { length: 128 }).notNull(),
+  workItemId: varchar("work_item_id", { length: 96 }).notNull(),
+  ordinal: integer("ordinal").notNull(),
+  relationRole: varchar("relation_role", { length: 32 }).notNull(),
+  linkedAtWorkItemRevision: integer("linked_at_work_item_revision").notNull(),
+}, (table) => [
+  uniqueIndex("uk_engineering_matter_revision_work_item").on(table.matterRevisionId, table.workItemId),
+  uniqueIndex("uk_engineering_matter_revision_ordinal").on(table.matterRevisionId, table.ordinal),
+  index("idx_engineering_matter_work_item_lookup").on(table.workItemId, table.matterRevisionId),
+  foreignKey({
+    columns: [table.tenantId, table.matterId, table.matterRevisionId],
+    foreignColumns: [engineeringMatterRevision.tenantId, engineeringMatterRevision.matterId, engineeringMatterRevision.matterRevisionId],
+    name: "fk_engineering_matter_revision_work_item_revision",
+  }),
+  foreignKey({
+    columns: [table.workItemId],
+    foreignColumns: [workItem.workItemId],
+    name: "fk_engineering_matter_revision_work_item_work_item",
+  }),
+  check("ck_engineering_matter_revision_work_item_ordinal", sql`${table.ordinal} > 0`),
+  check("ck_engineering_matter_revision_work_item_role", sql`${table.relationRole} IN ('PRIMARY', 'RELATED')`),
+  check("ck_engineering_matter_revision_work_item_revision", sql`${table.linkedAtWorkItemRevision} >= 0`),
+]);
+
 export const reviewConversation = pgTable("review_conversation", {
   id: uuid("id").primaryKey().defaultRandom(),
   reviewConversationId: varchar("review_conversation_id", { length: 96 }).notNull().unique(),
@@ -807,6 +890,75 @@ export const canonicalFleetConfigurationFactVersion = pgTable("canonical_fleet_c
   check("ck_canonical_fleet_fact_record_hash", sql`${table.recordHash} ~ '^sha256:[0-9a-f]{64}$'`),
 ]);
 
+export const canonicalRuleSetSnapshot = pgTable("canonical_rule_set_snapshot", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: varchar("tenant_id", { length: 128 }).notNull(),
+  ruleSetKey: varchar("rule_set_key", { length: 64 }).notNull(),
+  criterionSetId: varchar("criterion_set_id", { length: 96 }).notNull(),
+  criterionSetHash: varchar("criterion_set_hash", { length: 71 }).notNull(),
+  memberIdentityHash: varchar("member_identity_hash", { length: 71 }).notNull(),
+  criteriaCount: integer("criteria_count").notNull(),
+  rulePackVersion: varchar("rule_pack_version", { length: 96 }).notNull(),
+  rulePackJson: text("rule_pack_json").notNull(),
+  artifactRef: text("artifact_ref").notNull(),
+  artifactDigest: varchar("artifact_digest", { length: 71 }).notNull(),
+  artifactVersion: varchar("artifact_version", { length: 255 }).notNull(),
+  canonicalCriteriaHash: varchar("canonical_criteria_hash", { length: 71 }).notNull(),
+  sourceJobAidDocumentVersionId: varchar("source_job_aid_document_version_id", { length: 96 }),
+  sourceJobAidVersionStatus: varchar("source_job_aid_version_status", { length: 32 }).notNull(),
+  createdByEngineeringOwnerUserId: varchar("created_by_engineering_owner_user_id", { length: 255 }).notNull(),
+  createdAt: customTimestamptz("created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("uk_canonical_rule_set_snapshot").on(table.tenantId, table.ruleSetKey, table.criterionSetId),
+  index("idx_canonical_rule_set_snapshot_created").on(table.tenantId, table.ruleSetKey, table.createdAt),
+  check("ck_canonical_rule_set_key", sql`${table.ruleSetKey} = 'JOB_AID'`),
+  check("ck_canonical_rule_set_criterion_hash", sql`${table.criterionSetHash} ~ '^sha256:[0-9a-f]{64}$'`),
+  check("ck_canonical_rule_set_member_hash", sql`${table.memberIdentityHash} ~ '^sha256:[0-9a-f]{64}$'`),
+  check("ck_canonical_rule_set_artifact_digest", sql`${table.artifactDigest} ~ '^sha256:[0-9a-f]{64}$'`),
+  check("ck_canonical_rule_set_criteria_hash", sql`${table.canonicalCriteriaHash} ~ '^sha256:[0-9a-f]{64}$'`),
+  check("ck_canonical_rule_set_criteria_count", sql`${table.criteriaCount} > 0`),
+  check("ck_canonical_rule_set_source_status", sql`${table.sourceJobAidVersionStatus} IN ('CONFIRMED', 'VERSION_UNCONFIRMED')`),
+  check("ck_canonical_rule_set_source_version", sql`(
+    (${table.sourceJobAidVersionStatus} = 'CONFIRMED' AND ${table.sourceJobAidDocumentVersionId} IS NOT NULL)
+    OR
+    (${table.sourceJobAidVersionStatus} = 'VERSION_UNCONFIRMED' AND ${table.sourceJobAidDocumentVersionId} IS NULL)
+  )`),
+  check("ck_canonical_rule_set_payload", sql`length(${table.rulePackJson}) > 0`),
+]);
+
+export const canonicalRuleSetActivation = pgTable("canonical_rule_set_activation", {
+  activationId: uuid("activation_id").primaryKey().defaultRandom(),
+  tenantId: varchar("tenant_id", { length: 128 }).notNull(),
+  ruleSetKey: varchar("rule_set_key", { length: 64 }).notNull(),
+  activationRevision: integer("activation_revision").notNull(),
+  expectedRevision: integer("expected_revision").notNull(),
+  action: varchar("action", { length: 32 }).notNull(),
+  fromCriterionSetId: varchar("from_criterion_set_id", { length: 96 }),
+  activeCriterionSetId: varchar("active_criterion_set_id", { length: 96 }).notNull(),
+  engineeringOwnerUserId: varchar("engineering_owner_user_id", { length: 255 }).notNull(),
+  requiredRoleId: varchar("required_role_id", { length: 96 }).notNull(),
+  reason: text("reason").notNull(),
+  activatedAt: customTimestamptz("activated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("uk_canonical_rule_set_activation_revision").on(table.tenantId, table.ruleSetKey, table.activationRevision),
+  index("idx_canonical_rule_set_activation_target").on(table.tenantId, table.ruleSetKey, table.activeCriterionSetId, table.activationRevision),
+  foreignKey({
+    columns: [table.tenantId, table.ruleSetKey, table.activeCriterionSetId],
+    foreignColumns: [canonicalRuleSetSnapshot.tenantId, canonicalRuleSetSnapshot.ruleSetKey, canonicalRuleSetSnapshot.criterionSetId],
+    name: "fk_canonical_rule_set_activation_target",
+  }),
+  foreignKey({
+    columns: [table.tenantId, table.ruleSetKey, table.fromCriterionSetId],
+    foreignColumns: [canonicalRuleSetSnapshot.tenantId, canonicalRuleSetSnapshot.ruleSetKey, canonicalRuleSetSnapshot.criterionSetId],
+    name: "fk_canonical_rule_set_activation_previous",
+  }),
+  check("ck_canonical_rule_set_activation_key", sql`${table.ruleSetKey} = 'JOB_AID'`),
+  check("ck_canonical_rule_set_activation_revision", sql`${table.expectedRevision} >= 0 AND ${table.activationRevision} = ${table.expectedRevision} + 1`),
+  check("ck_canonical_rule_set_activation_action", sql`${table.action} IN ('PROMOTE', 'ROLLBACK')`),
+  check("ck_canonical_rule_set_activation_change", sql`${table.fromCriterionSetId} IS NULL OR ${table.fromCriterionSetId} <> ${table.activeCriterionSetId}`),
+  check("ck_canonical_rule_set_activation_reason", sql`length(btrim(${table.reason})) > 0`),
+]);
+
 /** Host-owned Feishu OAuth subject -> canonical Miaoda subject mapping. */
 export const identitySubjectMapping = pgTable("identity_subject_mapping", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -880,6 +1032,8 @@ export const canonicalFleetAssetVersionTable = canonicalFleetAssetVersion;
 export const canonicalFleetConfigurationFactVersionTable = canonicalFleetConfigurationFactVersion;
 export const canonicalFleetScopeHeadTable = canonicalFleetScopeHead;
 export const canonicalFleetSourceSnapshotTable = canonicalFleetSourceSnapshot;
+export const canonicalRuleSetActivationTable = canonicalRuleSetActivation;
+export const canonicalRuleSetSnapshotTable = canonicalRuleSetSnapshot;
 export const dmAcquisitionTable = dmAcquisition;
 export const dmCurrentnessDecisionTable = dmCurrentnessDecision;
 export const dmDocumentTable = dmDocument;
@@ -887,6 +1041,9 @@ export const dmDocumentVersionTable = dmDocumentVersion;
 export const dmIngressPreflightTable = dmIngressPreflight;
 export const dmPublicationFamilyTable = dmPublicationFamily;
 export const dmSourceArtifactTable = dmSourceArtifact;
+export const engineeringMatterTable = engineeringMatter;
+export const engineeringMatterRevisionTable = engineeringMatterRevision;
+export const engineeringMatterRevisionWorkItemTable = engineeringMatterRevisionWorkItem;
 export const externalDiscoveryCandidateTable = externalDiscoveryCandidate;
 export const externalSearchRunTable = externalSearchRun;
 export const identityOauthStateTable = identityOauthState;

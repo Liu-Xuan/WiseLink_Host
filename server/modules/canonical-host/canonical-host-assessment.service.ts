@@ -1,7 +1,3 @@
-import { createHash } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
-
 import {
   BadRequestException,
   ConflictException,
@@ -21,7 +17,6 @@ import {
   type HostedOpenClawDiscoveryResult,
 } from '../assessment-workbench/assessment-host-consumer.public-api';
 import { buildUnifiedSbJobAidAssessmentInput } from '../assessment-workbench/unified-assessment-input';
-import { buildJobAidCriterionSetVersion } from '../assessment-workbench/job-aid-runtime/criterionSet.js';
 import { UNIFIED_ARTIFACT_STORE } from '../unified-reader/unified-reader.constants';
 import { UnifiedReaderService } from '../unified-reader/unified-reader.service';
 import type { UnifiedArtifactStorePort } from '../unified-reader/unified-reader.types';
@@ -39,11 +34,10 @@ import type {
 import { MiaodaWorkItemRepository } from '../work-item/miaoda-work-item.repository';
 import { PHASE5_737_34_3830_HANDOFF } from '../document-management/src/hosted/phase5BoeingSbHandoff.js';
 import { authorizeAndLoadCanonicalWorkItem } from './canonical-authorized-work-item-reader';
-
-const RULE_ARTIFACT_REF = 'feishu-drive://file/Q3eVb8SGFovADCxSdH6cWDKCnme';
-const RULE_ARTIFACT_VERSION = '7672126854932728804';
-const RULE_CRITERIA_HASH =
-  'sha256:29a085166e2f08391b6f057a9e6dbb881800bd087cef9c359ea3a6f93ebc03cd';
+import {
+  CanonicalRuleSetLifecycleService,
+  type CanonicalRuleSetRuntime,
+} from './canonical-rule-set-lifecycle.service';
 const JOB_AID_SOURCE_MANIFEST_HASH =
   'sha256:550473ef40f3f4347eeceb392c9fd4318566e1bb7b102c10b5ec014f1a102678';
 
@@ -82,6 +76,7 @@ export class CanonicalHostAssessmentService {
     private readonly reader: UnifiedReaderService,
     private readonly repository: MiaodaWorkItemRepository,
     private readonly assessment: AssessmentHostConsumerService,
+    private readonly ruleSets: CanonicalRuleSetLifecycleService,
   ) {}
 
   async evaluateCandidate(
@@ -118,6 +113,7 @@ export class CanonicalHostAssessmentService {
     try {
       const result = await this.prepareDynamicRulesCandidate({
         workItem,
+        tenantId: actor.tenantId,
         permissionSnapshotVersion,
         assessmentAsOf: input.assessmentAsOf,
         generatedAt: input.generatedAt,
@@ -154,39 +150,41 @@ export class CanonicalHostAssessmentService {
 
   async prepareDynamicRulesCandidate(input: {
     workItem: CanonicalWorkItemProjection;
+    tenantId: string;
     permissionSnapshotVersion: string;
     assessmentAsOf: string;
     generatedAt: string;
     externalDiscovery: HostedOpenClawDiscoveryResult | null;
     reviewedExternalManifest: unknown | null;
   }): Promise<PreparedDynamicRulesCandidate> {
+    const activeRuleSet = await this.ruleSets.readActiveRuntime(input.tenantId);
+    return this.prepareDynamicRulesCandidateWithRuleSet(input, activeRuleSet);
+  }
+
+  async prepareDynamicRulesCandidateWithRuleSet(
+    input: {
+      workItem: CanonicalWorkItemProjection;
+      tenantId: string;
+      permissionSnapshotVersion: string;
+      assessmentAsOf: string;
+      generatedAt: string;
+      externalDiscovery: HostedOpenClawDiscoveryResult | null;
+      reviewedExternalManifest: unknown | null;
+    },
+    ruleSet: CanonicalRuleSetRuntime,
+  ): Promise<PreparedDynamicRulesCandidate> {
     const packageBytes = await this.readAcceptedPackage(
       input.workItem,
       input.permissionSnapshotVersion,
     );
-    const ruleBytes = await readAssessmentAsset('job-aid/rule-pack-0.2.json');
-    const rulePack = JSON.parse(
-      Buffer.from(ruleBytes).toString('utf8'),
-    ) as Record<string, unknown>;
-    const ruleDigest =
-      'sha256:' + createHash('sha256').update(ruleBytes).digest('hex');
-    const criterionSet = buildJobAidCriterionSetVersion({
-      rulePack,
-      artifactRef: RULE_ARTIFACT_REF,
-      artifactDigest: ruleDigest,
-      artifactVersion: RULE_ARTIFACT_VERSION,
-      canonicalCriteriaHash: RULE_CRITERIA_HASH,
-      sourceJobAidDocumentVersionStatus: 'VERSION_UNCONFIRMED',
-      lifecycleStatus: 'ACTIVE',
-    });
     const assessmentOptions = {
       workItemId: input.workItem.workItemId,
       documentVersionBinding: assessmentBinding(input.workItem),
       artifactBytes: packageBytes,
       assessmentAsOf: requiredIso(input.assessmentAsOf, 'assessmentAsOf'),
-      rulePack,
-      rulePackHash: ruleDigest.slice('sha256:'.length),
-      criterionSet,
+      rulePack: ruleSet.rulePack,
+      rulePackHash: ruleSet.rulePackHash,
+      criterionSet: ruleSet.criterionSet,
       jobAidSourceIdentity: {
         status: 'SOURCE_IDENTITY_MISMATCH',
         sourceManifestHash: JOB_AID_SOURCE_MANIFEST_HASH,
@@ -402,30 +400,6 @@ function assessmentProjection(
     evaluateAttemptId,
     resynthesisAttemptId,
   };
-}
-
-async function readAssessmentAsset(relativePath: string): Promise<Uint8Array> {
-  const candidates = [
-    resolve(
-      process.cwd(),
-      'dist/server/runtime-assets/assessment-host',
-      relativePath,
-    ),
-    resolve(
-      process.cwd(),
-      'server/runtime-assets/assessment-host',
-      relativePath,
-    ),
-    resolve(__dirname, '../../runtime-assets/assessment-host', relativePath),
-  ];
-  for (const path of candidates) {
-    try {
-      return new Uint8Array(await readFile(path));
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-    }
-  }
-  throw new Error('ASSESSMENT_RUNTIME_ASSET_NOT_PACKAGED:' + relativePath);
 }
 
 function withoutRevision(

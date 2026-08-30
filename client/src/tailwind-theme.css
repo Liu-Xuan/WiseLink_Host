@@ -1,39 +1,40 @@
 :root {
-  --button-outline: rgba(0,0,0, .10);
-  --badge-outline: rgba(0,0,0, .05);
+  --button-outline: var(--wl-border-strong);
+  --badge-outline: var(--wl-border);
 
   /* Automatic computation of border around primary / danger buttons */
   --opaque-button-border-intensity: -8; /* In terms of percentages */
 
   /* Backgrounds applied on top of other backgrounds when hovered/active */
-  --elevate-1: rgba(0,0,0, .03);
-  --elevate-2: rgba(0,0,0, .08);
+  --elevate-1: rgba(0, 0, 0, 0.03);
+  --elevate-2: rgba(0, 0, 0, 0.08);
 
-  --background: hsl(0 0% 100%);
-  --foreground: hsl(220 14% 14%);
-  --card: hsl(0 0% 100%);
-  --card-foreground: hsl(220 14% 14%);
-  --popover: hsl(0 0% 100%);
-  --popover-foreground: hsl(220 14% 14%);
-  --primary: hsl(221 83% 53%);
-  --primary-foreground: hsl(220 14% 98%);
-  --secondary: hsl(220 14% 96%);
-  --secondary-foreground: hsl(220 14% 14%);
-  --muted: hsl(220 14% 96%);
-  --muted-foreground: hsl(218 7% 59%);
-  --accent: hsl(220 14% 96%);
-  --accent-foreground: hsl(220 14% 14%);
-  --info: hsl(221 83% 53%);
-  --info-foreground: hsl(230 100% 98%);
-  --destructive: hsl(2 84% 62%);
-  --destructive-foreground: hsl(0 0% 100%);
-  --success: hsl(130 54% 42%);
-  --success-foreground: hsl(115 77% 97%);
-  --warning: hsl(26 90% 49%);
-  --warning-foreground: hsl(33 100% 96%);
-  --border: hsl(220 14% 89%);
-  --input: hsl(220 14% 89%);
-  --ring: hsl(221 83% 53%);
+  /* shadcn/Radix 与 WiseLink 共用同一语义源；Portal 不再漂回浅色主题。 */
+  --background: var(--wl-bg);
+  --foreground: var(--wl-ink);
+  --card: var(--wl-glass-content);
+  --card-foreground: var(--wl-ink);
+  --popover: var(--wl-surface-solid);
+  --popover-foreground: var(--wl-ink);
+  --primary: var(--wl-accent);
+  --primary-foreground: #ffffff;
+  --secondary: var(--wl-glass-soft);
+  --secondary-foreground: var(--wl-ink);
+  --muted: var(--wl-glass-soft);
+  --muted-foreground: var(--wl-muted);
+  --accent: var(--wl-accent-soft);
+  --accent-foreground: var(--wl-accent);
+  --info: var(--wl-accent);
+  --info-foreground: #ffffff;
+  --destructive: var(--wl-red);
+  --destructive-foreground: #ffffff;
+  --success: var(--wl-green);
+  --success-foreground: #ffffff;
+  --warning: var(--wl-amber);
+  --warning-foreground: var(--wl-ink);
+  --border: var(--wl-border);
+  --input: var(--wl-border-strong);
+  --ring: var(--wl-accent);
   --chart-1: hsl(222 82% 56%);
   --chart-2: hsl(174 77% 46%);
   --chart-3: hsl(46 100% 52%);
@@ -49,21 +50,17 @@
   --sidebar-ring: hsl(221 83% 53%);
 
   /* Computed borders using hsl relative color syntax */
-  --primary-border: hsl(from hsl(221 83% 53%) h s calc(l + var(--opaque-button-border-intensity)));
-  --secondary-border: hsl(from hsl(220 14% 96%) h s calc(l + var(--opaque-button-border-intensity)));
-  --destructive-border: hsl(from hsl(2 84% 62%) h s calc(l + var(--opaque-button-border-intensity)));
-  --accent-border: hsl(from hsl(220 14% 96%) h s calc(l + var(--opaque-button-border-intensity)));
-  --muted-border: hsl(from hsl(220 14% 96%) h s calc(l + var(--opaque-button-border-intensity)));
-  --font-sans:
-    'LarkHackSafariFont', 'LarkEmojiFont', 'LarkChineseQuote', '-apple-system',
-    'BlinkMacSystemFont', 'Helvetica Neue', 'Tahoma', 'PingFang SC',
-    'Microsoft Yahei', 'Arial', 'Hiragino Sans GB', 'sans-serif',
-    'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+  --primary-border: color-mix(in srgb, var(--wl-accent) 76%, black);
+  --secondary-border: var(--wl-border-strong);
+  --destructive-border: color-mix(in srgb, var(--wl-red) 76%, black);
+  --accent-border: var(--wl-border-strong);
+  --muted-border: var(--wl-border);
+  --font-sans: var(--wl-font-sans);
   --font-serif:
     'Geist', 'Geist Fallback', ui-serif, Georgia, Cambria, 'Times New Roman',
     Times, serif;
-  --font-mono: Source Code Pro, monospace;
-  --radius: 0.5rem;
+  --font-mono: var(--wl-mono);
+  --radius: var(--wl-radius-md);
   --shadow-x: 0px;
   --shadow-y: 2px;
   --shadow-blur: 12px;
@@ -168,7 +165,7 @@
  */
 @layer utilities {
   /* Hide ugly search cancel button in Chrome until we can style it properly */
-  input[type="search"]::-webkit-search-cancel-button {
+  input[type='search']::-webkit-search-cancel-button {
     @apply hidden;
   }
 
@@ -182,9 +179,10 @@
   /* .no-default-hover-elevate/no-default-active-elevate is an escape hatch so consumers of
    * buttons/badges can remove the automatic brightness adjustment on interactions
    * and program their own. */
-  .no-default-hover-elevate {}
-  .no-default-active-elevate {}
-
+  .no-default-hover-elevate {
+  }
+  .no-default-active-elevate {
+  }
 
   /**
    * Toggleable backgrounds go behind the content. Hoverable/active goes on top.
@@ -194,7 +192,7 @@
    */
   .toggle-elevate::before,
   .toggle-elevate-2::before {
-    content: "";
+    content: '';
     pointer-events: none;
     position: absolute;
     inset: 0px;
@@ -226,7 +224,7 @@
   .active-elevate:not(.no-default-active-elevate)::after,
   .hover-elevate-2:not(.no-default-hover-elevate)::after,
   .active-elevate-2:not(.no-default-active-elevate)::after {
-    content: "";
+    content: '';
     pointer-events: none;
     position: absolute;
     inset: 0px;

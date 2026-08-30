@@ -6,6 +6,30 @@
   font-family: var(--wl-font);
 }
 
+@media (min-width: 721px) {
+  .wl-workbench-main.is-workspace .structured-browser {
+    display: flex;
+    height: auto;
+    min-height: 0;
+    flex: 1;
+    flex-direction: column;
+  }
+
+  .wl-workbench-main.is-workspace .structured-browser-layout {
+    min-height: 0;
+    flex: 1;
+    align-items: stretch;
+    overflow: auto;
+    overscroll-behavior: contain;
+  }
+
+  .wl-workbench-main.is-workspace .structured-browser-outline {
+    max-height: none;
+    min-height: 0;
+    overflow: visible;
+  }
+}
+
 .structured-browser-header {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -354,14 +378,6 @@
   flex-direction: row;
 }
 
-@supports (backdrop-filter: blur(1px)) {
-  html:not([data-wl-transparency='reduced']) .structured-browser-header,
-  html:not([data-wl-transparency='reduced']) .structured-browser-search,
-  html:not([data-wl-transparency='reduced']) .structured-browser-outline {
-    backdrop-filter: blur(18px) saturate(128%);
-  }
-}
-
 html[data-wl-visual-mode='compatible'] .structured-browser-header,
 html[data-wl-visual-mode='compatible'] .structured-browser-search,
 html[data-wl-visual-mode='compatible'] .structured-browser-outline,
@@ -370,6 +386,7 @@ html[data-wl-transparency='reduced'] .structured-browser-search,
 html[data-wl-transparency='reduced'] .structured-browser-outline,
 html[data-wl-transparency='reduced'] .structured-browser-unit {
   background: var(--wl-surface-solid);
+  -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
 

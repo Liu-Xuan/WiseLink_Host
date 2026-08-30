@@ -1,5 +1,6 @@
 import {
   resolveWorkbenchAdaptiveLayout,
+  resolveWorkbenchContentLayout,
   resolveWorkbenchEvidenceVisibility,
 } from '../../client/src/features/workbench/workbench-layout';
 
@@ -16,6 +17,21 @@ const base = {
 };
 
 describe('workbench adaptive layout', () => {
+  it.each([
+    ['reader', 900, 'reader-single'],
+    ['reader', 901, 'paired'],
+    ['package', 940, 'package-single'],
+    ['package', 941, 'paired'],
+    ['assessment', 560, 'flow'],
+  ])(
+    'resolves %s at %dpx to %s before CSS chooses visible panes',
+    (activeTab, mainInlineSize, expected) => {
+      expect(resolveWorkbenchContentLayout(activeTab, mainInlineSize)).toBe(
+        expected,
+      );
+    },
+  );
+
   it('temporarily collapses the navigator when a 1440 Host shell leaves a constrained body', () => {
     expect(
       resolveWorkbenchAdaptiveLayout({ ...base, bodyWidth: 1328 }),
@@ -88,9 +104,23 @@ describe('workbench adaptive layout', () => {
     expect(
       resolveWorkbenchAdaptiveLayout({ ...base, bodyWidth: 1100 }),
     ).toEqual({
-      autoCollapseNavigator: false,
+      autoCollapseNavigator: true,
       useEvidenceOverlay: true,
       suppressEmptyEvidence: false,
+    });
+  });
+
+  it('uses the same container policy between tablet and mobile breakpoints', () => {
+    expect(
+      resolveWorkbenchAdaptiveLayout({
+        ...base,
+        bodyWidth: 900,
+        evidenceContentCount: 0,
+      }),
+    ).toEqual({
+      autoCollapseNavigator: false,
+      useEvidenceOverlay: false,
+      suppressEmptyEvidence: true,
     });
   });
 

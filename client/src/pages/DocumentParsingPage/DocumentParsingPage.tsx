@@ -301,6 +301,7 @@ export default function DocumentParsingPage() {
 
   useEffect(() => {
     if (loading || data === null) return;
+    if (activeNode === 'package' || activeNode === 'reader') return;
     const targetId: string =
       activeNode === 'aeo' && !data.workItem.aeo
         ? 'workspace-assessment'
@@ -588,6 +589,11 @@ export default function DocumentParsingPage() {
         quickOpenItems={quickOpenItems}
         tabs={WORKBENCH_TABS}
         activeTab={activeNode}
+        contentMode={
+          activeNode === 'package' || activeNode === 'reader'
+            ? 'workspace'
+            : 'flow'
+        }
         mobileActiveTab={
           activeNode === 'document' || activeNode === 'package'
             ? 'reader'
@@ -597,6 +603,12 @@ export default function DocumentParsingPage() {
         }
         onTabChange={handleTabChange}
       >
+        {activeNode === 'document' ? null : (
+          <h1 className="wl-visually-hidden">
+            {WORKBENCH_TABS.find((tab) => tab.key === activeNode)?.label ??
+              '工程分析工作台'}
+          </h1>
+        )}
         {activeNode === 'document' ? (
           <header className="parse-masthead">
             <div>
@@ -1299,6 +1311,7 @@ export default function DocumentParsingPage() {
 
         {activeNode === 'review' ? (
           <ContinuousReviewPanel
+            key={workItemId}
             workItemId={workItemId}
             workItemRevision={data.workItem.revision}
             confirmationReceipt={continuousReviewReceipt}

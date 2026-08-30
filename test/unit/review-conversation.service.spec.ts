@@ -115,6 +115,28 @@ describe('ReviewConversationService session and ACL boundary', () => {
     });
   });
 
+  it('exposes an active conversation as STALE_CONTEXT when WorkItem revision advanced', async () => {
+    const setup = makeService();
+    setup.objectAccess.freshRead.mockResolvedValue({
+      ...grant,
+      action: 'READ_WORK_ITEM',
+      workItemRevision: 8,
+    });
+    setup.conversations.loadCurrent.mockResolvedValue({
+      conversation,
+      turns: [turn],
+    });
+
+    const result = await setup.service.current('WI-1', {} as never);
+
+    expect(result.conversation).toMatchObject({
+      status: 'STALE_CONTEXT',
+      lastSyncedRevision: 7,
+      currentWorkItemRevision: 8,
+      currentRevisionSynced: false,
+    });
+  });
+
   it.each(['append', 'close'] as const)(
     'stops denied %s before all review repository I/O',
     async (operation) => {

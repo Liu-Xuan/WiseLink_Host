@@ -33,7 +33,11 @@ const Layout = () => {
 
       <FloatingDock workItemId={workItemId} />
 
-      <header className="wiselink-app-header wl-glass-nav" role="banner">
+      <header
+        className="wiselink-app-header wl-glass-nav"
+        data-wl-material="g1"
+        role="banner"
+      >
         <NavLink className="wiselink-app-brand" to="/library">
           <span className="wiselink-app-mark" aria-hidden="true">
             W

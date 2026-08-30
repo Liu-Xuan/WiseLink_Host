@@ -22,6 +22,7 @@ jest.mock(
 
 import { CanonicalHostAssessmentService } from '../../server/modules/canonical-host/canonical-host-assessment.service';
 import type { CanonicalHostActor } from '../../server/modules/canonical-host/canonical-host.types';
+import type { EngineerReviewState } from '@shared/assessment-host.interface';
 
 const ACTOR: CanonicalHostActor = {
   userId: 'engineer-1001',
@@ -77,6 +78,7 @@ function deniedService(
     {} as never,
     {} as never,
     {} as never,
+    {} as never,
   );
   return { authorization, permissionSnapshots, registrar, service };
 }
@@ -127,6 +129,7 @@ function authorizedService(
     {} as never,
     repository as never,
     {} as never,
+    {} as never,
   );
   return {
     artifactStore,
@@ -158,7 +161,7 @@ function engineerReview(
     | 'returned_for_rework'
     | 'deferred',
   status: 'ENGINEER_CONFIRMED' | 'NEEDS_REVIEW',
-) {
+): EngineerReviewState {
   return {
     baseRecordId: 'ENGINEER-REVIEW:WI-SB-1001:JAC-001',
     decision,
@@ -166,7 +169,7 @@ function engineerReview(
     reviewingEngineerUserIds: [ACTOR.userId],
     status,
     updatedAt: '2026-08-15T00:00:00.000Z',
-  } as const;
+  };
 }
 
 describe('CanonicalHostAssessmentService authorization ordering', () => {

@@ -20,6 +20,32 @@ export interface WorkbenchAdaptiveLayout {
   suppressEmptyEvidence: boolean;
 }
 
+export type WorkbenchContentLayout =
+  | 'flow'
+  | 'paired'
+  | 'reader-single'
+  | 'package-single';
+
+/**
+ * Reader 与 package 的单/双面板阈值使用真实主栏宽度计算，并由 DOM state
+ * 与 CSS 共同消费。这样侧栏 resize 后也不会留下“CSS 已换行、外层却裁切”
+ * 的中间状态。
+ */
+export function resolveWorkbenchContentLayout(
+  activeTab: string,
+  mainInlineSize: number,
+): WorkbenchContentLayout {
+  if (activeTab !== 'reader' && activeTab !== 'package') return 'flow';
+  if (mainInlineSize <= 0) return 'paired';
+  if (activeTab === 'reader' && mainInlineSize <= 900) {
+    return 'reader-single';
+  }
+  if (activeTab === 'package' && mainInlineSize <= 940) {
+    return 'package-single';
+  }
+  return 'paired';
+}
+
 /**
  * 根据工作台实际内容宽度分配三栏，而不是用浏览器视口猜测 Host 外壳占用。
  * 0/0 且无当前用户意图时先释放空证据栏；有真实证据或明确意图时再沿用
@@ -58,12 +84,16 @@ export function resolveWorkbenchAdaptiveLayout({
 
   if (suppressEmptyEvidence) {
     return {
+      /* 空证据已经释放宽度；目录继续作为主要导航，中心内容自行按
+       * container query 收敛为单列。不能同时静默隐藏两个辅助面板。 */
       autoCollapseNavigator: false,
       useEvidenceOverlay: false,
       suppressEmptyEvidence: true,
     };
   }
 
+  const navigatorInlineMinimum =
+    navWidth + WORKBENCH_MAIN_INLINE_MIN + WORKBENCH_DIVIDER_WIDTH;
   const evidenceInlineMinimum =
     evidenceWidth + WORKBENCH_MAIN_INLINE_MIN + WORKBENCH_DIVIDER_WIDTH;
   const useEvidenceOverlay = bodyWidth < evidenceInlineMinimum;
@@ -71,8 +101,8 @@ export function resolveWorkbenchAdaptiveLayout({
   return {
     autoCollapseNavigator:
       navigatorAvailable &&
-      !useEvidenceOverlay &&
-      bodyWidth < threeColumnMinimum,
+      bodyWidth <
+        (useEvidenceOverlay ? navigatorInlineMinimum : threeColumnMinimum),
     useEvidenceOverlay,
     suppressEmptyEvidence: false,
   };
