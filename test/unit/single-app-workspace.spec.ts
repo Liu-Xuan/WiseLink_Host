@@ -264,7 +264,7 @@ describe('single canonical app workspace', () => {
       /\.structured-browser button,\s*\.structured-browser input,\s*\.structured-browser summary,\s*\.structured-browser a\s*\{\s*min-height:\s*var\(--wl-touch-target\);/,
     );
     expect(documentParsingStyles).toMatch(
-      /\.parse-reader-split\.is-pdf-active\s*>\s*\.parse-pdf-pane\s*\{\s*display:\s*flex;/,
+      /data-content-layout='reader-single'[\s\S]*?\.parse-reader-split\.is-pdf-active[\s\S]*?\.parse-reader-workspace,[\s\S]*?data-content-layout='reader-single'[\s\S]*?\.parse-reader-split:not\(\.is-pdf-active\)[\s\S]*?\.parse-pdf-pane\s*\{\s*display:\s*none;/,
     );
     expect(documentParsingStyles).not.toMatch(
       /\.parse-reader-split\s*>\s*\.parse-pdf-pane\s*\{\s*display:\s*none;/,
@@ -273,7 +273,10 @@ describe('single canonical app workspace', () => {
       /\.parse-structured-pdf\s*\{\s*display:\s*none;/,
     );
     expect(documentParsingStyles).toContain(
-      '@container wl-workbench-main (max-width: 900px)',
+      ".wl-workbench-main[data-content-layout='package-single']",
+    );
+    expect(documentParsingStyles).not.toContain(
+      '@container wl-workbench-main (max-width:',
     );
     expect(documentParsingStyles).not.toContain(
       "body[data-wl-immersive='true'] .parse-shell--workbench {\n  height: 100vh",

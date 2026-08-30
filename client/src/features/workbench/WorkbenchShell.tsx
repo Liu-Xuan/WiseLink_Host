@@ -38,6 +38,7 @@ import QuickOpen, {
 } from '@client/src/features/workbench/QuickOpen';
 import {
   resolveWorkbenchAdaptiveLayout,
+  resolveWorkbenchContentLayout,
   resolveWorkbenchEvidenceVisibility,
 } from '@client/src/features/workbench/workbench-layout';
 
@@ -196,9 +197,11 @@ export default function WorkbenchShell({
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [mobileEvidenceOpen, setMobileEvidenceOpen] = useState(false);
   const [bodyWidth, setBodyWidth] = useState(0);
+  const [mainInlineSize, setMainInlineSize] = useState(0);
   const tabIdPrefix = useId().replace(/:/gu, '');
   const shellRef = useRef<HTMLDivElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
+  const mainRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef<'nav' | 'evidence' | null>(null);
   const navTriggerRef = useRef<HTMLButtonElement>(null);
   const evidenceTriggerRef = useRef<HTMLButtonElement>(null);
@@ -251,6 +254,29 @@ export default function WorkbenchShell({
       if (entry) updateWidth(entry.contentRect.width);
     });
     observer.observe(body);
+    return () => observer.disconnect();
+  }, []);
+
+  useLayoutEffect(() => {
+    const main = mainRef.current;
+    if (!main) return;
+    const updateWidth = (width = main.getBoundingClientRect().width) => {
+      const nextWidth = Math.round(width);
+      setMainInlineSize((current) =>
+        current === nextWidth ? current : nextWidth,
+      );
+    };
+    updateWidth();
+    if (typeof ResizeObserver === 'undefined') {
+      const handleResize = () => updateWidth();
+      window.addEventListener('resize', handleResize);
+      return () => window.removeEventListener('resize', handleResize);
+    }
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry) updateWidth(entry.contentRect.width);
+    });
+    observer.observe(main);
     return () => observer.disconnect();
   }, []);
 
@@ -391,6 +417,10 @@ export default function WorkbenchShell({
     evidenceActive,
     evidenceRequested,
   });
+  const contentLayout = resolveWorkbenchContentLayout(
+    activeTab,
+    mainInlineSize,
+  );
 
   /* 沉浸模式只隐藏应用外壳，不隐藏工作台的资料目录与证据栏。 */
   /* 自适应收起只保护中心内容宽度，不写入用户的目录偏好。 */
@@ -912,9 +942,11 @@ export default function WorkbenchShell({
         ) : null}
 
         <div
+          ref={mainRef}
           id={panelId}
           className={`wl-workbench-main is-${contentMode}`}
           data-content-mode={contentMode}
+          data-content-layout={contentLayout}
           role="tabpanel"
           aria-labelledby={activePanelLabelledBy}
           aria-label={activePanelLabelledBy ? undefined : '当前工作区'}

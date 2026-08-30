@@ -9,8 +9,9 @@
 @media (min-width: 721px) {
   .wl-workbench-main.is-workspace .structured-browser {
     display: flex;
-    height: 100%;
+    height: auto;
     min-height: 0;
+    flex: 1;
     flex-direction: column;
   }
 

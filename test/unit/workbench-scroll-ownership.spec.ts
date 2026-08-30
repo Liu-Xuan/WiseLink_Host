@@ -17,6 +17,7 @@ describe('workbench scroll ownership', () => {
     ]);
 
     expect(shell).toContain('data-content-mode={contentMode}');
+    expect(shell).toContain('data-content-layout={contentLayout}');
     expect(shell).toContain("tabIndex={contentMode === 'flow' ? 0 : -1}");
     expect(shellStyles).toMatch(
       /\.wl-workbench-main\.is-workspace\s*\{[\s\S]*?overflow: hidden;/,
