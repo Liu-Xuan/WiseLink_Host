@@ -12,7 +12,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, relative, resolve, sep } from 'node:path';
+import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 
 import type {
   ParsedPdfLayout,
@@ -29,7 +29,14 @@ import type {
   TargetedPdfOcrResult,
 } from './targeted-pdf-ocr.port';
 
-const OCR_RUNTIME_SCHEMA = 'wiselink.host-pdf-ocr-runtime.v1' as const;
+const OCR_RUNTIME_SCHEMA = 'wiselink.host-pdf-ocr-runtime.v2' as const;
+const OCR_RUNTIME_PLATFORM = 'linux' as const;
+const OCR_RUNTIME_ARCH = 'x64' as const;
+const OCR_RUNTIME_LIBC = 'bundled-glibc' as const;
+const OCR_RUNTIME_LOADER = 'lib/ld-linux-x86-64.so.2' as const;
+const OCR_RUNTIME_LIBRARY_DIRECTORY = 'lib' as const;
+const OCR_RUNTIME_POPPLER_DATA_DIRECTORY = 'share/poppler' as const;
+const OCR_RUNTIME_FONT_CONFIG = 'etc/fonts/fonts.conf' as const;
 const OCR_PROVIDER_ID =
   'host-owned-pdftoppm-25.03.0-tesseract-5.5.0-tsv' as const;
 const DEFAULT_DPI = 300;
@@ -47,6 +54,11 @@ const TSV_HEADER =
 
 interface OcrRuntimeManifest {
   schemaVersion: typeof OCR_RUNTIME_SCHEMA;
+  target: {
+    platform: typeof OCR_RUNTIME_PLATFORM;
+    arch: typeof OCR_RUNTIME_ARCH;
+    libc: typeof OCR_RUNTIME_LIBC;
+  };
   renderer: {
     executable: string;
     version: '25.03.0';
@@ -64,9 +76,14 @@ interface OcrRuntimeManifest {
 }
 
 interface OcrRuntimePaths {
+  runtimeRoot: string;
   manifest: OcrRuntimeManifest;
   rendererExecutable: string;
   engineExecutable: string;
+  loaderExecutable: string;
+  libraryDirectory: string;
+  popplerDataDirectory: string;
+  fontConfigFile: string;
   tessdataDirectory: string;
 }
 
@@ -160,7 +177,8 @@ export class TesseractTsvPdfOcrAdapter implements TargetedPdfOcrProvider {
       return unavailablePreflight(reasons);
     }
 
-    const renderer = runCommand(
+    const renderer = runRuntimeCommand(
+      runtime,
       runtime.rendererExecutable,
       ['-v'],
       this.timeoutMs,
@@ -174,7 +192,8 @@ export class TesseractTsvPdfOcrAdapter implements TargetedPdfOcrProvider {
       reasons.push('PDFTOPPM_VERSION_MISMATCH');
     }
 
-    const engine = runCommand(
+    const engine = runRuntimeCommand(
+      runtime,
       runtime.engineExecutable,
       ['--version'],
       this.timeoutMs,
@@ -187,7 +206,8 @@ export class TesseractTsvPdfOcrAdapter implements TargetedPdfOcrProvider {
       reasons.push('TESSERACT_VERSION_MISMATCH');
     }
 
-    const languages = runCommand(
+    const languages = runRuntimeCommand(
+      runtime,
       runtime.engineExecutable,
       ['--tessdata-dir', runtime.tessdataDirectory, '--list-langs'],
       this.timeoutMs,
@@ -206,7 +226,8 @@ export class TesseractTsvPdfOcrAdapter implements TargetedPdfOcrProvider {
       // therefore look installed, and an ordinary OCR invocation can even
       // exit 0 after dropping one requested language. Force a real bilingual
       // engine initialization against a deterministic in-memory raster.
-      const languageProbe = runCommand(
+      const languageProbe = runRuntimeCommand(
+        runtime,
         runtime.engineExecutable,
         [
           'stdin',
@@ -405,7 +426,8 @@ export class TesseractTsvPdfOcrAdapter implements TargetedPdfOcrProvider {
       );
     }
     renderArguments.push(sourcePath, outputPrefix);
-    const render = runCommand(
+    const render = runRuntimeCommand(
+      runtime,
       runtime.rendererExecutable,
       renderArguments,
       this.timeoutMs,
@@ -447,7 +469,8 @@ export class TesseractTsvPdfOcrAdapter implements TargetedPdfOcrProvider {
       geometry.viewportWidthPixels > geometry.viewportHeightPixels
         ? '11'
         : '6';
-    const tesseract = runCommand(
+    const tesseract = runRuntimeCommand(
+      runtime,
       runtime.engineExecutable,
       [
         imagePath,
@@ -549,10 +572,37 @@ export class TesseractTsvPdfOcrAdapter implements TargetedPdfOcrProvider {
       manifest.tessdata.directory,
       'TESSDATA_DIRECTORY_MISSING',
     );
+    const loaderExecutable = safeRuntimePath(
+      runtimeRootReal,
+      OCR_RUNTIME_LOADER,
+      'OCR_RUNTIME_LOADER_MISSING',
+    );
+    const libraryDirectory = safeRuntimePath(
+      runtimeRootReal,
+      OCR_RUNTIME_LIBRARY_DIRECTORY,
+      'OCR_RUNTIME_LIBRARY_DIRECTORY_MISSING',
+    );
+    const popplerDataDirectory = safeRuntimePath(
+      runtimeRootReal,
+      OCR_RUNTIME_POPPLER_DATA_DIRECTORY,
+      'OCR_RUNTIME_POPPLER_DATA_MISSING',
+    );
+    const fontConfigFile = safeRuntimePath(
+      runtimeRootReal,
+      OCR_RUNTIME_FONT_CONFIG,
+      'OCR_RUNTIME_FONT_CONFIG_MISSING',
+    );
     assertExecutable(rendererExecutable, 'PDFTOPPM_EXECUTABLE_MISSING');
     assertExecutable(engineExecutable, 'TESSERACT_EXECUTABLE_MISSING');
+    assertExecutable(loaderExecutable, 'OCR_RUNTIME_LOADER_MISSING');
     if (!existsSync(tessdataDirectory)) {
       throw new Error('TESSDATA_DIRECTORY_MISSING');
+    }
+    if (process.platform !== manifest.target.platform) {
+      throw new Error('OCR_RUNTIME_TARGET_PLATFORM_MISMATCH');
+    }
+    if (process.arch !== manifest.target.arch) {
+      throw new Error('OCR_RUNTIME_TARGET_ARCH_MISMATCH');
     }
     for (const language of manifest.tessdata.requiredLanguages) {
       const languagePath = resolve(
@@ -564,9 +614,14 @@ export class TesseractTsvPdfOcrAdapter implements TargetedPdfOcrProvider {
       }
     }
     return {
+      runtimeRoot: runtimeRootReal,
       manifest,
       rendererExecutable,
       engineExecutable,
+      loaderExecutable,
+      libraryDirectory,
+      popplerDataDirectory,
+      fontConfigFile,
       tessdataDirectory,
     };
   }
@@ -577,6 +632,9 @@ function validateManifest(value: unknown): OcrRuntimeManifest {
   const languages = manifest.tessdata?.requiredLanguages;
   if (
     manifest.schemaVersion !== OCR_RUNTIME_SCHEMA ||
+    manifest.target?.platform !== OCR_RUNTIME_PLATFORM ||
+    manifest.target?.arch !== OCR_RUNTIME_ARCH ||
+    manifest.target?.libc !== OCR_RUNTIME_LIBC ||
     manifest.renderer?.version !== '25.03.0' ||
     typeof manifest.renderer.executable !== 'string' ||
     manifest.engine?.version !== '5.5.0' ||
@@ -654,7 +712,7 @@ function unavailablePreflight(
     engineVersion: null,
     tessdataRevision: null,
     installedLanguages: [],
-    missingLanguages: REQUIRED_OCR_LANGUAGES,
+    missingLanguages: [],
     reasons,
   };
 }
@@ -790,14 +848,37 @@ interface CommandResult {
   timedOut: boolean;
 }
 
-function runCommand(
-  command: string,
+function runRuntimeCommand(
+  runtime: OcrRuntimePaths,
+  program: string,
   args: readonly string[],
   timeoutMs: number,
   input?: Uint8Array,
 ): CommandResult {
-  const result = spawnSync(command, [...args], {
+  const loaderArguments = [
+    '--inhibit-cache',
+    '--library-path',
+    runtime.libraryDirectory,
+    '--argv0',
+    program,
+    program,
+    ...args,
+  ];
+  const result = spawnSync(runtime.loaderExecutable, loaderArguments, {
+    cwd: runtime.runtimeRoot,
     encoding: 'utf8',
+    env: {
+      FONTCONFIG_FILE: basename(runtime.fontConfigFile),
+      FONTCONFIG_PATH: dirname(runtime.fontConfigFile),
+      HOME: tmpdir(),
+      LANG: 'C.UTF-8',
+      LC_ALL: 'C.UTF-8',
+      PATH: '/usr/bin:/bin',
+      POPPLER_DATADIR: runtime.popplerDataDirectory,
+      TMPDIR: tmpdir(),
+      TZ: 'UTC0',
+      XDG_CACHE_HOME: tmpdir(),
+    },
     ...(input ? { input } : {}),
     maxBuffer: MAX_COMMAND_BUFFER,
     timeout: timeoutMs,

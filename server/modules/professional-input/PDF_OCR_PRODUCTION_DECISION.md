@@ -58,9 +58,9 @@ uses the actual page operator geometry and text-layer overlap described above.
   `TesseractTsvPdfOcrAdapter`. It is not another parser seam.
 - The production build always copies pinned `pdfjs-dist`. OCR deployments must
   explicitly supply `WL31_PDF_OCR_RUNTIME_ROOT`; the build copies that complete
-  runtime into Host assets after checking the manifest, both executables, and
-  `eng`/`chi_sim` files. An omitted runtime is observable and fail-closed when
-  OCR is required.
+  runtime into Host assets only after validating its Linux/x64 ELF dependency
+  and ABI closure, target, renderer, engine, and `eng`/`chi_sim` assets. An
+  omitted runtime is observable and fail-closed when OCR is required.
 - `CapabilityService` is available as a general plugin invocation surface. The
   current app declares only `@official-plugins/feishu-bitable`; it has no
   `ai-doc-parser` package or capability instance. The official document-parser
@@ -79,12 +79,16 @@ uses the actual page operator geometry and text-layer overlap described above.
 
 ## Deployment requirement
 
-The remaining external deployment input is the Host-owned runtime directory.
-Its pinned manifest requires Poppler `pdftoppm` 25.03.0, Tesseract 5.5.0,
-`tessdata_fast` revision 4.1.0, and languages `eng` plus `chi_sim`. Startup
-preflight checks exact executable versions, language filenames, and an actual
-bilingual Tesseract initialization; `--list-langs` or exit code 0 alone is not
-accepted.
+The Host-owned runtime source is committed under
+`server/runtime-assets/professional-input/ocr-runtime`; deployments still opt
+in explicitly with `WL31_PDF_OCR_RUNTIME_ROOT`. Its v2 manifest targets
+Linux/x64 with a bundled glibc loader and requires Poppler `pdftoppm` 25.03.0,
+Tesseract 5.5.0, `tessdata_fast` revision 4.1.0, and languages `eng` plus
+`chi_sim`. Before returning `READY`, deployment validates every bundled ELF,
+recursive `DT_NEEDED`/SONAME edges and symbol-version requirements, then uses
+the same bundled-loader command as production for an actual PDF render and
+bilingual Tesseract initialization in a clean environment. `--list-langs`,
+version output, or exit code 0 alone is not accepted.
 
 For every requested page/region the private provider returns:
 
@@ -95,10 +99,12 @@ For every requested page/region the private provider returns:
 5. no external model/provider, Docker service, second package, or second
    Reader.
 
-The developer machine still lacks `chi_sim` in its Homebrew tessdata. That
-installation is not a production dependency. The real acceptance run used a
-private temporary runtime populated from the exact official 4.1.0 language
-blobs; those validation files are not committed or downloaded at runtime.
+The developer machine's Homebrew installation is not a production dependency.
+The packaged renderer, engine, loader, non-system shared libraries, fonts,
+Poppler data, exact `eng`/`chi_sim` assets, Debian package inventory, and
+license notices are all under the runtime root. Production execution does not
+inherit `LD_*`, `DYLD_*`, Fontconfig, locale, or cache paths from the build
+machine.
 
 ## Implemented adapter boundary
 
@@ -136,7 +142,10 @@ observed outcomes, not silent fallback or claims of document completion.
 
 ## Non-claims
 
-- This change does not deploy the OCR runtime or its language assets.
+- This change packages but does not deploy or publish the OCR runtime.
+- It does not claim a Miaoda Hosted process has executed the runtime; Hosted
+  child-process policy, package limits, and kernel compatibility remain release
+  readbacks.
 - It does not qualify the official document-parser plugin as a layout provider.
 - It does not reuse historical Tesseract/MinerU/Docker runtime as production.
 - It does not claim the low-confidence documents above are complete.

@@ -4,15 +4,35 @@ import {
   constants as fsConstants,
   cp,
   lstat,
+  mkdtemp,
   mkdir,
   readFile,
   readdir,
   realpath,
   rm,
+  writeFile,
 } from 'node:fs/promises';
-import { isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { tmpdir } from 'node:os';
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+  sep,
+} from 'node:path';
 
-const OCR_RUNTIME_SCHEMA = 'wiselink.host-pdf-ocr-runtime.v1';
+import { validateLinuxX64ElfRuntime } from './linux-x64-elf-runtime.mjs';
+
+const OCR_RUNTIME_SCHEMA = 'wiselink.host-pdf-ocr-runtime.v2';
+const OCR_RUNTIME_PLATFORM = 'linux';
+const OCR_RUNTIME_ARCH = 'x64';
+const OCR_RUNTIME_LIBC = 'bundled-glibc';
+const OCR_RUNTIME_LOADER = 'lib/ld-linux-x86-64.so.2';
+const OCR_RUNTIME_LIBRARY_DIRECTORY = 'lib';
+const OCR_RUNTIME_POPPLER_DATA_DIRECTORY = 'share/poppler';
+const OCR_RUNTIME_FONT_CONFIG = 'etc/fonts/fonts.conf';
 const REQUIRED_LANGUAGES = ['eng', 'chi_sim'];
 const TSV_HEADER =
   'level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext';
@@ -51,7 +71,7 @@ export async function copyPinnedPdfOcrRuntime({ source, target }) {
     assertContained(targetParentReal, targetReal, 'TARGET_ROOT');
     await assertTreeContained(targetReal, targetReal, 'TARGET');
     const targetRuntime = await resolveRuntimeAssets(targetReal, 'TARGET');
-    runBilingualPreflight(targetRuntime);
+    await runBilingualPreflight(targetRuntime);
     return {
       source: sourceReal,
       target: targetReal,
@@ -94,6 +114,26 @@ async function resolveRuntimeAssets(rootReal, scope) {
     manifest.tessdata.directory,
     scope,
   );
+  const loader = await containedExistingPath(
+    rootReal,
+    OCR_RUNTIME_LOADER,
+    scope,
+  );
+  const libraryDirectory = await containedExistingPath(
+    rootReal,
+    OCR_RUNTIME_LIBRARY_DIRECTORY,
+    scope,
+  );
+  const popplerDataDirectory = await containedExistingPath(
+    rootReal,
+    OCR_RUNTIME_POPPLER_DATA_DIRECTORY,
+    scope,
+  );
+  const fontConfig = await containedExistingPath(
+    rootReal,
+    OCR_RUNTIME_FONT_CONFIG,
+    scope,
+  );
   const languageFiles = [];
   for (const language of REQUIRED_LANGUAGES) {
     languageFiles.push(
@@ -107,17 +147,36 @@ async function resolveRuntimeAssets(rootReal, scope) {
   }
   await access(renderer, fsConstants.X_OK);
   await access(engine, fsConstants.X_OK);
+  await access(loader, fsConstants.X_OK);
+
+  const closure = await validateLinuxX64ElfRuntime({
+    root: rootReal,
+    renderer,
+    engine,
+    loader,
+    libraryDirectory,
+  });
 
   return {
+    root: rootReal,
     manifest,
     renderer,
     engine,
     tessdata,
+    loader,
+    libraryDirectory,
+    popplerDataDirectory,
+    fontConfig,
+    closure,
     realpaths: {
       manifest: manifestPath,
       renderer,
       engine,
       tessdata,
+      loader,
+      libraryDirectory,
+      popplerDataDirectory,
+      fontConfig,
       languages: languageFiles,
     },
   };
@@ -127,6 +186,9 @@ function validateManifest(manifest, scope) {
   const languages = manifest?.tessdata?.requiredLanguages;
   if (
     manifest?.schemaVersion !== OCR_RUNTIME_SCHEMA ||
+    manifest?.target?.platform !== OCR_RUNTIME_PLATFORM ||
+    manifest?.target?.arch !== OCR_RUNTIME_ARCH ||
+    manifest?.target?.libc !== OCR_RUNTIME_LIBC ||
     manifest?.renderer?.version !== '25.03.0' ||
     typeof manifest?.renderer?.executable !== 'string' ||
     manifest?.engine?.version !== '5.5.0' ||
@@ -197,8 +259,15 @@ async function requiredRealpath(path, reason) {
   }
 }
 
-function runBilingualPreflight(runtime) {
-  const renderer = run(runtime.renderer, ['-v']);
+async function runBilingualPreflight(runtime) {
+  if (process.platform !== OCR_RUNTIME_PLATFORM) {
+    throw new Error('OCR_RUNTIME_TARGET_PLATFORM_MISMATCH');
+  }
+  if (process.arch !== OCR_RUNTIME_ARCH) {
+    throw new Error('OCR_RUNTIME_TARGET_ARCH_MISMATCH');
+  }
+
+  const renderer = runRuntime(runtime, runtime.renderer, ['-v']);
   const rendererVersion = extractVersion(
     `${renderer.stderr}\n${renderer.stdout}`,
     /pdftoppm version\s+([0-9.]+)/iu,
@@ -210,7 +279,7 @@ function runBilingualPreflight(runtime) {
     throw new Error('OCR_RUNTIME_TARGET_PDFTOPPM_VERSION_MISMATCH');
   }
 
-  const engine = run(runtime.engine, ['--version']);
+  const engine = runRuntime(runtime, runtime.engine, ['--version']);
   const engineVersion = extractVersion(
     `${engine.stdout}\n${engine.stderr}`,
     /tesseract\s+([0-9.]+)/iu,
@@ -222,7 +291,7 @@ function runBilingualPreflight(runtime) {
     throw new Error('OCR_RUNTIME_TARGET_TESSERACT_VERSION_MISMATCH');
   }
 
-  const languages = run(runtime.engine, [
+  const languages = runRuntime(runtime, runtime.engine, [
     '--tessdata-dir',
     runtime.tessdata,
     '--list-langs',
@@ -240,7 +309,10 @@ function runBilingualPreflight(runtime) {
     throw new Error('OCR_RUNTIME_TARGET_LANGUAGE_ASSET_MISSING');
   }
 
-  const languageProbe = run(
+  await runRendererProbe(runtime);
+
+  const languageProbe = runRuntime(
+    runtime,
     runtime.engine,
     [
       'stdin',
@@ -267,9 +339,50 @@ function runBilingualPreflight(runtime) {
   }
 }
 
-function run(command, args, input) {
-  const result = spawnSync(command, args, {
+async function runRendererProbe(runtime) {
+  const directory = await mkdtemp(join(tmpdir(), 'wl31-ocr-preflight-'));
+  const pdfPath = join(directory, 'probe.pdf');
+  const outputPrefix = join(directory, 'probe');
+  try {
+    await writeFile(pdfPath, onePagePdfProbe());
+    const render = runRuntime(runtime, runtime.renderer, [
+      '-f',
+      '1',
+      '-l',
+      '1',
+      '-singlefile',
+      '-r',
+      '72',
+      '-gray',
+      pdfPath,
+      outputPrefix,
+    ]);
+    if (render.status !== 0) {
+      throw new Error('OCR_RUNTIME_TARGET_PDFTOPPM_RENDER_FAILED');
+    }
+    const raster = await readFile(`${outputPrefix}.pgm`);
+    if (!/^P5\s+72\s+72\s+255\s/u.test(raster.subarray(0, 64).toString())) {
+      throw new Error('OCR_RUNTIME_TARGET_PDFTOPPM_RENDER_INVALID');
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}
+
+function runRuntime(runtime, program, args, input) {
+  const loaderArguments = [
+    '--inhibit-cache',
+    '--library-path',
+    runtime.libraryDirectory,
+    '--argv0',
+    program,
+    program,
+    ...args,
+  ];
+  const result = spawnSync(runtime.loader, loaderArguments, {
+    cwd: runtime.root,
     encoding: 'utf8',
+    env: cleanRuntimeEnvironment(runtime),
     input,
     maxBuffer: MAX_COMMAND_BUFFER,
     timeout: PREFLIGHT_TIMEOUT_MS,
@@ -278,6 +391,21 @@ function run(command, args, input) {
     status: result.status,
     stdout: result.stdout ?? '',
     stderr: result.stderr ?? result.error?.message ?? '',
+  };
+}
+
+function cleanRuntimeEnvironment(runtime) {
+  return {
+    FONTCONFIG_FILE: basename(runtime.fontConfig),
+    FONTCONFIG_PATH: dirname(runtime.fontConfig),
+    HOME: tmpdir(),
+    LANG: 'C.UTF-8',
+    LC_ALL: 'C.UTF-8',
+    PATH: '/usr/bin:/bin',
+    POPPLER_DATADIR: runtime.popplerDataDirectory,
+    TMPDIR: tmpdir(),
+    TZ: 'UTC0',
+    XDG_CACHE_HOME: tmpdir(),
   };
 }
 
@@ -290,4 +418,28 @@ function blankPgmProbe() {
     Buffer.from('P5\n32 32\n255\n', 'ascii'),
     Buffer.alloc(32 * 32, 255),
   ]);
+}
+
+function onePagePdfProbe() {
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 72 72] /Contents 4 0 R >>',
+    '<< /Length 0 >>\nstream\n\nendstream',
+  ];
+  let body = '%PDF-1.4\n';
+  const offsets = [0];
+  for (let index = 0; index < objects.length; index += 1) {
+    offsets.push(Buffer.byteLength(body, 'ascii'));
+    body += `${index + 1} 0 obj\n${objects[index]}\nendobj\n`;
+  }
+  const xrefOffset = Buffer.byteLength(body, 'ascii');
+  body += `xref\n0 ${objects.length + 1}\n`;
+  body += '0000000000 65535 f \n';
+  for (const offset of offsets.slice(1)) {
+    body += `${String(offset).padStart(10, '0')} 00000 n \n`;
+  }
+  body += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\n`;
+  body += `startxref\n${xrefOffset}\n%%EOF\n`;
+  return Buffer.from(body, 'ascii');
 }

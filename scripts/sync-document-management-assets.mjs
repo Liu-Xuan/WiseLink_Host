@@ -91,11 +91,11 @@ if (ocrRuntimeSource) {
   // by an earlier enabled build so an unset deployment input can never inherit
   // stale executables or tessdata and masquerade as configured.
   await rm(ocrRuntimeTarget, { recursive: true, force: true });
-  await mkdir(resolve(ocrRuntimeTarget, '..'), { recursive: true });
-  await cp(ocrRuntimeManifestSource, ocrRuntimeTarget, {
-    recursive: true,
-    force: true,
-  });
+  await mkdir(ocrRuntimeTarget, { recursive: true });
+  await copyFile(
+    resolve(ocrRuntimeManifestSource, 'manifest.json'),
+    resolve(ocrRuntimeTarget, 'manifest.json'),
+  );
 }
 
 process.stdout.write(
@@ -113,9 +113,9 @@ process.stdout.write(
     },
     copiedOcrRuntime,
     ocrRuntimeDeploymentStatus: copiedOcrRuntime
-      ? 'PINNED_RUNTIME_COPIED'
+      ? 'PINNED_RUNTIME_READY'
       : 'NOT_SUPPLIED_FAIL_CLOSED_WHEN_REQUIRED',
-    copiedForHostedRuntime: true,
+    copiedForHostedRuntime: copiedOcrRuntime?.preflightStatus === 'READY',
     onlineMutationPerformed: false,
   })}\n`,
 );
