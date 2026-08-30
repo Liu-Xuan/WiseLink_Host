@@ -15,7 +15,7 @@
 .continuous-review-toolbar,
 .continuous-review-sync,
 .continuous-review-empty,
-.continuous-review-restart,
+.continuous-review-closed,
 .continuous-review-compose-row,
 .continuous-review-compose-footer,
 .continuous-review-turn header,
@@ -66,7 +66,6 @@
 
 .continuous-review-toolbar button,
 .continuous-review-empty button,
-.continuous-review-restart button,
 .continuous-review-composer button,
 .continuous-review-draft button {
   border-radius: var(--wl-radius-sm);
@@ -84,6 +83,16 @@
   border-color: color-mix(in srgb, var(--wl-accent) 35%, var(--wl-border));
   color: var(--wl-accent) !important;
   background: var(--wl-accent-soft);
+}
+
+.continuous-review-state.is-stale {
+  border-color: color-mix(in srgb, var(--wl-amber) 42%, var(--wl-border));
+  color: var(--wl-amber-ink) !important;
+  background: var(--wl-amber-soft);
+}
+
+.continuous-review-state.is-closed {
+  color: var(--wl-faint) !important;
 }
 
 .continuous-review-receipt,
@@ -122,7 +131,7 @@
 
 .continuous-review-sync,
 .continuous-review-empty,
-.continuous-review-restart {
+.continuous-review-closed {
   margin-top: 16px;
   padding: 14px 16px;
   gap: 14px;
@@ -141,6 +150,12 @@
 
 .continuous-review-sync > p {
   margin-left: auto;
+}
+
+.continuous-review-sync > p strong {
+  display: block;
+  color: var(--wl-ink);
+  font-size: 12px;
 }
 
 .continuous-review-empty > svg {
@@ -201,7 +216,7 @@
 .continuous-review-evidence-count,
 .continuous-review-no-turns,
 .continuous-review-compose-footer,
-.continuous-review-restart {
+.continuous-review-closed {
   color: var(--wl-muted);
   font-size: 11px;
 }
@@ -435,8 +450,19 @@
   gap: 12px;
 }
 
-.continuous-review-restart {
-  justify-content: space-between;
+.continuous-review-closed {
+  display: grid;
+  align-items: initial;
+  gap: 3px;
+  color: var(--wl-muted);
+}
+
+.continuous-review-closed strong {
+  color: var(--wl-ink);
+}
+
+.continuous-review-closed span {
+  line-height: 1.5;
 }
 
 .continuous-review-error {
@@ -453,7 +479,7 @@
   .continuous-review-header,
   .continuous-review-sync,
   .continuous-review-empty,
-  .continuous-review-restart,
+  .continuous-review-closed,
   .continuous-review-composer > label,
   .continuous-review-compose-footer {
     align-items: stretch;

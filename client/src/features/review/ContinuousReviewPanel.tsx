@@ -23,6 +23,7 @@ import type {
 } from '@shared/api.interface';
 
 import ReviewConversationTurn from './ReviewConversationTurn';
+import { continuousReviewPresentation } from './continuous-review-state';
 
 import './continuous-review-panel.css';
 
@@ -65,6 +66,7 @@ export default function ContinuousReviewPanel({
   const [error, setError] = useState<string | null>(null);
   const [confirmingTurnId, setConfirmingTurnId] = useState<string | null>(null);
   const requestIdRef = useRef<string | null>(null);
+  const presentation = continuousReviewPresentation(conversation);
 
   const readCurrent = useCallback(async (): Promise<void> => {
     setBusyAction('load');
@@ -114,14 +116,14 @@ export default function ContinuousReviewPanel({
   const busy = busyAction !== null;
   const { getInputProps, getRootProps, isDragActive } = useDropzone({
     accept: { 'application/pdf': ['.pdf'] },
-    disabled: busy || conversation?.currentRevisionSynced !== true,
+    disabled: busy || !presentation.composerEnabled,
     maxFiles: 1,
     multiple: false,
     onDrop,
   });
 
   async function startOrSync(): Promise<void> {
-    if (busy) return;
+    if (busy || !presentation.canStartOrSync) return;
     setBusyAction('start');
     setError(null);
     try {
@@ -230,8 +232,7 @@ export default function ContinuousReviewPanel({
     }
   }
 
-  const active = conversation?.status === 'ACTIVE';
-  const synced = conversation?.currentRevisionSynced === true;
+  const active = presentation.state === 'ACTIVE';
 
   return (
     <section
@@ -248,9 +249,10 @@ export default function ContinuousReviewPanel({
         </div>
         <div className="continuous-review-toolbar">
           <span
-            className={`continuous-review-state${active ? ' is-active' : ''}`}
+            className={`continuous-review-state${presentation.stateClassName}`}
+            data-state={presentation.state.toLowerCase()}
           >
-            {active ? '讨论进行中' : conversation ? '本轮已结束' : '尚未开始'}
+            {presentation.stateLabel}
           </span>
           <Button
             type="button"
@@ -291,9 +293,12 @@ export default function ContinuousReviewPanel({
               {currentRevision}
             </strong>
           </div>
-          {!synced && active ? (
+          {presentation.state === 'STALE_CONTEXT' ? (
             <>
-              <p>事项已有更新，请先同步讨论上下文再继续补充。</p>
+              <p>
+                <strong>{presentation.contextTitle}</strong>
+                {presentation.contextMessage}
+              </p>
               <Button
                 type="button"
                 size="sm"
@@ -353,7 +358,7 @@ export default function ContinuousReviewPanel({
             id="continuous-review-message"
             value={message}
             maxLength={20_000}
-            disabled={busy || !synced}
+            disabled={busy || !presentation.composerEnabled}
             placeholder="补充事实、提出疑问，或说明希望核对的判断"
             onChange={(event) => {
               requestIdRef.current = null;
@@ -370,7 +375,7 @@ export default function ContinuousReviewPanel({
                 'aria-label': file
                   ? `更换补充 PDF，当前为 ${file.name}`
                   : '选择一份补充 PDF',
-                'aria-disabled': busy || !synced,
+                'aria-disabled': busy || !presentation.composerEnabled,
               })}
             >
               <input {...getInputProps()} />
@@ -398,7 +403,9 @@ export default function ContinuousReviewPanel({
             ) : null}
             <Button
               type="button"
-              disabled={busy || !synced || !message.trim()}
+              disabled={
+                busy || !presentation.composerEnabled || !message.trim()
+              }
               onClick={() => void appendTurn()}
             >
               {file && !uploadedSelection ? (
@@ -422,18 +429,10 @@ export default function ContinuousReviewPanel({
             </Button>
           </div>
         </div>
-      ) : conversation?.status === 'CLOSED' ? (
-        <div className="continuous-review-restart">
-          <span>
-            已保留本轮记录。需要继续时会从事项当前版本开始新一轮讨论。
-          </span>
-          <Button
-            type="button"
-            disabled={busy}
-            onClick={() => void startOrSync()}
-          >
-            开始新一轮复核
-          </Button>
+      ) : presentation.state === 'CLOSED' ? (
+        <div className="continuous-review-closed">
+          <strong>{presentation.contextTitle}</strong>
+          <span>{presentation.contextMessage}</span>
         </div>
       ) : null}
 

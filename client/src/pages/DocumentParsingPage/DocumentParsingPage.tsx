@@ -1305,6 +1305,7 @@ export default function DocumentParsingPage() {
 
         {activeNode === 'review' ? (
           <ContinuousReviewPanel
+            key={workItemId}
             workItemId={workItemId}
             workItemRevision={data.workItem.revision}
             confirmationReceipt={continuousReviewReceipt}
