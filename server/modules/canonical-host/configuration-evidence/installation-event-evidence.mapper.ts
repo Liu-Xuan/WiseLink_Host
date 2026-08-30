@@ -1,4 +1,6 @@
 import type {
+  GetInstallationEventsFailure,
+  GetInstallationEventsFailureCode,
   GetInstallationEventsQuery,
   GetInstallationEventsResult,
   InstallationEventSourceRecord,
@@ -42,10 +44,26 @@ import type {
   ConfigEventEvidenceProjection,
   ConfigurationEventEvidenceBinding,
   ConfigurationEvidenceDiagnostic,
+  ConfigurationEvidencePublicSourceError,
   CurrentConfigurationAssertionCandidate,
   InstallationEventEvidenceProjection,
   InstallationEvidenceRecordProjection,
 } from './installation-event-evidence.types';
+
+const PUBLIC_SOURCE_ERROR_MESSAGES: Record<
+  GetInstallationEventsFailureCode,
+  string
+> = {
+  SOURCE_NOT_CONFIGURED: '尚未配置受控构型事件数据源，请联系系统管理员。',
+  ACCESS_DENIED: '当前账号无权读取受控构型事件，请联系数据源管理员。',
+  TIMEOUT: '构型事件查询超时，请稍后重试。',
+  SOURCE_UNAVAILABLE: '受控构型事件数据源暂不可用，请稍后重试。',
+  AIRCRAFT_AMBIGUOUS: '飞机身份无法唯一匹配，请核对飞机标识后重试。',
+  TARGET_AMBIGUOUS: '构型查询目标无法唯一匹配，请核对目标后重试。',
+  PARTIAL_RESULTS: '构型事件结果不完整，当前状态保持未知；请补齐数据后重试。',
+  TRUNCATED: '构型事件结果已截断，当前状态保持未知；请缩小范围后重试。',
+  SOURCE_CONFLICT: '受控构型事件存在冲突，当前状态需工程师复核。',
+};
 
 /**
  * Pure Host mapping boundary from read-only source observations to candidate
@@ -162,7 +180,7 @@ export function mapInstallationEventEvidence(input: {
     query,
     sourceStatus: result.status,
     sourceObservation: structuredClone(result.source),
-    sourceError: result.error ? structuredClone(result.error) : null,
+    sourceError: publicSourceError(result.error),
     coverage: structuredClone(result.coverage),
     evidenceRecords,
     configEvents,
@@ -174,6 +192,17 @@ export function mapInstallationEventEvidence(input: {
       writesCurrentConfiguration: false,
       returnsApplicabilityDecision: false,
     },
+  };
+}
+
+function publicSourceError(
+  error: GetInstallationEventsFailure | null,
+): ConfigurationEvidencePublicSourceError | null {
+  if (error === null) return null;
+  return {
+    code: error.code,
+    message: PUBLIC_SOURCE_ERROR_MESSAGES[error.code],
+    retryable: error.retryable,
   };
 }
 

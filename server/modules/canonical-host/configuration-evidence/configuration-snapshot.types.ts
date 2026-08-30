@@ -10,6 +10,7 @@ import type {
   ConfigEventEvidenceProjection,
   ConfigurationEventRelation,
   ConfigurationEvidenceDiagnostic,
+  ConfigurationEvidencePublicSourceError,
   CurrentConfigurationAssertionCandidate,
   CurrentConfigurationProperty,
   InstallationEvidenceRecordProjection,
@@ -37,11 +38,7 @@ export interface ConfigurationSnapshotSourceSlice {
   query: GetInstallationEventsQuery;
   sourceStatus: GetInstallationEventsResult['status'];
   sourceObservation: InstallationEventSourceObservation | null;
-  sourceError: {
-    code: string;
-    message: string;
-    retryable: boolean;
-  } | null;
+  sourceError: ConfigurationEvidencePublicSourceError | null;
   coverage: InstallationEventQueryCoverage;
   diagnostics: ConfigurationEvidenceDiagnostic[];
   evidenceRecordIds: string[];

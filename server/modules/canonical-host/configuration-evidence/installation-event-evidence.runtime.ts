@@ -1,5 +1,6 @@
 import type {
   ConfigurationEvidenceTarget,
+  GetInstallationEventsFailureCode,
   GetInstallationEventsQuery,
   GetInstallationEventsResult,
   InstallationEventPayload,
@@ -20,11 +21,17 @@ export interface CollectedSourceRecords {
   hadInvalidRecord: boolean;
 }
 
+interface ValidSourceRecordEntry {
+  record: InstallationEventSourceRecord;
+  semanticContent: string;
+}
+
 export function collectSourceRecords(input: {
   result: GetInstallationEventsResult;
   diagnostics: ConfigurationEvidenceDiagnostic[];
 }): CollectedSourceRecords {
   const records: IndexedSourceRecord[] = [];
+  const validEntries: ValidSourceRecordEntry[] = [];
   const payloadByIdentity: Map<string, string> = new Map<string, string>();
   const revisionsByRecord: Map<string, Set<string>> = new Map<
     string,
@@ -45,15 +52,32 @@ export function collectSourceRecords(input: {
       );
       return;
     }
-    const record: InstallationEventSourceRecord = rawRecord;
+    validEntries.push({
+      record: rawRecord,
+      semanticContent: stableSemanticJson(rawRecord),
+    });
+  });
+  validEntries.sort(
+    (left: ValidSourceRecordEntry, right: ValidSourceRecordEntry): number => {
+      const leftIdentity: string = sourceIdentity(input.result, left.record);
+      const rightIdentity: string = sourceIdentity(input.result, right.record);
+      return (
+        compareStableStrings(leftIdentity, rightIdentity) ||
+        compareStableStrings(left.semanticContent, right.semanticContent)
+      );
+    },
+  );
+
+  for (const entry of validEntries) {
+    const record: InstallationEventSourceRecord = entry.record;
     const identity: string = sourceIdentity(input.result, record);
     const sourceRecord: string = [
       input.result.source.sourceSystem,
       record.recordId,
     ].join('|');
-    const serialized: string = JSON.stringify(record);
+    const serialized: string = entry.semanticContent;
     const priorPayload: string | undefined = payloadByIdentity.get(identity);
-    if (priorPayload === serialized) return;
+    if (priorPayload === serialized) continue;
 
     const identityOccurrence: number =
       (occurrencesByIdentity.get(identity) ?? 0) + 1;
@@ -82,7 +106,7 @@ export function collectSourceRecords(input: {
     revisions.add(record.revision);
     revisionsByRecord.set(sourceRecord, revisions);
     records.push({ identityOccurrence, record });
-  });
+  }
   return { records, hadInvalidRecord };
 }
 
@@ -223,7 +247,7 @@ export function assertValidResultEnvelope(
 ): void {
   const errorShapeValid: boolean =
     result.error === null ||
-    (isNonBlank(result.error.code) &&
+    (isFailureCode(result.error.code) &&
       isNonBlank(result.error.message) &&
       typeof result.error.retryable === 'boolean');
   if (
@@ -251,6 +275,47 @@ function sourceIdentity(
   return [result.source.sourceSystem, record.recordId, record.revision].join(
     '|',
   );
+}
+
+function stableSemanticJson(value: unknown): string {
+  if (value === null || typeof value !== 'object') {
+    const encoded: string | undefined = JSON.stringify(value);
+    return encoded ?? 'undefined';
+  }
+  if (Array.isArray(value)) {
+    return `[${value
+      .map((item: unknown) => stableSemanticJson(item))
+      .join(',')}]`;
+  }
+  const record: Record<string, unknown> = value as Record<string, unknown>;
+  const properties: string[] = Object.keys(record)
+    .sort(compareStableStrings)
+    .map(
+      (key: string): string =>
+        `${JSON.stringify(key)}:${stableSemanticJson(record[key])}`,
+    );
+  return `{${properties.join(',')}}`;
+}
+
+function compareStableStrings(left: string, right: string): number {
+  if (left === right) return 0;
+  return left < right ? -1 : 1;
+}
+
+function isFailureCode(
+  value: unknown,
+): value is GetInstallationEventsFailureCode {
+  return [
+    'SOURCE_NOT_CONFIGURED',
+    'ACCESS_DENIED',
+    'TIMEOUT',
+    'SOURCE_UNAVAILABLE',
+    'AIRCRAFT_AMBIGUOUS',
+    'TARGET_AMBIGUOUS',
+    'PARTIAL_RESULTS',
+    'TRUNCATED',
+    'SOURCE_CONFLICT',
+  ].includes(String(value));
 }
 
 function isValidSourceRecord(

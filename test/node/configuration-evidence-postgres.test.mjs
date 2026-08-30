@@ -36,6 +36,7 @@ const AIRCRAFT = {
   lineNumber: 1051,
 };
 const AS_OF = '2026-08-29T23:59:59.999Z';
+const EARLY_AS_OF = '2026-08-28T02:30:00.000Z';
 const AIMS2_TARGET = {
   kind: 'EQUIPMENT',
   equipmentKey: 'AIMS2',
@@ -47,7 +48,7 @@ const REPAIR_TARGET = {
 };
 
 test(
-  '0017 PostgreSQL persists versioned evidence, current CAS, idempotency, dependent STALE and owner RLS',
+  '0017 PostgreSQL preserves RLS, CAS, bi-temporal as-of, conflict and append-only evidence',
   { skip: !databaseUrl, concurrency: false },
   async () => {
     assertSafeIsolatedDatabase(databaseUrl);
@@ -78,6 +79,31 @@ test(
         target: AIMS2_TARGET,
         records: [equipmentRecord('INSTALL', 1), equipmentRecord('REMOVE', 4)],
         recordedAt: '2026-08-30T01:02:00.000Z',
+      });
+      const earlyAsOfInput = commitInput({
+        requestId: 'REQ-AIMS2-EARLY-AS-OF',
+        expectedRevision: 10,
+        assessmentAsOf: EARLY_AS_OF,
+        sourceRevision: 'SOURCE-AIMS2-EARLY-AS-OF-REV-1',
+        target: AIMS2_TARGET,
+        records: [equipmentRecord('INSTALL', 1)],
+        recordedAt: '2026-08-30T01:03:00.000Z',
+      });
+      const conflictInput = commitInput({
+        requestId: 'REQ-AIMS2-CONFLICT',
+        expectedRevision: 11,
+        sourceRevision: 'SOURCE-AIMS2-CONFLICT-REV-1',
+        target: AIMS2_TARGET,
+        records: [equipmentRecord('INSTALL', 6), equipmentRecord('REMOVE', 6)],
+        recordedAt: '2026-08-30T01:04:00.000Z',
+      });
+      const staleCasInput = commitInput({
+        requestId: 'REQ-AIMS2-STALE-CAS',
+        expectedRevision: 11,
+        sourceRevision: 'SOURCE-AIMS2-STALE-CAS-REV-1',
+        target: AIMS2_TARGET,
+        records: [equipmentRecord('INSTALL', 7)],
+        recordedAt: '2026-08-30T01:05:00.000Z',
       });
 
       await asActor(databaseUrl, ACTOR_ID, async (actorSql) => {
@@ -182,6 +208,45 @@ test(
           'EVALUATED',
         );
 
+        const earlyAsOf = await store.commit(earlyAsOfInput);
+        const conflict = await store.commit(conflictInput);
+        const persistedEarlyAsOf = await store.readSnapshot({
+          tenantId: TENANT_ID,
+          workItemId: WORK_ITEM_ID,
+          snapshotId: earlyAsOf.persisted.summary.snapshotId,
+        });
+        const currentAfterConflict = await store.readCurrent({
+          tenantId: TENANT_ID,
+          workItemId: WORK_ITEM_ID,
+        });
+        const historyAfterConflict = await store.listHistory({
+          tenantId: TENANT_ID,
+          workItemId: WORK_ITEM_ID,
+          limit: 20,
+        });
+
+        assert.equal(earlyAsOf.persisted.snapshot.assessmentAsOf, EARLY_AS_OF);
+        assert.equal(earlyAsOf.persisted.snapshot.facts[0].truth, 'TRUE');
+        assert.equal(persistedEarlyAsOf?.snapshot.assessmentAsOf, EARLY_AS_OF);
+        assert.equal(persistedEarlyAsOf?.snapshot.facts[0].truth, 'TRUE');
+        assert.equal(persistedEarlyAsOf?.summary.isCurrent, false);
+        assert.equal(conflict.persisted.snapshot.facts[0].truth, 'CONFLICT');
+        assert.equal(
+          currentAfterConflict?.summary.snapshotId,
+          conflict.persisted.summary.snapshotId,
+        );
+        assert.equal(currentAfterConflict?.summary.configurationRevision, 5);
+        assert.equal(currentAfterConflict?.snapshot.facts[0].truth, 'CONFLICT');
+        assert.equal(historyAfterConflict.length, 5);
+        assert.equal(
+          historyAfterConflict.filter((entry) => entry.isCurrent).length,
+          1,
+        );
+        await assert.rejects(
+          store.commit(staleCasInput),
+          (error) => error?.code === 'WORK_ITEM_CAS_CONFLICT',
+        );
+
         await assertAppendOnlyAndHeadBinding(actorSql, {
           firstSnapshotId: first.persisted.summary.snapshotId,
         });
@@ -204,8 +269,24 @@ test(
           }),
           [],
         );
+        assert.equal(
+          await store.readSnapshot({
+            tenantId: TENANT_ID,
+            workItemId: WORK_ITEM_ID,
+            snapshotId: snapshotIdForRequest(earlyAsOfInput.request.requestId),
+          }),
+          null,
+        );
+        assert.equal(
+          await store.readSnapshot({
+            tenantId: TENANT_ID,
+            workItemId: WORK_ITEM_ID,
+            snapshotId: snapshotIdForRequest(conflictInput.request.requestId),
+          }),
+          null,
+        );
         await assert.rejects(
-          store.commit({ ...thirdInput, expectedWorkItemRevision: 10 }),
+          store.commit({ ...conflictInput, expectedWorkItemRevision: 12 }),
           (error) =>
             error?.code === 'CANONICAL_WORK_ITEM_NOT_FOUND' &&
             error?.statusCode === 409,
@@ -228,6 +309,10 @@ function assertSafeIsolatedDatabase(value) {
     '/wiselink_configuration_evidence_0017_test',
     'PostgreSQL integration test requires the exact isolated database name',
   );
+}
+
+function snapshotIdForRequest(requestId) {
+  return `CONFIGURATION-SNAPSHOT:${requestId}`;
 }
 
 async function resetDatabase(sql) {
@@ -404,12 +489,13 @@ async function asActor(value, actorId, callback) {
 }
 
 function commitInput(input) {
+  const assessmentAsOf = input.assessmentAsOf ?? AS_OF;
   const query = {
     schemaVersion: 'wiselink.3_1.get_installation_events_query.v0.candidate',
     aircraft: structuredClone(AIRCRAFT),
     target: structuredClone(input.target),
     windowStart: null,
-    assessmentAsOf: AS_OF,
+    assessmentAsOf,
   };
   const projection = mapInstallationEventEvidence({
     query,
@@ -430,7 +516,7 @@ function commitInput(input) {
       requestId: input.requestId,
       expectedRevision: input.expectedRevision,
       aircraftIdentifier: 'B-2035',
-      assessmentAsOf: AS_OF,
+      assessmentAsOf,
       windowStart: null,
       targets: [structuredClone(input.target)],
       aircraft: structuredClone(AIRCRAFT),
@@ -438,7 +524,7 @@ function commitInput(input) {
     projections: [projection],
     snapshot: mapConfigurationSnapshot({
       aircraftAssetId: AIRCRAFT.assetId,
-      assessmentAsOf: AS_OF,
+      assessmentAsOf,
       projections: [projection],
     }),
     recordedAt: input.recordedAt,
