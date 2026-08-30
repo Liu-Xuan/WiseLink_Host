@@ -2,6 +2,7 @@ import type { CanonicalWorkItemProjection } from '@shared/api.interface';
 import type {
   BatchApplicabilityCandidateSet,
   BatchApplicabilityClusterConfirmationDecision,
+  BatchApplicabilityFleetHeadBinding,
   BatchApplicabilitySourceConditionAuthority,
 } from '@shared/batch-applicability.interface';
 import type { ApplicabilityAstNode } from '../assessment-workbench/applicability-fleet/applicabilityKleeneEngine';
@@ -32,12 +33,16 @@ export interface BatchApplicabilityTargetInput {
 export interface EvaluateBatchApplicabilityCandidateInput {
   actionAttemptId: string;
   workItem: CanonicalWorkItemProjection;
+  /** Fresh read from the canonical Host Fleet head port. */
+  currentFleetHead: BatchApplicabilityFleetHeadBinding;
   sourceCondition: BatchApplicabilitySourceConditionInput;
   targets: BatchApplicabilityTargetInput[];
 }
 
 export interface ConfirmBatchApplicabilityClusterInput {
   currentWorkItem: CanonicalWorkItemProjection;
+  /** Fresh read again at human confirmation time. */
+  currentFleetHead: BatchApplicabilityFleetHeadBinding;
   candidateSet: BatchApplicabilityCandidateSet;
   expectedWorkItemRevision: number;
   candidateClusterId: string;

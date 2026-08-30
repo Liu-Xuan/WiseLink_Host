@@ -1,30 +1,22 @@
 import { Injectable } from '@nestjs/common';
 
 import type {
-  BatchApplicabilityBlockingUnknown,
   BatchApplicabilityCandidateCluster,
   BatchApplicabilityCandidateSet,
   BatchApplicabilityClusterConfirmationCandidate,
-  BatchApplicabilityClusterEligibility,
+  BatchApplicabilityHostBinding,
   BatchApplicabilityMatrixItem,
-  BatchApplicabilityPredicateTraceNode,
-  BatchApplicabilityStatus,
-  BatchApplicabilityTruth,
 } from '@shared/batch-applicability.interface';
 import {
-  UNKNOWN,
-  evaluateWithTrace,
-  type ApplicabilityAstNode,
-  type ApplicabilityFleetSnapshot,
-  type BlockingUnknown,
-  type KleeneResult,
-  type KleeneTrace,
-} from '../assessment-workbench/applicability-fleet/applicabilityKleeneEngine';
-import { evaluateApplicabilityForAircraft } from '../assessment-workbench/applicability-fleet/applicabilityFleetEvaluator';
+  assertSingleBatchFleetHead,
+  freezeBatchHostBinding,
+  sameFleetHead,
+} from './batch-applicability-currentness';
 import {
-  resolveFleetSnapshot,
-  type FleetSnapshotResolution,
-} from '../assessment-workbench/applicability-fleet/fleetMasterData';
+  buildBatchClusters,
+  countBatchRows,
+  evaluateBatchTarget,
+} from './batch-applicability-evaluation';
 import type {
   BatchApplicabilitySourceConditionInput,
   BatchApplicabilityTargetInput,
@@ -40,6 +32,11 @@ export class BatchApplicabilityService {
     validateEvaluationInput(input);
     const workItem = input.workItem;
     const sourceCondition = input.sourceCondition;
+    const hostBinding: BatchApplicabilityHostBinding = freezeBatchHostBinding({
+      workItem,
+      currentFleetHead: input.currentFleetHead,
+    });
+    assertSingleBatchFleetHead(input.targets, hostBinding.frozenFleetHead);
     const candidateSetId: string = [
       'BATCH-APPLICABILITY',
       requiredText(input.actionAttemptId, 'BATCH_ACTION_ATTEMPT_ID_REQUIRED'),
@@ -53,14 +50,15 @@ export class BatchApplicabilityService {
         target: BatchApplicabilityTargetInput,
         index: number,
       ): BatchApplicabilityMatrixItem =>
-        evaluateTarget({
+        evaluateBatchTarget({
           target,
           index,
           candidateSetId,
           sourceCondition,
+          hostBinding,
         }),
     );
-    const clusters: BatchApplicabilityCandidateCluster[] = buildClusters(
+    const clusters: BatchApplicabilityCandidateCluster[] = buildBatchClusters(
       candidateSetId,
       sourceCondition.sourceConditionId,
       unclusteredRows,
@@ -90,10 +88,11 @@ export class BatchApplicabilityService {
         sourceConditionAuthority: sourceCondition.authority,
         sourceRefIds: [...sourceCondition.sourceRefIds],
         target: structuredClone(sourceCondition.target),
+        hostBinding: structuredClone(hostBinding),
       },
       matrix,
       candidateClusters: clusters,
-      counts: countRows(matrix),
+      counts: countBatchRows(matrix),
       authority: {
         outputAuthority: 'CANDIDATE_ONLY',
         modelCanSetFinalApplicability: false,
@@ -219,250 +218,6 @@ export class BatchApplicabilityService {
   }
 }
 
-function evaluateTarget(input: {
-  target: BatchApplicabilityTargetInput;
-  index: number;
-  candidateSetId: string;
-  sourceCondition: BatchApplicabilitySourceConditionInput;
-}): BatchApplicabilityMatrixItem {
-  const aircraftIdentifier: string = requiredText(
-    input.target.aircraftIdentifier,
-    'BATCH_AIRCRAFT_IDENTIFIER_REQUIRED',
-  );
-  const asOf: string = requiredIsoDate(
-    input.target.asOf,
-    'BATCH_AS_OF_INVALID',
-  );
-  const evaluation = evaluateApplicabilityForAircraft({
-    dataSource: input.target.fleetMasterData,
-    aircraftNumber: aircraftIdentifier,
-    asOf,
-    applicabilityAst: input.sourceCondition.applicabilityAst,
-  });
-  const resolution: FleetSnapshotResolution = resolveFleetSnapshot({
-    dataSource: input.target.fleetMasterData,
-    aircraftNumber: aircraftIdentifier,
-    asOf,
-  });
-  const conflict: boolean = evaluation.blockingUnknowns.some(
-    (unknown: BlockingUnknown): boolean =>
-      unknown.kind === 'conflicting_fleet_fact',
-  );
-  const truth: BatchApplicabilityTruth = toTruth(evaluation.kleeneResult);
-  const status: BatchApplicabilityStatus = conflict
-    ? 'CONFLICT'
-    : evaluation.status === 'EVALUATED'
-      ? 'EVALUATED'
-      : 'WAITING_INPUT';
-  const clusterEligibility: BatchApplicabilityClusterEligibility =
-    toClusterEligibility(status, truth);
-  const predicateNodes: BatchApplicabilityPredicateTraceNode[] =
-    resolution.snapshot
-      ? collectPredicateTrace(
-          input.sourceCondition.applicabilityAst,
-          resolution.snapshot,
-        )
-      : [];
-  return {
-    matrixItemId: `${input.candidateSetId}:ITEM:${input.index + 1}`,
-    aircraftIdentifier,
-    resolvedAircraftNumber:
-      typeof resolution.snapshot?.context?.aircraftNumber === 'string'
-        ? resolution.snapshot.context.aircraftNumber
-        : null,
-    assetId: evaluation.sourceProvenance.assetId,
-    assetVersionId: evaluation.sourceProvenance.assetVersionId,
-    asOf,
-    truth,
-    status,
-    clusterEligibility,
-    candidateClusterId: null,
-    sourceRefIds: [...input.sourceCondition.sourceRefIds],
-    fleetSourceRefs: structuredClone(evaluation.sourceProvenance.sourceRefs),
-    trace: {
-      evaluator: 'CANONICAL_HOST_KLEENE_EVALUATOR',
-      fleetResolver: 'CANONICAL_FLEET_MASTER_DATA_RESOLVER',
-      fleetResolution: conflict
-        ? 'CONFLICT'
-        : resolution.status === 'RESOLVED'
-          ? 'RESOLVED'
-          : 'WAITING_INPUT',
-      sourceCurrentness: structuredClone(
-        evaluation.sourceProvenance.sourceCurrentness,
-      ),
-      predicateNodes,
-      blockingUnknowns: structuredClone(
-        evaluation.blockingUnknowns,
-      ) as BatchApplicabilityBlockingUnknown[],
-    },
-  };
-}
-
-function collectPredicateTrace(
-  ast: ApplicabilityAstNode | null,
-  snapshot: ApplicabilityFleetSnapshot,
-): BatchApplicabilityPredicateTraceNode[] {
-  if (ast === null) {
-    const trace: KleeneTrace = evaluateWithTrace(null, snapshot, null);
-    return [toPredicateTraceNode('root', 'missing_expression', null, trace)];
-  }
-  const nodes: BatchApplicabilityPredicateTraceNode[] = [];
-  collectPredicateTraceNode(ast, snapshot, 'root', nodes);
-  return nodes;
-}
-
-function collectPredicateTraceNode(
-  ast: ApplicabilityAstNode,
-  snapshot: ApplicabilityFleetSnapshot,
-  path: string,
-  nodes: BatchApplicabilityPredicateTraceNode[],
-): void {
-  const trace: KleeneTrace = evaluateWithTrace(ast, snapshot, null);
-  nodes.push(toPredicateTraceNode(path, ast.type, ast, trace));
-  if (ast.type === 'and' || ast.type === 'or') {
-    ast.children.forEach((child: ApplicabilityAstNode, index: number): void =>
-      collectPredicateTraceNode(
-        child,
-        snapshot,
-        `${path}.children[${index}]`,
-        nodes,
-      ),
-    );
-  } else if (ast.type === 'not') {
-    collectPredicateTraceNode(ast.child, snapshot, `${path}.child`, nodes);
-  }
-}
-
-function toPredicateTraceNode(
-  path: string,
-  nodeType: BatchApplicabilityPredicateTraceNode['nodeType'],
-  ast: ApplicabilityAstNode | null,
-  trace: KleeneTrace,
-): BatchApplicabilityPredicateTraceNode {
-  const predicate =
-    ast?.type === 'assert'
-      ? {
-          property: ast.property,
-          operator: ast.operator,
-          value: structuredClone(ast.value),
-          qualifier: ast.qualifier ?? null,
-        }
-      : null;
-  return {
-    path,
-    nodeType,
-    truth: toTruth(trace.result),
-    predicate,
-    blockingUnknowns: structuredClone(
-      trace.blockingUnknowns,
-    ) as BatchApplicabilityBlockingUnknown[],
-    shortCircuitReason: trace.shortCircuitReason ?? null,
-  };
-}
-
-function buildClusters(
-  candidateSetId: string,
-  sourceConditionId: string,
-  rows: BatchApplicabilityMatrixItem[],
-): BatchApplicabilityCandidateCluster[] {
-  const clusters: BatchApplicabilityCandidateCluster[] = [];
-  for (const truth of ['TRUE', 'FALSE'] as const) {
-    const members: BatchApplicabilityMatrixItem[] = rows.filter(
-      (row: BatchApplicabilityMatrixItem): boolean =>
-        row.status === 'EVALUATED' && row.truth === truth,
-    );
-    if (members.length === 0) continue;
-    clusters.push({
-      candidateClusterId: `${candidateSetId}:CLUSTER:${truth}`,
-      sourceConditionId,
-      truth,
-      status: 'EVALUATED',
-      memberMatrixItemIds: members.map(
-        (row: BatchApplicabilityMatrixItem): string => row.matrixItemId,
-      ),
-      aircraftIdentifiers: members.map(
-        (row: BatchApplicabilityMatrixItem): string => row.aircraftIdentifier,
-      ),
-      asOfValues: uniqueStrings(
-        members.map((row: BatchApplicabilityMatrixItem): string => row.asOf),
-      ),
-      humanConfirmation: 'PENDING',
-    });
-  }
-  return clusters;
-}
-
-function countRows(
-  rows: BatchApplicabilityMatrixItem[],
-): BatchApplicabilityCandidateSet['counts'] {
-  const clustered: number = rows.filter(
-    (row: BatchApplicabilityMatrixItem): boolean =>
-      row.clusterEligibility === 'ELIGIBLE_EVALUATED_TRUE' ||
-      row.clusterEligibility === 'ELIGIBLE_EVALUATED_FALSE',
-  ).length;
-  return {
-    total: rows.length,
-    true: count(
-      rows,
-      (row: BatchApplicabilityMatrixItem): boolean => row.truth === 'TRUE',
-    ),
-    false: count(
-      rows,
-      (row: BatchApplicabilityMatrixItem): boolean => row.truth === 'FALSE',
-    ),
-    unknown: count(
-      rows,
-      (row: BatchApplicabilityMatrixItem): boolean => row.truth === 'UNKNOWN',
-    ),
-    evaluated: count(
-      rows,
-      (row: BatchApplicabilityMatrixItem): boolean =>
-        row.status === 'EVALUATED',
-    ),
-    waitingInput: count(
-      rows,
-      (row: BatchApplicabilityMatrixItem): boolean =>
-        row.status === 'WAITING_INPUT',
-    ),
-    conflict: count(
-      rows,
-      (row: BatchApplicabilityMatrixItem): boolean => row.status === 'CONFLICT',
-    ),
-    stale: count(
-      rows,
-      (row: BatchApplicabilityMatrixItem): boolean => row.status === 'STALE',
-    ),
-    clustered,
-    excludedFromClustering: rows.length - clustered,
-  };
-}
-
-function count(
-  rows: BatchApplicabilityMatrixItem[],
-  predicate: (row: BatchApplicabilityMatrixItem) => boolean,
-): number {
-  return rows.filter(predicate).length;
-}
-
-function toTruth(result: KleeneResult | null): BatchApplicabilityTruth {
-  if (result === true) return 'TRUE';
-  if (result === false) return 'FALSE';
-  return 'UNKNOWN';
-}
-
-function toClusterEligibility(
-  status: BatchApplicabilityStatus,
-  truth: BatchApplicabilityTruth,
-): BatchApplicabilityClusterEligibility {
-  if (status === 'CONFLICT') return 'EXCLUDED_CONFLICT';
-  if (status === 'STALE') return 'EXCLUDED_STALE';
-  if (truth === 'UNKNOWN') return 'EXCLUDED_UNKNOWN';
-  if (status !== 'EVALUATED') return 'EXCLUDED_NOT_EVALUATED';
-  return truth === 'TRUE'
-    ? 'ELIGIBLE_EVALUATED_TRUE'
-    : 'ELIGIBLE_EVALUATED_FALSE';
-}
-
 function validateEvaluationInput(
   input: EvaluateBatchApplicabilityCandidateInput,
 ): void {
@@ -561,24 +316,31 @@ function validateConfirmationInput(
   ) {
     throw domainError('BATCH_CONFIRMATION_WORK_ITEM_REVISION_CONFLICT');
   }
+  if (
+    !sameFleetHead(source.hostBinding.frozenFleetHead, input.currentFleetHead)
+  ) {
+    throw domainError('BATCH_CONFIRMATION_FLEET_HEAD_CHANGED');
+  }
+  const currentHostBinding: BatchApplicabilityHostBinding =
+    freezeBatchHostBinding({
+      workItem,
+      currentFleetHead: input.currentFleetHead,
+    });
+  if (
+    source.hostBinding.status !== 'CURRENT' ||
+    currentHostBinding.status !== 'CURRENT' ||
+    source.hostBinding.applicabilityInput.bindingRevision !==
+      currentHostBinding.applicabilityInput.bindingRevision ||
+    source.hostBinding.controlledSelection.selectionRevision !==
+      currentHostBinding.controlledSelection.selectionRevision
+  ) {
+    throw domainError('BATCH_CONFIRMATION_HOST_CURRENTNESS_STALE');
+  }
 }
 
 function requiredText(value: string, code: string): string {
   if (typeof value !== 'string' || !value.trim()) throw domainError(code);
   return value.trim();
-}
-
-function requiredIsoDate(value: string, code: string): string {
-  const text: string = requiredText(value, code);
-  if (!/^\d{4}-\d{2}-\d{2}$/u.test(text)) throw domainError(code);
-  const timestamp: number = Date.parse(`${text}T00:00:00.000Z`);
-  if (
-    !Number.isFinite(timestamp) ||
-    new Date(timestamp).toISOString().slice(0, 10) !== text
-  ) {
-    throw domainError(code);
-  }
-  return text;
 }
 
 function requiredIsoTimestamp(value: string, code: string): string {

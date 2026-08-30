@@ -12,6 +12,34 @@ export type BatchApplicabilitySourceConditionAuthority =
   | 'SOURCE_ASSERTED'
   | 'NORMALIZED_CANDIDATE';
 
+export interface BatchApplicabilityFleetHeadBinding {
+  sourceSnapshotId: string;
+  sourceRevisionKey: string;
+  authorityRevision: string;
+  sourceAsOf: string;
+}
+
+export type BatchApplicabilityHostCurrentnessStatus =
+  | 'CURRENT'
+  | 'STALE'
+  | 'CONFLICT'
+  | 'UNVERIFIED';
+
+export interface BatchApplicabilityHostBinding {
+  status: BatchApplicabilityHostCurrentnessStatus;
+  applicabilityInput: {
+    currentness: BatchApplicabilityHostCurrentnessStatus;
+    bindingRevision: string;
+    selectionRevision: string;
+  };
+  controlledSelection: {
+    currentness: 'CURRENT' | 'STALE';
+    selectionRevision: string;
+  };
+  frozenFleetHead: BatchApplicabilityFleetHeadBinding;
+  staleReasons: string[];
+}
+
 export interface BatchApplicabilityBlockingUnknown {
   kind: string;
   reason?: string;
@@ -55,6 +83,10 @@ export interface BatchApplicabilityMatrixItemTrace {
     status: 'CURRENT' | 'STALE' | 'CONFLICT' | 'UNVERIFIED';
     sourceAsOf: string | null;
     reason: string | null;
+  };
+  hostCurrentness: {
+    status: BatchApplicabilityHostCurrentnessStatus;
+    staleReasons: string[];
   };
   predicateNodes: BatchApplicabilityPredicateTraceNode[];
   blockingUnknowns: BatchApplicabilityBlockingUnknown[];
@@ -111,6 +143,7 @@ export interface BatchApplicabilityCandidateSet {
       kind: 'document' | 'content_unit' | 'source_element';
       targetId: string | null;
     };
+    hostBinding: BatchApplicabilityHostBinding;
   };
   matrix: BatchApplicabilityMatrixItem[];
   candidateClusters: BatchApplicabilityCandidateCluster[];

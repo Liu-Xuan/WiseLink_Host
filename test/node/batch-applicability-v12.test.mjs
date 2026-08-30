@@ -43,13 +43,25 @@ const [manifest, assets, aliases, baseConfigurationFacts, real737Package] =
     readJson(REAL_737_PACKAGE_PATH),
   ]);
 
+const currentFleetHead = {
+  sourceSnapshotId: manifest.sourceSnapshotId,
+  sourceRevisionKey: manifest.sourceRevisionKey,
+  authorityRevision: '1',
+  sourceAsOf: manifest.sourceAsOf,
+};
+const baseFleetMasterData = buildFleetMasterData({
+  manifest,
+  assets,
+  aliases,
+  controlledFacts: baseConfigurationFacts,
+});
 const fleetMasterData = buildFleetMasterData({
   manifest,
   assets,
   aliases,
   controlledFacts: buildControlledConfigurationFacts(),
 });
-const workItem = buildWorkItem(real737Package.packageId);
+const workItem = buildWorkItem(real737Package, baseFleetMasterData);
 const sourceCondition = buildSourceCondition();
 const service = new BatchApplicabilityService();
 
@@ -62,7 +74,15 @@ test('uses the actual 587/2579 Fleet asset and alias snapshot plus frozen 737 So
   assert.equal(assets.length, 587);
   assert.equal(aliases.length, 2579);
   assert.equal(baseConfigurationFacts.length, 0);
+  assert.equal(baseFleetMasterData.facts.length, 0);
   assert.equal(fleetMasterData.assets.length, 587);
+  assert.ok(
+    fleetMasterData.facts.every(
+      (fact) =>
+        fact.sourceRef.sourceTable === 'test_controlled_configuration_fact',
+    ),
+    'controlled test facts must never masquerade as imported Fleet facts',
+  );
   assert.equal(real737Package.packageId, EXPECTED_PACKAGE_ID);
   assert.deepEqual(real737Package.applicability, {
     assignments: [],
@@ -124,16 +144,16 @@ test('runs one source condition across AircraftAsset/asOf targets with trace and
   const candidateSet = evaluateRealMatrix();
 
   assert.deepEqual(candidateSet.counts, {
-    total: 6,
+    total: 7,
     true: 2,
     false: 2,
-    unknown: 2,
+    unknown: 3,
     evaluated: 4,
     waitingInput: 1,
     conflict: 1,
-    stale: 0,
+    stale: 1,
     clustered: 4,
-    excludedFromClustering: 2,
+    excludedFromClustering: 3,
   });
   assert.equal(
     candidateSet.source.sourceConditionAuthority,
@@ -143,6 +163,11 @@ test('runs one source condition across AircraftAsset/asOf targets with trace and
     EFFECTIVITY_SOURCE_REF,
     PART_SOURCE_REF,
   ]);
+  assert.deepEqual(
+    candidateSet.source.hostBinding.frozenFleetHead,
+    currentFleetHead,
+  );
+  assert.equal(candidateSet.source.hostBinding.status, 'CURRENT');
   assert.deepEqual(candidateSet.authority, {
     outputAuthority: 'CANDIDATE_ONLY',
     modelCanSetFinalApplicability: false,
@@ -154,12 +179,24 @@ test('runs one source condition across AircraftAsset/asOf targets with trace and
     createsActionReadiness: false,
   });
 
-  const earlyB1397 = row(candidateSet, 'B-1397', '2025-12-31');
+  const staleB1397 = row(candidateSet, 'B-1397', '2026-06-04');
+  const earlyB1397 = row(candidateSet, 'B-1397', '2026-06-05');
   const currentB1397 = row(candidateSet, 'B-1397', '2026-08-30');
   const b1392 = row(candidateSet, 'B-1392', '2026-08-30');
   const b5043 = row(candidateSet, 'B-5043', '2026-08-30');
   const b2035Alias = row(candidateSet, 'WE160', '2026-08-30');
   const conflictB1398 = row(candidateSet, 'B-1398', '2026-08-30');
+
+  assertMatrixResult(staleB1397, {
+    truth: 'UNKNOWN',
+    status: 'STALE',
+    eligibility: 'EXCLUDED_STALE',
+    clusterId: null,
+  });
+  assert.deepEqual(staleB1397.trace.hostCurrentness, {
+    status: 'STALE',
+    staleReasons: ['ASSESSMENT_AS_OF_BEFORE_FLEET_SOURCE_AS_OF'],
+  });
 
   assertMatrixResult(earlyB1397, {
     truth: 'UNKNOWN',
@@ -226,6 +263,7 @@ test('runs one source condition across AircraftAsset/asOf targets with trace and
     ),
   );
   assert.equal(clusteredIds.has(earlyB1397.matrixItemId), false);
+  assert.equal(clusteredIds.has(staleB1397.matrixItemId), false);
   assert.equal(clusteredIds.has(conflictB1398.matrixItemId), false);
   for (const matrixItem of candidateSet.matrix) {
     assert.equal(matrixItem.trace.evaluator, 'CANONICAL_HOST_KLEENE_EVALUATOR');
@@ -243,6 +281,91 @@ test('runs one source condition across AircraftAsset/asOf targets with trace and
   }
 });
 
+test('keeps a stale Host applicability input stale and unclustered on the real 587/2579/0 Fleet', () => {
+  const staleWorkItem = structuredClone(workItem);
+  staleWorkItem.applicabilityInput.currentness = 'STALE';
+  const candidateSet = service.evaluateCandidate({
+    actionAttemptId: 'ATTEMPT-R09-V12-STALE-001',
+    workItem: staleWorkItem,
+    currentFleetHead,
+    sourceCondition,
+    targets: [
+      {
+        aircraftIdentifier: 'B-1397',
+        asOf: '2026-08-30',
+        fleetMasterData: baseFleetMasterData,
+      },
+      {
+        aircraftIdentifier: 'WE160',
+        asOf: '2026-08-30',
+        fleetMasterData: baseFleetMasterData,
+      },
+    ],
+  });
+
+  assert.equal(baseFleetMasterData.assets.length, 587);
+  assert.equal(baseFleetMasterData.facts.length, 0);
+  assert.equal(candidateSet.source.hostBinding.status, 'STALE');
+  assert.deepEqual(candidateSet.candidateClusters, []);
+  assert.deepEqual(
+    candidateSet.matrix.map((matrixItem) => ({
+      truth: matrixItem.truth,
+      status: matrixItem.status,
+      eligibility: matrixItem.clusterEligibility,
+      candidateClusterId: matrixItem.candidateClusterId,
+    })),
+    [
+      {
+        truth: 'UNKNOWN',
+        status: 'STALE',
+        eligibility: 'EXCLUDED_STALE',
+        candidateClusterId: null,
+      },
+      {
+        truth: 'FALSE',
+        status: 'STALE',
+        eligibility: 'EXCLUDED_STALE',
+        candidateClusterId: null,
+      },
+    ],
+  );
+  assert.ok(
+    candidateSet.matrix.every((matrixItem) =>
+      matrixItem.trace.hostCurrentness.staleReasons.includes(
+        'APPLICABILITY_INPUT_CURRENTNESS_STALE',
+      ),
+    ),
+  );
+});
+
+test('rejects mixed Fleet revisions as one batch before clustering on the real 587/2579/0 Fleet', () => {
+  const differentRevisionFleet = structuredClone(baseFleetMasterData);
+  differentRevisionFleet.sourceRevisionKey = `${differentRevisionFleet.sourceRevisionKey}-DIFFERENT`;
+
+  assert.throws(
+    () =>
+      service.evaluateCandidate({
+        actionAttemptId: 'ATTEMPT-R09-V12-MIXED-FLEET-001',
+        workItem,
+        currentFleetHead,
+        sourceCondition,
+        targets: [
+          {
+            aircraftIdentifier: 'B-1397',
+            asOf: '2026-08-30',
+            fleetMasterData: baseFleetMasterData,
+          },
+          {
+            aircraftIdentifier: 'WE160',
+            asOf: '2026-08-30',
+            fleetMasterData: differentRevisionFleet,
+          },
+        ],
+      }),
+    errorWithCode('BATCH_FLEET_SOURCE_MIXED'),
+  );
+});
+
 test('human confirmation is revision/source-bound candidate output, never engineering approval', () => {
   const candidateSet = evaluateRealMatrix();
   const trueCluster = candidateSet.candidateClusters.find(
@@ -250,6 +373,7 @@ test('human confirmation is revision/source-bound candidate output, never engine
   );
   const confirmation = service.confirmCluster({
     currentWorkItem: workItem,
+    currentFleetHead,
     candidateSet,
     expectedWorkItemRevision: workItem.revision,
     candidateClusterId: trueCluster.candidateClusterId,
@@ -272,11 +396,33 @@ test('human confirmation is revision/source-bound candidate output, never engine
   });
   assert.equal(Object.hasOwn(confirmation, 'engineeringApproval'), false);
 
+  const changedFleetHead = {
+    ...currentFleetHead,
+    sourceRevisionKey: `${currentFleetHead.sourceRevisionKey}-NEXT`,
+  };
+  assert.throws(
+    () =>
+      service.confirmCluster({
+        currentWorkItem: workItem,
+        currentFleetHead: changedFleetHead,
+        candidateSet,
+        expectedWorkItemRevision: workItem.revision,
+        candidateClusterId: trueCluster.candidateClusterId,
+        decision: 'CONFIRM_CLUSTER_CANDIDATE',
+        confirmedByActorId: 'actor-engineer-001',
+        reason: 'A changed Fleet head invalidates the frozen candidate batch.',
+        confirmedAt: '2026-08-30T10:00:00.000Z',
+        validUntil: '2026-09-30T10:00:00.000Z',
+      }),
+    errorWithCode('BATCH_CONFIRMATION_FLEET_HEAD_CHANGED'),
+  );
+
   const falseCluster = candidateSet.candidateClusters.find(
     (cluster) => cluster.truth === 'FALSE',
   );
   const rejection = service.confirmCluster({
     currentWorkItem: workItem,
+    currentFleetHead,
     candidateSet,
     expectedWorkItemRevision: workItem.revision,
     candidateClusterId: falseCluster.candidateClusterId,
@@ -298,6 +444,7 @@ test('human confirmation is revision/source-bound candidate output, never engine
     () =>
       service.confirmCluster({
         currentWorkItem: staleWorkItem,
+        currentFleetHead,
         candidateSet,
         expectedWorkItemRevision: staleWorkItem.revision,
         candidateClusterId: trueCluster.candidateClusterId,
@@ -310,11 +457,12 @@ test('human confirmation is revision/source-bound candidate output, never engine
     errorWithCode('BATCH_CONFIRMATION_WORK_ITEM_REVISION_CONFLICT'),
   );
 
-  const unknownRow = row(candidateSet, 'B-1397', '2025-12-31');
+  const unknownRow = row(candidateSet, 'B-1397', '2026-06-05');
   assert.throws(
     () =>
       service.confirmCluster({
         currentWorkItem: workItem,
+        currentFleetHead,
         candidateSet,
         expectedWorkItemRevision: workItem.revision,
         candidateClusterId: unknownRow.matrixItemId,
@@ -336,6 +484,7 @@ test('human confirmation is revision/source-bound candidate output, never engine
     () =>
       service.confirmCluster({
         currentWorkItem: workItem,
+        currentFleetHead,
         candidateSet: tamperedSet,
         expectedWorkItemRevision: workItem.revision,
         candidateClusterId: tamperedTrueCluster.candidateClusterId,
@@ -353,11 +502,17 @@ function evaluateRealMatrix() {
   return service.evaluateCandidate({
     actionAttemptId: 'ATTEMPT-R09-V12-BATCH-001',
     workItem,
+    currentFleetHead,
     sourceCondition,
     targets: [
       {
         aircraftIdentifier: 'B-1397',
-        asOf: '2025-12-31',
+        asOf: '2026-06-04',
+        fleetMasterData,
+      },
+      {
+        aircraftIdentifier: 'B-1397',
+        asOf: '2026-06-05',
         fleetMasterData,
       },
       {
@@ -426,7 +581,12 @@ function buildSourceCondition() {
   };
 }
 
-function buildWorkItem(packageId) {
+function buildWorkItem(realPackage, projectionFleet) {
+  const packageArtifact = realPackage.artifacts.find(
+    (artifact) => artifact.role === 'structured_parse_package',
+  );
+  const selectionRevision =
+    'work-item:WI-R09-V12-BATCH-001:applicability-selection:11';
   return {
     schemaVersion: 'wiselink.3_1.canonical_work_item_projection.v0.candidate',
     workItemId: 'WI-R09-V12-BATCH-001',
@@ -435,7 +595,40 @@ function buildWorkItem(packageId) {
     source: {
       documentVersionId: 'DV-737-34-3830-ORIGINAL-ISSUE',
     },
-    package: { packageId },
+    package: {
+      packageId: realPackage.packageId,
+      contentHash: realPackage.integrity.contentHash,
+      artifact: { sha256: packageArtifact.sha256 },
+    },
+    applicabilityControlledSelection: {
+      schemaVersion: 'wiselink.3_1.controlled_applicability_selection.v1',
+      selectionRevision,
+      currentness: 'CURRENT',
+      documentVersionId: 'DV-737-34-3830-ORIGINAL-ISSUE',
+      aircraftIdentifier: 'B-1397',
+      asOf: '2026-08-30',
+      fleetSourceSnapshotId: currentFleetHead.sourceSnapshotId,
+      fleetSourceRevisionKey: currentFleetHead.sourceRevisionKey,
+      fleetAuthorityRevision: currentFleetHead.authorityRevision,
+      fleetSourceAsOf: currentFleetHead.sourceAsOf,
+    },
+    applicabilityInput: {
+      schemaVersion: 'wiselink.3_1.applicability_input_projection.v1',
+      applicabilityContextRef:
+        'host-applicability-context:WI-R09-V12-BATCH-001',
+      workItemId: 'WI-R09-V12-BATCH-001',
+      documentVersionId: 'DV-737-34-3830-ORIGINAL-ISSUE',
+      sourcePackageId: realPackage.packageId,
+      sourcePackageContentHash: realPackage.integrity.contentHash,
+      sourcePackageArtifactSha256: packageArtifact.sha256,
+      targetBindingHash: 'sha256:test-controlled-target-binding',
+      selectionRevision,
+      bindingRevision: 'host-applicability:test-current-binding',
+      currentness: 'CURRENT',
+      aircraftNumber: 'B-1397',
+      assessmentAsOf: '2026-08-30',
+      fleetMasterData: projectionFleet,
+    },
   };
 }
 
@@ -491,7 +684,7 @@ function buildControlledConfigurationFacts() {
     property: 'pnInstalled',
     qualifier: '10-62225-004',
     value,
-    validAsOf: '2026-01-01',
+    validAsOf: '2026-07-01',
     sourceRef: sourceRef(factId),
     recordHash: `sha256:test-controlled-${factId}`,
   });
