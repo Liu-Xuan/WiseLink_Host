@@ -1,6 +1,8 @@
 import { access, copyFile, cp, mkdir, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
+import { copyPinnedPdfOcrRuntime } from './lib/pdf-ocr-runtime-deployment.mjs';
+
 const root = resolve(import.meta.dirname, '..');
 const source = resolve(root, 'config/document-family-adapters');
 const target = resolve(root, 'dist/config/document-family-adapters');
@@ -80,26 +82,10 @@ const ocrRuntimeManifestSource = resolve(
 );
 let copiedOcrRuntime = null;
 if (ocrRuntimeSource) {
-  const absoluteOcrRuntimeSource = resolve(ocrRuntimeSource);
-  await access(resolve(absoluteOcrRuntimeSource, 'manifest.json'));
-  await access(resolve(absoluteOcrRuntimeSource, 'bin/pdftoppm'));
-  await access(resolve(absoluteOcrRuntimeSource, 'bin/tesseract'));
-  await access(
-    resolve(absoluteOcrRuntimeSource, 'share/tessdata/eng.traineddata'),
-  );
-  await access(
-    resolve(absoluteOcrRuntimeSource, 'share/tessdata/chi_sim.traineddata'),
-  );
-  await rm(ocrRuntimeTarget, { recursive: true, force: true });
-  await mkdir(resolve(ocrRuntimeTarget, '..'), { recursive: true });
-  await cp(absoluteOcrRuntimeSource, ocrRuntimeTarget, {
-    recursive: true,
-    force: true,
-  });
-  copiedOcrRuntime = {
-    source: absoluteOcrRuntimeSource,
+  copiedOcrRuntime = await copyPinnedPdfOcrRuntime({
+    source: ocrRuntimeSource,
     target: ocrRuntimeTarget,
-  };
+  });
 } else {
   // deleteOutDir is intentionally false for this app. Remove any runtime left
   // by an earlier enabled build so an unset deployment input can never inherit

@@ -103,7 +103,8 @@ describe('professional-input PDF runtime security pin', () => {
     expect(runnerSource).toContain('isEvalSupported: false');
     expect(runnerSource).toContain('enableScripting: false');
     expect(runnerSource).not.toMatch(/\.render\s*\(/u);
-    expect(runnerSource).not.toContain('getViewport(');
+    expect(runnerSource).toContain('const viewport = page.getViewport({');
+    expect(runnerSource.match(/\.getViewport\s*\(/gu)).toHaveLength(1);
     expect(runnerSource).not.toContain('canvasContext');
   });
 });

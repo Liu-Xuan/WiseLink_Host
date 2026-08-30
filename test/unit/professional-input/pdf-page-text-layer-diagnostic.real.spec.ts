@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 
 import { runProfessionalInputPipeline } from '../../../server/modules/professional-input/builders/professional-input-pipeline';
 import { PdfjsDistLayoutExtractor } from '../../../server/modules/professional-input/parser/pdfjs-dist-layout-extractor.adapter';
+import { PdfjsOcrCompositeLayoutExtractor } from '../../../server/modules/professional-input/parser/pdfjs-ocr-composite-layout-extractor.adapter';
 import { ProfessionalInputPureError } from '../../../server/modules/professional-input/pure/professional-input-pure.error';
 import { Frozen2CandidateReaderService } from '../../../server/modules/unified-reader/frozen2-candidate-reader.service';
 import { PythonU0FullPackageValidatorAdapter } from '../../../server/modules/unified-reader/python-u0-full-package-validator.adapter';
@@ -16,11 +17,15 @@ const MIXED_PATH =
   'Airworthiness+Directive+Status+Letter+Delivery+07+26 226A.pdf';
 const LOW_TEXT_RASTER_PATH = `${UPLOADS_ROOT}/AD/AD2020-24-02/AD2020-24-02.pdf`;
 const BOEING_RASTER_ROUNDING_PATH =
-  `${UPLOADS_ROOT}/SB/机身/BOEING/2026/202605/` +
-  '737-34-3830 Original.pdf';
+  `${UPLOADS_ROOT}/SB/机身/BOEING/2026/202605/` + '737-34-3830 Original.pdf';
 const DIGITAL_PATH = `${UPLOADS_ROOT}/FTD/777-FTD-31-21002_Doc_09262025.pdf`;
+const OCR_RUNTIME_ROOT = process.env.WL31_PDF_OCR_RUNTIME_ROOT?.trim();
 const describeActualPdf =
   process.env.WL31_RUN_REAL_PDF_TEXT_LAYER_DIAGNOSTICS === '1'
+    ? describe
+    : describe.skip;
+const describeActualOcr =
+  process.env.WL31_RUN_REAL_PDF_OCR === '1' && OCR_RUNTIME_ROOT
     ? describe
     : describe.skip;
 
@@ -99,9 +104,7 @@ describeActualPdf('actual PDF page text-layer diagnostics', () => {
     expect(visualPages).toEqual([47, 48, 49, 50, 51, 52, 53]);
     expect(visualRatios[visualPages.indexOf(48)]).toBeGreaterThanOrEqual(0.25);
     expect(details).toEqual(
-      expect.arrayContaining([
-        expect.stringMatching(/^48:textChars=2;/u),
-      ]),
+      expect.arrayContaining([expect.stringMatching(/^48:textChars=2;/u)]),
     );
   });
 
@@ -187,6 +190,98 @@ describeActualPdf('actual PDF page text-layer diagnostics', () => {
     expect(
       readback.queryResults.every((result) => result.sourceRefIds.length > 0),
     ).toBe(true);
+  });
+});
+
+describeActualOcr('actual PDF composite OCR materialization', () => {
+  jest.setTimeout(180_000);
+
+  it('preserves CAAC certificate and eligibility semantics with granular page-1 refs', async () => {
+    const bytes = await actualBytes(
+      FULL_SCAN_PATH,
+      '26eb990db1df1745b25600252bce1175879447367d5b05999481cbe290025c31',
+    );
+    const pipeline = runProfessionalInputPipeline(
+      pipelineInput(bytes, '2233000-916_07351_20230322'),
+      {
+        extractor: PdfjsOcrCompositeLayoutExtractor.withOcrRuntime({
+          runtimeRoot: OCR_RUNTIME_ROOT,
+        }),
+      },
+    );
+
+    expect(
+      pipeline.layout.pageTextLayerDiagnostics.map((diagnostic) => ({
+        page: diagnostic.page,
+        status: diagnostic.status,
+        ocrStatus: diagnostic.ocrCoverage?.status,
+      })),
+    ).toEqual([
+      { page: 1, status: 'PRESENT', ocrStatus: 'OCR_COVERED' },
+      { page: 2, status: 'PRESENT', ocrStatus: 'OCR_COVERED' },
+    ]);
+
+    const reader = new Frozen2CandidateReaderService();
+    for (const expectedText of ['2023-GHA-CAAC-02162', 'B737']) {
+      const sourceUnit = pipeline.unitSet.units.find((unit) =>
+        unit.text.includes(expectedText),
+      );
+      expect(sourceUnit).toBeDefined();
+      const boundRefs = sourceUnit?.sourceRefIds.map((sourceRefId) =>
+        pipeline.unitSet.sourceRefs.find(
+          (sourceRef) => sourceRef.sourceRefId === sourceRefId,
+        ),
+      );
+      expect(boundRefs).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            pageStart: 1,
+            pageEnd: 1,
+            quote: expect.stringContaining(expectedText),
+          }),
+        ]),
+      );
+      expect(
+        boundRefs?.some(
+          (sourceRef) =>
+            sourceRef?.pageStart === 1 &&
+            sourceRef.bbox.join(',') !== '0,0,1000000,1000000',
+        ),
+      ).toBe(true);
+
+      const readback = reader.read(
+        pipeline.u0Input.artifact,
+        pipeline.u0Input.bytes,
+        expectedText,
+      );
+      expect(readback.queryResults.length).toBeGreaterThan(0);
+      expect(
+        readback.queryResults.some((result) =>
+          result.sourceLocators?.some(
+            (locator) =>
+              locator.pageStart === 1 &&
+              locator.bbox !== null &&
+              locator.bbox.join(',') !== '0,0,1000000,1000000',
+          ),
+        ),
+      ).toBe(true);
+    }
+
+    const validator = new U0FullValidationService(
+      new PythonU0FullPackageValidatorAdapter({
+        pythonExecutable: process.env.WL31_U0_PYTHON?.trim() || 'python3',
+        contractRoot: resolve(
+          process.cwd(),
+          'server/runtime-assets/technical-publication-parsed-package/v1-frozen-2',
+        ),
+        contractCommit: 'fa69ada08265934951df53c7a61a3ccdb8cb2900',
+        validatorRevision: 'caac-composite-ocr-real-test',
+      }),
+    );
+    await expect(validator.validate(pipeline.u0Input)).resolves.toMatchObject({
+      status: 'FULL_STRICT_VALIDATOR_PASSED',
+      packageId: pipeline.pkg.packageId,
+    });
   });
 });
 

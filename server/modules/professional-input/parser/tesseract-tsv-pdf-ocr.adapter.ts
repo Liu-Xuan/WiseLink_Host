@@ -7,11 +7,12 @@ import {
   mkdtempSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, relative, resolve } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 
 import type {
   ParsedPdfLayout,
@@ -437,6 +438,15 @@ export class TesseractTsvPdfOcrAdapter implements TargetedPdfOcrProvider {
     }
 
     const language = target.requiredLanguages.join('+');
+    // Sparse-text segmentation preserves independent cells in scanned
+    // landscape forms (for example certificate and eligibility fields).
+    // Portrait full pages and diagnostics-selected regions keep the uniform
+    // text-block strategy used by the accepted procedure regressions.
+    const pageSegmentationMode =
+      target.scope === 'FULL_PAGE' &&
+      geometry.viewportWidthPixels > geometry.viewportHeightPixels
+        ? '11'
+        : '6';
     const tesseract = runCommand(
       runtime.engineExecutable,
       [
@@ -447,7 +457,7 @@ export class TesseractTsvPdfOcrAdapter implements TargetedPdfOcrProvider {
         '-l',
         language,
         '--psm',
-        '6',
+        pageSegmentationMode,
         '--dpi',
         String(this.dpi),
         '-c',
@@ -503,7 +513,17 @@ export class TesseractTsvPdfOcrAdapter implements TargetedPdfOcrProvider {
   }
 
   private resolveRuntimePaths(): OcrRuntimePaths {
-    const manifestPath = resolve(this.runtimeRoot, 'manifest.json');
+    let runtimeRootReal: string;
+    try {
+      runtimeRootReal = realpathSync(this.runtimeRoot);
+    } catch {
+      throw new Error('OCR_RUNTIME_ROOT_MISSING');
+    }
+    const manifestPath = safeRuntimePath(
+      runtimeRootReal,
+      'manifest.json',
+      'OCR_RUNTIME_MANIFEST_MISSING',
+    );
     if (!existsSync(manifestPath)) {
       throw new Error('OCR_RUNTIME_MANIFEST_MISSING');
     }
@@ -515,21 +535,33 @@ export class TesseractTsvPdfOcrAdapter implements TargetedPdfOcrProvider {
     }
     const manifest = validateManifest(parsed);
     const rendererExecutable = safeRuntimePath(
-      this.runtimeRoot,
+      runtimeRootReal,
       manifest.renderer.executable,
+      'PDFTOPPM_EXECUTABLE_MISSING',
     );
     const engineExecutable = safeRuntimePath(
-      this.runtimeRoot,
+      runtimeRootReal,
       manifest.engine.executable,
+      'TESSERACT_EXECUTABLE_MISSING',
     );
     const tessdataDirectory = safeRuntimePath(
-      this.runtimeRoot,
+      runtimeRootReal,
       manifest.tessdata.directory,
+      'TESSDATA_DIRECTORY_MISSING',
     );
     assertExecutable(rendererExecutable, 'PDFTOPPM_EXECUTABLE_MISSING');
     assertExecutable(engineExecutable, 'TESSERACT_EXECUTABLE_MISSING');
     if (!existsSync(tessdataDirectory)) {
       throw new Error('TESSDATA_DIRECTORY_MISSING');
+    }
+    for (const language of manifest.tessdata.requiredLanguages) {
+      const languagePath = resolve(
+        tessdataDirectory,
+        `${language}.traineddata`,
+      );
+      if (existsSync(languagePath)) {
+        assertRuntimeRealpathContained(runtimeRootReal, languagePath);
+      }
     }
     return {
       manifest,
@@ -562,7 +594,11 @@ function validateManifest(value: unknown): OcrRuntimeManifest {
   return manifest as OcrRuntimeManifest;
 }
 
-function safeRuntimePath(root: string, child: string): string {
+function safeRuntimePath(
+  root: string,
+  child: string,
+  missingReason: string,
+): string {
   const resolvedRoot = resolve(root);
   const resolvedChild = resolve(resolvedRoot, child);
   const childRelative = relative(resolvedRoot, resolvedChild);
@@ -573,7 +609,31 @@ function safeRuntimePath(root: string, child: string): string {
   ) {
     throw new Error('OCR_RUNTIME_PATH_INVALID');
   }
-  return resolvedChild;
+  try {
+    return assertRuntimeRealpathContained(resolvedRoot, resolvedChild);
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message === 'OCR_RUNTIME_REALPATH_OUTSIDE_ROOT'
+    ) {
+      throw error;
+    }
+    throw new Error(missingReason);
+  }
+}
+
+function assertRuntimeRealpathContained(root: string, child: string): string {
+  const rootReal = realpathSync(root);
+  const childReal = realpathSync(child);
+  const childRelative = relative(rootReal, childReal);
+  if (
+    childRelative === '..' ||
+    childRelative.startsWith(`..${sep}`) ||
+    resolve(rootReal, childRelative) !== childReal
+  ) {
+    throw new Error('OCR_RUNTIME_REALPATH_OUTSIDE_ROOT');
+  }
+  return childReal;
 }
 
 function assertExecutable(path: string, reason: string): void {
