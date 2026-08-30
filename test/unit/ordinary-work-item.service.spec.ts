@@ -1,28 +1,4 @@
-jest.mock(
-  '../../server/modules/document-management/src/hosted/miaodaFileServiceArtifactStore.js',
-  () => ({ MiaodaFileServiceArtifactStore: jest.fn() }),
-);
-jest.mock(
-  '../../server/modules/document-management/src/hosted/phase5BoeingSbHandoff.js',
-  () => ({
-    createPhase5BoeingSbIngestRequest: jest.fn(),
-    PHASE5_737_34_3830_HANDOFF: {
-      source: { sha256: 'a'.repeat(64), byteLength: 1024 },
-      canonicalHostClassification: {
-        status: 'CANDIDATE',
-        normalizedFamily: 'SB',
-        classifierReleaseId: 'classifier@test',
-        classifierReleaseHash: `sha256:${'b'.repeat(64)}`,
-        parserProfileId: 'parser@test',
-        parserProfileHash: `sha256:${'c'.repeat(64)}`,
-        fingerprint: `sha256:${'d'.repeat(64)}`,
-      },
-    },
-  }),
-);
-
 import { OrdinaryWorkItemService } from '../../server/modules/work-item/ordinary-work-item.service';
-import { MiaodaFileServiceArtifactStore } from '../../server/modules/document-management/src/hosted/miaodaFileServiceArtifactStore.js';
 
 const ACTOR = {
   userId: 'engineer-1001',
@@ -99,7 +75,6 @@ const EXISTING_PARSE_AUTHORIZATION = {
 };
 
 function target() {
-  const fileService = { from: jest.fn() };
   const documentManagement = {
     assertCanIngest: jest.fn().mockResolvedValue(undefined),
     ingestFileServiceSelection: jest.fn(),
@@ -176,13 +151,11 @@ function target() {
     resolver,
     repository,
     vertical,
-    fileService,
     service: new OrdinaryWorkItemService(
       documentManagement as never,
       resolver as never,
       repository as never,
       vertical as never,
-      fileService as never,
     ),
   };
 }
@@ -205,19 +178,6 @@ function verticalResult() {
 }
 
 describe('OrdinaryWorkItemService run identity', () => {
-  beforeEach(() => {
-    jest.mocked(MiaodaFileServiceArtifactStore).mockImplementation(
-      () =>
-        ({
-          readSelection: jest.fn().mockResolvedValue({
-            sha256: 'e'.repeat(64),
-            byteLength: 2048,
-            providerObjectId: 'uploaded-object',
-          }),
-        }) as never,
-    );
-  });
-
   it('rejects a forged selection before every DM, FileService, binding, resolver, reserve, attempt, and vertical I/O', async () => {
     const targetValue = target();
 
@@ -1118,7 +1078,6 @@ function expectNoOrdinaryRunIo(targetValue: ReturnType<typeof target>): void {
   expect(
     targetValue.documentManagement.ingestFileServiceSelection,
   ).not.toHaveBeenCalled();
-  expect(targetValue.fileService.from).not.toHaveBeenCalled();
   expect(targetValue.resolver.resolve).not.toHaveBeenCalled();
   expect(
     targetValue.repository.loadAuthorizationBinding,

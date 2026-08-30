@@ -22,8 +22,33 @@ const REVIEW_ATTACHMENT_SOURCE_CHANNEL =
   'canonical_review_attachment_selection';
 const LEGACY_REVIEW_ATTACHMENT_DECISION =
   'DOCUMENT_IDENTITY_UNRESOLVED';
+const VERIFIED_DM_IDENTITY_AUTHORITIES = new Set([
+  'DM_ACTUAL_PDF_FIRST_THREE_PAGES',
+  'DM_ACTUAL_PDF_LAYOUT_AND_SERVER_REVIEW_SCOPE',
+]);
 
-function fail(code: string, message: string, details: Record<string, unknown> = {}) {
+function tenantFamilyIdentityPrefix(tenantId: unknown): string {
+  const normalized = String(tenantId || '').trim();
+  if (!normalized) {
+    fail('TENANT_SCOPE_REQUIRED', 'Catalog family reads require tenant scope.');
+  }
+  let encodedTenantId: string;
+  try {
+    encodedTenantId = encodeURIComponent(normalized);
+  } catch {
+    fail(
+      'TENANT_SCOPE_INVALID',
+      'Catalog tenant scope must contain valid Unicode.',
+    );
+  }
+  return `tenant:${encodedTenantId!}:family:`;
+}
+
+function fail(
+  code: string,
+  message: string,
+  details: Record<string, unknown> = {},
+) {
   throw Object.assign(new Error(message), { code, details });
 }
 
@@ -672,10 +697,28 @@ export class MiaodaHostedDocumentCatalog {
     }
   }
 
-  async findIngestionByIdempotency({ idempotencyKey, sourceChannel, sourceRef, selection }) {
-    const [acquisition] = await this.db.select().from(dmAcquisition).where(
-      eq(dmAcquisition.idempotencyKey, idempotencyKey),
-    ).limit(1);
+  async findIngestionByIdempotency({
+    idempotencyKey,
+    expectedAcquisitionId,
+    sourceChannel,
+    sourceRef,
+    selection,
+  }) {
+    const normalizedExpectedAcquisitionId = String(
+      expectedAcquisitionId || '',
+    ).trim();
+    const [acquisition] = await this.db
+      .select()
+      .from(dmAcquisition)
+      .where(
+        normalizedExpectedAcquisitionId
+          ? and(
+              eq(dmAcquisition.idempotencyKey, idempotencyKey),
+              eq(dmAcquisition.acquisitionId, normalizedExpectedAcquisitionId),
+            )
+          : eq(dmAcquisition.idempotencyKey, idempotencyKey),
+      )
+      .limit(1);
     if (!acquisition) return null;
     const selectionBucketId = String(selection?.bucketId || selection?.bucket_id || '').trim();
     const selectionFilePath = String(selection?.filePath || selection?.file_path || '').trim();
@@ -715,6 +758,46 @@ export class MiaodaHostedDocumentCatalog {
       fail('CATALOG_REPLAY_READ_FAILED', 'Completed replay lacks one fresh exact Catalog lineage.');
     }
     const row = rows[0];
+    const normalizedDescriptor = parseJson(
+      row.preflight.normalizedDescriptorJson,
+    ) as Record<string, unknown>;
+    const identityAuthority = String(
+      normalizedDescriptor.identityAuthority || '',
+    );
+    const pageCount = Number(normalizedDescriptor.pageCount || 0);
+    if (
+      !VERIFIED_DM_IDENTITY_AUTHORITIES.has(identityAuthority) ||
+      !Number.isSafeInteger(pageCount) ||
+      pageCount < 1 ||
+      normalizedDescriptor.sha256 !== row.artifact.sha256 ||
+      Number(normalizedDescriptor.sizeBytes) !==
+        Number(row.artifact.byteLength) ||
+      normalizedDescriptor.documentCode !==
+        row.family.canonicalDocumentNumber ||
+      normalizedDescriptor.canonicalDocumentFamily !==
+        row.family.documentFamily ||
+      normalizedDescriptor.issuer !== row.family.issuerAuthority ||
+      String(normalizedDescriptor.businessRevision || '') !==
+        String(row.version.businessRevision || '') ||
+      String(normalizedDescriptor.revisionDate || '') !==
+        String(row.version.revisionDate || '') ||
+      String(normalizedDescriptor.sourceGeneratedDate || '') !==
+        String(row.version.sourceGeneratedDate || '') ||
+      acquisition.sourceArtifactId !== row.artifact.sourceArtifactId ||
+      row.version.sourceArtifactId !== row.artifact.sourceArtifactId ||
+      row.version.acquisitionId !== acquisition.acquisitionId ||
+      row.preflight.acquisitionId !== acquisition.acquisitionId ||
+      row.preflight.documentVersionId !== row.version.documentVersionId
+    ) {
+      fail(
+        'CATALOG_REPLAY_IDENTITY_UNVERIFIED',
+        'Completed replay lacks verified DM actual-PDF identity readback.',
+        {
+          acquisitionId: acquisition.acquisitionId,
+          documentVersionId: row.version.documentVersionId,
+        },
+      );
+    }
     return {
       status: 'COMMITTED',
       acquisitionId: acquisition.acquisitionId,
@@ -726,6 +809,19 @@ export class MiaodaHostedDocumentCatalog {
       documentVersionId: row.version.documentVersionId,
       currentGeneration: row.family.currentGeneration,
       immutableReadbackVerified: true,
+      catalogFreshReadVerified: true,
+      identityReadback: {
+        identityAuthority,
+        canonicalIdentityKey: row.family.canonicalIdentityKey,
+        issuerAuthority: row.family.issuerAuthority,
+        documentFamily: row.family.documentFamily,
+        documentNumber: row.family.canonicalDocumentNumber,
+        businessRevision: row.version.businessRevision,
+        revisionDate: row.version.revisionDate,
+        sourceGeneratedDate: row.version.sourceGeneratedDate,
+        pageCount,
+        sourceArtifactId: row.artifact.sourceArtifactId,
+      },
     };
   }
 
@@ -930,49 +1026,60 @@ export class MiaodaHostedDocumentCatalog {
     };
   }
 
-  async listIngressDocuments() {
-    const rows = await this.db.select({
-      version: dmDocumentVersion,
-      family: dmPublicationFamily,
-    }).from(dmDocumentVersion).innerJoin(
-      dmPublicationFamily,
-      eq(dmDocumentVersion.familyId, dmPublicationFamily.familyId),
-    );
-    return rows.map(({ version, family }) => ({
-      documentId: version.documentId,
-      documentVersionId: version.documentVersionId,
-      familyId: version.familyId,
-      versionStatus: family.currentDocumentVersionId === version.documentVersionId
-        ? 'CANONICAL_CURRENT'
-        : 'CANONICAL_HISTORICAL',
-      detail: {
-        sha256: version.pdfSha256,
-        sizeBytes: Number(version.byteLength),
-        documentCode: family.canonicalDocumentNumber,
-        originalFilename: version.originalFilename,
-        documentFamily: family.documentFamily,
-        canonicalDocumentFamily: family.documentFamily,
-        businessRevision: version.businessRevision,
-        revisionDate: version.revisionDate,
-        sourceGeneratedDate: version.sourceGeneratedDate,
-        revisionId: version.revisionId,
-        status: 'catalog_committed',
-      },
-      upload: {
-        descriptorSummary: {
+  async listIngressDocuments({ tenantId }: { tenantId?: unknown } = {}) {
+    const tenantPrefix = tenantFamilyIdentityPrefix(tenantId);
+    const rows = await this.db
+      .select({
+        version: dmDocumentVersion,
+        family: dmPublicationFamily,
+      })
+      .from(dmDocumentVersion)
+      .innerJoin(
+        dmPublicationFamily,
+        eq(dmDocumentVersion.familyId, dmPublicationFamily.familyId),
+      );
+    return rows
+      .filter(({ family }) =>
+        family.canonicalIdentityKey.startsWith(tenantPrefix),
+      )
+      .map(({ version, family }) => ({
+        documentId: version.documentId,
+        documentVersionId: version.documentVersionId,
+        familyId: version.familyId,
+        versionStatus:
+          family.currentDocumentVersionId === version.documentVersionId
+            ? 'CANONICAL_CURRENT'
+            : 'CANONICAL_HISTORICAL',
+        detail: {
           sha256: version.pdfSha256,
           sizeBytes: Number(version.byteLength),
           documentCode: family.canonicalDocumentNumber,
+          originalFilename: version.originalFilename,
           documentFamily: family.documentFamily,
+          canonicalDocumentFamily: family.documentFamily,
+          issuerAuthority: family.issuerAuthority,
           businessRevision: version.businessRevision,
           revisionDate: version.revisionDate,
           sourceGeneratedDate: version.sourceGeneratedDate,
+          revisionId: version.revisionId,
+          status: 'catalog_committed',
         },
-      },
-      report: { status: 'not_available' },
-      ownerActionState: { pipeline: { selectedReplacementRevisionId: '' } },
-      documentAnalysisWorkbenchView: { status: 'not_available' },
-    }));
+        upload: {
+          descriptorSummary: {
+            sha256: version.pdfSha256,
+            sizeBytes: Number(version.byteLength),
+            documentCode: family.canonicalDocumentNumber,
+            documentFamily: family.documentFamily,
+            issuerAuthority: family.issuerAuthority,
+            businessRevision: version.businessRevision,
+            revisionDate: version.revisionDate,
+            sourceGeneratedDate: version.sourceGeneratedDate,
+          },
+        },
+        report: { status: 'not_available' },
+        ownerActionState: { pipeline: { selectedReplacementRevisionId: '' } },
+        documentAnalysisWorkbenchView: { status: 'not_available' },
+      }));
   }
 
   async observeFamily(canonicalIdentityKey: string) {
@@ -999,14 +1106,38 @@ export class MiaodaHostedDocumentCatalog {
     const [stored] = await this.db.select().from(dmIngressPreflight).where(
       eq(dmIngressPreflight.preflightId, preflight.preflightId),
     ).limit(1);
-    return stored;
+    return stored
+      ? {
+          ...stored,
+          normalizedDescriptor: parseJson(stored.normalizedDescriptorJson),
+          decisionPayload: parseJson(stored.decisionPayloadJson),
+        }
+      : null;
   }
 
-  async findExactDocumentVersion({ sha256, byteLength }) {
-    const matches = await this.db.select().from(dmDocumentVersion).where(and(
-      eq(dmDocumentVersion.pdfSha256, sha256),
-      eq(dmDocumentVersion.byteLength, Number(byteLength)),
-    )).limit(2);
+  async findExactDocumentVersion({ sha256, byteLength, tenantId }) {
+    const tenantPrefix = tenantFamilyIdentityPrefix(tenantId);
+    const rows = await this.db
+      .select({
+        version: dmDocumentVersion,
+        family: dmPublicationFamily,
+      })
+      .from(dmDocumentVersion)
+      .innerJoin(
+        dmPublicationFamily,
+        eq(dmPublicationFamily.familyId, dmDocumentVersion.familyId),
+      )
+      .where(
+        and(
+          eq(dmDocumentVersion.pdfSha256, sha256),
+          eq(dmDocumentVersion.byteLength, Number(byteLength)),
+        ),
+      );
+    const matches = rows
+      .filter(({ family }) =>
+        family.canonicalIdentityKey.startsWith(tenantPrefix),
+      )
+      .map(({ version }) => version);
     if (matches.length > 1) {
       fail('MULTIPLE_EXACT_MATCHES', 'Content identity resolved to multiple DocumentVersions.');
     }

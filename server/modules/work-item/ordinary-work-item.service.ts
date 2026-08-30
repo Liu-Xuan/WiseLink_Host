@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import { FileService } from '@lark-apaas/fullstack-nestjs-core';
-import { Injectable, Optional } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 
 import type {
   CanonicalClassificationSelection,
@@ -28,11 +27,6 @@ import {
 import { MiaodaDocumentVersionSourceResolver } from './miaoda-document-version-source.resolver';
 import { MiaodaWorkItemRepository } from './miaoda-work-item.repository';
 import { assertProductionMiaodaBrowserIdentityAvailable } from './production-miaoda-browser-ingress';
-import { MiaodaFileServiceArtifactStore } from '../document-management/src/hosted/miaodaFileServiceArtifactStore.js';
-import {
-  createPhase5BoeingSbIngestRequest,
-  PHASE5_737_34_3830_HANDOFF,
-} from '../document-management/src/hosted/phase5BoeingSbHandoff.js';
 
 const FTD_CLASSIFICATION: CanonicalClassificationSelection = {
   status: 'CANDIDATE',
@@ -86,7 +80,6 @@ export class OrdinaryWorkItemService {
     private readonly resolver: MiaodaDocumentVersionSourceResolver,
     private readonly repository: MiaodaWorkItemRepository,
     private readonly vertical: CanonicalHostVerticalService,
-    @Optional() private readonly fileService?: FileService,
   ) {}
 
   async parsePdf(
@@ -400,30 +393,13 @@ export class OrdinaryWorkItemService {
     const key = createHash('sha256')
       .update(`${context.tenantId}\n${bucketId}\n${filePath}`)
       .digest('hex');
-    const baseRequest = {
+    const request = {
       selection: { bucketId, filePath },
       sourceChannel: 'canonical_miaoda_document_selection',
       sourceRef: `miaoda-file-service:${bucketId}:${filePath}`,
       idempotencyKey: `ordinary-document-ingest:${key}`,
       descriptor: {},
     };
-    let request = baseRequest;
-    if (this.fileService) {
-      const actual = await new MiaodaFileServiceArtifactStore(
-        this.fileService,
-      ).readSelection({ bucketId, filePath });
-      const handoff = phase5Handoff();
-      if (
-        actual.sha256 === handoff.source.sha256 &&
-        Number(actual.byteLength) === handoff.source.byteLength
-      ) {
-        request = createPhase5BoeingSbIngestRequest({
-          selection: { bucketId, filePath },
-          sourceRef: `miaoda-file-service:${bucketId}:${actual.providerObjectId}`,
-          idempotencyKey: `ordinary-document-ingest:${key}`,
-        });
-      }
-    }
     const result = await this.documentManagement.ingestFileServiceSelection(
       request,
       context,
@@ -667,13 +643,6 @@ function classificationFor(
     new Error(`No activated hosted PDF producer profile for ${family}.`),
     { code: 'PDF_PRODUCER_PROFILE_NOT_AVAILABLE', statusCode: 409 },
   );
-}
-
-function phase5Handoff() {
-  return PHASE5_737_34_3830_HANDOFF as {
-    source: { sha256: string; byteLength: number };
-    canonicalHostClassification: CanonicalClassificationSelection;
-  };
 }
 
 function optionalQuery(value: unknown): string {

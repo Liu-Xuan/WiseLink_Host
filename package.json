@@ -38,6 +38,7 @@
     "test:document-management:real-pdf": "npm run build:server && node scripts/run-document-management-real-pdf-loop.mjs",
     "test:document-management:catalog-insert-shape": "npm run build:server && node scripts/verify-hosted-catalog-insert-select-shape.mjs",
     "test:document-management:orphan-recovery": "npm run build:server && node scripts/verify-hosted-orphan-recovery.mjs",
+    "test:document-management:pg-physical-family": "npm run build:server && node scripts/run-document-management-postgres-physical-family-loop.mjs",
     "test:document-management:external-candidate": "npm run build:server && node scripts/verify-external-candidate-document-version-reuse.mjs",
     "test:ordinary:first-ftd-loop": "npm run build:server && node scripts/run-ordinary-first-ftd-loop.mjs",
     "test:professional-input:real-ftd": "jest --runInBand test/unit/professional-input/host-native-real-ftd.spec.ts",
