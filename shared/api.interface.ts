@@ -9,7 +9,10 @@ export interface OfficialOauthCallbackRequest {
   state: string;
 }
 
-export type ReviewConversationStatus = 'ACTIVE' | 'CLOSED';
+export type ReviewConversationStatus =
+  | 'ACTIVE'
+  | 'STALE_CONTEXT'
+  | 'CLOSED';
 
 export type EngineerSuppliedInputType = 'ENGINEER_TEXT';
 
