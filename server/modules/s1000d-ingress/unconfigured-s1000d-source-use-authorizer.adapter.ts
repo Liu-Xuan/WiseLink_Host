@@ -5,6 +5,7 @@ import type {
 
 /** Default deployment posture: no OEM or redistribution credential, no read. */
 export class UnconfiguredS1000dSourceUseAuthorizerAdapter implements S1000dSourceUseAuthorizerPort {
+  readonly available = false;
   async authorize(): Promise<S1000dSourceUseAuthorization> {
     throw Object.assign(
       new Error(

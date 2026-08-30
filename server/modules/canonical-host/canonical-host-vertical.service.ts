@@ -11,6 +11,9 @@ import type {
   CanonicalEntryQueryResponse,
   CanonicalPdfVerticalRunRequest,
   CanonicalPdfVerticalRunResponse,
+  CanonicalS1000dVerticalRunRequest,
+  CanonicalS1000dVerticalRunResponse,
+  CanonicalParsedPackageUsagePolicy,
   CanonicalStructuredContentPageResponse,
   CanonicalWorkItemProjection,
   CanonicalPdfPreviewProjection,
@@ -20,6 +23,8 @@ import type {
 } from '@shared/api.interface';
 
 import { UnifiedReaderService } from '../unified-reader/unified-reader.service';
+import { S1000dIngressService } from '../s1000d-ingress/s1000d-ingress.service';
+import type { PreparedS1000dIngressCandidate } from '../s1000d-ingress/s1000d-ingress.types';
 import { UNIFIED_ARTIFACT_STORE } from '../unified-reader/unified-reader.constants';
 import type { UnifiedArtifactStorePort } from '../unified-reader/unified-reader.types';
 import {
@@ -31,6 +36,7 @@ import {
   CANONICAL_HOST,
   CANONICAL_PDF_PRODUCER,
   CANONICAL_PERMISSION_SNAPSHOT,
+  SCOPED_PROFESSIONAL_ARTIFACT_CORRELATION,
   CANONICAL_TRANSLATION_OWNER_OBSERVATION,
   CANONICAL_WORK_ITEM_REGISTRAR,
 } from './canonical-host.constants';
@@ -59,6 +65,10 @@ import type {
   CanonicalStructuredContentBrowseInput,
   CanonicalWorkItemRegistrarPort,
 } from './canonical-host.types';
+import {
+  assertScopedProfessionalArtifactCorrelation,
+  type ScopedProfessionalArtifactCorrelationPort,
+} from './scoped-professional-artifact-correlation.port';
 import type { CanonicalTranslationOwnerObservationPort } from './canonical-translation-owner-observation.port';
 import { parseBilingualTranslationArtifact } from './canonical-host-openclaw-translation.service';
 import { CanonicalPdfPreviewService } from './canonical-pdf-preview.service';
@@ -92,6 +102,11 @@ export class CanonicalHostVerticalService {
     private readonly translationOwnerObservation: CanonicalTranslationOwnerObservationPort | null,
     @Optional()
     private readonly pdfPreviews?: CanonicalPdfPreviewService,
+    @Optional()
+    private readonly s1000dIngress?: S1000dIngressService,
+    @Optional()
+    @Inject(SCOPED_PROFESSIONAL_ARTIFACT_CORRELATION)
+    private readonly professionalCorrelations?: ScopedProfessionalArtifactCorrelationPort,
   ) {}
 
   async runPdf(
@@ -225,6 +240,223 @@ export class CanonicalHostVerticalService {
           executionRoute,
         );
       return failedResponse(failed, this.entryFacade.status(failed));
+    }
+  }
+
+  /** Availability-only preflight used before the ordinary owner reserves. */
+  assertS1000dAvailable(): void {
+    if (!this.s1000dIngress) {
+      throw serviceUnavailable('S1000D_INGRESS_UNCONFIGURED');
+    }
+    this.s1000dIngress.assertAvailable();
+    if (
+      !this.professionalCorrelations?.available ||
+      typeof this.professionalCorrelations.readActualBytes !== 'function'
+    ) {
+      throw serviceUnavailable(
+        'S1000D_PROFESSIONAL_ARTIFACT_CORRELATION_UNAVAILABLE',
+      );
+    }
+  }
+
+  async runS1000d(
+    request: CanonicalS1000dVerticalRunRequest,
+    actor: CanonicalHostActor,
+  ): Promise<CanonicalS1000dVerticalRunResponse> {
+    validateS1000dRequest(request);
+    if (!this.s1000dIngress) {
+      throw serviceUnavailable('S1000D_INGRESS_UNCONFIGURED');
+    }
+    this.s1000dIngress.assertAvailable();
+    if (
+      !this.professionalCorrelations?.available ||
+      typeof this.professionalCorrelations.readActualBytes !== 'function'
+    ) {
+      throw serviceUnavailable(
+        'S1000D_PROFESSIONAL_ARTIFACT_CORRELATION_UNAVAILABLE',
+      );
+    }
+    const actionContext = await this.authorizeAction({
+      actor,
+      action: 'PARSE_PDF',
+      workItemId: request.workItemId,
+      requestId: request.requestId,
+      documentVersionId: request.source.documentVersionId,
+    });
+    let projection = await this.registrar.loadOrCreate(
+      seedProjection(request, actionContext),
+    );
+    assertSameRequest(projection, request);
+    assertSameAuthorization(projection, actionContext);
+    if (projection.phase === 'CANDIDATE_READBACK_VERIFIED') {
+      return this.reuseCompletedS1000d(request, projection);
+    }
+    if (projection.phase !== 'PARSE_REQUESTED') {
+      throw new Error(`WORK_ITEM_NOT_RUNNABLE:${projection.phase}`);
+    }
+    const replacesCompletedPackage = projection.package !== null;
+    projection = await this.registrar.compareAndSet({
+      workItemId: request.workItemId,
+      expectedRevision: projection.revision,
+      next: { ...withoutRevision(projection), phase: 'PARSING' },
+    });
+
+    const prepared = await this.s1000dIngress.prepare(
+      {
+        workItemId: request.workItemId,
+        requestId: request.requestId,
+        documentVersionId: request.source.documentVersionId,
+      },
+      actor,
+    );
+    assertS1000dPreparedSourceMatchesRequest(request, prepared);
+    await this.assertS1000dWorkItemCurrent(request, projection);
+
+    const producedArtifact = candidatePackageArtifact(prepared.produced.bytes);
+    const correlationRequest = {
+      workItemId: request.workItemId,
+      documentId: request.source.documentId,
+      documentVersionId: request.source.documentVersionId,
+      sourceArtifactId: request.source.sourceArtifactId,
+      sourceSha256: prepared.source.sha256,
+      sourceByteLength: prepared.source.byteLength,
+      sourceProviderObjectId: prepared.source.providerObjectId,
+      classification: request.classification,
+    };
+    const unresolvedCorrelation =
+      await this.professionalCorrelations.persistAndCorrelate(
+        correlationRequest,
+        {
+          packageId: prepared.produced.packageId,
+          artifact: producedArtifact,
+          bytes: prepared.produced.bytes,
+          lineage: {
+            producerDocumentId: prepared.source.documentId,
+            producerDocumentVersionId: prepared.source.documentVersionId,
+            documentCode: prepared.source.originalFilename,
+            businessRevision: prepared.source.canonicalRevisionIdentity,
+            packageRevisionLabel: prepared.source.revisionId,
+          },
+        },
+      );
+    if (!unresolvedCorrelation) {
+      throw serviceUnavailable(
+        'S1000D_PROFESSIONAL_ARTIFACT_CORRELATION_UNAVAILABLE',
+      );
+    }
+    const actualReadback = await this.professionalCorrelations.readActualBytes!(
+      unresolvedCorrelation,
+    );
+    assertScopedProfessionalArtifactCorrelation(
+      correlationRequest,
+      unresolvedCorrelation,
+      actualReadback,
+    );
+    if (!sameBytes(actualReadback.bytes, prepared.produced.bytes)) {
+      throw new Error('S1000D_PROFESSIONAL_ACTUAL_BYTE_MISMATCH');
+    }
+
+    const readback = await this.reader.persistAndReadback(
+      actualReadback.bytes,
+      {
+        workItemId: request.workItemId,
+        requestId: request.requestId,
+        documentVersionId: request.source.documentVersionId,
+        permissionSnapshotVersion: projection.permissionSnapshotVersion,
+        packageId: prepared.produced.packageId,
+        contractId: prepared.produced.contractId,
+        contractRevision: prepared.produced.contractRevision,
+        query: request.query,
+      },
+    );
+
+    // A competing owner may advance the WorkItem while XML production or
+    // actual-byte persistence runs. The immutable attempt artifact can remain,
+    // but only the exact initial PARSING revision may publish current.
+    await this.assertS1000dWorkItemCurrent(request, projection);
+    projection = await this.registrar.compareAndSet({
+      workItemId: request.workItemId,
+      expectedRevision: projection.revision,
+      next: {
+        ...withoutRevision(projection),
+        ...(replacesCompletedPackage ? clearedDerivedCandidates() : {}),
+        phase: 'CANDIDATE_READBACK_VERIFIED',
+        package: packageProjection(
+          readback,
+          s1000dUsagePolicy(prepared),
+          undefined,
+        ),
+        failure: null,
+        recordingFailure: null,
+      },
+    });
+    projection = await this.freshRead(request);
+    assertPublishedS1000dPackage(projection, prepared);
+    return s1000dVerifiedResponse(prepared.summary);
+  }
+
+  private async reuseCompletedS1000d(
+    request: CanonicalS1000dVerticalRunRequest,
+    projection: CanonicalWorkItemProjection,
+  ): Promise<CanonicalS1000dVerticalRunResponse> {
+    if (!projection.package) {
+      throw new Error('WORK_ITEM_CORRUPT:VERIFIED_WITHOUT_PACKAGE');
+    }
+    const bytes = await this.artifactStore.readActualBytes(
+      projection.package.artifact,
+    );
+    const parsed = parseNativeS1000dPackage(bytes);
+    await this.reader.readback({
+      workItemId: projection.workItemId,
+      requestId: projection.requestId,
+      documentVersionId: projection.source.documentVersionId,
+      permissionSnapshotVersion: projection.permissionSnapshotVersion,
+      package: {
+        packageId: projection.package.packageId,
+        contractId: projection.package.contractId,
+        contractRevision: projection.package.contractRevision,
+        artifact: projection.package.artifact,
+      },
+      query: request.query,
+    });
+    return s1000dVerifiedResponse({
+      resultStatus: parsed.resultStatus,
+      contentUnitCount: parsed.contentUnitCount,
+      sourceRefCount: parsed.sourceRefCount,
+      authorizedSourceArtifactCount: parsed.sourceArtifactIds.length,
+    });
+  }
+
+  private async assertS1000dWorkItemCurrent(
+    request: CanonicalS1000dVerticalRunRequest,
+    expected: CanonicalWorkItemProjection,
+  ): Promise<void> {
+    const current = await this.registrar.getExact({
+      workItemId: request.workItemId,
+      requestId: request.requestId,
+      documentVersionId: request.source.documentVersionId,
+    });
+    if (
+      current.revision !== expected.revision ||
+      current.phase !== 'PARSING' ||
+      current.source.documentId !== expected.source.documentId ||
+      current.source.documentVersionId !== expected.source.documentVersionId ||
+      current.source.sourceArtifactId !== expected.source.sourceArtifactId ||
+      current.source.sourceFileSha256 !== expected.source.sourceFileSha256 ||
+      current.source.sourceByteLength !== expected.source.sourceByteLength ||
+      current.source.driveFileToken !== expected.source.driveFileToken ||
+      current.source.driveSourceVersion !==
+        expected.source.driveSourceVersion ||
+      current.classification.fingerprint !==
+        expected.classification.fingerprint ||
+      current.parseAuthorization.decisionHash !==
+        expected.parseAuthorization.decisionHash ||
+      current.permissionSnapshotVersion !== expected.permissionSnapshotVersion
+    ) {
+      throw Object.assign(new Error('S1000D_WORK_ITEM_DRIFT'), {
+        code: 'S1000D_WORK_ITEM_DRIFT',
+        statusCode: 409,
+      });
     }
   }
 
@@ -839,7 +1071,7 @@ export class CanonicalHostVerticalService {
   }
 
   private freshRead(
-    request: CanonicalPdfVerticalRunRequest,
+    request: CanonicalVerticalRunRequest,
   ): Promise<CanonicalWorkItemProjection> {
     return this.registrar.getExact({
       workItemId: request.workItemId,
@@ -1126,7 +1358,7 @@ function requiredOpenApiText(
 }
 
 function seedProjection(
-  request: CanonicalPdfVerticalRunRequest,
+  request: CanonicalVerticalRunRequest,
   actionContext: CanonicalHostActionContext,
 ): Omit<CanonicalWorkItemProjection, 'revision'> {
   return {
@@ -1182,14 +1414,10 @@ function clearedDerivedCandidates(): Pick<
 
 function packageProjection(
   readback: UnifiedPackageReadbackResponse,
-  usagePolicy: Extract<
-    CanonicalPdfProducerResult,
-    { kind: 'PACKAGE' }
-  >['usagePolicy'],
-  documentIdentity: Extract<
-    CanonicalPdfProducerResult,
-    { kind: 'PACKAGE' }
-  >['documentIdentity'],
+  usagePolicy: CanonicalParsedPackageUsagePolicy | undefined,
+  documentIdentity:
+    | { documentCode: string; businessRevision: string | null }
+    | undefined,
 ): NonNullable<CanonicalWorkItemProjection['package']> {
   return {
     packageId: readback.package.packageId,
@@ -1310,6 +1538,59 @@ function validateRequest(request: CanonicalPdfVerticalRunRequest): void {
   }
 }
 
+function validateS1000dRequest(
+  request: CanonicalS1000dVerticalRunRequest,
+): void {
+  const wireRequest = request as unknown as Record<string, unknown>;
+  for (const forbiddenField of [
+    'actor',
+    'authority',
+    'decision',
+    'deepLinkPath',
+    'permissionSnapshotVersion',
+  ]) {
+    if (Object.hasOwn(wireRequest, forbiddenField)) {
+      throw new Error(
+        `CANONICAL_S1000D_VERTICAL_REQUEST_INVALID:SELF_REPORTED_AUTHORITY:${forbiddenField}`,
+      );
+    }
+  }
+  if (
+    request.schemaVersion !==
+    'wiselink.3_1.canonical_s1000d_vertical_request.v1'
+  ) {
+    throw new Error('CANONICAL_S1000D_VERTICAL_REQUEST_INVALID:SCHEMA_VERSION');
+  }
+  for (const value of [
+    request.workItemId,
+    request.requestId,
+    request.source.documentId,
+    request.source.documentVersionId,
+    request.source.parserRequestId,
+    request.source.sourceArtifactId,
+    request.source.sourceFileSha256,
+    request.source.driveFileToken,
+    request.source.driveSourceVersion,
+    request.classification.normalizedFamily,
+    request.classification.classifierReleaseId,
+    request.classification.classifierReleaseHash,
+    request.classification.parserProfileId,
+    request.classification.parserProfileHash,
+    request.classification.fingerprint,
+    request.query,
+  ]) {
+    requiredText(value, 'canonicalS1000dVertical.request', 500);
+  }
+  if (
+    !Number.isSafeInteger(request.source.sourceByteLength) ||
+    request.source.sourceByteLength <= 0 ||
+    !['CANDIDATE', 'CONFIRMED'].includes(request.classification.status) ||
+    request.classification.normalizedFamily !== 'S1000D'
+  ) {
+    throw new Error('CANONICAL_S1000D_VERTICAL_REQUEST_INVALID:SOURCE_PROFILE');
+  }
+}
+
 function validateDecision(
   decision: CanonicalAuthorizationDecision,
   expectedAction: CanonicalAuthorizationDecision['action'],
@@ -1360,7 +1641,7 @@ function stableCauseCode(error: unknown): string {
 
 function assertSameRequest(
   projection: CanonicalWorkItemProjection,
-  request: CanonicalPdfVerticalRunRequest,
+  request: CanonicalVerticalRunRequest,
 ): void {
   if (
     projection.workItemId !== request.workItemId ||
@@ -1372,3 +1653,150 @@ function assertSameRequest(
     throw new Error('WORK_ITEM_IDEMPOTENCY_COLLISION');
   }
 }
+
+function candidatePackageArtifact(bytes: Uint8Array) {
+  const digest = createHash('sha256').update(bytes).digest('hex');
+  return {
+    storeRole: 'UnifiedArtifactStoreCandidate' as const,
+    ref: `artifact://UnifiedArtifactStoreCandidate/unified-parsed-packages/sha256/${digest}`,
+    sha256: digest,
+    byteLength: bytes.byteLength,
+    mediaType: 'application/json' as const,
+  };
+}
+
+function s1000dUsagePolicy(
+  prepared: PreparedS1000dIngressCandidate,
+): CanonicalParsedPackageUsagePolicy {
+  const parsed = parseNativeS1000dPackage(prepared.produced.bytes);
+  return {
+    presentationMode: 'REFERENCE_ONLY',
+    qualityStatus: 'PASS',
+    applicability: parsed.applicabilityCounts,
+    assessmentAutoAdoptionAllowed: false,
+    aeoAutoAdoptionAllowed: false,
+    projectionSource: 'IMMUTABLE_PACKAGE_ACTUAL_BYTES',
+  };
+}
+
+function parseNativeS1000dPackage(bytes: Uint8Array): {
+  resultStatus: 'complete' | 'partial';
+  contentUnitCount: number;
+  sourceRefCount: number;
+  sourceArtifactIds: string[];
+  applicabilityCounts: {
+    sourceExpressionCount: number;
+    normalizedCandidateCount: number;
+    assignmentCount: number;
+  };
+} {
+  let value: unknown;
+  try {
+    value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+  } catch {
+    throw new Error('S1000D_CANONICAL_PACKAGE_ACTUAL_BYTES_INVALID');
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('S1000D_CANONICAL_PACKAGE_ACTUAL_BYTES_INVALID');
+  }
+  const pkg = value as Record<string, any>;
+  if (
+    pkg.source?.kind !== 'native_s1000d' ||
+    !['complete', 'partial'].includes(pkg.result?.status) ||
+    !Array.isArray(pkg.contentUnits) ||
+    !Array.isArray(pkg.sourceRefs) ||
+    !Array.isArray(pkg.source?.artifactIds) ||
+    pkg.source.artifactIds.some((item: unknown) => typeof item !== 'string') ||
+    !Array.isArray(pkg.applicability?.sourceExpressions) ||
+    !Array.isArray(pkg.applicability?.normalizedCandidates) ||
+    !Array.isArray(pkg.applicability?.assignments)
+  ) {
+    throw new Error('S1000D_CANONICAL_PACKAGE_ACTUAL_BYTES_INVALID');
+  }
+  return {
+    resultStatus: pkg.result.status,
+    contentUnitCount: pkg.contentUnits.length,
+    sourceRefCount: pkg.sourceRefs.length,
+    sourceArtifactIds: [...pkg.source.artifactIds],
+    applicabilityCounts: {
+      sourceExpressionCount: pkg.applicability.sourceExpressions.length,
+      normalizedCandidateCount: pkg.applicability.normalizedCandidates.length,
+      assignmentCount: pkg.applicability.assignments.length,
+    },
+  };
+}
+
+function assertPublishedS1000dPackage(
+  projection: CanonicalWorkItemProjection,
+  prepared: PreparedS1000dIngressCandidate,
+): void {
+  if (
+    projection.phase !== 'CANDIDATE_READBACK_VERIFIED' ||
+    !projection.package ||
+    projection.package.packageId !== prepared.produced.packageId ||
+    projection.package.contentUnitCount !== prepared.summary.contentUnitCount ||
+    projection.package.sourceRefCount !== prepared.summary.sourceRefCount
+  ) {
+    throw new Error('S1000D_CURRENT_PUBLICATION_READBACK_MISMATCH');
+  }
+}
+
+function assertS1000dPreparedSourceMatchesRequest(
+  request: CanonicalS1000dVerticalRunRequest,
+  prepared: PreparedS1000dIngressCandidate,
+): void {
+  if (
+    prepared.source.documentId !== request.source.documentId ||
+    prepared.source.documentVersionId !== request.source.documentVersionId ||
+    prepared.source.sourceArtifactId !== request.source.sourceArtifactId ||
+    `sha256:${prepared.source.sha256}` !== request.source.sourceFileSha256 ||
+    prepared.source.byteLength !== request.source.sourceByteLength ||
+    prepared.source.providerObjectId !== request.source.driveFileToken ||
+    prepared.source.providerVersionId !== request.source.driveSourceVersion
+  ) {
+    throw Object.assign(new Error('S1000D_REQUEST_SOURCE_DRIFT'), {
+      code: 'S1000D_REQUEST_SOURCE_DRIFT',
+      statusCode: 409,
+    });
+  }
+}
+
+function s1000dVerifiedResponse(
+  summary: PreparedS1000dIngressCandidate['summary'],
+): CanonicalS1000dVerticalRunResponse {
+  return {
+    schemaVersion: 'wiselink.3_1.canonical_s1000d_vertical_response.v1',
+    status: 'CANDIDATE_VERTICAL_VERIFIED',
+    sourceKind: 'native_s1000d',
+    summary: { ...summary },
+    boundary: {
+      canonicalArtifactPersisted: true,
+      professionalArtifactCorrelated: true,
+      workItemCurrentPublished: true,
+      readerProjectionCreated: true,
+      actualSourceBytesExposed: false,
+      internalIdentityExposed: false,
+      applicabilityIsInstallationFact: false,
+      publicationAuthorized: false,
+      currentSelectionChanged: false,
+    },
+  };
+}
+
+function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
+  return (
+    left.byteLength === right.byteLength &&
+    left.every((value, index) => value === right[index])
+  );
+}
+
+function serviceUnavailable(code: string): Error & {
+  code: string;
+  statusCode: number;
+} {
+  return Object.assign(new Error(code), { code, statusCode: 503 });
+}
+
+type CanonicalVerticalRunRequest =
+  | CanonicalPdfVerticalRunRequest
+  | CanonicalS1000dVerticalRunRequest;

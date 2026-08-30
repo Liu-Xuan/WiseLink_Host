@@ -71,6 +71,14 @@ export class CanonicalHostController {
     );
   }
 
+  @Post('work-items/parse-s1000d')
+  runS1000d(@Body() request: unknown, @Req() httpRequest: Request) {
+    return this.workItems.parseS1000d(
+      request as Parameters<OrdinaryWorkItemService['parseS1000d']>[0],
+      hostActor(httpRequest),
+    );
+  }
+
   @Get('work-items/:workItemId/document-parsing')
   page(
     @Param('workItemId') workItemId: string,

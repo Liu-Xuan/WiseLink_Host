@@ -61,6 +61,27 @@ describe('Miaoda S1000D DocumentVersion source adapter', () => {
 
     const source = await adapter.resolveCurrent('document-version-1');
     const readback = await adapter.readActualBytes(source);
+    const dependencyReadback = await adapter.readAuthorizedActualBytes({
+      packageArtifactId: `urn:techpub:artifact:v1:sha256:${'b'.repeat(64)}`,
+      hostSourceArtifactId: 'source-artifact-schema-1',
+      packageRole: 'schema',
+      normalizedPath: 'SCHEMA/descript.xsd',
+      mediaType: 'application/xml',
+      sha256,
+      byteLength: bytes.byteLength,
+      providerObjectId: 'provider-object-1',
+      providerVersionId: 'provider-object-1',
+      fileServiceLocator: {
+        bucketId: 'canonical-bucket',
+        filePath: '/document-management/source/example.xml',
+      },
+      authorizationEvidenceRef: 'authorization://fixture/schema-1',
+      dependency: {
+        kind: 'AUTHORIZED_DEPENDENCY',
+        parentPackageArtifactId: `urn:techpub:artifact:v1:sha256:${'a'.repeat(64)}`,
+        relationship: 'SCHEMA_BINDING',
+      },
+    });
 
     expect(resolver.resolve).toHaveBeenCalledWith('document-version-1', {
       requireCurrent: true,
@@ -77,6 +98,7 @@ describe('Miaoda S1000D DocumentVersion source adapter', () => {
       byteLength: bytes.byteLength,
     });
     expect(Buffer.from(readback).equals(bytes)).toBe(true);
+    expect(Buffer.from(dependencyReadback).equals(bytes)).toBe(true);
     expect(fileService.from).toHaveBeenCalledWith('canonical-bucket');
   });
 

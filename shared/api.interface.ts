@@ -1715,6 +1715,46 @@ export interface CanonicalPdfVerticalRunRequest {
   query: string;
 }
 
+export interface CanonicalS1000dVerticalRunRequest {
+  schemaVersion: 'wiselink.3_1.canonical_s1000d_vertical_request.v1';
+  workItemId: string;
+  requestId: string;
+  source: CanonicalDocumentVersionSelection;
+  classification: CanonicalClassificationSelection;
+  query: string;
+}
+
+/** Browser-safe completion receipt; canonical identities stay server-side. */
+export interface CanonicalS1000dVerticalRunResponse {
+  schemaVersion: 'wiselink.3_1.canonical_s1000d_vertical_response.v1';
+  status: 'CANDIDATE_VERTICAL_VERIFIED';
+  sourceKind: 'native_s1000d';
+  summary: {
+    resultStatus: 'complete' | 'partial';
+    contentUnitCount: number;
+    sourceRefCount: number;
+    authorizedSourceArtifactCount: number;
+  };
+  boundary: {
+    canonicalArtifactPersisted: true;
+    professionalArtifactCorrelated: true;
+    workItemCurrentPublished: true;
+    readerProjectionCreated: true;
+    actualSourceBytesExposed: false;
+    internalIdentityExposed: false;
+    applicabilityIsInstallationFact: false;
+    publicationAuthorized: false;
+    currentSelectionChanged: false;
+  };
+}
+
+export interface CanonicalS1000dOrdinaryRunResponse {
+  schemaVersion: 'wiselink.3_1.ordinary_s1000d_work_item_run.v1';
+  workItemCreated: boolean;
+  workItemReused: boolean;
+  result: CanonicalS1000dVerticalRunResponse;
+}
+
 export interface CanonicalPdfVerticalRunResponse {
   schemaVersion: 'wiselink.3_1.canonical_pdf_vertical_response.v0.candidate';
   status: 'CANDIDATE_VERTICAL_VERIFIED' | 'FAILED' | 'RECORDING_FAILED';

@@ -1,9 +1,11 @@
 import type { UnifiedPackageArtifactDescriptor } from '@shared/api.interface';
+import { Inject, Injectable } from '@nestjs/common';
 
 import type { CanonicalHostActor } from '../canonical-host/canonical-host.types';
 import { U0FullValidationService } from '../unified-reader/u0-full-validation.service';
 import { sha256Raw } from '../unified-reader/unified-reader.utils';
 import type {
+  PreparedS1000dIngressCandidate,
   ResolvedS1000dDocumentSource,
   S1000dDocumentSourcePort,
   S1000dIngressCandidateStatus,
@@ -19,6 +21,11 @@ import {
   validateProducedPackageBinding,
   validateResolvedSource,
 } from './s1000d-ingress.validation';
+import {
+  S1000D_DOCUMENT_SOURCE,
+  S1000D_SOURCE_USE_AUTHORIZER,
+  S1000D_STRUCTURED_PACKAGE_PRODUCER,
+} from './s1000d-ingress.constants';
 
 /**
  * S1000D-specific adapter seam for the existing canonical chain:
@@ -30,10 +37,15 @@ import {
  * Reader implementation. Persist/correlation/readback remains exclusively
  * owned by the canonical vertical once that owner accepts this candidate seam.
  */
+@Injectable()
+// eslint-disable-next-line @darraghor/nestjs-typed/injectable-should-be-provided -- CanonicalHostModule.forRoot owns the single vertical composition.
 export class S1000dIngressService {
   constructor(
+    @Inject(S1000D_DOCUMENT_SOURCE)
     private readonly sources: S1000dDocumentSourcePort,
+    @Inject(S1000D_SOURCE_USE_AUTHORIZER)
     private readonly authorizer: S1000dSourceUseAuthorizerPort,
+    @Inject(S1000D_STRUCTURED_PACKAGE_PRODUCER)
     private readonly producer: S1000dStructuredPackageProducerPort,
     private readonly validator: U0FullValidationService,
   ) {}
@@ -42,6 +54,32 @@ export class S1000dIngressService {
     request: S1000dIngressRequest,
     actor: CanonicalHostActor,
   ): Promise<S1000dIngressCandidateStatus> {
+    const prepared = await this.prepare(request, actor);
+    return candidateStatus(prepared);
+  }
+
+  assertAvailable(): void {
+    if (!this.sources.available) {
+      throw unavailable('S1000D_DOCUMENT_SOURCE_UNCONFIGURED');
+    }
+    if (!this.authorizer.available) {
+      throw unavailable('S1000D_SOURCE_USE_AUTHORIZATION_UNCONFIGURED');
+    }
+    if (!this.producer.available) {
+      throw unavailable('S1000D_PRODUCER_UNCONFIGURED');
+    }
+  }
+
+  /**
+   * Server-only candidate handoff. It has no Reader or write dependency; only
+   * CanonicalHostVerticalService may consume these bytes for correlation and
+   * publication.
+   */
+  async prepare(
+    request: S1000dIngressRequest,
+    actor: CanonicalHostActor,
+  ): Promise<PreparedS1000dIngressCandidate> {
+    this.assertAvailable();
     validateRequest(request);
     const source: ResolvedS1000dDocumentSource =
       await this.sources.resolveCurrent(request.documentVersionId);
@@ -69,9 +107,32 @@ export class S1000dIngressService {
       );
     }
 
+    const artifacts = await Promise.all(
+      authorization.authorizedSourceManifest.map(async (artifact) => {
+        const actualArtifactBytes =
+          artifact.dependency.kind === 'PRIMARY_DOCUMENT_VERSION'
+            ? actualBytes
+            : await this.sources.readAuthorizedActualBytes(artifact);
+        if (
+          actualArtifactBytes.byteLength !== artifact.byteLength ||
+          sha256Raw(actualArtifactBytes) !== artifact.sha256
+        ) {
+          throw s1000dIngressError(
+            'S1000D_AUTHORIZED_SOURCE_ACTUAL_BYTE_MISMATCH',
+            `An authorized S1000D package member does not match actual FileService bytes (${artifact.normalizedPath}).`,
+            409,
+          );
+        }
+        return {
+          authorization: artifact,
+          actualBytes: Uint8Array.from(actualArtifactBytes),
+        };
+      }),
+    );
+
     const produced = await this.producer.produce({
       source,
-      actualBytes,
+      artifacts,
       authorization,
     });
     const summary = validateProducedPackageBinding(
@@ -91,40 +152,53 @@ export class S1000dIngressService {
     const artifact: UnifiedPackageArtifactDescriptor = candidateDescriptor(
       produced.bytes,
     );
-    const proof = await this.validator.validate({
+    await this.validator.validate({
       artifact,
       bytes: produced.bytes,
       packageId: produced.packageId,
     });
 
     return {
-      schemaVersion: 'wiselink.3_1.s1000d_ingress_candidate_status.v1',
-      status: 'CANDIDATE_U0_VALIDATED',
-      sourceKind: 'native_s1000d',
-      contract: {
-        id: 'techpub.parsed-package.v1',
-        revision: 'frozen.2',
-        validatorStatus: proof.status,
-      },
+      source,
+      authorization,
+      produced,
       summary: {
         ...summary,
         authorizedSourceArtifactCount:
           authorization.authorizedSourceManifest.length,
       },
-      boundary: {
-        currentDocumentVersionRechecked: true,
-        canonicalArtifactPersisted: false,
-        professionalArtifactCorrelated: false,
-        workItemStateChanged: false,
-        readerProjectionCreated: false,
-        actualSourceBytesExposed: false,
-        internalIdentityExposed: false,
-        applicabilityIsInstallationFact: false,
-        publicationAuthorized: false,
-        currentSelectionChanged: false,
-      },
     };
   }
+}
+
+function candidateStatus(
+  prepared: PreparedS1000dIngressCandidate,
+): S1000dIngressCandidateStatus {
+  return {
+    schemaVersion: 'wiselink.3_1.s1000d_ingress_candidate_status.v1',
+    status: 'CANDIDATE_U0_VALIDATED',
+    sourceKind: 'native_s1000d',
+    contract: {
+      id: 'techpub.parsed-package.v1',
+      revision: 'frozen.2',
+      validatorStatus: 'FULL_STRICT_VALIDATOR_PASSED',
+    },
+    summary: {
+      ...prepared.summary,
+    },
+    boundary: {
+      currentDocumentVersionRechecked: true,
+      canonicalArtifactPersisted: false,
+      professionalArtifactCorrelated: false,
+      workItemStateChanged: false,
+      readerProjectionCreated: false,
+      actualSourceBytesExposed: false,
+      internalIdentityExposed: false,
+      applicabilityIsInstallationFact: false,
+      publicationAuthorized: false,
+      currentSelectionChanged: false,
+    },
+  };
 }
 
 function candidateDescriptor(
@@ -202,4 +276,10 @@ function requiredText(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function unavailable(
+  code: string,
+): Error & { code: string; statusCode: number } {
+  return Object.assign(new Error(code), { code, statusCode: 503 });
 }

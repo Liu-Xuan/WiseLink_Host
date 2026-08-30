@@ -119,6 +119,17 @@ import {
   GET_INSTALLATION_EVENTS,
   UnconfiguredGetInstallationEventsAdapter,
 } from './configuration-evidence/get-installation-events.port';
+import { S1000dIngressService } from '../s1000d-ingress/s1000d-ingress.service';
+import { MiaodaS1000dDocumentSourceAdapter } from '../s1000d-ingress/miaoda-s1000d-document-source.adapter';
+import { S1000dXmlStructuredPackageProducerAdapter } from '../s1000d-ingress/s1000d-xml-structured-package-producer.adapter';
+import { UnconfiguredS1000dDocumentSourceAdapter } from '../s1000d-ingress/unconfigured-s1000d-document-source.adapter';
+import { UnconfiguredS1000dSourceUseAuthorizerAdapter } from '../s1000d-ingress/unconfigured-s1000d-source-use-authorizer.adapter';
+import { UnconfiguredS1000dStructuredPackageProducerAdapter } from '../s1000d-ingress/unconfigured-s1000d-structured-package-producer.adapter';
+import {
+  S1000D_DOCUMENT_SOURCE,
+  S1000D_SOURCE_USE_AUTHORIZER,
+  S1000D_STRUCTURED_PACKAGE_PRODUCER,
+} from '../s1000d-ingress/s1000d-ingress.constants';
 
 export interface CanonicalHostModuleOptions {
   imports?: ModuleMetadata['imports'];
@@ -135,6 +146,9 @@ export interface CanonicalHostModuleOptions {
   professionalArtifactCorrelationProvider?: Provider;
   applicabilityControlledSelectionProvider?: Provider;
   installationEventsProvider?: Provider;
+  s1000dDocumentSourceProvider?: Provider;
+  s1000dSourceUseAuthorizerProvider?: Provider;
+  s1000dProducerProvider?: Provider;
 }
 
 @Module({
@@ -319,6 +333,24 @@ export class CanonicalHostModule {
       UnconfiguredGetInstallationEventsAdapter,
       'GET_INSTALLATION_EVENTS_PROVIDER_INVALID',
     );
+    const s1000dDocumentSourceProvider = resolveProvider(
+      options.s1000dDocumentSourceProvider,
+      S1000D_DOCUMENT_SOURCE,
+      UnconfiguredS1000dDocumentSourceAdapter,
+      'S1000D_DOCUMENT_SOURCE_PROVIDER_INVALID',
+    );
+    const s1000dSourceUseAuthorizerProvider = resolveProvider(
+      options.s1000dSourceUseAuthorizerProvider,
+      S1000D_SOURCE_USE_AUTHORIZER,
+      UnconfiguredS1000dSourceUseAuthorizerAdapter,
+      'S1000D_SOURCE_USE_AUTHORIZER_PROVIDER_INVALID',
+    );
+    const s1000dProducerProvider = resolveProvider(
+      options.s1000dProducerProvider,
+      S1000D_STRUCTURED_PACKAGE_PRODUCER,
+      UnconfiguredS1000dStructuredPackageProducerAdapter,
+      'S1000D_STRUCTURED_PACKAGE_PRODUCER_PROVIDER_INVALID',
+    );
     const binding: CanonicalHostBindingState = {
       mode:
         options.workItemRegistrarProvider &&
@@ -382,6 +414,9 @@ export class CanonicalHostModule {
         professionalArtifactCorrelationProvider,
         applicabilityControlledSelectionProvider,
         installationEventsProvider,
+        s1000dDocumentSourceProvider,
+        s1000dSourceUseAuthorizerProvider,
+        s1000dProducerProvider,
         {
           provide: CANONICAL_HOST_CLOCK,
           useClass: SystemCanonicalHostClockAdapter,
@@ -434,6 +469,9 @@ export class CanonicalHostModule {
           provide: CONFIGURATION_EVIDENCE_STORE,
           useExisting: MiaodaConfigurationEvidenceStore,
         },
+        S1000dIngressService,
+        MiaodaS1000dDocumentSourceAdapter,
+        S1000dXmlStructuredPackageProducerAdapter,
         {
           provide: CANONICAL_SERVICE_SCOPE_AUTHORIZATION,
           useExisting: CANONICAL_EXECUTOR_SERVICE_SCOPE_AUTHORIZATION,

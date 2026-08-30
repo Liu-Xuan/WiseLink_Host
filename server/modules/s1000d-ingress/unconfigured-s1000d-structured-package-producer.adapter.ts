@@ -5,6 +5,7 @@ import type { S1000dStructuredPackageProducerPort } from './s1000d-ingress.types
  * bound. Contract fixtures are never used as a production parser fallback.
  */
 export class UnconfiguredS1000dStructuredPackageProducerAdapter implements S1000dStructuredPackageProducerPort {
+  readonly available = false;
   async produce(): ReturnType<S1000dStructuredPackageProducerPort['produce']> {
     throw Object.assign(
       new Error('The production S1000D structured package producer is absent.'),

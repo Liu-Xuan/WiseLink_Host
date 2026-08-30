@@ -32,10 +32,14 @@ export interface ResolvedS1000dDocumentSource {
  * FileService owner used by Document Management.
  */
 export interface S1000dDocumentSourcePort {
+  readonly available: boolean;
   resolveCurrent(
     documentVersionId: string,
   ): Promise<ResolvedS1000dDocumentSource>;
   readActualBytes(source: ResolvedS1000dDocumentSource): Promise<Uint8Array>;
+  readAuthorizedActualBytes(
+    artifact: S1000dAuthorizedSourceArtifact,
+  ): Promise<Uint8Array>;
 }
 
 export type S1000dDependencyRelationship =
@@ -57,6 +61,13 @@ export interface S1000dAuthorizedSourceArtifact {
   mediaType: string;
   sha256: string;
   byteLength: number;
+  providerObjectId: string;
+  providerVersionId: string;
+  /** Host-only FileService locator. Never include it in a browser projection. */
+  fileServiceLocator: {
+    bucketId: string;
+    filePath: string;
+  };
   authorizationEvidenceRef: string;
   dependency:
     | {
@@ -68,6 +79,11 @@ export interface S1000dAuthorizedSourceArtifact {
         parentPackageArtifactId: string;
         relationship: S1000dDependencyRelationship;
       };
+}
+
+export interface S1000dPackageSourceArtifact {
+  authorization: S1000dAuthorizedSourceArtifact;
+  actualBytes: Uint8Array;
 }
 
 export interface S1000dSourceUseAuthorization {
@@ -89,6 +105,7 @@ export interface S1000dSourceUseAuthorization {
 }
 
 export interface S1000dSourceUseAuthorizerPort {
+  readonly available: boolean;
   authorize(input: {
     actor: CanonicalHostActor;
     workItemId: string;
@@ -107,11 +124,25 @@ export interface S1000dStructuredPackageProducerResult {
 }
 
 export interface S1000dStructuredPackageProducerPort {
+  readonly available: boolean;
   produce(input: {
     source: ResolvedS1000dDocumentSource;
-    actualBytes: Uint8Array;
+    artifacts: readonly S1000dPackageSourceArtifact[];
     authorization: S1000dSourceUseAuthorization;
   }): Promise<S1000dStructuredPackageProducerResult>;
+}
+
+/** Server-only handoff into the one canonical Host vertical. */
+export interface PreparedS1000dIngressCandidate {
+  source: ResolvedS1000dDocumentSource;
+  authorization: S1000dSourceUseAuthorization;
+  produced: S1000dStructuredPackageProducerResult;
+  summary: {
+    resultStatus: 'complete' | 'partial';
+    contentUnitCount: number;
+    sourceRefCount: number;
+    authorizedSourceArtifactCount: number;
+  };
 }
 
 export interface S1000dIngressRequest {

@@ -1,9 +1,11 @@
 import { FileService } from '@lark-apaas/fullstack-nestjs-core';
+import { Injectable } from '@nestjs/common';
 
 import { MiaodaFileServiceArtifactStore } from '../document-management/src/hosted/miaodaFileServiceArtifactStore.js';
 import { MiaodaDocumentVersionSourceResolver } from '../work-item/miaoda-document-version-source.resolver';
 import type {
   ResolvedS1000dDocumentSource,
+  S1000dAuthorizedSourceArtifact,
   S1000dDocumentSourcePort,
 } from './s1000d-ingress.types';
 
@@ -11,7 +13,10 @@ import type {
  * Read-only adapter over the existing DM Catalog resolver and FileService.
  * It cannot create an XML DocumentVersion; that remains the DM owner's seam.
  */
+@Injectable()
+// eslint-disable-next-line @darraghor/nestjs-typed/injectable-should-be-provided -- CanonicalHostModule.forRoot registers this dynamic production provider.
 export class MiaodaS1000dDocumentSourceAdapter implements S1000dDocumentSourcePort {
+  readonly available = true;
   private readonly sourceStore: MiaodaFileServiceArtifactStore;
 
   constructor(
@@ -37,8 +42,7 @@ export class MiaodaS1000dDocumentSourceAdapter implements S1000dDocumentSourcePo
       documentId: resolved.version.documentId,
       documentVersionId: resolved.version.documentVersionId,
       revisionId: resolved.version.revisionId,
-      canonicalRevisionIdentity:
-        resolved.version.canonicalRevisionIdentity,
+      canonicalRevisionIdentity: resolved.version.canonicalRevisionIdentity,
       committedAt: new Date(resolved.version.committedAt).toISOString(),
       sourceArtifactId: resolved.artifact.sourceArtifactId,
       originalFilename: resolved.version.originalFilename,
@@ -72,6 +76,26 @@ export class MiaodaS1000dDocumentSourceAdapter implements S1000dDocumentSourcePo
     }
     return Uint8Array.from(selected.bytes);
   }
+
+  async readAuthorizedActualBytes(
+    artifact: S1000dAuthorizedSourceArtifact,
+  ): Promise<Uint8Array> {
+    const selected = await this.sourceStore.readSelection(
+      artifact.fileServiceLocator,
+    );
+    if (
+      selected.readbackVerified !== true ||
+      selected.providerObjectId !== artifact.providerObjectId ||
+      selected.providerVersionId !== artifact.providerVersionId ||
+      selected.sha256 !== artifact.sha256 ||
+      selected.byteLength !== artifact.byteLength ||
+      normalizedMediaType(selected.mediaType) !==
+        normalizedMediaType(artifact.mediaType)
+    ) {
+      throw sourceIdentityInvalid();
+    }
+    return Uint8Array.from(selected.bytes);
+  }
 }
 
 function normalizedXmlMediaType(
@@ -91,6 +115,13 @@ function normalizedXmlMediaType(
     );
   }
   return normalized;
+}
+
+function normalizedMediaType(value: unknown): string {
+  return String(value ?? '')
+    .split(';', 1)[0]
+    .trim()
+    .toLocaleLowerCase();
 }
 
 function sourceIdentityInvalid(): Error & {

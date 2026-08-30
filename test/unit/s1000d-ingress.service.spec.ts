@@ -88,10 +88,7 @@ describe('S1000D V1.1 ingress adapter seam', () => {
       fullValidator(),
     );
 
-    const response = await service.ingest(
-      candidateRequest('fixture'),
-      ACTOR,
-    );
+    const response = await service.ingest(candidateRequest('fixture'), ACTOR);
 
     expect(events).toEqual([
       'resolve',
@@ -263,6 +260,7 @@ describe('S1000D V1.1 ingress adapter seam', () => {
     const initial = resolvedFixtureSource(sourceBytes);
     let current = structuredClone(initial);
     const source: S1000dDocumentSourcePort = {
+      available: true,
       resolveCurrent: async () => {
         events.push('resolve');
         return structuredClone(current);
@@ -271,6 +269,7 @@ describe('S1000D V1.1 ingress adapter seam', () => {
         events.push('read-bytes');
         return Uint8Array.from(sourceBytes);
       },
+      readAuthorizedActualBytes: async () => Uint8Array.from(sourceBytes),
     };
     const validator = fullValidator();
     const validate = jest.spyOn(validator, 'validate');
@@ -278,6 +277,7 @@ describe('S1000D V1.1 ingress adapter seam', () => {
       source,
       fixtureAuthorization(events),
       {
+        available: true,
         produce: async () => {
           events.push('producer-entered');
           producerEntered.resolve(undefined);
@@ -337,6 +337,7 @@ describe('S1000D V1.1 ingress adapter seam', () => {
     const service = new S1000dIngressService(
       fixtureSource(sourceBytes, events),
       {
+        available: true,
         authorize: async ({ source }) => {
           events.push('authorize');
           return {
@@ -348,7 +349,10 @@ describe('S1000D V1.1 ingress adapter seam', () => {
           };
         },
       },
-      { produce: jest.fn() } as unknown as S1000dStructuredPackageProducerPort,
+      {
+        available: true,
+        produce: jest.fn(),
+      } as unknown as S1000dStructuredPackageProducerPort,
       fullValidator(),
     );
 
@@ -377,7 +381,7 @@ describe('S1000D V1.1 ingress adapter seam', () => {
       code: 'S1000D_SOURCE_USE_AUTHORIZATION_UNCONFIGURED',
       statusCode: 503,
     });
-    expect(events).toEqual(['resolve']);
+    expect(events).toEqual([]);
   });
 
   it('reports the production producer blocker without falling back to fixture output', async () => {
@@ -396,7 +400,7 @@ describe('S1000D V1.1 ingress adapter seam', () => {
       code: 'S1000D_PRODUCER_UNCONFIGURED',
       statusCode: 503,
     });
-    expect(events).toEqual(['resolve', 'authorize', 'read-bytes']);
+    expect(events).toEqual([]);
   });
 });
 
@@ -430,6 +434,7 @@ function fixtureSource(
 ): S1000dDocumentSourcePort {
   const resolved = resolvedFixtureSource(bytes, options);
   return {
+    available: true,
     resolveCurrent: async () => {
       events.push('resolve');
       return structuredClone(resolved);
@@ -437,6 +442,12 @@ function fixtureSource(
     readActualBytes: async () => {
       events.push('read-bytes');
       return Uint8Array.from(bytes);
+    },
+    readAuthorizedActualBytes: async (artifact) => {
+      events.push(`read-dependency:${artifact.normalizedPath}`);
+      return Uint8Array.from(
+        await readFile(resolve(RICH_SOURCE_ROOT, artifact.normalizedPath)),
+      );
     },
   };
 }
@@ -468,8 +479,7 @@ function resolvedFixtureSource(
     fileServiceLocator: {
       bucketId: 'fixture-bucket',
       filePath:
-        options.filePath ??
-        '/document-management/source/minimal-s1000d.xml',
+        options.filePath ?? '/document-management/source/minimal-s1000d.xml',
     },
   };
 }
@@ -481,6 +491,7 @@ function fixtureAuthorization(
   ) => S1000dAuthorizedSourceArtifact[] = minimalAuthorizedManifest,
 ): S1000dSourceUseAuthorizerPort {
   return {
+    available: true,
     authorize: async ({ source }) => {
       events.push('authorize');
       return authorizedFixture(source, manifest(source));
@@ -490,8 +501,9 @@ function fixtureAuthorization(
 
 function authorizedFixture(
   source: ResolvedS1000dDocumentSource,
-  authorizedSourceManifest: S1000dAuthorizedSourceArtifact[] =
-    minimalAuthorizedManifest(source),
+  authorizedSourceManifest: S1000dAuthorizedSourceArtifact[] = minimalAuthorizedManifest(
+    source,
+  ),
 ): S1000dSourceUseAuthorization {
   return {
     status: 'AUTHORIZED',
@@ -522,6 +534,9 @@ function minimalAuthorizedManifest(
       mediaType: source.mediaType,
       sha256: source.sha256,
       byteLength: source.byteLength,
+      providerObjectId: source.providerObjectId,
+      providerVersionId: source.providerVersionId,
+      fileServiceLocator: { ...source.fileServiceLocator },
       authorizationEvidenceRef:
         'repository://frozen.2/fixtures/source/minimal-s1000d.xml',
       dependency: {
@@ -555,8 +570,22 @@ function richAuthorizedManifest(
     mediaType: artifact.mediaType,
     sha256: artifact.sha256.replace(/^sha256:/u, ''),
     byteLength: artifact.byteLength,
-    authorizationEvidenceRef:
-      `repository://frozen.2/fixtures/source/native-s1000d-issue-4-2/${artifact.normalizedPath}`,
+    providerObjectId:
+      artifact.artifactId === primary.artifactId
+        ? source.providerObjectId
+        : `provider-object:${artifact.normalizedPath}`,
+    providerVersionId:
+      artifact.artifactId === primary.artifactId
+        ? source.providerVersionId
+        : `provider-version:${artifact.normalizedPath}`,
+    fileServiceLocator:
+      artifact.artifactId === primary.artifactId
+        ? { ...source.fileServiceLocator }
+        : {
+            bucketId: source.fileServiceLocator.bucketId,
+            filePath: `/document-management/source/${artifact.normalizedPath}`,
+          },
+    authorizationEvidenceRef: `repository://frozen.2/fixtures/source/native-s1000d-issue-4-2/${artifact.normalizedPath}`,
     dependency:
       artifact.artifactId === primary.artifactId
         ? {
@@ -591,6 +620,7 @@ function fixtureProducer(
   events: string[],
 ): S1000dStructuredPackageProducerPort {
   return {
+    available: true,
     produce: async () => {
       events.push('produce');
       return producedFixture(bytes, packageId);

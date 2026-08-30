@@ -7,6 +7,8 @@ import type {
   CanonicalDevelopmentWorkItemRunRequest,
   CanonicalOrdinaryWorkItemRunResponse,
   CanonicalPdfVerticalRunRequest,
+  CanonicalS1000dOrdinaryRunResponse,
+  CanonicalS1000dVerticalRunRequest,
 } from '@shared/api.interface';
 import { CanonicalHostVerticalService } from '../canonical-host/canonical-host-vertical.service';
 import { CANONICAL_DEVELOPMENT_ROLE_ID } from '../canonical-host/canonical-host.constants';
@@ -54,6 +56,18 @@ const OEM_REFERENCE_CLASSIFICATION: CanonicalClassificationSelection = {
     'sha256:9e0f6036c057009b18c19333f33a3945b06cb567c27b1859b2e6ba47979f42c5',
 };
 
+const S1000D_CLASSIFICATION: CanonicalClassificationSelection = {
+  status: 'CONFIRMED',
+  normalizedFamily: 'S1000D',
+  classifierReleaseId: 'structured-source:s1000d-xml-v1.1',
+  classifierReleaseHash: stableSha256('structured-source:s1000d-xml-v1.1'),
+  parserProfileId: 'parser-profile:s1000d.native-xml.v1.1',
+  parserProfileHash: stableSha256('parser-profile:s1000d.native-xml.v1.1'),
+  fingerprint: stableSha256(
+    'S1000D\nstructured-source:s1000d-xml-v1.1\nparser-profile:s1000d.native-xml.v1.1',
+  ),
+};
+
 export interface OrdinaryPdfParseInput {
   documentVersionId?: unknown;
   selection?: {
@@ -98,6 +112,64 @@ export class OrdinaryWorkItemService {
       );
     }
     return this.runPdf(input, actor, origin, 'canonical');
+  }
+
+  async parseS1000d(
+    input: Pick<OrdinaryPdfParseInput, 'documentVersionId' | 'query'>,
+    actor: CanonicalHostActor,
+  ): Promise<CanonicalS1000dOrdinaryRunResponse> {
+    assertProductionMiaodaBrowserIdentityAvailable(actor);
+    const documentVersionId = requiredText(
+      input.documentVersionId,
+      'documentVersionId',
+      96,
+    );
+    await this.assertCanResolveDocumentVersion({
+      actor,
+      documentVersionId,
+      runKey: 'canonical',
+      developmentCreate: false,
+    });
+    this.vertical.assertS1000dAvailable();
+    const resolved = await this.resolver.resolve(documentVersionId, {
+      requireCurrent: true,
+    });
+    const reservation = await this.repository.reserve({
+      tenantId: actor.tenantId,
+      actorUserId: actor.userId,
+      documentId: resolved.version.documentId,
+      documentVersionId: resolved.version.documentVersionId,
+      sourceArtifactId: resolved.version.sourceArtifactId,
+      sourceFileSha256: resolved.version.pdfSha256,
+      sourceByteLength: Number(resolved.version.byteLength),
+      normalizedFamily: S1000D_CLASSIFICATION.normalizedFamily,
+      requestOrigin: 'MIAODA',
+      runKey: 'canonical',
+    });
+    const request: CanonicalS1000dVerticalRunRequest = {
+      schemaVersion: 'wiselink.3_1.canonical_s1000d_vertical_request.v1',
+      workItemId: reservation.workItemId,
+      requestId: reservation.requestId,
+      source: {
+        documentId: resolved.version.documentId,
+        documentVersionId: resolved.version.documentVersionId,
+        parserRequestId: reservation.requestId,
+        sourceArtifactId: resolved.version.sourceArtifactId,
+        sourceFileSha256: `sha256:${resolved.version.pdfSha256}`,
+        sourceByteLength: Number(resolved.version.byteLength),
+        driveFileToken: resolved.artifact.providerObjectId,
+        driveSourceVersion: resolved.artifact.providerVersionId,
+      },
+      classification: { ...S1000D_CLASSIFICATION },
+      query: optionalQuery(input.query),
+    };
+    const result = await this.vertical.runS1000d(request, actor);
+    return {
+      schemaVersion: 'wiselink.3_1.ordinary_s1000d_work_item_run.v1',
+      workItemCreated: reservation.created,
+      workItemReused: !reservation.created,
+      result,
+    };
   }
 
   async createDevelopmentRun(
@@ -650,6 +722,10 @@ function optionalQuery(value: unknown): string {
     return 'applicability';
   }
   return requiredText(value, 'query', 200);
+}
+
+function stableSha256(value: string): string {
+  return `sha256:${createHash('sha256').update(value).digest('hex')}`;
 }
 
 function requiredText(

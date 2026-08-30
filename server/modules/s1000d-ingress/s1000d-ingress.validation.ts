@@ -126,9 +126,7 @@ export function validateProducedPackageBinding(
   if (
     produced.contractId !== 'techpub.parsed-package.v1' ||
     produced.contractRevision !== 'frozen.2' ||
-    !/^urn:techpub:package:v1:sha256:[0-9a-f]{64}$/u.test(
-      produced.packageId,
-    ) ||
+    !/^urn:techpub:package:v1:sha256:[0-9a-f]{64}$/u.test(produced.packageId) ||
     !(produced.bytes instanceof Uint8Array) ||
     produced.bytes.byteLength <= 0 ||
     !produced.producerId.trim() ||
@@ -170,8 +168,10 @@ export function validateProducedPackageBinding(
     parsed.source.artifactIds,
     'SOURCE_ARTIFACT_ID',
   );
-  const packageArtifacts: Map<string, Record<string, unknown>> =
-    packageArtifactIndex(parsed.artifacts);
+  const packageArtifacts: Map<
+    string,
+    Record<string, unknown>
+  > = packageArtifactIndex(parsed.artifacts);
   const sourceOriginArtifactIds = [...packageArtifacts.entries()]
     .filter(([, artifact]) => artifact.origin === 'source')
     .map(([artifactId]) => artifactId);
@@ -272,6 +272,10 @@ function validateAuthorizedSourceManifest(
       !/^[0-9a-f]{64}$/u.test(entry.sha256) ||
       !Number.isSafeInteger(entry.byteLength) ||
       entry.byteLength <= 0 ||
+      !requiredString(entry.providerObjectId) ||
+      !requiredString(entry.providerVersionId) ||
+      !requiredString(entry.fileServiceLocator?.bucketId) ||
+      !requiredString(entry.fileServiceLocator?.filePath) ||
       !requiredString(entry.authorizationEvidenceRef) ||
       packageIds.has(entry.packageArtifactId) ||
       hostIds.has(entry.hostSourceArtifactId)
@@ -304,7 +308,12 @@ function validateAuthorizedSourceManifest(
     primary.normalizedPath !== source.originalFilename ||
     primary.mediaType !== source.mediaType ||
     primary.sha256 !== source.sha256 ||
-    primary.byteLength !== source.byteLength
+    primary.byteLength !== source.byteLength ||
+    primary.providerObjectId !== source.providerObjectId ||
+    primary.providerVersionId !== source.providerVersionId ||
+    primary.fileServiceLocator.bucketId !==
+      source.fileServiceLocator.bucketId ||
+    primary.fileServiceLocator.filePath !== source.fileServiceLocator.filePath
   ) {
     throw sourceManifestAuthorizationRequired('PRIMARY_BINDING');
   }

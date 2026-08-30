@@ -34,6 +34,12 @@ import { IdentityModule } from './modules/identity/identity.module';
 import { ConfiguredDevelopmentCanonicalServiceScopeAuthorization } from './modules/canonical-host/configured-development-service-scope.authorization';
 import { CANONICAL_EXECUTOR_SERVICE_SCOPE_AUTHORIZATION } from './modules/canonical-host/canonical-service-scope.authorization';
 import { ReviewPersistenceModule } from './modules/review-persistence/review-persistence.module';
+import {
+  S1000D_DOCUMENT_SOURCE,
+  S1000D_STRUCTURED_PACKAGE_PRODUCER,
+} from './modules/s1000d-ingress/s1000d-ingress.constants';
+import { MiaodaS1000dDocumentSourceAdapter } from './modules/s1000d-ingress/miaoda-s1000d-document-source.adapter';
+import { S1000dXmlStructuredPackageProducerAdapter } from './modules/s1000d-ingress/s1000d-xml-structured-package-producer.adapter';
 
 @Module({
   imports: [
@@ -73,6 +79,14 @@ import { ReviewPersistenceModule } from './modules/review-persistence/review-per
       applicabilityControlledSelectionProvider: {
         provide: CANONICAL_APPLICABILITY_CONTROLLED_SELECTION,
         useExisting: MiaodaApplicabilityControlledSelectionAdapter,
+      },
+      s1000dDocumentSourceProvider: {
+        provide: S1000D_DOCUMENT_SOURCE,
+        useExisting: MiaodaS1000dDocumentSourceAdapter,
+      },
+      s1000dProducerProvider: {
+        provide: S1000D_STRUCTURED_PACKAGE_PRODUCER,
+        useExisting: S1000dXmlStructuredPackageProducerAdapter,
       },
       unifiedReader: {
         artifactStoreProvider: {
