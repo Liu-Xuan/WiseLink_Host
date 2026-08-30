@@ -32,14 +32,21 @@ export class MiaodaS1000dDocumentSourceAdapter implements S1000dDocumentSourcePo
       throw sourceIdentityInvalid();
     }
     return {
+      familyId: resolved.family.familyId,
+      currentGeneration: Number(resolved.family.currentGeneration),
       documentId: resolved.version.documentId,
       documentVersionId: resolved.version.documentVersionId,
+      revisionId: resolved.version.revisionId,
+      canonicalRevisionIdentity:
+        resolved.version.canonicalRevisionIdentity,
+      committedAt: new Date(resolved.version.committedAt).toISOString(),
       sourceArtifactId: resolved.artifact.sourceArtifactId,
       originalFilename: resolved.version.originalFilename,
       mediaType,
       sha256: resolved.artifact.sha256,
       byteLength: Number(resolved.artifact.byteLength),
       providerObjectId: resolved.artifact.providerObjectId,
+      providerVersionId: resolved.artifact.providerVersionId,
       fileServiceLocator: {
         bucketId: resolved.artifact.bucketId,
         filePath: resolved.artifact.filePath,
@@ -56,6 +63,7 @@ export class MiaodaS1000dDocumentSourceAdapter implements S1000dDocumentSourcePo
     if (
       selected.readbackVerified !== true ||
       selected.providerObjectId !== source.providerObjectId ||
+      selected.providerVersionId !== source.providerVersionId ||
       selected.sha256 !== source.sha256 ||
       selected.byteLength !== source.byteLength ||
       normalizedXmlMediaType(selected.mediaType) !== source.mediaType

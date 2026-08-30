@@ -3,12 +3,14 @@
 This module is the narrow S1000D-specific seam for the existing WiseLink
 canonical chain:
 
-`DocumentVersion/SourceArtifact -> S1000D producer -> frozen.2 -> U0 -> UnifiedReader -> browser-safe projection`
+`DocumentVersion/SourceArtifact -> S1000D producer -> frozen.2 -> U0-validated candidate`
 
 It deliberately does not provide another XML parser, package schema, artifact
-store, Reader, HTTP route, database table or client. `S1000dIngressService`
-uses the existing `UnifiedReaderService`; `MiaodaS1000dDocumentSourceAdapter`
-reads the existing Document Management records and FileService actual bytes.
+store, Reader, HTTP route, database table or client. It also does not persist,
+correlate, mutate a WorkItem or create a Reader projection.
+`MiaodaS1000dDocumentSourceAdapter` reads the existing Document Management
+records and FileService actual bytes; `S1000dIngressService` only proves that a
+server-produced candidate passes the existing full U0 frozen.2 validator.
 
 ## Activation boundary
 
@@ -21,6 +23,26 @@ blocked until both owner seams exist:
    explicitly bound. OEM-controlled input additionally requires both
    processing and browser-redistribution evidence.
 
+Authorization covers the complete frozen.2 `source.artifactIds` set, not only
+the entry DMC. Every DM/PM/delivery object/schema/ICN needs one exact Host
+source-artifact binding and one dependency path to the unique primary
+DocumentVersion. Unknown, duplicate, unbound or cyclic dependencies fail before
+U0. Every SourceRef must also target an artifact in that exact authorized
+source set.
+
+After producer completion the adapter fresh-resolves the current
+DocumentVersion again and compares document, version, SourceArtifact, provider
+object, byte identity and FileService locator with the initial read. Any drift
+fails with `S1000D_DOCUMENT_VERSION_DRIFT` before U0. Because this adapter has
+no write-capable dependency, rejection has zero canonical persistence,
+correlation, WorkItem state or Reader side effects.
+
+The canonical vertical remains the sole future owner of persistence,
+`ScopedProfessionalArtifactCorrelation`, professional-artifact actual-byte
+readback, WorkItem CAS/current fresh-read and Reader projection. Until that
+owner integrates this candidate seam, successful output is only a minimal
+browser-safe validation status and cannot be treated as canonical ingestion.
+
 The unconfigured adapters fail with stable 503 errors. They never substitute a
 contract fixture for a production producer.
 
@@ -29,10 +51,12 @@ contract fixture for a production producer.
 The frozen.2 files under
 `server/runtime-assets/technical-publication-parsed-package/v1-frozen-2/fixtures`
 are repository-controlled synthetic contract fixtures. Tests use their actual
-bytes to prove source binding, strict frozen.2 validation, SourceUnit/SourceRef
-readback and browser sanitization only. They are not OEM data, production DM
-ingress evidence, CSDB interoperability evidence or authorization evidence.
+bytes to prove source binding, strict frozen.2 validation and read-only
+SourceUnit/SourceRef Reader inspection only. They are not OEM data, production
+DM ingress evidence, CSDB interoperability evidence or authorization evidence.
 
-The browser read model excludes raw source bytes, FileService/package artifact
-locators, XPath and XML element ids. S1000D applicability remains source
-evidence only and is never projected as an aircraft installation fact.
+The candidate status excludes authorization decision ids and direct work item,
+request, DocumentVersion, package, artifact, unit and SourceRef identities, as
+well as raw bytes, locators, XPath and XML element ids. S1000D applicability
+remains source evidence only and is never projected as an aircraft installation
+fact.

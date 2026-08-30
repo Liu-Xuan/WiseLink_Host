@@ -4,12 +4,14 @@ export { UnconfiguredS1000dSourceUseAuthorizerAdapter } from './unconfigured-s10
 export { UnconfiguredS1000dStructuredPackageProducerAdapter } from './unconfigured-s1000d-structured-package-producer.adapter';
 export type {
   ResolvedS1000dDocumentSource,
-  S1000dBrowserQueryUnit,
+  S1000dAuthorizedSourceArtifact,
+  S1000dDependencyRelationship,
   S1000dDocumentSourcePort,
-  S1000dIngressReadModel,
+  S1000dIngressCandidateStatus,
   S1000dIngressRequest,
   S1000dSourceClass,
   S1000dSourceUseAuthorization,
   S1000dSourceUseAuthorizerPort,
   S1000dStructuredPackageProducerPort,
+  S1000dStructuredPackageProducerResult,
 } from './s1000d-ingress.types';
