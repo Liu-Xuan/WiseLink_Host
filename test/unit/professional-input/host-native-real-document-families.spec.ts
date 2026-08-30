@@ -21,8 +21,18 @@ jest.mock(
   }),
 );
 
-import type { UnifiedPackageArtifactDescriptor } from '@shared/api.interface';
+import type {
+  CanonicalWorkItemProjection,
+  UnifiedPackageArtifactDescriptor,
+} from '@shared/api.interface';
 
+import { evaluateApplicabilityForAircraft } from '../../../server/modules/assessment-workbench/applicability-fleet/applicabilityFleetEvaluator';
+import {
+  FLEET_MASTER_DATA_SCHEMA_VERSION,
+  type FleetMasterDataSource,
+} from '../../../server/modules/assessment-workbench/applicability-fleet/fleetMasterData';
+import { UNKNOWN } from '../../../server/modules/assessment-workbench/applicability-fleet/applicabilityKleeneEngine';
+import { readFrozenApplicabilitySourceBinding } from '../../../server/modules/canonical-host/canonical-host-applicability-source';
 import { HostNativeDocumentFamilyPdfProducerAdapter } from '../../../server/modules/canonical-host/exact-ftd-frozen2-pdf-producer.adapter';
 import {
   hostNativePdfClassificationFor,
@@ -30,7 +40,13 @@ import {
   type HostNativePdfDocumentType,
 } from '../../../server/modules/canonical-host/host-native-pdf-profile.registry';
 import { scopedProfessionalArtifactRef } from '../../../server/modules/canonical-host/scoped-professional-artifact-correlation.port';
+import { runProfessionalInputPipelineFromLayout } from '../../../server/modules/professional-input/builders/professional-input-pipeline';
 import { PdfjsDistLayoutExtractor } from '../../../server/modules/professional-input/parser/pdfjs-dist-layout-extractor.adapter';
+import type {
+  ParsedPdfLayout,
+  ParsedPdfTextRun,
+  StructuredApplicabilityExpression,
+} from '../../../server/modules/professional-input/pure/professional-input-pure.types';
 import { Frozen2CandidateReaderService } from '../../../server/modules/unified-reader/frozen2-candidate-reader.service';
 import { PythonU0FullPackageValidatorAdapter } from '../../../server/modules/unified-reader/python-u0-full-package-validator.adapter';
 import { U0FullValidationService } from '../../../server/modules/unified-reader/u0-full-validation.service';
@@ -213,9 +229,13 @@ const REAL_FAMILY_CASES: RealFamilyCase[] = [
   },
 ];
 
-const describeRealFamilies = REAL_FAMILY_CASES.every((item) => item.path)
-  ? describe
-  : describe.skip;
+const ACTIVE_REAL_FAMILY_CASES = REAL_FAMILY_CASES.filter((item) => item.path);
+const describeRealFamilies =
+  ACTIVE_REAL_FAMILY_CASES.length > 0 ? describe : describe.skip;
+const REAL_BOEING_SB_PATH = REAL_FAMILY_CASES.find(
+  (item) => item.key === 'boeing-sb',
+)?.path;
+const describeRealBoeingSb = REAL_BOEING_SB_PATH ? describe : describe.skip;
 
 const REAL_OCR_BLOCKED_BOEING_SL_PATH =
   process.env.WL31_REAL_BOEING_SL_PDF_PATH?.trim();
@@ -372,7 +392,7 @@ describeRealFamilies(
   () => {
     jest.setTimeout(600_000);
 
-    it.each(REAL_FAMILY_CASES)(
+    it.each(ACTIVE_REAL_FAMILY_CASES)(
       '$key reads FileService/DV actual bytes -> frozen.2/U0 -> Unified Reader',
       async (fixture) => {
         const sourceBytes = await readFile(fixture.path as string);
@@ -610,8 +630,22 @@ describeRealFamilies(
             sha256: string;
             byteLength: number;
           }>;
-          sourceRefs: unknown[];
+          sourceRefs: Array<{
+            sourceRefId: string;
+            pageStart: number;
+            pageEnd: number;
+          }>;
           contentUnits: unknown[];
+          applicability: {
+            sourceExpressions: Array<{
+              text: string;
+              sourceRefIds: string[];
+            }>;
+            normalizedCandidates: Array<{
+              expression: StructuredApplicabilityExpression;
+            }>;
+            assignments: unknown[];
+          };
         };
         expect(pkg).toMatchObject({
           result: { status: 'complete' },
@@ -631,6 +665,55 @@ describeRealFamilies(
         });
         expect(pkg.sourceRefs.length).toBeGreaterThan(0);
         expect(pkg.contentUnits.length).toBeGreaterThan(0);
+        if (fixture.key === 'boeing-sb') {
+          expect(produced.usagePolicy.applicability).toEqual({
+            sourceExpressionCount: 1,
+            normalizedCandidateCount: 1,
+            assignmentCount: 1,
+          });
+          expect(pkg.applicability.sourceExpressions).toHaveLength(1);
+          expect(pkg.applicability.normalizedCandidates).toHaveLength(1);
+          expect(pkg.applicability.assignments).toHaveLength(1);
+          const sourceExpression = pkg.applicability.sourceExpressions[0];
+          expect(sourceExpression.text).toContain(
+            '777-200, 777-200LR, 777-300, 777-300ER, 777F',
+          );
+          expect(sourceExpression.text).toContain('number(s) 1-1566');
+          expect(sourceExpression.text).toContain('1834 in 1 Group(s).');
+          expect(sourceExpression.text).toContain(
+            'means "through" and "inclusive"',
+          );
+          expect(sourceExpression.sourceRefIds).toHaveLength(11);
+          const refsById = new Map(
+            pkg.sourceRefs.map((sourceRef) => [
+              sourceRef.sourceRefId,
+              sourceRef,
+            ]),
+          );
+          expect(
+            sourceExpression.sourceRefIds.map(
+              (sourceRefId) => refsById.get(sourceRefId)?.pageStart,
+            ),
+          ).toEqual(Array(11).fill(7));
+          expect(
+            sourceExpression.sourceRefIds.every((sourceRefId) =>
+              refsById.has(sourceRefId),
+            ),
+          ).toBe(true);
+          const lineSummary = summarize777LineExpression(
+            pkg.applicability.normalizedCandidates[0].expression,
+          );
+          expect(lineSummary.predicateCount).toBe(52);
+          expect(lineSummary.singletonCount).toBe(12);
+          expect(lineSummary.rangeCount).toBe(40);
+          expect(lineSummary.expanded.size).toBe(1783);
+          expect(Math.min(...lineSummary.expanded)).toBe(1);
+          expect(Math.max(...lineSummary.expanded)).toBe(1834);
+          expect(lineSummary.expanded.has(1558)).toBe(true);
+          for (const gap of [1567, 1574, 1581, 1587]) {
+            expect(lineSummary.expanded.has(gap)).toBe(false);
+          }
+        }
 
         const reader = new UnifiedReaderService(
           new InMemoryArtifactStore(),
@@ -674,7 +757,276 @@ describeRealFamilies(
             (result) => result.sourceRefIds.length > 0,
           ),
         ).toBe(true);
+        if (fixture.key === 'boeing-sb') {
+          const sourceUnits = await reader.readAllSourceUnits({
+            artifact: readback.artifact,
+            packageId: readback.package.packageId,
+          });
+          const frozenBinding = readFrozenApplicabilitySourceBinding({
+            bytes: produced.bytes,
+            workItem: {
+              package: {
+                usagePolicy: {
+                  applicability: {
+                    sourceExpressionCount: 1,
+                    normalizedCandidateCount: 1,
+                    assignmentCount: 1,
+                  },
+                },
+              },
+            } as unknown as CanonicalWorkItemProjection,
+            sourceUnits,
+          });
+          expect(frozenBinding.sourceExpressions).toHaveLength(1);
+          expect(frozenBinding.deterministicFragments).toHaveLength(1);
+          const applicabilityAst =
+            frozenBinding.deterministicFragments[0].expressionAst;
+          expect(
+            evaluateApplicabilityForAircraft({
+              dataSource: fleet777Data('B777-39L', 'B777', 'B777-300', 1558),
+              aircraftNumber: 'B-1266',
+              asOf: '2026-08-31',
+              applicabilityAst,
+            }),
+          ).toMatchObject({
+            status: 'EVALUATED',
+            decision: 'applicable',
+            kleeneResult: true,
+            pass: true,
+            blockingUnknowns: [],
+          });
+          for (const [dataSource, missingProperty] of [
+            [fleet777Data(null, null, null, 1558), 'model'],
+            [fleet777Data('B777-39L', 'B777', 'B777-300', null), 'lineNumber'],
+          ] as const) {
+            const result = evaluateApplicabilityForAircraft({
+              dataSource,
+              aircraftNumber: 'B-1266',
+              asOf: '2026-08-31',
+              applicabilityAst,
+            });
+            expect(result).toMatchObject({
+              status: 'WAITING_INPUT',
+              decision: 'needs_review',
+              kleeneResult: UNKNOWN,
+              pass: false,
+            });
+            expect(result.blockingUnknowns).toEqual(
+              expect.arrayContaining([
+                expect.objectContaining({
+                  kind: 'fact_unknown',
+                  property: missingProperty,
+                }),
+              ]),
+            );
+          }
+        }
       },
     );
   },
 );
+
+describeRealBoeingSb(
+  'actual 777-34-0425 deterministic applicability fail-closed boundary',
+  () => {
+    it('returns empty applicability when any exact model/list/inclusive evidence line is absent', async () => {
+      const sourceBytes = await readFile(REAL_BOEING_SB_PATH as string);
+      expect(sha256Raw(sourceBytes)).toBe(
+        '3a99b7a42da961a6c76b641b99971e40df58f2b2ec11253babeb4cdc37501ed8',
+      );
+      const layout =
+        new PdfjsDistLayoutExtractor().extractLayoutWithDiagnostics(
+          sourceBytes,
+        );
+      const declaredInput = {
+        artifact: {
+          artifactRef:
+            'artifact://CanonicalArtifactStore/sha256/3a99b7a42da961a6c76b641b99971e40df58f2b2ec11253babeb4cdc37501ed8',
+          normalizedPath: 'SB/BOEING/777-34-0425.pdf',
+        },
+        document: {
+          documentCode: '777-34-0425',
+          documentType: 'service_bulletin',
+          language: 'en',
+        },
+        lineage: {
+          generatedAt: '2026-08-31T00:00:00.000Z',
+          producerName: 'host-native-real-777-sb-fail-closed-test',
+          producerVersion: '1.0.0',
+        },
+      } as const;
+      expect(
+        runProfessionalInputPipelineFromLayout(layout, declaredInput).pkg
+          .applicability,
+      ).toMatchObject({
+        sourceExpressions: [expect.any(Object)],
+        normalizedCandidates: [expect.any(Object)],
+        assignments: [expect.any(Object)],
+      });
+
+      for (const missingLine of [
+        'This bulletin is applicable to 777-200, 777-200LR, 777-300, 777-300ER, 777F Airplane(s), line',
+        '1616-1619, 1621-1623, 1625-1628, 1630-1632, 1634-1637, 1639-1641, 1643-1646, 1648-1650,',
+        'means "through" and "inclusive", e.g. line numbers 1-9 means line numbers 1 through 9 inclusive.',
+      ]) {
+        expect(
+          runProfessionalInputPipelineFromLayout(
+            layoutWithoutExactNativeLine(layout, missingLine),
+            declaredInput,
+          ).pkg.applicability,
+        ).toEqual(emptyApplicability());
+      }
+    });
+  },
+);
+
+function summarize777LineExpression(
+  expression: StructuredApplicabilityExpression,
+): {
+  predicateCount: number;
+  singletonCount: number;
+  rangeCount: number;
+  expanded: Set<number>;
+} {
+  if (expression.operator !== 'all' || expression.children.length !== 2) {
+    throw new Error('EXPECTED_777_MODEL_AND_LINE_ROOT');
+  }
+  const [modelExpression, lineExpression] = expression.children;
+  if (
+    modelExpression.operator !== 'predicate' ||
+    modelExpression.predicate.property !== 'model' ||
+    modelExpression.predicate.comparator !== 'in'
+  ) {
+    throw new Error('EXPECTED_777_MODEL_PREDICATE');
+  }
+  expect(modelExpression.predicate.values).toEqual([
+    '777-200',
+    '777-200LR',
+    '777-300',
+    '777-300ER',
+    '777F',
+  ]);
+  if (lineExpression.operator !== 'any') {
+    throw new Error('EXPECTED_777_LINE_ANY');
+  }
+  let singletonCount = 0;
+  let rangeCount = 0;
+  const expanded = new Set<number>();
+  for (const child of lineExpression.children) {
+    if (
+      child.operator !== 'predicate' ||
+      child.predicate.property !== 'lineNumber'
+    ) {
+      throw new Error('EXPECTED_777_LINE_PREDICATE');
+    }
+    const values = child.predicate.values.map(Number);
+    if (child.predicate.comparator === 'eq' && values.length === 1) {
+      singletonCount += 1;
+      expanded.add(values[0]);
+      continue;
+    }
+    if (child.predicate.comparator !== 'range' || values.length !== 2) {
+      throw new Error('EXPECTED_777_EXACT_OR_RANGE');
+    }
+    rangeCount += 1;
+    for (let value = values[0]; value <= values[1]; value += 1) {
+      expanded.add(value);
+    }
+  }
+  return {
+    predicateCount: lineExpression.children.length,
+    singletonCount,
+    rangeCount,
+    expanded,
+  };
+}
+
+function fleet777Data(
+  aircraftModel: string | null,
+  fleetFamily: string | null,
+  series: string | null,
+  lineNumber: number | null,
+): FleetMasterDataSource {
+  return {
+    schemaVersion: FLEET_MASTER_DATA_SCHEMA_VERSION,
+    sourceSnapshotId: 'snapshot-real-777-sb',
+    sourceRevisionKey: 'revision-real-777-sb',
+    authorityRevision: 'authority-real-777-sb',
+    sourceAsOf: '2026-08-31',
+    assets: [
+      {
+        assetId: 'AIRCRAFT:MODEL_MSN:B777_39L_65300',
+        assetVersionId: 'asset-version-real-777-sb',
+        aircraftNumber: 'B-1266',
+        fleetFamily,
+        aircraftModel,
+        series,
+        msn: '65300',
+        lineNumber,
+        deliveryDate: null,
+        sourceRef: {
+          sourceTable: 'HostDV.fleetAssets',
+          sourceRecordId: 'AIRCRAFT:MODEL_MSN:B777_39L_65300',
+        },
+        recordHash: 'sha256:asset-real-777-sb',
+      },
+    ],
+    facts: [],
+  };
+}
+
+function layoutWithoutExactNativeLine(
+  layout: ParsedPdfLayout,
+  targetText: string,
+): ParsedPdfLayout {
+  const matchingRuns: ParsedPdfTextRun[][] = [];
+  for (let page = 1; page <= layout.pageCount; page += 1) {
+    const runs = layout.textRuns
+      .filter((run) => run.page === page && run.origin !== 'ocr_tesseract_tsv')
+      .slice()
+      .sort((left, right) => right.y - left.y || left.x - right.x);
+    let current: ParsedPdfTextRun[] = [];
+    let currentY: number | null = null;
+    const flush = () => {
+      if (
+        current
+          .slice()
+          .sort((left, right) => left.x - right.x)
+          .map((run) => run.text)
+          .join('')
+          .trim() === targetText
+      ) {
+        matchingRuns.push([...current]);
+      }
+      current = [];
+      currentY = null;
+    };
+    for (const run of runs) {
+      if (currentY === null || Math.abs(run.y - currentY) <= 2) {
+        current.push(run);
+        currentY ??= run.y;
+      } else {
+        flush();
+        current = [run];
+        currentY = run.y;
+      }
+    }
+    flush();
+  }
+  if (matchingRuns.length !== 1) {
+    throw new Error(`TARGET_LINE_NOT_UNIQUE:${targetText}`);
+  }
+  const removed = new Set(matchingRuns[0]);
+  return {
+    ...layout,
+    textRuns: layout.textRuns.filter((run) => !removed.has(run)),
+  };
+}
+
+function emptyApplicability() {
+  return {
+    sourceExpressions: [],
+    normalizedCandidates: [],
+    assignments: [],
+  };
+}

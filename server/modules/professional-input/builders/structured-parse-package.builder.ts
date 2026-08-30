@@ -462,6 +462,12 @@ interface BoeingSbApplicabilityObservation {
   existingPartNumber: string;
 }
 
+interface BoeingSbModelLineApplicabilityObservation {
+  effectivityEvidenceUnits: SourceUnit[];
+  models: string[];
+  lineObservations: BoeingSbLineObservation[];
+}
+
 /**
  * Recognize only the directly source-bound FTD form proven by the actual-byte
  * pipeline. A single Applicability label must be followed immediately
@@ -476,6 +482,16 @@ function buildDeterministicApplicability(
   const refsById = new Map(
     unitSet.sourceRefs.map((sourceRef) => [sourceRef.sourceRefId, sourceRef]),
   );
+  if (
+    document.documentCode === '777-34-0425' &&
+    document.documentType === 'service_bulletin'
+  ) {
+    return buildBoeing777SbDeterministicApplicability(
+      unitSet,
+      moduleId,
+      refsById,
+    );
+  }
   const observations: DeterministicApplicabilityObservation[] = [];
   for (let index = 0; index < unitSet.units.length - 1; index += 1) {
     const heading = unitSet.units[index];
@@ -509,13 +525,16 @@ function buildDeterministicApplicability(
     });
   }
   if (observations.length === 0) {
-    if (
-      document.documentCode !== '737-34-3830' ||
-      document.documentType !== 'service_bulletin'
-    ) {
-      return emptyApplicability();
+    if (document.documentType === 'service_bulletin') {
+      if (document.documentCode === '737-34-3830') {
+        return buildBoeingSbDeterministicApplicability(
+          unitSet,
+          moduleId,
+          refsById,
+        );
+      }
     }
-    return buildBoeingSbDeterministicApplicability(unitSet, moduleId, refsById);
+    return emptyApplicability();
   }
   if (observations.length !== 1) {
     return emptyApplicability();
@@ -634,10 +653,66 @@ function buildBoeingSbDeterministicApplicability(
   if (observations.length !== 1) return emptyApplicability();
 
   const observation = observations[0];
-  const evidenceUnits = uniqueSourceUnits([
-    ...observation.effectivityEvidenceUnits,
-    ...observation.partNumberEvidenceUnits,
-  ]);
+  return buildBoeingModelLineStructuredApplicability({
+    moduleId,
+    evidenceUnits: [
+      ...observation.effectivityEvidenceUnits,
+      ...observation.partNumberEvidenceUnits,
+    ],
+    models: ['737-8', '737-9', '737-8200'],
+    lineObservations: observation.lineObservations,
+    preserveSourceLineTokens: false,
+    additionalPredicates: [
+      {
+        operator: 'predicate',
+        predicate: {
+          property: 'pnInstalled',
+          comparator: 'eq',
+          values: [observation.existingPartNumber],
+        },
+      },
+    ],
+  });
+}
+
+/**
+ * Recognize only the native-text effectivity form proven by actual
+ * 777-34-0425 bytes. The exact document/profile guard is applied by the
+ * caller; every expected source line must be contiguous, uniquely bound to
+ * page 7, ordered, and accompanied by the source's through/inclusive rule.
+ * The later AIMS group table is intentionally not a configuration predicate:
+ * the effectivity sentence itself assigns all listed airplanes to one group.
+ */
+function buildBoeing777SbDeterministicApplicability(
+  unitSet: SourceUnitSet,
+  moduleId: string,
+  refsById: ReadonlyMap<string, SourceUnitSet['sourceRefs'][number]>,
+): StructuredApplicability {
+  const observations = collectBoeing777SbApplicabilityObservations(
+    unitSet,
+    refsById,
+  );
+  if (observations.length !== 1) return emptyApplicability();
+  const observation = observations[0];
+  return buildBoeingModelLineStructuredApplicability({
+    moduleId,
+    evidenceUnits: observation.effectivityEvidenceUnits,
+    models: observation.models,
+    lineObservations: observation.lineObservations,
+    preserveSourceLineTokens: true,
+    additionalPredicates: [],
+  });
+}
+
+function buildBoeingModelLineStructuredApplicability(input: {
+  moduleId: string;
+  evidenceUnits: readonly SourceUnit[];
+  models: readonly string[];
+  lineObservations: readonly BoeingSbLineObservation[];
+  preserveSourceLineTokens: boolean;
+  additionalPredicates: readonly StructuredApplicabilityExpression[];
+}): StructuredApplicability {
+  const evidenceUnits = uniqueSourceUnits(input.evidenceUnits);
   const sourceRefIds = uniqueText(
     evidenceUnits.flatMap((unit) => [...unit.sourceRefIds]),
   );
@@ -653,9 +728,10 @@ function buildBoeingSbDeterministicApplicability(
       }),
     ),
   );
-  const lineExpression = lineNumberExpression(
-    observation.lineObservations.flatMap((line) => line.specs),
-  );
+  const lineSpecs = input.lineObservations.flatMap((line) => line.specs);
+  const lineExpression = input.preserveSourceLineTokens
+    ? sourceTokenLineNumberExpression(lineSpecs)
+    : lineNumberExpression(lineSpecs);
   if (!lineExpression) return emptyApplicability();
   const normalizedExpression: StructuredApplicabilityExpression = {
     operator: 'all',
@@ -665,18 +741,11 @@ function buildBoeingSbDeterministicApplicability(
         predicate: {
           property: 'model',
           comparator: 'in',
-          values: ['737-8', '737-9', '737-8200'],
+          values: [...input.models],
         },
       },
       lineExpression,
-      {
-        operator: 'predicate',
-        predicate: {
-          property: 'pnInstalled',
-          comparator: 'eq',
-          values: [observation.existingPartNumber],
-        },
-      },
+      ...input.additionalPredicates,
     ],
   };
   const candidateId = techpubEntityId(
@@ -691,7 +760,7 @@ function buildBoeingSbDeterministicApplicability(
   );
   const target = {
     kind: 'module' as const,
-    targetId: moduleId,
+    targetId: input.moduleId,
     sourceRefIds,
   };
   const assignmentId = techpubEntityId(
@@ -733,6 +802,114 @@ function buildBoeingSbDeterministicApplicability(
       },
     ],
   };
+}
+
+function collectBoeing777SbApplicabilityObservations(
+  unitSet: SourceUnitSet,
+  refsById: ReadonlyMap<string, SourceUnitSet['sourceRefs'][number]>,
+): BoeingSbModelLineApplicabilityObservation[] {
+  const observations: BoeingSbModelLineApplicabilityObservation[] = [];
+  const units = unitSet.units;
+  const models = ['777-200', '777-200LR', '777-300', '777-300ER', '777F'];
+  const modelText =
+    'This bulletin is applicable to 777-200, 777-200LR, 777-300, 777-300ER, 777F Airplane(s), line';
+  const expectedLineTokenCounts = [7, 8, 10, 8, 9, 10];
+  for (let index = 2; index < units.length - 8; index += 1) {
+    const modelUnit = units[index];
+    if (modelUnit.text !== modelText) continue;
+    const effectivityHeading = units[index - 2];
+    const airplanesHeading = units[index - 1];
+    const lineUnits = units.slice(index + 1, index + 7);
+    const inclusiveEvidenceUnits = units.slice(index + 7, index + 9);
+    const evidenceUnits = units.slice(index - 2, index + 9);
+    if (
+      effectivityHeading.text !== 'A.Effectivity' ||
+      airplanesHeading.text !== '1.Airplanes' ||
+      lineUnits.length !== 6 ||
+      inclusiveEvidenceUnits.length !== 2 ||
+      evidenceUnits.length !== 11 ||
+      evidenceUnits.some(
+        (unit, offset) => unit.order !== effectivityHeading.order + offset,
+      ) ||
+      inclusiveEvidenceUnits[0].text !==
+        'Where the effectivity is presented with hyphens between line numbers, the airplane applicability' ||
+      inclusiveEvidenceUnits[1].text !==
+        'means "through" and "inclusive", e.g. line numbers 1-9 means line numbers 1 through 9 inclusive.'
+    ) {
+      continue;
+    }
+    const evidenceRefs = evidenceUnits.map((unit) =>
+      sourceRefForUnit(unit, refsById),
+    );
+    const evidencePage = evidenceRefs[0]?.pageStart;
+    if (
+      evidencePage === undefined ||
+      evidenceRefs.some(
+        (sourceRef, offset) =>
+          !sourceRef ||
+          sourceRef.pageStart !== evidencePage ||
+          sourceRef.pageEnd !== evidencePage ||
+          sourceRef.quote !== evidenceUnits[offset].text,
+      )
+    ) {
+      continue;
+    }
+
+    const lineObservations: BoeingSbLineObservation[] = [];
+    let previousEnd = -1;
+    let invalid = false;
+    for (let offset = 0; offset < lineUnits.length; offset += 1) {
+      const unit = lineUnits[offset];
+      const specs = parseBoeing777LineNumberSpecs(unit.text, {
+        first: offset === 0,
+        terminal: offset === lineUnits.length - 1,
+      });
+      if (
+        !specs ||
+        specs.length !== expectedLineTokenCounts[offset] ||
+        specs[0].start <= previousEnd
+      ) {
+        invalid = true;
+        break;
+      }
+      for (const spec of specs) {
+        if (spec.start <= previousEnd) {
+          invalid = true;
+          break;
+        }
+        previousEnd = spec.end;
+      }
+      if (invalid) break;
+      lineObservations.push({ unit, specs });
+    }
+    const allSpecs = lineObservations.flatMap((line) => line.specs);
+    const singletonCount = allSpecs.filter(
+      (spec) => spec.start === spec.end,
+    ).length;
+    const rangeCount = allSpecs.length - singletonCount;
+    const expandedCount = allSpecs.reduce(
+      (count, spec) => count + spec.end - spec.start + 1,
+      0,
+    );
+    if (
+      invalid ||
+      lineObservations.length !== 6 ||
+      allSpecs.length !== 52 ||
+      singletonCount !== 12 ||
+      rangeCount !== 40 ||
+      expandedCount !== 1783 ||
+      allSpecs[0]?.start !== 1 ||
+      allSpecs.at(-1)?.end !== 1834
+    ) {
+      continue;
+    }
+    observations.push({
+      effectivityEvidenceUnits: evidenceUnits,
+      models: [...models],
+      lineObservations,
+    });
+  }
+  return observations;
 }
 
 function collectBoeingSbApplicabilityObservations(
@@ -996,6 +1173,50 @@ function collectBoeingExistingPartNumberEvidence(
   return observations;
 }
 
+function parseBoeing777LineNumberSpecs(
+  value: string,
+  position: { first: boolean; terminal: boolean },
+): BoeingSbLineNumberSpec[] | null {
+  const prefix = 'number(s) ';
+  const suffix = ' in 1 Group(s).';
+  let listText = value;
+  if (position.first) {
+    if (!listText.startsWith(prefix)) return null;
+    listText = listText.slice(prefix.length);
+  } else if (listText.startsWith(prefix)) {
+    return null;
+  }
+  if (position.terminal) {
+    if (!listText.endsWith(suffix)) return null;
+    listText = listText.slice(0, -suffix.length);
+  } else {
+    if (!listText.endsWith(',') || listText.endsWith(suffix)) return null;
+    listText = listText.slice(0, -1);
+  }
+  if (!listText) return null;
+  const tokens = listText.split(', ');
+  if (tokens.length === 0 || tokens.length > 100) return null;
+  const specs: BoeingSbLineNumberSpec[] = [];
+  let previousEnd = -1;
+  for (const token of tokens) {
+    const match = token.match(/^([1-9]\d{0,3})(?:-([1-9]\d{0,3}))?$/u);
+    if (!match) return null;
+    const start = Number(match[1]);
+    const end = Number(match[2] ?? match[1]);
+    if (
+      !Number.isSafeInteger(start) ||
+      !Number.isSafeInteger(end) ||
+      end < start ||
+      start <= previousEnd
+    ) {
+      return null;
+    }
+    specs.push({ start, end });
+    previousEnd = end;
+  }
+  return specs;
+}
+
 function parseBoeingLineNumberSpecs(
   value: string,
   requireTerminator: boolean,
@@ -1025,6 +1246,26 @@ function parseBoeingLineNumberSpecs(
     previousEnd = end;
   }
   return specs;
+}
+
+function sourceTokenLineNumberExpression(
+  specs: readonly BoeingSbLineNumberSpec[],
+): StructuredApplicabilityExpression | null {
+  if (specs.length === 0 || specs.length > 100) return null;
+  return {
+    operator: 'any',
+    children: specs.map(
+      (spec): StructuredApplicabilityExpression => ({
+        operator: 'predicate',
+        predicate: {
+          property: 'lineNumber',
+          comparator: spec.start === spec.end ? 'eq' : 'range',
+          values:
+            spec.start === spec.end ? [spec.start] : [spec.start, spec.end],
+        },
+      }),
+    ),
+  };
 }
 
 function lineNumberExpression(
