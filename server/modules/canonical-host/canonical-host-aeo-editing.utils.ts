@@ -62,6 +62,30 @@ export function requiredHostInput(
   return value;
 }
 
+export function requiredPendingHostInput(
+  workItem: CanonicalWorkItemProjection,
+): CanonicalAeoEditingInputProjection {
+  const active = workItem.aeoEditingInput;
+  const pending = workItem.aeoEditingPendingInput;
+  if (!pending) throw new Error('AEO_EDITING_HOST_CURRENT_INPUT_NOT_STAGED');
+  const checked = requiredHostInput({
+    ...workItem,
+    aeoEditingInput: pending,
+  });
+  if ((active?.inputRevision ?? 0) > checked.inputRevision) {
+    throw new Error('AEO_EDITING_HOST_CURRENT_INPUT_REVISION_REGRESSED');
+  }
+  return checked;
+}
+
+export function assertNoPendingHostInput(
+  workItem: CanonicalWorkItemProjection,
+): void {
+  if (workItem.aeoEditingPendingInput) {
+    throw new Error('AEO_EDITING_DRAFT_INPUT_STALE');
+  }
+}
+
 export function currentDraftMatchesInput(
   workItem: CanonicalWorkItemProjection,
   input: CanonicalAeoEditingInputProjection,
@@ -128,10 +152,15 @@ export function feedbackInput(
   workItem: CanonicalWorkItemProjection,
   request: CanonicalAeoEditingDraftFeedbackRequest,
   actor: CanonicalHostActor,
+  resolved: {
+    feedbackId: string;
+    suggestionId: string;
+    revisionSourceRefs?: Array<{ sourceId: string; locator: string }>;
+  },
 ): AeoDraftFeedbackInput {
   return {
-    feedbackId: request.feedbackId,
-    suggestionId: request.suggestionId,
+    feedbackId: resolved.feedbackId,
+    suggestionId: resolved.suggestionId,
     expectedGenerationRevision: request.expectedGenerationRevision,
     decision: request.decision,
     engineerDecisionRef: decisionRef(workItem, request, actor),
@@ -142,9 +171,9 @@ export function feedbackInput(
     ...(request.revisedBodyEn === undefined
       ? {}
       : { revisedBodyEn: request.revisedBodyEn }),
-    ...(request.revisionSourceRefs === undefined
+    ...(resolved.revisionSourceRefs === undefined
       ? {}
-      : { revisionSourceRefs: request.revisionSourceRefs }),
+      : { revisionSourceRefs: resolved.revisionSourceRefs }),
     semanticField: request.semanticField,
     reasonCode: request.reasonCode,
     learningDisposition: request.learningDisposition,
@@ -220,8 +249,8 @@ function decisionRef(
         workItem.workItemId,
         workItem.revision,
         actor.userId,
-        request.feedbackId,
-        request.suggestionId,
+        request.feedbackRef,
+        request.suggestionRef,
         request.expectedGenerationRevision,
       ].join('\u0000'),
     )

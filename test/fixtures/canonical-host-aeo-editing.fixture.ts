@@ -2,12 +2,14 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
 import type {
-  CanonicalAeoEditingDraftCreateRequest,
   CanonicalWorkItemProjection,
   UnifiedPackageArtifactDescriptor,
 } from '@shared/api.interface';
 import { ingestAeoEditingKnowledgeCandidate } from '../../server/modules/aeo-authoring/aeo-editing-knowledge';
-import { CanonicalAeoEditingInputProducer } from '../../server/modules/canonical-host/canonical-aeo-editing-input.producer';
+import {
+  CanonicalAeoEditingInputProducer,
+  type CanonicalAeoEditingHostCurrentInput,
+} from '../../server/modules/canonical-host/canonical-aeo-editing-input.producer';
 import { CanonicalHostAeoEditingService } from '../../server/modules/canonical-host/canonical-host-aeo-editing.service';
 
 const REAL_AEO_ROOT = '/Volumes/SSD/LLM/WiseLink/output/personal-assistant/aeo';
@@ -229,7 +231,7 @@ export function aeoEditingHarness(directory: string, deny = false) {
     repository as never,
     inputProducer,
   );
-  const baseRequest = (): CanonicalAeoEditingDraftCreateRequest => ({
+  const baseCurrent = (): CanonicalAeoEditingHostCurrentInput => ({
     expectedRevision: state.workItem.revision,
     currentProducerArtifact: producerArtifact,
     sourceManifestArtifact: manifestArtifact,
@@ -252,7 +254,19 @@ export function aeoEditingHarness(directory: string, deny = false) {
     knowledge,
     byteStore,
     sourceRows,
-    createRequest: baseRequest,
+    producerArtifact,
+    createRequest: () => ({ expectedRevision: state.workItem.revision }),
+    currentInput: baseCurrent,
+    async stageCurrent(
+      current: CanonicalAeoEditingHostCurrentInput = baseCurrent(),
+    ) {
+      current.expectedRevision = state.workItem.revision;
+      return service.stageCurrentInput(
+        state.workItem.workItemId,
+        current,
+        AEO_EDITING_TEST_ACTOR,
+      );
+    },
     replaceProducer(mutator: (value: Record<string, unknown>) => void) {
       const changed = structuredClone(producer);
       mutator(changed);
@@ -265,7 +279,7 @@ export function aeoEditingHarness(directory: string, deny = false) {
       );
       byteStore.set(changedArtifact.ref, changedBytes);
       return {
-        ...baseRequest(),
+        ...baseCurrent(),
         currentProducerArtifact: changedArtifact,
       };
     },
@@ -321,6 +335,7 @@ function workItem(
       artifact: packageArtifact,
     } as never,
     aeoEditingInput: null,
+    aeoEditingPendingInput: null,
     aeoEditingDraft: null,
     failure: null,
     recordingFailure: null,

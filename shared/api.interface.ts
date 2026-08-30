@@ -1348,7 +1348,7 @@ export interface CanonicalAeoEditingBlockingGap {
     | 'AEO_SPECIALIZED_CONTROL_REQUIRES_ENGINEER_REVIEW'
     | 'AEO_ROUTINE_SERIES_PATTERN_NOT_GENERIC';
   message: string;
-  sourceRefs: CanonicalAeoEditingSourceRef[];
+  sourceRefs: CanonicalAeoEditingBrowserSourceRef[];
   blocking: true;
 }
 
@@ -1376,26 +1376,25 @@ export interface CanonicalAeoEditingDraftProjection {
 
 export interface CanonicalAeoEditingDraftCreateRequest {
   expectedRevision: number;
-  currentProducerArtifact: UnifiedPackageArtifactDescriptor;
-  sourceManifestArtifact: UnifiedPackageArtifactDescriptor;
-  sourceDocuments: Array<{
-    sourceId: string;
-    documentVersionId: string;
-  }>;
-  selectedUnitIds: string[];
+}
+
+export interface CanonicalAeoEditingBrowserSourceRef {
+  ref: string;
+  sourceLabel: string;
+  locationLabel: string;
 }
 
 export interface CanonicalAeoEditingDraftFeedbackRequest {
   expectedRevision: number;
-  feedbackId: string;
-  suggestionId: string;
+  feedbackRef: string;
+  suggestionRef: string;
   expectedGenerationRevision: number;
   decision: 'ACCEPT' | 'MODIFY' | 'REJECT';
   note: string;
   revisedBodyZh?: string | null;
   revisedBodyEn?: string | null;
-  revisionSourceRefs?: CanonicalAeoEditingSourceRef[];
-  semanticField: string;
+  revisionSourceRefs?: string[];
+  semanticField: 'SUGGESTION' | 'BODY' | 'SOURCE_BINDING';
   reasonCode:
     | 'SOURCE_MISMATCH'
     | 'APPLICABILITY'
@@ -1418,12 +1417,9 @@ export interface CanonicalAeoEditingDraftFeedbackRequest {
 }
 
 export interface CanonicalAeoEditingDraftReadModel {
-  schemaVersion: 'wiselink.3_1.aeo_editing_draft_read_model.v0.candidate.2';
+  schemaVersion: 'wiselink.3_1.aeo_editing_draft_read_model.v0.candidate.3';
   status: 'CANDIDATE_ONLY';
-  workItemId: string;
   workItemRevision: number;
-  documentVersionId: string;
-  sourcePackageId: string;
   projection: {
     status: 'CANDIDATE_ONLY';
     revision: number;
@@ -1444,26 +1440,26 @@ export interface CanonicalAeoEditingDraftReadModel {
   title: string;
   generationRevision: number;
   sources: Array<{
-    sourceId: string;
-    role: string;
-    observedIdentity: string | null;
+    sourceRef: string;
+    sourceLabel: string;
+    roleLabel: 'PRIMARY AEO SOURCE' | 'SUPPORTING ENGINEERING SOURCE';
   }>;
-  currentSourceRefs: CanonicalAeoEditingSourceRef[];
+  currentSourceRefs: CanonicalAeoEditingBrowserSourceRef[];
   suggestions: Array<{
-    suggestionId: string;
-    sourceUnitId: string;
+    suggestionRef: string;
+    unitLabel: string;
     section: string;
     kind: 'APPLICABLE_TEMPLATE_CANDIDATE' | 'COMPANY_STEP_CANDIDATE';
     bodyZh: string | null;
     bodyEn: string | null;
     parameters: unknown[];
     conditions: unknown[];
-    conditionSourceRefs: CanonicalAeoEditingSourceRef[];
+    conditionSourceRefs: CanonicalAeoEditingBrowserSourceRef[];
     dependencies: unknown[];
     branches: Array<{
       when: string;
       then: string;
-      sourceRefs: CanonicalAeoEditingSourceRef[];
+      sourceRefs: CanonicalAeoEditingBrowserSourceRef[];
     }>;
     performerRoles: string[];
     inspectorRoles: string[];
@@ -1482,7 +1478,7 @@ export interface CanonicalAeoEditingDraftReadModel {
       recording: Record<string, unknown>;
       explicitAbsences: string[];
     } | null;
-    sourceRefs: CanonicalAeoEditingSourceRef[];
+    sourceRefs: CanonicalAeoEditingBrowserSourceRef[];
     reviewStatus:
       | 'PENDING_ENGINEER_REVIEW'
       | 'ACCEPTED_CANDIDATE'
@@ -1490,30 +1486,35 @@ export interface CanonicalAeoEditingDraftReadModel {
       | 'REJECTED_CANDIDATE';
   }>;
   blocks: Array<{
-    blockId: string;
-    orderKey: string;
+    blockRef: string;
+    sequence: number;
     blockType: 'PARAGRAPH';
     originType: import('./aeo-editor').AeoContentOriginType;
     bodyZh: string | null;
     bodyEn: string | null;
-    sourceRefs: CanonicalAeoEditingSourceRef[];
-    unresolved: import('./aeo-editor').AeoBlockUnresolved[];
+    sourceRefs: CanonicalAeoEditingBrowserSourceRef[];
+    unresolved: Array<{
+      code: string;
+      message: string;
+      severity: 'INFO' | 'WARNING' | 'BLOCKING';
+      blocksCheckpoint: boolean;
+    }>;
   }>;
   blockingGaps: CanonicalAeoEditingBlockingGap[];
   feedback: Array<{
-    feedbackId: string;
-    suggestionId: string;
+    feedbackRef: string;
+    suggestionRef: string;
     targetGenerationRevision: number;
     decision: 'ACCEPT' | 'MODIFY' | 'REJECT';
     note: string;
     reasonCode: CanonicalAeoEditingDraftFeedbackRequest['reasonCode'];
     learningDisposition: CanonicalAeoEditingDraftFeedbackRequest['learningDisposition'];
-    sourceRefs: CanonicalAeoEditingSourceRef[];
+    sourceRefs: CanonicalAeoEditingBrowserSourceRef[];
   }>;
   supersededFeedback: Array<{
-    feedbackId: string;
-    suggestionId: string;
-    sourceUnitId: string;
+    feedbackRef: string;
+    suggestionRef: string;
+    unitLabel: string;
     decision: 'ACCEPT' | 'MODIFY' | 'REJECT';
     targetGenerationRevision: number;
     activeThroughGenerationRevision: number;
@@ -1521,11 +1522,11 @@ export interface CanonicalAeoEditingDraftReadModel {
     reason: 'SELECTED_UNIT_REGENERATED';
     note: string;
     learningDisposition: CanonicalAeoEditingDraftFeedbackRequest['learningDisposition'];
-    sourceRefs: CanonicalAeoEditingSourceRef[];
+    sourceRefs: CanonicalAeoEditingBrowserSourceRef[];
   }>;
   learning: {
     eligibleFeedbackCount: number;
-    excludedDoNotLearnFeedbackIds: string[];
+    excludedDoNotLearnFeedbackRefs: string[];
     boundary: 'FEEDBACK_INPUT_NOT_AUTOMATIC_RULE_NOT_AUTHORITY';
   };
   adoptionDecisions: [];
@@ -1569,6 +1570,8 @@ export interface CanonicalWorkItemProjection {
   overallRegenerationRequest?: CanonicalOverallRegenerationRequestProjection | null;
   aeo?: CanonicalAeoCandidateProjection | null;
   aeoEditingInput?: CanonicalAeoEditingInputProjection | null;
+  /** Server-only staged current input; never returned by an AEO browser DTO. */
+  aeoEditingPendingInput?: CanonicalAeoEditingInputProjection | null;
   aeoEditingDraft?: CanonicalAeoEditingDraftProjection | null;
   failure: CanonicalWorkItemFailureProjection | null;
   recordingFailure: CanonicalWorkItemRecordingFailureProjection | null;

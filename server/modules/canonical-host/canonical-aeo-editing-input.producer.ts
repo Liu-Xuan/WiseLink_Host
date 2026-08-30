@@ -2,10 +2,10 @@ import { FileService } from '@lark-apaas/fullstack-nestjs-core';
 import { Inject, Injectable } from '@nestjs/common';
 
 import type {
-  CanonicalAeoEditingDraftCreateRequest,
   CanonicalAeoEditingInputProjection,
   CanonicalAeoEditingSourceRef,
   CanonicalWorkItemProjection,
+  UnifiedPackageArtifactDescriptor,
 } from '@shared/api.interface';
 import {
   ingestAeoEditingKnowledgeCandidate,
@@ -36,6 +36,21 @@ export interface CanonicalAeoEditingPreparedInput {
     sourceRefs: CanonicalAeoEditingSourceRef[];
     sampleRef: string;
   } | null;
+}
+
+/**
+ * Server-only handoff from the current AEO producer path. This contract is not
+ * accepted by a browser controller and is bound to the WorkItem with CAS.
+ */
+export interface CanonicalAeoEditingHostCurrentInput {
+  expectedRevision: number;
+  currentProducerArtifact: UnifiedPackageArtifactDescriptor;
+  sourceManifestArtifact: UnifiedPackageArtifactDescriptor;
+  sourceDocuments: Array<{
+    sourceId: string;
+    documentVersionId: string;
+  }>;
+  selectedUnitIds: string[];
 }
 
 @Injectable()
@@ -77,7 +92,7 @@ export class CanonicalAeoEditingInputProducer {
 
   async produce(input: {
     workItem: CanonicalWorkItemProjection;
-    request: CanonicalAeoEditingDraftCreateRequest;
+    current: CanonicalAeoEditingHostCurrentInput;
     actor: CanonicalHostActor;
   }): Promise<CanonicalAeoEditingPreparedInput> {
     const packageProjection = input.workItem.package;
@@ -89,17 +104,17 @@ export class CanonicalAeoEditingInputProducer {
       throw new Error('AEO_EDITING_HOST_INPUT_SOURCE_NOT_READY');
     }
     const [producerBytes, manifestBytes] = await Promise.all([
-      this.artifacts.readActualBytes(input.request.currentProducerArtifact),
-      this.artifacts.readActualBytes(input.request.sourceManifestArtifact),
+      this.artifacts.readActualBytes(input.current.currentProducerArtifact),
+      this.artifacts.readActualBytes(input.current.sourceManifestArtifact),
     ]);
     assertActualBytes(
       producerBytes,
-      input.request.currentProducerArtifact,
+      input.current.currentProducerArtifact,
       'AEO_EDITING_CURRENT_PRODUCER_ACTUAL_BYTES_MISMATCH',
     );
     assertActualBytes(
       manifestBytes,
-      input.request.sourceManifestArtifact,
+      input.current.sourceManifestArtifact,
       'AEO_EDITING_SOURCE_MANIFEST_ACTUAL_BYTES_MISMATCH',
     );
     const producer = parseJson(
@@ -124,14 +139,14 @@ export class CanonicalAeoEditingInputProducer {
       primarySourceId:
         routine?.sourceRefs[0]?.sourceId ??
         unboundKnowledge!.documentIdentity.primarySourceId,
-      selections: input.request.sourceDocuments,
+      selections: input.current.sourceDocuments,
     });
     const inputKind = routine
       ? ('ROUTINE_SERIES_PATTERN' as const)
       : ('ACTION_UNITS' as const);
     const selectedUnitIds = routine
-      ? routineSelectedUnits(input.request.selectedUnitIds)
-      : selectedUnits(unboundKnowledge!, input.request.selectedUnitIds);
+      ? routineSelectedUnits(input.current.selectedUnitIds)
+      : selectedUnits(unboundKnowledge!, input.current.selectedUnitIds);
     const currentSourceRefs = routine
       ? routine.sourceRefs
       : selectedSourceRefs(unboundKnowledge!, selectedUnitIds);
@@ -139,18 +154,21 @@ export class CanonicalAeoEditingInputProducer {
       schemaVersion: 'wiselink.3_1.aeo_editing_input.v0.candidate.1',
       status: 'HOST_INPUT_READY',
       inputKind,
-      inputRevision: nextInputRevision(input.workItem.aeoEditingInput, {
-        currentProducerArtifact: input.request.currentProducerArtifact,
-        sourceManifestArtifact: input.request.sourceManifestArtifact,
-        sourceArtifacts,
-        selectedUnitIds,
-      }),
+      inputRevision: nextInputRevision(
+        input.workItem.aeoEditingPendingInput ?? input.workItem.aeoEditingInput,
+        {
+          currentProducerArtifact: input.current.currentProducerArtifact,
+          sourceManifestArtifact: input.current.sourceManifestArtifact,
+          sourceArtifacts,
+          selectedUnitIds,
+        },
+      ),
       workItemId: input.workItem.workItemId,
       documentVersionId: input.workItem.source.documentVersionId,
       sourcePackageId: packageProjection.packageId,
       sourcePackageArtifactSha256: packageProjection.artifact.sha256,
-      currentProducerArtifact: input.request.currentProducerArtifact,
-      sourceManifestArtifact: input.request.sourceManifestArtifact,
+      currentProducerArtifact: input.current.currentProducerArtifact,
+      sourceManifestArtifact: input.current.sourceManifestArtifact,
       sourceArtifacts,
       selectedUnitIds,
       currentSourceRefs,
@@ -174,12 +192,39 @@ export class CanonicalAeoEditingInputProducer {
     };
   }
 
+  async readCurrent(input: {
+    workItem: CanonicalWorkItemProjection;
+    hostInput: CanonicalAeoEditingInputProjection;
+    actor: CanonicalHostActor;
+  }): Promise<CanonicalAeoEditingPreparedInput> {
+    const prepared = await this.produce({
+      workItem: input.workItem,
+      actor: input.actor,
+      current: {
+        expectedRevision: input.workItem.revision,
+        currentProducerArtifact: input.hostInput.currentProducerArtifact,
+        sourceManifestArtifact: input.hostInput.sourceManifestArtifact,
+        sourceDocuments: input.hostInput.sourceArtifacts.map((source) => ({
+          sourceId: source.sourceId,
+          documentVersionId: source.documentVersionId,
+        })),
+        selectedUnitIds: [...input.hostInput.selectedUnitIds],
+      },
+    });
+    if (
+      JSON.stringify(prepared.hostInput) !== JSON.stringify(input.hostInput)
+    ) {
+      throw new Error('AEO_EDITING_HOST_CURRENT_INPUT_DRIFT');
+    }
+    return prepared;
+  }
+
   private async bindActualSourceDocuments(input: {
     workItem: CanonicalWorkItemProjection;
     actor: CanonicalHostActor;
     sourceIdentities: AeoEditingSourceIdentity[];
     primarySourceId: string;
-    selections: CanonicalAeoEditingDraftCreateRequest['sourceDocuments'];
+    selections: CanonicalAeoEditingHostCurrentInput['sourceDocuments'];
   }): Promise<CanonicalAeoEditingInputProjection['sourceArtifacts']> {
     const selections = new Map(
       input.selections.map((selection) => [selection.sourceId, selection]),

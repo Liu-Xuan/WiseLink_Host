@@ -14,8 +14,6 @@ import type { Request } from 'express';
 import type {
   CanonicalAeoEditingDraftCreateRequest,
   CanonicalAeoEditingDraftFeedbackRequest,
-  CanonicalAeoEditingSourceRef,
-  UnifiedPackageArtifactDescriptor,
 } from '@shared/api.interface';
 import { ProductionMiaodaBrowserObjectIngressGuard } from '../work-item/production-miaoda-browser-ingress';
 import { CanonicalHostAeoEditingService } from './canonical-host-aeo-editing.service';
@@ -42,6 +40,11 @@ const LEARNING_DISPOSITIONS = new Set<string>([
   'SERIES_PATTERN_CANDIDATE',
   'CATEGORY_PATTERN_CANDIDATE',
   'DO_NOT_LEARN',
+]);
+const SEMANTIC_FIELDS = new Set<string>([
+  'SUGGESTION',
+  'BODY',
+  'SOURCE_BINDING',
 ]);
 
 @NeedLogin()
@@ -86,79 +89,10 @@ export class CanonicalHostAeoEditingController {
 }
 
 function createBody(body: unknown): CanonicalAeoEditingDraftCreateRequest {
-  const value = exactBody(body, [
-    'expectedRevision',
-    'currentProducerArtifact',
-    'sourceManifestArtifact',
-    'sourceDocuments',
-    'selectedUnitIds',
-  ]);
+  const value = exactBody(body, ['expectedRevision']);
   return {
     expectedRevision: safeInteger(value.expectedRevision),
-    currentProducerArtifact: artifactDescriptor(
-      value.currentProducerArtifact,
-      'currentProducerArtifact',
-    ),
-    sourceManifestArtifact: artifactDescriptor(
-      value.sourceManifestArtifact,
-      'sourceManifestArtifact',
-    ),
-    sourceDocuments: sourceDocuments(value.sourceDocuments),
-    selectedUnitIds: stringArray(value.selectedUnitIds, 'selectedUnitIds'),
   };
-}
-
-function artifactDescriptor(
-  input: unknown,
-  field: string,
-): UnifiedPackageArtifactDescriptor {
-  const value = exactBody(input, [
-    'storeRole',
-    'ref',
-    'sha256',
-    'byteLength',
-    'mediaType',
-  ]);
-  const sha256 = requiredText(value.sha256, `${field}.sha256`);
-  if (
-    value.storeRole !== 'UnifiedArtifactStoreCandidate' ||
-    value.mediaType !== 'application/json' ||
-    !/^[a-f0-9]{64}$/u.test(sha256)
-  ) {
-    invalid(field);
-  }
-  const byteLength = safeInteger(value.byteLength);
-  if (byteLength < 1) invalid(`${field}.byteLength`);
-  return {
-    storeRole: 'UnifiedArtifactStoreCandidate',
-    ref: requiredText(value.ref, `${field}.ref`),
-    sha256,
-    byteLength,
-    mediaType: 'application/json',
-  };
-}
-
-function sourceDocuments(
-  input: unknown,
-): CanonicalAeoEditingDraftCreateRequest['sourceDocuments'] {
-  if (!Array.isArray(input) || input.length === 0) invalid('sourceDocuments');
-  const values = input.map((item, index) => {
-    const value = exactBody(item, ['sourceId', 'documentVersionId']);
-    return {
-      sourceId: requiredText(
-        value.sourceId,
-        `sourceDocuments[${index}].sourceId`,
-      ),
-      documentVersionId: requiredText(
-        value.documentVersionId,
-        `sourceDocuments[${index}].documentVersionId`,
-      ),
-    };
-  });
-  if (new Set(values.map((value) => value.sourceId)).size !== values.length) {
-    invalid('sourceDocuments');
-  }
-  return values;
 }
 
 function stringArray(input: unknown, field: string): string[] {
@@ -173,8 +107,8 @@ function stringArray(input: unknown, field: string): string[] {
 function feedbackBody(body: unknown): CanonicalAeoEditingDraftFeedbackRequest {
   const allowed = [
     'expectedRevision',
-    'feedbackId',
-    'suggestionId',
+    'feedbackRef',
+    'suggestionRef',
     'expectedGenerationRevision',
     'decision',
     'note',
@@ -197,10 +131,12 @@ function feedbackBody(body: unknown): CanonicalAeoEditingDraftFeedbackRequest {
   if (!LEARNING_DISPOSITIONS.has(learningDisposition)) {
     invalid('learningDisposition');
   }
+  const semanticField = requiredText(value.semanticField, 'semanticField');
+  if (!SEMANTIC_FIELDS.has(semanticField)) invalid('semanticField');
   return {
     expectedRevision: safeInteger(value.expectedRevision),
-    feedbackId: requiredText(value.feedbackId, 'feedbackId'),
-    suggestionId: requiredText(value.suggestionId, 'suggestionId'),
+    feedbackRef: requiredText(value.feedbackRef, 'feedbackRef'),
+    suggestionRef: requiredText(value.suggestionRef, 'suggestionRef'),
     expectedGenerationRevision: safeInteger(value.expectedGenerationRevision),
     decision: decision as CanonicalAeoEditingDraftFeedbackRequest['decision'],
     note: requiredText(value.note, 'note'),
@@ -212,8 +148,14 @@ function feedbackBody(body: unknown): CanonicalAeoEditingDraftFeedbackRequest {
       : { revisedBodyEn: nullableText(value.revisedBodyEn, 'revisedBodyEn') }),
     ...(value.revisionSourceRefs === undefined
       ? {}
-      : { revisionSourceRefs: sourceRefs(value.revisionSourceRefs) }),
-    semanticField: requiredText(value.semanticField, 'semanticField'),
+      : {
+          revisionSourceRefs: stringArray(
+            value.revisionSourceRefs,
+            'revisionSourceRefs',
+          ),
+        }),
+    semanticField:
+      semanticField as CanonicalAeoEditingDraftFeedbackRequest['semanticField'],
     reasonCode:
       reasonCode as CanonicalAeoEditingDraftFeedbackRequest['reasonCode'],
     learningDisposition:
@@ -230,30 +172,6 @@ function exactBody(body: unknown, allowed: string[]): Record<string, unknown> {
     invalid('unexpectedField');
   }
   return value;
-}
-
-function sourceRefs(value: unknown): CanonicalAeoEditingSourceRef[] {
-  if (!Array.isArray(value)) invalid('revisionSourceRefs');
-  const refs = value.map((item, index) => {
-    const record = exactBody(item, ['sourceId', 'locator']);
-    return {
-      sourceId: requiredText(
-        record.sourceId,
-        `revisionSourceRefs[${index}].sourceId`,
-      ),
-      locator: requiredText(
-        record.locator,
-        `revisionSourceRefs[${index}].locator`,
-      ),
-    };
-  });
-  if (
-    new Set(refs.map((ref) => `${ref.sourceId}#${ref.locator}`)).size !==
-    refs.length
-  ) {
-    invalid('revisionSourceRefs');
-  }
-  return refs;
 }
 
 function requiredText(value: unknown, field: string): string {

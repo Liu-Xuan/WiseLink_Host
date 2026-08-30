@@ -25,17 +25,20 @@ import {
   makeAeoEditingDraftArtifact,
   makeRoutineSeriesPatternDraft,
   parseAeoEditingDraftArtifact,
+  resolveAeoEditingBrowserFeedback,
   toAeoEditingDraftReadModel,
   type CanonicalAeoEditingDraftArtifact,
 } from './canonical-aeo-editing-draft.artifact';
 import {
   CanonicalAeoEditingInputProducer,
+  type CanonicalAeoEditingHostCurrentInput,
   type CanonicalAeoEditingPreparedInput,
 } from './canonical-aeo-editing-input.producer';
 import {
   assertActualBytes,
   assertExpectedRevision,
   assertExpectedWorkItemRevision,
+  assertNoPendingHostInput,
   assertSameBytes,
   currentDraftMatchesInput,
   draftProjection,
@@ -43,6 +46,7 @@ import {
   feedbackInput,
   requiredDraftProjection,
   requiredHostInput,
+  requiredPendingHostInput,
   withoutRevision,
 } from './canonical-host-aeo-editing.utils';
 import {
@@ -73,6 +77,43 @@ export class CanonicalHostAeoEditingService {
     private readonly inputProducer: CanonicalAeoEditingInputProducer,
   ) {}
 
+  async stageCurrentInput(
+    workItemId: string,
+    current: CanonicalAeoEditingHostCurrentInput,
+    actor: CanonicalHostActor,
+  ): Promise<{
+    status: 'HOST_CURRENT_INPUT_STAGED';
+    workItemRevision: number;
+    inputRevision: number;
+  }> {
+    assertExpectedRevision(current.expectedRevision);
+    const workItem = await this.authorizeAndLoad(
+      workItemId,
+      actor,
+      'CREATE_AEO_EDITING_DRAFT',
+    );
+    assertExpectedWorkItemRevision(workItem, current.expectedRevision);
+    const prepared = await this.inputProducer.produce({
+      workItem,
+      current,
+      actor,
+    });
+    const updated = await this.registrar.compareAndSet({
+      workItemId: workItem.workItemId,
+      expectedRevision: workItem.revision,
+      syncPrimaryAttempt: false,
+      next: {
+        ...withoutRevision(workItem),
+        aeoEditingPendingInput: prepared.hostInput,
+      },
+    });
+    return {
+      status: 'HOST_CURRENT_INPUT_STAGED',
+      workItemRevision: updated.revision,
+      inputRevision: prepared.hostInput.inputRevision,
+    };
+  }
+
   async createDraft(
     workItemId: string,
     request: CanonicalAeoEditingDraftCreateRequest,
@@ -85,14 +126,23 @@ export class CanonicalHostAeoEditingService {
       'CREATE_AEO_EDITING_DRAFT',
     );
     assertExpectedWorkItemRevision(workItem, request.expectedRevision);
-    const prepared = await this.inputProducer.produce({
+    const hostInput = requiredPendingHostInput(workItem);
+    const prepared = await this.inputProducer.readCurrent({
       workItem,
-      request,
+      hostInput,
       actor,
     });
-    const hostInput = prepared.hostInput;
     if (currentDraftMatchesInput(workItem, hostInput)) {
-      return this.readPersistedDraft(workItem);
+      const updated = await this.registrar.compareAndSet({
+        workItemId: workItem.workItemId,
+        expectedRevision: workItem.revision,
+        syncPrimaryAttempt: false,
+        next: {
+          ...withoutRevision(workItem),
+          aeoEditingPendingInput: null,
+        },
+      });
+      return this.readPersistedDraft(updated);
     }
 
     const draft = await this.buildDraft(workItem, prepared);
@@ -139,6 +189,7 @@ export class CanonicalHostAeoEditingService {
         next: {
           ...withoutRevision(workItem),
           aeoEditingInput: hostInput,
+          aeoEditingPendingInput: null,
           aeoEditingDraft: projection,
         },
       });
@@ -162,6 +213,7 @@ export class CanonicalHostAeoEditingService {
       actor,
       'READ_AEO_EDITING_DRAFT',
     );
+    assertNoPendingHostInput(workItem);
     return this.readPersistedDraft(workItem);
   }
 
@@ -177,11 +229,18 @@ export class CanonicalHostAeoEditingService {
       'RECORD_AEO_DRAFT_FEEDBACK',
     );
     assertExpectedWorkItemRevision(workItem, request.expectedRevision);
-    requiredHostInput(workItem);
+    assertNoPendingHostInput(workItem);
+    const hostInput = requiredHostInput(workItem);
+    await this.inputProducer.readCurrent({ workItem, hostInput, actor });
     const current = await this.readPersistedEnvelope(workItem);
     const updatedDraft = recordAeoDraftFeedback(
       current.draft,
-      feedbackInput(workItem, request, actor),
+      feedbackInput(
+        workItem,
+        request,
+        actor,
+        resolveAeoEditingBrowserFeedback({ artifact: current, request }),
+      ),
     );
     const projection = requiredDraftProjection(workItem);
     const nextDraftRevision = projection.revision + 1;
