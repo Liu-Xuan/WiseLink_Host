@@ -417,6 +417,7 @@ export class CanonicalHostOpenClawOverallService {
       packetInput('OPENCLAW_OVERALL_DYNAMIC_CANDIDATE_BUILD_FAILED', () =>
         this.assessment.prepareDynamicRulesCandidate({
           workItem,
+          tenantId: attempt.tenantId,
           permissionSnapshotVersion,
           assessmentAsOf: timestamp,
           generatedAt: timestamp,

@@ -93,6 +93,10 @@ import {
   MiaodaScopedProfessionalArtifactCorrelationAdapter,
   UnavailableScopedProfessionalArtifactCorrelationAdapter,
 } from './scoped-professional-artifact-correlation.port';
+import { CanonicalRuleSetArtifactReader } from './canonical-rule-set-artifact.reader';
+import { CanonicalRuleSetLifecycleController } from './canonical-rule-set-lifecycle.controller';
+import { CanonicalRuleSetLifecycleRepository } from './canonical-rule-set-lifecycle.repository';
+import { CanonicalRuleSetLifecycleService } from './canonical-rule-set-lifecycle.service';
 
 export interface CanonicalHostModuleOptions {
   imports?: ModuleMetadata['imports'];
@@ -130,6 +134,7 @@ export interface CanonicalHostModuleOptions {
     CanonicalHostReviewActionController,
     CanonicalHostApplicabilitySelectionController,
     CanonicalHostOverallRegenerationController,
+    CanonicalRuleSetLifecycleController,
   ],
   providers: [
     CanonicalEntryFacadeService,
@@ -162,6 +167,9 @@ export interface CanonicalHostModuleOptions {
     CanonicalHostEngineerReviewService,
     CanonicalHostLibraryIndexService,
     CanonicalHostAeoService,
+    CanonicalRuleSetArtifactReader,
+    CanonicalRuleSetLifecycleRepository,
+    CanonicalRuleSetLifecycleService,
     UnavailableCanonicalServiceScopeAuthorization,
     UnavailableCanonicalApplicabilityControlledSelection,
     UnavailableScopedProfessionalArtifactCorrelationAdapter,
@@ -294,6 +302,7 @@ export class CanonicalHostModule {
         CanonicalHostReviewActionController,
         CanonicalHostApplicabilitySelectionController,
         CanonicalHostOverallRegenerationController,
+        CanonicalRuleSetLifecycleController,
       ],
       providers: [
         workItemRegistrarProvider,
@@ -342,6 +351,9 @@ export class CanonicalHostModule {
         CanonicalHostEngineerReviewService,
         CanonicalHostLibraryIndexService,
         CanonicalHostAeoService,
+        CanonicalRuleSetArtifactReader,
+        CanonicalRuleSetLifecycleRepository,
+        CanonicalRuleSetLifecycleService,
         {
           provide: CANONICAL_SERVICE_SCOPE_AUTHORIZATION,
           useExisting: CANONICAL_EXECUTOR_SERVICE_SCOPE_AUTHORIZATION,
@@ -356,6 +368,7 @@ export class CanonicalHostModule {
         CanonicalHostLibraryIndexService,
         CanonicalHostAeoService,
         CanonicalHostApplicabilityInputProducer,
+        CanonicalRuleSetLifecycleService,
         CANONICAL_HOST_BINDING,
       ],
     };

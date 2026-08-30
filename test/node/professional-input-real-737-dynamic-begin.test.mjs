@@ -23,6 +23,7 @@ test(
       { UnifiedReaderService },
       { AssessmentHostConsumerService },
       { DynamicRulesEvaluationProcessor },
+      { buildJobAidCriterionSetVersion },
       { CanonicalHostAssessmentService },
       { CanonicalHostOpenClawDynamicEvaluationService },
     ] = await Promise.all([
@@ -44,6 +45,7 @@ test(
       importBuilt(
         'modules/assessment-workbench/dynamic-rules-evaluation.processor.js',
       ),
+      importBuilt('modules/assessment-workbench/job-aid-runtime/criterionSet.js'),
       importBuilt(
         'modules/canonical-host/canonical-host-assessment.service.js',
       ),
@@ -154,6 +156,31 @@ test(
         return structuredClone(workItem);
       },
     };
+    const rulePackBytes = new Uint8Array(await readFile(resolve(
+      root,
+      'server/runtime-assets/assessment-host/job-aid/rule-pack-0.2.json',
+    )));
+    const rulePack = JSON.parse(new TextDecoder().decode(rulePackBytes));
+    const rulePackHash = sha256(rulePackBytes);
+    const criterionSet = buildJobAidCriterionSetVersion({
+      rulePack,
+      artifactRef: 'runtime-asset://assessment-host/job-aid/rule-pack-0.2.json',
+      artifactDigest: `sha256:${rulePackHash}`,
+      artifactVersion: '0.2',
+      lifecycleStatus: 'ACTIVE',
+    });
+    const ruleSets = {
+      async readActiveRuntime(tenantId) {
+        assert.equal(tenantId, 'tenant-real-737-dynamic-begin-test');
+        return {
+          snapshotId: criterionSet.criterionSetId,
+          headRevision: 1,
+          rulePack,
+          rulePackHash,
+          criterionSet,
+        };
+      },
+    };
     const assessment = new CanonicalHostAssessmentService(
       registrar,
       {},
@@ -162,6 +189,7 @@ test(
       reader,
       {},
       new AssessmentHostConsumerService(),
+      ruleSets,
     );
     let reserveReached = false;
     const attempts = {

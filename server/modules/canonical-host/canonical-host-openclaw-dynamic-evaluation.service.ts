@@ -323,6 +323,7 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
     const timestamp = attempt.createdAt.toISOString();
     const candidate = await this.assessment.prepareDynamicRulesCandidate({
       workItem,
+      tenantId: attempt.tenantId,
       permissionSnapshotVersion,
       assessmentAsOf: timestamp,
       generatedAt: timestamp,

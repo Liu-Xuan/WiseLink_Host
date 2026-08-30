@@ -927,6 +927,90 @@ export interface CanonicalAssessmentCandidateProjection {
   resynthesisAttemptId: string | null;
 }
 
+export type CanonicalRuleSetLifecycleStatus = 'DRAFT' | 'ACTIVE' | 'SUPERSEDED';
+
+export type CanonicalRuleSetActivationAction = 'PROMOTE' | 'ROLLBACK';
+
+export interface CreateCanonicalRuleSetSnapshotRequest {
+  selection: {
+    bucketId: string;
+    filePath: string;
+  };
+}
+
+export interface ActivateCanonicalRuleSetSnapshotRequest {
+  targetSnapshotId: string;
+  expectedRevision: number;
+  reason: string;
+}
+
+export interface CanonicalRuleSetSnapshotReadModel {
+  snapshotId: string;
+  lifecycleStatus: CanonicalRuleSetLifecycleStatus;
+  rulePackVersion: string;
+  criterionSetId: string;
+  criterionSetHash: string;
+  memberIdentityHash: string;
+  criteriaCount: number;
+  artifact: {
+    ref: string;
+    digest: string;
+    version: string;
+  };
+  canonicalCriteriaHash: string;
+  sourceJobAidDocumentVersion: {
+    documentVersionId: string | null;
+    status: 'CONFIRMED' | 'VERSION_UNCONFIRMED';
+  };
+  createdByEngineeringOwnerUserId: string;
+  createdAt: string;
+}
+
+export interface CanonicalRuleSetActivationReadModel {
+  activationId: string;
+  revision: number;
+  action: CanonicalRuleSetActivationAction;
+  fromSnapshotId: string | null;
+  activeSnapshotId: string;
+  engineeringOwnerUserId: string;
+  requiredRoleId: string;
+  reason: string;
+  activatedAt: string;
+}
+
+export interface CanonicalRuleSetLifecycleReadModel {
+  schemaVersion: 'wiselink.3_1.rule_set_lifecycle.v1_1.candidate';
+  ruleSetKey: 'JOB_AID';
+  headRevision: number;
+  activeSnapshotId: string | null;
+  snapshots: CanonicalRuleSetSnapshotReadModel[];
+  rollbackCandidates: Array<{
+    targetSnapshotId: string;
+    expectedRevision: number;
+  }>;
+  activations: CanonicalRuleSetActivationReadModel[];
+  authority: {
+    currentOwner: 'CANONICAL_HOST';
+    currentCasEnforced: true;
+    activationAuditAppendOnly: true;
+    requiresExplicitEngineeringOwner: true;
+    aiMayPromote: false;
+    providerMayPromote: false;
+    publishesEngineeringApproval: false;
+  };
+}
+
+export interface CreateCanonicalRuleSetSnapshotResponse {
+  snapshot: CanonicalRuleSetSnapshotReadModel;
+  lifecycle: CanonicalRuleSetLifecycleReadModel;
+  replayed: boolean;
+}
+
+export interface ActivateCanonicalRuleSetSnapshotResponse {
+  activation: CanonicalRuleSetActivationReadModel;
+  lifecycle: CanonicalRuleSetLifecycleReadModel;
+}
+
 export interface CanonicalBaseRuleCandidateProjection {
   /**
    * Backward-compatible storage name. In the current runtime this projection

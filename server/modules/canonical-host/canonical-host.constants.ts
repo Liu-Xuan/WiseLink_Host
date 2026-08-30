@@ -61,3 +61,11 @@ export const CANONICAL_AILY_AGENT_ID = 'agent_4km47c77ujwqphg';
 // This role is limited to controlled development WorkItem creation/S1 flows;
 // it is never an object-read bypass.
 export const CANONICAL_DEVELOPMENT_ROLE_ID = 'wiselink_development';
+
+/**
+ * Deployment-owned platform role binding for V1.1 RuleSet current changes.
+ * The role must already exist in Miaoda and must not reuse the development
+ * role, whose scope is limited to controlled development WorkItems/S1 flows.
+ */
+export const CANONICAL_RULE_SET_ENGINEERING_OWNER_ROLE_ENV =
+  'WL_CANONICAL_RULE_SET_ENGINEERING_OWNER_ROLE_ID';
