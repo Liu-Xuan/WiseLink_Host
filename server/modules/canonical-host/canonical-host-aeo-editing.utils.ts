@@ -25,6 +25,7 @@ export function requiredHostInput(
     !value ||
     value.schemaVersion !== 'wiselink.3_1.aeo_editing_input.v0.candidate.1' ||
     value.status !== 'HOST_INPUT_READY' ||
+    !['ACTION_UNITS', 'ROUTINE_SERIES_PATTERN'].includes(value.inputKind) ||
     value.authority !== 'HOST_OWNED_INPUT_ACTUAL_BYTES_REVALIDATED_ON_USE' ||
     value.workItemId !== workItem.workItemId ||
     value.documentVersionId !== workItem.source.documentVersionId ||
@@ -38,11 +39,23 @@ export function requiredHostInput(
     value.inputRevision < 1 ||
     !value.draftTitle.trim() ||
     !uniqueNonEmpty(value.selectedUnitIds) ||
-    value.selectedUnitIds.length === 0 ||
+    (value.inputKind === 'ACTION_UNITS' &&
+      value.selectedUnitIds.length === 0) ||
+    (value.inputKind === 'ROUTINE_SERIES_PATTERN' &&
+      value.selectedUnitIds.length !== 0) ||
     !uniqueRefs(value.currentSourceRefs) ||
     value.currentSourceRefs.length === 0 ||
     !uniqueNonEmpty(value.sourceArtifacts.map((item) => item.sourceId)) ||
-    value.sourceArtifacts.length === 0
+    value.sourceArtifacts.length === 0 ||
+    value.sourceArtifacts.some(
+      (item) =>
+        !item.documentVersionId.trim() ||
+        !item.sourceArtifactId.trim() ||
+        !/^[a-f0-9]{64}$/u.test(item.artifactSha256) ||
+        !Number.isSafeInteger(item.byteLength) ||
+        item.byteLength < 1 ||
+        !item.mediaType.trim(),
+    )
   ) {
     throw new Error('AEO_EDITING_HOST_INPUT_INVALID');
   }

@@ -78,6 +78,7 @@ import { CanonicalHostAssessmentService } from './canonical-host-assessment.serv
 import { CanonicalHostAeoService } from './canonical-host-aeo.service';
 import { CanonicalHostAeoEditingController } from './canonical-host-aeo-editing.controller';
 import { CanonicalHostAeoEditingService } from './canonical-host-aeo-editing.service';
+import { CanonicalAeoEditingInputProducer } from './canonical-aeo-editing-input.producer';
 import { CanonicalHostIntegratedAssessmentService } from './canonical-host-integrated-assessment.service';
 import { CanonicalHostEngineerReviewService } from './canonical-host-engineer-review.service';
 import { CanonicalHostLibraryIndexService } from './canonical-host-library-index.service';
@@ -180,6 +181,7 @@ export interface CanonicalHostModuleOptions {
     EngineeringMatterRepository,
     EngineeringMatterService,
     CanonicalHostAeoEditingService,
+    CanonicalAeoEditingInputProducer,
     UnavailableCanonicalServiceScopeAuthorization,
     UnavailableCanonicalApplicabilityControlledSelection,
     UnavailableScopedProfessionalArtifactCorrelationAdapter,

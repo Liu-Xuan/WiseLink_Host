@@ -4,16 +4,15 @@ import type {
   CanonicalAeoEditingDraftCreateRequest,
   CanonicalAeoEditingDraftFeedbackRequest,
   CanonicalAeoEditingDraftReadModel,
-  CanonicalAeoEditingInputProjection,
   CanonicalWorkItemProjection,
   UnifiedPackageArtifactDescriptor,
 } from '@shared/api.interface';
 import {
   createAeoDraftAssistanceCandidate,
-  ingestAeoEditingKnowledgeCandidate,
+  diffAeoEditingKnowledgeVersions,
+  regenerateAeoDraftSelection,
   recordAeoDraftFeedback,
   type AeoDraftAssistanceCandidate,
-  type AeoEditingKnowledgeCandidate,
 } from '../aeo-authoring/aeo-editing-knowledge';
 import { UNIFIED_ARTIFACT_STORE } from '../unified-reader/unified-reader.constants';
 import type { UnifiedArtifactStorePort } from '../unified-reader/unified-reader.types';
@@ -21,14 +20,18 @@ import { MiaodaWorkItemRepository } from '../work-item/miaoda-work-item.reposito
 import { authorizeAndLoadCanonicalWorkItem } from './canonical-authorized-work-item-reader';
 import {
   assertAeoEditingDraftArtifact,
-  bindAeoEditingKnowledgeToHostSources,
   buildAeoEditingBlockingGaps,
   encodeAeoEditingDraftArtifact,
   makeAeoEditingDraftArtifact,
+  makeRoutineSeriesPatternDraft,
   parseAeoEditingDraftArtifact,
   toAeoEditingDraftReadModel,
   type CanonicalAeoEditingDraftArtifact,
 } from './canonical-aeo-editing-draft.artifact';
+import {
+  CanonicalAeoEditingInputProducer,
+  type CanonicalAeoEditingPreparedInput,
+} from './canonical-aeo-editing-input.producer';
 import {
   assertActualBytes,
   assertExpectedRevision,
@@ -38,7 +41,6 @@ import {
   draftProjection,
   errorCode,
   feedbackInput,
-  parseJson,
   requiredDraftProjection,
   requiredHostInput,
   withoutRevision,
@@ -68,6 +70,7 @@ export class CanonicalHostAeoEditingService {
     @Inject(UNIFIED_ARTIFACT_STORE)
     private readonly artifacts: UnifiedArtifactStorePort,
     private readonly repository: MiaodaWorkItemRepository,
+    private readonly inputProducer: CanonicalAeoEditingInputProducer,
   ) {}
 
   async createDraft(
@@ -82,13 +85,18 @@ export class CanonicalHostAeoEditingService {
       'CREATE_AEO_EDITING_DRAFT',
     );
     assertExpectedWorkItemRevision(workItem, request.expectedRevision);
-    const hostInput = requiredHostInput(workItem);
+    const prepared = await this.inputProducer.produce({
+      workItem,
+      request,
+      actor,
+    });
+    const hostInput = prepared.hostInput;
     if (currentDraftMatchesInput(workItem, hostInput)) {
       return this.readPersistedDraft(workItem);
     }
 
-    const draft = await this.buildDraft(workItem, hostInput);
-    const blockingGaps = buildAeoEditingBlockingGaps(draft.knowledge);
+    const draft = await this.buildDraft(workItem, prepared);
+    const blockingGaps = draft.blockingGaps;
     const nextDraftRevision = (workItem.aeoEditingDraft?.revision ?? 0) + 1;
     const attempt = await this.repository.reserveAssessmentAction({
       workItemId: workItem.workItemId,
@@ -130,6 +138,7 @@ export class CanonicalHostAeoEditingService {
         syncPrimaryAttempt: false,
         next: {
           ...withoutRevision(workItem),
+          aeoEditingInput: hostInput,
           aeoEditingDraft: projection,
         },
       });
@@ -231,40 +240,94 @@ export class CanonicalHostAeoEditingService {
 
   private async buildDraft(
     workItem: CanonicalWorkItemProjection,
-    hostInput: CanonicalAeoEditingInputProjection,
+    prepared: CanonicalAeoEditingPreparedInput,
   ): Promise<{
-    knowledge: AeoEditingKnowledgeCandidate;
     candidate: AeoDraftAssistanceCandidate;
+    blockingGaps: ReturnType<typeof buildAeoEditingBlockingGaps>;
   }> {
-    const [producerBytes, manifestBytes] = await Promise.all([
-      this.artifacts.readActualBytes(hostInput.currentProducerArtifact),
-      this.artifacts.readActualBytes(hostInput.sourceManifestArtifact),
-    ]);
-    assertActualBytes(
-      producerBytes,
-      hostInput.currentProducerArtifact,
-      'AEO_EDITING_CURRENT_PRODUCER_ACTUAL_BYTES_MISMATCH',
-    );
-    assertActualBytes(
-      manifestBytes,
-      hostInput.sourceManifestArtifact,
-      'AEO_EDITING_SOURCE_MANIFEST_ACTUAL_BYTES_MISMATCH',
-    );
-    const producer = parseJson(
-      producerBytes,
-      'AEO_EDITING_CURRENT_PRODUCER_JSON_INVALID',
-    );
-    const manifest = parseJson(
-      manifestBytes,
-      'AEO_EDITING_SOURCE_MANIFEST_JSON_INVALID',
-    );
-    const normalized = ingestAeoEditingKnowledgeCandidate(producer, manifest);
-    const knowledge = bindAeoEditingKnowledgeToHostSources(
-      normalized,
-      hostInput,
-    );
+    const { hostInput, knowledge, routine } = prepared;
+    if (routine) {
+      if (
+        workItem.aeoEditingDraft &&
+        workItem.aeoEditingInput?.inputKind !== 'ROUTINE_SERIES_PATTERN'
+      ) {
+        throw new Error('AEO_EDITING_REGENERATION_KIND_CHANGED');
+      }
+      const generationRevision =
+        (workItem.aeoEditingDraft?.generationRevision ?? 0) + 1;
+      return {
+        candidate: makeRoutineSeriesPatternDraft({
+          workItemId: workItem.workItemId,
+          title: hostInput.draftTitle,
+          generationRevision,
+          sources: routine.sources,
+          currentSourceRefs: routine.sourceRefs,
+        }),
+        blockingGaps: [
+          {
+            code: 'AEO_ROUTINE_SERIES_PATTERN_NOT_GENERIC',
+            message:
+              'Observed B777 routine revision evidence is retained as a series-specific blocking gap and generated zero authoring suggestions.',
+            sourceRefs: routine.sourceRefs,
+            blocking: true,
+          },
+        ],
+      };
+    }
+    if (!knowledge) throw new Error('AEO_EDITING_KNOWLEDGE_REQUIRED');
+    const previousInput = workItem.aeoEditingInput;
+    const previousProjection = workItem.aeoEditingDraft;
+    if (previousInput && previousProjection) {
+      const current = await this.readPersistedEnvelope(workItem);
+      const previousKnowledge =
+        await this.inputProducer.readBoundKnowledge(previousInput);
+      if (!previousKnowledge) {
+        throw new Error('AEO_EDITING_REGENERATION_KIND_CHANGED');
+      }
+      if (
+        !sameStringSet(previousInput.selectedUnitIds, hostInput.selectedUnitIds)
+      ) {
+        throw new Error(
+          'AEO_EDITING_REGENERATION_SELECTION_CHANGE_UNSUPPORTED',
+        );
+      }
+      const diff = diffAeoEditingKnowledgeVersions(
+        previousKnowledge,
+        knowledge,
+      );
+      if (!diff.sameMatter) {
+        throw new Error('AEO_DRAFT_REGENERATION_MATTER_IDENTITY_MISMATCH');
+      }
+      if (diff.changes.some((change) => change.change === 'REMOVED')) {
+        throw new Error('AEO_EDITING_REGENERATION_REMOVED_UNIT_UNSUPPORTED');
+      }
+      const affected = diff.changes
+        .filter(
+          (change) =>
+            change.change !== 'UNCHANGED' &&
+            hostInput.selectedUnitIds.includes(change.unitId),
+        )
+        .map((change) => change.unitId);
+      if (affected.length === 0) {
+        throw new Error('AEO_EDITING_REGENERATION_SEMANTIC_NOOP');
+      }
+      return {
+        candidate: regenerateAeoDraftSelection(
+          current.draft,
+          {
+            draftKey: workItem.workItemId,
+            title: hostInput.draftTitle,
+            knowledge,
+            selectedUnitIds: affected,
+            currentSourceRefs: hostInput.currentSourceRefs,
+            expectedGenerationRevision: current.draft.generationRevision,
+          },
+          'Host current producer and source manifest revision advanced.',
+        ),
+        blockingGaps: buildAeoEditingBlockingGaps(knowledge),
+      };
+    }
     return {
-      knowledge,
       candidate: createAeoDraftAssistanceCandidate({
         draftKey: workItem.workItemId,
         title: hostInput.draftTitle,
@@ -272,6 +335,7 @@ export class CanonicalHostAeoEditingService {
         selectedUnitIds: hostInput.selectedUnitIds,
         currentSourceRefs: hostInput.currentSourceRefs,
       }),
+      blockingGaps: buildAeoEditingBlockingGaps(knowledge),
     };
   }
 
@@ -348,4 +412,10 @@ export class CanonicalHostAeoEditingService {
       errorMessage: error instanceof Error ? error.message : String(error),
     });
   }
+}
+
+function sameStringSet(left: string[], right: string[]): boolean {
+  return (
+    left.length === right.length && left.every((value) => right.includes(value))
+  );
 }

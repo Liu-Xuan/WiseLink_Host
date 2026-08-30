@@ -1311,7 +1311,8 @@ export interface CanonicalAeoEditingSourceRef {
 
 export interface CanonicalAeoEditingBoundSourceArtifact {
   sourceId: string;
-  artifactRef: string;
+  documentVersionId: string;
+  sourceArtifactId: string;
   artifactSha256: string;
   byteLength: number;
   mediaType: string;
@@ -1324,6 +1325,7 @@ export interface CanonicalAeoEditingBoundSourceArtifact {
 export interface CanonicalAeoEditingInputProjection {
   schemaVersion: 'wiselink.3_1.aeo_editing_input.v0.candidate.1';
   status: 'HOST_INPUT_READY';
+  inputKind: 'ACTION_UNITS' | 'ROUTINE_SERIES_PATTERN';
   inputRevision: number;
   workItemId: string;
   documentVersionId: string;
@@ -1343,7 +1345,8 @@ export interface CanonicalAeoEditingBlockingGap {
     | 'AEO_MISSING_INPUT'
     | 'AEO_SOURCE_CONFLICT'
     | 'AEO_TYPED_FIGURE_OR_TABLE_NOT_PROJECTED'
-    | 'AEO_SPECIALIZED_CONTROL_REQUIRES_ENGINEER_REVIEW';
+    | 'AEO_SPECIALIZED_CONTROL_REQUIRES_ENGINEER_REVIEW'
+    | 'AEO_ROUTINE_SERIES_PATTERN_NOT_GENERIC';
   message: string;
   sourceRefs: CanonicalAeoEditingSourceRef[];
   blocking: true;
@@ -1373,6 +1376,13 @@ export interface CanonicalAeoEditingDraftProjection {
 
 export interface CanonicalAeoEditingDraftCreateRequest {
   expectedRevision: number;
+  currentProducerArtifact: UnifiedPackageArtifactDescriptor;
+  sourceManifestArtifact: UnifiedPackageArtifactDescriptor;
+  sourceDocuments: Array<{
+    sourceId: string;
+    documentVersionId: string;
+  }>;
+  selectedUnitIds: string[];
 }
 
 export interface CanonicalAeoEditingDraftFeedbackRequest {
@@ -1408,21 +1418,34 @@ export interface CanonicalAeoEditingDraftFeedbackRequest {
 }
 
 export interface CanonicalAeoEditingDraftReadModel {
-  schemaVersion: 'wiselink.3_1.aeo_editing_draft_read_model.v0.candidate.1';
+  schemaVersion: 'wiselink.3_1.aeo_editing_draft_read_model.v0.candidate.2';
   status: 'CANDIDATE_ONLY';
   workItemId: string;
   workItemRevision: number;
   documentVersionId: string;
   sourcePackageId: string;
-  projection: CanonicalAeoEditingDraftProjection;
+  projection: {
+    status: 'CANDIDATE_ONLY';
+    revision: number;
+    generationRevision: number;
+    basedOnInputRevision: number;
+    suggestionCount: number;
+    blockCount: number;
+    blockingGapCount: number;
+    feedbackCount: number;
+    supersededFeedbackCount: number;
+    doNotLearnFeedbackCount: number;
+    adoptionDecisions: [];
+    automaticallyAdopted: false;
+    engineeringApproved: false;
+    productionPublished: false;
+    currentChanged: false;
+  };
   title: string;
   generationRevision: number;
   sources: Array<{
     sourceId: string;
     role: string;
-    artifactRef: string;
-    artifactSha256: string;
-    byteLength: number;
     observedIdentity: string | null;
   }>;
   currentSourceRefs: CanonicalAeoEditingSourceRef[];
@@ -1465,18 +1488,38 @@ export interface CanonicalAeoEditingDraftReadModel {
       | 'ACCEPTED_CANDIDATE'
       | 'MODIFIED_CANDIDATE'
       | 'REJECTED_CANDIDATE';
-    engineerDecisionRef: string | null;
   }>;
-  blocks: import('./aeo-editor').AeoContentBlock[];
+  blocks: Array<{
+    blockId: string;
+    orderKey: string;
+    blockType: 'PARAGRAPH';
+    originType: import('./aeo-editor').AeoContentOriginType;
+    bodyZh: string | null;
+    bodyEn: string | null;
+    sourceRefs: CanonicalAeoEditingSourceRef[];
+    unresolved: import('./aeo-editor').AeoBlockUnresolved[];
+  }>;
   blockingGaps: CanonicalAeoEditingBlockingGap[];
   feedback: Array<{
     feedbackId: string;
     suggestionId: string;
     targetGenerationRevision: number;
     decision: 'ACCEPT' | 'MODIFY' | 'REJECT';
-    engineerDecisionRef: string;
     note: string;
     reasonCode: CanonicalAeoEditingDraftFeedbackRequest['reasonCode'];
+    learningDisposition: CanonicalAeoEditingDraftFeedbackRequest['learningDisposition'];
+    sourceRefs: CanonicalAeoEditingSourceRef[];
+  }>;
+  supersededFeedback: Array<{
+    feedbackId: string;
+    suggestionId: string;
+    sourceUnitId: string;
+    decision: 'ACCEPT' | 'MODIFY' | 'REJECT';
+    targetGenerationRevision: number;
+    activeThroughGenerationRevision: number;
+    supersededAtGenerationRevision: number;
+    reason: 'SELECTED_UNIT_REGENERATED';
+    note: string;
     learningDisposition: CanonicalAeoEditingDraftFeedbackRequest['learningDisposition'];
     sourceRefs: CanonicalAeoEditingSourceRef[];
   }>;

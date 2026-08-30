@@ -8,7 +8,7 @@ describe('CanonicalHostAeoEditingService real AEO product wiring', () => {
     const target = harness('AEO-B787-45-0002-R00');
     const readModel = await target.service.createDraft(
       target.state.workItem.workItemId,
-      { expectedRevision: target.state.workItem.revision },
+      target.createRequest(),
       ACTOR,
     );
 
@@ -23,20 +23,14 @@ describe('CanonicalHostAeoEditingService real AEO product wiring', () => {
     expect(readModel.blocks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          sourceBindings: expect.arrayContaining([
-            expect.objectContaining({
-              sourceArtifactRef: expect.stringMatching(
-                /^artifact:\/\/canonical-host\/aeo-sources\//u,
-              ),
-              sourceSha256: expect.stringMatching(/^[a-f0-9]{64}$/u),
-            }),
+          sourceRefs: expect.arrayContaining([
+            expect.objectContaining({ sourceId: expect.any(String) }),
           ]),
         }),
       ]),
     );
-    expect(
-      readModel.sources.every((source) => !source.artifactRef.startsWith('/')),
-    ).toBe(true);
+    expect(forbiddenBrowserKeys(readModel)).toEqual([]);
+    expect(JSON.stringify(readModel)).not.toContain('artifact://');
     expect(readModel.adoptionDecisions).toEqual([]);
     expect(readModel.authority).toEqual(
       expect.objectContaining({
@@ -52,7 +46,7 @@ describe('CanonicalHostAeoEditingService real AEO product wiring', () => {
       target.state.workItem.workItemId,
       ACTOR,
     );
-    expect(reread.projection.artifact).toEqual(readModel.projection.artifact);
+    expect(reread.projection).toEqual(readModel.projection);
     expect(reread.blocks).toEqual(readModel.blocks);
     expect(target.repository.completeAssessmentAction).toHaveBeenCalledTimes(1);
     expect(
@@ -71,7 +65,7 @@ describe('CanonicalHostAeoEditingService real AEO product wiring', () => {
     const target = harness('AEO-B747-23-0008-R00');
     const readModel = await target.service.createDraft(
       target.state.workItem.workItemId,
-      { expectedRevision: target.state.workItem.revision },
+      target.createRequest(),
       ACTOR,
     );
 
@@ -102,11 +96,8 @@ describe('CanonicalHostAeoEditingService real AEO product wiring', () => {
         ),
     ).toBe(true);
     expect(
-      readModel.blocks.some(
-        (block) =>
-          block.blockType === 'IMAGE' || block.blockType === 'DATA_TABLE',
-      ),
-    ).toBe(false);
+      readModel.blocks.every((block) => block.blockType === 'PARAGRAPH'),
+    ).toBe(true);
     expect(readModel.adoptionDecisions).toEqual([]);
   });
 
@@ -114,7 +105,7 @@ describe('CanonicalHostAeoEditingService real AEO product wiring', () => {
     const target = harness('AEO-B737-31-0034-R00');
     const readModel = await target.service.createDraft(
       target.state.workItem.workItemId,
-      { expectedRevision: target.state.workItem.revision },
+      target.createRequest(),
       ACTOR,
     );
     const inspection = readModel.suggestions.find(
@@ -173,11 +164,57 @@ describe('CanonicalHostAeoEditingService real AEO product wiring', () => {
     );
   });
 
+  it('reads every real B777 source byte but keeps the routine revision pattern at zero suggestions', async () => {
+    const target = harness('AEO-B777-31-1017-R25-R27');
+    const readModel = await target.service.createDraft(
+      target.state.workItem.workItemId,
+      target.createRequest(),
+      ACTOR,
+    );
+
+    expect(readModel.suggestions).toEqual([]);
+    expect(readModel.blocks).toEqual([]);
+    expect(readModel.blockingGaps).toEqual([
+      expect.objectContaining({
+        code: 'AEO_ROUTINE_SERIES_PATTERN_NOT_GENERIC',
+        blocking: true,
+      }),
+    ]);
+    expect(readModel.sources).toHaveLength(target.sourceRows.size);
+    expect(target.resolver.resolve).toHaveBeenCalledTimes(
+      target.sourceRows.size,
+    );
+    expect(readModel.adoptionDecisions).toEqual([]);
+    expect(forbiddenBrowserKeys(readModel)).toEqual([]);
+  });
+
+  it('rejects a B777 routine alias that names an undeclared source before draft persistence', async () => {
+    const target = harness('AEO-B777-31-1017-R25-R27');
+    const request = target.replaceProducer((producer) => {
+      const aliases = producer.sourceRefs as Record<
+        string,
+        Record<string, unknown>
+      >;
+      aliases.r25Aeo!.sourceId = 'SRC-UNDECLARED-ADVERSARIAL';
+    });
+    await expect(
+      target.service.createDraft(
+        target.state.workItem.workItemId,
+        request,
+        ACTOR,
+      ),
+    ).rejects.toThrow('AEO_ROUTINE_SERIES_PATTERN_SOURCE_REF_UNDECLARED');
+    expect(target.repository.reserveAssessmentAction).not.toHaveBeenCalled();
+    expect(target.artifacts.persistAndReadback).not.toHaveBeenCalled();
+    expect(target.state.workItem.aeoEditingInput).toBeNull();
+    expect(target.state.workItem.aeoEditingDraft).toBeNull();
+  });
+
   it('persists generation-bound DO_NOT_LEARN feedback without an adoption decision', async () => {
     const target = harness('AEO-B787-45-0003-R00');
     const base = await target.service.createDraft(
       target.state.workItem.workItemId,
-      { expectedRevision: target.state.workItem.revision },
+      target.createRequest(),
       ACTOR,
     );
     expect(base.suggestions).toHaveLength(26);
@@ -203,9 +240,6 @@ describe('CanonicalHostAeoEditingService real AEO product wiring', () => {
         feedbackId: 'FEEDBACK-DO-NOT-LEARN-1',
         targetGenerationRevision: 1,
         learningDisposition: 'DO_NOT_LEARN',
-        engineerDecisionRef: expect.stringMatching(
-          /^aeo-feedback:\/\/canonical-host\/[a-f0-9]{64}$/u,
-        ),
         sourceRefs: selected.sourceRefs,
       }),
     ]);
@@ -219,12 +253,103 @@ describe('CanonicalHostAeoEditingService real AEO product wiring', () => {
     expect(updated.authority.engineeringApproved).toBe(false);
   });
 
+  it('regenerates only changed units, retains unaffected MODIFY, and supersedes affected feedback', async () => {
+    const target = harness('AEO-B787-45-0002-R00');
+    const base = await target.service.createDraft(
+      target.state.workItem.workItemId,
+      target.createRequest(),
+      ACTOR,
+    );
+    const unaffected = base.suggestions[0]!;
+    const affected = base.suggestions[1]!;
+    const afterUnaffected = await target.service.recordFeedback(
+      target.state.workItem.workItemId,
+      {
+        expectedRevision: base.workItemRevision,
+        feedbackId: 'FDBK-UNAFFECTED',
+        suggestionId: unaffected.suggestionId,
+        expectedGenerationRevision: 1,
+        decision: 'MODIFY',
+        note: 'Engineer keeps this independent modification.',
+        revisedBodyZh: '工程师保留的未受影响修改。',
+        revisedBodyEn: unaffected.bodyEn,
+        revisionSourceRefs: unaffected.sourceRefs,
+        semanticField: 'BODY',
+        reasonCode: 'EXECUTABILITY',
+        learningDisposition: 'THIS_DRAFT_ONLY',
+      },
+      ACTOR,
+    );
+    const afterAffected = await target.service.recordFeedback(
+      target.state.workItem.workItemId,
+      {
+        expectedRevision: afterUnaffected.workItemRevision,
+        feedbackId: 'FDBK-AFFECTED',
+        suggestionId: affected.suggestionId,
+        expectedGenerationRevision: 1,
+        decision: 'MODIFY',
+        note: 'This older change must become superseded after regeneration.',
+        revisedBodyZh: '将被新一代候选替代的工程师修改。',
+        revisedBodyEn: affected.bodyEn,
+        revisionSourceRefs: affected.sourceRefs,
+        semanticField: 'BODY',
+        reasonCode: 'SOURCE_MISMATCH',
+        learningDisposition: 'DO_NOT_LEARN',
+      },
+      ACTOR,
+    );
+    const nextRequest = target.replaceProducer((producer) => {
+      const actions = producer.actions as Array<Record<string, unknown>>;
+      actions[1]!.zh = '来自 Host current producer 新 revision 的步骤正文。';
+    });
+    nextRequest.expectedRevision = afterAffected.workItemRevision;
+    const regenerated = await target.service.createDraft(
+      target.state.workItem.workItemId,
+      nextRequest,
+      ACTOR,
+    );
+
+    expect(regenerated.generationRevision).toBe(2);
+    expect(
+      regenerated.suggestions.find(
+        (suggestion) => suggestion.sourceUnitId === unaffected.sourceUnitId,
+      ),
+    ).toEqual(
+      expect.objectContaining({
+        bodyZh: '工程师保留的未受影响修改。',
+        reviewStatus: 'MODIFIED_CANDIDATE',
+      }),
+    );
+    expect(
+      regenerated.suggestions.find(
+        (suggestion) => suggestion.sourceUnitId === affected.sourceUnitId,
+      ),
+    ).toEqual(
+      expect.objectContaining({
+        bodyZh: '来自 Host current producer 新 revision 的步骤正文。',
+        reviewStatus: 'PENDING_ENGINEER_REVIEW',
+      }),
+    );
+    expect(regenerated.feedback.map((feedback) => feedback.feedbackId)).toEqual(
+      ['FDBK-UNAFFECTED'],
+    );
+    expect(regenerated.supersededFeedback).toEqual([
+      expect.objectContaining({
+        feedbackId: 'FDBK-AFFECTED',
+        activeThroughGenerationRevision: 1,
+        supersededAtGenerationRevision: 2,
+      }),
+    ]);
+    expect(regenerated.projection.doNotLearnFeedbackCount).toBe(0);
+    expect(regenerated.adoptionDecisions).toEqual([]);
+  });
+
   it('rejects outsider and stale-revision calls before producer/manifest or persistence I/O', async () => {
     const outsider = harness('AEO-B787-45-0002-R00', true);
     await expect(
       outsider.service.createDraft(
         outsider.state.workItem.workItemId,
-        { expectedRevision: outsider.state.workItem.revision },
+        outsider.createRequest(),
         ACTOR,
       ),
     ).rejects.toMatchObject({
@@ -238,7 +363,10 @@ describe('CanonicalHostAeoEditingService real AEO product wiring', () => {
     await expect(
       stale.service.createDraft(
         stale.state.workItem.workItemId,
-        { expectedRevision: stale.state.workItem.revision - 1 },
+        {
+          ...stale.createRequest(),
+          expectedRevision: stale.state.workItem.revision - 1,
+        },
         ACTOR,
       ),
     ).rejects.toThrow('WORK_ITEM_CAS_CONFLICT');
@@ -246,27 +374,24 @@ describe('CanonicalHostAeoEditingService real AEO product wiring', () => {
     expect(stale.repository.reserveAssessmentAction).not.toHaveBeenCalled();
   });
 
-  it('fails closed when a Host source binding does not match the actual manifest', async () => {
+  it('fails closed when a Host source actual byte identity does not match the manifest', async () => {
     const target = harness('AEO-B747-23-0008-R00');
-    target.state.workItem.aeoEditingInput!.sourceArtifacts[0] = {
-      ...target.state.workItem.aeoEditingInput!.sourceArtifacts[0]!,
-      artifactSha256: 'f'.repeat(64),
-    };
+    const first = [...target.sourceRows.values()][0]!;
+    first.bytes[0] = first.bytes[0] === 0 ? 1 : 0;
     await expect(
       target.service.createDraft(
         target.state.workItem.workItemId,
-        { expectedRevision: target.state.workItem.revision },
+        target.createRequest(),
         ACTOR,
       ),
-    ).rejects.toThrow('AEO_EDITING_INPUT_SOURCE_BINDING_MISMATCH');
+    ).rejects.toThrow('AEO_EDITING_SOURCE_ACTUAL_BYTES_MISMATCH');
     expect(target.repository.reserveAssessmentAction).not.toHaveBeenCalled();
     expect(target.artifacts.persistAndReadback).not.toHaveBeenCalled();
   });
 
   it('rejects producer bytes that do not match the Host-owned descriptor', async () => {
     const target = harness('AEO-B787-45-0002-R00');
-    const producerRef =
-      target.state.workItem.aeoEditingInput!.currentProducerArtifact.ref;
+    const producerRef = target.createRequest().currentProducerArtifact.ref;
     target.byteStore.set(
       producerRef,
       new TextEncoder().encode('{"tampered":true}'),
@@ -274,7 +399,7 @@ describe('CanonicalHostAeoEditingService real AEO product wiring', () => {
     await expect(
       target.service.createDraft(
         target.state.workItem.workItemId,
-        { expectedRevision: target.state.workItem.revision },
+        target.createRequest(),
         ACTOR,
       ),
     ).rejects.toThrow('AEO_EDITING_CURRENT_PRODUCER_ACTUAL_BYTES_MISMATCH');
@@ -290,7 +415,7 @@ describe('CanonicalHostAeoEditingService real AEO product wiring', () => {
     await expect(
       target.service.createDraft(
         target.state.workItem.workItemId,
-        { expectedRevision: target.state.workItem.revision },
+        target.createRequest(),
         ACTOR,
       ),
     ).rejects.toThrow('WORK_ITEM_CAS_CONFLICT');
@@ -301,3 +426,31 @@ describe('CanonicalHostAeoEditingService real AEO product wiring', () => {
     );
   });
 });
+
+function forbiddenBrowserKeys(value: unknown): string[] {
+  const forbidden = new Set([
+    'artifactRef',
+    'artifactSha256',
+    'sourceArtifactRef',
+    'sourceSha256',
+    'filePath',
+    'bucketId',
+    'providerObjectId',
+    'actorUserId',
+    'tenantId',
+  ]);
+  const found: string[] = [];
+  const visit = (input: unknown): void => {
+    if (Array.isArray(input)) {
+      input.forEach(visit);
+      return;
+    }
+    if (!input || typeof input !== 'object') return;
+    Object.entries(input as Record<string, unknown>).forEach(([key, child]) => {
+      if (forbidden.has(key)) found.push(key);
+      visit(child);
+    });
+  };
+  visit(value);
+  return found;
+}

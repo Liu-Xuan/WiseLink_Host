@@ -8,11 +8,17 @@ import type {
 } from '@shared/api.interface';
 import {
   buildAeoDraftLearningInput,
+  AEO_DRAFT_ASSISTANCE_VERSION,
   type AeoDraftAssistanceCandidate,
   type AeoEditingKnowledgeCandidate,
   type AeoEditingSourceIdentity,
   type AeoEditingSourceRef,
 } from '../aeo-authoring/aeo-editing-knowledge';
+import {
+  evidenceLabel,
+  evidenceSourceRefs,
+  missingSourceRef,
+} from './canonical-aeo-editing-gap.utils';
 
 const ARTIFACT_KIND = 'CANONICAL_AEO_EDITING_DRAFT_CANDIDATE' as const;
 const ARTIFACT_VERSION = 1 as const;
@@ -62,13 +68,13 @@ export function bindAeoEditingKnowledgeToHostSources(
         !source.sha256 ||
         bound.artifactSha256 !== source.sha256 ||
         bound.byteLength !== source.actualBytes ||
-        !hostArtifactRef(bound.artifactRef)
+        !bound.sourceArtifactId.trim()
       ) {
         throw new Error(
           `AEO_EDITING_INPUT_SOURCE_BINDING_MISMATCH:${source.sourceId}`,
         );
       }
-      return { ...source, artifactRef: bound.artifactRef };
+      return { ...source, artifactRef: bound.sourceArtifactId };
     },
   );
   if (sources.length !== input.sourceArtifacts.length) {
@@ -155,6 +161,60 @@ export function makeAeoEditingDraftArtifact(input: {
       productionPublished: false,
       currentChanged: false,
     },
+  };
+}
+
+export function makeRoutineSeriesPatternDraft(input: {
+  workItemId: string;
+  title: string;
+  generationRevision: number;
+  sources: AeoEditingSourceIdentity[];
+  currentSourceRefs: AeoEditingSourceRef[];
+}): AeoDraftAssistanceCandidate {
+  return {
+    schemaVersion: AEO_DRAFT_ASSISTANCE_VERSION,
+    lifecycleStatus: 'CANDIDATE_ONLY',
+    authority: 'EDITABLE_DRAFT_NOT_APPROVAL_NOT_RELEASE',
+    draftKey: input.workItemId,
+    title: input.title,
+    generationRevision: input.generationRevision,
+    knowledgeDocumentIdentity: {
+      aeoNumber: input.title.split(' ', 1)[0] ?? input.workItemId,
+      revision: 'CANDIDATE',
+      title: input.title,
+      category: 'ROUTINE_PARAMETER_REVISION_UPDATE',
+      actualBytes: input.sources[0]?.actualBytes ?? 1,
+      primarySourceId: input.currentSourceRefs[0]?.sourceId ?? 'MISSING_SOURCE',
+      expectedHeader: input.title,
+      observedHeader: input.title,
+      identityLocator: input.currentSourceRefs[0]?.locator ?? 'MISSING_SOURCE',
+    },
+    knowledgeDocumentState:
+      'CONTROLLED_OR_ISSUED_SAMPLE_APPROVAL_NOT_INDEPENDENTLY_VERIFIED',
+    sources: input.sources,
+    currentSourceRefs: input.currentSourceRefs,
+    suggestions: [],
+    editorBlocks: [],
+    missingInputs: [
+      'Observed B777 routine revision pattern remains series-specific and cannot be generalized into authoring suggestions.',
+    ],
+    conflicts: [],
+    feedback: [],
+    supersededFeedback: [],
+    regenerationHistory:
+      input.generationRevision > 1
+        ? [
+            {
+              generationRevision: input.generationRevision,
+              regeneratedUnitIds: [],
+              reason: 'Host current routine-series evidence revision advanced.',
+            },
+          ]
+        : [],
+    nonClaims: [
+      'Routine revision observations remain candidate evidence and are not a generic rule.',
+      'No suggestion was generated, adopted, approved, signed, sent, published, or made current.',
+    ],
   };
 }
 
@@ -250,21 +310,34 @@ export function toAeoEditingDraftReadModel(input: {
   }
   const learning = buildAeoDraftLearningInput(input.artifact.draft);
   return {
-    schemaVersion: 'wiselink.3_1.aeo_editing_draft_read_model.v0.candidate.1',
+    schemaVersion: 'wiselink.3_1.aeo_editing_draft_read_model.v0.candidate.2',
     status: 'CANDIDATE_ONLY',
     workItemId: input.workItem.workItemId,
     workItemRevision: input.workItem.revision,
     documentVersionId: input.workItem.source.documentVersionId,
     sourcePackageId: packageProjection.packageId,
-    projection,
+    projection: {
+      status: projection.status,
+      revision: projection.revision,
+      generationRevision: projection.generationRevision,
+      basedOnInputRevision: projection.basedOnInputRevision,
+      suggestionCount: projection.suggestionCount,
+      blockCount: projection.blockCount,
+      blockingGapCount: projection.blockingGapCount,
+      feedbackCount: projection.feedbackCount,
+      supersededFeedbackCount: input.artifact.draft.supersededFeedback.length,
+      doNotLearnFeedbackCount: projection.doNotLearnFeedbackCount,
+      adoptionDecisions: [],
+      automaticallyAdopted: false,
+      engineeringApproved: false,
+      productionPublished: false,
+      currentChanged: false,
+    },
     title: input.artifact.draft.title,
     generationRevision: input.artifact.draft.generationRevision,
     sources: input.artifact.draft.sources.map((source) => ({
       sourceId: source.sourceId,
       role: source.role,
-      artifactRef: source.artifactRef,
-      artifactSha256: requiredSha(source),
-      byteLength: source.actualBytes,
       observedIdentity: source.observedIdentity,
     })),
     currentSourceRefs: structuredClone(input.artifact.draft.currentSourceRefs),
@@ -292,20 +365,51 @@ export function toAeoEditingDraftReadModel(input: {
       inspectionDetail: structuredClone(suggestion.inspectionDetail),
       sourceRefs: structuredClone(suggestion.sourceRefs),
       reviewStatus: suggestion.reviewStatus,
-      engineerDecisionRef: suggestion.engineerDecisionRef,
     })),
-    blocks: structuredClone(input.artifact.draft.editorBlocks),
+    blocks: input.artifact.draft.editorBlocks.map((block) => {
+      if (block.blockType !== 'PARAGRAPH') {
+        throw new Error('AEO_EDITING_BROWSER_BLOCK_TYPE_UNSUPPORTED');
+      }
+      return {
+        blockId: block.blockId,
+        orderKey: block.orderKey,
+        blockType: block.blockType,
+        originType: block.originType,
+        bodyZh: block.bodyZh,
+        bodyEn: block.bodyEn,
+        sourceRefs: block.sourceBindings.map((binding) => ({
+          sourceId: sourceIdForArtifact(
+            input.artifact.draft.sources,
+            binding.sourceArtifactRef,
+          ),
+          locator: binding.locator,
+        })),
+        unresolved: structuredClone(block.unresolved),
+      };
+    }),
     blockingGaps: structuredClone(input.artifact.blockingGaps),
     feedback: input.artifact.draft.feedback.map((feedback) => ({
       feedbackId: feedback.feedbackId,
       suggestionId: feedback.suggestionId,
       targetGenerationRevision: feedback.targetGenerationRevision,
       decision: feedback.decision,
-      engineerDecisionRef: feedback.engineerDecisionRef,
       note: feedback.note,
       reasonCode: feedback.reasonCode,
       learningDisposition: feedback.learningDisposition,
       sourceRefs: structuredClone(feedback.after.sourceRefs),
+    })),
+    supersededFeedback: input.artifact.draft.supersededFeedback.map((item) => ({
+      feedbackId: item.feedback.feedbackId,
+      suggestionId: item.feedback.suggestionId,
+      sourceUnitId: item.sourceUnitId,
+      decision: item.feedback.decision,
+      targetGenerationRevision: item.feedback.targetGenerationRevision,
+      activeThroughGenerationRevision: item.activeThroughGenerationRevision,
+      supersededAtGenerationRevision: item.supersededAtGenerationRevision,
+      reason: item.reason,
+      note: item.feedback.note,
+      learningDisposition: item.feedback.learningDisposition,
+      sourceRefs: structuredClone(item.feedback.after.sourceRefs),
     })),
     learning: {
       eligibleFeedbackCount:
@@ -331,72 +435,6 @@ export function toAeoEditingDraftReadModel(input: {
   };
 }
 
-function evidenceSourceRefs(
-  value: unknown,
-  missingLocator: string,
-): CanonicalAeoEditingSourceRef[] {
-  const refs = collectSourceRefs(value);
-  return refs.length > 0 ? refs : [missingSourceRef(missingLocator)];
-}
-
-function collectSourceRefs(value: unknown): CanonicalAeoEditingSourceRef[] {
-  const found: CanonicalAeoEditingSourceRef[] = [];
-  visit(value, found);
-  const unique = new Map(
-    found.map((ref) => [`${ref.sourceId}#${ref.locator}`, ref] as const),
-  );
-  return Array.from(unique.values());
-}
-
-function visit(value: unknown, found: CanonicalAeoEditingSourceRef[]): void {
-  if (Array.isArray(value)) {
-    value.forEach((item) => visit(item, found));
-    return;
-  }
-  if (!value || typeof value !== 'object') return;
-  Object.entries(value as Record<string, unknown>).forEach(([key, child]) => {
-    if (key === 'sourceRefs' && Array.isArray(child)) {
-      child.forEach((ref) => {
-        const parsed = compactSourceRef(ref);
-        if (parsed) found.push(parsed);
-      });
-      return;
-    }
-    visit(child, found);
-  });
-}
-
-function compactSourceRef(value: unknown): AeoEditingSourceRef | null {
-  if (typeof value !== 'string') return null;
-  const separator = value.indexOf('#');
-  return separator > 0 && separator < value.length - 1
-    ? {
-        sourceId: value.slice(0, separator),
-        locator: value.slice(separator + 1),
-      }
-    : null;
-}
-
-function evidenceLabel(value: unknown, fallback: number): string {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return `#${fallback}`;
-  }
-  const record = value as Record<string, unknown>;
-  const identity = record.figure ?? record.control ?? record.class;
-  return typeof identity === 'string' || typeof identity === 'number'
-    ? JSON.stringify(identity)
-    : `#${fallback}`;
-}
-
-function missingSourceRef(locator: string): CanonicalAeoEditingSourceRef {
-  return { sourceId: 'MISSING_SOURCE', locator };
-}
-
-function requiredSha(source: AeoEditingSourceIdentity): string {
-  if (!source.sha256) throw new Error('AEO_EDITING_SOURCE_SHA256_REQUIRED');
-  return source.sha256;
-}
-
 function sameSourceBindings(
   sources: AeoEditingSourceIdentity[],
   bindings: CanonicalAeoEditingInputProjection['sourceArtifacts'],
@@ -409,7 +447,7 @@ function sameSourceBindings(
     const binding = bySourceId.get(source.sourceId);
     return Boolean(
       binding &&
-      source.artifactRef === binding.artifactRef &&
+      source.artifactRef === binding.sourceArtifactId &&
       source.sha256 === binding.artifactSha256 &&
       source.actualBytes === binding.byteLength,
     );
@@ -433,6 +471,11 @@ function sameStrings(left: string[], right: string[]): boolean {
   );
 }
 
-function hostArtifactRef(value: string): boolean {
-  return /^[a-z][a-z0-9+.-]*:\/\//iu.test(value);
+function sourceIdForArtifact(
+  sources: AeoEditingSourceIdentity[],
+  artifactRef: string,
+): string {
+  const source = sources.find((item) => item.artifactRef === artifactRef);
+  if (!source) throw new Error('AEO_EDITING_BROWSER_SOURCE_BINDING_INVALID');
+  return source.sourceId;
 }

@@ -15,6 +15,7 @@ import type {
   CanonicalAeoEditingDraftCreateRequest,
   CanonicalAeoEditingDraftFeedbackRequest,
   CanonicalAeoEditingSourceRef,
+  UnifiedPackageArtifactDescriptor,
 } from '@shared/api.interface';
 import { ProductionMiaodaBrowserObjectIngressGuard } from '../work-item/production-miaoda-browser-ingress';
 import { CanonicalHostAeoEditingService } from './canonical-host-aeo-editing.service';
@@ -85,8 +86,88 @@ export class CanonicalHostAeoEditingController {
 }
 
 function createBody(body: unknown): CanonicalAeoEditingDraftCreateRequest {
-  const value = exactBody(body, ['expectedRevision']);
-  return { expectedRevision: safeInteger(value.expectedRevision) };
+  const value = exactBody(body, [
+    'expectedRevision',
+    'currentProducerArtifact',
+    'sourceManifestArtifact',
+    'sourceDocuments',
+    'selectedUnitIds',
+  ]);
+  return {
+    expectedRevision: safeInteger(value.expectedRevision),
+    currentProducerArtifact: artifactDescriptor(
+      value.currentProducerArtifact,
+      'currentProducerArtifact',
+    ),
+    sourceManifestArtifact: artifactDescriptor(
+      value.sourceManifestArtifact,
+      'sourceManifestArtifact',
+    ),
+    sourceDocuments: sourceDocuments(value.sourceDocuments),
+    selectedUnitIds: stringArray(value.selectedUnitIds, 'selectedUnitIds'),
+  };
+}
+
+function artifactDescriptor(
+  input: unknown,
+  field: string,
+): UnifiedPackageArtifactDescriptor {
+  const value = exactBody(input, [
+    'storeRole',
+    'ref',
+    'sha256',
+    'byteLength',
+    'mediaType',
+  ]);
+  const sha256 = requiredText(value.sha256, `${field}.sha256`);
+  if (
+    value.storeRole !== 'UnifiedArtifactStoreCandidate' ||
+    value.mediaType !== 'application/json' ||
+    !/^[a-f0-9]{64}$/u.test(sha256)
+  ) {
+    invalid(field);
+  }
+  const byteLength = safeInteger(value.byteLength);
+  if (byteLength < 1) invalid(`${field}.byteLength`);
+  return {
+    storeRole: 'UnifiedArtifactStoreCandidate',
+    ref: requiredText(value.ref, `${field}.ref`),
+    sha256,
+    byteLength,
+    mediaType: 'application/json',
+  };
+}
+
+function sourceDocuments(
+  input: unknown,
+): CanonicalAeoEditingDraftCreateRequest['sourceDocuments'] {
+  if (!Array.isArray(input) || input.length === 0) invalid('sourceDocuments');
+  const values = input.map((item, index) => {
+    const value = exactBody(item, ['sourceId', 'documentVersionId']);
+    return {
+      sourceId: requiredText(
+        value.sourceId,
+        `sourceDocuments[${index}].sourceId`,
+      ),
+      documentVersionId: requiredText(
+        value.documentVersionId,
+        `sourceDocuments[${index}].documentVersionId`,
+      ),
+    };
+  });
+  if (new Set(values.map((value) => value.sourceId)).size !== values.length) {
+    invalid('sourceDocuments');
+  }
+  return values;
+}
+
+function stringArray(input: unknown, field: string): string[] {
+  if (!Array.isArray(input)) invalid(field);
+  const values = input.map((value, index) =>
+    requiredText(value, `${field}[${index}]`),
+  );
+  if (new Set(values).size !== values.length) invalid(field);
+  return values;
 }
 
 function feedbackBody(body: unknown): CanonicalAeoEditingDraftFeedbackRequest {
