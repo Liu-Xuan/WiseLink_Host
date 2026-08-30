@@ -208,3 +208,143 @@ export interface BatchApplicabilityClusterConfirmationCandidate {
     workItemChanged: false;
   };
 }
+
+export interface CreateBatchApplicabilityRunRequest {
+  requestId: string;
+  sourceExpressionId: string;
+  targets: Array<{
+    aircraftIdentifier: string;
+    asOf: string;
+  }>;
+}
+
+export interface ConfirmBatchApplicabilityClusterRequest {
+  requestId: string;
+  expectedWorkItemRevision: number;
+  candidateClusterId: string;
+  decision: BatchApplicabilityClusterConfirmationDecision;
+  reason: string;
+  validUntil: string;
+}
+
+export interface BatchApplicabilityBrowserSafeUnknown {
+  kind: string;
+  reason: string | null;
+  strategy: string | null;
+  property: string | null;
+  qualifier: string | null;
+  assessmentAsOf: string | null;
+}
+
+export interface BatchApplicabilityBrowserSafePredicateTraceNode {
+  path: string;
+  nodeType: BatchApplicabilityPredicateTraceNode['nodeType'];
+  truth: BatchApplicabilityTruth;
+  predicate: BatchApplicabilityPredicateTraceNode['predicate'];
+  blockingUnknowns: BatchApplicabilityBrowserSafeUnknown[];
+  shortCircuitReason: string | null;
+}
+
+export interface BatchApplicabilityRunRowReadModel {
+  matrixItemId: string;
+  aircraftIdentifier: string;
+  resolvedAircraftNumber: string | null;
+  asOf: string;
+  truth: BatchApplicabilityTruth;
+  status: BatchApplicabilityStatus;
+  clusterEligibility: BatchApplicabilityClusterEligibility;
+  candidateClusterId: string | null;
+  sourceRefIds: string[];
+  trace: {
+    evaluator: 'CANONICAL_HOST_KLEENE_EVALUATOR';
+    fleetResolver: 'CANONICAL_FLEET_MASTER_DATA_RESOLVER';
+    fleetResolution: 'RESOLVED' | 'WAITING_INPUT' | 'CONFLICT';
+    sourceCurrentness: {
+      sourceRevisionKey: string | null;
+      authorityRevision: string | null;
+      status: 'CURRENT' | 'STALE' | 'CONFLICT' | 'UNVERIFIED';
+      sourceAsOf: string | null;
+      reason: string | null;
+    };
+    hostCurrentness: {
+      status: BatchApplicabilityHostCurrentnessStatus;
+      staleReasons: string[];
+    };
+    predicateNodes: BatchApplicabilityBrowserSafePredicateTraceNode[];
+    blockingUnknowns: BatchApplicabilityBrowserSafeUnknown[];
+  };
+}
+
+export interface BatchApplicabilityConfirmationReceiptReadModel {
+  schemaVersion: 'wiselink.3_1.batch_applicability_confirmation_receipt.v1';
+  receiptId: string;
+  runId: string;
+  candidateClusterId: string;
+  decision: BatchApplicabilityClusterConfirmationDecision;
+  reviewedCluster: {
+    truth: 'TRUE' | 'FALSE';
+    memberMatrixItemIds: string[];
+    aircraftIdentifiers: string[];
+    asOfValues: string[];
+  };
+  reason: string;
+  confirmedAt: string;
+  validUntil: string;
+  authority: {
+    outputAuthority: 'CANDIDATE_ONLY';
+    receiptPersisted: true;
+    finalApplicabilityCreated: false;
+    reviewActionCreated: false;
+    engineeringApprovalChanged: false;
+    workItemChanged: false;
+    publicationPerformed: false;
+  };
+}
+
+export interface BatchApplicabilityRunReadModel {
+  schemaVersion: 'wiselink.3_1.batch_applicability_run.v1';
+  runId: string;
+  requestId: string;
+  workItemId: string;
+  workItemRevision: number;
+  documentVersionId: string;
+  createdAt: string;
+  currentness: {
+    status: BatchApplicabilityHostCurrentnessStatus;
+    reasonCodes: string[];
+  };
+  source: {
+    sourceConditionId: string;
+    sourceExpressionId: string;
+    sourceConditionAuthority: BatchApplicabilitySourceConditionAuthority;
+    sourceRefIds: string[];
+    target: {
+      kind: 'document' | 'content_unit' | 'source_element';
+      targetId: string | null;
+    };
+    fleetHead: {
+      sourceRevisionKey: string;
+      authorityRevision: string;
+      sourceAsOf: string;
+    };
+    hostBinding: {
+      status: BatchApplicabilityHostCurrentnessStatus;
+      staleReasons: string[];
+    };
+  };
+  matrix: BatchApplicabilityRunRowReadModel[];
+  candidateClusters: BatchApplicabilityCandidateCluster[];
+  confirmations: BatchApplicabilityConfirmationReceiptReadModel[];
+  counts: BatchApplicabilityCandidateSet['counts'];
+  authority: {
+    outputAuthority: 'CANDIDATE_ONLY';
+    modelCanSetFinalApplicability: false;
+    humanConfirmationIsEngineeringApproval: false;
+    engineeringApprovalChanged: false;
+    workItemChanged: false;
+    createsEvidenceRef: false;
+    createsClosureDecision: false;
+    createsActionReadiness: false;
+    publicationPerformed: false;
+  };
+}

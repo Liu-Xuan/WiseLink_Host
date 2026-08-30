@@ -1680,6 +1680,13 @@ export interface CanonicalWorkItemProjection {
   recordingFailure: CanonicalWorkItemRecordingFailureProjection | null;
 }
 
+export type {
+  BatchApplicabilityConfirmationReceiptReadModel,
+  BatchApplicabilityRunReadModel,
+  ConfirmBatchApplicabilityClusterRequest,
+  CreateBatchApplicabilityRunRequest,
+} from './batch-applicability.interface';
+
 export interface CanonicalPdfVerticalRunRequest {
   schemaVersion: 'wiselink.3_1.canonical_pdf_vertical_request.v0.candidate';
   workItemId: string;

@@ -106,6 +106,11 @@ import { CanonicalRuleSetLifecycleService } from './canonical-rule-set-lifecycle
 import { EngineeringMatterController } from './engineering-matter.controller';
 import { EngineeringMatterRepository } from './engineering-matter.repository';
 import { EngineeringMatterService } from './engineering-matter.service';
+import { BatchApplicabilityModule } from '../batch-applicability/batch-applicability.module';
+import { BatchApplicabilityController } from '../batch-applicability/batch-applicability.controller';
+import { BatchApplicabilityHostService } from '../batch-applicability/batch-applicability-host.service';
+import { BatchApplicabilityRepository } from '../batch-applicability/batch-applicability.repository';
+import { BatchApplicabilitySourceReader } from '../batch-applicability/batch-applicability-source-reader';
 
 export interface CanonicalHostModuleOptions {
   imports?: ModuleMetadata['imports'];
@@ -132,6 +137,7 @@ export interface CanonicalHostModuleOptions {
     WorkItemRuntimeModule,
     IdentityModule,
     ReviewPersistenceModule,
+    BatchApplicabilityModule,
   ],
   controllers: [
     CanonicalHostController,
@@ -147,6 +153,7 @@ export interface CanonicalHostModuleOptions {
     EngineeringMatterController,
     CanonicalHostAeoEditingController,
     CanonicalTranslationKnowledgeController,
+    BatchApplicabilityController,
   ],
   providers: [
     CanonicalEntryFacadeService,
@@ -188,6 +195,9 @@ export interface CanonicalHostModuleOptions {
     EngineeringMatterService,
     CanonicalHostAeoEditingService,
     CanonicalAeoEditingInputProducer,
+    BatchApplicabilityHostService,
+    BatchApplicabilityRepository,
+    BatchApplicabilitySourceReader,
     UnavailableCanonicalServiceScopeAuthorization,
     UnavailableCanonicalApplicabilityControlledSelection,
     UnavailableScopedProfessionalArtifactCorrelationAdapter,
@@ -308,6 +318,7 @@ export class CanonicalHostModule {
         WorkItemRuntimeModule,
         IdentityModule,
         ReviewPersistenceModule,
+        BatchApplicabilityModule,
         ...(options.imports ?? []),
       ],
       controllers: [
@@ -324,6 +335,7 @@ export class CanonicalHostModule {
         EngineeringMatterController,
         CanonicalHostAeoEditingController,
         CanonicalTranslationKnowledgeController,
+        BatchApplicabilityController,
       ],
       providers: [
         workItemRegistrarProvider,
@@ -380,6 +392,9 @@ export class CanonicalHostModule {
         EngineeringMatterRepository,
         EngineeringMatterService,
         CanonicalHostAeoEditingService,
+        BatchApplicabilityHostService,
+        BatchApplicabilityRepository,
+        BatchApplicabilitySourceReader,
         {
           provide: CANONICAL_SERVICE_SCOPE_AUTHORIZATION,
           useExisting: CANONICAL_EXECUTOR_SERVICE_SCOPE_AUTHORIZATION,
