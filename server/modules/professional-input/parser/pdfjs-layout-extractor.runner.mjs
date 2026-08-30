@@ -7,6 +7,7 @@
  *
  * Protocol:
  *   argv[2]: absolute path to a file holding the exact PDF source bytes
+ *   argv[4]: optional 1-based first page (argv[5] is requested last page)
  *   stdout : sentinel-wrapped single JSON payload
  *            <<<PDFJS-LAYOUT-JSON-BEGIN>>>{...}<<<PDFJS-LAYOUT-JSON-END>>>
  *            (engine warnings may interleave outside the sentinels; the
@@ -65,13 +66,14 @@ async function main() {
 
   const metadata = await doc.getMetadata();
   const info = metadata?.info ?? {};
+  const { pageStart, pageEnd } = requestedPageRange(doc.numPages);
   const textRuns = [];
   const pageBoxes = [];
   const pageTextLayerDiagnostics = [];
-  const boldByName = new Map();
 
-  for (let pageNumber = 1; pageNumber <= doc.numPages; pageNumber += 1) {
+  for (let pageNumber = pageStart; pageNumber <= pageEnd; pageNumber += 1) {
     const page = await doc.getPage(pageNumber);
+    const boldByName = new Map();
     // Resolve font objects first so commonObjs lookups below succeed.
     const operatorList = await page.getOperatorList();
     const content = await page.getTextContent();
@@ -165,6 +167,8 @@ async function main() {
   const layout = {
     pdfVersion: String(info.PDFFormatVersion ?? ''),
     pageCount: doc.numPages,
+    pageStart,
+    pageEnd,
     pageBoxes,
     metadata: {
       title:
@@ -180,6 +184,28 @@ async function main() {
     process.stdout.write(payload, () => resolveExit());
   });
   process.exit(0);
+}
+
+function requestedPageRange(pageCount) {
+  const rawPageStart = process.argv[4];
+  const rawRequestedPageEnd = process.argv[5];
+  if (rawPageStart === undefined && rawRequestedPageEnd === undefined) {
+    return { pageStart: 1, pageEnd: pageCount };
+  }
+  const pageStart = positiveIntegerOrNull(rawPageStart);
+  const requestedPageEnd = positiveIntegerOrNull(rawRequestedPageEnd);
+  if (
+    pageStart === null ||
+    requestedPageEnd === null ||
+    requestedPageEnd < pageStart ||
+    pageStart > pageCount
+  ) {
+    throw new Error('PDFJS_LAYOUT_PAGE_RANGE_INVALID');
+  }
+  return {
+    pageStart,
+    pageEnd: Math.min(requestedPageEnd, pageCount),
+  };
 }
 
 function analyzeRasterVisualCoverage({
