@@ -76,6 +76,8 @@ import { UnconfiguredFailureValidationWriteAuthorizationAdapter } from './unconf
 import { AssessmentHostConsumerModule } from '../assessment-workbench/assessment-host-consumer.public-api';
 import { CanonicalHostAssessmentService } from './canonical-host-assessment.service';
 import { CanonicalHostAeoService } from './canonical-host-aeo.service';
+import { CanonicalHostAeoEditingController } from './canonical-host-aeo-editing.controller';
+import { CanonicalHostAeoEditingService } from './canonical-host-aeo-editing.service';
 import { CanonicalHostIntegratedAssessmentService } from './canonical-host-integrated-assessment.service';
 import { CanonicalHostEngineerReviewService } from './canonical-host-engineer-review.service';
 import { CanonicalHostLibraryIndexService } from './canonical-host-library-index.service';
@@ -139,6 +141,7 @@ export interface CanonicalHostModuleOptions {
     CanonicalHostOverallRegenerationController,
     CanonicalRuleSetLifecycleController,
     EngineeringMatterController,
+    CanonicalHostAeoEditingController,
   ],
   providers: [
     CanonicalEntryFacadeService,
@@ -176,6 +179,7 @@ export interface CanonicalHostModuleOptions {
     CanonicalRuleSetLifecycleService,
     EngineeringMatterRepository,
     EngineeringMatterService,
+    CanonicalHostAeoEditingService,
     UnavailableCanonicalServiceScopeAuthorization,
     UnavailableCanonicalApplicabilityControlledSelection,
     UnavailableScopedProfessionalArtifactCorrelationAdapter,
@@ -310,6 +314,7 @@ export class CanonicalHostModule {
         CanonicalHostOverallRegenerationController,
         CanonicalRuleSetLifecycleController,
         EngineeringMatterController,
+        CanonicalHostAeoEditingController,
       ],
       providers: [
         workItemRegistrarProvider,
@@ -363,6 +368,7 @@ export class CanonicalHostModule {
         CanonicalRuleSetLifecycleService,
         EngineeringMatterRepository,
         EngineeringMatterService,
+        CanonicalHostAeoEditingService,
         {
           provide: CANONICAL_SERVICE_SCOPE_AUTHORIZATION,
           useExisting: CANONICAL_EXECUTOR_SERVICE_SCOPE_AUTHORIZATION,
@@ -376,6 +382,7 @@ export class CanonicalHostModule {
         CanonicalHostEngineerReviewService,
         CanonicalHostLibraryIndexService,
         CanonicalHostAeoService,
+        CanonicalHostAeoEditingService,
         CanonicalHostApplicabilityInputProducer,
         CanonicalRuleSetLifecycleService,
         CANONICAL_HOST_BINDING,

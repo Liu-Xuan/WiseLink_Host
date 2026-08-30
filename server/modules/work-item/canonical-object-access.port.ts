@@ -13,7 +13,10 @@ export type CanonicalLegacyObjectAccessAction =
   | 'RECORD_ENGINEER_REVIEW'
   | 'RECORD_OEM_DISCOVERY_RUN'
   | 'CONFIRM_OPENCLAW_OVERALL_FOR_AEO'
-  | 'RUN_AEO_CANDIDATE_LOOP';
+  | 'RUN_AEO_CANDIDATE_LOOP'
+  | 'CREATE_AEO_EDITING_DRAFT'
+  | 'READ_AEO_EDITING_DRAFT'
+  | 'RECORD_AEO_DRAFT_FEEDBACK';
 
 export type CanonicalObjectAccessAction =
   | CanonicalLegacyObjectAccessAction

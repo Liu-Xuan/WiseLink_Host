@@ -67,7 +67,9 @@ export type AssessmentActionType =
   | 'OPENCLAW_DYNAMIC_EVALUATION'
   | 'OPENCLAW_OVERALL_SYNTHESIS'
   | 'RECORD_ENGINEER_REVIEW'
-  | 'RUN_AEO_CANDIDATE_LOOP';
+  | 'RUN_AEO_CANDIDATE_LOOP'
+  | 'CREATE_AEO_EDITING_DRAFT'
+  | 'RECORD_AEO_DRAFT_FEEDBACK';
 
 export interface AssessmentActionAttemptReservation {
   attemptId: string;

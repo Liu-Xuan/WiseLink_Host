@@ -136,6 +136,7 @@ export interface AeoDraftSuggestion {
   bodyZh: string | null;
   bodyEn: string | null;
   parameters: unknown[];
+  conditions: unknown[];
   dependencies: unknown[];
   branches: AeoEditingBranch[];
   performerRoles: string[];

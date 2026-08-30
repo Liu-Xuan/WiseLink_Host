@@ -266,6 +266,7 @@ function suggestionFromUnit(
     bodyZh: unit.bodyZh,
     bodyEn: unit.bodyEn,
     parameters: unit.parameters,
+    conditions: unit.conditions,
     dependencies: unit.dependencies,
     branches: unit.branches,
     performerRoles: unit.performerRoles,
