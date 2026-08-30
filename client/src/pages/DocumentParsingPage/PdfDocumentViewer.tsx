@@ -5,11 +5,10 @@ import {
   Plus,
   RefreshCw,
 } from 'lucide-react';
-import {
-  GlobalWorkerOptions,
-  getDocument,
-  type PDFDocumentProxy,
-  type PDFPageProxy,
+import type {
+  PDFDocumentLoadingTask,
+  PDFDocumentProxy,
+  PDFPageProxy,
 } from 'pdfjs-dist';
 // Vite resolves this asset query to the bundled pdf.js worker URL.
 // eslint-disable-next-line import/no-unresolved
@@ -30,8 +29,9 @@ import {
   resolvePdfWorkerUrl,
 } from './pdf-viewer-request';
 import { clampPdfPage, visiblePdfPages } from './pdf-viewer-state';
+import { loadPdfJsRuntime } from './pdfjs-runtime';
 
-GlobalWorkerOptions.workerSrc = resolvePdfWorkerUrl(
+const PDF_WORKER_SRC: string = resolvePdfWorkerUrl(
   pdfWorkerUrl,
   import.meta.url,
 );
@@ -76,15 +76,21 @@ export default function PdfDocumentViewer({
 
   useEffect(() => {
     let active = true;
-    const loadingTask = getDocument(
-      buildPdfDocumentRequest(previewUrl, preview.supportsRange),
-    );
+    let loadingTask: PDFDocumentLoadingTask | null = null;
     setLoading(true);
     setError(false);
     setPdfDocument(null);
     setPageCount(0);
-    void loadingTask.promise
-      .then((document: PDFDocumentProxy) => {
+    void loadPdfJsRuntime(PDF_WORKER_SRC)
+      .then((runtime) => {
+        if (!active) return null;
+        loadingTask = runtime.getDocument(
+          buildPdfDocumentRequest(previewUrl, preview.supportsRange),
+        );
+        return loadingTask.promise;
+      })
+      .then((document: PDFDocumentProxy | null) => {
+        if (!document) return;
         if (!active) {
           void document.destroy();
           return;
@@ -106,7 +112,7 @@ export default function PdfDocumentViewer({
       });
     return () => {
       active = false;
-      void loadingTask.destroy();
+      if (loadingTask) void loadingTask.destroy();
     };
   }, [preview.supportsRange, previewUrl]);
 
