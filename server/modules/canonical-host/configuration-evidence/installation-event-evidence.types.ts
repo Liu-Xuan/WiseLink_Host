@@ -3,6 +3,7 @@ import type {
   ConfigurationEventKind,
   ConfigurationEvidenceCoverage,
   ConfigurationEvidenceFreshness,
+  GetInstallationEventsFailureCode,
   GetInstallationEventsQuery,
   GetInstallationEventsResult,
   InstallationEventPayload,
@@ -56,6 +57,13 @@ export interface ConfigurationEvidenceDiagnostic {
   code: ConfigurationEvidenceDiagnosticCode;
   sourceRecordId: string | null;
   detail: string;
+}
+
+/** Browser-safe source failure projection. Raw adapter messages stay private. */
+export interface ConfigurationEvidencePublicSourceError {
+  code: GetInstallationEventsFailureCode;
+  message: string;
+  retryable: boolean;
 }
 
 export interface InstallationEvidenceRecordProjection {
@@ -134,11 +142,7 @@ export interface InstallationEventEvidenceProjection {
   query: GetInstallationEventsQuery;
   sourceStatus: GetInstallationEventsResult['status'];
   sourceObservation: InstallationEventSourceObservation | null;
-  sourceError: {
-    code: string;
-    message: string;
-    retryable: boolean;
-  } | null;
+  sourceError: ConfigurationEvidencePublicSourceError | null;
   coverage: InstallationEventQueryCoverage;
   evidenceRecords: InstallationEvidenceRecordProjection[];
   configEvents: ConfigEventEvidenceProjection[];

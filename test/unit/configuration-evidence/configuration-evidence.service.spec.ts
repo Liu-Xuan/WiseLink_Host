@@ -1,0 +1,864 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import type { Request } from 'express';
+
+import type {
+  CanonicalConfigurationEvidenceCurrentProjection,
+  CanonicalWorkItemProjection,
+} from '@shared/api.interface';
+import { markDependentConfigurationPredicateTracesStale } from '../../../server/modules/canonical-host/configuration-evidence/configuration-predicate-trace.staleness';
+import type {
+  ConfigurationPredicateTrace,
+  ConfigurationPredicateTraceStaleReason,
+  ConfigurationSnapshot,
+} from '../../../server/modules/canonical-host/configuration-evidence/configuration-snapshot.types';
+import {
+  CONFIGURATION_EVIDENCE_READ_AUTHORITY,
+  type CommitConfigurationEvidenceInput,
+  type CommitConfigurationEvidenceResult,
+  type ConfigurationEvidenceReplayRead,
+  type ConfigurationEvidenceSnapshotSummary,
+  type ConfigurationEvidenceStorePort,
+  type ConfigurationEvidenceTruthSummary,
+  type PersistedConfigurationEvidenceSnapshot,
+  type RefreshConfigurationEvidenceRequest,
+} from '../../../server/modules/canonical-host/configuration-evidence/configuration-evidence.persistence.types';
+import { ConfigurationEvidenceService } from '../../../server/modules/canonical-host/configuration-evidence/configuration-evidence.service';
+import type {
+  GetInstallationEventsCompleteResult,
+  GetInstallationEventsPort,
+  GetInstallationEventsQuery,
+  GetInstallationEventsResult,
+  InstallationEventPayload,
+  InstallationEventSourceRecord,
+} from '../../../server/modules/canonical-host/configuration-evidence/get-installation-events.port';
+import {
+  changeEventCases,
+  completeResult,
+  componentIdentity,
+  sourceRecord,
+  unavailableResult,
+} from './installation-event-evidence.fixtures';
+
+const TENANT_ID = 'tenant-configuration-evidence';
+const ACTOR_ID = 'user-configuration-evidence';
+const WORK_ITEM_ID = 'WI-CONFIGURATION-EVIDENCE';
+const DOCUMENT_VERSION_ID = 'DV-777-FTD-31-21002';
+const AS_OF = '2026-08-29T23:59:59.999Z';
+const AIMS2_TARGET = {
+  kind: 'EQUIPMENT' as const,
+  equipmentKey: 'AIMS2',
+  positionId: null,
+};
+
+describe('Host configuration-evidence persistence product chain', () => {
+  it('persists the real 587/2579 B-2035 AIMS-2 gap as UNKNOWN/WAITING_INPUT', async () => {
+    const fleetAsset = realB2035Asset();
+    const fixture = target({ fleetAsset });
+    fixture.port.resultFactory = (query: GetInstallationEventsQuery) => {
+      const result = unavailableResult(query, 'SOURCE_NOT_CONFIGURED');
+      result.source.owner = 'canonical-host:configuration-evidence';
+      result.coverage.included =
+        'B-2035 is resolved from the real 587 asset / 2579 alias snapshot.';
+      result.coverage.limitation =
+        'The real Fleet snapshot has no configuration facts or controlled event chain.';
+      return result;
+    };
+
+    const refreshed = await fixture.service.refresh(
+      WORK_ITEM_ID,
+      refreshBody('REQ-AIMS2-UNKNOWN', 7),
+      {} as Request,
+    );
+    const current = await fixture.service.current(WORK_ITEM_ID, {} as Request);
+
+    expect(fleetAsset).toMatchObject({
+      assetId: 'AIRCRAFT:MODEL_MSN:B777_39L_38674',
+      aircraftNumber: 'B-2035',
+      msn: '38674',
+      lineNumber: 1051,
+    });
+    expect(refreshed.workItemRevision).toBe(8);
+    expect(refreshed.replayed).toBe(false);
+    expect(refreshed.persisted.snapshot.facts[0]).toMatchObject({
+      targetRef: 'EQUIPMENT:AIMS2',
+      truth: 'UNKNOWN',
+      value: null,
+      status: 'WAITING_INPUT',
+      authority: 'NONE',
+      supportingEvidenceRecordIds: [],
+      derivedConfigEventIds: [],
+    });
+    expect(refreshed.persisted.snapshot.predicateTraces[0]).toMatchObject({
+      truth: 'UNKNOWN',
+      status: 'WAITING_INPUT',
+      dependencyObservation: {
+        sourceStatus: 'UNAVAILABLE',
+        sourceErrorCode: 'SOURCE_NOT_CONFIGURED',
+        evidenceRecords: [],
+      },
+    });
+    expect(refreshed.persisted.summary.truthSummary).toEqual({
+      trueCount: 0,
+      falseCount: 0,
+      unknownCount: 1,
+      conflictCount: 0,
+    });
+    expect(current).toMatchObject({
+      status: 'AVAILABLE',
+      workItemRevision: 8,
+      current: {
+        summary: { isCurrent: true, configurationRevision: 1 },
+      },
+      authority: CONFIGURATION_EVIDENCE_READ_AUTHORITY,
+    });
+    expect(current.history).toHaveLength(1);
+    expect(fixture.workItem().configurationEvidenceCurrent).toMatchObject({
+      snapshotId: refreshed.persisted.summary.snapshotId,
+      configurationRevision: 1,
+      authority: 'WORK_ITEM_CURRENT_EVIDENCE_VIEW',
+      globalAircraftCurrentChanged: false,
+    });
+    expect(refreshed.authority).toMatchObject({
+      returnsApplicabilityDecision: false,
+      applicabilityEvaluatorCreated: false,
+      modelInferredFacts: false,
+      fullAircraftConfigurationClaimed: false,
+      globalAircraftCurrentChanged: false,
+    });
+  });
+
+  it('versions TRUE to FALSE, preserves old evidence, marks only the old dependency STALE, and replays exactly once', async () => {
+    const fixture = target({ fleetAsset: realB2035Asset() });
+    fixture.port.resultFactory = (query: GetInstallationEventsQuery) =>
+      controlledResult(
+        query,
+        [
+          equipmentRecord('INSTALL', 'COMPONENT:AIMS2:P1', 'P1', 1),
+          equipmentRecord('INSTALL', 'COMPONENT:AIMS2:P2', 'P2', 2),
+          equipmentRecord('REMOVE', 'COMPONENT:AIMS2:P2', 'P2', 3),
+        ],
+        'SOURCE-OBSERVATION-REV-1',
+      );
+
+    const first = await fixture.service.refresh(
+      WORK_ITEM_ID,
+      refreshBody('REQ-AIMS2-TRUE', 7),
+      {} as Request,
+    );
+    const firstEvidence = structuredClone(
+      first.persisted.snapshot.evidenceRecordRefs,
+    );
+    const firstFact = structuredClone(first.persisted.snapshot.facts[0]);
+    expect(firstFact.truth).toBe('TRUE');
+
+    fixture.port.resultFactory = (query: GetInstallationEventsQuery) =>
+      controlledResult(
+        query,
+        [
+          equipmentRecord('INSTALL', 'COMPONENT:AIMS2:P1', 'P1', 1),
+          equipmentRecord('INSTALL', 'COMPONENT:AIMS2:P2', 'P2', 2),
+          equipmentRecord('REMOVE', 'COMPONENT:AIMS2:P1', 'P1', 4),
+          equipmentRecord('REMOVE', 'COMPONENT:AIMS2:P2', 'P2', 3),
+        ],
+        'SOURCE-OBSERVATION-REV-2',
+      );
+    const secondBody = refreshBody('REQ-AIMS2-FALSE', 8);
+    const second = await fixture.service.refresh(
+      WORK_ITEM_ID,
+      secondBody,
+      {} as Request,
+    );
+    const sourceCallsBeforeReplay = fixture.port.calls.length;
+    const replay = await fixture.service.refresh(
+      WORK_ITEM_ID,
+      secondBody,
+      {} as Request,
+    );
+    const old = await fixture.service.snapshot(
+      WORK_ITEM_ID,
+      first.persisted.summary.snapshotId,
+      {} as Request,
+    );
+
+    expect(second.persisted.snapshot.facts[0]).toMatchObject({
+      truth: 'FALSE',
+      value: false,
+      status: 'SUPPORTED',
+      authority: 'CONTROLLED_SOURCE',
+    });
+    expect(second.workItemRevision).toBe(9);
+    expect(second.persisted.summary.configurationRevision).toBe(2);
+    expect(old.persisted.snapshot.facts[0]).toEqual(firstFact);
+    expect(old.persisted.snapshot.evidenceRecordRefs).toEqual(firstEvidence);
+    expect(old.persisted.snapshot.predicateTraces[0]).toMatchObject({
+      truth: 'TRUE',
+      status: 'STALE',
+      staleReason: {
+        code: 'DEPENDENCY_OBSERVATION_CHANGED',
+        previousStatus: 'EVALUATED',
+        incomingSourceRevision: 'SOURCE-OBSERVATION-REV-2',
+      },
+    });
+    expect(replay.replayed).toBe(true);
+    expect(replay.workItemRevision).toBe(9);
+    expect(replay.persisted).toEqual(second.persisted);
+    expect(fixture.port.calls).toHaveLength(sourceCallsBeforeReplay);
+    expect(fixture.store.recordCount()).toBe(2);
+    expect(fixture.workItem().revision).toBe(9);
+    expect(
+      (
+        await fixture.service.snapshot(
+          WORK_ITEM_ID,
+          first.persisted.summary.snapshotId,
+          {} as Request,
+        )
+      ).persisted.snapshot.predicateTraces[0].staleReason,
+    ).toEqual(old.persisted.snapshot.predicateTraces[0].staleReason);
+  });
+
+  it('returns the consistent current WorkItem revision when an unrelated lane advances after authorization', async () => {
+    const fixture = target({ fleetAsset: realB2035Asset() });
+    fixture.port.resultFactory = (query: GetInstallationEventsQuery) =>
+      controlledResult(
+        query,
+        [equipmentRecord('INSTALL', 'COMPONENT:AIMS2:P1', 'P1', 1)],
+        'SOURCE-AIMS2-IDEMPOTENT-REV-1',
+      );
+    const body = refreshBody('REQ-AIMS2-IDEMPOTENT-RACE', 7);
+    const first = await fixture.service.refresh(
+      WORK_ITEM_ID,
+      body,
+      {} as Request,
+    );
+    const sourceCallsBeforeReplay = fixture.port.calls.length;
+    fixture.store.advanceWorkItemRevisionBeforeNextReplay();
+
+    const replay = await fixture.service.refresh(
+      WORK_ITEM_ID,
+      body,
+      {} as Request,
+    );
+
+    expect(first.workItemRevision).toBe(8);
+    expect(replay).toMatchObject({
+      replayed: true,
+      workItemRevision: 9,
+      persisted: {
+        summary: {
+          snapshotId: first.persisted.summary.snapshotId,
+          isCurrent: true,
+        },
+      },
+    });
+    expect(fixture.workItem().revision).toBe(9);
+    expect(fixture.store.recordCount()).toBe(1);
+    expect(fixture.port.calls).toHaveLength(sourceCallsBeforeReplay);
+  });
+
+  it('marks a dependency in older history even when the current head queried an unrelated target', async () => {
+    const fixture = target({ fleetAsset: realB2035Asset() });
+    fixture.port.resultFactory = (query: GetInstallationEventsQuery) =>
+      controlledResult(
+        query,
+        [equipmentRecord('INSTALL', 'COMPONENT:AIMS2:P1', 'P1', 1)],
+        'SOURCE-AIMS2-REV-1',
+      );
+    const aims2 = await fixture.service.refresh(
+      WORK_ITEM_ID,
+      refreshBody('REQ-AIMS2-HISTORY-TRUE', 7),
+      {} as Request,
+    );
+
+    const repairCase = changeEventCases().find(
+      (candidate) => candidate.target.kind === 'REPAIR',
+    );
+    if (!repairCase) throw new Error('TEST_REPAIR_CASE_REQUIRED');
+    fixture.port.resultFactory = (query: GetInstallationEventsQuery) =>
+      controlledResult(
+        query,
+        [
+          sourceRecord(repairCase.event, {
+            recordId: 'WORK-ORDER:REPAIR:1',
+          }),
+        ],
+        'SOURCE-REPAIR-REV-1',
+      );
+    const unrelatedHead = await fixture.service.refresh(
+      WORK_ITEM_ID,
+      refreshBodyFor('REQ-REPAIR-HEAD', 8, [repairCase.target]),
+      {} as Request,
+    );
+
+    fixture.port.resultFactory = (query: GetInstallationEventsQuery) =>
+      controlledResult(
+        query,
+        [
+          equipmentRecord('INSTALL', 'COMPONENT:AIMS2:P1', 'P1', 1),
+          equipmentRecord('REMOVE', 'COMPONENT:AIMS2:P1', 'P1', 4),
+        ],
+        'SOURCE-AIMS2-REV-2',
+      );
+    await fixture.service.refresh(
+      WORK_ITEM_ID,
+      refreshBody('REQ-AIMS2-HISTORY-FALSE', 9),
+      {} as Request,
+    );
+    const oldAims2 = await fixture.service.snapshot(
+      WORK_ITEM_ID,
+      aims2.persisted.summary.snapshotId,
+      {} as Request,
+    );
+    const oldRepair = await fixture.service.snapshot(
+      WORK_ITEM_ID,
+      unrelatedHead.persisted.summary.snapshotId,
+      {} as Request,
+    );
+
+    expect(oldAims2.persisted.snapshot.predicateTraces[0]).toMatchObject({
+      truth: 'TRUE',
+      status: 'STALE',
+      staleReason: {
+        previousStatus: 'EVALUATED',
+        incomingSourceRevision: 'SOURCE-AIMS2-REV-2',
+      },
+    });
+    expect(oldRepair.persisted.snapshot.predicateTraces[0]).toMatchObject({
+      truth: 'TRUE',
+      status: 'EVALUATED',
+      staleReason: null,
+    });
+  });
+
+  it('persists a same-instance same-time contradiction as legal CONFLICT', async () => {
+    const fixture = target({ fleetAsset: realB2035Asset() });
+    fixture.port.resultFactory = (query: GetInstallationEventsQuery) =>
+      controlledResult(
+        query,
+        [
+          equipmentRecord('INSTALL', 'COMPONENT:AIMS2:P1', 'P1', 2),
+          equipmentRecord('REMOVE', 'COMPONENT:AIMS2:P1', 'P1', 2),
+        ],
+        'SOURCE-CONFLICT-REV-1',
+      );
+
+    const refreshed = await fixture.service.refresh(
+      WORK_ITEM_ID,
+      refreshBody('REQ-AIMS2-CONFLICT', 7),
+      {} as Request,
+    );
+
+    expect(refreshed.persisted.snapshot.coverage.sourceCompleteness).toBe(
+      'CONFLICT',
+    );
+    expect(refreshed.persisted.snapshot.facts[0]).toMatchObject({
+      truth: 'CONFLICT',
+      status: 'CONFLICT',
+      authority: 'NONE',
+    });
+    expect(refreshed.persisted.snapshot.predicateTraces[0]).toMatchObject({
+      truth: 'CONFLICT',
+      status: 'CONFLICT',
+    });
+    expect(refreshed.persisted.summary.truthSummary.conflictCount).toBe(1);
+  });
+
+  it('fails ACL and an unconfigured source before Fleet or persistence I/O', async () => {
+    const denied = target({ fleetAsset: realB2035Asset(), denyAccess: true });
+    await expect(
+      denied.service.refresh(
+        WORK_ITEM_ID,
+        refreshBody('REQ-DENIED', 7),
+        {} as Request,
+      ),
+    ).rejects.toMatchObject({
+      code: 'CANONICAL_WORK_ITEM_NOT_FOUND',
+      statusCode: 404,
+    });
+    expect(denied.fleet.readCurrentForAircraft).not.toHaveBeenCalled();
+    expect(denied.port.calls).toHaveLength(0);
+    expect(denied.store.recordCount()).toBe(0);
+
+    const unconfigured = target({
+      fleetAsset: realB2035Asset(),
+      sourceConfigured: false,
+    });
+    await expect(
+      unconfigured.service.refresh(
+        WORK_ITEM_ID,
+        refreshBody('REQ-UNCONFIGURED', 7),
+        {} as Request,
+      ),
+    ).rejects.toMatchObject({
+      code: 'GET_INSTALLATION_EVENTS_SOURCE_NOT_CONFIGURED',
+      statusCode: 503,
+    });
+    expect(unconfigured.fleet.readCurrentForAircraft).not.toHaveBeenCalled();
+    expect(unconfigured.store.recordCount()).toBe(0);
+  });
+
+  it('rejects self-reported evidence and authority fields at the HTTP service boundary', async () => {
+    const fixture = target({ fleetAsset: realB2035Asset() });
+    await expect(
+      fixture.service.refresh(
+        WORK_ITEM_ID,
+        {
+          ...refreshBody('REQ-SELF-REPORTED', 7),
+          evidenceRecords: [{ recordId: 'FAKE' }],
+        },
+        {} as Request,
+      ),
+    ).rejects.toMatchObject({
+      code: 'CONFIGURATION_EVIDENCE_UNKNOWN_FIELD:evidenceRecords',
+      statusCode: 400,
+    });
+    expect(fixture.objectAccess.freshRead).not.toHaveBeenCalled();
+    expect(fixture.store.recordCount()).toBe(0);
+  });
+});
+
+class ControlledInstallationEventsPort implements GetInstallationEventsPort {
+  readonly calls: GetInstallationEventsQuery[] = [];
+  resultFactory: (
+    query: GetInstallationEventsQuery,
+  ) => GetInstallationEventsResult = (query: GetInstallationEventsQuery) =>
+    unavailableResult(query);
+
+  constructor(readonly configured: boolean) {}
+
+  async getInstallationEvents(
+    query: GetInstallationEventsQuery,
+  ): Promise<GetInstallationEventsResult> {
+    this.calls.push(structuredClone(query));
+    return this.resultFactory(query);
+  }
+}
+
+class InMemoryConfigurationEvidenceStore implements ConfigurationEvidenceStorePort {
+  private readonly records: PersistedConfigurationEvidenceSnapshot[] = [];
+  private readonly staleBySnapshot: Map<
+    string,
+    Map<string, ConfigurationPredicateTraceStaleReason>
+  > = new Map();
+  private currentSnapshotId: string | null = null;
+  private advanceRevisionOnReplay: boolean = false;
+
+  constructor(
+    private readonly currentWorkItem: () => CanonicalWorkItemProjection,
+    private readonly saveWorkItem: (value: CanonicalWorkItemProjection) => void,
+  ) {}
+
+  recordCount(): number {
+    return this.records.length;
+  }
+
+  advanceWorkItemRevisionBeforeNextReplay(): void {
+    this.advanceRevisionOnReplay = true;
+  }
+
+  async findByRequest(input: {
+    tenantId: string;
+    workItemId: string;
+    requestId: string;
+  }): Promise<ConfigurationEvidenceReplayRead | null> {
+    void input.tenantId;
+    const stored = this.records.find(
+      (record: PersistedConfigurationEvidenceSnapshot) =>
+        record.request.requestId === input.requestId &&
+        input.workItemId === WORK_ITEM_ID,
+    );
+    if (!stored) return null;
+    if (this.advanceRevisionOnReplay) {
+      const current = this.currentWorkItem();
+      this.saveWorkItem({
+        ...structuredClone(current),
+        revision: current.revision + 1,
+      });
+      this.advanceRevisionOnReplay = false;
+    }
+    return {
+      workItem: structuredClone(this.currentWorkItem()),
+      persisted: this.materialize(stored),
+    };
+  }
+
+  async readCurrent(input: {
+    tenantId: string;
+    workItemId: string;
+  }): Promise<PersistedConfigurationEvidenceSnapshot | null> {
+    void input.tenantId;
+    if (input.workItemId !== WORK_ITEM_ID || !this.currentSnapshotId) {
+      return null;
+    }
+    const stored = this.records.find(
+      (record: PersistedConfigurationEvidenceSnapshot) =>
+        record.summary.snapshotId === this.currentSnapshotId,
+    );
+    return stored ? this.materialize(stored) : null;
+  }
+
+  async readSnapshot(input: {
+    tenantId: string;
+    workItemId: string;
+    snapshotId: string;
+  }): Promise<PersistedConfigurationEvidenceSnapshot | null> {
+    void input.tenantId;
+    if (input.workItemId !== WORK_ITEM_ID) return null;
+    const stored = this.records.find(
+      (record: PersistedConfigurationEvidenceSnapshot) =>
+        record.summary.snapshotId === input.snapshotId,
+    );
+    return stored ? this.materialize(stored) : null;
+  }
+
+  async listHistory(input: {
+    tenantId: string;
+    workItemId: string;
+    limit: number;
+  }): Promise<ConfigurationEvidenceSnapshotSummary[]> {
+    void input.tenantId;
+    if (input.workItemId !== WORK_ITEM_ID) return [];
+    return [...this.records]
+      .reverse()
+      .slice(0, input.limit)
+      .map(
+        (record: PersistedConfigurationEvidenceSnapshot) =>
+          this.materialize(record).summary,
+      );
+  }
+
+  async commit(
+    input: CommitConfigurationEvidenceInput,
+  ): Promise<CommitConfigurationEvidenceResult> {
+    const existing = await this.findByRequest({
+      tenantId: input.tenantId,
+      workItemId: input.workItemId,
+      requestId: input.request.requestId,
+    });
+    if (existing) {
+      if (
+        JSON.stringify(existing.persisted.request) !==
+        JSON.stringify(input.request)
+      ) {
+        throw conflict('CONFIGURATION_EVIDENCE_IDEMPOTENCY_PAYLOAD_MISMATCH');
+      }
+      return {
+        replayed: true,
+        workItem: existing.workItem,
+        persisted: existing.persisted,
+      };
+    }
+    const workItem = this.currentWorkItem();
+    if (workItem.revision !== input.expectedWorkItemRevision) {
+      throw conflict('WORK_ITEM_CAS_CONFLICT');
+    }
+    const configurationRevision = this.records.length + 1;
+    const snapshotId = `CONFIGURATION-SNAPSHOT:${input.request.requestId}`;
+    for (const prior of this.records) {
+      if (
+        prior.snapshot.aircraftAssetId === input.snapshot.aircraftAssetId &&
+        prior.snapshot.assessmentAsOf <= input.snapshot.assessmentAsOf
+      ) {
+        const marked = markDependentConfigurationPredicateTracesStale({
+          snapshot: prior.snapshot,
+          incomingProjections: input.projections,
+        });
+        const stale = new Map<string, ConfigurationPredicateTraceStaleReason>();
+        for (const trace of marked.predicateTraces) {
+          if (trace.status === 'STALE' && trace.staleReason) {
+            stale.set(
+              trace.predicateTraceId,
+              structuredClone(trace.staleReason),
+            );
+          }
+        }
+        if (stale.size > 0) {
+          this.staleBySnapshot.set(prior.summary.snapshotId, stale);
+        }
+      }
+    }
+    const truthSummary = summarizeTruth(input.snapshot);
+    const summary: ConfigurationEvidenceSnapshotSummary = {
+      snapshotId,
+      configurationRevision,
+      workItemRevisionBefore: input.expectedWorkItemRevision,
+      workItemRevisionAfter: input.expectedWorkItemRevision + 1,
+      aircraftAssetId: input.snapshot.aircraftAssetId,
+      assessmentAsOf: input.snapshot.assessmentAsOf,
+      sourceCompleteness: input.snapshot.coverage.sourceCompleteness,
+      truthSummary,
+      recordedByActorId: input.actorId,
+      recordedAt: input.recordedAt,
+      isCurrent: true,
+    };
+    const stored: PersistedConfigurationEvidenceSnapshot = {
+      request: structuredClone(input.request),
+      summary,
+      snapshot: structuredClone(input.snapshot),
+    };
+    const pointer: CanonicalConfigurationEvidenceCurrentProjection = {
+      schemaVersion: 'wiselink.3_1.configuration_evidence_work_item_current.v1',
+      snapshotId,
+      configurationRevision,
+      aircraftAssetId: input.snapshot.aircraftAssetId,
+      assessmentAsOf: input.snapshot.assessmentAsOf,
+      sourceCompleteness: input.snapshot.coverage.sourceCompleteness,
+      truthSummary: structuredClone(truthSummary),
+      recordedAt: input.recordedAt,
+      authority: 'WORK_ITEM_CURRENT_EVIDENCE_VIEW',
+      globalAircraftCurrentChanged: false,
+    };
+    const next: CanonicalWorkItemProjection = {
+      ...structuredClone(workItem),
+      revision: workItem.revision + 1,
+      configurationEvidenceCurrent: pointer,
+    };
+    this.records.push(stored);
+    this.currentSnapshotId = snapshotId;
+    this.saveWorkItem(next);
+    return {
+      replayed: false,
+      workItem: structuredClone(next),
+      persisted: this.materialize(stored),
+    };
+  }
+
+  private materialize(
+    stored: PersistedConfigurationEvidenceSnapshot,
+  ): PersistedConfigurationEvidenceSnapshot {
+    const materialized = structuredClone(stored);
+    materialized.summary.isCurrent =
+      materialized.summary.snapshotId === this.currentSnapshotId;
+    const stale = this.staleBySnapshot.get(materialized.summary.snapshotId);
+    if (stale) {
+      materialized.snapshot.predicateTraces =
+        materialized.snapshot.predicateTraces.map(
+          (trace: ConfigurationPredicateTrace): ConfigurationPredicateTrace => {
+            const reason = stale.get(trace.predicateTraceId);
+            return reason
+              ? {
+                  ...trace,
+                  status: 'STALE',
+                  staleReason: structuredClone(reason),
+                }
+              : trace;
+          },
+        );
+    }
+    return materialized;
+  }
+}
+
+function target(input: {
+  fleetAsset: Record<string, unknown>;
+  denyAccess?: boolean;
+  sourceConfigured?: boolean;
+}) {
+  let current = workItem();
+  const port = new ControlledInstallationEventsPort(
+    input.sourceConfigured ?? true,
+  );
+  const store = new InMemoryConfigurationEvidenceStore(
+    () => structuredClone(current),
+    (value: CanonicalWorkItemProjection) => {
+      current = structuredClone(value);
+    },
+  );
+  const session = {
+    actor: {
+      tenantId: TENANT_ID,
+      canonicalSubject: { namespace: 'MIAODA_USER_ID', id: ACTOR_ID },
+    },
+  };
+  const sessions = { resolve: jest.fn(async () => session) };
+  const objectAccess = {
+    freshRead: jest.fn(async ({ action, accessRoot }) =>
+      input.denyAccess
+        ? {
+            allowed: false,
+            action,
+            accessRoot,
+            code: 'CANONICAL_WORK_ITEM_NOT_FOUND',
+            statusCode: 404,
+            denialSource: 'MIAODA_OBJECT_ACCESS',
+          }
+        : {
+            allowed: true,
+            action,
+            accessRoot,
+            workItemId: WORK_ITEM_ID,
+            workItemRevision: current.revision,
+            requestId: current.requestId,
+            documentVersionId: current.source.documentVersionId,
+            tenantId: TENANT_ID,
+            actorUserId: ACTOR_ID,
+          },
+    ),
+  };
+  const registrar = {
+    getTenantScopedByWorkItemId: jest.fn(async () => structuredClone(current)),
+  };
+  const fleet = {
+    readCurrentForAircraft: jest.fn(async () => ({
+      schemaVersion: 'wiselink.fleet-master-data.v1',
+      sourceSnapshotId: 'FMS-REAL-587-2579',
+      sourceRevisionKey: 'legacy-object-layer-export-2026-06-05',
+      authorityRevision: '1',
+      sourceAsOf: '2026-06-05',
+      assets: [structuredClone(input.fleetAsset)],
+      facts: [],
+    })),
+  };
+  const clock = { nowIso: () => '2026-08-30T01:02:03.000Z' };
+  const service = new ConfigurationEvidenceService(
+    sessions as never,
+    objectAccess as never,
+    registrar as never,
+    fleet as never,
+    port,
+    store,
+    clock,
+  );
+  return {
+    service,
+    port,
+    store,
+    fleet,
+    objectAccess,
+    workItem: () => structuredClone(current),
+  };
+}
+
+function workItem(): CanonicalWorkItemProjection {
+  return {
+    schemaVersion: 'wiselink.3_1.canonical_work_item_projection.v0.candidate',
+    workItemId: WORK_ITEM_ID,
+    requestId: 'REQ-WORK-ITEM',
+    revision: 7,
+    phase: 'CANDIDATE_READBACK_VERIFIED',
+    permissionSnapshotVersion: 'permission-v7',
+    parseAuthorization: {
+      action: 'PARSE_PDF',
+      actorFingerprint: 'actor-fixture',
+      decisionId: 'decision-fixture',
+      decisionHash: 'decision-hash-fixture',
+      permissionSnapshotVersion: 'permission-v7',
+    },
+    source: { documentVersionId: DOCUMENT_VERSION_ID } as never,
+    classification: {
+      status: 'CONFIRMED',
+      normalizedFamily: 'FTD',
+    } as never,
+    package: null,
+    failure: null,
+    recordingFailure: null,
+  };
+}
+
+function refreshBody(requestId: string, expectedRevision: number) {
+  return refreshBodyFor(requestId, expectedRevision, [AIMS2_TARGET]);
+}
+
+function refreshBodyFor(
+  requestId: string,
+  expectedRevision: number,
+  targets: RefreshConfigurationEvidenceRequest['targets'],
+): RefreshConfigurationEvidenceRequest {
+  return {
+    schemaVersion: 'wiselink.3_1.refresh_configuration_evidence.v1',
+    requestId,
+    expectedRevision,
+    aircraftIdentifier: 'B-2035',
+    assessmentAsOf: AS_OF,
+    windowStart: null,
+    targets,
+  };
+}
+
+function equipmentRecord(
+  kind: 'INSTALL' | 'REMOVE',
+  componentId: string,
+  positionId: string,
+  timeIndex: number,
+): InstallationEventSourceRecord {
+  const event: InstallationEventPayload =
+    kind === 'INSTALL'
+      ? { kind, installedComponent: componentIdentity(componentId) }
+      : { kind, removedComponent: componentIdentity(componentId) };
+  const timestamp = `2026-08-28T${String(timeIndex).padStart(
+    2,
+    '0',
+  )}:00:00.000Z`;
+  return sourceRecord(event, {
+    recordId: `WORK-ORDER:${kind}:${positionId}:${timeIndex}`,
+    position: {
+      positionId: `POSITION:${positionId}`,
+      sourcePositionKey: positionId,
+    },
+    effectiveAt: timestamp,
+    recordedAt: timestamp,
+  });
+}
+
+function controlledResult(
+  query: GetInstallationEventsQuery,
+  records: InstallationEventSourceRecord[],
+  sourceRevision: string,
+): GetInstallationEventsCompleteResult {
+  const result = completeResult(query, records);
+  result.source.sourceRevision = sourceRevision;
+  result.source.observedAt = sourceRevision.endsWith('2')
+    ? '2026-08-29T13:00:00.000Z'
+    : '2026-08-29T12:00:00.000Z';
+  return result;
+}
+
+function summarizeTruth(
+  snapshot: ConfigurationSnapshot,
+): ConfigurationEvidenceTruthSummary {
+  return {
+    trueCount: snapshot.facts.filter((fact) => fact.truth === 'TRUE').length,
+    falseCount: snapshot.facts.filter((fact) => fact.truth === 'FALSE').length,
+    unknownCount: snapshot.facts.filter((fact) => fact.truth === 'UNKNOWN')
+      .length,
+    conflictCount: snapshot.facts.filter((fact) => fact.truth === 'CONFLICT')
+      .length,
+  };
+}
+
+function realB2035Asset(): Record<string, unknown> {
+  const assets = ndjson('assets.ndjson');
+  const aliases = ndjson('aliases.ndjson');
+  const configurationFacts = ndjson('configuration-facts.ndjson');
+  expect(assets).toHaveLength(587);
+  expect(aliases).toHaveLength(2579);
+  expect(configurationFacts).toHaveLength(0);
+  const asset = assets.find(
+    (value: Record<string, unknown>) => value.aircraftNumber === 'B-2035',
+  );
+  if (!asset) throw new Error('REAL_B2035_ASSET_REQUIRED');
+  return asset;
+}
+
+function ndjson(filename: string): Record<string, unknown>[] {
+  const content = readFileSync(
+    resolve(
+      process.cwd(),
+      'config/fleet-master-data/ameco-fleet-20260605',
+      filename,
+    ),
+    'utf8',
+  ).trim();
+  if (!content) return [];
+  return content.split('\n').map((line: string) => {
+    const value: unknown = JSON.parse(line);
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      throw new Error('REAL_FLEET_NDJSON_RECORD_INVALID');
+    }
+    return value as Record<string, unknown>;
+  });
+}
+
+function conflict(code: string): Error & { code: string; statusCode: number } {
+  return Object.assign(new Error(code), { code, statusCode: 409 });
+}

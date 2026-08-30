@@ -30,13 +30,38 @@ export function assertAeoDraftRegenerationContext(
     request.knowledge.documentIdentity;
   if (
     currentIdentity.aeoNumber !== requestedIdentity.aeoNumber ||
-    currentIdentity.revision !== requestedIdentity.revision ||
     currentIdentity.title !== requestedIdentity.title ||
     currentIdentity.category !== requestedIdentity.category ||
-    currentIdentity.expectedHeader !== requestedIdentity.expectedHeader
+    !sameRevisionOrVerifiedForwardRevision(currentIdentity, requestedIdentity)
   ) {
     throw new Error('AEO_DRAFT_REGENERATION_MATTER_IDENTITY_MISMATCH');
   }
+}
+
+function sameRevisionOrVerifiedForwardRevision(
+  current: AeoEditingDocumentIdentity,
+  requested: AeoEditingDocumentIdentity,
+): boolean {
+  if (current.revision === requested.revision) {
+    return current.expectedHeader === requested.expectedHeader;
+  }
+  const currentRevision = revisionNumber(current.revision);
+  const requestedRevision = revisionNumber(requested.revision);
+  return Boolean(
+    currentRevision !== null &&
+    requestedRevision !== null &&
+    requestedRevision > currentRevision &&
+    requested.expectedHeader ===
+      `${requested.aeoNumber}-${requested.revision}` &&
+    requested.observedHeader === requested.expectedHeader,
+  );
+}
+
+function revisionNumber(value: string): number | null {
+  const matched = value.match(/^R(\d+)$/u);
+  if (!matched?.[1]) return null;
+  const revision = Number(matched[1]);
+  return Number.isSafeInteger(revision) ? revision : null;
 }
 
 export function resolveAeoDraftRegenerationSources(

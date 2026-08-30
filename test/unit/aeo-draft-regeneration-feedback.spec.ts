@@ -255,6 +255,58 @@ describe('AEO draft regeneration feedback versions', () => {
     ).toThrow('AEO_DRAFT_REGENERATION_MATTER_IDENTITY_MISMATCH');
     expect(JSON.stringify(current)).toBe(before);
   });
+
+  it('allows only an exact same-matter forward revision identity', () => {
+    const original = sampleKnowledge();
+    const current = createAeoDraftAssistanceCandidate(request(original));
+    const forward = sampleKnowledge(
+      'R01',
+      'SRC-AEO-R01',
+      1200,
+      'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+    );
+    const regenerated = regenerateAeoDraftSelection(
+      current,
+      {
+        ...request(forward),
+        selectedUnitIds: ['ACTION-002'],
+        expectedGenerationRevision: 1,
+      },
+      'Verified Host current revision advanced from R00 to R01.',
+    );
+    expect(regenerated.generationRevision).toBe(2);
+    expect(regenerated.knowledgeDocumentIdentity.revision).toBe('R01');
+
+    const forged = sampleKnowledge(
+      'R02',
+      'SRC-AEO-R02',
+      1300,
+      'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+    );
+    forged.documentIdentity.observedHeader = 'AEO-B787-45-OTHER-R02';
+    expect(() =>
+      regenerateAeoDraftSelection(
+        regenerated,
+        {
+          ...request(forged),
+          selectedUnitIds: ['ACTION-002'],
+          expectedGenerationRevision: 2,
+        },
+        'A forged header cannot advance the revision.',
+      ),
+    ).toThrow('AEO_DRAFT_REGENERATION_MATTER_IDENTITY_MISMATCH');
+    expect(() =>
+      regenerateAeoDraftSelection(
+        regenerated,
+        {
+          ...request(original),
+          selectedUnitIds: ['ACTION-002'],
+          expectedGenerationRevision: 2,
+        },
+        'A revision cannot move backward.',
+      ),
+    ).toThrow('AEO_DRAFT_REGENERATION_MATTER_IDENTITY_MISMATCH');
+  });
 });
 
 function request(

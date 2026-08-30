@@ -137,17 +137,24 @@ describe('AEO editing knowledge and draft assistance', () => {
     const base: AeoDraftAssistanceCandidate = createAeoDraftAssistanceCandidate(
       draftRequest(original),
     );
-    expect(() =>
-      regenerateAeoDraftSelection(
-        base,
-        {
-          ...draftRequest(revised),
-          selectedUnitIds: ['ACTION-002'],
-          expectedGenerationRevision: 1,
-        },
-        'A different issued revision cannot partially replace this draft.',
-      ),
-    ).toThrow('AEO_DRAFT_REGENERATION_MATTER_IDENTITY_MISMATCH');
+    const forwardRegenerated = regenerateAeoDraftSelection(
+      base,
+      {
+        ...draftRequest(revised),
+        selectedUnitIds: ['ACTION-002'],
+        expectedGenerationRevision: 1,
+      },
+      'Host verified the same AEO identity moving forward from R00 to R01.',
+    );
+    expect(forwardRegenerated.generationRevision).toBe(2);
+    expect(forwardRegenerated.sources.map((source) => source.sourceId)).toEqual(
+      ['SRC-AEO-R01-DOCX', 'SRC-AEO-R00-DOCX'],
+    );
+    expect(
+      forwardRegenerated.suggestions.find(
+        (suggestion) => suggestion.sourceUnitId === 'ACTION-002',
+      )?.bodyZh,
+    ).toContain('R01');
     const sameRevisionUpdate: AeoEditingKnowledgeCandidate = {
       ...original,
       actionUnits: original.actionUnits.map((unit) =>

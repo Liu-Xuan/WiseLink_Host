@@ -205,8 +205,23 @@ export function appendBinding(
   toRef: string,
   evidenceRecordId: string,
 ): void {
+  const bindingId: string = [
+    'CONFIGURATION-EVIDENCE-BINDING',
+    relation,
+    encodeURIComponent(fromRef),
+    encodeURIComponent(toRef),
+    encodeURIComponent(evidenceRecordId),
+  ].join(':');
+  if (
+    bindings.some(
+      (binding: ConfigurationEventEvidenceBinding) =>
+        binding.bindingId === bindingId,
+    )
+  ) {
+    return;
+  }
   bindings.push({
-    bindingId: `CONFIGURATION-EVIDENCE-BINDING:${bindings.length + 1}:${relation}`,
+    bindingId,
     relation,
     fromRef,
     toRef,

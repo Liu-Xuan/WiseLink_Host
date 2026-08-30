@@ -19,6 +19,13 @@ import {
   type FleetMasterDataSource,
 } from '../assessment-workbench/applicability-fleet/fleetMasterData';
 
+export interface CurrentCanonicalFleetHead {
+  sourceSnapshotId: string;
+  sourceRevisionKey: string;
+  sourceAsOf: string;
+  authorityRevision: string;
+}
+
 interface CurrentFleetSourceRow {
   sourceSnapshotId: string;
   sourceRevisionKey: string;
@@ -53,6 +60,21 @@ export class CanonicalFleetMasterDataRepository {
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
   ) {}
+
+  /** Fresh tenant-scoped canonical head; callers cannot select a revision. */
+  async readCurrentHead(input: {
+    tenantId: string;
+  }): Promise<CurrentCanonicalFleetHead> {
+    const source = await this.requiredCurrentSource(
+      requiredText(input.tenantId),
+    );
+    return {
+      sourceSnapshotId: source.sourceSnapshotId,
+      sourceRevisionKey: source.sourceRevisionKey,
+      sourceAsOf: source.sourceAsOf,
+      authorityRevision: String(source.authorityRevision),
+    };
+  }
 
   async readCurrentForAircraft(input: {
     tenantId: string;

@@ -959,6 +959,262 @@ export const canonicalRuleSetActivation = pgTable("canonical_rule_set_activation
   check("ck_canonical_rule_set_activation_reason", sql`length(btrim(${table.reason})) > 0`),
 ]);
 
+export const batchApplicabilityRun = pgTable("batch_applicability_run", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  runId: varchar("run_id", { length: 96 }).notNull().unique(),
+  tenantId: varchar("tenant_id", { length: 128 }).notNull(),
+  actorId: varchar("actor_id", { length: 255 }).notNull(),
+  workItemId: varchar("work_item_id", { length: 96 }).notNull(),
+  requestId: varchar("request_id", { length: 96 }).notNull(),
+  requestPayloadJson: text("request_payload_json").notNull(),
+  workItemRevision: integer("work_item_revision").notNull(),
+  documentVersionId: varchar("document_version_id", { length: 96 }).notNull(),
+  sourcePackageId: text("source_package_id").notNull(),
+  sourceExpressionId: varchar("source_expression_id", { length: 160 }).notNull(),
+  sourceConditionId: varchar("source_condition_id", { length: 160 }).notNull(),
+  sourceRefIdsJson: text("source_ref_ids_json").notNull(),
+  fleetSourceSnapshotId: varchar("fleet_source_snapshot_id", { length: 96 }).notNull(),
+  fleetSourceRevisionKey: varchar("fleet_source_revision_key", { length: 255 }).notNull(),
+  fleetAuthorityRevision: varchar("fleet_authority_revision", { length: 96 }).notNull(),
+  fleetSourceAsOf: varchar("fleet_source_as_of", { length: 10 }).notNull(),
+  hostBindingStatus: varchar("host_binding_status", { length: 32 }).notNull(),
+  candidateSetJson: text("candidate_set_json").notNull(),
+  createdAt: customTimestamptz("created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("uk_batch_applicability_run_id").on(table.runId),
+  uniqueIndex("uk_batch_applicability_run_request").on(table.tenantId, table.workItemId, table.requestId),
+  index("idx_batch_applicability_run_work_item").on(table.workItemId, table.createdAt.desc()),
+  foreignKey({
+    columns: [table.workItemId],
+    foreignColumns: [workItem.workItemId],
+    name: "fk_batch_applicability_run_work_item",
+  }),
+  check("ck_batch_applicability_run_revision", sql`${table.workItemRevision} >= 0`),
+  check("ck_batch_applicability_run_request", sql`length(btrim(${table.requestId})) > 0`),
+  check("ck_batch_applicability_run_payload", sql`length(btrim(${table.requestPayloadJson})) > 0 AND length(btrim(${table.candidateSetJson})) > 0 AND length(btrim(${table.sourceRefIdsJson})) > 0`),
+  check("ck_batch_applicability_run_fleet_as_of", sql`${table.fleetSourceAsOf} ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'`),
+  check("ck_batch_applicability_run_host_status", sql`${table.hostBindingStatus} IN ('CURRENT', 'STALE', 'CONFLICT', 'UNVERIFIED')`),
+]);
+
+export const batchApplicabilityConfirmation = pgTable("batch_applicability_confirmation", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  receiptId: varchar("receipt_id", { length: 96 }).notNull().unique(),
+  runId: varchar("run_id", { length: 96 }).notNull(),
+  tenantId: varchar("tenant_id", { length: 128 }).notNull(),
+  actorId: varchar("actor_id", { length: 255 }).notNull(),
+  workItemId: varchar("work_item_id", { length: 96 }).notNull(),
+  requestId: varchar("request_id", { length: 96 }).notNull(),
+  requestPayloadJson: text("request_payload_json").notNull(),
+  workItemRevision: integer("work_item_revision").notNull(),
+  candidateClusterId: varchar("candidate_cluster_id", { length: 255 }).notNull(),
+  decision: varchar("decision", { length: 48 }).notNull(),
+  reason: text("reason").notNull(),
+  confirmedAt: customTimestamptz("confirmed_at", { precision: 3 }).notNull(),
+  validUntil: customTimestamptz("valid_until", { precision: 3 }).notNull(),
+  confirmationCandidateJson: text("confirmation_candidate_json").notNull(),
+  createdAt: customTimestamptz("created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("uk_batch_applicability_confirmation_receipt").on(table.receiptId),
+  uniqueIndex("uk_batch_applicability_confirmation_request").on(table.tenantId, table.workItemId, table.requestId),
+  uniqueIndex("uk_batch_applicability_confirmation_cluster").on(table.runId, table.candidateClusterId),
+  index("idx_batch_applicability_confirmation_run").on(table.runId, table.createdAt),
+  foreignKey({
+    columns: [table.runId],
+    foreignColumns: [batchApplicabilityRun.runId],
+    name: "fk_batch_applicability_confirmation_run",
+  }),
+  foreignKey({
+    columns: [table.workItemId],
+    foreignColumns: [workItem.workItemId],
+    name: "fk_batch_applicability_confirmation_work_item",
+  }),
+  check("ck_batch_applicability_confirmation_revision", sql`${table.workItemRevision} >= 0`),
+  check("ck_batch_applicability_confirmation_decision", sql`${table.decision} IN ('CONFIRM_CLUSTER_CANDIDATE', 'REJECT_CLUSTER_CANDIDATE')`),
+  check("ck_batch_applicability_confirmation_reason", sql`length(btrim(${table.reason})) > 0`),
+  check("ck_batch_applicability_confirmation_payload", sql`length(btrim(${table.requestPayloadJson})) > 0 AND length(btrim(${table.confirmationCandidateJson})) > 0`),
+  check("ck_batch_applicability_confirmation_validity", sql`${table.validUntil} > ${table.confirmedAt}`),
+]);
+
+export const configurationEvidenceSnapshotVersion = pgTable("configuration_evidence_snapshot_version", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: varchar("tenant_id", { length: 128 }).notNull(),
+  workItemId: varchar("work_item_id", { length: 96 }).notNull(),
+  snapshotId: varchar("snapshot_id", { length: 160 }).notNull(),
+  requestId: varchar("request_id", { length: 96 }).notNull(),
+  requestJson: text("request_json").notNull(),
+  aircraftAssetId: varchar("aircraft_asset_id", { length: 96 }).notNull(),
+  assessmentAsOf: customTimestamptz("assessment_as_of", { precision: 3 }).notNull(),
+  configurationRevision: integer("configuration_revision").notNull(),
+  workItemRevisionBefore: integer("work_item_revision_before").notNull(),
+  workItemRevisionAfter: integer("work_item_revision_after").notNull(),
+  sourceCompleteness: varchar("source_completeness", { length: 16 }).notNull(),
+  requestedTargetCount: integer("requested_target_count").notNull(),
+  trueCount: integer("true_count").notNull(),
+  falseCount: integer("false_count").notNull(),
+  unknownCount: integer("unknown_count").notNull(),
+  conflictCount: integer("conflict_count").notNull(),
+  snapshotJson: text("snapshot_json").notNull(),
+  recordedByActorId: varchar("recorded_by_actor_id", { length: 255 }).notNull(),
+  recordedAt: customTimestamptz("recorded_at", { precision: 3 }).notNull(),
+}, (table) => [
+  uniqueIndex("uk_configuration_evidence_snapshot").on(table.tenantId, table.workItemId, table.snapshotId),
+  uniqueIndex("uk_configuration_evidence_snapshot_revision_binding").on(table.tenantId, table.workItemId, table.snapshotId, table.configurationRevision),
+  uniqueIndex("uk_configuration_evidence_request").on(table.tenantId, table.workItemId, table.requestId),
+  uniqueIndex("uk_configuration_evidence_revision").on(table.tenantId, table.workItemId, table.configurationRevision),
+  uniqueIndex("uk_configuration_evidence_work_item_revision").on(table.workItemId, table.workItemRevisionAfter),
+  index("idx_configuration_evidence_snapshot_history").on(table.tenantId, table.workItemId, table.configurationRevision),
+  index("idx_configuration_evidence_snapshot_aircraft_asof").on(table.tenantId, table.aircraftAssetId, table.assessmentAsOf),
+  foreignKey({
+    columns: [table.workItemId],
+    foreignColumns: [workItem.workItemId],
+    name: "fk_configuration_evidence_snapshot_work_item",
+  }),
+  check("ck_configuration_evidence_snapshot_revisions", sql`${table.configurationRevision} > 0 AND ${table.workItemRevisionBefore} > 0 AND ${table.workItemRevisionAfter} = ${table.workItemRevisionBefore} + 1`),
+  check("ck_configuration_evidence_snapshot_completeness", sql`${table.sourceCompleteness} IN ('COMPLETE', 'PARTIAL', 'UNKNOWN', 'CONFLICT')`),
+  check("ck_configuration_evidence_snapshot_counts", sql`${table.requestedTargetCount} > 0 AND ${table.trueCount} >= 0 AND ${table.falseCount} >= 0 AND ${table.unknownCount} >= 0 AND ${table.conflictCount} >= 0 AND ${table.trueCount} + ${table.falseCount} + ${table.unknownCount} + ${table.conflictCount} = ${table.requestedTargetCount}`),
+  check("ck_configuration_evidence_snapshot_payloads", sql`length(btrim(${table.requestJson})) > 0 AND length(btrim(${table.snapshotJson})) > 0`),
+]);
+
+export const configurationEvidenceEventVersion = pgTable("configuration_evidence_event_version", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: varchar("tenant_id", { length: 128 }).notNull(),
+  workItemId: varchar("work_item_id", { length: 96 }).notNull(),
+  snapshotId: varchar("snapshot_id", { length: 160 }).notNull(),
+  configEventId: text("config_event_id").notNull(),
+  evidenceRecordId: text("evidence_record_id").notNull(),
+  eventKind: varchar("event_kind", { length: 32 }).notNull(),
+  aircraftAssetId: varchar("aircraft_asset_id", { length: 96 }).notNull(),
+  positionId: varchar("position_id", { length: 160 }),
+  effectiveAt: customTimestamptz("effective_at", { precision: 3 }).notNull(),
+  sourceRecordedAt: customTimestamptz("source_recorded_at", { precision: 3 }).notNull(),
+  evidenceJson: text("evidence_json").notNull(),
+  eventJson: text("event_json").notNull(),
+  recordedByActorId: varchar("recorded_by_actor_id", { length: 255 }).notNull(),
+  persistedAt: customTimestamptz("persisted_at", { precision: 3 }).notNull(),
+}, (table) => [
+  uniqueIndex("uk_configuration_evidence_event").on(table.tenantId, table.workItemId, table.snapshotId, table.configEventId),
+  index("idx_configuration_evidence_event_aircraft_time").on(table.tenantId, table.aircraftAssetId, table.effectiveAt),
+  index("idx_configuration_evidence_event_source").on(table.tenantId, table.evidenceRecordId),
+  foreignKey({
+    columns: [table.tenantId, table.workItemId, table.snapshotId],
+    foreignColumns: [configurationEvidenceSnapshotVersion.tenantId, configurationEvidenceSnapshotVersion.workItemId, configurationEvidenceSnapshotVersion.snapshotId],
+    name: "fk_configuration_evidence_event_snapshot",
+  }),
+  check("ck_configuration_evidence_event_kind", sql`${table.eventKind} IN ('INSTALL', 'REMOVE', 'REPLACE', 'SOFTWARE_LOAD', 'MODIFICATION_EMBODIMENT', 'REPAIR_ACCOMPLISHMENT')`),
+  check("ck_configuration_evidence_event_payloads", sql`length(btrim(${table.evidenceJson})) > 0 AND length(btrim(${table.eventJson})) > 0`),
+]);
+
+export const configurationEvidenceFactVersion = pgTable("configuration_evidence_fact_version", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: varchar("tenant_id", { length: 128 }).notNull(),
+  workItemId: varchar("work_item_id", { length: 96 }).notNull(),
+  snapshotId: varchar("snapshot_id", { length: 160 }).notNull(),
+  factAssertionId: text("fact_assertion_id").notNull(),
+  targetKey: text("target_key").notNull(),
+  property: varchar("property", { length: 96 }).notNull(),
+  truth: varchar("truth", { length: 16 }).notNull(),
+  valueJson: text("value_json").notNull(),
+  status: varchar("status", { length: 32 }).notNull(),
+  authority: varchar("authority", { length: 32 }).notNull(),
+  assessmentAsOf: customTimestamptz("assessment_as_of", { precision: 3 }).notNull(),
+  validFrom: customTimestamptz("valid_from", { precision: 3 }),
+  validThroughAsOf: customTimestamptz("valid_through_as_of", { precision: 3 }).notNull(),
+  sourceSliceRef: text("source_slice_ref").notNull(),
+  factJson: text("fact_json").notNull(),
+  recordedByActorId: varchar("recorded_by_actor_id", { length: 255 }).notNull(),
+  persistedAt: customTimestamptz("persisted_at", { precision: 3 }).notNull(),
+}, (table) => [
+  uniqueIndex("uk_configuration_evidence_fact").on(table.tenantId, table.workItemId, table.snapshotId, table.factAssertionId),
+  index("idx_configuration_evidence_fact_lookup").on(table.tenantId, table.workItemId, table.snapshotId, table.property),
+  foreignKey({
+    columns: [table.tenantId, table.workItemId, table.snapshotId],
+    foreignColumns: [configurationEvidenceSnapshotVersion.tenantId, configurationEvidenceSnapshotVersion.workItemId, configurationEvidenceSnapshotVersion.snapshotId],
+    name: "fk_configuration_evidence_fact_snapshot",
+  }),
+  check("ck_configuration_evidence_fact_truth", sql`${table.truth} IN ('TRUE', 'FALSE', 'UNKNOWN', 'CONFLICT')`),
+  check("ck_configuration_evidence_fact_status", sql`${table.status} IN ('SUPPORTED', 'WAITING_INPUT', 'CONFLICT')`),
+  check("ck_configuration_evidence_fact_authority", sql`${table.authority} IN ('CONTROLLED_SOURCE', 'NONE')`),
+  check("ck_configuration_evidence_fact_temporal", sql`${table.validThroughAsOf} = ${table.assessmentAsOf}`),
+  check("ck_configuration_evidence_fact_payloads", sql`length(btrim(${table.valueJson})) > 0 AND length(btrim(${table.factJson})) > 0`),
+]);
+
+export const configurationEvidencePredicateTraceVersion = pgTable("configuration_evidence_predicate_trace_version", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: varchar("tenant_id", { length: 128 }).notNull(),
+  workItemId: varchar("work_item_id", { length: 96 }).notNull(),
+  snapshotId: varchar("snapshot_id", { length: 160 }).notNull(),
+  predicateTraceId: text("predicate_trace_id").notNull(),
+  factAssertionId: text("fact_assertion_id").notNull(),
+  targetKey: text("target_key").notNull(),
+  truth: varchar("truth", { length: 16 }).notNull(),
+  status: varchar("status", { length: 32 }).notNull(),
+  assessmentAsOf: customTimestamptz("assessment_as_of", { precision: 3 }).notNull(),
+  sourceSliceRef: text("source_slice_ref").notNull(),
+  traceJson: text("trace_json").notNull(),
+  recordedByActorId: varchar("recorded_by_actor_id", { length: 255 }).notNull(),
+  persistedAt: customTimestamptz("persisted_at", { precision: 3 }).notNull(),
+}, (table) => [
+  uniqueIndex("uk_configuration_evidence_trace").on(table.tenantId, table.workItemId, table.snapshotId, table.predicateTraceId),
+  index("idx_configuration_evidence_trace_dependency").on(table.tenantId, table.workItemId, table.targetKey, table.assessmentAsOf),
+  foreignKey({
+    columns: [table.tenantId, table.workItemId, table.snapshotId],
+    foreignColumns: [configurationEvidenceSnapshotVersion.tenantId, configurationEvidenceSnapshotVersion.workItemId, configurationEvidenceSnapshotVersion.snapshotId],
+    name: "fk_configuration_evidence_trace_snapshot",
+  }),
+  check("ck_configuration_evidence_trace_truth", sql`${table.truth} IN ('TRUE', 'FALSE', 'UNKNOWN', 'CONFLICT')`),
+  check("ck_configuration_evidence_trace_status", sql`${table.status} IN ('EVALUATED', 'WAITING_INPUT', 'CONFLICT', 'STALE')`),
+  check("ck_configuration_evidence_trace_payload", sql`length(btrim(${table.traceJson})) > 0`),
+]);
+
+export const configurationEvidenceTraceStaleness = pgTable("configuration_evidence_trace_staleness", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: varchar("tenant_id", { length: 128 }).notNull(),
+  workItemId: varchar("work_item_id", { length: 96 }).notNull(),
+  stalenessId: text("staleness_id").notNull(),
+  priorSnapshotId: varchar("prior_snapshot_id", { length: 160 }).notNull(),
+  predicateTraceId: text("predicate_trace_id").notNull(),
+  incomingSnapshotId: varchar("incoming_snapshot_id", { length: 160 }).notNull(),
+  incomingConfigurationRevision: integer("incoming_configuration_revision").notNull(),
+  previousStatus: varchar("previous_status", { length: 32 }).notNull(),
+  staleReasonJson: text("stale_reason_json").notNull(),
+  recordedByActorId: varchar("recorded_by_actor_id", { length: 255 }).notNull(),
+  recordedAt: customTimestamptz("recorded_at", { precision: 3 }).notNull(),
+}, (table) => [
+  uniqueIndex("uk_configuration_evidence_trace_staleness").on(table.tenantId, table.workItemId, table.priorSnapshotId, table.predicateTraceId, table.incomingSnapshotId),
+  index("idx_configuration_evidence_trace_stale_read").on(table.tenantId, table.workItemId, table.priorSnapshotId, table.incomingConfigurationRevision),
+  foreignKey({
+    columns: [table.tenantId, table.workItemId, table.priorSnapshotId],
+    foreignColumns: [configurationEvidenceSnapshotVersion.tenantId, configurationEvidenceSnapshotVersion.workItemId, configurationEvidenceSnapshotVersion.snapshotId],
+    name: "fk_configuration_evidence_stale_prior_snapshot",
+  }),
+  foreignKey({
+    columns: [table.tenantId, table.workItemId, table.incomingSnapshotId],
+    foreignColumns: [configurationEvidenceSnapshotVersion.tenantId, configurationEvidenceSnapshotVersion.workItemId, configurationEvidenceSnapshotVersion.snapshotId],
+    name: "fk_configuration_evidence_stale_incoming_snapshot",
+  }),
+  check("ck_configuration_evidence_stale_revision", sql`${table.incomingConfigurationRevision} > 1`),
+  check("ck_configuration_evidence_stale_previous_status", sql`${table.previousStatus} IN ('EVALUATED', 'WAITING_INPUT', 'CONFLICT', 'STALE')`),
+  check("ck_configuration_evidence_stale_payload", sql`length(btrim(${table.staleReasonJson})) > 0`),
+]);
+
+export const configurationEvidenceWorkItemHead = pgTable("configuration_evidence_work_item_head", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: varchar("tenant_id", { length: 128 }).notNull(),
+  workItemId: varchar("work_item_id", { length: 96 }).notNull(),
+  currentSnapshotId: varchar("current_snapshot_id", { length: 160 }).notNull(),
+  configurationRevision: integer("configuration_revision").notNull(),
+  updatedByActorId: varchar("updated_by_actor_id", { length: 255 }).notNull(),
+  updatedAt: customTimestamptz("updated_at", { precision: 3 }).notNull(),
+}, (table) => [
+  uniqueIndex("uk_configuration_evidence_work_item_head").on(table.tenantId, table.workItemId),
+  foreignKey({
+    columns: [table.tenantId, table.workItemId, table.currentSnapshotId, table.configurationRevision],
+    foreignColumns: [configurationEvidenceSnapshotVersion.tenantId, configurationEvidenceSnapshotVersion.workItemId, configurationEvidenceSnapshotVersion.snapshotId, configurationEvidenceSnapshotVersion.configurationRevision],
+    name: "fk_configuration_evidence_head_snapshot",
+  }),
+  check("ck_configuration_evidence_head_revision", sql`${table.configurationRevision} > 0`),
+]);
+
 /** Host-owned Feishu OAuth subject -> canonical Miaoda subject mapping. */
 export const identitySubjectMapping = pgTable("identity_subject_mapping", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -1027,6 +1283,8 @@ export const identitySession = pgTable("identity_session", {
 
 // table aliases
 export const actionAttemptTable = actionAttempt;
+export const batchApplicabilityConfirmationTable = batchApplicabilityConfirmation;
+export const batchApplicabilityRunTable = batchApplicabilityRun;
 export const canonicalFleetAliasVersionTable = canonicalFleetAliasVersion;
 export const canonicalFleetAssetVersionTable = canonicalFleetAssetVersion;
 export const canonicalFleetConfigurationFactVersionTable = canonicalFleetConfigurationFactVersion;
@@ -1034,6 +1292,12 @@ export const canonicalFleetScopeHeadTable = canonicalFleetScopeHead;
 export const canonicalFleetSourceSnapshotTable = canonicalFleetSourceSnapshot;
 export const canonicalRuleSetActivationTable = canonicalRuleSetActivation;
 export const canonicalRuleSetSnapshotTable = canonicalRuleSetSnapshot;
+export const configurationEvidenceEventVersionTable = configurationEvidenceEventVersion;
+export const configurationEvidenceFactVersionTable = configurationEvidenceFactVersion;
+export const configurationEvidencePredicateTraceVersionTable = configurationEvidencePredicateTraceVersion;
+export const configurationEvidenceSnapshotVersionTable = configurationEvidenceSnapshotVersion;
+export const configurationEvidenceTraceStalenessTable = configurationEvidenceTraceStaleness;
+export const configurationEvidenceWorkItemHeadTable = configurationEvidenceWorkItemHead;
 export const dmAcquisitionTable = dmAcquisition;
 export const dmCurrentnessDecisionTable = dmCurrentnessDecision;
 export const dmDocumentTable = dmDocument;

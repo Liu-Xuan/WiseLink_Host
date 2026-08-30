@@ -28,6 +28,9 @@ import { CanonicalHostOpenClawOverallService } from './canonical-host-openclaw-o
 import { CanonicalHostOverallRegenerationController } from './canonical-host-overall-regeneration.controller';
 import { CanonicalHostOverallRegenerationService } from './canonical-host-overall-regeneration.service';
 import { CanonicalHostOpenClawTranslationService } from './canonical-host-openclaw-translation.service';
+import { CanonicalTranslationKnowledgeController } from './canonical-translation-knowledge.controller';
+import { CanonicalTranslationKnowledgeProductService } from './canonical-translation-knowledge-product.service';
+import { MiaodaTranslationKnowledgeProductStore } from './miaoda-translation-knowledge-product.store';
 import { CanonicalHostOpenClawApplicabilityService } from './canonical-host-openclaw-applicability.service';
 import { CanonicalHostOpenClawAttemptStatusService } from './canonical-host-openclaw-attempt-status.service';
 import {
@@ -76,6 +79,9 @@ import { UnconfiguredFailureValidationWriteAuthorizationAdapter } from './unconf
 import { AssessmentHostConsumerModule } from '../assessment-workbench/assessment-host-consumer.public-api';
 import { CanonicalHostAssessmentService } from './canonical-host-assessment.service';
 import { CanonicalHostAeoService } from './canonical-host-aeo.service';
+import { CanonicalHostAeoEditingController } from './canonical-host-aeo-editing.controller';
+import { CanonicalHostAeoEditingService } from './canonical-host-aeo-editing.service';
+import { CanonicalAeoEditingInputProducer } from './canonical-aeo-editing-input.producer';
 import { CanonicalHostIntegratedAssessmentService } from './canonical-host-integrated-assessment.service';
 import { CanonicalHostEngineerReviewService } from './canonical-host-engineer-review.service';
 import { CanonicalHostLibraryIndexService } from './canonical-host-library-index.service';
@@ -100,6 +106,19 @@ import { CanonicalRuleSetLifecycleService } from './canonical-rule-set-lifecycle
 import { EngineeringMatterController } from './engineering-matter.controller';
 import { EngineeringMatterRepository } from './engineering-matter.repository';
 import { EngineeringMatterService } from './engineering-matter.service';
+import { BatchApplicabilityModule } from '../batch-applicability/batch-applicability.module';
+import { BatchApplicabilityController } from '../batch-applicability/batch-applicability.controller';
+import { BatchApplicabilityHostService } from '../batch-applicability/batch-applicability-host.service';
+import { BatchApplicabilityRepository } from '../batch-applicability/batch-applicability.repository';
+import { BatchApplicabilitySourceReader } from '../batch-applicability/batch-applicability-source-reader';
+import { ConfigurationEvidenceController } from './configuration-evidence/configuration-evidence.controller';
+import { CONFIGURATION_EVIDENCE_STORE } from './configuration-evidence/configuration-evidence.persistence.types';
+import { MiaodaConfigurationEvidenceStore } from './configuration-evidence/configuration-evidence.repository';
+import { ConfigurationEvidenceService } from './configuration-evidence/configuration-evidence.service';
+import {
+  GET_INSTALLATION_EVENTS,
+  UnconfiguredGetInstallationEventsAdapter,
+} from './configuration-evidence/get-installation-events.port';
 
 export interface CanonicalHostModuleOptions {
   imports?: ModuleMetadata['imports'];
@@ -115,6 +134,7 @@ export interface CanonicalHostModuleOptions {
   serviceScopeAuthorizationProvider?: Provider;
   professionalArtifactCorrelationProvider?: Provider;
   applicabilityControlledSelectionProvider?: Provider;
+  installationEventsProvider?: Provider;
 }
 
 @Module({
@@ -126,6 +146,7 @@ export interface CanonicalHostModuleOptions {
     WorkItemRuntimeModule,
     IdentityModule,
     ReviewPersistenceModule,
+    BatchApplicabilityModule,
   ],
   controllers: [
     CanonicalHostController,
@@ -139,6 +160,10 @@ export interface CanonicalHostModuleOptions {
     CanonicalHostOverallRegenerationController,
     CanonicalRuleSetLifecycleController,
     EngineeringMatterController,
+    CanonicalHostAeoEditingController,
+    CanonicalTranslationKnowledgeController,
+    BatchApplicabilityController,
+    ConfigurationEvidenceController,
   ],
   providers: [
     CanonicalEntryFacadeService,
@@ -153,6 +178,8 @@ export interface CanonicalHostModuleOptions {
     CanonicalHostOpenClawOverallService,
     CanonicalHostOverallRegenerationService,
     CanonicalHostOpenClawTranslationService,
+    CanonicalTranslationKnowledgeProductService,
+    MiaodaTranslationKnowledgeProductStore,
     CanonicalHostOpenClawApplicabilityService,
     CanonicalHostOpenClawAttemptStatusService,
     CanonicalHostApplicabilityInputProducer,
@@ -176,6 +203,14 @@ export interface CanonicalHostModuleOptions {
     CanonicalRuleSetLifecycleService,
     EngineeringMatterRepository,
     EngineeringMatterService,
+    CanonicalHostAeoEditingService,
+    CanonicalAeoEditingInputProducer,
+    BatchApplicabilityHostService,
+    BatchApplicabilityRepository,
+    BatchApplicabilitySourceReader,
+    ConfigurationEvidenceService,
+    MiaodaConfigurationEvidenceStore,
+    SystemCanonicalHostClockAdapter,
     UnavailableCanonicalServiceScopeAuthorization,
     UnavailableCanonicalApplicabilityControlledSelection,
     UnavailableScopedProfessionalArtifactCorrelationAdapter,
@@ -195,6 +230,18 @@ export interface CanonicalHostModuleOptions {
     {
       provide: CANONICAL_APPLICABILITY_CONTROLLED_SELECTION,
       useExisting: UnavailableCanonicalApplicabilityControlledSelection,
+    },
+    {
+      provide: CONFIGURATION_EVIDENCE_STORE,
+      useExisting: MiaodaConfigurationEvidenceStore,
+    },
+    {
+      provide: GET_INSTALLATION_EVENTS,
+      useClass: UnconfiguredGetInstallationEventsAdapter,
+    },
+    {
+      provide: CANONICAL_HOST_CLOCK,
+      useExisting: SystemCanonicalHostClockAdapter,
     },
   ],
 })
@@ -266,6 +313,12 @@ export class CanonicalHostModule {
       UnavailableCanonicalApplicabilityControlledSelection,
       'CANONICAL_APPLICABILITY_CONTROLLED_SELECTION_PROVIDER_INVALID',
     );
+    const installationEventsProvider = resolveProvider(
+      options.installationEventsProvider,
+      GET_INSTALLATION_EVENTS,
+      UnconfiguredGetInstallationEventsAdapter,
+      'GET_INSTALLATION_EVENTS_PROVIDER_INVALID',
+    );
     const binding: CanonicalHostBindingState = {
       mode:
         options.workItemRegistrarProvider &&
@@ -296,6 +349,7 @@ export class CanonicalHostModule {
         WorkItemRuntimeModule,
         IdentityModule,
         ReviewPersistenceModule,
+        BatchApplicabilityModule,
         ...(options.imports ?? []),
       ],
       controllers: [
@@ -310,6 +364,10 @@ export class CanonicalHostModule {
         CanonicalHostOverallRegenerationController,
         CanonicalRuleSetLifecycleController,
         EngineeringMatterController,
+        CanonicalHostAeoEditingController,
+        CanonicalTranslationKnowledgeController,
+        BatchApplicabilityController,
+        ConfigurationEvidenceController,
       ],
       providers: [
         workItemRegistrarProvider,
@@ -323,6 +381,7 @@ export class CanonicalHostModule {
         serviceScopeAuthorizationProvider,
         professionalArtifactCorrelationProvider,
         applicabilityControlledSelectionProvider,
+        installationEventsProvider,
         {
           provide: CANONICAL_HOST_CLOCK,
           useClass: SystemCanonicalHostClockAdapter,
@@ -340,6 +399,8 @@ export class CanonicalHostModule {
         CanonicalHostOpenClawOverallService,
         CanonicalHostOverallRegenerationService,
         CanonicalHostOpenClawTranslationService,
+        CanonicalTranslationKnowledgeProductService,
+        MiaodaTranslationKnowledgeProductStore,
         CanonicalHostOpenClawApplicabilityService,
         CanonicalHostOpenClawAttemptStatusService,
         CanonicalHostApplicabilityInputProducer,
@@ -363,6 +424,16 @@ export class CanonicalHostModule {
         CanonicalRuleSetLifecycleService,
         EngineeringMatterRepository,
         EngineeringMatterService,
+        CanonicalHostAeoEditingService,
+        BatchApplicabilityHostService,
+        BatchApplicabilityRepository,
+        BatchApplicabilitySourceReader,
+        ConfigurationEvidenceService,
+        MiaodaConfigurationEvidenceStore,
+        {
+          provide: CONFIGURATION_EVIDENCE_STORE,
+          useExisting: MiaodaConfigurationEvidenceStore,
+        },
         {
           provide: CANONICAL_SERVICE_SCOPE_AUTHORIZATION,
           useExisting: CANONICAL_EXECUTOR_SERVICE_SCOPE_AUTHORIZATION,
@@ -376,6 +447,7 @@ export class CanonicalHostModule {
         CanonicalHostEngineerReviewService,
         CanonicalHostLibraryIndexService,
         CanonicalHostAeoService,
+        CanonicalHostAeoEditingService,
         CanonicalHostApplicabilityInputProducer,
         CanonicalRuleSetLifecycleService,
         CANONICAL_HOST_BINDING,

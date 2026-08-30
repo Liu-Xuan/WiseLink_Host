@@ -109,6 +109,14 @@ import {
   CanonicalHostModule,
   type CanonicalHostModuleOptions,
 } from '../../server/modules/canonical-host/canonical-host.module';
+import { ConfigurationEvidenceController } from '../../server/modules/canonical-host/configuration-evidence/configuration-evidence.controller';
+import { CONFIGURATION_EVIDENCE_STORE } from '../../server/modules/canonical-host/configuration-evidence/configuration-evidence.persistence.types';
+import { MiaodaConfigurationEvidenceStore } from '../../server/modules/canonical-host/configuration-evidence/configuration-evidence.repository';
+import { ConfigurationEvidenceService } from '../../server/modules/canonical-host/configuration-evidence/configuration-evidence.service';
+import {
+  GET_INSTALLATION_EVENTS,
+  UnconfiguredGetInstallationEventsAdapter,
+} from '../../server/modules/canonical-host/configuration-evidence/get-installation-events.port';
 
 describe('CanonicalHostModule service-scope wiring', () => {
   it('aliases the canonical scope to the configured executor scope instance', async () => {
@@ -160,6 +168,42 @@ describe('CanonicalHostModule service-scope wiring', () => {
     });
 
     await moduleRef.close();
+  });
+
+  it('wires only the supplied installation-event port into the Host evidence chain', () => {
+    const installationEvents = {
+      configured: true,
+      getInstallationEvents: jest.fn(),
+    };
+    const suppliedProvider: Provider = {
+      provide: GET_INSTALLATION_EVENTS,
+      useValue: installationEvents,
+    };
+    const configured = CanonicalHostModule.forRoot({
+      installationEventsProvider: suppliedProvider,
+    });
+    const fallback = CanonicalHostModule.forRoot();
+
+    expect(configured.controllers).toContain(ConfigurationEvidenceController);
+    expect(configured.providers).toEqual(
+      expect.arrayContaining([
+        suppliedProvider,
+        ConfigurationEvidenceService,
+        MiaodaConfigurationEvidenceStore,
+        {
+          provide: CONFIGURATION_EVIDENCE_STORE,
+          useExisting: MiaodaConfigurationEvidenceStore,
+        },
+      ]),
+    );
+    expect(fallback.providers).toEqual(
+      expect.arrayContaining([
+        {
+          provide: GET_INSTALLATION_EVENTS,
+          useClass: UnconfiguredGetInstallationEventsAdapter,
+        },
+      ]),
+    );
   });
 });
 

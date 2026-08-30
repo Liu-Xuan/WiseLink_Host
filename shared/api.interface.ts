@@ -605,6 +605,109 @@ export interface CanonicalTranslationCandidateProjection {
   artifact: UnifiedPackageArtifactDescriptor;
 }
 
+export type CanonicalTranslationKnowledgeFeedbackDecision =
+  | 'ADOPTED_AS_CANDIDATE_SUGGESTION'
+  | 'REJECTED';
+
+export interface CanonicalTranslationKnowledgeCandidateSnapshot {
+  schemaVersion: 'wiselink.3_1.translation_knowledge_candidate_snapshot.v1';
+  assetId: string;
+  workItemId: string;
+  snapshotWorkItemRevision: number;
+  governanceRevision: number;
+  knowledgeKind: 'TRANSLATION_MEMORY';
+  usagePolicy: 'SUGGESTION_ONLY';
+  unit: {
+    unitId: string;
+    kind: string;
+    sourceText: string;
+    translatedText: string;
+    sourceRefIds: string[];
+    engineerRevisionId: string | null;
+  };
+  ruleSet: {
+    ruleSetId: string;
+    ruleSetVersion: string;
+    sourceLocale: string;
+    targetLocale: string;
+  };
+  validFrom: string;
+  expiresAt: string;
+  confirmationStatus:
+    | 'PENDING_HUMAN_CONFIRMATION'
+    | 'HUMAN_CONFIRMED'
+    | 'HUMAN_REJECTED';
+  validityStatus: 'NOT_YET_VALID' | 'CURRENT' | 'EXPIRED' | 'INVALIDATED';
+  sourceCurrentness: 'CURRENT' | 'STALE';
+  retrievalEligibility: 'SUGGESTION_ONLY' | 'BLOCKED';
+  latestFeedback: {
+    decision: CanonicalTranslationKnowledgeFeedbackDecision;
+    comment: string;
+    occurredAt: string;
+  } | null;
+  authority: {
+    candidateOnly: true;
+    activeTerminology: false;
+    formalKnowledge: false;
+    companyProcedureActivated: false;
+    engineeringApproved: false;
+    productionPublished: false;
+    translationCurrentChanged: false;
+    frequencyCreatesAuthority: false;
+  };
+}
+
+export interface CreateCanonicalTranslationKnowledgeCandidatesRequest {
+  requestId: string;
+  expectedWorkItemRevision: number;
+  validFrom: string;
+  expiresAt: string;
+}
+
+export interface CreateCanonicalTranslationKnowledgeCandidatesResponse {
+  schemaVersion: 'wiselink.3_1.translation_knowledge_import_receipt.v1';
+  status: 'CANDIDATE_SNAPSHOTS_READY';
+  requestId: string;
+  workItemId: string;
+  snapshotWorkItemRevision: number;
+  createdCount: number;
+  reusedCount: number;
+  replayed: boolean;
+  candidates: CanonicalTranslationKnowledgeCandidateSnapshot[];
+  authority: CanonicalTranslationKnowledgeCandidateSnapshot['authority'];
+}
+
+export interface RecordCanonicalTranslationKnowledgeFeedbackRequest {
+  requestId: string;
+  expectedWorkItemRevision: number;
+  expectedGovernanceRevision: number;
+  decision: CanonicalTranslationKnowledgeFeedbackDecision;
+  comment: string;
+}
+
+export interface CanonicalTranslationKnowledgeAdoptionReceipt {
+  schemaVersion: 'wiselink.3_1.translation_knowledge_adoption_receipt.v1';
+  receiptId: string;
+  requestId: string;
+  workItemId: string;
+  assetId: string;
+  snapshotWorkItemRevision: number;
+  expectedGovernanceRevision: number;
+  resultingGovernanceRevision: number;
+  decision: CanonicalTranslationKnowledgeFeedbackDecision;
+  comment: string;
+  occurredAt: string;
+  replayed: boolean;
+  learningEventRecorded: true;
+  candidateSuggestionAdopted: boolean;
+  authority: CanonicalTranslationKnowledgeCandidateSnapshot['authority'];
+}
+
+export interface RecordCanonicalTranslationKnowledgeFeedbackResponse {
+  receipt: CanonicalTranslationKnowledgeAdoptionReceipt;
+  candidate: CanonicalTranslationKnowledgeCandidateSnapshot;
+}
+
 export interface CanonicalApplicabilityFleetSourceRef {
   sourceTable: string;
   sourceRecordId: string;
@@ -1304,12 +1407,268 @@ export interface CanonicalAeoCandidateRunResponse {
   };
 }
 
+export interface CanonicalAeoEditingSourceRef {
+  sourceId: string;
+  locator: string;
+}
+
+export interface CanonicalAeoEditingBoundSourceArtifact {
+  sourceId: string;
+  documentVersionId: string;
+  sourceArtifactId: string;
+  artifactSha256: string;
+  byteLength: number;
+  mediaType: string;
+}
+
+/**
+ * Host-owned input pointer for the isolated AEO editing-knowledge adapter.
+ * Requests cannot supply producer/manifest bytes or replace these bindings.
+ */
+export interface CanonicalAeoEditingInputProjection {
+  schemaVersion: 'wiselink.3_1.aeo_editing_input.v0.candidate.1';
+  status: 'HOST_INPUT_READY';
+  inputKind: 'ACTION_UNITS' | 'ROUTINE_SERIES_PATTERN';
+  inputRevision: number;
+  workItemId: string;
+  documentVersionId: string;
+  sourcePackageId: string;
+  sourcePackageArtifactSha256: string;
+  currentProducerArtifact: UnifiedPackageArtifactDescriptor;
+  sourceManifestArtifact: UnifiedPackageArtifactDescriptor;
+  sourceArtifacts: CanonicalAeoEditingBoundSourceArtifact[];
+  selectedUnitIds: string[];
+  currentSourceRefs: CanonicalAeoEditingSourceRef[];
+  draftTitle: string;
+  authority: 'HOST_OWNED_INPUT_ACTUAL_BYTES_REVALIDATED_ON_USE';
+}
+
+export interface CanonicalAeoEditingBlockingGap {
+  code:
+    | 'AEO_MISSING_INPUT'
+    | 'AEO_SOURCE_CONFLICT'
+    | 'AEO_TYPED_FIGURE_OR_TABLE_NOT_PROJECTED'
+    | 'AEO_SPECIALIZED_CONTROL_REQUIRES_ENGINEER_REVIEW'
+    | 'AEO_ROUTINE_SERIES_PATTERN_NOT_GENERIC';
+  message: string;
+  sourceRefs: CanonicalAeoEditingBrowserSourceRef[];
+  blocking: true;
+}
+
+export interface CanonicalAeoEditingDraftProjection {
+  schemaVersion: 'wiselink.3_1.aeo_editing_draft_projection.v0.candidate.1';
+  status: 'CANDIDATE_ONLY';
+  revision: number;
+  generationRevision: number;
+  basedOnInputRevision: number;
+  currentProducerArtifactSha256: string;
+  sourceManifestArtifactSha256: string;
+  suggestionCount: number;
+  blockCount: number;
+  blockingGapCount: number;
+  feedbackCount: number;
+  doNotLearnFeedbackCount: number;
+  artifact: UnifiedPackageArtifactDescriptor;
+  actionAttemptId: string;
+  adoptionDecisions: [];
+  automaticallyAdopted: false;
+  engineeringApproved: false;
+  productionPublished: false;
+  currentChanged: false;
+}
+
+export interface CanonicalAeoEditingDraftCreateRequest {
+  expectedRevision: number;
+}
+
+export interface CanonicalAeoEditingBrowserSourceRef {
+  ref: string;
+  sourceLabel: string;
+  locationLabel: string;
+}
+
+export interface CanonicalAeoEditingDraftFeedbackRequest {
+  expectedRevision: number;
+  feedbackRef: string;
+  suggestionRef: string;
+  expectedGenerationRevision: number;
+  decision: 'ACCEPT' | 'MODIFY' | 'REJECT';
+  note: string;
+  revisedBodyZh?: string | null;
+  revisedBodyEn?: string | null;
+  revisionSourceRefs?: string[];
+  semanticField: 'SUGGESTION' | 'BODY' | 'SOURCE_BINDING';
+  reasonCode:
+    | 'SOURCE_MISMATCH'
+    | 'APPLICABILITY'
+    | 'COMPANY_PROCESS'
+    | 'EXECUTABILITY'
+    | 'SAFETY'
+    | 'DUPLICATE'
+    | 'SUPERSEDED'
+    | 'TERMINOLOGY'
+    | 'LAYOUT'
+    | 'ROLE'
+    | 'TEST_OR_ACCEPTANCE'
+    | 'RESTORATION'
+    | 'OTHER';
+  learningDisposition:
+    | 'THIS_DRAFT_ONLY'
+    | 'SERIES_PATTERN_CANDIDATE'
+    | 'CATEGORY_PATTERN_CANDIDATE'
+    | 'DO_NOT_LEARN';
+}
+
+export interface CanonicalAeoEditingDraftReadModel {
+  schemaVersion: 'wiselink.3_1.aeo_editing_draft_read_model.v0.candidate.3';
+  status: 'CANDIDATE_ONLY';
+  workItemRevision: number;
+  projection: {
+    status: 'CANDIDATE_ONLY';
+    revision: number;
+    generationRevision: number;
+    basedOnInputRevision: number;
+    suggestionCount: number;
+    blockCount: number;
+    blockingGapCount: number;
+    feedbackCount: number;
+    supersededFeedbackCount: number;
+    doNotLearnFeedbackCount: number;
+    adoptionDecisions: [];
+    automaticallyAdopted: false;
+    engineeringApproved: false;
+    productionPublished: false;
+    currentChanged: false;
+  };
+  title: string;
+  generationRevision: number;
+  sources: Array<{
+    sourceRef: string;
+    sourceLabel: string;
+    roleLabel: 'PRIMARY AEO SOURCE' | 'SUPPORTING ENGINEERING SOURCE';
+  }>;
+  currentSourceRefs: CanonicalAeoEditingBrowserSourceRef[];
+  suggestions: Array<{
+    suggestionRef: string;
+    unitLabel: string;
+    section: string;
+    kind: 'APPLICABLE_TEMPLATE_CANDIDATE' | 'COMPANY_STEP_CANDIDATE';
+    bodyZh: string | null;
+    bodyEn: string | null;
+    parameters: unknown[];
+    conditions: unknown[];
+    conditionSourceRefs: CanonicalAeoEditingBrowserSourceRef[];
+    dependencies: unknown[];
+    branches: Array<{
+      when: string;
+      then: string;
+      sourceRefs: CanonicalAeoEditingBrowserSourceRef[];
+    }>;
+    performerRoles: string[];
+    inspectorRoles: string[];
+    signatureGranularity: string | null;
+    verifications: unknown[];
+    closeout: unknown[];
+    safetyNotes: unknown[];
+    inspectionDetail: {
+      area: Record<string, unknown>;
+      method: Record<string, unknown>;
+      referenceCondition: Record<string, unknown>;
+      thresholdsAndLimits: unknown[];
+      findingClassification: Record<string, unknown>;
+      repeatInterval: Record<string, unknown>;
+      ndt: Record<string, unknown>;
+      recording: Record<string, unknown>;
+      explicitAbsences: string[];
+    } | null;
+    sourceRefs: CanonicalAeoEditingBrowserSourceRef[];
+    reviewStatus:
+      | 'PENDING_ENGINEER_REVIEW'
+      | 'ACCEPTED_CANDIDATE'
+      | 'MODIFIED_CANDIDATE'
+      | 'REJECTED_CANDIDATE';
+  }>;
+  blocks: Array<{
+    blockRef: string;
+    sequence: number;
+    blockType: 'PARAGRAPH';
+    originType: import('./aeo-editor').AeoContentOriginType;
+    bodyZh: string | null;
+    bodyEn: string | null;
+    sourceRefs: CanonicalAeoEditingBrowserSourceRef[];
+    unresolved: Array<{
+      code: string;
+      message: string;
+      severity: 'INFO' | 'WARNING' | 'BLOCKING';
+      blocksCheckpoint: boolean;
+    }>;
+  }>;
+  blockingGaps: CanonicalAeoEditingBlockingGap[];
+  feedback: Array<{
+    feedbackRef: string;
+    suggestionRef: string;
+    targetGenerationRevision: number;
+    decision: 'ACCEPT' | 'MODIFY' | 'REJECT';
+    note: string;
+    reasonCode: CanonicalAeoEditingDraftFeedbackRequest['reasonCode'];
+    learningDisposition: CanonicalAeoEditingDraftFeedbackRequest['learningDisposition'];
+    sourceRefs: CanonicalAeoEditingBrowserSourceRef[];
+  }>;
+  supersededFeedback: Array<{
+    feedbackRef: string;
+    suggestionRef: string;
+    unitLabel: string;
+    decision: 'ACCEPT' | 'MODIFY' | 'REJECT';
+    targetGenerationRevision: number;
+    activeThroughGenerationRevision: number;
+    supersededAtGenerationRevision: number;
+    reason: 'SELECTED_UNIT_REGENERATED';
+    note: string;
+    learningDisposition: CanonicalAeoEditingDraftFeedbackRequest['learningDisposition'];
+    sourceRefs: CanonicalAeoEditingBrowserSourceRef[];
+  }>;
+  learning: {
+    eligibleFeedbackCount: number;
+    excludedDoNotLearnFeedbackRefs: string[];
+    boundary: 'FEEDBACK_INPUT_NOT_AUTOMATIC_RULE_NOT_AUTHORITY';
+  };
+  adoptionDecisions: [];
+  nonClaims: string[];
+  authority: {
+    candidateOnly: true;
+    automaticallyAdopted: false;
+    engineeringApproved: false;
+    signed: false;
+    sent: false;
+    productionPublished: false;
+    currentChanged: false;
+  };
+}
+
 export interface CanonicalParseAuthorizationProjection {
   action: 'PARSE_PDF';
   actorFingerprint: string;
   decisionId: string;
   decisionHash: string;
   permissionSnapshotVersion: string;
+}
+
+export interface CanonicalConfigurationEvidenceCurrentProjection {
+  schemaVersion: 'wiselink.3_1.configuration_evidence_work_item_current.v1';
+  snapshotId: string;
+  configurationRevision: number;
+  aircraftAssetId: string;
+  assessmentAsOf: string;
+  sourceCompleteness: 'COMPLETE' | 'PARTIAL' | 'UNKNOWN' | 'CONFLICT';
+  truthSummary: {
+    trueCount: number;
+    falseCount: number;
+    unknownCount: number;
+    conflictCount: number;
+  };
+  recordedAt: string;
+  authority: 'WORK_ITEM_CURRENT_EVIDENCE_VIEW';
+  globalAircraftCurrentChanged: false;
 }
 
 export interface CanonicalWorkItemProjection {
@@ -1330,10 +1689,22 @@ export interface CanonicalWorkItemProjection {
   assessment?: CanonicalAssessmentCandidateProjection | null;
   integratedAssessment?: CanonicalIntegratedAssessmentProjection | null;
   overallRegenerationRequest?: CanonicalOverallRegenerationRequestProjection | null;
+  configurationEvidenceCurrent?: CanonicalConfigurationEvidenceCurrentProjection | null;
   aeo?: CanonicalAeoCandidateProjection | null;
+  aeoEditingInput?: CanonicalAeoEditingInputProjection | null;
+  /** Server-only staged current input; never returned by an AEO browser DTO. */
+  aeoEditingPendingInput?: CanonicalAeoEditingInputProjection | null;
+  aeoEditingDraft?: CanonicalAeoEditingDraftProjection | null;
   failure: CanonicalWorkItemFailureProjection | null;
   recordingFailure: CanonicalWorkItemRecordingFailureProjection | null;
 }
+
+export type {
+  BatchApplicabilityConfirmationReceiptReadModel,
+  BatchApplicabilityRunReadModel,
+  ConfirmBatchApplicabilityClusterRequest,
+  CreateBatchApplicabilityRunRequest,
+} from './batch-applicability.interface';
 
 export interface CanonicalPdfVerticalRunRequest {
   schemaVersion: 'wiselink.3_1.canonical_pdf_vertical_request.v0.candidate';

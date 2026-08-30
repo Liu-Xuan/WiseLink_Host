@@ -13,6 +13,7 @@ import {
   MiaodaWorkItemRepository,
   type WorkItemAuthorizationBinding,
 } from '../../server/modules/work-item/miaoda-work-item.repository';
+import { MiaodaDocumentVersionSourceResolver } from '../../server/modules/work-item/miaoda-document-version-source.resolver';
 import {
   UnavailableAilyObjectAccessAdapter,
   UnavailableServiceObjectAccessAdapter,
@@ -248,6 +249,41 @@ describe('hosted native browser creator-only access', () => {
     });
   });
 
+  it.each([
+    'READ_CONFIGURATION_EVIDENCE' as const,
+    'REFRESH_CONFIGURATION_EVIDENCE' as const,
+  ])('keeps %s on the same fresh owner relation', async (action) => {
+    const repository = productionRepository();
+    const result = await productionRouter(repository).freshRead({
+      actor: hostedMiaodaActor(),
+      action,
+      accessRoot: { kind: 'WORK_ITEM', id: 'WI1' },
+    });
+
+    expect(result).toMatchObject({
+      allowed: true,
+      action,
+      workItemId: 'WI1',
+      workItemRevision: 11,
+      tenantId: 'tenant-1',
+      actorUserId: 'user-a',
+      ownerFact: {
+        isOwner: true,
+        source: 'HOST_WORK_ITEM_REQUESTED_BY',
+      },
+      actionPolicy: {
+        action,
+        objectRelation: 'OWNER',
+        requiredPlatformRoles: [],
+      },
+    });
+    expect(repository.loadAuthorizationBinding).toHaveBeenCalledWith({
+      workItemId: 'WI1',
+      tenantId: 'tenant-1',
+      actorUserId: 'user-a',
+    });
+  });
+
   it('does not promote an SDK-parsed header into the required hosted actor decision', async () => {
     const request = {
       headers: gatewayIdentityHeader('user-a', 'tenant-1'),
@@ -284,6 +320,8 @@ describe('WorkItemRuntimeModule object access routing', () => {
     })
       .overrideProvider(MiaodaWorkItemRepository)
       .useValue(repository)
+      .overrideProvider(MiaodaDocumentVersionSourceResolver)
+      .useValue({})
       .compile();
     const port = moduleRef.get<CanonicalObjectAccessPort>(
       CANONICAL_OBJECT_ACCESS,

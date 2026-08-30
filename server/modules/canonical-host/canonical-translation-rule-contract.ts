@@ -583,7 +583,7 @@ function numberMultiset(tokens: readonly string[]): Map<string, number> {
  * Exact field-by-field identity comparison of the existing private binding
  * type. This is the ONLY currentness check: no hash, no second fence.
  */
-function bindingsIdentical(
+export function translationConsumptionBindingsIdentical(
   a: CanonicalTranslationConsumptionBinding,
   b: CanonicalTranslationConsumptionBinding,
 ): boolean {
@@ -716,7 +716,10 @@ export function validateTranslationCandidate(
         'task-start or validation-time currentness binding is missing/invalid (fail closed)',
     });
   } else if (
-    !bindingsIdentical(input.taskStartBinding, input.validationTimeBinding)
+    !translationConsumptionBindingsIdentical(
+      input.taskStartBinding,
+      input.validationTimeBinding,
+    )
   ) {
     const drifted = bindingDriftFields(
       input.taskStartBinding,
