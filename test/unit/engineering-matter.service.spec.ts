@@ -95,7 +95,6 @@ describe('EngineeringMatterService', () => {
             document: expect.objectContaining({ documentCode: '777-FTD' }),
             sourceNavigation: {
               status: 'AVAILABLE',
-              packageId: 'PKG-WI-FTD',
               sourceRefCount: 239,
               structuredContentPath:
                 '/api/canonical-host/work-items/WI-FTD/structured-content',
@@ -110,7 +109,6 @@ describe('EngineeringMatterService', () => {
             document: expect.objectContaining({ documentCode: '737-SB' }),
             sourceNavigation: {
               status: 'AVAILABLE',
-              packageId: 'PKG-WI-SB',
               sourceRefCount: 76,
               structuredContentPath:
                 '/api/canonical-host/work-items/WI-SB/structured-content',
@@ -138,13 +136,20 @@ describe('EngineeringMatterService', () => {
     for (const forbidden of [
       'tenant-A',
       'actor-A',
+      'tenantId',
+      'actorUserId',
+      'packageId',
       'artifactRef',
+      'sourceArtifactId',
+      'sourceFileSha256',
+      'packageArtifactSha256',
       'bucketId',
       'filePath',
       'permissionSnapshotVersion',
     ]) {
       expect(serialized).not.toContain(forbidden);
     }
+    expect(serialized).not.toMatch(/sha256:[0-9a-f]{64}/u);
   });
 
   it('fails the whole catalog read when any linked WorkItem fresh ACL denies', async () => {
@@ -204,7 +209,7 @@ function workItem(workItemId: string) {
       revision: ftd ? 5 : 6,
       source: { documentVersionId },
       package: {
-        packageId: `PKG-${workItemId}`,
+        packageId: `urn:techpub:package:v1:sha256:${ftd ? 'a'.repeat(64) : 'b'.repeat(64)}`,
         sourceRefCount: ftd ? 239 : 76,
       },
     },

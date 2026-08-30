@@ -149,16 +149,16 @@ export class EngineeringMatterRepository {
       }
       return { snapshot: current, linked: false, replayed: true };
     }
-    if (current.currentRevisionNo !== input.expectedMatterRevision) {
-      throw matterCasConflict();
-    }
     if (
       current.links.some(
         (link: EngineeringMatterRevisionLinkSnapshot) =>
           link.workItemId === input.workItemId,
       )
     ) {
-      return { snapshot: current, linked: false, replayed: false };
+      throw matterWorkItemAlreadyLinked();
+    }
+    if (current.currentRevisionNo !== input.expectedMatterRevision) {
+      throw matterCasConflict();
     }
 
     const nextRevisionNo: number = current.currentRevisionNo + 1;
@@ -433,6 +433,19 @@ function matterCasConflict(): Error & { code: string; statusCode: number } {
     code: 'ENGINEERING_MATTER_CAS_CONFLICT',
     statusCode: 409,
   });
+}
+
+function matterWorkItemAlreadyLinked(): Error & {
+  code: string;
+  statusCode: number;
+} {
+  return Object.assign(
+    new Error('WorkItem is already linked to this Engineering Matter.'),
+    {
+      code: 'ENGINEERING_MATTER_WORK_ITEM_ALREADY_LINKED',
+      statusCode: 409,
+    },
+  );
 }
 
 function matterRequestReplayMismatch(): Error & {

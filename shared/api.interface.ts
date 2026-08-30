@@ -1556,13 +1556,11 @@ export interface EngineeringMatterCatalogEntry {
   sourceNavigation:
     | {
         status: 'AVAILABLE';
-        packageId: string;
         sourceRefCount: number;
         structuredContentPath: string;
       }
     | {
         status: 'NOT_PARSED';
-        packageId: null;
         sourceRefCount: 0;
         structuredContentPath: null;
       };
@@ -1570,7 +1568,8 @@ export interface EngineeringMatterCatalogEntry {
 
 /**
  * Browser-safe cross-WorkItem catalog. It contains no tenant, actor, artifact
- * locator, file hash, permission fingerprint, or server-side session value.
+ * locator, content-addressed package id, file hash, permission fingerprint, or
+ * server-side session value.
  */
 export interface EngineeringMatterReadModel {
   schemaVersion: 'wiselink.3_1.engineering_matter_catalog.v1';

@@ -245,7 +245,6 @@ function catalogEntry(
     projection?.package
       ? {
           status: 'AVAILABLE',
-          packageId: projection.package.packageId,
           sourceRefCount: projection.package.sourceRefCount,
           structuredContentPath: `/api/canonical-host/work-items/${encodeURIComponent(
             row.workItemId,
@@ -253,7 +252,6 @@ function catalogEntry(
         }
       : {
           status: 'NOT_PARSED',
-          packageId: null,
           sourceRefCount: 0,
           structuredContentPath: null,
         };

@@ -33,6 +33,7 @@ const {
 const databaseUrl = process.env.ENGINEERING_MATTER_TEST_DATABASE_URL;
 const FTD_WORK_ITEM_ID = 'WI-DM-FTD-FD88DCB9CF64CF3B';
 const SB_WORK_ITEM_ID = 'WI-LOCAL-737-34-3830-ASSESSMENT';
+const REQUEST_REUSE_WORK_ITEM_ID = 'WI-DM-FTD-FD88DCB9CF64CF3B-RERUN';
 
 test(
   'R09 Engineering Matter creates, revises and reads two real-document WorkItems with fresh ACL/currentness',
@@ -123,7 +124,10 @@ test(
         assert.equal(linkReplay.replayed, true);
         assert.equal(linkReplay.matter.currentRevision.revisionNo, 2);
 
-        await assertLinkReplayAndCasConflicts(owner, created.matter.matterId);
+        await assertLinkReplayMismatchAndCasConflict(
+          owner,
+          created.matter.matterId,
+        );
         await advanceOwnerWorkItemCurrent(sql);
         const fresh = await owner.service.read(
           created.matter.matterId,
@@ -143,6 +147,11 @@ test(
         assertBrowserSafe(fresh);
 
         await assertUnauthorizedLinkRollsBack(
+          sql,
+          owner,
+          created.matter.matterId,
+        );
+        await assertAlreadyLinkedRequestReuse(
           sql,
           owner,
           created.matter.matterId,
@@ -364,6 +373,27 @@ async function seedRealDocumentWorkItems(sql, fixtures) {
       work_item_id, tenant_id, action_type, document_id,
       document_version_id, source_artifact_id, source_file_sha256,
       source_byte_length, normalized_family, request_id, status, revision,
+      projection_json, package_id, requested_by_user_id, run_key
+    )
+    SELECT
+      ${REQUEST_REUSE_WORK_ITEM_ID}, tenant_id, action_type, document_id,
+      document_version_id, source_artifact_id, source_file_sha256,
+      source_byte_length, normalized_family, 'REQ-FTD-REAL-RERUN', status,
+      revision,
+      jsonb_set(
+        projection_json::jsonb,
+        '{workItemId}',
+        to_jsonb(${REQUEST_REUSE_WORK_ITEM_ID}::text)
+      )::text,
+      package_id, requested_by_user_id, 'matter-request-regression'
+    FROM work_item
+    WHERE work_item_id = ${FTD_WORK_ITEM_ID}
+  `;
+  await sql`
+    INSERT INTO work_item (
+      work_item_id, tenant_id, action_type, document_id,
+      document_version_id, source_artifact_id, source_file_sha256,
+      source_byte_length, normalized_family, request_id, status, revision,
       requested_by_user_id
     ) VALUES (
       'WI-OTHER-ACTOR', 'tenant-A', 'PARSE_PDF', 'document_other_actor',
@@ -555,7 +585,7 @@ function actor(userId, tenantId = 'tenant-A') {
   };
 }
 
-async function assertLinkReplayAndCasConflicts(owner, matterId) {
+async function assertLinkReplayMismatchAndCasConflict(owner, matterId) {
   await assert.rejects(
     owner.service.linkWorkItem(
       matterId,
@@ -575,12 +605,84 @@ async function assertLinkReplayAndCasConflicts(owner, matterId) {
       {
         requestId: 'REQ-MATTER-STALE-CAS',
         expectedMatterRevision: 1,
-        workItemId: SB_WORK_ITEM_ID,
+        workItemId: REQUEST_REUSE_WORK_ITEM_ID,
       },
       owner.actor,
     ),
     (error) => error?.code === 'ENGINEERING_MATTER_CAS_CONFLICT',
   );
+}
+
+async function assertAlreadyLinkedRequestReuse(sql, owner, matterId) {
+  const requestId = 'REQ-MATTER-ALREADY-LINKED-THEN-NEW';
+  await assert.rejects(
+    owner.service.linkWorkItem(
+      matterId,
+      {
+        requestId,
+        expectedMatterRevision: 2,
+        workItemId: SB_WORK_ITEM_ID,
+      },
+      owner.actor,
+    ),
+    (error) =>
+      error?.code === 'ENGINEERING_MATTER_WORK_ITEM_ALREADY_LINKED' &&
+      error?.statusCode === 409,
+  );
+  const [failedReadback] = await sql`
+    SELECT
+      matter.current_revision_no,
+      count(revision.matter_revision_id)::int AS request_revision_count
+    FROM engineering_matter AS matter
+    LEFT JOIN engineering_matter_revision AS revision
+      ON revision.matter_id = matter.matter_id
+      AND revision.request_id = ${requestId}
+    WHERE matter.matter_id = ${matterId}
+    GROUP BY matter.current_revision_no
+  `;
+  assert.deepEqual(failedReadback, {
+    current_revision_no: 2,
+    request_revision_count: 0,
+  });
+
+  const input = {
+    requestId,
+    expectedMatterRevision: 2,
+    workItemId: REQUEST_REUSE_WORK_ITEM_ID,
+    changeSummary: 'Link the request-id regression WorkItem.',
+  };
+  const linked = await owner.service.linkWorkItem(matterId, input, owner.actor);
+  assert.equal(linked.linked, true);
+  assert.equal(linked.replayed, false);
+  assert.equal(linked.matter.currentRevision.revisionNo, 3);
+
+  const replayed = await owner.service.linkWorkItem(
+    matterId,
+    input,
+    owner.actor,
+  );
+  assert.equal(replayed.linked, false);
+  assert.equal(replayed.replayed, true);
+  assert.equal(replayed.matter.currentRevision.revisionNo, 3);
+
+  await assert.rejects(
+    owner.service.linkWorkItem(
+      matterId,
+      { ...input, changeSummary: 'Changed after successful request.' },
+      owner.actor,
+    ),
+    (error) => error?.code === 'ENGINEERING_MATTER_REQUEST_REPLAY_MISMATCH',
+  );
+  const [successfulReadback] = await sql`
+    SELECT revision_no, changed_work_item_id, change_summary
+    FROM engineering_matter_revision
+    WHERE matter_id = ${matterId} AND request_id = ${requestId}
+  `;
+  assert.deepEqual(successfulReadback, {
+    revision_no: 3,
+    changed_work_item_id: REQUEST_REUSE_WORK_ITEM_ID,
+    change_summary: input.changeSummary,
+  });
 }
 
 async function advanceOwnerWorkItemCurrent(sql) {
@@ -749,13 +851,21 @@ function assertBrowserSafe(readModel) {
   for (const forbidden of [
     'tenant-A',
     'actor-A',
+    'tenantId',
+    'actorUserId',
+    'packageId',
     'artifactRef',
+    'artifactSha256',
+    'sourceArtifactId',
+    'sourceFileSha256',
+    'packageArtifactSha256',
     'bucketId',
     'filePath',
     'permissionSnapshotVersion',
   ]) {
     assert.equal(serialized.includes(forbidden), false, forbidden);
   }
+  assert.equal(/sha256:[0-9a-f]{64}/u.test(serialized), false, 'sha256');
 }
 
 async function assertMatterHistory(sql) {
@@ -776,6 +886,11 @@ async function assertMatterHistory(sql) {
         change_kind: 'WORK_ITEM_LINKED',
         changed_work_item_id: SB_WORK_ITEM_ID,
       },
+      {
+        revision_no: 3,
+        change_kind: 'WORK_ITEM_LINKED',
+        changed_work_item_id: REQUEST_REUSE_WORK_ITEM_ID,
+      },
     ],
   );
   const snapshots = await sql`
@@ -790,6 +905,7 @@ async function assertMatterHistory(sql) {
     [
       { revision_no: 1, linked_work_item_count: 1 },
       { revision_no: 2, linked_work_item_count: 2 },
+      { revision_no: 3, linked_work_item_count: 3 },
     ],
   );
 }
