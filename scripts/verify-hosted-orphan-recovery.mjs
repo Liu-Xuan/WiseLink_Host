@@ -4,17 +4,18 @@ import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+import {
+  LocalMiaodaFileServiceDouble,
+  resolveRealFtdFixturePath,
+} from '../test/support/document-management-hosted-test-support.mjs';
+
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const sourceRoot = resolve(root, '../../../..');
-const ownerRoot = resolve(
-  root,
-  '../../../../../../CodexHome/worktrees/d415/WiseLink/private/runtime/miaoda-app-repos/document-management-app-q2d',
-);
-const pdfPath = resolve(
-  sourceRoot,
-  'Docs/uploads/FTD/777-FTD-31-21002_Doc_07042025.pdf',
-);
-const [{ MiaodaFileServiceArtifactStore }, { DocumentManagementHostedCore }, catalogModule, ownerTesting] =
+const pdfPath = await resolveRealFtdFixturePath({
+  repoRoot: root,
+  filename: '777-FTD-31-21002_Doc_07042025.pdf',
+  explicitFile: process.env.WL31_REAL_FTD_0704_FIXTURE?.trim() || null,
+});
+const [{ MiaodaFileServiceArtifactStore }, { DocumentManagementHostedCore }, catalogModule] =
   await Promise.all([
     import(pathToFileURL(resolve(
       root,
@@ -28,17 +29,12 @@ const [{ MiaodaFileServiceArtifactStore }, { DocumentManagementHostedCore }, cat
       root,
       'dist/server/modules/document-management/src/hosted/nest/miaoda-hosted-document-catalog.js',
     ))),
-    import(pathToFileURL(resolve(
-      ownerRoot,
-      'src/hosted/testing/localFileServiceDouble.js',
-    ))),
   ]);
 
 const {
   classifyImmutableSourceReuseState,
   classifyIncompleteIngestionRecoveryState,
 } = catalogModule;
-const { LocalMiaodaFileServiceDouble } = ownerTesting;
 const bytes = await readFile(pdfPath);
 const sha256 = createHash('sha256').update(bytes).digest('hex');
 const bucketId = 'local-hosted-default';

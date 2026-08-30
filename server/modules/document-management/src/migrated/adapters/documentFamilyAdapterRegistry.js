@@ -315,7 +315,6 @@ function scoreAdapter(adapter = {}, { explicitFamily = '', issuerText = '', cont
   }
   let score = 0;
   let matched = false;
-  let nonFamilyMatched = false;
   let issuerMatched = false;
   let contentMatched = false;
 
@@ -328,31 +327,26 @@ function scoreAdapter(adapter = {}, { explicitFamily = '', issuerText = '', cont
   if (matchAnyToken(matchPolicy.sourceTypes || [], input.sourceType)) {
     score += 90;
     matched = true;
-    nonFamilyMatched = true;
     contentMatched = true;
   }
   if (matchAnyPattern(matchPolicy.filenamePatterns || [], normalizeString(input.filename))) {
     score += 70;
     matched = true;
-    nonFamilyMatched = true;
     contentMatched = true;
   }
   if (matchAnyPattern(matchPolicy.textPatterns || [], contextText)) {
     score += 45;
     matched = true;
-    nonFamilyMatched = true;
     contentMatched = true;
   }
   if (matchAnyPattern(matchPolicy.documentCodePatterns || [], normalizeString(input.documentCode))) {
     score += 65;
     matched = true;
-    nonFamilyMatched = true;
     contentMatched = true;
   }
   if (matchAnyPattern(matchPolicy.docFamilyPatterns || [], contextText)) {
     score += 35;
     matched = true;
-    nonFamilyMatched = true;
     contentMatched = true;
   }
 
@@ -363,13 +357,12 @@ function scoreAdapter(adapter = {}, { explicitFamily = '', issuerText = '', cont
   if (issuerAliases.length > 0 && (matchAnyPattern(issuerAliases, issuerText) || matchAnyPattern(issuerAliases, contextText))) {
     score += 20;
     matched = true;
-    nonFamilyMatched = true;
     issuerMatched = true;
   }
 
   if (adapter.adapterId === DEFAULT_DOCUMENT_FAMILY_ADAPTER_ID) score += 1;
   if (!matched && adapter.adapterId !== DEFAULT_DOCUMENT_FAMILY_ADAPTER_ID) return 0;
-  if (explicitFamily && adapter.issuerPolicy?.issuer && adapter.issuerPolicy.issuer !== 'GENERIC' && !nonFamilyMatched) return 0;
+  if (explicitFamily && adapter.issuerPolicy?.issuer && adapter.issuerPolicy.issuer !== 'GENERIC' && !contentMatched) return 0;
   if (!explicitFamily && adapter.issuerPolicy?.issuer && adapter.issuerPolicy.issuer !== 'GENERIC' && !contentMatched) return 0;
   if (issuerMatched && adapter.issuerPolicy?.issuer && adapter.issuerPolicy.issuer !== 'GENERIC') score += 100;
   return score + Number(matchPolicy.priority || 0);

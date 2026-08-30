@@ -46,7 +46,7 @@ jest.mock(
 
 import type { UnifiedPackageArtifactDescriptor } from '@shared/api.interface';
 
-import { ExactFtdFrozen2PdfProducerAdapter } from '../../../server/modules/canonical-host/exact-ftd-frozen2-pdf-producer.adapter';
+import { HostNativeDocumentFamilyPdfProducerAdapter } from '../../../server/modules/canonical-host/exact-ftd-frozen2-pdf-producer.adapter';
 import { scopedProfessionalArtifactRef } from '../../../server/modules/canonical-host/scoped-professional-artifact-correlation.port';
 import { runProfessionalInputPipeline } from '../../../server/modules/professional-input/builders/professional-input-pipeline';
 import { PdfjsDistLayoutExtractor } from '../../../server/modules/professional-input/parser/pdfjs-dist-layout-extractor.adapter';
@@ -65,7 +65,7 @@ const FIXTURE_PATH = process.env.WL31_REAL_FTD_FIXTURE?.trim();
 const EXPECTED_SOURCE_SHA256 =
   'b1b5c198df4a3d42925218f48d70ddc361563c65692be35dac4c81e0d8367a3c';
 const EXPECTED_PACKAGE_ID =
-  'urn:techpub:package:v1:sha256:514ee9f631ca3a124a9c55be76ff63ac09e9875373eff57703af06a9271e9fdc';
+  'urn:techpub:package:v1:sha256:5463009173acc1cf7f944f6b4dcd4c247cc36ab0c86395530bcbcdfc99fda5f2';
 const EXPECTED_APPLICABILITY_TEXT =
   'All777modelsequippedwithAirplaneInformationManagementSystem2(AIMS-2)Platform.';
 const EXPECTED_APPLICABILITY_SOURCE_REF =
@@ -278,6 +278,7 @@ describeRealFtd('Host-native professional input with actual FTD bytes', () => {
       family: {
         familyId: 'publication_family_actual_ftd_test',
         documentFamily: 'FTD',
+        issuerAuthority: 'BOEING',
         canonicalDocumentNumber: '777-FTD-31-21002',
         currentDocumentVersionId: documentVersionId,
         currentGeneration: 1,
@@ -302,7 +303,7 @@ describeRealFtd('Host-native professional input with actual FTD bytes', () => {
     const fullValidator = createFullValidator(
       'professional-input-real-ftd-test',
     );
-    const producer = new ExactFtdFrozen2PdfProducerAdapter(
+    const producer = new HostNativeDocumentFamilyPdfProducerAdapter(
       fileService as never,
       { resolve: resolveCurrent } as never,
       fullValidator,
@@ -312,8 +313,8 @@ describeRealFtd('Host-native professional input with actual FTD bytes', () => {
           professionalBytes = Uint8Array.from(produced.bytes);
           return {
             schemaVersion:
-              'wiselink.3_1.scoped_professional_artifact_correlation.v1',
-            status: 'HOST_SCOPE_BOUND_IMMUTABLE',
+              'wiselink.3_1.scoped_professional_artifact_correlation.v1' as const,
+            status: 'HOST_SCOPE_BOUND_IMMUTABLE' as const,
             scope: {
               workItemId: correlationRequest.workItemId,
               documentVersionId: correlationRequest.documentVersionId,
@@ -385,8 +386,10 @@ describeRealFtd('Host-native professional input with actual FTD bytes', () => {
       bucketId: fileMetadata.bucketID,
       filePath,
     });
+    if (produced.kind !== 'PACKAGE') {
+      throw new Error(`${produced.failureCode}: ${produced.message}`);
+    }
     expect(produced.kind).toBe('PACKAGE');
-    if (produced.kind !== 'PACKAGE') throw new Error(produced.failureCode);
     expect(produced).toMatchObject({
       packageId: EXPECTED_PACKAGE_ID,
       contractId: 'techpub.parsed-package.v1',

@@ -14,7 +14,7 @@ second currentness selector or Reader.
 | Canonical Host commit `57016a3bfcfa42a77974ff54aa640fbaa5627135`                                                                                                                                                                                                                                                                                 | Pure layout-to-source-unit and source-unit-to-SPP implementation seed                                                                 | `pure/*.ts`, `builders/*.ts`, and `parser/pdf-layout.extractor.port.ts`, corrected to the existing frozen.2 U0 identity/hash views |
 | Canonical Host commit `2dde98cf4eca1c8754cb071e736ff8327806f1fc`                                                                                                                                                                                                                                                                                 | Mature pdfjs layout adapter/runner seed                                                                                               | `parser/pdfjs-dist-layout-extractor.adapter.ts` and `parser/pdfjs-layout-extractor.runner.mjs`                                     |
 | Mozilla `pdfjs-dist@4.10.38`, declared in this Host's `package.json`                                                                                                                                                                                                                                                                             | Official PDF decoding, objects, streams, fonts, and text-content extraction; version is beyond the CVE-2024-4367 fixed boundary       | Resolved by Node 22 through the package's ESM legacy build; no hand-written PDF syntax parser exists here                          |
-| Existing canonical Host at base `77f2a56d4eacecd31e4a501630ee5fe3985fb25a`                                                                                                                                                                                                                                                                       | FileService actual-byte readback, DocumentVersion/currentness decision, frozen.2 U0 validator, package artifact store, Unified Reader | `ExactFtdFrozen2PdfProducerAdapter` composes those existing owners with this private parser pipeline                               |
+| Existing canonical Host at base `77f2a56d4eacecd31e4a501630ee5fe3985fb25a`                                                                                                                                                                                                                                                                       | FileService actual-byte readback, DocumentVersion/currentness decision, frozen.2 U0 validator, package artifact store, Unified Reader | `HostNativeDocumentFamilyPdfProducerAdapter` composes those existing owners with this private parser pipeline                      |
 
 The staged actual FTD source is
 `777-FTD-31-21002_Doc_09262025.pdf`, canonical Host source commit
@@ -26,6 +26,9 @@ supplied to `test:professional-input:real-ftd` through
 `WL31_REAL_FTD_FIXTURE`; the binary is not duplicated in the product tree.
 
 ## Authority and non-claims
+
+The page-level OCR decision and exact production-provider blocker are recorded
+in [PDF_OCR_PRODUCTION_DECISION.md](./PDF_OCR_PRODUCTION_DECISION.md).
 
 - Output is frozen.2 `CANDIDATE_ONLY`; it is not an engineering conclusion,
   release approval, publication, compliance sign-off, or airworthiness

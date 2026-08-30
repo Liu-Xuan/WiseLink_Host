@@ -9,6 +9,7 @@ import {
   dmCurrentnessDecision,
   dmAcquisition,
   dmDocumentVersion,
+  dmIngressPreflight,
   dmPublicationFamily,
   dmSourceArtifact,
 } from '../../database/schema';
@@ -29,6 +30,7 @@ export class MiaodaDocumentVersionSourceResolver {
         family: dmPublicationFamily,
         artifact: dmSourceArtifact,
         acquisition: dmAcquisition,
+        preflight: dmIngressPreflight,
         currentness: dmCurrentnessDecision,
       })
       .from(dmDocumentVersion)
@@ -38,11 +40,25 @@ export class MiaodaDocumentVersionSourceResolver {
       )
       .innerJoin(
         dmSourceArtifact,
-        eq(dmDocumentVersion.sourceArtifactId, dmSourceArtifact.sourceArtifactId),
+        eq(
+          dmDocumentVersion.sourceArtifactId,
+          dmSourceArtifact.sourceArtifactId,
+        ),
       )
       .innerJoin(
         dmAcquisition,
         eq(dmDocumentVersion.acquisitionId, dmAcquisition.acquisitionId),
+      )
+      .innerJoin(
+        dmIngressPreflight,
+        and(
+          eq(dmIngressPreflight.acquisitionId, dmAcquisition.acquisitionId),
+          eq(
+            dmIngressPreflight.documentVersionId,
+            dmDocumentVersion.documentVersionId,
+          ),
+          eq(dmIngressPreflight.status, 'COMMITTED'),
+        ),
       )
       .leftJoin(
         dmCurrentnessDecision,

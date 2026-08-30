@@ -1,0 +1,294 @@
+{
+  "$schema": "urn:techpub:schema:v1:parsed-package:frozen-2",
+  "schemaVersion": "techpub.parsed-package.v1",
+  "contractRevision": "frozen.2",
+  "packageId": "urn:techpub:package:v1:sha256:d15bf65abd4b2df90009f51b394d5af39b481d02dcf748397b883fb4cf9d5cee",
+  "integrity": {
+    "hashSpecVersion": "techpub.hash.v1",
+    "canonicalization": "RFC8785-JCS",
+    "digestAlgorithm": "SHA-256",
+    "contentHash": "sha256:d15bf65abd4b2df90009f51b394d5af39b481d02dcf748397b883fb4cf9d5cee",
+    "semanticHash": "sha256:3d38570ac9d9b97f0bbc22f7cfee323c1a75403f1138208470fe098a388ca02d",
+    "provenanceHash": "sha256:de034eb88532dc889071e057106f553cba13a26459c464a692d4977efff07b08",
+    "coverageHash": "sha256:ae5d82a8d8931a63732f839cd479064e13cfa1f56bf1a1ebb38204183fa936ab"
+  },
+  "result": {
+    "status": "complete",
+    "accountingComplete": true,
+    "contentPreserved": true,
+    "structuredCoverageComplete": true
+  },
+  "artifacts": [
+    {
+      "artifactId": "urn:techpub:artifact:v1:sha256:13f535bfc5bff1ef5a5cf7cec6090bd32ed50eaddd78917584f4a8fadf298d5b",
+      "origin": "source",
+      "role": "pdf",
+      "artifactRef": "contract://fixtures/source/minimal-pdf.pdf",
+      "sha256": "sha256:c7a1f296066a1147a7fc5c9ba7f0e16289ab18aeb14715594ccf8733807f39d1",
+      "mediaType": "application/pdf",
+      "byteLength": 2180,
+      "normalizedPath": "minimal-pdf.pdf"
+    }
+  ],
+  "source": {
+    "kind": "pdf",
+    "sourcePackageId": "pdf:contract-fixture:minimal:R1:en-US",
+    "sourcePackageHash": "sha256:c7a1f296066a1147a7fc5c9ba7f0e16289ab18aeb14715594ccf8733807f39d1",
+    "identityAuthority": "source_asserted",
+    "artifactIds": [
+      "urn:techpub:artifact:v1:sha256:13f535bfc5bff1ef5a5cf7cec6090bd32ed50eaddd78917584f4a8fadf298d5b"
+    ],
+    "deliveryObjects": [],
+    "legacyIdentifiers": []
+  },
+  "profile": {
+    "canonicalModel": "technical-publication-core.v1",
+    "sourceProfile": "minimal-contract-fixture",
+    "mappingProfile": {
+      "id": "minimal-pdf-to-techpub-v1",
+      "version": "frozen.2",
+      "hash": "sha256:a0744be11f67a5a7cfc6c5845d33dc6eddbc6abab110ca44cd6c075b7e00b7f8"
+    }
+  },
+  "lineage": {
+    "generatedAt": "2026-08-11T00:00:00Z",
+    "producer": {
+      "name": "techpub-contract-fixture-builder",
+      "version": "frozen.2",
+      "runtime": "python",
+      "buildHash": "sha256:59c9fe0b084f2163aa021d76c9025354ef1ca08acedac508fe97b6edd2bfb63d"
+    },
+    "inputs": [
+      {
+        "role": "source_package",
+        "schemaVersion": "application/pdf",
+        "id": "pdf:contract-fixture:minimal:R1:en-US",
+        "hash": "sha256:c7a1f296066a1147a7fc5c9ba7f0e16289ab18aeb14715594ccf8733807f39d1",
+        "artifactIds": [
+          "urn:techpub:artifact:v1:sha256:13f535bfc5bff1ef5a5cf7cec6090bd32ed50eaddd78917584f4a8fadf298d5b"
+        ]
+      }
+    ]
+  },
+  "document": {
+    "documentId": "urn:techpub:document:v1:sha256:58d56abab4de246f00658afe2f8a221a07a93b4bb4e102dd21c243d41438239c",
+    "documentType": {
+      "value": "service_bulletin",
+      "authority": "parser_normalized",
+      "mappingStatus": "normalized",
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:17bb304f046730ff8b7b021f554a1ee2a72afe678d1c950e0a88e9372d1c1998"
+      ]
+    },
+    "title": {
+      "value": "Controlled contract fixture",
+      "authority": "source_asserted",
+      "mappingStatus": "exact",
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:17bb304f046730ff8b7b021f554a1ee2a72afe678d1c950e0a88e9372d1c1998"
+      ]
+    },
+    "identifiers": [
+      {
+        "scheme": "oem_document_code",
+        "value": "SB-FIXTURE-001",
+        "authority": "source_asserted",
+        "completeness": "complete",
+        "sourceRefIds": [
+          "urn:techpub:source-ref:v1:sha256:17bb304f046730ff8b7b021f554a1ee2a72afe678d1c950e0a88e9372d1c1998"
+        ]
+      }
+    ],
+    "language": {
+      "value": "en-US",
+      "authority": "source_asserted",
+      "mappingStatus": "exact",
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:17bb304f046730ff8b7b021f554a1ee2a72afe678d1c950e0a88e9372d1c1998"
+      ]
+    },
+    "revision": {
+      "label": {
+        "value": "R1",
+        "authority": "source_asserted",
+        "mappingStatus": "exact",
+        "sourceRefIds": [
+          "urn:techpub:source-ref:v1:sha256:17bb304f046730ff8b7b021f554a1ee2a72afe678d1c950e0a88e9372d1c1998"
+        ]
+      }
+    },
+    "relationships": []
+  },
+  "publicationStructures": [],
+  "modules": [
+    {
+      "moduleId": "urn:techpub:module:v1:sha256:c2d14b7739c5829ba0b15a9face68522b2fd06f36a6a8f36e8c3c437f97028f6",
+      "continuityKey": "logical-document",
+      "moduleKind": "logical_document",
+      "informationType": "procedural",
+      "authority": "service_generated",
+      "identityStability": "generated_stable",
+      "order": 0,
+      "title": {
+        "value": "Controlled contract fixture",
+        "authority": "source_asserted",
+        "mappingStatus": "exact",
+        "sourceRefIds": [
+          "urn:techpub:source-ref:v1:sha256:17bb304f046730ff8b7b021f554a1ee2a72afe678d1c950e0a88e9372d1c1998"
+        ]
+      },
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:17bb304f046730ff8b7b021f554a1ee2a72afe678d1c950e0a88e9372d1c1998"
+      ],
+      "contentUnitIds": [
+        "urn:techpub:unit:v1:sha256:db4ba2089dbafc01aee9e95b5cd0120d1ca98d7aa53f52c348dd5b10edeb1449",
+        "urn:techpub:unit:v1:sha256:a7f28a5c3aeaa6dd60b6306db183651535e01f69babc7054691db65b3aa8be0a"
+      ]
+    }
+  ],
+  "sourceRefs": [
+    {
+      "sourceRefId": "urn:techpub:source-ref:v1:sha256:17bb304f046730ff8b7b021f554a1ee2a72afe678d1c950e0a88e9372d1c1998",
+      "kind": "pdf",
+      "artifactId": "urn:techpub:artifact:v1:sha256:13f535bfc5bff1ef5a5cf7cec6090bd32ed50eaddd78917584f4a8fadf298d5b",
+      "pageStart": 1,
+      "pageEnd": 1,
+      "bbox": [
+        100000,
+        100000,
+        900000,
+        300000
+      ],
+      "quote": "Disconnect electrical power.",
+      "anchorTextHash": "sha256:abd46f33cca611edd2d88a1d47bea375808337b7d9c93cde2c4c44836eda1ce3"
+    }
+  ],
+  "sourceSegments": [
+    {
+      "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:865e70f7baaa3ebbd6de6e46ecf0c8bd5aeba617e8702cbe8ed81e56aa972e63",
+      "continuityKey": "heading-1",
+      "kind": "text_block",
+      "expectedSemantic": "heading",
+      "order": 0,
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:17bb304f046730ff8b7b021f554a1ee2a72afe678d1c950e0a88e9372d1c1998"
+      ],
+      "segmentHash": "sha256:1dfc1962c27cbfa25d7e6c6e9b16925e0d8ace89ea0c5535a911e6af2439cd86",
+      "coverageRequired": true,
+      "parentSourceSegmentId": "urn:techpub:source-segment:v1:sha256:026e9bd92e35d69c713073421b1e515318ce85064727b76fab94c582505c41f8"
+    },
+    {
+      "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:026e9bd92e35d69c713073421b1e515318ce85064727b76fab94c582505c41f8",
+      "continuityKey": "paragraph-1",
+      "kind": "text_block",
+      "expectedSemantic": "text",
+      "order": 0,
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:17bb304f046730ff8b7b021f554a1ee2a72afe678d1c950e0a88e9372d1c1998"
+      ],
+      "segmentHash": "sha256:55671bcf7534ae9ea59f5d701ec939a022c9d4d7f17060598b26f8389fa7b3cb",
+      "coverageRequired": true,
+      "parentSourceSegmentId": "urn:techpub:source-segment:v1:sha256:865e70f7baaa3ebbd6de6e46ecf0c8bd5aeba617e8702cbe8ed81e56aa972e63"
+    }
+  ],
+  "contentUnits": [
+    {
+      "unitId": "urn:techpub:unit:v1:sha256:db4ba2089dbafc01aee9e95b5cd0120d1ca98d7aa53f52c348dd5b10edeb1449",
+      "continuityKey": "heading-1",
+      "unitHash": "sha256:2dfd4c05f213c471c0e6a6fd4a1c210cadb31ca8621fa5a5e38b3cdc14f4365b",
+      "moduleId": "urn:techpub:module:v1:sha256:c2d14b7739c5829ba0b15a9face68522b2fd06f36a6a8f36e8c3c437f97028f6",
+      "kind": "heading",
+      "identityStability": "revision_scoped",
+      "order": 0,
+      "depth": 0,
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:17bb304f046730ff8b7b021f554a1ee2a72afe678d1c950e0a88e9372d1c1998"
+      ],
+      "sourceSegmentIds": [
+        "urn:techpub:source-segment:v1:sha256:865e70f7baaa3ebbd6de6e46ecf0c8bd5aeba617e8702cbe8ed81e56aa972e63"
+      ],
+      "mapping": {
+        "status": "mapped_exactly",
+        "confidence": "deterministic",
+        "findingIds": []
+      },
+      "payload": {
+        "text": "Procedure",
+        "level": 1
+      }
+    },
+    {
+      "unitId": "urn:techpub:unit:v1:sha256:a7f28a5c3aeaa6dd60b6306db183651535e01f69babc7054691db65b3aa8be0a",
+      "continuityKey": "paragraph-1",
+      "unitHash": "sha256:eb8185977eab9450d451a60a2add5375ad59c98cce0c521313d7902462fb2dc1",
+      "moduleId": "urn:techpub:module:v1:sha256:c2d14b7739c5829ba0b15a9face68522b2fd06f36a6a8f36e8c3c437f97028f6",
+      "kind": "paragraph",
+      "identityStability": "revision_scoped",
+      "order": 0,
+      "depth": 1,
+      "parentUnitId": "urn:techpub:unit:v1:sha256:db4ba2089dbafc01aee9e95b5cd0120d1ca98d7aa53f52c348dd5b10edeb1449",
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:17bb304f046730ff8b7b021f554a1ee2a72afe678d1c950e0a88e9372d1c1998"
+      ],
+      "sourceSegmentIds": [
+        "urn:techpub:source-segment:v1:sha256:026e9bd92e35d69c713073421b1e515318ce85064727b76fab94c582505c41f8"
+      ],
+      "mapping": {
+        "status": "mapped_exactly",
+        "confidence": "deterministic",
+        "findingIds": []
+      },
+      "payload": {
+        "text": "Disconnect electrical power.",
+        "role": "body"
+      }
+    }
+  ],
+  "references": [],
+  "assets": [],
+  "applicability": {
+    "sourceExpressions": [],
+    "normalizedCandidates": [],
+    "assignments": []
+  },
+  "coverage": {
+    "basis": {
+      "segmentSetId": "urn:techpub:source-segment-set:v1:sha256:d9dcd97c51ff4a4636623d45025d6a2b20eabfd4e215ec3b0da2586aeefd3b09",
+      "segmentSetHash": "sha256:d9dcd97c51ff4a4636623d45025d6a2b20eabfd4e215ec3b0da2586aeefd3b09",
+      "segmentationProfileId": "minimal-pdf-segments-v1",
+      "segmentationProfileHash": "sha256:eff167f3b9945655fbcc60aa86b36bd12cbf7b0ea928129d71fe946a23c15839",
+      "requiredSourceSegmentCount": 2
+    },
+    "entries": [
+      {
+        "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:865e70f7baaa3ebbd6de6e46ecf0c8bd5aeba617e8702cbe8ed81e56aa972e63",
+        "disposition": "mapped_exactly",
+        "targetIds": [
+          "urn:techpub:unit:v1:sha256:db4ba2089dbafc01aee9e95b5cd0120d1ca98d7aa53f52c348dd5b10edeb1449"
+        ],
+        "findingIds": []
+      },
+      {
+        "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:026e9bd92e35d69c713073421b1e515318ce85064727b76fab94c582505c41f8",
+        "disposition": "mapped_exactly",
+        "targetIds": [
+          "urn:techpub:unit:v1:sha256:a7f28a5c3aeaa6dd60b6306db183651535e01f69babc7054691db65b3aa8be0a"
+        ],
+        "findingIds": []
+      }
+    ],
+    "summary": {
+      "requiredSourceSegmentCount": 2,
+      "mappedExactlyCount": 2,
+      "mappedWithNormalizationCount": 0,
+      "preservedAsTextCount": 0,
+      "intentionallyExcludedCount": 0,
+      "blockedCount": 0,
+      "accountingComplete": true,
+      "contentPreserved": true,
+      "structuredCoverageComplete": true
+    }
+  },
+  "findings": [],
+  "extensions": []
+}

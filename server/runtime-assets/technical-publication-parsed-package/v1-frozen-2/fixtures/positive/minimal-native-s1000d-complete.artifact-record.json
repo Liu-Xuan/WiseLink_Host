@@ -1,0 +1,11 @@
+{
+  "$schema": "urn:techpub:schema:v1:artifact-record:frozen-2",
+  "schemaVersion": "techpub.artifact-record.v1",
+  "contractRevision": "frozen.2",
+  "artifactRef": "contract://fixtures/positive/minimal-native-s1000d-complete.json",
+  "mediaType": "application/json",
+  "byteLength": 11478,
+  "artifactHash": "sha256:7d96f427ff3a7e3a3ef56dc5093e5763c247af0fe1c1633af38f8c341fdb945d",
+  "packageId": "urn:techpub:package:v1:sha256:b3f42752f8da47ce61c7871c52a7c0754662963ef5d64c5f7968ac7f37fb6dba",
+  "contentHash": "sha256:b3f42752f8da47ce61c7871c52a7c0754662963ef5d64c5f7968ac7f37fb6dba"
+}

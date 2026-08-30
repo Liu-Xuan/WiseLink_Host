@@ -1,0 +1,24 @@
+{
+  "$schema": "urn:techpub:schema:v1:parse-failure-report:frozen-2",
+  "schemaVersion": "techpub.parse-failure-report.v1",
+  "contractRevision": "frozen.2",
+  "failureId": "urn:techpub:parse-failure:v1:sha256:eff97986e13de44454cdc79abec11a0d9655e1086207ab7d67a3fab81507e0f2",
+  "sourceKind": "pdf",
+  "inputRef": "contract://fixtures/source/minimal-pdf.pdf",
+  "inputHash": "sha256:c7a1f296066a1147a7fc5c9ba7f0e16289ab18aeb14715594ccf8733807f39d1",
+  "stage": "parse",
+  "code": "PARSER.SYNTHETIC_FAILURE",
+  "message": "Synthetic blocking failure used to validate the fail-closed envelope.",
+  "blocking": true,
+  "packageProduced": false,
+  "producer": {
+    "name": "techpub-contract-fixture-builder",
+    "version": "frozen.2",
+    "buildHash": "sha256:59c9fe0b084f2163aa021d76c9025354ef1ca08acedac508fe97b6edd2bfb63d"
+  },
+  "observedAt": "2026-08-11T00:00:00Z",
+  "parameters": {
+    "fixture": true,
+    "attempt": 1
+  }
+}

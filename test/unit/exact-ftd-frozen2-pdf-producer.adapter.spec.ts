@@ -3,37 +3,44 @@ jest.mock(
   () => ({ MiaodaFileServiceArtifactStore: jest.fn() }),
 );
 jest.mock(
-  '../../server/modules/document-management/src/hosted/phase5BoeingSbHandoff.js',
+  '../../server/modules/professional-input/parser/pdfjs-dist-layout-extractor.adapter',
   () => ({
-    PHASE5_737_34_3830_HANDOFF: {
-      source: {
-        sha256:
-          'add32c7d4192d35c59162f15eb57f08247427135d5912438501ec9267fa4d41a',
-        byteLength: 1_060_204,
-      },
-      descriptor: {
-        documentCode: '737-34-3830',
-        businessRevision: 'Original Issue',
-      },
-      canonicalHostClassification: {
-        status: 'CONFIRMED',
-        normalizedFamily: 'SB',
-        classifierReleaseId:
-          'intake-classifier-release:q1-native-migration@1.0.0',
-        classifierReleaseHash:
-          'sha256:d374483eaa1c209912bf8ed0f830b582f8f0578e3149899de24633ad8e10587c',
-        parserProfileId: 'parser-profile:boeing.sb@1.0.0',
-        parserProfileHash:
-          'sha256:f87dbe8607c4958f253f980bc459cea062e7ebc1e7e8c65353549399cb07f3c0',
-        fingerprint:
-          'sha256:f87850cddc741f2969280db07d775125315d0f1b61ae2beb7bb14584176a2663',
-      },
+    PdfjsDistLayoutExtractor: class {
+      extractLayout(bytes: Uint8Array) {
+        const text =
+          bytes[0] === 1
+            ? '777- FTD-31-21002 Issue Title : Airplane Information Management System update. FLEET TEAM DIGEST BOEING PROPRIETARY.'
+            : bytes[0] === 3
+              ? 'MAINTENANCE TIP BOEING PROPRIETARY 787 MT 51 - 001 - R 3 SUBJECT TORX PLUS FASTENER REMOVAL'
+              : 'Commercial Airplanes 737 Service Bulletin BOEING SERVICE BULLETIN 737-34-3830';
+        return {
+          kind: 'pdf',
+          pdfVersion: '1.7',
+          pageCount: 1,
+          pageBoxes: [{ page: 1, mediaBox: [0, 0, 612, 792] }],
+          metadata: { title: null },
+          textRuns: [
+            {
+              page: 1,
+              fontName: 'F1',
+              bold: false,
+              fontSize: 12,
+              x: 10,
+              y: 700,
+              text,
+            },
+          ],
+          sourceSha256: `sha256:${'e'.repeat(64)}`,
+          sourceByteLength: bytes.byteLength,
+        };
+      }
     },
   }),
 );
 
 import { MiaodaFileServiceArtifactStore } from '../../server/modules/document-management/src/hosted/miaodaFileServiceArtifactStore.js';
-import { ExactFtdFrozen2PdfProducerAdapter } from '../../server/modules/canonical-host/exact-ftd-frozen2-pdf-producer.adapter';
+import { HostNativeDocumentFamilyPdfProducerAdapter } from '../../server/modules/canonical-host/exact-ftd-frozen2-pdf-producer.adapter';
+import { hostNativePdfClassificationFor } from '../../server/modules/canonical-host/host-native-pdf-profile.registry';
 import { UnavailableScopedProfessionalArtifactCorrelationAdapter } from '../../server/modules/canonical-host/scoped-professional-artifact-correlation.port';
 import type { CanonicalPdfVerticalRunRequest } from '../../shared/api.interface';
 
@@ -96,13 +103,14 @@ const exactSbRequest: CanonicalPdfVerticalRunRequest = {
   },
 };
 
-describe('ExactFtdFrozen2PdfProducerAdapter scoped professional correlation', () => {
+describe('HostNativeDocumentFamilyPdfProducerAdapter scoped professional correlation', () => {
   it('does not use a historical fixed binding when the new scope has no correlation', async () => {
     const readSelection = jest.fn().mockResolvedValue({
       readbackVerified: true,
       sha256: HISTORICAL_FTD_SHA256,
       byteLength: 122_102,
       providerObjectId: 'provider-source-new-scope',
+      bytes: Uint8Array.of(1),
     });
     jest
       .mocked(MiaodaFileServiceArtifactStore)
@@ -118,6 +126,7 @@ describe('ExactFtdFrozen2PdfProducerAdapter scoped professional correlation', ()
         },
         family: {
           documentFamily: 'FTD',
+          issuerAuthority: 'BOEING',
           canonicalDocumentNumber: '777-FTD-31-21002',
         },
         artifact: {
@@ -132,7 +141,7 @@ describe('ExactFtdFrozen2PdfProducerAdapter scoped professional correlation', ()
       }),
     };
     const validator = { validate: jest.fn() };
-    const adapter = new ExactFtdFrozen2PdfProducerAdapter(
+    const adapter = new HostNativeDocumentFamilyPdfProducerAdapter(
       {} as never,
       resolver as never,
       validator as never,
@@ -158,12 +167,13 @@ describe('ExactFtdFrozen2PdfProducerAdapter scoped professional correlation', ()
     expect(validator.validate).not.toHaveBeenCalled();
   });
 
-  it('accepts the exact 737 SB when business revision differs only by case and whitespace', async () => {
+  it('recognizes Boeing SB content without using the legacy exact-source profile', async () => {
     const readSelection = jest.fn().mockResolvedValue({
       readbackVerified: true,
       sha256: EXACT_737_SB_SHA256,
       byteLength: exactSbRequest.source.sourceByteLength,
       providerObjectId: 'provider-source-exact-737-sb',
+      bytes: Uint8Array.of(2),
     });
     jest
       .mocked(MiaodaFileServiceArtifactStore)
@@ -180,6 +190,7 @@ describe('ExactFtdFrozen2PdfProducerAdapter scoped professional correlation', ()
         },
         family: {
           documentFamily: 'SB',
+          issuerAuthority: 'BOEING',
           canonicalDocumentNumber: '737-34-3830',
         },
         artifact: {
@@ -194,7 +205,7 @@ describe('ExactFtdFrozen2PdfProducerAdapter scoped professional correlation', ()
       }),
     };
     const validator = { validate: jest.fn() };
-    const adapter = new ExactFtdFrozen2PdfProducerAdapter(
+    const adapter = new HostNativeDocumentFamilyPdfProducerAdapter(
       {} as never,
       resolver as never,
       validator as never,
@@ -216,8 +227,14 @@ describe('ExactFtdFrozen2PdfProducerAdapter scoped professional correlation', ()
     expect(validator.validate).not.toHaveBeenCalled();
   });
 
-  it('rejects the exact 737 SB when the actual business revision differs', async () => {
-    const readSelection = jest.fn();
+  it('does not bind the Boeing SB profile to one business revision', async () => {
+    const readSelection = jest.fn().mockResolvedValue({
+      readbackVerified: true,
+      sha256: EXACT_737_SB_SHA256,
+      byteLength: exactSbRequest.source.sourceByteLength,
+      providerObjectId: 'provider-source-exact-737-sb',
+      bytes: Uint8Array.of(2),
+    });
     jest
       .mocked(MiaodaFileServiceArtifactStore)
       .mockImplementation(() => ({ readSelection }) as never);
@@ -233,6 +250,7 @@ describe('ExactFtdFrozen2PdfProducerAdapter scoped professional correlation', ()
         },
         family: {
           documentFamily: 'SB',
+          issuerAuthority: 'BOEING',
           canonicalDocumentNumber: '737-34-3830',
         },
         artifact: {
@@ -246,55 +264,177 @@ describe('ExactFtdFrozen2PdfProducerAdapter scoped professional correlation', ()
         },
       }),
     };
-    const adapter = new ExactFtdFrozen2PdfProducerAdapter(
+    const adapter = new HostNativeDocumentFamilyPdfProducerAdapter(
       {} as never,
       resolver as never,
       { validate: jest.fn() } as never,
       new UnavailableScopedProfessionalArtifactCorrelationAdapter(),
     );
 
-    await expect(adapter.producePdf(exactSbRequest)).rejects.toThrow(
-      'PDF_PRODUCER_DOCUMENT_VERSION_READBACK_MISMATCH',
-    );
-    expect(readSelection).not.toHaveBeenCalled();
+    await expect(adapter.producePdf(exactSbRequest)).resolves.toMatchObject({
+      kind: 'FAILURE_SIGNAL',
+      failureCode: 'PDF_PRODUCER_CORRELATION_UNAVAILABLE',
+    });
+    expect(readSelection).toHaveBeenCalledWith({
+      bucketId: 'bucket-source-exact-737-sb',
+      filePath: '/source/exact-737-sb.pdf',
+    });
   });
 
-  it('fails closed before readback for every other SB source', async () => {
-    const resolver = { resolve: jest.fn() };
-    const adapter = new ExactFtdFrozen2PdfProducerAdapter(
+  it('fails closed after recognition when the requested profile differs or DM issuer is missing', async () => {
+    const readSelection = jest.fn().mockResolvedValue({
+      readbackVerified: true,
+      sha256: EXACT_737_SB_SHA256,
+      byteLength: exactSbRequest.source.sourceByteLength,
+      providerObjectId: 'provider-source-exact-737-sb',
+      bytes: Uint8Array.of(2),
+    });
+    jest
+      .mocked(MiaodaFileServiceArtifactStore)
+      .mockImplementation(() => ({ readSelection }) as never);
+    const resolved = {
+      version: {
+        documentId: exactSbRequest.source.documentId,
+        documentVersionId: exactSbRequest.source.documentVersionId,
+        sourceArtifactId: exactSbRequest.source.sourceArtifactId,
+        pdfSha256: EXACT_737_SB_SHA256,
+        byteLength: exactSbRequest.source.sourceByteLength,
+        businessRevision: 'Original Issue',
+      },
+      family: {
+        documentFamily: 'SB',
+        issuerAuthority: 'BOEING',
+        canonicalDocumentNumber: '737-34-3830',
+      },
+      artifact: {
+        sourceArtifactId: exactSbRequest.source.sourceArtifactId,
+        bucketId: 'bucket-source-exact-737-sb',
+        filePath: '/source/exact-737-sb.pdf',
+        providerObjectId: 'provider-source-exact-737-sb',
+        mediaType: 'application/pdf',
+        sha256: EXACT_737_SB_SHA256,
+        byteLength: exactSbRequest.source.sourceByteLength,
+      },
+    };
+    const resolver = {
+      resolve: jest.fn().mockResolvedValue(resolved),
+    };
+    const adapter = new HostNativeDocumentFamilyPdfProducerAdapter(
       {} as never,
       resolver as never,
       { validate: jest.fn() } as never,
       new UnavailableScopedProfessionalArtifactCorrelationAdapter(),
     );
 
-    await expect(
-      adapter.producePdf({
-        ...exactSbRequest,
-        source: {
-          ...exactSbRequest.source,
-          sourceFileSha256: `sha256:${'d'.repeat(64)}`,
-        },
-      }),
-    ).resolves.toEqual({
-      kind: 'FAILURE_SIGNAL',
-      failureCode: 'PDF_PRODUCER_PROFILE_NOT_AVAILABLE',
-      message:
-        'No Host-native PDF producer profile matches this classification.',
-      executionRoute: 'dm_document_version->host_native_pdf_pipeline',
-    });
     await expect(
       adapter.producePdf({
         ...exactSbRequest,
         classification: {
           ...exactSbRequest.classification,
-          status: 'CANDIDATE',
+          parserProfileId: 'parser-profile:airbus.sb@1.0.0',
+          parserProfileHash: `sha256:${'d'.repeat(64)}`,
         },
       }),
     ).resolves.toMatchObject({
       kind: 'FAILURE_SIGNAL',
       failureCode: 'PDF_PRODUCER_PROFILE_NOT_AVAILABLE',
+      executionRoute: 'dm_document_version->host_native_pdf_pipeline',
     });
-    expect(resolver.resolve).not.toHaveBeenCalled();
+    resolver.resolve.mockResolvedValueOnce({
+      ...resolved,
+      family: {
+        ...resolved.family,
+        issuerAuthority: undefined,
+      },
+    });
+    await expect(adapter.producePdf(exactSbRequest)).resolves.toMatchObject({
+      kind: 'FAILURE_SIGNAL',
+      failureCode: 'PDF_PRODUCER_PROFILE_NOT_AVAILABLE',
+      executionRoute: 'dm_document_version->host_native_pdf_pipeline',
+    });
+    expect(resolver.resolve).toHaveBeenCalledTimes(2);
+    expect(readSelection).toHaveBeenCalledTimes(2);
+  });
+
+  it('requires the committed DM adapter release for a subtype profile', async () => {
+    const sourceSha256 = 'f'.repeat(64);
+    const classification = hostNativePdfClassificationFor({
+      family: 'MT',
+      issuerAuthority: 'BOEING',
+      adapterId: 'issuer.boeing.maintenance_tip.v1',
+    });
+    if (!classification) throw new Error('TEST_MT_PROFILE_NOT_ACTIVATED');
+    const mtRequest: CanonicalPdfVerticalRunRequest = {
+      ...exactSbRequest,
+      source: {
+        ...exactSbRequest.source,
+        documentId: 'document-boeing-mt',
+        documentVersionId: 'document-version-boeing-mt',
+        sourceArtifactId: 'source-artifact-boeing-mt',
+        sourceFileSha256: `sha256:${sourceSha256}`,
+        sourceByteLength: 3,
+      },
+      classification,
+    };
+    const readSelection = jest.fn().mockResolvedValue({
+      readbackVerified: true,
+      sha256: sourceSha256,
+      byteLength: 3,
+      providerObjectId: 'provider-source-boeing-mt',
+      bytes: Uint8Array.of(3, 0, 0),
+    });
+    jest
+      .mocked(MiaodaFileServiceArtifactStore)
+      .mockImplementation(() => ({ readSelection }) as never);
+    const resolved = {
+      version: {
+        documentId: mtRequest.source.documentId,
+        documentVersionId: mtRequest.source.documentVersionId,
+        sourceArtifactId: mtRequest.source.sourceArtifactId,
+        pdfSha256: sourceSha256,
+        byteLength: mtRequest.source.sourceByteLength,
+      },
+      family: {
+        documentFamily: 'MT',
+        issuerAuthority: 'BOEING',
+        canonicalDocumentNumber: '787 MT 51-001',
+      },
+      artifact: {
+        sourceArtifactId: mtRequest.source.sourceArtifactId,
+        bucketId: 'bucket-source-boeing-mt',
+        filePath: '/source/boeing-mt.pdf',
+        providerObjectId: 'provider-source-boeing-mt',
+        mediaType: 'application/pdf',
+        sha256: sourceSha256,
+        byteLength: mtRequest.source.sourceByteLength,
+      },
+    };
+    const resolver = { resolve: jest.fn().mockResolvedValue(resolved) };
+    const adapter = new HostNativeDocumentFamilyPdfProducerAdapter(
+      {} as never,
+      resolver as never,
+      { validate: jest.fn() } as never,
+      new UnavailableScopedProfessionalArtifactCorrelationAdapter(),
+    );
+
+    await expect(adapter.producePdf(mtRequest)).resolves.toMatchObject({
+      kind: 'FAILURE_SIGNAL',
+      failureCode: 'PDF_PRODUCER_PROFILE_NOT_AVAILABLE',
+    });
+    resolver.resolve.mockResolvedValueOnce({
+      ...resolved,
+      preflight: {
+        normalizedDescriptorJson: JSON.stringify({
+          adapterRelease: {
+            adapterId: 'issuer.boeing.maintenance_tip.v1',
+            adapterVersion: 'v8.4-document-family-adapter.v1',
+          },
+        }),
+      },
+    });
+    await expect(adapter.producePdf(mtRequest)).resolves.toMatchObject({
+      kind: 'FAILURE_SIGNAL',
+      failureCode: 'PDF_PRODUCER_CORRELATION_UNAVAILABLE',
+    });
   });
 });

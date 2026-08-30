@@ -51,8 +51,12 @@ export class U0Frozen2FailureAdapterService
 
   build(input: U0Frozen2FailureAdapterInput): U0Frozen2FailureBuildResult {
     validateInput(input);
-    const definition = definitionFor(input.cause.code);
+    const diagnosticParameters = normalizeDiagnosticParameters(
+      input.cause.parameters,
+    );
+    const definition = definitionFor(input.cause.code, diagnosticParameters);
     const parameters: UnifiedParseFailureReport['parameters'] = {
+      ...diagnosticParameters,
       workItemId: input.correlation.workItemId,
       requestId: input.correlation.requestId,
       documentId: input.correlation.documentId ?? 'UNAVAILABLE',
@@ -249,7 +253,31 @@ function validateInput(input: U0Frozen2FailureAdapterInput): void {
   }
 }
 
-function definitionFor(cause: string): FailureDefinition {
+function definitionFor(
+  cause: string,
+  parameters: UnifiedParseFailureReport['parameters'],
+): FailureDefinition {
+  if (cause === 'PDF_OCR_REQUIRED_UNSUPPORTED') {
+    const requiredPages =
+      typeof parameters.ocrRequiredPageRanges === 'string'
+        ? parameters.ocrRequiredPageRanges
+        : Array.isArray(parameters.ocrRequiredPages)
+          ? parameters.ocrRequiredPages.join(',')
+          : typeof parameters.emptyTextLayerPageRanges === 'string'
+            ? parameters.emptyTextLayerPageRanges
+            : Array.isArray(parameters.emptyTextLayerPages)
+              ? parameters.emptyTextLayerPages.join(',')
+              : 'unknown';
+    const pageCount = parameters.pageCount ?? 'unknown';
+    return definition(
+      'PDF_OCR_REQUIRED_UNSUPPORTED',
+      'parse',
+      'PARSE_SOURCE',
+      'NOT_SAFE_WITHOUT_OWNER_ACTION',
+      `PDF pages ${requiredPages} of ${pageCount} require OCR because text-layer or raster-visual coverage is incomplete; no production-safe page OCR layout provider is bound.`,
+      'Bind a Host-owned page/region OCR layout provider that preserves PDF page/source identity and merges OCR with existing text runs, then retry the same input.',
+    );
+  }
   if (cause.includes('ARTIFACT_READBACK')) {
     return definition(
       'ARTIFACT_READBACK_MISMATCH',
@@ -308,6 +336,43 @@ function definitionFor(cause: string): FailureDefinition {
     'The parse pipeline stopped without an accepted package.',
     '查看冻结 FailureReport 并修复明确的输入或解析实现错误。',
   );
+}
+
+function normalizeDiagnosticParameters(
+  parameters: Record<string, string | number | boolean | string[]> | undefined,
+): UnifiedParseFailureReport['parameters'] {
+  if (!parameters) return {};
+  const normalized: UnifiedParseFailureReport['parameters'] = {};
+  for (const [key, value] of Object.entries(parameters)) {
+    if (!/^[A-Za-z][A-Za-z0-9_]{0,63}$/u.test(key)) {
+      throw new Error('U0_FAILURE_ADAPTER_REJECTED:DIAGNOSTIC_KEY');
+    }
+    if (typeof value === 'string') {
+      normalized[key] = value.slice(0, 1000);
+      continue;
+    }
+    if (typeof value === 'number') {
+      if (!Number.isSafeInteger(value)) {
+        throw new Error('U0_FAILURE_ADAPTER_REJECTED:DIAGNOSTIC_NUMBER');
+      }
+      normalized[key] = value;
+      continue;
+    }
+    if (typeof value === 'boolean') {
+      normalized[key] = value;
+      continue;
+    }
+    if (
+      Array.isArray(value) &&
+      value.length <= 1000 &&
+      value.every((entry) => typeof entry === 'string')
+    ) {
+      normalized[key] = value.map((entry) => entry.slice(0, 200));
+      continue;
+    }
+    throw new Error('U0_FAILURE_ADAPTER_REJECTED:DIAGNOSTIC_VALUE');
+  }
+  return normalized;
 }
 
 function definition(

@@ -648,6 +648,7 @@ export class CanonicalHostVerticalService {
     const frozen = await this.failureRecording.record({
       request,
       error: new Error(produced.failureCode),
+      failureParameters: produced.parameters,
       permissionSnapshotVersion: running.permissionSnapshotVersion,
       executionRoute: produced.executionRoute,
       packageAttempt: null,

@@ -1,0 +1,54 @@
+{
+  "$schema": "urn:techpub:schema:v1:writer-provenance-manifest:frozen-2",
+  "schemaVersion": "techpub.writer-provenance-manifest.v1",
+  "contractRevision": "frozen.2",
+  "manifestId": "urn:techpub:writer-manifest:v1:sha256:94f0463fc4a098a3ffab2244e209a366bd19cdf40125d27e985390fe8157d3f9",
+  "inputPackage": {
+    "packageId": "urn:techpub:package:v1:sha256:f0110dd2b0d990e5589d6c24a503605af7c6928087c5c1014c8ad9bb462b99d9",
+    "contentHash": "sha256:f0110dd2b0d990e5589d6c24a503605af7c6928087c5c1014c8ad9bb462b99d9",
+    "semanticHash": "sha256:3d38570ac9d9b97f0bbc22f7cfee323c1a75403f1138208470fe098a388ca02d",
+    "provenanceHash": "sha256:01f320889af5c0f9232afdb3bc2b8634df9c748600f3f56a46533c4943601684"
+  },
+  "writerProfile": {
+    "id": "techpub.fixture.s1000d-writer",
+    "version": "frozen.2",
+    "hash": "sha256:bfb930a35fadbb99d6d3c17f1ee15fa6cf910b589fb0fd38887380949834cda2"
+  },
+  "generatedPackageHash": "sha256:1cda0875b7cb8a5b241bf7aebcf10a0d18f8519322cd7fde107e602d081a42af",
+  "generatedArtifacts": [
+    {
+      "normalizedPath": "fixtures/writer-output/DM-GENERATED-FIXTURE.xml",
+      "mediaType": "application/xml",
+      "byteLength": 637,
+      "sha256": "sha256:dee1f4fc39568663d2f1adff7a79c8b901e92a8115190ad25f459ce9103515dc"
+    }
+  ],
+  "unitMappings": [
+    {
+      "originUnitId": "urn:techpub:unit:v1:sha256:db4ba2089dbafc01aee9e95b5cd0120d1ca98d7aa53f52c348dd5b10edeb1449",
+      "originSourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:17bb304f046730ff8b7b021f554a1ee2a72afe678d1c950e0a88e9372d1c1998"
+      ],
+      "generatedPath": "fixtures/writer-output/DM-GENERATED-FIXTURE.xml",
+      "xpath": "/dmodule/content/description/title",
+      "elementId": "u-heading-1"
+    },
+    {
+      "originUnitId": "urn:techpub:unit:v1:sha256:a7f28a5c3aeaa6dd60b6306db183651535e01f69babc7054691db65b3aa8be0a",
+      "originSourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:17bb304f046730ff8b7b021f554a1ee2a72afe678d1c950e0a88e9372d1c1998"
+      ],
+      "generatedPath": "fixtures/writer-output/DM-GENERATED-FIXTURE.xml",
+      "xpath": "/dmodule/content/description/para",
+      "elementId": "u-paragraph-1"
+    }
+  ],
+  "assetMappings": [],
+  "noAuthority": {
+    "oemIdentityClaimed": false,
+    "approvalClaimed": false,
+    "releaseClaimed": false,
+    "airworthinessClaimed": false
+  },
+  "createdAt": "2026-08-11T00:00:00Z"
+}

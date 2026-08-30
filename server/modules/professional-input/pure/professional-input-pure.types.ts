@@ -50,6 +50,40 @@ export interface ParsedPdfPageBox {
   mediaBox: readonly [number, number, number, number];
 }
 
+/** Page-level text-layer and raster-visual coverage from the layout provider. */
+export interface ParsedPdfRasterRegionDiagnostic {
+  /** Displayed raster bounds clipped to the 1-based PDF page media box. */
+  bbox: readonly [number, number, number, number];
+  displayedPageAreaRatio: number;
+  sourcePixelWidth: number | null;
+  sourcePixelHeight: number | null;
+  textLayerOverlapRunCount: number;
+  textLayerOverlapNonWhitespaceCharacterCount: number;
+}
+
+export interface ParsedPdfRasterVisualCoverageDiagnostic {
+  status:
+    | 'NO_MATERIAL_RASTER'
+    | 'TEXT_LAYER_OVERLAP_PRESENT'
+    | 'UNVERIFIED';
+  /** General safety policy: unverified raster union covering >= 1/4 page. */
+  materialUnverifiedRasterPageFraction: number;
+  rasterRegionCount: number;
+  rasterPageAreaRatio: number;
+  unverifiedRasterRegionCount: number;
+  unverifiedRasterPageAreaRatio: number;
+  unverifiedRasterRegions: readonly ParsedPdfRasterRegionDiagnostic[];
+}
+
+export interface ParsedPdfPageTextLayerDiagnostic {
+  /** 1-based PDF page number. */
+  page: number;
+  status: 'PRESENT' | 'EMPTY' | 'VISUAL_TEXT_UNVERIFIED';
+  textRunCount: number;
+  nonWhitespaceCharacterCount: number;
+  rasterVisualCoverage: ParsedPdfRasterVisualCoverageDiagnostic;
+}
+
 export interface ParsedPdfLayout {
   kind: 'pdf';
   pdfVersion: string;
@@ -57,6 +91,8 @@ export interface ParsedPdfLayout {
   pageBoxes: readonly ParsedPdfPageBox[];
   metadata: ParsedPdfDocumentMetadata;
   textRuns: readonly ParsedPdfTextRun[];
+  /** One entry per page, including pages with no extractable text layer. */
+  pageTextLayerDiagnostics: readonly ParsedPdfPageTextLayerDiagnostic[];
   /** Source sha256 over the exact input bytes. */
   sourceSha256: string;
   sourceByteLength: number;
@@ -246,7 +282,16 @@ export interface ProfessionalInputSourceArtifactInput {
 
 export interface ProfessionalInputDocumentIdentityInput {
   documentCode: string;
-  documentType: 'service_bulletin' | 'oem_reference';
+  documentType:
+    | 'airworthiness_directive'
+    | 'maintenance_programme'
+    | 'maintenance_tip'
+    | 'oem_reference'
+    | 'operator_transmission'
+    | 'retrofit_information_letter'
+    | 'service_bulletin'
+    | 'service_information_letter'
+    | 'service_letter';
   language: string;
 }
 

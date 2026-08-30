@@ -1,0 +1,1969 @@
+{
+  "$schema": "urn:techpub:schema:v1:parsed-package:frozen-2",
+  "schemaVersion": "techpub.parsed-package.v1",
+  "contractRevision": "frozen.2",
+  "packageId": "urn:techpub:package:v1:sha256:2e3a09944fc6abf3743d027898fcd5823fddcb33b9f6ea29f3a3478bc333d249",
+  "integrity": {
+    "hashSpecVersion": "techpub.hash.v1",
+    "canonicalization": "RFC8785-JCS",
+    "digestAlgorithm": "SHA-256",
+    "contentHash": "sha256:2e3a09944fc6abf3743d027898fcd5823fddcb33b9f6ea29f3a3478bc333d249",
+    "semanticHash": "sha256:2a74a96defc5b71b696aeb1a9e2e888bbe037efd733caeca42989da766818630",
+    "provenanceHash": "sha256:b92a82a7a537b77e8961db0a5ddae8a290ea4b7337bfa613f69e10c75d432333",
+    "coverageHash": "sha256:ecce448930adb586a25dac0fc0f1d5326465a7507b9740110caa8dfa968cddc2"
+  },
+  "result": {
+    "status": "complete",
+    "accountingComplete": true,
+    "contentPreserved": true,
+    "structuredCoverageComplete": true
+  },
+  "artifacts": [
+    {
+      "artifactId": "urn:techpub:artifact:v1:sha256:d5466d06d6e5e53c016a623f3ede860436814c5a17e95de142df17b674ba3efd",
+      "origin": "source",
+      "role": "xml",
+      "artifactRef": "contract://fixtures/source/native-s1000d-issue-4-2/DDN-FIXTURE.XML",
+      "sha256": "sha256:0255a570f3b3d1e6aa853e9903590eb7397ccae8398641a6fce329b2c463f83b",
+      "mediaType": "application/xml",
+      "byteLength": 718,
+      "normalizedPath": "DDN-FIXTURE.XML"
+    },
+    {
+      "artifactId": "urn:techpub:artifact:v1:sha256:cf5ea6ea9e72fb69eea1c606e7642f50548c846c0f4e5fadb0fbf5cf56a96fff",
+      "origin": "source",
+      "role": "xml",
+      "artifactRef": "contract://fixtures/source/native-s1000d-issue-4-2/DMC-FIXTURE.XML",
+      "sha256": "sha256:bec4007c96a58782edd331f47b787153869975273ca9da21d4175e4053ffdb81",
+      "mediaType": "application/xml",
+      "byteLength": 2873,
+      "normalizedPath": "DMC-FIXTURE.XML"
+    },
+    {
+      "artifactId": "urn:techpub:artifact:v1:sha256:d8d7a8a9186b4289aacb298ca08b6b54da809b089fbe59a468881b1a2a210b2f",
+      "origin": "source",
+      "role": "xml",
+      "artifactRef": "contract://fixtures/source/native-s1000d-issue-4-2/DML-FIXTURE.XML",
+      "sha256": "sha256:9f56655d0bca0ed9a016724ab924adcb7fa376d570f8856f7365149a83de91af",
+      "mediaType": "application/xml",
+      "byteLength": 936,
+      "normalizedPath": "DML-FIXTURE.XML"
+    },
+    {
+      "artifactId": "urn:techpub:artifact:v1:sha256:ca711fc18deff99b4effdb78071b22e9afaf4adb1c7f5efaf3a71d542b6f1951",
+      "origin": "source",
+      "role": "information_entity",
+      "artifactRef": "contract://fixtures/source/native-s1000d-issue-4-2/ICN-FIXTURE-001.png",
+      "sha256": "sha256:626f1dff3211a5d3a5f74fdebb87cbf8dffb4bbc49fc747deebc39a781fe1193",
+      "mediaType": "image/png",
+      "byteLength": 67,
+      "normalizedPath": "ICN-FIXTURE-001.png"
+    },
+    {
+      "artifactId": "urn:techpub:artifact:v1:sha256:3c7f8f8172142afaf0cd4762ef0a7270993d96500a57527ac76a96c64b052373",
+      "origin": "source",
+      "role": "xml",
+      "artifactRef": "contract://fixtures/source/native-s1000d-issue-4-2/PMC-FIXTURE.XML",
+      "sha256": "sha256:404c584cee7eca8e2ad7446e9cb168d0dc7ca66108e1120a4fd204ba3287d47d",
+      "mediaType": "application/xml",
+      "byteLength": 1037,
+      "normalizedPath": "PMC-FIXTURE.XML"
+    },
+    {
+      "artifactId": "urn:techpub:artifact:v1:sha256:844c0913468d4a088e0bf53b6aa1d41a974c5847446ddbea1721b5f83a3da8b5",
+      "origin": "source",
+      "role": "schema",
+      "artifactRef": "contract://fixtures/source/native-s1000d-issue-4-2/SCHEMA/ddn.xsd",
+      "sha256": "sha256:0e467b0425184682921d4fa8f116d828534d1c326ef008faff17341af6062c79",
+      "mediaType": "application/xml",
+      "byteLength": 359,
+      "normalizedPath": "SCHEMA/ddn.xsd"
+    },
+    {
+      "artifactId": "urn:techpub:artifact:v1:sha256:fb9f83e8cea5bcfbc7754df1fd8f2d4c25e1b35866d31c0ba6dd00a84da51665",
+      "origin": "source",
+      "role": "schema",
+      "artifactRef": "contract://fixtures/source/native-s1000d-issue-4-2/SCHEMA/descript.xsd",
+      "sha256": "sha256:b3ea9cfe15be19396f437efcad4469aa34341944134a5b651d54cc5ba9fe09dd",
+      "mediaType": "application/xml",
+      "byteLength": 363,
+      "normalizedPath": "SCHEMA/descript.xsd"
+    },
+    {
+      "artifactId": "urn:techpub:artifact:v1:sha256:ccb4004a9f180ff959491a0517774abd97e0f08bdde796079e2eba1528217826",
+      "origin": "source",
+      "role": "schema",
+      "artifactRef": "contract://fixtures/source/native-s1000d-issue-4-2/SCHEMA/dml.xsd",
+      "sha256": "sha256:cca665e04b291b9e9d93d6bba1e1b534569e092c0ce68bd0104cccc5a7e97216",
+      "mediaType": "application/xml",
+      "byteLength": 359,
+      "normalizedPath": "SCHEMA/dml.xsd"
+    },
+    {
+      "artifactId": "urn:techpub:artifact:v1:sha256:66cec7efae5f3ce10eff0ca47105a9778751b8c4ba8ee43eee8770b66de18bd9",
+      "origin": "source",
+      "role": "schema",
+      "artifactRef": "contract://fixtures/source/native-s1000d-issue-4-2/SCHEMA/pm.xsd",
+      "sha256": "sha256:3b8dd444f39ae93e9cedf079f019d6c4516b844106b7f72679806a283eaa0958",
+      "mediaType": "application/xml",
+      "byteLength": 358,
+      "normalizedPath": "SCHEMA/pm.xsd"
+    },
+    {
+      "artifactId": "urn:techpub:artifact:v1:sha256:ef1b76326542c267c6e17ea75a4bd99e527154a0dfe9d62bad2fb0c4a87e8647",
+      "origin": "derived",
+      "role": "producer_snapshot",
+      "artifactRef": "contract://fixtures/source/native-s1000d-issue-4-2.parsed.json",
+      "sha256": "sha256:e7065dc6089c33b62516800946a5676dbfae6b701dfe2e7404fee3ad5ecba0c3",
+      "mediaType": "application/json",
+      "byteLength": 14213,
+      "normalizedPath": "lineage/native-s1000d-issue-4-2.parsed.json"
+    },
+    {
+      "artifactId": "urn:techpub:artifact:v1:sha256:15b81ea0132d0af1db7d0fd4d64f1d67568aba84ecdd4dc095076c217bb02d38",
+      "origin": "derived",
+      "role": "controlled_real_baseline_summary",
+      "artifactRef": "contract://fixtures/source/real-issue-4-2-baseline.summary.json",
+      "sha256": "sha256:d964b9132912b4671f1ab7cb7bc48e42e3d3d2ac841587c549a9c212172e1eff",
+      "mediaType": "application/json",
+      "byteLength": 1164,
+      "normalizedPath": "lineage/real-issue-4-2-baseline.summary.json"
+    }
+  ],
+  "source": {
+    "kind": "native_s1000d",
+    "sourcePackageId": "s1000d:controlled-fixture-package:issue-4.2:001",
+    "sourcePackageHash": "sha256:9aec4702ab8a658af9680f1d2cf9c0df77d1f2e79e40c6df0105acfb439caf06",
+    "identityAuthority": "service_observed",
+    "artifactIds": [
+      "urn:techpub:artifact:v1:sha256:d5466d06d6e5e53c016a623f3ede860436814c5a17e95de142df17b674ba3efd",
+      "urn:techpub:artifact:v1:sha256:cf5ea6ea9e72fb69eea1c606e7642f50548c846c0f4e5fadb0fbf5cf56a96fff",
+      "urn:techpub:artifact:v1:sha256:d8d7a8a9186b4289aacb298ca08b6b54da809b089fbe59a468881b1a2a210b2f",
+      "urn:techpub:artifact:v1:sha256:ca711fc18deff99b4effdb78071b22e9afaf4adb1c7f5efaf3a71d542b6f1951",
+      "urn:techpub:artifact:v1:sha256:3c7f8f8172142afaf0cd4762ef0a7270993d96500a57527ac76a96c64b052373",
+      "urn:techpub:artifact:v1:sha256:844c0913468d4a088e0bf53b6aa1d41a974c5847446ddbea1721b5f83a3da8b5",
+      "urn:techpub:artifact:v1:sha256:fb9f83e8cea5bcfbc7754df1fd8f2d4c25e1b35866d31c0ba6dd00a84da51665",
+      "urn:techpub:artifact:v1:sha256:ccb4004a9f180ff959491a0517774abd97e0f08bdde796079e2eba1528217826",
+      "urn:techpub:artifact:v1:sha256:66cec7efae5f3ce10eff0ca47105a9778751b8c4ba8ee43eee8770b66de18bd9"
+    ],
+    "deliveryObjects": [
+      {
+        "deliveryObjectId": "urn:techpub:delivery-object:v1:sha256:bc67148fda2e508956a3c2a5ef2e3b846f4d2258eccb539a7d970445a337dd4a",
+        "kind": "dml",
+        "identifier": {
+          "scheme": "s1000d_dml_identity",
+          "value": "dml:-:dmlType=s;modelIdentCode=FIXTURE;senderIdent=ZZZZZ;seqNumber=00001;yearOfDataIssue=2026:001-00:en-US",
+          "authority": "source_asserted",
+          "completeness": "complete",
+          "sourceRefIds": [
+            "urn:techpub:source-ref:v1:sha256:dca9c3da0ff87a95f3afe43053b60ba2f74dc5492e0c7048ab63fd2ea05ac9a7"
+          ]
+        },
+        "artifactIds": [
+          "urn:techpub:artifact:v1:sha256:d8d7a8a9186b4289aacb298ca08b6b54da809b089fbe59a468881b1a2a210b2f"
+        ],
+        "sourceRefIds": [
+          "urn:techpub:source-ref:v1:sha256:dca9c3da0ff87a95f3afe43053b60ba2f74dc5492e0c7048ab63fd2ea05ac9a7"
+        ]
+      },
+      {
+        "deliveryObjectId": "urn:techpub:delivery-object:v1:sha256:5c7fe10810dba1708d76b4456fcad8f51ebbafa940038419713f9cec8efe2b3b",
+        "kind": "ddn",
+        "identifier": {
+          "scheme": "s1000d_ddn_identity",
+          "value": "ddn:-:modelIdentCode=FIXTURE;receiverIdent=YYYYY;senderIdent=ZZZZZ;seqNumber=00001;yearOfDataIssue=2026:001-00:en-US",
+          "authority": "source_asserted",
+          "completeness": "complete",
+          "sourceRefIds": [
+            "urn:techpub:source-ref:v1:sha256:665d31064b62a5bafb87e765bdf902c660b955ad6542aa11f3d98e6498ac9b71"
+          ]
+        },
+        "artifactIds": [
+          "urn:techpub:artifact:v1:sha256:d5466d06d6e5e53c016a623f3ede860436814c5a17e95de142df17b674ba3efd"
+        ],
+        "sourceRefIds": [
+          "urn:techpub:source-ref:v1:sha256:665d31064b62a5bafb87e765bdf902c660b955ad6542aa11f3d98e6498ac9b71"
+        ]
+      }
+    ],
+    "legacyIdentifiers": [
+      {
+        "namespace": "s1000d-service.parser-package-hash.v1",
+        "value": "sha256:b5f52e0c4c26d925e863bf1aee708b04f21ab66cdfb69f65a7fca93d3844eed8"
+      }
+    ]
+  },
+  "profile": {
+    "canonicalModel": "technical-publication-core.v1",
+    "sourceProfile": "S1000D_4-2",
+    "sourceStandard": {
+      "name": "S1000D",
+      "issue": "4.2",
+      "profile": "controlled-synthetic-contract-fixture"
+    },
+    "mappingProfile": {
+      "id": "s1000d-issue-4.2-to-techpub-core-v1",
+      "version": "frozen.2",
+      "hash": "sha256:403f765c324fe84ca07d7a0953fd5be7e57e24c88cfc9fad271a002071aad659"
+    }
+  },
+  "lineage": {
+    "generatedAt": "2026-08-11T00:00:00Z",
+    "producer": {
+      "name": "techpub-s1000d-u0-fixture-projector",
+      "version": "frozen.2",
+      "runtime": "python",
+      "buildHash": "sha256:19cbe7650e70cfe5a07e24529703c102859968ecd953e81c305cfd284f04652c"
+    },
+    "inputs": [
+      {
+        "role": "source_package",
+        "schemaVersion": "S1000D_4-2",
+        "id": "s1000d:controlled-fixture-package:issue-4.2:001",
+        "hash": "sha256:9aec4702ab8a658af9680f1d2cf9c0df77d1f2e79e40c6df0105acfb439caf06",
+        "artifactIds": [
+          "urn:techpub:artifact:v1:sha256:d5466d06d6e5e53c016a623f3ede860436814c5a17e95de142df17b674ba3efd",
+          "urn:techpub:artifact:v1:sha256:cf5ea6ea9e72fb69eea1c606e7642f50548c846c0f4e5fadb0fbf5cf56a96fff",
+          "urn:techpub:artifact:v1:sha256:d8d7a8a9186b4289aacb298ca08b6b54da809b089fbe59a468881b1a2a210b2f",
+          "urn:techpub:artifact:v1:sha256:ca711fc18deff99b4effdb78071b22e9afaf4adb1c7f5efaf3a71d542b6f1951",
+          "urn:techpub:artifact:v1:sha256:3c7f8f8172142afaf0cd4762ef0a7270993d96500a57527ac76a96c64b052373",
+          "urn:techpub:artifact:v1:sha256:844c0913468d4a088e0bf53b6aa1d41a974c5847446ddbea1721b5f83a3da8b5",
+          "urn:techpub:artifact:v1:sha256:fb9f83e8cea5bcfbc7754df1fd8f2d4c25e1b35866d31c0ba6dd00a84da51665",
+          "urn:techpub:artifact:v1:sha256:ccb4004a9f180ff959491a0517774abd97e0f08bdde796079e2eba1528217826",
+          "urn:techpub:artifact:v1:sha256:66cec7efae5f3ce10eff0ca47105a9778751b8c4ba8ee43eee8770b66de18bd9"
+        ]
+      },
+      {
+        "role": "producer_snapshot",
+        "schemaVersion": "s1000d-service.parsed-document.v1",
+        "id": "s1000d-parser-snapshot:controlled-fixture:001",
+        "hash": "sha256:e7065dc6089c33b62516800946a5676dbfae6b701dfe2e7404fee3ad5ecba0c3",
+        "artifactIds": [
+          "urn:techpub:artifact:v1:sha256:ef1b76326542c267c6e17ea75a4bd99e527154a0dfe9d62bad2fb0c4a87e8647"
+        ]
+      },
+      {
+        "role": "controlled_real_baseline_summary",
+        "schemaVersion": "techpub.fixture.s1000d-real-baseline-summary.v1",
+        "id": "s1000d-real-controlled-baseline:issue-4.2:2026-08-11",
+        "hash": "sha256:d964b9132912b4671f1ab7cb7bc48e42e3d3d2ac841587c549a9c212172e1eff",
+        "artifactIds": [
+          "urn:techpub:artifact:v1:sha256:15b81ea0132d0af1db7d0fd4d64f1d67568aba84ecdd4dc095076c217bb02d38"
+        ]
+      }
+    ]
+  },
+  "document": {
+    "documentId": "urn:techpub:document:v1:sha256:dee688ce2dd07db0f61d27703815acd8cd447b2d83b521deb3911025234f6aae",
+    "documentType": {
+      "value": "publication",
+      "authority": "parser_normalized",
+      "mappingStatus": "normalized",
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:6f239d3163a3ef15136f450a8871545f91710c72fcf473f25e374dfdc4a2874e"
+      ]
+    },
+    "title": {
+      "value": "Controlled fixture publication",
+      "authority": "source_asserted",
+      "mappingStatus": "exact",
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:6f239d3163a3ef15136f450a8871545f91710c72fcf473f25e374dfdc4a2874e"
+      ]
+    },
+    "identifiers": [
+      {
+        "scheme": "s1000d_pm_identity",
+        "value": "pm:-:modelIdentCode=FIXTURE;pmIssuer=ZZZZZ;pmNumber=00001;pmVolume=01:001-00:en-US",
+        "authority": "source_asserted",
+        "completeness": "complete",
+        "sourceRefIds": [
+          "urn:techpub:source-ref:v1:sha256:6f239d3163a3ef15136f450a8871545f91710c72fcf473f25e374dfdc4a2874e"
+        ]
+      }
+    ],
+    "language": {
+      "value": "en-US",
+      "authority": "source_asserted",
+      "mappingStatus": "exact",
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:6f239d3163a3ef15136f450a8871545f91710c72fcf473f25e374dfdc4a2874e"
+      ]
+    },
+    "revision": {
+      "label": {
+        "value": "001-00",
+        "authority": "source_asserted",
+        "mappingStatus": "exact",
+        "sourceRefIds": [
+          "urn:techpub:source-ref:v1:sha256:6f239d3163a3ef15136f450a8871545f91710c72fcf473f25e374dfdc4a2874e"
+        ]
+      }
+    },
+    "relationships": []
+  },
+  "publicationStructures": [
+    {
+      "publicationStructureId": "urn:techpub:publication-structure:v1:sha256:cd8af54551e3c68284e79cd09ff1c2374d57f4ea457ddc28b8d95e39149b7904",
+      "continuityKey": "pm:-:modelIdentCode=FIXTURE;pmIssuer=ZZZZZ;pmNumber=00001;pmVolume=01:001-00:en-US",
+      "kind": "s1000d_publication_module",
+      "authority": "source_asserted",
+      "order": 0,
+      "standardIdentity": {
+        "scheme": "s1000d_pm_identity",
+        "value": "pm:-:modelIdentCode=FIXTURE;pmIssuer=ZZZZZ;pmNumber=00001;pmVolume=01:001-00:en-US",
+        "authority": "source_asserted",
+        "completeness": "complete",
+        "sourceRefIds": [
+          "urn:techpub:source-ref:v1:sha256:6f239d3163a3ef15136f450a8871545f91710c72fcf473f25e374dfdc4a2874e"
+        ]
+      },
+      "title": {
+        "value": "Controlled fixture publication",
+        "authority": "source_asserted",
+        "mappingStatus": "exact",
+        "sourceRefIds": [
+          "urn:techpub:source-ref:v1:sha256:6f239d3163a3ef15136f450a8871545f91710c72fcf473f25e374dfdc4a2874e"
+        ]
+      },
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:6f239d3163a3ef15136f450a8871545f91710c72fcf473f25e374dfdc4a2874e",
+        "urn:techpub:source-ref:v1:sha256:867644702db53ce29c31bfb5b8b5cb1ded88d2bd6aa755ee3bb1b7ccb82dff86"
+      ],
+      "nodes": [
+        {
+          "nodeId": "urn:techpub:publication-node:v1:sha256:2ffbd03418a6362683a4af9f507282aa9db2420215617f109298a3e139ebd75b",
+          "continuityKey": "pm-entry-fixture-procedure",
+          "order": 0,
+          "title": {
+            "value": "Fixture procedure",
+            "authority": "source_asserted",
+            "mappingStatus": "exact",
+            "sourceRefIds": [
+              "urn:techpub:source-ref:v1:sha256:867644702db53ce29c31bfb5b8b5cb1ded88d2bd6aa755ee3bb1b7ccb82dff86"
+            ]
+          },
+          "moduleIds": [
+            "urn:techpub:module:v1:sha256:c3c09fa8098adc2b91d95a881d6eb2416ff6d7c7ea1da5a1a423e1bc3ea72571"
+          ],
+          "children": []
+        }
+      ]
+    }
+  ],
+  "modules": [
+    {
+      "moduleId": "urn:techpub:module:v1:sha256:c3c09fa8098adc2b91d95a881d6eb2416ff6d7c7ea1da5a1a423e1bc3ea72571",
+      "continuityKey": "dm:-:modelIdentCode=FIXTURE;systemDiffCode=A;systemCode=00;subSystemCode=0;subSubSystemCode=0;assyCode=00;disassyCode=00;disassyCodeVariant=A;infoCode=040;infoCodeVariant=A;itemLocationCode=D:001-00:en-US",
+      "moduleKind": "data_module",
+      "informationType": "descriptive",
+      "authority": "source_asserted",
+      "identityStability": "source_stable",
+      "order": 0,
+      "standardIdentity": {
+        "scheme": "s1000d_dm_identity",
+        "value": "dm:-:modelIdentCode=FIXTURE;systemDiffCode=A;systemCode=00;subSystemCode=0;subSubSystemCode=0;assyCode=00;disassyCode=00;disassyCodeVariant=A;infoCode=040;infoCodeVariant=A;itemLocationCode=D:001-00:en-US",
+        "authority": "source_asserted",
+        "completeness": "complete",
+        "sourceRefIds": [
+          "urn:techpub:source-ref:v1:sha256:3cc858a000f1bd9addc6e2f201c1dd1ceef19e31c868c2283ff68d1810b51965"
+        ]
+      },
+      "title": {
+        "value": "Fixture equipment Controlled procedure",
+        "authority": "source_asserted",
+        "mappingStatus": "exact",
+        "sourceRefIds": [
+          "urn:techpub:source-ref:v1:sha256:3cc858a000f1bd9addc6e2f201c1dd1ceef19e31c868c2283ff68d1810b51965"
+        ]
+      },
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:3cc858a000f1bd9addc6e2f201c1dd1ceef19e31c868c2283ff68d1810b51965"
+      ],
+      "contentUnitIds": [
+        "urn:techpub:unit:v1:sha256:2d07027897be655cee16b5fd9961bf70abd18659dc610a88b2cd9de133fb157d",
+        "urn:techpub:unit:v1:sha256:6aa0a1eaf643812f09fa15f41156ceb2b138c3e945c149a970f07a2b9be678fb",
+        "urn:techpub:unit:v1:sha256:53528ca7686fa53a46e7d620d3af79b1e2e81c09c050ede973330badd72b5abc",
+        "urn:techpub:unit:v1:sha256:eb4f0668fa09cae38bb2cd2871141b052aab371e1ee458d5ad466b11a40949e6",
+        "urn:techpub:unit:v1:sha256:7a7ef319c478be4975a190a4485d9db5605479bd9d92d0481a54417a9722b30a",
+        "urn:techpub:unit:v1:sha256:2303ae8b14cfa9eac19f79a98fcebea5dcaeb1021b8d01c8f08677758671a26a",
+        "urn:techpub:unit:v1:sha256:51b9e994e9e18a49420ab9c200168236df9307f342e1df9b23ae10055cfb4a60",
+        "urn:techpub:unit:v1:sha256:3c97ad0a361c1c926033d3482270df1b0e387659c955561282c368cd594f4be5",
+        "urn:techpub:unit:v1:sha256:e704dc0e4cd3403a5ae1f9ad356bd9dab884ae2c71aa2a08c3e2665b98824955",
+        "urn:techpub:unit:v1:sha256:c7b5675297a9e4d48589fa1773dfd92ebd76cf37d682210324efca28285f591c",
+        "urn:techpub:unit:v1:sha256:1f5ee27a79b6fe437d691a8ee71bc1531f5168dbe707e02e82eae3e21fe115d9"
+      ]
+    },
+    {
+      "moduleId": "urn:techpub:module:v1:sha256:04fed7ebb23f69381d13198271edf519245c677923e0b4512689b239b3bf126e",
+      "continuityKey": "pm:-:modelIdentCode=FIXTURE;pmIssuer=ZZZZZ;pmNumber=00001;pmVolume=01:001-00:en-US",
+      "moduleKind": "other",
+      "informationType": "publication",
+      "authority": "source_asserted",
+      "identityStability": "source_stable",
+      "order": 1,
+      "standardIdentity": {
+        "scheme": "s1000d_pm_identity",
+        "value": "pm:-:modelIdentCode=FIXTURE;pmIssuer=ZZZZZ;pmNumber=00001;pmVolume=01:001-00:en-US",
+        "authority": "source_asserted",
+        "completeness": "complete",
+        "sourceRefIds": [
+          "urn:techpub:source-ref:v1:sha256:6f239d3163a3ef15136f450a8871545f91710c72fcf473f25e374dfdc4a2874e"
+        ]
+      },
+      "title": {
+        "value": "Controlled fixture publication",
+        "authority": "source_asserted",
+        "mappingStatus": "exact",
+        "sourceRefIds": [
+          "urn:techpub:source-ref:v1:sha256:6f239d3163a3ef15136f450a8871545f91710c72fcf473f25e374dfdc4a2874e"
+        ]
+      },
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:6f239d3163a3ef15136f450a8871545f91710c72fcf473f25e374dfdc4a2874e"
+      ],
+      "contentUnitIds": [
+        "urn:techpub:unit:v1:sha256:74e1d183ec6d4b623f0a158536c52870df40a1f9fd50658d0c8e6e3ca29c0684",
+        "urn:techpub:unit:v1:sha256:66c5d4a9faaccbcdad8864f17455e982b320b5fd5124df3db17a4328dfa8b47b"
+      ]
+    }
+  ],
+  "sourceRefs": [
+    {
+      "sourceRefId": "urn:techpub:source-ref:v1:sha256:3cc858a000f1bd9addc6e2f201c1dd1ceef19e31c868c2283ff68d1810b51965",
+      "kind": "xml",
+      "artifactId": "urn:techpub:artifact:v1:sha256:cf5ea6ea9e72fb69eea1c606e7642f50548c846c0f4e5fadb0fbf5cf56a96fff",
+      "normalizedPath": "DMC-FIXTURE.XML",
+      "xpath": "/dmodule/identAndStatusSection/dmAddress",
+      "quote": "Fixture equipment Controlled procedure",
+      "anchorTextHash": "sha256:bfcfa0856379a57535c119f8cd26da15444aa8953a5c16df94d5893ef6cec737"
+    },
+    {
+      "sourceRefId": "urn:techpub:source-ref:v1:sha256:6f239d3163a3ef15136f450a8871545f91710c72fcf473f25e374dfdc4a2874e",
+      "kind": "xml",
+      "artifactId": "urn:techpub:artifact:v1:sha256:3c7f8f8172142afaf0cd4762ef0a7270993d96500a57527ac76a96c64b052373",
+      "normalizedPath": "PMC-FIXTURE.XML",
+      "xpath": "/pm/identAndStatusSection/pmAddress",
+      "quote": "Controlled fixture publication",
+      "anchorTextHash": "sha256:856f2fae1f2db5ee7cf58b731c50d78fe77fb3b75786940d5de7279109a33ef9"
+    },
+    {
+      "sourceRefId": "urn:techpub:source-ref:v1:sha256:dca9c3da0ff87a95f3afe43053b60ba2f74dc5492e0c7048ab63fd2ea05ac9a7",
+      "kind": "xml",
+      "artifactId": "urn:techpub:artifact:v1:sha256:d8d7a8a9186b4289aacb298ca08b6b54da809b089fbe59a468881b1a2a210b2f",
+      "normalizedPath": "DML-FIXTURE.XML",
+      "xpath": "/dml",
+      "quote": "FIXTURE",
+      "anchorTextHash": "sha256:70c95c4b3e0dbbf6863d8d888c4cce41afbf45aceb7a4afc70aab945da104a05"
+    },
+    {
+      "sourceRefId": "urn:techpub:source-ref:v1:sha256:665d31064b62a5bafb87e765bdf902c660b955ad6542aa11f3d98e6498ac9b71",
+      "kind": "xml",
+      "artifactId": "urn:techpub:artifact:v1:sha256:d5466d06d6e5e53c016a623f3ede860436814c5a17e95de142df17b674ba3efd",
+      "normalizedPath": "DDN-FIXTURE.XML",
+      "xpath": "/ddn",
+      "quote": "DMC-FIXTURE.XML ICN-FIXTURE-001.png",
+      "anchorTextHash": "sha256:2ca71fe985c46c5707c77caffe9b3378a4f40e9fb9b288b44aca8531a58f27e8"
+    },
+    {
+      "sourceRefId": "urn:techpub:source-ref:v1:sha256:aa35350d2083608985921fb05dbfd62613def177630b9ddac24195b044a4eafe",
+      "kind": "xml",
+      "artifactId": "urn:techpub:artifact:v1:sha256:cf5ea6ea9e72fb69eea1c606e7642f50548c846c0f4e5fadb0fbf5cf56a96fff",
+      "normalizedPath": "DMC-FIXTURE.XML",
+      "xpath": "/dmodule/content/description/levelledPara/title",
+      "quote": "Controlled fixture overview",
+      "anchorTextHash": "sha256:94c6d61947cec2e0d8269e1f4f31f5bf14249aa8a69e29aac46c645803725433"
+    },
+    {
+      "sourceRefId": "urn:techpub:source-ref:v1:sha256:d3ba26ee4807061618d60ee9d69b90254801b1b9ef37e80af9d151056c1f4c9f",
+      "kind": "xml",
+      "artifactId": "urn:techpub:artifact:v1:sha256:cf5ea6ea9e72fb69eea1c606e7642f50548c846c0f4e5fadb0fbf5cf56a96fff",
+      "normalizedPath": "DMC-FIXTURE.XML",
+      "xpath": "/dmodule/content/description/levelledPara/para",
+      "quote": "This synthetic module contains no manufacturer instruction.",
+      "anchorTextHash": "sha256:638fd882684932ced992bbbf206ca41c18ef8bfc19e526d05ceb977d359978e2"
+    },
+    {
+      "sourceRefId": "urn:techpub:source-ref:v1:sha256:c9a2e7d15cd4a32a9b819862cfb52e3a7bfe72334ee04295c063c2074c61423d",
+      "kind": "xml",
+      "artifactId": "urn:techpub:artifact:v1:sha256:cf5ea6ea9e72fb69eea1c606e7642f50548c846c0f4e5fadb0fbf5cf56a96fff",
+      "normalizedPath": "DMC-FIXTURE.XML",
+      "xpath": "/dmodule/content/procedure/mainProcedure/proceduralStep",
+      "quote": "Disconnect the synthetic test power source.",
+      "anchorTextHash": "sha256:1faf6c0c1f307b1c76c2844a5a59f3504c0219bd77192e04e303ff1fc4c8859e",
+      "elementId": "step-fixture-1"
+    },
+    {
+      "sourceRefId": "urn:techpub:source-ref:v1:sha256:bcd0955d18aa6a8468dea27ac9b636f627488d25788542744efcbdf12ef02663",
+      "kind": "xml",
+      "artifactId": "urn:techpub:artifact:v1:sha256:cf5ea6ea9e72fb69eea1c606e7642f50548c846c0f4e5fadb0fbf5cf56a96fff",
+      "normalizedPath": "DMC-FIXTURE.XML",
+      "xpath": "/dmodule/content/procedure/mainProcedure/proceduralStep/warning",
+      "quote": "Use only the synthetic test set.",
+      "anchorTextHash": "sha256:7e4164b4903f7e7d5cd0e81e671549ecaed4d18df51dde3c6b9370de3c2dc730",
+      "elementId": "warning-fixture-1"
+    },
+    {
+      "sourceRefId": "urn:techpub:source-ref:v1:sha256:bdcf42ef14b6e05943e5228f2624b0e89894002a66bd7b541cf2d07dc650fbc4",
+      "kind": "xml",
+      "artifactId": "urn:techpub:artifact:v1:sha256:cf5ea6ea9e72fb69eea1c606e7642f50548c846c0f4e5fadb0fbf5cf56a96fff",
+      "normalizedPath": "DMC-FIXTURE.XML",
+      "xpath": "/dmodule/content/procedure/mainProcedure/proceduralStep/caution",
+      "quote": "Protect the fixture connector.",
+      "anchorTextHash": "sha256:4fa978be618106b9a60e7e22d4b92804987db1c000aef3fafd4807142865ec48",
+      "elementId": "caution-fixture-1"
+    },
+    {
+      "sourceRefId": "urn:techpub:source-ref:v1:sha256:89edcfc56f81bcbf21c612eeaafad8615ab8c6e74ea92d1853e8b399f32f6712",
+      "kind": "xml",
+      "artifactId": "urn:techpub:artifact:v1:sha256:cf5ea6ea9e72fb69eea1c606e7642f50548c846c0f4e5fadb0fbf5cf56a96fff",
+      "normalizedPath": "DMC-FIXTURE.XML",
+      "xpath": "/dmodule/content/procedure/mainProcedure/proceduralStep/note",
+      "quote": "This note has no engineering authority.",
+      "anchorTextHash": "sha256:88d797d5025b80b8862cc60ad9a78a5e64a6e470414e84b038cdeafdb4741fea",
+      "elementId": "note-fixture-1"
+    },
+    {
+      "sourceRefId": "urn:techpub:source-ref:v1:sha256:c831fedd1050e3482591aa98844223b68631c37655efc228d146d9fb39fd2cb2",
+      "kind": "xml",
+      "artifactId": "urn:techpub:artifact:v1:sha256:cf5ea6ea9e72fb69eea1c606e7642f50548c846c0f4e5fadb0fbf5cf56a96fff",
+      "normalizedPath": "DMC-FIXTURE.XML",
+      "xpath": "/dmodule/content/procedure/mainProcedure/proceduralStep/randomList",
+      "quote": "Inspect the synthetic label.",
+      "anchorTextHash": "sha256:20f8f54fa94d49e57eb71e06326aa889e578d0793d3a6c1034a06374e2c21264"
+    },
+    {
+      "sourceRefId": "urn:techpub:source-ref:v1:sha256:c3282fb23c6ebc6456107f70803acd49574b742f45f5afd0a27cf3a96e0ea111",
+      "kind": "xml",
+      "artifactId": "urn:techpub:artifact:v1:sha256:cf5ea6ea9e72fb69eea1c606e7642f50548c846c0f4e5fadb0fbf5cf56a96fff",
+      "normalizedPath": "DMC-FIXTURE.XML",
+      "xpath": "/dmodule/content/procedure/mainProcedure/proceduralStep/randomList/listItem",
+      "quote": "Inspect the synthetic label.",
+      "anchorTextHash": "sha256:20f8f54fa94d49e57eb71e06326aa889e578d0793d3a6c1034a06374e2c21264"
+    },
+    {
+      "sourceRefId": "urn:techpub:source-ref:v1:sha256:9e43a23b1cb56fca2e372659cc90a3154b95507b6ff3201c575d85520c010de3",
+      "kind": "xml",
+      "artifactId": "urn:techpub:artifact:v1:sha256:cf5ea6ea9e72fb69eea1c606e7642f50548c846c0f4e5fadb0fbf5cf56a96fff",
+      "normalizedPath": "DMC-FIXTURE.XML",
+      "xpath": "/dmodule/content/procedure/mainProcedure/proceduralStep/table",
+      "quote": "Fixture parts Item Status Fixture label CHECK",
+      "anchorTextHash": "sha256:613b103e60d09501694d52c7bbeae175f8a6deeeaa2710237955ef64188f4f9f",
+      "elementId": "table-fixture-1"
+    },
+    {
+      "sourceRefId": "urn:techpub:source-ref:v1:sha256:ceb1180cc2a4f8c8b6a8fdd0d9cd804e6b4dc126269b67bb69134a5bbfa2276c",
+      "kind": "xml",
+      "artifactId": "urn:techpub:artifact:v1:sha256:cf5ea6ea9e72fb69eea1c606e7642f50548c846c0f4e5fadb0fbf5cf56a96fff",
+      "normalizedPath": "DMC-FIXTURE.XML",
+      "xpath": "/dmodule/content/procedure/mainProcedure/proceduralStep/figure",
+      "quote": "Fixture connection",
+      "anchorTextHash": "sha256:585d535c201a2b7826305209151ca0f39224361e54a615958bb602ba6980452c",
+      "elementId": "figure-fixture-1"
+    },
+    {
+      "sourceRefId": "urn:techpub:source-ref:v1:sha256:0974aa2a66356691ac6ba8619af37edd68ff26d43eeb63b5eb72e7eff7af0c88",
+      "kind": "xml",
+      "artifactId": "urn:techpub:artifact:v1:sha256:cf5ea6ea9e72fb69eea1c606e7642f50548c846c0f4e5fadb0fbf5cf56a96fff",
+      "normalizedPath": "DMC-FIXTURE.XML",
+      "xpath": "/dmodule/content/procedure/mainProcedure/proceduralStep/figure/graphic",
+      "quote": "ICN-FIXTURE-001",
+      "anchorTextHash": "sha256:5f17777647ef765df719abdae1d7cc7495f167772ce3710524a83e748327ea5e",
+      "elementId": "graphic-fixture-1"
+    },
+    {
+      "sourceRefId": "urn:techpub:source-ref:v1:sha256:49fcdd5de1165a0460f896da315e4ab6ba8028ccfde151916ea0046d57fe268f",
+      "kind": "xml",
+      "artifactId": "urn:techpub:artifact:v1:sha256:cf5ea6ea9e72fb69eea1c606e7642f50548c846c0f4e5fadb0fbf5cf56a96fff",
+      "normalizedPath": "DMC-FIXTURE.XML",
+      "xpath": "/dmodule/content/procedure/mainProcedure/proceduralStep/internalRef",
+      "quote": "step-fixture-1",
+      "anchorTextHash": "sha256:96807b4ac556d93fbf01a2fe52046bebb51ed9042585caa10909ba866f065495"
+    },
+    {
+      "sourceRefId": "urn:techpub:source-ref:v1:sha256:3c747698986865b0298011b8040344f15b56a95a03571a11e21906ecdf010f23",
+      "kind": "xml",
+      "artifactId": "urn:techpub:artifact:v1:sha256:cf5ea6ea9e72fb69eea1c606e7642f50548c846c0f4e5fadb0fbf5cf56a96fff",
+      "normalizedPath": "DMC-FIXTURE.XML",
+      "xpath": "/dmodule/content/procedure/mainProcedure/proceduralStep/externalPubRef",
+      "quote": "FIXTURE-MANUAL-001",
+      "anchorTextHash": "sha256:1948ccb8fdeb7f276452c9aaea18a6fd92348aa2b101b5846e2853aa452b8c10"
+    },
+    {
+      "sourceRefId": "urn:techpub:source-ref:v1:sha256:69b0a68e3a942c1b68f0b64df8a345b4995cc25433e47d90e6b7562523363102",
+      "kind": "xml",
+      "artifactId": "urn:techpub:artifact:v1:sha256:cf5ea6ea9e72fb69eea1c606e7642f50548c846c0f4e5fadb0fbf5cf56a96fff",
+      "normalizedPath": "DMC-FIXTURE.XML",
+      "xpath": "/dmodule/identAndStatusSection/dmStatus/applic",
+      "quote": "TEST ASSET GROUP ALPHA ONLY",
+      "anchorTextHash": "sha256:31485ce644227c4084ceb670b34c664f820896a185cac51ca3a992a36ce18ba6",
+      "elementId": "app-fixture-1"
+    },
+    {
+      "sourceRefId": "urn:techpub:source-ref:v1:sha256:867644702db53ce29c31bfb5b8b5cb1ded88d2bd6aa755ee3bb1b7ccb82dff86",
+      "kind": "xml",
+      "artifactId": "urn:techpub:artifact:v1:sha256:3c7f8f8172142afaf0cd4762ef0a7270993d96500a57527ac76a96c64b052373",
+      "normalizedPath": "PMC-FIXTURE.XML",
+      "xpath": "/pm/content/pmEntry",
+      "quote": "Fixture procedure",
+      "anchorTextHash": "sha256:6c07afa3b89a1448fd3c76b87f131a99db67d8fde01735eeccb130d7d446b7a1"
+    },
+    {
+      "sourceRefId": "urn:techpub:source-ref:v1:sha256:1231338cebc3b7f1a3e33f269606520291a2900f6822094c2a8dd2875174b6eb",
+      "kind": "xml",
+      "artifactId": "urn:techpub:artifact:v1:sha256:3c7f8f8172142afaf0cd4762ef0a7270993d96500a57527ac76a96c64b052373",
+      "normalizedPath": "PMC-FIXTURE.XML",
+      "xpath": "/pm/content/pmEntry/dmRef",
+      "quote": "FIXTURE",
+      "anchorTextHash": "sha256:70c95c4b3e0dbbf6863d8d888c4cce41afbf45aceb7a4afc70aab945da104a05"
+    },
+    {
+      "sourceRefId": "urn:techpub:source-ref:v1:sha256:6b01a4d81fccbedc15468ff20b60165f51e7efbfa358c6845d3f9da028699f0e",
+      "kind": "xml",
+      "artifactId": "urn:techpub:artifact:v1:sha256:844c0913468d4a088e0bf53b6aa1d41a974c5847446ddbea1721b5f83a3da8b5",
+      "normalizedPath": "SCHEMA/ddn.xsd",
+      "xpath": "/xs:schema",
+      "quote": "<xs:schema",
+      "anchorTextHash": "sha256:49a6767d5a4707f9fc674e8257e493d75622d1ec7b30b74df6b909e291736820"
+    },
+    {
+      "sourceRefId": "urn:techpub:source-ref:v1:sha256:93e4bb7dc106aa8476784d6f835ab77970c7d8346dd7a3c1a8b1f7854fb86e79",
+      "kind": "xml",
+      "artifactId": "urn:techpub:artifact:v1:sha256:fb9f83e8cea5bcfbc7754df1fd8f2d4c25e1b35866d31c0ba6dd00a84da51665",
+      "normalizedPath": "SCHEMA/descript.xsd",
+      "xpath": "/xs:schema",
+      "quote": "<xs:schema",
+      "anchorTextHash": "sha256:49a6767d5a4707f9fc674e8257e493d75622d1ec7b30b74df6b909e291736820"
+    },
+    {
+      "sourceRefId": "urn:techpub:source-ref:v1:sha256:1fd9b40e9a8f5ea0d02640371b5a0a85369fe52c2add45fe622bbe46b91fccb0",
+      "kind": "xml",
+      "artifactId": "urn:techpub:artifact:v1:sha256:ccb4004a9f180ff959491a0517774abd97e0f08bdde796079e2eba1528217826",
+      "normalizedPath": "SCHEMA/dml.xsd",
+      "xpath": "/xs:schema",
+      "quote": "<xs:schema",
+      "anchorTextHash": "sha256:49a6767d5a4707f9fc674e8257e493d75622d1ec7b30b74df6b909e291736820"
+    },
+    {
+      "sourceRefId": "urn:techpub:source-ref:v1:sha256:f9e00a59530a860ad6d2e893f7c861f57a96e825ae701a1e8e475a9ca4d9372f",
+      "kind": "xml",
+      "artifactId": "urn:techpub:artifact:v1:sha256:66cec7efae5f3ce10eff0ca47105a9778751b8c4ba8ee43eee8770b66de18bd9",
+      "normalizedPath": "SCHEMA/pm.xsd",
+      "xpath": "/xs:schema",
+      "quote": "<xs:schema",
+      "anchorTextHash": "sha256:49a6767d5a4707f9fc674e8257e493d75622d1ec7b30b74df6b909e291736820"
+    }
+  ],
+  "sourceSegments": [
+    {
+      "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:24fe8e91d38709eb9d8e5ed74517aeac451f965df83b71e38892e250f938f4cb",
+      "continuityKey": "schema:SCHEMA/ddn.xsd",
+      "kind": "xml_element",
+      "expectedSemantic": "other",
+      "order": 0,
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:6b01a4d81fccbedc15468ff20b60165f51e7efbfa358c6845d3f9da028699f0e"
+      ],
+      "segmentHash": "sha256:98645102da00c4864329fbb33d2f95052df02d4fedb19c9e322d0a06f13a5849",
+      "coverageRequired": true
+    },
+    {
+      "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:1ef8cb3c3a9131a6b8c98e0abb3e12748123d48e22536027db7a95a79e15475f",
+      "continuityKey": "schema:SCHEMA/descript.xsd",
+      "kind": "xml_element",
+      "expectedSemantic": "other",
+      "order": 1,
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:93e4bb7dc106aa8476784d6f835ab77970c7d8346dd7a3c1a8b1f7854fb86e79"
+      ],
+      "segmentHash": "sha256:128cd6cc47d59573ac2f2af3859b8eecfce259eef82e2fdf8f92c921eb1247ee",
+      "coverageRequired": true
+    },
+    {
+      "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:7fedefb952bdbcb637af49b3fe588b80585cf2f993ceb08a5b6897f58c34874f",
+      "continuityKey": "schema:SCHEMA/dml.xsd",
+      "kind": "xml_element",
+      "expectedSemantic": "other",
+      "order": 2,
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:1fd9b40e9a8f5ea0d02640371b5a0a85369fe52c2add45fe622bbe46b91fccb0"
+      ],
+      "segmentHash": "sha256:93c4f94e5e1102ca2a99b26d626f21b410d47101ff18afda2f5252a09e13de9c",
+      "coverageRequired": true
+    },
+    {
+      "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:e1b8cf8783a333985732e58ce82c7db9e6e9aad372b2d13ed9233c4e115e500b",
+      "continuityKey": "schema:SCHEMA/pm.xsd",
+      "kind": "xml_element",
+      "expectedSemantic": "other",
+      "order": 3,
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:f9e00a59530a860ad6d2e893f7c861f57a96e825ae701a1e8e475a9ca4d9372f"
+      ],
+      "segmentHash": "sha256:95b5310297590099e8209e1567c4831d78c020ed1863daf7ce97e143326ca41e",
+      "coverageRequired": true
+    },
+    {
+      "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:b6a85a8ccb58771dfe540a6eb6d71dd66756dddc9c4bd7e7e8aac838a80bbac8",
+      "continuityKey": "dm-metadata",
+      "kind": "xml_element",
+      "expectedSemantic": "metadata",
+      "order": 4,
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:3cc858a000f1bd9addc6e2f201c1dd1ceef19e31c868c2283ff68d1810b51965"
+      ],
+      "segmentHash": "sha256:32145b7951ecee5d9f1b2d64338374d4c3f4d277a83242684308701645a44012",
+      "coverageRequired": true
+    },
+    {
+      "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:b5b9213b75207af3ac2e49bbb12cac372a26e7b7f9c3100b5b33a449aa49e79a",
+      "continuityKey": "pm-metadata",
+      "kind": "xml_element",
+      "expectedSemantic": "metadata",
+      "order": 5,
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:6f239d3163a3ef15136f450a8871545f91710c72fcf473f25e374dfdc4a2874e"
+      ],
+      "segmentHash": "sha256:760bc67a373294421edd186a58350e4c274e1cf4cbf502523a919e7a739d6f63",
+      "coverageRequired": true
+    },
+    {
+      "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:3329e9a1f77b69340cf6b0c838a602dd185e781e2cddb178086f3b83c50cbfd4",
+      "continuityKey": "dml-delivery-object",
+      "kind": "xml_element",
+      "expectedSemantic": "other",
+      "order": 6,
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:dca9c3da0ff87a95f3afe43053b60ba2f74dc5492e0c7048ab63fd2ea05ac9a7"
+      ],
+      "segmentHash": "sha256:c2d36dd10f8c60091d7bf7e28187b2e8a6f278c36fbafb105ac57156c109885d",
+      "coverageRequired": true
+    },
+    {
+      "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:0ddaeb6724d6844c6435db096825a2ac842ae663a84d550a4608543a2dc870a8",
+      "continuityKey": "ddn-delivery-object",
+      "kind": "xml_element",
+      "expectedSemantic": "other",
+      "order": 7,
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:665d31064b62a5bafb87e765bdf902c660b955ad6542aa11f3d98e6498ac9b71"
+      ],
+      "segmentHash": "sha256:871bcb16447bd4c563b0571a73d1896567b78acbb031869505f9eaea0dbbcf6e",
+      "coverageRequired": true
+    },
+    {
+      "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:d5437e5d1f8f078d33f4ebba86edce1b791e636daba918a4a332e9d579b45051",
+      "continuityKey": "dm-heading",
+      "kind": "xml_element",
+      "expectedSemantic": "heading",
+      "order": 8,
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:aa35350d2083608985921fb05dbfd62613def177630b9ddac24195b044a4eafe"
+      ],
+      "segmentHash": "sha256:eabcb9393ab49c193f41d191e8d52130480527580bf4c240fd751be7a3bbac52",
+      "coverageRequired": true
+    },
+    {
+      "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:e424996176b8b6810f641ec62d5a22bbc4e1eb8c3306f3228ea1e4de9b767be6",
+      "continuityKey": "dm-paragraph",
+      "kind": "xml_element",
+      "expectedSemantic": "text",
+      "order": 9,
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:d3ba26ee4807061618d60ee9d69b90254801b1b9ef37e80af9d151056c1f4c9f"
+      ],
+      "segmentHash": "sha256:ac8776fc6a42a66eb700490b8c3dd84f2dd222a300bd327dbe362fcc461de787",
+      "coverageRequired": true
+    },
+    {
+      "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:e151f0fb33ff327a89aef73de5b3dab7ac6eb349f6ebc2eea66c6301a48f56d8",
+      "continuityKey": "dm-step",
+      "kind": "xml_element",
+      "expectedSemantic": "step",
+      "order": 10,
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:c9a2e7d15cd4a32a9b819862cfb52e3a7bfe72334ee04295c063c2074c61423d"
+      ],
+      "segmentHash": "sha256:9d108c6385b342bef13d26f50be11b4906e75a841219f4049d082ac4e7862c66",
+      "coverageRequired": true
+    },
+    {
+      "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:9e0b7c5bbbcfcc4dd6ee2afe988f62af8c367b7ce9cd1335c0ae925f2b9735c8",
+      "continuityKey": "dm-warning",
+      "kind": "xml_element",
+      "expectedSemantic": "advisory",
+      "order": 11,
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:bcd0955d18aa6a8468dea27ac9b636f627488d25788542744efcbdf12ef02663"
+      ],
+      "segmentHash": "sha256:14251bd8f17952f346a15eae0646ff5aba5286f9c721ab06a4eb7ebaf74a51c1",
+      "coverageRequired": true
+    },
+    {
+      "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:ce975206d61e981e05a655fb0e9b7f8786dc4c5f90851e625ef54042e9a4eb66",
+      "continuityKey": "dm-caution",
+      "kind": "xml_element",
+      "expectedSemantic": "advisory",
+      "order": 12,
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:bdcf42ef14b6e05943e5228f2624b0e89894002a66bd7b541cf2d07dc650fbc4"
+      ],
+      "segmentHash": "sha256:b4a6a42c8df75bdc3427bba125d44c9ed74c181b5ce984de48fae00b0513f131",
+      "coverageRequired": true
+    },
+    {
+      "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:6e946bf68adc0c7c862b1e624924581ac9a3003deb37ffb67c3180a2d11a8200",
+      "continuityKey": "dm-note",
+      "kind": "xml_element",
+      "expectedSemantic": "advisory",
+      "order": 13,
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:89edcfc56f81bcbf21c612eeaafad8615ab8c6e74ea92d1853e8b399f32f6712"
+      ],
+      "segmentHash": "sha256:1e837cece6c940ce23a59e5c949920f13b9aaebd2c9943f3394ce2512fa23830",
+      "coverageRequired": true
+    },
+    {
+      "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:f8e87edc0e07ed544449d5688290a257d8468ed9219596abd43ecd368bc1df13",
+      "continuityKey": "dm-list",
+      "kind": "xml_element",
+      "expectedSemantic": "list",
+      "order": 14,
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:c831fedd1050e3482591aa98844223b68631c37655efc228d146d9fb39fd2cb2"
+      ],
+      "segmentHash": "sha256:9587565df3273d23590a724e502f84e951076f915c3663f3517595e3aa8febbf",
+      "coverageRequired": true
+    },
+    {
+      "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:daf33e332c1776f98d87cd90c28da08ccf8e0590e1168d15176d434c05bfbdfb",
+      "continuityKey": "dm-list-item",
+      "kind": "xml_element",
+      "expectedSemantic": "list",
+      "order": 15,
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:c3282fb23c6ebc6456107f70803acd49574b742f45f5afd0a27cf3a96e0ea111"
+      ],
+      "segmentHash": "sha256:f4a222ac79344b505d79ba77433214c698072500a456fb5f90e206a9f6b6c483",
+      "coverageRequired": true
+    },
+    {
+      "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:89ab1c54365d70361bd8acbae173cf4c822669d3f51fca929004ed1e8aac4ce6",
+      "continuityKey": "dm-table",
+      "kind": "xml_element",
+      "expectedSemantic": "table",
+      "order": 16,
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:9e43a23b1cb56fca2e372659cc90a3154b95507b6ff3201c575d85520c010de3"
+      ],
+      "segmentHash": "sha256:7e8f83e9e603766d6fca1487898e98ce2b1391fd53b77dca75bf06e4118f4558",
+      "coverageRequired": true
+    },
+    {
+      "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:80869c272ce2a59f9f67ce25c331e429f72b5200f8f6a5e253f452586ad6e182",
+      "continuityKey": "dm-figure",
+      "kind": "xml_element",
+      "expectedSemantic": "figure",
+      "order": 17,
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:ceb1180cc2a4f8c8b6a8fdd0d9cd804e6b4dc126269b67bb69134a5bbfa2276c"
+      ],
+      "segmentHash": "sha256:62d5bc6bad69013baf370717fe3655816eae27c986239cdaf11f4808eed84659",
+      "coverageRequired": true
+    },
+    {
+      "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:19bc47ce52683c5f19913a8ceb688352e7b375cc1f03bf8ab1fcc253cbe99ccb",
+      "continuityKey": "dm-asset",
+      "kind": "xml_element",
+      "expectedSemantic": "asset",
+      "order": 18,
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:0974aa2a66356691ac6ba8619af37edd68ff26d43eeb63b5eb72e7eff7af0c88"
+      ],
+      "segmentHash": "sha256:df9a13a056dcf685c603a9cf2fcf41dd1d94d64ca18435650a047a5541bf9252",
+      "coverageRequired": true
+    },
+    {
+      "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:83ba210411e6c2aef981c0ffa2e5966c26e8ba141ac4798753e0e742d7d7cf4b",
+      "continuityKey": "dm-internal-reference",
+      "kind": "xml_element",
+      "expectedSemantic": "reference",
+      "order": 19,
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:49fcdd5de1165a0460f896da315e4ab6ba8028ccfde151916ea0046d57fe268f"
+      ],
+      "segmentHash": "sha256:3cbbbd7fff7582e82b6a0caf33b3af9c603eb62cb57a7b7d6cd069239676b0d8",
+      "coverageRequired": true
+    },
+    {
+      "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:14cf4ab3a4520f81d7c0b72ec90c4618684afe3c0c4fd1cbfd4d6d61ad05cfdf",
+      "continuityKey": "dm-external-reference",
+      "kind": "xml_element",
+      "expectedSemantic": "reference",
+      "order": 20,
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:3c747698986865b0298011b8040344f15b56a95a03571a11e21906ecdf010f23"
+      ],
+      "segmentHash": "sha256:c37d6780b22422ce46fbfd227ce028210f8cda08fe31b4820ef3cd322cc7f558",
+      "coverageRequired": true
+    },
+    {
+      "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:d9d78ef87465ef2d5b4b2bc2c219ceb8d3623ca6bff6af2469650b397c55b8bb",
+      "continuityKey": "dm-applicability",
+      "kind": "xml_element",
+      "expectedSemantic": "applicability",
+      "order": 21,
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:69b0a68e3a942c1b68f0b64df8a345b4995cc25433e47d90e6b7562523363102"
+      ],
+      "segmentHash": "sha256:3143d1e1308b3edd244afbed4f9466e7431c0e4bf18d46d61c9a176f4b00d63e",
+      "coverageRequired": true
+    },
+    {
+      "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:fc4540213487e88429f30c8c8af7e8330b05f08e373ed8b59a54dc86bafcf633",
+      "continuityKey": "pm-entry-heading",
+      "kind": "xml_element",
+      "expectedSemantic": "heading",
+      "order": 22,
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:867644702db53ce29c31bfb5b8b5cb1ded88d2bd6aa755ee3bb1b7ccb82dff86"
+      ],
+      "segmentHash": "sha256:0434ef68852698ab1f5ddcacad066a229186550d214ff8d9e21e4e55b6d333b4",
+      "coverageRequired": true
+    },
+    {
+      "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:d422f2c1b0893a564006e6973ef6d100bca59224bfd177a5cc238b0e0c0b379e",
+      "continuityKey": "pm-dm-reference",
+      "kind": "xml_element",
+      "expectedSemantic": "reference",
+      "order": 23,
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:1231338cebc3b7f1a3e33f269606520291a2900f6822094c2a8dd2875174b6eb"
+      ],
+      "segmentHash": "sha256:a920b654fd036b7c121b82d0bb913291ec29c8d6775dcdedacd6169a1cba03ed",
+      "coverageRequired": true
+    }
+  ],
+  "contentUnits": [
+    {
+      "unitId": "urn:techpub:unit:v1:sha256:2d07027897be655cee16b5fd9961bf70abd18659dc610a88b2cd9de133fb157d",
+      "continuityKey": "section-overview/title",
+      "unitHash": "sha256:7bf18dd9e953261794fdcd92a8bd377cc67ceb627c294b2866ef810f0c0ed19a",
+      "moduleId": "urn:techpub:module:v1:sha256:c3c09fa8098adc2b91d95a881d6eb2416ff6d7c7ea1da5a1a423e1bc3ea72571",
+      "kind": "heading",
+      "identityStability": "source_stable",
+      "order": 0,
+      "depth": 0,
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:aa35350d2083608985921fb05dbfd62613def177630b9ddac24195b044a4eafe"
+      ],
+      "sourceSegmentIds": [
+        "urn:techpub:source-segment:v1:sha256:d5437e5d1f8f078d33f4ebba86edce1b791e636daba918a4a332e9d579b45051"
+      ],
+      "mapping": {
+        "status": "mapped_exactly",
+        "confidence": "deterministic",
+        "findingIds": []
+      },
+      "payload": {
+        "text": "Controlled fixture overview",
+        "level": 1
+      }
+    },
+    {
+      "unitId": "urn:techpub:unit:v1:sha256:6aa0a1eaf643812f09fa15f41156ceb2b138c3e945c149a970f07a2b9be678fb",
+      "continuityKey": "section-overview/paragraph-1",
+      "unitHash": "sha256:521d4093e081aafe5ae583379b22c623b2fb8f6914a98b6db545eb47685a9063",
+      "moduleId": "urn:techpub:module:v1:sha256:c3c09fa8098adc2b91d95a881d6eb2416ff6d7c7ea1da5a1a423e1bc3ea72571",
+      "kind": "paragraph",
+      "identityStability": "source_stable",
+      "order": 0,
+      "depth": 1,
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:d3ba26ee4807061618d60ee9d69b90254801b1b9ef37e80af9d151056c1f4c9f"
+      ],
+      "sourceSegmentIds": [
+        "urn:techpub:source-segment:v1:sha256:e424996176b8b6810f641ec62d5a22bbc4e1eb8c3306f3228ea1e4de9b767be6"
+      ],
+      "mapping": {
+        "status": "mapped_exactly",
+        "confidence": "deterministic",
+        "findingIds": []
+      },
+      "payload": {
+        "text": "This synthetic module contains no manufacturer instruction.",
+        "role": "body"
+      },
+      "parentUnitId": "urn:techpub:unit:v1:sha256:2d07027897be655cee16b5fd9961bf70abd18659dc610a88b2cd9de133fb157d"
+    },
+    {
+      "unitId": "urn:techpub:unit:v1:sha256:53528ca7686fa53a46e7d620d3af79b1e2e81c09c050ede973330badd72b5abc",
+      "continuityKey": "step-fixture-1",
+      "unitHash": "sha256:7d742c9ee702f8ae88dffc8db2aa805e446500cc8048f3713c2c4c9c0f0a1e28",
+      "moduleId": "urn:techpub:module:v1:sha256:c3c09fa8098adc2b91d95a881d6eb2416ff6d7c7ea1da5a1a423e1bc3ea72571",
+      "kind": "step",
+      "identityStability": "source_stable",
+      "order": 1,
+      "depth": 0,
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:c9a2e7d15cd4a32a9b819862cfb52e3a7bfe72334ee04295c063c2074c61423d"
+      ],
+      "sourceSegmentIds": [
+        "urn:techpub:source-segment:v1:sha256:e151f0fb33ff327a89aef73de5b3dab7ac6eb349f6ebc2eea66c6301a48f56d8"
+      ],
+      "mapping": {
+        "status": "mapped_with_normalization",
+        "confidence": "deterministic",
+        "findingIds": []
+      },
+      "payload": {
+        "stepRole": "procedural",
+        "label": "1",
+        "instructionText": "Disconnect the synthetic test power source."
+      }
+    },
+    {
+      "unitId": "urn:techpub:unit:v1:sha256:eb4f0668fa09cae38bb2cd2871141b052aab371e1ee458d5ad466b11a40949e6",
+      "continuityKey": "warning-fixture-1",
+      "unitHash": "sha256:aed9701a568e3d7c2c50c5e7a5d28e57b156a6e70ee5608c241825516eee7b03",
+      "moduleId": "urn:techpub:module:v1:sha256:c3c09fa8098adc2b91d95a881d6eb2416ff6d7c7ea1da5a1a423e1bc3ea72571",
+      "kind": "advisory",
+      "identityStability": "source_stable",
+      "order": 0,
+      "depth": 1,
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:bcd0955d18aa6a8468dea27ac9b636f627488d25788542744efcbdf12ef02663"
+      ],
+      "sourceSegmentIds": [
+        "urn:techpub:source-segment:v1:sha256:9e0b7c5bbbcfcc4dd6ee2afe988f62af8c367b7ce9cd1335c0ae925f2b9735c8"
+      ],
+      "mapping": {
+        "status": "mapped_with_normalization",
+        "confidence": "deterministic",
+        "findingIds": []
+      },
+      "payload": {
+        "advisoryType": "warning",
+        "text": "Use only the synthetic test set.",
+        "scope": {
+          "kind": "explicit_units",
+          "targetUnitIds": [
+            "urn:techpub:unit:v1:sha256:53528ca7686fa53a46e7d620d3af79b1e2e81c09c050ede973330badd72b5abc"
+          ]
+        }
+      },
+      "parentUnitId": "urn:techpub:unit:v1:sha256:53528ca7686fa53a46e7d620d3af79b1e2e81c09c050ede973330badd72b5abc"
+    },
+    {
+      "unitId": "urn:techpub:unit:v1:sha256:7a7ef319c478be4975a190a4485d9db5605479bd9d92d0481a54417a9722b30a",
+      "continuityKey": "caution-fixture-1",
+      "unitHash": "sha256:259cf4a405eeb25aca49adf9f9edc992fe5575aff281f5505d4ba8a79ab40c81",
+      "moduleId": "urn:techpub:module:v1:sha256:c3c09fa8098adc2b91d95a881d6eb2416ff6d7c7ea1da5a1a423e1bc3ea72571",
+      "kind": "advisory",
+      "identityStability": "source_stable",
+      "order": 1,
+      "depth": 1,
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:bdcf42ef14b6e05943e5228f2624b0e89894002a66bd7b541cf2d07dc650fbc4"
+      ],
+      "sourceSegmentIds": [
+        "urn:techpub:source-segment:v1:sha256:ce975206d61e981e05a655fb0e9b7f8786dc4c5f90851e625ef54042e9a4eb66"
+      ],
+      "mapping": {
+        "status": "mapped_with_normalization",
+        "confidence": "deterministic",
+        "findingIds": []
+      },
+      "payload": {
+        "advisoryType": "caution",
+        "text": "Protect the fixture connector.",
+        "scope": {
+          "kind": "explicit_units",
+          "targetUnitIds": [
+            "urn:techpub:unit:v1:sha256:53528ca7686fa53a46e7d620d3af79b1e2e81c09c050ede973330badd72b5abc"
+          ]
+        }
+      },
+      "parentUnitId": "urn:techpub:unit:v1:sha256:53528ca7686fa53a46e7d620d3af79b1e2e81c09c050ede973330badd72b5abc"
+    },
+    {
+      "unitId": "urn:techpub:unit:v1:sha256:2303ae8b14cfa9eac19f79a98fcebea5dcaeb1021b8d01c8f08677758671a26a",
+      "continuityKey": "note-fixture-1",
+      "unitHash": "sha256:400cb471fa0f6e0892416bc9a68e140ca20aaa05bf52a024a563c870c93b3125",
+      "moduleId": "urn:techpub:module:v1:sha256:c3c09fa8098adc2b91d95a881d6eb2416ff6d7c7ea1da5a1a423e1bc3ea72571",
+      "kind": "advisory",
+      "identityStability": "source_stable",
+      "order": 2,
+      "depth": 1,
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:89edcfc56f81bcbf21c612eeaafad8615ab8c6e74ea92d1853e8b399f32f6712"
+      ],
+      "sourceSegmentIds": [
+        "urn:techpub:source-segment:v1:sha256:6e946bf68adc0c7c862b1e624924581ac9a3003deb37ffb67c3180a2d11a8200"
+      ],
+      "mapping": {
+        "status": "mapped_with_normalization",
+        "confidence": "deterministic",
+        "findingIds": []
+      },
+      "payload": {
+        "advisoryType": "note",
+        "text": "This note has no engineering authority.",
+        "scope": {
+          "kind": "explicit_units",
+          "targetUnitIds": [
+            "urn:techpub:unit:v1:sha256:53528ca7686fa53a46e7d620d3af79b1e2e81c09c050ede973330badd72b5abc"
+          ]
+        }
+      },
+      "parentUnitId": "urn:techpub:unit:v1:sha256:53528ca7686fa53a46e7d620d3af79b1e2e81c09c050ede973330badd72b5abc"
+    },
+    {
+      "unitId": "urn:techpub:unit:v1:sha256:51b9e994e9e18a49420ab9c200168236df9307f342e1df9b23ae10055cfb4a60",
+      "continuityKey": "random-list-fixture-1",
+      "unitHash": "sha256:80b626d54eb47ae370172d739830a8e332b2dcb6f40d2009992fcef0b685c19b",
+      "moduleId": "urn:techpub:module:v1:sha256:c3c09fa8098adc2b91d95a881d6eb2416ff6d7c7ea1da5a1a423e1bc3ea72571",
+      "kind": "list",
+      "identityStability": "source_stable",
+      "order": 3,
+      "depth": 1,
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:c831fedd1050e3482591aa98844223b68631c37655efc228d146d9fb39fd2cb2"
+      ],
+      "sourceSegmentIds": [
+        "urn:techpub:source-segment:v1:sha256:f8e87edc0e07ed544449d5688290a257d8468ed9219596abd43ecd368bc1df13"
+      ],
+      "mapping": {
+        "status": "mapped_with_normalization",
+        "confidence": "deterministic",
+        "findingIds": []
+      },
+      "payload": {
+        "listType": "unordered",
+        "itemUnitIds": [
+          "urn:techpub:unit:v1:sha256:3c97ad0a361c1c926033d3482270df1b0e387659c955561282c368cd594f4be5"
+        ]
+      },
+      "parentUnitId": "urn:techpub:unit:v1:sha256:53528ca7686fa53a46e7d620d3af79b1e2e81c09c050ede973330badd72b5abc"
+    },
+    {
+      "unitId": "urn:techpub:unit:v1:sha256:3c97ad0a361c1c926033d3482270df1b0e387659c955561282c368cd594f4be5",
+      "continuityKey": "random-list-fixture-1/item-1",
+      "unitHash": "sha256:6c2b30be73572c9608ee66a3d1f7d5eb3e5ef4ed30824537fc21918efadf53da",
+      "moduleId": "urn:techpub:module:v1:sha256:c3c09fa8098adc2b91d95a881d6eb2416ff6d7c7ea1da5a1a423e1bc3ea72571",
+      "kind": "list_item",
+      "identityStability": "source_stable",
+      "order": 0,
+      "depth": 2,
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:c3282fb23c6ebc6456107f70803acd49574b742f45f5afd0a27cf3a96e0ea111"
+      ],
+      "sourceSegmentIds": [
+        "urn:techpub:source-segment:v1:sha256:daf33e332c1776f98d87cd90c28da08ccf8e0590e1168d15176d434c05bfbdfb"
+      ],
+      "mapping": {
+        "status": "mapped_exactly",
+        "confidence": "deterministic",
+        "findingIds": []
+      },
+      "payload": {
+        "marker": "•",
+        "text": "Inspect the synthetic label."
+      },
+      "parentUnitId": "urn:techpub:unit:v1:sha256:51b9e994e9e18a49420ab9c200168236df9307f342e1df9b23ae10055cfb4a60"
+    },
+    {
+      "unitId": "urn:techpub:unit:v1:sha256:e704dc0e4cd3403a5ae1f9ad356bd9dab884ae2c71aa2a08c3e2665b98824955",
+      "continuityKey": "table-fixture-1",
+      "unitHash": "sha256:b79f31c6c6a7a855a58bf634879dd1383c20e03a102e493175e914ddb0e03637",
+      "moduleId": "urn:techpub:module:v1:sha256:c3c09fa8098adc2b91d95a881d6eb2416ff6d7c7ea1da5a1a423e1bc3ea72571",
+      "kind": "table",
+      "identityStability": "source_stable",
+      "order": 4,
+      "depth": 1,
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:9e43a23b1cb56fca2e372659cc90a3154b95507b6ff3201c575d85520c010de3"
+      ],
+      "sourceSegmentIds": [
+        "urn:techpub:source-segment:v1:sha256:89ab1c54365d70361bd8acbae173cf4c822669d3f51fca929004ed1e8aac4ce6"
+      ],
+      "mapping": {
+        "status": "mapped_with_normalization",
+        "confidence": "deterministic",
+        "findingIds": []
+      },
+      "payload": {
+        "layout": "grid",
+        "caption": "Fixture parts",
+        "columnCount": 2,
+        "columns": [
+          {
+            "columnId": "urn:techpub:table-column:v1:sha256:0202ac0d0097cc3d73a084ca7af85eaacbc76b8beee105f80a8a0e167eeb8fb3",
+            "order": 0,
+            "name": "item",
+            "width": "1*",
+            "align": "left",
+            "sourceRefIds": [
+              "urn:techpub:source-ref:v1:sha256:9e43a23b1cb56fca2e372659cc90a3154b95507b6ff3201c575d85520c010de3"
+            ]
+          }
+        ],
+        "rowGroups": [
+          {
+            "rowGroupId": "urn:techpub:table-row-group:v1:sha256:8f56f050fa19562ab3377d0436b03704631537c5e284c1577a5bb86a99060959",
+            "kind": "tbody",
+            "order": 0,
+            "rows": [
+              {
+                "rowId": "urn:techpub:table-row:v1:sha256:f7e95095d5ae7a70f8caa6fb15df8dd62ba14ba0ae0f72473562174f38f6de86",
+                "order": 0,
+                "cells": [
+                  {
+                    "cellId": "urn:techpub:table-cell:v1:sha256:f1ceba570278d6208c9e61c469296244636b4fe3317f2a65d9fbbab0053f0e9f",
+                    "order": 0,
+                    "columnStart": 0,
+                    "rowSpan": 1,
+                    "colSpan": 1,
+                    "role": "header",
+                    "inlineContent": [
+                      {
+                        "inlineId": "urn:techpub:inline:v1:sha256:2ac6f3e5ffafdb48604dfd0045dd0327b793fbd0495d9822b776bb3541bfe17c",
+                        "kind": "text",
+                        "text": "Item",
+                        "sourceRefIds": [
+                          "urn:techpub:source-ref:v1:sha256:9e43a23b1cb56fca2e372659cc90a3154b95507b6ff3201c575d85520c010de3"
+                        ]
+                      }
+                    ],
+                    "sourceRefIds": [
+                      "urn:techpub:source-ref:v1:sha256:9e43a23b1cb56fca2e372659cc90a3154b95507b6ff3201c575d85520c010de3"
+                    ]
+                  },
+                  {
+                    "cellId": "urn:techpub:table-cell:v1:sha256:56bb1515c627f64d4924978640fa8a3171bd25347b97cd9b09b79f65a49dde07",
+                    "order": 1,
+                    "columnStart": 1,
+                    "rowSpan": 1,
+                    "colSpan": 1,
+                    "role": "header",
+                    "inlineContent": [
+                      {
+                        "inlineId": "urn:techpub:inline:v1:sha256:a83a43ba859d4fdce701f6d428384a527e379092ee5f7379dd5650f6a9c1c337",
+                        "kind": "text",
+                        "text": "Status",
+                        "sourceRefIds": [
+                          "urn:techpub:source-ref:v1:sha256:9e43a23b1cb56fca2e372659cc90a3154b95507b6ff3201c575d85520c010de3"
+                        ]
+                      }
+                    ],
+                    "sourceRefIds": [
+                      "urn:techpub:source-ref:v1:sha256:9e43a23b1cb56fca2e372659cc90a3154b95507b6ff3201c575d85520c010de3"
+                    ]
+                  }
+                ],
+                "sourceRefIds": [
+                  "urn:techpub:source-ref:v1:sha256:9e43a23b1cb56fca2e372659cc90a3154b95507b6ff3201c575d85520c010de3"
+                ]
+              },
+              {
+                "rowId": "urn:techpub:table-row:v1:sha256:240e94d79983fd60d8504ba371eab53d1ef0cae0c92edc5fba9791325bfd1c90",
+                "order": 1,
+                "cells": [
+                  {
+                    "cellId": "urn:techpub:table-cell:v1:sha256:1f9f5bdf99f44bc9f41cc870305427e6887928928b195731bb1a64c107e5f118",
+                    "order": 0,
+                    "columnStart": 0,
+                    "rowSpan": 1,
+                    "colSpan": 1,
+                    "role": "data",
+                    "inlineContent": [
+                      {
+                        "inlineId": "urn:techpub:inline:v1:sha256:c050f4e2c424226728d581f7011dbbc4e9c0cfb7b2bfbd7f4b0f7f364cfcb1ab",
+                        "kind": "text",
+                        "text": "Fixture label",
+                        "sourceRefIds": [
+                          "urn:techpub:source-ref:v1:sha256:9e43a23b1cb56fca2e372659cc90a3154b95507b6ff3201c575d85520c010de3"
+                        ]
+                      }
+                    ],
+                    "sourceRefIds": [
+                      "urn:techpub:source-ref:v1:sha256:9e43a23b1cb56fca2e372659cc90a3154b95507b6ff3201c575d85520c010de3"
+                    ]
+                  },
+                  {
+                    "cellId": "urn:techpub:table-cell:v1:sha256:b7f7c6353858d3b377853f2782198baf333f0f65437f84d8d804e64459d0c7d8",
+                    "order": 1,
+                    "columnStart": 1,
+                    "rowSpan": 1,
+                    "colSpan": 1,
+                    "role": "data",
+                    "inlineContent": [
+                      {
+                        "inlineId": "urn:techpub:inline:v1:sha256:d1b79cb7e96541f6e6b3b84f9bc13795176bcead15a795e5267fb279b9350a0d",
+                        "kind": "text",
+                        "text": "CHECK",
+                        "sourceRefIds": [
+                          "urn:techpub:source-ref:v1:sha256:9e43a23b1cb56fca2e372659cc90a3154b95507b6ff3201c575d85520c010de3"
+                        ]
+                      }
+                    ],
+                    "sourceRefIds": [
+                      "urn:techpub:source-ref:v1:sha256:9e43a23b1cb56fca2e372659cc90a3154b95507b6ff3201c575d85520c010de3"
+                    ]
+                  }
+                ],
+                "sourceRefIds": [
+                  "urn:techpub:source-ref:v1:sha256:9e43a23b1cb56fca2e372659cc90a3154b95507b6ff3201c575d85520c010de3"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "parentUnitId": "urn:techpub:unit:v1:sha256:53528ca7686fa53a46e7d620d3af79b1e2e81c09c050ede973330badd72b5abc"
+    },
+    {
+      "unitId": "urn:techpub:unit:v1:sha256:c7b5675297a9e4d48589fa1773dfd92ebd76cf37d682210324efca28285f591c",
+      "continuityKey": "figure-fixture-1",
+      "unitHash": "sha256:99c37db97f0059cf6a398d51681f684fb37e311678a6dc2d89cad202cd423415",
+      "moduleId": "urn:techpub:module:v1:sha256:c3c09fa8098adc2b91d95a881d6eb2416ff6d7c7ea1da5a1a423e1bc3ea72571",
+      "kind": "figure",
+      "identityStability": "source_stable",
+      "order": 5,
+      "depth": 1,
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:ceb1180cc2a4f8c8b6a8fdd0d9cd804e6b4dc126269b67bb69134a5bbfa2276c"
+      ],
+      "sourceSegmentIds": [
+        "urn:techpub:source-segment:v1:sha256:80869c272ce2a59f9f67ce25c331e429f72b5200f8f6a5e253f452586ad6e182"
+      ],
+      "mapping": {
+        "status": "mapped_with_normalization",
+        "confidence": "deterministic",
+        "findingIds": []
+      },
+      "payload": {
+        "figureId": "urn:techpub:figure:v1:sha256:d1b2c1cb155eaf1dcaa441524a4ac03d6bb532ca9de4a743ca980c25f27bb176",
+        "caption": "Fixture connection",
+        "assetIds": [
+          "urn:techpub:asset:v1:sha256:a9e6da77ac4a082bf9c4083100599adde3e64e2318c8325a213f31d8986389b8"
+        ],
+        "referenceIds": [
+          "urn:techpub:reference:v1:sha256:9dae1060652bf84e2e21ca6aa71c3cc742e630dcf776d41f70ab20445713ed01"
+        ]
+      },
+      "parentUnitId": "urn:techpub:unit:v1:sha256:53528ca7686fa53a46e7d620d3af79b1e2e81c09c050ede973330badd72b5abc"
+    },
+    {
+      "unitId": "urn:techpub:unit:v1:sha256:1f5ee27a79b6fe437d691a8ee71bc1531f5168dbe707e02e82eae3e21fe115d9",
+      "continuityKey": "step-fixture-1/references",
+      "unitHash": "sha256:dda0092952bc386b3606963fb01fd29ef246991b42b4c8d3e537ef52151cf79b",
+      "moduleId": "urn:techpub:module:v1:sha256:c3c09fa8098adc2b91d95a881d6eb2416ff6d7c7ea1da5a1a423e1bc3ea72571",
+      "kind": "reference",
+      "identityStability": "source_stable",
+      "order": 6,
+      "depth": 1,
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:49fcdd5de1165a0460f896da315e4ab6ba8028ccfde151916ea0046d57fe268f",
+        "urn:techpub:source-ref:v1:sha256:3c747698986865b0298011b8040344f15b56a95a03571a11e21906ecdf010f23"
+      ],
+      "sourceSegmentIds": [
+        "urn:techpub:source-segment:v1:sha256:83ba210411e6c2aef981c0ffa2e5966c26e8ba141ac4798753e0e742d7d7cf4b",
+        "urn:techpub:source-segment:v1:sha256:14cf4ab3a4520f81d7c0b72ec90c4618684afe3c0c4fd1cbfd4d6d61ad05cfdf"
+      ],
+      "mapping": {
+        "status": "mapped_with_normalization",
+        "confidence": "deterministic",
+        "findingIds": [
+          "urn:techpub:finding:v1:sha256:2b5e6e9c3a9322a6e6e4bdbe4402a95f15cb8ec9c43522ffbf60dd11c6ddb0ae"
+        ]
+      },
+      "payload": {
+        "referenceIds": [
+          "urn:techpub:reference:v1:sha256:09fbd18b5ab11709e971ef54d1c5a1b9fde1f27e8c7fb565370ab2e60ac1d844",
+          "urn:techpub:reference:v1:sha256:b9c043923ca610efcf742f02a39fcf85540dc7f6611f29c3bda21da3f5393c61"
+        ]
+      },
+      "parentUnitId": "urn:techpub:unit:v1:sha256:53528ca7686fa53a46e7d620d3af79b1e2e81c09c050ede973330badd72b5abc"
+    },
+    {
+      "unitId": "urn:techpub:unit:v1:sha256:74e1d183ec6d4b623f0a158536c52870df40a1f9fd50658d0c8e6e3ca29c0684",
+      "continuityKey": "pm-entry-fixture-procedure/title",
+      "unitHash": "sha256:a016460d723c34a01ac6c3cd6c8991c687ebb8df77d3c2419b23a9f29bc3f848",
+      "moduleId": "urn:techpub:module:v1:sha256:04fed7ebb23f69381d13198271edf519245c677923e0b4512689b239b3bf126e",
+      "kind": "heading",
+      "identityStability": "source_stable",
+      "order": 0,
+      "depth": 0,
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:867644702db53ce29c31bfb5b8b5cb1ded88d2bd6aa755ee3bb1b7ccb82dff86"
+      ],
+      "sourceSegmentIds": [
+        "urn:techpub:source-segment:v1:sha256:fc4540213487e88429f30c8c8af7e8330b05f08e373ed8b59a54dc86bafcf633"
+      ],
+      "mapping": {
+        "status": "mapped_exactly",
+        "confidence": "deterministic",
+        "findingIds": []
+      },
+      "payload": {
+        "text": "Fixture procedure",
+        "level": 1
+      }
+    },
+    {
+      "unitId": "urn:techpub:unit:v1:sha256:66c5d4a9faaccbcdad8864f17455e982b320b5fd5124df3db17a4328dfa8b47b",
+      "continuityKey": "pm-entry-fixture-procedure/dm-ref",
+      "unitHash": "sha256:1742f71158ea39dc64b24bc379aeec2ffeecd3952fa5597e4c2ea4f12fa8b344",
+      "moduleId": "urn:techpub:module:v1:sha256:04fed7ebb23f69381d13198271edf519245c677923e0b4512689b239b3bf126e",
+      "kind": "reference",
+      "identityStability": "source_stable",
+      "order": 0,
+      "depth": 1,
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:1231338cebc3b7f1a3e33f269606520291a2900f6822094c2a8dd2875174b6eb"
+      ],
+      "sourceSegmentIds": [
+        "urn:techpub:source-segment:v1:sha256:d422f2c1b0893a564006e6973ef6d100bca59224bfd177a5cc238b0e0c0b379e"
+      ],
+      "mapping": {
+        "status": "mapped_with_normalization",
+        "confidence": "deterministic",
+        "findingIds": []
+      },
+      "payload": {
+        "referenceIds": [
+          "urn:techpub:reference:v1:sha256:a0c1e497c7fd39aab7efc299c8d82de548ae17d89af981cd9d97552502447a55"
+        ]
+      },
+      "parentUnitId": "urn:techpub:unit:v1:sha256:74e1d183ec6d4b623f0a158536c52870df40a1f9fd50658d0c8e6e3ca29c0684"
+    }
+  ],
+  "references": [
+    {
+      "referenceId": "urn:techpub:reference:v1:sha256:09fbd18b5ab11709e971ef54d1c5a1b9fde1f27e8c7fb565370ab2e60ac1d844",
+      "referenceType": "internal_anchor",
+      "fromUnitId": "urn:techpub:unit:v1:sha256:1f5ee27a79b6fe437d691a8ee71bc1531f5168dbe707e02e82eae3e21fe115d9",
+      "target": {
+        "kind": "unit",
+        "identifier": {
+          "scheme": "techpub_core_unit_id",
+          "value": "urn:techpub:unit:v1:sha256:53528ca7686fa53a46e7d620d3af79b1e2e81c09c050ede973330badd72b5abc",
+          "completeness": "complete"
+        }
+      },
+      "resolutionStatus": "resolved",
+      "authority": "parser_normalized",
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:49fcdd5de1165a0460f896da315e4ab6ba8028ccfde151916ea0046d57fe268f"
+      ],
+      "findingIds": []
+    },
+    {
+      "referenceId": "urn:techpub:reference:v1:sha256:b9c043923ca610efcf742f02a39fcf85540dc7f6611f29c3bda21da3f5393c61",
+      "referenceType": "external_reference",
+      "fromUnitId": "urn:techpub:unit:v1:sha256:1f5ee27a79b6fe437d691a8ee71bc1531f5168dbe707e02e82eae3e21fe115d9",
+      "target": {
+        "kind": "external",
+        "identifier": {
+          "scheme": "external_publication_code",
+          "value": "FIXTURE-MANUAL-001",
+          "completeness": "partial",
+          "missingComponents": [
+            "revision"
+          ]
+        }
+      },
+      "resolutionStatus": "external",
+      "authority": "source_asserted",
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:3c747698986865b0298011b8040344f15b56a95a03571a11e21906ecdf010f23"
+      ],
+      "findingIds": [
+        "urn:techpub:finding:v1:sha256:2b5e6e9c3a9322a6e6e4bdbe4402a95f15cb8ec9c43522ffbf60dd11c6ddb0ae"
+      ]
+    },
+    {
+      "referenceId": "urn:techpub:reference:v1:sha256:9dae1060652bf84e2e21ca6aa71c3cc742e630dcf776d41f70ab20445713ed01",
+      "referenceType": "asset_reference",
+      "fromUnitId": "urn:techpub:unit:v1:sha256:c7b5675297a9e4d48589fa1773dfd92ebd76cf37d682210324efca28285f591c",
+      "target": {
+        "kind": "asset",
+        "identifier": {
+          "scheme": "techpub_core_asset_id",
+          "value": "urn:techpub:asset:v1:sha256:a9e6da77ac4a082bf9c4083100599adde3e64e2318c8325a213f31d8986389b8",
+          "completeness": "complete"
+        }
+      },
+      "resolutionStatus": "resolved",
+      "authority": "parser_normalized",
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:0974aa2a66356691ac6ba8619af37edd68ff26d43eeb63b5eb72e7eff7af0c88"
+      ],
+      "findingIds": []
+    },
+    {
+      "referenceId": "urn:techpub:reference:v1:sha256:a0c1e497c7fd39aab7efc299c8d82de548ae17d89af981cd9d97552502447a55",
+      "referenceType": "module_reference",
+      "fromUnitId": "urn:techpub:unit:v1:sha256:66c5d4a9faaccbcdad8864f17455e982b320b5fd5124df3db17a4328dfa8b47b",
+      "target": {
+        "kind": "module",
+        "identifier": {
+          "scheme": "techpub_core_module_id",
+          "value": "urn:techpub:module:v1:sha256:c3c09fa8098adc2b91d95a881d6eb2416ff6d7c7ea1da5a1a423e1bc3ea72571",
+          "completeness": "complete"
+        }
+      },
+      "resolutionStatus": "resolved",
+      "authority": "parser_normalized",
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:1231338cebc3b7f1a3e33f269606520291a2900f6822094c2a8dd2875174b6eb"
+      ],
+      "findingIds": []
+    }
+  ],
+  "assets": [
+    {
+      "assetId": "urn:techpub:asset:v1:sha256:a9e6da77ac4a082bf9c4083100599adde3e64e2318c8325a213f31d8986389b8",
+      "logicalType": "s1000d_information_entity",
+      "authority": "source_asserted",
+      "standardIdentity": {
+        "scheme": "s1000d_icn",
+        "value": "ICN-FIXTURE-001",
+        "authority": "source_asserted",
+        "completeness": "complete",
+        "sourceRefIds": [
+          "urn:techpub:source-ref:v1:sha256:0974aa2a66356691ac6ba8619af37edd68ff26d43eeb63b5eb72e7eff7af0c88"
+        ]
+      },
+      "title": {
+        "value": "Fixture connection",
+        "authority": "source_asserted",
+        "mappingStatus": "exact",
+        "sourceRefIds": [
+          "urn:techpub:source-ref:v1:sha256:ceb1180cc2a4f8c8b6a8fdd0d9cd804e6b4dc126269b67bb69134a5bbfa2276c"
+        ]
+      },
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:0974aa2a66356691ac6ba8619af37edd68ff26d43eeb63b5eb72e7eff7af0c88"
+      ],
+      "renditions": [
+        {
+          "renditionId": "urn:techpub:rendition:v1:sha256:7960e4ecd51762903d2c4e7c7e758b36b3f82a455774ccfa166f57be95b4ae88",
+          "role": "source_original",
+          "artifactId": "urn:techpub:artifact:v1:sha256:ca711fc18deff99b4effdb78071b22e9afaf4adb1c7f5efaf3a71d542b6f1951",
+          "mediaType": "image/png",
+          "sha256": "sha256:626f1dff3211a5d3a5f74fdebb87cbf8dffb4bbc49fc747deebc39a781fe1193",
+          "pixelWidth": 1,
+          "pixelHeight": 1,
+          "sourceRefIds": [
+            "urn:techpub:source-ref:v1:sha256:0974aa2a66356691ac6ba8619af37edd68ff26d43eeb63b5eb72e7eff7af0c88"
+          ]
+        }
+      ]
+    }
+  ],
+  "applicability": {
+    "sourceExpressions": [
+      {
+        "expressionId": "urn:techpub:applicability-source:v1:sha256:45e8967183065b8719fc03a99b6a7c09a8eed4845741c58cefe3ea9bc1f25dd8",
+        "text": "TEST ASSET GROUP ALPHA ONLY",
+        "form": "logical_expression",
+        "authority": "source_asserted",
+        "sourceRefIds": [
+          "urn:techpub:source-ref:v1:sha256:69b0a68e3a942c1b68f0b64df8a345b4995cc25433e47d90e6b7562523363102"
+        ]
+      }
+    ],
+    "normalizedCandidates": [
+      {
+        "candidateId": "urn:techpub:applicability-candidate:v1:sha256:31697c86e5b8b6f2d1cf2a412bdef836186daf33d03d1d262d294c06d9810c9d",
+        "language": "techpub-applicability-expr.v1",
+        "confidence": "deterministic",
+        "sourceExpressionIds": [
+          "urn:techpub:applicability-source:v1:sha256:45e8967183065b8719fc03a99b6a7c09a8eed4845741c58cefe3ea9bc1f25dd8"
+        ],
+        "expression": {
+          "operator": "predicate",
+          "predicate": {
+            "property": "fixture-group",
+            "comparator": "eq",
+            "values": [
+              "ALPHA"
+            ]
+          }
+        },
+        "authority": "parser_candidate"
+      }
+    ],
+    "assignments": [
+      {
+        "assignmentId": "urn:techpub:applicability-assignment:v1:sha256:40e3b4f12334858542164980cd95c5bb88a362908b61723d45cf0212cdd2d08b",
+        "expressionId": "urn:techpub:applicability-source:v1:sha256:45e8967183065b8719fc03a99b6a7c09a8eed4845741c58cefe3ea9bc1f25dd8",
+        "target": {
+          "kind": "module",
+          "targetId": "urn:techpub:module:v1:sha256:c3c09fa8098adc2b91d95a881d6eb2416ff6d7c7ea1da5a1a423e1bc3ea72571",
+          "sourceRefIds": [
+            "urn:techpub:source-ref:v1:sha256:69b0a68e3a942c1b68f0b64df8a345b4995cc25433e47d90e6b7562523363102"
+          ]
+        },
+        "sourceReferenceId": "app-fixture-1",
+        "authority": "source_asserted"
+      }
+    ]
+  },
+  "coverage": {
+    "basis": {
+      "segmentSetId": "urn:techpub:source-segment-set:v1:sha256:ee2854e2ef8dbf2d2e8175d08c77a387f41c33259436f965e07e1ca0b0eb1f19",
+      "segmentSetHash": "sha256:ee2854e2ef8dbf2d2e8175d08c77a387f41c33259436f965e07e1ca0b0eb1f19",
+      "segmentationProfileId": "s1000d-issue-4.2-semantic-elements-v1",
+      "segmentationProfileHash": "sha256:a5d1bcaaa85da9097cf53d071113c125e54799319e2e746f544f8e7e952d24de",
+      "requiredSourceSegmentCount": 24
+    },
+    "entries": [
+      {
+        "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:24fe8e91d38709eb9d8e5ed74517aeac451f965df83b71e38892e250f938f4cb",
+        "disposition": "intentionally_excluded_with_reason",
+        "targetIds": [],
+        "findingIds": [],
+        "reasonCode": "schema_definition"
+      },
+      {
+        "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:1ef8cb3c3a9131a6b8c98e0abb3e12748123d48e22536027db7a95a79e15475f",
+        "disposition": "intentionally_excluded_with_reason",
+        "targetIds": [],
+        "findingIds": [],
+        "reasonCode": "schema_definition"
+      },
+      {
+        "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:7fedefb952bdbcb637af49b3fe588b80585cf2f993ceb08a5b6897f58c34874f",
+        "disposition": "intentionally_excluded_with_reason",
+        "targetIds": [],
+        "findingIds": [],
+        "reasonCode": "schema_definition"
+      },
+      {
+        "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:e1b8cf8783a333985732e58ce82c7db9e6e9aad372b2d13ed9233c4e115e500b",
+        "disposition": "intentionally_excluded_with_reason",
+        "targetIds": [],
+        "findingIds": [],
+        "reasonCode": "schema_definition"
+      },
+      {
+        "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:b6a85a8ccb58771dfe540a6eb6d71dd66756dddc9c4bd7e7e8aac838a80bbac8",
+        "disposition": "mapped_exactly",
+        "targetIds": [
+          "urn:techpub:module:v1:sha256:c3c09fa8098adc2b91d95a881d6eb2416ff6d7c7ea1da5a1a423e1bc3ea72571"
+        ],
+        "findingIds": []
+      },
+      {
+        "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:b5b9213b75207af3ac2e49bbb12cac372a26e7b7f9c3100b5b33a449aa49e79a",
+        "disposition": "mapped_exactly",
+        "targetIds": [
+          "urn:techpub:document:v1:sha256:dee688ce2dd07db0f61d27703815acd8cd447b2d83b521deb3911025234f6aae",
+          "urn:techpub:module:v1:sha256:04fed7ebb23f69381d13198271edf519245c677923e0b4512689b239b3bf126e",
+          "urn:techpub:publication-structure:v1:sha256:cd8af54551e3c68284e79cd09ff1c2374d57f4ea457ddc28b8d95e39149b7904"
+        ],
+        "findingIds": []
+      },
+      {
+        "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:3329e9a1f77b69340cf6b0c838a602dd185e781e2cddb178086f3b83c50cbfd4",
+        "disposition": "mapped_exactly",
+        "targetIds": [
+          "urn:techpub:delivery-object:v1:sha256:bc67148fda2e508956a3c2a5ef2e3b846f4d2258eccb539a7d970445a337dd4a"
+        ],
+        "findingIds": []
+      },
+      {
+        "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:0ddaeb6724d6844c6435db096825a2ac842ae663a84d550a4608543a2dc870a8",
+        "disposition": "mapped_exactly",
+        "targetIds": [
+          "urn:techpub:delivery-object:v1:sha256:5c7fe10810dba1708d76b4456fcad8f51ebbafa940038419713f9cec8efe2b3b"
+        ],
+        "findingIds": []
+      },
+      {
+        "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:d5437e5d1f8f078d33f4ebba86edce1b791e636daba918a4a332e9d579b45051",
+        "disposition": "mapped_exactly",
+        "targetIds": [
+          "urn:techpub:unit:v1:sha256:2d07027897be655cee16b5fd9961bf70abd18659dc610a88b2cd9de133fb157d"
+        ],
+        "findingIds": []
+      },
+      {
+        "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:e424996176b8b6810f641ec62d5a22bbc4e1eb8c3306f3228ea1e4de9b767be6",
+        "disposition": "mapped_exactly",
+        "targetIds": [
+          "urn:techpub:unit:v1:sha256:6aa0a1eaf643812f09fa15f41156ceb2b138c3e945c149a970f07a2b9be678fb"
+        ],
+        "findingIds": []
+      },
+      {
+        "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:e151f0fb33ff327a89aef73de5b3dab7ac6eb349f6ebc2eea66c6301a48f56d8",
+        "disposition": "mapped_with_normalization",
+        "targetIds": [
+          "urn:techpub:unit:v1:sha256:53528ca7686fa53a46e7d620d3af79b1e2e81c09c050ede973330badd72b5abc"
+        ],
+        "findingIds": []
+      },
+      {
+        "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:9e0b7c5bbbcfcc4dd6ee2afe988f62af8c367b7ce9cd1335c0ae925f2b9735c8",
+        "disposition": "mapped_with_normalization",
+        "targetIds": [
+          "urn:techpub:unit:v1:sha256:eb4f0668fa09cae38bb2cd2871141b052aab371e1ee458d5ad466b11a40949e6"
+        ],
+        "findingIds": []
+      },
+      {
+        "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:ce975206d61e981e05a655fb0e9b7f8786dc4c5f90851e625ef54042e9a4eb66",
+        "disposition": "mapped_with_normalization",
+        "targetIds": [
+          "urn:techpub:unit:v1:sha256:7a7ef319c478be4975a190a4485d9db5605479bd9d92d0481a54417a9722b30a"
+        ],
+        "findingIds": []
+      },
+      {
+        "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:6e946bf68adc0c7c862b1e624924581ac9a3003deb37ffb67c3180a2d11a8200",
+        "disposition": "mapped_with_normalization",
+        "targetIds": [
+          "urn:techpub:unit:v1:sha256:2303ae8b14cfa9eac19f79a98fcebea5dcaeb1021b8d01c8f08677758671a26a"
+        ],
+        "findingIds": []
+      },
+      {
+        "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:f8e87edc0e07ed544449d5688290a257d8468ed9219596abd43ecd368bc1df13",
+        "disposition": "mapped_with_normalization",
+        "targetIds": [
+          "urn:techpub:unit:v1:sha256:51b9e994e9e18a49420ab9c200168236df9307f342e1df9b23ae10055cfb4a60"
+        ],
+        "findingIds": []
+      },
+      {
+        "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:daf33e332c1776f98d87cd90c28da08ccf8e0590e1168d15176d434c05bfbdfb",
+        "disposition": "mapped_exactly",
+        "targetIds": [
+          "urn:techpub:unit:v1:sha256:3c97ad0a361c1c926033d3482270df1b0e387659c955561282c368cd594f4be5"
+        ],
+        "findingIds": []
+      },
+      {
+        "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:89ab1c54365d70361bd8acbae173cf4c822669d3f51fca929004ed1e8aac4ce6",
+        "disposition": "mapped_with_normalization",
+        "targetIds": [
+          "urn:techpub:unit:v1:sha256:e704dc0e4cd3403a5ae1f9ad356bd9dab884ae2c71aa2a08c3e2665b98824955"
+        ],
+        "findingIds": []
+      },
+      {
+        "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:80869c272ce2a59f9f67ce25c331e429f72b5200f8f6a5e253f452586ad6e182",
+        "disposition": "mapped_exactly",
+        "targetIds": [
+          "urn:techpub:unit:v1:sha256:c7b5675297a9e4d48589fa1773dfd92ebd76cf37d682210324efca28285f591c"
+        ],
+        "findingIds": []
+      },
+      {
+        "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:19bc47ce52683c5f19913a8ceb688352e7b375cc1f03bf8ab1fcc253cbe99ccb",
+        "disposition": "mapped_with_normalization",
+        "targetIds": [
+          "urn:techpub:asset:v1:sha256:a9e6da77ac4a082bf9c4083100599adde3e64e2318c8325a213f31d8986389b8",
+          "urn:techpub:reference:v1:sha256:9dae1060652bf84e2e21ca6aa71c3cc742e630dcf776d41f70ab20445713ed01"
+        ],
+        "findingIds": []
+      },
+      {
+        "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:83ba210411e6c2aef981c0ffa2e5966c26e8ba141ac4798753e0e742d7d7cf4b",
+        "disposition": "mapped_with_normalization",
+        "targetIds": [
+          "urn:techpub:unit:v1:sha256:1f5ee27a79b6fe437d691a8ee71bc1531f5168dbe707e02e82eae3e21fe115d9",
+          "urn:techpub:reference:v1:sha256:09fbd18b5ab11709e971ef54d1c5a1b9fde1f27e8c7fb565370ab2e60ac1d844"
+        ],
+        "findingIds": []
+      },
+      {
+        "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:14cf4ab3a4520f81d7c0b72ec90c4618684afe3c0c4fd1cbfd4d6d61ad05cfdf",
+        "disposition": "mapped_with_normalization",
+        "targetIds": [
+          "urn:techpub:unit:v1:sha256:1f5ee27a79b6fe437d691a8ee71bc1531f5168dbe707e02e82eae3e21fe115d9",
+          "urn:techpub:reference:v1:sha256:b9c043923ca610efcf742f02a39fcf85540dc7f6611f29c3bda21da3f5393c61"
+        ],
+        "findingIds": [
+          "urn:techpub:finding:v1:sha256:2b5e6e9c3a9322a6e6e4bdbe4402a95f15cb8ec9c43522ffbf60dd11c6ddb0ae"
+        ]
+      },
+      {
+        "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:d9d78ef87465ef2d5b4b2bc2c219ceb8d3623ca6bff6af2469650b397c55b8bb",
+        "disposition": "mapped_with_normalization",
+        "targetIds": [
+          "urn:techpub:applicability-source:v1:sha256:45e8967183065b8719fc03a99b6a7c09a8eed4845741c58cefe3ea9bc1f25dd8",
+          "urn:techpub:applicability-candidate:v1:sha256:31697c86e5b8b6f2d1cf2a412bdef836186daf33d03d1d262d294c06d9810c9d",
+          "urn:techpub:applicability-assignment:v1:sha256:40e3b4f12334858542164980cd95c5bb88a362908b61723d45cf0212cdd2d08b"
+        ],
+        "findingIds": []
+      },
+      {
+        "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:fc4540213487e88429f30c8c8af7e8330b05f08e373ed8b59a54dc86bafcf633",
+        "disposition": "mapped_exactly",
+        "targetIds": [
+          "urn:techpub:unit:v1:sha256:74e1d183ec6d4b623f0a158536c52870df40a1f9fd50658d0c8e6e3ca29c0684"
+        ],
+        "findingIds": []
+      },
+      {
+        "sourceSegmentId": "urn:techpub:source-segment:v1:sha256:d422f2c1b0893a564006e6973ef6d100bca59224bfd177a5cc238b0e0c0b379e",
+        "disposition": "mapped_exactly",
+        "targetIds": [
+          "urn:techpub:unit:v1:sha256:66c5d4a9faaccbcdad8864f17455e982b320b5fd5124df3db17a4328dfa8b47b",
+          "urn:techpub:reference:v1:sha256:a0c1e497c7fd39aab7efc299c8d82de548ae17d89af981cd9d97552502447a55"
+        ],
+        "findingIds": []
+      }
+    ],
+    "summary": {
+      "requiredSourceSegmentCount": 24,
+      "mappedExactlyCount": 10,
+      "mappedWithNormalizationCount": 10,
+      "preservedAsTextCount": 0,
+      "intentionallyExcludedCount": 4,
+      "blockedCount": 0,
+      "accountingComplete": true,
+      "contentPreserved": true,
+      "structuredCoverageComplete": true
+    }
+  },
+  "findings": [
+    {
+      "findingId": "urn:techpub:finding:v1:sha256:2b5e6e9c3a9322a6e6e4bdbe4402a95f15cb8ec9c43522ffbf60dd11c6ddb0ae",
+      "code": "S1000D.EXTERNAL_REFERENCE_PARTIAL",
+      "severity": "warning",
+      "message": "The external publication reference has no source revision; it remains a partial identifier.",
+      "stage": "projection",
+      "blocking": false,
+      "blocks": [],
+      "sourceRefIds": [
+        "urn:techpub:source-ref:v1:sha256:3c747698986865b0298011b8040344f15b56a95a03571a11e21906ecdf010f23"
+      ],
+      "sourceSegmentIds": [
+        "urn:techpub:source-segment:v1:sha256:14cf4ab3a4520f81d7c0b72ec90c4618684afe3c0c4fd1cbfd4d6d61ad05cfdf"
+      ],
+      "affectedUnitIds": [
+        "urn:techpub:unit:v1:sha256:1f5ee27a79b6fe437d691a8ee71bc1531f5168dbe707e02e82eae3e21fe115d9"
+      ],
+      "parameters": {
+        "targetCode": "FIXTURE-MANUAL-001",
+        "missingComponents": [
+          "revision"
+        ]
+      }
+    }
+  ],
+  "extensions": [
+    {
+      "namespace": "urn:techpub:ext:s1000d-native-lineage:v1",
+      "schemaId": "urn:techpub:schema:v1:extension:s1000d-native-lineage:frozen-2",
+      "version": "1.1.0",
+      "targetIds": [
+        "urn:techpub:module:v1:sha256:c3c09fa8098adc2b91d95a881d6eb2416ff6d7c7ea1da5a1a423e1bc3ea72571",
+        "urn:techpub:module:v1:sha256:04fed7ebb23f69381d13198271edf519245c677923e0b4512689b239b3bf126e"
+      ],
+      "semanticImpact": false,
+      "payloadHash": "sha256:4774fa1d18ea5f9bde976033998caae7d0bbf37e559d6c72e6dcd4b07ff34e4c",
+      "payload": {
+        "parser": {
+          "profileVersion": "S1000D_4-2",
+          "schemaVersion": "s1000d-service.parsed-document.v1",
+          "packageHash": "sha256:b5f52e0c4c26d925e863bf1aee708b04f21ab66cdfb69f65a7fca93d3844eed8",
+          "snapshotArtifactId": "urn:techpub:artifact:v1:sha256:ef1b76326542c267c6e17ea75a4bd99e527154a0dfe9d62bad2fb0c4a87e8647",
+          "summary": {
+            "valid": true,
+            "fileCount": 9,
+            "moduleCount": 4,
+            "contentUnitCount": 9,
+            "referenceCount": 6,
+            "assetCount": 1,
+            "findingCount": 0,
+            "referenceCounts": {
+              "delivery_file:resolved": 2,
+              "internal:resolved": 1,
+              "external_publication:external": 1,
+              "dm:resolved": 2
+            }
+          }
+        },
+        "realControlledBaseline": {
+          "summaryArtifactId": "urn:techpub:artifact:v1:sha256:15b81ea0132d0af1db7d0fd4d64f1d67568aba84ecdd4dc095076c217bb02d38",
+          "sourcePolicy": "controlled_local_path_no_manufacturer_body_committed",
+          "profileVersion": "S1000D_4-2",
+          "parserPackageHash": "sha256:fce0866f43bd00741f352ee4811dc09a22f6898620823beda3e67f56d8661cc5",
+          "counts": {
+            "files": 73,
+            "documents": 39,
+            "dataModules": 37,
+            "dml": 1,
+            "ddn": 1,
+            "publicationModules": 0,
+            "contentUnits": 435,
+            "references": 354,
+            "assets": 5,
+            "findings": 0
+          },
+          "publicationModuleCoverage": "absent_in_real_baseline_covered_by_synthetic_fixture"
+        },
+        "moduleMappings": [
+          {
+            "coreModuleId": "urn:techpub:module:v1:sha256:c3c09fa8098adc2b91d95a881d6eb2416ff6d7c7ea1da5a1a423e1bc3ea72571",
+            "moduleType": "dm",
+            "schemaName": "descript.xsd",
+            "parserIdentity": "dm:-:modelIdentCode=FIXTURE;systemDiffCode=A;systemCode=00;subSystemCode=0;subSubSystemCode=0;assyCode=00;disassyCode=00;disassyCodeVariant=A;infoCode=040;infoCodeVariant=A;itemLocationCode=D:001-00:en-US",
+            "sourcePath": "DMC-FIXTURE.XML"
+          },
+          {
+            "coreModuleId": "urn:techpub:module:v1:sha256:04fed7ebb23f69381d13198271edf519245c677923e0b4512689b239b3bf126e",
+            "moduleType": "pm",
+            "schemaName": "pm.xsd",
+            "parserIdentity": "pm:-:modelIdentCode=FIXTURE;pmIssuer=ZZZZZ;pmNumber=00001;pmVolume=01:001-00:en-US",
+            "sourcePath": "PMC-FIXTURE.XML"
+          }
+        ],
+        "deliveryObjectMappings": [
+          {
+            "deliveryObjectId": "urn:techpub:delivery-object:v1:sha256:bc67148fda2e508956a3c2a5ef2e3b846f4d2258eccb539a7d970445a337dd4a",
+            "moduleType": "dml",
+            "schemaName": "dml.xsd",
+            "parserIdentity": "dml:-:dmlType=s;modelIdentCode=FIXTURE;senderIdent=ZZZZZ;seqNumber=00001;yearOfDataIssue=2026:001-00:en-US",
+            "sourcePath": "DML-FIXTURE.XML"
+          },
+          {
+            "deliveryObjectId": "urn:techpub:delivery-object:v1:sha256:5c7fe10810dba1708d76b4456fcad8f51ebbafa940038419713f9cec8efe2b3b",
+            "moduleType": "ddn",
+            "schemaName": "ddn.xsd",
+            "parserIdentity": "ddn:-:modelIdentCode=FIXTURE;receiverIdent=YYYYY;senderIdent=ZZZZZ;seqNumber=00001;yearOfDataIssue=2026:001-00:en-US",
+            "sourcePath": "DDN-FIXTURE.XML"
+          }
+        ],
+        "tableSourceStyles": [
+          {
+            "coreUnitId": "urn:techpub:unit:v1:sha256:e704dc0e4cd3403a5ae1f9ad356bd9dab884ae2c71aa2a08c3e2665b98824955",
+            "styleName": "CALS-fixture",
+            "frame": "all",
+            "rowSeparator": "1",
+            "columnSeparator": "1",
+            "sourceRefIds": [
+              "urn:techpub:source-ref:v1:sha256:9e43a23b1cb56fca2e372659cc90a3154b95507b6ff3201c575d85520c010de3"
+            ],
+            "columnStyles": [
+              {
+                "coreColumnId": "urn:techpub:table-column:v1:sha256:0202ac0d0097cc3d73a084ca7af85eaacbc76b8beee105f80a8a0e167eeb8fb3",
+                "order": 0,
+                "sourceName": "item",
+                "width": "1*",
+                "align": "left"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

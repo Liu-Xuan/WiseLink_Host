@@ -113,7 +113,15 @@ function target() {
         pdfSha256: 'a'.repeat(64),
         byteLength: 1024,
       },
-      family: { documentFamily: 'SB' },
+      family: { documentFamily: 'SB', issuerAuthority: 'BOEING' },
+      preflight: {
+        normalizedDescriptorJson: JSON.stringify({
+          adapterRelease: {
+            adapterId: 'issuer.boeing.service_bulletin.v1',
+            adapterVersion: 'v8.4-document-family-adapter.v1',
+          },
+        }),
+      },
       artifact: {
         providerObjectId: 'drive-token-sb',
         providerVersionId: 'drive-version-sb',
@@ -336,6 +344,53 @@ describe('OrdinaryWorkItemService run identity', () => {
         roles: [],
         env: 'dev',
       }),
+      DEVELOPMENT_SCOPE,
+    );
+  });
+
+  it('uses the committed DM adapter release to classify a Boeing Maintenance Tip', async () => {
+    const targetValue = target();
+    targetValue.resolver.resolve.mockResolvedValue({
+      version: {
+        documentId: 'document-mt',
+        documentVersionId: 'document-version-sb',
+        sourceArtifactId: 'artifact-mt',
+        pdfSha256: 'a'.repeat(64),
+        byteLength: 1024,
+      },
+      family: { documentFamily: 'MT', issuerAuthority: 'BOEING' },
+      preflight: {
+        normalizedDescriptorJson: JSON.stringify({
+          adapterRelease: {
+            adapterId: 'issuer.boeing.maintenance_tip.v1',
+            adapterVersion: 'v8.4-document-family-adapter.v1',
+          },
+        }),
+      },
+      artifact: {
+        providerObjectId: 'drive-token-mt',
+        providerVersionId: 'drive-version-mt',
+      },
+    });
+
+    await targetValue.service.createDevelopmentAcceptanceRun(
+      {
+        documentVersionId: 'document-version-sb',
+        developmentRunToken: '0f8fad5b-d9cb-469f-a165-70867728950e',
+      },
+      DEVELOPMENT_SCOPE,
+    );
+
+    expect(
+      targetValue.vertical.runPdfWithDevelopmentScope,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        classification: expect.objectContaining({
+          normalizedFamily: 'MT',
+          parserProfileId: 'parser-profile:boeing.maintenance_tip@1.0.0',
+        }),
+      }),
+      expect.any(Object),
       DEVELOPMENT_SCOPE,
     );
   });

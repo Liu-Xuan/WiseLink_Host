@@ -171,7 +171,11 @@ export type U0FailureRetryClass =
 export interface U0Frozen2FailureAdapterInput {
   schemaVersion: 'wiselink.3_1.u0_frozen2_failure_adapter_input.v0.candidate.1';
   observedAt: string;
-  cause: { code: string; errorClass: string };
+  cause: {
+    code: string;
+    errorClass: string;
+    parameters?: Record<string, string | number | boolean | string[]>;
+  };
   source: {
     sourceKind: 'pdf' | 'native_s1000d' | 'unknown';
     sourceArtifactId: string;

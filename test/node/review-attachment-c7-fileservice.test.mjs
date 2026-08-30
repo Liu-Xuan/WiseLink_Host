@@ -4,6 +4,11 @@ import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import test from 'node:test';
 
+import {
+  InMemoryHostedDocumentCatalog,
+  LocalMiaodaFileServiceDouble,
+} from '../support/document-management-hosted-test-support.mjs';
+
 const require = createRequire(import.meta.url);
 const {
   ReviewAttachmentService,
@@ -49,20 +54,17 @@ test('R09 C7 official FileService actual PDF bytes -> DM binding -> parsed artif
       ),
     ),
   );
-  const scoped = new LocalScopedFileService(bucketId);
-  scoped.seed(
-    selectionPath,
-    pdfBytes,
-    'engineering-note.pdf',
-    'application/pdf',
-  );
-  const fileService = {
-    getDefaultBucket: async () => bucketId,
-    from: (requestedBucketId) => {
-      assert.equal(requestedBucketId, bucketId);
-      return scoped;
-    },
-  };
+  const fileService = new LocalMiaodaFileServiceDouble({
+    defaultBucketId: bucketId,
+    defaultCreatedBy: 'actor-C7',
+  });
+  fileService.seed({
+    bucketId,
+    filePath: selectionPath,
+    bytes: pdfBytes,
+    fileName: 'engineering-note.pdf',
+    contentType: 'application/pdf',
+  });
   const catalog = new InMemoryHostedDocumentCatalog();
   const documentManagement = new DocumentManagementHostedService(
     fileService,
@@ -122,7 +124,7 @@ test('R09 C7 official FileService actual PDF bytes -> DM binding -> parsed artif
   assert.equal(binding.byteLength, pdfBytes.byteLength);
   assert.equal(binding.selectionKey, `${bucketId}\n${selectionPath}`);
   const parsed = parseReviewAttachmentParsedArtifact(
-    scoped.jsonArtifactBytes(),
+    fileService.jsonArtifactBytes(),
   );
   assert.equal(parsed.attachmentRef, binding.attachmentRef);
   assert.equal(parsed.workItemId, 'WI-C7');
@@ -179,20 +181,17 @@ test('legacy unresolved Review residual recovers only under exact new-request sc
       ),
     ),
   );
-  const scoped = new LocalScopedFileService(bucketId);
-  scoped.seed(
-    selectionPath,
-    pdfBytes,
-    'residual-note.pdf',
-    'application/pdf',
-  );
-  const fileService = {
-    getDefaultBucket: async () => bucketId,
-    from: (requestedBucketId) => {
-      assert.equal(requestedBucketId, bucketId);
-      return scoped;
-    },
-  };
+  const fileService = new LocalMiaodaFileServiceDouble({
+    defaultBucketId: bucketId,
+    defaultCreatedBy: 'actor-C7',
+  });
+  fileService.seed({
+    bucketId,
+    filePath: selectionPath,
+    bytes: pdfBytes,
+    fileName: 'residual-note.pdf',
+    contentType: 'application/pdf',
+  });
   const artifactStore = new MiaodaFileServiceArtifactStore(fileService);
   const selected = await artifactStore.readSelection({
     bucketId,
@@ -632,436 +631,6 @@ test('legacy unresolved Review residual recovers only under exact new-request sc
   assert.deepEqual(actualReadback.bytes, Buffer.from(pdfBytes));
 });
 
-class InMemoryHostedDocumentCatalog {
-  #sourceArtifacts = new Map();
-  #acquisitions = new Map();
-  #acquisitionsByIdempotency = new Map();
-  #preflights = new Map();
-  #families = new Map();
-  #documents = new Map();
-  #versions = new Map();
-  #currentness = [];
-  #downstreamWorkItems = [];
-  #actionAttempts = [];
-  #scopeConversations = new Map();
-  #scopeWorkItems = new Map();
-  #commitCount = 0;
-  #exactLinkCount = 0;
-
-  get versionCount() {
-    return this.#versions.size;
-  }
-
-  get acquisitionCount() {
-    return this.#acquisitions.size;
-  }
-
-  get commitCount() {
-    return this.#commitCount;
-  }
-
-  get exactLinkCount() {
-    return this.#exactLinkCount;
-  }
-
-  get legacyResidualCount() {
-    return [...this.#acquisitions.values()].filter(
-      (value) =>
-        value.status === 'ACQUIRED_READBACK_VERIFIED'
-        && value.documentVersionId === null,
-    ).length;
-  }
-
-  get preflightDecisions() {
-    return [...this.#preflights.values()].map((value) => value.decision);
-  }
-
-  get firstIncomingIdentity() {
-    return [...this.#preflights.values()][0].decisionPayload.incoming;
-  }
-
-  async findIngestionByIdempotency(input) {
-    const acquisitionId = this.#acquisitionsByIdempotency.get(
-      input.idempotencyKey,
-    );
-    if (!acquisitionId) return null;
-    const acquisition = this.#acquisitions.get(acquisitionId);
-    assert.equal(acquisition.sourceChannel, input.sourceChannel);
-    assert.equal(acquisition.sourceRef, input.sourceRef);
-    assert.equal(acquisition.selectionBucketId, input.selection.bucketId);
-    assert.equal(acquisition.selectionFilePath, input.selection.filePath);
-    if (!acquisition.documentVersionId) {
-      return { status: 'INCOMPLETE', acquisitionId };
-    }
-    const preflight = [...this.#preflights.values()].find(
-      (value) => value.acquisitionId === acquisitionId,
-    );
-    const version = this.#versions.get(acquisition.documentVersionId);
-    const family = this.#families.get(version.familyId);
-    return {
-      status: 'COMMITTED',
-      acquisitionId,
-      sourceArtifactId: acquisition.sourceArtifactId,
-      preflightId: preflight.preflightId,
-      decision: preflight.decision,
-      familyId: family.familyId,
-      documentId: version.documentId,
-      documentVersionId: version.documentVersionId,
-      currentGeneration: family.currentGeneration,
-      immutableReadbackVerified: true,
-    };
-  }
-
-  async assertImmutableSourceReuseSafe(input) {
-    const state = this.residualClassificationState(input);
-    const hasIncompleteState = state.acquisitions.some(
-      (row) =>
-        !row.documentVersionId
-        || ![
-          'COMMITTED_CANONICAL',
-          'LINKED_EXACT_DOCUMENT_VERSION',
-        ].includes(row.status),
-    ) || state.preflights.some(
-      (row) => row.status !== 'COMMITTED' || !row.documentVersionId,
-    );
-    if (input.serverBoundReviewAttachmentScope && hasIncompleteState) {
-      return classifyReviewAttachmentResidualReuseState(input, state);
-    }
-    return classifyImmutableSourceReuseState(input, state);
-  }
-
-  seedReviewScope({
-    reviewConversationId,
-    tenantId,
-    actorUserId,
-    workItemId,
-    revision,
-    sourceArtifactId,
-    documentId,
-    documentVersionId,
-  }) {
-    this.#scopeConversations.set(reviewConversationId, {
-      reviewConversationId,
-      tenantId,
-      actorId: actorUserId,
-      workItemId,
-      status: 'ACTIVE',
-    });
-    const scopedWorkItem = {
-      workItemId,
-      tenantId,
-      requestedByUserId: actorUserId,
-      revision,
-      sourceArtifactId,
-      documentId,
-      documentVersionId,
-    };
-    this.#scopeWorkItems.set(workItemId, scopedWorkItem);
-    if (sourceArtifactId && documentId && documentVersionId) {
-      this.#downstreamWorkItems.push(scopedWorkItem);
-    }
-  }
-
-  seedActionAttempt({ attemptId, workItemId }) {
-    this.#actionAttempts.push({ attemptId, workItemId });
-  }
-
-  seedLegacyReviewResidual({ sourceArtifact, acquisition, preflight }) {
-    this.#sourceArtifacts.set(sourceArtifact.sourceArtifactId, sourceArtifact);
-    this.#acquisitions.set(acquisition.acquisitionId, {
-      ...acquisition,
-      sourceDescriptorJson: JSON.stringify(acquisition.sourceDescriptor),
-    });
-    this.#acquisitionsByIdempotency.set(
-      acquisition.idempotencyKey,
-      acquisition.acquisitionId,
-    );
-    this.#preflights.set(preflight.preflightId, {
-      ...preflight,
-      normalizedDescriptorJson: JSON.stringify(
-        preflight.normalizedDescriptor,
-      ),
-      decisionPayloadJson: JSON.stringify(preflight.decisionPayload),
-    });
-  }
-
-  residualClassificationState(input = {}) {
-    const acquisitions = [...this.#acquisitions.values()].filter(
-      (row) =>
-        row.sourceArtifactId === input.sourceArtifactId
-        || row.acquisitionId === input.acquisitionId
-        || row.idempotencyKey === input.idempotencyKey
-        || !input.sourceArtifactId,
-    );
-    const acquisitionIds = new Set(
-      acquisitions.map((row) => row.acquisitionId),
-    );
-    const scope = input.serverBoundReviewAttachmentScope;
-    return {
-      artifacts: [...this.#sourceArtifacts.values()].filter(
-        (row) =>
-          row.sourceArtifactId === input.sourceArtifactId
-          || !input.sourceArtifactId,
-      ),
-      acquisitions,
-      preflights: [...this.#preflights.values()].filter(
-        (row) => acquisitionIds.has(row.acquisitionId),
-      ),
-      versions: [...this.#versions.values()].filter(
-        (row) =>
-          row.sourceArtifactId === input.sourceArtifactId
-          || acquisitionIds.has(row.acquisitionId)
-          || !input.sourceArtifactId,
-      ),
-      currentness: [...this.#currentness],
-      downstreamWorkItems: [...this.#downstreamWorkItems],
-      actionAttempts: [...this.#actionAttempts],
-      scopeConversations: scope
-        ? [this.#scopeConversations.get(scope.reviewConversationId)]
-          .filter(Boolean)
-        : [...this.#scopeConversations.values()],
-      scopeWorkItems: scope
-        ? [this.#scopeWorkItems.get(scope.workItemId)].filter(Boolean)
-        : [...this.#scopeWorkItems.values()],
-    };
-  }
-
-  async recordAcquisition({ sourceArtifact, acquisition }) {
-    const existingArtifact = this.#sourceArtifacts.get(
-      sourceArtifact.sourceArtifactId,
-    );
-    if (existingArtifact) {
-      assert.equal(existingArtifact.sha256, sourceArtifact.sha256);
-      assert.equal(existingArtifact.byteLength, sourceArtifact.byteLength);
-    } else {
-      this.#sourceArtifacts.set(sourceArtifact.sourceArtifactId, sourceArtifact);
-    }
-    this.#acquisitions.set(acquisition.acquisitionId, {
-      ...acquisition,
-      documentVersionId: null,
-      sourceDescriptorJson: JSON.stringify(acquisition.sourceDescriptor),
-      status: 'ACQUIRED_READBACK_VERIFIED',
-    });
-    this.#acquisitionsByIdempotency.set(
-      acquisition.idempotencyKey,
-      acquisition.acquisitionId,
-    );
-    return acquisition;
-  }
-
-  async listIngressDocuments() {
-    return [...this.#versions.values()].map((version) => {
-      const family = this.#families.get(version.familyId);
-      return {
-        documentId: version.documentId,
-        documentVersionId: version.documentVersionId,
-        familyId: version.familyId,
-        detail: {
-          sha256: version.pdfSha256,
-          sizeBytes: version.byteLength,
-          documentCode: family.canonicalDocumentNumber,
-          originalFilename: version.originalFilename,
-          documentFamily: family.documentFamily,
-          canonicalDocumentFamily: family.documentFamily,
-          businessRevision: version.businessRevision,
-          revisionDate: version.revisionDate,
-          sourceGeneratedDate: version.sourceGeneratedDate,
-          revisionId: version.revisionId,
-          status: 'catalog_committed',
-        },
-        upload: {
-          descriptorSummary: {
-            sha256: version.pdfSha256,
-            sizeBytes: version.byteLength,
-            documentCode: family.canonicalDocumentNumber,
-            documentFamily: family.documentFamily,
-            businessRevision: version.businessRevision,
-            revisionDate: version.revisionDate,
-            sourceGeneratedDate: version.sourceGeneratedDate,
-          },
-        },
-        report: { status: 'not_available' },
-        ownerActionState: { pipeline: { selectedReplacementRevisionId: '' } },
-        documentAnalysisWorkbenchView: { status: 'not_available' },
-      };
-    });
-  }
-
-  async observeFamily(identityKey) {
-    return (
-      [...this.#families.values()].find(
-        (family) => family.canonicalIdentityKey === identityKey,
-      ) || null
-    );
-  }
-
-  async recordPreflight(preflight) {
-    this.#preflights.set(preflight.preflightId, {
-      ...preflight,
-      documentVersionId: null,
-      commitIdempotencyKey: null,
-      normalizedDescriptorJson: JSON.stringify(
-        preflight.normalizedDescriptor,
-      ),
-      decisionPayloadJson: JSON.stringify(preflight.decisionPayload),
-    });
-    return preflight;
-  }
-
-  async findExactDocumentVersion({ sha256, byteLength }) {
-    return (
-      [...this.#versions.values()].find(
-        (version) =>
-          version.pdfSha256 === sha256 &&
-          Number(version.byteLength) === Number(byteLength),
-      ) || null
-    );
-  }
-
-  async linkAcquisitionToVersion({
-    acquisitionId,
-    documentVersionId,
-    preflightId,
-  }) {
-    this.#exactLinkCount += 1;
-    const acquisition = this.#acquisitions.get(acquisitionId);
-    acquisition.documentVersionId = documentVersionId;
-    acquisition.status = 'LINKED_EXACT_DOCUMENT_VERSION';
-    const preflight = this.#preflights.get(preflightId);
-    preflight.documentVersionId = documentVersionId;
-    preflight.status = 'COMMITTED';
-    return acquisition;
-  }
-
-  async commitNewVersion(command) {
-    this.#commitCount += 1;
-    const family = {
-      ...command.family,
-      currentDocumentVersionId: command.documentVersion.documentVersionId,
-      currentGeneration: command.observedCurrentGeneration + 1,
-    };
-    this.#families.set(family.familyId, family);
-    this.#documents.set(command.document.documentId, command.document);
-    this.#versions.set(
-      command.documentVersion.documentVersionId,
-      command.documentVersion,
-    );
-    const acquisition = this.#acquisitions.get(
-      command.documentVersion.acquisitionId,
-    );
-    acquisition.documentVersionId = command.documentVersion.documentVersionId;
-    acquisition.status = 'COMMITTED_CANONICAL';
-    const preflight = this.#preflights.get(command.preflightId);
-    preflight.documentVersionId = command.documentVersion.documentVersionId;
-    preflight.status = 'COMMITTED';
-    return {
-      disposition: 'CREATED',
-      familyId: family.familyId,
-      documentId: command.document.documentId,
-      documentVersionId: command.documentVersion.documentVersionId,
-      currentGeneration: family.currentGeneration,
-      currentnessChanged: true,
-    };
-  }
-
-  async readDocumentVersion(documentVersionId) {
-    return this.#versions.get(documentVersionId) || null;
-  }
-
-  async readFamily(familyId) {
-    return this.#families.get(familyId) || null;
-  }
-
-  async resolveDocumentVersionSource(documentVersionId, options) {
-    const version = this.#versions.get(documentVersionId);
-    if (!version) throw new Error('DOCUMENT_VERSION_NOT_FOUND');
-    const acquisition = this.#acquisitions.get(version.acquisitionId);
-    const artifact = this.#sourceArtifacts.get(version.sourceArtifactId);
-    if (
-      options.expectedCreatorUserId !== version.committedBy ||
-      options.expectedCreatorUserId !== acquisition.acquiredBy
-    ) {
-      throw new Error('DOCUMENT_VERSION_NOT_FOUND');
-    }
-    assert.equal(version.pdfSha256, artifact.sha256);
-    assert.equal(version.byteLength, artifact.byteLength);
-    return { version, acquisition, artifact };
-  }
-}
-
-class LocalScopedFileService {
-  #files = new Map();
-  #uploadCount = 0;
-
-  constructor(bucketId) {
-    this.bucketId = bucketId;
-  }
-
-  seed(path, bytes, name, mimeType) {
-    this.#files.set(canonicalPath(path), {
-      id: `seed-${this.#files.size + 1}`,
-      bytes: Uint8Array.from(bytes),
-      name,
-      mimeType,
-      createdBy: 'actor-C7',
-    });
-  }
-
-  async getFileMetadata(path) {
-    const stored = this.#files.get(canonicalPath(path));
-    return stored ? metadata(this.bucketId, path, stored) : null;
-  }
-
-  async upload(bytes, options) {
-    assert.equal(options.upsert, false);
-    this.#uploadCount += 1;
-    const stored = {
-      id: `uploaded-${this.#uploadCount}`,
-      bytes: Uint8Array.from(bytes),
-      name: options.fileName,
-      mimeType: options.contentType,
-      createdBy: 'actor-C7',
-    };
-    this.#files.set(canonicalPath(options.filePath), stored);
-    return metadata(this.bucketId, options.filePath, stored);
-  }
-
-  async download(path) {
-    const stored = this.#files.get(canonicalPath(path));
-    if (!stored) throw new Error('FILE_NOT_FOUND');
-    return {
-      content: Uint8Array.from(stored.bytes),
-      metadata: metadata(this.bucketId, path, stored),
-    };
-  }
-
-  jsonArtifactBytes() {
-    const stored = [...this.#files.values()].find(
-      (value) => value.mimeType === 'application/json',
-    );
-    if (!stored) throw new Error('PARSED_ARTIFACT_NOT_FOUND');
-    return Uint8Array.from(stored.bytes);
-  }
-}
-
-function metadata(bucketId, path, stored) {
-  return {
-    id: stored.id,
-    bucketID: bucketId,
-    filePath: `/${canonicalPath(path)}`,
-    name: stored.name,
-    createdBy: { userID: stored.createdBy },
-    updatedAt: '2026-08-27T00:00:00.000Z',
-    metadata: {
-      contentLength: String(stored.bytes.byteLength),
-      mimeType: stored.mimeType,
-    },
-  };
-}
-
-function canonicalPath(value) {
-  return value.replace(/^\/+/, '');
-}
 
 function restoreProcessEnv(key, value) {
   if (value === undefined) {

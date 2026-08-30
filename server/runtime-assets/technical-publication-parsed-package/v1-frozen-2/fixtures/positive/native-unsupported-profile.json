@@ -1,0 +1,24 @@
+{
+  "$schema": "urn:techpub:schema:v1:parse-failure-report:frozen-2",
+  "schemaVersion": "techpub.parse-failure-report.v1",
+  "contractRevision": "frozen.2",
+  "failureId": "urn:techpub:parse-failure:v1:sha256:c60f97db7247908d722d6dea446c016336b358b5f4c2b4661a3fc7b252d26a6e",
+  "sourceKind": "native_s1000d",
+  "inputRef": "contract://fixtures/source/native-s1000d-issue-4-2",
+  "inputHash": "sha256:9aec4702ab8a658af9680f1d2cf9c0df77d1f2e79e40c6df0105acfb439caf06",
+  "stage": "schema_binding",
+  "code": "S1000D.UNSUPPORTED_PROFILE",
+  "message": "The declared S1000D issue/profile is unsupported; no parsed package is produced.",
+  "blocking": true,
+  "packageProduced": false,
+  "producer": {
+    "name": "techpub-s1000d-u0-fixture-projector",
+    "version": "frozen.2",
+    "buildHash": "sha256:19cbe7650e70cfe5a07e24529703c102859968ecd953e81c305cfd284f04652c"
+  },
+  "observedAt": "2026-08-11T00:00:00Z",
+  "parameters": {
+    "fixture": true,
+    "scenario": "native-unsupported-profile"
+  }
+}

@@ -23,6 +23,13 @@ import { Button } from '@client/src/components/ui/button';
 import { Input } from '@client/src/components/ui/input';
 import type { CanonicalApplicabilitySelectionReadModel } from '@shared/api.interface';
 
+import {
+  isApplicabilitySelectionUnconfigured,
+  presentApplicabilitySelection,
+  presentApplicabilitySelectionError,
+  type ApplicabilitySelectionLoadState,
+  type ApplicabilitySelectionPresentation,
+} from './applicability-selection-presentation';
 import './applicability-selection-panel.css';
 
 interface ApplicabilitySelectionPanelProps {
@@ -30,18 +37,7 @@ interface ApplicabilitySelectionPanelProps {
   onRefreshWorkspace: () => void;
 }
 
-type SelectionLoadState = 'loading' | 'ready' | 'unconfigured' | 'error';
-
-const UNCONFIGURED_CODE = 'APPLICABILITY_CONTROLLED_SELECTION_NOT_CONFIGURED';
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/u;
-
-function requestErrorDetail(reason: unknown, fallback: string): string {
-  if (reason instanceof Error && reason.message.trim()) {
-    return reason.message.trim();
-  }
-  const detail: string = String(reason ?? '').trim();
-  return detail || fallback;
-}
 
 const ApplicabilitySelectionPanel: FC<ApplicabilitySelectionPanelProps> = ({
   workItemId,
@@ -52,7 +48,8 @@ const ApplicabilitySelectionPanel: FC<ApplicabilitySelectionPanelProps> = ({
     useState<CanonicalApplicabilitySelectionReadModel | null>(null);
   const [aircraftIdentifier, setAircraftIdentifier] = useState<string>('');
   const [asOf, setAsOf] = useState<string>('');
-  const [loadState, setLoadState] = useState<SelectionLoadState>('loading');
+  const [loadState, setLoadState] =
+    useState<ApplicabilitySelectionLoadState>('loading');
   const [saving, setSaving] = useState<boolean>(false);
   const [errorDetail, setErrorDetail] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -76,19 +73,15 @@ const ApplicabilitySelectionPanel: FC<ApplicabilitySelectionPanelProps> = ({
       setLoadState('ready');
     } catch (reason) {
       if (requestEpochRef.current !== epoch) return;
-      const detail: string = requestErrorDetail(
-        reason,
-        'APPLICABILITY_SELECTION_UNAVAILABLE',
-      );
       setSelection(null);
-      if (detail.includes(UNCONFIGURED_CODE)) {
+      if (isApplicabilitySelectionUnconfigured(reason)) {
         setAircraftIdentifier('');
         setAsOf('');
         setLoadState('unconfigured');
         return;
       }
       setLoadState('error');
-      setErrorDetail(detail);
+      setErrorDetail(presentApplicabilitySelectionError(reason, 'read'));
     }
   }, [workItemId]);
 
@@ -103,12 +96,12 @@ const ApplicabilitySelectionPanel: FC<ApplicabilitySelectionPanelProps> = ({
     const normalizedAircraftIdentifier: string = aircraftIdentifier.trim();
     const normalizedAsOf: string = asOf.trim();
     if (!normalizedAircraftIdentifier || !normalizedAsOf) {
-      setErrorDetail('飞机号与 as-of 必须由工程师明确填写。');
+      setErrorDetail('飞机号与评估日期必须由工程师明确填写。');
       setSuccessMessage(null);
       return;
     }
     if (!ISO_DATE_PATTERN.test(normalizedAsOf)) {
-      setErrorDetail('as-of 格式必须为 YYYY-MM-DD。');
+      setErrorDetail('评估日期格式必须为 YYYY-MM-DD。');
       setSuccessMessage(null);
       return;
     }
@@ -129,12 +122,10 @@ const ApplicabilitySelectionPanel: FC<ApplicabilitySelectionPanelProps> = ({
       setAircraftIdentifier(readback.aircraftIdentifier);
       setAsOf(readback.asOf);
       setLoadState('ready');
-      setSuccessMessage('已提交，并完成 authenticated Host GET readback。');
+      setSuccessMessage('已保存并重新读取当前选择。');
     } catch (reason) {
       if (requestEpochRef.current !== epoch) return;
-      setErrorDetail(
-        requestErrorDetail(reason, 'APPLICABILITY_SELECTION_SAVE_FAILED'),
-      );
+      setErrorDetail(presentApplicabilitySelectionError(reason, 'save'));
     } finally {
       if (requestEpochRef.current === epoch) setSaving(false);
     }
@@ -160,8 +151,6 @@ const ApplicabilitySelectionPanel: FC<ApplicabilitySelectionPanelProps> = ({
 
   const isLoading: boolean = loadState === 'loading';
   const isBusy: boolean = isLoading || saving;
-  const sourceBindingReady: boolean =
-    selection?.frozenSourceBinding.status === 'READY';
   const draftPresent: boolean = Boolean(
     aircraftIdentifier.trim() || asOf.trim(),
   );
@@ -170,6 +159,8 @@ const ApplicabilitySelectionPanel: FC<ApplicabilitySelectionPanelProps> = ({
     aircraftIdentifier.trim() === selection.aircraftIdentifier &&
     asOf.trim() === selection.asOf,
   );
+  const presentation: ApplicabilitySelectionPresentation =
+    presentApplicabilitySelection(loadState, selection);
 
   return (
     <section
@@ -184,7 +175,7 @@ const ApplicabilitySelectionPanel: FC<ApplicabilitySelectionPanelProps> = ({
             <Plane />
           </span>
           <div>
-            <span>Host 受控输入</span>
+            <span>工程师受控输入</span>
             <h2>飞机适用性选择</h2>
             <p>
               仅保存工程师明确输入的飞机号与评估时点；浏览器不会生成飞机或构型事实。
@@ -194,15 +185,23 @@ const ApplicabilitySelectionPanel: FC<ApplicabilitySelectionPanelProps> = ({
         <div className="applicability-selection-statuses">
           <Badge
             variant={
-              selection?.currentness === 'STALE' ? 'destructive' : 'outline'
+              presentation.state === 'error'
+                ? 'destructive'
+                : presentation.state === 'success'
+                  ? 'secondary'
+                  : 'outline'
             }
           >
-            {selection
-              ? `currentness · ${selection.currentness}`
-              : 'currentness · 未读回'}
+            {presentation.selectionLabel}
           </Badge>
-          <Badge variant={sourceBindingReady ? 'secondary' : 'outline'}>
-            frozen source · {selection?.frozenSourceBinding.status ?? '未读回'}
+          <Badge
+            variant={
+              selection?.frozenSourceBinding.status === 'READY'
+                ? 'secondary'
+                : 'outline'
+            }
+          >
+            {presentation.sourceLabel}
           </Badge>
           <Badge variant="outline">
             表单 ·{' '}
@@ -214,6 +213,12 @@ const ApplicabilitySelectionPanel: FC<ApplicabilitySelectionPanelProps> = ({
           </Badge>
         </div>
       </header>
+
+      {loadState === 'ready' ? (
+        <p className="applicability-selection-guidance">
+          {presentation.guidance}
+        </p>
+      ) : null}
 
       <div className="applicability-selection-controls">
         <label htmlFor="applicability-aircraft-identifier">
@@ -234,7 +239,7 @@ const ApplicabilitySelectionPanel: FC<ApplicabilitySelectionPanelProps> = ({
         </label>
         <label htmlFor="applicability-as-of">
           <span>
-            <CalendarDays aria-hidden="true" /> as-of
+            <CalendarDays aria-hidden="true" /> 评估日期
           </span>
           <Input
             id="applicability-as-of"
@@ -250,7 +255,7 @@ const ApplicabilitySelectionPanel: FC<ApplicabilitySelectionPanelProps> = ({
             onKeyDown={handleInputKeyDown}
           />
           <small id="applicability-as-of-help">
-            评估时点与 Fleet source currentness 分开保存。
+            评估日期用于冻结本次查询时点；资料版本由系统单独校验。
           </small>
         </label>
         <div className="applicability-selection-actions">
@@ -264,7 +269,7 @@ const ApplicabilitySelectionPanel: FC<ApplicabilitySelectionPanelProps> = ({
               className={isLoading ? 'applicability-selection-spin' : ''}
               aria-hidden="true"
             />
-            读取当前选择
+            读取已保存选择
           </Button>
           <Button
             type="button"
@@ -283,18 +288,13 @@ const ApplicabilitySelectionPanel: FC<ApplicabilitySelectionPanelProps> = ({
           role="status"
         >
           <AlertTriangle aria-hidden="true" />
-          <p>
-            当前 WorkItem 尚未配置飞机适用性选择。
-            <code>{UNCONFIGURED_CODE}</code>
-          </p>
+          <p>{presentation.guidance}</p>
         </div>
       ) : null}
       {errorDetail ? (
         <div className="applicability-selection-notice is-error" role="alert">
           <AlertTriangle aria-hidden="true" />
-          <p>
-            Host 返回：<code>{errorDetail}</code>
-          </p>
+          <p>{errorDetail}</p>
         </div>
       ) : null}
       {successMessage ? (
@@ -311,59 +311,48 @@ const ApplicabilitySelectionPanel: FC<ApplicabilitySelectionPanelProps> = ({
       ) : null}
 
       {selection ? (
-        <div className="applicability-selection-readback">
-          <div className="applicability-selection-readback-title">
+        <details className="applicability-selection-readback">
+          <summary>
             <Database aria-hidden="true" />
-            <div>
-              <span>authenticated GET readback</span>
-              <h3>当前 Host 选择与来源绑定</h3>
-            </div>
+            <span>查看来源绑定说明</span>
+          </summary>
+          <div className="applicability-selection-readback-content">
+            <h3>当前选择与受控来源</h3>
+            <dl>
+              <div>
+                <dt>飞机号</dt>
+                <dd>{selection.aircraftIdentifier}</dd>
+              </div>
+              <div>
+                <dt>评估日期</dt>
+                <dd>{selection.asOf}</dd>
+              </div>
+              <div>
+                <dt>选择状态</dt>
+                <dd>{presentation.selectionLabel}</dd>
+              </div>
+              <div>
+                <dt>来源绑定</dt>
+                <dd>{presentation.sourceLabel}</dd>
+              </div>
+              <div>
+                <dt>来源更新时间</dt>
+                <dd>{selection.fleetSource.sourceAsOf}</dd>
+              </div>
+              <div>
+                <dt>受控匹配范围</dt>
+                <dd>
+                  {selection.frozenSourceBinding.sourceExpressionCount} 条范围 ·{' '}
+                  {selection.frozenSourceBinding.assignmentCount} 条飞机分配
+                </dd>
+              </div>
+            </dl>
+            <p>
+              {presentation.guidance}
+              这里仅展示工程师输入及来源绑定，不推断飞机适用性，也不构成正式工程结论。
+            </p>
           </div>
-          <dl>
-            <div>
-              <dt>飞机号 / as-of</dt>
-              <dd>
-                {selection.aircraftIdentifier} · {selection.asOf}
-              </dd>
-            </div>
-            <div>
-              <dt>WorkItem revision</dt>
-              <dd>{selection.workItemRevision}</dd>
-            </div>
-            <div>
-              <dt>selection revision</dt>
-              <dd>{selection.selectionRevision}</dd>
-            </div>
-            <div>
-              <dt>DocumentVersion</dt>
-              <dd>{selection.documentVersionId}</dd>
-            </div>
-            <div>
-              <dt>Fleet source revision</dt>
-              <dd>{selection.fleetSource.sourceRevisionKey}</dd>
-            </div>
-            <div>
-              <dt>Fleet authority revision</dt>
-              <dd>{selection.fleetSource.authorityRevision}</dd>
-            </div>
-            <div>
-              <dt>Fleet source as-of</dt>
-              <dd>{selection.fleetSource.sourceAsOf}</dd>
-            </div>
-            <div>
-              <dt>frozen source binding</dt>
-              <dd>
-                {selection.frozenSourceBinding.status} ·{' '}
-                {selection.frozenSourceBinding.sourceExpressionCount} 条表达式 /{' '}
-                {selection.frozenSourceBinding.assignmentCount} 条分配
-              </dd>
-            </div>
-          </dl>
-          <p>
-            此读回只证明 Host
-            已冻结选择与来源绑定；不代表构型事实完整，也不构成正式适用性结论。
-          </p>
-        </div>
+        </details>
       ) : null}
     </section>
   );

@@ -1,4 +1,4 @@
-import { access, copyFile, cp, mkdir } from 'node:fs/promises';
+import { access, copyFile, cp, mkdir, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');
@@ -7,6 +7,30 @@ const target = resolve(root, 'dist/config/document-family-adapters');
 
 await mkdir(target, { recursive: true });
 await cp(source, target, { recursive: true, force: true });
+
+const technicalPublicationContractSource = resolve(
+  root,
+  'server/runtime-assets/technical-publication-parsed-package/v1-frozen-2',
+);
+const technicalPublicationContractTarget = resolve(
+  root,
+  'dist/server/runtime-assets/technical-publication-parsed-package/v1-frozen-2',
+);
+await access(
+  resolve(
+    technicalPublicationContractSource,
+    'freeze/frozen-2-contract-manifest.json',
+  ),
+);
+await rm(technicalPublicationContractTarget, { recursive: true, force: true });
+await mkdir(resolve(technicalPublicationContractTarget, '..'), {
+  recursive: true,
+});
+await cp(
+  technicalPublicationContractSource,
+  technicalPublicationContractTarget,
+  { recursive: true, force: true },
+);
 
 const producerAssetTargetDirectory = resolve(
   root,
@@ -44,6 +68,10 @@ await cp(pdfjsSource, pdfjsTarget, { recursive: true, force: true });
 process.stdout.write(`${JSON.stringify({
   source,
   target,
+  copiedTechnicalPublicationContract: {
+    source: technicalPublicationContractSource,
+    target: technicalPublicationContractTarget,
+  },
   copiedProducerAssets,
   copiedPdfjsRuntime: {
     source: pdfjsSource,

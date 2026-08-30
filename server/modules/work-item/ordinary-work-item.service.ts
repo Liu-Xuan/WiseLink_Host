@@ -16,6 +16,10 @@ import type {
   CanonicalHostActor,
 } from '../canonical-host/canonical-host.types';
 import type { CanonicalVerifiedDevelopmentCreateScope } from '../canonical-host/canonical-service-scope.authorization';
+import {
+  hostNativePdfAdapterIdFromDmPreflight,
+  hostNativePdfClassificationFor,
+} from '../canonical-host/host-native-pdf-profile.registry';
 import type { CanonicalMiaodaFinalUserActorContext } from './canonical-object-access.port';
 import {
   DocumentManagementHostedService,
@@ -258,7 +262,11 @@ export class OrdinaryWorkItemService {
       requireCurrent: requireCurrentDocumentVersion,
       expectedCreatorUserId: oauthSessionCreate ? actor.userId : undefined,
     });
-    const classification = classificationFor(resolved.family.documentFamily);
+    const classification = classificationFor(
+      resolved.family.documentFamily,
+      resolved.family.issuerAuthority,
+      hostNativePdfAdapterIdFromDmPreflight(resolved.preflight),
+    );
     const reservationInput = {
       tenantId: actor.tenantId,
       actorUserId: actor.userId,
@@ -642,12 +650,19 @@ function requireDevelopmentWorkItemRole(actor: CanonicalHostActor): void {
   }
 }
 
-function classificationFor(family: string): CanonicalClassificationSelection {
+function classificationFor(
+  family: string,
+  issuerAuthority: string,
+  adapterId: string,
+): CanonicalClassificationSelection {
   if (family === 'FTD') return { ...FTD_CLASSIFICATION };
   if (family === 'OEM_REFERENCE') return { ...OEM_REFERENCE_CLASSIFICATION };
-  if (family === 'SB') {
-    return structuredClone(phase5Handoff().canonicalHostClassification);
-  }
+  const classification = hostNativePdfClassificationFor({
+    family,
+    issuerAuthority,
+    adapterId,
+  });
+  if (classification) return classification;
   throw Object.assign(
     new Error(`No activated hosted PDF producer profile for ${family}.`),
     { code: 'PDF_PRODUCER_PROFILE_NOT_AVAILABLE', statusCode: 409 },

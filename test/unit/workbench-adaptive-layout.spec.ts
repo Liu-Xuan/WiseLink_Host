@@ -1,4 +1,7 @@
-import { resolveWorkbenchAdaptiveLayout } from '../../client/src/features/workbench/workbench-layout';
+import {
+  resolveWorkbenchAdaptiveLayout,
+  resolveWorkbenchEvidenceVisibility,
+} from '../../client/src/features/workbench/workbench-layout';
 
 const base = {
   navWidth: 304,
@@ -7,6 +10,9 @@ const base = {
   isCompact: false,
   navigatorAvailable: true,
   evidenceAvailable: true,
+  evidenceContentCount: 2,
+  evidenceActive: false,
+  evidenceRequested: false,
 };
 
 describe('workbench adaptive layout', () => {
@@ -16,7 +22,56 @@ describe('workbench adaptive layout', () => {
     ).toEqual({
       autoCollapseNavigator: true,
       useEvidenceOverlay: false,
+      suppressEmptyEvidence: false,
     });
+  });
+
+  it('keeps the navigator and suppresses an unrequested 0/0 evidence panel at a 1440 Host body width', () => {
+    expect(
+      resolveWorkbenchAdaptiveLayout({
+        ...base,
+        bodyWidth: 1328,
+        evidenceContentCount: 0,
+      }),
+    ).toEqual({
+      autoCollapseNavigator: false,
+      useEvidenceOverlay: false,
+      suppressEmptyEvidence: true,
+    });
+  });
+
+  it.each([
+    ['a non-empty panel', { evidenceContentCount: 2 }],
+    ['an active SourceRef', { evidenceContentCount: 0, evidenceActive: true }],
+    [
+      'an explicit user request',
+      { evidenceContentCount: 0, evidenceRequested: true },
+    ],
+  ])(
+    'keeps %s in the existing constrained desktop layout',
+    (_label, evidenceState) => {
+      expect(
+        resolveWorkbenchAdaptiveLayout({
+          ...base,
+          ...evidenceState,
+          bodyWidth: 1328,
+        }),
+      ).toEqual({
+        autoCollapseNavigator: true,
+        useEvidenceOverlay: false,
+        suppressEmptyEvidence: false,
+      });
+    },
+  );
+
+  it('does not suppress an empty panel when the desktop can fit all three columns', () => {
+    expect(
+      resolveWorkbenchAdaptiveLayout({
+        ...base,
+        bodyWidth: 1500,
+        evidenceContentCount: 0,
+      }).suppressEmptyEvidence,
+    ).toBe(false);
   });
 
   it('keeps all three columns when the actual body is wide enough', () => {
@@ -25,6 +80,7 @@ describe('workbench adaptive layout', () => {
     ).toEqual({
       autoCollapseNavigator: false,
       useEvidenceOverlay: false,
+      suppressEmptyEvidence: false,
     });
   });
 
@@ -34,6 +90,7 @@ describe('workbench adaptive layout', () => {
     ).toEqual({
       autoCollapseNavigator: false,
       useEvidenceOverlay: true,
+      suppressEmptyEvidence: false,
     });
   });
 
@@ -47,6 +104,28 @@ describe('workbench adaptive layout', () => {
     ).toEqual({
       autoCollapseNavigator: false,
       useEvidenceOverlay: false,
+      suppressEmptyEvidence: false,
     });
+  });
+
+  it('keeps the 390 drawer controlled only by the mobile open state', () => {
+    expect(
+      resolveWorkbenchEvidenceVisibility({
+        evidenceAvailable: true,
+        isCompact: true,
+        desktopOpen: true,
+        mobileOpen: false,
+        suppressEmptyEvidence: true,
+      }),
+    ).toBe(false);
+    expect(
+      resolveWorkbenchEvidenceVisibility({
+        evidenceAvailable: true,
+        isCompact: true,
+        desktopOpen: false,
+        mobileOpen: true,
+        suppressEmptyEvidence: true,
+      }),
+    ).toBe(true);
   });
 });

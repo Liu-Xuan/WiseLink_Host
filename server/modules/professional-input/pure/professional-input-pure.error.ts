@@ -7,10 +7,28 @@
  */
 export class ProfessionalInputPureError extends Error {
   readonly code: string;
+  readonly diagnostic: Readonly<ProfessionalInputPureDiagnostic>;
 
-  constructor(code: string, message: string) {
+  constructor(
+    code: string,
+    message: string,
+    diagnostic: ProfessionalInputPureDiagnostic = {},
+  ) {
     super(`[${code}] ${message}`);
     this.name = 'ProfessionalInputPureError';
     this.code = code;
+    this.diagnostic = Object.freeze({ ...diagnostic });
   }
 }
+
+export type ProfessionalInputPureDiagnosticValue =
+  | string
+  | number
+  | boolean
+  | readonly string[]
+  | readonly number[];
+
+export type ProfessionalInputPureDiagnostic = Record<
+  string,
+  ProfessionalInputPureDiagnosticValue
+>;

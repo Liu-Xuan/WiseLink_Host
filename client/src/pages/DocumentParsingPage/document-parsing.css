@@ -1884,10 +1884,8 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
 }
 
 .parse-assessment-audit article > small {
-  overflow: hidden;
   font-family: var(--wl-font);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .parse-criterion-list {
