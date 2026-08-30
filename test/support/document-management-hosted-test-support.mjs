@@ -10,6 +10,23 @@ const {
   classifyReviewAttachmentResidualReuseState,
 } = require('../../dist/server/modules/document-management/src/hosted/nest/miaoda-hosted-document-catalog.js');
 
+const VERIFIED_DM_IDENTITY_AUTHORITIES = new Set([
+  'DM_ACTUAL_PDF_FIRST_THREE_PAGES',
+  'DM_ACTUAL_PDF_LAYOUT_AND_SERVER_REVIEW_SCOPE',
+]);
+
+function fail(code, message) {
+  throw Object.assign(new Error(message), { code });
+}
+
+function tenantFamilyIdentityPrefix(tenantId) {
+  const normalized = String(tenantId || '').trim();
+  if (!normalized) {
+    fail('TENANT_SCOPE_REQUIRED', 'Catalog family reads require tenant scope.');
+  }
+  return `tenant:${encodeURIComponent(normalized)}:family:`;
+}
+
 /**
  * Canonical-owned local Catalog support for exercising the production hosted
  * Document Management core without Postgres. This module is test/script-only;
@@ -84,6 +101,12 @@ export class InMemoryHostedDocumentCatalog {
       input.idempotencyKey,
     );
     if (!acquisitionId) return null;
+    if (
+      input.expectedAcquisitionId &&
+      acquisitionId !== input.expectedAcquisitionId
+    ) {
+      return null;
+    }
     const acquisition = this.#acquisitions.get(acquisitionId);
     assert.equal(acquisition.sourceChannel, input.sourceChannel);
     assert.equal(acquisition.sourceRef, input.sourceRef);
@@ -96,7 +119,45 @@ export class InMemoryHostedDocumentCatalog {
       (value) => value.acquisitionId === acquisitionId,
     );
     const version = this.#versions.get(acquisition.documentVersionId);
-    const family = this.#families.get(version.familyId);
+    const family = version ? this.#families.get(version.familyId) : null;
+    const artifact = this.#sourceArtifacts.get(acquisition.sourceArtifactId);
+    if (!preflight || !version || !family || !artifact) {
+      fail(
+        'CATALOG_REPLAY_READ_FAILED',
+        'Completed replay lacks one fresh exact Catalog lineage.',
+      );
+    }
+    const normalizedDescriptor = JSON.parse(preflight.normalizedDescriptorJson);
+    const identityAuthority = String(
+      normalizedDescriptor.identityAuthority || '',
+    );
+    const pageCount = Number(normalizedDescriptor.pageCount || 0);
+    if (
+      !VERIFIED_DM_IDENTITY_AUTHORITIES.has(identityAuthority) ||
+      !Number.isSafeInteger(pageCount) ||
+      pageCount < 1 ||
+      normalizedDescriptor.sha256 !== artifact.sha256 ||
+      Number(normalizedDescriptor.sizeBytes) !== Number(artifact.byteLength) ||
+      normalizedDescriptor.documentCode !== family.canonicalDocumentNumber ||
+      normalizedDescriptor.canonicalDocumentFamily !== family.documentFamily ||
+      normalizedDescriptor.issuer !== family.issuerAuthority ||
+      String(normalizedDescriptor.businessRevision || '') !==
+        String(version.businessRevision || '') ||
+      String(normalizedDescriptor.revisionDate || '') !==
+        String(version.revisionDate || '') ||
+      String(normalizedDescriptor.sourceGeneratedDate || '') !==
+        String(version.sourceGeneratedDate || '') ||
+      acquisition.sourceArtifactId !== artifact.sourceArtifactId ||
+      version.sourceArtifactId !== artifact.sourceArtifactId ||
+      version.acquisitionId !== acquisition.acquisitionId ||
+      preflight.acquisitionId !== acquisition.acquisitionId ||
+      preflight.documentVersionId !== version.documentVersionId
+    ) {
+      fail(
+        'CATALOG_REPLAY_IDENTITY_UNVERIFIED',
+        'Completed replay lacks verified DM actual-PDF identity readback.',
+      );
+    }
     return {
       status: 'COMMITTED',
       acquisitionId,
@@ -108,6 +169,19 @@ export class InMemoryHostedDocumentCatalog {
       documentVersionId: version.documentVersionId,
       currentGeneration: family.currentGeneration,
       immutableReadbackVerified: true,
+      catalogFreshReadVerified: true,
+      identityReadback: {
+        identityAuthority,
+        canonicalIdentityKey: family.canonicalIdentityKey,
+        issuerAuthority: family.issuerAuthority,
+        documentFamily: family.documentFamily,
+        documentNumber: family.canonicalDocumentNumber,
+        businessRevision: version.businessRevision,
+        revisionDate: version.revisionDate,
+        sourceGeneratedDate: version.sourceGeneratedDate,
+        pageCount,
+        sourceArtifactId: artifact.sourceArtifactId,
+      },
     };
   }
 
@@ -183,6 +257,47 @@ export class InMemoryHostedDocumentCatalog {
     });
   }
 
+  seedCompletedCanonicalLineage({
+    sourceArtifact,
+    acquisition,
+    preflight,
+    family,
+    document,
+    version,
+    currentnessDecision,
+  }) {
+    assert.equal(acquisition.sourceArtifactId, sourceArtifact.sourceArtifactId);
+    assert.equal(version.sourceArtifactId, sourceArtifact.sourceArtifactId);
+    assert.equal(version.acquisitionId, acquisition.acquisitionId);
+    assert.equal(version.familyId, family.familyId);
+    assert.equal(version.documentId, document.documentId);
+    this.#sourceArtifacts.set(sourceArtifact.sourceArtifactId, {
+      ...sourceArtifact,
+    });
+    this.#acquisitions.set(acquisition.acquisitionId, {
+      ...acquisition,
+      documentVersionId: version.documentVersionId,
+      sourceDescriptorJson: JSON.stringify(acquisition.sourceDescriptor),
+      status: 'COMMITTED_CANONICAL',
+    });
+    this.#acquisitionsByIdempotency.set(
+      acquisition.idempotencyKey,
+      acquisition.acquisitionId,
+    );
+    this.#preflights.set(preflight.preflightId, {
+      ...preflight,
+      documentVersionId: version.documentVersionId,
+      normalizedDescriptorJson: JSON.stringify(preflight.normalizedDescriptor),
+      decisionPayloadJson: JSON.stringify(preflight.decisionPayload),
+      status: 'COMMITTED',
+    });
+    this.#families.set(family.familyId, { ...family });
+    this.#documents.set(document.documentId, { ...document });
+    this.#versions.set(version.documentVersionId, { ...version });
+    this.#currentness.push({ ...currentnessDecision });
+    this.#commitCount += 1;
+  }
+
   residualClassificationState(input = {}) {
     const acquisitions = [...this.#acquisitions.values()].filter(
       (row) =>
@@ -253,9 +368,11 @@ export class InMemoryHostedDocumentCatalog {
     return { ...stored };
   }
 
-  async listIngressDocuments() {
-    return [...this.#versions.values()].map((version) => {
+  async listIngressDocuments({ tenantId } = {}) {
+    const tenantPrefix = tenantFamilyIdentityPrefix(tenantId);
+    return [...this.#versions.values()].flatMap((version) => {
       const family = this.#families.get(version.familyId);
+      if (!family.canonicalIdentityKey.startsWith(tenantPrefix)) return [];
       return {
         documentId: version.documentId,
         documentVersionId: version.documentVersionId,
@@ -271,6 +388,7 @@ export class InMemoryHostedDocumentCatalog {
           originalFilename: version.originalFilename,
           documentFamily: family.documentFamily,
           canonicalDocumentFamily: family.documentFamily,
+          issuerAuthority: family.issuerAuthority,
           businessRevision: version.businessRevision,
           revisionDate: version.revisionDate,
           sourceGeneratedDate: version.sourceGeneratedDate,
@@ -283,6 +401,7 @@ export class InMemoryHostedDocumentCatalog {
             sizeBytes: version.byteLength,
             documentCode: family.canonicalDocumentNumber,
             documentFamily: family.documentFamily,
+            issuerAuthority: family.issuerAuthority,
             businessRevision: version.businessRevision,
             revisionDate: version.revisionDate,
             sourceGeneratedDate: version.sourceGeneratedDate,
@@ -317,12 +436,16 @@ export class InMemoryHostedDocumentCatalog {
     return { ...stored };
   }
 
-  async findExactDocumentVersion({ sha256, byteLength }) {
-    const matches = [...this.#versions.values()].filter(
-      (version) =>
+  async findExactDocumentVersion({ sha256, byteLength, tenantId }) {
+    const tenantPrefix = tenantFamilyIdentityPrefix(tenantId);
+    const matches = [...this.#versions.values()].filter((version) => {
+      const family = this.#families.get(version.familyId);
+      return (
+        family?.canonicalIdentityKey.startsWith(tenantPrefix) &&
         version.pdfSha256 === sha256 &&
-        Number(version.byteLength) === Number(byteLength),
-    );
+        Number(version.byteLength) === Number(byteLength)
+      );
+    });
     if (matches.length > 1) throw new Error('MULTIPLE_EXACT_MATCHES');
     return matches[0] || null;
   }
@@ -418,7 +541,19 @@ export class InMemoryHostedDocumentCatalog {
     const acquisition = this.#acquisitions.get(version.acquisitionId);
     const artifact = this.#sourceArtifacts.get(version.sourceArtifactId);
     const family = this.#families.get(version.familyId);
-    if (!acquisition || !artifact || !family) {
+    const preflight = [...this.#preflights.values()].find(
+      (value) =>
+        value.acquisitionId === acquisition?.acquisitionId &&
+        value.documentVersionId === documentVersionId &&
+        value.status === 'COMMITTED',
+    );
+    const currentness = this.#currentness.find(
+      (value) =>
+        value.familyId === family?.familyId &&
+        value.nextDocumentVersionId === documentVersionId &&
+        value.nextGeneration === family?.currentGeneration,
+    );
+    if (!acquisition || !artifact || !family || !preflight) {
       throw new Error('DOCUMENT_VERSION_SOURCE_NOT_FOUND');
     }
     if (
@@ -434,9 +569,19 @@ export class InMemoryHostedDocumentCatalog {
     ) {
       throw new Error('DOCUMENT_VERSION_NOT_CURRENT');
     }
+    if (options.requireCurrent === true && !currentness) {
+      throw new Error('DOCUMENT_VERSION_CURRENTNESS_UNVERIFIED');
+    }
     assert.equal(version.pdfSha256, artifact.sha256);
     assert.equal(version.byteLength, artifact.byteLength);
-    return structuredClone({ version, acquisition, artifact, family });
+    return structuredClone({
+      version,
+      acquisition,
+      artifact,
+      family,
+      preflight,
+      currentness: currentness ?? null,
+    });
   }
 }
 

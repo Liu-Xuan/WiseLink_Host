@@ -3,8 +3,14 @@ import {
   buildGovernedDocumentIngressPreflightDecision,
   documentIngressCodeFromFilename,
 } from '../migrated/ingress/documentIngressPreflight.js';
+import {
+  controlledPdfByteView,
+  readActualPdfPageCount,
+  resolveActualPdfDocumentIdentity,
+} from '../migrated/ingress/pdfDocumentIdentityOwner.js';
 import { normalizeUploadDescriptor } from '../migrated/ingress/uploadDescriptor.js';
 import { deterministicId, sha256Hex } from '../runtime/valueTools.js';
+import { PdfjsDistLayoutExtractor } from '../../../professional-input/parser/pdfjs-dist-layout-extractor.adapter';
 
 const NEW_VERSION_DECISIONS = new Set([
   'INGEST_NEW_FAMILY',
@@ -16,6 +22,36 @@ const EXACT_LINK_DECISIONS = new Set([
 ]);
 const REVIEW_ATTACHMENT_SOURCE_CHANNEL =
   'canonical_review_attachment_selection';
+const EXTERNAL_DISCOVERY_SOURCE_CHANNELS = new Set([
+  'openclaw_external_discovery_review',
+  'openclaw_external_monitor_review',
+]);
+const CALLER_IDENTITY_FIELDS = Object.freeze([
+  'adapterId',
+  'airplaneModel',
+  'businessRevision',
+  'documentCategory',
+  'documentCode',
+  'documentCodeProvenance',
+  'documentFamily',
+  'documentFamilyAdapterId',
+  'documentTitle',
+  'fileName',
+  'generatedDate',
+  'identityAuthority',
+  'issuer',
+  'lastRevisedDate',
+  'metadata',
+  'originalFilename',
+  'pageCount',
+  'revisionDate',
+  'revisionLabel',
+  'sha256',
+  'sizeBytes',
+  'sourceGeneratedDate',
+  'sourceGeneratedDateProvenance',
+  'sourceType',
+]);
 
 function fail(code, message, details = {}) {
   throw Object.assign(new Error(message), { code, details });
@@ -28,17 +64,37 @@ function required(value, fieldName) {
   return normalized;
 }
 
-function assertPdf(bytes, mediaType) {
-  if (
-    !Buffer.isBuffer(bytes) ||
-    bytes.byteLength < 8 ||
-    bytes.subarray(0, 5).toString() !== '%PDF-'
-  ) {
+function tenantScopedValue(kind, tenantId, value, maxLength) {
+  let encodedTenantId;
+  let encodedValue;
+  try {
+    encodedTenantId = encodeURIComponent(tenantId);
+    encodedValue = encodeURIComponent(value);
+  } catch {
     fail(
-      'INVALID_PDF_INPUT',
-      'Selected FileService object is not a PDF byte stream.',
+      'HOSTED_INGEST_INPUT_INVALID',
+      `Tenant and ${kind} must contain valid Unicode.`,
     );
   }
+  const scoped = `tenant:${encodedTenantId}:${kind}:${encodedValue}`;
+  if (scoped.length > maxLength) {
+    fail(
+      'HOSTED_INGEST_INPUT_INVALID',
+      `Tenant-scoped ${kind} exceeds the Catalog limit.`,
+    );
+  }
+  return scoped;
+}
+
+function tenantScopedIdempotencyKey(tenantId, requestIdempotencyKey) {
+  return tenantScopedValue('request', tenantId, requestIdempotencyKey, 255);
+}
+
+function tenantScopedFamilyIdentityKey(tenantId, businessIdentityKey) {
+  return tenantScopedValue('family', tenantId, businessIdentityKey, 512);
+}
+
+function assertPdfMediaType(mediaType) {
   if (
     mediaType &&
     mediaType !== 'application/pdf' &&
@@ -77,8 +133,7 @@ function serverBoundReviewAttachmentScope(request, serverContext) {
     reviewAuthority?.mode !== 'HOSTED_OAUTH_SESSION_REVIEW_ATTACHMENT' ||
     reviewAuthority.actorUserId !== serverContext.actorUserId ||
     reviewAuthority.tenantId !== serverContext.tenantId ||
-    reviewAuthority.identityProvenance !==
-      'FEISHU_OAUTH_USER_ACCESS_TOKEN' ||
+    reviewAuthority.identityProvenance !== 'FEISHU_OAUTH_USER_ACCESS_TOKEN' ||
     reviewAuthority.sessionProvenance !== 'SERVER_OPAQUE_SESSION'
   ) {
     fail(
@@ -132,16 +187,175 @@ function issuerFor(normalizedDescriptor) {
   );
 }
 
+function operationalCallerDescriptor(descriptor = {}, sourceChannel = '') {
+  if (descriptor.sourceRuntimeJsonCopiedAsAuthority === true) {
+    fail(
+      'SOURCE_RUNTIME_JSON_FORBIDDEN',
+      'Source runtime JSON authority import is forbidden.',
+    );
+  }
+  if (descriptor.copiedIntoTargetRepository === true) {
+    fail(
+      'DOCS_UPLOADS_COPY_FORBIDDEN',
+      'The request cannot claim that controlled source files were copied into the repository.',
+    );
+  }
+  const operational = {};
+  for (const key of ['accessControl', 'runtimeTraceContext']) {
+    if (Object.hasOwn(descriptor, key)) {
+      operational[key] = structuredClone(descriptor[key]);
+    }
+  }
+  if (Object.hasOwn(descriptor, 'externalDiscovery')) {
+    if (!EXTERNAL_DISCOVERY_SOURCE_CHANNELS.has(sourceChannel)) {
+      fail(
+        'EXTERNAL_DISCOVERY_SOURCE_CHANNEL_INVALID',
+        'External discovery provenance requires a server-reserved source channel.',
+      );
+    }
+    operational.externalDiscovery = structuredClone(
+      descriptor.externalDiscovery,
+    );
+    operational.authorityClass = 'OEM_REFERENCE_ONLY';
+    operational.engineeringConclusionAllowed = false;
+    operational.applicabilityConclusionAllowed = false;
+  }
+  const ignoredCallerIdentityFields = CALLER_IDENTITY_FIELDS.filter((key) =>
+    Object.hasOwn(descriptor, key),
+  );
+  return {
+    ...operational,
+    ...(ignoredCallerIdentityFields.length > 0
+      ? { ignoredCallerIdentityFields }
+      : {}),
+  };
+}
+
+function parsedJsonField(row, materializedKey, jsonKey) {
+  if (row?.[materializedKey] && typeof row[materializedKey] === 'object') {
+    return row[materializedKey];
+  }
+  try {
+    return JSON.parse(String(row?.[jsonKey] || ''));
+  } catch {
+    return null;
+  }
+}
+
+function assertDescriptorIdentityReadback({
+  acquisition,
+  storedPreflight,
+  normalizedDescriptor,
+}) {
+  const acquiredDescriptor = parsedJsonField(
+    acquisition,
+    'sourceDescriptor',
+    'sourceDescriptorJson',
+  );
+  const storedNormalizedDescriptor = parsedJsonField(
+    storedPreflight,
+    'normalizedDescriptor',
+    'normalizedDescriptorJson',
+  );
+  const expected = normalizedDescriptor;
+  if (
+    !acquiredDescriptor ||
+    !storedNormalizedDescriptor ||
+    acquiredDescriptor.documentCode !== expected.documentCode ||
+    acquiredDescriptor.issuer !== expected.issuer ||
+    Number(acquiredDescriptor.pageCount) !== expected.pageCount ||
+    storedNormalizedDescriptor.documentCode !== expected.documentCode ||
+    storedNormalizedDescriptor.canonicalDocumentFamily !==
+      expected.canonicalDocumentFamily ||
+    storedNormalizedDescriptor.issuer !== expected.issuer ||
+    Number(storedNormalizedDescriptor.pageCount) !== expected.pageCount
+  ) {
+    fail(
+      'DM_IDENTITY_READBACK_MISMATCH',
+      'Acquisition/preflight readback did not preserve the DM-owned PDF identity.',
+    );
+  }
+  return storedNormalizedDescriptor;
+}
+
+function identityReadback({
+  family,
+  version,
+  normalizedDescriptor,
+  sourceArtifactId,
+}) {
+  return {
+    identityAuthority:
+      normalizedDescriptor.identityAuthority ||
+      'DM_ACTUAL_PDF_FIRST_THREE_PAGES',
+    canonicalIdentityKey: family?.canonicalIdentityKey || '',
+    issuerAuthority: family?.issuerAuthority || normalizedDescriptor.issuer,
+    documentFamily:
+      family?.documentFamily || normalizedDescriptor.canonicalDocumentFamily,
+    documentNumber:
+      family?.canonicalDocumentNumber || normalizedDescriptor.documentCode,
+    businessRevision:
+      version?.businessRevision || normalizedDescriptor.businessRevision,
+    revisionDate: version?.revisionDate || normalizedDescriptor.revisionDate,
+    sourceGeneratedDate:
+      version?.sourceGeneratedDate || normalizedDescriptor.sourceGeneratedDate,
+    pageCount: normalizedDescriptor.pageCount,
+    sourceArtifactId,
+  };
+}
+
+function assertExactDocumentIdentity({
+  family,
+  version,
+  familyIdentityKey,
+  incoming,
+}) {
+  const expected = {
+    canonicalIdentityKey: familyIdentityKey,
+    issuerAuthority: incoming.issuerAuthority,
+    documentFamily: incoming.documentTypeFamily,
+    documentNumber: incoming.documentCode,
+    canonicalRevisionIdentity: incoming.comparableVersion,
+    businessRevision: incoming.businessRevision,
+    revisionDate: incoming.revisionDate,
+    sourceGeneratedDate: incoming.sourceGeneratedDate,
+  };
+  const actual = {
+    canonicalIdentityKey: family?.canonicalIdentityKey || '',
+    issuerAuthority: family?.issuerAuthority || '',
+    documentFamily: family?.documentFamily || '',
+    documentNumber: family?.canonicalDocumentNumber || '',
+    canonicalRevisionIdentity: version?.canonicalRevisionIdentity || '',
+    businessRevision: version?.businessRevision || '',
+    revisionDate: version?.revisionDate || '',
+    sourceGeneratedDate: version?.sourceGeneratedDate || '',
+  };
+  if (
+    !family ||
+    Object.keys(expected).some((key) => actual[key] !== expected[key])
+  ) {
+    fail(
+      'CATALOG_EXACT_DOCUMENT_IDENTITY_CONFLICT',
+      'Exact bytes already belong to Catalog identity that conflicts with the DM-owned actual PDF identity.',
+      { expected, actual },
+    );
+  }
+}
+
 function sourceDescriptorForSelection({
   request,
   selected,
   immutable,
   actualSha256,
+  pdfObservation,
 }) {
   const sourceDescriptor = {
-    ...(request.descriptor || {}),
-    originalFilename:
-      request.descriptor?.originalFilename || selected.fileName,
+    ...operationalCallerDescriptor(
+      request.descriptor || {},
+      request.sourceChannel,
+    ),
+    ...pdfObservation,
+    originalFilename: selected.fileName,
     mediaType: 'application/pdf',
     sha256: actualSha256,
     sizeBytes: selected.bytes.byteLength,
@@ -160,14 +374,14 @@ function sourceDescriptorForSelection({
   // their fallback identity to the FileService bytes after actual-byte
   // verification; retain a recognized controlled filename code when present.
   const documentCode =
-    filenameDocumentCode ||
-    `REVIEW-ATTACHMENT-${actualSha256}`.toUpperCase();
+    filenameDocumentCode || `REVIEW-ATTACHMENT-${actualSha256}`.toUpperCase();
   return {
     ...sourceDescriptor,
     originalFilename: selected.fileName,
     documentCode,
     documentFamily: 'OEM_REFERENCE',
     sourceType: 'oem_reference',
+    issuer: 'UNKNOWN',
     businessRevision: 'R1',
     revisionDate: undefined,
     sourceGeneratedDate: undefined,
@@ -178,6 +392,7 @@ function sourceDescriptorForSelection({
       inspectedSha256: actualSha256,
       conflict: false,
     },
+    identityAuthority: 'DM_ACTUAL_PDF_LAYOUT_AND_SERVER_REVIEW_SCOPE',
   };
 }
 
@@ -186,17 +401,24 @@ export class DocumentManagementHostedCore {
     artifactStore,
     catalog,
     authorizer,
+    pdfLayoutExtractor = new PdfjsDistLayoutExtractor(),
     now = () => new Date().toISOString(),
   } = {}) {
-    if (!artifactStore || !catalog || !authorizer) {
+    if (
+      !artifactStore ||
+      !catalog ||
+      !authorizer ||
+      typeof pdfLayoutExtractor?.extractLayout !== 'function'
+    ) {
       fail(
         'HOSTED_DOCUMENT_MANAGEMENT_NOT_CONFIGURED',
-        'ArtifactStore, DocumentCatalog, and server-bound authorizer are required.',
+        'ArtifactStore, DocumentCatalog, PDF layout extractor, and server-bound authorizer are required.',
       );
     }
     this.artifactStore = artifactStore;
     this.catalog = catalog;
     this.authorizer = authorizer;
+    this.pdfLayoutExtractor = pdfLayoutExtractor;
     this.now = now;
   }
 
@@ -207,10 +429,25 @@ export class DocumentManagementHostedCore {
       'serverContext.actorUserId',
     );
     const tenantId = required(serverContext.tenantId, 'serverContext.tenantId');
-    const idempotencyKey = required(
+    const requestIdempotencyKey = required(
       request.idempotencyKey,
       'request.idempotencyKey',
     );
+    const scopedIdempotencyKey = tenantScopedIdempotencyKey(
+      tenantId,
+      requestIdempotencyKey,
+    );
+    const scopedAcquisitionId = deterministicId(
+      'acquisition',
+      scopedIdempotencyKey,
+    );
+    const legacyAcquisitionId = deterministicId(
+      'acquisition',
+      tenantId,
+      requestIdempotencyKey,
+    );
+    let idempotencyKey = scopedIdempotencyKey;
+    let acquisitionId = scopedAcquisitionId;
     const selection = {
       bucketId: required(
         request.selection?.bucketId,
@@ -240,12 +477,30 @@ export class DocumentManagementHostedCore {
         : {}),
     });
 
-    const existingIngestion = await this.catalog.findIngestionByIdempotency({
+    let existingIngestion = await this.catalog.findIngestionByIdempotency({
       idempotencyKey,
+      expectedAcquisitionId: scopedAcquisitionId,
+      tenantId,
       sourceChannel: request.sourceChannel,
       sourceRef: request.sourceRef,
       selection: request.selection,
     });
+    if (!existingIngestion) {
+      const legacyIngestion = await this.catalog.findIngestionByIdempotency({
+        idempotencyKey: requestIdempotencyKey,
+        expectedAcquisitionId: legacyAcquisitionId,
+        tenantId,
+        sourceChannel: request.sourceChannel,
+        sourceRef: request.sourceRef,
+        selection: request.selection,
+      });
+      if (legacyIngestion?.acquisitionId === legacyAcquisitionId) {
+        existingIngestion = legacyIngestion;
+        idempotencyKey = requestIdempotencyKey;
+        acquisitionId = legacyAcquisitionId;
+      }
+    }
+    const commitIdempotencyKey = `catalog:${acquisitionId}`;
     let incompleteIngestion = null;
     if (existingIngestion) {
       if (existingIngestion.status === 'INCOMPLETE') {
@@ -267,7 +522,8 @@ export class DocumentManagementHostedCore {
     }
 
     const selected = await this.artifactStore.readSelection(request.selection);
-    assertPdf(selected.bytes, selected.mediaType);
+    assertPdfMediaType(selected.mediaType);
+    const pdfByteView = controlledPdfByteView(selected.bytes);
     const actualSha256 = sha256Hex(selected.bytes);
     if (
       actualSha256 !== selected.sha256 ||
@@ -278,15 +534,62 @@ export class DocumentManagementHostedCore {
         'Selection receipt does not match actual bytes.',
       );
     }
+    const inspectionSha256 = sha256Hex(pdfByteView.bytes);
+    let pdfLayout;
+    try {
+      const inspectLayout =
+        typeof this.pdfLayoutExtractor.extractLayoutWithDiagnostics ===
+        'function'
+          ? this.pdfLayoutExtractor.extractLayoutWithDiagnostics.bind(
+              this.pdfLayoutExtractor,
+            )
+          : this.pdfLayoutExtractor.extractLayout.bind(this.pdfLayoutExtractor);
+      pdfLayout = inspectLayout(pdfByteView.bytes);
+    } catch (error) {
+      fail(
+        'DM_PDF_LAYOUT_INSPECTION_FAILED',
+        'The existing production PDF layout extractor could not inspect the selected actual bytes.',
+        {
+          causeCode: error?.code || error?.name || 'UNKNOWN',
+          causeMessage: String(error?.message || error),
+        },
+      );
+    }
+    const actualByteLength = selected.bytes.byteLength;
+    const inspectionByteLength = pdfByteView.bytes.byteLength;
+    const pageCount = readActualPdfPageCount({
+      layout: pdfLayout,
+      actualSha256,
+      actualByteLength,
+      inspectionSha256,
+      inspectionByteLength,
+    });
+    const pdfObservation = reviewAttachmentScope
+      ? {
+          pageCount,
+          pdfByteView: {
+            normalization: pdfByteView.normalization,
+            offset: pdfByteView.offset,
+            inspectionSha256,
+            inspectionByteLength,
+            actualSha256,
+            actualByteLength,
+          },
+        }
+      : resolveActualPdfDocumentIdentity({
+          layout: pdfLayout,
+          actualSha256,
+          actualByteLength,
+          inspectionSha256,
+          inspectionByteLength,
+          byteViewOffset: pdfByteView.offset,
+          byteViewNormalization: pdfByteView.normalization,
+          originalFilename: selected.fileName,
+        });
     const sourceArtifactId = deterministicId(
       'source_artifact',
       actualSha256,
       selected.bytes.byteLength,
-    );
-    const acquisitionId = deterministicId(
-      'acquisition',
-      tenantId,
-      idempotencyKey,
     );
     const immutable = await this.artifactStore.persistImmutableSource({
       bytes: selected.bytes,
@@ -325,8 +628,7 @@ export class DocumentManagementHostedCore {
       if (
         reuse?.disposition !== 'ORPHAN_RECOVERY_ALLOWED' &&
         reuse?.disposition !== 'CATALOGED_SOURCE_REUSE_ALLOWED' &&
-        reuse?.disposition !==
-          'REVIEW_ATTACHMENT_RESIDUAL_RECOVERY_ALLOWED'
+        reuse?.disposition !== 'REVIEW_ATTACHMENT_RESIDUAL_RECOVERY_ALLOWED'
       ) {
         fail(
           'IMMUTABLE_SOURCE_REUSE_STATE_INVALID',
@@ -341,6 +643,7 @@ export class DocumentManagementHostedCore {
       selected,
       immutable,
       actualSha256,
+      pdfObservation,
     });
     const sourceArtifactRecord = {
       sourceArtifactId,
@@ -377,7 +680,24 @@ export class DocumentManagementHostedCore {
     }
 
     const normalizedDescriptor = normalizeUploadDescriptor(sourceDescriptor);
-    const documents = await this.catalog.listIngressDocuments();
+    if (
+      normalizedDescriptor.sha256 !== actualSha256 ||
+      normalizedDescriptor.sizeBytes !== selected.bytes.byteLength ||
+      normalizedDescriptor.pageCount !== pageCount ||
+      (!reviewAttachmentScope &&
+        (normalizedDescriptor.documentCode !== pdfObservation.documentCode ||
+          normalizedDescriptor.canonicalDocumentFamily !==
+            pdfObservation.documentFamily ||
+          normalizedDescriptor.issuer !== pdfObservation.issuer ||
+          normalizedDescriptor.adapterRelease?.adapterId !==
+            pdfObservation.documentFamilyAdapterId))
+    ) {
+      fail(
+        'DM_PDF_IDENTITY_NORMALIZATION_MISMATCH',
+        'Legacy descriptor normalization did not preserve the DM-owned actual PDF observation.',
+      );
+    }
+    const documents = await this.catalog.listIngressDocuments({ tenantId });
     const decision = buildGovernedDocumentIngressPreflightDecision({
       generatedAt: this.now(),
       documents,
@@ -385,8 +705,11 @@ export class DocumentManagementHostedCore {
       normalizedDescriptor,
     });
     const issuerAuthority = issuerFor(normalizedDescriptor);
-    const familyIdentityKey = decision.incoming.identityResolved
+    const businessFamilyIdentityKey = decision.incoming.identityResolved
       ? `${issuerAuthority}|${decision.incoming.documentTypeFamily}|${decision.incoming.documentCode}`
+      : '';
+    const familyIdentityKey = businessFamilyIdentityKey
+      ? tenantScopedFamilyIdentityKey(tenantId, businessFamilyIdentityKey)
       : '';
     const observedFamily = familyIdentityKey
       ? await this.catalog.observeFamily(familyIdentityKey)
@@ -412,8 +735,14 @@ export class DocumentManagementHostedCore {
       status: 'READY',
       createdAt: this.now(),
     };
+    let storedPreflight = preflightRecord;
     if (!incompleteIngestion) {
-      await this.catalog.recordPreflight(preflightRecord);
+      storedPreflight = await this.catalog.recordPreflight(preflightRecord);
+      assertDescriptorIdentityReadback({
+        acquisition,
+        storedPreflight,
+        normalizedDescriptor,
+      });
     } else if (decision.decision !== 'INGEST_NEW_FAMILY') {
       fail(
         'INCOMPLETE_INGESTION_RECOVERY_DECISION_UNSUPPORTED',
@@ -425,6 +754,7 @@ export class DocumentManagementHostedCore {
       const exactVersion = await this.catalog.findExactDocumentVersion({
         sha256: actualSha256,
         byteLength: selected.bytes.byteLength,
+        tenantId,
       });
       if (!exactVersion) {
         fail(
@@ -432,23 +762,62 @@ export class DocumentManagementHostedCore {
           `${decision.decision} requires one exact DocumentVersion.`,
         );
       }
+      const exactFamily = await this.catalog.readFamily(exactVersion.familyId);
+      if (!reviewAttachmentScope) {
+        assertExactDocumentIdentity({
+          family: exactFamily,
+          version: exactVersion,
+          familyIdentityKey,
+          incoming: {
+            ...decision.incoming,
+            issuerAuthority,
+          },
+        });
+      }
       await this.catalog.linkAcquisitionToVersion({
         acquisitionId: acquisition.acquisitionId,
         documentVersionId: exactVersion.documentVersionId,
         preflightId,
-        idempotencyKey: `catalog:${tenantId}:${idempotencyKey}`,
+        idempotencyKey: commitIdempotencyKey,
       });
+      const linkedVersion = await this.catalog.readDocumentVersion(
+        exactVersion.documentVersionId,
+      );
+      const linkedFamily = linkedVersion
+        ? await this.catalog.readFamily(linkedVersion.familyId)
+        : null;
+      if (
+        !linkedVersion ||
+        !linkedFamily ||
+        linkedVersion.sourceArtifactId !== sourceArtifactId ||
+        linkedVersion.pdfSha256 !== actualSha256 ||
+        Number(linkedVersion.byteLength) !== selected.bytes.byteLength ||
+        (!reviewAttachmentScope &&
+          linkedFamily.canonicalIdentityKey !== familyIdentityKey)
+      ) {
+        fail(
+          'CATALOG_FRESH_READ_MISMATCH',
+          'Exact-link Catalog fresh read does not prove the source bytes and DM identity.',
+        );
+      }
       return {
         acquisitionId: acquisition.acquisitionId,
         sourceArtifactId,
         preflightId,
         decision: decision.decision,
         disposition: decision.decision,
-        familyId: exactVersion.familyId,
-        documentVersionId: exactVersion.documentVersionId,
+        familyId: linkedFamily.familyId,
+        documentVersionId: linkedVersion.documentVersionId,
         newDocumentVersionCreated: false,
         currentnessChanged: false,
         immutableReadbackVerified: true,
+        catalogFreshReadVerified: true,
+        identityReadback: identityReadback({
+          family: linkedFamily,
+          version: linkedVersion,
+          normalizedDescriptor,
+          sourceArtifactId,
+        }),
       };
     }
 
@@ -463,6 +832,16 @@ export class DocumentManagementHostedCore {
         currentnessChanged: false,
         immutableReadbackVerified: true,
         reason: decision.reason,
+        identityReadback: {
+          identityAuthority: normalizedDescriptor.identityAuthority || '',
+          documentFamily: normalizedDescriptor.canonicalDocumentFamily,
+          documentNumber: normalizedDescriptor.documentCode,
+          businessRevision: normalizedDescriptor.businessRevision,
+          revisionDate: normalizedDescriptor.revisionDate,
+          sourceGeneratedDate: normalizedDescriptor.sourceGeneratedDate,
+          pageCount: normalizedDescriptor.pageCount,
+          sourceArtifactId,
+        },
       };
     }
     if (
@@ -526,7 +905,7 @@ export class DocumentManagementHostedCore {
     }
     const committedAt = this.now();
     const commit = await this.catalog.commitNewVersion({
-      idempotencyKey: `catalog:${tenantId}:${idempotencyKey}`,
+      idempotencyKey: commitIdempotencyKey,
       preflightId,
       preflightDecision: decision.decision,
       observedCurrentGeneration: observedFamily?.currentGeneration || 0,
@@ -587,6 +966,11 @@ export class DocumentManagementHostedCore {
       !freshVersion ||
       freshVersion.pdfSha256 !== actualSha256 ||
       freshVersion.byteLength !== selected.bytes.byteLength ||
+      freshVersion.sourceArtifactId !== sourceArtifactId ||
+      freshFamily?.canonicalIdentityKey !== familyIdentityKey ||
+      freshFamily?.issuerAuthority !== issuerAuthority ||
+      freshFamily?.documentFamily !== decision.incoming.documentTypeFamily ||
+      freshFamily?.canonicalDocumentNumber !== decision.incoming.documentCode ||
       freshFamily?.currentDocumentVersionId !== freshVersion.documentVersionId
     ) {
       fail(
@@ -608,6 +992,12 @@ export class DocumentManagementHostedCore {
       currentnessChanged: commit.currentnessChanged,
       immutableReadbackVerified: true,
       catalogFreshReadVerified: true,
+      identityReadback: identityReadback({
+        family: freshFamily,
+        version: freshVersion,
+        normalizedDescriptor,
+        sourceArtifactId,
+      }),
     };
   }
 }

@@ -66,9 +66,12 @@ describe('CanonicalHostOpenClawDynamicEvaluationService', () => {
     expect(harness.processor.buildRequest.mock.calls[0][2]).toMatchObject({
       expectedRevision: 5,
     });
+    expect(
+      harness.ruleSets.readRuntimeSnapshotAtActivation,
+    ).toHaveBeenCalledWith('tenant-dynamic', 'JACS-DYNAMIC-2', 1);
   });
 
-  it('reads and validates ACTIVE before reserving, so a zero head creates no attempt', async () => {
+  it('resolves ACTIVE inside new-attempt construction, so a zero head cannot build an attempt', async () => {
     const harness = createHarness();
     harness.ruleSets.readActiveRuntime.mockRejectedValueOnce(
       Object.assign(new Error('RULE_SET_ACTIVE_SNAPSHOT_REQUIRED'), {
@@ -81,10 +84,39 @@ describe('CanonicalHostOpenClawDynamicEvaluationService', () => {
       code: 'RULE_SET_ACTIVE_SNAPSHOT_REQUIRED',
       statusCode: 503,
     });
-    expect(harness.attempts.reserveAndClaim).not.toHaveBeenCalled();
+    expect(harness.attempts.reserveAndClaim).toHaveBeenCalledTimes(1);
     expect(
       harness.assessment.prepareDynamicRulesCandidateWithRuleSet,
     ).not.toHaveBeenCalled();
+    expect(
+      harness.ruleSets.readRuntimeSnapshotAtActivation,
+    ).not.toHaveBeenCalled();
+  });
+
+  it('recovers an existing RUNNING task from its sealed snapshot without reading current', async () => {
+    const harness = createHarness();
+    const task = taskEnvelope(workItemProjection());
+    harness.attempts.reserveAndClaim.mockResolvedValueOnce({
+      attemptRef: ATTEMPT_REF,
+      status: 'RUNNING',
+      leaseToken: LEASE_TOKEN,
+      leaseGeneration: 1,
+      leaseExpiresAt: '2026-08-24T11:00:00.000Z',
+      task,
+      created: false,
+      triggerRequestId: 'REQ-DYNAMIC-REAL',
+    });
+
+    await expect(harness.service.begin(WORK_ITEM_ID)).resolves.toMatchObject({
+      status: 'RUNNING',
+      modelInput: {
+        ruleSetBinding: { snapshotId: 'JACS-DYNAMIC-2' },
+      },
+    });
+    expect(harness.ruleSets.readActiveRuntime).not.toHaveBeenCalled();
+    expect(
+      harness.ruleSets.readRuntimeSnapshotAtActivation,
+    ).toHaveBeenCalledWith('tenant-dynamic', 'JACS-DYNAMIC-2', 1);
   });
 
   it('consumes only ResultEnvelope.modelOutput, persists actual bytes, CASes, then finalizes', async () => {
@@ -150,7 +182,7 @@ describe('CanonicalHostOpenClawDynamicEvaluationService', () => {
 
   it('reads the immutable bound snapshot before moving RUNNING to COMMITTING', async () => {
     const harness = createHarness();
-    harness.ruleSets.readRuntimeSnapshot.mockRejectedValueOnce(
+    harness.ruleSets.readRuntimeSnapshotAtActivation.mockRejectedValueOnce(
       new Error('RULE_SET_RUNTIME_SNAPSHOT_MISSING'),
     );
 
@@ -172,10 +204,9 @@ describe('CanonicalHostOpenClawDynamicEvaluationService', () => {
       harness.service.commit(ATTEMPT_REF, LEASE_TOKEN, 1, dynamicResult()),
     ).resolves.toMatchObject({ status: 'BASE_RULE_CANDIDATE_READY' });
     expect(harness.ruleSets.readActiveRuntime).not.toHaveBeenCalled();
-    expect(harness.ruleSets.readRuntimeSnapshot).toHaveBeenCalledWith(
-      'tenant-dynamic',
-      'JACS-DYNAMIC-2',
-    );
+    expect(
+      harness.ruleSets.readRuntimeSnapshotAtActivation,
+    ).toHaveBeenCalledWith('tenant-dynamic', 'JACS-DYNAMIC-2', 1);
     expect(
       harness.assessment.prepareDynamicRulesCandidateWithRuleSet,
     ).toHaveBeenCalledWith(expect.any(Object), RULE_SET_RUNTIME);
@@ -365,7 +396,7 @@ function createHarness() {
   };
   const ruleSets = {
     readActiveRuntime: jest.fn(async () => RULE_SET_RUNTIME),
-    readRuntimeSnapshot: jest.fn(async () => RULE_SET_RUNTIME),
+    readRuntimeSnapshotAtActivation: jest.fn(async () => RULE_SET_RUNTIME),
   };
   const service = new CanonicalHostOpenClawDynamicEvaluationService(
     registrar as never,

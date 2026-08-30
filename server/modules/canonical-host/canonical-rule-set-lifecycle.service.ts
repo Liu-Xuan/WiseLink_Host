@@ -191,6 +191,40 @@ export class CanonicalRuleSetLifecycleService {
     };
   }
 
+  async readRuntimeSnapshotAtActivation(
+    tenantIdValue: string,
+    snapshotIdValue: string,
+    activationRevisionValue: number,
+  ): Promise<CanonicalRuleSetRuntime> {
+    const tenantId: string = requiredText(
+      tenantIdValue,
+      'RULE_SET_TENANT_ID_REQUIRED',
+      128,
+    );
+    const snapshotId: string = requiredText(
+      snapshotIdValue,
+      'RULE_SET_SNAPSHOT_ID_REQUIRED',
+      96,
+    );
+    if (
+      !Number.isSafeInteger(activationRevisionValue) ||
+      activationRevisionValue <= 0
+    ) {
+      throw lifecycleError('RULE_SET_ACTIVATION_REVISION_INVALID', 500);
+    }
+    const activation = await this.repository.getActivationAtRevision(
+      tenantId,
+      activationRevisionValue,
+    );
+    if (!activation) {
+      throw lifecycleError('RULE_SET_RUNTIME_ACTIVATION_MISSING', 500);
+    }
+    if (activation.activeCriterionSetId !== snapshotId) {
+      throw lifecycleError('RULE_SET_RUNTIME_ACTIVATION_MISMATCH', 500);
+    }
+    return this.readRuntimeSnapshot(tenantId, snapshotId);
+  }
+
   private async activate(
     action: 'PROMOTE' | 'ROLLBACK',
     input: ActivateCanonicalRuleSetSnapshotRequest,

@@ -1,5 +1,11 @@
 import { FileService } from '@lark-apaas/fullstack-nestjs-core';
-import { Inject, Injectable, Optional } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  Optional,
+  type OnModuleInit,
+} from '@nestjs/common';
 
 import type {
   CanonicalParsedPackageUsagePolicy,
@@ -7,7 +13,7 @@ import type {
 } from '@shared/api.interface';
 import { MiaodaFileServiceArtifactStore } from '../document-management/src/hosted/miaodaFileServiceArtifactStore.js';
 import { runProfessionalInputPipelineFromLayout } from '../professional-input/builders/professional-input-pipeline';
-import { PdfjsDistLayoutExtractor } from '../professional-input/parser/pdfjs-dist-layout-extractor.adapter';
+import { PdfjsOcrCompositeLayoutExtractor } from '../professional-input/parser/pdfjs-ocr-composite-layout-extractor.adapter';
 import { ProfessionalInputPureError } from '../professional-input/pure/professional-input-pure.error';
 import { MiaodaDocumentVersionSourceResolver } from '../work-item/miaoda-document-version-source.resolver';
 import { U0FullValidationService } from '../unified-reader/u0-full-validation.service';
@@ -30,7 +36,14 @@ import {
 } from './host-native-pdf-profile.registry';
 
 @Injectable()
-export class HostNativeDocumentFamilyPdfProducerAdapter implements CanonicalPdfProducerPort {
+export class HostNativeDocumentFamilyPdfProducerAdapter
+  implements CanonicalPdfProducerPort, OnModuleInit
+{
+  private readonly logger = new Logger(
+    HostNativeDocumentFamilyPdfProducerAdapter.name,
+  );
+  private readonly layoutExtractor = new PdfjsOcrCompositeLayoutExtractor();
+
   constructor(
     private readonly fileService: FileService,
     private readonly resolver: MiaodaDocumentVersionSourceResolver,
@@ -39,6 +52,16 @@ export class HostNativeDocumentFamilyPdfProducerAdapter implements CanonicalPdfP
     @Inject(SCOPED_PROFESSIONAL_ARTIFACT_CORRELATION)
     private readonly professionalCorrelations?: ScopedProfessionalArtifactCorrelationPort,
   ) {}
+
+  onModuleInit(): void {
+    const preflight = this.layoutExtractor.preflight();
+    const message = `Host PDF OCR runtime preflight: ${JSON.stringify(preflight)}`;
+    if (preflight.status === 'READY') {
+      this.logger.log(message);
+    } else {
+      this.logger.warn(message);
+    }
+  }
 
   async producePdf(
     request: CanonicalPdfVerticalRunRequest,
@@ -79,11 +102,9 @@ export class HostNativeDocumentFamilyPdfProducerAdapter implements CanonicalPdfP
       throw new Error('PDF_PRODUCER_SOURCE_READBACK_MISMATCH');
     }
 
-    let layout: ReturnType<PdfjsDistLayoutExtractor['extractLayout']>;
+    let layout: ReturnType<PdfjsOcrCompositeLayoutExtractor['extractLayout']>;
     try {
-      layout = new PdfjsDistLayoutExtractor().extractLayout(
-        sourceSelection.bytes,
-      );
+      layout = this.layoutExtractor.extractLayout(sourceSelection.bytes);
     } catch (error) {
       if (
         error instanceof ProfessionalInputPureError &&

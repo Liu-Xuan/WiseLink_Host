@@ -37,17 +37,25 @@ const {
   CanonicalHostOpenClawDynamicEvaluationService,
 } = require('../../dist/server/modules/canonical-host/canonical-host-openclaw-dynamic-evaluation.service.js');
 const {
+  CanonicalHostAssessmentService,
+} = require('../../dist/server/modules/canonical-host/canonical-host-assessment.service.js');
+const {
   CanonicalRuleSetLifecycleRepository,
 } = require('../../dist/server/modules/canonical-host/canonical-rule-set-lifecycle.repository.js');
 const {
   CanonicalRuleSetLifecycleService,
 } = require('../../dist/server/modules/canonical-host/canonical-rule-set-lifecycle.service.js');
+const {
+  MiaodaWorkItemRepository,
+} = require('../../dist/server/modules/work-item/miaoda-work-item.repository.js');
 
 const databaseUrl = process.env.CANONICAL_RULE_SET_TEST_DATABASE_URL;
 const root = process.cwd();
 const tenantId = 'tenant-rule-set-pg';
+const otherTenantId = 'tenant-rule-set-pg-other';
 const roleId = 'role_rule_set_engineering_owner_pg';
 const ownerUserId = 'owner-rule-set-pg';
+const otherOwnerUserId = 'owner-rule-set-pg-other';
 
 test(
   'real PostgreSQL bootstrap and dynamic recovery stay bound to immutable 150-rule snapshots',
@@ -61,11 +69,37 @@ test(
     try {
       await resetDatabase(sql);
       const workItem = workItemProjection();
-      await seedWorkItem(sql, workItem);
+      const otherWorkItem = {
+        ...workItemProjection(),
+        workItemId: 'WI-RULE-SET-PG-OTHER',
+        requestId: 'REQ-RULE-SET-PG-OTHER',
+      };
+      await seedWorkItem(sql, workItem, tenantId);
+      await seedWorkItem(sql, otherWorkItem, otherTenantId);
       const harness = createHarness(sql, workItem);
+      const otherRuleSets = new CanonicalRuleSetLifecycleService(
+        harness.repository,
+        {},
+      );
+      const synchronousAssessment = createSynchronousAssessmentService(
+        sql,
+        otherWorkItem,
+        otherRuleSets,
+      );
 
       await assert.rejects(
         harness.dynamic.begin(workItem.workItemId),
+        /RULE_SET_ACTIVE_SNAPSHOT_REQUIRED/,
+      );
+      await assert.rejects(
+        synchronousAssessment.evaluateCandidate(
+          {
+            workItemId: otherWorkItem.workItemId,
+            assessmentAsOf: '2026-08-30T00:00:00.000Z',
+            generatedAt: '2026-08-30T00:00:00.000Z',
+          },
+          serviceActor(otherTenantId, otherOwnerUserId),
+        ),
         /RULE_SET_ACTIVE_SNAPSHOT_REQUIRED/,
       );
       assert.equal(await attemptCount(sql), 0);
@@ -78,6 +112,9 @@ test(
           schemaVersion: 'wiselink.3_1.rule_set_bootstrap_owner_map.v1',
           tenants: {
             [tenantId]: { engineeringOwnerUserId: ownerUserId },
+            [otherTenantId]: {
+              engineeringOwnerUserId: otherOwnerUserId,
+            },
           },
         }),
       );
@@ -97,7 +134,11 @@ test(
       );
       const firstBootstrap = runBootstrap(ownerMapPath);
       assert.equal(firstBootstrap.status, 'applied');
-      assert.equal(firstBootstrap.tenantCount, 1);
+      assert.equal(firstBootstrap.tenantCount, 2);
+      assert.deepEqual(
+        firstBootstrap.activeHeads.map((head) => head.tenantId).sort(),
+        [otherTenantId, tenantId].sort(),
+      );
       const replay = runBootstrap(ownerMapPath);
       assert.equal(replay.status, 'idempotent_replay');
       assert.equal(
@@ -106,12 +147,32 @@ test(
             await sql`SELECT count(*)::int AS count FROM canonical_rule_set_activation`
           )[0].count,
         ),
-        1,
+        2,
+      );
+
+      const synchronousRepository = new MiaodaWorkItemRepository(drizzle(sql));
+      const synchronousRetry =
+        await synchronousRepository.reserveAssessmentAction({
+          workItemId: otherWorkItem.workItemId,
+          actionType: 'EVALUATE_JOB_AID',
+          triggerRequestId: otherWorkItem.requestId,
+          requestOrigin: 'MIAODA',
+          actorUserId: otherOwnerUserId,
+          tenantId: otherTenantId,
+          attemptNo: 1,
+        });
+      assert.equal(synchronousRetry.created, true);
+      await synchronousRepository.completeAssessmentAction(
+        synchronousRetry.attemptId,
       );
 
       const activeA = await harness.ruleSets.readActiveRuntime(tenantId);
       assert.equal(activeA.snapshotId, 'JACS-72D0484B6F1C17A38F671F46');
       assertActual150RuleEvaluation(activeA);
+      assert.equal(
+        (await harness.ruleSets.readActiveRuntime(otherTenantId)).snapshotId,
+        activeA.snapshotId,
+      );
 
       const runningA = await harness.dynamic.begin(workItem.workItemId);
       assert.equal(runningA.status, 'RUNNING');
@@ -121,25 +182,82 @@ test(
       );
       assert.equal(runningA.modelInput.ruleSetBinding.criteriaCount, 150);
 
-      const snapshotB = await createReplacementSnapshot(harness.repository);
-      await harness.repository.appendActivation({
-        tenantId,
-        targetCriterionSetId: snapshotB.criterionSetId,
-        expectedRevision: 1,
-        action: 'PROMOTE',
-        engineeringOwnerUserId: ownerUserId,
-        requiredRoleId: roleId,
-        reason: 'Real PostgreSQL recovery test replacement.',
-      });
+      const snapshotB = await createReplacementSnapshot(
+        harness.repository,
+        'replacement-b',
+      );
+      const snapshotC = await createReplacementSnapshot(
+        harness.repository,
+        'replacement-c',
+      );
+      assert.equal(
+        await harness.repository.getSnapshot(
+          otherTenantId,
+          snapshotB.criterionSetId,
+        ),
+        null,
+      );
+      const promotions = await Promise.allSettled([
+        harness.repository.appendActivation({
+          tenantId,
+          targetCriterionSetId: snapshotB.criterionSetId,
+          expectedRevision: 1,
+          action: 'PROMOTE',
+          engineeringOwnerUserId: ownerUserId,
+          requiredRoleId: roleId,
+          reason: 'Concurrent real PostgreSQL replacement B.',
+        }),
+        harness.repository.appendActivation({
+          tenantId,
+          targetCriterionSetId: snapshotC.criterionSetId,
+          expectedRevision: 1,
+          action: 'PROMOTE',
+          engineeringOwnerUserId: ownerUserId,
+          requiredRoleId: roleId,
+          reason: 'Concurrent real PostgreSQL replacement C.',
+        }),
+      ]);
+      const fulfilledPromotions = promotions.filter(
+        (result) => result.status === 'fulfilled',
+      );
+      const rejectedPromotions = promotions.filter(
+        (result) => result.status === 'rejected',
+      );
+      assert.equal(fulfilledPromotions.length, 1);
+      assert.equal(rejectedPromotions.length, 1);
+      assert.match(
+        String(rejectedPromotions[0].reason?.code),
+        /RULE_SET_CURRENT_CAS_CONFLICT/,
+      );
       const activeB = await harness.ruleSets.readActiveRuntime(tenantId);
-      assert.equal(activeB.snapshotId, snapshotB.criterionSetId);
+      assert.ok(
+        [snapshotB.criterionSetId, snapshotC.criterionSetId].includes(
+          activeB.snapshotId,
+        ),
+      );
       assertActual150RuleEvaluation(activeB);
+
+      const currentReaderAfterPromote = harness.ruleSets.readActiveRuntime.bind(
+        harness.ruleSets,
+      );
+      harness.ruleSets.readActiveRuntime = async () => {
+        throw new Error('CURRENT_RULE_SET_READ_DURING_RUNNING_RECOVERY');
+      };
+      const runningRecovery = await harness.dynamic.begin(
+        runningA.task.workItemId,
+      );
+      harness.ruleSets.readActiveRuntime = currentReaderAfterPromote;
+      assert.equal(runningRecovery.status, 'RUNNING');
+      assert.equal(
+        runningRecovery.modelInput.ruleSetBinding.snapshotId,
+        activeA.snapshotId,
+      );
 
       const committedA = await harness.dynamic.commit(
         runningA.attemptRef,
-        runningA.leaseToken,
-        runningA.leaseGeneration,
-        resultFor(runningA),
+        runningRecovery.leaseToken,
+        runningRecovery.leaseGeneration,
+        resultFor(runningRecovery),
       );
       assert.equal(committedA.baseRules.criterionSetId, activeA.snapshotId);
       assert.equal(harness.usedSnapshots.at(-1), activeA.snapshotId);
@@ -196,10 +314,26 @@ test(
         activeA.snapshotId,
       );
 
+      const actualReadActiveRuntime = harness.ruleSets.readActiveRuntime.bind(
+        harness.ruleSets,
+      );
+      harness.ruleSets.readActiveRuntime = async () => {
+        throw new Error('CURRENT_RULE_SET_READ_DURING_RECOVERY');
+      };
+      const committingRecovery = await harness.dynamic.begin(
+        committingB.task.workItemId,
+      );
+      harness.ruleSets.readActiveRuntime = actualReadActiveRuntime;
+      assert.equal(committingRecovery.status, 'COMMITTING');
+      assert.equal(
+        committingRecovery.modelInput.ruleSetBinding.snapshotId,
+        activeB.snapshotId,
+      );
+
       const recoveredB = await harness.dynamic.commit(
         committingB.attemptRef,
-        committingB.leaseToken,
-        committingB.leaseGeneration,
+        committingRecovery.leaseToken,
+        committingRecovery.leaseGeneration,
         committingResult,
       );
       assert.equal(recoveredB.baseRules.criterionSetId, activeB.snapshotId);
@@ -207,6 +341,22 @@ test(
       assert.equal(
         await attemptStatus(sql, committingB.attemptRef),
         'SUCCEEDED',
+      );
+
+      const postRollback = await harness.dynamic.begin(workItem.workItemId);
+      assert.equal(
+        postRollback.modelInput.ruleSetBinding.snapshotId,
+        activeA.snapshotId,
+      );
+      const committedPostRollback = await harness.dynamic.commit(
+        postRollback.attemptRef,
+        postRollback.leaseToken,
+        postRollback.leaseGeneration,
+        resultFor(postRollback),
+      );
+      assert.equal(
+        committedPostRollback.baseRules.criterionSetId,
+        activeA.snapshotId,
       );
     } finally {
       await sql.end({ timeout: 5 });
@@ -316,6 +466,45 @@ function createHarness(sql, initialWorkItem) {
   };
 }
 
+function createSynchronousAssessmentService(sql, initialWorkItem, ruleSets) {
+  const permissionSnapshotVersion = 'permission:rule-set-pg-sync-zero';
+  const registrar = sqlRegistrar(sql);
+  const authorization = {
+    async authorize({ action, actor, workItemId }) {
+      assert.equal(action, 'EVALUATE_JOB_AID');
+      assert.equal(actor.tenantId, otherTenantId);
+      assert.equal(workItemId, initialWorkItem.workItemId);
+      return {
+        action,
+        allowed: true,
+        actorFingerprint: 'actor:rule-set-pg-sync-zero',
+        decisionId: 'decision:rule-set-pg-sync-zero',
+        decisionHash: 'decision-hash:rule-set-pg-sync-zero',
+        permissionSnapshotVersion,
+      };
+    },
+  };
+  const permissionSnapshots = {
+    async freshRead({ decision }) {
+      assert.equal(
+        decision.permissionSnapshotVersion,
+        permissionSnapshotVersion,
+      );
+      return { permissionSnapshotVersion };
+    },
+  };
+  return new CanonicalHostAssessmentService(
+    registrar,
+    authorization,
+    permissionSnapshots,
+    {},
+    {},
+    new MiaodaWorkItemRepository(drizzle(sql)),
+    {},
+    ruleSets,
+  );
+}
+
 function serviceScope(workItemId) {
   return {
     principalId: 'service:openclaw-rule-set-pg',
@@ -323,6 +512,16 @@ function serviceScope(workItemId) {
     tenantId,
     workItemId,
     authorizationFingerprint: 'scope:rule-set-pg',
+  };
+}
+
+function serviceActor(targetTenantId, userId) {
+  return {
+    userId,
+    tenantId: targetTenantId,
+    appId: 'app_17bzc551rsg',
+    roles: [],
+    env: 'hosted',
   };
 }
 
@@ -388,7 +587,7 @@ function resultFor(begin) {
   });
 }
 
-async function createReplacementSnapshot(repository) {
+async function createReplacementSnapshot(repository, variant) {
   const rulePackJson = await readFile(
     resolve(
       root,
@@ -403,9 +602,9 @@ async function createReplacementSnapshot(repository) {
   const canonicalCriteriaHash = hashExecutableCriterionList(rulePack.criteria);
   const criterionSet = buildJobAidCriterionSetVersion({
     rulePack,
-    artifactRef: 'test://rule-set/replacement-v0.2',
+    artifactRef: `test://rule-set/${variant}-v0.2`,
     artifactDigest,
-    artifactVersion: 'replacement-v0.2',
+    artifactVersion: `${variant}-v0.2`,
     canonicalCriteriaHash,
     sourceJobAidDocumentVersionStatus: 'VERSION_UNCONFIRMED',
     lifecycleStatus: 'ACTIVE',
@@ -528,7 +727,7 @@ async function attemptStatus(sql, attemptRef) {
   return row?.status ?? null;
 }
 
-async function seedWorkItem(sql, workItem) {
+async function seedWorkItem(sql, workItem, targetTenantId) {
   await sql`
     INSERT INTO work_item(
       work_item_id, tenant_id, action_type, document_id, document_version_id,
@@ -537,7 +736,7 @@ async function seedWorkItem(sql, workItem) {
       package_id, package_artifact_ref, package_artifact_sha256,
       requested_by_user_id, run_key
     ) VALUES (
-      ${workItem.workItemId}, ${tenantId}, 'PARSE_PDF',
+      ${workItem.workItemId}, ${targetTenantId}, 'PARSE_PDF',
       ${workItem.source.documentId}, ${workItem.source.documentVersionId},
       ${workItem.source.sourceArtifactId}, ${workItem.source.sourceFileSha256},
       ${workItem.source.sourceByteLength}, 'SB', ${workItem.requestId},

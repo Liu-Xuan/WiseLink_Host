@@ -30,6 +30,23 @@ jest.mock(
               text,
             },
           ],
+          pageTextLayerDiagnostics: [
+            {
+              page: 1,
+              status: 'PRESENT',
+              textRunCount: 1,
+              nonWhitespaceCharacterCount: text.replace(/\s/gu, '').length,
+              rasterVisualCoverage: {
+                status: 'NO_MATERIAL_RASTER',
+                materialUnverifiedRasterPageFraction: 0.25,
+                rasterRegionCount: 0,
+                rasterPageAreaRatio: 0,
+                unverifiedRasterRegionCount: 0,
+                unverifiedRasterPageAreaRatio: 0,
+                unverifiedRasterRegions: [],
+              },
+            },
+          ],
           sourceSha256: `sha256:${'e'.repeat(64)}`,
           sourceByteLength: bytes.byteLength,
         };

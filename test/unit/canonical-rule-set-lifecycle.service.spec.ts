@@ -153,6 +153,60 @@ describe('CanonicalRuleSetLifecycleService', () => {
     ).toBe('SUPERSEDED');
   });
 
+  it('rebuilds only the snapshot recorded by an exact historical activation', async () => {
+    const rulePackBytes: Uint8Array = new Uint8Array(
+      readFileSync(RULE_PACK_PATH),
+    );
+    const repository = new InMemoryRuleSetRepository();
+    const service = new CanonicalRuleSetLifecycleService(
+      repository as never,
+      new InMemoryRuleSetArtifacts(rulePackBytes) as never,
+    );
+    const actor: CanonicalHostActor = engineeringOwner();
+    const first = await service.createSnapshot(
+      selection('historical-a.json'),
+      actor,
+    );
+    const second = await service.createSnapshot(
+      selection('historical-b.json'),
+      actor,
+    );
+    await service.promote(
+      {
+        targetSnapshotId: first.snapshot.snapshotId,
+        expectedRevision: 0,
+        reason: 'Activate the historical baseline.',
+      },
+      actor,
+    );
+    await service.promote(
+      {
+        targetSnapshotId: second.snapshot.snapshotId,
+        expectedRevision: 1,
+        reason: 'Move current after sealing the first activation.',
+      },
+      actor,
+    );
+
+    await expect(
+      service.readRuntimeSnapshotAtActivation(
+        TENANT_ID,
+        first.snapshot.snapshotId,
+        1,
+      ),
+    ).resolves.toMatchObject({ snapshotId: first.snapshot.snapshotId });
+    await expect(
+      service.readRuntimeSnapshotAtActivation(
+        TENANT_ID,
+        second.snapshot.snapshotId,
+        1,
+      ),
+    ).rejects.toMatchObject({
+      code: 'RULE_SET_RUNTIME_ACTIVATION_MISMATCH',
+      statusCode: 500,
+    });
+  });
+
   it('rejects stale current and non-owner attempts', async () => {
     const rulePackBytes: Uint8Array = new Uint8Array(
       readFileSync(RULE_PACK_PATH),
@@ -410,6 +464,18 @@ class InMemoryRuleSetRepository {
 
   async currentActivation(): Promise<StoredCanonicalRuleSetActivation | null> {
     return this.activations.at(-1) ?? null;
+  }
+
+  async getActivationAtRevision(
+    _tenantId: string,
+    activationRevision: number,
+  ): Promise<StoredCanonicalRuleSetActivation | null> {
+    return (
+      this.activations.find(
+        (activation): boolean =>
+          activation.activationRevision === activationRevision,
+      ) ?? null
+    );
   }
 
   async appendActivation(input: {

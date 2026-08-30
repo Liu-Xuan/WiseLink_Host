@@ -175,21 +175,31 @@ test(
       artifactVersion: '0.2',
       lifecycleStatus: 'ACTIVE',
     });
+    const runtimeRuleSet = {
+      snapshotId: criterionSet.criterionSetId,
+      headRevision: 1,
+      rulePack,
+      rulePackHash,
+      rulePackVersion: '0.2',
+      artifactRef: 'runtime-asset://assessment-host/job-aid/rule-pack-0.2.json',
+      artifactDigest: `sha256:${rulePackHash}`,
+      artifactVersion: '0.2',
+      criterionSet,
+    };
     const ruleSets = {
       async readActiveRuntime(tenantId) {
         assert.equal(tenantId, 'tenant-real-737-dynamic-begin-test');
-        return {
-          snapshotId: criterionSet.criterionSetId,
-          headRevision: 1,
-          rulePack,
-          rulePackHash,
-          rulePackVersion: '0.2',
-          artifactRef:
-            'runtime-asset://assessment-host/job-aid/rule-pack-0.2.json',
-          artifactDigest: `sha256:${rulePackHash}`,
-          artifactVersion: '0.2',
-          criterionSet,
-        };
+        return runtimeRuleSet;
+      },
+      async readRuntimeSnapshotAtActivation(
+        tenantId,
+        snapshotId,
+        activationRevision,
+      ) {
+        assert.equal(tenantId, 'tenant-real-737-dynamic-begin-test');
+        assert.equal(snapshotId, criterionSet.criterionSetId);
+        assert.equal(activationRevision, 1);
+        return runtimeRuleSet;
       },
     };
     const assessment = new CanonicalHostAssessmentService(

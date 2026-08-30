@@ -92,7 +92,7 @@ export function buildSourceUnitSet(
       page: 1,
       bbox: fullPageBbox(layout, 1),
       text: metadataQuote,
-      sourceRefId: metadataRef.sourceRefId,
+      sourceRefIds: [metadataRef.sourceRefId],
     }),
   );
 
@@ -125,16 +125,28 @@ export function buildSourceUnitSet(
       kind = 'text_block';
       semantic = 'text';
     }
-    const sourceRef = pageContextRefsBuilt.has(line.page)
-      ? buildRunAnchorSourceRef(artifactId, layout, line)
-      : buildWholePageSourceRef(
-          artifactId,
-          layout,
-          line.page,
-          wholePageQuotes.get(line.page)!,
-        );
+    const sourceRefIds: string[] = [];
+    const refsForLine: PdfSourceRefValue[] = [];
+    if (!pageContextRefsBuilt.has(line.page)) {
+      const pageContextRef = buildWholePageSourceRef(
+        artifactId,
+        layout,
+        line.page,
+        wholePageQuotes.get(line.page)!,
+      );
+      refsForLine.push(pageContextRef);
+      sourceRefIds.push(pageContextRef.sourceRefId);
+    }
+    if (
+      pageContextRefsBuilt.has(line.page) ||
+      line.origin === 'ocr_tesseract_tsv'
+    ) {
+      const granularRef = buildRunAnchorSourceRef(artifactId, layout, line);
+      refsForLine.push(granularRef);
+      sourceRefIds.push(granularRef.sourceRefId);
+    }
     pageContextRefsBuilt.add(line.page);
-    sourceRefs.push(sourceRef);
+    sourceRefs.push(...refsForLine);
     units.push(
       buildUnit({
         artifactId,
@@ -145,7 +157,7 @@ export function buildSourceUnitSet(
         page: line.page,
         bbox: runBbox(layout, line),
         text,
-        sourceRefId: sourceRef.sourceRefId,
+        sourceRefIds,
         continuityKey,
       }),
     );
@@ -191,6 +203,9 @@ interface ParsedLine {
   y: number;
   runs: ParsedPdfTextRun[];
   text: string;
+  origin?: 'ocr_tesseract_tsv';
+  readingOrder?: number;
+  normalizedBbox?: readonly [number, number, number, number];
 }
 
 function collectLines(layout: ParsedPdfLayout): ParsedLine[] {
@@ -203,7 +218,12 @@ function collectLines(layout: ParsedPdfLayout): ParsedLine[] {
     byPage.set(run.page, bucket);
   }
   for (let page = 1; page <= layout.pageCount; page += 1) {
-    const runs = (byPage.get(page) ?? []).slice();
+    const pageRuns = (byPage.get(page) ?? []).slice();
+    const ocrRuns = pageRuns.filter(
+      (run) => run.origin === 'ocr_tesseract_tsv',
+    );
+    const runs = pageRuns.filter((run) => run.origin !== 'ocr_tesseract_tsv');
+    const nativeLines: ParsedLine[] = [];
     // Reading order: descending baseline (top of page first), then x.
     runs.sort((left, right) => right.y - left.y || left.x - right.x || 0);
     let current: ParsedPdfTextRun[] = [];
@@ -211,7 +231,7 @@ function collectLines(layout: ParsedPdfLayout): ParsedLine[] {
     const flush = () => {
       if (current.length === 0) return;
       const ordered = current.slice().sort((a, b) => a.x - b.x);
-      lines.push({
+      nativeLines.push({
         page,
         y: currentY ?? ordered[0].y,
         runs: ordered,
@@ -234,8 +254,91 @@ function collectLines(layout: ParsedPdfLayout): ParsedLine[] {
       }
     }
     flush();
+    if (ocrRuns.length === 0) {
+      lines.push(...nativeLines);
+      continue;
+    }
+    const ocrLines = ocrRuns
+      .slice()
+      .sort(
+        (left, right) =>
+          assertOcrReadingOrder(left) - assertOcrReadingOrder(right),
+      )
+      .map(
+        (run): ParsedLine => ({
+          page,
+          y: run.y,
+          runs: [run],
+          text: run.text,
+          origin: 'ocr_tesseract_tsv',
+          readingOrder: assertOcrReadingOrder(run),
+          normalizedBbox: assertOcrNormalizedBbox(run),
+        }),
+      );
+    lines.push(
+      ...[...nativeLines, ...ocrLines].sort((left, right) => {
+        const topDifference =
+          lineNormalizedTop(left, layout) - lineNormalizedTop(right, layout);
+        if (topDifference !== 0) return topDifference;
+        if (
+          left.origin === 'ocr_tesseract_tsv' &&
+          right.origin === 'ocr_tesseract_tsv'
+        ) {
+          return (left.readingOrder ?? 0) - (right.readingOrder ?? 0);
+        }
+        return left.origin === 'ocr_tesseract_tsv' ? 1 : -1;
+      }),
+    );
   }
   return filterPageAuxiliaryLines(lines, layout);
+}
+
+function assertOcrReadingOrder(run: ParsedPdfTextRun): number {
+  if (!Number.isSafeInteger(run.readingOrder) || Number(run.readingOrder) < 0) {
+    throw new ProfessionalInputPureError(
+      'SOURCE_UNIT_SET_OCR_READING_ORDER_INVALID',
+      `OCR run on page ${run.page} has no valid provider reading order.`,
+    );
+  }
+  return Number(run.readingOrder);
+}
+
+function assertOcrNormalizedBbox(
+  run: ParsedPdfTextRun,
+): readonly [number, number, number, number] {
+  const bbox = run.normalizedBbox;
+  if (
+    !bbox ||
+    !bbox.every(Number.isSafeInteger) ||
+    bbox.some((value) => value < 0 || value > 1_000_000) ||
+    bbox[2] <= bbox[0] ||
+    bbox[3] <= bbox[1]
+  ) {
+    throw new ProfessionalInputPureError(
+      'SOURCE_UNIT_SET_OCR_BBOX_INVALID',
+      `OCR run on page ${run.page} has no valid exact normalized bbox.`,
+    );
+  }
+  return bbox;
+}
+
+function lineNormalizedTop(line: ParsedLine, layout: ParsedPdfLayout): number {
+  if (line.normalizedBbox) return line.normalizedBbox[1];
+  const nativeBboxes = line.runs
+    .map((run) => run.normalizedBbox)
+    .filter(
+      (bbox): bbox is readonly [number, number, number, number] =>
+        bbox !== undefined,
+    );
+  if (nativeBboxes.length === line.runs.length) {
+    return Math.min(...nativeBboxes.map((bbox) => bbox[1]));
+  }
+  const [, y0, , y1] = pageBox(layout, line.page);
+  const height = y1 - y0;
+  const yMax = Math.max(
+    ...line.runs.map((run) => run.y + Math.abs(run.fontSize)),
+  );
+  return Math.round(Math.min(1, Math.max(0, (y1 - yMax) / height)) * 1_000_000);
 }
 
 /**
@@ -438,16 +541,17 @@ function buildUnit(input: {
   page: number;
   bbox: readonly [number, number, number, number];
   text: string;
-  sourceRefId: string;
+  sourceRefIds: readonly string[];
   continuityKey?: string;
 }): SourceUnit {
   const continuityKey =
     input.continuityKey ?? `${input.semantic}-${input.order}`;
+  const hashSourceRefIds = [...input.sourceRefIds].sort();
   const unitHash = `sha256:${sha256Hex(
     jcsCanonicalize({
       kind: input.kind,
       expectedSemantic: input.semantic,
-      sourceRefIds: [input.sourceRefId],
+      sourceRefIds: hashSourceRefIds,
     }),
   )}`;
   return {
@@ -466,7 +570,7 @@ function buildUnit(input: {
     kind: input.kind,
     expectedSemantic: input.semantic,
     order: input.order,
-    sourceRefIds: [input.sourceRefId],
+    sourceRefIds: input.sourceRefIds,
     unitHash,
     text: input.text,
   };
@@ -564,6 +668,16 @@ function runBbox(
   layout: ParsedPdfLayout,
   line: ParsedLine,
 ): [number, number, number, number] {
+  if (line.origin === 'ocr_tesseract_tsv') {
+    const bbox = line.normalizedBbox;
+    if (!bbox) {
+      throw new ProfessionalInputPureError(
+        'SOURCE_UNIT_SET_OCR_BBOX_INVALID',
+        `OCR line on page ${line.page} has no exact normalized bbox.`,
+      );
+    }
+    return [bbox[0], bbox[1], bbox[2], bbox[3]];
+  }
   const xMin = Math.min(...line.runs.map((run) => run.x));
   const xMax = Math.max(
     ...line.runs.map((run) => run.x + estimateRunWidth(run)),

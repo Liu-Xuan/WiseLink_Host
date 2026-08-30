@@ -77,11 +77,11 @@ export interface ScopedProfessionalArtifactProducedPackage {
 }
 
 /**
- * Receives only bytes already produced by the Host-native PDF pipeline and
- * accepted by strict U0. It persists/registers those exact bytes under the
- * exact WorkItem + DocumentVersion scope and returns only the correlation and
- * FileService locator. The producer then performs a separate actual-byte
- * readback. Lineage never owns or authorizes the returned artifact.
+ * Receives only bytes already produced by a Host-native professional-input
+ * pipeline and accepted by strict U0. It persists/registers those exact bytes
+ * under the exact WorkItem + DocumentVersion scope and returns only the
+ * correlation and FileService locator. The caller then performs a separate
+ * actual-byte readback. Lineage never owns or authorizes the returned artifact.
  */
 export interface ScopedProfessionalArtifactCorrelationPort {
   readonly available: boolean;
@@ -89,22 +89,33 @@ export interface ScopedProfessionalArtifactCorrelationPort {
     request: ScopedProfessionalArtifactCorrelationRequest,
     produced: ScopedProfessionalArtifactProducedPackage,
   ): Promise<ScopedProfessionalArtifactCorrelation | null>;
+  readActualBytes?(
+    correlation: ScopedProfessionalArtifactCorrelation,
+  ): Promise<ScopedProfessionalArtifactActualReadback>;
 }
 
 @Injectable()
 export class UnavailableScopedProfessionalArtifactCorrelationAdapter implements ScopedProfessionalArtifactCorrelationPort {
   readonly available = false;
 
-  async persistAndCorrelate(): Promise<null> {
+  async persistAndCorrelate(
+    _request: ScopedProfessionalArtifactCorrelationRequest,
+    _produced: ScopedProfessionalArtifactProducedPackage,
+  ): Promise<null> {
     return null;
+  }
+
+  async readActualBytes(): Promise<never> {
+    throw new Error('PROFESSIONAL_ARTIFACT_CORRELATION_UNAVAILABLE');
   }
 }
 
 /**
- * Hosted implementation for the Host-native PDF producer. It writes only the
- * already U0-accepted package bytes, at a WorkItem + DocumentVersion scoped
- * immutable path, and verifies the provider object and actual bytes before it
- * returns a correlation. The caller performs an independent readback again.
+ * Hosted implementation for Host-native professional-input producers. It
+ * writes only already U0-accepted package bytes at a WorkItem + DocumentVersion
+ * scoped immutable path, and verifies the provider object and actual bytes
+ * before it returns a correlation. The caller performs an independent readback
+ * again.
  */
 @Injectable()
 export class MiaodaScopedProfessionalArtifactCorrelationAdapter implements ScopedProfessionalArtifactCorrelationPort {
@@ -148,8 +159,7 @@ export class MiaodaScopedProfessionalArtifactCorrelationAdapter implements Scope
       throw new Error('PDF_PRODUCER_PROFESSIONAL_ACTUAL_BYTE_MISMATCH');
     }
     return {
-      schemaVersion:
-        'wiselink.3_1.scoped_professional_artifact_correlation.v1',
+      schemaVersion: 'wiselink.3_1.scoped_professional_artifact_correlation.v1',
       status: 'HOST_SCOPE_BOUND_IMMUTABLE',
       scope: {
         workItemId: request.workItemId,
@@ -170,10 +180,7 @@ export class MiaodaScopedProfessionalArtifactCorrelationAdapter implements Scope
         packageId: produced.packageId,
         artifact: {
           storeRole: 'UnifiedArtifactStoreCandidate',
-          ref: scopedProfessionalArtifactRef(
-            request,
-            professionalArtifactId,
-          ),
+          ref: scopedProfessionalArtifactRef(request, professionalArtifactId),
           sha256: produced.artifact.sha256,
           byteLength: produced.artifact.byteLength,
           mediaType: 'application/json',
@@ -185,6 +192,24 @@ export class MiaodaScopedProfessionalArtifactCorrelationAdapter implements Scope
         },
       },
       lineage: { ...produced.lineage },
+    };
+  }
+
+  async readActualBytes(
+    correlation: ScopedProfessionalArtifactCorrelation,
+  ): Promise<ScopedProfessionalArtifactActualReadback> {
+    const selected = await new MiaodaFileServiceArtifactStore(
+      this.fileService,
+    ).readSelection({
+      bucketId: correlation.professionalArtifact.fileServiceLocator.bucketId,
+      filePath: correlation.professionalArtifact.fileServiceLocator.filePath,
+    });
+    return {
+      verified: selected.readbackVerified,
+      bytes: Uint8Array.from(selected.bytes),
+      providerObjectId: selected.providerObjectId,
+      sha256: selected.sha256,
+      byteLength: selected.byteLength,
     };
   }
 }

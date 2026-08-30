@@ -1,13 +1,14 @@
 import { createHash } from 'node:crypto';
 
-import { FileService } from '@lark-apaas/fullstack-nestjs-core';
-import { Injectable, Optional } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 
 import type {
   CanonicalClassificationSelection,
   CanonicalDevelopmentWorkItemRunRequest,
   CanonicalOrdinaryWorkItemRunResponse,
   CanonicalPdfVerticalRunRequest,
+  CanonicalS1000dOrdinaryRunResponse,
+  CanonicalS1000dVerticalRunRequest,
 } from '@shared/api.interface';
 import { CanonicalHostVerticalService } from '../canonical-host/canonical-host-vertical.service';
 import { CANONICAL_DEVELOPMENT_ROLE_ID } from '../canonical-host/canonical-host.constants';
@@ -28,11 +29,6 @@ import {
 import { MiaodaDocumentVersionSourceResolver } from './miaoda-document-version-source.resolver';
 import { MiaodaWorkItemRepository } from './miaoda-work-item.repository';
 import { assertProductionMiaodaBrowserIdentityAvailable } from './production-miaoda-browser-ingress';
-import { MiaodaFileServiceArtifactStore } from '../document-management/src/hosted/miaodaFileServiceArtifactStore.js';
-import {
-  createPhase5BoeingSbIngestRequest,
-  PHASE5_737_34_3830_HANDOFF,
-} from '../document-management/src/hosted/phase5BoeingSbHandoff.js';
 
 const FTD_CLASSIFICATION: CanonicalClassificationSelection = {
   status: 'CANDIDATE',
@@ -58,6 +54,18 @@ const OEM_REFERENCE_CLASSIFICATION: CanonicalClassificationSelection = {
     'sha256:0508c397ca2249dc38507b7de312547503208dad6ad7993659ec900713ed1dde',
   fingerprint:
     'sha256:9e0f6036c057009b18c19333f33a3945b06cb567c27b1859b2e6ba47979f42c5',
+};
+
+const S1000D_CLASSIFICATION: CanonicalClassificationSelection = {
+  status: 'CONFIRMED',
+  normalizedFamily: 'S1000D',
+  classifierReleaseId: 'structured-source:s1000d-xml-v1.1',
+  classifierReleaseHash: stableSha256('structured-source:s1000d-xml-v1.1'),
+  parserProfileId: 'parser-profile:s1000d.native-xml.v1.1',
+  parserProfileHash: stableSha256('parser-profile:s1000d.native-xml.v1.1'),
+  fingerprint: stableSha256(
+    'S1000D\nstructured-source:s1000d-xml-v1.1\nparser-profile:s1000d.native-xml.v1.1',
+  ),
 };
 
 export interface OrdinaryPdfParseInput {
@@ -86,7 +94,6 @@ export class OrdinaryWorkItemService {
     private readonly resolver: MiaodaDocumentVersionSourceResolver,
     private readonly repository: MiaodaWorkItemRepository,
     private readonly vertical: CanonicalHostVerticalService,
-    @Optional() private readonly fileService?: FileService,
   ) {}
 
   async parsePdf(
@@ -105,6 +112,64 @@ export class OrdinaryWorkItemService {
       );
     }
     return this.runPdf(input, actor, origin, 'canonical');
+  }
+
+  async parseS1000d(
+    input: Pick<OrdinaryPdfParseInput, 'documentVersionId' | 'query'>,
+    actor: CanonicalHostActor,
+  ): Promise<CanonicalS1000dOrdinaryRunResponse> {
+    assertProductionMiaodaBrowserIdentityAvailable(actor);
+    const documentVersionId = requiredText(
+      input.documentVersionId,
+      'documentVersionId',
+      96,
+    );
+    await this.assertCanResolveDocumentVersion({
+      actor,
+      documentVersionId,
+      runKey: 'canonical',
+      developmentCreate: false,
+    });
+    this.vertical.assertS1000dAvailable();
+    const resolved = await this.resolver.resolve(documentVersionId, {
+      requireCurrent: true,
+    });
+    const reservation = await this.repository.reserve({
+      tenantId: actor.tenantId,
+      actorUserId: actor.userId,
+      documentId: resolved.version.documentId,
+      documentVersionId: resolved.version.documentVersionId,
+      sourceArtifactId: resolved.version.sourceArtifactId,
+      sourceFileSha256: resolved.version.pdfSha256,
+      sourceByteLength: Number(resolved.version.byteLength),
+      normalizedFamily: S1000D_CLASSIFICATION.normalizedFamily,
+      requestOrigin: 'MIAODA',
+      runKey: 'canonical',
+    });
+    const request: CanonicalS1000dVerticalRunRequest = {
+      schemaVersion: 'wiselink.3_1.canonical_s1000d_vertical_request.v1',
+      workItemId: reservation.workItemId,
+      requestId: reservation.requestId,
+      source: {
+        documentId: resolved.version.documentId,
+        documentVersionId: resolved.version.documentVersionId,
+        parserRequestId: reservation.requestId,
+        sourceArtifactId: resolved.version.sourceArtifactId,
+        sourceFileSha256: `sha256:${resolved.version.pdfSha256}`,
+        sourceByteLength: Number(resolved.version.byteLength),
+        driveFileToken: resolved.artifact.providerObjectId,
+        driveSourceVersion: resolved.artifact.providerVersionId,
+      },
+      classification: { ...S1000D_CLASSIFICATION },
+      query: optionalQuery(input.query),
+    };
+    const result = await this.vertical.runS1000d(request, actor);
+    return {
+      schemaVersion: 'wiselink.3_1.ordinary_s1000d_work_item_run.v1',
+      workItemCreated: reservation.created,
+      workItemReused: !reservation.created,
+      result,
+    };
   }
 
   async createDevelopmentRun(
@@ -400,30 +465,13 @@ export class OrdinaryWorkItemService {
     const key = createHash('sha256')
       .update(`${context.tenantId}\n${bucketId}\n${filePath}`)
       .digest('hex');
-    const baseRequest = {
+    const request = {
       selection: { bucketId, filePath },
       sourceChannel: 'canonical_miaoda_document_selection',
       sourceRef: `miaoda-file-service:${bucketId}:${filePath}`,
       idempotencyKey: `ordinary-document-ingest:${key}`,
       descriptor: {},
     };
-    let request = baseRequest;
-    if (this.fileService) {
-      const actual = await new MiaodaFileServiceArtifactStore(
-        this.fileService,
-      ).readSelection({ bucketId, filePath });
-      const handoff = phase5Handoff();
-      if (
-        actual.sha256 === handoff.source.sha256 &&
-        Number(actual.byteLength) === handoff.source.byteLength
-      ) {
-        request = createPhase5BoeingSbIngestRequest({
-          selection: { bucketId, filePath },
-          sourceRef: `miaoda-file-service:${bucketId}:${actual.providerObjectId}`,
-          idempotencyKey: `ordinary-document-ingest:${key}`,
-        });
-      }
-    }
     const result = await this.documentManagement.ingestFileServiceSelection(
       request,
       context,
@@ -669,18 +717,15 @@ function classificationFor(
   );
 }
 
-function phase5Handoff() {
-  return PHASE5_737_34_3830_HANDOFF as {
-    source: { sha256: string; byteLength: number };
-    canonicalHostClassification: CanonicalClassificationSelection;
-  };
-}
-
 function optionalQuery(value: unknown): string {
   if (value === undefined || value === null || value === '') {
     return 'applicability';
   }
   return requiredText(value, 'query', 200);
+}
+
+function stableSha256(value: string): string {
+  return `sha256:${createHash('sha256').update(value).digest('hex')}`;
 }
 
 function requiredText(

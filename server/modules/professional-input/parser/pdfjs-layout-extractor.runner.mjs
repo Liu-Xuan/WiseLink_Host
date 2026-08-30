@@ -7,6 +7,7 @@
  *
  * Protocol:
  *   argv[2]: absolute path to a file holding the exact PDF source bytes
+ *   argv[4]: optional 1-based first page (argv[5] is requested last page)
  *   stdout : sentinel-wrapped single JSON payload
  *            <<<PDFJS-LAYOUT-JSON-BEGIN>>>{...}<<<PDFJS-LAYOUT-JSON-END>>>
  *            (engine warnings may interleave outside the sentinels; the
@@ -65,17 +66,22 @@ async function main() {
 
   const metadata = await doc.getMetadata();
   const info = metadata?.info ?? {};
+  const { pageStart, pageEnd } = requestedPageRange(doc.numPages);
   const textRuns = [];
   const pageBoxes = [];
   const pageTextLayerDiagnostics = [];
-  const boldByName = new Map();
 
-  for (let pageNumber = 1; pageNumber <= doc.numPages; pageNumber += 1) {
+  for (let pageNumber = pageStart; pageNumber <= pageEnd; pageNumber += 1) {
     const page = await doc.getPage(pageNumber);
+    const boldByName = new Map();
     // Resolve font objects first so commonObjs lookups below succeed.
     const operatorList = await page.getOperatorList();
     const content = await page.getTextContent();
     const view = page.view;
+    const viewport = page.getViewport({
+      scale: 1,
+      rotation: page.rotate,
+    });
     pageBoxes.push({
       page: pageNumber,
       mediaBox: [
@@ -84,6 +90,13 @@ async function main() {
         Number(view[2]),
         Number(view[3]),
       ],
+      rotation: Number(page.rotate),
+      userUnit: Number(page.userUnit),
+      viewport: {
+        width: Number(viewport.width),
+        height: Number(viewport.height),
+        transform: viewport.transform.map(Number),
+      },
     });
     let pageTextRunCount = 0;
     let pageNonWhitespaceCharacterCount = 0;
@@ -96,16 +109,14 @@ async function main() {
       const nonWhitespaceCharacterCount = Array.from(item.str).filter(
         (character) => !/\s/u.test(character),
       ).length;
+      const bounds = textItemBounds(item);
       pageTextRunCount += 1;
       pageNonWhitespaceCharacterCount += nonWhitespaceCharacterCount;
-      if (nonWhitespaceCharacterCount > 0) {
-        const bounds = textItemBounds(item);
-        if (bounds) {
-          pageTextBounds.push({
-            bounds,
-            nonWhitespaceCharacterCount,
-          });
-        }
+      if (nonWhitespaceCharacterCount > 0 && bounds) {
+        pageTextBounds.push({
+          bounds,
+          nonWhitespaceCharacterCount,
+        });
       }
       const fontName = String(item.fontName ?? '');
       if (!boldByName.has(fontName)) {
@@ -119,6 +130,16 @@ async function main() {
         x: Number(item.transform[4]),
         y: Number(item.transform[5]),
         text: item.str,
+        ...(bounds && nonWhitespaceCharacterCount > 0
+          ? {
+              pdfUserSpaceBbox: bounds.map(roundGeometry),
+              normalizedBbox: normalizeDisplayBbox(
+                pdfBboxToDisplayBbox(bounds, viewport.transform),
+                viewport.width,
+                viewport.height,
+              ),
+            }
+          : {}),
       });
     }
     const rasterVisualCoverage = analyzeRasterVisualCoverage({
@@ -146,6 +167,8 @@ async function main() {
   const layout = {
     pdfVersion: String(info.PDFFormatVersion ?? ''),
     pageCount: doc.numPages,
+    pageStart,
+    pageEnd,
     pageBoxes,
     metadata: {
       title:
@@ -161,6 +184,28 @@ async function main() {
     process.stdout.write(payload, () => resolveExit());
   });
   process.exit(0);
+}
+
+function requestedPageRange(pageCount) {
+  const rawPageStart = process.argv[4];
+  const rawRequestedPageEnd = process.argv[5];
+  if (rawPageStart === undefined && rawRequestedPageEnd === undefined) {
+    return { pageStart: 1, pageEnd: pageCount };
+  }
+  const pageStart = positiveIntegerOrNull(rawPageStart);
+  const requestedPageEnd = positiveIntegerOrNull(rawRequestedPageEnd);
+  if (
+    pageStart === null ||
+    requestedPageEnd === null ||
+    requestedPageEnd < pageStart ||
+    pageStart > pageCount
+  ) {
+    throw new Error('PDFJS_LAYOUT_PAGE_RANGE_INVALID');
+  }
+  return {
+    pageStart,
+    pageEnd: Math.min(requestedPageEnd, pageCount),
+  };
 }
 
 function analyzeRasterVisualCoverage({
@@ -204,8 +249,8 @@ function analyzeRasterVisualCoverage({
   const unverifiedRasterBounds = rasterRegions
     .filter(
       (_region, index) =>
-        annotatedRegions[index]
-          .textLayerOverlapNonWhitespaceCharacterCount === 0,
+        annotatedRegions[index].textLayerOverlapNonWhitespaceCharacterCount ===
+        0,
     )
     .map((region) => region.bounds);
   const rasterPageAreaRatio = roundRatio(
@@ -217,8 +262,7 @@ function analyzeRasterVisualCoverage({
   const hasMaterialRaster =
     rasterPageAreaRatio >= MATERIAL_UNVERIFIED_RASTER_PAGE_FRACTION;
   const hasMaterialUnverifiedRaster =
-    unverifiedRasterPageAreaRatio >=
-    MATERIAL_UNVERIFIED_RASTER_PAGE_FRACTION;
+    unverifiedRasterPageAreaRatio >= MATERIAL_UNVERIFIED_RASTER_PAGE_FRACTION;
 
   return {
     status: hasMaterialUnverifiedRaster
@@ -242,7 +286,10 @@ function collectDisplayedRasterRegions(operatorList, ops, pageBounds) {
   let ctm = [1, 0, 0, 1, 0, 0];
 
   const addRegion = (transform, source) => {
-    const bounds = clipBounds(transformedUnitSquareBounds(transform), pageBounds);
+    const bounds = clipBounds(
+      transformedUnitSquareBounds(transform),
+      pageBounds,
+    );
     if (!bounds || rectangleArea(bounds) <= 0) return;
     regions.push({
       bounds,
@@ -300,11 +347,7 @@ function collectDisplayedRasterRegions(operatorList, ops, pageBounds) {
       const scaleX = Number(args[1]);
       const scaleY = Number(args[2]);
       const positions = numericSequence(args[3]);
-      if (
-        Number.isFinite(scaleX) &&
-        Number.isFinite(scaleY) &&
-        positions
-      ) {
+      if (Number.isFinite(scaleX) && Number.isFinite(scaleY) && positions) {
         for (let offset = 0; offset + 1 < positions.length; offset += 2) {
           const repeated = [
             scaleX,
@@ -327,10 +370,7 @@ function collectDisplayedRasterRegions(operatorList, ops, pageBounds) {
       const skewY = Number(args[3]);
       const scaleY = Number(args[4]);
       const positions = numericSequence(args[5]);
-      if (
-        [scaleX, skewX, skewY, scaleY].every(Number.isFinite) &&
-        positions
-      ) {
+      if ([scaleX, skewX, skewY, scaleY].every(Number.isFinite) && positions) {
         for (let offset = 0; offset + 1 < positions.length; offset += 2) {
           const repeated = [
             scaleX,
@@ -449,9 +489,44 @@ function pointsBounds(points) {
   return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
 }
 
+function pdfBboxToDisplayBbox(bounds, transform) {
+  return pointsBounds([
+    applyTransform([bounds[0], bounds[1]], transform),
+    applyTransform([bounds[2], bounds[1]], transform),
+    applyTransform([bounds[0], bounds[3]], transform),
+    applyTransform([bounds[2], bounds[3]], transform),
+  ]);
+}
+
+function applyTransform(point, matrix) {
+  return [
+    point[0] * matrix[0] + point[1] * matrix[2] + matrix[4],
+    point[0] * matrix[1] + point[1] * matrix[3] + matrix[5],
+  ];
+}
+
+function normalizeDisplayBbox(bounds, width, height) {
+  const clamp = (value) => Math.min(1, Math.max(0, value));
+  const left = Math.round(clamp(bounds[0] / width) * 1_000_000);
+  const top = Math.round(clamp(bounds[1] / height) * 1_000_000);
+  const right = Math.round(clamp(bounds[2] / width) * 1_000_000);
+  const bottom = Math.round(clamp(bounds[3] / height) * 1_000_000);
+  return [
+    Math.min(left, 999_999),
+    Math.min(top, 999_999),
+    Math.max(right, left + 1),
+    Math.max(bottom, top + 1),
+  ];
+}
+
 function normalizedBounds(value) {
   const [x1, y1, x2, y2] = value.map(Number);
-  return [Math.min(x1, x2), Math.min(y1, y2), Math.max(x1, x2), Math.max(y1, y2)];
+  return [
+    Math.min(x1, x2),
+    Math.min(y1, y2),
+    Math.max(x1, x2),
+    Math.max(y1, y2),
+  ];
 }
 
 function clipBounds(bounds, clip) {
@@ -472,7 +547,9 @@ function rectanglesOverlap(left, right) {
 }
 
 function rectangleArea(bounds) {
-  return Math.max(0, bounds[2] - bounds[0]) * Math.max(0, bounds[3] - bounds[1]);
+  return (
+    Math.max(0, bounds[2] - bounds[0]) * Math.max(0, bounds[3] - bounds[1])
+  );
 }
 
 function rectangleUnionArea(rectangles) {

@@ -213,46 +213,144 @@ test('legacy unresolved Review residual recovers only under exact new-request sc
     catalog,
     new OrdinaryDocumentManagementAuthorizer({}, fileService),
   );
-  const previousOrdinarySandboxId = process.env.SANDBOX_ID;
-  const previousOrdinaryLocalDev = process.env.MIAODA_LOCAL_DEV;
-  process.env.SANDBOX_ID = 'review-attachment-ordinary-companion';
-  delete process.env.MIAODA_LOCAL_DEV;
-  let ordinaryBinding;
-  try {
-    ordinaryBinding = await documentManagement.ingestFileServiceSelection(
-      {
-        selection: { bucketId, filePath: selectionPath },
-        sourceChannel: 'canonical_miaoda_document_selection',
-        sourceRef: 'ordinary:completed-lineage',
-        idempotencyKey: 'ordinary:completed-lineage',
-        descriptor: {
-          documentCode: 'ORDINARY-RESIDUAL-COMPANION',
-          documentFamily: 'OEM_REFERENCE',
-          issuer: 'BOEING',
-          businessRevision: '1',
-          revisionDate: '2026-08-27',
-          sourceGeneratedDate: '2026-08-27',
-          documentCodeProvenance: {
-            schemaVersion: 'wiselink.document_code_provenance.v1',
-            source: 'controlled_metadata',
-            candidates: ['ORDINARY-RESIDUAL-COMPANION'],
-            inspectedSha256: actualSha256,
-            conflict: false,
-          },
-        },
-      },
-      {
-        actorUserId: 'actor-C7',
-        tenantId: 'tenant-C7',
-        roles: ['wiselink_development'],
-        appId: 'app_17bzc551rsg',
-        env: 'preview',
-      },
-    );
-  } finally {
-    restoreProcessEnv('SANDBOX_ID', previousOrdinarySandboxId);
-    restoreProcessEnv('MIAODA_LOCAL_DEV', previousOrdinaryLocalDev);
-  }
+  const sourceArtifactId = deterministicId(
+    'source_artifact',
+    actualSha256,
+    selected.byteLength,
+  );
+  const ordinaryFamilyId = 'family-review-residual-companion';
+  const ordinaryDocumentId = 'document-review-residual-companion';
+  const ordinaryDocumentVersionId =
+    'document-version-review-residual-companion';
+  const ordinaryAcquisitionId = 'acquisition-review-residual-companion';
+  const ordinaryPreflightId = 'preflight-review-residual-companion';
+  const ordinaryDescriptor = {
+    documentCode: 'TEST-REVIEW-RESIDUAL-COMPANION',
+    documentFamily: 'OEM_REFERENCE',
+    issuer: 'TEST',
+    businessRevision: '1',
+    revisionDate: '2026-08-27',
+    sourceGeneratedDate: '2026-08-27',
+    pageCount: 1,
+    sourceKind: 'canonical_miaoda_document_selection',
+    originalFilename: selected.fileName,
+    mediaType: 'application/pdf',
+    sha256: actualSha256,
+    sizeBytes: selected.byteLength,
+    sourceStorageKey: `${immutable.bucketId}:${immutable.filePath}`,
+    providerUpdatedAt: selected.providerUpdatedAt,
+    documentCodeProvenance: {
+      schemaVersion: 'wiselink.document_code_provenance.v1',
+      source: 'controlled_metadata',
+      candidates: ['TEST-REVIEW-RESIDUAL-COMPANION'],
+      inspectedSha256: actualSha256,
+      conflict: false,
+    },
+  };
+  const ordinaryNormalizedDescriptor =
+    normalizeUploadDescriptor(ordinaryDescriptor);
+  const ordinaryDecision = buildGovernedDocumentIngressPreflightDecision({
+    generatedAt: '2026-08-27T00:00:00.000Z',
+    documents: [],
+    rawDescriptor: ordinaryDescriptor,
+    normalizedDescriptor: ordinaryNormalizedDescriptor,
+  });
+  catalog.seedCompletedCanonicalLineage({
+    sourceArtifact: {
+      sourceArtifactId,
+      sha256: actualSha256,
+      byteLength: selected.byteLength,
+      mediaType: 'application/pdf',
+      bucketId: immutable.bucketId,
+      filePath: immutable.filePath,
+      providerObjectId: immutable.providerObjectId,
+      providerVersionId: immutable.providerVersionId,
+      readbackVerified: true,
+      createdAt: '2026-08-27T00:00:00.000Z',
+    },
+    acquisition: {
+      acquisitionId: ordinaryAcquisitionId,
+      sourceArtifactId,
+      sourceChannel: 'canonical_miaoda_document_selection',
+      sourceRef: 'ordinary:completed-lineage',
+      selectionBucketId: selected.bucketId,
+      selectionFilePath: selected.filePath,
+      providerObjectId: selected.providerObjectId,
+      providerVersionId: selected.providerVersionId,
+      acquiredBy: 'actor-C7',
+      acquiredAt: '2026-08-27T00:00:00.000Z',
+      idempotencyKey: 'ordinary:completed-lineage',
+      sourceDescriptor: ordinaryDescriptor,
+    },
+    preflight: {
+      preflightId: ordinaryPreflightId,
+      acquisitionId: ordinaryAcquisitionId,
+      decision: ordinaryDecision.decision,
+      branch: ordinaryDecision.branch,
+      executionAuthorized: true,
+      observedCurrentGeneration: 0,
+      observedCurrentDocumentVersionId: null,
+      normalizedDescriptor: ordinaryNormalizedDescriptor,
+      decisionPayload: ordinaryDecision,
+      commitIdempotencyKey: 'ordinary:completed-lineage',
+      createdAt: '2026-08-27T00:00:00.000Z',
+    },
+    family: {
+      familyId: ordinaryFamilyId,
+      canonicalIdentityKey:
+        'tenant:tenant-C7:family:TEST%7COEM_REFERENCE%7CTEST-REVIEW-RESIDUAL-COMPANION',
+      documentFamily: 'OEM_REFERENCE',
+      issuerAuthority: 'TEST',
+      canonicalDocumentNumber: 'TEST-REVIEW-RESIDUAL-COMPANION',
+      currentDocumentVersionId: ordinaryDocumentVersionId,
+      currentGeneration: 1,
+      status: 'ACTIVE',
+      createdAt: '2026-08-27T00:00:00.000Z',
+      updatedAt: '2026-08-27T00:00:00.000Z',
+    },
+    document: {
+      documentId: ordinaryDocumentId,
+      familyId: ordinaryFamilyId,
+      documentFamily: 'OEM_REFERENCE',
+      status: 'ACTIVE',
+      createdAt: '2026-08-27T00:00:00.000Z',
+    },
+    version: {
+      documentVersionId: ordinaryDocumentVersionId,
+      documentId: ordinaryDocumentId,
+      familyId: ordinaryFamilyId,
+      revisionId: 'TEST-REVIEW-RESIDUAL-COMPANION-R1',
+      canonicalRevisionIdentity: '2026-08-27',
+      businessRevision: '1',
+      revisionDate: '2026-08-27',
+      sourceGeneratedDate: '2026-08-27',
+      originalFilename: selected.fileName,
+      sourceArtifactId,
+      acquisitionId: ordinaryAcquisitionId,
+      pdfSha256: actualSha256,
+      byteLength: selected.byteLength,
+      mediaType: 'application/pdf',
+      committedAt: '2026-08-27T00:00:00.000Z',
+      committedBy: 'actor-C7',
+      lifecycleStatus: 'COMMITTED_IMMUTABLE',
+    },
+    currentnessDecision: {
+      currentnessDecisionId: 'currentness-review-residual-companion',
+      familyId: ordinaryFamilyId,
+      previousDocumentVersionId: null,
+      nextDocumentVersionId: ordinaryDocumentVersionId,
+      previousGeneration: 0,
+      nextGeneration: 1,
+      reason: ordinaryDecision.decision,
+      decidedAt: '2026-08-27T00:00:00.000Z',
+      decidedBy: 'actor-C7',
+      preflightId: ordinaryPreflightId,
+    },
+  });
+  const ordinaryBinding = {
+    documentId: ordinaryDocumentId,
+    documentVersionId: ordinaryDocumentVersionId,
+  };
   assert.equal(catalog.versionCount, 1);
   assert.equal(catalog.acquisitionCount, 1);
   assert.equal(catalog.commitCount, 1);
@@ -261,11 +359,6 @@ test('legacy unresolved Review residual recovers only under exact new-request sc
   const legacySourceRef = `ATTACHMENT:RC-C7:${legacyRequestRef}`;
   const legacyIdempotencyKey =
     `review-attachment:RC-C7:${legacyRequestRef}`;
-  const sourceArtifactId = deterministicId(
-    'source_artifact',
-    actualSha256,
-    selected.byteLength,
-  );
   const legacyAcquisitionId = deterministicId(
     'acquisition',
     'tenant-C7',

@@ -181,6 +181,27 @@ export class CanonicalRuleSetLifecycleRepository {
     return row ? toStoredActivation(row) : null;
   }
 
+  async getActivationAtRevision(
+    tenantId: string,
+    activationRevision: number,
+  ): Promise<StoredCanonicalRuleSetActivation | null> {
+    const [row] = await this.db
+      .select(activationSelection())
+      .from(canonicalRuleSetActivation)
+      .where(
+        and(
+          eq(canonicalRuleSetActivation.tenantId, tenantId),
+          eq(
+            canonicalRuleSetActivation.ruleSetKey,
+            CANONICAL_JOB_AID_RULE_SET_KEY,
+          ),
+          eq(canonicalRuleSetActivation.activationRevision, activationRevision),
+        ),
+      )
+      .limit(1);
+    return row ? toStoredActivation(row) : null;
+  }
+
   async appendActivation(input: {
     tenantId: string;
     targetCriterionSetId: string;

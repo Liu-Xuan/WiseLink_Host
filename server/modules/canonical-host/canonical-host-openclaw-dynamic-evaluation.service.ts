@@ -95,10 +95,6 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
       workItem,
       scope,
     );
-    // Resolve and validate current before reservation I/O. A tenant with no
-    // active head must never create or claim an ActionAttempt.
-    const activeRuleSet = await this.ruleSets.readActiveRuntime(actor.tenantId);
-    const ruleSetBinding = dynamicRuleSetBinding(activeRuleSet);
     const claim = await this.attempts.reserveAndClaim({
       workItemId: workItem.workItemId,
       taskType: 'OPENCLAW_DYNAMIC_EVALUATION',
@@ -116,6 +112,13 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
         },
       ],
       buildModelInput: async (identity) => {
+        // reserveAndClaim invokes this callback only for a genuinely new
+        // attempt, before inserting it. Replays therefore never consult the
+        // mutable ACTIVE head, while zero-head creation remains zero-write.
+        const activeRuleSet: ActiveCanonicalRuleSetRuntime =
+          await this.ruleSets.readActiveRuntime(actor.tenantId);
+        const ruleSetBinding: OpenClawDynamicRuleSetBinding =
+          dynamicRuleSetBinding(activeRuleSet);
         const request = await this.buildRequest(
           workItem,
           permissionSnapshotVersion,
@@ -127,6 +130,15 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
       },
     });
     const task = parseDynamicTaskEnvelope(claim.task);
+    const ruleSetBinding: OpenClawDynamicRuleSetBinding =
+      parseDynamicRuleSetBinding(task.modelInput);
+    const boundRuleSet: CanonicalRuleSetRuntime =
+      await this.ruleSets.readRuntimeSnapshotAtActivation(
+        actor.tenantId,
+        ruleSetBinding.snapshotId,
+        ruleSetBinding.activationRevision,
+      );
+    assertRuleSetBindingMatchesRuntime(ruleSetBinding, boundRuleSet);
     return {
       attemptRef: claim.attemptRef,
       status: claim.status,
@@ -161,13 +173,14 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
       row: preflightRow,
       result: resultEnvelope,
     });
-    const ruleSetBinding = parseDynamicRuleSetBinding(
-      preflight.task.modelInput,
-    );
-    const boundRuleSet = await this.ruleSets.readRuntimeSnapshot(
-      scope.tenantId,
-      ruleSetBinding.snapshotId,
-    );
+    const ruleSetBinding: OpenClawDynamicRuleSetBinding =
+      parseDynamicRuleSetBinding(preflight.task.modelInput);
+    const boundRuleSet: CanonicalRuleSetRuntime =
+      await this.ruleSets.readRuntimeSnapshotAtActivation(
+        scope.tenantId,
+        ruleSetBinding.snapshotId,
+        ruleSetBinding.activationRevision,
+      );
     assertRuleSetBindingMatchesRuntime(ruleSetBinding, boundRuleSet);
     assertAttemptBinding(
       scope,

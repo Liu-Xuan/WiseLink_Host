@@ -121,6 +121,11 @@ function authorizedService(
   const repository = {
     reserveAssessmentAction: jest.fn(),
   };
+  const ruleSets = {
+    readActiveRuntime: jest.fn().mockResolvedValue({
+      snapshotId: 'JACS-72D0484B6F1C17A38F671F46',
+    }),
+  };
   const service = new CanonicalHostAssessmentService(
     registrar as never,
     authorization as never,
@@ -129,7 +134,7 @@ function authorizedService(
     {} as never,
     repository as never,
     {} as never,
-    {} as never,
+    ruleSets as never,
   );
   return {
     artifactStore,
@@ -137,6 +142,7 @@ function authorizedService(
     permissionSnapshots,
     registrar,
     repository,
+    ruleSets,
     service,
   };
 }
@@ -320,6 +326,31 @@ describe('CanonicalHostAssessmentService authorization ordering', () => {
     ).resolves.toBe(completed);
     expect(target.authorization.authorize).toHaveBeenCalledTimes(2);
     expect(target.permissionSnapshots.freshRead).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not reserve or fail an attempt when the tenant has no ACTIVE snapshot', async () => {
+    const target = authorizedService(workItem(null));
+    target.ruleSets.readActiveRuntime.mockRejectedValueOnce(
+      Object.assign(new Error('RULE_SET_ACTIVE_SNAPSHOT_REQUIRED'), {
+        code: 'RULE_SET_ACTIVE_SNAPSHOT_REQUIRED',
+        statusCode: 503,
+      }),
+    );
+
+    await expect(
+      target.service.evaluateCandidate(
+        {
+          workItemId: 'WI-SB-1001',
+          assessmentAsOf: '2026-08-15T00:00:00.000Z',
+          generatedAt: '2026-08-15T00:00:00.000Z',
+        },
+        ACTOR,
+      ),
+    ).rejects.toMatchObject({
+      code: 'RULE_SET_ACTIVE_SNAPSHOT_REQUIRED',
+      statusCode: 503,
+    });
+    expect(target.repository.reserveAssessmentAction).not.toHaveBeenCalled();
   });
 
   it('reauthorizes the fresh result returned after a resynthesis attempt collision', async () => {

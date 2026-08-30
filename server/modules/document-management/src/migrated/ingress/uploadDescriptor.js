@@ -13,13 +13,7 @@ import {
 // only extraction changes.
 
 const DEFAULT_DESCRIPTOR = Object.freeze({
-  originalFilename: '787-FTD-34-19008_Doc_04252025.pdf',
   mediaType: 'application/pdf',
-  documentCode: '787-FTD-34-19008',
-  airplaneModel: 'B787',
-  sha256: '601cacf8ecbe005682a7d1c8e4be275991b9e9cfef7ba071b064e434ea0232aa',
-  sizeBytes: 140803,
-  pageCount: 6,
   sourceKind: 'external_real_pdf_upload_descriptor',
   copiedIntoTargetRepository: false,
 });
@@ -273,8 +267,8 @@ function resolveDisplayDocumentFamily({ explicitFamily = '', canonicalDocumentFa
 
 export function resolveUploadDescriptorClassification(descriptor = {}) {
   const metadata = asPlainObject(descriptor.metadata);
-  const originalFilename = normalizeString(descriptor.originalFilename || descriptor.fileName, DEFAULT_DESCRIPTOR.originalFilename);
-  const documentCode = normalizeString(descriptor.documentCode, DEFAULT_DESCRIPTOR.documentCode);
+  const originalFilename = normalizeString(descriptor.originalFilename || descriptor.fileName, '');
+  const documentCode = normalizeString(descriptor.documentCode, '');
   const explicitFamily = normalizeDescriptorDocumentFamily(descriptor.documentFamily || metadata.documentFamily || metadata.document_family);
   const explicitSpecificFamily = explicitFamily && explicitFamily !== 'GENERIC' ? explicitFamily : '';
   const explicitSourceType = normalizeApiSourceType(
@@ -316,6 +310,7 @@ export function resolveUploadDescriptorClassification(descriptor = {}) {
     ? inferredSourceType
     : '';
   const adapter = resolveDocumentFamilyAdapter({
+    adapterId: descriptor.documentFamilyAdapterId,
     filename: originalFilename,
     documentCode,
     documentFamily: explicitSpecificFamily,
@@ -396,11 +391,11 @@ export function normalizeUploadDescriptor(descriptor = {}) {
   if (descriptor.copiedIntoTargetRepository === true) {
     throw Object.assign(new Error('P13 upload descriptor cannot claim Docs/uploads copied into target repository.'), { statusCode: 400, code: 'DOCS_UPLOADS_COPY_FORBIDDEN' });
   }
-  const sha256 = normalizeString(descriptor.sha256 || DEFAULT_DESCRIPTOR.sha256);
+  const sha256 = normalizeString(descriptor.sha256).toLowerCase();
   if (!/^[a-f0-9]{64}$/u.test(sha256)) {
     throw Object.assign(new Error('Upload descriptor requires a sha256 digest.'), { statusCode: 400, code: 'UPLOAD_DESCRIPTOR_SHA_REQUIRED' });
   }
-  const sizeBytes = Number(descriptor.sizeBytes || DEFAULT_DESCRIPTOR.sizeBytes);
+  const sizeBytes = Number(descriptor.sizeBytes || 0);
   if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) {
     throw Object.assign(new Error('Upload descriptor requires positive sizeBytes.'), { statusCode: 400, code: 'UPLOAD_DESCRIPTOR_SIZE_REQUIRED' });
   }
@@ -410,21 +405,23 @@ export function normalizeUploadDescriptor(descriptor = {}) {
     canonicalDocumentFamily: classification.canonicalDocumentFamily,
     sourceType: classification.sourceType,
   });
+  const pageCount = Number(descriptor.pageCount || 0);
   return {
-    originalFilename: normalizeString(descriptor.originalFilename || descriptor.fileName, DEFAULT_DESCRIPTOR.originalFilename),
+    originalFilename: normalizeString(descriptor.originalFilename || descriptor.fileName, ''),
     mediaType: normalizeString(descriptor.mediaType, DEFAULT_DESCRIPTOR.mediaType),
-    documentCode: normalizeString(normalizedBoeingBulletinIdentity.documentCode, DEFAULT_DESCRIPTOR.documentCode),
+    documentCode: normalizeString(normalizedBoeingBulletinIdentity.documentCode, ''),
     documentFamily: classification.displayDocumentFamily,
     canonicalDocumentFamily: classification.canonicalDocumentFamily,
     sourceType: classification.sourceType,
     detectedDocumentCategory: classification.documentCategory,
     parserFormat: classification.parserFormat,
     adapterRelease: classification.adapterRelease,
+    identityAuthority: normalizeString(descriptor.identityAuthority, ''),
     issuer: normalizeString(descriptor.issuer || descriptor.metadata?.issuer, ''),
     airplaneModel: normalizeString(descriptor.airplaneModel, ''),
     sha256,
     sizeBytes,
-    pageCount: Number(descriptor.pageCount || DEFAULT_DESCRIPTOR.pageCount),
+    pageCount: Number.isSafeInteger(pageCount) && pageCount > 0 ? pageCount : 0,
     sourceKind: normalizeString(descriptor.sourceKind, DEFAULT_DESCRIPTOR.sourceKind),
     sourcePath: normalizeString(descriptor.sourcePath || descriptor.localSourcePath || descriptor.controlledSourcePath, ''),
     sourceStorageKey: normalizeString(descriptor.sourceStorageKey, ''),

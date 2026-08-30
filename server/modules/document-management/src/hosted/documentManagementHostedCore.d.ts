@@ -8,7 +8,7 @@ export interface HostedCorePorts {
     findIngestionByIdempotency(input: unknown): Promise<unknown>;
     assertImmutableSourceReuseSafe(input: unknown): Promise<unknown>;
     assertIncompleteIngestionRecoverySafe(input: unknown): Promise<unknown>;
-    listIngressDocuments(): Promise<unknown[]>;
+    listIngressDocuments(input?: unknown): Promise<unknown[]>;
     observeFamily(identityKey: string): Promise<unknown>;
     recordPreflight(input: unknown): Promise<unknown>;
     findExactDocumentVersion(input: unknown): Promise<unknown>;
@@ -16,6 +16,10 @@ export interface HostedCorePorts {
     commitNewVersion(input: unknown): Promise<unknown>;
     readDocumentVersion(documentVersionId: string): Promise<unknown>;
     readFamily(familyId: string): Promise<unknown>;
+  };
+  pdfLayoutExtractor?: {
+    extractLayout(bytes: Buffer): unknown;
+    extractLayoutWithDiagnostics?(bytes: Buffer): unknown;
   };
   authorizer: {
     assertCanIngest(context: unknown): Promise<void>;

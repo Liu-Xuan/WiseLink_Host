@@ -1,28 +1,4 @@
-jest.mock(
-  '../../server/modules/document-management/src/hosted/miaodaFileServiceArtifactStore.js',
-  () => ({ MiaodaFileServiceArtifactStore: jest.fn() }),
-);
-jest.mock(
-  '../../server/modules/document-management/src/hosted/phase5BoeingSbHandoff.js',
-  () => ({
-    createPhase5BoeingSbIngestRequest: jest.fn(),
-    PHASE5_737_34_3830_HANDOFF: {
-      source: { sha256: 'a'.repeat(64), byteLength: 1024 },
-      canonicalHostClassification: {
-        status: 'CANDIDATE',
-        normalizedFamily: 'SB',
-        classifierReleaseId: 'classifier@test',
-        classifierReleaseHash: `sha256:${'b'.repeat(64)}`,
-        parserProfileId: 'parser@test',
-        parserProfileHash: `sha256:${'c'.repeat(64)}`,
-        fingerprint: `sha256:${'d'.repeat(64)}`,
-      },
-    },
-  }),
-);
-
 import { OrdinaryWorkItemService } from '../../server/modules/work-item/ordinary-work-item.service';
-import { MiaodaFileServiceArtifactStore } from '../../server/modules/document-management/src/hosted/miaodaFileServiceArtifactStore.js';
 
 const ACTOR = {
   userId: 'engineer-1001',
@@ -99,7 +75,6 @@ const EXISTING_PARSE_AUTHORIZATION = {
 };
 
 function target() {
-  const fileService = { from: jest.fn() };
   const documentManagement = {
     assertCanIngest: jest.fn().mockResolvedValue(undefined),
     ingestFileServiceSelection: jest.fn(),
@@ -165,6 +140,8 @@ function target() {
     authorizeExistingWorkItem: jest
       .fn()
       .mockResolvedValue(EXISTING_PARSE_AUTHORIZATION),
+    assertS1000dAvailable: jest.fn(),
+    runS1000d: jest.fn().mockResolvedValue(s1000dVerticalResult()),
     runPdf: jest.fn().mockResolvedValue(verticalResult()),
     runPdfWithExistingAuthorization: jest
       .fn()
@@ -176,13 +153,11 @@ function target() {
     resolver,
     repository,
     vertical,
-    fileService,
     service: new OrdinaryWorkItemService(
       documentManagement as never,
       resolver as never,
       repository as never,
       vertical as never,
-      fileService as never,
     ),
   };
 }
@@ -204,20 +179,32 @@ function verticalResult() {
   };
 }
 
-describe('OrdinaryWorkItemService run identity', () => {
-  beforeEach(() => {
-    jest.mocked(MiaodaFileServiceArtifactStore).mockImplementation(
-      () =>
-        ({
-          readSelection: jest.fn().mockResolvedValue({
-            sha256: 'e'.repeat(64),
-            byteLength: 2048,
-            providerObjectId: 'uploaded-object',
-          }),
-        }) as never,
-    );
-  });
+function s1000dVerticalResult() {
+  return {
+    schemaVersion: 'wiselink.3_1.canonical_s1000d_vertical_response.v1',
+    status: 'CANDIDATE_VERTICAL_VERIFIED',
+    sourceKind: 'native_s1000d',
+    summary: {
+      resultStatus: 'complete',
+      contentUnitCount: 13,
+      sourceRefCount: 24,
+      authorizedSourceArtifactCount: 9,
+    },
+    boundary: {
+      canonicalArtifactPersisted: true,
+      professionalArtifactCorrelated: true,
+      workItemCurrentPublished: true,
+      readerProjectionCreated: true,
+      actualSourceBytesExposed: false,
+      internalIdentityExposed: false,
+      applicabilityIsInstallationFact: false,
+      publicationAuthorized: false,
+      currentSelectionChanged: false,
+    },
+  };
+}
 
+describe('OrdinaryWorkItemService run identity', () => {
   it('rejects a forged selection before every DM, FileService, binding, resolver, reserve, attempt, and vertical I/O', async () => {
     const targetValue = target();
 
@@ -282,6 +269,87 @@ describe('OrdinaryWorkItemService run identity', () => {
       restoreProcessEnv('MIAODA_LOCAL_DEV', previousLocal);
     }
     expectNoOrdinaryRunIo(targetValue);
+  });
+
+  it('fails S1000D availability before resolver, reservation, or producer work', async () => {
+    const targetValue = target();
+    targetValue.vertical.assertS1000dAvailable.mockImplementation(() => {
+      throw Object.assign(
+        new Error('S1000D_SOURCE_USE_AUTHORIZATION_UNCONFIGURED'),
+        {
+          code: 'S1000D_SOURCE_USE_AUTHORIZATION_UNCONFIGURED',
+          statusCode: 503,
+        },
+      );
+    });
+    const previousSandbox = process.env.SANDBOX_ID;
+    const previousLocal = process.env.MIAODA_LOCAL_DEV;
+    process.env.SANDBOX_ID = 'unit-hosted-sandbox';
+    delete process.env.MIAODA_LOCAL_DEV;
+    try {
+      await expect(
+        targetValue.service.parseS1000d(
+          { documentVersionId: 'document-version-sb' },
+          { ...ACTOR, env: 'preview' },
+        ),
+      ).rejects.toMatchObject({
+        code: 'S1000D_SOURCE_USE_AUTHORIZATION_UNCONFIGURED',
+        statusCode: 503,
+      });
+    } finally {
+      restoreProcessEnv('SANDBOX_ID', previousSandbox);
+      restoreProcessEnv('MIAODA_LOCAL_DEV', previousLocal);
+    }
+    expect(targetValue.resolver.resolve).not.toHaveBeenCalled();
+    expect(targetValue.repository.reserve).not.toHaveBeenCalled();
+    expect(targetValue.vertical.runS1000d).not.toHaveBeenCalled();
+  });
+
+  it('routes S1000D through the existing ordinary reservation and returns only the redacted receipt', async () => {
+    const targetValue = target();
+    const previousSandbox = process.env.SANDBOX_ID;
+    const previousLocal = process.env.MIAODA_LOCAL_DEV;
+    process.env.SANDBOX_ID = 'unit-hosted-sandbox';
+    delete process.env.MIAODA_LOCAL_DEV;
+    try {
+      const result = await targetValue.service.parseS1000d(
+        {
+          documentVersionId: 'document-version-sb',
+          query: 'synthetic',
+        },
+        { ...ACTOR, env: 'preview' },
+      );
+
+      expect(targetValue.repository.reserve).toHaveBeenCalledWith(
+        expect.objectContaining({
+          documentVersionId: 'document-version-sb',
+          normalizedFamily: 'S1000D',
+          runKey: 'canonical',
+        }),
+      );
+      expect(targetValue.vertical.runS1000d).toHaveBeenCalledWith(
+        expect.objectContaining({
+          workItemId: 'WI-NEW-SB',
+          requestId: 'REQ-NEW-SB',
+          classification: expect.objectContaining({
+            normalizedFamily: 'S1000D',
+          }),
+        }),
+        expect.objectContaining({ userId: ACTOR.userId }),
+      );
+      expect(result).toMatchObject({
+        schemaVersion: 'wiselink.3_1.ordinary_s1000d_work_item_run.v1',
+        workItemCreated: true,
+        workItemReused: false,
+        result: s1000dVerticalResult(),
+      });
+      expect(JSON.stringify(result)).not.toMatch(
+        /"(?:decisionId|unitId|documentVersionId|packageId|sourceRefIds|sourceArtifactId|artifactId|artifactRef|requestId|workItemId|sha256|fileServiceLocator|xpath|elementId)"\s*:/u,
+      );
+    } finally {
+      restoreProcessEnv('SANDBOX_ID', previousSandbox);
+      restoreProcessEnv('MIAODA_LOCAL_DEV', previousLocal);
+    }
   });
 
   it('does not let role presence or absence change the unavailable identity result', async () => {
@@ -1118,7 +1186,6 @@ function expectNoOrdinaryRunIo(targetValue: ReturnType<typeof target>): void {
   expect(
     targetValue.documentManagement.ingestFileServiceSelection,
   ).not.toHaveBeenCalled();
-  expect(targetValue.fileService.from).not.toHaveBeenCalled();
   expect(targetValue.resolver.resolve).not.toHaveBeenCalled();
   expect(
     targetValue.repository.loadAuthorizationBinding,

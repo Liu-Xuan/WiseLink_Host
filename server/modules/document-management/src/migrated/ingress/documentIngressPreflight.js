@@ -14,6 +14,10 @@ const CONTROLLED_CODE_PROVENANCE_SOURCES = new Set([
   'pdf_text_first_three_pages',
   'controlled_metadata',
 ]);
+const CONTROLLED_DATE_PROVENANCE_SOURCES = new Set([
+  'pdf_text_first_three_pages',
+  'controlled_metadata',
+]);
 
 function normalizeString(value, fallback = '') {
   if (value === null || value === undefined) return fallback;
@@ -29,7 +33,9 @@ function asDocumentMap(documents) {
   if (documents instanceof Map) return documents;
   if (Array.isArray(documents)) {
     return new Map(documents.map((document) => [
-      normalizeString(document?.documentId || document?.id),
+      normalizeString(
+        document?.documentVersionId || document?.documentId || document?.id,
+      ),
       document,
     ]));
   }
@@ -73,10 +79,17 @@ export function normalizeDocumentIngressCode(value = '') {
 
 export function documentIngressCodeFromFilename(filename = '') {
   const upperFilename = normalizeString(filename).toUpperCase();
+  const ftd = upperFilename.match(
+    /(?:^|[^A-Z0-9])([A-Z0-9]+-FTD-\d{2}-\d{5})(?=[^A-Z0-9]|$)/u,
+  )?.[1];
+  if (ftd) return normalizeDocumentIngressCode(ftd);
+  const directive = upperFilename.match(
+    /(?:^|[^A-Z0-9])((AD|CAD|EAD)[-_ ]?(\d{4})[-_ ](\d{2})[-_ ](\d{2}))(?=[^A-Z0-9]|$)/u,
+  );
   return normalizeDocumentIngressCode(
-    upperFilename.match(/(?:^|[^A-Z0-9])([A-Z0-9]+-FTD-\d{2}-\d{5})(?=[^A-Z0-9]|$)/u)?.[1]
-      || upperFilename.match(/(?:^|[^A-Z0-9])((?:AD|CAD|EAD)[-_ ]?\d{4}[-_ ]\d{2}[-_ ]\d{2})(?=[^A-Z0-9]|$)/u)?.[1]?.replace(/[ _]+/gu, '-')
-      || '',
+    directive
+      ? `${directive[2]}-${directive[3]}-${directive[4]}-${directive[5]}`
+      : '',
   );
 }
 
@@ -136,8 +149,6 @@ export function documentIngressIdentityFromDescriptor(
   let resolvedProvenanceSource = '';
   if (storedDocument && explicitCode && provenanceSource === 'stored_document') {
     resolvedProvenanceSource = 'stored_document';
-  } else if (explicitCode && filenameCode === explicitCode) {
-    resolvedProvenanceSource = 'filename_pattern';
   } else if (
     explicitCode
     && provenance.schemaVersion === 'wiselink.document_code_provenance.v1'
@@ -148,6 +159,8 @@ export function documentIngressIdentityFromDescriptor(
     && provenance.conflict !== true
   ) {
     resolvedProvenanceSource = provenanceSource;
+  } else if (explicitCode && filenameCode === explicitCode) {
+    resolvedProvenanceSource = 'filename_pattern';
   } else if (explicitCode) {
     identityIssues.push('DOCUMENT_CODE_PROVENANCE_UNVERIFIED');
   } else if (!rawExplicitCode && filenameCode) {
@@ -185,11 +198,34 @@ export function documentIngressIdentityFromDescriptor(
   const sourceGeneratedDateExplicitInvalid = Boolean(
     rawExplicitSourceGeneratedDate && !explicitSourceGeneratedDate,
   );
+  const sourceGeneratedDateProvenance = asPlainObject(
+    descriptor.sourceGeneratedDateProvenance,
+  );
+  const sourceGeneratedDateProvenanceSource = normalizeString(
+    sourceGeneratedDateProvenance.source,
+  ).toLowerCase();
+  const sourceGeneratedDateProvenanceValue =
+    normalizeDocumentIngressRevisionDate(sourceGeneratedDateProvenance.value);
+  const sourceGeneratedDateProvenanceSha256 = normalizeString(
+    sourceGeneratedDateProvenance.inspectedSha256,
+  ).toLowerCase();
+  const sourceGeneratedDateProvenanceVerified = Boolean(
+    explicitSourceGeneratedDate
+      && sourceGeneratedDateProvenance.schemaVersion
+        === 'wiselink.source_generated_date_provenance.v1'
+      && CONTROLLED_DATE_PROVENANCE_SOURCES.has(
+        sourceGeneratedDateProvenanceSource,
+      )
+      && sourceGeneratedDateProvenanceValue === explicitSourceGeneratedDate
+      && sourceGeneratedDateProvenanceSha256
+        === normalizeString(descriptor.sha256).toLowerCase()
+      && sourceGeneratedDateProvenance.conflict !== true,
+  );
   const sourceGeneratedDate = explicitSourceGeneratedDate || filenameSourceGeneratedDate;
   const sourceGeneratedDateControlled = Boolean(sourceGeneratedDate)
     && !sourceGeneratedDateConflict
     && !sourceGeneratedDateExplicitInvalid
-    && Boolean(filenameSourceGeneratedDate);
+    && Boolean(filenameSourceGeneratedDate || sourceGeneratedDateProvenanceVerified);
   const filenameRevision =
     upperFilename.match(/(?:^|[_\s-])R(?:EV)?[_\s-]?(\d{1,4})(?:[^A-Z0-9]|$)/u)?.[1] || '';
   const businessRevision = normalizeString(
@@ -204,6 +240,15 @@ export function documentIngressIdentityFromDescriptor(
   const canonicalDocumentFamily = normalizeDescriptorDocumentFamily(
     normalizedDescriptor.canonicalDocumentFamily || normalizedDescriptor.documentFamily,
   ) || 'GENERIC';
+  const issuerAuthority = normalizeString(
+    normalizedDescriptor.issuer
+      || descriptor.issuer
+      || descriptor.metadata?.issuer,
+  ).toUpperCase();
+  const revisionFamilyKey = documentCode && issuerAuthority
+    ? `${issuerAuthority}|${canonicalDocumentFamily}|${documentCode}`
+    : '';
+  if (!issuerAuthority) identityIssues.push('ISSUER_AUTHORITY_UNRESOLVED');
   const comparableVersion = revisionDate
     ? `DATE:${revisionDate}`
     : /^R\d{1,4}$/u.test(businessRevision)
@@ -219,7 +264,8 @@ export function documentIngressIdentityFromDescriptor(
   return {
     schemaVersion: 'wiselink.0_10.document_ingress_identity.v1',
     documentCode,
-    revisionFamilyKey: documentCode,
+    issuerAuthority,
+    revisionFamilyKey,
     documentTypeFamily: canonicalDocumentFamily,
     businessRevision,
     revisionDate,
@@ -230,16 +276,22 @@ export function documentIngressIdentityFromDescriptor(
         ? 'conflict'
         : sourceGeneratedDateExplicitInvalid
           ? 'invalid_explicit_value'
-          : explicitSourceGeneratedDate && filenameSourceGeneratedDate
-            ? 'descriptor_and_filename'
-            : filenameSourceGeneratedDate
-              ? 'filename_pattern'
-              : explicitSourceGeneratedDate
-                ? 'descriptor_only'
-                : 'unresolved',
+          : sourceGeneratedDateProvenanceVerified
+            ? sourceGeneratedDateProvenanceSource
+            : explicitSourceGeneratedDate && filenameSourceGeneratedDate
+              ? 'descriptor_and_filename'
+              : filenameSourceGeneratedDate
+                ? 'filename_pattern'
+                : explicitSourceGeneratedDate
+                  ? 'descriptor_only'
+                  : 'unresolved',
       controlled: sourceGeneratedDateControlled,
       explicitValue: explicitSourceGeneratedDate,
       filenameValue: filenameSourceGeneratedDate,
+      inspectedValue: sourceGeneratedDateProvenanceValue,
+      inspectedContentIdentityMatches:
+        sourceGeneratedDateProvenanceSha256
+          === normalizeString(descriptor.sha256).toLowerCase(),
       conflict: sourceGeneratedDateConflict,
       explicitValueInvalid: sourceGeneratedDateExplicitInvalid,
     },
@@ -258,6 +310,7 @@ export function documentIngressIdentityFromDescriptor(
     identityConflicts: [...new Set(identityConflicts)],
     identityConflict: identityConflicts.length > 0,
     identityResolved: Boolean(documentCode)
+      && Boolean(issuerAuthority)
       && Boolean(resolvedProvenanceSource)
       && identityConflicts.length === 0,
     versionOrderResolved: Boolean(comparableVersion),
@@ -271,6 +324,10 @@ export function documentIngressIdentityFromDocument(document = {}) {
     originalFilename: document.detail?.originalFilename,
     documentFamily:
       document.detail?.canonicalDocumentFamily || document.detail?.documentFamily,
+    issuer:
+      document.detail?.issuerAuthority
+        || document.upload?.descriptorSummary?.issuerAuthority
+        || document.upload?.descriptorSummary?.issuer,
     businessRevision:
       document.detail?.businessRevision || document.upload?.descriptorSummary?.businessRevision,
     revisionDate:

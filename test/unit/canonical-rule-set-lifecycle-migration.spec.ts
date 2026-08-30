@@ -6,6 +6,9 @@ describe('0013 canonical RuleSet lifecycle migration', () => {
     resolve(process.cwd(), 'migrations/0013_canonical_rule_set_lifecycle.sql'),
     'utf8',
   );
+  const packageJson = JSON.parse(
+    readFileSync(resolve(process.cwd(), 'package.json'), 'utf8'),
+  ) as { scripts?: Record<string, string> };
 
   it('uses immutable snapshots and one append-only activation ledger', () => {
     expect(sql).toContain(
@@ -34,5 +37,14 @@ describe('0013 canonical RuleSet lifecycle migration', () => {
     expect(sql).not.toMatch(
       /TO authenticated[\s\S]{0,100}FOR (INSERT|UPDATE|ALL)/u,
     );
+  });
+
+  it('declares the exact legacy bootstrap as a mandatory pre-traffic step', () => {
+    expect(packageJson.scripts?.['bootstrap:canonical:rule-set-v0-2']).toBe(
+      'node scripts/bootstrap-canonical-rule-set-v0-2.mjs',
+    );
+    expect(sql).toContain('REQUIRED PRE-TRAFFIC STEP');
+    expect(sql).toContain('npm run bootstrap:canonical:rule-set-v0-2');
+    expect(sql).toContain('exact legacy v0.2 snapshot');
   });
 });
