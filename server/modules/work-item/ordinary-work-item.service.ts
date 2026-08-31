@@ -113,7 +113,7 @@ export class OrdinaryWorkItemService {
     const actor = oauthSessionDevelopmentActor(sessionActor, gatewayActor);
     const bucketId = await this.fileService.getDefaultBucket();
     const listed = await this.fileService.from(bucketId).list('', {
-      maxKeys: 500,
+      maxKeys: 200,
     });
     const search = String(input.search ?? '').trim().toLocaleLowerCase();
     const offset = boundedListOffset(input.offset);

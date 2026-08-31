@@ -281,7 +281,7 @@ describe('OrdinaryWorkItemService run identity', () => {
       'bucket-default',
     );
     expect(targetValue.fileServiceBucket.list).toHaveBeenCalledWith('', {
-      maxKeys: 500,
+      maxKeys: 200,
     });
   });
 
