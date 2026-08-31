@@ -13,6 +13,9 @@ import type {
 } from './canonical-host-applicability-input.producer';
 import type { CanonicalWorkItemRegistrarPort } from './canonical-host.types';
 
+const HOST_TARGET_AIRCRAFT_ENV = 'WL_OPENCLAW_APPLICABILITY_TARGET_AIRCRAFT_ID';
+const HOST_TARGET_AS_OF_ENV = 'WL_OPENCLAW_APPLICABILITY_TARGET_AS_OF';
+
 /** Production DB-backed owner for CANONICAL_APPLICABILITY_CONTROLLED_SELECTION. */
 @Injectable()
 export class MiaodaApplicabilityControlledSelectionAdapter implements CanonicalApplicabilityControlledSelectionPort {
@@ -49,8 +52,10 @@ export class MiaodaApplicabilityControlledSelectionAdapter implements CanonicalA
       );
     }
     assertFrozenApplicabilitySourceReady(workItem);
-    const selection: CanonicalApplicabilityControlledSelectionProjection =
-      requiredSelection(workItem);
+    const selection = optionalSelection(workItem);
+    if (!selection) {
+      return this.readConfiguredHostTarget(input, workItem);
+    }
     const fleetMasterData: FleetMasterDataSource =
       await this.fleetRepository.readCurrentForAircraft({
         tenantId: input.tenantId,
@@ -70,6 +75,77 @@ export class MiaodaApplicabilityControlledSelectionAdapter implements CanonicalA
       documentVersionId: selection.documentVersionId,
       aircraftNumber: selection.aircraftIdentifier,
       assessmentAsOf: selection.asOf,
+      fleetMasterData,
+    };
+  }
+
+  private async readConfiguredHostTarget(
+    input: {
+      tenantId: string;
+      workItemId: string;
+      documentVersionId: string;
+      applicabilityContextRef: string;
+    },
+    workItem: CanonicalWorkItemProjection,
+  ): Promise<CanonicalApplicabilityControlledSelection> {
+    const aircraftNumber = normalizeAircraftIdentifier(
+      process.env[HOST_TARGET_AIRCRAFT_ENV],
+    );
+    const assessmentAsOf = process.env[HOST_TARGET_AS_OF_ENV]?.trim() ?? '';
+    if (!aircraftNumber || !isIsoDate(assessmentAsOf)) {
+      throw controlledSelectionUnavailable(
+        'APPLICABILITY_HOST_TARGET_NOT_CONFIGURED',
+        409,
+      );
+    }
+    const fleetMasterData = await this.fleetRepository.readCurrentForAircraft({
+      tenantId: input.tenantId,
+      aircraftIdentifier: aircraftNumber,
+      asOf: assessmentAsOf,
+    });
+    const matches = fleetMasterData.assets.filter(
+      (asset) =>
+        normalizeAircraftIdentifier(asset.aircraftNumber) === aircraftNumber ||
+        (asset.aliases ?? []).some(
+          (alias) =>
+            normalizeAircraftIdentifier(alias.aliasValue) === aircraftNumber,
+        ),
+    );
+    if (matches.length !== 1) {
+      throw controlledSelectionUnavailable(
+        matches.length === 0
+          ? 'APPLICABILITY_HOST_TARGET_NOT_FOUND'
+          : 'APPLICABILITY_HOST_TARGET_AMBIGUOUS',
+        matches.length === 0 ? 409 : 503,
+      );
+    }
+    if (
+      !fleetMasterData.sourceSnapshotId?.trim() ||
+      !fleetMasterData.sourceRevisionKey?.trim() ||
+      !fleetMasterData.authorityRevision?.trim() ||
+      !isIsoDate(fleetMasterData.sourceAsOf ?? '') ||
+      fleetMasterData.sourceAsOf! > assessmentAsOf
+    ) {
+      throw controlledSelectionUnavailable(
+        'APPLICABILITY_HOST_TARGET_FLEET_CURRENTNESS_INVALID',
+        409,
+      );
+    }
+    return {
+      schemaVersion: 'wiselink.3_1.controlled_applicability_selection.v1',
+      selectionRevision: [
+        'host-target',
+        workItem.workItemId,
+        workItem.source.documentVersionId,
+        aircraftNumber,
+        assessmentAsOf,
+        fleetMasterData.sourceRevisionKey,
+        fleetMasterData.authorityRevision,
+      ].join(':'),
+      currentness: 'CURRENT',
+      documentVersionId: workItem.source.documentVersionId,
+      aircraftNumber,
+      assessmentAsOf,
       fleetMasterData,
     };
   }
@@ -108,12 +184,12 @@ export function selectionMatchesFleet(
   );
 }
 
-function requiredSelection(
+function optionalSelection(
   workItem: CanonicalWorkItemProjection,
-): CanonicalApplicabilityControlledSelectionProjection {
+): CanonicalApplicabilityControlledSelectionProjection | null {
   const selection = workItem.applicabilityControlledSelection;
+  if (!selection) return null;
   if (
-    !selection ||
     selection.schemaVersion !==
       'wiselink.3_1.controlled_applicability_selection.v1' ||
     selection.currentness !== 'CURRENT' ||
@@ -132,6 +208,10 @@ function requiredSelection(
     );
   }
   return selection;
+}
+
+function normalizeAircraftIdentifier(value: string | undefined): string {
+  return value?.trim().toUpperCase() ?? '';
 }
 
 function isIsoDate(value: string): boolean {
