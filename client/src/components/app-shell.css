@@ -9,12 +9,24 @@
   color: var(--wl-ink);
 }
 
-/* 工作台由 AppShell 单独拥有视口高度；页面只填满剩余轨道。 */
+/* 工作台的 Header 与可用高度只有 AppShell 一个 owner。
+ * Header block 同时包含玻璃顶栏与它下方的呼吸空间；页面不得再补 offset。 */
 .wiselink-app-shell.is-workbench-route {
+  --wl-app-safe-block-start: env(safe-area-inset-top, 0px);
+  --wl-app-header-block-size: 72px;
+  --wl-workspace-block-size: calc(
+    100dvh - var(--wl-app-safe-block-start) -
+      var(--wl-app-header-block-size)
+  );
+
   display: grid;
+  box-sizing: border-box;
   height: 100dvh;
   min-height: 0;
-  grid-template-rows: auto minmax(0, 1fr);
+  padding-block-start: var(--wl-app-safe-block-start);
+  grid-template-rows:
+    var(--wl-app-header-block-size)
+    minmax(0, var(--wl-workspace-block-size));
   overflow: hidden;
 }
 
@@ -266,16 +278,18 @@ button.wiselink-account-state {
 }
 
 .wiselink-app-shell.is-workbench-route .wiselink-app-body {
-  height: auto;
+  height: var(--wl-workspace-block-size);
   min-height: 0;
   overflow: hidden;
   padding-bottom: 0;
 }
 
 .wiselink-app-shell.is-workbench-route .wiselink-app-header {
-  top: 8px;
+  position: relative;
+  top: auto;
+  align-self: center;
   min-height: 56px;
-  margin-top: 10px;
+  margin-block: 0;
 }
 
 /* Reader 中全局头栏改为稳定 G3；G1 采样预算留给 Dock 与工作台 Tabs。 */
@@ -289,6 +303,24 @@ button.wiselink-account-state {
 
 .wiselink-app-shell.is-workbench-route .wiselink-breadcrumb {
   display: none;
+}
+
+/* 沉浸模式只移除全局外壳；工作台内部工具栏仍在 workspace 轨道内。 */
+body[data-wl-immersive='true']
+  .wiselink-app-shell.is-workbench-route {
+  --wl-app-header-block-size: 0px;
+}
+
+body[data-wl-immersive='true'] .wiselink-app-header,
+body[data-wl-immersive='true'] .wiselink-breadcrumb,
+body[data-wl-immersive='true'] .wl-dock {
+  display: none;
+}
+
+body[data-wl-immersive='true']
+  .wiselink-app-shell.is-workbench-route
+  .wiselink-app-body {
+  padding: 0;
 }
 
 .wiselink-breadcrumb {
@@ -409,6 +441,10 @@ select:focus-visible {
 }
 
 @media (max-width: 720px) {
+  .wiselink-app-shell.is-workbench-route {
+    --wl-app-header-block-size: 0px;
+  }
+
   .wiselink-account-menu-trigger {
     width: var(--wl-touch-target);
     height: var(--wl-touch-target);
@@ -464,7 +500,7 @@ select:focus-visible {
   }
 
   .wiselink-app-shell.is-workbench-route .wiselink-app-body {
-    height: auto;
+    height: var(--wl-workspace-block-size);
     min-height: 0;
     padding: 0 10px;
   }

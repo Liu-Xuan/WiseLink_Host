@@ -8,6 +8,47 @@ async function source(path: string): Promise<string> {
 }
 
 describe('workbench scroll ownership', () => {
+  it('gives AppShell sole ownership of the header offset and workspace height', async () => {
+    const [appShellStyles, pageStyles, workbenchStyles] = await Promise.all([
+      source('client/src/components/app-shell.css'),
+      source('client/src/pages/DocumentParsingPage/document-parsing.css'),
+      source('client/src/features/workbench/workbench-shell.css'),
+    ]);
+
+    expect(appShellStyles).toContain(
+      '--wl-app-safe-block-start: env(safe-area-inset-top, 0px)',
+    );
+    expect(appShellStyles).toContain('--wl-app-header-block-size: 72px');
+    expect(appShellStyles).toMatch(
+      /--wl-workspace-block-size:\s*calc\([\s\S]*?100dvh[\s\S]*?var\(--wl-app-safe-block-start\)[\s\S]*?var\(--wl-app-header-block-size\)[\s\S]*?\);/,
+    );
+    expect(appShellStyles).toMatch(
+      /\.wiselink-app-shell\.is-workbench-route\s*\{[\s\S]*?padding-block-start: var\(--wl-app-safe-block-start\);/,
+    );
+    expect(appShellStyles).toMatch(
+      /grid-template-rows:\s*var\(--wl-app-header-block-size\)\s*minmax\(0, var\(--wl-workspace-block-size\)\);/,
+    );
+    expect(appShellStyles).toMatch(
+      /\.wiselink-app-shell\.is-workbench-route \.wiselink-app-header\s*\{[\s\S]*?position: relative;[\s\S]*?top: auto;[\s\S]*?margin-block: 0;/,
+    );
+    expect(appShellStyles).toMatch(
+      /body\[data-wl-immersive='true'\][\s\S]*?\.wiselink-app-shell\.is-workbench-route\s*\{\s*--wl-app-header-block-size: 0px;/,
+    );
+    expect(appShellStyles).toMatch(
+      /@media \(max-width: 720px\)[\s\S]*?\.wiselink-app-shell\.is-workbench-route\s*\{\s*--wl-app-header-block-size: 0px;/,
+    );
+    expect(pageStyles).toMatch(
+      /\.parse-shell\.parse-shell--workbench\s*\{[\s\S]*?height: 100%;[\s\S]*?min-height: 0;[\s\S]*?padding: 0;/,
+    );
+    expect(pageStyles).not.toContain('grid-template-rows: minmax(0, 1fr)');
+    expect(pageStyles).not.toMatch(
+      /body\[data-wl-immersive='true'\][\s\S]*?\.wiselink-app-body/,
+    );
+    expect(workbenchStyles).toMatch(
+      /\.wl-workbench-toolbar\s*\{[\s\S]*?flex: 0 0 auto;/,
+    );
+  });
+
   it('separates flow pages from fixed desktop workspaces', async () => {
     const [shell, shellStyles, page, pageStyles] = await Promise.all([
       source('client/src/features/workbench/WorkbenchShell.tsx'),
