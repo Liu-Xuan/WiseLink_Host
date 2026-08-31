@@ -7,9 +7,12 @@ jest.mock('@nestjs/common', () => {
     ...actual,
     Body: noOp,
     Controller: noOp,
+    Get: noOp,
     Param: noOp,
     Post: noOp,
+    Query: noOp,
     Req: noOp,
+    UseGuards: noOp,
   };
 });
 
@@ -33,6 +36,38 @@ describe('OauthSessionDevelopmentWorkItemController explicit reparse', () => {
     jest
       .mocked(miaodaHostedFinalUserActor)
       .mockReturnValue(GATEWAY_ACTOR as never);
+  });
+
+  it('lists existing PDFs through the authenticated Host-owned selection route', async () => {
+    const sessions = {
+      resolve: jest.fn().mockResolvedValue({ actor: SESSION_ACTOR }),
+    };
+    const page = {
+      schemaVersion: 'wiselink.3_1.oauth_session_existing_pdf_page.v1',
+      items: [],
+      hasNextPage: false,
+      sourceTruncated: false,
+    };
+    const workItems = {
+      listOauthSessionDevelopmentPdfs: jest.fn().mockResolvedValue(page),
+    };
+    const controller = new OauthSessionDevelopmentWorkItemController(
+      sessions as never,
+      workItems as never,
+    );
+    const request = {
+      userContext: { userId: 'same-user' },
+    } as never as Request;
+
+    await expect(
+      controller.listExistingPdfs('777', '24', request),
+    ).resolves.toEqual(page);
+
+    expect(workItems.listOauthSessionDevelopmentPdfs).toHaveBeenCalledWith(
+      { search: '777', offset: '24' },
+      SESSION_ACTOR,
+      GATEWAY_ACTOR,
+    );
   });
 
   it('extends the existing retry route and passes only server-derived actors with the same WorkItem id', async () => {

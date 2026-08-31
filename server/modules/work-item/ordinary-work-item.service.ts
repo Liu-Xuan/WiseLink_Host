@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import { Injectable } from '@nestjs/common';
+import { FileService } from '@lark-apaas/fullstack-nestjs-core';
 
 import type {
   CanonicalClassificationSelection,
@@ -94,7 +95,57 @@ export class OrdinaryWorkItemService {
     private readonly resolver: MiaodaDocumentVersionSourceResolver,
     private readonly repository: MiaodaWorkItemRepository,
     private readonly vertical: CanonicalHostVerticalService,
+    private readonly fileService?: FileService,
   ) {}
+
+  async listOauthSessionDevelopmentPdfs(
+    input: { search?: unknown; offset?: unknown },
+    sessionActor: CanonicalMiaodaFinalUserActorContext,
+    gatewayActor: CanonicalMiaodaFinalUserActorContext,
+  ) {
+    assertOauthSessionDevelopmentActors(sessionActor, gatewayActor);
+    if (!this.fileService) {
+      throw Object.assign(new Error('Canonical FileService is unavailable.'), {
+        code: 'CANONICAL_FILE_SERVICE_UNAVAILABLE',
+        statusCode: 503,
+      });
+    }
+    const actor = oauthSessionDevelopmentActor(sessionActor, gatewayActor);
+    const bucketId = await this.fileService.getDefaultBucket();
+    const listed = await this.fileService.from(bucketId).list('', {
+      maxKeys: 500,
+      sortBy: { column: 'updated_at', order: 'desc' },
+    });
+    const search = String(input.search ?? '').trim().toLocaleLowerCase();
+    const offset = boundedListOffset(input.offset);
+    const ownedPdfs = listed.attachments.flatMap((metadata) => {
+      const filePath = normalizedExistingPdfPath(metadata.filePath);
+      const displayName = String(metadata.name ?? '').trim();
+      if (
+        !filePath ||
+        !displayName.toLocaleLowerCase().endsWith('.pdf') ||
+        !sameExactUserId(metadata.createdBy?.userID, actor.userId) ||
+        (search && !displayName.toLocaleLowerCase().includes(search))
+      ) {
+        return [];
+      }
+      return [
+        {
+          selection: { bucketId, filePath },
+          displayName,
+          updatedAt: String(metadata.updatedAt ?? ''),
+        },
+      ];
+    });
+    const pageSize = 24;
+    return {
+      schemaVersion:
+        'wiselink.3_1.oauth_session_existing_pdf_page.v1' as const,
+      items: ownedPdfs.slice(offset, offset + pageSize),
+      hasNextPage: ownedPdfs.length > offset + pageSize,
+      sourceTruncated: listed.hasMore,
+    };
+  }
 
   async parsePdf(
     input: OrdinaryPdfParseInput,
@@ -762,4 +813,40 @@ function requiredDevelopmentRunToken(value: unknown): string {
     });
   }
   return normalized;
+}
+
+function boundedListOffset(value: unknown): number {
+  const parsed = Number(value ?? 0);
+  if (!Number.isSafeInteger(parsed) || parsed < 0 || parsed > 10_000) {
+    throw Object.assign(new Error('offset is invalid.'), {
+      code: 'WORK_ITEM_INPUT_INVALID',
+      statusCode: 400,
+    });
+  }
+  return parsed;
+}
+
+function normalizedExistingPdfPath(value: unknown): string | null {
+  const normalized = String(value ?? '').trim().replace(/^\/+/, '');
+  const segments = normalized.split('/');
+  if (
+    !normalized ||
+    normalized.length > 1024 ||
+    normalized.includes('\\') ||
+    normalized.includes('\0') ||
+    !normalized.toLocaleLowerCase().endsWith('.pdf') ||
+    segments.some((segment) => !segment || segment === '.' || segment === '..')
+  ) {
+    return null;
+  }
+  return normalized;
+}
+
+function sameExactUserId(value: unknown, actorUserId: string): boolean {
+  if (typeof value === 'string') return value === actorUserId;
+  return (
+    typeof value === 'number' &&
+    Number.isSafeInteger(value) &&
+    String(value) === actorUserId
+  );
 }

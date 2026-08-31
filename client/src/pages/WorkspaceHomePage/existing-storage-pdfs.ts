@@ -1,12 +1,10 @@
-import { getDataloom } from '@lark-apaas/client-toolkit/dataloom';
-import { getDefaultBucketId } from '@lark-apaas/client-toolkit/tools/storage';
+import { listDevelopmentExistingPdfs } from '@client/src/api/canonical-host';
 
 import {
   EXISTING_PDF_PAGE_SIZE,
   ExistingStoragePdfListError,
   type ExistingStoragePdfPage,
-  type ListedStorageObject,
-  normalizeExistingStoragePdfPage,
+  formatStorageUpdatedAt,
   toExistingStoragePdfListError,
 } from './existing-storage-pdf-model';
 
@@ -22,31 +20,20 @@ export async function listExistingStoragePdfs(input: {
   offset: number;
   signal: AbortSignal;
 }): Promise<ExistingStoragePdfPage> {
-  const bucketId = String(getDefaultBucketId() ?? '').trim();
-  if (!bucketId) {
-    throw new ExistingStoragePdfListError('BUCKET_UNAVAILABLE');
-  }
-
   try {
-    const dataloom = await getDataloom();
-    const bucket = dataloom.storage.from(bucketId);
-    const search = input.search.trim();
-    const result = await bucket.list(
-      undefined,
-      {
-        limit: EXISTING_PDF_PAGE_SIZE,
-        offset: Math.max(0, input.offset),
-        sortBy: { column: 'updated_at', order: 'desc' },
-        ...(search ? { search } : {}),
-      },
-      { signal: input.signal },
-    );
-    if (result.error || !result.data) {
-      throw toExistingStoragePdfListError(result.error);
-    }
-
-    const listed: ListedStorageObject[] = result.data;
-    return normalizeExistingStoragePdfPage(listed);
+    const page = await listDevelopmentExistingPdfs({
+      search: input.search.trim(),
+      offset: Math.max(0, input.offset),
+      signal: input.signal,
+    });
+    return {
+      items: page.items.map((item) => ({
+        selection: item.selection,
+        displayName: item.displayName,
+        updatedLabel: formatStorageUpdatedAt(item.updatedAt),
+      })),
+      hasNextPage: page.hasNextPage,
+    };
   } catch (reason) {
     if (isAbortError(reason) || reason instanceof ExistingStoragePdfListError) {
       throw reason;

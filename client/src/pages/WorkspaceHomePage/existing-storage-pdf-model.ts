@@ -1,11 +1,5 @@
 export const EXISTING_PDF_PAGE_SIZE = 24;
 
-export interface ListedStorageObject {
-  name: string;
-  bucket_id: string;
-  updated_at: string;
-}
-
 export interface ExistingStoragePdfOption {
   selection: {
     bucketId: string;
@@ -37,32 +31,6 @@ export class ExistingStoragePdfListError extends Error {
   }
 }
 
-export function normalizeExistingStoragePdfPage(
-  listed: ListedStorageObject[],
-): ExistingStoragePdfPage {
-  return {
-    items: listed.flatMap((file: ListedStorageObject) => {
-      const filePath = file.name.trim();
-      const resultBucketId = file.bucket_id.trim();
-      if (
-        !filePath ||
-        !resultBucketId ||
-        !displayPdfName(filePath).toLowerCase().endsWith('.pdf')
-      ) {
-        return [];
-      }
-      return [
-        {
-          selection: { bucketId: resultBucketId, filePath },
-          displayName: displayPdfName(filePath),
-          updatedLabel: formatStorageUpdatedAt(file.updated_at),
-        },
-      ];
-    }),
-    hasNextPage: listed.length === EXISTING_PDF_PAGE_SIZE,
-  };
-}
-
 export function displayPdfName(filePath: string): string {
   const segments = filePath.split(/[\\/]/u).filter(Boolean);
   return segments.at(-1)?.trim() || '未命名 PDF';
@@ -88,7 +56,7 @@ export function toExistingStoragePdfListError(
   return new ExistingStoragePdfListError('LIST_FAILED');
 }
 
-function formatStorageUpdatedAt(value: string): string {
+export function formatStorageUpdatedAt(value: string): string {
   const timestamp = Date.parse(value);
   if (!Number.isFinite(timestamp)) return '更新时间未知';
   return `更新于 ${new Intl.DateTimeFormat('zh-CN', {
