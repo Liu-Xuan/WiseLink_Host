@@ -254,6 +254,7 @@ test(
           };
         },
       },
+      {},
     );
     const begun = await dynamic.begin(workItemId);
 

@@ -213,6 +213,7 @@ describe('host-native PDF profile registry', () => {
         adapterId: 'issuer.airbus.retrofit_information_letter.v1',
       }),
     ).toMatchObject({
+      status: 'CONFIRMED',
       normalizedFamily: 'SB',
       parserProfileId:
         'parser-profile:airbus.retrofit_information_letter@1.0.0',

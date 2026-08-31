@@ -26,7 +26,14 @@ import type {
 import { UNIFIED_ARTIFACT_STORE } from '../unified-reader/unified-reader.constants';
 import type { UnifiedArtifactStorePort } from '../unified-reader/unified-reader.types';
 import type { DynamicEvaluationActionAttempt } from '../work-item/miaoda-work-item.repository';
+import { MiaodaDocumentVersionSourceResolver } from '../work-item/miaoda-document-version-source.resolver';
 import { CANONICAL_WORK_ITEM_REGISTRAR } from './canonical-host.constants';
+import { canonicalHostBareSha256 } from './canonical-host-sha256';
+import {
+  hostNativePdfAdapterIdFromDmPreflight,
+  hostNativePdfClassificationFor,
+  matchesHostNativePdfClassification,
+} from './host-native-pdf-profile.registry';
 import { preflightCanonicalHostOpenClawResult } from './canonical-host-openclaw-runtime-policy';
 import { CanonicalHostAssessmentService } from './canonical-host-assessment.service';
 import { CanonicalHostEngineerReviewService } from './canonical-host-engineer-review.service';
@@ -81,6 +88,7 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
     private readonly ruleSets: CanonicalRuleSetLifecycleService,
     @Inject(CANONICAL_SERVICE_SCOPE_AUTHORIZATION)
     private readonly serviceScope: CanonicalServiceScopeAuthorizationPort,
+    private readonly documentVersions: MiaodaDocumentVersionSourceResolver,
   ) {}
 
   async begin(workItemId: string): Promise<BeginDynamicEvaluationResult> {
@@ -407,13 +415,92 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
     if (workItem.phase !== 'CANDIDATE_READBACK_VERIFIED' || !workItem.package) {
       throw new Error('DYNAMIC_EVALUATION_PARSED_PACKAGE_NOT_READY');
     }
+    if (workItem.classification.normalizedFamily !== 'SB') {
+      throw new Error('DYNAMIC_EVALUATION_REQUIRES_CONFIRMED_SB');
+    }
+    if (workItem.classification.status === 'CONFIRMED') return workItem;
+    return this.reconcileDmConfirmedSb(workItem, tenantId);
+  }
+
+  private async reconcileDmConfirmedSb(
+    workItem: CanonicalWorkItemProjection,
+    tenantId: string,
+  ): Promise<CanonicalWorkItemProjection> {
+    if (workItem.classification.status !== 'CANDIDATE') {
+      throw new Error('DYNAMIC_EVALUATION_REQUIRES_CONFIRMED_SB');
+    }
+    const resolved = await this.documentVersions.resolve(
+      workItem.source.documentVersionId,
+      { requireCurrent: true },
+    );
+    const sourceDigest = canonicalHostBareSha256(
+      workItem.source.sourceFileSha256,
+    );
+    const resolvedDigest = canonicalHostBareSha256(resolved.artifact.sha256);
     if (
-      workItem.classification.status !== 'CONFIRMED' ||
-      workItem.classification.normalizedFamily !== 'SB'
+      resolved.version.documentId !== workItem.source.documentId ||
+      resolved.version.documentVersionId !==
+        workItem.source.documentVersionId ||
+      resolved.version.sourceArtifactId !== workItem.source.sourceArtifactId ||
+      resolved.artifact.sourceArtifactId !== workItem.source.sourceArtifactId ||
+      sourceDigest === null ||
+      sourceDigest !== resolvedDigest ||
+      Number(resolved.artifact.byteLength) !==
+        workItem.source.sourceByteLength ||
+      resolved.family.documentFamily !== 'SB'
+    ) {
+      throw new Error('DYNAMIC_EVALUATION_SB_SOURCE_BINDING_INVALID');
+    }
+    const confirmed = hostNativePdfClassificationFor({
+      family: resolved.family.documentFamily,
+      issuerAuthority: resolved.family.issuerAuthority,
+      adapterId: hostNativePdfAdapterIdFromDmPreflight(resolved.preflight),
+    });
+    if (
+      !confirmed ||
+      confirmed.status !== 'CONFIRMED' ||
+      confirmed.normalizedFamily !== 'SB' ||
+      !matchesHostNativePdfClassification(
+        {
+          family: confirmed.normalizedFamily,
+          parserProfileId: confirmed.parserProfileId,
+          parserProfileHash: confirmed.parserProfileHash,
+        },
+        workItem.classification,
+      )
     ) {
       throw new Error('DYNAMIC_EVALUATION_REQUIRES_CONFIRMED_SB');
     }
-    return workItem;
+    const updated = await this.registrar.compareAndSet({
+      workItemId: workItem.workItemId,
+      expectedRevision: workItem.revision,
+      syncPrimaryAttempt: false,
+      next: {
+        ...withoutRevision(workItem),
+        classification: confirmed,
+      },
+    });
+    if (
+      updated.workItemId !== workItem.workItemId ||
+      updated.revision !== workItem.revision + 1 ||
+      updated.classification.status !== 'CONFIRMED' ||
+      updated.classification.normalizedFamily !== 'SB'
+    ) {
+      throw new Error('DYNAMIC_EVALUATION_SB_CONFIRMATION_READBACK_INVALID');
+    }
+    const fresh = await this.registrar.getTenantScopedByWorkItemId({
+      workItemId: updated.workItemId,
+      tenantId,
+    });
+    if (
+      fresh.revision !== updated.revision ||
+      fresh.classification.status !== 'CONFIRMED' ||
+      fresh.classification.parserProfileId !== confirmed.parserProfileId ||
+      fresh.classification.parserProfileHash !== confirmed.parserProfileHash
+    ) {
+      throw new Error('DYNAMIC_EVALUATION_SB_CONFIRMATION_READBACK_INVALID');
+    }
+    return fresh;
   }
 }
 

@@ -224,7 +224,11 @@ export function hostNativePdfClassificationFor(input: {
     registryScore: 0,
   });
   return {
-    status: 'CANDIDATE',
+    // A DM-owned adapter release is selected only after actual-byte identity,
+    // issuer/family and adapter-version checks have committed.  That binding
+    // is authoritative enough for Host routing; the family/issuer fallback
+    // remains a candidate because it has not crossed that production seam.
+    status: normalizedText(input.adapterId) ? 'CONFIRMED' : 'CANDIDATE',
     normalizedFamily: profile.family,
     classifierReleaseId: CLASSIFIER_RELEASE_ID,
     classifierReleaseHash: CLASSIFIER_RELEASE_HASH,
@@ -247,7 +251,10 @@ export function hostNativePdfAdapterIdFromDmPreflight(
 }
 
 export function matchesHostNativePdfClassification(
-  profile: HostNativePdfProfile,
+  profile: Pick<
+    HostNativePdfProfile,
+    'family' | 'parserProfileId' | 'parserProfileHash'
+  >,
   classification: CanonicalClassificationSelection,
 ): boolean {
   return (
