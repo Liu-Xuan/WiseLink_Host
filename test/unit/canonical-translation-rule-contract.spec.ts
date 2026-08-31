@@ -675,6 +675,95 @@ describe('translation rule contract on the real frozen FTD package (WL31 owner/r
     ).toBe(true);
   });
 
+  it('ACCEPTS ordinary English words containing mm without treating them as the mm unit', () => {
+    const unitRulePack: TranslationRulePack = {
+      ...FTD_RULE_PACK,
+      terms: [],
+      noTranslate: [],
+      deterministic: {
+        ...FTD_RULE_PACK.deterministic,
+        preservedIdentifierPatterns: [],
+        preservedUnits: ['mm'],
+        numericFidelity: false,
+        preserveAtaChapterNumbers: false,
+        preservePartNumbers: false,
+        preserveCitations: false,
+      },
+    };
+    const sourceUnits: TranslationSourceUnit[] = [
+      {
+        unitKey: 'actual-777-ordinary-mm-substrings',
+        kind: 'paragraph',
+        text: 'Commercial Summary recommended common Accomplishment.',
+        sourceRefIds: ['actual-777-source-ref'],
+      },
+    ];
+    const result = validateTranslationCandidate({
+      rulePack: unitRulePack,
+      rulePackId: unitRulePack.meta.rulePackId,
+      rulePackVersion: unitRulePack.meta.rulePackVersion,
+      sourceUnits,
+      candidateUnits: [
+        {
+          unitKey: 'actual-777-ordinary-mm-substrings',
+          text: '商业摘要、建议、通用和实施。',
+          sourceRefIds: ['actual-777-source-ref'],
+          engineerRevision: null,
+        },
+      ],
+      taskStartBinding: FTD_BINDING,
+      validationTimeBinding: FTD_BINDING,
+    });
+
+    expect(result.verdict).toBe('ACCEPTED');
+    expect(result.findings).toEqual([]);
+  });
+
+  it('REJECTS a real mm unit that is not preserved', () => {
+    const unitRulePack: TranslationRulePack = {
+      ...FTD_RULE_PACK,
+      terms: [],
+      noTranslate: [],
+      deterministic: {
+        ...FTD_RULE_PACK.deterministic,
+        preservedIdentifierPatterns: [],
+        preservedUnits: ['mm'],
+        preserveAtaChapterNumbers: false,
+        preservePartNumbers: false,
+        preserveCitations: false,
+      },
+    };
+    const sourceUnits: TranslationSourceUnit[] = [
+      {
+        unitKey: 'real-mm-unit',
+        kind: 'paragraph',
+        text: 'Maintain a 10mm clearance.',
+        sourceRefIds: ['real-mm-source-ref'],
+      },
+    ];
+    const result = validateTranslationCandidate({
+      rulePack: unitRulePack,
+      rulePackId: unitRulePack.meta.rulePackId,
+      rulePackVersion: unitRulePack.meta.rulePackVersion,
+      sourceUnits,
+      candidateUnits: [
+        {
+          unitKey: 'real-mm-unit',
+          text: '保持 10 的间隙。',
+          sourceRefIds: ['real-mm-source-ref'],
+          engineerRevision: null,
+        },
+      ],
+      taskStartBinding: FTD_BINDING,
+      validationTimeBinding: FTD_BINDING,
+    });
+
+    expect(result.verdict).toBe('REJECTED');
+    expect(result.findings.map((finding) => finding.code)).toContain(
+      'UNIT_NOT_PRESERVED',
+    );
+  });
+
   it('REJECTS SourceRef omission, addition, mismatch, and duplication on candidate units', () => {
     // Omission: a candidate drops its SourceRef binding.
     const dropped = candidateFor(SOURCE_UNITS).map((candidate, index) =>

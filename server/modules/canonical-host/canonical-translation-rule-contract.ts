@@ -580,6 +580,26 @@ function numberMultiset(tokens: readonly string[]): Map<string, number> {
 }
 
 /**
+ * Preserve engineering units as tokens, not arbitrary substrings of words.
+ * Digits may be adjacent (`10mm`, `FL285`), while adjacent Unicode letters
+ * mean the same bytes are part of an ordinary word (`Summary`, `Commercial`).
+ */
+function containsPreservedUnit(text: string, unit: string): boolean {
+  let offset = 0;
+  while (offset <= text.length - unit.length) {
+    const index = text.indexOf(unit, offset);
+    if (index < 0) return false;
+    const before = index === 0 ? '' : text[index - 1] ?? '';
+    const after = text[index + unit.length] ?? '';
+    const leftBounded = !/^\p{L}/u.test(unit) || !/\p{L}/u.test(before);
+    const rightBounded = !/\p{L}$/u.test(unit) || !/\p{L}/u.test(after);
+    if (leftBounded && rightBounded) return true;
+    offset = index + Math.max(unit.length, 1);
+  }
+  return false;
+}
+
+/**
  * Exact field-by-field identity comparison of the existing private binding
  * type. This is the ONLY currentness check: no hash, no second fence.
  */
@@ -1086,8 +1106,8 @@ export function validateTranslationCandidate(
     }
 
     for (const unit of rulePack.deterministic.preservedUnits) {
-      if (!source.text.includes(unit)) continue;
-      if (!candidate.text.includes(unit)) {
+      if (!containsPreservedUnit(source.text, unit)) continue;
+      if (!containsPreservedUnit(candidate.text, unit)) {
         findings.push({
           ruleId: 'unit.preserve',
           code: 'UNIT_NOT_PRESERVED',

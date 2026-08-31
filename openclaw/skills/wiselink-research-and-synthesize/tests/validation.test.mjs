@@ -700,6 +700,44 @@ test('accepts a normal Chinese translation with Host tokens preserved', () => {
   validatePayload('translation-pair', { input, output });
 });
 
+test('does not treat mm inside ordinary words as a preserved engineering unit', () => {
+  const input = translationInput();
+  const output = translationOutput();
+  input.rulePack.deterministic.preservedUnits = ['mm'];
+  input.sourceUnits[0].text =
+    'Commercial Summary recommended common Accomplishment.';
+  output.candidateUnits[0].text = '商业摘要、建议、通用和实施。';
+  validatePayload('translation-pair', { input, output });
+});
+
+test('rejects missing mandatory terms and real engineering units before Host commit', () => {
+  const input = translationInput();
+  const output = translationOutput();
+  input.rulePack.terms = [
+    {
+      ruleId: 'term.airplane',
+      sourceTerm: 'airplane',
+      targetRenderings: ['飞机'],
+      severity: 'mandatory',
+    },
+  ];
+  input.rulePack.deterministic.preservedUnits = ['mm'];
+  input.sourceUnits[0].unitKey = 'ACTUAL-777-PREFLIGHT';
+  input.sourceUnits[0].text = 'The airplane requires a 10mm clearance.';
+  output.candidateUnits[0].unitKey = 'ACTUAL-777-PREFLIGHT';
+  output.candidateUnits[0].text = '该设备要求保持 10 的间隙。';
+
+  assert.throws(
+    () => validatePayload('translation-pair', { input, output }),
+    (error) => {
+      assert.match(error.message, /TERM_MANDATORY_MISSING/u);
+      assert.match(error.message, /UNIT_NOT_PRESERVED/u);
+      assert.match(error.message, /ACTUAL-777-PREFLIGHT/u);
+      return true;
+    },
+  );
+});
+
 test('stops invalid translation before seal, post-model heartbeat, or upload', async () => {
   const input = translationInput();
   input.sourceUnits[0].unitKey = 'SYNTH-PRECOMMIT';
