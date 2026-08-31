@@ -2,8 +2,14 @@
   "extends": "./tsconfig.node.json",
   "compilerOptions": {
     "allowJs": true,
+    "jsx": "react-jsx",
     "noEmit": true,
-    "types": ["node", "jest"]
+    "types": ["node", "jest"],
+    "paths": {
+      "@client/*": ["client/*"],
+      "@server/*": ["server/*"],
+      "@shared/*": ["shared/*"]
+    }
   },
   "include": ["server/**/*", "shared/**/*.ts", "test/unit/**/*.ts"],
   "exclude": [

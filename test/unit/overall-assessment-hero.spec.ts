@@ -31,6 +31,14 @@ describe('OverallAssessmentHero user-visible technical details', () => {
     const upperHtml = html.toUpperCase();
 
     expect(html).toContain('工程结论');
+    expect(html).toContain('class="wl-overall-supporting"');
+    expect(html).toContain('展开依据、适用范围与下一步');
+    expect(html).not.toContain(
+      '<details class="wl-overall-supporting" open=""',
+    );
+    expect(html.indexOf('工程结论')).toBeLessThan(
+      html.indexOf('展开依据、适用范围与下一步'),
+    );
     expect(html).toContain('ORIGINAL ISSUE');
     expect(html).toContain('当前有效');
     expect(html).toContain('150/150');

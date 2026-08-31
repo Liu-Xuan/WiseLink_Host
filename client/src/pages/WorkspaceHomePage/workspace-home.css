@@ -1,4 +1,6 @@
 .library-home {
+  --library-canvas-max: 1760px;
+
   min-height: calc(100vh - 60px);
   padding: 28px clamp(14px, 3vw, 48px) 40px;
   color: var(--wl-ink);
@@ -11,7 +13,7 @@
 .library-query-band,
 .library-surface,
 .library-home-footer {
-  width: min(1480px, 100%);
+  width: min(var(--library-canvas-max), 100%);
   margin-inline: auto;
 }
 
@@ -364,7 +366,7 @@
 
 .library-alert {
   display: flex;
-  width: min(1480px, 100%);
+  width: min(var(--library-canvas-max), 100%);
   margin: 14px auto 0;
   align-items: center;
   gap: 10px;
@@ -1316,26 +1318,30 @@
   }
 }
 
-/* ── Apple Glass R03：用 G2/G3/G4 层次覆盖旧资料页的硬白面 ── */
+/* ── R05.6：资料库由自身组件维护 G2/G3/G4 层次与容器密度 ── */
 .library-home {
   min-height: calc(100dvh - 78px);
-  padding: 30px clamp(16px, 3.2vw, 48px) 48px;
+  padding: 14px clamp(12px, 2vw, 28px) 30px;
   font-family: var(--wl-font);
 }
 
 .library-home-header,
+.library-entry-grid,
 .hosted-intake,
 .library-query-band,
 .library-surface,
+.library-home-footer,
 .library-empty-stage {
-  width: min(1480px, 100%);
+  width: min(var(--library-canvas-max), 100%);
   margin-inline: auto;
 }
 
 .library-home-header {
   align-items: center;
-  padding: 8px 4px 20px;
-  border: 0;
+  min-height: 72px;
+  padding: 8px 4px 14px;
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--wl-border) 82%, transparent);
 }
 
 .library-home-eyebrow,
@@ -1360,57 +1366,39 @@
 }
 
 .library-home-header h1 {
-  margin: 9px 0 8px;
+  margin: 5px 0 3px;
   color: var(--wl-ink);
-  font-size: clamp(34px, 4vw, 50px);
-  font-weight: 760;
+  font-size: clamp(27px, 3vw, 38px);
+  font-weight: 730;
   letter-spacing: -0.035em;
 }
 
 .library-home-lede {
-  max-width: 720px;
+  max-width: 860px;
   color: var(--wl-muted);
-  font-size: 14px;
-  line-height: 1.75;
+  font-size: var(--wl-text-body-sm);
+  line-height: 1.55;
 }
 
 .hosted-intake,
 .library-query-band,
 .library-empty-stage {
-  border: 1px solid transparent;
-  background:
-    linear-gradient(180deg, var(--wl-g3-highlight), var(--wl-glass-content))
-      padding-box,
-    linear-gradient(
-        138deg,
-        color-mix(in srgb, var(--wl-g1-cold-rim) 34%, transparent),
-        var(--wl-border) 52%,
-        color-mix(in srgb, var(--wl-g1-warm-rim) 32%, var(--wl-border))
-      )
-      border-box;
+  border: 1px solid var(--wl-border);
+  background: color-mix(
+    in srgb,
+    var(--wl-surface-solid) 95%,
+    transparent
+  );
   box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--wl-g3-highlight) 52%, transparent),
-    0 14px 34px var(--wl-g3-shadow);
+    inset 0 1px 0 color-mix(in srgb, var(--wl-g3-highlight) 46%, transparent),
+    0 8px 22px var(--wl-g4-shadow);
 }
 
 .hosted-intake {
-  gap: 24px;
-  padding: 24px 26px;
-  border-radius: var(--wl-radius-xl);
-  background:
-    linear-gradient(
-        135deg,
-        color-mix(in srgb, var(--wl-g3-highlight) 64%, transparent),
-        var(--wl-glass-content) 52%
-      )
-      padding-box,
-    linear-gradient(
-        138deg,
-        color-mix(in srgb, var(--wl-g1-cold-rim) 40%, transparent),
-        var(--wl-border) 52%,
-        color-mix(in srgb, var(--wl-g1-warm-rim) 36%, var(--wl-border))
-      )
-      border-box;
+  gap: 14px;
+  min-height: 104px;
+  padding: 14px 16px;
+  border-radius: var(--wl-radius-panel);
 }
 
 .hosted-intake-copy h2,
@@ -1422,8 +1410,8 @@
 }
 
 .hosted-intake-copy h2 {
-  margin: 7px 0 8px;
-  font-size: 21px;
+  margin: 5px 0 6px;
+  font-size: 18px;
 }
 
 .hosted-intake-copy > p,
@@ -1438,7 +1426,7 @@
 }
 
 .hosted-intake-drop {
-  min-height: 74px;
+  min-height: 56px;
   padding: 13px 14px;
   border-color: color-mix(in srgb, var(--wl-accent) 40%, var(--wl-border));
   border-radius: var(--wl-radius-md);
@@ -1475,28 +1463,15 @@
 .hosted-intake-action > button,
 .library-query-row button,
 .library-preview-title button {
-  border-radius: 999px;
+  border-radius: 12px;
 }
 
 .library-query-band {
   grid-template-columns: minmax(220px, 0.58fr) minmax(360px, 1.42fr);
-  gap: 24px;
-  padding: 18px 22px;
-  border-radius: var(--wl-radius-xl);
-  background:
-    linear-gradient(
-        145deg,
-        color-mix(in srgb, var(--wl-accent-soft) 38%, transparent),
-        var(--wl-glass-content) 52%
-      )
-      padding-box,
-    linear-gradient(
-        138deg,
-        color-mix(in srgb, var(--wl-g1-cold-rim) 38%, transparent),
-        var(--wl-border) 54%,
-        color-mix(in srgb, var(--wl-g1-warm-rim) 34%, var(--wl-border))
-      )
-      border-box;
+  gap: 14px;
+  min-height: 104px;
+  padding: 14px 16px;
+  border-radius: var(--wl-radius-panel);
 }
 
 .library-query-band h2,
@@ -1776,13 +1751,13 @@
 }
 
 .library-surface {
-  grid-template-columns: minmax(260px, 300px) minmax(440px, 1fr) minmax(
-      270px,
-      320px
+  grid-template-columns: minmax(268px, 320px) minmax(480px, 1fr) minmax(
+      286px,
+      330px
     );
-  min-height: 520px;
-  gap: 14px;
-  margin-top: 18px;
+  min-height: 560px;
+  gap: 12px;
+  margin-top: 14px;
   overflow: visible;
   border: 0;
   border-radius: 0;
@@ -1806,7 +1781,7 @@
 .library-preview-panel,
 .library-graph-panel {
   min-height: 0;
-  padding: 20px;
+  padding: 16px;
   overflow: auto;
   border: 1px solid var(--wl-border);
   box-shadow: var(--wl-shadow-1);
@@ -1907,6 +1882,18 @@
 .library-facts dd {
   color: var(--wl-ink);
   font-family: var(--wl-font);
+}
+
+.library-recent-open strong,
+.library-content-list article strong,
+.library-content-list article p {
+  font-size: var(--wl-text-body-sm);
+  line-height: 1.55;
+}
+
+.library-preview-title h3 {
+  font-size: clamp(19px, 2vw, 25px);
+  letter-spacing: -0.025em;
 }
 
 .library-recent-open small,

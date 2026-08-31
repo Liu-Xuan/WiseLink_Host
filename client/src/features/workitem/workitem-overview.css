@@ -5,10 +5,10 @@
 
 .wl-overview-page {
   display: grid;
-  max-width: 1480px;
+  max-width: 1760px;
   margin: 0 auto;
-  padding: 24px clamp(14px, 3vw, 40px) 48px;
-  gap: 20px;
+  padding: 16px clamp(12px, 2vw, 28px) 34px;
+  gap: 14px;
 }
 
 /* ── AuthorityStrip ── */
@@ -17,14 +17,11 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  padding: 12px 18px;
-  border: 1px solid transparent;
-  border-radius: var(--wl-radius-panel);
-  background:
-    linear-gradient(180deg, var(--wl-g3-highlight), var(--wl-glass-content))
-      padding-box,
-    linear-gradient(145deg, var(--wl-g2-highlight), var(--wl-border)) border-box;
-  box-shadow: 0 10px 24px var(--wl-g3-shadow);
+  padding: 8px 12px;
+  border: 1px solid var(--wl-border);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--wl-surface-solid) 94%, transparent);
+  box-shadow: 0 8px 22px var(--wl-g4-shadow);
   font-size: 12px;
 }
 
@@ -32,7 +29,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 11px;
+  padding: 4px 9px;
   border: 1px solid var(--wl-border);
   border-radius: 999px;
   font-weight: 650;
@@ -83,24 +80,24 @@
   min-width: 0;
   font-family: var(--wl-font);
   border-radius: var(--wl-radius-xl);
-  padding: 28px 32px;
+  padding: 20px 22px;
   border: 1px solid transparent;
   background:
     radial-gradient(
         ellipse at 8% 0%,
-        color-mix(in srgb, var(--wl-ambient-cold) 48%, transparent),
+        color-mix(in srgb, var(--wl-ambient-cold) 30%, transparent),
         transparent 42%
       )
       padding-box,
     radial-gradient(
         ellipse at 90% 0%,
-        color-mix(in srgb, var(--wl-ambient-warm) 40%, transparent),
+        color-mix(in srgb, var(--wl-ambient-warm) 24%, transparent),
         transparent 38%
       )
       padding-box,
     radial-gradient(
         ellipse at 92% 100%,
-        color-mix(in srgb, var(--wl-ambient-reflect) 36%, transparent),
+        color-mix(in srgb, var(--wl-ambient-reflect) 20%, transparent),
         transparent 44%
       )
       padding-box,
@@ -109,13 +106,13 @@
     linear-gradient(
         132deg,
         var(--wl-g1-highlight),
-        color-mix(in srgb, var(--wl-g1-cold-rim) 54%, transparent) 44%,
-        color-mix(in srgb, var(--wl-g1-warm-rim) 52%, transparent) 84%
+        color-mix(in srgb, var(--wl-g1-cold-rim) 38%, transparent) 44%,
+        color-mix(in srgb, var(--wl-g1-warm-rim) 34%, transparent) 84%
       )
       border-box;
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, var(--wl-g1-highlight) 58%, transparent),
-    0 18px 44px var(--wl-g3-shadow);
+    0 14px 38px var(--wl-g3-shadow);
 }
 
 .wl-overall-hero::before {
@@ -138,12 +135,12 @@
   position: absolute;
   inset: 2px;
   z-index: 0;
-  border: 1px solid color-mix(in srgb, var(--wl-accent) 28%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wl-accent) 18%, transparent);
   border-radius: calc(var(--wl-radius-xl) - 2px);
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, var(--wl-g1-highlight) 48%, transparent),
     inset 0 0 26px color-mix(in srgb, var(--wl-accent) 10%, transparent);
-  opacity: 0.44;
+  opacity: 0.34;
   pointer-events: none;
 }
 
@@ -205,10 +202,10 @@ html[data-wl-visual-mode='compatible'] .wl-overall-hero {
 
 .wl-overall-hero.is-empty {
   display: grid;
-  min-height: 280px;
+  min-height: 176px;
   place-items: center;
   gap: 10px;
-  padding: 44px 32px;
+  padding: 26px 24px;
   background:
     radial-gradient(
       circle at 50% 12%,
@@ -226,11 +223,11 @@ html[data-wl-visual-mode='compatible'] .wl-overall-hero {
 
 .wl-overall-empty-mark {
   display: grid;
-  width: 58px;
-  height: 58px;
+  width: 48px;
+  height: 48px;
   place-items: center;
   border: 1px solid color-mix(in srgb, var(--wl-accent) 26%, var(--wl-border));
-  border-radius: 20px;
+  border-radius: 16px;
   color: var(--wl-accent);
   background: var(--wl-accent-soft);
   box-shadow: inset 0 1px 0
@@ -238,8 +235,8 @@ html[data-wl-visual-mode='compatible'] .wl-overall-hero {
 }
 
 .wl-overall-empty-icon {
-  width: 26px;
-  height: 26px;
+  width: 22px;
+  height: 22px;
 }
 
 .wl-overall-hero.is-empty h2 {
@@ -265,7 +262,7 @@ html[data-wl-visual-mode='compatible'] .wl-overall-hero {
   align-items: flex-start;
   justify-content: space-between;
   gap: 18px;
-  margin-bottom: 18px;
+  margin-bottom: 12px;
 }
 
 .wl-overall-head > div {
@@ -305,7 +302,7 @@ html[data-wl-visual-mode='compatible'] .wl-overall-hero {
   max-width: 100%;
   flex: 0 0 auto;
   gap: 4px;
-  padding: 10px 14px;
+  padding: 8px 10px;
   border: 1px solid var(--wl-border);
   border-radius: var(--wl-radius-md);
   background: var(--wl-glass-soft);
@@ -315,8 +312,8 @@ html[data-wl-visual-mode='compatible'] .wl-overall-hero {
 }
 
 .wl-overall-judgment {
-  margin-bottom: 18px;
-  padding: 16px 18px;
+  margin-bottom: 12px;
+  padding: 13px 14px;
   border: 1px solid color-mix(in srgb, var(--wl-accent) 24%, var(--wl-border));
   border-radius: var(--wl-radius-panel);
   background: linear-gradient(
@@ -353,17 +350,65 @@ html[data-wl-visual-mode='compatible'] .wl-overall-hero {
 
 .wl-overall-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
-  margin-bottom: 20px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  margin: 0;
+  padding: 10px;
+}
+
+.wl-overall-supporting {
+  overflow: hidden;
+  margin-bottom: 12px;
+  border: 1px solid var(--wl-border);
+  border-radius: var(--wl-radius-md);
+  background: color-mix(in srgb, var(--wl-surface-solid) 72%, transparent);
+}
+
+.wl-overall-supporting > summary {
+  display: grid;
+  min-height: 42px;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  color: var(--wl-ink);
+  font-size: 13px;
+  font-weight: 680;
+  cursor: pointer;
+  list-style: none;
+}
+
+.wl-overall-supporting > summary::-webkit-details-marker {
+  display: none;
+}
+
+.wl-overall-supporting > summary small {
+  color: var(--wl-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.wl-overall-supporting > summary svg {
+  width: 15px;
+  height: 15px;
+  color: var(--wl-muted);
+  transition: transform var(--wl-motion-fast) ease;
+}
+
+.wl-overall-supporting[open] > summary {
+  border-bottom: 1px solid var(--wl-border);
+}
+
+.wl-overall-supporting[open] > summary svg {
+  transform: rotate(180deg);
 }
 
 .wl-overall-block {
   min-width: 0;
-  padding: 16px 18px;
-  border: 1px solid var(--wl-border);
-  border-radius: var(--wl-radius-md);
-  background: var(--wl-glass-soft);
+  padding: 13px 14px;
+  border: 1px solid color-mix(in srgb, var(--wl-border) 84%, transparent);
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--wl-surface-solid) 78%, transparent);
 }
 
 .wl-overall-block.is-wide {
@@ -413,7 +458,7 @@ html[data-wl-visual-mode='compatible'] .wl-overall-hero {
   min-width: 0;
   margin: 0;
   color: var(--wl-ink);
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.7;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
@@ -610,7 +655,7 @@ html[data-wl-visual-mode='compatible'] .wl-overall-hero {
 .wl-overall-actions {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
@@ -662,7 +707,7 @@ html[data-wl-visual-mode='compatible'] .wl-overall-hero {
 
 /* ── 技术详情折叠 ── */
 .wl-overall-tech {
-  margin-top: 18px;
+  margin-top: 12px;
   border: 1px solid var(--wl-border);
   border-radius: var(--wl-radius-md);
   background: var(--wl-glass-soft);
@@ -845,7 +890,11 @@ html[data-wl-visual-mode='compatible'] .wl-overall-hero {
 /* ── 响应式（§10.1） ── */
 @media (max-width: 1120px) {
   .wl-overall-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: 1fr;
+  }
+
+  .wl-overall-block.is-wide {
+    grid-column: auto;
   }
 }
 
@@ -856,7 +905,7 @@ html[data-wl-visual-mode='compatible'] .wl-overall-hero {
   }
 
   .wl-overall-hero {
-    padding: 20px 18px;
+    padding: 16px;
   }
 
   .wl-overall-head {
@@ -871,6 +920,14 @@ html[data-wl-visual-mode='compatible'] .wl-overall-hero {
   .wl-overall-grid,
   .wl-overview-side {
     grid-template-columns: 1fr;
+  }
+
+  .wl-overall-supporting > summary {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .wl-overall-supporting > summary small {
+    display: none;
   }
 
   .wl-overall-block.is-wide {

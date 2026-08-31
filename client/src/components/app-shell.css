@@ -1,6 +1,6 @@
 /* ============================================================
  * WiseLink 3.1 · App Shell (Spec R01 §5 / §7 AppShell)
- * 玻璃顶栏（G1）+ 玻璃面包屑 + 环境背景（wl-environment）。
+ * 单一玻璃 App Chrome（G1）+ 环境背景（wl-environment）。
  * ============================================================ */
 
 .wiselink-app-shell {
@@ -15,8 +15,7 @@
   --wl-app-safe-block-start: env(safe-area-inset-top, 0px);
   --wl-app-header-block-size: 72px;
   --wl-workspace-block-size: calc(
-    100dvh - var(--wl-app-safe-block-start) -
-      var(--wl-app-header-block-size)
+    100dvh - var(--wl-app-safe-block-start) - var(--wl-app-header-block-size)
   );
 
   display: grid;
@@ -30,18 +29,28 @@
   overflow: hidden;
 }
 
-.wiselink-app-header {
+.wiselink-app-chrome {
   position: sticky;
   z-index: var(--wl-z-header);
   top: 12px;
   display: grid;
-  min-height: 64px;
   margin: 14px 18px 0 94px;
+  border-radius: var(--wl-radius-shell);
+}
+
+.wiselink-app-header {
+  display: grid;
+  min-height: 64px;
   grid-template-columns: minmax(220px, 270px) minmax(0, 1fr) auto;
   align-items: center;
   gap: 18px;
   padding: 0 22px;
-  border-radius: var(--wl-radius-shell);
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .wiselink-app-brand {
@@ -284,7 +293,7 @@ button.wiselink-account-state {
   padding-bottom: 0;
 }
 
-.wiselink-app-shell.is-workbench-route .wiselink-app-header {
+.wiselink-app-shell.is-workbench-route .wiselink-app-chrome {
   position: relative;
   top: auto;
   align-self: center;
@@ -293,7 +302,7 @@ button.wiselink-account-state {
 }
 
 /* Reader 中全局头栏改为稳定 G3；G1 采样预算留给 Dock 与工作台 Tabs。 */
-.wiselink-app-shell.is-workbench-route .wiselink-app-header {
+.wiselink-app-shell.is-workbench-route .wiselink-app-chrome {
   border-color: var(--wl-border);
   background: var(--wl-glass-content);
   box-shadow: 0 10px 24px var(--wl-g3-shadow);
@@ -306,13 +315,11 @@ button.wiselink-account-state {
 }
 
 /* 沉浸模式只移除全局外壳；工作台内部工具栏仍在 workspace 轨道内。 */
-body[data-wl-immersive='true']
-  .wiselink-app-shell.is-workbench-route {
+body[data-wl-immersive='true'] .wiselink-app-shell.is-workbench-route {
   --wl-app-header-block-size: 0px;
 }
 
-body[data-wl-immersive='true'] .wiselink-app-header,
-body[data-wl-immersive='true'] .wiselink-breadcrumb,
+body[data-wl-immersive='true'] .wiselink-app-chrome,
 body[data-wl-immersive='true'] .wl-dock {
   display: none;
 }
@@ -328,12 +335,15 @@ body[data-wl-immersive='true']
   z-index: 1;
   display: flex;
   align-items: center;
-  margin: 10px 16px 0 96px;
   min-height: 34px;
-  padding: 0 18px;
-  border: 1px solid var(--wl-border);
-  border-radius: var(--wl-radius-md);
-  background: var(--wl-glass-soft);
+  padding: 0 22px;
+  border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--wl-border) 68%, transparent);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .wiselink-breadcrumb ol {
@@ -417,9 +427,12 @@ select:focus-visible {
     display: none;
   }
 
+  .wiselink-app-chrome {
+    margin-left: 16px;
+  }
+
   .wiselink-app-header {
     grid-template-columns: minmax(190px, 1fr) auto auto;
-    margin-left: 16px;
   }
 
   .wiselink-app-body {
@@ -431,8 +444,7 @@ select:focus-visible {
   }
 
   .wiselink-breadcrumb {
-    margin-left: 16px;
-    padding: 0 16px;
+    padding-inline: 16px;
   }
 
   .wiselink-app-context-note {
@@ -452,7 +464,6 @@ select:focus-visible {
   }
 
   .wiselink-breadcrumb {
-    margin: 8px 14px 0;
     min-height: 30px;
     padding: 0 14px;
   }
@@ -466,14 +477,17 @@ select:focus-visible {
     height: 12px;
   }
 
-  .wiselink-app-header {
+  .wiselink-app-chrome {
     position: sticky;
     top: 6px;
+    margin: 8px 10px 0;
+  }
+
+  .wiselink-app-header {
     display: grid;
     min-height: 56px;
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 10px;
-    margin: 8px 10px 0;
     padding: 8px 12px;
   }
 
@@ -505,7 +519,7 @@ select:focus-visible {
     padding: 0 10px;
   }
 
-  .wiselink-app-shell.is-workbench-route .wiselink-app-header {
+  .wiselink-app-shell.is-workbench-route .wiselink-app-chrome {
     display: none;
   }
 }
@@ -516,7 +530,6 @@ select:focus-visible {
   }
 
   .wiselink-breadcrumb {
-    margin: 8px 10px 0;
     min-height: 28px;
     padding: 0 10px;
   }

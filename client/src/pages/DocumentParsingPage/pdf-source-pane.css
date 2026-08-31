@@ -7,7 +7,7 @@
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
   background: var(--wl-surface-solid);
 }
 
@@ -16,36 +16,30 @@
 }
 
 .parse-pdf-binding {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 12px 14px;
-  border: 1px solid var(--wl-border);
-  border-radius: var(--wl-radius-md);
-  background: var(--wl-surface-solid);
-  box-shadow: 0 5px 14px var(--wl-g4-shadow);
-}
-
-.parse-pdf-binding span {
-  color: var(--wl-faint);
-  font-size: var(--wl-text-caption);
-  font-weight: 700;
-  letter-spacing: 0.02em;
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  color: var(--wl-muted);
+  font-weight: 500;
+  letter-spacing: 0;
 }
 
 .parse-pdf-binding strong {
   overflow: hidden;
-  color: var(--wl-ink);
+  color: var(--wl-muted);
   font-family: var(--wl-font);
-  font-size: 12px;
+  font-size: var(--wl-text-caption);
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.parse-pdf-binding p {
-  margin: 0;
-  color: var(--wl-muted);
-  font-size: 11px;
+.parse-pdf-binding small {
+  flex: 0 0 auto;
+  color: var(--wl-faint);
+  font-size: var(--wl-text-meta);
 }
 
 /* ── 当前定位：页码 + 引文（§4.2 点击依据定位页码区域） ── */
@@ -114,11 +108,11 @@
   flex-direction: column;
   overflow: hidden;
   border: 1px solid var(--wl-border);
-  border-radius: var(--wl-radius-md);
+  border-radius: 12px;
   background: var(--wl-surface-solid);
   box-shadow:
     inset 0 1px 0 var(--wl-g4-highlight),
-    0 12px 28px var(--wl-g4-shadow);
+    0 8px 20px var(--wl-g4-shadow);
 }
 
 .parse-pdf-toolbar {
@@ -189,31 +183,17 @@
   max-height: 760px;
   flex: 1;
   flex-direction: column;
-  gap: 14px;
+  gap: 8px;
   overflow: auto;
-  padding: 14px;
+  padding: 6px;
   background: color-mix(in srgb, var(--wl-bg) 86%, #d8e2ef);
   overscroll-behavior: contain;
 }
 
 @media (min-width: 721px) {
   .wl-workbench-main.is-workspace .parse-pdf-pane {
-    gap: 8px;
-    padding: 10px;
-  }
-
-  .wl-workbench-main.is-workspace .parse-pdf-binding {
-    min-height: 34px;
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: 4px 8px;
-    padding: 7px 10px;
-    box-shadow: none;
-  }
-
-  .wl-workbench-main.is-workspace .parse-pdf-binding p {
-    margin-left: auto;
+    gap: 6px;
+    padding: 7px;
   }
 
   .wl-workbench-main.is-workspace .parse-pdf-located {
@@ -243,7 +223,7 @@
   min-height: 280px;
   aspect-ratio: 8.5 / 11;
   place-items: center;
-  padding: 26px 8px 10px;
+  padding: 4px;
   border: 1px solid color-mix(in srgb, var(--wl-border) 78%, #ffffff);
   border-radius: 8px;
   background: #ffffff;
@@ -265,7 +245,11 @@
   position: absolute;
   top: 6px;
   left: 10px;
+  z-index: 1;
+  padding: 2px 6px;
+  border-radius: 999px;
   color: #66758a;
+  background: rgb(255 255 255 / 88%);
   font-size: var(--wl-text-caption);
   font-weight: 700;
 }
@@ -409,6 +393,10 @@ html[data-wl-transparency='reduced'] .parse-pdf-toolbar {
 @media (max-width: 720px) {
   .parse-pdf-pane {
     padding: 12px;
+  }
+
+  .parse-pdf-binding {
+    display: none;
   }
 
   .parse-pdf-pane .parse-panel-label {

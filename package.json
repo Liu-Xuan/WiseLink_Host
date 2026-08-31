@@ -231,7 +231,7 @@
     "preset": "ts-jest",
     "testEnvironment": "node",
     "transform": {
-      "^.+\\.[tj]s$": [
+      "^.+\\.[tj]sx?$": [
         "ts-jest",
         {
           "tsconfig": "tsconfig.jest.json"
@@ -240,7 +240,8 @@
     },
     "moduleNameMapper": {
       "^@server/(.*)$": "<rootDir>/server/$1",
-      "^@shared/(.*)$": "<rootDir>/shared/$1"
+      "^@shared/(.*)$": "<rootDir>/shared/$1",
+      "^@client/(.*)$": "<rootDir>/client/$1"
     },
     "testMatch": [
       "<rootDir>/server/**/*.spec.ts",

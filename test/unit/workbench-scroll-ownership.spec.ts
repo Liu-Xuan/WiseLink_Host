@@ -29,7 +29,7 @@ describe('workbench scroll ownership', () => {
       /grid-template-rows:\s*var\(--wl-app-header-block-size\)\s*minmax\(0, var\(--wl-workspace-block-size\)\);/,
     );
     expect(appShellStyles).toMatch(
-      /\.wiselink-app-shell\.is-workbench-route \.wiselink-app-header\s*\{[\s\S]*?position: relative;[\s\S]*?top: auto;[\s\S]*?margin-block: 0;/,
+      /\.wiselink-app-shell\.is-workbench-route \.wiselink-app-chrome\s*\{[\s\S]*?position: relative;[\s\S]*?top: auto;[\s\S]*?margin-block: 0;/,
     );
     expect(appShellStyles).toMatch(
       /body\[data-wl-immersive='true'\][\s\S]*?\.wiselink-app-shell\.is-workbench-route\s*\{\s*--wl-app-header-block-size: 0px;/,

@@ -34,6 +34,63 @@ export interface CanonicalDocumentParsingProjectionReader {
   ): Promise<CanonicalDocumentParsingPageResponse>;
 }
 
+const ROUTE_HANDOFF_MAX_AGE_MS = 5_000;
+
+export interface CanonicalDocumentParsingRouteHandoff {
+  version: 1;
+  createdAtMs: number;
+  sessionGeneration: number;
+  workItemId: string;
+  query: string;
+  page: CanonicalDocumentParsingPageResponse;
+}
+
+export function createCanonicalDocumentParsingRouteHandoff(
+  page: CanonicalDocumentParsingPageResponse,
+  sessionGeneration: number,
+  query = '',
+  createdAtMs = Date.now(),
+): CanonicalDocumentParsingRouteHandoff {
+  return {
+    version: 1,
+    createdAtMs,
+    sessionGeneration,
+    workItemId: page.workItem.workItemId,
+    query: query.trim(),
+    page,
+  };
+}
+
+export function resolveCanonicalDocumentParsingRouteHandoff(
+  value: unknown,
+  expected: {
+    sessionGeneration: number;
+    workItemId: string;
+    query: string;
+    nowMs?: number;
+  },
+): CanonicalDocumentParsingPageResponse | null {
+  if (!value || typeof value !== 'object') return null;
+  const handoff = value as Partial<CanonicalDocumentParsingRouteHandoff>;
+  const nowMs = expected.nowMs ?? Date.now();
+  const normalizedQuery = expected.query.trim();
+  if (
+    handoff.version !== 1 ||
+    !Number.isFinite(handoff.createdAtMs) ||
+    handoff.createdAtMs! > nowMs ||
+    nowMs - handoff.createdAtMs! > ROUTE_HANDOFF_MAX_AGE_MS ||
+    handoff.sessionGeneration !== expected.sessionGeneration ||
+    handoff.workItemId !== expected.workItemId ||
+    handoff.query !== normalizedQuery ||
+    handoff.page?.status !== 'FRESH_READ' ||
+    handoff.page.workItem.workItemId !== expected.workItemId ||
+    (handoff.page.readerProjection?.query ?? '') !== normalizedQuery
+  ) {
+    return null;
+  }
+  return handoff.page;
+}
+
 /**
  * Shares only identical in-flight projection reads. Resolved responses are never
  * retained, so a later refresh still performs the canonical Host fresh read.

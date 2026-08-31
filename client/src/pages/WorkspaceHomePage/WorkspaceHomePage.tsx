@@ -56,6 +56,7 @@ import {
   availableParseAction,
   parseActionLabel,
 } from './reparse-completed-work-item';
+import { createCanonicalDocumentParsingRouteHandoff } from '../DocumentParsingPage/document-parsing-load';
 
 type LibrarySelection = string;
 
@@ -362,8 +363,21 @@ export default function WorkspaceHomePage() {
 
   function openWorkbench(targetNodeOverride?: string): void {
     if (!projection) return;
+    const navigationOptions = data
+      ? {
+          state: {
+            documentParsingHandoff: createCanonicalDocumentParsingRouteHandoff(
+              data,
+              sessionGeneration,
+            ),
+          },
+        }
+      : undefined;
     if (!targetNodeOverride) {
-      navigate(`/work-items/${encodeURIComponent(projection.workItemId)}`);
+      navigate(
+        `/work-items/${encodeURIComponent(projection.workItemId)}`,
+        navigationOptions,
+      );
       return;
     }
     const selectedNode: CanonicalLibraryIndexNode | undefined = nodes.find(
@@ -379,6 +393,7 @@ export default function WorkspaceHomePage() {
           : targetNode;
     navigate(
       `/work-items/${encodeURIComponent(projection.workItemId)}/documents?node=${encodeURIComponent(targetNode)}&tab=${encodeURIComponent(targetTab)}`,
+      navigationOptions,
     );
   }
 
@@ -402,7 +417,20 @@ export default function WorkspaceHomePage() {
         node.kind === 'version') &&
       node.targetNode
     ) {
-      navigate(`/work-items/${encodeURIComponent(projection!.workItemId)}`);
+      navigate(
+        `/work-items/${encodeURIComponent(projection!.workItemId)}`,
+        data
+          ? {
+              state: {
+                documentParsingHandoff:
+                  createCanonicalDocumentParsingRouteHandoff(
+                    data,
+                    sessionGeneration,
+                  ),
+              },
+            }
+          : undefined,
+      );
     }
   }
 

@@ -1,4 +1,4 @@
-import { ChevronDown, CircleGauge } from 'lucide-react';
+import { ChevronDown, Layers3 } from 'lucide-react';
 
 import {
   type WlVisualMode,
@@ -42,6 +42,10 @@ function isVisualMode(value: string): value is WlVisualMode {
   return VISUAL_MODES.some((option) => option.value === value);
 }
 
+function shortModeLabel(label: string): string {
+  return label.replace('效果', '');
+}
+
 export default function VisualModeControl({
   compact = false,
 }: {
@@ -56,13 +60,15 @@ export default function VisualModeControl({
         <button
           type="button"
           className={`wl-visual-mode-trigger${compact ? ' is-compact' : ''}`}
-          aria-label={`视觉模式：${current.label}`}
-          title={`视觉模式：${current.label}`}
+          aria-label={`视觉效果：${current.label}`}
+          title={`视觉效果：${current.label}`}
         >
           <span className="wl-visual-mode-orb" aria-hidden="true">
-            <CircleGauge />
+            <Layers3 />
           </span>
-          <span className="wl-visual-mode-label">{current.label}</span>
+          <span className="wl-visual-mode-label">
+            视觉效果 · {shortModeLabel(current.label)}
+          </span>
           <ChevronDown className="wl-visual-mode-chevron" aria-hidden="true" />
         </button>
       </DropdownMenuTrigger>
@@ -71,9 +77,9 @@ export default function VisualModeControl({
         sideOffset={8}
         className="wl-visual-mode-menu"
       >
-        <DropdownMenuLabel>视觉完成度</DropdownMenuLabel>
+        <DropdownMenuLabel>视觉效果</DropdownMenuLabel>
         <p className="wl-visual-mode-hint">
-          三种模式只改变材质与动效，不改变页面内容。
+          三种效果只改变材质与动效，不改变工程内容和操作。
         </p>
         <DropdownMenuSeparator />
         <DropdownMenuRadioGroup

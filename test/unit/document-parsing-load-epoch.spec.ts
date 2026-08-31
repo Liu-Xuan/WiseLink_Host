@@ -1,6 +1,8 @@
 import type { CanonicalDocumentParsingPageResponse } from '@shared/api.interface';
 import {
+  createCanonicalDocumentParsingRouteHandoff,
   createCanonicalDocumentParsingProjectionReader,
+  resolveCanonicalDocumentParsingRouteHandoff,
   runCanonicalDocumentParsingLoad,
 } from '../../client/src/pages/DocumentParsingPage/document-parsing-load';
 
@@ -25,6 +27,7 @@ function deferred<T>(): Deferred<T> {
 
 function page(marker: string): CanonicalDocumentParsingPageResponse {
   return {
+    status: 'FRESH_READ',
     workItem: {
       workItemId: 'WI-SHARED',
       classification: { normalizedFamily: 'SB' },
@@ -32,6 +35,9 @@ function page(marker: string): CanonicalDocumentParsingPageResponse {
         documentId: marker,
         documentVersionId: `DV-${marker}`,
       },
+    },
+    readerProjection: {
+      query: '',
     },
   } as CanonicalDocumentParsingPageResponse;
 }
@@ -244,5 +250,65 @@ describe('DocumentParsingPage identity-bound load epoch', () => {
     await expect(generationOneRead).resolves.toEqual(page('GENERATION_1'));
 
     expect(projectionCalls).toBe(2);
+  });
+
+  it('hands a just-read projection to the same session route without a duplicate request', () => {
+    const fresh = page('ROUTE_HANDOFF');
+    const handoff = createCanonicalDocumentParsingRouteHandoff(
+      fresh,
+      7,
+      '',
+      1_000,
+    );
+
+    expect(
+      resolveCanonicalDocumentParsingRouteHandoff(handoff, {
+        sessionGeneration: 7,
+        workItemId: 'WI-SHARED',
+        query: '',
+        nowMs: 5_999,
+      }),
+    ).toBe(fresh);
+  });
+
+  it('rejects stale, cross-session, cross-work-item, and cross-query route handoffs', () => {
+    const fresh = page('ROUTE_HANDOFF');
+    const handoff = createCanonicalDocumentParsingRouteHandoff(
+      fresh,
+      7,
+      '',
+      1_000,
+    );
+    const expected = {
+      sessionGeneration: 7,
+      workItemId: 'WI-SHARED',
+      query: '',
+      nowMs: 6_001,
+    };
+
+    expect(
+      resolveCanonicalDocumentParsingRouteHandoff(handoff, expected),
+    ).toBeNull();
+    expect(
+      resolveCanonicalDocumentParsingRouteHandoff(handoff, {
+        ...expected,
+        nowMs: 1_001,
+        sessionGeneration: 8,
+      }),
+    ).toBeNull();
+    expect(
+      resolveCanonicalDocumentParsingRouteHandoff(handoff, {
+        ...expected,
+        nowMs: 1_001,
+        workItemId: 'WI-OTHER',
+      }),
+    ).toBeNull();
+    expect(
+      resolveCanonicalDocumentParsingRouteHandoff(handoff, {
+        ...expected,
+        nowMs: 1_001,
+        query: 'applicability',
+      }),
+    ).toBeNull();
   });
 });

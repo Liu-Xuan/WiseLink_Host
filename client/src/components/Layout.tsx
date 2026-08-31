@@ -35,71 +35,72 @@ const Layout = () => {
 
         <FloatingDock workItemId={workItemId} />
 
-        <header
-          className="wiselink-app-header wl-glass-nav"
+        <div
+          className={`wiselink-app-chrome wl-glass-nav${crumbs.length > 1 ? ' has-breadcrumb' : ''}`}
           data-wl-material="g1"
-          role="banner"
         >
-          <NavLink className="wiselink-app-brand" to="/library">
-            <span className="wiselink-app-mark" aria-hidden="true">
-              W
-            </span>
-            <span>
-              <strong>WiseLink</strong>
-              <small>工程资料与综合评估</small>
-            </span>
-          </NavLink>
-
-          <p className="wiselink-app-page-label" aria-current="page">
-            {pageLabel}
-          </p>
-
-          <div className="wiselink-app-context">
-            {workItemId ? (
-              <NavLink
-                className="wiselink-app-work-item"
-                to={`/work-items/${encodeURIComponent(workItemId)}`}
-              >
-                <FileSearch2 aria-hidden="true" />
-                <span>当前工程事项</span>
-              </NavLink>
-            ) : (
-              <span className="wiselink-app-context-note">
-                资料与结果按权限显示
+          <header className="wiselink-app-header" role="banner">
+            <NavLink className="wiselink-app-brand" to="/library">
+              <span className="wiselink-app-mark" aria-hidden="true">
+                W
               </span>
-            )}
-            <VisualModeControl />
-            <CurrentUserControl />
-          </div>
-        </header>
+              <span>
+                <strong>WiseLink</strong>
+                <small>工程资料与综合评估</small>
+              </span>
+            </NavLink>
 
-        {crumbs.length > 1 && (
-          <nav className="wiselink-breadcrumb" aria-label="面包屑">
-            <ol>
-              {crumbs.map((crumb, index) => (
-                <li key={crumb.label} className="wiselink-breadcrumb-item">
-                  {index > 0 && (
-                    <ChevronRight
-                      className="wiselink-breadcrumb-sep"
-                      aria-hidden="true"
-                    />
-                  )}
-                  {crumb.to ? (
-                    <NavLink to={crumb.to}>{crumb.label}</NavLink>
-                  ) : (
-                    <span
-                      aria-current={
-                        index === crumbs.length - 1 ? 'page' : undefined
-                      }
-                    >
-                      {crumb.label}
-                    </span>
-                  )}
-                </li>
-              ))}
-            </ol>
-          </nav>
-        )}
+            <p className="wiselink-app-page-label" aria-current="page">
+              {pageLabel}
+            </p>
+
+            <div className="wiselink-app-context">
+              {workItemId ? (
+                <NavLink
+                  className="wiselink-app-work-item"
+                  to={`/work-items/${encodeURIComponent(workItemId)}`}
+                >
+                  <FileSearch2 aria-hidden="true" />
+                  <span>当前工程事项</span>
+                </NavLink>
+              ) : (
+                <span className="wiselink-app-context-note">
+                  资料与结果按权限显示
+                </span>
+              )}
+              <VisualModeControl />
+              <CurrentUserControl />
+            </div>
+          </header>
+
+          {crumbs.length > 1 && (
+            <nav className="wiselink-breadcrumb" aria-label="面包屑">
+              <ol>
+                {crumbs.map((crumb, index) => (
+                  <li key={crumb.label} className="wiselink-breadcrumb-item">
+                    {index > 0 && (
+                      <ChevronRight
+                        className="wiselink-breadcrumb-sep"
+                        aria-hidden="true"
+                      />
+                    )}
+                    {crumb.to ? (
+                      <NavLink to={crumb.to}>{crumb.label}</NavLink>
+                    ) : (
+                      <span
+                        aria-current={
+                          index === crumbs.length - 1 ? 'page' : undefined
+                        }
+                      >
+                        {crumb.label}
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ol>
+            </nav>
+          )}
+        </div>
 
         <div className="wiselink-app-body" id="main-content" tabIndex={-1}>
           <Outlet />

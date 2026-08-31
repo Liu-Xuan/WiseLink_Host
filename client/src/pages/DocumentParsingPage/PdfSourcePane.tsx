@@ -122,6 +122,15 @@ export default function PdfSourcePane({
     <article className="parse-panel parse-pdf-pane" aria-label="PDF 原文与定位">
       <div className="parse-panel-label">
         <FileSearch aria-hidden="true" /> PDF 原文
+        <span
+          className="parse-pdf-binding"
+          aria-label={`受控文件来源：已绑定当前文件版本，${fileSizeLabel(
+            data.workItem.source.sourceByteLength,
+          )}`}
+        >
+          <strong>已绑定当前文件版本</strong>
+          <small>{fileSizeLabel(data.workItem.source.sourceByteLength)}</small>
+        </span>
         <button
           type="button"
           className="parse-pdf-mobile-return"
@@ -129,12 +138,6 @@ export default function PdfSourcePane({
         >
           返回结构化原文
         </button>
-      </div>
-
-      <div className="parse-pdf-binding">
-        <span>受控文件来源</span>
-        <strong>已绑定当前文件版本</strong>
-        <p>{fileSizeLabel(data.workItem.source.sourceByteLength)}</p>
       </div>
 
       {requestedSourceRef && locatedPages.length > 0 ? (
