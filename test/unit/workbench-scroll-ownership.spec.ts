@@ -113,9 +113,8 @@ describe('workbench scroll ownership', () => {
     expect(pdf).toContain('container.scrollTo');
     expect(pdf).toContain('onScroll={handlePagesScroll}');
     expect(pdf).toContain('pageAtReadingLine');
-    expect(pdf).toContain(
-      "data-render-state={renderRequested ? 'requested' : 'deferred'}",
-    );
+    expect(pdf).toContain('renderRequested || highlighted');
+    expect(pdf).toContain("? 'requested' : 'deferred'");
     expect(pdfStyles).toMatch(
       /\.wl-workbench-main\.is-workspace \.parse-pdf-pages\s*\{[\s\S]*?max-height: none;[\s\S]*?min-height: 0;/,
     );
