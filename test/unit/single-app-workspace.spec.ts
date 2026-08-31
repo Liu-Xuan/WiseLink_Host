@@ -255,6 +255,10 @@ describe('single canonical app workspace', () => {
     expect(visualModeStyles).toMatch(
       /\.wiselink-app-header\s+\.wl-visual-mode-trigger\s*\{\s*min-width:\s*var\(--wl-touch-target\);\s*width:\s*var\(--wl-touch-target\);\s*min-height:\s*var\(--wl-touch-target\);/,
     );
+    expect(visualModeControl).toContain('Layers3');
+    expect(visualModeControl).not.toContain('CircleGauge');
+    expect(visualModeControl).toContain('视觉效果 ·');
+    expect(visualModeControl).toContain('视觉效果：');
     expect(workbenchStyles).toContain(
       'padding-bottom: var(--wl-workbench-mobilebar-height)',
     );
