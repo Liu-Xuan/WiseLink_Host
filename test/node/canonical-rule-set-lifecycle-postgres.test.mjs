@@ -455,6 +455,7 @@ function createHarness(sql, initialWorkItem) {
     attempts,
     ruleSets,
     scope,
+    {},
   );
   return {
     dynamic,

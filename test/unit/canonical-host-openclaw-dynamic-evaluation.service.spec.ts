@@ -7,6 +7,7 @@ import {
 import type { ActionAttemptRow } from '../../server/modules/action-attempt/action-attempt.types';
 import { CanonicalHostOpenClawDynamicEvaluationService } from '../../server/modules/canonical-host/canonical-host-openclaw-dynamic-evaluation.service';
 import { CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY } from '../../server/modules/canonical-host/canonical-host-openclaw-runtime-policy';
+import { hostNativePdfClassificationFor } from '../../server/modules/canonical-host/host-native-pdf-profile.registry';
 
 const WORK_ITEM_ID = 'WI-DYNAMIC-150';
 const ATTEMPT_ID = 'ATT-DYNAMIC-REAL';
@@ -69,6 +70,62 @@ describe('CanonicalHostOpenClawDynamicEvaluationService', () => {
     expect(
       harness.ruleSets.readRuntimeSnapshotAtActivation,
     ).toHaveBeenCalledWith('tenant-dynamic', 'JACS-DYNAMIC-2', 1);
+  });
+
+  it('promotes only the current DM-bound SB adapter before reserving Dynamic', async () => {
+    const harness = createHarness();
+    const candidate = hostNativePdfClassificationFor({
+      family: 'SB',
+      issuerAuthority: 'BOEING',
+    });
+    expect(candidate).toMatchObject({ status: 'CANDIDATE' });
+    harness.workItem.classification = candidate!;
+
+    const begun = await harness.service.begin(WORK_ITEM_ID);
+
+    expect(harness.documentVersions.resolve).toHaveBeenCalledWith(
+      'DV-DYNAMIC',
+      { requireCurrent: true },
+    );
+    expect(harness.registrar.compareAndSet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workItemId: WORK_ITEM_ID,
+        expectedRevision: 5,
+        syncPrimaryAttempt: false,
+        next: expect.objectContaining({
+          classification: expect.objectContaining({
+            status: 'CONFIRMED',
+            normalizedFamily: 'SB',
+            parserProfileId: 'parser-profile:boeing.sb@1.0.0',
+          }),
+        }),
+      }),
+    );
+    expect(harness.attempts.reserveAndClaim).toHaveBeenCalledWith(
+      expect.objectContaining({ inputRevision: 6, baseRevision: 6 }),
+    );
+    expect(begun.status).toBe('RUNNING');
+  });
+
+  it('does not promote a candidate when the current DM source identity drifts', async () => {
+    const harness = createHarness();
+    harness.workItem.classification = hostNativePdfClassificationFor({
+      family: 'SB',
+      issuerAuthority: 'BOEING',
+    })!;
+    harness.documentVersions.resolve.mockResolvedValueOnce({
+      ...dmResolvedSource(),
+      artifact: {
+        ...dmResolvedSource().artifact,
+        sha256: 'f'.repeat(64),
+      },
+    });
+
+    await expect(harness.service.begin(WORK_ITEM_ID)).rejects.toThrow(
+      'DYNAMIC_EVALUATION_SB_SOURCE_BINDING_INVALID',
+    );
+    expect(harness.registrar.compareAndSet).not.toHaveBeenCalled();
+    expect(harness.attempts.reserveAndClaim).not.toHaveBeenCalled();
   });
 
   it('resolves ACTIVE inside new-attempt construction, so a zero head cannot build an attempt', async () => {
@@ -286,17 +343,28 @@ describe('CanonicalHostOpenClawDynamicEvaluationService', () => {
 
 function createHarness() {
   const workItem = workItemProjection();
+  let currentWorkItem = workItem;
   const task = taskEnvelope(workItem);
   const row = actionRow(task);
   const prepared = { row, task, result: dynamicResult(task), recovery: false };
   const registrar = {
-    getTenantScopedByWorkItemId: jest.fn(async () => workItem),
+    getTenantScopedByWorkItemId: jest.fn(async () => currentWorkItem),
     compareAndSet: jest.fn(
       async (input: {
         expectedRevision: number;
         next: Omit<CanonicalWorkItemProjection, 'revision'>;
-      }) => ({ ...input.next, revision: input.expectedRevision + 1 }),
+      }) => {
+        const updated = {
+          ...input.next,
+          revision: input.expectedRevision + 1,
+        } satisfies CanonicalWorkItemProjection;
+        currentWorkItem = updated;
+        return updated;
+      },
     ),
+  };
+  const documentVersions = {
+    resolve: jest.fn(async () => dmResolvedSource()),
   };
   const artifactStore = {
     persistAndReadback: jest.fn(async (bytes: Uint8Array) => ({
@@ -407,6 +475,7 @@ function createHarness() {
     attempts as never,
     ruleSets as never,
     scope as never,
+    documentVersions as never,
   );
   return {
     service,
@@ -419,6 +488,36 @@ function createHarness() {
     attempts,
     ruleSets,
     scope,
+    documentVersions,
+  };
+}
+
+function dmResolvedSource() {
+  return {
+    version: {
+      documentId: 'DOC-DYNAMIC',
+      documentVersionId: 'DV-DYNAMIC',
+      sourceArtifactId: 'SOURCE-ARTIFACT',
+      pdfSha256: 'b'.repeat(64),
+      byteLength: 100,
+    },
+    artifact: {
+      sourceArtifactId: 'SOURCE-ARTIFACT',
+      sha256: 'b'.repeat(64),
+      byteLength: 100,
+    },
+    family: {
+      documentFamily: 'SB',
+      issuerAuthority: 'BOEING',
+    },
+    preflight: {
+      normalizedDescriptorJson: JSON.stringify({
+        adapterRelease: {
+          adapterId: 'issuer.boeing.service_bulletin.v1',
+          adapterVersion: 'v8.4-document-family-adapter.v1',
+        },
+      }),
+    },
   };
 }
 
