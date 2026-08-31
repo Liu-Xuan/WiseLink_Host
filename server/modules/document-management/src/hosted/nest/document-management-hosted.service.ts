@@ -81,6 +81,13 @@ export class DocumentManagementHostedService {
       roles: [...context.roles],
       action: 'DOCUMENT_INGEST',
       selection,
+      ...(context.runtimeIngestAuthority
+        ? {
+            runtimeIngestAuthority: structuredClone(
+              context.runtimeIngestAuthority,
+            ),
+          }
+        : {}),
     });
   }
 

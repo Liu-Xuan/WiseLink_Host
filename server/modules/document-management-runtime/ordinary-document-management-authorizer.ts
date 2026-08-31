@@ -23,6 +23,8 @@ export class OrdinaryDocumentManagementAuthorizer implements DocumentManagementI
   ): Promise<void> {
     assertAuthenticated(input);
     const reviewAttachment: boolean = isReviewAttachmentIngest(input);
+    const oauthDevelopmentSelection: boolean =
+      isOauthSessionDevelopmentIngest(input);
     if (
       !reviewAttachment &&
       !input.roles.includes(CANONICAL_DEVELOPMENT_ROLE_ID)
@@ -32,7 +34,9 @@ export class OrdinaryDocumentManagementAuthorizer implements DocumentManagementI
     const bucketId = input.selection.bucketId.trim();
     const filePath: string | null = reviewAttachment
       ? normalizedReviewAttachmentPath(input.selection.filePath)
-      : normalizedDevelopmentFilePath(input.selection.filePath);
+      : oauthDevelopmentSelection
+        ? normalizedOauthDevelopmentFilePath(input.selection.filePath)
+        : normalizedDevelopmentFilePath(input.selection.filePath);
     if (!bucketId || !filePath) {
       throw documentActionForbidden();
     }
@@ -70,6 +74,20 @@ export class OrdinaryDocumentManagementAuthorizer implements DocumentManagementI
   }
 }
 
+function isOauthSessionDevelopmentIngest(
+  input: Parameters<DocumentManagementIngestAuthorizer['assertCanIngest']>[0],
+): boolean {
+  const authority = input.runtimeIngestAuthority;
+  return Boolean(
+    authority?.mode === 'HOSTED_OAUTH_SESSION_DEVELOPMENT_RUN' &&
+    authority.actorUserId === input.actorUserId &&
+    authority.tenantId === input.tenantId &&
+    authority.appId === CANONICAL_MIAODA_APP_ID &&
+    authority.identityProvenance === 'FEISHU_OAUTH_USER_ACCESS_TOKEN' &&
+    authority.sessionProvenance === 'SERVER_OPAQUE_SESSION',
+  );
+}
+
 function isReviewAttachmentIngest(
   input: Parameters<DocumentManagementIngestAuthorizer['assertCanIngest']>[0],
 ): boolean {
@@ -94,6 +112,24 @@ const DEVELOPMENT_FILE_PATH_PATTERN =
 function normalizedDevelopmentFilePath(value: string): string | null {
   const normalized = normalizedProviderPath(value);
   if (!DEVELOPMENT_FILE_PATH_PATTERN.test(normalized)) {
+    return null;
+  }
+  return normalized;
+}
+
+function normalizedOauthDevelopmentFilePath(value: string): string | null {
+  const normalized = normalizedProviderPath(value);
+  const pathSegments = normalized.split('/');
+  if (
+    !normalized ||
+    normalized.length > 1024 ||
+    normalized.includes('\\') ||
+    normalized.includes('\0') ||
+    !normalized.toLowerCase().endsWith('.pdf') ||
+    pathSegments.some(
+      (segment) => !segment || segment === '.' || segment === '..',
+    )
+  ) {
     return null;
   }
   return normalized;

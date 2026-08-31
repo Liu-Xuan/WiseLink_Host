@@ -24,6 +24,7 @@ const creatorContext = {
 
 const OWNED_PATH =
   'wiselink/dev-intake/0f8fad5b-d9cb-469f-a165-70867728950e/source.pdf';
+const EXISTING_OWNED_PATH = '1875002688986330.pdf';
 
 function runtimeContext(
   overrides: Partial<HostedRequestContext> = {},
@@ -165,6 +166,76 @@ describe('ordinary document-management authorization', () => {
     expect(fileService.from).toHaveBeenCalledWith('bucket-default');
     expect(fileService.getFileMetadata).toHaveBeenCalledWith(OWNED_PATH);
   });
+
+  it('allows a verified OAuth development run to reuse an owned existing PDF', async () => {
+    const metadata = {
+      bucketID: 'bucket-default',
+      filePath: EXISTING_OWNED_PATH,
+      createdBy: { userID: creatorContext.actorUserId },
+    };
+    const fileService = fileServiceTarget(metadata);
+    const authorizer = new OrdinaryDocumentManagementAuthorizer(
+      {} as never,
+      fileService as never,
+    );
+
+    await expect(
+      authorizer.assertCanIngest({
+        ...runtimeContext(),
+        action: 'DOCUMENT_INGEST',
+        selection: {
+          bucketId: 'bucket-default',
+          filePath: `/${EXISTING_OWNED_PATH}`,
+        },
+      }),
+    ).resolves.toBeUndefined();
+    expect(fileService.getFileMetadata).toHaveBeenCalledWith(
+      EXISTING_OWNED_PATH,
+    );
+  });
+
+  it.each([
+    ['missing authority', undefined],
+    [
+      'wrong OAuth actor',
+      {
+        ...runtimeContext().runtimeIngestAuthority!,
+        actorUserId: 'another-user',
+      },
+    ],
+    [
+      'wrong application',
+      {
+        ...runtimeContext().runtimeIngestAuthority!,
+        appId: 'app_other',
+      },
+    ],
+  ])(
+    'rejects an existing PDF selection with %s',
+    async (_label, runtimeIngestAuthority) => {
+      const fileService = fileServiceTarget({
+        bucketID: 'bucket-default',
+        filePath: EXISTING_OWNED_PATH,
+        createdBy: { userID: creatorContext.actorUserId },
+      });
+      const authorizer = new OrdinaryDocumentManagementAuthorizer(
+        {} as never,
+        fileService as never,
+      );
+
+      await expect(
+        authorizer.assertCanIngest({
+          ...runtimeContext({ runtimeIngestAuthority }),
+          action: 'DOCUMENT_INGEST',
+          selection: {
+            bucketId: 'bucket-default',
+            filePath: EXISTING_OWNED_PATH,
+          },
+        }),
+      ).rejects.toMatchObject({ code: 'DOCUMENT_ACTION_FORBIDDEN' });
+      expect(fileService.from).not.toHaveBeenCalled();
+    },
+  );
 
   it.each([
     [
@@ -373,6 +444,7 @@ describe('ordinary document-management authorization', () => {
       roles: context.roles,
       action: 'DOCUMENT_INGEST',
       selection: { bucketId: 'bucket-default', filePath: OWNED_PATH },
+      runtimeIngestAuthority: context.runtimeIngestAuthority,
     });
     expect(core.ingestFileServiceSelection).toHaveBeenCalledWith(
       { selection: { bucketId: 'bucket-default', filePath: OWNED_PATH } },
