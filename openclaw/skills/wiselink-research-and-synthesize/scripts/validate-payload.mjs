@@ -64,6 +64,9 @@ const PACKAGE_ID = /^urn:techpub:package:v1:sha256:[a-f0-9]{64}$/u;
 const SOURCE_REF_ID = /^urn:techpub:source-ref:v1:sha256:[a-f0-9]{64}$/u;
 /** Keep these two patterns aligned with the current Host ResultGate. */
 const ATA_CHAPTER_PATTERN = /\b\d{2,3}(?:-\d{2,3})?\b/;
+const PART_NUMBER_PATTERN =
+  /\b\d{3}-(?:FTD|SL|SIL|FOTB)-\d{2,3}-\d{3,6}(?:\s?R\d+)?\b|\bD\d{10,14}\b/;
+const CITATION_PATTERN = /\b\d{3}-FTD-\d{2,3}-\d{3,6}\b/;
 export const DYNAMIC_RULES_TRANSPORT_TARGET_MAX_UTF8_BYTES = 28_000;
 const DYNAMIC_RULE_RESULT_FIELDS = [
   'ruleId',
@@ -3098,7 +3101,7 @@ export function validateTranslationPair(input, output) {
         unitKey: source.unitKey,
         sourceText: source.text,
         candidateText: candidate.text,
-        deterministic: input.rulePack.deterministic,
+        rulePack: input.rulePack,
       }),
     );
     if (candidate.engineerRevision !== null) {
@@ -3120,9 +3123,67 @@ function translationFidelityFindings({
   unitKey,
   sourceText,
   candidateText,
-  deterministic,
+  rulePack,
 }) {
   const findings = [];
+  const deterministic = rulePack.deterministic;
+
+  for (const term of rulePack.terms ?? []) {
+    if (term.severity !== 'mandatory') continue;
+    if (!sourceText.includes(term.sourceTerm)) continue;
+    const rendered = (term.targetRenderings ?? []).some((rendering) =>
+      candidateText.includes(rendering),
+    );
+    if (!rendered) {
+      findings.push({
+        ruleId: term.ruleId,
+        code: 'TERM_MANDATORY_MISSING',
+        unitKey,
+        message: `mandatory term "${term.sourceTerm}" not rendered by any of [${(term.targetRenderings ?? []).join(', ')}]`,
+      });
+    }
+  }
+
+  for (const entry of rulePack.noTranslate ?? []) {
+    if (!sourceText.includes(entry.token)) continue;
+    if (!candidateText.includes(entry.token)) {
+      findings.push({
+        ruleId: entry.ruleId,
+        code: 'NO_TRANSLATE_VIOLATED',
+        unitKey,
+        message: `no-translate token "${entry.token}" must be retained verbatim`,
+      });
+    }
+  }
+
+  for (const pattern of deterministic.preservedIdentifierPatterns ?? []) {
+    let regex = null;
+    try {
+      regex = new RegExp(pattern, 'g');
+    } catch {
+      regex = null;
+    }
+    if (regex === null) {
+      findings.push({
+        ruleId: 'identifier.preserve',
+        code: 'UNRECOGNIZED_RULES',
+        unitKey,
+        message: `identifier pattern is not a valid regex: ${pattern}`,
+      });
+      continue;
+    }
+    for (const identifier of sourceText.match(regex) ?? []) {
+      if (!candidateText.includes(identifier)) {
+        findings.push({
+          ruleId: 'identifier.preserve',
+          code: 'IDENTIFIER_NOT_PRESERVED',
+          unitKey,
+          message: `identifier "${identifier}" must be preserved verbatim`,
+        });
+      }
+    }
+  }
+
   if (deterministic.numericFidelity) {
     // Exact Host semantics: token occurrence multiset equality catches
     // missing, changed, extra, and wrongly duplicated numeric tokens.
@@ -3152,6 +3213,18 @@ function translationFidelityFindings({
     }
   }
 
+  for (const unit of deterministic.preservedUnits ?? []) {
+    if (!containsPreservedUnit(sourceText, unit)) continue;
+    if (!containsPreservedUnit(candidateText, unit)) {
+      findings.push({
+        ruleId: 'unit.preserve',
+        code: 'UNIT_NOT_PRESERVED',
+        unitKey,
+        message: `unit "${unit}" must be preserved verbatim`,
+      });
+    }
+  }
+
   if (deterministic.preserveAtaChapterNumbers) {
     const ataMatches = sourceText.match(ATA_CHAPTER_PATTERN) ?? [];
     for (const ata of ataMatches) {
@@ -3165,7 +3238,48 @@ function translationFidelityFindings({
       }
     }
   }
+
+  if (deterministic.preservePartNumbers) {
+    for (const part of sourceText.match(PART_NUMBER_PATTERN) ?? []) {
+      if (!candidateText.includes(part)) {
+        findings.push({
+          ruleId: 'part.preserve',
+          code: 'PART_NUMBER_NOT_PRESERVED',
+          unitKey,
+          message: `part number "${part}" must be preserved verbatim`,
+        });
+      }
+    }
+  }
+
+  if (deterministic.preserveCitations) {
+    for (const citation of sourceText.match(CITATION_PATTERN) ?? []) {
+      if (!candidateText.includes(citation)) {
+        findings.push({
+          ruleId: 'citation.preserve',
+          code: 'CITATION_NOT_PRESERVED',
+          unitKey,
+          message: `citation "${citation}" must be preserved verbatim`,
+        });
+      }
+    }
+  }
   return findings;
+}
+
+function containsPreservedUnit(text, unit) {
+  let offset = 0;
+  while (offset <= text.length - unit.length) {
+    const index = text.indexOf(unit, offset);
+    if (index < 0) return false;
+    const before = index === 0 ? '' : text[index - 1] ?? '';
+    const after = text[index + unit.length] ?? '';
+    const leftBounded = !/^\p{L}/u.test(unit) || !/\p{L}/u.test(before);
+    const rightBounded = !/\p{L}$/u.test(unit) || !/\p{L}/u.test(after);
+    if (leftBounded && rightBounded) return true;
+    offset = index + Math.max(unit.length, 1);
+  }
+  return false;
 }
 
 function sourceNumbers(text) {
