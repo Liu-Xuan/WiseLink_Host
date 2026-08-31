@@ -1,9 +1,12 @@
 import {
   resolveWorkbenchAdaptiveLayout,
   resolveWorkbenchContentLayout,
+  resolveWorkbenchEvidenceActive,
   resolveWorkbenchEvidenceVisibility,
   resolveWorkbenchMainInlineMinimum,
 } from '../../client/src/features/workbench/workbench-layout';
+import { structuredSourceDeepLink } from '../../client/src/pages/DocumentParsingPage/document-parsing-navigation';
+import { summarizeWorkbenchEvidence } from '../../client/src/features/workbench/evidence-summary';
 
 const base = {
   navWidth: 304,
@@ -94,6 +97,59 @@ describe('workbench adaptive layout', () => {
     expect(
       resolveWorkbenchContentLayout('package', mainWidthAfterEmptyRailRelease),
     ).toBe('paired');
+  });
+
+  it('keeps a package SourceRef as inline PDF intent while releasing empty evidence', () => {
+    const deepLink = structuredSourceDeepLink('SOURCE-REF-22', 22);
+    const evidenceActive = resolveWorkbenchEvidenceActive(
+      deepLink.tab ?? '',
+      deepLink.sourceRef ?? '',
+    );
+    const structuredLocator = {
+      sourceRefId: 'SOURCE-REF-22',
+      kind: 'PARAGRAPH',
+      pageStart: 22,
+      pageEnd: 22,
+      quote: '受控原文摘录',
+    };
+    const evidenceSummary = summarizeWorkbenchEvidence(
+      [],
+      evidenceActive ? structuredLocator : null,
+    );
+    const layout = resolveWorkbenchAdaptiveLayout({
+      ...base,
+      bodyWidth: 1494,
+      evidenceContentCount: evidenceSummary.contentCount,
+      evidenceActive,
+    });
+    const mainWidthAfterEmptyRailRelease = 1494 - base.navWidth - 6;
+
+    expect(deepLink).toMatchObject({
+      node: 'package',
+      tab: 'package',
+      sourceRef: 'SOURCE-REF-22',
+      page: '22',
+    });
+    expect(evidenceActive).toBe(false);
+    expect(evidenceSummary).toEqual({
+      unitCount: 0,
+      referenceCount: 0,
+      contentCount: 0,
+    });
+    expect(layout.suppressEmptyEvidence).toBe(true);
+    expect(
+      resolveWorkbenchContentLayout('package', mainWidthAfterEmptyRailRelease),
+    ).toBe('paired');
+  });
+
+  it('keeps the existing Reader SourceRef evidence semantics', () => {
+    expect(resolveWorkbenchEvidenceActive('reader', 'SOURCE-REF-22')).toBe(
+      true,
+    );
+    expect(resolveWorkbenchEvidenceActive('package', 'SOURCE-REF-22')).toBe(
+      false,
+    );
+    expect(resolveWorkbenchEvidenceActive('reader', '   ')).toBe(false);
   });
 
   it('keeps an active SourceRef and PDF paired by reclaiming the navigator width', () => {

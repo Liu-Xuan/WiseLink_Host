@@ -30,6 +30,17 @@ export type WorkbenchContentLayout =
   | 'package-single';
 
 /**
+ * A SourceRef in the package workspace is an inline PDF locator, not evidence
+ * panel intent. Reader SourceRefs still represent the existing evidence flow.
+ */
+export function resolveWorkbenchEvidenceActive(
+  activeTab: string,
+  sourceRef: string,
+): boolean {
+  return activeTab === 'reader' && sourceRef.trim() !== '';
+}
+
+/**
  * Reader 与 package 的单/双面板阈值使用真实主栏宽度计算，并由 DOM state
  * 与 CSS 共同消费。这样侧栏 resize 后也不会留下“CSS 已换行、外层却裁切”
  * 的中间状态。

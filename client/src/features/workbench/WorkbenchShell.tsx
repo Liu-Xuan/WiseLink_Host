@@ -64,7 +64,7 @@ export interface WorkbenchShellProps {
   evidencePanel?: ReactNode;
   /** 当前证据面板实际可呈现的内容单元与来源引用总数。 */
   evidenceContentCount?: number;
-  /** 当前深链是否带有 active SourceRef。 */
+  /** 当前证据工作流是否带有 active SourceRef；内联 PDF 定位不计入。 */
   evidenceActive?: boolean;
   /** 主内容中点击证据引用时递增；面板自动展开（§4.2 折叠策略） */
   evidenceSignal?: number;

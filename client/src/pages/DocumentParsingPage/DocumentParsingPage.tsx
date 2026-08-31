@@ -65,6 +65,7 @@ import {
 } from '@client/src/services/viewModelMappers';
 import EvidencePanel from '@client/src/features/workbench/EvidencePanel';
 import { summarizeWorkbenchEvidence } from '@client/src/features/workbench/evidence-summary';
+import { resolveWorkbenchEvidenceActive } from '@client/src/features/workbench/workbench-layout';
 import NavigatorTree from '@client/src/features/navigation/NavigatorTree';
 import {
   buildDocumentTree,
@@ -179,6 +180,13 @@ export default function DocumentParsingPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const activeNode: WorkbenchNode = getWorkbenchNode(searchParams.get('node'));
   const activeQuery: string = searchParams.get('q')?.trim() ?? '';
+  const requestedReaderUnit: string = searchParams.get('unit')?.trim() ?? '';
+  const requestedSourceRef: string =
+    searchParams.get('sourceRef')?.trim() ?? '';
+  const evidenceContextActive: boolean = resolveWorkbenchEvidenceActive(
+    activeNode,
+    requestedSourceRef,
+  );
   const readerMode: ReaderViewMode = getReaderViewMode(
     searchParams.get('readerMode'),
   );
@@ -320,9 +328,13 @@ export default function DocumentParsingPage() {
     () =>
       summarizeWorkbenchEvidence(
         data?.readerProjection?.units ?? [],
-        structuredSourceLocator,
+        evidenceContextActive ? structuredSourceLocator : null,
       ),
-    [data?.readerProjection?.units, structuredSourceLocator],
+    [
+      data?.readerProjection?.units,
+      evidenceContextActive,
+      structuredSourceLocator,
+    ],
   );
 
   useEffect(() => {
@@ -375,9 +387,6 @@ export default function DocumentParsingPage() {
     data.workItem.classification.normalizedFamily === 'SB';
   const aeo = data.workItem.aeo ?? null;
   const results = data.readerProjection?.units ?? [];
-  const requestedReaderUnit: string = searchParams.get('unit')?.trim() ?? '';
-  const requestedSourceRef: string =
-    searchParams.get('sourceRef')?.trim() ?? '';
   const requestedPdfTargetPage: number | null = parsePdfTargetPage(
     searchParams.get('page'),
   );
@@ -604,7 +613,7 @@ export default function DocumentParsingPage() {
           />
         }
         evidenceContentCount={evidenceSummary.contentCount}
-        evidenceActive={requestedSourceRef !== ''}
+        evidenceActive={evidenceContextActive}
         evidenceSignal={evidenceSignal}
         quickOpenItems={quickOpenItems}
         tabs={WORKBENCH_TABS}

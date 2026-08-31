@@ -48,6 +48,7 @@ interface PdfCanvasPageProps {
   pageNumber: number;
   zoom: number;
   highlighted: boolean;
+  renderRequested: boolean;
 }
 
 interface PdfScrollRequest {
@@ -72,6 +73,9 @@ export default function PdfDocumentViewer({
   const [zoom, setZoom] = useState<number>(1);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<boolean>(false);
+  const [renderedPages, setRenderedPages] = useState<ReadonlySet<number>>(
+    () => new Set([targetPage ?? 1]),
+  );
   const [scrollRequest, setScrollRequest] = useState<PdfScrollRequest>(() => ({
     page: targetPage ?? 1,
     sequence: 0,
@@ -99,6 +103,7 @@ export default function PdfDocumentViewer({
     setError(false);
     setPdfDocument(null);
     setPageCount(0);
+    setRenderedPages(new Set([targetPage ?? 1]));
     void loadPdfJsRuntime(PDF_WORKER_SRC)
       .then((runtime) => {
         if (!active) return null;
@@ -147,6 +152,48 @@ export default function PdfDocumentViewer({
   const sourceTargetPage: number | null =
     targetPage === null ? null : clampPdfPage(targetPage, pageCount);
 
+  useEffect(() => {
+    const container: HTMLDivElement | null = pagesRef.current;
+    if (!container || !pdfDocument || pageCount <= 0) return;
+    const pageFrames: HTMLElement[] = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-pdf-page]'),
+    );
+    if (pageFrames.length === 0) return;
+
+    if (typeof IntersectionObserver === 'undefined') {
+      setRenderedPages(
+        new Set(
+          pageFrames.map((frame: HTMLElement) =>
+            Number(frame.getAttribute('data-pdf-page')),
+          ),
+        ),
+      );
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries: IntersectionObserverEntry[]) => {
+        const intersectingPages: number[] = entries
+          .filter((entry: IntersectionObserverEntry) => entry.isIntersecting)
+          .map((entry: IntersectionObserverEntry) =>
+            Number(entry.target.getAttribute('data-pdf-page')),
+          )
+          .filter((pageNumber: number) => Number.isSafeInteger(pageNumber));
+        if (intersectingPages.length === 0) return;
+        setRenderedPages((current: ReadonlySet<number>) => {
+          const next: Set<number> = new Set(current);
+          intersectingPages.forEach((pageNumber: number) =>
+            next.add(pageNumber),
+          );
+          return next.size === current.size ? current : next;
+        });
+      },
+      { root: container, rootMargin: '900px 0px' },
+    );
+    pageFrames.forEach((frame: HTMLElement) => observer.observe(frame));
+    return () => observer.disconnect();
+  }, [pageCount, pdfDocument]);
+
   useLayoutEffect(() => {
     const container = pagesRef.current;
     if (!container || pageCount <= 0) return;
@@ -178,6 +225,10 @@ export default function PdfDocumentViewer({
     const nextPage: number = clampPdfPage(page, pageCount);
     setCurrentPage(nextPage);
     setPageInput(String(nextPage));
+    setRenderedPages((current: ReadonlySet<number>) => {
+      if (current.has(nextPage)) return current;
+      return new Set(current).add(nextPage);
+    });
     setScrollRequest((current: PdfScrollRequest) => ({
       page: nextPage,
       sequence: current.sequence + 1,
@@ -334,6 +385,7 @@ export default function PdfDocumentViewer({
             document={pdfDocument}
             pageNumber={pageNumber}
             zoom={zoom}
+            renderRequested={renderedPages.has(pageNumber)}
             highlighted={
               pageNumber === sourceTargetPage && Boolean(targetSignal)
             }
@@ -349,46 +401,14 @@ function PdfCanvasPage({
   pageNumber,
   zoom,
   highlighted,
+  renderRequested,
 }: PdfCanvasPageProps) {
   const frameRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [renderError, setRenderError] = useState<boolean>(false);
-  const [renderRequested, setRenderRequested] = useState<boolean>(highlighted);
 
   useEffect(() => {
-    if (highlighted) setRenderRequested(true);
-  }, [highlighted]);
-
-  useEffect(() => {
-    const frame: HTMLDivElement | null = frameRef.current;
-    if (!frame || renderRequested) return;
-    if (typeof IntersectionObserver === 'undefined') {
-      setRenderRequested(true);
-      return;
-    }
-    const observer = new IntersectionObserver(
-      (entries: IntersectionObserverEntry[]) => {
-        if (
-          !entries.some(
-            (entry: IntersectionObserverEntry) => entry.isIntersecting,
-          )
-        ) {
-          return;
-        }
-        setRenderRequested(true);
-        observer.disconnect();
-      },
-      {
-        root: frame.parentElement,
-        rootMargin: '900px 0px',
-      },
-    );
-    observer.observe(frame);
-    return () => observer.disconnect();
-  }, [renderRequested]);
-
-  useEffect(() => {
-    if (!renderRequested) return;
+    if (!renderRequested && !highlighted) return;
     const frame: HTMLDivElement | null = frameRef.current;
     const canvas: HTMLCanvasElement | null = canvasRef.current;
     if (!frame || !canvas) return;
@@ -441,19 +461,21 @@ function PdfCanvasPage({
       cancelRender?.();
       page?.cleanup();
     };
-  }, [document, pageNumber, renderRequested, zoom]);
+  }, [document, highlighted, pageNumber, renderRequested, zoom]);
 
   return (
     <article
       ref={frameRef}
       className={`parse-pdf-page${highlighted ? ' is-source-target' : ''}`}
       data-pdf-page={pageNumber}
-      data-render-state={renderRequested ? 'requested' : 'deferred'}
+      data-render-state={
+        renderRequested || highlighted ? 'requested' : 'deferred'
+      }
       aria-label={`PDF 第 ${pageNumber} 页`}
-      aria-busy={!renderRequested}
+      aria-busy={!renderRequested && !highlighted}
     >
       <span className="parse-pdf-page-number">第 {pageNumber} 页</span>
-      {!renderRequested ? (
+      {!renderRequested && !highlighted ? (
         <span className="parse-pdf-page-placeholder" aria-hidden="true">
           滚动到附近时加载页面
         </span>
