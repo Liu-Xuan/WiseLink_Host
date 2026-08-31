@@ -227,65 +227,72 @@ export default function OverallAssessmentHero({
         </ul>
       </div>
 
-      <div className="wl-overall-grid">
-        <section className="wl-overall-block">
-          <h3>
-            <CircleAlert aria-hidden="true" /> 为什么重要
-          </h3>
-          <StatementList
-            statements={overall.whyItMatters}
-            onViewEvidence={onViewEvidence}
-          />
-        </section>
+      <details className="wl-overall-supporting">
+        <summary>
+          <span>展开依据、适用范围与下一步</span>
+          <small>保留当前判断作为首要信息</small>
+          <ChevronDown aria-hidden="true" />
+        </summary>
+        <div className="wl-overall-grid">
+          <section className="wl-overall-block">
+            <h3>
+              <CircleAlert aria-hidden="true" /> 为什么重要
+            </h3>
+            <StatementList
+              statements={overall.whyItMatters}
+              onViewEvidence={onViewEvidence}
+            />
+          </section>
 
-        <section className="wl-overall-block is-wide">
-          <h3>
-            <Target aria-hidden="true" /> 适用飞机与当前机队匹配
-          </h3>
-          <StatementList
-            statements={[
-              ...(overall.applicability.sourceScope
-                ? [overall.applicability.sourceScope]
-                : []),
-              ...(overall.applicability.fleetMatch
-                ? [overall.applicability.fleetMatch]
-                : []),
-              ...overall.applicability.requiredFacts,
-            ]}
-            onViewEvidence={onViewEvidence}
-          />
-        </section>
+          <section className="wl-overall-block is-wide">
+            <h3>
+              <Target aria-hidden="true" /> 适用飞机与当前机队匹配
+            </h3>
+            <StatementList
+              statements={[
+                ...(overall.applicability.sourceScope
+                  ? [overall.applicability.sourceScope]
+                  : []),
+                ...(overall.applicability.fleetMatch
+                  ? [overall.applicability.fleetMatch]
+                  : []),
+                ...overall.applicability.requiredFacts,
+              ]}
+              onViewEvidence={onViewEvidence}
+            />
+          </section>
 
-        <section className="wl-overall-block">
-          <h3>
-            <Wrench aria-hidden="true" /> 实施影响
-          </h3>
-          <StatementList
-            statements={overall.implementationImpact}
-            onViewEvidence={onViewEvidence}
-          />
-        </section>
+          <section className="wl-overall-block">
+            <h3>
+              <Wrench aria-hidden="true" /> 实施影响
+            </h3>
+            <StatementList
+              statements={overall.implementationImpact}
+              onViewEvidence={onViewEvidence}
+            />
+          </section>
 
-        <section className="wl-overall-block">
-          <h3>
-            <Gauge aria-hidden="true" /> 处置优先级
-          </h3>
-          <StatementList
-            statements={overall.dispositionPriority}
-            onViewEvidence={onViewEvidence}
-          />
-        </section>
+          <section className="wl-overall-block">
+            <h3>
+              <Gauge aria-hidden="true" /> 处置优先级
+            </h3>
+            <StatementList
+              statements={overall.dispositionPriority}
+              onViewEvidence={onViewEvidence}
+            />
+          </section>
 
-        <section className="wl-overall-block is-wide">
-          <h3>
-            <ClipboardCheck aria-hidden="true" /> 下一步
-          </h3>
-          <StatementList
-            statements={overall.nextActions}
-            onViewEvidence={onViewEvidence}
-          />
-        </section>
-      </div>
+          <section className="wl-overall-block is-wide">
+            <h3>
+              <ClipboardCheck aria-hidden="true" /> 下一步
+            </h3>
+            <StatementList
+              statements={overall.nextActions}
+              onViewEvidence={onViewEvidence}
+            />
+          </section>
+        </div>
+      </details>
 
       <footer className="wl-overall-actions">
         <button
