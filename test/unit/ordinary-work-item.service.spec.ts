@@ -148,16 +148,26 @@ function target() {
       .mockResolvedValue(verticalResult()),
     runPdfWithDevelopmentScope: jest.fn().mockResolvedValue(verticalResult()),
   };
+  const fileServiceBucket = {
+    list: jest.fn().mockResolvedValue({ attachments: [], hasMore: false }),
+  };
+  const fileService = {
+    getDefaultBucket: jest.fn().mockResolvedValue('bucket-default'),
+    from: jest.fn().mockReturnValue(fileServiceBucket),
+  };
   return {
     documentManagement,
     resolver,
     repository,
     vertical,
+    fileService,
+    fileServiceBucket,
     service: new OrdinaryWorkItemService(
       documentManagement as never,
       resolver as never,
       repository as never,
       vertical as never,
+      fileService as never,
     ),
   };
 }
@@ -205,6 +215,81 @@ function s1000dVerticalResult() {
 }
 
 describe('OrdinaryWorkItemService run identity', () => {
+  it('lists only actor-owned PDFs using the same canonical FileService path consumed by ingest', async () => {
+    const targetValue = target();
+    targetValue.fileServiceBucket.list.mockResolvedValue({
+      attachments: [
+        {
+          name: '777-34-0425.pdf',
+          filePath: '/1875002688986330.pdf',
+          createdBy: { userID: ACTOR.userId },
+          updatedAt: '2026-08-31T02:08:00.000Z',
+        },
+        {
+          name: 'other-user.pdf',
+          filePath: '/other-user.pdf',
+          createdBy: { userID: 'engineer-else' },
+          updatedAt: '2026-08-31T02:09:00.000Z',
+        },
+        {
+          name: 'notes.txt',
+          filePath: '/notes.txt',
+          createdBy: { userID: ACTOR.userId },
+          updatedAt: '2026-08-31T02:10:00.000Z',
+        },
+      ],
+      hasMore: false,
+    });
+
+    await expect(
+      targetValue.service.listOauthSessionDevelopmentPdfs(
+        { search: '777', offset: 0 },
+        OAUTH_SESSION_ACTOR,
+        GATEWAY_ACTOR,
+      ),
+    ).resolves.toEqual({
+      schemaVersion: 'wiselink.3_1.oauth_session_existing_pdf_page.v1',
+      items: [
+        {
+          selection: {
+            bucketId: 'bucket-default',
+            filePath: '1875002688986330.pdf',
+          },
+          displayName: '777-34-0425.pdf',
+          updatedAt: '2026-08-31T02:08:00.000Z',
+        },
+      ],
+      hasNextPage: false,
+      sourceTruncated: false,
+    });
+
+    expect(targetValue.fileService.from).toHaveBeenCalledWith(
+      'bucket-default',
+    );
+    expect(targetValue.fileServiceBucket.list).toHaveBeenCalledWith('', {
+      maxKeys: 500,
+      sortBy: { column: 'updated_at', order: 'desc' },
+    });
+  });
+
+  it('rejects mismatched OAuth and gateway actors before listing FileService', async () => {
+    const targetValue = target();
+
+    await expect(
+      targetValue.service.listOauthSessionDevelopmentPdfs(
+        { search: '', offset: 0 },
+        OAUTH_SESSION_ACTOR,
+        {
+          ...GATEWAY_ACTOR,
+          canonicalSubject: { namespace: 'MIAODA_USER_ID', id: 'other-user' },
+        },
+      ),
+    ).rejects.toMatchObject({
+      code: 'CANONICAL_IDENTITY_HANDOFF_UNAVAILABLE',
+    });
+    expect(targetValue.fileService.getDefaultBucket).not.toHaveBeenCalled();
+  });
+
   it('rejects a forged selection before every DM, FileService, binding, resolver, reserve, attempt, and vertical I/O', async () => {
     const targetValue = target();
 

@@ -1,10 +1,12 @@
 import {
   Body,
   Controller,
+  Get,
   HttpException,
   HttpStatus,
   Param,
   Post,
+  Query,
   Req,
 } from '@nestjs/common';
 import type { Request } from 'express';
@@ -20,6 +22,26 @@ export class OauthSessionDevelopmentWorkItemController {
     private readonly sessions: SessionResolver,
     private readonly workItems: OrdinaryWorkItemService,
   ) {}
+
+  @Get('work-items/development-runs/existing-pdfs')
+  async listExistingPdfs(
+    @Query('search') search: string | undefined,
+    @Query('offset') offset: string | undefined,
+    @Req() request: Request,
+  ) {
+    const session = await this.sessions.resolve(request);
+    if (!session) {
+      throw new HttpException(
+        { code: 'SESSION_REQUIRED', statusCode: 401 },
+        HttpStatus.UNAUTHORIZED,
+      );
+    }
+    return this.workItems.listOauthSessionDevelopmentPdfs(
+      { search, offset },
+      session.actor,
+      miaodaHostedFinalUserActor(request.userContext),
+    );
+  }
 
   @Post('work-items/development-runs')
   async create(@Body() body: unknown, @Req() request: Request) {

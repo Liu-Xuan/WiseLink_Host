@@ -220,6 +220,50 @@ export async function createDevelopmentWorkItem(
   }
 }
 
+export interface ExistingDevelopmentPdfPage {
+  schemaVersion: 'wiselink.3_1.oauth_session_existing_pdf_page.v1';
+  items: Array<{
+    selection: { bucketId: string; filePath: string };
+    displayName: string;
+    updatedAt: string;
+  }>;
+  hasNextPage: boolean;
+  sourceTruncated: boolean;
+}
+
+export async function listDevelopmentExistingPdfs(input: {
+  search: string;
+  offset: number;
+  signal: AbortSignal;
+}): Promise<ExistingDevelopmentPdfPage> {
+  const requestGeneration = clientSessionGeneration;
+  try {
+    const response = await axiosForBackend<ExistingDevelopmentPdfPage>({
+      url: '/api/canonical-host/work-items/development-runs/existing-pdfs',
+      method: 'GET',
+      params: { search: input.search, offset: input.offset },
+      signal: input.signal,
+    });
+    if (response.status === 401) {
+      throw clientLoginRequired(
+        'CANONICAL_EXISTING_PDF_LIST_FAILED',
+        requestGeneration,
+      );
+    }
+    if (response.status < 200 || response.status >= 300) {
+      throw backendResponseError(
+        response.data,
+        'CANONICAL_EXISTING_PDF_LIST_FAILED',
+      );
+    }
+    return response.data;
+  } catch (error) {
+    markRejectedCanonicalLogin(error, requestGeneration);
+    logger.error('读取受控的现有 PDF 列表失败', error);
+    throw error;
+  }
+}
+
 export async function retryDevelopmentWorkItem(
   workItemId: string,
 ): Promise<CanonicalOrdinaryWorkItemRunResponse> {
