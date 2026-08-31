@@ -114,7 +114,6 @@ export class OrdinaryWorkItemService {
     const bucketId = await this.fileService.getDefaultBucket();
     const listed = await this.fileService.from(bucketId).list('', {
       maxKeys: 500,
-      sortBy: { column: 'updated_at', order: 'desc' },
     });
     const search = String(input.search ?? '').trim().toLocaleLowerCase();
     const offset = boundedListOffset(input.offset);
@@ -136,6 +135,15 @@ export class OrdinaryWorkItemService {
           updatedAt: String(metadata.updatedAt ?? ''),
         },
       ];
+    });
+    ownedPdfs.sort((left, right) => {
+      const updatedOrder =
+        existingPdfUpdatedTimestamp(right.updatedAt) -
+        existingPdfUpdatedTimestamp(left.updatedAt);
+      if (updatedOrder !== 0) return updatedOrder;
+      return `${left.displayName}\u0000${left.selection.filePath}`.localeCompare(
+        `${right.displayName}\u0000${right.selection.filePath}`,
+      );
     });
     const pageSize = 24;
     return {
@@ -849,4 +857,9 @@ function sameExactUserId(value: unknown, actorUserId: string): boolean {
     Number.isSafeInteger(value) &&
     String(value) === actorUserId
   );
+}
+
+function existingPdfUpdatedTimestamp(value: string): number {
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
