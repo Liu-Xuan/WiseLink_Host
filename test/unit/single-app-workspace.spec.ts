@@ -134,7 +134,8 @@ describe('single canonical app workspace', () => {
     expect(home).toContain('尚无最近资料');
     expect(home).not.toContain('developmentIntakeAvailable ? null');
     expect(page).toContain('WorkbenchShell');
-    expect(page).toContain('WorkItemContextTree');
+    expect(page).toContain('NavigatorTree');
+    expect(page).not.toContain('WorkItemContextTree');
     expect(page).toContain('EvidencePanel');
     expect(tree).toContain('族群 · 文档 · 修订');
     expect(tree).toContain('随当前工程事项的最新资料更新');
