@@ -237,6 +237,12 @@ describe('OrdinaryWorkItemService run identity', () => {
           createdBy: { userID: ACTOR.userId },
           updatedAt: '2026-08-31T02:10:00.000Z',
         },
+        {
+          name: '777-34-0425-later.pdf',
+          filePath: '/1875002688986331.pdf',
+          createdBy: { userID: ACTOR.userId },
+          updatedAt: '2026-08-31T03:08:00.000Z',
+        },
       ],
       hasMore: false,
     });
@@ -250,6 +256,14 @@ describe('OrdinaryWorkItemService run identity', () => {
     ).resolves.toEqual({
       schemaVersion: 'wiselink.3_1.oauth_session_existing_pdf_page.v1',
       items: [
+        {
+          selection: {
+            bucketId: 'bucket-default',
+            filePath: '1875002688986331.pdf',
+          },
+          displayName: '777-34-0425-later.pdf',
+          updatedAt: '2026-08-31T03:08:00.000Z',
+        },
         {
           selection: {
             bucketId: 'bucket-default',
@@ -268,7 +282,6 @@ describe('OrdinaryWorkItemService run identity', () => {
     );
     expect(targetValue.fileServiceBucket.list).toHaveBeenCalledWith('', {
       maxKeys: 500,
-      sortBy: { column: 'updated_at', order: 'desc' },
     });
   });
 
