@@ -11,9 +11,11 @@ import {
 } from 'lucide-react';
 
 import {
+  getCanonicalHostClientSessionGeneration,
   getDocumentParsingPage,
   isCanonicalObjectNotFound,
 } from '@client/src/api/canonical-host';
+import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSessionProvider';
 import OverallAssessmentHero from '@client/src/features/workitem/OverallAssessmentHero';
 import { useOverallRegeneration } from '@client/src/features/workitem/useOverallRegeneration';
 import AuthorityStrip from '@client/src/features/workitem/AuthorityStrip';
@@ -29,32 +31,64 @@ import '@client/src/features/workitem/workitem-overview.css';
  * 数据全部来自 getDocumentParsingPage fresh-read，不建第二真源。
  */
 export default function WorkItemOverviewPage() {
+  const { authenticationRequired, sessionGeneration } = useCurrentUserSession();
   const { workItemId = '' } = useParams<{ workItemId: string }>();
   const navigate = useNavigate();
   const [view, setView] = useState<WorkItemView | null>(null);
+  const [viewSessionGeneration, setViewSessionGeneration] = useState<
+    number | null
+  >(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadSignal, setReloadSignal] = useState(0);
   const overallRegeneration = useOverallRegeneration({
     workItemId,
+    sessionGeneration,
     onSucceeded: (fresh) => {
+      if (
+        authenticationRequired ||
+        getCanonicalHostClientSessionGeneration() !== sessionGeneration
+      ) {
+        return;
+      }
       setView(toWorkItemView(fresh));
+      setViewSessionGeneration(sessionGeneration);
       setError(null);
     },
   });
 
   useEffect(() => {
-    if (!workItemId) return;
     let cancelled = false;
+    const isCurrentSession = (): boolean =>
+      !cancelled &&
+      getCanonicalHostClientSessionGeneration() === sessionGeneration;
     setLoading(true);
     setError(null);
     setView(null);
+    setViewSessionGeneration(null);
+    if (authenticationRequired) {
+      setLoading(false);
+      setError('请先登录，再读取当前账户可访问的事项。');
+      return () => {
+        cancelled = true;
+      };
+    }
+    if (!workItemId) {
+      setLoading(false);
+      setError('当前事项标识缺失，请从资料库重新进入。');
+      return () => {
+        cancelled = true;
+      };
+    }
     void (async () => {
       try {
         const fresh = await getDocumentParsingPage(workItemId, '');
-        if (!cancelled) setView(toWorkItemView(fresh));
+        if (isCurrentSession()) {
+          setView(toWorkItemView(fresh));
+          setViewSessionGeneration(sessionGeneration);
+        }
       } catch (reason) {
-        if (!cancelled) {
+        if (isCurrentSession()) {
           setError(
             isCanonicalObjectNotFound(reason)
               ? '该事项不存在或当前用户无权读取；请从资料库重新进入。'
@@ -62,13 +96,13 @@ export default function WorkItemOverviewPage() {
           );
         }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (isCurrentSession()) setLoading(false);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [reloadSignal, workItemId]);
+  }, [authenticationRequired, reloadSignal, sessionGeneration, workItemId]);
 
   function openWorkbench(): void {
     navigate(
@@ -84,6 +118,11 @@ export default function WorkItemOverviewPage() {
       `/work-items/${encodeURIComponent(workItemId)}/documents?node=reader&tab=reader${sourceQuery}`,
     );
   }
+
+  const visibleView =
+    !authenticationRequired && viewSessionGeneration === sessionGeneration
+      ? view
+      : null;
 
   if (loading) {
     return (
@@ -125,15 +164,15 @@ export default function WorkItemOverviewPage() {
     );
   }
 
-  if (!view) return null;
+  if (!visibleView) return null;
 
   return (
     <main className="wl-overview-page wl-workbench-enter">
       <h1 className="wl-visually-hidden">当前工程事项综合评估</h1>
-      <AuthorityStrip view={view} />
+      <AuthorityStrip view={visibleView} />
 
       <OverallAssessmentHero
-        view={view}
+        view={visibleView}
         onOpenWorkbench={openWorkbench}
         onViewEvidence={viewEvidence}
         regeneration={overallRegeneration}
@@ -147,15 +186,15 @@ export default function WorkItemOverviewPage() {
           <ul className="wl-side-list">
             <li>
               <FileText aria-hidden="true" />
-              <span>{view.documentLabel}</span>
+              <span>{visibleView.documentLabel}</span>
               <small>当前受控文件版本</small>
             </li>
             <li>
               <Network aria-hidden="true" />
               <span>结构化解析结果</span>
               <small>
-                {view.overall
-                  ? `${view.overall.sourceCount} 条来源引用`
+                {visibleView.overall
+                  ? `${visibleView.overall.sourceCount} 条来源引用`
                   : '综合评估来源尚未形成'}
               </small>
             </li>
@@ -167,9 +206,9 @@ export default function WorkItemOverviewPage() {
           <h3>
             <History aria-hidden="true" /> 最近变化
           </h3>
-          {view.lastEvents.length > 0 ? (
+          {visibleView.lastEvents.length > 0 ? (
             <ul className="wl-side-list">
-              {view.lastEvents.map((event) => (
+              {visibleView.lastEvents.map((event) => (
                 <li key={event.id}>
                   <FileClock aria-hidden="true" />
                   <span>{event.label}</span>

@@ -22,6 +22,7 @@ export interface CanonicalDocumentParsingLoadCallbacks {
 
 export interface CanonicalDocumentParsingProjectionRequest {
   identity: CanonicalDocumentParsingIdentity;
+  sessionGeneration: number;
   workItemId: string;
   query: string;
 }
@@ -46,6 +47,7 @@ export function createCanonicalDocumentParsingProjectionReader(): CanonicalDocum
   return {
     read(request, readProjection) {
       const key: string = JSON.stringify([
+        request.sessionGeneration,
         request.identity.tenantId,
         request.identity.userId,
         request.workItemId.trim(),
@@ -90,33 +92,12 @@ export async function runCanonicalDocumentParsingLoad(
     page = await callbacks.readPage(startedIdentity);
   } catch (cause) {
     if (!callbacks.isCurrent()) return;
-    const identityConfirmed = await confirmIdentity(callbacks, startedIdentity);
-    if (!identityConfirmed || !callbacks.isCurrent()) return;
     callbacks.onDenied(startedIdentity, cause);
     if (callbacks.isCurrent()) callbacks.onSettled();
     return;
   }
   if (!callbacks.isCurrent()) return;
 
-  const identityConfirmed = await confirmIdentity(callbacks, startedIdentity);
-  if (!identityConfirmed || !callbacks.isCurrent()) return;
   callbacks.onFresh(startedIdentity, page);
   if (callbacks.isCurrent()) callbacks.onSettled();
-}
-
-async function confirmIdentity(
-  callbacks: CanonicalDocumentParsingLoadCallbacks,
-  startedIdentity: CanonicalDocumentParsingIdentity,
-): Promise<boolean> {
-  let currentIdentity: CanonicalDocumentParsingIdentity;
-  try {
-    currentIdentity = await callbacks.readIdentity();
-  } catch {
-    return false;
-  }
-  return (
-    callbacks.isCurrent() &&
-    currentIdentity.userId === startedIdentity.userId &&
-    currentIdentity.tenantId === startedIdentity.tenantId
-  );
 }

@@ -32,7 +32,7 @@ import {
 import { Textarea } from '@client/src/components/ui/textarea';
 import { rememberRecentWorkItem } from '@client/src/utils/recent-work-items';
 import { forgetRecentWorkItem } from '@client/src/utils/recent-work-items';
-import { useCurrentUserProfile } from '@lark-apaas/client-toolkit/hooks/useCurrentUserProfile';
+import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSessionProvider';
 
 import {
   getWorkbenchNode,
@@ -170,11 +170,10 @@ function flattenNavigationTree(
 }
 
 export default function DocumentParsingPage() {
-  const currentUser = useCurrentUserProfile();
+  const { authenticationRequired, sessionGeneration } = useCurrentUserSession();
   const navigate = useNavigate();
-  const actorSignal: string = String(currentUser.user_id ?? '').trim();
-  const actorSignalRef = useRef<string>(actorSignal);
-  actorSignalRef.current = actorSignal;
+  const sessionGenerationRef = useRef<number>(sessionGeneration);
+  sessionGenerationRef.current = sessionGeneration;
   const loadEpochRef = useRef<number>(0);
   const { workItemId = '' } = useParams<{ workItemId: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -193,7 +192,9 @@ export default function DocumentParsingPage() {
   const [query, setQuery] = useState<string>(activeQuery);
   const [pageData, setPageData] =
     useState<CanonicalDocumentParsingPageResponse | null>(null);
-  const [pageActorSignal, setPageActorSignal] = useState<string | null>(null);
+  const [pageSessionGeneration, setPageSessionGeneration] = useState<
+    number | null
+  >(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [assessmentAction, setAssessmentAction] = useState<
@@ -223,6 +224,7 @@ export default function DocumentParsingPage() {
     useState<CanonicalStructuredContentSourceLocator | null>(null);
   const overallRegeneration = useOverallRegeneration({
     workItemId,
+    sessionGeneration,
     onSucceeded: async () => load(activeQuery),
   });
 
@@ -244,7 +246,7 @@ export default function DocumentParsingPage() {
   async function load(nextQuery: string): Promise<void> {
     const epoch: number = loadEpochRef.current + 1;
     loadEpochRef.current = epoch;
-    const startedActorSignal: string = actorSignal;
+    const startedSessionGeneration: number = sessionGeneration;
     if (!workItemId) {
       setError('WORKITEM_ID_REQUIRED');
       setLoading(false);
@@ -252,22 +254,29 @@ export default function DocumentParsingPage() {
     }
     setLoading(true);
     setPageData(null);
-    setPageActorSignal(null);
+    setPageSessionGeneration(null);
     setError(null);
     const isCurrent = (): boolean =>
       loadEpochRef.current === epoch &&
-      actorSignalRef.current === startedActorSignal;
+      sessionGenerationRef.current === startedSessionGeneration &&
+      canonicalHost.getCanonicalHostClientSessionGeneration() ===
+        startedSessionGeneration;
     await runCanonicalDocumentParsingLoad({
       isCurrent,
       readIdentity: canonicalHost.getCanonicalHostIdentityContext,
       readPage: (identity) =>
         documentParsingProjectionReader.read(
-          { identity, workItemId, query: nextQuery },
+          {
+            identity,
+            sessionGeneration: startedSessionGeneration,
+            workItemId,
+            query: nextQuery,
+          },
           () => canonicalHost.getDocumentParsingPage(workItemId, nextQuery),
         ),
       onFresh: (identity, fresh) => {
         setPageData(fresh);
-        setPageActorSignal(startedActorSignal);
+        setPageSessionGeneration(startedSessionGeneration);
         rememberRecentWorkItem(identity, {
           workItemId: fresh.workItem.workItemId,
           family: fresh.workItem.classification.normalizedFamily,
@@ -280,7 +289,7 @@ export default function DocumentParsingPage() {
       },
       onDenied: (identity, cause) => {
         setPageData(null);
-        setPageActorSignal(null);
+        setPageSessionGeneration(null);
         if (canonicalHost.isCanonicalObjectNotFound(cause)) {
           forgetRecentWorkItem(identity, workItemId);
         }
@@ -288,7 +297,7 @@ export default function DocumentParsingPage() {
       },
       onIdentityError: (cause) => {
         setPageData(null);
-        setPageActorSignal(null);
+        setPageSessionGeneration(null);
         setError(
           cause instanceof Error
             ? cause.message
@@ -301,12 +310,12 @@ export default function DocumentParsingPage() {
 
   useEffect(() => {
     setQuery(activeQuery);
-    if (!actorSignal) {
+    if (authenticationRequired) {
       loadEpochRef.current += 1;
       setPageData(null);
-      setPageActorSignal(null);
-      setError(null);
-      setLoading(true);
+      setPageSessionGeneration(null);
+      setError('CANONICAL_HOST_IDENTITY_REQUIRED');
+      setLoading(false);
       return () => {
         loadEpochRef.current += 1;
       };
@@ -315,7 +324,7 @@ export default function DocumentParsingPage() {
     return () => {
       loadEpochRef.current += 1;
     };
-  }, [workItemId, activeQuery, actorSignal]);
+  }, [workItemId, activeQuery, authenticationRequired, sessionGeneration]);
 
   useEffect(() => {
     setContinuousReviewReceipt(null);
@@ -323,7 +332,7 @@ export default function DocumentParsingPage() {
   }, [workItemId]);
 
   const data: CanonicalDocumentParsingPageResponse | null =
-    pageActorSignal === actorSignal ? pageData : null;
+    pageSessionGeneration === sessionGeneration ? pageData : null;
   const evidenceSummary = useMemo(
     () =>
       summarizeWorkbenchEvidence(

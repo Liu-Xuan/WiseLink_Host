@@ -110,6 +110,7 @@ describe('DocumentParsingPage identity-bound load epoch', () => {
           projectionReader.read(
             {
               identity,
+              sessionGeneration: 1,
               workItemId: 'WI-SHARED',
               query: epoch === 1 ? '  hydraulic  ' : 'hydraulic',
             },
@@ -149,24 +150,99 @@ describe('DocumentParsingPage identity-bound load epoch', () => {
       };
 
     await projectionReader.read(
-      { identity: identityA, workItemId: 'WI-SHARED', query: 'hydraulic' },
+      {
+        identity: identityA,
+        sessionGeneration: 1,
+        workItemId: 'WI-SHARED',
+        query: 'hydraulic',
+      },
       readProjection,
     );
     await projectionReader.read(
-      { identity: identityA, workItemId: 'WI-SHARED', query: 'hydraulic' },
+      {
+        identity: identityA,
+        sessionGeneration: 1,
+        workItemId: 'WI-SHARED',
+        query: 'hydraulic',
+      },
       readProjection,
     );
     await Promise.all([
       projectionReader.read(
-        { identity: identityA, workItemId: 'WI-SHARED', query: 'electrical' },
+        {
+          identity: identityA,
+          sessionGeneration: 1,
+          workItemId: 'WI-SHARED',
+          query: 'electrical',
+        },
         readProjection,
       ),
       projectionReader.read(
-        { identity: identityB, workItemId: 'WI-SHARED', query: 'hydraulic' },
+        {
+          identity: identityB,
+          sessionGeneration: 1,
+          workItemId: 'WI-SHARED',
+          query: 'hydraulic',
+        },
         readProjection,
       ),
     ]);
 
     expect(projectionCalls).toBe(4);
+  });
+
+  it('reads identity once for a successful load and once for a denied load', async () => {
+    const successfulIdentity = jest.fn().mockResolvedValue(identityA);
+    const deniedIdentity = jest.fn().mockResolvedValue(identityA);
+
+    await runCanonicalDocumentParsingLoad({
+      isCurrent: () => true,
+      readIdentity: successfulIdentity,
+      readPage: jest.fn().mockResolvedValue(page('SUCCESS')),
+      onFresh: jest.fn(),
+      onDenied: jest.fn(),
+      onIdentityError: jest.fn(),
+      onSettled: jest.fn(),
+    });
+    await runCanonicalDocumentParsingLoad({
+      isCurrent: () => true,
+      readIdentity: deniedIdentity,
+      readPage: jest.fn().mockRejectedValue(new Error('DENIED')),
+      onFresh: jest.fn(),
+      onDenied: jest.fn(),
+      onIdentityError: jest.fn(),
+      onSettled: jest.fn(),
+    });
+
+    expect(successfulIdentity).toHaveBeenCalledTimes(1);
+    expect(deniedIdentity).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not share an in-flight projection across session generations', async () => {
+    const projectionReader = createCanonicalDocumentParsingProjectionReader();
+    const firstProjection = deferred<CanonicalDocumentParsingPageResponse>();
+    let projectionCalls = 0;
+    const startRead = (sessionGeneration: number) =>
+      projectionReader.read(
+        {
+          identity: identityA,
+          sessionGeneration,
+          workItemId: 'WI-SHARED',
+          query: 'hydraulic',
+        },
+        () => {
+          projectionCalls += 1;
+          return sessionGeneration === 1
+            ? firstProjection.promise
+            : Promise.resolve(page('GENERATION_2'));
+        },
+      );
+
+    const generationOneRead = startRead(1);
+    await expect(startRead(2)).resolves.toEqual(page('GENERATION_2'));
+    firstProjection.resolve(page('GENERATION_1'));
+    await expect(generationOneRead).resolves.toEqual(page('GENERATION_1'));
+
+    expect(projectionCalls).toBe(2);
   });
 });

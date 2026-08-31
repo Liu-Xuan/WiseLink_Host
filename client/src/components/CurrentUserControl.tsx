@@ -1,17 +1,15 @@
-import { useEffect, useState, type FC } from 'react';
+import { useState, type FC } from 'react';
 import { authClient } from '@lark-apaas/client-toolkit/auth';
-import { useCurrentUserProfile } from '@lark-apaas/client-toolkit/hooks/useCurrentUserProfile';
 import {
   ChevronDown,
-  CircleAlert,
   LoaderCircle,
   LogIn,
   LogOut,
-  RefreshCw,
   UserRound,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
+import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSessionProvider';
 import { UserDisplay } from '@client/src/components/business-ui/user-display';
 import {
   DropdownMenu,
@@ -22,67 +20,28 @@ import {
   DropdownMenuTrigger,
 } from '@client/src/components/ui/dropdown-menu';
 
-type SessionState =
-  | 'checking'
-  | 'authenticated'
-  | 'unauthenticated'
-  | 'unavailable';
+type SessionState = 'checking' | 'authenticated' | 'unauthenticated';
 
 const CurrentUserControl: FC = () => {
-  const currentUser = useCurrentUserProfile();
-  const [sessionState, setSessionState] = useState<SessionState>('checking');
-  const [sessionUserId, setSessionUserId] = useState<string | null>(null);
-  const [sessionRevision, setSessionRevision] = useState<number>(0);
+  const {
+    authenticationRequired,
+    clearCurrentUser,
+    currentUser,
+    invalidateSession,
+    profileSettled,
+  } = useCurrentUserSession();
   const [signingOut, setSigningOut] = useState<boolean>(false);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    if (currentUser.user_id) {
-      setSessionUserId(currentUser.user_id);
-      setSessionState('authenticated');
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    setSessionState('checking');
-    void authClient.session
-      .getUserInfo()
-      .then((result) => {
-        if (cancelled) return;
-        if (result.status === 401) {
-          setSessionUserId(null);
-          setSessionState('unauthenticated');
-          return;
-        }
-        if (result.error) {
-          setSessionUserId(null);
-          setSessionState('unavailable');
-          return;
-        }
-        const resolvedUserId = result.data.user_info?.user_id;
-        if (!resolvedUserId) {
-          setSessionUserId(null);
-          setSessionState('unavailable');
-          return;
-        }
-        setSessionUserId(String(resolvedUserId));
-        setSessionState('authenticated');
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setSessionUserId(null);
-          setSessionState('unavailable');
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [currentUser.user_id, sessionRevision]);
+  const userId = String(currentUser.user_id ?? '').trim();
+  const sessionState: SessionState = authenticationRequired
+    ? 'unauthenticated'
+    : userId
+      ? 'authenticated'
+      : profileSettled
+        ? 'unauthenticated'
+        : 'checking';
 
   function handleLogin(): void {
+    invalidateSession();
     const result = authClient.session.redirectToLogin();
     if (result.error) {
       toast.error('登录入口暂时不可用，请稍后重试。');
@@ -104,10 +63,10 @@ const CurrentUserControl: FC = () => {
         toast.error('退出登录未完成，请稍后重试。');
         return;
       }
+      clearCurrentUser();
+      invalidateSession();
       const redirect = authClient.session.redirectToLogin();
       if (redirect.error) {
-        setSessionUserId(null);
-        setSessionState('unauthenticated');
         toast.error('已退出登录，请重新打开登录页。');
       }
     } catch {
@@ -144,38 +103,11 @@ const CurrentUserControl: FC = () => {
     );
   }
 
-  if (sessionState === 'unavailable') {
-    return (
-      <button
-        type="button"
-        className="wiselink-account-state is-action is-warning"
-        aria-label="重试读取当前用户"
-        onClick={() => setSessionRevision((revision) => revision + 1)}
-      >
-        <CircleAlert aria-hidden="true" />
-        <span>重试身份</span>
-        <RefreshCw aria-hidden="true" />
-      </button>
-    );
-  }
-
-  const userId = currentUser.user_id ?? sessionUserId;
-  if (!userId) {
-    return (
-      <span className="wiselink-account-state is-warning" role="status">
-        <CircleAlert aria-hidden="true" />
-        <span>身份信息未返回</span>
-      </span>
-    );
-  }
-
-  const displayValue = currentUser.user_id
-    ? {
-        user_id: currentUser.user_id,
-        name: currentUser.name,
-        avatar: currentUser.avatar,
-      }
-    : userId;
+  const displayValue = {
+    user_id: userId,
+    name: currentUser.name,
+    avatar: currentUser.avatar,
+  };
 
   return (
     <div className="wiselink-account-control">

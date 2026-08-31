@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useCurrentUserProfile } from '@lark-apaas/client-toolkit/hooks/useCurrentUserProfile';
 import {
   ArrowRight,
   ChevronRight,
@@ -26,6 +25,7 @@ import type {
 } from '@shared/api.interface';
 import {
   getCanonicalHostIdentityContext,
+  getCanonicalHostClientSessionGeneration,
   getDocumentParsingPage,
   isCanonicalObjectNotFound,
   requireOfficialOauthSession,
@@ -39,6 +39,7 @@ import type {
 import { humanState } from '@client/src/features/navigation/treeMappers';
 import { Button } from '@client/src/components/ui/button';
 import { Input } from '@client/src/components/ui/input';
+import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSessionProvider';
 import {
   forgetRecentWorkItem,
   readRecentWorkItems,
@@ -186,13 +187,15 @@ function candidateStepCopy(
 }
 
 export default function WorkspaceHomePage() {
-  const currentUser = useCurrentUserProfile();
+  const { authenticationRequired, sessionGeneration } = useCurrentUserSession();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [workItemId, setWorkItemId] = useState<string>('');
-  const [data, setData] = useState<CanonicalDocumentParsingPageResponse | null>(
-    null,
-  );
+  const [pageData, setPageData] =
+    useState<CanonicalDocumentParsingPageResponse | null>(null);
+  const [loadedSessionGeneration, setLoadedSessionGeneration] = useState<
+    number | null
+  >(null);
   const [selection, setSelection] = useState<LibrarySelection>('work-item');
   const [treeMode, setTreeMode] = useState<NavigatorMode>(
     searchParams.get('mode') === 'matter' ? 'matter' : 'document',
@@ -213,14 +216,26 @@ export default function WorkspaceHomePage() {
     // 深链标识仅用于路由读取，不回显到用户输入框。
     setWorkItemId('');
     let cancelled = false;
+    const isCurrentSession = (): boolean =>
+      !cancelled &&
+      getCanonicalHostClientSessionGeneration() === sessionGeneration;
     setLoading(true);
-    setData(null);
+    setPageData(null);
+    setLoadedSessionGeneration(null);
     setError(null);
     setRecentWorkItems([]);
     setDevelopmentIntakeAvailable(false);
+    if (authenticationRequired) {
+      setLoading(false);
+      setError('请先登录，再读取当前账户可访问的资料。');
+      return () => {
+        cancelled = true;
+      };
+    }
     void (async () => {
       const identity = await getCanonicalHostIdentityContext();
-      if (cancelled) return;
+      if (!isCurrentSession()) return;
+      setLoadedSessionGeneration(sessionGeneration);
       setDevelopmentIntakeAvailable(
         identity.developmentIntakeAvailable === true,
       );
@@ -231,8 +246,8 @@ export default function WorkspaceHomePage() {
       }
       try {
         const fresh = await getDocumentParsingPage(deepLinkedWorkItemId, '');
-        if (cancelled) return;
-        setData(fresh);
+        if (!isCurrentSession()) return;
+        setPageData(fresh);
         setSelection('work-item');
         rememberRecentWorkItem(identity, {
           workItemId: fresh.workItem.workItemId,
@@ -245,38 +260,49 @@ export default function WorkspaceHomePage() {
         });
         setRecentWorkItems(readRecentWorkItems(identity));
       } catch (reason) {
-        if (cancelled) return;
+        if (!isCurrentSession()) return;
         if (isCanonicalObjectNotFound(reason)) {
           forgetRecentWorkItem(identity, deepLinkedWorkItemId);
           setRecentWorkItems(readRecentWorkItems(identity));
         }
-        setData(null);
+        setPageData(null);
         setError(errorLabel(reason));
       }
     })()
       .catch((reason: unknown) => {
-        if (!cancelled) {
-          setData(null);
+        if (isCurrentSession()) {
+          setPageData(null);
           setRecentWorkItems([]);
           setError(errorLabel(reason));
         }
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (isCurrentSession()) setLoading(false);
       });
 
     return () => {
       cancelled = true;
     };
-  }, [currentUser.user_id, refreshRevision, searchParams]);
+  }, [
+    authenticationRequired,
+    refreshRevision,
+    searchParams,
+    sessionGeneration,
+  ]);
 
+  const sessionDataVisible =
+    !authenticationRequired && loadedSessionGeneration === sessionGeneration;
+  const data = sessionDataVisible ? pageData : null;
+  const visibleRecentWorkItems = sessionDataVisible ? recentWorkItems : [];
+  const visibleDevelopmentIntakeAvailable =
+    sessionDataVisible && developmentIntakeAvailable;
   const projection = data?.workItem ?? null;
   const phaseLabel = projection
     ? PHASE_LABELS[projection.phase]
     : '尚未选择工程事项';
   const tone = projection ? phaseTone(projection.phase) : 'muted';
   const parseAction = availableParseAction(
-    developmentIntakeAvailable,
+    visibleDevelopmentIntakeAvailable,
     projection,
   );
   const nodes = useMemo(() => {
@@ -287,19 +313,21 @@ export default function WorkspaceHomePage() {
     Array<{ family: string; documents: RecentWorkItemReference[] }>
   >(() => {
     const grouped: Map<string, RecentWorkItemReference[]> = new Map();
-    recentWorkItems.forEach((reference: RecentWorkItemReference): void => {
-      grouped.set(reference.family, [
-        ...(grouped.get(reference.family) ?? []),
-        reference,
-      ]);
-    });
+    visibleRecentWorkItems.forEach(
+      (reference: RecentWorkItemReference): void => {
+        grouped.set(reference.family, [
+          ...(grouped.get(reference.family) ?? []),
+          reference,
+        ]);
+      },
+    );
     return Array.from(grouped.entries()).map(
       ([family, documents]: [string, RecentWorkItemReference[]]) => ({
         family,
         documents,
       }),
     );
-  }, [recentWorkItems]);
+  }, [visibleRecentWorkItems]);
 
   const visibleRecentFamilies = recentFamilies;
 
@@ -387,6 +415,7 @@ export default function WorkspaceHomePage() {
 
   async function retryExistingWorkItem(): Promise<void> {
     if (!projection || parseAction === null || retrying) return;
+    const startedSessionGeneration = sessionGeneration;
     const expected = {
       workItemId: projection.workItemId,
       documentVersionId: projection.source.documentVersionId,
@@ -402,7 +431,13 @@ export default function WorkspaceHomePage() {
         'applicability',
       );
       assertSameWorkItemReparseReadback(readback, expected);
-      setData(readback);
+      if (
+        getCanonicalHostClientSessionGeneration() !== startedSessionGeneration
+      ) {
+        return;
+      }
+      setPageData(readback);
+      setLoadedSessionGeneration(startedSessionGeneration);
       navigate(
         `/work-items/${encodeURIComponent(expected.workItemId)}/documents?node=document&tab=source`,
       );
@@ -428,7 +463,7 @@ export default function WorkspaceHomePage() {
       </header>
 
       <div
-        className={`library-entry-grid${developmentIntakeAvailable ? ' has-intake' : ''}`}
+        className={`library-entry-grid${visibleDevelopmentIntakeAvailable ? ' has-intake' : ''}`}
       >
         <section
           className="library-query-band"
@@ -472,7 +507,7 @@ export default function WorkspaceHomePage() {
           </form>
         </section>
 
-        {developmentIntakeAvailable ? <HostedDevelopmentIntake /> : null}
+        {visibleDevelopmentIntakeAvailable ? <HostedDevelopmentIntake /> : null}
       </div>
 
       {error ? (
@@ -504,7 +539,7 @@ export default function WorkspaceHomePage() {
             </div>
             {nodes.length === 0 ? (
               <div className="library-tree-recent-wrapper">
-                {recentWorkItems.length > 0 ? (
+                {visibleRecentWorkItems.length > 0 ? (
                   <div
                     className="library-recent-list"
                     role="tree"
@@ -576,7 +611,7 @@ export default function WorkspaceHomePage() {
                     <FileBox aria-hidden="true" />
                     <strong>尚无最近资料</strong>
                     <p>
-                      {developmentIntakeAvailable
+                      {visibleDevelopmentIntakeAvailable
                         ? '粘贴已有工作链接，或在上方上传 PDF 创建工程事项；打开过的资料会按当前用户显示在这里。'
                         : '粘贴团队共享的工作链接打开资料；最近访问只用于当前用户的导航。'}
                     </p>
