@@ -124,6 +124,17 @@ function canonicalFtdCode(value = '') {
   return match ? `${match[1].toUpperCase()}-FTD-${match[2]}-${match[3]}` : '';
 }
 
+function canonicalServiceLetterCode(value = '') {
+  const match = normalizeText(value).match(
+    /\b(737MAX|737NG|737|747|757|767|777|787)\s*-\s*SL\s*-\s*(\d{2})\s*-\s*([A-Z0-9]{3,6}(?:\s*-\s*[A-Z0-9]{1,4})?)\b/iu,
+  );
+  return match
+    ? `${match[1].toUpperCase()}-SL-${match[2]}-${match[3]
+        .replace(/\s*-\s*/gu, '-')
+        .toUpperCase()}`
+    : '';
+}
+
 function extractBoeingFtd({ firstPageText, inspectedText }) {
   if (
     !/\bFLEET\s+TEAM\s+DIGEST\b/iu.test(inspectedText) ||
@@ -135,7 +146,7 @@ function extractBoeingFtd({ firstPageText, inspectedText }) {
   const documentCode = singleIdentityCandidate(
     [
       ...firstPageText.matchAll(
-        /((?:737MAX|737NG|737|747|757|767|777|787)\s*-\s*FTD\s*-\s*\d{2}\s*-\s*\d{5})\s+ISSUE\s+TITLE\b/giu,
+        /((?:737MAX|737NG|737|747|757|767|777|787)\s*-\s*FTD\s*-\s*\d{2}\s*-\s*\d{5})\s*ISSUE\s+TITLE\b/giu,
       ),
     ].map((match) => canonicalFtdCode(match[1])),
     adapterId,
@@ -144,7 +155,7 @@ function extractBoeingFtd({ firstPageText, inspectedText }) {
   const sourceGeneratedDate = singleIdentityCandidate(
     [
       ...inspectedText.matchAll(
-        /\bTHE\s+DOCUMENT\s+GENERATED\s+ON\s+(\d{1,2}\/\d{1,2}\/\d{4})\b/giu,
+        /\b(?:THE\s+)?DOCUMENT\s+GENERATED\s+ON\s+(\d{1,2}\/\d{1,2}\/\d{4})\s+BY\s+FLEET\s+TEAM\s+DIGEST\b/giu,
       ),
     ].map((match) =>
       requiredExtractedDate(match[1], adapterId, 'source generated date'),
@@ -212,11 +223,11 @@ function extractBoeingServiceLetter({ firstPageText }) {
   const adapterId = 'issuer.boeing.service_letter.v1';
   const headers = [
     ...firstPageText.matchAll(
-      /\b((?:737MAX|737NG|737|747|757|767|777|787)-SL-\d{2}-[A-Z0-9]{3,6})\b[\s\S]{0,160}?\b(\d{1,2}\s+[A-Z]{3,9}\s+\d{4})\b/giu,
+      /(?:^\s*|\bSERVICE\s+LETTER\b[\s\S]{0,240}?)((?:737MAX|737NG|737|747|757|767|777|787)\s*-\s*SL\s*-\s*\d{2}\s*-\s*[A-Z0-9]{3,6}(?:\s*-\s*[A-Z0-9]{1,4})?)\s+ATA\s*:\s*\d[\d-]{1,10}\s+(\d{1,2}\s+[A-Z]{3,9}\s+\d{4})\b/giu,
     ),
   ];
   const documentCode = singleIdentityCandidate(
-    headers.map((match) => match[1].toUpperCase()),
+    headers.map((match) => canonicalServiceLetterCode(match[1])),
     adapterId,
     'document code',
   );
@@ -454,11 +465,33 @@ export function resolveActualPdfDocumentIdentity({
       { pageCount },
     );
   }
-  const adapter = resolveDocumentFamilyAdapter({
-    filename: String(originalFilename || '').trim(),
-    title: layout?.metadata?.title || '',
-    content: inspectedText,
-  });
+  const extractedCandidates = [...ACTIVATED_IDENTITY_OWNERS.entries()]
+    .map(([adapterId, owner]) => ({
+      adapterId,
+      identity: owner({ firstPageText, inspectedText }),
+    }))
+    .filter((candidate) => candidate.identity?.documentCode);
+  if (extractedCandidates.length > 1) {
+    fail(
+      'DM_PDF_FAMILY_IDENTITY_CONFLICT',
+      'The actual PDF pages do not prove one unambiguous adapter-owned publication identity.',
+      {
+        extractedCandidates: extractedCandidates.map((candidate) => ({
+          adapterId: candidate.adapterId,
+          documentCode: candidate.identity.documentCode,
+        })),
+      },
+    );
+  }
+  const adapter = extractedCandidates.length === 1
+    ? resolveDocumentFamilyAdapter({
+        adapterId: extractedCandidates[0].adapterId,
+      })
+    : resolveDocumentFamilyAdapter({
+        filename: String(originalFilename || '').trim(),
+        title: layout?.metadata?.title || '',
+        content: inspectedText,
+      });
   if (!adapter?.adapterId || adapter.adapterId === GENERIC_ADAPTER_ID) {
     fail(
       'DM_PDF_FAMILY_UNRESOLVED',
@@ -471,29 +504,6 @@ export function resolveActualPdfDocumentIdentity({
       'DM_PDF_FAMILY_IDENTITY_NOT_ACTIVATED',
       `No production DM identity owner is activated for ${adapter.adapterId}.`,
       { adapterId: adapter.adapterId, documentFamily: adapter.docFamily },
-    );
-  }
-  const extractedCandidates = [...ACTIVATED_IDENTITY_OWNERS.entries()]
-    .map(([adapterId, owner]) => ({
-      adapterId,
-      identity: owner({ firstPageText, inspectedText }),
-    }))
-    .filter((candidate) => candidate.identity?.documentCode);
-  if (
-    extractedCandidates.length > 1 ||
-    (extractedCandidates.length === 1 &&
-      extractedCandidates[0].adapterId !== adapter.adapterId)
-  ) {
-    fail(
-      'DM_PDF_FAMILY_IDENTITY_CONFLICT',
-      'The actual PDF pages do not prove one unambiguous adapter-owned publication identity.',
-      {
-        registryAdapterId: adapter.adapterId,
-        extractedCandidates: extractedCandidates.map((candidate) => ({
-          adapterId: candidate.adapterId,
-          documentCode: candidate.identity.documentCode,
-        })),
-      },
     );
   }
   const extracted = extractedCandidates[0]?.identity;
