@@ -1,13 +1,8 @@
-jest.mock('@lark-apaas/client-toolkit/logger', () => ({
-  logger: { error: jest.fn() },
-}));
-
 import type { CanonicalDocumentParsingPageResponse } from '@shared/api.interface';
-import { runCanonicalDocumentParsingLoad } from '../../client/src/pages/DocumentParsingPage/document-parsing-load';
 import {
-  readRecentWorkItems,
-  rememberRecentWorkItem,
-} from '../../client/src/utils/recent-work-items';
+  createCanonicalDocumentParsingProjectionReader,
+  runCanonicalDocumentParsingLoad,
+} from '../../client/src/pages/DocumentParsingPage/document-parsing-load';
 
 interface Deferred<T> {
   promise: Promise<T>;
@@ -44,34 +39,12 @@ function page(marker: string): CanonicalDocumentParsingPageResponse {
 describe('DocumentParsingPage identity-bound load epoch', () => {
   const identityA = { userId: 'user-a', tenantId: 'tenant-a' };
   const identityB = { userId: 'user-b', tenantId: 'tenant-b' };
-  const values: Map<string, string> = new Map<string, string>();
-
-  beforeEach(() => {
-    values.clear();
-    Object.defineProperty(globalThis, 'window', {
-      configurable: true,
-      value: {
-        localStorage: {
-          getItem: (key: string): string | null => values.get(key) ?? null,
-          setItem: (key: string, value: string): void => {
-            values.set(key, value);
-          },
-          removeItem: (key: string): void => {
-            values.delete(key);
-          },
-        },
-      },
-    });
-  });
-
-  afterEach(() => {
-    Reflect.deleteProperty(globalThis, 'window');
-  });
 
   it('cannot render or cache an old actor response after the new actor is denied', async () => {
     const actorAReader = deferred<CanonicalDocumentParsingPageResponse>();
     let currentEpoch = 1;
     let domMarker: string | null = null;
+    const cacheMarkers: string[] = [];
     let readerCalls = 0;
 
     const actorALoad = runCanonicalDocumentParsingLoad({
@@ -81,14 +54,9 @@ describe('DocumentParsingPage identity-bound load epoch', () => {
         readerCalls += 1;
         return actorAReader.promise;
       },
-      onFresh: (identity, fresh) => {
+      onFresh: (_identity, fresh) => {
         domMarker = fresh.workItem.source.documentId;
-        rememberRecentWorkItem(identity, {
-          workItemId: fresh.workItem.workItemId,
-          family: fresh.workItem.classification.normalizedFamily,
-          documentLabel: fresh.workItem.source.documentId,
-          documentVersionId: fresh.workItem.source.documentVersionId,
-        });
+        cacheMarkers.push(fresh.workItem.source.documentId);
       },
       onDenied: jest.fn(),
       onIdentityError: jest.fn(),
@@ -124,9 +92,81 @@ describe('DocumentParsingPage identity-bound load epoch', () => {
     expect(readerCalls).toBe(2);
     expect(actorBReader).toHaveBeenCalledTimes(1);
     expect(domMarker).toBeNull();
-    expect(readRecentWorkItems(identityA)).toEqual([]);
-    expect([...values.values()].join('\n')).not.toContain(
-      'ACTOR_A_SECRET_MARKER',
+    expect(cacheMarkers).toEqual([]);
+  });
+
+  it('shares one large projection request across overlapping epochs with the same stable identity key', async () => {
+    const projectionReader = createCanonicalDocumentParsingProjectionReader();
+    const projection = deferred<CanonicalDocumentParsingPageResponse>();
+    const freshMarkers: string[] = [];
+    let currentEpoch = 1;
+    let projectionCalls = 0;
+
+    const startLoad = (epoch: number): Promise<void> =>
+      runCanonicalDocumentParsingLoad({
+        isCurrent: () => currentEpoch === epoch,
+        readIdentity: jest.fn().mockResolvedValue(identityA),
+        readPage: (identity) =>
+          projectionReader.read(
+            {
+              identity,
+              workItemId: 'WI-SHARED',
+              query: epoch === 1 ? '  hydraulic  ' : 'hydraulic',
+            },
+            () => {
+              projectionCalls += 1;
+              return projection.promise;
+            },
+          ),
+        onFresh: (_identity, fresh) => {
+          freshMarkers.push(fresh.workItem.source.documentId);
+        },
+        onDenied: jest.fn(),
+        onIdentityError: jest.fn(),
+        onSettled: jest.fn(),
+      });
+
+    const firstLoad = startLoad(1);
+    await Promise.resolve();
+    currentEpoch = 2;
+    const secondLoad = startLoad(2);
+    await Promise.resolve();
+
+    expect(projectionCalls).toBe(1);
+    projection.resolve(page('SHARED_FRESH_PROJECTION'));
+    await Promise.all([firstLoad, secondLoad]);
+
+    expect(freshMarkers).toEqual(['SHARED_FRESH_PROJECTION']);
+  });
+
+  it('does not retain completed projections or share across identity and query keys', async () => {
+    const projectionReader = createCanonicalDocumentParsingProjectionReader();
+    let projectionCalls = 0;
+    const readProjection =
+      async (): Promise<CanonicalDocumentParsingPageResponse> => {
+        projectionCalls += 1;
+        return page(`PROJECTION_${projectionCalls}`);
+      };
+
+    await projectionReader.read(
+      { identity: identityA, workItemId: 'WI-SHARED', query: 'hydraulic' },
+      readProjection,
     );
+    await projectionReader.read(
+      { identity: identityA, workItemId: 'WI-SHARED', query: 'hydraulic' },
+      readProjection,
+    );
+    await Promise.all([
+      projectionReader.read(
+        { identity: identityA, workItemId: 'WI-SHARED', query: 'electrical' },
+        readProjection,
+      ),
+      projectionReader.read(
+        { identity: identityB, workItemId: 'WI-SHARED', query: 'hydraulic' },
+        readProjection,
+      ),
+    ]);
+
+    expect(projectionCalls).toBe(4);
   });
 });

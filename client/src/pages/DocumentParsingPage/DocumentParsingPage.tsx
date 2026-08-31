@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   Activity,
@@ -44,10 +44,7 @@ import { EngineeringReasoningTrail } from './EngineeringReasoningTrail';
 import { AeoAuthoringWorkspace } from './AeoAuthoringWorkspace';
 import ApplicabilitySelectionPanel from './ApplicabilitySelectionPanel';
 import AssessmentRuleWorkspace from './AssessmentRuleWorkspace';
-import {
-  assessmentRuleName,
-  buildAssessmentRulePresentations,
-} from './assessment-rule-presentation';
+import { assessmentRuleName } from './assessment-rule-presentation';
 import { AssessmentSemanticsOverview } from './AssessmentSemanticsOverview';
 import { DocumentReaderWorkspace } from './DocumentReaderWorkspace';
 import PdfSourcePane from './PdfSourcePane';
@@ -80,7 +77,10 @@ import {
   getReaderViewMode,
   type ReaderViewMode,
 } from './workbench-projection';
-import { runCanonicalDocumentParsingLoad } from './document-parsing-load';
+import {
+  createCanonicalDocumentParsingProjectionReader,
+  runCanonicalDocumentParsingLoad,
+} from './document-parsing-load';
 import './document-parsing.css';
 import './pdf-source-pane.css';
 import '@client/src/features/workbench/workbench-shell.css';
@@ -155,6 +155,9 @@ const WORKBENCH_TABS = WORKBENCH_TAB_DEFINITIONS.map((tab) => ({
   ...tab,
   icon: WORKBENCH_TAB_ICONS[tab.key],
 }));
+
+const documentParsingProjectionReader =
+  createCanonicalDocumentParsingProjectionReader();
 
 function flattenNavigationTree(
   nodes: NavigationNodeView[],
@@ -247,8 +250,11 @@ export default function DocumentParsingPage() {
     await runCanonicalDocumentParsingLoad({
       isCurrent,
       readIdentity: canonicalHost.getCanonicalHostIdentityContext,
-      readPage: () =>
-        canonicalHost.getDocumentParsingPage(workItemId, nextQuery),
+      readPage: (identity) =>
+        documentParsingProjectionReader.read(
+          { identity, workItemId, query: nextQuery },
+          () => canonicalHost.getDocumentParsingPage(workItemId, nextQuery),
+        ),
       onFresh: (identity, fresh) => {
         setPageData(fresh);
         setPageActorSignal(startedActorSignal);
@@ -285,6 +291,16 @@ export default function DocumentParsingPage() {
 
   useEffect(() => {
     setQuery(activeQuery);
+    if (!actorSignal) {
+      loadEpochRef.current += 1;
+      setPageData(null);
+      setPageActorSignal(null);
+      setError(null);
+      setLoading(true);
+      return () => {
+        loadEpochRef.current += 1;
+      };
+    }
     void load(activeQuery);
     return () => {
       loadEpochRef.current += 1;
@@ -298,6 +314,14 @@ export default function DocumentParsingPage() {
 
   const data: CanonicalDocumentParsingPageResponse | null =
     pageActorSignal === actorSignal ? pageData : null;
+  const evidenceSummary = useMemo(
+    () =>
+      summarizeWorkbenchEvidence(
+        data?.readerProjection?.units ?? [],
+        structuredSourceLocator,
+      ),
+    [data?.readerProjection?.units, structuredSourceLocator],
+  );
 
   useEffect(() => {
     if (loading || data === null) return;
@@ -352,10 +376,6 @@ export default function DocumentParsingPage() {
   const requestedReaderUnit: string = searchParams.get('unit')?.trim() ?? '';
   const requestedSourceRef: string =
     searchParams.get('sourceRef')?.trim() ?? '';
-  const evidenceSummary = summarizeWorkbenchEvidence(
-    results,
-    structuredSourceLocator,
-  );
   const requestedPdfTargetPage: number | null = parsePdfTargetPage(
     searchParams.get('page'),
   );
@@ -373,9 +393,6 @@ export default function DocumentParsingPage() {
   )
     ? requestedReviewCriterion
     : reviewContext?.items[0]?.criterionId || '';
-  const reviewRulePresentations = buildAssessmentRulePresentations(
-    reviewContext?.items ?? [],
-  );
   const reviewCriterionLabel = (criterionId: string): string => {
     const index =
       reviewContext?.items.findIndex(
@@ -576,6 +593,7 @@ export default function DocumentParsingPage() {
             activeSourceRef={requestedSourceRef}
             activeReaderUnit={requestedReaderUnit}
             activeStructuredLocator={structuredSourceLocator}
+            summary={evidenceSummary}
             onLocate={locateSourceRef}
             onClear={() => {
               setStructuredSourceLocator(null);
@@ -1228,9 +1246,8 @@ export default function DocumentParsingPage() {
                             key={item.criterionId}
                             value={item.criterionId}
                           >
-                            {reviewRulePresentations[index]?.criterionName ??
-                              `判断规则 ${index + 1}`}{' '}
-                            · {humanState(item.dynamicResult) ?? '状态待确认'}
+                            {assessmentRuleName(item, index)} ·{' '}
+                            {humanState(item.dynamicResult) ?? '状态待确认'}
                           </NativeSelectOption>
                         ))}
                       </NativeSelect>
