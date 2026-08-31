@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import {
+  useLocation,
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from 'react-router-dom';
 import {
   Activity,
   AlertTriangle,
@@ -80,6 +85,7 @@ import {
 } from './workbench-projection';
 import {
   createCanonicalDocumentParsingProjectionReader,
+  resolveCanonicalDocumentParsingRouteHandoff,
   runCanonicalDocumentParsingLoad,
 } from './document-parsing-load';
 import './document-parsing.css';
@@ -172,6 +178,7 @@ function flattenNavigationTree(
 export default function DocumentParsingPage() {
   const { authenticationRequired, sessionGeneration } = useCurrentUserSession();
   const navigate = useNavigate();
+  const location = useLocation();
   const sessionGenerationRef = useRef<number>(sessionGeneration);
   sessionGenerationRef.current = sessionGeneration;
   const loadEpochRef = useRef<number>(0);
@@ -179,6 +186,11 @@ export default function DocumentParsingPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const activeNode: WorkbenchNode = getWorkbenchNode(searchParams.get('node'));
   const activeQuery: string = searchParams.get('q')?.trim() ?? '';
+  const routeHandoff = resolveCanonicalDocumentParsingRouteHandoff(
+    (location.state as { documentParsingHandoff?: unknown } | null)
+      ?.documentParsingHandoff,
+    { sessionGeneration, workItemId, query: activeQuery },
+  );
   const requestedReaderUnit: string = searchParams.get('unit')?.trim() ?? '';
   const requestedSourceRef: string =
     searchParams.get('sourceRef')?.trim() ?? '';
@@ -191,11 +203,11 @@ export default function DocumentParsingPage() {
   );
   const [query, setQuery] = useState<string>(activeQuery);
   const [pageData, setPageData] =
-    useState<CanonicalDocumentParsingPageResponse | null>(null);
+    useState<CanonicalDocumentParsingPageResponse | null>(routeHandoff);
   const [pageSessionGeneration, setPageSessionGeneration] = useState<
     number | null
-  >(null);
-  const [loading, setLoading] = useState<boolean>(true);
+  >(routeHandoff ? sessionGeneration : null);
+  const [loading, setLoading] = useState<boolean>(routeHandoff === null);
   const [error, setError] = useState<string | null>(null);
   const [assessmentAction, setAssessmentAction] = useState<
     'CONFIRM_OVERALL_FOR_AEO' | 'GENERATE_AEO_CANDIDATE' | null
@@ -320,11 +332,27 @@ export default function DocumentParsingPage() {
         loadEpochRef.current += 1;
       };
     }
+    if (routeHandoff) {
+      loadEpochRef.current += 1;
+      setPageData(routeHandoff);
+      setPageSessionGeneration(sessionGeneration);
+      setError(null);
+      setLoading(false);
+      return () => {
+        loadEpochRef.current += 1;
+      };
+    }
     void load(activeQuery);
     return () => {
       loadEpochRef.current += 1;
     };
-  }, [workItemId, activeQuery, authenticationRequired, sessionGeneration]);
+  }, [
+    workItemId,
+    activeQuery,
+    authenticationRequired,
+    sessionGeneration,
+    routeHandoff,
+  ]);
 
   useEffect(() => {
     setContinuousReviewReceipt(null);
