@@ -12,13 +12,15 @@ describe('PDF viewer page navigation', () => {
     expect(clampPdfPage(99, 42)).toBe(42);
   });
 
-  it('keeps the current and adjacent pages at desktop width', () => {
-    expect(visiblePdfPages(17, 42, false)).toEqual([16, 17, 18]);
-    expect(visiblePdfPages(1, 42, false)).toEqual([1, 2]);
+  it('exposes a continuous desktop page list for scroll reading', () => {
+    const pages: number[] = visiblePdfPages(17, 42, false);
+    expect(pages).toHaveLength(42);
+    expect(pages.slice(0, 3)).toEqual([1, 2, 3]);
+    expect(pages.slice(-3)).toEqual([40, 41, 42]);
   });
 
-  it('renders one fit-width page for the 390px single-panel mode', () => {
-    expect(visiblePdfPages(17, 42, true)).toEqual([17]);
+  it('keeps continuous pages inside the 390px single-panel PDF stage', () => {
+    expect(visiblePdfPages(17, 4, true)).toEqual([1, 2, 3, 4]);
   });
 
   it('uses a sanitized structured pageStart when the Reader query is empty', () => {

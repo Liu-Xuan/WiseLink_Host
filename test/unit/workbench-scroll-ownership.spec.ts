@@ -66,6 +66,12 @@ describe('workbench scroll ownership', () => {
     expect(page).toContain(
       "activeNode === 'package' || activeNode === 'reader'",
     );
+    const structuredLocateHandler = page.match(
+      /function locateStructuredSourceRef\([\s\S]*?\n  }/,
+    )?.[0];
+    expect(structuredLocateHandler).toContain('setPdfLocateSignal');
+    expect(structuredLocateHandler).not.toContain('setEvidenceSignal');
+    expect(page).toContain('locateSignal={pdfLocateSignal}');
     expect(pageStyles).toMatch(
       /> :is\(\.parse-reader-split, \.parse-structured-split\)\s*\{[\s\S]*?flex: 1 1 auto;[\s\S]*?overflow: hidden;/,
     );
@@ -105,6 +111,11 @@ describe('workbench scroll ownership', () => {
     expect(pdf).toContain('aria-label="PDF 页面"');
     expect(pdf).toContain('data-pdf-page={pageNumber}');
     expect(pdf).toContain('container.scrollTo');
+    expect(pdf).toContain('onScroll={handlePagesScroll}');
+    expect(pdf).toContain('pageAtReadingLine');
+    expect(pdf).toContain(
+      "data-render-state={renderRequested ? 'requested' : 'deferred'}",
+    );
     expect(pdfStyles).toMatch(
       /\.wl-workbench-main\.is-workspace \.parse-pdf-pages\s*\{[\s\S]*?max-height: none;[\s\S]*?min-height: 0;/,
     );

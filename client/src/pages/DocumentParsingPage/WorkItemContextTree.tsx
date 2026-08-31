@@ -16,14 +16,7 @@ import type {
   CanonicalLibraryIndexNode,
 } from '@shared/api.interface';
 
-type WorkbenchNode =
-  | 'document'
-  | 'package'
-  | 'reader'
-  | 'assessment'
-  | 'review'
-  | 'overall'
-  | 'aeo';
+import type { WorkbenchNode } from './document-parsing-navigation';
 
 interface WorkItemContextTreeProps {
   data: CanonicalDocumentParsingPageResponse;
@@ -190,5 +183,3 @@ function iconForNode(kind: CanonicalLibraryIndexNode['kind']): typeof FileText {
   }
   return FileCheck2;
 }
-
-export type { WorkbenchNode };

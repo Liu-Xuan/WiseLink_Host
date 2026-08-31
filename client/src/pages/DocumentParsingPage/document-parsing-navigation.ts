@@ -1,4 +1,11 @@
-import type { WorkbenchNode } from './WorkItemContextTree';
+export type WorkbenchNode =
+  | 'document'
+  | 'package'
+  | 'reader'
+  | 'assessment'
+  | 'review'
+  | 'overall'
+  | 'aeo';
 
 export interface WorkbenchTabDefinition {
   key: WorkbenchNode;
@@ -57,11 +64,11 @@ export function structuredSourceDeepLink(
   pageStart: number | null | undefined,
 ): Record<string, string | null> {
   return {
-    node: 'reader',
-    tab: 'reader',
+    node: 'package',
+    tab: 'package',
     unit: null,
     sourceRef,
-    readerMode: 'source',
+    readerMode: null,
     page:
       pageStart === null || pageStart === undefined ? null : String(pageStart),
   };

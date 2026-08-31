@@ -40,6 +40,7 @@ import {
   resolveWorkbenchAdaptiveLayout,
   resolveWorkbenchContentLayout,
   resolveWorkbenchEvidenceVisibility,
+  resolveWorkbenchMainInlineMinimum,
 } from '@client/src/features/workbench/workbench-layout';
 
 import './workbench-shell.css';
@@ -416,6 +417,7 @@ export default function WorkbenchShell({
     evidenceContentCount,
     evidenceActive,
     evidenceRequested,
+    mainInlineMinimum: resolveWorkbenchMainInlineMinimum(activeTab),
   });
   const contentLayout = resolveWorkbenchContentLayout(
     activeTab,

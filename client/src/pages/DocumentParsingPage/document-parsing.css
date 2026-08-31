@@ -726,6 +726,34 @@
 }
 
 @media (min-width: 721px) {
+  .wl-workbench-main.is-workspace > .wl-authority-strip {
+    flex-wrap: nowrap;
+    gap: 6px;
+    margin-bottom: 8px;
+    padding: 6px 10px;
+    overflow: hidden;
+  }
+
+  .wl-workbench-main.is-workspace > .wl-authority-strip .wl-authority-chip {
+    padding: 3px 8px;
+  }
+
+  .wl-workbench-main.is-workspace > .wl-authority-strip .wl-authority-meta {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .wl-workbench-main.is-workspace > .parse-overall-bar {
+    margin-bottom: 8px;
+  }
+
+  .wl-workbench-main.is-workspace > .parse-overall-bar summary {
+    min-height: 38px;
+    padding: 4px 10px;
+  }
+
   .wl-workbench-main.is-workspace
     > :is(.parse-reader-split, .parse-structured-split) {
     height: 100%;

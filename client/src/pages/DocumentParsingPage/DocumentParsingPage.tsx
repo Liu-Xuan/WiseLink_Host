@@ -34,10 +34,10 @@ import { rememberRecentWorkItem } from '@client/src/utils/recent-work-items';
 import { forgetRecentWorkItem } from '@client/src/utils/recent-work-items';
 import { useCurrentUserProfile } from '@lark-apaas/client-toolkit/hooks/useCurrentUserProfile';
 
-import { type WorkbenchNode } from './WorkItemContextTree';
 import {
   getWorkbenchNode,
   structuredSourceDeepLink,
+  type WorkbenchNode,
   WORKBENCH_TAB_DEFINITIONS,
 } from './document-parsing-navigation';
 import { EngineeringReasoningTrail } from './EngineeringReasoningTrail';
@@ -209,6 +209,8 @@ export default function DocumentParsingPage() {
   );
   /** 点击主内容中的来源引用时递增，驱动右侧证据栏自动展开（§4.2） */
   const [evidenceSignal, setEvidenceSignal] = useState(0);
+  /** 结构化内容定位只驱动同屏 PDF，不改变右侧证据栏分配。 */
+  const [pdfLocateSignal, setPdfLocateSignal] = useState(0);
   const [structuredSourceLocator, setStructuredSourceLocator] =
     useState<CanonicalStructuredContentSourceLocator | null>(null);
   const overallRegeneration = useOverallRegeneration({
@@ -544,7 +546,7 @@ export default function DocumentParsingPage() {
     locator: CanonicalStructuredContentSourceLocator | undefined,
   ): void {
     setStructuredSourceLocator(locator ?? null);
-    setEvidenceSignal((value: number) => value + 1);
+    setPdfLocateSignal((value) => value + 1);
     updateDeepLink(structuredSourceDeepLink(sourceRef, locator?.pageStart));
   }
 
@@ -820,7 +822,7 @@ export default function DocumentParsingPage() {
                   requestedSourceRef={requestedSourceRef}
                   structuredLocator={structuredSourceLocator}
                   explicitTargetPage={requestedPdfTargetPage}
-                  locateSignal={evidenceSignal}
+                  locateSignal={pdfLocateSignal}
                   onLocate={locatePdfQuerySourceRef}
                   onReturnStructured={() =>
                     updateDeepLink({ node: 'package', tab: 'package' })

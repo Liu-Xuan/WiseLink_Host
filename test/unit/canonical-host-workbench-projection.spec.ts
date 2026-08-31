@@ -30,13 +30,13 @@ describe('canonical Host workbench projection', () => {
     ).toEqual(['总体', '原文', '复核', '动态']);
   });
 
-  it('routes a structured page locator to the source reader intent', () => {
+  it('keeps a structured page locator in the paired package workspace', () => {
     expect(structuredSourceDeepLink('SOURCE-REF-1', 22)).toEqual({
-      node: 'reader',
-      tab: 'reader',
+      node: 'package',
+      tab: 'package',
       unit: null,
       sourceRef: 'SOURCE-REF-1',
-      readerMode: 'source',
+      readerMode: null,
       page: '22',
     });
   });
