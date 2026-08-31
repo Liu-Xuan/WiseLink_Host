@@ -1,8 +1,12 @@
 import {
   resolveWorkbenchAdaptiveLayout,
   resolveWorkbenchContentLayout,
+  resolveWorkbenchEvidenceActive,
   resolveWorkbenchEvidenceVisibility,
+  resolveWorkbenchMainInlineMinimum,
 } from '../../client/src/features/workbench/workbench-layout';
+import { structuredSourceDeepLink } from '../../client/src/pages/DocumentParsingPage/document-parsing-navigation';
+import { summarizeWorkbenchEvidence } from '../../client/src/features/workbench/evidence-summary';
 
 const base = {
   navWidth: 304,
@@ -14,6 +18,7 @@ const base = {
   evidenceContentCount: 2,
   evidenceActive: false,
   evidenceRequested: false,
+  mainInlineMinimum: resolveWorkbenchMainInlineMinimum('package'),
 };
 
 describe('workbench adaptive layout', () => {
@@ -80,24 +85,106 @@ describe('workbench adaptive layout', () => {
     },
   );
 
-  it('does not suppress an empty panel when the desktop can fit all three columns', () => {
+  it('suppresses an empty rail before it can push a 1728 screenshot stage below paired width', () => {
+    const layout = resolveWorkbenchAdaptiveLayout({
+      ...base,
+      bodyWidth: 1494,
+      evidenceContentCount: 0,
+    });
+    const mainWidthAfterEmptyRailRelease = 1494 - base.navWidth - 6;
+
+    expect(layout.suppressEmptyEvidence).toBe(true);
     expect(
-      resolveWorkbenchAdaptiveLayout({
-        ...base,
-        bodyWidth: 1500,
-        evidenceContentCount: 0,
-      }).suppressEmptyEvidence,
-    ).toBe(false);
+      resolveWorkbenchContentLayout('package', mainWidthAfterEmptyRailRelease),
+    ).toBe('paired');
+  });
+
+  it('keeps a package SourceRef as inline PDF intent while releasing empty evidence', () => {
+    const deepLink = structuredSourceDeepLink('SOURCE-REF-22', 22);
+    const evidenceActive = resolveWorkbenchEvidenceActive(
+      deepLink.tab ?? '',
+      deepLink.sourceRef ?? '',
+    );
+    const structuredLocator = {
+      sourceRefId: 'SOURCE-REF-22',
+      kind: 'PARAGRAPH',
+      pageStart: 22,
+      pageEnd: 22,
+      quote: '受控原文摘录',
+    };
+    const evidenceSummary = summarizeWorkbenchEvidence(
+      [],
+      evidenceActive ? structuredLocator : null,
+    );
+    const layout = resolveWorkbenchAdaptiveLayout({
+      ...base,
+      bodyWidth: 1494,
+      evidenceContentCount: evidenceSummary.contentCount,
+      evidenceActive,
+    });
+    const mainWidthAfterEmptyRailRelease = 1494 - base.navWidth - 6;
+
+    expect(deepLink).toMatchObject({
+      node: 'package',
+      tab: 'package',
+      sourceRef: 'SOURCE-REF-22',
+      page: '22',
+    });
+    expect(evidenceActive).toBe(false);
+    expect(evidenceSummary).toEqual({
+      unitCount: 0,
+      referenceCount: 0,
+      contentCount: 0,
+    });
+    expect(layout.suppressEmptyEvidence).toBe(true);
+    expect(
+      resolveWorkbenchContentLayout('package', mainWidthAfterEmptyRailRelease),
+    ).toBe('paired');
+  });
+
+  it('keeps the existing Reader SourceRef evidence semantics', () => {
+    expect(resolveWorkbenchEvidenceActive('reader', 'SOURCE-REF-22')).toBe(
+      true,
+    );
+    expect(resolveWorkbenchEvidenceActive('package', 'SOURCE-REF-22')).toBe(
+      false,
+    );
+    expect(resolveWorkbenchEvidenceActive('reader', '   ')).toBe(false);
+  });
+
+  it('keeps an active SourceRef and PDF paired by reclaiming the navigator width', () => {
+    const layout = resolveWorkbenchAdaptiveLayout({
+      ...base,
+      bodyWidth: 1494,
+      evidenceContentCount: 0,
+      evidenceActive: true,
+    });
+    const mainWidthWithEvidence = 1494 - base.evidenceWidth - 6;
+
+    expect(layout).toEqual({
+      autoCollapseNavigator: true,
+      useEvidenceOverlay: false,
+      suppressEmptyEvidence: false,
+    });
+    expect(
+      resolveWorkbenchContentLayout('package', mainWidthWithEvidence),
+    ).toBe('paired');
   });
 
   it('keeps all three columns when the actual body is wide enough', () => {
     expect(
-      resolveWorkbenchAdaptiveLayout({ ...base, bodyWidth: 1500 }),
+      resolveWorkbenchAdaptiveLayout({ ...base, bodyWidth: 1600 }),
     ).toEqual({
       autoCollapseNavigator: false,
       useEvidenceOverlay: false,
       suppressEmptyEvidence: false,
     });
+  });
+
+  it('uses the active workspace paired floor instead of the generic flow floor', () => {
+    expect(resolveWorkbenchMainInlineMinimum('assessment')).toBe(820);
+    expect(resolveWorkbenchMainInlineMinimum('reader')).toBe(901);
+    expect(resolveWorkbenchMainInlineMinimum('package')).toBe(941);
   });
 
   it('uses an evidence overlay only after the center content cannot stay usable', () => {
@@ -136,6 +223,9 @@ describe('workbench adaptive layout', () => {
       useEvidenceOverlay: false,
       suppressEmptyEvidence: false,
     });
+    expect(resolveWorkbenchContentLayout('package', 390)).toBe(
+      'package-single',
+    );
   });
 
   it('keeps the 390 drawer controlled only by the mobile open state', () => {

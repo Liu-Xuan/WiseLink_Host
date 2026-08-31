@@ -1,4 +1,6 @@
-const WORKBENCH_MAIN_INLINE_MIN = 820;
+const WORKBENCH_FLOW_MAIN_INLINE_MIN = 820;
+const WORKBENCH_READER_PAIRED_INLINE_MIN = 901;
+const WORKBENCH_PACKAGE_PAIRED_INLINE_MIN = 941;
 const WORKBENCH_DIVIDER_WIDTH = 6;
 
 export interface WorkbenchAdaptiveLayoutInput {
@@ -12,6 +14,7 @@ export interface WorkbenchAdaptiveLayoutInput {
   evidenceContentCount: number;
   evidenceActive: boolean;
   evidenceRequested: boolean;
+  mainInlineMinimum: number;
 }
 
 export interface WorkbenchAdaptiveLayout {
@@ -27,6 +30,17 @@ export type WorkbenchContentLayout =
   | 'package-single';
 
 /**
+ * A SourceRef in the package workspace is an inline PDF locator, not evidence
+ * panel intent. Reader SourceRefs still represent the existing evidence flow.
+ */
+export function resolveWorkbenchEvidenceActive(
+  activeTab: string,
+  sourceRef: string,
+): boolean {
+  return activeTab === 'reader' && sourceRef.trim() !== '';
+}
+
+/**
  * Reader 与 package 的单/双面板阈值使用真实主栏宽度计算，并由 DOM state
  * 与 CSS 共同消费。这样侧栏 resize 后也不会留下“CSS 已换行、外层却裁切”
  * 的中间状态。
@@ -37,13 +51,30 @@ export function resolveWorkbenchContentLayout(
 ): WorkbenchContentLayout {
   if (activeTab !== 'reader' && activeTab !== 'package') return 'flow';
   if (mainInlineSize <= 0) return 'paired';
-  if (activeTab === 'reader' && mainInlineSize <= 900) {
+  if (
+    activeTab === 'reader' &&
+    mainInlineSize < WORKBENCH_READER_PAIRED_INLINE_MIN
+  ) {
     return 'reader-single';
   }
-  if (activeTab === 'package' && mainInlineSize <= 940) {
+  if (
+    activeTab === 'package' &&
+    mainInlineSize < WORKBENCH_PACKAGE_PAIRED_INLINE_MIN
+  ) {
     return 'package-single';
   }
   return 'paired';
+}
+
+/**
+ * Allocation must protect the same width that content layout needs. Using the
+ * old generic 820px floor allowed an empty evidence rail to leave package at
+ * 910px and silently switch the main stage to a single PDF panel.
+ */
+export function resolveWorkbenchMainInlineMinimum(activeTab: string): number {
+  if (activeTab === 'reader') return WORKBENCH_READER_PAIRED_INLINE_MIN;
+  if (activeTab === 'package') return WORKBENCH_PACKAGE_PAIRED_INLINE_MIN;
+  return WORKBENCH_FLOW_MAIN_INLINE_MIN;
 }
 
 /**
@@ -62,6 +93,7 @@ export function resolveWorkbenchAdaptiveLayout({
   evidenceContentCount,
   evidenceActive,
   evidenceRequested,
+  mainInlineMinimum,
 }: WorkbenchAdaptiveLayoutInput): WorkbenchAdaptiveLayout {
   if (bodyWidth <= 0 || isCompact || !evidenceAvailable || !evidenceOpen) {
     return {
@@ -72,10 +104,7 @@ export function resolveWorkbenchAdaptiveLayout({
   }
 
   const threeColumnMinimum =
-    navWidth +
-    evidenceWidth +
-    WORKBENCH_MAIN_INLINE_MIN +
-    WORKBENCH_DIVIDER_WIDTH * 2;
+    navWidth + evidenceWidth + mainInlineMinimum + WORKBENCH_DIVIDER_WIDTH * 2;
   const suppressEmptyEvidence =
     evidenceContentCount <= 0 &&
     !evidenceActive &&
@@ -93,9 +122,9 @@ export function resolveWorkbenchAdaptiveLayout({
   }
 
   const navigatorInlineMinimum =
-    navWidth + WORKBENCH_MAIN_INLINE_MIN + WORKBENCH_DIVIDER_WIDTH;
+    navWidth + mainInlineMinimum + WORKBENCH_DIVIDER_WIDTH;
   const evidenceInlineMinimum =
-    evidenceWidth + WORKBENCH_MAIN_INLINE_MIN + WORKBENCH_DIVIDER_WIDTH;
+    evidenceWidth + mainInlineMinimum + WORKBENCH_DIVIDER_WIDTH;
   const useEvidenceOverlay = bodyWidth < evidenceInlineMinimum;
 
   return {

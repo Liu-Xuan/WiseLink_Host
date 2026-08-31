@@ -16,37 +16,17 @@
 
 /* ── 全屏工作台模式：固定高度三栏容器（Spec R01 §4.2） ── */
 
-.parse-shell--workbench {
+.parse-shell.parse-shell--workbench {
   display: flex;
   height: 100%;
   min-height: 0;
-  padding: 8px 0 0;
+  padding: 0;
   overflow: hidden;
 }
 
-.parse-shell--workbench > .wl-workbench-shell {
+.parse-shell.parse-shell--workbench > .wl-workbench-shell {
   flex: 1;
   min-width: 0;
-}
-
-/* 沉浸模式：隐藏 AppShell 顶栏与浮动 Dock，让内容占满视口 */
-body[data-wl-immersive='true'] .wiselink-app-header,
-body[data-wl-immersive='true'] .wiselink-breadcrumb,
-body[data-wl-immersive='true'] .wl-dock {
-  display: none;
-}
-
-body[data-wl-immersive='true'] .wiselink-app-body {
-  padding: 0;
-}
-
-body[data-wl-immersive='true'] .wiselink-app-shell.is-workbench-route {
-  grid-template-rows: minmax(0, 1fr);
-}
-
-body[data-wl-immersive='true'] .parse-shell--workbench {
-  height: 100%;
-  padding-top: 0;
 }
 
 .parse-shell {
@@ -746,6 +726,34 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
 }
 
 @media (min-width: 721px) {
+  .wl-workbench-main.is-workspace > .wl-authority-strip {
+    flex-wrap: nowrap;
+    gap: 6px;
+    margin-bottom: 8px;
+    padding: 6px 10px;
+    overflow: hidden;
+  }
+
+  .wl-workbench-main.is-workspace > .wl-authority-strip .wl-authority-chip {
+    padding: 3px 8px;
+  }
+
+  .wl-workbench-main.is-workspace > .wl-authority-strip .wl-authority-meta {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .wl-workbench-main.is-workspace > .parse-overall-bar {
+    margin-bottom: 8px;
+  }
+
+  .wl-workbench-main.is-workspace > .parse-overall-bar summary {
+    min-height: 38px;
+    padding: 4px 10px;
+  }
+
   .wl-workbench-main.is-workspace
     > :is(.parse-reader-split, .parse-structured-split) {
     height: 100%;
@@ -3528,12 +3536,6 @@ body[data-wl-immersive='true'] .parse-shell--workbench {
   .parse-shell.parse-shell--workbench {
     height: 100%;
     min-height: 0;
-    padding-top: 6px;
-  }
-
-  body[data-wl-immersive='true'] .parse-shell.parse-shell--workbench {
-    height: 100%;
-    padding-top: 0;
   }
 
   .parse-panel,

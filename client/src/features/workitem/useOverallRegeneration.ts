@@ -29,6 +29,7 @@ const POLL_LIMIT = 80;
 
 interface UseOverallRegenerationInput {
   workItemId: string;
+  sessionGeneration: number;
   onSucceeded: (
     fresh: CanonicalDocumentParsingPageResponse,
   ) => void | Promise<void>;
@@ -40,6 +41,7 @@ export interface OverallRegenerationControl extends OverallRegenerationPresentat
 
 export function useOverallRegeneration({
   workItemId,
+  sessionGeneration,
   onSucceeded,
 }: UseOverallRegenerationInput): OverallRegenerationControl {
   const [view, setView] = useState<OverallRegenerationPresentation>(
@@ -60,7 +62,7 @@ export function useOverallRegeneration({
     epochRef.current += 1;
     requestRef.current = reset.request;
     setView(reset.view);
-  }, [workItemId]);
+  }, [sessionGeneration, workItemId]);
 
   async function finish(
     model: CanonicalOverallRegenerationReadModel,

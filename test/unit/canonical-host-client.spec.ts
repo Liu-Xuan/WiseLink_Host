@@ -28,22 +28,28 @@ import {
   createOrResumeReviewConversation,
   generateAeoCandidate,
   getApplicabilitySelection,
+  getCanonicalHostIdentityContext,
+  getCanonicalHostClientSessionGeneration,
   getCurrentReviewConversation,
   getDocumentParsingPage,
   getStructuredContentPage,
   getLibraryIndex,
   getOverallRegenerationStatus,
   isCanonicalObjectNotFound,
+  isCanonicalHostClientSessionAuthenticationRequired,
+  invalidateCanonicalHostClientSession,
   queryParsedUnits,
   recordEngineerReview,
   reloadReviewConversation,
   requestOverallRegeneration,
   requireOfficialOauthSession,
+  subscribeCanonicalHostClientSession,
 } from '../../client/src/api/canonical-host';
 import { createRequestCorrelationId } from '../../client/src/utils/request-correlation-id';
 
 describe('canonical host assessment client', () => {
   beforeEach(() => {
+    invalidateCanonicalHostClientSession();
     request.mockReset();
     resolveAppUrl.mockReset();
     resolveAppUrl.mockImplementation((path: string) => path);
@@ -69,21 +75,252 @@ describe('canonical host assessment client', () => {
     });
 
     await expect(requireOfficialOauthSession()).resolves.toBeUndefined();
+    await expect(requireOfficialOauthSession()).resolves.toBeUndefined();
     expect(request).toHaveBeenCalledWith({
       url: '/api/identity/whoami',
       method: 'GET',
     });
+    expect(request).toHaveBeenCalledTimes(1);
   });
 
   it('fails closed when the Hosted whoami response is not an opaque session', async () => {
-    request.mockResolvedValue({
-      status: 200,
-      data: { authenticated: true, verifiedIdentity: {} },
-    });
+    request
+      .mockResolvedValueOnce({
+        status: 200,
+        data: { authenticated: true, verifiedIdentity: {} },
+      })
+      .mockResolvedValueOnce({
+        status: 200,
+        data: {
+          authenticated: true,
+          verifiedIdentity: { provenance: 'FEISHU_OAUTH_USER_ACCESS_TOKEN' },
+          session: { provenance: 'SERVER_OPAQUE_SESSION' },
+        },
+      });
 
     await expect(requireOfficialOauthSession()).rejects.toThrow(
       'OFFICIAL_OAUTH_SESSION_REQUIRED',
     );
+    await expect(requireOfficialOauthSession()).resolves.toBeUndefined();
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+
+  it('clears the reusable identity preflight after a protected 401', async () => {
+    const authenticatedResponse = {
+      status: 200,
+      data: {
+        authenticated: true,
+        verifiedIdentity: { provenance: 'FEISHU_OAUTH_USER_ACCESS_TOKEN' },
+        session: { provenance: 'SERVER_OPAQUE_SESSION' },
+      },
+    };
+    request
+      .mockResolvedValueOnce(authenticatedResponse)
+      .mockResolvedValueOnce({ status: 401, data: {} })
+      .mockResolvedValueOnce(authenticatedResponse);
+
+    await expect(requireOfficialOauthSession()).resolves.toBeUndefined();
+    await expect(getDocumentParsingPage('WI-SB-1001', '')).rejects.toThrow(
+      'CANONICAL_PAGE_LOGIN_REQUIRED',
+    );
+    expect(isCanonicalHostClientSessionAuthenticationRequired()).toBe(true);
+    await expect(requireOfficialOauthSession()).resolves.toBeUndefined();
+    expect(request).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not repeat the identity preflight after an object-level 403', async () => {
+    request
+      .mockResolvedValueOnce({
+        status: 200,
+        data: {
+          authenticated: true,
+          verifiedIdentity: { provenance: 'FEISHU_OAUTH_USER_ACCESS_TOKEN' },
+          session: { provenance: 'SERVER_OPAQUE_SESSION' },
+        },
+      })
+      .mockResolvedValueOnce({ status: 403, data: {} });
+
+    await expect(requireOfficialOauthSession()).resolves.toBeUndefined();
+    await expect(
+      getDocumentParsingPage('WI-FORBIDDEN', ''),
+    ).rejects.toMatchObject({ code: 'CANONICAL_WORK_ITEM_NOT_FOUND' });
+    expect(isCanonicalHostClientSessionAuthenticationRequired()).toBe(false);
+    await expect(requireOfficialOauthSession()).resolves.toBeUndefined();
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+
+  it('publishes one blocked generation for concurrent protected 401 responses', async () => {
+    const listener = jest.fn();
+    const unsubscribe = subscribeCanonicalHostClientSession(listener);
+    const startedGeneration = getCanonicalHostClientSessionGeneration();
+    request.mockResolvedValue({ status: 401, data: {} });
+
+    const results = await Promise.allSettled([
+      getDocumentParsingPage('WI-EXPIRED-1', ''),
+      getDocumentParsingPage('WI-EXPIRED-2', ''),
+    ]);
+    unsubscribe();
+
+    expect(results.map((result) => result.status)).toEqual([
+      'rejected',
+      'rejected',
+    ]);
+    expect(getCanonicalHostClientSessionGeneration()).toBe(
+      startedGeneration + 1,
+    );
+    expect(isCanonicalHostClientSessionAuthenticationRequired()).toBe(true);
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it('shares one canonical identity read across concurrent and later consumers', async () => {
+    let resolveIdentity!: (value: unknown) => void;
+    request.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveIdentity = resolve;
+        }),
+    );
+
+    const first = getCanonicalHostIdentityContext();
+    const second = getCanonicalHostIdentityContext();
+    await Promise.resolve();
+    expect(request).toHaveBeenCalledTimes(1);
+
+    resolveIdentity({
+      status: 200,
+      data: {
+        userId: ' user-1 ',
+        tenantId: ' tenant-1 ',
+        developmentIntakeAvailable: true,
+      },
+    });
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      {
+        userId: 'user-1',
+        tenantId: 'tenant-1',
+        developmentIntakeAvailable: true,
+      },
+      {
+        userId: 'user-1',
+        tenantId: 'tenant-1',
+        developmentIntakeAvailable: true,
+      },
+    ]);
+    await expect(getCanonicalHostIdentityContext()).resolves.toMatchObject({
+      userId: 'user-1',
+      tenantId: 'tenant-1',
+    });
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not cache failed or incomplete canonical identity reads', async () => {
+    request
+      .mockResolvedValueOnce({
+        status: 503,
+        data: {},
+      })
+      .mockResolvedValueOnce({
+        status: 200,
+        data: { userId: '', tenantId: 'tenant-1' },
+      })
+      .mockResolvedValueOnce({
+        status: 200,
+        data: { userId: 'user-1', tenantId: 'tenant-1' },
+      });
+
+    await expect(getCanonicalHostIdentityContext()).rejects.toThrow(
+      'CANONICAL_HOST_IDENTITY_UNAVAILABLE',
+    );
+    await expect(getCanonicalHostIdentityContext()).rejects.toThrow(
+      'CANONICAL_HOST_IDENTITY_UNAVAILABLE',
+    );
+    await expect(getCanonicalHostIdentityContext()).resolves.toMatchObject({
+      userId: 'user-1',
+      tenantId: 'tenant-1',
+    });
+    expect(request).toHaveBeenCalledTimes(3);
+  });
+
+  it('cannot let a stale identity response refill a new session generation', async () => {
+    let resolveOldIdentity!: (value: unknown) => void;
+    request
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveOldIdentity = resolve;
+          }),
+      )
+      .mockResolvedValueOnce({
+        status: 200,
+        data: { userId: 'user-b', tenantId: 'tenant-b' },
+      });
+
+    const oldRead = getCanonicalHostIdentityContext();
+    await Promise.resolve();
+    invalidateCanonicalHostClientSession();
+    await expect(getCanonicalHostIdentityContext()).resolves.toMatchObject({
+      userId: 'user-b',
+      tenantId: 'tenant-b',
+    });
+    resolveOldIdentity({
+      status: 200,
+      data: { userId: 'user-a', tenantId: 'tenant-a' },
+    });
+    await expect(oldRead).rejects.toThrow('CANONICAL_HOST_IDENTITY_STALE');
+    await expect(getCanonicalHostIdentityContext()).resolves.toMatchObject({
+      userId: 'user-b',
+      tenantId: 'tenant-b',
+    });
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not let a stale protected 401 block a newer session generation', async () => {
+    let resolveOldPage!: (value: unknown) => void;
+    request.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveOldPage = resolve;
+        }),
+    );
+
+    const oldPage = getDocumentParsingPage('WI-OLD-SESSION', '');
+    await Promise.resolve();
+    invalidateCanonicalHostClientSession();
+    resolveOldPage({ status: 401, data: {} });
+
+    await expect(oldPage).rejects.toThrow('CANONICAL_PAGE_LOGIN_REQUIRED');
+    expect(isCanonicalHostClientSessionAuthenticationRequired()).toBe(false);
+  });
+
+  it('does not let a stale whoami 401 clear a newer identity cache', async () => {
+    let resolveOldWhoami!: (value: unknown) => void;
+    request
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveOldWhoami = resolve;
+          }),
+      )
+      .mockResolvedValueOnce({
+        status: 200,
+        data: { userId: 'user-b', tenantId: 'tenant-b' },
+      });
+
+    const oldWhoami = requireOfficialOauthSession();
+    await Promise.resolve();
+    invalidateCanonicalHostClientSession();
+    await expect(getCanonicalHostIdentityContext()).resolves.toMatchObject({
+      userId: 'user-b',
+      tenantId: 'tenant-b',
+    });
+    resolveOldWhoami({ status: 401, data: {} });
+
+    await expect(oldWhoami).rejects.toThrow('OFFICIAL_OAUTH_SESSION_REQUIRED');
+    await expect(getCanonicalHostIdentityContext()).resolves.toMatchObject({
+      userId: 'user-b',
+      tenantId: 'tenant-b',
+    });
+    expect(request).toHaveBeenCalledTimes(2);
   });
 
   it('keeps empty document parsing reads separate from Reader search', async () => {

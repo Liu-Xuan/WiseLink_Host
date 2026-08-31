@@ -33,6 +33,13 @@ export interface CanonicalHostIdentityContext {
   developmentIntakeAvailable?: boolean;
 }
 
+type CanonicalHostClientSessionListener = () => void;
+
+interface CachedClientSessionRead<T> {
+  generation: number;
+  promise: Promise<T>;
+}
+
 interface OfficialOauthWhoamiResponse {
   authenticated?: boolean;
   verifiedIdentity?: unknown;
@@ -41,45 +48,151 @@ interface OfficialOauthWhoamiResponse {
   };
 }
 
+let clientSessionGeneration = 0;
+let clientSessionAuthenticationRequired = false;
+let identityContextRead: CachedClientSessionRead<CanonicalHostIdentityContext> | null =
+  null;
+let officialOauthRead: CachedClientSessionRead<void> | null = null;
+const clientSessionListeners = new Set<CanonicalHostClientSessionListener>();
+
+export function getCanonicalHostClientSessionGeneration(): number {
+  return clientSessionGeneration;
+}
+
+export function isCanonicalHostClientSessionAuthenticationRequired(): boolean {
+  return clientSessionAuthenticationRequired;
+}
+
+export function subscribeCanonicalHostClientSession(
+  listener: CanonicalHostClientSessionListener,
+): () => void {
+  clientSessionListeners.add(listener);
+  return () => clientSessionListeners.delete(listener);
+}
+
+/**
+ * Starts a new browser-side identity generation. The cache is deliberately
+ * memory-only: login, logout and runtime identity changes must not inherit an
+ * actor snapshot from an earlier session.
+ */
+export function invalidateCanonicalHostClientSession(): void {
+  clientSessionGeneration += 1;
+  clientSessionAuthenticationRequired = false;
+  clearCanonicalHostClientSessionCache();
+  publishCanonicalHostClientSessionChange();
+}
+
+/**
+ * Drops reusable identity reads without triggering an automatic page reload.
+ * This is used after a 401 so the current request can render its login error
+ * instead of entering an unauthorized reload loop.
+ */
+export function clearCanonicalHostClientSessionCache(): void {
+  identityContextRead = null;
+  officialOauthRead = null;
+}
+
 export async function getCanonicalHostIdentityContext(): Promise<CanonicalHostIdentityContext> {
-  const response = await axiosForBackend<CanonicalHostIdentityContext>({
-    url: '/api/canonical-host/identity-context',
-    method: 'GET',
-  });
-  if (response.status === 401 || response.status === 403) {
-    throw new Error('CANONICAL_HOST_IDENTITY_REQUIRED');
+  const generation = clientSessionGeneration;
+  if (identityContextRead?.generation === generation) {
+    return identityContextRead.promise;
   }
-  if (response.status < 200 || response.status >= 300) {
-    throw backendResponseError(
-      response.data,
-      'CANONICAL_HOST_IDENTITY_UNAVAILABLE',
-    );
-  }
-  return response.data;
+
+  let cachedPromise!: Promise<CanonicalHostIdentityContext>;
+  cachedPromise = Promise.resolve()
+    .then(async (): Promise<CanonicalHostIdentityContext> => {
+      const response = await axiosForBackend<CanonicalHostIdentityContext>({
+        url: '/api/canonical-host/identity-context',
+        method: 'GET',
+      });
+      if (response.status === 401 || response.status === 403) {
+        requireCanonicalHostClientAuthentication(generation);
+        throw new Error('CANONICAL_HOST_IDENTITY_REQUIRED');
+      }
+      if (response.status < 200 || response.status >= 300) {
+        throw backendResponseError(
+          response.data,
+          'CANONICAL_HOST_IDENTITY_UNAVAILABLE',
+        );
+      }
+      const userId = response.data.userId?.trim();
+      const tenantId = response.data.tenantId?.trim();
+      if (!userId || !tenantId) {
+        throw new Error('CANONICAL_HOST_IDENTITY_UNAVAILABLE');
+      }
+      if (
+        generation !== clientSessionGeneration ||
+        identityContextRead?.promise !== cachedPromise
+      ) {
+        throw new Error('CANONICAL_HOST_IDENTITY_STALE');
+      }
+      return { ...response.data, userId, tenantId };
+    })
+    .catch((cause: unknown) => {
+      if (responseStatus(cause) === 401) {
+        requireCanonicalHostClientAuthentication(generation);
+      }
+      if (identityContextRead?.promise === cachedPromise) {
+        identityContextRead = null;
+      }
+      throw cause;
+    });
+  identityContextRead = { generation, promise: cachedPromise };
+  return cachedPromise;
 }
 
 export async function requireOfficialOauthSession(): Promise<void> {
-  const response = await axiosForBackend<OfficialOauthWhoamiResponse>({
-    url: '/api/identity/whoami',
-    method: 'GET',
-  });
-  if (
-    response.status < 200 ||
-    response.status >= 300 ||
-    response.data.authenticated !== true ||
-    !response.data.verifiedIdentity ||
-    response.data.session?.provenance !== 'SERVER_OPAQUE_SESSION'
-  ) {
-    throw backendResponseError(
-      response.data,
-      'OFFICIAL_OAUTH_SESSION_REQUIRED',
-    );
+  const generation = clientSessionGeneration;
+  if (officialOauthRead?.generation === generation) {
+    return officialOauthRead.promise;
   }
+
+  let cachedPromise!: Promise<void>;
+  cachedPromise = Promise.resolve()
+    .then(async (): Promise<void> => {
+      const response = await axiosForBackend<OfficialOauthWhoamiResponse>({
+        url: '/api/identity/whoami',
+        method: 'GET',
+      });
+      if (
+        response.status < 200 ||
+        response.status >= 300 ||
+        response.data.authenticated !== true ||
+        !response.data.verifiedIdentity ||
+        response.data.session?.provenance !== 'SERVER_OPAQUE_SESSION'
+      ) {
+        if (response.status === 401) {
+          clearCanonicalHostClientSessionCacheForGeneration(generation);
+        }
+        throw backendResponseError(
+          response.data,
+          'OFFICIAL_OAUTH_SESSION_REQUIRED',
+        );
+      }
+      if (
+        generation !== clientSessionGeneration ||
+        officialOauthRead?.promise !== cachedPromise
+      ) {
+        throw new Error('OFFICIAL_OAUTH_SESSION_STALE');
+      }
+    })
+    .catch((cause: unknown) => {
+      if (responseStatus(cause) === 401) {
+        clearCanonicalHostClientSessionCacheForGeneration(generation);
+      }
+      if (officialOauthRead?.promise === cachedPromise) {
+        officialOauthRead = null;
+      }
+      throw cause;
+    });
+  officialOauthRead = { generation, promise: cachedPromise };
+  return cachedPromise;
 }
 
 export async function createDevelopmentWorkItem(
   input: CanonicalDevelopmentWorkItemRunRequest,
 ): Promise<CanonicalOrdinaryWorkItemRunResponse> {
+  const requestGeneration = clientSessionGeneration;
   try {
     const response =
       await axiosForBackend<CanonicalOrdinaryWorkItemRunResponse>({
@@ -87,6 +200,12 @@ export async function createDevelopmentWorkItem(
         method: 'POST',
         data: input,
       });
+    if (response.status === 401) {
+      throw clientLoginRequired(
+        'CANONICAL_DEVELOPMENT_WORK_ITEM_CREATE_FAILED',
+        requestGeneration,
+      );
+    }
     if (response.status < 200 || response.status >= 300) {
       throw backendResponseError(
         response.data,
@@ -95,6 +214,7 @@ export async function createDevelopmentWorkItem(
     }
     return response.data;
   } catch (error) {
+    markRejectedCanonicalLogin(error, requestGeneration);
     logger.error('创建隔离 DEV WorkItem 失败', error);
     throw error;
   }
@@ -103,12 +223,19 @@ export async function createDevelopmentWorkItem(
 export async function retryDevelopmentWorkItem(
   workItemId: string,
 ): Promise<CanonicalOrdinaryWorkItemRunResponse> {
+  const requestGeneration = clientSessionGeneration;
   try {
     const response =
       await axiosForBackend<CanonicalOrdinaryWorkItemRunResponse>({
         url: `/api/canonical-host/work-items/${encodeURIComponent(workItemId)}/retry-development-run`,
         method: 'POST',
       });
+    if (response.status === 401) {
+      throw clientLoginRequired(
+        'CANONICAL_DEVELOPMENT_WORK_ITEM_RETRY_FAILED',
+        requestGeneration,
+      );
+    }
     if (response.status < 200 || response.status >= 300) {
       throw backendResponseError(
         response.data,
@@ -117,6 +244,7 @@ export async function retryDevelopmentWorkItem(
     }
     return response.data;
   } catch (error) {
+    markRejectedCanonicalLogin(error, requestGeneration);
     logger.error('重新解析既有 DEV WorkItem 失败', error);
     throw error;
   }
@@ -125,13 +253,18 @@ export async function retryDevelopmentWorkItem(
 export async function getLibraryIndex(
   workItemId: string,
 ): Promise<CanonicalLibraryIndexReadResponse> {
+  const requestGeneration = clientSessionGeneration;
   try {
     const response = await axiosForBackend<CanonicalLibraryIndexReadResponse>({
       url: `/api/canonical-host/work-items/${encodeURIComponent(workItemId)}/library-index`,
       method: 'GET',
     });
-    if (response.status === 401)
-      throw new Error('CANONICAL_LIBRARY_LOGIN_REQUIRED');
+    if (response.status === 401) {
+      throw clientLoginRequired(
+        'CANONICAL_LIBRARY_LOGIN_REQUIRED',
+        requestGeneration,
+      );
+    }
     if (response.status === 403 || response.status === 404) {
       throw canonicalObjectNotFound();
     }
@@ -144,7 +277,7 @@ export async function getLibraryIndex(
     return response.data;
   } catch (error) {
     logger.error('读取 WorkItem LibraryIndex fresh projection 失败', error);
-    throw normalizedDirectObjectError(error);
+    throw normalizedDirectObjectError(error, requestGeneration);
   }
 }
 
@@ -153,6 +286,7 @@ export async function getDocumentParsingPage(
   query: string,
   options: { freshness?: 'default' | 'mutation' } = {},
 ): Promise<CanonicalDocumentParsingPageResponse> {
+  const requestGeneration = clientSessionGeneration;
   try {
     const normalizedQuery: string = query.trim();
     const mutationFreshRead: boolean = options.freshness === 'mutation';
@@ -174,7 +308,10 @@ export async function getDocumentParsingPage(
           : {}),
       });
     if (response.status === 401) {
-      throw new Error('CANONICAL_PAGE_LOGIN_REQUIRED');
+      throw clientLoginRequired(
+        'CANONICAL_PAGE_LOGIN_REQUIRED',
+        requestGeneration,
+      );
     }
     if (response.status === 403 || response.status === 404) {
       throw canonicalObjectNotFound();
@@ -188,7 +325,7 @@ export async function getDocumentParsingPage(
     return response.data;
   } catch (error) {
     logger.error('读取文档与解析 fresh projection 失败', error);
-    throw normalizedDirectObjectError(error);
+    throw normalizedDirectObjectError(error, requestGeneration);
   }
 }
 
@@ -225,6 +362,7 @@ async function overallRegenerationRequest<T>(input: {
   data?: RequestCanonicalOverallRegenerationRequest;
   operation: string;
 }): Promise<T> {
+  const requestGeneration = clientSessionGeneration;
   try {
     const response = await axiosForBackend<T>({
       url: input.url,
@@ -232,7 +370,10 @@ async function overallRegenerationRequest<T>(input: {
       ...(input.data === undefined ? {} : { data: input.data }),
     });
     if (response.status === 401) {
-      throw new Error('OVERALL_REGENERATION_LOGIN_REQUIRED');
+      throw clientLoginRequired(
+        'OVERALL_REGENERATION_LOGIN_REQUIRED',
+        requestGeneration,
+      );
     }
     if (response.status === 403 || response.status === 404) {
       throw canonicalObjectNotFound();
@@ -247,7 +388,7 @@ async function overallRegenerationRequest<T>(input: {
     return response.data;
   } catch (error) {
     logger.error(`${input.operation}失败`, error);
-    throw normalizedOverallRegenerationError(error);
+    throw normalizedOverallRegenerationError(error, requestGeneration);
   }
 }
 
@@ -265,6 +406,7 @@ export async function getStructuredContentPage(
     expectedRevision?: number;
   } = {},
 ): Promise<CanonicalStructuredContentPageResponse> {
+  const requestGeneration = clientSessionGeneration;
   try {
     const params: Record<string, string | number> = {};
     if (input.cursor) params.cursor = input.cursor;
@@ -279,7 +421,10 @@ export async function getStructuredContentPage(
         ...(Object.keys(params).length === 0 ? {} : { params }),
       });
     if (response.status === 401) {
-      throw new Error('STRUCTURED_CONTENT_LOGIN_REQUIRED');
+      throw clientLoginRequired(
+        'STRUCTURED_CONTENT_LOGIN_REQUIRED',
+        requestGeneration,
+      );
     }
     if (response.status === 403 || response.status === 404) {
       throw canonicalObjectNotFound();
@@ -293,7 +438,7 @@ export async function getStructuredContentPage(
     return response.data;
   } catch (error) {
     logger.error('读取结构化内容分页失败', error);
-    throw normalizedDirectObjectError(error);
+    throw normalizedDirectObjectError(error, requestGeneration);
   }
 }
 
@@ -346,6 +491,7 @@ async function applicabilitySelectionRequest(input: {
   data?: ConfigureCanonicalApplicabilitySelectionRequest;
   operation: string;
 }): Promise<CanonicalApplicabilitySelectionReadModel> {
+  const requestGeneration = clientSessionGeneration;
   try {
     const response =
       await axiosForBackend<CanonicalApplicabilitySelectionReadModel>({
@@ -354,7 +500,10 @@ async function applicabilitySelectionRequest(input: {
         ...(input.data === undefined ? {} : { data: input.data }),
       });
     if (response.status === 401) {
-      throw new Error('APPLICABILITY_SELECTION_LOGIN_REQUIRED');
+      throw clientLoginRequired(
+        'APPLICABILITY_SELECTION_LOGIN_REQUIRED',
+        requestGeneration,
+      );
     }
     if (response.status === 403 || response.status === 404) {
       throw canonicalObjectNotFound();
@@ -368,7 +517,7 @@ async function applicabilitySelectionRequest(input: {
     return response.data;
   } catch (error) {
     logger.error(`${input.operation}失败`, error);
-    throw normalizedApplicabilitySelectionError(error);
+    throw normalizedApplicabilitySelectionError(error, requestGeneration);
   }
 }
 
@@ -447,6 +596,7 @@ async function reviewConversationRequest<T>(input: {
   data?: Record<string, never> | AppendReviewTextTurnRequest;
   operation: string;
 }): Promise<T> {
+  const requestGeneration = clientSessionGeneration;
   try {
     const response = await axiosForBackend<T>({
       url: input.url,
@@ -454,7 +604,10 @@ async function reviewConversationRequest<T>(input: {
       ...(input.data === undefined ? {} : { data: input.data }),
     });
     if (response.status === 401) {
-      throw new Error('REVIEW_CONVERSATION_LOGIN_REQUIRED');
+      throw clientLoginRequired(
+        'REVIEW_CONVERSATION_LOGIN_REQUIRED',
+        requestGeneration,
+      );
     }
     if (response.status === 403 || response.status === 404) {
       throw canonicalObjectNotFound();
@@ -468,7 +621,7 @@ async function reviewConversationRequest<T>(input: {
     return response.data;
   } catch (error) {
     logger.error(`${input.operation}失败`, error);
-    throw normalizedDirectObjectError(error);
+    throw normalizedDirectObjectError(error, requestGeneration);
   }
 }
 
@@ -483,14 +636,23 @@ function reviewConversationUrl(
   return `/api/work-items/${encodeURIComponent(workItemId)}/review-conversations/${encodeURIComponent(reviewConversationId)}`;
 }
 
-function normalizedDirectObjectError(error: unknown): unknown {
+function normalizedDirectObjectError(
+  error: unknown,
+  requestGeneration: number,
+): unknown {
   const status = responseStatus(error);
+  if (status === 401) {
+    requireCanonicalHostClientAuthentication(requestGeneration);
+  }
   if (status === 403 || status === 404) return canonicalObjectNotFound();
   return error;
 }
 
-function normalizedApplicabilitySelectionError(error: unknown): unknown {
-  const normalized = normalizedDirectObjectError(error);
+function normalizedApplicabilitySelectionError(
+  error: unknown,
+  requestGeneration: number,
+): unknown {
+  const normalized = normalizedDirectObjectError(error, requestGeneration);
   if (normalized !== error || !isRecord(error)) return normalized;
   const response = error.response;
   if (!isRecord(response)) return error;
@@ -500,8 +662,11 @@ function normalizedApplicabilitySelectionError(error: unknown): unknown {
   );
 }
 
-function normalizedOverallRegenerationError(error: unknown): unknown {
-  const normalized = normalizedDirectObjectError(error);
+function normalizedOverallRegenerationError(
+  error: unknown,
+  requestGeneration: number,
+): unknown {
+  const normalized = normalizedDirectObjectError(error, requestGeneration);
   if (normalized !== error) return normalized;
   if (responseStatus(error) === 409) return overallRegenerationConflict();
   return error;
@@ -553,6 +718,46 @@ function backendResponseError(data: unknown, fallback: string): Error {
   return new Error(fallback);
 }
 
+function clientLoginRequired(code: string, requestGeneration: number): Error {
+  requireCanonicalHostClientAuthentication(requestGeneration);
+  return new Error(code);
+}
+
+function requireCanonicalHostClientAuthentication(
+  requestGeneration: number,
+): void {
+  if (requestGeneration !== clientSessionGeneration) return;
+  if (clientSessionAuthenticationRequired) {
+    clearCanonicalHostClientSessionCache();
+    return;
+  }
+  clientSessionGeneration += 1;
+  clientSessionAuthenticationRequired = true;
+  clearCanonicalHostClientSessionCache();
+  publishCanonicalHostClientSessionChange();
+}
+
+function publishCanonicalHostClientSessionChange(): void {
+  clientSessionListeners.forEach((listener) => listener());
+}
+
+function clearCanonicalHostClientSessionCacheForGeneration(
+  requestGeneration: number,
+): void {
+  if (requestGeneration === clientSessionGeneration) {
+    clearCanonicalHostClientSessionCache();
+  }
+}
+
+function markRejectedCanonicalLogin(
+  error: unknown,
+  requestGeneration: number,
+): void {
+  if (responseStatus(error) === 401) {
+    requireCanonicalHostClientAuthentication(requestGeneration);
+  }
+}
+
 export async function recordEngineerReview(
   workItemId: string,
   input: {
@@ -562,6 +767,7 @@ export async function recordEngineerReview(
     comment: string;
   },
 ): Promise<CanonicalWorkItemProjection> {
+  const requestGeneration = clientSessionGeneration;
   try {
     const response = await axiosForBackend<CanonicalWorkItemProjection>({
       url: `/api/canonical-host/work-items/${encodeURIComponent(workItemId)}/integrated-assessment/engineer-reviews`,
@@ -569,7 +775,10 @@ export async function recordEngineerReview(
       data: input,
     });
     if (response.status === 401) {
-      throw new Error('ENGINEER_REVIEW_ACCESS_DENIED');
+      throw clientLoginRequired(
+        'ENGINEER_REVIEW_ACCESS_DENIED',
+        requestGeneration,
+      );
     }
     if (response.status === 403 || response.status === 404) {
       throw canonicalObjectNotFound();
@@ -577,13 +786,14 @@ export async function recordEngineerReview(
     return response.data;
   } catch (error) {
     logger.error('记录工程师逐项意见失败', error);
-    throw normalizedDirectObjectError(error);
+    throw normalizedDirectObjectError(error, requestGeneration);
   }
 }
 
 export async function queryParsedUnits(
   request: CanonicalEntryQueryRequest,
 ): Promise<CanonicalEntryQueryResponse> {
+  const requestGeneration = clientSessionGeneration;
   try {
     const response = await axiosForBackend<CanonicalEntryQueryResponse>({
       url: '/api/canonical-host/work-items/query-parsed-units',
@@ -591,7 +801,10 @@ export async function queryParsedUnits(
       data: request,
     });
     if (response.status === 401) {
-      throw new Error('CANONICAL_QUERY_ACCESS_DENIED');
+      throw clientLoginRequired(
+        'CANONICAL_QUERY_ACCESS_DENIED',
+        requestGeneration,
+      );
     }
     if (response.status === 403 || response.status === 404) {
       throw canonicalObjectNotFound();
@@ -599,13 +812,14 @@ export async function queryParsedUnits(
     return response.data;
   } catch (error) {
     logger.error('查询解析单元失败', error);
-    throw normalizedDirectObjectError(error);
+    throw normalizedDirectObjectError(error, requestGeneration);
   }
 }
 
 export async function confirmIntegratedOverallForAeo(
   workItemId: string,
 ): Promise<CanonicalWorkItemProjection> {
+  const requestGeneration = clientSessionGeneration;
   try {
     const response = await axiosForBackend<CanonicalWorkItemProjection>({
       url: `/api/canonical-host/work-items/${encodeURIComponent(workItemId)}/integrated-assessment/confirm-for-aeo`,
@@ -613,7 +827,10 @@ export async function confirmIntegratedOverallForAeo(
       data: {},
     });
     if (response.status === 401) {
-      throw new Error('OPENCLAW_OVERALL_CONFIRMATION_ACCESS_DENIED');
+      throw clientLoginRequired(
+        'OPENCLAW_OVERALL_CONFIRMATION_ACCESS_DENIED',
+        requestGeneration,
+      );
     }
     if (response.status === 403 || response.status === 404) {
       throw canonicalObjectNotFound();
@@ -621,13 +838,14 @@ export async function confirmIntegratedOverallForAeo(
     return response.data;
   } catch (error) {
     logger.error('确认当前整体综合用于 AEO 失败', error);
-    throw normalizedDirectObjectError(error);
+    throw normalizedDirectObjectError(error, requestGeneration);
   }
 }
 
 export async function generateAeoCandidate(
   workItemId: string,
 ): Promise<CanonicalAeoCandidateRunResponse> {
+  const requestGeneration = clientSessionGeneration;
   try {
     const response = await axiosForBackend<CanonicalAeoCandidateRunResponse>({
       url: `/api/canonical-host/work-items/${encodeURIComponent(workItemId)}/aeo/candidate`,
@@ -635,7 +853,10 @@ export async function generateAeoCandidate(
       data: {},
     });
     if (response.status === 401) {
-      throw new Error('AEO_CANDIDATE_ACCESS_DENIED');
+      throw clientLoginRequired(
+        'AEO_CANDIDATE_ACCESS_DENIED',
+        requestGeneration,
+      );
     }
     if (response.status === 403 || response.status === 404) {
       throw canonicalObjectNotFound();
@@ -643,6 +864,6 @@ export async function generateAeoCandidate(
     return response.data;
   } catch (error) {
     logger.error('生成同一 WorkItem 的 AEO 候选失败', error);
-    throw normalizedDirectObjectError(error);
+    throw normalizedDirectObjectError(error, requestGeneration);
   }
 }

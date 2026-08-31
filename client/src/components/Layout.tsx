@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom';
 
 import CurrentUserControl from '@client/src/components/CurrentUserControl';
 import VisualModeControl from '@client/src/components/VisualModeControl';
+import { CurrentUserSessionProvider } from '@client/src/app/providers/CurrentUserSessionProvider';
 import FloatingDock from '@client/src/features/navigation/FloatingDock';
 import './app-shell.css';
 
@@ -18,91 +19,93 @@ const Layout = () => {
   const pageLabel = derivePageLabel(location.pathname);
 
   return (
-    <div
-      className={`wiselink-app-shell wl-environment${isWorkbenchRoute ? ' is-workbench-route' : ''}`}
-    >
-      <div className="wl-ambient-field" aria-hidden="true">
-        <span className="wl-light wl-light--cold" />
-        <span className="wl-light wl-light--warm" />
-        <span className="wl-light wl-light--reflect" />
-      </div>
-
-      <a href="#main-content" className="wiselink-skip-link">
-        跳转到主内容
-      </a>
-
-      <FloatingDock workItemId={workItemId} />
-
-      <header
-        className="wiselink-app-header wl-glass-nav"
-        data-wl-material="g1"
-        role="banner"
+    <CurrentUserSessionProvider>
+      <div
+        className={`wiselink-app-shell wl-environment${isWorkbenchRoute ? ' is-workbench-route' : ''}`}
       >
-        <NavLink className="wiselink-app-brand" to="/library">
-          <span className="wiselink-app-mark" aria-hidden="true">
-            W
-          </span>
-          <span>
-            <strong>WiseLink</strong>
-            <small>工程资料与综合评估</small>
-          </span>
-        </NavLink>
-
-        <p className="wiselink-app-page-label" aria-current="page">
-          {pageLabel}
-        </p>
-
-        <div className="wiselink-app-context">
-          {workItemId ? (
-            <NavLink
-              className="wiselink-app-work-item"
-              to={`/work-items/${encodeURIComponent(workItemId)}`}
-            >
-              <FileSearch2 aria-hidden="true" />
-              <span>当前工程事项</span>
-            </NavLink>
-          ) : (
-            <span className="wiselink-app-context-note">
-              资料与结果按权限显示
-            </span>
-          )}
-          <VisualModeControl />
-          <CurrentUserControl />
+        <div className="wl-ambient-field" aria-hidden="true">
+          <span className="wl-light wl-light--cold" />
+          <span className="wl-light wl-light--warm" />
+          <span className="wl-light wl-light--reflect" />
         </div>
-      </header>
 
-      {crumbs.length > 1 && (
-        <nav className="wiselink-breadcrumb" aria-label="面包屑">
-          <ol>
-            {crumbs.map((crumb, index) => (
-              <li key={crumb.label} className="wiselink-breadcrumb-item">
-                {index > 0 && (
-                  <ChevronRight
-                    className="wiselink-breadcrumb-sep"
-                    aria-hidden="true"
-                  />
-                )}
-                {crumb.to ? (
-                  <NavLink to={crumb.to}>{crumb.label}</NavLink>
-                ) : (
-                  <span
-                    aria-current={
-                      index === crumbs.length - 1 ? 'page' : undefined
-                    }
-                  >
-                    {crumb.label}
-                  </span>
-                )}
-              </li>
-            ))}
-          </ol>
-        </nav>
-      )}
+        <a href="#main-content" className="wiselink-skip-link">
+          跳转到主内容
+        </a>
 
-      <div className="wiselink-app-body" id="main-content" tabIndex={-1}>
-        <Outlet />
+        <FloatingDock workItemId={workItemId} />
+
+        <header
+          className="wiselink-app-header wl-glass-nav"
+          data-wl-material="g1"
+          role="banner"
+        >
+          <NavLink className="wiselink-app-brand" to="/library">
+            <span className="wiselink-app-mark" aria-hidden="true">
+              W
+            </span>
+            <span>
+              <strong>WiseLink</strong>
+              <small>工程资料与综合评估</small>
+            </span>
+          </NavLink>
+
+          <p className="wiselink-app-page-label" aria-current="page">
+            {pageLabel}
+          </p>
+
+          <div className="wiselink-app-context">
+            {workItemId ? (
+              <NavLink
+                className="wiselink-app-work-item"
+                to={`/work-items/${encodeURIComponent(workItemId)}`}
+              >
+                <FileSearch2 aria-hidden="true" />
+                <span>当前工程事项</span>
+              </NavLink>
+            ) : (
+              <span className="wiselink-app-context-note">
+                资料与结果按权限显示
+              </span>
+            )}
+            <VisualModeControl />
+            <CurrentUserControl />
+          </div>
+        </header>
+
+        {crumbs.length > 1 && (
+          <nav className="wiselink-breadcrumb" aria-label="面包屑">
+            <ol>
+              {crumbs.map((crumb, index) => (
+                <li key={crumb.label} className="wiselink-breadcrumb-item">
+                  {index > 0 && (
+                    <ChevronRight
+                      className="wiselink-breadcrumb-sep"
+                      aria-hidden="true"
+                    />
+                  )}
+                  {crumb.to ? (
+                    <NavLink to={crumb.to}>{crumb.label}</NavLink>
+                  ) : (
+                    <span
+                      aria-current={
+                        index === crumbs.length - 1 ? 'page' : undefined
+                      }
+                    >
+                      {crumb.label}
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ol>
+          </nav>
+        )}
+
+        <div className="wiselink-app-body" id="main-content" tabIndex={-1}>
+          <Outlet />
+        </div>
       </div>
-    </div>
+    </CurrentUserSessionProvider>
   );
 };
 

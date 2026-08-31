@@ -5,11 +5,10 @@ import {
   Plus,
   RefreshCw,
 } from 'lucide-react';
-import {
-  GlobalWorkerOptions,
-  getDocument,
-  type PDFDocumentProxy,
-  type PDFPageProxy,
+import type {
+  PDFDocumentLoadingTask,
+  PDFDocumentProxy,
+  PDFPageProxy,
 } from 'pdfjs-dist';
 // Vite resolves this asset query to the bundled pdf.js worker URL.
 // eslint-disable-next-line import/no-unresolved
@@ -30,8 +29,9 @@ import {
   resolvePdfWorkerUrl,
 } from './pdf-viewer-request';
 import { clampPdfPage, visiblePdfPages } from './pdf-viewer-state';
+import { loadPdfJsRuntime } from './pdfjs-runtime';
 
-GlobalWorkerOptions.workerSrc = resolvePdfWorkerUrl(
+const PDF_WORKER_SRC: string = resolvePdfWorkerUrl(
   pdfWorkerUrl,
   import.meta.url,
 );
@@ -48,6 +48,12 @@ interface PdfCanvasPageProps {
   pageNumber: number;
   zoom: number;
   highlighted: boolean;
+  renderRequested: boolean;
+}
+
+interface PdfScrollRequest {
+  page: number;
+  sequence: number;
 }
 
 const MIN_ZOOM = 0.75;
@@ -67,7 +73,15 @@ export default function PdfDocumentViewer({
   const [zoom, setZoom] = useState<number>(1);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<boolean>(false);
+  const [renderedPages, setRenderedPages] = useState<ReadonlySet<number>>(
+    () => new Set([targetPage ?? 1]),
+  );
+  const [scrollRequest, setScrollRequest] = useState<PdfScrollRequest>(() => ({
+    page: targetPage ?? 1,
+    sequence: 0,
+  }));
   const pagesRef = useRef<HTMLDivElement | null>(null);
+  const scrollFrameRef = useRef<number | null>(null);
   const isMobile: boolean = usePdfMobileViewport();
   const previewUrl: string = useMemo(
     () => canonicalPdfPreviewUrl(workItemId, preview.opaqueLocator),
@@ -75,16 +89,31 @@ export default function PdfDocumentViewer({
   );
 
   useEffect(() => {
+    const initialPage: number = targetPage ?? 1;
+    setScrollRequest((current: PdfScrollRequest) => ({
+      page: initialPage,
+      sequence: current.sequence + 1,
+    }));
+  }, [previewUrl]);
+
+  useEffect(() => {
     let active = true;
-    const loadingTask = getDocument(
-      buildPdfDocumentRequest(previewUrl, preview.supportsRange),
-    );
+    let loadingTask: PDFDocumentLoadingTask | null = null;
     setLoading(true);
     setError(false);
     setPdfDocument(null);
     setPageCount(0);
-    void loadingTask.promise
-      .then((document: PDFDocumentProxy) => {
+    setRenderedPages(new Set([targetPage ?? 1]));
+    void loadPdfJsRuntime(PDF_WORKER_SRC)
+      .then((runtime) => {
+        if (!active) return null;
+        loadingTask = runtime.getDocument(
+          buildPdfDocumentRequest(previewUrl, preview.supportsRange),
+        );
+        return loadingTask.promise;
+      })
+      .then((document: PDFDocumentProxy | null) => {
+        if (!document) return;
         if (!active) {
           void document.destroy();
           return;
@@ -106,15 +135,14 @@ export default function PdfDocumentViewer({
       });
     return () => {
       active = false;
-      void loadingTask.destroy();
+      if (loadingTask) void loadingTask.destroy();
     };
   }, [preview.supportsRange, previewUrl]);
 
   useEffect(() => {
     if (!pdfDocument || targetPage === null) return;
     const nextPage: number = clampPdfPage(targetPage, pdfDocument.numPages);
-    setCurrentPage(nextPage);
-    setPageInput(String(nextPage));
+    requestPdfPage(nextPage);
   }, [pdfDocument, targetPage, targetSignal]);
 
   const visiblePages: number[] = useMemo(
@@ -124,30 +152,137 @@ export default function PdfDocumentViewer({
   const sourceTargetPage: number | null =
     targetPage === null ? null : clampPdfPage(targetPage, pageCount);
 
+  useEffect(() => {
+    const container: HTMLDivElement | null = pagesRef.current;
+    if (!container || !pdfDocument || pageCount <= 0) return;
+    const pageFrames: HTMLElement[] = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-pdf-page]'),
+    );
+    if (pageFrames.length === 0) return;
+
+    if (typeof IntersectionObserver === 'undefined') {
+      setRenderedPages(
+        new Set(
+          pageFrames.map((frame: HTMLElement) =>
+            Number(frame.getAttribute('data-pdf-page')),
+          ),
+        ),
+      );
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries: IntersectionObserverEntry[]) => {
+        const intersectingPages: number[] = entries
+          .filter((entry: IntersectionObserverEntry) => entry.isIntersecting)
+          .map((entry: IntersectionObserverEntry) =>
+            Number(entry.target.getAttribute('data-pdf-page')),
+          )
+          .filter((pageNumber: number) => Number.isSafeInteger(pageNumber));
+        if (intersectingPages.length === 0) return;
+        setRenderedPages((current: ReadonlySet<number>) => {
+          const next: Set<number> = new Set(current);
+          intersectingPages.forEach((pageNumber: number) =>
+            next.add(pageNumber),
+          );
+          return next.size === current.size ? current : next;
+        });
+      },
+      { root: container, rootMargin: '900px 0px' },
+    );
+    pageFrames.forEach((frame: HTMLElement) => observer.observe(frame));
+    return () => observer.disconnect();
+  }, [pageCount, pdfDocument]);
+
   useLayoutEffect(() => {
     const container = pagesRef.current;
     if (!container || pageCount <= 0) return;
     const target = container.querySelector<HTMLElement>(
-      `[data-pdf-page="${currentPage}"]`,
+      `[data-pdf-page="${scrollRequest.page}"]`,
     );
     if (!target) return;
+    const containerRect: DOMRect = container.getBoundingClientRect();
+    const targetRect: DOMRect = target.getBoundingClientRect();
     container.scrollTo({
-      top: Math.max(0, target.offsetTop - container.offsetTop),
+      top: Math.max(
+        0,
+        container.scrollTop + targetRect.top - containerRect.top,
+      ),
       behavior: 'auto',
     });
-  }, [currentPage, pageCount, targetSignal]);
+  }, [pageCount, scrollRequest]);
+
+  useEffect(
+    () => () => {
+      if (scrollFrameRef.current !== null) {
+        window.cancelAnimationFrame(scrollFrameRef.current);
+      }
+    },
+    [],
+  );
+
+  function requestPdfPage(page: number): void {
+    const nextPage: number = clampPdfPage(page, pageCount);
+    setCurrentPage(nextPage);
+    setPageInput(String(nextPage));
+    setRenderedPages((current: ReadonlySet<number>) => {
+      if (current.has(nextPage)) return current;
+      return new Set(current).add(nextPage);
+    });
+    setScrollRequest((current: PdfScrollRequest) => ({
+      page: nextPage,
+      sequence: current.sequence + 1,
+    }));
+  }
 
   function movePage(offset: number): void {
     const nextPage: number = clampPdfPage(currentPage + offset, pageCount);
-    setCurrentPage(nextPage);
-    setPageInput(String(nextPage));
+    requestPdfPage(nextPage);
   }
 
   function commitPageInput(): void {
     const parsed: number = Number.parseInt(pageInput, 10);
     const nextPage: number = clampPdfPage(parsed, pageCount);
-    setCurrentPage(nextPage);
-    setPageInput(String(nextPage));
+    requestPdfPage(nextPage);
+  }
+
+  function handlePagesScroll(): void {
+    if (scrollFrameRef.current !== null) return;
+    scrollFrameRef.current = window.requestAnimationFrame(() => {
+      scrollFrameRef.current = null;
+      const container: HTMLDivElement | null = pagesRef.current;
+      if (!container) return;
+      const pages: HTMLElement[] = Array.from(
+        container.querySelectorAll<HTMLElement>('[data-pdf-page]'),
+      );
+      if (pages.length === 0) return;
+      const containerRect: DOMRect = container.getBoundingClientRect();
+      const readingLine: number =
+        containerRect.top + Math.min(container.clientHeight * 0.32, 180);
+      const pageAtReadingLine: HTMLElement | undefined = pages.find(
+        (page: HTMLElement) => {
+          const rect: DOMRect = page.getBoundingClientRect();
+          return rect.top <= readingLine && rect.bottom > readingLine;
+        },
+      );
+      const visiblePage: HTMLElement =
+        pageAtReadingLine ??
+        pages.reduce((nearest: HTMLElement, candidate: HTMLElement) => {
+          const nearestDistance: number = Math.abs(
+            nearest.getBoundingClientRect().top - readingLine,
+          );
+          const candidateDistance: number = Math.abs(
+            candidate.getBoundingClientRect().top - readingLine,
+          );
+          return candidateDistance < nearestDistance ? candidate : nearest;
+        });
+      const nextPage: number = Number(
+        visiblePage.getAttribute('data-pdf-page'),
+      );
+      if (!Number.isSafeInteger(nextPage) || nextPage === currentPage) return;
+      setCurrentPage(nextPage);
+      setPageInput(String(nextPage));
+    });
   }
 
   if (loading) {
@@ -240,6 +375,7 @@ export default function PdfDocumentViewer({
         aria-live="polite"
         aria-label="PDF 页面"
         tabIndex={0}
+        onScroll={handlePagesScroll}
       >
         {visiblePages.map((pageNumber: number) => (
           <PdfCanvasPage
@@ -249,6 +385,7 @@ export default function PdfDocumentViewer({
             document={pdfDocument}
             pageNumber={pageNumber}
             zoom={zoom}
+            renderRequested={renderedPages.has(pageNumber)}
             highlighted={
               pageNumber === sourceTargetPage && Boolean(targetSignal)
             }
@@ -264,12 +401,14 @@ function PdfCanvasPage({
   pageNumber,
   zoom,
   highlighted,
+  renderRequested,
 }: PdfCanvasPageProps) {
   const frameRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [renderError, setRenderError] = useState<boolean>(false);
 
   useEffect(() => {
+    if (!renderRequested && !highlighted) return;
     const frame: HTMLDivElement | null = frameRef.current;
     const canvas: HTMLCanvasElement | null = canvasRef.current;
     if (!frame || !canvas) return;
@@ -322,16 +461,25 @@ function PdfCanvasPage({
       cancelRender?.();
       page?.cleanup();
     };
-  }, [document, pageNumber, zoom]);
+  }, [document, highlighted, pageNumber, renderRequested, zoom]);
 
   return (
     <article
       ref={frameRef}
       className={`parse-pdf-page${highlighted ? ' is-source-target' : ''}`}
       data-pdf-page={pageNumber}
+      data-render-state={
+        renderRequested || highlighted ? 'requested' : 'deferred'
+      }
       aria-label={`PDF 第 ${pageNumber} 页`}
+      aria-busy={!renderRequested && !highlighted}
     >
       <span className="parse-pdf-page-number">第 {pageNumber} 页</span>
+      {!renderRequested && !highlighted ? (
+        <span className="parse-pdf-page-placeholder" aria-hidden="true">
+          滚动到附近时加载页面
+        </span>
+      ) : null}
       {renderError ? (
         <div className="parse-pdf-page-error" role="alert">
           当前页渲染失败，请切换页码或刷新后重试。

@@ -8,10 +8,14 @@ export function visiblePdfPages(
   pageCount: number,
   mobile: boolean,
 ): number[] {
-  const current: number = clampPdfPage(currentPage, pageCount);
-  if (mobile) return [current];
-  return [current - 1, current, current + 1].filter(
-    (page: number) => page >= 1 && page <= pageCount,
+  const safePageCount: number = Number.isFinite(pageCount)
+    ? Math.max(0, Math.trunc(pageCount))
+    : 0;
+  if (safePageCount <= 0) return [];
+  if (mobile) return [clampPdfPage(currentPage, safePageCount)];
+  return Array.from(
+    { length: safePageCount },
+    (_value: undefined, index: number) => index + 1,
   );
 }
 

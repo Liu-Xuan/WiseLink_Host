@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   Activity,
@@ -32,22 +32,19 @@ import {
 import { Textarea } from '@client/src/components/ui/textarea';
 import { rememberRecentWorkItem } from '@client/src/utils/recent-work-items';
 import { forgetRecentWorkItem } from '@client/src/utils/recent-work-items';
-import { useCurrentUserProfile } from '@lark-apaas/client-toolkit/hooks/useCurrentUserProfile';
+import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSessionProvider';
 
-import { type WorkbenchNode } from './WorkItemContextTree';
 import {
   getWorkbenchNode,
   structuredSourceDeepLink,
+  type WorkbenchNode,
   WORKBENCH_TAB_DEFINITIONS,
 } from './document-parsing-navigation';
 import { EngineeringReasoningTrail } from './EngineeringReasoningTrail';
 import { AeoAuthoringWorkspace } from './AeoAuthoringWorkspace';
 import ApplicabilitySelectionPanel from './ApplicabilitySelectionPanel';
 import AssessmentRuleWorkspace from './AssessmentRuleWorkspace';
-import {
-  assessmentRuleName,
-  buildAssessmentRulePresentations,
-} from './assessment-rule-presentation';
+import { assessmentRuleName } from './assessment-rule-presentation';
 import { AssessmentSemanticsOverview } from './AssessmentSemanticsOverview';
 import { DocumentReaderWorkspace } from './DocumentReaderWorkspace';
 import PdfSourcePane from './PdfSourcePane';
@@ -68,6 +65,7 @@ import {
 } from '@client/src/services/viewModelMappers';
 import EvidencePanel from '@client/src/features/workbench/EvidencePanel';
 import { summarizeWorkbenchEvidence } from '@client/src/features/workbench/evidence-summary';
+import { resolveWorkbenchEvidenceActive } from '@client/src/features/workbench/workbench-layout';
 import NavigatorTree from '@client/src/features/navigation/NavigatorTree';
 import {
   buildDocumentTree,
@@ -80,7 +78,10 @@ import {
   getReaderViewMode,
   type ReaderViewMode,
 } from './workbench-projection';
-import { runCanonicalDocumentParsingLoad } from './document-parsing-load';
+import {
+  createCanonicalDocumentParsingProjectionReader,
+  runCanonicalDocumentParsingLoad,
+} from './document-parsing-load';
 import './document-parsing.css';
 import './pdf-source-pane.css';
 import '@client/src/features/workbench/workbench-shell.css';
@@ -156,6 +157,9 @@ const WORKBENCH_TABS = WORKBENCH_TAB_DEFINITIONS.map((tab) => ({
   icon: WORKBENCH_TAB_ICONS[tab.key],
 }));
 
+const documentParsingProjectionReader =
+  createCanonicalDocumentParsingProjectionReader();
+
 function flattenNavigationTree(
   nodes: NavigationNodeView[],
 ): NavigationNodeView[] {
@@ -166,23 +170,31 @@ function flattenNavigationTree(
 }
 
 export default function DocumentParsingPage() {
-  const currentUser = useCurrentUserProfile();
+  const { authenticationRequired, sessionGeneration } = useCurrentUserSession();
   const navigate = useNavigate();
-  const actorSignal: string = String(currentUser.user_id ?? '').trim();
-  const actorSignalRef = useRef<string>(actorSignal);
-  actorSignalRef.current = actorSignal;
+  const sessionGenerationRef = useRef<number>(sessionGeneration);
+  sessionGenerationRef.current = sessionGeneration;
   const loadEpochRef = useRef<number>(0);
   const { workItemId = '' } = useParams<{ workItemId: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const activeNode: WorkbenchNode = getWorkbenchNode(searchParams.get('node'));
   const activeQuery: string = searchParams.get('q')?.trim() ?? '';
+  const requestedReaderUnit: string = searchParams.get('unit')?.trim() ?? '';
+  const requestedSourceRef: string =
+    searchParams.get('sourceRef')?.trim() ?? '';
+  const evidenceContextActive: boolean = resolveWorkbenchEvidenceActive(
+    activeNode,
+    requestedSourceRef,
+  );
   const readerMode: ReaderViewMode = getReaderViewMode(
     searchParams.get('readerMode'),
   );
   const [query, setQuery] = useState<string>(activeQuery);
   const [pageData, setPageData] =
     useState<CanonicalDocumentParsingPageResponse | null>(null);
-  const [pageActorSignal, setPageActorSignal] = useState<string | null>(null);
+  const [pageSessionGeneration, setPageSessionGeneration] = useState<
+    number | null
+  >(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [assessmentAction, setAssessmentAction] = useState<
@@ -206,10 +218,13 @@ export default function DocumentParsingPage() {
   );
   /** 点击主内容中的来源引用时递增，驱动右侧证据栏自动展开（§4.2） */
   const [evidenceSignal, setEvidenceSignal] = useState(0);
+  /** 结构化内容定位只驱动同屏 PDF，不改变右侧证据栏分配。 */
+  const [pdfLocateSignal, setPdfLocateSignal] = useState(0);
   const [structuredSourceLocator, setStructuredSourceLocator] =
     useState<CanonicalStructuredContentSourceLocator | null>(null);
   const overallRegeneration = useOverallRegeneration({
     workItemId,
+    sessionGeneration,
     onSucceeded: async () => load(activeQuery),
   });
 
@@ -231,7 +246,7 @@ export default function DocumentParsingPage() {
   async function load(nextQuery: string): Promise<void> {
     const epoch: number = loadEpochRef.current + 1;
     loadEpochRef.current = epoch;
-    const startedActorSignal: string = actorSignal;
+    const startedSessionGeneration: number = sessionGeneration;
     if (!workItemId) {
       setError('WORKITEM_ID_REQUIRED');
       setLoading(false);
@@ -239,19 +254,29 @@ export default function DocumentParsingPage() {
     }
     setLoading(true);
     setPageData(null);
-    setPageActorSignal(null);
+    setPageSessionGeneration(null);
     setError(null);
     const isCurrent = (): boolean =>
       loadEpochRef.current === epoch &&
-      actorSignalRef.current === startedActorSignal;
+      sessionGenerationRef.current === startedSessionGeneration &&
+      canonicalHost.getCanonicalHostClientSessionGeneration() ===
+        startedSessionGeneration;
     await runCanonicalDocumentParsingLoad({
       isCurrent,
       readIdentity: canonicalHost.getCanonicalHostIdentityContext,
-      readPage: () =>
-        canonicalHost.getDocumentParsingPage(workItemId, nextQuery),
+      readPage: (identity) =>
+        documentParsingProjectionReader.read(
+          {
+            identity,
+            sessionGeneration: startedSessionGeneration,
+            workItemId,
+            query: nextQuery,
+          },
+          () => canonicalHost.getDocumentParsingPage(workItemId, nextQuery),
+        ),
       onFresh: (identity, fresh) => {
         setPageData(fresh);
-        setPageActorSignal(startedActorSignal);
+        setPageSessionGeneration(startedSessionGeneration);
         rememberRecentWorkItem(identity, {
           workItemId: fresh.workItem.workItemId,
           family: fresh.workItem.classification.normalizedFamily,
@@ -264,7 +289,7 @@ export default function DocumentParsingPage() {
       },
       onDenied: (identity, cause) => {
         setPageData(null);
-        setPageActorSignal(null);
+        setPageSessionGeneration(null);
         if (canonicalHost.isCanonicalObjectNotFound(cause)) {
           forgetRecentWorkItem(identity, workItemId);
         }
@@ -272,7 +297,7 @@ export default function DocumentParsingPage() {
       },
       onIdentityError: (cause) => {
         setPageData(null);
-        setPageActorSignal(null);
+        setPageSessionGeneration(null);
         setError(
           cause instanceof Error
             ? cause.message
@@ -285,11 +310,21 @@ export default function DocumentParsingPage() {
 
   useEffect(() => {
     setQuery(activeQuery);
+    if (authenticationRequired) {
+      loadEpochRef.current += 1;
+      setPageData(null);
+      setPageSessionGeneration(null);
+      setError('CANONICAL_HOST_IDENTITY_REQUIRED');
+      setLoading(false);
+      return () => {
+        loadEpochRef.current += 1;
+      };
+    }
     void load(activeQuery);
     return () => {
       loadEpochRef.current += 1;
     };
-  }, [workItemId, activeQuery, actorSignal]);
+  }, [workItemId, activeQuery, authenticationRequired, sessionGeneration]);
 
   useEffect(() => {
     setContinuousReviewReceipt(null);
@@ -297,7 +332,19 @@ export default function DocumentParsingPage() {
   }, [workItemId]);
 
   const data: CanonicalDocumentParsingPageResponse | null =
-    pageActorSignal === actorSignal ? pageData : null;
+    pageSessionGeneration === sessionGeneration ? pageData : null;
+  const evidenceSummary = useMemo(
+    () =>
+      summarizeWorkbenchEvidence(
+        data?.readerProjection?.units ?? [],
+        evidenceContextActive ? structuredSourceLocator : null,
+      ),
+    [
+      data?.readerProjection?.units,
+      evidenceContextActive,
+      structuredSourceLocator,
+    ],
+  );
 
   useEffect(() => {
     if (loading || data === null) return;
@@ -349,13 +396,6 @@ export default function DocumentParsingPage() {
     data.workItem.classification.normalizedFamily === 'SB';
   const aeo = data.workItem.aeo ?? null;
   const results = data.readerProjection?.units ?? [];
-  const requestedReaderUnit: string = searchParams.get('unit')?.trim() ?? '';
-  const requestedSourceRef: string =
-    searchParams.get('sourceRef')?.trim() ?? '';
-  const evidenceSummary = summarizeWorkbenchEvidence(
-    results,
-    structuredSourceLocator,
-  );
   const requestedPdfTargetPage: number | null = parsePdfTargetPage(
     searchParams.get('page'),
   );
@@ -373,9 +413,6 @@ export default function DocumentParsingPage() {
   )
     ? requestedReviewCriterion
     : reviewContext?.items[0]?.criterionId || '';
-  const reviewRulePresentations = buildAssessmentRulePresentations(
-    reviewContext?.items ?? [],
-  );
   const reviewCriterionLabel = (criterionId: string): string => {
     const index =
       reviewContext?.items.findIndex(
@@ -527,7 +564,7 @@ export default function DocumentParsingPage() {
     locator: CanonicalStructuredContentSourceLocator | undefined,
   ): void {
     setStructuredSourceLocator(locator ?? null);
-    setEvidenceSignal((value: number) => value + 1);
+    setPdfLocateSignal((value) => value + 1);
     updateDeepLink(structuredSourceDeepLink(sourceRef, locator?.pageStart));
   }
 
@@ -576,6 +613,7 @@ export default function DocumentParsingPage() {
             activeSourceRef={requestedSourceRef}
             activeReaderUnit={requestedReaderUnit}
             activeStructuredLocator={structuredSourceLocator}
+            summary={evidenceSummary}
             onLocate={locateSourceRef}
             onClear={() => {
               setStructuredSourceLocator(null);
@@ -584,7 +622,7 @@ export default function DocumentParsingPage() {
           />
         }
         evidenceContentCount={evidenceSummary.contentCount}
-        evidenceActive={requestedSourceRef !== ''}
+        evidenceActive={evidenceContextActive}
         evidenceSignal={evidenceSignal}
         quickOpenItems={quickOpenItems}
         tabs={WORKBENCH_TABS}
@@ -802,7 +840,7 @@ export default function DocumentParsingPage() {
                   requestedSourceRef={requestedSourceRef}
                   structuredLocator={structuredSourceLocator}
                   explicitTargetPage={requestedPdfTargetPage}
-                  locateSignal={evidenceSignal}
+                  locateSignal={pdfLocateSignal}
                   onLocate={locatePdfQuerySourceRef}
                   onReturnStructured={() =>
                     updateDeepLink({ node: 'package', tab: 'package' })
@@ -1228,9 +1266,8 @@ export default function DocumentParsingPage() {
                             key={item.criterionId}
                             value={item.criterionId}
                           >
-                            {reviewRulePresentations[index]?.criterionName ??
-                              `判断规则 ${index + 1}`}{' '}
-                            · {humanState(item.dynamicResult) ?? '状态待确认'}
+                            {assessmentRuleName(item, index)} ·{' '}
+                            {humanState(item.dynamicResult) ?? '状态待确认'}
                           </NativeSelectOption>
                         ))}
                       </NativeSelect>

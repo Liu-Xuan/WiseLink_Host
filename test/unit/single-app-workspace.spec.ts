@@ -9,6 +9,7 @@ describe('single canonical app workspace', () => {
       routes,
       layout,
       currentUser,
+      currentUserSession,
       floatingDock,
       home,
       page,
@@ -25,6 +26,8 @@ describe('single canonical app workspace', () => {
       homeStyles,
       motion,
       overallHero,
+      workItemOverview,
+      overallRegeneration,
       reasoningTrail,
       reader,
       workbenchStyles,
@@ -41,6 +44,7 @@ describe('single canonical app workspace', () => {
       source('client/src/app.tsx'),
       source('client/src/components/Layout.tsx'),
       source('client/src/components/CurrentUserControl.tsx'),
+      source('client/src/app/providers/CurrentUserSessionProvider.tsx'),
       source('client/src/features/navigation/FloatingDock.tsx'),
       source('client/src/pages/WorkspaceHomePage/WorkspaceHomePage.tsx'),
       source('client/src/pages/DocumentParsingPage/DocumentParsingPage.tsx'),
@@ -59,6 +63,8 @@ describe('single canonical app workspace', () => {
       source('client/src/pages/WorkspaceHomePage/workspace-home.css'),
       source('client/src/styles/motion.css'),
       source('client/src/features/workitem/OverallAssessmentHero.tsx'),
+      source('client/src/features/workitem/WorkItemOverviewPage.tsx'),
+      source('client/src/features/workitem/useOverallRegeneration.ts'),
       source(
         'client/src/pages/DocumentParsingPage/EngineeringReasoningTrail.tsx',
       ),
@@ -101,16 +107,35 @@ describe('single canonical app workspace', () => {
     expect(layout).not.toContain('唯一妙搭应用');
     expect(layout).not.toContain('CANONICAL HOST');
     expect(layout).toContain('<CurrentUserControl />');
-    expect(currentUser).toContain('useCurrentUserProfile');
-    expect(currentUser).toContain('.getUserInfo()');
+    expect(layout).toContain('<CurrentUserSessionProvider>');
+    expect(currentUserSession).toContain('authClient.session.getUserInfo()');
+    expect(
+      currentUserSession.split('authClient.session.getUserInfo()'),
+    ).toHaveLength(2);
+    expect(currentUserSession).toContain("window.addEventListener('pageshow'");
+    expect(currentUserSession).not.toContain('MiaoDaMetaInfoChanged');
+    expect(currentUser).not.toContain('useCurrentUserProfile');
+    expect(currentUser).not.toContain('.getUserInfo()');
+    expect(currentUser).toContain('useCurrentUserSession');
     expect(currentUser).toContain('authClient.session.redirectToLogin()');
     expect(currentUser).toContain('authClient.session.signOut()');
     expect(currentUser).toContain('<UserDisplay');
     expect(currentUser).toContain('退出登录');
+    expect(workItemOverview).toContain('useCurrentUserSession');
+    expect(workItemOverview).toContain(
+      'getCanonicalHostClientSessionGeneration',
+    );
+    expect(workItemOverview).toContain('setView(null)');
+    expect(workItemOverview).toContain(
+      'viewSessionGeneration === sessionGeneration',
+    );
+    expect(home).toContain('loadedSessionGeneration === sessionGeneration');
+    expect(overallRegeneration).toContain('[sessionGeneration, workItemId]');
     expect(home).toContain('尚无最近资料');
     expect(home).not.toContain('developmentIntakeAvailable ? null');
     expect(page).toContain('WorkbenchShell');
-    expect(page).toContain('WorkItemContextTree');
+    expect(page).toContain('NavigatorTree');
+    expect(page).not.toContain('WorkItemContextTree');
     expect(page).toContain('EvidencePanel');
     expect(tree).toContain('族群 · 文档 · 修订');
     expect(tree).toContain('随当前工程事项的最新资料更新');

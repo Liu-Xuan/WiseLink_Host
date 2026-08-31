@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { FileSearch2, Link2, LocateFixed, PanelTop } from 'lucide-react';
 
 import type {
@@ -6,7 +6,7 @@ import type {
   CanonicalStructuredContentSourceLocator,
 } from '@shared/api.interface';
 
-import { summarizeWorkbenchEvidence } from './evidence-summary';
+import type { WorkbenchEvidenceSummary } from './evidence-summary';
 
 import './evidence-panel.css';
 
@@ -17,6 +17,7 @@ export interface EvidencePanelProps {
   /** 深链中的 unit */
   activeReaderUnit: string;
   activeStructuredLocator?: CanonicalStructuredContentSourceLocator | null;
+  summary: WorkbenchEvidenceSummary;
   /** 点击证据：跳转到 Reader 定位 */
   onLocate: (unitId: string, sourceRef: string) => void;
   /** 清除定位 */
@@ -33,6 +34,7 @@ export default function EvidencePanel({
   activeSourceRef,
   activeReaderUnit,
   activeStructuredLocator = null,
+  summary,
   onLocate,
   onClear,
 }: EvidencePanelProps) {
@@ -62,11 +64,6 @@ export default function EvidencePanel({
     }
   }, [activeSourceRef, activeReaderUnit, units.length]);
 
-  const stats = useMemo(
-    () => summarizeWorkbenchEvidence(units, activeStructuredLocator),
-    [activeStructuredLocator, units],
-  );
-
   return (
     <div className="wl-evidence-panel">
       <header className="wl-evidence-head">
@@ -74,7 +71,7 @@ export default function EvidencePanel({
           <PanelTop aria-hidden="true" />
           <strong>原文依据</strong>
           <span>
-            {stats.unitCount} 个内容单元 · {stats.referenceCount} 条来源引用
+            {summary.unitCount} 个内容单元 · {summary.referenceCount} 条来源引用
           </span>
         </div>
         {activeSourceRef ? (
