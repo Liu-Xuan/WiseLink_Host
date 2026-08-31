@@ -39,6 +39,22 @@ describe('structured PDF workspace wiring', () => {
     expect(viewer).toContain('container.scrollTo({');
     expect(viewer).not.toContain('root: frame.parentElement');
   });
+
+  it('renders a requested 390px SourceRef page as the current page frame', async () => {
+    const viewer: string = await source(
+      'client/src/pages/DocumentParsingPage/PdfDocumentViewer.tsx',
+    );
+
+    expect(viewer).toContain(
+      'visiblePdfPages(currentPage, pageCount, isMobile)',
+    );
+    expect(viewer).toContain('requestPdfPage(nextPage);');
+    expect(viewer).toContain('setCurrentPage(nextPage);');
+    expect(viewer).toContain('return new Set(current).add(nextPage);');
+    expect(viewer).toContain(
+      '{visiblePages.map((pageNumber: number) => (',
+    );
+  });
 });
 
 function source(relative: string): Promise<string> {

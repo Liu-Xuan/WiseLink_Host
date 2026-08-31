@@ -12,15 +12,17 @@ describe('PDF viewer page navigation', () => {
     expect(clampPdfPage(99, 42)).toBe(42);
   });
 
-  it('exposes a continuous desktop page list for scroll reading', () => {
-    const pages: number[] = visiblePdfPages(17, 42, false);
-    expect(pages).toHaveLength(42);
+  it('exposes all 22 desktop pages for continuous scroll reading', () => {
+    const pages: number[] = visiblePdfPages(17, 22, false);
+    expect(pages).toHaveLength(22);
     expect(pages.slice(0, 3)).toEqual([1, 2, 3]);
-    expect(pages.slice(-3)).toEqual([40, 41, 42]);
+    expect(pages.slice(-3)).toEqual([20, 21, 22]);
   });
 
-  it('keeps continuous pages inside the 390px single-panel PDF stage', () => {
-    expect(visiblePdfPages(17, 4, true)).toEqual([1, 2, 3, 4]);
+  it('keeps only the current page inside the 390px PDF stage', () => {
+    expect(visiblePdfPages(17, 22, true)).toEqual([17]);
+    expect(visiblePdfPages(99, 22, true)).toEqual([22]);
+    expect(visiblePdfPages(17, 0, true)).toEqual([]);
   });
 
   it('uses a sanitized structured pageStart when the Reader query is empty', () => {
@@ -38,6 +40,13 @@ describe('PDF viewer page navigation', () => {
     };
 
     expect(viewerInput).toEqual({ targetPage: 22 });
+    expect(
+      visiblePdfPages(
+        clampPdfPage(viewerInput.targetPage ?? 1, 42),
+        42,
+        true,
+      ),
+    ).toEqual([22]);
     expect(JSON.stringify(viewerInput)).not.toMatch(
       /documentVersionId|sourceArtifactId|artifactId|bucketId|filePath/u,
     );
