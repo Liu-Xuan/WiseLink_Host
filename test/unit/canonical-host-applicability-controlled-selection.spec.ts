@@ -6,6 +6,14 @@ import { CanonicalHostApplicabilitySelectionService } from '../../server/modules
 import { MiaodaApplicabilityControlledSelectionAdapter } from '../../server/modules/canonical-host/miaoda-applicability-controlled-selection.adapter';
 
 describe('production applicability controlled selection', () => {
+  const targetAircraftEnv = 'WL_OPENCLAW_APPLICABILITY_TARGET_AIRCRAFT_ID';
+  const targetAsOfEnv = 'WL_OPENCLAW_APPLICABILITY_TARGET_AS_OF';
+
+  beforeEach(() => {
+    delete process.env[targetAircraftEnv];
+    delete process.env[targetAsOfEnv];
+  });
+
   it('persists only server-derived selection/Fleet revisions and exposes the real 0/0 frozen-source blocker', async () => {
     const harness = selectionHarness();
     const selected = await harness.service.configure(
@@ -47,8 +55,8 @@ describe('production applicability controlled selection', () => {
     expect(JSON.stringify(selected)).not.toContain('recordHash');
 
     const provider = new MiaodaApplicabilityControlledSelectionAdapter(
-      harness.registrar,
-      harness.fleetRepository,
+      harness.registrar as never,
+      harness.fleetRepository as never,
     );
     await expect(
       provider.readCurrent({
@@ -73,8 +81,8 @@ describe('production applicability controlled selection', () => {
       assignmentCount: 1,
     };
     const provider = new MiaodaApplicabilityControlledSelectionAdapter(
-      harness.registrar,
-      harness.fleetRepository,
+      harness.registrar as never,
+      harness.fleetRepository as never,
     );
 
     await expect(
@@ -94,6 +102,75 @@ describe('production applicability controlled selection', () => {
         authorityRevision: 'authority-r1',
       },
     });
+  });
+
+  it('freezes the Host-scoped target without requiring an engineer form submission', async () => {
+    const harness = selectionHarness();
+    harness.current.package!.usagePolicy!.applicability = {
+      sourceExpressionCount: 1,
+      normalizedCandidateCount: 1,
+      assignmentCount: 1,
+    };
+    process.env[targetAircraftEnv] = 'b-1234';
+    process.env[targetAsOfEnv] = '2026-08-27';
+    const provider = new MiaodaApplicabilityControlledSelectionAdapter(
+      harness.registrar as never,
+      harness.fleetRepository as never,
+    );
+
+    await expect(
+      provider.readCurrent({
+        tenantId: 'tenant-1',
+        workItemId: 'WI-APP-1',
+        documentVersionId: 'DV-1',
+        applicabilityContextRef: 'APCTX-1',
+      }),
+    ).resolves.toMatchObject({
+      selectionRevision: expect.stringMatching(
+        /^host-target:WI-APP-1:DV-1:B-1234:2026-08-27:/u,
+      ),
+      currentness: 'CURRENT',
+      documentVersionId: 'DV-1',
+      aircraftNumber: 'B-1234',
+      assessmentAsOf: '2026-08-27',
+      fleetMasterData: {
+        sourceRevisionKey: 'fleet-r1',
+        authorityRevision: 'authority-r1',
+      },
+    });
+    expect(harness.registrar.compareAndSet).not.toHaveBeenCalled();
+    expect(harness.fleetRepository.readCurrentForAircraft).toHaveBeenCalledWith(
+      {
+        tenantId: 'tenant-1',
+        aircraftIdentifier: 'B-1234',
+        asOf: '2026-08-27',
+      },
+    );
+  });
+
+  it('fails closed when neither a persisted nor Host-scoped target exists', async () => {
+    const harness = selectionHarness();
+    harness.current.package!.usagePolicy!.applicability = {
+      sourceExpressionCount: 1,
+      normalizedCandidateCount: 1,
+      assignmentCount: 1,
+    };
+    const provider = new MiaodaApplicabilityControlledSelectionAdapter(
+      harness.registrar as never,
+      harness.fleetRepository as never,
+    );
+
+    await expect(
+      provider.readCurrent({
+        tenantId: 'tenant-1',
+        workItemId: 'WI-APP-1',
+        documentVersionId: 'DV-1',
+        applicabilityContextRef: 'APCTX-1',
+      }),
+    ).rejects.toThrow('APPLICABILITY_HOST_TARGET_NOT_CONFIGURED');
+    expect(
+      harness.fleetRepository.readCurrentForAircraft,
+    ).not.toHaveBeenCalled();
   });
 
   it('rejects a different WorkItem/tenant before a selection CAS', async () => {
@@ -171,7 +248,7 @@ function selectionHarness(options: { deny?: boolean } = {}) {
   return {
     service,
     registrar,
-    fleetRepository: fleetRepository as never,
+    fleetRepository,
     get current(): CanonicalWorkItemProjection {
       return current;
     },
