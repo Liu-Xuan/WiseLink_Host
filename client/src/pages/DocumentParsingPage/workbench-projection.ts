@@ -94,6 +94,7 @@ interface AssessmentProjectionInput {
 }
 
 type AssessmentGapCode =
+  | `HOST_GAP:${string}`
   | 'READER_SOURCE_BINDING_MISSING'
   | 'DYNAMIC_ITEMS_UNRESOLVED'
   | 'ENGINEER_REVIEW_PENDING'
@@ -108,6 +109,7 @@ interface AssessmentGap {
   detail: string;
   authority:
     | 'HOST_READER_AUDIT'
+    | 'HOST_GAP_LEDGER'
     | 'HOST_DYNAMIC_EVALUATION'
     | 'HOST_ENGINEER_REVIEW_CONTEXT'
     | 'HOST_OVERALL_SYNTHESIS';
@@ -242,7 +244,21 @@ function buildAssessmentSemantics(
       authority: 'HOST_READER_AUDIT',
     });
   }
-  if (dynamic && dynamic.unresolvedCount > 0) {
+  const hostGapLedger = input.engineerReviewContext?.gapLedger;
+  if (hostGapLedger) {
+    for (const gap of hostGapLedger.gaps) {
+      if (gap.resolutionStatus === 'RESOLVED_BY_ENGINEER_REVIEW') continue;
+      gaps.push({
+        code: `HOST_GAP:${gap.gapRef}`,
+        label: gap.displayLabel,
+        detail:
+          gap.resolutionStatus === 'PARTIALLY_RESOLVED'
+            ? `${gap.whyNeeded} 已有部分规则获得补充，仍影响 ${gap.affectedCriterionIds.length} 项判断。`
+            : `${gap.whyNeeded} 当前影响 ${gap.affectedCriterionIds.length} 项判断。`,
+        authority: 'HOST_GAP_LEDGER',
+      });
+    }
+  } else if (dynamic && dynamic.unresolvedCount > 0) {
     gaps.push({
       code: 'DYNAMIC_ITEMS_UNRESOLVED',
       label: '逐项评估尚未闭合',

@@ -183,6 +183,8 @@ RUNNING 正常路径：
 3. 模型只能看到移除 workItemId 后的最小 context、用户消息、允许的 operation/item/input/source IDs 和
    executionPolicy；附件只额外暴露 opaque `attachmentRefs` 与按需读取的 parsed value。模型看不到
    actorContextRef、tenant、ACL、resource artifact ref/SHA、FileService locator 或 raw bytes。
+   `context.evaluation.gapLedger` 是 current revision 的 Host 派生只读投影；同一 `missingInputId` 已合并其
+   origin／affected Criterion。模型只按列出的 `gapRef` 解释或起草候选动作，不能创建、重命名或关闭 Gap。
 4. review candidate 只能引用本轮实际 read 的 SourceRefs。其外层 ResultEnvelope sourceRefs 绑定对应 resource
    artifact ref/SHA。
 5. 单次 `commit_review_turn_candidate`。成功回执必须显示 candidate persisted，同时五个 authority flag 精确：

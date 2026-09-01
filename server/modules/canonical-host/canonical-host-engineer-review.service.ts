@@ -38,6 +38,7 @@ import type {
   CanonicalReviewEvidence,
   CanonicalReviewEvidenceInput,
 } from './selective-overall-resynthesis';
+import { buildCanonicalAssessmentGapLedger } from './canonical-assessment-gap-ledger';
 
 const LEDGER_KIND = 'CANONICAL_ENGINEER_REVIEW_LEDGER';
 const LEDGER_VERSION = 1;
@@ -295,31 +296,50 @@ export class CanonicalHostEngineerReviewService {
     );
     const ledger = await this.readLedger(workItem);
     const effective = effectiveReviews(ledger?.reviews ?? []);
+    const pageItems = items.map((item) => {
+      const latest = effective.get(item.criterionId) ?? null;
+      const rule = rules.get(item.criterionId);
+      if (!rule) {
+        throw new Error(
+          `ENGINEER_REVIEW_CRITERION_UNKNOWN:${item.criterionId}`,
+        );
+      }
+      return {
+        ...item,
+        criterionName: rule.criterionName,
+        evaluationQuestion: rule.evaluationQuestion,
+        decisionRule: rule.decisionRule,
+        appliesWhen: rule.appliesWhen,
+        latestReview: latest
+          ? {
+              decision: latest.decision,
+              status: latest.status,
+              comment: latest.comment,
+              recordedAt: latest.recordedAt,
+            }
+          : null,
+      };
+    });
     return {
       criterionSetId: workItem.integratedAssessment.baseRules.criterionSetId,
       baseRuleRevision: workItem.integratedAssessment.baseRules.revision,
       ledger: workItem.integratedAssessment.engineerReviews ?? null,
-      items: items.map((item) => {
-        const latest = effective.get(item.criterionId) ?? null;
-        const rule = rules.get(item.criterionId);
-        if (!rule) {
-          throw new Error(
-            `ENGINEER_REVIEW_CRITERION_UNKNOWN:${item.criterionId}`,
-          );
-        }
-        return {
-          ...item,
-          ...rule,
-          latestReview: latest
-            ? {
-                decision: latest.decision,
-                status: latest.status,
-                comment: latest.comment,
-                recordedAt: latest.recordedAt,
-              }
-            : null,
-        };
+      gapLedger: buildCanonicalAssessmentGapLedger({
+        workItemRevision: workItem.revision,
+        baseRuleRevision: workItem.integratedAssessment.baseRules.revision,
+        expectedUnresolvedCriterionCount:
+          workItem.integratedAssessment.baseRules.unresolvedCount,
+        items: pageItems,
+        rules,
+        effectiveReviews: [...effective.values()].map((review) => ({
+          criterionId: review.criterionId,
+          affectedCriterionIds: [
+            ...(review.affectedCriterionIds ?? [review.criterionId]),
+          ],
+          resolvedMissingInputs: [...(review.resolvedMissingInputs ?? [])],
+        })),
       }),
+      items: pageItems,
     };
   }
 

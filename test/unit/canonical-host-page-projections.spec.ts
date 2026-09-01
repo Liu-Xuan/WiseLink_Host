@@ -165,6 +165,22 @@ const engineerReviewContext: CanonicalEngineerReviewPageContext = {
   criterionSetId: 'job-aid-current',
   baseRuleRevision: 1,
   ledger: engineerReviewLedger,
+  gapLedger: {
+    schemaVersion: 'wiselink.3_1.assessment_gap_ledger_projection.v1',
+    inputRevision: 14,
+    baseRuleRevision: 1,
+    currentness: 'CURRENT',
+    candidateOnly: true,
+    gaps: [],
+    summary: {
+      total: 0,
+      open: 0,
+      partiallyResolved: 0,
+      resolved: 0,
+      decisionCritical: 0,
+      reviewQueryable: 0,
+    },
+  },
   items: [
     {
       criterionId: 'APP-001',

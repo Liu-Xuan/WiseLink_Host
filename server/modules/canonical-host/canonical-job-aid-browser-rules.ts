@@ -9,6 +9,12 @@ export interface CanonicalJobAidBrowserRule {
   evaluationQuestion: string;
   decisionRule: string;
   appliesWhen: string;
+  gapMetadata: {
+    blockerLevel: 'HARD_BLOCK' | 'ACTION_BLOCK' | 'WARNING' | 'NONE';
+    automationMode: 'HYBRID' | 'RULE' | 'HUMAN_REQUIRED' | 'AI_ASSISTED';
+    stageCode: string;
+    stageName: string;
+  };
 }
 
 export async function readActiveJobAidBrowserRules(
@@ -36,6 +42,22 @@ export async function readActiveJobAidBrowserRules(
       evaluationQuestion: browserRuleText(criterion.evaluation_question),
       decisionRule: browserRuleText(criterion.decision_rule),
       appliesWhen: browserRuleText(criterion.applies_when),
+      gapMetadata: {
+        blockerLevel: browserRuleEnum(criterion.blocker_level, [
+          'HARD_BLOCK',
+          'ACTION_BLOCK',
+          'WARNING',
+          'NONE',
+        ] as const),
+        automationMode: browserRuleEnum(criterion.automation_mode, [
+          'HYBRID',
+          'RULE',
+          'HUMAN_REQUIRED',
+          'AI_ASSISTED',
+        ] as const),
+        stageCode: browserRuleText(criterion.stage_code),
+        stageName: browserRuleText(criterion.stage_name),
+      },
     });
   }
   return rules;
@@ -74,4 +96,15 @@ function browserRuleText(value: unknown): string {
     throw new Error('ENGINEER_REVIEW_RULE_CONTENT_UNAVAILABLE');
   }
   return value.trim();
+}
+
+function browserRuleEnum<const T extends readonly string[]>(
+  value: unknown,
+  allowed: T,
+): T[number] {
+  const text = browserRuleText(value);
+  if (!allowed.includes(text)) {
+    throw new Error('ENGINEER_REVIEW_RULE_CONTENT_UNAVAILABLE');
+  }
+  return text as T[number];
 }

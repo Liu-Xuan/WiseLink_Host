@@ -469,6 +469,7 @@ export class CanonicalHostOpenClawReviewService {
       evaluation: {
         criterionSetId: pageContext.criterionSetId,
         baseRuleRevision: pageContext.baseRuleRevision,
+        gapLedger: pageContext.gapLedger,
         items: pageContext.items,
       },
       bilingual,

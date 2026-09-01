@@ -228,6 +228,12 @@ begin_review_turn({reviewConversationRef, requestId})
 
 - 每轮由 Host fresh-read ReviewConversation、ReviewTurn、current revision、evaluation、bilingual、
   applicability 和 adopted inputs；不能依赖 session memory 判断 current 或权限。
+- `context.evaluation.gapLedger` 是 Host 从 current dynamic artifact、active CriterionSet 和 effective
+  engineer-review ledger 机械派生的只读缺口账本。优先按 `gapRef` 解释相同受控输入影响的全部
+  `affectedCriterionIds`，不得把逐项 `missingInputs` 重复扩写成多个新缺口，也不得自行关闭 Gap。
+- `gapLedger` 的 `REVIEW_QUERYABLE` 只表示本轮可通过既有 Review 输入／附件路径补充候选证据，
+  不表示存在自动查询工具；`HUMAN_DECISION_ONLY` 不得触发查询。任何补充仍先形成
+  CandidateEvidence／ReviewActionDraft，未经工程师确认不得改变 current。
 - `allowedOperations` 必须精确是 C2 六项：`GET_WORKITEM_CONTEXT`、`GET_EVALUATION_ITEM`、
   `READ_SOURCE_REFS`、`DRAFT_REVIEW_ACTION`、`PREVIEW_AFFECTED_ITEMS`、`GET_OPERATION_STATUS`。
 - candidate 使用的每个 SourceRef 必须属于 Task allowlist，并在本轮实际通过 `read_source_refs` 读取；外层

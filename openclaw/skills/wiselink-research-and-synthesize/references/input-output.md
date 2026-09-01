@@ -270,7 +270,8 @@ allowedOperations（exact C2 six）
 resourceRefs[{sourceRefId,resourceArtifactRef,resourceArtifactSha256,value}]
 allowedEvaluationItemIds / allowedAdoptedInputRefs
 attachmentRefs[]（非空唯一字符串，且 attachmentRefs ⊆ resourceRefs.sourceRefId）
-context
+context（`evaluation.gapLedger` 为 Host 派生只读投影，包含 gapRef、missingInputId、影响项、
+materiality/queryability/resolutionStatus 与 candidate-only authority）
 executionPolicy{runtimeAppId,profileRef,modelPolicyRef,skillPolicyRef,toolPolicyRef}
 ```
 
