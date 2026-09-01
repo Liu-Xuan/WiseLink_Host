@@ -84,4 +84,3 @@ CREATE POLICY review_turn_authenticated_candidate_update
   );
 
 COMMIT;
-
