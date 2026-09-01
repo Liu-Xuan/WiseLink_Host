@@ -12,9 +12,10 @@
  *   explicit fleet source snapshot/revision/authority currentness block;
  * - missing/conflicting fleet facts resolve to WAITING_INPUT with observable
  *   missing-fact descriptors — they are never silently guessed;
- * - sbIncorporated / pnInstalled / optionInstalled / equipmentModelInstalled
- *   keep explicit-absence semantics (installed:false is a fact, an absent key
- *   is unknown).
+ * - aircraft identity, component/equipment/software identifiers and
+ *   modification/repair state all remain source-controlled facts;
+ * - qualified properties keep explicit-absence semantics (false is a fact,
+ *   an absent qualifier is unknown).
  */
 
 import type { ApplicabilityFleetSnapshot } from './applicabilityKleeneEngine';
@@ -155,11 +156,24 @@ function normalizeEquipmentModel(value: unknown): string {
   return normalizeKey(value).replace(/[^A-Z0-9]/gu, '');
 }
 
+function normalizeIdentifier(value: unknown): string {
+  return normalizeKey(value).replace(/[^A-Z0-9]/gu, '');
+}
+
 const QUALIFIED_PROPERTIES = [
   'sbIncorporated',
   'pnInstalled',
   'optionInstalled',
   'equipmentModelInstalled',
+  'componentPartNumberInstalled',
+  'componentSerialNumberInstalled',
+  'equipmentNumberInstalled',
+  'finPositionOccupied',
+  'softwarePartNumberInstalled',
+  'softwareSerialNumberInstalled',
+  'softwareVersion',
+  'modificationEmbodied',
+  'repairPresent',
 ];
 
 const QUALIFIER_NORMALIZERS: Record<string, (value: unknown) => string> = {
@@ -167,6 +181,15 @@ const QUALIFIER_NORMALIZERS: Record<string, (value: unknown) => string> = {
   pnInstalled: normalizePartNumber,
   equipmentModelInstalled: normalizeEquipmentModel,
   optionInstalled: normalizeKey,
+  componentPartNumberInstalled: normalizePartNumber,
+  componentSerialNumberInstalled: normalizeIdentifier,
+  equipmentNumberInstalled: normalizeIdentifier,
+  finPositionOccupied: normalizeIdentifier,
+  softwarePartNumberInstalled: normalizePartNumber,
+  softwareSerialNumberInstalled: normalizeIdentifier,
+  softwareVersion: normalizeIdentifier,
+  modificationEmbodied: normalizeIdentifier,
+  repairPresent: normalizeIdentifier,
 };
 
 function normalizeQualifier(property: string, qualifier: unknown): string {
@@ -346,6 +369,7 @@ export function resolveFleetSnapshot(input: ResolveFleetSnapshotInput): FleetSna
     fleetFamily: asset.fleetFamily ?? undefined,
     series: asset.series ?? undefined,
     tailNumber: asset.aircraftNumber,
+    registrationNumber: asset.aircraftNumber,
   };
   if (asset.msn != null) properties.msn = asset.msn;
   if (asset.lineNumber != null) properties.lineNumber = asset.lineNumber;

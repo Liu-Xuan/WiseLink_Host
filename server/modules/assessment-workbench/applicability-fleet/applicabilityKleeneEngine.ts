@@ -164,6 +164,14 @@ function normalizeEquipmentModel(value: unknown): string {
   return normalizeString(value).toUpperCase().replace(/[^A-Z0-9]/gu, '');
 }
 
+function normalizeIdentifier(value: unknown): string {
+  return normalizeString(value).toUpperCase().replace(/[^A-Z0-9]/gu, '');
+}
+
+function normalizeSoftwareVersion(value: unknown): string {
+  return normalizeString(value).toUpperCase().replace(/\s+/gu, '');
+}
+
 function normalizeDateOnly(value: unknown): string {
   const raw = normalizeString(value);
   if (!raw) return raw;
@@ -193,6 +201,10 @@ function applyNormalizer(
       return normalizePartNumber(value);
     case 'normalizeEquipmentModel':
       return normalizeEquipmentModel(value);
+    case 'normalizeIdentifier':
+      return normalizeIdentifier(value);
+    case 'normalizeSoftwareVersion':
+      return normalizeSoftwareVersion(value);
     case 'normalizeDateOnly':
       return normalizeDateOnly(value);
     default:

@@ -12,8 +12,12 @@ import {
 import {
   FLEET_MASTER_DATA_SCHEMA_VERSION,
   resolveFleetSnapshot,
+  type ConflictingFleetFact,
   type FleetMasterDataSource,
 } from '../../server/modules/assessment-workbench/applicability-fleet/fleetMasterData';
+import {
+  getRegistry,
+} from '../../server/modules/assessment-workbench/applicability-fleet/applicabilityPropertyRegistry';
 import {
   evaluateApplicabilityForAircraft,
 } from '../../server/modules/assessment-workbench/applicability-fleet/applicabilityFleetEvaluator';
@@ -139,6 +143,118 @@ describe('applicability-fleet Kleene engine (migrated semantics)', () => {
       },
     );
     expect(eqTrace.result).toBe(true);
+  });
+
+  it('publishes and evaluates aircraft, component, equipment and software applicability dimensions', () => {
+    const registryProperties = new Set(
+      getRegistry().properties.map((entry) => entry.property),
+    );
+    const requiredProperties = [
+      'registrationNumber',
+      'variableNumber',
+      'componentPartNumberInstalled',
+      'componentSerialNumberInstalled',
+      'equipmentNumberInstalled',
+      'finPositionOccupied',
+      'softwarePartNumberInstalled',
+      'softwareSerialNumberInstalled',
+      'softwareVersion',
+      'modificationEmbodied',
+      'repairPresent',
+    ];
+    for (const property of requiredProperties) {
+      expect(registryProperties.has(property)).toBe(true);
+    }
+
+    const snapshot = {
+      assetId: 'ASSET-CONFIG-001',
+      assessmentAsOf: '2026-09-01',
+      properties: {
+        registrationNumber: 'B-1234',
+        variableNumber: 'VN-0098',
+        componentPartNumberInstalled: { '1062225004': true },
+        componentSerialNumberInstalled: { SNFMC0098: true },
+        equipmentNumberInstalled: { FMC1: true },
+        finPositionOccupied: { N111: true },
+        softwarePartNumberInstalled: { SWPN1401: true },
+        softwareSerialNumberInstalled: { SWSN0098: true },
+        softwareVersion: { FMCOPS: 'U14.1' },
+        modificationEmbodied: { MOD340425: true },
+        repairPresent: { REPAIR001: false },
+      },
+    };
+    const assertions = [
+      { property: 'registrationNumber', value: 'b 1234' },
+      { property: 'variableNumber', value: 'vn-0098' },
+      {
+        property: 'componentPartNumberInstalled',
+        value: true,
+        qualifier: '10-62225-004',
+      },
+      {
+        property: 'componentSerialNumberInstalled',
+        value: true,
+        qualifier: 'sn-fmc-0098',
+      },
+      {
+        property: 'equipmentNumberInstalled',
+        value: true,
+        qualifier: 'FMC-1',
+      },
+      {
+        property: 'finPositionOccupied',
+        value: true,
+        qualifier: 'N-111',
+      },
+      {
+        property: 'softwarePartNumberInstalled',
+        value: true,
+        qualifier: 'SW-PN-14-01',
+      },
+      {
+        property: 'softwareSerialNumberInstalled',
+        value: true,
+        qualifier: 'SW-SN-0098',
+      },
+      {
+        property: 'softwareVersion',
+        value: 'u14.1',
+        qualifier: 'FMC OPS',
+      },
+      {
+        property: 'modificationEmbodied',
+        value: true,
+        qualifier: 'MOD-34-0425',
+      },
+      {
+        property: 'repairPresent',
+        value: false,
+        qualifier: 'REPAIR-001',
+      },
+    ];
+
+    for (const assertion of assertions) {
+      expect(
+        evaluateAssertWithTrace({ operator: 'eq', ...assertion }, snapshot)
+          .result,
+      ).toBe(true);
+    }
+
+    const missing = evaluateAssertWithTrace(
+      {
+        property: 'softwareVersion',
+        operator: 'eq',
+        value: 'U14.1',
+        qualifier: 'AIMS-2',
+      },
+      snapshot,
+    );
+    expect(missing.result).toBe(UNKNOWN);
+    expect(missing.blockingUnknowns[0]).toMatchObject({
+      kind: 'fact_unknown',
+      property: 'softwareVersion',
+      qualifier: 'AIMS2',
+    });
   });
 
   it('matches model family patterns but not sibling minor models', () => {
@@ -481,6 +597,7 @@ describe('applicability-fleet FleetMasterData resolution', () => {
     expect(resolution.status).toBe('RESOLVED');
     expect(resolution.snapshot?.assetId).toBe('ASSET-001');
     expect(resolution.snapshot?.assessmentAsOf).toBe('2026-08-25');
+    expect(resolution.snapshot?.properties.registrationNumber).toBe('B-1001');
     expect(
       (resolution.snapshot?.properties.sbIncorporated as Record<string, unknown>)?.['737471015'],
     ).toBe(true);
@@ -524,7 +641,10 @@ describe('applicability-fleet FleetMasterData resolution', () => {
   it('rejects unsupported FleetMasterData schema versions', () => {
     expect(() =>
       resolveFleetSnapshot({
-        dataSource: { ...buildDataSource(), schemaVersion: 'wiselink.v0_11.fleet' },
+        dataSource: {
+          ...buildDataSource(),
+          schemaVersion: 'wiselink.v0_11.fleet',
+        } as unknown as FleetMasterDataSource,
         aircraftNumber: 'B-1001',
         asOf: '2026-08-25',
       }),
@@ -623,7 +743,10 @@ describe('applicability-fleet FleetMasterData resolution', () => {
     });
     expect(resolution.status).toBe('RESOLVED');
     expect(resolution.conflictingFacts).toHaveLength(0);
-    expect(resolution.snapshot.properties.pnInstalled.GGM2120).toBe(true);
+    expect(
+      (resolution.snapshot?.properties.pnInstalled as Record<string, unknown>)
+        .GGM2120,
+    ).toBe(true);
   });
 
   it('does not misreport different qualifiers or future asOf facts as conflicts', () => {
@@ -670,7 +793,10 @@ describe('applicability-fleet FleetMasterData resolution', () => {
       });
     expect(resolution.status).toBe('RESOLVED');
     expect(resolution.conflictingFacts).toHaveLength(0);
-    expect(resolution.snapshot.properties.pnInstalled.GGM2120).toBe(true);
+    expect(
+      (resolution.snapshot?.properties.pnInstalled as Record<string, unknown>)
+        .GGM2120,
+    ).toBe(true);
   });
 });
 
@@ -808,7 +934,7 @@ describe('applicability-fleet evaluation gate', () => {
     expect(result.decision).toBe('needs_review');
     const conflict = result.blockingUnknowns.find(
       (entry) => entry.kind === 'conflicting_fleet_fact',
-    );
+    ) as unknown as ConflictingFleetFact | undefined;
     expect(conflict).toBeTruthy();
     expect(conflict?.property).toBe('pnInstalled');
     expect(conflict?.conflicts.map((entry: { factId: string }) => entry.factId).sort()).toEqual(
@@ -848,10 +974,10 @@ describe('applicability-fleet evaluation gate', () => {
 });
 
 describe('applicability-fleet boundary: no second evaluator or legacy runtime', () => {
-  it('uses the single 3.1 registry — v8-only properties are unsupported', () => {
+  it('uses the single 3.1 registry — unregistered legacy properties are unsupported', () => {
     const trace = evaluateAssertWithTrace(
-      { property: 'operatorCode', operator: 'eq', value: 'ABC' },
-      { properties: { operatorCode: 'ABC' } },
+      { property: 'cabinZone', operator: 'eq', value: 'ABC' },
+      { properties: { cabinZone: 'ABC' } },
     );
     expect(trace.result).toBe(UNKNOWN);
     expect(trace.blockingUnknowns?.[0]?.reason).toBe('unsupported_property');

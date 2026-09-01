@@ -59,33 +59,35 @@ export function presentApplicabilitySelection(
   if (loadState === 'loading') {
     return {
       state: 'waiting',
-      selectionLabel: '正在读取选择',
+      selectionLabel: '正在读取可选调整',
       sourceLabel: '正在核对来源',
-      guidance: '正在读取工程师已保存的选择与受控来源。',
+      guidance: '正在读取已保存的评估对象调整与受控来源。',
     };
   }
   if (loadState === 'unconfigured') {
     return {
-      state: 'waiting',
-      selectionLabel: '等待工程师输入',
-      sourceLabel: '保存后核对来源',
-      guidance: '填写飞机号和评估日期后保存，系统不会自行推测。',
+      state: 'unknown',
+      selectionLabel: '使用系统自动目标',
+      sourceLabel: '分析时由 Host 核对',
+      guidance:
+        '未设置手动调整；初始分析仍会由 Host 自动冻结受控评估对象和时点，无需工程师确认。',
     };
   }
   if (loadState === 'error') {
     return {
       state: 'error',
-      selectionLabel: '选择状态未知',
+      selectionLabel: '可选调整状态未知',
       sourceLabel: '来源状态未知',
-      guidance: '读取暂时不可用，可稍后重试；现有分析内容仍可查看。',
+      guidance:
+        '可选调整暂时无法读取；初始分析仍按 Host 冻结目标运行，现有分析内容可继续查看。',
     };
   }
   if (!selection) {
     return {
       state: 'unknown',
-      selectionLabel: '选择状态未知',
+      selectionLabel: '未读取到手动调整',
       sourceLabel: '来源状态未知',
-      guidance: '当前没有可展示的受控选择读回。',
+      guidance: '当前没有可展示的手动调整读回。',
     };
   }
   if (selection.currentness === 'STALE') {
@@ -96,21 +98,21 @@ export function presentApplicabilitySelection(
         selection.frozenSourceBinding.status === 'READY'
           ? '来源已绑定'
           : '来源待补齐',
-      guidance: '事项资料已经更新，请重新读取当前选择后再继续评估。',
+      guidance: '事项资料已经更新；Host 将基于 current 资料重新冻结评估输入。',
     };
   }
   if (selection.frozenSourceBinding.status === 'MISSING') {
     return {
       state: 'waiting',
-      selectionLabel: '选择已同步',
+      selectionLabel: '调整已保存',
       sourceLabel: '来源待补齐',
-      guidance: '工程师选择已保存，但受控来源尚未完整绑定。',
+      guidance: '评估对象调整已保存，但受控来源尚未完整绑定。',
     };
   }
   return {
     state: 'success',
-    selectionLabel: '选择已同步',
+    selectionLabel: '调整已同步',
     sourceLabel: '来源已绑定',
-    guidance: '工程师选择与受控来源均已读取。',
+    guidance: '评估对象调整与受控来源均已读取。',
   };
 }

@@ -41,20 +41,20 @@ describe('applicability selection presentation', () => {
   it('maps success, unknown, waiting, stale and error without inferring applicability', () => {
     expect(presentApplicabilitySelection('ready', selection())).toMatchObject({
       state: 'success',
-      selectionLabel: '选择已同步',
+      selectionLabel: '调整已同步',
       sourceLabel: '来源已绑定',
     });
     expect(presentApplicabilitySelection('ready', null)).toMatchObject({
       state: 'unknown',
-      selectionLabel: '选择状态未知',
+      selectionLabel: '未读取到手动调整',
     });
     expect(presentApplicabilitySelection('unconfigured', null)).toMatchObject({
-      state: 'waiting',
-      selectionLabel: '等待工程师输入',
+      state: 'unknown',
+      selectionLabel: '使用系统自动目标',
     });
     expect(presentApplicabilitySelection('error', null)).toMatchObject({
       state: 'error',
-      selectionLabel: '选择状态未知',
+      selectionLabel: '可选调整状态未知',
     });
     expect(
       presentApplicabilitySelection(
@@ -88,7 +88,7 @@ describe('applicability selection presentation', () => {
     );
     expect(isApplicabilitySelectionUnconfigured(reason)).toBe(true);
     expect(presentApplicabilitySelection('unconfigured', null).guidance).toBe(
-      '填写飞机号和评估日期后保存，系统不会自行推测。',
+      '未设置手动调整；初始分析仍会由 Host 自动冻结受控评估对象和时点，无需工程师确认。',
     );
   });
 

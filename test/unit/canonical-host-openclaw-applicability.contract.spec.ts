@@ -28,6 +28,22 @@ describe('canonical Host OpenClaw applicability contract', () => {
         .find((entry) => entry.property === 'lineNumber')
         ?.operators.some((entry) => entry.operator === 'between'),
     ).toBe(false);
+    expect(
+      vocabulary.properties.find(
+        (entry) => entry.property === 'componentSerialNumberInstalled',
+      ),
+    ).toMatchObject({
+      valueType: 'boolean',
+      qualifier: 'required',
+    });
+    expect(
+      vocabulary.properties.find(
+        (entry) => entry.property === 'softwareVersion',
+      ),
+    ).toMatchObject({
+      valueType: 'string',
+      qualifier: 'required',
+    });
   });
 
   it('accepts an exact source-bound candidate using the registered AST vocabulary', () => {
