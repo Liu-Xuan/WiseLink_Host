@@ -90,6 +90,11 @@ export interface ApplicabilityTaskContract {
     validAsOf: string | null;
     recordHash: string;
   }>;
+  /**
+   * Host-derived grammar exposed to the model. The model must not infer an
+   * operator or value shape from prose in the source document.
+   */
+  astVocabulary: ApplicabilityAstVocabulary;
   sourceExpressions: ApplicabilityTaskSourceExpression[];
   bilingualSourceUnits: ApplicabilityTaskBilingualSourceUnit[];
   runtimePolicy: ApplicabilityRuntimePolicy;
@@ -97,6 +102,26 @@ export interface ApplicabilityTaskContract {
     candidateOnly: true;
     documentTextDoesNotProveFleetApplicability: true;
     hostDeterministicEvaluationRequired: true;
+  };
+}
+
+export interface ApplicabilityAstVocabulary {
+  schemaVersion: 'wiselink.3_1.applicability_ast_vocabulary.v1';
+  nodeTypes: Array<'literal' | 'assert' | 'and' | 'or' | 'not'>;
+  properties: Array<{
+    property: string;
+    valueType: ApplicabilityPropertyDefinition['valueType'];
+    qualifier: 'required' | 'forbidden';
+    operators: Array<{
+      operator: string;
+      valueShape: 'scalar' | 'scalar_array' | 'min_max_object';
+    }>;
+  }>;
+  limits: {
+    maxDepth: 24;
+    maxNodes: 500;
+    maxGroupChildren: 100;
+    maxSetValues: 200;
   };
 }
 
@@ -147,6 +172,34 @@ export function applicabilityRuntimePolicy(): ApplicabilityRuntimePolicy {
     skillVersion: APPLICABILITY_SKILL_VERSION,
     mcpServerName: APPLICABILITY_MCP_SERVER_NAME,
     mcpServerVersion: APPLICABILITY_MCP_SERVER_VERSION,
+  };
+}
+
+export function applicabilityAstVocabulary(): ApplicabilityAstVocabulary {
+  return {
+    schemaVersion: 'wiselink.3_1.applicability_ast_vocabulary.v1',
+    nodeTypes: ['literal', 'assert', 'and', 'or', 'not'],
+    properties: getRegistry().properties.map((definition) => ({
+      property: definition.property,
+      valueType: definition.valueType,
+      qualifier:
+        definition.qualifierNormalizer === null ? 'forbidden' : 'required',
+      operators: definition.supportedOperators.map((operator) => ({
+        operator,
+        valueShape:
+          operator === 'in' || operator === 'not_in'
+            ? 'scalar_array'
+            : operator === 'range'
+              ? 'min_max_object'
+              : 'scalar',
+      })),
+    })),
+    limits: {
+      maxDepth: 24,
+      maxNodes: 500,
+      maxGroupChildren: 100,
+      maxSetValues: 200,
+    },
   };
 }
 

@@ -16,6 +16,7 @@ import { readFrozenApplicabilitySourceBinding } from '../../../server/modules/ca
 import {
   APPLICABILITY_CANDIDATE_SCHEMA_VERSION,
   APPLICABILITY_TASK_SCHEMA_VERSION,
+  applicabilityAstVocabulary,
   applicabilityRuntimePolicy,
   parseApplicabilityCandidate,
   validateApplicabilityCandidateBinding,
@@ -428,6 +429,7 @@ function applicabilityTask(
     },
     controlledAircraft: null,
     controlledFacts: [],
+    astVocabulary: applicabilityAstVocabulary(),
     sourceExpressions,
     bilingualSourceUnits: [],
     runtimePolicy: applicabilityRuntimePolicy(),

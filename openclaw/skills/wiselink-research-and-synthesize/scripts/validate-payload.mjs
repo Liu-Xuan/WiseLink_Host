@@ -21,6 +21,8 @@ const REVIEW_CANDIDATE_SCHEMA = 'wiselink.3_1.review_turn_candidate.v1.c2';
 const APPLICABILITY_TASK_SCHEMA = 'wiselink.3_1.applicability_task.v1';
 const APPLICABILITY_AST_CANDIDATE_SCHEMA =
   'wiselink.3_1.applicability_ast_candidate.v1';
+const APPLICABILITY_AST_VOCABULARY_SCHEMA =
+  'wiselink.3_1.applicability_ast_vocabulary.v1';
 const APPLICABILITY_CANDIDATE_SCHEMA =
   'wiselink.3_1.applicability_candidate.v1';
 const BARE_SHA256 = /^[a-f0-9]{64}$/u;
@@ -2030,6 +2032,7 @@ export function validateApplicabilityModelInput(input) {
       'fleetBinding',
       'controlledAircraft',
       'controlledFacts',
+      'astVocabulary',
       'sourceExpressions',
       'bilingualSourceUnits',
       'runtimePolicy',
@@ -2062,6 +2065,7 @@ export function validateApplicabilityModelInput(input) {
   validateApplicabilityFleetBinding(input.fleetBinding);
   validateApplicabilityControlledAircraft(input.controlledAircraft);
   validateApplicabilityControlledFacts(input.controlledFacts);
+  validateApplicabilityAstVocabulary(input.astVocabulary);
   validateApplicabilitySourceExpressions(input.sourceExpressions);
   validateApplicabilityBilingualUnits(input.bilingualSourceUnits);
   validateApplicabilityRuntimePolicy(input.runtimePolicy);
@@ -2152,7 +2156,10 @@ export function validateApplicabilityAstCandidate(output, input) {
     ) {
       fail('APPLICABILITY_AST_SOURCE_BINDING_MISMATCH');
     }
-    validateApplicabilityAstNode(expression.expressionAst);
+    validateApplicabilityAstNode(
+      expression.expressionAst,
+      input?.astVocabulary ?? null,
+    );
   });
   return output;
 }
@@ -2453,9 +2460,101 @@ function validateApplicabilityRuntimePolicy(value) {
   );
 }
 
-function validateApplicabilityAstNode(value) {
+function validateApplicabilityAstVocabulary(value) {
+  assertObject(value, 'applicability AST vocabulary');
+  exactKeys(
+    value,
+    ['schemaVersion', 'nodeTypes', 'properties', 'limits'],
+    [],
+    'applicability AST vocabulary',
+  );
+  equal(
+    value.schemaVersion,
+    APPLICABILITY_AST_VOCABULARY_SCHEMA,
+    'APPLICABILITY_AST_VOCABULARY_SCHEMA_UNSUPPORTED',
+  );
+  const expectedNodeTypes = ['literal', 'assert', 'and', 'or', 'not'];
+  if (canonicalJson(value.nodeTypes) !== canonicalJson(expectedNodeTypes)) {
+    fail('APPLICABILITY_AST_VOCABULARY_NODE_TYPES_INVALID');
+  }
+  array(value.properties, 'APPLICABILITY_AST_VOCABULARY_PROPERTIES_INVALID');
+  if (value.properties.length < 1 || value.properties.length > 64) {
+    fail('APPLICABILITY_AST_VOCABULARY_PROPERTIES_INVALID');
+  }
+  const seenProperties = new Set();
+  value.properties.forEach((property, propertyIndex) => {
+    assertObject(property, `applicability AST property ${propertyIndex}`);
+    exactKeys(
+      property,
+      ['property', 'valueType', 'qualifier', 'operators'],
+      [],
+      `applicability AST property ${propertyIndex}`,
+    );
+    nonEmpty(property.property, 'APPLICABILITY_AST_VOCABULARY_PROPERTY_INVALID');
+    if (seenProperties.has(property.property)) {
+      fail('APPLICABILITY_AST_VOCABULARY_PROPERTY_DUPLICATE');
+    }
+    seenProperties.add(property.property);
+    if (!['string', 'number', 'boolean', 'date'].includes(property.valueType)) {
+      fail('APPLICABILITY_AST_VOCABULARY_VALUE_TYPE_INVALID');
+    }
+    if (!['required', 'forbidden'].includes(property.qualifier)) {
+      fail('APPLICABILITY_AST_VOCABULARY_QUALIFIER_INVALID');
+    }
+    array(property.operators, 'APPLICABILITY_AST_VOCABULARY_OPERATORS_INVALID');
+    if (property.operators.length < 1 || property.operators.length > 16) {
+      fail('APPLICABILITY_AST_VOCABULARY_OPERATORS_INVALID');
+    }
+    const seenOperators = new Set();
+    property.operators.forEach((operator, operatorIndex) => {
+      assertObject(
+        operator,
+        `applicability AST operator ${propertyIndex}:${operatorIndex}`,
+      );
+      exactKeys(
+        operator,
+        ['operator', 'valueShape'],
+        [],
+        `applicability AST operator ${propertyIndex}:${operatorIndex}`,
+      );
+      nonEmpty(operator.operator, 'APPLICABILITY_AST_VOCABULARY_OPERATOR_INVALID');
+      if (seenOperators.has(operator.operator)) {
+        fail('APPLICABILITY_AST_VOCABULARY_OPERATOR_DUPLICATE');
+      }
+      seenOperators.add(operator.operator);
+      if (!['scalar', 'scalar_array', 'min_max_object'].includes(operator.valueShape)) {
+        fail('APPLICABILITY_AST_VOCABULARY_VALUE_SHAPE_INVALID');
+      }
+    });
+  });
+  exactKeys(
+    value.limits,
+    ['maxDepth', 'maxNodes', 'maxGroupChildren', 'maxSetValues'],
+    [],
+    'applicability AST vocabulary limits',
+  );
+  integerInRange(value.limits.maxDepth, 1, 64, 'APPLICABILITY_AST_VOCABULARY_LIMIT_INVALID');
+  integerInRange(value.limits.maxNodes, 1, 2000, 'APPLICABILITY_AST_VOCABULARY_LIMIT_INVALID');
+  integerInRange(value.limits.maxGroupChildren, 1, 500, 'APPLICABILITY_AST_VOCABULARY_LIMIT_INVALID');
+  integerInRange(value.limits.maxSetValues, 1, 1000, 'APPLICABILITY_AST_VOCABULARY_LIMIT_INVALID');
+}
+
+function validateApplicabilityAstNode(
+  value,
+  vocabulary = null,
+  depth = 0,
+  budget = { count: 0 },
+) {
   assertObject(value, 'applicability AST node');
   nonEmpty(value.type, 'APPLICABILITY_AST_TYPE_REQUIRED');
+  if (vocabulary) {
+    if (depth > vocabulary.limits.maxDepth || ++budget.count > vocabulary.limits.maxNodes) {
+      fail('APPLICABILITY_AST_TOO_COMPLEX');
+    }
+    if (!vocabulary.nodeTypes.includes(value.type)) {
+      fail('APPLICABILITY_AST_TYPE_UNSUPPORTED');
+    }
+  }
   if (value.type === 'literal') {
     exactKeys(value, ['type', 'value'], [], 'applicability AST literal');
     boolean(value.value, 'APPLICABILITY_AST_LITERAL_INVALID');
@@ -2473,21 +2572,111 @@ function validateApplicabilityAstNode(value) {
     if (Object.hasOwn(value, 'qualifier')) {
       nullableText(value.qualifier, 'APPLICABILITY_AST_QUALIFIER_INVALID');
     }
+    if (vocabulary) {
+      const definition = vocabulary.properties.find(
+        (entry) => entry.property === value.property,
+      );
+      const operator = definition?.operators.find(
+        (entry) => entry.operator === value.operator,
+      );
+      if (!definition || !operator) {
+        fail('APPLICABILITY_AST_ASSERT_UNSUPPORTED');
+      }
+      const hasQualifier =
+        Object.hasOwn(value, 'qualifier') && value.qualifier !== null;
+      if ((definition.qualifier === 'required') !== hasQualifier) {
+        fail('APPLICABILITY_AST_QUALIFIER_INVALID');
+      }
+      validateApplicabilityAssertValue(
+        value.value,
+        definition.valueType,
+        operator.valueShape,
+        vocabulary.limits.maxSetValues,
+      );
+    }
     return;
   }
   if (value.type === 'and' || value.type === 'or') {
     exactKeys(value, ['type', 'children'], [], 'applicability AST group');
     array(value.children, 'APPLICABILITY_AST_CHILDREN_INVALID');
-    if (value.children.length < 1) fail('APPLICABILITY_AST_CHILDREN_INVALID');
-    value.children.forEach(validateApplicabilityAstNode);
+    if (
+      value.children.length < 1 ||
+      (vocabulary &&
+        value.children.length > vocabulary.limits.maxGroupChildren)
+    ) {
+      fail('APPLICABILITY_AST_CHILDREN_INVALID');
+    }
+    value.children.forEach((child) =>
+      validateApplicabilityAstNode(child, vocabulary, depth + 1, budget),
+    );
     return;
   }
   if (value.type === 'not') {
     exactKeys(value, ['type', 'child'], [], 'applicability AST not');
-    validateApplicabilityAstNode(value.child);
+    validateApplicabilityAstNode(value.child, vocabulary, depth + 1, budget);
     return;
   }
   fail('APPLICABILITY_AST_TYPE_UNSUPPORTED');
+}
+
+function validateApplicabilityAssertValue(
+  value,
+  valueType,
+  valueShape,
+  maxSetValues,
+) {
+  if (valueShape === 'scalar_array') {
+    array(value, 'APPLICABILITY_AST_VALUE_SHAPE_INVALID');
+    if (value.length < 1 || value.length > maxSetValues) {
+      fail('APPLICABILITY_AST_VALUE_SHAPE_INVALID');
+    }
+    value.forEach((item) => validateApplicabilityScalar(item, valueType));
+    if (new Set(value.map((item) => canonicalJson(item))).size !== value.length) {
+      fail('APPLICABILITY_AST_VALUE_SHAPE_INVALID');
+    }
+    return;
+  }
+  if (valueShape === 'min_max_object') {
+    assertObject(value, 'applicability AST range');
+    const keys = Object.keys(value).sort();
+    if (
+      keys.length < 1 ||
+      keys.some((key) => key !== 'min' && key !== 'max')
+    ) {
+      fail('APPLICABILITY_AST_VALUE_SHAPE_INVALID');
+    }
+    if (Object.hasOwn(value, 'min')) {
+      validateApplicabilityScalar(value.min, valueType);
+    }
+    if (Object.hasOwn(value, 'max')) {
+      validateApplicabilityScalar(value.max, valueType);
+    }
+    if (
+      Object.hasOwn(value, 'min') &&
+      Object.hasOwn(value, 'max') &&
+      value.min > value.max
+    ) {
+      fail('APPLICABILITY_AST_VALUE_RANGE_INVALID');
+    }
+    return;
+  }
+  validateApplicabilityScalar(value, valueType);
+}
+
+function validateApplicabilityScalar(value, valueType) {
+  if (valueType === 'boolean' && typeof value === 'boolean') return;
+  if (valueType === 'number' && Number.isFinite(value)) return;
+  if (
+    valueType === 'date' &&
+    typeof value === 'string' &&
+    /^\d{4}-\d{2}-\d{2}$/u.test(value)
+  ) {
+    return;
+  }
+  if (valueType === 'string' && typeof value === 'string' && value.trim()) {
+    return;
+  }
+  fail('APPLICABILITY_AST_VALUE_TYPE_INVALID');
 }
 
 export function canonicalJson(value) {
