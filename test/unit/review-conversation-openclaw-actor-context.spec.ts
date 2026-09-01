@@ -5,18 +5,12 @@ import { ReviewConversationRepository } from '../../server/modules/review-persis
 describe('ReviewConversationRepository OpenClaw actor context', () => {
   afterEach(() => jest.restoreAllMocks());
 
-  it('sets the Host-owned actor inside one transaction before any Review read', async () => {
+  it('sets the Host-owned actor and reads the Review binding in one statement', async () => {
     const warning = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
-    const executor = {
-      execute: jest.fn(async () => [{ actorId: 'actor-1' }]),
-      select: jest.fn(() => ({
-        from: jest.fn(() => ({
-          where: jest.fn(() => ({ limit: jest.fn(async () => []) })),
-        })),
-      })),
-    };
     const db = {
-      transaction: jest.fn(async (operation) => operation(executor)),
+      execute: jest.fn(async () => [{ actorContext: 'actor-1' }]),
+      transaction: jest.fn(),
+      select: jest.fn(),
     };
     const repository = new ReviewConversationRepository(db as never);
 
@@ -30,12 +24,9 @@ describe('ReviewConversationRepository OpenClaw actor context', () => {
       }),
     ).resolves.toBeNull();
 
-    expect(db.transaction).toHaveBeenCalledTimes(1);
-    expect(executor.execute).toHaveBeenCalledTimes(1);
-    expect(executor.select).toHaveBeenCalledTimes(1);
-    expect(executor.execute.mock.invocationCallOrder[0]).toBeLessThan(
-      executor.select.mock.invocationCallOrder[0],
-    );
+    expect(db.execute).toHaveBeenCalledTimes(1);
+    expect(db.transaction).not.toHaveBeenCalled();
+    expect(db.select).not.toHaveBeenCalled();
     expect(warning).toHaveBeenCalledWith(
       JSON.stringify({
         event: 'OPENCLAW_REVIEW_BINDING_NOT_FOUND',
@@ -47,13 +38,11 @@ describe('ReviewConversationRepository OpenClaw actor context', () => {
     );
   });
 
-  it('fails closed before reading Review rows when local actor context is not established', async () => {
-    const executor = {
-      execute: jest.fn(async () => [{ actorId: 'actor-other' }]),
-      select: jest.fn(),
-    };
+  it('fails closed when the one-statement actor context is not established', async () => {
     const db = {
-      transaction: jest.fn(async (operation) => operation(executor)),
+      execute: jest.fn(async () => [{ actorContext: 'actor-other' }]),
+      transaction: jest.fn(),
+      select: jest.fn(),
     };
     const repository = new ReviewConversationRepository(db as never);
 
@@ -66,11 +55,13 @@ describe('ReviewConversationRepository OpenClaw actor context', () => {
         workItemId: 'WI-1',
       }),
     ).rejects.toThrow('REVIEW_OPENCLAW_ACTOR_CONTEXT_UNAVAILABLE');
-    expect(executor.select).not.toHaveBeenCalled();
+    expect(db.execute).toHaveBeenCalledTimes(1);
+    expect(db.transaction).not.toHaveBeenCalled();
+    expect(db.select).not.toHaveBeenCalled();
   });
 
-  it('never establishes a transaction for the public or service actor', async () => {
-    const db = { transaction: jest.fn() };
+  it('never executes a Review statement for the public or service actor', async () => {
+    const db = { execute: jest.fn(), transaction: jest.fn() };
     const repository = new ReviewConversationRepository(db as never);
 
     for (const actorId of ['-1', 'service:openclaw', '']) {
@@ -84,6 +75,7 @@ describe('ReviewConversationRepository OpenClaw actor context', () => {
         }),
       ).rejects.toThrow('REVIEW_OPENCLAW_ACTOR_CONTEXT_UNAVAILABLE');
     }
+    expect(db.execute).not.toHaveBeenCalled();
     expect(db.transaction).not.toHaveBeenCalled();
   });
 });
