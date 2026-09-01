@@ -1254,6 +1254,36 @@ test('runs no-discovery overall from complete persisted dynamic N', async () => 
   );
 });
 
+test('binds Overall applicability status to the Host current candidate', () => {
+  const input = synthesisInput();
+  input.applicabilityResult = {
+    schemaVersion: 'wiselink.3_1.overall_applicability_result.v1',
+    status: 'CANDIDATE_ONLY',
+    sourceResultId: 'openclaw-applicability://REQ-APPLICABILITY-001',
+    inputRevision: 6,
+    documentVersionId: input.baseRuleResult.documentVersionId,
+    sourcePackageId: input.baseRuleResult.packageId,
+    sourcePackageContentHash: 'f'.repeat(64),
+    sourceExpressionCount: 1,
+    sourceRefCount: 1,
+    decision: 'APPLICABLE',
+    kleeneResult: true,
+    pass: true,
+    blockingUnknownCount: 0,
+  };
+  const output = synthesisOutput(input);
+  validatePayload('synthesis-pair', { input, output });
+  assert.equal(output.applicabilityStatus, 'APPLICABLE');
+  assert.throws(
+    () =>
+      validatePayload('synthesis-pair', {
+        input,
+        output: { ...output, applicabilityStatus: 'UNKNOWN/WAITING_INPUT' },
+      }),
+    /OVERALL_APPLICABILITY_STATUS_MISMATCH/u,
+  );
+});
+
 test('validates the exact C2 review task and candidate fixtures', async () => {
   const task = await readJson(REVIEW_TASK_FIXTURE_URL);
   const attachmentTask = await readJson(REVIEW_ATTACHMENT_TASK_FIXTURE_URL);
@@ -2124,6 +2154,7 @@ function synthesisInput() {
   return {
     operation: 'SYNTHESIZE_OVERALL_CANDIDATE',
     outputCorrelationRef: 'REQ-OVERALL-001',
+    applicabilityResult: null,
     baseRuleResult: {
       sourceResultId: 'openclaw-dynamic://REQ-DYNAMIC',
       revision: 1,
@@ -2271,7 +2302,12 @@ function synthesisOutput(input) {
       },
     ],
     missingInputs: ['Controlled FleetFacts'],
-    applicabilityStatus: 'UNKNOWN/WAITING_INPUT',
+    applicabilityStatus:
+      input.applicabilityResult?.decision === 'APPLICABLE'
+        ? 'APPLICABLE'
+        : input.applicabilityResult?.decision === 'NOT_APPLICABLE'
+          ? 'NOT_APPLICABLE'
+          : 'UNKNOWN/WAITING_INPUT',
     engineeringReviewRequired: true,
   };
 }

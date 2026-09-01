@@ -1111,6 +1111,11 @@ export function validateSynthesisPair(input, output) {
     input.engineerReviewContext.artifactSha256,
     'OVERALL_ENGINEER_REVIEW_ARTIFACT_MISMATCH',
   );
+  equal(
+    output.applicabilityStatus,
+    expectedOverallApplicabilityStatus(input.applicabilityResult),
+    'OVERALL_APPLICABILITY_STATUS_MISMATCH',
+  );
   const knownRefs = new Set(context.sourceRefs.map((item) => item.sourceRefId));
   for (const finding of output.findings) {
     for (const sourceRefId of finding.sourceRefIds) {
@@ -1305,6 +1310,7 @@ function validateSynthesisInput(input) {
     [
       'operation',
       'outputCorrelationRef',
+      'applicabilityResult',
       'baseRuleResult',
       'unifiedSourceContext',
       'adoptedDocumentVersions',
@@ -1321,6 +1327,7 @@ function validateSynthesisInput(input) {
     'SYNTHESIS_OPERATION_INVALID',
   );
   nonEmpty(input.outputCorrelationRef, 'SYNTHESIS_CORRELATION_INVALID');
+  validateOverallApplicabilityResult(input.applicabilityResult);
   validateBaseRuleResult(input.baseRuleResult);
   validateUnifiedSourceContext(input.unifiedSourceContext);
   validateAdoptedDocumentVersions(input.adoptedDocumentVersions);
@@ -1344,6 +1351,14 @@ function validateSynthesisInput(input) {
     fail('SYNTHESIS_PACKAGE_ID_MISMATCH');
   if (base.packageArtifactSha256 !== context.packageArtifactSha256) {
     fail('SYNTHESIS_PACKAGE_ARTIFACT_MISMATCH');
+  }
+  const applicability = input.applicabilityResult;
+  if (
+    applicability &&
+    (applicability.documentVersionId !== base.documentVersionId ||
+      applicability.sourcePackageId !== base.packageId)
+  ) {
+    fail('SYNTHESIS_APPLICABILITY_SOURCE_BINDING_MISMATCH');
   }
   if (
     !input.adoptedDocumentVersions.some(
@@ -1424,6 +1439,105 @@ function validateEngineerReviewContext(context) {
       fail(`ENGINEER_REVIEW_EFFECTIVE_DRIFT:${criterionId}`);
     }
   }
+}
+
+function validateOverallApplicabilityResult(result) {
+  if (result === null) return;
+  assertObject(result, 'overall applicability result');
+  exactKeys(
+    result,
+    [
+      'schemaVersion',
+      'status',
+      'sourceResultId',
+      'inputRevision',
+      'documentVersionId',
+      'sourcePackageId',
+      'sourcePackageContentHash',
+      'sourceExpressionCount',
+      'sourceRefCount',
+      'decision',
+      'kleeneResult',
+      'pass',
+      'blockingUnknownCount',
+    ],
+    [],
+    'overall applicability result',
+  );
+  equal(
+    result.schemaVersion,
+    'wiselink.3_1.overall_applicability_result.v1',
+    'OVERALL_APPLICABILITY_RESULT_SCHEMA_INVALID',
+  );
+  if (!['CANDIDATE_ONLY', 'WAITING_INPUT'].includes(result.status)) {
+    fail('OVERALL_APPLICABILITY_RESULT_STATUS_INVALID');
+  }
+  nonEmpty(result.sourceResultId, 'OVERALL_APPLICABILITY_SOURCE_RESULT_INVALID');
+  positiveInteger(
+    result.inputRevision,
+    'OVERALL_APPLICABILITY_INPUT_REVISION_INVALID',
+  );
+  nonEmpty(
+    result.documentVersionId,
+    'OVERALL_APPLICABILITY_DOCUMENT_VERSION_INVALID',
+  );
+  match(
+    result.sourcePackageId,
+    PACKAGE_ID,
+    'OVERALL_APPLICABILITY_PACKAGE_ID_INVALID',
+  );
+  nonEmpty(
+    result.sourcePackageContentHash,
+    'OVERALL_APPLICABILITY_PACKAGE_CONTENT_HASH_INVALID',
+  );
+  integerInRange(
+    result.sourceExpressionCount,
+    0,
+    Number.MAX_SAFE_INTEGER,
+    'OVERALL_APPLICABILITY_EXPRESSION_COUNT_INVALID',
+  );
+  integerInRange(
+    result.sourceRefCount,
+    0,
+    Number.MAX_SAFE_INTEGER,
+    'OVERALL_APPLICABILITY_SOURCE_REF_COUNT_INVALID',
+  );
+  integerInRange(
+    result.blockingUnknownCount,
+    0,
+    Number.MAX_SAFE_INTEGER,
+    'OVERALL_APPLICABILITY_UNKNOWN_COUNT_INVALID',
+  );
+  boolean(result.pass, 'OVERALL_APPLICABILITY_PASS_INVALID');
+  if (!['APPLICABLE', 'NOT_APPLICABLE', 'UNKNOWN'].includes(result.decision)) {
+    fail('OVERALL_APPLICABILITY_DECISION_INVALID');
+  }
+  if (![true, false, 'unknown'].includes(result.kleeneResult)) {
+    fail('OVERALL_APPLICABILITY_KLEENE_INVALID');
+  }
+  const consistent =
+    (result.decision === 'APPLICABLE' &&
+      result.status === 'CANDIDATE_ONLY' &&
+      result.kleeneResult === true &&
+      result.pass === true &&
+      result.blockingUnknownCount === 0) ||
+    (result.decision === 'NOT_APPLICABLE' &&
+      result.status === 'CANDIDATE_ONLY' &&
+      result.kleeneResult === false &&
+      result.pass === false &&
+      result.blockingUnknownCount === 0) ||
+    (result.decision === 'UNKNOWN' &&
+      result.status === 'WAITING_INPUT' &&
+      result.kleeneResult === 'unknown' &&
+      result.pass === false &&
+      result.blockingUnknownCount > 0);
+  if (!consistent) fail('OVERALL_APPLICABILITY_RESULT_INVALID');
+}
+
+function expectedOverallApplicabilityStatus(result) {
+  return !result || result.decision === 'UNKNOWN'
+    ? 'UNKNOWN/WAITING_INPUT'
+    : result.decision;
 }
 
 function validateEngineerReviewEntry(review, expectedSequence = undefined) {
@@ -1785,7 +1899,7 @@ function validateSynthesisOutput(output) {
   }
   arrayOfText(output.missingInputs, 'OVERALL_MISSING_INPUTS_INVALID');
   if (
-    !['UNKNOWN/WAITING_INPUT', 'CANDIDATE_REVIEW_REQUIRED'].includes(
+    !['APPLICABLE', 'NOT_APPLICABLE', 'UNKNOWN/WAITING_INPUT'].includes(
       output.applicabilityStatus,
     )
   ) {

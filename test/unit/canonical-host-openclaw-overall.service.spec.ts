@@ -62,6 +62,27 @@ describe('CanonicalHostOpenClawOverallService', () => {
     });
   });
 
+  it('freezes the current Host applicability artifact into the Overall task input vector', async () => {
+    const harness = createHarness();
+    harness.workItem.applicability = applicabilityProjection();
+
+    await harness.service.begin(WORK_ITEM_ID, []);
+
+    const reservation = (
+      harness.attempts.reserveAndClaim.mock.calls as unknown[][]
+    ).at(-1)?.[0] as
+      | { sourceRefs?: Array<{ ref: string; sha256: string }> }
+      | undefined;
+    expect(reservation?.sourceRefs).toEqual(
+      expect.arrayContaining([
+        {
+          ref: 'artifact://applicability',
+          sha256: 'f'.repeat(64),
+        },
+      ]),
+    );
+  });
+
   it('lets a Host-marked user regeneration reach the same begin path without discovery', async () => {
     const harness = createHarness();
     const priorOverall = {
@@ -118,7 +139,9 @@ describe('CanonicalHostOpenClawOverallService', () => {
     await expect(
       harness.service.begin(WORK_ITEM_ID, []),
     ).resolves.toMatchObject({ attemptRef: ATTEMPT_REF, status: 'RUNNING' });
-    const reservation = harness.attempts.reserveAndClaim.mock.calls.at(-1)?.[0];
+    const reservation = (
+      harness.attempts.reserveAndClaim.mock.calls as unknown[][]
+    ).at(-1)?.[0] as Record<string, unknown> | undefined;
     expect(reservation).toMatchObject({
       baseRevision: 5,
       allowedConnectors: [],
@@ -412,6 +435,7 @@ function workItemProjection(): CanonicalWorkItemProjection {
     classification: { parserProfileId: 'issuer.boeing.sb' },
     package: {
       packageId: 'PKG-737',
+      contentHash: 'package-content-hash',
       contractRevision: 'frozen.2',
       contentUnitCount: 1,
       documentIdentity: {
@@ -440,10 +464,44 @@ function workItemProjection(): CanonicalWorkItemProjection {
   } as unknown as CanonicalWorkItemProjection;
 }
 
+function applicabilityProjection() {
+  return {
+    schemaVersion:
+      'wiselink.3_1.applicability_candidate_projection.v1' as const,
+    status: 'CANDIDATE_ONLY' as const,
+    currentness: 'CURRENT' as const,
+    staleReason: null,
+    sourceResultId: 'openclaw-applicability://REQ-APP',
+    actionAttemptId: 'ATT-APP',
+    inputRevision: 4,
+    documentId: 'DOC-737',
+    documentVersionId: 'DV-737',
+    sourcePackageId: 'PKG-737',
+    sourcePackageContentHash: 'package-content-hash',
+    translationActionAttemptId: 'ATT-TRANSLATION',
+    applicabilityContextRef: 'APCTX-737',
+    applicabilityBindingRevision: 'host-applicability:test',
+    aircraftNumber: 'B-1266',
+    assessmentAsOf: '2026-09-01',
+    fleetSourceSnapshotId: 'FLEET-SNAPSHOT-1',
+    fleetSourceRevisionKey: 'FLEET-REV-1',
+    fleetAuthorityRevision: 'FLEET-AUTH-1',
+    fleetSourceAsOf: '2026-09-01',
+    sourceExpressionCount: 1,
+    sourceRefCount: 11,
+    decision: 'APPLICABLE' as const,
+    kleeneResult: true as const,
+    pass: true,
+    blockingUnknownCount: 0,
+    artifact: artifact('artifact://applicability', 'f'.repeat(64)),
+  };
+}
+
 function overallModelInput() {
   return {
     operation: 'SYNTHESIZE_OVERALL_CANDIDATE' as const,
     outputCorrelationRef: TRIGGER_REF,
+    applicabilityResult: null,
     baseRuleResult: {
       sourceResultId: 'openclaw-dynamic://DYN-RESULT-1',
       revision: 1,
@@ -600,7 +658,7 @@ function validOutput(): string {
       },
     ],
     missingInputs: [],
-    applicabilityStatus: 'CANDIDATE_REVIEW_REQUIRED',
+    applicabilityStatus: 'UNKNOWN/WAITING_INPUT',
     engineeringReviewRequired: true,
     adopted: false,
     usableAsEvidence: false,
