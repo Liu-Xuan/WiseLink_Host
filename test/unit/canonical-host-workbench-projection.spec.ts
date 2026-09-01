@@ -210,12 +210,15 @@ describe('canonical Host workbench projection', () => {
     expect(semantics.gaps.map((gap) => gap.code)).toEqual(
       expect.arrayContaining([
         'READER_SOURCE_BINDING_MISSING',
-        'DYNAMIC_ITEMS_UNRESOLVED',
+        'HOST_GAP:GAP-001',
         'ENGINEER_REVIEW_PENDING',
         'OVERALL_CANDIDATE_STALE',
         'OVERALL_GAP_REPORTED',
         'OVERALL_ITEMS_UNRESOLVED',
       ]),
+    );
+    expect(semantics.gaps.map((gap) => gap.code)).not.toContain(
+      'DYNAMIC_ITEMS_UNRESOLVED',
     );
     expect(semantics.boundary).toContain('不构成工程、适航或发布结论');
   });
@@ -390,6 +393,46 @@ function reviewContext(): CanonicalEngineerReviewPageContext {
     criterionSetId: 'RULESET-1',
     baseRuleRevision: 2,
     ledger: null,
+    gapLedger: {
+      schemaVersion: 'wiselink.3_1.assessment_gap_ledger_projection.v1',
+      inputRevision: 7,
+      baseRuleRevision: 2,
+      currentness: 'CURRENT',
+      candidateOnly: true,
+      gaps: [
+        {
+          gapRef: 'GAP-001',
+          missingInputId: 'aircraft.currentPartNumber',
+          displayLabel: '当前装机件号',
+          reasonClass: 'CONTROLLED_FACT_MISSING',
+          dataDomain: 'aircraft',
+          requiredFactType: 'aircraft.currentPartNumber',
+          whyNeeded: '当前装机件号会影响此项规则判断。',
+          materiality: 'P0_DECISION_CRITICAL',
+          requiredness: 'REQUIRED_FOR_CONFIRMATION',
+          queryability: 'REVIEW_QUERYABLE',
+          resolutionStatus: 'OPEN',
+          originCriterionIds: ['RULE-1'],
+          affectedCriterionIds: ['RULE-1'],
+          sourceRefs: ['SRC-001'],
+          resolutionOptions: ['在交互式复核中补充受控事实或来源证据'],
+          authority: {
+            owner: 'CANONICAL_HOST',
+            candidateOnly: true,
+            modelMayClose: false,
+            queryResultIsFact: false,
+          },
+        },
+      ],
+      summary: {
+        total: 1,
+        open: 1,
+        partiallyResolved: 0,
+        resolved: 0,
+        decisionCritical: 1,
+        reviewQueryable: 1,
+      },
+    },
     items: [
       {
         criterionId: 'RULE-1',

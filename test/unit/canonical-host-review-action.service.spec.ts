@@ -1,6 +1,9 @@
 import { createHash } from 'node:crypto';
 
-import type { CanonicalWorkItemProjection } from '@shared/api.interface';
+import type {
+  CanonicalWorkItemProjection,
+  ReviewActionDraftCandidate,
+} from '@shared/api.interface';
 import { CanonicalHostEngineerReviewService } from '../../server/modules/canonical-host/canonical-host-engineer-review.service';
 import { CanonicalHostReviewActionService } from '../../server/modules/canonical-host/canonical-host-review-action.service';
 import { buildSelectiveOverallResynthesisPlan } from '../../server/modules/canonical-host/selective-overall-resynthesis';
@@ -63,6 +66,8 @@ describe('CanonicalHostReviewActionService', () => {
     expect(result.reviewAction).toEqual({
       evaluationItemId: 'RULE-1',
       affectedItemIds: ['RULE-1', 'RULE-2'],
+      resolvedGapRefs: [],
+      resolvedMissingInputs: [],
       workItemRevision: 8,
       engineerReviewRevision: 1,
       overallStatus: 'STALE',
@@ -74,6 +79,74 @@ describe('CanonicalHostReviewActionService', () => {
     expect(publicJson).not.toContain('tenant-1');
     expect(publicJson).not.toContain('official-selection');
     expect(publicJson).not.toContain('artifact://attachment');
+  });
+
+  it('resolves Host-issued gap refs to missing inputs before recording engineer-confirmed evidence', async () => {
+    const harness = target({ resolvedGapRefs: ['GAP-007'] });
+
+    const result = await harness.service.confirmDraft(
+      'WI-1',
+      'RC-1',
+      'RT-1',
+      {} as never,
+    );
+
+    expect(
+      harness.engineerReviews.resolveReviewActionGaps,
+    ).toHaveBeenCalledWith(
+      {
+        workItemId: 'WI-1',
+        expectedRevision: 7,
+        gapRefs: ['GAP-007'],
+        affectedCriterionIds: ['RULE-1', 'RULE-2'],
+      },
+      expect.objectContaining({ userId: 'actor-1', tenantId: 'tenant-1' }),
+    );
+    expect(harness.engineerReviews.recordReviewAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        affectedCriterionIds: ['RULE-1', 'RULE-2'],
+        resolvedMissingInputs: ['aircraft.currentPartNumber'],
+      }),
+      expect.any(Object),
+    );
+    expect(result.reviewAction).toMatchObject({
+      resolvedGapRefs: ['GAP-007'],
+      resolvedMissingInputs: ['aircraft.currentPartNumber'],
+    });
+  });
+
+  it('does not close a Host gap when the confirmed draft carries no engineer evidence', async () => {
+    const harness = target({
+      resolvedGapRefs: ['GAP-007'],
+      withoutEvidence: true,
+    });
+
+    await expect(
+      harness.service.confirmDraft('WI-1', 'RC-1', 'RT-1', {} as never),
+    ).rejects.toMatchObject({
+      code: 'REVIEW_ACTION_GAP_EVIDENCE_REQUIRED',
+      statusCode: 409,
+    });
+    expect(harness.engineerReviews.recordReviewAction).not.toHaveBeenCalled();
+  });
+
+  it('treats a persisted pre-gap-ledger draft as a no-gap action', async () => {
+    const harness = target({ legacyDraftWithoutGapField: true });
+
+    const result = await harness.service.confirmDraft(
+      'WI-1',
+      'RC-1',
+      'RT-1',
+      {} as never,
+    );
+
+    expect(result.reviewAction).toMatchObject({
+      resolvedGapRefs: [],
+      resolvedMissingInputs: [],
+    });
+    expect(
+      harness.engineerReviews.resolveReviewActionGaps,
+    ).not.toHaveBeenCalled();
   });
 
   it('rejects a stale draft before ReviewAction/CAS mutation', async () => {
@@ -148,7 +221,13 @@ describe('CanonicalHostReviewActionService', () => {
 });
 
 function target(
-  options: { workItemRevision?: number; conversationWorkItemId?: string } = {},
+  options: {
+    workItemRevision?: number;
+    conversationWorkItemId?: string;
+    resolvedGapRefs?: string[];
+    withoutEvidence?: boolean;
+    legacyDraftWithoutGapField?: boolean;
+  } = {},
 ) {
   const attachmentArtifact = {
     storeRole: 'UnifiedArtifactStoreCandidate' as const,
@@ -166,22 +245,29 @@ function target(
     selectionKey: 'default-bucket\nofficial-selection/engineering-note.pdf',
     parsedArtifact: attachmentArtifact,
   };
+  const reviewActionDraft: ReviewActionDraftCandidate = {
+    baseRevision: 7,
+    evaluationItemId: 'RULE-1',
+    proposedStatus: 'review_required',
+    resolvedGapRefs: [...(options.resolvedGapRefs ?? [])],
+    adoptedInputRefs: options.withoutEvidence
+      ? []
+      : ['engineer-input:ESI-1', 'ATTACHMENT-1'],
+    sourceRefs: options.withoutEvidence ? [] : ['ATTACHMENT-1'],
+    assumptions: ['Attachment is applicable to the current configuration.'],
+    affectedItemIds: ['RULE-1', 'RULE-2'],
+    overallImpact: true,
+  };
+  if (options.legacyDraftWithoutGapField) {
+    delete reviewActionDraft.resolvedGapRefs;
+  }
   const assistantCandidate = {
     responseType: 'REVIEW_ACTION_DRAFT' as const,
     answer: 'Adopt the supplied evidence and selectively reassess.',
     sourceRefs: ['ATTACHMENT-1'],
     missingInputs: [],
     candidateEvidenceRefs: ['ATTACHMENT-1'],
-    reviewActionDraft: {
-      baseRevision: 7,
-      evaluationItemId: 'RULE-1',
-      proposedStatus: 'review_required',
-      adoptedInputRefs: ['engineer-input:ESI-1', 'ATTACHMENT-1'],
-      sourceRefs: ['ATTACHMENT-1'],
-      assumptions: ['Attachment is applicable to the current configuration.'],
-      affectedItemIds: ['RULE-1', 'RULE-2'],
-      overallImpact: true,
-    },
+    reviewActionDraft,
     affectedItemIds: ['RULE-1', 'RULE-2'],
     warnings: [],
     actionAttemptRef: 'AQ-1',
@@ -254,6 +340,14 @@ function target(
     })),
   };
   const engineerReviews = {
+    resolveReviewActionGaps: jest.fn(async () => ({
+      gapRefs: [...(options.resolvedGapRefs ?? [])],
+      resolvedMissingInputs:
+        options.resolvedGapRefs?.length > 0
+          ? ['aircraft.currentPartNumber']
+          : [],
+      affectedCriterionIds: ['RULE-1', 'RULE-2'],
+    })),
     recordReviewAction: jest.fn(async () => ({
       revision: 8,
       integratedAssessment: {
@@ -430,6 +524,7 @@ function integratedTarget() {
         baseRevision: 7,
         evaluationItemId: 'RULE-A',
         proposedStatus: 'review_required',
+        resolvedGapRefs: [],
         adoptedInputRefs: ['engineer-input:ESI-C7', 'ATTACHMENT-C7'],
         sourceRefs: ['ATTACHMENT-C7'],
         assumptions: [],

@@ -29,6 +29,110 @@ describe('CanonicalHostEngineerReviewService', () => {
     expect(serialized).not.toContain('criterionHash');
     expect(serialized).not.toContain('criterionVersion');
     expect(serialized).not.toContain('ruleArtifact');
+    expect(serialized).not.toContain('blockerLevel');
+    expect(serialized).not.toContain('automationMode');
+    expect(serialized).not.toContain('stageCode');
+    expect(serialized).not.toContain('stageName');
+  });
+
+  it('derives one browser-safe current gap for a shared missing input', async () => {
+    const harness = target();
+    harness.state.workItem.integratedAssessment!.baseRules!.criterionSetId =
+      CANONICAL_ACTIVE_JOB_AID_CRITERION_SET_ID;
+    harness.state.workItem.integratedAssessment!.baseRules!.criterionCount = 2;
+    harness.state.workItem.integratedAssessment!.baseRules!.evaluationItemCount = 2;
+    harness.state.workItem.integratedAssessment!.baseRules!.unresolvedCount = 2;
+    harness.artifacts.set('artifact://dynamic', dynamicGapBytes());
+
+    const context = await harness.service.pageContext(harness.state.workItem);
+
+    expect(context?.gapLedger).toMatchObject({
+      inputRevision: 5,
+      baseRuleRevision: 1,
+      currentness: 'CURRENT',
+      candidateOnly: true,
+      summary: {
+        total: 1,
+        open: 1,
+        partiallyResolved: 0,
+        resolved: 0,
+        decisionCritical: 1,
+        reviewQueryable: 1,
+      },
+      gaps: [
+        expect.objectContaining({
+          gapRef: 'GAP-001',
+          missingInputId: 'aircraft.currentPartNumber',
+          materiality: 'P0_DECISION_CRITICAL',
+          queryability: 'REVIEW_QUERYABLE',
+          affectedCriterionIds: ['GOV-001', 'GOV-002'],
+          sourceRefs: ['SRC-001', 'SRC-002'],
+        }),
+      ],
+    });
+  });
+
+  it('fresh-reads and resolves only the exact Host gap-to-criterion mapping', async () => {
+    const harness = target();
+    harness.state.workItem.integratedAssessment!.baseRules!.criterionSetId =
+      CANONICAL_ACTIVE_JOB_AID_CRITERION_SET_ID;
+    harness.state.workItem.integratedAssessment!.baseRules!.criterionCount = 2;
+    harness.state.workItem.integratedAssessment!.baseRules!.evaluationItemCount = 2;
+    harness.state.workItem.integratedAssessment!.baseRules!.unresolvedCount = 2;
+    harness.artifacts.set('artifact://dynamic', dynamicGapBytes());
+
+    const resolved = await harness.service.resolveReviewActionGaps(
+      {
+        workItemId: 'WI-REVIEW',
+        expectedRevision: 5,
+        gapRefs: ['GAP-001'],
+        affectedCriterionIds: ['GOV-002', 'GOV-001'],
+      },
+      engineerActor(),
+    );
+
+    expect(resolved).toEqual({
+      gapRefs: ['GAP-001'],
+      resolvedMissingInputs: ['aircraft.currentPartNumber'],
+      affectedCriterionIds: ['GOV-001', 'GOV-002'],
+    });
+    expect(harness.state.attempts).toBe(0);
+    expect(harness.state.persisted).toHaveLength(0);
+  });
+
+  it('rejects invented gaps and incomplete affected-only mappings before mutation', async () => {
+    const harness = target();
+    harness.state.workItem.integratedAssessment!.baseRules!.criterionSetId =
+      CANONICAL_ACTIVE_JOB_AID_CRITERION_SET_ID;
+    harness.state.workItem.integratedAssessment!.baseRules!.criterionCount = 2;
+    harness.state.workItem.integratedAssessment!.baseRules!.evaluationItemCount = 2;
+    harness.state.workItem.integratedAssessment!.baseRules!.unresolvedCount = 2;
+    harness.artifacts.set('artifact://dynamic', dynamicGapBytes());
+
+    await expect(
+      harness.service.resolveReviewActionGaps(
+        {
+          workItemId: 'WI-REVIEW',
+          expectedRevision: 5,
+          gapRefs: ['GAP-404'],
+          affectedCriterionIds: ['GOV-001', 'GOV-002'],
+        },
+        engineerActor(),
+      ),
+    ).rejects.toThrow('ENGINEER_REVIEW_GAP_UNKNOWN:GAP-404');
+    await expect(
+      harness.service.resolveReviewActionGaps(
+        {
+          workItemId: 'WI-REVIEW',
+          expectedRevision: 5,
+          gapRefs: ['GAP-001'],
+          affectedCriterionIds: ['GOV-001'],
+        },
+        engineerActor(),
+      ),
+    ).rejects.toThrow('ENGINEER_REVIEW_GAP_AFFECTED_CRITERIA_MISMATCH');
+    expect(harness.state.attempts).toBe(0);
+    expect(harness.state.persisted).toHaveLength(0);
   });
 
   it('appends repeated criterion reviews, stales overall, clears AEO, and exposes only sanitized model context', async () => {
@@ -377,6 +481,16 @@ function attachmentArtifact() {
   };
 }
 
+function engineerActor() {
+  return {
+    userId: 'engineer-1',
+    tenantId: 'tenant-1',
+    appId: 'app_17bzc551rsg',
+    env: 'development',
+    roles: [],
+  };
+}
+
 function workItem(): CanonicalWorkItemProjection {
   const artifact = (ref: string, sha256: string) => ({
     storeRole: 'UnifiedArtifactStoreCandidate' as const,
@@ -479,6 +593,50 @@ function dynamicBytes(criterionId = 'RULE-001') {
             'candidate conclusion',
             ['SRC-001'],
             [],
+            true,
+          ],
+        ],
+      },
+    }),
+  );
+}
+
+function dynamicGapBytes() {
+  return new TextEncoder().encode(
+    JSON.stringify({
+      ruleResults: {
+        columns: [
+          'ruleId',
+          'result',
+          'factsConsidered',
+          'ruleApplication',
+          'analysisSummary',
+          'conclusion',
+          'sourceRefs',
+          'missingInputs',
+          'humanReviewRequired',
+        ],
+        rows: [
+          [
+            'GOV-001',
+            'UNKNOWN',
+            ['fact-1'],
+            'rule application 1',
+            'analysis 1',
+            'waiting for controlled fact',
+            ['SRC-001'],
+            ['aircraft.currentPartNumber'],
+            true,
+          ],
+          [
+            'GOV-002',
+            'UNKNOWN',
+            ['fact-2'],
+            'rule application 2',
+            'analysis 2',
+            'waiting for controlled fact',
+            ['SRC-002'],
+            ['aircraft.currentPartNumber'],
             true,
           ],
         ],

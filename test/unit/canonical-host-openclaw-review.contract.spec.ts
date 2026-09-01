@@ -22,7 +22,8 @@ describe('interactive review C2 task/result contract', () => {
         baseRevision: 7,
         evaluationItemId: 'RULE-1',
         proposedStatus: 'confirmed_pass',
-        adoptedInputRefs: [],
+        resolvedGapRefs: ['GAP-001'],
+        adoptedInputRefs: ['engineer-input:ESI-1'],
         sourceRefs: ['SRC-1'],
         assumptions: [],
         affectedItemIds: ['RULE-1'],
@@ -37,6 +38,52 @@ describe('interactive review C2 task/result contract', () => {
       reviewTurnRef: 'RT-1',
       responseType: 'REVIEW_ACTION_DRAFT',
     });
+  });
+
+  it('rejects a model-invented gap ref before persistence', () => {
+    const task = reviewTask();
+    const result = reviewResult(task, {
+      responseType: 'REVIEW_ACTION_DRAFT',
+      reviewActionDraft: {
+        baseRevision: 7,
+        evaluationItemId: 'RULE-1',
+        proposedStatus: 'confirmed_pass',
+        resolvedGapRefs: ['GAP-404'],
+        adoptedInputRefs: ['engineer-input:ESI-1'],
+        sourceRefs: ['SRC-1'],
+        assumptions: [],
+        affectedItemIds: ['RULE-1'],
+        overallImpact: true,
+      },
+      affectedItemIds: ['RULE-1'],
+    });
+
+    expect(() => parseReviewTurnCandidateContract({ result, task })).toThrow(
+      'REVIEW_RESULT_DRAFT_GAP_NOT_ALLOWED',
+    );
+  });
+
+  it('rejects gap closure without engineer input or attachment evidence', () => {
+    const task = reviewTask();
+    const result = reviewResult(task, {
+      responseType: 'REVIEW_ACTION_DRAFT',
+      reviewActionDraft: {
+        baseRevision: 7,
+        evaluationItemId: 'RULE-1',
+        proposedStatus: 'confirmed_pass',
+        resolvedGapRefs: ['GAP-001'],
+        adoptedInputRefs: [],
+        sourceRefs: ['SRC-1'],
+        assumptions: [],
+        affectedItemIds: ['RULE-1'],
+        overallImpact: true,
+      },
+      affectedItemIds: ['RULE-1'],
+    });
+
+    expect(() => parseReviewTurnCandidateContract({ result, task })).toThrow(
+      'REVIEW_RESULT_DRAFT_GAP_EVIDENCE_REQUIRED',
+    );
   });
 
   it('rejects a cross-WorkItem SourceRef before persistence', () => {
@@ -82,6 +129,7 @@ describe('interactive review C2 task/result contract', () => {
         baseRevision: 7,
         evaluationItemId: 'RULE-OTHER',
         proposedStatus: 'confirmed_pass',
+        resolvedGapRefs: [],
         adoptedInputRefs: [],
         sourceRefs: ['SRC-1'],
         assumptions: [],
@@ -103,6 +151,7 @@ describe('interactive review C2 task/result contract', () => {
         baseRevision: 7,
         evaluationItemId: 'RULE-1',
         proposedStatus: 'confirmed_pass',
+        resolvedGapRefs: [],
         adoptedInputRefs: ['engineer-review:other-work-item'],
         sourceRefs: ['SRC-1'],
         assumptions: [],
@@ -153,9 +202,33 @@ function reviewTask() {
           },
         ],
         allowedEvaluationItemIds: ['RULE-1'],
-        allowedAdoptedInputRefs: [],
+        allowedAdoptedInputRefs: ['engineer-input:ESI-1'],
         attachmentRefs: [],
-        context: { evaluation: { items: [] } },
+        context: {
+          evaluation: {
+            items: [],
+            gapLedger: {
+              schemaVersion: 'wiselink.3_1.assessment_gap_ledger_projection.v1',
+              inputRevision: 7,
+              baseRuleRevision: 1,
+              currentness: 'CURRENT',
+              candidateOnly: true,
+              gaps: [
+                {
+                  gapRef: 'GAP-001',
+                  missingInputId: 'aircraft.currentPartNumber',
+                  queryability: 'REVIEW_QUERYABLE',
+                  resolutionStatus: 'OPEN',
+                  affectedCriterionIds: ['RULE-1'],
+                  authority: {
+                    owner: 'CANONICAL_HOST',
+                    modelMayClose: false,
+                  },
+                },
+              ],
+            },
+          },
+        },
         executionPolicy: {
           runtimeAppId: REVIEW_RUNTIME_APP_ID,
           profileRef: REVIEW_PROFILE_REF,

@@ -176,7 +176,8 @@ test('rejects an operator outside the Host-frozen applicability vocabulary befor
     value: [100, 200],
   };
   assert.throws(
-    () => validatePayload('applicability-pair', { input, output: astCandidate }),
+    () =>
+      validatePayload('applicability-pair', { input, output: astCandidate }),
     /APPLICABILITY_AST_ASSERT_UNSUPPORTED/u,
   );
 });
@@ -1617,6 +1618,87 @@ test('fails closed for invalid attachment relations and unavailable expansion', 
   );
   assert.equal(task.allowedOperations.includes('COMPARE_REVISIONS'), false);
   assert.equal(task.allowedOperations.includes('REEVALUATE_AFFECTED'), false);
+});
+
+test('binds review gap resolution to Host-issued gaps, engineer evidence, and exact affected items', async () => {
+  const baseTask = await readJson(REVIEW_TASK_FIXTURE_URL);
+  const task = {
+    ...structuredClone(baseTask),
+    allowedAdoptedInputRefs: ['engineer-input:fixture-001'],
+    context: {
+      ...structuredClone(baseTask.context),
+      evaluation: {
+        ...structuredClone(baseTask.context.evaluation),
+        gapLedger: {
+          schemaVersion: 'wiselink.3_1.assessment_gap_ledger_projection.v1',
+          inputRevision: baseTask.inputRevision,
+          baseRuleRevision: 1,
+          currentness: 'CURRENT',
+          candidateOnly: true,
+          gaps: [
+            {
+              gapRef: 'GAP-001',
+              missingInputId: 'aircraft.currentPartNumber',
+              queryability: 'REVIEW_QUERYABLE',
+              resolutionStatus: 'OPEN',
+              affectedCriterionIds: ['criterion-001'],
+              authority: {
+                owner: 'CANONICAL_HOST',
+                modelMayClose: false,
+              },
+            },
+          ],
+        },
+      },
+    },
+  };
+  const draft = {
+    baseRevision: task.inputRevision,
+    evaluationItemId: 'criterion-001',
+    proposedStatus: 'review_required',
+    resolvedGapRefs: ['GAP-001'],
+    adoptedInputRefs: ['engineer-input:fixture-001'],
+    sourceRefs: [task.resourceRefs[0].sourceRefId],
+    assumptions: [],
+    affectedItemIds: ['criterion-001'],
+    overallImpact: true,
+  };
+  const candidate = {
+    schemaVersion: 'wiselink.3_1.review_turn_candidate.v1.c2',
+    mode: 'INTERACTIVE_REVIEW',
+    reviewConversationRef: task.reviewConversationRef,
+    reviewTurnRef: task.reviewTurnRef,
+    responseType: 'REVIEW_ACTION_DRAFT',
+    answer: '基于工程师补充事实形成候选动作。',
+    sourceRefs: [task.resourceRefs[0].sourceRefId],
+    missingInputs: [],
+    candidateEvidenceRefs: [],
+    reviewActionDraft: draft,
+    affectedItemIds: ['criterion-001'],
+    warnings: ['candidate_only'],
+    runtime: {
+      runtimeAppId: 'app_17c3zn24kv2',
+      profileRef: 'wiselink-engineering',
+    },
+  };
+
+  assert.equal(validateReviewCandidate(task, candidate), candidate);
+  assert.throws(
+    () =>
+      validateReviewCandidate(task, {
+        ...candidate,
+        reviewActionDraft: { ...draft, resolvedGapRefs: ['GAP-404'] },
+      }),
+    /REVIEW_CANDIDATE_DRAFT_GAP_NOT_ALLOWED/u,
+  );
+  assert.throws(
+    () =>
+      validateReviewCandidate(task, {
+        ...candidate,
+        reviewActionDraft: { ...draft, adoptedInputRefs: [] },
+      }),
+    /REVIEW_CANDIDATE_DRAFT_GAP_EVIDENCE_REQUIRED/u,
+  );
 });
 
 test('rejects duplicate or unknown attachment refs before context and model', async (t) => {

@@ -228,6 +228,16 @@ begin_review_turn({reviewConversationRef, requestId})
 
 - 每轮由 Host fresh-read ReviewConversation、ReviewTurn、current revision、evaluation、bilingual、
   applicability 和 adopted inputs；不能依赖 session memory 判断 current 或权限。
+- `context.evaluation.gapLedger` 是 Host 从 current dynamic artifact、active CriterionSet 和 effective
+  engineer-review ledger 机械派生的只读缺口账本。优先按 `gapRef` 解释相同受控输入影响的全部
+  `affectedCriterionIds`，不得把逐项 `missingInputs` 重复扩写成多个新缺口，也不得自行关闭 Gap。
+- `gapLedger` 的 `REVIEW_QUERYABLE` 只表示本轮可通过既有 Review 输入／附件路径补充候选证据，
+  不表示存在自动查询工具；`HUMAN_DECISION_ONLY` 不得触发查询。任何补充仍先形成
+  CandidateEvidence／ReviewActionDraft，未经工程师确认不得改变 current。
+- ReviewActionDraft 仅可在 `resolvedGapRefs` 中引用本轮 Host `gapLedger` 已列出的
+  `REVIEW_QUERYABLE` 且未完全关闭的 Gap；其 `affectedItemIds` 必须等于这些 Gap 的 Host
+  `affectedCriterionIds` 并集，并且必须采用本轮工程师文本或附件证据。模型不能提交
+  `missingInputId` 作为关闭依据，也不能仅凭旧 SourceRef 声称缺口已解决。
 - `allowedOperations` 必须精确是 C2 六项：`GET_WORKITEM_CONTEXT`、`GET_EVALUATION_ITEM`、
   `READ_SOURCE_REFS`、`DRAFT_REVIEW_ACTION`、`PREVIEW_AFFECTED_ITEMS`、`GET_OPERATION_STATUS`。
 - candidate 使用的每个 SourceRef 必须属于 Task allowlist，并在本轮实际通过 `read_source_refs` 读取；外层
@@ -239,6 +249,9 @@ begin_review_turn({reviewConversationRef, requestId})
   affected-items preview 与 task status。所有输出仍为候选。
 - Host commit 只追加 assistant candidate、candidateEvidence 和 ReviewActionDraft；不执行 ReviewAction，
   不改 revision/current/STALE。
+- 后续工程师显式确认 ReviewActionDraft 时，Host 会 fresh-read current Gap Ledger，以
+  `resolvedGapRefs` 重新派生 `resolvedMissingInputs` 和受影响 Criterion，再进入既有 Review ledger／CAS；
+  任一 revision、Gap、queryability、证据或受影响项漂移均 fail closed。
 - 独立 `ANALYZE_ATTACHMENT` operation/tool、附件上传、knowledge search、revision compare、affected
   reevaluation 和 overall resynthesis 当前没有 C2 工具授权；请求这些扩展能力必须 fail closed，不虚构调用或
   结果。Host 已在当前 ReviewTurn 授权并解析的附件仍可按上一条 SourceRef 路径读取和形成候选分析。

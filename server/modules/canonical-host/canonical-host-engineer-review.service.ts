@@ -38,6 +38,7 @@ import type {
   CanonicalReviewEvidence,
   CanonicalReviewEvidenceInput,
 } from './selective-overall-resynthesis';
+import { buildCanonicalAssessmentGapLedger } from './canonical-assessment-gap-ledger';
 
 const LEDGER_KIND = 'CANONICAL_ENGINEER_REVIEW_LEDGER';
 const LEDGER_VERSION = 1;
@@ -96,6 +97,19 @@ export interface RecordEngineerReviewActionInput {
   evidence?: CanonicalReviewEvidenceInput[];
   resolvedMissingInputs?: string[];
   correctedAnalysisDirection?: string;
+}
+
+export interface ResolveReviewActionGapsInput {
+  workItemId: string;
+  expectedRevision: number;
+  gapRefs: string[];
+  affectedCriterionIds: string[];
+}
+
+export interface ResolvedReviewActionGaps {
+  gapRefs: string[];
+  resolvedMissingInputs: string[];
+  affectedCriterionIds: string[];
 }
 
 @Injectable()
@@ -285,6 +299,62 @@ export class CanonicalHostEngineerReviewService {
     }
   }
 
+  async resolveReviewActionGaps(
+    input: ResolveReviewActionGapsInput,
+    actor: CanonicalHostActor,
+  ): Promise<ResolvedReviewActionGaps> {
+    if (
+      !input.workItemId.trim() ||
+      !Number.isSafeInteger(input.expectedRevision) ||
+      input.expectedRevision < 1 ||
+      !validDistinctTexts(input.gapRefs) ||
+      input.gapRefs.length === 0 ||
+      !validDistinctTexts(input.affectedCriterionIds)
+    ) {
+      throw new Error('ENGINEER_REVIEW_GAP_RESOLUTION_INPUT_INVALID');
+    }
+    const authorized = await this.authorizeAndLoad(input.workItemId, actor);
+    const workItem = requiredDynamicWorkItem(authorized.workItem);
+    if (workItem.revision !== input.expectedRevision) {
+      throw new Error('WORK_ITEM_CAS_CONFLICT');
+    }
+    const context = await this.pageContext(workItem);
+    if (!context || context.gapLedger.inputRevision !== workItem.revision) {
+      throw new Error('ENGINEER_REVIEW_GAP_LEDGER_CURRENTNESS_INVALID');
+    }
+    const gapsByRef = new Map(
+      context.gapLedger.gaps.map((gap) => [gap.gapRef, gap]),
+    );
+    const selected = input.gapRefs.map((gapRef) => {
+      const gap = gapsByRef.get(gapRef);
+      if (!gap) throw new Error(`ENGINEER_REVIEW_GAP_UNKNOWN:${gapRef}`);
+      if (
+        gap.queryability !== 'REVIEW_QUERYABLE' ||
+        gap.authority.owner !== 'CANONICAL_HOST' ||
+        gap.authority.modelMayClose !== false
+      ) {
+        throw new Error(`ENGINEER_REVIEW_GAP_NOT_QUERYABLE:${gapRef}`);
+      }
+      if (gap.resolutionStatus === 'RESOLVED_BY_ENGINEER_REVIEW') {
+        throw new Error(`ENGINEER_REVIEW_GAP_ALREADY_RESOLVED:${gapRef}`);
+      }
+      return gap;
+    });
+    const affectedCriterionIds = uniqueSortedTexts(
+      selected.flatMap((gap) => gap.affectedCriterionIds),
+    );
+    if (!sameTextSet(affectedCriterionIds, input.affectedCriterionIds)) {
+      throw new Error('ENGINEER_REVIEW_GAP_AFFECTED_CRITERIA_MISMATCH');
+    }
+    return {
+      gapRefs: uniqueSortedTexts(selected.map((gap) => gap.gapRef)),
+      resolvedMissingInputs: uniqueSortedTexts(
+        selected.map((gap) => gap.missingInputId),
+      ),
+      affectedCriterionIds,
+    };
+  }
+
   async pageContext(
     workItem: CanonicalWorkItemProjection,
   ): Promise<CanonicalEngineerReviewPageContext | null> {
@@ -295,31 +365,50 @@ export class CanonicalHostEngineerReviewService {
     );
     const ledger = await this.readLedger(workItem);
     const effective = effectiveReviews(ledger?.reviews ?? []);
+    const pageItems = items.map((item) => {
+      const latest = effective.get(item.criterionId) ?? null;
+      const rule = rules.get(item.criterionId);
+      if (!rule) {
+        throw new Error(
+          `ENGINEER_REVIEW_CRITERION_UNKNOWN:${item.criterionId}`,
+        );
+      }
+      return {
+        ...item,
+        criterionName: rule.criterionName,
+        evaluationQuestion: rule.evaluationQuestion,
+        decisionRule: rule.decisionRule,
+        appliesWhen: rule.appliesWhen,
+        latestReview: latest
+          ? {
+              decision: latest.decision,
+              status: latest.status,
+              comment: latest.comment,
+              recordedAt: latest.recordedAt,
+            }
+          : null,
+      };
+    });
     return {
       criterionSetId: workItem.integratedAssessment.baseRules.criterionSetId,
       baseRuleRevision: workItem.integratedAssessment.baseRules.revision,
       ledger: workItem.integratedAssessment.engineerReviews ?? null,
-      items: items.map((item) => {
-        const latest = effective.get(item.criterionId) ?? null;
-        const rule = rules.get(item.criterionId);
-        if (!rule) {
-          throw new Error(
-            `ENGINEER_REVIEW_CRITERION_UNKNOWN:${item.criterionId}`,
-          );
-        }
-        return {
-          ...item,
-          ...rule,
-          latestReview: latest
-            ? {
-                decision: latest.decision,
-                status: latest.status,
-                comment: latest.comment,
-                recordedAt: latest.recordedAt,
-              }
-            : null,
-        };
+      gapLedger: buildCanonicalAssessmentGapLedger({
+        workItemRevision: workItem.revision,
+        baseRuleRevision: workItem.integratedAssessment.baseRules.revision,
+        expectedUnresolvedCriterionCount:
+          workItem.integratedAssessment.baseRules.unresolvedCount,
+        items: pageItems,
+        rules,
+        effectiveReviews: [...effective.values()].map((review) => ({
+          criterionId: review.criterionId,
+          affectedCriterionIds: [
+            ...(review.affectedCriterionIds ?? [review.criterionId]),
+          ],
+          resolvedMissingInputs: [...(review.resolvedMissingInputs ?? [])],
+        })),
       }),
+      items: pageItems,
     };
   }
 
@@ -673,6 +762,18 @@ function validDistinctTexts(values: string[]): boolean {
   return (
     values.every((value) => typeof value === 'string' && value.trim() !== '') &&
     new Set(values).size === values.length
+  );
+}
+
+function uniqueSortedTexts(values: string[]): string[] {
+  return [...new Set(values)].sort((left, right) => left.localeCompare(right));
+}
+
+function sameTextSet(left: string[], right: string[]): boolean {
+  return (
+    left.length === right.length &&
+    left.every((value) => right.includes(value)) &&
+    right.every((value) => left.includes(value))
   );
 }
 

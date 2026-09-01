@@ -276,6 +276,7 @@ function assistantCandidate() {
       baseRevision: 7,
       evaluationItemId: 'RULE-1',
       proposedStatus: 'review_required',
+      resolvedGapRefs: [],
       adoptedInputRefs: ['ATTACHMENT-C7'],
       sourceRefs: ['ATTACHMENT-C7'],
       assumptions: [],

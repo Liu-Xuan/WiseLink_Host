@@ -9,10 +9,7 @@ export interface OfficialOauthCallbackRequest {
   state: string;
 }
 
-export type ReviewConversationStatus =
-  | 'ACTIVE'
-  | 'STALE_CONTEXT'
-  | 'CLOSED';
+export type ReviewConversationStatus = 'ACTIVE' | 'STALE_CONTEXT' | 'CLOSED';
 
 export type EngineerSuppliedInputType = 'ENGINEER_TEXT';
 
@@ -33,6 +30,8 @@ export interface ReviewActionDraftCandidate {
   baseRevision: number;
   evaluationItemId: string;
   proposedStatus: string;
+  /** Host-issued gap refs that this evidence draft proposes to resolve. */
+  resolvedGapRefs?: string[];
   adoptedInputRefs: string[];
   sourceRefs: string[];
   assumptions: string[];
@@ -135,6 +134,8 @@ export interface ConfirmReviewActionDraftResponse {
   reviewAction: {
     evaluationItemId: string;
     affectedItemIds: string[];
+    resolvedGapRefs: string[];
+    resolvedMissingInputs: string[];
     workItemRevision: number;
     engineerReviewRevision: number;
     overallStatus: 'STALE' | 'NOT_AVAILABLE';
@@ -1314,10 +1315,87 @@ export interface CanonicalEngineerReviewPageItem {
   } | null;
 }
 
+export type CanonicalAssessmentGapReasonClass =
+  | 'CONTROLLED_FACT_MISSING'
+  | 'HUMAN_DECISION_REQUIRED';
+
+export type CanonicalAssessmentGapMateriality =
+  | 'P0_DECISION_CRITICAL'
+  | 'P1_ACTION_CRITICAL'
+  | 'P2_OPTIMIZATION'
+  | 'P3_LIFECYCLE';
+
+export type CanonicalAssessmentGapRequiredness =
+  | 'REQUIRED_FOR_CONFIRMATION'
+  | 'REQUIRED_FOR_IMPLEMENTATION'
+  | 'OPTIONAL_OPTIMIZATION'
+  | 'FUTURE_LIFECYCLE';
+
+export type CanonicalAssessmentGapQueryability =
+  | 'REVIEW_QUERYABLE'
+  | 'HUMAN_DECISION_ONLY';
+
+export type CanonicalAssessmentGapResolutionStatus =
+  | 'OPEN'
+  | 'PARTIALLY_RESOLVED'
+  | 'RESOLVED_BY_ENGINEER_REVIEW';
+
+/**
+ * Browser-safe, Host-derived view of one unresolved assessment input. The
+ * projection groups the exact dynamic missing-input key across every affected
+ * Criterion. It is not an EvidenceRecord and cannot be closed by a model.
+ */
+export interface CanonicalAssessmentGapProjection {
+  gapRef: string;
+  missingInputId: string;
+  displayLabel: string;
+  reasonClass: CanonicalAssessmentGapReasonClass;
+  dataDomain: string;
+  requiredFactType: string;
+  whyNeeded: string;
+  materiality: CanonicalAssessmentGapMateriality;
+  requiredness: CanonicalAssessmentGapRequiredness;
+  queryability: CanonicalAssessmentGapQueryability;
+  resolutionStatus: CanonicalAssessmentGapResolutionStatus;
+  originCriterionIds: string[];
+  affectedCriterionIds: string[];
+  sourceRefs: string[];
+  resolutionOptions: string[];
+  authority: {
+    owner: 'CANONICAL_HOST';
+    candidateOnly: true;
+    modelMayClose: false;
+    queryResultIsFact: false;
+  };
+}
+
+/**
+ * Read-only gap ledger derived from the current dynamic artifact, active
+ * CriterionSet and effective engineer-review ledger. It is rebuilt on every
+ * fresh page/task read and deliberately has no independent persistence path.
+ */
+export interface CanonicalAssessmentGapLedgerProjection {
+  schemaVersion: 'wiselink.3_1.assessment_gap_ledger_projection.v1';
+  inputRevision: number;
+  baseRuleRevision: number;
+  currentness: 'CURRENT';
+  candidateOnly: true;
+  gaps: CanonicalAssessmentGapProjection[];
+  summary: {
+    total: number;
+    open: number;
+    partiallyResolved: number;
+    resolved: number;
+    decisionCritical: number;
+    reviewQueryable: number;
+  };
+}
+
 export interface CanonicalEngineerReviewPageContext {
   criterionSetId: string;
   baseRuleRevision: number;
   ledger: CanonicalEngineerReviewLedgerProjection | null;
+  gapLedger: CanonicalAssessmentGapLedgerProjection;
   items: CanonicalEngineerReviewPageItem[];
 }
 

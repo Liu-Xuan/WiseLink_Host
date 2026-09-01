@@ -270,7 +270,8 @@ allowedOperations（exact C2 six）
 resourceRefs[{sourceRefId,resourceArtifactRef,resourceArtifactSha256,value}]
 allowedEvaluationItemIds / allowedAdoptedInputRefs
 attachmentRefs[]（非空唯一字符串，且 attachmentRefs ⊆ resourceRefs.sourceRefId）
-context
+context（`evaluation.gapLedger` 为 Host 派生只读投影，包含 gapRef、missingInputId、影响项、
+materiality/queryability/resolutionStatus 与 candidate-only authority）
 executionPolicy{runtimeAppId,profileRef,modelPolicyRef,skillPolicyRef,toolPolicyRef}
 ```
 
@@ -304,9 +305,13 @@ ReviewActionDraft 字段：
 ```text
 baseRevision
 evaluationItemId / proposedStatus
+resolvedGapRefs
 adoptedInputRefs / sourceRefs / assumptions
 affectedItemIds / overallImpact
 ```
 
 baseRevision/item/input/source 必须属于 Task allowlist。主 evaluationItemId 必须出现在 affectedItemIds；candidate
-affectedItemIds 与 draft 完全一致。Draft 只被 Host 追加保存，不执行。
+affectedItemIds 与 draft 完全一致。`resolvedGapRefs=[]` 表示本 Draft 不关闭缺口；非空时只能引用 current
+`gapLedger` 中 `REVIEW_QUERYABLE` 且未完全关闭的 Gap，affectedItemIds 必须等于 Host 影响项并集，并采用本轮
+工程师文本或附件证据。Draft 只被 Host 追加保存，不执行；工程师显式确认时 Host 重新 fresh-read Gap Ledger，
+由 Gap 派生 resolvedMissingInputs，模型不得直接提交缺失输入键或自行关闭 Gap。
