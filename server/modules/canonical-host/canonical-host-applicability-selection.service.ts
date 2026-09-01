@@ -52,6 +52,10 @@ export class CanonicalHostApplicabilitySelectionService {
     input: ConfigureCanonicalApplicabilitySelectionRequest,
     request: Request,
   ): Promise<CanonicalApplicabilitySelectionReadModel> {
+    // Deliberately not exposed by the initial-analysis browser controller.
+    // This mutation boundary is retained for a future accepted ReviewAction
+    // adapter, where conversational engineer input is authenticated, reviewed,
+    // and CAS-bound before it can alter the Host-owned evaluation target.
     const session = await this.requireSession(request);
     const grant = await this.authorize(
       session,

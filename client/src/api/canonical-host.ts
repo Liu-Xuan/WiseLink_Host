@@ -17,7 +17,6 @@ import type {
   ConfirmReviewActionDraftResponse,
   CreateOrResumeReviewConversationResponse,
   CurrentReviewConversationResponse,
-  ConfigureCanonicalApplicabilitySelectionRequest,
   RequestCanonicalOverallRegenerationRequest,
   RequestCanonicalOverallRegenerationResponse,
 } from '@shared/api.interface';
@@ -507,32 +506,12 @@ export async function getApplicabilitySelection(
 ): Promise<CanonicalApplicabilitySelectionReadModel> {
   return applicabilitySelectionRequest({
     workItemId,
-    method: 'GET',
-    operation: '读取当前飞机适用性选择',
+    operation: '读取当前适用性自动评估范围',
   });
-}
-
-/**
- * The PUT response is deliberately followed by a fresh GET. The browser only
- * presents a saved selection after the authenticated Host readback succeeds.
- */
-export async function configureApplicabilitySelection(
-  workItemId: string,
-  input: ConfigureCanonicalApplicabilitySelectionRequest,
-): Promise<CanonicalApplicabilitySelectionReadModel> {
-  await applicabilitySelectionRequest({
-    workItemId,
-    method: 'PUT',
-    data: input,
-    operation: '保存飞机适用性选择',
-  });
-  return getApplicabilitySelection(workItemId);
 }
 
 async function applicabilitySelectionRequest(input: {
   workItemId: string;
-  method: 'GET' | 'PUT';
-  data?: ConfigureCanonicalApplicabilitySelectionRequest;
   operation: string;
 }): Promise<CanonicalApplicabilitySelectionReadModel> {
   const requestGeneration = clientSessionGeneration;
@@ -540,8 +519,7 @@ async function applicabilitySelectionRequest(input: {
     const response =
       await axiosForBackend<CanonicalApplicabilitySelectionReadModel>({
         url: `/api/work-items/${encodeURIComponent(input.workItemId)}/applicability-selection`,
-        method: input.method,
-        ...(input.data === undefined ? {} : { data: input.data }),
+        method: 'GET',
       });
     if (response.status === 401) {
       throw clientLoginRequired(

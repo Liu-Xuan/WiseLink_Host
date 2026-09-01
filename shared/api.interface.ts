@@ -742,9 +742,11 @@ export interface CanonicalApplicabilityFleetFact {
 }
 
 /**
- * Host-owned engineer selection persisted inside the canonical WorkItem
- * projection. Fleet facts are deliberately not stored here: they are read
- * from the server-private Host FleetMasterData configuration at use time.
+ * Host-owned evaluation target persisted inside the canonical WorkItem
+ * projection. Initial analysis freezes it automatically. A later change may
+ * only come from accepted interactive-review input; the browser never creates
+ * aircraft or configuration facts. Fleet facts are read from the server-private
+ * Host FleetMasterData configuration at use time.
  */
 export interface CanonicalApplicabilityControlledSelectionProjection {
   schemaVersion: 'wiselink.3_1.controlled_applicability_selection.v1';
@@ -759,6 +761,7 @@ export interface CanonicalApplicabilityControlledSelectionProjection {
   fleetSourceAsOf: string;
 }
 
+/** Host-internal accepted-review command; never an initial-analysis form DTO. */
 export interface ConfigureCanonicalApplicabilitySelectionRequest {
   aircraftIdentifier: string;
   asOf: string;

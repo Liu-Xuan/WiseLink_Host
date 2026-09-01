@@ -32,24 +32,19 @@ export function isApplicabilitySelectionUnconfigured(reason: unknown): boolean {
   return rawErrorText(reason).includes(UNCONFIGURED_CODE);
 }
 
-export function presentApplicabilitySelectionError(
-  reason: unknown,
-  action: 'read' | 'save',
-): string {
+export function presentApplicabilitySelectionError(reason: unknown): string {
   const raw: string = rawErrorText(reason).toUpperCase();
 
   if (/CONFLICT|STALE|REVISION/u.test(raw)) {
-    return '事项资料已经更新，请重新读取当前选择后再试。';
+    return '事项资料已经更新，请刷新自动评估范围。';
   }
   if (/UNAUTHORIZED|FORBIDDEN|PERMISSION|ACCESS_DENIED/u.test(raw)) {
-    return '当前账户无权读取或修改这项飞机选择。';
+    return '当前账户无权读取这项自动评估范围。';
   }
   if (/WAITING_INPUT|INPUT_REQUIRED|VALIDATION_FAILED/u.test(raw)) {
-    return '需要先填写有效的飞机号和评估日期。';
+    return '系统尚未形成完整评估范围；初始分析会保留未知项并继续。';
   }
-  return action === 'save'
-    ? '暂时无法保存飞机选择，请稍后重试。'
-    : '暂时无法读取飞机选择，请稍后重试；现有分析内容仍可查看。';
+  return '暂时无法读取自动评估范围；现有分析内容仍可查看。';
 }
 
 export function presentApplicabilitySelection(
@@ -59,35 +54,35 @@ export function presentApplicabilitySelection(
   if (loadState === 'loading') {
     return {
       state: 'waiting',
-      selectionLabel: '正在读取可选调整',
+      selectionLabel: '正在读取自动范围',
       sourceLabel: '正在核对来源',
-      guidance: '正在读取已保存的评估对象调整与受控来源。',
+      guidance: '正在读取 Host 冻结的评估对象、时点与受控来源。',
     };
   }
   if (loadState === 'unconfigured') {
     return {
       state: 'unknown',
-      selectionLabel: '使用系统自动目标',
+      selectionLabel: '分析时自动冻结',
       sourceLabel: '分析时由 Host 核对',
       guidance:
-        '未设置手动调整；初始分析仍会由 Host 自动冻结受控评估对象和时点，无需工程师确认。',
+        '当前尚未形成冻结范围；初始分析开始时由 Host 自动确定，无需工程师输入或确认。',
     };
   }
   if (loadState === 'error') {
     return {
       state: 'error',
-      selectionLabel: '可选调整状态未知',
+      selectionLabel: '自动范围状态未知',
       sourceLabel: '来源状态未知',
       guidance:
-        '可选调整暂时无法读取；初始分析仍按 Host 冻结目标运行，现有分析内容可继续查看。',
+        '自动范围暂时无法读取；初始分析继续保持诚实未知项，现有分析内容仍可查看。',
     };
   }
   if (!selection) {
     return {
       state: 'unknown',
-      selectionLabel: '未读取到手动调整',
+      selectionLabel: '未读取到冻结范围',
       sourceLabel: '来源状态未知',
-      guidance: '当前没有可展示的手动调整读回。',
+      guidance: '当前没有可展示的 Host 冻结范围。',
     };
   }
   if (selection.currentness === 'STALE') {
@@ -98,21 +93,22 @@ export function presentApplicabilitySelection(
         selection.frozenSourceBinding.status === 'READY'
           ? '来源已绑定'
           : '来源待补齐',
-      guidance: '事项资料已经更新；Host 将基于 current 资料重新冻结评估输入。',
+      guidance:
+        '事项资料已经更新；Host 将基于 current 资料重新冻结评估输入，无需人工重填。',
     };
   }
   if (selection.frozenSourceBinding.status === 'MISSING') {
     return {
       state: 'waiting',
-      selectionLabel: '调整已保存',
+      selectionLabel: '范围已冻结',
       sourceLabel: '来源待补齐',
-      guidance: '评估对象调整已保存，但受控来源尚未完整绑定。',
+      guidance: '评估范围已冻结，但受控来源尚未完整绑定。',
     };
   }
   return {
     state: 'success',
-    selectionLabel: '调整已同步',
+    selectionLabel: '系统范围已冻结',
     sourceLabel: '来源已绑定',
-    guidance: '评估对象调整与受控来源均已读取。',
+    guidance: 'Host 冻结的评估对象、时点与受控来源均已读取。',
   };
 }
