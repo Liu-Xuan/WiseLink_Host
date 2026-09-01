@@ -47,6 +47,140 @@
       "recordHash": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
     }
   ],
+  "astVocabulary": {
+    "schemaVersion": "wiselink.3_1.applicability_ast_vocabulary.v1",
+    "nodeTypes": ["literal", "assert", "and", "or", "not"],
+    "properties": [
+      {
+        "property": "model",
+        "valueType": "string",
+        "qualifier": "forbidden",
+        "operators": [
+          { "operator": "eq", "valueShape": "scalar" },
+          { "operator": "neq", "valueShape": "scalar" },
+          { "operator": "in", "valueShape": "scalar_array" },
+          { "operator": "not_in", "valueShape": "scalar_array" }
+        ]
+      },
+      {
+        "property": "fleetFamily",
+        "valueType": "string",
+        "qualifier": "forbidden",
+        "operators": [
+          { "operator": "eq", "valueShape": "scalar" },
+          { "operator": "neq", "valueShape": "scalar" },
+          { "operator": "in", "valueShape": "scalar_array" },
+          { "operator": "not_in", "valueShape": "scalar_array" }
+        ]
+      },
+      {
+        "property": "series",
+        "valueType": "string",
+        "qualifier": "forbidden",
+        "operators": [
+          { "operator": "eq", "valueShape": "scalar" },
+          { "operator": "neq", "valueShape": "scalar" },
+          { "operator": "in", "valueShape": "scalar_array" },
+          { "operator": "not_in", "valueShape": "scalar_array" }
+        ]
+      },
+      {
+        "property": "tailNumber",
+        "valueType": "string",
+        "qualifier": "forbidden",
+        "operators": [
+          { "operator": "eq", "valueShape": "scalar" },
+          { "operator": "neq", "valueShape": "scalar" },
+          { "operator": "in", "valueShape": "scalar_array" },
+          { "operator": "not_in", "valueShape": "scalar_array" }
+        ]
+      },
+      {
+        "property": "msn",
+        "valueType": "number",
+        "qualifier": "forbidden",
+        "operators": [
+          { "operator": "eq", "valueShape": "scalar" },
+          { "operator": "neq", "valueShape": "scalar" },
+          { "operator": "in", "valueShape": "scalar_array" },
+          { "operator": "not_in", "valueShape": "scalar_array" },
+          { "operator": "range", "valueShape": "min_max_object" },
+          { "operator": "gte", "valueShape": "scalar" },
+          { "operator": "lte", "valueShape": "scalar" }
+        ]
+      },
+      {
+        "property": "lineNumber",
+        "valueType": "number",
+        "qualifier": "forbidden",
+        "operators": [
+          { "operator": "eq", "valueShape": "scalar" },
+          { "operator": "neq", "valueShape": "scalar" },
+          { "operator": "in", "valueShape": "scalar_array" },
+          { "operator": "not_in", "valueShape": "scalar_array" },
+          { "operator": "range", "valueShape": "min_max_object" },
+          { "operator": "gte", "valueShape": "scalar" },
+          { "operator": "lte", "valueShape": "scalar" }
+        ]
+      },
+      {
+        "property": "deliveryDate",
+        "valueType": "date",
+        "qualifier": "forbidden",
+        "operators": [
+          { "operator": "eq", "valueShape": "scalar" },
+          { "operator": "neq", "valueShape": "scalar" },
+          { "operator": "in", "valueShape": "scalar_array" },
+          { "operator": "not_in", "valueShape": "scalar_array" },
+          { "operator": "range", "valueShape": "min_max_object" },
+          { "operator": "gte", "valueShape": "scalar" },
+          { "operator": "lte", "valueShape": "scalar" }
+        ]
+      },
+      {
+        "property": "sbIncorporated",
+        "valueType": "boolean",
+        "qualifier": "required",
+        "operators": [
+          { "operator": "eq", "valueShape": "scalar" },
+          { "operator": "neq", "valueShape": "scalar" }
+        ]
+      },
+      {
+        "property": "optionInstalled",
+        "valueType": "boolean",
+        "qualifier": "required",
+        "operators": [
+          { "operator": "eq", "valueShape": "scalar" },
+          { "operator": "neq", "valueShape": "scalar" }
+        ]
+      },
+      {
+        "property": "pnInstalled",
+        "valueType": "boolean",
+        "qualifier": "required",
+        "operators": [
+          { "operator": "eq", "valueShape": "scalar" },
+          { "operator": "neq", "valueShape": "scalar" }
+        ]
+      },
+      {
+        "property": "equipmentModelInstalled",
+        "valueType": "boolean",
+        "qualifier": "required",
+        "operators": [
+          { "operator": "eq", "valueShape": "scalar" },
+          { "operator": "neq", "valueShape": "scalar" }
+        ]
+      }
+    ],
+    "limits": {
+      "maxDepth": 24,
+      "maxNodes": 500,
+      "maxGroupChildren": 100,
+      "maxSetValues": 200
+    }
+  },
   "sourceExpressions": [
     {
       "expressionId": "expression-001",

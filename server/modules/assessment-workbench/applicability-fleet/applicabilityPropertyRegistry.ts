@@ -19,6 +19,8 @@ export type ApplicabilityNormalizerName =
   | 'normalizeOptionCode'
   | 'normalizePartNumber'
   | 'normalizeEquipmentModel'
+  | 'normalizeIdentifier'
+  | 'normalizeSoftwareVersion'
   | 'normalizeDateOnly'
   | null;
 
@@ -75,7 +77,31 @@ const REGISTRY: ApplicabilityPropertyDefinition[] = [
   {
     property: 'tailNumber',
     valueType: 'string',
-    normalizer: null,
+    normalizer: 'normalizeIdentifier',
+    qualifierNormalizer: null,
+    supportedOperators: [...STRING_OPS],
+    factType: 'fleet_configuration',
+  },
+  {
+    property: 'registrationNumber',
+    valueType: 'string',
+    normalizer: 'normalizeIdentifier',
+    qualifierNormalizer: null,
+    supportedOperators: [...STRING_OPS],
+    factType: 'fleet_configuration',
+  },
+  {
+    property: 'operatorCode',
+    valueType: 'string',
+    normalizer: 'normalizeIdentifier',
+    qualifierNormalizer: null,
+    supportedOperators: [...STRING_OPS],
+    factType: 'fleet_configuration',
+  },
+  {
+    property: 'variableNumber',
+    valueType: 'string',
+    normalizer: 'normalizeIdentifier',
     qualifierNormalizer: null,
     supportedOperators: [...STRING_OPS],
     factType: 'fleet_configuration',
@@ -133,6 +159,78 @@ const REGISTRY: ApplicabilityPropertyDefinition[] = [
     valueType: 'boolean',
     normalizer: null,
     qualifierNormalizer: 'normalizeEquipmentModel',
+    supportedOperators: [...BOOLEAN_OPS],
+    factType: 'fleet_configuration',
+  },
+  {
+    property: 'componentPartNumberInstalled',
+    valueType: 'boolean',
+    normalizer: null,
+    qualifierNormalizer: 'normalizePartNumber',
+    supportedOperators: [...BOOLEAN_OPS],
+    factType: 'fleet_configuration',
+  },
+  {
+    property: 'componentSerialNumberInstalled',
+    valueType: 'boolean',
+    normalizer: null,
+    qualifierNormalizer: 'normalizeIdentifier',
+    supportedOperators: [...BOOLEAN_OPS],
+    factType: 'fleet_configuration',
+  },
+  {
+    property: 'equipmentNumberInstalled',
+    valueType: 'boolean',
+    normalizer: null,
+    qualifierNormalizer: 'normalizeIdentifier',
+    supportedOperators: [...BOOLEAN_OPS],
+    factType: 'fleet_configuration',
+  },
+  {
+    property: 'finPositionOccupied',
+    valueType: 'boolean',
+    normalizer: null,
+    qualifierNormalizer: 'normalizeIdentifier',
+    supportedOperators: [...BOOLEAN_OPS],
+    factType: 'fleet_configuration',
+  },
+  {
+    property: 'softwarePartNumberInstalled',
+    valueType: 'boolean',
+    normalizer: null,
+    qualifierNormalizer: 'normalizePartNumber',
+    supportedOperators: [...BOOLEAN_OPS],
+    factType: 'fleet_configuration',
+  },
+  {
+    property: 'softwareSerialNumberInstalled',
+    valueType: 'boolean',
+    normalizer: null,
+    qualifierNormalizer: 'normalizeIdentifier',
+    supportedOperators: [...BOOLEAN_OPS],
+    factType: 'fleet_configuration',
+  },
+  {
+    property: 'softwareVersion',
+    valueType: 'string',
+    normalizer: 'normalizeSoftwareVersion',
+    qualifierNormalizer: 'normalizeIdentifier',
+    supportedOperators: [...STRING_OPS],
+    factType: 'fleet_configuration',
+  },
+  {
+    property: 'modificationEmbodied',
+    valueType: 'boolean',
+    normalizer: null,
+    qualifierNormalizer: 'normalizeIdentifier',
+    supportedOperators: [...BOOLEAN_OPS],
+    factType: 'fleet_configuration',
+  },
+  {
+    property: 'repairPresent',
+    valueType: 'boolean',
+    normalizer: null,
+    qualifierNormalizer: 'normalizeIdentifier',
     supportedOperators: [...BOOLEAN_OPS],
     factType: 'fleet_configuration',
   },

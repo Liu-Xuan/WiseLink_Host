@@ -298,7 +298,7 @@ export class CanonicalHostOpenClawMcpService {
       {
         title: '提交飞机号适用性提取候选',
         description:
-          '仅接受专属 CANDIDATE applicability 输出与完整 fenced ResultEnvelope。Host 校验 exact DV/revision/SourceRef/aircraft/asOf/fact versions/actual runtime provenance，再调用唯一 FleetMasterData+Kleene evaluator，实际字节 readback 后 CAS 写回；FALSE 永远是 NOT_APPLICABLE/pass=false，只有 Host 缺失受控事实可形成 UNKNOWN/WAITING_INPUT。',
+          '仅接受由官方 Skill runApplicabilityEvaluation 按 Host modelInput.astVocabulary 组装的专属 CANDIDATE 与 fenced ResultEnvelope；factsConsidered 必须精确等于 Host controlledFacts[].factId。业务校验拒绝后不得重提 commit。Host 校验 exact DV/revision/SourceRef/aircraft/asOf/fact versions/actual runtime provenance，再调用唯一 FleetMasterData+Kleene evaluator，实际字节 readback 后 CAS 写回；FALSE 永远是 NOT_APPLICABLE/pass=false，只有 Host 缺失受控事实可形成 UNKNOWN/WAITING_INPUT。',
         inputSchema: z
           .object({
             attemptRef,

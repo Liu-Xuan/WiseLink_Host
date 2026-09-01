@@ -65,6 +65,14 @@ describe('CanonicalHostOpenClawApplicabilityService', () => {
     ]);
     expect(task.controlledAircraft?.assetId).toBe('ASSET-1');
     expect(task.controlledFacts.map((fact) => fact.factId)).toEqual(['FACT-1']);
+    expect(
+      task.astVocabulary.properties
+        .find((entry) => entry.property === 'lineNumber')
+        ?.operators,
+    ).toContainEqual({
+      operator: 'range',
+      valueShape: 'min_max_object',
+    });
     expect(JSON.stringify(task)).not.toContain('ASSET-OTHER');
     expect(JSON.stringify(task)).not.toContain('drive-file-token');
     expect(JSON.stringify(task)).not.toContain('tenant-1');

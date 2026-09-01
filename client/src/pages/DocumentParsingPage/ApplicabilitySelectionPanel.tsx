@@ -96,7 +96,7 @@ const ApplicabilitySelectionPanel: FC<ApplicabilitySelectionPanelProps> = ({
     const normalizedAircraftIdentifier: string = aircraftIdentifier.trim();
     const normalizedAsOf: string = asOf.trim();
     if (!normalizedAircraftIdentifier || !normalizedAsOf) {
-      setErrorDetail('飞机号与评估日期必须由工程师明确填写。');
+      setErrorDetail('手动调整评估对象时，飞机号与评估日期均需填写。');
       setSuccessMessage(null);
       return;
     }
@@ -122,7 +122,7 @@ const ApplicabilitySelectionPanel: FC<ApplicabilitySelectionPanelProps> = ({
       setAircraftIdentifier(readback.aircraftIdentifier);
       setAsOf(readback.asOf);
       setLoadState('ready');
-      setSuccessMessage('已保存并重新读取当前选择。');
+      setSuccessMessage('已保存并重新读取评估对象调整。');
     } catch (reason) {
       if (requestEpochRef.current !== epoch) return;
       setErrorDetail(presentApplicabilitySelectionError(reason, 'save'));
@@ -166,7 +166,7 @@ const ApplicabilitySelectionPanel: FC<ApplicabilitySelectionPanelProps> = ({
     <section
       id="workspace-assessment"
       className="applicability-selection-panel"
-      aria-label="飞机适用性选择"
+      aria-label="评估对象与时点"
       aria-busy={isBusy}
     >
       <header className="applicability-selection-header">
@@ -175,10 +175,10 @@ const ApplicabilitySelectionPanel: FC<ApplicabilitySelectionPanelProps> = ({
             <Plane />
           </span>
           <div>
-            <span>工程师受控输入</span>
-            <h2>飞机适用性选择</h2>
+            <span>评估范围</span>
+            <h2>评估对象与时点</h2>
             <p>
-              仅保存工程师明确输入的飞机号与评估时点；浏览器不会生成飞机或构型事实。
+              初始分析由 Host 自动冻结受控对象与评估时点；仅在需要切换对象或回溯时手动调整。
             </p>
           </div>
         </div>
@@ -204,12 +204,12 @@ const ApplicabilitySelectionPanel: FC<ApplicabilitySelectionPanelProps> = ({
             {presentation.sourceLabel}
           </Badge>
           <Badge variant="outline">
-            表单 ·{' '}
+            可选调整 ·{' '}
             {draftMatchesReadback
               ? '与读回一致'
               : draftPresent
                 ? '未提交编辑'
-                : '等待输入'}
+                : '未设置'}
           </Badge>
         </div>
       </header>
@@ -223,7 +223,7 @@ const ApplicabilitySelectionPanel: FC<ApplicabilitySelectionPanelProps> = ({
       <div className="applicability-selection-controls">
         <label htmlFor="applicability-aircraft-identifier">
           <span>
-            <Plane aria-hidden="true" /> 飞机号
+            <Plane aria-hidden="true" /> 飞机号 / 资产标识
           </span>
           <Input
             id="applicability-aircraft-identifier"
@@ -232,7 +232,7 @@ const ApplicabilitySelectionPanel: FC<ApplicabilitySelectionPanelProps> = ({
             maxLength={64}
             autoComplete="off"
             disabled={isBusy}
-            placeholder="输入受控飞机号"
+            placeholder="需要调整时输入受控标识"
             onChange={handleAircraftIdentifierChange}
             onKeyDown={handleInputKeyDown}
           />
@@ -255,7 +255,7 @@ const ApplicabilitySelectionPanel: FC<ApplicabilitySelectionPanelProps> = ({
             onKeyDown={handleInputKeyDown}
           />
           <small id="applicability-as-of-help">
-            评估日期用于冻结本次查询时点；资料版本由系统单独校验。
+            仅用于调整本次查询范围；资料版本与构型事实始终由 Host 核验。
           </small>
         </label>
         <div className="applicability-selection-actions">
@@ -269,7 +269,7 @@ const ApplicabilitySelectionPanel: FC<ApplicabilitySelectionPanelProps> = ({
               className={isLoading ? 'applicability-selection-spin' : ''}
               aria-hidden="true"
             />
-            读取已保存选择
+            读取已保存调整
           </Button>
           <Button
             type="button"
@@ -277,7 +277,7 @@ const ApplicabilitySelectionPanel: FC<ApplicabilitySelectionPanelProps> = ({
             onClick={() => void saveSelection()}
           >
             <Save aria-hidden="true" />
-            {saving ? '提交并读回中…' : '提交并读回'}
+            {saving ? '保存并读回中…' : '保存可选调整'}
           </Button>
         </div>
       </div>
@@ -317,10 +317,10 @@ const ApplicabilitySelectionPanel: FC<ApplicabilitySelectionPanelProps> = ({
             <span>查看来源绑定说明</span>
           </summary>
           <div className="applicability-selection-readback-content">
-            <h3>当前选择与受控来源</h3>
+            <h3>当前评估对象与受控来源</h3>
             <dl>
               <div>
-                <dt>飞机号</dt>
+                <dt>飞机号 / 资产标识</dt>
                 <dd>{selection.aircraftIdentifier}</dd>
               </div>
               <div>
@@ -328,7 +328,7 @@ const ApplicabilitySelectionPanel: FC<ApplicabilitySelectionPanelProps> = ({
                 <dd>{selection.asOf}</dd>
               </div>
               <div>
-                <dt>选择状态</dt>
+                <dt>调整状态</dt>
                 <dd>{presentation.selectionLabel}</dd>
               </div>
               <div>
@@ -349,7 +349,8 @@ const ApplicabilitySelectionPanel: FC<ApplicabilitySelectionPanelProps> = ({
             </dl>
             <p>
               {presentation.guidance}
-              这里仅展示工程师输入及来源绑定，不推断飞机适用性，也不构成正式工程结论。
+              这里仅管理评估对象和时点，不确认适用性；飞机、部件、设备与软件构型条件由 Host
+              的受控事实和三值求值器自动判断。
             </p>
           </div>
         </details>

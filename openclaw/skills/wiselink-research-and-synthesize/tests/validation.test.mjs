@@ -166,6 +166,21 @@ test('runs real applicability AST extraction through dedicated begin/commit', as
   );
 });
 
+test('rejects an operator outside the Host-frozen applicability vocabulary before commit', async () => {
+  const input = await readJson(APPLICABILITY_TASK_FIXTURE_URL);
+  const astCandidate = await readJson(APPLICABILITY_AST_FIXTURE_URL);
+  astCandidate.expressions[0].expressionAst = {
+    type: 'assert',
+    property: 'lineNumber',
+    operator: 'between',
+    value: [100, 200],
+  };
+  assert.throws(
+    () => validatePayload('applicability-pair', { input, output: astCandidate }),
+    /APPLICABILITY_AST_ASSERT_UNSUPPORTED/u,
+  );
+});
+
 test('propagates only Host-frozen applicability missing input without a model call', async () => {
   const input = await readJson(APPLICABILITY_TASK_FIXTURE_URL);
   const missingInputs = [

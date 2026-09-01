@@ -150,10 +150,20 @@ CAS；Skill 不声称这些步骤由模型完成。8. commit 响应未知时只�
   DocumentVersion、frozen.2 SourceExpressions/SourceRefs、current bilingual SourceUnits、飞机号/asOf 与窄受控
   Fleet facts。
 - begin 后只使用 Host `modelInput`；TaskEnvelope 中的 tenant/workItem/lease 等控制面字段不进入模型。
+- `aircraftNumber/asOf` 是 Host 冻结的评估对象与时点，不是工程师对适用性的确认。初始分析可由 Host 自动冻结
+  current 受控目标；前端手动输入仅用于切换目标或回溯时点，缺少手动选择不得被解释为“尚未确认适用性”。
+- `modelInput.astVocabulary` 是本 attempt 唯一合法 AST 词表。属性、operator、qualifier、value shape 与复杂度必须
+  逐项遵守；例如数值区间只能使用词表声明的 `range` + `{min,max}`，不得猜测 `between` 或其他近义写法。
+- 适用性条件不限于飞机号或生产线号。只要词表已发布且 Host 提供 current 受控事实，可表达注册号/MSN/line/
+  variable number、部件 P/N/S/N、设备号/FIN、软件 P/N/S/N/version、改装与修理状态；缺失 qualifier 对应事实时
+  必须保持 UNKNOWN/WAITING_INPUT，不得从文档原文或常识补成 TRUE/FALSE。
 - 模型只返回 `applicability_ast_candidate.v1` 的 `expressionId + sourceRefIds + expressionAst`；不返回
   `applicabilityLevel`、`contentRef`、飞机匹配结论或 current。
 - Skill 用 Host modelInput 组装专属 `applicability_candidate.v1`；Host 才负责 target level/contentRef、唯一
   FleetMasterData、Kleene evaluator、ResultGate、实际字节 readback、CAS/current。
+- Applicability 必须走本 Skill 的 `runApplicabilityEvaluation` 编排，不得手工拼 ResultEnvelope；
+  `factsConsidered` 只可由 `modelInput.controlledFacts[].factId` 派生。业务校验拒绝后停止，不得重提 commit；只有
+  明确的传输响应丢失才按既有只读 status recovery 路径恢复。
 - Host 冻结 `hostResolvedMissingInputs` 时不调用模型，只原样提交 WAITING_INPUT；不得补造、删减或改写 missing/
   conflict。
 - Applicability 的 WAITING_INPUT 只终结当前 applicability ActionAttempt，不终结整个 INITIAL_ANALYSIS。保持

@@ -1,4 +1,5 @@
 import {
+  applicabilityAstVocabulary,
   applicabilityRuntimePolicy,
   parseApplicabilityCandidate,
   validateApplicabilityCandidateBinding,
@@ -6,6 +7,45 @@ import {
 } from '../../server/modules/canonical-host/canonical-host-openclaw-applicability.contract';
 
 describe('canonical Host OpenClaw applicability contract', () => {
+  it('publishes the exact registry grammar and complexity limits to the model', () => {
+    const vocabulary = applicabilityAstVocabulary();
+    expect(vocabulary.limits).toEqual({
+      maxDepth: 24,
+      maxNodes: 500,
+      maxGroupChildren: 100,
+      maxSetValues: 200,
+    });
+    expect(
+      vocabulary.properties
+        .find((entry) => entry.property === 'lineNumber')
+        ?.operators,
+    ).toContainEqual({
+      operator: 'range',
+      valueShape: 'min_max_object',
+    });
+    expect(
+      vocabulary.properties
+        .find((entry) => entry.property === 'lineNumber')
+        ?.operators.some((entry) => entry.operator === 'between'),
+    ).toBe(false);
+    expect(
+      vocabulary.properties.find(
+        (entry) => entry.property === 'componentSerialNumberInstalled',
+      ),
+    ).toMatchObject({
+      valueType: 'boolean',
+      qualifier: 'required',
+    });
+    expect(
+      vocabulary.properties.find(
+        (entry) => entry.property === 'softwareVersion',
+      ),
+    ).toMatchObject({
+      valueType: 'string',
+      qualifier: 'required',
+    });
+  });
+
   it('accepts an exact source-bound candidate using the registered AST vocabulary', () => {
     const task = applicabilityTask();
     const candidate = parseApplicabilityCandidate(candidateFor(task));
@@ -204,6 +244,7 @@ function applicabilityTask(): ApplicabilityTaskContract {
     },
     controlledAircraft: null,
     controlledFacts: [],
+    astVocabulary: applicabilityAstVocabulary(),
     sourceExpressions: [
       {
         expressionId: 'EXP-1',

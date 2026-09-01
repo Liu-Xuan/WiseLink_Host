@@ -158,7 +158,11 @@ candidate ID 时只能原样回显，不能生成 Unified URN 映射。
 
 `begin_applicability_evaluation` 只接收 opaque `applicabilityContextRef + requestId`。Host 返回的专属 modelInput
 绑定 current DV/frozen.2、current bilingual、source expressions/refs、飞机号/asOf、窄受控 aircraft/facts 和
-runtimePolicy。
+runtimePolicy，并包含本 attempt 唯一合法的 `astVocabulary`（属性、operator、qualifier、value shape、节点与
+集合上限）。模型不得根据自然语言猜操作符；数值区间只能按词表使用 `range:{min,max}`，集合使用 `in:[...]`。
+飞机号/asOf 是 Host 冻结的评估目标，不是人工适用性确认；初始分析可使用 Host 自动冻结目标。词表可覆盖飞机身份、
+MSN/line/variable number、部件或软件 P/N/S/N、设备号/FIN、软件版本、改装与修理状态，但模型只能使用本 attempt
+实际发布的属性与 controlledFacts；缺少事实时保持 UNKNOWN/WAITING_INPUT。
 
 模型输出只含：
 
@@ -169,7 +173,9 @@ expressions[{expressionId,sourceRefIds,extractionStatus=extracted,expressionAst}
 
 Skill 从 Host modelInput 组装 `wiselink.3_1.applicability_candidate.v1`；模型不输出 target level/contentRef、Fleet
 decision 或 current。Host commit 使用唯一 FleetMasterData + Kleene evaluator，并负责 ResultGate、actual bytes、
-CAS/current。Host 已冻结 missing input 时，ResultEnvelope 为 WAITING_INPUT、`modelOutput=null`，missing 原样传播。
+CAS/current。Applicability 必须通过 `runApplicabilityEvaluation` 组装 ResultEnvelope；`factsConsidered` 精确取
+`controlledFacts[].factId`，业务拒绝不得重复 commit。Host 已冻结 missing input 时，ResultEnvelope 为
+WAITING_INPUT、`modelOutput=null`，missing 原样传播。
 该 WAITING_INPUT 只终结 applicability ActionAttempt；INITIAL_ANALYSIS 继续使用 Host 后续 begin 返回的受控输入运行
 Dynamic N/N、Job-Aid 与 overall，UNKNOWN 不得改写成 TRUE/FALSE。
 
