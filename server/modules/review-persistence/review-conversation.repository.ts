@@ -290,10 +290,14 @@ export class ReviewConversationRepository {
           current_setting('row_security', TRUE) IN ('on', 'true', '1') AS
             row_security_active,
           (
-            to_regclass('review_conversation') IS NOT NULL
-            AND to_regclass('review_turn') IS NOT NULL
-            AND to_regclass('engineer_supplied_input') IS NOT NULL
-            AND to_regclass('identity_subject_mapping') IS NOT NULL
+            to_regclass('review_conversation') =
+              to_regclass('public.review_conversation')
+            AND to_regclass('review_turn') =
+              to_regclass('public.review_turn')
+            AND to_regclass('engineer_supplied_input') =
+              to_regclass('public.engineer_supplied_input')
+            AND to_regclass('identity_subject_mapping') =
+              to_regclass('public.identity_subject_mapping')
           ) AS expected_schema_resolved,
           EXISTS (
             SELECT 1
@@ -302,6 +306,13 @@ export class ReviewConversationRepository {
               AND candidate_policy.policyname =
                 'review_conversation_authenticated_select'
               AND 'authenticated' = ANY(candidate_policy.roles)
+              AND to_regclass(
+                format(
+                  '%I.%I',
+                  candidate_policy.schemaname,
+                  candidate_policy.tablename
+                )
+              ) = to_regclass('review_conversation')
           ) AS review_select_policy_present,
           COALESCE(
             (
