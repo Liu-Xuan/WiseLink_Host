@@ -29,6 +29,7 @@ test(
     try {
       await resetDatabase(sql);
       await seedC1Turn(sql);
+      await assertOpenClawActorScopedBinding(databaseUrl);
       const repository = new ReviewConversationRepository(drizzle(sql));
       const aggregate = await repository.loadById('RC-C2');
       assert.ok(aggregate);
@@ -154,6 +155,25 @@ async function resetDatabase(sql) {
   } finally {
     migrationSql.release();
   }
+  await sql.unsafe(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'review_c2_runtime')
+      THEN CREATE ROLE review_c2_runtime LOGIN PASSWORD 'review-c2-password';
+      END IF;
+    END $$
+  `);
+  await sql.unsafe('GRANT authenticated TO review_c2_runtime');
+  await sql.unsafe('GRANT USAGE ON SCHEMA public TO authenticated');
+  await sql.unsafe(`
+    GRANT SELECT ON TABLE
+      identity_subject_mapping,
+      work_item,
+      review_conversation,
+      review_turn,
+      engineer_supplied_input
+    TO authenticated
+  `);
 }
 
 async function seedC1Turn(sql) {
@@ -186,6 +206,54 @@ async function seedC1Turn(sql) {
     actorId: 'actor-C2',
     hash: 'a'.repeat(64),
   });
+}
+
+async function assertOpenClawActorScopedBinding(value) {
+  const runtimeUrl = new URL(value);
+  runtimeUrl.username = 'review_c2_runtime';
+  runtimeUrl.password = 'review-c2-password';
+  const runtimeSql = postgres(runtimeUrl.toString(), { max: 1 });
+  try {
+    const [identity] = await runtimeSql`
+      SELECT
+        current_user AS "currentUser",
+        rolsuper AS "superuser",
+        rolbypassrls AS "bypassRls"
+      FROM pg_roles
+      WHERE rolname = current_user
+    `;
+    assert.deepEqual(identity, {
+      currentUser: 'review_c2_runtime',
+      superuser: false,
+      bypassRls: false,
+    });
+
+    const repository = new ReviewConversationRepository(drizzle(runtimeSql));
+    const binding = await repository.loadOpenClawTurnBinding({
+      reviewConversationId: 'RC-C2',
+      requestId: 'request-C2',
+      tenantId: 'tenant-C2',
+      actorId: 'actor-C2',
+      workItemId: 'WI-C2',
+    });
+    assert.ok(binding);
+    assert.equal(binding.conversation.reviewConversationId, 'RC-C2');
+    assert.equal(binding.turn.reviewTurnId, 'RT-C2');
+    assert.equal(binding.turn.assistantCandidate, null);
+
+    assert.equal(
+      await repository.loadOpenClawTurnBinding({
+        reviewConversationId: 'RC-C2',
+        requestId: 'request-C2',
+        tenantId: 'tenant-C2',
+        actorId: 'actor-other',
+        workItemId: 'WI-C2',
+      }),
+      null,
+    );
+  } finally {
+    await runtimeSql.end({ timeout: 5 });
+  }
 }
 
 async function insertTurn(sql, turnId, inputId, requestId) {

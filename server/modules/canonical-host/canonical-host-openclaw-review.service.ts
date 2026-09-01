@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import type {
   CanonicalEngineerReviewPageContext,
@@ -106,6 +106,8 @@ export interface CommitReviewTurnResult {
 
 @Injectable()
 export class CanonicalHostOpenClawReviewService {
+  private readonly logger = new Logger(CanonicalHostOpenClawReviewService.name);
+
   constructor(
     private readonly conversations: ReviewConversationRepository,
     private readonly workItems: MiaodaWorkItemRepository,
@@ -133,7 +135,10 @@ export class CanonicalHostOpenClawReviewService {
       scope.workItemId,
       scope.tenantId,
     );
-    if (!scopedWorkItem?.projection) throw reviewNotFound();
+    if (!scopedWorkItem?.projection) {
+      this.warnBeginNotFound('WORK_ITEM_SCOPE_NOT_VISIBLE');
+      throw reviewNotFound();
+    }
     const binding = await this.requiredConversationTurn(
       reviewConversationRef,
       requestId,
@@ -303,8 +308,23 @@ export class CanonicalHostOpenClawReviewService {
       actorId,
       workItemId: scope.workItemId,
     });
-    if (!binding || binding.turn.assistantCandidate) throw reviewNotFound();
+    if (!binding) throw reviewNotFound();
+    if (binding.turn.assistantCandidate) {
+      this.warnBeginNotFound('CANDIDATE_ALREADY_PRESENT');
+      throw reviewNotFound();
+    }
     return binding;
+  }
+
+  private warnBeginNotFound(
+    reason: 'WORK_ITEM_SCOPE_NOT_VISIBLE' | 'CANDIDATE_ALREADY_PRESENT',
+  ): void {
+    this.logger.warn(
+      JSON.stringify({
+        event: 'OPENCLAW_REVIEW_BEGIN_NOT_FOUND',
+        reason,
+      }),
+    );
   }
 
   private async requiredCurrentWorkItem(

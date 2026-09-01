@@ -1,7 +1,12 @@
+import { Logger } from '@nestjs/common';
+
 import { ReviewConversationRepository } from '../../server/modules/review-persistence/review-conversation.repository';
 
 describe('ReviewConversationRepository OpenClaw actor context', () => {
+  afterEach(() => jest.restoreAllMocks());
+
   it('sets the Host-owned actor inside one transaction before any Review read', async () => {
+    const warning = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
     const executor = {
       execute: jest.fn(async () => [{ actorId: 'actor-1' }]),
       select: jest.fn(() => ({
@@ -30,6 +35,15 @@ describe('ReviewConversationRepository OpenClaw actor context', () => {
     expect(executor.select).toHaveBeenCalledTimes(1);
     expect(executor.execute.mock.invocationCallOrder[0]).toBeLessThan(
       executor.select.mock.invocationCallOrder[0],
+    );
+    expect(warning).toHaveBeenCalledWith(
+      JSON.stringify({
+        event: 'OPENCLAW_REVIEW_BINDING_NOT_FOUND',
+        reason: 'CONVERSATION_NOT_VISIBLE',
+      }),
+    );
+    expect(warning.mock.calls.flat().join(' ')).not.toMatch(
+      /actor-1|tenant-1|WI-1|RC-1|request-1/u,
     );
   });
 
