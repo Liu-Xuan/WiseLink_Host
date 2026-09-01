@@ -23,7 +23,6 @@ import {
 } from 'lucide-react';
 
 import { useWlTheme } from '@client/src/app/providers/ThemeProvider';
-import VisualModeControl from '@client/src/components/VisualModeControl';
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -736,7 +735,6 @@ export default function WorkbenchShell({
               <kbd>⌘K</kbd>
             </button>
           ) : null}
-          <VisualModeControl />
           {!isCompact ? (
             <>
               <button

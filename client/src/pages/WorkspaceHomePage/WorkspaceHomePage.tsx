@@ -40,6 +40,11 @@ import { humanState } from '@client/src/features/navigation/treeMappers';
 import { Button } from '@client/src/components/ui/button';
 import { Input } from '@client/src/components/ui/input';
 import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSessionProvider';
+import { useCurrentObjectContext } from '@client/src/app/providers/CurrentObjectContextProvider';
+import {
+  buildCurrentObjectContext,
+  buildEngineeringQuicklook,
+} from '@client/src/features/navigation/contextual-navigation';
 import {
   forgetRecentWorkItem,
   readRecentWorkItems,
@@ -57,6 +62,7 @@ import {
   parseActionLabel,
 } from './reparse-completed-work-item';
 import { createCanonicalDocumentParsingRouteHandoff } from '../DocumentParsingPage/document-parsing-load';
+import EngineeringQuicklook from './EngineeringQuicklook';
 
 type LibrarySelection = string;
 
@@ -137,10 +143,6 @@ function phaseTone(
   return 'muted';
 }
 
-function relationToneClass(tone: RelationNode['tone']): string {
-  return `library-graph-node--${tone}`;
-}
-
 function candidateStepCopy(
   label: string,
   summary: string,
@@ -189,8 +191,11 @@ function candidateStepCopy(
 
 export default function WorkspaceHomePage() {
   const { authenticationRequired, sessionGeneration } = useCurrentUserSession();
+  const { publishCurrentObject } = useCurrentObjectContext();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const deepLinkedWorkItemId: string =
+    searchParams.get('workItemId')?.trim() ?? '';
   const [workItemId, setWorkItemId] = useState<string>('');
   const [pageData, setPageData] =
     useState<CanonicalDocumentParsingPageResponse | null>(null);
@@ -213,7 +218,6 @@ export default function WorkspaceHomePage() {
   const [retryError, setRetryError] = useState<string | null>(null);
 
   useEffect(() => {
-    const deepLinkedWorkItemId = searchParams.get('workItemId')?.trim() ?? '';
     // 深链标识仅用于路由读取，不回显到用户输入框。
     setWorkItemId('');
     let cancelled = false;
@@ -286,8 +290,8 @@ export default function WorkspaceHomePage() {
     };
   }, [
     authenticationRequired,
+    deepLinkedWorkItemId,
     refreshRevision,
-    searchParams,
     sessionGeneration,
   ]);
 
@@ -298,6 +302,24 @@ export default function WorkspaceHomePage() {
   const visibleDevelopmentIntakeAvailable =
     sessionDataVisible && developmentIntakeAvailable;
   const projection = data?.workItem ?? null;
+  const currentObject = useMemo(
+    () =>
+      data
+        ? buildCurrentObjectContext(
+            data,
+            treeMode === 'matter' ? 'MATTER' : 'DOCUMENT',
+          )
+        : null,
+    [data, treeMode],
+  );
+  const engineeringQuicklook = useMemo(
+    () => (data ? buildEngineeringQuicklook(data) : null),
+    [data],
+  );
+
+  useEffect(() => {
+    publishCurrentObject(currentObject);
+  }, [currentObject, publishCurrentObject]);
   const phaseLabel = projection
     ? PHASE_LABELS[projection.phase]
     : '尚未选择工程事项';
@@ -373,18 +395,11 @@ export default function WorkspaceHomePage() {
           },
         }
       : undefined;
-    if (!targetNodeOverride) {
-      navigate(
-        `/work-items/${encodeURIComponent(projection.workItemId)}`,
-        navigationOptions,
-      );
-      return;
-    }
     const selectedNode: CanonicalLibraryIndexNode | undefined = nodes.find(
       (node: CanonicalLibraryIndexNode) => node.id === selection,
     );
     const targetNode: string =
-      targetNodeOverride ?? selectedNode?.targetNode ?? 'assessment';
+      targetNodeOverride ?? selectedNode?.targetNode ?? 'reader';
     const targetTab: string =
       targetNode === 'document'
         ? 'source'
@@ -399,39 +414,35 @@ export default function WorkspaceHomePage() {
 
   function handleTreeModeChange(mode: NavigatorMode): void {
     setTreeMode(mode);
-    // 深链同步：仅替换 URL 查询参数，不触发数据重读
-    const params = new URLSearchParams(window.location.search);
+    const params = new URLSearchParams(searchParams);
     params.set('mode', mode);
-    window.history.replaceState(
-      null,
-      '',
-      `${window.location.pathname}?${params.toString()}`,
-    );
+    setSearchParams(params, { replace: true });
   }
 
   function handleTreeSelect(node: NavigationNodeView): void {
     setSelection(node.id);
-    if (
-      (node.kind === 'matter' ||
-        node.kind === 'document' ||
-        node.kind === 'version') &&
-      node.targetNode
-    ) {
-      navigate(
-        `/work-items/${encodeURIComponent(projection!.workItemId)}`,
-        data
-          ? {
-              state: {
-                documentParsingHandoff:
-                  createCanonicalDocumentParsingRouteHandoff(
-                    data,
-                    sessionGeneration,
-                  ),
-              },
-            }
-          : undefined,
-      );
-    }
+  }
+
+  function openReview(): void {
+    openWorkbench('review');
+  }
+
+  function locateQuicklookEvidence(sourceRefId: string): void {
+    if (!projection || !sourceRefId) return;
+    navigate(
+      `/work-items/${encodeURIComponent(projection.workItemId)}/documents?node=reader&tab=reader&readerMode=source&sourceRef=${encodeURIComponent(sourceRefId)}`,
+      data
+        ? {
+            state: {
+              documentParsingHandoff:
+                createCanonicalDocumentParsingRouteHandoff(
+                  data,
+                  sessionGeneration,
+                ),
+            },
+          }
+        : undefined,
+    );
   }
 
   function refresh(): void {
@@ -485,58 +496,72 @@ export default function WorkspaceHomePage() {
           </p>
           <h1>资料库</h1>
           <p className="library-home-lede">
-            浏览受控资料与最近事项。打开资料后，先查看综合候选意见，再进入原文与证据复核。
+            在同一页面浏览文档族与工程事项，并同步查看当前工程快览。
           </p>
+        </div>
+        <div className="library-home-status" aria-label="当前资料库视图">
+          <span>{treeMode === 'document' ? '文档族' : '工程事项'}</span>
+          <strong>{visibleRecentWorkItems.length} 项最近资料</strong>
         </div>
       </header>
 
-      <div
-        className={`library-entry-grid${visibleDevelopmentIntakeAvailable ? ' has-intake' : ''}`}
-      >
-        <section
-          className="library-query-band"
-          aria-labelledby="library-query-title"
+      <details className="library-entry-disclosure" id="library-search">
+        <summary>
+          <span>
+            <Search aria-hidden="true" /> 打开或受理资料
+          </span>
+          <small>粘贴已有链接，或选择 PDF 创建工程事项</small>
+        </summary>
+        <div
+          className={`library-entry-grid${visibleDevelopmentIntakeAvailable ? ' has-intake' : ''}`}
         >
-          <div>
-            <span className="library-section-label">已有工程事项</span>
-            <h2 id="library-query-title">打开已有资料</h2>
-            <p className="library-query-note">
-              粘贴 WiseLink 工作链接，只按当前用户权限读取，不会改变现有结果。
-            </p>
-          </div>
-          <form className="library-query-form" onSubmit={handleSubmit}>
-            <label htmlFor="library-work-item-id">已有工作链接</label>
-            <div className="library-query-row">
-              <div className="library-query-input">
-                <Search aria-hidden="true" />
-                <Input
-                  id="library-work-item-id"
-                  value={workItemId}
-                  onChange={(event) => setWorkItemId(event.target.value)}
-                  placeholder="粘贴已有工作链接"
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-              </div>
-              <Button
-                type="submit"
-                size="lg"
-                disabled={!workItemId.trim() || loading}
-                data-ai-section-type="button"
-              >
-                {loading ? (
-                  <LoaderCircle className="library-spin" aria-hidden="true" />
-                ) : (
-                  <ArrowRight aria-hidden="true" />
-                )}
-                {loading ? '读取中…' : '定位资料'}
-              </Button>
+          <section
+            className="library-query-band"
+            aria-labelledby="library-query-title"
+          >
+            <div>
+              <span className="library-section-label">已有工程事项</span>
+              <h2 id="library-query-title">打开已有资料</h2>
+              <p className="library-query-note">
+                粘贴 WiseLink 工作链接，只按当前用户权限读取，不会改变现有结果。
+              </p>
             </div>
-          </form>
-        </section>
+            <form className="library-query-form" onSubmit={handleSubmit}>
+              <label htmlFor="library-work-item-id">已有工作链接</label>
+              <div className="library-query-row">
+                <div className="library-query-input">
+                  <Search aria-hidden="true" />
+                  <Input
+                    id="library-work-item-id"
+                    value={workItemId}
+                    onChange={(event) => setWorkItemId(event.target.value)}
+                    placeholder="粘贴已有工作链接"
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                </div>
+                <Button
+                  type="submit"
+                  size="lg"
+                  disabled={!workItemId.trim() || loading}
+                  data-ai-section-type="button"
+                >
+                  {loading ? (
+                    <LoaderCircle className="library-spin" aria-hidden="true" />
+                  ) : (
+                    <ArrowRight aria-hidden="true" />
+                  )}
+                  {loading ? '读取中…' : '定位资料'}
+                </Button>
+              </div>
+            </form>
+          </section>
 
-        {visibleDevelopmentIntakeAvailable ? <HostedDevelopmentIntake /> : null}
-      </div>
+          {visibleDevelopmentIntakeAvailable ? (
+            <HostedDevelopmentIntake />
+          ) : null}
+        </div>
+      </details>
 
       {error ? (
         <div className="library-alert" role="alert">
@@ -596,7 +621,7 @@ export default function WorkspaceHomePage() {
                                 type="button"
                                 onClick={() =>
                                   navigate(
-                                    `/work-items/${encodeURIComponent(reference.workItemId)}`,
+                                    `/library?workItemId=${encodeURIComponent(reference.workItemId)}&mode=${treeMode}`,
                                   )
                                 }
                               >
@@ -863,74 +888,18 @@ export default function WorkspaceHomePage() {
             )}
           </section>
 
-          {projection || loading ? (
-            <aside className="library-graph-panel" aria-label="关联文档图谱">
-              <div className="library-panel-heading">
-                <div>
-                  <span className="library-section-label">资料关系</span>
-                  <h2>关联资料</h2>
-                </div>
-                <Network aria-hidden="true" />
-              </div>
-              {!projection ? (
-                loading ? (
-                  <div
-                    className="library-graph-skeleton"
-                    role="status"
-                    aria-live="polite"
-                  >
-                    <Network aria-hidden="true" />
-                    <h3>正在读取关系图谱…</h3>
-                    <p>最新资料返回后将展示来源链。</p>
-                  </div>
-                ) : (
-                  <div className="library-graph-empty">
-                    <Network aria-hidden="true" />
-                    <h3>等待资料关系</h3>
-                    <p>
-                      读取事项后展示来源资料、版本、解析结果和候选状态之间的关系。
-                    </p>
-                  </div>
-                )
-              ) : relations.length === 0 ? (
-                <div className="library-graph-empty">
-                  <Network aria-hidden="true" />
-                  <h3>当前无关联资料</h3>
-                  <span className="library-unavailable-badge">暂无数据</span>
-                  <p>当前未返回关联文档关系。</p>
-                </div>
-              ) : (
-                <>
-                  <div className="library-graph-flow">
-                    {relations.map((node, index) => {
-                      const NodeIcon = node.icon;
-                      return (
-                        <div key={node.id} className="library-graph-step">
-                          <button
-                            type="button"
-                            className={`library-graph-node ${relationToneClass(node.tone)}`}
-                            onClick={() => setSelection(node.id)}
-                          >
-                            <NodeIcon aria-hidden="true" />
-                            <span>
-                              <strong>{node.label}</strong>
-                              <small>{node.detail}</small>
-                            </span>
-                          </button>
-                          {index < relations.length - 1 ? (
-                            <div className="library-graph-edge">
-                              <span>资料关系</span>
-                              <ArrowRight aria-hidden="true" />
-                            </div>
-                          ) : null}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </>
-              )}
-            </aside>
-          ) : null}
+          <EngineeringQuicklook
+            title={
+              projection?.package?.documentIdentity?.documentCode ??
+              projection?.package?.title ??
+              '当前选择'
+            }
+            quicklook={engineeringQuicklook}
+            onOpenWorkbench={() => openWorkbench('reader')}
+            onContinueReview={openReview}
+            onOpenFamily={() => openWorkbench('document')}
+            onLocateEvidence={locateQuicklookEvidence}
+          />
         </section>
       </>
     </main>

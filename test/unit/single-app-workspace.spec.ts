@@ -10,8 +10,11 @@ describe('single canonical app workspace', () => {
       layout,
       currentUser,
       currentUserSession,
+      currentObjectContext,
       floatingDock,
+      contextualNavigation,
       home,
+      engineeringQuicklook,
       page,
       tree,
       dock,
@@ -45,8 +48,11 @@ describe('single canonical app workspace', () => {
       source('client/src/components/Layout.tsx'),
       source('client/src/components/CurrentUserControl.tsx'),
       source('client/src/app/providers/CurrentUserSessionProvider.tsx'),
+      source('client/src/app/providers/CurrentObjectContextProvider.tsx'),
       source('client/src/features/navigation/FloatingDock.tsx'),
+      source('client/src/features/navigation/contextual-navigation.ts'),
       source('client/src/pages/WorkspaceHomePage/WorkspaceHomePage.tsx'),
+      source('client/src/pages/WorkspaceHomePage/EngineeringQuicklook.tsx'),
       source('client/src/pages/DocumentParsingPage/DocumentParsingPage.tsx'),
       source('client/src/pages/DocumentParsingPage/WorkItemContextTree.tsx'),
       source('client/src/pages/DocumentParsingPage/WorkItemContextDock.tsx'),
@@ -94,10 +100,13 @@ describe('single canonical app workspace', () => {
     expect(routes).not.toContain('ailyCardsPreviewRoute');
     expect(routes).not.toContain('AilyCardsPreview');
     expect(routes).not.toContain('mockFixtures');
-    expect(floatingDock).toContain('WiseLink 主导航');
+    expect(floatingDock).toContain('WiseLink 导航');
+    expect(floatingDock).toContain('全局导航');
+    expect(floatingDock).toContain('当前对象操作');
     expect(floatingDock).toContain('资料库');
-    expect(floatingDock).toContain('补充资料');
-    expect(floatingDock).toContain('toggleTransparency');
+    expect(floatingDock).toContain('工作台');
+    expect(floatingDock).toContain('Job-Aid');
+    expect(floatingDock).not.toContain('toggleTransparency');
     expect(floatingDock).not.toContain('is-disabled');
     expect(layout).toContain('wl-light--cold');
     expect(layout).toContain('wl-light--warm');
@@ -108,6 +117,16 @@ describe('single canonical app workspace', () => {
     expect(layout).not.toContain('CANONICAL HOST');
     expect(layout).toContain('<CurrentUserControl />');
     expect(layout).toContain('<CurrentUserSessionProvider>');
+    expect(layout).toContain('<CurrentObjectContextProvider>');
+    expect(currentObjectContext).toContain('currentRouteWorkItemId');
+    expect(currentObjectContext).toContain(
+      'published?.routeWorkItemId === routeWorkItemId',
+    );
+    expect(contextualNavigation).toContain('buildCurrentObjectContext');
+    expect(contextualNavigation).toContain('buildEngineeringQuicklook');
+    expect(contextualNavigation).toContain(
+      '?node=overall&tab=overall#workspace-history',
+    );
     expect(currentUserSession).toContain('authClient.session.getUserInfo()');
     expect(
       currentUserSession.split('authClient.session.getUserInfo()'),
@@ -133,10 +152,19 @@ describe('single canonical app workspace', () => {
     expect(overallRegeneration).toContain('[sessionGeneration, workItemId]');
     expect(home).toContain('尚无最近资料');
     expect(home).not.toContain('developmentIntakeAvailable ? null');
+    expect(home).toContain('<EngineeringQuicklook');
+    expect(engineeringQuicklook).toContain('当前判断');
+    expect(engineeringQuicklook).toContain('为什么需要关注');
+    expect(engineeringQuicklook).toContain('未决问题');
+    expect(engineeringQuicklook).toContain('建议下一步');
+    expect(engineeringQuicklook).toContain('资料族、版本与附件');
+    expect(engineeringQuicklook).toContain('不在资料库首屏预取');
+    expect(engineeringQuicklook).not.toContain('sourceRefId}</');
     expect(page).toContain('WorkbenchShell');
     expect(page).toContain('NavigatorTree');
     expect(page).not.toContain('WorkItemContextTree');
     expect(page).toContain('EvidencePanel');
+    expect(page).toContain('id="workspace-history"');
     expect(tree).toContain('族群 · 文档 · 修订');
     expect(tree).toContain('随当前工程事项的最新资料更新');
     expect(dock).toContain('动态评估');
@@ -188,6 +216,9 @@ describe('single canonical app workspace', () => {
     expect(visualModeControl).toContain('默认效果');
     expect(visualModeControl).toContain('极致效果');
     expect(visualModeControl).toContain('兼容效果');
+    expect(visualModeControl).toContain('降低透明度');
+    expect(visualModeControl).toContain('切换浅色主题');
+    expect(visualModeControl).toContain('切换深色主题');
     expect(quickOpen).toContain('event.metaKey || event.ctrlKey');
     expect(quickOpen).toContain('仅显示当前账户可读取的数据');
     expect(quickOpen).not.toContain('mock');
@@ -258,7 +289,7 @@ describe('single canonical app workspace', () => {
     expect(visualModeControl).toContain('Layers3');
     expect(visualModeControl).not.toContain('CircleGauge');
     expect(visualModeControl).toContain('视觉效果 ·');
-    expect(visualModeControl).toContain('视觉效果：');
+    expect(visualModeControl).toContain('显示与视觉设置：');
     expect(workbenchStyles).toContain(
       'padding-bottom: var(--wl-workbench-mobilebar-height)',
     );

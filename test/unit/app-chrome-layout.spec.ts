@@ -11,46 +11,43 @@ const shellCss = fs.readFileSync(
   'utf8',
 );
 
-describe('App chrome layout ownership', () => {
-  it('uses one material owner around the title row and breadcrumb row', () => {
+describe('App chrome contextual navigation ownership', () => {
+  it('uses one material owner and one contextual header without a second breadcrumb frame', () => {
     const chromeStart = layoutSource.indexOf(
-      'className={`wiselink-app-chrome wl-glass-nav',
+      'className="wiselink-app-chrome wl-glass-nav"',
     );
     const headerStart = layoutSource.indexOf(
       '<header className="wiselink-app-header"',
       chromeStart,
     );
-    const breadcrumbStart = layoutSource.indexOf(
-      '<nav className="wiselink-breadcrumb"',
+    const objectContextStart = layoutSource.indexOf(
+      'className={`wiselink-object-context',
       headerStart,
     );
     const bodyStart = layoutSource.indexOf(
       '<div className="wiselink-app-body"',
-      breadcrumbStart,
+      objectContextStart,
     );
 
     expect(chromeStart).toBeGreaterThan(-1);
     expect(headerStart).toBeGreaterThan(chromeStart);
-    expect(breadcrumbStart).toBeGreaterThan(headerStart);
-    expect(bodyStart).toBeGreaterThan(breadcrumbStart);
-    expect(layoutSource).not.toContain(
-      'className="wiselink-app-header wl-glass-nav"',
-    );
-    expect(layoutSource).not.toContain(
-      '<nav className="wiselink-breadcrumb wl-glass-nav"',
-    );
+    expect(objectContextStart).toBeGreaterThan(headerStart);
+    expect(bodyStart).toBeGreaterThan(objectContextStart);
+    expect(layoutSource).not.toContain('wiselink-breadcrumb');
+    expect(layoutSource).toContain('<CurrentObjectContextProvider>');
+    expect(layoutSource).toContain('currentObject.displayCode');
+    expect(layoutSource).toContain('currentObject.statusLabel');
   });
 
   it('keeps sticky positioning and glass treatment on the outer chrome only', () => {
     expect(shellCss).toMatch(
-      /\.wiselink-app-chrome\s*\{[\s\S]*?position: sticky;[\s\S]*?top: 12px;[\s\S]*?border-radius: var\(--wl-radius-shell\);/,
+      /\.wiselink-app-chrome\s*\{[\s\S]*?position: sticky;[\s\S]*?top: 10px;[\s\S]*?border-radius: 26px;/,
     );
     expect(shellCss).toMatch(
       /\.wiselink-app-header\s*\{[\s\S]*?border: 0;[\s\S]*?background: transparent;[\s\S]*?box-shadow: none;[\s\S]*?backdrop-filter: none;/,
     );
-    expect(shellCss).toMatch(
-      /\.wiselink-breadcrumb\s*\{[\s\S]*?border: 0;[\s\S]*?border-top: 1px solid[\s\S]*?border-radius: 0;[\s\S]*?background: transparent;[\s\S]*?box-shadow: none;/,
-    );
+    expect(shellCss).toContain('.wiselink-object-context');
+    expect(shellCss).toContain('.wiselink-object-context-sub');
   });
 
   it('preserves workbench and mobile height ownership on the chrome wrapper', () => {

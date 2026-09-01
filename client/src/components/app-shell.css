@@ -13,7 +13,7 @@
  * Header block 同时包含玻璃顶栏与它下方的呼吸空间；页面不得再补 offset。 */
 .wiselink-app-shell.is-workbench-route {
   --wl-app-safe-block-start: env(safe-area-inset-top, 0px);
-  --wl-app-header-block-size: 72px;
+  --wl-app-header-block-size: 78px;
   --wl-workspace-block-size: calc(
     100dvh - var(--wl-app-safe-block-start) - var(--wl-app-header-block-size)
   );
@@ -32,19 +32,19 @@
 .wiselink-app-chrome {
   position: sticky;
   z-index: var(--wl-z-header);
-  top: 12px;
+  top: 10px;
   display: grid;
-  margin: 14px 18px 0 94px;
-  border-radius: var(--wl-radius-shell);
+  margin: 12px 12px 0 112px;
+  border-radius: 26px;
 }
 
 .wiselink-app-header {
   display: grid;
-  min-height: 64px;
-  grid-template-columns: minmax(220px, 270px) minmax(0, 1fr) auto;
+  min-height: 76px;
+  grid-template-columns: 158px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 18px;
-  padding: 0 22px;
+  gap: 14px;
+  padding: 8px 14px;
   border: 0;
   border-radius: inherit;
   background: transparent;
@@ -108,17 +108,90 @@
   flex: 0 0 15px;
 }
 
-.wiselink-app-page-label {
+.wiselink-object-context {
+  display: grid;
   min-width: 0;
-  margin: 0;
+  gap: 4px;
+  padding-left: 13px;
+  border-left: 1px solid var(--wl-border);
+}
+
+.wiselink-object-context.is-global {
+  border-left-color: transparent;
+}
+
+.wiselink-object-context-main,
+.wiselink-object-context-sub {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.wiselink-object-page-label {
+  color: var(--wl-muted);
+  font-size: var(--wl-text-caption);
+  font-weight: 680;
+}
+
+.wiselink-object-context-main strong {
+  flex: 0 0 auto;
+  overflow: hidden;
+  max-width: 210px;
+  color: var(--wl-ink);
+  font-size: 14px;
+  font-weight: 790;
+  letter-spacing: -0.01em;
+  text-overflow: ellipsis;
+}
+
+.wiselink-object-kind {
+  display: inline-flex;
+  min-height: 22px;
+  align-items: center;
+  padding: 0 7px;
+  border: 1px solid color-mix(in srgb, var(--wl-accent) 18%, transparent);
+  border-radius: 999px;
+  color: var(--wl-accent);
+  background: var(--wl-accent-soft);
+  font-size: 10.5px;
+  font-weight: 720;
+}
+
+.wiselink-object-kind.is-matter {
+  color: var(--wl-purple);
+  border-color: color-mix(in srgb, var(--wl-purple) 22%, transparent);
+  background: color-mix(in srgb, var(--wl-purple) 10%, transparent);
+}
+
+.wiselink-object-title {
+  min-width: 0;
   overflow: hidden;
   color: var(--wl-ink);
-  font-size: 13px;
-  font-weight: 720;
-  letter-spacing: -0.01em;
-  text-align: center;
+  font-size: var(--wl-text-body-sm);
+  font-weight: 660;
   text-overflow: ellipsis;
-  white-space: nowrap;
+}
+
+.wiselink-object-context-sub {
+  color: var(--wl-muted);
+  font-size: 10.5px;
+  font-weight: 560;
+}
+
+.wiselink-object-context-sub span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wiselink-object-context-sub i {
+  width: 3px;
+  height: 3px;
+  flex: 0 0 3px;
+  border-radius: 50%;
+  background: var(--wl-faint);
 }
 
 .wiselink-app-context {
@@ -129,14 +202,23 @@
   gap: 8px;
 }
 
-.wiselink-app-context-note {
-  display: inline-flex;
-  min-height: 28px;
-  align-items: center;
-  color: var(--wl-muted);
-  font-size: 11px;
-  font-weight: 600;
-  white-space: nowrap;
+.wiselink-header-icon-action {
+  display: grid;
+  width: var(--wl-control-size);
+  height: var(--wl-control-size);
+  flex: 0 0 var(--wl-control-size);
+  place-items: center;
+  border: 1px solid var(--wl-border);
+  border-radius: var(--wl-radius-md);
+  color: var(--wl-ink);
+  background: var(--wl-glass-soft);
+  text-decoration: none;
+}
+
+.wiselink-header-icon-action:hover,
+.wiselink-header-icon-action:focus-visible {
+  color: var(--wl-accent);
+  background: var(--wl-accent-soft);
 }
 
 .wiselink-account-control,
@@ -241,49 +323,11 @@ button.wiselink-account-state {
   color: var(--wl-faint);
 }
 
-.wiselink-app-work-item {
-  display: inline-flex;
-  min-width: 0;
-  max-width: 190px;
-  min-height: 28px;
-  padding: 0 10px;
-  align-items: center;
-  gap: 6px;
-  border: 1px solid var(--wl-border);
-  border-radius: var(--wl-radius-sm);
-  color: var(--wl-ink);
-  background: var(--wl-glass-soft);
-  font-family: var(--wl-font);
-  font-size: var(--wl-text-caption);
-  text-decoration: none;
-  transition:
-    color var(--wl-motion-fast) ease,
-    background-color var(--wl-motion-fast) ease;
-}
-
-.wiselink-app-work-item span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.wiselink-app-work-item:hover,
-.wiselink-app-work-item.active {
-  color: var(--wl-accent);
-  background: var(--wl-accent-soft);
-}
-
-.wiselink-app-work-item svg:last-child {
-  width: 12px;
-  height: 12px;
-  color: var(--wl-faint);
-}
-
 .wiselink-app-body {
   position: relative;
   z-index: var(--wl-z-content);
-  min-height: calc(100vh - 84px);
-  padding: 0 16px 32px 96px;
+  min-height: calc(100vh - 98px);
+  padding: 10px 12px 32px 112px;
 }
 
 .wiselink-app-shell.is-workbench-route .wiselink-app-body {
@@ -297,7 +341,7 @@ button.wiselink-account-state {
   position: relative;
   top: auto;
   align-self: center;
-  min-height: 56px;
+  min-height: 76px;
   margin-block: 0;
 }
 
@@ -308,10 +352,6 @@ button.wiselink-account-state {
   box-shadow: 0 10px 24px var(--wl-g3-shadow);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
-}
-
-.wiselink-app-shell.is-workbench-route .wiselink-breadcrumb {
-  display: none;
 }
 
 /* 沉浸模式只移除全局外壳；工作台内部工具栏仍在 workspace 轨道内。 */
@@ -328,64 +368,6 @@ body[data-wl-immersive='true']
   .wiselink-app-shell.is-workbench-route
   .wiselink-app-body {
   padding: 0;
-}
-
-.wiselink-breadcrumb {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  min-height: 34px;
-  padding: 0 22px;
-  border: 0;
-  border-top: 1px solid color-mix(in srgb, var(--wl-border) 68%, transparent);
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-}
-
-.wiselink-breadcrumb ol {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 2px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.wiselink-breadcrumb-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  font-size: 12px;
-}
-
-.wiselink-breadcrumb-item a {
-  color: var(--wl-muted);
-  text-decoration: none;
-  font-weight: 550;
-}
-
-.wiselink-breadcrumb-item a:hover {
-  color: var(--wl-accent);
-}
-
-.wiselink-breadcrumb-item span {
-  color: var(--wl-ink);
-  font-weight: 650;
-}
-
-.wiselink-breadcrumb-item span[aria-current='page'] {
-  color: var(--wl-ink);
-}
-
-.wiselink-breadcrumb-sep {
-  width: 14px;
-  height: 14px;
-  color: var(--wl-faint);
 }
 
 .wiselink-skip-link {
@@ -409,10 +391,6 @@ body[data-wl-immersive='true']
   outline-offset: 2px;
 }
 
-.wiselink-app-nav-toggle {
-  display: none;
-}
-
 button:focus-visible,
 a:focus-visible,
 input:focus-visible,
@@ -422,32 +400,33 @@ select:focus-visible {
   outline-offset: 2px;
 }
 
-@media (max-width: 980px) {
+@media (max-width: 920px) {
   .wiselink-app-shell.is-workbench-route .wl-dock {
     display: none;
   }
 
   .wiselink-app-chrome {
-    margin-left: 16px;
+    margin-left: 12px;
   }
 
   .wiselink-app-header {
-    grid-template-columns: minmax(190px, 1fr) auto auto;
+    grid-template-columns: 44px minmax(0, 1fr) auto;
   }
 
   .wiselink-app-body {
-    padding-left: 16px;
+    padding-left: 12px;
   }
 
   .wiselink-app-shell:not(.is-workbench-route) .wiselink-app-body {
     padding-bottom: var(--wl-floating-dock-clearance);
   }
 
-  .wiselink-breadcrumb {
-    padding-inline: 16px;
+  .wiselink-app-brand > span:last-child {
+    display: none;
   }
 
-  .wiselink-app-context-note {
+  .wiselink-object-page-label,
+  .wiselink-object-context-sub {
     display: none;
   }
 }
@@ -463,20 +442,6 @@ select:focus-visible {
     flex-basis: var(--wl-touch-target);
   }
 
-  .wiselink-breadcrumb {
-    min-height: 30px;
-    padding: 0 14px;
-  }
-
-  .wiselink-breadcrumb-item {
-    font-size: 11px;
-  }
-
-  .wiselink-breadcrumb-sep {
-    width: 12px;
-    height: 12px;
-  }
-
   .wiselink-app-chrome {
     position: sticky;
     top: 6px;
@@ -486,7 +451,7 @@ select:focus-visible {
   .wiselink-app-header {
     display: grid;
     min-height: 56px;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: 44px minmax(0, 1fr) auto;
     gap: 10px;
     padding: 8px 12px;
   }
@@ -495,22 +460,28 @@ select:focus-visible {
     min-width: 0;
   }
 
-  .wiselink-app-page-label {
-    display: none;
-  }
-
   .wiselink-app-context {
     display: flex;
   }
 
-  .wiselink-app-work-item,
-  .wiselink-app-context-note {
-    display: none;
+  .wiselink-object-context {
+    padding-left: 0;
+    border-left: 0;
+  }
+
+  .wiselink-object-context-main strong {
+    max-width: 34vw;
+    font-size: 12px;
+  }
+
+  .wiselink-object-title {
+    max-width: 30vw;
+    font-size: var(--wl-text-caption);
   }
 
   .wiselink-app-body {
     min-height: calc(100vh - 120px);
-    padding: 0 10px var(--wl-floating-dock-clearance);
+    padding: 8px 10px var(--wl-floating-dock-clearance);
   }
 
   .wiselink-app-shell.is-workbench-route .wiselink-app-body {
@@ -529,25 +500,12 @@ select:focus-visible {
     padding: 8px 10px;
   }
 
-  .wiselink-breadcrumb {
-    min-height: 28px;
-    padding: 0 10px;
-  }
-
-  .wiselink-breadcrumb-item {
-    font-size: var(--wl-text-caption);
-  }
-
   .wiselink-app-brand strong {
     font-size: 14px;
   }
 
   .wiselink-app-brand small {
     font-size: var(--wl-text-caption);
-  }
-
-  .wiselink-app-page-label {
-    font-size: 12px;
   }
 
   .wiselink-account-display > div > div {
