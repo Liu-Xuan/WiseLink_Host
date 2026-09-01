@@ -289,43 +289,45 @@ export class ReviewConversationRepository {
           END AS service_role_member,
           current_setting('row_security', TRUE) IN ('on', 'true', '1') AS
             row_security_active,
-          (
-            to_regclass('review_conversation') =
-              to_regclass('public.review_conversation')
-            AND to_regclass('review_turn') =
-              to_regclass('public.review_turn')
-            AND to_regclass('engineer_supplied_input') =
-              to_regclass('public.engineer_supplied_input')
-            AND to_regclass('identity_subject_mapping') =
-              to_regclass('public.identity_subject_mapping')
+          COALESCE(
+            to_regclass('public.review_conversation') IS NOT NULL
+            AND to_regclass('public.review_turn') IS NOT NULL
+            AND to_regclass('public.engineer_supplied_input') IS NOT NULL
+            AND to_regclass('public.identity_subject_mapping') IS NOT NULL,
+            FALSE
           ) AS expected_schema_resolved,
           EXISTS (
             SELECT 1
             FROM pg_catalog.pg_policies AS candidate_policy
-            WHERE candidate_policy.tablename = 'review_conversation'
+            WHERE candidate_policy.schemaname = 'public'
+              AND candidate_policy.tablename = 'review_conversation'
               AND candidate_policy.policyname =
-                'review_conversation_authenticated_select'
-              AND 'authenticated' = ANY(candidate_policy.roles)
-              AND to_regclass(
-                format(
-                  '%I.%I',
-                  candidate_policy.schemaname,
-                  candidate_policy.tablename
+                'review_conversation_hosted_runtime_actor_select'
+              AND candidate_policy.cmd = 'SELECT'
+              AND candidate_policy.permissive = 'PERMISSIVE'
+              AND 'public' = ANY(candidate_policy.roles)
+              AND to_regclass('public.review_conversation') =
+                to_regclass(
+                  format(
+                    '%I.%I',
+                    candidate_policy.schemaname,
+                    candidate_policy.tablename
+                  )
                 )
-              ) = to_regclass('review_conversation')
           ) AS review_select_policy_present,
           COALESCE(
             (
               SELECT candidate_table.relrowsecurity
               FROM pg_catalog.pg_class AS candidate_table
-              WHERE candidate_table.oid = to_regclass('review_conversation')
+              WHERE candidate_table.oid =
+                to_regclass('public.review_conversation')
             ),
             FALSE
           ) AS review_rls_enabled
       ) AS runtime_diagnostics
       LEFT JOIN LATERAL (
         SELECT candidate_conversation.*
-        FROM review_conversation AS candidate_conversation
+        FROM public.review_conversation AS candidate_conversation
         WHERE candidate_conversation.review_conversation_id =
           ${input.reviewConversationId}
           AND candidate_conversation.actor_id = actor_context.actor_id
@@ -333,7 +335,7 @@ export class ReviewConversationRepository {
       ) AS bound_conversation ON TRUE
       LEFT JOIN LATERAL (
         SELECT candidate_mapping.id AS mapping_id
-        FROM identity_subject_mapping AS candidate_mapping
+        FROM public.identity_subject_mapping AS candidate_mapping
         WHERE candidate_mapping.miaoda_tenant_id = ${input.tenantId}
           AND candidate_mapping.miaoda_user_id = actor_context.actor_id
           AND candidate_mapping.expected_client_id = ${OFFICIAL_CLIENT_ID}
@@ -346,8 +348,8 @@ export class ReviewConversationRepository {
           supplied_input.input_type AS supplied_input_type,
           supplied_input.adoption_status AS supplied_adoption_status,
           supplied_input.candidate_text AS supplied_candidate_text
-        FROM review_turn AS candidate_turn
-        INNER JOIN engineer_supplied_input AS supplied_input
+        FROM public.review_turn AS candidate_turn
+        INNER JOIN public.engineer_supplied_input AS supplied_input
           ON supplied_input.engineer_supplied_input_id =
             candidate_turn.engineer_supplied_input_id
           AND supplied_input.actor_id = actor_context.actor_id
@@ -931,7 +933,7 @@ interface ActorBoundReviewTurnRow extends Record<string, unknown> {
   authenticatedRoleMember: boolean | null;
   serviceRoleMember: boolean | null;
   rowSecurityActive: boolean | null;
-  expectedSchemaResolved: boolean | null;
+  expectedSchemaResolved: boolean;
   reviewSelectPolicyPresent: boolean | null;
   reviewRlsEnabled: boolean | null;
   reviewConversationId: string | null;
@@ -984,7 +986,7 @@ interface OpenClawBindingDiagnostic {
   authenticatedRoleMember: boolean | null;
   serviceRoleMember: boolean | null;
   rowSecurityActive: boolean | null;
-  expectedSchemaResolved: boolean | null;
+  expectedSchemaResolved: boolean;
   sameConnectionContextSupported: boolean;
   reviewSelectPolicyPresent: boolean | null;
   reviewRlsEnabled: boolean | null;
@@ -1010,14 +1012,12 @@ function openClawBindingDiagnostic(
     authenticatedRoleMember,
     serviceRoleMember,
     rowSecurityActive: row?.rowSecurityActive ?? null,
-    expectedSchemaResolved: row?.expectedSchemaResolved ?? null,
+    expectedSchemaResolved: row?.expectedSchemaResolved ?? false,
     sameConnectionContextSupported: actorContextApplied,
     reviewSelectPolicyPresent,
     reviewRlsEnabled,
     rlsPolicyApplicable:
-      authenticatedRoleMember === true &&
-      reviewSelectPolicyPresent === true &&
-      reviewRlsEnabled === true,
+      reviewSelectPolicyPresent === true && reviewRlsEnabled === true,
     exactActiveConversationVisible: Boolean(row?.reviewConversationId),
   };
 }
