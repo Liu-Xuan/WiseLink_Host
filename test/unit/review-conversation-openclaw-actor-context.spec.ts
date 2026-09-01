@@ -51,7 +51,7 @@ describe('ReviewConversationRepository OpenClaw actor context', () => {
           sameConnectionContextSupported: true,
           reviewSelectPolicyPresent: true,
           reviewRlsEnabled: true,
-          rlsPolicyApplicable: false,
+          rlsPolicyApplicable: true,
           exactActiveConversationVisible: false,
         },
       }),
