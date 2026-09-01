@@ -18,7 +18,7 @@ describe('workbench scroll ownership', () => {
     expect(appShellStyles).toContain(
       '--wl-app-safe-block-start: env(safe-area-inset-top, 0px)',
     );
-    expect(appShellStyles).toContain('--wl-app-header-block-size: 72px');
+    expect(appShellStyles).toContain('--wl-app-header-block-size: 78px');
     expect(appShellStyles).toMatch(
       /--wl-workspace-block-size:\s*calc\([\s\S]*?100dvh[\s\S]*?var\(--wl-app-safe-block-start\)[\s\S]*?var\(--wl-app-header-block-size\)[\s\S]*?\);/,
     );

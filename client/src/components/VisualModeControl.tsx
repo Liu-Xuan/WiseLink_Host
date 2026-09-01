@@ -1,4 +1,4 @@
-import { ChevronDown, Layers3 } from 'lucide-react';
+import { ChevronDown, Contrast, Layers3, Moon, Sun } from 'lucide-react';
 
 import {
   type WlVisualMode,
@@ -6,7 +6,9 @@ import {
 } from '@client/src/app/providers/ThemeProvider';
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
@@ -51,7 +53,14 @@ export default function VisualModeControl({
 }: {
   compact?: boolean;
 }) {
-  const { visualMode, setVisualMode } = useWlTheme();
+  const {
+    theme,
+    visualMode,
+    reduceTransparency,
+    setVisualMode,
+    toggleTheme,
+    toggleTransparency,
+  } = useWlTheme();
   const current = VISUAL_MODES.find((option) => option.value === visualMode)!;
 
   return (
@@ -60,8 +69,8 @@ export default function VisualModeControl({
         <button
           type="button"
           className={`wl-visual-mode-trigger${compact ? ' is-compact' : ''}`}
-          aria-label={`视觉效果：${current.label}`}
-          title={`视觉效果：${current.label}`}
+          aria-label={`显示与视觉设置：${current.label}`}
+          title={`显示与视觉设置：${current.label}`}
         >
           <span className="wl-visual-mode-orb" aria-hidden="true">
             <Layers3 />
@@ -73,15 +82,33 @@ export default function VisualModeControl({
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
-        align="end"
+        align={compact ? 'start' : 'end'}
+        side={compact ? 'right' : 'bottom'}
         sideOffset={8}
         className="wl-visual-mode-menu"
       >
-        <DropdownMenuLabel>视觉效果</DropdownMenuLabel>
+        <DropdownMenuLabel>显示与视觉设置</DropdownMenuLabel>
         <p className="wl-visual-mode-hint">
           三种效果只改变材质与动效，不改变工程内容和操作。
         </p>
         <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={toggleTheme}>
+          {theme === 'dark' ? (
+            <Sun aria-hidden="true" />
+          ) : (
+            <Moon aria-hidden="true" />
+          )}
+          <span>{theme === 'dark' ? '切换浅色主题' : '切换深色主题'}</span>
+        </DropdownMenuItem>
+        <DropdownMenuCheckboxItem
+          checked={reduceTransparency}
+          onCheckedChange={toggleTransparency}
+        >
+          <Contrast aria-hidden="true" />
+          <span>降低透明度</span>
+        </DropdownMenuCheckboxItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel>视觉效果</DropdownMenuLabel>
         <DropdownMenuRadioGroup
           value={visualMode}
           onValueChange={(value) => {

@@ -38,6 +38,8 @@ import { Textarea } from '@client/src/components/ui/textarea';
 import { rememberRecentWorkItem } from '@client/src/utils/recent-work-items';
 import { forgetRecentWorkItem } from '@client/src/utils/recent-work-items';
 import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSessionProvider';
+import { useCurrentObjectContext } from '@client/src/app/providers/CurrentObjectContextProvider';
+import { buildCurrentObjectContext } from '@client/src/features/navigation/contextual-navigation';
 
 import {
   getWorkbenchNode,
@@ -177,6 +179,7 @@ function flattenNavigationTree(
 
 export default function DocumentParsingPage() {
   const { authenticationRequired, sessionGeneration } = useCurrentUserSession();
+  const { publishCurrentObject } = useCurrentObjectContext();
   const navigate = useNavigate();
   const location = useLocation();
   const sessionGenerationRef = useRef<number>(sessionGeneration);
@@ -361,6 +364,14 @@ export default function DocumentParsingPage() {
 
   const data: CanonicalDocumentParsingPageResponse | null =
     pageSessionGeneration === sessionGeneration ? pageData : null;
+  const currentObject = useMemo(
+    () => (data ? buildCurrentObjectContext(data, 'DOCUMENT') : null),
+    [data],
+  );
+
+  useEffect(() => {
+    publishCurrentObject(currentObject);
+  }, [currentObject, publishCurrentObject]);
   const evidenceSummary = useMemo(
     () =>
       summarizeWorkbenchEvidence(
@@ -1391,7 +1402,9 @@ export default function DocumentParsingPage() {
         {activeNode === 'overall' ? (
           <>
             <EngineeringReasoningTrail data={data} />
-            <RevisionTimeline timeline={data.timeline} />
+            <div id="workspace-history">
+              <RevisionTimeline timeline={data.timeline} />
+            </div>
           </>
         ) : null}
 

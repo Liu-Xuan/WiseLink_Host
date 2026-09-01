@@ -1,148 +1,126 @@
-import { ChevronRight, FileSearch2 } from 'lucide-react';
+import { Search } from 'lucide-react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 
-import CurrentUserControl from '@client/src/components/CurrentUserControl';
-import VisualModeControl from '@client/src/components/VisualModeControl';
+import {
+  CurrentObjectContextProvider,
+  useCurrentObjectContext,
+} from '@client/src/app/providers/CurrentObjectContextProvider';
 import { CurrentUserSessionProvider } from '@client/src/app/providers/CurrentUserSessionProvider';
+import CurrentUserControl from '@client/src/components/CurrentUserControl';
 import FloatingDock from '@client/src/features/navigation/FloatingDock';
+
 import './app-shell.css';
 
 const Layout = () => {
-  const location = useLocation();
-  const workItemId = decodeURIComponent(
-    location.pathname.match(/\/work-items\/([^/]+)/)?.[1] ?? '',
-  );
-  const isWorkbenchRoute = /\/work-items\/[^/]+\/documents(?:\/|$)/u.test(
-    location.pathname,
-  );
-  const crumbs = deriveBreadcrumbs(location.pathname, workItemId);
-  const pageLabel = derivePageLabel(location.pathname);
-
   return (
     <CurrentUserSessionProvider>
-      <div
-        className={`wiselink-app-shell wl-environment${isWorkbenchRoute ? ' is-workbench-route' : ''}`}
-      >
-        <div className="wl-ambient-field" aria-hidden="true">
-          <span className="wl-light wl-light--cold" />
-          <span className="wl-light wl-light--warm" />
-          <span className="wl-light wl-light--reflect" />
-        </div>
-
-        <a href="#main-content" className="wiselink-skip-link">
-          跳转到主内容
-        </a>
-
-        <FloatingDock workItemId={workItemId} />
-
-        <div
-          className={`wiselink-app-chrome wl-glass-nav${crumbs.length > 1 ? ' has-breadcrumb' : ''}`}
-          data-wl-material="g1"
-        >
-          <header className="wiselink-app-header" role="banner">
-            <NavLink className="wiselink-app-brand" to="/library">
-              <span className="wiselink-app-mark" aria-hidden="true">
-                W
-              </span>
-              <span>
-                <strong>WiseLink</strong>
-                <small>工程资料与综合评估</small>
-              </span>
-            </NavLink>
-
-            <p className="wiselink-app-page-label" aria-current="page">
-              {pageLabel}
-            </p>
-
-            <div className="wiselink-app-context">
-              {workItemId ? (
-                <NavLink
-                  className="wiselink-app-work-item"
-                  to={`/work-items/${encodeURIComponent(workItemId)}`}
-                >
-                  <FileSearch2 aria-hidden="true" />
-                  <span>当前工程事项</span>
-                </NavLink>
-              ) : (
-                <span className="wiselink-app-context-note">
-                  资料与结果按权限显示
-                </span>
-              )}
-              <VisualModeControl />
-              <CurrentUserControl />
-            </div>
-          </header>
-
-          {crumbs.length > 1 && (
-            <nav className="wiselink-breadcrumb" aria-label="面包屑">
-              <ol>
-                {crumbs.map((crumb, index) => (
-                  <li key={crumb.label} className="wiselink-breadcrumb-item">
-                    {index > 0 && (
-                      <ChevronRight
-                        className="wiselink-breadcrumb-sep"
-                        aria-hidden="true"
-                      />
-                    )}
-                    {crumb.to ? (
-                      <NavLink to={crumb.to}>{crumb.label}</NavLink>
-                    ) : (
-                      <span
-                        aria-current={
-                          index === crumbs.length - 1 ? 'page' : undefined
-                        }
-                      >
-                        {crumb.label}
-                      </span>
-                    )}
-                  </li>
-                ))}
-              </ol>
-            </nav>
-          )}
-        </div>
-
-        <div className="wiselink-app-body" id="main-content" tabIndex={-1}>
-          <Outlet />
-        </div>
-      </div>
+      <CurrentObjectContextProvider>
+        <LayoutChrome />
+      </CurrentObjectContextProvider>
     </CurrentUserSessionProvider>
   );
 };
 
-export default Layout;
+function LayoutChrome() {
+  const location = useLocation();
+  const { currentObject } = useCurrentObjectContext();
+  const isWorkbenchRoute: boolean =
+    /\/work-items\/[^/]+\/documents(?:\/|$)/u.test(location.pathname);
+  const pageLabel: string = derivePageLabel(location.pathname);
 
-function deriveBreadcrumbs(
-  pathname: string,
-  workItemId: string,
-): Array<{ label: string; to?: string }> {
-  if (pathname === '/' || pathname === '/library') {
-    return [{ label: '资料库' }];
-  }
+  return (
+    <div
+      className={`wiselink-app-shell wl-environment${isWorkbenchRoute ? ' is-workbench-route' : ''}`}
+    >
+      <div className="wl-ambient-field" aria-hidden="true">
+        <span className="wl-light wl-light--cold" />
+        <span className="wl-light wl-light--warm" />
+        <span className="wl-light wl-light--reflect" />
+      </div>
 
-  const crumbs: Array<{ label: string; to?: string }> = [
-    { label: '资料库', to: '/library' },
-  ];
+      <a href="#main-content" className="wiselink-skip-link">
+        跳转到主内容
+      </a>
 
-  if (pathname.startsWith('/work-items/') && workItemId) {
-    crumbs.push({ label: '当前工程事项' });
-  } else if (pathname === '/external-discovery') {
-    crumbs.push({ label: '补充资料' });
-  } else if (pathname === '/runtime-probe') {
-    crumbs.push({ label: '连接状态' });
-  } else {
-    crumbs.push({ label: '页面未找到' });
-  }
+      <FloatingDock />
 
-  return crumbs;
+      <div className="wiselink-app-chrome wl-glass-nav" data-wl-material="g1">
+        <header className="wiselink-app-header" role="banner">
+          <NavLink className="wiselink-app-brand" to="/library">
+            <span className="wiselink-app-mark" aria-hidden="true">
+              W
+            </span>
+            <span>
+              <strong>WiseLink</strong>
+              <small>工程资料智能分析</small>
+            </span>
+          </NavLink>
+
+          <div
+            className={`wiselink-object-context${currentObject ? ' has-object' : ' is-global'}`}
+          >
+            <div className="wiselink-object-context-main">
+              <span className="wiselink-object-page-label">{pageLabel}</span>
+              {currentObject ? (
+                <>
+                  <span
+                    className={`wiselink-object-kind is-${currentObject.kind.toLowerCase()}`}
+                  >
+                    {currentObject.kind === 'DOCUMENT' ? '文档' : '事项'}
+                  </span>
+                  <strong>{currentObject.displayCode}</strong>
+                  <span className="wiselink-object-title">
+                    {currentObject.title}
+                  </span>
+                </>
+              ) : (
+                <strong>{pageLabel}</strong>
+              )}
+            </div>
+            <div className="wiselink-object-context-sub">
+              {currentObject ? (
+                <>
+                  <span>{currentObject.parentLabel}</span>
+                  <i aria-hidden="true" />
+                  <span>{currentObject.meta}</span>
+                  <i aria-hidden="true" />
+                  <span>{currentObject.statusLabel}</span>
+                </>
+              ) : (
+                <span>受控资料、工程事项与候选结果按当前权限显示</span>
+              )}
+            </div>
+          </div>
+
+          <div className="wiselink-app-context">
+            <NavLink
+              className="wiselink-header-icon-action"
+              to="/library#library-search"
+              aria-label="搜索资料与事项"
+              title="搜索资料与事项"
+            >
+              <Search aria-hidden="true" />
+            </NavLink>
+            <CurrentUserControl />
+          </div>
+        </header>
+      </div>
+
+      <div className="wiselink-app-body" id="main-content" tabIndex={-1}>
+        <Outlet />
+      </div>
+    </div>
+  );
 }
+
+export default Layout;
 
 function derivePageLabel(pathname: string): string {
   if (pathname === '/' || pathname === '/library') return '资料库';
   if (/\/work-items\/[^/]+\/documents(?:\/|$)/u.test(pathname)) {
     return '工程分析工作台';
   }
-  if (pathname.startsWith('/work-items/')) return '综合评估';
+  if (pathname.startsWith('/work-items/')) return '工程事项';
   if (pathname === '/external-discovery') return '补充资料';
   if (pathname === '/runtime-probe') return '连接状态';
   return 'WiseLink';

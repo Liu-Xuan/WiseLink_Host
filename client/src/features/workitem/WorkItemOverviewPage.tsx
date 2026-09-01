@@ -16,6 +16,11 @@ import {
   isCanonicalObjectNotFound,
 } from '@client/src/api/canonical-host';
 import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSessionProvider';
+import {
+  useCurrentObjectContext,
+  type CurrentObjectContextView,
+} from '@client/src/app/providers/CurrentObjectContextProvider';
+import { buildCurrentObjectContext } from '@client/src/features/navigation/contextual-navigation';
 import OverallAssessmentHero from '@client/src/features/workitem/OverallAssessmentHero';
 import { useOverallRegeneration } from '@client/src/features/workitem/useOverallRegeneration';
 import AuthorityStrip from '@client/src/features/workitem/AuthorityStrip';
@@ -32,6 +37,7 @@ import '@client/src/features/workitem/workitem-overview.css';
  */
 export default function WorkItemOverviewPage() {
   const { authenticationRequired, sessionGeneration } = useCurrentUserSession();
+  const { publishCurrentObject } = useCurrentObjectContext();
   const { workItemId = '' } = useParams<{ workItemId: string }>();
   const navigate = useNavigate();
   const [view, setView] = useState<WorkItemView | null>(null);
@@ -41,6 +47,8 @@ export default function WorkItemOverviewPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadSignal, setReloadSignal] = useState(0);
+  const [contextView, setContextView] =
+    useState<CurrentObjectContextView | null>(null);
   const overallRegeneration = useOverallRegeneration({
     workItemId,
     sessionGeneration,
@@ -52,6 +60,7 @@ export default function WorkItemOverviewPage() {
         return;
       }
       setView(toWorkItemView(fresh));
+      setContextView(buildCurrentObjectContext(fresh, 'MATTER'));
       setViewSessionGeneration(sessionGeneration);
       setError(null);
     },
@@ -65,6 +74,7 @@ export default function WorkItemOverviewPage() {
     setLoading(true);
     setError(null);
     setView(null);
+    setContextView(null);
     setViewSessionGeneration(null);
     if (authenticationRequired) {
       setLoading(false);
@@ -85,6 +95,7 @@ export default function WorkItemOverviewPage() {
         const fresh = await getDocumentParsingPage(workItemId, '');
         if (isCurrentSession()) {
           setView(toWorkItemView(fresh));
+          setContextView(buildCurrentObjectContext(fresh, 'MATTER'));
           setViewSessionGeneration(sessionGeneration);
         }
       } catch (reason) {
@@ -103,6 +114,10 @@ export default function WorkItemOverviewPage() {
       cancelled = true;
     };
   }, [authenticationRequired, reloadSignal, sessionGeneration, workItemId]);
+
+  useEffect(() => {
+    publishCurrentObject(authenticationRequired ? null : contextView);
+  }, [authenticationRequired, contextView, publishCurrentObject]);
 
   function openWorkbench(): void {
     navigate(
