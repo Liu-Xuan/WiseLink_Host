@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
@@ -72,6 +72,8 @@ export interface PersistedReviewConversationAggregate {
 
 @Injectable()
 export class ReviewConversationRepository {
+  private readonly logger = new Logger(ReviewConversationRepository.name);
+
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
   ) {}
@@ -171,14 +173,21 @@ export class ReviewConversationRepository {
         input.reviewConversationId,
         executor,
       );
+      if (!conversation) {
+        this.warnOpenClawBinding('CONVERSATION_NOT_VISIBLE');
+        return null;
+      }
       if (
-        !conversation ||
         conversation.status !== ACTIVE_STATUS ||
         conversation.tenantId !== input.tenantId ||
         conversation.actorId !== input.actorId ||
-        conversation.workItemId !== input.workItemId ||
-        !(await this.hasActiveOfficialActorMappingInternal(input, executor))
+        conversation.workItemId !== input.workItemId
       ) {
+        this.warnOpenClawBinding('CONVERSATION_SCOPE_MISMATCH');
+        return null;
+      }
+      if (!(await this.hasActiveOfficialActorMappingInternal(input, executor))) {
+        this.warnOpenClawBinding('OFFICIAL_ACTOR_MAPPING_NOT_VISIBLE');
         return null;
       }
       const turn = await this.loadTurnByRequest(
@@ -186,7 +195,11 @@ export class ReviewConversationRepository {
         input.requestId,
         executor,
       );
-      return turn ? { conversation, turn } : null;
+      if (!turn) {
+        this.warnOpenClawBinding('TURN_NOT_VISIBLE');
+        return null;
+      }
+      return { conversation, turn };
     });
   }
 
@@ -657,6 +670,21 @@ export class ReviewConversationRepository {
       }
       return operation(executor);
     });
+  }
+
+  private warnOpenClawBinding(
+    reason:
+      | 'CONVERSATION_NOT_VISIBLE'
+      | 'CONVERSATION_SCOPE_MISMATCH'
+      | 'OFFICIAL_ACTOR_MAPPING_NOT_VISIBLE'
+      | 'TURN_NOT_VISIBLE',
+  ): void {
+    this.logger.warn(
+      JSON.stringify({
+        event: 'OPENCLAW_REVIEW_BINDING_NOT_FOUND',
+        reason,
+      }),
+    );
   }
 }
 
