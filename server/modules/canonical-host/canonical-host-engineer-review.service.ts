@@ -99,6 +99,19 @@ export interface RecordEngineerReviewActionInput {
   correctedAnalysisDirection?: string;
 }
 
+export interface ResolveReviewActionGapsInput {
+  workItemId: string;
+  expectedRevision: number;
+  gapRefs: string[];
+  affectedCriterionIds: string[];
+}
+
+export interface ResolvedReviewActionGaps {
+  gapRefs: string[];
+  resolvedMissingInputs: string[];
+  affectedCriterionIds: string[];
+}
+
 @Injectable()
 export class CanonicalHostEngineerReviewService {
   constructor(
@@ -284,6 +297,62 @@ export class CanonicalHostEngineerReviewService {
       });
       throw error;
     }
+  }
+
+  async resolveReviewActionGaps(
+    input: ResolveReviewActionGapsInput,
+    actor: CanonicalHostActor,
+  ): Promise<ResolvedReviewActionGaps> {
+    if (
+      !input.workItemId.trim() ||
+      !Number.isSafeInteger(input.expectedRevision) ||
+      input.expectedRevision < 1 ||
+      !validDistinctTexts(input.gapRefs) ||
+      input.gapRefs.length === 0 ||
+      !validDistinctTexts(input.affectedCriterionIds)
+    ) {
+      throw new Error('ENGINEER_REVIEW_GAP_RESOLUTION_INPUT_INVALID');
+    }
+    const authorized = await this.authorizeAndLoad(input.workItemId, actor);
+    const workItem = requiredDynamicWorkItem(authorized.workItem);
+    if (workItem.revision !== input.expectedRevision) {
+      throw new Error('WORK_ITEM_CAS_CONFLICT');
+    }
+    const context = await this.pageContext(workItem);
+    if (!context || context.gapLedger.inputRevision !== workItem.revision) {
+      throw new Error('ENGINEER_REVIEW_GAP_LEDGER_CURRENTNESS_INVALID');
+    }
+    const gapsByRef = new Map(
+      context.gapLedger.gaps.map((gap) => [gap.gapRef, gap]),
+    );
+    const selected = input.gapRefs.map((gapRef) => {
+      const gap = gapsByRef.get(gapRef);
+      if (!gap) throw new Error(`ENGINEER_REVIEW_GAP_UNKNOWN:${gapRef}`);
+      if (
+        gap.queryability !== 'REVIEW_QUERYABLE' ||
+        gap.authority.owner !== 'CANONICAL_HOST' ||
+        gap.authority.modelMayClose !== false
+      ) {
+        throw new Error(`ENGINEER_REVIEW_GAP_NOT_QUERYABLE:${gapRef}`);
+      }
+      if (gap.resolutionStatus === 'RESOLVED_BY_ENGINEER_REVIEW') {
+        throw new Error(`ENGINEER_REVIEW_GAP_ALREADY_RESOLVED:${gapRef}`);
+      }
+      return gap;
+    });
+    const affectedCriterionIds = uniqueSortedTexts(
+      selected.flatMap((gap) => gap.affectedCriterionIds),
+    );
+    if (!sameTextSet(affectedCriterionIds, input.affectedCriterionIds)) {
+      throw new Error('ENGINEER_REVIEW_GAP_AFFECTED_CRITERIA_MISMATCH');
+    }
+    return {
+      gapRefs: uniqueSortedTexts(selected.map((gap) => gap.gapRef)),
+      resolvedMissingInputs: uniqueSortedTexts(
+        selected.map((gap) => gap.missingInputId),
+      ),
+      affectedCriterionIds,
+    };
   }
 
   async pageContext(
@@ -693,6 +762,18 @@ function validDistinctTexts(values: string[]): boolean {
   return (
     values.every((value) => typeof value === 'string' && value.trim() !== '') &&
     new Set(values).size === values.length
+  );
+}
+
+function uniqueSortedTexts(values: string[]): string[] {
+  return [...new Set(values)].sort((left, right) => left.localeCompare(right));
+}
+
+function sameTextSet(left: string[], right: string[]): boolean {
+  return (
+    left.length === right.length &&
+    left.every((value) => right.includes(value)) &&
+    right.every((value) => left.includes(value))
   );
 }
 

@@ -30,6 +30,8 @@ export interface ReviewActionDraftCandidate {
   baseRevision: number;
   evaluationItemId: string;
   proposedStatus: string;
+  /** Host-issued gap refs that this evidence draft proposes to resolve. */
+  resolvedGapRefs?: string[];
   adoptedInputRefs: string[];
   sourceRefs: string[];
   assumptions: string[];
@@ -132,6 +134,8 @@ export interface ConfirmReviewActionDraftResponse {
   reviewAction: {
     evaluationItemId: string;
     affectedItemIds: string[];
+    resolvedGapRefs: string[];
+    resolvedMissingInputs: string[];
     workItemRevision: number;
     engineerReviewRevision: number;
     overallStatus: 'STALE' | 'NOT_AVAILABLE';

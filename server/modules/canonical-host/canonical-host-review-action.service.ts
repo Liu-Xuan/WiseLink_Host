@@ -76,19 +76,39 @@ export class CanonicalHostReviewActionService {
       throw reviewConflict('REVIEW_ACTION_DRAFT_REQUIRED');
     }
     assertCurrentDraft(draft, turn, conversation, grant);
+    const draftResolvedGapRefs = draft.resolvedGapRefs ?? [];
+    const resolvedGaps =
+      draftResolvedGapRefs.length > 0
+        ? await this.engineerReviews.resolveReviewActionGaps(
+            {
+              workItemId: conversation.workItemId,
+              expectedRevision: draft.baseRevision,
+              gapRefs: [...draftResolvedGapRefs],
+              affectedCriterionIds: [...draft.affectedItemIds],
+            },
+            hostActor(session),
+          )
+        : {
+            gapRefs: [] as string[],
+            resolvedMissingInputs: [] as string[],
+            affectedCriterionIds: [...draft.affectedItemIds],
+          };
     const action = await this.deriveReviewAction(draft, turn, conversation);
+    if (resolvedGaps.gapRefs.length > 0 && !action.evidence) {
+      throw reviewConflict('REVIEW_ACTION_GAP_EVIDENCE_REQUIRED');
+    }
     const updated = await this.engineerReviews.recordReviewAction(
       {
         workItemId: conversation.workItemId,
         expectedRevision: draft.baseRevision,
         criterionId: draft.evaluationItemId,
-        affectedCriterionIds: [...draft.affectedItemIds],
+        affectedCriterionIds: [...resolvedGaps.affectedCriterionIds],
         comment: action.comment,
         ...(action.evidence
           ? {
               actionType: 'SUPPLEMENT_EVIDENCE' as const,
               evidence: action.evidence,
-              resolvedMissingInputs: [],
+              resolvedMissingInputs: [...resolvedGaps.resolvedMissingInputs],
             }
           : {
               actionType: 'REVISE_JUDGMENT' as const,
@@ -123,7 +143,9 @@ export class CanonicalHostReviewActionService {
       turn: reviewTurnReadModel(syncedTurn),
       reviewAction: {
         evaluationItemId: draft.evaluationItemId,
-        affectedItemIds: [...draft.affectedItemIds],
+        affectedItemIds: [...resolvedGaps.affectedCriterionIds],
+        resolvedGapRefs: [...resolvedGaps.gapRefs],
+        resolvedMissingInputs: [...resolvedGaps.resolvedMissingInputs],
         workItemRevision: updated.revision,
         engineerReviewRevision: engineerReview.revision,
         overallStatus: overall ? 'STALE' : 'NOT_AVAILABLE',

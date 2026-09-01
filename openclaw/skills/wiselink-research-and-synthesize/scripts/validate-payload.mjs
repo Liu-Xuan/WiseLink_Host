@@ -1472,7 +1472,10 @@ function validateOverallApplicabilityResult(result) {
   if (!['CANDIDATE_ONLY', 'WAITING_INPUT'].includes(result.status)) {
     fail('OVERALL_APPLICABILITY_RESULT_STATUS_INVALID');
   }
-  nonEmpty(result.sourceResultId, 'OVERALL_APPLICABILITY_SOURCE_RESULT_INVALID');
+  nonEmpty(
+    result.sourceResultId,
+    'OVERALL_APPLICABILITY_SOURCE_RESULT_INVALID',
+  );
   positiveInteger(
     result.inputRevision,
     'OVERALL_APPLICABILITY_INPUT_REVISION_INVALID',
@@ -2604,7 +2607,10 @@ function validateApplicabilityAstVocabulary(value) {
       [],
       `applicability AST property ${propertyIndex}`,
     );
-    nonEmpty(property.property, 'APPLICABILITY_AST_VOCABULARY_PROPERTY_INVALID');
+    nonEmpty(
+      property.property,
+      'APPLICABILITY_AST_VOCABULARY_PROPERTY_INVALID',
+    );
     if (seenProperties.has(property.property)) {
       fail('APPLICABILITY_AST_VOCABULARY_PROPERTY_DUPLICATE');
     }
@@ -2631,12 +2637,19 @@ function validateApplicabilityAstVocabulary(value) {
         [],
         `applicability AST operator ${propertyIndex}:${operatorIndex}`,
       );
-      nonEmpty(operator.operator, 'APPLICABILITY_AST_VOCABULARY_OPERATOR_INVALID');
+      nonEmpty(
+        operator.operator,
+        'APPLICABILITY_AST_VOCABULARY_OPERATOR_INVALID',
+      );
       if (seenOperators.has(operator.operator)) {
         fail('APPLICABILITY_AST_VOCABULARY_OPERATOR_DUPLICATE');
       }
       seenOperators.add(operator.operator);
-      if (!['scalar', 'scalar_array', 'min_max_object'].includes(operator.valueShape)) {
+      if (
+        !['scalar', 'scalar_array', 'min_max_object'].includes(
+          operator.valueShape,
+        )
+      ) {
         fail('APPLICABILITY_AST_VOCABULARY_VALUE_SHAPE_INVALID');
       }
     });
@@ -2647,10 +2660,30 @@ function validateApplicabilityAstVocabulary(value) {
     [],
     'applicability AST vocabulary limits',
   );
-  integerInRange(value.limits.maxDepth, 1, 64, 'APPLICABILITY_AST_VOCABULARY_LIMIT_INVALID');
-  integerInRange(value.limits.maxNodes, 1, 2000, 'APPLICABILITY_AST_VOCABULARY_LIMIT_INVALID');
-  integerInRange(value.limits.maxGroupChildren, 1, 500, 'APPLICABILITY_AST_VOCABULARY_LIMIT_INVALID');
-  integerInRange(value.limits.maxSetValues, 1, 1000, 'APPLICABILITY_AST_VOCABULARY_LIMIT_INVALID');
+  integerInRange(
+    value.limits.maxDepth,
+    1,
+    64,
+    'APPLICABILITY_AST_VOCABULARY_LIMIT_INVALID',
+  );
+  integerInRange(
+    value.limits.maxNodes,
+    1,
+    2000,
+    'APPLICABILITY_AST_VOCABULARY_LIMIT_INVALID',
+  );
+  integerInRange(
+    value.limits.maxGroupChildren,
+    1,
+    500,
+    'APPLICABILITY_AST_VOCABULARY_LIMIT_INVALID',
+  );
+  integerInRange(
+    value.limits.maxSetValues,
+    1,
+    1000,
+    'APPLICABILITY_AST_VOCABULARY_LIMIT_INVALID',
+  );
 }
 
 function validateApplicabilityAstNode(
@@ -2662,7 +2695,10 @@ function validateApplicabilityAstNode(
   assertObject(value, 'applicability AST node');
   nonEmpty(value.type, 'APPLICABILITY_AST_TYPE_REQUIRED');
   if (vocabulary) {
-    if (depth > vocabulary.limits.maxDepth || ++budget.count > vocabulary.limits.maxNodes) {
+    if (
+      depth > vocabulary.limits.maxDepth ||
+      ++budget.count > vocabulary.limits.maxNodes
+    ) {
       fail('APPLICABILITY_AST_TOO_COMPLEX');
     }
     if (!vocabulary.nodeTypes.includes(value.type)) {
@@ -2715,8 +2751,7 @@ function validateApplicabilityAstNode(
     array(value.children, 'APPLICABILITY_AST_CHILDREN_INVALID');
     if (
       value.children.length < 1 ||
-      (vocabulary &&
-        value.children.length > vocabulary.limits.maxGroupChildren)
+      (vocabulary && value.children.length > vocabulary.limits.maxGroupChildren)
     ) {
       fail('APPLICABILITY_AST_CHILDREN_INVALID');
     }
@@ -2745,7 +2780,9 @@ function validateApplicabilityAssertValue(
       fail('APPLICABILITY_AST_VALUE_SHAPE_INVALID');
     }
     value.forEach((item) => validateApplicabilityScalar(item, valueType));
-    if (new Set(value.map((item) => canonicalJson(item))).size !== value.length) {
+    if (
+      new Set(value.map((item) => canonicalJson(item))).size !== value.length
+    ) {
       fail('APPLICABILITY_AST_VALUE_SHAPE_INVALID');
     }
     return;
@@ -2753,10 +2790,7 @@ function validateApplicabilityAssertValue(
   if (valueShape === 'min_max_object') {
     assertObject(value, 'applicability AST range');
     const keys = Object.keys(value).sort();
-    if (
-      keys.length < 1 ||
-      keys.some((key) => key !== 'min' && key !== 'max')
-    ) {
+    if (keys.length < 1 || keys.some((key) => key !== 'min' && key !== 'max')) {
       fail('APPLICABILITY_AST_VALUE_SHAPE_INVALID');
     }
     if (Object.hasOwn(value, 'min')) {
@@ -3575,7 +3609,7 @@ function containsPreservedUnit(text, unit) {
   while (offset <= text.length - unit.length) {
     const index = text.indexOf(unit, offset);
     if (index < 0) return false;
-    const before = index === 0 ? '' : text[index - 1] ?? '';
+    const before = index === 0 ? '' : (text[index - 1] ?? '');
     const after = text[index + unit.length] ?? '';
     const leftBounded = !/^\p{L}/u.test(unit) || !/\p{L}/u.test(before);
     const rightBounded = !/\p{L}$/u.test(unit) || !/\p{L}/u.test(after);
@@ -3830,6 +3864,7 @@ export function validateReviewCandidate(task, candidate) {
         'baseRevision',
         'evaluationItemId',
         'proposedStatus',
+        'resolvedGapRefs',
         'adoptedInputRefs',
         'sourceRefs',
         'assumptions',
@@ -3846,6 +3881,10 @@ export function validateReviewCandidate(task, candidate) {
     );
     nonEmpty(draft.evaluationItemId, 'REVIEW_CANDIDATE_DRAFT_ITEM_REQUIRED');
     nonEmpty(draft.proposedStatus, 'REVIEW_CANDIDATE_DRAFT_STATUS_REQUIRED');
+    uniqueTextArray(
+      draft.resolvedGapRefs,
+      'REVIEW_CANDIDATE_DRAFT_GAP_REFS_INVALID',
+    );
     uniqueTextArray(
       draft.adoptedInputRefs,
       'REVIEW_CANDIDATE_DRAFT_ADOPTED_REFS_INVALID',
@@ -3889,6 +3928,69 @@ export function validateReviewCandidate(task, candidate) {
       canonicalJson(candidate.affectedItemIds),
       'REVIEW_CANDIDATE_DRAFT_AFFECTED_ITEMS_MISMATCH',
     );
+    if (draft.resolvedGapRefs.length > 0) {
+      assertObject(task.context.evaluation, 'review evaluation context');
+      assertObject(task.context.evaluation.gapLedger, 'review gap ledger');
+      const gapLedger = task.context.evaluation.gapLedger;
+      equal(
+        gapLedger.inputRevision,
+        task.inputRevision,
+        'REVIEW_CANDIDATE_GAP_LEDGER_CURRENTNESS_INVALID',
+      );
+      equal(
+        gapLedger.currentness,
+        'CURRENT',
+        'REVIEW_CANDIDATE_GAP_LEDGER_CURRENTNESS_INVALID',
+      );
+      equal(
+        gapLedger.candidateOnly,
+        true,
+        'REVIEW_CANDIDATE_GAP_LEDGER_CURRENTNESS_INVALID',
+      );
+      array(gapLedger.gaps, 'REVIEW_CANDIDATE_GAP_LEDGER_INVALID');
+      const gapsByRef = new Map();
+      gapLedger.gaps.forEach((gap, index) => {
+        assertObject(gap, `review gap ${index}`);
+        nonEmpty(gap.gapRef, 'REVIEW_CANDIDATE_GAP_LEDGER_INVALID');
+        if (gapsByRef.has(gap.gapRef)) {
+          fail('REVIEW_CANDIDATE_GAP_LEDGER_INVALID');
+        }
+        gapsByRef.set(gap.gapRef, gap);
+      });
+      const selectedGaps = draft.resolvedGapRefs.map((gapRef) => {
+        const gap = gapsByRef.get(gapRef);
+        if (!gap) fail('REVIEW_CANDIDATE_DRAFT_GAP_NOT_ALLOWED');
+        assertObject(gap.authority, 'review gap authority');
+        if (
+          gap.queryability !== 'REVIEW_QUERYABLE' ||
+          gap.resolutionStatus === 'RESOLVED_BY_ENGINEER_REVIEW' ||
+          gap.authority.owner !== 'CANONICAL_HOST' ||
+          gap.authority.modelMayClose !== false
+        ) {
+          fail('REVIEW_CANDIDATE_DRAFT_GAP_NOT_RESOLVABLE');
+        }
+        uniqueTextArray(
+          gap.affectedCriterionIds,
+          'REVIEW_CANDIDATE_GAP_LEDGER_INVALID',
+        );
+        return gap;
+      });
+      const affectedFromGaps = [
+        ...new Set(selectedGaps.flatMap((gap) => gap.affectedCriterionIds)),
+      ].sort();
+      const affectedFromDraft = [...draft.affectedItemIds].sort();
+      equal(
+        canonicalJson(affectedFromGaps),
+        canonicalJson(affectedFromDraft),
+        'REVIEW_CANDIDATE_DRAFT_GAP_AFFECTED_ITEMS_MISMATCH',
+      );
+      const hasAttachmentEvidence = draft.sourceRefs.some((sourceRef) =>
+        task.attachmentRefs.includes(sourceRef),
+      );
+      if (draft.adoptedInputRefs.length === 0 && !hasAttachmentEvidence) {
+        fail('REVIEW_CANDIDATE_DRAFT_GAP_EVIDENCE_REQUIRED');
+      }
+    }
   }
   exactKeys(
     candidate.runtime,

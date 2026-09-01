@@ -313,6 +313,7 @@ export function parseReviewTurnCandidateContract(input: {
     ) {
       fail('REVIEW_RESULT_DRAFT_AFFECTED_ITEMS_MISMATCH');
     }
+    validateGapResolutionDraft(task, reviewActionDraft);
   }
   assertSubset(
     affectedItemIds,
@@ -386,6 +387,7 @@ function parseReviewActionDraft(
     'baseRevision',
     'evaluationItemId',
     'proposedStatus',
+    'resolvedGapRefs',
     'adoptedInputRefs',
     'sourceRefs',
     'assumptions',
@@ -395,17 +397,98 @@ function parseReviewActionDraft(
   requiredRevision(record.baseRevision, 'REVIEW_RESULT_DRAFT_REVISION_INVALID');
   requiredText(record.evaluationItemId, 'REVIEW_RESULT_DRAFT_ITEM_REQUIRED');
   requiredText(record.proposedStatus, 'REVIEW_RESULT_DRAFT_STATUS_REQUIRED');
-  ['adoptedInputRefs', 'sourceRefs', 'assumptions', 'affectedItemIds'].forEach(
-    (key) =>
-      assertUnique(
-        stringArray(record[key], 'REVIEW_RESULT_DRAFT_INVALID'),
-        'REVIEW_RESULT_DRAFT_DUPLICATE',
-      ),
+  [
+    'resolvedGapRefs',
+    'adoptedInputRefs',
+    'sourceRefs',
+    'assumptions',
+    'affectedItemIds',
+  ].forEach((key) =>
+    assertUnique(
+      stringArray(record[key], 'REVIEW_RESULT_DRAFT_INVALID'),
+      'REVIEW_RESULT_DRAFT_DUPLICATE',
+    ),
   );
   if (typeof record.overallImpact !== 'boolean') {
     fail('REVIEW_RESULT_DRAFT_OVERALL_IMPACT_INVALID');
   }
   return structuredClone(record) as unknown as ReviewActionDraftCandidate;
+}
+
+function validateGapResolutionDraft(
+  task: ReviewTurnTaskContract,
+  draft: ReviewActionDraftCandidate,
+): void {
+  const resolvedGapRefs = draft.resolvedGapRefs ?? [];
+  if (resolvedGapRefs.length === 0) return;
+  const evaluation = requiredRecord(
+    task.context.evaluation,
+    'REVIEW_RESULT_GAP_LEDGER_REQUIRED',
+  );
+  const ledger = requiredRecord(
+    evaluation.gapLedger,
+    'REVIEW_RESULT_GAP_LEDGER_REQUIRED',
+  );
+  if (
+    ledger.inputRevision !== task.inputRevision ||
+    ledger.currentness !== 'CURRENT' ||
+    ledger.candidateOnly !== true
+  ) {
+    fail('REVIEW_RESULT_GAP_LEDGER_CURRENTNESS_INVALID');
+  }
+  const gaps = requiredArray(
+    ledger.gaps,
+    'REVIEW_RESULT_GAP_LEDGER_REQUIRED',
+  ).map((value) => requiredRecord(value, 'REVIEW_RESULT_GAP_LEDGER_INVALID'));
+  const gapsByRef = new Map<string, Record<string, unknown>>();
+  for (const gap of gaps) {
+    const gapRef = requiredText(gap.gapRef, 'REVIEW_RESULT_GAP_LEDGER_INVALID');
+    if (gapsByRef.has(gapRef)) fail('REVIEW_RESULT_GAP_LEDGER_INVALID');
+    gapsByRef.set(gapRef, gap);
+  }
+  const selected = resolvedGapRefs.map((gapRef) => {
+    const gap = gapsByRef.get(gapRef);
+    if (!gap) fail('REVIEW_RESULT_DRAFT_GAP_NOT_ALLOWED');
+    const authority = requiredRecord(
+      gap.authority,
+      'REVIEW_RESULT_GAP_LEDGER_INVALID',
+    );
+    if (
+      gap.queryability !== 'REVIEW_QUERYABLE' ||
+      gap.resolutionStatus === 'RESOLVED_BY_ENGINEER_REVIEW' ||
+      authority.owner !== 'CANONICAL_HOST' ||
+      authority.modelMayClose !== false
+    ) {
+      fail('REVIEW_RESULT_DRAFT_GAP_NOT_RESOLVABLE');
+    }
+    return gap;
+  });
+  const affectedCriterionIds = uniqueSortedTexts(
+    selected.flatMap((gap) =>
+      stringArray(gap.affectedCriterionIds, 'REVIEW_RESULT_GAP_LEDGER_INVALID'),
+    ),
+  );
+  if (!sameTextSet(affectedCriterionIds, draft.affectedItemIds)) {
+    fail('REVIEW_RESULT_DRAFT_GAP_AFFECTED_ITEMS_MISMATCH');
+  }
+  const attachmentEvidence = draft.sourceRefs.some((sourceRef) =>
+    task.attachmentRefs.includes(sourceRef),
+  );
+  if (draft.adoptedInputRefs.length === 0 && !attachmentEvidence) {
+    fail('REVIEW_RESULT_DRAFT_GAP_EVIDENCE_REQUIRED');
+  }
+}
+
+function uniqueSortedTexts(values: string[]): string[] {
+  return [...new Set(values)].sort((left, right) => left.localeCompare(right));
+}
+
+function sameTextSet(left: string[], right: string[]): boolean {
+  return (
+    left.length === right.length &&
+    left.every((value) => right.includes(value)) &&
+    right.every((value) => left.includes(value))
+  );
 }
 
 function exactKeys(
