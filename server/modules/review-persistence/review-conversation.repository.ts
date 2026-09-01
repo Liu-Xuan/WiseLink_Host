@@ -32,6 +32,12 @@ const CANDIDATE_UNADOPTED = 'CANDIDATE_UNADOPTED';
 const OFFICIAL_CLIENT_ID = 'cli_aadde8b579f95bc9';
 const ENGINEER_INPUT_PREFIX = 'WLR7:';
 
+function assertOpenClawActorContext(actorId: string): void {
+  if (!actorId.trim() || actorId === '-1' || actorId.startsWith('service:')) {
+    throw new Error('REVIEW_OPENCLAW_ACTOR_CONTEXT_UNAVAILABLE');
+  }
+}
+
 type DatabaseExecutor = PostgresJsDatabase;
 
 export interface PersistedReviewConversation {
@@ -168,38 +174,9 @@ export class ReviewConversationRepository {
     conversation: PersistedReviewConversation;
     turn: PersistedReviewTurn;
   } | null> {
-    return this.withAuthenticatedActor(input.actorId, async (executor) => {
-      const conversation = await this.loadConversationInternal(
-        input.reviewConversationId,
-        executor,
-      );
-      if (!conversation) {
-        this.warnOpenClawBinding('CONVERSATION_NOT_VISIBLE');
-        return null;
-      }
-      if (
-        conversation.status !== ACTIVE_STATUS ||
-        conversation.tenantId !== input.tenantId ||
-        conversation.actorId !== input.actorId ||
-        conversation.workItemId !== input.workItemId
-      ) {
-        this.warnOpenClawBinding('CONVERSATION_SCOPE_MISMATCH');
-        return null;
-      }
-      if (!(await this.hasActiveOfficialActorMappingInternal(input, executor))) {
-        this.warnOpenClawBinding('OFFICIAL_ACTOR_MAPPING_NOT_VISIBLE');
-        return null;
-      }
-      const turn = await this.loadTurnByRequest(
-        input.reviewConversationId,
-        input.requestId,
-        executor,
-      );
-      if (!turn) {
-        this.warnOpenClawBinding('TURN_NOT_VISIBLE');
-        return null;
-      }
-      return { conversation, turn };
+    return this.loadActorBoundOpenClawTurn({
+      ...input,
+      requestId: input.requestId,
     });
   }
 
@@ -213,28 +190,136 @@ export class ReviewConversationRepository {
     conversation: PersistedReviewConversation;
     turn: PersistedReviewTurn;
   } | null> {
-    return this.withAuthenticatedActor(input.actorId, async (executor) => {
-      const conversation = await this.loadConversationInternal(
-        input.reviewConversationId,
-        executor,
-      );
-      if (
-        !conversation ||
-        conversation.status !== ACTIVE_STATUS ||
-        conversation.tenantId !== input.tenantId ||
-        conversation.actorId !== input.actorId ||
-        conversation.workItemId !== input.workItemId ||
-        !(await this.hasActiveOfficialActorMappingInternal(input, executor))
-      ) {
-        return null;
-      }
-      const turn = await this.loadTurnByIdInternal(
-        input.reviewConversationId,
-        input.reviewTurnId,
-        executor,
-      );
-      return turn ? { conversation, turn } : null;
+    return this.loadActorBoundOpenClawTurn({
+      ...input,
+      reviewTurnId: input.reviewTurnId,
     });
+  }
+
+  private async loadActorBoundOpenClawTurn(
+    input: {
+      reviewConversationId: string;
+      tenantId: string;
+      actorId: string;
+      workItemId: string;
+    } & ({ requestId: string } | { reviewTurnId: string }),
+  ): Promise<{
+    conversation: PersistedReviewConversation;
+    turn: PersistedReviewTurn;
+  } | null> {
+    assertOpenClawActorContext(input.actorId);
+    // The hosted APaaS adapter may route a raw execute and a subsequent ORM
+    // builder through different pooled connections. Establish the local RLS
+    // actor and read every bound row in one PostgreSQL statement instead.
+    const turnIdentity =
+      'requestId' in input
+        ? sql`candidate_turn.request_id = ${input.requestId}`
+        : sql`candidate_turn.review_turn_id = ${input.reviewTurnId}`;
+    const rows = await this.db.execute<ActorBoundReviewTurnRow>(sql`
+      WITH actor_context AS MATERIALIZED (
+        SELECT set_config('app.user_id', ${input.actorId}, TRUE) AS actor_id
+      )
+      SELECT
+        actor_context.actor_id AS "actorContext",
+        bound_conversation.review_conversation_id AS "reviewConversationId",
+        bound_conversation.tenant_id AS "conversationTenantId",
+        bound_conversation.actor_id AS "conversationActorId",
+        bound_conversation.work_item_id AS "conversationWorkItemId",
+        bound_conversation.openclaw_agent_id AS "openClawAgentId",
+        bound_conversation.openclaw_session_key AS "openClawSessionKey",
+        bound_conversation.started_at_revision AS "startedAtRevision",
+        bound_conversation.last_synced_revision AS "lastSyncedRevision",
+        bound_conversation.status AS "conversationStatus",
+        bound_conversation.created_at AS "conversationCreatedAt",
+        bound_conversation.last_active_at AS "lastActiveAt",
+        bound_conversation.closed_at AS "closedAt",
+        official_mapping.mapping_id AS "officialMappingId",
+        bound_turn.review_turn_id AS "reviewTurnId",
+        bound_turn.review_conversation_id AS "turnReviewConversationId",
+        bound_turn.engineer_supplied_input_id AS "engineerSuppliedInputId",
+        bound_turn.turn_no AS "turnNo",
+        bound_turn.request_id AS "requestId",
+        bound_turn.input_revision AS "inputRevision",
+        bound_turn.user_message AS "userMessage",
+        bound_turn.supplied_input_type AS "inputType",
+        bound_turn.supplied_adoption_status AS "adoptionStatus",
+        bound_turn.supplied_candidate_text AS "candidateText",
+        bound_turn.response_type AS "responseType",
+        bound_turn.assistant_response AS "assistantResponse",
+        bound_turn.source_refs_json AS "sourceRefsJson",
+        bound_turn.missing_inputs_json AS "missingInputsJson",
+        bound_turn.candidate_evidence_refs_json AS "candidateEvidenceRefsJson",
+        bound_turn.review_action_draft_json AS "reviewActionDraftJson",
+        bound_turn.affected_item_ids_json AS "affectedItemIdsJson",
+        bound_turn.warnings_json AS "warningsJson",
+        bound_turn.result_provenance_json AS "resultProvenanceJson",
+        bound_turn.result_content_hash AS "resultContentHash",
+        bound_turn.action_attempt_id AS "actionAttemptId",
+        bound_turn.assistant_completed_at AS "assistantCompletedAt",
+        bound_turn.created_at AS "turnCreatedAt"
+      FROM actor_context
+      LEFT JOIN LATERAL (
+        SELECT candidate_conversation.*
+        FROM review_conversation AS candidate_conversation
+        WHERE candidate_conversation.review_conversation_id =
+          ${input.reviewConversationId}
+          AND candidate_conversation.actor_id = actor_context.actor_id
+        LIMIT 1
+      ) AS bound_conversation ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT candidate_mapping.id AS mapping_id
+        FROM identity_subject_mapping AS candidate_mapping
+        WHERE candidate_mapping.miaoda_tenant_id = ${input.tenantId}
+          AND candidate_mapping.miaoda_user_id = actor_context.actor_id
+          AND candidate_mapping.expected_client_id = ${OFFICIAL_CLIENT_ID}
+          AND candidate_mapping.status = ${ACTIVE_STATUS}
+        LIMIT 1
+      ) AS official_mapping ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT
+          candidate_turn.*,
+          supplied_input.input_type AS supplied_input_type,
+          supplied_input.adoption_status AS supplied_adoption_status,
+          supplied_input.candidate_text AS supplied_candidate_text
+        FROM review_turn AS candidate_turn
+        INNER JOIN engineer_supplied_input AS supplied_input
+          ON supplied_input.engineer_supplied_input_id =
+            candidate_turn.engineer_supplied_input_id
+          AND supplied_input.actor_id = actor_context.actor_id
+        WHERE candidate_turn.review_conversation_id =
+          ${input.reviewConversationId}
+          AND candidate_turn.actor_id = actor_context.actor_id
+          AND ${turnIdentity}
+        LIMIT 1
+      ) AS bound_turn ON TRUE
+    `);
+    const row = rows[0];
+    if (row?.actorContext !== input.actorId) {
+      throw new Error('REVIEW_OPENCLAW_ACTOR_CONTEXT_UNAVAILABLE');
+    }
+    if (!row.reviewConversationId) {
+      this.warnOpenClawBinding('CONVERSATION_NOT_VISIBLE');
+      return null;
+    }
+    const conversation = actorBoundConversation(row);
+    if (
+      conversation.status !== ACTIVE_STATUS ||
+      conversation.tenantId !== input.tenantId ||
+      conversation.actorId !== input.actorId ||
+      conversation.workItemId !== input.workItemId
+    ) {
+      this.warnOpenClawBinding('CONVERSATION_SCOPE_MISMATCH');
+      return null;
+    }
+    if (!row.officialMappingId) {
+      this.warnOpenClawBinding('OFFICIAL_ACTOR_MAPPING_NOT_VISIBLE');
+      return null;
+    }
+    if (!row.reviewTurnId) {
+      this.warnOpenClawBinding('TURN_NOT_VISIBLE');
+      return null;
+    }
+    return { conversation, turn: persistedTurn(actorBoundTurn(row)) };
   }
 
   async loadTurnById(
@@ -657,9 +742,7 @@ export class ReviewConversationRepository {
     actorId: string,
     operation: (executor: DatabaseExecutor) => Promise<T>,
   ): Promise<T> {
-    if (!actorId.trim() || actorId === '-1' || actorId.startsWith('service:')) {
-      throw new Error('REVIEW_OPENCLAW_ACTOR_CONTEXT_UNAVAILABLE');
-    }
+    assertOpenClawActorContext(actorId);
     return this.db.transaction(async (transaction) => {
       const executor = transaction as DatabaseExecutor;
       const rows = await executor.execute<{ actorId: string | null }>(
@@ -757,6 +840,123 @@ interface SelectedReviewTurn {
   actionAttemptId: string | null;
   assistantCompletedAt: Date | null;
   createdAt: Date;
+}
+
+interface ActorBoundReviewTurnRow extends Record<string, unknown> {
+  actorContext: string | null;
+  reviewConversationId: string | null;
+  conversationTenantId: string | null;
+  conversationActorId: string | null;
+  conversationWorkItemId: string | null;
+  openClawAgentId: string | null;
+  openClawSessionKey: string | null;
+  startedAtRevision: number | null;
+  lastSyncedRevision: number | null;
+  conversationStatus: string | null;
+  conversationCreatedAt: Date | null;
+  lastActiveAt: Date | null;
+  closedAt: Date | null;
+  officialMappingId: string | null;
+  reviewTurnId: string | null;
+  turnReviewConversationId: string | null;
+  engineerSuppliedInputId: string | null;
+  turnNo: number | null;
+  requestId: string | null;
+  inputRevision: number | null;
+  userMessage: string | null;
+  inputType: string | null;
+  adoptionStatus: string | null;
+  candidateText: string | null;
+  responseType: string | null;
+  assistantResponse: string | null;
+  sourceRefsJson: string | null;
+  missingInputsJson: string | null;
+  candidateEvidenceRefsJson: string | null;
+  reviewActionDraftJson: string | null;
+  affectedItemIdsJson: string | null;
+  warningsJson: string | null;
+  resultProvenanceJson: string | null;
+  resultContentHash: string | null;
+  actionAttemptId: string | null;
+  assistantCompletedAt: Date | null;
+  turnCreatedAt: Date | null;
+}
+
+function actorBoundConversation(
+  row: ActorBoundReviewTurnRow,
+): PersistedReviewConversation {
+  if (
+    !row.reviewConversationId ||
+    !row.conversationTenantId ||
+    !row.conversationActorId ||
+    !row.conversationWorkItemId ||
+    !row.openClawAgentId ||
+    !row.openClawSessionKey ||
+    row.startedAtRevision === null ||
+    row.lastSyncedRevision === null ||
+    !row.conversationStatus ||
+    !row.conversationCreatedAt ||
+    !row.lastActiveAt
+  ) {
+    throw new Error('REVIEW_OPENCLAW_CONVERSATION_BINDING_PARTIAL');
+  }
+  return {
+    reviewConversationId: row.reviewConversationId,
+    tenantId: row.conversationTenantId,
+    actorId: row.conversationActorId,
+    workItemId: row.conversationWorkItemId,
+    openClawAgentId: row.openClawAgentId,
+    openClawSessionKey: row.openClawSessionKey,
+    startedAtRevision: row.startedAtRevision,
+    lastSyncedRevision: row.lastSyncedRevision,
+    status: row.conversationStatus,
+    createdAt: row.conversationCreatedAt,
+    lastActiveAt: row.lastActiveAt,
+    closedAt: row.closedAt,
+  };
+}
+
+function actorBoundTurn(row: ActorBoundReviewTurnRow): SelectedReviewTurn {
+  if (
+    !row.reviewTurnId ||
+    !row.turnReviewConversationId ||
+    !row.engineerSuppliedInputId ||
+    row.turnNo === null ||
+    !row.requestId ||
+    row.inputRevision === null ||
+    !row.userMessage ||
+    !row.inputType ||
+    !row.adoptionStatus ||
+    !row.candidateText ||
+    !row.turnCreatedAt
+  ) {
+    throw new Error('REVIEW_OPENCLAW_TURN_BINDING_PARTIAL');
+  }
+  return {
+    reviewTurnId: row.reviewTurnId,
+    reviewConversationId: row.turnReviewConversationId,
+    engineerSuppliedInputId: row.engineerSuppliedInputId,
+    turnNo: row.turnNo,
+    requestId: row.requestId,
+    inputRevision: row.inputRevision,
+    userMessage: row.userMessage,
+    inputType: row.inputType,
+    adoptionStatus: row.adoptionStatus,
+    candidateText: row.candidateText,
+    responseType: row.responseType,
+    assistantResponse: row.assistantResponse,
+    sourceRefsJson: row.sourceRefsJson,
+    missingInputsJson: row.missingInputsJson,
+    candidateEvidenceRefsJson: row.candidateEvidenceRefsJson,
+    reviewActionDraftJson: row.reviewActionDraftJson,
+    affectedItemIdsJson: row.affectedItemIdsJson,
+    warningsJson: row.warningsJson,
+    resultProvenanceJson: row.resultProvenanceJson,
+    resultContentHash: row.resultContentHash,
+    actionAttemptId: row.actionAttemptId,
+    assistantCompletedAt: row.assistantCompletedAt,
+    createdAt: row.turnCreatedAt,
+  };
 }
 
 function persistedTurn(row: SelectedReviewTurn): PersistedReviewTurn {

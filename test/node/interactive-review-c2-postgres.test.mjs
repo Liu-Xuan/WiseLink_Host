@@ -241,6 +241,24 @@ async function assertOpenClawActorScopedBinding(value) {
     assert.equal(binding.turn.reviewTurnId, 'RT-C2');
     assert.equal(binding.turn.assistantCandidate, null);
 
+    const byIdBinding = await repository.loadOpenClawTurnByIdBinding({
+      reviewConversationId: 'RC-C2',
+      reviewTurnId: 'RT-C2',
+      tenantId: 'tenant-C2',
+      actorId: 'actor-C2',
+      workItemId: 'WI-C2',
+    });
+    assert.ok(byIdBinding);
+    assert.equal(byIdBinding.turn.requestId, 'request-C2');
+
+    const [contextAfterStatement] = await runtimeSql`
+      SELECT current_setting('app.user_id', true) AS "actorContext"
+    `;
+    assert.ok(
+      contextAfterStatement.actorContext === null ||
+        contextAfterStatement.actorContext === '',
+    );
+
     assert.equal(
       await repository.loadOpenClawTurnBinding({
         reviewConversationId: 'RC-C2',
