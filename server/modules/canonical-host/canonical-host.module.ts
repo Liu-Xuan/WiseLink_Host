@@ -85,6 +85,8 @@ import { CanonicalAeoEditingInputProducer } from './canonical-aeo-editing-input.
 import { CanonicalHostIntegratedAssessmentService } from './canonical-host-integrated-assessment.service';
 import { CanonicalHostEngineerReviewService } from './canonical-host-engineer-review.service';
 import { CanonicalHostLibraryIndexService } from './canonical-host-library-index.service';
+import { CanonicalLibraryCatalogController } from './canonical-library-catalog.controller';
+import { CanonicalLibraryCatalogService } from './canonical-library-catalog.service';
 import { AeoSameWorkItemAuthoringModule } from '../aeo-authoring/public-api';
 import {
   UnconfiguredCanonicalBaseRuleResultProvider,
@@ -176,6 +178,7 @@ export interface CanonicalHostModuleOptions {
     EngineeringMatterController,
     CanonicalHostAeoEditingController,
     CanonicalTranslationKnowledgeController,
+    CanonicalLibraryCatalogController,
     BatchApplicabilityController,
     ConfigurationEvidenceController,
   ],
@@ -211,6 +214,7 @@ export interface CanonicalHostModuleOptions {
     CanonicalHostIntegratedAssessmentService,
     CanonicalHostEngineerReviewService,
     CanonicalHostLibraryIndexService,
+    CanonicalLibraryCatalogService,
     CanonicalHostAeoService,
     CanonicalRuleSetArtifactReader,
     CanonicalRuleSetLifecycleRepository,
@@ -398,6 +402,7 @@ export class CanonicalHostModule {
         EngineeringMatterController,
         CanonicalHostAeoEditingController,
         CanonicalTranslationKnowledgeController,
+        CanonicalLibraryCatalogController,
         BatchApplicabilityController,
         ConfigurationEvidenceController,
       ],
@@ -453,6 +458,7 @@ export class CanonicalHostModule {
         CanonicalHostIntegratedAssessmentService,
         CanonicalHostEngineerReviewService,
         CanonicalHostLibraryIndexService,
+        CanonicalLibraryCatalogService,
         CanonicalHostAeoService,
         CanonicalRuleSetArtifactReader,
         CanonicalRuleSetLifecycleRepository,
@@ -484,6 +490,7 @@ export class CanonicalHostModule {
         CanonicalHostIntegratedAssessmentService,
         CanonicalHostEngineerReviewService,
         CanonicalHostLibraryIndexService,
+        CanonicalLibraryCatalogService,
         CanonicalHostAeoService,
         CanonicalHostAeoEditingService,
         CanonicalHostApplicabilityInputProducer,

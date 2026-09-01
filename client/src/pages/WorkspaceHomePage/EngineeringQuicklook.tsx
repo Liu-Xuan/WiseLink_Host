@@ -174,7 +174,11 @@ export default function EngineeringQuicklook({
               </div>
               <div>
                 <dt>关联资料</dt>
-                <dd>{quicklook.relatedDocumentCount} 项</dd>
+                <dd>
+                  {quicklook.relatedDocumentCount === null
+                    ? '进入资料族后读取'
+                    : `${quicklook.relatedDocumentCount} 项`}
+                </dd>
               </div>
             </dl>
             <p>

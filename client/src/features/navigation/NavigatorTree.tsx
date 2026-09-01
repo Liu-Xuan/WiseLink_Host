@@ -286,7 +286,7 @@ export default function NavigatorTree({
           onClick={() => onModeChange('matter')}
           onKeyDown={(event) => handleModeKeyDown(event, 'matter')}
         >
-          按事项
+          按评估
         </button>
       </div>
 
@@ -303,7 +303,7 @@ export default function NavigatorTree({
 
       {mode === 'matter' ? (
         <p className="wl-navigator-scope-note">
-          当前仅展示本事项的关联内容；跨事项汇总尚未开放。
+          当前仅展示本次工程评估的关联内容；跨评估汇总尚未开放。
         </p>
       ) : null}
 
@@ -313,13 +313,15 @@ export default function NavigatorTree({
         className="wl-navigator-tree"
         role="tree"
         aria-labelledby={`${idPrefix}-${mode}-mode`}
-        aria-label={mode === 'document' ? '按文档浏览目录' : '按事项聚合目录'}
+        aria-label={
+          mode === 'document' ? '按文档浏览目录' : '按工程评估聚合目录'
+        }
         onKeyDown={handleKeyDown}
       >
         {flatVisible.length === 0 ? (
           <p className="wl-navigator-empty">
             {nodes.length === 0
-              ? '读取一个受控事项后，目录会出现在这里。'
+              ? '读取一项受控工程评估后，目录会出现在这里。'
               : '当前搜索没有匹配节点。'}
           </p>
         ) : (

@@ -99,7 +99,7 @@ export function WorkItemContextTree({
       </div>
       <footer>
         <span>{nodes.length} 个上下文节点</span>
-        <small>目录随当前工程事项的最新资料更新。</small>
+        <small>目录随当前工程评估的最新资料更新。</small>
       </footer>
     </aside>
   );
@@ -147,7 +147,7 @@ function targetByNode(value: CanonicalLibraryIndexNode['targetNode']): string {
   if (value === 'package') return 'workspace-package';
   if (value === 'reader') return 'workspace-reader';
   if (value === 'assessment') return 'workspace-assessment';
-  if (value === 'overall') return 'workspace-reasoning';
+  if (value === 'process') return 'workspace-reasoning';
   return 'workspace-aeo';
 }
 

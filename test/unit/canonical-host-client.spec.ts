@@ -31,6 +31,8 @@ import {
   getCanonicalHostClientSessionGeneration,
   getCurrentReviewConversation,
   getDocumentParsingPage,
+  getEngineeringQuicklook,
+  getLibraryCatalog,
   getStructuredContentPage,
   getLibraryIndex,
   getOverallRegenerationStatus,
@@ -779,3 +781,54 @@ function restoreGlobalCrypto(): void {
   }
   Reflect.deleteProperty(globalThis, 'crypto');
 }
+
+describe('canonical Host-owned library clients', () => {
+  beforeEach(() => {
+    invalidateCanonicalHostClientSession();
+    request.mockReset();
+  });
+
+  it('reads a paginated server catalog without using a Workbench DTO', async () => {
+    request.mockResolvedValue({
+      status: 200,
+      data: { schemaVersion: 'wiselink.3_1.library_catalog.v1', items: [] },
+    });
+
+    await getLibraryCatalog({
+      view: 'assessment',
+      query: '737',
+      family: 'B737',
+      cursor: 'opaque-cursor',
+      limit: 24,
+    });
+
+    expect(request).toHaveBeenCalledWith({
+      url: '/api/canonical-host/library-catalog',
+      method: 'GET',
+      params: {
+        view: 'assessment',
+        query: '737',
+        family: 'B737',
+        cursor: 'opaque-cursor',
+        limit: 24,
+      },
+    });
+  });
+
+  it('reads quicklook independently from Reader, Review, and PDF payloads', async () => {
+    request.mockResolvedValue({
+      status: 200,
+      data: {
+        schemaVersion: 'wiselink.3_1.engineering_quicklook.v1',
+        workItemId: 'WI-737/34',
+      },
+    });
+
+    await getEngineeringQuicklook('WI-737/34');
+
+    expect(request).toHaveBeenCalledWith({
+      url: '/api/canonical-host/library-catalog/WI-737%2F34/quicklook',
+      method: 'GET',
+    });
+  });
+});

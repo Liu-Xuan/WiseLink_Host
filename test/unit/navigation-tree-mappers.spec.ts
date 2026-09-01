@@ -37,10 +37,7 @@ describe('navigation tree user-facing state semantics', () => {
   });
 });
 
-function node(
-  state: string,
-  index: number,
-): CanonicalLibraryIndexNode {
+function node(state: string, index: number): CanonicalLibraryIndexNode {
   return {
     id: `node-${index}`,
     parentId: null,
@@ -48,7 +45,7 @@ function node(
     label: '综合评估意见',
     detail: '当前候选',
     state,
-    targetNode: 'overall',
+    targetNode: 'process',
     authority: 'HOST_WORKITEM_PROJECTION',
   };
 }

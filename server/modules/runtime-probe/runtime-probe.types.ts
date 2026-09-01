@@ -8,6 +8,8 @@ export interface RuntimeProbeResponse {
   status: 'PASS' | 'BLOCKED';
   appId: 'app_17bzc551rsg';
   deployedCommit: string;
+  releaseId: string;
+  apiContractVersion: 'wiselink.3_1.canonical_host.r06.0';
   selectedContract: {
     contractId: 'techpub.parsed-package.v1';
     contractRevision: 'frozen.2';

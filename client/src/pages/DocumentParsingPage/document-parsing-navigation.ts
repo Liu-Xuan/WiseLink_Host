@@ -4,7 +4,7 @@ export type WorkbenchNode =
   | 'reader'
   | 'assessment'
   | 'review'
-  | 'overall'
+  | 'process'
   | 'aeo';
 
 export interface WorkbenchTabDefinition {
@@ -30,7 +30,7 @@ export const WORKBENCH_TAB_DEFINITIONS: WorkbenchTabDefinition[] = [
     mobileOrder: 2,
   },
   {
-    key: 'overall',
+    key: 'process',
     label: '分析过程',
     mobileLabel: '动态',
     mobileOrder: 4,
@@ -51,11 +51,12 @@ export function getWorkbenchNode(value: string | null): WorkbenchNode {
     value === 'reader' ||
     value === 'assessment' ||
     value === 'review' ||
-    value === 'overall' ||
+    value === 'process' ||
     value === 'aeo'
   ) {
     return value;
   }
+  if (value === 'overall') return 'process';
   return 'assessment';
 }
 

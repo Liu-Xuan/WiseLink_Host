@@ -9,7 +9,7 @@ import {
 } from 'react';
 import { useLocation } from 'react-router-dom';
 
-export type CurrentObjectKind = 'DOCUMENT' | 'MATTER';
+export type CurrentObjectKind = 'DOCUMENT' | 'WORKITEM' | 'MATTER';
 
 export interface CurrentObjectRoutes {
   overview: string;
@@ -64,7 +64,10 @@ export function currentRouteWorkItemId(
   );
   if (routeMatch?.[1]) return decodeRouteSegment(routeMatch[1]);
   if (pathname !== '/library') return '';
-  return new URLSearchParams(search).get('workItemId')?.trim() ?? '';
+  const params = new URLSearchParams(search);
+  return (
+    params.get('selected')?.trim() ?? params.get('workItemId')?.trim() ?? ''
+  );
 }
 
 export function CurrentObjectContextProvider({

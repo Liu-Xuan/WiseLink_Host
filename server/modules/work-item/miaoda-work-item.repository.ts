@@ -5,13 +5,28 @@ import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  ilike,
+  inArray,
+  isNull,
+  lt,
+  or,
+} from 'drizzle-orm';
 
 import type {
   CanonicalParseAuthorizationProjection,
   CanonicalWorkItemProjection,
 } from '@shared/api.interface';
-import { actionAttempt, workItem } from '../../database/schema';
+import {
+  actionAttempt,
+  dmDocumentVersion,
+  dmPublicationFamily,
+  workItem,
+} from '../../database/schema';
 
 const ACTION_TYPE = 'PARSE_PDF';
 
@@ -56,6 +71,28 @@ export interface OwnedWorkItemSummary extends WorkItemAuthorizationBinding {
   actionType: string;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface OwnedLibraryCatalogCursor {
+  updatedAt: Date;
+  workItemId: string;
+}
+
+export interface OwnedLibraryCatalogRow {
+  workItemId: string;
+  revision: number;
+  status: string;
+  documentId: string;
+  documentVersionId: string;
+  requestedByUserId: string;
+  createdAt: Date;
+  updatedAt: Date;
+  projection: CanonicalWorkItemProjection | null;
+  documentCode: string;
+  documentFamily: string;
+  businessRevision: string;
+  currentDocumentVersionId: string | null;
+  currentGeneration: number;
 }
 
 export type AssessmentActionType =
@@ -557,6 +594,112 @@ export class MiaodaWorkItemRepository {
       )
       .orderBy(desc(workItem.updatedAt))
       .limit(limit);
+  }
+
+  /**
+   * Creator-owned, tenant-scoped catalog rows for the native browser.
+   * Search and cursor predicates stay in SQL so pagination never depends on
+   * browser history or a post-filtered page.
+   */
+  async listOwnedLibraryCatalog(input: {
+    tenantId: string;
+    actorUserId: string;
+    query?: string;
+    family?: string;
+    cursor?: OwnedLibraryCatalogCursor;
+    limit: number;
+  }): Promise<OwnedLibraryCatalogRow[]> {
+    const conditions = [
+      eq(workItem.tenantId, input.tenantId),
+      eq(workItem.requestedByUserId, input.actorUserId),
+      eq(workItem.documentId, dmDocumentVersion.documentId),
+    ];
+    const query = input.query?.trim();
+    if (query) {
+      const pattern = `%${query}%`;
+      conditions.push(
+        or(
+          ilike(dmPublicationFamily.canonicalDocumentNumber, pattern),
+          ilike(dmPublicationFamily.documentFamily, pattern),
+          ilike(dmDocumentVersion.originalFilename, pattern),
+          ilike(workItem.status, pattern),
+        )!,
+      );
+    }
+    const family = input.family?.trim();
+    if (family) {
+      conditions.push(eq(dmPublicationFamily.documentFamily, family));
+    }
+    if (input.cursor) {
+      conditions.push(
+        or(
+          lt(workItem.updatedAt, input.cursor.updatedAt),
+          and(
+            eq(workItem.updatedAt, input.cursor.updatedAt),
+            lt(workItem.workItemId, input.cursor.workItemId),
+          ),
+        )!,
+      );
+    }
+    const rows = await this.db
+      .select({
+        workItemId: workItem.workItemId,
+        revision: workItem.revision,
+        status: workItem.status,
+        documentId: workItem.documentId,
+        documentVersionId: workItem.documentVersionId,
+        requestedByUserId: workItem.requestedByUserId,
+        createdAt: workItem.createdAt,
+        updatedAt: workItem.updatedAt,
+        projectionJson: workItem.projectionJson,
+        documentCode: dmPublicationFamily.canonicalDocumentNumber,
+        documentFamily: dmPublicationFamily.documentFamily,
+        businessRevision: dmDocumentVersion.businessRevision,
+        currentDocumentVersionId: dmPublicationFamily.currentDocumentVersionId,
+        currentGeneration: dmPublicationFamily.currentGeneration,
+      })
+      .from(workItem)
+      .innerJoin(
+        dmDocumentVersion,
+        eq(workItem.documentVersionId, dmDocumentVersion.documentVersionId),
+      )
+      .innerJoin(
+        dmPublicationFamily,
+        eq(dmDocumentVersion.familyId, dmPublicationFamily.familyId),
+      )
+      .where(and(...conditions))
+      .orderBy(desc(workItem.updatedAt), desc(workItem.workItemId))
+      .limit(Math.min(Math.max(input.limit, 1), 51));
+    return rows.map((row) => ({
+      ...row,
+      projection: parseProjection(row.projectionJson),
+    }));
+  }
+
+  async listOwnedLibraryFamilies(input: {
+    tenantId: string;
+    actorUserId: string;
+  }): Promise<string[]> {
+    const rows = await this.db
+      .selectDistinct({ family: dmPublicationFamily.documentFamily })
+      .from(workItem)
+      .innerJoin(
+        dmDocumentVersion,
+        eq(workItem.documentVersionId, dmDocumentVersion.documentVersionId),
+      )
+      .innerJoin(
+        dmPublicationFamily,
+        eq(dmDocumentVersion.familyId, dmPublicationFamily.familyId),
+      )
+      .where(
+        and(
+          eq(workItem.tenantId, input.tenantId),
+          eq(workItem.requestedByUserId, input.actorUserId),
+          eq(workItem.documentId, dmDocumentVersion.documentId),
+        ),
+      )
+      .orderBy(asc(dmPublicationFamily.documentFamily));
+    return rows.map((row) => row.family);
   }
 
   async loadTenantRunAuthorizationBinding(input: {

@@ -20,6 +20,9 @@ describe('R05.9 contextual navigation', () => {
     ).toBe('WI-737-34-3830');
     expect(currentRouteWorkItemId('/library', '?mode=matter')).toBe('');
     expect(
+      currentRouteWorkItemId('/library', '?view=assessment&selected=WI-NEW'),
+    ).toBe('WI-NEW');
+    expect(
       currentRouteWorkItemId('/external-discovery', '?workItemId=WI-X'),
     ).toBe('');
   });

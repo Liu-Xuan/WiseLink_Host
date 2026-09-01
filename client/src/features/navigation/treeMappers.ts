@@ -42,7 +42,7 @@ export interface NavigationNodeView {
 
 /** 后端技术名词 → 用户语言（Spec R01 §2.3） */
 const KIND_LABELS: Record<CanonicalLibraryIndexNodeKind, string> = {
-  WORK_ITEM: '工程事项',
+  WORK_ITEM: '工程评估',
   DOCUMENT: '受控文件',
   DOCUMENT_VERSION: '当前文件版本',
   PARSED_PACKAGE: '解析结果',
@@ -57,9 +57,7 @@ export function kindLabel(kind: CanonicalLibraryIndexNodeKind): string {
   return KIND_LABELS[kind] ?? kind;
 }
 
-function stateTone(
-  state: string | undefined,
-): NavigationNodeView['badgeTone'] {
+function stateTone(state: string | undefined): NavigationNodeView['badgeTone'] {
   if (!state) return undefined;
   const upper = state.toUpperCase();
   if (upper.includes('FAILED') || upper.includes('CONFLICT')) return 'red';
@@ -95,7 +93,7 @@ function humanLabel(node: CanonicalLibraryIndexNode): string {
     return KIND_LABELS[node.kind] || '动态综合评估';
   }
   if (label && /document\s*version/i.test(label)) return '当前文件版本';
-  if (label && /work\s*item/i.test(label)) return '当前工程事项';
+  if (label && /work\s*item/i.test(label)) return '当前工程评估';
   return label || KIND_LABELS[node.kind] || '资料节点';
 }
 
@@ -160,9 +158,9 @@ export function buildDocumentTree(
   return clean(roots);
 }
 
-/* ── 模式 B：按事项聚合（以 WORK_ITEM 为根，语义分组聚合子节点） ── */
+/* ── 模式 B：按工程评估聚合（以 WORK_ITEM 为根，语义分组聚合子节点） ── */
 
-/** 事项树固定分组顺序（Spec R01 §3 模式 B） */
+/** 工程评估树固定分组顺序（Spec R01 §3 模式 B） */
 const MATTER_GROUPS: Array<{
   key: string;
   label: string;
@@ -188,13 +186,13 @@ export function buildMatterTree(
   const workItemNodes = nodes.filter((n) => n.kind === 'WORK_ITEM');
   const others = nodes.filter((n) => n.kind !== 'WORK_ITEM');
 
-  // Host 当前 scope 为 CURRENT_WORKITEM_ONLY：以 WORK_ITEM 节点为事项根。
-  // 无 WORK_ITEM 节点时，以根标签构造单一事项占位（数据仍来自真实节点）。
+  // Host 当前 scope 为 CURRENT_WORKITEM_ONLY：以 WORK_ITEM 节点为评估根。
+  // 无 WORK_ITEM 节点时，以根标签构造单一评估占位（数据仍来自真实节点）。
   const matterRoots: NavigationNodeView[] = workItemNodes.map((wi) => ({
     id: wi.id,
     kind: 'matter' as const,
     label: humanLabel(wi),
-    subtitle: humanDetail(wi.detail) || '工程事项',
+    subtitle: humanDetail(wi.detail) || '工程评估',
     badge: humanState(wi.state),
     badgeTone: stateTone(wi.state),
     targetNode: wi.targetNode,
@@ -207,8 +205,8 @@ export function buildMatterTree(
     ({
       id: 'matter-root',
       kind: 'matter' as const,
-      label: '当前工程事项',
-      subtitle: '当前事项资料',
+      label: '当前工程评估',
+      subtitle: '当前评估资料',
       selectable: true,
       children: [],
     } satisfies NavigationNodeView);

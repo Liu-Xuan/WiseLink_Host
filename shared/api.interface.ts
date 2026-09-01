@@ -1940,7 +1940,7 @@ export type CanonicalWorkbenchTargetNode =
   | 'package'
   | 'reader'
   | 'assessment'
-  | 'overall'
+  | 'process'
   | 'aeo';
 
 export type CanonicalLibraryIndexNodeKind =
@@ -2007,6 +2007,125 @@ export interface CanonicalLibraryIndexReadResponse {
     action: 'READ_LIBRARY_INDEX';
     decisionId: string;
     permissionSnapshotVersion: string;
+  };
+}
+
+export type CanonicalLibraryCatalogView =
+  | 'DOCUMENT_FAMILY'
+  | 'ENGINEERING_ASSESSMENT';
+
+export interface ResponsibilityScopeProjection {
+  mode: 'CREATOR_OWNED';
+  label: '我的负责范围';
+  allAuthorizedAvailable: false;
+  policyRevision: 'creator-only.v1';
+  note: string;
+}
+
+export interface LibraryItemSummary {
+  workItemId: string;
+  displayCode: string;
+  title: string;
+  views: CanonicalLibraryCatalogView[];
+  document: {
+    family: string;
+    businessRevision: string;
+    currentness: 'CURRENT' | 'SUPERSEDED';
+    currentGeneration: number;
+  };
+  assessment: {
+    phase: string;
+    workItemRevision: number;
+    authority: 'CANDIDATE' | 'UNAVAILABLE';
+    freshness: 'CURRENT' | 'STALE' | 'SUPERSEDED';
+    jobAid: {
+      completed: number;
+      total: number;
+      waiting: number;
+    } | null;
+    unresolvedCount: number | null;
+    reviewRequired: boolean;
+    overallAvailable: boolean;
+  };
+  updatedAt: string;
+  routes: {
+    overview: string;
+    workspace: string;
+  };
+}
+
+export interface LibraryCatalogProjection {
+  schemaVersion: 'wiselink.3_1.library_catalog.v1';
+  status: 'FRESH_READ';
+  scope: ResponsibilityScopeProjection;
+  view: CanonicalLibraryCatalogView;
+  query: string;
+  family: string | null;
+  dataAsOf: string;
+  items: LibraryItemSummary[];
+  facets: {
+    documentFamilies: string[];
+  };
+  page: {
+    limit: number;
+    returnedCount: number;
+    nextCursor: string | null;
+    hasMore: boolean;
+  };
+  completeness: {
+    tenantWideCatalogAvailable: false;
+    memberSharedItemsAvailable: false;
+    note: string;
+  };
+}
+
+export interface EngineeringQuicklookSourceBoundText {
+  text: string;
+  basis: CanonicalEngineeringStatementBasis;
+  sourceRefIds: string[];
+}
+
+export interface EngineeringQuicklookSourceRefSummary {
+  sourceRefId: string;
+  label: string;
+  pageStart: number | null;
+  sectionTitle: string | null;
+}
+
+export interface EngineeringQuicklookProjection {
+  schemaVersion: 'wiselink.3_1.engineering_quicklook.v1';
+  status: 'FRESH_READ';
+  objectKind: 'WORKITEM';
+  workItemId: string;
+  displayCode: string;
+  title: string;
+  authorityState:
+    | 'CANDIDATE'
+    | 'ENGINEER_CONFIRMED'
+    | 'FORMAL_READBACK'
+    | 'UNAVAILABLE';
+  freshness: 'CURRENT' | 'STALE' | 'SUPERSEDED';
+  generatedAt: string | null;
+  basedOnRevision: number;
+  dataAsOf: string;
+  currentJudgment: EngineeringQuicklookSourceBoundText | null;
+  applicabilitySummary: EngineeringQuicklookSourceBoundText[];
+  whyItMatters: EngineeringQuicklookSourceBoundText[];
+  keyEvidence: EngineeringQuicklookSourceRefSummary[];
+  unresolvedQuestions: string[];
+  recommendedActions: EngineeringQuicklookSourceBoundText[];
+  familySummary: {
+    currentVersion: string;
+    currentGeneration: number;
+    historicalVersionCount: number | null;
+    attachmentCount: number | null;
+    derivedArtifactCount: number;
+  };
+  boundary: {
+    candidateOnly: true;
+    sourceRefsRemainWorkItemScoped: true;
+    missingCountsAreNotInferred: true;
+    note: string;
   };
 }
 

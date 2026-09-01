@@ -146,7 +146,7 @@
   color: var(--wl-faint);
 }
 
-/* ── 范围提示（按事项聚合的诚实降级说明） ── */
+/* ── 范围提示（按工程评估聚合的诚实降级说明） ── */
 .wl-navigator-scope-note {
   margin: 0;
   padding: 8px 10px;

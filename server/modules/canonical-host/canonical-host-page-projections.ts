@@ -166,7 +166,7 @@ function buildLibraryNodes(
           `${integrated.overallSynthesis.findingCount} findings · ` +
           `${integrated.overallSynthesis.discoveryStatus}`,
         state: integrated.overallSynthesis.status,
-        targetNode: 'overall',
+        targetNode: 'process',
         authority: 'HOST_WORKITEM_PROJECTION',
       }),
     );
@@ -431,8 +431,7 @@ function buildTimeline(
       kind: 'DYNAMIC_EVALUATION',
       label: 'OpenClaw dynamic-N candidate',
       status: dynamic.status,
-      detail:
-        `${dynamic.evaluationItemCount}/${dynamic.criterionCount} criteria`,
+      detail: `${dynamic.evaluationItemCount}/${dynamic.criterionCount} criteria`,
       occurredAt: null,
       revision: dynamic.revision,
       artifactRef: dynamic.artifact.ref,
@@ -458,8 +457,7 @@ function buildTimeline(
       kind: 'OVERALL_SYNTHESIS',
       label: 'OpenClaw overall candidate',
       status: overall.status,
-      detail:
-        `${overall.findingCount} findings · gap ${overall.gap ?? 'NONE'}`,
+      detail: `${overall.findingCount} findings · gap ${overall.gap ?? 'NONE'}`,
       occurredAt: null,
       revision: overall.revision,
       artifactRef: overall.artifact.ref,
@@ -467,7 +465,8 @@ function buildTimeline(
     });
   }
   if (workItem.integratedAssessment?.overallForAeoConfirmation) {
-    const confirmation = workItem.integratedAssessment.overallForAeoConfirmation;
+    const confirmation =
+      workItem.integratedAssessment.overallForAeoConfirmation;
     pushEvent(events, {
       kind: 'OVERALL_CONFIRMATION',
       label: 'Human confirmation for downstream AEO',
@@ -620,8 +619,9 @@ function documentLabel(workItem: CanonicalWorkItemProjection): string {
 
 function sourceBoundState(results: UnifiedReaderQueryResult[]): string {
   if (results.length === 0) return 'NO_RESULTS';
-  return results.every((result: UnifiedReaderQueryResult): boolean =>
-    result.sourceRefIds.length > 0,
+  return results.every(
+    (result: UnifiedReaderQueryResult): boolean =>
+      result.sourceRefIds.length > 0,
   )
     ? 'SOURCE_BOUND'
     : 'SOURCE_REF_MISSING';
@@ -641,9 +641,8 @@ function effectiveReviewedCount(
   context: CanonicalEngineerReviewPageContext | null,
 ): number {
   return (
-    context?.items.filter(
-      (item): boolean => item.latestReview !== null,
-    ).length ?? 0
+    context?.items.filter((item): boolean => item.latestReview !== null)
+      .length ?? 0
   );
 }
 

@@ -1,0 +1,47 @@
+.wl-runtime-fingerprint {
+  display: grid;
+  gap: var(--wl-space-4, 16px);
+}
+
+.wl-runtime-fingerprint dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--wl-space-3, 12px);
+  margin: 0;
+}
+
+.wl-runtime-fingerprint dl > div {
+  min-width: 0;
+  padding: var(--wl-space-3, 12px);
+  border: 1px solid var(--wl-border-subtle, rgb(124 145 177 / 22%));
+  border-radius: var(--wl-radius-md, 12px);
+  background: var(--wl-surface-tertiary, rgb(255 255 255 / 54%));
+}
+
+.wl-runtime-fingerprint dt {
+  color: var(--wl-text-secondary, #52647d);
+  font-size: var(--wl-text-caption, 12px);
+}
+
+.wl-runtime-fingerprint dd {
+  overflow-wrap: anywhere;
+  margin: 6px 0 0;
+  color: var(--wl-text-primary, #17243a);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.wl-runtime-fingerprint button {
+  width: fit-content;
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1px solid var(--wl-border-selected, rgb(42 125 255 / 45%));
+  border-radius: 12px;
+  color: var(--wl-accent-primary, #1677ff);
+  background: var(--wl-surface-secondary, rgb(255 255 255 / 72%));
+}
+
+@media (width <= 720px) {
+  .wl-runtime-fingerprint dl {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

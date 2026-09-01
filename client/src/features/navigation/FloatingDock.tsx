@@ -31,8 +31,9 @@ export default function FloatingDock() {
   const { currentObject } = useCurrentObjectContext();
   const params = new URLSearchParams(location.search);
   const activeNode: string = params.get('node') ?? '';
-  const libraryMatterActive: boolean =
-    location.pathname === '/library' && params.get('mode') === 'matter';
+  const libraryAssessmentActive: boolean =
+    location.pathname === '/library' &&
+    (params.get('view') === 'assessment' || params.get('mode') === 'matter');
   const globalItems: DockItemView[] = [
     {
       key: 'library',
@@ -41,14 +42,14 @@ export default function FloatingDock() {
       to: '/library',
       active:
         (location.pathname === '/' || location.pathname === '/library') &&
-        !libraryMatterActive,
+        !libraryAssessmentActive,
     },
     {
-      key: 'tasks',
-      label: '任务',
+      key: 'assessments',
+      label: '事项',
       icon: ClipboardList,
-      to: '/library?mode=matter',
-      active: libraryMatterActive,
+      to: '/library?view=assessment',
+      active: libraryAssessmentActive,
     },
     {
       key: 'search',
@@ -75,7 +76,7 @@ export default function FloatingDock() {
           icon: Activity,
           to: currentObject.routes.process,
           active:
-            activeNode === 'overall' && location.hash !== '#workspace-history',
+            activeNode === 'process' && location.hash !== '#workspace-history',
           badge: currentObject.badges?.process,
         },
         {
@@ -145,10 +146,16 @@ export default function FloatingDock() {
             <NavLink
               className="wl-dock-context-anchor"
               to={currentObject.routes.overview}
-              aria-label={`当前${currentObject.kind === 'DOCUMENT' ? '文档' : '事项'}：${currentObject.displayCode}`}
+              aria-label={`当前${currentObject.kind === 'DOCUMENT' ? '文档' : currentObject.kind === 'MATTER' ? '事项' : '工程评估'}：${currentObject.displayCode}`}
               title={`${currentObject.displayCode} · ${currentObject.title}`}
             >
-              <span>{currentObject.kind === 'DOCUMENT' ? '文' : '事'}</span>
+              <span>
+                {currentObject.kind === 'DOCUMENT'
+                  ? '文'
+                  : currentObject.kind === 'MATTER'
+                    ? '事'
+                    : '评'}
+              </span>
               <small>{currentObject.displayCode}</small>
               <i aria-hidden="true" />
             </NavLink>

@@ -66,7 +66,11 @@ function LayoutChrome() {
                   <span
                     className={`wiselink-object-kind is-${currentObject.kind.toLowerCase()}`}
                   >
-                    {currentObject.kind === 'DOCUMENT' ? '文档' : '事项'}
+                    {currentObject.kind === 'DOCUMENT'
+                      ? '文档'
+                      : currentObject.kind === 'MATTER'
+                        ? '事项'
+                        : '工程评估'}
                   </span>
                   <strong>{currentObject.displayCode}</strong>
                   <span className="wiselink-object-title">
@@ -80,14 +84,18 @@ function LayoutChrome() {
             <div className="wiselink-object-context-sub">
               {currentObject ? (
                 <>
-                  <span>{currentObject.parentLabel}</span>
-                  <i aria-hidden="true" />
+                  {currentObject.parentLabel?.trim() ? (
+                    <>
+                      <span>{currentObject.parentLabel}</span>
+                      <i aria-hidden="true" />
+                    </>
+                  ) : null}
                   <span>{currentObject.meta}</span>
                   <i aria-hidden="true" />
                   <span>{currentObject.statusLabel}</span>
                 </>
               ) : (
-                <span>受控资料、工程事项与候选结果按当前权限显示</span>
+                <span>受控资料、工程评估与候选结果按当前权限显示</span>
               )}
             </div>
           </div>
@@ -120,7 +128,7 @@ function derivePageLabel(pathname: string): string {
   if (/\/work-items\/[^/]+\/documents(?:\/|$)/u.test(pathname)) {
     return '工程分析工作台';
   }
-  if (pathname.startsWith('/work-items/')) return '工程事项';
+  if (pathname.startsWith('/work-items/')) return '工程评估';
   if (pathname === '/external-discovery') return '补充资料';
   if (pathname === '/runtime-probe') return '连接状态';
   return 'WiseLink';

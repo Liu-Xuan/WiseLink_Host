@@ -1,4 +1,8 @@
-import type { CanonicalDocumentParsingPageResponse } from '@shared/api.interface';
+import type {
+  CanonicalDocumentParsingPageResponse,
+  EngineeringQuicklookProjection,
+  LibraryItemSummary,
+} from '@shared/api.interface';
 import {
   AUTHORITY_LABELS,
   FRESHNESS_LABELS,
@@ -27,7 +31,7 @@ export interface EngineeringQuicklookView {
   recommendedActions: string[];
   sourceCount?: number;
   documentVersionLabel: string;
-  relatedDocumentCount: number;
+  relatedDocumentCount: number | null;
 }
 
 function firstNonEmpty(...values: Array<string | null | undefined>): string {
@@ -53,10 +57,10 @@ function workItemRoutes(workItemId: string) {
   return {
     overview: `/work-items/${encoded}`,
     workspace: `${workbench}?node=reader&tab=reader&readerMode=structured`,
-    process: `${workbench}?node=overall&tab=overall`,
+    process: `${workbench}?node=process&tab=process`,
     jobAid: `${workbench}?node=assessment&tab=assessment`,
     review: `${workbench}?node=review&tab=review`,
-    history: `${workbench}?node=overall&tab=overall#workspace-history`,
+    history: `${workbench}?node=process&tab=process#workspace-history`,
     family: `${workbench}?node=document&tab=source`,
   };
 }
@@ -71,31 +75,30 @@ export function buildCurrentObjectContext(
   const title: string =
     packageTitle && packageTitle !== documentCode
       ? packageTitle
-      : kind === 'MATTER'
-        ? `${documentCode} 工程评估`
-        : '当前受控资料';
+      : kind === 'DOCUMENT'
+        ? '当前受控资料'
+        : '工程评估';
   const baseRules = page.workItem.integratedAssessment?.baseRules;
-  const reviewCount: number = page.engineerReviewContext?.items.length ?? 0;
+  const completedCriteria = baseRules
+    ? Math.max(0, baseRules.evaluationItemCount - baseRules.unresolvedCount)
+    : 0;
 
   return {
     kind,
     routeWorkItemId: page.workItem.workItemId,
-    displayCode: kind === 'DOCUMENT' ? documentCode : `${documentCode} 事项`,
+    displayCode: documentCode,
     title,
     meta: `${view.documentVersion} · ${view.aircraftFamily}`,
     parentLabel:
-      kind === 'DOCUMENT'
-        ? '关联事项 · 当前工程事项'
-        : `当前来源 · ${documentCode}`,
+      kind === 'DOCUMENT' ? '当前工程评估' : `主要来源 · ${documentCode}`,
     statusLabel: `${AUTHORITY_LABELS[view.authority]} · ${
       FRESHNESS_LABELS[view.freshness]
     }`,
     routes: workItemRoutes(page.workItem.workItemId),
     badges: {
-      process: baseRules?.unresolvedCount,
-      jobAid: baseRules ? `${baseRules.evaluationItemCount} 项` : undefined,
-      review: reviewCount || undefined,
-      family: page.relatedDocuments.relations.length || undefined,
+      jobAid: baseRules
+        ? `${completedCriteria}/${baseRules.criterionCount}`
+        : undefined,
     },
   };
 }
@@ -160,6 +163,104 @@ export function buildEngineeringQuicklook(
     documentVersionLabel: view.documentVersion,
     relatedDocumentCount: page.relatedDocuments.relations.length,
   };
+}
+
+export function buildCatalogCurrentObjectContext(
+  item: LibraryItemSummary,
+  kind: 'DOCUMENT' | 'WORKITEM',
+): CurrentObjectContextView {
+  const jobAid = item.assessment.jobAid;
+  return {
+    kind,
+    routeWorkItemId: item.workItemId,
+    displayCode: item.displayCode,
+    title: item.title,
+    meta: `${item.document.businessRevision} · ${item.document.family}`,
+    parentLabel:
+      kind === 'DOCUMENT' ? '当前工程评估' : `主要来源 · ${item.displayCode}`,
+    statusLabel: `${catalogAuthorityLabel(item.assessment.authority)} · ${catalogFreshnessLabel(item.assessment.freshness)}`,
+    routes: workItemRoutes(item.workItemId),
+    badges: {
+      jobAid: jobAid ? `${jobAid.completed}/${jobAid.total}` : undefined,
+    },
+  };
+}
+
+export function buildQuicklookCurrentObjectContext(
+  projection: EngineeringQuicklookProjection,
+  kind: 'DOCUMENT' | 'WORKITEM',
+): CurrentObjectContextView {
+  return {
+    kind,
+    routeWorkItemId: projection.workItemId,
+    displayCode: projection.displayCode,
+    title: projection.title,
+    meta: projection.familySummary.currentVersion,
+    parentLabel:
+      kind === 'DOCUMENT'
+        ? '当前工程评估'
+        : `主要来源 · ${projection.displayCode}`,
+    statusLabel: `${quicklookAuthorityLabel(projection.authorityState)} · ${catalogFreshnessLabel(projection.freshness)}`,
+    routes: workItemRoutes(projection.workItemId),
+  };
+}
+
+export function buildCatalogEngineeringQuicklook(
+  projection: EngineeringQuicklookProjection,
+): EngineeringQuicklookView {
+  const applicability = projection.applicabilitySummary
+    .map((statement) => statement.text.trim())
+    .filter(Boolean);
+  const why = projection.whyItMatters
+    .map((statement) => statement.text.trim())
+    .filter(Boolean);
+  return {
+    authorityLabel: quicklookAuthorityLabel(projection.authorityState),
+    freshnessLabel: catalogFreshnessLabel(projection.freshness),
+    currentJudgment:
+      projection.currentJudgment?.text.trim() ||
+      '当前尚未形成可直接展示的工程摘要，请进入工作台查看受控原文与解析状态。',
+    applicabilitySummary:
+      applicability.join(' ') || '当前资料尚未返回适用范围摘要。',
+    whyItMatters: why[0] || '当前资料尚未返回风险或影响摘要。',
+    keyEvidence: projection.keyEvidence.map((evidence) => ({
+      label:
+        [evidence.sectionTitle, evidence.pageStart && `P${evidence.pageStart}`]
+          .filter(Boolean)
+          .join(' · ') || evidence.label,
+      sourceRefId: evidence.sourceRefId,
+    })),
+    unresolvedQuestions: projection.unresolvedQuestions,
+    recommendedActions: projection.recommendedActions.map(
+      (statement) => statement.text,
+    ),
+    sourceCount: projection.keyEvidence.length,
+    documentVersionLabel: projection.familySummary.currentVersion,
+    relatedDocumentCount: projection.familySummary.attachmentCount,
+  };
+}
+
+function catalogAuthorityLabel(
+  authority: LibraryItemSummary['assessment']['authority'],
+): string {
+  return authority === 'CANDIDATE' ? '候选意见' : '摘要未形成';
+}
+
+function quicklookAuthorityLabel(
+  authority: EngineeringQuicklookProjection['authorityState'],
+): string {
+  if (authority === 'ENGINEER_CONFIRMED') return '工程师已确认';
+  if (authority === 'FORMAL_READBACK') return '正式结果回读';
+  if (authority === 'CANDIDATE') return '候选意见';
+  return '摘要未形成';
+}
+
+function catalogFreshnessLabel(
+  freshness: EngineeringQuicklookProjection['freshness'],
+): string {
+  if (freshness === 'STALE') return '结论需更新';
+  if (freshness === 'SUPERSEDED') return '历史文件版本';
+  return '当前有效';
 }
 
 export function quicklookMarkdown(

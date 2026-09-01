@@ -276,8 +276,8 @@ export function HostedDevelopmentIntake() {
   return (
     <section className="hosted-intake" aria-labelledby="hosted-intake-title">
       <div className="hosted-intake-copy">
-        <span className="library-section-label">新建工程事项</span>
-        <h2 id="hosted-intake-title">选择或上传 PDF 并新建工程事项</h2>
+        <span className="library-section-label">新建工程评估</span>
+        <h2 id="hosted-intake-title">选择或上传 PDF 并新建工程评估</h2>
         <p>
           可选择当前会话中的已上传
           PDF，或从本机上传。创建成功后先进入综合评估概述。
@@ -533,8 +533,8 @@ function phaseLabel(
   if (phase === 'creating') return '校验并创建…';
   if (phase === 'readback') return '核验资料关联…';
   if (phase === 'failed' && prepared) return '重新提交';
-  if (existing) return '用所选 PDF 创建工程事项';
-  return '上传并创建工程事项';
+  if (existing) return '用所选 PDF 创建工程评估';
+  return '上传并创建工程评估';
 }
 
 function fileSizeLabel(bytes: number): string {
@@ -546,7 +546,7 @@ function fileSizeLabel(bytes: number): string {
 function intakeError(reason: unknown): string {
   const message = reason instanceof Error ? reason.message.trim() : '';
   if (/IDENTITY|LOGIN|OAUTH|401|UNAUTHORIZED/iu.test(message)) {
-    return '请先完成飞书授权，再上传并创建工程事项。';
+    return '请先完成飞书授权，再上传并创建工程评估。';
   }
   if (/SAME_USER_READBACK_MISMATCH/iu.test(message)) {
     return '文件已上传，但事项校验尚未完成。请保留当前文件后重试；未通过校验的结果不会作为当前事项。';
@@ -554,7 +554,7 @@ function intakeError(reason: unknown): string {
   if (/BROWSER_(RANDOM_UUID|SHA256)_UNAVAILABLE/iu.test(message)) {
     return '当前浏览器缺少安全校验能力，请使用最新版飞书或受支持浏览器重试。';
   }
-  return '工程事项创建失败，请保留当前文件后重试。';
+  return '工程评估创建失败，请保留当前文件后重试。';
 }
 
 function existingPickerError(reason: unknown): string {

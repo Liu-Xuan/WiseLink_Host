@@ -125,7 +125,7 @@ describe('single canonical app workspace', () => {
     expect(contextualNavigation).toContain('buildCurrentObjectContext');
     expect(contextualNavigation).toContain('buildEngineeringQuicklook');
     expect(contextualNavigation).toContain(
-      '?node=overall&tab=overall#workspace-history',
+      '?node=process&tab=process#workspace-history',
     );
     expect(currentUserSession).toContain('authClient.session.getUserInfo()');
     expect(
@@ -148,9 +148,13 @@ describe('single canonical app workspace', () => {
     expect(workItemOverview).toContain(
       'viewSessionGeneration === sessionGeneration',
     );
-    expect(home).toContain('loadedSessionGeneration === sessionGeneration');
+    expect(home).toContain('getLibraryCatalog');
+    expect(home).toContain(
+      '[authenticationRequired, family, query, sessionGeneration, view]',
+    );
     expect(overallRegeneration).toContain('[sessionGeneration, workItemId]');
-    expect(home).toContain('尚无最近资料');
+    expect(home).toContain('不使用浏览器最近访问记录推断权限');
+    expect(home).not.toContain('readRecentWorkItems');
     expect(home).not.toContain('developmentIntakeAvailable ? null');
     expect(home).toContain('<EngineeringQuicklook');
     expect(engineeringQuicklook).toContain('当前判断');
@@ -166,7 +170,7 @@ describe('single canonical app workspace', () => {
     expect(page).toContain('EvidencePanel');
     expect(page).toContain('id="workspace-history"');
     expect(tree).toContain('族群 · 文档 · 修订');
-    expect(tree).toContain('随当前工程事项的最新资料更新');
+    expect(tree).toContain('随当前工程评估的最新资料更新');
     expect(dock).toContain('动态评估');
     expect(dock).toContain('当前事项摘要');
     expect(dock).toContain('已记录，不等于正式批准');

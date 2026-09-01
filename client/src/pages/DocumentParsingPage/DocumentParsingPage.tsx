@@ -134,7 +134,7 @@ const NODE_TARGETS: Record<WorkbenchNode, string> = {
   reader: 'workspace-reader',
   assessment: 'workspace-assessment',
   review: 'workspace-review',
-  overall: 'workspace-reasoning',
+  process: 'workspace-reasoning',
   aeo: 'workspace-aeo',
 };
 
@@ -144,7 +144,7 @@ const NODE_TABS: Record<WorkbenchNode, string> = {
   reader: 'reader',
   assessment: 'assessment',
   review: 'review',
-  overall: 'overall',
+  process: 'process',
   aeo: 'aeo',
 };
 
@@ -155,7 +155,7 @@ const WORKBENCH_TAB_ICONS: Partial<Record<WorkbenchNode, ReactNode>> = {
   assessment: <Sparkles aria-hidden="true" />,
   package: <Waypoints aria-hidden="true" />,
   reader: <FileText aria-hidden="true" />,
-  overall: <Activity aria-hidden="true" />,
+  process: <Activity aria-hidden="true" />,
   review: <ClipboardCheck aria-hidden="true" />,
   aeo: <FileText aria-hidden="true" />,
 };
@@ -408,7 +408,7 @@ export default function DocumentParsingPage() {
   if (loading) {
     return (
       <LockedState
-        title="正在读取当前工程事项…"
+        title="正在读取当前工程评估…"
         role="status"
         ariaLive="polite"
       />
@@ -417,7 +417,7 @@ export default function DocumentParsingPage() {
   if (error || data === null) {
     return (
       <LockedState
-        title="暂时无法打开当前工程事项"
+        title="暂时无法打开当前工程评估"
         role="alert"
         onRetry={() => void load(activeQuery)}
         onBack={() => navigate('/library')}
@@ -689,10 +689,10 @@ export default function DocumentParsingPage() {
         {activeNode === 'document' ? (
           <header className="parse-masthead">
             <div>
-              <p className="parse-eyebrow">当前工程事项 · 文档与解析</p>
+              <p className="parse-eyebrow">当前工程评估 · 文档与解析</p>
               <h1>文档与解析结果</h1>
               <p className="parse-lede">
-                当前页面读取同一工程事项的最新结果，并始终把综合意见标记为待复核候选。
+                当前页面读取同一工程评估的最新结果，并始终把综合意见标记为待复核候选。
               </p>
             </div>
             <div className="parse-state-seal">
@@ -1399,7 +1399,7 @@ export default function DocumentParsingPage() {
           />
         ) : null}
 
-        {activeNode === 'overall' ? (
+        {activeNode === 'process' ? (
           <>
             <EngineeringReasoningTrail data={data} />
             <div id="workspace-history">
@@ -1520,7 +1520,7 @@ export default function DocumentParsingPage() {
         />
 
         <footer className="parse-footer">
-          <span>当前工程事项 · 候选意见需工程师确认</span>
+          <span>当前工程评估 · 候选意见需工程师确认</span>
           <a href={data.entry.deepLinkPath}>
             继续与 WiseLink 讨论 <ArrowUpRight />
           </a>

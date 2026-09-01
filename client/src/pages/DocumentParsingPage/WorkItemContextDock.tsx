@@ -54,10 +54,10 @@ export function WorkItemContextDock({
   ];
 
   return (
-    <aside className="workitem-context-dock" aria-label="当前工程事项摘要">
+    <aside className="workitem-context-dock" aria-label="当前工程评估摘要">
       <header>
         <div>
-          <span>工程事项进度</span>
+          <span>工程评估进度</span>
           <strong>{phaseLabel(data.workItem.phase)}</strong>
         </div>
         <small>当前受控事项</small>
@@ -113,7 +113,7 @@ export function WorkItemContextDock({
         data-ai-section-type="button"
       >
         <RefreshCw aria-hidden="true" />
-        {refreshing ? '正在读取最新结果…' : '刷新当前工程事项'}
+        {refreshing ? '正在读取最新结果…' : '刷新当前工程评估'}
       </Button>
       <Link
         to={`/external-discovery?workItemId=${encodeURIComponent(

@@ -10,6 +10,8 @@ import type {
   CanonicalWorkItemProjection,
   CanonicalEngineerReviewDecision,
   CanonicalLibraryIndexReadResponse,
+  EngineeringQuicklookProjection,
+  LibraryCatalogProjection,
   CanonicalDevelopmentWorkItemRunRequest,
   CanonicalOverallRegenerationReadModel,
   CanonicalOrdinaryWorkItemRunResponse,
@@ -320,6 +322,80 @@ export async function getLibraryIndex(
     return response.data;
   } catch (error) {
     logger.error('读取 WorkItem LibraryIndex fresh projection 失败', error);
+    throw normalizedDirectObjectError(error, requestGeneration);
+  }
+}
+
+export async function getLibraryCatalog(
+  input: {
+    view?: 'document' | 'assessment';
+    query?: string;
+    family?: string;
+    cursor?: string;
+    limit?: number;
+  } = {},
+): Promise<LibraryCatalogProjection> {
+  const requestGeneration = clientSessionGeneration;
+  try {
+    const params: Record<string, string | number> = {};
+    if (input.view) params.view = input.view;
+    if (input.query?.trim()) params.query = input.query.trim();
+    if (input.family?.trim()) params.family = input.family.trim();
+    if (input.cursor) params.cursor = input.cursor;
+    if (input.limit !== undefined) params.limit = input.limit;
+    const response = await axiosForBackend<LibraryCatalogProjection>({
+      url: '/api/canonical-host/library-catalog',
+      method: 'GET',
+      ...(Object.keys(params).length === 0 ? {} : { params }),
+    });
+    if (response.status === 401) {
+      throw clientLoginRequired(
+        'CANONICAL_LIBRARY_LOGIN_REQUIRED',
+        requestGeneration,
+      );
+    }
+    if (response.status < 200 || response.status >= 300) {
+      throw backendResponseError(
+        response.data,
+        'CANONICAL_LIBRARY_CATALOG_UNAVAILABLE',
+      );
+    }
+    return response.data;
+  } catch (error) {
+    logger.error('读取授权资料目录失败', error);
+    throw normalizedDirectObjectError(error, requestGeneration);
+  }
+}
+
+export async function getEngineeringQuicklook(
+  workItemId: string,
+): Promise<EngineeringQuicklookProjection> {
+  const requestGeneration = clientSessionGeneration;
+  try {
+    const response = await axiosForBackend<EngineeringQuicklookProjection>({
+      url:
+        '/api/canonical-host/library-catalog/' +
+        `${encodeURIComponent(workItemId)}/quicklook`,
+      method: 'GET',
+    });
+    if (response.status === 401) {
+      throw clientLoginRequired(
+        'CANONICAL_LIBRARY_LOGIN_REQUIRED',
+        requestGeneration,
+      );
+    }
+    if (response.status === 403 || response.status === 404) {
+      throw canonicalObjectNotFound();
+    }
+    if (response.status < 200 || response.status >= 300) {
+      throw backendResponseError(
+        response.data,
+        'ENGINEERING_QUICKLOOK_UNAVAILABLE',
+      );
+    }
+    return response.data;
+  } catch (error) {
+    logger.error('读取工程快览失败', error);
     throw normalizedDirectObjectError(error, requestGeneration);
   }
 }

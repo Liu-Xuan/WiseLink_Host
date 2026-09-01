@@ -1,13 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import {
-  access,
-  mkdtemp,
-  readFile,
-  rm,
-  writeFile,
-} from 'node:fs/promises';
+import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
@@ -106,6 +100,11 @@ export class RuntimeProbeService {
         process.env.GIT_COMMIT ??
         process.env.COMMIT_SHA ??
         'UNAVAILABLE',
+      releaseId:
+        process.env.MIAODA_RELEASE_ID ??
+        process.env.RELEASE_ID ??
+        'UNAVAILABLE',
+      apiContractVersion: 'wiselink.3_1.canonical_host.r06.0',
       selectedContract: {
         contractId: 'techpub.parsed-package.v1',
         contractRevision: 'frozen.2',
@@ -185,10 +184,7 @@ async function manifestCheck(
   blockers: string[],
 ): Promise<RuntimeProbeCheck> {
   try {
-    const path = join(
-      contractRoot,
-      'freeze/frozen-2-contract-manifest.json',
-    );
+    const path = join(contractRoot, 'freeze/frozen-2-contract-manifest.json');
     const bytes = await readFile(path);
     const observed = createHash('sha256').update(bytes).digest('hex');
     if (observed !== U0_MANIFEST_SHA256) {

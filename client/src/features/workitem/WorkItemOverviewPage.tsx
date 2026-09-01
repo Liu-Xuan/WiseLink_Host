@@ -31,7 +31,7 @@ import { humanState } from '@client/src/features/navigation/treeMappers';
 import '@client/src/features/workitem/workitem-overview.css';
 
 /**
- * 工程事项综合评估首页（Spec R01 §4.1）。
+ * 工程评估首页（Spec R01 §4.1）。
  * 选择文档或事项后默认第一屏：先看综合候选意见，再下钻解析与原文。
  * 数据全部来自 getDocumentParsingPage fresh-read，不建第二真源。
  */
@@ -60,7 +60,7 @@ export default function WorkItemOverviewPage() {
         return;
       }
       setView(toWorkItemView(fresh));
-      setContextView(buildCurrentObjectContext(fresh, 'MATTER'));
+      setContextView(buildCurrentObjectContext(fresh, 'WORKITEM'));
       setViewSessionGeneration(sessionGeneration);
       setError(null);
     },
@@ -95,7 +95,7 @@ export default function WorkItemOverviewPage() {
         const fresh = await getDocumentParsingPage(workItemId, '');
         if (isCurrentSession()) {
           setView(toWorkItemView(fresh));
-          setContextView(buildCurrentObjectContext(fresh, 'MATTER'));
+          setContextView(buildCurrentObjectContext(fresh, 'WORKITEM'));
           setViewSessionGeneration(sessionGeneration);
         }
       } catch (reason) {
@@ -183,7 +183,7 @@ export default function WorkItemOverviewPage() {
 
   return (
     <main className="wl-overview-page wl-workbench-enter">
-      <h1 className="wl-visually-hidden">当前工程事项综合评估</h1>
+      <h1 className="wl-visually-hidden">当前工程评估</h1>
       <AuthorityStrip view={visibleView} />
 
       <OverallAssessmentHero

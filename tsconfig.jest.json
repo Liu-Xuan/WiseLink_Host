@@ -8,7 +8,13 @@
     "paths": {
       "@client/*": ["client/*"],
       "@server/*": ["server/*"],
-      "@shared/*": ["shared/*"]
+      "@shared/*": ["shared/*"],
+      "@lark-apaas/client-toolkit/utils/*": [
+        "node_modules/@lark-apaas/client-toolkit/lib/apis/utils/*"
+      ],
+      "@lark-apaas/client-toolkit/logger": [
+        "node_modules/@lark-apaas/client-toolkit/lib/apis/logger"
+      ]
     }
   },
   "include": ["server/**/*", "shared/**/*.ts", "test/unit/**/*.ts"],

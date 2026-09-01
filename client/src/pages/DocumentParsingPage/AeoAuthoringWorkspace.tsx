@@ -121,7 +121,7 @@ export function AeoAuthoringWorkspace({
           <dl className="aeo-authoring-facts">
             <div>
               <dt>当前范围</dt>
-              <dd>当前受控工程事项</dd>
+              <dd>当前受控工程评估</dd>
             </div>
             <div>
               <dt>来源候选</dt>
@@ -177,9 +177,7 @@ function ArtifactRow({
         <strong>{ARTIFACT_LABELS[artifact.artifactKind]}</strong>
         <span>{humanState(artifact.state) ?? '状态待确认'}</span>
       </div>
-      <small>
-        候选素材 · {humanState(artifact.state) ?? '状态待确认'}
-      </small>
+      <small>候选素材 · {humanState(artifact.state) ?? '状态待确认'}</small>
       {artifact.state === 'AVAILABLE' ? (
         <CircleDashed aria-label="候选素材可读取" />
       ) : null}
