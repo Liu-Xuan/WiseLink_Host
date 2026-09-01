@@ -13,6 +13,7 @@
   "matchPolicy": {
     "priority": 45,
     "issuerAliases": ["\\bHONEYWELL\\b"],
+    "sourceTypes": ["supplier_sil"],
     "filenamePatterns": ["HONEYWELL.*(SIL|SERVICE[-_\\s]*INFORMATION[-_\\s]*LETTER)"],
     "textPatterns": ["\\bHONEYWELL\\b[\\s\\S]{0,160}\\b(SIL|SERVICE\\s+INFORMATION\\s+LETTER)\\b"]
   },
