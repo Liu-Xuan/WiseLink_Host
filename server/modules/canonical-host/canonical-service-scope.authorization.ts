@@ -52,9 +52,13 @@ export interface CanonicalServiceScopeAuthorizationPort {
       | 'BEGIN_DYNAMIC'
       | 'RECORD_DISCOVERY'
       | 'BEGIN_OVERALL'
-      | 'BEGIN_REVIEW'
       | 'BEGIN_TRANSLATE';
     workItemId: string;
+  }): Promise<CanonicalVerifiedServiceScope>;
+  authorizeOpenClawReview(input: {
+    operation: 'BEGIN_REVIEW';
+    reviewConversationRef: string;
+    requestId: string;
   }): Promise<CanonicalVerifiedServiceScope>;
   authorizeOpenClawApplicabilityContext(input: {
     operation: 'BEGIN_APPLICABILITY';
@@ -93,6 +97,10 @@ export class UnavailableCanonicalServiceScopeAuthorization implements CanonicalS
   }
 
   authorizeOpenClawWorkItem(): Promise<CanonicalVerifiedServiceScope> {
+    return Promise.reject(canonicalServiceScopeUnavailable());
+  }
+
+  authorizeOpenClawReview(): Promise<CanonicalVerifiedServiceScope> {
     return Promise.reject(canonicalServiceScopeUnavailable());
   }
 

@@ -5,7 +5,7 @@ import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import { and, asc, eq, isNull } from 'drizzle-orm';
+import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 
 import type {
   ReviewTurnAssistantCandidate,
@@ -31,6 +31,8 @@ const ENGINEER_TEXT = 'ENGINEER_TEXT';
 const CANDIDATE_UNADOPTED = 'CANDIDATE_UNADOPTED';
 const OFFICIAL_CLIENT_ID = 'cli_aadde8b579f95bc9';
 const ENGINEER_INPUT_PREFIX = 'WLR7:';
+
+type DatabaseExecutor = PostgresJsDatabase;
 
 export interface PersistedReviewConversation {
   reviewConversationId: string;
@@ -154,11 +156,91 @@ export class ReviewConversationRepository {
     return { conversation, turns };
   }
 
+  async loadOpenClawTurnBinding(input: {
+    reviewConversationId: string;
+    requestId: string;
+    tenantId: string;
+    actorId: string;
+    workItemId: string;
+  }): Promise<{
+    conversation: PersistedReviewConversation;
+    turn: PersistedReviewTurn;
+  } | null> {
+    return this.withAuthenticatedActor(input.actorId, async (executor) => {
+      const conversation = await this.loadConversationInternal(
+        input.reviewConversationId,
+        executor,
+      );
+      if (
+        !conversation ||
+        conversation.status !== ACTIVE_STATUS ||
+        conversation.tenantId !== input.tenantId ||
+        conversation.actorId !== input.actorId ||
+        conversation.workItemId !== input.workItemId ||
+        !(await this.hasActiveOfficialActorMappingInternal(input, executor))
+      ) {
+        return null;
+      }
+      const turn = await this.loadTurnByRequest(
+        input.reviewConversationId,
+        input.requestId,
+        executor,
+      );
+      return turn ? { conversation, turn } : null;
+    });
+  }
+
+  async loadOpenClawTurnByIdBinding(input: {
+    reviewConversationId: string;
+    reviewTurnId: string;
+    tenantId: string;
+    actorId: string;
+    workItemId: string;
+  }): Promise<{
+    conversation: PersistedReviewConversation;
+    turn: PersistedReviewTurn;
+  } | null> {
+    return this.withAuthenticatedActor(input.actorId, async (executor) => {
+      const conversation = await this.loadConversationInternal(
+        input.reviewConversationId,
+        executor,
+      );
+      if (
+        !conversation ||
+        conversation.status !== ACTIVE_STATUS ||
+        conversation.tenantId !== input.tenantId ||
+        conversation.actorId !== input.actorId ||
+        conversation.workItemId !== input.workItemId ||
+        !(await this.hasActiveOfficialActorMappingInternal(input, executor))
+      ) {
+        return null;
+      }
+      const turn = await this.loadTurnByIdInternal(
+        input.reviewConversationId,
+        input.reviewTurnId,
+        executor,
+      );
+      return turn ? { conversation, turn } : null;
+    });
+  }
+
   async loadTurnById(
     reviewConversationId: string,
     reviewTurnId: string,
   ): Promise<PersistedReviewTurn | null> {
-    const [row] = await this.db
+    return this.loadTurnByIdInternal(
+      reviewConversationId,
+      reviewTurnId,
+      this.db,
+    );
+  }
+
+  private async loadTurnByIdInternal(
+    reviewConversationId: string,
+    reviewTurnId: string,
+    executor: DatabaseExecutor,
+  ): Promise<PersistedReviewTurn | null> {
+    const [row] = await executor
       .select(turnSelection())
       .from(reviewTurn)
       .innerJoin(
@@ -182,7 +264,14 @@ export class ReviewConversationRepository {
     tenantId: string;
     actorId: string;
   }): Promise<boolean> {
-    const [row] = await this.db
+    return this.hasActiveOfficialActorMappingInternal(input, this.db);
+  }
+
+  private async hasActiveOfficialActorMappingInternal(
+    input: { tenantId: string; actorId: string },
+    executor: DatabaseExecutor,
+  ): Promise<boolean> {
+    const [row] = await executor
       .select({ id: identitySubjectMapping.id })
       .from(identitySubjectMapping)
       .where(
@@ -207,8 +296,39 @@ export class ReviewConversationRepository {
     > & { actionAttemptRef: string };
     completedAt: Date;
   }): Promise<{ turn: PersistedReviewTurn; replayed: boolean }> {
+    return this.persistAssistantCandidateWithExecutor(this.db, input);
+  }
+
+  async persistOpenClawAssistantCandidate(input: {
+    conversation: PersistedReviewConversation;
+    turn: PersistedReviewTurn;
+    actionAttemptId: string;
+    candidate: Omit<
+      ReviewTurnAssistantCandidate,
+      'actionAttemptRef' | 'completedAt'
+    > & { actionAttemptRef: string };
+    completedAt: Date;
+  }): Promise<{ turn: PersistedReviewTurn; replayed: boolean }> {
+    return this.withAuthenticatedActor(input.conversation.actorId, (executor) =>
+      this.persistAssistantCandidateWithExecutor(executor, input),
+    );
+  }
+
+  private async persistAssistantCandidateWithExecutor(
+    executor: DatabaseExecutor,
+    input: {
+      conversation: PersistedReviewConversation;
+      turn: PersistedReviewTurn;
+      actionAttemptId: string;
+      candidate: Omit<
+        ReviewTurnAssistantCandidate,
+        'actionAttemptRef' | 'completedAt'
+      > & { actionAttemptRef: string };
+      completedAt: Date;
+    },
+  ): Promise<{ turn: PersistedReviewTurn; replayed: boolean }> {
     const candidate = input.candidate;
-    const updated = await this.db
+    const updated = await executor
       .update(reviewTurn)
       .set({
         responseType: candidate.responseType,
@@ -244,9 +364,10 @@ export class ReviewConversationRepository {
         ),
       )
       .returning({ reviewTurnId: reviewTurn.reviewTurnId });
-    const stored = await this.loadTurnById(
+    const stored = await this.loadTurnByIdInternal(
       input.conversation.reviewConversationId,
       input.turn.reviewTurnId,
+      executor,
     );
     if (!stored) throw new Error('REVIEW_TURN_CANDIDATE_READBACK_FAILED');
     assertCandidateReplay(stored, candidate);
@@ -457,8 +578,9 @@ export class ReviewConversationRepository {
 
   private async loadConversationInternal(
     reviewConversationId: string,
+    executor: DatabaseExecutor = this.db,
   ): Promise<PersistedReviewConversation | null> {
-    const [row] = await this.db
+    const [row] = await executor
       .select(conversationSelection())
       .from(reviewConversation)
       .where(eq(reviewConversation.reviewConversationId, reviewConversationId))
@@ -487,8 +609,9 @@ export class ReviewConversationRepository {
   private async loadTurnByRequest(
     reviewConversationId: string,
     requestId: string,
+    executor: DatabaseExecutor = this.db,
   ): Promise<PersistedReviewTurn | null> {
-    const [row] = await this.db
+    const [row] = await executor
       .select(turnSelection())
       .from(reviewTurn)
       .innerJoin(
@@ -515,6 +638,25 @@ export class ReviewConversationRepository {
       await this.loadById(reviewConversationId);
     if (!aggregate) throw new Error('REVIEW_CONVERSATION_READBACK_FAILED');
     return aggregate;
+  }
+
+  private async withAuthenticatedActor<T>(
+    actorId: string,
+    operation: (executor: DatabaseExecutor) => Promise<T>,
+  ): Promise<T> {
+    if (!actorId.trim() || actorId === '-1' || actorId.startsWith('service:')) {
+      throw new Error('REVIEW_OPENCLAW_ACTOR_CONTEXT_UNAVAILABLE');
+    }
+    return this.db.transaction(async (transaction) => {
+      const executor = transaction as DatabaseExecutor;
+      const rows = await executor.execute<{ actorId: string | null }>(
+        sql`SELECT set_config('app.user_id', ${actorId}, TRUE) AS "actorId"`,
+      );
+      if (rows[0]?.actorId !== actorId) {
+        throw new Error('REVIEW_OPENCLAW_ACTOR_CONTEXT_UNAVAILABLE');
+      }
+      return operation(executor);
+    });
   }
 }
 

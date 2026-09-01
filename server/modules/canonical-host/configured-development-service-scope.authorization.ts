@@ -77,11 +77,22 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
       | 'BEGIN_DYNAMIC'
       | 'RECORD_DISCOVERY'
       | 'BEGIN_OVERALL'
-      | 'BEGIN_REVIEW'
       | 'BEGIN_TRANSLATE';
     workItemId: string;
   }): Promise<CanonicalVerifiedServiceScope> {
     return exactWorkItemScope(requiredConfig(), input.workItemId);
+  }
+
+  async authorizeOpenClawReview(input: {
+    operation: 'BEGIN_REVIEW';
+    reviewConversationRef: string;
+    requestId: string;
+  }): Promise<CanonicalVerifiedServiceScope> {
+    if (!input.reviewConversationRef.trim() || !input.requestId.trim()) {
+      throw scopeNotFound();
+    }
+    const config = requiredConfig();
+    return exactWorkItemScope(config, config.workItemId);
   }
 
   async authorizeOpenClawApplicabilityContext(input: {

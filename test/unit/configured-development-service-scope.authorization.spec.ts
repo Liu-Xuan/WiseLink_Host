@@ -91,6 +91,31 @@ describe('ConfiguredDevelopmentCanonicalServiceScopeAuthorization', () => {
     });
   });
 
+  it('derives Review begin scope only from the configured WorkItem', async () => {
+    configure();
+    const service =
+      new ConfiguredDevelopmentCanonicalServiceScopeAuthorization();
+
+    await expect(
+      service.authorizeOpenClawReview({
+        operation: 'BEGIN_REVIEW',
+        reviewConversationRef: 'RC-OPAQUE-1',
+        requestId: 'request-1',
+      }),
+    ).resolves.toMatchObject({
+      principalId: 'service:openclaw-dev-real',
+      tenantId: 'tenant-dev',
+      workItemId: 'WI-DEV-ISOLATED',
+    });
+    await expect(
+      service.authorizeOpenClawReview({
+        operation: 'BEGIN_REVIEW',
+        reviewConversationRef: '',
+        requestId: 'request-1',
+      }),
+    ).rejects.toMatchObject({ code: 'CANONICAL_WORK_ITEM_NOT_FOUND' });
+  });
+
   it('resolves only the configured opaque applicability context and never accepts a caller WorkItem', async () => {
     configure();
     const service =
