@@ -82,6 +82,8 @@ function parseEnglishDate(value = '') {
   if (match) return validDate(match[3], monthNumber(match[1]), match[2]);
   match = source.match(/^(\d{1,2})\s+([A-Z]{3,9})\s+(\d{4})$/iu);
   if (match) return validDate(match[3], monthNumber(match[2]), match[1]);
+  match = source.match(/^(\d{1,2})-([A-Z]{3,9})-(\d{4})$/iu);
+  if (match) return validDate(match[3], monthNumber(match[2]), match[1]);
   match = source.match(/^([A-Z]{3,9})\s+(\d{1,2})\/(\d{2}|\d{4})$/iu);
   if (match) {
     const year =
@@ -372,12 +374,141 @@ function extractAirbusServiceBulletin({ firstPageText }) {
   };
 }
 
+function extractHoneywellServiceInformationLetter({ firstPageText }) {
+  if (
+    !/\bHONEYWELL(?:\s+INTERNATIONAL\s+INC\.)?\b/iu.test(firstPageText) ||
+    !/\bSERVICE\s+INFORMATION\s+LETTER\b/iu.test(firstPageText)
+  ) {
+    return null;
+  }
+  const adapterId = 'issuer.honeywell.sil.v1';
+  const documentCode = singleIdentityCandidate(
+    [...firstPageText.matchAll(/\bPUBLICATION\s+NUMBER\s+(D\d{12})\b/giu)].map(
+      (match) => match[1].toUpperCase(),
+    ),
+    adapterId,
+    'document code',
+  );
+  const revisions = [
+    ...firstPageText.matchAll(
+      /\bREVISION\s+(\d{1,4})\s*,\s*(\d{1,2}\s+[A-Z]{3,9}\s+\d{4})\b/giu,
+    ),
+  ].map((match) => ({
+    number: Number(match[1]),
+    date: requiredExtractedDate(match[2], adapterId, 'revision date'),
+  }));
+  if (!documentCode || revisions.length === 0) return null;
+  const revisionNumber = Math.max(...revisions.map((value) => value.number));
+  const revisionDate = singleIdentityCandidate(
+    revisions
+      .filter((value) => value.number === revisionNumber)
+      .map((value) => value.date),
+    adapterId,
+    'current revision date',
+  );
+  return {
+    documentCode,
+    businessRevision: `R${revisionNumber}`,
+    revisionDate,
+    sourceGeneratedDate: '',
+    sourceType: 'supplier_sil',
+  };
+}
+
+function extractAirbusRetrofitInformationLetter({ firstPageText }) {
+  if (
+    !/\bAIRBUS\b/iu.test(firstPageText) ||
+    !/\bRETROFIT\s+INFORMATION\s+LETTER\s*-\s*RIL\b/iu.test(firstPageText)
+  ) {
+    return null;
+  }
+  const adapterId = 'issuer.airbus.retrofit_information_letter.v1';
+  const headers = [
+    ...firstPageText.matchAll(
+      /\bRIL\s+REFERENCE\s*:\s*(V[0-9A-Z]+)\s+R(\d{1,3})\s+DATED\s+(\d{1,2}-[A-Z]{3,9}-\d{4})\b/giu,
+    ),
+  ];
+  const documentCode = singleIdentityCandidate(
+    headers.map((match) => match[1].toUpperCase()),
+    adapterId,
+    'document code',
+  );
+  const revisionNumber = singleIdentityCandidate(
+    headers.map((match) => String(Number(match[2]))),
+    adapterId,
+    'revision number',
+  );
+  const revisionDate = singleIdentityCandidate(
+    headers.map((match) =>
+      requiredExtractedDate(match[3], adapterId, 'revision date'),
+    ),
+    adapterId,
+    'revision date',
+  );
+  if (!documentCode || !revisionNumber || !revisionDate) return null;
+  return {
+    documentCode,
+    businessRevision: `R${revisionNumber}`,
+    revisionDate,
+    sourceGeneratedDate: '',
+    sourceType: 'airbus_retrofit_information_letter',
+  };
+}
+
+function extractAirbusOperatorTransmission({ firstPageText }) {
+  if (
+    !/\bAIRBUS\b/iu.test(firstPageText) ||
+    !/\b(?:ALERT\s+OPERATORS|OPERATORS\s+INFORMATION|FLIGHT\s+OPERATIONS)\s+TRANSMISSION\s*-\s*(?:AOT|OIT|FOT)\b/iu.test(
+      firstPageText,
+    )
+  ) {
+    return null;
+  }
+  const adapterId = 'issuer.airbus.operator_transmission.v1';
+  const headers = [
+    ...firstPageText.matchAll(
+      /\bOUR\s+REF\.\s*:\s*([A-Z0-9]+(?:[./-][A-Z0-9]+)+)\s+REV\s+(\d{1,3})\s+DATED\s+(\d{1,2}-[A-Z]{3,9}-\d{4})\b/giu,
+    ),
+  ];
+  const documentCode = singleIdentityCandidate(
+    headers.map((match) => match[1].toUpperCase()),
+    adapterId,
+    'document code',
+  );
+  const revisionNumber = singleIdentityCandidate(
+    headers.map((match) => String(Number(match[2]))),
+    adapterId,
+    'revision number',
+  );
+  const revisionDate = singleIdentityCandidate(
+    headers.map((match) =>
+      requiredExtractedDate(match[3], adapterId, 'revision date'),
+    ),
+    adapterId,
+    'revision date',
+  );
+  if (!documentCode || !revisionNumber || !revisionDate) return null;
+  return {
+    documentCode,
+    businessRevision: `R${revisionNumber}`,
+    revisionDate,
+    sourceGeneratedDate: '',
+    sourceType: 'airbus_operator_transmission',
+  };
+}
+
 const ACTIVATED_IDENTITY_OWNERS = new Map([
   ['issuer.boeing.ftd.v1', extractBoeingFtd],
   ['issuer.faa.airworthiness_directive.v1', extractFaaAd],
   ['issuer.boeing.service_letter.v1', extractBoeingServiceLetter],
   ['issuer.boeing.service_bulletin.v1', extractBoeingServiceBulletin],
   ['issuer.airbus.service_bulletin.v1', extractAirbusServiceBulletin],
+  ['issuer.honeywell.sil.v1', extractHoneywellServiceInformationLetter],
+  [
+    'issuer.airbus.retrofit_information_letter.v1',
+    extractAirbusRetrofitInformationLetter,
+  ],
+  ['issuer.airbus.operator_transmission.v1', extractAirbusOperatorTransmission],
 ]);
 
 export function controlledPdfByteView(bytes) {
@@ -483,15 +614,16 @@ export function resolveActualPdfDocumentIdentity({
       },
     );
   }
-  const adapter = extractedCandidates.length === 1
-    ? resolveDocumentFamilyAdapter({
-        adapterId: extractedCandidates[0].adapterId,
-      })
-    : resolveDocumentFamilyAdapter({
-        filename: String(originalFilename || '').trim(),
-        title: layout?.metadata?.title || '',
-        content: inspectedText,
-      });
+  const adapter =
+    extractedCandidates.length === 1
+      ? resolveDocumentFamilyAdapter({
+          adapterId: extractedCandidates[0].adapterId,
+        })
+      : resolveDocumentFamilyAdapter({
+          filename: String(originalFilename || '').trim(),
+          title: layout?.metadata?.title || '',
+          content: inspectedText,
+        });
   if (!adapter?.adapterId || adapter.adapterId === GENERIC_ADAPTER_ID) {
     fail(
       'DM_PDF_FAMILY_UNRESOLVED',

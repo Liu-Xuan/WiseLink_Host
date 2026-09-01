@@ -62,6 +62,15 @@ export function hasServiceLetterDocumentIdentity(text = '') {
   return /service letter|service\s+letter|(?:^|[^a-z0-9])(?:737|747|767|777|787)[-_\s]*sl[-_\s]*\d/i.test(head);
 }
 
+function hasHoneywellServiceInformationLetterIdentity(text = '') {
+  const head = String(text || '').slice(0, 4000);
+  return (
+    /\bHONEYWELL(?:\s+INTERNATIONAL\s+INC\.)?\b/i.test(head) &&
+    /\bSERVICE\s+INFORMATION\s+LETTER\b/i.test(head) &&
+    /\bPUBLICATION\s+NUMBER\s+D\d{12}\b/i.test(head)
+  );
+}
+
 function hasServiceBulletinDocumentIdentity(text = '') {
   return /service\s+bulletin|\bsb\s+\d{3}-\d{2}-\d{4}|\bsb[-_\s]*\d/i.test(text);
 }
@@ -238,6 +247,7 @@ export function inferSourceType({
     || hasBoeingFtdDocumentIdentity(contentText)
   ) return 'boeing_ftd';
   if (hasDirectiveCurrentSourceIdentity(text)) return 'ad';
+  if (hasHoneywellServiceInformationLetterIdentity(text)) return 'supplier_sil';
   if (hasServiceLetterDocumentIdentity(text)) return 'boeing_service_letter';
   if (hasDirectiveAuxiliarySourceIdentity(text)) return 'generic';
   if (hasAirbusRetrofitInformationLetterIdentity(text)) return 'airbus_retrofit_information_letter';
@@ -311,6 +321,8 @@ export function detectDocumentDimensions(input = {}) {
     documentCategory = 'boeing_ftd';
   } else if (hasDirectiveCurrentSourceIdentity(text)) {
     documentCategory = 'ad';
+  } else if (hasHoneywellServiceInformationLetterIdentity(text)) {
+    documentCategory = 'sil';
   } else if (hasServiceLetterDocumentIdentity(text)) {
     documentCategory = 'sl';
   } else if (hasDirectiveAuxiliarySourceIdentity(text)) {
