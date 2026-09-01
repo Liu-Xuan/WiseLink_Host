@@ -221,6 +221,15 @@ export class ReviewConversationRepository {
       )
       SELECT
         actor_context.actor_id AS "actorContext",
+        runtime_diagnostics.authenticated_role_member AS
+          "authenticatedRoleMember",
+        runtime_diagnostics.service_role_member AS "serviceRoleMember",
+        runtime_diagnostics.row_security_active AS "rowSecurityActive",
+        runtime_diagnostics.expected_schema_resolved AS
+          "expectedSchemaResolved",
+        runtime_diagnostics.review_select_policy_present AS
+          "reviewSelectPolicyPresent",
+        runtime_diagnostics.review_rls_enabled AS "reviewRlsEnabled",
         bound_conversation.review_conversation_id AS "reviewConversationId",
         bound_conversation.tenant_id AS "conversationTenantId",
         bound_conversation.actor_id AS "conversationActorId",
@@ -258,6 +267,51 @@ export class ReviewConversationRepository {
         bound_turn.assistant_completed_at AS "assistantCompletedAt",
         bound_turn.created_at AS "turnCreatedAt"
       FROM actor_context
+      CROSS JOIN LATERAL (
+        SELECT
+          CASE
+            WHEN EXISTS (
+              SELECT 1 FROM pg_catalog.pg_roles
+              WHERE rolname = 'authenticated'
+            ) THEN pg_catalog.pg_has_role(
+              current_user, 'authenticated', 'MEMBER'
+            )
+            ELSE FALSE
+          END AS authenticated_role_member,
+          CASE
+            WHEN EXISTS (
+              SELECT 1 FROM pg_catalog.pg_roles
+              WHERE rolname = 'service_role'
+            ) THEN pg_catalog.pg_has_role(
+              current_user, 'service_role', 'MEMBER'
+            )
+            ELSE FALSE
+          END AS service_role_member,
+          current_setting('row_security', TRUE) IN ('on', 'true', '1') AS
+            row_security_active,
+          (
+            to_regclass('review_conversation') IS NOT NULL
+            AND to_regclass('review_turn') IS NOT NULL
+            AND to_regclass('engineer_supplied_input') IS NOT NULL
+            AND to_regclass('identity_subject_mapping') IS NOT NULL
+          ) AS expected_schema_resolved,
+          EXISTS (
+            SELECT 1
+            FROM pg_catalog.pg_policies AS candidate_policy
+            WHERE candidate_policy.tablename = 'review_conversation'
+              AND candidate_policy.policyname =
+                'review_conversation_authenticated_select'
+              AND 'authenticated' = ANY(candidate_policy.roles)
+          ) AS review_select_policy_present,
+          COALESCE(
+            (
+              SELECT candidate_table.relrowsecurity
+              FROM pg_catalog.pg_class AS candidate_table
+              WHERE candidate_table.oid = to_regclass('review_conversation')
+            ),
+            FALSE
+          ) AS review_rls_enabled
+      ) AS runtime_diagnostics
       LEFT JOIN LATERAL (
         SELECT candidate_conversation.*
         FROM review_conversation AS candidate_conversation
@@ -295,10 +349,17 @@ export class ReviewConversationRepository {
     `);
     const row = rows[0];
     if (row?.actorContext !== input.actorId) {
+      this.warnOpenClawBinding(
+        'ACTOR_CONTEXT_NOT_RETAINED',
+        openClawBindingDiagnostic(row, input.actorId),
+      );
       throw new Error('REVIEW_OPENCLAW_ACTOR_CONTEXT_UNAVAILABLE');
     }
     if (!row.reviewConversationId) {
-      this.warnOpenClawBinding('CONVERSATION_NOT_VISIBLE');
+      this.warnOpenClawBinding(
+        'CONVERSATION_NOT_VISIBLE',
+        openClawBindingDiagnostic(row, input.actorId),
+      );
       return null;
     }
     const conversation = actorBoundConversation(row);
@@ -308,15 +369,24 @@ export class ReviewConversationRepository {
       conversation.actorId !== input.actorId ||
       conversation.workItemId !== input.workItemId
     ) {
-      this.warnOpenClawBinding('CONVERSATION_SCOPE_MISMATCH');
+      this.warnOpenClawBinding(
+        'CONVERSATION_SCOPE_MISMATCH',
+        openClawBindingDiagnostic(row, input.actorId),
+      );
       return null;
     }
     if (!row.officialMappingId) {
-      this.warnOpenClawBinding('OFFICIAL_ACTOR_MAPPING_NOT_VISIBLE');
+      this.warnOpenClawBinding(
+        'OFFICIAL_ACTOR_MAPPING_NOT_VISIBLE',
+        openClawBindingDiagnostic(row, input.actorId),
+      );
       return null;
     }
     if (!row.reviewTurnId) {
-      this.warnOpenClawBinding('TURN_NOT_VISIBLE');
+      this.warnOpenClawBinding(
+        'TURN_NOT_VISIBLE',
+        openClawBindingDiagnostic(row, input.actorId),
+      );
       return null;
     }
     return { conversation, turn: persistedTurn(actorBoundTurn(row)) };
@@ -757,15 +827,18 @@ export class ReviewConversationRepository {
 
   private warnOpenClawBinding(
     reason:
+      | 'ACTOR_CONTEXT_NOT_RETAINED'
       | 'CONVERSATION_NOT_VISIBLE'
       | 'CONVERSATION_SCOPE_MISMATCH'
       | 'OFFICIAL_ACTOR_MAPPING_NOT_VISIBLE'
       | 'TURN_NOT_VISIBLE',
+    diagnostic: OpenClawBindingDiagnostic,
   ): void {
     this.logger.warn(
       JSON.stringify({
         event: 'OPENCLAW_REVIEW_BINDING_NOT_FOUND',
         reason,
+        diagnostic,
       }),
     );
   }
@@ -844,6 +917,12 @@ interface SelectedReviewTurn {
 
 interface ActorBoundReviewTurnRow extends Record<string, unknown> {
   actorContext: string | null;
+  authenticatedRoleMember: boolean | null;
+  serviceRoleMember: boolean | null;
+  rowSecurityActive: boolean | null;
+  expectedSchemaResolved: boolean | null;
+  reviewSelectPolicyPresent: boolean | null;
+  reviewRlsEnabled: boolean | null;
   reviewConversationId: string | null;
   conversationTenantId: string | null;
   conversationActorId: string | null;
@@ -880,6 +959,68 @@ interface ActorBoundReviewTurnRow extends Record<string, unknown> {
   actionAttemptId: string | null;
   assistantCompletedAt: Date | null;
   turnCreatedAt: Date | null;
+}
+
+type RuntimeRoleClass =
+  | 'AUTHENTICATED_MEMBER'
+  | 'SERVICE_ROLE_MEMBER'
+  | 'NEITHER'
+  | 'UNKNOWN';
+
+interface OpenClawBindingDiagnostic {
+  actorContextApplied: boolean;
+  runtimeRoleClass: RuntimeRoleClass;
+  authenticatedRoleMember: boolean | null;
+  serviceRoleMember: boolean | null;
+  rowSecurityActive: boolean | null;
+  expectedSchemaResolved: boolean | null;
+  sameConnectionContextSupported: boolean;
+  reviewSelectPolicyPresent: boolean | null;
+  reviewRlsEnabled: boolean | null;
+  rlsPolicyApplicable: boolean;
+  exactActiveConversationVisible: boolean;
+}
+
+function openClawBindingDiagnostic(
+  row: ActorBoundReviewTurnRow | undefined,
+  actorId: string,
+): OpenClawBindingDiagnostic {
+  const actorContextApplied = row?.actorContext === actorId;
+  const authenticatedRoleMember = row?.authenticatedRoleMember ?? null;
+  const serviceRoleMember = row?.serviceRoleMember ?? null;
+  const reviewSelectPolicyPresent = row?.reviewSelectPolicyPresent ?? null;
+  const reviewRlsEnabled = row?.reviewRlsEnabled ?? null;
+  return {
+    actorContextApplied,
+    runtimeRoleClass: runtimeRoleClass(
+      authenticatedRoleMember,
+      serviceRoleMember,
+    ),
+    authenticatedRoleMember,
+    serviceRoleMember,
+    rowSecurityActive: row?.rowSecurityActive ?? null,
+    expectedSchemaResolved: row?.expectedSchemaResolved ?? null,
+    sameConnectionContextSupported: actorContextApplied,
+    reviewSelectPolicyPresent,
+    reviewRlsEnabled,
+    rlsPolicyApplicable:
+      authenticatedRoleMember === true &&
+      reviewSelectPolicyPresent === true &&
+      reviewRlsEnabled === true,
+    exactActiveConversationVisible: Boolean(row?.reviewConversationId),
+  };
+}
+
+function runtimeRoleClass(
+  authenticatedRoleMember: boolean | null,
+  serviceRoleMember: boolean | null,
+): RuntimeRoleClass {
+  if (serviceRoleMember === true) return 'SERVICE_ROLE_MEMBER';
+  if (authenticatedRoleMember === true) return 'AUTHENTICATED_MEMBER';
+  if (authenticatedRoleMember === false && serviceRoleMember === false) {
+    return 'NEITHER';
+  }
+  return 'UNKNOWN';
 }
 
 function actorBoundConversation(
