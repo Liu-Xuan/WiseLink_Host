@@ -22,7 +22,6 @@ import {
   appendReviewTextTurn,
   canonicalPdfPreviewUrl,
   closeReviewConversation,
-  configureApplicabilitySelection,
   confirmReviewActionDraft,
   confirmIntegratedOverallForAeo,
   createOrResumeReviewConversation,
@@ -540,41 +539,6 @@ describe('canonical host assessment client', () => {
     });
     expect(request).toHaveBeenCalledWith({
       url: '/api/work-items/WI-SB%2F1001/applicability-selection',
-      method: 'GET',
-    });
-  });
-
-  it('configures only aircraft and as-of, then requires a fresh GET readback', async () => {
-    request
-      .mockResolvedValueOnce({
-        status: 200,
-        data: { selectionRevision: 'mutation-response' },
-      })
-      .mockResolvedValueOnce({
-        status: 200,
-        data: {
-          selectionRevision: 'fresh-readback',
-          aircraftIdentifier: 'B-TEST',
-          asOf: '2026-01-02',
-        },
-      });
-
-    await expect(
-      configureApplicabilitySelection('WI-SB-1001', {
-        aircraftIdentifier: 'B-TEST',
-        asOf: '2026-01-02',
-      }),
-    ).resolves.toMatchObject({ selectionRevision: 'fresh-readback' });
-    expect(request).toHaveBeenNthCalledWith(1, {
-      url: '/api/work-items/WI-SB-1001/applicability-selection',
-      method: 'PUT',
-      data: {
-        aircraftIdentifier: 'B-TEST',
-        asOf: '2026-01-02',
-      },
-    });
-    expect(request).toHaveBeenNthCalledWith(2, {
-      url: '/api/work-items/WI-SB-1001/applicability-selection',
       method: 'GET',
     });
   });

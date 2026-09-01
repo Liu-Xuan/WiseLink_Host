@@ -936,7 +936,9 @@ export default function DocumentParsingPage() {
           <ApplicabilitySelectionPanel
             key={workItemId}
             workItemId={workItemId}
-            onRefreshWorkspace={() => void load(activeQuery)}
+            onOpenInteractiveReview={() =>
+              updateDeepLink({ node: 'review', tab: 'review' })
+            }
           />
         ) : null}
 

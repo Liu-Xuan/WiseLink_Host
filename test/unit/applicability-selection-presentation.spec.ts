@@ -41,20 +41,20 @@ describe('applicability selection presentation', () => {
   it('maps success, unknown, waiting, stale and error without inferring applicability', () => {
     expect(presentApplicabilitySelection('ready', selection())).toMatchObject({
       state: 'success',
-      selectionLabel: '调整已同步',
+      selectionLabel: '系统范围已冻结',
       sourceLabel: '来源已绑定',
     });
     expect(presentApplicabilitySelection('ready', null)).toMatchObject({
       state: 'unknown',
-      selectionLabel: '未读取到手动调整',
+      selectionLabel: '未读取到冻结范围',
     });
     expect(presentApplicabilitySelection('unconfigured', null)).toMatchObject({
       state: 'unknown',
-      selectionLabel: '使用系统自动目标',
+      selectionLabel: '分析时自动冻结',
     });
     expect(presentApplicabilitySelection('error', null)).toMatchObject({
       state: 'error',
-      selectionLabel: '可选调整状态未知',
+      selectionLabel: '自动范围状态未知',
     });
     expect(
       presentApplicabilitySelection(
@@ -88,23 +88,20 @@ describe('applicability selection presentation', () => {
     );
     expect(isApplicabilitySelectionUnconfigured(reason)).toBe(true);
     expect(presentApplicabilitySelection('unconfigured', null).guidance).toBe(
-      '未设置手动调整；初始分析仍会由 Host 自动冻结受控评估对象和时点，无需工程师确认。',
+      '当前尚未形成冻结范围；初始分析开始时由 Host 自动确定，无需工程师输入或确认。',
     );
   });
 
   it('maps raw Host failures to bounded user guidance', () => {
-    const cases: Array<[Error, 'read' | 'save']> = [
-      [new Error('APPLICABILITY_SELECTION_UNAVAILABLE'), 'read'],
-      [new Error('WORK_ITEM_REVISION_CONFLICT'), 'save'],
-      [new Error('PERMISSION_DENIED: actor-id'), 'read'],
-      [new Error('WAITING_INPUT: internal-detail'), 'save'],
+    const cases: Error[] = [
+      new Error('APPLICABILITY_SELECTION_UNAVAILABLE'),
+      new Error('WORK_ITEM_REVISION_CONFLICT'),
+      new Error('PERMISSION_DENIED: actor-id'),
+      new Error('WAITING_INPUT: internal-detail'),
     ];
 
-    for (const [reason, action] of cases) {
-      const message: string = presentApplicabilitySelectionError(
-        reason,
-        action,
-      );
+    for (const reason of cases) {
+      const message: string = presentApplicabilitySelectionError(reason);
       expect(message).toMatch(/[\u4e00-\u9fff]/u);
       expect(message).not.toMatch(
         /APPLICABILITY|WORK_ITEM|PERMISSION|WAITING_INPUT|actor-id|internal-detail/u,
@@ -137,9 +134,33 @@ describe('applicability selection presentation', () => {
     expect(component).not.toContain('<code>{errorDetail}</code>');
     expect(component).not.toContain('{selection.documentVersionId}');
     expect(component).not.toContain('{selection.selectionRevision}');
+    expect(component).not.toContain('<Input');
+    expect(component).not.toContain('configureApplicabilitySelection');
+    expect(component).not.toContain('工程师受控输入');
+    expect(component).not.toContain('保存可选调整');
+    expect(component).toContain('在交互式复核中补充');
     expect(component).toContain(
       '<details className="applicability-selection-readback">',
     );
+
+    const controller: string = await readFile(
+      resolve(
+        root,
+        'server/modules/canonical-host/canonical-host-applicability-selection.controller.ts',
+      ),
+      'utf8',
+    );
+    expect(controller).toContain("@Get(':workItemId/applicability-selection')");
+    expect(controller).not.toContain(
+      "@Put(':workItemId/applicability-selection')",
+    );
+
+    const clientApi: string = await readFile(
+      resolve(root, 'client/src/api/canonical-host.ts'),
+      'utf8',
+    );
+    expect(clientApi).not.toContain('configureApplicabilitySelection');
+    expect(clientApi).not.toContain("method: 'PUT'");
   });
 
   it('allows the assessment audit explanation to wrap on narrow layouts', async () => {
