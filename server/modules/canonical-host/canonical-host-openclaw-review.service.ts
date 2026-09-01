@@ -121,15 +121,25 @@ export class CanonicalHostOpenClawReviewService {
     reviewConversationRef: string,
     requestId: string,
   ): Promise<BeginReviewTurnResult> {
+    requiredText(reviewConversationRef, 'REVIEW_CONVERSATION_REF_REQUIRED');
+    requiredText(requestId, 'REVIEW_REQUEST_ID_REQUIRED');
+    const scope = await this.serviceScope.authorizeOpenClawReview({
+      operation: 'BEGIN_REVIEW',
+      reviewConversationRef,
+      requestId,
+    });
+    assertWorkItemScope(scope, scope.workItemId);
+    const scopedWorkItem = await this.workItems.loadTenantScopedProjection(
+      scope.workItemId,
+      scope.tenantId,
+    );
+    if (!scopedWorkItem?.projection) throw reviewNotFound();
     const binding = await this.requiredConversationTurn(
       reviewConversationRef,
       requestId,
+      scope,
+      scopedWorkItem.row.requestedByUserId,
     );
-    const scope = await this.serviceScope.authorizeOpenClawWorkItem({
-      operation: 'BEGIN_REVIEW',
-      workItemId: binding.conversation.workItemId,
-    });
-    assertWorkItemScope(scope, binding.conversation.workItemId);
     const workItem = await this.requiredCurrentWorkItem(binding, scope);
     const taskContract = await this.buildTaskContract(binding, workItem);
     const claim = await this.attempts.reserveAndClaim({
@@ -251,13 +261,14 @@ export class CanonicalHostOpenClawReviewService {
     ) {
       return this.attempts.projectTerminal(prepared.row);
     }
-    const persisted = await this.conversations.persistAssistantCandidate({
-      conversation: authorized.conversation,
-      turn: authorized.turn,
-      actionAttemptId: prepared.row.attemptId,
-      candidate: assistantCandidate(attemptRef, candidate, result),
-      completedAt: new Date(),
-    });
+    const persisted =
+      await this.conversations.persistOpenClawAssistantCandidate({
+        conversation: authorized.conversation,
+        turn: authorized.turn,
+        actionAttemptId: prepared.row.attemptId,
+        candidate: assistantCandidate(attemptRef, candidate, result),
+        completedAt: new Date(),
+      });
     const terminal =
       await this.attempts.finishCandidatePersistenceSuccess(prepared);
     if (!persisted.turn.assistantCandidate) {
@@ -282,24 +293,18 @@ export class CanonicalHostOpenClawReviewService {
   private async requiredConversationTurn(
     reviewConversationRef: string,
     requestId: string,
+    scope: CanonicalVerifiedServiceScope,
+    actorId: string,
   ): Promise<ReviewBinding> {
-    requiredText(reviewConversationRef, 'REVIEW_CONVERSATION_REF_REQUIRED');
-    requiredText(requestId, 'REVIEW_REQUEST_ID_REQUIRED');
-    const aggregate = await this.conversations.loadById(reviewConversationRef);
-    if (!aggregate || aggregate.conversation.status !== 'ACTIVE') {
-      throw reviewNotFound();
-    }
-    const turn = aggregate.turns.find((value) => value.requestId === requestId);
-    if (!turn || turn.assistantCandidate) throw reviewNotFound();
-    if (
-      !(await this.conversations.hasActiveOfficialActorMapping({
-        tenantId: aggregate.conversation.tenantId,
-        actorId: aggregate.conversation.actorId,
-      }))
-    ) {
-      throw reviewNotFound();
-    }
-    return { conversation: aggregate.conversation, turn };
+    const binding = await this.conversations.loadOpenClawTurnBinding({
+      reviewConversationId: reviewConversationRef,
+      requestId,
+      tenantId: scope.tenantId,
+      actorId,
+      workItemId: scope.workItemId,
+    });
+    if (!binding || binding.turn.assistantCandidate) throw reviewNotFound();
+    return binding;
   }
 
   private async requiredCurrentWorkItem(
@@ -360,47 +365,32 @@ export class CanonicalHostOpenClawReviewService {
     }
     const task = parseTaskEnvelope(row.taskEnvelopeJson);
     const contract = parseReviewTurnTaskContract(task.modelInput);
-    const aggregate = await this.conversations.loadById(
-      contract.reviewConversationRef,
-    );
-    const turn = await this.conversations.loadTurnById(
-      contract.reviewConversationRef,
-      contract.reviewTurnRef,
-    );
+    const binding = await this.conversations.loadOpenClawTurnByIdBinding({
+      reviewConversationId: contract.reviewConversationRef,
+      reviewTurnId: contract.reviewTurnRef,
+      tenantId: row.tenantId,
+      actorId: row.actorUserId,
+      workItemId: row.workItemId,
+    });
     if (
-      !aggregate ||
-      !turn ||
-      aggregate.conversation.tenantId !== row.tenantId ||
-      aggregate.conversation.actorId !== row.actorUserId ||
-      aggregate.conversation.workItemId !== row.workItemId ||
-      turn.requestId !== contract.requestId ||
-      turn.inputRevision !== row.inputRevision ||
-      task.inputRevision !== turn.inputRevision
-    ) {
-      throw reviewNotFound();
-    }
-    if (
-      !(await this.conversations.hasActiveOfficialActorMapping({
-        tenantId: aggregate.conversation.tenantId,
-        actorId: aggregate.conversation.actorId,
-      }))
+      !binding ||
+      binding.turn.requestId !== contract.requestId ||
+      binding.turn.inputRevision !== row.inputRevision ||
+      task.inputRevision !== binding.turn.inputRevision
     ) {
       throw reviewNotFound();
     }
     if (requireCurrent) {
-      if (aggregate.conversation.status !== 'ACTIVE') throw reviewNotFound();
-      await this.requiredCurrentWorkItem(
-        { conversation: aggregate.conversation, turn },
-        scope,
-      );
+      if (binding.conversation.status !== 'ACTIVE') throw reviewNotFound();
+      await this.requiredCurrentWorkItem(binding, scope);
     }
     return {
       scope,
       row,
       task,
       contract,
-      conversation: aggregate.conversation,
-      turn,
+      conversation: binding.conversation,
+      turn: binding.turn,
     };
   }
 

@@ -73,6 +73,44 @@ describe('CanonicalHostOpenClawReviewService', () => {
     expect(JSON.stringify(begin.task.modelInput)).not.toContain(
       'openClawSessionKey',
     );
+    expect(harness.serviceScope.authorizeOpenClawReview).toHaveBeenCalledWith({
+      operation: 'BEGIN_REVIEW',
+      reviewConversationRef: 'RC-1',
+      requestId: 'request-1',
+    });
+    expect(harness.conversations.loadOpenClawTurnBinding).toHaveBeenCalledWith({
+      reviewConversationId: 'RC-1',
+      requestId: 'request-1',
+      tenantId: 'tenant-1',
+      actorId: 'actor-1',
+      workItemId: 'WI-1',
+    });
+    expect(
+      harness.serviceScope.authorizeOpenClawReview.mock.invocationCallOrder[0],
+    ).toBeLessThan(
+      harness.conversations.loadOpenClawTurnBinding.mock.invocationCallOrder[0],
+    );
+    expect(harness.workItems.loadTenantScopedProjection).toHaveBeenCalledTimes(
+      2,
+    );
+  });
+
+  it('rejects a Review binding that does not match the Host-owned WorkItem actor', async () => {
+    const harness = reviewHarness();
+    harness.conversations.loadOpenClawTurnBinding.mockResolvedValueOnce({
+      conversation: {
+        ...(await harness.conversations.loadById()).conversation,
+        actorId: 'actor-forged',
+      },
+      turn: await harness.conversations.loadTurnById(),
+    });
+
+    await expect(
+      harness.service.begin('RC-1', 'request-1'),
+    ).rejects.toMatchObject({
+      code: 'REVIEW_TURN_BINDING_STALE_OR_INELIGIBLE',
+    });
+    expect(harness.attempts.reserveAndClaim).not.toHaveBeenCalled();
   });
 
   it('returns only exact frozen allowlisted SourceRefs and rejects any other ref', async () => {
@@ -146,7 +184,7 @@ describe('CanonicalHostOpenClawReviewService', () => {
     ).rejects.toThrow('REVIEW_RESULT_PROVENANCE_INVALID');
     expect(harness.attempts.prepareCommit).not.toHaveBeenCalled();
     expect(
-      harness.conversations.persistAssistantCandidate,
+      harness.conversations.persistOpenClawAssistantCandidate,
     ).not.toHaveBeenCalled();
   });
 
@@ -169,7 +207,7 @@ describe('CanonicalHostOpenClawReviewService', () => {
     ).rejects.toThrow('OPENCLAW_RESULT_RUNTIME_POLICY_MISMATCH');
     expect(harness.attempts.prepareCommit).not.toHaveBeenCalled();
     expect(
-      harness.conversations.persistAssistantCandidate,
+      harness.conversations.persistOpenClawAssistantCandidate,
     ).not.toHaveBeenCalled();
   });
 
@@ -199,7 +237,7 @@ describe('CanonicalHostOpenClawReviewService', () => {
       },
     });
     expect(
-      harness.conversations.persistAssistantCandidate,
+      harness.conversations.persistOpenClawAssistantCandidate,
     ).toHaveBeenCalledTimes(1);
     expect(
       harness.attempts.finishCandidatePersistenceSuccess,
@@ -225,7 +263,7 @@ describe('CanonicalHostOpenClawReviewService', () => {
     ).rejects.toMatchObject({ code: 'ACTION_ATTEMPT_LEASE_EXPIRED' });
     expect(harness.attempts.prepareCommit).not.toHaveBeenCalled();
     expect(
-      harness.conversations.persistAssistantCandidate,
+      harness.conversations.persistOpenClawAssistantCandidate,
     ).not.toHaveBeenCalled();
   });
 });
@@ -286,7 +324,12 @@ function reviewHarness(withAttachment = false) {
     loadById: jest.fn(async () => ({ conversation, turns: [turn] })),
     loadTurnById: jest.fn(async () => turn),
     hasActiveOfficialActorMapping: jest.fn(async () => true),
-    persistAssistantCandidate: jest.fn(async (input) => {
+    loadOpenClawTurnBinding: jest.fn(async () => ({ conversation, turn })),
+    loadOpenClawTurnByIdBinding: jest.fn(async () => ({
+      conversation,
+      turn,
+    })),
+    persistOpenClawAssistantCandidate: jest.fn(async (input) => {
       const assistantCandidate: ReviewTurnAssistantCandidate = {
         ...input.candidate,
         completedAt: '2026-08-26T10:02:00.000Z',
@@ -455,6 +498,7 @@ function reviewHarness(withAttachment = false) {
   };
   const serviceScope = {
     authorizeOpenClawWorkItem: jest.fn(async () => verifiedScope()),
+    authorizeOpenClawReview: jest.fn(async () => verifiedScope()),
     authorizeOpenClawAttempt: jest.fn(async () => ({
       ...verifiedScope(),
       attemptRef: 'AQ-REVIEW-1',
@@ -473,6 +517,7 @@ function reviewHarness(withAttachment = false) {
     attempts,
     conversations,
     workItems,
+    serviceScope,
     expireLease() {
       row = {
         ...row!,
