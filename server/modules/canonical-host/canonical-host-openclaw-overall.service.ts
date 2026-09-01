@@ -479,6 +479,14 @@ export class CanonicalHostOpenClawOverallService {
           ref: workItem.integratedAssessment!.baseRules.artifact.ref,
           sha256: workItem.integratedAssessment!.baseRules.artifact.sha256,
         },
+        ...(workItem.applicability
+          ? [
+              {
+                ref: workItem.applicability.artifact.ref,
+                sha256: workItem.applicability.artifact.sha256,
+              },
+            ]
+          : []),
       ],
       allowedConnectors: providers,
       buildModelInput: async (identity) => {

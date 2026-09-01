@@ -182,8 +182,11 @@ CAS；Skill 不声称这些步骤由模型完成。8. commit 响应未知时只�
 
 - 先确认 Host 已落账完整 dynamic N/N，再以 `providers=[]` 运行无 discovery overall。
 - 输入必须包含同一 frozen.2 package、完整 N/N、当前 adopted DocumentVersions、脱敏 engineer-review
-  timeline/effective、Host `selectiveResynthesis` 摘要和 Unified SourceRefs。
-- 若当前文档的 source-bound 适用性条件缺少受控机队事实，仍执行 overall 模型并形成初步工程综合候选；只允许
+  timeline/effective、Host `selectiveResynthesis` 摘要、Unified SourceRefs，以及 Host 当前
+  `applicabilityResult`（没有当前候选时为 null）。Overall 必须逐字遵循 Host 派生的适用性终态：
+  `APPLICABLE`、`NOT_APPLICABLE` 或 `UNKNOWN/WAITING_INPUT`，不得降级为笼统人工复核。
+- 若当前文档的 source-bound 适用性条件缺少受控机队事实，且 Host `applicabilityResult` 为 null 或 UNKNOWN，
+  仍执行 overall 模型并形成初步工程综合候选；只允许
   列出当前 SourceRef/effectivity 实际要求的缺失事实，保持适用性为条件性 UNKNOWN，并说明需要工程师或后续受控
   数据确认。不得引入当前文档、dynamic 缺口和 Host missingInputs 中不存在的设备、软件或构型名称。
 - 输出 `engineeringSummary` 必须回答一句话工程结论、为什么重要、来源适用范围与当前机队匹配、实施影响、处置

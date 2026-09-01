@@ -226,6 +226,7 @@ Host record 时不接收模型给出的 runtimeAppId/observedAt；Host 派生真
 ```text
 operation=SYNTHESIZE_OVERALL_CANDIDATE
 outputCorrelationRef
+applicabilityResult（Host 当前适用性候选；含 source/result binding 与 APPLICABLE/NOT_APPLICABLE/UNKNOWN，缺失为 null）
 baseRuleResult（完整 dynamic N/N 兼容投影）
 unifiedSourceContext（同一 frozen.2 + SourceRefs）
 adoptedDocumentVersions
@@ -251,8 +252,9 @@ engineeringReviewRequired=true
 并返回 overallCandidate、engineeringSummary、findings、missingInputs、applicabilityStatus、provider status 和
 计数。`engineeringSummary` 包含一句话工程结论、whyItMatters、applicability.sourceScope/fleetMatch/requiredFacts、
 implementationImpact、dispositionPriority 和 1–3 个 nextActions。每个陈述必须带至少一个当前 DocumentVersion
-SourceRef，并标明 `SOURCE_FACT` 或 `CONDITIONAL_INFERENCE`。缺 FleetFacts/predicates 时 applicability 保持
-`UNKNOWN/WAITING_INPUT`，但仍形成初步工程综合候选；只列当前来源条件实际要求的缺失事实，不从其它文档带入
+SourceRef，并标明 `SOURCE_FACT` 或 `CONDITIONAL_INFERENCE`。`applicabilityStatus` 必须与 Host
+`applicabilityResult` 一致；Host 已求值为 APPLICABLE/NOT_APPLICABLE 时不得改回人工复核或 UNKNOWN。缺当前
+候选或其 decision=UNKNOWN 时 applicability 保持 `UNKNOWN/WAITING_INPUT`，但仍形成初步工程综合候选；只列当前来源条件实际要求的缺失事实，不从其它文档带入
 设备、软件或构型名称，不得最终批准或发布。
 
 ## INTERACTIVE_REVIEW task

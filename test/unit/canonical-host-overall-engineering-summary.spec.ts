@@ -11,6 +11,7 @@ import type {
 import {
   buildOpenClawOverallSynthesisInput,
   consumeOpenClawOverallSynthesisOutput,
+  expectedOverallApplicabilityStatus,
   type OpenClawOverallSynthesisInput,
 } from '../../server/modules/canonical-host/openclaw-overall-synthesis.processor';
 
@@ -94,7 +95,7 @@ describe('source-bound Overall engineering summary', () => {
     expect(serializedInput).toContain('FMC OPS Update 14');
     expect(serializedInput).not.toMatch(/AIMS[ -]?2/iu);
     expect(
-      input.unifiedSourceContext.sourceRefs.filter(
+      sourceContextRefs(input).filter(
         (value) =>
           typeof (value as { excerpt?: unknown }).excerpt === 'string',
       ),
@@ -227,12 +228,20 @@ describe('source-bound Overall engineering summary', () => {
       real777Package,
       real777Bytes,
       [applicability, action],
-      ['需要当前飞机 AIMS-2 与 ONS 构型才能选择对应 Service Bulletin。'],
+      [],
+      'APPLICABLE',
     );
 
     expect(JSON.stringify(input)).toContain('AIMS-2');
+    expect(input.applicabilityResult).toMatchObject({
+      status: 'CANDIDATE_ONLY',
+      decision: 'APPLICABLE',
+      kleeneResult: true,
+      pass: true,
+      blockingUnknownCount: 0,
+    });
     expect(
-      input.unifiedSourceContext.sourceRefs.filter(
+      sourceContextRefs(input).filter(
         (value) =>
           typeof (value as { excerpt?: unknown }).excerpt === 'string',
       ),
@@ -263,19 +272,12 @@ describe('source-bound Overall engineering summary', () => {
           applicability,
         ),
         fleetMatch: statement(
-          '当前飞机是否装有 AIMS-2 及其 ONS 构型尚未给出，不能选择具体 Service Bulletin。',
+          'Host 当前受控适用性求值为 APPLICABLE；具体实施时仍按来源中的 ONS 构型选择对应 Service Bulletin。',
           'CONDITIONAL_INFERENCE',
           applicability,
           action,
         ),
-        requiredFacts: [
-          statement(
-            '核对当前飞机的 AIMS-2 与 ONS 构型。',
-            'CONDITIONAL_INFERENCE',
-            applicability,
-            action,
-          ),
-        ],
+        requiredFacts: [],
       },
       implementationImpact: [
         statement(
@@ -286,7 +288,7 @@ describe('source-bound Overall engineering summary', () => {
       ],
       dispositionPriority: [
         statement(
-          '在构型识别完成前保留为条件性计划项。',
+          '按 Host 已完成的适用性求值进入候选实施规划，最终工程批准仍独立保留。',
           'CONDITIONAL_INFERENCE',
           applicability,
           action,
@@ -294,7 +296,7 @@ describe('source-bound Overall engineering summary', () => {
       ],
       nextActions: [
         statement(
-          '读取飞机 AIMS-2/ONS 构型并选择相应 Service Bulletin。',
+          '依据受控 ONS 构型选择并准备相应 Service Bulletin。',
           'CONDITIONAL_INFERENCE',
           applicability,
           action,
@@ -307,9 +309,20 @@ describe('source-bound Overall engineering summary', () => {
     );
 
     expect(JSON.stringify(consumed)).toContain('AIMS-2');
+    expect(consumed.applicabilityStatus).toBe('APPLICABLE');
     expect(summary.conclusion.sourceRefIds).toContain(
       applicability.sourceRefId,
     );
+    const staleUnknown = JSON.parse(
+      synthesisOutput(input, summary),
+    ) as Record<string, unknown>;
+    staleUnknown.applicabilityStatus = 'UNKNOWN/WAITING_INPUT';
+    expect(() =>
+      consumeOpenClawOverallSynthesisOutput(
+        input,
+        JSON.stringify(staleUnknown),
+      ),
+    ).toThrow('OVERALL_APPLICABILITY_STATUS_MISMATCH');
   });
 });
 
@@ -332,6 +345,7 @@ function buildRealInput(
   packageBytes: Buffer,
   refs: FrozenSourceRef[],
   missingInputs: string[],
+  applicabilityDecision?: 'APPLICABLE' | 'NOT_APPLICABLE' | 'UNKNOWN',
 ): OpenClawOverallSynthesisInput {
   const documentVersionId = legacyId(pkg, 'wiselink_document_version_id');
   const baseOutput = {
@@ -389,6 +403,7 @@ function buildRealInput(
     },
     package: {
       packageId: pkg.packageId,
+      contentHash: 'c'.repeat(64),
       contractRevision: pkg.contractRevision,
       contentUnitCount: pkg.contentUnits.length,
       documentIdentity: {
@@ -397,6 +412,46 @@ function buildRealInput(
       },
       artifact: artifact('artifact://real-package', PACKAGE_SHA),
     },
+    applicability: applicabilityDecision
+      ? {
+          schemaVersion:
+            'wiselink.3_1.applicability_candidate_projection.v1',
+          status:
+            applicabilityDecision === 'UNKNOWN'
+              ? 'WAITING_INPUT'
+              : 'CANDIDATE_ONLY',
+          currentness: 'CURRENT',
+          staleReason: null,
+          sourceResultId: `openclaw-applicability://${documentVersionId}`,
+          actionAttemptId: 'ATT-REAL-APPLICABILITY',
+          inputRevision: 1,
+          documentId: pkg.document.documentId,
+          documentVersionId,
+          sourcePackageId: pkg.packageId,
+          sourcePackageContentHash: 'c'.repeat(64),
+          translationActionAttemptId: 'ATT-REAL-TRANSLATION',
+          applicabilityContextRef: 'APCTX-REAL',
+          applicabilityBindingRevision: 'host-applicability:real',
+          aircraftNumber: 'B-1266',
+          assessmentAsOf: '2026-09-01',
+          fleetSourceSnapshotId: 'FLEET-REAL',
+          fleetSourceRevisionKey: 'FLEET-REV-REAL',
+          fleetAuthorityRevision: 'FLEET-AUTH-REAL',
+          fleetSourceAsOf: '2026-09-01',
+          sourceExpressionCount: 1,
+          sourceRefCount: refs.length,
+          decision: applicabilityDecision,
+          kleeneResult:
+            applicabilityDecision === 'APPLICABLE'
+              ? true
+              : applicabilityDecision === 'NOT_APPLICABLE'
+                ? false
+                : 'unknown',
+          pass: applicabilityDecision === 'APPLICABLE',
+          blockingUnknownCount: applicabilityDecision === 'UNKNOWN' ? 1 : 0,
+          artifact: artifact('artifact://real-applicability', 'f'.repeat(64)),
+        }
+      : null,
     integratedAssessment: {
       status: 'BASE_RULE_CANDIDATE_READY',
       baseRules,
@@ -454,7 +509,9 @@ function synthesisOutput(
       },
     ],
     missingInputs: [],
-    applicabilityStatus: 'UNKNOWN/WAITING_INPUT',
+    applicabilityStatus: expectedOverallApplicabilityStatus(
+      input.applicabilityResult,
+    ),
     engineeringReviewRequired: true,
     adopted: false,
     usableAsEvidence: false,
@@ -472,6 +529,14 @@ function statement(
     basis,
     sourceRefIds: [...new Set(refs.map((ref) => ref.sourceRefId))],
   };
+}
+
+function sourceContextRefs(
+  input: OpenClawOverallSynthesisInput,
+): Array<Record<string, unknown>> {
+  return input.unifiedSourceContext.sourceRefs as Array<
+    Record<string, unknown>
+  >;
 }
 
 function legacyId(pkg: FrozenPackage, namespace: string): string {

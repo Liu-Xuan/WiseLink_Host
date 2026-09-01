@@ -1,4 +1,5 @@
 import type {
+  CanonicalApplicabilityCandidateProjection,
   CanonicalBaseRuleCandidateProjection,
   CanonicalWorkItemProjection,
 } from '@shared/api.interface';
@@ -58,12 +59,29 @@ const OUTPUT_KEYS = [
 export interface OpenClawOverallSynthesisInput {
   operation: 'SYNTHESIZE_OVERALL_CANDIDATE';
   outputCorrelationRef: string;
+  applicabilityResult: OpenClawOverallApplicabilityResult | null;
   baseRuleResult: Record<string, unknown>;
   unifiedSourceContext: Record<string, unknown>;
   adoptedDocumentVersions: Array<Record<string, unknown>>;
   externalDiscoveryResults: Array<Record<string, unknown>>;
   engineerReviewContext: OpenClawEngineerReviewContext;
   selectiveResynthesis: SelectiveOverallResynthesisSummary;
+}
+
+export interface OpenClawOverallApplicabilityResult {
+  schemaVersion: 'wiselink.3_1.overall_applicability_result.v1';
+  status: 'CANDIDATE_ONLY' | 'WAITING_INPUT';
+  sourceResultId: string;
+  inputRevision: number;
+  documentVersionId: string;
+  sourcePackageId: string;
+  sourcePackageContentHash: string;
+  sourceExpressionCount: number;
+  sourceRefCount: number;
+  decision: 'APPLICABLE' | 'NOT_APPLICABLE' | 'UNKNOWN';
+  kleeneResult: true | false | 'unknown';
+  pass: boolean;
+  blockingUnknownCount: number;
 }
 
 export function buildOpenClawOverallSynthesisInput(input: {
@@ -187,9 +205,11 @@ export function buildOpenClawOverallSynthesisInput(input: {
   const documentNumber =
     documentIdentity?.documentCode ?? input.workItem.source.documentId;
   const revisionLabel = documentIdentity?.businessRevision ?? 'UNSPECIFIED';
+  const applicabilityResult = overallApplicabilityResult(input.workItem);
   const modelInput: OpenClawOverallSynthesisInput = {
     operation: 'SYNTHESIZE_OVERALL_CANDIDATE',
     outputCorrelationRef: input.outputCorrelationRef,
+    applicabilityResult,
     baseRuleResult: {
       sourceResultId: input.baseRules.sourceResultId,
       revision: input.baseRules.revision,
@@ -356,13 +376,11 @@ export function consumeOpenClawOverallSynthesisOutput(
     true,
     'OVERALL_ENGINEER_REVIEW_REQUIRED',
   );
-  if (
-    !['UNKNOWN/WAITING_INPUT', 'CANDIDATE_REVIEW_REQUIRED'].includes(
-      String(parsed.applicabilityStatus),
-    )
-  ) {
-    throw new Error('OVERALL_APPLICABILITY_STATUS_INVALID');
-  }
+  same(
+    parsed.applicabilityStatus,
+    expectedOverallApplicabilityStatus(input.applicabilityResult),
+    'OVERALL_APPLICABILITY_STATUS_MISMATCH',
+  );
   text(parsed.overallCandidate, 'OVERALL_CANDIDATE_INVALID');
   nullableText(parsed.gap, 'OVERALL_GAP_INVALID');
   const findings = requiredArray(parsed.findings, 'OVERALL_FINDINGS_INVALID');
@@ -455,6 +473,79 @@ export function consumeOpenClawOverallSynthesisOutput(
     'OVERALL_UNRESOLVED_COUNT_MISMATCH',
   );
   return parsed;
+}
+
+export function expectedOverallApplicabilityStatus(
+  result: OpenClawOverallApplicabilityResult | null,
+): 'APPLICABLE' | 'NOT_APPLICABLE' | 'UNKNOWN/WAITING_INPUT' {
+  if (!result || result.decision === 'UNKNOWN') {
+    return 'UNKNOWN/WAITING_INPUT';
+  }
+  return result.decision;
+}
+
+function overallApplicabilityResult(
+  workItem: CanonicalWorkItemProjection,
+): OpenClawOverallApplicabilityResult | null {
+  const applicability = workItem.applicability;
+  if (!applicability) return null;
+  assertCurrentApplicabilityBinding(workItem, applicability);
+  if (applicability.status === 'STALE') {
+    throw new Error('OPENCLAW_OVERALL_APPLICABILITY_BINDING_INVALID');
+  }
+  return {
+    schemaVersion: 'wiselink.3_1.overall_applicability_result.v1',
+    status: applicability.status,
+    sourceResultId: applicability.sourceResultId,
+    inputRevision: applicability.inputRevision,
+    documentVersionId: applicability.documentVersionId,
+    sourcePackageId: applicability.sourcePackageId,
+    sourcePackageContentHash: applicability.sourcePackageContentHash,
+    sourceExpressionCount: applicability.sourceExpressionCount,
+    sourceRefCount: applicability.sourceRefCount,
+    decision: applicability.decision,
+    kleeneResult: applicability.kleeneResult,
+    pass: applicability.pass,
+    blockingUnknownCount: applicability.blockingUnknownCount,
+  };
+}
+
+function assertCurrentApplicabilityBinding(
+  workItem: CanonicalWorkItemProjection,
+  applicability: CanonicalApplicabilityCandidateProjection,
+): void {
+  const pkg = workItem.package;
+  if (
+    !pkg ||
+    applicability.currentness !== 'CURRENT' ||
+    applicability.staleReason !== null ||
+    !['CANDIDATE_ONLY', 'WAITING_INPUT'].includes(applicability.status) ||
+    applicability.documentId !== workItem.source.documentId ||
+    applicability.documentVersionId !== workItem.source.documentVersionId ||
+    applicability.sourcePackageId !== pkg.packageId ||
+    applicability.sourcePackageContentHash !== pkg.contentHash
+  ) {
+    throw new Error('OPENCLAW_OVERALL_APPLICABILITY_BINDING_INVALID');
+  }
+  const terminalConsistent =
+    (applicability.decision === 'APPLICABLE' &&
+      applicability.status === 'CANDIDATE_ONLY' &&
+      applicability.kleeneResult === true &&
+      applicability.pass === true &&
+      applicability.blockingUnknownCount === 0) ||
+    (applicability.decision === 'NOT_APPLICABLE' &&
+      applicability.status === 'CANDIDATE_ONLY' &&
+      applicability.kleeneResult === false &&
+      applicability.pass === false &&
+      applicability.blockingUnknownCount === 0) ||
+    (applicability.decision === 'UNKNOWN' &&
+      applicability.status === 'WAITING_INPUT' &&
+      applicability.kleeneResult === 'unknown' &&
+      applicability.pass === false &&
+      applicability.blockingUnknownCount > 0);
+  if (!terminalConsistent) {
+    throw new Error('OPENCLAW_OVERALL_APPLICABILITY_RESULT_INVALID');
+  }
 }
 
 export function readDynamicRuleReviewItems(
