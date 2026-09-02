@@ -1020,6 +1020,8 @@ interface SelectedReviewTurn {
   createdAt: Date;
 }
 
+type RawDatabaseTimestamp = Date | string;
+
 interface ActorBoundReviewTurnRow extends Record<string, unknown> {
   actorContext: string | null;
   authenticatedRoleMember: boolean | null;
@@ -1037,9 +1039,9 @@ interface ActorBoundReviewTurnRow extends Record<string, unknown> {
   startedAtRevision: number | null;
   lastSyncedRevision: number | null;
   conversationStatus: string | null;
-  conversationCreatedAt: Date | null;
-  lastActiveAt: Date | null;
-  closedAt: Date | null;
+  conversationCreatedAt: RawDatabaseTimestamp | null;
+  lastActiveAt: RawDatabaseTimestamp | null;
+  closedAt: RawDatabaseTimestamp | null;
   officialMappingId: string | null;
   reviewTurnId: string | null;
   turnReviewConversationId: string | null;
@@ -1062,8 +1064,8 @@ interface ActorBoundReviewTurnRow extends Record<string, unknown> {
   resultProvenanceJson: string | null;
   resultContentHash: string | null;
   actionAttemptId: string | null;
-  assistantCompletedAt: Date | null;
-  turnCreatedAt: Date | null;
+  assistantCompletedAt: RawDatabaseTimestamp | null;
+  turnCreatedAt: RawDatabaseTimestamp | null;
 }
 
 type RuntimeRoleClass =
@@ -1154,9 +1156,17 @@ function actorBoundConversation(
     startedAtRevision: row.startedAtRevision,
     lastSyncedRevision: row.lastSyncedRevision,
     status: row.conversationStatus,
-    createdAt: row.conversationCreatedAt,
-    lastActiveAt: row.lastActiveAt,
-    closedAt: row.closedAt,
+    createdAt: persistedTimestamp(
+      row.conversationCreatedAt,
+      'reviewConversation.createdAt',
+    ),
+    lastActiveAt: persistedTimestamp(
+      row.lastActiveAt,
+      'reviewConversation.lastActiveAt',
+    ),
+    closedAt: row.closedAt !== null
+      ? persistedTimestamp(row.closedAt, 'reviewConversation.closedAt')
+      : null,
   };
 }
 
@@ -1198,9 +1208,25 @@ function actorBoundTurn(row: ActorBoundReviewTurnRow): SelectedReviewTurn {
     resultProvenanceJson: row.resultProvenanceJson,
     resultContentHash: row.resultContentHash,
     actionAttemptId: row.actionAttemptId,
-    assistantCompletedAt: row.assistantCompletedAt,
-    createdAt: row.turnCreatedAt,
+    assistantCompletedAt: row.assistantCompletedAt !== null
+      ? persistedTimestamp(
+          row.assistantCompletedAt,
+          'reviewTurn.assistantCompletedAt',
+        )
+      : null,
+    createdAt: persistedTimestamp(row.turnCreatedAt, 'reviewTurn.createdAt'),
   };
+}
+
+function persistedTimestamp(
+  value: RawDatabaseTimestamp,
+  field: string,
+): Date {
+  const timestamp = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(timestamp.getTime())) {
+    throw new Error(`REVIEW_PERSISTED_TIMESTAMP_INVALID:${field}`);
+  }
+  return timestamp;
 }
 
 function persistedTurn(row: SelectedReviewTurn): PersistedReviewTurn {
