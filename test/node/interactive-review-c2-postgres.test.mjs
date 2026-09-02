@@ -31,7 +31,7 @@ test(
       await resetDatabase(sql);
       await seedC1Turn(sql);
       await assertOpenClawActorScopedBinding(databaseUrl);
-      await assertHostedNeitherActorScopedBinding(sql, databaseUrl);
+      await assertHostedSystemAccountActorScopedBinding(sql, databaseUrl);
       const repository = new ReviewConversationRepository(drizzle(sql));
       const aggregate = await repository.loadById('RC-C2');
       assert.ok(aggregate);
@@ -208,11 +208,9 @@ async function resetDatabase(sql) {
       NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT NOBYPASSRLS
   `);
   await sql.unsafe('REVOKE authenticated FROM review_c2_hosted_runtime_sim');
-  await sql.unsafe('REVOKE service_role FROM review_c2_hosted_runtime_sim');
-  await sql.unsafe('GRANT anon TO review_c2_hosted_runtime_sim');
-  await sql.unsafe(
-    'GRANT USAGE ON SCHEMA public TO review_c2_hosted_runtime_sim',
-  );
+  await sql.unsafe('REVOKE anon FROM review_c2_hosted_runtime_sim');
+  await sql.unsafe('GRANT service_role TO review_c2_hosted_runtime_sim');
+  await sql.unsafe('GRANT USAGE ON SCHEMA public TO service_role');
   await sql.unsafe(`
     GRANT SELECT ON TABLE
       identity_subject_mapping,
@@ -220,7 +218,7 @@ async function resetDatabase(sql) {
       review_conversation,
       review_turn,
       engineer_supplied_input
-    TO review_c2_hosted_runtime_sim
+    TO service_role
   `);
 }
 
@@ -391,16 +389,18 @@ async function assertOpenClawActorScopedBinding(value) {
   }
 }
 
-async function assertHostedNeitherActorScopedBinding(adminSql, value) {
+async function assertHostedSystemAccountActorScopedBinding(adminSql, value) {
   const runtimeUrl = new URL(value);
   runtimeUrl.username = 'review_c2_hosted_runtime_sim';
   runtimeUrl.password = 'review-c2-hosted-password';
   const runtimeSql = postgres(runtimeUrl.toString(), { max: 1 });
   try {
+    await runtimeSql.unsafe('SET ROLE service_role');
     await runtimeSql`SET row_security = on`;
     const [identity] = await runtimeSql`
       SELECT
         current_user AS "currentUser",
+        session_user AS "sessionUser",
         rolsuper AS "superuser",
         rolbypassrls AS "bypassRls",
         pg_has_role(current_user, 'authenticated', 'MEMBER') AS
@@ -412,11 +412,12 @@ async function assertHostedNeitherActorScopedBinding(adminSql, value) {
       WHERE rolname = current_user
     `;
     assert.deepEqual(identity, {
-      currentUser: 'review_c2_hosted_runtime_sim',
+      currentUser: 'service_role',
+      sessionUser: 'review_c2_hosted_runtime_sim',
       superuser: false,
       bypassRls: false,
       authenticatedMember: false,
-      serviceRoleMember: false,
+      serviceRoleMember: true,
       rowSecurity: 'on',
     });
 
@@ -505,15 +506,13 @@ async function assertHostedNeitherActorScopedBinding(adminSql, value) {
     `;
 
     await adminSql.unsafe(
-      'REVOKE SELECT ON public.review_turn FROM review_c2_hosted_runtime_sim',
+      'REVOKE SELECT ON public.review_turn FROM service_role',
     );
     await assert.rejects(
       repository.loadOpenClawTurnBinding(exactInput),
       (error) => databaseCode(error) === '42501',
     );
-    await adminSql.unsafe(
-      'GRANT SELECT ON public.review_turn TO review_c2_hosted_runtime_sim',
-    );
+    await adminSql.unsafe('GRANT SELECT ON public.review_turn TO service_role');
     assert.ok(await repository.loadOpenClawTurnBinding(exactInput));
 
     const [contextAfterStatement] = await runtimeSql`
@@ -636,7 +635,7 @@ async function assertRuntimeSelectPolicyReadback(sql) {
       tableName,
       command: 'SELECT',
       permissive: true,
-      roles: ['anon'],
+      roles: ['service_role'],
       qualHash: proof.sourceQualHash,
       sourcePolicyName: `${tableName}_authenticated_select`,
       sourceQualHash: proof.sourceQualHash,
@@ -649,7 +648,7 @@ async function assertRuntimeSelectPolicyReadback(sql) {
   ]) {
     const helper = rows.find((row) => row.policyName === policyName);
     assert.ok(helper);
-    assert.deepEqual(helper.roles, ['anon']);
+    assert.deepEqual(helper.roles, ['service_role']);
     assert.equal(helper.command, 'SELECT');
     assert.equal(helper.permissive, 'PERMISSIVE');
   }

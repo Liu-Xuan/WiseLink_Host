@@ -272,6 +272,9 @@ export class ReviewConversationRepository {
       CROSS JOIN LATERAL (
         SELECT
           CASE
+            WHEN current_user = 'authenticated'
+              OR current_user LIKE 'authenticated#_%' ESCAPE '#'
+            THEN TRUE
             WHEN EXISTS (
               SELECT 1 FROM pg_catalog.pg_roles
               WHERE rolname = 'authenticated'
@@ -281,6 +284,9 @@ export class ReviewConversationRepository {
             ELSE FALSE
           END AS authenticated_role_member,
           CASE
+            WHEN current_user = 'service_role'
+              OR current_user LIKE 'service_role#_%' ESCAPE '#'
+            THEN TRUE
             WHEN EXISTS (
               SELECT 1 FROM pg_catalog.pg_roles
               WHERE rolname = 'service_role'
