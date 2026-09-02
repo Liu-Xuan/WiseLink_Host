@@ -1,4 +1,7 @@
-import type { CanonicalWorkItemProjection } from '@shared/api.interface';
+import type {
+  CanonicalAssessmentGapMateriality,
+  CanonicalWorkItemProjection,
+} from '@shared/api.interface';
 
 import type {
   ConfigurationEvidenceTarget,
@@ -25,11 +28,25 @@ export interface RefreshConfigurationEvidenceRequest {
   aircraftIdentifier: string;
   assessmentAsOf: string;
   windowStart: string | null;
+  gapRefs: string[];
   targets: ConfigurationEvidenceTarget[];
 }
 
 export interface ResolvedConfigurationEvidenceRequest extends RefreshConfigurationEvidenceRequest {
   aircraft: InstallationEventAircraftQuery;
+  capabilityGrant: ConfigurationEvidenceCapabilityGrant;
+}
+
+export interface ConfigurationEvidenceCapabilityGrant {
+  schemaVersion: 'wiselink.3_1.configuration_evidence_capability_grant.v1';
+  grantRef: string;
+  capability: 'GET_INSTALLATION_EVENTS';
+  inputRevision: number;
+  gapRefs: string[];
+  affectedCriterionIds: string[];
+  materialities: CanonicalAssessmentGapMateriality[];
+  sourceConfigured: boolean;
+  issuedAt: string;
 }
 
 export interface ConfigurationEvidenceTruthSummary {
@@ -66,15 +83,6 @@ export interface ConfigurationEvidenceCurrentReadModel {
   status: 'EMPTY' | 'AVAILABLE';
   current: PersistedConfigurationEvidenceSnapshot | null;
   history: ConfigurationEvidenceSnapshotSummary[];
-  authority: ConfigurationEvidenceReadAuthority;
-}
-
-export interface ConfigurationEvidenceRefreshResponse {
-  schemaVersion: 'wiselink.3_1.configuration_evidence_refresh_response.v1';
-  workItemId: string;
-  workItemRevision: number;
-  replayed: boolean;
-  persisted: PersistedConfigurationEvidenceSnapshot;
   authority: ConfigurationEvidenceReadAuthority;
 }
 
@@ -157,6 +165,8 @@ export interface ConfigurationEvidenceQueryAuthority {
   maxQueries: 5;
   noRecordMeansFalse: false;
   notConnectedMeansFalse: false;
+  gapBoundQuery: true;
+  capabilityGrantRequired: true;
 }
 
 export interface ConfigurationEvidenceReadAuthority {
@@ -300,4 +310,6 @@ export const CONFIGURATION_EVIDENCE_QUERY_AUTHORITY: ConfigurationEvidenceQueryA
     maxQueries: 5,
     noRecordMeansFalse: false,
     notConnectedMeansFalse: false,
+    gapBoundQuery: true,
+    capabilityGrantRequired: true,
   };

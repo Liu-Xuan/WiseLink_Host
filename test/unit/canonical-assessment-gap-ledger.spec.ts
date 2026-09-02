@@ -13,7 +13,12 @@ describe('canonical assessment gap ledger', () => {
         item('RULE-002', ['aircraft.currentPartNumber'], ['SRC-002']),
       ],
       rules: new Map([
-        ['RULE-001', rule('当前构型匹配', 'HARD_BLOCK', 'HYBRID')],
+        [
+          'RULE-001',
+          rule('当前构型匹配', 'HARD_BLOCK', 'HYBRID', [
+            'GET_INSTALLATION_EVENTS',
+          ]),
+        ],
         ['RULE-002', rule('实施前置条件', 'ACTION_BLOCK', 'HUMAN_REQUIRED')],
       ]),
       effectiveReviews: [],
@@ -38,6 +43,7 @@ describe('canonical assessment gap ledger', () => {
         materiality: 'P0_DECISION_CRITICAL',
         requiredness: 'REQUIRED_FOR_CONFIRMATION',
         queryability: 'REVIEW_QUERYABLE',
+        evidenceCapabilities: ['GET_INSTALLATION_EVENTS'],
         resolutionStatus: 'OPEN',
         originCriterionIds: ['RULE-001', 'RULE-002'],
         affectedCriterionIds: ['RULE-001', 'RULE-002'],
@@ -189,6 +195,7 @@ function rule(
   criterionName: string,
   blockerLevel: CanonicalJobAidBrowserRule['gapMetadata']['blockerLevel'],
   automationMode: CanonicalJobAidBrowserRule['gapMetadata']['automationMode'],
+  evidenceCapabilities: CanonicalJobAidBrowserRule['gapMetadata']['evidenceCapabilities'] = [],
 ): CanonicalJobAidBrowserRule {
   return {
     criterionName,
@@ -198,6 +205,7 @@ function rule(
     gapMetadata: {
       blockerLevel,
       automationMode,
+      evidenceCapabilities,
       stageCode: '01',
       stageName: '初始评估',
     },

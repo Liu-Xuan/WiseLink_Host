@@ -1424,6 +1424,9 @@ export type CanonicalAssessmentGapResolutionStatus =
   | 'PARTIALLY_RESOLVED'
   | 'RESOLVED_BY_ENGINEER_REVIEW';
 
+export type CanonicalAssessmentGapEvidenceCapability =
+  'GET_INSTALLATION_EVENTS';
+
 export interface CanonicalAssessmentGapDispositionProjection
   extends ReviewUncertaintyDispositionCandidate {
   source: 'ENGINEER_CONFIRMED_DECISION_SNAPSHOT';
@@ -1446,6 +1449,7 @@ export interface CanonicalAssessmentGapProjection {
   materiality: CanonicalAssessmentGapMateriality;
   requiredness: CanonicalAssessmentGapRequiredness;
   queryability: CanonicalAssessmentGapQueryability;
+  evidenceCapabilities: CanonicalAssessmentGapEvidenceCapability[];
   resolutionStatus: CanonicalAssessmentGapResolutionStatus;
   disposition: CanonicalAssessmentGapDispositionProjection | null;
   originCriterionIds: string[];

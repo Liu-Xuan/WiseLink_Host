@@ -411,6 +411,7 @@ function reviewContext(): CanonicalEngineerReviewPageContext {
           materiality: 'P0_DECISION_CRITICAL',
           requiredness: 'REQUIRED_FOR_CONFIRMATION',
           queryability: 'REVIEW_QUERYABLE',
+          evidenceCapabilities: [],
           resolutionStatus: 'OPEN',
           disposition: null,
           originCriterionIds: ['RULE-1'],

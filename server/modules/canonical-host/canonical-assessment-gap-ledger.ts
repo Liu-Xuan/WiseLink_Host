@@ -154,6 +154,7 @@ function gapProjection(
     materiality,
     requiredness: requiredness(materiality),
     queryability,
+    evidenceCapabilities: uniqueEvidenceCapabilities(value.rules),
     resolutionStatus: resolutionStatus(
       value.missingInputId,
       originCriterionIds,
@@ -182,6 +183,19 @@ function gapProjection(
       queryResultIsFact: false,
     },
   };
+}
+
+function uniqueEvidenceCapabilities(
+  rules: CanonicalJobAidBrowserRule[],
+): CanonicalAssessmentGapProjection['evidenceCapabilities'] {
+  return [
+    ...new Set(
+      rules.flatMap(
+        (rule: CanonicalJobAidBrowserRule) =>
+          rule.gapMetadata.evidenceCapabilities,
+      ),
+    ),
+  ].sort();
 }
 
 function latestDisposition(

@@ -2,7 +2,10 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { Request } from 'express';
 
-import type { CanonicalWorkItemProjection } from '@shared/api.interface';
+import type {
+  CanonicalAssessmentGapProjection,
+  CanonicalWorkItemProjection,
+} from '@shared/api.interface';
 import { markDependentConfigurationPredicateTracesStale } from '../../../server/modules/canonical-host/configuration-evidence/configuration-predicate-trace.staleness';
 import { adoptConfigurationEvidenceIntoWorkItem } from '../../../server/modules/canonical-host/configuration-evidence/configuration-evidence-work-item.transition';
 import type {
@@ -11,7 +14,6 @@ import type {
   ConfigurationSnapshot,
 } from '../../../server/modules/canonical-host/configuration-evidence/configuration-snapshot.types';
 import {
-  CONFIGURATION_EVIDENCE_READ_AUTHORITY,
   type CommitConfigurationEvidenceInput,
   type CommitConfigurationEvidenceResult,
   type ConfigurationEvidenceReplayRead,
@@ -54,7 +56,7 @@ const AIMS2_TARGET = {
 };
 
 describe('Host configuration-evidence persistence product chain', () => {
-  it('persists the real 587/2579 B-2035 AIMS-2 gap as UNKNOWN/WAITING_INPUT', async () => {
+  it('keeps the real 587/2579 B-2035 AIMS-2 unavailable result candidate-only', async () => {
     const fleetAsset = realB2035Asset();
     const fixture = target({ fleetAsset });
     fixture.port.resultFactory = (query: GetInstallationEventsQuery) => {
@@ -67,12 +69,11 @@ describe('Host configuration-evidence persistence product chain', () => {
       return result;
     };
 
-    const refreshed = await fixture.service.refresh(
+    const queried = await fixture.service.query(
       WORK_ITEM_ID,
       refreshBody('REQ-AIMS2-UNKNOWN', 7),
       {} as Request,
     );
-    const current = await fixture.service.current(WORK_ITEM_ID, {} as Request);
 
     expect(fleetAsset).toMatchObject({
       assetId: 'AIRCRAFT:MODEL_MSN:B777_39L_38674',
@@ -80,9 +81,10 @@ describe('Host configuration-evidence persistence product chain', () => {
       msn: '38674',
       lineNumber: 1051,
     });
-    expect(refreshed.workItemRevision).toBe(8);
-    expect(refreshed.replayed).toBe(false);
-    expect(refreshed.persisted.snapshot.facts[0]).toMatchObject({
+    expect(queried.workItemRevision).toBe(7);
+    expect(queried.replayed).toBe(false);
+    expect(queried.candidate.terminalStatus).toBe('NOT_CONNECTED');
+    expect(queried.candidate.candidateSnapshot?.facts[0]).toMatchObject({
       targetRef: 'EQUIPMENT:AIMS2',
       truth: 'UNKNOWN',
       value: null,
@@ -91,7 +93,9 @@ describe('Host configuration-evidence persistence product chain', () => {
       supportingEvidenceRecordIds: [],
       derivedConfigEventIds: [],
     });
-    expect(refreshed.persisted.snapshot.predicateTraces[0]).toMatchObject({
+    expect(
+      queried.candidate.candidateSnapshot?.predicateTraces[0],
+    ).toMatchObject({
       truth: 'UNKNOWN',
       status: 'WAITING_INPUT',
       dependencyObservation: {
@@ -100,34 +104,20 @@ describe('Host configuration-evidence persistence product chain', () => {
         evidenceRecords: [],
       },
     });
-    expect(refreshed.persisted.summary.truthSummary).toEqual({
-      trueCount: 0,
-      falseCount: 0,
-      unknownCount: 1,
-      conflictCount: 0,
+    expect(queried.authority).toMatchObject({
+      queryAdvancesWorkItemRevision: false,
+      notConnectedMeansFalse: false,
+      gapBoundQuery: true,
+      capabilityGrantRequired: true,
     });
-    expect(current).toMatchObject({
-      status: 'AVAILABLE',
-      workItemRevision: 8,
-      current: {
-        summary: { isCurrent: true, configurationRevision: 1 },
-      },
-      authority: CONFIGURATION_EVIDENCE_READ_AUTHORITY,
+    expect(queried.candidate.request.capabilityGrant).toMatchObject({
+      grantRef: 'CG-REQ-AIMS2-UNKNOWN',
+      gapRefs: ['GAP-CONFIGURATION'],
+      affectedCriterionIds: ['APP-012'],
+      sourceConfigured: true,
     });
-    expect(current.history).toHaveLength(1);
-    expect(fixture.workItem().configurationEvidenceCurrent).toMatchObject({
-      snapshotId: refreshed.persisted.summary.snapshotId,
-      configurationRevision: 1,
-      authority: 'WORK_ITEM_CURRENT_EVIDENCE_VIEW',
-      globalAircraftCurrentChanged: false,
-    });
-    expect(refreshed.authority).toMatchObject({
-      returnsApplicabilityDecision: false,
-      applicabilityEvaluatorCreated: false,
-      modelInferredFacts: false,
-      fullAircraftConfigurationClaimed: false,
-      globalAircraftCurrentChanged: false,
-    });
+    expect(fixture.workItem().revision).toBe(7);
+    expect(fixture.store.recordCount()).toBe(0);
   });
 
   it('versions TRUE to FALSE, preserves old evidence, marks only the old dependency STALE, and replays exactly once', async () => {
@@ -143,7 +133,8 @@ describe('Host configuration-evidence persistence product chain', () => {
         'SOURCE-OBSERVATION-REV-1',
       );
 
-    const first = await fixture.service.refresh(
+    const first = await queryAndAdopt(
+      fixture,
       WORK_ITEM_ID,
       refreshBody('REQ-AIMS2-TRUE', 7),
       {} as Request,
@@ -166,13 +157,15 @@ describe('Host configuration-evidence persistence product chain', () => {
         'SOURCE-OBSERVATION-REV-2',
       );
     const secondBody = refreshBody('REQ-AIMS2-FALSE', 8);
-    const second = await fixture.service.refresh(
+    const second = await queryAndAdopt(
+      fixture,
       WORK_ITEM_ID,
       secondBody,
       {} as Request,
     );
     const sourceCallsBeforeReplay = fixture.port.calls.length;
-    const replay = await fixture.service.refresh(
+    const replay = await queryAndAdopt(
+      fixture,
       WORK_ITEM_ID,
       secondBody,
       {} as Request,
@@ -228,7 +221,8 @@ describe('Host configuration-evidence persistence product chain', () => {
         'SOURCE-AIMS2-IDEMPOTENT-REV-1',
       );
     const body = refreshBody('REQ-AIMS2-IDEMPOTENT-RACE', 7);
-    const first = await fixture.service.refresh(
+    const first = await queryAndAdopt(
+      fixture,
       WORK_ITEM_ID,
       body,
       {} as Request,
@@ -236,7 +230,8 @@ describe('Host configuration-evidence persistence product chain', () => {
     const sourceCallsBeforeReplay = fixture.port.calls.length;
     fixture.store.advanceWorkItemRevisionBeforeNextReplay();
 
-    const replay = await fixture.service.refresh(
+    const replay = await queryAndAdopt(
+      fixture,
       WORK_ITEM_ID,
       body,
       {} as Request,
@@ -266,7 +261,8 @@ describe('Host configuration-evidence persistence product chain', () => {
         [equipmentRecord('INSTALL', 'COMPONENT:AIMS2:P1', 'P1', 1)],
         'SOURCE-AIMS2-REV-1',
       );
-    const aims2 = await fixture.service.refresh(
+    const aims2 = await queryAndAdopt(
+      fixture,
       WORK_ITEM_ID,
       refreshBody('REQ-AIMS2-HISTORY-TRUE', 7),
       {} as Request,
@@ -286,7 +282,8 @@ describe('Host configuration-evidence persistence product chain', () => {
         ],
         'SOURCE-REPAIR-REV-1',
       );
-    const unrelatedHead = await fixture.service.refresh(
+    const unrelatedHead = await queryAndAdopt(
+      fixture,
       WORK_ITEM_ID,
       refreshBodyFor('REQ-REPAIR-HEAD', 8, [repairCase.target]),
       {} as Request,
@@ -301,7 +298,8 @@ describe('Host configuration-evidence persistence product chain', () => {
         ],
         'SOURCE-AIMS2-REV-2',
       );
-    await fixture.service.refresh(
+    await queryAndAdopt(
+      fixture,
       WORK_ITEM_ID,
       refreshBody('REQ-AIMS2-HISTORY-FALSE', 9),
       {} as Request,
@@ -332,7 +330,7 @@ describe('Host configuration-evidence persistence product chain', () => {
     });
   });
 
-  it('persists a same-instance same-time contradiction as legal CONFLICT', async () => {
+  it('keeps a same-instance same-time contradiction unadopted', async () => {
     const fixture = target({ fleetAsset: realB2035Asset() });
     fixture.port.resultFactory = (query: GetInstallationEventsQuery) =>
       controlledResult(
@@ -344,31 +342,35 @@ describe('Host configuration-evidence persistence product chain', () => {
         'SOURCE-CONFLICT-REV-1',
       );
 
-    const refreshed = await fixture.service.refresh(
+    const queried = await fixture.service.query(
       WORK_ITEM_ID,
       refreshBody('REQ-AIMS2-CONFLICT', 7),
       {} as Request,
     );
 
-    expect(refreshed.persisted.snapshot.coverage.sourceCompleteness).toBe(
-      'CONFLICT',
-    );
-    expect(refreshed.persisted.snapshot.facts[0]).toMatchObject({
+    expect(queried.candidate.terminalStatus).toBe('CONFLICT');
+    expect(
+      queried.candidate.candidateSnapshot?.coverage.sourceCompleteness,
+    ).toBe('CONFLICT');
+    expect(queried.candidate.candidateSnapshot?.facts[0]).toMatchObject({
       truth: 'CONFLICT',
       status: 'CONFLICT',
       authority: 'NONE',
     });
-    expect(refreshed.persisted.snapshot.predicateTraces[0]).toMatchObject({
+    expect(
+      queried.candidate.candidateSnapshot?.predicateTraces[0],
+    ).toMatchObject({
       truth: 'CONFLICT',
       status: 'CONFLICT',
     });
-    expect(refreshed.persisted.summary.truthSummary.conflictCount).toBe(1);
+    expect(fixture.workItem().revision).toBe(7);
+    expect(fixture.store.recordCount()).toBe(0);
   });
 
-  it('fails ACL and an unconfigured source before Fleet or persistence I/O', async () => {
+  it('fails ACL before Fleet or persistence I/O and records an unconfigured source truthfully', async () => {
     const denied = target({ fleetAsset: realB2035Asset(), denyAccess: true });
     await expect(
-      denied.service.refresh(
+      denied.service.query(
         WORK_ITEM_ID,
         refreshBody('REQ-DENIED', 7),
         {} as Request,
@@ -385,24 +387,20 @@ describe('Host configuration-evidence persistence product chain', () => {
       fleetAsset: realB2035Asset(),
       sourceConfigured: false,
     });
-    await expect(
-      unconfigured.service.refresh(
-        WORK_ITEM_ID,
-        refreshBody('REQ-UNCONFIGURED', 7),
-        {} as Request,
-      ),
-    ).rejects.toMatchObject({
-      code: 'GET_INSTALLATION_EVENTS_SOURCE_NOT_CONFIGURED',
-      statusCode: 503,
-    });
-    expect(unconfigured.fleet.readCurrentForAircraft).not.toHaveBeenCalled();
+    const unavailable = await unconfigured.service.query(
+      WORK_ITEM_ID,
+      refreshBody('REQ-UNCONFIGURED', 7),
+      {} as Request,
+    );
+    expect(unavailable.candidate.terminalStatus).toBe('NOT_CONNECTED');
+    expect(unconfigured.fleet.readCurrentForAircraft).toHaveBeenCalledTimes(1);
     expect(unconfigured.store.recordCount()).toBe(0);
   });
 
   it('rejects self-reported evidence and authority fields at the HTTP service boundary', async () => {
     const fixture = target({ fleetAsset: realB2035Asset() });
     await expect(
-      fixture.service.refresh(
+      fixture.service.query(
         WORK_ITEM_ID,
         {
           ...refreshBody('REQ-SELF-REPORTED', 7),
@@ -416,6 +414,88 @@ describe('Host configuration-evidence persistence product chain', () => {
     });
     expect(fixture.objectAccess.freshRead).not.toHaveBeenCalled();
     expect(fixture.store.recordCount()).toBe(0);
+  });
+
+  it('rejects an unknown Gap before Fleet, connector, or persistence I/O', async () => {
+    const fixture = target({ fleetAsset: realB2035Asset() });
+    const body = refreshBody('REQ-UNKNOWN-GAP', 7);
+    body.gapRefs = ['GAP-UNKNOWN'];
+
+    await expect(
+      fixture.service.query(WORK_ITEM_ID, body, {} as Request),
+    ).rejects.toMatchObject({
+      code: 'CONFIGURATION_EVIDENCE_GAP_UNKNOWN:GAP-UNKNOWN',
+      statusCode: 409,
+    });
+    expect(fixture.fleet.readCurrentForAircraft).not.toHaveBeenCalled();
+    expect(fixture.port.calls).toHaveLength(0);
+    expect(fixture.queryStore.count()).toBe(0);
+    expect(fixture.store.recordCount()).toBe(0);
+  });
+
+  it.each([
+    ['missing capability', { evidenceCapabilities: [] }],
+    ['non-material P2', { materiality: 'P2_OPTIMIZATION' }],
+    ['already resolved', { resolutionStatus: 'RESOLVED_BY_ENGINEER_REVIEW' }],
+    [
+      'controlled disposition',
+      {
+        disposition: {
+          gapRef: 'GAP-CONFIGURATION',
+          disposition: 'MITIGATE_AND_MONITOR',
+          rationale: '当前用监控边界控制，不授权立即查询。',
+          assumptions: [],
+          controlsAndMitigations: ['持续监控构型变化。'],
+          evidenceRefs: [],
+          reviewBy: '2026-10-01T00:00:00.000Z',
+          reopenTriggers: ['发现受影响件号。'],
+          source: 'ENGINEER_CONFIRMED_DECISION_SNAPSHOT',
+          reviewSequence: 2,
+        },
+      },
+    ],
+  ] as const)(
+    'rejects a Gap with %s before Fleet or connector I/O',
+    async (_label, gapOverrides) => {
+      const fixture = target({
+        fleetAsset: realB2035Asset(),
+        gapOverrides: gapOverrides as Partial<CanonicalAssessmentGapProjection>,
+      });
+
+      await expect(
+        fixture.service.query(
+          WORK_ITEM_ID,
+          refreshBody('REQ-NON-QUERYABLE', 7),
+          {} as Request,
+        ),
+      ).rejects.toMatchObject({
+        code: 'CONFIGURATION_EVIDENCE_GAP_NOT_QUERYABLE:GAP-CONFIGURATION',
+        statusCode: 409,
+      });
+      expect(fixture.fleet.readCurrentForAircraft).not.toHaveBeenCalled();
+      expect(fixture.port.calls).toHaveLength(0);
+      expect(fixture.queryStore.count()).toBe(0);
+    },
+  );
+
+  it('binds an idempotency key to the exact selected Gap set', async () => {
+    const fixture = target({
+      fleetAsset: realB2035Asset(),
+      sourceConfigured: false,
+    });
+    const first = refreshBody('REQ-GAP-IDEMPOTENCY', 7);
+    await fixture.service.query(WORK_ITEM_ID, first, {} as Request);
+    const changed = structuredClone(first);
+    changed.gapRefs = ['GAP-DIFFERENT'];
+
+    await expect(
+      fixture.service.query(WORK_ITEM_ID, changed, {} as Request),
+    ).rejects.toMatchObject({
+      code: 'CONFIGURATION_EVIDENCE_IDEMPOTENCY_PAYLOAD_MISMATCH',
+      statusCode: 409,
+    });
+    expect(fixture.fleet.readCurrentForAircraft).toHaveBeenCalledTimes(1);
+    expect(fixture.queryStore.count()).toBe(1);
   });
 
   it('records an unconfigured query as NOT_CONNECTED without advancing revision', async () => {
@@ -944,6 +1024,7 @@ function target(input: {
   fleetAsset: Record<string, unknown>;
   denyAccess?: boolean;
   sourceConfigured?: boolean;
+  gapOverrides?: Partial<CanonicalAssessmentGapProjection>;
 }) {
   let current = workItem();
   const port = new ControlledInstallationEventsPort(
@@ -1001,12 +1082,43 @@ function target(input: {
       facts: [],
     })),
   };
+  const engineerReview = {
+    pageContext: jest.fn(async (candidate: CanonicalWorkItemProjection) => ({
+      criterionSetId: 'JACS-72D0484B6F1C17A38F671F46',
+      baseRuleRevision: 1,
+      ledger: null,
+      gapLedger: {
+        schemaVersion: 'wiselink.3_1.assessment_gap_ledger_projection.v1',
+        inputRevision: candidate.revision,
+        baseRuleRevision: 1,
+        currentness: 'CURRENT',
+        candidateOnly: true,
+        gaps: [gapFixture(input.gapOverrides)],
+        summary: {
+          total: 1,
+          open: 1,
+          partiallyResolved: 0,
+          resolved: 0,
+          decisionCritical: 1,
+          reviewQueryable: 1,
+          resolveNow: 0,
+          controlledByDisposition: 0,
+          assumptionOrConservative: 0,
+          monitoringOrDeferred: 0,
+          optimization: 0,
+          lifecycle: 0,
+        },
+      },
+      items: [],
+    })),
+  };
   const clock = { nowIso: () => '2026-08-30T01:02:03.000Z' };
   const service = new ConfigurationEvidenceService(
     sessions as never,
     objectAccess as never,
     registrar as never,
     fleet as never,
+    engineerReview as never,
     port,
     store,
     queryStore,
@@ -1018,8 +1130,40 @@ function target(input: {
     store,
     queryStore,
     fleet,
+    engineerReview,
     objectAccess,
     workItem: () => structuredClone(current),
+  };
+}
+
+function gapFixture(
+  overrides: Partial<CanonicalAssessmentGapProjection> = {},
+): CanonicalAssessmentGapProjection {
+  return {
+    gapRef: 'GAP-CONFIGURATION',
+    missingInputId: 'applicability.requires_actual_installation_evidence',
+    displayLabel: '装机状态多源校验所需输入',
+    reasonClass: 'CONTROLLED_FACT_MISSING',
+    dataDomain: 'applicability',
+    requiredFactType: 'applicability.requires_actual_installation_evidence',
+    whyNeeded: '需要受控安装事件证据。',
+    materiality: 'P0_DECISION_CRITICAL',
+    requiredness: 'REQUIRED_FOR_CONFIRMATION',
+    queryability: 'REVIEW_QUERYABLE',
+    evidenceCapabilities: ['GET_INSTALLATION_EVENTS'],
+    resolutionStatus: 'OPEN',
+    disposition: null,
+    originCriterionIds: ['APP-012'],
+    affectedCriterionIds: ['APP-012'],
+    sourceRefs: [],
+    resolutionOptions: ['在交互式复核中补充受控事实或来源证据'],
+    authority: {
+      owner: 'CANONICAL_HOST',
+      candidateOnly: true,
+      modelMayClose: false,
+      queryResultIsFact: false,
+    },
+    ...overrides,
   };
 }
 
@@ -1065,8 +1209,24 @@ function refreshBodyFor(
     aircraftIdentifier: 'B-2035',
     assessmentAsOf: AS_OF,
     windowStart: null,
+    gapRefs: ['GAP-CONFIGURATION'],
     targets,
   };
+}
+
+async function queryAndAdopt(
+  fixture: ReturnType<typeof target>,
+  workItemId: string,
+  body: RefreshConfigurationEvidenceRequest,
+  request: Request,
+) {
+  const queried = await fixture.service.query(workItemId, body, request);
+  return fixture.service.adopt(
+    workItemId,
+    queried.candidate.candidateEvidenceRef,
+    { expectedRevision: body.expectedRevision },
+    request,
+  );
 }
 
 function equipmentRecord(
