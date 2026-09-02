@@ -13,7 +13,7 @@ export const CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY = {
   runtimeAppId: 'app_17c3zn24kv2',
   profileRef: 'wiselink-engineering',
   modelPolicyRef: 'official-hosted-profile-config',
-  skillVersion: 'wiselink-research-and-synthesize@r09.c7',
+  skillVersion: 'wiselink-research-and-synthesize@r09.c8',
   mcpServerName: 'wiselink-openclaw-engineering-assessment',
   mcpServerVersion: '1.2.0',
 } as const;

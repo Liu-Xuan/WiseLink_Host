@@ -10,7 +10,7 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
 
@@ -37,7 +37,11 @@ const MODEL_OUTPUT_KEYS = [
   'missingInputs',
   'warnings',
 ];
-const REVIEW_PROMPT_VERSION = 'wiselink.3_1.review_prompt.v1.c7';
+const REVIEW_PROMPT_VERSION = 'wiselink.3_1.review_prompt.v1.c8';
+const WISELINK_HOST_MCP_CONFIG_KEYS = new Set([
+  WISELINK_HOST_MCP_NAME,
+  'wiselink_host_controller',
+]);
 const MAX_SOURCE_REFS = 100;
 const MAX_GATEWAY_BYTES = 4 * 1024 * 1024;
 
@@ -601,22 +605,51 @@ async function loadMcpSdk() {
 }
 
 async function resolveRuntimeConfig(argv, env) {
-  const configPath =
-    option(argv, '--openclaw-config') ||
-    env.OPENCLAW_CONFIG_PATH ||
-    join(
-      env.OPENCLAW_STATE_DIR || join(homedir(), '.openclaw'),
-      'openclaw.json',
-    );
-  let config = {};
-  try {
-    config = JSON.parse(await readFile(configPath, 'utf8'));
-  } catch {
-    if (!env.WL_REVIEW_HOST_MCP_URL || !env.WL_REVIEW_GATEWAY_URL) {
-      throw new Error('REVIEW_OPENCLAW_CONFIG_UNREADABLE');
+  const explicitConfigPath =
+    option(argv, '--openclaw-config') || env.OPENCLAW_CONFIG_PATH || '';
+  const candidates = openClawConfigCandidates(argv, env);
+  const readable = [];
+  for (const configPath of candidates) {
+    try {
+      readable.push({
+        configPath,
+        config: JSON.parse(await readFile(configPath, 'utf8')),
+      });
+    } catch {
+      // Candidate paths are intentionally probed read-only. An explicit path
+      // remains fail-closed below instead of falling through to another file.
     }
   }
-  const mcp = findMcpConfig(config);
+  if (explicitConfigPath && readable.length !== 1) {
+    throw new Error('REVIEW_OPENCLAW_CONFIG_UNREADABLE');
+  }
+  const matched = readable
+    .map(({ configPath, config }) => ({
+      configPath,
+      config,
+      mcp: findMcpConfig(config),
+    }))
+    .filter(({ mcp }) => mcp !== null);
+  if (matched.length > 1) {
+    const uniqueBindings = new Set(
+      matched.map(({ config, mcp }) =>
+        canonicalJson({
+          url: mcp.url,
+          headers: mcp.headers ?? {},
+          gatewayPort: config?.gateway?.port ?? null,
+          gatewayToken: config?.gateway?.auth?.token ?? null,
+        }),
+      ),
+    );
+    if (uniqueBindings.size > 1) {
+      throw new Error('REVIEW_OPENCLAW_CONFIG_AMBIGUOUS');
+    }
+  }
+  const selected = matched[0] ?? readable[0] ?? { config: {}, mcp: null };
+  const { config, mcp } = selected;
+  if (!mcp && !env.WL_REVIEW_HOST_MCP_URL) {
+    throw new Error('REVIEW_HOST_MCP_CONFIG_NOT_FOUND');
+  }
   const hostMcpUrl = env.WL_REVIEW_HOST_MCP_URL || mcp?.url;
   const headers = parseHeaders(
     env.WL_REVIEW_HOST_MCP_HEADERS_JSON,
@@ -631,13 +664,40 @@ async function resolveRuntimeConfig(argv, env) {
   return { hostMcpUrl, headers, gatewayUrl, gatewayToken };
 }
 
-function findMcpConfig(root) {
+export function openClawConfigCandidates(
+  argv,
+  env,
+  {
+    homeDirectory = homedir(),
+    workingDirectory = process.cwd(),
+  } = {},
+) {
+  const explicit = option(argv, '--openclaw-config') || env.OPENCLAW_CONFIG_PATH;
+  if (explicit) return [resolve(explicit)];
+
+  const candidates = [];
+  if (env.OPENCLAW_STATE_DIR) {
+    candidates.push(join(resolve(env.OPENCLAW_STATE_DIR), 'openclaw.json'));
+  }
+  candidates.push(join(resolve(homeDirectory), '.openclaw', 'openclaw.json'));
+
+  let current = resolve(workingDirectory);
+  for (let depth = 0; depth < 8; depth += 1) {
+    candidates.push(join(current, 'openclaw.json'));
+    const parent = dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  return [...new Set(candidates)];
+}
+
+export function findMcpConfig(root) {
   const matches = [];
   const visit = (value, path = []) => {
     if (!value || typeof value !== 'object') return;
     if (
       typeof value.url === 'string' &&
-      (path.join('.').includes(WISELINK_HOST_MCP_NAME) ||
+      (path.some((segment) => WISELINK_HOST_MCP_CONFIG_KEYS.has(segment)) ||
         value.name === WISELINK_HOST_MCP_NAME)
     ) {
       matches.push(value);

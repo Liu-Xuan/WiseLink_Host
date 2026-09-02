@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
-export const WISELINK_SKILL_VERSION = 'wiselink-research-and-synthesize@r09.c7';
+export const WISELINK_SKILL_VERSION = 'wiselink-research-and-synthesize@r09.c8';
 export const WISELINK_HOST_MCP_NAME =
   'wiselink-openclaw-engineering-assessment';
 export const WISELINK_HOST_MCP_VERSION = '1.2.0';
