@@ -280,6 +280,10 @@ ReviewActionDraft 只能引用 Task 中允许的 evaluation items、adopted inpu
 绑定、candidate outcome、modelOutput、artifact/source refs、missing/conflict/warning、实际模型/Prompt/Skill/
 tool 版本、run metrics、错误字段和 canonical SHA-256 `contentHash`。
 
+Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生成，并通过
+`commit_review_turn_candidate.resultJson` 发送 canonical JSON 字符串；不得让托管模型逐字段手写嵌套
+`result` 参数。Host 会解析 `resultJson` 后进入同一个 ResultEnvelope、provenance、SourceRef 和 lease gate。
+
 当前 validator 强制：
 
 - `modelVersion` 是官方托管 profile/config 本轮选择后的非空、可读实际模型；不做具体版本等值判断

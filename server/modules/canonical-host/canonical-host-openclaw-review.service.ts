@@ -218,7 +218,7 @@ export class CanonicalHostOpenClawReviewService {
     );
     const selected = sourceRefIds.map((sourceRefId) => {
       const resource = allowlist.get(sourceRefId);
-      if (!resource) throw reviewNotFound();
+      if (!resource) throw reviewSourceRefNotAllowed();
       return structuredClone(resource.value);
     });
     return {
@@ -907,6 +907,19 @@ function reviewNotFound(): Error & { code: string; statusCode: number } {
     code: 'REVIEW_TURN_NOT_FOUND',
     statusCode: 404,
   });
+}
+
+function reviewSourceRefNotAllowed(): Error & {
+  code: string;
+  statusCode: number;
+} {
+  return Object.assign(
+    new Error('Review SourceRef is not in the frozen task allowlist.'),
+    {
+      code: 'REVIEW_SOURCE_REF_NOT_ALLOWED',
+      statusCode: 400,
+    },
+  );
 }
 
 function reviewConflict(code: string): Error & {

@@ -613,7 +613,7 @@ export async function runInteractiveReviewTurn({
   try {
     committed = await callTool(
       'commit_review_turn_candidate',
-      commitArgs(begin, result),
+      reviewCommitArgs(begin, result),
     );
   } catch (error) {
     return recoverCommitResponseLoss({
@@ -1143,6 +1143,15 @@ function commitArgs(begin, result) {
     leaseToken: begin.leaseToken,
     leaseGeneration: begin.leaseGeneration,
     result,
+  };
+}
+
+function reviewCommitArgs(begin, result) {
+  return {
+    attemptRef: begin.attemptRef,
+    leaseToken: begin.leaseToken,
+    leaseGeneration: begin.leaseGeneration,
+    resultJson: canonicalJson(result),
   };
 }
 

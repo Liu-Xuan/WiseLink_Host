@@ -37,6 +37,24 @@ const attemptRef = z.string().trim().min(1).max(200);
 const leaseToken = z.string().uuid();
 const leaseGeneration = z.number().int().positive();
 const resultEnvelope = z.record(z.string(), z.unknown());
+const reviewCommitInput = z.union([
+  z
+    .object({
+      attemptRef,
+      leaseToken,
+      leaseGeneration,
+      result: resultEnvelope,
+    })
+    .strict(),
+  z
+    .object({
+      attemptRef,
+      leaseToken,
+      leaseGeneration,
+      resultJson: z.string().trim().min(2).max(1_000_000),
+    })
+    .strict(),
+]);
 const resultContentHash = z.string().regex(/^[0-9a-f]{64}$/u);
 const translationResultPartBinding = z
   .object({
@@ -525,31 +543,24 @@ export class CanonicalHostOpenClawMcpService {
       {
         title: '提交评审轮次候选响应',
         description:
-          '按 exact attempt、lease token/generation 与完整 versioned ResultEnvelope fail-closed 校验 provenance/SourceRef/item allowlists，只追加 ReviewTurn assistant response、candidateEvidence 与 ReviewActionDraft 候选；绝不执行 ReviewAction 或修改 WorkItem revision/current/STALE。',
-        inputSchema: z
-          .object({
-            attemptRef,
-            leaseToken,
-            leaseGeneration,
-            result: resultEnvelope,
-          })
-          .strict(),
+          '按 exact attempt、lease token/generation 与完整 versioned ResultEnvelope fail-closed 校验 provenance/SourceRef/item allowlists。resultJson 是托管函数调用会改形复杂 JSON 时的 canonical JSON 传输形式；两种输入进入同一 Host gate。只追加 ReviewTurn assistant response、candidateEvidence 与 ReviewActionDraft 候选；绝不执行 ReviewAction 或修改 WorkItem revision/current/STALE。',
+        inputSchema: reviewCommitInput,
         annotations: commitAnnotations,
       },
-      async ({
-        attemptRef: selectedAttemptRef,
-        leaseToken: selectedLeaseToken,
-        leaseGeneration: selectedLeaseGeneration,
-        result,
-      }) =>
-        textResult(
+      async (input) => {
+        const result =
+          'resultJson' in input
+            ? parseCanonicalReviewResultJson(input.resultJson)
+            : input.result;
+        return textResult(
           await this.review.commit(
-            selectedAttemptRef,
-            selectedLeaseToken,
-            selectedLeaseGeneration,
+            input.attemptRef,
+            input.leaseToken,
+            input.leaseGeneration,
             result,
           ),
-        ),
+        );
+      },
     );
 
     server.registerTool(
@@ -616,5 +627,16 @@ export class CanonicalHostOpenClawMcpService {
     );
 
     return server;
+  }
+}
+
+function parseCanonicalReviewResultJson(value: string): unknown {
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    throw Object.assign(new Error('REVIEW_RESULT_JSON_INVALID'), {
+      code: 'REVIEW_RESULT_JSON_INVALID',
+      statusCode: 400,
+    });
   }
 }
