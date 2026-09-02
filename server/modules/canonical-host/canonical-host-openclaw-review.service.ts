@@ -29,6 +29,7 @@ import { UNIFIED_ARTIFACT_STORE } from '../unified-reader/unified-reader.constan
 import type { UnifiedArtifactStorePort } from '../unified-reader/unified-reader.types';
 import { assertNoDuplicateJsonKeys } from '../unified-reader/unified-reader.utils';
 import { MiaodaWorkItemRepository } from '../work-item/miaoda-work-item.repository';
+import { CanonicalHostAssessmentService } from './canonical-host-assessment.service';
 import { CanonicalHostEngineerReviewService } from './canonical-host-engineer-review.service';
 import { preflightCanonicalHostOpenClawResult } from './canonical-host-openclaw-runtime-policy';
 import { parseBilingualTranslationArtifact } from './canonical-host-openclaw-translation.service';
@@ -112,6 +113,7 @@ export class CanonicalHostOpenClawReviewService {
     private readonly conversations: ReviewConversationRepository,
     private readonly workItems: MiaodaWorkItemRepository,
     private readonly engineerReviews: CanonicalHostEngineerReviewService,
+    private readonly assessment: CanonicalHostAssessmentService,
     private readonly attempts: ActionAttemptLifecycleService,
     @Inject(UNIFIED_ARTIFACT_STORE)
     private readonly artifactStore: UnifiedArtifactStorePort,
@@ -433,11 +435,20 @@ export class CanonicalHostOpenClawReviewService {
     ]);
     if (!pageContext)
       throw reviewConflict('REVIEW_EVALUATION_CONTEXT_REQUIRED');
+    const resolvedPageContext = resolveReviewPageSourceRefs(
+      pageContext,
+      await this.assessment.resolveStoredBaseSourceEvidenceRefs({
+        workItem,
+        tenantId: binding.conversation.tenantId,
+        packageBytes,
+        assessmentAsOf: binding.turn.createdAt.toISOString(),
+      }),
+    );
     const packageResourceRefs = frozenPackageResourceRefs(
       packageBytes,
       workItem.package!.artifact.ref,
       workItem.package!.artifact.sha256,
-      packageReferencedSourceRefIds(pageContext, workItem),
+      packageReferencedSourceRefIds(resolvedPageContext, workItem),
     );
     const adoptedInputs = adoptedContext.effective.map((review) => ({
       adoptedInputRef: `engineer-review:${review.sequence}`,
@@ -460,7 +471,7 @@ export class CanonicalHostOpenClawReviewService {
       adoptedEvidenceResourceRefs(workItem, adoptedInputs),
       attachmentContext.resourceRefs,
     );
-    const allowedEvaluationItemIds = pageContext.items.map(
+    const allowedEvaluationItemIds = resolvedPageContext.items.map(
       (item) => item.criterionId,
     );
     const engineerInputRef = `engineer-input:${binding.turn.engineerSuppliedInputId}`;
@@ -477,10 +488,10 @@ export class CanonicalHostOpenClawReviewService {
         title: workItem.package!.title,
       },
       evaluation: {
-        criterionSetId: pageContext.criterionSetId,
-        baseRuleRevision: pageContext.baseRuleRevision,
-        gapLedger: pageContext.gapLedger,
-        items: pageContext.items,
+        criterionSetId: resolvedPageContext.criterionSetId,
+        baseRuleRevision: resolvedPageContext.baseRuleRevision,
+        gapLedger: resolvedPageContext.gapLedger,
+        items: resolvedPageContext.items,
       },
       bilingual,
       applicability: {
@@ -625,6 +636,33 @@ function packageReferencedSourceRefIds(
       workItem.integratedAssessment?.overallSynthesis?.findings ?? []
     ).flatMap((finding) => finding.sourceRefIds),
   ]);
+}
+
+function resolveReviewPageSourceRefs(
+  page: CanonicalEngineerReviewPageContext,
+  candidateRefs: Map<string, string[]>,
+): CanonicalEngineerReviewPageContext {
+  const resolve = (sourceRefs: string[]): string[] => [
+    ...new Set(
+      sourceRefs.flatMap((sourceRefId) =>
+        candidateRefs.get(sourceRefId) ?? [sourceRefId],
+      ),
+    ),
+  ];
+  return {
+    ...page,
+    gapLedger: {
+      ...page.gapLedger,
+      gaps: page.gapLedger.gaps.map((gap) => ({
+        ...gap,
+        sourceRefs: resolve(gap.sourceRefs),
+      })),
+    },
+    items: page.items.map((item) => ({
+      ...item,
+      sourceRefs: resolve(item.sourceRefs ?? []),
+    })),
+  };
 }
 
 function frozenPackageResourceRefs(
