@@ -5,10 +5,7 @@ import {
 } from '@lark-apaas/fullstack-nestjs-core';
 import { and, desc, eq } from 'drizzle-orm';
 
-import type {
-  CanonicalConfigurationEvidenceCurrentProjection,
-  CanonicalWorkItemProjection,
-} from '@shared/api.interface';
+import type { CanonicalWorkItemProjection } from '@shared/api.interface';
 import {
   configurationEvidenceEventVersion,
   configurationEvidenceFactVersion,
@@ -19,6 +16,7 @@ import {
   workItem,
 } from '../../../database/schema';
 import { markDependentConfigurationPredicateTracesStale } from './configuration-predicate-trace.staleness';
+import { adoptConfigurationEvidenceIntoWorkItem } from './configuration-evidence-work-item.transition';
 import { configurationTargetKey } from './configuration-snapshot.mapper';
 import type {
   ConfigurationPredicateTrace,
@@ -178,14 +176,15 @@ export class MiaodaConfigurationEvidenceStore implements ConfigurationEvidenceSt
       const truthSummary: ConfigurationEvidenceTruthSummary = summarizeTruth(
         input.snapshot,
       );
-      const nextWorkItem: CanonicalWorkItemProjection = nextWorkItemProjection({
-        current: storedWorkItem,
-        snapshotId,
-        configurationRevision,
-        snapshot: input.snapshot,
-        truthSummary,
-        recordedAt: input.recordedAt,
-      });
+      const nextWorkItem: CanonicalWorkItemProjection =
+        adoptConfigurationEvidenceIntoWorkItem({
+          current: storedWorkItem,
+          snapshotId,
+          configurationRevision,
+          snapshot: input.snapshot,
+          truthSummary,
+          recordedAt: input.recordedAt,
+        });
       const pendingStaleness: PendingStaleness[] = head
         ? await staleDependencies({
             executor,
@@ -586,33 +585,6 @@ async function requiredCurrentWorkItem(
     );
   }
   return projection;
-}
-
-function nextWorkItemProjection(input: {
-  current: CanonicalWorkItemProjection;
-  snapshotId: string;
-  configurationRevision: number;
-  snapshot: ConfigurationSnapshot;
-  truthSummary: ConfigurationEvidenceTruthSummary;
-  recordedAt: string;
-}): CanonicalWorkItemProjection {
-  const currentPointer: CanonicalConfigurationEvidenceCurrentProjection = {
-    schemaVersion: 'wiselink.3_1.configuration_evidence_work_item_current.v1',
-    snapshotId: input.snapshotId,
-    configurationRevision: input.configurationRevision,
-    aircraftAssetId: input.snapshot.aircraftAssetId,
-    assessmentAsOf: input.snapshot.assessmentAsOf,
-    sourceCompleteness: input.snapshot.coverage.sourceCompleteness,
-    truthSummary: structuredClone(input.truthSummary),
-    recordedAt: input.recordedAt,
-    authority: 'WORK_ITEM_CURRENT_EVIDENCE_VIEW',
-    globalAircraftCurrentChanged: false,
-  };
-  return {
-    ...structuredClone(input.current),
-    revision: input.current.revision + 1,
-    configurationEvidenceCurrent: currentPointer,
-  };
 }
 
 function assertCurrentBinding(

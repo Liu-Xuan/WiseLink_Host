@@ -1226,7 +1226,7 @@ function largeTranslationResultEnvelope() {
     warnings: [],
     modelVersion: 'GLM-5.3',
     promptVersion: 'wiselink.3_1.openclaw_translation_prompt.v1',
-    skillVersion: 'wiselink-research-and-synthesize@r09.c4',
+    skillVersion: 'wiselink-research-and-synthesize@r09.c5',
     toolVersions: {
       'wiselink-openclaw-engineering-assessment': '1.2.0',
     },

@@ -788,15 +788,51 @@ function assistantCandidate(
   candidate: ReviewTurnCandidateContract,
   result: OpenClawResultEnvelope,
 ): Omit<ReviewTurnAssistantCandidate, 'completedAt'> {
+  const decisionSnapshot = candidate.reviewActionDraft?.decisionSnapshot
+    ? {
+        ...structuredClone(candidate.reviewActionDraft.decisionSnapshot),
+        decisionSnapshotRef: `DS-${canonicalSha256({
+          schemaVersion: 'wiselink.3_1.decision_snapshot_ref.v1',
+          attemptRef,
+          workItemId: result.workItemId,
+          revision: result.baseRevision,
+          resultContentHash: result.contentHash,
+          snapshot: candidate.reviewActionDraft.decisionSnapshot,
+        })}`,
+        workItemId: result.workItemId,
+        revision: result.baseRevision,
+        engineerConfirmationRef: null,
+      }
+    : null;
+  const persistedDraft = candidate.reviewActionDraft
+    ? {
+        ...structuredClone(candidate.reviewActionDraft),
+        uncertaintyDispositions: [
+          ...(candidate.reviewActionDraft.uncertaintyDispositions ?? []),
+        ],
+        decisionSnapshot,
+      }
+    : null;
+  const reviewActionDraft = candidate.reviewActionDraft
+    ? {
+        ...persistedDraft!,
+        reviewActionDraftRef: `RAD-${canonicalSha256({
+          schemaVersion: 'wiselink.3_1.review_action_draft_ref.v1',
+          attemptRef,
+          reviewConversationRef: candidate.reviewConversationRef,
+          reviewTurnRef: candidate.reviewTurnRef,
+          resultContentHash: result.contentHash,
+          draft: persistedDraft,
+        })}`,
+      }
+    : null;
   return {
     responseType: candidate.responseType,
     answer: candidate.answer,
     sourceRefs: [...candidate.sourceRefs],
     missingInputs: [...candidate.missingInputs],
     candidateEvidenceRefs: [...candidate.candidateEvidenceRefs],
-    reviewActionDraft: candidate.reviewActionDraft
-      ? structuredClone(candidate.reviewActionDraft)
-      : null,
+    reviewActionDraft,
     affectedItemIds: [...candidate.affectedItemIds],
     warnings: [...candidate.warnings],
     actionAttemptRef: attemptRef,

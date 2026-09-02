@@ -734,7 +734,7 @@ describe('canonical host assessment client', () => {
     });
   });
 
-  it('closes and confirms only by bound path with no client-resubmitted draft', async () => {
+  it('closes and confirms only by bound path plus the Host-issued draft handle', async () => {
     request
       .mockResolvedValueOnce({
         status: 200,
@@ -750,7 +750,10 @@ describe('canonical host assessment client', () => {
       });
 
     await closeReviewConversation('WI-SB-1001', 'RC-001');
-    await confirmReviewActionDraft('WI-SB-1001', 'RC-001', 'RT-004');
+    await confirmReviewActionDraft('WI-SB-1001', 'RC-001', 'RT-004', {
+      reviewActionDraftRef: 'RAD-DRAFT-004',
+      expectedRevision: 12,
+    });
 
     expect(request).toHaveBeenNthCalledWith(1, {
       url: '/api/work-items/WI-SB-1001/review-conversations/RC-001/close',
@@ -760,7 +763,10 @@ describe('canonical host assessment client', () => {
     expect(request).toHaveBeenNthCalledWith(2, {
       url: '/api/work-items/WI-SB-1001/review-conversations/RC-001/turns/RT-004/confirm-draft',
       method: 'POST',
-      data: {},
+      data: {
+        reviewActionDraftRef: 'RAD-DRAFT-004',
+        expectedRevision: 12,
+      },
     });
   });
 });

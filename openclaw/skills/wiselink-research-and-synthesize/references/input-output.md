@@ -77,7 +77,7 @@ Task artifact allowlist 子集。
 ```text
 runtimePolicy.modelPolicyRef = official-hosted-profile-config
 ResultEnvelope.modelVersion = 官方托管 profile/config 本轮选择后的非空、可读实际模型
-skillVersion = wiselink-research-and-synthesize@r09.c4
+skillVersion = wiselink-research-and-synthesize@r09.c5
 toolVersions.wiselink-openclaw-engineering-assessment = 1.2.0
 promptVersion = 当前实际运行非空版本
 ```
@@ -266,7 +266,7 @@ mode=INTERACTIVE_REVIEW
 reviewConversationRef / reviewTurnRef / requestId
 actorContextRef（控制面，不送模型）
 inputRevision / selectedEvaluationItemId / userMessage
-allowedOperations（exact C2 six）
+allowedOperations（exact six）
 resourceRefs[{sourceRefId,resourceArtifactRef,resourceArtifactSha256,value}]
 allowedEvaluationItemIds / allowedAdoptedInputRefs
 attachmentRefs[]（非空唯一字符串，且 attachmentRefs ⊆ resourceRefs.sourceRefId）
@@ -285,7 +285,7 @@ resource artifact ref/SHA 也不进入模型输入。
 
 ## INTERACTIVE_REVIEW candidate
 
-模型输出 schema：`wiselink.3_1.review_turn_candidate.v1.c2`。
+模型输出 schema：`wiselink.3_1.review_turn_candidate.v1.c3`。
 
 ```text
 mode=INTERACTIVE_REVIEW
@@ -298,7 +298,7 @@ runtime{runtimeAppId=app_17c3zn24kv2,profileRef=wiselink-engineering}
 ```
 
 允许 responseType：ANSWER、CLARIFYING_QUESTION、SOURCE_LINK、CANDIDATE_EVIDENCE、
-REVIEW_ACTION_DRAFT、INPUT_REQUEST、AFFECTED_ITEMS_PREVIEW、TASK_STATUS。C2 不允许 RESYNTHESIS_RESULT。
+REVIEW_ACTION_DRAFT、INPUT_REQUEST、AFFECTED_ITEMS_PREVIEW、TASK_STATUS。C3 不允许 RESYNTHESIS_RESULT。
 
 ReviewActionDraft 字段：
 
@@ -308,6 +308,8 @@ evaluationItemId / proposedStatus
 resolvedGapRefs
 adoptedInputRefs / sourceRefs / assumptions
 affectedItemIds / overallImpact
+uncertaintyDispositions[]
+decisionSnapshot
 ```
 
 baseRevision/item/input/source 必须属于 Task allowlist。主 evaluationItemId 必须出现在 affectedItemIds；candidate
@@ -315,3 +317,8 @@ affectedItemIds 与 draft 完全一致。`resolvedGapRefs=[]` 表示本 Draft �
 `gapLedger` 中 `REVIEW_QUERYABLE` 且未完全关闭的 Gap，affectedItemIds 必须等于 Host 影响项并集，并采用本轮
 工程师文本或附件证据。Draft 只被 Host 追加保存，不执行；工程师显式确认时 Host 重新 fresh-read Gap Ledger，
 由 Gap 派生 resolvedMissingInputs，模型不得直接提交缺失输入键或自行关闭 Gap。
+
+`uncertaintyDispositions[]` 每项包含 `gapRef/disposition/rationale/assumptions/controlsAndMitigations/
+evidenceRefs/reviewBy/reopenTriggers`。`decisionSnapshot` 包含评估时点、证据边界、当前最佳与备选判断、
+成熟度、决定性事实、假设、剩余未知及其处置、控制/监控、有效期/复核日、重开与结论改变条件，并保持
+`candidateOnly=true`。只有所有 P0/P1 未知均有受控处置时可标记 `CONFIRMABLE`；remaining unknowns 可继续存在。

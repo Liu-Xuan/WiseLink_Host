@@ -4,6 +4,8 @@ import { resolve } from 'node:path';
 export const CANONICAL_ACTIVE_JOB_AID_CRITERION_SET_ID =
   'JACS-72D0484B6F1C17A38F671F46';
 
+export type CanonicalEvidenceCapability = 'GET_INSTALLATION_EVENTS';
+
 export interface CanonicalJobAidBrowserRule {
   criterionName: string;
   evaluationQuestion: string;
@@ -12,6 +14,7 @@ export interface CanonicalJobAidBrowserRule {
   gapMetadata: {
     blockerLevel: 'HARD_BLOCK' | 'ACTION_BLOCK' | 'WARNING' | 'NONE';
     automationMode: 'HYBRID' | 'RULE' | 'HUMAN_REQUIRED' | 'AI_ASSISTED';
+    evidenceCapabilities: CanonicalEvidenceCapability[];
     stageCode: string;
     stageName: string;
   };
@@ -55,12 +58,31 @@ export async function readActiveJobAidBrowserRules(
           'HUMAN_REQUIRED',
           'AI_ASSISTED',
         ] as const),
+        evidenceCapabilities: browserRuleEvidenceCapabilities(
+          criterion.evidence_capabilities,
+        ),
         stageCode: browserRuleText(criterion.stage_code),
         stageName: browserRuleText(criterion.stage_name),
       },
     });
   }
   return rules;
+}
+
+function browserRuleEvidenceCapabilities(
+  value: unknown,
+): CanonicalEvidenceCapability[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) {
+    throw new Error('ENGINEER_REVIEW_RULE_CONTENT_UNAVAILABLE');
+  }
+  const capabilities = value.map((candidate: unknown) =>
+    browserRuleEnum(candidate, ['GET_INSTALLATION_EVENTS'] as const),
+  );
+  if (new Set(capabilities).size !== capabilities.length) {
+    throw new Error('ENGINEER_REVIEW_RULE_CONTENT_UNAVAILABLE');
+  }
+  return capabilities;
 }
 
 async function readPackagedRulePack(): Promise<Record<string, unknown>> {

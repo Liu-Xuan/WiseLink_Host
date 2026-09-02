@@ -112,7 +112,11 @@ import { BatchApplicabilityHostService } from '../batch-applicability/batch-appl
 import { BatchApplicabilityRepository } from '../batch-applicability/batch-applicability.repository';
 import { BatchApplicabilitySourceReader } from '../batch-applicability/batch-applicability-source-reader';
 import { ConfigurationEvidenceController } from './configuration-evidence/configuration-evidence.controller';
-import { CONFIGURATION_EVIDENCE_STORE } from './configuration-evidence/configuration-evidence.persistence.types';
+import {
+  CONFIGURATION_EVIDENCE_QUERY_STORE,
+  CONFIGURATION_EVIDENCE_STORE,
+} from './configuration-evidence/configuration-evidence.persistence.types';
+import { MiaodaConfigurationEvidenceQueryStore } from './configuration-evidence/configuration-evidence-query.repository';
 import { MiaodaConfigurationEvidenceStore } from './configuration-evidence/configuration-evidence.repository';
 import { ConfigurationEvidenceService } from './configuration-evidence/configuration-evidence.service';
 import {
@@ -223,6 +227,7 @@ export interface CanonicalHostModuleOptions {
     BatchApplicabilityRepository,
     BatchApplicabilitySourceReader,
     ConfigurationEvidenceService,
+    MiaodaConfigurationEvidenceQueryStore,
     MiaodaConfigurationEvidenceStore,
     SystemCanonicalHostClockAdapter,
     UnavailableCanonicalServiceScopeAuthorization,
@@ -244,6 +249,10 @@ export interface CanonicalHostModuleOptions {
     {
       provide: CANONICAL_APPLICABILITY_CONTROLLED_SELECTION,
       useExisting: UnavailableCanonicalApplicabilityControlledSelection,
+    },
+    {
+      provide: CONFIGURATION_EVIDENCE_QUERY_STORE,
+      useExisting: MiaodaConfigurationEvidenceQueryStore,
     },
     {
       provide: CONFIGURATION_EVIDENCE_STORE,
@@ -464,7 +473,12 @@ export class CanonicalHostModule {
         BatchApplicabilityRepository,
         BatchApplicabilitySourceReader,
         ConfigurationEvidenceService,
+        MiaodaConfigurationEvidenceQueryStore,
         MiaodaConfigurationEvidenceStore,
+        {
+          provide: CONFIGURATION_EVIDENCE_QUERY_STORE,
+          useExisting: MiaodaConfigurationEvidenceQueryStore,
+        },
         {
           provide: CONFIGURATION_EVIDENCE_STORE,
           useExisting: MiaodaConfigurationEvidenceStore,

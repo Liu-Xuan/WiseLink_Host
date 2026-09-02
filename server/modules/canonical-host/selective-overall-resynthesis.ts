@@ -2,6 +2,8 @@ import type {
   CanonicalEngineerReviewDecision,
   CanonicalEngineerReviewLedgerProjection,
   CanonicalOpenClawOverallProjection,
+  ReviewDecisionSnapshotCandidate,
+  ReviewUncertaintyDispositionCandidate,
   UnifiedPackageArtifactDescriptor,
 } from '@shared/api.interface';
 
@@ -52,6 +54,8 @@ export interface OpenClawEngineerReviewItem {
   recordedAt: string;
   evidence: CanonicalReviewEvidence[];
   resolvedMissingInputs: string[];
+  uncertaintyDispositions: ReviewUncertaintyDispositionCandidate[];
+  decisionSnapshot: ReviewDecisionSnapshotCandidate | null;
   correctedAnalysisDirection: string | null;
 }
 

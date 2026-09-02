@@ -65,6 +65,7 @@ export default function ContinuousReviewPanel({
   >('load');
   const [error, setError] = useState<string | null>(null);
   const [confirmingTurnId, setConfirmingTurnId] = useState<string | null>(null);
+  const [rejectedDraftRefs, setRejectedDraftRefs] = useState<string[]>([]);
   const requestIdRef = useRef<string | null>(null);
   const presentation = continuousReviewPresentation(conversation);
 
@@ -219,6 +220,12 @@ export default function ContinuousReviewPanel({
         workItemId,
         conversation.reviewConversationId,
         turn.reviewTurnId,
+        {
+          reviewActionDraftRef:
+            turn.assistantCandidate.reviewActionDraft.reviewActionDraftRef,
+          expectedRevision:
+            turn.assistantCandidate.reviewActionDraft.baseRevision,
+        },
       );
       onConfirmationReceipt(response.reviewAction);
       setConversation(response.conversation);
@@ -337,8 +344,28 @@ export default function ContinuousReviewPanel({
               currentRevision={currentRevision}
               busy={busy}
               confirming={confirmingTurnId === turn.reviewTurnId}
+              rejected={
+                !!turn.assistantCandidate?.reviewActionDraft &&
+                rejectedDraftRefs.includes(
+                  turn.assistantCandidate.reviewActionDraft
+                    .reviewActionDraftRef,
+                )
+              }
               onBeginConfirm={() => setConfirmingTurnId(turn.reviewTurnId)}
               onCancelConfirm={() => setConfirmingTurnId(null)}
+              onRejectDraft={() => {
+                const draftRef =
+                  turn.assistantCandidate?.reviewActionDraft
+                    ?.reviewActionDraftRef;
+                if (draftRef) {
+                  setRejectedDraftRefs((current) =>
+                    current.includes(draftRef)
+                      ? current
+                      : [...current, draftRef],
+                  );
+                }
+                setConfirmingTurnId(null);
+              }}
               onConfirm={() => void confirmDraft(turn)}
               onLocateSourceRef={onLocateSourceRef}
             />

@@ -179,6 +179,12 @@ const engineerReviewContext: CanonicalEngineerReviewPageContext = {
       resolved: 0,
       decisionCritical: 0,
       reviewQueryable: 0,
+      resolveNow: 0,
+      controlledByDisposition: 0,
+      assumptionOrConservative: 0,
+      monitoringOrDeferred: 0,
+      optimization: 0,
+      lifecycle: 0,
     },
   },
   items: [

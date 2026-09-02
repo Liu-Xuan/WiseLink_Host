@@ -21,7 +21,7 @@ jest.mock('@lark-apaas/fullstack-nestjs-core', () => {
 import { CanonicalHostReviewActionController } from '../../server/modules/canonical-host/canonical-host-review-action.controller';
 
 describe('CanonicalHostReviewActionController request boundary', () => {
-  it('accepts only exact route identity and an empty body', async () => {
+  it('accepts only the Host-issued draft ref and expected revision', async () => {
     const service = { confirmDraft: jest.fn().mockResolvedValue({ ok: true }) };
     const controller = new CanonicalHostReviewActionController(
       service as never,
@@ -31,13 +31,20 @@ describe('CanonicalHostReviewActionController request boundary', () => {
       ' WI-1 ',
       ' RC-1 ',
       ' RT-1 ',
-      {},
+      {
+        reviewActionDraftRef: 'RAD-DRAFT-1',
+        expectedRevision: 7,
+      },
       {} as never,
     );
     expect(service.confirmDraft).toHaveBeenCalledWith(
       'WI-1',
       'RC-1',
       'RT-1',
+      {
+        reviewActionDraftRef: 'RAD-DRAFT-1',
+        expectedRevision: 7,
+      },
       expect.anything(),
     );
     await expect(
@@ -45,7 +52,11 @@ describe('CanonicalHostReviewActionController request boundary', () => {
         'WI-1',
         'RC-1',
         'RT-1',
-        { expectedRevision: 7 },
+        {
+          reviewActionDraftRef: 'RAD-DRAFT-1',
+          expectedRevision: 7,
+          proposedStatus: 'pass',
+        },
         {} as never,
       ),
     ).rejects.toMatchObject({ statusCode: 400 });

@@ -518,8 +518,21 @@ function commitInput(input) {
       aircraftIdentifier: 'B-2035',
       assessmentAsOf,
       windowStart: null,
+      gapRefs: ['GAP-CONFIGURATION'],
       targets: [structuredClone(input.target)],
       aircraft: structuredClone(AIRCRAFT),
+      capabilityGrant: {
+        schemaVersion:
+          'wiselink.3_1.configuration_evidence_capability_grant.v1',
+        grantRef: `CG-${input.requestId}`,
+        capability: 'GET_INSTALLATION_EVENTS',
+        inputRevision: input.expectedRevision,
+        gapRefs: ['GAP-CONFIGURATION'],
+        affectedCriterionIds: ['APP-012'],
+        materialities: ['P0_DECISION_CRITICAL'],
+        sourceConfigured: true,
+        issuedAt: input.recordedAt,
+      },
     },
     projections: [projection],
     snapshot: mapConfigurationSnapshot({

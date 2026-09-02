@@ -14,6 +14,7 @@ import type {
   CanonicalOverallRegenerationReadModel,
   CanonicalOrdinaryWorkItemRunResponse,
   CloseReviewConversationResponse,
+  ConfirmReviewActionDraftRequest,
   ConfirmReviewActionDraftResponse,
   CreateOrResumeReviewConversationResponse,
   CurrentReviewConversationResponse,
@@ -603,11 +604,12 @@ export async function confirmReviewActionDraft(
   workItemId: string,
   reviewConversationId: string,
   reviewTurnId: string,
+  input: ConfirmReviewActionDraftRequest,
 ): Promise<ConfirmReviewActionDraftResponse> {
   return reviewConversationRequest<ConfirmReviewActionDraftResponse>({
     url: `${reviewConversationUrl(workItemId, reviewConversationId)}/turns/${encodeURIComponent(reviewTurnId)}/confirm-draft`,
     method: 'POST',
-    data: {},
+    data: input,
     operation: '确认工程复核草稿',
   });
 }
@@ -615,7 +617,10 @@ export async function confirmReviewActionDraft(
 async function reviewConversationRequest<T>(input: {
   url: string;
   method: 'GET' | 'POST';
-  data?: Record<string, never> | AppendReviewTextTurnRequest;
+  data?:
+    | Record<string, never>
+    | AppendReviewTextTurnRequest
+    | ConfirmReviewActionDraftRequest;
   operation: string;
 }): Promise<T> {
   const requestGeneration = clientSessionGeneration;

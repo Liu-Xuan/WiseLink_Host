@@ -160,7 +160,7 @@ Discovery 不是 INITIAL_ANALYSIS 前置步骤。只有 dynamic/overall 暴露�
 `record_oem_discovery_run` 响应未知时无精确 readback，所以 outcome unknown、no retry。SearchRun/snippet 永远
 不是 evidence；Host/DM 未采纳前不改变 EvaluationContext/current。
 
-## INTERACTIVE_REVIEW C2
+## INTERACTIVE_REVIEW C3
 
 入口只有 C1 已持久对象引用：
 
@@ -186,7 +186,8 @@ RUNNING 正常路径：
    `context.evaluation.gapLedger` 是 current revision 的 Host 派生只读投影；同一 `missingInputId` 已合并其
    origin／affected Criterion。模型只按列出的 `gapRef` 解释或起草候选动作，不能创建、重命名或关闭 Gap。
    若起草缺口证据动作，`resolvedGapRefs` 只能选择 `REVIEW_QUERYABLE` 且未完全关闭的 Host Gap，
-   `affectedItemIds` 必须等于选中 Gap 的影响项并集，并必须采用当前工程师文本或附件；确认时 Host 再次
+   `affectedItemIds` 必须等于选中 Gap 的影响项并集，并必须采用当前工程师文本或附件；Draft 同时携带
+   不确定性处置和 candidate-only Decision Snapshot；确认时 Host 再次
    fresh-read 并派生 missingInputId，模型不得提交该内部映射。
 4. review candidate 只能引用本轮实际 read 的 SourceRefs。其外层 ResultEnvelope sourceRefs 绑定对应 resource
    artifact ref/SHA。
@@ -208,7 +209,7 @@ sealed ResultEnvelope 的 `contentHash` 才能返回恢复。
 ## 当前未授权 review operations
 
 独立 attachment analysis operation、knowledge search、revision compare、affected reevaluation、overall
-resynthesis 在 R09 目标合同中存在，但 C2 没有对应 MCP 工具。因此以下扩展 operation 仍全部 fail closed：
+resynthesis 在 R09 目标合同中存在，但 C3 没有对应 MCP 工具。因此以下扩展 operation 仍全部 fail closed：
 
 - `ANALYZE_ATTACHMENT`
 - `SEARCH_ALLOWED_KNOWLEDGE`

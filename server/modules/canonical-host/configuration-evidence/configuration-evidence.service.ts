@@ -1,7 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Request } from 'express';
 
-import type { CanonicalWorkItemProjection } from '@shared/api.interface';
+import type {
+  CanonicalAssessmentGapMateriality,
+  CanonicalWorkItemProjection,
+} from '@shared/api.interface';
+import { canonicalSha256 } from '../../action-attempt/action-attempt-envelope';
 import { SessionResolver } from '../../identity/session-resolver.service';
 import type { ResolvedSession } from '../../identity/session-resolver.service';
 import {
@@ -10,6 +14,7 @@ import {
   type CanonicalObjectAccessPort,
 } from '../../work-item/canonical-object-access.port';
 import { CanonicalFleetMasterDataRepository } from '../canonical-fleet-master-data.repository';
+import { CanonicalHostEngineerReviewService } from '../canonical-host-engineer-review.service';
 import {
   CANONICAL_HOST_CLOCK,
   CANONICAL_WORK_ITEM_REGISTRAR,
@@ -25,10 +30,16 @@ import {
 import type { ConfigurationSnapshot } from './configuration-snapshot.types';
 import {
   CONFIGURATION_EVIDENCE_READ_AUTHORITY,
+  CONFIGURATION_EVIDENCE_QUERY_AUTHORITY,
+  CONFIGURATION_EVIDENCE_QUERY_STORE,
   CONFIGURATION_EVIDENCE_STORE,
+  type ConfigurationEvidenceAdoptionResponse,
+  type ConfigurationEvidenceCapabilityGrant,
   type ConfigurationEvidenceCurrentReadModel,
-  type ConfigurationEvidenceReplayRead,
-  type ConfigurationEvidenceRefreshResponse,
+  type ConfigurationEvidenceQueryAttemptReadModel,
+  type ConfigurationEvidenceQueryResponse,
+  type ConfigurationEvidenceQueryStorePort,
+  type ConfigurationEvidenceQueryTerminalStatus,
   type ConfigurationEvidenceSnapshotReadResponse,
   type ConfigurationEvidenceStorePort,
   type PersistedConfigurationEvidenceSnapshot,
@@ -39,14 +50,16 @@ import {
   GET_INSTALLATION_EVENTS,
   type ConfigurationEvidenceTarget,
   type GetInstallationEventsPort,
+  type GetInstallationEventsFailureCode,
   type GetInstallationEventsQuery,
   type GetInstallationEventsResult,
 } from './get-installation-events.port';
 import { mapInstallationEventEvidence } from './installation-event-evidence.mapper';
 import type { InstallationEventEvidenceProjection } from './installation-event-evidence.types';
 
-const MAX_TARGETS = 16;
+const MAX_TARGETS = 5;
 const HISTORY_LIMIT = 20;
+const QUERY_DEADLINE_MS = 60_000;
 
 interface AuthorizedConfigurationAccess {
   session: ResolvedSession;
@@ -63,19 +76,22 @@ export class ConfigurationEvidenceService {
     @Inject(CANONICAL_WORK_ITEM_REGISTRAR)
     private readonly registrar: CanonicalWorkItemRegistrarPort,
     private readonly fleet: CanonicalFleetMasterDataRepository,
+    private readonly engineerReview: CanonicalHostEngineerReviewService,
     @Inject(GET_INSTALLATION_EVENTS)
     private readonly installationEvents: GetInstallationEventsPort,
     @Inject(CONFIGURATION_EVIDENCE_STORE)
     private readonly store: ConfigurationEvidenceStorePort,
+    @Inject(CONFIGURATION_EVIDENCE_QUERY_STORE)
+    private readonly queryStore: ConfigurationEvidenceQueryStorePort,
     @Inject(CANONICAL_HOST_CLOCK)
     private readonly clock: CanonicalHostClockPort,
   ) {}
 
-  async refresh(
+  async query(
     workItemIdValue: string,
     body: unknown,
     httpRequest: Request,
-  ): Promise<ConfigurationEvidenceRefreshResponse> {
+  ): Promise<ConfigurationEvidenceQueryResponse> {
     const workItemId: string = requiredIdentifier(
       workItemIdValue,
       'CONFIGURATION_EVIDENCE_WORK_ITEM_ID_INVALID',
@@ -87,104 +103,222 @@ export class ConfigurationEvidenceService {
         'REFRESH_CONFIGURATION_EVIDENCE',
         httpRequest,
       );
-    const existing: ConfigurationEvidenceReplayRead | null =
-      await this.store.findByRequest({
-        tenantId: authorized.grant.tenantId,
+    const replay = await this.queryStore.findByRequest({
+      tenantId: authorized.grant.tenantId,
+      workItemId,
+      requestId: request.requestId,
+    });
+    if (replay) {
+      assertSameRefreshIntent(replay.request, request);
+      return queryResponse(
         workItemId,
-        requestId: request.requestId,
-      });
-    if (existing) {
-      assertSameRefreshIntent(existing.persisted.request, request);
-      assertReplayReadBinding(authorized, existing);
-      return refreshResponse(
-        workItemId,
-        existing.workItem.revision,
+        authorized.workItem.revision,
         true,
-        existing.persisted,
+        replay,
       );
     }
-    if (
-      request.expectedRevision !== authorized.workItem.revision ||
-      request.expectedRevision !== authorized.grant.workItemRevision
-    ) {
-      throw configurationConflict('WORK_ITEM_CAS_CONFLICT');
-    }
-    if (!this.installationEvents.configured) {
-      throw configurationUnavailable(
-        'GET_INSTALLATION_EVENTS_SOURCE_NOT_CONFIGURED',
+    assertExpectedRevision(authorized, request.expectedRevision);
+
+    const resolved: ResolvedConfigurationEvidenceRequest =
+      await this.resolveRequest(authorized, request);
+    const queryFingerprint: string = canonicalSha256({
+      workItemId,
+      inputRevision: resolved.expectedRevision,
+      aircraftAssetId: resolved.aircraft.assetId,
+      assessmentAsOf: resolved.assessmentAsOf,
+      windowStart: resolved.windowStart,
+      gapRefs: resolved.gapRefs,
+      capabilityGrantRef: resolved.capabilityGrant.grantRef,
+      targets: resolved.targets,
+    });
+    const startedAt: string = this.clock.nowIso();
+    const reserved = await this.queryStore.reserve({
+      tenantId: authorized.grant.tenantId,
+      actorId: authorized.grant.actorUserId,
+      workItemId,
+      request: resolved,
+      queryAttemptRef: `EQ-${request.requestId}`,
+      candidateEvidenceRef: `CE-${request.requestId}`,
+      queryFingerprint,
+      startedAt,
+      deadlineAt: new Date(
+        Date.parse(startedAt) + QUERY_DEADLINE_MS,
+      ).toISOString(),
+    });
+    if (reserved.replayed || reserved.attempt.terminalStatus !== 'RUNNING') {
+      return queryResponse(
+        workItemId,
+        authorized.workItem.revision,
+        true,
+        reserved.attempt,
       );
     }
 
-    const fleet = await this.fleet.readCurrentForAircraft({
-      tenantId: authorized.grant.tenantId,
-      aircraftIdentifier: request.aircraftIdentifier,
-      asOf: request.assessmentAsOf.slice(0, 10),
-    });
-    if (fleet.assets.length !== 1) {
-      throw configurationConflict(
-        fleet.assets.length === 0
-          ? 'CONFIGURATION_EVIDENCE_AIRCRAFT_NOT_FOUND'
-          : 'CONFIGURATION_EVIDENCE_AIRCRAFT_AMBIGUOUS',
-      );
+    const queries: GetInstallationEventsQuery[] = installationQueries(resolved);
+    const results: GetInstallationEventsResult[] = [];
+    for (const sourceQuery of queries) {
+      results.push(await this.executeQuery(sourceQuery));
     }
-    const asset = fleet.assets[0];
-    const resolved: ResolvedConfigurationEvidenceRequest = {
-      ...request,
-      aircraft: {
-        assetId: requiredIdentifier(
-          asset.assetId,
-          'CONFIGURATION_EVIDENCE_ASSET_ID_INVALID',
-        ),
-        aircraftNumber: requiredIdentifier(
-          asset.aircraftNumber,
-          'CONFIGURATION_EVIDENCE_AIRCRAFT_NUMBER_INVALID',
-        ),
-        msn: nullableIdentifier(asset.msn),
-        lineNumber: nullableNonNegativeInteger(asset.lineNumber),
-      },
-    };
-    const queries: GetInstallationEventsQuery[] = resolved.targets.map(
-      (target: ConfigurationEvidenceTarget): GetInstallationEventsQuery => ({
-        schemaVersion:
-          'wiselink.3_1.get_installation_events_query.v0.candidate',
-        aircraft: structuredClone(resolved.aircraft),
-        target: structuredClone(target),
-        windowStart: resolved.windowStart,
-        assessmentAsOf: resolved.assessmentAsOf,
-      }),
-    );
-    const results: GetInstallationEventsResult[] = await Promise.all(
-      queries.map((query: GetInstallationEventsQuery) =>
-        this.installationEvents.getInstallationEvents(query),
-      ),
-    );
     const projections: InstallationEventEvidenceProjection[] = queries.map(
-      (
-        query: GetInstallationEventsQuery,
-        index: number,
-      ): InstallationEventEvidenceProjection =>
-        mapInstallationEventEvidence({ query, result: results[index] }),
+      (sourceQuery: GetInstallationEventsQuery, index: number) =>
+        mapInstallationEventEvidence({
+          query: sourceQuery,
+          result: results[index],
+        }),
     );
-    const snapshot: ConfigurationSnapshot = mapConfigurationSnapshot({
+    const candidateSnapshot: ConfigurationSnapshot = mapConfigurationSnapshot({
       aircraftAssetId: resolved.aircraft.assetId,
       assessmentAsOf: resolved.assessmentAsOf,
       projections,
     });
+    const completed = await this.queryStore.complete({
+      tenantId: authorized.grant.tenantId,
+      actorId: authorized.grant.actorUserId,
+      workItemId,
+      queryAttemptRef: reserved.attempt.queryAttemptRef,
+      terminalStatus: terminalQueryStatus(results, candidateSnapshot),
+      projections,
+      candidateSnapshot,
+      sourceRecordCount: results.reduce(
+        (total: number, result: GetInstallationEventsResult) =>
+          total + result.records.length,
+        0,
+      ),
+      completedAt: this.clock.nowIso(),
+    });
+    return queryResponse(
+      workItemId,
+      authorized.workItem.revision,
+      false,
+      completed,
+    );
+  }
+
+  async queryStatus(
+    workItemIdValue: string,
+    queryAttemptRefValue: string,
+    httpRequest: Request,
+  ): Promise<ConfigurationEvidenceQueryResponse> {
+    const workItemId: string = requiredIdentifier(
+      workItemIdValue,
+      'CONFIGURATION_EVIDENCE_WORK_ITEM_ID_INVALID',
+    );
+    const queryAttemptRef: string = requiredIdentifier(
+      queryAttemptRefValue,
+      'CONFIGURATION_EVIDENCE_QUERY_ATTEMPT_REF_INVALID',
+      160,
+    );
+    const authorized = await this.authorizeAndLoad(
+      workItemId,
+      'READ_CONFIGURATION_EVIDENCE',
+      httpRequest,
+    );
+    const candidate = await this.queryStore.findByQueryAttemptRef({
+      tenantId: authorized.grant.tenantId,
+      workItemId,
+      queryAttemptRef,
+    });
+    if (!candidate) throw configurationNotFound();
+    return queryResponse(
+      workItemId,
+      authorized.workItem.revision,
+      true,
+      candidate,
+    );
+  }
+
+  async adopt(
+    workItemIdValue: string,
+    candidateEvidenceRefValue: string,
+    body: unknown,
+    httpRequest: Request,
+  ): Promise<ConfigurationEvidenceAdoptionResponse> {
+    const workItemId: string = requiredIdentifier(
+      workItemIdValue,
+      'CONFIGURATION_EVIDENCE_WORK_ITEM_ID_INVALID',
+    );
+    const candidateEvidenceRef: string = requiredIdentifier(
+      candidateEvidenceRefValue,
+      'CONFIGURATION_EVIDENCE_CANDIDATE_REF_INVALID',
+      160,
+    );
+    const expectedRevision: number = adoptionRequest(body);
+    const authorized = await this.authorizeAndLoad(
+      workItemId,
+      'REFRESH_CONFIGURATION_EVIDENCE',
+      httpRequest,
+    );
+    const candidate = await this.queryStore.findByCandidateEvidenceRef({
+      tenantId: authorized.grant.tenantId,
+      workItemId,
+      candidateEvidenceRef,
+    });
+    if (!candidate) throw configurationNotFound();
+    if (candidate.adoption.status === 'ADOPTED') {
+      const replay = await this.store.findByRequest({
+        tenantId: authorized.grant.tenantId,
+        workItemId,
+        requestId: candidate.request.requestId,
+      });
+      if (!replay) {
+        throw configurationUnavailable(
+          'CONFIGURATION_EVIDENCE_ADOPTION_READBACK_INVALID',
+        );
+      }
+      return adoptionResponse(
+        workItemId,
+        replay.workItem.revision,
+        true,
+        candidateEvidenceRef,
+        replay.persisted,
+      );
+    }
+    if (
+      candidate.terminalStatus !== 'SUCCEEDED_EVIDENCE' &&
+      candidate.terminalStatus !== 'SUCCEEDED_NO_RECORD'
+    ) {
+      throw configurationConflict(
+        'CONFIGURATION_EVIDENCE_CANDIDATE_NOT_ADOPTABLE',
+      );
+    }
+    if (!candidate.projections || !candidate.candidateSnapshot) {
+      throw configurationUnavailable(
+        'CONFIGURATION_EVIDENCE_CANDIDATE_READBACK_INVALID',
+      );
+    }
+    if (
+      expectedRevision !== candidate.inputRevision ||
+      expectedRevision !== authorized.workItem.revision ||
+      expectedRevision !== authorized.grant.workItemRevision
+    ) {
+      throw configurationConflict('WORK_ITEM_CAS_CONFLICT');
+    }
+    const recordedAt: string = this.clock.nowIso();
     const committed = await this.store.commit({
       tenantId: authorized.grant.tenantId,
       actorId: authorized.grant.actorUserId,
       workItemId,
-      expectedWorkItemRevision: request.expectedRevision,
-      request: resolved,
-      projections,
-      snapshot,
-      recordedAt: this.clock.nowIso(),
+      expectedWorkItemRevision: expectedRevision,
+      request: candidate.request,
+      projections: candidate.projections,
+      snapshot: candidate.candidateSnapshot,
+      recordedAt,
     });
     assertCommittedCurrent(committed.workItem, committed.persisted);
-    return refreshResponse(
+    await this.queryStore.markAdopted({
+      tenantId: authorized.grant.tenantId,
+      actorId: authorized.grant.actorUserId,
+      workItemId,
+      candidateEvidenceRef,
+      snapshotId: committed.persisted.summary.snapshotId,
+      workItemRevision: committed.workItem.revision,
+      adoptedAt: recordedAt,
+    });
+    return adoptionResponse(
       workItemId,
       committed.workItem.revision,
       committed.replayed,
+      candidateEvidenceRef,
       committed.persisted,
     );
   }
@@ -261,6 +395,128 @@ export class ConfigurationEvidenceService {
     };
   }
 
+  private async resolveRequest(
+    authorized: AuthorizedConfigurationAccess,
+    request: RefreshConfigurationEvidenceRequest,
+  ): Promise<ResolvedConfigurationEvidenceRequest> {
+    const capabilityGrant = await this.issueCapabilityGrant(
+      authorized.workItem,
+      request,
+    );
+    const fleet = await this.fleet.readCurrentForAircraft({
+      tenantId: authorized.grant.tenantId,
+      aircraftIdentifier: request.aircraftIdentifier,
+      asOf: request.assessmentAsOf.slice(0, 10),
+    });
+    if (fleet.assets.length !== 1) {
+      throw configurationConflict(
+        fleet.assets.length === 0
+          ? 'CONFIGURATION_EVIDENCE_AIRCRAFT_NOT_FOUND'
+          : 'CONFIGURATION_EVIDENCE_AIRCRAFT_AMBIGUOUS',
+      );
+    }
+    const asset = fleet.assets[0];
+    return {
+      ...request,
+      aircraft: {
+        assetId: requiredIdentifier(
+          asset.assetId,
+          'CONFIGURATION_EVIDENCE_ASSET_ID_INVALID',
+        ),
+        aircraftNumber: requiredIdentifier(
+          asset.aircraftNumber,
+          'CONFIGURATION_EVIDENCE_AIRCRAFT_NUMBER_INVALID',
+        ),
+        msn: nullableIdentifier(asset.msn),
+        lineNumber: nullableNonNegativeInteger(asset.lineNumber),
+      },
+      capabilityGrant,
+    };
+  }
+
+  private async issueCapabilityGrant(
+    workItem: CanonicalWorkItemProjection,
+    request: RefreshConfigurationEvidenceRequest,
+  ): Promise<ConfigurationEvidenceCapabilityGrant> {
+    const context = await this.engineerReview.pageContext(workItem);
+    if (!context || context.gapLedger.inputRevision !== workItem.revision) {
+      throw configurationConflict(
+        'CONFIGURATION_EVIDENCE_GAP_LEDGER_NOT_READY',
+      );
+    }
+    const gapsByRef = new Map(
+      context.gapLedger.gaps.map((gap) => [gap.gapRef, gap]),
+    );
+    const selected = request.gapRefs.map((gapRef: string) => {
+      const gap = gapsByRef.get(gapRef);
+      if (!gap) {
+        throw configurationConflict(
+          `CONFIGURATION_EVIDENCE_GAP_UNKNOWN:${gapRef}`,
+        );
+      }
+      const material =
+        gap.materiality === 'P0_DECISION_CRITICAL' ||
+        gap.materiality === 'P1_ACTION_CRITICAL';
+      const dispositionAllowsQuery =
+        gap.disposition === null ||
+        gap.disposition.disposition === 'RESOLVE_NOW';
+      if (
+        gap.queryability !== 'REVIEW_QUERYABLE' ||
+        gap.resolutionStatus === 'RESOLVED_BY_ENGINEER_REVIEW' ||
+        !gap.evidenceCapabilities.includes('GET_INSTALLATION_EVENTS') ||
+        !material ||
+        !dispositionAllowsQuery
+      ) {
+        throw configurationConflict(
+          `CONFIGURATION_EVIDENCE_GAP_NOT_QUERYABLE:${gapRef}`,
+        );
+      }
+      return gap;
+    });
+    return {
+      schemaVersion: 'wiselink.3_1.configuration_evidence_capability_grant.v1',
+      grantRef: `CG-${request.requestId}`,
+      capability: 'GET_INSTALLATION_EVENTS',
+      inputRevision: workItem.revision,
+      gapRefs: [...request.gapRefs],
+      affectedCriterionIds: uniqueSortedTexts(
+        selected.flatMap((gap) => gap.affectedCriterionIds),
+      ),
+      materialities: uniqueMaterialities(
+        selected.map((gap) => gap.materiality),
+      ),
+      sourceConfigured: this.installationEvents.configured,
+      issuedAt: this.clock.nowIso(),
+    };
+  }
+
+  private async executeQuery(
+    query: GetInstallationEventsQuery,
+  ): Promise<GetInstallationEventsResult> {
+    if (!this.installationEvents.configured) {
+      return unavailableQueryResult(
+        query,
+        'SOURCE_NOT_CONFIGURED',
+        this.clock.nowIso(),
+      );
+    }
+    try {
+      const result = await this.installationEvents.getInstallationEvents(query);
+      mapInstallationEventEvidence({ query, result });
+      return result;
+    } catch (error) {
+      const code: GetInstallationEventsFailureCode = isErrorCode(
+        error,
+        'ACCESS_DENIED',
+      )
+        ? 'ACCESS_DENIED'
+        : isErrorCode(error, 'TIMEOUT')
+          ? 'TIMEOUT'
+          : 'SOURCE_UNAVAILABLE';
+      return unavailableQueryResult(query, code, this.clock.nowIso());
+    }
+  }
+
   private async authorizeAndLoad(
     workItemId: string,
     action: 'READ_CONFIGURATION_EVIDENCE' | 'REFRESH_CONFIGURATION_EVIDENCE',
@@ -308,6 +564,7 @@ function refreshRequest(body: unknown): RefreshConfigurationEvidenceRequest {
     'aircraftIdentifier',
     'assessmentAsOf',
     'windowStart',
+    'gapRefs',
     'targets',
   ]);
   if (
@@ -317,6 +574,10 @@ function refreshRequest(body: unknown): RefreshConfigurationEvidenceRequest {
       'CONFIGURATION_EVIDENCE_SCHEMA_VERSION_INVALID',
     );
   }
+  if (!validDistinctTexts(value.gapRefs, 1, MAX_TARGETS)) {
+    throw configurationBadRequest('CONFIGURATION_EVIDENCE_GAP_REFS_INVALID');
+  }
+  const gapRefs = [...(value.gapRefs as string[])].sort();
   if (!Number.isSafeInteger(value.expectedRevision)) {
     throw configurationBadRequest(
       'CONFIGURATION_EVIDENCE_EXPECTED_REVISION_INVALID',
@@ -377,6 +638,7 @@ function refreshRequest(body: unknown): RefreshConfigurationEvidenceRequest {
     ),
     assessmentAsOf,
     windowStart,
+    gapRefs,
     targets,
   };
 }
@@ -466,6 +728,7 @@ function assertSameRefreshIntent(
     aircraftIdentifier: stored.aircraftIdentifier,
     assessmentAsOf: stored.assessmentAsOf,
     windowStart: stored.windowStart,
+    gapRefs: [...stored.gapRefs],
     targets: structuredClone(stored.targets),
   };
   if (JSON.stringify(storedIntent) !== JSON.stringify(incoming)) {
@@ -475,42 +738,24 @@ function assertSameRefreshIntent(
   }
 }
 
-function assertReplayReadBinding(
-  authorized: AuthorizedConfigurationAccess,
-  replay: ConfigurationEvidenceReplayRead,
-): void {
-  const pointer = replay.workItem.configurationEvidenceCurrent ?? null;
-  const replayedIsCurrent = replay.persisted.summary.isCurrent;
-  if (
-    replay.workItem.workItemId !== authorized.grant.workItemId ||
-    replay.workItem.requestId !== authorized.grant.requestId ||
-    replay.workItem.source.documentVersionId !==
-      authorized.grant.documentVersionId ||
-    (replayedIsCurrent &&
-      (!pointer ||
-        pointer.snapshotId !== replay.persisted.summary.snapshotId ||
-        pointer.configurationRevision !==
-          replay.persisted.summary.configurationRevision)) ||
-    (!replayedIsCurrent &&
-      pointer?.snapshotId === replay.persisted.summary.snapshotId)
-  ) {
-    throw configurationUnavailable(
-      'CONFIGURATION_EVIDENCE_REPLAY_READBACK_INVALID',
-    );
-  }
-}
-
 function assertCommittedCurrent(
   workItem: CanonicalWorkItemProjection,
   persisted: PersistedConfigurationEvidenceSnapshot,
 ): void {
   const pointer = workItem.configurationEvidenceCurrent;
+  const reevaluation = workItem.configurationEvidenceReevaluation;
   if (
     !persisted.summary.isCurrent ||
     !pointer ||
     pointer.snapshotId !== persisted.summary.snapshotId ||
     pointer.configurationRevision !== persisted.summary.configurationRevision ||
-    pointer.globalAircraftCurrentChanged !== false
+    pointer.globalAircraftCurrentChanged !== false ||
+    !reevaluation ||
+    reevaluation.triggerSnapshotId !== persisted.summary.snapshotId ||
+    reevaluation.triggerConfigurationRevision !==
+      persisted.summary.configurationRevision ||
+    reevaluation.adoptionWorkItemRevision !== workItem.revision ||
+    reevaluation.status !== 'REQUIRED'
   ) {
     throw configurationUnavailable(
       'CONFIGURATION_EVIDENCE_CURRENT_READBACK_INVALID',
@@ -537,20 +782,196 @@ function assertReadCurrentBinding(
   }
 }
 
-function refreshResponse(
+function queryResponse(
   workItemId: string,
   workItemRevision: number,
   replayed: boolean,
-  persisted: PersistedConfigurationEvidenceSnapshot,
-): ConfigurationEvidenceRefreshResponse {
+  candidate: ConfigurationEvidenceQueryAttemptReadModel,
+): ConfigurationEvidenceQueryResponse {
   return {
-    schemaVersion: 'wiselink.3_1.configuration_evidence_refresh_response.v1',
+    schemaVersion: 'wiselink.3_1.configuration_evidence_query_response.v1',
     workItemId,
     workItemRevision,
     replayed,
-    persisted,
-    authority: structuredClone(CONFIGURATION_EVIDENCE_READ_AUTHORITY),
+    candidate,
+    authority: structuredClone(CONFIGURATION_EVIDENCE_QUERY_AUTHORITY),
   };
+}
+
+function adoptionResponse(
+  workItemId: string,
+  workItemRevision: number,
+  replayed: boolean,
+  candidateEvidenceRef: string,
+  persisted: PersistedConfigurationEvidenceSnapshot,
+): ConfigurationEvidenceAdoptionResponse {
+  return {
+    schemaVersion: 'wiselink.3_1.configuration_evidence_adoption_response.v1',
+    workItemId,
+    workItemRevision,
+    replayed,
+    candidateEvidenceRef,
+    persisted,
+    reevaluation: {
+      mode: 'FULL_APPLICABILITY_JOB_AID_OVERALL',
+      status: 'REQUIRED',
+      trigger: 'CONFIGURATION_EVIDENCE_ADOPTED',
+    },
+    authority: structuredClone(CONFIGURATION_EVIDENCE_QUERY_AUTHORITY),
+  };
+}
+
+function adoptionRequest(body: unknown): number {
+  const value: Record<string, unknown> = objectBody(body);
+  strictKeys(value, ['expectedRevision']);
+  if (
+    !Number.isSafeInteger(value.expectedRevision) ||
+    Number(value.expectedRevision) < 1
+  ) {
+    throw configurationBadRequest(
+      'CONFIGURATION_EVIDENCE_EXPECTED_REVISION_INVALID',
+    );
+  }
+  return Number(value.expectedRevision);
+}
+
+function assertExpectedRevision(
+  authorized: AuthorizedConfigurationAccess,
+  expectedRevision: number,
+): void {
+  if (
+    expectedRevision !== authorized.workItem.revision ||
+    expectedRevision !== authorized.grant.workItemRevision
+  ) {
+    throw configurationConflict('WORK_ITEM_CAS_CONFLICT');
+  }
+}
+
+function installationQueries(
+  request: ResolvedConfigurationEvidenceRequest,
+): GetInstallationEventsQuery[] {
+  return request.targets.map(
+    (target: ConfigurationEvidenceTarget): GetInstallationEventsQuery => ({
+      schemaVersion: 'wiselink.3_1.get_installation_events_query.v0.candidate',
+      aircraft: structuredClone(request.aircraft),
+      target: structuredClone(target),
+      windowStart: request.windowStart,
+      assessmentAsOf: request.assessmentAsOf,
+    }),
+  );
+}
+
+function unavailableQueryResult(
+  query: GetInstallationEventsQuery,
+  code: Extract<
+    GetInstallationEventsFailureCode,
+    'SOURCE_NOT_CONFIGURED' | 'ACCESS_DENIED' | 'TIMEOUT' | 'SOURCE_UNAVAILABLE'
+  >,
+  observedAt: string,
+): GetInstallationEventsResult {
+  return {
+    status: 'UNAVAILABLE',
+    records: [],
+    error: {
+      code,
+      message: code,
+      retryable: code === 'TIMEOUT' || code === 'SOURCE_UNAVAILABLE',
+    },
+    source: {
+      owner: 'canonical-host:configuration-evidence',
+      sourceSystem:
+        code === 'SOURCE_NOT_CONFIGURED'
+          ? 'UNCONFIGURED_INSTALLATION_EVENT_SOR'
+          : 'CONFIGURED_INSTALLATION_EVENT_SOR',
+      sourceRevision: 'UNAVAILABLE',
+      observedAt,
+      freshness: 'UNKNOWN',
+    },
+    queryScope: structuredClone(query),
+    coverage: {
+      included: 'No controlled source records were accepted for this query.',
+      limitation: code,
+      completeness: 'UNKNOWN',
+      allRecordsRead: false,
+      exactAircraftMatch: true,
+      exactTargetMatch: true,
+    },
+  };
+}
+
+function terminalQueryStatus(
+  results: readonly GetInstallationEventsResult[],
+  candidateSnapshot: ConfigurationSnapshot,
+): Exclude<ConfigurationEvidenceQueryTerminalStatus, 'RUNNING'> {
+  const errorCodes = results
+    .map((result: GetInstallationEventsResult) => result.error?.code ?? null)
+    .filter((code): code is GetInstallationEventsFailureCode => code !== null);
+  if (
+    candidateSnapshot.coverage.sourceCompleteness === 'CONFLICT' ||
+    candidateSnapshot.facts.some((fact) => fact.truth === 'CONFLICT') ||
+    results.some(
+      (result: GetInstallationEventsResult) => result.status === 'CONFLICT',
+    ) ||
+    errorCodes.includes('SOURCE_CONFLICT')
+  ) {
+    return 'CONFLICT';
+  }
+  if (errorCodes.includes('ACCESS_DENIED')) return 'ACCESS_DENIED';
+  if (errorCodes.includes('TIMEOUT')) return 'TIMEOUT';
+  if (errorCodes.includes('SOURCE_NOT_CONFIGURED')) return 'NOT_CONNECTED';
+  if (results.some((result) => result.status !== 'COMPLETE')) {
+    return 'FAILED_VALIDATION';
+  }
+  return results.every((result) => result.records.length === 0)
+    ? 'SUCCEEDED_NO_RECORD'
+    : 'SUCCEEDED_EVIDENCE';
+}
+
+function isErrorCode(error: unknown, code: string): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    typeof error.code === 'string' &&
+    error.code.includes(code)
+  );
+}
+
+function validDistinctTexts(
+  value: unknown,
+  minimum: number,
+  maximum: number,
+): value is string[] {
+  return (
+    Array.isArray(value) &&
+    value.length >= minimum &&
+    value.length <= maximum &&
+    value.every(
+      (item: unknown): item is string =>
+        typeof item === 'string' &&
+        item.trim() === item &&
+        item.length > 0 &&
+        item.length <= 160 &&
+        !item.includes('\u0000'),
+    ) &&
+    new Set(value).size === value.length
+  );
+}
+
+function uniqueSortedTexts(values: string[]): string[] {
+  return [...new Set(values)].sort();
+}
+
+function uniqueMaterialities(
+  values: CanonicalAssessmentGapMateriality[],
+): CanonicalAssessmentGapMateriality[] {
+  const order: CanonicalAssessmentGapMateriality[] = [
+    'P0_DECISION_CRITICAL',
+    'P1_ACTION_CRITICAL',
+    'P2_OPTIMIZATION',
+    'P3_LIFECYCLE',
+  ];
+  return order.filter((value) => values.includes(value));
 }
 
 function objectBody(body: unknown): Record<string, unknown> {

@@ -5,7 +5,14 @@ import type {
   CanonicalWorkItemProjection,
 } from '@shared/api.interface';
 import type { FleetMasterDataSource } from '../assessment-workbench/applicability-fleet/fleetMasterData';
+import { canonicalSha256 } from '../action-attempt/action-attempt-envelope';
 import { CanonicalFleetMasterDataRepository } from './canonical-fleet-master-data.repository';
+import {
+  CONFIGURATION_EVIDENCE_STORE,
+  type ConfigurationEvidenceStorePort,
+  type PersistedConfigurationEvidenceSnapshot,
+} from './configuration-evidence/configuration-evidence.persistence.types';
+import type { ConfigurationSnapshotFact } from './configuration-evidence/configuration-snapshot.types';
 import { CANONICAL_WORK_ITEM_REGISTRAR } from './canonical-host.constants';
 import type {
   CanonicalApplicabilityControlledSelection,
@@ -23,6 +30,8 @@ export class MiaodaApplicabilityControlledSelectionAdapter implements CanonicalA
     @Inject(CANONICAL_WORK_ITEM_REGISTRAR)
     private readonly registrar: CanonicalWorkItemRegistrarPort,
     private readonly fleetRepository: CanonicalFleetMasterDataRepository,
+    @Inject(CONFIGURATION_EVIDENCE_STORE)
+    private readonly configurationEvidence: ConfigurationEvidenceStorePort,
   ) {}
 
   async readCurrent(input: {
@@ -68,7 +77,7 @@ export class MiaodaApplicabilityControlledSelectionAdapter implements CanonicalA
         409,
       );
     }
-    return {
+    return this.withConfigurationEvidence(input, {
       schemaVersion: selection.schemaVersion,
       selectionRevision: selection.selectionRevision,
       currentness: 'CURRENT',
@@ -76,7 +85,7 @@ export class MiaodaApplicabilityControlledSelectionAdapter implements CanonicalA
       aircraftNumber: selection.aircraftIdentifier,
       assessmentAsOf: selection.asOf,
       fleetMasterData,
-    };
+    });
   }
 
   private async readConfiguredHostTarget(
@@ -131,7 +140,7 @@ export class MiaodaApplicabilityControlledSelectionAdapter implements CanonicalA
         409,
       );
     }
-    return {
+    return this.withConfigurationEvidence(input, {
       schemaVersion: 'wiselink.3_1.controlled_applicability_selection.v1',
       selectionRevision: [
         'host-target',
@@ -147,8 +156,136 @@ export class MiaodaApplicabilityControlledSelectionAdapter implements CanonicalA
       aircraftNumber,
       assessmentAsOf,
       fleetMasterData,
+    });
+  }
+
+  private async withConfigurationEvidence(
+    input: { tenantId: string; workItemId: string },
+    selection: CanonicalApplicabilityControlledSelection,
+  ): Promise<CanonicalApplicabilityControlledSelection> {
+    const current = await this.configurationEvidence.readCurrent({
+      tenantId: input.tenantId,
+      workItemId: input.workItemId,
+    });
+    if (!current) return selection;
+    const fleetMasterData = overlayConfigurationEvidence(
+      selection.fleetMasterData,
+      current,
+      selection.assessmentAsOf,
+    );
+    return {
+      ...selection,
+      selectionRevision: [
+        selection.selectionRevision,
+        'configuration-evidence',
+        current.summary.snapshotId,
+        String(current.summary.configurationRevision),
+      ].join(':'),
+      fleetMasterData,
     };
   }
+}
+
+function overlayConfigurationEvidence(
+  source: FleetMasterDataSource,
+  current: PersistedConfigurationEvidenceSnapshot,
+  assessmentAsOf: string,
+): FleetMasterDataSource {
+  const asset = source.assets.find(
+    (candidate) => candidate.assetId === current.snapshot.aircraftAssetId,
+  );
+  if (!asset || current.snapshot.assessmentAsOf.slice(0, 10) > assessmentAsOf) {
+    throw controlledSelectionUnavailable(
+      'CONFIGURATION_EVIDENCE_SELECTION_BINDING_INVALID',
+      409,
+    );
+  }
+  const facts = current.snapshot.facts
+    .map((fact: ConfigurationSnapshotFact) =>
+      configurationFleetFact(current, fact),
+    )
+    .filter(
+      (fact): fact is NonNullable<ReturnType<typeof configurationFleetFact>> =>
+        fact !== null,
+    );
+  return {
+    ...structuredClone(source),
+    facts: [...structuredClone(source.facts), ...facts],
+  };
+}
+
+function configurationFleetFact(
+  current: PersistedConfigurationEvidenceSnapshot,
+  fact: ConfigurationSnapshotFact,
+): FleetMasterDataSource['facts'][number] | null {
+  if (
+    fact.authority !== 'CONTROLLED_SOURCE' ||
+    fact.status !== 'SUPPORTED' ||
+    (fact.truth !== 'TRUE' && fact.truth !== 'FALSE')
+  ) {
+    return null;
+  }
+  const mapped = configurationProperty(fact);
+  if (!mapped) return null;
+  const value: boolean = fact.truth === 'TRUE';
+  return {
+    factId: `CONFIGURATION:${current.summary.snapshotId}:${fact.factAssertionId}`,
+    assetId: fact.aircraftAssetId,
+    factType: 'fleet_configuration',
+    property: mapped.property,
+    qualifier: mapped.qualifier,
+    value,
+    validAsOf: fact.assessmentAsOf.slice(0, 10),
+    sourceRef: {
+      sourceTable: 'configuration_evidence_snapshot_version',
+      sourceRecordId: current.summary.snapshotId,
+      sourceField: fact.factAssertionId,
+    },
+    recordHash: canonicalSha256({
+      snapshotId: current.summary.snapshotId,
+      configurationRevision: current.summary.configurationRevision,
+      factAssertionId: fact.factAssertionId,
+      aircraftAssetId: fact.aircraftAssetId,
+      property: mapped.property,
+      qualifier: mapped.qualifier,
+      value,
+      assessmentAsOf: fact.assessmentAsOf,
+      supportingEvidenceRecordIds: fact.supportingEvidenceRecordIds,
+    }),
+  };
+}
+
+function configurationProperty(
+  fact: ConfigurationSnapshotFact,
+): { property: string; qualifier: string } | null {
+  if (fact.target.kind === 'COMPONENT') {
+    return {
+      property: 'equipmentNumberInstalled',
+      qualifier: fact.target.componentId,
+    };
+  }
+  if (fact.target.kind === 'EQUIPMENT') {
+    return {
+      property: 'equipmentModelInstalled',
+      qualifier: fact.target.equipmentKey,
+    };
+  }
+  if (fact.target.kind === 'SOFTWARE') {
+    return {
+      property: 'softwarePartNumberInstalled',
+      qualifier: fact.target.softwareKey,
+    };
+  }
+  if (fact.target.kind === 'MODIFICATION') {
+    return {
+      property: 'modificationEmbodied',
+      qualifier: fact.target.modificationId,
+    };
+  }
+  if (fact.target.kind === 'REPAIR') {
+    return { property: 'repairPresent', qualifier: fact.target.repairId };
+  }
+  return null;
 }
 
 export function assertFrozenApplicabilitySourceReady(
