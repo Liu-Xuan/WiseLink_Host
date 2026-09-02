@@ -189,8 +189,10 @@ RUNNING 正常路径：
    `affectedItemIds` 必须等于选中 Gap 的影响项并集，并必须采用当前工程师文本或附件；Draft 同时携带
    不确定性处置和 candidate-only Decision Snapshot；确认时 Host 再次
    fresh-read 并派生 missingInputId，模型不得提交该内部映射。
-4. review candidate 只能引用本轮实际 read 的 SourceRefs。其外层 ResultEnvelope sourceRefs 绑定对应 resource
-   artifact ref/SHA。
+4. review candidate 只能引用本轮实际 read 的 SourceRefs。内层 `candidate.sourceRefs` 是
+   `sourceRefId[]`；其外层 `ResultEnvelope.sourceRefs` 必须由
+   `reviewCandidateArtifactRefs(task, candidate)` 机械映射成对应 resource artifact `{ref,sha256}`。
+   两者同名但类型不同，严禁把 sourceRefId 写入外层字段。
 5. 单次 `commit_review_turn_candidate`。成功回执必须显示 candidate persisted，同时五个 authority flag 精确：
    `reviewActionExecuted=false`、`workItemRevisionChanged=false`、`currentChanged=false`、`staleMarked=false`。
 
