@@ -215,7 +215,9 @@ export class ReviewConversationRepository {
       'requestId' in input
         ? sql`candidate_turn.request_id = ${input.requestId}`
         : sql`candidate_turn.review_turn_id = ${input.reviewTurnId}`;
-    const rows = await this.db.execute<ActorBoundReviewTurnRow>(sql`
+    const rows = await this.db
+      .execute<ActorBoundReviewTurnRow>(
+        sql`
       WITH actor_context AS MATERIALIZED (
         SELECT set_config('app.user_id', ${input.actorId}, TRUE) AS actor_id
       )
@@ -290,44 +292,110 @@ export class ReviewConversationRepository {
           current_setting('row_security', TRUE) IN ('on', 'true', '1') AS
             row_security_active,
           COALESCE(
-            to_regclass('public.review_conversation') IS NOT NULL
-            AND to_regclass('public.review_turn') IS NOT NULL
-            AND to_regclass('public.engineer_supplied_input') IS NOT NULL
-            AND to_regclass('public.identity_subject_mapping') IS NOT NULL,
+            to_regclass('review_conversation') IS NOT NULL
+            AND to_regclass('review_turn') IS NOT NULL
+            AND to_regclass('engineer_supplied_input') IS NOT NULL
+            AND to_regclass('identity_subject_mapping') IS NOT NULL
+            AND to_regclass('work_item') IS NOT NULL,
             FALSE
           ) AS expected_schema_resolved,
-          EXISTS (
+          NOT EXISTS (
             SELECT 1
-            FROM pg_catalog.pg_policies AS candidate_policy
-            WHERE candidate_policy.schemaname = 'public'
-              AND candidate_policy.tablename = 'review_conversation'
-              AND candidate_policy.policyname =
-                'review_conversation_hosted_runtime_actor_select'
-              AND candidate_policy.cmd = 'SELECT'
-              AND candidate_policy.permissive = 'PERMISSIVE'
-              AND 'public' = ANY(candidate_policy.roles)
-              AND to_regclass('public.review_conversation') =
-                to_regclass(
-                  format(
-                    '%I.%I',
-                    candidate_policy.schemaname,
-                    candidate_policy.tablename
+            FROM (
+              VALUES
+                (
+                  'identity_subject_mapping',
+                  ARRAY[
+                    'identity_subject_mapping_authenticated_oauth_read',
+                    'identity_subject_mapping_hosted_runtime_actor_select'
+                  ]::text[]
+                ),
+                (
+                  'work_item',
+                  ARRAY[
+                    '查看全部数据',
+                    'work_item_hosted_runtime_actor_select'
+                  ]::text[]
+                ),
+                (
+                  'review_conversation',
+                  ARRAY[
+                    'review_conversation_authenticated_select',
+                    'review_conversation_hosted_runtime_actor_select'
+                  ]::text[]
+                ),
+                (
+                  'review_turn',
+                  ARRAY[
+                    'review_turn_authenticated_select',
+                    'review_turn_hosted_runtime_actor_select'
+                  ]::text[]
+                ),
+                (
+                  'engineer_supplied_input',
+                  ARRAY[
+                    'engineer_supplied_input_authenticated_select',
+                    'engineer_supplied_input_hosted_runtime_actor_select'
+                  ]::text[]
+                )
+            ) AS expected_policy(table_name, policy_names)
+            WHERE NOT EXISTS (
+              SELECT 1
+              FROM pg_catalog.pg_class AS expected_table
+              WHERE expected_table.oid =
+                to_regclass(expected_policy.table_name)
+                AND (
+                  expected_table.relrowsecurity = FALSE
+                  OR EXISTS (
+                    SELECT 1
+                    FROM pg_catalog.pg_policies AS candidate_policy
+                    WHERE candidate_policy.tablename =
+                      expected_policy.table_name
+                      AND candidate_policy.policyname =
+                        ANY(expected_policy.policy_names)
+                      AND candidate_policy.cmd = 'SELECT'
+                      AND candidate_policy.permissive = 'PERMISSIVE'
+                      AND to_regclass(
+                        format(
+                          '%I.%I',
+                          candidate_policy.schemaname,
+                          candidate_policy.tablename
+                        )
+                      ) = expected_table.oid
+                      AND EXISTS (
+                        SELECT 1
+                        FROM unnest(candidate_policy.roles) AS candidate_role(
+                          role_name
+                        )
+                        LEFT JOIN pg_catalog.pg_roles AS concrete_role
+                          ON concrete_role.rolname = candidate_role.role_name
+                        WHERE candidate_role.role_name = 'public'
+                          OR (
+                            concrete_role.oid IS NOT NULL
+                            AND pg_catalog.pg_has_role(
+                              current_user,
+                              concrete_role.oid,
+                              'USAGE'
+                            )
+                          )
+                      )
                   )
                 )
+            )
           ) AS review_select_policy_present,
           COALESCE(
             (
               SELECT candidate_table.relrowsecurity
               FROM pg_catalog.pg_class AS candidate_table
               WHERE candidate_table.oid =
-                to_regclass('public.review_conversation')
+                to_regclass('review_conversation')
             ),
             FALSE
           ) AS review_rls_enabled
       ) AS runtime_diagnostics
       LEFT JOIN LATERAL (
         SELECT candidate_conversation.*
-        FROM public.review_conversation AS candidate_conversation
+        FROM review_conversation AS candidate_conversation
         WHERE candidate_conversation.review_conversation_id =
           ${input.reviewConversationId}
           AND candidate_conversation.actor_id = actor_context.actor_id
@@ -335,7 +403,7 @@ export class ReviewConversationRepository {
       ) AS bound_conversation ON TRUE
       LEFT JOIN LATERAL (
         SELECT candidate_mapping.id AS mapping_id
-        FROM public.identity_subject_mapping AS candidate_mapping
+        FROM identity_subject_mapping AS candidate_mapping
         WHERE candidate_mapping.miaoda_tenant_id = ${input.tenantId}
           AND candidate_mapping.miaoda_user_id = actor_context.actor_id
           AND candidate_mapping.expected_client_id = ${OFFICIAL_CLIENT_ID}
@@ -348,8 +416,8 @@ export class ReviewConversationRepository {
           supplied_input.input_type AS supplied_input_type,
           supplied_input.adoption_status AS supplied_adoption_status,
           supplied_input.candidate_text AS supplied_candidate_text
-        FROM public.review_turn AS candidate_turn
-        INNER JOIN public.engineer_supplied_input AS supplied_input
+        FROM review_turn AS candidate_turn
+        INNER JOIN engineer_supplied_input AS supplied_input
           ON supplied_input.engineer_supplied_input_id =
             candidate_turn.engineer_supplied_input_id
           AND supplied_input.actor_id = actor_context.actor_id
@@ -359,7 +427,14 @@ export class ReviewConversationRepository {
           AND ${turnIdentity}
         LIMIT 1
       ) AS bound_turn ON TRUE
-    `);
+    `,
+      )
+      .catch((cause: unknown) => {
+        if (databaseErrorMatches(cause, '42P01')) {
+          throw reviewSchemaNotReady();
+        }
+        throw cause;
+      });
     const row = rows[0];
     if (row?.actorContext !== input.actorId) {
       this.warnOpenClawBinding(
@@ -367,6 +442,16 @@ export class ReviewConversationRepository {
         openClawBindingDiagnostic(row, input.actorId),
       );
       throw new Error('REVIEW_OPENCLAW_ACTOR_CONTEXT_UNAVAILABLE');
+    }
+    if (
+      !row.expectedSchemaResolved ||
+      (row.reviewRlsEnabled === true && row.reviewSelectPolicyPresent !== true)
+    ) {
+      this.warnOpenClawBinding(
+        'REVIEW_SCHEMA_NOT_READY',
+        openClawBindingDiagnostic(row, input.actorId),
+      );
+      throw reviewSchemaNotReady();
     }
     if (!row.reviewConversationId) {
       this.warnOpenClawBinding(
@@ -841,6 +926,7 @@ export class ReviewConversationRepository {
   private warnOpenClawBinding(
     reason:
       | 'ACTOR_CONTEXT_NOT_RETAINED'
+      | 'REVIEW_SCHEMA_NOT_READY'
       | 'CONVERSATION_NOT_VISIBLE'
       | 'CONVERSATION_SCOPE_MISMATCH'
       | 'OFFICIAL_ACTOR_MAPPING_NOT_VISIBLE'
@@ -1369,4 +1455,29 @@ function reviewPersistenceConflict(code: string): Error & {
   statusCode: number;
 } {
   return Object.assign(new Error(code), { code, statusCode: 409 });
+}
+
+function reviewSchemaNotReady(): Error & {
+  code: 'REVIEW_SCHEMA_NOT_READY';
+  statusCode: 503;
+  retryable: false;
+  operatorAction: 'APPLY_REQUIRED_SCHEMA_MIGRATIONS';
+  details: {
+    retryable: false;
+    operatorAction: 'APPLY_REQUIRED_SCHEMA_MIGRATIONS';
+  };
+} {
+  const details = {
+    retryable: false,
+    operatorAction: 'APPLY_REQUIRED_SCHEMA_MIGRATIONS',
+  } as const;
+  return Object.assign(
+    new Error('Required Review database schema is not ready.'),
+    {
+      code: 'REVIEW_SCHEMA_NOT_READY' as const,
+      statusCode: 503 as const,
+      ...details,
+      details,
+    },
+  );
 }

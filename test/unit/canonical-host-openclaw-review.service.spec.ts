@@ -113,6 +113,31 @@ describe('CanonicalHostOpenClawReviewService', () => {
     expect(harness.attempts.reserveAndClaim).not.toHaveBeenCalled();
   });
 
+  it('propagates Review schema readiness errors before reserving an ActionAttempt', async () => {
+    const harness = reviewHarness();
+    harness.conversations.loadOpenClawTurnBinding.mockRejectedValueOnce(
+      Object.assign(
+        new Error('Required Review database schema is not ready.'),
+        {
+          code: 'REVIEW_SCHEMA_NOT_READY',
+          statusCode: 503,
+          retryable: false,
+          operatorAction: 'APPLY_REQUIRED_SCHEMA_MIGRATIONS',
+        },
+      ),
+    );
+
+    await expect(
+      harness.service.begin('RC-1', 'request-1'),
+    ).rejects.toMatchObject({
+      code: 'REVIEW_SCHEMA_NOT_READY',
+      statusCode: 503,
+      retryable: false,
+      operatorAction: 'APPLY_REQUIRED_SCHEMA_MIGRATIONS',
+    });
+    expect(harness.attempts.reserveAndClaim).not.toHaveBeenCalled();
+  });
+
   it('returns only exact frozen allowlisted SourceRefs and rejects any other ref', async () => {
     const harness = reviewHarness();
     await harness.service.begin('RC-1', 'request-1');

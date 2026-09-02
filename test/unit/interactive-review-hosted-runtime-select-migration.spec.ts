@@ -40,17 +40,15 @@ describe('R09 Hosted runtime Review SELECT migration', () => {
     ]);
   });
 
-  it('adds only three permissive PUBLIC SELECT policies without grants or write widening', () => {
+  it('adds only five permissive anon SELECT policies without grants or write widening', () => {
     const executable = runtimeMigration.replace(/--.*$/gmu, '');
-    expect(executable.match(/CREATE POLICY/gu)).toHaveLength(3);
-    expect(executable.match(/FOR SELECT\s+TO PUBLIC/gu)).toHaveLength(3);
+    expect(executable.match(/CREATE POLICY/gu)).toHaveLength(5);
+    expect(executable.match(/FOR SELECT\s+TO anon/gu)).toHaveLength(5);
     expect(executable).not.toMatch(/\bGRANT\b|\bREVOKE\b/iu);
     expect(executable).not.toMatch(
       /FOR\s+(?:ALL|INSERT|UPDATE|DELETE)|DISABLE ROW LEVEL SECURITY/iu,
     );
-    expect(executable).not.toMatch(
-      /CREATE POLICY[\s\S]*?ON public\.(?:work_item|identity_subject_mapping)/iu,
-    );
+    expect(executable).not.toMatch(/\bpublic\./u);
   });
 
   it.each(policyPairs)(
@@ -63,11 +61,11 @@ describe('R09 Hosted runtime Review SELECT migration', () => {
       const runtimeQual = normalizedPolicyQual(runtimeMigration, policyName);
       const proof = {
         policyName,
-        schemaName: 'public',
+        schemaResolution: 'CURRENT_SEARCH_PATH',
         tableName,
         command: 'SELECT',
         permissive: true,
-        roles: ['public'],
+        roles: ['anon'],
         qualHash: hash(runtimeQual),
         sourcePolicyName,
         sourceQualHash: hash(sourceQual),
@@ -76,11 +74,11 @@ describe('R09 Hosted runtime Review SELECT migration', () => {
 
       expect(proof).toMatchObject({
         policyName,
-        schemaName: 'public',
+        schemaResolution: 'CURRENT_SEARCH_PATH',
         tableName,
         command: 'SELECT',
         permissive: true,
-        roles: ['public'],
+        roles: ['anon'],
         sourcePolicyName,
         qualEquivalent: true,
       });
@@ -88,19 +86,28 @@ describe('R09 Hosted runtime Review SELECT migration', () => {
     },
   );
 
-  it('fully qualifies policy targets and every predicate dependency', () => {
+  it('binds policy targets and predicate dependencies through the current search path', () => {
+    expect(runtimeMigration).toContain(
+      'CREATE POLICY identity_subject_mapping_hosted_runtime_actor_select\n' +
+        '  ON identity_subject_mapping',
+    );
+    expect(runtimeMigration).toContain(
+      'CREATE POLICY work_item_hosted_runtime_actor_select\n' +
+        '  ON work_item',
+    );
     for (const { tableName, policyName } of policyPairs) {
       expect(runtimeMigration).toContain(
-        `CREATE POLICY ${policyName}\n  ON public.${tableName}`,
+        `CREATE POLICY ${policyName}\n  ON ${tableName}`,
       );
     }
     expect(runtimeMigration).toContain(
-      'FROM public.identity_subject_mapping current_mapping',
+      'FROM identity_subject_mapping current_mapping',
     );
-    expect(runtimeMigration).toContain('FROM public.work_item owned_work_item');
+    expect(runtimeMigration).toContain('FROM work_item owned_work_item');
     expect(runtimeMigration).toContain(
-      'FROM public.review_conversation bound_conversation',
+      'FROM review_conversation bound_conversation',
     );
+    expect(runtimeMigration).not.toMatch(/\bpublic\./u);
   });
 });
 

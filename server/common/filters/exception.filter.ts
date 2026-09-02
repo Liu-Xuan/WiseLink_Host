@@ -1,7 +1,16 @@
-import { ExceptionFilter, Catch, ArgumentsHost, HttpException, HttpStatus } from '@nestjs/common';
+import {
+  ExceptionFilter,
+  Catch,
+  ArgumentsHost,
+  HttpException,
+  HttpStatus,
+} from '@nestjs/common';
 import type { Response } from 'express';
 import { BusinessException } from '../interfaces/exception.interface';
-import { HTTP_STATUS_TO_RESPONSE_CODE_MAP, ResponseCode } from '../constants/api_response_code';
+import {
+  HTTP_STATUS_TO_RESPONSE_CODE_MAP,
+  ResponseCode,
+} from '../constants/api_response_code';
 import { ApiErrorResponse } from '../interfaces/api_response.interface';
 
 // 全局异常过滤器，用于捕获所有未处理的异常
@@ -10,7 +19,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
-     
+
     // 如果响应头已发送，则不处理
     if (response.headersSent) {
       return;
@@ -39,8 +48,14 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       errorResponse = {
         error: {
           code: HTTP_STATUS_TO_RESPONSE_CODE_MAP[httpStatus],
-          message: typeof exceptionResponse === 'string' ? exceptionResponse : exception.message,
-          details: typeof exceptionResponse === 'object' ? JSON.stringify(exceptionResponse) : undefined,
+          message:
+            typeof exceptionResponse === 'string'
+              ? exceptionResponse
+              : exception.message,
+          details:
+            typeof exceptionResponse === 'object'
+              ? JSON.stringify(exceptionResponse)
+              : undefined,
           timestamp: Date.now(),
         },
       };
@@ -53,6 +68,8 @@ export class GlobalExceptionFilter implements ExceptionFilter {
           code: exception.code,
           message: exception.message,
           details: serializeDetails(exception.details),
+          retryable: exception.retryable,
+          operatorAction: exception.operatorAction,
           timestamp: Date.now(),
         },
       };
@@ -94,6 +111,8 @@ interface StatusBearingError {
   message: string;
   statusCode: number;
   details?: unknown;
+  retryable?: boolean;
+  operatorAction?: string;
 }
 
 function isStatusBearingError(value: unknown): value is StatusBearingError {
@@ -105,7 +124,11 @@ function isStatusBearingError(value: unknown): value is StatusBearingError {
     typeof candidate.message === 'string' &&
     Number.isInteger(candidate.statusCode) &&
     Number(candidate.statusCode) >= 400 &&
-    Number(candidate.statusCode) <= 599
+    Number(candidate.statusCode) <= 599 &&
+    (candidate.retryable === undefined ||
+      typeof candidate.retryable === 'boolean') &&
+    (candidate.operatorAction === undefined ||
+      typeof candidate.operatorAction === 'string')
   );
 }
 
