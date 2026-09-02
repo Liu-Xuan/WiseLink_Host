@@ -1424,6 +1424,16 @@ function sanitizeForModel(value, modelPath = '$') {
   for (const [key, child] of Object.entries(value)) {
     const normalized = normalizeAuthorityInputKey(key);
     if (normalized === 'workitemid') continue;
+    if (
+      normalized === 'authority' &&
+      /^\$\.evaluation\.gapLedger\.gaps\[\d+\]$/u.test(modelPath)
+    ) {
+      if (Object.hasOwn(value, 'gapControl')) {
+        throw new Error(`REVIEW_MODEL_GAP_CONTROL_INVALID:${modelPath}`);
+      }
+      result.gapControl = sanitizeReviewGapControl(child, modelPath);
+      continue;
+    }
     if (isForbiddenAuthorityInputKey(key)) {
       throw new Error(
         `REVIEW_MODEL_SENSITIVE_FIELD_FORBIDDEN:${modelPath}.${key}`,
@@ -1432,6 +1442,35 @@ function sanitizeForModel(value, modelPath = '$') {
     result[key] = sanitizeForModel(child, `${modelPath}.${key}`);
   }
   return result;
+}
+
+function sanitizeReviewGapControl(value, modelPath) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`REVIEW_MODEL_GAP_CONTROL_INVALID:${modelPath}.authority`);
+  }
+  const allowedKeys = new Set([
+    'owner',
+    'candidateOnly',
+    'modelMayClose',
+    'queryResultIsFact',
+  ]);
+  if (Object.keys(value).some((key) => !allowedKeys.has(key))) {
+    throw new Error(`REVIEW_MODEL_GAP_CONTROL_INVALID:${modelPath}.authority`);
+  }
+  if (
+    value.owner !== 'CANONICAL_HOST' ||
+    value.candidateOnly !== true ||
+    value.modelMayClose !== false ||
+    value.queryResultIsFact !== false
+  ) {
+    throw new Error(`REVIEW_MODEL_GAP_CONTROL_INVALID:${modelPath}.authority`);
+  }
+  return {
+    owner: value.owner,
+    candidateOnly: value.candidateOnly,
+    modelMayClose: value.modelMayClose,
+    queryResultIsFact: value.queryResultIsFact,
+  };
 }
 
 function validateReviewSourceRefRequest(sourceRefIds, task) {

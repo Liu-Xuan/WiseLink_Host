@@ -31,7 +31,11 @@ import {
   runTranslation,
   summarizeQueryParsedPackage,
 } from '../scripts/orchestrate-host-mcp.mjs';
-import { runHostedReviewTurn } from '../scripts/run-hosted-review-turn.mjs';
+import {
+  findMcpConfig,
+  openClawConfigCandidates,
+  runHostedReviewTurn,
+} from '../scripts/run-hosted-review-turn.mjs';
 
 const DYNAMIC_FIXTURE_URL = new URL(
   './fixtures/dynamic-rules-evaluation-737.input.json',
@@ -83,7 +87,7 @@ test('pins exact20 MCP 1.2, five review tools, and hosted provenance', () => {
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c7',
+    'wiselink-research-and-synthesize@r09.c8',
   );
   assert.equal(WISELINK_MODEL_POLICY_REF, 'official-hosted-profile-config');
   assert.equal(WISELINK_HOST_MCP_VERSION, '1.2.0');
@@ -1390,6 +1394,24 @@ test('runs a review turn from durable checkpoints without replaying remote work'
   );
   t.after(() => rm(checkpointDir, { recursive: true, force: true }));
   const reviewTask = await readJson(REVIEW_TASK_FIXTURE_URL);
+  reviewTask.context.evaluation.gapLedger = {
+    schemaVersion: 'wiselink.3_1.assessment_gap_ledger_projection.v1',
+    inputRevision: reviewTask.inputRevision,
+    baseRuleRevision: 1,
+    currentness: 'CURRENT',
+    candidateOnly: true,
+    gaps: [
+      {
+        gapRef: 'GAP-001',
+        authority: {
+          owner: 'CANONICAL_HOST',
+          candidateOnly: true,
+          modelMayClose: false,
+          queryResultIsFact: false,
+        },
+      },
+    ],
+  };
   const task = makeTask('OPENCLAW_INTERACTIVE_REVIEW', reviewTask);
   const calls = [];
   const modelInputs = [];
@@ -1456,6 +1478,22 @@ test('runs a review turn from durable checkpoints without replaying remote work'
     ],
   );
   assert.equal(modelInputs.length, 1);
+  assert.deepEqual(
+    modelInputs[0].input.context.evaluation.gapLedger.gaps[0].gapControl,
+    {
+      owner: 'CANONICAL_HOST',
+      candidateOnly: true,
+      modelMayClose: false,
+      queryResultIsFact: false,
+    },
+  );
+  assert.equal(
+    Object.hasOwn(
+      modelInputs[0].input.context.evaluation.gapLedger.gaps[0],
+      'authority',
+    ),
+    false,
+  );
   const serializedModelInput = JSON.stringify(modelInputs[0]);
   for (const forbidden of [
     reviewTask.reviewConversationRef,
@@ -1470,6 +1508,63 @@ test('runs a review turn from durable checkpoints without replaying remote work'
   }
   const checkpointInfo = await stat(join(checkpointDir, 'begin.result.json'));
   assert.equal(checkpointInfo.mode & 0o077, 0);
+});
+
+test('keeps non-gap authority data outside the review model boundary', async () => {
+  const reviewTask = await readJson(REVIEW_TASK_FIXTURE_URL);
+  reviewTask.context.evaluation.actorAuthority = {
+    authority: { owner: 'UNTRUSTED' },
+  };
+  const task = makeTask('OPENCLAW_INTERACTIVE_REVIEW', reviewTask);
+  await assert.rejects(
+    runInteractiveReviewTurn({
+      mode: 'INTERACTIVE_REVIEW',
+      reviewConversationRef: reviewTask.reviewConversationRef,
+      requestId: reviewTask.requestId,
+      callTool: async (name) => {
+        if (name === 'begin_review_turn') return runningBegin(task);
+        if (name === 'get_review_turn_context') {
+          return reviewContext(task, reviewTask);
+        }
+        throw new Error(`UNEXPECTED_TOOL:${name}`);
+      },
+      respond: async () => {
+        throw new Error('MODEL_MUST_NOT_RUN');
+      },
+    }),
+    /REVIEW_MODEL_SENSITIVE_FIELD_FORBIDDEN:\$\.evaluation\.actorAuthority\.authority/u,
+  );
+});
+
+test('discovers the Hosted OpenClaw config and exact canonical MCP alias', () => {
+  const paths = openClawConfigCandidates([], {}, {
+    homeDirectory: '/home/gem',
+    workingDirectory:
+      '/home/gem/workspace/agent/workspace/skills/wiselink-research-and-synthesize',
+  });
+  assert.ok(paths.includes('/home/gem/workspace/agent/openclaw.json'));
+  assert.deepEqual(
+    findMcpConfig({
+      mcp: {
+        servers: {
+          wiselink_host_controller: {
+            url: 'https://host.example.test/mcp',
+            headers: { 'x-api-key': 'fixture-only' },
+          },
+        },
+      },
+    }),
+    {
+      url: 'https://host.example.test/mcp',
+      headers: { 'x-api-key': 'fixture-only' },
+    },
+  );
+  assert.equal(
+    findMcpConfig({
+      mcp: { servers: { unrelated: { url: 'https://other.example.test' } } },
+    }),
+    null,
+  );
 });
 
 test('recovers an ambiguous checkpointed review commit with one status read and no replay', async (t) => {
