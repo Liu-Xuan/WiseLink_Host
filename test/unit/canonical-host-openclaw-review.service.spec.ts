@@ -197,7 +197,10 @@ describe('CanonicalHostOpenClawReviewService', () => {
 
     await expect(
       harness.service.readSourceRefs('AQ-REVIEW-1', ['SRC-OTHER']),
-    ).rejects.toMatchObject({ code: 'REVIEW_TURN_NOT_FOUND' });
+    ).rejects.toMatchObject({
+      code: 'REVIEW_SOURCE_REF_NOT_ALLOWED',
+      statusCode: 400,
+    });
     await expect(
       harness.service.readSourceRefs('AQ-REVIEW-1', ['SRC-1']),
     ).resolves.toMatchObject({

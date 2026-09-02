@@ -1323,11 +1323,12 @@ test('runs INTERACTIVE_REVIEW through only the five-tool C2 contract', async () 
         'attemptRef',
         'leaseGeneration',
         'leaseToken',
-        'result',
+        'resultJson',
       ]);
-      validatePayload('result-envelope', { task, result: args.result });
-      assert.equal(args.result.skillVersion, WISELINK_SKILL_VERSION);
-      assert.deepEqual(args.result.sourceRefs, [
+      const submittedResult = JSON.parse(args.resultJson);
+      validatePayload('result-envelope', { task, result: submittedResult });
+      assert.equal(submittedResult.skillVersion, WISELINK_SKILL_VERSION);
+      assert.deepEqual(submittedResult.sourceRefs, [
         {
           ref: ARTIFACT_REF,
           sha256: ARTIFACT_SHA,
@@ -1423,8 +1424,9 @@ test('reads a Host-authorized attachment through the C2 SourceRef path', async (
       };
     }
     if (name === 'commit_review_turn_candidate') {
-      validatePayload('result-envelope', { task, result: args.result });
-      assert.deepEqual(args.result.sourceRefs, [
+      const submittedResult = JSON.parse(args.resultJson);
+      validatePayload('result-envelope', { task, result: submittedResult });
+      assert.deepEqual(submittedResult.sourceRefs, [
         {
           ref: attachmentResource.resourceArtifactRef,
           sha256: attachmentResource.resourceArtifactSha256,
@@ -1537,7 +1539,7 @@ test('recovers review commit response loss by matching the sealed result hash', 
       };
     }
     if (name === 'commit_review_turn_candidate') {
-      submittedResult = args.result;
+      submittedResult = JSON.parse(args.resultJson);
       throw new Error('TRANSPORT_RESPONSE_LOST');
     }
     if (name === 'get_action_attempt_status') {
