@@ -123,6 +123,9 @@ async function resetDatabase(sql) {
       IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role')
       THEN CREATE ROLE service_role NOLOGIN;
       END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon')
+      THEN CREATE ROLE anon NOLOGIN;
+      END IF;
     END $$
   `);
   await sql.unsafe(`
@@ -196,16 +199,17 @@ async function resetDatabase(sql) {
       ) THEN
         CREATE ROLE review_c2_hosted_runtime_sim
           LOGIN PASSWORD 'review-c2-hosted-password'
-          NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
+          NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT NOBYPASSRLS;
       END IF;
     END $$
   `);
   await sql.unsafe(`
     ALTER ROLE review_c2_hosted_runtime_sim
-      NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS
+      NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT NOBYPASSRLS
   `);
   await sql.unsafe('REVOKE authenticated FROM review_c2_hosted_runtime_sim');
   await sql.unsafe('REVOKE service_role FROM review_c2_hosted_runtime_sim');
+  await sql.unsafe('GRANT anon TO review_c2_hosted_runtime_sim');
   await sql.unsafe(
     'GRANT USAGE ON SCHEMA public TO review_c2_hosted_runtime_sim',
   );
@@ -588,11 +592,13 @@ async function assertRuntimeSelectPolicyReadback(sql) {
         'review_turn_authenticated_select',
         'review_turn_hosted_runtime_actor_select',
         'engineer_supplied_input_authenticated_select',
-        'engineer_supplied_input_hosted_runtime_actor_select'
+        'engineer_supplied_input_hosted_runtime_actor_select',
+        'identity_subject_mapping_hosted_runtime_actor_select',
+        'work_item_hosted_runtime_actor_select'
       )
     ORDER BY tablename, policyname
   `;
-  assert.equal(rows.length, 6);
+  assert.equal(rows.length, 8);
   for (const tableName of [
     'review_conversation',
     'review_turn',
@@ -630,12 +636,22 @@ async function assertRuntimeSelectPolicyReadback(sql) {
       tableName,
       command: 'SELECT',
       permissive: true,
-      roles: ['public'],
+      roles: ['anon'],
       qualHash: proof.sourceQualHash,
       sourcePolicyName: `${tableName}_authenticated_select`,
       sourceQualHash: proof.sourceQualHash,
       qualEquivalent: true,
     });
+  }
+  for (const policyName of [
+    'identity_subject_mapping_hosted_runtime_actor_select',
+    'work_item_hosted_runtime_actor_select',
+  ]) {
+    const helper = rows.find((row) => row.policyName === policyName);
+    assert.ok(helper);
+    assert.deepEqual(helper.roles, ['anon']);
+    assert.equal(helper.command, 'SELECT');
+    assert.equal(helper.permissive, 'PERMISSIVE');
   }
 }
 

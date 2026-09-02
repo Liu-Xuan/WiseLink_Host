@@ -8,6 +8,10 @@ export interface ApiErrorResponse {
     message: string;
     /** 错误详情 */
     details?: string;
+    /** 此错误是否适合由调用方原样重试 */
+    retryable?: boolean;
+    /** 需要由运维或应用 owner 执行的修复动作 */
+    operatorAction?: string;
     /** 字段验证错误 */
     fieldErrors?: Record<string, string[]>;
     /** 调用栈（仅开发环境） */
@@ -18,4 +22,3 @@ export interface ApiErrorResponse {
     timestamp?: number;
   };
 }
-
