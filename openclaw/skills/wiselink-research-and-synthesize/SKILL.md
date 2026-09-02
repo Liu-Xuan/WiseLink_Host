@@ -12,7 +12,7 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（官方 profile 当前可选 `GLM-5.3`，Skill 不绑定具体模型）
-- Skill：`wiselink-research-and-synthesize@r09.c8`
+- Skill：`wiselink-research-and-synthesize@r09.c9`
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（exact 20 tools）
 - Host baseline：`6fd2655d27edc3851c745547efaf8796ad22c82c`
 
@@ -217,8 +217,9 @@ commit_review_turn_candidate
 驱动将完整 MCP 结果写入权限为 `0600` 的持久 checkpoint，并将目录限制为 `0700`：已完成步骤只从
 checkpoint 恢复；begin/context/SourceRef/model 的结果一旦不确定即停止且不重试；只有 commit 响应丢失时
 允许恰好一次只读 status 恢复。模型只收到移除 conversation/turn/request/attempt/lease/WorkItem 控制面值的
-生成输入，并且只能返回 answer/sourceRef/missingInput/warning 内容；候选绑定、ResultEnvelope 和 commit 均由
-驱动机械完成。
+生成输入。c9 驱动允许模型在用户明确意图和 Host allowlist 内返回只读答复、CandidateEvidence、
+affected-items preview 或完整 ReviewActionDraft proposal；候选绑定、ResultEnvelope 和 commit 仍均由驱动
+机械完成，模型永远不能确认或执行草案。
 
 正常轮次：
 
@@ -250,7 +251,8 @@ begin_review_turn({reviewConversationRef, requestId})
   `missingInputId` 作为关闭依据，也不能仅凭旧 SourceRef 声称缺口已解决。
 - `allowedOperations` 必须精确是六项：`GET_WORKITEM_CONTEXT`、`GET_EVALUATION_ITEM`、
   `READ_SOURCE_REFS`、`DRAFT_REVIEW_ACTION`、`PREVIEW_AFFECTED_ITEMS`、`GET_OPERATION_STATUS`。
-- candidate 使用的每个 SourceRef 必须属于 Task allowlist，并在本轮实际通过 `read_source_refs` 读取；外层
+- candidate 使用的每个 SourceRef 必须属于 Task allowlist，并在本轮实际通过 `read_source_refs` 读取；当本轮
+  同时具有 selected Criterion 和附件时，驱动必须读取二者的受控 SourceRef，不得因 Criterion 原文优先而遗漏附件；外层
   ResultEnvelope 绑定其 actual resource artifact ref/SHA。
 - `attachmentRefs` 可以非空，但每项必须是非空唯一字符串且属于同一 Task `resourceRefs`。附件正文只能按
   `read_source_refs` 读取 Host 已解析、已脱敏的 value；不得读取或推导 raw FileService locator/bytes，也不得把
@@ -309,7 +311,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - `modelVersion` 是官方托管 profile/config 本轮选择后的非空、可读实际模型；不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c8`
+- `skillVersion=wiselink-research-and-synthesize@r09.c9`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致

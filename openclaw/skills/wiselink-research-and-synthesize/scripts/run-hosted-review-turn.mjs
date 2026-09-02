@@ -35,9 +35,12 @@ const MODEL_OUTPUT_KEYS = [
   'answer',
   'sourceRefs',
   'missingInputs',
+  'candidateEvidenceRefs',
+  'reviewActionDraft',
+  'affectedItemIds',
   'warnings',
 ];
-const REVIEW_PROMPT_VERSION = 'wiselink.3_1.review_prompt.v1.c8';
+const REVIEW_PROMPT_VERSION = 'wiselink.3_1.review_prompt.v1.c9';
 const WISELINK_HOST_MCP_CONFIG_KEYS = new Set([
   WISELINK_HOST_MCP_NAME,
   'wiselink_host_controller',
@@ -103,7 +106,7 @@ export async function runHostedReviewTurn(options, dependencies = {}) {
       const generationInput = {
         schemaVersion: MODEL_INPUT_SCHEMA,
         mode: 'INTERACTIVE_REVIEW',
-        purpose: 'READ_ONLY_EXPLANATION',
+        purpose: 'SUPERVISED_REVIEW_CANDIDATE',
         candidateOnly: true,
         input,
         sourceRefs,
@@ -119,7 +122,11 @@ export async function runHostedReviewTurn(options, dependencies = {}) {
         ambiguousCommit: false,
         perform: () => invokeModel(structuredClone(generationInput)),
       });
-      const partial = validateModelExecution(execution, selectedSourceRefIds);
+      const partial = validateModelExecution(
+        execution,
+        selectedSourceRefIds,
+        input.attachmentRefs,
+      );
       return {
         output: {
           schemaVersion: 'wiselink.3_1.review_turn_candidate.v1.c3',
@@ -131,9 +138,9 @@ export async function runHostedReviewTurn(options, dependencies = {}) {
           answer: partial.output.answer,
           sourceRefs: partial.output.sourceRefs,
           missingInputs: partial.output.missingInputs,
-          candidateEvidenceRefs: [],
-          reviewActionDraft: null,
-          affectedItemIds: [],
+          candidateEvidenceRefs: partial.output.candidateEvidenceRefs,
+          reviewActionDraft: partial.output.reviewActionDraft,
+          affectedItemIds: partial.output.affectedItemIds,
           warnings: partial.output.warnings,
           runtime: {
             runtimeAppId: WISELINK_RUNTIME_APP_ID,
@@ -404,9 +411,13 @@ function selectSourceRefIds(input) {
     : [];
   const item = items.find(({ criterionId }) => criterionId === selected);
   const preferred = Array.isArray(item?.sourceRefs) ? item.sourceRefs : [];
-  const ids = (preferred.length > 0 ? preferred : [...available]).filter((id) =>
-    available.has(id),
-  );
+  const attachments = Array.isArray(input.attachmentRefs)
+    ? input.attachmentRefs
+    : [];
+  const ids = [
+    ...(preferred.length > 0 ? preferred : [...available]),
+    ...attachments,
+  ].filter((id) => available.has(id));
   const unique = [...new Set(ids)];
   if (unique.length > MAX_SOURCE_REFS) {
     throw new Error('REVIEW_SOURCE_REF_SELECTION_TOO_LARGE');
@@ -414,7 +425,11 @@ function selectSourceRefIds(input) {
   return unique;
 }
 
-function validateModelExecution(value, readSourceRefIds) {
+function validateModelExecution(
+  value,
+  readSourceRefIds,
+  candidateEvidenceRefIds,
+) {
   if (
     !isRecord(value) ||
     !isRecord(value.output) ||
@@ -429,11 +444,28 @@ function validateModelExecution(value, readSourceRefIds) {
   ) {
     throw new Error('REVIEW_MODEL_OUTPUT_KEYS_INVALID');
   }
-  if (!['ANSWER', 'SOURCE_LINK'].includes(output.responseType)) {
+  if (
+    ![
+      'ANSWER',
+      'CLARIFYING_QUESTION',
+      'SOURCE_LINK',
+      'CANDIDATE_EVIDENCE',
+      'REVIEW_ACTION_DRAFT',
+      'INPUT_REQUEST',
+      'AFFECTED_ITEMS_PREVIEW',
+      'TASK_STATUS',
+    ].includes(output.responseType)
+  ) {
     throw new Error('REVIEW_MODEL_RESPONSE_TYPE_INVALID');
   }
   requiredText(output.answer, 'REVIEW_MODEL_ANSWER_REQUIRED');
-  for (const key of ['sourceRefs', 'missingInputs', 'warnings']) {
+  for (const key of [
+    'sourceRefs',
+    'missingInputs',
+    'candidateEvidenceRefs',
+    'affectedItemIds',
+    'warnings',
+  ]) {
     if (
       !Array.isArray(output[key]) ||
       output[key].some(
@@ -445,8 +477,52 @@ function validateModelExecution(value, readSourceRefIds) {
     }
   }
   const allowed = new Set(readSourceRefIds);
-  if (output.sourceRefs.some((sourceRefId) => !allowed.has(sourceRefId))) {
+  if (
+    [...output.sourceRefs, ...output.candidateEvidenceRefs].some(
+      (sourceRefId) => !allowed.has(sourceRefId),
+    )
+  ) {
     throw new Error('REVIEW_MODEL_SOURCE_REF_NOT_READ');
+  }
+  const allowedCandidateEvidence = new Set(candidateEvidenceRefIds ?? []);
+  if (
+    output.candidateEvidenceRefs.some(
+      (sourceRefId) => !allowedCandidateEvidence.has(sourceRefId),
+    )
+  ) {
+    throw new Error('REVIEW_MODEL_CANDIDATE_EVIDENCE_REF_NOT_ATTACHMENT');
+  }
+  const hasDraft = isRecord(output.reviewActionDraft);
+  if (
+    (output.responseType === 'REVIEW_ACTION_DRAFT') !== hasDraft ||
+    (output.reviewActionDraft !== null && !hasDraft)
+  ) {
+    throw new Error('REVIEW_MODEL_DRAFT_RESPONSE_MISMATCH');
+  }
+  if (
+    output.responseType === 'CANDIDATE_EVIDENCE' &&
+    output.candidateEvidenceRefs.length === 0
+  ) {
+    throw new Error('REVIEW_MODEL_CANDIDATE_EVIDENCE_REQUIRED');
+  }
+  if (
+    output.responseType === 'AFFECTED_ITEMS_PREVIEW' &&
+    output.affectedItemIds.length === 0
+  ) {
+    throw new Error('REVIEW_MODEL_AFFECTED_ITEMS_REQUIRED');
+  }
+  if (
+    [
+      'ANSWER',
+      'CLARIFYING_QUESTION',
+      'SOURCE_LINK',
+      'INPUT_REQUEST',
+      'TASK_STATUS',
+    ].includes(output.responseType) &&
+    (output.candidateEvidenceRefs.length > 0 ||
+      output.affectedItemIds.length > 0)
+  ) {
+    throw new Error('REVIEW_MODEL_READ_ONLY_SIDE_EFFECT_INVALID');
   }
   return value;
 }
@@ -491,10 +567,18 @@ function parseStrictJsonObject(value) {
 
 function buildReviewPrompt(input) {
   return [
-    'Generate a candidate-only, read-only WiseLink engineering review response.',
-    'Return exactly these keys: responseType, answer, sourceRefs, missingInputs, warnings.',
-    'responseType must be ANSWER or SOURCE_LINK. Every other listed collection must be a string array.',
-    'Use sourceRefs only from SOURCE_REFS that you actually cite. Do not invent facts, IDs, evidence, approval, publication, current changes, drafts, or engineer confirmation.',
+    'Generate one candidate-only WiseLink engineering review response from the engineer message and the current Host-frozen context.',
+    'Return exactly these keys: responseType, answer, sourceRefs, missingInputs, candidateEvidenceRefs, reviewActionDraft, affectedItemIds, warnings.',
+    'responseType must be ANSWER, CLARIFYING_QUESTION, SOURCE_LINK, CANDIDATE_EVIDENCE, REVIEW_ACTION_DRAFT, INPUT_REQUEST, AFFECTED_ITEMS_PREVIEW, or TASK_STATUS.',
+    'sourceRefs, missingInputs, candidateEvidenceRefs, affectedItemIds, and warnings must each be a unique string array.',
+    'Use sourceRefs and candidateEvidenceRefs only from SOURCE_REFS read this turn. Never invent facts, IDs, evidence, adoption, approval, publication, confirmation, current changes, or gap closure.',
+    'For an explanation, source link, clarification, input request, or task status, set candidateEvidenceRefs and affectedItemIds to [] and reviewActionDraft to null.',
+    'Use CANDIDATE_EVIDENCE only when the engineer asks to analyze supplied or Host-authorized evidence; keep reviewActionDraft null and include every proposed evidence ref in candidateEvidenceRefs.',
+    'Use REVIEW_ACTION_DRAFT only when the engineer explicitly asks to adopt evidence, modify a judgment, accept an assumption or conservative bound, or set monitoring/review controls.',
+    'A reviewActionDraft must contain exactly: baseRevision, evaluationItemId, proposedStatus, resolvedGapRefs, adoptedInputRefs, sourceRefs, assumptions, affectedItemIds, overallImpact, uncertaintyDispositions, decisionSnapshot.',
+    'Each uncertainty disposition must contain exactly: gapRef, disposition, rationale, assumptions, controlsAndMitigations, evidenceRefs, reviewBy, reopenTriggers.',
+    'decisionSnapshot must contain exactly: assessmentAsOf, evidenceHorizon, currentBestJudgment, alternativeJudgments, decisionMaturity, decisiveFacts, assumptions, residualUncertainties, uncertaintyDispositions, controlsAndMitigations, monitoringPlan, validUntil, reviewBy, reopenTriggers, whatWouldChangeDecision, candidateOnly. Its uncertaintyDispositions must exactly equal the draft list and candidateOnly must be true.',
+    'Copy only allowed revision, evaluation item, adopted input, source, attachment, and gap refs from INPUT. A draft proposes change but never confirms or executes it.',
     'State the current best bounded judgment, remaining uncertainty, and what would change the judgment when relevant.',
     'Do not call tools. The driver exclusively owns begin, context, SourceRef read, commit, and status.',
     `INPUT:\n${canonicalJson(input)}`,

@@ -1,4 +1,4 @@
-# 官方托管 R09 c7 UAT runbook
+# 官方托管 R09 c9 UAT runbook
 
 本 runbook 只定义 Host C4+C5 accepted 后的真实验证顺序；本地实现不执行安装、发布、Session 创建、模型调用或
 云配置修改。
@@ -12,7 +12,7 @@
 3. 模型由官方托管 profile/config 选择，当前 UI 可选 `GLM-5.3`；每个 turn 必须读回非空、可识别的实际
    `modelVersion`，智能选择/fallback 只有在实际模型仍逐 turn 可见时才可继续；
 4. 同名 Skill 只有一个，安装版本精确
-   `wiselink-research-and-synthesize@r09.c8`；
+   `wiselink-research-and-synthesize@r09.c9`；
 5. Host MCP package/version 为
    `wiselink-openclaw-engineering-assessment@1.2.0`，exact 20 tools 可见；
 6. C3 successor 已进入 current Hosted release；只凭 Git commit 不等于 deployed readback；
@@ -97,17 +97,20 @@ authenticated user。
 
 ### Positive：ReviewActionDraft
 
-1. 选择 allowed evaluation item；按需读 exact SourceRefs。
-2. 生成 baseRevision=current、items/inputs/refs 全在 allowlist，并带 Gap dispositions 与 candidate-only
+1. 先用本轮 Host 已授权附件形成 CandidateEvidence，确认附件与 selected Criterion SourceRef 均被实读，
+   且 revision/current/STALE 不变。
+2. 工程师在后续自然语言 turn 明确要求采用证据或修改判断；选择 allowed evaluation item，按需读 exact SourceRefs。
+3. 生成 baseRevision=current、items/inputs/refs 全在 allowlist，并带 Gap dispositions 与 candidate-only
    Decision Snapshot 的 ReviewActionDraft candidate。
-3. commit 后只读回 Draft；确认没有 ReviewAction、current 切换或 STALE mutation。
+4. commit 后只读回 Draft；确认没有 ReviewAction、current 切换或 STALE mutation，不调用 confirm 接口。
 
 ### Required negative
 
 - 错 conversation/request、cross actor/tenant/workItem、closed conversation、旧 revision：not-found/conflict 且零 mutation。
 - 未 read 的 SourceRef、越界 item/adopted ref、错误 Skill/tool version、空或不可读实际模型 provenance、非官方
   runtime/profile、hash drift：commit 前或 Host gate 拒绝。
-- attachment/search/compare/reevaluate/resynthesize：明确 unsupported，零伪造工具调用。
+- 未在本轮 Host Task 中授权的 attachment，以及独立 search/compare/reevaluate/resynthesize：明确 unsupported，
+  零伪造工具调用。本轮已授权并解析的附件只通过 `read_source_refs` 读取。
 - COMMITTING：只调用 status，模型调用数 0、commit 数 0。
 - commit 响应丢失：status 只读一次，commit 数仍为 1，不把 terminal status 冒充 exact candidate readback。
 - begin/context/SourceRef/model 已写 started 但没有 result checkpoint：重启后停止并报告 outcome unknown，绝不重试；

@@ -87,7 +87,7 @@ test('pins exact20 MCP 1.2, five review tools, and hosted provenance', () => {
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c8',
+    'wiselink-research-and-synthesize@r09.c9',
   );
   assert.equal(WISELINK_MODEL_POLICY_REF, 'official-hosted-profile-config');
   assert.equal(WISELINK_HOST_MCP_VERSION, '1.2.0');
@@ -1452,6 +1452,9 @@ test('runs a review turn from durable checkpoints without replaying remote work'
         answer: '该候选只解释本轮实读来源，当前判断仍受缺失构型事实限制。',
         sourceRefs: [reviewTask.resourceRefs[0].sourceRefId],
         missingInputs: ['Controlled FleetFacts'],
+        candidateEvidenceRefs: [],
+        reviewActionDraft: null,
+        affectedItemIds: [],
         warnings: ['candidate_only'],
       },
       provenance: provenance(),
@@ -1508,6 +1511,276 @@ test('runs a review turn from durable checkpoints without replaying remote work'
   }
   const checkpointInfo = await stat(join(checkpointDir, 'begin.result.json'));
   assert.equal(checkpointInfo.mode & 0o077, 0);
+});
+
+test('reads both selected Criterion sources and the current attachment for candidate evidence', async (t) => {
+  const checkpointDir = await mkdtemp(
+    join(tmpdir(), 'wiselink-review-driver-evidence-'),
+  );
+  t.after(() => rm(checkpointDir, { recursive: true, force: true }));
+  const reviewTask = await readJson(REVIEW_ATTACHMENT_TASK_FIXTURE_URL);
+  const task = makeTask(
+    'OPENCLAW_INTERACTIVE_REVIEW',
+    reviewTask,
+    [],
+    reviewTask.resourceRefs.map(
+      ({ resourceArtifactRef: ref, resourceArtifactSha256: sha256 }) => ({
+        ref,
+        sha256,
+      }),
+    ),
+  );
+  const calls = [];
+  let committedResult;
+  const callTool = async (name, args) => {
+    calls.push({ name, args });
+    if (name === 'begin_review_turn') return runningBegin(task);
+    if (name === 'get_review_turn_context') {
+      return reviewContext(task, reviewTask);
+    }
+    if (name === 'read_source_refs') {
+      return {
+        schemaVersion: 'wiselink.3_1.review_source_refs.v1.c2',
+        attemptRef: task.operationRef,
+        sourceRefs: args.sourceRefIds.map((sourceRefId) => ({
+          sourceRefId,
+          kind: sourceRefId === reviewTask.attachmentRefs[0]
+            ? 'ENGINEER_ATTACHMENT'
+            : 'page',
+          statement: 'Fixture-only source-bound statement.',
+        })),
+      };
+    }
+    if (name === 'commit_review_turn_candidate') {
+      committedResult = JSON.parse(args.resultJson);
+      return reviewCommit(task.operationRef);
+    }
+    throw new Error(`UNEXPECTED_TOOL:${name}`);
+  };
+
+  const result = await runHostedReviewTurn(
+    {
+      reviewConversationRef: reviewTask.reviewConversationRef,
+      requestId: reviewTask.requestId,
+      checkpointDir,
+    },
+    {
+      callTool,
+      invokeModel: async () => ({
+        output: {
+          responseType: 'CANDIDATE_EVIDENCE',
+          answer: '本轮附件形成候选证据，但尚未采纳或改变任何业务状态。',
+          sourceRefs: [reviewTask.attachmentRefs[0]],
+          missingInputs: [],
+          candidateEvidenceRefs: [reviewTask.attachmentRefs[0]],
+          reviewActionDraft: null,
+          affectedItemIds: [],
+          warnings: ['candidate_only', 'not_adopted'],
+        },
+        provenance: provenance(),
+      }),
+    },
+  );
+
+  const sourceCall = calls.find(({ name }) => name === 'read_source_refs');
+  assert.deepEqual(sourceCall.args.sourceRefIds, [
+    reviewTask.resourceRefs[0].sourceRefId,
+    reviewTask.attachmentRefs[0],
+  ]);
+  assert.deepEqual(JSON.parse(committedResult.modelOutput).candidateEvidenceRefs, [
+    reviewTask.attachmentRefs[0],
+  ]);
+  assert.deepEqual(result.authorityMutations, {
+    reviewCandidatePersisted: true,
+    workItemRevisionChanged: false,
+    currentChanged: false,
+    staleChanged: false,
+    reviewActionExecuted: false,
+  });
+});
+
+test('does not relabel a document SourceRef as new candidate evidence', async (t) => {
+  const checkpointDir = await mkdtemp(
+    join(tmpdir(), 'wiselink-review-driver-evidence-boundary-'),
+  );
+  t.after(() => rm(checkpointDir, { recursive: true, force: true }));
+  const reviewTask = await readJson(REVIEW_ATTACHMENT_TASK_FIXTURE_URL);
+  const task = makeTask(
+    'OPENCLAW_INTERACTIVE_REVIEW',
+    reviewTask,
+    [],
+    reviewTask.resourceRefs.map(
+      ({ resourceArtifactRef: ref, resourceArtifactSha256: sha256 }) => ({
+        ref,
+        sha256,
+      }),
+    ),
+  );
+  await assert.rejects(
+    runHostedReviewTurn(
+      {
+        reviewConversationRef: reviewTask.reviewConversationRef,
+        requestId: reviewTask.requestId,
+        checkpointDir,
+      },
+      {
+        callTool: async (name, args) => {
+          if (name === 'begin_review_turn') return runningBegin(task);
+          if (name === 'get_review_turn_context') {
+            return reviewContext(task, reviewTask);
+          }
+          if (name === 'read_source_refs') {
+            return {
+              schemaVersion: 'wiselink.3_1.review_source_refs.v1.c2',
+              attemptRef: task.operationRef,
+              sourceRefs: args.sourceRefIds.map((sourceRefId) => ({
+                sourceRefId,
+                kind: 'fixture',
+                statement: 'Fixture-only source-bound statement.',
+              })),
+            };
+          }
+          throw new Error(`MODEL_MUST_NOT_COMMIT:${name}`);
+        },
+        invokeModel: async () => ({
+          output: {
+            responseType: 'CANDIDATE_EVIDENCE',
+            answer: '错误地把受控原文标为新证据。',
+            sourceRefs: [reviewTask.resourceRefs[0].sourceRefId],
+            missingInputs: [],
+            candidateEvidenceRefs: [reviewTask.resourceRefs[0].sourceRefId],
+            reviewActionDraft: null,
+            affectedItemIds: [],
+            warnings: ['candidate_only'],
+          },
+          provenance: provenance(),
+        }),
+      },
+    ),
+    /REVIEW_MODEL_CANDIDATE_EVIDENCE_REF_NOT_ATTACHMENT/u,
+  );
+});
+
+test('persists a complete candidate-only review action draft without confirming it', async (t) => {
+  const checkpointDir = await mkdtemp(
+    join(tmpdir(), 'wiselink-review-driver-draft-'),
+  );
+  t.after(() => rm(checkpointDir, { recursive: true, force: true }));
+  const reviewTask = await readJson(REVIEW_ATTACHMENT_TASK_FIXTURE_URL);
+  reviewTask.userMessage =
+    '采用本轮附件作为候选输入，把 criterion-001 改为 PROVISIONAL，并给出确认前差异草案。';
+  reviewTask.context.engineerInput.text = reviewTask.userMessage;
+  const task = makeTask(
+    'OPENCLAW_INTERACTIVE_REVIEW',
+    reviewTask,
+    [],
+    reviewTask.resourceRefs.map(
+      ({ resourceArtifactRef: ref, resourceArtifactSha256: sha256 }) => ({
+        ref,
+        sha256,
+      }),
+    ),
+  );
+  const calls = [];
+  let committedResult;
+  const callTool = async (name, args) => {
+    calls.push({ name, args });
+    if (name === 'begin_review_turn') return runningBegin(task);
+    if (name === 'get_review_turn_context') {
+      return reviewContext(task, reviewTask);
+    }
+    if (name === 'read_source_refs') {
+      return {
+        schemaVersion: 'wiselink.3_1.review_source_refs.v1.c2',
+        attemptRef: task.operationRef,
+        sourceRefs: args.sourceRefIds.map((sourceRefId) => ({
+          sourceRefId,
+          kind: 'fixture',
+          statement: 'Fixture-only source-bound statement.',
+        })),
+      };
+    }
+    if (name === 'commit_review_turn_candidate') {
+      committedResult = JSON.parse(args.resultJson);
+      return reviewCommit(task.operationRef);
+    }
+    throw new Error(`UNEXPECTED_TOOL:${name}`);
+  };
+  const sourceRefId = reviewTask.resourceRefs[0].sourceRefId;
+  const attachmentRef = reviewTask.attachmentRefs[0];
+  const uncertaintyDispositions = [];
+  const reviewActionDraft = {
+    baseRevision: reviewTask.inputRevision,
+    evaluationItemId: 'criterion-001',
+    proposedStatus: 'PROVISIONAL',
+    resolvedGapRefs: [],
+    adoptedInputRefs: ['engineer-input:ESI-fixture-001'],
+    sourceRefs: [sourceRefId, attachmentRef],
+    assumptions: ['附件内容仍需工程师确认后才可进入 Host current。'],
+    affectedItemIds: ['criterion-001'],
+    overallImpact: true,
+    uncertaintyDispositions,
+    decisionSnapshot: {
+      assessmentAsOf: '2026-09-02T00:00:00.000Z',
+      evidenceHorizon: [
+        'SOURCE_DOCUMENT_COMPLETE',
+        'CONFIGURATION_PARTIAL',
+      ],
+      currentBestJudgment: 'criterion-001 可形成 PROVISIONAL 候选判断。',
+      alternativeJudgments: ['保留 UNKNOWN/WAITING_INPUT。'],
+      decisionMaturity: 'REVIEWABLE',
+      decisiveFacts: ['本轮附件与受控原文已读取。'],
+      assumptions: ['附件内容尚未通过结构化确认。'],
+      residualUncertainties: ['目标构型覆盖仍不完整。'],
+      uncertaintyDispositions,
+      controlsAndMitigations: ['确认前不改变 current。'],
+      monitoringPlan: null,
+      validUntil: null,
+      reviewBy: null,
+      reopenTriggers: ['取得新的受控构型证据。'],
+      whatWouldChangeDecision: ['反证附件内容与目标对象不匹配。'],
+      candidateOnly: true,
+    },
+  };
+
+  const result = await runHostedReviewTurn(
+    {
+      reviewConversationRef: reviewTask.reviewConversationRef,
+      requestId: reviewTask.requestId,
+      checkpointDir,
+    },
+    {
+      callTool,
+      invokeModel: async () => ({
+        output: {
+          responseType: 'REVIEW_ACTION_DRAFT',
+          answer: '已形成确认前差异草案；尚未确认、采纳或执行。',
+          sourceRefs: [sourceRefId, attachmentRef],
+          missingInputs: ['工程师结构化确认'],
+          candidateEvidenceRefs: [attachmentRef],
+          reviewActionDraft,
+          affectedItemIds: ['criterion-001'],
+          warnings: ['candidate_only', 'confirmation_required'],
+        },
+        provenance: provenance(),
+      }),
+    },
+  );
+
+  const candidate = JSON.parse(committedResult.modelOutput);
+  assert.deepEqual(candidate.reviewActionDraft, reviewActionDraft);
+  assert.equal(candidate.responseType, 'REVIEW_ACTION_DRAFT');
+  assert.equal(result.authorityMutations.reviewActionExecuted, false);
+  assert.equal(result.authorityMutations.workItemRevisionChanged, false);
+  assert.deepEqual(
+    calls.map(({ name }) => name),
+    [
+      'begin_review_turn',
+      'get_review_turn_context',
+      'read_source_refs',
+      'commit_review_turn_candidate',
+    ],
+  );
 });
 
 test('keeps non-gap authority data outside the review model boundary', async () => {
@@ -1616,6 +1889,9 @@ test('recovers an ambiguous checkpointed review commit with one status read and 
           answer: '候选答复。',
           sourceRefs: [reviewTask.resourceRefs[0].sourceRefId],
           missingInputs: [],
+          candidateEvidenceRefs: [],
+          reviewActionDraft: null,
+          affectedItemIds: [],
           warnings: ['candidate_only'],
         },
         provenance: provenance(),
