@@ -29,6 +29,9 @@ import {
 } from './validate-payload.mjs';
 
 const DRIVER_SCHEMA = 'wiselink.3_1.hosted_review_driver.v1';
+const KNOWN_MODEL_NONDISPATCH_CODES = new Set([
+  'REVIEW_GATEWAY_INVALID_JSON_HTTP_404',
+]);
 const MODEL_INPUT_SCHEMA = 'wiselink.3_1.review_generation_input.v1';
 const MODEL_OUTPUT_KEYS = [
   'responseType',
@@ -40,7 +43,7 @@ const MODEL_OUTPUT_KEYS = [
   'affectedItemIds',
   'warnings',
 ];
-const REVIEW_PROMPT_VERSION = 'wiselink.3_1.review_prompt.v1.c9';
+const REVIEW_PROMPT_VERSION = 'wiselink.3_1.review_prompt.v1.c10';
 const WISELINK_HOST_MCP_CONFIG_KEYS = new Set([
   WISELINK_HOST_MCP_NAME,
   'wiselink_host_controller',
@@ -250,6 +253,119 @@ export async function invokeHostedReviewModel(input, options = {}) {
       },
     },
   };
+}
+
+export function isChatCompletionsEnabled(config) {
+  return (
+    config?.gateway?.http?.endpoints?.chatCompletions?.enabled === true
+  );
+}
+
+export function assertHostedModelGatewayReady(runtime) {
+  if (runtime?.gatewayChatCompletionsEnabled !== true) {
+    throw new Error('REVIEW_GATEWAY_CHAT_COMPLETIONS_DISABLED');
+  }
+}
+
+export async function prepareKnownModelNonDispatchRecovery(options) {
+  const checkpointDir = requiredText(
+    options?.checkpointDir,
+    'REVIEW_CHECKPOINT_DIRECTORY_REQUIRED',
+  );
+  const failureCode = requiredText(
+    options?.failureCode,
+    'REVIEW_MODEL_RECOVERY_FAILURE_CODE_REQUIRED',
+  );
+  if (!KNOWN_MODEL_NONDISPATCH_CODES.has(failureCode)) {
+    throw new Error('REVIEW_MODEL_RECOVERY_FAILURE_NOT_PROVEN_NONDISPATCH');
+  }
+  const evidencePath = requiredText(
+    options?.evidencePath,
+    'REVIEW_MODEL_RECOVERY_EVIDENCE_REQUIRED',
+  );
+  const evidenceInfo = await stat(evidencePath);
+  if (!evidenceInfo.isFile() || evidenceInfo.size > 4096) {
+    throw new Error('REVIEW_MODEL_RECOVERY_EVIDENCE_INVALID');
+  }
+  const evidence = await readFile(evidencePath, 'utf8');
+  const evidenceLines = evidence
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (
+    canonicalJson(evidenceLines) !==
+    canonicalJson([failureCode, 'FIRST_RUN_EXIT=1'])
+  ) {
+    throw new Error('REVIEW_MODEL_RECOVERY_EVIDENCE_INVALID');
+  }
+
+  const checkpoint = await createCheckpointStore(checkpointDir);
+  for (const step of ['begin', 'context', 'sources']) {
+    if (
+      !(await checkpoint.readOptional(`${step}.started`)) ||
+      !(await checkpoint.readOptional(`${step}.result`))
+    ) {
+      throw new Error(`REVIEW_MODEL_RECOVERY_${step.toUpperCase()}_INCOMPLETE`);
+    }
+  }
+  const originalStarted = await checkpoint.readOptional('model.started');
+  const archivedStarted = await checkpoint.readOptional(
+    'model.known-nondispatch',
+  );
+  const modelResult = await checkpoint.readOptional('model.result');
+  const recovery = await checkpoint.readOptional('model.recovery');
+
+  if (recovery) {
+    if (
+      recovery.schemaVersion !== DRIVER_SCHEMA ||
+      recovery.step !== 'model' ||
+      recovery.failureCode !== failureCode
+    ) {
+      throw new Error('REVIEW_MODEL_RECOVERY_BINDING_MISMATCH');
+    }
+    if (!archivedStarted) {
+      if (!originalStarted || recovery.argsHash !== originalStarted.argsHash) {
+        throw new Error('REVIEW_MODEL_RECOVERY_BINDING_MISMATCH');
+      }
+      await rename(
+        join(checkpointDir, 'model.started.json'),
+        join(checkpointDir, 'model.known-nondispatch.json'),
+      );
+      await chmod(join(checkpointDir, 'model.known-nondispatch.json'), 0o600);
+      return { prepared: true, replayed: true };
+    }
+    if (recovery.argsHash !== archivedStarted.argsHash) {
+      throw new Error('REVIEW_MODEL_RECOVERY_BINDING_MISMATCH');
+    }
+    if (modelResult) return { prepared: true, replayed: true };
+    if (originalStarted) {
+      throw new Error('REVIEW_MODEL_RECOVERY_OUTCOME_UNKNOWN');
+    }
+    return { prepared: true, replayed: true };
+  }
+
+  if (
+    (await checkpoint.readOptional('commit.started')) ||
+    (await checkpoint.readOptional('commit.result'))
+  ) {
+    throw new Error('REVIEW_MODEL_RECOVERY_COMMIT_ALREADY_STARTED');
+  }
+  if (!originalStarted || archivedStarted || modelResult) {
+    throw new Error('REVIEW_MODEL_RECOVERY_CHECKPOINT_STATE_INVALID');
+  }
+  await checkpoint.write('model.recovery', {
+    schemaVersion: DRIVER_SCHEMA,
+    step: 'model',
+    failureCode,
+    argsHash: originalStarted.argsHash,
+    preparedAt: new Date().toISOString(),
+  });
+  await rename(
+    join(checkpointDir, 'model.started.json'),
+    join(checkpointDir, 'model.known-nondispatch.json'),
+  );
+  await chmod(join(checkpointDir, 'model.known-nondispatch.json'), 0o600);
+  return { prepared: true, replayed: false };
 }
 
 export async function createHostMcpConnection(options) {
@@ -745,7 +861,13 @@ async function resolveRuntimeConfig(argv, env) {
     (Number.isSafeInteger(port) ? `http://127.0.0.1:${port}` : '');
   const gatewayToken =
     env.WL_REVIEW_GATEWAY_TOKEN || config?.gateway?.auth?.token || '';
-  return { hostMcpUrl, headers, gatewayUrl, gatewayToken };
+  return {
+    hostMcpUrl,
+    headers,
+    gatewayUrl,
+    gatewayToken,
+    gatewayChatCompletionsEnabled: isChatCompletionsEnabled(config),
+  };
 }
 
 export function openClawConfigCandidates(
@@ -844,6 +966,7 @@ function isRecord(value) {
 function usage() {
   return [
     'Usage: node scripts/run-hosted-review-turn.mjs --review-conversation-ref RC-... --request-id ... --checkpoint-dir /private/path',
+    'Known non-dispatch recovery: --recover-known-model-nondispatch REVIEW_GATEWAY_INVALID_JSON_HTTP_404 --failure-evidence-file /private/log',
     'Runtime config is read from OpenClaw. Explicit env overrides: WL_REVIEW_HOST_MCP_URL, WL_REVIEW_HOST_MCP_HEADERS_JSON, WL_REVIEW_GATEWAY_URL, WL_REVIEW_GATEWAY_TOKEN.',
   ].join('\n');
 }
@@ -859,6 +982,18 @@ async function main(argv, env) {
     checkpointDir: option(argv, '--checkpoint-dir'),
   };
   const runtime = await resolveRuntimeConfig(argv, env);
+  assertHostedModelGatewayReady(runtime);
+  const recoveryFailureCode = option(
+    argv,
+    '--recover-known-model-nondispatch',
+  );
+  if (recoveryFailureCode) {
+    await prepareKnownModelNonDispatchRecovery({
+      checkpointDir: options.checkpointDir,
+      failureCode: recoveryFailureCode,
+      evidencePath: option(argv, '--failure-evidence-file'),
+    });
+  }
   const connection = await createHostMcpConnection(runtime);
   try {
     const result = await runHostedReviewTurn(options, {

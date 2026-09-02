@@ -1,4 +1,4 @@
-# 官方托管 R09 c9 UAT runbook
+# 官方托管 R09 c10 UAT runbook
 
 本 runbook 只定义 Host C4+C5 accepted 后的真实验证顺序；本地实现不执行安装、发布、Session 创建、模型调用或
 云配置修改。
@@ -12,7 +12,7 @@
 3. 模型由官方托管 profile/config 选择，当前 UI 可选 `GLM-5.3`；每个 turn 必须读回非空、可识别的实际
    `modelVersion`，智能选择/fallback 只有在实际模型仍逐 turn 可见时才可继续；
 4. 同名 Skill 只有一个，安装版本精确
-   `wiselink-research-and-synthesize@r09.c9`；
+   `wiselink-research-and-synthesize@r09.c10`；
 5. Host MCP package/version 为
    `wiselink-openclaw-engineering-assessment@1.2.0`，exact 20 tools 可见；
 6. C3 successor 已进入 current Hosted release；只凭 Git commit 不等于 deployed readback；
@@ -86,7 +86,8 @@ authenticated user。
 ### Positive：解释 + SourceRef
 
 1. 在同一 active ReviewConversation 新增一条用户 turn，取得 `reviewConversationRef + requestId`。
-2. 只启动一次 `scripts/run-hosted-review-turn.mjs` 外部驱动；不得让对话模型直接调用五个 Host 工具。
+2. 先确认官方 OpenClaw 配置已明确启用 `gateway.http.endpoints.chatCompletions`；未启用则在任何 business tool
+   之前停止。随后只启动一次 `scripts/run-hosted-review-turn.mjs` 外部驱动；不得让对话模型直接调用五个 Host 工具。
 3. 驱动执行一次 `begin_review_turn`；确认 Host 派生 actor/tenant/WorkItem/session，调用参数中没有这些字段。
 4. 驱动执行一次 `get_review_turn_context` fresh-read current，并只读取本轮所需 SourceRef；确认模型输入不含
    conversation/turn/request/attempt/lease/WorkItem 控制面值。
@@ -114,7 +115,10 @@ authenticated user。
 - COMMITTING：只调用 status，模型调用数 0、commit 数 0。
 - commit 响应丢失：status 只读一次，commit 数仍为 1，不把 terminal status 冒充 exact candidate readback。
 - begin/context/SourceRef/model 已写 started 但没有 result checkpoint：重启后停止并报告 outcome unknown，绝不重试；
-  commit 是唯一允许通过一次 status 消除响应不确定性的步骤。
+  commit 是唯一允许通过一次 status 消除响应不确定性的步骤。唯一受控例外仅限 c8 遗留的
+  `REVIEW_GATEWAY_INVALID_JSON_HTTP_404`：必须由原始短日志同时证明该错误和 `FIRST_RUN_EXIT=1`、model result 与
+  commit 均不存在，并用 c10 recovery flag 把原 `model.started` 归档后恢复一次；不得删除 checkpoint 或重放
+  begin/context/SourceRef，第二次 recovery 若仍无 model result 必须停止。
 
 ## 每轮证据
 

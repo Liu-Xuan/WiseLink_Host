@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import {
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -32,8 +38,11 @@ import {
   summarizeQueryParsedPackage,
 } from '../scripts/orchestrate-host-mcp.mjs';
 import {
+  assertHostedModelGatewayReady,
   findMcpConfig,
+  isChatCompletionsEnabled,
   openClawConfigCandidates,
+  prepareKnownModelNonDispatchRecovery,
   runHostedReviewTurn,
 } from '../scripts/run-hosted-review-turn.mjs';
 
@@ -87,7 +96,7 @@ test('pins exact20 MCP 1.2, five review tools, and hosted provenance', () => {
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c9',
+    'wiselink-research-and-synthesize@r09.c10',
   );
   assert.equal(WISELINK_MODEL_POLICY_REF, 'official-hosted-profile-config');
   assert.equal(WISELINK_HOST_MCP_VERSION, '1.2.0');
@@ -1840,6 +1849,40 @@ test('discovers the Hosted OpenClaw config and exact canonical MCP alias', () =>
   );
 });
 
+test('requires an explicitly enabled Hosted chat-completions endpoint', () => {
+  assert.equal(
+    isChatCompletionsEnabled({
+      gateway: {
+        http: {
+          endpoints: { chatCompletions: { enabled: true } },
+        },
+      },
+    }),
+    true,
+  );
+  for (const config of [
+    {},
+    { gateway: {} },
+    { gateway: { http: { endpoints: { chatCompletions: {} } } } },
+    {
+      gateway: {
+        http: {
+          endpoints: { chatCompletions: { enabled: false } },
+        },
+      },
+    },
+  ]) {
+    assert.equal(isChatCompletionsEnabled(config), false);
+  }
+  assert.throws(
+    () =>
+      assertHostedModelGatewayReady({
+        gatewayChatCompletionsEnabled: false,
+      }),
+    /REVIEW_GATEWAY_CHAT_COMPLETIONS_DISABLED/u,
+  );
+});
+
 test('recovers an ambiguous checkpointed review commit with one status read and no replay', async (t) => {
   const checkpointDir = await mkdtemp(
     join(tmpdir(), 'wiselink-review-driver-recovery-'),
@@ -1957,6 +2000,106 @@ test('never retries an ambiguous non-commit review step after restart', async (t
   assert.equal(counts.get('get_review_turn_context'), 1);
   assert.equal(counts.get('read_source_refs'), 1);
   assert.equal(modelCalls, 1);
+});
+
+test('recovers a proven pre-dispatch gateway 404 once without replaying Host reads', async (t) => {
+  const checkpointDir = await mkdtemp(
+    join(tmpdir(), 'wiselink-review-driver-known-nondispatch-'),
+  );
+  t.after(() => rm(checkpointDir, { recursive: true, force: true }));
+  const evidencePath = join(checkpointDir, 'gateway-failure.log');
+  const failureCode = 'REVIEW_GATEWAY_INVALID_JSON_HTTP_404';
+  const reviewTask = await readJson(REVIEW_TASK_FIXTURE_URL);
+  const task = makeTask('OPENCLAW_INTERACTIVE_REVIEW', reviewTask);
+  const counts = new Map();
+  const callTool = async (name, args) => {
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+    if (name === 'begin_review_turn') return runningBegin(task);
+    if (name === 'get_review_turn_context') {
+      return reviewContext(task, reviewTask);
+    }
+    if (name === 'read_source_refs') {
+      return {
+        schemaVersion: 'wiselink.3_1.review_source_refs.v1.c2',
+        attemptRef: task.operationRef,
+        sourceRefs: args.sourceRefIds.map((sourceRefId) => ({
+          sourceRefId,
+          kind: 'page',
+          statement: 'Fixture-only source-bound statement.',
+        })),
+      };
+    }
+    if (name === 'commit_review_turn_candidate') {
+      return reviewCommit(task.operationRef);
+    }
+    throw new Error(`UNEXPECTED_TOOL:${name}`);
+  };
+  let modelCalls = 0;
+  const options = {
+    reviewConversationRef: reviewTask.reviewConversationRef,
+    requestId: reviewTask.requestId,
+    checkpointDir,
+  };
+
+  await assert.rejects(
+    runHostedReviewTurn(options, {
+      callTool,
+      invokeModel: async () => {
+        modelCalls += 1;
+        throw new Error(failureCode);
+      },
+    }),
+    new RegExp(failureCode, 'u'),
+  );
+  await writeFile(evidencePath, `${failureCode}\nFIRST_RUN_EXIT=1\n`, {
+    mode: 0o600,
+  });
+  const prepared = await prepareKnownModelNonDispatchRecovery({
+    checkpointDir,
+    failureCode,
+    evidencePath,
+  });
+  assert.deepEqual(prepared, { prepared: true, replayed: false });
+
+  const dependencies = {
+    callTool,
+    invokeModel: async () => {
+      modelCalls += 1;
+      return {
+        output: {
+          responseType: 'SOURCE_LINK',
+          answer: '候选答复。',
+          sourceRefs: [reviewTask.resourceRefs[0].sourceRefId],
+          missingInputs: [],
+          candidateEvidenceRefs: [],
+          reviewActionDraft: null,
+          affectedItemIds: [],
+          warnings: ['candidate_only'],
+        },
+        provenance: provenance(),
+      };
+    },
+  };
+  const recovered = await runHostedReviewTurn(options, dependencies);
+  const recoveryReplay = await prepareKnownModelNonDispatchRecovery({
+    checkpointDir,
+    failureCode,
+    evidencePath,
+  });
+  const replayed = await runHostedReviewTurn(options, dependencies);
+
+  assert.equal(recovered.outcome, 'CANDIDATE_ONLY');
+  assert.deepEqual(replayed, recovered);
+  assert.deepEqual(recoveryReplay, { prepared: true, replayed: true });
+  assert.equal(counts.get('begin_review_turn'), 1);
+  assert.equal(counts.get('get_review_turn_context'), 1);
+  assert.equal(counts.get('read_source_refs'), 1);
+  assert.equal(counts.get('commit_review_turn_candidate'), 1);
+  assert.equal(modelCalls, 2);
+  const archiveInfo = await stat(
+    join(checkpointDir, 'model.known-nondispatch.json'),
+  );
+  assert.equal(archiveInfo.mode & 0o077, 0);
 });
 
 test('keeps review sourceRefIds inside the candidate and maps only artifact refs to the envelope', async () => {

@@ -77,7 +77,7 @@ Task artifact allowlist 子集。
 ```text
 runtimePolicy.modelPolicyRef = official-hosted-profile-config
 ResultEnvelope.modelVersion = 官方托管 profile/config 本轮选择后的非空、可读实际模型
-skillVersion = wiselink-research-and-synthesize@r09.c9
+skillVersion = wiselink-research-and-synthesize@r09.c10
 toolVersions.wiselink-openclaw-engineering-assessment = 1.2.0
 promptVersion = 当前实际运行非空版本
 ```

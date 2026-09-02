@@ -12,7 +12,7 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（官方 profile 当前可选 `GLM-5.3`，Skill 不绑定具体模型）
-- Skill：`wiselink-research-and-synthesize@r09.c9`
+- Skill：`wiselink-research-and-synthesize@r09.c10`
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（exact 20 tools）
 - Host baseline：`6fd2655d27edc3851c745547efaf8796ad22c82c`
 
@@ -214,10 +214,12 @@ commit_review_turn_candidate
 ```
 
 这五个 Host 工具只能由 `scripts/run-hosted-review-turn.mjs` 的确定性外部驱动调用，不得由对话模型直接调用。
-驱动将完整 MCP 结果写入权限为 `0600` 的持久 checkpoint，并将目录限制为 `0700`：已完成步骤只从
-checkpoint 恢复；begin/context/SourceRef/model 的结果一旦不确定即停止且不重试；只有 commit 响应丢失时
-允许恰好一次只读 status 恢复。模型只收到移除 conversation/turn/request/attempt/lease/WorkItem 控制面值的
-生成输入。c9 驱动允许模型在用户明确意图和 Host allowlist 内返回只读答复、CandidateEvidence、
+驱动先从官方 OpenClaw 配置确认 `gateway.http.endpoints.chatCompletions.enabled=true`，未明确启用时在任何
+Host business begin 之前停止。完整 MCP 结果写入权限为 `0600` 的持久 checkpoint，目录限制为 `0700`：已完成
+步骤只从 checkpoint 恢复；begin/context/SourceRef/model 的结果一旦不确定即停止且不重试；只有 commit 响应
+丢失时允许恰好一次只读 status 恢复。唯一例外是有 c8 原始日志严格证明 HTTP 404 在路由层未触达模型时，c10
+可将旧 `model.started` 原样归档并只恢复一次 model/commit，不重放任何已完成 Host 读取。模型只收到移除
+conversation/turn/request/attempt/lease/WorkItem 控制面值的生成输入。c10 驱动允许模型在用户明确意图和 Host allowlist 内返回只读答复、CandidateEvidence、
 affected-items preview 或完整 ReviewActionDraft proposal；候选绑定、ResultEnvelope 和 commit 仍均由驱动
 机械完成，模型永远不能确认或执行草案。
 
@@ -311,7 +313,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - `modelVersion` 是官方托管 profile/config 本轮选择后的非空、可读实际模型；不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c9`
+- `skillVersion=wiselink-research-and-synthesize@r09.c10`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致
