@@ -95,6 +95,59 @@ describe('CanonicalHostOpenClawReviewService', () => {
     );
   });
 
+  it('expands stored source-evidence candidate IDs to exact package SourceRefs', async () => {
+    const harness = reviewHarness();
+    const page = await harness.engineerReviews.pageContext();
+    harness.engineerReviews.pageContext.mockResolvedValueOnce({
+      ...page,
+      gapLedger: {
+        ...page.gapLedger,
+        gaps: page.gapLedger.gaps.map((gap) => ({
+          ...gap,
+          sourceRefs: ['SEC-RULE-1'],
+        })),
+      },
+      items: page.items.map((item) => ({
+        ...item,
+        sourceRefs: ['SEC-RULE-1'],
+      })),
+    });
+    harness.assessment.resolveStoredBaseSourceEvidenceRefs.mockResolvedValueOnce(
+      new Map([['SEC-RULE-1', ['SRC-1']]]),
+    );
+
+    const begin = await harness.service.begin('RC-1', 'request-1');
+
+    expect(begin.task.modelInput).toMatchObject({
+      resourceRefs: [expect.objectContaining({ sourceRefId: 'SRC-1' })],
+      context: {
+        evaluation: {
+          gapLedger: {
+            gaps: [expect.objectContaining({ sourceRefs: ['SRC-1'] })],
+          },
+          items: [expect.objectContaining({ sourceRefs: ['SRC-1'] })],
+        },
+      },
+    });
+  });
+
+  it('fails closed when a stored source-evidence candidate cannot be resolved', async () => {
+    const harness = reviewHarness();
+    const page = await harness.engineerReviews.pageContext();
+    harness.engineerReviews.pageContext.mockResolvedValueOnce({
+      ...page,
+      items: page.items.map((item) => ({
+        ...item,
+        sourceRefs: ['SEC-UNKNOWN'],
+      })),
+    });
+
+    await expect(
+      harness.service.begin('RC-1', 'request-1'),
+    ).rejects.toThrow('REVIEW_REFERENCED_SOURCE_REF_NOT_IN_PACKAGE');
+    expect(harness.attempts.reserveAndClaim).not.toHaveBeenCalled();
+  });
+
   it('rejects a Review binding that does not match the Host-owned WorkItem actor', async () => {
     const harness = reviewHarness();
     harness.conversations.loadOpenClawTurnBinding.mockResolvedValueOnce({
@@ -442,6 +495,11 @@ function reviewHarness(withAttachment = false) {
       effective: [],
     })),
   };
+  const assessment = {
+    resolveStoredBaseSourceEvidenceRefs: jest.fn(
+      async () => new Map<string, string[]>(),
+    ),
+  };
   const attempts = {
     reserveAndClaim: jest.fn(async (input: ReserveAndClaimInput) => {
       const modelInput = await input.buildModelInput({
@@ -533,6 +591,7 @@ function reviewHarness(withAttachment = false) {
     conversations as never,
     workItems as never,
     engineerReviews as never,
+    assessment as never,
     attempts as never,
     artifactStore as never,
     serviceScope as never,
@@ -542,6 +601,8 @@ function reviewHarness(withAttachment = false) {
     attempts,
     conversations,
     workItems,
+    engineerReviews,
+    assessment,
     serviceScope,
     expireLease() {
       row = {

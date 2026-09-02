@@ -16,6 +16,7 @@ import {
   type AssessmentHostCandidateResult,
   type HostedOpenClawDiscoveryResult,
 } from '../assessment-workbench/assessment-host-consumer.public-api';
+import { buildJobAidSourceEvidenceCandidates } from '../assessment-workbench/job-aid-runtime/sourceEvidenceCandidates.js';
 import { buildUnifiedSbJobAidAssessmentInput } from '../assessment-workbench/unified-assessment-input';
 import { UNIFIED_ARTIFACT_STORE } from '../unified-reader/unified-reader.constants';
 import { UnifiedReaderService } from '../unified-reader/unified-reader.service';
@@ -168,6 +169,60 @@ export class CanonicalHostAssessmentService {
   }): Promise<PreparedDynamicRulesCandidate> {
     const activeRuleSet = await this.ruleSets.readActiveRuntime(input.tenantId);
     return this.prepareDynamicRulesCandidateWithRuleSet(input, activeRuleSet);
+  }
+
+  async resolveStoredBaseSourceEvidenceRefs(input: {
+    workItem: CanonicalWorkItemProjection;
+    tenantId: string;
+    packageBytes: Uint8Array;
+    assessmentAsOf: string;
+  }): Promise<Map<string, string[]>> {
+    const baseRules = input.workItem.integratedAssessment?.baseRules;
+    if (!baseRules) throw new Error('ASSESSMENT_STORED_BASE_RULES_REQUIRED');
+    const ruleSet = await this.ruleSets.readRuntimeSnapshot(
+      input.tenantId,
+      baseRules.criterionSetId,
+    );
+    const criteria = runtimeCriteria(ruleSet.rulePack);
+    if (
+      ruleSet.snapshotId !== baseRules.criterionSetId ||
+      ruleSet.criterionSet.criterionSetId !== baseRules.criterionSetId ||
+      ruleSet.criterionSet.criteriaCount !== baseRules.criterionCount ||
+      criteria.length !== baseRules.evaluationItemCount
+    ) {
+      throw new Error('ASSESSMENT_STORED_BASE_RULE_SET_DRIFT');
+    }
+    const dynamicRulesInput = buildUnifiedSbJobAidAssessmentInput({
+      documentVersionBinding: assessmentBinding(input.workItem),
+      artifactBytes: input.packageBytes,
+      assessmentAsOf: requiredIso(input.assessmentAsOf, 'assessmentAsOf'),
+    });
+    const resolved = new Map<string, string[]>();
+    for (const criterion of criteria) {
+      const criterionId = requiredRuntimeText(
+        criterion.criterion_id,
+        'ASSESSMENT_STORED_BASE_CRITERION_ID_INVALID',
+      );
+      const candidates: unknown = buildJobAidSourceEvidenceCandidates({
+        criterion,
+        input: dynamicRulesInput,
+      });
+      if (!Array.isArray(candidates)) {
+        throw new Error('ASSESSMENT_STORED_BASE_SOURCE_CATALOG_INVALID');
+      }
+      for (const candidate of candidates) {
+        const binding = sourceEvidenceCandidateBinding(candidate, criterionId);
+        const existing = resolved.get(binding.candidateId);
+        if (
+          existing &&
+          JSON.stringify(existing) !== JSON.stringify(binding.sourceRefIds)
+        ) {
+          throw new Error('ASSESSMENT_STORED_BASE_SOURCE_CANDIDATE_DRIFT');
+        }
+        resolved.set(binding.candidateId, binding.sourceRefIds);
+      }
+    }
+    return resolved;
   }
 
   async prepareDynamicRulesCandidateWithRuleSet(
@@ -441,6 +496,71 @@ function requiredIso(value: string, field: string): string {
     throw new Error('ASSESSMENT_' + field.toUpperCase() + '_INVALID');
   }
   return value;
+}
+
+function runtimeCriteria(rulePack: Record<string, unknown>) {
+  const criteria = rulePack.criteria;
+  if (
+    !Array.isArray(criteria) ||
+    criteria.some(
+      (criterion) =>
+        typeof criterion !== 'object' ||
+        criterion === null ||
+        Array.isArray(criterion),
+    )
+  ) {
+    throw new Error('ASSESSMENT_STORED_BASE_RULE_PACK_INVALID');
+  }
+  return criteria as Array<Record<string, unknown>>;
+}
+
+function sourceEvidenceCandidateBinding(
+  value: unknown,
+  criterionId: string,
+): { candidateId: string; sourceRefIds: string[] } {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error('ASSESSMENT_STORED_BASE_SOURCE_CANDIDATE_INVALID');
+  }
+  const candidate = value as Record<string, unknown>;
+  if (
+    requiredRuntimeText(
+      candidate.criterionId,
+      'ASSESSMENT_STORED_BASE_SOURCE_CRITERION_INVALID',
+    ) !== criterionId ||
+    !Array.isArray(candidate.sourceRefs) ||
+    candidate.sourceRefs.length === 0
+  ) {
+    throw new Error('ASSESSMENT_STORED_BASE_SOURCE_CANDIDATE_INVALID');
+  }
+  const sourceRefIds = [
+    ...new Set(
+      candidate.sourceRefs.map((sourceRef) => {
+        if (
+          typeof sourceRef !== 'object' ||
+          sourceRef === null ||
+          Array.isArray(sourceRef)
+        ) {
+          throw new Error('ASSESSMENT_STORED_BASE_SOURCE_REF_INVALID');
+        }
+        return requiredRuntimeText(
+          (sourceRef as Record<string, unknown>).sourceRefId,
+          'ASSESSMENT_STORED_BASE_SOURCE_REF_ID_INVALID',
+        );
+      }),
+    ),
+  ];
+  return {
+    candidateId: requiredRuntimeText(
+      candidate.candidateId,
+      'ASSESSMENT_STORED_BASE_SOURCE_CANDIDATE_ID_INVALID',
+    ),
+    sourceRefIds,
+  };
+}
+
+function requiredRuntimeText(value: unknown, code: string): string {
+  if (typeof value !== 'string' || !value.trim()) throw new Error(code);
+  return value.trim();
 }
 
 function validateEngineerChange(
