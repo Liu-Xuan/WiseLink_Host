@@ -142,9 +142,9 @@ describe('CanonicalHostOpenClawReviewService', () => {
       })),
     });
 
-    await expect(
-      harness.service.begin('RC-1', 'request-1'),
-    ).rejects.toThrow('REVIEW_REFERENCED_SOURCE_REF_NOT_IN_PACKAGE');
+    await expect(harness.service.begin('RC-1', 'request-1')).rejects.toThrow(
+      'REVIEW_REFERENCED_SOURCE_REF_NOT_IN_PACKAGE',
+    );
     expect(harness.attempts.reserveAndClaim).not.toHaveBeenCalled();
   });
 
@@ -386,6 +386,28 @@ describe('CanonicalHostOpenClawReviewService', () => {
     expect(
       harness.conversations.persistOpenClawAssistantCandidate,
     ).not.toHaveBeenCalled();
+  });
+
+  it('reconciles an already sealed COMMITTING candidate after lease expiry', async () => {
+    const harness = reviewHarness();
+    const begin = await harness.service.begin('RC-1', 'request-1');
+    harness.markCommittingAndExpireLease();
+    const result = harness.result(begin.task, {
+      'wiselink-openclaw-engineering-assessment': '1.2.0',
+    });
+
+    await expect(
+      harness.service.commit(
+        begin.attemptRef,
+        begin.leaseToken,
+        begin.leaseGeneration,
+        result,
+      ),
+    ).resolves.toMatchObject({ status: 'SUCCEEDED' });
+    expect(harness.attempts.prepareCommit).toHaveBeenCalledTimes(1);
+    expect(
+      harness.conversations.persistOpenClawAssistantCandidate,
+    ).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -650,6 +672,14 @@ function reviewHarness(withAttachment = false) {
     expireLease() {
       row = {
         ...row!,
+        leaseExpiresAt: new Date('2020-01-01T00:00:00.000Z'),
+      };
+    },
+    markCommittingAndExpireLease() {
+      row = {
+        ...row!,
+        status: 'COMMITTING',
+        commitStartedAt: new Date('2026-08-26T10:00:30.000Z'),
         leaseExpiresAt: new Date('2020-01-01T00:00:00.000Z'),
       };
     },

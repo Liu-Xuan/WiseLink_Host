@@ -18,6 +18,7 @@ describe('ReviewConversationRepository OpenClaw actor context', () => {
           rowSecurityActive: true,
           expectedSchemaResolved: true,
           reviewSelectPolicyPresent: true,
+          reviewCandidateUpdatePolicyPresent: true,
           reviewRlsEnabled: true,
         },
       ]),
@@ -52,6 +53,7 @@ describe('ReviewConversationRepository OpenClaw actor context', () => {
           expectedSchemaResolved: true,
           sameConnectionContextSupported: true,
           reviewSelectPolicyPresent: true,
+          reviewCandidateUpdatePolicyPresent: true,
           reviewRlsEnabled: true,
           rlsPolicyApplicable: true,
           exactActiveConversationVisible: false,
@@ -73,6 +75,7 @@ describe('ReviewConversationRepository OpenClaw actor context', () => {
           rowSecurityActive: true,
           expectedSchemaResolved: true,
           reviewSelectPolicyPresent: true,
+          reviewCandidateUpdatePolicyPresent: true,
           reviewRlsEnabled: true,
           reviewConversationId: 'RC-1',
           conversationTenantId: 'tenant-1',
@@ -147,6 +150,7 @@ describe('ReviewConversationRepository OpenClaw actor context', () => {
           rowSecurityActive: true,
           expectedSchemaResolved: true,
           reviewSelectPolicyPresent: true,
+          reviewCandidateUpdatePolicyPresent: true,
           reviewRlsEnabled: true,
         },
       ]),
@@ -180,6 +184,7 @@ describe('ReviewConversationRepository OpenClaw actor context', () => {
           expectedSchemaResolved: true,
           sameConnectionContextSupported: false,
           reviewSelectPolicyPresent: true,
+          reviewCandidateUpdatePolicyPresent: true,
           reviewRlsEnabled: true,
           rlsPolicyApplicable: true,
           exactActiveConversationVisible: false,
@@ -202,6 +207,7 @@ describe('ReviewConversationRepository OpenClaw actor context', () => {
           rowSecurityActive: true,
           expectedSchemaResolved: true,
           reviewSelectPolicyPresent: false,
+          reviewCandidateUpdatePolicyPresent: true,
           reviewRlsEnabled: true,
         },
       ]),
@@ -235,6 +241,7 @@ describe('ReviewConversationRepository OpenClaw actor context', () => {
           expectedSchemaResolved: true,
           sameConnectionContextSupported: true,
           reviewSelectPolicyPresent: false,
+          reviewCandidateUpdatePolicyPresent: true,
           reviewRlsEnabled: true,
           rlsPolicyApplicable: false,
           exactActiveConversationVisible: false,
@@ -279,6 +286,9 @@ describe('ReviewConversationRepository OpenClaw actor context', () => {
       "'identity_subject_mapping_hosted_runtime_actor_select'",
     );
     expect(source).toContain("'work_item_hosted_runtime_actor_select'");
+    expect(source).toContain(
+      "'review_turn_hosted_runtime_actor_candidate_update'",
+    );
     expect(source).toContain('pg_catalog.pg_has_role(');
     expect(source).toContain("current_user LIKE 'service_role#_%'");
     expect(source).toContain(
@@ -317,5 +327,119 @@ describe('ReviewConversationRepository OpenClaw actor context', () => {
         operatorAction: 'APPLY_REQUIRED_SCHEMA_MIGRATIONS',
       },
     });
+  });
+
+  it('persists and reads a hosted candidate with actor context in one statement', async () => {
+    const resultContentHash = 'a'.repeat(64);
+    const completedAt = new Date('2026-09-02T12:00:00.000Z');
+    const db = {
+      execute: jest.fn(async () => [
+        {
+          actorContext: 'actor-1',
+          candidateInserted: true,
+          reviewTurnId: 'RT-1',
+          reviewConversationId: 'RC-1',
+          engineerSuppliedInputId: 'ESI-1',
+          turnNo: 1,
+          requestId: 'request-1',
+          inputRevision: 7,
+          userMessage: 'Please review rule 1.',
+          inputType: 'ENGINEER_TEXT',
+          adoptionStatus: 'CANDIDATE_UNADOPTED',
+          candidateText: 'Please review rule 1.',
+          responseType: 'INPUT_REQUEST',
+          assistantResponse: 'Controlled AD evidence is required.',
+          sourceRefsJson: '[]',
+          missingInputsJson: '["controlled-ad-mapping"]',
+          candidateEvidenceRefsJson: '[]',
+          reviewActionDraftJson: 'null',
+          affectedItemIdsJson: '[]',
+          warningsJson: '["candidate_only"]',
+          resultProvenanceJson: JSON.stringify({
+            runtimeAppId: 'app_17c3zn24kv2',
+            profileRef: 'wiselink-engineering',
+            modelVersion: 'GLM-5.3',
+            promptVersion: 'wiselink-review-turn-prompt@r09.c5',
+            skillVersion: 'wiselink-research-and-synthesize@r09.c5',
+            toolVersions: {
+              'wiselink-openclaw-engineering-assessment': '1.2.0',
+            },
+            resultContentHash,
+            actionAttemptRef: 'AQ-1',
+          }),
+          resultContentHash,
+          actionAttemptId: 'ATT-1',
+          assistantCompletedAt: completedAt.toISOString(),
+          createdAt: '2026-09-02T11:59:00.000Z',
+        },
+      ]),
+      transaction: jest.fn(),
+      update: jest.fn(),
+      select: jest.fn(),
+    };
+    const repository = new ReviewConversationRepository(db as never);
+
+    const persisted = await repository.persistOpenClawAssistantCandidate({
+      conversation: {
+        reviewConversationId: 'RC-1',
+        tenantId: 'tenant-1',
+        actorId: 'actor-1',
+        workItemId: 'WI-1',
+        openClawAgentId: 'wiselink-engineering',
+        openClawSessionKey: 'review:server-owned',
+        startedAtRevision: 7,
+        lastSyncedRevision: 7,
+        status: 'ACTIVE',
+        createdAt: new Date('2026-09-02T11:58:00.000Z'),
+        lastActiveAt: new Date('2026-09-02T11:59:00.000Z'),
+        closedAt: null,
+      },
+      turn: {
+        reviewTurnId: 'RT-1',
+        reviewConversationId: 'RC-1',
+        engineerSuppliedInputId: 'ESI-1',
+        turnNo: 1,
+        requestId: 'request-1',
+        inputRevision: 7,
+        userMessage: 'Please review rule 1.',
+        inputType: 'ENGINEER_TEXT',
+        adoptionStatus: 'CANDIDATE_UNADOPTED',
+        candidateText: 'Please review rule 1.',
+        attachmentBindings: [],
+        assistantCandidate: null,
+        createdAt: new Date('2026-09-02T11:59:00.000Z'),
+      },
+      actionAttemptId: 'ATT-1',
+      candidate: {
+        responseType: 'INPUT_REQUEST',
+        answer: 'Controlled AD evidence is required.',
+        sourceRefs: [],
+        missingInputs: ['controlled-ad-mapping'],
+        candidateEvidenceRefs: [],
+        reviewActionDraft: null,
+        affectedItemIds: [],
+        warnings: ['candidate_only'],
+        actionAttemptRef: 'AQ-1',
+        provenance: {
+          runtimeAppId: 'app_17c3zn24kv2',
+          profileRef: 'wiselink-engineering',
+          modelVersion: 'GLM-5.3',
+          promptVersion: 'wiselink-review-turn-prompt@r09.c5',
+          skillVersion: 'wiselink-research-and-synthesize@r09.c5',
+          toolVersions: {
+            'wiselink-openclaw-engineering-assessment': '1.2.0',
+          },
+          resultContentHash,
+        },
+      },
+      completedAt,
+    });
+
+    expect(persisted.replayed).toBe(false);
+    expect(persisted.turn.assistantCandidate?.actionAttemptRef).toBe('AQ-1');
+    expect(db.execute).toHaveBeenCalledTimes(1);
+    expect(db.transaction).not.toHaveBeenCalled();
+    expect(db.update).not.toHaveBeenCalled();
+    expect(db.select).not.toHaveBeenCalled();
   });
 });
