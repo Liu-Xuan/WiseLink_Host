@@ -1388,11 +1388,8 @@ function assertReviewContext(value, begin, task) {
 function buildReviewModelInput(task, contextResult) {
   const context = sanitizeForModel(contextResult.context);
   return {
-    schemaVersion: 'wiselink.3_1.review_model_input.v1.c2',
+    schemaVersion: 'wiselink.3_1.review_model_input.v1.c3',
     mode: 'INTERACTIVE_REVIEW',
-    reviewConversationRef: task.reviewConversationRef,
-    reviewTurnRef: task.reviewTurnRef,
-    requestId: task.requestId,
     inputRevision: task.inputRevision,
     selectedEvaluationItemId: task.selectedEvaluationItemId,
     userMessage: task.userMessage,
@@ -1404,7 +1401,6 @@ function buildReviewModelInput(task, contextResult) {
       ({ sourceRefId }) => sourceRefId,
     ),
     context,
-    executionPolicy: structuredClone(task.executionPolicy),
   };
 }
 

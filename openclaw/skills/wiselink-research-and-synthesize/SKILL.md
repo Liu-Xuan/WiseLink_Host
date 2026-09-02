@@ -12,7 +12,7 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（官方 profile 当前可选 `GLM-5.3`，Skill 不绑定具体模型）
-- Skill：`wiselink-research-and-synthesize@r09.c6`
+- Skill：`wiselink-research-and-synthesize@r09.c7`
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（exact 20 tools）
 - Host baseline：`6fd2655d27edc3851c745547efaf8796ad22c82c`
 
@@ -213,13 +213,21 @@ get_action_attempt_status
 commit_review_turn_candidate
 ```
 
+这五个 Host 工具只能由 `scripts/run-hosted-review-turn.mjs` 的确定性外部驱动调用，不得由对话模型直接调用。
+驱动将完整 MCP 结果写入权限为 `0600` 的持久 checkpoint，并将目录限制为 `0700`：已完成步骤只从
+checkpoint 恢复；begin/context/SourceRef/model 的结果一旦不确定即停止且不重试；只有 commit 响应丢失时
+允许恰好一次只读 status 恢复。模型只收到移除 conversation/turn/request/attempt/lease/WorkItem 控制面值的
+生成输入，并且只能返回 answer/sourceRef/missingInput/warning 内容；候选绑定、ResultEnvelope 和 commit 均由
+驱动机械完成。
+
 正常轮次：
 
 ```text
 begin_review_turn({reviewConversationRef, requestId})
 → get_review_turn_context({attemptRef})
 → read_source_refs({attemptRef, sourceRefIds}) [仅按本轮明确需要]
-→ 托管 profile 当前选定模型生成 review_turn_candidate.v1.c3
+→ 驱动通过无工具执行的 Gateway HTTP 请求调用托管 profile 当前选定模型
+→ 驱动绑定 review_turn_candidate.v1.c3
 → validator + full ResultEnvelope
 → commit_review_turn_candidate({attemptRef, leaseToken, leaseGeneration, result})
 ```
@@ -228,6 +236,8 @@ begin_review_turn({reviewConversationRef, requestId})
 
 - 每轮由 Host fresh-read ReviewConversation、ReviewTurn、current revision、evaluation、bilingual、
   applicability 和 adopted inputs；不能依赖 session memory 判断 current 或权限。
+- 不得用普通对话 Session 承载 begin/lease/commit 状态；Session compaction、重启或重放不能再次发起任何已开始的
+  Host 调用。模型若返回 tool_calls，驱动必须拒绝。
 - `context.evaluation.gapLedger` 是 Host 从 current dynamic artifact、active CriterionSet 和 effective
   engineer-review ledger 机械派生的只读缺口账本。优先按 `gapRef` 解释相同受控输入影响的全部
   `affectedCriterionIds`，不得把逐项 `missingInputs` 重复扩写成多个新缺口，也不得自行关闭 Gap。
@@ -299,7 +309,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - `modelVersion` 是官方托管 profile/config 本轮选择后的非空、可读实际模型；不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c6`
+- `skillVersion=wiselink-research-and-synthesize@r09.c7`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致

@@ -65,7 +65,7 @@
     "runtimeAppId": "app_17c3zn24kv2",
     "profileRef": "wiselink-engineering",
     "modelPolicyRef": "official-hosted-profile-config",
-    "skillPolicyRef": "wiselink-research-and-synthesize@r09.c6",
+    "skillPolicyRef": "wiselink-research-and-synthesize@r09.c7",
     "toolPolicyRef": "wiselink-openclaw-engineering-assessment@1.2.0#interactive-review-c3"
   }
 }

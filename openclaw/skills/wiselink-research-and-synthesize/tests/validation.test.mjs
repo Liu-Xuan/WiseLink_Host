@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -31,6 +31,7 @@ import {
   runTranslation,
   summarizeQueryParsedPackage,
 } from '../scripts/orchestrate-host-mcp.mjs';
+import { runHostedReviewTurn } from '../scripts/run-hosted-review-turn.mjs';
 
 const DYNAMIC_FIXTURE_URL = new URL(
   './fixtures/dynamic-rules-evaluation-737.input.json',
@@ -82,7 +83,7 @@ test('pins exact20 MCP 1.2, five review tools, and hosted provenance', () => {
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c6',
+    'wiselink-research-and-synthesize@r09.c7',
   );
   assert.equal(WISELINK_MODEL_POLICY_REF, 'official-hosted-profile-config');
   assert.equal(WISELINK_HOST_MCP_VERSION, '1.2.0');
@@ -1362,6 +1363,15 @@ test('runs INTERACTIVE_REVIEW through only the five-tool C3 contract', async () 
     JSON.stringify(modelInput).includes('ACTX-opaque-fixture'),
     false,
   );
+  assert.equal(
+    JSON.stringify(modelInput).includes(reviewTask.reviewConversationRef),
+    false,
+  );
+  assert.equal(
+    JSON.stringify(modelInput).includes(reviewTask.requestId),
+    false,
+  );
+  assert.equal(Object.hasOwn(modelInput, 'executionPolicy'), false);
   assert.deepEqual(
     calls.map(({ name }) => name),
     [
@@ -1374,12 +1384,218 @@ test('runs INTERACTIVE_REVIEW through only the five-tool C3 contract', async () 
   assert.ok(calls.every(({ name }) => INTERACTIVE_REVIEW_TOOLS.includes(name)));
 });
 
+test('runs a review turn from durable checkpoints without replaying remote work', async (t) => {
+  const checkpointDir = await mkdtemp(
+    join(tmpdir(), 'wiselink-review-driver-'),
+  );
+  t.after(() => rm(checkpointDir, { recursive: true, force: true }));
+  const reviewTask = await readJson(REVIEW_TASK_FIXTURE_URL);
+  const task = makeTask('OPENCLAW_INTERACTIVE_REVIEW', reviewTask);
+  const calls = [];
+  const modelInputs = [];
+  const callTool = async (name, args) => {
+    calls.push({ name, args });
+    if (name === 'begin_review_turn') return runningBegin(task);
+    if (name === 'get_review_turn_context') {
+      return reviewContext(task, reviewTask);
+    }
+    if (name === 'read_source_refs') {
+      return {
+        schemaVersion: 'wiselink.3_1.review_source_refs.v1.c2',
+        attemptRef: task.operationRef,
+        sourceRefs: args.sourceRefIds.map((sourceRefId) => ({
+          sourceRefId,
+          kind: 'page',
+          statement: 'Fixture-only source-bound statement.',
+        })),
+      };
+    }
+    if (name === 'commit_review_turn_candidate') {
+      assert.deepEqual(Object.keys(args).sort(), [
+        'attemptRef',
+        'leaseGeneration',
+        'leaseToken',
+        'resultJson',
+      ]);
+      assert.equal(Object.hasOwn(args, 'result'), false);
+      return reviewCommit(task.operationRef);
+    }
+    throw new Error(`UNEXPECTED_TOOL:${name}`);
+  };
+  const invokeModel = async (input) => {
+    modelInputs.push(input);
+    return {
+      output: {
+        responseType: 'SOURCE_LINK',
+        answer: '该候选只解释本轮实读来源，当前判断仍受缺失构型事实限制。',
+        sourceRefs: [reviewTask.resourceRefs[0].sourceRefId],
+        missingInputs: ['Controlled FleetFacts'],
+        warnings: ['candidate_only'],
+      },
+      provenance: provenance(),
+    };
+  };
+  const options = {
+    reviewConversationRef: reviewTask.reviewConversationRef,
+    requestId: reviewTask.requestId,
+    checkpointDir,
+  };
+
+  const first = await runHostedReviewTurn(options, { callTool, invokeModel });
+  const second = await runHostedReviewTurn(options, { callTool, invokeModel });
+
+  assert.deepEqual(second, first);
+  assert.equal(first.outcome, 'CANDIDATE_ONLY');
+  assert.deepEqual(
+    calls.map(({ name }) => name),
+    [
+      'begin_review_turn',
+      'get_review_turn_context',
+      'read_source_refs',
+      'commit_review_turn_candidate',
+    ],
+  );
+  assert.equal(modelInputs.length, 1);
+  const serializedModelInput = JSON.stringify(modelInputs[0]);
+  for (const forbidden of [
+    reviewTask.reviewConversationRef,
+    reviewTask.reviewTurnRef,
+    reviewTask.requestId,
+    task.actionAttemptId,
+    task.operationRef,
+    task.workItemId,
+    LEASE_TOKEN,
+  ]) {
+    assert.equal(serializedModelInput.includes(forbidden), false, forbidden);
+  }
+  const checkpointInfo = await stat(join(checkpointDir, 'begin.result.json'));
+  assert.equal(checkpointInfo.mode & 0o077, 0);
+});
+
+test('recovers an ambiguous checkpointed review commit with one status read and no replay', async (t) => {
+  const checkpointDir = await mkdtemp(
+    join(tmpdir(), 'wiselink-review-driver-recovery-'),
+  );
+  t.after(() => rm(checkpointDir, { recursive: true, force: true }));
+  const reviewTask = await readJson(REVIEW_TASK_FIXTURE_URL);
+  const task = makeTask('OPENCLAW_INTERACTIVE_REVIEW', reviewTask);
+  let committedResult;
+  const counts = new Map();
+  const callTool = async (name, args) => {
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+    if (name === 'begin_review_turn') return runningBegin(task);
+    if (name === 'get_review_turn_context') {
+      return reviewContext(task, reviewTask);
+    }
+    if (name === 'read_source_refs') {
+      return {
+        schemaVersion: 'wiselink.3_1.review_source_refs.v1.c2',
+        attemptRef: task.operationRef,
+        sourceRefs: args.sourceRefIds.map((sourceRefId) => ({
+          sourceRefId,
+          kind: 'page',
+          statement: 'Fixture-only source-bound statement.',
+        })),
+      };
+    }
+    if (name === 'commit_review_turn_candidate') {
+      committedResult = JSON.parse(args.resultJson);
+      throw new Error('TRANSPORT_RESPONSE_LOST_AFTER_HOST_COMMIT');
+    }
+    if (name === 'get_action_attempt_status') {
+      return attemptStatus(task, 'SUCCEEDED', committedResult);
+    }
+    throw new Error(`UNEXPECTED_TOOL:${name}`);
+  };
+  const result = await runHostedReviewTurn(
+    {
+      reviewConversationRef: reviewTask.reviewConversationRef,
+      requestId: reviewTask.requestId,
+      checkpointDir,
+    },
+    {
+      callTool,
+      invokeModel: async () => ({
+        output: {
+          responseType: 'SOURCE_LINK',
+          answer: '候选答复。',
+          sourceRefs: [reviewTask.resourceRefs[0].sourceRefId],
+          missingInputs: [],
+          warnings: ['candidate_only'],
+        },
+        provenance: provenance(),
+      }),
+    },
+  );
+
+  assert.equal(result.outcome, 'COMMIT_RESPONSE_LOSS_RECOVERED_READ_ONLY');
+  assert.equal(counts.get('commit_review_turn_candidate'), 1);
+  assert.equal(counts.get('get_action_attempt_status'), 1);
+});
+
+test('never retries an ambiguous non-commit review step after restart', async (t) => {
+  const checkpointDir = await mkdtemp(
+    join(tmpdir(), 'wiselink-review-driver-fail-closed-'),
+  );
+  t.after(() => rm(checkpointDir, { recursive: true, force: true }));
+  const reviewTask = await readJson(REVIEW_TASK_FIXTURE_URL);
+  const task = makeTask('OPENCLAW_INTERACTIVE_REVIEW', reviewTask);
+  const counts = new Map();
+  const callTool = async (name, args) => {
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+    if (name === 'begin_review_turn') return runningBegin(task);
+    if (name === 'get_review_turn_context') {
+      return reviewContext(task, reviewTask);
+    }
+    if (name === 'read_source_refs') {
+      return {
+        schemaVersion: 'wiselink.3_1.review_source_refs.v1.c2',
+        attemptRef: task.operationRef,
+        sourceRefs: args.sourceRefIds.map((sourceRefId) => ({
+          sourceRefId,
+          kind: 'page',
+          statement: 'Fixture-only source-bound statement.',
+        })),
+      };
+    }
+    throw new Error(`UNEXPECTED_TOOL:${name}`);
+  };
+  let modelCalls = 0;
+  const dependencies = {
+    callTool,
+    invokeModel: async () => {
+      modelCalls += 1;
+      throw new Error('MODEL_RESPONSE_OUTCOME_UNKNOWN');
+    },
+  };
+  const options = {
+    reviewConversationRef: reviewTask.reviewConversationRef,
+    requestId: reviewTask.requestId,
+    checkpointDir,
+  };
+
+  await assert.rejects(
+    runHostedReviewTurn(options, dependencies),
+    /MODEL_RESPONSE_OUTCOME_UNKNOWN/u,
+  );
+  await assert.rejects(
+    runHostedReviewTurn(options, dependencies),
+    /REVIEW_MODEL_OUTCOME_UNKNOWN/u,
+  );
+  assert.equal(counts.get('begin_review_turn'), 1);
+  assert.equal(counts.get('get_review_turn_context'), 1);
+  assert.equal(counts.get('read_source_refs'), 1);
+  assert.equal(modelCalls, 1);
+});
+
 test('keeps review sourceRefIds inside the candidate and maps only artifact refs to the envelope', async () => {
   const reviewTask = await readJson(REVIEW_TASK_FIXTURE_URL);
   const candidate = await readJson(REVIEW_CANDIDATE_FIXTURE_URL);
   const task = makeTask('OPENCLAW_INTERACTIVE_REVIEW', reviewTask);
   const artifactRefs = reviewCandidateArtifactRefs(task, candidate);
-  assert.deepEqual(candidate.sourceRefs, [reviewTask.resourceRefs[0].sourceRefId]);
+  assert.deepEqual(candidate.sourceRefs, [
+    reviewTask.resourceRefs[0].sourceRefId,
+  ]);
   assert.deepEqual(artifactRefs, [
     {
       ref: reviewTask.resourceRefs[0].resourceArtifactRef,
@@ -1393,7 +1609,9 @@ test('keeps review sourceRefIds inside the candidate and maps only artifact refs
         task,
         modelOutput: candidate,
         provenance: provenance(),
-        sourceRefs: candidate.sourceRefs.map((sourceRefId) => ({ sourceRefId })),
+        sourceRefs: candidate.sourceRefs.map((sourceRefId) => ({
+          sourceRefId,
+        })),
       }),
     /ACTION_ENVELOPE_REF_UNKNOWN_FIELD:sourceRefId/u,
   );
