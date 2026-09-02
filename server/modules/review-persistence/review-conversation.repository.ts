@@ -235,6 +235,8 @@ export class ReviewConversationRepository {
           "expectedSchemaResolved",
         runtime_diagnostics.review_select_policy_present AS
           "reviewSelectPolicyPresent",
+        runtime_diagnostics.review_candidate_update_policy_present AS
+          "reviewCandidateUpdatePolicyPresent",
         runtime_diagnostics.review_rls_enabled AS "reviewRlsEnabled",
         bound_conversation.review_conversation_id AS "reviewConversationId",
         bound_conversation.tenant_id AS "conversationTenantId",
@@ -290,6 +292,8 @@ export class ReviewConversationRepository {
           CASE
             WHEN current_user = 'service_role'
               OR current_user LIKE 'service_role#_%' ESCAPE '#'
+              OR current_user LIKE
+                'service#_role#_workspace#_%' ESCAPE '#'
             THEN TRUE
             WHEN EXISTS (
               SELECT 1 FROM pg_catalog.pg_roles
@@ -306,7 +310,10 @@ export class ReviewConversationRepository {
             AND to_regclass('review_turn') IS NOT NULL
             AND to_regclass('engineer_supplied_input') IS NOT NULL
             AND to_regclass('identity_subject_mapping') IS NOT NULL
-            AND to_regclass('work_item') IS NOT NULL,
+            AND to_regclass('work_item') IS NOT NULL
+            AND to_regprocedure(
+              'review_turn_hosted_runtime_persist_candidate(text,text,text,text,text,integer,text,text,text,text,text,text,text,text,text,text,text,timestamp with time zone)'
+            ) IS NOT NULL,
             FALSE
           ) AS expected_schema_resolved,
           NOT EXISTS (
@@ -393,6 +400,43 @@ export class ReviewConversationRepository {
                 )
             )
           ) AS review_select_policy_present,
+          EXISTS (
+            SELECT 1
+            FROM pg_catalog.pg_policies AS candidate_policy
+            WHERE candidate_policy.tablename = 'review_turn'
+              AND candidate_policy.policyname = ANY(
+                ARRAY[
+                  'review_turn_authenticated_candidate_update',
+                  'review_turn_hosted_runtime_actor_candidate_update'
+                ]::text[]
+              )
+              AND candidate_policy.cmd = 'UPDATE'
+              AND candidate_policy.permissive = 'PERMISSIVE'
+              AND to_regclass(
+                format(
+                  '%I.%I',
+                  candidate_policy.schemaname,
+                  candidate_policy.tablename
+                )
+              ) = to_regclass('review_turn')
+              AND EXISTS (
+                SELECT 1
+                FROM unnest(candidate_policy.roles) AS candidate_role(
+                  role_name
+                )
+                LEFT JOIN pg_catalog.pg_roles AS concrete_role
+                  ON concrete_role.rolname = candidate_role.role_name
+                WHERE candidate_role.role_name = 'public'
+                  OR (
+                    concrete_role.oid IS NOT NULL
+                    AND pg_catalog.pg_has_role(
+                      current_user,
+                      concrete_role.oid,
+                      'USAGE'
+                    )
+                  )
+              )
+          ) AS review_candidate_update_policy_present,
           COALESCE(
             (
               SELECT candidate_table.relrowsecurity
@@ -455,7 +499,9 @@ export class ReviewConversationRepository {
     }
     if (
       !row.expectedSchemaResolved ||
-      (row.reviewRlsEnabled === true && row.reviewSelectPolicyPresent !== true)
+      (row.reviewRlsEnabled === true &&
+        (row.reviewSelectPolicyPresent !== true ||
+          row.reviewCandidateUpdatePolicyPresent !== true))
     ) {
       this.warnOpenClawBinding(
         'REVIEW_SCHEMA_NOT_READY',
@@ -585,9 +631,81 @@ export class ReviewConversationRepository {
     > & { actionAttemptRef: string };
     completedAt: Date;
   }): Promise<{ turn: PersistedReviewTurn; replayed: boolean }> {
-    return this.withAuthenticatedActor(input.conversation.actorId, (executor) =>
-      this.persistAssistantCandidateWithExecutor(executor, input),
-    );
+    assertOpenClawActorContext(input.conversation.actorId);
+    const candidate = input.candidate;
+    const rows = await this.db.execute<ActorPersistedReviewTurnRow>(sql`
+      SELECT
+        persisted_candidate.actor_context AS "actorContext",
+        persisted_candidate.candidate_inserted AS "candidateInserted",
+        persisted_candidate.turn_row ->> 'review_turn_id' AS "reviewTurnId",
+        persisted_candidate.turn_row ->> 'review_conversation_id' AS
+          "reviewConversationId",
+        persisted_candidate.turn_row ->> 'engineer_supplied_input_id' AS
+          "engineerSuppliedInputId",
+        (persisted_candidate.turn_row ->> 'turn_no')::integer AS "turnNo",
+        persisted_candidate.turn_row ->> 'request_id' AS "requestId",
+        (persisted_candidate.turn_row ->> 'input_revision')::integer AS
+          "inputRevision",
+        persisted_candidate.turn_row ->> 'user_message' AS "userMessage",
+        persisted_candidate.input_row ->> 'input_type' AS "inputType",
+        persisted_candidate.input_row ->> 'adoption_status' AS
+          "adoptionStatus",
+        persisted_candidate.input_row ->> 'candidate_text' AS "candidateText",
+        persisted_candidate.turn_row ->> 'response_type' AS "responseType",
+        persisted_candidate.turn_row ->> 'assistant_response' AS
+          "assistantResponse",
+        persisted_candidate.turn_row ->> 'source_refs_json' AS
+          "sourceRefsJson",
+        persisted_candidate.turn_row ->> 'missing_inputs_json' AS
+          "missingInputsJson",
+        persisted_candidate.turn_row ->> 'candidate_evidence_refs_json' AS
+          "candidateEvidenceRefsJson",
+        persisted_candidate.turn_row ->> 'review_action_draft_json' AS
+          "reviewActionDraftJson",
+        persisted_candidate.turn_row ->> 'affected_item_ids_json' AS
+          "affectedItemIdsJson",
+        persisted_candidate.turn_row ->> 'warnings_json' AS "warningsJson",
+        persisted_candidate.turn_row ->> 'result_provenance_json' AS
+          "resultProvenanceJson",
+        persisted_candidate.turn_row ->> 'result_content_hash' AS
+          "resultContentHash",
+        persisted_candidate.turn_row ->> 'action_attempt_id' AS
+          "actionAttemptId",
+        persisted_candidate.turn_row ->> 'assistant_completed_at' AS
+          "assistantCompletedAt",
+        persisted_candidate.turn_row ->> 'created_at' AS "createdAt"
+      FROM review_turn_hosted_runtime_persist_candidate(
+        ${input.conversation.actorId},
+        ${input.turn.reviewTurnId},
+        ${input.conversation.reviewConversationId},
+        ${input.conversation.tenantId},
+        ${input.conversation.workItemId},
+        ${input.turn.inputRevision},
+        ${candidate.responseType},
+        ${candidate.answer},
+        ${canonicalJson(candidate.sourceRefs)},
+        ${canonicalJson(candidate.missingInputs)},
+        ${canonicalJson(candidate.candidateEvidenceRefs)},
+        ${canonicalJson(candidate.reviewActionDraft)},
+        ${canonicalJson(candidate.affectedItemIds)},
+        ${canonicalJson(candidate.warnings)},
+        ${canonicalJson({
+          ...candidate.provenance,
+          actionAttemptRef: candidate.actionAttemptRef,
+        })},
+        ${candidate.provenance.resultContentHash},
+        ${input.actionAttemptId},
+        ${input.completedAt.toISOString()}::timestamptz
+      ) AS persisted_candidate
+    `);
+    const row = rows[0];
+    if (row?.actorContext !== input.conversation.actorId) {
+      throw new Error('REVIEW_OPENCLAW_ACTOR_CONTEXT_UNAVAILABLE');
+    }
+    const stored = row ? persistedTurn(actorPersistedTurn(row)) : null;
+    if (!stored) throw new Error('REVIEW_TURN_CANDIDATE_READBACK_FAILED');
+    assertCandidateReplay(stored, candidate);
+    return { turn: stored, replayed: !row.candidateInserted };
   }
 
   private async persistAssistantCandidateWithExecutor(
@@ -916,23 +1034,6 @@ export class ReviewConversationRepository {
     return aggregate;
   }
 
-  private async withAuthenticatedActor<T>(
-    actorId: string,
-    operation: (executor: DatabaseExecutor) => Promise<T>,
-  ): Promise<T> {
-    assertOpenClawActorContext(actorId);
-    return this.db.transaction(async (transaction) => {
-      const executor = transaction as DatabaseExecutor;
-      const rows = await executor.execute<{ actorId: string | null }>(
-        sql`SELECT set_config('app.user_id', ${actorId}, TRUE) AS "actorId"`,
-      );
-      if (rows[0]?.actorId !== actorId) {
-        throw new Error('REVIEW_OPENCLAW_ACTOR_CONTEXT_UNAVAILABLE');
-      }
-      return operation(executor);
-    });
-  }
-
   private warnOpenClawBinding(
     reason:
       | 'ACTOR_CONTEXT_NOT_RETAINED'
@@ -1024,6 +1125,34 @@ interface SelectedReviewTurn {
   createdAt: Date;
 }
 
+interface ActorPersistedReviewTurnRow extends Record<string, unknown> {
+  actorContext: string | null;
+  candidateInserted: boolean;
+  reviewTurnId: string;
+  reviewConversationId: string;
+  engineerSuppliedInputId: string;
+  turnNo: number;
+  requestId: string;
+  inputRevision: number;
+  userMessage: string;
+  inputType: string;
+  adoptionStatus: string;
+  candidateText: string;
+  responseType: string | null;
+  assistantResponse: string | null;
+  sourceRefsJson: string | null;
+  missingInputsJson: string | null;
+  candidateEvidenceRefsJson: string | null;
+  reviewActionDraftJson: string | null;
+  affectedItemIdsJson: string | null;
+  warningsJson: string | null;
+  resultProvenanceJson: string | null;
+  resultContentHash: string | null;
+  actionAttemptId: string | null;
+  assistantCompletedAt: RawDatabaseTimestamp | null;
+  createdAt: RawDatabaseTimestamp;
+}
+
 type RawDatabaseTimestamp = Date | string;
 
 interface ActorBoundReviewTurnRow extends Record<string, unknown> {
@@ -1033,6 +1162,7 @@ interface ActorBoundReviewTurnRow extends Record<string, unknown> {
   rowSecurityActive: boolean | null;
   expectedSchemaResolved: boolean;
   reviewSelectPolicyPresent: boolean | null;
+  reviewCandidateUpdatePolicyPresent: boolean | null;
   reviewRlsEnabled: boolean | null;
   reviewConversationId: string | null;
   conversationTenantId: string | null;
@@ -1087,6 +1217,7 @@ interface OpenClawBindingDiagnostic {
   expectedSchemaResolved: boolean;
   sameConnectionContextSupported: boolean;
   reviewSelectPolicyPresent: boolean | null;
+  reviewCandidateUpdatePolicyPresent: boolean | null;
   reviewRlsEnabled: boolean | null;
   rlsPolicyApplicable: boolean;
   exactActiveConversationVisible: boolean;
@@ -1100,6 +1231,8 @@ function openClawBindingDiagnostic(
   const authenticatedRoleMember = row?.authenticatedRoleMember ?? null;
   const serviceRoleMember = row?.serviceRoleMember ?? null;
   const reviewSelectPolicyPresent = row?.reviewSelectPolicyPresent ?? null;
+  const reviewCandidateUpdatePolicyPresent =
+    row?.reviewCandidateUpdatePolicyPresent ?? null;
   const reviewRlsEnabled = row?.reviewRlsEnabled ?? null;
   return {
     actorContextApplied,
@@ -1113,9 +1246,12 @@ function openClawBindingDiagnostic(
     expectedSchemaResolved: row?.expectedSchemaResolved ?? false,
     sameConnectionContextSupported: actorContextApplied,
     reviewSelectPolicyPresent,
+    reviewCandidateUpdatePolicyPresent,
     reviewRlsEnabled,
     rlsPolicyApplicable:
-      reviewSelectPolicyPresent === true && reviewRlsEnabled === true,
+      reviewSelectPolicyPresent === true &&
+      reviewCandidateUpdatePolicyPresent === true &&
+      reviewRlsEnabled === true,
     exactActiveConversationVisible: Boolean(row?.reviewConversationId),
   };
 }
@@ -1168,9 +1304,10 @@ function actorBoundConversation(
       row.lastActiveAt,
       'reviewConversation.lastActiveAt',
     ),
-    closedAt: row.closedAt !== null
-      ? persistedTimestamp(row.closedAt, 'reviewConversation.closedAt')
-      : null,
+    closedAt:
+      row.closedAt !== null
+        ? persistedTimestamp(row.closedAt, 'reviewConversation.closedAt')
+        : null,
   };
 }
 
@@ -1212,25 +1349,59 @@ function actorBoundTurn(row: ActorBoundReviewTurnRow): SelectedReviewTurn {
     resultProvenanceJson: row.resultProvenanceJson,
     resultContentHash: row.resultContentHash,
     actionAttemptId: row.actionAttemptId,
-    assistantCompletedAt: row.assistantCompletedAt !== null
-      ? persistedTimestamp(
-          row.assistantCompletedAt,
-          'reviewTurn.assistantCompletedAt',
-        )
-      : null,
+    assistantCompletedAt:
+      row.assistantCompletedAt !== null
+        ? persistedTimestamp(
+            row.assistantCompletedAt,
+            'reviewTurn.assistantCompletedAt',
+          )
+        : null,
     createdAt: persistedTimestamp(row.turnCreatedAt, 'reviewTurn.createdAt'),
   };
 }
 
-function persistedTimestamp(
-  value: RawDatabaseTimestamp,
-  field: string,
-): Date {
+function persistedTimestamp(value: RawDatabaseTimestamp, field: string): Date {
   const timestamp = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(timestamp.getTime())) {
     throw new Error(`REVIEW_PERSISTED_TIMESTAMP_INVALID:${field}`);
   }
   return timestamp;
+}
+
+function actorPersistedTurn(
+  row: ActorPersistedReviewTurnRow,
+): SelectedReviewTurn {
+  return {
+    reviewTurnId: row.reviewTurnId,
+    reviewConversationId: row.reviewConversationId,
+    engineerSuppliedInputId: row.engineerSuppliedInputId,
+    turnNo: row.turnNo,
+    requestId: row.requestId,
+    inputRevision: row.inputRevision,
+    userMessage: row.userMessage,
+    inputType: row.inputType,
+    adoptionStatus: row.adoptionStatus,
+    candidateText: row.candidateText,
+    responseType: row.responseType,
+    assistantResponse: row.assistantResponse,
+    sourceRefsJson: row.sourceRefsJson,
+    missingInputsJson: row.missingInputsJson,
+    candidateEvidenceRefsJson: row.candidateEvidenceRefsJson,
+    reviewActionDraftJson: row.reviewActionDraftJson,
+    affectedItemIdsJson: row.affectedItemIdsJson,
+    warningsJson: row.warningsJson,
+    resultProvenanceJson: row.resultProvenanceJson,
+    resultContentHash: row.resultContentHash,
+    actionAttemptId: row.actionAttemptId,
+    assistantCompletedAt:
+      row.assistantCompletedAt === null
+        ? null
+        : persistedTimestamp(
+            row.assistantCompletedAt,
+            'reviewTurn.assistantCompletedAt',
+          ),
+    createdAt: persistedTimestamp(row.createdAt, 'reviewTurn.createdAt'),
+  };
 }
 
 function persistedTurn(row: SelectedReviewTurn): PersistedReviewTurn {

@@ -112,6 +112,20 @@ async function resetDatabase(sql) {
     ),
     'utf8',
   );
+  const authenticatedCandidateUpdate = await readFile(
+    resolve(
+      process.cwd(),
+      'migrations/0018_interactive_review_openclaw_candidate_update.sql',
+    ),
+    'utf8',
+  );
+  const hostedRuntimeCandidateUpdate = await readFile(
+    resolve(
+      process.cwd(),
+      'migrations/0021_interactive_review_hosted_runtime_candidate_update.sql',
+    ),
+    'utf8',
+  );
   await sql.unsafe('DROP SCHEMA public CASCADE');
   await sql.unsafe('CREATE SCHEMA public');
   await sql.unsafe(`
@@ -167,7 +181,9 @@ async function resetDatabase(sql) {
   try {
     await migrationSql.unsafe(c1);
     await migrationSql.unsafe(c2);
+    await migrationSql.unsafe(authenticatedCandidateUpdate);
     await migrationSql.unsafe(hostedRuntimeSelect);
+    await migrationSql.unsafe(hostedRuntimeCandidateUpdate);
   } finally {
     migrationSql.release();
   }
@@ -185,6 +201,7 @@ async function resetDatabase(sql) {
     GRANT SELECT ON TABLE
       identity_subject_mapping,
       work_item,
+      action_attempt,
       review_conversation,
       review_turn,
       engineer_supplied_input
@@ -215,11 +232,13 @@ async function resetDatabase(sql) {
     GRANT SELECT ON TABLE
       identity_subject_mapping,
       work_item,
+      action_attempt,
       review_conversation,
       review_turn,
       engineer_supplied_input
     TO service_role
   `);
+  await sql.unsafe('GRANT UPDATE ON public.review_turn TO service_role');
 }
 
 async function seedC1Turn(sql) {
@@ -234,6 +253,11 @@ async function seedC1Turn(sql) {
     INSERT INTO work_item (
       work_item_id, tenant_id, requested_by_user_id, revision
     ) VALUES ('WI-C2', 'tenant-C2', 'actor-C2', 7)
+  `;
+  await sql`
+    INSERT INTO work_item (
+      work_item_id, tenant_id, requested_by_user_id, revision
+    ) VALUES ('WI-HOSTED', 'tenant-C2', 'actor-C2', 7)
   `;
   await sql`
     INSERT INTO review_conversation (
@@ -251,6 +275,29 @@ async function seedC1Turn(sql) {
     attemptId: 'ATT-C2',
     actorId: 'actor-C2',
     hash: 'a'.repeat(64),
+  });
+  await insertConversation(sql, {
+    reviewConversationId: 'RC-HOSTED',
+    tenantId: 'tenant-C2',
+    actorId: 'actor-C2',
+    workItemId: 'WI-HOSTED',
+    revision: 7,
+  });
+  await insertScopedTurn(sql, {
+    reviewConversationId: 'RC-HOSTED',
+    turnId: 'RT-HOSTED',
+    inputId: 'ESI-HOSTED',
+    tenantId: 'tenant-C2',
+    actorId: 'actor-C2',
+    workItemId: 'WI-HOSTED',
+    requestId: 'request-hosted',
+    revision: 7,
+  });
+  await insertAttempt(sql, {
+    attemptId: 'ATT-HOSTED',
+    actorId: 'actor-C2',
+    workItemId: 'WI-HOSTED',
+    hash: 'e'.repeat(64),
   });
   await sql`
     INSERT INTO identity_subject_mapping (
@@ -343,6 +390,21 @@ async function assertOpenClawActorScopedBinding(value) {
       bypassRls: false,
     });
 
+    await assert.rejects(
+      runtimeSql`
+        SELECT *
+        FROM review_turn_hosted_runtime_persist_candidate(
+          'actor-C2', 'RT-C2', 'RC-C2', 'tenant-C2', 'WI-C2', 7,
+          'ANSWER', 'forged candidate', '[]', '[]', '[]', 'null',
+          '[]', '[]', '{}', ${'f'.repeat(64)}, 'ATT-C2',
+          '2026-08-26T11:20:00.000Z'::timestamptz
+        )
+      `,
+      (error) =>
+        databaseCode(error) === '42501' &&
+        String(error.message).includes('REVIEW_HOSTED_RUNTIME_ROLE_REQUIRED'),
+    );
+
     const repository = new ReviewConversationRepository(drizzle(runtimeSql));
     const binding = await repository.loadOpenClawTurnBinding({
       reviewConversationId: 'RC-C2',
@@ -422,6 +484,7 @@ async function assertHostedSystemAccountActorScopedBinding(adminSql, value) {
     });
 
     await assertRuntimeSelectPolicyReadback(adminSql);
+    await assertRuntimeCandidateUpdatePolicyReadback(adminSql);
     await assertHostedRuntimePrivileges(adminSql, runtimeSql);
 
     const repository = new ReviewConversationRepository(drizzle(runtimeSql));
@@ -467,6 +530,40 @@ async function assertHostedSystemAccountActorScopedBinding(adminSql, value) {
       null,
     );
 
+    const hostedBinding = await repository.loadOpenClawTurnBinding({
+      reviewConversationId: 'RC-HOSTED',
+      requestId: 'request-hosted',
+      tenantId: 'tenant-C2',
+      actorId: 'actor-C2',
+      workItemId: 'WI-HOSTED',
+    });
+    assert.ok(hostedBinding);
+    const hostedCandidate = candidate('AQ-HOSTED', 'e'.repeat(64));
+    const hostedPersisted = await repository.persistOpenClawAssistantCandidate({
+      conversation: hostedBinding.conversation,
+      turn: hostedBinding.turn,
+      actionAttemptId: 'ATT-HOSTED',
+      candidate: hostedCandidate,
+      completedAt: new Date('2026-08-26T11:30:00.000Z'),
+    });
+    assert.equal(hostedPersisted.replayed, false);
+    assert.deepEqual(hostedPersisted.turn.assistantCandidate, {
+      ...hostedCandidate,
+      completedAt: '2026-08-26T11:30:00.000Z',
+    });
+    const hostedReplay = await repository.persistOpenClawAssistantCandidate({
+      conversation: hostedBinding.conversation,
+      turn: hostedBinding.turn,
+      actionAttemptId: 'ATT-HOSTED',
+      candidate: hostedCandidate,
+      completedAt: new Date('2026-08-26T11:31:00.000Z'),
+    });
+    assert.equal(hostedReplay.replayed, true);
+    assert.equal(
+      hostedReplay.turn.assistantCandidate.completedAt,
+      '2026-08-26T11:30:00.000Z',
+    );
+
     for (const actorId of ['', '-1', 'service:openclaw']) {
       const [row] = await runtimeSql`
         WITH actor_context AS MATERIALIZED (
@@ -488,7 +585,7 @@ async function assertHostedSystemAccountActorScopedBinding(adminSql, value) {
     `;
     assert.deepEqual(
       visibleRows.map((row) => row.reviewConversationId),
-      ['RC-C2', 'RC-CLOSED'],
+      ['RC-C2', 'RC-CLOSED', 'RC-HOSTED'],
     );
 
     await adminSql`
@@ -543,6 +640,14 @@ async function assertHostedRuntimePrivileges(adminSql, runtimeSql) {
   `;
   assert.deepEqual(Array.from(publicGrants), []);
 
+  const candidateWithoutActorContext = await runtimeSql`
+    UPDATE review_turn
+    SET assistant_response = 'forged without actor context'
+    WHERE review_turn_id = 'RT-HOSTED'
+    RETURNING review_turn_id
+  `;
+  assert.equal(candidateWithoutActorContext.length, 0);
+
   await assert.rejects(
     runtimeSql`
       INSERT INTO review_conversation (
@@ -570,6 +675,54 @@ async function assertHostedRuntimePrivileges(adminSql, runtimeSql) {
       WHERE review_conversation_id = 'RC-C2'
     `,
     (error) => databaseCode(error) === '42501',
+  );
+}
+
+async function assertRuntimeCandidateUpdatePolicyReadback(sql) {
+  const rows = await sql`
+    SELECT
+      schemaname AS "schemaName",
+      tablename AS "tableName",
+      policyname AS "policyName",
+      permissive,
+      roles,
+      cmd AS command,
+      qual,
+      with_check AS "withCheck"
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND policyname IN (
+        'review_turn_authenticated_candidate_update',
+        'review_turn_hosted_runtime_actor_candidate_update'
+      )
+    ORDER BY policyname
+  `;
+  assert.equal(rows.length, 2);
+  const authenticated = rows.find((row) =>
+    row.policyName.endsWith('_authenticated_candidate_update'),
+  );
+  const hosted = rows.find((row) =>
+    row.policyName.endsWith('_hosted_runtime_actor_candidate_update'),
+  );
+  assert.ok(authenticated);
+  assert.ok(hosted);
+  assert.deepEqual(hosted, {
+    schemaName: 'public',
+    tableName: 'review_turn',
+    policyName: 'review_turn_hosted_runtime_actor_candidate_update',
+    permissive: 'PERMISSIVE',
+    roles: ['service_role'],
+    command: 'UPDATE',
+    qual: hosted.qual,
+    withCheck: hosted.withCheck,
+  });
+  assert.equal(
+    normalizedPostgresQual(hosted.qual),
+    normalizedPostgresQual(authenticated.qual),
+  );
+  assert.equal(
+    normalizedPostgresQual(hosted.withCheck),
+    normalizedPostgresQual(authenticated.withCheck),
   );
 }
 
@@ -701,7 +854,7 @@ async function insertAttempt(sql, input) {
       attempt_id, work_item_id, action_type, actor_user_id, tenant_id,
       input_revision, base_revision, status, result_content_hash
     ) VALUES (
-      ${input.attemptId}, 'WI-C2',
+      ${input.attemptId}, ${input.workItemId ?? 'WI-C2'},
       ${input.actionType ?? 'OPENCLAW_INTERACTIVE_REVIEW'},
       ${input.actorId}, 'tenant-C2', 7, 7,
       ${input.status ?? 'COMMITTING'}, ${input.hash ?? null}

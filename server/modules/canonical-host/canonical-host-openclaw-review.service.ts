@@ -644,8 +644,8 @@ function resolveReviewPageSourceRefs(
 ): CanonicalEngineerReviewPageContext {
   const resolve = (sourceRefs: string[]): string[] => [
     ...new Set(
-      sourceRefs.flatMap((sourceRefId) =>
-        candidateRefs.get(sourceRefId) ?? [sourceRefId],
+      sourceRefs.flatMap(
+        (sourceRefId) => candidateRefs.get(sourceRefId) ?? [sourceRefId],
       ),
     ),
   ];
@@ -919,6 +919,7 @@ function assertReviewCommitFence(input: {
   ) {
     throw reviewConflict('ACTION_ATTEMPT_LEASE_FENCE_REJECTED');
   }
+  if (row.status === 'COMMITTING') return;
   const now = new Date();
   if (!row.leaseExpiresAt || row.leaseExpiresAt <= now) {
     throw reviewConflict('ACTION_ATTEMPT_LEASE_EXPIRED');
