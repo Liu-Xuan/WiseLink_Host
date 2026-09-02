@@ -13,6 +13,7 @@ import {
   WISELINK_SKILL_VERSION,
   buildApplicabilityCandidate,
   canonicalSha256,
+  reviewCandidateArtifactRefs,
   sealResultEnvelope,
   validatePayload,
   validateReviewCandidate,
@@ -81,7 +82,7 @@ test('pins exact20 MCP 1.2, five review tools, and hosted provenance', () => {
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c5',
+    'wiselink-research-and-synthesize@r09.c6',
   );
   assert.equal(WISELINK_MODEL_POLICY_REF, 'official-hosted-profile-config');
   assert.equal(WISELINK_HOST_MCP_VERSION, '1.2.0');
@@ -1371,6 +1372,31 @@ test('runs INTERACTIVE_REVIEW through only the five-tool C3 contract', async () 
     ],
   );
   assert.ok(calls.every(({ name }) => INTERACTIVE_REVIEW_TOOLS.includes(name)));
+});
+
+test('keeps review sourceRefIds inside the candidate and maps only artifact refs to the envelope', async () => {
+  const reviewTask = await readJson(REVIEW_TASK_FIXTURE_URL);
+  const candidate = await readJson(REVIEW_CANDIDATE_FIXTURE_URL);
+  const task = makeTask('OPENCLAW_INTERACTIVE_REVIEW', reviewTask);
+  const artifactRefs = reviewCandidateArtifactRefs(task, candidate);
+  assert.deepEqual(candidate.sourceRefs, [reviewTask.resourceRefs[0].sourceRefId]);
+  assert.deepEqual(artifactRefs, [
+    {
+      ref: reviewTask.resourceRefs[0].resourceArtifactRef,
+      sha256: reviewTask.resourceRefs[0].resourceArtifactSha256,
+    },
+  ]);
+  assert.equal('sourceRefId' in artifactRefs[0], false);
+  assert.throws(
+    () =>
+      sealResultEnvelope({
+        task,
+        modelOutput: candidate,
+        provenance: provenance(),
+        sourceRefs: candidate.sourceRefs.map((sourceRefId) => ({ sourceRefId })),
+      }),
+    /ACTION_ENVELOPE_REF_UNKNOWN_FIELD:sourceRefId/u,
+  );
 });
 
 test('reads a Host-authorized attachment through the C3 SourceRef path', async () => {

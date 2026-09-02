@@ -12,7 +12,7 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（官方 profile 当前可选 `GLM-5.3`，Skill 不绑定具体模型）
-- Skill：`wiselink-research-and-synthesize@r09.c5`
+- Skill：`wiselink-research-and-synthesize@r09.c6`
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（exact 20 tools）
 - Host baseline：`6fd2655d27edc3851c745547efaf8796ad22c82c`
 
@@ -288,10 +288,18 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 `commit_review_turn_candidate.resultJson` 发送 canonical JSON 字符串；不得让托管模型逐字段手写嵌套
 `result` 参数。Host 会解析 `resultJson` 后进入同一个 ResultEnvelope、provenance、SourceRef 和 lease gate。
 
+注意两个同名字段的不同类型，不得直接复制：
+
+- `candidate.sourceRefs` 是本轮已通过 `read_source_refs` 实读的 `sourceRefId[]`；
+- 外层 `ResultEnvelope.sourceRefs` 是这些 ID 对应的 actual resource artifact `[{ref,sha256}]`，必须由
+  `reviewCandidateArtifactRefs(task, candidate)` 从 `task.modelInput.resourceRefs` 机械派生；
+- 严禁把 `{sourceRefId}` 或 `sourceRefId[]` 写入外层 `ResultEnvelope.sourceRefs`；
+- 必须先让 `sealResultEnvelope` 本地验证成功，再发起唯一一次 commit。本地验证失败不消耗 commit 机会。
+
 当前 validator 强制：
 
 - `modelVersion` 是官方托管 profile/config 本轮选择后的非空、可读实际模型；不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c5`
+- `skillVersion=wiselink-research-and-synthesize@r09.c6`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致

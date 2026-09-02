@@ -37,24 +37,14 @@ const attemptRef = z.string().trim().min(1).max(200);
 const leaseToken = z.string().uuid();
 const leaseGeneration = z.number().int().positive();
 const resultEnvelope = z.record(z.string(), z.unknown());
-const reviewCommitInput = z.union([
-  z
-    .object({
-      attemptRef,
-      leaseToken,
-      leaseGeneration,
-      result: resultEnvelope,
-    })
-    .strict(),
-  z
-    .object({
-      attemptRef,
-      leaseToken,
-      leaseGeneration,
-      resultJson: z.string().trim().min(2).max(1_000_000),
-    })
-    .strict(),
-]);
+const reviewCommitInput = z
+  .object({
+    attemptRef,
+    leaseToken,
+    leaseGeneration,
+    resultJson: z.string().trim().min(2).max(1_000_000),
+  })
+  .strict();
 const resultContentHash = z.string().regex(/^[0-9a-f]{64}$/u);
 const translationResultPartBinding = z
   .object({
@@ -543,15 +533,12 @@ export class CanonicalHostOpenClawMcpService {
       {
         title: '提交评审轮次候选响应',
         description:
-          '按 exact attempt、lease token/generation 与完整 versioned ResultEnvelope fail-closed 校验 provenance/SourceRef/item allowlists。resultJson 是托管函数调用会改形复杂 JSON 时的 canonical JSON 传输形式；两种输入进入同一 Host gate。只追加 ReviewTurn assistant response、candidateEvidence 与 ReviewActionDraft 候选；绝不执行 ReviewAction 或修改 WorkItem revision/current/STALE。',
+          '仅接收 bundled validator 生成的 canonical resultJson，并按 exact attempt、lease token/generation 与完整 versioned ResultEnvelope fail-closed 校验 provenance/SourceRef/item allowlists。外层 ResultEnvelope.sourceRefs 只能是 TaskEnvelope.sourceRefs 中的 artifact {ref,sha256}；已读取的 sourceRefId 只能放在 modelOutput 内层 Review candidate.sourceRefs，严禁混用。只追加 ReviewTurn assistant response、candidateEvidence 与 ReviewActionDraft 候选；绝不执行 ReviewAction 或修改 WorkItem revision/current/STALE。',
         inputSchema: reviewCommitInput,
         annotations: commitAnnotations,
       },
       async (input) => {
-        const result =
-          'resultJson' in input
-            ? parseCanonicalReviewResultJson(input.resultJson)
-            : input.result;
+        const result = parseCanonicalReviewResultJson(input.resultJson);
         return textResult(
           await this.review.commit(
             input.attemptRef,

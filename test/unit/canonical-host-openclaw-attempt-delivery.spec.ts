@@ -80,7 +80,7 @@ describe('OpenClaw translation delivery', () => {
       warnings: [],
       modelVersion: 'GLM-5.3',
       promptVersion: 'r09.prompt.fixture.1',
-      skillVersion: 'wiselink-research-and-synthesize@r09.c5',
+      skillVersion: 'wiselink-research-and-synthesize@r09.c6',
       toolVersions: {
         'wiselink-openclaw-engineering-assessment': '1.2.0',
       },

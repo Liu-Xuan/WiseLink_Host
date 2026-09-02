@@ -12,6 +12,7 @@ import {
   canonicalJson,
   isForbiddenAuthorityInputKey,
   normalizeAuthorityInputKey,
+  reviewCandidateArtifactRefs,
   sealResultEnvelope,
   sealTranslationDeliveryResultEnvelope,
   sealWaitingInputResultEnvelope,
@@ -605,7 +606,7 @@ export async function runInteractiveReviewTurn({
     task: begin.task,
     modelOutput: candidate,
     provenance: execution.provenance,
-    sourceRefs: reviewArtifactRefs(task, candidate),
+    sourceRefs: reviewCandidateArtifactRefs(begin.task, candidate),
     factsConsidered: [...candidate.sourceRefs],
     warnings: [...candidate.warnings],
   });
@@ -1483,27 +1484,6 @@ function sanitizeSourceRefReadback(value, attemptRef, requested) {
   return value.sourceRefs.map((sourceRef, index) =>
     sanitizeForModel(sourceRef, `$.sourceRefs[${index}]`),
   );
-}
-
-function reviewArtifactRefs(task, candidate) {
-  const used = new Set([
-    ...candidate.sourceRefs,
-    ...candidate.candidateEvidenceRefs,
-    ...(candidate.reviewActionDraft?.sourceRefs ?? []),
-  ]);
-  const artifacts = new Map();
-  for (const resource of task.resourceRefs) {
-    if (!used.has(resource.sourceRefId)) continue;
-    const existing = artifacts.get(resource.resourceArtifactRef);
-    if (existing && existing !== resource.resourceArtifactSha256) {
-      throw new Error('REVIEW_RESOURCE_ARTIFACT_BINDING_CONFLICT');
-    }
-    artifacts.set(
-      resource.resourceArtifactRef,
-      resource.resourceArtifactSha256,
-    );
-  }
-  return [...artifacts].map(([ref, sha256]) => ({ ref, sha256 }));
 }
 
 function assertReviewSourcesWereRead(candidate, readSourceRefIds) {

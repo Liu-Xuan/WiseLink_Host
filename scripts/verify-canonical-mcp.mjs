@@ -944,13 +944,31 @@ try {
         resultContentHash: null,
       },
     );
-    await openClawClient.callTool({
+    const rejectedRawReviewCommit = await openClawClient.callTool({
       name: 'commit_review_turn_candidate',
       arguments: {
         attemptRef: 'AQ-REVIEW',
         leaseToken,
         leaseGeneration: 1,
         result: candidateResult,
+      },
+    });
+    assert.equal(rejectedRawReviewCommit.isError, true);
+    assert.deepEqual(
+      reviewCalls.map(({ tool }) => tool),
+      [
+        'begin_review_turn',
+        'get_review_turn_context',
+        'read_source_refs',
+      ],
+    );
+    await openClawClient.callTool({
+      name: 'commit_review_turn_candidate',
+      arguments: {
+        attemptRef: 'AQ-REVIEW',
+        leaseToken,
+        leaseGeneration: 1,
+        resultJson: JSON.stringify(candidateResult),
       },
     });
     assert.deepEqual(
@@ -1226,7 +1244,7 @@ function largeTranslationResultEnvelope() {
     warnings: [],
     modelVersion: 'GLM-5.3',
     promptVersion: 'wiselink.3_1.openclaw_translation_prompt.v1',
-    skillVersion: 'wiselink-research-and-synthesize@r09.c5',
+    skillVersion: 'wiselink-research-and-synthesize@r09.c6',
     toolVersions: {
       'wiselink-openclaw-engineering-assessment': '1.2.0',
     },

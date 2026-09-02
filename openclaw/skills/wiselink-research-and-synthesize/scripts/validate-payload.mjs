@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
-export const WISELINK_SKILL_VERSION = 'wiselink-research-and-synthesize@r09.c5';
+export const WISELINK_SKILL_VERSION = 'wiselink-research-and-synthesize@r09.c6';
 export const WISELINK_HOST_MCP_NAME =
   'wiselink-openclaw-engineering-assessment';
 export const WISELINK_HOST_MCP_VERSION = '1.2.0';
@@ -2903,6 +2903,38 @@ export function sealResultEnvelope({
   const sealed = { ...envelope, contentHash: canonicalSha256(envelope) };
   validateResultEnvelope(task, sealed);
   return sealed;
+}
+
+export function reviewCandidateArtifactRefs(task, candidate) {
+  validateTaskEnvelope(task);
+  const reviewTask = validateReviewTask(task.modelInput);
+  validateReviewCandidate(reviewTask, candidate);
+  const usedSourceRefIds = new Set([
+    ...candidate.sourceRefs,
+    ...candidate.candidateEvidenceRefs,
+    ...(candidate.reviewActionDraft?.sourceRefs ?? []),
+  ]);
+  const artifacts = new Map();
+  for (const resource of reviewTask.resourceRefs) {
+    if (!usedSourceRefIds.has(resource.sourceRefId)) continue;
+    const existingSha256 = artifacts.get(resource.resourceArtifactRef);
+    if (
+      existingSha256 !== undefined &&
+      existingSha256 !== resource.resourceArtifactSha256
+    ) {
+      fail('REVIEW_RESOURCE_ARTIFACT_BINDING_CONFLICT');
+    }
+    artifacts.set(
+      resource.resourceArtifactRef,
+      resource.resourceArtifactSha256,
+    );
+  }
+  const artifactRefs = [...artifacts].map(([ref, sha256]) => ({
+    ref,
+    sha256,
+  }));
+  assertEnvelopeSourceSubset(task.sourceRefs, artifactRefs);
+  return artifactRefs;
 }
 
 export function sealTranslationDeliveryResultEnvelope({
