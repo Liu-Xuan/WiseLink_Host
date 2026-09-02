@@ -2,11 +2,9 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { Request } from 'express';
 
-import type {
-  CanonicalConfigurationEvidenceCurrentProjection,
-  CanonicalWorkItemProjection,
-} from '@shared/api.interface';
+import type { CanonicalWorkItemProjection } from '@shared/api.interface';
 import { markDependentConfigurationPredicateTracesStale } from '../../../server/modules/canonical-host/configuration-evidence/configuration-predicate-trace.staleness';
+import { adoptConfigurationEvidenceIntoWorkItem } from '../../../server/modules/canonical-host/configuration-evidence/configuration-evidence-work-item.transition';
 import type {
   ConfigurationPredicateTrace,
   ConfigurationPredicateTraceStaleReason,
@@ -17,11 +15,15 @@ import {
   type CommitConfigurationEvidenceInput,
   type CommitConfigurationEvidenceResult,
   type ConfigurationEvidenceReplayRead,
+  type CompleteConfigurationEvidenceQueryInput,
+  type ConfigurationEvidenceQueryAttemptReadModel,
+  type ConfigurationEvidenceQueryStorePort,
   type ConfigurationEvidenceSnapshotSummary,
   type ConfigurationEvidenceStorePort,
   type ConfigurationEvidenceTruthSummary,
   type PersistedConfigurationEvidenceSnapshot,
   type RefreshConfigurationEvidenceRequest,
+  type ReserveConfigurationEvidenceQueryInput,
 } from '../../../server/modules/canonical-host/configuration-evidence/configuration-evidence.persistence.types';
 import { ConfigurationEvidenceService } from '../../../server/modules/canonical-host/configuration-evidence/configuration-evidence.service';
 import type {
@@ -415,6 +417,151 @@ describe('Host configuration-evidence persistence product chain', () => {
     expect(fixture.objectAccess.freshRead).not.toHaveBeenCalled();
     expect(fixture.store.recordCount()).toBe(0);
   });
+
+  it('records an unconfigured query as NOT_CONNECTED without advancing revision', async () => {
+    const fixture = target({
+      fleetAsset: realB2035Asset(),
+      sourceConfigured: false,
+    });
+
+    const queried = await fixture.service.query(
+      WORK_ITEM_ID,
+      refreshBody('REQ-QUERY-NOT-CONNECTED', 7),
+      {} as Request,
+    );
+    const readback = await fixture.service.queryStatus(
+      WORK_ITEM_ID,
+      queried.candidate.queryAttemptRef,
+      {} as Request,
+    );
+
+    expect(queried).toMatchObject({
+      workItemRevision: 7,
+      replayed: false,
+      candidate: {
+        terminalStatus: 'NOT_CONNECTED',
+        inputRevision: 7,
+        sourceRecordCount: 0,
+        adoption: { status: 'CANDIDATE_UNADOPTED' },
+        candidateSnapshot: {
+          facts: [{ truth: 'UNKNOWN', status: 'WAITING_INPUT' }],
+        },
+      },
+      authority: {
+        queryAdvancesWorkItemRevision: false,
+        notConnectedMeansFalse: false,
+        connectorConcurrency: 1,
+      },
+    });
+    expect(readback.candidate).toEqual(queried.candidate);
+    expect(fixture.workItem().revision).toBe(7);
+    expect(fixture.port.calls).toHaveLength(0);
+    expect(fixture.store.recordCount()).toBe(0);
+    expect(fixture.queryStore.count()).toBe(1);
+  });
+
+  it('keeps a successful query candidate-only, then adopts it with one CAS', async () => {
+    const fixture = target({ fleetAsset: realB2035Asset() });
+    fixture.port.resultFactory = (query: GetInstallationEventsQuery) =>
+      controlledResult(
+        query,
+        [equipmentRecord('INSTALL', 'COMPONENT:AIMS2:P1', 'P1', 1)],
+        'SOURCE-QUERY-REV-1',
+      );
+    const body = refreshBody('REQ-QUERY-ADOPT', 7);
+
+    const queried = await fixture.service.query(
+      WORK_ITEM_ID,
+      body,
+      {} as Request,
+    );
+    const queryReplay = await fixture.service.query(
+      WORK_ITEM_ID,
+      body,
+      {} as Request,
+    );
+
+    expect(queried).toMatchObject({
+      workItemRevision: 7,
+      candidate: {
+        terminalStatus: 'SUCCEEDED_EVIDENCE',
+        sourceRecordCount: 1,
+        candidateSnapshot: { facts: [{ truth: 'TRUE' }] },
+      },
+    });
+    expect(queryReplay.replayed).toBe(true);
+    expect(fixture.workItem().revision).toBe(7);
+    expect(fixture.store.recordCount()).toBe(0);
+    expect(fixture.port.calls).toHaveLength(1);
+
+    const adopted = await fixture.service.adopt(
+      WORK_ITEM_ID,
+      queried.candidate.candidateEvidenceRef,
+      { expectedRevision: 7 },
+      {} as Request,
+    );
+    const adoptionReplay = await fixture.service.adopt(
+      WORK_ITEM_ID,
+      queried.candidate.candidateEvidenceRef,
+      { expectedRevision: 7 },
+      {} as Request,
+    );
+
+    expect(adopted).toMatchObject({
+      workItemRevision: 8,
+      replayed: false,
+      persisted: { snapshot: { facts: [{ truth: 'TRUE' }] } },
+      reevaluation: {
+        mode: 'FULL_APPLICABILITY_JOB_AID_OVERALL',
+        status: 'REQUIRED',
+      },
+    });
+    expect(adoptionReplay).toMatchObject({
+      workItemRevision: 8,
+      replayed: true,
+    });
+    expect(fixture.workItem().revision).toBe(8);
+    expect(fixture.workItem().configurationEvidenceReevaluation).toEqual({
+      schemaVersion: 'wiselink.3_1.configuration_evidence_reevaluation.v1',
+      trigger: 'CONFIGURATION_EVIDENCE_ADOPTED',
+      triggerSnapshotId: adopted.persisted.summary.snapshotId,
+      triggerConfigurationRevision: 1,
+      adoptionWorkItemRevision: 8,
+      mode: 'FULL_APPLICABILITY_JOB_AID_OVERALL',
+      status: 'REQUIRED',
+      applicability: 'STALE_OR_NOT_AVAILABLE',
+      jobAid: 'FULL_RERUN_REQUIRED',
+      overall: 'STALE_OR_NOT_AVAILABLE',
+      candidateOnly: true,
+    });
+    expect(fixture.store.recordCount()).toBe(1);
+  });
+
+  it('does not turn an authoritative no-record response into a false fact', async () => {
+    const fixture = target({ fleetAsset: realB2035Asset() });
+    fixture.port.resultFactory = (query: GetInstallationEventsQuery) =>
+      completeResult(query, []);
+
+    const queried = await fixture.service.query(
+      WORK_ITEM_ID,
+      refreshBody('REQ-QUERY-NO-RECORD', 7),
+      {} as Request,
+    );
+
+    expect(queried).toMatchObject({
+      workItemRevision: 7,
+      candidate: {
+        terminalStatus: 'SUCCEEDED_NO_RECORD',
+        sourceRecordCount: 0,
+        candidateSnapshot: {
+          facts: [{ truth: 'UNKNOWN', status: 'WAITING_INPUT' }],
+        },
+      },
+      authority: { noRecordMeansFalse: false },
+    });
+    expect(fixture.workItem().revision).toBe(7);
+    expect(fixture.store.recordCount()).toBe(0);
+  });
 });
 
 class ControlledInstallationEventsPort implements GetInstallationEventsPort {
@@ -596,23 +743,15 @@ class InMemoryConfigurationEvidenceStore implements ConfigurationEvidenceStorePo
       summary,
       snapshot: structuredClone(input.snapshot),
     };
-    const pointer: CanonicalConfigurationEvidenceCurrentProjection = {
-      schemaVersion: 'wiselink.3_1.configuration_evidence_work_item_current.v1',
-      snapshotId,
-      configurationRevision,
-      aircraftAssetId: input.snapshot.aircraftAssetId,
-      assessmentAsOf: input.snapshot.assessmentAsOf,
-      sourceCompleteness: input.snapshot.coverage.sourceCompleteness,
-      truthSummary: structuredClone(truthSummary),
-      recordedAt: input.recordedAt,
-      authority: 'WORK_ITEM_CURRENT_EVIDENCE_VIEW',
-      globalAircraftCurrentChanged: false,
-    };
-    const next: CanonicalWorkItemProjection = {
-      ...structuredClone(workItem),
-      revision: workItem.revision + 1,
-      configurationEvidenceCurrent: pointer,
-    };
+    const next: CanonicalWorkItemProjection =
+      adoptConfigurationEvidenceIntoWorkItem({
+        current: workItem,
+        snapshotId,
+        configurationRevision,
+        snapshot: input.snapshot,
+        truthSummary,
+        recordedAt: input.recordedAt,
+      });
     this.records.push(stored);
     this.currentSnapshotId = snapshotId;
     this.saveWorkItem(next);
@@ -649,6 +788,158 @@ class InMemoryConfigurationEvidenceStore implements ConfigurationEvidenceStorePo
   }
 }
 
+class InMemoryConfigurationEvidenceQueryStore implements ConfigurationEvidenceQueryStorePort {
+  private readonly attempts: ConfigurationEvidenceQueryAttemptReadModel[] = [];
+
+  count(): number {
+    return this.attempts.length;
+  }
+
+  async findByRequest(input: {
+    tenantId: string;
+    workItemId: string;
+    requestId: string;
+  }): Promise<ConfigurationEvidenceQueryAttemptReadModel | null> {
+    void input.tenantId;
+    return this.clone(
+      this.attempts.find(
+        (attempt) =>
+          attempt.workItemId === input.workItemId &&
+          attempt.request.requestId === input.requestId,
+      ),
+    );
+  }
+
+  async findByQueryAttemptRef(input: {
+    tenantId: string;
+    workItemId: string;
+    queryAttemptRef: string;
+  }): Promise<ConfigurationEvidenceQueryAttemptReadModel | null> {
+    void input.tenantId;
+    return this.clone(
+      this.attempts.find(
+        (attempt) =>
+          attempt.workItemId === input.workItemId &&
+          attempt.queryAttemptRef === input.queryAttemptRef,
+      ),
+    );
+  }
+
+  async findByCandidateEvidenceRef(input: {
+    tenantId: string;
+    workItemId: string;
+    candidateEvidenceRef: string;
+  }): Promise<ConfigurationEvidenceQueryAttemptReadModel | null> {
+    void input.tenantId;
+    return this.clone(
+      this.attempts.find(
+        (attempt) =>
+          attempt.workItemId === input.workItemId &&
+          attempt.candidateEvidenceRef === input.candidateEvidenceRef,
+      ),
+    );
+  }
+
+  async reserve(input: ReserveConfigurationEvidenceQueryInput): Promise<{
+    replayed: boolean;
+    attempt: ConfigurationEvidenceQueryAttemptReadModel;
+  }> {
+    const existing = await this.findByRequest({
+      tenantId: input.tenantId,
+      workItemId: input.workItemId,
+      requestId: input.request.requestId,
+    });
+    if (existing) return { replayed: true, attempt: existing };
+    const cycle = this.attempts.filter(
+      (attempt) =>
+        attempt.workItemId === input.workItemId &&
+        attempt.inputRevision === input.request.expectedRevision,
+    );
+    if (cycle.some((attempt) => attempt.terminalStatus === 'RUNNING')) {
+      throw conflict('CONFIGURATION_EVIDENCE_QUERY_ALREADY_RUNNING');
+    }
+    if (
+      cycle.some(
+        (attempt) => attempt.queryFingerprint === input.queryFingerprint,
+      )
+    ) {
+      throw conflict('CONFIGURATION_EVIDENCE_QUERY_DUPLICATE');
+    }
+    if (cycle.length >= 2) {
+      throw conflict('CONFIGURATION_EVIDENCE_QUERY_ROUND_BUDGET_EXCEEDED');
+    }
+    const attempt: ConfigurationEvidenceQueryAttemptReadModel = {
+      queryAttemptRef: input.queryAttemptRef,
+      candidateEvidenceRef: input.candidateEvidenceRef,
+      workItemId: input.workItemId,
+      inputRevision: input.request.expectedRevision,
+      roundNo: cycle.length + 1,
+      queryCount: input.request.targets.length,
+      queryFingerprint: input.queryFingerprint,
+      request: structuredClone(input.request),
+      terminalStatus: 'RUNNING',
+      sourceRecordCount: 0,
+      projections: null,
+      candidateSnapshot: null,
+      startedAt: input.startedAt,
+      deadlineAt: input.deadlineAt,
+      completedAt: null,
+      adoption: { status: 'CANDIDATE_UNADOPTED' },
+    };
+    this.attempts.push(attempt);
+    return { replayed: false, attempt: structuredClone(attempt) };
+  }
+
+  async complete(
+    input: CompleteConfigurationEvidenceQueryInput,
+  ): Promise<ConfigurationEvidenceQueryAttemptReadModel> {
+    const attempt = this.attempts.find(
+      (candidate) =>
+        candidate.workItemId === input.workItemId &&
+        candidate.queryAttemptRef === input.queryAttemptRef,
+    );
+    if (!attempt) throw new Error('QUERY_ATTEMPT_NOT_FOUND');
+    attempt.terminalStatus = input.terminalStatus;
+    attempt.sourceRecordCount = input.sourceRecordCount;
+    attempt.projections = structuredClone(input.projections);
+    attempt.candidateSnapshot = structuredClone(input.candidateSnapshot);
+    attempt.completedAt = input.completedAt;
+    return structuredClone(attempt);
+  }
+
+  async markAdopted(input: {
+    tenantId: string;
+    actorId: string;
+    workItemId: string;
+    candidateEvidenceRef: string;
+    snapshotId: string;
+    workItemRevision: number;
+    adoptedAt: string;
+  }): Promise<ConfigurationEvidenceQueryAttemptReadModel> {
+    void input.tenantId;
+    void input.actorId;
+    const attempt = this.attempts.find(
+      (candidate) =>
+        candidate.workItemId === input.workItemId &&
+        candidate.candidateEvidenceRef === input.candidateEvidenceRef,
+    );
+    if (!attempt) throw new Error('QUERY_ATTEMPT_NOT_FOUND');
+    attempt.adoption = {
+      status: 'ADOPTED',
+      snapshotId: input.snapshotId,
+      workItemRevision: input.workItemRevision,
+      adoptedAt: input.adoptedAt,
+    };
+    return structuredClone(attempt);
+  }
+
+  private clone(
+    attempt: ConfigurationEvidenceQueryAttemptReadModel | undefined,
+  ): ConfigurationEvidenceQueryAttemptReadModel | null {
+    return attempt ? structuredClone(attempt) : null;
+  }
+}
+
 function target(input: {
   fleetAsset: Record<string, unknown>;
   denyAccess?: boolean;
@@ -664,6 +955,7 @@ function target(input: {
       current = structuredClone(value);
     },
   );
+  const queryStore = new InMemoryConfigurationEvidenceQueryStore();
   const session = {
     actor: {
       tenantId: TENANT_ID,
@@ -717,12 +1009,14 @@ function target(input: {
     fleet as never,
     port,
     store,
+    queryStore,
     clock,
   );
   return {
     service,
     port,
     store,
+    queryStore,
     fleet,
     objectAccess,
     workItem: () => structuredClone(current),

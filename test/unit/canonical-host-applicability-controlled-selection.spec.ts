@@ -57,6 +57,7 @@ describe('production applicability controlled selection', () => {
     const provider = new MiaodaApplicabilityControlledSelectionAdapter(
       harness.registrar as never,
       harness.fleetRepository as never,
+      harness.configurationEvidence as never,
     );
     await expect(
       provider.readCurrent({
@@ -83,6 +84,7 @@ describe('production applicability controlled selection', () => {
     const provider = new MiaodaApplicabilityControlledSelectionAdapter(
       harness.registrar as never,
       harness.fleetRepository as never,
+      harness.configurationEvidence as never,
     );
 
     await expect(
@@ -116,6 +118,7 @@ describe('production applicability controlled selection', () => {
     const provider = new MiaodaApplicabilityControlledSelectionAdapter(
       harness.registrar as never,
       harness.fleetRepository as never,
+      harness.configurationEvidence as never,
     );
 
     await expect(
@@ -148,6 +151,96 @@ describe('production applicability controlled selection', () => {
     );
   });
 
+  it('overlays only adopted controlled configuration facts into the next applicability input', async () => {
+    const harness = selectionHarness();
+    await harness.service.configure(
+      'WI-APP-1',
+      { aircraftIdentifier: 'B-1234', asOf: '2026-08-27' },
+      {} as Request,
+    );
+    harness.current.package!.usagePolicy!.applicability = {
+      sourceExpressionCount: 1,
+      normalizedCandidateCount: 1,
+      assignmentCount: 1,
+    };
+    harness.configurationEvidence.readCurrent.mockResolvedValue({
+      summary: {
+        snapshotId: 'CONFIGURATION-SNAPSHOT:REQ-1',
+        configurationRevision: 1,
+      },
+      snapshot: {
+        aircraftAssetId: 'ASSET-1',
+        assessmentAsOf: '2026-08-27T00:00:00.000Z',
+        facts: [
+          {
+            factAssertionId: 'FACTASSERT:AIMS2',
+            aircraftAssetId: 'ASSET-1',
+            target: {
+              kind: 'EQUIPMENT',
+              equipmentKey: 'AIMS2',
+              positionId: null,
+            },
+            truth: 'TRUE',
+            status: 'SUPPORTED',
+            authority: 'CONTROLLED_SOURCE',
+            assessmentAsOf: '2026-08-27T00:00:00.000Z',
+            supportingEvidenceRecordIds: ['ER-1'],
+          },
+          {
+            factAssertionId: 'FACTASSERT:UNKNOWN',
+            aircraftAssetId: 'ASSET-1',
+            target: {
+              kind: 'EQUIPMENT',
+              equipmentKey: 'UNKNOWN-EQUIPMENT',
+              positionId: null,
+            },
+            truth: 'UNKNOWN',
+            status: 'WAITING_INPUT',
+            authority: 'NONE',
+            assessmentAsOf: '2026-08-27T00:00:00.000Z',
+            supportingEvidenceRecordIds: [],
+          },
+        ],
+      },
+    } as never);
+    const provider = new MiaodaApplicabilityControlledSelectionAdapter(
+      harness.registrar as never,
+      harness.fleetRepository as never,
+      harness.configurationEvidence as never,
+    );
+
+    const selected = await provider.readCurrent({
+      tenantId: 'tenant-1',
+      workItemId: 'WI-APP-1',
+      documentVersionId: 'DV-1',
+      applicabilityContextRef: 'APCTX-1',
+    });
+
+    expect(selected.selectionRevision).toContain(
+      ':configuration-evidence:CONFIGURATION-SNAPSHOT:REQ-1:1',
+    );
+    expect(selected.fleetMasterData.facts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          assetId: 'ASSET-1',
+          property: 'equipmentModelInstalled',
+          qualifier: 'AIMS2',
+          value: true,
+          sourceRef: {
+            sourceTable: 'configuration_evidence_snapshot_version',
+            sourceRecordId: 'CONFIGURATION-SNAPSHOT:REQ-1',
+            sourceField: 'FACTASSERT:AIMS2',
+          },
+        }),
+      ]),
+    );
+    expect(
+      selected.fleetMasterData.facts.some(
+        (fact) => fact.qualifier === 'UNKNOWN-EQUIPMENT',
+      ),
+    ).toBe(false);
+  });
+
   it('fails closed when neither a persisted nor Host-scoped target exists', async () => {
     const harness = selectionHarness();
     harness.current.package!.usagePolicy!.applicability = {
@@ -158,6 +251,7 @@ describe('production applicability controlled selection', () => {
     const provider = new MiaodaApplicabilityControlledSelectionAdapter(
       harness.registrar as never,
       harness.fleetRepository as never,
+      harness.configurationEvidence as never,
     );
 
     await expect(
@@ -236,6 +330,9 @@ function selectionHarness(options: { deny?: boolean } = {}) {
   const fleetRepository = {
     readCurrentForAircraft: jest.fn(async () => structuredClone(fleet)),
   };
+  const configurationEvidence = {
+    readCurrent: jest.fn<Promise<unknown>, [unknown]>(async () => null),
+  };
   const sessions = {
     resolve: jest.fn(async () => ({ actor })),
   };
@@ -249,6 +346,7 @@ function selectionHarness(options: { deny?: boolean } = {}) {
     service,
     registrar,
     fleetRepository,
+    configurationEvidence,
     get current(): CanonicalWorkItemProjection {
       return current;
     },

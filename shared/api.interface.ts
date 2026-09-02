@@ -1849,6 +1849,20 @@ export interface CanonicalConfigurationEvidenceCurrentProjection {
   globalAircraftCurrentChanged: false;
 }
 
+export interface CanonicalConfigurationEvidenceReevaluationProjection {
+  schemaVersion: 'wiselink.3_1.configuration_evidence_reevaluation.v1';
+  trigger: 'CONFIGURATION_EVIDENCE_ADOPTED';
+  triggerSnapshotId: string;
+  triggerConfigurationRevision: number;
+  adoptionWorkItemRevision: number;
+  mode: 'FULL_APPLICABILITY_JOB_AID_OVERALL';
+  status: 'REQUIRED';
+  applicability: 'STALE_OR_NOT_AVAILABLE';
+  jobAid: 'FULL_RERUN_REQUIRED';
+  overall: 'STALE_OR_NOT_AVAILABLE';
+  candidateOnly: true;
+}
+
 export interface CanonicalWorkItemProjection {
   schemaVersion: 'wiselink.3_1.canonical_work_item_projection.v0.candidate';
   workItemId: string;
@@ -1868,6 +1882,7 @@ export interface CanonicalWorkItemProjection {
   integratedAssessment?: CanonicalIntegratedAssessmentProjection | null;
   overallRegenerationRequest?: CanonicalOverallRegenerationRequestProjection | null;
   configurationEvidenceCurrent?: CanonicalConfigurationEvidenceCurrentProjection | null;
+  configurationEvidenceReevaluation?: CanonicalConfigurationEvidenceReevaluationProjection | null;
   aeo?: CanonicalAeoCandidateProjection | null;
   aeoEditingInput?: CanonicalAeoEditingInputProjection | null;
   /** Server-only staged current input; never returned by an AEO browser DTO. */
