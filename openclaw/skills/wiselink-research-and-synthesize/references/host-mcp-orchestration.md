@@ -171,7 +171,7 @@ begin_review_turn({reviewConversationRef, requestId})
 Host 从 OAuth subject mapping、ReviewConversation/Turn、owner-bound WorkItem 和 current revision 派生 actor、
 tenant、WorkItem、session binding 与 opaque actorContextRef。调用方不能提交这些字段。
 
-RUNNING 正常路径：
+RUNNING 正常路径由 `scripts/run-hosted-review-turn.mjs` 外部驱动执行；对话模型不得直接持有五工具控制面：
 
 1. begin Task 的 `attachmentRefs` 允许为空或非空；非空时必须全部是非空唯一字符串，且是同一 Task
    `resourceRefs.sourceRefId` 的子集。随后 `get_review_turn_context({attemptRef})`，校验
@@ -180,9 +180,10 @@ RUNNING 正常路径：
 2. 仅对本轮明确需要且属于 Task allowlist 的 IDs 调
    `read_source_refs({attemptRef, sourceRefIds})`；每批 1–100，去重。Host 授权的 current-turn attachment ref 也只走
    这条路径，返回 Host 已从 actual bytes 绑定并解析的 `ENGINEER_ATTACHMENT` value，不直接读取附件 locator/bytes。
-3. 模型只能看到移除 workItemId 后的最小 context、用户消息、允许的 operation/item/input/source IDs 和
-   executionPolicy；附件只额外暴露 opaque `attachmentRefs` 与按需读取的 parsed value。模型看不到
-   actorContextRef、tenant、ACL、resource artifact ref/SHA、FileService locator 或 raw bytes。
+3. 模型只能看到移除 workItemId、conversation、turn、request、attempt、lease 与 executionPolicy 后的最小
+   context、用户消息、允许的 operation/item/input/source IDs；附件只额外暴露 opaque `attachmentRefs` 与按需
+   读取的 parsed value。模型看不到 actorContextRef、tenant、ACL、resource artifact ref/SHA、FileService
+   locator 或 raw bytes，也不能调用 Host 工具。
    `context.evaluation.gapLedger` 是 current revision 的 Host 派生只读投影；同一 `missingInputId` 已合并其
    origin／affected Criterion。模型只按列出的 `gapRef` 解释或起草候选动作，不能创建、重命名或关闭 Gap。
    若起草缺口证据动作，`resolvedGapRefs` 只能选择 `REVIEW_QUERYABLE` 且未完全关闭的 Host Gap，
@@ -195,6 +196,10 @@ RUNNING 正常路径：
    两者同名但类型不同，严禁把 sourceRefId 写入外层字段。
 5. 单次 `commit_review_turn_candidate`。成功回执必须显示 candidate persisted，同时五个 authority flag 精确：
    `reviewActionExecuted=false`、`workItemRevisionChanged=false`、`currentChanged=false`、`staleMarked=false`。
+
+驱动在私有 `0700` 目录中以 `0600` 持久化每步 started/result。重启只读已完成 checkpoint；非 commit 步骤的
+started-without-result 一律停止且不重试。commit started-without-result 触发且只触发一次 status readback，不再
+提交 commit。模型调用通过无工具 Gateway HTTP 完成，返回 tool_calls 时 fail closed。
 
 COMMITTING：
 
