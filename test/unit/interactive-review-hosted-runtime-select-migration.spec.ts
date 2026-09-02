@@ -40,10 +40,10 @@ describe('R09 Hosted runtime Review SELECT migration', () => {
     ]);
   });
 
-  it('adds only five permissive anon SELECT policies without grants or write widening', () => {
+  it('adds only five permissive service-role SELECT policies without grants or write widening', () => {
     const executable = runtimeMigration.replace(/--.*$/gmu, '');
     expect(executable.match(/CREATE POLICY/gu)).toHaveLength(5);
-    expect(executable.match(/FOR SELECT\s+TO anon/gu)).toHaveLength(5);
+    expect(executable.match(/FOR SELECT\s+TO service_role/gu)).toHaveLength(5);
     expect(executable).not.toMatch(/\bGRANT\b|\bREVOKE\b/iu);
     expect(executable).not.toMatch(
       /FOR\s+(?:ALL|INSERT|UPDATE|DELETE)|DISABLE ROW LEVEL SECURITY/iu,
@@ -65,7 +65,7 @@ describe('R09 Hosted runtime Review SELECT migration', () => {
         tableName,
         command: 'SELECT',
         permissive: true,
-        roles: ['anon'],
+        roles: ['service_role'],
         qualHash: hash(runtimeQual),
         sourcePolicyName,
         sourceQualHash: hash(sourceQual),
@@ -78,7 +78,7 @@ describe('R09 Hosted runtime Review SELECT migration', () => {
         tableName,
         command: 'SELECT',
         permissive: true,
-        roles: ['anon'],
+        roles: ['service_role'],
         sourcePolicyName,
         qualEquivalent: true,
       });

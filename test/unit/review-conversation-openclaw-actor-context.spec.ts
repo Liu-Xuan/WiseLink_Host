@@ -14,7 +14,7 @@ describe('ReviewConversationRepository OpenClaw actor context', () => {
         {
           actorContext: 'actor-1',
           authenticatedRoleMember: false,
-          serviceRoleMember: false,
+          serviceRoleMember: true,
           rowSecurityActive: true,
           expectedSchemaResolved: true,
           reviewSelectPolicyPresent: true,
@@ -45,9 +45,9 @@ describe('ReviewConversationRepository OpenClaw actor context', () => {
         reason: 'CONVERSATION_NOT_VISIBLE',
         diagnostic: {
           actorContextApplied: true,
-          runtimeRoleClass: 'NEITHER',
+          runtimeRoleClass: 'SERVICE_ROLE_MEMBER',
           authenticatedRoleMember: false,
-          serviceRoleMember: false,
+          serviceRoleMember: true,
           rowSecurityActive: true,
           expectedSchemaResolved: true,
           sameConnectionContextSupported: true,
@@ -125,7 +125,7 @@ describe('ReviewConversationRepository OpenClaw actor context', () => {
         {
           actorContext: 'actor-1',
           authenticatedRoleMember: false,
-          serviceRoleMember: false,
+          serviceRoleMember: true,
           rowSecurityActive: true,
           expectedSchemaResolved: true,
           reviewSelectPolicyPresent: false,
@@ -155,9 +155,9 @@ describe('ReviewConversationRepository OpenClaw actor context', () => {
         reason: 'REVIEW_SCHEMA_NOT_READY',
         diagnostic: {
           actorContextApplied: true,
-          runtimeRoleClass: 'NEITHER',
+          runtimeRoleClass: 'SERVICE_ROLE_MEMBER',
           authenticatedRoleMember: false,
-          serviceRoleMember: false,
+          serviceRoleMember: true,
           rowSecurityActive: true,
           expectedSchemaResolved: true,
           sameConnectionContextSupported: true,
@@ -207,6 +207,7 @@ describe('ReviewConversationRepository OpenClaw actor context', () => {
     );
     expect(source).toContain("'work_item_hosted_runtime_actor_select'");
     expect(source).toContain('pg_catalog.pg_has_role(');
+    expect(source).toContain("current_user LIKE 'service_role#_%'");
     expect(source).toContain(
       'FROM review_conversation AS candidate_conversation',
     );

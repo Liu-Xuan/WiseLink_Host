@@ -1,12 +1,12 @@
 -- WiseLink V1.0 R09 Hosted OpenClaw Review SELECT applicability.
 --
--- The managed APaaS adapter can route raw execute statements through the
--- scoped `anon` role even when adjacent ORM reads use another pooled role.
--- The platform already grants this role table-level SELECT, while RLS remains
--- enabled. Host establishes app.user_id locally in the exact Review begin
--- statement. These permissive SELECT policies expose only the official actor
--- mapping, actor-owned WorkItem, and actor-bound Review rows needed by that
--- statement. They add no GRANT and do not widen Review writes.
+-- SqlExecutionContextMiddleware routes a Hosted Aily system account through
+-- the workspace-scoped `service_role`. The platform already grants this role
+-- table-level SELECT without BYPASSRLS, while RLS remains enabled. Host
+-- establishes app.user_id locally in the exact Review begin statement. These
+-- permissive SELECT policies expose only the official actor mapping,
+-- actor-owned WorkItem, and actor-bound Review rows needed by that statement.
+-- They add no GRANT and do not widen Review writes.
 
 BEGIN;
 
@@ -16,7 +16,7 @@ CREATE POLICY identity_subject_mapping_hosted_runtime_actor_select
   ON identity_subject_mapping
   AS PERMISSIVE
   FOR SELECT
-  TO anon
+  TO service_role
   USING (
     pg_catalog.current_setting('app.user_id', true) <> ''
     AND miaoda_user_id =
@@ -31,7 +31,7 @@ CREATE POLICY work_item_hosted_runtime_actor_select
   ON work_item
   AS PERMISSIVE
   FOR SELECT
-  TO anon
+  TO service_role
   USING (
     requested_by_user_id =
       pg_catalog.current_setting('app.user_id', true)
@@ -52,7 +52,7 @@ CREATE POLICY review_conversation_hosted_runtime_actor_select
   ON review_conversation
   AS PERMISSIVE
   FOR SELECT
-  TO anon
+  TO service_role
   USING (
     actor_id = pg_catalog.current_setting('app.user_id', true)
     AND EXISTS (
@@ -81,7 +81,7 @@ CREATE POLICY review_turn_hosted_runtime_actor_select
   ON review_turn
   AS PERMISSIVE
   FOR SELECT
-  TO anon
+  TO service_role
   USING (
     actor_id = pg_catalog.current_setting('app.user_id', true)
     AND EXISTS (
@@ -117,7 +117,7 @@ CREATE POLICY engineer_supplied_input_hosted_runtime_actor_select
   ON engineer_supplied_input
   AS PERMISSIVE
   FOR SELECT
-  TO anon
+  TO service_role
   USING (
     actor_id = pg_catalog.current_setting('app.user_id', true)
     AND EXISTS (
@@ -161,6 +161,7 @@ COMMIT;
 --     to_regclass(tablename)
 -- ORDER BY tablename, policyname;
 --
--- Expected: exactly five PERMISSIVE SELECT policies on the scoped `anon` role.
--- No GRANT is intentionally present. The platform-managed runtime retains its
--- existing least-privilege table SELECT; no table privilege is widened.
+-- Expected: exactly five PERMISSIVE SELECT policies on the workspace-scoped
+-- `service_role`. No GRANT is intentionally present. The platform-managed
+-- runtime retains its existing least-privilege table SELECT; no table
+-- privilege is widened.
