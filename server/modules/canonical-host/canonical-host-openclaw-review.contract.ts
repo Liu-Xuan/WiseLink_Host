@@ -1,6 +1,11 @@
 import type {
-  ReviewActionDraftCandidate,
+  ReviewDecisionMaturity,
+  ReviewDecisionSnapshotProposal,
+  ReviewEvidenceHorizon,
+  ReviewActionDraftProposal,
   ReviewTurnResponseType,
+  ReviewUncertaintyDispositionCandidate,
+  ReviewUncertaintyDispositionKind,
 } from '@shared/api.interface';
 import { assertNoDuplicateJsonKeys } from '../unified-reader/unified-reader.utils';
 import type { OpenClawResultEnvelope } from '../action-attempt/action-attempt-envelope.types';
@@ -15,7 +20,7 @@ export const REVIEW_MODEL_POLICY_REF =
 export const REVIEW_SKILL_POLICY_REF =
   CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.skillVersion;
 export const REVIEW_TOOL_POLICY_REF =
-  'wiselink-openclaw-engineering-assessment@1.2.0#interactive-review-c2' as const;
+  'wiselink-openclaw-engineering-assessment@1.2.0#interactive-review-c3' as const;
 export const REVIEW_MCP_PACKAGE_VERSION =
   CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.mcpServerVersion;
 
@@ -61,7 +66,9 @@ export interface ReviewTurnTaskContract {
 }
 
 export interface ReviewTurnCandidateContract {
-  schemaVersion: 'wiselink.3_1.review_turn_candidate.v1.c2';
+  schemaVersion:
+    | 'wiselink.3_1.review_turn_candidate.v1.c2'
+    | 'wiselink.3_1.review_turn_candidate.v1.c3';
   mode: 'INTERACTIVE_REVIEW';
   reviewConversationRef: string;
   reviewTurnRef: string;
@@ -70,7 +77,7 @@ export interface ReviewTurnCandidateContract {
   sourceRefs: string[];
   missingInputs: string[];
   candidateEvidenceRefs: string[];
-  reviewActionDraft: ReviewActionDraftCandidate | null;
+  reviewActionDraft: ReviewActionDraftProposal | null;
   affectedItemIds: string[];
   warnings: string[];
   runtime: {
@@ -89,6 +96,35 @@ const RESPONSE_TYPES = new Set<ReviewTurnResponseType>([
   'AFFECTED_ITEMS_PREVIEW',
   'RESYNTHESIS_RESULT',
   'TASK_STATUS',
+]);
+
+const UNCERTAINTY_DISPOSITIONS = new Set<ReviewUncertaintyDispositionKind>([
+  'RESOLVE_NOW',
+  'ACCEPT_WITH_ASSUMPTION',
+  'APPLY_CONSERVATIVE_BOUND',
+  'MITIGATE_AND_MONITOR',
+  'DEFER_TO_REVIEW_DATE',
+  'PROFESSIONAL_JUDGMENT',
+  'OUT_OF_CURRENT_SCOPE',
+  'LIFECYCLE_NOT_REACHED',
+  'RESOLVED_BY_EVIDENCE',
+  'NOT_APPLICABLE',
+]);
+
+const DECISION_MATURITIES = new Set<ReviewDecisionMaturity>([
+  'PRELIMINARY',
+  'REVIEWABLE',
+  'CONFIRMABLE',
+  'DEFERRED_WITH_MONITORING',
+]);
+
+const EVIDENCE_HORIZONS = new Set<ReviewEvidenceHorizon>([
+  'SOURCE_DOCUMENT_COMPLETE',
+  'TARGET_IDENTITY_KNOWN',
+  'CONFIGURATION_PARTIAL',
+  'LOCAL_RELIABILITY_NOT_CONNECTED',
+  'GLOBAL_EVIDENCE_PARTIAL',
+  'OPERATIONS_REVIEW_PENDING',
 ]);
 
 export function parseReviewTurnTaskContract(
@@ -238,7 +274,10 @@ export function parseReviewTurnCandidateContract(input: {
     'runtime',
   ]);
   if (
-    record.schemaVersion !== 'wiselink.3_1.review_turn_candidate.v1.c2' ||
+    ![
+      'wiselink.3_1.review_turn_candidate.v1.c2',
+      'wiselink.3_1.review_turn_candidate.v1.c3',
+    ].includes(String(record.schemaVersion)) ||
     record.mode !== 'INTERACTIVE_REVIEW' ||
     record.reviewConversationRef !== task.reviewConversationRef ||
     record.reviewTurnRef !== task.reviewTurnRef ||
@@ -281,7 +320,10 @@ export function parseReviewTurnCandidateContract(input: {
     task.resourceRefs.map((item) => item.sourceRefId),
     'REVIEW_RESULT_SOURCE_REF_NOT_ALLOWED',
   );
-  const reviewActionDraft = parseReviewActionDraft(record.reviewActionDraft);
+  const reviewActionDraft = parseReviewActionDraft(
+    record.reviewActionDraft,
+    record.schemaVersion === 'wiselink.3_1.review_turn_candidate.v1.c3',
+  );
   if (reviewActionDraft) {
     if (reviewActionDraft.baseRevision !== task.inputRevision) {
       fail('REVIEW_RESULT_DRAFT_REVISION_MISMATCH');
@@ -380,10 +422,11 @@ function parseFrozenSourceRef(value: unknown): FrozenReviewSourceRef {
 
 function parseReviewActionDraft(
   value: unknown,
-): ReviewActionDraftCandidate | null {
+  c3: boolean,
+): ReviewActionDraftProposal | null {
   if (value === null) return null;
   const record = requiredRecord(value, 'REVIEW_RESULT_DRAFT_INVALID');
-  exactKeys(record, [
+  const baseKeys = [
     'baseRevision',
     'evaluationItemId',
     'proposedStatus',
@@ -393,7 +436,13 @@ function parseReviewActionDraft(
     'assumptions',
     'affectedItemIds',
     'overallImpact',
-  ]);
+  ];
+  exactKeys(
+    record,
+    c3
+      ? [...baseKeys, 'uncertaintyDispositions', 'decisionSnapshot']
+      : baseKeys,
+  );
   requiredRevision(record.baseRevision, 'REVIEW_RESULT_DRAFT_REVISION_INVALID');
   requiredText(record.evaluationItemId, 'REVIEW_RESULT_DRAFT_ITEM_REQUIRED');
   requiredText(record.proposedStatus, 'REVIEW_RESULT_DRAFT_STATUS_REQUIRED');
@@ -412,15 +461,217 @@ function parseReviewActionDraft(
   if (typeof record.overallImpact !== 'boolean') {
     fail('REVIEW_RESULT_DRAFT_OVERALL_IMPACT_INVALID');
   }
-  return structuredClone(record) as unknown as ReviewActionDraftCandidate;
+  if (!c3) {
+    return structuredClone(record) as unknown as ReviewActionDraftProposal;
+  }
+  const uncertaintyDispositions = requiredArray(
+    record.uncertaintyDispositions,
+    'REVIEW_RESULT_DRAFT_DISPOSITIONS_INVALID',
+  ).map(parseUncertaintyDisposition);
+  assertUnique(
+    uncertaintyDispositions.map((item) => item.gapRef),
+    'REVIEW_RESULT_DRAFT_DISPOSITIONS_DUPLICATE',
+  );
+  const decisionSnapshot = parseDecisionSnapshot(record.decisionSnapshot);
+  if (
+    JSON.stringify(decisionSnapshot.uncertaintyDispositions) !==
+    JSON.stringify(uncertaintyDispositions)
+  ) {
+    fail('REVIEW_RESULT_DECISION_SNAPSHOT_DISPOSITIONS_MISMATCH');
+  }
+  return structuredClone({
+    ...record,
+    uncertaintyDispositions,
+    decisionSnapshot,
+  }) as unknown as ReviewActionDraftProposal;
+}
+
+function parseUncertaintyDisposition(
+  value: unknown,
+): ReviewUncertaintyDispositionCandidate {
+  const record = requiredRecord(
+    value,
+    'REVIEW_RESULT_DRAFT_DISPOSITION_INVALID',
+  );
+  exactKeys(record, [
+    'gapRef',
+    'disposition',
+    'rationale',
+    'assumptions',
+    'controlsAndMitigations',
+    'evidenceRefs',
+    'reviewBy',
+    'reopenTriggers',
+  ]);
+  const disposition = requiredText(
+    record.disposition,
+    'REVIEW_RESULT_DRAFT_DISPOSITION_INVALID',
+  ) as ReviewUncertaintyDispositionKind;
+  if (!UNCERTAINTY_DISPOSITIONS.has(disposition)) {
+    fail('REVIEW_RESULT_DRAFT_DISPOSITION_INVALID');
+  }
+  const assumptions = uniqueStringArray(
+    record.assumptions,
+    'REVIEW_RESULT_DRAFT_DISPOSITION_INVALID',
+  );
+  const controlsAndMitigations = uniqueStringArray(
+    record.controlsAndMitigations,
+    'REVIEW_RESULT_DRAFT_DISPOSITION_INVALID',
+  );
+  const evidenceRefs = uniqueStringArray(
+    record.evidenceRefs,
+    'REVIEW_RESULT_DRAFT_DISPOSITION_INVALID',
+  );
+  const reviewBy = nullableIsoText(
+    record.reviewBy,
+    'REVIEW_RESULT_DRAFT_DISPOSITION_REVIEW_BY_INVALID',
+  );
+  const reopenTriggers = uniqueStringArray(
+    record.reopenTriggers,
+    'REVIEW_RESULT_DRAFT_DISPOSITION_INVALID',
+  );
+  if (
+    (disposition === 'ACCEPT_WITH_ASSUMPTION' && assumptions.length === 0) ||
+    (['APPLY_CONSERVATIVE_BOUND', 'MITIGATE_AND_MONITOR'].includes(
+      disposition,
+    ) &&
+      controlsAndMitigations.length === 0) ||
+    (['MITIGATE_AND_MONITOR', 'DEFER_TO_REVIEW_DATE'].includes(disposition) &&
+      reviewBy === null) ||
+    (disposition === 'RESOLVED_BY_EVIDENCE' && evidenceRefs.length === 0)
+  ) {
+    fail('REVIEW_RESULT_DRAFT_DISPOSITION_INCOMPLETE');
+  }
+  return {
+    gapRef: requiredText(
+      record.gapRef,
+      'REVIEW_RESULT_DRAFT_DISPOSITION_INVALID',
+    ),
+    disposition,
+    rationale: requiredText(
+      record.rationale,
+      'REVIEW_RESULT_DRAFT_DISPOSITION_INVALID',
+    ),
+    assumptions,
+    controlsAndMitigations,
+    evidenceRefs,
+    reviewBy,
+    reopenTriggers,
+  };
+}
+
+function parseDecisionSnapshot(value: unknown): ReviewDecisionSnapshotProposal {
+  const record = requiredRecord(
+    value,
+    'REVIEW_RESULT_DECISION_SNAPSHOT_INVALID',
+  );
+  exactKeys(record, [
+    'assessmentAsOf',
+    'evidenceHorizon',
+    'currentBestJudgment',
+    'alternativeJudgments',
+    'decisionMaturity',
+    'decisiveFacts',
+    'assumptions',
+    'residualUncertainties',
+    'uncertaintyDispositions',
+    'controlsAndMitigations',
+    'monitoringPlan',
+    'validUntil',
+    'reviewBy',
+    'reopenTriggers',
+    'whatWouldChangeDecision',
+    'candidateOnly',
+  ]);
+  const evidenceHorizon = uniqueStringArray(
+    record.evidenceHorizon,
+    'REVIEW_RESULT_DECISION_SNAPSHOT_INVALID',
+  ) as ReviewEvidenceHorizon[];
+  if (evidenceHorizon.some((item) => !EVIDENCE_HORIZONS.has(item))) {
+    fail('REVIEW_RESULT_DECISION_SNAPSHOT_INVALID');
+  }
+  const decisionMaturity = requiredText(
+    record.decisionMaturity,
+    'REVIEW_RESULT_DECISION_SNAPSHOT_INVALID',
+  ) as ReviewDecisionMaturity;
+  if (!DECISION_MATURITIES.has(decisionMaturity)) {
+    fail('REVIEW_RESULT_DECISION_SNAPSHOT_INVALID');
+  }
+  if (record.candidateOnly !== true) {
+    fail('REVIEW_RESULT_DECISION_SNAPSHOT_AUTHORITY_INVALID');
+  }
+  return {
+    assessmentAsOf: requiredIsoText(
+      record.assessmentAsOf,
+      'REVIEW_RESULT_DECISION_SNAPSHOT_AS_OF_INVALID',
+    ),
+    evidenceHorizon,
+    currentBestJudgment: requiredText(
+      record.currentBestJudgment,
+      'REVIEW_RESULT_DECISION_SNAPSHOT_INVALID',
+    ),
+    alternativeJudgments: uniqueStringArray(
+      record.alternativeJudgments,
+      'REVIEW_RESULT_DECISION_SNAPSHOT_INVALID',
+    ),
+    decisionMaturity,
+    decisiveFacts: uniqueStringArray(
+      record.decisiveFacts,
+      'REVIEW_RESULT_DECISION_SNAPSHOT_INVALID',
+    ),
+    assumptions: uniqueStringArray(
+      record.assumptions,
+      'REVIEW_RESULT_DECISION_SNAPSHOT_INVALID',
+    ),
+    residualUncertainties: uniqueStringArray(
+      record.residualUncertainties,
+      'REVIEW_RESULT_DECISION_SNAPSHOT_INVALID',
+    ),
+    uncertaintyDispositions: requiredArray(
+      record.uncertaintyDispositions,
+      'REVIEW_RESULT_DECISION_SNAPSHOT_INVALID',
+    ).map(parseUncertaintyDisposition),
+    controlsAndMitigations: uniqueStringArray(
+      record.controlsAndMitigations,
+      'REVIEW_RESULT_DECISION_SNAPSHOT_INVALID',
+    ),
+    monitoringPlan: nullableText(
+      record.monitoringPlan,
+      'REVIEW_RESULT_DECISION_SNAPSHOT_INVALID',
+    ),
+    validUntil: nullableIsoText(
+      record.validUntil,
+      'REVIEW_RESULT_DECISION_SNAPSHOT_VALID_UNTIL_INVALID',
+    ),
+    reviewBy: nullableIsoText(
+      record.reviewBy,
+      'REVIEW_RESULT_DECISION_SNAPSHOT_REVIEW_BY_INVALID',
+    ),
+    reopenTriggers: uniqueStringArray(
+      record.reopenTriggers,
+      'REVIEW_RESULT_DECISION_SNAPSHOT_INVALID',
+    ),
+    whatWouldChangeDecision: uniqueStringArray(
+      record.whatWouldChangeDecision,
+      'REVIEW_RESULT_DECISION_SNAPSHOT_INVALID',
+    ),
+    candidateOnly: true,
+  };
 }
 
 function validateGapResolutionDraft(
   task: ReviewTurnTaskContract,
-  draft: ReviewActionDraftCandidate,
+  draft: ReviewActionDraftProposal,
 ): void {
   const resolvedGapRefs = draft.resolvedGapRefs ?? [];
-  if (resolvedGapRefs.length === 0) return;
+  const dispositions = draft.uncertaintyDispositions ?? [];
+  if (
+    resolvedGapRefs.length === 0 &&
+    dispositions.length === 0 &&
+    !draft.decisionSnapshot
+  ) {
+    return;
+  }
   const evaluation = requiredRecord(
     task.context.evaluation,
     'REVIEW_RESULT_GAP_LEDGER_REQUIRED',
@@ -446,6 +697,30 @@ function validateGapResolutionDraft(
     if (gapsByRef.has(gapRef)) fail('REVIEW_RESULT_GAP_LEDGER_INVALID');
     gapsByRef.set(gapRef, gap);
   }
+  for (const disposition of dispositions) {
+    const gap = gapsByRef.get(disposition.gapRef);
+    if (!gap) fail('REVIEW_RESULT_DRAFT_GAP_NOT_ALLOWED');
+    const authority = requiredRecord(
+      gap.authority,
+      'REVIEW_RESULT_GAP_LEDGER_INVALID',
+    );
+    if (
+      authority.owner !== 'CANONICAL_HOST' ||
+      authority.modelMayClose !== false
+    ) {
+      fail('REVIEW_RESULT_DRAFT_GAP_NOT_RESOLVABLE');
+    }
+    assertSubset(
+      disposition.evidenceRefs,
+      task.resourceRefs.map((item) => item.sourceRefId),
+      'REVIEW_RESULT_DRAFT_DISPOSITION_EVIDENCE_NOT_ALLOWED',
+    );
+    const resolvedByEvidence =
+      disposition.disposition === 'RESOLVED_BY_EVIDENCE';
+    if (resolvedByEvidence !== resolvedGapRefs.includes(disposition.gapRef)) {
+      fail('REVIEW_RESULT_DRAFT_DISPOSITION_RESOLUTION_MISMATCH');
+    }
+  }
   const selected = resolvedGapRefs.map((gapRef) => {
     const gap = gapsByRef.get(gapRef);
     if (!gap) fail('REVIEW_RESULT_DRAFT_GAP_NOT_ALLOWED');
@@ -468,14 +743,44 @@ function validateGapResolutionDraft(
       stringArray(gap.affectedCriterionIds, 'REVIEW_RESULT_GAP_LEDGER_INVALID'),
     ),
   );
-  if (!sameTextSet(affectedCriterionIds, draft.affectedItemIds)) {
+  if (
+    resolvedGapRefs.length > 0 &&
+    !sameTextSet(affectedCriterionIds, draft.affectedItemIds)
+  ) {
     fail('REVIEW_RESULT_DRAFT_GAP_AFFECTED_ITEMS_MISMATCH');
   }
   const attachmentEvidence = draft.sourceRefs.some((sourceRef) =>
     task.attachmentRefs.includes(sourceRef),
   );
-  if (draft.adoptedInputRefs.length === 0 && !attachmentEvidence) {
+  if (
+    resolvedGapRefs.length > 0 &&
+    draft.adoptedInputRefs.length === 0 &&
+    !attachmentEvidence
+  ) {
     fail('REVIEW_RESULT_DRAFT_GAP_EVIDENCE_REQUIRED');
+  }
+  if (draft.decisionSnapshot?.decisionMaturity !== 'CONFIRMABLE') return;
+  const dispositionsByGap = new Map(
+    dispositions.map((item) => [item.gapRef, item.disposition]),
+  );
+  const uncontrolledCriticalGap = gaps.some((gap) => {
+    if (
+      !['P0_DECISION_CRITICAL', 'P1_ACTION_CRITICAL'].includes(
+        String(gap.materiality),
+      ) ||
+      gap.resolutionStatus === 'RESOLVED_BY_ENGINEER_REVIEW'
+    ) {
+      return false;
+    }
+    const gapRef = requiredText(
+      gap.gapRef,
+      'REVIEW_RESULT_GAP_LEDGER_INVALID',
+    );
+    const disposition = dispositionsByGap.get(gapRef);
+    return disposition === undefined || disposition === 'RESOLVE_NOW';
+  });
+  if (uncontrolledCriticalGap) {
+    fail('REVIEW_RESULT_DECISION_SNAPSHOT_NOT_CONFIRMABLE');
   }
 }
 
@@ -523,6 +828,12 @@ function stringArray(value: unknown, code: string): string[] {
   return [...values] as string[];
 }
 
+function uniqueStringArray(value: unknown, code: string): string[] {
+  const values = stringArray(value, code);
+  assertUnique(values, code);
+  return values;
+}
+
 function requiredText(value: unknown, code: string): string {
   if (typeof value !== 'string' || !value.trim() || value !== value.trim())
     fail(code);
@@ -532,6 +843,18 @@ function requiredText(value: unknown, code: string): string {
 function nullableText(value: unknown, code: string): string | null {
   if (value === null) return null;
   return requiredText(value, code);
+}
+
+function requiredIsoText(value: unknown, code: string): string {
+  const text = requiredText(value, code);
+  const timestamp = Date.parse(text);
+  if (!Number.isFinite(timestamp)) fail(code);
+  return text;
+}
+
+function nullableIsoText(value: unknown, code: string): string | null {
+  if (value === null) return null;
+  return requiredIsoText(value, code);
 }
 
 function requiredRevision(value: unknown, code: string): number {

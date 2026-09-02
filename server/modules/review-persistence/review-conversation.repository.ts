@@ -8,10 +8,14 @@ import {
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 
 import type {
+  ReviewActionDraftCandidate,
   ReviewTurnAssistantCandidate,
   ReviewTurnResponseType,
 } from '@shared/api.interface';
-import { canonicalJson } from '../action-attempt/action-attempt-envelope';
+import {
+  canonicalJson,
+  canonicalSha256,
+} from '../action-attempt/action-attempt-envelope';
 
 import {
   engineerSuppliedInput,
@@ -1283,15 +1287,20 @@ function parseAssistantCandidate(
   const actionAttemptRef = requiredJsonText(provenance.actionAttemptRef);
   const { actionAttemptRef: _actionAttemptRef, ...resultProvenance } =
     provenance;
+  const reviewActionDraft = parseStoredReviewActionDraft({
+    value: row.reviewActionDraftJson,
+    actionAttemptRef,
+    reviewConversationRef: row.reviewConversationId,
+    reviewTurnRef: row.reviewTurnId,
+    resultContentHash: row.resultContentHash,
+  });
   return {
     responseType: row.responseType as ReviewTurnResponseType,
     answer: row.assistantResponse,
     sourceRefs: parseJsonStringArray(row.sourceRefsJson),
     missingInputs: parseJsonStringArray(row.missingInputsJson),
     candidateEvidenceRefs: parseJsonStringArray(row.candidateEvidenceRefsJson),
-    reviewActionDraft: JSON.parse(
-      row.reviewActionDraftJson,
-    ) as ReviewTurnAssistantCandidate['reviewActionDraft'],
+    reviewActionDraft,
     affectedItemIds: parseJsonStringArray(row.affectedItemIdsJson),
     warnings: parseJsonStringArray(row.warningsJson),
     actionAttemptRef,
@@ -1299,6 +1308,44 @@ function parseAssistantCandidate(
       resultProvenance as unknown as ReviewTurnAssistantCandidate['provenance'],
     completedAt: row.assistantCompletedAt.toISOString(),
   };
+}
+
+function parseStoredReviewActionDraft(input: {
+  value: string;
+  actionAttemptRef: string;
+  reviewConversationRef: string;
+  reviewTurnRef: string;
+  resultContentHash: string;
+}): ReviewActionDraftCandidate | null {
+  const parsed: unknown = JSON.parse(input.value) as unknown;
+  if (parsed === null) return null;
+  if (typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('REVIEW_TURN_CANDIDATE_JSON_INVALID');
+  }
+  const record: Record<string, unknown> = parsed as Record<string, unknown>;
+  const { reviewActionDraftRef: storedRef, ...proposal } = record;
+  const normalizedDraft = {
+    ...proposal,
+    uncertaintyDispositions: Array.isArray(proposal.uncertaintyDispositions)
+      ? proposal.uncertaintyDispositions
+      : [],
+    decisionSnapshot: proposal.decisionSnapshot ?? null,
+  };
+  const expectedRef = `RAD-${canonicalSha256({
+    schemaVersion: 'wiselink.3_1.review_action_draft_ref.v1',
+    attemptRef: input.actionAttemptRef,
+    reviewConversationRef: input.reviewConversationRef,
+    reviewTurnRef: input.reviewTurnRef,
+    resultContentHash: input.resultContentHash,
+    draft: normalizedDraft,
+  })}`;
+  if (storedRef !== undefined && storedRef !== expectedRef) {
+    throw new Error('REVIEW_ACTION_DRAFT_REF_BINDING_DRIFT');
+  }
+  return structuredClone({
+    ...normalizedDraft,
+    reviewActionDraftRef: expectedRef,
+  }) as unknown as ReviewActionDraftCandidate;
 }
 
 function parseJsonRecord(value: string): Record<string, unknown> {

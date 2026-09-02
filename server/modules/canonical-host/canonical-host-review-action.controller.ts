@@ -2,7 +2,10 @@ import { Body, Controller, Param, Post, Req } from '@nestjs/common';
 import { NeedLogin } from '@lark-apaas/fullstack-nestjs-core';
 import type { Request } from 'express';
 
-import type { ConfirmReviewActionDraftResponse } from '@shared/api.interface';
+import type {
+  ConfirmReviewActionDraftRequest,
+  ConfirmReviewActionDraftResponse,
+} from '@shared/api.interface';
 import { CanonicalHostReviewActionService } from './canonical-host-review-action.service';
 
 const MAX_IDENTIFIER_LENGTH = 96;
@@ -22,7 +25,7 @@ export class CanonicalHostReviewActionController {
     @Body() body: unknown,
     @Req() request: Request,
   ): Promise<ConfirmReviewActionDraftResponse> {
-    emptyBody(body);
+    const input: ConfirmReviewActionDraftRequest = confirmBody(body);
     return this.service.confirmDraft(
       requiredIdentifier(workItemIdValue, 'WORK_ITEM_ID_INVALID'),
       requiredIdentifier(
@@ -30,18 +33,40 @@ export class CanonicalHostReviewActionController {
         'REVIEW_CONVERSATION_ID_INVALID',
       ),
       requiredIdentifier(reviewTurnIdValue, 'REVIEW_TURN_ID_INVALID'),
+      input,
       request,
     );
   }
 }
 
-function emptyBody(body: unknown): void {
-  if (body === undefined || body === null) return;
+function confirmBody(body: unknown): ConfirmReviewActionDraftRequest {
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     throw badRequest('REVIEW_REQUEST_BODY_INVALID');
   }
-  const key = Object.keys(body)[0];
-  if (key) throw badRequest(`REVIEW_REQUEST_UNKNOWN_FIELD:${key}`);
+  const value: Record<string, unknown> = body as Record<string, unknown>;
+  const allowed = new Set(['reviewActionDraftRef', 'expectedRevision']);
+  for (const key of Object.keys(value)) {
+    if (!allowed.has(key)) {
+      throw badRequest(`REVIEW_REQUEST_UNKNOWN_FIELD:${key}`);
+    }
+  }
+  if (Object.keys(value).length !== allowed.size) {
+    throw badRequest('REVIEW_REQUEST_BODY_INVALID');
+  }
+  const expectedRevision: number = Number(value.expectedRevision);
+  if (
+    !Number.isSafeInteger(value.expectedRevision) ||
+    expectedRevision < 1
+  ) {
+    throw badRequest('REVIEW_EXPECTED_REVISION_INVALID');
+  }
+  return {
+    reviewActionDraftRef: requiredIdentifier(
+      value.reviewActionDraftRef,
+      'REVIEW_ACTION_DRAFT_REF_INVALID',
+    ),
+    expectedRevision,
+  };
 }
 
 function requiredIdentifier(value: unknown, code: string): string {

@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
-export const WISELINK_SKILL_VERSION = 'wiselink-research-and-synthesize@r09.c4';
+export const WISELINK_SKILL_VERSION = 'wiselink-research-and-synthesize@r09.c5';
 export const WISELINK_HOST_MCP_NAME =
   'wiselink-openclaw-engineering-assessment';
 export const WISELINK_HOST_MCP_VERSION = '1.2.0';
@@ -17,7 +17,7 @@ export const WISELINK_APPLICABILITY_PROMPT_VERSION =
 const TASK_ENVELOPE_SCHEMA = 'wiselink.3_1.openclaw_task_envelope.v1';
 const RESULT_ENVELOPE_SCHEMA = 'wiselink.3_1.openclaw_result_envelope.v1';
 const REVIEW_TASK_SCHEMA = 'wiselink.3_1.review_turn_task.v1.c2';
-const REVIEW_CANDIDATE_SCHEMA = 'wiselink.3_1.review_turn_candidate.v1.c2';
+const REVIEW_CANDIDATE_SCHEMA = 'wiselink.3_1.review_turn_candidate.v1.c3';
 const APPLICABILITY_TASK_SCHEMA = 'wiselink.3_1.applicability_task.v1';
 const APPLICABILITY_AST_CANDIDATE_SCHEMA =
   'wiselink.3_1.applicability_ast_candidate.v1';
@@ -50,6 +50,32 @@ const REVIEW_RESPONSE_TYPES = new Set([
   'INPUT_REQUEST',
   'AFFECTED_ITEMS_PREVIEW',
   'TASK_STATUS',
+]);
+const REVIEW_UNCERTAINTY_DISPOSITIONS = new Set([
+  'RESOLVE_NOW',
+  'ACCEPT_WITH_ASSUMPTION',
+  'APPLY_CONSERVATIVE_BOUND',
+  'MITIGATE_AND_MONITOR',
+  'DEFER_TO_REVIEW_DATE',
+  'PROFESSIONAL_JUDGMENT',
+  'OUT_OF_CURRENT_SCOPE',
+  'LIFECYCLE_NOT_REACHED',
+  'RESOLVED_BY_EVIDENCE',
+  'NOT_APPLICABLE',
+]);
+const REVIEW_DECISION_MATURITIES = new Set([
+  'PRELIMINARY',
+  'REVIEWABLE',
+  'CONFIRMABLE',
+  'DEFERRED_WITH_MONITORING',
+]);
+const REVIEW_EVIDENCE_HORIZONS = new Set([
+  'SOURCE_DOCUMENT_COMPLETE',
+  'TARGET_IDENTITY_KNOWN',
+  'CONFIGURATION_PARTIAL',
+  'LOCAL_RELIABILITY_NOT_CONNECTED',
+  'GLOBAL_EVIDENCE_PARTIAL',
+  'OPERATIONS_REVIEW_PENDING',
 ]);
 
 const PROVIDERS = new Set(['BOEING', 'AIRBUS', 'COMAC']);
@@ -3770,7 +3796,7 @@ export function validateReviewTask(value) {
   );
   equal(
     value.executionPolicy.toolPolicyRef,
-    `${WISELINK_HOST_MCP_NAME}@${WISELINK_HOST_MCP_VERSION}#interactive-review-c2`,
+    `${WISELINK_HOST_MCP_NAME}@${WISELINK_HOST_MCP_VERSION}#interactive-review-c3`,
     'REVIEW_TASK_TOOL_POLICY_INVALID',
   );
   return value;
@@ -3815,7 +3841,7 @@ export function validateReviewCandidate(task, candidate) {
     'REVIEW_CANDIDATE_TURN_MISMATCH',
   );
   if (!REVIEW_RESPONSE_TYPES.has(candidate.responseType)) {
-    fail('REVIEW_CANDIDATE_RESPONSE_TYPE_UNSUPPORTED_BY_C2');
+    fail('REVIEW_CANDIDATE_RESPONSE_TYPE_UNSUPPORTED_BY_C3');
   }
   nonEmpty(candidate.answer, 'REVIEW_CANDIDATE_ANSWER_REQUIRED');
   uniqueTextArray(candidate.sourceRefs, 'REVIEW_CANDIDATE_SOURCE_REFS_INVALID');
@@ -3870,6 +3896,8 @@ export function validateReviewCandidate(task, candidate) {
         'assumptions',
         'affectedItemIds',
         'overallImpact',
+        'uncertaintyDispositions',
+        'decisionSnapshot',
       ],
       [],
       'review action draft',
@@ -3905,6 +3933,15 @@ export function validateReviewCandidate(task, candidate) {
       draft.overallImpact,
       'REVIEW_CANDIDATE_DRAFT_OVERALL_IMPACT_INVALID',
     );
+    const dispositions = validateReviewUncertaintyDispositions(
+      draft.uncertaintyDispositions,
+    );
+    const snapshot = validateReviewDecisionSnapshot(draft.decisionSnapshot);
+    equal(
+      canonicalJson(snapshot.uncertaintyDispositions),
+      canonicalJson(dispositions),
+      'REVIEW_CANDIDATE_DECISION_SNAPSHOT_DISPOSITIONS_MISMATCH',
+    );
     assertSubsetOf(
       [draft.evaluationItemId, ...draft.affectedItemIds],
       allowedItems,
@@ -3928,7 +3965,11 @@ export function validateReviewCandidate(task, candidate) {
       canonicalJson(candidate.affectedItemIds),
       'REVIEW_CANDIDATE_DRAFT_AFFECTED_ITEMS_MISMATCH',
     );
-    if (draft.resolvedGapRefs.length > 0) {
+    if (
+      draft.resolvedGapRefs.length > 0 ||
+      dispositions.length > 0 ||
+      snapshot.decisionMaturity === 'CONFIRMABLE'
+    ) {
       assertObject(task.context.evaluation, 'review evaluation context');
       assertObject(task.context.evaluation.gapLedger, 'review gap ledger');
       const gapLedger = task.context.evaluation.gapLedger;
@@ -3957,6 +3998,27 @@ export function validateReviewCandidate(task, candidate) {
         }
         gapsByRef.set(gap.gapRef, gap);
       });
+      dispositions.forEach((disposition) => {
+        const gap = gapsByRef.get(disposition.gapRef);
+        if (!gap) fail('REVIEW_CANDIDATE_DRAFT_GAP_NOT_ALLOWED');
+        assertObject(gap.authority, 'review gap authority');
+        if (
+          gap.authority.owner !== 'CANONICAL_HOST' ||
+          gap.authority.modelMayClose !== false
+        ) {
+          fail('REVIEW_CANDIDATE_DRAFT_GAP_NOT_RESOLVABLE');
+        }
+        assertSubsetOf(
+          disposition.evidenceRefs,
+          allowedSources,
+          'REVIEW_CANDIDATE_DISPOSITION_EVIDENCE_REF_NOT_ALLOWED',
+        );
+        equal(
+          disposition.disposition === 'RESOLVED_BY_EVIDENCE',
+          draft.resolvedGapRefs.includes(disposition.gapRef),
+          'REVIEW_CANDIDATE_DISPOSITION_RESOLUTION_MISMATCH',
+        );
+      });
       const selectedGaps = draft.resolvedGapRefs.map((gapRef) => {
         const gap = gapsByRef.get(gapRef);
         if (!gap) fail('REVIEW_CANDIDATE_DRAFT_GAP_NOT_ALLOWED');
@@ -3975,20 +4037,39 @@ export function validateReviewCandidate(task, candidate) {
         );
         return gap;
       });
-      const affectedFromGaps = [
-        ...new Set(selectedGaps.flatMap((gap) => gap.affectedCriterionIds)),
-      ].sort();
-      const affectedFromDraft = [...draft.affectedItemIds].sort();
-      equal(
-        canonicalJson(affectedFromGaps),
-        canonicalJson(affectedFromDraft),
-        'REVIEW_CANDIDATE_DRAFT_GAP_AFFECTED_ITEMS_MISMATCH',
-      );
-      const hasAttachmentEvidence = draft.sourceRefs.some((sourceRef) =>
-        task.attachmentRefs.includes(sourceRef),
-      );
-      if (draft.adoptedInputRefs.length === 0 && !hasAttachmentEvidence) {
-        fail('REVIEW_CANDIDATE_DRAFT_GAP_EVIDENCE_REQUIRED');
+      if (draft.resolvedGapRefs.length > 0) {
+        const affectedFromGaps = [
+          ...new Set(selectedGaps.flatMap((gap) => gap.affectedCriterionIds)),
+        ].sort();
+        const affectedFromDraft = [...draft.affectedItemIds].sort();
+        equal(
+          canonicalJson(affectedFromGaps),
+          canonicalJson(affectedFromDraft),
+          'REVIEW_CANDIDATE_DRAFT_GAP_AFFECTED_ITEMS_MISMATCH',
+        );
+        const hasAttachmentEvidence = draft.sourceRefs.some((sourceRef) =>
+          task.attachmentRefs.includes(sourceRef),
+        );
+        if (draft.adoptedInputRefs.length === 0 && !hasAttachmentEvidence) {
+          fail('REVIEW_CANDIDATE_DRAFT_GAP_EVIDENCE_REQUIRED');
+        }
+      }
+      if (snapshot.decisionMaturity === 'CONFIRMABLE') {
+        const dispositionByGap = new Map(
+          dispositions.map((value) => [value.gapRef, value.disposition]),
+        );
+        const uncontrolled = gapLedger.gaps.some(
+          (gap) =>
+            ['P0_DECISION_CRITICAL', 'P1_ACTION_CRITICAL'].includes(
+              gap.materiality,
+            ) &&
+            gap.resolutionStatus !== 'RESOLVED_BY_ENGINEER_REVIEW' &&
+            (dispositionByGap.get(gap.gapRef) === undefined ||
+              dispositionByGap.get(gap.gapRef) === 'RESOLVE_NOW'),
+        );
+        if (uncontrolled) {
+          fail('REVIEW_CANDIDATE_DECISION_SNAPSHOT_NOT_CONFIRMABLE');
+        }
       }
     }
   }
@@ -4009,6 +4090,143 @@ export function validateReviewCandidate(task, candidate) {
     'REVIEW_CANDIDATE_PROFILE_INVALID',
   );
   return candidate;
+}
+
+function validateReviewUncertaintyDispositions(value) {
+  array(value, 'REVIEW_CANDIDATE_DISPOSITIONS_INVALID');
+  const seen = new Set();
+  value.forEach((item, index) => {
+    assertObject(item, `review uncertainty disposition ${index}`);
+    exactKeys(
+      item,
+      [
+        'gapRef',
+        'disposition',
+        'rationale',
+        'assumptions',
+        'controlsAndMitigations',
+        'evidenceRefs',
+        'reviewBy',
+        'reopenTriggers',
+      ],
+      [],
+      `review uncertainty disposition ${index}`,
+    );
+    nonEmpty(item.gapRef, 'REVIEW_CANDIDATE_DISPOSITION_INVALID');
+    if (seen.has(item.gapRef)) {
+      fail('REVIEW_CANDIDATE_DISPOSITION_DUPLICATE');
+    }
+    seen.add(item.gapRef);
+    if (!REVIEW_UNCERTAINTY_DISPOSITIONS.has(item.disposition)) {
+      fail('REVIEW_CANDIDATE_DISPOSITION_INVALID');
+    }
+    nonEmpty(item.rationale, 'REVIEW_CANDIDATE_DISPOSITION_INVALID');
+    uniqueTextArray(item.assumptions, 'REVIEW_CANDIDATE_DISPOSITION_INVALID');
+    uniqueTextArray(
+      item.controlsAndMitigations,
+      'REVIEW_CANDIDATE_DISPOSITION_INVALID',
+    );
+    uniqueTextArray(
+      item.evidenceRefs,
+      'REVIEW_CANDIDATE_DISPOSITION_INVALID',
+    );
+    nullableIsoText(item.reviewBy, 'REVIEW_CANDIDATE_DISPOSITION_INVALID');
+    uniqueTextArray(
+      item.reopenTriggers,
+      'REVIEW_CANDIDATE_DISPOSITION_INVALID',
+    );
+    if (
+      (item.disposition === 'ACCEPT_WITH_ASSUMPTION' &&
+        item.assumptions.length === 0) ||
+      (['APPLY_CONSERVATIVE_BOUND', 'MITIGATE_AND_MONITOR'].includes(
+        item.disposition,
+      ) &&
+        item.controlsAndMitigations.length === 0) ||
+      (['MITIGATE_AND_MONITOR', 'DEFER_TO_REVIEW_DATE'].includes(
+        item.disposition,
+      ) &&
+        item.reviewBy === null) ||
+      (item.disposition === 'RESOLVED_BY_EVIDENCE' &&
+        item.evidenceRefs.length === 0)
+    ) {
+      fail('REVIEW_CANDIDATE_DISPOSITION_INCOMPLETE');
+    }
+  });
+  return value;
+}
+
+function validateReviewDecisionSnapshot(value) {
+  assertObject(value, 'review decision snapshot');
+  exactKeys(
+    value,
+    [
+      'assessmentAsOf',
+      'evidenceHorizon',
+      'currentBestJudgment',
+      'alternativeJudgments',
+      'decisionMaturity',
+      'decisiveFacts',
+      'assumptions',
+      'residualUncertainties',
+      'uncertaintyDispositions',
+      'controlsAndMitigations',
+      'monitoringPlan',
+      'validUntil',
+      'reviewBy',
+      'reopenTriggers',
+      'whatWouldChangeDecision',
+      'candidateOnly',
+    ],
+    [],
+    'review decision snapshot',
+  );
+  isoText(value.assessmentAsOf, 'REVIEW_CANDIDATE_SNAPSHOT_AS_OF_INVALID');
+  uniqueTextArray(
+    value.evidenceHorizon,
+    'REVIEW_CANDIDATE_SNAPSHOT_INVALID',
+  );
+  if (value.evidenceHorizon.some((item) => !REVIEW_EVIDENCE_HORIZONS.has(item))) {
+    fail('REVIEW_CANDIDATE_SNAPSHOT_INVALID');
+  }
+  nonEmpty(value.currentBestJudgment, 'REVIEW_CANDIDATE_SNAPSHOT_INVALID');
+  uniqueTextArray(
+    value.alternativeJudgments,
+    'REVIEW_CANDIDATE_SNAPSHOT_INVALID',
+  );
+  if (!REVIEW_DECISION_MATURITIES.has(value.decisionMaturity)) {
+    fail('REVIEW_CANDIDATE_SNAPSHOT_INVALID');
+  }
+  uniqueTextArray(value.decisiveFacts, 'REVIEW_CANDIDATE_SNAPSHOT_INVALID');
+  uniqueTextArray(value.assumptions, 'REVIEW_CANDIDATE_SNAPSHOT_INVALID');
+  uniqueTextArray(
+    value.residualUncertainties,
+    'REVIEW_CANDIDATE_SNAPSHOT_INVALID',
+  );
+  validateReviewUncertaintyDispositions(value.uncertaintyDispositions);
+  uniqueTextArray(
+    value.controlsAndMitigations,
+    'REVIEW_CANDIDATE_SNAPSHOT_INVALID',
+  );
+  nullableText(value.monitoringPlan, 'REVIEW_CANDIDATE_SNAPSHOT_INVALID');
+  nullableIsoText(value.validUntil, 'REVIEW_CANDIDATE_SNAPSHOT_INVALID');
+  nullableIsoText(value.reviewBy, 'REVIEW_CANDIDATE_SNAPSHOT_INVALID');
+  uniqueTextArray(value.reopenTriggers, 'REVIEW_CANDIDATE_SNAPSHOT_INVALID');
+  uniqueTextArray(
+    value.whatWouldChangeDecision,
+    'REVIEW_CANDIDATE_SNAPSHOT_INVALID',
+  );
+  equal(value.candidateOnly, true, 'REVIEW_CANDIDATE_SNAPSHOT_AUTHORITY_INVALID');
+  return value;
+}
+
+function isoText(value, code) {
+  nonEmpty(value, code);
+  if (!Number.isFinite(Date.parse(value))) fail(code);
+}
+
+function nullableIsoText(value, code) {
+  if (value === null) return;
+  isoText(value, code);
 }
 
 function validateEnvelopeRefs(value, code) {

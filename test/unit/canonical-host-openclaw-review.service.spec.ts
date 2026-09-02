@@ -326,6 +326,46 @@ describe('CanonicalHostOpenClawReviewService', () => {
     expect(harness.workItems.loadTenantScopedProjection).toHaveBeenCalled();
   });
 
+  it('issues an immutable Host draft ref before persisting a confirmable draft', async () => {
+    const harness = reviewHarness();
+    const begin = await harness.service.begin('RC-1', 'request-1');
+    const result = harness.result(
+      begin.task,
+      { 'wiselink-openclaw-engineering-assessment': '1.2.0' },
+      REVIEW_SKILL_POLICY_REF,
+      'GLM-5.3',
+      REVIEW_PROFILE_REF,
+      true,
+    );
+
+    const committed = await harness.service.commit(
+      begin.attemptRef,
+      begin.leaseToken,
+      begin.leaseGeneration,
+      result,
+    );
+    if (!('assistantCandidate' in committed)) {
+      throw new Error('Expected a persisted Review candidate.');
+    }
+
+    expect(
+      committed.assistantCandidate.reviewActionDraft?.reviewActionDraftRef,
+    ).toMatch(/^RAD-[0-9a-f]{64}$/u);
+    expect(
+      harness.conversations.persistOpenClawAssistantCandidate,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        candidate: expect.objectContaining({
+          reviewActionDraft: expect.objectContaining({
+            reviewActionDraftRef:
+              committed.assistantCandidate.reviewActionDraft
+                ?.reviewActionDraftRef,
+          }),
+        }),
+      }),
+    );
+  });
+
   it('rejects an expired lease before ActionAttempt recovery or review mutation', async () => {
     const harness = reviewHarness();
     const begin = await harness.service.begin('RC-1', 'request-1');
@@ -619,6 +659,7 @@ function reviewHarness(withAttachment = false) {
       skillVersion: string = REVIEW_SKILL_POLICY_REF,
       modelVersion: string = 'GLM-5.3',
       profileRef: string = REVIEW_PROFILE_REF,
+      withDraft: boolean = false,
     ): OpenClawResultEnvelope {
       return sealResultEnvelope({
         schemaVersion: 'wiselink.3_1.openclaw_result_envelope.v1',
@@ -631,17 +672,48 @@ function reviewHarness(withAttachment = false) {
         businessOutcome: 'CANDIDATE_READY',
         candidateStatus: null,
         modelOutput: JSON.stringify({
-          schemaVersion: 'wiselink.3_1.review_turn_candidate.v1.c2',
+          schemaVersion: 'wiselink.3_1.review_turn_candidate.v1.c3',
           mode: 'INTERACTIVE_REVIEW',
           reviewConversationRef: 'RC-1',
           reviewTurnRef: 'RT-1',
-          responseType: 'ANSWER',
+          responseType: withDraft ? 'REVIEW_ACTION_DRAFT' : 'ANSWER',
           answer: 'Candidate answer.',
           sourceRefs: ['SRC-1'],
           missingInputs: [],
           candidateEvidenceRefs: [],
-          reviewActionDraft: null,
-          affectedItemIds: [],
+          reviewActionDraft: withDraft
+            ? {
+                baseRevision: 7,
+                evaluationItemId: 'RULE-1',
+                proposedStatus: 'review_required',
+                resolvedGapRefs: [],
+                adoptedInputRefs: ['engineer-input:ESI-1'],
+                sourceRefs: ['SRC-1'],
+                assumptions: [],
+                affectedItemIds: ['RULE-1'],
+                overallImpact: true,
+                uncertaintyDispositions: [],
+                decisionSnapshot: {
+                  assessmentAsOf: '2026-08-26T10:00:00.000Z',
+                  evidenceHorizon: ['SOURCE_DOCUMENT_COMPLETE'],
+                  currentBestJudgment: 'Candidate answer.',
+                  alternativeJudgments: [],
+                  decisionMaturity: 'PRELIMINARY',
+                  decisiveFacts: [],
+                  assumptions: [],
+                  residualUncertainties: [],
+                  uncertaintyDispositions: [],
+                  controlsAndMitigations: [],
+                  monitoringPlan: null,
+                  validUntil: null,
+                  reviewBy: null,
+                  reopenTriggers: [],
+                  whatWouldChangeDecision: [],
+                  candidateOnly: true,
+                },
+              }
+            : null,
+          affectedItemIds: withDraft ? ['RULE-1'] : [],
           warnings: [],
           runtime: {
             runtimeAppId: 'app_17c3zn24kv2',

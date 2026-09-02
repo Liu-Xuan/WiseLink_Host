@@ -71,9 +71,11 @@ describe('canonical assessment gap ledger', () => {
       ...input,
       effectiveReviews: [
         {
+          sequence: 1,
           criterionId: 'RULE-001',
           affectedCriterionIds: ['RULE-001'],
           resolvedMissingInputs: ['fleet.lineNumber'],
+          uncertaintyDispositions: [],
         },
       ],
     });
@@ -87,9 +89,11 @@ describe('canonical assessment gap ledger', () => {
       ...input,
       effectiveReviews: [
         {
+          sequence: 1,
           criterionId: 'RULE-001',
           affectedCriterionIds: ['RULE-001', 'RULE-002'],
           resolvedMissingInputs: ['fleet.lineNumber'],
+          uncertaintyDispositions: [],
         },
       ],
     });
@@ -100,6 +104,52 @@ describe('canonical assessment gap ledger', () => {
       open: 0,
       partiallyResolved: 0,
       resolved: 1,
+    });
+  });
+
+  it('reads back the latest confirmed uncertainty disposition without treating it as evidence resolution', () => {
+    const disposition = {
+      gapRef: 'GAP-001',
+      disposition: 'MITIGATE_AND_MONITOR' as const,
+      rationale: '当前数据不足，但可用监控边界控制决策风险。',
+      assumptions: [],
+      controlsAndMitigations: ['每月复核构型变化。'],
+      evidenceRefs: [],
+      reviewBy: '2026-10-01T00:00:00.000Z',
+      reopenTriggers: ['发现受影响 P/N。'],
+    };
+    const ledger = buildCanonicalAssessmentGapLedger({
+      workItemRevision: 12,
+      baseRuleRevision: 2,
+      expectedUnresolvedCriterionCount: 1,
+      items: [item('RULE-001', ['aircraft.currentPartNumber'])],
+      rules: new Map([
+        ['RULE-001', rule('当前构型匹配', 'HARD_BLOCK', 'HYBRID')],
+      ]),
+      effectiveReviews: [
+        {
+          sequence: 2,
+          criterionId: 'RULE-001',
+          affectedCriterionIds: ['RULE-001'],
+          resolvedMissingInputs: [],
+          uncertaintyDispositions: [disposition],
+        },
+      ],
+    });
+
+    expect(ledger.gaps[0]).toMatchObject({
+      resolutionStatus: 'OPEN',
+      disposition: {
+        ...disposition,
+        source: 'ENGINEER_CONFIRMED_DECISION_SNAPSHOT',
+        reviewSequence: 2,
+      },
+    });
+    expect(ledger.summary).toMatchObject({
+      open: 1,
+      controlledByDisposition: 1,
+      monitoringOrDeferred: 1,
+      resolveNow: 0,
     });
   });
 

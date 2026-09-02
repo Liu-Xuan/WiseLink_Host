@@ -1,4 +1,4 @@
-# 官方托管 R09 c4 UAT runbook
+# 官方托管 R09 c5 UAT runbook
 
 本 runbook 只定义 Host C4+C5 accepted 后的真实验证顺序；本地实现不执行安装、发布、Session 创建、模型调用或
 云配置修改。
@@ -12,10 +12,10 @@
 3. 模型由官方托管 profile/config 选择，当前 UI 可选 `GLM-5.3`；每个 turn 必须读回非空、可识别的实际
    `modelVersion`，智能选择/fallback 只有在实际模型仍逐 turn 可见时才可继续；
 4. 同名 Skill 只有一个，安装版本精确
-   `wiselink-research-and-synthesize@r09.c4`；
+   `wiselink-research-and-synthesize@r09.c5`；
 5. Host MCP package/version 为
    `wiselink-openclaw-engineering-assessment@1.2.0`，exact 20 tools 可见；
-6. C2 successor 已进入 current Hosted release；只凭 Git commit 不等于 deployed readback；
+6. C3 successor 已进入 current Hosted release；只凭 Git commit 不等于 deployed readback；
 7. 凭据已轮换，托管日志/trace 不回显 Bearer、cookie、token、API key 或 FileService locator。
 
 任一项无法读回则停止，不猜 app/spring 映射，不用普通 app OpenAPI 伪造 invoke。
@@ -87,7 +87,7 @@ authenticated user。
 
 1. 在同一 active ReviewConversation 新增一条用户 turn，取得 `reviewConversationRef + requestId`。
 2. `begin_review_turn`；确认 Host 派生 actor/tenant/WorkItem/session，调用参数中没有这些字段。
-3. `get_review_turn_context` fresh-read current；确认 executionPolicy exact C2。
+3. `get_review_turn_context` fresh-read current；确认 executionPolicy exact C3。
 4. 只读取本轮所需 SourceRef；生成 SOURCE_LINK/ANSWER candidate。
 5. 检查 ResultEnvelope 实际 provenance 与 SourceRef artifact ref/SHA；单次 commit。
 6. Host 读回原 ReviewTurn assistant candidate 和 provenance；WorkItem revision/current/STALE 均未变化。
@@ -95,7 +95,8 @@ authenticated user。
 ### Positive：ReviewActionDraft
 
 1. 选择 allowed evaluation item；按需读 exact SourceRefs。
-2. 生成 baseRevision=current、items/inputs/refs 全在 allowlist 的 ReviewActionDraft candidate。
+2. 生成 baseRevision=current、items/inputs/refs 全在 allowlist，并带 Gap dispositions 与 candidate-only
+   Decision Snapshot 的 ReviewActionDraft candidate。
 3. commit 后只读回 Draft；确认没有 ReviewAction、current 切换或 STALE mutation。
 
 ### Required negative

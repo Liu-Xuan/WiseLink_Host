@@ -256,6 +256,8 @@ function supplementalContext(): OpenClawEngineerReviewContext {
       },
     ],
     resolvedMissingInputs: ['AIRCRAFT_FACT_REQUIRED'],
+    uncertaintyDispositions: [],
+    decisionSnapshot: null,
     correctedAnalysisDirection: null,
   };
   return {

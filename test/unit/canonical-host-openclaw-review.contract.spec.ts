@@ -13,7 +13,7 @@ import {
   REVIEW_TOOL_POLICY_REF,
 } from '../../server/modules/canonical-host/canonical-host-openclaw-review.contract';
 
-describe('interactive review C2 task/result contract', () => {
+describe('interactive review C2 task / C2 legacy and C3 current result contract', () => {
   it('accepts a complete candidate-only result bound to the frozen allowlists', () => {
     const task = reviewTask();
     const result = reviewResult(task, {
@@ -38,6 +38,123 @@ describe('interactive review C2 task/result contract', () => {
       reviewTurnRef: 'RT-1',
       responseType: 'REVIEW_ACTION_DRAFT',
     });
+  });
+
+  it('accepts a c3 DecisionSnapshot when every critical Gap has a controlled disposition', () => {
+    const task = reviewTask();
+    const uncertaintyDispositions = [
+      {
+        gapRef: 'GAP-001',
+        disposition: 'RESOLVED_BY_EVIDENCE',
+        rationale: 'Engineer input supplies the controlled current fact.',
+        assumptions: [],
+        controlsAndMitigations: [],
+        evidenceRefs: ['SRC-1'],
+        reviewBy: null,
+        reopenTriggers: ['A newer configuration record becomes current.'],
+      },
+    ];
+    const result = reviewResult(task, {
+      schemaVersion: 'wiselink.3_1.review_turn_candidate.v1.c3',
+      responseType: 'REVIEW_ACTION_DRAFT',
+      reviewActionDraft: {
+        baseRevision: 7,
+        evaluationItemId: 'RULE-1',
+        proposedStatus: 'confirmed_pass',
+        resolvedGapRefs: ['GAP-001'],
+        adoptedInputRefs: ['engineer-input:ESI-1'],
+        sourceRefs: ['SRC-1'],
+        assumptions: [],
+        affectedItemIds: ['RULE-1'],
+        overallImpact: true,
+        uncertaintyDispositions,
+        decisionSnapshot: {
+          assessmentAsOf: '2026-08-26T10:00:00.000Z',
+          evidenceHorizon: [
+            'SOURCE_DOCUMENT_COMPLETE',
+            'TARGET_IDENTITY_KNOWN',
+          ],
+          currentBestJudgment: 'The criterion is satisfied as of the evidence time.',
+          alternativeJudgments: [],
+          decisionMaturity: 'CONFIRMABLE',
+          decisiveFacts: ['The controlled configuration record matches the target.'],
+          assumptions: [],
+          residualUncertainties: [],
+          uncertaintyDispositions,
+          controlsAndMitigations: [],
+          monitoringPlan: null,
+          validUntil: null,
+          reviewBy: null,
+          reopenTriggers: ['A newer configuration record becomes current.'],
+          whatWouldChangeDecision: ['Contradictory controlled configuration evidence.'],
+          candidateOnly: true,
+        },
+      },
+      affectedItemIds: ['RULE-1'],
+    });
+
+    expect(parseReviewTurnCandidateContract({ result, task })).toMatchObject({
+      schemaVersion: 'wiselink.3_1.review_turn_candidate.v1.c3',
+      reviewActionDraft: {
+        decisionSnapshot: { decisionMaturity: 'CONFIRMABLE' },
+        uncertaintyDispositions,
+      },
+    });
+  });
+
+  it('rejects a c3 CONFIRMABLE snapshot while a critical Gap is only RESOLVE_NOW', () => {
+    const task = reviewTask();
+    const uncertaintyDispositions = [
+      {
+        gapRef: 'GAP-001',
+        disposition: 'RESOLVE_NOW',
+        rationale: 'The fact is still required.',
+        assumptions: [],
+        controlsAndMitigations: [],
+        evidenceRefs: [],
+        reviewBy: null,
+        reopenTriggers: [],
+      },
+    ];
+    const result = reviewResult(task, {
+      schemaVersion: 'wiselink.3_1.review_turn_candidate.v1.c3',
+      responseType: 'REVIEW_ACTION_DRAFT',
+      reviewActionDraft: {
+        baseRevision: 7,
+        evaluationItemId: 'RULE-1',
+        proposedStatus: 'deferred',
+        resolvedGapRefs: [],
+        adoptedInputRefs: [],
+        sourceRefs: ['SRC-1'],
+        assumptions: [],
+        affectedItemIds: ['RULE-1'],
+        overallImpact: true,
+        uncertaintyDispositions,
+        decisionSnapshot: {
+          assessmentAsOf: '2026-08-26T10:00:00.000Z',
+          evidenceHorizon: ['SOURCE_DOCUMENT_COMPLETE'],
+          currentBestJudgment: 'The current judgment remains deferred.',
+          alternativeJudgments: [],
+          decisionMaturity: 'CONFIRMABLE',
+          decisiveFacts: [],
+          assumptions: [],
+          residualUncertainties: ['Current part number is unknown.'],
+          uncertaintyDispositions,
+          controlsAndMitigations: [],
+          monitoringPlan: null,
+          validUntil: null,
+          reviewBy: null,
+          reopenTriggers: [],
+          whatWouldChangeDecision: ['A controlled current part number.'],
+          candidateOnly: true,
+        },
+      },
+      affectedItemIds: ['RULE-1'],
+    });
+
+    expect(() => parseReviewTurnCandidateContract({ result, task })).toThrow(
+      'REVIEW_RESULT_DECISION_SNAPSHOT_NOT_CONFIRMABLE',
+    );
   });
 
   it('rejects a model-invented gap ref before persistence', () => {
@@ -217,6 +334,7 @@ function reviewTask() {
                 {
                   gapRef: 'GAP-001',
                   missingInputId: 'aircraft.currentPartNumber',
+                  materiality: 'P0_DECISION_CRITICAL',
                   queryability: 'REVIEW_QUERYABLE',
                   resolutionStatus: 'OPEN',
                   affectedCriterionIds: ['RULE-1'],

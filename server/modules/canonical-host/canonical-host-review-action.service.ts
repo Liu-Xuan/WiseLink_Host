@@ -3,6 +3,7 @@ import type { Request } from 'express';
 
 import type {
   CanonicalEngineerReviewDecision,
+  ConfirmReviewActionDraftRequest,
   ConfirmReviewActionDraftResponse,
   ReviewActionDraftCandidate,
 } from '@shared/api.interface';
@@ -50,6 +51,7 @@ export class CanonicalHostReviewActionService {
     workItemId: string,
     reviewConversationId: string,
     reviewTurnId: string,
+    input: ConfirmReviewActionDraftRequest,
     request: Request,
   ): Promise<ConfirmReviewActionDraftResponse> {
     const session: ResolvedSession | null =
@@ -75,7 +77,7 @@ export class CanonicalHostReviewActionService {
     ) {
       throw reviewConflict('REVIEW_ACTION_DRAFT_REQUIRED');
     }
-    assertCurrentDraft(draft, turn, conversation, grant);
+    assertCurrentDraft(draft, turn, conversation, grant, input);
     const draftResolvedGapRefs = draft.resolvedGapRefs ?? [];
     const resolvedGaps =
       draftResolvedGapRefs.length > 0
@@ -109,10 +111,22 @@ export class CanonicalHostReviewActionService {
               actionType: 'SUPPLEMENT_EVIDENCE' as const,
               evidence: action.evidence,
               resolvedMissingInputs: [...resolvedGaps.resolvedMissingInputs],
+              uncertaintyDispositions: structuredClone(
+                draft.uncertaintyDispositions,
+              ),
+              ...(draft.decisionSnapshot
+                ? { decisionSnapshot: structuredClone(draft.decisionSnapshot) }
+                : {}),
             }
           : {
               actionType: 'REVISE_JUDGMENT' as const,
               decision: decisionFor(draft.proposedStatus),
+              uncertaintyDispositions: structuredClone(
+                draft.uncertaintyDispositions,
+              ),
+              ...(draft.decisionSnapshot
+                ? { decisionSnapshot: structuredClone(draft.decisionSnapshot) }
+                : {}),
             }),
       },
       hostActor(session),
@@ -142,6 +156,7 @@ export class CanonicalHostReviewActionService {
       conversation: reviewConversationReadModel(synced, updated.revision),
       turn: reviewTurnReadModel(syncedTurn),
       reviewAction: {
+        reviewActionDraftRef: draft.reviewActionDraftRef,
         evaluationItemId: draft.evaluationItemId,
         affectedItemIds: [...resolvedGaps.affectedCriterionIds],
         resolvedGapRefs: [...resolvedGaps.gapRefs],
@@ -151,6 +166,16 @@ export class CanonicalHostReviewActionService {
         overallStatus: overall ? 'STALE' : 'NOT_AVAILABLE',
         overallRevision: overall?.revision ?? null,
         selectiveResynthesis: 'AFFECTED_ONLY_PENDING',
+        uncertaintyDispositions: structuredClone(
+          draft.uncertaintyDispositions,
+        ),
+        decisionSnapshot: draft.decisionSnapshot
+          ? {
+              ...structuredClone(draft.decisionSnapshot),
+              revision: updated.revision,
+              engineerConfirmationRef: engineerReview.actionAttemptId,
+            }
+          : null,
       },
     };
   }
@@ -264,8 +289,15 @@ function assertCurrentDraft(
   turn: PersistedReviewTurn,
   conversation: PersistedReviewConversation,
   grant: CanonicalObjectAccessGrant,
+  input: ConfirmReviewActionDraftRequest,
 ): void {
   if (
+    input.reviewActionDraftRef !== draft.reviewActionDraftRef ||
+    input.expectedRevision !== draft.baseRevision ||
+    (draft.decisionSnapshot &&
+      (draft.decisionSnapshot.workItemId !== conversation.workItemId ||
+        draft.decisionSnapshot.revision !== draft.baseRevision ||
+        draft.decisionSnapshot.engineerConfirmationRef !== null)) ||
     draft.baseRevision !== turn.inputRevision ||
     draft.baseRevision !== conversation.lastSyncedRevision ||
     draft.baseRevision !== grant.workItemRevision ||

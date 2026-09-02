@@ -19,6 +19,11 @@ const actor = {
   sessionProvenance: 'SERVER_OPAQUE_SESSION',
 };
 
+const CONFIRM_INPUT = {
+  reviewActionDraftRef: 'RAD-DRAFT-1',
+  expectedRevision: 7,
+};
+
 describe('CanonicalHostReviewActionService', () => {
   it('derives the ReviewAction entirely from the stored current draft and reads back revision + STALE', async () => {
     const harness = target();
@@ -26,6 +31,7 @@ describe('CanonicalHostReviewActionService', () => {
       'WI-1',
       'RC-1',
       'RT-1',
+      CONFIRM_INPUT,
       {} as never,
     );
 
@@ -64,6 +70,7 @@ describe('CanonicalHostReviewActionService', () => {
       currentRevision: 8,
     });
     expect(result.reviewAction).toEqual({
+      reviewActionDraftRef: 'RAD-DRAFT-1',
       evaluationItemId: 'RULE-1',
       affectedItemIds: ['RULE-1', 'RULE-2'],
       resolvedGapRefs: [],
@@ -73,6 +80,8 @@ describe('CanonicalHostReviewActionService', () => {
       overallStatus: 'STALE',
       overallRevision: 2,
       selectiveResynthesis: 'AFFECTED_ONLY_PENDING',
+      uncertaintyDispositions: [],
+      decisionSnapshot: null,
     });
     const publicJson = JSON.stringify(result);
     expect(publicJson).not.toContain('actor-1');
@@ -88,6 +97,7 @@ describe('CanonicalHostReviewActionService', () => {
       'WI-1',
       'RC-1',
       'RT-1',
+      CONFIRM_INPUT,
       {} as never,
     );
 
@@ -122,7 +132,13 @@ describe('CanonicalHostReviewActionService', () => {
     });
 
     await expect(
-      harness.service.confirmDraft('WI-1', 'RC-1', 'RT-1', {} as never),
+      harness.service.confirmDraft(
+        'WI-1',
+        'RC-1',
+        'RT-1',
+        CONFIRM_INPUT,
+        {} as never,
+      ),
     ).rejects.toMatchObject({
       code: 'REVIEW_ACTION_GAP_EVIDENCE_REQUIRED',
       statusCode: 409,
@@ -137,6 +153,7 @@ describe('CanonicalHostReviewActionService', () => {
       'WI-1',
       'RC-1',
       'RT-1',
+      CONFIRM_INPUT,
       {} as never,
     );
 
@@ -152,7 +169,33 @@ describe('CanonicalHostReviewActionService', () => {
   it('rejects a stale draft before ReviewAction/CAS mutation', async () => {
     const harness = target({ workItemRevision: 8 });
     await expect(
-      harness.service.confirmDraft('WI-1', 'RC-1', 'RT-1', {} as never),
+      harness.service.confirmDraft(
+        'WI-1',
+        'RC-1',
+        'RT-1',
+        CONFIRM_INPUT,
+        {} as never,
+      ),
+    ).rejects.toMatchObject({
+      code: 'REVIEW_ACTION_DRAFT_STALE',
+      statusCode: 409,
+    });
+    expect(harness.engineerReviews.recordReviewAction).not.toHaveBeenCalled();
+  });
+
+  it('rejects a forged draft handle before ReviewAction/CAS mutation', async () => {
+    const harness = target();
+    await expect(
+      harness.service.confirmDraft(
+        'WI-1',
+        'RC-1',
+        'RT-1',
+        {
+          reviewActionDraftRef: 'RAD-FORGED',
+          expectedRevision: 7,
+        },
+        {} as never,
+      ),
     ).rejects.toMatchObject({
       code: 'REVIEW_ACTION_DRAFT_STALE',
       statusCode: 409,
@@ -163,7 +206,13 @@ describe('CanonicalHostReviewActionService', () => {
   it('returns not-found for a conversation bound to another WorkItem', async () => {
     const harness = target({ conversationWorkItemId: 'WI-OTHER' });
     await expect(
-      harness.service.confirmDraft('WI-1', 'RC-1', 'RT-1', {} as never),
+      harness.service.confirmDraft(
+        'WI-1',
+        'RC-1',
+        'RT-1',
+        CONFIRM_INPUT,
+        {} as never,
+      ),
     ).rejects.toMatchObject({
       code: 'REVIEW_CONVERSATION_NOT_FOUND',
       statusCode: 404,
@@ -177,6 +226,7 @@ describe('CanonicalHostReviewActionService', () => {
       'WI-C7',
       'RC-C7',
       'RT-C7',
+      CONFIRM_INPUT,
       {} as never,
     );
 
@@ -246,6 +296,7 @@ function target(
     parsedArtifact: attachmentArtifact,
   };
   const reviewActionDraft: ReviewActionDraftCandidate = {
+    reviewActionDraftRef: CONFIRM_INPUT.reviewActionDraftRef,
     baseRevision: 7,
     evaluationItemId: 'RULE-1',
     proposedStatus: 'review_required',
@@ -257,6 +308,8 @@ function target(
     assumptions: ['Attachment is applicable to the current configuration.'],
     affectedItemIds: ['RULE-1', 'RULE-2'],
     overallImpact: true,
+    uncertaintyDispositions: [],
+    decisionSnapshot: null,
   };
   if (options.legacyDraftWithoutGapField) {
     delete reviewActionDraft.resolvedGapRefs;
@@ -521,6 +574,7 @@ function integratedTarget() {
       missingInputs: [],
       candidateEvidenceRefs: ['ATTACHMENT-C7'],
       reviewActionDraft: {
+        reviewActionDraftRef: CONFIRM_INPUT.reviewActionDraftRef,
         baseRevision: 7,
         evaluationItemId: 'RULE-A',
         proposedStatus: 'review_required',
@@ -530,6 +584,8 @@ function integratedTarget() {
         assumptions: [],
         affectedItemIds: ['RULE-A', 'RULE-B'],
         overallImpact: true,
+        uncertaintyDispositions: [],
+        decisionSnapshot: null,
       },
       affectedItemIds: ['RULE-A', 'RULE-B'],
       warnings: [],

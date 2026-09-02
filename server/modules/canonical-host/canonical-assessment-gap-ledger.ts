@@ -1,5 +1,6 @@
 import type {
   CanonicalAssessmentGapLedgerProjection,
+  CanonicalAssessmentGapDispositionProjection,
   CanonicalAssessmentGapMateriality,
   CanonicalAssessmentGapProjection,
   CanonicalAssessmentGapQueryability,
@@ -7,14 +8,17 @@ import type {
   CanonicalAssessmentGapRequiredness,
   CanonicalAssessmentGapResolutionStatus,
   CanonicalEngineerReviewPageItem,
+  ReviewUncertaintyDispositionCandidate,
 } from '@shared/api.interface';
 
 import type { CanonicalJobAidBrowserRule } from './canonical-job-aid-browser-rules';
 
 interface EffectiveGapReview {
+  sequence: number;
   criterionId: string;
   affectedCriterionIds: string[];
   resolvedMissingInputs: string[];
+  uncertaintyDispositions: ReviewUncertaintyDispositionCandidate[];
 }
 
 interface BuildCanonicalAssessmentGapLedgerInput {
@@ -99,6 +103,30 @@ export function buildCanonicalAssessmentGapLedger(
         (gap: CanonicalAssessmentGapProjection): boolean =>
           gap.queryability === 'REVIEW_QUERYABLE',
       ).length,
+      resolveNow: gaps.filter(
+        (gap): boolean => gap.disposition?.disposition === 'RESOLVE_NOW',
+      ).length,
+      controlledByDisposition: gaps.filter(
+        (gap): boolean =>
+          gap.disposition !== null &&
+          gap.disposition.disposition !== 'RESOLVE_NOW',
+      ).length,
+      assumptionOrConservative: gaps.filter(
+        (gap): boolean =>
+          gap.disposition?.disposition === 'ACCEPT_WITH_ASSUMPTION' ||
+          gap.disposition?.disposition === 'APPLY_CONSERVATIVE_BOUND',
+      ).length,
+      monitoringOrDeferred: gaps.filter(
+        (gap): boolean =>
+          gap.disposition?.disposition === 'MITIGATE_AND_MONITOR' ||
+          gap.disposition?.disposition === 'DEFER_TO_REVIEW_DATE',
+      ).length,
+      optimization: gaps.filter(
+        (gap): boolean => gap.materiality === 'P2_OPTIMIZATION',
+      ).length,
+      lifecycle: gaps.filter(
+        (gap): boolean => gap.materiality === 'P3_LIFECYCLE',
+      ).length,
     },
   };
 }
@@ -131,6 +159,10 @@ function gapProjection(
       originCriterionIds,
       reviews,
     ),
+    disposition: latestDisposition(
+      `GAP-${String(index + 1).padStart(3, '0')}`,
+      reviews,
+    ),
     originCriterionIds,
     affectedCriterionIds: [...originCriterionIds],
     sourceRefs: uniqueTexts(
@@ -149,6 +181,25 @@ function gapProjection(
       modelMayClose: false,
       queryResultIsFact: false,
     },
+  };
+}
+
+function latestDisposition(
+  gapRef: string,
+  reviews: EffectiveGapReview[],
+): CanonicalAssessmentGapDispositionProjection | null {
+  const latest = reviews
+    .flatMap((review) =>
+      review.uncertaintyDispositions
+        .filter((candidate) => candidate.gapRef === gapRef)
+        .map((candidate) => ({ review, candidate })),
+    )
+    .sort((left, right) => right.review.sequence - left.review.sequence)[0];
+  if (!latest) return null;
+  return {
+    ...structuredClone(latest.candidate),
+    source: 'ENGINEER_CONFIRMED_DECISION_SNAPSHOT',
+    reviewSequence: latest.review.sequence,
   };
 }
 

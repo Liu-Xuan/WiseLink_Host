@@ -44,7 +44,7 @@ const REVIEW_ATTACHMENT_TASK_FIXTURE_URL = new URL(
   import.meta.url,
 );
 const REVIEW_CANDIDATE_FIXTURE_URL = new URL(
-  './fixtures/review-turn-candidate.c2.json',
+  './fixtures/review-turn-candidate.c3.json',
   import.meta.url,
 );
 const APPLICABILITY_TASK_FIXTURE_URL = new URL(
@@ -81,7 +81,7 @@ test('pins exact20 MCP 1.2, five review tools, and hosted provenance', () => {
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c4',
+    'wiselink-research-and-synthesize@r09.c5',
   );
   assert.equal(WISELINK_MODEL_POLICY_REF, 'official-hosted-profile-config');
   assert.equal(WISELINK_HOST_MCP_VERSION, '1.2.0');
@@ -1285,7 +1285,7 @@ test('binds Overall applicability status to the Host current candidate', () => {
   );
 });
 
-test('validates the exact C2 review task and candidate fixtures', async () => {
+test('validates the exact C3 review task and candidate fixtures', async () => {
   const task = await readJson(REVIEW_TASK_FIXTURE_URL);
   const attachmentTask = await readJson(REVIEW_ATTACHMENT_TASK_FIXTURE_URL);
   const candidate = await readJson(REVIEW_CANDIDATE_FIXTURE_URL);
@@ -1294,7 +1294,7 @@ test('validates the exact C2 review task and candidate fixtures', async () => {
   validatePayload('review-candidate', { task, candidate });
 });
 
-test('runs INTERACTIVE_REVIEW through only the five-tool C2 contract', async () => {
+test('runs INTERACTIVE_REVIEW through only the five-tool C3 contract', async () => {
   const reviewTask = await readJson(REVIEW_TASK_FIXTURE_URL);
   const candidate = await readJson(REVIEW_CANDIDATE_FIXTURE_URL);
   const task = makeTask('OPENCLAW_INTERACTIVE_REVIEW', reviewTask);
@@ -1373,7 +1373,7 @@ test('runs INTERACTIVE_REVIEW through only the five-tool C2 contract', async () 
   assert.ok(calls.every(({ name }) => INTERACTIVE_REVIEW_TOOLS.includes(name)));
 });
 
-test('reads a Host-authorized attachment through the C2 SourceRef path', async () => {
+test('reads a Host-authorized attachment through the C3 SourceRef path', async () => {
   const reviewTask = await readJson(REVIEW_ATTACHMENT_TASK_FIXTURE_URL);
   const baseCandidate = await readJson(REVIEW_CANDIDATE_FIXTURE_URL);
   const attachmentRef = reviewTask.attachmentRefs[0];
@@ -1616,7 +1616,7 @@ test('fails closed for invalid attachment relations and unavailable expansion', 
         ...candidate,
         responseType: 'RESYNTHESIS_RESULT',
       }),
-    /REVIEW_CANDIDATE_RESPONSE_TYPE_UNSUPPORTED_BY_C2/u,
+    /REVIEW_CANDIDATE_RESPONSE_TYPE_UNSUPPORTED_BY_C3/u,
   );
   assert.equal(task.allowedOperations.includes('COMPARE_REVISIONS'), false);
   assert.equal(task.allowedOperations.includes('REEVALUATE_AFFECTED'), false);
@@ -1641,6 +1641,7 @@ test('binds review gap resolution to Host-issued gaps, engineer evidence, and ex
             {
               gapRef: 'GAP-001',
               missingInputId: 'aircraft.currentPartNumber',
+              materiality: 'P0_DECISION_CRITICAL',
               queryability: 'REVIEW_QUERYABLE',
               resolutionStatus: 'OPEN',
               affectedCriterionIds: ['criterion-001'],
@@ -1664,9 +1665,50 @@ test('binds review gap resolution to Host-issued gaps, engineer evidence, and ex
     assumptions: [],
     affectedItemIds: ['criterion-001'],
     overallImpact: true,
+    uncertaintyDispositions: [
+      {
+        gapRef: 'GAP-001',
+        disposition: 'RESOLVED_BY_EVIDENCE',
+        rationale: '工程师补充已提供当前构型事实。',
+        assumptions: [],
+        controlsAndMitigations: [],
+        evidenceRefs: [task.resourceRefs[0].sourceRefId],
+        reviewBy: null,
+        reopenTriggers: ['目标飞机或构型发生变化。'],
+      },
+    ],
+    decisionSnapshot: {
+      assessmentAsOf: '2026-09-02T00:00:00.000Z',
+      evidenceHorizon: ['SOURCE_DOCUMENT_COMPLETE', 'CONFIGURATION_PARTIAL'],
+      currentBestJudgment: '采用当前受控构型事实形成候选判断。',
+      alternativeJudgments: [],
+      decisionMaturity: 'REVIEWABLE',
+      decisiveFacts: ['当前构型事实由工程师补充。'],
+      assumptions: [],
+      residualUncertainties: [],
+      uncertaintyDispositions: [
+        {
+          gapRef: 'GAP-001',
+          disposition: 'RESOLVED_BY_EVIDENCE',
+          rationale: '工程师补充已提供当前构型事实。',
+          assumptions: [],
+          controlsAndMitigations: [],
+          evidenceRefs: [task.resourceRefs[0].sourceRefId],
+          reviewBy: null,
+          reopenTriggers: ['目标飞机或构型发生变化。'],
+        },
+      ],
+      controlsAndMitigations: [],
+      monitoringPlan: null,
+      validUntil: null,
+      reviewBy: null,
+      reopenTriggers: ['目标飞机或构型发生变化。'],
+      whatWouldChangeDecision: ['出现冲突的受控构型记录。'],
+      candidateOnly: true,
+    },
   };
   const candidate = {
-    schemaVersion: 'wiselink.3_1.review_turn_candidate.v1.c2',
+    schemaVersion: 'wiselink.3_1.review_turn_candidate.v1.c3',
     mode: 'INTERACTIVE_REVIEW',
     reviewConversationRef: task.reviewConversationRef,
     reviewTurnRef: task.reviewTurnRef,
@@ -1685,11 +1727,23 @@ test('binds review gap resolution to Host-issued gaps, engineer evidence, and ex
   };
 
   assert.equal(validateReviewCandidate(task, candidate), candidate);
+  const unknownGapDisposition = {
+    ...draft.uncertaintyDispositions[0],
+    gapRef: 'GAP-404',
+  };
   assert.throws(
     () =>
       validateReviewCandidate(task, {
         ...candidate,
-        reviewActionDraft: { ...draft, resolvedGapRefs: ['GAP-404'] },
+        reviewActionDraft: {
+          ...draft,
+          resolvedGapRefs: ['GAP-404'],
+          uncertaintyDispositions: [unknownGapDisposition],
+          decisionSnapshot: {
+            ...draft.decisionSnapshot,
+            uncertaintyDispositions: [unknownGapDisposition],
+          },
+        },
       }),
     /REVIEW_CANDIDATE_DRAFT_GAP_NOT_ALLOWED/u,
   );

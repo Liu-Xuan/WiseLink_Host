@@ -3,8 +3,10 @@ import { Link2, RefreshCw } from 'lucide-react';
 import { Button } from '@client/src/components/ui/button';
 import type {
   ReviewConversationReadModel,
+  ReviewDecisionMaturity,
   ReviewTurnReadModel,
   ReviewTurnResponseType,
+  ReviewUncertaintyDispositionKind,
 } from '@shared/api.interface';
 
 interface ReviewConversationTurnProps {
@@ -13,8 +15,10 @@ interface ReviewConversationTurnProps {
   currentRevision: number;
   busy: boolean;
   confirming: boolean;
+  rejected: boolean;
   onBeginConfirm: () => void;
   onCancelConfirm: () => void;
+  onRejectDraft: () => void;
   onConfirm: () => void;
   onLocateSourceRef: (sourceRef: string) => void;
 }
@@ -24,6 +28,8 @@ export default function ReviewConversationTurn(
 ) {
   const candidate = props.turn.assistantCandidate;
   const draft = candidate?.reviewActionDraft ?? null;
+  const snapshot = draft?.decisionSnapshot ?? null;
+  const dispositions = draft?.uncertaintyDispositions ?? [];
   const draftCurrent =
     props.conversation.currentRevisionSynced &&
     draft?.baseRevision === props.currentRevision;
@@ -94,8 +100,37 @@ export default function ReviewConversationTurn(
                     预计影响 {draft.affectedItemIds.length || 1} 个评估项
                   </strong>
                 </div>
-                <span>基于事项版本 {draft.baseRevision}</span>
+                <span>
+                  {props.rejected
+                    ? '已拒绝，未写入'
+                    : `基于事项版本 ${draft.baseRevision}`}
+                </span>
               </header>
+              <div>
+                <span>修改范围</span>
+                <ul>
+                  <li>当前绑定：Host current 事项版本 {draft.baseRevision}</li>
+                  <li>
+                    拟写入：{draft.evaluationItemId} → {draft.proposedStatus}
+                  </li>
+                  <li>
+                    Overall：{draft.overallImpact ? '需要重新综合' : '不受影响'}
+                  </li>
+                </ul>
+              </div>
+              {draft.sourceRefs.length || draft.adoptedInputRefs.length ? (
+                <div>
+                  <span>使用的证据与输入</span>
+                  <ul>
+                    {draft.sourceRefs.map((item) => (
+                      <li key={`source-${item}`}>{item}</li>
+                    ))}
+                    {draft.adoptedInputRefs.map((item) => (
+                      <li key={`input-${item}`}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
               {draft.assumptions.length ? (
                 <div>
                   <span>确认前提</span>
@@ -106,7 +141,52 @@ export default function ReviewConversationTurn(
                   </ul>
                 </div>
               ) : null}
-              {!draftCurrent ? (
+              {dispositions.length ? (
+                <div>
+                  <span>剩余不确定性的处置</span>
+                  <ul>
+                    {dispositions.map((item) => (
+                      <li key={item.gapRef}>
+                        {item.gapRef} · {dispositionLabel(item.disposition)}：
+                        {item.rationale}
+                        {item.reviewBy
+                          ? `；复核日期 ${formatReviewTime(item.reviewBy)}`
+                          : ''}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {snapshot ? (
+                <div>
+                  <span>Decision Snapshot</span>
+                  <ul>
+                    <li>当前最佳判断：{snapshot.currentBestJudgment}</li>
+                    <li>判断成熟度：{maturityLabel(snapshot.decisionMaturity)}</li>
+                    <li>评估时点：{formatReviewTime(snapshot.assessmentAsOf)}</li>
+                    {snapshot.reviewBy ? (
+                      <li>再次复核：{formatReviewTime(snapshot.reviewBy)}</li>
+                    ) : null}
+                    {snapshot.residualUncertainties.map((item) => (
+                      <li key={`uncertainty-${item}`}>剩余未知：{item}</li>
+                    ))}
+                    {snapshot.controlsAndMitigations.map((item) => (
+                      <li key={`control-${item}`}>控制措施：{item}</li>
+                    ))}
+                    {snapshot.reopenTriggers.map((item) => (
+                      <li key={`reopen-${item}`}>重开条件：{item}</li>
+                    ))}
+                    {snapshot.whatWouldChangeDecision.map((item) => (
+                      <li key={`change-${item}`}>结论改变条件：{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {props.rejected ? (
+                <p className="continuous-review-draft-stale">
+                  此草稿已在当前页面拒绝；没有修改 Host current，也没有推进事项版本。继续对话可形成新草稿。
+                </p>
+              ) : !draftCurrent ? (
                 <p className="continuous-review-draft-stale">
                   事项版本已经变化，请同步后重新形成草稿。
                 </p>
@@ -123,7 +203,16 @@ export default function ReviewConversationTurn(
                       disabled={props.busy}
                       onClick={props.onCancelConfirm}
                     >
-                      取消
+                      继续对话调整
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={props.busy}
+                      onClick={props.onRejectDraft}
+                    >
+                      拒绝草案
                     </Button>
                     <Button
                       type="button"
@@ -131,7 +220,7 @@ export default function ReviewConversationTurn(
                       disabled={props.busy}
                       onClick={props.onConfirm}
                     >
-                      {props.busy ? '正在确认…' : '确认写入复核意见'}
+                      {props.busy ? '正在确认…' : '确认修改'}
                     </Button>
                   </div>
                 </div>
@@ -143,7 +232,7 @@ export default function ReviewConversationTurn(
                   disabled={props.busy}
                   onClick={props.onBeginConfirm}
                 >
-                  检查并确认草稿
+                  查看详细差异
                 </Button>
               )}
             </div>
@@ -157,6 +246,32 @@ export default function ReviewConversationTurn(
       )}
     </article>
   );
+}
+
+function dispositionLabel(value: ReviewUncertaintyDispositionKind): string {
+  const labels: Record<ReviewUncertaintyDispositionKind, string> = {
+    RESOLVE_NOW: '立即补证',
+    ACCEPT_WITH_ASSUMPTION: '接受假设',
+    APPLY_CONSERVATIVE_BOUND: '采用保守边界',
+    MITIGATE_AND_MONITOR: '控制并监控',
+    DEFER_TO_REVIEW_DATE: '延期复核',
+    PROFESSIONAL_JUDGMENT: '专业判断',
+    OUT_OF_CURRENT_SCOPE: '当前范围外',
+    LIFECYCLE_NOT_REACHED: '生命周期未到',
+    RESOLVED_BY_EVIDENCE: '证据已解决',
+    NOT_APPLICABLE: '不适用',
+  };
+  return labels[value];
+}
+
+function maturityLabel(value: ReviewDecisionMaturity): string {
+  const labels: Record<ReviewDecisionMaturity, string> = {
+    PRELIMINARY: '初步判断',
+    REVIEWABLE: '可复核',
+    CONFIRMABLE: '可有条件确认',
+    DEFERRED_WITH_MONITORING: '延期并监控',
+  };
+  return labels[value];
 }
 
 function responseTypeLabel(type: ReviewTurnResponseType): string {

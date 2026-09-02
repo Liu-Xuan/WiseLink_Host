@@ -1,6 +1,6 @@
 ---
 name: wiselink-research-and-synthesize
-description: Orchestrate the single official hosted WiseLink engineering profile through the canonical Host MCP for INITIAL_ANALYSIS and INTERACTIVE_REVIEW. Preserve applicability AST extraction, dynamic N/N tri-state semantics, SourceRef/currentness bindings, candidate-only authority, fenced ResultEnvelope commits including bounded Translation parts, and exact hosted provenance. Read Host-authorized parsed attachments only through the C2 SourceRef path, and fail closed for unavailable search, compare, reevaluation, or resynthesis tools.
+description: Orchestrate the single official hosted WiseLink engineering profile through the canonical Host MCP for INITIAL_ANALYSIS and INTERACTIVE_REVIEW. Preserve applicability AST extraction, dynamic N/N tri-state semantics, SourceRef/currentness bindings, candidate-only authority, fenced ResultEnvelope commits including bounded Translation parts, and exact hosted provenance. Read Host-authorized parsed attachments only through the C3 SourceRef path, and fail closed for unavailable search, compare, reevaluation, or resynthesis tools.
 ---
 
 # WiseLink R09 工程分析与交互复核
@@ -12,7 +12,7 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（官方 profile 当前可选 `GLM-5.3`，Skill 不绑定具体模型）
-- Skill：`wiselink-research-and-synthesize@r09.c4`
+- Skill：`wiselink-research-and-synthesize@r09.c5`
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（exact 20 tools）
 - Host baseline：`6fd2655d27edc3851c745547efaf8796ad22c82c`
 
@@ -203,7 +203,7 @@ CAS；Skill 不声称这些步骤由模型完成。8. commit 响应未知时只�
 
 ## Mode 2：INTERACTIVE_REVIEW
 
-当前精确 C2 工具集只有：
+当前精确 C3 复核合同仍只使用以下五个工具：
 
 ```text
 begin_review_turn
@@ -219,7 +219,7 @@ commit_review_turn_candidate
 begin_review_turn({reviewConversationRef, requestId})
 → get_review_turn_context({attemptRef})
 → read_source_refs({attemptRef, sourceRefIds}) [仅按本轮明确需要]
-→ 托管 profile 当前选定模型生成 review_turn_candidate.v1.c2
+→ 托管 profile 当前选定模型生成 review_turn_candidate.v1.c3
 → validator + full ResultEnvelope
 → commit_review_turn_candidate({attemptRef, leaseToken, leaseGeneration, result})
 ```
@@ -238,7 +238,7 @@ begin_review_turn({reviewConversationRef, requestId})
   `REVIEW_QUERYABLE` 且未完全关闭的 Gap；其 `affectedItemIds` 必须等于这些 Gap 的 Host
   `affectedCriterionIds` 并集，并且必须采用本轮工程师文本或附件证据。模型不能提交
   `missingInputId` 作为关闭依据，也不能仅凭旧 SourceRef 声称缺口已解决。
-- `allowedOperations` 必须精确是 C2 六项：`GET_WORKITEM_CONTEXT`、`GET_EVALUATION_ITEM`、
+- `allowedOperations` 必须精确是六项：`GET_WORKITEM_CONTEXT`、`GET_EVALUATION_ITEM`、
   `READ_SOURCE_REFS`、`DRAFT_REVIEW_ACTION`、`PREVIEW_AFFECTED_ITEMS`、`GET_OPERATION_STATUS`。
 - candidate 使用的每个 SourceRef 必须属于 Task allowlist，并在本轮实际通过 `read_source_refs` 读取；外层
   ResultEnvelope 绑定其 actual resource artifact ref/SHA。
@@ -253,7 +253,7 @@ begin_review_turn({reviewConversationRef, requestId})
   `resolvedGapRefs` 重新派生 `resolvedMissingInputs` 和受影响 Criterion，再进入既有 Review ledger／CAS；
   任一 revision、Gap、queryability、证据或受影响项漂移均 fail closed。
 - 独立 `ANALYZE_ATTACHMENT` operation/tool、附件上传、knowledge search、revision compare、affected
-  reevaluation 和 overall resynthesis 当前没有 C2 工具授权；请求这些扩展能力必须 fail closed，不虚构调用或
+  reevaluation 和 overall resynthesis 当前没有 C3 工具授权；请求这些扩展能力必须 fail closed，不虚构调用或
   结果。Host 已在当前 ReviewTurn 授权并解析的附件仍可按上一条 SourceRef 路径读取和形成候选分析。
 - begin/status 为 `COMMITTING` 时只调用 `get_action_attempt_status` 读取 recovery ResultEnvelope；不调用模型、
   不重放 commit。commit 响应未知时也只读 status 一次，不因 status=SUCCEEDED 就猜测 exact candidate 已落账。
@@ -261,7 +261,7 @@ begin_review_turn({reviewConversationRef, requestId})
 Review candidate 精确使用：
 
 ```text
-schemaVersion = wiselink.3_1.review_turn_candidate.v1.c2
+schemaVersion = wiselink.3_1.review_turn_candidate.v1.c3
 mode = INTERACTIVE_REVIEW
 reviewConversationRef / reviewTurnRef = Task exact binding
 responseType / answer
@@ -272,7 +272,11 @@ runtime = {runtimeAppId, profileRef}
 ```
 
 ReviewActionDraft 只能引用 Task 中允许的 evaluation items、adopted input refs 和 SourceRefs，且
-`baseRevision` 必须等于 Task inputRevision。它不是 ReviewAction。
+`baseRevision` 必须等于 Task inputRevision。C3 Draft 还必须带
+`uncertaintyDispositions[]` 与 `decisionSnapshot`：每个 disposition 只能绑定 Host 当前 Gap；
+`RESOLVED_BY_EVIDENCE` 必须与 `resolvedGapRefs` 精确一致；`CONFIRMABLE` 只允许在全部 P0/P1 未知已有
+证据、假设、保守边界、控制、专业判断或监控处置时产生。Decision Snapshot 始终
+`candidateOnly=true`，模型不生成 Host draft/snapshot ref，也不执行 ReviewAction。
 
 ## ResultEnvelope 与 provenance
 
@@ -287,7 +291,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - `modelVersion` 是官方托管 profile/config 本轮选择后的非空、可读实际模型；不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c4`
+- `skillVersion=wiselink-research-and-synthesize@r09.c5`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致

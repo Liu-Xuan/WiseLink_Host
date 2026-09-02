@@ -6,6 +6,8 @@ import type {
   CanonicalEngineerReviewPageContext,
   CanonicalIntegratedAssessmentProjection,
   CanonicalWorkItemProjection,
+  ReviewDecisionSnapshotCandidate,
+  ReviewUncertaintyDispositionCandidate,
 } from '@shared/api.interface';
 import {
   parseReviewAttachmentParsedArtifact,
@@ -56,6 +58,8 @@ interface EngineerReviewEntry {
   actionType?: CanonicalReviewActionType;
   evidence?: CanonicalReviewEvidence[];
   resolvedMissingInputs?: string[];
+  uncertaintyDispositions?: ReviewUncertaintyDispositionCandidate[];
+  decisionSnapshot?: ReviewDecisionSnapshotCandidate;
   correctedAnalysisDirection?: string;
   actorUserId: string;
   recordedAt: string;
@@ -96,6 +100,8 @@ export interface RecordEngineerReviewActionInput {
   decision?: CanonicalEngineerReviewDecision;
   evidence?: CanonicalReviewEvidenceInput[];
   resolvedMissingInputs?: string[];
+  uncertaintyDispositions?: ReviewUncertaintyDispositionCandidate[];
+  decisionSnapshot?: ReviewDecisionSnapshotCandidate;
   correctedAnalysisDirection?: string;
 }
 
@@ -148,6 +154,7 @@ export class CanonicalHostEngineerReviewService {
     if (workItem.revision !== input.expectedRevision) {
       throw new Error('WORK_ITEM_CAS_CONFLICT');
     }
+    assertDecisionSnapshotProposalBinding(input, workItem);
     const integrated = workItem.integratedAssessment!;
     const dynamicItems = await this.readDynamicItems(workItem);
     const knownCriterionIds = new Set(
@@ -220,6 +227,22 @@ export class CanonicalHostEngineerReviewService {
           : {}),
         ...(input.resolvedMissingInputs
           ? { resolvedMissingInputs: [...input.resolvedMissingInputs] }
+          : {}),
+        ...(input.uncertaintyDispositions
+          ? {
+              uncertaintyDispositions: structuredClone(
+                input.uncertaintyDispositions,
+              ),
+            }
+          : {}),
+        ...(input.decisionSnapshot
+          ? {
+              decisionSnapshot: {
+                ...structuredClone(input.decisionSnapshot),
+                revision: workItem.revision + 1,
+                engineerConfirmationRef: attempt.attemptId,
+              },
+            }
           : {}),
         ...(input.correctedAnalysisDirection
           ? { correctedAnalysisDirection: input.correctedAnalysisDirection }
@@ -401,11 +424,15 @@ export class CanonicalHostEngineerReviewService {
         items: pageItems,
         rules,
         effectiveReviews: [...effective.values()].map((review) => ({
+          sequence: review.sequence,
           criterionId: review.criterionId,
           affectedCriterionIds: [
             ...(review.affectedCriterionIds ?? [review.criterionId]),
           ],
           resolvedMissingInputs: [...(review.resolvedMissingInputs ?? [])],
+          uncertaintyDispositions: structuredClone(
+            review.uncertaintyDispositions ?? [],
+          ),
         })),
       }),
       items: pageItems,
@@ -583,6 +610,19 @@ function validateReviewActionInput(
   ) {
     throw new Error('ENGINEER_REVIEW_AFFECTED_CRITERIA_INVALID');
   }
+  validateUncertaintyDispositions(input.uncertaintyDispositions ?? []);
+  if (
+    input.decisionSnapshot &&
+    (!input.decisionSnapshot.decisionSnapshotRef?.trim() ||
+      !input.decisionSnapshot.workItemId?.trim() ||
+      !Number.isSafeInteger(input.decisionSnapshot.revision) ||
+      input.decisionSnapshot.revision < 1 ||
+      input.decisionSnapshot.candidateOnly !== true ||
+      JSON.stringify(input.decisionSnapshot.uncertaintyDispositions) !==
+        JSON.stringify(input.uncertaintyDispositions ?? []))
+  ) {
+    throw new Error('ENGINEER_REVIEW_DECISION_SNAPSHOT_INVALID');
+  }
   if (input.actionType === 'REVISE_JUDGMENT') {
     if (
       !input.decision ||
@@ -624,6 +664,8 @@ function validateReviewActionInput(
       input.decision !== undefined ||
       input.evidence !== undefined ||
       input.resolvedMissingInputs !== undefined ||
+      input.uncertaintyDispositions !== undefined ||
+      input.decisionSnapshot !== undefined ||
       !input.correctedAnalysisDirection?.trim()
     ) {
       throw new Error('ENGINEER_REVIEW_DIRECTION_ACTION_INVALID');
@@ -631,6 +673,70 @@ function validateReviewActionInput(
     return;
   }
   throw new Error('ENGINEER_REVIEW_ACTION_TYPE_INVALID');
+}
+
+function assertDecisionSnapshotProposalBinding(
+  input: RecordEngineerReviewActionInput,
+  workItem: CanonicalWorkItemProjection,
+): void {
+  const snapshot = input.decisionSnapshot;
+  if (!snapshot) return;
+  if (
+    snapshot.workItemId !== workItem.workItemId ||
+    snapshot.revision !== workItem.revision ||
+    snapshot.engineerConfirmationRef !== null
+  ) {
+    throw new Error('ENGINEER_REVIEW_DECISION_SNAPSHOT_BINDING_INVALID');
+  }
+}
+
+function validateUncertaintyDispositions(
+  dispositions: ReviewUncertaintyDispositionCandidate[],
+): void {
+  const allowed = new Set([
+    'RESOLVE_NOW',
+    'ACCEPT_WITH_ASSUMPTION',
+    'APPLY_CONSERVATIVE_BOUND',
+    'MITIGATE_AND_MONITOR',
+    'DEFER_TO_REVIEW_DATE',
+    'PROFESSIONAL_JUDGMENT',
+    'OUT_OF_CURRENT_SCOPE',
+    'LIFECYCLE_NOT_REACHED',
+    'RESOLVED_BY_EVIDENCE',
+    'NOT_APPLICABLE',
+  ]);
+  if (
+    !Array.isArray(dispositions) ||
+    !validDistinctTexts(dispositions.map((value) => value.gapRef)) ||
+    dispositions.some(
+      (value) =>
+        !allowed.has(value.disposition) ||
+        !value.rationale?.trim() ||
+        !validDistinctTexts(value.assumptions) ||
+        !validDistinctTexts(value.controlsAndMitigations) ||
+        !validDistinctTexts(value.evidenceRefs) ||
+        !validDistinctTexts(value.reopenTriggers) ||
+        (value.reviewBy !== null && !validIsoText(value.reviewBy)) ||
+        (value.disposition === 'ACCEPT_WITH_ASSUMPTION' &&
+          value.assumptions.length === 0) ||
+        (['APPLY_CONSERVATIVE_BOUND', 'MITIGATE_AND_MONITOR'].includes(
+          value.disposition,
+        ) &&
+          value.controlsAndMitigations.length === 0) ||
+        (['MITIGATE_AND_MONITOR', 'DEFER_TO_REVIEW_DATE'].includes(
+          value.disposition,
+        ) &&
+          value.reviewBy === null) ||
+        (value.disposition === 'RESOLVED_BY_EVIDENCE' &&
+          value.evidenceRefs.length === 0),
+    )
+  ) {
+    throw new Error('ENGINEER_REVIEW_UNCERTAINTY_DISPOSITION_INVALID');
+  }
+}
+
+function validIsoText(value: string): boolean {
+  return value.trim() === value && Number.isFinite(Date.parse(value));
 }
 
 function statusFor(
@@ -661,6 +767,12 @@ function sanitizedReview(review: EngineerReviewEntry) {
     recordedAt: review.recordedAt,
     evidence: structuredClone(review.evidence ?? []),
     resolvedMissingInputs: [...(review.resolvedMissingInputs ?? [])],
+    uncertaintyDispositions: structuredClone(
+      review.uncertaintyDispositions ?? [],
+    ),
+    decisionSnapshot: review.decisionSnapshot
+      ? structuredClone(review.decisionSnapshot)
+      : null,
     correctedAnalysisDirection: review.correctedAnalysisDirection ?? null,
   };
 }
@@ -711,14 +823,17 @@ function assertLedger(
       !review.actorUserId?.trim() ||
       !review.recordedAt?.trim() ||
       !review.actionAttemptId?.trim() ||
-      !validLedgerAction(review)
+      !validLedgerAction(review, ledger.workItemId)
     ) {
       throw new Error('ENGINEER_REVIEW_LEDGER_ENTRY_INVALID');
     }
   });
 }
 
-function validLedgerAction(review: EngineerReviewEntry): boolean {
+function validLedgerAction(
+  review: EngineerReviewEntry,
+  workItemId = 'ledger-readback',
+): boolean {
   try {
     const actionType = review.actionType ?? 'REVISE_JUDGMENT';
     validateReviewActionInput({
@@ -735,6 +850,12 @@ function validLedgerAction(review: EngineerReviewEntry): boolean {
       ...(review.resolvedMissingInputs
         ? { resolvedMissingInputs: review.resolvedMissingInputs }
         : {}),
+      ...(review.uncertaintyDispositions
+        ? { uncertaintyDispositions: review.uncertaintyDispositions }
+        : {}),
+      ...(review.decisionSnapshot
+        ? { decisionSnapshot: review.decisionSnapshot }
+        : {}),
       ...(review.correctedAnalysisDirection
         ? { correctedAnalysisDirection: review.correctedAnalysisDirection }
         : {}),
@@ -743,6 +864,16 @@ function validLedgerAction(review: EngineerReviewEntry): boolean {
       (actionType === 'REVISE_JUDGMENT'
         ? statusFor(review.decision)
         : 'NEEDS_REVIEW') !== review.status
+    ) {
+      return false;
+    }
+    if (
+      review.decisionSnapshot &&
+      (review.decisionSnapshot.workItemId !== workItemId ||
+        review.decisionSnapshot.revision !==
+          review.workItemRevisionBefore + 1 ||
+        review.decisionSnapshot.engineerConfirmationRef !==
+          review.actionAttemptId)
     ) {
       return false;
     }

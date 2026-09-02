@@ -26,7 +26,71 @@ export type ReviewTurnResponseType =
   | 'RESYNTHESIS_RESULT'
   | 'TASK_STATUS';
 
-export interface ReviewActionDraftCandidate {
+export type ReviewUncertaintyDispositionKind =
+  | 'RESOLVE_NOW'
+  | 'ACCEPT_WITH_ASSUMPTION'
+  | 'APPLY_CONSERVATIVE_BOUND'
+  | 'MITIGATE_AND_MONITOR'
+  | 'DEFER_TO_REVIEW_DATE'
+  | 'PROFESSIONAL_JUDGMENT'
+  | 'OUT_OF_CURRENT_SCOPE'
+  | 'LIFECYCLE_NOT_REACHED'
+  | 'RESOLVED_BY_EVIDENCE'
+  | 'NOT_APPLICABLE';
+
+export interface ReviewUncertaintyDispositionCandidate {
+  gapRef: string;
+  disposition: ReviewUncertaintyDispositionKind;
+  rationale: string;
+  assumptions: string[];
+  controlsAndMitigations: string[];
+  evidenceRefs: string[];
+  reviewBy: string | null;
+  reopenTriggers: string[];
+}
+
+export type ReviewDecisionMaturity =
+  | 'PRELIMINARY'
+  | 'REVIEWABLE'
+  | 'CONFIRMABLE'
+  | 'DEFERRED_WITH_MONITORING';
+
+export type ReviewEvidenceHorizon =
+  | 'SOURCE_DOCUMENT_COMPLETE'
+  | 'TARGET_IDENTITY_KNOWN'
+  | 'CONFIGURATION_PARTIAL'
+  | 'LOCAL_RELIABILITY_NOT_CONNECTED'
+  | 'GLOBAL_EVIDENCE_PARTIAL'
+  | 'OPERATIONS_REVIEW_PENDING';
+
+export interface ReviewDecisionSnapshotProposal {
+  assessmentAsOf: string;
+  evidenceHorizon: ReviewEvidenceHorizon[];
+  currentBestJudgment: string;
+  alternativeJudgments: string[];
+  decisionMaturity: ReviewDecisionMaturity;
+  decisiveFacts: string[];
+  assumptions: string[];
+  residualUncertainties: string[];
+  uncertaintyDispositions: ReviewUncertaintyDispositionCandidate[];
+  controlsAndMitigations: string[];
+  monitoringPlan: string | null;
+  validUntil: string | null;
+  reviewBy: string | null;
+  reopenTriggers: string[];
+  whatWouldChangeDecision: string[];
+  candidateOnly: true;
+}
+
+export interface ReviewDecisionSnapshotCandidate
+  extends ReviewDecisionSnapshotProposal {
+  decisionSnapshotRef: string;
+  workItemId: string;
+  revision: number;
+  engineerConfirmationRef: string | null;
+}
+
+export interface ReviewActionDraftProposal {
   baseRevision: number;
   evaluationItemId: string;
   proposedStatus: string;
@@ -37,6 +101,18 @@ export interface ReviewActionDraftCandidate {
   assumptions: string[];
   affectedItemIds: string[];
   overallImpact: boolean;
+  /** Present on c3 drafts; absent only for persisted c2 compatibility. */
+  uncertaintyDispositions?: ReviewUncertaintyDispositionCandidate[];
+  /** Present on c3 drafts; absent only for persisted c2 compatibility. */
+  decisionSnapshot?: ReviewDecisionSnapshotProposal;
+}
+
+/** Host-issued, persisted confirmation handle for one immutable draft. */
+export interface ReviewActionDraftCandidate
+  extends Omit<ReviewActionDraftProposal, 'decisionSnapshot'> {
+  reviewActionDraftRef: string;
+  uncertaintyDispositions: ReviewUncertaintyDispositionCandidate[];
+  decisionSnapshot: ReviewDecisionSnapshotCandidate | null;
 }
 
 export interface ReviewTurnAssistantCandidate {
@@ -128,10 +204,16 @@ export interface CloseReviewConversationResponse {
   alreadyClosed: boolean;
 }
 
+export interface ConfirmReviewActionDraftRequest {
+  reviewActionDraftRef: string;
+  expectedRevision: number;
+}
+
 export interface ConfirmReviewActionDraftResponse {
   conversation: ReviewConversationReadModel;
   turn: ReviewTurnReadModel;
   reviewAction: {
+    reviewActionDraftRef: string;
     evaluationItemId: string;
     affectedItemIds: string[];
     resolvedGapRefs: string[];
@@ -141,6 +223,8 @@ export interface ConfirmReviewActionDraftResponse {
     overallStatus: 'STALE' | 'NOT_AVAILABLE';
     overallRevision: number | null;
     selectiveResynthesis: 'AFFECTED_ONLY_PENDING';
+    uncertaintyDispositions: ReviewUncertaintyDispositionCandidate[];
+    decisionSnapshot: ReviewDecisionSnapshotCandidate | null;
   };
 }
 
@@ -1340,6 +1424,12 @@ export type CanonicalAssessmentGapResolutionStatus =
   | 'PARTIALLY_RESOLVED'
   | 'RESOLVED_BY_ENGINEER_REVIEW';
 
+export interface CanonicalAssessmentGapDispositionProjection
+  extends ReviewUncertaintyDispositionCandidate {
+  source: 'ENGINEER_CONFIRMED_DECISION_SNAPSHOT';
+  reviewSequence: number;
+}
+
 /**
  * Browser-safe, Host-derived view of one unresolved assessment input. The
  * projection groups the exact dynamic missing-input key across every affected
@@ -1357,6 +1447,7 @@ export interface CanonicalAssessmentGapProjection {
   requiredness: CanonicalAssessmentGapRequiredness;
   queryability: CanonicalAssessmentGapQueryability;
   resolutionStatus: CanonicalAssessmentGapResolutionStatus;
+  disposition: CanonicalAssessmentGapDispositionProjection | null;
   originCriterionIds: string[];
   affectedCriterionIds: string[];
   sourceRefs: string[];
@@ -1388,6 +1479,12 @@ export interface CanonicalAssessmentGapLedgerProjection {
     resolved: number;
     decisionCritical: number;
     reviewQueryable: number;
+    resolveNow: number;
+    controlledByDisposition: number;
+    assumptionOrConservative: number;
+    monitoringOrDeferred: number;
+    optimization: number;
+    lifecycle: number;
   };
 }
 
