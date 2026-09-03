@@ -29,6 +29,10 @@ import {
   buildSourceBoundAdDocumentRelations,
   buildSourceBoundAdObligations,
   buildSourceBoundConcurrentRequirements,
+  buildSourceBoundSlAction,
+  buildSourceBoundSlReferenceCatalog,
+  buildSourceBoundSlReferenceRelations,
+  type SourceBoundSlReferenceCatalog,
   type SourceBoundSectionWindow,
 } from './family-section-topology.builder';
 
@@ -163,12 +167,15 @@ export function buildStructuredParsePackage(input: {
   }
 
   const sectionTopology = buildFamilySectionTopology({ unitSet, document });
+  const slReferenceCatalog =
+    buildSourceBoundSlReferenceCatalog(sectionTopology);
   for (const section of sectionTopology) {
     const sectionUnits = buildSectionObservationContentUnits({
       section,
       moduleId,
       sourcePackageId,
       firstOrder: contentOrder,
+      slReferenceCatalog,
     });
     contentUnits.push(...sectionUnits);
     contentOrder += sectionUnits.length;
@@ -657,8 +664,10 @@ function buildSectionObservationContentUnits(input: {
   moduleId: string;
   sourcePackageId: string;
   firstOrder: number;
+  slReferenceCatalog: SourceBoundSlReferenceCatalog | null;
 }): Array<Record<string, unknown>> {
-  const { section, moduleId, sourcePackageId, firstOrder } = input;
+  const { section, moduleId, sourcePackageId, firstOrder, slReferenceCatalog } =
+    input;
   const authority = {
     candidateOnly: true,
     canDecideApplicability: false,
@@ -837,6 +846,91 @@ function buildSectionObservationContentUnits(input: {
             sectionKey: section.sectionKey,
             sectionOrdinal: section.ordinal ?? null,
             ...adRelations,
+          },
+          authority,
+        },
+      }),
+    );
+  }
+  if (section.family === 'SL' && section.sectionKey === 'references') {
+    units.push(
+      buildStructuredObservationContentUnit({
+        sourcePackageId,
+        moduleId,
+        order: firstOrder + units.length,
+        continuityKey: `${sectionContinuityPrefix}:sl-reference-catalog`,
+        sourceRefIds: section.sourceRefIds,
+        sourceSegmentIds:
+          section.bodyUnits.length > 0
+            ? section.bodyUnits.map((unit) => unit.sourceUnitId)
+            : [section.headingUnit.sourceUnitId],
+        payload: {
+          observationType: 'SL_REFERENCE_CATALOG',
+          value: {
+            family: section.family,
+            scopeKey: section.scopeKey ?? 'document',
+            sectionKey: section.sectionKey,
+            semanticState:
+              slReferenceCatalog?.semanticState ?? section.semanticBodyState,
+            referencesStructured:
+              slReferenceCatalog?.referencesStructured ?? false,
+            unstructuredReason:
+              slReferenceCatalog === null
+                ? 'NO_REFERENCE_ENTRIES'
+                : slReferenceCatalog.unstructuredReason,
+            entries: slReferenceCatalog?.entries ?? [],
+          },
+          authority,
+        },
+      }),
+    );
+  }
+  const slReferenceRelations = buildSourceBoundSlReferenceRelations(
+    section,
+    slReferenceCatalog,
+  );
+  if (slReferenceRelations) {
+    units.push(
+      buildStructuredObservationContentUnit({
+        sourcePackageId,
+        moduleId,
+        order: firstOrder + units.length,
+        continuityKey: `${sectionContinuityPrefix}:sl-reference-relations`,
+        sourceRefIds: section.sourceRefIds,
+        sourceSegmentIds:
+          section.bodyUnits.length > 0
+            ? section.bodyUnits.map((unit) => unit.sourceUnitId)
+            : [section.headingUnit.sourceUnitId],
+        payload: {
+          observationType: 'SL_REFERENCE_RELATIONS',
+          value: {
+            family: section.family,
+            scopeKey: section.scopeKey ?? 'document',
+            sectionKey: section.sectionKey,
+            ...slReferenceRelations,
+          },
+          authority,
+        },
+      }),
+    );
+  }
+  const slAction = buildSourceBoundSlAction(section);
+  if (slAction) {
+    units.push(
+      buildStructuredObservationContentUnit({
+        sourcePackageId,
+        moduleId,
+        order: firstOrder + units.length,
+        continuityKey: `${sectionContinuityPrefix}:sl-action`,
+        sourceRefIds: slAction.sourceRefIds,
+        sourceSegmentIds: slAction.sourceUnitIds,
+        payload: {
+          observationType: 'SL_ACTION',
+          value: {
+            family: section.family,
+            scopeKey: section.scopeKey ?? 'document',
+            sectionKey: section.sectionKey,
+            ...slAction,
           },
           authority,
         },

@@ -8,7 +8,7 @@ import type {
 export type SemanticSectionBodyState = 'CONTENT' | 'NONE' | 'MISSING';
 
 export interface SourceBoundSectionWindow {
-  readonly family: 'FTD' | 'SB' | 'AD';
+  readonly family: 'FTD' | 'SB' | 'AD' | 'SL';
   readonly sectionKey: string;
   readonly matchedHeading: string;
   readonly occurrence: number;
@@ -94,6 +94,59 @@ export interface SourceBoundAdDocumentRelations {
   readonly relations: readonly SourceBoundAdDocumentRelation[];
 }
 
+export type SourceBoundSlReferenceKind =
+  | 'SERVICE_BULLETIN'
+  | 'FLEET_TEAM_DIGEST'
+  | 'SERVICE_RELATED_PROBLEM'
+  | 'SERVICE_INFORMATION_LETTER'
+  | 'AIRPLANE_CONFIGURATION_BULLETIN'
+  | 'DRAWING'
+  | 'OTHER';
+
+export interface SourceBoundSlReferenceEntry {
+  readonly referenceLabel: string;
+  readonly referenceKind: SourceBoundSlReferenceKind;
+  readonly targetDocumentCode: string | null;
+  readonly rawText: string;
+  readonly sourceUnitIds: readonly string[];
+  readonly sourceRefIds: readonly string[];
+}
+
+export interface SourceBoundSlReferenceCatalog {
+  readonly semanticState: SemanticSectionBodyState;
+  readonly referencesStructured: boolean;
+  readonly unstructuredReason:
+    | 'DUPLICATE_REFERENCE_LABEL'
+    | 'ORPHAN_REFERENCE_CONTINUATION'
+    | 'NO_REFERENCE_ENTRIES'
+    | null;
+  readonly entries: readonly SourceBoundSlReferenceEntry[];
+}
+
+export interface SourceBoundSlReferenceRelation {
+  readonly referenceLabel: string;
+  readonly referenceKind: SourceBoundSlReferenceKind;
+  readonly targetDocumentCode: string | null;
+  readonly sourceUnitIds: readonly string[];
+  readonly sourceRefIds: readonly string[];
+}
+
+export interface SourceBoundSlReferenceRelations {
+  readonly relationsStructured: boolean;
+  readonly unstructuredReason: 'UNRESOLVED_REFERENCE_LABEL' | null;
+  readonly relations: readonly SourceBoundSlReferenceRelation[];
+}
+
+export interface SourceBoundSlAction {
+  readonly actionRole:
+    | 'BOEING_ACTION'
+    | 'SUPPLIER_ACTION'
+    | 'OPERATOR_RECOMMENDATION';
+  readonly actionTextRaw: string;
+  readonly sourceUnitIds: readonly string[];
+  readonly sourceRefIds: readonly string[];
+}
+
 interface SectionGrammarEntry {
   readonly sectionKey: string;
   readonly aliases: readonly string[];
@@ -107,6 +160,7 @@ interface SectionAnchorCandidate {
   readonly nodeKind?: 'register' | 'section' | 'action';
   readonly scopeKey?: string;
   readonly ordinal?: string;
+  readonly bodyStartsAtAnchor?: boolean;
 }
 
 /**
@@ -177,6 +231,61 @@ const FAA_AD_CORE_SECTIONS = new Set([
   'alternative_methods_of_compliance',
   'material_incorporated_by_reference',
 ]);
+const BOEING_SL_SECTION_GRAMMAR: readonly SectionGrammarEntry[] = [
+  { sectionKey: 'subject', aliases: ['subject'] },
+  { sectionKey: 'model', aliases: ['model'] },
+  { sectionKey: 'minor_models', aliases: ['minor models'] },
+  { sectionKey: 'applicability', aliases: ['applicability'] },
+  { sectionKey: 'references', aliases: ['references'] },
+  {
+    sectionKey: 'export_compliance_statement',
+    aliases: ['export compliance statement'],
+  },
+  { sectionKey: 'summary', aliases: ['summary'] },
+  { sectionKey: 'background', aliases: ['background'] },
+  { sectionKey: 'discussion', aliases: ['discussion'] },
+  { sectionKey: 'boeing_action', aliases: ['boeing action'] },
+  { sectionKey: 'supplier_action', aliases: ['supplier action'] },
+  {
+    sectionKey: 'suggested_operator_action',
+    aliases: ['suggested operator action'],
+  },
+  { sectionKey: 'estimated_labor_hours', aliases: ['estimated labor hours'] },
+  {
+    sectionKey: 'industry_support_information',
+    aliases: ['industry support information'],
+  },
+  { sectionKey: 'warranty_information', aliases: ['warranty information'] },
+  { sectionKey: 'interchangeability', aliases: ['interchangeability'] },
+  { sectionKey: 'parts_availability', aliases: ['parts availability'] },
+  {
+    sectionKey: 'cmc_eicas_messages',
+    aliases: ['cmc/eicas message(s)', 'cmc/eicas message'],
+  },
+  { sectionKey: 'supplier_information', aliases: ['supplier information'] },
+  { sectionKey: 'attachment_boundary', aliases: ['attachment'] },
+] as const;
+const BOEING_SL_CORE_SECTION_ORDER = [
+  'subject',
+  'applicability',
+  'references',
+  'background',
+  'boeing_action',
+  'suggested_operator_action',
+] as const;
+const BOEING_SL_TERMINAL_SECTION_KEYS = new Set([
+  'estimated_labor_hours',
+  'industry_support_information',
+  'warranty_information',
+  'interchangeability',
+  'parts_availability',
+  'cmc_eicas_messages',
+  'attachment_boundary',
+]);
+const BOEING_SL_EMITTED_SECTION_KEYS = new Set([
+  ...BOEING_SL_CORE_SECTION_ORDER,
+  'supplier_action',
+]);
 
 export function buildFamilySectionTopology(input: {
   readonly unitSet: SourceUnitSet;
@@ -190,6 +299,9 @@ export function buildFamilySectionTopology(input: {
   }
   if (input.document.documentType === 'airworthiness_directive') {
     return buildFaaAdSectionTopology(input.unitSet);
+  }
+  if (input.document.documentType === 'service_letter') {
+    return buildBoeingSlSectionTopology(input.unitSet, input.document);
   }
   return [];
 }
@@ -361,6 +473,142 @@ export function buildSourceBoundAdDocumentRelations(
   };
 }
 
+export function buildSourceBoundSlReferenceCatalog(
+  sections: readonly SourceBoundSectionWindow[],
+): SourceBoundSlReferenceCatalog | null {
+  const referenceSections = sections.filter(
+    (section) => section.family === 'SL' && section.sectionKey === 'references',
+  );
+  if (referenceSections.length !== 1) return null;
+  const section = referenceSections[0];
+  if (section.semanticBodyState !== 'CONTENT') {
+    return {
+      semanticState: section.semanticBodyState,
+      referencesStructured: true,
+      unstructuredReason: null,
+      entries: [],
+    };
+  }
+  const parsed = parseBoeingSlReferenceEntries(section.bodyUnits);
+  if (parsed.orphanContinuation) {
+    return {
+      semanticState: 'CONTENT',
+      referencesStructured: false,
+      unstructuredReason: 'ORPHAN_REFERENCE_CONTINUATION',
+      entries: [],
+    };
+  }
+  if (parsed.entries.length === 0) {
+    return {
+      semanticState: 'CONTENT',
+      referencesStructured: false,
+      unstructuredReason: 'NO_REFERENCE_ENTRIES',
+      entries: [],
+    };
+  }
+  const labels = parsed.entries.map((entry) => entry.referenceLabel);
+  if (new Set(labels).size !== labels.length) {
+    return {
+      semanticState: 'CONTENT',
+      referencesStructured: false,
+      unstructuredReason: 'DUPLICATE_REFERENCE_LABEL',
+      entries: [],
+    };
+  }
+  return {
+    semanticState: 'CONTENT',
+    referencesStructured: true,
+    unstructuredReason: null,
+    entries: parsed.entries,
+  };
+}
+
+export function buildSourceBoundSlReferenceRelations(
+  section: SourceBoundSectionWindow,
+  catalog: SourceBoundSlReferenceCatalog | null,
+): SourceBoundSlReferenceRelations | null {
+  if (
+    section.family !== 'SL' ||
+    ![
+      'background',
+      'discussion',
+      'boeing_action',
+      'supplier_action',
+      'suggested_operator_action',
+    ].includes(section.sectionKey) ||
+    section.semanticBodyState !== 'CONTENT'
+  ) {
+    return null;
+  }
+  const citations = parseBoeingSlReferenceCitations(section.bodyUnits);
+  if (citations.length === 0) return null;
+  if (!catalog?.referencesStructured) {
+    return {
+      relationsStructured: false,
+      unstructuredReason: 'UNRESOLVED_REFERENCE_LABEL',
+      relations: [],
+    };
+  }
+  const entryByLabel = new Map(
+    catalog.entries.map((entry) => [entry.referenceLabel, entry]),
+  );
+  if (citations.some((citation) => !entryByLabel.has(citation.label))) {
+    return {
+      relationsStructured: false,
+      unstructuredReason: 'UNRESOLVED_REFERENCE_LABEL',
+      relations: [],
+    };
+  }
+  const byLabel = new Map<string, SourceBoundSlReferenceRelation>();
+  for (const citation of citations) {
+    const entry = entryByLabel.get(
+      citation.label,
+    ) as SourceBoundSlReferenceEntry;
+    const previous = byLabel.get(citation.label);
+    byLabel.set(citation.label, {
+      referenceLabel: citation.label,
+      referenceKind: entry.referenceKind,
+      targetDocumentCode: entry.targetDocumentCode,
+      sourceUnitIds: unique([
+        ...(previous?.sourceUnitIds ?? []),
+        ...citation.sourceUnitIds,
+      ]),
+      sourceRefIds: unique([
+        ...(previous?.sourceRefIds ?? []),
+        ...citation.sourceRefIds,
+      ]),
+    });
+  }
+  return {
+    relationsStructured: true,
+    unstructuredReason: null,
+    relations: [...byLabel.values()],
+  };
+}
+
+export function buildSourceBoundSlAction(
+  section: SourceBoundSectionWindow,
+): SourceBoundSlAction | null {
+  if (section.family !== 'SL' || section.semanticBodyState !== 'CONTENT') {
+    return null;
+  }
+  const roles = new Map<string, SourceBoundSlAction['actionRole']>([
+    ['boeing_action', 'BOEING_ACTION'],
+    ['supplier_action', 'SUPPLIER_ACTION'],
+    ['suggested_operator_action', 'OPERATOR_RECOMMENDATION'],
+  ]);
+  const actionRole = roles.get(section.sectionKey);
+  if (!actionRole) return null;
+  return {
+    actionRole,
+    actionTextRaw: joinSourceText(section.bodyUnits),
+    sourceUnitIds: section.bodyUnits.map((unit) => unit.sourceUnitId),
+    sourceRefIds: unique(
+      section.bodyUnits.flatMap((unit) => unit.sourceRefIds),
+    ),
+  };
+}
+
 function buildFtdSectionTopology(
   unitSet: SourceUnitSet,
 ): readonly SourceBoundSectionWindow[] {
@@ -461,6 +709,114 @@ function buildAirbusSbSectionTopology(
   }
   candidates.sort((left, right) => left.index - right.index);
   return materializeSectionWindows(unitSet, contentUnits, candidates, 'SB');
+}
+
+function buildBoeingSlSectionTopology(
+  unitSet: SourceUnitSet,
+  document: ProfessionalInputDocumentIdentityInput,
+): readonly SourceBoundSectionWindow[] {
+  const contentUnits = orderedContentUnits(unitSet);
+  const serviceLetterProven = contentUnits.some((unit) =>
+    /^(?:bcacustomersupport|customer)serviceletter$/u.test(
+      normalizeLabel(unit.text),
+    ),
+  );
+  const documentCodeProven = contentUnits.some(
+    (unit) =>
+      normalizeLabel(unit.text) === normalizeLabel(document.documentCode),
+  );
+  if (!serviceLetterProven || !documentCodeProven) return [];
+
+  const grammarByAlias = new Map<string, SectionGrammarEntry>();
+  for (const entry of BOEING_SL_SECTION_GRAMMAR) {
+    for (const alias of entry.aliases) {
+      grammarByAlias.set(normalizeLabel(alias), entry);
+    }
+  }
+  const attachmentBoundaryIndex = contentUnits.findIndex((unit) =>
+    /^ATTACHMENT\s*:/iu.test(unit.text.normalize('NFKC').trim()),
+  );
+  const candidates = contentUnits.flatMap(
+    (unit, index): SectionAnchorCandidate[] => {
+      if (attachmentBoundaryIndex >= 0 && index > attachmentBoundaryIndex) {
+        return [];
+      }
+      const parsed = parseBoeingSlSectionAnchor(unit.text, grammarByAlias);
+      if (!parsed) return [];
+      return [
+        {
+          unit,
+          index,
+          sectionKey: parsed.grammar.sectionKey,
+          matchedHeading: parsed.matchedHeading,
+          nodeKind: 'section',
+          scopeKey: 'service_letter',
+          ...(parsed.hasInlineBody ? { bodyStartsAtAnchor: true } : {}),
+        },
+      ];
+    },
+  );
+  const candidatesByKey = new Map<string, SectionAnchorCandidate[]>();
+  for (const candidate of candidates) {
+    const values = candidatesByKey.get(candidate.sectionKey) ?? [];
+    values.push(candidate);
+    candidatesByKey.set(candidate.sectionKey, values);
+  }
+  if (
+    BOEING_SL_CORE_SECTION_ORDER.some(
+      (sectionKey) => candidatesByKey.get(sectionKey)?.length !== 1,
+    ) ||
+    [...candidatesByKey.values()].some((values) => values.length > 1)
+  ) {
+    return [];
+  }
+  const coreIndexes = BOEING_SL_CORE_SECTION_ORDER.map(
+    (sectionKey) =>
+      (candidatesByKey.get(sectionKey) as [SectionAnchorCandidate])[0].index,
+  );
+  if (
+    coreIndexes.some(
+      (index, position) => position > 0 && index <= coreIndexes[position - 1],
+    )
+  ) {
+    return [];
+  }
+  const supplierAction = candidatesByKey.get('supplier_action')?.[0];
+  if (
+    supplierAction &&
+    (supplierAction.index <= coreIndexes[4] ||
+      supplierAction.index >= coreIndexes[5])
+  ) {
+    return [];
+  }
+  const suggestedOperatorActionIndex = coreIndexes[5];
+  if (
+    !candidates.some(
+      (candidate) =>
+        candidate.index > suggestedOperatorActionIndex &&
+        BOEING_SL_TERMINAL_SECTION_KEYS.has(candidate.sectionKey),
+    )
+  ) {
+    return [];
+  }
+  const windows = materializeSectionWindows(
+    unitSet,
+    contentUnits,
+    candidates.sort((left, right) => left.index - right.index),
+    'SL',
+  );
+  if (
+    BOEING_SL_CORE_SECTION_ORDER.some(
+      (sectionKey) =>
+        windows.find((window) => window.sectionKey === sectionKey)
+          ?.semanticBodyState !== 'CONTENT',
+    )
+  ) {
+    return [];
+  }
+  return windows.filter((window) =>
+    BOEING_SL_EMITTED_SECTION_KEYS.has(window.sectionKey),
+  );
 }
 
 function buildFaaAdSectionTopology(
@@ -609,7 +965,10 @@ function materializeSectionWindows(
       contentUnits.length,
     );
     const bodyUnits = contentUnits
-      .slice(anchor.index + 1, nextIndex)
+      .slice(
+        anchor.bodyStartsAtAnchor ? anchor.index : anchor.index + 1,
+        nextIndex,
+      )
       .filter(
         (unit) =>
           !isRepeatedBottomAuxiliary(unit, refById, repeatedAuxiliary) &&
@@ -820,6 +1179,164 @@ function isFaaAdSubordinateHeading(value: string): boolean {
   return /^(?:Note|Exception)\s+\d*\s*to\s+paragraph\b/iu.test(
     value.normalize('NFKC').trim(),
   );
+}
+
+function parseBoeingSlSectionAnchor(
+  value: string,
+  grammarByAlias: ReadonlyMap<string, SectionGrammarEntry>,
+): {
+  grammar: SectionGrammarEntry;
+  matchedHeading: string;
+  hasInlineBody: boolean;
+} | null {
+  const normalized = value.normalize('NFKC').trim();
+  const colonIndex = normalized.indexOf(':');
+  const label = colonIndex >= 0 ? normalized.slice(0, colonIndex) : normalized;
+  const grammar = grammarByAlias.get(normalizeLabel(label));
+  if (!grammar) return null;
+  const inlineBody =
+    colonIndex >= 0 ? normalized.slice(colonIndex + 1).trim() : '';
+  return {
+    grammar,
+    matchedHeading:
+      colonIndex >= 0 ? normalized.slice(0, colonIndex + 1) : label,
+    hasInlineBody: inlineBody.length > 0,
+  };
+}
+
+function parseBoeingSlReferenceEntries(units: readonly SourceUnit[]): {
+  entries: SourceBoundSlReferenceEntry[];
+  orphanContinuation: boolean;
+} {
+  const entries: SourceBoundSlReferenceEntry[] = [];
+  let current:
+    | { referenceLabel: string; units: SourceUnit[]; textParts: string[] }
+    | undefined;
+  let orphanContinuation = false;
+  const flush = (): void => {
+    if (!current) return;
+    const rawText = current.textParts.join(' ').replace(/\s+/gu, ' ').trim();
+    const referenceKind = classifyBoeingSlReference(rawText);
+    entries.push({
+      referenceLabel: current.referenceLabel,
+      referenceKind,
+      targetDocumentCode: extractBoeingSlReferenceCode(rawText, referenceKind),
+      rawText,
+      sourceUnitIds: current.units.map((unit) => unit.sourceUnitId),
+      sourceRefIds: unique(current.units.flatMap((unit) => unit.sourceRefIds)),
+    });
+    current = undefined;
+  };
+  for (const unit of units) {
+    const text = stripBoeingSlReferencesPrefix(unit.text);
+    if (!text || isBoeingSlReferenceFurniture(unit, text)) continue;
+    const marker = text.match(/^([a-z])\)\s*(\S.*)$/iu);
+    if (marker) {
+      flush();
+      current = {
+        referenceLabel: marker[1].toLowerCase(),
+        units: [unit],
+        textParts: [marker[2]],
+      };
+      continue;
+    }
+    if (!current) {
+      orphanContinuation = true;
+      continue;
+    }
+    current.units.push(unit);
+    current.textParts.push(text);
+  }
+  flush();
+  return { entries, orphanContinuation };
+}
+
+function stripBoeingSlReferencesPrefix(value: string): string {
+  return value
+    .normalize('NFKC')
+    .trim()
+    .replace(/^REFERENCES\s*:\s*/iu, '');
+}
+
+function isBoeingSlReferenceFurniture(
+  unit: SourceUnit,
+  value: string,
+): boolean {
+  const normalized = normalizeLabel(value);
+  return (
+    normalized === 'referencetypereferencenumberrevisionnumberreference' ||
+    normalized === 'date' ||
+    /^Page\s+\d+\s+of\s+\d+$/iu.test(value) ||
+    /^ATA\s*:/iu.test(value) ||
+    /^\d{1,2}\s+[A-Z][a-z]+\s+\d{4}$/u.test(value) ||
+    /^ECCN\s*:/iu.test(value) ||
+    /^\(EAR\b/iu.test(value) ||
+    /^(?:transfer|country\s+group)\b/iu.test(value) ||
+    /^Disclaimer\s*:/iu.test(value) ||
+    /^required\s+for\s+forwarding\b/iu.test(value) ||
+    /\bDocument\s+Generated\s+on\b/iu.test(value) ||
+    /^BOEING\s+PROPRIETARY$/iu.test(value) ||
+    (unit.expectedSemantic === 'heading' && /revisionnumber/iu.test(normalized))
+  );
+}
+
+function classifyBoeingSlReference(value: string): SourceBoundSlReferenceKind {
+  if (/\bService\s+Information\s+Letter\b|\bSIL\b/iu.test(value)) {
+    return 'SERVICE_INFORMATION_LETTER';
+  }
+  if (
+    /\bService\s+Bulletin\b|\bAirplane\s+Service\s+Bulletin\b/iu.test(value)
+  ) {
+    return 'SERVICE_BULLETIN';
+  }
+  if (/\bFleet\s+Team\s+Digest\b|\bFTD\b/iu.test(value)) {
+    return 'FLEET_TEAM_DIGEST';
+  }
+  if (/\bService\s+Related\s+Problem\b|\bSRP\b/iu.test(value)) {
+    return 'SERVICE_RELATED_PROBLEM';
+  }
+  if (/\bAirplane\s+Configuration\s+Bulletin\b|\bACB\b/iu.test(value)) {
+    return 'AIRPLANE_CONFIGURATION_BULLETIN';
+  }
+  if (/\bDrawing\b/iu.test(value)) return 'DRAWING';
+  return 'OTHER';
+}
+
+function extractBoeingSlReferenceCode(
+  value: string,
+  kind: SourceBoundSlReferenceKind,
+): string | null {
+  const dashed = value.match(/\b([A-Z0-9]+(?:-[A-Z0-9]+){1,})\b/iu)?.[1];
+  if (dashed) return dashed.toUpperCase();
+  if (kind === 'SERVICE_INFORMATION_LETTER') {
+    return value.match(/\b(D\d{8,})\b/iu)?.[1]?.toUpperCase() ?? null;
+  }
+  if (kind === 'DRAWING') {
+    return value.match(/\b(\d+[A-Z]\d+)\b/iu)?.[1]?.toUpperCase() ?? null;
+  }
+  return null;
+}
+
+function parseBoeingSlReferenceCitations(units: readonly SourceUnit[]): Array<{
+  label: string;
+  sourceUnitIds: string[];
+  sourceRefIds: string[];
+}> {
+  const indexed = indexSourceText(units);
+  const citationPattern =
+    /\breferences?\s+([a-z]\)(?:(?:\s*,\s*(?:(?:and|or)\s+)?|\s+(?:and|or)\s+)[a-z]\))*)/giu;
+  return [...indexed.text.matchAll(citationPattern)].flatMap((match) => {
+    const start = match.index ?? 0;
+    const end = start + match[0].length;
+    const evidenceUnits = indexed.spans
+      .filter((span) => span.end > start && span.start < end)
+      .map((span) => span.unit);
+    return [...match[1].matchAll(/\b([a-z])\)/giu)].map((labelMatch) => ({
+      label: labelMatch[1].toLowerCase(),
+      sourceUnitIds: evidenceUnits.map((unit) => unit.sourceUnitId),
+      sourceRefIds: unique(evidenceUnits.flatMap((unit) => unit.sourceRefIds)),
+    }));
+  });
 }
 
 function firstMatch(
