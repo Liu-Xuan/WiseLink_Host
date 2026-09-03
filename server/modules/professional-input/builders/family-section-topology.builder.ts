@@ -8,12 +8,13 @@ import type {
 export type SemanticSectionBodyState = 'CONTENT' | 'NONE' | 'MISSING';
 
 export interface SourceBoundSectionWindow {
-  readonly family: 'FTD' | 'SB';
+  readonly family: 'FTD' | 'SB' | 'AD';
   readonly sectionKey: string;
   readonly matchedHeading: string;
   readonly occurrence: number;
-  readonly nodeKind?: 'register' | 'section';
+  readonly nodeKind?: 'register' | 'section' | 'action';
   readonly scopeKey?: string;
+  readonly ordinal?: string;
   readonly headingUnit: SourceUnit;
   readonly bodyUnits: readonly SourceUnit[];
   readonly semanticBodyState: SemanticSectionBodyState;
@@ -45,6 +46,54 @@ export interface SourceBoundConcurrentRequirements {
   readonly relationGroups: readonly SourceBoundConcurrentRequirementGroup[];
 }
 
+export interface SourceBoundAdObligation {
+  readonly itemOrdinal: string;
+  readonly actionTitle: string | null;
+  readonly modality: 'REQUIRED' | 'CONDITIONAL';
+  readonly conditionRaw: string | null;
+  readonly complianceTimeRaw: string | null;
+  readonly actionTextRaw: string;
+  readonly nestedParagraphCount: number;
+  readonly conditionalClauseCount: number;
+  readonly sourceUnitIds: readonly string[];
+  readonly sourceRefIds: readonly string[];
+}
+
+export interface SourceBoundAdObligations {
+  readonly semanticState: SemanticSectionBodyState;
+  readonly obligationsStructured: boolean;
+  readonly unstructuredReason:
+    | 'LEADING_UNSCOPED_CONTENT'
+    | 'NO_TOP_LEVEL_ACTIONS'
+    | null;
+  readonly obligations: readonly SourceBoundAdObligation[];
+}
+
+export type SourceBoundAdRelationKind =
+  | 'AFFECTS'
+  | 'TERMINATES'
+  | 'APPLICABILITY_SCOPE'
+  | 'ACTION_BASIS'
+  | 'INCORPORATED_BY_REFERENCE';
+
+export interface SourceBoundAdDocumentRelation {
+  readonly relationKind: SourceBoundAdRelationKind;
+  readonly targetDocumentKind:
+    | 'AIRWORTHINESS_DIRECTIVE'
+    | 'SERVICE_BULLETIN'
+    | 'AMOC_LETTER';
+  readonly targetDocumentCode: string;
+  readonly targetRevision: string | null;
+  readonly sourceUnitIds: readonly string[];
+  readonly sourceRefIds: readonly string[];
+}
+
+export interface SourceBoundAdDocumentRelations {
+  readonly semanticState: SemanticSectionBodyState;
+  readonly relationsStructured: boolean;
+  readonly relations: readonly SourceBoundAdDocumentRelation[];
+}
+
 interface SectionGrammarEntry {
   readonly sectionKey: string;
   readonly aliases: readonly string[];
@@ -55,8 +104,9 @@ interface SectionAnchorCandidate {
   readonly index: number;
   readonly sectionKey: string;
   readonly matchedHeading: string;
-  readonly nodeKind?: 'register' | 'section';
+  readonly nodeKind?: 'register' | 'section' | 'action';
   readonly scopeKey?: string;
+  readonly ordinal?: string;
 }
 
 /**
@@ -92,6 +142,41 @@ const AIRBUS_SB_REQUIRED_REGISTERS = new Set([
   'material_information',
   'accomplishment_instructions',
 ]);
+const FAA_AD_SECTION_GRAMMAR: readonly SectionGrammarEntry[] = [
+  { sectionKey: 'effective_date', aliases: ['effective date'] },
+  { sectionKey: 'affected_ads', aliases: ['affected ads'] },
+  { sectionKey: 'applicability', aliases: ['applicability'] },
+  { sectionKey: 'subject', aliases: ['subject'] },
+  { sectionKey: 'unsafe_condition', aliases: ['unsafe condition'] },
+  { sectionKey: 'compliance', aliases: ['compliance'] },
+  { sectionKey: 'required_actions', aliases: ['required actions'] },
+  {
+    sectionKey: 'terminating_action_for_affected_ads',
+    aliases: ['terminating action for affected ads'],
+  },
+  { sectionKey: 'special_flight_permit', aliases: ['special flight permit'] },
+  {
+    sectionKey: 'alternative_methods_of_compliance',
+    aliases: [
+      'alternative methods of compliance (amocs)',
+      'alternative methods of compliance',
+    ],
+  },
+  { sectionKey: 'related_information', aliases: ['related information'] },
+  {
+    sectionKey: 'material_incorporated_by_reference',
+    aliases: ['material incorporated by reference'],
+  },
+] as const;
+const FAA_AD_OPERATIVE_SCOPE = 'operative_rule';
+const FAA_AD_OPERATIVE_START = '3913amended';
+const FAA_AD_CORE_SECTIONS = new Set([
+  'effective_date',
+  'applicability',
+  'compliance',
+  'alternative_methods_of_compliance',
+  'material_incorporated_by_reference',
+]);
 
 export function buildFamilySectionTopology(input: {
   readonly unitSet: SourceUnitSet;
@@ -102,6 +187,9 @@ export function buildFamilySectionTopology(input: {
   }
   if (input.document.documentType === 'service_bulletin') {
     return buildAirbusSbSectionTopology(input.unitSet);
+  }
+  if (input.document.documentType === 'airworthiness_directive') {
+    return buildFaaAdSectionTopology(input.unitSet);
   }
   return [];
 }
@@ -151,6 +239,125 @@ export function buildSourceBoundConcurrentRequirements(
       new Set(rowCodes).size === rowCodes.length,
     requirements,
     relationGroups,
+  };
+}
+
+export function buildSourceBoundAdObligations(
+  section: SourceBoundSectionWindow,
+): SourceBoundAdObligations | null {
+  if (
+    section.family !== 'AD' ||
+    (section.sectionKey !== 'required_actions' && section.nodeKind !== 'action')
+  ) {
+    return null;
+  }
+  if (section.semanticBodyState !== 'CONTENT') {
+    return {
+      semanticState: section.semanticBodyState,
+      obligationsStructured: true,
+      unstructuredReason: null,
+      obligations: [],
+    };
+  }
+  const numbered =
+    section.sectionKey === 'required_actions'
+      ? splitTopLevelNumberedParagraphs(section.bodyUnits)
+      : null;
+  if (numbered?.leadingUnits.length) {
+    return {
+      semanticState: 'CONTENT',
+      obligationsStructured: false,
+      unstructuredReason: 'LEADING_UNSCOPED_CONTENT',
+      obligations: [],
+    };
+  }
+  const groups = numbered
+    ? numbered.groups
+    : [
+        {
+          itemOrdinal: section.ordinal ?? String(section.occurrence),
+          units: [...section.bodyUnits],
+        },
+      ];
+  if (groups.length === 0) {
+    return {
+      semanticState: 'CONTENT',
+      obligationsStructured: false,
+      unstructuredReason: 'NO_TOP_LEVEL_ACTIONS',
+      obligations: [],
+    };
+  }
+  const obligations: SourceBoundAdObligation[] = groups.map(
+    ({ itemOrdinal, units }) => {
+      const actionTextRaw = joinSourceText(units);
+      const conditionRaw = firstMatch(
+        actionTextRaw,
+        /(?:^|\n)(?:\([^)]+\)\s*)?(For\s+airplanes\b[^:]+):/iu,
+        1,
+      );
+      const complianceTimeRaw =
+        firstMatch(
+          actionTextRaw,
+          /\b(Within\s+\d+(?:\.\d+)?\s+(?:days?|months?|years?)\s+after\s+the\s+effective\s+date\s+of\s+this\s+AD)\b/iu,
+          1,
+        ) ??
+        firstMatch(
+          actionTextRaw,
+          /\b(Before\s+further\s+flight(?:\s+after\s+[^,.;:]+)?)/iu,
+          1,
+        );
+      const nestedParagraphCount = units.filter((unit) =>
+        /^\([^)]+\)\s/u.test(unit.text.trim()),
+      ).length;
+      const conditionalClauseCount = units.filter((unit) =>
+        /^(?:\([^)]+\)\s*)?If\b/iu.test(unit.text.trim()),
+      ).length;
+      return {
+        itemOrdinal,
+        actionTitle:
+          section.nodeKind === 'action' ? section.matchedHeading : null,
+        modality: conditionRaw ? 'CONDITIONAL' : 'REQUIRED',
+        conditionRaw,
+        complianceTimeRaw,
+        actionTextRaw,
+        nestedParagraphCount,
+        conditionalClauseCount,
+        sourceUnitIds: units.map((unit) => unit.sourceUnitId),
+        sourceRefIds: unique(units.flatMap((unit) => unit.sourceRefIds)),
+      };
+    },
+  );
+  return {
+    semanticState: 'CONTENT',
+    obligationsStructured: true,
+    unstructuredReason: null,
+    obligations,
+  };
+}
+
+export function buildSourceBoundAdDocumentRelations(
+  section: SourceBoundSectionWindow,
+): SourceBoundAdDocumentRelations | null {
+  if (section.family !== 'AD') return null;
+  const relationKind = adRelationKind(section);
+  if (!relationKind) return null;
+  if (section.semanticBodyState !== 'CONTENT') {
+    return {
+      semanticState: section.semanticBodyState,
+      relationsStructured: true,
+      relations: [],
+    };
+  }
+  const indexedText = indexSourceText(section.bodyUnits);
+  const relations =
+    relationKind === 'AFFECTS' || relationKind === 'TERMINATES'
+      ? parseAdRelations(indexedText, relationKind)
+      : parseAdSupportRelations(indexedText, relationKind);
+  if (section.nodeKind === 'action' && relations.length === 0) return null;
+  return {
+    semanticState: 'CONTENT',
+    relationsStructured: relations.length > 0,
+    relations,
   };
 }
 
@@ -256,6 +463,134 @@ function buildAirbusSbSectionTopology(
   return materializeSectionWindows(unitSet, contentUnits, candidates, 'SB');
 }
 
+function buildFaaAdSectionTopology(
+  unitSet: SourceUnitSet,
+): readonly SourceBoundSectionWindow[] {
+  const contentUnits = orderedContentUnits(unitSet);
+  let operativeStartIndex = -1;
+  for (const [index, unit] of contentUnits.entries()) {
+    if (
+      unit.expectedSemantic === 'heading' &&
+      normalizeLabel(unit.text) === FAA_AD_OPERATIVE_START
+    ) {
+      operativeStartIndex = index;
+    }
+  }
+  if (
+    operativeStartIndex < 0 ||
+    !contentUnits
+      .slice(0, operativeStartIndex + 1)
+      .some(
+        (unit) => normalizeLabel(unit.text) === 'federalaviationadministration',
+      ) ||
+    !contentUnits
+      .slice(0, operativeStartIndex + 1)
+      .some((unit) => normalizeLabel(unit.text) === '14cfrpart39')
+  ) {
+    return [];
+  }
+  const operativeIdentityCount = contentUnits
+    .slice(operativeStartIndex + 1)
+    .filter((unit) => isFaaAdOperativeIdentity(unit.text)).length;
+  // A Federal Register final rule can amend Part 39 with multiple ADs. Until
+  // each identity owns a separate bounded topology, never emit a partially
+  // merged package that silently assigns AD2 actions to AD1.
+  if (operativeIdentityCount !== 1) return [];
+  const grammarByAlias = new Map<string, SectionGrammarEntry>();
+  for (const entry of FAA_AD_SECTION_GRAMMAR) {
+    for (const alias of entry.aliases) {
+      grammarByAlias.set(normalizeLabel(alias), entry);
+    }
+  }
+  const fixedCandidates = contentUnits.flatMap(
+    (unit, index): SectionAnchorCandidate[] => {
+      if (index <= operativeStartIndex || unit.expectedSemantic !== 'heading') {
+        return [];
+      }
+      const heading = parseFaaAdHeading(unit.text);
+      const grammar = grammarByAlias.get(normalizeLabel(heading.label));
+      if (!grammar) return [];
+      const ordinal =
+        heading.ordinal ?? firstFollowingFaaOrdinal(contentUnits, index);
+      return [
+        {
+          unit,
+          index,
+          sectionKey: grammar.sectionKey,
+          matchedHeading: heading.label,
+          nodeKind: 'section',
+          scopeKey: FAA_AD_OPERATIVE_SCOPE,
+          ...(ordinal ? { ordinal } : {}),
+        },
+      ];
+    },
+  );
+  if (
+    [...FAA_AD_CORE_SECTIONS].some(
+      (sectionKey) =>
+        !fixedCandidates.some(
+          (candidate) => candidate.sectionKey === sectionKey,
+        ),
+    )
+  ) {
+    return [];
+  }
+  const complianceIndex = fixedCandidates.find(
+    (candidate) => candidate.sectionKey === 'compliance',
+  )?.index;
+  const complianceOrdinal = fixedCandidates.find(
+    (candidate) => candidate.sectionKey === 'compliance',
+  )?.ordinal;
+  const administrativeStartIndex = fixedCandidates
+    .filter(
+      (candidate) =>
+        candidate.sectionKey === 'alternative_methods_of_compliance' ||
+        candidate.sectionKey === 'related_information' ||
+        candidate.sectionKey === 'material_incorporated_by_reference',
+    )
+    .reduce(
+      (minimum, candidate) => Math.min(minimum, candidate.index),
+      contentUnits.length,
+    );
+  const fixedIndexes = new Set(
+    fixedCandidates.map((candidate) => candidate.index),
+  );
+  const actionCandidates = contentUnits.flatMap(
+    (unit, index): SectionAnchorCandidate[] => {
+      if (
+        complianceIndex === undefined ||
+        index <= complianceIndex ||
+        index >= administrativeStartIndex ||
+        unit.expectedSemantic !== 'heading' ||
+        fixedIndexes.has(index) ||
+        isFaaAdSubordinateHeading(unit.text)
+      ) {
+        return [];
+      }
+      const ordinal = firstFollowingFaaOrdinal(contentUnits, index);
+      if (ordinal && complianceOrdinal && ordinal <= complianceOrdinal) {
+        return [];
+      }
+      const matchedHeading = unit.text.normalize('NFKC').trim();
+      return [
+        {
+          unit,
+          index,
+          sectionKey: toSectionKey(matchedHeading),
+          matchedHeading,
+          nodeKind: 'action',
+          scopeKey: FAA_AD_OPERATIVE_SCOPE,
+          ...(ordinal ? { ordinal } : {}),
+        },
+      ];
+    },
+  );
+  const candidates = [...fixedCandidates, ...actionCandidates].sort(
+    (left, right) => left.index - right.index,
+  );
+  return materializeSectionWindows(unitSet, contentUnits, candidates, 'AD');
+}
+
 function materializeSectionWindows(
   unitSet: SourceUnitSet,
   contentUnits: readonly SourceUnit[],
@@ -278,7 +613,7 @@ function materializeSectionWindows(
       .filter(
         (unit) =>
           !isRepeatedBottomAuxiliary(unit, refById, repeatedAuxiliary) &&
-          !isPageNumberAuxiliary(unit, refById),
+          !isPageNumberAuxiliary(unit, refById, family),
       );
     const occurrenceKey = `${anchor.scopeKey ?? 'document'}:${anchor.sectionKey}`;
     const occurrence = (occurrences.get(occurrenceKey) ?? 0) + 1;
@@ -301,6 +636,7 @@ function materializeSectionWindows(
       occurrence,
       ...(anchor.nodeKind ? { nodeKind: anchor.nodeKind } : {}),
       ...(anchor.scopeKey ? { scopeKey: anchor.scopeKey } : {}),
+      ...(anchor.ordinal ? { ordinal: anchor.ordinal } : {}),
       headingUnit: anchor.unit,
       bodyUnits,
       semanticBodyState: semanticBodyState(bodyUnits),
@@ -417,6 +753,224 @@ function parseAnyRequirementGroup(
   };
 }
 
+interface IndexedSourceText {
+  readonly text: string;
+  readonly spans: readonly {
+    readonly start: number;
+    readonly end: number;
+    readonly unit: SourceUnit;
+  }[];
+}
+
+function parseFaaAdHeading(value: string): {
+  label: string;
+  ordinal: string | null;
+} {
+  const normalized = value.normalize('NFKC').trim();
+  const match = normalized.match(/^\(([a-z])\)\s*(\S.*)$/iu);
+  return match
+    ? { label: match[2].trim(), ordinal: match[1].toLowerCase() }
+    : { label: normalized, ordinal: null };
+}
+
+function firstFollowingFaaOrdinal(
+  units: readonly SourceUnit[],
+  headingIndex: number,
+): string | null {
+  const next = units[headingIndex + 1];
+  if (!next || next.expectedSemantic === 'heading') return null;
+  return (
+    next.text
+      .normalize('NFKC')
+      .trim()
+      .match(/^\(([a-z])\)(?:\(|\s|$)/iu)?.[1]
+      ?.toLowerCase() ?? null
+  );
+}
+
+function splitTopLevelNumberedParagraphs(units: readonly SourceUnit[]): {
+  groups: Array<{ itemOrdinal: string; units: SourceUnit[] }>;
+  leadingUnits: SourceUnit[];
+} {
+  const groups: Array<{ itemOrdinal: string; units: SourceUnit[] }> = [];
+  const leadingUnits: SourceUnit[] = [];
+  for (const unit of units) {
+    const ordinal = unit.text
+      .normalize('NFKC')
+      .trim()
+      .match(/^\((\d+)\)(?:\s|$)/u)?.[1];
+    if (ordinal) {
+      groups.push({ itemOrdinal: ordinal, units: [unit] });
+      continue;
+    }
+    const current = groups.at(-1);
+    if (current) current.units.push(unit);
+    else leadingUnits.push(unit);
+  }
+  return { groups, leadingUnits };
+}
+
+function isFaaAdOperativeIdentity(value: string): boolean {
+  return /^\s*\d{4}-\d{2}-\d{2}\s*[^:\n]{2,160}:\s*Amendment\s*39-\d+\b/iu.test(
+    value.normalize('NFKC'),
+  );
+}
+
+function isFaaAdSubordinateHeading(value: string): boolean {
+  return /^(?:Note|Exception)\s+\d*\s*to\s+paragraph\b/iu.test(
+    value.normalize('NFKC').trim(),
+  );
+}
+
+function firstMatch(
+  value: string,
+  pattern: RegExp,
+  group: number,
+): string | null {
+  return value.match(pattern)?.[group]?.replace(/\s+/gu, ' ').trim() ?? null;
+}
+
+function joinSourceText(units: readonly SourceUnit[]): string {
+  return units.map((unit) => unit.text).join('\n');
+}
+
+function indexSourceText(units: readonly SourceUnit[]): IndexedSourceText {
+  let text = '';
+  const spans: Array<{ start: number; end: number; unit: SourceUnit }> = [];
+  for (const unit of units) {
+    if (text.length > 0) text += '\n';
+    const start = text.length;
+    text += unit.text;
+    spans.push({ start, end: text.length, unit });
+  }
+  return { text, spans };
+}
+
+function adRelationKind(
+  section: SourceBoundSectionWindow,
+): SourceBoundAdRelationKind | null {
+  if (
+    section.nodeKind === 'action' ||
+    section.sectionKey === 'required_actions'
+  ) {
+    return 'ACTION_BASIS';
+  }
+  const bySection = new Map<string, SourceBoundAdRelationKind>([
+    ['affected_ads', 'AFFECTS'],
+    ['terminating_action_for_affected_ads', 'TERMINATES'],
+    ['applicability', 'APPLICABILITY_SCOPE'],
+    ['material_incorporated_by_reference', 'INCORPORATED_BY_REFERENCE'],
+  ]);
+  return bySection.get(section.sectionKey) ?? null;
+}
+
+function parseAdRelations(
+  indexed: IndexedSourceText,
+  relationKind: 'AFFECTS' | 'TERMINATES',
+): SourceBoundAdDocumentRelation[] {
+  return mergeAdRelations(
+    [
+      ...indexed.text.matchAll(/\bAD\s+(\d{4}-\d{2}-\d{2}(?:\s+R\d+)?)\b/giu),
+    ].map((match) =>
+      sourcedAdRelation(indexed, match, {
+        relationKind,
+        targetDocumentKind: 'AIRWORTHINESS_DIRECTIVE',
+        targetDocumentCode: `AD ${match[1]}`
+          .replace(/\s+/gu, ' ')
+          .toUpperCase(),
+        targetRevision: null,
+      }),
+    ),
+  );
+}
+
+function parseAdSupportRelations(
+  indexed: IndexedSourceText,
+  relationKind:
+    | 'APPLICABILITY_SCOPE'
+    | 'ACTION_BASIS'
+    | 'INCORPORATED_BY_REFERENCE',
+): SourceBoundAdDocumentRelation[] {
+  const bulletinRelations = [
+    ...indexed.text.matchAll(
+      /\b(?:Boeing\s+)?(?:Alert\s+)?(?:Service|Requirements)\s+Bulletin\s+([A-Z0-9]+(?:-[A-Z0-9]+){1,})(?:\s+RB)?(?:,\s*Issue\s+(\d+))?/giu,
+    ),
+  ].map((match) =>
+    sourcedAdRelation(indexed, match, {
+      relationKind,
+      targetDocumentKind: 'SERVICE_BULLETIN',
+      targetDocumentCode: match[1].toUpperCase(),
+      targetRevision: match[2] ? `ISSUE ${match[2]}` : null,
+    }),
+  );
+  if (relationKind !== 'ACTION_BASIS') {
+    return mergeAdRelations(bulletinRelations);
+  }
+  const amocRelations = [
+    ...indexed.text.matchAll(/\bAMOC\s+Letter\s+([A-Z0-9-]+)\b/giu),
+  ].map((match) =>
+    sourcedAdRelation(indexed, match, {
+      relationKind,
+      targetDocumentKind: 'AMOC_LETTER',
+      targetDocumentCode: match[1].toUpperCase(),
+      targetRevision: null,
+    }),
+  );
+  return mergeAdRelations([...bulletinRelations, ...amocRelations]);
+}
+
+function sourcedAdRelation(
+  indexed: IndexedSourceText,
+  match: RegExpMatchArray,
+  relation: Omit<
+    SourceBoundAdDocumentRelation,
+    'sourceUnitIds' | 'sourceRefIds'
+  >,
+): SourceBoundAdDocumentRelation {
+  const start = match.index ?? 0;
+  const end = start + match[0].length;
+  const units = indexed.spans
+    .filter((span) => span.end > start && span.start < end)
+    .map((span) => span.unit);
+  return {
+    ...relation,
+    sourceUnitIds: units.map((unit) => unit.sourceUnitId),
+    sourceRefIds: unique(units.flatMap((unit) => unit.sourceRefIds)),
+  };
+}
+
+function mergeAdRelations(
+  values: readonly SourceBoundAdDocumentRelation[],
+): SourceBoundAdDocumentRelation[] {
+  const byIdentity = new Map<string, SourceBoundAdDocumentRelation>();
+  for (const value of values) {
+    const key = [
+      value.relationKind,
+      value.targetDocumentKind,
+      value.targetDocumentCode,
+      value.targetRevision ?? '',
+    ].join(':');
+    const previous = byIdentity.get(key);
+    byIdentity.set(
+      key,
+      previous
+        ? {
+            ...previous,
+            sourceUnitIds: unique([
+              ...previous.sourceUnitIds,
+              ...value.sourceUnitIds,
+            ]),
+            sourceRefIds: unique([
+              ...previous.sourceRefIds,
+              ...value.sourceRefIds,
+            ]),
+          }
+        : value,
+    );
+  }
+  return [...byIdentity.values()];
+}
+
 function semanticBodyState(
   bodyUnits: readonly SourceUnit[],
 ): SemanticSectionBodyState {
@@ -459,12 +1013,13 @@ function isRepeatedBottomAuxiliary(
 function isPageNumberAuxiliary(
   unit: SourceUnit,
   refById: ReadonlyMap<string, PdfSourceRefValue>,
+  family: SourceBoundSectionWindow['family'],
 ): boolean {
   if (!isBottomLocated(unit, refById)) return false;
   const match = unit.text
     .normalize('NFKC')
     .trim()
-    .match(/^Page\s*(\d+)$/iu);
+    .match(family === 'AD' ? /^(?:Page\s*)?(\d+)$/iu : /^Page\s*(\d+)$/iu);
   return match !== null && Number(match[1]) === pageForUnit(unit, refById);
 }
 

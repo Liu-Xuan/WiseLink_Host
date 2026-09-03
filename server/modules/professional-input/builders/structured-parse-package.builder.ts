@@ -26,6 +26,8 @@ import {
 } from './source-unit-set.builder';
 import {
   buildFamilySectionTopology,
+  buildSourceBoundAdDocumentRelations,
+  buildSourceBoundAdObligations,
   buildSourceBoundConcurrentRequirements,
   type SourceBoundSectionWindow,
 } from './family-section-topology.builder';
@@ -679,6 +681,7 @@ function buildSectionObservationContentUnits(input: {
   const scope = {
     ...(section.nodeKind ? { nodeKind: section.nodeKind } : {}),
     ...(section.scopeKey ? { scopeKey: section.scopeKey } : {}),
+    ...(section.ordinal ? { ordinal: section.ordinal } : {}),
   };
   const sectionContinuityPrefix = section.scopeKey
     ? `section:${section.family}:${section.scopeKey}:${section.sectionKey}:${section.occurrence}`
@@ -753,6 +756,87 @@ function buildSectionObservationContentUnits(input: {
             sectionKey: section.sectionKey,
             occurrence: section.occurrence,
             ...concurrentRequirements,
+          },
+          authority,
+        },
+      }),
+    );
+  }
+  const adObligations = buildSourceBoundAdObligations(section);
+  if (adObligations) {
+    units.push(
+      buildStructuredObservationContentUnit({
+        sourcePackageId,
+        moduleId,
+        order: firstOrder + units.length,
+        continuityKey: `${sectionContinuityPrefix}:ad-obligations`,
+        sourceRefIds: section.sourceRefIds,
+        sourceSegmentIds:
+          section.bodyUnits.length > 0
+            ? section.bodyUnits.map((unit) => unit.sourceUnitId)
+            : [section.headingUnit.sourceUnitId],
+        payload: {
+          observationType: 'AD_OBLIGATIONS',
+          value: {
+            family: section.family,
+            scopeKey: section.scopeKey ?? 'document',
+            sectionKey: section.sectionKey,
+            sectionOrdinal: section.ordinal ?? null,
+            semanticState: adObligations.semanticState,
+            obligationsStructured: adObligations.obligationsStructured,
+            unstructuredReason: adObligations.unstructuredReason,
+            obligationCount: adObligations.obligations.length,
+          },
+          authority,
+        },
+      }),
+    );
+  }
+  for (const obligation of adObligations?.obligations ?? []) {
+    units.push(
+      buildStructuredObservationContentUnit({
+        sourcePackageId,
+        moduleId,
+        order: firstOrder + units.length,
+        continuityKey:
+          `${sectionContinuityPrefix}:ad-obligation:` + obligation.itemOrdinal,
+        sourceRefIds: obligation.sourceRefIds,
+        sourceSegmentIds: obligation.sourceUnitIds,
+        payload: {
+          observationType: 'AD_OBLIGATION',
+          value: {
+            family: section.family,
+            scopeKey: section.scopeKey ?? 'document',
+            sectionKey: section.sectionKey,
+            sectionOrdinal: section.ordinal ?? null,
+            ...obligation,
+          },
+          authority,
+        },
+      }),
+    );
+  }
+  const adRelations = buildSourceBoundAdDocumentRelations(section);
+  if (adRelations) {
+    units.push(
+      buildStructuredObservationContentUnit({
+        sourcePackageId,
+        moduleId,
+        order: firstOrder + units.length,
+        continuityKey: `${sectionContinuityPrefix}:ad-document-relations`,
+        sourceRefIds: section.sourceRefIds,
+        sourceSegmentIds:
+          section.bodyUnits.length > 0
+            ? section.bodyUnits.map((unit) => unit.sourceUnitId)
+            : [section.headingUnit.sourceUnitId],
+        payload: {
+          observationType: 'AD_DOCUMENT_RELATIONS',
+          value: {
+            family: section.family,
+            scopeKey: section.scopeKey ?? 'document',
+            sectionKey: section.sectionKey,
+            sectionOrdinal: section.ordinal ?? null,
+            ...adRelations,
           },
           authority,
         },
