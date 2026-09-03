@@ -1336,6 +1336,16 @@ test('validates the exact C3 review task and candidate fixtures', async () => {
   validatePayload('review-candidate', { task, candidate });
 });
 
+test('rejects SOURCE_LINK without a structured SourceRef', async () => {
+  const task = await readJson(REVIEW_TASK_FIXTURE_URL);
+  const candidate = await readJson(REVIEW_CANDIDATE_FIXTURE_URL);
+  candidate.sourceRefs = [];
+  assert.throws(
+    () => validatePayload('review-candidate', { task, candidate }),
+    /REVIEW_CANDIDATE_SOURCE_LINK_REF_REQUIRED/u,
+  );
+});
+
 test('runs INTERACTIVE_REVIEW through only the five-tool C3 contract', async () => {
   const reviewTask = await readJson(REVIEW_TASK_FIXTURE_URL);
   const candidate = await readJson(REVIEW_CANDIDATE_FIXTURE_URL);
@@ -1422,6 +1432,69 @@ test('runs INTERACTIVE_REVIEW through only the five-tool C3 contract', async () 
     ],
   );
   assert.ok(calls.every(({ name }) => INTERACTIVE_REVIEW_TOOLS.includes(name)));
+});
+
+test('stops a SOURCE_LINK without SourceRefs before review commit', async (t) => {
+  const checkpointDir = await mkdtemp(
+    join(tmpdir(), 'wiselink-review-source-link-'),
+  );
+  t.after(() => rm(checkpointDir, { recursive: true, force: true }));
+  const reviewTask = await readJson(REVIEW_TASK_FIXTURE_URL);
+  const task = makeTask('OPENCLAW_INTERACTIVE_REVIEW', reviewTask);
+  const calls = [];
+  const callTool = async (name, args) => {
+    calls.push({ name, args });
+    if (name === 'begin_review_turn') return runningBegin(task);
+    if (name === 'get_review_turn_context') {
+      return reviewContext(task, reviewTask);
+    }
+    if (name === 'read_source_refs') {
+      return {
+        schemaVersion: 'wiselink.3_1.review_source_refs.v1.c2',
+        attemptRef: task.operationRef,
+        sourceRefs: args.sourceRefIds.map((sourceRefId) => ({
+          sourceRefId,
+          kind: 'page',
+          statement: 'Fixture-only source-bound statement.',
+        })),
+      };
+    }
+    if (name === 'commit_review_turn_candidate') {
+      throw new Error('COMMIT_MUST_NOT_RUN');
+    }
+    throw new Error(`UNEXPECTED_TOOL:${name}`);
+  };
+
+  await assert.rejects(
+    runHostedReviewTurn(
+      {
+        reviewConversationRef: reviewTask.reviewConversationRef,
+        requestId: reviewTask.requestId,
+        checkpointDir,
+      },
+      {
+        callTool,
+        invokeModel: async () => ({
+          output: {
+            responseType: 'SOURCE_LINK',
+            answer: '正文声称存在来源，但结构化引用缺失。',
+            sourceRefs: [],
+            missingInputs: [],
+            candidateEvidenceRefs: [],
+            reviewActionDraft: null,
+            affectedItemIds: [],
+            warnings: ['candidate_only'],
+          },
+          provenance: provenance(),
+        }),
+      },
+    ),
+    /REVIEW_MODEL_SOURCE_LINK_REF_REQUIRED/u,
+  );
+  assert.deepEqual(
+    calls.map(({ name }) => name),
+    ['begin_review_turn', 'get_review_turn_context', 'read_source_refs'],
+  );
 });
 
 test('runs a review turn from durable checkpoints without replaying remote work', async (t) => {

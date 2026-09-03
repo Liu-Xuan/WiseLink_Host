@@ -3880,6 +3880,12 @@ export function validateReviewCandidate(task, candidate) {
   }
   nonEmpty(candidate.answer, 'REVIEW_CANDIDATE_ANSWER_REQUIRED');
   uniqueTextArray(candidate.sourceRefs, 'REVIEW_CANDIDATE_SOURCE_REFS_INVALID');
+  if (
+    candidate.responseType === 'SOURCE_LINK' &&
+    candidate.sourceRefs.length === 0
+  ) {
+    fail('REVIEW_CANDIDATE_SOURCE_LINK_REF_REQUIRED');
+  }
   uniqueTextArray(
     candidate.missingInputs,
     'REVIEW_CANDIDATE_MISSING_INPUTS_INVALID',

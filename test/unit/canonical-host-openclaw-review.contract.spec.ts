@@ -212,6 +212,17 @@ describe('interactive review C2 task / C2 legacy and C3 current result contract'
     );
   });
 
+  it('rejects SOURCE_LINK without a structured SourceRef before persistence', () => {
+    const task = reviewTask();
+    const result = reviewResult(task, {
+      responseType: 'SOURCE_LINK',
+      sourceRefs: [],
+    });
+    expect(() => parseReviewTurnCandidateContract({ result, task })).toThrow(
+      'REVIEW_RESULT_SOURCE_LINK_REF_REQUIRED',
+    );
+  });
+
   it('rejects missing actual tool provenance before persistence', () => {
     const task = reviewTask();
     const result = reviewResult(task, {}, {});

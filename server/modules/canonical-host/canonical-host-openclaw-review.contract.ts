@@ -295,6 +295,9 @@ export function parseReviewTurnCandidateContract(input: {
     record.sourceRefs,
     'REVIEW_RESULT_SOURCE_REFS_INVALID',
   );
+  if (record.responseType === 'SOURCE_LINK' && sourceRefs.length === 0) {
+    fail('REVIEW_RESULT_SOURCE_LINK_REF_REQUIRED');
+  }
   const missingInputs = stringArray(
     record.missingInputs,
     'REVIEW_RESULT_MISSING_INPUTS_INVALID',

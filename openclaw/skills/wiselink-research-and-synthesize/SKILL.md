@@ -262,6 +262,9 @@ begin_review_turn({reviewConversationRef, requestId})
 - candidate 使用的每个 SourceRef 必须属于 Task allowlist，并在本轮实际通过 `read_source_refs` 读取；当本轮
   同时具有 selected Criterion 和附件时，驱动必须读取二者的受控 SourceRef，不得因 Criterion 原文优先而遗漏附件；外层
   ResultEnvelope 绑定其 actual resource artifact ref/SHA。
+- 工程师明确要求定位、引用或返回 SourceRef 时，候选必须使用 `SOURCE_LINK`，并至少返回一个本轮实读的
+  `candidate.sourceRefs`；`SOURCE_LINK + sourceRefs=[]` 在 Skill 与 Host 两侧均 fail closed，不能只在回答正文中
+  描述来源而让浏览器失去可点击定位入口。
 - `attachmentRefs` 可以非空，但每项必须是非空唯一字符串且属于同一 Task `resourceRefs`。附件正文只能按
   `read_source_refs` 读取 Host 已解析、已脱敏的 value；不得读取或推导 raw FileService locator/bytes，也不得把
   Task 中的 resource artifact ref/SHA 送给模型。

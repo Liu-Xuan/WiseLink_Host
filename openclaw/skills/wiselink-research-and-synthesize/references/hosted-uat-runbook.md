@@ -119,10 +119,12 @@ authenticated user。
 3. 驱动执行一次 `begin_review_turn`；确认 Host 派生 actor/tenant/WorkItem/session，调用参数中没有这些字段。
 4. 驱动执行一次 `get_review_turn_context` fresh-read current，并只读取本轮所需 SourceRef；确认模型输入不含
    conversation/turn/request/attempt/lease/WorkItem 控制面值。
-5. 模型经 Gateway HTTP 仅生成 SOURCE_LINK/ANSWER 内容；若返回 tool_calls 则 fail closed。
+5. 模型经 Gateway HTTP 仅生成 SOURCE_LINK/ANSWER 内容；本用例要求 `SOURCE_LINK` 且至少一个
+   `sourceRefs` 来自本轮实读 allowlist，`sourceRefs=[]` 必须在 commit 前 fail closed；若返回 tool_calls 也 fail closed。
 6. 驱动检查 ResultEnvelope 实际 provenance 与 SourceRef artifact ref/SHA，并单次 commit。
 7. 用同一 checkpoint 目录再次启动驱动，确认 Host/模型远程调用数均不增加。
-8. Host 读回原 ReviewTurn assistant candidate 和 provenance；WorkItem revision/current/STALE 均未变化。
+8. Host 读回原 ReviewTurn assistant candidate 和 provenance；WorkItem revision/current/STALE 均未变化。浏览器必须
+   把每个非空 `candidate.sourceRefs` 显示为可点击“原文依据”，点击后进入当前 WorkItem Reader 并定位同一 SourceRef。
 
 ### Positive：ReviewActionDraft
 
