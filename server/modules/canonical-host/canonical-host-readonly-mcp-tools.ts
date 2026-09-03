@@ -24,7 +24,7 @@ export function registerCanonicalHostReadonlyMcpTools(
     {
       title: '读取工程文件处理状态',
       description:
-        '读取同一 WiseLink WorkItem 的最新状态、解析包摘要和候选评估摘要。',
+        '读取同一 WiseLink WorkItem 的最新状态、解析包摘要、候选评估摘要，以及配置证据采纳触发的脱敏全量重算进度。',
       inputSchema: z.object({ workItemId: mcpWorkItemId }).strict(),
       annotations: readOnlyAnnotations,
     },

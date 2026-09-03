@@ -28,6 +28,13 @@ import {
   type ApplicabilityTaskContract,
 } from '../../server/modules/canonical-host/canonical-host-openclaw-applicability.contract';
 import { CanonicalHostOpenClawApplicabilityService } from '../../server/modules/canonical-host/canonical-host-openclaw-applicability.service';
+import {
+  activeConfigurationEvidenceReevaluation,
+  createConfigurationEvidenceReevaluation,
+  retryConfigurationEvidenceReevaluationStage,
+  withConfigurationEvidenceTerminal,
+  withStagedApplicabilityInput,
+} from '../../server/modules/canonical-host/configuration-evidence/configuration-evidence-reevaluation.state';
 
 describe('CanonicalHostOpenClawApplicabilityService', () => {
   it('freezes only the selected aircraft, bilingual SourceUnits and current SourceRefs', async () => {
@@ -66,9 +73,9 @@ describe('CanonicalHostOpenClawApplicabilityService', () => {
     expect(task.controlledAircraft?.assetId).toBe('ASSET-1');
     expect(task.controlledFacts.map((fact) => fact.factId)).toEqual(['FACT-1']);
     expect(
-      task.astVocabulary.properties
-        .find((entry) => entry.property === 'lineNumber')
-        ?.operators,
+      task.astVocabulary.properties.find(
+        (entry) => entry.property === 'lineNumber',
+      )?.operators,
     ).toContainEqual({
       operator: 'range',
       valueShape: 'min_max_object',
@@ -538,7 +545,7 @@ describe('CanonicalHostOpenClawApplicabilityService', () => {
     });
   });
 
-  it('discards a private finalized artifact when a competing WorkItem CAS wins', async () => {
+  it('terminalizes the attempt and discards a private finalized artifact when a competing WorkItem CAS wins', async () => {
     const harness = applicabilityHarness({
       beforeCandidateCas(current) {
         current.revision += 1;
@@ -554,7 +561,11 @@ describe('CanonicalHostOpenClawApplicabilityService', () => {
         begin.leaseGeneration,
         result,
       ),
-    ).rejects.toThrow('WORK_ITEM_CAS_CONFLICT');
+    ).resolves.toMatchObject({
+      status: 'CONFLICT',
+      projectionApplied: false,
+      terminalReason: 'WORK_ITEM_CAS_CONFLICT_AFTER_COMMIT_START',
+    });
     expect(
       harness.artifactStore.stageCandidateAndReadback,
     ).toHaveBeenCalledTimes(1);
@@ -566,13 +577,441 @@ describe('CanonicalHostOpenClawApplicabilityService', () => {
     );
     expect(harness.readCurrent().applicability ?? null).toBeNull();
     expect(harness.readAttempt()).toMatchObject({
-      status: 'COMMITTING',
+      status: 'CONFLICT',
       resultContentHash: result.contentHash,
-      completedAt: null,
-      terminalReason: null,
+      terminalReason: 'WORK_ITEM_CAS_CONFLICT_AFTER_COMMIT_START',
       projectionApplied: false,
     });
+    expect(harness.attempts.finishProjectionConflict).toHaveBeenCalledTimes(1);
   });
+
+  it('protects a physical artifact referenced by the competing WorkItem winner', async () => {
+    const harness = applicabilityHarness({
+      beforeCandidateCas(current, _row, next) {
+        current.revision += 1;
+        current.applicability = {
+          ...structuredClone(next.applicability!),
+          actionAttemptId: 'ATT-APP-COMPETING',
+        };
+      },
+    });
+    const begin = await harness.begin();
+
+    await expect(
+      harness.service.commit(
+        begin.attemptRef,
+        begin.leaseToken,
+        begin.leaseGeneration,
+        harness.resultFor(candidateFor(begin)),
+      ),
+    ).resolves.toMatchObject({ status: 'CONFLICT' });
+
+    expect(harness.readCurrent().applicability).toMatchObject({
+      actionAttemptId: 'ATT-APP-COMPETING',
+    });
+    expect(
+      harness.artifactStore.discardCandidateArtifact,
+    ).not.toHaveBeenCalled();
+    expect(harness.attempts.finishProjectionConflict).toHaveBeenCalledTimes(1);
+  });
+
+  it('records a P0B candidate CAS race as exact-attempt CONFLICT and supports terminal replay', async () => {
+    const harness = applicabilityHarness({
+      p0b: true,
+      applicabilityTerminalMarkerCasFailures: 1,
+      beforeCandidateCas(current) {
+        current.revision += 1;
+      },
+    });
+    const servingBefore = servingSnapshot(harness.readCurrent());
+    const begin = await harness.begin();
+    const result = harness.resultFor(candidateFor(begin));
+    expect(
+      (begin.modelInput as unknown as ApplicabilityTaskContract)
+        .configurationEvidenceReevaluation,
+    ).toEqual({
+      triggerSnapshotId: 'CONFIGURATION-SNAPSHOT:P0B-APP-1',
+      triggerConfigurationRevision: 1,
+      adoptionWorkItemRevision: 7,
+      applicabilityRetryNo: 0,
+    });
+
+    await expect(
+      harness.service.commit(
+        begin.attemptRef,
+        begin.leaseToken,
+        begin.leaseGeneration,
+        result,
+      ),
+    ).resolves.toMatchObject({
+      status: 'CONFLICT',
+      terminalReason: 'WORK_ITEM_CAS_CONFLICT_AFTER_COMMIT_START',
+    });
+
+    const after = harness.readCurrent();
+    expect(servingSnapshot(after)).toEqual(servingBefore);
+    expect(activeConfigurationEvidenceReevaluation(after)).toMatchObject({
+      status: 'CONFLICT',
+      stages: {
+        applicability: {
+          status: 'CONFLICT',
+          retryNo: 0,
+          attempt: {
+            attemptId: 'ATT-APP-1',
+            attemptRef: 'AQ-APP-1',
+            inputRevision: 8,
+            baseRevision: 8,
+          },
+          terminal: {
+            status: 'CONFLICT',
+            code: 'WORK_ITEM_CAS_CONFLICT_AFTER_COMMIT_START',
+          },
+        },
+      },
+      stagedBundle: { applicability: null },
+    });
+    expect(
+      harness.artifactStore.discardCandidateArtifact,
+    ).toHaveBeenCalledTimes(1);
+
+    await expect(
+      harness.service.commit(
+        begin.attemptRef,
+        begin.leaseToken,
+        begin.leaseGeneration,
+        result,
+      ),
+    ).resolves.toMatchObject({ status: 'CONFLICT' });
+    expect(
+      harness.artifactStore.stageCandidateAndReadback,
+    ).toHaveBeenCalledTimes(1);
+    expect(harness.attempts.finishProjectionConflict).toHaveBeenCalledTimes(1);
+    expect(harness.registrar.compareAndSet).toHaveBeenCalledTimes(4);
+  });
+
+  it('repairs a still-RUNNING P0B marker when terminal replay follows two marker CAS races', async () => {
+    const harness = applicabilityHarness({
+      p0b: true,
+      applicabilityTerminalMarkerCasFailures: 2,
+      beforeCandidateCas(current) {
+        current.revision += 1;
+      },
+    });
+    const servingBefore = servingSnapshot(harness.readCurrent());
+    const begin = await harness.begin();
+    const result = harness.resultFor(candidateFor(begin));
+
+    await expect(
+      harness.service.commit(
+        begin.attemptRef,
+        begin.leaseToken,
+        begin.leaseGeneration,
+        result,
+      ),
+    ).rejects.toThrow('WORK_ITEM_CAS_CONFLICT');
+    expect(harness.readAttempt()).toMatchObject({ status: 'CONFLICT' });
+    expect(
+      activeConfigurationEvidenceReevaluation(harness.readCurrent()),
+    ).toMatchObject({
+      status: 'RUNNING',
+      stages: { applicability: { status: 'RUNNING', retryNo: 0 } },
+    });
+
+    await expect(
+      harness.service.commit(
+        begin.attemptRef,
+        begin.leaseToken,
+        begin.leaseGeneration,
+        result,
+      ),
+    ).resolves.toMatchObject({ status: 'CONFLICT' });
+
+    const repaired = harness.readCurrent();
+    expect(servingSnapshot(repaired)).toEqual(servingBefore);
+    expect(activeConfigurationEvidenceReevaluation(repaired)).toMatchObject({
+      status: 'CONFLICT',
+      stages: {
+        applicability: {
+          status: 'CONFLICT',
+          retryNo: 0,
+          attempt: { attemptId: 'ATT-APP-1', attemptRef: 'AQ-APP-1' },
+          terminal: {
+            status: 'CONFLICT',
+            code: 'WORK_ITEM_CAS_CONFLICT_AFTER_COMMIT_START',
+          },
+        },
+      },
+    });
+    expect(
+      harness.artifactStore.stageCandidateAndReadback,
+    ).toHaveBeenCalledTimes(1);
+    expect(
+      harness.artifactStore.discardCandidateArtifact,
+    ).toHaveBeenCalledTimes(1);
+    expect(harness.attempts.finishProjectionConflict).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['WAITING_INPUT', 'FAILED'] as const)(
+    'repairs a P0B %s marker on terminal replay after two marker CAS races',
+    async (status) => {
+      const harness = applicabilityHarness({
+        p0b: true,
+        applicabilityTerminalMarkerCasFailures: 2,
+      });
+      if (status === 'WAITING_INPUT') {
+        harness.mutateControlledOwner((input) => {
+          input!.fleetMasterData.assets = [];
+          input!.fleetMasterData.facts = [];
+        });
+      }
+      const servingBefore = servingSnapshot(harness.readCurrent());
+      const begin = await harness.begin();
+      const result = harness.resultFor(
+        candidateFor(begin),
+        status === 'WAITING_INPUT'
+          ? {
+              status,
+              businessOutcome: 'WAITING_INPUT',
+              candidateStatus: 'WAITING_INPUT',
+              modelOutput: null,
+              factsConsidered: [],
+              missingInputs: structuredClone(
+                begin.task.hostResolvedMissingInputs,
+              ),
+            }
+          : {
+              status,
+              businessOutcome: 'NOT_PRODUCED',
+              candidateStatus: null,
+              modelOutput: null,
+              factsConsidered: [],
+              errorCode: 'OPENCLAW_EXECUTOR_FAILED',
+              errorDetail: 'executor failed',
+            },
+      );
+
+      await expect(
+        harness.service.commit(
+          begin.attemptRef,
+          begin.leaseToken,
+          begin.leaseGeneration,
+          result,
+        ),
+      ).rejects.toThrow('WORK_ITEM_CAS_CONFLICT');
+      expect(harness.readAttempt()).toMatchObject({ status });
+      expect(
+        activeConfigurationEvidenceReevaluation(harness.readCurrent()),
+      ).toMatchObject({
+        status: 'RUNNING',
+        stages: { applicability: { status: 'RUNNING', retryNo: 0 } },
+      });
+
+      await expect(
+        harness.service.commit(
+          begin.attemptRef,
+          begin.leaseToken,
+          begin.leaseGeneration,
+          result,
+        ),
+      ).resolves.toMatchObject({ status });
+      expect(servingSnapshot(harness.readCurrent())).toEqual(servingBefore);
+      expect(
+        activeConfigurationEvidenceReevaluation(harness.readCurrent()),
+      ).toMatchObject({
+        status,
+        stages: {
+          applicability: {
+            status,
+            retryNo: 0,
+            attempt: { attemptId: 'ATT-APP-1', attemptRef: 'AQ-APP-1' },
+            terminal: { status },
+          },
+        },
+      });
+    },
+  );
+
+  it('repairs Host-deterministic P0B WAITING_INPUT from a COMMITTING replay', async () => {
+    const harness = applicabilityHarness({
+      p0b: true,
+      applicabilityTerminalMarkerCasFailures: 2,
+    });
+    const servingBefore = servingSnapshot(harness.readCurrent());
+    const begin = await harness.begin();
+    const candidate = candidateFor(begin);
+    candidate.expressions[0].expressionAst = {
+      type: 'assert',
+      property: 'optionInstalled',
+      operator: 'eq',
+      value: true,
+      qualifier: 'OPT-X',
+    };
+    const result = harness.resultFor(candidate);
+
+    await expect(
+      harness.service.commit(
+        begin.attemptRef,
+        begin.leaseToken,
+        begin.leaseGeneration,
+        result,
+      ),
+    ).rejects.toThrow('WORK_ITEM_CAS_CONFLICT');
+    expect(harness.readAttempt()).toMatchObject({ status: 'COMMITTING' });
+
+    await expect(
+      harness.service.commit(
+        begin.attemptRef,
+        begin.leaseToken,
+        begin.leaseGeneration,
+        result,
+      ),
+    ).resolves.toMatchObject({ status: 'WAITING_INPUT' });
+    expect(servingSnapshot(harness.readCurrent())).toEqual(servingBefore);
+    expect(
+      activeConfigurationEvidenceReevaluation(harness.readCurrent()),
+    ).toMatchObject({
+      status: 'WAITING_INPUT',
+      stages: {
+        applicability: {
+          status: 'WAITING_INPUT',
+          attempt: { attemptId: 'ATT-APP-1', attemptRef: 'AQ-APP-1' },
+          terminal: {
+            status: 'WAITING_INPUT',
+            code: 'APPLICABILITY_HOST_CONTROLLED_FACT_REQUIRED',
+          },
+        },
+      },
+    });
+  });
+
+  it.each(['ADOPTION', 'RETRY', 'OWNER'] as const)(
+    'does not let a losing P0B candidate CAS overwrite a later %s',
+    async (laterChange) => {
+      const harness = applicabilityHarness({
+        p0b: true,
+        beforeCandidateCas(current, row) {
+          if (laterChange === 'ADOPTION') {
+            current.revision += 1;
+            current.configurationEvidenceCurrent = {
+              ...current.configurationEvidenceCurrent!,
+              snapshotId: 'CONFIGURATION-SNAPSHOT:P0B-APP-LATER',
+              configurationRevision: 2,
+            };
+            current.configurationEvidenceReevaluation =
+              createConfigurationEvidenceReevaluation({
+                triggerSnapshotId: 'CONFIGURATION-SNAPSHOT:P0B-APP-LATER',
+                triggerConfigurationRevision: 2,
+                adoptionWorkItemRevision: current.revision,
+              });
+            return;
+          }
+          const terminal = withConfigurationEvidenceTerminal(
+            current,
+            'APPLICABILITY',
+            'FAILED',
+            {
+              attemptId:
+                laterChange === 'OWNER' ? 'ATT-APP-LATER' : row.attemptId,
+              attemptRef:
+                laterChange === 'OWNER' ? 'AQ-APP-LATER' : row.operationRef!,
+              inputRevision: row.inputRevision!,
+              baseRevision: row.baseRevision!,
+            },
+            laterChange === 'OWNER'
+              ? 'CONCURRENT_OWNER_TERMINAL'
+              : 'CONCURRENT_RETRY_REQUIRED',
+            null,
+          );
+          if (laterChange === 'OWNER') {
+            Object.assign(current, terminal);
+            return;
+          }
+          Object.assign(
+            current,
+            retryConfigurationEvidenceReevaluationStage({
+              workItem: terminal,
+              stage: 'APPLICABILITY',
+            }),
+          );
+        },
+      });
+      const servingBefore = servingSnapshot(harness.readCurrent());
+      const begin = await harness.begin();
+
+      await expect(
+        harness.service.commit(
+          begin.attemptRef,
+          begin.leaseToken,
+          begin.leaseGeneration,
+          harness.resultFor(candidateFor(begin)),
+        ),
+      ).resolves.toMatchObject({
+        status: laterChange === 'RETRY' ? 'OBSOLETE' : 'CONFLICT',
+      });
+
+      const after = harness.readCurrent();
+      const marker = activeConfigurationEvidenceReevaluation(after);
+      expect(servingSnapshot(after)).toEqual(servingBefore);
+      expect(marker).toMatchObject(
+        laterChange === 'ADOPTION'
+          ? {
+              triggerSnapshotId: 'CONFIGURATION-SNAPSHOT:P0B-APP-LATER',
+              triggerConfigurationRevision: 2,
+              status: 'REQUIRED',
+              stages: {
+                applicability: { status: 'PENDING', retryNo: 0 },
+              },
+            }
+          : laterChange === 'RETRY'
+            ? {
+                triggerSnapshotId: 'CONFIGURATION-SNAPSHOT:P0B-APP-1',
+                triggerConfigurationRevision: 1,
+                status: 'REQUIRED',
+                stages: {
+                  applicability: { status: 'PENDING', retryNo: 1 },
+                },
+              }
+            : {
+                triggerSnapshotId: 'CONFIGURATION-SNAPSHOT:P0B-APP-1',
+                triggerConfigurationRevision: 1,
+                status: 'FAILED',
+                stages: {
+                  applicability: {
+                    status: 'FAILED',
+                    retryNo: 0,
+                    attempt: {
+                      attemptId: 'ATT-APP-LATER',
+                      attemptRef: 'AQ-APP-LATER',
+                    },
+                    terminal: {
+                      status: 'FAILED',
+                      code: 'CONCURRENT_OWNER_TERMINAL',
+                    },
+                  },
+                },
+              },
+      );
+      await expect(
+        harness.service.commit(
+          begin.attemptRef,
+          begin.leaseToken,
+          begin.leaseGeneration,
+          harness.resultFor(candidateFor(begin)),
+        ),
+      ).resolves.toMatchObject({
+        status: laterChange === 'RETRY' ? 'OBSOLETE' : 'CONFLICT',
+      });
+      expect(
+        activeConfigurationEvidenceReevaluation(harness.readCurrent()),
+      ).toEqual(marker);
+      expect(
+        harness.artifactStore.discardCandidateArtifact,
+      ).toHaveBeenCalledTimes(1);
+      expect(harness.attempts.finishProjectionConflict).toHaveBeenCalledTimes(
+        1,
+      );
+    },
+  );
 
   it.each(['WAITING_INPUT', 'FAILED'] as const)(
     'rejects stale %s terminalization before ActionAttempt mutation',
@@ -719,6 +1158,358 @@ describe('CanonicalHostOpenClawApplicabilityService', () => {
     ).toHaveBeenCalledTimes(1);
     expect(harness.registrar.compareAndSet).toHaveBeenCalledTimes(1);
   });
+
+  it('stages a P0B candidate, preserves serving projections, and recovers by exact attempt binding', async () => {
+    const harness = applicabilityHarness({ p0b: true });
+    const servingBefore = servingSnapshot(harness.readCurrent());
+    const begin = await harness.begin();
+    const result = harness.resultFor(candidateFor(begin));
+
+    expect(begin.task.baseRevision).toBe(8);
+    expect(servingSnapshot(harness.readCurrent())).toEqual(servingBefore);
+    const committed = await harness.service.commit(
+      begin.attemptRef,
+      begin.leaseToken,
+      begin.leaseGeneration,
+      result,
+    );
+    const after = harness.readCurrent();
+    const marker = activeConfigurationEvidenceReevaluation(after);
+
+    expect(committed).toMatchObject({
+      workItemRevision: 9,
+      status: 'CANDIDATE_ONLY',
+      applicability: { actionAttemptId: 'ATT-APP-1', decision: 'APPLICABLE' },
+    });
+    expect(servingSnapshot(after)).toEqual(servingBefore);
+    expect(marker).toMatchObject({
+      status: 'RUNNING',
+      stages: {
+        applicability: {
+          status: 'SUCCEEDED',
+          committedWorkItemRevision: 9,
+          attempt: {
+            attemptId: 'ATT-APP-1',
+            attemptRef: 'AQ-APP-1',
+            inputRevision: 8,
+            baseRevision: 8,
+          },
+        },
+      },
+      stagedBundle: {
+        applicability: { actionAttemptId: 'ATT-APP-1' },
+      },
+    });
+
+    harness.setAttemptStatus('COMMITTING');
+    const recovered = await harness.service.commit(
+      begin.attemptRef,
+      begin.leaseToken,
+      begin.leaseGeneration,
+      result,
+    );
+    expect(recovered).toEqual(committed);
+    expect(
+      harness.artifactStore.stageCandidateAndReadback,
+    ).toHaveBeenCalledTimes(1);
+    expect(harness.registrar.compareAndSet).toHaveBeenCalledTimes(2);
+  });
+
+  it('records P0B WAITING_INPUT only in the marker, then retries with a new revision and attempt', async () => {
+    const harness = applicabilityHarness({ p0b: true });
+    const servingBefore = servingSnapshot(harness.readCurrent());
+    harness.mutateControlledOwner((input) => {
+      input!.fleetMasterData.assets = [];
+      input!.fleetMasterData.facts = [];
+    });
+    const first = await harness.begin('request-wait-1');
+    const waiting = harness.resultFor(candidateFor(first), {
+      status: 'WAITING_INPUT',
+      businessOutcome: 'WAITING_INPUT',
+      candidateStatus: 'WAITING_INPUT',
+      modelOutput: null,
+      factsConsidered: [],
+      missingInputs: structuredClone(first.task.hostResolvedMissingInputs),
+    });
+
+    await expect(
+      harness.service.commit(
+        first.attemptRef,
+        first.leaseToken,
+        first.leaseGeneration,
+        waiting,
+      ),
+    ).resolves.toMatchObject({ status: 'WAITING_INPUT' });
+    const terminal = harness.readCurrent();
+    expect(servingSnapshot(terminal)).toEqual(servingBefore);
+    expect(activeConfigurationEvidenceReevaluation(terminal)).toMatchObject({
+      status: 'WAITING_INPUT',
+      stages: {
+        applicability: {
+          status: 'WAITING_INPUT',
+          retryNo: 0,
+          attempt: { attemptId: 'ATT-APP-1', attemptRef: 'AQ-APP-1' },
+          terminal: { status: 'WAITING_INPUT' },
+        },
+      },
+      stagedBundle: { applicability: null },
+    });
+    expect(
+      harness.artifactStore.stageCandidateAndReadback,
+    ).not.toHaveBeenCalled();
+
+    const retry = await harness.begin('request-wait-2');
+    expect(retry).toMatchObject({
+      attemptRef: 'AQ-APP-2',
+      task: { actionAttemptId: 'ATT-APP-2', baseRevision: 11 },
+    });
+    expect(servingSnapshot(harness.readCurrent())).toEqual(servingBefore);
+    expect(
+      activeConfigurationEvidenceReevaluation(harness.readCurrent()),
+    ).toMatchObject({
+      status: 'RUNNING',
+      stages: { applicability: { status: 'RUNNING', retryNo: 1 } },
+    });
+  });
+
+  it('records a P0B Host-evaluated UNKNOWN as marker-only WAITING_INPUT', async () => {
+    const harness = applicabilityHarness({ p0b: true });
+    const servingBefore = servingSnapshot(harness.readCurrent());
+    const begin = await harness.begin();
+    const candidate = candidateFor(begin);
+    candidate.expressions[0].expressionAst = {
+      type: 'assert',
+      property: 'optionInstalled',
+      operator: 'eq',
+      value: true,
+      qualifier: 'OPT-X',
+    };
+
+    await expect(
+      harness.service.commit(
+        begin.attemptRef,
+        begin.leaseToken,
+        begin.leaseGeneration,
+        harness.resultFor(candidate),
+      ),
+    ).resolves.toMatchObject({ status: 'WAITING_INPUT' });
+    const current = harness.readCurrent();
+    expect(servingSnapshot(current)).toEqual(servingBefore);
+    expect(activeConfigurationEvidenceReevaluation(current)).toMatchObject({
+      status: 'WAITING_INPUT',
+      stages: {
+        applicability: {
+          status: 'WAITING_INPUT',
+          terminal: {
+            status: 'WAITING_INPUT',
+            code: 'APPLICABILITY_HOST_CONTROLLED_FACT_REQUIRED',
+          },
+        },
+      },
+      stagedBundle: { applicability: null },
+    });
+    expect(
+      harness.artifactStore.stageCandidateAndReadback,
+    ).not.toHaveBeenCalled();
+  });
+
+  it.each(['FAILED', 'CONFLICT'] as const)(
+    'records P0B %s only in the marker and preserves the old serving result',
+    async (status) => {
+      const harness = applicabilityHarness({
+        p0b: true,
+        ...(status === 'CONFLICT'
+          ? { preparedTerminalStatus: 'CONFLICT' as const }
+          : {}),
+      });
+      const servingBefore = servingSnapshot(harness.readCurrent());
+      const begin = await harness.begin();
+      const result = harness.resultFor(
+        candidateFor(begin),
+        status === 'FAILED'
+          ? {
+              status: 'FAILED',
+              businessOutcome: 'NOT_PRODUCED',
+              candidateStatus: null,
+              modelOutput: null,
+              factsConsidered: [],
+              errorCode: 'OPENCLAW_EXECUTOR_FAILED',
+              errorDetail: 'executor failed',
+            }
+          : {},
+      );
+
+      await expect(
+        harness.service.commit(
+          begin.attemptRef,
+          begin.leaseToken,
+          begin.leaseGeneration,
+          result,
+        ),
+      ).resolves.toMatchObject({ status });
+      const current = harness.readCurrent();
+      expect(servingSnapshot(current)).toEqual(servingBefore);
+      expect(activeConfigurationEvidenceReevaluation(current)).toMatchObject({
+        status,
+        stages: {
+          applicability: {
+            status,
+            attempt: { attemptId: 'ATT-APP-1', attemptRef: 'AQ-APP-1' },
+            terminal: { status },
+          },
+        },
+        stagedBundle: { applicability: null },
+      });
+      expect(
+        harness.artifactStore.stageCandidateAndReadback,
+      ).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ['CANCELLED', 'FAILED'],
+    ['TIMED_OUT', 'FAILED'],
+    ['FAILED', 'FAILED'],
+    ['OBSOLETE', 'CONFLICT'],
+    ['CONFLICT', 'CONFLICT'],
+  ] as const)(
+    'records a P0B prepare race from %s as marker-only %s',
+    async (attemptStatus, markerStatus) => {
+      const harness = applicabilityHarness({
+        p0b: true,
+        preparationRaceTerminalStatus: attemptStatus,
+      });
+      const servingBefore = servingSnapshot(harness.readCurrent());
+      const begin = await harness.begin();
+
+      await expect(
+        harness.service.commit(
+          begin.attemptRef,
+          begin.leaseToken,
+          begin.leaseGeneration,
+          harness.resultFor(candidateFor(begin)),
+        ),
+      ).rejects.toThrow(`ACTION_ATTEMPT_ALREADY_${attemptStatus}`);
+
+      const current = harness.readCurrent();
+      expect(servingSnapshot(current)).toEqual(servingBefore);
+      expect(activeConfigurationEvidenceReevaluation(current)).toMatchObject({
+        status: markerStatus,
+        stages: {
+          applicability: {
+            status: markerStatus,
+            attempt: {
+              attemptId: 'ATT-APP-1',
+              attemptRef: 'AQ-APP-1',
+              inputRevision: 8,
+              baseRevision: 8,
+            },
+            terminal: {
+              status: markerStatus,
+              code: `PREPARE_RACE_${attemptStatus}`,
+            },
+          },
+        },
+        stagedBundle: { applicability: null },
+      });
+      expect(harness.registrar.compareAndSet).toHaveBeenCalledTimes(2);
+      expect(
+        harness.artifactStore.stageCandidateAndReadback,
+      ).not.toHaveBeenCalled();
+    },
+  );
+
+  it('keeps ordinary prepare-race behavior unchanged when no P0B marker exists', async () => {
+    const harness = applicabilityHarness({
+      preparationRaceTerminalStatus: 'CANCELLED',
+    });
+    const before = harness.readCurrent();
+    const begin = await harness.begin();
+
+    await expect(
+      harness.service.commit(
+        begin.attemptRef,
+        begin.leaseToken,
+        begin.leaseGeneration,
+        harness.resultFor(candidateFor(begin)),
+      ),
+    ).rejects.toThrow('ACTION_ATTEMPT_ALREADY_CANCELLED');
+
+    expect(harness.readCurrent()).toEqual(before);
+    expect(harness.registrar.compareAndSet).not.toHaveBeenCalled();
+  });
+
+  it('does not let an old attempt write a terminal marker into a new adoption cycle', async () => {
+    const harness = applicabilityHarness({
+      p0b: true,
+      preparationRaceTerminalStatus: 'TIMED_OUT',
+      afterPreparationRace: (current) => {
+        current.revision += 1;
+        current.configurationEvidenceCurrent = {
+          ...current.configurationEvidenceCurrent!,
+          snapshotId: 'CONFIGURATION-SNAPSHOT:P0B-APP-2',
+          configurationRevision: 2,
+        };
+        current.configurationEvidenceReevaluation =
+          createConfigurationEvidenceReevaluation({
+            triggerSnapshotId: 'CONFIGURATION-SNAPSHOT:P0B-APP-2',
+            triggerConfigurationRevision: 2,
+            adoptionWorkItemRevision: current.revision,
+          });
+      },
+    });
+    const servingBefore = servingSnapshot(harness.readCurrent());
+    const begin = await harness.begin();
+
+    await expect(
+      harness.service.commit(
+        begin.attemptRef,
+        begin.leaseToken,
+        begin.leaseGeneration,
+        harness.resultFor(candidateFor(begin)),
+      ),
+    ).rejects.toThrow('ACTION_ATTEMPT_ALREADY_TIMED_OUT');
+
+    const current = harness.readCurrent();
+    expect(servingSnapshot(current)).toEqual(servingBefore);
+    expect(activeConfigurationEvidenceReevaluation(current)).toMatchObject({
+      triggerSnapshotId: 'CONFIGURATION-SNAPSHOT:P0B-APP-2',
+      triggerConfigurationRevision: 2,
+      adoptionWorkItemRevision: 9,
+      status: 'REQUIRED',
+      stages: { applicability: { status: 'PENDING', terminal: null } },
+    });
+    expect(harness.registrar.compareAndSet).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not write the marker when the terminal fresh read is not the exact attempt', async () => {
+    const harness = applicabilityHarness({
+      p0b: true,
+      preparationRaceTerminalStatus: 'CANCELLED',
+      afterPreparationRace: (_current, row) => {
+        row.operationRef = 'AQ-APP-DIFFERENT';
+      },
+    });
+    const servingBefore = servingSnapshot(harness.readCurrent());
+    const begin = await harness.begin();
+
+    await expect(
+      harness.service.commit(
+        begin.attemptRef,
+        begin.leaseToken,
+        begin.leaseGeneration,
+        harness.resultFor(candidateFor(begin)),
+      ),
+    ).rejects.toThrow('ACTION_ATTEMPT_ALREADY_CANCELLED');
+
+    const current = harness.readCurrent();
+    expect(servingSnapshot(current)).toEqual(servingBefore);
+    expect(activeConfigurationEvidenceReevaluation(current)).toMatchObject({
+      status: 'RUNNING',
+      stages: { applicability: { status: 'RUNNING', terminal: null } },
+    });
+    expect(harness.registrar.compareAndSet).toHaveBeenCalledTimes(1);
+  });
 });
 
 function applicabilityHarness(
@@ -734,7 +1525,21 @@ function applicabilityHarness(
     beforeCandidateCas?: (
       current: CanonicalWorkItemProjection,
       row: ActionAttemptRow,
+      next: Omit<CanonicalWorkItemProjection, 'revision'>,
     ) => void;
+    p0b?: boolean;
+    preparedTerminalStatus?: 'CONFLICT';
+    preparationRaceTerminalStatus?:
+      | 'FAILED'
+      | 'CANCELLED'
+      | 'TIMED_OUT'
+      | 'OBSOLETE'
+      | 'CONFLICT';
+    afterPreparationRace?: (
+      current: CanonicalWorkItemProjection,
+      row: ActionAttemptRow,
+    ) => void;
+    applicabilityTerminalMarkerCasFailures?: number;
   } = {},
 ) {
   const packageAssignments = options.packageAssignments ?? [
@@ -804,8 +1609,40 @@ function applicabilityHarness(
     options.packageNormalizedCandidates?.length ?? 0,
   );
   let ownerInput = structuredClone(current.applicabilityInput!);
+  if (options.p0b) {
+    Object.assign(current, servingProjectionSentinels(), {
+      configurationEvidenceCurrent: {
+        schemaVersion:
+          'wiselink.3_1.configuration_evidence_work_item_current.v1',
+        snapshotId: 'CONFIGURATION-SNAPSHOT:P0B-APP-1',
+        configurationRevision: 1,
+        aircraftAssetId: 'ASSET-1',
+        assessmentAsOf: '2026-08-27T23:59:59.999Z',
+        sourceCompleteness: 'COMPLETE',
+        truthSummary: {
+          trueCount: 1,
+          falseCount: 0,
+          unknownCount: 0,
+          conflictCount: 0,
+        },
+        recordedAt: '2026-08-28T00:00:00.000Z',
+        authority: 'WORK_ITEM_CURRENT_EVIDENCE_VIEW',
+        globalAircraftCurrentChanged: false,
+      },
+      configurationEvidenceReevaluation:
+        createConfigurationEvidenceReevaluation({
+          triggerSnapshotId: 'CONFIGURATION-SNAPSHOT:P0B-APP-1',
+          triggerConfigurationRevision: 1,
+          adoptionWorkItemRevision: current.revision,
+        }),
+    });
+  }
   let task: OpenClawTaskEnvelope | null = null;
   let row: ActionAttemptRow | null = null;
+  let attemptSequence = 0;
+  let preparationRaceThrown = false;
+  let applicabilityTerminalMarkerCasFailuresRemaining =
+    options.applicabilityTerminalMarkerCasFailures ?? 0;
   const registrar = {
     getTenantScopedByWorkItemId: jest.fn(async () => structuredClone(current)),
     compareAndSet: jest.fn(
@@ -813,8 +1650,30 @@ function applicabilityHarness(
         expectedRevision: number;
         next: Omit<CanonicalWorkItemProjection, 'revision'>;
       }) => {
-        if (input.next.applicability?.actionAttemptId === row?.attemptId) {
-          options.beforeCandidateCas?.(current, row);
+        const nextApplicability =
+          input.next.configurationEvidenceReevaluation?.schemaVersion ===
+          'wiselink.3_1.configuration_evidence_reevaluation.v2'
+            ? input.next.configurationEvidenceReevaluation.stagedBundle
+                .applicability
+            : input.next.applicability;
+        if (row && nextApplicability?.actionAttemptId === row.attemptId) {
+          options.beforeCandidateCas?.(current, row, input.next);
+        }
+        const nextApplicabilityStage =
+          input.next.configurationEvidenceReevaluation?.schemaVersion ===
+          'wiselink.3_1.configuration_evidence_reevaluation.v2'
+            ? input.next.configurationEvidenceReevaluation.stages.applicability
+            : null;
+        if (
+          row &&
+          applicabilityTerminalMarkerCasFailuresRemaining > 0 &&
+          ['WAITING_INPUT', 'FAILED', 'CONFLICT'].includes(
+            nextApplicabilityStage?.status ?? '',
+          ) &&
+          nextApplicabilityStage.attempt?.attemptId === row.attemptId
+        ) {
+          applicabilityTerminalMarkerCasFailuresRemaining -= 1;
+          current.revision += 1;
         }
         if (input.expectedRevision !== current.revision) {
           throw new Error('WORK_ITEM_CAS_CONFLICT');
@@ -874,11 +1733,12 @@ function applicabilityHarness(
   };
   const attempts = {
     reserveAndClaim: jest.fn(async (input: ReserveAndClaimInput) => {
+      attemptSequence += 1;
       const identity = {
-        attemptId: 'ATT-APP-1',
-        operationRef: 'AQ-APP-1',
-        triggerRequestId: 'REQ-APP-INTERNAL-1',
-        attemptNo: 1,
+        attemptId: `ATT-APP-${attemptSequence}`,
+        operationRef: `AQ-APP-${attemptSequence}`,
+        triggerRequestId: `REQ-APP-INTERNAL-${attemptSequence}`,
+        attemptNo: attemptSequence,
         createdAt: new Date('2026-08-27T10:00:00.000Z'),
       };
       const modelInput = await input.buildModelInput(identity);
@@ -923,6 +1783,17 @@ function applicabilityHarness(
         ) {
           throw new Error('ACTION_ATTEMPT_LEASE_FENCE_REJECTED');
         }
+        if (options.preparationRaceTerminalStatus && !preparationRaceThrown) {
+          preparationRaceThrown = true;
+          row!.status = options.preparationRaceTerminalStatus;
+          row!.terminalReason = `PREPARE_RACE_${options.preparationRaceTerminalStatus}`;
+          row!.resultEnvelopeJson = null;
+          row!.resultContentHash = null;
+          options.afterPreparationRace?.(current, row!);
+          throw new Error(
+            `ACTION_ATTEMPT_ALREADY_${options.preparationRaceTerminalStatus}`,
+          );
+        }
         const result = input.result as OpenClawResultEnvelope;
         if (result.status === 'WAITING_INPUT') {
           row!.status = 'WAITING_INPUT';
@@ -930,6 +1801,9 @@ function applicabilityHarness(
         } else if (result.status === 'FAILED') {
           row!.status = 'FAILED';
           row!.terminalReason = result.errorCode;
+        } else if (options.preparedTerminalStatus === 'CONFLICT') {
+          row!.status = 'CONFLICT';
+          row!.terminalReason = 'WORK_ITEM_REVISION_CONFLICT';
         } else if (row!.status === 'RUNNING') {
           row!.status = 'COMMITTING';
         }
@@ -963,7 +1837,36 @@ function applicabilityHarness(
         };
       },
     ),
-    finishProjectionConflict: jest.fn(),
+    finishProjectionConflict: jest.fn(
+      async ({
+        prepared,
+        currentRevision,
+      }: {
+        prepared: PreparedActionAttemptCommit;
+        currentRevision: number;
+      }) => {
+        const status =
+          currentRevision === prepared.task.baseRevision + 1
+            ? 'CONFLICT'
+            : currentRevision > prepared.task.baseRevision
+              ? 'OBSOLETE'
+              : 'FAILED';
+        row!.status = status;
+        row!.terminalReason =
+          status === 'CONFLICT'
+            ? 'WORK_ITEM_CAS_CONFLICT_AFTER_COMMIT_START'
+            : status === 'OBSOLETE'
+              ? 'WORK_ITEM_RESULT_OBSOLETE_AFTER_COMMIT_START'
+              : 'WORK_ITEM_REVISION_REGRESSED';
+        row!.completedAt = new Date('2026-08-27T10:01:00.000Z');
+        return {
+          attemptRef: row!.operationRef!,
+          status,
+          projectionApplied: false,
+          terminalReason: row!.terminalReason,
+        };
+      },
+    ),
     projectTerminal: jest.fn((selected: ActionAttemptRow) => ({
       attemptRef: selected.operationRef!,
       status: selected.status,
@@ -979,39 +1882,51 @@ function applicabilityHarness(
         requestId,
       }),
     ),
-    authorizeOpenClawAttempt: jest.fn(async () => ({
+    authorizeOpenClawAttempt: jest.fn(async ({ attemptRef }) => ({
       ...verifiedScope(),
-      attemptRef: 'AQ-APP-1',
+      attemptRef,
     })),
   };
   const applicabilityInputs = {
-    produceAuthorized: jest.fn(async () => structuredClone(current)),
+    produceAuthorized: jest.fn(async () => {
+      const reevaluation = activeConfigurationEvidenceReevaluation(current);
+      if (reevaluation && !reevaluation.stagedBundle.applicabilityInput) {
+        const next = withStagedApplicabilityInput(current, ownerInput);
+        await registrar.compareAndSet({
+          expectedRevision: current.revision,
+          next: withoutRevision(next),
+        });
+      }
+      return structuredClone(current);
+    }),
     resolveCurrent: jest.fn(async () => ({
       workItem: structuredClone(current),
       applicabilityInput: structuredClone(current.applicabilityInput!),
     })),
     readCurrentOwnerValidated: jest.fn(async () => {
+      const selected = selectedInput(current);
       if (
-        canonicalSha256(ownerInput) !==
-        canonicalSha256(current.applicabilityInput!)
+        !selected ||
+        canonicalSha256(ownerInput) !== canonicalSha256(selected)
       ) {
         throw new Error('APPLICABILITY_CONTROLLED_SELECTION_DRIFT');
       }
       return {
         workItem: structuredClone(current),
-        applicabilityInput: structuredClone(current.applicabilityInput!),
+        applicabilityInput: structuredClone(selected),
       };
     }),
     readCurrentSelectionValidated: jest.fn(async () => {
+      const selected = selectedInput(current);
       if (
-        canonicalSha256(ownerInput) !==
-        canonicalSha256(current.applicabilityInput!)
+        !selected ||
+        canonicalSha256(ownerInput) !== canonicalSha256(selected)
       ) {
         throw new Error('APPLICABILITY_CONTROLLED_SELECTION_DRIFT');
       }
       return {
         workItem: structuredClone(current),
-        applicabilityInput: structuredClone(current.applicabilityInput!),
+        applicabilityInput: structuredClone(selected),
       };
     }),
   };
@@ -1029,7 +1944,8 @@ function applicabilityHarness(
     artifactStore,
     applicabilityInputs,
     attempts,
-    begin: () => service.begin('APCTX-OPAQUE-1', 'request-1'),
+    begin: (requestId = 'request-1') =>
+      service.begin('APCTX-OPAQUE-1', requestId),
     resultFor(
       candidate: Record<string, any>,
       overrides: Partial<OpenClawResultEnvelope> = {},
@@ -1121,6 +2037,59 @@ function candidateFor(begin: {
       createsActionReadiness: false,
       createsAirworthinessConclusion: false,
     },
+  };
+}
+
+function selectedInput(
+  workItem: CanonicalWorkItemProjection,
+): CanonicalWorkItemProjection['applicabilityInput'] {
+  const reevaluation = activeConfigurationEvidenceReevaluation(workItem);
+  return reevaluation
+    ? reevaluation.stagedBundle.applicabilityInput
+    : workItem.applicabilityInput;
+}
+
+function withoutRevision(
+  workItem: CanonicalWorkItemProjection,
+): Omit<CanonicalWorkItemProjection, 'revision'> {
+  const { revision: _revision, ...rest } = workItem;
+  return rest;
+}
+
+function servingProjectionSentinels(): Partial<CanonicalWorkItemProjection> {
+  return {
+    applicabilityInput: {
+      schemaVersion: 'serving-applicability-input',
+      marker: 'old-serving-input',
+    } as never,
+    applicability: {
+      schemaVersion: 'serving-applicability',
+      status: 'CANDIDATE_ONLY',
+      currentness: 'CURRENT',
+      marker: 'old-serving-applicability',
+    } as never,
+    assessment: {
+      schemaVersion: 'serving-assessment',
+      marker: 'old-serving-assessment',
+    } as never,
+    integratedAssessment: {
+      status: 'OVERALL_CANDIDATE_READY',
+      marker: 'old-serving-integrated-assessment',
+    } as never,
+    aeo: {
+      schemaVersion: 'serving-aeo',
+      marker: 'old-serving-aeo',
+    } as never,
+  };
+}
+
+function servingSnapshot(workItem: CanonicalWorkItemProjection) {
+  return {
+    applicabilityInput: structuredClone(workItem.applicabilityInput),
+    applicability: structuredClone(workItem.applicability),
+    assessment: structuredClone(workItem.assessment),
+    integratedAssessment: structuredClone(workItem.integratedAssessment),
+    aeo: structuredClone(workItem.aeo),
   };
 }
 

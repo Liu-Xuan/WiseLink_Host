@@ -1,11 +1,11 @@
 import type {
   CanonicalConfigurationEvidenceCurrentProjection,
-  CanonicalConfigurationEvidenceReevaluationProjection,
   CanonicalWorkItemProjection,
 } from '@shared/api.interface';
 
 import type { ConfigurationSnapshot } from './configuration-snapshot.types';
 import type { ConfigurationEvidenceTruthSummary } from './configuration-evidence.persistence.types';
+import { createConfigurationEvidenceReevaluation } from './configuration-evidence-reevaluation.state';
 
 export function adoptConfigurationEvidenceIntoWorkItem(input: {
   current: CanonicalWorkItemProjection;
@@ -28,76 +28,15 @@ export function adoptConfigurationEvidenceIntoWorkItem(input: {
     authority: 'WORK_ITEM_CURRENT_EVIDENCE_VIEW',
     globalAircraftCurrentChanged: false,
   };
-  const reevaluation: CanonicalConfigurationEvidenceReevaluationProjection = {
-    schemaVersion: 'wiselink.3_1.configuration_evidence_reevaluation.v1',
-    trigger: 'CONFIGURATION_EVIDENCE_ADOPTED',
+  const reevaluation = createConfigurationEvidenceReevaluation({
     triggerSnapshotId: input.snapshotId,
     triggerConfigurationRevision: input.configurationRevision,
     adoptionWorkItemRevision: revision,
-    mode: 'FULL_APPLICABILITY_JOB_AID_OVERALL',
-    status: 'REQUIRED',
-    applicability: 'STALE_OR_NOT_AVAILABLE',
-    jobAid: 'FULL_RERUN_REQUIRED',
-    overall: 'STALE_OR_NOT_AVAILABLE',
-    candidateOnly: true,
-  };
+  });
   return {
     ...structuredClone(input.current),
     revision,
     configurationEvidenceCurrent: currentPointer,
     configurationEvidenceReevaluation: reevaluation,
-    applicabilityInput: staleApplicabilityInput(input.current),
-    applicability: staleApplicability(input.current),
-    assessment: staleAssessment(input.current),
-    integratedAssessment: staleIntegratedAssessment(input.current),
-  };
-}
-
-function staleApplicabilityInput(
-  workItem: CanonicalWorkItemProjection,
-): CanonicalWorkItemProjection['applicabilityInput'] {
-  const current = workItem.applicabilityInput;
-  return current ? { ...current, currentness: 'STALE' } : (current ?? null);
-}
-
-function staleApplicability(
-  workItem: CanonicalWorkItemProjection,
-): CanonicalWorkItemProjection['applicability'] {
-  const current = workItem.applicability;
-  if (!current) return current ?? null;
-  return {
-    ...current,
-    status: 'STALE',
-    currentness: 'STALE',
-    staleReason: 'FLEET_FACTS_CHANGED',
-  };
-}
-
-function staleAssessment(
-  workItem: CanonicalWorkItemProjection,
-): CanonicalWorkItemProjection['assessment'] {
-  const current = workItem.assessment;
-  if (!current) return current ?? null;
-  return {
-    ...current,
-    previousOverallStale: true,
-    staleReason: 'EXTERNAL_CONTEXT_STALE',
-  };
-}
-
-function staleIntegratedAssessment(
-  workItem: CanonicalWorkItemProjection,
-): CanonicalWorkItemProjection['integratedAssessment'] {
-  const current = workItem.integratedAssessment;
-  if (!current?.overallSynthesis) return current ?? null;
-  return {
-    ...current,
-    status: 'OVERALL_CANDIDATE_STALE',
-    overallSynthesis: {
-      ...current.overallSynthesis,
-      status: 'STALE',
-      staleReason: 'BASE_RULE_RESULT_CHANGED',
-    },
-    overallForAeoConfirmation: null,
   };
 }

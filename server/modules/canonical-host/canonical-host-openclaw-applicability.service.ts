@@ -3,6 +3,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import type {
   CanonicalApplicabilityCandidateProjection,
   CanonicalApplicabilityInputProjection,
+  CanonicalConfigurationEvidenceReevaluationAttemptBinding,
   CanonicalReaderBilingualUnit,
   CanonicalWorkItemProjection,
   UnifiedPackageArtifactDescriptor,
@@ -67,6 +68,12 @@ import {
 import { CANONICAL_WORK_ITEM_REGISTRAR } from './canonical-host.constants';
 import type { CanonicalWorkItemRegistrarPort } from './canonical-host.types';
 import {
+  activeConfigurationEvidenceReevaluation,
+  retryConfigurationEvidenceReevaluationStage,
+  withConfigurationEvidenceTerminal,
+  withStagedApplicability,
+} from './configuration-evidence/configuration-evidence-reevaluation.state';
+import {
   CANONICAL_SERVICE_SCOPE_AUTHORIZATION,
   type CanonicalServiceScopeAuthorizationPort,
   type CanonicalVerifiedApplicabilityContextScope,
@@ -90,6 +97,15 @@ interface ApplicabilityEvaluation {
   pass: boolean;
   blockingUnknowns: BlockingUnknown[];
   fleetResolution: FleetSnapshotResolution;
+}
+
+interface ConfigurationEvidenceApplicabilityCasOwner {
+  triggerSnapshotId: string;
+  triggerConfigurationRevision: number;
+  adoptionWorkItemRevision: number;
+  retryNo: number;
+  baseRevision: number;
+  attempt: CanonicalConfigurationEvidenceReevaluationAttemptBinding;
 }
 
 interface ApplicabilityCandidateArtifact {
@@ -177,6 +193,7 @@ export class CanonicalHostOpenClawApplicabilityService {
       },
     );
     assertApplicabilityContextScope(scope, applicabilityContextRef, requestId);
+    await this.retryTerminalConfigurationEvidenceApplicability(scope);
     await this.applicabilityInputs.produceAuthorized(scope);
     const { workItem, applicabilityInput } =
       await this.applicabilityInputs.readCurrentOwnerValidated(scope);
@@ -222,6 +239,34 @@ export class CanonicalHostOpenClawApplicabilityService {
     };
   }
 
+  private async retryTerminalConfigurationEvidenceApplicability(
+    scope: CanonicalVerifiedApplicabilityContextScope,
+  ): Promise<void> {
+    const workItem = await this.registrar.getTenantScopedByWorkItemId({
+      workItemId: scope.workItemId,
+      tenantId: scope.tenantId,
+    });
+    const reevaluation = activeConfigurationEvidenceReevaluation(workItem);
+    if (
+      !reevaluation ||
+      !['WAITING_INPUT', 'FAILED', 'CONFLICT'].includes(
+        reevaluation.stages.applicability.status,
+      )
+    ) {
+      return;
+    }
+    const retried = retryConfigurationEvidenceReevaluationStage({
+      workItem,
+      stage: 'APPLICABILITY',
+    });
+    await this.registrar.compareAndSet({
+      workItemId: workItem.workItemId,
+      expectedRevision: workItem.revision,
+      syncPrimaryAttempt: false,
+      next: withoutRevision(retried),
+    });
+  }
+
   async commit(
     attemptRef: string,
     leaseToken: string,
@@ -259,8 +304,35 @@ export class CanonicalHostOpenClawApplicabilityService {
       tenantId: scope.tenantId,
     });
     assertFreshAttemptWorkItemBinding(storedBinding, row, task);
+    const recoveredOwnedTerminal =
+      await this.recoverConfigurationEvidenceApplicabilityOwnedTerminal({
+        workItem: storedBinding,
+        row,
+        task,
+        result,
+        scope,
+        attemptRef,
+        leaseToken,
+        leaseGeneration,
+        resultEnvelope,
+        applicabilityContextRef,
+      });
+    if (recoveredOwnedTerminal) return recoveredOwnedTerminal;
+    const recoveredTerminal =
+      await this.recoverConfigurationEvidenceApplicabilityTerminal({
+        workItem: storedBinding,
+        row,
+        task,
+        scope,
+        attemptRef,
+        leaseToken,
+        leaseGeneration,
+        resultEnvelope,
+      });
+    if (recoveredTerminal) return recoveredTerminal;
+    const recoveredProjection = selectedApplicabilityProjection(storedBinding);
     if (
-      storedBinding.applicability?.actionAttemptId !== row.attemptId &&
+      recoveredProjection?.actionAttemptId !== row.attemptId &&
       storedBinding.revision !== task.baseRevision
     ) {
       throw conflict(
@@ -269,7 +341,6 @@ export class CanonicalHostOpenClawApplicabilityService {
           : 'WORK_ITEM_REVISION_CONFLICT',
       );
     }
-    const recoveredProjection = storedBinding.applicability;
     if (recoveredProjection?.actionAttemptId === row.attemptId) {
       const recovered =
         await this.applicabilityInputs.readCurrentSelectionValidated({
@@ -278,7 +349,9 @@ export class CanonicalHostOpenClawApplicabilityService {
           applicabilityContextRef,
         });
       assertFreshAttemptWorkItemBinding(recovered.workItem, row, task);
-      const currentProjection = recovered.workItem.applicability;
+      const currentProjection = selectedApplicabilityProjection(
+        recovered.workItem,
+      );
       if (currentProjection?.actionAttemptId !== row.attemptId) {
         throw conflict('APPLICABILITY_COMMITTING_WORK_ITEM_DRIFT');
       }
@@ -302,7 +375,9 @@ export class CanonicalHostOpenClawApplicabilityService {
           tenantId: scope.tenantId,
           applicabilityContextRef,
         });
-      const freshProjection = freshRecovered.workItem.applicability;
+      const freshProjection = selectedApplicabilityProjection(
+        freshRecovered.workItem,
+      );
       if (freshProjection?.actionAttemptId !== row.attemptId) {
         throw conflict('APPLICABILITY_COMMITTING_WORK_ITEM_DRIFT');
       }
@@ -343,6 +418,10 @@ export class CanonicalHostOpenClawApplicabilityService {
         leaseToken,
         leaseGeneration,
         resultEnvelope,
+        workItem,
+        row,
+        task,
+        result,
       });
     }
     if (result.status === 'FAILED') {
@@ -354,6 +433,10 @@ export class CanonicalHostOpenClawApplicabilityService {
         leaseToken,
         leaseGeneration,
         resultEnvelope,
+        workItem,
+        row,
+        task,
+        result,
       });
     }
 
@@ -371,12 +454,16 @@ export class CanonicalHostOpenClawApplicabilityService {
       ));
     validateApplicabilityCandidateBinding(candidate, rebuilt.contract);
 
-    const prepared = await this.prepareCommit({
+    const prepared = await this.prepareInitialCommit({
       scope,
       attemptRef,
       leaseToken,
       leaseGeneration,
       resultEnvelope,
+      workItem,
+      row,
+      task,
+      result,
     });
     const recovered = await this.recoverPreparedCommit(
       prepared,
@@ -384,12 +471,18 @@ export class CanonicalHostOpenClawApplicabilityService {
     );
     if (recovered) return recovered;
     if (prepared.row.status !== 'COMMITTING') {
+      await this.recordConfigurationEvidenceApplicabilityTerminal(
+        workItem,
+        prepared,
+      );
       return this.attempts.projectTerminal(prepared.row);
     }
 
     let ownedArtifact: CandidateArtifactPersistResult | null = null;
     let finalized: FinalizedCandidateArtifactPersistResult | null = null;
     let workItemCasAttempted = false;
+    let configurationEvidenceCasOwner: ConfigurationEvidenceApplicabilityCasOwner | null =
+      null;
     try {
       // Rebuild from a fresh, read-only owner snapshot immediately before any
       // artifact bytes are written. A changed selection leaves COMMITTING
@@ -407,6 +500,23 @@ export class CanonicalHostOpenClawApplicabilityService {
         rebuilt.fleetSource,
       );
       assertOnlyHostFactUnknown(evaluation);
+      if (
+        evaluation.status === 'WAITING_INPUT' &&
+        activeConfigurationEvidenceReevaluation(workItem)
+      ) {
+        await this.recordConfigurationEvidenceApplicabilityOwnedTerminal({
+          prepared,
+          owner: configurationEvidenceApplicabilityCasOwnerFromTask(
+            prepared.row,
+            prepared.task,
+          ),
+          status: 'WAITING_INPUT',
+          code: 'APPLICABILITY_HOST_CONTROLLED_FACT_REQUIRED',
+          message:
+            'Controlled configuration evidence is still insufficient for applicability reevaluation.',
+        });
+        return this.attempts.finishProjectionWaitingInput(prepared);
+      }
       let artifactValue = buildApplicabilityArtifact({
         workItem,
         applicabilityInput,
@@ -463,15 +573,35 @@ export class CanonicalHostOpenClawApplicabilityService {
         artifact: finalized.artifact,
         artifactValue,
       });
+      const reevaluation = activeConfigurationEvidenceReevaluation(workItem);
+      const attemptBinding = configurationEvidenceAttemptBinding(prepared.row);
+      configurationEvidenceCasOwner =
+        configurationEvidenceApplicabilityCasOwnerFromTask(
+          prepared.row,
+          prepared.task,
+        );
+      if (
+        reevaluation &&
+        (!configurationEvidenceCasOwner ||
+          !sameConfigurationEvidenceCasOwner(
+            configurationEvidenceCasOwner,
+            reevaluation,
+          ))
+      ) {
+        throw conflict('APPLICABILITY_ATTEMPT_CURRENT_BINDING_MISMATCH');
+      }
+      const next = reevaluation
+        ? withStagedApplicability(workItem, applicability, attemptBinding)
+        : {
+            ...workItem,
+            applicability,
+          };
       workItemCasAttempted = true;
       const updated = await this.registrar.compareAndSet({
         workItemId: workItem.workItemId,
-        expectedRevision: task.baseRevision,
+        expectedRevision: workItem.revision,
         syncPrimaryAttempt: false,
-        next: {
-          ...withoutRevision(workItem),
-          applicability,
-        },
+        next: withoutRevision(next),
       });
 
       const terminalCurrent =
@@ -480,7 +610,9 @@ export class CanonicalHostOpenClawApplicabilityService {
           tenantId: prepared.row.tenantId,
           applicabilityContextRef,
         });
-      const terminalProjection = terminalCurrent.workItem.applicability;
+      const terminalProjection = selectedApplicabilityProjection(
+        terminalCurrent.workItem,
+      );
       if (terminalProjection?.actionAttemptId !== prepared.row.attemptId) {
         throw conflict('APPLICABILITY_COMMITTING_WORK_ITEM_DRIFT');
       }
@@ -506,7 +638,8 @@ export class CanonicalHostOpenClawApplicabilityService {
         workItemId: prepared.row.workItemId,
         tenantId: prepared.row.tenantId,
       });
-      const recoveredAfterFailure = storedWorkItem.applicability;
+      const recoveredAfterFailure =
+        selectedApplicabilityProjection(storedWorkItem);
       const currentReferencesOwnedArtifact =
         recoveredAfterFailure !== null &&
         recoveredAfterFailure !== undefined &&
@@ -518,75 +651,320 @@ export class CanonicalHostOpenClawApplicabilityService {
         if (!finalized) {
           throw conflict('APPLICABILITY_FINALIZED_ARTIFACT_REQUIRED');
         }
-        if (recoveredAfterFailure.actionAttemptId !== prepared.row.attemptId) {
-          throw conflict(
-            'APPLICABILITY_RECOVERY_CURRENT_PHYSICAL_REF_CONFLICT',
+        if (recoveredAfterFailure.actionAttemptId === prepared.row.attemptId) {
+          if (
+            canonicalJson(recoveredAfterFailure.artifact) !==
+            canonicalJson(finalized.artifact)
+          ) {
+            await this.finishApplicabilityCandidateCasConflict({
+              prepared,
+              currentRevision: storedWorkItem.revision,
+              owner: configurationEvidenceCasOwner,
+            });
+            throw conflict('APPLICABILITY_RECOVERY_CURRENT_BINDING_MISMATCH');
+          }
+          const ownerValidated =
+            await this.applicabilityInputs.readCurrentSelectionValidated({
+              workItemId: prepared.row.workItemId,
+              tenantId: prepared.row.tenantId,
+              applicabilityContextRef,
+            });
+          const recoveredCurrent = selectedApplicabilityProjection(
+            ownerValidated.workItem,
+          );
+          if (recoveredCurrent?.actionAttemptId !== prepared.row.attemptId) {
+            throw conflict('APPLICABILITY_COMMITTING_WORK_ITEM_DRIFT');
+          }
+          assertRecoveredProjectionBinding(
+            ownerValidated.workItem,
+            ownerValidated.applicabilityInput,
+            recoveredCurrent,
+            prepared.row,
+            prepared.task,
+            finalized.artifact,
+          );
+          const beforeTerminal =
+            await this.applicabilityInputs.readCurrentSelectionValidated({
+              workItemId: prepared.row.workItemId,
+              tenantId: prepared.row.tenantId,
+              applicabilityContextRef,
+            });
+          const beforeTerminalProjection = selectedApplicabilityProjection(
+            beforeTerminal.workItem,
+          );
+          if (
+            beforeTerminalProjection?.actionAttemptId !== prepared.row.attemptId
+          ) {
+            throw conflict('APPLICABILITY_COMMITTING_WORK_ITEM_DRIFT');
+          }
+          assertRecoveredProjectionBinding(
+            beforeTerminal.workItem,
+            beforeTerminal.applicabilityInput,
+            beforeTerminalProjection,
+            prepared.row,
+            prepared.task,
+            finalized.artifact,
+          );
+          await this.reconcileProjectionTerminalAfterCas({
+            scope,
+            attemptRef,
+            leaseToken,
+            leaseGeneration,
+            resultEnvelope,
+            projection: beforeTerminalProjection,
+          });
+          return projectionResult(
+            beforeTerminal.workItem,
+            beforeTerminalProjection,
           );
         }
-        if (
-          canonicalJson(recoveredAfterFailure.artifact) !==
-          canonicalJson(finalized.artifact)
-        ) {
-          throw conflict('APPLICABILITY_RECOVERY_CURRENT_BINDING_MISMATCH');
-        }
-        const ownerValidated =
-          await this.applicabilityInputs.readCurrentSelectionValidated({
-            workItemId: prepared.row.workItemId,
-            tenantId: prepared.row.tenantId,
-            applicabilityContextRef,
-          });
-        const recoveredCurrent = ownerValidated.workItem.applicability;
-        if (recoveredCurrent?.actionAttemptId !== prepared.row.attemptId) {
-          throw conflict('APPLICABILITY_COMMITTING_WORK_ITEM_DRIFT');
-        }
-        assertRecoveredProjectionBinding(
-          ownerValidated.workItem,
-          ownerValidated.applicabilityInput,
-          recoveredCurrent,
-          prepared.row,
-          prepared.task,
-          finalized.artifact,
-        );
-        const beforeTerminal =
-          await this.applicabilityInputs.readCurrentSelectionValidated({
-            workItemId: prepared.row.workItemId,
-            tenantId: prepared.row.tenantId,
-            applicabilityContextRef,
-          });
-        const beforeTerminalProjection = beforeTerminal.workItem.applicability;
-        if (
-          beforeTerminalProjection?.actionAttemptId !== prepared.row.attemptId
-        ) {
-          throw conflict('APPLICABILITY_COMMITTING_WORK_ITEM_DRIFT');
-        }
-        assertRecoveredProjectionBinding(
-          beforeTerminal.workItem,
-          beforeTerminal.applicabilityInput,
-          beforeTerminalProjection,
-          prepared.row,
-          prepared.task,
-          finalized.artifact,
-        );
-        await this.reconcileProjectionTerminalAfterCas({
-          scope,
-          attemptRef,
-          leaseToken,
-          leaseGeneration,
-          resultEnvelope,
-          projection: beforeTerminalProjection,
-        });
-        return projectionResult(
-          beforeTerminal.workItem,
-          beforeTerminalProjection,
-        );
       }
-      if (recoveredAfterFailure?.actionAttemptId === prepared.row.attemptId) {
-        await candidateStore.discardCandidateArtifact(ownedArtifact);
+      if (storedWorkItem.revision === prepared.task.baseRevision) {
+        if (!currentReferencesOwnedArtifact) {
+          await candidateStore.discardCandidateArtifact(ownedArtifact);
+        }
+        throw error;
+      }
+      const sameAttemptProjectionMismatch =
+        recoveredAfterFailure?.actionAttemptId === prepared.row.attemptId;
+      let terminal: ActionAttemptTerminalProjection;
+      try {
+        terminal = await this.finishApplicabilityCandidateCasConflict({
+          prepared,
+          currentRevision: storedWorkItem.revision,
+          owner: configurationEvidenceCasOwner,
+        });
+      } finally {
+        // A competing projection may reuse the same content-addressed object.
+        // Protect any artifact currently referenced by WorkItem; otherwise the
+        // losing attempt owns the object and must discard it.
+        if (!currentReferencesOwnedArtifact) {
+          await candidateStore.discardCandidateArtifact(ownedArtifact);
+        }
+      }
+      if (sameAttemptProjectionMismatch) {
         throw conflict('APPLICABILITY_RECOVERY_CURRENT_BINDING_MISMATCH');
       }
-      await candidateStore.discardCandidateArtifact(ownedArtifact);
-      throw error;
+      return terminal;
     }
+  }
+
+  private async finishApplicabilityCandidateCasConflict(input: {
+    prepared: PreparedActionAttemptCommit;
+    currentRevision: number;
+    owner: ConfigurationEvidenceApplicabilityCasOwner | null;
+  }): Promise<ActionAttemptTerminalProjection> {
+    const terminal = await this.attempts.finishProjectionConflict({
+      prepared: input.prepared,
+      currentRevision: input.currentRevision,
+    });
+    await this.recordConfigurationEvidenceApplicabilityOwnedTerminal({
+      prepared: input.prepared,
+      owner: input.owner,
+      status: 'CONFLICT',
+      code: terminal.terminalReason ?? 'WORK_ITEM_CAS_CONFLICT',
+      message: null,
+    });
+    return terminal;
+  }
+
+  private async recoverConfigurationEvidenceApplicabilityOwnedTerminal(input: {
+    workItem: CanonicalWorkItemProjection;
+    row: ActionAttemptRow;
+    task: OpenClawTaskEnvelope;
+    result: OpenClawResultEnvelope;
+    scope: CanonicalVerifiedOpenClawAttemptScope;
+    attemptRef: string;
+    leaseToken: string;
+    leaseGeneration: number;
+    resultEnvelope: unknown;
+    applicabilityContextRef: string;
+  }): Promise<ActionAttemptTerminalProjection | null> {
+    const owner = configurationEvidenceApplicabilityCasOwnerFromTask(
+      input.row,
+      input.task,
+    );
+    if (!owner) return null;
+    const marker = activeConfigurationEvidenceReevaluation(input.workItem);
+    if (!marker || !sameConfigurationEvidenceCasOwner(owner, marker)) {
+      if (isApplicabilityAttemptTerminal(input.row.status)) {
+        return this.attempts.projectTerminal(input.row);
+      }
+      if (
+        input.row.status === 'COMMITTING' &&
+        input.workItem.revision !== input.task.baseRevision
+      ) {
+        return this.attempts.finishProjectionConflict({
+          prepared: {
+            row: input.row,
+            task: input.task,
+            result: input.result,
+            recovery: true,
+          },
+          currentRevision: input.workItem.revision,
+        });
+      }
+      return null;
+    }
+    const stage = marker.stages.applicability;
+    if (isApplicabilityAttemptTerminal(input.row.status)) {
+      if (input.row.resultContentHash !== input.result.contentHash) return null;
+      const terminal = configurationEvidenceReplayTerminal(
+        input.row,
+        input.result,
+      );
+      if (!terminal) return this.attempts.projectTerminal(input.row);
+      await this.recordConfigurationEvidenceApplicabilityOwnedTerminal({
+        prepared: {
+          row: input.row,
+          task: input.task,
+          result: input.result,
+          recovery: true,
+        },
+        owner,
+        ...terminal,
+      });
+      return this.attempts.projectTerminal(input.row);
+    }
+    if (
+      input.row.status !== 'COMMITTING' ||
+      input.result.status !== 'SUCCEEDED' ||
+      stage.status !== 'RUNNING' ||
+      stage.attempt !== null ||
+      stage.terminal !== null ||
+      marker.stagedBundle.applicability !== null
+    ) {
+      return null;
+    }
+    const ownerValidated =
+      await this.applicabilityInputs.readCurrentOwnerValidated({
+        workItemId: input.row.workItemId,
+        tenantId: input.row.tenantId,
+        applicabilityContextRef: input.applicabilityContextRef,
+      });
+    const rebuilt = await this.buildTaskContract(
+      ownerValidated.workItem,
+      ownerValidated.applicabilityInput,
+    );
+    const frozenContract = {
+      ...rebuilt.contract,
+      inputRevision: input.task.baseRevision,
+    };
+    if (
+      canonicalJson(frozenContract) !== canonicalJson(input.task.modelInput)
+    ) {
+      return null;
+    }
+    const candidate = parseCandidateModelOutput(input.result.modelOutput);
+    validateApplicabilityCandidateBinding(candidate, frozenContract);
+    const evaluation = evaluateCandidate(
+      candidate,
+      frozenContract,
+      rebuilt.fleetSource,
+    );
+    assertOnlyHostFactUnknown(evaluation);
+    if (evaluation.status !== 'WAITING_INPUT') return null;
+    const prepared = await this.prepareCommit(input);
+    await this.recordConfigurationEvidenceApplicabilityOwnedTerminal({
+      prepared,
+      owner,
+      status: 'WAITING_INPUT',
+      code: 'APPLICABILITY_HOST_CONTROLLED_FACT_REQUIRED',
+      message:
+        'Controlled configuration evidence is still insufficient for applicability reevaluation.',
+    });
+    return this.attempts.finishProjectionWaitingInput(prepared);
+  }
+
+  private async recordConfigurationEvidenceApplicabilityOwnedTerminal(input: {
+    prepared: PreparedActionAttemptCommit;
+    owner: ConfigurationEvidenceApplicabilityCasOwner | null;
+    status: 'WAITING_INPUT' | 'FAILED' | 'CONFLICT';
+    code: string;
+    message: string | null;
+  }): Promise<void> {
+    if (!input.owner) return;
+    for (let casAttempt = 0; casAttempt < 2; casAttempt += 1) {
+      const current = await this.registrar.getTenantScopedByWorkItemId({
+        workItemId: input.prepared.row.workItemId,
+        tenantId: input.prepared.row.tenantId,
+      });
+      const marker = activeConfigurationEvidenceReevaluation(current);
+      const stage = marker?.stages.applicability;
+      if (!marker || !sameConfigurationEvidenceCasOwner(input.owner, marker)) {
+        return;
+      }
+      if (
+        stage?.status === input.status &&
+        sameConfigurationEvidenceAttempt(stage.attempt, input.owner.attempt)
+      ) {
+        return;
+      }
+      if (
+        !stage ||
+        stage.status !== 'RUNNING' ||
+        stage.attempt !== null ||
+        stage.terminal !== null ||
+        marker.stagedBundle.applicability !== null
+      ) {
+        return;
+      }
+      const next = withConfigurationEvidenceTerminal(
+        current,
+        'APPLICABILITY',
+        input.status,
+        input.owner.attempt,
+        input.code,
+        input.message,
+      );
+      try {
+        await this.registrar.compareAndSet({
+          workItemId: current.workItemId,
+          expectedRevision: current.revision,
+          syncPrimaryAttempt: false,
+          next: withoutRevision(next),
+        });
+        return;
+      } catch (error) {
+        if (casAttempt === 1) throw error;
+      }
+    }
+  }
+
+  private async recoverConfigurationEvidenceApplicabilityTerminal(input: {
+    workItem: CanonicalWorkItemProjection;
+    row: ActionAttemptRow;
+    task: OpenClawTaskEnvelope;
+    scope: CanonicalVerifiedOpenClawAttemptScope;
+    attemptRef: string;
+    leaseToken: string;
+    leaseGeneration: number;
+    resultEnvelope: unknown;
+  }): Promise<ActionAttemptTerminalProjection | null> {
+    const marker = activeConfigurationEvidenceReevaluation(input.workItem);
+    const stage = marker?.stages.applicability;
+    if (!stage?.terminal) return null;
+    assertConfigurationEvidenceAttemptBinding(
+      stage.attempt,
+      input.row,
+      input.task,
+    );
+    const prepared = await this.prepareCommit(input);
+    assertConfigurationEvidenceAttemptBinding(
+      stage.attempt,
+      prepared.row,
+      prepared.task,
+    );
+    if (
+      stage.status === 'WAITING_INPUT' &&
+      prepared.row.status === 'COMMITTING'
+    ) {
+      return this.attempts.finishProjectionWaitingInput(prepared);
+    }
+    if (prepared.row.status !== stage.status) {
+      throw conflict('APPLICABILITY_RECOVERY_CURRENT_BINDING_MISMATCH');
+    }
+    return this.attempts.projectTerminal(prepared.row);
   }
 
   private async prepareCommit(input: {
@@ -605,6 +983,99 @@ export class CanonicalHostOpenClawApplicabilityService {
       leaseGeneration: input.leaseGeneration,
       result: input.resultEnvelope,
       failClosedWithoutRejectionMutation: true,
+    });
+  }
+
+  private async prepareInitialCommit(input: {
+    scope: CanonicalVerifiedOpenClawAttemptScope;
+    attemptRef: string;
+    leaseToken: string;
+    leaseGeneration: number;
+    resultEnvelope: unknown;
+    workItem: CanonicalWorkItemProjection;
+    row: ActionAttemptRow;
+    task: OpenClawTaskEnvelope;
+    result: OpenClawResultEnvelope;
+  }): Promise<PreparedActionAttemptCommit> {
+    try {
+      return await this.prepareCommit(input);
+    } catch (error) {
+      await this.recordConfigurationEvidencePreparationRaceTerminal({
+        ...input,
+        error,
+      });
+      throw error;
+    }
+  }
+
+  private async recordConfigurationEvidencePreparationRaceTerminal(input: {
+    scope: CanonicalVerifiedOpenClawAttemptScope;
+    attemptRef: string;
+    workItem: CanonicalWorkItemProjection;
+    row: ActionAttemptRow;
+    task: OpenClawTaskEnvelope;
+    result: OpenClawResultEnvelope;
+    error: unknown;
+  }): Promise<void> {
+    const beforeMarker = activeConfigurationEvidenceReevaluation(
+      input.workItem,
+    );
+    if (!beforeMarker) return;
+
+    const freshRow = await this.attempts.readScoped({
+      attemptRef: input.attemptRef,
+      tenantId: input.scope.tenantId,
+      workItemId: input.scope.workItemId,
+    });
+    const status = configurationEvidencePreparationRaceStatus(freshRow.status);
+    if (
+      !status ||
+      !sameImmutableApplicabilityAttempt(input.row, freshRow, input.task) ||
+      (freshRow.resultContentHash !== null &&
+        freshRow.resultContentHash !== input.result.contentHash)
+    ) {
+      return;
+    }
+    const freshTask = requiredApplicabilityTask(freshRow);
+    if (canonicalJson(freshTask) !== canonicalJson(input.task)) return;
+
+    const freshWorkItem = await this.registrar.getTenantScopedByWorkItemId({
+      workItemId: freshRow.workItemId,
+      tenantId: freshRow.tenantId,
+    });
+    assertFreshAttemptWorkItemBinding(freshWorkItem, freshRow, freshTask);
+    const freshMarker = activeConfigurationEvidenceReevaluation(freshWorkItem);
+    if (
+      !freshMarker ||
+      input.workItem.revision !== input.task.baseRevision ||
+      freshWorkItem.revision !== input.task.baseRevision ||
+      !sameConfigurationEvidenceCycle(beforeMarker, freshMarker) ||
+      freshMarker.stages.applicability.status !== 'RUNNING' ||
+      freshMarker.stages.applicability.attempt !== null ||
+      freshMarker.stages.applicability.terminal !== null ||
+      freshMarker.stagedBundle.applicability !== null
+    ) {
+      return;
+    }
+
+    await this.recordConfigurationEvidenceApplicabilityOwnedTerminal({
+      prepared: {
+        row: freshRow,
+        task: freshTask,
+        result: input.result,
+        recovery: true,
+      },
+      owner: configurationEvidenceApplicabilityCasOwnerFromTask(
+        freshRow,
+        freshTask,
+      ),
+      status,
+      code:
+        freshRow.terminalReason ??
+        (input.error instanceof Error
+          ? input.error.message
+          : String(input.error)),
+      message: null,
     });
   }
 
@@ -634,9 +1105,33 @@ export class CanonicalHostOpenClawApplicabilityService {
     leaseToken: string;
     leaseGeneration: number;
     resultEnvelope: unknown;
+    workItem: CanonicalWorkItemProjection;
+    row: ActionAttemptRow;
+    task: OpenClawTaskEnvelope;
+    result: OpenClawResultEnvelope;
   }): Promise<ActionAttemptTerminalProjection> {
-    const prepared = await this.prepareCommit(input);
+    const prepared = await this.prepareInitialCommit(input);
+    await this.recordConfigurationEvidenceApplicabilityTerminal(
+      input.workItem,
+      prepared,
+    );
     return this.attempts.projectTerminal(prepared.row);
+  }
+
+  private async recordConfigurationEvidenceApplicabilityTerminal(
+    workItem: CanonicalWorkItemProjection,
+    prepared: PreparedActionAttemptCommit,
+  ): Promise<void> {
+    if (!activeConfigurationEvidenceReevaluation(workItem)) return;
+    const terminal = configurationEvidenceTerminalFromPrepared(prepared);
+    await this.recordConfigurationEvidenceApplicabilityOwnedTerminal({
+      prepared,
+      owner: configurationEvidenceApplicabilityCasOwnerFromTask(
+        prepared.row,
+        prepared.task,
+      ),
+      ...terminal,
+    });
   }
 
   private async recoverPreparedCommit(
@@ -654,16 +1149,15 @@ export class CanonicalHostOpenClawApplicabilityService {
       prepared.row,
       prepared.task,
     );
+    const recoveredProjection = selectedApplicabilityProjection(storedBinding);
     if (
-      storedBinding.applicability?.actionAttemptId !== prepared.row.attemptId &&
+      recoveredProjection?.actionAttemptId !== prepared.row.attemptId &&
       prepared.row.status === 'COMMITTING' &&
       storedBinding.revision !== prepared.task.baseRevision
     ) {
       throw conflict('APPLICABILITY_COMMITTING_WORK_ITEM_DRIFT');
     }
-    if (
-      storedBinding.applicability?.actionAttemptId === prepared.row.attemptId
-    ) {
+    if (recoveredProjection?.actionAttemptId === prepared.row.attemptId) {
       const recovered =
         await this.applicabilityInputs.readCurrentSelectionValidated({
           workItemId: prepared.row.workItemId,
@@ -675,7 +1169,7 @@ export class CanonicalHostOpenClawApplicabilityService {
         prepared.row,
         prepared.task,
       );
-      const applicability = recovered.workItem.applicability;
+      const applicability = selectedApplicabilityProjection(recovered.workItem);
       if (applicability?.actionAttemptId !== prepared.row.attemptId) {
         throw conflict('APPLICABILITY_COMMITTING_WORK_ITEM_DRIFT');
       }
@@ -871,11 +1365,21 @@ export class CanonicalHostOpenClawApplicabilityService {
               fact.validAsOf <= applicabilityInput.assessmentAsOf),
         )
       : [];
+    const reevaluation = activeConfigurationEvidenceReevaluation(workItem);
     const contract: ApplicabilityTaskContract = {
       schemaVersion: APPLICABILITY_TASK_SCHEMA_VERSION,
       operation: 'EXTRACT_APPLICABILITY',
       applicabilityContextRef: applicabilityInput.applicabilityContextRef,
       inputRevision: workItem.revision,
+      configurationEvidenceReevaluation: reevaluation
+        ? {
+            triggerSnapshotId: reevaluation.triggerSnapshotId,
+            triggerConfigurationRevision:
+              reevaluation.triggerConfigurationRevision,
+            adoptionWorkItemRevision: reevaluation.adoptionWorkItemRevision,
+            applicabilityRetryNo: reevaluation.stages.applicability.retryNo,
+          }
+        : null,
       documentVersionRef: workItem.source.documentVersionId,
       sourcePackage: {
         packageId: workItem.package!.packageId,
@@ -1269,6 +1773,241 @@ function assertFreshAttemptWorkItemBinding(
   }
 }
 
+function selectedApplicabilityProjection(
+  workItem: CanonicalWorkItemProjection,
+): CanonicalApplicabilityCandidateProjection | null {
+  const reevaluation = activeConfigurationEvidenceReevaluation(workItem);
+  return reevaluation
+    ? reevaluation.stagedBundle.applicability
+    : (workItem.applicability ?? null);
+}
+
+function configurationEvidenceAttemptBinding(
+  row: ActionAttemptRow,
+): CanonicalConfigurationEvidenceReevaluationAttemptBinding {
+  if (
+    !row.attemptId?.trim() ||
+    !row.operationRef?.trim() ||
+    !Number.isSafeInteger(row.inputRevision) ||
+    !Number.isSafeInteger(row.baseRevision)
+  ) {
+    throw conflict('APPLICABILITY_ATTEMPT_CURRENT_BINDING_MISMATCH');
+  }
+  return {
+    attemptId: row.attemptId,
+    attemptRef: row.operationRef,
+    inputRevision: row.inputRevision!,
+    baseRevision: row.baseRevision!,
+  };
+}
+
+function assertConfigurationEvidenceAttemptBinding(
+  binding: CanonicalConfigurationEvidenceReevaluationAttemptBinding | null,
+  row: ActionAttemptRow,
+  task: OpenClawTaskEnvelope,
+): void {
+  if (
+    !binding ||
+    binding.attemptId !== row.attemptId ||
+    binding.attemptRef !== row.operationRef ||
+    binding.inputRevision !== row.inputRevision ||
+    binding.baseRevision !== row.baseRevision ||
+    binding.inputRevision !== task.inputRevision ||
+    binding.baseRevision !== task.baseRevision
+  ) {
+    throw conflict('APPLICABILITY_RECOVERY_CURRENT_BINDING_MISMATCH');
+  }
+}
+
+function configurationEvidenceTerminalFromPrepared(
+  prepared: PreparedActionAttemptCommit,
+): {
+  status: 'WAITING_INPUT' | 'FAILED' | 'CONFLICT';
+  code: string;
+  message: string | null;
+} {
+  if (prepared.result.status === 'WAITING_INPUT') {
+    return {
+      status: 'WAITING_INPUT',
+      code:
+        prepared.result.missingInputs[0]?.code ?? 'APPLICABILITY_WAITING_INPUT',
+      message: prepared.result.missingInputs[0]?.message ?? null,
+    };
+  }
+  if (prepared.result.status === 'FAILED') {
+    return {
+      status: 'FAILED',
+      code: prepared.result.errorCode ?? 'OPENCLAW_EXECUTOR_FAILED',
+      message: prepared.result.errorDetail,
+    };
+  }
+  if (prepared.row.status === 'CONFLICT') {
+    return {
+      status: 'CONFLICT',
+      code: prepared.row.terminalReason ?? 'WORK_ITEM_REVISION_CONFLICT',
+      message: null,
+    };
+  }
+  throw conflict('APPLICABILITY_TERMINAL_RESULT_INVALID');
+}
+
+function configurationEvidencePreparationRaceStatus(
+  status: string,
+): 'FAILED' | 'CONFLICT' | null {
+  if (status === 'CONFLICT' || status === 'OBSOLETE') return 'CONFLICT';
+  if (status === 'FAILED' || status === 'TIMED_OUT' || status === 'CANCELLED') {
+    return 'FAILED';
+  }
+  return null;
+}
+
+function configurationEvidenceReplayTerminal(
+  row: ActionAttemptRow,
+  result: OpenClawResultEnvelope,
+): {
+  status: 'WAITING_INPUT' | 'FAILED' | 'CONFLICT';
+  code: string;
+  message: string | null;
+} | null {
+  if (row.status === 'CONFLICT' || row.status === 'OBSOLETE') {
+    return {
+      status: 'CONFLICT',
+      code: row.terminalReason ?? 'WORK_ITEM_CAS_CONFLICT',
+      message: null,
+    };
+  }
+  if (row.status === 'WAITING_INPUT' && result.status === 'WAITING_INPUT') {
+    return {
+      status: 'WAITING_INPUT',
+      code: result.missingInputs[0]?.code ?? 'APPLICABILITY_WAITING_INPUT',
+      message: result.missingInputs[0]?.message ?? null,
+    };
+  }
+  if (row.status === 'FAILED' && result.status === 'FAILED') {
+    return {
+      status: 'FAILED',
+      code: result.errorCode ?? 'OPENCLAW_EXECUTOR_FAILED',
+      message: result.errorDetail,
+    };
+  }
+  return null;
+}
+
+function isApplicabilityAttemptTerminal(status: string): boolean {
+  return [
+    'SUCCEEDED',
+    'WAITING_INPUT',
+    'FAILED',
+    'TIMED_OUT',
+    'CANCELLED',
+    'CONFLICT',
+    'OBSOLETE',
+  ].includes(status);
+}
+
+function sameImmutableApplicabilityAttempt(
+  before: ActionAttemptRow,
+  after: ActionAttemptRow,
+  task: OpenClawTaskEnvelope,
+): boolean {
+  return (
+    after.attemptId === before.attemptId &&
+    after.operationRef === before.operationRef &&
+    after.operationRef === task.operationRef &&
+    after.workItemId === before.workItemId &&
+    after.workItemId === task.workItemId &&
+    after.tenantId === before.tenantId &&
+    after.tenantId === task.tenantId &&
+    after.actionType === before.actionType &&
+    after.actionType === 'OPENCLAW_APPLICABILITY_EVALUATION' &&
+    after.documentVersionId === before.documentVersionId &&
+    after.documentVersionId === task.documentVersionId &&
+    after.taskInputHash === before.taskInputHash &&
+    after.taskInputHash === task.inputHash &&
+    after.inputRevision === before.inputRevision &&
+    after.inputRevision === task.inputRevision &&
+    after.baseRevision === before.baseRevision &&
+    after.baseRevision === task.baseRevision
+  );
+}
+
+function sameConfigurationEvidenceCycle(
+  before: NonNullable<
+    ReturnType<typeof activeConfigurationEvidenceReevaluation>
+  >,
+  after: NonNullable<
+    ReturnType<typeof activeConfigurationEvidenceReevaluation>
+  >,
+): boolean {
+  return (
+    after.triggerSnapshotId === before.triggerSnapshotId &&
+    after.triggerConfigurationRevision ===
+      before.triggerConfigurationRevision &&
+    after.adoptionWorkItemRevision === before.adoptionWorkItemRevision
+  );
+}
+
+function sameConfigurationEvidenceCasOwner(
+  owner: ConfigurationEvidenceApplicabilityCasOwner,
+  marker: NonNullable<
+    ReturnType<typeof activeConfigurationEvidenceReevaluation>
+  >,
+): boolean {
+  return (
+    marker.triggerSnapshotId === owner.triggerSnapshotId &&
+    marker.triggerConfigurationRevision ===
+      owner.triggerConfigurationRevision &&
+    marker.adoptionWorkItemRevision === owner.adoptionWorkItemRevision &&
+    marker.stages.applicability.retryNo === owner.retryNo &&
+    owner.attempt.baseRevision === owner.baseRevision &&
+    owner.attempt.inputRevision === owner.baseRevision
+  );
+}
+
+function configurationEvidenceApplicabilityCasOwnerFromTask(
+  row: ActionAttemptRow,
+  task: OpenClawTaskEnvelope,
+): ConfigurationEvidenceApplicabilityCasOwner | null {
+  const contract = task.modelInput as unknown as ApplicabilityTaskContract;
+  const binding = contract.configurationEvidenceReevaluation;
+  if (binding === null) return null;
+  if (
+    !binding ||
+    !binding.triggerSnapshotId?.trim() ||
+    !Number.isSafeInteger(binding.triggerConfigurationRevision) ||
+    binding.triggerConfigurationRevision < 1 ||
+    !Number.isSafeInteger(binding.adoptionWorkItemRevision) ||
+    binding.adoptionWorkItemRevision < 1 ||
+    !Number.isSafeInteger(binding.applicabilityRetryNo) ||
+    binding.applicabilityRetryNo < 0 ||
+    contract.inputRevision !== task.baseRevision ||
+    row.inputRevision !== task.inputRevision ||
+    row.baseRevision !== task.baseRevision
+  ) {
+    throw conflict('APPLICABILITY_ATTEMPT_CURRENT_BINDING_MISMATCH');
+  }
+  return {
+    triggerSnapshotId: binding.triggerSnapshotId,
+    triggerConfigurationRevision: binding.triggerConfigurationRevision,
+    adoptionWorkItemRevision: binding.adoptionWorkItemRevision,
+    retryNo: binding.applicabilityRetryNo,
+    baseRevision: task.baseRevision,
+    attempt: configurationEvidenceAttemptBinding(row),
+  };
+}
+
+function sameConfigurationEvidenceAttempt(
+  left: CanonicalConfigurationEvidenceReevaluationAttemptBinding | null,
+  right: CanonicalConfigurationEvidenceReevaluationAttemptBinding,
+): boolean {
+  return (
+    left?.attemptId === right.attemptId &&
+    left.attemptRef === right.attemptRef &&
+    left.inputRevision === right.inputRevision &&
+    left.baseRevision === right.baseRevision
+  );
+}
+
 function assertRecoveredProjectionBinding(
   workItem: CanonicalWorkItemProjection,
   applicabilityInput: CanonicalApplicabilityInputProjection,
@@ -1277,6 +2016,18 @@ function assertRecoveredProjectionBinding(
   task: OpenClawTaskEnvelope,
   expectedArtifact?: UnifiedPackageArtifactDescriptor,
 ): void {
+  const reevaluation = activeConfigurationEvidenceReevaluation(workItem);
+  if (reevaluation) {
+    const stage = reevaluation.stages.applicability;
+    assertConfigurationEvidenceAttemptBinding(stage.attempt, row, task);
+    if (
+      stage.status !== 'SUCCEEDED' ||
+      stage.committedWorkItemRevision !== workItem.revision ||
+      reevaluation.stagedBundle.applicability?.actionAttemptId !== row.attemptId
+    ) {
+      throw conflict('APPLICABILITY_RECOVERY_CURRENT_BINDING_MISMATCH');
+    }
+  }
   if (
     workItem.revision !== task.baseRevision + 1 ||
     projection.currentness !== 'CURRENT' ||
@@ -1563,6 +2314,13 @@ function assertApplicabilityNotCurrent(
   workItem: CanonicalWorkItemProjection,
   input: CanonicalApplicabilityInputProjection,
 ): void {
+  const reevaluation = activeConfigurationEvidenceReevaluation(workItem);
+  if (reevaluation) {
+    if (reevaluation.stages.applicability.status === 'SUCCEEDED') {
+      throw new Error('APPLICABILITY_ALREADY_CURRENT');
+    }
+    return;
+  }
   const current = workItem.applicability;
   if (
     current?.status === 'CANDIDATE_ONLY' &&

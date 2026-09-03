@@ -1,4 +1,10 @@
-import type { CanonicalWorkItemProjection } from '@shared/api.interface';
+import type {
+  CanonicalApplicabilityCandidateProjection,
+  CanonicalApplicabilityInputProjection,
+  CanonicalBaseRuleCandidateProjection,
+  CanonicalConfigurationEvidenceReevaluationAttemptBinding,
+  CanonicalWorkItemProjection,
+} from '@shared/api.interface';
 
 import {
   sealResultEnvelope,
@@ -7,6 +13,14 @@ import {
 import type { ActionAttemptRow } from '../../server/modules/action-attempt/action-attempt.types';
 import { CanonicalHostOpenClawDynamicEvaluationService } from '../../server/modules/canonical-host/canonical-host-openclaw-dynamic-evaluation.service';
 import { CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY } from '../../server/modules/canonical-host/canonical-host-openclaw-runtime-policy';
+import {
+  createConfigurationEvidenceReevaluation,
+  retryConfigurationEvidenceReevaluationStage,
+  withConfigurationEvidenceTerminal,
+  withStagedApplicability,
+  withStagedApplicabilityInput,
+  withStagedBaseRules,
+} from '../../server/modules/canonical-host/configuration-evidence/configuration-evidence-reevaluation.state';
 import { hostNativePdfClassificationFor } from '../../server/modules/canonical-host/host-native-pdf-profile.registry';
 
 const WORK_ITEM_ID = 'WI-DYNAMIC-150';
@@ -250,6 +264,89 @@ describe('CanonicalHostOpenClawDynamicEvaluationService', () => {
     expect(harness.artifactStore.persistAndReadback).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['CANCELLED', 'FAILED'],
+    ['TIMED_OUT', 'FAILED'],
+    ['OBSOLETE', 'CONFLICT'],
+    ['CONFLICT', 'CONFLICT'],
+  ] as const)(
+    'fresh-reads a %s prepareCommit race and terminalizes only the exact P0B base as %s',
+    async (attemptStatus, reevaluationStatus) => {
+      const workItem = reevaluationWorkItem();
+      const servingBefore = servingFields(workItem);
+      const harness = createHarness(workItem);
+      prepareTerminalRace(harness, attemptStatus);
+
+      await expect(
+        harness.service.commit(
+          ATTEMPT_REF,
+          LEASE_TOKEN,
+          1,
+          dynamicResult(harness.prepared.task),
+        ),
+      ).resolves.toMatchObject({ status: attemptStatus });
+
+      expect(harness.attempts.readScoped).toHaveBeenCalledTimes(2);
+      expect(servingFields(harness.current())).toEqual(servingBefore);
+      expect(harness.current().configurationEvidenceReevaluation).toMatchObject(
+        {
+          status: reevaluationStatus,
+          stages: {
+            dynamic: {
+              status: reevaluationStatus,
+              attempt: { attemptId: ATTEMPT_ID },
+              terminal: { code: `PREPARE_RACE_${attemptStatus}` },
+            },
+          },
+        },
+      );
+    },
+  );
+
+  it.each(['CANCELLED', 'TIMED_OUT', 'OBSOLETE', 'CONFLICT'] as const)(
+    'does not let an old %s prepareCommit race overwrite a later adoption',
+    async (attemptStatus) => {
+      const oldCycle = reevaluationWorkItem();
+      const harness = createHarness(oldCycle);
+      const laterAdoption = laterAdoptionWorkItem(oldCycle);
+      harness.setCurrent(laterAdoption);
+      prepareTerminalRace(harness, attemptStatus);
+
+      await expect(
+        harness.service.commit(
+          ATTEMPT_REF,
+          LEASE_TOKEN,
+          1,
+          dynamicResult(harness.prepared.task),
+        ),
+      ).resolves.toMatchObject({ status: attemptStatus });
+
+      expect(harness.attempts.readScoped).toHaveBeenCalledTimes(2);
+      expect(harness.registrar.compareAndSet).not.toHaveBeenCalled();
+      expect(harness.current()).toEqual(laterAdoption);
+      expect(harness.current().configurationEvidenceReevaluation).toMatchObject(
+        {
+          triggerSnapshotId: 'CONFIG-SNAPSHOT-P0B-LATER',
+          status: 'REQUIRED',
+          stages: { dynamic: { status: 'PENDING' } },
+        },
+      );
+    },
+  );
+
+  it('keeps the ordinary path projection-free when prepareCommit fresh-reads a terminal race', async () => {
+    const harness = createHarness();
+    prepareTerminalRace(harness, 'CANCELLED');
+
+    await expect(
+      harness.service.commit(ATTEMPT_REF, LEASE_TOKEN, 1, dynamicResult()),
+    ).resolves.toMatchObject({ status: 'CANCELLED' });
+
+    expect(harness.attempts.readScoped).toHaveBeenCalledTimes(2);
+    expect(harness.registrar.compareAndSet).not.toHaveBeenCalled();
+    expect(harness.current()).toEqual(harness.workItem);
+  });
+
   it('rebuilds a COMMITTING recovery from its bound historical snapshot after current changes', async () => {
     const harness = createHarness();
     harness.prepared.row.status = 'COMMITTING';
@@ -339,12 +436,424 @@ describe('CanonicalHostOpenClawDynamicEvaluationService', () => {
     });
     expect(harness.artifactStore.persistAndReadback).not.toHaveBeenCalled();
   });
+
+  it('builds P0B Dynamic from the staged applicability shadow and stages Base without changing serving current', async () => {
+    const workItem = reevaluationWorkItem();
+    const servingBefore = servingFields(workItem);
+    const harness = createHarness(workItem);
+
+    const committed = await harness.service.commit(
+      ATTEMPT_REF,
+      LEASE_TOKEN,
+      1,
+      dynamicResult(harness.prepared.task),
+    );
+
+    expect(
+      harness.assessment.prepareDynamicRulesCandidateWithRuleSet,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workItem: expect.objectContaining({
+          applicabilityInput: expect.objectContaining({
+            applicabilityContextRef: 'APCTX-P0B',
+          }),
+          applicability: expect.objectContaining({
+            actionAttemptId: 'ATT-APP-P0B',
+          }),
+        }),
+      }),
+      RULE_SET_RUNTIME,
+    );
+    expect(servingFields(harness.current())).toEqual(servingBefore);
+    expect(harness.current().configurationEvidenceReevaluation).toMatchObject({
+      status: 'RUNNING',
+      stages: { dynamic: { status: 'SUCCEEDED' } },
+      stagedBundle: {
+        baseRules: { actionAttemptId: ATTEMPT_ID },
+      },
+    });
+    expect(committed).toMatchObject({
+      workItemRevision: workItem.revision + 1,
+      baseRules: { actionAttemptId: ATTEMPT_ID },
+    });
+  });
+
+  it('recovers a staged P0B Base result after projection CAS without rewriting it', async () => {
+    const workItem = reevaluationWorkItem();
+    const harness = createHarness(workItem);
+    const staged = withStagedBaseRules(
+      workItem,
+      committedP0bBaseRules(),
+      reevaluationAttempt(harness.prepared.row, workItem.revision),
+    );
+    harness.setCurrent(staged);
+    harness.prepared.row.status = 'COMMITTING';
+
+    await expect(
+      harness.service.commit(
+        ATTEMPT_REF,
+        LEASE_TOKEN,
+        1,
+        dynamicResult(harness.prepared.task),
+      ),
+    ).resolves.toMatchObject({
+      workItemRevision: staged.revision,
+      baseRules: { actionAttemptId: ATTEMPT_ID },
+    });
+    expect(harness.artifactStore.persistAndReadback).not.toHaveBeenCalled();
+    expect(harness.registrar.compareAndSet).not.toHaveBeenCalled();
+    expect(harness.attempts.finishProjectionSuccess).toHaveBeenCalledTimes(1);
+  });
+
+  it('records a non-success P0B result in the marker and preserves serving current', async () => {
+    const workItem = reevaluationWorkItem();
+    const servingBefore = servingFields(workItem);
+    const harness = createHarness(workItem);
+    harness.prepared.row.status = 'WAITING_INPUT';
+    harness.prepared.row.terminalReason = 'HOST_RESOLVED_INPUT_REQUIRED';
+
+    await expect(
+      harness.service.commit(
+        ATTEMPT_REF,
+        LEASE_TOKEN,
+        1,
+        dynamicResult(harness.prepared.task),
+      ),
+    ).resolves.toMatchObject({ status: 'WAITING_INPUT' });
+    expect(servingFields(harness.current())).toEqual(servingBefore);
+    expect(harness.current().configurationEvidenceReevaluation).toMatchObject({
+      status: 'WAITING_INPUT',
+      stages: {
+        dynamic: {
+          status: 'WAITING_INPUT',
+          attempt: { attemptId: ATTEMPT_ID },
+          terminal: { code: 'HOST_RESOLVED_INPUT_REQUIRED' },
+        },
+      },
+    });
+  });
+
+  it('records a P0B ResultGate failure without promoting staged or serving fields', async () => {
+    const workItem = reevaluationWorkItem();
+    const servingBefore = servingFields(workItem);
+    const harness = createHarness(workItem);
+    harness.prepared.task.modelInput = {
+      purpose: 'EVALUATE_DYNAMIC_RULES',
+      expectedSelfCheck: { criterionSetId: 'DRIFTED' },
+    };
+
+    await expect(
+      harness.service.commit(
+        ATTEMPT_REF,
+        LEASE_TOKEN,
+        1,
+        dynamicResult(harness.prepared.task),
+      ),
+    ).resolves.toMatchObject({ status: 'FAILED' });
+    expect(servingFields(harness.current())).toEqual(servingBefore);
+    expect(harness.current().configurationEvidenceReevaluation).toMatchObject({
+      status: 'FAILED',
+      stages: {
+        dynamic: {
+          status: 'FAILED',
+          terminal: { code: 'DYNAMIC_EVALUATION_RESULT_GATE_REJECTED' },
+        },
+      },
+      stagedBundle: { baseRules: null },
+    });
+  });
+
+  it('terminalizes a P0B engineer-review compatibility rejection before artifact persistence', async () => {
+    const workItem = reevaluationWorkItem();
+    workItem.integratedAssessment!.engineerReviews = {} as never;
+    const servingBefore = servingFields(workItem);
+    const harness = createHarness(workItem);
+    harness.engineerReviews.assertLedgerCompatibleWithDynamicBytes.mockRejectedValueOnce(
+      new Error('ENGINEER_REVIEW_DYNAMIC_RESULT_DRIFT'),
+    );
+
+    await expect(
+      harness.service.commit(
+        ATTEMPT_REF,
+        LEASE_TOKEN,
+        1,
+        dynamicResult(harness.prepared.task),
+      ),
+    ).resolves.toMatchObject({ status: 'FAILED' });
+    expect(harness.artifactStore.persistAndReadback).not.toHaveBeenCalled();
+    expect(servingFields(harness.current())).toEqual(servingBefore);
+    expect(harness.current().configurationEvidenceReevaluation).toMatchObject({
+      status: 'FAILED',
+      stages: {
+        dynamic: {
+          status: 'FAILED',
+          terminal: {
+            code: 'DYNAMIC_EVALUATION_RESULT_GATE_REJECTED',
+            message: 'ENGINEER_REVIEW_DYNAMIC_RESULT_DRIFT',
+          },
+        },
+      },
+    });
+  });
+
+  it('records a P0B CAS conflict on the same cycle without changing serving current', async () => {
+    const workItem = reevaluationWorkItem();
+    const harness = createHarness(workItem);
+    const drifted = { ...workItem, revision: workItem.revision + 1 };
+    harness.setCurrent(drifted);
+    harness.attempts.finishProjectionConflict.mockResolvedValueOnce({
+      attemptRef: ATTEMPT_REF,
+      status: 'CONFLICT',
+      projectionApplied: false,
+      terminalReason: 'WORK_ITEM_CAS_CONFLICT_AFTER_COMMIT_START',
+    });
+
+    await expect(
+      harness.service.commit(
+        ATTEMPT_REF,
+        LEASE_TOKEN,
+        1,
+        dynamicResult(harness.prepared.task),
+      ),
+    ).resolves.toMatchObject({ status: 'CONFLICT' });
+    expect(servingFields(harness.current())).toEqual(servingFields(workItem));
+    expect(harness.current().configurationEvidenceReevaluation).toMatchObject({
+      status: 'CONFLICT',
+      stages: { dynamic: { status: 'CONFLICT' } },
+    });
+  });
+
+  it('does not let retry 0 terminal output overwrite retry 1 PENDING in the same adoption cycle', async () => {
+    const workItem = reevaluationWorkItem();
+    const harness = createHarness(workItem);
+    const retryZeroTerminal = withConfigurationEvidenceTerminal(
+      workItem,
+      'DYNAMIC',
+      'FAILED',
+      reevaluationAttempt(harness.prepared.row, workItem.revision),
+      'RETRY_ZERO_FAILED',
+    );
+    const retryOne = retryConfigurationEvidenceReevaluationStage({
+      workItem: retryZeroTerminal,
+      stage: 'DYNAMIC',
+    });
+    harness.setCurrent(retryOne);
+    harness.prepared.row.status = 'WAITING_INPUT';
+    harness.prepared.row.terminalReason = 'LATE_RETRY_ZERO_TERMINAL';
+
+    await expect(
+      harness.service.commit(
+        ATTEMPT_REF,
+        LEASE_TOKEN,
+        1,
+        dynamicResult(harness.prepared.task),
+      ),
+    ).resolves.toMatchObject({ status: 'WAITING_INPUT' });
+
+    expect(harness.registrar.compareAndSet).not.toHaveBeenCalled();
+    expect(harness.current()).toEqual(retryOne);
+    expect(harness.current().configurationEvidenceReevaluation).toMatchObject({
+      status: 'REQUIRED',
+      stages: { dynamic: { status: 'PENDING', retryNo: 1 } },
+    });
+  });
+
+  it('does not let retry 0 CAS-drift recovery overwrite retry 1 PENDING', async () => {
+    const workItem = reevaluationWorkItem();
+    const harness = createHarness(workItem);
+    const retryZeroTerminal = withConfigurationEvidenceTerminal(
+      workItem,
+      'DYNAMIC',
+      'CONFLICT',
+      reevaluationAttempt(harness.prepared.row, workItem.revision),
+      'RETRY_ZERO_CONFLICT',
+    );
+    const retryOne = retryConfigurationEvidenceReevaluationStage({
+      workItem: retryZeroTerminal,
+      stage: 'DYNAMIC',
+    });
+    harness.setCurrent(retryOne);
+    harness.attempts.finishProjectionConflict.mockResolvedValueOnce({
+      attemptRef: ATTEMPT_REF,
+      status: 'CONFLICT',
+      projectionApplied: false,
+      terminalReason: 'WORK_ITEM_CAS_CONFLICT_AFTER_COMMIT_START',
+    });
+
+    await expect(
+      harness.service.commit(
+        ATTEMPT_REF,
+        LEASE_TOKEN,
+        1,
+        dynamicResult(harness.prepared.task),
+      ),
+    ).resolves.toMatchObject({ status: 'CONFLICT' });
+
+    expect(harness.registrar.compareAndSet).not.toHaveBeenCalled();
+    expect(harness.current()).toEqual(retryOne);
+  });
+
+  it('does not let retry 0 prepareCommit-race recovery overwrite retry 1 PENDING', async () => {
+    const workItem = reevaluationWorkItem();
+    const harness = createHarness(workItem);
+    const retryZeroTerminal = withConfigurationEvidenceTerminal(
+      workItem,
+      'DYNAMIC',
+      'FAILED',
+      reevaluationAttempt(harness.prepared.row, workItem.revision),
+      'RETRY_ZERO_FAILED',
+    );
+    const retryOne = retryConfigurationEvidenceReevaluationStage({
+      workItem: retryZeroTerminal,
+      stage: 'DYNAMIC',
+    });
+    harness.setCurrent(retryOne);
+    prepareTerminalRace(harness, 'CANCELLED');
+
+    await expect(
+      harness.service.commit(
+        ATTEMPT_REF,
+        LEASE_TOKEN,
+        1,
+        dynamicResult(harness.prepared.task),
+      ),
+    ).resolves.toMatchObject({ status: 'CANCELLED' });
+
+    expect(harness.registrar.compareAndSet).not.toHaveBeenCalled();
+    expect(harness.current()).toEqual(retryOne);
+  });
+
+  it('does not overwrite a terminal Dynamic stage already owned by another attempt', async () => {
+    const workItem = reevaluationWorkItem();
+    const harness = createHarness(workItem);
+    const occupied = withConfigurationEvidenceTerminal(
+      workItem,
+      'DYNAMIC',
+      'FAILED',
+      {
+        attemptId: 'ATT-DYNAMIC-OTHER',
+        attemptRef: 'AQ-DYNAMIC-OTHER',
+        inputRevision: workItem.revision,
+        baseRevision: workItem.revision,
+      },
+      'OTHER_ATTEMPT_FAILED',
+    );
+    harness.setCurrent(occupied);
+    harness.prepared.row.status = 'WAITING_INPUT';
+    harness.prepared.row.terminalReason = 'LATE_ATTEMPT_TERMINAL';
+
+    await expect(
+      harness.service.commit(
+        ATTEMPT_REF,
+        LEASE_TOKEN,
+        1,
+        dynamicResult(harness.prepared.task),
+      ),
+    ).resolves.toMatchObject({ status: 'WAITING_INPUT' });
+
+    expect(harness.registrar.compareAndSet).not.toHaveBeenCalled();
+    expect(harness.current()).toEqual(occupied);
+  });
+
+  it('accepts a legacy P0B task without retry binding only at its exact base revision', async () => {
+    const workItem = reevaluationWorkItem();
+    const harness = createHarness(workItem, { legacyReevaluationTask: true });
+    harness.prepared.row.status = 'WAITING_INPUT';
+    harness.prepared.row.terminalReason = 'LEGACY_WAITING_INPUT';
+
+    await expect(
+      harness.service.commit(
+        ATTEMPT_REF,
+        LEASE_TOKEN,
+        1,
+        dynamicResult(harness.prepared.task),
+      ),
+    ).resolves.toMatchObject({ status: 'WAITING_INPUT' });
+
+    expect(harness.current().configurationEvidenceReevaluation).toMatchObject({
+      status: 'WAITING_INPUT',
+      stages: {
+        dynamic: {
+          status: 'WAITING_INPUT',
+          terminal: { code: 'LEGACY_WAITING_INPUT' },
+        },
+      },
+    });
+  });
+
+  it('fails closed instead of writing a legacy P0B task after revision drift', async () => {
+    const workItem = reevaluationWorkItem();
+    const harness = createHarness(workItem, { legacyReevaluationTask: true });
+    const drifted = {
+      ...structuredClone(workItem),
+      revision: workItem.revision + 1,
+    };
+    harness.setCurrent(drifted);
+    harness.prepared.row.status = 'WAITING_INPUT';
+    harness.prepared.row.terminalReason = 'LATE_LEGACY_TERMINAL';
+
+    await expect(
+      harness.service.commit(
+        ATTEMPT_REF,
+        LEASE_TOKEN,
+        1,
+        dynamicResult(harness.prepared.task),
+      ),
+    ).resolves.toMatchObject({ status: 'WAITING_INPUT' });
+
+    expect(harness.registrar.compareAndSet).not.toHaveBeenCalled();
+    expect(harness.current()).toEqual(drifted);
+    expect(harness.current().configurationEvidenceReevaluation).toMatchObject({
+      status: 'RUNNING',
+      stages: { dynamic: { status: 'PENDING', retryNo: 0 } },
+    });
+  });
+
+  it('advances a terminal P0B marker before reserving a new Dynamic attempt', async () => {
+    const workItem = reevaluationWorkItem();
+    const terminal = withConfigurationEvidenceTerminal(
+      workItem,
+      'DYNAMIC',
+      'FAILED',
+      reevaluationAttempt(actionRow(taskEnvelope(workItem)), workItem.revision),
+      'PREVIOUS_DYNAMIC_FAILED',
+    );
+    const harness = createHarness(terminal);
+
+    const begun = await harness.service.begin(WORK_ITEM_ID);
+
+    expect(harness.registrar.compareAndSet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        expectedRevision: terminal.revision,
+        syncPrimaryAttempt: false,
+      }),
+    );
+    expect(harness.attempts.reserveAndClaim).toHaveBeenCalledWith(
+      expect.objectContaining({
+        inputRevision: terminal.revision + 1,
+        baseRevision: terminal.revision + 1,
+      }),
+    );
+    expect(begun.task.modelInput).toMatchObject({
+      configurationEvidenceReevaluationBinding: {
+        triggerSnapshotId: 'CONFIG-SNAPSHOT-P0B',
+        triggerConfigurationRevision: 2,
+        retryNo: 1,
+      },
+    });
+    expect(harness.current().configurationEvidenceReevaluation).toMatchObject({
+      status: 'REQUIRED',
+      stages: { dynamic: { status: 'PENDING', retryNo: 1 } },
+    });
+  });
 });
 
-function createHarness() {
-  const workItem = workItemProjection();
+function createHarness(
+  workItem = workItemProjection(),
+  options: { legacyReevaluationTask?: boolean } = {},
+) {
   let currentWorkItem = workItem;
-  const task = taskEnvelope(workItem);
+  const task = taskEnvelope(workItem, !options.legacyReevaluationTask);
   const row = actionRow(task);
   const prepared = { row, task, result: dynamicResult(task), recovery: false };
   const registrar = {
@@ -406,6 +915,8 @@ function createHarness() {
   const attempts = {
     reserveAndClaim: jest.fn(
       async (input: {
+        inputRevision: number;
+        baseRevision: number;
         buildModelInput(
           identity: Record<string, unknown>,
         ): Promise<Record<string, unknown>>;
@@ -423,7 +934,12 @@ function createHarness() {
           leaseToken: LEASE_TOKEN,
           leaseGeneration: 1,
           leaseExpiresAt: '2026-08-24T11:00:00.000Z',
-          task: { ...task, modelInput },
+          task: {
+            ...task,
+            inputRevision: input.inputRevision,
+            baseRevision: input.baseRevision,
+            modelInput,
+          },
           created: true,
           triggerRequestId: 'REQ-DYNAMIC-REAL',
         };
@@ -443,6 +959,12 @@ function createHarness() {
       status: 'FAILED',
       projectionApplied: false,
       terminalReason: 'HOST_RESULT_GATE_REJECTED',
+    })),
+    projectTerminal: jest.fn((attemptRow: ActionAttemptRow) => ({
+      attemptRef: attemptRow.operationRef,
+      status: attemptRow.status,
+      projectionApplied: attemptRow.projectionApplied,
+      terminalReason: attemptRow.terminalReason,
     })),
   };
   const scope = {
@@ -466,12 +988,15 @@ function createHarness() {
     readActiveRuntime: jest.fn(async () => RULE_SET_RUNTIME),
     readRuntimeSnapshotAtActivation: jest.fn(async () => RULE_SET_RUNTIME),
   };
+  const engineerReviews = {
+    assertLedgerCompatibleWithDynamicBytes: jest.fn(),
+  };
   const service = new CanonicalHostOpenClawDynamicEvaluationService(
     registrar as never,
     artifactStore as never,
     assessment as never,
     processor as never,
-    { assertLedgerCompatibleWithDynamicBytes: jest.fn() } as never,
+    engineerReviews as never,
     attempts as never,
     ruleSets as never,
     scope as never,
@@ -489,6 +1014,62 @@ function createHarness() {
     ruleSets,
     scope,
     documentVersions,
+    engineerReviews,
+    current: () => currentWorkItem,
+    setCurrent: (next: CanonicalWorkItemProjection) => {
+      currentWorkItem = next;
+    },
+  };
+}
+
+type PrepareCommitRaceStatus =
+  | 'CANCELLED'
+  | 'TIMED_OUT'
+  | 'OBSOLETE'
+  | 'CONFLICT';
+
+function prepareTerminalRace(
+  harness: ReturnType<typeof createHarness>,
+  status: PrepareCommitRaceStatus,
+): void {
+  const preflightRow: ActionAttemptRow = {
+    ...harness.prepared.row,
+    status: 'RUNNING',
+  };
+  const terminalRow: ActionAttemptRow = {
+    ...harness.prepared.row,
+    status,
+    terminalReason: `PREPARE_RACE_${status}`,
+    resultEnvelopeJson: null,
+    resultContentHash: null,
+    completedAt: new Date('2026-08-24T10:00:01.000Z'),
+  };
+  harness.attempts.readScoped.mockReset();
+  harness.attempts.readScoped
+    .mockResolvedValueOnce(preflightRow)
+    .mockResolvedValueOnce(terminalRow);
+  harness.attempts.prepareCommit.mockRejectedValueOnce(
+    new Error(`ACTION_ATTEMPT_${status}`),
+  );
+}
+
+function laterAdoptionWorkItem(
+  oldCycle: CanonicalWorkItemProjection,
+): CanonicalWorkItemProjection {
+  const revision = oldCycle.revision + 1;
+  return {
+    ...structuredClone(oldCycle),
+    revision,
+    configurationEvidenceCurrent: {
+      ...structuredClone(oldCycle.configurationEvidenceCurrent!),
+      snapshotId: 'CONFIG-SNAPSHOT-P0B-LATER',
+      configurationRevision: 3,
+    },
+    configurationEvidenceReevaluation: createConfigurationEvidenceReevaluation({
+      triggerSnapshotId: 'CONFIG-SNAPSHOT-P0B-LATER',
+      triggerConfigurationRevision: 3,
+      adoptionWorkItemRevision: revision,
+    }),
   };
 }
 
@@ -582,7 +1163,207 @@ function workItemProjection(): CanonicalWorkItemProjection {
   };
 }
 
-function taskEnvelope(workItem: CanonicalWorkItemProjection) {
+function reevaluationWorkItem(): CanonicalWorkItemProjection {
+  const oldBaseRules: CanonicalBaseRuleCandidateProjection = {
+    status: 'CANDIDATE_ONLY',
+    revision: 1,
+    sourceResultId: 'openclaw-dynamic://OLD',
+    criterionSetId: 'JACS-DYNAMIC-2',
+    criterionCount: 1,
+    evaluationItemCount: 1,
+    unresolvedCount: 0,
+    sourceBoundCandidateCount: 1,
+    artifact: artifact('artifact://old-dynamic'),
+    actionAttemptId: 'ATT-DYNAMIC-OLD',
+  };
+  const initial: CanonicalWorkItemProjection = {
+    ...workItemProjection(),
+    applicabilityInput: p0bApplicabilityInput('SERVING'),
+    applicability: p0bApplicability('SERVING', 'ATT-APP-SERVING'),
+    integratedAssessment: {
+      status: 'OVERALL_CANDIDATE_READY',
+      baseRules: oldBaseRules,
+      overallSynthesis: {
+        status: 'CANDIDATE_ONLY',
+        revision: 1,
+        sourceResultId: 'openclaw-overall://OLD',
+        basedOnBaseRuleRevision: oldBaseRules.revision,
+        basedOnBaseRuleArtifactSha256: oldBaseRules.artifact.sha256,
+        basedOnEngineerReviewRevision: null,
+        basedOnEngineerReviewArtifactSha256: null,
+        discoveryStatus: 'NO_DISCOVERY',
+        gap: null,
+        candidateRefCount: 1,
+        findingCount: 1,
+        unresolvedCount: 0,
+        authorityLevel: 'candidate_only',
+        externalDiscoveryIsEvidence: false,
+        artifact: artifact('artifact://old-overall'),
+        actionAttemptId: 'ATT-OVERALL-OLD',
+        staleReason: null,
+      },
+      engineerReviews: null,
+      overallForAeoConfirmation: null,
+    },
+    configurationEvidenceCurrent: {
+      schemaVersion: 'wiselink.3_1.configuration_evidence_work_item_current.v1',
+      snapshotId: 'CONFIG-SNAPSHOT-P0B',
+      configurationRevision: 2,
+      aircraftAssetId: 'AIRCRAFT-P0B',
+      assessmentAsOf: '2026-09-04',
+      sourceCompleteness: 'COMPLETE',
+      truthSummary: {
+        trueCount: 1,
+        falseCount: 0,
+        unknownCount: 0,
+        conflictCount: 0,
+      },
+      recordedAt: '2026-09-04T00:00:00.000Z',
+      authority: 'WORK_ITEM_CURRENT_EVIDENCE_VIEW',
+      globalAircraftCurrentChanged: false,
+    },
+    configurationEvidenceReevaluation: createConfigurationEvidenceReevaluation({
+      triggerSnapshotId: 'CONFIG-SNAPSHOT-P0B',
+      triggerConfigurationRevision: 2,
+      adoptionWorkItemRevision: 5,
+    }),
+    aeo: { status: 'CANDIDATE_AUTHORING_IN_PROGRESS' } as never,
+  };
+  const withInput = withStagedApplicabilityInput(
+    initial,
+    p0bApplicabilityInput('P0B'),
+  );
+  return withStagedApplicability(
+    withInput,
+    p0bApplicability('P0B', 'ATT-APP-P0B'),
+    {
+      attemptId: 'ATT-APP-P0B',
+      attemptRef: 'AQ-APP-P0B',
+      inputRevision: withInput.revision,
+      baseRevision: withInput.revision,
+    },
+  );
+}
+
+function p0bApplicabilityInput(
+  identity: 'SERVING' | 'P0B',
+): CanonicalApplicabilityInputProjection {
+  return {
+    schemaVersion: 'wiselink.3_1.applicability_input_projection.v1',
+    applicabilityContextRef: `APCTX-${identity}`,
+    workItemId: WORK_ITEM_ID,
+    documentVersionId: 'DV-DYNAMIC',
+    sourcePackageId: 'PKG-DYNAMIC',
+    sourcePackageContentHash: 'c'.repeat(64),
+    sourcePackageArtifactSha256: 'a'.repeat(64),
+    targetBindingHash: `TARGET-${identity}`,
+    selectionRevision: `SELECTION-${identity}`,
+    bindingRevision: `BINDING-${identity}`,
+    currentness: 'CURRENT',
+    aircraftNumber: 'B-2035',
+    assessmentAsOf: '2026-09-04',
+    fleetMasterData: {
+      schemaVersion: 'wiselink.v3_1.applicability_fleet.fleet_master_data.v1',
+      sourceSnapshotId: `FLEET-${identity}`,
+      sourceRevisionKey: `FLEET-REV-${identity}`,
+      authorityRevision: `AUTH-${identity}`,
+      sourceAsOf: '2026-09-04',
+      assets: [],
+      facts: [],
+    },
+  };
+}
+
+function p0bApplicability(
+  identity: 'SERVING' | 'P0B',
+  actionAttemptId: string,
+): CanonicalApplicabilityCandidateProjection {
+  const input = p0bApplicabilityInput(identity);
+  return {
+    schemaVersion: 'wiselink.3_1.applicability_candidate_projection.v1',
+    status: 'CANDIDATE_ONLY',
+    currentness: 'CURRENT',
+    staleReason: null,
+    sourceResultId: `openclaw-applicability://${identity}`,
+    actionAttemptId,
+    inputRevision: 5,
+    documentId: 'DOC-DYNAMIC',
+    documentVersionId: 'DV-DYNAMIC',
+    sourcePackageId: 'PKG-DYNAMIC',
+    sourcePackageContentHash: 'c'.repeat(64),
+    translationActionAttemptId: 'ATT-TRANSLATION',
+    applicabilityContextRef: input.applicabilityContextRef,
+    applicabilityBindingRevision: input.bindingRevision,
+    aircraftNumber: input.aircraftNumber,
+    assessmentAsOf: input.assessmentAsOf,
+    fleetSourceSnapshotId: input.fleetMasterData.sourceSnapshotId!,
+    fleetSourceRevisionKey: input.fleetMasterData.sourceRevisionKey!,
+    fleetAuthorityRevision: input.fleetMasterData.authorityRevision!,
+    fleetSourceAsOf: input.fleetMasterData.sourceAsOf!,
+    sourceExpressionCount: 1,
+    sourceRefCount: 1,
+    decision: 'APPLICABLE',
+    kleeneResult: true,
+    pass: true,
+    blockingUnknownCount: 0,
+    artifact: artifact(`artifact://applicability-${identity}`),
+  };
+}
+
+function committedP0bBaseRules(): CanonicalBaseRuleCandidateProjection {
+  return {
+    status: 'CANDIDATE_ONLY',
+    revision: 2,
+    sourceResultId: 'openclaw-dynamic://REQ-DYNAMIC-REAL',
+    criterionSetId: 'JACS-DYNAMIC-2',
+    criterionCount: 2,
+    evaluationItemCount: 2,
+    unresolvedCount: 1,
+    sourceBoundCandidateCount: 2,
+    artifact: artifact('artifact://dynamic-output'),
+    actionAttemptId: ATTEMPT_ID,
+  };
+}
+
+function servingFields(workItem: CanonicalWorkItemProjection) {
+  return {
+    applicabilityInput: workItem.applicabilityInput,
+    applicability: workItem.applicability,
+    integratedAssessment: workItem.integratedAssessment,
+    aeo: workItem.aeo,
+  };
+}
+
+function reevaluationAttempt(
+  row: ActionAttemptRow,
+  baseRevision: number,
+): CanonicalConfigurationEvidenceReevaluationAttemptBinding {
+  return {
+    attemptId: row.attemptId,
+    attemptRef: row.operationRef!,
+    inputRevision: baseRevision,
+    baseRevision,
+  };
+}
+
+function taskEnvelope(
+  workItem: CanonicalWorkItemProjection,
+  includeReevaluationBinding = true,
+) {
+  const reevaluation = workItem.configurationEvidenceReevaluation;
+  const reevaluationBinding =
+    includeReevaluationBinding &&
+    reevaluation?.schemaVersion ===
+      'wiselink.3_1.configuration_evidence_reevaluation.v2'
+      ? {
+          configurationEvidenceReevaluationBinding: {
+            triggerSnapshotId: reevaluation.triggerSnapshotId,
+            triggerConfigurationRevision:
+              reevaluation.triggerConfigurationRevision,
+            retryNo: reevaluation.stages.dynamic.retryNo,
+          },
+        }
+      : {};
   return sealTaskEnvelope({
     schemaVersion: 'wiselink.3_1.openclaw_task_envelope.v1',
     actionAttemptId: ATTEMPT_ID,
@@ -591,8 +1372,8 @@ function taskEnvelope(workItem: CanonicalWorkItemProjection) {
     priority: 100,
     tenantId: 'tenant-dynamic',
     workItemId: WORK_ITEM_ID,
-    inputRevision: 5,
-    baseRevision: 5,
+    inputRevision: workItem.revision,
+    baseRevision: workItem.revision,
     documentVersionId: workItem.source.documentVersionId,
     sourceRefs: [
       {
@@ -606,6 +1387,7 @@ function taskEnvelope(workItem: CanonicalWorkItemProjection) {
       purpose: 'EVALUATE_DYNAMIC_RULES',
       expectedSelfCheck: { criterionSetId: 'JACS-DYNAMIC-2' },
       ruleSetBinding: ruleSetBinding(RULE_SET_RUNTIME),
+      ...reevaluationBinding,
     },
     deadline: '2026-08-24T12:00:00.000Z',
     idempotencyKey: 'openclaw-v1:dynamic:test',
@@ -658,8 +1440,8 @@ function actionRow(task: ReturnType<typeof taskEnvelope>): ActionAttemptRow {
     tenantId: 'tenant-dynamic',
     actorUserId: 'service:openclaw-main',
     priority: 100,
-    inputRevision: 5,
-    baseRevision: 5,
+    inputRevision: task.inputRevision,
+    baseRevision: task.baseRevision,
     documentVersionId: 'DV-DYNAMIC',
     taskEnvelopeJson: JSON.stringify(task),
     taskInputHash: task.inputHash,

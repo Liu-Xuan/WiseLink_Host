@@ -1853,7 +1853,11 @@ export interface CanonicalConfigurationEvidenceCurrentProjection {
   globalAircraftCurrentChanged: false;
 }
 
-export interface CanonicalConfigurationEvidenceReevaluationProjection {
+/**
+ * Legacy adoption marker. Persisted v1 WorkItems remain readable and are
+ * upgraded in memory before the reevaluation state machine is advanced.
+ */
+export interface CanonicalConfigurationEvidenceReevaluationLegacyProjection {
   schemaVersion: 'wiselink.3_1.configuration_evidence_reevaluation.v1';
   trigger: 'CONFIGURATION_EVIDENCE_ADOPTED';
   triggerSnapshotId: string;
@@ -1866,6 +1870,80 @@ export interface CanonicalConfigurationEvidenceReevaluationProjection {
   overall: 'STALE_OR_NOT_AVAILABLE';
   candidateOnly: true;
 }
+
+export type CanonicalConfigurationEvidenceReevaluationStatus =
+  | 'REQUIRED'
+  | 'RUNNING'
+  | 'WAITING_INPUT'
+  | 'FAILED'
+  | 'CONFLICT'
+  | 'SUCCEEDED';
+
+export type CanonicalConfigurationEvidenceReevaluationStageStatus =
+  | 'PENDING'
+  | 'RUNNING'
+  | 'SUCCEEDED'
+  | 'WAITING_INPUT'
+  | 'FAILED'
+  | 'CONFLICT';
+
+export type CanonicalConfigurationEvidenceReevaluationStageName =
+  | 'APPLICABILITY'
+  | 'DYNAMIC'
+  | 'OVERALL';
+
+export interface CanonicalConfigurationEvidenceReevaluationAttemptBinding {
+  attemptId: string;
+  attemptRef: string;
+  inputRevision: number;
+  baseRevision: number;
+}
+
+export interface CanonicalConfigurationEvidenceReevaluationTerminalProjection {
+  status: 'WAITING_INPUT' | 'FAILED' | 'CONFLICT';
+  code: string;
+  message: string | null;
+}
+
+export interface CanonicalConfigurationEvidenceReevaluationStageProjection {
+  status: CanonicalConfigurationEvidenceReevaluationStageStatus;
+  retryNo: number;
+  attempt: CanonicalConfigurationEvidenceReevaluationAttemptBinding | null;
+  committedWorkItemRevision: number | null;
+  terminal: CanonicalConfigurationEvidenceReevaluationTerminalProjection | null;
+}
+
+export interface CanonicalConfigurationEvidenceReevaluationStagedBundleProjection {
+  applicabilityInput: CanonicalApplicabilityInputProjection | null;
+  applicability: CanonicalApplicabilityCandidateProjection | null;
+  baseRules: CanonicalBaseRuleCandidateProjection | null;
+}
+
+/**
+ * Host-owned, candidate-only P0B state. No staged field is serving current;
+ * all fields are promoted together only by the final WorkItem CAS.
+ */
+export interface CanonicalConfigurationEvidenceReevaluationV2Projection {
+  schemaVersion: 'wiselink.3_1.configuration_evidence_reevaluation.v2';
+  trigger: 'CONFIGURATION_EVIDENCE_ADOPTED';
+  triggerSnapshotId: string;
+  triggerConfigurationRevision: number;
+  adoptionWorkItemRevision: number;
+  mode: 'FULL_APPLICABILITY_JOB_AID_OVERALL';
+  status: CanonicalConfigurationEvidenceReevaluationStatus;
+  stages: {
+    applicability: CanonicalConfigurationEvidenceReevaluationStageProjection;
+    dynamic: CanonicalConfigurationEvidenceReevaluationStageProjection;
+    overall: CanonicalConfigurationEvidenceReevaluationStageProjection;
+  };
+  stagedBundle: CanonicalConfigurationEvidenceReevaluationStagedBundleProjection;
+  promotedWorkItemRevision: number | null;
+  candidateOnly: true;
+}
+
+export type CanonicalConfigurationEvidenceReevaluationProjection =
+  | CanonicalConfigurationEvidenceReevaluationLegacyProjection
+  | CanonicalConfigurationEvidenceReevaluationV2Projection;
 
 export interface CanonicalWorkItemProjection {
   schemaVersion: 'wiselink.3_1.canonical_work_item_projection.v0.candidate';
@@ -2024,11 +2102,37 @@ export interface AilyParsedPackageSummary {
   fullValidationStatus: 'FULL_STRICT_VALIDATOR_PASSED';
 }
 
+export interface AilyConfigurationEvidenceReevaluationStatus {
+  schemaVersion: 'wiselink.3_1.configuration_evidence_reevaluation_status.v1';
+  triggerSnapshotId: string;
+  triggerConfigurationRevision: number;
+  mode: 'FULL_APPLICABILITY_JOB_AID_OVERALL';
+  status: CanonicalConfigurationEvidenceReevaluationStatus;
+  nextStage: 'APPLICABILITY' | 'JOB_AID' | 'OVERALL' | null;
+  stages: {
+    applicability: {
+      status: CanonicalConfigurationEvidenceReevaluationStageStatus;
+      retryNo: number;
+    };
+    jobAid: {
+      status: CanonicalConfigurationEvidenceReevaluationStageStatus;
+      retryNo: number;
+    };
+    overall: {
+      status: CanonicalConfigurationEvidenceReevaluationStageStatus;
+      retryNo: number;
+    };
+  };
+  servingCurrentPreserved: boolean;
+  candidateOnly: true;
+}
+
 export interface AilyWorkItemStatusResponse {
   entry: CanonicalEntryFacadeResponse;
   packageSummary: AilyParsedPackageSummary | null;
   assessmentSummary: CanonicalAssessmentCandidateProjection | null;
   integratedAssessmentSummary: CanonicalIntegratedAssessmentProjection | null;
+  configurationEvidenceReevaluation: AilyConfigurationEvidenceReevaluationStatus | null;
 }
 
 export interface AilyParsedPackageQueryResponse {

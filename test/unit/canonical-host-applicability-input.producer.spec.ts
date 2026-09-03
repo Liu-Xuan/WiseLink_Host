@@ -8,6 +8,7 @@ import {
   CanonicalHostApplicabilityInputProducer,
   type CanonicalApplicabilityControlledSelection,
 } from '../../server/modules/canonical-host/canonical-host-applicability-input.producer';
+import { createConfigurationEvidenceReevaluation } from '../../server/modules/canonical-host/configuration-evidence/configuration-evidence-reevaluation.state';
 
 describe('CanonicalHostApplicabilityInputProducer', () => {
   it('authorizes an opaque context, minimizes controlled Fleet, and CAS-writes projection_json shape', async () => {
@@ -110,9 +111,71 @@ describe('CanonicalHostApplicabilityInputProducer', () => {
     ).rejects.toThrow('APPLICABILITY_CONTROLLED_SELECTION_DRIFT');
     expect(harness.registrar.compareAndSet).toHaveBeenCalledTimes(casCount);
   });
+
+  it('stages a P0B input while preserving every serving applicability and assessment projection', async () => {
+    const harness = producerHarness({ p0b: true });
+    const before = harness.readCurrent();
+
+    const produced = await harness.producer.produce(
+      'APCTX-OPAQUE-1',
+      'request-1',
+    );
+    const marker = produced.configurationEvidenceReevaluation;
+
+    expect(produced.revision).toBe(8);
+    expect(marker).toMatchObject({
+      schemaVersion: 'wiselink.3_1.configuration_evidence_reevaluation.v2',
+      status: 'RUNNING',
+      stages: { applicability: { status: 'RUNNING', retryNo: 0 } },
+    });
+    if (
+      !marker ||
+      marker.schemaVersion !==
+        'wiselink.3_1.configuration_evidence_reevaluation.v2'
+    ) {
+      throw new Error('REEVALUATION_V2_REQUIRED');
+    }
+    expect(marker.stagedBundle.applicabilityInput).toMatchObject({
+      applicabilityContextRef: 'APCTX-OPAQUE-1',
+      workItemId: 'WI-APP-1',
+      currentness: 'CURRENT',
+      selectionRevision: 'selection-r1',
+    });
+    expect({
+      applicabilityInput: produced.applicabilityInput,
+      applicability: produced.applicability,
+      assessment: produced.assessment,
+      integratedAssessment: produced.integratedAssessment,
+      aeo: produced.aeo,
+    }).toEqual({
+      applicabilityInput: before.applicabilityInput,
+      applicability: before.applicability,
+      assessment: before.assessment,
+      integratedAssessment: before.integratedAssessment,
+      aeo: before.aeo,
+    });
+
+    const resolved = await harness.producer.resolveCurrent({
+      tenantId: 'tenant-1',
+      workItemId: 'WI-APP-1',
+      applicabilityContextRef: 'APCTX-OPAQUE-1',
+    });
+    const ownerValidated = await harness.producer.readCurrentOwnerValidated({
+      tenantId: 'tenant-1',
+      workItemId: 'WI-APP-1',
+      applicabilityContextRef: 'APCTX-OPAQUE-1',
+    });
+    expect(resolved.applicabilityInput).toEqual(
+      marker.stagedBundle.applicabilityInput,
+    );
+    expect(ownerValidated.applicabilityInput).toEqual(
+      marker.stagedBundle.applicabilityInput,
+    );
+    expect(harness.registrar.compareAndSet).toHaveBeenCalledTimes(1);
+  });
 });
 
-function producerHarness() {
+function producerHarness(options: { p0b?: boolean } = {}) {
   const packageBytes = new TextEncoder().encode(
     JSON.stringify({
       sourceRefs: [{ sourceRefId: 'SRC-1' }],
@@ -145,6 +208,34 @@ function producerHarness() {
   );
   const packageArtifact = artifact('package.json', packageBytes);
   let current = workItem(packageArtifact);
+  if (options.p0b) {
+    Object.assign(current, servingProjectionSentinels(), {
+      configurationEvidenceCurrent: {
+        schemaVersion:
+          'wiselink.3_1.configuration_evidence_work_item_current.v1',
+        snapshotId: 'CONFIGURATION-SNAPSHOT:P0B-1',
+        configurationRevision: 1,
+        aircraftAssetId: 'ASSET-1',
+        assessmentAsOf: '2026-08-27T23:59:59.999Z',
+        sourceCompleteness: 'COMPLETE',
+        truthSummary: {
+          trueCount: 1,
+          falseCount: 0,
+          unknownCount: 0,
+          conflictCount: 0,
+        },
+        recordedAt: '2026-08-28T00:00:00.000Z',
+        authority: 'WORK_ITEM_CURRENT_EVIDENCE_VIEW',
+        globalAircraftCurrentChanged: false,
+      },
+      configurationEvidenceReevaluation:
+        createConfigurationEvidenceReevaluation({
+          triggerSnapshotId: 'CONFIGURATION-SNAPSHOT:P0B-1',
+          triggerConfigurationRevision: 1,
+          adoptionWorkItemRevision: 7,
+        }),
+    });
+  }
   const registrar = {
     getTenantScopedByWorkItemId: jest.fn(async () => structuredClone(current)),
     compareAndSet: jest.fn(async (input: any) => {
@@ -195,7 +286,40 @@ function producerHarness() {
     serviceScope as never,
     controlledSelectionPort,
   );
-  return { producer, registrar, selection, packageArtifact };
+  return {
+    producer,
+    registrar,
+    selection,
+    packageArtifact,
+    readCurrent: () => structuredClone(current),
+  };
+}
+
+function servingProjectionSentinels(): Partial<CanonicalWorkItemProjection> {
+  return {
+    applicabilityInput: {
+      schemaVersion: 'serving-applicability-input',
+      marker: 'old-serving-input',
+    } as never,
+    applicability: {
+      schemaVersion: 'serving-applicability',
+      status: 'CANDIDATE_ONLY',
+      currentness: 'CURRENT',
+      marker: 'old-serving-applicability',
+    } as never,
+    assessment: {
+      schemaVersion: 'serving-assessment',
+      marker: 'old-serving-assessment',
+    } as never,
+    integratedAssessment: {
+      status: 'OVERALL_CANDIDATE_READY',
+      marker: 'old-serving-integrated-assessment',
+    } as never,
+    aeo: {
+      schemaVersion: 'serving-aeo',
+      marker: 'old-serving-aeo',
+    } as never,
+  };
 }
 
 function controlledSelection(): CanonicalApplicabilityControlledSelection {

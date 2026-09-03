@@ -15,6 +15,10 @@ import { UnifiedReaderService } from '../unified-reader/unified-reader.service';
 import type { UnifiedArtifactStorePort } from '../unified-reader/unified-reader.types';
 import { readFrozenApplicabilitySourceBinding } from './canonical-host-applicability-source';
 import {
+  activeConfigurationEvidenceReevaluation,
+  withStagedApplicabilityInput,
+} from './configuration-evidence/configuration-evidence-reevaluation.state';
+import {
   CANONICAL_APPLICABILITY_CONTROLLED_SELECTION,
   CANONICAL_WORK_ITEM_REGISTRAR,
 } from './canonical-host.constants';
@@ -114,21 +118,29 @@ export class CanonicalHostApplicabilityInputProducer {
       selection,
       targetBindingHash: sourceBinding.targetBindingHash,
     });
+    const reevaluation = activeConfigurationEvidenceReevaluation(workItem);
+    const currentInput = reevaluation
+      ? reevaluation.stagedBundle.applicabilityInput
+      : workItem.applicabilityInput;
     if (
-      workItem.applicabilityInput &&
-      canonicalSha256(workItem.applicabilityInput) ===
-        canonicalSha256(projection)
+      currentInput &&
+      canonicalSha256(currentInput) === canonicalSha256(projection)
     ) {
       return workItem;
     }
+    const next = reevaluation
+      ? withStagedApplicabilityInput(workItem, projection)
+      : {
+          ...workItem,
+          applicabilityInput: projection,
+          applicability: staleApplicability(workItem, projection),
+        };
     return this.registrar.compareAndSet({
       workItemId: workItem.workItemId,
       expectedRevision: workItem.revision,
       syncPrimaryAttempt: false,
       next: {
-        ...withoutRevision(workItem),
-        applicabilityInput: projection,
-        applicability: staleApplicability(workItem, projection),
+        ...withoutRevision(next),
       },
     });
   }
@@ -207,7 +219,8 @@ export class CanonicalHostApplicabilityInputProducer {
     applicabilityInput: CanonicalApplicabilityInputProjection;
   }> {
     const workItem = await this.requiredParsedWorkItem(scope);
-    const targetBindingHash = workItem.applicabilityInput?.targetBindingHash;
+    const targetBindingHash =
+      selectedApplicabilityInput(workItem)?.targetBindingHash;
     if (!targetBindingHash?.trim()) throw scopeNotFound();
     const persisted = requiredApplicabilityInput({
       workItem,
@@ -325,7 +338,7 @@ function requiredApplicabilityInput(input: {
   applicabilityContextRef: string;
   targetBindingHash: string;
 }): CanonicalApplicabilityInputProjection {
-  const value = input.workItem.applicabilityInput;
+  const value = selectedApplicabilityInput(input.workItem);
   if (
     !value ||
     value.schemaVersion !== 'wiselink.3_1.applicability_input_projection.v1' ||
@@ -356,6 +369,15 @@ function requiredApplicabilityInput(input: {
     value.assessmentAsOf,
   );
   return structuredClone(value);
+}
+
+function selectedApplicabilityInput(
+  workItem: CanonicalWorkItemProjection,
+): CanonicalApplicabilityInputProjection | null {
+  const reevaluation = activeConfigurationEvidenceReevaluation(workItem);
+  return reevaluation
+    ? reevaluation.stagedBundle.applicabilityInput
+    : (workItem.applicabilityInput ?? null);
 }
 
 function selectControlledFleet(

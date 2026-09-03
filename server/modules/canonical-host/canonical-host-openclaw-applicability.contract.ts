@@ -56,6 +56,12 @@ export interface ApplicabilityTaskContract {
   operation: 'EXTRACT_APPLICABILITY';
   applicabilityContextRef: string;
   inputRevision: number;
+  configurationEvidenceReevaluation: {
+    triggerSnapshotId: string;
+    triggerConfigurationRevision: number;
+    adoptionWorkItemRevision: number;
+    applicabilityRetryNo: number;
+  } | null;
   documentVersionRef: string;
   sourcePackage: { packageId: string; contentHash: string };
   bilingualBinding: {

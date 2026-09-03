@@ -26,10 +26,13 @@ import {
   validateReviewCandidate,
 } from '../scripts/validate-payload.mjs';
 import {
+  CONFIGURATION_EVIDENCE_REEVALUATION_STATUS_SCHEMA,
   HOST_MCP_TOOLS,
   INITIAL_ANALYSIS_OPERATIONS,
   INTERACTIVE_REVIEW_TOOLS,
   commitTranslationPayloadFile,
+  parseConfigurationEvidenceReevaluationStatus,
+  runConfigurationEvidenceReevaluation,
   runDynamicEvaluation,
   runApplicabilityEvaluation,
   runInitialAnalysis,
@@ -71,6 +74,10 @@ const APPLICABILITY_AST_FIXTURE_URL = new URL(
   './fixtures/applicability-ast-candidate.c4.json',
   import.meta.url,
 );
+const CONFIGURATION_REEVALUATION_FIXTURE_URL = new URL(
+  './fixtures/configuration-evidence-reevaluation-status.p0b.json',
+  import.meta.url,
+);
 const PACKAGED_VERSION_DECLARATIONS = [
   [new URL('../SKILL.md', import.meta.url), 'full'],
   [new URL('../agents/openai.yaml', import.meta.url), 'suffix'],
@@ -103,7 +110,7 @@ test('pins exact20 MCP 1.2, five review tools, and hosted provenance', () => {
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c11',
+    'wiselink-research-and-synthesize@r09.c12',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -127,6 +134,403 @@ test('keeps every packaged runtime version declaration aligned', async () => {
       `${url.pathname} must declare ${expected}`,
     );
   }
+});
+
+test('requires the single sanitized Host P0B status field', () => {
+  assert.throws(
+    () =>
+      parseConfigurationEvidenceReevaluationStatus(
+        status(WORK_ITEM_ID),
+        WORK_ITEM_ID,
+      ),
+    /HOST_P0B_STATUS_UNAVAILABLE/u,
+  );
+  assert.throws(
+    () =>
+      parseConfigurationEvidenceReevaluationStatus(
+        {
+          entry: { workItemId: WORK_ITEM_ID },
+          configurationEvidenceReevaluationSummary: {},
+        },
+        WORK_ITEM_ID,
+      ),
+    /HOST_P0B_STATUS_UNAVAILABLE/u,
+  );
+});
+
+test('coordinates P0B through the existing tools without serving-current assumptions', async () => {
+  const applicabilityInput = await readJson(APPLICABILITY_TASK_FIXTURE_URL);
+  const applicabilityOutput = await readJson(APPLICABILITY_AST_FIXTURE_URL);
+  const applicabilityTask = makeTask(
+    'OPENCLAW_APPLICABILITY_EVALUATION',
+    applicabilityInput,
+  );
+  const dynamicInput = await readJson(DYNAMIC_FIXTURE_URL);
+  const dynamicOutput = buildDynamicRulesOutput(dynamicInput);
+  const dynamicTask = makeTask('OPENCLAW_DYNAMIC_EVALUATION', dynamicInput);
+  const overallInput = synthesisInput();
+  const overallOutput = synthesisOutput(overallInput);
+  const overallTask = makeTask('OPENCLAW_OVERALL_SYNTHESIS', {
+    modelInput: overallInput,
+    selectedDiscoveryRefs: [],
+    providerCodes: [],
+  });
+  const initialReevaluation = await readJson(
+    CONFIGURATION_REEVALUATION_FIXTURE_URL,
+  );
+  let reevaluation = structuredClone(initialReevaluation);
+  const calls = [];
+  const callTool = async (name, args) => {
+    calls.push({ name, args: structuredClone(args) });
+    if (name === 'get_parse_status') {
+      return p0bStatus(WORK_ITEM_ID, reevaluation);
+    }
+    if (name === 'begin_applicability_evaluation') {
+      return runningBegin(applicabilityTask, {
+        modelInput: applicabilityInput,
+      });
+    }
+    if (name === 'begin_dynamic_evaluation') {
+      return runningBegin(dynamicTask, { modelInput: dynamicInput });
+    }
+    if (name === 'begin_overall_synthesis') {
+      return runningBegin(overallTask, {
+        modelInput: overallInput,
+        selectedDiscoveryRefs: [],
+      });
+    }
+    if (name === 'heartbeat_action_attempt') {
+      return {
+        attemptRef: args.attemptRef,
+        status: 'RUNNING',
+        leaseGeneration: args.leaseGeneration,
+        leaseExpiresAt: '2026-08-27T11:05:00.000Z',
+      };
+    }
+    if (name === 'commit_applicability_candidate') {
+      validatePayload('result-envelope', {
+        task: applicabilityTask,
+        result: args.result,
+      });
+      reevaluation = p0bReevaluation('JOB_AID');
+      return {
+        workItemId: WORK_ITEM_ID,
+        workItemRevision: 9,
+        status: 'CANDIDATE_ONLY',
+        applicability: {
+          status: 'CANDIDATE_ONLY',
+          actionAttemptId: applicabilityTask.actionAttemptId,
+        },
+      };
+    }
+    if (name === 'commit_dynamic_evaluation_candidate') {
+      validatePayload('result-envelope', {
+        task: dynamicTask,
+        result: args.result,
+      });
+      reevaluation = p0bReevaluation('OVERALL');
+      return {
+        workItemId: WORK_ITEM_ID,
+        workItemRevision: 10,
+        status: 'BASE_RULE_CANDIDATE_READY',
+      };
+    }
+    if (name === 'commit_overall_candidate') {
+      validatePayload('result-envelope', {
+        task: overallTask,
+        result: args.result,
+      });
+      reevaluation = p0bReevaluation(null);
+      return {
+        workItemId: WORK_ITEM_ID,
+        workItemRevision: 11,
+        status: 'OVERALL_CANDIDATE_READY',
+        overallSynthesis: {
+          status: 'CANDIDATE_ONLY',
+          authorityLevel: 'candidate_only',
+          externalDiscoveryIsEvidence: false,
+        },
+      };
+    }
+    if (name === 'get_deep_link') {
+      return { workItemId: WORK_ITEM_ID, deepLink: '/work-item/fixture' };
+    }
+    throw new Error(`UNEXPECTED_TOOL:${name}`);
+  };
+
+  const result = await runConfigurationEvidenceReevaluation({
+    workItemId: WORK_ITEM_ID,
+    applicabilityContextRef: applicabilityInput.applicabilityContextRef,
+    applicabilityRequestId: 'REQ-P0B-APPLICABILITY-001',
+    callTool,
+    extractApplicability: async () => ({
+      output: applicabilityOutput,
+      provenance: applicabilityProvenance(),
+    }),
+    evaluateDynamicRules: async () => ({
+      output: dynamicOutput,
+      provenance: provenance(),
+    }),
+    synthesizeOverall: async () => ({
+      output: overallOutput,
+      provenance: provenance(),
+    }),
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.reevaluation.status, 'SUCCEEDED');
+  assert.equal(Object.hasOwn(result, 'initialStatus'), false);
+  assert.equal(
+    result.initialReevaluation.schemaVersion,
+    CONFIGURATION_EVIDENCE_REEVALUATION_STATUS_SCHEMA,
+  );
+  assert.deepEqual(
+    result.operations.map(({ stage }) => stage),
+    ['APPLICABILITY', 'JOB_AID', 'OVERALL'],
+  );
+  assert.equal(
+    calls.every(({ name }) => HOST_MCP_TOOLS.includes(name)),
+    true,
+  );
+  assert.deepEqual(
+    calls
+      .filter(({ name }) =>
+        [
+          'commit_applicability_candidate',
+          'commit_dynamic_evaluation_candidate',
+          'commit_overall_candidate',
+          'get_parse_status',
+        ].includes(name),
+      )
+      .map(({ name }) => name)
+      .filter(
+        (name, index, sequence) =>
+          name !== 'get_parse_status' ||
+          index === 0 ||
+          sequence[index - 1] !== 'get_parse_status',
+      )
+      .slice(-7),
+    [
+      'get_parse_status',
+      'commit_applicability_candidate',
+      'get_parse_status',
+      'commit_dynamic_evaluation_candidate',
+      'get_parse_status',
+      'commit_overall_candidate',
+      'get_parse_status',
+    ],
+  );
+});
+
+test('resumes P0B from Host nextStage and skips completed stages', async () => {
+  const overallInput = synthesisInput();
+  const overallOutput = synthesisOutput(overallInput);
+  const overallTask = makeTask('OPENCLAW_OVERALL_SYNTHESIS', {
+    modelInput: overallInput,
+    selectedDiscoveryRefs: [],
+    providerCodes: [],
+  });
+  let reevaluation = p0bReevaluation('OVERALL');
+  const calls = [];
+  const callTool = async (name, args) => {
+    calls.push(name);
+    if (name === 'get_parse_status') {
+      return p0bStatus(WORK_ITEM_ID, reevaluation);
+    }
+    if (name === 'begin_overall_synthesis') {
+      return runningBegin(overallTask, {
+        modelInput: overallInput,
+        selectedDiscoveryRefs: [],
+      });
+    }
+    if (name === 'heartbeat_action_attempt') {
+      return heartbeatResult(overallTask, args);
+    }
+    if (name === 'commit_overall_candidate') {
+      reevaluation = p0bReevaluation(null);
+      return {
+        workItemId: WORK_ITEM_ID,
+        workItemRevision: 11,
+        status: 'OVERALL_CANDIDATE_READY',
+        overallSynthesis: {
+          status: 'CANDIDATE_ONLY',
+          authorityLevel: 'candidate_only',
+          externalDiscoveryIsEvidence: false,
+        },
+      };
+    }
+    if (name === 'get_deep_link') return { deepLink: '/work-item/fixture' };
+    throw new Error(`UNEXPECTED_TOOL:${name}`);
+  };
+
+  const result = await runConfigurationEvidenceReevaluation({
+    workItemId: WORK_ITEM_ID,
+    callTool,
+    synthesizeOverall: async () => ({
+      output: overallOutput,
+      provenance: provenance(),
+    }),
+  });
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.operations.map(({ stage }) => stage), ['OVERALL']);
+  assert.equal(calls.includes('begin_applicability_evaluation'), false);
+  assert.equal(calls.includes('begin_dynamic_evaluation'), false);
+});
+
+test('accepts deterministic Host WAITING_INPUT after a successful applicability model result', async () => {
+  const input = await readJson(APPLICABILITY_TASK_FIXTURE_URL);
+  const astCandidate = await readJson(APPLICABILITY_AST_FIXTURE_URL);
+  const task = makeTask('OPENCLAW_APPLICABILITY_EVALUATION', input);
+  let reevaluation = p0bReevaluation('APPLICABILITY');
+  const calls = [];
+  const callTool = async (name, args) => {
+    calls.push(name);
+    if (name === 'get_parse_status') {
+      return p0bStatus(WORK_ITEM_ID, reevaluation);
+    }
+    if (name === 'begin_applicability_evaluation') {
+      return runningBegin(task, { modelInput: input });
+    }
+    if (name === 'heartbeat_action_attempt') {
+      return heartbeatResult(task, args);
+    }
+    if (name === 'commit_applicability_candidate') {
+      assert.equal(args.result.status, 'SUCCEEDED');
+      reevaluation = p0bReevaluation('APPLICABILITY');
+      reevaluation.status = 'WAITING_INPUT';
+      reevaluation.stages.applicability.status = 'WAITING_INPUT';
+      return {
+        attemptRef: task.operationRef,
+        status: 'WAITING_INPUT',
+        projectionApplied: false,
+        terminalReason: 'APPLICABILITY_HOST_CONTROLLED_FACT_REQUIRED',
+      };
+    }
+    if (name === 'get_deep_link') return { deepLink: '/work-item/fixture' };
+    throw new Error(`UNEXPECTED_TOOL:${name}`);
+  };
+
+  const result = await runConfigurationEvidenceReevaluation({
+    workItemId: WORK_ITEM_ID,
+    applicabilityContextRef: input.applicabilityContextRef,
+    applicabilityRequestId: 'REQ-P0B-DETERMINISTIC-WAITING-001',
+    callTool,
+    extractApplicability: async () => ({
+      output: astCandidate,
+      provenance: applicabilityProvenance(),
+    }),
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.outcome, 'WAITING_INPUT');
+  assert.equal(result.operations[0].result.outcome, 'WAITING_INPUT');
+  assert.equal(result.reevaluation.stages.applicability.status, 'WAITING_INPUT');
+  assert.equal(calls.includes('get_action_attempt_status'), false);
+});
+
+test('prioritizes fresh P0B terminal state over generic commit recovery outcome', async () => {
+  const input = await readJson(APPLICABILITY_TASK_FIXTURE_URL);
+  const astCandidate = await readJson(APPLICABILITY_AST_FIXTURE_URL);
+  const task = makeTask('OPENCLAW_APPLICABILITY_EVALUATION', input);
+  const recoveryResult = sealResultEnvelope({
+    task,
+    modelOutput: buildApplicabilityCandidate(input, astCandidate),
+    provenance: applicabilityProvenance(),
+    factsConsidered: input.controlledFacts.map(({ factId }) => factId),
+  });
+  let reevaluation = p0bReevaluation('APPLICABILITY');
+  reevaluation.stages.applicability.status = 'COMMITTING';
+  const calls = [];
+  const callTool = async (name) => {
+    calls.push(name);
+    if (name === 'get_parse_status') {
+      return p0bStatus(WORK_ITEM_ID, reevaluation);
+    }
+    if (name === 'begin_applicability_evaluation') {
+      return {
+        ...runningBegin(task, { modelInput: input }),
+        status: 'COMMITTING',
+        recoveryResult,
+      };
+    }
+    if (name === 'get_action_attempt_status') {
+      reevaluation = p0bReevaluation('APPLICABILITY');
+      reevaluation.status = 'WAITING_INPUT';
+      reevaluation.stages.applicability.status = 'WAITING_INPUT';
+      return attemptStatus(task, 'COMMITTING', recoveryResult);
+    }
+    throw new Error(`UNEXPECTED_TOOL:${name}`);
+  };
+  let modelCallCount = 0;
+
+  const result = await runConfigurationEvidenceReevaluation({
+    workItemId: WORK_ITEM_ID,
+    applicabilityContextRef: input.applicabilityContextRef,
+    applicabilityRequestId: 'REQ-P0B-RECOVERY-001',
+    callTool,
+    extractApplicability: async () => {
+      modelCallCount += 1;
+      throw new Error('MODEL_MUST_NOT_RUN');
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.outcome, 'WAITING_INPUT');
+  assert.equal(
+    result.operations[0].result.outcome,
+    'COMMITTING_RECOVERY_READ_ONLY',
+  );
+  assert.equal(result.reevaluation.nextStage, 'APPLICABILITY');
+  assert.equal(modelCallCount, 0);
+  assert.deepEqual(calls, [
+    'get_parse_status',
+    'begin_applicability_evaluation',
+    'get_parse_status',
+    'get_action_attempt_status',
+    'get_parse_status',
+  ]);
+});
+
+test('binds P0B applicability begin to the requested WorkItem before model or commit', async () => {
+  const input = await readJson(APPLICABILITY_TASK_FIXTURE_URL);
+  const task = makeTask('OPENCLAW_APPLICABILITY_EVALUATION', input);
+  const { inputHash: ignoredInputHash, ...wrongWorkItemTaskFields } = {
+    ...task,
+    workItemId: 'WI-P0B-WRONG-TARGET',
+  };
+  assert.ok(ignoredInputHash);
+  const wrongWorkItemTask = {
+    ...wrongWorkItemTaskFields,
+    inputHash: canonicalSha256(wrongWorkItemTaskFields),
+  };
+  const reevaluation = p0bReevaluation('APPLICABILITY');
+  const calls = [];
+
+  await assert.rejects(
+    runConfigurationEvidenceReevaluation({
+      workItemId: WORK_ITEM_ID,
+      applicabilityContextRef: input.applicabilityContextRef,
+      applicabilityRequestId: 'REQ-P0B-WORKITEM-BINDING-001',
+      callTool: async (name) => {
+        calls.push(name);
+        if (name === 'get_parse_status') {
+          return p0bStatus(WORK_ITEM_ID, reevaluation);
+        }
+        if (name === 'begin_applicability_evaluation') {
+          return runningBegin(wrongWorkItemTask, { modelInput: input });
+        }
+        throw new Error(`UNEXPECTED_TOOL:${name}`);
+      },
+      extractApplicability: async () => {
+        throw new Error('MODEL_MUST_NOT_RUN');
+      },
+    }),
+    /HOST_MCP_APPLICABILITY_WORKITEM_BINDING_MISMATCH/u,
+  );
+  assert.deepEqual(calls, [
+    'get_parse_status',
+    'begin_applicability_evaluation',
+  ]);
 });
 
 test('runs real applicability AST extraction through dedicated begin/commit', async () => {
@@ -3346,6 +3750,45 @@ function statusWithOverall(workItemId, correlationRef) {
         externalDiscoveryIsEvidence: false,
       },
     },
+  };
+}
+
+function p0bStatus(workItemId, reevaluation) {
+  return {
+    entry: { workItemId },
+    integratedAssessmentSummary: null,
+    configurationEvidenceReevaluation: structuredClone(reevaluation),
+  };
+}
+
+function p0bReevaluation(nextStage) {
+  const stages = {
+    applicability: {
+      status: nextStage === 'APPLICABILITY' ? 'PENDING' : 'SUCCEEDED',
+      retryNo: 0,
+    },
+    jobAid: {
+      status:
+        nextStage === 'APPLICABILITY' || nextStage === 'JOB_AID'
+          ? 'PENDING'
+          : 'SUCCEEDED',
+      retryNo: 0,
+    },
+    overall: {
+      status: nextStage === null ? 'SUCCEEDED' : 'PENDING',
+      retryNo: 0,
+    },
+  };
+  return {
+    schemaVersion: CONFIGURATION_EVIDENCE_REEVALUATION_STATUS_SCHEMA,
+    triggerSnapshotId: 'CES-P0B-FIXTURE-001',
+    triggerConfigurationRevision: 2,
+    mode: 'FULL_APPLICABILITY_JOB_AID_OVERALL',
+    status: nextStage === null ? 'SUCCEEDED' : 'RUNNING',
+    nextStage,
+    stages,
+    servingCurrentPreserved: nextStage !== null,
+    candidateOnly: true,
   };
 }
 

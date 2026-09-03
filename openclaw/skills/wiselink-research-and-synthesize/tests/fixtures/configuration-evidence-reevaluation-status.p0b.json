@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "wiselink.3_1.configuration_evidence_reevaluation_status.v1",
+  "triggerSnapshotId": "CES-P0B-FIXTURE-001",
+  "triggerConfigurationRevision": 2,
+  "mode": "FULL_APPLICABILITY_JOB_AID_OVERALL",
+  "status": "REQUIRED",
+  "nextStage": "APPLICABILITY",
+  "stages": {
+    "applicability": {
+      "status": "PENDING",
+      "retryNo": 0
+    },
+    "jobAid": {
+      "status": "PENDING",
+      "retryNo": 0
+    },
+    "overall": {
+      "status": "PENDING",
+      "retryNo": 0
+    }
+  },
+  "servingCurrentPreserved": true,
+  "candidateOnly": true
+}

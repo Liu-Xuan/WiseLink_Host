@@ -160,6 +160,26 @@ Discovery 不是 INITIAL_ANALYSIS 前置步骤。只有 dynamic/overall 暴露�
 `record_oem_discovery_run` 响应未知时无精确 readback，所以 outcome unknown、no retry。SearchRun/snippet 永远
 不是 evidence；Host/DM 未采纳前不改变 EvaluationContext/current。
 
+### Configuration-evidence P0B
+
+`runConfigurationEvidenceReevaluation` 是现有 INITIAL_ANALYSIS 编排器上的顺序协调层，不新增 MCP
+tool。它首先 fresh-read `get_parse_status.configurationEvidenceReevaluation`，再严格跟随 Host
+`nextStage`：
+
+```text
+APPLICABILITY -> fresh status
+JOB_AID       -> fresh status
+OVERALL       -> fresh status
+```
+
+每个阶段内部仍复用原 begin/heartbeat/commit/status 路径。恢复时，已为 `SUCCEEDED` 的前序阶段
+不再调用；`WAITING_INPUT|FAILED|CONFLICT` 不在同一运行中自动重试。阶段间必须保持同一
+snapshot/configuration revision 触发绑定且不回退。Overall 不检查旧 serving baseRules，只要求
+Host 脱敏状态确认已进入 `OVERALL`；真正 staged 输入由 Host begin 从内部 shadow WorkItem 派生。
+
+旧 Host 不返回该状态字段时，P0B 入口返回 `HOST_P0B_STATUS_UNAVAILABLE`，原有
+`runInitialAnalysis` 单操作路由保持不变。
+
 ## INTERACTIVE_REVIEW C3
 
 入口只有 C1 已持久对象引用：

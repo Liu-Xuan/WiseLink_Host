@@ -265,6 +265,7 @@ export class ConfigurationEvidenceService {
           'CONFIGURATION_EVIDENCE_ADOPTION_READBACK_INVALID',
         );
       }
+      assertCommittedCurrent(replay.workItem, replay.persisted);
       return adoptionResponse(
         workItemId,
         replay.workItem.revision,
@@ -754,8 +755,12 @@ function assertCommittedCurrent(
     reevaluation.triggerSnapshotId !== persisted.summary.snapshotId ||
     reevaluation.triggerConfigurationRevision !==
       persisted.summary.configurationRevision ||
-    reevaluation.adoptionWorkItemRevision !== workItem.revision ||
-    reevaluation.status !== 'REQUIRED'
+    reevaluation.trigger !== 'CONFIGURATION_EVIDENCE_ADOPTED' ||
+    reevaluation.adoptionWorkItemRevision !==
+      persisted.summary.workItemRevisionAfter ||
+    reevaluation.adoptionWorkItemRevision > workItem.revision ||
+    reevaluation.mode !== 'FULL_APPLICABILITY_JOB_AID_OVERALL' ||
+    reevaluation.candidateOnly !== true
   ) {
     throw configurationUnavailable(
       'CONFIGURATION_EVIDENCE_CURRENT_READBACK_INVALID',

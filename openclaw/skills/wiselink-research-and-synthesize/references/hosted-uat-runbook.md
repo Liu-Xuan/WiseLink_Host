@@ -1,4 +1,4 @@
-# 官方托管 R09 c11 发布与 UAT runbook
+# 官方托管 R09 c12 发布与 UAT runbook
 
 本 runbook 只定义 Host C4+C5 accepted 后的真实验证顺序；本地实现不执行安装、发布、Session 创建、模型调用或
 云配置修改。
@@ -17,7 +17,7 @@
    manifest 中的字节数、archive SHA-256、唯一根目录、普通文件集合及每文件 SHA-256，不输出签名 URL。
 4. 首次迁移先发布一次 Host 兼容策略：`skillCompatibilityRef=wiselink-research-and-synthesize@r09`、
    `minimumCompatibleSkillVersion=r09.c10`。它依然严格校验 Task/Result schema、MCP 1.2.0、app/profile、
-   SourceRef 和 CAS，但不再把每个兼容 c 修订与 Host release 绑定。迁移后，本次 c11 及以后不改变合同的
+   SourceRef 和 CAS，但不再把每个兼容 c 修订与 Host release 绑定。迁移后，本次 c12 及以后不改变合同的
    c 修订可用官方 `openclaw skills install <verified-root> --as wiselink-research-and-synthesize --force`
    独立覆盖唯一同名 Skill。不创建第二份、不绑定模型、不手工修改 installed 文件。
 5. 安装后 fresh-read `openclaw skills list/info/check`，复跑 installed tests，并将 installed 递归文件摘要与
@@ -40,7 +40,7 @@ Task/Result schema、MCP tool 形状、authority 或安全语义改变时升级 
 3. 模型由官方托管 profile/config 选择，当前 UI 可选 `GLM-5.3`；每个 turn 必须读回非空、可识别的实际
    `modelVersion`，智能选择/fallback 只有在实际模型仍逐 turn 可见时才可继续；
 4. 同名 Skill 只有一个，安装版本精确
-   `wiselink-research-and-synthesize@r09.c11`；
+   `wiselink-research-and-synthesize@r09.c12`；
 5. Host MCP package/version 为
    `wiselink-openclaw-engineering-assessment@1.2.0`，exact 20 tools 可见；
 6. C3 successor 已进入 current Hosted release；只凭 Git commit 不等于 deployed readback；
@@ -106,6 +106,21 @@ Task/Result schema、MCP tool 形状、authority 或安全语义改变时升级 
   排序后仍须完整唯一。
 - 非 owner/跨 tenant/旧 revision/过期 lease：统一 fail closed，不泄露对象存在性。
 
+## P0B 配置证据全量重算 UAT
+
+1. 在既有 serving Applicability/Job-Aid/Overall 可读的 WorkItem 上采纳一个新配置证据快照。
+2. 确认 `get_parse_status` 只暴露脱敏 `configurationEvidenceReevaluation`，不暴露 staged bundle；
+   重算未成功前旧 serving current 保持可用。
+3. 运行 `runConfigurationEvidenceReevaluation`，核对 exact20 清单没有增加工具，且顺序为
+   Applicability → fresh status → Dynamic N/N → fresh status → Overall → fresh status。
+4. 在 Applicability 或 Dynamic 已成功后重启协调器，确认从 Host `nextStage` 恢复，已成功阶段的
+   begin/model/commit 调用数均为 0。
+5. 注入 `WAITING_INPUT`、`FAILED` 和 `CONFLICT`，确认仅 marker/retry 状态前进，旧 serving current
+   不变，不自动重放 commit。
+6. 仅在三阶段都成功且 Host 重新校验 snapshot/configuration/WorkItem 绑定后，核对一次最终
+   CAS 同时替换 serving Applicability、Job-Aid baseRules 和 Overall，marker 为 `SUCCEEDED`。
+7. 对不含 P0B 状态的旧 Host，新协调入口必须明确停止，同时原有单 operation UAT 继续通过。
+
 ## INTERACTIVE_REVIEW UAT
 
 前置：C1 ReviewConversation/Turn API 正向回环已由真实已登录浏览器或官方入口验证；不要用 CLI 管理角色替代
@@ -147,7 +162,7 @@ authenticated user。
 - begin/context/SourceRef/model 已写 started 但没有 result checkpoint：重启后停止并报告 outcome unknown，绝不重试；
   commit 是唯一允许通过一次 status 消除响应不确定性的步骤。唯一受控例外仅限 c8 遗留的
   `REVIEW_GATEWAY_INVALID_JSON_HTTP_404`：必须由原始短日志同时证明该错误和 `FIRST_RUN_EXIT=1`、model result 与
-  commit 均不存在，并用 c11 保留的受控 recovery flag 把原 `model.started` 归档后恢复一次；不得删除 checkpoint 或重放
+  commit 均不存在，并用 c12 保留的受控 recovery flag 把原 `model.started` 归档后恢复一次；不得删除 checkpoint 或重放
   begin/context/SourceRef，第二次 recovery 若仍无 model result 必须停止。
 
 ## 每轮证据
