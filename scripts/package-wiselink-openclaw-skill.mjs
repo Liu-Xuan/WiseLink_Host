@@ -16,6 +16,8 @@ export const SKILL_ROOT_RELATIVE = `openclaw/skills/${SKILL_SLUG}`;
 export const SKILL_ROOT = join(REPOSITORY_ROOT, SKILL_ROOT_RELATIVE);
 export const HOST_POLICY_RELATIVE =
   'server/modules/canonical-host/canonical-host-openclaw-runtime-policy.ts';
+export const PUBLISHER_RELATIVE =
+  'scripts/package-wiselink-openclaw-skill.mjs';
 
 const FULL_VERSION_PATTERN = /wiselink-research-and-synthesize@r09\.c\d+/gu;
 const PROMPT_VERSION_PATTERN = /Skill r09\.c\d+\/MCP 1\.2\.0/gu;
@@ -106,6 +108,7 @@ export async function buildPublishLitePackage({ outputDirectory }) {
 
   const commit = await gitText(['rev-parse', 'HEAD']);
   const tree = await gitText(['rev-parse', `HEAD:${SKILL_ROOT_RELATIVE}`]);
+  const commitUnixSeconds = await readCommitUnixSeconds(commit);
   const entries = await trackedSkillEntries();
   const workingPaths = (await listRegularFiles(SKILL_ROOT)).map((path) =>
     relative(SKILL_ROOT, path),
@@ -120,13 +123,11 @@ export async function buildPublishLitePackage({ outputDirectory }) {
   await mkdir(destination, { recursive: true });
   const archiveName = `${SKILL_SLUG}-${versionSuffix}.zip`;
   const archivePath = join(destination, archiveName);
-  await git([
-    'archive',
-    '--format=zip',
-    `--prefix=${SKILL_SLUG}/`,
-    `--output=${archivePath}`,
-    `HEAD:${SKILL_ROOT_RELATIVE}`,
-  ]);
+  await writeDeterministicSkillArchive({
+    archivePath,
+    commit,
+    commitUnixSeconds,
+  });
 
   const archiveBytes = await readFile(archivePath);
   const files = await Promise.all(
@@ -147,6 +148,7 @@ export async function buildPublishLitePackage({ outputDirectory }) {
     compatibilityRef: source.compatibilityRef,
     source: {
       gitCommit: commit,
+      gitCommitUnixSeconds: commitUnixSeconds,
       gitTree: tree,
       subtree: SKILL_ROOT_RELATIVE,
     },
@@ -185,12 +187,42 @@ async function assertPublishSourceClean() {
     '--',
     SKILL_ROOT_RELATIVE,
     HOST_POLICY_RELATIVE,
+    PUBLISHER_RELATIVE,
   ]);
   if (status) {
     throw new Error(
       `SKILL_PUBLISH_SOURCE_DIRTY:${status.replaceAll('\n', '|')}`,
     );
   }
+}
+
+export async function writeDeterministicSkillArchive({
+  archivePath,
+  commit = 'HEAD',
+  commitUnixSeconds,
+}) {
+  const resolvedCommitUnixSeconds =
+    commitUnixSeconds ?? (await readCommitUnixSeconds(commit));
+  await git([
+    'archive',
+    '--format=zip',
+    `--mtime=@${resolvedCommitUnixSeconds}`,
+    `--prefix=${SKILL_SLUG}/`,
+    `--output=${archivePath}`,
+    `${commit}:${SKILL_ROOT_RELATIVE}`,
+  ]);
+}
+
+async function readCommitUnixSeconds(commit) {
+  const value = await gitText(['show', '-s', '--format=%ct', commit]);
+  if (!/^(?:0|[1-9]\d*)$/u.test(value)) {
+    throw new Error(`SKILL_SOURCE_COMMIT_TIME_INVALID:${value}`);
+  }
+  const seconds = Number(value);
+  if (!Number.isSafeInteger(seconds)) {
+    throw new Error(`SKILL_SOURCE_COMMIT_TIME_INVALID:${value}`);
+  }
+  return seconds;
 }
 
 async function runSkillTests() {

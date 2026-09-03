@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
+import { mkdtemp, readFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 
-import { inspectPublishLiteSource } from '../../scripts/package-wiselink-openclaw-skill.mjs';
+import {
+  inspectPublishLiteSource,
+  writeDeterministicSkillArchive,
+} from '../../scripts/package-wiselink-openclaw-skill.mjs';
 
 test('aligns the Host, packaged Skill, interface prompt, and fixtures', async () => {
   const source = await inspectPublishLiteSource();
@@ -16,3 +22,24 @@ test('aligns the Host, packaged Skill, interface prompt, and fixtures', async ()
   assert.equal(source.fileCount, 19);
   assert.ok(source.claims.some(({ path }) => path === 'agents/openai.yaml'));
 });
+
+test(
+  'writes byte-identical archives across different wall-clock timestamps',
+  { timeout: 15_000 },
+  async () => {
+    const outputDirectory = await mkdtemp(
+      join(tmpdir(), 'wiselink-skill-publish-lite-'),
+    );
+    const firstArchive = join(outputDirectory, 'first.zip');
+    const secondArchive = join(outputDirectory, 'second.zip');
+
+    await writeDeterministicSkillArchive({ archivePath: firstArchive });
+    await new Promise((resolve) => setTimeout(resolve, 2_100));
+    await writeDeterministicSkillArchive({ archivePath: secondArchive });
+
+    assert.deepEqual(
+      await readFile(firstArchive),
+      await readFile(secondArchive),
+    );
+  },
+);

@@ -11,7 +11,8 @@
    validator、`agents/openai.yaml`、runbook 和 fixtures 中的实际包版本声明一致。
 2. 运行 `npm run package:openclaw:skill`。脚本必须先通过 Skill 自测，然后只从当前提交的
    `openclaw/skills/wiselink-research-and-synthesize` Git 子树生成单根 ZIP、manifest 和 SHA-256 文件。
-   Skill 子树或 Host policy 有未提交变更时必须停止，不包装工作区近似内容。
+   ZIP 条目时间必须固定为源 Git commit 时间，不得使用打包当下的墙上时钟；同一 commit 跨时间构建必须逐字节
+   一致。Skill 子树、Host policy 或 Publish Lite 脚本有未提交变更时必须停止，不包装工作区近似内容。
 3. 只在用户明确批准发布后，才将该 ZIP 上传到妙搭私有存储。托管端下载后必须重新校验
    manifest 中的字节数、archive SHA-256、唯一根目录、普通文件集合及每文件 SHA-256，不输出签名 URL。
 4. 首次迁移先发布一次 Host 兼容策略：`skillCompatibilityRef=wiselink-research-and-synthesize@r09`、
