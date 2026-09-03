@@ -16,6 +16,7 @@ import {
   WISELINK_HOST_MCP_VERSION,
   WISELINK_MODEL_POLICY_REF,
   WISELINK_APPLICABILITY_PROMPT_VERSION,
+  WISELINK_SKILL_COMPATIBILITY_REF,
   WISELINK_SKILL_VERSION,
   buildApplicabilityCandidate,
   canonicalSha256,
@@ -70,6 +71,12 @@ const APPLICABILITY_AST_FIXTURE_URL = new URL(
   './fixtures/applicability-ast-candidate.c4.json',
   import.meta.url,
 );
+const PACKAGED_VERSION_DECLARATIONS = [
+  [new URL('../SKILL.md', import.meta.url), 'full'],
+  [new URL('../agents/openai.yaml', import.meta.url), 'suffix'],
+  [new URL('../references/hosted-uat-runbook.md', import.meta.url), 'full'],
+  [new URL('../references/input-output.md', import.meta.url), 'full'],
+];
 
 const ARTIFACT_REF = 'artifact://fixture/frozen-package';
 const ARTIFACT_SHA = 'b'.repeat(64);
@@ -96,10 +103,30 @@ test('pins exact20 MCP 1.2, five review tools, and hosted provenance', () => {
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c10',
+    'wiselink-research-and-synthesize@r09.c11',
+  );
+  assert.equal(
+    WISELINK_SKILL_COMPATIBILITY_REF,
+    'wiselink-research-and-synthesize@r09',
   );
   assert.equal(WISELINK_MODEL_POLICY_REF, 'official-hosted-profile-config');
   assert.equal(WISELINK_HOST_MCP_VERSION, '1.2.0');
+});
+
+test('keeps every packaged runtime version declaration aligned', async () => {
+  const versionSuffix = WISELINK_SKILL_VERSION.split('@').at(-1);
+  assert.match(versionSuffix, /^r09\.c\d+$/u);
+  for (const [url, format] of PACKAGED_VERSION_DECLARATIONS) {
+    const contents = await readFile(url, 'utf8');
+    const expected =
+      format === 'suffix'
+        ? `Skill ${versionSuffix}/MCP ${WISELINK_HOST_MCP_VERSION}`
+        : WISELINK_SKILL_VERSION;
+    assert.ok(
+      contents.includes(expected),
+      `${url.pathname} must declare ${expected}`,
+    );
+  }
 });
 
 test('runs real applicability AST extraction through dedicated begin/commit', async () => {

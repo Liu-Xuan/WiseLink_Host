@@ -24,6 +24,8 @@
     "start": "NODE_ENV=production node main.js",
     "test": "jest",
     "test:openclaw:worker": "node --test test/node/openclaw-action-attempt-worker.test.mjs",
+    "check:openclaw:skill-publish": "node scripts/package-wiselink-openclaw-skill.mjs --check-only",
+    "package:openclaw:skill": "node scripts/package-wiselink-openclaw-skill.mjs",
     "bootstrap:g2:development-document": "node scripts/bootstrap-g2-development-document-version.mjs",
     "bootstrap:canonical:rule-set-v0-2": "node scripts/bootstrap-canonical-rule-set-v0-2.mjs",
     "test:watch": "jest --watch",

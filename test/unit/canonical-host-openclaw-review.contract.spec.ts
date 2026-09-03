@@ -7,6 +7,7 @@ import {
   parseReviewTurnTaskContract,
   REVIEW_ALLOWED_OPERATIONS,
   REVIEW_MODEL_POLICY_REF,
+  REVIEW_MINIMUM_COMPATIBLE_SKILL_VERSION,
   REVIEW_PROFILE_REF,
   REVIEW_RUNTIME_APP_ID,
   REVIEW_SKILL_POLICY_REF,
@@ -367,7 +368,7 @@ function reviewResult(
   toolVersions: Record<string, string> = {
     'wiselink-openclaw-engineering-assessment': '1.2.0',
   },
-  skillVersion: string = REVIEW_SKILL_POLICY_REF,
+  skillVersion: string = REVIEW_MINIMUM_COMPATIBLE_SKILL_VERSION,
 ) {
   return sealResultEnvelope({
     schemaVersion: 'wiselink.3_1.openclaw_result_envelope.v1',

@@ -599,7 +599,8 @@ function overallResult(
     warnings: [],
     modelVersion: 'GLM-5.3',
     promptVersion: 'overall-prompt-v1',
-    skillVersion: CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.skillVersion,
+    skillVersion:
+      CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.minimumCompatibleSkillVersion,
     toolVersions: {
       [CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.mcpServerName]:
         CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.mcpServerVersion,

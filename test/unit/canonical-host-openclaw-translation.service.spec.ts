@@ -940,7 +940,7 @@ function harnessForTranslation(selectedSourceUnits = sourceUnits()) {
           'wiselink.3_1.openclaw_translation_prompt.v1',
         skillVersion:
           overrides.skillVersion ??
-          CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.skillVersion,
+          CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.minimumCompatibleSkillVersion,
         toolVersions:
           overrides.toolVersions ??
           ({

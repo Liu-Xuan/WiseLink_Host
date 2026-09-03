@@ -12,7 +12,8 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（官方 profile 当前可选 `GLM-5.3`，Skill 不绑定具体模型）
-- Skill：`wiselink-research-and-synthesize@r09.c10`
+- Skill：`wiselink-research-and-synthesize@r09.c11`
+- Skill compatibility：`wiselink-research-and-synthesize@r09`（Host 最低接受 `r09.c10`）
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（exact 20 tools）
 - Host baseline：`6fd2655d27edc3851c745547efaf8796ad22c82c`
 
@@ -20,6 +21,11 @@ app/profile/Skill/MCP 是执行合同，不是允许模型自报的标签。具�
 `modelVersion`、`promptVersion`、`skillVersion` 和 `toolVersions`，由 validator 校验后写入完整
 ResultEnvelope。实际 `modelVersion` 缺失、为空，或只读回 `fallback`/`unknown`/策略引用而无法识别实际模型时停止
 commit；Skill 不维护模型版本 allowlist。
+
+`skillVersion` 始终记录实际安装包版本；Task 中的 `skillPolicyRef`（以及 Applicability v1 的历史字段
+`runtimePolicy.skillVersion`）表示兼容线 `wiselink-research-and-synthesize@r09`。只改 references、示例或不改变
+Task/Result/MCP 语义的 prompt 时可 Skill-only 发布新 c 修订；改变 schema、tool 参数、authority 或安全语义时
+必须升级兼容线并与 Host 协同发布。
 
 ## 不变边界
 
@@ -217,9 +223,9 @@ commit_review_turn_candidate
 驱动先从官方 OpenClaw 配置确认 `gateway.http.endpoints.chatCompletions.enabled=true`，未明确启用时在任何
 Host business begin 之前停止。完整 MCP 结果写入权限为 `0600` 的持久 checkpoint，目录限制为 `0700`：已完成
 步骤只从 checkpoint 恢复；begin/context/SourceRef/model 的结果一旦不确定即停止且不重试；只有 commit 响应
-丢失时允许恰好一次只读 status 恢复。唯一例外是有 c8 原始日志严格证明 HTTP 404 在路由层未触达模型时，c10
+丢失时允许恰好一次只读 status 恢复。唯一例外是有 c8 原始日志严格证明 HTTP 404 在路由层未触达模型时，c11
 可将旧 `model.started` 原样归档并只恢复一次 model/commit，不重放任何已完成 Host 读取。模型只收到移除
-conversation/turn/request/attempt/lease/WorkItem 控制面值的生成输入。c10 驱动允许模型在用户明确意图和 Host allowlist 内返回只读答复、CandidateEvidence、
+conversation/turn/request/attempt/lease/WorkItem 控制面值的生成输入。c11 驱动允许模型在用户明确意图和 Host allowlist 内返回只读答复、CandidateEvidence、
 affected-items preview 或完整 ReviewActionDraft proposal；候选绑定、ResultEnvelope 和 commit 仍均由驱动
 机械完成，模型永远不能确认或执行草案。
 
@@ -313,7 +319,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - `modelVersion` 是官方托管 profile/config 本轮选择后的非空、可读实际模型；不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c10`
+- `skillVersion=wiselink-research-and-synthesize@r09.c11`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致

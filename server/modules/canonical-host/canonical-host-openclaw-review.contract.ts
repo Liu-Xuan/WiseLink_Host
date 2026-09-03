@@ -9,7 +9,10 @@ import type {
 } from '@shared/api.interface';
 import { assertNoDuplicateJsonKeys } from '../unified-reader/unified-reader.utils';
 import type { OpenClawResultEnvelope } from '../action-attempt/action-attempt-envelope.types';
-import { CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY } from './canonical-host-openclaw-runtime-policy';
+import {
+  CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY,
+  isCanonicalHostOpenClawSkillVersionCompatible,
+} from './canonical-host-openclaw-runtime-policy';
 
 export const REVIEW_RUNTIME_APP_ID =
   CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.runtimeAppId;
@@ -18,7 +21,9 @@ export const REVIEW_PROFILE_REF =
 export const REVIEW_MODEL_POLICY_REF =
   CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.modelPolicyRef;
 export const REVIEW_SKILL_POLICY_REF =
-  CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.skillVersion;
+  CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.skillCompatibilityRef;
+export const REVIEW_MINIMUM_COMPATIBLE_SKILL_VERSION =
+  CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.minimumCompatibleSkillVersion;
 export const REVIEW_TOOL_POLICY_REF =
   'wiselink-openclaw-engineering-assessment@1.2.0#interactive-review-c3' as const;
 export const REVIEW_MCP_PACKAGE_VERSION =
@@ -379,7 +384,8 @@ export function parseReviewTurnCandidateContract(input: {
     result.toolVersions['wiselink-openclaw-engineering-assessment'] !==
       REVIEW_MCP_PACKAGE_VERSION ||
     !result.promptVersion.trim() ||
-    result.skillVersion !== task.executionPolicy.skillPolicyRef
+    task.executionPolicy.skillPolicyRef !== REVIEW_SKILL_POLICY_REF ||
+    !isCanonicalHostOpenClawSkillVersionCompatible(result.skillVersion)
   ) {
     fail('REVIEW_RESULT_PROVENANCE_INVALID');
   }
@@ -693,7 +699,10 @@ function validateGapResolutionDraft(
   ).map((value) => requiredRecord(value, 'REVIEW_RESULT_GAP_LEDGER_INVALID'));
   const gapsByRef = new Map<string, Record<string, unknown>>();
   for (const gap of gaps) {
-    const gapRef = requiredText(gap.gapRef, 'REVIEW_RESULT_GAP_LEDGER_INVALID');
+    const gapRef = requiredText(
+      gap.gapRef,
+      'REVIEW_RESULT_GAP_LEDGER_INVALID',
+    );
     if (gapsByRef.has(gapRef)) fail('REVIEW_RESULT_GAP_LEDGER_INVALID');
     gapsByRef.set(gapRef, gap);
   }
@@ -772,10 +781,7 @@ function validateGapResolutionDraft(
     ) {
       return false;
     }
-    const gapRef = requiredText(
-      gap.gapRef,
-      'REVIEW_RESULT_GAP_LEDGER_INVALID',
-    );
+    const gapRef = requiredText(gap.gapRef, 'REVIEW_RESULT_GAP_LEDGER_INVALID');
     const disposition = dispositionsByGap.get(gapRef);
     return disposition === undefined || disposition === 'RESOLVE_NOW';
   });

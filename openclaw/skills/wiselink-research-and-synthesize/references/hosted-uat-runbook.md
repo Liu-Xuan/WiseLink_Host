@@ -1,7 +1,34 @@
-# 官方托管 R09 c10 UAT runbook
+# 官方托管 R09 c11 发布与 UAT runbook
 
 本 runbook 只定义 Host C4+C5 accepted 后的真实验证顺序；本地实现不执行安装、发布、Session 创建、模型调用或
 云配置修改。
+
+## Publish Lite（唯一发布路径）
+
+本版本不建立通用 Skill 发布平台。只保留一条可重复、可读回的私有覆盖安装路径：
+
+1. 在干净 Git 提交上运行 `npm run check:openclaw:skill-publish`，确认 Host 与 Skill 的兼容线一致，且 Skill
+   validator、`agents/openai.yaml`、runbook 和 fixtures 中的实际包版本声明一致。
+2. 运行 `npm run package:openclaw:skill`。脚本必须先通过 Skill 自测，然后只从当前提交的
+   `openclaw/skills/wiselink-research-and-synthesize` Git 子树生成单根 ZIP、manifest 和 SHA-256 文件。
+   Skill 子树或 Host policy 有未提交变更时必须停止，不包装工作区近似内容。
+3. 只在用户明确批准发布后，才将该 ZIP 上传到妙搭私有存储。托管端下载后必须重新校验
+   manifest 中的字节数、archive SHA-256、唯一根目录、普通文件集合及每文件 SHA-256，不输出签名 URL。
+4. 首次迁移先发布一次 Host 兼容策略：`skillCompatibilityRef=wiselink-research-and-synthesize@r09`、
+   `minimumCompatibleSkillVersion=r09.c10`。它依然严格校验 Task/Result schema、MCP 1.2.0、app/profile、
+   SourceRef 和 CAS，但不再把每个兼容 c 修订与 Host release 绑定。迁移后，本次 c11 及以后不改变合同的
+   c 修订可用官方 `openclaw skills install <verified-root> --as wiselink-research-and-synthesize --force`
+   独立覆盖唯一同名 Skill。不创建第二份、不绑定模型、不手工修改 installed 文件。
+5. 安装后 fresh-read `openclaw skills list/info/check`，复跑 installed tests，并将 installed 递归文件摘要与
+   manifest 比较；安装器允许额外的 `.openclaw/source-origin.json` 必须单独报告，不当作 source 包内文件。
+6. 只用全新 OpenClaw Session 和全新 Host successor attempt 执行 smoke/UAT。历史 attempt、requestId、
+   checkpoint 不得重试、删除或改写。
+
+ZIP 的 SHA-256 只用于证明“私有存储中的实际字节”与“安装时验证的字节”相同；Git 提交无法跨越该
+上传/下载边界，因此不能用 Git SHA 替代 archive SHA。该 manifest 不是新的业务 contract、baseline 或 gate。
+
+发布分级固定为：Skill references/prompt/fixture 的兼容改进走 Skill-only；Host 业务逻辑、Connector/config 走 Host-only；
+Task/Result schema、MCP tool 形状、authority 或安全语义改变时升级 compatibility ref，走 Host + Skill 协同发布。
 
 ## 前置读回
 
@@ -12,7 +39,7 @@
 3. 模型由官方托管 profile/config 选择，当前 UI 可选 `GLM-5.3`；每个 turn 必须读回非空、可识别的实际
    `modelVersion`，智能选择/fallback 只有在实际模型仍逐 turn 可见时才可继续；
 4. 同名 Skill 只有一个，安装版本精确
-   `wiselink-research-and-synthesize@r09.c10`；
+   `wiselink-research-and-synthesize@r09.c11`；
 5. Host MCP package/version 为
    `wiselink-openclaw-engineering-assessment@1.2.0`，exact 20 tools 可见；
 6. C3 successor 已进入 current Hosted release；只凭 Git commit 不等于 deployed readback；
@@ -108,7 +135,7 @@ authenticated user。
 ### Required negative
 
 - 错 conversation/request、cross actor/tenant/workItem、closed conversation、旧 revision：not-found/conflict 且零 mutation。
-- 未 read 的 SourceRef、越界 item/adopted ref、错误 Skill/tool version、空或不可读实际模型 provenance、非官方
+- 未 read 的 SourceRef、越界 item/adopted ref、低于最低版本或跨兼容线的 Skill、错误 tool version、空或不可读实际模型 provenance、非官方
   runtime/profile、hash drift：commit 前或 Host gate 拒绝。
 - 未在本轮 Host Task 中授权的 attachment，以及独立 search/compare/reevaluate/resynthesize：明确 unsupported，
   零伪造工具调用。本轮已授权并解析的附件只通过 `read_source_refs` 读取。
@@ -117,7 +144,7 @@ authenticated user。
 - begin/context/SourceRef/model 已写 started 但没有 result checkpoint：重启后停止并报告 outcome unknown，绝不重试；
   commit 是唯一允许通过一次 status 消除响应不确定性的步骤。唯一受控例外仅限 c8 遗留的
   `REVIEW_GATEWAY_INVALID_JSON_HTTP_404`：必须由原始短日志同时证明该错误和 `FIRST_RUN_EXIT=1`、model result 与
-  commit 均不存在，并用 c10 recovery flag 把原 `model.started` 归档后恢复一次；不得删除 checkpoint 或重放
+  commit 均不存在，并用 c11 保留的受控 recovery flag 把原 `model.started` 归档后恢复一次；不得删除 checkpoint 或重放
   begin/context/SourceRef，第二次 recovery 若仍无 model result 必须停止。
 
 ## 每轮证据

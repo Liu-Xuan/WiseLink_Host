@@ -303,7 +303,7 @@ function resultEnvelope(task: OpenClawTaskEnvelope): OpenClawResultEnvelope {
       task.taskType === 'OPENCLAW_APPLICABILITY_EVALUATION'
         ? CANONICAL_HOST_OPENCLAW_APPLICABILITY_PROMPT_VERSION
         : `prompt:${task.taskType}`,
-    skillVersion: policy.skillVersion,
+    skillVersion: policy.minimumCompatibleSkillVersion,
     toolVersions: { [policy.mcpServerName]: policy.mcpServerVersion },
     runMetrics: { durationMs: 10, inputUnits: 20, outputUnits: 30 },
     errorCode: null,

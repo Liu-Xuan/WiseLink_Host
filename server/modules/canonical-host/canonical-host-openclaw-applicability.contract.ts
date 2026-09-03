@@ -26,8 +26,10 @@ export const APPLICABILITY_MODEL_POLICY_REF =
   CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.modelPolicyRef;
 export const APPLICABILITY_PROMPT_VERSION =
   CANONICAL_HOST_OPENCLAW_APPLICABILITY_PROMPT_VERSION;
+export const APPLICABILITY_SKILL_POLICY_REF =
+  CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.skillCompatibilityRef;
 export const APPLICABILITY_SKILL_VERSION =
-  CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.skillVersion;
+  CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.minimumCompatibleSkillVersion;
 
 export interface ApplicabilityTaskSourceExpression {
   expressionId: string;
@@ -130,7 +132,8 @@ export interface ApplicabilityRuntimePolicy {
   profileRef: typeof APPLICABILITY_PROFILE_REF;
   modelPolicyRef: typeof APPLICABILITY_MODEL_POLICY_REF;
   promptVersion: typeof APPLICABILITY_PROMPT_VERSION;
-  skillVersion: typeof APPLICABILITY_SKILL_VERSION;
+  /** Compatibility line; the ResultEnvelope records the actual package version. */
+  skillVersion: typeof APPLICABILITY_SKILL_POLICY_REF;
   mcpServerName: typeof APPLICABILITY_MCP_SERVER_NAME;
   mcpServerVersion: typeof APPLICABILITY_MCP_SERVER_VERSION;
 }
@@ -169,7 +172,7 @@ export function applicabilityRuntimePolicy(): ApplicabilityRuntimePolicy {
     profileRef: APPLICABILITY_PROFILE_REF,
     modelPolicyRef: APPLICABILITY_MODEL_POLICY_REF,
     promptVersion: APPLICABILITY_PROMPT_VERSION,
-    skillVersion: APPLICABILITY_SKILL_VERSION,
+    skillVersion: APPLICABILITY_SKILL_POLICY_REF,
     mcpServerName: APPLICABILITY_MCP_SERVER_NAME,
     mcpServerVersion: APPLICABILITY_MCP_SERVER_VERSION,
   };
