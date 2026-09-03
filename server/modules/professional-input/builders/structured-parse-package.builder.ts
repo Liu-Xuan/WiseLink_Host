@@ -1,4 +1,10 @@
 import {
+  buildSourceBoundRilDocumentReferences,
+  buildSourceBoundRilGeneralEvaluation,
+  buildSourceBoundRilPageChrome,
+  buildSourceBoundRilProcedure,
+} from './airbus-ril-structure.builder';
+import {
   jcsCanonicalize,
   sha256Hex,
   sha256Urn,
@@ -177,6 +183,8 @@ export function buildStructuredParsePackage(input: {
   for (const section of sectionTopology) {
     const sectionUnits = buildSectionObservationContentUnits({
       section,
+      unitSet,
+      documentCode: document.documentCode,
       moduleId,
       sourcePackageId,
       firstOrder: contentOrder,
@@ -667,6 +675,8 @@ function buildDeterministicApplicability(
 
 function buildSectionObservationContentUnits(input: {
   section: SourceBoundSectionWindow;
+  unitSet: SourceUnitSet;
+  documentCode: string;
   moduleId: string;
   sourcePackageId: string;
   firstOrder: number;
@@ -677,6 +687,8 @@ function buildSectionObservationContentUnits(input: {
 }): Array<Record<string, unknown>> {
   const {
     section,
+    unitSet,
+    documentCode,
     moduleId,
     sourcePackageId,
     firstOrder,
@@ -756,6 +768,105 @@ function buildSectionObservationContentUnits(input: {
       },
     }),
   ];
+  if (
+    section.family === 'SB' &&
+    section.scopeKey === 'retrofit_information_letter' &&
+    section.sectionKey === 'general_evaluation'
+  ) {
+    const chrome = buildSourceBoundRilPageChrome(unitSet);
+    units.push(
+      buildStructuredObservationContentUnit({
+        sourcePackageId,
+        moduleId,
+        order: firstOrder + units.length,
+        continuityKey: 'section:SB:retrofit_information_letter:page-chrome',
+        sourceRefIds: chrome.sourceRefIds,
+        sourceSegmentIds: chrome.sourceUnitIds,
+        payload: {
+          observationType: 'RIL_PAGE_CHROME',
+          value: {
+            family: section.family,
+            scopeKey: section.scopeKey,
+            ...chrome,
+          },
+          authority,
+        },
+      }),
+    );
+  }
+  const rilEvaluation = buildSourceBoundRilGeneralEvaluation(section, unitSet);
+  if (rilEvaluation) {
+    units.push(
+      buildStructuredObservationContentUnit({
+        sourcePackageId,
+        moduleId,
+        order: firstOrder + units.length,
+        continuityKey: `${sectionContinuityPrefix}:ril-general-evaluation`,
+        sourceRefIds: section.sourceRefIds,
+        sourceSegmentIds: section.bodyUnits.map((unit) => unit.sourceUnitId),
+        payload: {
+          observationType: 'RIL_GENERAL_EVALUATION',
+          value: {
+            family: section.family,
+            scopeKey: section.scopeKey,
+            sectionKey: section.sectionKey,
+            ...rilEvaluation,
+          },
+          authority,
+        },
+      }),
+    );
+  }
+  const rilReferences = buildSourceBoundRilDocumentReferences(
+    section,
+    documentCode,
+    unitSet,
+  );
+  if (rilReferences) {
+    units.push(
+      buildStructuredObservationContentUnit({
+        sourcePackageId,
+        moduleId,
+        order: firstOrder + units.length,
+        continuityKey: `${sectionContinuityPrefix}:ril-document-references`,
+        sourceRefIds: section.sourceRefIds,
+        sourceSegmentIds: section.bodyUnits.map((unit) => unit.sourceUnitId),
+        payload: {
+          observationType: 'RIL_DOCUMENT_REFERENCES',
+          value: {
+            family: section.family,
+            scopeKey: section.scopeKey,
+            sectionKey: section.sectionKey,
+            ...rilReferences,
+          },
+          authority,
+        },
+      }),
+    );
+  }
+  const rilProcedure = buildSourceBoundRilProcedure(section, unitSet);
+  if (rilProcedure) {
+    units.push(
+      buildStructuredObservationContentUnit({
+        sourcePackageId,
+        moduleId,
+        order: firstOrder + units.length,
+        continuityKey: `${sectionContinuityPrefix}:ril-procedure`,
+        sourceRefIds: section.sourceRefIds,
+        sourceSegmentIds: section.bodyUnits.map((unit) => unit.sourceUnitId),
+        payload: {
+          observationType: 'RIL_RETROFIT_PROCEDURE',
+          value: {
+            family: section.family,
+            scopeKey: section.scopeKey,
+            sectionKey: section.sectionKey,
+            ...rilProcedure,
+          },
+          authority,
+        },
+      }),
+    );
+  }
   const concurrentRequirements =
     buildSourceBoundConcurrentRequirements(section);
   if (concurrentRequirements) {

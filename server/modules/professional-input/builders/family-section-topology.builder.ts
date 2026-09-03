@@ -4,6 +4,7 @@ import type {
   SourceUnit,
   SourceUnitSet,
 } from '../pure/professional-input-pure.types';
+import { airbusRilSemanticContentUnits } from './airbus-ril-structure.builder';
 
 export type SemanticSectionBodyState = 'CONTENT' | 'NONE' | 'MISSING';
 
@@ -374,11 +375,38 @@ const HONEYWELL_SIL_PART_NUMBER_COLUMNS = [
   'software_part_number',
   'media_part_number',
 ] as const;
+const AIRBUS_RIL_SECTIONS = [
+  {
+    ordinal: '1',
+    sectionKey: 'general_evaluation',
+    title: 'general evaluation',
+  },
+  {
+    ordinal: '2',
+    sectionKey: 'document_references',
+    title: 'document references',
+  },
+  { ordinal: '3', sectionKey: 'context', title: 'context' },
+  {
+    ordinal: '4',
+    sectionKey: 'retrofit_procedure',
+    title: 'retrofit procedure',
+  },
+  { ordinal: '5', sectionKey: 'material', title: 'material' },
+  { ordinal: '5.1', sectionKey: 'availability', title: 'availability' },
+  { ordinal: '5.2', sectionKey: 'list_of_material', title: 'list of material' },
+  { ordinal: '5.3', sectionKey: 'ordering', title: 'ordering' },
+  { ordinal: '6', sectionKey: 'industry_support', title: 'industry support' },
+  { ordinal: '7', sectionKey: 'reporting', title: 'reporting' },
+] as const;
 
 export function buildFamilySectionTopology(input: {
   readonly unitSet: SourceUnitSet;
   readonly document: ProfessionalInputDocumentIdentityInput;
 }): readonly SourceBoundSectionWindow[] {
+  if (input.document.documentType === 'retrofit_information_letter') {
+    return buildAirbusRilSectionTopology(input.unitSet, input.document);
+  }
   if (input.document.documentType === 'fleet_team_digest') {
     return buildFtdSectionTopology(input.unitSet);
   }
@@ -395,6 +423,81 @@ export function buildFamilySectionTopology(input: {
     return buildHoneywellSilSectionTopology(input.unitSet, input.document);
   }
   return [];
+}
+
+function buildAirbusRilSectionTopology(
+  unitSet: SourceUnitSet,
+  document: ProfessionalInputDocumentIdentityInput,
+): readonly SourceBoundSectionWindow[] {
+  const rawContentUnits = orderedContentUnits(unitSet);
+  const contentUnits = airbusRilSemanticContentUnits(unitSet);
+  const rilMastheadProven = rawContentUnits.some(
+    (unit) => normalizeLabel(unit.text) === 'retrofitinformationletterril',
+  );
+  const airbusProven = rawContentUnits.some((unit) =>
+    /^airbus/u.test(normalizeLabel(unit.text)),
+  );
+  const documentCodeProven = rawContentUnits.some((unit) => {
+    const text = unit.text.normalize('NFKC').replace(/\s+/gu, ' ').trim();
+    return new RegExp(
+      `^RIL Reference:\\s*${escapeRegularExpression(document.documentCode)}(?:\\s|$)`,
+      'iu',
+    ).test(text);
+  });
+  if (!rilMastheadProven || !airbusProven || !documentCodeProven) return [];
+
+  const candidates = contentUnits.flatMap(
+    (unit, index): SectionAnchorCandidate[] => {
+      if (unit.expectedSemantic !== 'heading') return [];
+      const match = unit.text
+        .normalize('NFKC')
+        .trim()
+        .match(/^([1-7])\.(?:(\d)\.?)?(\S.*)$/u);
+      if (!match) return [];
+      const ordinal = match[2] ? `${match[1]}.${match[2]}` : match[1];
+      const definition = AIRBUS_RIL_SECTIONS.find(
+        (section) => section.ordinal === ordinal,
+      );
+      if (
+        !definition ||
+        normalizeLabel(match[3]) !== normalizeLabel(definition.title)
+      ) {
+        return [];
+      }
+      return [
+        {
+          unit,
+          index,
+          sectionKey: definition.sectionKey,
+          matchedHeading: unit.text.trim(),
+          nodeKind: match[2] ? 'section' : 'register',
+          scopeKey: match[2] ? 'material' : 'retrofit_information_letter',
+          ordinal,
+        },
+      ];
+    },
+  );
+  if (
+    candidates.length !== AIRBUS_RIL_SECTIONS.length ||
+    candidates.some((candidate, index) => {
+      const expected = AIRBUS_RIL_SECTIONS[index];
+      return (
+        candidate.ordinal !== expected.ordinal ||
+        candidate.sectionKey !== expected.sectionKey
+      );
+    })
+  ) {
+    return [];
+  }
+  const windows = materializeSectionWindows(
+    unitSet,
+    contentUnits,
+    candidates,
+    'SB',
+  );
+  return windows.some((window) => window.semanticBodyState !== 'CONTENT')
+    ? []
+    : windows;
 }
 
 export function buildSourceBoundConcurrentRequirements(
@@ -1993,6 +2096,10 @@ function normalizeLabel(value: string): string {
     .normalize('NFKC')
     .toLocaleLowerCase('en-US')
     .replace(/[\s\p{P}\p{S}]+/gu, '');
+}
+
+function escapeRegularExpression(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
 }
 
 function normalizeExplicitState(value: string): string {
