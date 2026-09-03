@@ -46,6 +46,7 @@ import {
   projectCanonicalStructuredContentUnit,
 } from './canonical-structured-content-projection';
 import { CanonicalEntryFacadeService } from './canonical-entry-facade.service';
+import { projectConfigurationEvidenceReevaluationStatus } from './configuration-evidence/configuration-evidence-reevaluation.state';
 import { CanonicalFailureRecordingService } from './canonical-failure-recording.service';
 import {
   deriveTranslationConsumptionAxes,
@@ -504,6 +505,8 @@ export class CanonicalHostVerticalService {
             },
       assessmentSummary: projection.assessment ?? null,
       integratedAssessmentSummary: projection.integratedAssessment ?? null,
+      configurationEvidenceReevaluation:
+        projectConfigurationEvidenceReevaluationStatus(projection),
     };
   }
 

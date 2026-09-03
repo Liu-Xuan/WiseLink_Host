@@ -43,7 +43,7 @@ const MODEL_OUTPUT_KEYS = [
   'affectedItemIds',
   'warnings',
 ];
-const REVIEW_PROMPT_VERSION = 'wiselink.3_1.review_prompt.v1.c11';
+const REVIEW_PROMPT_VERSION = 'wiselink.3_1.review_prompt.v1.c12';
 const WISELINK_HOST_MCP_CONFIG_KEYS = new Set([
   WISELINK_HOST_MCP_NAME,
   'wiselink_host_controller',

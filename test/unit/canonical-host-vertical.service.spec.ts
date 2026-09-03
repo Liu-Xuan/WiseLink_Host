@@ -359,6 +359,7 @@ describe('CanonicalHostVerticalService', () => {
       entry,
       assessmentSummary: null,
       integratedAssessmentSummary: null,
+      configurationEvidenceReevaluation: null,
       packageSummary: expect.objectContaining({
         packageId,
         contractRevision: 'frozen.2',

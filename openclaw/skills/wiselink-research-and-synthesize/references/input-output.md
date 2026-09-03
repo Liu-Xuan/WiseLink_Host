@@ -79,7 +79,7 @@ runtimePolicy.modelPolicyRef = official-hosted-profile-config
 ResultEnvelope.modelVersion = 官方托管 profile/config 本轮选择后的非空、可读实际模型
 Task.skillPolicyRef = wiselink-research-and-synthesize@r09
 ApplicabilityTask.runtimePolicy.skillVersion = wiselink-research-and-synthesize@r09  # v1 历史字段名，语义为兼容线
-ResultEnvelope.skillVersion = wiselink-research-and-synthesize@r09.c11       # 实际安装包版本
+ResultEnvelope.skillVersion = wiselink-research-and-synthesize@r09.c12       # 实际安装包版本
 toolVersions.wiselink-openclaw-engineering-assessment = 1.2.0
 promptVersion = 当前实际运行非空版本
 ```
@@ -220,6 +220,33 @@ provider 必须是 `BOEING|AIRBUS|COMAC`；官方域策略由实现内置，调�
 
 Host record 时不接收模型给出的 runtimeAppId/observedAt；Host 派生真实时间和 SearchRun ref。所有 discovery
 保持未采纳、非证据。
+
+## Configuration-evidence P0B status
+
+`get_parse_status` 可选返回唯一脱敏字段
+`configurationEvidenceReevaluation`：
+
+```text
+schemaVersion=wiselink.3_1.configuration_evidence_reevaluation_status.v1
+triggerSnapshotId
+triggerConfigurationRevision
+mode=FULL_APPLICABILITY_JOB_AID_OVERALL
+status=REQUIRED|RUNNING|WAITING_INPUT|FAILED|CONFLICT|SUCCEEDED
+nextStage=APPLICABILITY|JOB_AID|OVERALL|null
+stages{
+  applicability{status,retryNo}
+  jobAid{status,retryNo}
+  overall{status,retryNo}
+}
+servingCurrentPreserved
+candidateOnly=true
+```
+
+阶段 status 可为 `PENDING|RUNNING|COMMITTING|SUCCEEDED|WAITING_INPUT|FAILED|CONFLICT`。
+`COMMITTING` 为前向兼容读值；Host 当前可仅公开其余状态。非 `SUCCEEDED` 时
+`servingCurrentPreserved` 必须为 true。此投影不包含 staged bundle、actor/tenant、lease、凭据或
+FileService 位置。Skill 只用它选择/恢复下一阶段，不用 serving current 反推阶段。旧 Host
+缺少该字段时，仅 P0B 协调入口 fail closed，既有单 operation 不受影响。
 
 ## Overall
 

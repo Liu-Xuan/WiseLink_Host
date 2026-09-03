@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 
 import type {
   CanonicalOverallEngineeringSummary,
+  CanonicalConfigurationEvidenceReevaluationAttemptBinding,
   CanonicalIntegratedAssessmentProjection,
   CanonicalOpenClawOverallProjection,
   CanonicalSourceBoundEngineeringStatement,
@@ -48,6 +49,13 @@ import {
 import { assertLatestOverallCandidate } from './selective-overall-resynthesis';
 import { preflightCanonicalHostOpenClawResult } from './canonical-host-openclaw-runtime-policy';
 import { canonicalHostBareSha256 } from './canonical-host-sha256';
+import {
+  activeConfigurationEvidenceReevaluation,
+  configurationEvidenceShadow,
+  promoteConfigurationEvidenceReevaluation,
+  retryConfigurationEvidenceReevaluationStage,
+  withConfigurationEvidenceTerminal,
+} from './configuration-evidence/configuration-evidence-reevaluation.state';
 
 const OPENCLAW_SERVICE_USER_ID = 'service:openclaw-main';
 const CANONICAL_APP_ID = 'app_17bzc551rsg';
@@ -87,7 +95,11 @@ export class CanonicalHostOpenClawOverallService {
       workItemId,
     });
     assertWorkItemScope(scope, workItemId);
-    const workItem = await this.requiredBaseRules(workItemId, scope.tenantId);
+    const context = await this.prepareOverallExecution(
+      await this.requiredBaseRulesContext(workItemId, scope.tenantId),
+      scope.tenantId,
+    );
+    const workItem = context.execution;
     if (
       workItem.overallRegenerationRequest?.executionRevision ===
       workItem.revision
@@ -232,15 +244,27 @@ export class CanonicalHostOpenClawOverallService {
       overallAttemptFromRow(preflightRow),
       attemptRef,
     );
-    const prepared = await this.attempts.prepareCommit({
-      attemptRef,
-      tenantId: scope.tenantId,
-      workItemId: scope.workItemId,
-      principalId: scope.principalId,
-      leaseToken,
-      leaseGeneration,
-      result: preflight.result,
-    });
+    let prepared: PreparedActionAttemptCommit;
+    try {
+      prepared = await this.attempts.prepareCommit({
+        attemptRef,
+        tenantId: scope.tenantId,
+        workItemId: scope.workItemId,
+        principalId: scope.principalId,
+        leaseToken,
+        leaseGeneration,
+        result: preflight.result,
+      });
+    } catch (error) {
+      await this.recordPreparationRaceTerminal({
+        scope,
+        attemptRef,
+        preflightRow,
+        result: preflight.result,
+        error,
+      });
+      throw error;
+    }
     const attempt = overallAttemptFromRow(prepared.row);
     assertAttemptBinding(scope, attempt, attemptRef);
     const recovered = await this.recoverPreparedCommit(prepared);
@@ -249,19 +273,35 @@ export class CanonicalHostOpenClawOverallService {
       throw new Error('OPENCLAW_OVERALL_SUCCEEDED_PROJECTION_MISSING');
     }
     if (prepared.row.status !== 'COMMITTING') {
+      await this.recordReevaluationTerminal({
+        prepared,
+        status: reevaluationTerminalStatus(prepared.row.status),
+        code:
+          prepared.row.terminalReason ??
+          prepared.result.errorCode ??
+          'OPENCLAW_OVERALL_TERMINAL',
+        message: prepared.result.errorDetail,
+      });
       return this.attempts.projectTerminal(prepared.row);
     }
     if (prepared.result.status !== 'SUCCEEDED') {
       throw new Error('OPENCLAW_OVERALL_COMMITTING_RESULT_INVALID');
     }
-    const workItem = await this.requiredBaseRules(
+    const context = await this.requiredBaseRulesContext(
       prepared.row.workItemId,
       scope.tenantId,
     );
-    if (workItem.revision !== prepared.task.baseRevision) {
+    const workItem = context.execution;
+    if (context.authoritative.revision !== prepared.task.baseRevision) {
       await this.attempts.finishProjectionConflict({
         prepared,
-        currentRevision: workItem.revision,
+        currentRevision: context.authoritative.revision,
+      });
+      await this.recordReevaluationTerminal({
+        prepared,
+        status: 'CONFLICT',
+        code: 'WORK_ITEM_REVISION_CONFLICT',
+        message: null,
       });
       throw new Error('WORK_ITEM_CAS_CONFLICT');
     }
@@ -284,7 +324,17 @@ export class CanonicalHostOpenClawOverallService {
         output = requiredModelOutput(prepared.result);
         parsed = consumeOpenClawOverallSynthesisOutput(modelInput, output);
       } catch (error) {
-        return this.attempts.finishResultGateFailure(prepared, error);
+        const terminal = await this.attempts.finishResultGateFailure(
+          prepared,
+          error,
+        );
+        await this.recordReevaluationTerminal({
+          prepared,
+          status: 'FAILED',
+          code: 'OPENCLAW_OVERALL_RESULT_GATE_REJECTED',
+          message: error instanceof Error ? error.message : String(error),
+        });
+        return terminal;
       }
       const persisted = await this.artifactStore.persistAndReadback(
         new TextEncoder().encode(output),
@@ -324,7 +374,21 @@ export class CanonicalHostOpenClawOverallService {
         skillVersion: requiredText(prepared.result.skillVersion),
         toolVersions: requiredTextRecord(prepared.result.toolVersions),
       };
-      assertLatestOverallCandidate(modelInput.selectiveResynthesis, overall);
+      try {
+        assertLatestOverallCandidate(modelInput.selectiveResynthesis, overall);
+      } catch (error) {
+        const terminal = await this.attempts.finishResultGateFailure(
+          prepared,
+          error,
+        );
+        await this.recordReevaluationTerminal({
+          prepared,
+          status: 'FAILED',
+          code: 'OPENCLAW_OVERALL_LATEST_CANDIDATE_REJECTED',
+          message: error instanceof Error ? error.message : String(error),
+        });
+        return terminal;
+      }
       const integratedAssessment: CanonicalIntegratedAssessmentProjection = {
         status: 'OVERALL_CANDIDATE_READY',
         baseRules,
@@ -332,17 +396,37 @@ export class CanonicalHostOpenClawOverallService {
         overallSynthesis: overall,
         overallForAeoConfirmation: null,
       };
+      const reevaluation = activeConfigurationEvidenceReevaluation(
+        context.authoritative,
+      );
+      if (reevaluation) {
+        await Promise.all([
+          this.artifactStore.readActualBytes(
+            reevaluation.stagedBundle.applicability!.artifact,
+          ),
+          this.artifactStore.readActualBytes(
+            reevaluation.stagedBundle.baseRules!.artifact,
+          ),
+        ]);
+      }
+      const next = reevaluation
+        ? promoteConfigurationEvidenceReevaluation(
+            context.authoritative,
+            overall,
+            reevaluationAttemptBinding(prepared.row),
+          )
+        : {
+            ...workItem,
+            integratedAssessment,
+            // A new overall candidate must be confirmed before it can seed AEO.
+            // Do not keep displaying a candidate bound to an older synthesis.
+            aeo: null,
+          };
       const updated = await this.registrar.compareAndSet({
-        workItemId: workItem.workItemId,
+        workItemId: context.authoritative.workItemId,
         expectedRevision: prepared.task.baseRevision,
         syncPrimaryAttempt: false,
-        next: {
-          ...withoutRevision(workItem),
-          integratedAssessment,
-          // A new overall candidate must be confirmed before it can seed AEO.
-          // Do not keep displaying a candidate bound to an older synthesis.
-          aeo: null,
-        },
+        next: withoutRevision(next),
       });
       await this.attempts.finishProjectionSuccess(prepared);
       return {
@@ -361,10 +445,10 @@ export class CanonicalHostOpenClawOverallService {
   private async recoverPreparedCommit(
     prepared: PreparedActionAttemptCommit,
   ): Promise<Record<string, unknown> | ActionAttemptTerminalProjection | null> {
-    const workItem = await this.requiredBaseRules(
-      prepared.row.workItemId,
-      prepared.row.tenantId,
-    );
+    const workItem = await this.registrar.getTenantScopedByWorkItemId({
+      workItemId: prepared.row.workItemId,
+      tenantId: prepared.row.tenantId,
+    });
     const attempt = overallAttemptFromRow(prepared.row);
     const committed = committedOverallResult(workItem, attempt);
     if (committed) {
@@ -375,10 +459,17 @@ export class CanonicalHostOpenClawOverallService {
       prepared.row.status === 'COMMITTING' &&
       workItem.revision !== prepared.task.baseRevision
     ) {
-      return this.attempts.finishProjectionConflict({
+      const terminal = await this.attempts.finishProjectionConflict({
         prepared,
         currentRevision: workItem.revision,
       });
+      await this.recordReevaluationTerminal({
+        prepared,
+        status: 'CONFLICT',
+        code: 'WORK_ITEM_REVISION_CONFLICT',
+        message: null,
+      });
+      return terminal;
     }
     return null;
   }
@@ -499,6 +590,8 @@ export class CanonicalHostOpenClawOverallService {
           modelInput: structuredClone(packet.modelInput),
           selectedDiscoveryRefs: [...packet.selectedDiscoveryRefs],
           providerCodes: [...providerCodes],
+          configurationEvidenceReevaluation:
+            storedConfigurationEvidenceCycle(workItem),
         };
       },
     };
@@ -508,10 +601,35 @@ export class CanonicalHostOpenClawOverallService {
     workItemId: string,
     tenantId: string,
   ): Promise<CanonicalWorkItemProjection> {
-    const workItem = await this.registrar.getTenantScopedByWorkItemId({
+    return (await this.requiredBaseRulesContext(workItemId, tenantId))
+      .execution;
+  }
+
+  private async requiredBaseRulesContext(
+    workItemId: string,
+    tenantId: string,
+  ): Promise<{
+    authoritative: CanonicalWorkItemProjection;
+    execution: CanonicalWorkItemProjection;
+  }> {
+    const authoritative = await this.registrar.getTenantScopedByWorkItemId({
       workItemId,
       tenantId,
     });
+    const marker = activeConfigurationEvidenceReevaluation(authoritative);
+    if (
+      marker &&
+      (marker.stages.applicability.status !== 'SUCCEEDED' ||
+        marker.stages.dynamic.status !== 'SUCCEEDED' ||
+        !marker.stagedBundle.applicabilityInput ||
+        !marker.stagedBundle.applicability ||
+        !marker.stagedBundle.baseRules)
+    ) {
+      throw new Error('CONFIGURATION_REEVALUATION_OVERALL_STAGE_REQUIRED');
+    }
+    const workItem = marker
+      ? configurationEvidenceShadow(authoritative)
+      : authoritative;
     if (
       workItem.phase !== 'CANDIDATE_READBACK_VERIFIED' ||
       !workItem.package ||
@@ -535,7 +653,147 @@ export class CanonicalHostOpenClawOverallService {
     ) {
       throw new Error('OPENCLAW_OVERALL_DYNAMIC_N_ATTEMPT_MISMATCH');
     }
-    return workItem;
+    return { authoritative, execution: workItem };
+  }
+
+  private async prepareOverallExecution(
+    context: {
+      authoritative: CanonicalWorkItemProjection;
+      execution: CanonicalWorkItemProjection;
+    },
+    tenantId: string,
+  ): Promise<{
+    authoritative: CanonicalWorkItemProjection;
+    execution: CanonicalWorkItemProjection;
+  }> {
+    const marker = activeConfigurationEvidenceReevaluation(
+      context.authoritative,
+    );
+    if (!marker) return context;
+    if (
+      marker.stages.overall.status !== 'WAITING_INPUT' &&
+      marker.stages.overall.status !== 'FAILED' &&
+      marker.stages.overall.status !== 'CONFLICT'
+    ) {
+      return context;
+    }
+    const retry = retryConfigurationEvidenceReevaluationStage({
+      workItem: context.authoritative,
+      stage: 'OVERALL',
+    });
+    const updated = await this.registrar.compareAndSet({
+      workItemId: context.authoritative.workItemId,
+      expectedRevision: context.authoritative.revision,
+      syncPrimaryAttempt: false,
+      next: withoutRevision(retry),
+    });
+    return this.requiredBaseRulesContext(updated.workItemId, tenantId);
+  }
+
+  private async recordReevaluationTerminal(input: {
+    prepared: PreparedActionAttemptCommit;
+    status: 'WAITING_INPUT' | 'FAILED' | 'CONFLICT';
+    code: string;
+    message: string | null;
+  }): Promise<void> {
+    return this.recordReevaluationTerminalFromAttempt({
+      row: input.prepared.row,
+      task: input.prepared.task,
+      status: input.status,
+      code: input.code,
+      message: input.message,
+    });
+  }
+
+  private async recordPreparationRaceTerminal(input: {
+    scope: CanonicalVerifiedOpenClawAttemptScope;
+    attemptRef: string;
+    preflightRow: ActionAttemptRow;
+    result: OpenClawResultEnvelope;
+    error: unknown;
+  }): Promise<void> {
+    const row = await this.attempts.readScoped({
+      attemptRef: input.attemptRef,
+      tenantId: input.scope.tenantId,
+      workItemId: input.scope.workItemId,
+    });
+    const status = reevaluationTerminalStatusOrNull(row.status);
+    if (!status || !row.taskEnvelopeJson) return;
+    if (
+      row.attemptId !== input.preflightRow.attemptId ||
+      row.operationRef !== input.preflightRow.operationRef ||
+      row.workItemId !== input.preflightRow.workItemId ||
+      row.actionType !== input.preflightRow.actionType ||
+      row.tenantId !== input.preflightRow.tenantId ||
+      row.inputRevision !== input.preflightRow.inputRevision ||
+      row.baseRevision !== input.preflightRow.baseRevision ||
+      row.taskInputHash !== input.preflightRow.taskInputHash
+    ) {
+      return;
+    }
+    const task = preflightCanonicalHostOpenClawResult({
+      row,
+      result: input.result,
+    }).task;
+    assertAttemptBinding(
+      input.scope,
+      overallAttemptFromRow(row),
+      input.attemptRef,
+    );
+    await this.recordReevaluationTerminalFromAttempt({
+      row,
+      task,
+      status,
+      code:
+        row.terminalReason ??
+        (input.error instanceof Error
+          ? input.error.message
+          : String(input.error)),
+      message: null,
+    });
+  }
+
+  private async recordReevaluationTerminalFromAttempt(input: {
+    row: ActionAttemptRow;
+    task: OpenClawTaskEnvelope;
+    status: 'WAITING_INPUT' | 'FAILED' | 'CONFLICT';
+    code: string;
+    message: string | null;
+  }): Promise<void> {
+    const current = await this.registrar.getTenantScopedByWorkItemId({
+      workItemId: input.row.workItemId,
+      tenantId: input.row.tenantId,
+    });
+    const marker = activeConfigurationEvidenceReevaluation(current);
+    if (!marker) return;
+    if (
+      current.revision !== input.task.baseRevision &&
+      !matchesStoredConfigurationEvidenceCycle(input.task, marker)
+    ) {
+      return;
+    }
+    const existing = marker.stages.overall;
+    if (
+      existing.status === 'WAITING_INPUT' ||
+      existing.status === 'FAILED' ||
+      existing.status === 'CONFLICT'
+    ) {
+      return;
+    }
+    const next = withConfigurationEvidenceTerminal(
+      current,
+      'OVERALL',
+      input.status,
+      reevaluationAttemptBinding(input.row),
+      input.code,
+      input.message,
+    );
+    await this.registrar.compareAndSet({
+      workItemId: current.workItemId,
+      expectedRevision: current.revision,
+      syncPrimaryAttempt: false,
+      next: withoutRevision(next),
+    });
   }
 }
 
@@ -706,6 +964,44 @@ function overallAttemptFromRow(
   };
 }
 
+function reevaluationAttemptBinding(
+  row: ActionAttemptRow,
+): CanonicalConfigurationEvidenceReevaluationAttemptBinding {
+  if (
+    row.inputRevision === null ||
+    row.baseRevision === null ||
+    typeof row.operationRef !== 'string' ||
+    !row.operationRef.trim()
+  ) {
+    throw new Error('CONFIGURATION_REEVALUATION_ATTEMPT_BINDING_INVALID');
+  }
+  return {
+    attemptId: row.attemptId,
+    attemptRef: row.operationRef,
+    inputRevision: row.inputRevision,
+    baseRevision: row.baseRevision,
+  };
+}
+
+function reevaluationTerminalStatus(
+  status: string,
+): 'WAITING_INPUT' | 'FAILED' | 'CONFLICT' {
+  if (status === 'WAITING_INPUT') return 'WAITING_INPUT';
+  if (status === 'CONFLICT' || status === 'OBSOLETE') return 'CONFLICT';
+  return 'FAILED';
+}
+
+function reevaluationTerminalStatusOrNull(
+  status: string,
+): 'WAITING_INPUT' | 'FAILED' | 'CONFLICT' | null {
+  if (status === 'WAITING_INPUT') return 'WAITING_INPUT';
+  if (status === 'CONFLICT' || status === 'OBSOLETE') return 'CONFLICT';
+  if (status === 'FAILED' || status === 'TIMED_OUT' || status === 'CANCELLED') {
+    return 'FAILED';
+  }
+  return null;
+}
+
 function overallRequestOrigin(providerCodes: string[]): string {
   return `OPENCLAW_OVR_${providerCodes.length === 0 ? 'NONE' : providerCodes.join('')}`;
 }
@@ -753,6 +1049,11 @@ interface StoredOverallTaskInput {
   modelInput: OpenClawOverallSynthesisInput;
   selectedDiscoveryRefs: string[];
   providerCodes: string[];
+  configurationEvidenceReevaluation: {
+    triggerSnapshotId: string;
+    triggerConfigurationRevision: number;
+    overallRetryNo: number | null;
+  } | null;
 }
 
 function storedOverallInput(value: unknown): StoredOverallTaskInput {
@@ -783,11 +1084,76 @@ function storedOverallInput(value: unknown): StoredOverallTaskInput {
   ) {
     throw new Error('OPENCLAW_OVERALL_TASK_INPUT_INVALID');
   }
+  const reevaluation = record.configurationEvidenceReevaluation;
+  let configurationEvidenceReevaluation: StoredOverallTaskInput['configurationEvidenceReevaluation'] =
+    null;
+  if (reevaluation !== undefined && reevaluation !== null) {
+    const reevaluationRecord = reevaluation as Record<string, unknown>;
+    const overallRetryNo = reevaluationRecord.overallRetryNo;
+    if (
+      typeof reevaluation !== 'object' ||
+      Array.isArray(reevaluation) ||
+      typeof reevaluationRecord.triggerSnapshotId !== 'string' ||
+      !reevaluationRecord.triggerSnapshotId ||
+      !Number.isSafeInteger(reevaluationRecord.triggerConfigurationRevision) ||
+      Number(reevaluationRecord.triggerConfigurationRevision) < 1 ||
+      (overallRetryNo !== undefined &&
+        (typeof overallRetryNo !== 'number' ||
+          !Number.isSafeInteger(overallRetryNo) ||
+          overallRetryNo < 0))
+    ) {
+      throw new Error('OPENCLAW_OVERALL_TASK_REEVALUATION_BINDING_INVALID');
+    }
+    configurationEvidenceReevaluation = {
+      triggerSnapshotId: reevaluationRecord.triggerSnapshotId as string,
+      triggerConfigurationRevision: Number(
+        reevaluationRecord.triggerConfigurationRevision,
+      ),
+      overallRetryNo:
+        overallRetryNo === undefined ? null : (overallRetryNo as number),
+    };
+  }
   return {
     modelInput: modelInput as unknown as OpenClawOverallSynthesisInput,
     selectedDiscoveryRefs: [...record.selectedDiscoveryRefs] as string[],
     providerCodes: [...record.providerCodes] as string[],
+    configurationEvidenceReevaluation,
   };
+}
+
+function storedConfigurationEvidenceCycle(
+  workItem: CanonicalWorkItemProjection,
+): StoredOverallTaskInput['configurationEvidenceReevaluation'] {
+  const marker = activeConfigurationEvidenceReevaluation(workItem);
+  return marker
+    ? {
+        triggerSnapshotId: marker.triggerSnapshotId,
+        triggerConfigurationRevision: marker.triggerConfigurationRevision,
+        overallRetryNo: marker.stages.overall.retryNo,
+      }
+    : null;
+}
+
+function matchesStoredConfigurationEvidenceCycle(
+  task: OpenClawTaskEnvelope,
+  marker: NonNullable<
+    ReturnType<typeof activeConfigurationEvidenceReevaluation>
+  >,
+): boolean {
+  const binding = storedOverallInput(
+    task.modelInput,
+  ).configurationEvidenceReevaluation;
+  return (
+    binding !== null &&
+    binding.triggerSnapshotId === marker.triggerSnapshotId &&
+    binding.triggerConfigurationRevision ===
+      marker.triggerConfigurationRevision &&
+    binding.overallRetryNo !== null &&
+    binding.overallRetryNo === marker.stages.overall.retryNo &&
+    marker.stages.dynamic.status === 'SUCCEEDED' &&
+    marker.stages.dynamic.committedWorkItemRevision !== null &&
+    marker.stages.dynamic.committedWorkItemRevision <= task.baseRevision
+  );
 }
 
 function requiredModelOutput(result: OpenClawResultEnvelope): string {
@@ -937,9 +1303,7 @@ function overallEngineeringSummary(
 ): CanonicalOverallEngineeringSummary {
   const summary = requiredObject(value);
   const applicability = requiredObject(summary.applicability);
-  if (
-    summary.schemaVersion !== 'wiselink.3_1.overall_engineering_summary.v1'
-  ) {
+  if (summary.schemaVersion !== 'wiselink.3_1.overall_engineering_summary.v1') {
     throw new Error('OPENCLAW_OVERALL_ENGINEERING_SUMMARY_VERSION_INVALID');
   }
   return {

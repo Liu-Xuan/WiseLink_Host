@@ -253,6 +253,62 @@ describe('Host configuration-evidence persistence product chain', () => {
     expect(fixture.port.calls).toHaveLength(sourceCallsBeforeReplay);
   });
 
+  it('accepts adoption readback after a later reevaluation stage revision', async () => {
+    const fixture = target({ fleetAsset: realB2035Asset() });
+    fixture.port.resultFactory = (query: GetInstallationEventsQuery) =>
+      controlledResult(
+        query,
+        [equipmentRecord('INSTALL', 'COMPONENT:AIMS2:P1', 'P1', 1)],
+        'SOURCE-STAGE-REVISION-1',
+      );
+    const body = refreshBody('REQ-LATER-STAGE-REVISION', 7);
+    const first = await queryAndAdopt(
+      fixture,
+      WORK_ITEM_ID,
+      body,
+      {} as Request,
+    );
+    const staged = fixture.workItem();
+    const marker = staged.configurationEvidenceReevaluation;
+    if (
+      !marker ||
+      marker.schemaVersion !==
+        'wiselink.3_1.configuration_evidence_reevaluation.v2'
+    ) {
+      throw new Error('REEVALUATION_V2_REQUIRED');
+    }
+    staged.revision += 1;
+    staged.configurationEvidenceReevaluation = {
+      ...marker,
+      status: 'RUNNING',
+      stages: {
+        ...marker.stages,
+        applicability: {
+          ...marker.stages.applicability,
+          status: 'RUNNING',
+        },
+      },
+    };
+    fixture.replaceWorkItem(staged);
+
+    const replay = await fixture.service.adopt(
+      WORK_ITEM_ID,
+      first.candidateEvidenceRef,
+      { expectedRevision: 7 },
+      {} as Request,
+    );
+
+    expect(replay).toMatchObject({
+      replayed: true,
+      workItemRevision: 9,
+    });
+    expect(fixture.workItem().configurationEvidenceReevaluation).toMatchObject({
+      status: 'RUNNING',
+      adoptionWorkItemRevision: 8,
+      triggerSnapshotId: first.persisted.summary.snapshotId,
+    });
+  });
+
   it('marks a dependency in older history even when the current head queried an unrelated target', async () => {
     const fixture = target({ fleetAsset: realB2035Asset() });
     fixture.port.resultFactory = (query: GetInstallationEventsQuery) =>
@@ -541,7 +597,11 @@ describe('Host configuration-evidence persistence product chain', () => {
   });
 
   it('keeps a successful query candidate-only, then adopts it with one CAS', async () => {
-    const fixture = target({ fleetAsset: realB2035Asset() });
+    const servingBefore = servingProjectionSentinels();
+    const fixture = target({
+      fleetAsset: realB2035Asset(),
+      workItemOverrides: servingBefore,
+    });
     fixture.port.resultFactory = (query: GetInstallationEventsQuery) =>
       controlledResult(
         query,
@@ -602,19 +662,90 @@ describe('Host configuration-evidence persistence product chain', () => {
     });
     expect(fixture.workItem().revision).toBe(8);
     expect(fixture.workItem().configurationEvidenceReevaluation).toEqual({
-      schemaVersion: 'wiselink.3_1.configuration_evidence_reevaluation.v1',
+      schemaVersion: 'wiselink.3_1.configuration_evidence_reevaluation.v2',
       trigger: 'CONFIGURATION_EVIDENCE_ADOPTED',
       triggerSnapshotId: adopted.persisted.summary.snapshotId,
       triggerConfigurationRevision: 1,
       adoptionWorkItemRevision: 8,
       mode: 'FULL_APPLICABILITY_JOB_AID_OVERALL',
       status: 'REQUIRED',
-      applicability: 'STALE_OR_NOT_AVAILABLE',
-      jobAid: 'FULL_RERUN_REQUIRED',
-      overall: 'STALE_OR_NOT_AVAILABLE',
+      stages: {
+        applicability: {
+          status: 'PENDING',
+          retryNo: 0,
+          attempt: null,
+          committedWorkItemRevision: null,
+          terminal: null,
+        },
+        dynamic: {
+          status: 'PENDING',
+          retryNo: 0,
+          attempt: null,
+          committedWorkItemRevision: null,
+          terminal: null,
+        },
+        overall: {
+          status: 'PENDING',
+          retryNo: 0,
+          attempt: null,
+          committedWorkItemRevision: null,
+          terminal: null,
+        },
+      },
+      stagedBundle: {
+        applicabilityInput: null,
+        applicability: null,
+        baseRules: null,
+      },
+      promotedWorkItemRevision: null,
       candidateOnly: true,
     });
+    expect({
+      applicabilityInput: fixture.workItem().applicabilityInput,
+      applicability: fixture.workItem().applicability,
+      assessment: fixture.workItem().assessment,
+      integratedAssessment: fixture.workItem().integratedAssessment,
+      aeo: fixture.workItem().aeo,
+    }).toEqual(servingBefore);
     expect(fixture.store.recordCount()).toBe(1);
+  });
+
+  it('rejects an adopted-candidate replay whose immutable trigger binding was changed', async () => {
+    const fixture = target({ fleetAsset: realB2035Asset() });
+    fixture.port.resultFactory = (query: GetInstallationEventsQuery) =>
+      controlledResult(
+        query,
+        [equipmentRecord('INSTALL', 'COMPONENT:AIMS2:P1', 'P1', 1)],
+        'SOURCE-TRIGGER-BINDING-REV-1',
+      );
+    const body = refreshBody('REQ-TRIGGER-BINDING', 7);
+    const first = await queryAndAdopt(
+      fixture,
+      WORK_ITEM_ID,
+      body,
+      {} as Request,
+    );
+    const tampered = fixture.workItem();
+    if (!tampered.configurationEvidenceReevaluation) {
+      throw new Error('REEVALUATION_REQUIRED');
+    }
+    tampered.configurationEvidenceReevaluation = {
+      ...tampered.configurationEvidenceReevaluation,
+      triggerSnapshotId: 'CONFIGURATION-SNAPSHOT:TAMPERED',
+    };
+    fixture.replaceWorkItem(tampered);
+
+    await expect(
+      fixture.service.adopt(
+        WORK_ITEM_ID,
+        first.candidateEvidenceRef,
+        { expectedRevision: 7 },
+        {} as Request,
+      ),
+    ).rejects.toMatchObject({
+      code: 'CONFIGURATION_EVIDENCE_CURRENT_READBACK_INVALID',
+      statusCode: 503,
+    });
   });
 
   it('does not turn an authoritative no-record response into a false fact', async () => {
@@ -1025,8 +1156,12 @@ function target(input: {
   denyAccess?: boolean;
   sourceConfigured?: boolean;
   gapOverrides?: Partial<CanonicalAssessmentGapProjection>;
+  workItemOverrides?: Partial<CanonicalWorkItemProjection>;
 }) {
-  let current = workItem();
+  let current: CanonicalWorkItemProjection = {
+    ...workItem(),
+    ...structuredClone(input.workItemOverrides ?? {}),
+  };
   const port = new ControlledInstallationEventsPort(
     input.sourceConfigured ?? true,
   );
@@ -1133,6 +1268,55 @@ function target(input: {
     engineerReview,
     objectAccess,
     workItem: () => structuredClone(current),
+    replaceWorkItem: (value: CanonicalWorkItemProjection) => {
+      current = structuredClone(value);
+    },
+  };
+}
+
+function servingProjectionSentinels(): Pick<
+  CanonicalWorkItemProjection,
+  | 'applicabilityInput'
+  | 'applicability'
+  | 'assessment'
+  | 'integratedAssessment'
+  | 'aeo'
+> {
+  return {
+    applicabilityInput: {
+      schemaVersion: 'existing-applicability-input',
+      currentness: 'CURRENT',
+      nested: { marker: 'preserve-applicability-input' },
+    } as never,
+    applicability: {
+      schemaVersion: 'existing-applicability',
+      status: 'SUCCEEDED',
+      currentness: 'CURRENT',
+      staleReason: null,
+      nested: { marker: 'preserve-applicability' },
+    } as never,
+    assessment: {
+      schemaVersion: 'existing-assessment',
+      previousOverallStale: false,
+      staleReason: null,
+      nested: { marker: 'preserve-assessment' },
+    } as never,
+    integratedAssessment: {
+      schemaVersion: 'existing-integrated-assessment',
+      status: 'CURRENT',
+      overallSynthesis: {
+        status: 'CURRENT',
+        staleReason: null,
+        marker: 'preserve-overall-synthesis',
+      },
+      overallForAeoConfirmation: {
+        marker: 'preserve-overall-for-aeo',
+      },
+    } as never,
+    aeo: {
+      schemaVersion: 'existing-aeo',
+      marker: 'preserve-aeo',
+    } as never,
   };
 }
 

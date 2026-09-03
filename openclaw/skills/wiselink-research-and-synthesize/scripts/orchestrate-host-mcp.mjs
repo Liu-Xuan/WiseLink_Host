@@ -71,6 +71,38 @@ export const HOST_MCP_TOOLS = [
   'cancel_action_attempt',
 ];
 
+export const CONFIGURATION_EVIDENCE_REEVALUATION_STATUS_SCHEMA =
+  'wiselink.3_1.configuration_evidence_reevaluation_status.v1';
+
+const CONFIGURATION_EVIDENCE_REEVALUATION_STAGES = [
+  'APPLICABILITY',
+  'JOB_AID',
+  'OVERALL',
+];
+const CONFIGURATION_EVIDENCE_REEVALUATION_ACTIVE_STATUSES = new Set([
+  'REQUIRED',
+  'RUNNING',
+]);
+const CONFIGURATION_EVIDENCE_REEVALUATION_TERMINAL_STATUSES = new Set([
+  'WAITING_INPUT',
+  'FAILED',
+  'CONFLICT',
+]);
+const CONFIGURATION_EVIDENCE_REEVALUATION_STATUSES = new Set([
+  ...CONFIGURATION_EVIDENCE_REEVALUATION_ACTIVE_STATUSES,
+  ...CONFIGURATION_EVIDENCE_REEVALUATION_TERMINAL_STATUSES,
+  'SUCCEEDED',
+]);
+const CONFIGURATION_EVIDENCE_REEVALUATION_STAGE_STATUSES = new Set([
+  'PENDING',
+  'RUNNING',
+  'COMMITTING',
+  'SUCCEEDED',
+  'WAITING_INPUT',
+  'FAILED',
+  'CONFLICT',
+]);
+
 const DYNAMIC_COMMIT_STATUSES = new Set([
   'BASE_RULE_CANDIDATE_READY',
   'OVERALL_CANDIDATE_STALE',
@@ -100,6 +132,337 @@ export async function runInitialAnalysis(input) {
     default:
       throw new Error('INITIAL_ANALYSIS_OPERATION_UNSUPPORTED');
   }
+}
+
+/**
+ * Coordinate the Host-owned P0B full reevaluation after configuration
+ * evidence adoption. The Host status is the only stage authority: serving
+ * applicability/baseRules/overall may intentionally remain unchanged until
+ * the final Host CAS, and the Skill never asks to see the staged bundle.
+ */
+export async function runConfigurationEvidenceReevaluation(input) {
+  const workItemId = requiredText(
+    input?.workItemId,
+    'HOST_MCP_WORKITEM_REQUIRED',
+  );
+  if (typeof input?.callTool !== 'function') {
+    throw new Error('HOST_MCP_CALLBACK_REQUIRED');
+  }
+  const operations = [];
+  const initialStatusResult = await input.callTool('get_parse_status', {
+    workItemId,
+  });
+  let reevaluation = parseConfigurationEvidenceReevaluationStatus(
+    initialStatusResult,
+    workItemId,
+  );
+  const initialReevaluation = structuredClone(reevaluation);
+  const triggerBinding = configurationEvidenceTriggerBinding(reevaluation);
+
+  while (operations.length < CONFIGURATION_EVIDENCE_REEVALUATION_STAGES.length) {
+    if (reevaluation.status === 'SUCCEEDED') {
+      return completedConfigurationEvidenceReevaluation({
+        initialReevaluation,
+        operations,
+        reevaluation,
+      });
+    }
+    if (
+      CONFIGURATION_EVIDENCE_REEVALUATION_TERMINAL_STATUSES.has(
+        reevaluation.status,
+      )
+    ) {
+      return stoppedConfigurationEvidenceReevaluation({
+        initialReevaluation,
+        operations,
+        reevaluation,
+      });
+    }
+    if (
+      !CONFIGURATION_EVIDENCE_REEVALUATION_ACTIVE_STATUSES.has(
+        reevaluation.status,
+      ) ||
+      reevaluation.nextStage === null
+    ) {
+      throw new Error('HOST_P0B_STATUS_INVALID');
+    }
+
+    const stage = reevaluation.nextStage;
+    const operationResult = await runConfigurationEvidenceStage({
+      ...input,
+      workItemId,
+      reevaluation,
+      stage,
+    });
+    operations.push({ stage, result: operationResult });
+
+    const freshStatusResult = await input.callTool('get_parse_status', {
+      workItemId,
+    });
+    const fresh = parseConfigurationEvidenceReevaluationStatus(
+      freshStatusResult,
+      workItemId,
+    );
+    assertConfigurationEvidenceTriggerBinding(fresh, triggerBinding);
+    reevaluation = fresh;
+
+    if (
+      CONFIGURATION_EVIDENCE_REEVALUATION_TERMINAL_STATUSES.has(
+        reevaluation.status,
+      )
+    ) {
+      return stoppedConfigurationEvidenceReevaluation({
+        initialReevaluation,
+        operations,
+        reevaluation,
+      });
+    }
+    if (
+      operationResult?.outcome === 'COMMITTING_RECOVERY_READ_ONLY' ||
+      operationResult?.outcome ===
+        'COMMIT_RESPONSE_LOSS_RECOVERED_READ_ONLY'
+    ) {
+      return {
+        ok: false,
+        mode: 'CONFIGURATION_EVIDENCE_REEVALUATION',
+        outcome: operationResult.outcome,
+        initialReevaluation: structuredClone(initialReevaluation),
+        operations: structuredClone(operations),
+        reevaluation: structuredClone(reevaluation),
+      };
+    }
+    if (reevaluation.status === 'SUCCEEDED') {
+      return completedConfigurationEvidenceReevaluation({
+        initialReevaluation,
+        operations,
+        reevaluation,
+      });
+    }
+    assertConfigurationEvidenceStageDidNotRegress(stage, fresh);
+  }
+
+  if (
+    CONFIGURATION_EVIDENCE_REEVALUATION_TERMINAL_STATUSES.has(
+      reevaluation.status,
+    )
+  ) {
+    return stoppedConfigurationEvidenceReevaluation({
+      initialReevaluation,
+      operations,
+      reevaluation,
+    });
+  }
+  if (reevaluation.status !== 'SUCCEEDED') {
+    throw new Error('HOST_P0B_REEVALUATION_DID_NOT_COMPLETE');
+  }
+  return completedConfigurationEvidenceReevaluation({
+    initialReevaluation,
+    operations,
+    reevaluation,
+  });
+}
+
+export function parseConfigurationEvidenceReevaluationStatus(
+  statusResult,
+  expectedWorkItemId,
+) {
+  if (!isRecord(statusResult)) throw new Error('HOST_P0B_STATUS_INVALID');
+  if (
+    expectedWorkItemId !== undefined &&
+    statusResult.entry?.workItemId !== expectedWorkItemId
+  ) {
+    throw new Error('HOST_P0B_WORKITEM_BINDING_MISMATCH');
+  }
+  const value = statusResult.configurationEvidenceReevaluation;
+  if (value === undefined || value === null) {
+    throw new Error('HOST_P0B_STATUS_UNAVAILABLE');
+  }
+  if (
+    !isRecord(value) ||
+    value.schemaVersion !==
+      CONFIGURATION_EVIDENCE_REEVALUATION_STATUS_SCHEMA ||
+    value.mode !== 'FULL_APPLICABILITY_JOB_AID_OVERALL' ||
+    !CONFIGURATION_EVIDENCE_REEVALUATION_STATUSES.has(value.status) ||
+    typeof value.servingCurrentPreserved !== 'boolean' ||
+    value.candidateOnly !== true
+  ) {
+    throw new Error('HOST_P0B_STATUS_INVALID');
+  }
+  const triggerSnapshotId = requiredText(
+    value.triggerSnapshotId,
+    'HOST_P0B_TRIGGER_SNAPSHOT_REQUIRED',
+  );
+  if (
+    !Number.isSafeInteger(value.triggerConfigurationRevision) ||
+    value.triggerConfigurationRevision < 1
+  ) {
+    throw new Error('HOST_P0B_TRIGGER_REVISION_INVALID');
+  }
+  if (!Object.hasOwn(value, 'nextStage')) {
+    throw new Error('HOST_P0B_NEXT_STAGE_REQUIRED');
+  }
+  const nextStage = value.nextStage;
+  if (
+    nextStage !== null &&
+    !CONFIGURATION_EVIDENCE_REEVALUATION_STAGES.includes(nextStage)
+  ) {
+    throw new Error('HOST_P0B_NEXT_STAGE_INVALID');
+  }
+  if (
+    CONFIGURATION_EVIDENCE_REEVALUATION_ACTIVE_STATUSES.has(value.status) &&
+    nextStage === null
+  ) {
+    throw new Error('HOST_P0B_NEXT_STAGE_REQUIRED');
+  }
+  if (value.status === 'SUCCEEDED' && nextStage !== null) {
+    throw new Error('HOST_P0B_SUCCEEDED_NEXT_STAGE_INVALID');
+  }
+  if (value.status !== 'SUCCEEDED' && value.servingCurrentPreserved !== true) {
+    throw new Error('HOST_P0B_SERVING_CURRENT_NOT_PRESERVED');
+  }
+
+  const stages = parseConfigurationEvidenceStages(value.stages);
+  assertConfigurationEvidenceStageOrder(value.status, nextStage, stages);
+  return {
+    schemaVersion: CONFIGURATION_EVIDENCE_REEVALUATION_STATUS_SCHEMA,
+    triggerSnapshotId,
+    triggerConfigurationRevision: value.triggerConfigurationRevision,
+    mode: 'FULL_APPLICABILITY_JOB_AID_OVERALL',
+    status: value.status,
+    nextStage,
+    stages,
+    servingCurrentPreserved: value.servingCurrentPreserved,
+    candidateOnly: true,
+  };
+}
+
+async function runConfigurationEvidenceStage(input) {
+  switch (input.stage) {
+    case 'APPLICABILITY':
+      return runApplicabilityEvaluation({
+        applicabilityContextRef: input.applicabilityContextRef,
+        requestId: input.applicabilityRequestId,
+        expectedWorkItemId: input.workItemId,
+        callTool: input.callTool,
+        extractApplicability: input.extractApplicability,
+        runtimeProvenance: input.runtimeProvenance,
+      });
+    case 'JOB_AID':
+      return runDynamicEvaluation({
+        workItemId: input.workItemId,
+        callTool: input.callTool,
+        evaluateDynamicRules: input.evaluateDynamicRules,
+      });
+    case 'OVERALL':
+      return runOverallSynthesis({
+        workItemId: input.workItemId,
+        providers: [],
+        callTool: input.callTool,
+        synthesizeOverall: input.synthesizeOverall,
+        configurationEvidenceReevaluation: input.reevaluation,
+      });
+    default:
+      throw new Error('HOST_P0B_NEXT_STAGE_INVALID');
+  }
+}
+
+function parseConfigurationEvidenceStages(value) {
+  if (!isRecord(value)) throw new Error('HOST_P0B_STAGES_INVALID');
+  return {
+    applicability: parseConfigurationEvidenceStage(
+      value.applicability,
+      'APPLICABILITY',
+    ),
+    jobAid: parseConfigurationEvidenceStage(value.jobAid, 'JOB_AID'),
+    overall: parseConfigurationEvidenceStage(value.overall, 'OVERALL'),
+  };
+}
+
+function parseConfigurationEvidenceStage(value, name) {
+  if (
+    !isRecord(value) ||
+    !CONFIGURATION_EVIDENCE_REEVALUATION_STAGE_STATUSES.has(value.status) ||
+    !Number.isSafeInteger(value.retryNo) ||
+    value.retryNo < 0
+  ) {
+    throw new Error(`HOST_P0B_${name}_STAGE_INVALID`);
+  }
+  return { status: value.status, retryNo: value.retryNo };
+}
+
+function assertConfigurationEvidenceStageOrder(status, nextStage, stages) {
+  if (nextStage === 'JOB_AID' && stages.applicability.status !== 'SUCCEEDED') {
+    throw new Error('HOST_P0B_APPLICABILITY_NOT_SUCCEEDED');
+  }
+  if (
+    nextStage === 'OVERALL' &&
+    (stages.applicability.status !== 'SUCCEEDED' ||
+      stages.jobAid.status !== 'SUCCEEDED')
+  ) {
+    throw new Error('HOST_P0B_JOB_AID_NOT_SUCCEEDED');
+  }
+  if (
+    status === 'SUCCEEDED' &&
+    Object.values(stages).some((stage) => stage.status !== 'SUCCEEDED')
+  ) {
+    throw new Error('HOST_P0B_SUCCEEDED_STAGES_INVALID');
+  }
+}
+
+function configurationEvidenceTriggerBinding(value) {
+  return {
+    triggerSnapshotId: value.triggerSnapshotId,
+    triggerConfigurationRevision: value.triggerConfigurationRevision,
+  };
+}
+
+function assertConfigurationEvidenceTriggerBinding(value, expected) {
+  if (
+    value.triggerSnapshotId !== expected.triggerSnapshotId ||
+    value.triggerConfigurationRevision !==
+      expected.triggerConfigurationRevision
+  ) {
+    throw new Error('HOST_P0B_TRIGGER_BINDING_CHANGED');
+  }
+}
+
+function assertConfigurationEvidenceStageDidNotRegress(completedStage, fresh) {
+  if (
+    fresh.status === 'SUCCEEDED' ||
+    CONFIGURATION_EVIDENCE_REEVALUATION_TERMINAL_STATUSES.has(fresh.status)
+  ) {
+    return;
+  }
+  const completedIndex =
+    CONFIGURATION_EVIDENCE_REEVALUATION_STAGES.indexOf(completedStage);
+  const nextIndex = CONFIGURATION_EVIDENCE_REEVALUATION_STAGES.indexOf(
+    fresh.nextStage,
+  );
+  if (nextIndex <= completedIndex) {
+    throw new Error('HOST_P0B_STAGE_DID_NOT_ADVANCE');
+  }
+}
+
+function completedConfigurationEvidenceReevaluation(input) {
+  return {
+    ok: true,
+    mode: 'CONFIGURATION_EVIDENCE_REEVALUATION',
+    outcome: 'SUCCEEDED',
+    initialReevaluation: structuredClone(input.initialReevaluation),
+    operations: structuredClone(input.operations),
+    reevaluation: structuredClone(input.reevaluation),
+  };
+}
+
+function stoppedConfigurationEvidenceReevaluation(input) {
+  return {
+    ok: false,
+    mode: 'CONFIGURATION_EVIDENCE_REEVALUATION',
+    outcome: input.reevaluation.status,
+    initialReevaluation: structuredClone(input.initialReevaluation),
+    operations: structuredClone(input.operations),
+    reevaluation: structuredClone(input.reevaluation),
+  };
 }
 
 export async function runTranslation({ workItemId, callTool, translate }) {
@@ -255,6 +618,7 @@ export async function commitTranslationResultParts({
 export async function runApplicabilityEvaluation({
   applicabilityContextRef,
   requestId,
+  expectedWorkItemId,
   callTool,
   extractApplicability,
   runtimeProvenance,
@@ -272,6 +636,12 @@ export async function runApplicabilityEvaluation({
     requestId,
   });
   assertBegin(begin, 'OPENCLAW_APPLICABILITY_EVALUATION');
+  if (
+    expectedWorkItemId !== undefined &&
+    begin.task.workItemId !== expectedWorkItemId
+  ) {
+    throw new Error('HOST_MCP_APPLICABILITY_WORKITEM_BINDING_MISMATCH');
+  }
   validatePayload('applicability-input', begin.modelInput);
   const workItemId = begin.task.workItemId;
   const before = await callTool('get_parse_status', { workItemId });
@@ -342,7 +712,9 @@ export async function runApplicabilityEvaluation({
     mode: 'INITIAL_ANALYSIS',
     operation: 'EXTRACT_APPLICABILITY',
     outcome:
-      result.status === 'WAITING_INPUT' ? 'WAITING_INPUT' : 'CANDIDATE_ONLY',
+      committed.status === 'WAITING_INPUT' || result.status === 'WAITING_INPUT'
+        ? 'WAITING_INPUT'
+        : 'CANDIDATE_ONLY',
     before,
     committed,
     after,
@@ -437,11 +809,29 @@ export async function runOverallSynthesis({
   providers = [],
   callTool,
   synthesizeOverall,
+  configurationEvidenceReevaluation,
 }) {
   assertCallbacks(workItemId, callTool, synthesizeOverall);
   const selectedProviders = validateProviders(providers);
   const before = await callTool('get_parse_status', { workItemId });
-  assertOverallSynthesisReady(before);
+  if (configurationEvidenceReevaluation === undefined) {
+    assertOverallSynthesisReady(before);
+  } else {
+    const freshReevaluation =
+      parseConfigurationEvidenceReevaluationStatus(before, workItemId);
+    assertConfigurationEvidenceTriggerBinding(
+      freshReevaluation,
+      configurationEvidenceTriggerBinding(configurationEvidenceReevaluation),
+    );
+    if (
+      !CONFIGURATION_EVIDENCE_REEVALUATION_ACTIVE_STATUSES.has(
+        freshReevaluation.status,
+      ) ||
+      freshReevaluation.nextStage !== 'OVERALL'
+    ) {
+      throw new Error('HOST_P0B_OVERALL_STAGE_NOT_READY');
+    }
+  }
   const begin = await callTool('begin_overall_synthesis', {
     workItemId,
     providers: selectedProviders,
@@ -1273,17 +1663,25 @@ function assertTranslationCommit(value, workItemId) {
 }
 
 function assertApplicabilityCommit(value, begin, result) {
-  if (result.status === 'WAITING_INPUT') {
-    if (
-      !value ||
-      typeof value !== 'object' ||
-      Array.isArray(value) ||
-      value.attemptRef !== begin.attemptRef ||
-      value.status !== 'WAITING_INPUT'
-    ) {
+  if (
+    value &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    value.status === 'WAITING_INPUT'
+  ) {
+    const terminalAttempt = value.attemptRef === begin.attemptRef;
+    const candidateProjection =
+      value.workItemId === begin.task.workItemId &&
+      Number.isSafeInteger(value.workItemRevision) &&
+      value.applicability?.status === 'WAITING_INPUT' &&
+      value.applicability?.actionAttemptId === begin.task.actionAttemptId;
+    if (!terminalAttempt && !candidateProjection) {
       throw new Error('HOST_MCP_APPLICABILITY_WAITING_RESULT_INVALID');
     }
     return;
+  }
+  if (result.status === 'WAITING_INPUT') {
+    throw new Error('HOST_MCP_APPLICABILITY_WAITING_RESULT_INVALID');
   }
   if (
     !value ||

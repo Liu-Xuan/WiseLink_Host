@@ -12,7 +12,7 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（官方 profile 当前可选 `GLM-5.3`，Skill 不绑定具体模型）
-- Skill：`wiselink-research-and-synthesize@r09.c11`
+- Skill：`wiselink-research-and-synthesize@r09.c12`
 - Skill compatibility：`wiselink-research-and-synthesize@r09`（Host 最低接受 `r09.c10`）
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（exact 20 tools）
 - Host baseline：`6fd2655d27edc3851c745547efaf8796ad22c82c`
@@ -207,6 +207,34 @@ CAS；Skill 不声称这些步骤由模型完成。8. commit 响应未知时只�
   输入才消费它。
 - `resume_overall_synthesis` 只恢复既有 RUNNING attempt；不新建 attempt、不重跑 dynamic/discovery。
 
+### P0B：配置证据采纳后全量重算
+
+只有 Host `get_parse_status` 返回唯一脱敏字段
+`configurationEvidenceReevaluation` 时，才允许调用
+`runConfigurationEvidenceReevaluation`。旧 Host 没有该字段时，新入口必须以
+`HOST_P0B_STATUS_UNAVAILABLE` 停止；原有单 operation `runInitialAnalysis` 保持兼容。
+
+协调器仅复用 exact20 中的现有工具，并严格以 Host `nextStage` 为准：
+
+```text
+get_parse_status
+→ Applicability 既有 begin/commit
+→ get_parse_status
+→ Dynamic N/N 既有 begin/commit
+→ get_parse_status
+→ Overall 既有 begin/commit
+→ get_parse_status
+```
+
+- `nextStage=APPLICABILITY|JOB_AID|OVERALL|null`；已成功阶段必须跳过，不重放模型或 commit。
+- 每阶段后 fresh-read 必须保持同一 `triggerSnapshotId + triggerConfigurationRevision`，不得回退阶段。
+- `WAITING_INPUT` / `FAILED` / `CONFLICT` 只返回 Host 终态，不在同一运行自动重试。重试必须由 Host
+  状态与新 ActionAttempt 授权。
+- 协调器不读、不要求、不推断 Host 内部 staged bundle，也不根据 serving
+  Applicability/Job-Aid/Overall 判断阶段。旧 serving current 可在最终 Host CAS 前保持不变。
+- Overall 的本地 preflight 在 P0B 模式下只核对 Host 脱敏状态已进入 `OVERALL`；真正的 staged
+  Applicability/baseRules 绑定、ResultGate、actual-byte readback 与最终单次 CAS 仍全由 Host 执行。
+
 ## Mode 2：INTERACTIVE_REVIEW
 
 当前精确 C3 复核合同仍只使用以下五个工具：
@@ -223,9 +251,9 @@ commit_review_turn_candidate
 驱动先从官方 OpenClaw 配置确认 `gateway.http.endpoints.chatCompletions.enabled=true`，未明确启用时在任何
 Host business begin 之前停止。完整 MCP 结果写入权限为 `0600` 的持久 checkpoint，目录限制为 `0700`：已完成
 步骤只从 checkpoint 恢复；begin/context/SourceRef/model 的结果一旦不确定即停止且不重试；只有 commit 响应
-丢失时允许恰好一次只读 status 恢复。唯一例外是有 c8 原始日志严格证明 HTTP 404 在路由层未触达模型时，c11
+丢失时允许恰好一次只读 status 恢复。唯一例外是有 c8 原始日志严格证明 HTTP 404 在路由层未触达模型时，c12
 可将旧 `model.started` 原样归档并只恢复一次 model/commit，不重放任何已完成 Host 读取。模型只收到移除
-conversation/turn/request/attempt/lease/WorkItem 控制面值的生成输入。c11 驱动允许模型在用户明确意图和 Host allowlist 内返回只读答复、CandidateEvidence、
+conversation/turn/request/attempt/lease/WorkItem 控制面值的生成输入。c12 驱动允许模型在用户明确意图和 Host allowlist 内返回只读答复、CandidateEvidence、
 affected-items preview 或完整 ReviewActionDraft proposal；候选绑定、ResultEnvelope 和 commit 仍均由驱动
 机械完成，模型永远不能确认或执行草案。
 
@@ -322,7 +350,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - `modelVersion` 是官方托管 profile/config 本轮选择后的非空、可读实际模型；不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c11`
+- `skillVersion=wiselink-research-and-synthesize@r09.c12`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致

@@ -412,6 +412,7 @@ function applicabilityTask(
     operation: 'EXTRACT_APPLICABILITY',
     applicabilityContextRef: 'applicability-context-real-737-sb',
     inputRevision: 1,
+    configurationEvidenceReevaluation: null,
     documentVersionRef: 'document-version-real-737-sb-applicability',
     sourcePackage: { packageId, contentHash },
     bilingualBinding: null,
