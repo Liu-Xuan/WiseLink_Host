@@ -26,6 +26,7 @@ import {
 } from './source-unit-set.builder';
 import {
   buildFamilySectionTopology,
+  buildSourceBoundConcurrentRequirements,
   type SourceBoundSectionWindow,
 } from './family-section-topology.builder';
 
@@ -161,15 +162,14 @@ export function buildStructuredParsePackage(input: {
 
   const sectionTopology = buildFamilySectionTopology({ unitSet, document });
   for (const section of sectionTopology) {
-    contentUnits.push(
-      ...buildSectionObservationContentUnits({
-        section,
-        moduleId,
-        sourcePackageId,
-        firstOrder: contentOrder,
-      }),
-    );
-    contentOrder += 2;
+    const sectionUnits = buildSectionObservationContentUnits({
+      section,
+      moduleId,
+      sourcePackageId,
+      firstOrder: contentOrder,
+    });
+    contentUnits.push(...sectionUnits);
+    contentOrder += sectionUnits.length;
   }
 
   const applicability = buildDeterministicApplicability(
@@ -676,14 +676,19 @@ function buildSectionObservationContentUnits(input: {
   )
     .slice(0, 24)
     .toUpperCase()}`;
-  return [
+  const scope = {
+    ...(section.nodeKind ? { nodeKind: section.nodeKind } : {}),
+    ...(section.scopeKey ? { scopeKey: section.scopeKey } : {}),
+  };
+  const sectionContinuityPrefix = section.scopeKey
+    ? `section:${section.family}:${section.scopeKey}:${section.sectionKey}:${section.occurrence}`
+    : `section:${section.family}:${section.sectionKey}:${section.occurrence}`;
+  const units = [
     buildStructuredObservationContentUnit({
       sourcePackageId,
       moduleId,
       order: firstOrder,
-      continuityKey:
-        `section:${section.family}:${section.sectionKey}:` +
-        `${section.occurrence}:anchor`,
+      continuityKey: `${sectionContinuityPrefix}:anchor`,
       sourceRefIds: section.headingUnit.sourceRefIds,
       sourceSegmentIds: [section.headingUnit.sourceUnitId],
       payload: {
@@ -693,6 +698,7 @@ function buildSectionObservationContentUnits(input: {
           sectionKey: section.sectionKey,
           occurrence: section.occurrence,
           matchedHeading: section.matchedHeading,
+          ...scope,
         },
         authority,
       },
@@ -701,9 +707,7 @@ function buildSectionObservationContentUnits(input: {
       sourcePackageId,
       moduleId,
       order: firstOrder + 1,
-      continuityKey:
-        `section:${section.family}:${section.sectionKey}:` +
-        `${section.occurrence}:window`,
+      continuityKey: `${sectionContinuityPrefix}:window`,
       sourceRefIds: section.sourceRefIds,
       sourceSegmentIds:
         section.bodyUnits.length > 0
@@ -719,11 +723,43 @@ function buildSectionObservationContentUnits(input: {
           semanticBodyState: section.semanticBodyState,
           pageStart: section.pageStart,
           pageEnd: section.pageEnd,
+          ...scope,
         },
         authority,
       },
     }),
   ];
+  const concurrentRequirements =
+    buildSourceBoundConcurrentRequirements(section);
+  if (concurrentRequirements) {
+    units.push(
+      buildStructuredObservationContentUnit({
+        sourcePackageId,
+        moduleId,
+        order: firstOrder + units.length,
+        continuityKey:
+          `section:${section.family}:${section.scopeKey ?? 'document'}:` +
+          `${section.sectionKey}:${section.occurrence}:concurrent-requirements`,
+        sourceRefIds: section.sourceRefIds,
+        sourceSegmentIds:
+          section.bodyUnits.length > 0
+            ? section.bodyUnits.map((unit) => unit.sourceUnitId)
+            : [section.headingUnit.sourceUnitId],
+        payload: {
+          observationType: 'CONCURRENT_REQUIREMENTS',
+          value: {
+            family: section.family,
+            scopeKey: section.scopeKey ?? 'document',
+            sectionKey: section.sectionKey,
+            occurrence: section.occurrence,
+            ...concurrentRequirements,
+          },
+          authority,
+        },
+      }),
+    );
+  }
+  return units;
 }
 
 function buildStructuredObservationContentUnit(input: {
