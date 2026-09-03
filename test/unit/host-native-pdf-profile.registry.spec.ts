@@ -65,6 +65,7 @@ describe('host-native PDF profile registry', () => {
       adapterId: 'issuer.boeing.ftd.v1',
       family: 'FTD',
       parseProfileRef: 'boeing.ftd.v1',
+      documentType: 'fleet_team_digest',
     });
     expect(
       recognizeHostNativePdfProfile(

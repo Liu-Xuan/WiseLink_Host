@@ -24,6 +24,10 @@ import {
   pdfArtifactEntityId,
   pdfSourcePackageId,
 } from './source-unit-set.builder';
+import {
+  buildFamilySectionTopology,
+  type SourceBoundSectionWindow,
+} from './family-section-topology.builder';
 
 /**
  * Stage 3: assemble the frozen.2 StructuredParsePackage (CANDIDATE_ONLY).
@@ -153,6 +157,19 @@ export function buildStructuredParsePackage(input: {
       'PACKAGE_CONTENT_UNITS_EMPTY',
       'No text-bearing source units were produced; refusing to emit an empty package.',
     );
+  }
+
+  const sectionTopology = buildFamilySectionTopology({ unitSet, document });
+  for (const section of sectionTopology) {
+    contentUnits.push(
+      ...buildSectionObservationContentUnits({
+        section,
+        moduleId,
+        sourcePackageId,
+        firstOrder: contentOrder,
+      }),
+    );
+    contentOrder += 2;
   }
 
   const applicability = buildDeterministicApplicability(
@@ -492,6 +509,19 @@ function buildDeterministicApplicability(
       refsById,
     );
   }
+  if (document.documentType !== 'fleet_team_digest') {
+    if (
+      document.documentType === 'service_bulletin' &&
+      document.documentCode === '737-34-3830'
+    ) {
+      return buildBoeingSbDeterministicApplicability(
+        unitSet,
+        moduleId,
+        refsById,
+      );
+    }
+    return emptyApplicability();
+  }
   const observations: DeterministicApplicabilityObservation[] = [];
   for (let index = 0; index < unitSet.units.length - 1; index += 1) {
     const heading = unitSet.units[index];
@@ -525,15 +555,6 @@ function buildDeterministicApplicability(
     });
   }
   if (observations.length === 0) {
-    if (document.documentType === 'service_bulletin') {
-      if (document.documentCode === '737-34-3830') {
-        return buildBoeingSbDeterministicApplicability(
-          unitSet,
-          moduleId,
-          refsById,
-        );
-      }
-    }
     return emptyApplicability();
   }
   if (observations.length !== 1) {
@@ -626,6 +647,136 @@ function buildDeterministicApplicability(
         authority: 'source_asserted',
       },
     ],
+  };
+}
+
+function buildSectionObservationContentUnits(input: {
+  section: SourceBoundSectionWindow;
+  moduleId: string;
+  sourcePackageId: string;
+  firstOrder: number;
+}): Array<Record<string, unknown>> {
+  const { section, moduleId, sourcePackageId, firstOrder } = input;
+  const authority = {
+    candidateOnly: true,
+    canDecideApplicability: false,
+    canCreateEvidenceRef: false,
+    canCreateClosureDecision: false,
+    canCreateActionReadiness: false,
+  };
+  const windowId = `NSW-${sha256Hex(
+    jcsCanonicalize({
+      namespace: 'wiselink-native-section-window-v1',
+      sourcePackageId,
+      family: section.family,
+      sectionKey: section.sectionKey,
+      occurrence: section.occurrence,
+      sourceUnitIds: section.bodyUnits.map((unit) => unit.sourceUnitId),
+    }),
+  )
+    .slice(0, 24)
+    .toUpperCase()}`;
+  return [
+    buildStructuredObservationContentUnit({
+      sourcePackageId,
+      moduleId,
+      order: firstOrder,
+      continuityKey:
+        `section:${section.family}:${section.sectionKey}:` +
+        `${section.occurrence}:anchor`,
+      sourceRefIds: section.headingUnit.sourceRefIds,
+      sourceSegmentIds: [section.headingUnit.sourceUnitId],
+      payload: {
+        observationType: 'SECTION_ANCHOR',
+        value: {
+          family: section.family,
+          sectionKey: section.sectionKey,
+          occurrence: section.occurrence,
+          matchedHeading: section.matchedHeading,
+        },
+        authority,
+      },
+    }),
+    buildStructuredObservationContentUnit({
+      sourcePackageId,
+      moduleId,
+      order: firstOrder + 1,
+      continuityKey:
+        `section:${section.family}:${section.sectionKey}:` +
+        `${section.occurrence}:window`,
+      sourceRefIds: section.sourceRefIds,
+      sourceSegmentIds:
+        section.bodyUnits.length > 0
+          ? section.bodyUnits.map((unit) => unit.sourceUnitId)
+          : [section.headingUnit.sourceUnitId],
+      payload: {
+        observationType: 'SECTION_WINDOW',
+        value: {
+          windowId,
+          family: section.family,
+          sectionKey: section.sectionKey,
+          occurrence: section.occurrence,
+          semanticBodyState: section.semanticBodyState,
+          pageStart: section.pageStart,
+          pageEnd: section.pageEnd,
+        },
+        authority,
+      },
+    }),
+  ];
+}
+
+function buildStructuredObservationContentUnit(input: {
+  sourcePackageId: string;
+  moduleId: string;
+  order: number;
+  continuityKey: string;
+  sourceRefIds: readonly string[];
+  sourceSegmentIds: readonly string[];
+  payload: Record<string, unknown>;
+}): Record<string, unknown> {
+  const kind = 'paragraph';
+  const unitId = techpubEntityId(
+    'unit',
+    sha256Hex(
+      jcsCanonicalize({
+        namespace: 'techpub-unit-id-v1',
+        sourcePackageId: input.sourcePackageId,
+        moduleAnchorKey: 'logical-document',
+        sourceAnchorKey: input.continuityKey,
+        kind,
+      }),
+    ),
+  );
+  const contentUnitWithoutHash: Record<string, unknown> = {
+    unitId,
+    continuityKey: input.continuityKey,
+    moduleId: input.moduleId,
+    kind,
+    identityStability: 'revision_scoped',
+    order: input.order,
+    depth: 0,
+    sourceRefIds: [...input.sourceRefIds],
+    sourceSegmentIds: [...input.sourceSegmentIds],
+    mapping: {
+      status: 'mapped_with_normalization',
+      confidence: 'deterministic',
+      findingIds: [],
+    },
+    payload: {
+      text: JSON.stringify(input.payload),
+      role: 'body',
+    },
+  };
+  return {
+    unitId,
+    continuityKey: input.continuityKey,
+    unitHash: `sha256:${sha256Hex(jcsCanonicalize(contentUnitWithoutHash))}`,
+    ...Object.fromEntries(
+      Object.entries(contentUnitWithoutHash).filter(
+        ([key]) => key !== 'unitId' && key !== 'continuityKey',
+      ),
+    ),
   };
 }
 

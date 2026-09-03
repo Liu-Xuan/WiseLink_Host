@@ -11,6 +11,7 @@ import type { ParsedPdfLayout } from '../professional-input/pure/professional-in
 
 export type HostNativePdfDocumentType =
   | 'airworthiness_directive'
+  | 'fleet_team_digest'
   | 'maintenance_programme'
   | 'maintenance_tip'
   | 'operator_transmission'
@@ -66,7 +67,7 @@ const ACTIVATED_PROFILE_DEFINITIONS = [
     family: 'FTD',
     issuerAuthority: 'BOEING',
     parseProfileRef: 'boeing.ftd.v1',
-    documentType: 'service_bulletin',
+    documentType: 'fleet_team_digest',
     parserProfileHashOverride:
       'sha256:c47a7388da23d106c2476b579308c458332127153930ced8c684212f1b431731',
   },

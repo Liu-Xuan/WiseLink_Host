@@ -311,6 +311,7 @@ export interface ProfessionalInputDocumentIdentityInput {
   documentCode: string;
   documentType:
     | 'airworthiness_directive'
+    | 'fleet_team_digest'
     | 'maintenance_programme'
     | 'maintenance_tip'
     | 'oem_reference'
