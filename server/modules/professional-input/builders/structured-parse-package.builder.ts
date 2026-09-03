@@ -29,6 +29,9 @@ import {
   buildSourceBoundAdDocumentRelations,
   buildSourceBoundAdObligations,
   buildSourceBoundConcurrentRequirements,
+  buildSourceBoundSilDocumentReferences,
+  buildSourceBoundSilPartNumberMatrix,
+  buildSourceBoundSilRecommendationSectionStatus,
   buildSourceBoundSlAction,
   buildSourceBoundSlReferenceCatalog,
   buildSourceBoundSlReferenceRelations,
@@ -169,6 +172,8 @@ export function buildStructuredParsePackage(input: {
   const sectionTopology = buildFamilySectionTopology({ unitSet, document });
   const slReferenceCatalog =
     buildSourceBoundSlReferenceCatalog(sectionTopology);
+  const silRecommendationSectionStatus =
+    buildSourceBoundSilRecommendationSectionStatus(sectionTopology);
   for (const section of sectionTopology) {
     const sectionUnits = buildSectionObservationContentUnits({
       section,
@@ -176,6 +181,7 @@ export function buildStructuredParsePackage(input: {
       sourcePackageId,
       firstOrder: contentOrder,
       slReferenceCatalog,
+      silRecommendationSectionStatus,
     });
     contentUnits.push(...sectionUnits);
     contentOrder += sectionUnits.length;
@@ -665,9 +671,18 @@ function buildSectionObservationContentUnits(input: {
   sourcePackageId: string;
   firstOrder: number;
   slReferenceCatalog: SourceBoundSlReferenceCatalog | null;
+  silRecommendationSectionStatus: ReturnType<
+    typeof buildSourceBoundSilRecommendationSectionStatus
+  >;
 }): Array<Record<string, unknown>> {
-  const { section, moduleId, sourcePackageId, firstOrder, slReferenceCatalog } =
-    input;
+  const {
+    section,
+    moduleId,
+    sourcePackageId,
+    firstOrder,
+    slReferenceCatalog,
+    silRecommendationSectionStatus,
+  } = input;
   const authority = {
     candidateOnly: true,
     canDecideApplicability: false,
@@ -931,6 +946,84 @@ function buildSectionObservationContentUnits(input: {
             scopeKey: section.scopeKey ?? 'document',
             sectionKey: section.sectionKey,
             ...slAction,
+          },
+          authority,
+        },
+      }),
+    );
+  }
+  const silPartNumberMatrix = buildSourceBoundSilPartNumberMatrix(section);
+  if (silPartNumberMatrix) {
+    units.push(
+      buildStructuredObservationContentUnit({
+        sourcePackageId,
+        moduleId,
+        order: firstOrder + units.length,
+        continuityKey: `${sectionContinuityPrefix}:sil-part-number-matrix`,
+        sourceRefIds: section.sourceRefIds,
+        sourceSegmentIds:
+          section.bodyUnits.length > 0
+            ? section.bodyUnits.map((unit) => unit.sourceUnitId)
+            : [section.headingUnit.sourceUnitId],
+        payload: {
+          observationType: 'SIL_PART_NUMBER_MATRIX',
+          value: {
+            family: section.family,
+            scopeKey: section.scopeKey ?? 'document',
+            sectionKey: section.sectionKey,
+            ...silPartNumberMatrix,
+          },
+          authority,
+        },
+      }),
+    );
+  }
+  const silDocumentReferences = buildSourceBoundSilDocumentReferences(section);
+  if (silDocumentReferences) {
+    units.push(
+      buildStructuredObservationContentUnit({
+        sourcePackageId,
+        moduleId,
+        order: firstOrder + units.length,
+        continuityKey: `${sectionContinuityPrefix}:sil-document-references`,
+        sourceRefIds: section.sourceRefIds,
+        sourceSegmentIds:
+          section.bodyUnits.length > 0
+            ? section.bodyUnits.map((unit) => unit.sourceUnitId)
+            : [section.headingUnit.sourceUnitId],
+        payload: {
+          observationType: 'SIL_DOCUMENT_REFERENCES',
+          value: {
+            family: section.family,
+            scopeKey: section.scopeKey ?? 'document',
+            sectionKey: section.sectionKey,
+            ...silDocumentReferences,
+          },
+          authority,
+        },
+      }),
+    );
+  }
+  if (
+    silRecommendationSectionStatus &&
+    section.family === 'SIL' &&
+    section.sectionKey === 'revision_history'
+  ) {
+    units.push(
+      buildStructuredObservationContentUnit({
+        sourcePackageId,
+        moduleId,
+        order: firstOrder + units.length,
+        continuityKey:
+          'section:SIL:service_information_letter:recommendation-section-status',
+        sourceRefIds: silRecommendationSectionStatus.sourceRefIds,
+        sourceSegmentIds: silRecommendationSectionStatus.sourceUnitIds,
+        payload: {
+          observationType: 'SIL_RECOMMENDATION_SECTION_STATUS',
+          value: {
+            family: section.family,
+            scopeKey: section.scopeKey ?? 'document',
+            ...silRecommendationSectionStatus,
           },
           authority,
         },

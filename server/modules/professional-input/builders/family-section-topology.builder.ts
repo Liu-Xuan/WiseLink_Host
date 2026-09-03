@@ -8,7 +8,7 @@ import type {
 export type SemanticSectionBodyState = 'CONTENT' | 'NONE' | 'MISSING';
 
 export interface SourceBoundSectionWindow {
-  readonly family: 'FTD' | 'SB' | 'AD' | 'SL';
+  readonly family: 'FTD' | 'SB' | 'AD' | 'SIL' | 'SL';
   readonly sectionKey: string;
   readonly matchedHeading: string;
   readonly occurrence: number;
@@ -143,6 +143,62 @@ export interface SourceBoundSlAction {
     | 'SUPPLIER_ACTION'
     | 'OPERATOR_RECOMMENDATION';
   readonly actionTextRaw: string;
+  readonly sourceUnitIds: readonly string[];
+  readonly sourceRefIds: readonly string[];
+}
+
+export interface SourceBoundSilPartNumberRow {
+  readonly rowName: string;
+  readonly hardwarePartNumberRaw: string;
+  readonly softwarePartNumberRaw: string;
+  readonly mediaPartNumberRaw: string;
+  readonly sourceUnitIds: readonly string[];
+  readonly sourceRefIds: readonly string[];
+}
+
+export interface SourceBoundSilPartNumberMatrix {
+  readonly semanticState: SemanticSectionBodyState;
+  readonly rowsStructured: boolean;
+  readonly unstructuredReason:
+    | 'TABLE_TITLE_OR_HEADER_UNRESOLVED'
+    | 'TABLE_ROW_UNRESOLVED'
+    | 'DUPLICATE_ROW_NAME'
+    | null;
+  readonly tableNumber: '1';
+  readonly columns: readonly [
+    'name',
+    'hardware_part_number',
+    'software_part_number',
+    'media_part_number',
+  ];
+  readonly rows: readonly SourceBoundSilPartNumberRow[];
+}
+
+export interface SourceBoundSilDocumentReference {
+  readonly relationKind: 'ASSOCIATED_PUBLICATION';
+  readonly issuerAuthority: 'BOEING';
+  readonly targetDocumentKind: 'SERVICE_LETTER' | 'SERVICE_BULLETIN';
+  readonly targetDocumentCode: string;
+  readonly titleRaw: string;
+  readonly sourceUnitIds: readonly string[];
+  readonly sourceRefIds: readonly string[];
+}
+
+export interface SourceBoundSilDocumentReferences {
+  readonly semanticState: SemanticSectionBodyState;
+  readonly referencesStructured: boolean;
+  readonly unstructuredReason:
+    | 'NO_REFERENCE_ENTRIES'
+    | 'REFERENCE_ENTRY_UNRESOLVED'
+    | 'DUPLICATE_REFERENCE'
+    | null;
+  readonly subsequentRevisionsAcceptableByDefault: boolean;
+  readonly references: readonly SourceBoundSilDocumentReference[];
+}
+
+export interface SourceBoundSilRecommendationSectionStatus {
+  readonly semanticState: 'SOURCE_ABSENT';
+  readonly reason: 'COMPLETE_A_TO_H_PUBLICATION_HAS_NO_RECOMMENDATION_SECTION';
   readonly sourceUnitIds: readonly string[];
   readonly sourceRefIds: readonly string[];
 }
@@ -286,6 +342,38 @@ const BOEING_SL_EMITTED_SECTION_KEYS = new Set([
   ...BOEING_SL_CORE_SECTION_ORDER,
   'supplier_action',
 ]);
+const HONEYWELL_SIL_SECTION_KEYS = [
+  'subject',
+  'effectivity',
+  'reason',
+  'references',
+  'summary',
+  'contact_information',
+  'summary_of_change',
+  'revision_history',
+] as const;
+const HONEYWELL_SIL_SECTION_BY_LETTER = new Map<
+  string,
+  {
+    readonly sectionKey: (typeof HONEYWELL_SIL_SECTION_KEYS)[number];
+    readonly title: string;
+  }
+>([
+  ['A', { sectionKey: 'subject', title: 'subject' }],
+  ['B', { sectionKey: 'effectivity', title: 'effectivity' }],
+  ['C', { sectionKey: 'reason', title: 'reason' }],
+  ['D', { sectionKey: 'references', title: 'references' }],
+  ['E', { sectionKey: 'summary', title: 'summary' }],
+  ['F', { sectionKey: 'contact_information', title: 'contact information' }],
+  ['G', { sectionKey: 'summary_of_change', title: 'summary of change' }],
+  ['H', { sectionKey: 'revision_history', title: 'revision history' }],
+]);
+const HONEYWELL_SIL_PART_NUMBER_COLUMNS = [
+  'name',
+  'hardware_part_number',
+  'software_part_number',
+  'media_part_number',
+] as const;
 
 export function buildFamilySectionTopology(input: {
   readonly unitSet: SourceUnitSet;
@@ -302,6 +390,9 @@ export function buildFamilySectionTopology(input: {
   }
   if (input.document.documentType === 'service_letter') {
     return buildBoeingSlSectionTopology(input.unitSet, input.document);
+  }
+  if (input.document.documentType === 'service_information_letter') {
+    return buildHoneywellSilSectionTopology(input.unitSet, input.document);
   }
   return [];
 }
@@ -609,6 +700,189 @@ export function buildSourceBoundSlAction(
   };
 }
 
+export function buildSourceBoundSilPartNumberMatrix(
+  section: SourceBoundSectionWindow,
+): SourceBoundSilPartNumberMatrix | null {
+  if (section.family !== 'SIL' || section.sectionKey !== 'reason') {
+    return null;
+  }
+  const empty = (
+    reason: SourceBoundSilPartNumberMatrix['unstructuredReason'],
+  ): SourceBoundSilPartNumberMatrix => ({
+    semanticState: section.semanticBodyState,
+    rowsStructured: false,
+    unstructuredReason: reason,
+    tableNumber: '1',
+    columns: HONEYWELL_SIL_PART_NUMBER_COLUMNS,
+    rows: [],
+  });
+  if (section.semanticBodyState !== 'CONTENT') {
+    return {
+      semanticState: section.semanticBodyState,
+      rowsStructured: true,
+      unstructuredReason: null,
+      tableNumber: '1',
+      columns: HONEYWELL_SIL_PART_NUMBER_COLUMNS,
+      rows: [],
+    };
+  }
+
+  const titleIndexes = section.bodyUnits.flatMap((unit, index) =>
+    /^Table\s+1\.\s*Matrix\s+of\s+Part\s+Numbers(?:\s*\(Cont\))?$/iu.test(
+      unit.text.normalize('NFKC').trim(),
+    )
+      ? [index]
+      : [],
+  );
+  const headerIndexes = section.bodyUnits.flatMap((unit, index) =>
+    normalizeLabel(unit.text) ===
+    'namehardwarepartnumbersoftwarepartnumbermediapartnumber'
+      ? [index]
+      : [],
+  );
+  if (
+    titleIndexes.length === 0 ||
+    titleIndexes.length !== headerIndexes.length ||
+    titleIndexes.some(
+      (titleIndex, index) => titleIndex + 1 !== headerIndexes[index],
+    ) ||
+    !/^Table\s+1\.\s*Matrix\s+of\s+Part\s+Numbers$/iu.test(
+      section.bodyUnits[titleIndexes[0]]?.text.normalize('NFKC').trim() ?? '',
+    ) ||
+    titleIndexes
+      .slice(1)
+      .some(
+        (titleIndex) =>
+          !/^Table\s+1\.\s*Matrix\s+of\s+Part\s+Numbers\s*\(Cont\)$/iu.test(
+            section.bodyUnits[titleIndex]?.text.normalize('NFKC').trim() ?? '',
+          ),
+      )
+  ) {
+    return empty('TABLE_TITLE_OR_HEADER_UNRESOLVED');
+  }
+
+  const rows: SourceBoundSilPartNumberRow[] = [];
+  for (const [headerPosition, headerIndex] of headerIndexes.entries()) {
+    const segmentEnd =
+      titleIndexes[headerPosition + 1] ?? section.bodyUnits.length;
+    for (const unit of section.bodyUnits.slice(headerIndex + 1, segmentEnd)) {
+      if (
+        unit.expectedSemantic === 'heading' ||
+        isHoneywellSilTableFurniture(unit.text)
+      ) {
+        continue;
+      }
+      const row = parseHoneywellSilPartNumberRow(unit);
+      if (!row) return empty('TABLE_ROW_UNRESOLVED');
+      rows.push(row);
+    }
+  }
+  if (rows.length === 0) return empty('TABLE_ROW_UNRESOLVED');
+  const rowNames = rows.map((row) => normalizeLabel(row.rowName));
+  if (new Set(rowNames).size !== rowNames.length) {
+    return empty('DUPLICATE_ROW_NAME');
+  }
+  return {
+    semanticState: 'CONTENT',
+    rowsStructured: true,
+    unstructuredReason: null,
+    tableNumber: '1',
+    columns: HONEYWELL_SIL_PART_NUMBER_COLUMNS,
+    rows,
+  };
+}
+
+export function buildSourceBoundSilDocumentReferences(
+  section: SourceBoundSectionWindow,
+): SourceBoundSilDocumentReferences | null {
+  if (section.family !== 'SIL' || section.sectionKey !== 'references') {
+    return null;
+  }
+  const base = {
+    semanticState: section.semanticBodyState,
+    subsequentRevisionsAcceptableByDefault: section.bodyUnits.some((unit) =>
+      /\bUnless\s+specified\s+differently,\s+you\s+can\s+use\s+subsequent\s+revisions\b/iu.test(
+        unit.text.normalize('NFKC'),
+      ),
+    ),
+  };
+  if (section.semanticBodyState !== 'CONTENT') {
+    return {
+      ...base,
+      referencesStructured: true,
+      unstructuredReason: null,
+      references: [],
+    };
+  }
+  const blocks: SourceUnit[][] = [];
+  for (const unit of section.bodyUnits) {
+    if (/^[•●▪]\s*\S/iu.test(unit.text.normalize('NFKC').trim())) {
+      blocks.push([unit]);
+    } else if (blocks.length > 0) {
+      blocks.at(-1)?.push(unit);
+    }
+  }
+  if (blocks.length === 0) {
+    return {
+      ...base,
+      referencesStructured: false,
+      unstructuredReason: 'NO_REFERENCE_ENTRIES',
+      references: [],
+    };
+  }
+  const references = blocks.map(parseHoneywellSilDocumentReference);
+  if (references.some((reference) => reference === null)) {
+    return {
+      ...base,
+      referencesStructured: false,
+      unstructuredReason: 'REFERENCE_ENTRY_UNRESOLVED',
+      references: [],
+    };
+  }
+  const resolved = references as SourceBoundSilDocumentReference[];
+  const identities = resolved.map(
+    (reference) =>
+      `${reference.targetDocumentKind}:${reference.targetDocumentCode}`,
+  );
+  if (new Set(identities).size !== identities.length) {
+    return {
+      ...base,
+      referencesStructured: false,
+      unstructuredReason: 'DUPLICATE_REFERENCE',
+      references: [],
+    };
+  }
+  return {
+    ...base,
+    referencesStructured: true,
+    unstructuredReason: null,
+    references: resolved,
+  };
+}
+
+export function buildSourceBoundSilRecommendationSectionStatus(
+  sections: readonly SourceBoundSectionWindow[],
+): SourceBoundSilRecommendationSectionStatus | null {
+  if (
+    sections.length !== HONEYWELL_SIL_SECTION_KEYS.length ||
+    sections.some(
+      (section, index) =>
+        section.family !== 'SIL' ||
+        section.sectionKey !== HONEYWELL_SIL_SECTION_KEYS[index],
+    )
+  ) {
+    return null;
+  }
+  return {
+    semanticState: 'SOURCE_ABSENT',
+    reason: 'COMPLETE_A_TO_H_PUBLICATION_HAS_NO_RECOMMENDATION_SECTION',
+    sourceUnitIds: sections.map((section) => section.headingUnit.sourceUnitId),
+    sourceRefIds: unique(
+      sections.flatMap((section) => section.headingUnit.sourceRefIds),
+    ),
+  };
+}
+
 function buildFtdSectionTopology(
   unitSet: SourceUnitSet,
 ): readonly SourceBoundSectionWindow[] {
@@ -817,6 +1091,95 @@ function buildBoeingSlSectionTopology(
   return windows.filter((window) =>
     BOEING_SL_EMITTED_SECTION_KEYS.has(window.sectionKey),
   );
+}
+
+function buildHoneywellSilSectionTopology(
+  unitSet: SourceUnitSet,
+  document: ProfessionalInputDocumentIdentityInput,
+): readonly SourceBoundSectionWindow[] {
+  const contentUnits = orderedContentUnits(unitSet);
+  const honeywellProven = contentUnits.some((unit) =>
+    /^honeywellinternationalinc/u.test(normalizeLabel(unit.text)),
+  );
+  const serviceInformationLetterProven = contentUnits.some(
+    (unit) => normalizeLabel(unit.text) === 'serviceinformationletter',
+  );
+  const documentCodeProven = contentUnits.some(
+    (unit) =>
+      normalizeLabel(unit.text) ===
+      `publicationnumber${normalizeLabel(document.documentCode)}`,
+  );
+  if (
+    !honeywellProven ||
+    !serviceInformationLetterProven ||
+    !documentCodeProven
+  ) {
+    return [];
+  }
+
+  const candidates = contentUnits.flatMap(
+    (unit, index): SectionAnchorCandidate[] => {
+      if (unit.expectedSemantic !== 'heading') return [];
+      const text = unit.text.normalize('NFKC').trim();
+      const match = text.match(/^([A-H])\s*\.\s*(\S.*)$/u);
+      if (!match) return [];
+      const definition = HONEYWELL_SIL_SECTION_BY_LETTER.get(match[1]);
+      if (
+        !definition ||
+        normalizeLabel(match[2]) !== normalizeLabel(definition.title)
+      ) {
+        return [];
+      }
+      return [
+        {
+          unit,
+          index,
+          sectionKey: definition.sectionKey,
+          matchedHeading: text,
+          nodeKind: 'section',
+          scopeKey: 'service_information_letter',
+          ordinal: match[1],
+        },
+      ];
+    },
+  );
+  if (
+    candidates.length !== HONEYWELL_SIL_SECTION_KEYS.length ||
+    candidates.some(
+      (candidate, index) =>
+        candidate.sectionKey !== HONEYWELL_SIL_SECTION_KEYS[index],
+    )
+  ) {
+    return [];
+  }
+
+  const exportControl = contentUnits.findIndex(
+    (unit) =>
+      unit.expectedSemantic === 'heading' &&
+      normalizeLabel(unit.text) === 'exportcontrol',
+  );
+  const boundedCandidates: SectionAnchorCandidate[] = [...candidates];
+  if (exportControl > candidates.at(-1)!.index) {
+    const unit = contentUnits[exportControl];
+    boundedCandidates.push({
+      unit,
+      index: exportControl,
+      sectionKey: 'export_control_boundary',
+      matchedHeading: unit.text,
+      nodeKind: 'section',
+      scopeKey: 'service_information_letter',
+    });
+  }
+  const windows = materializeSectionWindows(
+    unitSet,
+    contentUnits,
+    boundedCandidates,
+    'SIL',
+  ).filter((window) => window.sectionKey !== 'export_control_boundary');
+  if (windows.some((window) => window.semanticBodyState !== 'CONTENT')) {
+    return [];
+  }
+  return windows;
 }
 
 function buildFaaAdSectionTopology(
@@ -1109,6 +1472,71 @@ function parseAnyRequirementGroup(
     memberDocumentCodes,
     sourceUnitIds: block.units.map((unit) => unit.sourceUnitId),
     sourceRefIds: unique(block.units.flatMap((unit) => unit.sourceRefIds)),
+  };
+}
+
+function parseHoneywellSilPartNumberRow(
+  unit: SourceUnit,
+): SourceBoundSilPartNumberRow | null {
+  const match = unit.text
+    .normalize('NFKC')
+    .trim()
+    .match(/^(.+?)\s*PN\s+(.+?)\s*PN\s+(.+?)\s*PN\s+(.+)$/iu);
+  if (!match) return null;
+  const values = match
+    .slice(1)
+    .map((value) => value.replace(/\s+/gu, ' ').trim());
+  if (values.some((value) => value.length === 0)) return null;
+  return {
+    rowName: values[0],
+    hardwarePartNumberRaw: values[1],
+    softwarePartNumberRaw: values[2],
+    mediaPartNumberRaw: values[3],
+    sourceUnitIds: [unit.sourceUnitId],
+    sourceRefIds: [...unit.sourceRefIds],
+  };
+}
+
+function isHoneywellSilTableFurniture(value: string): boolean {
+  const text = value.normalize('NFKC').replace(/\s+/gu, ' ').trim();
+  return (
+    /^\d{1,2}\s+[A-Z][a-z]+\s+\d{4}$/u.test(text) ||
+    /^Revision\s+\d+\s*,\s*\d{1,2}\s+[A-Z][a-z]+\s+\d{4}\s*Page\s+\d+(?:\s+of\s+\d+)?$/u.test(
+      text,
+    ) ||
+    /^Publication\s+Number\s+D\d+$/iu.test(text) ||
+    /^©\s*Honeywell\s+International\s+Inc\./iu.test(text) ||
+    /^This\s+document\s+is\s+governed\s+by\s+the\s+terms\s+of\s+the\s+current\s+Honeywell\s+Confidential\s+Notice/iu.test(
+      text,
+    ) ||
+    /^by\s+logging\s+into\s+https:\/\/aerospace\.honeywell\.com\b/iu.test(text)
+  );
+}
+
+function parseHoneywellSilDocumentReference(
+  units: readonly SourceUnit[],
+): SourceBoundSilDocumentReference | null {
+  const rawText = units
+    .map((unit) => unit.text.normalize('NFKC').trim())
+    .join(' ')
+    .replace(/\s+/gu, ' ')
+    .replace(/^[•●▪]\s*/u, '')
+    .trim();
+  const match = rawText.match(
+    /^Boeing\s+Service\s+(Letter|Bulletin)\s*,\s*Publication\s+Number\s+([A-Z0-9-]+)\s*,\s*(\S.*)$/iu,
+  );
+  if (!match) return null;
+  return {
+    relationKind: 'ASSOCIATED_PUBLICATION',
+    issuerAuthority: 'BOEING',
+    targetDocumentKind:
+      match[1].toLowerCase() === 'letter'
+        ? 'SERVICE_LETTER'
+        : 'SERVICE_BULLETIN',
+    targetDocumentCode: match[2].toUpperCase(),
+    titleRaw: match[3].trim(),
+    sourceUnitIds: units.map((unit) => unit.sourceUnitId),
+    sourceRefIds: unique(units.flatMap((unit) => unit.sourceRefIds)),
   };
 }
 
