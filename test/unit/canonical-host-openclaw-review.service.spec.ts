@@ -16,8 +16,8 @@ import type {
 } from '../../server/modules/action-attempt/action-attempt.types';
 import {
   REVIEW_MODEL_POLICY_REF,
+  REVIEW_MINIMUM_COMPATIBLE_SKILL_VERSION,
   REVIEW_PROFILE_REF,
-  REVIEW_SKILL_POLICY_REF,
 } from '../../server/modules/canonical-host/canonical-host-openclaw-review.contract';
 import { CanonicalHostOpenClawReviewService } from '../../server/modules/canonical-host/canonical-host-openclaw-review.service';
 import { encodeReviewAttachmentParsedArtifact } from '../../server/modules/review-persistence/review-attachment-artifact';
@@ -250,7 +250,7 @@ describe('CanonicalHostOpenClawReviewService', () => {
     const result = harness.result(
       begin.task,
       { 'wiselink-openclaw-engineering-assessment': '1.2.0' },
-      REVIEW_SKILL_POLICY_REF,
+      REVIEW_MINIMUM_COMPATIBLE_SKILL_VERSION,
       'GLM-5.3',
       'unofficial-profile',
     );
@@ -332,7 +332,7 @@ describe('CanonicalHostOpenClawReviewService', () => {
     const result = harness.result(
       begin.task,
       { 'wiselink-openclaw-engineering-assessment': '1.2.0' },
-      REVIEW_SKILL_POLICY_REF,
+      REVIEW_MINIMUM_COMPATIBLE_SKILL_VERSION,
       'GLM-5.3',
       REVIEW_PROFILE_REF,
       true,
@@ -686,7 +686,7 @@ function reviewHarness(withAttachment = false) {
     result(
       selectedTask: OpenClawTaskEnvelope,
       toolVersions: Record<string, string>,
-      skillVersion: string = REVIEW_SKILL_POLICY_REF,
+      skillVersion: string = REVIEW_MINIMUM_COMPATIBLE_SKILL_VERSION,
       modelVersion: string = 'GLM-5.3',
       profileRef: string = REVIEW_PROFILE_REF,
       withDraft: boolean = false,

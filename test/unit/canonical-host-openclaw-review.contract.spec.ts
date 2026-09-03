@@ -7,6 +7,7 @@ import {
   parseReviewTurnTaskContract,
   REVIEW_ALLOWED_OPERATIONS,
   REVIEW_MODEL_POLICY_REF,
+  REVIEW_MINIMUM_COMPATIBLE_SKILL_VERSION,
   REVIEW_PROFILE_REF,
   REVIEW_RUNTIME_APP_ID,
   REVIEW_SKILL_POLICY_REF,
@@ -211,6 +212,17 @@ describe('interactive review C2 task / C2 legacy and C3 current result contract'
     );
   });
 
+  it('rejects SOURCE_LINK without a structured SourceRef before persistence', () => {
+    const task = reviewTask();
+    const result = reviewResult(task, {
+      responseType: 'SOURCE_LINK',
+      sourceRefs: [],
+    });
+    expect(() => parseReviewTurnCandidateContract({ result, task })).toThrow(
+      'REVIEW_RESULT_SOURCE_LINK_REF_REQUIRED',
+    );
+  });
+
   it('rejects missing actual tool provenance before persistence', () => {
     const task = reviewTask();
     const result = reviewResult(task, {}, {});
@@ -367,7 +379,7 @@ function reviewResult(
   toolVersions: Record<string, string> = {
     'wiselink-openclaw-engineering-assessment': '1.2.0',
   },
-  skillVersion: string = REVIEW_SKILL_POLICY_REF,
+  skillVersion: string = REVIEW_MINIMUM_COMPATIBLE_SKILL_VERSION,
 ) {
   return sealResultEnvelope({
     schemaVersion: 'wiselink.3_1.openclaw_result_envelope.v1',

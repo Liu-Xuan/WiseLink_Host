@@ -13,7 +13,8 @@ export const CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY = {
   runtimeAppId: 'app_17c3zn24kv2',
   profileRef: 'wiselink-engineering',
   modelPolicyRef: 'official-hosted-profile-config',
-  skillVersion: 'wiselink-research-and-synthesize@r09.c9',
+  skillCompatibilityRef: 'wiselink-research-and-synthesize@r09',
+  minimumCompatibleSkillVersion: 'wiselink-research-and-synthesize@r09.c10',
   mcpServerName: 'wiselink-openclaw-engineering-assessment',
   mcpServerVersion: '1.2.0',
 } as const;
@@ -85,7 +86,7 @@ export function assertCanonicalHostOpenClawRuntimePolicy(
   const policy = CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY;
   if (
     !hasReadableActualModelProvenance(result.modelVersion) ||
-    result.skillVersion !== policy.skillVersion ||
+    !isCanonicalHostOpenClawSkillVersionCompatible(result.skillVersion) ||
     result.toolVersions[policy.mcpServerName] !== policy.mcpServerVersion ||
     !result.promptVersion.trim()
   ) {
@@ -98,6 +99,37 @@ export function assertCanonicalHostOpenClawRuntimePolicy(
   ) {
     throw policyError('OPENCLAW_APPLICABILITY_PROMPT_POLICY_MISMATCH');
   }
+}
+
+export function isCanonicalHostOpenClawSkillVersionCompatible(
+  value: string,
+): boolean {
+  const policy = CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY;
+  const minimumRevision = parseCompatibleSkillRevision(
+    policy.minimumCompatibleSkillVersion,
+    policy.skillCompatibilityRef,
+  );
+  const actualRevision = parseCompatibleSkillRevision(
+    value,
+    policy.skillCompatibilityRef,
+  );
+  return (
+    minimumRevision !== null &&
+    actualRevision !== null &&
+    actualRevision >= minimumRevision
+  );
+}
+
+function parseCompatibleSkillRevision(
+  value: string,
+  compatibilityRef: string,
+): number | null {
+  const prefix = `${compatibilityRef}.c`;
+  if (!value.startsWith(prefix)) return null;
+  const revision = value.slice(prefix.length);
+  if (!/^(?:0|[1-9]\d*)$/u.test(revision)) return null;
+  const parsed = Number(revision);
+  return Number.isSafeInteger(parsed) ? parsed : null;
 }
 
 function hasReadableActualModelProvenance(value: string): boolean {

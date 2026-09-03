@@ -4,7 +4,10 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
-export const WISELINK_SKILL_VERSION = 'wiselink-research-and-synthesize@r09.c10';
+export const WISELINK_SKILL_VERSION =
+  'wiselink-research-and-synthesize@r09.c11';
+export const WISELINK_SKILL_COMPATIBILITY_REF =
+  'wiselink-research-and-synthesize@r09';
 export const WISELINK_HOST_MCP_NAME =
   'wiselink-openclaw-engineering-assessment';
 export const WISELINK_HOST_MCP_VERSION = '1.2.0';
@@ -2588,7 +2591,7 @@ function validateApplicabilityRuntimePolicy(value) {
   );
   equal(
     value.skillVersion,
-    WISELINK_SKILL_VERSION,
+    WISELINK_SKILL_COMPATIBILITY_REF,
     'APPLICABILITY_SKILL_POLICY_MISMATCH',
   );
   equal(
@@ -3823,7 +3826,7 @@ export function validateReviewTask(value) {
   );
   equal(
     value.executionPolicy.skillPolicyRef,
-    WISELINK_SKILL_VERSION,
+    WISELINK_SKILL_COMPATIBILITY_REF,
     'REVIEW_TASK_SKILL_POLICY_INVALID',
   );
   equal(
@@ -3877,6 +3880,12 @@ export function validateReviewCandidate(task, candidate) {
   }
   nonEmpty(candidate.answer, 'REVIEW_CANDIDATE_ANSWER_REQUIRED');
   uniqueTextArray(candidate.sourceRefs, 'REVIEW_CANDIDATE_SOURCE_REFS_INVALID');
+  if (
+    candidate.responseType === 'SOURCE_LINK' &&
+    candidate.sourceRefs.length === 0
+  ) {
+    fail('REVIEW_CANDIDATE_SOURCE_LINK_REF_REQUIRED');
+  }
   uniqueTextArray(
     candidate.missingInputs,
     'REVIEW_CANDIDATE_MISSING_INPUTS_INVALID',

@@ -214,7 +214,7 @@
     "profileRef": "wiselink-engineering",
     "modelPolicyRef": "official-hosted-profile-config",
     "promptVersion": "wiselink-applicability-extraction@r09.c4",
-    "skillVersion": "wiselink-research-and-synthesize@r09.c10",
+    "skillVersion": "wiselink-research-and-synthesize@r09",
     "mcpServerName": "wiselink-openclaw-engineering-assessment",
     "mcpServerVersion": "1.2.0"
   },

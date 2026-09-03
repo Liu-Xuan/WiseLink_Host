@@ -43,7 +43,7 @@ const MODEL_OUTPUT_KEYS = [
   'affectedItemIds',
   'warnings',
 ];
-const REVIEW_PROMPT_VERSION = 'wiselink.3_1.review_prompt.v1.c10';
+const REVIEW_PROMPT_VERSION = 'wiselink.3_1.review_prompt.v1.c11';
 const WISELINK_HOST_MCP_CONFIG_KEYS = new Set([
   WISELINK_HOST_MCP_NAME,
   'wiselink_host_controller',
@@ -592,6 +592,12 @@ function validateModelExecution(
       throw new Error(`REVIEW_MODEL_${key.toUpperCase()}_INVALID`);
     }
   }
+  if (
+    output.responseType === 'SOURCE_LINK' &&
+    output.sourceRefs.length === 0
+  ) {
+    throw new Error('REVIEW_MODEL_SOURCE_LINK_REF_REQUIRED');
+  }
   const allowed = new Set(readSourceRefIds);
   if (
     [...output.sourceRefs, ...output.candidateEvidenceRefs].some(
@@ -688,6 +694,7 @@ function buildReviewPrompt(input) {
     'responseType must be ANSWER, CLARIFYING_QUESTION, SOURCE_LINK, CANDIDATE_EVIDENCE, REVIEW_ACTION_DRAFT, INPUT_REQUEST, AFFECTED_ITEMS_PREVIEW, or TASK_STATUS.',
     'sourceRefs, missingInputs, candidateEvidenceRefs, affectedItemIds, and warnings must each be a unique string array.',
     'Use sourceRefs and candidateEvidenceRefs only from SOURCE_REFS read this turn. Never invent facts, IDs, evidence, adoption, approval, publication, confirmation, current changes, or gap closure.',
+    'When the engineer asks to locate, cite, or return a SourceRef, use SOURCE_LINK and include at least one relevant sourceRefs entry read this turn. SOURCE_LINK with an empty sourceRefs array is invalid.',
     'For an explanation, source link, clarification, input request, or task status, set candidateEvidenceRefs and affectedItemIds to [] and reviewActionDraft to null.',
     'Use CANDIDATE_EVIDENCE only when the engineer asks to analyze supplied or Host-authorized evidence; keep reviewActionDraft null and include every proposed evidence ref in candidateEvidenceRefs.',
     'Use REVIEW_ACTION_DRAFT only when the engineer explicitly asks to adopt evidence, modify a judgment, accept an assumption or conservative bound, or set monitoring/review controls.',
