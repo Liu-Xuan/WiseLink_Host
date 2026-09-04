@@ -11,6 +11,7 @@ import type {
   CanonicalEntryQueryResponse,
   CanonicalPdfVerticalRunRequest,
   CanonicalPdfVerticalRunResponse,
+  CanonicalRelatedContextPreviewResponse,
   CanonicalS1000dVerticalRunRequest,
   CanonicalS1000dVerticalRunResponse,
   CanonicalParsedPackageUsagePolicy,
@@ -42,6 +43,7 @@ import {
   CANONICAL_WORK_ITEM_REGISTRAR,
 } from './canonical-host.constants';
 import { buildCanonicalPageProjections } from './canonical-host-page-projections';
+import { deriveCanonicalReferenceMentionPreview } from './canonical-reference-mention-preview';
 import {
   projectCanonicalBrowserQueryResult,
   projectCanonicalStructuredContentUnit,
@@ -63,6 +65,7 @@ import type {
   CanonicalPdfProducerPort,
   CanonicalPdfProducerResult,
   CanonicalPermissionSnapshotPort,
+  CanonicalRelatedContextPreviewInput,
   CanonicalStatusInput,
   CanonicalStructuredContentBrowseInput,
   CanonicalWorkItemRegistrarPort,
@@ -745,6 +748,80 @@ export class CanonicalHostVerticalService {
       nextCursor: hasMore ? String(nextOffset) : null,
       hasMore,
       units: pageUnits,
+    };
+  }
+
+  async explicitRelatedContextPreview(
+    input: CanonicalRelatedContextPreviewInput,
+    actor: CanonicalHostActor,
+  ): Promise<CanonicalRelatedContextPreviewResponse> {
+    await this.authorizeAction({
+      actor,
+      action: 'READ_DOCUMENT_PARSING',
+      workItemId: input.workItemId,
+    });
+    const firstRead: CanonicalWorkItemProjection =
+      await this.registrar.getTenantScopedByWorkItemId({
+        workItemId: input.workItemId,
+        tenantId: actor.tenantId,
+      });
+    assertStructuredContentReady(firstRead);
+
+    await this.authorizeAction({
+      actor,
+      action: 'READ_DOCUMENT_PARSING',
+      workItemId: firstRead.workItemId,
+      requestId: firstRead.requestId,
+      documentVersionId: firstRead.source.documentVersionId,
+    });
+    const projection: CanonicalWorkItemProjection =
+      await this.registrar.getTenantScopedByWorkItemId({
+        workItemId: input.workItemId,
+        tenantId: actor.tenantId,
+      });
+    assertStructuredContentReady(projection);
+    if (
+      projection.revision !== firstRead.revision ||
+      projection.source.documentVersionId !== firstRead.source.documentVersionId
+    ) {
+      throw structuredContentConflict('RELATED_CONTEXT_REVISION_CHANGED');
+    }
+    if (
+      input.expectedRevision !== undefined &&
+      input.expectedRevision !== projection.revision
+    ) {
+      throw structuredContentConflict('RELATED_CONTEXT_REVISION_STALE');
+    }
+
+    const pkg = projection.package;
+    if (pkg === null) throw new Error('WORK_ITEM_CORRUPT:PACKAGE_REQUIRED');
+    const allUnits = await this.reader.readAllSourceUnits({
+      artifact: pkg.artifact,
+      packageId: pkg.packageId,
+    });
+    const browserUnits = allUnits
+      .map((unit, index) =>
+        projectCanonicalStructuredContentUnit(unit, index + 1),
+      )
+      .filter((unit) => unit !== null);
+    const mentions = deriveCanonicalReferenceMentionPreview(
+      browserUnits,
+      pkg.documentIdentity?.documentCode,
+    );
+
+    return {
+      schemaVersion: 'wiselink.3_1.related_context_preview.v1',
+      status: 'FRESH_READ',
+      mode: 'EXPLICIT_PREVIEW',
+      revision: projection.revision,
+      documentVersionId: projection.source.documentVersionId,
+      totalMentionCount: mentions.length,
+      mentions,
+      authority: {
+        candidateOnly: true,
+        readOnly: true,
+        includedInAssessmentInput: false,
+      },
     };
   }
 
