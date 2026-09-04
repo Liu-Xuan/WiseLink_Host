@@ -78,6 +78,13 @@ export class ActionAttemptLifecycleService {
       };
     }
 
+    await this.repository.terminalizeExpiredActiveForSuccessor({
+      workItemId: input.workItemId,
+      actionType: input.taskType,
+      tenantId: input.tenantId,
+      now,
+    });
+
     const attemptNo = await this.repository.nextAttemptNo({
       workItemId: input.workItemId,
       actionType: input.taskType,
