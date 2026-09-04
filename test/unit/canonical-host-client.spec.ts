@@ -734,6 +734,36 @@ describe('canonical host assessment client', () => {
     });
   });
 
+  it('preserves nested Review error metadata for safe operator readback', async () => {
+    request.mockRejectedValue({
+      response: {
+        status: 503,
+        data: {
+          error: {
+            code: 'REVIEW_HOSTED_RUNTIME_UNAVAILABLE',
+            message: 'Review generation is temporarily unavailable.',
+            retryable: true,
+            operatorAction: 'RELEASE_SUCCESSOR_ATTEMPT',
+            timestamp: 1_788_000_000_000,
+          },
+        },
+      },
+    });
+
+    await expect(
+      appendReviewTextTurn('WI-SB-1001', 'RC-001', {
+        requestId: 'req-review-observable-001',
+        userMessage: '请继续核对当前适用性。',
+      }),
+    ).rejects.toMatchObject({
+      code: 'REVIEW_HOSTED_RUNTIME_UNAVAILABLE',
+      statusCode: 503,
+      retryable: true,
+      operatorAction: 'RELEASE_SUCCESSOR_ATTEMPT',
+      timestamp: 1_788_000_000_000,
+    });
+  });
+
   it('closes and confirms only by bound path plus the Host-issued draft handle', async () => {
     request
       .mockResolvedValueOnce({

@@ -12,7 +12,12 @@ import {
 } from 'lucide-react';
 
 import { canonicalHost } from '@client/src/api';
+import {
+  getHostedRuntimeFingerprint,
+  type HostedRuntimeFingerprintResponse,
+} from '@client/src/api/runtime-probe';
 import { uploadFile } from '@client/src/components/business-ui/api/files/service';
+import { runtimeBuildFingerprint } from '@client/src/config/runtime-build';
 import { Button } from '@client/src/components/ui/button';
 import { Textarea } from '@client/src/components/ui/textarea';
 import { createRequestCorrelationId } from '@client/src/utils/request-correlation-id';
@@ -23,7 +28,13 @@ import type {
 } from '@shared/api.interface';
 
 import ReviewConversationTurn from './ReviewConversationTurn';
-import { continuousReviewPresentation } from './continuous-review-state';
+import {
+  continuousReviewPresentation,
+  reviewOperationErrorPresentation,
+  reviewTurnGroups,
+  shouldAutoRefreshReviewTurn,
+  type ReviewOperationErrorPresentation,
+} from './continuous-review-state';
 
 import './continuous-review-panel.css';
 
@@ -61,60 +72,141 @@ export default function ContinuousReviewPanel({
   const [uploadedSelection, setUploadedSelection] =
     useState<UploadedReviewSelection | null>(null);
   const [busyAction, setBusyAction] = useState<
-    'load' | 'start' | 'append' | 'close' | 'confirm' | null
-  >('load');
-  const [error, setError] = useState<string | null>(null);
+    'start' | 'append' | 'close' | 'confirm' | null
+  >(null);
+  const [refreshing, setRefreshing] = useState(true);
+  const [error, setError] = useState<ReviewOperationErrorPresentation | null>(
+    null,
+  );
+  const [errorFingerprint, setErrorFingerprint] =
+    useState<HostedRuntimeFingerprintResponse | null>(null);
+  const [errorFingerprintReading, setErrorFingerprintReading] = useState(false);
+  const [activeRequestId, setActiveRequestId] = useState<string | null>(null);
   const [confirmingTurnId, setConfirmingTurnId] = useState<string | null>(null);
   const [rejectedDraftRefs, setRejectedDraftRefs] = useState<string[]>([]);
   const requestIdRef = useRef<string | null>(null);
+  const errorEpochRef = useRef(0);
   const presentation = continuousReviewPresentation(conversation);
+  const turns = reviewTurnGroups(conversation?.turns ?? []);
+  const currentTurn = turns.current;
+
+  const clearError = useCallback((): void => {
+    errorEpochRef.current += 1;
+    setError(null);
+    setErrorFingerprint(null);
+    setErrorFingerprintReading(false);
+  }, []);
+
+  const captureError = useCallback((reason: unknown): void => {
+    const errorEpoch = errorEpochRef.current + 1;
+    errorEpochRef.current = errorEpoch;
+    setError(reviewOperationErrorPresentation(reason));
+    setErrorFingerprint(null);
+    setErrorFingerprintReading(true);
+    void getHostedRuntimeFingerprint()
+      .then((fingerprint) => {
+        if (errorEpochRef.current === errorEpoch) {
+          setErrorFingerprint(fingerprint);
+          setErrorFingerprintReading(false);
+        }
+      })
+      .catch(() => {
+        if (errorEpochRef.current === errorEpoch) {
+          setErrorFingerprintReading(false);
+        }
+      });
+  }, []);
 
   const readCurrent = useCallback(async (): Promise<void> => {
-    setBusyAction('load');
-    setError(null);
+    setRefreshing(true);
+    clearError();
     try {
       const response = await canonicalHost.reloadReviewConversation(workItemId);
       setConversation(response.conversation);
       setCurrentRevision(response.currentWorkItemRevision);
     } catch (reason) {
-      setError(reviewErrorLabel(reason));
+      captureError(reason);
     } finally {
-      setBusyAction(null);
+      setRefreshing(false);
     }
-  }, [workItemId]);
+  }, [captureError, clearError, workItemId]);
 
   useEffect(() => {
     void readCurrent();
   }, [readCurrent]);
 
+  useEffect(
+    () => () => {
+      errorEpochRef.current += 1;
+    },
+    [],
+  );
+
   useEffect(() => {
     setCurrentRevision(workItemRevision);
   }, [workItemRevision]);
 
-  const onDrop = useCallback((acceptedFiles: File[]) => {
-    const selected = acceptedFiles[0] ?? null;
-    setUploadedSelection(null);
-    requestIdRef.current = null;
-    setError(null);
-    if (!selected) {
-      setFile(null);
-      setError('请选择一个 PDF 文件。');
+  useEffect(() => {
+    const currentTurn = turns.current;
+    if (
+      !currentTurn ||
+      !shouldAutoRefreshReviewTurn(currentTurn) ||
+      conversation?.status !== 'ACTIVE' ||
+      busyAction !== null ||
+      refreshing
+    ) {
       return;
     }
-    if (!selected.name.toLowerCase().endsWith('.pdf')) {
-      setFile(null);
-      setError('当前补充资料入口仅接受 PDF。');
-      return;
-    }
-    if (selected.size <= 0 || selected.size > MAX_PDF_BYTES) {
-      setFile(null);
-      setError('PDF 不能为空，且文件大小不能超过 100 MB。');
-      return;
-    }
-    setFile(selected);
-  }, []);
+    const timer = window.setTimeout(() => void readCurrent(), 4_000);
+    return () => window.clearTimeout(timer);
+  }, [
+    busyAction,
+    conversation?.status,
+    readCurrent,
+    refreshing,
+    turns.current,
+  ]);
 
-  const busy = busyAction !== null;
+  const onDrop = useCallback(
+    (acceptedFiles: File[]) => {
+      const selected = acceptedFiles[0] ?? null;
+      setUploadedSelection(null);
+      requestIdRef.current = null;
+      setActiveRequestId(null);
+      clearError();
+      if (!selected) {
+        setFile(null);
+        setError(
+          reviewInputError('REVIEW_PDF_REQUIRED', '请选择一个 PDF 文件。'),
+        );
+        return;
+      }
+      if (!selected.name.toLowerCase().endsWith('.pdf')) {
+        setFile(null);
+        setError(
+          reviewInputError(
+            'REVIEW_PDF_TYPE_INVALID',
+            '当前补充资料入口仅接受 PDF。',
+          ),
+        );
+        return;
+      }
+      if (selected.size <= 0 || selected.size > MAX_PDF_BYTES) {
+        setFile(null);
+        setError(
+          reviewInputError(
+            'REVIEW_PDF_SIZE_INVALID',
+            'PDF 不能为空，且文件大小不能超过 100 MB。',
+          ),
+        );
+        return;
+      }
+      setFile(selected);
+    },
+    [clearError],
+  );
+
+  const busy = busyAction !== null || refreshing;
   const { getInputProps, getRootProps, isDragActive } = useDropzone({
     accept: { 'application/pdf': ['.pdf'] },
     disabled: busy || !presentation.composerEnabled,
@@ -126,14 +218,14 @@ export default function ContinuousReviewPanel({
   async function startOrSync(): Promise<void> {
     if (busy || !presentation.canStartOrSync) return;
     setBusyAction('start');
-    setError(null);
+    clearError();
     try {
       const response =
         await canonicalHost.createOrResumeReviewConversation(workItemId);
       setConversation(response.conversation);
       setCurrentRevision(response.conversation.currentWorkItemRevision);
     } catch (reason) {
-      setError(reviewErrorLabel(reason));
+      captureError(reason);
     } finally {
       setBusyAction(null);
     }
@@ -151,10 +243,11 @@ export default function ContinuousReviewPanel({
       return;
     }
     setBusyAction('append');
-    setError(null);
+    clearError();
     try {
       const requestId = requestIdRef.current ?? createRequestCorrelationId();
       requestIdRef.current = requestId;
+      setActiveRequestId(requestId);
       let selection = uploadedSelection;
       if (file && !selection) {
         await canonicalHost.requireOfficialOauthSession();
@@ -184,8 +277,9 @@ export default function ContinuousReviewPanel({
       setFile(null);
       setUploadedSelection(null);
       requestIdRef.current = null;
+      setActiveRequestId(null);
     } catch (reason) {
-      setError(reviewErrorLabel(reason));
+      captureError(reason);
     } finally {
       setBusyAction(null);
     }
@@ -194,7 +288,7 @@ export default function ContinuousReviewPanel({
   async function closeConversation(): Promise<void> {
     if (busy || !conversation || conversation.status !== 'ACTIVE') return;
     setBusyAction('close');
-    setError(null);
+    clearError();
     try {
       const response = await canonicalHost.closeReviewConversation(
         workItemId,
@@ -203,7 +297,7 @@ export default function ContinuousReviewPanel({
       setConversation(response.conversation);
       setConfirmingTurnId(null);
     } catch (reason) {
-      setError(reviewErrorLabel(reason));
+      captureError(reason);
     } finally {
       setBusyAction(null);
     }
@@ -214,7 +308,7 @@ export default function ContinuousReviewPanel({
       return;
     }
     setBusyAction('confirm');
-    setError(null);
+    clearError();
     try {
       const response = await canonicalHost.confirmReviewActionDraft(
         workItemId,
@@ -233,10 +327,21 @@ export default function ContinuousReviewPanel({
       setConfirmingTurnId(null);
       await onWorkItemRefresh();
     } catch (reason) {
-      setError(reviewErrorLabel(reason));
+      captureError(reason);
     } finally {
       setBusyAction(null);
     }
+  }
+
+  function rejectDraft(turn: ReviewTurnReadModel): void {
+    const draftRef =
+      turn.assistantCandidate?.reviewActionDraft?.reviewActionDraftRef;
+    if (draftRef) {
+      setRejectedDraftRefs((current) =>
+        current.includes(draftRef) ? current : [...current, draftRef],
+      );
+    }
+    setConfirmingTurnId(null);
   }
 
   const active = presentation.state === 'ACTIVE';
@@ -265,11 +370,11 @@ export default function ContinuousReviewPanel({
             type="button"
             size="sm"
             variant="outline"
-            disabled={busy}
+            disabled={refreshing}
             onClick={() => void readCurrent()}
           >
             <RefreshCw aria-hidden="true" />
-            重新读取
+            {refreshing ? '正在读取…' : '重新读取'}
           </Button>
         </div>
       </header>
@@ -292,13 +397,19 @@ export default function ContinuousReviewPanel({
       ) : null}
 
       {conversation ? (
-        <div className="continuous-review-sync" role="status">
+        <div
+          className={`continuous-review-sync${refreshing ? ' is-refreshing' : ''}`}
+          role="status"
+        >
           <div>
             <span>讨论依据</span>
             <strong>
               已同步至事项版本 {conversation.lastSyncedRevision} · 当前版本{' '}
               {currentRevision}
             </strong>
+            {refreshing ? (
+              <small>正在 fresh-read；当前投影保留至新读回完成。</small>
+            ) : null}
           </div>
           {presentation.state === 'STALE_CONTEXT' ? (
             <>
@@ -329,47 +440,74 @@ export default function ContinuousReviewPanel({
             disabled={busy}
             onClick={() => void startOrSync()}
           >
-            {busyAction === 'start' ? '正在开始…' : '开始复核讨论'}
+            {refreshing
+              ? '正在读取…'
+              : busyAction === 'start'
+                ? '正在开始…'
+                : '开始复核讨论'}
           </Button>
         </div>
       )}
 
-      {conversation?.turns.length ? (
+      {currentTurn ? (
         <div className="continuous-review-turns" aria-label="复核讨论记录">
-          {conversation.turns.map((turn) => (
-            <ReviewConversationTurn
-              key={turn.reviewTurnId}
-              turn={turn}
-              conversation={conversation}
-              currentRevision={currentRevision}
-              busy={busy}
-              confirming={confirmingTurnId === turn.reviewTurnId}
-              rejected={
-                !!turn.assistantCandidate?.reviewActionDraft &&
-                rejectedDraftRefs.includes(
-                  turn.assistantCandidate.reviewActionDraft
-                    .reviewActionDraftRef,
-                )
-              }
-              onBeginConfirm={() => setConfirmingTurnId(turn.reviewTurnId)}
-              onCancelConfirm={() => setConfirmingTurnId(null)}
-              onRejectDraft={() => {
-                const draftRef =
-                  turn.assistantCandidate?.reviewActionDraft
-                    ?.reviewActionDraftRef;
-                if (draftRef) {
-                  setRejectedDraftRefs((current) =>
-                    current.includes(draftRef)
-                      ? current
-                      : [...current, draftRef],
-                  );
-                }
-                setConfirmingTurnId(null);
-              }}
-              onConfirm={() => void confirmDraft(turn)}
-              onLocateSourceRef={onLocateSourceRef}
-            />
-          ))}
+          {turns.history.length ? (
+            <details className="continuous-review-history">
+              <summary>历史回合 · {turns.history.length}</summary>
+              <div>
+                {turns.history.map((turn) => (
+                  <ReviewConversationTurn
+                    key={turn.reviewTurnId}
+                    turn={turn}
+                    conversation={conversation!}
+                    currentRevision={currentRevision}
+                    isCurrent={false}
+                    busy={busy}
+                    confirming={confirmingTurnId === turn.reviewTurnId}
+                    rejected={
+                      !!turn.assistantCandidate?.reviewActionDraft &&
+                      rejectedDraftRefs.includes(
+                        turn.assistantCandidate.reviewActionDraft
+                          .reviewActionDraftRef,
+                      )
+                    }
+                    onBeginConfirm={() =>
+                      setConfirmingTurnId(turn.reviewTurnId)
+                    }
+                    onCancelConfirm={() => setConfirmingTurnId(null)}
+                    onRejectDraft={() => rejectDraft(turn)}
+                    onConfirm={() => void confirmDraft(turn)}
+                    onLocateSourceRef={onLocateSourceRef}
+                  />
+                ))}
+              </div>
+            </details>
+          ) : null}
+          <div className="continuous-review-current-label">
+            <span>当前回合</span>
+            <strong>Turn {currentTurn.turnNo}</strong>
+          </div>
+          <ReviewConversationTurn
+            key={currentTurn.reviewTurnId}
+            turn={currentTurn}
+            conversation={conversation!}
+            currentRevision={currentRevision}
+            isCurrent
+            busy={busy}
+            confirming={confirmingTurnId === currentTurn.reviewTurnId}
+            rejected={
+              !!currentTurn.assistantCandidate?.reviewActionDraft &&
+              rejectedDraftRefs.includes(
+                currentTurn.assistantCandidate.reviewActionDraft
+                  .reviewActionDraftRef,
+              )
+            }
+            onBeginConfirm={() => setConfirmingTurnId(currentTurn.reviewTurnId)}
+            onCancelConfirm={() => setConfirmingTurnId(null)}
+            onRejectDraft={() => rejectDraft(currentTurn)}
+            onConfirm={() => void confirmDraft(currentTurn)}
+            onLocateSourceRef={onLocateSourceRef}
+          />
         </div>
       ) : conversation ? (
         <p className="continuous-review-no-turns">当前讨论还没有补充内容。</p>
@@ -389,9 +527,22 @@ export default function ContinuousReviewPanel({
             placeholder="补充事实、提出疑问，或说明希望核对的判断"
             onChange={(event) => {
               requestIdRef.current = null;
+              setActiveRequestId(null);
               setMessage(event.target.value);
             }}
           />
+          {busyAction === 'append' && activeRequestId ? (
+            <div className="continuous-review-generation" role="status">
+              <RefreshCw aria-hidden="true" />
+              <div>
+                <strong>正在保存输入并请求候选</strong>
+                <span title={activeRequestId}>
+                  requestId {shortRequestId(activeRequestId)}
+                  ；此阶段不会采纳输入或推进事项版本。
+                </span>
+              </div>
+            </div>
+          ) : null}
           <div className="continuous-review-compose-row">
             <div
               {...getRootProps({
@@ -423,6 +574,7 @@ export default function ContinuousReviewPanel({
                   setFile(null);
                   setUploadedSelection(null);
                   requestIdRef.current = null;
+                  setActiveRequestId(null);
                 }}
               >
                 <X aria-hidden="true" />
@@ -464,10 +616,74 @@ export default function ContinuousReviewPanel({
       ) : null}
 
       {error ? (
-        <p className="continuous-review-error" role="alert">
+        <div className="continuous-review-error" role="alert">
           <TriangleAlert aria-hidden="true" />
-          {error}
-        </p>
+          <div>
+            <strong>{error.title}</strong>
+            <span>{error.message}</span>
+            <dl>
+              <div>
+                <dt>错误码</dt>
+                <dd>{error.code ?? 'UNAVAILABLE'}</dd>
+              </div>
+              <div>
+                <dt>重试语义</dt>
+                <dd>
+                  {error.retryable === true
+                    ? 'Host 允许原样重试'
+                    : error.retryable === false
+                      ? 'Host 不允许原样重试'
+                      : 'Host 未返回'}
+                </dd>
+              </div>
+              {error.operatorAction ? (
+                <div>
+                  <dt>运维动作</dt>
+                  <dd>{error.operatorAction}</dd>
+                </div>
+              ) : null}
+              {!error.code?.startsWith('REVIEW_PDF_') ? (
+                <>
+                  <div>
+                    <dt>前端源码</dt>
+                    <dd>{runtimeBuildFingerprint.sourceCommit}</dd>
+                  </div>
+                  <div>
+                    <dt>Host 部署</dt>
+                    <dd>
+                      {errorFingerprintReading
+                        ? '正在读取…'
+                        : (errorFingerprint?.deployedCommit ?? 'UNAVAILABLE')}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Release</dt>
+                    <dd>
+                      {errorFingerprintReading
+                        ? '正在读取…'
+                        : (errorFingerprint?.releaseId ?? 'UNAVAILABLE')}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>API 合同</dt>
+                    <dd>
+                      {errorFingerprintReading
+                        ? '正在读取…'
+                        : (errorFingerprint?.apiContractVersion ??
+                          'UNAVAILABLE')}
+                    </dd>
+                  </div>
+                </>
+              ) : null}
+            </dl>
+            {activeRequestId ? (
+              <small>
+                当前输入与 requestId {shortRequestId(activeRequestId)}
+                已保留；再次提交会复用同一标识，避免重复回合。
+              </small>
+            ) : null}
+          </div>
+        </div>
       ) : null}
     </section>
   );
@@ -485,22 +701,19 @@ function safePdfName(fileName: string): string {
   return `${base || 'review-attachment'}.pdf`;
 }
 
-function reviewErrorLabel(reason: unknown): string {
-  const message = reason instanceof Error ? reason.message : String(reason);
-  if (/LOGIN|IDENTITY|OAUTH|UNAUTHORIZED|401/iu.test(message)) {
-    return '请先完成飞书授权，再继续当前复核。';
-  }
-  if (/NOT_FOUND|FORBIDDEN|403|404/iu.test(message)) {
-    return '当前事项或复核讨论不可用，请返回资料库重新进入。';
-  }
-  if (/REVISION|STALE|CONFLICT|409/iu.test(message)) {
-    return '事项已经更新，请重新读取并同步到最新版本。';
-  }
-  if (/ATTACHMENT/iu.test(message)) {
-    return '补充资料未能受控接入，请保留文件并重试。';
-  }
-  if (/BROWSER_RANDOM_UUID_UNAVAILABLE/iu.test(message)) {
-    return '当前浏览器缺少安全请求标识能力，请使用受支持的飞书客户端或浏览器。';
-  }
-  return '本次复核操作未完成，请保留当前输入后重试。';
+function shortRequestId(value: string): string {
+  return value.length <= 18 ? value : `${value.slice(0, 8)}…${value.slice(-6)}`;
+}
+
+function reviewInputError(
+  code: string,
+  message: string,
+): ReviewOperationErrorPresentation {
+  return {
+    title: '补充资料不可用',
+    message,
+    code,
+    retryable: null,
+    operatorAction: null,
+  };
 }
