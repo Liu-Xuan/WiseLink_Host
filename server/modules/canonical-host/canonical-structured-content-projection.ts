@@ -28,8 +28,8 @@ export function projectCanonicalStructuredContentUnit(
     sectionTitle: semantics.sectionTitle,
     displayText: semantics.displayText,
     sourceRefIds: [...unit.sourceRefIds],
-    sourceLocators: (unit.sourceLocators ?? []).map(
-      sanitizeStructuredContentLocator,
+    sourceLocators: (unit.sourceLocators ?? []).map((locator) =>
+      projectCanonicalStructuredContentLocator(locator),
     ),
   };
 }
@@ -245,21 +245,37 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function sanitizeStructuredContentLocator(
+export function projectCanonicalStructuredContentLocator(
   locator: UnifiedReaderSourceLocator,
+  focusText?: string,
 ): CanonicalStructuredContentSourceLocator {
   return {
     sourceRefId: locator.sourceRefId,
     kind: locator.kind,
     pageStart: locator.pageStart,
     pageEnd: locator.pageEnd,
-    quote: boundedQuote(locator.quote),
+    quote: boundedQuote(locator.quote, focusText),
   };
 }
 
-function boundedQuote(value: string | null): string | null {
+function boundedQuote(
+  value: string | null,
+  focusText?: string,
+): string | null {
   const quote: string | null = readableText(value);
   if (quote === null) return null;
   if (quote.length <= MAX_SOURCE_QUOTE_LENGTH) return quote;
+  const focus = focusText?.trim();
+  if (focus) {
+    const index = quote.toUpperCase().indexOf(focus.toUpperCase());
+    if (index >= 0) {
+      const radius = Math.floor((MAX_SOURCE_QUOTE_LENGTH - 3) / 2);
+      const start = Math.max(0, index - radius);
+      const end = Math.min(quote.length, start + MAX_SOURCE_QUOTE_LENGTH - 2);
+      return `${start > 0 ? '…' : ''}${quote.slice(start, end).trim()}${
+        end < quote.length ? '…' : ''
+      }`;
+    }
+  }
   return `${quote.slice(0, MAX_SOURCE_QUOTE_LENGTH - 1).trimEnd()}…`;
 }

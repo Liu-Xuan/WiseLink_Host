@@ -818,6 +818,7 @@ export class CanonicalHostVerticalService {
     const mentionCandidates = deriveCanonicalReferenceMentionPreview(
       browserUnits,
       pkg.documentIdentity?.documentCode,
+      allUnits,
     );
     const mentions = await this.resolveReferenceMentionTargets(
       mentionCandidates,
@@ -845,6 +846,15 @@ export class CanonicalHostVerticalService {
     actor: CanonicalHostActor,
   ): Promise<CanonicalReferenceMentionPreviewItem[]> {
     const targets = [...new Set(mentions.map((item) => item.normalizedTarget))];
+    const catalogTargets = this.documentManagement
+      ? await this.documentManagement.listCurrentReferenceTargets(targets, {
+          actorUserId: actor.userId,
+          tenantId: actor.tenantId,
+          roles: [...actor.roles],
+          appId: actor.appId,
+          env: actor.env,
+        })
+      : [];
     const resolutions = new Map<
       string,
       CanonicalReferenceTargetResolution
@@ -853,7 +863,14 @@ export class CanonicalHostVerticalService {
       targets.map(async (target) => {
         resolutions.set(
           target,
-          await this.resolveReferenceTarget(target, actor),
+          await this.resolveReferenceTarget(
+            catalogTargets.filter(
+              (match) =>
+                canonicalReferenceLookupKey(match.canonicalDocumentNumber) ===
+                canonicalReferenceLookupKey(target),
+            ),
+            actor,
+          ),
         );
       }),
     );
@@ -866,22 +883,15 @@ export class CanonicalHostVerticalService {
   }
 
   private async resolveReferenceTarget(
-    normalizedTarget: string,
+    matches: Array<{
+      documentVersionId: string;
+      canonicalDocumentNumber: string;
+    }>,
     actor: CanonicalHostActor,
   ): Promise<CanonicalReferenceTargetResolution> {
-    if (!this.documentManagement || !this.workItems) {
+    if (!this.workItems) {
       return { status: 'DOCUMENT_NOT_INGESTED' };
     }
-    const matches = await this.documentManagement.listCurrentReferenceTargets(
-      normalizedTarget,
-      {
-        actorUserId: actor.userId,
-        tenantId: actor.tenantId,
-        roles: [...actor.roles],
-        appId: actor.appId,
-        env: actor.env,
-      },
-    );
     if (matches.length === 0) return { status: 'DOCUMENT_NOT_INGESTED' };
     if (matches.length > 1) {
       return { status: 'RESOLVED_MULTIPLE', candidateCount: matches.length };
@@ -1990,6 +2000,10 @@ function s1000dVerifiedResponse(
       currentSelectionChanged: false,
     },
   };
+}
+
+function canonicalReferenceLookupKey(value: string): string {
+  return value.trim().toUpperCase().replace(/[^A-Z0-9]/gu, '');
 }
 
 function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
