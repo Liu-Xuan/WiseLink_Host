@@ -252,6 +252,10 @@ export interface CompleteConfigurationEvidenceQueryInput {
 }
 
 export interface ConfigurationEvidenceQueryStorePort {
+  findLatest(input: {
+    tenantId: string;
+    workItemId: string;
+  }): Promise<ConfigurationEvidenceQueryAttemptReadModel | null>;
   findByRequest(input: {
     tenantId: string;
     workItemId: string;
@@ -267,9 +271,7 @@ export interface ConfigurationEvidenceQueryStorePort {
     workItemId: string;
     candidateEvidenceRef: string;
   }): Promise<ConfigurationEvidenceQueryAttemptReadModel | null>;
-  reserve(
-    input: ReserveConfigurationEvidenceQueryInput,
-  ): Promise<{
+  reserve(input: ReserveConfigurationEvidenceQueryInput): Promise<{
     replayed: boolean;
     attempt: ConfigurationEvidenceQueryAttemptReadModel;
   }>;

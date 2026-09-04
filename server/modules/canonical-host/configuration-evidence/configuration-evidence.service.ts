@@ -3,6 +3,7 @@ import type { Request } from 'express';
 
 import type {
   CanonicalAssessmentGapMateriality,
+  CanonicalConfigurationEvidenceStatusReadModel,
   CanonicalWorkItemProjection,
 } from '@shared/api.interface';
 import { canonicalSha256 } from '../../action-attempt/action-attempt-envelope';
@@ -56,6 +57,7 @@ import {
 } from './get-installation-events.port';
 import { mapInstallationEventEvidence } from './installation-event-evidence.mapper';
 import type { InstallationEventEvidenceProjection } from './installation-event-evidence.types';
+import { projectConfigurationEvidenceReevaluationStatus } from './configuration-evidence-reevaluation.state';
 
 const MAX_TARGETS = 5;
 const HISTORY_LIMIT = 20;
@@ -384,6 +386,79 @@ export class ConfigurationEvidenceService {
       current,
       history,
       authority: structuredClone(CONFIGURATION_EVIDENCE_READ_AUTHORITY),
+    };
+  }
+
+  async status(
+    workItemIdValue: string,
+    httpRequest: Request,
+  ): Promise<CanonicalConfigurationEvidenceStatusReadModel> {
+    const workItemId: string = requiredIdentifier(
+      workItemIdValue,
+      'CONFIGURATION_EVIDENCE_WORK_ITEM_ID_INVALID',
+    );
+    const authorized: AuthorizedConfigurationAccess =
+      await this.authorizeAndLoad(
+        workItemId,
+        'READ_CONFIGURATION_EVIDENCE',
+        httpRequest,
+      );
+    const [latestQuery, current] = await Promise.all([
+      this.queryStore.findLatest({
+        tenantId: authorized.grant.tenantId,
+        workItemId,
+      }),
+      this.store.readCurrent({
+        tenantId: authorized.grant.tenantId,
+        workItemId,
+      }),
+    ]);
+    assertReadCurrentBinding(authorized.workItem, current);
+    const adoption = latestQuery
+      ? configurationEvidenceAdoptionStatus(
+          latestQuery,
+          authorized.workItem.revision,
+        )
+      : null;
+    return {
+      schemaVersion: 'wiselink.3_1.configuration_evidence_status.v1',
+      workItemId,
+      workItemRevision: authorized.workItem.revision,
+      source: {
+        configured: this.installationEvents.configured,
+      },
+      latestQuery: latestQuery
+        ? {
+            queryAttemptRef: latestQuery.queryAttemptRef,
+            candidateEvidenceRef: latestQuery.candidateEvidenceRef,
+            inputRevision: latestQuery.inputRevision,
+            terminalStatus: latestQuery.terminalStatus,
+            sourceRecordCount: latestQuery.sourceRecordCount,
+            completedAt: latestQuery.completedAt,
+            adoptionStatus: latestQuery.adoption.status,
+            ...adoption,
+          }
+        : null,
+      current: current
+        ? {
+            snapshotId: current.summary.snapshotId,
+            configurationRevision: current.summary.configurationRevision,
+            aircraftAssetId: current.summary.aircraftAssetId,
+            assessmentAsOf: current.summary.assessmentAsOf,
+            sourceCompleteness: current.summary.sourceCompleteness,
+            truthSummary: structuredClone(current.summary.truthSummary),
+            recordedAt: current.summary.recordedAt,
+          }
+        : null,
+      reevaluation: projectConfigurationEvidenceReevaluationStatus(
+        authorized.workItem,
+      ),
+      authority: {
+        owner: 'CANONICAL_HOST',
+        candidateOnly: true,
+        noRecordMeansFalse: false,
+        notConnectedMeansFalse: false,
+      },
     };
   }
 
@@ -956,6 +1031,43 @@ function terminalQueryStatus(
   return results.every((result) => result.records.length === 0)
     ? 'SUCCEEDED_NO_RECORD'
     : 'SUCCEEDED_EVIDENCE';
+}
+
+function configurationEvidenceAdoptionStatus(
+  latestQuery: ConfigurationEvidenceQueryAttemptReadModel,
+  currentWorkItemRevision: number,
+): Pick<
+  NonNullable<CanonicalConfigurationEvidenceStatusReadModel['latestQuery']>,
+  'adoptionEligible' | 'adoptionBlockReason'
+> {
+  if (latestQuery.adoption.status === 'ADOPTED') {
+    return {
+      adoptionEligible: false,
+      adoptionBlockReason: 'ALREADY_ADOPTED',
+    };
+  }
+  if (latestQuery.terminalStatus === 'RUNNING') {
+    return {
+      adoptionEligible: false,
+      adoptionBlockReason: 'QUERY_RUNNING',
+    };
+  }
+  if (
+    latestQuery.terminalStatus !== 'SUCCEEDED_EVIDENCE' &&
+    latestQuery.terminalStatus !== 'SUCCEEDED_NO_RECORD'
+  ) {
+    return {
+      adoptionEligible: false,
+      adoptionBlockReason: 'QUERY_NOT_ADOPTABLE',
+    };
+  }
+  if (latestQuery.inputRevision !== currentWorkItemRevision) {
+    return {
+      adoptionEligible: false,
+      adoptionBlockReason: 'WORK_ITEM_REVISION_CHANGED',
+    };
+  }
+  return { adoptionEligible: true, adoptionBlockReason: null };
 }
 
 function isErrorCode(error: unknown, code: string): boolean {

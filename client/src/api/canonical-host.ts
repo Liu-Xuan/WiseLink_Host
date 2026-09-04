@@ -2,6 +2,7 @@ import type {
   AppendReviewTextTurnRequest,
   AppendReviewTextTurnResponse,
   CanonicalApplicabilitySelectionReadModel,
+  CanonicalConfigurationEvidenceStatusReadModel,
   CanonicalAeoCandidateRunResponse,
   CanonicalDocumentParsingPageResponse,
   CanonicalRelatedContextPreviewResponse,
@@ -348,8 +349,7 @@ export async function getDocumentParsingPage(
     const normalizedQuery: string = query.trim();
     const normalizedSourceRef: string = options.sourceRef?.trim() ?? '';
     const cacheBypassFreshRead: boolean =
-      options.freshness === 'mutation' ||
-      options.freshness === 'source-link';
+      options.freshness === 'mutation' || options.freshness === 'source-link';
     const params: Record<string, string> = {};
     if (normalizedQuery !== '') params.query = normalizedQuery;
     if (normalizedSourceRef !== '') params.sourceRef = normalizedSourceRef;
@@ -559,6 +559,73 @@ export async function getApplicabilitySelection(
     workItemId,
     operation: '读取当前适用性自动评估范围',
   });
+}
+
+export async function getConfigurationEvidenceStatus(
+  workItemId: string,
+): Promise<CanonicalConfigurationEvidenceStatusReadModel> {
+  const requestGeneration = clientSessionGeneration;
+  try {
+    const response =
+      await axiosForBackend<CanonicalConfigurationEvidenceStatusReadModel>({
+        url: `/api/canonical-host/work-items/${encodeURIComponent(workItemId)}/configuration-evidence/status`,
+        method: 'GET',
+      });
+    if (response.status === 401) {
+      throw clientLoginRequired(
+        'CONFIGURATION_EVIDENCE_LOGIN_REQUIRED',
+        requestGeneration,
+      );
+    }
+    if (response.status === 403 || response.status === 404) {
+      throw canonicalObjectNotFound();
+    }
+    if (response.status < 200 || response.status >= 300) {
+      throw backendResponseError(
+        response.data,
+        'CONFIGURATION_EVIDENCE_STATUS_UNAVAILABLE',
+        response.status,
+      );
+    }
+    return response.data;
+  } catch (error) {
+    logger.error('读取构型证据状态失败', error);
+    throw normalizedDirectObjectError(error, requestGeneration);
+  }
+}
+
+export async function adoptConfigurationEvidenceCandidate(
+  workItemId: string,
+  candidateEvidenceRef: string,
+  expectedRevision: number,
+): Promise<void> {
+  const requestGeneration = clientSessionGeneration;
+  try {
+    const response = await axiosForBackend<unknown>({
+      url: `/api/canonical-host/work-items/${encodeURIComponent(workItemId)}/configuration-evidence/candidate-evidence/${encodeURIComponent(candidateEvidenceRef)}/adoptions`,
+      method: 'POST',
+      data: { expectedRevision },
+    });
+    if (response.status === 401) {
+      throw clientLoginRequired(
+        'CONFIGURATION_EVIDENCE_LOGIN_REQUIRED',
+        requestGeneration,
+      );
+    }
+    if (response.status === 403 || response.status === 404) {
+      throw canonicalObjectNotFound();
+    }
+    if (response.status < 200 || response.status >= 300) {
+      throw backendResponseError(
+        response.data,
+        'CONFIGURATION_EVIDENCE_ADOPTION_FAILED',
+        response.status,
+      );
+    }
+  } catch (error) {
+    logger.error('采纳构型证据候选失败', error);
+    throw normalizedDirectObjectError(error, requestGeneration);
+  }
 }
 
 async function applicabilitySelectionRequest(input: {

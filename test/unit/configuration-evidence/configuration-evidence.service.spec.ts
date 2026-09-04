@@ -570,6 +570,7 @@ describe('Host configuration-evidence persistence product chain', () => {
       queried.candidate.queryAttemptRef,
       {} as Request,
     );
+    const status = await fixture.service.status(WORK_ITEM_ID, {} as Request);
 
     expect(queried).toMatchObject({
       workItemRevision: 7,
@@ -590,6 +591,18 @@ describe('Host configuration-evidence persistence product chain', () => {
       },
     });
     expect(readback.candidate).toEqual(queried.candidate);
+    expect(status).toMatchObject({
+      workItemRevision: 7,
+      source: { configured: false },
+      latestQuery: {
+        terminalStatus: 'NOT_CONNECTED',
+        adoptionEligible: false,
+        adoptionBlockReason: 'QUERY_NOT_ADOPTABLE',
+      },
+      current: null,
+      reevaluation: null,
+      authority: { notConnectedMeansFalse: false },
+    });
     expect(fixture.workItem().revision).toBe(7);
     expect(fixture.port.calls).toHaveLength(0);
     expect(fixture.store.recordCount()).toBe(0);
@@ -634,6 +647,17 @@ describe('Host configuration-evidence persistence product chain', () => {
     expect(fixture.store.recordCount()).toBe(0);
     expect(fixture.port.calls).toHaveLength(1);
 
+    await expect(
+      fixture.service.status(WORK_ITEM_ID, {} as Request),
+    ).resolves.toMatchObject({
+      latestQuery: {
+        terminalStatus: 'SUCCEEDED_EVIDENCE',
+        adoptionEligible: true,
+        adoptionBlockReason: null,
+      },
+      current: null,
+    });
+
     const adopted = await fixture.service.adopt(
       WORK_ITEM_ID,
       queried.candidate.candidateEvidenceRef,
@@ -659,6 +683,25 @@ describe('Host configuration-evidence persistence product chain', () => {
     expect(adoptionReplay).toMatchObject({
       workItemRevision: 8,
       replayed: true,
+    });
+    await expect(
+      fixture.service.status(WORK_ITEM_ID, {} as Request),
+    ).resolves.toMatchObject({
+      workItemRevision: 8,
+      latestQuery: {
+        adoptionStatus: 'ADOPTED',
+        adoptionEligible: false,
+        adoptionBlockReason: 'ALREADY_ADOPTED',
+      },
+      current: {
+        configurationRevision: 1,
+        truthSummary: { trueCount: 1 },
+      },
+      reevaluation: {
+        status: 'REQUIRED',
+        nextStage: 'APPLICABILITY',
+        servingCurrentPreserved: true,
+      },
     });
     expect(fixture.workItem().revision).toBe(8);
     expect(fixture.workItem().configurationEvidenceReevaluation).toEqual({
@@ -1074,6 +1117,20 @@ class InMemoryConfigurationEvidenceQueryStore implements ConfigurationEvidenceQu
 
   failNextAdoptionMarker(): void {
     this.failNextMarkAdopted = true;
+  }
+
+  async findLatest(input: {
+    tenantId: string;
+    workItemId: string;
+  }): Promise<ConfigurationEvidenceQueryAttemptReadModel | null> {
+    void input.tenantId;
+    for (let index = this.attempts.length - 1; index >= 0; index -= 1) {
+      const attempt = this.attempts[index];
+      if (attempt?.workItemId === input.workItemId) {
+        return structuredClone(attempt);
+      }
+    }
+    return null;
   }
 
   async findByRequest(input: {

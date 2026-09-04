@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Post, Req } from '@nestjs/common';
 import { NeedLogin } from '@lark-apaas/fullstack-nestjs-core';
 import type { Request } from 'express';
 
+import type { CanonicalConfigurationEvidenceStatusReadModel } from '@shared/api.interface';
 import type {
   ConfigurationEvidenceCurrentReadModel,
   ConfigurationEvidenceAdoptionResponse,
@@ -14,6 +15,14 @@ import { ConfigurationEvidenceService } from './configuration-evidence.service';
 @Controller('api/canonical-host/work-items/:workItemId/configuration-evidence')
 export class ConfigurationEvidenceController {
   constructor(private readonly service: ConfigurationEvidenceService) {}
+
+  @Get('status')
+  status(
+    @Param('workItemId') workItemId: string,
+    @Req() request: Request,
+  ): Promise<CanonicalConfigurationEvidenceStatusReadModel> {
+    return this.service.status(workItemId, request);
+  }
 
   @Post('queries')
   query(
