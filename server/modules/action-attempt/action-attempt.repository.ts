@@ -143,6 +143,42 @@ export class ActionAttemptRepository {
     return (row as ActionAttemptRow | undefined) ?? null;
   }
 
+  async terminalizeExpiredActiveForSuccessor(input: {
+    workItemId: string;
+    actionType: string;
+    tenantId: string;
+    now: Date;
+  }): Promise<boolean> {
+    const updated = await this.db
+      .update(actionAttempt)
+      .set({
+        status: 'TIMED_OUT',
+        terminalReason: 'ACTION_ATTEMPT_DEADLINE_EXCEEDED',
+        completedAt: input.now,
+        leaseOwner: null,
+        leaseToken: null,
+        leaseExpiresAt: null,
+        leaseSlot: null,
+        updatedAt: input.now,
+      })
+      .where(
+        and(
+          eq(actionAttempt.workItemId, input.workItemId),
+          eq(actionAttempt.actionType, input.actionType),
+          eq(actionAttempt.tenantId, input.tenantId),
+          inArray(actionAttempt.status, [...CANCELLABLE_STATUSES]),
+          lte(actionAttempt.deadlineAt, input.now),
+          isNull(actionAttempt.commitStartedAt),
+          isNull(actionAttempt.resultEnvelopeJson),
+          isNull(actionAttempt.resultContentHash),
+          eq(actionAttempt.projectionApplied, false),
+          isNull(actionAttempt.completedAt),
+        ),
+      )
+      .returning({ attemptId: actionAttempt.attemptId });
+    return updated.length === 1;
+  }
+
   async reserve(
     attempt: typeof actionAttempt.$inferInsert,
   ): Promise<ActionAttemptReservation> {

@@ -49,6 +49,75 @@ describe('ActionAttemptLifecycleService', () => {
     expect(builds).toBe(1);
   });
 
+  it('terminalizes an expired prior request before claiming a fresh successor', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-09-03T00:00:00.000Z'));
+    try {
+      const repository = new MemoryActionAttemptRepository();
+      const service = new ActionAttemptLifecycleService(repository as never);
+      const first = await service.reserveAndClaim(
+        reservationInput(async () => ({ request: 'first' })),
+      );
+
+      jest.setSystemTime(new Date('2026-09-03T01:00:01.000Z'));
+      const successor = await service.reserveAndClaim({
+        ...reservationInput(async () => ({ request: 'successor' })),
+        idempotencyKey: 'openclaw-v1:successor',
+      });
+
+      expect(repository.terminalizedForSuccessor).toHaveLength(1);
+      expect(repository.terminalizedForSuccessor[0]).toMatchObject({
+        attemptId: first.task.actionAttemptId,
+        attemptNo: 1,
+        status: 'TIMED_OUT',
+        terminalReason: 'ACTION_ATTEMPT_DEADLINE_EXCEEDED',
+        completedAt: new Date('2026-09-03T01:00:01.000Z'),
+        leaseOwner: null,
+        leaseToken: null,
+        leaseExpiresAt: null,
+        leaseSlot: null,
+        projectionApplied: false,
+      });
+      expect(successor).toMatchObject({
+        created: true,
+        status: 'RUNNING',
+        task: { idempotencyKey: 'openclaw-v1:successor' },
+      });
+      expect(successor.task.actionAttemptId).not.toBe(first.task.actionAttemptId);
+      expect(repository.row).toMatchObject({ attemptNo: 2, status: 'RUNNING' });
+      expect(repository.transitions).toEqual([
+        'QUEUED',
+        'RUNNING',
+        'TIMED_OUT',
+        'QUEUED',
+        'RUNNING',
+      ]);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('keeps a live prior request fenced against a different successor', async () => {
+    const repository = new MemoryActionAttemptRepository();
+    const service = new ActionAttemptLifecycleService(repository as never);
+    const first = await service.reserveAndClaim(
+      reservationInput(async () => ({ request: 'first' })),
+    );
+
+    await expect(
+      service.reserveAndClaim({
+        ...reservationInput(async () => ({ request: 'successor' })),
+        idempotencyKey: 'openclaw-v1:successor',
+      }),
+    ).rejects.toMatchObject({ code: 'ACTION_ATTEMPT_ACTIVE_CONFLICT' });
+
+    expect(repository.terminalizedForSuccessor).toHaveLength(0);
+    expect(repository.row).toMatchObject({
+      attemptId: first.task.actionAttemptId,
+      status: 'RUNNING',
+    });
+    expect(repository.transitions).toEqual(['QUEUED', 'RUNNING']);
+  });
+
   it('atomically refreshes and claims the same expired unstarted user-regeneration attempt', async () => {
     jest.useFakeTimers().setSystemTime(new Date('2026-08-29T10:00:00.000Z'));
     try {
@@ -599,6 +668,7 @@ class MemoryActionAttemptRepository {
     projectionJson: '{}',
   };
   row: ActionAttemptRow | null = null;
+  terminalizedForSuccessor: ActionAttemptRow[] = [];
   transitions: string[] = [];
   beforeExpiredUnstartedClaim: (() => void) | null = null;
 
@@ -607,7 +677,7 @@ class MemoryActionAttemptRepository {
   }
 
   async nextAttemptNo() {
-    return 1;
+    return this.terminalizedForSuccessor.length + 1;
   }
 
   async readByIdempotency(input: { idempotencyKey: string }) {
@@ -631,7 +701,57 @@ class MemoryActionAttemptRepository {
     return this.row?.attemptId === attemptId ? this.row : null;
   }
 
+  async terminalizeExpiredActiveForSuccessor(input: {
+    workItemId: string;
+    actionType: string;
+    tenantId: string;
+    now: Date;
+  }) {
+    const row = this.row;
+    if (
+      !row ||
+      row.workItemId !== input.workItemId ||
+      row.actionType !== input.actionType ||
+      row.tenantId !== input.tenantId ||
+      !['QUEUED', 'RUNNING', 'RETRY_SCHEDULED'].includes(row.status) ||
+      !row.deadlineAt ||
+      row.deadlineAt > input.now ||
+      row.commitStartedAt !== null ||
+      row.resultEnvelopeJson !== null ||
+      row.resultContentHash !== null ||
+      row.projectionApplied ||
+      row.completedAt !== null
+    ) {
+      return false;
+    }
+    this.row = {
+      ...row,
+      status: 'TIMED_OUT',
+      terminalReason: 'ACTION_ATTEMPT_DEADLINE_EXCEEDED',
+      completedAt: input.now,
+      leaseOwner: null,
+      leaseToken: null,
+      leaseExpiresAt: null,
+      leaseSlot: null,
+      updatedAt: input.now,
+    };
+    this.terminalizedForSuccessor.push(structuredClone(this.row));
+    this.transitions.push('TIMED_OUT');
+    return true;
+  }
+
   async reserve(value: Record<string, unknown>) {
+    if (
+      this.row &&
+      ['QUEUED', 'RUNNING', 'RETRY_SCHEDULED', 'COMMITTING'].includes(
+        this.row.status,
+      )
+    ) {
+      throw Object.assign(new Error('active attempt conflict'), {
+        code: 'ACTION_ATTEMPT_ACTIVE_CONFLICT',
+        statusCode: 409,
+      });
+    }
     const row = newRow(value);
     this.row = row;
     this.transitions.push(row.status);
