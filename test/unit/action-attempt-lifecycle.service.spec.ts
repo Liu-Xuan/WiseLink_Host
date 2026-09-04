@@ -96,6 +96,53 @@ describe('ActionAttemptLifecycleService', () => {
     }
   });
 
+  it('obsoletes a lease-expired prior request before claiming a fresh successor', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-09-03T00:00:00.000Z'));
+    try {
+      const repository = new MemoryActionAttemptRepository();
+      const service = new ActionAttemptLifecycleService(repository as never);
+      const first = await service.reserveAndClaim(
+        reservationInput(async () => ({ request: 'first' })),
+      );
+
+      jest.setSystemTime(new Date('2026-09-03T00:30:01.000Z'));
+      const successor = await service.reserveAndClaim({
+        ...reservationInput(async () => ({ request: 'successor' })),
+        idempotencyKey: 'openclaw-v1:successor',
+      });
+
+      expect(repository.terminalizedForSuccessor).toHaveLength(1);
+      expect(repository.terminalizedForSuccessor[0]).toMatchObject({
+        attemptId: first.task.actionAttemptId,
+        attemptNo: 1,
+        status: 'OBSOLETE',
+        terminalReason: 'ACTION_ATTEMPT_SUPERSEDED_AFTER_LEASE_EXPIRY',
+        completedAt: new Date('2026-09-03T00:30:01.000Z'),
+        leaseOwner: null,
+        leaseToken: null,
+        leaseExpiresAt: null,
+        leaseSlot: null,
+        projectionApplied: false,
+      });
+      expect(successor).toMatchObject({
+        created: true,
+        status: 'RUNNING',
+        task: { idempotencyKey: 'openclaw-v1:successor' },
+      });
+      expect(successor.task.actionAttemptId).not.toBe(first.task.actionAttemptId);
+      expect(repository.row).toMatchObject({ attemptNo: 2, status: 'RUNNING' });
+      expect(repository.transitions).toEqual([
+        'QUEUED',
+        'RUNNING',
+        'OBSOLETE',
+        'QUEUED',
+        'RUNNING',
+      ]);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('keeps a live prior request fenced against a different successor', async () => {
     const repository = new MemoryActionAttemptRepository();
     const service = new ActionAttemptLifecycleService(repository as never);
@@ -708,14 +755,18 @@ class MemoryActionAttemptRepository {
     now: Date;
   }) {
     const row = this.row;
+    const deadlineExpired = row?.deadlineAt && row.deadlineAt <= input.now;
+    const leaseExpired =
+      row?.status === 'RUNNING' &&
+      row.leaseExpiresAt !== null &&
+      row.leaseExpiresAt <= input.now;
     if (
       !row ||
       row.workItemId !== input.workItemId ||
       row.actionType !== input.actionType ||
       row.tenantId !== input.tenantId ||
       !['QUEUED', 'RUNNING', 'RETRY_SCHEDULED'].includes(row.status) ||
-      !row.deadlineAt ||
-      row.deadlineAt > input.now ||
+      (!deadlineExpired && !leaseExpired) ||
       row.commitStartedAt !== null ||
       row.resultEnvelopeJson !== null ||
       row.resultContentHash !== null ||
@@ -726,8 +777,10 @@ class MemoryActionAttemptRepository {
     }
     this.row = {
       ...row,
-      status: 'TIMED_OUT',
-      terminalReason: 'ACTION_ATTEMPT_DEADLINE_EXCEEDED',
+      status: deadlineExpired ? 'TIMED_OUT' : 'OBSOLETE',
+      terminalReason: deadlineExpired
+        ? 'ACTION_ATTEMPT_DEADLINE_EXCEEDED'
+        : 'ACTION_ATTEMPT_SUPERSEDED_AFTER_LEASE_EXPIRY',
       completedAt: input.now,
       leaseOwner: null,
       leaseToken: null,
@@ -736,7 +789,7 @@ class MemoryActionAttemptRepository {
       updatedAt: input.now,
     };
     this.terminalizedForSuccessor.push(structuredClone(this.row));
-    this.transitions.push('TIMED_OUT');
+    this.transitions.push(deadlineExpired ? 'TIMED_OUT' : 'OBSOLETE');
     return true;
   }
 
