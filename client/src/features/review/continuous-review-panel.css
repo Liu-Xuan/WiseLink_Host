@@ -148,6 +148,15 @@
   gap: 3px;
 }
 
+.continuous-review-sync small {
+  color: var(--wl-muted);
+  font-size: var(--wl-text-caption);
+}
+
+.continuous-review-sync.is-refreshing {
+  border-color: color-mix(in srgb, var(--wl-accent) 32%, var(--wl-border));
+}
+
 .continuous-review-sync > p {
   margin-left: auto;
 }
@@ -170,6 +179,38 @@
   gap: 12px;
 }
 
+.continuous-review-history {
+  border: 1px solid var(--wl-border);
+  border-radius: var(--wl-radius-md);
+  background: var(--wl-glass-soft);
+}
+
+.continuous-review-history > summary {
+  padding: 11px 14px;
+  color: var(--wl-muted);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.continuous-review-history > div {
+  display: grid;
+  padding: 0 10px 10px;
+  gap: 10px;
+}
+
+.continuous-review-current-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--wl-muted);
+  font-size: 11px;
+}
+
+.continuous-review-current-label strong {
+  color: var(--wl-ink);
+}
+
 .continuous-review-turn {
   display: grid;
   grid-template-columns: minmax(220px, 0.72fr) minmax(320px, 1.28fr);
@@ -178,6 +219,14 @@
   border-radius: var(--wl-radius-md);
   background: var(--wl-surface-solid);
   box-shadow: 0 5px 14px var(--wl-g4-shadow);
+}
+
+.continuous-review-turn.is-current {
+  border-color: color-mix(in srgb, var(--wl-accent) 30%, var(--wl-border));
+}
+
+.continuous-review-turn.is-history {
+  box-shadow: none;
 }
 
 .continuous-review-input,
@@ -222,6 +271,9 @@
 }
 
 .continuous-review-candidate > header > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   padding: 4px 8px;
   border: 1px solid color-mix(in srgb, var(--wl-accent) 30%, var(--wl-border));
   border-radius: 999px;
@@ -229,11 +281,20 @@
   background: var(--wl-accent-soft);
 }
 
+.continuous-review-candidate > header > span svg {
+  width: 13px;
+  height: 13px;
+}
+
 .continuous-review-sources {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 7px;
+}
+
+.continuous-review-draft .continuous-review-sources {
+  margin-top: 7px;
 }
 
 .continuous-review-sources > span {
@@ -340,10 +401,37 @@
   font-size: 12px;
 }
 
+.continuous-review-pending > div,
+.continuous-review-generation > div,
+.continuous-review-error > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.continuous-review-pending strong {
+  color: var(--wl-ink);
+}
+
+.continuous-review-pending span {
+  line-height: 1.55;
+}
+
 .continuous-review-pending svg {
   width: 17px;
   height: 17px;
   color: var(--wl-accent);
+}
+
+.continuous-review-candidate-runtime {
+  display: grid;
+  margin-top: 13px;
+  padding-top: 11px;
+  gap: 3px;
+  border-top: 1px solid var(--wl-border);
+  color: var(--wl-muted);
+  font-size: var(--wl-text-caption);
+  line-height: 1.5;
 }
 
 .continuous-review-no-turns {
@@ -385,6 +473,31 @@
   color: var(--wl-ink);
   background: var(--wl-surface-solid);
   box-shadow: 0 5px 14px var(--wl-g4-shadow);
+}
+
+.continuous-review-generation {
+  display: flex;
+  margin-top: 10px;
+  padding: 10px 12px;
+  align-items: flex-start;
+  gap: 9px;
+  border: 1px solid color-mix(in srgb, var(--wl-accent) 32%, var(--wl-border));
+  border-radius: var(--wl-radius-md);
+  color: var(--wl-muted);
+  background: var(--wl-accent-soft);
+  font-size: 11px;
+}
+
+.continuous-review-generation strong {
+  color: var(--wl-ink);
+  font-size: 12px;
+}
+
+.continuous-review-generation svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  color: var(--wl-accent);
 }
 
 .continuous-review-compose-row {
@@ -469,6 +582,39 @@
   padding: 10px 12px;
   font-size: 12px;
   line-height: 1.5;
+}
+
+.continuous-review-error > div {
+  flex: 1 1 auto;
+}
+
+.continuous-review-error span,
+.continuous-review-error small {
+  color: var(--wl-muted);
+}
+
+.continuous-review-error dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  margin: 8px 0 0;
+  gap: 6px 12px;
+}
+
+.continuous-review-error dl > div {
+  min-width: 0;
+}
+
+.continuous-review-error dt {
+  color: var(--wl-muted);
+  font-size: var(--wl-text-caption);
+}
+
+.continuous-review-error dd {
+  margin: 1px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--wl-ink);
+  font-family: var(--wl-mono);
+  font-size: var(--wl-text-caption);
 }
 
 @media (max-width: 760px) {

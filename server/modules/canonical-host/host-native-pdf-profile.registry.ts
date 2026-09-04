@@ -11,6 +11,8 @@ import type { ParsedPdfLayout } from '../professional-input/pure/professional-in
 
 export type HostNativePdfDocumentType =
   | 'airworthiness_directive'
+  | 'engineering_order'
+  | 'fleet_team_digest'
   | 'maintenance_programme'
   | 'maintenance_tip'
   | 'operator_transmission'
@@ -22,7 +24,7 @@ export type HostNativePdfDocumentType =
 export interface HostNativePdfProfile {
   readonly adapterId: string;
   readonly adapterSchemaVersion: string;
-  readonly family: 'AD' | 'FTD' | 'MT' | 'SB' | 'SIL' | 'SL';
+  readonly family: 'AD' | 'AEO' | 'FTD' | 'MT' | 'SB' | 'SIL' | 'SL';
   readonly issuerAuthority: string;
   readonly parseProfileRef: string;
   readonly parserProfileId: string;
@@ -62,11 +64,19 @@ const EXECUTION_ROUTE =
 
 const ACTIVATED_PROFILE_DEFINITIONS = [
   {
+    adapterId: 'issuer.ameco.engineering_order.v1',
+    family: 'AEO',
+    issuerAuthority: 'AMECO',
+    parseProfileRef: 'ameco.engineering_order',
+    documentType: 'engineering_order',
+    requiresDmAdapterRelease: true,
+  },
+  {
     adapterId: 'issuer.boeing.ftd.v1',
     family: 'FTD',
     issuerAuthority: 'BOEING',
     parseProfileRef: 'boeing.ftd.v1',
-    documentType: 'service_bulletin',
+    documentType: 'fleet_team_digest',
     parserProfileHashOverride:
       'sha256:c47a7388da23d106c2476b579308c458332127153930ced8c684212f1b431731',
   },

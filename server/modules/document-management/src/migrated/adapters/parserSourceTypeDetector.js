@@ -57,6 +57,14 @@ function hasDirectiveDocumentIdentity(text = '') {
     || /适\s*航\s*指\s*令|AIRWORTHINESS\s+DIRECTIVE/i.test(text);
 }
 
+function hasAmecoEngineeringOrderIdentity(text = '') {
+  return (
+    /(?:工程指令|ENGINEERING\s+ORDER)\s*[（(]?\s*(?:第一部分|SECTION\s*1)\s*[）)]?/i.test(text)
+    && /\bCCA-ED-021\b/i.test(text)
+    && /\bAMECO\b/i.test(text)
+  );
+}
+
 export function hasServiceLetterDocumentIdentity(text = '') {
   const head = String(text || '').slice(0, 4000);
   return /service letter|service\s+letter|(?:^|[^a-z0-9])(?:737|747|767|777|787)[-_\s]*sl[-_\s]*\d/i.test(head);
@@ -246,6 +254,7 @@ export function inferSourceType({
     hasBoeingFtdFilenameIdentity(sourceName)
     || hasBoeingFtdDocumentIdentity(contentText)
   ) return 'boeing_ftd';
+  if (hasAmecoEngineeringOrderIdentity(text)) return 'ameco_engineering_order';
   if (hasDirectiveCurrentSourceIdentity(text)) return 'ad';
   if (hasHoneywellServiceInformationLetterIdentity(text)) return 'supplier_sil';
   if (hasServiceLetterDocumentIdentity(text)) return 'boeing_service_letter';
@@ -315,10 +324,12 @@ export function detectDocumentDimensions(input = {}) {
   }
 
   let documentCategory = 'generic';
-  if (['boeing_ftd', 'boeing_mpd', 'boeing_maintenance_tip', 'maintenance_tip', 'mpd', 'sb', 'sl', 'rb', 'sil', 'ad', 'amm', 'mt', 'airbus_sb', 'airbus_sbit', 'airbus_aot', 'airbus_oit', 'airbus_fot', 'airbus_ril', 'airbus_als', 'airbus_cmp', 'airbus_tfu', 'airbus_concession', 'airbus_ame', 'generic'].includes(explicitDocumentCategory)) {
+  if (['boeing_ftd', 'boeing_mpd', 'boeing_maintenance_tip', 'maintenance_tip', 'mpd', 'sb', 'sl', 'rb', 'sil', 'ad', 'aeo', 'amm', 'mt', 'airbus_sb', 'airbus_sbit', 'airbus_aot', 'airbus_oit', 'airbus_fot', 'airbus_ril', 'airbus_als', 'airbus_cmp', 'airbus_tfu', 'airbus_concession', 'airbus_ame', 'generic'].includes(explicitDocumentCategory)) {
     documentCategory = explicitDocumentCategory;
   } else if (hasBoeingFtdFilenameIdentity(sourceName) || hasBoeingFtdDocumentIdentity(text)) {
     documentCategory = 'boeing_ftd';
+  } else if (hasAmecoEngineeringOrderIdentity(text)) {
+    documentCategory = 'aeo';
   } else if (hasDirectiveCurrentSourceIdentity(text)) {
     documentCategory = 'ad';
   } else if (hasHoneywellServiceInformationLetterIdentity(text)) {

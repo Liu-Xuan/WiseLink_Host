@@ -1,0 +1,38 @@
+{
+  "schemaVersion": "v8.4-document-family-adapter.v1",
+  "adapterId": "issuer.ameco.engineering_order.v1",
+  "extends": "generic.general_document.v1",
+  "issuerPolicy": {
+    "issuer": "AMECO",
+    "issuerAliases": ["\\bAMECO\\b", "\\bAmeco\\b"]
+  },
+  "docFamily": "AEO",
+  "subtype": "ameco_engineering_order",
+  "templateMode": "declared_ameco_aeo_source_bounded",
+  "formatOverlay": "ameco_engineering_order",
+  "matchPolicy": {
+    "priority": 96,
+    "issuerAliases": ["\\bAMECO\\b", "\\bAmeco\\b"],
+    "sourceTypes": ["ameco_engineering_order"],
+    "filenamePatterns": ["^AEO-[A-Z0-9]+-\\d{2}-\\d{4}-R\\d{2,3}\\.pdf$"],
+    "textPatterns": [
+      "工程指令[（(]?第一部分[）)]?[\\s\\S]{0,160}Engineering\\s+Order\\s*\\(SECTION\\s*1\\)",
+      "Engineering\\s+Order\\s*\\(SECTION\\s*1\\)[\\s\\S]{0,1800}CCA-ED-021"
+    ]
+  },
+  "sourceContract": {
+    "requiredSources": ["source.pdf_or_mineru_markdown", "source_excerpt"],
+    "missingSourceNeedKind": "ameco_aeo_format_profile_need",
+    "tableFidelityRequired": true,
+    "genericReadAllowed": false
+  },
+  "canonicalSchemaRef": "schema.document.engineering_order.v1",
+  "issuerOverlaySchemaRef": "schema.issuer.ameco.engineering_order.v1",
+  "documentTypeProfileRef": "engineering_order",
+  "parseProfileRef": "ameco.engineering_order",
+  "documentTemplateRef": "config/document-templates/generic_pdf/template.yaml",
+  "structuredParseTemplateRef": "engineering_order",
+  "evaluationProfileRef": "evaluation.engineering_order.source_closed.v1",
+  "closurePolicyOverlayRef": "closure.overlay.engineering_order.v1",
+  "fixtureSetRef": "test/fixtures/professional-input/ameco_aeo"
+}

@@ -1,4 +1,4 @@
-import { Link2, RefreshCw } from 'lucide-react';
+import { CheckCircle2, Link2, RefreshCw } from 'lucide-react';
 
 import { Button } from '@client/src/components/ui/button';
 import type {
@@ -8,11 +8,13 @@ import type {
   ReviewTurnResponseType,
   ReviewUncertaintyDispositionKind,
 } from '@shared/api.interface';
+import { reviewSourceRefLabel } from './continuous-review-state';
 
 interface ReviewConversationTurnProps {
   turn: ReviewTurnReadModel;
   conversation: ReviewConversationReadModel;
   currentRevision: number;
+  isCurrent: boolean;
   busy: boolean;
   confirming: boolean;
   rejected: boolean;
@@ -31,11 +33,16 @@ export default function ReviewConversationTurn(
   const snapshot = draft?.decisionSnapshot ?? null;
   const dispositions = draft?.uncertaintyDispositions ?? [];
   const draftCurrent =
+    props.isCurrent &&
+    props.conversation.status === 'ACTIVE' &&
     props.conversation.currentRevisionSynced &&
     draft?.baseRevision === props.currentRevision;
 
   return (
-    <article className="continuous-review-turn">
+    <article
+      className={`continuous-review-turn${props.isCurrent ? ' is-current' : ' is-history'}`}
+      data-generation-state={candidate ? 'completed' : 'pending'}
+    >
       <div className="continuous-review-input">
         <header>
           <strong>工程师补充</strong>
@@ -57,23 +64,18 @@ export default function ReviewConversationTurn(
         <div className="continuous-review-candidate">
           <header>
             <strong>{responseTypeLabel(candidate.responseType)}</strong>
-            <span>待工程师复核</span>
+            <span>
+              <CheckCircle2 aria-hidden="true" />
+              候选已生成 · 未采纳
+            </span>
           </header>
           <p>{candidate.answer}</p>
           {candidate.sourceRefs.length ? (
-            <div className="continuous-review-sources">
-              <span>原文依据</span>
-              {candidate.sourceRefs.map((sourceRef, index) => (
-                <button
-                  type="button"
-                  key={sourceRef}
-                  onClick={() => props.onLocateSourceRef(sourceRef)}
-                >
-                  <Link2 aria-hidden="true" />
-                  原文依据 {index + 1}
-                </button>
-              ))}
-            </div>
+            <SourceRefButtons
+              label="原文依据"
+              sourceRefs={candidate.sourceRefs}
+              onLocateSourceRef={props.onLocateSourceRef}
+            />
           ) : null}
           {candidate.candidateEvidenceRefs.length ? (
             <p className="continuous-review-evidence-count">
@@ -121,10 +123,14 @@ export default function ReviewConversationTurn(
               {draft.sourceRefs.length || draft.adoptedInputRefs.length ? (
                 <div>
                   <span>使用的证据与输入</span>
+                  {draft.sourceRefs.length ? (
+                    <SourceRefButtons
+                      label="草稿 SourceRef"
+                      sourceRefs={draft.sourceRefs}
+                      onLocateSourceRef={props.onLocateSourceRef}
+                    />
+                  ) : null}
                   <ul>
-                    {draft.sourceRefs.map((item) => (
-                      <li key={`source-${item}`}>{item}</li>
-                    ))}
                     {draft.adoptedInputRefs.map((item) => (
                       <li key={`input-${item}`}>{item}</li>
                     ))}
@@ -162,8 +168,12 @@ export default function ReviewConversationTurn(
                   <span>Decision Snapshot</span>
                   <ul>
                     <li>当前最佳判断：{snapshot.currentBestJudgment}</li>
-                    <li>判断成熟度：{maturityLabel(snapshot.decisionMaturity)}</li>
-                    <li>评估时点：{formatReviewTime(snapshot.assessmentAsOf)}</li>
+                    <li>
+                      判断成熟度：{maturityLabel(snapshot.decisionMaturity)}
+                    </li>
+                    <li>
+                      评估时点：{formatReviewTime(snapshot.assessmentAsOf)}
+                    </li>
                     {snapshot.reviewBy ? (
                       <li>再次复核：{formatReviewTime(snapshot.reviewBy)}</li>
                     ) : null}
@@ -184,7 +194,12 @@ export default function ReviewConversationTurn(
               ) : null}
               {props.rejected ? (
                 <p className="continuous-review-draft-stale">
-                  此草稿已在当前页面拒绝；没有修改 Host current，也没有推进事项版本。继续对话可形成新草稿。
+                  此草稿已在当前页面拒绝；没有修改 Host
+                  current，也没有推进事项版本。继续对话可形成新草稿。
+                </p>
+              ) : !props.isCurrent ? (
+                <p className="continuous-review-draft-stale">
+                  历史回合草稿仅供追溯；请在当前回合核对并显式确认最新草稿。
                 </p>
               ) : !draftCurrent ? (
                 <p className="continuous-review-draft-stale">
@@ -237,15 +252,64 @@ export default function ReviewConversationTurn(
               )}
             </div>
           ) : null}
+          <footer className="continuous-review-candidate-runtime">
+            <span>候选阶段没有采纳输入、修改 current 或推进事项版本。</span>
+            <span title={candidate.actionAttemptRef}>
+              Attempt {shortRef(candidate.actionAttemptRef)} · Model{' '}
+              {candidate.provenance.modelVersion} · Skill{' '}
+              {candidate.provenance.skillVersion} ·{' '}
+              {formatReviewTime(candidate.completedAt)}
+            </span>
+            {candidate.warnings.length ? (
+              <span>提示：{candidate.warnings.join('；')}</span>
+            ) : null}
+          </footer>
         </div>
       ) : (
         <div className="continuous-review-pending" role="status">
           <RefreshCw aria-hidden="true" />
-          <span>候选答复尚未形成，请稍后重新读取当前讨论。</span>
+          <div>
+            <strong>候选生成中</strong>
+            <span>
+              工程师输入已经记录；候选尚未形成，事项 current 与 revision
+              均未因此改变。
+            </span>
+          </div>
         </div>
       )}
     </article>
   );
+}
+
+function SourceRefButtons({
+  label,
+  sourceRefs,
+  onLocateSourceRef,
+}: {
+  label: string;
+  sourceRefs: string[];
+  onLocateSourceRef: (sourceRef: string) => void;
+}) {
+  return (
+    <div className="continuous-review-sources">
+      <span>{label}</span>
+      {sourceRefs.map((sourceRef, index) => (
+        <button
+          type="button"
+          key={`${index}-${sourceRef}`}
+          title={sourceRef}
+          onClick={() => onLocateSourceRef(sourceRef)}
+        >
+          <Link2 aria-hidden="true" />
+          {reviewSourceRefLabel(sourceRef, index)}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function shortRef(value: string): string {
+  return value.length <= 18 ? value : `${value.slice(0, 8)}…${value.slice(-6)}`;
 }
 
 function dispositionLabel(value: ReviewUncertaintyDispositionKind): string {

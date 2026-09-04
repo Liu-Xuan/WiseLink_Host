@@ -43,7 +43,7 @@ const MODEL_OUTPUT_KEYS = [
   'affectedItemIds',
   'warnings',
 ];
-const REVIEW_PROMPT_VERSION = 'wiselink.3_1.review_prompt.v1.c13';
+const REVIEW_PROMPT_VERSION = 'wiselink.3_1.review_prompt.v1.c14';
 const WISELINK_HOST_MCP_CONFIG_KEYS = new Set([
   WISELINK_HOST_MCP_NAME,
   'wiselink_host_controller',
@@ -213,6 +213,7 @@ export async function invokeHostedReviewModel(input, options = {}) {
         },
         { role: 'user', content: prompt },
       ],
+      response_format: { type: 'json_object' },
       stream: false,
     }),
     signal: AbortSignal.timeout(timeoutMs),

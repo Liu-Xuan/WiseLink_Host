@@ -62,10 +62,11 @@ import type {
 import { sha256Raw } from '../../../server/modules/unified-reader/unified-reader.utils';
 
 const FIXTURE_PATH = process.env.WL31_REAL_FTD_FIXTURE?.trim();
+const SECTION_FIXTURE_PATH = process.env.WL31_REAL_FTD_SECTION_FIXTURE?.trim();
 const EXPECTED_SOURCE_SHA256 =
   'b1b5c198df4a3d42925218f48d70ddc361563c65692be35dac4c81e0d8367a3c';
 const EXPECTED_PACKAGE_ID =
-  'urn:techpub:package:v1:sha256:5463009173acc1cf7f944f6b4dcd4c247cc36ab0c86395530bcbcdfc99fda5f2';
+  'urn:techpub:package:v1:sha256:7eb3c400521fc86aaca7fc7b6a669a20d64e25dc08c2bf6f6d9589816745f3d4';
 const EXPECTED_APPLICABILITY_TEXT =
   'All777modelsequippedwithAirplaneInformationManagementSystem2(AIMS-2)Platform.';
 const EXPECTED_APPLICABILITY_SOURCE_REF =
@@ -74,6 +75,7 @@ const U0_CONTRACT_COMMIT = 'fa69ada08265934951df53c7a61a3ccdb8cb2900' as const;
 const CVE_2024_4367_FIRST_FIXED = '4.2.67';
 
 const describeRealFtd = FIXTURE_PATH ? describe : describe.skip;
+const describeRealFtdSections = SECTION_FIXTURE_PATH ? describe : describe.skip;
 
 describe('professional-input PDF runtime security pin', () => {
   it('locks a CVE-2024-4367-fixed pdfjs ESM build with evaluation and scripting disabled', async () => {
@@ -406,12 +408,20 @@ describeRealFtd('Host-native professional input with actual FTD bytes', () => {
       modules: Array<{ moduleId: string }>;
       sourceRefs: Array<{ sourceRefId: string; quote: string }>;
       sourceSegments: unknown[];
-      contentUnits: unknown[];
+      document: { documentType: { value: string } };
+      contentUnits: Array<{
+        unitId: string;
+        order: number;
+        sourceRefIds: string[];
+        sourceSegmentIds: string[];
+        payload: { text: string };
+      }>;
       applicability: StructuredApplicability;
     };
+    expect(pkg.document.documentType.value).toBe('fleet_team_digest');
     expect(pkg.sourceRefs).toHaveLength(197);
     expect(pkg.sourceSegments).toHaveLength(197);
-    expect(pkg.contentUnits).toHaveLength(196);
+    expect(pkg.contentUnits).toHaveLength(216);
     expect(pkg.modules).toHaveLength(1);
     expect(pkg.applicability.sourceExpressions).toHaveLength(1);
     expect(pkg.applicability.normalizedCandidates).toHaveLength(1);
@@ -469,6 +479,89 @@ describeRealFtd('Host-native professional input with actual FTD bytes', () => {
       ),
     ).toMatchObject({ quote: EXPECTED_APPLICABILITY_TEXT });
 
+    const observations = pkg.contentUnits
+      .map((unit) => {
+        try {
+          const value = JSON.parse(unit.payload.text) as {
+            observationType?: string;
+            value?: Record<string, unknown>;
+          };
+          return value.observationType
+            ? {
+                unit,
+                observationType: value.observationType,
+                value: value.value,
+              }
+            : null;
+        } catch {
+          return null;
+        }
+      })
+      .filter(
+        (
+          value,
+        ): value is {
+          unit: (typeof pkg.contentUnits)[number];
+          observationType: string;
+          value: Record<string, unknown> | undefined;
+        } => value !== null,
+      );
+    const anchors = observations.filter(
+      (observation) => observation.observationType === 'SECTION_ANCHOR',
+    );
+    const windows = observations.filter(
+      (observation) => observation.observationType === 'SECTION_WINDOW',
+    );
+    expect(anchors.map((anchor) => anchor.value?.sectionKey)).toEqual([
+      'revision_description',
+      'applicability',
+      'description',
+      'status',
+      'interim_action',
+      'final_action',
+      'milestones',
+      'operator_action',
+      'reference_categories',
+      'related_categories',
+    ]);
+    expect(windows).toHaveLength(anchors.length);
+    expect(
+      windows.find((window) => window.value?.sectionKey === 'interim_action'),
+    ).toMatchObject({
+      value: {
+        family: 'FTD',
+        semanticBodyState: 'NONE',
+        pageStart: 3,
+        pageEnd: 3,
+      },
+      unit: {
+        sourceRefIds: expect.any(Array),
+        sourceSegmentIds: expect.any(Array),
+      },
+    });
+    expect(
+      windows.find((window) => window.value?.sectionKey === 'description'),
+    ).toMatchObject({
+      value: { semanticBodyState: 'CONTENT', pageStart: 1, pageEnd: 2 },
+    });
+    expect(
+      windows.find((window) => window.value?.sectionKey === 'status'),
+    ).toMatchObject({
+      value: { semanticBodyState: 'CONTENT', pageStart: 2, pageEnd: 3 },
+    });
+    const knownSourceRefs = new Set(
+      pkg.sourceRefs.map((sourceRef) => sourceRef.sourceRefId),
+    );
+    expect(
+      observations.every(
+        (observation) =>
+          observation.unit.sourceRefIds.length > 0 &&
+          observation.unit.sourceRefIds.every((sourceRefId) =>
+            knownSourceRefs.has(sourceRefId),
+          ),
+      ),
+    ).toBe(true);
+
     const reader = new UnifiedReaderService(
       new InMemoryArtifactStore(),
       new Frozen2CandidateReaderService(),
@@ -498,7 +591,7 @@ describeRealFtd('Host-native professional input with actual FTD bytes', () => {
         packageId: EXPECTED_PACKAGE_ID,
         sourceKind: 'pdf',
         resultStatus: 'complete',
-        contentUnitCount: 196,
+        contentUnitCount: 216,
         sourceRefCount: 197,
       },
       fullValidatorProof: {
@@ -507,7 +600,7 @@ describeRealFtd('Host-native professional input with actual FTD bytes', () => {
       },
       receipt: {
         validationStatus: 'CONSUMER_READBACK_VERIFIED',
-        sourceBoundUnitCount: 196,
+        sourceBoundUnitCount: 216,
         authority: {
           createsWorkItemState: false,
           createsEngineeringConclusion: false,
@@ -535,6 +628,161 @@ describeRealFtd('Host-native professional input with actual FTD bytes', () => {
     });
   });
 });
+
+describeRealFtdSections(
+  'professional-input FTD section topology with actual cross-page bytes',
+  () => {
+    jest.setTimeout(120_000);
+
+    it('keeps repeated subheads inside source-bound host-section windows', async () => {
+      const sourceBytes = await readFile(SECTION_FIXTURE_PATH as string);
+      expect(sourceBytes.byteLength).toBe(97_146);
+      expect(sha256Raw(sourceBytes)).toBe(
+        '47543cbb1cb80f1805f6a6799aa58f6472b576d4e688f388a2da7457251ce92d',
+      );
+      const pipeline = runProfessionalInputPipeline(
+        {
+          pdfBytes: sourceBytes,
+          artifact: {
+            artifactRef: 'fixture://professional-input/actual-ftd-sections.pdf',
+            normalizedPath: '787-FTD-46-22001_Doc_05282026.pdf',
+          },
+          document: {
+            documentCode: '787-FTD-46-22001',
+            documentType: 'fleet_team_digest',
+            language: 'en-US',
+          },
+          lineage: {
+            generatedAt: '2026-05-28T00:00:00.000Z',
+            producerName: 'professional-input-actual-ftd-sections-test',
+            producerVersion: '1.0.0',
+          },
+        },
+        { extractor: new PdfjsDistLayoutExtractor() },
+      );
+      await expect(
+        createFullValidator('professional-input-actual-ftd-sections').validate(
+          pipeline.u0Input,
+        ),
+      ).resolves.toMatchObject({
+        status: 'FULL_STRICT_VALIDATOR_PASSED',
+        packageId: pipeline.pkg.packageId,
+      });
+
+      const observations = (
+        pipeline.pkg.contentUnits as Array<{
+          sourceRefIds: string[];
+          sourceSegmentIds: string[];
+          payload: { text: string };
+        }>
+      )
+        .map((unit) => {
+          try {
+            const parsed = JSON.parse(unit.payload.text) as {
+              observationType?: string;
+              value?: Record<string, unknown>;
+            };
+            return parsed.observationType
+              ? { unit, type: parsed.observationType, value: parsed.value }
+              : null;
+          } catch {
+            return null;
+          }
+        })
+        .filter(
+          (
+            value,
+          ): value is {
+            unit: {
+              sourceRefIds: string[];
+              sourceSegmentIds: string[];
+              payload: { text: string };
+            };
+            type: string;
+            value: Record<string, unknown> | undefined;
+          } => value !== null,
+        );
+      const windows = observations.filter(
+        (observation) => observation.type === 'SECTION_WINDOW',
+      );
+      expect(
+        observations
+          .filter((observation) => observation.type === 'SECTION_ANCHOR')
+          .map((observation) => observation.value?.sectionKey),
+      ).toEqual([
+        'revision_description',
+        'applicability',
+        'description',
+        'background',
+        'status',
+        'interim_action',
+        'final_action',
+        'milestones',
+        'reference_categories',
+        'related_categories',
+      ]);
+      const byKey = new Map(
+        windows.map((window) => [String(window.value?.sectionKey), window]),
+      );
+      expect(byKey.get('background')?.value).toMatchObject({
+        pageStart: 1,
+        pageEnd: 2,
+        semanticBodyState: 'CONTENT',
+      });
+      expect(byKey.get('status')?.value).toMatchObject({
+        pageStart: 2,
+        pageEnd: 3,
+        semanticBodyState: 'CONTENT',
+      });
+      expect(byKey.get('milestones')?.value).toMatchObject({
+        pageStart: 3,
+        pageEnd: 4,
+        semanticBodyState: 'CONTENT',
+      });
+
+      const sourceTextBySegmentId = new Map(
+        pipeline.unitSet.units.map((unit) => [unit.sourceUnitId, unit.text]),
+      );
+      for (const key of ['background', 'status', 'interim_action']) {
+        const window = byKey.get(key);
+        expect(window).toBeDefined();
+        const texts = window!.unit.sourceSegmentIds.map((sourceSegmentId) =>
+          sourceTextBySegmentId.get(sourceSegmentId),
+        );
+        expect(texts).toContain('NIM-2200(822-2279-102)');
+        expect(texts).toContain('NIM-2200(822-2279-103)');
+        expect(
+          texts.some((text) => text?.startsWith('BOEINGPROPRIETARY-')),
+        ).toBe(false);
+      }
+      expect(
+        byKey
+          .get('background')!
+          .unit.sourceSegmentIds.some((sourceSegmentId) =>
+            byKey
+              .get('status')!
+              .unit.sourceSegmentIds.includes(sourceSegmentId),
+          ),
+      ).toBe(false);
+
+      const readerSummary = new Frozen2CandidateReaderService().read(
+        pipeline.u0Input.artifact,
+        pipeline.u0Input.bytes,
+        '822-2279-103',
+      );
+      expect(readerSummary.queryResults.length).toBeGreaterThan(0);
+      expect(
+        readerSummary.queryResults.every(
+          (result) =>
+            result.sourceRefIds.length > 0 &&
+            result.sourceLocators?.every(
+              (locator) => locator.kind === 'pdf' && locator.pageStart !== null,
+            ),
+        ),
+      ).toBe(true);
+    });
+  },
+);
 
 function createFullValidator(
   validatorRevision: string,

@@ -1,0 +1,56 @@
+.wl-runtime-fingerprint {
+  display: grid;
+  gap: 16px;
+}
+
+.wl-runtime-fingerprint h2,
+.wl-runtime-fingerprint p {
+  margin: 0;
+}
+
+.wl-runtime-fingerprint dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  margin: 0;
+  gap: 10px;
+}
+
+.wl-runtime-fingerprint dl > div {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--wl-border);
+  border-radius: var(--wl-radius-md);
+  background: var(--wl-glass-soft);
+}
+
+.wl-runtime-fingerprint dt {
+  color: var(--wl-muted);
+  font-size: var(--wl-text-caption);
+}
+
+.wl-runtime-fingerprint dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--wl-ink);
+  font-family: var(--wl-mono);
+  font-size: 12px;
+}
+
+.wl-runtime-fingerprint button {
+  width: fit-content;
+  padding: 8px 12px;
+  border: 1px solid var(--wl-border-strong);
+  border-radius: var(--wl-radius-sm);
+  color: var(--wl-ink);
+  background: var(--wl-surface-solid);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+
+.wl-runtime-fingerprint button:hover,
+.wl-runtime-fingerprint button:focus-visible {
+  border-color: var(--wl-accent);
+  outline: none;
+  color: var(--wl-accent);
+}

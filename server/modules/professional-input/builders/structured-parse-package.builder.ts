@@ -1,4 +1,18 @@
 import {
+  buildSourceBoundAeoEffectivity,
+  buildSourceBoundAeoProcedure,
+  buildSourceBoundAeoSafetyBoundary,
+  buildSourceBoundAeoSoftwareControl,
+  type SourceBoundAeoEffectivity,
+} from './ameco-aeo-structure.builder';
+import { buildSourceBoundOperatorTransmissionDocument } from './airbus-operator-transmission-structure.builder';
+import {
+  buildSourceBoundRilDocumentReferences,
+  buildSourceBoundRilGeneralEvaluation,
+  buildSourceBoundRilPageChrome,
+  buildSourceBoundRilProcedure,
+} from './airbus-ril-structure.builder';
+import {
   jcsCanonicalize,
   sha256Hex,
   sha256Urn,
@@ -24,6 +38,20 @@ import {
   pdfArtifactEntityId,
   pdfSourcePackageId,
 } from './source-unit-set.builder';
+import {
+  buildFamilySectionTopology,
+  buildSourceBoundAdDocumentRelations,
+  buildSourceBoundAdObligations,
+  buildSourceBoundConcurrentRequirements,
+  buildSourceBoundSilDocumentReferences,
+  buildSourceBoundSilPartNumberMatrix,
+  buildSourceBoundSilRecommendationSectionStatus,
+  buildSourceBoundSlAction,
+  buildSourceBoundSlReferenceCatalog,
+  buildSourceBoundSlReferenceRelations,
+  type SourceBoundSlReferenceCatalog,
+  type SourceBoundSectionWindow,
+} from './family-section-topology.builder';
 
 /**
  * Stage 3: assemble the frozen.2 StructuredParsePackage (CANDIDATE_ONLY).
@@ -155,10 +183,67 @@ export function buildStructuredParsePackage(input: {
     );
   }
 
+  const sectionTopology = buildFamilySectionTopology({ unitSet, document });
+  const slReferenceCatalog =
+    buildSourceBoundSlReferenceCatalog(sectionTopology);
+  const silRecommendationSectionStatus =
+    buildSourceBoundSilRecommendationSectionStatus(sectionTopology);
+  for (const section of sectionTopology) {
+    const sectionUnits = buildSectionObservationContentUnits({
+      section,
+      unitSet,
+      documentCode: document.documentCode,
+      moduleId,
+      sourcePackageId,
+      firstOrder: contentOrder,
+      slReferenceCatalog,
+      silRecommendationSectionStatus,
+    });
+    contentUnits.push(...sectionUnits);
+    contentOrder += sectionUnits.length;
+  }
+  const operatorTransmission = buildSourceBoundOperatorTransmissionDocument({
+    unitSet,
+    sections: sectionTopology,
+    documentCode: document.documentCode,
+    documentType: document.documentType,
+  });
+  if (operatorTransmission) {
+    contentUnits.push(
+      buildStructuredObservationContentUnit({
+        sourcePackageId,
+        moduleId,
+        order: contentOrder,
+        continuityKey: 'document:SB:operator_transmission:typed-semantics',
+        sourceRefIds: sourceBoundIds(
+          operatorTransmission.sourceRefIds,
+          unitSet.sourceRefs.map((sourceRef) => sourceRef.sourceRefId),
+        ),
+        sourceSegmentIds: sourceBoundIds(
+          operatorTransmission.sourceUnitIds,
+          unitSet.units.map((unit) => unit.sourceUnitId),
+        ),
+        payload: {
+          observationType: 'OPERATOR_TRANSMISSION_DOCUMENT',
+          value: operatorTransmission,
+          authority: {
+            candidateOnly: true,
+            canDecideApplicability: false,
+            canCreateEvidenceRef: false,
+            canCreateClosureDecision: false,
+            canCreateActionReadiness: false,
+          },
+        },
+      }),
+    );
+    contentOrder += 1;
+  }
+
   const applicability = buildDeterministicApplicability(
     unitSet,
     moduleId,
     document,
+    sectionTopology,
   );
 
   const sourceSegments = unitSet.units.map(toSourceSegment);
@@ -478,10 +563,23 @@ function buildDeterministicApplicability(
   unitSet: SourceUnitSet,
   moduleId: string,
   document: ProfessionalInputDocumentIdentityInput,
+  sectionTopology: readonly SourceBoundSectionWindow[],
 ): StructuredApplicability {
   const refsById = new Map(
     unitSet.sourceRefs.map((sourceRef) => [sourceRef.sourceRefId, sourceRef]),
   );
+  if (document.documentType === 'engineering_order') {
+    const effectivitySection = sectionTopology.find(
+      (section) =>
+        section.family === 'AEO' && section.sectionKey === 'engineering_basis',
+    );
+    const effectivity = effectivitySection
+      ? buildSourceBoundAeoEffectivity(effectivitySection)
+      : null;
+    return effectivity?.effectivityStructured
+      ? buildAeoDeterministicApplicability(effectivity, moduleId)
+      : emptyApplicability();
+  }
   if (
     document.documentCode === '777-34-0425' &&
     document.documentType === 'service_bulletin'
@@ -491,6 +589,19 @@ function buildDeterministicApplicability(
       moduleId,
       refsById,
     );
+  }
+  if (document.documentType !== 'fleet_team_digest') {
+    if (
+      document.documentType === 'service_bulletin' &&
+      document.documentCode === '737-34-3830'
+    ) {
+      return buildBoeingSbDeterministicApplicability(
+        unitSet,
+        moduleId,
+        refsById,
+      );
+    }
+    return emptyApplicability();
   }
   const observations: DeterministicApplicabilityObservation[] = [];
   for (let index = 0; index < unitSet.units.length - 1; index += 1) {
@@ -525,15 +636,6 @@ function buildDeterministicApplicability(
     });
   }
   if (observations.length === 0) {
-    if (document.documentType === 'service_bulletin') {
-      if (document.documentCode === '737-34-3830') {
-        return buildBoeingSbDeterministicApplicability(
-          unitSet,
-          moduleId,
-          refsById,
-        );
-      }
-    }
     return emptyApplicability();
   }
   if (observations.length !== 1) {
@@ -626,6 +728,789 @@ function buildDeterministicApplicability(
         authority: 'source_asserted',
       },
     ],
+  };
+}
+
+export function buildAeoDeterministicApplicability(
+  effectivity: SourceBoundAeoEffectivity,
+  moduleId: string,
+): StructuredApplicability {
+  const models = uniqueStrings(
+    effectivity.groups.map((group) => group.aircraftModel),
+  );
+  const registrations = uniqueStrings(
+    effectivity.groups.flatMap((group) => group.aircraftRegistrations),
+  );
+  const sourceUnitIds = uniqueStrings(
+    effectivity.groups.flatMap(
+      (group) => group.applicabilitySourceUnitIds,
+    ),
+  );
+  const sourceRefIds = uniqueStrings(
+    effectivity.groups.flatMap(
+      (group) => group.applicabilitySourceRefIds,
+    ),
+  );
+  if (
+    models.length === 0 ||
+    models.length > 200 ||
+    registrations.length === 0 ||
+    registrations.length > 200 ||
+    sourceUnitIds.length === 0 ||
+    sourceRefIds.length === 0
+  ) {
+    return emptyApplicability();
+  }
+  const text = effectivity.groups
+    .map(
+      (group) =>
+        `${group.groupId} ${group.aircraftModel}: ` +
+        group.aircraftRegistrations.join(', '),
+    )
+    .join('; ');
+  const expressionId = techpubEntityId(
+    'applicability-source',
+    sha256Hex(
+      jcsCanonicalize({
+        namespace: 'techpub-applicability-source-id-v1',
+        sourceUnitIds,
+        sourceRefIds,
+        text,
+      }),
+    ),
+  );
+  const expression: StructuredApplicabilityExpression = {
+    operator: 'any',
+    children: effectivity.groups.map((group) => ({
+      operator: 'all',
+      children: [
+        {
+          operator: 'predicate',
+          predicate: {
+            property: 'model',
+            comparator: 'eq',
+            values: [group.aircraftModel],
+          },
+        },
+        {
+          operator: 'predicate',
+          predicate: {
+            property: 'registrationNumber',
+            comparator: 'in',
+            values: group.aircraftRegistrations,
+          },
+        },
+      ],
+    })),
+  };
+  const candidateId = techpubEntityId(
+    'applicability-candidate',
+    sha256Hex(
+      jcsCanonicalize({
+        namespace: 'techpub-applicability-candidate-id-v1',
+        expressionId,
+        expression,
+      }),
+    ),
+  );
+  const target = {
+    kind: 'module' as const,
+    targetId: moduleId,
+    sourceRefIds,
+  };
+  const assignmentId = techpubEntityId(
+    'applicability-assignment',
+    sha256Hex(
+      jcsCanonicalize({
+        namespace: 'techpub-applicability-assignment-id-v1',
+        expressionId,
+        target,
+      }),
+    ),
+  );
+  return {
+    sourceExpressions: [
+      {
+        expressionId,
+        text,
+        form: 'logical_expression',
+        authority: 'source_asserted',
+        sourceRefIds,
+      },
+    ],
+    normalizedCandidates: [
+      {
+        candidateId,
+        language: 'techpub-applicability-expr.v1',
+        confidence: 'deterministic',
+        sourceExpressionIds: [expressionId],
+        expression,
+        authority: 'parser_candidate',
+      },
+    ],
+    assignments: [
+      {
+        assignmentId,
+        expressionId,
+        target,
+        authority: 'source_asserted',
+      },
+    ],
+  };
+}
+
+function buildSectionObservationContentUnits(input: {
+  section: SourceBoundSectionWindow;
+  unitSet: SourceUnitSet;
+  documentCode: string;
+  moduleId: string;
+  sourcePackageId: string;
+  firstOrder: number;
+  slReferenceCatalog: SourceBoundSlReferenceCatalog | null;
+  silRecommendationSectionStatus: ReturnType<
+    typeof buildSourceBoundSilRecommendationSectionStatus
+  >;
+}): Array<Record<string, unknown>> {
+  const {
+    section,
+    unitSet,
+    documentCode,
+    moduleId,
+    sourcePackageId,
+    firstOrder,
+    slReferenceCatalog,
+    silRecommendationSectionStatus,
+  } = input;
+  const authority = {
+    candidateOnly: true,
+    canDecideApplicability: false,
+    canCreateEvidenceRef: false,
+    canCreateClosureDecision: false,
+    canCreateActionReadiness: false,
+  };
+  const windowId = `NSW-${sha256Hex(
+    jcsCanonicalize({
+      namespace: 'wiselink-native-section-window-v1',
+      sourcePackageId,
+      family: section.family,
+      sectionKey: section.sectionKey,
+      occurrence: section.occurrence,
+      sourceUnitIds: section.bodyUnits.map((unit) => unit.sourceUnitId),
+    }),
+  )
+    .slice(0, 24)
+    .toUpperCase()}`;
+  const scope = {
+    ...(section.nodeKind ? { nodeKind: section.nodeKind } : {}),
+    ...(section.scopeKey ? { scopeKey: section.scopeKey } : {}),
+    ...(section.ordinal ? { ordinal: section.ordinal } : {}),
+  };
+  const sectionContinuityPrefix = section.scopeKey
+    ? `section:${section.family}:${section.scopeKey}:${section.sectionKey}:${section.occurrence}`
+    : `section:${section.family}:${section.sectionKey}:${section.occurrence}`;
+  const units = [
+    buildStructuredObservationContentUnit({
+      sourcePackageId,
+      moduleId,
+      order: firstOrder,
+      continuityKey: `${sectionContinuityPrefix}:anchor`,
+      sourceRefIds: section.headingUnit.sourceRefIds,
+      sourceSegmentIds: [section.headingUnit.sourceUnitId],
+      payload: {
+        observationType: 'SECTION_ANCHOR',
+        value: {
+          family: section.family,
+          sectionKey: section.sectionKey,
+          occurrence: section.occurrence,
+          matchedHeading: section.matchedHeading,
+          ...scope,
+        },
+        authority,
+      },
+    }),
+    buildStructuredObservationContentUnit({
+      sourcePackageId,
+      moduleId,
+      order: firstOrder + 1,
+      continuityKey: `${sectionContinuityPrefix}:window`,
+      sourceRefIds: section.sourceRefIds,
+      sourceSegmentIds:
+        section.bodyUnits.length > 0
+          ? section.bodyUnits.map((unit) => unit.sourceUnitId)
+          : [section.headingUnit.sourceUnitId],
+      payload: {
+        observationType: 'SECTION_WINDOW',
+        value: {
+          windowId,
+          family: section.family,
+          sectionKey: section.sectionKey,
+          occurrence: section.occurrence,
+          semanticBodyState: section.semanticBodyState,
+          pageStart: section.pageStart,
+          pageEnd: section.pageEnd,
+          ...scope,
+        },
+        authority,
+      },
+    }),
+  ];
+  const aeoEffectivity = buildSourceBoundAeoEffectivity(section);
+  if (aeoEffectivity) {
+    units.push(
+      buildStructuredObservationContentUnit({
+        sourcePackageId,
+        moduleId,
+        order: firstOrder + units.length,
+        continuityKey: `${sectionContinuityPrefix}:aeo-effectivity-groups`,
+        sourceRefIds: sourceBoundIds(
+          aeoEffectivity.groups.flatMap((group) => group.sourceRefIds),
+          section.sourceRefIds,
+        ),
+        sourceSegmentIds: sourceBoundIds(
+          aeoEffectivity.groups.flatMap((group) => group.sourceUnitIds),
+          section.bodyUnits.map((unit) => unit.sourceUnitId),
+        ),
+        payload: {
+          observationType: 'AEO_EFFECTIVITY_GROUPS',
+          value: {
+            family: section.family,
+            scopeKey: section.scopeKey,
+            sectionKey: section.sectionKey,
+            ...aeoEffectivity,
+          },
+          authority,
+        },
+      }),
+    );
+  }
+  const aeoProcedure = buildSourceBoundAeoProcedure(section);
+  if (aeoProcedure) {
+    units.push(
+      buildStructuredObservationContentUnit({
+        sourcePackageId,
+        moduleId,
+        order: firstOrder + units.length,
+        continuityKey: `${sectionContinuityPrefix}:aeo-procedure-graph`,
+        sourceRefIds: sourceBoundIds([
+          ...aeoProcedure.actions.flatMap((action) => action.sourceRefIds),
+          ...aeoProcedure.branches.flatMap((branch) => branch.sourceRefIds),
+          ...aeoProcedure.references.flatMap(
+            (reference) => reference.sourceRefIds,
+          ),
+        ], section.sourceRefIds),
+        sourceSegmentIds: sourceBoundIds([
+          ...aeoProcedure.actions.flatMap((action) => action.sourceUnitIds),
+          ...aeoProcedure.branches.flatMap((branch) => branch.sourceUnitIds),
+          ...aeoProcedure.references.flatMap(
+            (reference) => reference.sourceUnitIds,
+          ),
+        ], section.bodyUnits.map((unit) => unit.sourceUnitId)),
+        payload: {
+          observationType: 'AEO_PROCEDURE_GRAPH',
+          value: {
+            family: section.family,
+            scopeKey: section.scopeKey,
+            sectionKey: section.sectionKey,
+            ...aeoProcedure,
+          },
+          authority,
+        },
+      }),
+    );
+  }
+  const aeoSoftwareControl = buildSourceBoundAeoSoftwareControl(section);
+  if (aeoSoftwareControl) {
+    units.push(
+      buildStructuredObservationContentUnit({
+        sourcePackageId,
+        moduleId,
+        order: firstOrder + units.length,
+        continuityKey: `${sectionContinuityPrefix}:aeo-software-control`,
+        sourceRefIds: sourceBoundIds([
+          ...aeoSoftwareControl.assignments.flatMap(
+            (assignment) => assignment.sourceRefIds,
+          ),
+          ...aeoSoftwareControl.invalidSoftwareParts.flatMap(
+            (part) => part.sourceRefIds,
+          ),
+        ], section.sourceRefIds),
+        sourceSegmentIds: sourceBoundIds([
+          ...aeoSoftwareControl.assignments.flatMap(
+            (assignment) => assignment.sourceUnitIds,
+          ),
+          ...aeoSoftwareControl.invalidSoftwareParts.flatMap(
+            (part) => part.sourceUnitIds,
+          ),
+        ], section.bodyUnits.map((unit) => unit.sourceUnitId)),
+        payload: {
+          observationType: 'AEO_SOFTWARE_CONTROL',
+          value: {
+            family: section.family,
+            scopeKey: section.scopeKey,
+            sectionKey: section.sectionKey,
+            ...aeoSoftwareControl,
+          },
+          authority,
+        },
+      }),
+    );
+  }
+  const aeoSafetyBoundary = buildSourceBoundAeoSafetyBoundary(section);
+  if (aeoSafetyBoundary) {
+    units.push(
+      buildStructuredObservationContentUnit({
+        sourcePackageId,
+        moduleId,
+        order: firstOrder + units.length,
+        continuityKey: `${sectionContinuityPrefix}:aeo-safety-boundary`,
+        sourceRefIds: sourceBoundIds(
+          aeoSafetyBoundary.items.flatMap((item) => item.sourceRefIds),
+          section.sourceRefIds,
+        ),
+        sourceSegmentIds: sourceBoundIds(
+          aeoSafetyBoundary.items.flatMap((item) => item.sourceUnitIds),
+          section.bodyUnits.map((unit) => unit.sourceUnitId),
+        ),
+        payload: {
+          observationType: 'AEO_SAFETY_BOUNDARY',
+          value: {
+            family: section.family,
+            scopeKey: section.scopeKey,
+            sectionKey: section.sectionKey,
+            ...aeoSafetyBoundary,
+          },
+          authority,
+        },
+      }),
+    );
+  }
+  if (
+    section.family === 'SB' &&
+    section.scopeKey === 'retrofit_information_letter' &&
+    section.sectionKey === 'general_evaluation'
+  ) {
+    const chrome = buildSourceBoundRilPageChrome(unitSet);
+    units.push(
+      buildStructuredObservationContentUnit({
+        sourcePackageId,
+        moduleId,
+        order: firstOrder + units.length,
+        continuityKey: 'section:SB:retrofit_information_letter:page-chrome',
+        sourceRefIds: chrome.sourceRefIds,
+        sourceSegmentIds: chrome.sourceUnitIds,
+        payload: {
+          observationType: 'RIL_PAGE_CHROME',
+          value: {
+            family: section.family,
+            scopeKey: section.scopeKey,
+            ...chrome,
+          },
+          authority,
+        },
+      }),
+    );
+  }
+  const rilEvaluation = buildSourceBoundRilGeneralEvaluation(section, unitSet);
+  if (rilEvaluation) {
+    units.push(
+      buildStructuredObservationContentUnit({
+        sourcePackageId,
+        moduleId,
+        order: firstOrder + units.length,
+        continuityKey: `${sectionContinuityPrefix}:ril-general-evaluation`,
+        sourceRefIds: section.sourceRefIds,
+        sourceSegmentIds: section.bodyUnits.map((unit) => unit.sourceUnitId),
+        payload: {
+          observationType: 'RIL_GENERAL_EVALUATION',
+          value: {
+            family: section.family,
+            scopeKey: section.scopeKey,
+            sectionKey: section.sectionKey,
+            ...rilEvaluation,
+          },
+          authority,
+        },
+      }),
+    );
+  }
+  const rilReferences = buildSourceBoundRilDocumentReferences(
+    section,
+    documentCode,
+    unitSet,
+  );
+  if (rilReferences) {
+    units.push(
+      buildStructuredObservationContentUnit({
+        sourcePackageId,
+        moduleId,
+        order: firstOrder + units.length,
+        continuityKey: `${sectionContinuityPrefix}:ril-document-references`,
+        sourceRefIds: section.sourceRefIds,
+        sourceSegmentIds: section.bodyUnits.map((unit) => unit.sourceUnitId),
+        payload: {
+          observationType: 'RIL_DOCUMENT_REFERENCES',
+          value: {
+            family: section.family,
+            scopeKey: section.scopeKey,
+            sectionKey: section.sectionKey,
+            ...rilReferences,
+          },
+          authority,
+        },
+      }),
+    );
+  }
+  const rilProcedure = buildSourceBoundRilProcedure(section, unitSet);
+  if (rilProcedure) {
+    units.push(
+      buildStructuredObservationContentUnit({
+        sourcePackageId,
+        moduleId,
+        order: firstOrder + units.length,
+        continuityKey: `${sectionContinuityPrefix}:ril-procedure`,
+        sourceRefIds: section.sourceRefIds,
+        sourceSegmentIds: section.bodyUnits.map((unit) => unit.sourceUnitId),
+        payload: {
+          observationType: 'RIL_RETROFIT_PROCEDURE',
+          value: {
+            family: section.family,
+            scopeKey: section.scopeKey,
+            sectionKey: section.sectionKey,
+            ...rilProcedure,
+          },
+          authority,
+        },
+      }),
+    );
+  }
+  const concurrentRequirements =
+    buildSourceBoundConcurrentRequirements(section);
+  if (concurrentRequirements) {
+    units.push(
+      buildStructuredObservationContentUnit({
+        sourcePackageId,
+        moduleId,
+        order: firstOrder + units.length,
+        continuityKey:
+          `section:${section.family}:${section.scopeKey ?? 'document'}:` +
+          `${section.sectionKey}:${section.occurrence}:concurrent-requirements`,
+        sourceRefIds: section.sourceRefIds,
+        sourceSegmentIds:
+          section.bodyUnits.length > 0
+            ? section.bodyUnits.map((unit) => unit.sourceUnitId)
+            : [section.headingUnit.sourceUnitId],
+        payload: {
+          observationType: 'CONCURRENT_REQUIREMENTS',
+          value: {
+            family: section.family,
+            scopeKey: section.scopeKey ?? 'document',
+            sectionKey: section.sectionKey,
+            occurrence: section.occurrence,
+            ...concurrentRequirements,
+          },
+          authority,
+        },
+      }),
+    );
+  }
+  const adObligations = buildSourceBoundAdObligations(section);
+  if (adObligations) {
+    units.push(
+      buildStructuredObservationContentUnit({
+        sourcePackageId,
+        moduleId,
+        order: firstOrder + units.length,
+        continuityKey: `${sectionContinuityPrefix}:ad-obligations`,
+        sourceRefIds: section.sourceRefIds,
+        sourceSegmentIds:
+          section.bodyUnits.length > 0
+            ? section.bodyUnits.map((unit) => unit.sourceUnitId)
+            : [section.headingUnit.sourceUnitId],
+        payload: {
+          observationType: 'AD_OBLIGATIONS',
+          value: {
+            family: section.family,
+            scopeKey: section.scopeKey ?? 'document',
+            sectionKey: section.sectionKey,
+            sectionOrdinal: section.ordinal ?? null,
+            semanticState: adObligations.semanticState,
+            obligationsStructured: adObligations.obligationsStructured,
+            unstructuredReason: adObligations.unstructuredReason,
+            obligationCount: adObligations.obligations.length,
+          },
+          authority,
+        },
+      }),
+    );
+  }
+  for (const obligation of adObligations?.obligations ?? []) {
+    units.push(
+      buildStructuredObservationContentUnit({
+        sourcePackageId,
+        moduleId,
+        order: firstOrder + units.length,
+        continuityKey:
+          `${sectionContinuityPrefix}:ad-obligation:` + obligation.itemOrdinal,
+        sourceRefIds: obligation.sourceRefIds,
+        sourceSegmentIds: obligation.sourceUnitIds,
+        payload: {
+          observationType: 'AD_OBLIGATION',
+          value: {
+            family: section.family,
+            scopeKey: section.scopeKey ?? 'document',
+            sectionKey: section.sectionKey,
+            sectionOrdinal: section.ordinal ?? null,
+            ...obligation,
+          },
+          authority,
+        },
+      }),
+    );
+  }
+  const adRelations = buildSourceBoundAdDocumentRelations(section);
+  if (adRelations) {
+    units.push(
+      buildStructuredObservationContentUnit({
+        sourcePackageId,
+        moduleId,
+        order: firstOrder + units.length,
+        continuityKey: `${sectionContinuityPrefix}:ad-document-relations`,
+        sourceRefIds: section.sourceRefIds,
+        sourceSegmentIds:
+          section.bodyUnits.length > 0
+            ? section.bodyUnits.map((unit) => unit.sourceUnitId)
+            : [section.headingUnit.sourceUnitId],
+        payload: {
+          observationType: 'AD_DOCUMENT_RELATIONS',
+          value: {
+            family: section.family,
+            scopeKey: section.scopeKey ?? 'document',
+            sectionKey: section.sectionKey,
+            sectionOrdinal: section.ordinal ?? null,
+            ...adRelations,
+          },
+          authority,
+        },
+      }),
+    );
+  }
+  if (section.family === 'SL' && section.sectionKey === 'references') {
+    units.push(
+      buildStructuredObservationContentUnit({
+        sourcePackageId,
+        moduleId,
+        order: firstOrder + units.length,
+        continuityKey: `${sectionContinuityPrefix}:sl-reference-catalog`,
+        sourceRefIds: section.sourceRefIds,
+        sourceSegmentIds:
+          section.bodyUnits.length > 0
+            ? section.bodyUnits.map((unit) => unit.sourceUnitId)
+            : [section.headingUnit.sourceUnitId],
+        payload: {
+          observationType: 'SL_REFERENCE_CATALOG',
+          value: {
+            family: section.family,
+            scopeKey: section.scopeKey ?? 'document',
+            sectionKey: section.sectionKey,
+            semanticState:
+              slReferenceCatalog?.semanticState ?? section.semanticBodyState,
+            referencesStructured:
+              slReferenceCatalog?.referencesStructured ?? false,
+            unstructuredReason:
+              slReferenceCatalog === null
+                ? 'NO_REFERENCE_ENTRIES'
+                : slReferenceCatalog.unstructuredReason,
+            entries: slReferenceCatalog?.entries ?? [],
+          },
+          authority,
+        },
+      }),
+    );
+  }
+  const slReferenceRelations = buildSourceBoundSlReferenceRelations(
+    section,
+    slReferenceCatalog,
+  );
+  if (slReferenceRelations) {
+    units.push(
+      buildStructuredObservationContentUnit({
+        sourcePackageId,
+        moduleId,
+        order: firstOrder + units.length,
+        continuityKey: `${sectionContinuityPrefix}:sl-reference-relations`,
+        sourceRefIds: section.sourceRefIds,
+        sourceSegmentIds:
+          section.bodyUnits.length > 0
+            ? section.bodyUnits.map((unit) => unit.sourceUnitId)
+            : [section.headingUnit.sourceUnitId],
+        payload: {
+          observationType: 'SL_REFERENCE_RELATIONS',
+          value: {
+            family: section.family,
+            scopeKey: section.scopeKey ?? 'document',
+            sectionKey: section.sectionKey,
+            ...slReferenceRelations,
+          },
+          authority,
+        },
+      }),
+    );
+  }
+  const slAction = buildSourceBoundSlAction(section);
+  if (slAction) {
+    units.push(
+      buildStructuredObservationContentUnit({
+        sourcePackageId,
+        moduleId,
+        order: firstOrder + units.length,
+        continuityKey: `${sectionContinuityPrefix}:sl-action`,
+        sourceRefIds: slAction.sourceRefIds,
+        sourceSegmentIds: slAction.sourceUnitIds,
+        payload: {
+          observationType: 'SL_ACTION',
+          value: {
+            family: section.family,
+            scopeKey: section.scopeKey ?? 'document',
+            sectionKey: section.sectionKey,
+            ...slAction,
+          },
+          authority,
+        },
+      }),
+    );
+  }
+  const silPartNumberMatrix = buildSourceBoundSilPartNumberMatrix(section);
+  if (silPartNumberMatrix) {
+    units.push(
+      buildStructuredObservationContentUnit({
+        sourcePackageId,
+        moduleId,
+        order: firstOrder + units.length,
+        continuityKey: `${sectionContinuityPrefix}:sil-part-number-matrix`,
+        sourceRefIds: section.sourceRefIds,
+        sourceSegmentIds:
+          section.bodyUnits.length > 0
+            ? section.bodyUnits.map((unit) => unit.sourceUnitId)
+            : [section.headingUnit.sourceUnitId],
+        payload: {
+          observationType: 'SIL_PART_NUMBER_MATRIX',
+          value: {
+            family: section.family,
+            scopeKey: section.scopeKey ?? 'document',
+            sectionKey: section.sectionKey,
+            ...silPartNumberMatrix,
+          },
+          authority,
+        },
+      }),
+    );
+  }
+  const silDocumentReferences = buildSourceBoundSilDocumentReferences(section);
+  if (silDocumentReferences) {
+    units.push(
+      buildStructuredObservationContentUnit({
+        sourcePackageId,
+        moduleId,
+        order: firstOrder + units.length,
+        continuityKey: `${sectionContinuityPrefix}:sil-document-references`,
+        sourceRefIds: section.sourceRefIds,
+        sourceSegmentIds:
+          section.bodyUnits.length > 0
+            ? section.bodyUnits.map((unit) => unit.sourceUnitId)
+            : [section.headingUnit.sourceUnitId],
+        payload: {
+          observationType: 'SIL_DOCUMENT_REFERENCES',
+          value: {
+            family: section.family,
+            scopeKey: section.scopeKey ?? 'document',
+            sectionKey: section.sectionKey,
+            ...silDocumentReferences,
+          },
+          authority,
+        },
+      }),
+    );
+  }
+  if (
+    silRecommendationSectionStatus &&
+    section.family === 'SIL' &&
+    section.sectionKey === 'revision_history'
+  ) {
+    units.push(
+      buildStructuredObservationContentUnit({
+        sourcePackageId,
+        moduleId,
+        order: firstOrder + units.length,
+        continuityKey:
+          'section:SIL:service_information_letter:recommendation-section-status',
+        sourceRefIds: silRecommendationSectionStatus.sourceRefIds,
+        sourceSegmentIds: silRecommendationSectionStatus.sourceUnitIds,
+        payload: {
+          observationType: 'SIL_RECOMMENDATION_SECTION_STATUS',
+          value: {
+            family: section.family,
+            scopeKey: section.scopeKey ?? 'document',
+            ...silRecommendationSectionStatus,
+          },
+          authority,
+        },
+      }),
+    );
+  }
+  return units;
+}
+
+function buildStructuredObservationContentUnit(input: {
+  sourcePackageId: string;
+  moduleId: string;
+  order: number;
+  continuityKey: string;
+  sourceRefIds: readonly string[];
+  sourceSegmentIds: readonly string[];
+  payload: Record<string, unknown>;
+}): Record<string, unknown> {
+  const kind = 'paragraph';
+  const unitId = techpubEntityId(
+    'unit',
+    sha256Hex(
+      jcsCanonicalize({
+        namespace: 'techpub-unit-id-v1',
+        sourcePackageId: input.sourcePackageId,
+        moduleAnchorKey: 'logical-document',
+        sourceAnchorKey: input.continuityKey,
+        kind,
+      }),
+    ),
+  );
+  const contentUnitWithoutHash: Record<string, unknown> = {
+    unitId,
+    continuityKey: input.continuityKey,
+    moduleId: input.moduleId,
+    kind,
+    identityStability: 'revision_scoped',
+    order: input.order,
+    depth: 0,
+    sourceRefIds: [...input.sourceRefIds],
+    sourceSegmentIds: [...input.sourceSegmentIds],
+    mapping: {
+      status: 'mapped_with_normalization',
+      confidence: 'deterministic',
+      findingIds: [],
+    },
+    payload: {
+      text: JSON.stringify(input.payload),
+      role: 'body',
+    },
+  };
+  return {
+    unitId,
+    continuityKey: input.continuityKey,
+    unitHash: `sha256:${sha256Hex(jcsCanonicalize(contentUnitWithoutHash))}`,
+    ...Object.fromEntries(
+      Object.entries(contentUnitWithoutHash).filter(
+        ([key]) => key !== 'unitId' && key !== 'continuityKey',
+      ),
+    ),
   };
 }
 
@@ -1605,4 +2490,16 @@ function stripLocationFields(value: unknown): unknown {
 
 function compareText(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function uniqueStrings(values: readonly string[]): string[] {
+  return [...new Set(values)];
+}
+
+function sourceBoundIds(
+  primary: readonly string[],
+  fallback: readonly string[],
+): string[] {
+  const values = uniqueStrings(primary);
+  return values.length > 0 ? values : uniqueStrings(fallback);
 }
