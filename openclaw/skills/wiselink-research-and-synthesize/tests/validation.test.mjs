@@ -1,12 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import {
-  mkdtemp,
-  readFile,
-  rm,
-  stat,
-  writeFile,
-} from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -48,7 +42,9 @@ import {
   isChatCompletionsEnabled,
   openClawConfigCandidates,
   prepareKnownModelNonDispatchRecovery,
+  resolveConfiguredModelVersion,
   runHostedReviewTurn,
+  summarizeHostedReviewModelOutputShape,
 } from '../scripts/run-hosted-review-turn.mjs';
 
 const DYNAMIC_FIXTURE_URL = new URL(
@@ -111,7 +107,7 @@ test('pins exact20 MCP 1.2, five review tools, and hosted provenance', () => {
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c14',
+    'wiselink-research-and-synthesize@r09.c16',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -373,7 +369,10 @@ test('resumes P0B from Host nextStage and skips completed stages', async () => {
     }),
   });
   assert.equal(result.ok, true);
-  assert.deepEqual(result.operations.map(({ stage }) => stage), ['OVERALL']);
+  assert.deepEqual(
+    result.operations.map(({ stage }) => stage),
+    ['OVERALL'],
+  );
   assert.equal(calls.includes('begin_applicability_evaluation'), false);
   assert.equal(calls.includes('begin_dynamic_evaluation'), false);
 });
@@ -425,7 +424,10 @@ test('accepts deterministic Host WAITING_INPUT after a successful applicability 
   assert.equal(result.ok, false);
   assert.equal(result.outcome, 'WAITING_INPUT');
   assert.equal(result.operations[0].result.outcome, 'WAITING_INPUT');
-  assert.equal(result.reevaluation.stages.applicability.status, 'WAITING_INPUT');
+  assert.equal(
+    result.reevaluation.stages.applicability.status,
+    'WAITING_INPUT',
+  );
   assert.equal(calls.includes('get_action_attempt_status'), false);
 });
 
@@ -1929,6 +1931,8 @@ test('runs a review turn from durable checkpoints without replaying remote work'
   const task = makeTask('OPENCLAW_INTERACTIVE_REVIEW', reviewTask);
   const calls = [];
   const modelInputs = [];
+  const modelSessionDiscriminators = [];
+  let shapeObserverCalls = 0;
   const callTool = async (name, args) => {
     calls.push({ name, args });
     if (name === 'begin_review_turn') return runningBegin(task);
@@ -1958,8 +1962,42 @@ test('runs a review turn from durable checkpoints without replaying remote work'
     }
     throw new Error(`UNEXPECTED_TOOL:${name}`);
   };
-  const invokeModel = async (input) => {
+  const invokeModel = async (
+    input,
+    { observeOutputShape, sessionDiscriminator },
+  ) => {
     modelInputs.push(input);
+    modelSessionDiscriminators.push(sessionDiscriminator);
+    shapeObserverCalls += 1;
+    await observeOutputShape(
+      summarizeHostedReviewModelOutputShape({
+        httpStatus: 200,
+        httpOk: true,
+        requestedModel: 'openclaw/wiselink-engineering',
+        payload: {
+          provider: 'openai-codex',
+          model: 'gpt-5.4',
+          choices: [
+            {
+              finish_reason: 'stop',
+              message: {
+                content: null,
+                tool_calls: [
+                  {
+                    type: 'function',
+                    function: {
+                      name: 'return_wiselink_review_candidate',
+                      arguments:
+                        '{"private":"MODEL-OUTPUT-MUST-NOT-BE-CHECKPOINTED"}',
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      }),
+    );
     return {
       output: {
         responseType: 'SOURCE_LINK',
@@ -1995,6 +2033,10 @@ test('runs a review turn from durable checkpoints without replaying remote work'
     ],
   );
   assert.equal(modelInputs.length, 1);
+  assert.deepEqual(modelSessionDiscriminators, [
+    createHash('sha256').update(reviewTask.requestId).digest('hex'),
+  ]);
+  assert.equal(shapeObserverCalls, 1);
   assert.deepEqual(
     modelInputs[0].input.context.evaluation.gapLedger.gaps[0].gapControl,
     {
@@ -2025,6 +2067,26 @@ test('runs a review turn from durable checkpoints without replaying remote work'
   }
   const checkpointInfo = await stat(join(checkpointDir, 'begin.result.json'));
   assert.equal(checkpointInfo.mode & 0o077, 0);
+  const shapePath = join(checkpointDir, 'model.output-shape.json');
+  const shapeInfo = await stat(shapePath);
+  const shapeSerialized = await readFile(shapePath, 'utf8');
+  const shapeCheckpoint = JSON.parse(shapeSerialized);
+  assert.equal(shapeInfo.mode & 0o077, 0);
+  assert.equal(shapeCheckpoint.argsHash, canonicalSha256(modelInputs[0]));
+  assert.equal(shapeCheckpoint.value.outputChannel, 'FUNCTION_ARGUMENTS');
+  assert.equal(
+    shapeCheckpoint.value.toolCall.sha256,
+    createHash('sha256')
+      .update('{"private":"MODEL-OUTPUT-MUST-NOT-BE-CHECKPOINTED"}')
+      .digest('hex'),
+  );
+  assert.equal(shapeCheckpoint.value.assistantContent.isBlank, true);
+  assert.equal(shapeCheckpoint.value.toolCall.rawJsonParseResult, 'OBJECT');
+  assert.equal(
+    shapeSerialized.includes('MODEL-OUTPUT-MUST-NOT-BE-CHECKPOINTED'),
+    false,
+  );
+  assert.equal(shapeSerialized.includes('{"private"'), false);
 });
 
 test('reads both selected Criterion sources and the current attachment for candidate evidence', async (t) => {
@@ -2058,9 +2120,10 @@ test('reads both selected Criterion sources and the current attachment for candi
         attemptRef: task.operationRef,
         sourceRefs: args.sourceRefIds.map((sourceRefId) => ({
           sourceRefId,
-          kind: sourceRefId === reviewTask.attachmentRefs[0]
-            ? 'ENGINEER_ATTACHMENT'
-            : 'page',
+          kind:
+            sourceRefId === reviewTask.attachmentRefs[0]
+              ? 'ENGINEER_ATTACHMENT'
+              : 'page',
           statement: 'Fixture-only source-bound statement.',
         })),
       };
@@ -2101,9 +2164,10 @@ test('reads both selected Criterion sources and the current attachment for candi
     reviewTask.resourceRefs[0].sourceRefId,
     reviewTask.attachmentRefs[0],
   ]);
-  assert.deepEqual(JSON.parse(committedResult.modelOutput).candidateEvidenceRefs, [
-    reviewTask.attachmentRefs[0],
-  ]);
+  assert.deepEqual(
+    JSON.parse(committedResult.modelOutput).candidateEvidenceRefs,
+    [reviewTask.attachmentRefs[0]],
+  );
   assert.deepEqual(result.authorityMutations, {
     reviewCandidatePersisted: true,
     workItemRevisionChanged: false,
@@ -2236,10 +2300,7 @@ test('persists a complete candidate-only review action draft without confirming 
     uncertaintyDispositions,
     decisionSnapshot: {
       assessmentAsOf: '2026-09-02T00:00:00.000Z',
-      evidenceHorizon: [
-        'SOURCE_DOCUMENT_COMPLETE',
-        'CONFIGURATION_PARTIAL',
-      ],
+      evidenceHorizon: ['SOURCE_DOCUMENT_COMPLETE', 'CONFIGURATION_PARTIAL'],
       currentBestJudgment: 'criterion-001 可形成 PROVISIONAL 候选判断。',
       alternativeJudgments: ['保留 UNKNOWN/WAITING_INPUT。'],
       decisionMaturity: 'REVIEWABLE',
@@ -2324,11 +2385,15 @@ test('keeps non-gap authority data outside the review model boundary', async () 
 });
 
 test('discovers the Hosted OpenClaw config and exact canonical MCP alias', () => {
-  const paths = openClawConfigCandidates([], {}, {
-    homeDirectory: '/home/gem',
-    workingDirectory:
-      '/home/gem/workspace/agent/workspace/skills/wiselink-research-and-synthesize',
-  });
+  const paths = openClawConfigCandidates(
+    [],
+    {},
+    {
+      homeDirectory: '/home/gem',
+      workingDirectory:
+        '/home/gem/workspace/agent/workspace/skills/wiselink-research-and-synthesize',
+    },
+  );
   assert.ok(paths.includes('/home/gem/workspace/agent/openclaw.json'));
   assert.deepEqual(
     findMcpConfig({
@@ -2388,7 +2453,101 @@ test('requires an explicitly enabled Hosted chat-completions endpoint', () => {
   );
 });
 
-test('accepts JSON-standard surrounding whitespace from the Hosted review model', async (t) => {
+test('resolves one no-fallback model from the explicit agent or defaults', () => {
+  assert.equal(
+    resolveConfiguredModelVersion({
+      agents: {
+        defaults: { model: 'provider/default' },
+        list: [{ id: 'wiselink-engineering', model: 'provider/explicit' }],
+      },
+    }),
+    'provider/explicit',
+  );
+  assert.equal(
+    resolveConfiguredModelVersion({
+      agents: {
+        list: [
+          {
+            id: 'wiselink-engineering',
+            model: { primary: 'provider/explicit-object', fallbacks: [] },
+          },
+        ],
+      },
+    }),
+    'provider/explicit-object',
+  );
+  assert.equal(
+    resolveConfiguredModelVersion({
+      agents: {
+        defaults: {
+          model: { primary: 'provider/default-object', fallbacks: [] },
+        },
+        list: [{ id: 'wiselink-engineering' }],
+      },
+    }),
+    'provider/default-object',
+  );
+  assert.equal(
+    resolveConfiguredModelVersion(
+      { agents: { defaults: { model: 'provider/default' }, list: [] } },
+      'another-agent',
+    ),
+    'provider/default',
+  );
+});
+
+test('rejects ambiguous, fallback-enabled, and unreadable model config', () => {
+  assert.throws(
+    () =>
+      resolveConfiguredModelVersion({
+        agents: {
+          defaults: { model: 'provider/default' },
+          list: [
+            { id: 'wiselink-engineering' },
+            { id: 'wiselink-engineering' },
+          ],
+        },
+      }),
+    /REVIEW_MODEL_CONFIG_AMBIGUOUS/u,
+  );
+  for (const fallbacks of [['provider/fallback'], 'provider/fallback']) {
+    assert.throws(
+      () =>
+        resolveConfiguredModelVersion({
+          agents: {
+            list: [
+              {
+                id: 'wiselink-engineering',
+                model: { primary: 'provider/primary', fallbacks },
+              },
+            ],
+          },
+        }),
+      /REVIEW_MODEL_FALLBACK_NONEMPTY/u,
+    );
+  }
+  for (const config of [
+    {},
+    { agents: { list: 'not-an-array' } },
+    {
+      agents: {
+        list: [
+          {
+            id: 'wiselink-engineering',
+            model: { primary: 'unknown', fallbacks: [] },
+          },
+        ],
+      },
+    },
+  ]) {
+    assert.throws(
+      () => resolveConfiguredModelVersion(config),
+      /REVIEW_MODEL_CONFIG_UNREADABLE/u,
+    );
+  }
+});
+
+test('uses one forced output function with blank assistant content', async (t) => {
   const originalFetch = globalThis.fetch;
   let requestBody;
   t.after(() => {
@@ -2402,7 +2561,16 @@ test('accepts JSON-standard surrounding whitespace from the Hosted review model'
         choices: [
           {
             message: {
-              content: ' \n {"candidateOnly":true} \n ',
+              content: ' \n ',
+              tool_calls: [
+                {
+                  type: 'function',
+                  function: {
+                    name: 'return_wiselink_review_candidate',
+                    arguments: ' \n {"candidateOnly":true} \n ',
+                  },
+                },
+              ],
             },
           },
         ],
@@ -2416,31 +2584,59 @@ test('accepts JSON-standard surrounding whitespace from the Hosted review model'
     {
       gatewayUrl: 'http://127.0.0.1:18789',
       gatewayToken: 'fixture-only-never-logged',
+      configuredModelVersion: 'provider/configured',
     },
   );
 
   assert.deepEqual(result.output, { candidateOnly: true });
-  assert.deepEqual(requestBody.response_format, { type: 'json_object' });
+  assert.equal(Object.hasOwn(requestBody, 'response_format'), false);
+  assert.equal(requestBody.tools.length, 1);
+  assert.equal(
+    requestBody.tools[0].function.name,
+    'return_wiselink_review_candidate',
+  );
+  assert.equal(requestBody.tools[0].function.parameters.type, 'object');
+  assert.equal(
+    requestBody.tools[0].function.parameters.additionalProperties,
+    false,
+  );
+  assert.deepEqual(requestBody.tool_choice, {
+    type: 'function',
+    function: { name: 'return_wiselink_review_candidate' },
+  });
+  assert.equal(requestBody.parallel_tool_calls, false);
+  assert.equal(requestBody.n, 1);
+  assert.match(requestBody.user, /^review-driver:[0-9a-f]{24}$/u);
   assert.equal(result.provenance.modelVersion, 'openai-codex/gpt-5.4');
   assert.equal(
     result.provenance.promptVersion,
-    'wiselink.3_1.review_prompt.v1.c14',
+    'wiselink.3_1.review_prompt.v1.c16',
   );
 });
 
-test('continues to reject Markdown-fenced Hosted review output', async (t) => {
+test('falls back to the configured model and records only output shape v2', async (t) => {
   const originalFetch = globalThis.fetch;
+  let outputShape;
   t.after(() => {
     globalThis.fetch = originalFetch;
   });
   globalThis.fetch = async () =>
     new Response(
       JSON.stringify({
-        model: 'openai-codex/gpt-5.4',
         choices: [
           {
             message: {
-              content: '```json\n{"candidateOnly":true}\n```',
+              content: null,
+              tool_calls: [
+                {
+                  type: 'function',
+                  function: {
+                    name: 'return_wiselink_review_candidate',
+                    arguments:
+                      '{"private":"MODEL-OUTPUT-MUST-NOT-BE-RETAINED","candidateOnly":true}',
+                  },
+                },
+              ],
             },
           },
         ],
@@ -2448,6 +2644,256 @@ test('continues to reject Markdown-fenced Hosted review output', async (t) => {
       { status: 200, headers: { 'content-type': 'application/json' } },
     );
 
+  const result = await invokeHostedReviewModel(
+    { candidateOnly: true },
+    {
+      gatewayUrl: 'http://127.0.0.1:18789',
+      gatewayToken: 'fixture-only-never-logged',
+      configuredModelVersion: 'provider/configured',
+      observeOutputShape: async (value) => {
+        outputShape = value;
+      },
+    },
+  );
+
+  assert.deepEqual(result.output, {
+    private: 'MODEL-OUTPUT-MUST-NOT-BE-RETAINED',
+    candidateOnly: true,
+  });
+  assert.equal(result.provenance.modelVersion, 'provider/configured');
+  assert.equal(
+    result.provenance.promptVersion,
+    'wiselink.3_1.review_prompt.v1.c16',
+  );
+  assert.equal(
+    outputShape.schemaVersion,
+    'wiselink.3_1.review_model_output_shape.v2',
+  );
+  assert.equal(outputShape.outputChannel, 'FUNCTION_ARGUMENTS');
+  assert.equal(outputShape.assistantContent.isBlank, true);
+  assert.equal(outputShape.toolCall.count, 1);
+  assert.equal(outputShape.toolCall.nameMatched, true);
+  assert.equal(outputShape.toolCall.rawJsonParseResult, 'OBJECT');
+  assert.equal(outputShape.toolCall.strictJsonObjectAccepted, true);
+  assert.equal(
+    JSON.stringify(outputShape).includes('MODEL-OUTPUT-MUST-NOT-BE-RETAINED'),
+    false,
+  );
+});
+
+test('rejects prose, fences, arrays, null, analysis, and ambiguous output channels', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  const validToolCall = () => ({
+    type: 'function',
+    function: {
+      name: 'return_wiselink_review_candidate',
+      arguments: '{"candidateOnly":true}',
+    },
+  });
+  let nextChoices = [
+    { message: { content: null, tool_calls: [validToolCall()] } },
+  ];
+  globalThis.fetch = async () =>
+    new Response(
+      JSON.stringify({
+        model: 'openai-codex/gpt-5.4',
+        choices: nextChoices,
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    );
+
+  const invoke = () =>
+    invokeHostedReviewModel(
+      { candidateOnly: true },
+      {
+        gatewayUrl: 'http://127.0.0.1:18789',
+        gatewayToken: 'fixture-only-never-logged',
+        configuredModelVersion: 'provider/configured',
+      },
+    );
+  for (const argumentsText of [
+    '```json\n{"candidateOnly":true}\n```',
+    'Here is the result: {"candidateOnly":true}',
+    '[{"candidateOnly":true}]',
+    'null',
+  ]) {
+    const toolCall = validToolCall();
+    toolCall.function.arguments = argumentsText;
+    nextChoices = [{ message: { content: null, tool_calls: [toolCall] } }];
+    await assert.rejects(
+      invoke(),
+      /REVIEW_MODEL_STRICT_JSON_REQUIRED/u,
+      argumentsText,
+    );
+  }
+  const malformedArguments = validToolCall();
+  malformedArguments.function.arguments = '{"candidateOnly":true,}';
+  nextChoices = [
+    { message: { content: null, tool_calls: [malformedArguments] } },
+  ];
+  await assert.rejects(invoke(), /REVIEW_MODEL_JSON_INVALID/u);
+  nextChoices = [
+    {
+      message: {
+        content: 'Here is the result:',
+        tool_calls: [validToolCall()],
+      },
+    },
+  ];
+  await assert.rejects(invoke(), /REVIEW_GATEWAY_ASSISTANT_CONTENT_FORBIDDEN/u);
+  nextChoices = [{ message: { content: '{"candidateOnly":true}' } }];
+  await assert.rejects(invoke(), /REVIEW_GATEWAY_ASSISTANT_CONTENT_FORBIDDEN/u);
+  nextChoices = [
+    {
+      message: {
+        content: null,
+        reasoning_content: 'MODEL-OUTPUT-MUST-NOT-BE-CHECKPOINTED',
+        tool_calls: [validToolCall()],
+      },
+    },
+  ];
+  await assert.rejects(invoke(), /REVIEW_MODEL_ANALYSIS_FORBIDDEN/u);
+  nextChoices = [
+    {
+      message: {
+        content: null,
+        tool_calls: [validToolCall(), validToolCall()],
+      },
+    },
+  ];
+  await assert.rejects(
+    invoke(),
+    /REVIEW_GATEWAY_OUTPUT_FUNCTION_COUNT_INVALID/u,
+  );
+  nextChoices = [{ message: { content: null, tool_calls: [] } }];
+  await assert.rejects(
+    invoke(),
+    /REVIEW_GATEWAY_OUTPUT_FUNCTION_COUNT_INVALID/u,
+  );
+  const wrongType = validToolCall();
+  wrongType.type = 'custom';
+  nextChoices = [{ message: { content: null, tool_calls: [wrongType] } }];
+  await assert.rejects(
+    invoke(),
+    /REVIEW_GATEWAY_OUTPUT_FUNCTION_TYPE_INVALID/u,
+  );
+  const wrongName = validToolCall();
+  wrongName.function.name = 'another_function';
+  nextChoices = [{ message: { content: null, tool_calls: [wrongName] } }];
+  await assert.rejects(
+    invoke(),
+    /REVIEW_GATEWAY_OUTPUT_FUNCTION_NAME_INVALID/u,
+  );
+  nextChoices = [];
+  await assert.rejects(invoke(), /REVIEW_GATEWAY_CHOICE_COUNT_INVALID/u);
+  nextChoices = [
+    { message: { content: null, tool_calls: [validToolCall()] } },
+    { message: { content: null, tool_calls: [validToolCall()] } },
+  ];
+  await assert.rejects(invoke(), /REVIEW_GATEWAY_CHOICE_COUNT_INVALID/u);
+  const nonStringArguments = validToolCall();
+  nonStringArguments.function.arguments = { candidateOnly: true };
+  nextChoices = [
+    {
+      message: { content: null, tool_calls: [nonStringArguments] },
+    },
+  ];
+  await assert.rejects(
+    invoke(),
+    /REVIEW_GATEWAY_OUTPUT_FUNCTION_ARGUMENTS_REQUIRED/u,
+  );
+  const missingArguments = validToolCall();
+  delete missingArguments.function.arguments;
+  nextChoices = [
+    { message: { content: null, tool_calls: [missingArguments] } },
+  ];
+  await assert.rejects(
+    invoke(),
+    /REVIEW_GATEWAY_OUTPUT_FUNCTION_ARGUMENTS_REQUIRED/u,
+  );
+});
+
+test('classifies rejected forced-function output without retaining raw values', () => {
+  const summarize = ({ content = null, argumentsText, message = {} }) =>
+    summarizeHostedReviewModelOutputShape({
+      httpStatus: 200,
+      httpOk: true,
+      requestedModel: 'openclaw/wiselink-engineering',
+      payload: {
+        provider: 'openai-codex',
+        model: 'gpt-5.4',
+        choices: [
+          {
+            finish_reason: 'stop',
+            message: {
+              content,
+              tool_calls: [
+                {
+                  type: 'function',
+                  function: {
+                    name: 'return_wiselink_review_candidate',
+                    arguments: argumentsText,
+                  },
+                },
+              ],
+              ...message,
+            },
+          },
+        ],
+      },
+    });
+  const analysis = summarize({
+    argumentsText: '{"candidateOnly":true}',
+    message: {
+      reasoning_content: 'MODEL-OUTPUT-MUST-NOT-BE-CHECKPOINTED',
+    },
+  });
+  const prose = summarize({
+    argumentsText:
+      'Result: MODEL-OUTPUT-MUST-NOT-BE-CHECKPOINTED {"candidateOnly":true}',
+  });
+  const fence = summarize({
+    argumentsText:
+      '```json\n{"private":"MODEL-OUTPUT-MUST-NOT-BE-CHECKPOINTED"}\n```',
+  });
+  const array = summarize({ argumentsText: '[{"candidateOnly":true}]' });
+  const nullValue = summarize({ argumentsText: 'null' });
+  const nonblankContent = summarize({
+    content: 'MODEL-OUTPUT-MUST-NOT-BE-CHECKPOINTED',
+    argumentsText: '{"candidateOnly":true}',
+  });
+
+  assert.equal(analysis.hasAnalysis, true);
+  assert.equal(analysis.outputChannel, 'REJECTED');
+  assert.equal(prose.toolCall.rawJsonParseResult, 'INVALID');
+  assert.equal(prose.outputChannel, 'REJECTED');
+  assert.equal(fence.toolCall.rawJsonParseResult, 'INVALID');
+  assert.equal(fence.outputChannel, 'REJECTED');
+  assert.equal(array.toolCall.rawJsonParseResult, 'ARRAY');
+  assert.equal(array.outputChannel, 'REJECTED');
+  assert.equal(nullValue.toolCall.rawJsonParseResult, 'NULL');
+  assert.equal(nullValue.outputChannel, 'REJECTED');
+  assert.equal(nonblankContent.assistantContent.isBlank, false);
+  assert.equal(nonblankContent.outputChannel, 'REJECTED');
+  for (const shape of [
+    analysis,
+    prose,
+    fence,
+    array,
+    nullValue,
+    nonblankContent,
+  ]) {
+    assert.equal(
+      JSON.stringify(shape).includes('MODEL-OUTPUT-MUST-NOT-BE-CHECKPOINTED'),
+      false,
+    );
+  }
+});
+
+test('requires a configured model before dispatch', async () => {
   await assert.rejects(
     invokeHostedReviewModel(
       { candidateOnly: true },
@@ -2456,7 +2902,7 @@ test('continues to reject Markdown-fenced Hosted review output', async (t) => {
         gatewayToken: 'fixture-only-never-logged',
       },
     ),
-    /REVIEW_MODEL_STRICT_JSON_REQUIRED/u,
+    /REVIEW_MODEL_CONFIG_UNREADABLE/u,
   );
 });
 
@@ -2524,11 +2970,39 @@ test('recovers an ambiguous checkpointed review commit with one status read and 
   assert.equal(counts.get('get_action_attempt_status'), 1);
 });
 
-test('never retries an ambiguous non-commit review step after restart', async (t) => {
+test('never retries invalid model arguments after output-shape checkpoint', async (t) => {
   const checkpointDir = await mkdtemp(
     join(tmpdir(), 'wiselink-review-driver-fail-closed-'),
   );
   t.after(() => rm(checkpointDir, { recursive: true, force: true }));
+  const originalFetch = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  globalThis.fetch = async () =>
+    new Response(
+      JSON.stringify({
+        model: 'openai-codex/gpt-5.4',
+        choices: [
+          {
+            finish_reason: 'stop',
+            message: {
+              content: null,
+              tool_calls: [
+                {
+                  type: 'function',
+                  function: {
+                    name: 'return_wiselink_review_candidate',
+                    arguments: '{"candidateOnly":true,}',
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    );
   const reviewTask = await readJson(REVIEW_TASK_FIXTURE_URL);
   const task = makeTask('OPENCLAW_INTERACTIVE_REVIEW', reviewTask);
   const counts = new Map();
@@ -2554,9 +3028,15 @@ test('never retries an ambiguous non-commit review step after restart', async (t
   let modelCalls = 0;
   const dependencies = {
     callTool,
-    invokeModel: async () => {
+    invokeModel: async (input, hooks) => {
       modelCalls += 1;
-      throw new Error('MODEL_RESPONSE_OUTCOME_UNKNOWN');
+      return invokeHostedReviewModel(input, {
+        gatewayUrl: 'http://127.0.0.1:18789',
+        gatewayToken: 'fixture-only-never-logged',
+        configuredModelVersion: 'provider/configured',
+        sessionDiscriminator: hooks.sessionDiscriminator,
+        observeOutputShape: hooks.observeOutputShape,
+      });
     },
   };
   const options = {
@@ -2567,7 +3047,7 @@ test('never retries an ambiguous non-commit review step after restart', async (t
 
   await assert.rejects(
     runHostedReviewTurn(options, dependencies),
-    /MODEL_RESPONSE_OUTCOME_UNKNOWN/u,
+    /REVIEW_MODEL_JSON_INVALID/u,
   );
   await assert.rejects(
     runHostedReviewTurn(options, dependencies),
@@ -2576,7 +3056,19 @@ test('never retries an ambiguous non-commit review step after restart', async (t
   assert.equal(counts.get('begin_review_turn'), 1);
   assert.equal(counts.get('get_review_turn_context'), 1);
   assert.equal(counts.get('read_source_refs'), 1);
+  assert.equal(counts.get('commit_review_turn_candidate'), undefined);
   assert.equal(modelCalls, 1);
+  await stat(join(checkpointDir, 'model.output-shape.json'));
+  for (const name of [
+    'model.result.json',
+    'commit.started.json',
+    'commit.result.json',
+  ]) {
+    await assert.rejects(
+      stat(join(checkpointDir, name)),
+      (error) => error?.code === 'ENOENT',
+    );
+  }
 });
 
 test('recovers a proven pre-dispatch gateway 404 once without replaying Host reads', async (t) => {

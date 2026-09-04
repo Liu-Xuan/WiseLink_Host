@@ -3,10 +3,12 @@
 import { createHash } from 'node:crypto';
 import {
   chmod,
+  link,
   mkdir,
   readFile,
   rename,
   stat,
+  unlink,
   writeFile,
 } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -29,6 +31,7 @@ import {
 } from './validate-payload.mjs';
 
 const DRIVER_SCHEMA = 'wiselink.3_1.hosted_review_driver.v1';
+const MODEL_OUTPUT_SHAPE_SCHEMA = 'wiselink.3_1.review_model_output_shape.v2';
 const KNOWN_MODEL_NONDISPATCH_CODES = new Set([
   'REVIEW_GATEWAY_INVALID_JSON_HTTP_404',
 ]);
@@ -43,7 +46,18 @@ const MODEL_OUTPUT_KEYS = [
   'affectedItemIds',
   'warnings',
 ];
-const REVIEW_PROMPT_VERSION = 'wiselink.3_1.review_prompt.v1.c14';
+const REVIEW_OUTPUT_FUNCTION_NAME = 'return_wiselink_review_candidate';
+const REVIEW_RESPONSE_TYPES = [
+  'ANSWER',
+  'CLARIFYING_QUESTION',
+  'SOURCE_LINK',
+  'CANDIDATE_EVIDENCE',
+  'REVIEW_ACTION_DRAFT',
+  'INPUT_REQUEST',
+  'AFFECTED_ITEMS_PREVIEW',
+  'TASK_STATUS',
+];
+const REVIEW_PROMPT_VERSION = 'wiselink.3_1.review_prompt.v1.c16';
 const WISELINK_HOST_MCP_CONFIG_KEYS = new Set([
   WISELINK_HOST_MCP_NAME,
   'wiselink_host_controller',
@@ -119,11 +133,23 @@ export async function runHostedReviewTurn(options, dependencies = {}) {
         normalized,
         beginResult,
       );
+      const modelArgsHash = canonicalSha256(generationInput);
       const execution = await checkpoint.remoteStep({
         step: 'model',
         args: generationInput,
         ambiguousCommit: false,
-        perform: () => invokeModel(structuredClone(generationInput)),
+        perform: () =>
+          invokeModel(structuredClone(generationInput), {
+            sessionDiscriminator: sha256(normalized.requestId),
+            observeOutputShape: async (value) =>
+              checkpoint.writeOnce('model.output-shape', {
+                schemaVersion: DRIVER_SCHEMA,
+                step: 'model',
+                argsHash: modelArgsHash,
+                observedAt: new Date().toISOString(),
+                value: validateModelOutputShape(value),
+              }),
+          }),
       });
       const partial = validateModelExecution(
         execution,
@@ -192,7 +218,22 @@ export async function invokeHostedReviewModel(input, options = {}) {
     'REVIEW_AGENT_REQUIRED',
   );
   const timeoutMs = positiveInteger(options.timeoutMs, 480_000);
+  const configuredModelVersion = requiredText(
+    options.configuredModelVersion,
+    'REVIEW_MODEL_CONFIG_UNREADABLE',
+  );
+  const observeOutputShape = options.observeOutputShape;
+  if (
+    observeOutputShape !== undefined &&
+    typeof observeOutputShape !== 'function'
+  ) {
+    throw new Error('REVIEW_MODEL_OUTPUT_SHAPE_OBSERVER_INVALID');
+  }
   const prompt = buildReviewPrompt(input);
+  const sessionDiscriminator = requiredText(
+    options.sessionDiscriminator ?? canonicalSha256(input),
+    'REVIEW_MODEL_SESSION_DISCRIMINATOR_REQUIRED',
+  );
   const startedAt = Date.now();
   const endpoint = new URL('/v1/chat/completions', gatewayUrl);
   const response = await fetch(endpoint, {
@@ -204,16 +245,22 @@ export async function invokeHostedReviewModel(input, options = {}) {
     },
     body: JSON.stringify({
       model: `openclaw/${agentId}`,
-      user: `review-driver:${canonicalSha256(input).slice(0, 24)}`,
+      user: `review-driver:${sha256(sessionDiscriminator).slice(0, 24)}`,
       messages: [
         {
           role: 'system',
           content:
-            'Return one strict JSON object only. Do not call tools and do not emit Markdown.',
+            `Call ${REVIEW_OUTPUT_FUNCTION_NAME} exactly once to serialize the candidate. Emit no assistant prose. This function has no implementation and is never executed.`,
         },
         { role: 'user', content: prompt },
       ],
-      response_format: { type: 'json_object' },
+      tools: [reviewCandidateFunctionTool()],
+      tool_choice: {
+        type: 'function',
+        function: { name: REVIEW_OUTPUT_FUNCTION_NAME },
+      },
+      parallel_tool_calls: false,
+      n: 1,
       stream: false,
     }),
     signal: AbortSignal.timeout(timeoutMs),
@@ -228,16 +275,31 @@ export async function invokeHostedReviewModel(input, options = {}) {
   } catch {
     throw new Error(`REVIEW_GATEWAY_INVALID_JSON_HTTP_${response.status}`);
   }
+  const choices = Array.isArray(payload.choices) ? payload.choices : [];
+  const choice = choices.length === 1 && isRecord(choices[0]) ? choices[0] : null;
+  const message = isRecord(choice?.message) ? choice.message : null;
+  const outputShape = summarizeHostedReviewModelOutputShape({
+    httpStatus: response.status,
+    httpOk: response.ok,
+    requestedModel: `openclaw/${agentId}`,
+    payload,
+  });
+  if (observeOutputShape) {
+    await observeOutputShape(outputShape);
+  }
   if (!response.ok) {
     throw new Error(`REVIEW_GATEWAY_HTTP_${response.status}`);
   }
-  const choice = Array.isArray(payload.choices) ? payload.choices[0] : null;
-  const message = isRecord(choice?.message) ? choice.message : null;
-  if (Array.isArray(message?.tool_calls) && message.tool_calls.length > 0) {
-    throw new Error('REVIEW_GATEWAY_TOOL_CALL_FORBIDDEN');
+  if (outputShape.hasAnalysis) {
+    throw new Error('REVIEW_MODEL_ANALYSIS_FORBIDDEN');
   }
-  const output = parseStrictJsonObject(message?.content);
-  const modelVersion = actualModelVersion(payload, choice, message);
+  const { argumentsText, output } = readReviewCandidateArguments(payload);
+  const modelVersion = actualModelVersion(
+    payload,
+    choice,
+    message,
+    configuredModelVersion,
+  );
   return {
     output,
     provenance: {
@@ -250,16 +312,174 @@ export async function invokeHostedReviewModel(input, options = {}) {
       runMetrics: {
         durationMs: Date.now() - startedAt,
         inputUnits: Buffer.byteLength(prompt),
-        outputUnits: Buffer.byteLength(message.content),
+        outputUnits: Buffer.byteLength(argumentsText),
       },
     },
   };
 }
 
 export function isChatCompletionsEnabled(config) {
-  return (
-    config?.gateway?.http?.endpoints?.chatCompletions?.enabled === true
+  return config?.gateway?.http?.endpoints?.chatCompletions?.enabled === true;
+}
+
+export function resolveConfiguredModelVersion(
+  config,
+  agentId = WISELINK_PROFILE_REF,
+) {
+  const normalizedAgentId = requiredText(
+    agentId,
+    'REVIEW_AGENT_REQUIRED',
   );
+  const agents = config?.agents?.list;
+  if (agents !== undefined && !Array.isArray(agents)) {
+    throw new Error('REVIEW_MODEL_CONFIG_UNREADABLE');
+  }
+  const matches = (agents ?? []).filter(
+    (agent) => isRecord(agent) && agent.id === normalizedAgentId,
+  );
+  if (matches.length > 1) {
+    throw new Error('REVIEW_MODEL_CONFIG_AMBIGUOUS');
+  }
+  const modelConfig =
+    matches.length === 1 && matches[0].model !== undefined
+      ? matches[0].model
+      : config?.agents?.defaults?.model;
+  const selection =
+    typeof modelConfig === 'string'
+      ? { primary: modelConfig, fallbacks: [] }
+      : isRecord(modelConfig)
+        ? {
+            primary: modelConfig.primary,
+            fallbacks: modelConfig.fallbacks ?? [],
+          }
+        : null;
+  if (!selection) {
+    throw new Error('REVIEW_MODEL_CONFIG_UNREADABLE');
+  }
+  if (
+    !Array.isArray(selection.fallbacks) ||
+    selection.fallbacks.length > 0
+  ) {
+    throw new Error('REVIEW_MODEL_FALLBACK_NONEMPTY');
+  }
+  if (!isReadableActualModel(selection.primary)) {
+    throw new Error('REVIEW_MODEL_CONFIG_UNREADABLE');
+  }
+  return selection.primary.trim();
+}
+
+export function summarizeHostedReviewModelOutputShape({
+  httpStatus,
+  httpOk,
+  requestedModel,
+  payload,
+}) {
+  const choices = Array.isArray(payload?.choices) ? payload.choices : [];
+  const choice = isRecord(choices[0]) ? choices[0] : null;
+  const message = isRecord(choice?.message) ? choice.message : null;
+  const content = message?.content;
+  const serializedContent = diagnosticContent(content);
+  const hasAnalysisWrapper = analysisWrapper(content);
+  const toolCalls = Array.isArray(message?.tool_calls)
+    ? message.tool_calls
+    : [];
+  const toolCall = toolCalls.length === 1 && isRecord(toolCalls[0])
+    ? toolCalls[0]
+    : null;
+  const outputFunction = isRecord(toolCall?.function)
+    ? toolCall.function
+    : null;
+  const argumentsText = outputFunction?.arguments;
+  const serializedArguments =
+    typeof argumentsText === 'string' ? argumentsText : null;
+  const argumentsParseResult = rawJsonParseResult(argumentsText);
+  const reportedModel = diagnosticToken(
+    [
+      message?.model,
+      message?.model_version,
+      choice?.model,
+      payload?.model_version,
+      payload?.model,
+      payload?._meta?.modelVersion,
+      payload?._meta?.model,
+    ].find((value) => typeof value === 'string' && value.trim() !== ''),
+  );
+  const reportedProvider = diagnosticToken(
+    [
+      message?.provider,
+      choice?.provider,
+      payload?.provider,
+      payload?._meta?.provider,
+    ].find((value) => typeof value === 'string' && value.trim() !== ''),
+  );
+  const finishReason = diagnosticToken(choice?.finish_reason);
+  const hasAnalysis =
+    hasAnalysisWrapper ||
+    hasNonEmptyValue(message?.analysis) ||
+    hasNonEmptyValue(message?.reasoning) ||
+    hasNonEmptyValue(message?.reasoning_content) ||
+    (Array.isArray(content) &&
+      content.some(
+        (item) =>
+          isRecord(item) &&
+          ['analysis', 'reasoning'].includes(String(item.type).toLowerCase()),
+      ));
+  const assistantContentBlank = isBlankAssistantContent(content);
+  const expectedFunctionNameMatched =
+    outputFunction?.name === REVIEW_OUTPUT_FUNCTION_NAME;
+  const functionArgumentsAccepted = argumentsParseResult === 'OBJECT';
+  const outputChannelAccepted =
+    choices.length === 1 &&
+    toolCalls.length === 1 &&
+    toolCall?.type === 'function' &&
+    expectedFunctionNameMatched &&
+    typeof argumentsText === 'string' &&
+    assistantContentBlank &&
+    !hasAnalysis &&
+    functionArgumentsAccepted;
+  return {
+    schemaVersion: MODEL_OUTPUT_SHAPE_SCHEMA,
+    http: {
+      status: Number.isSafeInteger(httpStatus) ? httpStatus : null,
+      ok: httpOk === true,
+    },
+    routing: {
+      requestedModel: diagnosticToken(requestedModel),
+      reportedProvider,
+      reportedModel,
+    },
+    finishReason:
+      finishReason ??
+      (typeof choice?.finish_reason === 'string' ? 'UNREADABLE' : null),
+    choiceCount: choices.length,
+    hasAnalysis,
+    outputChannel: outputChannelAccepted
+      ? 'FUNCTION_ARGUMENTS'
+      : 'REJECTED',
+    assistantContent: {
+      type: diagnosticContentType(content),
+      byteLength:
+        serializedContent === null
+          ? null
+          : Buffer.byteLength(serializedContent),
+      isBlank: assistantContentBlank,
+      sha256: serializedContent === null ? null : sha256(serializedContent),
+    },
+    toolCall: {
+      count: toolCalls.length,
+      type: diagnosticToken(toolCall?.type),
+      nameMatched: expectedFunctionNameMatched,
+      argumentsType: diagnosticContentType(argumentsText),
+      byteLength:
+        serializedArguments === null
+          ? null
+          : Buffer.byteLength(serializedArguments),
+      rawJsonParseResult: argumentsParseResult,
+      strictJsonObjectAccepted: functionArgumentsAccepted,
+      sha256:
+        serializedArguments === null ? null : sha256(serializedArguments),
+    },
+  };
 }
 
 export function assertHostedModelGatewayReady(runtime) {
@@ -447,6 +667,7 @@ async function createCheckpointStore(directory) {
   return {
     readOptional: (step) => readCheckpointOptional(root, step),
     write: (step, value) => writeCheckpoint(root, step, value),
+    writeOnce: (step, value) => writeCheckpointOnce(root, step, value),
     remoteStep: async ({ step, args, ambiguousCommit, perform }) => {
       const argsHash = canonicalSha256(args);
       const completed = await readCheckpointOptional(root, `${step}.result`);
@@ -508,6 +729,30 @@ async function writeCheckpoint(root, step, value) {
   await chmod(path, 0o600);
 }
 
+async function writeCheckpointOnce(root, step, value) {
+  const path = join(root, `${step}.json`);
+  const temporary = `${path}.${process.pid}.once.tmp`;
+  await writeFile(temporary, `${canonicalJson(value)}\n`, {
+    encoding: 'utf8',
+    mode: 0o600,
+    flag: 'wx',
+  });
+  await chmod(temporary, 0o600);
+  try {
+    await link(temporary, path);
+  } catch (error) {
+    if (error?.code === 'EEXIST') {
+      throw new Error(`REVIEW_CHECKPOINT_ALREADY_EXISTS:${step}`);
+    }
+    throw error;
+  } finally {
+    await unlink(temporary).catch((error) => {
+      if (error?.code !== 'ENOENT') throw error;
+    });
+  }
+  await chmod(path, 0o600);
+}
+
 function toolStep(name) {
   return (
     {
@@ -561,18 +806,7 @@ function validateModelExecution(
   ) {
     throw new Error('REVIEW_MODEL_OUTPUT_KEYS_INVALID');
   }
-  if (
-    ![
-      'ANSWER',
-      'CLARIFYING_QUESTION',
-      'SOURCE_LINK',
-      'CANDIDATE_EVIDENCE',
-      'REVIEW_ACTION_DRAFT',
-      'INPUT_REQUEST',
-      'AFFECTED_ITEMS_PREVIEW',
-      'TASK_STATUS',
-    ].includes(output.responseType)
-  ) {
+  if (!REVIEW_RESPONSE_TYPES.includes(output.responseType)) {
     throw new Error('REVIEW_MODEL_RESPONSE_TYPE_INVALID');
   }
   requiredText(output.answer, 'REVIEW_MODEL_ANSWER_REQUIRED');
@@ -593,10 +827,7 @@ function validateModelExecution(
       throw new Error(`REVIEW_MODEL_${key.toUpperCase()}_INVALID`);
     }
   }
-  if (
-    output.responseType === 'SOURCE_LINK' &&
-    output.sourceRefs.length === 0
-  ) {
+  if (output.responseType === 'SOURCE_LINK' && output.sourceRefs.length === 0) {
     throw new Error('REVIEW_MODEL_SOURCE_LINK_REF_REQUIRED');
   }
   const allowed = new Set(readSourceRefIds);
@@ -672,6 +903,149 @@ function validateModelOutputJson(value) {
   return value;
 }
 
+function validateModelOutputShape(value) {
+  const fail = () => {
+    throw new Error('REVIEW_MODEL_OUTPUT_SHAPE_INVALID');
+  };
+  if (
+    !isRecord(value) ||
+    value.schemaVersion !== MODEL_OUTPUT_SHAPE_SCHEMA ||
+    canonicalJson(Object.keys(value).sort()) !==
+      canonicalJson(
+        [
+          'schemaVersion',
+          'http',
+          'routing',
+          'finishReason',
+          'choiceCount',
+          'hasAnalysis',
+          'outputChannel',
+          'assistantContent',
+          'toolCall',
+        ].sort(),
+      ) ||
+    !isRecord(value.http) ||
+    canonicalJson(Object.keys(value.http).sort()) !==
+      canonicalJson(['status', 'ok'].sort()) ||
+    !isRecord(value.routing) ||
+    canonicalJson(Object.keys(value.routing).sort()) !==
+      canonicalJson(
+        ['requestedModel', 'reportedProvider', 'reportedModel'].sort(),
+      ) ||
+    !isRecord(value.assistantContent) ||
+    !isRecord(value.toolCall)
+  ) {
+    fail();
+  }
+  if (
+    canonicalJson(Object.keys(value.assistantContent).sort()) !==
+      canonicalJson(['type', 'byteLength', 'isBlank', 'sha256'].sort()) ||
+    canonicalJson(Object.keys(value.toolCall).sort()) !==
+      canonicalJson(
+        [
+          'count',
+          'type',
+          'nameMatched',
+          'argumentsType',
+          'byteLength',
+          'rawJsonParseResult',
+          'strictJsonObjectAccepted',
+          'sha256',
+        ].sort(),
+      ) ||
+    (value.http.status !== null && !Number.isSafeInteger(value.http.status)) ||
+    typeof value.http.ok !== 'boolean' ||
+    !Number.isSafeInteger(value.choiceCount) ||
+    value.choiceCount < 0 ||
+    typeof value.hasAnalysis !== 'boolean' ||
+    !['FUNCTION_ARGUMENTS', 'REJECTED'].includes(value.outputChannel) ||
+    ![
+      'string',
+      'array',
+      'object',
+      'null',
+      'number',
+      'boolean',
+      'missing',
+    ].includes(value.assistantContent.type) ||
+    !nullableNonNegativeInteger(value.assistantContent.byteLength) ||
+    typeof value.assistantContent.isBlank !== 'boolean' ||
+    (value.assistantContent.sha256 !== null &&
+      !/^[0-9a-f]{64}$/u.test(value.assistantContent.sha256)) ||
+    !Number.isSafeInteger(value.toolCall.count) ||
+    value.toolCall.count < 0 ||
+    (value.toolCall.type !== null &&
+      diagnosticToken(value.toolCall.type) !== value.toolCall.type) ||
+    typeof value.toolCall.nameMatched !== 'boolean' ||
+    ![
+      'string',
+      'array',
+      'object',
+      'null',
+      'number',
+      'boolean',
+      'missing',
+    ].includes(value.toolCall.argumentsType) ||
+    !nullableNonNegativeInteger(value.toolCall.byteLength) ||
+    ![
+      'OBJECT',
+      'ARRAY',
+      'NULL',
+      'STRING',
+      'NUMBER',
+      'BOOLEAN',
+      'INVALID',
+      'NON_STRING',
+    ].includes(value.toolCall.rawJsonParseResult) ||
+    typeof value.toolCall.strictJsonObjectAccepted !== 'boolean' ||
+    (value.toolCall.sha256 !== null &&
+      !/^[0-9a-f]{64}$/u.test(value.toolCall.sha256)) ||
+    ![value.finishReason, ...Object.values(value.routing)].every(
+      (item) => item === null || diagnosticToken(item) === item,
+    )
+  ) {
+    fail();
+  }
+  return structuredClone(value);
+}
+
+function nullableNonNegativeInteger(value) {
+  return value === null || (Number.isSafeInteger(value) && value >= 0);
+}
+
+function readReviewCandidateArguments(payload) {
+  if (!Array.isArray(payload?.choices) || payload.choices.length !== 1) {
+    throw new Error('REVIEW_GATEWAY_CHOICE_COUNT_INVALID');
+  }
+  const choice = payload.choices[0];
+  const message = isRecord(choice?.message) ? choice.message : null;
+  if (!message) throw new Error('REVIEW_GATEWAY_MESSAGE_INVALID');
+  if (!isBlankAssistantContent(message.content)) {
+    throw new Error('REVIEW_GATEWAY_ASSISTANT_CONTENT_FORBIDDEN');
+  }
+  if (!Array.isArray(message.tool_calls) || message.tool_calls.length !== 1) {
+    throw new Error('REVIEW_GATEWAY_OUTPUT_FUNCTION_COUNT_INVALID');
+  }
+  const toolCall = message.tool_calls[0];
+  if (!isRecord(toolCall) || toolCall.type !== 'function') {
+    throw new Error('REVIEW_GATEWAY_OUTPUT_FUNCTION_TYPE_INVALID');
+  }
+  if (
+    !isRecord(toolCall.function) ||
+    toolCall.function.name !== REVIEW_OUTPUT_FUNCTION_NAME
+  ) {
+    throw new Error('REVIEW_GATEWAY_OUTPUT_FUNCTION_NAME_INVALID');
+  }
+  const argumentsText = toolCall.function.arguments;
+  if (typeof argumentsText !== 'string') {
+    throw new Error('REVIEW_GATEWAY_OUTPUT_FUNCTION_ARGUMENTS_REQUIRED');
+  }
+  return {
+    argumentsText,
+    output: parseStrictJsonObject(argumentsText),
+  };
+}
+
 function parseStrictJsonObject(value) {
   if (typeof value !== 'string') {
     throw new Error('REVIEW_MODEL_STRICT_JSON_REQUIRED');
@@ -688,12 +1062,103 @@ function parseStrictJsonObject(value) {
   }
 }
 
+function rawJsonParseResult(value) {
+  if (typeof value !== 'string') return 'NON_STRING';
+  try {
+    const parsed = JSON.parse(value.trim());
+    if (isRecord(parsed)) return 'OBJECT';
+    if (Array.isArray(parsed)) return 'ARRAY';
+    if (parsed === null) return 'NULL';
+    return typeof parsed === 'string'
+      ? 'STRING'
+      : typeof parsed === 'number'
+        ? 'NUMBER'
+        : 'BOOLEAN';
+  } catch {
+    return 'INVALID';
+  }
+}
+
+function diagnosticContent(value) {
+  if (value === undefined) return null;
+  return typeof value === 'string' ? value : canonicalJson(value);
+}
+
+function diagnosticContentType(value) {
+  if (value === undefined) return 'missing';
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return 'array';
+  return typeof value;
+}
+
+function diagnosticToken(value) {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim();
+  return /^[A-Za-z0-9][A-Za-z0-9._:/+@-]{0,159}$/u.test(normalized)
+    ? normalized
+    : null;
+}
+
+function analysisWrapper(value) {
+  if (typeof value !== 'string') return false;
+  const normalized = value.trim();
+  return (
+    /^<(?:analysis|think)(?:\s[^>]*)?>/iu.test(normalized) ||
+    /<\/(?:analysis|think)>$/iu.test(normalized)
+  );
+}
+
+function hasNonEmptyValue(value) {
+  if (typeof value === 'string') return value.trim() !== '';
+  if (Array.isArray(value)) return value.length > 0;
+  return isRecord(value) && Object.keys(value).length > 0;
+}
+
+function isBlankAssistantContent(value) {
+  return (
+    value === undefined ||
+    value === null ||
+    (typeof value === 'string' && value.trim() === '')
+  );
+}
+
+function reviewCandidateFunctionTool() {
+  const stringArray = {
+    type: 'array',
+    items: { type: 'string', minLength: 1 },
+    uniqueItems: true,
+  };
+  return {
+    type: 'function',
+    function: {
+      name: REVIEW_OUTPUT_FUNCTION_NAME,
+      description:
+        'Serialization-only WiseLink review candidate output. It has no implementation and is never executed.',
+      parameters: {
+        type: 'object',
+        additionalProperties: false,
+        required: [...MODEL_OUTPUT_KEYS],
+        properties: {
+          responseType: { type: 'string', enum: [...REVIEW_RESPONSE_TYPES] },
+          answer: { type: 'string', minLength: 1 },
+          sourceRefs: structuredClone(stringArray),
+          missingInputs: structuredClone(stringArray),
+          candidateEvidenceRefs: structuredClone(stringArray),
+          reviewActionDraft: {
+            anyOf: [{ type: 'object' }, { type: 'null' }],
+          },
+          affectedItemIds: structuredClone(stringArray),
+          warnings: structuredClone(stringArray),
+        },
+      },
+    },
+  };
+}
+
 function buildReviewPrompt(input) {
   return [
     'Generate one candidate-only WiseLink engineering review response from the engineer message and the current Host-frozen context.',
-    'Return exactly these keys: responseType, answer, sourceRefs, missingInputs, candidateEvidenceRefs, reviewActionDraft, affectedItemIds, warnings.',
-    'responseType must be ANSWER, CLARIFYING_QUESTION, SOURCE_LINK, CANDIDATE_EVIDENCE, REVIEW_ACTION_DRAFT, INPUT_REQUEST, AFFECTED_ITEMS_PREVIEW, or TASK_STATUS.',
-    'sourceRefs, missingInputs, candidateEvidenceRefs, affectedItemIds, and warnings must each be a unique string array.',
+    `Call ${REVIEW_OUTPUT_FUNCTION_NAME} exactly once. It is only a serialization channel and will not be executed. Emit no prose outside its arguments.`,
     'Use sourceRefs and candidateEvidenceRefs only from SOURCE_REFS read this turn. Never invent facts, IDs, evidence, adoption, approval, publication, confirmation, current changes, or gap closure.',
     'When the engineer asks to locate, cite, or return a SourceRef, use SOURCE_LINK and include at least one relevant sourceRefs entry read this turn. SOURCE_LINK with an empty sourceRefs array is invalid.',
     'For an explanation, source link, clarification, input request, or task status, set candidateEvidenceRefs and affectedItemIds to [] and reviewActionDraft to null.',
@@ -704,12 +1169,17 @@ function buildReviewPrompt(input) {
     'decisionSnapshot must contain exactly: assessmentAsOf, evidenceHorizon, currentBestJudgment, alternativeJudgments, decisionMaturity, decisiveFacts, assumptions, residualUncertainties, uncertaintyDispositions, controlsAndMitigations, monitoringPlan, validUntil, reviewBy, reopenTriggers, whatWouldChangeDecision, candidateOnly. Its uncertaintyDispositions must exactly equal the draft list and candidateOnly must be true.',
     'Copy only allowed revision, evaluation item, adopted input, source, attachment, and gap refs from INPUT. A draft proposes change but never confirms or executes it.',
     'State the current best bounded judgment, remaining uncertainty, and what would change the judgment when relevant.',
-    'Do not call tools. The driver exclusively owns begin, context, SourceRef read, commit, and status.',
+    'Do not call any other tool. The driver exclusively owns begin, context, SourceRef read, commit, and status.',
     `INPUT:\n${canonicalJson(input)}`,
   ].join('\n');
 }
 
-function actualModelVersion(payload, choice, message) {
+function actualModelVersion(
+  payload,
+  choice,
+  message,
+  configuredModelVersion,
+) {
   const candidates = [
     message?.model,
     message?.model_version,
@@ -718,6 +1188,7 @@ function actualModelVersion(payload, choice, message) {
     payload?.model,
     payload?._meta?.modelVersion,
     payload?._meta?.model,
+    configuredModelVersion,
   ];
   const model = candidates.find(isReadableActualModel);
   if (!model) throw new Error('REVIEW_MODEL_PROVENANCE_UNREADABLE');
@@ -869,24 +1340,24 @@ async function resolveRuntimeConfig(argv, env) {
     (Number.isSafeInteger(port) ? `http://127.0.0.1:${port}` : '');
   const gatewayToken =
     env.WL_REVIEW_GATEWAY_TOKEN || config?.gateway?.auth?.token || '';
+  const agentId = option(argv, '--agent') || WISELINK_PROFILE_REF;
   return {
     hostMcpUrl,
     headers,
     gatewayUrl,
     gatewayToken,
     gatewayChatCompletionsEnabled: isChatCompletionsEnabled(config),
+    configuredModelVersion: resolveConfiguredModelVersion(config, agentId),
   };
 }
 
 export function openClawConfigCandidates(
   argv,
   env,
-  {
-    homeDirectory = homedir(),
-    workingDirectory = process.cwd(),
-  } = {},
+  { homeDirectory = homedir(), workingDirectory = process.cwd() } = {},
 ) {
-  const explicit = option(argv, '--openclaw-config') || env.OPENCLAW_CONFIG_PATH;
+  const explicit =
+    option(argv, '--openclaw-config') || env.OPENCLAW_CONFIG_PATH;
   if (explicit) return [resolve(explicit)];
 
   const candidates = [];
@@ -991,10 +1462,7 @@ async function main(argv, env) {
   };
   const runtime = await resolveRuntimeConfig(argv, env);
   assertHostedModelGatewayReady(runtime);
-  const recoveryFailureCode = option(
-    argv,
-    '--recover-known-model-nondispatch',
-  );
+  const recoveryFailureCode = option(argv, '--recover-known-model-nondispatch');
   if (recoveryFailureCode) {
     await prepareKnownModelNonDispatchRecovery({
       checkpointDir: options.checkpointDir,
@@ -1006,15 +1474,18 @@ async function main(argv, env) {
   try {
     const result = await runHostedReviewTurn(options, {
       callTool: connection.callTool,
-      invokeModel: (input) =>
+      invokeModel: (input, hooks = {}) =>
         invokeHostedReviewModel(input, {
           gatewayUrl: runtime.gatewayUrl,
           gatewayToken: runtime.gatewayToken,
           agentId: option(argv, '--agent') || WISELINK_PROFILE_REF,
+          configuredModelVersion: runtime.configuredModelVersion,
+          sessionDiscriminator: hooks.sessionDiscriminator,
           timeoutMs: positiveInteger(
             Number.parseInt(option(argv, '--timeout-ms'), 10) || undefined,
             480_000,
           ),
+          observeOutputShape: hooks.observeOutputShape,
         }),
     });
     process.stdout.write(`${canonicalJson(result)}\n`);

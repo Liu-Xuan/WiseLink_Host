@@ -538,7 +538,8 @@ export default function ContinuousReviewPanel({
                 <strong>正在保存输入并请求候选</strong>
                 <span title={activeRequestId}>
                   requestId {shortRequestId(activeRequestId)}
-                  ；此阶段不会采纳输入或推进事项版本。
+                  ；此阶段不会采纳输入，也不会修改 WorkItem current、revision 或
+                  STALE 状态。
                 </span>
               </div>
             </div>

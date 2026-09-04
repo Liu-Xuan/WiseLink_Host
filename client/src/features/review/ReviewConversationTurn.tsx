@@ -41,7 +41,7 @@ export default function ReviewConversationTurn(
   return (
     <article
       className={`continuous-review-turn${props.isCurrent ? ' is-current' : ' is-history'}`}
-      data-generation-state={candidate ? 'completed' : 'pending'}
+      data-generation-state={candidate ? 'candidate-ready' : 'pending'}
     >
       <div className="continuous-review-input">
         <header>
@@ -253,7 +253,10 @@ export default function ReviewConversationTurn(
             </div>
           ) : null}
           <footer className="continuous-review-candidate-runtime">
-            <span>候选阶段没有采纳输入、修改 current 或推进事项版本。</span>
+            <span>
+              候选阶段没有采纳输入，也不会修改 WorkItem current、revision 或
+              STALE 状态。
+            </span>
             <span title={candidate.actionAttemptRef}>
               Attempt {shortRef(candidate.actionAttemptRef)} · Model{' '}
               {candidate.provenance.modelVersion} · Skill{' '}
@@ -271,8 +274,8 @@ export default function ReviewConversationTurn(
           <div>
             <strong>候选生成中</strong>
             <span>
-              工程师输入已经记录；候选尚未形成，事项 current 与 revision
-              均未因此改变。
+              工程师输入已经记录；候选尚未形成，WorkItem current、revision 与
+              STALE 状态均未因此改变。
             </span>
           </div>
         </div>

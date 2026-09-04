@@ -25,6 +25,7 @@ export interface CanonicalDocumentParsingProjectionRequest {
   sessionGeneration: number;
   workItemId: string;
   query: string;
+  sourceRef?: string;
 }
 
 export interface CanonicalDocumentParsingProjectionReader {
@@ -109,6 +110,7 @@ export function createCanonicalDocumentParsingProjectionReader(): CanonicalDocum
         request.identity.userId,
         request.workItemId.trim(),
         request.query.trim(),
+        request.sourceRef?.trim() ?? '',
       ]);
       const existing = inFlight.get(key);
       if (existing) return existing;

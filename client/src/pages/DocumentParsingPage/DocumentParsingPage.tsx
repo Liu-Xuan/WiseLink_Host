@@ -189,14 +189,19 @@ export default function DocumentParsingPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const activeNode: WorkbenchNode = getWorkbenchNode(searchParams.get('node'));
   const activeQuery: string = searchParams.get('q')?.trim() ?? '';
-  const routeHandoff = resolveCanonicalDocumentParsingRouteHandoff(
-    (location.state as { documentParsingHandoff?: unknown } | null)
-      ?.documentParsingHandoff,
-    { sessionGeneration, workItemId, query: activeQuery },
-  );
   const requestedReaderUnit: string = searchParams.get('unit')?.trim() ?? '';
   const requestedSourceRef: string =
     searchParams.get('sourceRef')?.trim() ?? '';
+  const activeReaderSourceRef: string =
+    activeNode === 'reader' ? requestedSourceRef : '';
+  const routeHandoff =
+    activeReaderSourceRef === ''
+      ? resolveCanonicalDocumentParsingRouteHandoff(
+          (location.state as { documentParsingHandoff?: unknown } | null)
+            ?.documentParsingHandoff,
+          { sessionGeneration, workItemId, query: activeQuery },
+        )
+      : null;
   const evidenceContextActive: boolean = resolveWorkbenchEvidenceActive(
     activeNode,
     requestedSourceRef,
@@ -258,7 +263,10 @@ export default function DocumentParsingPage() {
     setSearchParams(next, { replace });
   }
 
-  async function load(nextQuery: string): Promise<void> {
+  async function load(
+    nextQuery: string,
+    nextSourceRef: string = activeReaderSourceRef,
+  ): Promise<void> {
     const epoch: number = loadEpochRef.current + 1;
     loadEpochRef.current = epoch;
     const startedSessionGeneration: number = sessionGeneration;
@@ -286,8 +294,15 @@ export default function DocumentParsingPage() {
             sessionGeneration: startedSessionGeneration,
             workItemId,
             query: nextQuery,
+            sourceRef: nextSourceRef,
           },
-          () => canonicalHost.getDocumentParsingPage(workItemId, nextQuery),
+          () =>
+            canonicalHost.getDocumentParsingPage(workItemId, nextQuery, {
+              sourceRef: nextSourceRef,
+              ...(nextSourceRef === ''
+                ? {}
+                : { freshness: 'source-link' as const }),
+            }),
         ),
       onFresh: (identity, fresh) => {
         setPageData(fresh);
@@ -345,13 +360,14 @@ export default function DocumentParsingPage() {
         loadEpochRef.current += 1;
       };
     }
-    void load(activeQuery);
+    void load(activeQuery, activeReaderSourceRef);
     return () => {
       loadEpochRef.current += 1;
     };
   }, [
     workItemId,
     activeQuery,
+    activeReaderSourceRef,
     authenticationRequired,
     sessionGeneration,
     routeHandoff,

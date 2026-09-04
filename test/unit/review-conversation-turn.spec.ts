@@ -18,7 +18,8 @@ describe('ReviewConversationTurn candidate boundary', () => {
 
     expect(html).toContain('data-generation-state="pending"');
     expect(html).toContain('候选生成中');
-    expect(html).toContain('事项 current 与 revision');
+    expect(html).toContain('WorkItem current、revision 与');
+    expect(html).toContain('STALE 状态均未因此改变');
     expect(html).not.toContain('确认修改');
   });
 
@@ -51,10 +52,11 @@ describe('ReviewConversationTurn candidate boundary', () => {
       }),
     );
 
-    expect(html).toContain('data-generation-state="completed"');
+    expect(html).toContain('data-generation-state="candidate-ready"');
     expect(html).toContain('候选已生成 · 未采纳');
     expect(html).toContain(`title="${sourceRef}"`);
-    expect(html).toContain('候选阶段没有采纳输入、修改 current 或推进事项版本');
+    expect(html).toContain('候选阶段没有采纳输入，也不会修改 WorkItem current');
+    expect(html).toContain('revision 或 STALE 状态');
     expect(html).toContain('Model model-1 · Skill skill-1');
   });
 
