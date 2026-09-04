@@ -167,6 +167,14 @@ describe('CanonicalHostOpenClawReviewService', () => {
       ref: 'artifact://related-package',
       sha256: 'f'.repeat(64),
     });
+    const [snapshotBytes] = harness.artifactStore.persistAndReadback.mock
+      .calls[0] as [Uint8Array];
+    const modelContext = begin.task.modelInput.context as {
+      relatedContext: { snapshotRef: string };
+    };
+    expect(JSON.parse(new TextDecoder().decode(snapshotBytes))).toMatchObject({
+      snapshotRef: modelContext.relatedContext.snapshotRef,
+    });
     await expect(
       harness.service.readSourceRefs('AQ-REVIEW-1', ['TARGET-SRC-1']),
     ).resolves.toMatchObject({
@@ -182,6 +190,35 @@ describe('CanonicalHostOpenClawReviewService', () => {
         },
       ],
     });
+  });
+
+  it('does not expose a related document after current read authorization is revoked', async () => {
+    const harness = reviewHarness(false, true);
+    harness.conversations.hasActiveOfficialActorMapping.mockResolvedValueOnce(
+      false,
+    );
+
+    const begin = await harness.service.begin('RC-1', 'request-1');
+
+    expect(begin.task.modelInput).toMatchObject({
+      context: {
+        relatedContext: {
+          items: [
+            expect.objectContaining({
+              normalizedTarget: '777-SL-31-064',
+              availability: 'ACCESS_DENIED',
+              availableRelatedSourceRefIds: [],
+            }),
+          ],
+        },
+      },
+    });
+    expect(begin.task.modelInput.resourceRefs).not.toContainEqual(
+      expect.objectContaining({ sourceRefId: 'TARGET-SRC-1' }),
+    );
+    expect(harness.artifactStore.readActualBytes).not.toHaveBeenCalledWith(
+      expect.objectContaining({ ref: 'artifact://related-package' }),
+    );
   });
 
   it('reuses a matching CURRENT related-document applicability result without entering the assessment input', async () => {
@@ -619,10 +656,25 @@ function reviewHarness(
   const workItems = {
     loadTenantScopedProjection: jest.fn(async (workItemId: string) => ({
       row: {
+        workItemId,
+        tenantId: 'tenant-1',
+        requestId:
+          workItemId === 'WI-RELATED-1' ? 'WORK-REQ-RELATED-1' : 'WORK-REQ-1',
+        documentVersionId: workItemId === 'WI-RELATED-1' ? 'DV-SL-1' : 'DV-1',
         requestedByUserId: 'actor-1',
         revision: workItemId === 'WI-RELATED-1' ? 3 : 7,
       },
       projection: workItemId === 'WI-RELATED-1' ? relatedWorkItem : workItem,
+    })),
+    loadAuthorizationBinding: jest.fn(async () => ({
+      workItemId: 'WI-RELATED-1',
+      revision: 3,
+      tenantId: 'tenant-1',
+      requestId: 'WORK-REQ-RELATED-1',
+      documentId: 'DOC-SL-1',
+      documentVersionId: 'DV-SL-1',
+      requestedByUserId: 'actor-1',
+      runKey: 'run-related-1',
     })),
     listTenantDocumentAuthorizationBindings: jest.fn(async () => [
       {
@@ -765,6 +817,17 @@ function reviewHarness(
     projectTerminal: jest.fn(),
   };
   const artifactStore = {
+    persistAndReadback: jest.fn(async (bytes: Uint8Array) => ({
+      artifact: {
+        storeRole: 'UnifiedArtifactStoreCandidate' as const,
+        ref: 'artifact://related-context-snapshot',
+        sha256: '9'.repeat(64),
+        byteLength: bytes.byteLength,
+        mediaType: 'application/json' as const,
+      },
+      bytes: Uint8Array.from(bytes),
+      reused: false,
+    })),
     readActualBytes: jest.fn(async (artifact: { ref: string }) =>
       artifact.ref === 'artifact://review-attachment'
         ? encodeReviewAttachmentParsedArtifact({
@@ -855,6 +918,7 @@ function reviewHarness(
     engineerReviews,
     assessment,
     serviceScope,
+    artifactStore,
     expireLease() {
       row = {
         ...row!,

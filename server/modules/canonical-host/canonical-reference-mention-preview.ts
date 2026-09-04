@@ -1,7 +1,11 @@
 import type {
   CanonicalReferenceContextRole,
   CanonicalReferenceDocumentType,
+  CanonicalReferenceExtractionMethod,
   CanonicalReferenceMentionPreviewItem,
+  CanonicalReferenceTargetResolution,
+  CanonicalRelatedContextRelationRole,
+  CanonicalRelatedTargetApplicability,
   CanonicalStructuredContentSourceLocator,
   CanonicalStructuredContentUnit,
   UnifiedReaderQueryResult,
@@ -9,10 +13,86 @@ import type {
 
 import { projectCanonicalStructuredContentLocator } from './canonical-structured-content-projection';
 
-export type CanonicalReferenceMentionCandidate = Omit<
-  CanonicalReferenceMentionPreviewItem,
-  'targetResolution'
->;
+export interface CanonicalReferenceMentionCandidate {
+  mentionId: string;
+  unitOrdinal: number;
+  matchedText: string;
+  normalizedTarget: string;
+  documentType: CanonicalReferenceDocumentType;
+  contextRole: CanonicalReferenceContextRole;
+  relationCue: string | null;
+  relationRoleCandidates: CanonicalRelatedContextRelationRole[];
+  extractionMethod: CanonicalReferenceExtractionMethod;
+  initialResolutionState?: 'UNRESOLVED' | 'UNSUPPORTED_DOCUMENT';
+  targetApplicability: 'NOT_EVALUATED';
+  sourceRefIds: string[];
+  sourceLocators: CanonicalStructuredContentSourceLocator[];
+}
+
+interface FinalizeReferenceMentionInput {
+  candidate: CanonicalReferenceMentionCandidate;
+  primaryDocumentVersionRef: string;
+  targetResolution: CanonicalReferenceTargetResolution;
+  targetApplicability: CanonicalRelatedTargetApplicability;
+  applicabilityResultRef?: string;
+  publisherCandidate?: string | null;
+}
+
+export function canonicalReferenceResolutionOr(
+  candidate: CanonicalReferenceMentionCandidate,
+  fallback: CanonicalReferenceTargetResolution,
+): CanonicalReferenceTargetResolution {
+  return candidate.initialResolutionState
+    ? { status: candidate.initialResolutionState }
+    : fallback;
+}
+
+export function finalizeCanonicalReferenceMentionPreview(
+  input: FinalizeReferenceMentionInput,
+): CanonicalReferenceMentionPreviewItem {
+  const mentionSourceRef = input.candidate.sourceRefIds[0];
+  if (!mentionSourceRef) {
+    throw new Error('REFERENCE_MENTION_SOURCE_REF_REQUIRED');
+  }
+  const resolvedDocumentVersionRef =
+    input.targetResolution.status === 'RESOLVED_EXACT'
+      ? input.targetResolution.documentVersionId
+      : null;
+  const { initialResolutionState, ...candidate } = input.candidate;
+  void initialResolutionState;
+  return {
+    ...candidate,
+    mentionRef: `reference-mention://${encodeURIComponent(input.primaryDocumentVersionRef)}/${input.candidate.mentionId}`,
+    primaryDocumentVersionRef: input.primaryDocumentVersionRef,
+    mentionSourceRef,
+    citationText: input.candidate.matchedText,
+    normalizedIdentity: {
+      documentNumber:
+        input.targetResolution.status === 'UNRESOLVED'
+          ? null
+          : input.candidate.normalizedTarget.trim() || null,
+      title: null,
+      publisher: input.publisherCandidate ?? null,
+    },
+    documentTypeCandidate: input.candidate.documentType,
+    resolutionState: input.targetResolution.status,
+    resolvedDocumentVersionRef,
+    permissionState:
+      input.targetResolution.status === 'RESOLVED_EXACT'
+        ? 'AUTHORIZED'
+        : input.targetResolution.status === 'ACCESS_DENIED'
+          ? 'DENIED'
+          : 'NOT_CHECKED',
+    sourceAuthority: 'UNKNOWN',
+    evidenceStance: 'NOT_EVALUATED',
+    candidateOnly: true,
+    targetResolution: input.targetResolution,
+    targetApplicability: input.targetApplicability,
+    ...(input.applicabilityResultRef
+      ? { applicabilityResultRef: input.applicabilityResultRef }
+      : {}),
+  };
+}
 
 interface MentionCandidate {
   start: number;
@@ -20,6 +100,7 @@ interface MentionCandidate {
   matchedText: string;
   normalizedTarget: string;
   documentType: CanonicalReferenceDocumentType;
+  initialResolutionState?: 'UNRESOLVED' | 'UNSUPPORTED_DOCUMENT';
 }
 
 const PREFIXED_REFERENCE =
@@ -28,6 +109,8 @@ const EMBEDDED_REFERENCE =
   /\b([A-Z0-9]{2,12}-(FTD|SL|SB)-\d{2}-[A-Z0-9][A-Z0-9-]*)\b/giu;
 const MANUAL_REFERENCE =
   /\b(?:([A-Z0-9/-]*\d[A-Z0-9/-]*)\s+)?(AMM|CMM|SRM|IPC|WDM|FIM)\s+(\d{2}-\d{2}-\d{2})((?:\s*,\s*\d{2}-\d{2}-\d{2})*)\b/giu;
+const UNSUPPORTED_PREFIXED_REFERENCE =
+  /\b(MPD|MRBR)\s*[\s:#-]+([A-Z0-9][A-Z0-9/-]*(?:-[A-Z0-9]+)+)\b/giu;
 
 export function deriveCanonicalReferenceMentionPreview(
   units: CanonicalStructuredContentUnit[],
@@ -59,6 +142,7 @@ export function deriveCanonicalReferenceMentionPreview(
       ...prefixedCandidates(unit.displayText, currentDocumentCode),
       ...embeddedCandidates(unit.displayText),
       ...manualCandidates(unit.displayText),
+      ...unsupportedPrefixedCandidates(unit.displayText),
     ]
       .filter(
         (candidate) =>
@@ -97,13 +181,21 @@ export function deriveCanonicalReferenceMentionPreview(
           contextEnd,
         )}`;
         const evidence = mentionEvidence(unit, sourceUnit, candidate);
+        if (evidence.sourceRefIds.length === 0) return;
+        const role = contextRole(localContext);
         mentions.push({
           mentionId: `RM-${unit.ordinal}-${candidate.start}-${mentions.length + 1}`,
           unitOrdinal: unit.ordinal,
           matchedText: candidate.matchedText,
           normalizedTarget: candidate.normalizedTarget,
           documentType: candidate.documentType,
-          contextRole: contextRole(localContext),
+          contextRole: role,
+          relationCue: relationCue(localContext, role),
+          relationRoleCandidates: candidateRelationRoles(role),
+          extractionMethod: 'DETERMINISTIC_TEXT',
+          ...(candidate.initialResolutionState
+            ? { initialResolutionState: candidate.initialResolutionState }
+            : {}),
           targetApplicability: 'NOT_EVALUATED',
           sourceRefIds: evidence.sourceRefIds,
           sourceLocators: evidence.sourceLocators,
@@ -219,14 +311,23 @@ function manualCandidates(text: string): MentionCandidate[] {
         start: match.index + tailOffset + item.index,
         end: match.index + tailOffset + item.index + item[0].length,
         matchedText: item[0],
-        normalizedTarget: [aircraft, type, item[0]]
-          .filter(Boolean)
-          .join(' '),
+        normalizedTarget: [aircraft, type, item[0]].filter(Boolean).join(' '),
         documentType: type,
       }),
     );
     return [first, ...continuation];
   });
+}
+
+function unsupportedPrefixedCandidates(text: string): MentionCandidate[] {
+  return [...text.matchAll(UNSUPPORTED_PREFIXED_REFERENCE)].map((match) => ({
+    start: match.index,
+    end: match.index + match[0].length,
+    matchedText: match[0],
+    normalizedTarget: match[2].toUpperCase(),
+    documentType: 'UNKNOWN',
+    initialResolutionState: 'UNSUPPORTED_DOCUMENT',
+  }));
 }
 
 function structuredReferenceCandidate(
@@ -244,18 +345,27 @@ function structuredReferenceCandidate(
   if (!isRecord(value) || value.sourceSectionField !== 'referenceCategories') {
     return null;
   }
-  const normalizedTarget = textValue(value.referenceNumber);
-  const documentType = referenceDocumentType(value.referenceFamily);
-  if (!normalizedTarget || !documentType) return null;
+  const rawReferenceNumber = textValue(value.referenceNumber);
+  const supportedDocumentType = referenceDocumentType(value.referenceFamily);
+  const referenceFamily = textValue(value.referenceFamily)?.toUpperCase();
+  if (!rawReferenceNumber || !referenceFamily) return null;
+  const referenceNumberIsUsable = /\d/u.test(rawReferenceNumber);
+  const normalizedTarget = referenceNumberIsUsable ? rawReferenceNumber : '';
+  const documentType = supportedDocumentType ?? 'UNKNOWN';
   const matchedText =
     textValue(value.sourceLine) ??
-    [textValue(value.referenceType), normalizedTarget]
+    [textValue(value.referenceType), rawReferenceNumber]
       .filter(Boolean)
       .join(' ');
   const orderedLocators = orderedReferenceLocators(
     sourceUnit,
-    normalizedTarget,
+    rawReferenceNumber,
   );
+  const sourceRefIds =
+    orderedLocators.length > 0
+      ? orderedLocators.map((locator) => locator.sourceRefId)
+      : [...sourceUnit.sourceRefIds];
+  if (sourceRefIds.length === 0) return null;
   return {
     mentionId: `RM-${unit.ordinal}-structured-${sequence}`,
     unitOrdinal: unit.ordinal,
@@ -263,11 +373,16 @@ function structuredReferenceCandidate(
     normalizedTarget,
     documentType,
     contextRole: 'RELATED_INFORMATION',
+    relationCue: null,
+    relationRoleCandidates: ['GENERAL_BACKGROUND'],
+    extractionMethod: 'STRUCTURED_REFERENCE',
+    ...(!supportedDocumentType
+      ? { initialResolutionState: 'UNSUPPORTED_DOCUMENT' as const }
+      : !referenceNumberIsUsable
+        ? { initialResolutionState: 'UNRESOLVED' as const }
+        : {}),
     targetApplicability: 'NOT_EVALUATED',
-    sourceRefIds:
-      orderedLocators.length > 0
-        ? orderedLocators.map((locator) => locator.sourceRefId)
-        : [...sourceUnit.sourceRefIds],
+    sourceRefIds,
     sourceLocators: orderedLocators,
   };
 }
@@ -388,6 +503,45 @@ function contextRole(context: string): CanonicalReferenceContextRole {
   return 'UNCLASSIFIED';
 }
 
+function candidateRelationRoles(
+  role: CanonicalReferenceContextRole,
+): CanonicalRelatedContextRelationRole[] {
+  if (role === 'CONCURRENT_REQUIREMENT' || role === 'PROCEDURE_SUPPORT') {
+    return ['IMPLEMENTATION_INSTRUCTION'];
+  }
+  if (role === 'RELATED_INFORMATION') return ['GENERAL_BACKGROUND'];
+  return [];
+}
+
+function relationCue(
+  context: string,
+  role: CanonicalReferenceContextRole,
+): string | null {
+  const patterns: Record<CanonicalReferenceContextRole, RegExp[]> = {
+    CONCURRENT_REQUIREMENT: [
+      /concurrent requirements?/iu,
+      /并行要求|同期要求/u,
+    ],
+    PROCEDURE_SUPPORT: [
+      /in accordance with|accepted procedure|refer(?:red)? to/iu,
+      /参考[^。；\n]*程序|按照[^。；\n]*程序/u,
+    ],
+    RELATED_INFORMATION: [
+      /related (?:to|information)|see also|for more information/iu,
+      /相关资料|相关信息/u,
+    ],
+    UNCLASSIFIED: [],
+  };
+  for (const pattern of patterns[role]) {
+    const match = context.match(pattern)?.[0]?.trim();
+    if (match) return match;
+  }
+  return null;
+}
+
 function normalizeCode(value: string): string {
-  return value.trim().toUpperCase().replace(/[^A-Z0-9]/gu, '');
+  return value
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/gu, '');
 }

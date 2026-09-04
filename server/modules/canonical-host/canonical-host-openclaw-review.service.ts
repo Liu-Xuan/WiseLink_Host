@@ -35,7 +35,9 @@ import { DocumentManagementHostedService } from '../document-management/src/host
 import { CanonicalHostAssessmentService } from './canonical-host-assessment.service';
 import { CanonicalHostEngineerReviewService } from './canonical-host-engineer-review.service';
 import {
+  canonicalReferenceResolutionOr,
   deriveCanonicalReferenceMentionPreview,
+  finalizeCanonicalReferenceMentionPreview,
   type CanonicalReferenceMentionCandidate,
 } from './canonical-reference-mention-preview';
 import { buildCanonicalRelatedContextSnapshot } from './canonical-related-context-snapshot';
@@ -643,7 +645,7 @@ export class CanonicalHostOpenClawReviewService {
     binding: ReviewBinding,
     workItem: CanonicalWorkItemProjection,
   ): Promise<ReviewRelatedContextBuild> {
-    if (!this.reader || !this.documentManagement || !workItem.package) {
+    if (!this.reader || !workItem.package) {
       return unavailableReviewRelatedContext(
         'RELATED_CONTEXT_RUNTIME_NOT_CONFIGURED',
       );
@@ -671,16 +673,19 @@ export class CanonicalHostOpenClawReviewService {
       );
       const mentions = candidates.map((mention) => {
         const target = resolved.get(mention.normalizedTarget);
-        return {
-          ...mention,
-          targetResolution: target?.resolution ?? {
-            status: 'DOCUMENT_NOT_INGESTED' as const,
-          },
+        return finalizeCanonicalReferenceMentionPreview({
+          candidate: mention,
+          primaryDocumentVersionRef: workItem.source.documentVersionId,
+          targetResolution: canonicalReferenceResolutionOr(
+            mention,
+            target?.resolution ?? { status: 'UNAVAILABLE' },
+          ),
           targetApplicability: target?.targetApplicability ?? 'NOT_EVALUATED',
           ...(target?.applicabilityResultRef
             ? { applicabilityResultRef: target.applicabilityResultRef }
             : {}),
-        };
+          publisherCandidate: target?.publisherCandidate ?? null,
+        });
       });
       const built = buildCanonicalRelatedContextSnapshot({
         workItemId: workItem.workItemId,
@@ -691,6 +696,10 @@ export class CanonicalHostOpenClawReviewService {
         assessmentAsOf: assessmentTarget?.assessmentAsOf ?? null,
         mentions,
       });
+      const persistedSnapshot = await this.artifactStore.persistAndReadback(
+        built.bytes,
+      );
+      const snapshot = built.snapshot;
       const relatedResources = [...resolved.values()].flatMap(
         (entry) => entry.resourceRefs,
       );
@@ -707,18 +716,24 @@ export class CanonicalHostOpenClawReviewService {
         resourceRefs: relatedResources,
         context: {
           status: 'AVAILABLE',
-          schemaVersion: built.snapshot.schemaVersion,
-          snapshotRef: built.snapshot.snapshotRef,
-          inputRevision: built.snapshot.inputRevision,
-          primaryDocumentVersionRef: built.snapshot.primaryDocumentVersionRef,
-          retrievalReceipts: built.snapshot.retrievalReceipts,
+          schemaVersion: snapshot.schemaVersion,
+          snapshotRef: snapshot.snapshotRef,
+          snapshotArtifact: persistedSnapshot.artifact,
+          inputRevision: snapshot.inputRevision,
+          primaryDocumentVersionRef: snapshot.primaryDocumentVersionRef,
+          mode: snapshot.mode,
+          policyVersion: snapshot.policyVersion,
+          availability: snapshot.availability,
+          downgradeReasons: snapshot.downgradeReasons,
+          unresolvedMentions: snapshot.unresolvedMentions,
+          retrievalReceipts: snapshot.retrievalReceipts,
           usagePolicy: {
             candidateOnly: true,
             readOnly: true,
             includedInAssessmentInput: false,
           },
-          items: built.snapshot.items.map((item) => {
-            const { authority: sourceBasis, ...safeItem } = item;
+          items: snapshot.items.map((item) => {
+            const { sourceBasis, ...safeItem } = item;
             return {
               ...safeItem,
               sourceBasis,
@@ -741,15 +756,57 @@ export class CanonicalHostOpenClawReviewService {
     binding: ReviewBinding,
     assessmentTarget: CanonicalRelatedContextAssessmentTarget | null,
   ): Promise<Map<string, ResolvedReviewReferenceTarget>> {
-    const targets = [...new Set(mentions.map((item) => item.normalizedTarget))];
-    const catalogTargets =
-      await this.documentManagement!.listCurrentReferenceTargets(targets, {
-        actorUserId: binding.conversation.actorId,
+    const targets = [
+      ...new Set(
+        mentions
+          .filter((item) => !item.initialResolutionState)
+          .map((item) => item.normalizedTarget),
+      ),
+    ];
+    // This server-side review delegation has no browser session to replay.
+    // Re-read its Host-owned identity mapping and owner binding before bytes.
+    const actorMappingActive = await this.conversations
+      .hasActiveOfficialActorMapping({
         tenantId: binding.conversation.tenantId,
-        roles: [],
-        appId: CANONICAL_APP_ID,
-        env: 'runtime',
-      });
+        actorId: binding.conversation.actorId,
+      })
+      .catch(() => false);
+    if (!actorMappingActive) {
+      return new Map(
+        targets.map((target) => [
+          target,
+          unresolvedReviewReferenceTarget('ACCESS_DENIED'),
+        ]),
+      );
+    }
+    if (!this.documentManagement) {
+      return new Map(
+        targets.map((target) => [
+          target,
+          unresolvedReviewReferenceTarget('UNAVAILABLE'),
+        ]),
+      );
+    }
+    let catalogTargets: Awaited<
+      ReturnType<DocumentManagementHostedService['listCurrentReferenceTargets']>
+    >;
+    try {
+      catalogTargets =
+        await this.documentManagement.listCurrentReferenceTargets(targets, {
+          actorUserId: binding.conversation.actorId,
+          tenantId: binding.conversation.tenantId,
+          roles: [],
+          appId: CANONICAL_APP_ID,
+          env: 'runtime',
+        });
+    } catch {
+      return new Map(
+        targets.map((target) => [
+          target,
+          unresolvedReviewReferenceTarget('UNAVAILABLE'),
+        ]),
+      );
+    }
     const result = new Map<string, ResolvedReviewReferenceTarget>();
     await Promise.all(
       targets.map(async (target) => {
@@ -771,21 +828,46 @@ export class CanonicalHostOpenClawReviewService {
               status: 'RESOLVED_MULTIPLE',
               candidateCount: matches.length,
             },
+            publisherCandidate: null,
             resourceRefs: [],
             targetApplicability: 'NOT_EVALUATED',
           });
           return;
         }
         const [match] = matches;
-        const bindings = (
+        const tenantBindings =
           await this.workItems.listTenantDocumentAuthorizationBindings({
             tenantId: binding.conversation.tenantId,
             documentVersionId: match.documentVersionId,
-          })
-        ).filter(
-          (candidate) =>
-            candidate.requestedByUserId === binding.conversation.actorId,
-        );
+          });
+        if (tenantBindings.length === 0) {
+          result.set(
+            target,
+            unresolvedReviewReferenceTarget('DOCUMENT_NOT_INGESTED'),
+          );
+          return;
+        }
+        const bindings: typeof tenantBindings = [];
+        for (const candidate of tenantBindings) {
+          if (candidate.requestedByUserId !== binding.conversation.actorId) {
+            continue;
+          }
+          const freshBinding = await this.workItems.loadAuthorizationBinding({
+            workItemId: candidate.workItemId,
+            tenantId: binding.conversation.tenantId,
+            actorUserId: binding.conversation.actorId,
+          });
+          if (
+            freshBinding?.workItemId === candidate.workItemId &&
+            freshBinding.tenantId === candidate.tenantId &&
+            freshBinding.requestId === candidate.requestId &&
+            freshBinding.documentVersionId === candidate.documentVersionId &&
+            freshBinding.requestedByUserId === candidate.requestedByUserId &&
+            freshBinding.revision === candidate.revision
+          ) {
+            bindings.push(freshBinding);
+          }
+        }
         if (bindings.length === 0) {
           result.set(target, unresolvedReviewReferenceTarget('ACCESS_DENIED'));
           return;
@@ -796,6 +878,7 @@ export class CanonicalHostOpenClawReviewService {
               status: 'RESOLVED_MULTIPLE',
               candidateCount: bindings.length,
             },
+            publisherCandidate: null,
             resourceRefs: [],
             targetApplicability: 'NOT_EVALUATED',
           });
@@ -806,9 +889,20 @@ export class CanonicalHostOpenClawReviewService {
           owned.workItemId,
           binding.conversation.tenantId,
         );
+        if (!loaded?.projection.package) {
+          result.set(target, unresolvedReviewReferenceTarget('UNAVAILABLE'));
+          return;
+        }
         if (
-          !loaded?.projection.package ||
+          loaded.row.workItemId !== owned.workItemId ||
+          loaded.row.tenantId !== owned.tenantId ||
           loaded.row.requestedByUserId !== binding.conversation.actorId ||
+          loaded.row.requestId !== owned.requestId ||
+          loaded.row.documentVersionId !== match.documentVersionId ||
+          loaded.row.revision !== owned.revision ||
+          loaded.projection.workItemId !== owned.workItemId ||
+          loaded.projection.requestId !== owned.requestId ||
+          loaded.projection.revision !== owned.revision ||
           loaded.projection.source.documentVersionId !== match.documentVersionId
         ) {
           result.set(target, unresolvedReviewReferenceTarget('ACCESS_DENIED'));
@@ -832,6 +926,7 @@ export class CanonicalHostOpenClawReviewService {
               targetWorkItem.package.documentIdentity?.businessRevision ?? null,
           },
           ...applicability,
+          publisherCandidate: match.issuerAuthority,
           resourceRefs: relatedDocumentResourceRefs(
             packageBytes,
             targetWorkItem.package.artifact.ref,
@@ -867,6 +962,7 @@ interface ReviewRelatedContextBuild {
 
 interface ResolvedReviewReferenceTarget extends CanonicalRelatedTargetApplicabilityResolution {
   resolution: CanonicalReferenceTargetResolution;
+  publisherCandidate: string | null;
   resourceRefs: FrozenReviewSourceRef[];
 }
 
@@ -1100,10 +1196,16 @@ function unavailableReviewRelatedContext(
 }
 
 function unresolvedReviewReferenceTarget(
-  status: 'DOCUMENT_NOT_INGESTED' | 'ACCESS_DENIED',
+  status:
+    | 'UNRESOLVED'
+    | 'DOCUMENT_NOT_INGESTED'
+    | 'UNAVAILABLE'
+    | 'ACCESS_DENIED'
+    | 'UNSUPPORTED_DOCUMENT',
 ): ResolvedReviewReferenceTarget {
   return {
     resolution: { status },
+    publisherCandidate: null,
     resourceRefs: [],
     targetApplicability: 'NOT_EVALUATED',
   };
