@@ -137,6 +137,105 @@ function canonicalServiceLetterCode(value = '') {
     : '';
 }
 
+function overlapJoinedPdfLines(layout, pageLimit) {
+  const grouped = new Map();
+  for (const run of Array.isArray(layout?.textRuns) ? layout.textRuns : []) {
+    const page = Number(run?.page);
+    const x = Number(run?.x);
+    const y = Number(run?.y);
+    const text = String(run?.text || '').normalize('NFKC').replace(/\s+/gu, '');
+    if (
+      !Number.isSafeInteger(page) ||
+      page < 1 ||
+      page > pageLimit ||
+      !Number.isFinite(x) ||
+      !Number.isFinite(y) ||
+      !text
+    ) {
+      continue;
+    }
+    const key = `${page}:${Math.round(y * 4)}`;
+    const values = grouped.get(key) || [];
+    values.push({ page, x, text });
+    grouped.set(key, values);
+  }
+  return [...grouped.values()].map((values) => {
+    const ordered = values.sort(
+      (left, right) => left.x - right.x || left.text.localeCompare(right.text),
+    );
+    return {
+      page: ordered[0].page,
+      text: ordered.reduce((joined, value) => {
+        if (!joined) return value.text;
+        const limit = Math.min(joined.length, value.text.length);
+        for (let overlap = limit; overlap >= 1; overlap -= 1) {
+          if (joined.endsWith(value.text.slice(0, overlap))) {
+            return `${joined}${value.text.slice(overlap)}`;
+          }
+        }
+        return `${joined}${value.text}`;
+      }, ''),
+    };
+  });
+}
+
+function extractAmecoEngineeringOrder({ firstPageText, inspectedText, layout }) {
+  if (
+    !/(?:工程指令|ENGINEERING\s+ORDER)\s*[（(]?\s*(?:第一部分|SECTION\s*1)\s*[）)]?/iu.test(
+      firstPageText,
+    ) ||
+    !/\bCCA-ED-021\b/iu.test(firstPageText) ||
+    !/\bAMECO\b/iu.test(inspectedText)
+  ) {
+    return null;
+  }
+  const adapterId = 'issuer.ameco.engineering_order.v1';
+  const occurrences = overlapJoinedPdfLines(
+    layout,
+    INSPECTED_PAGE_LIMIT,
+  ).flatMap((line) => {
+    const matches = [
+      ...line.text.matchAll(
+        /\b(AEO-[A-Z0-9]+-\d{2}-\d{4})-R(\d{2,3})(?![A-Z0-9-])/giu,
+      ),
+    ];
+    return matches.map((match) => ({
+      page: line.page,
+      documentCode: match[1].toUpperCase(),
+      revision: `R${Number(match[2])}`,
+    }));
+  });
+  const documentCode = singleIdentityCandidate(
+    occurrences.map((occurrence) => occurrence.documentCode),
+    adapterId,
+    'document code',
+  );
+  const businessRevision = singleIdentityCandidate(
+    occurrences.map((occurrence) => occurrence.revision),
+    adapterId,
+    'business revision',
+  );
+  const independentPages = new Set(
+    occurrences
+      .filter(
+        (occurrence) =>
+          occurrence.documentCode === documentCode &&
+          occurrence.revision === businessRevision,
+      )
+      .map((occurrence) => occurrence.page),
+  );
+  if (!documentCode || !businessRevision || independentPages.size < 2) {
+    return null;
+  }
+  return {
+    documentCode,
+    businessRevision,
+    revisionDate: '',
+    sourceGeneratedDate: '',
+    sourceType: 'ameco_engineering_order',
+  };
+}
+
 function extractBoeingFtd({ firstPageText, inspectedText }) {
   if (
     !/\bFLEET\s+TEAM\s+DIGEST\b/iu.test(inspectedText) ||
@@ -498,6 +597,7 @@ function extractAirbusOperatorTransmission({ firstPageText }) {
 }
 
 const ACTIVATED_IDENTITY_OWNERS = new Map([
+  ['issuer.ameco.engineering_order.v1', extractAmecoEngineeringOrder],
   ['issuer.boeing.ftd.v1', extractBoeingFtd],
   ['issuer.faa.airworthiness_directive.v1', extractFaaAd],
   ['issuer.boeing.service_letter.v1', extractBoeingServiceLetter],
@@ -599,7 +699,7 @@ export function resolveActualPdfDocumentIdentity({
   const extractedCandidates = [...ACTIVATED_IDENTITY_OWNERS.entries()]
     .map(([adapterId, owner]) => ({
       adapterId,
-      identity: owner({ firstPageText, inspectedText }),
+      identity: owner({ firstPageText, inspectedText, layout }),
     }))
     .filter((candidate) => candidate.identity?.documentCode);
   if (extractedCandidates.length > 1) {

@@ -62,7 +62,7 @@ const U0_CONTRACT_COMMIT = 'fa69ada08265934951df53c7a61a3ccdb8cb2900';
 interface RealFamilyCase {
   key: string;
   path: string | undefined;
-  family: 'AD' | 'MT' | 'SB' | 'SIL' | 'SL';
+  family: 'AD' | 'AEO' | 'MT' | 'SB' | 'SIL' | 'SL';
   issuerAuthority: string;
   adapterId: string;
   documentCode: string;
@@ -74,6 +74,19 @@ interface RealFamilyCase {
 }
 
 const REAL_FAMILY_CASES: RealFamilyCase[] = [
+  {
+    key: 'ameco-aeo',
+    path: process.env.WL31_REAL_AEO_PDF_PATH?.trim(),
+    family: 'AEO',
+    issuerAuthority: 'AMECO',
+    adapterId: 'issuer.ameco.engineering_order.v1',
+    documentCode: 'AEO-B787-46-0012',
+    query: 'B-1466',
+    businessRevision: 'R0',
+    expectedParserProfileId:
+      'parser-profile:ameco.engineering_order@1.0.0',
+    expectedDocumentType: 'engineering_order',
+  },
   {
     key: 'boeing-sb',
     path: process.env.WL31_REAL_BOEING_SB_PDF_PATH?.trim(),
@@ -244,11 +257,6 @@ const describeRealOcrBlockedBoeingSl = REAL_OCR_BLOCKED_BOEING_SL_PATH
   : describe.skip;
 
 const REAL_UNAVAILABLE_CASES = [
-  {
-    key: 'aeo-engineering-pdf',
-    path: process.env.WL31_REAL_AEO_PDF_PATH?.trim(),
-    expectedFamily: 'GENERIC',
-  },
   {
     key: 'amm-linked-response',
     path: process.env.WL31_REAL_AMM_LINKED_RESPONSE_PDF_PATH?.trim(),

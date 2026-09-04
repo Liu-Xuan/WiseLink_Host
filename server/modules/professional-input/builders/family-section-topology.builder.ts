@@ -9,7 +9,7 @@ import { airbusRilSemanticContentUnits } from './airbus-ril-structure.builder';
 export type SemanticSectionBodyState = 'CONTENT' | 'NONE' | 'MISSING';
 
 export interface SourceBoundSectionWindow {
-  readonly family: 'FTD' | 'SB' | 'AD' | 'SIL' | 'SL';
+  readonly family: 'FTD' | 'SB' | 'AD' | 'AEO' | 'SIL' | 'SL';
   readonly sectionKey: string;
   readonly matchedHeading: string;
   readonly occurrence: number;
@@ -404,6 +404,9 @@ export function buildFamilySectionTopology(input: {
   readonly unitSet: SourceUnitSet;
   readonly document: ProfessionalInputDocumentIdentityInput;
 }): readonly SourceBoundSectionWindow[] {
+  if (input.document.documentType === 'engineering_order') {
+    return buildAmecoAeoSectionTopology(input.unitSet, input.document);
+  }
   if (input.document.documentType === 'retrofit_information_letter') {
     return buildAirbusRilSectionTopology(input.unitSet, input.document);
   }
@@ -423,6 +426,127 @@ export function buildFamilySectionTopology(input: {
     return buildHoneywellSilSectionTopology(input.unitSet, input.document);
   }
   return [];
+}
+
+function buildAmecoAeoSectionTopology(
+  unitSet: SourceUnitSet,
+  document: ProfessionalInputDocumentIdentityInput,
+): readonly SourceBoundSectionWindow[] {
+  const contentUnits = orderedContentUnits(unitSet);
+  const normalizedDocumentCode = document.documentCode
+    .normalize('NFKC')
+    .toUpperCase();
+  const firstSectionIndexes = contentUnits.flatMap((unit, index) =>
+    /^(?:工程指令第一部分|engineeringordersection1)$/u.test(
+      normalizeLabel(unit.text),
+    )
+      ? [index]
+      : [],
+  );
+  const secondSectionIndexes = contentUnits.flatMap((unit, index) =>
+    /^(?:工程指令第二部分|engineeringordersection2)$/u.test(
+      normalizeLabel(unit.text),
+    )
+      ? [index]
+      : [],
+  );
+  const safetyIndexes = contentUnits.flatMap((unit, index) =>
+    normalizeLabel(unit.text) === '安全检查单配发信息页' ? [index] : [],
+  );
+  const documentCodePattern = new RegExp(
+    `^${escapeRegularExpression(normalizedDocumentCode)}-R\\d{2,3}$`,
+    'u',
+  );
+  const documentCodeUnits = contentUnits.filter((unit) =>
+    documentCodePattern.test(unit.text.normalize('NFKC').trim().toUpperCase()),
+  );
+  const footerUnits = contentUnits.filter((unit) => {
+    const text = unit.text.normalize('NFKC').replace(/\s+/gu, '');
+    return (
+      /^CCA-ED-021CCA-ED-021SECTION1SECTION1PageNo:\d+of\d+Page\d+of\d+$/u.test(
+        text,
+      ) || /^CCA-ED-021SECTION2PageNo:\d+of\d+$/u.test(text)
+    );
+  });
+  const refById = new Map(
+    unitSet.sourceRefs.map((sourceRef) => [sourceRef.sourceRefId, sourceRef]),
+  );
+  const pageCount = Math.max(
+    0,
+    ...unitSet.sourceRefs.map((sourceRef) => sourceRef.pageEnd),
+  );
+  const footerPages = new Set(
+    footerUnits.map((unit) => pageForUnit(unit, refById)),
+  );
+  if (
+    firstSectionIndexes.length !== 2 ||
+    secondSectionIndexes.length !== 2 ||
+    safetyIndexes.length !== 1 ||
+    documentCodeUnits.length !== 1 ||
+    pageCount < 3 ||
+    footerUnits.length !== pageCount ||
+    footerPages.size !== pageCount
+  ) {
+    return [];
+  }
+  const firstIndex = Math.min(...firstSectionIndexes);
+  const secondIndex = Math.min(...secondSectionIndexes);
+  const safetyIndex = safetyIndexes[0];
+  if (!(firstIndex < secondIndex && secondIndex < safetyIndex)) return [];
+  const firstPage = pageForUnit(contentUnits[firstIndex], refById);
+  const secondPage = pageForUnit(contentUnits[secondIndex], refById);
+  const safetyPage = pageForUnit(contentUnits[safetyIndex], refById);
+  const candidates: SectionAnchorCandidate[] = [
+    {
+      unit: contentUnits[firstIndex],
+      index: firstIndex,
+      sectionKey: 'engineering_basis',
+      matchedHeading: contentUnits[firstIndex].text.trim(),
+      nodeKind: 'section',
+      scopeKey: 'engineering_order',
+      ordinal: '1',
+      bodyStartsAtAnchor: true,
+    },
+    {
+      unit: contentUnits[secondIndex],
+      index: secondIndex,
+      sectionKey: 'accomplishment_instructions',
+      matchedHeading: contentUnits[secondIndex].text.trim(),
+      nodeKind: 'section',
+      scopeKey: 'engineering_order',
+      ordinal: '2',
+      bodyStartsAtAnchor: true,
+    },
+    {
+      unit: contentUnits[safetyIndex],
+      index: safetyIndex,
+      sectionKey: 'safety_checklist',
+      matchedHeading: contentUnits[safetyIndex].text.trim(),
+      nodeKind: 'section',
+      scopeKey: 'engineering_order',
+      ordinal: '2.safety',
+      bodyStartsAtAnchor: true,
+    },
+  ];
+  const windows = materializeSectionWindows(
+    unitSet,
+    contentUnits,
+    candidates,
+    'AEO',
+  );
+  return windows.length === 3 &&
+    firstPage === 1 &&
+    secondPage > firstPage &&
+    safetyPage > secondPage &&
+    safetyPage === pageCount &&
+    windows[0].pageStart === firstPage &&
+    windows[0].pageEnd === secondPage - 1 &&
+    windows[1].pageStart === secondPage &&
+    windows[1].pageEnd === safetyPage - 1 &&
+    windows[2].pageStart === safetyPage &&
+    windows[2].pageEnd === pageCount
+    ? windows
+    : [];
 }
 
 function buildAirbusRilSectionTopology(

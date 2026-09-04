@@ -19,6 +19,8 @@ const DEFAULT_DESCRIPTOR = Object.freeze({
 });
 
 const DOCUMENT_CATEGORY_FAMILY_MAP = Object.freeze({
+  ameco_engineering_order: 'AEO',
+  aeo: 'AEO',
   boeing_ftd: 'FTD',
   boeing_asb: 'SB',
   alert_service_bulletin: 'SB',
@@ -181,6 +183,7 @@ function normalizeApiSourceType(value = '') {
   if (['boeing_service_letter', 'boeing_sl', 'service_letter', 'sl'].includes(normalized)) return 'boeing_sl';
   if (['supplier_service_information_letter', 'service_information_letter', 'supplier_sil', 'sil', 'honeywell_sil'].includes(normalized)) return 'supplier_sil';
   if (['airworthiness_directive', 'faa_ad', 'easa_ad', 'caac_ad', 'cad', 'ead', 'ad'].includes(normalized)) return 'ad';
+  if (['aeo', 'engineering_order', 'ameco_engineering_order'].includes(normalized)) return 'ameco_engineering_order';
   if (['requirements_bulletin', 'requirement_bulletin', 'rb'].includes(normalized)) return 'requirements_bulletin';
   if (['boeing_mpd', 'mpd', 'maintenance_planning_document'].includes(normalized)) return 'boeing_mpd';
   if (['boeing_maintenance_tip', 'maintenance_tip', 'maintenance_task', 'mt'].includes(normalized)) return 'boeing_maintenance_tip';
@@ -204,6 +207,7 @@ function familyFromSourceType(sourceType = '') {
   if (normalized === 'boeing_sl') return 'SL';
   if (normalized === 'supplier_sil') return 'SIL';
   if (normalized === 'ad') return 'AD';
+  if (normalized === 'ameco_engineering_order') return 'AEO';
   if (normalized === 'requirements_bulletin') return 'RB';
   if (normalized === 'boeing_mpd' || normalized === 'boeing_maintenance_tip' || normalized === 'airbus_maintenance_programme') return 'MT';
   if (normalized === 'generic' || normalized === 'generic_pdf' || normalized === 'pdf' || normalized === 'word') return 'GENERIC';
@@ -224,6 +228,7 @@ function defaultSourceTypeForFamily(canonicalDocumentFamily = '', context = {}) 
   const filename = normalizeString(context.originalFilename).toLowerCase();
   if (canonicalDocumentFamily === 'FTD') return 'boeing_ftd';
   if (canonicalDocumentFamily === 'AD') return 'ad';
+  if (canonicalDocumentFamily === 'AEO') return 'ameco_engineering_order';
   if (canonicalDocumentFamily === 'SL') return /boeing|(?:^|[^a-z0-9])(?:737|747|767|777|787)[-_\s]*sl/u.test(`${displayFamily}\n${filename}`) ? 'boeing_sl' : 'service_letter';
   if (canonicalDocumentFamily === 'SIL') return 'supplier_sil';
   if (canonicalDocumentFamily === 'RB') return 'requirements_bulletin';
@@ -258,6 +263,7 @@ function resolveDisplayDocumentFamily({ explicitFamily = '', canonicalDocumentFa
   if (canonicalDocumentFamily === 'SL' && /^boeing_/u.test(sourceType)) return 'Boeing SL';
   if (canonicalDocumentFamily === 'FTD') return 'FTD';
   if (canonicalDocumentFamily === 'AD') return 'AD';
+  if (canonicalDocumentFamily === 'AEO') return 'AEO';
   if (canonicalDocumentFamily === 'SIL') return 'SIL';
   if (canonicalDocumentFamily === 'RB') return 'RB';
   if (canonicalDocumentFamily === 'MT') return 'MT';

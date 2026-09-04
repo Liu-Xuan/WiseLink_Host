@@ -8,6 +8,7 @@ export const DEFAULT_DOCUMENT_FAMILY_ADAPTER_ID = 'generic.general_document.v1';
 export const DOCUMENT_FAMILY_ADAPTER_SCHEMA_VERSION = 'v8.4-document-family-adapter.v1';
 export const DOCUMENT_FAMILY_ADAPTER_FAMILIES = Object.freeze([
   'AD',
+  'AEO',
   'FTD',
   'GENERIC',
   'MT',
@@ -107,6 +108,7 @@ export function normalizeDocumentFamily(value = '') {
   const normalized = normalizeToken(value);
   if (!normalized) return '';
   if (normalized === 'AIRWORTHINESS_DIRECTIVE' || normalized === 'CAD' || normalized === 'EAD') return 'AD';
+  if (normalized === 'ENGINEERING_ORDER' || normalized === 'EO') return 'AEO';
   if (normalized === 'SERVICE_BULLETIN' || normalized === 'ALERT_SERVICE_BULLETIN' || normalized === 'ASB') return 'SB';
   if (normalized === 'SERVICE_LETTER') return 'SL';
   if (normalized === 'REQUIREMENTS_BULLETIN') return 'RB';
