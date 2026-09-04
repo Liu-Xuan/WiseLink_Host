@@ -881,6 +881,60 @@ describe('Host configuration-evidence persistence product chain', () => {
     expect(fixture.workItem().revision).toBe(7);
     expect(fixture.store.recordCount()).toBe(0);
   });
+
+  it('does not treat an incomplete empty page as authoritative no-record', async () => {
+    const fixture = target({ fleetAsset: realB2035Asset() });
+    fixture.port.resultFactory = (query: GetInstallationEventsQuery) => {
+      const result = completeResult(query, []);
+      result.coverage = {
+        ...result.coverage,
+        completeness: 'PARTIAL',
+        allRecordsRead: false,
+        limitation: 'The source returned only the first page.',
+      };
+      return result;
+    };
+
+    const queried = await fixture.service.query(
+      WORK_ITEM_ID,
+      refreshBody('REQ-QUERY-INCOMPLETE-NO-RECORD', 7),
+      {} as Request,
+    );
+
+    expect(queried.candidate).toMatchObject({
+      terminalStatus: 'FAILED_VALIDATION',
+      sourceRecordCount: 0,
+      candidateSnapshot: {
+        coverage: {
+          sourceCompleteness: 'PARTIAL',
+          allRequestedRecordsRead: false,
+        },
+        facts: [{ truth: 'UNKNOWN', status: 'WAITING_INPUT' }],
+      },
+    });
+    await expect(
+      fixture.service.status(WORK_ITEM_ID, {} as Request),
+    ).resolves.toMatchObject({
+      latestQuery: {
+        terminalStatus: 'FAILED_VALIDATION',
+        adoptionEligible: false,
+        adoptionBlockReason: 'QUERY_NOT_ADOPTABLE',
+      },
+    });
+    await expect(
+      fixture.service.adopt(
+        WORK_ITEM_ID,
+        queried.candidate.candidateEvidenceRef,
+        { expectedRevision: 7 },
+        {} as Request,
+      ),
+    ).rejects.toMatchObject({
+      code: 'CONFIGURATION_EVIDENCE_CANDIDATE_NOT_ADOPTABLE',
+      statusCode: 409,
+    });
+    expect(fixture.workItem().revision).toBe(7);
+    expect(fixture.store.recordCount()).toBe(0);
+  });
 });
 
 class ControlledInstallationEventsPort implements GetInstallationEventsPort {
