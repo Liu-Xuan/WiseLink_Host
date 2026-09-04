@@ -471,6 +471,49 @@ export interface CanonicalReferenceMentionPreviewItem {
   sourceLocators: CanonicalStructuredContentSourceLocator[];
 }
 
+export interface CanonicalRelatedContextSnapshotItem {
+  relatedContextItemRef: string;
+  retrievalChannel: 'EXPLICIT_REFERENCE';
+  normalizedTarget: string;
+  mentionSourceRefs: string[];
+  resolvedDocumentVersionRef?: string;
+  resolvedWorkItemRef?: string;
+  unresolvedIdentity?: string;
+  documentType: CanonicalReferenceDocumentType;
+  relationRoles: CanonicalReferenceContextRole[];
+  issueRelevance: 'EXPLICIT_REFERENCE';
+  targetApplicability: 'NOT_EVALUATED';
+  currentness: 'CURRENT' | 'UNKNOWN';
+  authority: 'PRIMARY_DOCUMENT_EXPLICIT_MENTION';
+  contextUse: 'BACKGROUND_ONLY';
+  selectedSourceRefs: string[];
+  conflicts: string[];
+  missingInputs: string[];
+  occurrenceCount: number;
+}
+
+export interface CanonicalRelatedContextSnapshot {
+  schemaVersion: 'wiselink.3_1.related_context_snapshot.v1';
+  snapshotRef: string;
+  workItemRef: string;
+  inputRevision: number;
+  primaryDocumentVersionRef: string;
+  assessmentTargetContextRef: null;
+  assessmentAsOf: null;
+  items: CanonicalRelatedContextSnapshotItem[];
+  retrievalReceipts: Array<{
+    channel: 'EXPLICIT_REFERENCE';
+    status: 'COMPLETE';
+    mentionCount: number;
+  }>;
+  contentHash: string;
+  authority: {
+    candidateOnly: true;
+    readOnly: true;
+    includedInAssessmentInput: false;
+  };
+}
+
 export interface CanonicalRelatedContextPreviewResponse {
   schemaVersion: 'wiselink.3_1.related_context_preview.v1';
   status: 'FRESH_READ';
@@ -479,6 +522,9 @@ export interface CanonicalRelatedContextPreviewResponse {
   documentVersionId: string;
   totalMentionCount: number;
   mentions: CanonicalReferenceMentionPreviewItem[];
+  snapshot: CanonicalRelatedContextSnapshot;
+  snapshotArtifact: UnifiedPackageArtifactDescriptor;
+  snapshotArtifactReused: boolean;
   authority: {
     candidateOnly: true;
     readOnly: true;

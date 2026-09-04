@@ -116,7 +116,11 @@ export function ReferenceMentionPreview({
       )}
 
       <footer>
-        当前展示逐次引用、租户内关联文件解析和上下文作用；目标适用性尚未评估，也未进入评估输入。
+        当前展示逐次引用、租户内关联文件解析和上下文作用；
+        {preview
+          ? `已准备 ${preview.snapshot.items.length} 个关联目标的只读快照。`
+          : '只读快照尚未准备。'}
+        目标适用性尚未评估，也未进入评估输入。
       </footer>
     </section>
   );
