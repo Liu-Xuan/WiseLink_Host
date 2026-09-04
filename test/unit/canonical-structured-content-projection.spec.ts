@@ -7,7 +7,10 @@ import type {
 } from '@shared/api.interface';
 
 import { projectCanonicalStructuredContentUnit } from '../../server/modules/canonical-host/canonical-structured-content-projection';
-import { deriveCanonicalReferenceMentionPreview } from '../../server/modules/canonical-host/canonical-reference-mention-preview';
+import {
+  deriveCanonicalReferenceMentionPreview,
+  finalizeCanonicalReferenceMentionPreview,
+} from '../../server/modules/canonical-host/canonical-reference-mention-preview';
 import { buildCanonicalRelatedContextSnapshot } from '../../server/modules/canonical-host/canonical-related-context-snapshot';
 import { Frozen2CandidateReaderService } from '../../server/modules/unified-reader/frozen2-candidate-reader.service';
 import { sha256Raw } from '../../server/modules/unified-reader/unified-reader.utils';
@@ -216,25 +219,29 @@ describe('canonical structured-content browser projection', () => {
       primaryDocumentVersionId: 'document-version-real-ftd',
       assessmentTargetContextRef: 'applicability-context://B-1266',
       assessmentAsOf: '2026-06-05',
-      mentions: mentions.map((mention) => ({
-        ...mention,
-        ...(mention.normalizedTarget === '777-SL-31-064'
-          ? {
-              targetApplicability: 'APPLICABLE' as const,
-              applicabilityResultRef: 'openclaw-applicability://RESULT-RELATED',
-            }
-          : {}),
-        targetResolution:
-          mention.normalizedTarget === '777-SL-31-064'
+      mentions: mentions.map((mention) => {
+        const exact = mention.normalizedTarget === '777-SL-31-064';
+        return finalizeCanonicalReferenceMentionPreview({
+          candidate: mention,
+          primaryDocumentVersionRef: 'document-version-real-ftd',
+          targetResolution: exact
             ? {
-                status: 'RESOLVED_EXACT' as const,
+                status: 'RESOLVED_EXACT',
                 workItemId: 'WI-real-sl',
                 documentVersionId: 'document-version-real-sl',
                 canonicalDocumentNumber: '777-SL-31-064',
                 businessRevision: 'ORIGINAL ISSUE',
               }
-            : { status: 'DOCUMENT_NOT_INGESTED' as const },
-      })),
+            : { status: 'DOCUMENT_NOT_INGESTED' },
+          targetApplicability: exact ? 'APPLICABLE' : 'NOT_EVALUATED',
+          ...(exact
+            ? {
+                applicabilityResultRef:
+                  'openclaw-applicability://RESULT-RELATED',
+              }
+            : {}),
+        });
+      }),
     });
 
     expect(built.snapshot.items).toHaveLength(2);

@@ -436,13 +436,53 @@ export type CanonicalReferenceDocumentType =
   | 'SIL'
   | 'SL'
   | 'SRM'
-  | 'WDM';
+  | 'WDM'
+  | 'UNKNOWN';
 
 export type CanonicalReferenceContextRole =
   | 'CONCURRENT_REQUIREMENT'
   | 'PROCEDURE_SUPPORT'
   | 'RELATED_INFORMATION'
   | 'UNCLASSIFIED';
+
+export type CanonicalRelatedContextRelationRole =
+  | 'ISSUE_SIGNAL'
+  | 'INVESTIGATION_UPDATE'
+  | 'TECHNICAL_BACKGROUND'
+  | 'TEMPORARY_MEASURE'
+  | 'FINAL_MEASURE'
+  | 'IMPLEMENTATION_INSTRUCTION'
+  | 'PUBLICATION_IMPACT'
+  | 'OPERATOR_ACTION'
+  | 'COMPLETION_FEEDBACK'
+  | 'REVISION_OR_SUPERSESSION'
+  | 'SUPPORTS'
+  | 'CONTRADICTS'
+  | 'GENERAL_BACKGROUND';
+
+export type CanonicalRelatedContextSourceAuthority =
+  | 'REGULATORY'
+  | 'OEM_FORMAL'
+  | 'OEM_TRACKING'
+  | 'OPERATOR_CONTROLLED'
+  | 'AUTHORIZED_REFERENCE'
+  | 'REFERENCE_ONLY'
+  | 'UNKNOWN';
+
+export type CanonicalRelatedContextEvidenceStance =
+  | 'SUPPORTS'
+  | 'CONTRADICTS'
+  | 'NEUTRAL'
+  | 'NOT_EVALUATED';
+
+export type CanonicalReferencePermissionState =
+  | 'AUTHORIZED'
+  | 'DENIED'
+  | 'NOT_CHECKED';
+
+export type CanonicalReferenceExtractionMethod =
+  | 'STRUCTURED_REFERENCE'
+  | 'DETERMINISTIC_TEXT';
 
 export type CanonicalReferenceTargetResolution =
   | {
@@ -453,8 +493,11 @@ export type CanonicalReferenceTargetResolution =
       businessRevision: string | null;
     }
   | { status: 'RESOLVED_MULTIPLE'; candidateCount: number }
+  | { status: 'UNRESOLVED' }
   | { status: 'DOCUMENT_NOT_INGESTED' }
-  | { status: 'ACCESS_DENIED' };
+  | { status: 'UNAVAILABLE' }
+  | { status: 'ACCESS_DENIED' }
+  | { status: 'UNSUPPORTED_DOCUMENT' };
 
 export type CanonicalRelatedTargetApplicability =
   | 'APPLICABLE'
@@ -468,7 +511,27 @@ export type CanonicalRelatedTargetApplicability =
  * This is a read-only preview, not a persisted relation or assessment input.
  */
 export interface CanonicalReferenceMentionPreviewItem {
+  /** R10 ReferenceMention artifact identity; mentionId is its UI alias. */
+  mentionRef: string;
   mentionId: string;
+  primaryDocumentVersionRef: string;
+  mentionSourceRef: string;
+  citationText: string;
+  normalizedIdentity: {
+    documentNumber: string | null;
+    title: string | null;
+    publisher: string | null;
+  };
+  documentTypeCandidate: CanonicalReferenceDocumentType;
+  extractionMethod: CanonicalReferenceExtractionMethod;
+  relationCue: string | null;
+  relationRoleCandidates: CanonicalRelatedContextRelationRole[];
+  resolutionState: CanonicalReferenceTargetResolution['status'];
+  resolvedDocumentVersionRef: string | null;
+  permissionState: CanonicalReferencePermissionState;
+  sourceAuthority: CanonicalRelatedContextSourceAuthority;
+  evidenceStance: CanonicalRelatedContextEvidenceStance;
+  candidateOnly: true;
   unitOrdinal: number;
   matchedText: string;
   normalizedTarget: string;
@@ -482,47 +545,86 @@ export interface CanonicalReferenceMentionPreviewItem {
 }
 
 export interface CanonicalRelatedContextSnapshotItem {
+  contextItemRef: string;
   relatedContextItemRef: string;
+  primaryDocumentVersionRef: string;
+  mentionRefs: string[];
   retrievalChannel: 'EXPLICIT_REFERENCE';
   normalizedTarget: string;
   mentionSourceRefs: string[];
+  relatedDocumentRef: string | null;
+  authorizedExternalRef: null;
   resolvedDocumentVersionRef?: string;
   resolvedWorkItemRef?: string;
   unresolvedIdentity?: string;
   documentType: CanonicalReferenceDocumentType;
+  contributionRoleCandidates: CanonicalRelatedContextRelationRole[];
+  acceptedContributionRoles: CanonicalRelatedContextRelationRole[];
+  relationTypeCandidates: CanonicalReferenceContextRole[];
+  acceptedRelationTypes: CanonicalReferenceContextRole[];
   relationRoles: CanonicalReferenceContextRole[];
-  issueRelevance: 'EXPLICIT_REFERENCE';
+  issueRelevance: 'HIGH' | 'MEDIUM' | 'LOW' | 'UNKNOWN';
   targetApplicability: CanonicalRelatedTargetApplicability;
   applicabilityResultRef?: string;
-  currentness: 'CURRENT' | 'UNKNOWN';
-  authority: 'PRIMARY_DOCUMENT_EXPLICIT_MENTION';
+  currentness: 'CURRENT' | 'HISTORICAL' | 'SUPERSEDED' | 'STALE' | 'UNKNOWN';
+  authority: CanonicalRelatedContextSourceAuthority;
+  sourceAuthority: CanonicalRelatedContextSourceAuthority;
+  sourceBasis: 'PRIMARY_DOCUMENT_EXPLICIT_MENTION';
+  evidenceStance: CanonicalRelatedContextEvidenceStance;
   contextUse: 'BACKGROUND_ONLY';
+  sourceRefs: string[];
   selectedSourceRefs: string[];
+  assessmentAsOf: string | null;
+  availability:
+    | 'AVAILABLE'
+    | 'AMBIGUOUS'
+    | 'UNRESOLVED'
+    | 'NOT_INGESTED'
+    | 'UNAVAILABLE'
+    | 'ACCESS_DENIED'
+    | 'UNSUPPORTED';
+  confidence: 'HIGH' | 'MEDIUM' | 'LOW' | 'UNKNOWN';
+  reasonCodes: string[];
+  provenance: {
+    source: 'PRIMARY_DOCUMENT_EXPLICIT_MENTION';
+    mentionSourceRefs: string[];
+    extractionMethods: CanonicalReferenceExtractionMethod[];
+  };
   conflicts: string[];
+  conflictRefs: string[];
   missingInputs: string[];
+  roleExplanation: string | null;
   occurrenceCount: number;
+  candidateOnly: true;
 }
 
 export interface CanonicalRelatedContextSnapshot {
   schemaVersion: 'wiselink.3_1.related_context_snapshot.v1';
   snapshotRef: string;
+  mode: 'EXPLICIT_PREVIEW';
+  policyVersion: 'wiselink.related-context.explicit-preview.v1';
   workItemRef: string;
   inputRevision: number;
   primaryDocumentVersionRef: string;
   assessmentTargetContextRef: string | null;
   assessmentAsOf: string | null;
+  referenceMentions: CanonicalReferenceMentionPreviewItem[];
   items: CanonicalRelatedContextSnapshotItem[];
+  unresolvedMentions: CanonicalReferenceMentionPreviewItem[];
   retrievalReceipts: Array<{
     channel: 'EXPLICIT_REFERENCE';
     status: 'COMPLETE';
     mentionCount: number;
   }>;
-  contentHash: string;
-  authority: {
-    candidateOnly: true;
-    readOnly: true;
-    includedInAssessmentInput: false;
+  authorization: {
+    scope: 'CURRENT_USER_TENANT_WORKITEM';
+    allResolvedItemsAuthorized: boolean;
   };
+  availability: 'AVAILABLE' | 'PARTIAL' | 'UNAVAILABLE';
+  downgradeReasons: string[];
+  candidateOnly: true;
+  readOnly: true;
+  includedInAssessmentInput: false;
 }
 
 export interface CanonicalRelatedContextPreviewResponse {
