@@ -74,7 +74,7 @@
 
 .reference-preview-list article {
   display: grid;
-  grid-template-columns: auto minmax(160px, 1fr) auto auto auto;
+  grid-template-columns: auto minmax(160px, 1fr) auto auto auto auto;
   gap: 9px;
   align-items: center;
   padding: 9px 10px;
@@ -110,6 +110,20 @@
 .reference-preview-list small {
   color: var(--wl-muted);
   font-size: 10px;
+}
+
+.reference-preview-list .reference-preview-resolution {
+  color: var(--wl-muted);
+  background: var(--wl-surface-subtle);
+}
+
+.reference-preview-list .reference-preview-resolution.is-ACCESS_DENIED {
+  color: var(--wl-danger);
+}
+
+.reference-preview-list .reference-preview-open {
+  color: var(--wl-success);
+  border-color: color-mix(in srgb, var(--wl-success) 45%, var(--wl-border));
 }
 
 .reference-preview-list small {

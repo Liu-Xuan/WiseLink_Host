@@ -441,6 +441,17 @@ export type CanonicalReferenceContextRole =
   | 'RELATED_INFORMATION'
   | 'UNCLASSIFIED';
 
+export type CanonicalReferenceTargetResolution =
+  | {
+      status: 'RESOLVED_EXACT';
+      workItemId: string;
+      documentVersionId: string;
+      canonicalDocumentNumber: string;
+    }
+  | { status: 'RESOLVED_MULTIPLE'; candidateCount: number }
+  | { status: 'DOCUMENT_NOT_INGESTED' }
+  | { status: 'ACCESS_DENIED' };
+
 /**
  * One explicit reference occurrence projected from the current frozen.2 text.
  * This is a read-only preview, not a persisted relation or assessment input.
@@ -452,6 +463,7 @@ export interface CanonicalReferenceMentionPreviewItem {
   normalizedTarget: string;
   documentType: CanonicalReferenceDocumentType;
   contextRole: CanonicalReferenceContextRole;
+  targetResolution: CanonicalReferenceTargetResolution;
   targetApplicability: 'NOT_EVALUATED';
   sourceRefIds: string[];
   sourceLocators: CanonicalStructuredContentSourceLocator[];

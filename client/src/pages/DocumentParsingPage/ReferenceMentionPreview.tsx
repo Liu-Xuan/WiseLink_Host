@@ -1,10 +1,17 @@
 import { useEffect, useState } from 'react';
-import { FileSymlink, LocateFixed, Network, RefreshCw } from 'lucide-react';
+import {
+  ExternalLink,
+  FileSymlink,
+  LocateFixed,
+  Network,
+  RefreshCw,
+} from 'lucide-react';
 
 import { canonicalHost } from '@client/src/api';
 import type {
   CanonicalReferenceContextRole,
   CanonicalReferenceMentionPreviewItem,
+  CanonicalReferenceTargetResolution,
   CanonicalRelatedContextPreviewResponse,
   CanonicalStructuredContentSourceLocator,
 } from '@shared/api.interface';
@@ -18,6 +25,7 @@ interface ReferenceMentionPreviewProps {
     sourceRef: string,
     locator: CanonicalStructuredContentSourceLocator | undefined,
   ) => void;
+  onOpenTarget: (workItemId: string) => void;
 }
 
 const ROLE_LABELS: Record<CanonicalReferenceContextRole, string> = {
@@ -31,6 +39,7 @@ export function ReferenceMentionPreview({
   workItemId,
   workItemRevision,
   onLocateSourceRef,
+  onOpenTarget,
 }: ReferenceMentionPreviewProps) {
   const [preview, setPreview] =
     useState<CanonicalRelatedContextPreviewResponse | null>(null);
@@ -96,6 +105,7 @@ export function ReferenceMentionPreview({
               key={mention.mentionId}
               mention={mention}
               onLocateSourceRef={onLocateSourceRef}
+              onOpenTarget={onOpenTarget}
             />
           ))}
         </div>
@@ -106,7 +116,7 @@ export function ReferenceMentionPreview({
       )}
 
       <footer>
-        当前仅展示正文中的逐次引用及上下文作用；目标适用性尚未评估，也未进入评估输入。
+        当前展示逐次引用、租户内关联文件解析和上下文作用；目标适用性尚未评估，也未进入评估输入。
       </footer>
     </section>
   );
@@ -115,9 +125,11 @@ export function ReferenceMentionPreview({
 function ReferenceMentionRow({
   mention,
   onLocateSourceRef,
+  onOpenTarget,
 }: {
   mention: CanonicalReferenceMentionPreviewItem;
   onLocateSourceRef: ReferenceMentionPreviewProps['onLocateSourceRef'];
+  onOpenTarget: ReferenceMentionPreviewProps['onOpenTarget'];
 }) {
   const locator: CanonicalStructuredContentSourceLocator | undefined =
     mention.sourceLocators.find((item) =>
@@ -138,6 +150,10 @@ function ReferenceMentionRow({
       </div>
       <small>{mention.documentType}</small>
       <small>{ROLE_LABELS[mention.contextRole]}</small>
+      <TargetResolution
+        resolution={mention.targetResolution}
+        onOpenTarget={onOpenTarget}
+      />
       <button
         type="button"
         disabled={sourceRef === undefined}
@@ -149,5 +165,39 @@ function ReferenceMentionRow({
         原文
       </button>
     </article>
+  );
+}
+
+function TargetResolution({
+  resolution,
+  onOpenTarget,
+}: {
+  resolution: CanonicalReferenceTargetResolution;
+  onOpenTarget: ReferenceMentionPreviewProps['onOpenTarget'];
+}) {
+  if (resolution.status === 'RESOLVED_EXACT') {
+    return (
+      <button
+        type="button"
+        className="reference-preview-open"
+        onClick={() => onOpenTarget(resolution.workItemId)}
+      >
+        <ExternalLink aria-hidden="true" />
+        打开关联文件
+      </button>
+    );
+  }
+  const label: Record<
+    Exclude<CanonicalReferenceTargetResolution['status'], 'RESOLVED_EXACT'>,
+    string
+  > = {
+    RESOLVED_MULTIPLE: '多个匹配',
+    DOCUMENT_NOT_INGESTED: '未收录',
+    ACCESS_DENIED: '无权访问',
+  };
+  return (
+    <small className={`reference-preview-resolution is-${resolution.status}`}>
+      {label[resolution.status]}
+    </small>
   );
 }

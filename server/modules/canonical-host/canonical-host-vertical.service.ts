@@ -11,6 +11,8 @@ import type {
   CanonicalEntryQueryResponse,
   CanonicalPdfVerticalRunRequest,
   CanonicalPdfVerticalRunResponse,
+  CanonicalReferenceMentionPreviewItem,
+  CanonicalReferenceTargetResolution,
   CanonicalRelatedContextPreviewResponse,
   CanonicalS1000dVerticalRunRequest,
   CanonicalS1000dVerticalRunResponse,
@@ -26,6 +28,8 @@ import type {
 
 import { UnifiedReaderService } from '../unified-reader/unified-reader.service';
 import { S1000dIngressService } from '../s1000d-ingress/s1000d-ingress.service';
+import { DocumentManagementHostedService } from '../document-management/src/hosted/nest';
+import { MiaodaWorkItemRepository } from '../work-item/miaoda-work-item.repository';
 import type { PreparedS1000dIngressCandidate } from '../s1000d-ingress/s1000d-ingress.types';
 import { UNIFIED_ARTIFACT_STORE } from '../unified-reader/unified-reader.constants';
 import type { UnifiedArtifactStorePort } from '../unified-reader/unified-reader.types';
@@ -43,7 +47,10 @@ import {
   CANONICAL_WORK_ITEM_REGISTRAR,
 } from './canonical-host.constants';
 import { buildCanonicalPageProjections } from './canonical-host-page-projections';
-import { deriveCanonicalReferenceMentionPreview } from './canonical-reference-mention-preview';
+import {
+  deriveCanonicalReferenceMentionPreview,
+  type CanonicalReferenceMentionCandidate,
+} from './canonical-reference-mention-preview';
 import {
   projectCanonicalBrowserQueryResult,
   projectCanonicalStructuredContentUnit,
@@ -112,6 +119,10 @@ export class CanonicalHostVerticalService {
     @Optional()
     @Inject(SCOPED_PROFESSIONAL_ARTIFACT_CORRELATION)
     private readonly professionalCorrelations?: ScopedProfessionalArtifactCorrelationPort,
+    @Optional()
+    private readonly documentManagement?: DocumentManagementHostedService,
+    @Optional()
+    private readonly workItems?: MiaodaWorkItemRepository,
   ) {}
 
   async runPdf(
@@ -804,9 +815,13 @@ export class CanonicalHostVerticalService {
         projectCanonicalStructuredContentUnit(unit, index + 1),
       )
       .filter((unit) => unit !== null);
-    const mentions = deriveCanonicalReferenceMentionPreview(
+    const mentionCandidates = deriveCanonicalReferenceMentionPreview(
       browserUnits,
       pkg.documentIdentity?.documentCode,
+    );
+    const mentions = await this.resolveReferenceMentionTargets(
+      mentionCandidates,
+      actor,
     );
 
     return {
@@ -822,6 +837,91 @@ export class CanonicalHostVerticalService {
         readOnly: true,
         includedInAssessmentInput: false,
       },
+    };
+  }
+
+  private async resolveReferenceMentionTargets(
+    mentions: CanonicalReferenceMentionCandidate[],
+    actor: CanonicalHostActor,
+  ): Promise<CanonicalReferenceMentionPreviewItem[]> {
+    const targets = [...new Set(mentions.map((item) => item.normalizedTarget))];
+    const resolutions = new Map<
+      string,
+      CanonicalReferenceTargetResolution
+    >();
+    await Promise.all(
+      targets.map(async (target) => {
+        resolutions.set(
+          target,
+          await this.resolveReferenceTarget(target, actor),
+        );
+      }),
+    );
+    return mentions.map((mention) => ({
+      ...mention,
+      targetResolution: resolutions.get(mention.normalizedTarget) ?? {
+        status: 'DOCUMENT_NOT_INGESTED',
+      },
+    }));
+  }
+
+  private async resolveReferenceTarget(
+    normalizedTarget: string,
+    actor: CanonicalHostActor,
+  ): Promise<CanonicalReferenceTargetResolution> {
+    if (!this.documentManagement || !this.workItems) {
+      return { status: 'DOCUMENT_NOT_INGESTED' };
+    }
+    const matches = await this.documentManagement.listCurrentReferenceTargets(
+      normalizedTarget,
+      {
+        actorUserId: actor.userId,
+        tenantId: actor.tenantId,
+        roles: [...actor.roles],
+        appId: actor.appId,
+        env: actor.env,
+      },
+    );
+    if (matches.length === 0) return { status: 'DOCUMENT_NOT_INGESTED' };
+    if (matches.length > 1) {
+      return { status: 'RESOLVED_MULTIPLE', candidateCount: matches.length };
+    }
+
+    const [match] = matches;
+    const tenantBindings =
+      await this.workItems.listTenantDocumentAuthorizationBindings({
+        tenantId: actor.tenantId,
+        documentVersionId: match.documentVersionId,
+      });
+    if (tenantBindings.length === 0) {
+      return { status: 'DOCUMENT_NOT_INGESTED' };
+    }
+    const authorized: typeof tenantBindings = [];
+    for (const binding of tenantBindings) {
+      if (binding.requestedByUserId !== actor.userId) continue;
+      try {
+        await this.authorizeAction({
+          actor,
+          action: 'READ_DOCUMENT_PARSING',
+          workItemId: binding.workItemId,
+          requestId: binding.requestId,
+          documentVersionId: binding.documentVersionId,
+        });
+        authorized.push(binding);
+      } catch {
+        continue;
+      }
+    }
+    if (authorized.length === 0) return { status: 'ACCESS_DENIED' };
+    if (authorized.length > 1) {
+      return { status: 'RESOLVED_MULTIPLE', candidateCount: authorized.length };
+    }
+    const [ownedBinding] = authorized;
+    return {
+      status: 'RESOLVED_EXACT',
+      workItemId: ownedBinding.workItemId,
+      documentVersionId: match.documentVersionId,
+      canonicalDocumentNumber: match.canonicalDocumentNumber,
     };
   }
 
