@@ -111,7 +111,7 @@ test('pins exact20 MCP 1.2, five review tools, and hosted provenance', () => {
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c13',
+    'wiselink-research-and-synthesize@r09.c14',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -2390,11 +2390,13 @@ test('requires an explicitly enabled Hosted chat-completions endpoint', () => {
 
 test('accepts JSON-standard surrounding whitespace from the Hosted review model', async (t) => {
   const originalFetch = globalThis.fetch;
+  let requestBody;
   t.after(() => {
     globalThis.fetch = originalFetch;
   });
-  globalThis.fetch = async () =>
-    new Response(
+  globalThis.fetch = async (_input, init) => {
+    requestBody = JSON.parse(init.body);
+    return new Response(
       JSON.stringify({
         model: 'openai-codex/gpt-5.4',
         choices: [
@@ -2407,6 +2409,7 @@ test('accepts JSON-standard surrounding whitespace from the Hosted review model'
       }),
       { status: 200, headers: { 'content-type': 'application/json' } },
     );
+  };
 
   const result = await invokeHostedReviewModel(
     { candidateOnly: true },
@@ -2417,10 +2420,11 @@ test('accepts JSON-standard surrounding whitespace from the Hosted review model'
   );
 
   assert.deepEqual(result.output, { candidateOnly: true });
+  assert.deepEqual(requestBody.response_format, { type: 'json_object' });
   assert.equal(result.provenance.modelVersion, 'openai-codex/gpt-5.4');
   assert.equal(
     result.provenance.promptVersion,
-    'wiselink.3_1.review_prompt.v1.c13',
+    'wiselink.3_1.review_prompt.v1.c14',
   );
 });
 
