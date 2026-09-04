@@ -20,6 +20,7 @@ import {
   type ApplicabilitySelectionLoadState,
   type ApplicabilitySelectionPresentation,
 } from './applicability-selection-presentation';
+import { presentConfigurationEvidence } from './configuration-evidence-presentation';
 import './applicability-selection-panel.css';
 
 interface ApplicabilitySelectionPanelProps {
@@ -134,6 +135,7 @@ const ApplicabilitySelectionPanel: FC<ApplicabilitySelectionPanelProps> = ({
   const isLoading: boolean = loadState === 'loading' || evidenceLoading;
   const presentation: ApplicabilitySelectionPresentation =
     presentApplicabilitySelection(loadState, selection);
+  const configurationEvidence = presentConfigurationEvidence(evidenceStatus);
 
   return (
     <section
@@ -218,27 +220,19 @@ const ApplicabilitySelectionPanel: FC<ApplicabilitySelectionPanelProps> = ({
             }
           >
             {evidenceLoading
-              ? '正在读取事件源'
-              : evidenceStatus?.source.configured
-                ? '事件源已接通'
-                : evidenceStatus
-                  ? '事件源未接通'
-                  : '事件源状态不可用'}
+              ? '正在读取查询能力'
+              : configurationEvidence.sourceLabel}
           </Badge>
         </div>
-        <p>{configurationEvidenceGuidance(evidenceStatus)}</p>
+        <p>{configurationEvidence.guidance}</p>
         {evidenceStatus?.latestQuery ? (
           <dl className="configuration-evidence-query-summary">
             <div>
               <dt>最近查询</dt>
-              <dd>
-                {configurationEvidenceQueryLabel(
-                  evidenceStatus.latestQuery.terminalStatus,
-                )}
-              </dd>
+              <dd>{configurationEvidence.queryLabel}</dd>
             </div>
             <div>
-              <dt>受控记录</dt>
+              <dt>本次返回记录</dt>
               <dd>{evidenceStatus.latestQuery.sourceRecordCount} 条</dd>
             </div>
             <div>
@@ -271,8 +265,9 @@ const ApplicabilitySelectionPanel: FC<ApplicabilitySelectionPanelProps> = ({
         ) : null}
         {evidenceStatus?.current ? (
           <p className="configuration-evidence-current">
-            当前构型证据版本 {evidenceStatus.current.configurationRevision}：
-            TRUE {evidenceStatus.current.truthSummary.trueCount} · FALSE{' '}
+            {configurationEvidence.currentCoverageLabel} · 当前构型证据版本{' '}
+            {evidenceStatus.current.configurationRevision}：TRUE{' '}
+            {evidenceStatus.current.truthSummary.trueCount} · FALSE{' '}
             {evidenceStatus.current.truthSummary.falseCount} · UNKNOWN{' '}
             {evidenceStatus.current.truthSummary.unknownCount} · CONFLICT{' '}
             {evidenceStatus.current.truthSummary.conflictCount}
@@ -360,53 +355,6 @@ const ApplicabilitySelectionPanel: FC<ApplicabilitySelectionPanelProps> = ({
     </section>
   );
 };
-
-function configurationEvidenceQueryLabel(
-  status: NonNullable<
-    CanonicalConfigurationEvidenceStatusReadModel['latestQuery']
-  >['terminalStatus'],
-): string {
-  const labels: Record<typeof status, string> = {
-    RUNNING: '查询中',
-    SUCCEEDED_EVIDENCE: '已取得受控记录',
-    SUCCEEDED_NO_RECORD: '未查到受控记录',
-    NOT_CONNECTED: '事件源未接通',
-    ACCESS_DENIED: '事件源拒绝访问',
-    CONFLICT: '记录存在冲突',
-    FAILED_VALIDATION: '查询结果未通过校验',
-    TIMEOUT: '查询超时',
-    CANCELED: '查询已取消',
-  };
-  return labels[status];
-}
-
-function configurationEvidenceGuidance(
-  status: CanonicalConfigurationEvidenceStatusReadModel | null,
-): string {
-  const latest = status?.latestQuery;
-  if (!status || !latest) {
-    return '尚无构型事件查询记录；缺失事实继续保持 UNKNOWN。';
-  }
-  if (latest.terminalStatus === 'NOT_CONNECTED') {
-    return '构型事件源未接通；本次真实查询未取得受控安装记录，缺失事实继续保持 UNKNOWN。';
-  }
-  if (latest.terminalStatus === 'SUCCEEDED_NO_RECORD') {
-    return '事件源未查到受控记录；这不自动代表不适用，也不会把事实判定为 FALSE。';
-  }
-  if (latest.adoptionBlockReason === 'WORK_ITEM_REVISION_CHANGED') {
-    return '事项已更新，旧候选不可采纳；请基于当前版本重新查询。';
-  }
-  if (status.reevaluation?.servingCurrentPreserved) {
-    return 'P0B 正在按适用性、逐项规则、综合评估顺序重算；全部成功前继续提供原当前结果。';
-  }
-  if (latest.adoptionEligible) {
-    return '查询候选已就绪；采纳后将启动适用性、逐项规则、综合评估的完整重算。';
-  }
-  if (latest.adoptionStatus === 'ADOPTED') {
-    return '构型证据候选已采纳，当前状态已由 Host 记录。';
-  }
-  return '查询未形成可采纳候选；缺失事实继续保持 UNKNOWN。';
-}
 
 function configurationEvidenceStageLabel(status: string): string {
   const labels: Record<string, string> = {
