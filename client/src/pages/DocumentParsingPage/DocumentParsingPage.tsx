@@ -967,6 +967,7 @@ export default function DocumentParsingPage() {
             onOpenInteractiveReview={() =>
               updateDeepLink({ node: 'review', tab: 'review' })
             }
+            onConfigurationEvidenceAdopted={() => load(activeQuery)}
           />
         ) : null}
 

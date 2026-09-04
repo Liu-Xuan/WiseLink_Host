@@ -3,7 +3,7 @@ import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import { and, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 
 import { configurationEvidenceQueryAttempt } from '../../../database/schema';
 import type { ConfigurationSnapshot } from './configuration-snapshot.types';
@@ -37,6 +37,27 @@ export class MiaodaConfigurationEvidenceQueryStore implements ConfigurationEvide
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
   ) {}
+
+  async findLatest(input: {
+    tenantId: string;
+    workItemId: string;
+  }): Promise<ConfigurationEvidenceQueryAttemptReadModel | null> {
+    const [row] = await this.db
+      .select()
+      .from(configurationEvidenceQueryAttempt)
+      .where(
+        and(
+          eq(configurationEvidenceQueryAttempt.tenantId, input.tenantId),
+          eq(configurationEvidenceQueryAttempt.workItemId, input.workItemId),
+        ),
+      )
+      .orderBy(
+        desc(configurationEvidenceQueryAttempt.startedAt),
+        desc(configurationEvidenceQueryAttempt.createdAt),
+      )
+      .limit(1);
+    return row ? queryReadModel(row) : null;
+  }
 
   async findByRequest(input: {
     tenantId: string;

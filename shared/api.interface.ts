@@ -2246,6 +2246,61 @@ export interface AilyConfigurationEvidenceReevaluationStatus {
   candidateOnly: true;
 }
 
+export interface CanonicalConfigurationEvidenceStatusReadModel {
+  schemaVersion: 'wiselink.3_1.configuration_evidence_status.v1';
+  workItemId: string;
+  workItemRevision: number;
+  source: {
+    configured: boolean;
+  };
+  latestQuery: {
+    queryAttemptRef: string;
+    candidateEvidenceRef: string;
+    inputRevision: number;
+    terminalStatus:
+      | 'RUNNING'
+      | 'SUCCEEDED_EVIDENCE'
+      | 'SUCCEEDED_NO_RECORD'
+      | 'NOT_CONNECTED'
+      | 'ACCESS_DENIED'
+      | 'CONFLICT'
+      | 'FAILED_VALIDATION'
+      | 'TIMEOUT'
+      | 'CANCELED';
+    sourceRecordCount: number;
+    completedAt: string | null;
+    adoptionStatus: 'CANDIDATE_UNADOPTED' | 'ADOPTED';
+    adoptionEligible: boolean;
+    adoptionBlockReason:
+      | 'QUERY_RUNNING'
+      | 'QUERY_NOT_ADOPTABLE'
+      | 'ALREADY_ADOPTED'
+      | 'WORK_ITEM_REVISION_CHANGED'
+      | null;
+  } | null;
+  current: {
+    snapshotId: string;
+    configurationRevision: number;
+    aircraftAssetId: string;
+    assessmentAsOf: string;
+    sourceCompleteness: 'COMPLETE' | 'PARTIAL' | 'UNKNOWN' | 'CONFLICT';
+    truthSummary: {
+      trueCount: number;
+      falseCount: number;
+      unknownCount: number;
+      conflictCount: number;
+    };
+    recordedAt: string;
+  } | null;
+  reevaluation: AilyConfigurationEvidenceReevaluationStatus | null;
+  authority: {
+    owner: 'CANONICAL_HOST';
+    candidateOnly: true;
+    noRecordMeansFalse: false;
+    notConnectedMeansFalse: false;
+  };
+}
+
 export interface AilyWorkItemStatusResponse {
   entry: CanonicalEntryFacadeResponse;
   packageSummary: AilyParsedPackageSummary | null;

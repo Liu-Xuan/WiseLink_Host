@@ -150,6 +150,82 @@
   background: var(--wl-red-soft);
 }
 
+.configuration-evidence-status {
+  display: grid;
+  padding: 14px;
+  gap: 12px;
+  border: 1px solid var(--wl-border);
+  border-radius: var(--wl-radius-md);
+  background: var(--wl-glass-soft);
+}
+
+.configuration-evidence-status-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.configuration-evidence-status-heading span {
+  color: var(--wl-accent);
+  font-size: var(--wl-text-caption);
+  font-weight: 750;
+  letter-spacing: 0.04em;
+}
+
+.configuration-evidence-status-heading h3 {
+  margin: 3px 0 0;
+  font-size: 14px;
+}
+
+.configuration-evidence-status > p {
+  margin: 0;
+  color: var(--wl-muted);
+  font-size: var(--wl-text-meta);
+  line-height: 1.55;
+}
+
+.configuration-evidence-query-summary {
+  display: grid;
+  margin: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.configuration-evidence-query-summary > div,
+.configuration-evidence-stages > div {
+  display: grid;
+  padding: 10px;
+  gap: 4px;
+  border: 1px solid var(--wl-border);
+  border-radius: var(--wl-radius-sm);
+  background: var(--wl-surface-solid);
+}
+
+.configuration-evidence-query-summary dt,
+.configuration-evidence-stages span {
+  color: var(--wl-faint);
+  font-size: var(--wl-text-caption);
+  font-weight: 700;
+}
+
+.configuration-evidence-query-summary dd,
+.configuration-evidence-stages strong {
+  margin: 0;
+  color: var(--wl-ink);
+  font-size: var(--wl-text-meta);
+}
+
+.configuration-evidence-stages {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.configuration-evidence-status > button {
+  justify-self: end;
+}
+
 .applicability-selection-readback {
   overflow: hidden;
   border: 1px solid var(--wl-border);
@@ -270,6 +346,11 @@
   .applicability-selection-readback dl {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .configuration-evidence-query-summary,
+  .configuration-evidence-stages {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 @media (max-width: 640px) {
@@ -311,6 +392,14 @@
 
   .applicability-selection-notice button {
     grid-column: 1 / -1;
+  }
+
+  .configuration-evidence-status-heading {
+    display: grid;
+  }
+
+  .configuration-evidence-status > button {
+    width: 100%;
   }
 }
 
