@@ -1028,6 +1028,17 @@ function terminalQueryStatus(
   if (results.some((result) => result.status !== 'COMPLETE')) {
     return 'FAILED_VALIDATION';
   }
+  if (
+    results.some(
+      (result: GetInstallationEventsResult) =>
+        result.coverage.completeness !== 'COMPLETE' ||
+        result.coverage.allRecordsRead !== true ||
+        result.coverage.exactAircraftMatch !== true ||
+        result.coverage.exactTargetMatch !== true,
+    )
+  ) {
+    return 'FAILED_VALIDATION';
+  }
   return results.every((result) => result.records.length === 0)
     ? 'SUCCEEDED_NO_RECORD'
     : 'SUCCEEDED_EVIDENCE';
