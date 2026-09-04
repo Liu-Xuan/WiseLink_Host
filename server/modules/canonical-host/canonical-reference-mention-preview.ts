@@ -56,7 +56,7 @@ export function deriveCanonicalReferenceMentionPreview(
       continue;
     }
     const candidates: MentionCandidate[] = [
-      ...prefixedCandidates(unit.displayText),
+      ...prefixedCandidates(unit.displayText, currentDocumentCode),
       ...embeddedCandidates(unit.displayText),
       ...manualCandidates(unit.displayText),
     ]
@@ -134,10 +134,16 @@ function preferStructuredReferenceRows(
   );
 }
 
-function prefixedCandidates(text: string): MentionCandidate[] {
+function prefixedCandidates(
+  text: string,
+  currentDocumentCode?: string,
+): MentionCandidate[] {
   return [...text.matchAll(PREFIXED_REFERENCE)].map((match) => {
-    const matchedText: string = match[0];
-    const code: string = match[3].toUpperCase();
+    const code: string = trimReferenceProseTail(match[3]).toUpperCase();
+    const matchedText: string = match[0].slice(
+      0,
+      match[0].length - (match[3].length - code.length),
+    );
     const type: CanonicalReferenceDocumentType = prefixType(
       match[2] || match[1],
     );
@@ -145,20 +151,49 @@ function prefixedCandidates(text: string): MentionCandidate[] {
       start: match.index,
       end: match.index + matchedText.length,
       matchedText,
-      normalizedTarget: code,
+      normalizedTarget: canonicalPrefixedTarget(
+        code,
+        type,
+        currentDocumentCode,
+      ),
       documentType: type,
     };
   });
 }
 
 function embeddedCandidates(text: string): MentionCandidate[] {
-  return [...text.matchAll(EMBEDDED_REFERENCE)].map((match) => ({
-    start: match.index,
-    end: match.index + match[0].length,
-    matchedText: match[0],
-    normalizedTarget: match[1].toUpperCase(),
-    documentType: match[2].toUpperCase() as CanonicalReferenceDocumentType,
-  }));
+  return [...text.matchAll(EMBEDDED_REFERENCE)].map((match) => {
+    const matchedText = trimReferenceProseTail(match[0]);
+    return {
+      start: match.index,
+      end: match.index + matchedText.length,
+      matchedText,
+      normalizedTarget: trimReferenceProseTail(match[1]).toUpperCase(),
+      documentType: match[2].toUpperCase() as CanonicalReferenceDocumentType,
+    };
+  });
+}
+
+function trimReferenceProseTail(value: string): string {
+  return value.replace(/FOR\s*MORE\s*INFORMATION.*$/iu, '');
+}
+
+function canonicalPrefixedTarget(
+  code: string,
+  type: CanonicalReferenceDocumentType,
+  currentDocumentCode?: string,
+): string {
+  const aircraft = currentDocumentCode
+    ?.toUpperCase()
+    .match(/^(.+?)-(?:FTD|FOTB|SL|SIL|SB)-/u)?.[1];
+  if (!aircraft || !['FTD', 'FOTB', 'SL', 'SIL', 'SB'].includes(type)) {
+    return code;
+  }
+  const relativeCode = code.replace(new RegExp(`^${type}-`, 'u'), '');
+  if (relativeCode !== code || /^\d{2}-/u.test(relativeCode)) {
+    return `${aircraft}-${type}-${relativeCode}`;
+  }
+  return code;
 }
 
 function manualCandidates(text: string): MentionCandidate[] {

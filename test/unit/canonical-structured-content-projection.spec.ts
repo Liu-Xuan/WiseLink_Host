@@ -180,4 +180,32 @@ describe('canonical structured-content browser projection', () => {
       ),
     ).toBe(true);
   });
+
+  it('normalizes the reference text produced by the real FTD intake path', () => {
+    const displayed: CanonicalStructuredContentUnit[] = [
+      {
+        ordinal: 1,
+        displayKind: 'body',
+        outlineKind: 'NONE',
+        sectionTitle: null,
+        displayText:
+          'Refer to FTD-31-21002 and FTD-23-20001formoreinformation. Service Letter (SL) 777-SL-31-064 is related.',
+        sourceRefIds: ['src-real-ftd'],
+        sourceLocators: [],
+      },
+    ];
+
+    const mentions = deriveCanonicalReferenceMentionPreview(
+      displayed,
+      '777-FTD-31-21002',
+    );
+
+    expect(mentions.map((mention) => mention.normalizedTarget)).toEqual([
+      '777-FTD-23-20001',
+      '777-SL-31-064',
+    ]);
+    expect(mentions.map((mention) => mention.matchedText).join(' ')).not.toMatch(
+      /formoreinformation/iu,
+    );
+  });
 });
