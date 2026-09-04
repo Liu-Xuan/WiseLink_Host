@@ -55,6 +55,7 @@ import { assessmentRuleName } from './assessment-rule-presentation';
 import { AssessmentSemanticsOverview } from './AssessmentSemanticsOverview';
 import { DocumentReaderWorkspace } from './DocumentReaderWorkspace';
 import PdfSourcePane from './PdfSourcePane';
+import { ReferenceMentionPreview } from './ReferenceMentionPreview';
 import { StructuredContentBrowser } from './StructuredContentBrowser';
 import { parsePdfTargetPage } from './pdf-viewer-state';
 import ReviewImpactPreview from '@client/src/features/review/ReviewImpactPreview';
@@ -1256,6 +1257,14 @@ export default function DocumentParsingPage() {
               </article>
             </section>
           )
+        ) : null}
+
+        {activeNode === 'review' ? (
+          <ReferenceMentionPreview
+            workItemId={workItemId}
+            workItemRevision={data.workItem.revision}
+            onLocateSourceRef={locateStructuredSourceRef}
+          />
         ) : null}
 
         {/* ── §4.2 复核意见：CriterionSet 逐项投影 + 工程师逐项复核 ── */}

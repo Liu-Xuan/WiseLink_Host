@@ -174,6 +174,11 @@ export interface CanonicalStructuredContentBrowseInput {
   expectedRevision?: number;
 }
 
+export interface CanonicalRelatedContextPreviewInput {
+  workItemId: string;
+  expectedRevision?: number;
+}
+
 export type CanonicalQueryInput = CanonicalEntryQueryRequest;
 
 export interface CanonicalBaseRuleResult {

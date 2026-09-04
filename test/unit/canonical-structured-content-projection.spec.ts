@@ -7,6 +7,7 @@ import type {
 } from '@shared/api.interface';
 
 import { projectCanonicalStructuredContentUnit } from '../../server/modules/canonical-host/canonical-structured-content-projection';
+import { deriveCanonicalReferenceMentionPreview } from '../../server/modules/canonical-host/canonical-reference-mention-preview';
 import { Frozen2CandidateReaderService } from '../../server/modules/unified-reader/frozen2-candidate-reader.service';
 import { sha256Raw } from '../../server/modules/unified-reader/unified-reader.utils';
 
@@ -80,5 +81,40 @@ describe('canonical structured-content browser projection', () => {
           (locator) => locator.quote === null || locator.quote.length <= 320,
         ),
     ).toBe(true);
+
+    const referenceMentions = deriveCanonicalReferenceMentionPreview(
+      displayed,
+      '737-34-3830',
+    );
+    expect(referenceMentions.length).toBeGreaterThan(4);
+    expect(referenceMentions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          normalizedTarget: '737MAX-FTD-34-18008',
+          documentType: 'FTD',
+          targetApplicability: 'NOT_EVALUATED',
+        }),
+        expect.objectContaining({
+          normalizedTarget: '737-SL-34-267',
+          documentType: 'SL',
+        }),
+        expect.objectContaining({
+          normalizedTarget: '2907C-34-7',
+          documentType: 'SB',
+        }),
+        expect.objectContaining({
+          documentType: 'AMM',
+          contextRole: 'PROCEDURE_SUPPORT',
+        }),
+      ]),
+    );
+    expect(
+      referenceMentions.some(
+        (mention) => mention.normalizedTarget === '737-34-3830',
+      ),
+    ).toBe(false);
+    expect(
+      new Set(referenceMentions.map((mention) => mention.mentionId)).size,
+    ).toBe(referenceMentions.length);
   });
 });

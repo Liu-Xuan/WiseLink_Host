@@ -124,6 +124,28 @@ export class CanonicalHostController {
     );
   }
 
+  @Get('work-items/:workItemId/related-context/explicit-preview')
+  explicitRelatedContextPreview(
+    @Param('workItemId') workItemId: string,
+    @Query('expectedRevision') expectedRevisionValue: string | undefined,
+    @Req() httpRequest: Request,
+  ) {
+    return this.service.explicitRelatedContextPreview(
+      {
+        workItemId: requiredText(workItemId, 'workItemId'),
+        ...(expectedRevisionValue === undefined
+          ? {}
+          : {
+              expectedRevision: optionalSafeInteger(
+                expectedRevisionValue,
+                'expectedRevision',
+              ),
+            }),
+      },
+      hostActor(httpRequest),
+    );
+  }
+
   @Get('work-items/:workItemId/library-index')
   library(
     @Param('workItemId') workItemId: string,

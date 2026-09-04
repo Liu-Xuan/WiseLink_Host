@@ -423,6 +423,55 @@ export interface CanonicalStructuredContentPageResponse {
   units: CanonicalStructuredContentUnit[];
 }
 
+export type CanonicalReferenceDocumentType =
+  | 'AD'
+  | 'AMM'
+  | 'CMM'
+  | 'FIM'
+  | 'FTD'
+  | 'IPC'
+  | 'SB'
+  | 'SL'
+  | 'SRM'
+  | 'WDM';
+
+export type CanonicalReferenceContextRole =
+  | 'CONCURRENT_REQUIREMENT'
+  | 'PROCEDURE_SUPPORT'
+  | 'RELATED_INFORMATION'
+  | 'UNCLASSIFIED';
+
+/**
+ * One explicit reference occurrence projected from the current frozen.2 text.
+ * This is a read-only preview, not a persisted relation or assessment input.
+ */
+export interface CanonicalReferenceMentionPreviewItem {
+  mentionId: string;
+  unitOrdinal: number;
+  matchedText: string;
+  normalizedTarget: string;
+  documentType: CanonicalReferenceDocumentType;
+  contextRole: CanonicalReferenceContextRole;
+  targetApplicability: 'NOT_EVALUATED';
+  sourceRefIds: string[];
+  sourceLocators: CanonicalStructuredContentSourceLocator[];
+}
+
+export interface CanonicalRelatedContextPreviewResponse {
+  schemaVersion: 'wiselink.3_1.related_context_preview.v1';
+  status: 'FRESH_READ';
+  mode: 'EXPLICIT_PREVIEW';
+  revision: number;
+  documentVersionId: string;
+  totalMentionCount: number;
+  mentions: CanonicalReferenceMentionPreviewItem[];
+  authority: {
+    candidateOnly: true;
+    readOnly: true;
+    includedInAssessmentInput: false;
+  };
+}
+
 export interface UnifiedReaderCandidateReceipt {
   schemaVersion: 'wiselink.3_1.reader_candidate_receipt.v0.candidate';
   readerReceiptId: string;

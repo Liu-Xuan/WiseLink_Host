@@ -2,9 +2,10 @@ import type {
   AppendReviewTextTurnRequest,
   AppendReviewTextTurnResponse,
   CanonicalApplicabilitySelectionReadModel,
-  CanonicalDocumentParsingPageResponse,
-  CanonicalStructuredContentPageResponse,
   CanonicalAeoCandidateRunResponse,
+  CanonicalDocumentParsingPageResponse,
+  CanonicalRelatedContextPreviewResponse,
+  CanonicalStructuredContentPageResponse,
   CanonicalEntryQueryRequest,
   CanonicalEntryQueryResponse,
   CanonicalWorkItemProjection,
@@ -498,6 +499,39 @@ export async function getStructuredContentPage(
     return response.data;
   } catch (error) {
     logger.error('读取结构化内容分页失败', error);
+    throw normalizedDirectObjectError(error, requestGeneration);
+  }
+}
+
+export async function getRelatedContextPreview(
+  workItemId: string,
+  expectedRevision?: number,
+): Promise<CanonicalRelatedContextPreviewResponse> {
+  const requestGeneration = clientSessionGeneration;
+  try {
+    const response =
+      await axiosForBackend<CanonicalRelatedContextPreviewResponse>({
+        url: `/api/canonical-host/work-items/${encodeURIComponent(workItemId)}/related-context/explicit-preview`,
+        method: 'GET',
+        ...(expectedRevision === undefined
+          ? {}
+          : { params: { expectedRevision } }),
+      });
+    if (response.status === 401) {
+      throw clientLoginRequired(
+        'RELATED_CONTEXT_LOGIN_REQUIRED',
+        requestGeneration,
+      );
+    }
+    if (response.status === 403 || response.status === 404) {
+      throw canonicalObjectNotFound();
+    }
+    if (response.status < 200 || response.status >= 300) {
+      throw backendResponseError(response.data, 'RELATED_CONTEXT_UNAVAILABLE');
+    }
+    return response.data;
+  } catch (error) {
+    logger.error('读取关联上下文预览失败', error);
     throw normalizedDirectObjectError(error, requestGeneration);
   }
 }
