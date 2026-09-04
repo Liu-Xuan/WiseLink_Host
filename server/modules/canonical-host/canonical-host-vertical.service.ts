@@ -51,6 +51,7 @@ import {
   deriveCanonicalReferenceMentionPreview,
   type CanonicalReferenceMentionCandidate,
 } from './canonical-reference-mention-preview';
+import { buildCanonicalRelatedContextSnapshot } from './canonical-related-context-snapshot';
 import {
   projectCanonicalBrowserQueryResult,
   projectCanonicalStructuredContentUnit,
@@ -824,6 +825,15 @@ export class CanonicalHostVerticalService {
       mentionCandidates,
       actor,
     );
+    const snapshotCandidate = buildCanonicalRelatedContextSnapshot({
+      workItemId: projection.workItemId,
+      inputRevision: projection.revision,
+      primaryDocumentVersionId: projection.source.documentVersionId,
+      mentions,
+    });
+    const snapshotArtifact = await this.artifactStore.persistAndReadback(
+      snapshotCandidate.bytes,
+    );
 
     return {
       schemaVersion: 'wiselink.3_1.related_context_preview.v1',
@@ -833,6 +843,9 @@ export class CanonicalHostVerticalService {
       documentVersionId: projection.source.documentVersionId,
       totalMentionCount: mentions.length,
       mentions,
+      snapshot: snapshotCandidate.snapshot,
+      snapshotArtifact: snapshotArtifact.artifact,
+      snapshotArtifactReused: snapshotArtifact.reused,
       authority: {
         candidateOnly: true,
         readOnly: true,

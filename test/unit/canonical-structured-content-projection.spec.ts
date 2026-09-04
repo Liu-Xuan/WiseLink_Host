@@ -8,6 +8,7 @@ import type {
 
 import { projectCanonicalStructuredContentUnit } from '../../server/modules/canonical-host/canonical-structured-content-projection';
 import { deriveCanonicalReferenceMentionPreview } from '../../server/modules/canonical-host/canonical-reference-mention-preview';
+import { buildCanonicalRelatedContextSnapshot } from '../../server/modules/canonical-host/canonical-related-context-snapshot';
 import { Frozen2CandidateReaderService } from '../../server/modules/unified-reader/frozen2-candidate-reader.service';
 import { sha256Raw } from '../../server/modules/unified-reader/unified-reader.utils';
 
@@ -207,6 +208,40 @@ describe('canonical structured-content browser projection', () => {
     expect(mentions[0].contextRole).toBe('RELATED_INFORMATION');
     expect(mentions.map((mention) => mention.matchedText).join(' ')).not.toMatch(
       /formoreinformation/iu,
+    );
+
+    const built = buildCanonicalRelatedContextSnapshot({
+      workItemId: 'WI-real-ftd',
+      inputRevision: 3,
+      primaryDocumentVersionId: 'document-version-real-ftd',
+      mentions: mentions.map((mention) => ({
+        ...mention,
+        targetResolution:
+          mention.normalizedTarget === '777-SL-31-064'
+            ? {
+                status: 'RESOLVED_EXACT' as const,
+                workItemId: 'WI-real-sl',
+                documentVersionId: 'document-version-real-sl',
+                canonicalDocumentNumber: '777-SL-31-064',
+              }
+            : { status: 'DOCUMENT_NOT_INGESTED' as const },
+      })),
+    });
+
+    expect(built.snapshot.items).toHaveLength(2);
+    expect(built.snapshot.items[0]).toMatchObject({
+      normalizedTarget: '777-FTD-23-20001',
+      currentness: 'UNKNOWN',
+      targetApplicability: 'NOT_EVALUATED',
+    });
+    expect(built.snapshot.items[1]).toMatchObject({
+      normalizedTarget: '777-SL-31-064',
+      resolvedWorkItemRef: 'WI-real-sl',
+      currentness: 'CURRENT',
+      contextUse: 'BACKGROUND_ONLY',
+    });
+    expect(JSON.parse(new TextDecoder().decode(built.bytes))).toEqual(
+      built.snapshot,
     );
   });
 });
