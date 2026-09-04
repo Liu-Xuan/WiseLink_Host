@@ -149,7 +149,7 @@ export class ActionAttemptRepository {
     tenantId: string;
     now: Date;
   }): Promise<boolean> {
-    const updated = await this.db
+    const expiredByDeadline = await this.db
       .update(actionAttempt)
       .set({
         status: 'TIMED_OUT',
@@ -176,7 +176,40 @@ export class ActionAttemptRepository {
         ),
       )
       .returning({ attemptId: actionAttempt.attemptId });
-    return updated.length === 1;
+    if (expiredByDeadline.length === 1) return true;
+
+    const supersededAfterLeaseExpiry = await this.db
+      .update(actionAttempt)
+      .set({
+        status: 'OBSOLETE',
+        terminalReason: 'ACTION_ATTEMPT_SUPERSEDED_AFTER_LEASE_EXPIRY',
+        completedAt: input.now,
+        leaseOwner: null,
+        leaseToken: null,
+        leaseExpiresAt: null,
+        leaseSlot: null,
+        updatedAt: input.now,
+      })
+      .where(
+        and(
+          eq(actionAttempt.workItemId, input.workItemId),
+          eq(actionAttempt.actionType, input.actionType),
+          eq(actionAttempt.tenantId, input.tenantId),
+          eq(actionAttempt.status, 'RUNNING'),
+          lte(actionAttempt.leaseExpiresAt, input.now),
+          or(
+            isNull(actionAttempt.deadlineAt),
+            gt(actionAttempt.deadlineAt, input.now),
+          ),
+          isNull(actionAttempt.commitStartedAt),
+          isNull(actionAttempt.resultEnvelopeJson),
+          isNull(actionAttempt.resultContentHash),
+          eq(actionAttempt.projectionApplied, false),
+          isNull(actionAttempt.completedAt),
+        ),
+      )
+      .returning({ attemptId: actionAttempt.attemptId });
+    return supersededAfterLeaseExpiry.length === 1;
   }
 
   async reserve(
