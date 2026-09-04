@@ -43,7 +43,7 @@ const MODEL_OUTPUT_KEYS = [
   'affectedItemIds',
   'warnings',
 ];
-const REVIEW_PROMPT_VERSION = 'wiselink.3_1.review_prompt.v1.c12';
+const REVIEW_PROMPT_VERSION = 'wiselink.3_1.review_prompt.v1.c13';
 const WISELINK_HOST_MCP_CONFIG_KEYS = new Set([
   WISELINK_HOST_MCP_NAME,
   'wiselink_host_controller',
@@ -672,15 +672,15 @@ function validateModelOutputJson(value) {
 }
 
 function parseStrictJsonObject(value) {
-  if (
-    typeof value !== 'string' ||
-    !value.startsWith('{') ||
-    !value.endsWith('}')
-  ) {
+  if (typeof value !== 'string') {
+    throw new Error('REVIEW_MODEL_STRICT_JSON_REQUIRED');
+  }
+  const normalized = value.trim();
+  if (!normalized.startsWith('{') || !normalized.endsWith('}')) {
     throw new Error('REVIEW_MODEL_STRICT_JSON_REQUIRED');
   }
   try {
-    return validateModelOutputJson(JSON.parse(value));
+    return validateModelOutputJson(JSON.parse(normalized));
   } catch (error) {
     if (error?.message === 'REVIEW_MODEL_OUTPUT_INVALID') throw error;
     throw new Error('REVIEW_MODEL_JSON_INVALID');
