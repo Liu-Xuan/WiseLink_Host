@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
 export const WISELINK_SKILL_VERSION =
-  'wiselink-research-and-synthesize@r09.c17';
+  'wiselink-research-and-synthesize@r09.c18';
 export const WISELINK_SKILL_COMPATIBILITY_REF =
   'wiselink-research-and-synthesize@r09';
 export const WISELINK_HOST_MCP_NAME =
@@ -2184,7 +2184,7 @@ export function validateApplicabilityModelInput(input) {
       'runtimePolicy',
       'authority',
     ],
-    [],
+    ['configurationEvidenceReevaluation'],
     'applicability input',
   );
   equal(
@@ -2215,6 +2215,11 @@ export function validateApplicabilityModelInput(input) {
   validateApplicabilitySourceExpressions(input.sourceExpressions);
   validateApplicabilityBilingualUnits(input.bilingualSourceUnits);
   validateApplicabilityRuntimePolicy(input.runtimePolicy);
+  if ('configurationEvidenceReevaluation' in input) {
+    validateApplicabilityConfigurationEvidenceReevaluation(
+      input.configurationEvidenceReevaluation,
+    );
+  }
   exactKeys(
     input.authority,
     [
@@ -2237,6 +2242,43 @@ export function validateApplicabilityModelInput(input) {
     'APPLICABILITY_AUTHORITY_INVALID',
   );
   return input;
+}
+
+function validateApplicabilityConfigurationEvidenceReevaluation(value) {
+  if (value === null) return;
+  exactKeys(
+    value,
+    [
+      'triggerSnapshotId',
+      'triggerConfigurationRevision',
+      'adoptionWorkItemRevision',
+      'applicabilityRetryNo',
+    ],
+    [],
+    'applicability configuration evidence reevaluation',
+  );
+  nonEmpty(
+    value.triggerSnapshotId,
+    'APPLICABILITY_REEVALUATION_TRIGGER_SNAPSHOT_ID_REQUIRED',
+  );
+  integerInRange(
+    value.triggerConfigurationRevision,
+    0,
+    Number.MAX_SAFE_INTEGER,
+    'APPLICABILITY_REEVALUATION_TRIGGER_CONFIGURATION_REVISION_INVALID',
+  );
+  integerInRange(
+    value.adoptionWorkItemRevision,
+    0,
+    Number.MAX_SAFE_INTEGER,
+    'APPLICABILITY_REEVALUATION_ADOPTION_WORK_ITEM_REVISION_INVALID',
+  );
+  integerInRange(
+    value.applicabilityRetryNo,
+    0,
+    Number.MAX_SAFE_INTEGER,
+    'APPLICABILITY_REEVALUATION_RETRY_NO_INVALID',
+  );
 }
 
 export function validateApplicabilityAstCandidate(output, input) {

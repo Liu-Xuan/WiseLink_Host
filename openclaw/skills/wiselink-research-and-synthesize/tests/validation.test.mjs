@@ -16,6 +16,7 @@ import {
   canonicalSha256,
   reviewCandidateArtifactRefs,
   sealResultEnvelope,
+  validateApplicabilityModelInput,
   validatePayload,
   validateReviewCandidate,
 } from '../scripts/validate-payload.mjs';
@@ -107,7 +108,7 @@ test('pins exact20 MCP 1.2, five review tools, and hosted provenance', () => {
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c17',
+    'wiselink-research-and-synthesize@r09.c18',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -115,6 +116,68 @@ test('pins exact20 MCP 1.2, five review tools, and hosted provenance', () => {
   );
   assert.equal(WISELINK_MODEL_POLICY_REF, 'official-hosted-profile-config');
   assert.equal(WISELINK_HOST_MCP_VERSION, '1.2.0');
+});
+
+test('accepts ordinary applicability input with missing or null reevaluation coordination', async () => {
+  const input = await readJson(APPLICABILITY_TASK_FIXTURE_URL);
+  assert.equal('configurationEvidenceReevaluation' in input, false);
+  assert.doesNotThrow(() => validateApplicabilityModelInput(input));
+
+  input.configurationEvidenceReevaluation = null;
+  assert.doesNotThrow(() => validateApplicabilityModelInput(input));
+});
+
+test('accepts exact P0B applicability coordination without projecting it into the candidate', async () => {
+  const input = await readJson(APPLICABILITY_TASK_FIXTURE_URL);
+  const astCandidate = await readJson(APPLICABILITY_AST_FIXTURE_URL);
+  input.configurationEvidenceReevaluation = {
+    triggerSnapshotId: 'CES-P0B-FIXTURE-001',
+    triggerConfigurationRevision: 2,
+    adoptionWorkItemRevision: 9,
+    applicabilityRetryNo: 0,
+  };
+
+  assert.doesNotThrow(() => validateApplicabilityModelInput(input));
+  const candidate = buildApplicabilityCandidate(input, astCandidate);
+  assert.equal('configurationEvidenceReevaluation' in candidate, false);
+
+  const withUnknownField = structuredClone(input);
+  withUnknownField.configurationEvidenceReevaluation.nextStage =
+    'APPLICABILITY';
+  assert.throws(
+    () => validateApplicabilityModelInput(withUnknownField),
+    /APPLICABILITY_CONFIGURATION_EVIDENCE_REEVALUATION_UNKNOWN_FIELD:nextStage/u,
+  );
+
+  for (const [field, invalidValue, expectedCode] of [
+    [
+      'triggerSnapshotId',
+      '',
+      'APPLICABILITY_REEVALUATION_TRIGGER_SNAPSHOT_ID_REQUIRED',
+    ],
+    [
+      'triggerConfigurationRevision',
+      -1,
+      'APPLICABILITY_REEVALUATION_TRIGGER_CONFIGURATION_REVISION_INVALID',
+    ],
+    [
+      'adoptionWorkItemRevision',
+      Number.MAX_SAFE_INTEGER + 1,
+      'APPLICABILITY_REEVALUATION_ADOPTION_WORK_ITEM_REVISION_INVALID',
+    ],
+    [
+      'applicabilityRetryNo',
+      0.5,
+      'APPLICABILITY_REEVALUATION_RETRY_NO_INVALID',
+    ],
+  ]) {
+    const invalid = structuredClone(input);
+    invalid.configurationEvidenceReevaluation[field] = invalidValue;
+    assert.throws(
+      () => validateApplicabilityModelInput(invalid),
+      new RegExp(expectedCode, 'u'),
+    );
+  }
 });
 
 test('keeps every packaged runtime version declaration aligned', async () => {
