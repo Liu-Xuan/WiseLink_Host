@@ -79,7 +79,7 @@ runtimePolicy.modelPolicyRef = official-hosted-profile-config
 ResultEnvelope.modelVersion = 官方托管 profile/config 本轮选择后的非空、可读实际模型
 Task.skillPolicyRef = wiselink-research-and-synthesize@r09
 ApplicabilityTask.runtimePolicy.skillVersion = wiselink-research-and-synthesize@r09  # v1 历史字段名，语义为兼容线
-ResultEnvelope.skillVersion = wiselink-research-and-synthesize@r09.c16       # 实际安装包版本
+ResultEnvelope.skillVersion = wiselink-research-and-synthesize@r09.c17       # 实际安装包版本
 toolVersions.wiselink-openclaw-engineering-assessment = 1.2.0
 promptVersion = 当前实际运行非空版本
 ```
@@ -319,7 +319,7 @@ requestId 仅在驱动控制面派生不可逆 session discriminator；它不进
 
 模型输出 schema：`wiselink.3_1.review_turn_candidate.v1.c3`。
 
-c16 Gateway transport 不依赖 `response_format`，只声明唯一 forced function
+当前 Gateway transport 不依赖 `response_format`，只声明唯一 forced function
 `return_wiselink_review_candidate`，固定 `tool_choice` 指向该函数、`parallel_tool_calls=false`、`n=1`。该函数是无实现、
 不执行的序列化通道。响应必须只有一个 choice 和一个同名 function call；assistant content 必须为 null 或仅空白，
 function arguments 必须直接是 strict JSON object。其他函数、多 tool call、fence、prose、array、null arguments 或任何

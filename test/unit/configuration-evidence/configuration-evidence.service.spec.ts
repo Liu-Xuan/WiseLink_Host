@@ -710,6 +710,71 @@ describe('Host configuration-evidence persistence product chain', () => {
     expect(fixture.store.recordCount()).toBe(1);
   });
 
+  it('self-heals an adoption marker failure without repeating the WorkItem commit', async () => {
+    const fixture = target({ fleetAsset: realB2035Asset() });
+    fixture.port.resultFactory = (query: GetInstallationEventsQuery) =>
+      controlledResult(
+        query,
+        [equipmentRecord('INSTALL', 'COMPONENT:AIMS2:P1', 'P1', 1)],
+        'SOURCE-QUERY-REV-MARKER-RECOVERY',
+      );
+    const queried = await fixture.service.query(
+      WORK_ITEM_ID,
+      refreshBody('REQ-QUERY-MARKER-RECOVERY', 7),
+      {} as Request,
+    );
+    fixture.queryStore.failNextAdoptionMarker();
+
+    await expect(
+      fixture.service.adopt(
+        WORK_ITEM_ID,
+        queried.candidate.candidateEvidenceRef,
+        { expectedRevision: 7 },
+        {} as Request,
+      ),
+    ).rejects.toThrow('ADOPTION_MARKER_TRANSIENT_FAILURE');
+    expect(fixture.workItem().revision).toBe(8);
+    expect(fixture.store.recordCount()).toBe(1);
+    expect(
+      (
+        await fixture.queryStore.findByCandidateEvidenceRef({
+          tenantId: TENANT_ID,
+          workItemId: WORK_ITEM_ID,
+          candidateEvidenceRef: queried.candidate.candidateEvidenceRef,
+        })
+      )?.adoption.status,
+    ).toBe('CANDIDATE_UNADOPTED');
+
+    const replay = await fixture.service.adopt(
+      WORK_ITEM_ID,
+      queried.candidate.candidateEvidenceRef,
+      { expectedRevision: 7 },
+      {} as Request,
+    );
+
+    expect(replay).toMatchObject({
+      replayed: true,
+      workItemRevision: 8,
+      persisted: {
+        summary: {
+          workItemRevisionAfter: 8,
+          isCurrent: true,
+        },
+      },
+    });
+    expect(fixture.workItem().revision).toBe(8);
+    expect(fixture.store.recordCount()).toBe(1);
+    expect(
+      (
+        await fixture.queryStore.findByCandidateEvidenceRef({
+          tenantId: TENANT_ID,
+          workItemId: WORK_ITEM_ID,
+          candidateEvidenceRef: queried.candidate.candidateEvidenceRef,
+        })
+      )?.adoption.status,
+    ).toBe('ADOPTED');
+  });
+
   it('rejects an adopted-candidate replay whose immutable trigger binding was changed', async () => {
     const fixture = target({ fleetAsset: realB2035Asset() });
     fixture.port.resultFactory = (query: GetInstallationEventsQuery) =>
@@ -1001,9 +1066,14 @@ class InMemoryConfigurationEvidenceStore implements ConfigurationEvidenceStorePo
 
 class InMemoryConfigurationEvidenceQueryStore implements ConfigurationEvidenceQueryStorePort {
   private readonly attempts: ConfigurationEvidenceQueryAttemptReadModel[] = [];
+  private failNextMarkAdopted: boolean = false;
 
   count(): number {
     return this.attempts.length;
+  }
+
+  failNextAdoptionMarker(): void {
+    this.failNextMarkAdopted = true;
   }
 
   async findByRequest(input: {
@@ -1120,7 +1190,6 @@ class InMemoryConfigurationEvidenceQueryStore implements ConfigurationEvidenceQu
 
   async markAdopted(input: {
     tenantId: string;
-    actorId: string;
     workItemId: string;
     candidateEvidenceRef: string;
     snapshotId: string;
@@ -1128,7 +1197,10 @@ class InMemoryConfigurationEvidenceQueryStore implements ConfigurationEvidenceQu
     adoptedAt: string;
   }): Promise<ConfigurationEvidenceQueryAttemptReadModel> {
     void input.tenantId;
-    void input.actorId;
+    if (this.failNextMarkAdopted) {
+      this.failNextMarkAdopted = false;
+      throw new Error('ADOPTION_MARKER_TRANSIENT_FAILURE');
+    }
     const attempt = this.attempts.find(
       (candidate) =>
         candidate.workItemId === input.workItemId &&
