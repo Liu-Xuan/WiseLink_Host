@@ -69,6 +69,7 @@ describe('UnifiedReaderService hosted candidate loop', () => {
         artifactStoreConfigured: false,
         fullU0ValidatorConfigured: true,
         aeoSpecialistReaderConfigured: false,
+        immutableAcceptanceReceiptOwnerConfigured: false,
         authority: 'COMPOSITION_STATE_NOT_ACTIVATION_NOT_WRITE_AUTHORIZATION',
       },
     );

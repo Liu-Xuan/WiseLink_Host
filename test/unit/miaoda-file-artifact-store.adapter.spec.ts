@@ -44,7 +44,9 @@ describe('MiaodaFileArtifactStoreAdapter', () => {
     const path: string = `unified-parsed-packages/sha256/${digest}.json`;
     const fileService = {
       download: jest.fn().mockResolvedValue({
-        content: new Blob([bytes], { type: 'application/json' }),
+        content: new Blob([Uint8Array.from(bytes)], {
+          type: 'application/json',
+        }),
         metadata: {
           filePath: path,
           metadata: {

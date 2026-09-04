@@ -55,11 +55,11 @@ describe('DocumentManagementHostedController direct-call defense', () => {
         operation === 'ingest'
           ? controller.ingestFileServiceSelection(
               forbidden,
-              { userContext: undefined } as Request,
+              { userContext: undefined } as unknown as Request,
             )
           : controller.getDocumentVersion('DV-FORGED', {
               userContext: undefined,
-            } as Request);
+            } as unknown as Request);
 
       expect(invoke).toThrow(
         expect.objectContaining({
@@ -101,7 +101,7 @@ describe('DocumentManagementHostedController direct-call defense', () => {
             env: 'preview',
             roles: ['authenticated', 'wiselink_development'],
           },
-        } as Request),
+        } as unknown as Request),
       ).resolves.toEqual({ documentVersionId: 'DV-NATIVE' });
     } finally {
       if (previousSandboxId === undefined) delete process.env.SANDBOX_ID;
@@ -155,7 +155,7 @@ describe('DocumentManagementHostedController direct-call defense', () => {
               env: 'runtime',
               roles: ['authenticated', 'wiselink_development'],
             },
-          } as Request),
+          } as unknown as Request),
         ),
       ).rejects.toMatchObject({
         code: 'DOCUMENT_INGEST_PREVIEW_REQUIRED',

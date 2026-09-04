@@ -1,4 +1,4 @@
-# 官方托管 R09 c12 发布与 UAT runbook
+# 官方托管 R09 c13 发布与 UAT runbook
 
 本 runbook 只定义 Host C4+C5 accepted 后的真实验证顺序；本地实现不执行安装、发布、Session 创建、模型调用或
 云配置修改。
@@ -40,7 +40,7 @@ Task/Result schema、MCP tool 形状、authority 或安全语义改变时升级 
 3. 模型由官方托管 profile/config 选择，当前 UI 可选 `GLM-5.3`；每个 turn 必须读回非空、可识别的实际
    `modelVersion`，智能选择/fallback 只有在实际模型仍逐 turn 可见时才可继续；
 4. 同名 Skill 只有一个，安装版本精确
-   `wiselink-research-and-synthesize@r09.c12`；
+   `wiselink-research-and-synthesize@r09.c13`；
 5. Host MCP package/version 为
    `wiselink-openclaw-engineering-assessment@1.2.0`，exact 20 tools 可见；
 6. C3 successor 已进入 current Hosted release；只凭 Git commit 不等于 deployed readback；

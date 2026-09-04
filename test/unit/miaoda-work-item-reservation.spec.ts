@@ -22,13 +22,19 @@ interface StoredAttempt {
   attemptNo: number;
 }
 
+interface FixtureDatabase {
+  insert: jest.Mock;
+  select: jest.Mock;
+  transaction: jest.Mock;
+}
+
 function database() {
   const workItems: StoredWorkItem[] = [];
   const attempts: StoredAttempt[] = [];
   let selectedKind: 'work-item' | 'attempt' = 'work-item';
   let failActionAttemptInsert = false;
 
-  const db = {
+  const db: FixtureDatabase = {
     insert: jest.fn((table: unknown) => {
       const kind: 'work-item' | 'attempt' =
         table === actionAttempt ? 'attempt' : 'work-item';
@@ -87,17 +93,19 @@ function database() {
         };
       },
     })),
-    transaction: jest.fn(async (callback: (transaction: typeof db) => unknown) => {
-      const workItemsSnapshot = [...workItems];
-      const attemptsSnapshot = [...attempts];
-      try {
-        return await callback(db);
-      } catch (error) {
-        workItems.splice(0, workItems.length, ...workItemsSnapshot);
-        attempts.splice(0, attempts.length, ...attemptsSnapshot);
-        throw error;
-      }
-    }),
+    transaction: jest.fn(
+      async (callback: (transaction: FixtureDatabase) => unknown) => {
+        const workItemsSnapshot = [...workItems];
+        const attemptsSnapshot = [...attempts];
+        try {
+          return await callback(db);
+        } catch (error) {
+          workItems.splice(0, workItems.length, ...workItemsSnapshot);
+          attempts.splice(0, attempts.length, ...attemptsSnapshot);
+          throw error;
+        }
+      },
+    ),
   };
   return {
     db,

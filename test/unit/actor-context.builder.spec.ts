@@ -4,6 +4,7 @@ import { buildActorContextFromVerifiedIdentity } from '../../server/modules/iden
 import type { VerifiedIdentity } from '../../server/modules/identity/identity.types';
 
 const IDENTITY: VerifiedIdentity = {
+  subjectMappingId: '11111111-1111-4111-8111-111111111111',
   provenance: 'FEISHU_OAUTH_USER_ACCESS_TOKEN',
   miaodaUserId: 'miaoda_user_001',
   tenantId: '2001',

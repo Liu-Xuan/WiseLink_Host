@@ -210,6 +210,7 @@ function ownerInput(bytes: Uint8Array): {
     requestId: 'REQ-RECEIPT-1',
     documentVersionId: 'DV-RECEIPT-1',
     permissionSnapshotVersion: 'permission-1',
+    classificationFingerprint: `sha256:${'f'.repeat(64)}`,
   };
   const candidateReceipt: UnifiedAcceptanceCandidateReceipt = {
     schemaVersion: 'wiselink.3_1.unified_acceptance_receipt.v0.candidate.2',
@@ -328,7 +329,9 @@ function fileServiceFixture(options: FileServiceFixtureOptions = {}) {
       }
       const bytes: Uint8Array = options.downloadBytes ?? storedBytes;
       return {
-        content: new Blob([bytes], { type: 'application/json' }),
+        content: new Blob([Uint8Array.from(bytes)], {
+          type: 'application/json',
+        }),
         metadata: metadata(
           filePath,
           storedBytes,

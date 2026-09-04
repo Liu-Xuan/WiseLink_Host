@@ -44,6 +44,7 @@ import {
 import {
   assertHostedModelGatewayReady,
   findMcpConfig,
+  invokeHostedReviewModel,
   isChatCompletionsEnabled,
   openClawConfigCandidates,
   prepareKnownModelNonDispatchRecovery,
@@ -110,7 +111,7 @@ test('pins exact20 MCP 1.2, five review tools, and hosted provenance', () => {
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c12',
+    'wiselink-research-and-synthesize@r09.c13',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -2384,6 +2385,74 @@ test('requires an explicitly enabled Hosted chat-completions endpoint', () => {
         gatewayChatCompletionsEnabled: false,
       }),
     /REVIEW_GATEWAY_CHAT_COMPLETIONS_DISABLED/u,
+  );
+});
+
+test('accepts JSON-standard surrounding whitespace from the Hosted review model', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  globalThis.fetch = async () =>
+    new Response(
+      JSON.stringify({
+        model: 'openai-codex/gpt-5.4',
+        choices: [
+          {
+            message: {
+              content: ' \n {"candidateOnly":true} \n ',
+            },
+          },
+        ],
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    );
+
+  const result = await invokeHostedReviewModel(
+    { candidateOnly: true },
+    {
+      gatewayUrl: 'http://127.0.0.1:18789',
+      gatewayToken: 'fixture-only-never-logged',
+    },
+  );
+
+  assert.deepEqual(result.output, { candidateOnly: true });
+  assert.equal(result.provenance.modelVersion, 'openai-codex/gpt-5.4');
+  assert.equal(
+    result.provenance.promptVersion,
+    'wiselink.3_1.review_prompt.v1.c13',
+  );
+});
+
+test('continues to reject Markdown-fenced Hosted review output', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  globalThis.fetch = async () =>
+    new Response(
+      JSON.stringify({
+        model: 'openai-codex/gpt-5.4',
+        choices: [
+          {
+            message: {
+              content: '```json\n{"candidateOnly":true}\n```',
+            },
+          },
+        ],
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    );
+
+  await assert.rejects(
+    invokeHostedReviewModel(
+      { candidateOnly: true },
+      {
+        gatewayUrl: 'http://127.0.0.1:18789',
+        gatewayToken: 'fixture-only-never-logged',
+      },
+    ),
+    /REVIEW_MODEL_STRICT_JSON_REQUIRED/u,
   );
 });
 
