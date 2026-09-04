@@ -3,10 +3,12 @@
 import { createHash } from 'node:crypto';
 import {
   chmod,
+  link,
   mkdir,
   readFile,
   rename,
   stat,
+  unlink,
   writeFile,
 } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -29,6 +31,7 @@ import {
 } from './validate-payload.mjs';
 
 const DRIVER_SCHEMA = 'wiselink.3_1.hosted_review_driver.v1';
+const MODEL_OUTPUT_SHAPE_SCHEMA = 'wiselink.3_1.review_model_output_shape.v1';
 const KNOWN_MODEL_NONDISPATCH_CODES = new Set([
   'REVIEW_GATEWAY_INVALID_JSON_HTTP_404',
 ]);
@@ -43,7 +46,7 @@ const MODEL_OUTPUT_KEYS = [
   'affectedItemIds',
   'warnings',
 ];
-const REVIEW_PROMPT_VERSION = 'wiselink.3_1.review_prompt.v1.c14';
+const REVIEW_PROMPT_VERSION = 'wiselink.3_1.review_prompt.v1.c15';
 const WISELINK_HOST_MCP_CONFIG_KEYS = new Set([
   WISELINK_HOST_MCP_NAME,
   'wiselink_host_controller',
@@ -119,11 +122,22 @@ export async function runHostedReviewTurn(options, dependencies = {}) {
         normalized,
         beginResult,
       );
+      const modelArgsHash = canonicalSha256(generationInput);
       const execution = await checkpoint.remoteStep({
         step: 'model',
         args: generationInput,
         ambiguousCommit: false,
-        perform: () => invokeModel(structuredClone(generationInput)),
+        perform: () =>
+          invokeModel(structuredClone(generationInput), {
+            observeOutputShape: async (value) =>
+              checkpoint.writeOnce('model.output-shape', {
+                schemaVersion: DRIVER_SCHEMA,
+                step: 'model',
+                argsHash: modelArgsHash,
+                observedAt: new Date().toISOString(),
+                value: validateModelOutputShape(value),
+              }),
+          }),
       });
       const partial = validateModelExecution(
         execution,
@@ -192,6 +206,13 @@ export async function invokeHostedReviewModel(input, options = {}) {
     'REVIEW_AGENT_REQUIRED',
   );
   const timeoutMs = positiveInteger(options.timeoutMs, 480_000);
+  const observeOutputShape = options.observeOutputShape;
+  if (
+    observeOutputShape !== undefined &&
+    typeof observeOutputShape !== 'function'
+  ) {
+    throw new Error('REVIEW_MODEL_OUTPUT_SHAPE_OBSERVER_INVALID');
+  }
   const prompt = buildReviewPrompt(input);
   const startedAt = Date.now();
   const endpoint = new URL('/v1/chat/completions', gatewayUrl);
@@ -228,15 +249,27 @@ export async function invokeHostedReviewModel(input, options = {}) {
   } catch {
     throw new Error(`REVIEW_GATEWAY_INVALID_JSON_HTTP_${response.status}`);
   }
+  const choice = Array.isArray(payload.choices) ? payload.choices[0] : null;
+  const message = isRecord(choice?.message) ? choice.message : null;
+  const outputShape = summarizeHostedReviewModelOutputShape({
+    httpStatus: response.status,
+    httpOk: response.ok,
+    requestedModel: `openclaw/${agentId}`,
+    payload,
+  });
+  if (observeOutputShape) {
+    await observeOutputShape(outputShape);
+  }
   if (!response.ok) {
     throw new Error(`REVIEW_GATEWAY_HTTP_${response.status}`);
   }
-  const choice = Array.isArray(payload.choices) ? payload.choices[0] : null;
-  const message = isRecord(choice?.message) ? choice.message : null;
   if (Array.isArray(message?.tool_calls) && message.tool_calls.length > 0) {
     throw new Error('REVIEW_GATEWAY_TOOL_CALL_FORBIDDEN');
   }
-  const output = parseStrictJsonObject(message?.content);
+  if (outputShape.hasAnalysis) {
+    throw new Error('REVIEW_MODEL_ANALYSIS_FORBIDDEN');
+  }
+  const output = parseReviewModelTransport(message?.content);
   const modelVersion = actualModelVersion(payload, choice, message);
   return {
     output,
@@ -257,9 +290,95 @@ export async function invokeHostedReviewModel(input, options = {}) {
 }
 
 export function isChatCompletionsEnabled(config) {
-  return (
-    config?.gateway?.http?.endpoints?.chatCompletions?.enabled === true
+  return config?.gateway?.http?.endpoints?.chatCompletions?.enabled === true;
+}
+
+export function summarizeHostedReviewModelOutputShape({
+  httpStatus,
+  httpOk,
+  requestedModel,
+  payload,
+}) {
+  const choices = Array.isArray(payload?.choices) ? payload.choices : [];
+  const choice = isRecord(choices[0]) ? choices[0] : null;
+  const message = isRecord(choice?.message) ? choice.message : null;
+  const content = message?.content;
+  const serializedContent = diagnosticContent(content);
+  const hasAnalysisWrapper = analysisWrapper(content);
+  const reportedModel = diagnosticToken(
+    [
+      message?.model,
+      message?.model_version,
+      choice?.model,
+      payload?.model_version,
+      payload?.model,
+      payload?._meta?.modelVersion,
+      payload?._meta?.model,
+    ].find((value) => typeof value === 'string' && value.trim() !== ''),
   );
+  const reportedProvider = diagnosticToken(
+    [
+      message?.provider,
+      choice?.provider,
+      payload?.provider,
+      payload?._meta?.provider,
+    ].find((value) => typeof value === 'string' && value.trim() !== ''),
+  );
+  const finishReason = diagnosticToken(choice?.finish_reason);
+  const transportNormalization = reviewModelTransportDisposition(content);
+  return {
+    schemaVersion: MODEL_OUTPUT_SHAPE_SCHEMA,
+    http: {
+      status: Number.isSafeInteger(httpStatus) ? httpStatus : null,
+      ok: httpOk === true,
+    },
+    routing: {
+      requestedModel: diagnosticToken(requestedModel),
+      reportedProvider,
+      reportedModel,
+    },
+    finishReason:
+      finishReason ??
+      (typeof choice?.finish_reason === 'string' ? 'UNREADABLE' : null),
+    choiceCount: choices.length,
+    hasToolCalls:
+      Array.isArray(message?.tool_calls) && message.tool_calls.length > 0,
+    hasAnalysis:
+      hasAnalysisWrapper ||
+      hasNonEmptyValue(message?.analysis) ||
+      hasNonEmptyValue(message?.reasoning) ||
+      hasNonEmptyValue(message?.reasoning_content) ||
+      (Array.isArray(content) &&
+        content.some(
+          (item) =>
+            isRecord(item) &&
+            ['analysis', 'reasoning'].includes(String(item.type).toLowerCase()),
+        )),
+    content: {
+      type: diagnosticContentType(content),
+      encoding:
+        serializedContent === null
+          ? null
+          : typeof content === 'string'
+            ? 'UTF8_STRING'
+            : 'CANONICAL_JSON',
+      byteLength:
+        serializedContent === null
+          ? null
+          : Buffer.byteLength(serializedContent),
+      codePointLength:
+        typeof content === 'string' ? Array.from(content).length : null,
+      firstNonWhitespaceClass: boundaryCharacterClass(content, 'first'),
+      lastNonWhitespaceClass: boundaryCharacterClass(content, 'last'),
+      hasMarkdownFence: markdownFenceWrapper(content),
+      hasAnalysisWrapper,
+      hasProseOutsideJsonObject: proseOutsideJsonObject(content),
+      rawJsonParseResult: rawJsonParseResult(content),
+      transportNormalization,
+      strictJsonObjectAccepted: transportNormalization !== 'REJECTED',
+      sha256: serializedContent === null ? null : sha256(serializedContent),
+    },
+  };
 }
 
 export function assertHostedModelGatewayReady(runtime) {
@@ -447,6 +566,7 @@ async function createCheckpointStore(directory) {
   return {
     readOptional: (step) => readCheckpointOptional(root, step),
     write: (step, value) => writeCheckpoint(root, step, value),
+    writeOnce: (step, value) => writeCheckpointOnce(root, step, value),
     remoteStep: async ({ step, args, ambiguousCommit, perform }) => {
       const argsHash = canonicalSha256(args);
       const completed = await readCheckpointOptional(root, `${step}.result`);
@@ -505,6 +625,30 @@ async function writeCheckpoint(root, step, value) {
   });
   await chmod(temporary, 0o600);
   await rename(temporary, path);
+  await chmod(path, 0o600);
+}
+
+async function writeCheckpointOnce(root, step, value) {
+  const path = join(root, `${step}.json`);
+  const temporary = `${path}.${process.pid}.once.tmp`;
+  await writeFile(temporary, `${canonicalJson(value)}\n`, {
+    encoding: 'utf8',
+    mode: 0o600,
+    flag: 'wx',
+  });
+  await chmod(temporary, 0o600);
+  try {
+    await link(temporary, path);
+  } catch (error) {
+    if (error?.code === 'EEXIST') {
+      throw new Error(`REVIEW_CHECKPOINT_ALREADY_EXISTS:${step}`);
+    }
+    throw error;
+  } finally {
+    await unlink(temporary).catch((error) => {
+      if (error?.code !== 'ENOENT') throw error;
+    });
+  }
   await chmod(path, 0o600);
 }
 
@@ -593,10 +737,7 @@ function validateModelExecution(
       throw new Error(`REVIEW_MODEL_${key.toUpperCase()}_INVALID`);
     }
   }
-  if (
-    output.responseType === 'SOURCE_LINK' &&
-    output.sourceRefs.length === 0
-  ) {
+  if (output.responseType === 'SOURCE_LINK' && output.sourceRefs.length === 0) {
     throw new Error('REVIEW_MODEL_SOURCE_LINK_REF_REQUIRED');
   }
   const allowed = new Set(readSourceRefIds);
@@ -672,6 +813,130 @@ function validateModelOutputJson(value) {
   return value;
 }
 
+function validateModelOutputShape(value) {
+  const fail = () => {
+    throw new Error('REVIEW_MODEL_OUTPUT_SHAPE_INVALID');
+  };
+  if (
+    !isRecord(value) ||
+    value.schemaVersion !== MODEL_OUTPUT_SHAPE_SCHEMA ||
+    canonicalJson(Object.keys(value).sort()) !==
+      canonicalJson(
+        [
+          'schemaVersion',
+          'http',
+          'routing',
+          'finishReason',
+          'choiceCount',
+          'hasToolCalls',
+          'hasAnalysis',
+          'content',
+        ].sort(),
+      ) ||
+    !isRecord(value.http) ||
+    canonicalJson(Object.keys(value.http).sort()) !==
+      canonicalJson(['status', 'ok'].sort()) ||
+    !isRecord(value.routing) ||
+    canonicalJson(Object.keys(value.routing).sort()) !==
+      canonicalJson(
+        ['requestedModel', 'reportedProvider', 'reportedModel'].sort(),
+      ) ||
+    !isRecord(value.content)
+  ) {
+    fail();
+  }
+  const contentKeys = [
+    'type',
+    'encoding',
+    'byteLength',
+    'codePointLength',
+    'firstNonWhitespaceClass',
+    'lastNonWhitespaceClass',
+    'hasMarkdownFence',
+    'hasAnalysisWrapper',
+    'hasProseOutsideJsonObject',
+    'rawJsonParseResult',
+    'transportNormalization',
+    'strictJsonObjectAccepted',
+    'sha256',
+  ];
+  if (
+    canonicalJson(Object.keys(value.content).sort()) !==
+      canonicalJson(contentKeys.sort()) ||
+    (value.http.status !== null && !Number.isSafeInteger(value.http.status)) ||
+    typeof value.http.ok !== 'boolean' ||
+    !Number.isSafeInteger(value.choiceCount) ||
+    value.choiceCount < 0 ||
+    typeof value.hasToolCalls !== 'boolean' ||
+    typeof value.hasAnalysis !== 'boolean' ||
+    ![
+      'string',
+      'array',
+      'object',
+      'null',
+      'number',
+      'boolean',
+      'missing',
+    ].includes(value.content.type) ||
+    ![null, 'UTF8_STRING', 'CANONICAL_JSON'].includes(value.content.encoding) ||
+    !nullableNonNegativeInteger(value.content.byteLength) ||
+    !nullableNonNegativeInteger(value.content.codePointLength) ||
+    !diagnosticBoundaryClass(value.content.firstNonWhitespaceClass) ||
+    !diagnosticBoundaryClass(value.content.lastNonWhitespaceClass) ||
+    typeof value.content.hasMarkdownFence !== 'boolean' ||
+    typeof value.content.hasAnalysisWrapper !== 'boolean' ||
+    typeof value.content.hasProseOutsideJsonObject !== 'boolean' ||
+    ![
+      'OBJECT',
+      'ARRAY',
+      'NULL',
+      'STRING',
+      'NUMBER',
+      'BOOLEAN',
+      'INVALID',
+      'NON_STRING',
+    ].includes(value.content.rawJsonParseResult) ||
+    !['DIRECT_JSON_OBJECT', 'EXACT_JSON_FENCE', 'REJECTED'].includes(
+      value.content.transportNormalization,
+    ) ||
+    typeof value.content.strictJsonObjectAccepted !== 'boolean' ||
+    (value.content.sha256 !== null &&
+      !/^[0-9a-f]{64}$/u.test(value.content.sha256)) ||
+    ![value.finishReason, ...Object.values(value.routing)].every(
+      (item) => item === null || diagnosticToken(item) === item,
+    )
+  ) {
+    fail();
+  }
+  return structuredClone(value);
+}
+
+function nullableNonNegativeInteger(value) {
+  return value === null || (Number.isSafeInteger(value) && value >= 0);
+}
+
+function diagnosticBoundaryClass(value) {
+  return [
+    'NONE',
+    'OBJECT_OPEN',
+    'OBJECT_CLOSE',
+    'ARRAY_OPEN',
+    'ARRAY_CLOSE',
+    'QUOTE',
+    'BACKTICK',
+    'ANGLE_OPEN',
+    'ANGLE_CLOSE',
+    'LETTER',
+    'DIGIT',
+    'OTHER',
+  ].includes(value);
+}
+
+function parseReviewModelTransport(value) {
+  const fenced = exactJsonFencePayload(value);
+  return parseStrictJsonObject(fenced ?? value);
+}
+
 function parseStrictJsonObject(value) {
   if (typeof value !== 'string') {
     throw new Error('REVIEW_MODEL_STRICT_JSON_REQUIRED');
@@ -686,6 +951,154 @@ function parseStrictJsonObject(value) {
     if (error?.message === 'REVIEW_MODEL_OUTPUT_INVALID') throw error;
     throw new Error('REVIEW_MODEL_JSON_INVALID');
   }
+}
+
+function reviewModelTransportDisposition(value) {
+  if (rawJsonParseResult(value) === 'OBJECT') return 'DIRECT_JSON_OBJECT';
+  const fenced = exactJsonFencePayload(value);
+  return fenced !== null && rawJsonParseResult(fenced) === 'OBJECT'
+    ? 'EXACT_JSON_FENCE'
+    : 'REJECTED';
+}
+
+function exactJsonFencePayload(value) {
+  if (typeof value !== 'string') return null;
+  const lines = value.split(/\r\n|\n|\r/u);
+  if (lines.length < 3 || lines[0] !== '```json' || lines.at(-1) !== '```') {
+    return null;
+  }
+  return lines.slice(1, -1).join('\n');
+}
+
+function rawJsonParseResult(value) {
+  if (typeof value !== 'string') return 'NON_STRING';
+  try {
+    const parsed = JSON.parse(value.trim());
+    if (isRecord(parsed)) return 'OBJECT';
+    if (Array.isArray(parsed)) return 'ARRAY';
+    if (parsed === null) return 'NULL';
+    return typeof parsed === 'string'
+      ? 'STRING'
+      : typeof parsed === 'number'
+        ? 'NUMBER'
+        : 'BOOLEAN';
+  } catch {
+    return 'INVALID';
+  }
+}
+
+function diagnosticContent(value) {
+  if (value === undefined) return null;
+  return typeof value === 'string' ? value : canonicalJson(value);
+}
+
+function diagnosticContentType(value) {
+  if (value === undefined) return 'missing';
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return 'array';
+  return typeof value;
+}
+
+function diagnosticToken(value) {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim();
+  return /^[A-Za-z0-9][A-Za-z0-9._:/+@-]{0,159}$/u.test(normalized)
+    ? normalized
+    : null;
+}
+
+function boundaryCharacterClass(value, edge) {
+  if (typeof value !== 'string') return 'NONE';
+  const characters = Array.from(value.trim());
+  const character = edge === 'first' ? characters[0] : characters.at(-1);
+  return classifyBoundaryCharacter(character);
+}
+
+function classifyBoundaryCharacter(value) {
+  if (value === undefined) return 'NONE';
+  return (
+    {
+      '{': 'OBJECT_OPEN',
+      '}': 'OBJECT_CLOSE',
+      '[': 'ARRAY_OPEN',
+      ']': 'ARRAY_CLOSE',
+      '"': 'QUOTE',
+      '`': 'BACKTICK',
+      '<': 'ANGLE_OPEN',
+      '>': 'ANGLE_CLOSE',
+    }[value] ??
+    (/^\p{L}$/u.test(value)
+      ? 'LETTER'
+      : /^\p{N}$/u.test(value)
+        ? 'DIGIT'
+        : 'OTHER')
+  );
+}
+
+function markdownFenceWrapper(value) {
+  if (typeof value !== 'string') return false;
+  const normalized = value.trim();
+  return normalized.startsWith('```') || normalized.endsWith('```');
+}
+
+function analysisWrapper(value) {
+  if (typeof value !== 'string') return false;
+  const normalized = value.trim();
+  return (
+    /^<(?:analysis|think)(?:\s[^>]*)?>/iu.test(normalized) ||
+    /<\/(?:analysis|think)>$/iu.test(normalized)
+  );
+}
+
+function proseOutsideJsonObject(value) {
+  if (typeof value !== 'string' || value.trim() === '') return false;
+  if (rawJsonParseResult(value) !== 'INVALID') return false;
+  if (exactJsonFencePayload(value) !== null || analysisWrapper(value)) {
+    return false;
+  }
+  const normalized = value.trim();
+  const span = completeJsonObjectSpan(normalized);
+  if (span) {
+    return (
+      normalized.slice(0, span.start).trim() !== '' ||
+      normalized.slice(span.end).trim() !== ''
+    );
+  }
+  return /^\p{L}/u.test(normalized);
+}
+
+function completeJsonObjectSpan(value) {
+  const start = value.indexOf('{');
+  if (start < 0) return null;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let index = start; index < value.length; index += 1) {
+    const character = value[index];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (character === '\\') escaped = true;
+      else if (character === '"') inString = false;
+      continue;
+    }
+    if (character === '"') {
+      inString = true;
+      continue;
+    }
+    if (character === '{') depth += 1;
+    if (character === '}') {
+      depth -= 1;
+      if (depth === 0) return { start, end: index + 1 };
+      if (depth < 0) return null;
+    }
+  }
+  return null;
+}
+
+function hasNonEmptyValue(value) {
+  if (typeof value === 'string') return value.trim() !== '';
+  if (Array.isArray(value)) return value.length > 0;
+  return isRecord(value) && Object.keys(value).length > 0;
 }
 
 function buildReviewPrompt(input) {
@@ -881,12 +1294,10 @@ async function resolveRuntimeConfig(argv, env) {
 export function openClawConfigCandidates(
   argv,
   env,
-  {
-    homeDirectory = homedir(),
-    workingDirectory = process.cwd(),
-  } = {},
+  { homeDirectory = homedir(), workingDirectory = process.cwd() } = {},
 ) {
-  const explicit = option(argv, '--openclaw-config') || env.OPENCLAW_CONFIG_PATH;
+  const explicit =
+    option(argv, '--openclaw-config') || env.OPENCLAW_CONFIG_PATH;
   if (explicit) return [resolve(explicit)];
 
   const candidates = [];
@@ -991,10 +1402,7 @@ async function main(argv, env) {
   };
   const runtime = await resolveRuntimeConfig(argv, env);
   assertHostedModelGatewayReady(runtime);
-  const recoveryFailureCode = option(
-    argv,
-    '--recover-known-model-nondispatch',
-  );
+  const recoveryFailureCode = option(argv, '--recover-known-model-nondispatch');
   if (recoveryFailureCode) {
     await prepareKnownModelNonDispatchRecovery({
       checkpointDir: options.checkpointDir,
@@ -1006,7 +1414,7 @@ async function main(argv, env) {
   try {
     const result = await runHostedReviewTurn(options, {
       callTool: connection.callTool,
-      invokeModel: (input) =>
+      invokeModel: (input, hooks = {}) =>
         invokeHostedReviewModel(input, {
           gatewayUrl: runtime.gatewayUrl,
           gatewayToken: runtime.gatewayToken,
@@ -1015,6 +1423,7 @@ async function main(argv, env) {
             Number.parseInt(option(argv, '--timeout-ms'), 10) || undefined,
             480_000,
           ),
+          observeOutputShape: hooks.observeOutputShape,
         }),
     });
     process.stdout.write(`${canonicalJson(result)}\n`);

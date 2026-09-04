@@ -1,12 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import {
-  mkdtemp,
-  readFile,
-  rm,
-  stat,
-  writeFile,
-} from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -49,6 +43,7 @@ import {
   openClawConfigCandidates,
   prepareKnownModelNonDispatchRecovery,
   runHostedReviewTurn,
+  summarizeHostedReviewModelOutputShape,
 } from '../scripts/run-hosted-review-turn.mjs';
 
 const DYNAMIC_FIXTURE_URL = new URL(
@@ -111,7 +106,7 @@ test('pins exact20 MCP 1.2, five review tools, and hosted provenance', () => {
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c14',
+    'wiselink-research-and-synthesize@r09.c15',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -373,7 +368,10 @@ test('resumes P0B from Host nextStage and skips completed stages', async () => {
     }),
   });
   assert.equal(result.ok, true);
-  assert.deepEqual(result.operations.map(({ stage }) => stage), ['OVERALL']);
+  assert.deepEqual(
+    result.operations.map(({ stage }) => stage),
+    ['OVERALL'],
+  );
   assert.equal(calls.includes('begin_applicability_evaluation'), false);
   assert.equal(calls.includes('begin_dynamic_evaluation'), false);
 });
@@ -425,7 +423,10 @@ test('accepts deterministic Host WAITING_INPUT after a successful applicability 
   assert.equal(result.ok, false);
   assert.equal(result.outcome, 'WAITING_INPUT');
   assert.equal(result.operations[0].result.outcome, 'WAITING_INPUT');
-  assert.equal(result.reevaluation.stages.applicability.status, 'WAITING_INPUT');
+  assert.equal(
+    result.reevaluation.stages.applicability.status,
+    'WAITING_INPUT',
+  );
   assert.equal(calls.includes('get_action_attempt_status'), false);
 });
 
@@ -1929,6 +1930,7 @@ test('runs a review turn from durable checkpoints without replaying remote work'
   const task = makeTask('OPENCLAW_INTERACTIVE_REVIEW', reviewTask);
   const calls = [];
   const modelInputs = [];
+  let shapeObserverCalls = 0;
   const callTool = async (name, args) => {
     calls.push({ name, args });
     if (name === 'begin_review_turn') return runningBegin(task);
@@ -1958,8 +1960,29 @@ test('runs a review turn from durable checkpoints without replaying remote work'
     }
     throw new Error(`UNEXPECTED_TOOL:${name}`);
   };
-  const invokeModel = async (input) => {
+  const invokeModel = async (input, { observeOutputShape }) => {
     modelInputs.push(input);
+    shapeObserverCalls += 1;
+    await observeOutputShape(
+      summarizeHostedReviewModelOutputShape({
+        httpStatus: 200,
+        httpOk: true,
+        requestedModel: 'openclaw/wiselink-engineering',
+        payload: {
+          provider: 'openai-codex',
+          model: 'gpt-5.4',
+          choices: [
+            {
+              finish_reason: 'stop',
+              message: {
+                content:
+                  '```json\n{"private":"MODEL-OUTPUT-MUST-NOT-BE-CHECKPOINTED"}\n```',
+              },
+            },
+          ],
+        },
+      }),
+    );
     return {
       output: {
         responseType: 'SOURCE_LINK',
@@ -1995,6 +2018,7 @@ test('runs a review turn from durable checkpoints without replaying remote work'
     ],
   );
   assert.equal(modelInputs.length, 1);
+  assert.equal(shapeObserverCalls, 1);
   assert.deepEqual(
     modelInputs[0].input.context.evaluation.gapLedger.gaps[0].gapControl,
     {
@@ -2025,6 +2049,29 @@ test('runs a review turn from durable checkpoints without replaying remote work'
   }
   const checkpointInfo = await stat(join(checkpointDir, 'begin.result.json'));
   assert.equal(checkpointInfo.mode & 0o077, 0);
+  const shapePath = join(checkpointDir, 'model.output-shape.json');
+  const shapeInfo = await stat(shapePath);
+  const shapeSerialized = await readFile(shapePath, 'utf8');
+  const shapeCheckpoint = JSON.parse(shapeSerialized);
+  assert.equal(shapeInfo.mode & 0o077, 0);
+  assert.equal(shapeCheckpoint.argsHash, canonicalSha256(modelInputs[0]));
+  assert.equal(
+    shapeCheckpoint.value.content.transportNormalization,
+    'EXACT_JSON_FENCE',
+  );
+  assert.equal(
+    shapeCheckpoint.value.content.sha256,
+    createHash('sha256')
+      .update(
+        '```json\n{"private":"MODEL-OUTPUT-MUST-NOT-BE-CHECKPOINTED"}\n```',
+      )
+      .digest('hex'),
+  );
+  assert.equal(
+    shapeSerialized.includes('MODEL-OUTPUT-MUST-NOT-BE-CHECKPOINTED'),
+    false,
+  );
+  assert.equal(shapeSerialized.includes('```json'), false);
 });
 
 test('reads both selected Criterion sources and the current attachment for candidate evidence', async (t) => {
@@ -2058,9 +2105,10 @@ test('reads both selected Criterion sources and the current attachment for candi
         attemptRef: task.operationRef,
         sourceRefs: args.sourceRefIds.map((sourceRefId) => ({
           sourceRefId,
-          kind: sourceRefId === reviewTask.attachmentRefs[0]
-            ? 'ENGINEER_ATTACHMENT'
-            : 'page',
+          kind:
+            sourceRefId === reviewTask.attachmentRefs[0]
+              ? 'ENGINEER_ATTACHMENT'
+              : 'page',
           statement: 'Fixture-only source-bound statement.',
         })),
       };
@@ -2101,9 +2149,10 @@ test('reads both selected Criterion sources and the current attachment for candi
     reviewTask.resourceRefs[0].sourceRefId,
     reviewTask.attachmentRefs[0],
   ]);
-  assert.deepEqual(JSON.parse(committedResult.modelOutput).candidateEvidenceRefs, [
-    reviewTask.attachmentRefs[0],
-  ]);
+  assert.deepEqual(
+    JSON.parse(committedResult.modelOutput).candidateEvidenceRefs,
+    [reviewTask.attachmentRefs[0]],
+  );
   assert.deepEqual(result.authorityMutations, {
     reviewCandidatePersisted: true,
     workItemRevisionChanged: false,
@@ -2236,10 +2285,7 @@ test('persists a complete candidate-only review action draft without confirming 
     uncertaintyDispositions,
     decisionSnapshot: {
       assessmentAsOf: '2026-09-02T00:00:00.000Z',
-      evidenceHorizon: [
-        'SOURCE_DOCUMENT_COMPLETE',
-        'CONFIGURATION_PARTIAL',
-      ],
+      evidenceHorizon: ['SOURCE_DOCUMENT_COMPLETE', 'CONFIGURATION_PARTIAL'],
       currentBestJudgment: 'criterion-001 可形成 PROVISIONAL 候选判断。',
       alternativeJudgments: ['保留 UNKNOWN/WAITING_INPUT。'],
       decisionMaturity: 'REVIEWABLE',
@@ -2324,11 +2370,15 @@ test('keeps non-gap authority data outside the review model boundary', async () 
 });
 
 test('discovers the Hosted OpenClaw config and exact canonical MCP alias', () => {
-  const paths = openClawConfigCandidates([], {}, {
-    homeDirectory: '/home/gem',
-    workingDirectory:
-      '/home/gem/workspace/agent/workspace/skills/wiselink-research-and-synthesize',
-  });
+  const paths = openClawConfigCandidates(
+    [],
+    {},
+    {
+      homeDirectory: '/home/gem',
+      workingDirectory:
+        '/home/gem/workspace/agent/workspace/skills/wiselink-research-and-synthesize',
+    },
+  );
   assert.ok(paths.includes('/home/gem/workspace/agent/openclaw.json'));
   assert.deepEqual(
     findMcpConfig({
@@ -2424,12 +2474,13 @@ test('accepts JSON-standard surrounding whitespace from the Hosted review model'
   assert.equal(result.provenance.modelVersion, 'openai-codex/gpt-5.4');
   assert.equal(
     result.provenance.promptVersion,
-    'wiselink.3_1.review_prompt.v1.c14',
+    'wiselink.3_1.review_prompt.v1.c15',
   );
 });
 
-test('continues to reject Markdown-fenced Hosted review output', async (t) => {
+test('normalizes only one exact json fence around a strict object', async (t) => {
   const originalFetch = globalThis.fetch;
+  let outputShape;
   t.after(() => {
     globalThis.fetch = originalFetch;
   });
@@ -2448,6 +2499,76 @@ test('continues to reject Markdown-fenced Hosted review output', async (t) => {
       { status: 200, headers: { 'content-type': 'application/json' } },
     );
 
+  const result = await invokeHostedReviewModel(
+    { candidateOnly: true },
+    {
+      gatewayUrl: 'http://127.0.0.1:18789',
+      gatewayToken: 'fixture-only-never-logged',
+      observeOutputShape: async (value) => {
+        outputShape = value;
+      },
+    },
+  );
+
+  assert.deepEqual(result.output, { candidateOnly: true });
+  assert.equal(
+    result.provenance.promptVersion,
+    'wiselink.3_1.review_prompt.v1.c15',
+  );
+  assert.equal(outputShape.content.hasMarkdownFence, true);
+  assert.equal(outputShape.content.rawJsonParseResult, 'INVALID');
+  assert.equal(outputShape.content.transportNormalization, 'EXACT_JSON_FENCE');
+  assert.equal(outputShape.content.strictJsonObjectAccepted, true);
+  assert.equal(
+    JSON.stringify(outputShape).includes('{"candidateOnly":true}'),
+    false,
+  );
+});
+
+test('rejects every non-exact wrapper and non-object fenced value', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  const invalidOutputs = [
+    'before\n```json\n{"candidateOnly":true}\n```',
+    '```json\n{"candidateOnly":true}\n```\nafter',
+    ' ```json\n{"candidateOnly":true}\n```',
+    '```JSON\n{"candidateOnly":true}\n```',
+    '```\n{"candidateOnly":true}\n```',
+    '```json\n[{"candidateOnly":true}]\n```',
+    '```json\nnull\n```',
+    '<analysis>done</analysis>\n{"candidateOnly":true}',
+    'Here is the result: {"candidateOnly":true}',
+  ];
+  let nextMessage = { content: '' };
+  globalThis.fetch = async () =>
+    new Response(
+      JSON.stringify({
+        model: 'openai-codex/gpt-5.4',
+        choices: [{ message: nextMessage }],
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    );
+
+  for (const value of invalidOutputs) {
+    nextMessage = { content: value };
+    await assert.rejects(
+      invokeHostedReviewModel(
+        { candidateOnly: true },
+        {
+          gatewayUrl: 'http://127.0.0.1:18789',
+          gatewayToken: 'fixture-only-never-logged',
+        },
+      ),
+      /REVIEW_MODEL_(?:STRICT_JSON_REQUIRED|OUTPUT_INVALID|ANALYSIS_FORBIDDEN)/u,
+      value,
+    );
+  }
+  nextMessage = {
+    content: '{"candidateOnly":true}',
+    reasoning_content: 'MODEL-OUTPUT-MUST-NOT-BE-CHECKPOINTED',
+  };
   await assert.rejects(
     invokeHostedReviewModel(
       { candidateOnly: true },
@@ -2456,8 +2577,47 @@ test('continues to reject Markdown-fenced Hosted review output', async (t) => {
         gatewayToken: 'fixture-only-never-logged',
       },
     ),
-    /REVIEW_MODEL_STRICT_JSON_REQUIRED/u,
+    /REVIEW_MODEL_ANALYSIS_FORBIDDEN/u,
   );
+});
+
+test('classifies rejected output wrappers without retaining their content', () => {
+  const summarize = (content) =>
+    summarizeHostedReviewModelOutputShape({
+      httpStatus: 200,
+      httpOk: true,
+      requestedModel: 'openclaw/wiselink-engineering',
+      payload: {
+        provider: 'openai-codex',
+        model: 'gpt-5.4',
+        choices: [{ finish_reason: 'stop', message: { content } }],
+      },
+    });
+  const analysis = summarize(
+    '<analysis>MODEL-OUTPUT-MUST-NOT-BE-CHECKPOINTED</analysis>\n{"candidateOnly":true}',
+  );
+  const prose = summarize(
+    'Result: MODEL-OUTPUT-MUST-NOT-BE-CHECKPOINTED {"candidateOnly":true}',
+  );
+  const array = summarize('[{"candidateOnly":true}]');
+  const nullContent = summarize(null);
+
+  assert.equal(analysis.hasAnalysis, true);
+  assert.equal(analysis.content.hasAnalysisWrapper, true);
+  assert.equal(analysis.content.transportNormalization, 'REJECTED');
+  assert.equal(prose.content.hasProseOutsideJsonObject, true);
+  assert.equal(prose.content.transportNormalization, 'REJECTED');
+  assert.equal(array.content.rawJsonParseResult, 'ARRAY');
+  assert.equal(array.content.transportNormalization, 'REJECTED');
+  assert.equal(nullContent.content.type, 'null');
+  assert.equal(nullContent.content.rawJsonParseResult, 'NON_STRING');
+  assert.equal(nullContent.content.transportNormalization, 'REJECTED');
+  for (const shape of [analysis, prose, array, nullContent]) {
+    assert.equal(
+      JSON.stringify(shape).includes('MODEL-OUTPUT-MUST-NOT-BE-CHECKPOINTED'),
+      false,
+    );
+  }
 });
 
 test('recovers an ambiguous checkpointed review commit with one status read and no replay', async (t) => {
@@ -2552,11 +2712,27 @@ test('never retries an ambiguous non-commit review step after restart', async (t
     throw new Error(`UNEXPECTED_TOOL:${name}`);
   };
   let modelCalls = 0;
+  const outputShape = summarizeHostedReviewModelOutputShape({
+    httpStatus: 200,
+    httpOk: true,
+    requestedModel: 'openclaw/wiselink-engineering',
+    payload: {
+      model: 'openai-codex/gpt-5.4',
+      choices: [
+        {
+          finish_reason: 'stop',
+          message: { content: '{"candidateOnly":true}' },
+        },
+      ],
+    },
+  });
   const dependencies = {
     callTool,
-    invokeModel: async () => {
+    invokeModel: async (_input, { observeOutputShape }) => {
       modelCalls += 1;
-      throw new Error('MODEL_RESPONSE_OUTCOME_UNKNOWN');
+      await observeOutputShape(outputShape);
+      await observeOutputShape(outputShape);
+      throw new Error('MODEL_MUST_NOT_REACH_THIS_POINT');
     },
   };
   const options = {
@@ -2567,7 +2743,7 @@ test('never retries an ambiguous non-commit review step after restart', async (t
 
   await assert.rejects(
     runHostedReviewTurn(options, dependencies),
-    /MODEL_RESPONSE_OUTCOME_UNKNOWN/u,
+    /REVIEW_CHECKPOINT_ALREADY_EXISTS:model.output-shape/u,
   );
   await assert.rejects(
     runHostedReviewTurn(options, dependencies),

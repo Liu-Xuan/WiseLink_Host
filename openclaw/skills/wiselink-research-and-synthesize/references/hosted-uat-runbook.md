@@ -40,7 +40,7 @@ Task/Result schema、MCP tool 形状、authority 或安全语义改变时升级 
 3. 模型由官方托管 profile/config 选择，当前 UI 可选 `GLM-5.3`；每个 turn 必须读回非空、可识别的实际
    `modelVersion`，智能选择/fallback 只有在实际模型仍逐 turn 可见时才可继续；
 4. 同名 Skill 只有一个，安装版本精确
-   `wiselink-research-and-synthesize@r09.c14`；
+   `wiselink-research-and-synthesize@r09.c15`；
 5. Host MCP package/version 为
    `wiselink-openclaw-engineering-assessment@1.2.0`，exact 20 tools 可见；
 6. C3 successor 已进入 current Hosted release；只凭 Git commit 不等于 deployed readback；
@@ -136,6 +136,11 @@ authenticated user。
    conversation/turn/request/attempt/lease/WorkItem 控制面值。
 5. 模型经 Gateway HTTP 仅生成 SOURCE_LINK/ANSWER 内容；本用例要求 `SOURCE_LINK` 且至少一个
    `sourceRefs` 来自本轮实读 allowlist，`sourceRefs=[]` 必须在 commit 前 fail closed；若返回 tool_calls 也 fail closed。
+   c15 在 strict parse 前以 0600 write-once checkpoint 只保存 provider/model、HTTP/finish、content type/length、
+   首尾字符类别、fence/analysis/prose 标志、JSON object parse 结果与 content SHA，不保存原始响应。只允许
+   首行由三个反引号紧接小写 `json`、末行仅含三个反引号、围栏外零内容且内部为 JSON object 的单一围栏
+   被机械移除；其余
+   fence/prose/analysis/array/null 均 fail closed。
 6. 驱动检查 ResultEnvelope 实际 provenance 与 SourceRef artifact ref/SHA，并单次 commit。
 7. 用同一 checkpoint 目录再次启动驱动，确认 Host/模型远程调用数均不增加。
 8. Host 读回原 ReviewTurn assistant candidate 和 provenance；WorkItem revision/current/STALE 均未变化。浏览器必须
@@ -172,7 +177,8 @@ authenticated user。
 - Hosted release/Host MCP version、Skill version、profile、Session mode/key hash；
 - attemptRef、taskType、input/base revision、Task inputHash；
 - tool name/sequence、status、lease generation（不保留 lease token）；
-- checkpoint 文件仅在私有 `0700` 目录中以 `0600` 保存；对外报告只保留绑定 hash 和调用计数；
+- checkpoint 文件仅在私有 `0700` 目录中以 `0600` 保存；`model.output-shape` 必须 write-once 且不含模型
+  原始 content；对外报告只保留绑定 hash 和调用计数；
 - Result contentHash、candidate type、SourceRef IDs 与 artifact SHA；
 - 实际 `modelVersion/promptVersion/skillVersion/toolVersions`；
 - mutation summary（candidate persisted 与五个 authority false flags）；

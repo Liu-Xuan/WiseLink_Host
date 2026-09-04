@@ -79,7 +79,7 @@ runtimePolicy.modelPolicyRef = official-hosted-profile-config
 ResultEnvelope.modelVersion = 官方托管 profile/config 本轮选择后的非空、可读实际模型
 Task.skillPolicyRef = wiselink-research-and-synthesize@r09
 ApplicabilityTask.runtimePolicy.skillVersion = wiselink-research-and-synthesize@r09  # v1 历史字段名，语义为兼容线
-ResultEnvelope.skillVersion = wiselink-research-and-synthesize@r09.c14       # 实际安装包版本
+ResultEnvelope.skillVersion = wiselink-research-and-synthesize@r09.c15       # 实际安装包版本
 toolVersions.wiselink-openclaw-engineering-assessment = 1.2.0
 promptVersion = 当前实际运行非空版本
 ```
@@ -315,6 +315,14 @@ resource artifact ref/SHA 也不进入模型输入。
 ## INTERACTIVE_REVIEW candidate
 
 模型输出 schema：`wiselink.3_1.review_turn_candidate.v1.c3`。
+
+c15 Gateway transport 保留 `response_format={type:json_object}`。驱动在业务 strict parse 前先写
+`model.output-shape.json`：只含 input argsHash、provider/model、HTTP/finish、content type/length、首尾字符类别、
+fence/analysis/prose 标志、raw JSON parse 分类、transport normalization 结果和 exact-content SHA；不含原始
+content。该 checkpoint 在私有 `0700` 目录中以 `0600` 原子 write-once 保存，不参与 replay 或业务状态判定。
+模型 content 可以是直接 JSON object，或首行由三个反引号紧接小写 `json`、末行仅含三个反引号、围栏外零内容
+且内部 `JSON.parse` 为 object 的单一围栏；后者只移除 transport 围栏。其他 fence、prose、analysis、array 或
+null 全部拒绝，不抽取或修复内容。
 
 ```text
 mode=INTERACTIVE_REVIEW
