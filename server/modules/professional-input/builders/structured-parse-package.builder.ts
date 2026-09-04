@@ -5,6 +5,7 @@ import {
   buildSourceBoundAeoSoftwareControl,
   type SourceBoundAeoEffectivity,
 } from './ameco-aeo-structure.builder';
+import { buildSourceBoundOperatorTransmissionDocument } from './airbus-operator-transmission-structure.builder';
 import {
   buildSourceBoundRilDocumentReferences,
   buildSourceBoundRilGeneralEvaluation,
@@ -200,6 +201,42 @@ export function buildStructuredParsePackage(input: {
     });
     contentUnits.push(...sectionUnits);
     contentOrder += sectionUnits.length;
+  }
+  const operatorTransmission = buildSourceBoundOperatorTransmissionDocument({
+    unitSet,
+    sections: sectionTopology,
+    documentCode: document.documentCode,
+    documentType: document.documentType,
+  });
+  if (operatorTransmission) {
+    contentUnits.push(
+      buildStructuredObservationContentUnit({
+        sourcePackageId,
+        moduleId,
+        order: contentOrder,
+        continuityKey: 'document:SB:operator_transmission:typed-semantics',
+        sourceRefIds: sourceBoundIds(
+          operatorTransmission.sourceRefIds,
+          unitSet.sourceRefs.map((sourceRef) => sourceRef.sourceRefId),
+        ),
+        sourceSegmentIds: sourceBoundIds(
+          operatorTransmission.sourceUnitIds,
+          unitSet.units.map((unit) => unit.sourceUnitId),
+        ),
+        payload: {
+          observationType: 'OPERATOR_TRANSMISSION_DOCUMENT',
+          value: operatorTransmission,
+          authority: {
+            candidateOnly: true,
+            canDecideApplicability: false,
+            canCreateEvidenceRef: false,
+            canCreateClosureDecision: false,
+            canCreateActionReadiness: false,
+          },
+        },
+      }),
+    );
+    contentOrder += 1;
   }
 
   const applicability = buildDeterministicApplicability(

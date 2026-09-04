@@ -407,6 +407,9 @@ export function buildFamilySectionTopology(input: {
   if (input.document.documentType === 'engineering_order') {
     return buildAmecoAeoSectionTopology(input.unitSet, input.document);
   }
+  if (input.document.documentType === 'operator_transmission') {
+    return buildAirbusOperatorTransmissionSectionTopology(input.unitSet);
+  }
   if (input.document.documentType === 'retrofit_information_letter') {
     return buildAirbusRilSectionTopology(input.unitSet, input.document);
   }
@@ -426,6 +429,112 @@ export function buildFamilySectionTopology(input: {
     return buildHoneywellSilSectionTopology(input.unitSet, input.document);
   }
   return [];
+}
+
+function buildAirbusOperatorTransmissionSectionTopology(
+  unitSet: SourceUnitSet,
+): readonly SourceBoundSectionWindow[] {
+  const contentUnits = orderedContentUnits(unitSet).filter(
+    (unit) => !isAirbusOperatorTransmissionFurniture(unit.text),
+  );
+  const normalized = contentUnits.map((unit) => normalizeLabel(unit.text));
+  const oitBannerCount = normalized.filter(
+    (value) => value === 'operatorsinformationtransmissionoit',
+  ).length;
+  const fotBannerCount = normalized.filter(
+    (value) => value === 'flightoperationstransmissionfot',
+  ).length;
+  const sbitCategoryCount = normalized.filter(
+    (value) =>
+      value ===
+      'oitcategoryservicebulletininformationtransmissionsbit',
+  ).length;
+  const adviceCategoryCount = normalized.filter(
+    (value) => value === 'oitcategoryadvice',
+  ).length;
+  const subtype =
+    oitBannerCount === 1 &&
+    sbitCategoryCount === 1 &&
+    fotBannerCount === 0
+      ? 'SBIT'
+      : oitBannerCount === 1 &&
+          adviceCategoryCount === 1 &&
+          sbitCategoryCount === 0 &&
+          fotBannerCount === 0
+        ? 'OIT'
+        : fotBannerCount === 1 &&
+            oitBannerCount === 0 &&
+            sbitCategoryCount === 0
+          ? 'FOT'
+          : null;
+  if (!subtype) return [];
+  const definitions =
+    subtype === 'OIT'
+      ? [
+          ['1', 'purpose', '1purpose'],
+          ['2', 'background', '2background'],
+          ['3', 'description', '3description'],
+          ['4', 'follow_up', '4followup'],
+          ['5', 'contacts', '5contacts'],
+        ]
+      : subtype === 'FOT'
+        ? [
+            ['1', 'purpose', '1purpose'],
+            ['2', 'description', '2description'],
+            ['3', 'recommendations', '3recommendations'],
+            ['4', 'follow_up_plan', '4followupplan'],
+          ]
+        : [
+            ['0', 'reason_for_revision', '0reasonforrevision'],
+            ['1', 'purpose', '1purpose'],
+            ['2', 'background', '2background'],
+            ['3', 'recommendation', '3recommendation'],
+            ['4', 'follow_up', '4followup'],
+            ['5', 'contacts', '5contacts'],
+          ];
+  const candidates = definitions.flatMap(
+    ([ordinal, sectionKey, normalizedHeading]) => {
+      const indexes = contentUnits.flatMap((unit, index) =>
+        normalizeLabel(unit.text) === normalizedHeading ? [index] : [],
+      );
+      return indexes.length === 1
+        ? [
+            {
+              unit: contentUnits[indexes[0]],
+              index: indexes[0],
+              sectionKey,
+              matchedHeading: contentUnits[indexes[0]].text.trim(),
+              nodeKind: 'section' as const,
+              scopeKey: 'operator_transmission',
+              ordinal,
+            },
+          ]
+        : [];
+    },
+  );
+  if (
+    candidates.length !== definitions.length ||
+    candidates.some(
+      (candidate, index) =>
+        index > 0 && candidate.index <= candidates[index - 1].index,
+    )
+  ) {
+    return [];
+  }
+  return materializeSectionWindows(unitSet, contentUnits, candidates, 'SB');
+}
+
+function isAirbusOperatorTransmissionFurniture(value: string): boolean {
+  const text = value.normalize('NFKC').replace(/\s+/gu, ' ').trim();
+  return (
+    /^(?:OIT|FOT)\s+ref\s*:.+Rev\s+\d+\s*Page\s+\d+\s+of\s+\d+\s*Date\s*:/iu.test(
+      text,
+    ) ||
+    /^©\s*AIRBUS\s+S\.A\.S\./iu.test(text) ||
+    /^TELEPHONE\s*\+\s*33\s*\(0\)5\s+61\s+93\s+33\s+33(?:Airbus)?$/iu.test(
+      text,
+    )
+  );
 }
 
 function buildAmecoAeoSectionTopology(
