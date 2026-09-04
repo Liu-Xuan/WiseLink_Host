@@ -1,9 +1,18 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
-import type { ReviewConversationReadModel } from '@shared/api.interface';
+import type {
+  ReviewConversationReadModel,
+  ReviewTurnReadModel,
+} from '@shared/api.interface';
 
-import { continuousReviewPresentation } from '../../client/src/features/review/continuous-review-state';
+import {
+  continuousReviewPresentation,
+  reviewOperationErrorPresentation,
+  reviewSourceRefLabel,
+  reviewTurnGroups,
+  shouldAutoRefreshReviewTurn,
+} from '../../client/src/features/review/continuous-review-state';
 
 describe('continuous review client state', () => {
   it('keeps a same-revision active conversation writable', () => {
@@ -69,6 +78,53 @@ describe('continuous review client state', () => {
       /<ContinuousReviewPanel\s+key=\{workItemId\}\s+workItemId=\{workItemId\}/u,
     );
   });
+
+  it('separates the newest Host turn from ordered history', () => {
+    const groups = reviewTurnGroups([turn(3), turn(1), turn(2)]);
+
+    expect(groups.current?.turnNo).toBe(3);
+    expect(groups.history.map((item) => item.turnNo)).toEqual([1, 2]);
+  });
+
+  it('auto-refreshes only a recent pending Host turn', () => {
+    const pending = turn(1);
+    const createdAt = new Date(pending.createdAt).getTime();
+
+    expect(shouldAutoRefreshReviewTurn(pending, createdAt + 30_000)).toBe(true);
+    expect(shouldAutoRefreshReviewTurn(pending, createdAt + 6 * 60_000)).toBe(
+      false,
+    );
+  });
+
+  it('keeps SourceRef identity visible while abbreviating long locators', () => {
+    expect(reviewSourceRefLabel('SRC-P9-EFFECTIVITY', 0)).toBe(
+      'SRC-P9-EFFECTIVITY',
+    );
+    const label = reviewSourceRefLabel(
+      'urn:techpub:source-ref:v1:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      1,
+    );
+    expect(label).toContain('urn:techpub:source-ref');
+    expect(label).toContain('aaaaaaaaaaaa');
+  });
+
+  it('preserves stable Host error observability without exposing a stack', () => {
+    const error = Object.assign(new Error('runtime failed'), {
+      code: 'REVIEW_HOSTED_RUNTIME_FAILED',
+      statusCode: 503,
+      retryable: true,
+      operatorAction: 'RELEASE_SUCCESSOR_ATTEMPT',
+      stack: 'sensitive stack',
+    });
+
+    expect(reviewOperationErrorPresentation(error)).toEqual({
+      title: '复核操作未完成',
+      message: '本次复核操作未完成，当前输入仍保留。',
+      code: 'REVIEW_HOSTED_RUNTIME_FAILED',
+      retryable: true,
+      operatorAction: 'RELEASE_SUCCESSOR_ATTEMPT',
+    });
+  });
 });
 
 function conversation(
@@ -88,5 +144,25 @@ function conversation(
     lastActiveAt: '2026-08-30T00:00:00.000Z',
     closedAt: status === 'CLOSED' ? '2026-08-30T00:05:00.000Z' : null,
     turns: [],
+  };
+}
+
+function turn(turnNo: number): ReviewTurnReadModel {
+  return {
+    reviewTurnId: `turn-${turnNo}`,
+    turnNo,
+    requestId: `request-${turnNo}`,
+    inputRevision: 7,
+    userMessage: `message-${turnNo}`,
+    engineerSuppliedInput: {
+      engineerSuppliedInputId: `input-${turnNo}`,
+      inputType: 'ENGINEER_TEXT',
+      adoptionStatus: 'CANDIDATE_UNADOPTED',
+      text: `message-${turnNo}`,
+      attachmentRefs: [],
+    },
+    attachmentRefs: [],
+    assistantCandidate: null,
+    createdAt: `2026-08-30T00:0${turnNo}:00.000Z`,
   };
 }

@@ -1,5 +1,9 @@
 declare module '*.css';
 
+declare const __WISELINK_SOURCE_COMMIT__: string;
+declare const __WISELINK_BUILD_TIME__: string;
+declare const __WISELINK_VISUAL_VERSION__: string;
+
 // Type declarations for importing static assets
 declare module '*.png' {
   const value: string;

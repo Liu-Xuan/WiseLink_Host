@@ -33,6 +33,15 @@ export interface CanonicalHostIdentityContext {
   developmentIntakeAvailable?: boolean;
 }
 
+export interface CanonicalHostClientError extends Error {
+  code?: string;
+  statusCode?: number;
+  details?: string;
+  retryable?: boolean;
+  operatorAction?: string;
+  timestamp?: number;
+}
+
 type CanonicalHostClientSessionListener = () => void;
 
 interface CachedClientSessionRead<T> {
@@ -643,12 +652,13 @@ async function reviewConversationRequest<T>(input: {
       throw backendResponseError(
         response.data,
         'REVIEW_CONVERSATION_UNAVAILABLE',
+        response.status,
       );
     }
     return response.data;
   } catch (error) {
     logger.error(`${input.operation}失败`, error);
-    throw normalizedDirectObjectError(error, requestGeneration);
+    throw normalizedReviewConversationError(error, requestGeneration);
   }
 }
 
@@ -699,6 +709,21 @@ function normalizedOverallRegenerationError(
   return error;
 }
 
+function normalizedReviewConversationError(
+  error: unknown,
+  requestGeneration: number,
+): unknown {
+  const normalized = normalizedDirectObjectError(error, requestGeneration);
+  if (normalized !== error || !isRecord(error)) return normalized;
+  const response = error.response;
+  if (!isRecord(response)) return error;
+  return backendResponseError(
+    response.data,
+    'REVIEW_CONVERSATION_UNAVAILABLE',
+    typeof response.status === 'number' ? response.status : undefined,
+  );
+}
+
 export function isCanonicalObjectNotFound(error: unknown): boolean {
   return isRecord(error) && error.code === 'CANONICAL_WORK_ITEM_NOT_FOUND';
 }
@@ -734,15 +759,35 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
-function backendResponseError(data: unknown, fallback: string): Error {
-  if (
-    isRecord(data) &&
-    typeof data.message === 'string' &&
-    data.message.trim()
-  ) {
-    return new Error(data.message);
+function backendResponseError(
+  data: unknown,
+  fallback: string,
+  responseStatusCode?: number,
+): CanonicalHostClientError {
+  const envelope = isRecord(data) && isRecord(data.error) ? data.error : data;
+  const payload = isRecord(envelope) ? envelope : {};
+  const code = nonEmptyString(payload.code);
+  const message = nonEmptyString(payload.message) ?? code ?? fallback;
+  const error = new Error(message) as CanonicalHostClientError;
+  if (code) error.code = code;
+  if (responseStatusCode !== undefined) {
+    error.statusCode = responseStatusCode;
   }
-  return new Error(fallback);
+  const details = nonEmptyString(payload.details);
+  if (details) error.details = details;
+  if (typeof payload.retryable === 'boolean') {
+    error.retryable = payload.retryable;
+  }
+  const operatorAction = nonEmptyString(payload.operatorAction);
+  if (operatorAction) error.operatorAction = operatorAction;
+  if (typeof payload.timestamp === 'number') {
+    error.timestamp = payload.timestamp;
+  }
+  return error;
+}
+
+function nonEmptyString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
 function clientLoginRequired(code: string, requestGeneration: number): Error {
