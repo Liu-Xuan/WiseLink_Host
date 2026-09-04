@@ -157,8 +157,12 @@ describe('single canonical app workspace', () => {
     expect(engineeringQuicklook).toContain('为什么需要关注');
     expect(engineeringQuicklook).toContain('未决问题');
     expect(engineeringQuicklook).toContain('建议下一步');
-    expect(engineeringQuicklook).toContain('资料族、版本与附件');
-    expect(engineeringQuicklook).toContain('不在资料库首屏预取');
+    expect(engineeringQuicklook).toContain('当前版本／派生产物');
+    expect(engineeringQuicklook).toContain("?? 'Host 未返回'");
+    expect(engineeringQuicklook).toContain(
+      '不推断附件、历史版本或外部关联资料',
+    );
+    expect(engineeringQuicklook).not.toContain('资料族、版本与附件');
     expect(engineeringQuicklook).not.toContain('sourceRefId}</');
     expect(page).toContain('WorkbenchShell');
     expect(page).toContain('NavigatorTree');
