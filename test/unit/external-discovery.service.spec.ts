@@ -21,7 +21,10 @@ class MemoryCandidateStore {
   readonly runs = new Map<string, FeishuNativeOemSearchRun>();
   readonly reviews = new Map<string, Review>();
 
-  async recordSearchRun(run: FeishuNativeOemSearchRun) {
+  async recordSearchRun(
+    run: FeishuNativeOemSearchRun,
+    _context: FeishuNativeOemServerContext,
+  ) {
     if (this.runs.has(run.searchRunRef)) throw conflict('OEM_MONITORING_SEARCH_RUN_CONFLICT');
     this.runs.set(run.searchRunRef, structuredClone(run));
     return { disposition: 'RECORDED', searchRun: structuredClone(run) };

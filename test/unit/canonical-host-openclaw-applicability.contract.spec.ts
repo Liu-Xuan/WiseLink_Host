@@ -227,6 +227,7 @@ function applicabilityTask(): ApplicabilityTaskContract {
     operation: 'EXTRACT_APPLICABILITY',
     applicabilityContextRef: 'APCTX-OPAQUE-1',
     inputRevision: 7,
+    configurationEvidenceReevaluation: null,
     documentVersionRef: 'DV-1',
     sourcePackage: { packageId: 'PKG-1', contentHash: 'sha256:pkg' },
     bilingualBinding: {

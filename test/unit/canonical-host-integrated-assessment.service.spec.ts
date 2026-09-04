@@ -472,6 +472,8 @@ describe('CanonicalHostIntegratedAssessmentService', () => {
           sourceResultId: 'OPENCLAW-RESULT-1',
           basedOnBaseRuleRevision: 1,
           basedOnBaseRuleArtifactSha256: '5'.repeat(64),
+          basedOnEngineerReviewRevision: null,
+          basedOnEngineerReviewArtifactSha256: null,
           discoveryStatus: 'NO_DISCOVERY',
           gap: null,
           candidateRefCount: 0,

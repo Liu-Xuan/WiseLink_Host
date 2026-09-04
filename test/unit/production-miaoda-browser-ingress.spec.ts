@@ -1,27 +1,5 @@
 import 'reflect-metadata';
 
-jest.mock('@nestjs/common', () => {
-  const actual = jest.requireActual('@nestjs/common');
-  const noOpParameterDecorator = () => () => undefined;
-  const stageThreeMethodDecorator =
-    (factory: (path?: string) => MethodDecorator) => (path?: string) => {
-      const legacy = factory(path);
-      return (value: (...args: unknown[]) => unknown, _context: unknown) => {
-        legacy({}, '', { value } as PropertyDescriptor);
-        return value;
-      };
-    };
-  return {
-    ...actual,
-    Body: noOpParameterDecorator,
-    Param: noOpParameterDecorator,
-    Query: noOpParameterDecorator,
-    Req: noOpParameterDecorator,
-    Get: stageThreeMethodDecorator(actual.Get),
-    Post: stageThreeMethodDecorator(actual.Post),
-  };
-});
-
 jest.mock('@lark-apaas/fullstack-nestjs-core', () => {
   const actual = jest.requireActual('@lark-apaas/fullstack-nestjs-core');
   return {
@@ -34,6 +12,7 @@ import { UserContextMiddleware } from '@lark-apaas/fullstack-nestjs-core';
 import type {
   ExecutionContext,
   INestApplication,
+  InjectionToken,
   Provider,
   Type,
 } from '@nestjs/common';
@@ -286,10 +265,13 @@ describe('ExternalDiscoveryController direct-call defense', () => {
 });
 
 function dependencyProviders(controllers: Type<unknown>[]): Provider[] {
-  const tokens = new Set<unknown>();
+  const tokens = new Set<InjectionToken>();
   for (const controller of controllers) {
     const parameterTypes =
-      (Reflect.getMetadata('design:paramtypes', controller) as unknown[]) ?? [];
+      (Reflect.getMetadata(
+        'design:paramtypes',
+        controller,
+      ) as InjectionToken[]) ?? [];
     for (const token of parameterTypes) tokens.add(token);
   }
   return [...tokens].map((token) => ({ provide: token, useValue: {} }));

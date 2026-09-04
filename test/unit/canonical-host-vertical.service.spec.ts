@@ -262,6 +262,7 @@ describe('CanonicalHostVerticalService', () => {
         mode: 'HOST_CONFIGURED',
         artifactStoreConfigured: true,
         fullU0ValidatorConfigured: true,
+        immutableAcceptanceReceiptOwnerConfigured: false,
         aeoSpecialistReaderConfigured: false,
         authority: 'COMPOSITION_STATE_NOT_ACTIVATION_NOT_WRITE_AUTHORIZATION',
       },
@@ -275,6 +276,7 @@ describe('CanonicalHostVerticalService', () => {
       reader,
       entryFacade(),
       failureReports(store, fullValidator()),
+      null,
     );
 
     const first = await service.runPdf(request, TEST_ACTOR);
@@ -409,6 +411,8 @@ describe('CanonicalHostVerticalService', () => {
             basedOnBaseRuleRevision: 1,
             basedOnBaseRuleArtifactSha256:
               first.workItem.package!.artifact.sha256,
+            basedOnEngineerReviewRevision: null,
+            basedOnEngineerReviewArtifactSha256: null,
             discoveryStatus: 'ACCESS_DENIED',
             gap: 'BOEING:UPSTREAM_CONNECT_TIMEOUT',
             candidateRefCount: 0,
@@ -504,6 +508,7 @@ describe('CanonicalHostVerticalService', () => {
         mode: 'HOST_CONFIGURED',
         artifactStoreConfigured: true,
         fullU0ValidatorConfigured: true,
+        immutableAcceptanceReceiptOwnerConfigured: false,
         aeoSpecialistReaderConfigured: false,
         authority: 'COMPOSITION_STATE_NOT_ACTIVATION_NOT_WRITE_AUTHORIZATION',
       },
@@ -517,6 +522,7 @@ describe('CanonicalHostVerticalService', () => {
       reader,
       entryFacade(),
       failureReports(store, fullValidator()),
+      null,
     );
 
     const initial = await service.runPdf(request, TEST_ACTOR);
@@ -600,12 +606,14 @@ describe('CanonicalHostVerticalService', () => {
           mode: 'HOST_CONFIGURED',
           artifactStoreConfigured: true,
           fullU0ValidatorConfigured: true,
+          immutableAcceptanceReceiptOwnerConfigured: false,
           aeoSpecialistReaderConfigured: false,
           authority: 'COMPOSITION_STATE_NOT_ACTIVATION_NOT_WRITE_AUTHORIZATION',
         },
       ),
       entryFacade(),
       failureReports(store, fullValidator()),
+      null,
     );
 
     const response = await service.runPdf(request, TEST_ACTOR);
@@ -686,6 +694,7 @@ describe('CanonicalHostVerticalService', () => {
           mode: 'HOST_CONFIGURED',
           artifactStoreConfigured: true,
           fullU0ValidatorConfigured: true,
+          immutableAcceptanceReceiptOwnerConfigured: false,
           aeoSpecialistReaderConfigured: false,
           authority: 'COMPOSITION_STATE_NOT_ACTIVATION_NOT_WRITE_AUTHORIZATION',
         },
@@ -696,6 +705,7 @@ describe('CanonicalHostVerticalService', () => {
         fullValidator(),
         new UnconfiguredFailureValidationWriteAuthorizationAdapter(),
       ),
+      null,
     );
 
     await expect(service.runPdf(request, TEST_ACTOR)).rejects.toThrow(
@@ -766,12 +776,14 @@ describe('CanonicalHostVerticalService', () => {
           mode: 'HOST_CONFIGURED',
           artifactStoreConfigured: true,
           fullU0ValidatorConfigured: true,
+          immutableAcceptanceReceiptOwnerConfigured: false,
           aeoSpecialistReaderConfigured: false,
           authority: 'COMPOSITION_STATE_NOT_ACTIVATION_NOT_WRITE_AUTHORIZATION',
         },
       ),
       entryFacade(),
       failureReports(store, fullValidator()),
+      null,
     );
 
     const response = await service.runPdf(request, TEST_ACTOR);
@@ -837,12 +849,14 @@ describe('CanonicalHostVerticalService', () => {
           mode: 'HOST_CONFIGURED',
           artifactStoreConfigured: true,
           fullU0ValidatorConfigured: true,
+          immutableAcceptanceReceiptOwnerConfigured: false,
           aeoSpecialistReaderConfigured: false,
           authority: 'COMPOSITION_STATE_NOT_ACTIVATION_NOT_WRITE_AUTHORIZATION',
         },
       ),
       entryFacade(),
       failureReports(transientStore, fullValidator()),
+      null,
     );
 
     const response = await service.runPdf(request, TEST_ACTOR);
@@ -894,12 +908,14 @@ describe('CanonicalHostVerticalService', () => {
           mode: 'HOST_CONFIGURED',
           artifactStoreConfigured: true,
           fullU0ValidatorConfigured: true,
+          immutableAcceptanceReceiptOwnerConfigured: false,
           aeoSpecialistReaderConfigured: false,
           authority: 'COMPOSITION_STATE_NOT_ACTIVATION_NOT_WRITE_AUTHORIZATION',
         },
       ),
       entryFacade(),
       failureReports(store, fullValidator()),
+      null,
     );
 
     const response = await service.runPdf(request, TEST_ACTOR);
@@ -949,12 +965,14 @@ describe('CanonicalHostVerticalService', () => {
           mode: 'HOST_CONFIGURED',
           artifactStoreConfigured: true,
           fullU0ValidatorConfigured: true,
+          immutableAcceptanceReceiptOwnerConfigured: false,
           aeoSpecialistReaderConfigured: false,
           authority: 'COMPOSITION_STATE_NOT_ACTIVATION_NOT_WRITE_AUTHORIZATION',
         },
       ),
       entryFacade(),
       failureReports(store, fullValidator()),
+      null,
     );
     const first = await service.runPdf(request, TEST_ACTOR);
     const artifact = first.workItem.package?.artifact;
@@ -1023,12 +1041,14 @@ describe('CanonicalHostVerticalService', () => {
           mode: 'HOST_CONFIGURED',
           artifactStoreConfigured: true,
           fullU0ValidatorConfigured: true,
+          immutableAcceptanceReceiptOwnerConfigured: false,
           aeoSpecialistReaderConfigured: false,
           authority: 'COMPOSITION_STATE_NOT_ACTIVATION_NOT_WRITE_AUTHORIZATION',
         },
       ),
       entryFacade(),
       failureReports(failingStore, fullValidator()),
+      null,
     );
 
     const response = await service.runPdf(request, TEST_ACTOR);
@@ -1093,6 +1113,7 @@ describe('CanonicalHostVerticalService', () => {
           mode: 'HOST_CONFIGURED',
           artifactStoreConfigured: true,
           fullU0ValidatorConfigured: true,
+          immutableAcceptanceReceiptOwnerConfigured: false,
           aeoSpecialistReaderConfigured: false,
           authority: 'COMPOSITION_STATE_NOT_ACTIVATION_NOT_WRITE_AUTHORIZATION',
         },
@@ -1269,6 +1290,7 @@ describe('CanonicalHostVerticalService', () => {
           mode: 'HOST_CONFIGURED',
           artifactStoreConfigured: true,
           fullU0ValidatorConfigured: true,
+          immutableAcceptanceReceiptOwnerConfigured: false,
           aeoSpecialistReaderConfigured: false,
           authority: 'COMPOSITION_STATE_NOT_ACTIVATION_NOT_WRITE_AUTHORIZATION',
         },
@@ -1353,6 +1375,7 @@ describe('CanonicalHostVerticalService', () => {
       {} as never,
       {} as never,
       {} as never,
+      null,
     );
 
     await expect(
@@ -1387,6 +1410,7 @@ describe('CanonicalHostVerticalService', () => {
       reader as never,
       {} as never,
       {} as never,
+      null,
     );
 
     await expect(
@@ -1419,6 +1443,7 @@ describe('CanonicalHostVerticalService', () => {
       {} as never,
       {} as never,
       {} as never,
+      null,
     );
 
     await expect(
@@ -1485,6 +1510,7 @@ describe('CanonicalHostVerticalService', () => {
             mode: 'HOST_CONFIGURED',
             artifactStoreConfigured: true,
             fullU0ValidatorConfigured: true,
+            immutableAcceptanceReceiptOwnerConfigured: false,
             aeoSpecialistReaderConfigured: false,
             authority:
               'COMPOSITION_STATE_NOT_ACTIVATION_NOT_WRITE_AUTHORIZATION',
@@ -1492,6 +1518,7 @@ describe('CanonicalHostVerticalService', () => {
         ),
         entryFacade(),
         failureReports(store, fullValidator()),
+        null,
       );
 
       await expect(
@@ -1546,12 +1573,14 @@ describe('CanonicalHostVerticalService', () => {
           mode: 'HOST_CONFIGURED',
           artifactStoreConfigured: true,
           fullU0ValidatorConfigured: true,
+          immutableAcceptanceReceiptOwnerConfigured: false,
           aeoSpecialistReaderConfigured: false,
           authority: 'COMPOSITION_STATE_NOT_ACTIVATION_NOT_WRITE_AUTHORIZATION',
         },
       ),
       entryFacade(),
       failureReports(store, fullValidator()),
+      null,
     );
 
     await expect(service.runPdf(request, TEST_ACTOR)).rejects.toThrow(

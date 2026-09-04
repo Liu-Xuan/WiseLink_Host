@@ -172,11 +172,10 @@ describe('hosted Aily signed MCP creator-only access', () => {
     const repository = productionRepository();
     const router = productionRouter(repository);
 
-    const openIdSelfReport =
-      ailyActor() as CanonicalAilyFinalUserActorContext & {
-        feishuOpenId: string;
-      };
-    openIdSelfReport.feishuOpenId = 'ou_self_reported_open_id';
+    const openIdSelfReport = {
+      ...ailyActor(),
+      feishuOpenId: 'ou_self_reported_open_id',
+    } as unknown as CanonicalAilyFinalUserActorContext;
     await expect(
       router.freshRead({
         actor: openIdSelfReport,
@@ -208,7 +207,7 @@ describe('hosted Aily signed MCP creator-only access', () => {
     const sdkConstructed = {
       ...gatewayActor(),
       transport: 'AILY_SIGNED_MCP_HTTP',
-    } as CanonicalAilyFinalUserActorContext;
+    } as unknown as CanonicalAilyFinalUserActorContext;
     await expect(
       router.freshRead({
         actor: sdkConstructed,
