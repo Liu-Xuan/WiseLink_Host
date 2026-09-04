@@ -1,4 +1,6 @@
 import type {
+  CanonicalApplicabilityCandidateProjection,
+  CanonicalApplicabilityInputProjection,
   CanonicalWorkItemProjection,
   ReviewTurnAssistantCandidate,
 } from '../../shared/api.interface';
@@ -180,6 +182,49 @@ describe('CanonicalHostOpenClawReviewService', () => {
         },
       ],
     });
+  });
+
+  it('reuses a matching CURRENT related-document applicability result without entering the assessment input', async () => {
+    const harness = reviewHarness(false, true, true);
+
+    const begin = await harness.service.begin('RC-1', 'request-1');
+
+    expect(begin.task.modelInput).toMatchObject({
+      context: {
+        relatedContext: {
+          status: 'AVAILABLE',
+          usagePolicy: {
+            candidateOnly: true,
+            readOnly: true,
+            includedInAssessmentInput: false,
+          },
+          items: [
+            expect.objectContaining({
+              normalizedTarget: '777-SL-31-064',
+              targetApplicability: 'APPLICABLE',
+              applicabilityResultRef: 'openclaw-applicability://RESULT-RELATED',
+            }),
+          ],
+        },
+      },
+    });
+    await expect(
+      harness.service.readSourceRefs('AQ-REVIEW-1', ['TARGET-SRC-1']),
+    ).resolves.toMatchObject({
+      sourceRefs: [
+        {
+          relatedDocument: {
+            targetApplicability: 'APPLICABLE',
+            applicabilityResultRef: 'openclaw-applicability://RESULT-RELATED',
+            contextUse: 'BACKGROUND_ONLY',
+          },
+        },
+      ],
+    });
+    expect(harness.workItems.loadTenantScopedProjection).toHaveBeenCalledWith(
+      'WI-RELATED-1',
+      'tenant-1',
+    );
   });
 
   it('fails closed when a stored source-evidence candidate cannot be resolved', async () => {
@@ -462,7 +507,11 @@ describe('CanonicalHostOpenClawReviewService', () => {
   });
 });
 
-function reviewHarness(withAttachment = false, withRelatedContext = false) {
+function reviewHarness(
+  withAttachment = false,
+  withRelatedContext = false,
+  withRelatedApplicability = false,
+) {
   const workItem = parsedWorkItem();
   const relatedWorkItem: CanonicalWorkItemProjection = {
     ...structuredClone(workItem),
@@ -477,6 +526,7 @@ function reviewHarness(withAttachment = false, withRelatedContext = false) {
     package: {
       ...structuredClone(workItem.package!),
       packageId: 'PKG-SL-1',
+      contentHash: 'related-content-hash',
       artifact: {
         ...structuredClone(workItem.package!.artifact),
         ref: 'artifact://related-package',
@@ -491,6 +541,11 @@ function reviewHarness(withAttachment = false, withRelatedContext = false) {
       sourceRefCount: 1,
     },
   };
+  if (withRelatedApplicability) {
+    workItem.applicabilityInput = matchingApplicabilityInput(workItem);
+    relatedWorkItem.applicability =
+      matchingApplicabilityResult(relatedWorkItem);
+  }
   const conversation = {
     reviewConversationId: 'RC-1',
     tenantId: 'tenant-1',
@@ -567,8 +622,7 @@ function reviewHarness(withAttachment = false, withRelatedContext = false) {
         requestedByUserId: 'actor-1',
         revision: workItemId === 'WI-RELATED-1' ? 3 : 7,
       },
-      projection:
-        workItemId === 'WI-RELATED-1' ? relatedWorkItem : workItem,
+      projection: workItemId === 'WI-RELATED-1' ? relatedWorkItem : workItem,
     })),
     listTenantDocumentAuthorizationBindings: jest.fn(async () => [
       {
@@ -739,14 +793,14 @@ function reviewHarness(withAttachment = false, withRelatedContext = false) {
               }),
             )
           : new TextEncoder().encode(
-            JSON.stringify({
-              sourceRefs: [
-                { sourceRefId: 'SRC-1', pageStart: 1, pageEnd: 1 },
-                { sourceRefId: 'SRC-REL', pageStart: 2, pageEnd: 2 },
-                { sourceRefId: 'SRC-UNUSED', pageStart: 2, pageEnd: 2 },
-              ],
-            }),
-          ),
+              JSON.stringify({
+                sourceRefs: [
+                  { sourceRefId: 'SRC-1', pageStart: 1, pageEnd: 1 },
+                  { sourceRefId: 'SRC-REL', pageStart: 2, pageEnd: 2 },
+                  { sourceRefId: 'SRC-UNUSED', pageStart: 2, pageEnd: 2 },
+                ],
+              }),
+            ),
     ),
   };
   const reader = withRelatedContext
@@ -1046,5 +1100,74 @@ function parsedWorkItem(): CanonicalWorkItemProjection {
     aeo: null,
     failure: null,
     recordingFailure: null,
+  };
+}
+
+function matchingApplicabilityInput(
+  item: CanonicalWorkItemProjection,
+): CanonicalApplicabilityInputProjection {
+  return {
+    schemaVersion: 'wiselink.3_1.applicability_input_projection.v1',
+    applicabilityContextRef: 'applicability-context://B-1266/2026-06-05',
+    workItemId: item.workItemId,
+    documentVersionId: item.source.documentVersionId,
+    sourcePackageId: item.package!.packageId,
+    sourcePackageContentHash: item.package!.contentHash,
+    sourcePackageArtifactSha256: item.package!.artifact.sha256,
+    targetBindingHash: 'target-binding-hash',
+    selectionRevision: 'selection-v1',
+    bindingRevision: 'binding-v1',
+    currentness: 'CURRENT',
+    aircraftNumber: 'B-1266',
+    assessmentAsOf: '2026-06-05',
+    fleetMasterData: {
+      schemaVersion: 'wiselink.v3_1.applicability_fleet.fleet_master_data.v1',
+      sourceSnapshotId: 'fleet-snapshot-1',
+      sourceRevisionKey: 'fleet-revision-1',
+      authorityRevision: 'fleet-authority-1',
+      sourceAsOf: '2026-06-05T00:00:00.000Z',
+      assets: [],
+      facts: [],
+    },
+  };
+}
+
+function matchingApplicabilityResult(
+  item: CanonicalWorkItemProjection,
+): CanonicalApplicabilityCandidateProjection {
+  return {
+    schemaVersion: 'wiselink.3_1.applicability_candidate_projection.v1',
+    status: 'CANDIDATE_ONLY',
+    currentness: 'CURRENT',
+    staleReason: null,
+    sourceResultId: 'openclaw-applicability://RESULT-RELATED',
+    actionAttemptId: 'ATT-RELATED',
+    inputRevision: 3,
+    documentId: item.source.documentId,
+    documentVersionId: item.source.documentVersionId,
+    sourcePackageId: item.package!.packageId,
+    sourcePackageContentHash: item.package!.contentHash,
+    translationActionAttemptId: 'ATT-TRANSLATION',
+    applicabilityContextRef: 'applicability-context://related',
+    applicabilityBindingRevision: 'binding-v1',
+    aircraftNumber: 'B-1266',
+    assessmentAsOf: '2026-06-05',
+    fleetSourceSnapshotId: 'fleet-snapshot-1',
+    fleetSourceRevisionKey: 'fleet-revision-1',
+    fleetAuthorityRevision: 'fleet-authority-1',
+    fleetSourceAsOf: '2026-06-05T00:00:00.000Z',
+    sourceExpressionCount: 1,
+    sourceRefCount: 1,
+    decision: 'APPLICABLE',
+    kleeneResult: true,
+    pass: true,
+    blockingUnknownCount: 0,
+    artifact: {
+      storeRole: 'UnifiedArtifactStoreCandidate',
+      ref: 'artifact://related-applicability',
+      sha256: 'd'.repeat(64),
+      byteLength: 100,
+      mediaType: 'application/json',
+    },
   };
 }

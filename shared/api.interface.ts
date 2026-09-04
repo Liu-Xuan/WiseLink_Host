@@ -82,8 +82,7 @@ export interface ReviewDecisionSnapshotProposal {
   candidateOnly: true;
 }
 
-export interface ReviewDecisionSnapshotCandidate
-  extends ReviewDecisionSnapshotProposal {
+export interface ReviewDecisionSnapshotCandidate extends ReviewDecisionSnapshotProposal {
   decisionSnapshotRef: string;
   workItemId: string;
   revision: number;
@@ -108,8 +107,10 @@ export interface ReviewActionDraftProposal {
 }
 
 /** Host-issued, persisted confirmation handle for one immutable draft. */
-export interface ReviewActionDraftCandidate
-  extends Omit<ReviewActionDraftProposal, 'decisionSnapshot'> {
+export interface ReviewActionDraftCandidate extends Omit<
+  ReviewActionDraftProposal,
+  'decisionSnapshot'
+> {
   reviewActionDraftRef: string;
   uncertaintyDispositions: ReviewUncertaintyDispositionCandidate[];
   decisionSnapshot: ReviewDecisionSnapshotCandidate | null;
@@ -449,10 +450,18 @@ export type CanonicalReferenceTargetResolution =
       workItemId: string;
       documentVersionId: string;
       canonicalDocumentNumber: string;
+      businessRevision: string | null;
     }
   | { status: 'RESOLVED_MULTIPLE'; candidateCount: number }
   | { status: 'DOCUMENT_NOT_INGESTED' }
   | { status: 'ACCESS_DENIED' };
+
+export type CanonicalRelatedTargetApplicability =
+  | 'APPLICABLE'
+  | 'NOT_APPLICABLE'
+  | 'UNKNOWN'
+  | 'NOT_EVALUATED'
+  | 'NOT_APPLICABILITY_BEARING';
 
 /**
  * One explicit reference occurrence projected from the current frozen.2 text.
@@ -466,7 +475,8 @@ export interface CanonicalReferenceMentionPreviewItem {
   documentType: CanonicalReferenceDocumentType;
   contextRole: CanonicalReferenceContextRole;
   targetResolution: CanonicalReferenceTargetResolution;
-  targetApplicability: 'NOT_EVALUATED';
+  targetApplicability: CanonicalRelatedTargetApplicability;
+  applicabilityResultRef?: string;
   sourceRefIds: string[];
   sourceLocators: CanonicalStructuredContentSourceLocator[];
 }
@@ -482,7 +492,8 @@ export interface CanonicalRelatedContextSnapshotItem {
   documentType: CanonicalReferenceDocumentType;
   relationRoles: CanonicalReferenceContextRole[];
   issueRelevance: 'EXPLICIT_REFERENCE';
-  targetApplicability: 'NOT_EVALUATED';
+  targetApplicability: CanonicalRelatedTargetApplicability;
+  applicabilityResultRef?: string;
   currentness: 'CURRENT' | 'UNKNOWN';
   authority: 'PRIMARY_DOCUMENT_EXPLICIT_MENTION';
   contextUse: 'BACKGROUND_ONLY';
@@ -498,8 +509,8 @@ export interface CanonicalRelatedContextSnapshot {
   workItemRef: string;
   inputRevision: number;
   primaryDocumentVersionRef: string;
-  assessmentTargetContextRef: null;
-  assessmentAsOf: null;
+  assessmentTargetContextRef: string | null;
+  assessmentAsOf: string | null;
   items: CanonicalRelatedContextSnapshotItem[];
   retrievalReceipts: Array<{
     channel: 'EXPLICIT_REFERENCE';
@@ -1536,8 +1547,7 @@ export type CanonicalAssessmentGapResolutionStatus =
 export type CanonicalAssessmentGapEvidenceCapability =
   'GET_INSTALLATION_EVENTS';
 
-export interface CanonicalAssessmentGapDispositionProjection
-  extends ReviewUncertaintyDispositionCandidate {
+export interface CanonicalAssessmentGapDispositionProjection extends ReviewUncertaintyDispositionCandidate {
   source: 'ENGINEER_CONFIRMED_DECISION_SNAPSHOT';
   reviewSequence: number;
 }

@@ -39,6 +39,12 @@ import {
   type CanonicalReferenceMentionCandidate,
 } from './canonical-reference-mention-preview';
 import { buildCanonicalRelatedContextSnapshot } from './canonical-related-context-snapshot';
+import {
+  relatedContextAssessmentTarget,
+  resolveCanonicalRelatedTargetApplicability,
+  type CanonicalRelatedContextAssessmentTarget,
+  type CanonicalRelatedTargetApplicabilityResolution,
+} from './canonical-related-context-applicability';
 import { projectCanonicalStructuredContentUnit } from './canonical-structured-content-projection';
 import { preflightCanonicalHostOpenClawResult } from './canonical-host-openclaw-runtime-policy';
 import { parseBilingualTranslationArtifact } from './canonical-host-openclaw-translation.service';
@@ -657,20 +663,32 @@ export class CanonicalHostOpenClawReviewService {
         workItem.package.documentIdentity?.documentCode,
         allUnits,
       );
+      const assessmentTarget = relatedContextAssessmentTarget(workItem);
       const resolved = await this.resolveReviewReferenceTargets(
         candidates,
         binding,
+        assessmentTarget,
       );
-      const mentions = candidates.map((mention) => ({
-        ...mention,
-        targetResolution: resolved.get(mention.normalizedTarget)?.resolution ?? {
-          status: 'DOCUMENT_NOT_INGESTED' as const,
-        },
-      }));
+      const mentions = candidates.map((mention) => {
+        const target = resolved.get(mention.normalizedTarget);
+        return {
+          ...mention,
+          targetResolution: target?.resolution ?? {
+            status: 'DOCUMENT_NOT_INGESTED' as const,
+          },
+          targetApplicability: target?.targetApplicability ?? 'NOT_EVALUATED',
+          ...(target?.applicabilityResultRef
+            ? { applicabilityResultRef: target.applicabilityResultRef }
+            : {}),
+        };
+      });
       const built = buildCanonicalRelatedContextSnapshot({
         workItemId: workItem.workItemId,
         inputRevision: workItem.revision,
         primaryDocumentVersionId: workItem.source.documentVersionId,
+        assessmentTargetContextRef:
+          assessmentTarget?.applicabilityContextRef ?? null,
+        assessmentAsOf: assessmentTarget?.assessmentAsOf ?? null,
         mentions,
       });
       const relatedResources = [...resolved.values()].flatMap(
@@ -692,8 +710,7 @@ export class CanonicalHostOpenClawReviewService {
           schemaVersion: built.snapshot.schemaVersion,
           snapshotRef: built.snapshot.snapshotRef,
           inputRevision: built.snapshot.inputRevision,
-          primaryDocumentVersionRef:
-            built.snapshot.primaryDocumentVersionRef,
+          primaryDocumentVersionRef: built.snapshot.primaryDocumentVersionRef,
           retrievalReceipts: built.snapshot.retrievalReceipts,
           usagePolicy: {
             candidateOnly: true,
@@ -722,18 +739,17 @@ export class CanonicalHostOpenClawReviewService {
   private async resolveReviewReferenceTargets(
     mentions: CanonicalReferenceMentionCandidate[],
     binding: ReviewBinding,
+    assessmentTarget: CanonicalRelatedContextAssessmentTarget | null,
   ): Promise<Map<string, ResolvedReviewReferenceTarget>> {
     const targets = [...new Set(mentions.map((item) => item.normalizedTarget))];
-    const catalogTargets = await this.documentManagement!.listCurrentReferenceTargets(
-      targets,
-      {
+    const catalogTargets =
+      await this.documentManagement!.listCurrentReferenceTargets(targets, {
         actorUserId: binding.conversation.actorId,
         tenantId: binding.conversation.tenantId,
         roles: [],
         appId: CANONICAL_APP_ID,
         env: 'runtime',
-      },
-    );
+      });
     const result = new Map<string, ResolvedReviewReferenceTarget>();
     await Promise.all(
       targets.map(async (target) => {
@@ -743,7 +759,10 @@ export class CanonicalHostOpenClawReviewService {
             canonicalReferenceLookupKey(target),
         );
         if (matches.length === 0) {
-          result.set(target, unresolvedReviewReferenceTarget('DOCUMENT_NOT_INGESTED'));
+          result.set(
+            target,
+            unresolvedReviewReferenceTarget('DOCUMENT_NOT_INGESTED'),
+          );
           return;
         }
         if (matches.length > 1) {
@@ -753,6 +772,7 @@ export class CanonicalHostOpenClawReviewService {
               candidateCount: matches.length,
             },
             resourceRefs: [],
+            targetApplicability: 'NOT_EVALUATED',
           });
           return;
         }
@@ -777,6 +797,7 @@ export class CanonicalHostOpenClawReviewService {
               candidateCount: bindings.length,
             },
             resourceRefs: [],
+            targetApplicability: 'NOT_EVALUATED',
           });
           return;
         }
@@ -794,6 +815,10 @@ export class CanonicalHostOpenClawReviewService {
           return;
         }
         const targetWorkItem = loaded.projection;
+        const applicability = resolveCanonicalRelatedTargetApplicability(
+          assessmentTarget,
+          targetWorkItem,
+        );
         const packageBytes = await this.artifactStore.readActualBytes(
           targetWorkItem.package.artifact,
         );
@@ -803,13 +828,17 @@ export class CanonicalHostOpenClawReviewService {
             workItemId: targetWorkItem.workItemId,
             documentVersionId: match.documentVersionId,
             canonicalDocumentNumber: match.canonicalDocumentNumber,
+            businessRevision:
+              targetWorkItem.package.documentIdentity?.businessRevision ?? null,
           },
+          ...applicability,
           resourceRefs: relatedDocumentResourceRefs(
             packageBytes,
             targetWorkItem.package.artifact.ref,
             targetWorkItem.package.artifact.sha256,
             target,
             match.documentVersionId,
+            applicability,
           ),
         });
       }),
@@ -836,7 +865,7 @@ interface ReviewRelatedContextBuild {
   context: Record<string, unknown>;
 }
 
-interface ResolvedReviewReferenceTarget {
+interface ResolvedReviewReferenceTarget extends CanonicalRelatedTargetApplicabilityResolution {
   resolution: CanonicalReferenceTargetResolution;
   resourceRefs: FrozenReviewSourceRef[];
 }
@@ -929,6 +958,7 @@ function relatedDocumentResourceRefs(
   resourceArtifactSha256: string,
   normalizedTarget: string,
   documentVersionRef: string,
+  applicability: CanonicalRelatedTargetApplicabilityResolution,
 ): FrozenReviewSourceRef[] {
   const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
   assertNoDuplicateJsonKeys(text);
@@ -958,7 +988,12 @@ function relatedDocumentResourceRefs(
           normalizedTarget,
           documentVersionRef,
           contextUse: 'BACKGROUND_ONLY',
-          targetApplicability: 'NOT_EVALUATED',
+          targetApplicability: applicability.targetApplicability,
+          ...(applicability.applicabilityResultRef
+            ? {
+                applicabilityResultRef: applicability.applicabilityResultRef,
+              }
+            : {}),
         },
       },
     };
@@ -1067,11 +1102,18 @@ function unavailableReviewRelatedContext(
 function unresolvedReviewReferenceTarget(
   status: 'DOCUMENT_NOT_INGESTED' | 'ACCESS_DENIED',
 ): ResolvedReviewReferenceTarget {
-  return { resolution: { status }, resourceRefs: [] };
+  return {
+    resolution: { status },
+    resourceRefs: [],
+    targetApplicability: 'NOT_EVALUATED',
+  };
 }
 
 function canonicalReferenceLookupKey(value: string): string {
-  return value.trim().toUpperCase().replace(/[^A-Z0-9]/gu, '');
+  return value
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/gu, '');
 }
 
 function relatedContextErrorCode(error: unknown): string {

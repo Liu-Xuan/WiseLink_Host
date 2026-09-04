@@ -12,6 +12,7 @@ import type {
   CanonicalReferenceContextRole,
   CanonicalReferenceMentionPreviewItem,
   CanonicalReferenceTargetResolution,
+  CanonicalRelatedTargetApplicability,
   CanonicalRelatedContextPreviewResponse,
   CanonicalStructuredContentSourceLocator,
 } from '@shared/api.interface';
@@ -120,7 +121,8 @@ export function ReferenceMentionPreview({
         {preview
           ? `已准备 ${preview.snapshot.items.length} 个关联目标的只读快照。`
           : '只读快照尚未准备。'}
-        目标适用性尚未评估，也未进入评估输入。
+        {preview ? applicabilitySummary(preview) : ''}
+        所有关联上下文均未进入评估输入。
       </footer>
     </section>
   );
@@ -154,6 +156,7 @@ function ReferenceMentionRow({
       </div>
       <small>{mention.documentType}</small>
       <small>{ROLE_LABELS[mention.contextRole]}</small>
+      <TargetApplicability value={mention.targetApplicability} />
       <TargetResolution
         resolution={mention.targetResolution}
         onOpenTarget={onOpenTarget}
@@ -169,6 +172,25 @@ function ReferenceMentionRow({
         原文
       </button>
     </article>
+  );
+}
+
+function TargetApplicability({
+  value,
+}: {
+  value: CanonicalRelatedTargetApplicability;
+}) {
+  const labels: Record<CanonicalRelatedTargetApplicability, string> = {
+    APPLICABLE: '适用',
+    NOT_APPLICABLE: '不适用',
+    UNKNOWN: '适用性未知',
+    NOT_EVALUATED: '未评估',
+    NOT_APPLICABILITY_BEARING: '不承担适用性',
+  };
+  return (
+    <small className={`reference-preview-applicability is-${value}`}>
+      {labels[value]}
+    </small>
   );
 }
 
@@ -188,6 +210,7 @@ function TargetResolution({
       >
         <ExternalLink aria-hidden="true" />
         打开关联文件
+        {resolution.businessRevision ? ` · ${resolution.businessRevision}` : ''}
       </button>
     );
   }
@@ -204,4 +227,14 @@ function TargetResolution({
       {label[resolution.status]}
     </small>
   );
+}
+
+function applicabilitySummary(
+  preview: CanonicalRelatedContextPreviewResponse,
+): string {
+  const evaluated = preview.snapshot.items.filter(
+    (item) => item.targetApplicability !== 'NOT_EVALUATED',
+  ).length;
+  if (evaluated === 0) return '目标文档尚无可复用的当前适用性结果；';
+  return `已复用 ${evaluated} 个目标文档自己的当前适用性结果；`;
 }

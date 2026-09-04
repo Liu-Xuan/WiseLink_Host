@@ -53,6 +53,12 @@ import {
 } from './canonical-reference-mention-preview';
 import { buildCanonicalRelatedContextSnapshot } from './canonical-related-context-snapshot';
 import {
+  relatedContextAssessmentTarget,
+  resolveCanonicalRelatedTargetApplicability,
+  type CanonicalRelatedContextAssessmentTarget,
+  type CanonicalRelatedTargetApplicabilityResolution,
+} from './canonical-related-context-applicability';
+import {
   projectCanonicalBrowserQueryResult,
   projectCanonicalStructuredContentUnit,
 } from './canonical-structured-content-projection';
@@ -821,14 +827,19 @@ export class CanonicalHostVerticalService {
       pkg.documentIdentity?.documentCode,
       allUnits,
     );
+    const assessmentTarget = relatedContextAssessmentTarget(projection);
     const mentions = await this.resolveReferenceMentionTargets(
       mentionCandidates,
       actor,
+      assessmentTarget,
     );
     const snapshotCandidate = buildCanonicalRelatedContextSnapshot({
       workItemId: projection.workItemId,
       inputRevision: projection.revision,
       primaryDocumentVersionId: projection.source.documentVersionId,
+      assessmentTargetContextRef:
+        assessmentTarget?.applicabilityContextRef ?? null,
+      assessmentAsOf: assessmentTarget?.assessmentAsOf ?? null,
       mentions,
     });
     const snapshotArtifact = await this.artifactStore.persistAndReadback(
@@ -857,6 +868,7 @@ export class CanonicalHostVerticalService {
   private async resolveReferenceMentionTargets(
     mentions: CanonicalReferenceMentionCandidate[],
     actor: CanonicalHostActor,
+    assessmentTarget: CanonicalRelatedContextAssessmentTarget | null,
   ): Promise<CanonicalReferenceMentionPreviewItem[]> {
     const targets = [...new Set(mentions.map((item) => item.normalizedTarget))];
     const catalogTargets = this.documentManagement
@@ -868,10 +880,7 @@ export class CanonicalHostVerticalService {
           env: actor.env,
         })
       : [];
-    const resolutions = new Map<
-      string,
-      CanonicalReferenceTargetResolution
-    >();
+    const resolutions = new Map<string, ResolvedReferenceTarget>();
     await Promise.all(
       targets.map(async (target) => {
         resolutions.set(
@@ -883,16 +892,24 @@ export class CanonicalHostVerticalService {
                 canonicalReferenceLookupKey(target),
             ),
             actor,
+            assessmentTarget,
           ),
         );
       }),
     );
-    return mentions.map((mention) => ({
-      ...mention,
-      targetResolution: resolutions.get(mention.normalizedTarget) ?? {
-        status: 'DOCUMENT_NOT_INGESTED',
-      },
-    }));
+    return mentions.map((mention) => {
+      const resolved = resolutions.get(mention.normalizedTarget);
+      return {
+        ...mention,
+        targetResolution: resolved?.resolution ?? {
+          status: 'DOCUMENT_NOT_INGESTED',
+        },
+        targetApplicability: resolved?.targetApplicability ?? 'NOT_EVALUATED',
+        ...(resolved?.applicabilityResultRef
+          ? { applicabilityResultRef: resolved.applicabilityResultRef }
+          : {}),
+      };
+    });
   }
 
   private async resolveReferenceTarget(
@@ -901,13 +918,16 @@ export class CanonicalHostVerticalService {
       canonicalDocumentNumber: string;
     }>,
     actor: CanonicalHostActor,
-  ): Promise<CanonicalReferenceTargetResolution> {
+    assessmentTarget: CanonicalRelatedContextAssessmentTarget | null,
+  ): Promise<ResolvedReferenceTarget> {
     if (!this.workItems) {
-      return { status: 'DOCUMENT_NOT_INGESTED' };
+      return unresolvedReferenceTarget('DOCUMENT_NOT_INGESTED');
     }
-    if (matches.length === 0) return { status: 'DOCUMENT_NOT_INGESTED' };
+    if (matches.length === 0) {
+      return unresolvedReferenceTarget('DOCUMENT_NOT_INGESTED');
+    }
     if (matches.length > 1) {
-      return { status: 'RESOLVED_MULTIPLE', candidateCount: matches.length };
+      return multipleReferenceTargets(matches.length);
     }
 
     const [match] = matches;
@@ -917,7 +937,7 @@ export class CanonicalHostVerticalService {
         documentVersionId: match.documentVersionId,
       });
     if (tenantBindings.length === 0) {
-      return { status: 'DOCUMENT_NOT_INGESTED' };
+      return unresolvedReferenceTarget('DOCUMENT_NOT_INGESTED');
     }
     const authorized: typeof tenantBindings = [];
     for (const binding of tenantBindings) {
@@ -935,16 +955,38 @@ export class CanonicalHostVerticalService {
         continue;
       }
     }
-    if (authorized.length === 0) return { status: 'ACCESS_DENIED' };
+    if (authorized.length === 0) {
+      return unresolvedReferenceTarget('ACCESS_DENIED');
+    }
     if (authorized.length > 1) {
-      return { status: 'RESOLVED_MULTIPLE', candidateCount: authorized.length };
+      return multipleReferenceTargets(authorized.length);
     }
     const [ownedBinding] = authorized;
+    const loaded = await this.workItems.loadTenantScopedProjection(
+      ownedBinding.workItemId,
+      actor.tenantId,
+    );
+    if (
+      !loaded?.projection ||
+      loaded.row.requestedByUserId !== actor.userId ||
+      loaded.projection.source.documentVersionId !== match.documentVersionId
+    ) {
+      return unresolvedReferenceTarget('ACCESS_DENIED');
+    }
+    const targetWorkItem = loaded.projection;
     return {
-      status: 'RESOLVED_EXACT',
-      workItemId: ownedBinding.workItemId,
-      documentVersionId: match.documentVersionId,
-      canonicalDocumentNumber: match.canonicalDocumentNumber,
+      resolution: {
+        status: 'RESOLVED_EXACT',
+        workItemId: ownedBinding.workItemId,
+        documentVersionId: match.documentVersionId,
+        canonicalDocumentNumber: match.canonicalDocumentNumber,
+        businessRevision:
+          targetWorkItem.package?.documentIdentity?.businessRevision ?? null,
+      },
+      ...resolveCanonicalRelatedTargetApplicability(
+        assessmentTarget,
+        targetWorkItem,
+      ),
     };
   }
 
@@ -2015,8 +2057,33 @@ function s1000dVerifiedResponse(
   };
 }
 
+type ResolvedReferenceTarget = CanonicalRelatedTargetApplicabilityResolution & {
+  resolution: CanonicalReferenceTargetResolution;
+};
+
+function unresolvedReferenceTarget(
+  status: 'DOCUMENT_NOT_INGESTED' | 'ACCESS_DENIED',
+): ResolvedReferenceTarget {
+  return {
+    resolution: { status },
+    targetApplicability: 'NOT_EVALUATED',
+  };
+}
+
+function multipleReferenceTargets(
+  candidateCount: number,
+): ResolvedReferenceTarget {
+  return {
+    resolution: { status: 'RESOLVED_MULTIPLE', candidateCount },
+    targetApplicability: 'NOT_EVALUATED',
+  };
+}
+
 function canonicalReferenceLookupKey(value: string): string {
-  return value.trim().toUpperCase().replace(/[^A-Z0-9]/gu, '');
+  return value
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/gu, '');
 }
 
 function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
