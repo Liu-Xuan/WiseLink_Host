@@ -189,7 +189,7 @@ describe('canonical structured-content browser projection', () => {
         outlineKind: 'NONE',
         sectionTitle: null,
         displayText:
-          'Refer to FTD-31-21002 and FTD-23-20001formoreinformation. Service Letter (SL) 777-SL-31-064 is related.',
+          'Pleasereferto FTD-31-21002 and FTD-23-20001formoreinformation. Service Letter (SL) 777-SL-31-064 is related.',
         sourceRefIds: ['src-real-ftd'],
         sourceLocators: [],
       },
@@ -204,6 +204,7 @@ describe('canonical structured-content browser projection', () => {
       '777-FTD-23-20001',
       '777-SL-31-064',
     ]);
+    expect(mentions[0].contextRole).toBe('RELATED_INFORMATION');
     expect(mentions.map((mention) => mention.matchedText).join(' ')).not.toMatch(
       /formoreinformation/iu,
     );
