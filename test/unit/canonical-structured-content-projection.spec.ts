@@ -85,6 +85,7 @@ describe('canonical structured-content browser projection', () => {
     const referenceMentions = deriveCanonicalReferenceMentionPreview(
       displayed,
       '737-34-3830',
+      sourceUnits,
     );
     expect(referenceMentions.length).toBeGreaterThan(4);
     expect(referenceMentions).toEqual(
@@ -116,5 +117,67 @@ describe('canonical structured-content browser projection', () => {
     expect(
       new Set(referenceMentions.map((mention) => mention.mentionId)).size,
     ).toBe(referenceMentions.length);
+    expect(
+      referenceMentions.find(
+        (mention) => mention.normalizedTarget === '737MAX-FTD-34-18008',
+      )?.sourceLocators[0],
+    ).toMatchObject({ pageStart: 5 });
+    expect(
+      referenceMentions.some((mention) =>
+        mention.normalizedTarget.endsWith('AMM 34-61-00'),
+      ),
+    ).toBe(true);
+  });
+
+  it('uses the real legacy FTD reference rows as precise occurrence owners', async () => {
+    const bytes = new Uint8Array(
+      await readFile(resolve('test/fixtures/real-ftd-frozen2.unified-package.json')),
+    );
+    const artifact: UnifiedPackageArtifactDescriptor = {
+      storeRole: 'UnifiedArtifactStoreCandidate',
+      ref: 'artifact://test/real-ftd-frozen-2',
+      sha256: sha256Raw(bytes),
+      byteLength: bytes.byteLength,
+      mediaType: 'application/json',
+    };
+    const sourceUnits = new Frozen2CandidateReaderService().readAllSourceUnits(
+      artifact,
+      bytes,
+    );
+    const displayed = sourceUnits
+      .map((unit, index) =>
+        projectCanonicalStructuredContentUnit(unit, index + 1),
+      )
+      .filter((unit): unit is CanonicalStructuredContentUnit => unit !== null);
+    const mentions = deriveCanonicalReferenceMentionPreview(
+      displayed,
+      '777-FTD-31-21002',
+      sourceUnits,
+    );
+    const structured = mentions.filter((mention) =>
+      mention.mentionId.includes('-structured-'),
+    );
+
+    expect(structured).toHaveLength(15);
+    expect(structured.map((mention) => mention.normalizedTarget)).toEqual(
+      expect.arrayContaining([
+        '777-31A0391',
+        'D201009000032',
+        '777-23-61',
+        '777-SL-31-064',
+      ]),
+    );
+    expect(new Set(structured.map((mention) => mention.documentType))).toEqual(
+      new Set(['SB', 'SIL', 'FTD', 'FOTB', 'SL']),
+    );
+    expect(
+      structured.every(
+        (mention) =>
+          mention.sourceRefIds.length > 0 &&
+          mention.sourceLocators[0]?.quote?.includes(
+            mention.normalizedTarget,
+          ),
+      ),
+    ).toBe(true);
   });
 });

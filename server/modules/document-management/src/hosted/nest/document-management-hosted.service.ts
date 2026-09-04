@@ -124,12 +124,12 @@ export class DocumentManagementHostedService {
   }
 
   async listCurrentReferenceTargets(
-    canonicalDocumentNumber: string,
+    canonicalDocumentNumbers: readonly string[],
     context: HostedRequestContext,
   ): Promise<HostedCurrentReferenceTarget[]> {
     assertProductionMiaodaBrowserIdentityAvailable(hostedIdentity(context));
-    const lookupKey = canonicalDocumentNumberLookupKey(
-      canonicalDocumentNumber,
+    const lookupKeys = new Set(
+      canonicalDocumentNumbers.map(canonicalDocumentNumberLookupKey),
     );
     const documents = await this.catalog.listIngressDocuments({
       tenantId: context.tenantId,
@@ -138,8 +138,9 @@ export class DocumentManagementHostedService {
       .filter(
         (document) =>
           document.versionStatus === 'CANONICAL_CURRENT' &&
-          canonicalDocumentNumberLookupKey(document.detail.documentCode) ===
-            lookupKey,
+          lookupKeys.has(
+            canonicalDocumentNumberLookupKey(document.detail.documentCode),
+          ),
       )
       .map((document) => ({
         familyId: document.familyId,

@@ -428,9 +428,11 @@ export type CanonicalReferenceDocumentType =
   | 'AMM'
   | 'CMM'
   | 'FIM'
+  | 'FOTB'
   | 'FTD'
   | 'IPC'
   | 'SB'
+  | 'SIL'
   | 'SL'
   | 'SRM'
   | 'WDM';
