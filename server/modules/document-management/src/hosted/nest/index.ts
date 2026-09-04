@@ -5,6 +5,7 @@ export {
 } from './document-management-hosted.module';
 export {
   DocumentManagementHostedService,
+  type HostedCurrentReferenceTarget,
   type HostedRequestContext,
 } from './document-management-hosted.service';
 export {

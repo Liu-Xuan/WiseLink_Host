@@ -5,6 +5,11 @@ import type {
   CanonicalStructuredContentUnit,
 } from '@shared/api.interface';
 
+export type CanonicalReferenceMentionCandidate = Omit<
+  CanonicalReferenceMentionPreviewItem,
+  'targetResolution'
+>;
+
 interface MentionCandidate {
   start: number;
   end: number;
@@ -23,8 +28,8 @@ const MANUAL_REFERENCE =
 export function deriveCanonicalReferenceMentionPreview(
   units: CanonicalStructuredContentUnit[],
   currentDocumentCode?: string,
-): CanonicalReferenceMentionPreviewItem[] {
-  const mentions: CanonicalReferenceMentionPreviewItem[] = [];
+): CanonicalReferenceMentionCandidate[] {
+  const mentions: CanonicalReferenceMentionCandidate[] = [];
   const currentTarget: string = normalizeCode(currentDocumentCode ?? '');
   let currentSection = '';
 

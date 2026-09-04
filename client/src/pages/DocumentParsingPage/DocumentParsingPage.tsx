@@ -1264,6 +1264,11 @@ export default function DocumentParsingPage() {
             workItemId={workItemId}
             workItemRevision={data.workItem.revision}
             onLocateSourceRef={locateStructuredSourceRef}
+            onOpenTarget={(targetWorkItemId) =>
+              navigate(
+                `/work-items/${encodeURIComponent(targetWorkItemId)}/documents?node=reader&tab=reader&readerMode=structured`,
+              )
+            }
           />
         ) : null}
 

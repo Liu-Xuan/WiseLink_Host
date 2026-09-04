@@ -616,6 +616,32 @@ export class MiaodaWorkItemRepository {
     return row ?? null;
   }
 
+  async listTenantDocumentAuthorizationBindings(input: {
+    tenantId: string;
+    documentVersionId: string;
+  }): Promise<WorkItemAuthorizationBinding[]> {
+    return this.db
+      .select({
+        workItemId: workItem.workItemId,
+        revision: workItem.revision,
+        tenantId: workItem.tenantId,
+        requestId: workItem.requestId,
+        documentId: workItem.documentId,
+        documentVersionId: workItem.documentVersionId,
+        requestedByUserId: workItem.requestedByUserId,
+        runKey: workItem.runKey,
+      })
+      .from(workItem)
+      .where(
+        and(
+          eq(workItem.tenantId, input.tenantId),
+          eq(workItem.actionType, ACTION_TYPE),
+          eq(workItem.documentVersionId, input.documentVersionId),
+        ),
+      )
+      .orderBy(desc(workItem.updatedAt));
+  }
+
   async initializeProjection(
     workItemId: string,
     seed: Omit<CanonicalWorkItemProjection, 'revision'>,

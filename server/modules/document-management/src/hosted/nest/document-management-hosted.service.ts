@@ -35,6 +35,14 @@ export interface HostedRequestContext {
   };
 }
 
+export interface HostedCurrentReferenceTarget {
+  familyId: string;
+  documentVersionId: string;
+  canonicalDocumentNumber: string;
+  documentFamily: string;
+  issuerAuthority: string;
+}
+
 @Injectable()
 // Registered by DocumentManagementHostedModule.register().
 // eslint-disable-next-line @darraghor/nestjs-typed/injectable-should-be-provided
@@ -114,6 +122,37 @@ export class DocumentManagementHostedService {
     const family = await this.catalog.readFamily(version.familyId);
     return { version, family };
   }
+
+  async listCurrentReferenceTargets(
+    canonicalDocumentNumber: string,
+    context: HostedRequestContext,
+  ): Promise<HostedCurrentReferenceTarget[]> {
+    assertProductionMiaodaBrowserIdentityAvailable(hostedIdentity(context));
+    const lookupKey = canonicalDocumentNumberLookupKey(
+      canonicalDocumentNumber,
+    );
+    const documents = await this.catalog.listIngressDocuments({
+      tenantId: context.tenantId,
+    });
+    return documents
+      .filter(
+        (document) =>
+          document.versionStatus === 'CANONICAL_CURRENT' &&
+          canonicalDocumentNumberLookupKey(document.detail.documentCode) ===
+            lookupKey,
+      )
+      .map((document) => ({
+        familyId: document.familyId,
+        documentVersionId: document.documentVersionId,
+        canonicalDocumentNumber: document.detail.documentCode,
+        documentFamily: document.detail.documentFamily,
+        issuerAuthority: document.detail.issuerAuthority,
+      }));
+  }
+}
+
+function canonicalDocumentNumberLookupKey(value: string): string {
+  return value.trim().toUpperCase().replace(/[^A-Z0-9]/gu, '');
 }
 
 function hostedIdentity(context: HostedRequestContext) {
