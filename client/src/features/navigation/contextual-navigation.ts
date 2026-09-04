@@ -1,4 +1,7 @@
-import type { CanonicalDocumentParsingPageResponse } from '@shared/api.interface';
+import type {
+  CanonicalDocumentParsingPageResponse,
+  CanonicalRelatedDocumentRelation,
+} from '@shared/api.interface';
 import {
   AUTHORITY_LABELS,
   FRESHNESS_LABELS,
@@ -26,8 +29,8 @@ export interface EngineeringQuicklookView {
   unresolvedQuestions: string[];
   recommendedActions: string[];
   sourceCount?: number;
-  documentVersionLabel: string;
-  relatedDocumentCount: number;
+  currentVersionLabel: string | null;
+  derivedArtifactCount: number | null;
 }
 
 function firstNonEmpty(...values: Array<string | null | undefined>): string {
@@ -45,6 +48,16 @@ function statementEvidence(
     label: statement.text,
     sourceRefId: statement.sourceRefIds[0],
   };
+}
+
+export function countQuicklookDerivedArtifacts(
+  relations: CanonicalRelatedDocumentRelation[],
+): number {
+  return relations.filter(
+    (relation: CanonicalRelatedDocumentRelation) =>
+      relation.relationRole !== 'SELECTED_DOCUMENT_VERSION' &&
+      relation.relationRole !== 'HAS_READER_RESULTS',
+  ).length;
 }
 
 function workItemRoutes(workItemId: string) {
@@ -95,7 +108,6 @@ export function buildCurrentObjectContext(
       process: baseRules?.unresolvedCount,
       jobAid: baseRules ? `${baseRules.evaluationItemCount} 项` : undefined,
       review: reviewCount || undefined,
-      family: page.relatedDocuments.relations.length || undefined,
     },
   };
 }
@@ -157,8 +169,11 @@ export function buildEngineeringQuicklook(
         (statement: EngineeringStatementView) => statement.text,
       ) ?? [],
     sourceCount: overall?.sourceCount,
-    documentVersionLabel: view.documentVersion,
-    relatedDocumentCount: page.relatedDocuments.relations.length,
+    currentVersionLabel:
+      page.workItem.package?.documentIdentity?.businessRevision?.trim() || null,
+    derivedArtifactCount: countQuicklookDerivedArtifacts(
+      page.relatedDocuments.relations,
+    ),
   };
 }
 

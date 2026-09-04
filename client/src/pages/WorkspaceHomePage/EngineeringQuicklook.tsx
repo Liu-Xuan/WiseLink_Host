@@ -166,22 +166,27 @@ export default function EngineeringQuicklook({
           </section>
 
           <details className="library-quicklook-family">
-            <summary>资料族、版本与附件</summary>
+            <summary>当前版本／派生产物</summary>
             <dl>
               <div>
-                <dt>当前受控版本</dt>
-                <dd>{quicklook.documentVersionLabel}</dd>
+                <dt>当前版本</dt>
+                <dd>{quicklook.currentVersionLabel ?? 'Host 未返回'}</dd>
               </div>
               <div>
-                <dt>关联资料</dt>
-                <dd>{quicklook.relatedDocumentCount} 项</dd>
+                <dt>派生产物</dt>
+                <dd>
+                  {quicklook.derivedArtifactCount === null
+                    ? 'Host 未返回'
+                    : `${quicklook.derivedArtifactCount} 项`}
+                </dd>
               </div>
             </dl>
             <p>
-              历史版本与附件清单不在资料库首屏预取；进入资料族后按当前权限读取。
+              仅显示 Host 当前 WorkItem
+              投影中的受控版本与派生产物；不推断附件、历史版本或外部关联资料。
             </p>
             <Button type="button" variant="outline" onClick={onOpenFamily}>
-              打开资料族与历史 <ArrowRight aria-hidden="true" />
+              打开当前资料 <ArrowRight aria-hidden="true" />
             </Button>
           </details>
 
