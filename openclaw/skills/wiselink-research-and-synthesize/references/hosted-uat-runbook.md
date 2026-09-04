@@ -37,10 +37,13 @@ Task/Result schema、MCP tool 形状、authority 或安全语义改变时升级 
 
 1. app 精确为 `app_17c3zn24kv2`；
 2. 唯一逻辑 profile 为 `wiselink-engineering`；
-3. 模型由官方托管 profile/config 选择，当前 UI 可选 `GLM-5.3`；每个 turn 必须读回非空、可识别的实际
-   `modelVersion`，智能选择/fallback 只有在实际模型仍逐 turn 可见时才可继续；
+3. 模型由官方托管 profile/config 选择，当前 configured provider/model endpoint 为
+   `miaoda/miaoda-model-auto`，下游具体模型未暴露；驱动先解析 `agents.list[]` 中当前 profile 的
+   string 或 `{primary,fallbacks}` model，未显式配置时才回退 `agents.defaults.model`，并要求 fallbacks 为空。每个 turn
+   优先读回非空、可识别的实际 `modelVersion`；响应未提供可读模型时才使用上述唯一 configured endpoint 作为可证明执行标识，不把它解释为未暴露的下游具体模型。重复 agent、
+   不可读 primary、fallbacks 非数组或非空均在调用模型前停止；
 4. 同名 Skill 只有一个，安装版本精确
-   `wiselink-research-and-synthesize@r09.c15`；
+   `wiselink-research-and-synthesize@r09.c16`；
 5. Host MCP package/version 为
    `wiselink-openclaw-engineering-assessment@1.2.0`，exact 20 tools 可见；
 6. C3 successor 已进入 current Hosted release；只凭 Git commit 不等于 deployed readback；
@@ -133,14 +136,17 @@ authenticated user。
    之前停止。随后只启动一次 `scripts/run-hosted-review-turn.mjs` 外部驱动；不得让对话模型直接调用五个 Host 工具。
 3. 驱动执行一次 `begin_review_turn`；确认 Host 派生 actor/tenant/WorkItem/session，调用参数中没有这些字段。
 4. 驱动执行一次 `get_review_turn_context` fresh-read current，并只读取本轮所需 SourceRef；确认模型输入不含
-   conversation/turn/request/attempt/lease/WorkItem 控制面值。
+   conversation/turn/request/attempt/lease/WorkItem 控制面值；确认本轮 requestId 只派生不可逆 session discriminator，
+   相同正文的新 Turn 也不会复用模型会话。
 5. 模型经 Gateway HTTP 仅生成 SOURCE_LINK/ANSWER 内容；本用例要求 `SOURCE_LINK` 且至少一个
-   `sourceRefs` 来自本轮实读 allowlist，`sourceRefs=[]` 必须在 commit 前 fail closed；若返回 tool_calls 也 fail closed。
-   c15 在 strict parse 前以 0600 write-once checkpoint 只保存 provider/model、HTTP/finish、content type/length、
-   首尾字符类别、fence/analysis/prose 标志、JSON object parse 结果与 content SHA，不保存原始响应。只允许
-   首行由三个反引号紧接小写 `json`、末行仅含三个反引号、围栏外零内容且内部为 JSON object 的单一围栏
-   被机械移除；其余
-   fence/prose/analysis/array/null 均 fail closed。
+   `sourceRefs` 来自本轮实读 allowlist，`sourceRefs=[]` 必须在 commit 前 fail closed。c16 请求只暴露唯一 forced
+   function `return_wiselink_review_candidate`，固定 `tool_choice`、`parallel_tool_calls=false` 和 `n=1`；该函数只作为
+   序列化通道且永不执行。响应必须只有一个 choice 和一个同名 function call，assistant content 为 null 或仅空白，
+   arguments 为 direct strict JSON object。其他函数、多 tool call、fence/prose/array/null arguments 或任何 analysis
+   均 fail closed，不抽取、不修复、不归一化。
+   strict parse 前的 `model.output-shape` v2 0600 write-once checkpoint 只保存 provider/model、HTTP/finish、choice/tool
+   call 数量、assistant content 类型/长度/空白状态与 hash、function 名称匹配、arguments 类型/长度/JSON parse 分类与
+   hash，不保存原始 content 或 arguments。
 6. 驱动检查 ResultEnvelope 实际 provenance 与 SourceRef artifact ref/SHA，并单次 commit。
 7. 用同一 checkpoint 目录再次启动驱动，确认 Host/模型远程调用数均不增加。
 8. Host 读回原 ReviewTurn assistant candidate 和 provenance；WorkItem revision/current/STALE 均未变化。浏览器必须
@@ -177,8 +183,8 @@ authenticated user。
 - Hosted release/Host MCP version、Skill version、profile、Session mode/key hash；
 - attemptRef、taskType、input/base revision、Task inputHash；
 - tool name/sequence、status、lease generation（不保留 lease token）；
-- checkpoint 文件仅在私有 `0700` 目录中以 `0600` 保存；`model.output-shape` 必须 write-once 且不含模型
-  原始 content；对外报告只保留绑定 hash 和调用计数；
+- checkpoint 文件仅在私有 `0700` 目录中以 `0600` 保存；`model.output-shape` v2 必须 write-once 且不含模型
+  原始 content/arguments；对外报告只保留绑定 hash 和调用计数；
 - Result contentHash、candidate type、SourceRef IDs 与 artifact SHA；
 - 实际 `modelVersion/promptVersion/skillVersion/toolVersions`；
 - mutation summary（candidate persisted 与五个 authority false flags）；

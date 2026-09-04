@@ -79,13 +79,15 @@ runtimePolicy.modelPolicyRef = official-hosted-profile-config
 ResultEnvelope.modelVersion = 官方托管 profile/config 本轮选择后的非空、可读实际模型
 Task.skillPolicyRef = wiselink-research-and-synthesize@r09
 ApplicabilityTask.runtimePolicy.skillVersion = wiselink-research-and-synthesize@r09  # v1 历史字段名，语义为兼容线
-ResultEnvelope.skillVersion = wiselink-research-and-synthesize@r09.c15       # 实际安装包版本
+ResultEnvelope.skillVersion = wiselink-research-and-synthesize@r09.c16       # 实际安装包版本
 toolVersions.wiselink-openclaw-engineering-assessment = 1.2.0
 promptVersion = 当前实际运行非空版本
 ```
 
-官方 profile 当前可选 `GLM-5.3`，但 Skill 不维护具体模型 allowlist，也不把 task policy ref 冒充实际
-`modelVersion`。缺失、空、仅 `fallback`/`unknown` 或只回显 policy ref 的模型 provenance 不能 commit。
+当前官方 profile 配置的 provider/model endpoint 为 `miaoda/miaoda-model-auto`，其下游具体模型未暴露。Skill 不维护具体模型
+allowlist，也不把 task policy ref 冒充实际 `modelVersion`。驱动从唯一 profile 的 `agents.list[].model` 解析 string 或 `{primary,fallbacks}`；未显式配置时才使用
+同形状的 `agents.defaults.model`，并要求 fallbacks 为空。响应有可读实际模型时优先使用响应值；响应缺失或不可读时
+使用该 configured endpoint 作为可证明执行标识，但不得把它扩张解释为未暴露的下游具体模型。重复 agent、不可读 primary、fallbacks 非数组或非空均 fail closed。
 
 ### Translation ResultEnvelope 分块传输
 
@@ -311,18 +313,22 @@ ReviewTurn 完成 DM/DV/FileService actual-byte 绑定与解析时，可把对�
 `read_source_refs({attemptRef,sourceRefIds})` 读取其 `ENGINEER_ATTACHMENT` parsed value。模型只看到 opaque ref、
 文件显示 metadata 与解析页内容，不接触 raw FileService locator/bytes、actor、tenant 或 sessionKey；Task 中的
 resource artifact ref/SHA 也不进入模型输入。
+requestId 仅在驱动控制面派生不可逆 session discriminator；它不进入模型正文，但保证相同正文的新 Turn 使用不同 Gateway session。
 
 ## INTERACTIVE_REVIEW candidate
 
 模型输出 schema：`wiselink.3_1.review_turn_candidate.v1.c3`。
 
-c15 Gateway transport 保留 `response_format={type:json_object}`。驱动在业务 strict parse 前先写
-`model.output-shape.json`：只含 input argsHash、provider/model、HTTP/finish、content type/length、首尾字符类别、
-fence/analysis/prose 标志、raw JSON parse 分类、transport normalization 结果和 exact-content SHA；不含原始
-content。该 checkpoint 在私有 `0700` 目录中以 `0600` 原子 write-once 保存，不参与 replay 或业务状态判定。
-模型 content 可以是直接 JSON object，或首行由三个反引号紧接小写 `json`、末行仅含三个反引号、围栏外零内容
-且内部 `JSON.parse` 为 object 的单一围栏；后者只移除 transport 围栏。其他 fence、prose、analysis、array 或
-null 全部拒绝，不抽取或修复内容。
+c16 Gateway transport 不依赖 `response_format`，只声明唯一 forced function
+`return_wiselink_review_candidate`，固定 `tool_choice` 指向该函数、`parallel_tool_calls=false`、`n=1`。该函数是无实现、
+不执行的序列化通道。响应必须只有一个 choice 和一个同名 function call；assistant content 必须为 null 或仅空白，
+function arguments 必须直接是 strict JSON object。其他函数、多 tool call、fence、prose、array、null arguments 或任何
+analysis 全部拒绝，不抽取、修复或归一化。
+
+驱动在业务 strict parse 前先写 `model.output-shape.json` v2：只含 input argsHash、provider/model、HTTP/finish、
+choice/tool-call 数量、assistant content 类型/长度/空白状态与 SHA、function 名称匹配、arguments 类型/长度、raw JSON
+parse 分类、接受状态与 SHA；不含原始 content 或 arguments。该 checkpoint 在私有 `0700` 目录中以 `0600` 原子
+write-once 保存，不参与 replay 或业务状态判定。
 
 ```text
 mode=INTERACTIVE_REVIEW

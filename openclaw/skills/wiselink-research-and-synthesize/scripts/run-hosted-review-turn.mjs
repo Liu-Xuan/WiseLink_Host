@@ -31,7 +31,7 @@ import {
 } from './validate-payload.mjs';
 
 const DRIVER_SCHEMA = 'wiselink.3_1.hosted_review_driver.v1';
-const MODEL_OUTPUT_SHAPE_SCHEMA = 'wiselink.3_1.review_model_output_shape.v1';
+const MODEL_OUTPUT_SHAPE_SCHEMA = 'wiselink.3_1.review_model_output_shape.v2';
 const KNOWN_MODEL_NONDISPATCH_CODES = new Set([
   'REVIEW_GATEWAY_INVALID_JSON_HTTP_404',
 ]);
@@ -46,7 +46,18 @@ const MODEL_OUTPUT_KEYS = [
   'affectedItemIds',
   'warnings',
 ];
-const REVIEW_PROMPT_VERSION = 'wiselink.3_1.review_prompt.v1.c15';
+const REVIEW_OUTPUT_FUNCTION_NAME = 'return_wiselink_review_candidate';
+const REVIEW_RESPONSE_TYPES = [
+  'ANSWER',
+  'CLARIFYING_QUESTION',
+  'SOURCE_LINK',
+  'CANDIDATE_EVIDENCE',
+  'REVIEW_ACTION_DRAFT',
+  'INPUT_REQUEST',
+  'AFFECTED_ITEMS_PREVIEW',
+  'TASK_STATUS',
+];
+const REVIEW_PROMPT_VERSION = 'wiselink.3_1.review_prompt.v1.c16';
 const WISELINK_HOST_MCP_CONFIG_KEYS = new Set([
   WISELINK_HOST_MCP_NAME,
   'wiselink_host_controller',
@@ -129,6 +140,7 @@ export async function runHostedReviewTurn(options, dependencies = {}) {
         ambiguousCommit: false,
         perform: () =>
           invokeModel(structuredClone(generationInput), {
+            sessionDiscriminator: sha256(normalized.requestId),
             observeOutputShape: async (value) =>
               checkpoint.writeOnce('model.output-shape', {
                 schemaVersion: DRIVER_SCHEMA,
@@ -206,6 +218,10 @@ export async function invokeHostedReviewModel(input, options = {}) {
     'REVIEW_AGENT_REQUIRED',
   );
   const timeoutMs = positiveInteger(options.timeoutMs, 480_000);
+  const configuredModelVersion = requiredText(
+    options.configuredModelVersion,
+    'REVIEW_MODEL_CONFIG_UNREADABLE',
+  );
   const observeOutputShape = options.observeOutputShape;
   if (
     observeOutputShape !== undefined &&
@@ -214,6 +230,10 @@ export async function invokeHostedReviewModel(input, options = {}) {
     throw new Error('REVIEW_MODEL_OUTPUT_SHAPE_OBSERVER_INVALID');
   }
   const prompt = buildReviewPrompt(input);
+  const sessionDiscriminator = requiredText(
+    options.sessionDiscriminator ?? canonicalSha256(input),
+    'REVIEW_MODEL_SESSION_DISCRIMINATOR_REQUIRED',
+  );
   const startedAt = Date.now();
   const endpoint = new URL('/v1/chat/completions', gatewayUrl);
   const response = await fetch(endpoint, {
@@ -225,16 +245,22 @@ export async function invokeHostedReviewModel(input, options = {}) {
     },
     body: JSON.stringify({
       model: `openclaw/${agentId}`,
-      user: `review-driver:${canonicalSha256(input).slice(0, 24)}`,
+      user: `review-driver:${sha256(sessionDiscriminator).slice(0, 24)}`,
       messages: [
         {
           role: 'system',
           content:
-            'Return one strict JSON object only. Do not call tools and do not emit Markdown.',
+            `Call ${REVIEW_OUTPUT_FUNCTION_NAME} exactly once to serialize the candidate. Emit no assistant prose. This function has no implementation and is never executed.`,
         },
         { role: 'user', content: prompt },
       ],
-      response_format: { type: 'json_object' },
+      tools: [reviewCandidateFunctionTool()],
+      tool_choice: {
+        type: 'function',
+        function: { name: REVIEW_OUTPUT_FUNCTION_NAME },
+      },
+      parallel_tool_calls: false,
+      n: 1,
       stream: false,
     }),
     signal: AbortSignal.timeout(timeoutMs),
@@ -249,7 +275,8 @@ export async function invokeHostedReviewModel(input, options = {}) {
   } catch {
     throw new Error(`REVIEW_GATEWAY_INVALID_JSON_HTTP_${response.status}`);
   }
-  const choice = Array.isArray(payload.choices) ? payload.choices[0] : null;
+  const choices = Array.isArray(payload.choices) ? payload.choices : [];
+  const choice = choices.length === 1 && isRecord(choices[0]) ? choices[0] : null;
   const message = isRecord(choice?.message) ? choice.message : null;
   const outputShape = summarizeHostedReviewModelOutputShape({
     httpStatus: response.status,
@@ -263,14 +290,16 @@ export async function invokeHostedReviewModel(input, options = {}) {
   if (!response.ok) {
     throw new Error(`REVIEW_GATEWAY_HTTP_${response.status}`);
   }
-  if (Array.isArray(message?.tool_calls) && message.tool_calls.length > 0) {
-    throw new Error('REVIEW_GATEWAY_TOOL_CALL_FORBIDDEN');
-  }
   if (outputShape.hasAnalysis) {
     throw new Error('REVIEW_MODEL_ANALYSIS_FORBIDDEN');
   }
-  const output = parseReviewModelTransport(message?.content);
-  const modelVersion = actualModelVersion(payload, choice, message);
+  const { argumentsText, output } = readReviewCandidateArguments(payload);
+  const modelVersion = actualModelVersion(
+    payload,
+    choice,
+    message,
+    configuredModelVersion,
+  );
   return {
     output,
     provenance: {
@@ -283,7 +312,7 @@ export async function invokeHostedReviewModel(input, options = {}) {
       runMetrics: {
         durationMs: Date.now() - startedAt,
         inputUnits: Buffer.byteLength(prompt),
-        outputUnits: Buffer.byteLength(message.content),
+        outputUnits: Buffer.byteLength(argumentsText),
       },
     },
   };
@@ -291,6 +320,52 @@ export async function invokeHostedReviewModel(input, options = {}) {
 
 export function isChatCompletionsEnabled(config) {
   return config?.gateway?.http?.endpoints?.chatCompletions?.enabled === true;
+}
+
+export function resolveConfiguredModelVersion(
+  config,
+  agentId = WISELINK_PROFILE_REF,
+) {
+  const normalizedAgentId = requiredText(
+    agentId,
+    'REVIEW_AGENT_REQUIRED',
+  );
+  const agents = config?.agents?.list;
+  if (agents !== undefined && !Array.isArray(agents)) {
+    throw new Error('REVIEW_MODEL_CONFIG_UNREADABLE');
+  }
+  const matches = (agents ?? []).filter(
+    (agent) => isRecord(agent) && agent.id === normalizedAgentId,
+  );
+  if (matches.length > 1) {
+    throw new Error('REVIEW_MODEL_CONFIG_AMBIGUOUS');
+  }
+  const modelConfig =
+    matches.length === 1 && matches[0].model !== undefined
+      ? matches[0].model
+      : config?.agents?.defaults?.model;
+  const selection =
+    typeof modelConfig === 'string'
+      ? { primary: modelConfig, fallbacks: [] }
+      : isRecord(modelConfig)
+        ? {
+            primary: modelConfig.primary,
+            fallbacks: modelConfig.fallbacks ?? [],
+          }
+        : null;
+  if (!selection) {
+    throw new Error('REVIEW_MODEL_CONFIG_UNREADABLE');
+  }
+  if (
+    !Array.isArray(selection.fallbacks) ||
+    selection.fallbacks.length > 0
+  ) {
+    throw new Error('REVIEW_MODEL_FALLBACK_NONEMPTY');
+  }
+  if (!isReadableActualModel(selection.primary)) {
+    throw new Error('REVIEW_MODEL_CONFIG_UNREADABLE');
+  }
+  return selection.primary.trim();
 }
 
 export function summarizeHostedReviewModelOutputShape({
@@ -305,6 +380,19 @@ export function summarizeHostedReviewModelOutputShape({
   const content = message?.content;
   const serializedContent = diagnosticContent(content);
   const hasAnalysisWrapper = analysisWrapper(content);
+  const toolCalls = Array.isArray(message?.tool_calls)
+    ? message.tool_calls
+    : [];
+  const toolCall = toolCalls.length === 1 && isRecord(toolCalls[0])
+    ? toolCalls[0]
+    : null;
+  const outputFunction = isRecord(toolCall?.function)
+    ? toolCall.function
+    : null;
+  const argumentsText = outputFunction?.arguments;
+  const serializedArguments =
+    typeof argumentsText === 'string' ? argumentsText : null;
+  const argumentsParseResult = rawJsonParseResult(argumentsText);
   const reportedModel = diagnosticToken(
     [
       message?.model,
@@ -325,7 +413,30 @@ export function summarizeHostedReviewModelOutputShape({
     ].find((value) => typeof value === 'string' && value.trim() !== ''),
   );
   const finishReason = diagnosticToken(choice?.finish_reason);
-  const transportNormalization = reviewModelTransportDisposition(content);
+  const hasAnalysis =
+    hasAnalysisWrapper ||
+    hasNonEmptyValue(message?.analysis) ||
+    hasNonEmptyValue(message?.reasoning) ||
+    hasNonEmptyValue(message?.reasoning_content) ||
+    (Array.isArray(content) &&
+      content.some(
+        (item) =>
+          isRecord(item) &&
+          ['analysis', 'reasoning'].includes(String(item.type).toLowerCase()),
+      ));
+  const assistantContentBlank = isBlankAssistantContent(content);
+  const expectedFunctionNameMatched =
+    outputFunction?.name === REVIEW_OUTPUT_FUNCTION_NAME;
+  const functionArgumentsAccepted = argumentsParseResult === 'OBJECT';
+  const outputChannelAccepted =
+    choices.length === 1 &&
+    toolCalls.length === 1 &&
+    toolCall?.type === 'function' &&
+    expectedFunctionNameMatched &&
+    typeof argumentsText === 'string' &&
+    assistantContentBlank &&
+    !hasAnalysis &&
+    functionArgumentsAccepted;
   return {
     schemaVersion: MODEL_OUTPUT_SHAPE_SCHEMA,
     http: {
@@ -341,42 +452,32 @@ export function summarizeHostedReviewModelOutputShape({
       finishReason ??
       (typeof choice?.finish_reason === 'string' ? 'UNREADABLE' : null),
     choiceCount: choices.length,
-    hasToolCalls:
-      Array.isArray(message?.tool_calls) && message.tool_calls.length > 0,
-    hasAnalysis:
-      hasAnalysisWrapper ||
-      hasNonEmptyValue(message?.analysis) ||
-      hasNonEmptyValue(message?.reasoning) ||
-      hasNonEmptyValue(message?.reasoning_content) ||
-      (Array.isArray(content) &&
-        content.some(
-          (item) =>
-            isRecord(item) &&
-            ['analysis', 'reasoning'].includes(String(item.type).toLowerCase()),
-        )),
-    content: {
+    hasAnalysis,
+    outputChannel: outputChannelAccepted
+      ? 'FUNCTION_ARGUMENTS'
+      : 'REJECTED',
+    assistantContent: {
       type: diagnosticContentType(content),
-      encoding:
-        serializedContent === null
-          ? null
-          : typeof content === 'string'
-            ? 'UTF8_STRING'
-            : 'CANONICAL_JSON',
       byteLength:
         serializedContent === null
           ? null
           : Buffer.byteLength(serializedContent),
-      codePointLength:
-        typeof content === 'string' ? Array.from(content).length : null,
-      firstNonWhitespaceClass: boundaryCharacterClass(content, 'first'),
-      lastNonWhitespaceClass: boundaryCharacterClass(content, 'last'),
-      hasMarkdownFence: markdownFenceWrapper(content),
-      hasAnalysisWrapper,
-      hasProseOutsideJsonObject: proseOutsideJsonObject(content),
-      rawJsonParseResult: rawJsonParseResult(content),
-      transportNormalization,
-      strictJsonObjectAccepted: transportNormalization !== 'REJECTED',
+      isBlank: assistantContentBlank,
       sha256: serializedContent === null ? null : sha256(serializedContent),
+    },
+    toolCall: {
+      count: toolCalls.length,
+      type: diagnosticToken(toolCall?.type),
+      nameMatched: expectedFunctionNameMatched,
+      argumentsType: diagnosticContentType(argumentsText),
+      byteLength:
+        serializedArguments === null
+          ? null
+          : Buffer.byteLength(serializedArguments),
+      rawJsonParseResult: argumentsParseResult,
+      strictJsonObjectAccepted: functionArgumentsAccepted,
+      sha256:
+        serializedArguments === null ? null : sha256(serializedArguments),
     },
   };
 }
@@ -705,18 +806,7 @@ function validateModelExecution(
   ) {
     throw new Error('REVIEW_MODEL_OUTPUT_KEYS_INVALID');
   }
-  if (
-    ![
-      'ANSWER',
-      'CLARIFYING_QUESTION',
-      'SOURCE_LINK',
-      'CANDIDATE_EVIDENCE',
-      'REVIEW_ACTION_DRAFT',
-      'INPUT_REQUEST',
-      'AFFECTED_ITEMS_PREVIEW',
-      'TASK_STATUS',
-    ].includes(output.responseType)
-  ) {
+  if (!REVIEW_RESPONSE_TYPES.includes(output.responseType)) {
     throw new Error('REVIEW_MODEL_RESPONSE_TYPE_INVALID');
   }
   requiredText(output.answer, 'REVIEW_MODEL_ANSWER_REQUIRED');
@@ -828,9 +918,10 @@ function validateModelOutputShape(value) {
           'routing',
           'finishReason',
           'choiceCount',
-          'hasToolCalls',
           'hasAnalysis',
-          'content',
+          'outputChannel',
+          'assistantContent',
+          'toolCall',
         ].sort(),
       ) ||
     !isRecord(value.http) ||
@@ -841,34 +932,33 @@ function validateModelOutputShape(value) {
       canonicalJson(
         ['requestedModel', 'reportedProvider', 'reportedModel'].sort(),
       ) ||
-    !isRecord(value.content)
+    !isRecord(value.assistantContent) ||
+    !isRecord(value.toolCall)
   ) {
     fail();
   }
-  const contentKeys = [
-    'type',
-    'encoding',
-    'byteLength',
-    'codePointLength',
-    'firstNonWhitespaceClass',
-    'lastNonWhitespaceClass',
-    'hasMarkdownFence',
-    'hasAnalysisWrapper',
-    'hasProseOutsideJsonObject',
-    'rawJsonParseResult',
-    'transportNormalization',
-    'strictJsonObjectAccepted',
-    'sha256',
-  ];
   if (
-    canonicalJson(Object.keys(value.content).sort()) !==
-      canonicalJson(contentKeys.sort()) ||
+    canonicalJson(Object.keys(value.assistantContent).sort()) !==
+      canonicalJson(['type', 'byteLength', 'isBlank', 'sha256'].sort()) ||
+    canonicalJson(Object.keys(value.toolCall).sort()) !==
+      canonicalJson(
+        [
+          'count',
+          'type',
+          'nameMatched',
+          'argumentsType',
+          'byteLength',
+          'rawJsonParseResult',
+          'strictJsonObjectAccepted',
+          'sha256',
+        ].sort(),
+      ) ||
     (value.http.status !== null && !Number.isSafeInteger(value.http.status)) ||
     typeof value.http.ok !== 'boolean' ||
     !Number.isSafeInteger(value.choiceCount) ||
     value.choiceCount < 0 ||
-    typeof value.hasToolCalls !== 'boolean' ||
     typeof value.hasAnalysis !== 'boolean' ||
+    !['FUNCTION_ARGUMENTS', 'REJECTED'].includes(value.outputChannel) ||
     ![
       'string',
       'array',
@@ -877,15 +967,26 @@ function validateModelOutputShape(value) {
       'number',
       'boolean',
       'missing',
-    ].includes(value.content.type) ||
-    ![null, 'UTF8_STRING', 'CANONICAL_JSON'].includes(value.content.encoding) ||
-    !nullableNonNegativeInteger(value.content.byteLength) ||
-    !nullableNonNegativeInteger(value.content.codePointLength) ||
-    !diagnosticBoundaryClass(value.content.firstNonWhitespaceClass) ||
-    !diagnosticBoundaryClass(value.content.lastNonWhitespaceClass) ||
-    typeof value.content.hasMarkdownFence !== 'boolean' ||
-    typeof value.content.hasAnalysisWrapper !== 'boolean' ||
-    typeof value.content.hasProseOutsideJsonObject !== 'boolean' ||
+    ].includes(value.assistantContent.type) ||
+    !nullableNonNegativeInteger(value.assistantContent.byteLength) ||
+    typeof value.assistantContent.isBlank !== 'boolean' ||
+    (value.assistantContent.sha256 !== null &&
+      !/^[0-9a-f]{64}$/u.test(value.assistantContent.sha256)) ||
+    !Number.isSafeInteger(value.toolCall.count) ||
+    value.toolCall.count < 0 ||
+    (value.toolCall.type !== null &&
+      diagnosticToken(value.toolCall.type) !== value.toolCall.type) ||
+    typeof value.toolCall.nameMatched !== 'boolean' ||
+    ![
+      'string',
+      'array',
+      'object',
+      'null',
+      'number',
+      'boolean',
+      'missing',
+    ].includes(value.toolCall.argumentsType) ||
+    !nullableNonNegativeInteger(value.toolCall.byteLength) ||
     ![
       'OBJECT',
       'ARRAY',
@@ -895,13 +996,10 @@ function validateModelOutputShape(value) {
       'BOOLEAN',
       'INVALID',
       'NON_STRING',
-    ].includes(value.content.rawJsonParseResult) ||
-    !['DIRECT_JSON_OBJECT', 'EXACT_JSON_FENCE', 'REJECTED'].includes(
-      value.content.transportNormalization,
-    ) ||
-    typeof value.content.strictJsonObjectAccepted !== 'boolean' ||
-    (value.content.sha256 !== null &&
-      !/^[0-9a-f]{64}$/u.test(value.content.sha256)) ||
+    ].includes(value.toolCall.rawJsonParseResult) ||
+    typeof value.toolCall.strictJsonObjectAccepted !== 'boolean' ||
+    (value.toolCall.sha256 !== null &&
+      !/^[0-9a-f]{64}$/u.test(value.toolCall.sha256)) ||
     ![value.finishReason, ...Object.values(value.routing)].every(
       (item) => item === null || diagnosticToken(item) === item,
     )
@@ -915,26 +1013,37 @@ function nullableNonNegativeInteger(value) {
   return value === null || (Number.isSafeInteger(value) && value >= 0);
 }
 
-function diagnosticBoundaryClass(value) {
-  return [
-    'NONE',
-    'OBJECT_OPEN',
-    'OBJECT_CLOSE',
-    'ARRAY_OPEN',
-    'ARRAY_CLOSE',
-    'QUOTE',
-    'BACKTICK',
-    'ANGLE_OPEN',
-    'ANGLE_CLOSE',
-    'LETTER',
-    'DIGIT',
-    'OTHER',
-  ].includes(value);
-}
-
-function parseReviewModelTransport(value) {
-  const fenced = exactJsonFencePayload(value);
-  return parseStrictJsonObject(fenced ?? value);
+function readReviewCandidateArguments(payload) {
+  if (!Array.isArray(payload?.choices) || payload.choices.length !== 1) {
+    throw new Error('REVIEW_GATEWAY_CHOICE_COUNT_INVALID');
+  }
+  const choice = payload.choices[0];
+  const message = isRecord(choice?.message) ? choice.message : null;
+  if (!message) throw new Error('REVIEW_GATEWAY_MESSAGE_INVALID');
+  if (!isBlankAssistantContent(message.content)) {
+    throw new Error('REVIEW_GATEWAY_ASSISTANT_CONTENT_FORBIDDEN');
+  }
+  if (!Array.isArray(message.tool_calls) || message.tool_calls.length !== 1) {
+    throw new Error('REVIEW_GATEWAY_OUTPUT_FUNCTION_COUNT_INVALID');
+  }
+  const toolCall = message.tool_calls[0];
+  if (!isRecord(toolCall) || toolCall.type !== 'function') {
+    throw new Error('REVIEW_GATEWAY_OUTPUT_FUNCTION_TYPE_INVALID');
+  }
+  if (
+    !isRecord(toolCall.function) ||
+    toolCall.function.name !== REVIEW_OUTPUT_FUNCTION_NAME
+  ) {
+    throw new Error('REVIEW_GATEWAY_OUTPUT_FUNCTION_NAME_INVALID');
+  }
+  const argumentsText = toolCall.function.arguments;
+  if (typeof argumentsText !== 'string') {
+    throw new Error('REVIEW_GATEWAY_OUTPUT_FUNCTION_ARGUMENTS_REQUIRED');
+  }
+  return {
+    argumentsText,
+    output: parseStrictJsonObject(argumentsText),
+  };
 }
 
 function parseStrictJsonObject(value) {
@@ -951,23 +1060,6 @@ function parseStrictJsonObject(value) {
     if (error?.message === 'REVIEW_MODEL_OUTPUT_INVALID') throw error;
     throw new Error('REVIEW_MODEL_JSON_INVALID');
   }
-}
-
-function reviewModelTransportDisposition(value) {
-  if (rawJsonParseResult(value) === 'OBJECT') return 'DIRECT_JSON_OBJECT';
-  const fenced = exactJsonFencePayload(value);
-  return fenced !== null && rawJsonParseResult(fenced) === 'OBJECT'
-    ? 'EXACT_JSON_FENCE'
-    : 'REJECTED';
-}
-
-function exactJsonFencePayload(value) {
-  if (typeof value !== 'string') return null;
-  const lines = value.split(/\r\n|\n|\r/u);
-  if (lines.length < 3 || lines[0] !== '```json' || lines.at(-1) !== '```') {
-    return null;
-  }
-  return lines.slice(1, -1).join('\n');
 }
 
 function rawJsonParseResult(value) {
@@ -1007,40 +1099,6 @@ function diagnosticToken(value) {
     : null;
 }
 
-function boundaryCharacterClass(value, edge) {
-  if (typeof value !== 'string') return 'NONE';
-  const characters = Array.from(value.trim());
-  const character = edge === 'first' ? characters[0] : characters.at(-1);
-  return classifyBoundaryCharacter(character);
-}
-
-function classifyBoundaryCharacter(value) {
-  if (value === undefined) return 'NONE';
-  return (
-    {
-      '{': 'OBJECT_OPEN',
-      '}': 'OBJECT_CLOSE',
-      '[': 'ARRAY_OPEN',
-      ']': 'ARRAY_CLOSE',
-      '"': 'QUOTE',
-      '`': 'BACKTICK',
-      '<': 'ANGLE_OPEN',
-      '>': 'ANGLE_CLOSE',
-    }[value] ??
-    (/^\p{L}$/u.test(value)
-      ? 'LETTER'
-      : /^\p{N}$/u.test(value)
-        ? 'DIGIT'
-        : 'OTHER')
-  );
-}
-
-function markdownFenceWrapper(value) {
-  if (typeof value !== 'string') return false;
-  const normalized = value.trim();
-  return normalized.startsWith('```') || normalized.endsWith('```');
-}
-
 function analysisWrapper(value) {
   if (typeof value !== 'string') return false;
   const normalized = value.trim();
@@ -1050,63 +1108,57 @@ function analysisWrapper(value) {
   );
 }
 
-function proseOutsideJsonObject(value) {
-  if (typeof value !== 'string' || value.trim() === '') return false;
-  if (rawJsonParseResult(value) !== 'INVALID') return false;
-  if (exactJsonFencePayload(value) !== null || analysisWrapper(value)) {
-    return false;
-  }
-  const normalized = value.trim();
-  const span = completeJsonObjectSpan(normalized);
-  if (span) {
-    return (
-      normalized.slice(0, span.start).trim() !== '' ||
-      normalized.slice(span.end).trim() !== ''
-    );
-  }
-  return /^\p{L}/u.test(normalized);
-}
-
-function completeJsonObjectSpan(value) {
-  const start = value.indexOf('{');
-  if (start < 0) return null;
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-  for (let index = start; index < value.length; index += 1) {
-    const character = value[index];
-    if (inString) {
-      if (escaped) escaped = false;
-      else if (character === '\\') escaped = true;
-      else if (character === '"') inString = false;
-      continue;
-    }
-    if (character === '"') {
-      inString = true;
-      continue;
-    }
-    if (character === '{') depth += 1;
-    if (character === '}') {
-      depth -= 1;
-      if (depth === 0) return { start, end: index + 1 };
-      if (depth < 0) return null;
-    }
-  }
-  return null;
-}
-
 function hasNonEmptyValue(value) {
   if (typeof value === 'string') return value.trim() !== '';
   if (Array.isArray(value)) return value.length > 0;
   return isRecord(value) && Object.keys(value).length > 0;
 }
 
+function isBlankAssistantContent(value) {
+  return (
+    value === undefined ||
+    value === null ||
+    (typeof value === 'string' && value.trim() === '')
+  );
+}
+
+function reviewCandidateFunctionTool() {
+  const stringArray = {
+    type: 'array',
+    items: { type: 'string', minLength: 1 },
+    uniqueItems: true,
+  };
+  return {
+    type: 'function',
+    function: {
+      name: REVIEW_OUTPUT_FUNCTION_NAME,
+      description:
+        'Serialization-only WiseLink review candidate output. It has no implementation and is never executed.',
+      parameters: {
+        type: 'object',
+        additionalProperties: false,
+        required: [...MODEL_OUTPUT_KEYS],
+        properties: {
+          responseType: { type: 'string', enum: [...REVIEW_RESPONSE_TYPES] },
+          answer: { type: 'string', minLength: 1 },
+          sourceRefs: structuredClone(stringArray),
+          missingInputs: structuredClone(stringArray),
+          candidateEvidenceRefs: structuredClone(stringArray),
+          reviewActionDraft: {
+            anyOf: [{ type: 'object' }, { type: 'null' }],
+          },
+          affectedItemIds: structuredClone(stringArray),
+          warnings: structuredClone(stringArray),
+        },
+      },
+    },
+  };
+}
+
 function buildReviewPrompt(input) {
   return [
     'Generate one candidate-only WiseLink engineering review response from the engineer message and the current Host-frozen context.',
-    'Return exactly these keys: responseType, answer, sourceRefs, missingInputs, candidateEvidenceRefs, reviewActionDraft, affectedItemIds, warnings.',
-    'responseType must be ANSWER, CLARIFYING_QUESTION, SOURCE_LINK, CANDIDATE_EVIDENCE, REVIEW_ACTION_DRAFT, INPUT_REQUEST, AFFECTED_ITEMS_PREVIEW, or TASK_STATUS.',
-    'sourceRefs, missingInputs, candidateEvidenceRefs, affectedItemIds, and warnings must each be a unique string array.',
+    `Call ${REVIEW_OUTPUT_FUNCTION_NAME} exactly once. It is only a serialization channel and will not be executed. Emit no prose outside its arguments.`,
     'Use sourceRefs and candidateEvidenceRefs only from SOURCE_REFS read this turn. Never invent facts, IDs, evidence, adoption, approval, publication, confirmation, current changes, or gap closure.',
     'When the engineer asks to locate, cite, or return a SourceRef, use SOURCE_LINK and include at least one relevant sourceRefs entry read this turn. SOURCE_LINK with an empty sourceRefs array is invalid.',
     'For an explanation, source link, clarification, input request, or task status, set candidateEvidenceRefs and affectedItemIds to [] and reviewActionDraft to null.',
@@ -1117,12 +1169,17 @@ function buildReviewPrompt(input) {
     'decisionSnapshot must contain exactly: assessmentAsOf, evidenceHorizon, currentBestJudgment, alternativeJudgments, decisionMaturity, decisiveFacts, assumptions, residualUncertainties, uncertaintyDispositions, controlsAndMitigations, monitoringPlan, validUntil, reviewBy, reopenTriggers, whatWouldChangeDecision, candidateOnly. Its uncertaintyDispositions must exactly equal the draft list and candidateOnly must be true.',
     'Copy only allowed revision, evaluation item, adopted input, source, attachment, and gap refs from INPUT. A draft proposes change but never confirms or executes it.',
     'State the current best bounded judgment, remaining uncertainty, and what would change the judgment when relevant.',
-    'Do not call tools. The driver exclusively owns begin, context, SourceRef read, commit, and status.',
+    'Do not call any other tool. The driver exclusively owns begin, context, SourceRef read, commit, and status.',
     `INPUT:\n${canonicalJson(input)}`,
   ].join('\n');
 }
 
-function actualModelVersion(payload, choice, message) {
+function actualModelVersion(
+  payload,
+  choice,
+  message,
+  configuredModelVersion,
+) {
   const candidates = [
     message?.model,
     message?.model_version,
@@ -1131,6 +1188,7 @@ function actualModelVersion(payload, choice, message) {
     payload?.model,
     payload?._meta?.modelVersion,
     payload?._meta?.model,
+    configuredModelVersion,
   ];
   const model = candidates.find(isReadableActualModel);
   if (!model) throw new Error('REVIEW_MODEL_PROVENANCE_UNREADABLE');
@@ -1282,12 +1340,14 @@ async function resolveRuntimeConfig(argv, env) {
     (Number.isSafeInteger(port) ? `http://127.0.0.1:${port}` : '');
   const gatewayToken =
     env.WL_REVIEW_GATEWAY_TOKEN || config?.gateway?.auth?.token || '';
+  const agentId = option(argv, '--agent') || WISELINK_PROFILE_REF;
   return {
     hostMcpUrl,
     headers,
     gatewayUrl,
     gatewayToken,
     gatewayChatCompletionsEnabled: isChatCompletionsEnabled(config),
+    configuredModelVersion: resolveConfiguredModelVersion(config, agentId),
   };
 }
 
@@ -1419,6 +1479,8 @@ async function main(argv, env) {
           gatewayUrl: runtime.gatewayUrl,
           gatewayToken: runtime.gatewayToken,
           agentId: option(argv, '--agent') || WISELINK_PROFILE_REF,
+          configuredModelVersion: runtime.configuredModelVersion,
+          sessionDiscriminator: hooks.sessionDiscriminator,
           timeoutMs: positiveInteger(
             Number.parseInt(option(argv, '--timeout-ms'), 10) || undefined,
             480_000,
