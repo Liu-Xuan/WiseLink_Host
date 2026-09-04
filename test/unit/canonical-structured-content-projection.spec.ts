@@ -132,7 +132,9 @@ describe('canonical structured-content browser projection', () => {
 
   it('uses the real legacy FTD reference rows as precise occurrence owners', async () => {
     const bytes = new Uint8Array(
-      await readFile(resolve('test/fixtures/real-ftd-frozen2.unified-package.json')),
+      await readFile(
+        resolve('test/fixtures/real-ftd-frozen2.unified-package.json'),
+      ),
     );
     const artifact: UnifiedPackageArtifactDescriptor = {
       storeRole: 'UnifiedArtifactStoreCandidate',
@@ -175,9 +177,7 @@ describe('canonical structured-content browser projection', () => {
       structured.every(
         (mention) =>
           mention.sourceRefIds.length > 0 &&
-          mention.sourceLocators[0]?.quote?.includes(
-            mention.normalizedTarget,
-          ),
+          mention.sourceLocators[0]?.quote?.includes(mention.normalizedTarget),
       ),
     ).toBe(true);
   });
@@ -206,16 +206,24 @@ describe('canonical structured-content browser projection', () => {
       '777-SL-31-064',
     ]);
     expect(mentions[0].contextRole).toBe('RELATED_INFORMATION');
-    expect(mentions.map((mention) => mention.matchedText).join(' ')).not.toMatch(
-      /formoreinformation/iu,
-    );
+    expect(
+      mentions.map((mention) => mention.matchedText).join(' '),
+    ).not.toMatch(/formoreinformation/iu);
 
     const built = buildCanonicalRelatedContextSnapshot({
       workItemId: 'WI-real-ftd',
       inputRevision: 3,
       primaryDocumentVersionId: 'document-version-real-ftd',
+      assessmentTargetContextRef: 'applicability-context://B-1266',
+      assessmentAsOf: '2026-06-05',
       mentions: mentions.map((mention) => ({
         ...mention,
+        ...(mention.normalizedTarget === '777-SL-31-064'
+          ? {
+              targetApplicability: 'APPLICABLE' as const,
+              applicabilityResultRef: 'openclaw-applicability://RESULT-RELATED',
+            }
+          : {}),
         targetResolution:
           mention.normalizedTarget === '777-SL-31-064'
             ? {
@@ -223,6 +231,7 @@ describe('canonical structured-content browser projection', () => {
                 workItemId: 'WI-real-sl',
                 documentVersionId: 'document-version-real-sl',
                 canonicalDocumentNumber: '777-SL-31-064',
+                businessRevision: 'ORIGINAL ISSUE',
               }
             : { status: 'DOCUMENT_NOT_INGESTED' as const },
       })),
@@ -239,6 +248,12 @@ describe('canonical structured-content browser projection', () => {
       resolvedWorkItemRef: 'WI-real-sl',
       currentness: 'CURRENT',
       contextUse: 'BACKGROUND_ONLY',
+      targetApplicability: 'APPLICABLE',
+      applicabilityResultRef: 'openclaw-applicability://RESULT-RELATED',
+    });
+    expect(built.snapshot).toMatchObject({
+      assessmentTargetContextRef: 'applicability-context://B-1266',
+      assessmentAsOf: '2026-06-05',
     });
     expect(JSON.parse(new TextDecoder().decode(built.bytes))).toEqual(
       built.snapshot,

@@ -74,7 +74,7 @@
 
 .reference-preview-list article {
   display: grid;
-  grid-template-columns: auto minmax(160px, 1fr) auto auto auto auto;
+  grid-template-columns: auto minmax(160px, 1fr) auto auto auto auto auto;
   gap: 9px;
   align-items: center;
   padding: 9px 10px;
@@ -119,6 +119,20 @@
 
 .reference-preview-list .reference-preview-resolution.is-ACCESS_DENIED {
   color: var(--wl-danger);
+}
+
+.reference-preview-list .reference-preview-applicability.is-APPLICABLE {
+  color: var(--wl-success);
+  background: color-mix(in srgb, var(--wl-success) 12%, transparent);
+}
+
+.reference-preview-list .reference-preview-applicability.is-NOT_APPLICABLE {
+  color: var(--wl-danger);
+  background: color-mix(in srgb, var(--wl-danger) 10%, transparent);
+}
+
+.reference-preview-list .reference-preview-applicability.is-UNKNOWN {
+  color: var(--wl-accent);
 }
 
 .reference-preview-list .reference-preview-open {

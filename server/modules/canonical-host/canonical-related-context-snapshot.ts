@@ -11,6 +11,8 @@ interface RelatedContextSnapshotBuildInput {
   workItemId: string;
   inputRevision: number;
   primaryDocumentVersionId: string;
+  assessmentTargetContextRef?: string | null;
+  assessmentAsOf?: string | null;
   mentions: CanonicalReferenceMentionPreviewItem[];
 }
 
@@ -22,8 +24,8 @@ export function buildCanonicalRelatedContextSnapshot(
     workItemRef: input.workItemId,
     inputRevision: input.inputRevision,
     primaryDocumentVersionRef: input.primaryDocumentVersionId,
-    assessmentTargetContextRef: null,
-    assessmentAsOf: null,
+    assessmentTargetContextRef: input.assessmentTargetContextRef ?? null,
+    assessmentAsOf: input.assessmentAsOf ?? null,
     items: snapshotItems(input.mentions),
     retrievalReceipts: [
       {
@@ -99,7 +101,10 @@ function snapshotItems(
       documentType: group.first.documentType,
       relationRoles: [...group.roles],
       issueRelevance: 'EXPLICIT_REFERENCE',
-      targetApplicability: 'NOT_EVALUATED',
+      targetApplicability: group.first.targetApplicability,
+      ...(group.first.applicabilityResultRef
+        ? { applicabilityResultRef: group.first.applicabilityResultRef }
+        : {}),
       currentness: resolved ? 'CURRENT' : 'UNKNOWN',
       authority: 'PRIMARY_DOCUMENT_EXPLICIT_MENTION',
       contextUse: 'BACKGROUND_ONLY',
@@ -110,7 +115,12 @@ function snapshotItems(
           : [],
       missingInputs: [
         ...(!resolved ? ['RESOLVED_DOCUMENT_VERSION'] : []),
-        'TARGET_APPLICABILITY',
+        ...(group.first.targetApplicability === 'NOT_EVALUATED'
+          ? ['TARGET_APPLICABILITY']
+          : []),
+        ...(group.first.targetApplicability === 'UNKNOWN'
+          ? ['TARGET_APPLICABILITY_FACTS']
+          : []),
       ],
       occurrenceCount: group.count,
     };
