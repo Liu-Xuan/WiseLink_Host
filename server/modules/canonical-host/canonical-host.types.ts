@@ -164,6 +164,7 @@ export interface CanonicalStatusInput {
 export interface CanonicalPageInput {
   workItemId: string;
   query?: string;
+  sourceRef?: string;
 }
 
 export interface CanonicalStructuredContentBrowseInput {

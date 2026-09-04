@@ -18,6 +18,7 @@ import type {
   CanonicalWorkItemProjection,
   CanonicalPdfPreviewProjection,
   CanonicalReaderProjection,
+  UnifiedReaderQueryResult,
   UnifiedPackageSourceKind,
   UnifiedPackageReadbackResponse,
 } from '@shared/api.interface';
@@ -579,6 +580,7 @@ export class CanonicalHostVerticalService {
     let queryResults: UnifiedPackageReadbackResponse['queryResults'] = [];
     let readerSourceKind: UnifiedPackageSourceKind | null = null;
     const query: string = optionalReaderQuery(input.query);
+    const sourceRef: string = optionalReaderSourceRef(input.sourceRef);
     if (
       projection.phase === 'CANDIDATE_READBACK_VERIFIED' &&
       projection.package !== null
@@ -588,7 +590,22 @@ export class CanonicalHostVerticalService {
         packageId: projection.package.packageId,
       });
       readerSourceKind = inspection.sourceKind;
-      if (query !== '') {
+      if (sourceRef !== '') {
+        const sourceUnits: UnifiedReaderQueryResult[] =
+          await this.reader.readAllSourceUnits({
+            artifact: projection.package.artifact,
+            packageId: projection.package.packageId,
+          });
+        queryResults = sourceUnits
+          .filter((unit: UnifiedReaderQueryResult): boolean =>
+            unit.sourceRefIds.includes(sourceRef),
+          )
+          .slice(0, 50)
+          .map((result: UnifiedReaderQueryResult, index: number) =>
+            projectCanonicalBrowserQueryResult(result, index + 1),
+          )
+          .filter((result) => result !== null);
+      } else if (query !== '') {
         const readback: UnifiedPackageReadbackResponse = await this.readPackage(
           projection,
           actionContext.decision.permissionSnapshotVersion,
@@ -1285,6 +1302,18 @@ function optionalReaderQuery(value: string | undefined): string {
   const normalized: string = value.trim().normalize('NFC');
   if (normalized.length > 200) {
     throw structuredContentBadRequest('READER_QUERY_INVALID');
+  }
+  return normalized;
+}
+
+function optionalReaderSourceRef(value: string | undefined): string {
+  if (value === undefined) return '';
+  if (typeof value !== 'string') {
+    throw structuredContentBadRequest('READER_SOURCE_REF_INVALID');
+  }
+  const normalized: string = value.trim().normalize('NFC');
+  if (normalized.length > 1_000) {
+    throw structuredContentBadRequest('READER_SOURCE_REF_INVALID');
   }
   return normalized;
 }

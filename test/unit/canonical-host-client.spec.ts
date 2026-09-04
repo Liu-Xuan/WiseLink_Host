@@ -437,6 +437,30 @@ describe('canonical host assessment client', () => {
     });
   });
 
+  it('forwards a trimmed SourceRef as an exact read-only locator', async () => {
+    setGlobalCrypto(undefined);
+    request.mockResolvedValue({ status: 200, data: { workItem: {} } });
+
+    await expect(
+      getDocumentParsingPage('WI-SB-1001', '', {
+        sourceRef: '  urn:techpub:source-ref:v1:sha256:abc123  ',
+        freshness: 'source-link',
+      }),
+    ).resolves.toEqual({ workItem: {} });
+    expect(request).toHaveBeenCalledWith({
+      url: '/api/canonical-host/work-items/WI-SB-1001/document-parsing',
+      method: 'GET',
+      params: {
+        sourceRef: 'urn:techpub:source-ref:v1:sha256:abc123',
+        _fresh: expect.any(String),
+      },
+      headers: {
+        'Cache-Control': 'no-cache',
+        Pragma: 'no-cache',
+      },
+    });
+  });
+
   it('posts only the Host-owned overall regeneration request contract', async () => {
     const input = {
       requestId: 'ce59df8f-6984-40a8-98b9-05dde4ef233f',

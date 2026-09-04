@@ -83,12 +83,14 @@ export class CanonicalHostController {
   page(
     @Param('workItemId') workItemId: string,
     @Query('query') query: string | undefined,
+    @Query('sourceRef') sourceRef: string | undefined,
     @Req() httpRequest: Request,
   ) {
     return this.pageWithEngineerReviews(
       {
         workItemId,
         query,
+        sourceRef,
       },
       hostActor(httpRequest),
     );
@@ -201,7 +203,11 @@ export class CanonicalHostController {
   }
 
   private async pageWithEngineerReviews(
-    input: { workItemId: string; query: string },
+    input: {
+      workItemId: string;
+      query?: string;
+      sourceRef?: string;
+    },
     actor: CanonicalHostActor,
   ) {
     const page = await this.service.page(input, actor);

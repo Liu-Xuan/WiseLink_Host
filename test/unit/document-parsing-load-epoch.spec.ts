@@ -197,6 +197,43 @@ describe('DocumentParsingPage identity-bound load epoch', () => {
     expect(projectionCalls).toBe(4);
   });
 
+  it('does not share an in-flight projection across exact SourceRef keys', async () => {
+    const projectionReader = createCanonicalDocumentParsingProjectionReader();
+    const sourceA = deferred<CanonicalDocumentParsingPageResponse>();
+    let projectionCalls = 0;
+    const first = projectionReader.read(
+      {
+        identity: identityA,
+        sessionGeneration: 1,
+        workItemId: 'WI-SHARED',
+        query: '',
+        sourceRef: 'SOURCE-A',
+      },
+      () => {
+        projectionCalls += 1;
+        return sourceA.promise;
+      },
+    );
+    const second = projectionReader.read(
+      {
+        identity: identityA,
+        sessionGeneration: 1,
+        workItemId: 'WI-SHARED',
+        query: '',
+        sourceRef: 'SOURCE-B',
+      },
+      () => {
+        projectionCalls += 1;
+        return Promise.resolve(page('SOURCE_B'));
+      },
+    );
+
+    await expect(second).resolves.toEqual(page('SOURCE_B'));
+    sourceA.resolve(page('SOURCE_A'));
+    await expect(first).resolves.toEqual(page('SOURCE_A'));
+    expect(projectionCalls).toBe(2);
+  });
+
   it('reads identity once for a successful load and once for a denied load', async () => {
     const successfulIdentity = jest.fn().mockResolvedValue(identityA);
     const deniedIdentity = jest.fn().mockResolvedValue(identityA);

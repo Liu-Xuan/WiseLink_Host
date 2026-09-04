@@ -337,21 +337,28 @@ export async function getLibraryIndex(
 export async function getDocumentParsingPage(
   workItemId: string,
   query: string,
-  options: { freshness?: 'default' | 'mutation' } = {},
+  options: {
+    freshness?: 'default' | 'mutation' | 'source-link';
+    sourceRef?: string;
+  } = {},
 ): Promise<CanonicalDocumentParsingPageResponse> {
   const requestGeneration = clientSessionGeneration;
   try {
     const normalizedQuery: string = query.trim();
-    const mutationFreshRead: boolean = options.freshness === 'mutation';
+    const normalizedSourceRef: string = options.sourceRef?.trim() ?? '';
+    const cacheBypassFreshRead: boolean =
+      options.freshness === 'mutation' ||
+      options.freshness === 'source-link';
     const params: Record<string, string> = {};
     if (normalizedQuery !== '') params.query = normalizedQuery;
-    if (mutationFreshRead) params._fresh = createRequestCorrelationId();
+    if (normalizedSourceRef !== '') params.sourceRef = normalizedSourceRef;
+    if (cacheBypassFreshRead) params._fresh = createRequestCorrelationId();
     const response =
       await axiosForBackend<CanonicalDocumentParsingPageResponse>({
         url: `/api/canonical-host/work-items/${encodeURIComponent(workItemId)}/document-parsing`,
         method: 'GET',
         ...(Object.keys(params).length === 0 ? {} : { params }),
-        ...(mutationFreshRead
+        ...(cacheBypassFreshRead
           ? {
               headers: {
                 'Cache-Control': 'no-cache',

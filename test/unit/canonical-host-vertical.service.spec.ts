@@ -1176,6 +1176,30 @@ describe('CanonicalHostVerticalService', () => {
     expect(authorizeSpy).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'READ_DOCUMENT_PARSING' }),
     );
+    const sourceRef: string = page.queryResults[0].sourceRefIds[0];
+    const sourceLinked = await service.page(
+      {
+        workItemId: request.workItemId,
+        query: 'NOT-PRESENT-AS-FREE-TEXT',
+        sourceRef,
+      },
+      TEST_ACTOR,
+    );
+    expect(sourceLinked.queryResults.length).toBeGreaterThan(0);
+    expect(
+      sourceLinked.queryResults.every((result) =>
+        result.sourceRefIds.includes(sourceRef),
+      ),
+    ).toBe(true);
+    expect(sourceLinked.readerProjection).toMatchObject({
+      query: 'NOT-PRESENT-AS-FREE-TEXT',
+      units: expect.arrayContaining([
+        expect.objectContaining({
+          sourceRefIds: expect.arrayContaining([sourceRef]),
+        }),
+      ]),
+    });
+    expect(pdfPreviews.issue).toHaveBeenCalledTimes(2);
     const browseOnly = await service.page(
       { workItemId: request.workItemId },
       TEST_ACTOR,
