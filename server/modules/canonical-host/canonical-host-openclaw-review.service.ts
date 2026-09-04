@@ -1,7 +1,8 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
 import type {
   CanonicalEngineerReviewPageContext,
+  CanonicalReferenceTargetResolution,
   CanonicalWorkItemProjection,
   ReviewTurnAssistantCandidate,
 } from '@shared/api.interface';
@@ -26,11 +27,19 @@ import {
 import { parseReviewAttachmentParsedArtifact } from '../review-persistence/review-attachment-artifact';
 import type { ReviewAttachmentBinding } from '../review-persistence/review-attachment.types';
 import { UNIFIED_ARTIFACT_STORE } from '../unified-reader/unified-reader.constants';
+import { UnifiedReaderService } from '../unified-reader/unified-reader.service';
 import type { UnifiedArtifactStorePort } from '../unified-reader/unified-reader.types';
 import { assertNoDuplicateJsonKeys } from '../unified-reader/unified-reader.utils';
 import { MiaodaWorkItemRepository } from '../work-item/miaoda-work-item.repository';
+import { DocumentManagementHostedService } from '../document-management/src/hosted/nest';
 import { CanonicalHostAssessmentService } from './canonical-host-assessment.service';
 import { CanonicalHostEngineerReviewService } from './canonical-host-engineer-review.service';
+import {
+  deriveCanonicalReferenceMentionPreview,
+  type CanonicalReferenceMentionCandidate,
+} from './canonical-reference-mention-preview';
+import { buildCanonicalRelatedContextSnapshot } from './canonical-related-context-snapshot';
+import { projectCanonicalStructuredContentUnit } from './canonical-structured-content-projection';
 import { preflightCanonicalHostOpenClawResult } from './canonical-host-openclaw-runtime-policy';
 import { parseBilingualTranslationArtifact } from './canonical-host-openclaw-translation.service';
 import {
@@ -119,6 +128,10 @@ export class CanonicalHostOpenClawReviewService {
     private readonly artifactStore: UnifiedArtifactStorePort,
     @Inject(CANONICAL_SERVICE_SCOPE_AUTHORIZATION)
     private readonly serviceScope: CanonicalServiceScopeAuthorizationPort,
+    @Optional()
+    private readonly reader?: UnifiedReaderService,
+    @Optional()
+    private readonly documentManagement?: DocumentManagementHostedService,
   ) {}
 
   async begin(
@@ -159,7 +172,7 @@ export class CanonicalHostOpenClawReviewService {
       inputRevision: binding.turn.inputRevision,
       baseRevision: binding.turn.inputRevision,
       idempotencyKey: reviewIdempotencyKey(binding),
-      sourceRefs: taskArtifactRefs(workItem, binding.turn),
+      sourceRefs: taskArtifactRefs(workItem, binding.turn, taskContract),
       allowedConnectors: [],
       buildModelInput: async () =>
         structuredClone(taskContract) as unknown as Record<string, unknown>,
@@ -426,12 +439,14 @@ export class CanonicalHostOpenClawReviewService {
       packageBytes,
       bilingual,
       attachmentContext,
+      relatedContext,
     ] = await Promise.all([
       this.engineerReviews.pageContext(workItem),
       this.engineerReviews.modelContext(workItem),
       this.artifactStore.readActualBytes(workItem.package!.artifact),
       this.readBilingualContext(workItem),
       this.readAttachmentContext(binding),
+      this.readRelatedContext(binding, workItem),
     ]);
     if (!pageContext)
       throw reviewConflict('REVIEW_EVALUATION_CONTEXT_REQUIRED');
@@ -448,7 +463,10 @@ export class CanonicalHostOpenClawReviewService {
       packageBytes,
       workItem.package!.artifact.ref,
       workItem.package!.artifact.sha256,
-      packageReferencedSourceRefIds(resolvedPageContext, workItem),
+      new Set([
+        ...packageReferencedSourceRefIds(resolvedPageContext, workItem),
+        ...relatedContext.mentionSourceRefIds,
+      ]),
     );
     const adoptedInputs = adoptedContext.effective.map((review) => ({
       adoptedInputRef: `engineer-review:${review.sequence}`,
@@ -470,6 +488,7 @@ export class CanonicalHostOpenClawReviewService {
       packageResourceRefs,
       adoptedEvidenceResourceRefs(workItem, adoptedInputs),
       attachmentContext.resourceRefs,
+      relatedContext.resourceRefs,
     );
     const allowedEvaluationItemIds = resolvedPageContext.items.map(
       (item) => item.criterionId,
@@ -516,6 +535,7 @@ export class CanonicalHostOpenClawReviewService {
         text: binding.turn.candidateText,
         attachmentRefs: [...attachmentContext.attachmentRefs],
       },
+      relatedContext: relatedContext.context,
     };
     return parseReviewTurnTaskContract({
       schemaVersion: 'wiselink.3_1.review_turn_task.v1.c2',
@@ -612,6 +632,190 @@ export class CanonicalHostOpenClawReviewService {
       })),
     };
   }
+
+  private async readRelatedContext(
+    binding: ReviewBinding,
+    workItem: CanonicalWorkItemProjection,
+  ): Promise<ReviewRelatedContextBuild> {
+    if (!this.reader || !this.documentManagement || !workItem.package) {
+      return unavailableReviewRelatedContext(
+        'RELATED_CONTEXT_RUNTIME_NOT_CONFIGURED',
+      );
+    }
+    try {
+      const allUnits = await this.reader.readAllSourceUnits({
+        artifact: workItem.package.artifact,
+        packageId: workItem.package.packageId,
+      });
+      const browserUnits = allUnits
+        .map((unit, index) =>
+          projectCanonicalStructuredContentUnit(unit, index + 1),
+        )
+        .filter((unit) => unit !== null);
+      const candidates = deriveCanonicalReferenceMentionPreview(
+        browserUnits,
+        workItem.package.documentIdentity?.documentCode,
+        allUnits,
+      );
+      const resolved = await this.resolveReviewReferenceTargets(
+        candidates,
+        binding,
+      );
+      const mentions = candidates.map((mention) => ({
+        ...mention,
+        targetResolution: resolved.get(mention.normalizedTarget)?.resolution ?? {
+          status: 'DOCUMENT_NOT_INGESTED' as const,
+        },
+      }));
+      const built = buildCanonicalRelatedContextSnapshot({
+        workItemId: workItem.workItemId,
+        inputRevision: workItem.revision,
+        primaryDocumentVersionId: workItem.source.documentVersionId,
+        mentions,
+      });
+      const relatedResources = [...resolved.values()].flatMap(
+        (entry) => entry.resourceRefs,
+      );
+      const availableByTarget = new Map(
+        [...resolved].map(([target, entry]) => [
+          target,
+          entry.resourceRefs.map((resource) => resource.sourceRefId),
+        ]),
+      );
+      return {
+        mentionSourceRefIds: new Set(
+          mentions.flatMap((mention) => mention.sourceRefIds),
+        ),
+        resourceRefs: relatedResources,
+        context: {
+          status: 'AVAILABLE',
+          schemaVersion: built.snapshot.schemaVersion,
+          snapshotRef: built.snapshot.snapshotRef,
+          inputRevision: built.snapshot.inputRevision,
+          primaryDocumentVersionRef:
+            built.snapshot.primaryDocumentVersionRef,
+          retrievalReceipts: built.snapshot.retrievalReceipts,
+          usagePolicy: {
+            candidateOnly: true,
+            readOnly: true,
+            includedInAssessmentInput: false,
+          },
+          items: built.snapshot.items.map((item) => {
+            const { authority: sourceBasis, ...safeItem } = item;
+            return {
+              ...safeItem,
+              sourceBasis,
+              availableRelatedSourceRefIds:
+                availableByTarget.get(item.normalizedTarget) ?? [],
+            };
+          }),
+        },
+      };
+    } catch (error) {
+      this.logger.warn(
+        `Related Context unavailable for review ${binding.turn.reviewTurnId}: ${relatedContextErrorCode(error)}`,
+      );
+      return unavailableReviewRelatedContext(relatedContextErrorCode(error));
+    }
+  }
+
+  private async resolveReviewReferenceTargets(
+    mentions: CanonicalReferenceMentionCandidate[],
+    binding: ReviewBinding,
+  ): Promise<Map<string, ResolvedReviewReferenceTarget>> {
+    const targets = [...new Set(mentions.map((item) => item.normalizedTarget))];
+    const catalogTargets = await this.documentManagement!.listCurrentReferenceTargets(
+      targets,
+      {
+        actorUserId: binding.conversation.actorId,
+        tenantId: binding.conversation.tenantId,
+        roles: [],
+        appId: CANONICAL_APP_ID,
+        env: 'runtime',
+      },
+    );
+    const result = new Map<string, ResolvedReviewReferenceTarget>();
+    await Promise.all(
+      targets.map(async (target) => {
+        const matches = catalogTargets.filter(
+          (candidate) =>
+            canonicalReferenceLookupKey(candidate.canonicalDocumentNumber) ===
+            canonicalReferenceLookupKey(target),
+        );
+        if (matches.length === 0) {
+          result.set(target, unresolvedReviewReferenceTarget('DOCUMENT_NOT_INGESTED'));
+          return;
+        }
+        if (matches.length > 1) {
+          result.set(target, {
+            resolution: {
+              status: 'RESOLVED_MULTIPLE',
+              candidateCount: matches.length,
+            },
+            resourceRefs: [],
+          });
+          return;
+        }
+        const [match] = matches;
+        const bindings = (
+          await this.workItems.listTenantDocumentAuthorizationBindings({
+            tenantId: binding.conversation.tenantId,
+            documentVersionId: match.documentVersionId,
+          })
+        ).filter(
+          (candidate) =>
+            candidate.requestedByUserId === binding.conversation.actorId,
+        );
+        if (bindings.length === 0) {
+          result.set(target, unresolvedReviewReferenceTarget('ACCESS_DENIED'));
+          return;
+        }
+        if (bindings.length > 1) {
+          result.set(target, {
+            resolution: {
+              status: 'RESOLVED_MULTIPLE',
+              candidateCount: bindings.length,
+            },
+            resourceRefs: [],
+          });
+          return;
+        }
+        const [owned] = bindings;
+        const loaded = await this.workItems.loadTenantScopedProjection(
+          owned.workItemId,
+          binding.conversation.tenantId,
+        );
+        if (
+          !loaded?.projection.package ||
+          loaded.row.requestedByUserId !== binding.conversation.actorId ||
+          loaded.projection.source.documentVersionId !== match.documentVersionId
+        ) {
+          result.set(target, unresolvedReviewReferenceTarget('ACCESS_DENIED'));
+          return;
+        }
+        const targetWorkItem = loaded.projection;
+        const packageBytes = await this.artifactStore.readActualBytes(
+          targetWorkItem.package.artifact,
+        );
+        result.set(target, {
+          resolution: {
+            status: 'RESOLVED_EXACT',
+            workItemId: targetWorkItem.workItemId,
+            documentVersionId: match.documentVersionId,
+            canonicalDocumentNumber: match.canonicalDocumentNumber,
+          },
+          resourceRefs: relatedDocumentResourceRefs(
+            packageBytes,
+            targetWorkItem.package.artifact.ref,
+            targetWorkItem.package.artifact.sha256,
+            target,
+            match.documentVersionId,
+          ),
+        });
+      }),
+    );
+    return result;
+  }
 }
 
 interface ReviewBinding {
@@ -624,6 +828,17 @@ interface AuthorizedReviewAttempt extends ReviewBinding {
   row: ActionAttemptRow;
   task: OpenClawTaskEnvelope;
   contract: ReviewTurnTaskContract;
+}
+
+interface ReviewRelatedContextBuild {
+  mentionSourceRefIds: Set<string>;
+  resourceRefs: FrozenReviewSourceRef[];
+  context: Record<string, unknown>;
+}
+
+interface ResolvedReviewReferenceTarget {
+  resolution: CanonicalReferenceTargetResolution;
+  resourceRefs: FrozenReviewSourceRef[];
 }
 
 function packageReferencedSourceRefIds(
@@ -708,6 +923,48 @@ function frozenPackageResourceRefs(
   return result;
 }
 
+function relatedDocumentResourceRefs(
+  bytes: Uint8Array,
+  resourceArtifactRef: string,
+  resourceArtifactSha256: string,
+  normalizedTarget: string,
+  documentVersionRef: string,
+): FrozenReviewSourceRef[] {
+  const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  assertNoDuplicateJsonKeys(text);
+  const raw: unknown = JSON.parse(text) as unknown;
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    throw new Error('REVIEW_RELATED_PACKAGE_JSON_INVALID');
+  }
+  const sourceRefs = (raw as Record<string, unknown>).sourceRefs;
+  if (!Array.isArray(sourceRefs)) {
+    throw new Error('REVIEW_RELATED_PACKAGE_SOURCE_REFS_INVALID');
+  }
+  return sourceRefs.map((value) => {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+      throw new Error('REVIEW_RELATED_PACKAGE_SOURCE_REF_INVALID');
+    }
+    const ref = value as Record<string, unknown>;
+    return {
+      sourceRefId: requiredText(
+        ref.sourceRefId,
+        'REVIEW_RELATED_PACKAGE_SOURCE_REF_ID_INVALID',
+      ),
+      resourceArtifactRef,
+      resourceArtifactSha256,
+      value: {
+        ...structuredClone(ref),
+        relatedDocument: {
+          normalizedTarget,
+          documentVersionRef,
+          contextUse: 'BACKGROUND_ONLY',
+          targetApplicability: 'NOT_EVALUATED',
+        },
+      },
+    };
+  });
+}
+
 interface MinimalAdoptedInput {
   adoptedInputRef: string;
   evidence: Array<{
@@ -761,6 +1018,7 @@ function mergeResourceRefs(
 function taskArtifactRefs(
   workItem: CanonicalWorkItemProjection,
   turn: PersistedReviewTurn,
+  contract: ReviewTurnTaskContract,
 ): OpenClawTaskEnvelope['sourceRefs'] {
   const artifacts = [
     workItem.package?.artifact,
@@ -771,6 +1029,10 @@ function taskArtifactRefs(
     ...(turn.attachmentBindings ?? []).map(
       (attachment: ReviewAttachmentBinding) => attachment.parsedArtifact,
     ),
+    ...contract.resourceRefs.map((resource) => ({
+      ref: resource.resourceArtifactRef,
+      sha256: resource.resourceArtifactSha256,
+    })),
   ].filter((value) => value !== undefined);
   const result = new Map<string, string>();
   for (const artifact of artifacts) {
@@ -781,6 +1043,51 @@ function taskArtifactRefs(
     result.set(artifact.ref, artifact.sha256);
   }
   return [...result].map(([ref, sha256]) => ({ ref, sha256 }));
+}
+
+function unavailableReviewRelatedContext(
+  reason: string,
+): ReviewRelatedContextBuild {
+  return {
+    mentionSourceRefIds: new Set(),
+    resourceRefs: [],
+    context: {
+      status: 'UNAVAILABLE',
+      reason,
+      usagePolicy: {
+        candidateOnly: true,
+        readOnly: true,
+        includedInAssessmentInput: false,
+      },
+      items: [],
+    },
+  };
+}
+
+function unresolvedReviewReferenceTarget(
+  status: 'DOCUMENT_NOT_INGESTED' | 'ACCESS_DENIED',
+): ResolvedReviewReferenceTarget {
+  return { resolution: { status }, resourceRefs: [] };
+}
+
+function canonicalReferenceLookupKey(value: string): string {
+  return value.trim().toUpperCase().replace(/[^A-Z0-9]/gu, '');
+}
+
+function relatedContextErrorCode(error: unknown): string {
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    typeof error.code === 'string' &&
+    error.code.trim()
+  ) {
+    return error.code.trim();
+  }
+  if (error instanceof Error && /^[A-Z][A-Z0-9_:.-]+$/u.test(error.message)) {
+    return error.message;
+  }
+  return 'RELATED_CONTEXT_BUILD_FAILED';
 }
 
 function assistantCandidate(

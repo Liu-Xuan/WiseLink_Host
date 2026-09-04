@@ -131,6 +131,57 @@ describe('CanonicalHostOpenClawReviewService', () => {
     });
   });
 
+  it('exposes explicit related documents through the existing review context and SourceRef tools', async () => {
+    const harness = reviewHarness(false, true);
+
+    const begin = await harness.service.begin('RC-1', 'request-1');
+
+    expect(begin.task.modelInput).toMatchObject({
+      context: {
+        relatedContext: {
+          status: 'AVAILABLE',
+          usagePolicy: {
+            candidateOnly: true,
+            readOnly: true,
+            includedInAssessmentInput: false,
+          },
+          items: [
+            expect.objectContaining({
+              normalizedTarget: '777-SL-31-064',
+              currentness: 'CURRENT',
+              contextUse: 'BACKGROUND_ONLY',
+              targetApplicability: 'NOT_EVALUATED',
+              availableRelatedSourceRefIds: ['TARGET-SRC-1'],
+            }),
+          ],
+        },
+      },
+      resourceRefs: expect.arrayContaining([
+        expect.objectContaining({ sourceRefId: 'SRC-REL' }),
+        expect.objectContaining({ sourceRefId: 'TARGET-SRC-1' }),
+      ]),
+    });
+    expect(begin.task.sourceRefs).toContainEqual({
+      ref: 'artifact://related-package',
+      sha256: 'f'.repeat(64),
+    });
+    await expect(
+      harness.service.readSourceRefs('AQ-REVIEW-1', ['TARGET-SRC-1']),
+    ).resolves.toMatchObject({
+      sourceRefs: [
+        {
+          sourceRefId: 'TARGET-SRC-1',
+          relatedDocument: {
+            normalizedTarget: '777-SL-31-064',
+            documentVersionRef: 'DV-SL-1',
+            contextUse: 'BACKGROUND_ONLY',
+            targetApplicability: 'NOT_EVALUATED',
+          },
+        },
+      ],
+    });
+  });
+
   it('fails closed when a stored source-evidence candidate cannot be resolved', async () => {
     const harness = reviewHarness();
     const page = await harness.engineerReviews.pageContext();
@@ -411,8 +462,35 @@ describe('CanonicalHostOpenClawReviewService', () => {
   });
 });
 
-function reviewHarness(withAttachment = false) {
+function reviewHarness(withAttachment = false, withRelatedContext = false) {
   const workItem = parsedWorkItem();
+  const relatedWorkItem: CanonicalWorkItemProjection = {
+    ...structuredClone(workItem),
+    workItemId: 'WI-RELATED-1',
+    requestId: 'WORK-REQ-RELATED-1',
+    revision: 3,
+    source: {
+      ...structuredClone(workItem.source),
+      documentId: 'DOC-SL-1',
+      documentVersionId: 'DV-SL-1',
+    },
+    package: {
+      ...structuredClone(workItem.package!),
+      packageId: 'PKG-SL-1',
+      artifact: {
+        ...structuredClone(workItem.package!.artifact),
+        ref: 'artifact://related-package',
+        sha256: 'f'.repeat(64),
+      },
+      title: '777-SL-31-064',
+      documentIdentity: {
+        documentCode: '777-SL-31-064',
+        businessRevision: 'ORIGINAL ISSUE',
+      },
+      contentUnitCount: 1,
+      sourceRefCount: 1,
+    },
+  };
   const conversation = {
     reviewConversationId: 'RC-1',
     tenantId: 'tenant-1',
@@ -484,13 +562,26 @@ function reviewHarness(withAttachment = false) {
     }),
   };
   const workItems = {
-    loadTenantScopedProjection: jest.fn(async () => ({
+    loadTenantScopedProjection: jest.fn(async (workItemId: string) => ({
       row: {
         requestedByUserId: 'actor-1',
-        revision: 7,
+        revision: workItemId === 'WI-RELATED-1' ? 3 : 7,
       },
-      projection: workItem,
+      projection:
+        workItemId === 'WI-RELATED-1' ? relatedWorkItem : workItem,
     })),
+    listTenantDocumentAuthorizationBindings: jest.fn(async () => [
+      {
+        workItemId: 'WI-RELATED-1',
+        revision: 3,
+        tenantId: 'tenant-1',
+        requestId: 'WORK-REQ-RELATED-1',
+        documentId: 'DOC-SL-1',
+        documentVersionId: 'DV-SL-1',
+        requestedByUserId: 'actor-1',
+        runKey: 'run-related-1',
+      },
+    ]),
   };
   const engineerReviews = {
     pageContext: jest.fn(async () => ({
@@ -634,16 +725,55 @@ function reviewHarness(withAttachment = false) {
             pageCount: 1,
             pages: [{ page: 1, text: 'Parsed engineering attachment.' }],
           })
-        : new TextEncoder().encode(
+        : artifact.ref === 'artifact://related-package'
+          ? new TextEncoder().encode(
+              JSON.stringify({
+                sourceRefs: [
+                  {
+                    sourceRefId: 'TARGET-SRC-1',
+                    pageStart: 1,
+                    pageEnd: 1,
+                    quote: 'Related document evidence.',
+                  },
+                ],
+              }),
+            )
+          : new TextEncoder().encode(
             JSON.stringify({
               sourceRefs: [
                 { sourceRefId: 'SRC-1', pageStart: 1, pageEnd: 1 },
+                { sourceRefId: 'SRC-REL', pageStart: 2, pageEnd: 2 },
                 { sourceRefId: 'SRC-UNUSED', pageStart: 2, pageEnd: 2 },
               ],
             }),
           ),
     ),
   };
+  const reader = withRelatedContext
+    ? {
+        readAllSourceUnits: jest.fn(async () => [
+          {
+            unitId: 'UNIT-REL-1',
+            kind: 'paragraph',
+            text: 'Please refer to 777-SL-31-064 for more information.',
+            sourceRefIds: ['SRC-REL'],
+          },
+        ]),
+      }
+    : undefined;
+  const documentManagement = withRelatedContext
+    ? {
+        listCurrentReferenceTargets: jest.fn(async () => [
+          {
+            familyId: 'FAMILY-SL-1',
+            documentVersionId: 'DV-SL-1',
+            canonicalDocumentNumber: '777-SL-31-064',
+            documentFamily: 'SL',
+            issuerAuthority: 'BOEING',
+          },
+        ]),
+      }
+    : undefined;
   const serviceScope = {
     authorizeOpenClawWorkItem: jest.fn(async () => verifiedScope()),
     authorizeOpenClawReview: jest.fn(async () => verifiedScope()),
@@ -660,6 +790,8 @@ function reviewHarness(withAttachment = false) {
     attempts as never,
     artifactStore as never,
     serviceScope as never,
+    reader as never,
+    documentManagement as never,
   );
   return {
     service,
