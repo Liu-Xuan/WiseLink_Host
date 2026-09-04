@@ -278,7 +278,6 @@ export interface ConfigurationEvidenceQueryStorePort {
   ): Promise<ConfigurationEvidenceQueryAttemptReadModel>;
   markAdopted(input: {
     tenantId: string;
-    actorId: string;
     workItemId: string;
     candidateEvidenceRef: string;
     snapshotId: string;

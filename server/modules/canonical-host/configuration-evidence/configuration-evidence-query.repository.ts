@@ -221,7 +221,6 @@ export class MiaodaConfigurationEvidenceQueryStore implements ConfigurationEvide
 
   async markAdopted(input: {
     tenantId: string;
-    actorId: string;
     workItemId: string;
     candidateEvidenceRef: string;
     snapshotId: string;
@@ -247,10 +246,6 @@ export class MiaodaConfigurationEvidenceQueryStore implements ConfigurationEvide
           eq(
             configurationEvidenceQueryAttempt.adoptionStatus,
             'CANDIDATE_UNADOPTED',
-          ),
-          eq(
-            configurationEvidenceQueryAttempt.recordedByActorId,
-            input.actorId,
           ),
         ),
       )

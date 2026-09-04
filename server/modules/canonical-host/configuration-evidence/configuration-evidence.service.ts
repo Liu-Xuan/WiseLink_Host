@@ -287,6 +287,33 @@ export class ConfigurationEvidenceService {
         'CONFIGURATION_EVIDENCE_CANDIDATE_READBACK_INVALID',
       );
     }
+    const committedReplay = await this.store.findByRequest({
+      tenantId: authorized.grant.tenantId,
+      workItemId,
+      requestId: candidate.request.requestId,
+    });
+    if (committedReplay) {
+      assertCommittedCurrent(
+        committedReplay.workItem,
+        committedReplay.persisted,
+      );
+      await this.queryStore.markAdopted({
+        tenantId: authorized.grant.tenantId,
+        workItemId,
+        candidateEvidenceRef,
+        snapshotId: committedReplay.persisted.summary.snapshotId,
+        workItemRevision:
+          committedReplay.persisted.summary.workItemRevisionAfter,
+        adoptedAt: this.clock.nowIso(),
+      });
+      return adoptionResponse(
+        workItemId,
+        committedReplay.workItem.revision,
+        true,
+        candidateEvidenceRef,
+        committedReplay.persisted,
+      );
+    }
     if (
       expectedRevision !== candidate.inputRevision ||
       expectedRevision !== authorized.workItem.revision ||
@@ -308,7 +335,6 @@ export class ConfigurationEvidenceService {
     assertCommittedCurrent(committed.workItem, committed.persisted);
     await this.queryStore.markAdopted({
       tenantId: authorized.grant.tenantId,
-      actorId: authorized.grant.actorUserId,
       workItemId,
       candidateEvidenceRef,
       snapshotId: committed.persisted.summary.snapshotId,

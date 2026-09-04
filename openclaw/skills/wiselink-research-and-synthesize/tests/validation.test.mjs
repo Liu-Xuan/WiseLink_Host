@@ -107,7 +107,7 @@ test('pins exact20 MCP 1.2, five review tools, and hosted provenance', () => {
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c16',
+    'wiselink-research-and-synthesize@r09.c17',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -131,6 +131,19 @@ test('keeps every packaged runtime version declaration aligned', async () => {
       `${url.pathname} must declare ${expected}`,
     );
   }
+});
+
+test('distinguishes ordinary applicability waiting from terminal P0B stages', async () => {
+  const contents = await readFile(
+    new URL('../agents/openai.yaml', import.meta.url),
+    'utf8',
+  );
+  assert.match(contents, /ordinary non-P0B INITIAL_ANALYSIS/u);
+  assert.match(
+    contents,
+    /configuration-evidence P0B, any WAITING_INPUT, FAILED, or CONFLICT stage is terminal/u,
+  );
+  assert.match(contents, /do not continue to a downstream stage/u);
 });
 
 test('requires the single sanitized Host P0B status field', () => {
