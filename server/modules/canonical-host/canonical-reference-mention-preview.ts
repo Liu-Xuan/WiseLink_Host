@@ -358,12 +358,19 @@ function prefixType(value: string): CanonicalReferenceDocumentType {
 }
 
 function contextRole(context: string): CanonicalReferenceContextRole {
-  if (/\bconcurrent(?:ly)?\b|并行要求|同期要求/iu.test(context)) {
+  const compact = context.toUpperCase().replace(/[^A-Z0-9\u4E00-\u9FFF]/gu, '');
+  if (
+    /\bconcurrent(?:ly)?\b|并行要求|同期要求/iu.test(context) ||
+    /CONCURRENT(?:LY)?|并行要求|同期要求/u.test(compact)
+  ) {
     return 'CONCURRENT_REQUIREMENT';
   }
   if (
     /\brelated\s+(?:to|information)\b|see\s+also|相关资料|相关信息/iu.test(
       context,
+    ) ||
+    /RELATED(?:TO|INFORMATION)|SEEALSO|FORMOREINFORMATION|相关资料|相关信息/u.test(
+      compact,
     )
   ) {
     return 'RELATED_INFORMATION';
@@ -371,6 +378,9 @@ function contextRole(context: string): CanonicalReferenceContextRole {
   if (
     /\brefer(?:red)?\s+to\b|in\s+accordance\s+with|accepted\s+procedure|参考.*程序|按照.*程序/iu.test(
       context,
+    ) ||
+    /REFER(?:RED)?TO|INACCORDANCEWITH|ACCEPTEDPROCEDURE|参考.*程序|按照.*程序/u.test(
+      compact,
     )
   ) {
     return 'PROCEDURE_SUPPORT';
