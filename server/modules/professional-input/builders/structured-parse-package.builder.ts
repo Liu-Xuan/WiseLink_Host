@@ -731,7 +731,7 @@ function buildDeterministicApplicability(
   };
 }
 
-function buildAeoDeterministicApplicability(
+export function buildAeoDeterministicApplicability(
   effectivity: SourceBoundAeoEffectivity,
   moduleId: string,
 ): StructuredApplicability {
@@ -780,25 +780,28 @@ function buildAeoDeterministicApplicability(
     ),
   );
   const expression: StructuredApplicabilityExpression = {
-    operator: 'all',
-    children: [
-      {
-        operator: 'predicate',
-        predicate: {
-          property: 'model',
-          comparator: 'in',
-          values: models,
+    operator: 'any',
+    children: effectivity.groups.map((group) => ({
+      operator: 'all',
+      children: [
+        {
+          operator: 'predicate',
+          predicate: {
+            property: 'model',
+            comparator: 'eq',
+            values: [group.aircraftModel],
+          },
         },
-      },
-      {
-        operator: 'predicate',
-        predicate: {
-          property: 'registrationNumber',
-          comparator: 'in',
-          values: registrations,
+        {
+          operator: 'predicate',
+          predicate: {
+            property: 'registrationNumber',
+            comparator: 'in',
+            values: group.aircraftRegistrations,
+          },
         },
-      },
-    ],
+      ],
+    })),
   };
   const candidateId = techpubEntityId(
     'applicability-candidate',
