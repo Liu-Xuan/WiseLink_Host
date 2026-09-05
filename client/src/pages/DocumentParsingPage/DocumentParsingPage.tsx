@@ -51,7 +51,10 @@ import { EngineeringReasoningTrail } from './EngineeringReasoningTrail';
 import { AeoAuthoringWorkspace } from './AeoAuthoringWorkspace';
 import ApplicabilitySelectionPanel from './ApplicabilitySelectionPanel';
 import AssessmentRuleWorkspace from './AssessmentRuleWorkspace';
-import { assessmentRuleName } from './assessment-rule-presentation';
+import {
+  assessmentRuleName,
+  resolveAssessmentRuleSelection,
+} from './assessment-rule-presentation';
 import { AssessmentSemanticsOverview } from './AssessmentSemanticsOverview';
 import { DocumentReaderWorkspace } from './DocumentReaderWorkspace';
 import PdfSourcePane from './PdfSourcePane';
@@ -464,11 +467,11 @@ export default function DocumentParsingPage() {
   const reviewContext = data.engineerReviewContext ?? null;
   const requestedReviewCriterion: string =
     searchParams.get('criterion')?.trim() ?? '';
-  const selectedReviewCriterion = reviewContext?.items.some(
-    (item) => item.criterionId === requestedReviewCriterion,
-  )
-    ? requestedReviewCriterion
-    : reviewContext?.items[0]?.criterionId || '';
+  const selectedReviewCriterion: string =
+    resolveAssessmentRuleSelection(
+      reviewContext?.items,
+      requestedReviewCriterion,
+    ) ?? '';
   const reviewCriterionLabel = (criterionId: string): string => {
     const index =
       reviewContext?.items.findIndex(
@@ -1265,10 +1268,9 @@ export default function DocumentParsingPage() {
           reviewContext ? (
             <>
               <AssessmentRuleWorkspace
-                key={`${workItemId}:${data.workItem.revision}:${requestedReviewCriterion}`}
+                key={`${workItemId}:${data.workItem.revision}:${selectedReviewCriterion}`}
                 items={reviewContext.items}
                 selectedCriterionId={selectedReviewCriterion}
-                preferSelectedOnLoad={requestedReviewCriterion !== ''}
                 onSelectCriterion={(criterionId: string) =>
                   updateDeepLink({
                     criterion: criterionId,

@@ -87,6 +87,43 @@ export function assessmentRuleCategory(
   return item.humanReviewRequired ? 'attention' : 'concluded';
 }
 
+export function resolveAssessmentRuleSelection(
+  items: readonly CanonicalEngineerReviewPageItem[] | null | undefined,
+  requestedCriterionId: string | null | undefined,
+  category?: AssessmentRuleCategory | 'all',
+): string | null {
+  const available: readonly CanonicalEngineerReviewPageItem[] = items ?? [];
+  const selectable: readonly CanonicalEngineerReviewPageItem[] =
+    category && category !== 'all'
+      ? available.filter(
+          (item: CanonicalEngineerReviewPageItem) =>
+            assessmentRuleCategory(item) === category,
+        )
+      : available;
+  const requested: CanonicalEngineerReviewPageItem | undefined =
+    selectable.find(
+      (item: CanonicalEngineerReviewPageItem) =>
+        item.criterionId === requestedCriterionId?.trim(),
+    );
+  if (requested) return requested.criterionId;
+  if (category) return selectable[0]?.criterionId ?? null;
+
+  const priority: readonly AssessmentRuleCategory[] = [
+    'attention',
+    'concluded',
+    'unavailable',
+    'not-applicable',
+  ];
+  for (const preferredCategory of priority) {
+    const first: CanonicalEngineerReviewPageItem | undefined = selectable.find(
+      (item: CanonicalEngineerReviewPageItem) =>
+        assessmentRuleCategory(item) === preferredCategory,
+    );
+    if (first) return first.criterionId;
+  }
+  return null;
+}
+
 export function assessmentRuleConclusion(
   item: CanonicalEngineerReviewPageItem,
 ): string {

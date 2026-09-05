@@ -26,7 +26,9 @@ export function buildCanonicalRelatedContextSnapshot(
   );
   const snapshot: CanonicalRelatedContextSnapshot = {
     schemaVersion: 'wiselink.3_1.related_context_snapshot.v1' as const,
-    snapshotRef: `related-context-snapshot://${encodeURIComponent(input.workItemId)}/${input.inputRevision}/${randomUUID()}`,
+    // The snapshot stores its WorkItem binding below; its shared reference
+    // must not embed the Host control identifier in model-visible context.
+    snapshotRef: `related-context-snapshot://${randomUUID()}`,
     mode: 'EXPLICIT_PREVIEW',
     policyVersion: 'wiselink.related-context.explicit-preview.v1',
     workItemRef: input.workItemId,

@@ -124,6 +124,12 @@ describe('continuous review client state', () => {
     expect(pageSource).toContain(
       'selectedEvaluationItemId={selectedReviewCriterion || null}',
     );
+    expect(pageSource).toContain(
+      'selectedCriterionId={selectedReviewCriterion}',
+    );
+    expect(pageSource).toMatch(
+      /const selectedReviewCriterion:\s*string\s*=\s*resolveAssessmentRuleSelection\(/u,
+    );
     expect(panelSource).toMatch(
       /selectedEvaluationItemId:\s*string\s*\|\s*null;/u,
     );

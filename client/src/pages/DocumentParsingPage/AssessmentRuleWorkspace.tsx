@@ -12,6 +12,7 @@ import type { CanonicalEngineerReviewPageItem } from '@shared/api.interface';
 
 import {
   buildAssessmentRulePresentations,
+  resolveAssessmentRuleSelection,
   type AssessmentRuleCategory,
   type AssessmentRulePresentation,
 } from './assessment-rule-presentation';
@@ -20,7 +21,6 @@ import './assessment-rule-workspace.css';
 interface AssessmentRuleWorkspaceProps {
   items: CanonicalEngineerReviewPageItem[];
   selectedCriterionId: string;
-  preferSelectedOnLoad: boolean;
   onSelectCriterion: (criterionId: string) => void;
   onLocateSourceRef: (sourceRefId: string) => void;
 }
@@ -39,33 +39,6 @@ const CATEGORY_OPTIONS: CategoryOption[] = [
 ];
 const RULE_PAGE_SIZE = 40;
 
-function initialCategory(
-  items: AssessmentRulePresentation[],
-  selectedCriterionId: string,
-  preferSelectedOnLoad: boolean,
-): AssessmentRuleCategory | 'all' {
-  const selected: AssessmentRulePresentation | undefined = items.find(
-    (item: AssessmentRulePresentation) =>
-      item.item.criterionId === selectedCriterionId,
-  );
-  if (selected && preferSelectedOnLoad) return selected.category;
-  if (
-    items.some(
-      (item: AssessmentRulePresentation) => item.category === 'attention',
-    )
-  ) {
-    return 'attention';
-  }
-  if (
-    items.some(
-      (item: AssessmentRulePresentation) => item.category === 'concluded',
-    )
-  ) {
-    return 'concluded';
-  }
-  return 'unavailable';
-}
-
 function categoryLabel(category: AssessmentRuleCategory): string {
   return (
     CATEGORY_OPTIONS.find((option: CategoryOption) => option.key === category)
@@ -83,7 +56,6 @@ function CategoryIcon({ category }: { category: AssessmentRuleCategory }) {
 export default function AssessmentRuleWorkspace({
   items,
   selectedCriterionId,
-  preferSelectedOnLoad,
   onSelectCriterion,
   onLocateSourceRef,
 }: AssessmentRuleWorkspaceProps) {
@@ -91,8 +63,12 @@ export default function AssessmentRuleWorkspace({
     () => buildAssessmentRulePresentations(items),
     [items],
   );
-  const [category, setCategory] = useState<AssessmentRuleCategory | 'all'>(() =>
-    initialCategory(presentations, selectedCriterionId, preferSelectedOnLoad),
+  const selected: AssessmentRulePresentation | undefined = presentations.find(
+    (item: AssessmentRulePresentation) =>
+      item.item.criterionId === selectedCriterionId,
+  );
+  const [category, setCategory] = useState<AssessmentRuleCategory | 'all'>(
+    () => selected?.category ?? 'all',
   );
   const [visibleCount, setVisibleCount] = useState<number>(RULE_PAGE_SIZE);
 
@@ -123,14 +99,14 @@ export default function AssessmentRuleWorkspace({
           ),
     [category, presentations],
   );
-  const selected: AssessmentRulePresentation | undefined =
-    filtered.find(
-      (item: AssessmentRulePresentation) =>
-        item.item.criterionId === selectedCriterionId,
-    ) ??
-    filtered[0] ??
-    presentations[0];
-  const visible: AssessmentRulePresentation[] = filtered.slice(0, visibleCount);
+  const selectedIndex: number = filtered.findIndex(
+    (item: AssessmentRulePresentation) =>
+      item.item.criterionId === selectedCriterionId,
+  );
+  const visible: AssessmentRulePresentation[] = filtered.slice(
+    0,
+    Math.max(visibleCount, selectedIndex + 1),
+  );
 
   if (!selected) {
     return (
@@ -174,9 +150,20 @@ export default function AssessmentRuleWorkspace({
               key={option.key}
               className={`is-${option.key}`}
               aria-pressed={category === option.key}
+              disabled={count === 0}
               onClick={() => {
+                const nextCriterionId: string | null =
+                  resolveAssessmentRuleSelection(
+                    items,
+                    selectedCriterionId,
+                    option.key,
+                  );
+                if (!nextCriterionId) return;
                 setCategory(option.key);
                 setVisibleCount(RULE_PAGE_SIZE);
+                if (nextCriterionId !== selectedCriterionId) {
+                  onSelectCriterion(nextCriterionId);
+                }
               }}
             >
               {option.label} <span>{count}</span>
