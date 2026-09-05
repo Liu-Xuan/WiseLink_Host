@@ -816,10 +816,11 @@ export class CanonicalHostOpenClawReviewService {
             includedInAssessmentInput: false,
           },
           items: snapshot.items.map((item) => {
-            const { sourceBasis, ...safeItem } = item;
+            // The snapshot keeps a legacy alias; the model receives the
+            // existing sourceAuthority field, not a control-plane authority.
+            const { authority: _legacyAuthority, ...safeItem } = item;
             return {
               ...safeItem,
-              sourceBasis,
               availableRelatedSourceRefIds:
                 availableByTarget.get(item.normalizedTarget) ?? [],
             };

@@ -205,11 +205,22 @@ describe('CanonicalHostOpenClawReviewService', () => {
     const [snapshotBytes] = harness.artifactStore.persistAndReadback.mock
       .calls[0] as [Uint8Array];
     const modelContext = begin.task.modelInput.context as {
-      relatedContext: { snapshotRef: string };
+      relatedContext: {
+        snapshotRef: string;
+        items: Array<Record<string, unknown>>;
+      };
     };
-    expect(JSON.parse(new TextDecoder().decode(snapshotBytes))).toMatchObject({
+    const persistedSnapshot = JSON.parse(new TextDecoder().decode(snapshotBytes));
+    expect(persistedSnapshot).toMatchObject({
       snapshotRef: modelContext.relatedContext.snapshotRef,
     });
+    // Real Turn 15 stopped before model execution on this legacy alias.
+    // Keep the public snapshot intact and preserve its source semantics.
+    expect(persistedSnapshot.items[0].authority).toBeDefined();
+    expect(modelContext.relatedContext.items[0]).not.toHaveProperty('authority');
+    expect(modelContext.relatedContext.items[0].sourceAuthority).toBe(
+      persistedSnapshot.items[0].sourceAuthority,
+    );
     await expect(
       harness.service.readSourceRefs('AQ-REVIEW-1', ['TARGET-SRC-1']),
     ).resolves.toMatchObject({
