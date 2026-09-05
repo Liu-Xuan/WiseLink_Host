@@ -501,6 +501,14 @@ export class CanonicalHostOpenClawReviewService {
     const allowedEvaluationItemIds = resolvedPageContext.items.map(
       (item) => item.criterionId,
     );
+    const selectedEvaluationItemId: string | null =
+      binding.turn.selectedEvaluationItemId ?? null;
+    if (
+      selectedEvaluationItemId !== null &&
+      !allowedEvaluationItemIds.includes(selectedEvaluationItemId)
+    ) {
+      throw reviewConflict('REVIEW_SELECTED_EVALUATION_ITEM_NOT_FOUND');
+    }
     const engineerInputRef = `engineer-input:${binding.turn.engineerSuppliedInputId}`;
     const allowedAdoptedInputRefs = [
       ...adoptedInputs.map((input) => input.adoptedInputRef),
@@ -553,7 +561,7 @@ export class CanonicalHostOpenClawReviewService {
       requestId: binding.turn.requestId,
       actorContextRef: actorContextRef(binding.conversation),
       inputRevision: binding.turn.inputRevision,
-      selectedEvaluationItemId: null,
+      selectedEvaluationItemId,
       userMessage: binding.turn.userMessage,
       allowedOperations: [...REVIEW_ALLOWED_OPERATIONS],
       resourceRefs,

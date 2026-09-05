@@ -13,5 +13,6 @@ export interface ReviewAttachmentBinding {
 export interface ReviewEngineerInputPayload {
   schemaVersion: 'wiselink.3_1.review_engineer_input.v1.c7';
   userMessage: string;
+  selectedEvaluationItemId?: string | null;
   attachments: ReviewAttachmentBinding[];
 }

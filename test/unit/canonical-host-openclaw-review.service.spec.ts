@@ -97,6 +97,27 @@ describe('CanonicalHostOpenClawReviewService', () => {
     );
   });
 
+  it('passes the persisted focus to the Agent task and context tool', async () => {
+    const harness = reviewHarness(false, false, false, 'RULE-1');
+    const begin = await harness.service.begin('RC-1', 'request-1');
+
+    expect(begin.task.modelInput.selectedEvaluationItemId).toBe('RULE-1');
+    await expect(harness.service.context('AQ-REVIEW-1')).resolves.toMatchObject(
+      {
+        selectedEvaluationItemId: 'RULE-1',
+      },
+    );
+  });
+
+  it('does not run against a focus absent from the current assessment', async () => {
+    const harness = reviewHarness(false, false, false, 'RULE-OTHER');
+    await expect(
+      harness.service.begin('RC-1', 'request-1'),
+    ).rejects.toMatchObject({
+      code: 'REVIEW_SELECTED_EVALUATION_ITEM_NOT_FOUND',
+    });
+  });
+
   it('expands stored source-evidence candidate IDs to exact package SourceRefs', async () => {
     const harness = reviewHarness();
     const page = await harness.engineerReviews.pageContext();
@@ -548,6 +569,7 @@ function reviewHarness(
   withAttachment = false,
   withRelatedContext = false,
   withRelatedApplicability = false,
+  selectedEvaluationItemId: string | null = null,
 ) {
   const workItem = parsedWorkItem();
   const relatedWorkItem: CanonicalWorkItemProjection = {
@@ -605,6 +627,7 @@ function reviewHarness(
     requestId: 'request-1',
     inputRevision: 7,
     userMessage: 'Please review rule 1.',
+    selectedEvaluationItemId,
     inputType: 'ENGINEER_TEXT',
     adoptionStatus: 'CANDIDATE_UNADOPTED',
     candidateText: 'Please review rule 1.',
