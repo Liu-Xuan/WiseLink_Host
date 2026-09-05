@@ -91,7 +91,7 @@ describe('same-object refresh wiring', () => {
     expect(parsing).toMatch(
       /<ReviewImpactPreview[\s\S]*?refreshing=\{loading\}/u,
     );
-    expect(parsing).toContain('scrolledNodeRef.current === destination');
+    expect(parsing).toContain('scrolledNodesRef.current.has(destination)');
     expect(parsing).not.toMatch(/\binert[=\s>]/u);
   });
 

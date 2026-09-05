@@ -23,6 +23,7 @@ import {
 } from 'react';
 
 import { canonicalPdfPreviewUrl } from '@client/src/api/canonical-host';
+import { useWorkbenchPanelActive } from '@client/src/features/workbench/RetainedWorkbenchPanel';
 import type { CanonicalPdfPreviewProjection } from '@shared/api.interface';
 import {
   buildPdfDocumentRequest,
@@ -66,6 +67,7 @@ export default function PdfDocumentViewer({
   targetPage,
   targetSignal,
 }: PdfDocumentViewerProps) {
+  const panelActive: boolean = useWorkbenchPanelActive();
   const [pdfDocument, setPdfDocument] = useState<PDFDocumentProxy | null>(null);
   const [pageCount, setPageCount] = useState<number>(0);
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -82,6 +84,8 @@ export default function PdfDocumentViewer({
   }));
   const pagesRef = useRef<HTMLDivElement | null>(null);
   const scrollFrameRef = useRef<number | null>(null);
+  const savedScrollTopRef = useRef<number>(0);
+  const appliedScrollRequestRef = useRef<PdfScrollRequest | null>(null);
   const isMobile: boolean = usePdfMobileViewport();
   const previewUrl: string = useMemo(
     () => canonicalPdfPreviewUrl(workItemId, preview.opaqueLocator),
@@ -153,6 +157,7 @@ export default function PdfDocumentViewer({
     targetPage === null ? null : clampPdfPage(targetPage, pageCount);
 
   useEffect(() => {
+    if (!panelActive) return;
     const container: HTMLDivElement | null = pagesRef.current;
     if (!container || !pdfDocument || pageCount <= 0) return;
     const pageFrames: HTMLElement[] = Array.from(
@@ -192,11 +197,22 @@ export default function PdfDocumentViewer({
     );
     pageFrames.forEach((frame: HTMLElement) => observer.observe(frame));
     return () => observer.disconnect();
-  }, [pageCount, pdfDocument]);
+  }, [pageCount, pdfDocument, panelActive]);
 
   useLayoutEffect(() => {
+    if (!panelActive) {
+      if (scrollFrameRef.current !== null) {
+        window.cancelAnimationFrame(scrollFrameRef.current);
+        scrollFrameRef.current = null;
+      }
+      return;
+    }
     const container = pagesRef.current;
     if (!container || pageCount <= 0) return;
+    if (appliedScrollRequestRef.current === scrollRequest) {
+      container.scrollTop = savedScrollTopRef.current;
+      return;
+    }
     const target = container.querySelector<HTMLElement>(
       `[data-pdf-page="${scrollRequest.page}"]`,
     );
@@ -210,7 +226,9 @@ export default function PdfDocumentViewer({
       ),
       behavior: 'auto',
     });
-  }, [pageCount, scrollRequest]);
+    savedScrollTopRef.current = container.scrollTop;
+    appliedScrollRequestRef.current = scrollRequest;
+  }, [pageCount, scrollRequest, panelActive]);
 
   useEffect(
     () => () => {
@@ -247,6 +265,8 @@ export default function PdfDocumentViewer({
   }
 
   function handlePagesScroll(): void {
+    if (!panelActive) return;
+    savedScrollTopRef.current = pagesRef.current?.scrollTop ?? 0;
     if (scrollFrameRef.current !== null) return;
     scrollFrameRef.current = window.requestAnimationFrame(() => {
       scrollFrameRef.current = null;
@@ -403,11 +423,13 @@ function PdfCanvasPage({
   highlighted,
   renderRequested,
 }: PdfCanvasPageProps) {
+  const panelActive: boolean = useWorkbenchPanelActive();
   const frameRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [renderError, setRenderError] = useState<boolean>(false);
 
   useEffect(() => {
+    if (!panelActive) return;
     if (!renderRequested && !highlighted) return;
     const frame: HTMLDivElement | null = frameRef.current;
     const canvas: HTMLCanvasElement | null = canvasRef.current;
@@ -417,6 +439,7 @@ function PdfCanvasPage({
     let cancelRender: (() => void) | null = null;
 
     async function render(): Promise<void> {
+      if (!active || !frame || frame.clientWidth === 0) return;
       try {
         page = await document.getPage(pageNumber);
         if (!active || !frame || !canvas) return;
@@ -461,7 +484,7 @@ function PdfCanvasPage({
       cancelRender?.();
       page?.cleanup();
     };
-  }, [document, highlighted, pageNumber, renderRequested, zoom]);
+  }, [document, highlighted, pageNumber, renderRequested, zoom, panelActive]);
 
   return (
     <article

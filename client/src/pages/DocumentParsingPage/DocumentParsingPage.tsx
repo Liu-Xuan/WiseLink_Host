@@ -68,6 +68,7 @@ import { documentFailureAllowsReviewReadback } from './saved-review-readback';
 import RevisionTimeline from '@client/src/features/review/RevisionTimeline';
 import TaskPills from '@client/src/features/review/TaskPills';
 import WorkbenchShell from '@client/src/features/workbench/WorkbenchShell';
+import RetainedWorkbenchPanel from '@client/src/features/workbench/RetainedWorkbenchPanel';
 import type { QuickOpenItem } from '@client/src/features/workbench/QuickOpen';
 import OverallAssessmentHero from '@client/src/features/workitem/OverallAssessmentHero';
 import { useOverallRegeneration } from '@client/src/features/workitem/useOverallRegeneration';
@@ -97,6 +98,7 @@ import {
   resolveCanonicalDocumentParsingRouteHandoff,
   runCanonicalDocumentParsingLoad,
 } from './document-parsing-load';
+import { useReaderRequestScope } from './useReaderRequestScope';
 import './document-parsing.css';
 import './pdf-source-pane.css';
 import '@client/src/features/workbench/workbench-shell.css';
@@ -192,7 +194,7 @@ export default function DocumentParsingPage() {
   const sessionGenerationRef = useRef<number>(sessionGeneration);
   sessionGenerationRef.current = sessionGeneration;
   const loadEpochRef = useRef<number>(0);
-  const scrolledNodeRef = useRef<string | null>(null);
+  const scrolledNodesRef = useRef(new Set<string>());
   const { workItemId = '' } = useParams<{ workItemId: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const activeNode: WorkbenchNode = getWorkbenchNode(searchParams.get('node'));
@@ -200,8 +202,12 @@ export default function DocumentParsingPage() {
   const requestedReaderUnit: string = searchParams.get('unit')?.trim() ?? '';
   const requestedSourceRef: string =
     searchParams.get('sourceRef')?.trim() ?? '';
-  const activeReaderSourceRef: string =
-    activeNode === 'reader' ? requestedSourceRef : '';
+  const activeReaderSourceRef: string = useReaderRequestScope(
+    workItemId,
+    sessionGeneration,
+    activeNode === 'reader',
+    requestedSourceRef,
+  );
   const evidenceContextActive: boolean = resolveWorkbenchEvidenceActive(
     activeNode,
     requestedSourceRef,
@@ -474,6 +480,7 @@ export default function DocumentParsingPage() {
   ]);
 
   useEffect(() => {
+    scrolledNodesRef.current.clear();
     setContinuousReviewReceipt(null);
     setStructuredSourceLocator(null);
     setReviewComment('');
@@ -503,9 +510,9 @@ export default function DocumentParsingPage() {
 
   useEffect(() => {
     const destination = `${sessionGeneration}:${workItemId}:${activeNode}`;
-    if (scrolledNodeRef.current === destination) return;
+    if (scrolledNodesRef.current.has(destination)) return;
     if (activeNode === 'package' || activeNode === 'reader') {
-      scrolledNodeRef.current = destination;
+      scrolledNodesRef.current.add(destination);
       return;
     }
     if (loading || data === null) return;
@@ -515,7 +522,7 @@ export default function DocumentParsingPage() {
         : NODE_TARGETS[activeNode];
     const target: HTMLElement | null = document.getElementById(targetId);
     if (!target) return;
-    scrolledNodeRef.current = destination;
+    scrolledNodesRef.current.add(destination);
     window.requestAnimationFrame(() => {
       const reduceMotion = window.matchMedia(
         '(prefers-reduced-motion: reduce)',
@@ -775,6 +782,8 @@ export default function DocumentParsingPage() {
   return (
     <main className="parse-shell parse-shell--workbench wl-workbench-enter">
       <WorkbenchShell
+        key={`${sessionGeneration}:${workItemId}`}
+        retainTabScroll
         contextLabel={`${pkg?.documentIdentity?.documentCode ?? fileLabel} · ${WORKBENCH_TABS.find((tab) => tab.key === activeNode)?.label ?? '综合评估'}`}
         navigator={
           <NavigatorTree
@@ -986,8 +995,8 @@ export default function DocumentParsingPage() {
           </section>
         ) : null}
 
-        {activeNode === 'package' ? (
-          pkg ? (
+        <RetainedWorkbenchPanel active={activeNode === 'package'}>
+          {pkg ? (
             <div className="parse-structured-split" id="workspace-package">
               <div className="parse-structured-primary">
                 <div
@@ -1047,10 +1056,10 @@ export default function DocumentParsingPage() {
                   : '文件正在等待解析。'}
               </p>
             </article>
-          )
-        ) : null}
+          )}
+        </RetainedWorkbenchPanel>
 
-        {activeNode === 'reader' ? (
+        <RetainedWorkbenchPanel active={activeNode === 'reader'}>
           <div
             className={`parse-reader-split${
               readerMode === 'source' ? ' is-pdf-active' : ''
@@ -1086,9 +1095,9 @@ export default function DocumentParsingPage() {
               onReturnStructured={returnToStructuredReader}
             />
           </div>
-        ) : null}
+        </RetainedWorkbenchPanel>
 
-        {activeNode === 'assessment' ? (
+        <RetainedWorkbenchPanel active={activeNode === 'assessment'}>
           <ApplicabilitySelectionPanel
             key={workItemId}
             workItemId={workItemId}
@@ -1099,10 +1108,7 @@ export default function DocumentParsingPage() {
             }
             onConfigurationEvidenceAdopted={() => load(activeQuery)}
           />
-        ) : null}
-
-        {activeNode === 'assessment' ? (
-          assessmentEligible ? (
+          {assessmentEligible ? (
             <section
               className="parse-assessment-panel parse-assessment-workspace"
               id="workspace-assessment-results"
@@ -1393,12 +1399,12 @@ export default function DocumentParsingPage() {
                 </Button>
               </article>
             </section>
-          )
-        ) : null}
+          )}
+        </RetainedWorkbenchPanel>
 
         {/* ── §4.2 复核意见：CriterionSet 逐项投影 + 工程师逐项复核 ── */}
-        {activeNode === 'review' ? (
-          reviewContext ? (
+        <RetainedWorkbenchPanel active={activeNode === 'review'}>
+          {reviewContext ? (
             <>
               <AssessmentRuleWorkspace
                 key={`${workItemId}:${data.workItem.revision}:${selectedReviewCriterion}`}
@@ -1537,10 +1543,7 @@ export default function DocumentParsingPage() {
             <div className="parse-assessment-empty" id="workspace-review">
               <p>当前资料尚未提供可复核的逐项内容。</p>
             </div>
-          )
-        ) : null}
-
-        {activeNode === 'review' ? (
+          )}
           <ContinuousReviewPanel
             key={workItemId}
             workItemId={workItemId}
@@ -1580,7 +1583,7 @@ export default function DocumentParsingPage() {
               ),
             }}
           />
-        ) : null}
+        </RetainedWorkbenchPanel>
 
         {activeNode === 'overall' ? (
           <>

@@ -71,6 +71,8 @@ export interface WorkbenchShellProps {
   activeTab: string;
   /** 普通页面由主栏滚动；Reader/package 工作区把滚动交给各自内容窗格。 */
   contentMode?: 'flow' | 'workspace';
+  /** In-memory scroll positions, reset with the session/WorkItem-keyed shell. */
+  retainTabScroll?: boolean;
   /** 窄屏四项底栏的语义归组；例如解析结果归入「原文」。 */
   mobileActiveTab?: string;
   /** Quick Open 只接入当前 Host 已返回、当前用户可读取的真实对象。 */
@@ -169,6 +171,7 @@ export default function WorkbenchShell({
   tabs,
   activeTab,
   contentMode = 'flow',
+  retainTabScroll = false,
   mobileActiveTab,
   quickOpenItems = [],
   onTabChange,
@@ -202,6 +205,7 @@ export default function WorkbenchShell({
   const shellRef = useRef<HTMLDivElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const mainRef = useRef<HTMLDivElement>(null);
+  const tabScrollRef = useRef(new Map<string, { top: number; left: number }>());
   const draggingRef = useRef<'nav' | 'evidence' | null>(null);
   const navTriggerRef = useRef<HTMLButtonElement>(null);
   const evidenceTriggerRef = useRef<HTMLButtonElement>(null);
@@ -220,6 +224,14 @@ export default function WorkbenchShell({
     drawerOriginRef.current =
       active instanceof HTMLElement && active.isConnected ? active : null;
   }, []);
+
+  useLayoutEffect(() => {
+    const main = mainRef.current;
+    if (!retainTabScroll || !main) return;
+    const position = tabScrollRef.current.get(activeTab);
+    main.scrollTop = position?.top ?? 0;
+    main.scrollLeft = position?.left ?? 0;
+  }, [activeTab, retainTabScroll]);
 
   /* ── §4.2 布局偏好持久化：仅界面偏好，不保存 WorkItem/current ── */
   useEffect(() => {
@@ -951,6 +963,14 @@ export default function WorkbenchShell({
           aria-labelledby={activePanelLabelledBy}
           aria-label={activePanelLabelledBy ? undefined : '当前工作区'}
           tabIndex={contentMode === 'flow' ? 0 : -1}
+          onScroll={(event) => {
+            if (!retainTabScroll || event.target !== event.currentTarget)
+              return;
+            tabScrollRef.current.set(activeTab, {
+              top: event.currentTarget.scrollTop,
+              left: event.currentTarget.scrollLeft,
+            });
+          }}
         >
           {children}
         </div>
