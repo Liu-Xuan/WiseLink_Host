@@ -40,7 +40,21 @@ Host 优化 `72b9c156f` 与前端 A+B 已集成到 `3903eb6c1`，发布 `7681981
 - 同身份、同事项 pending refresh 保留现有内容、草稿和滚动位置，标明尚未确认最新状态；身份/对象/权限变化或读取失败仍清除，旧原文错误不视作缓存成功。确认、采纳与 Overall 写入在刷新期间禁用，草稿仍可编辑。
 - Overall 已完成的 fresh DTO 在当前事项、query、无 SourceRef 选择且版本不倒退时直接复用；不匹配时读取当前路由对应内容，不加入变更前的 pending GET。
 - 入场 handoff 仅在 lazy 初始状态解析，原 5 秒有效期不延长，不因随后本地渲染而重新应用/失效重拉。
-- 保留挂载的复核和适用性面板在实际 revision 变化时重读。跨节点已访问面板的保活 C 另批由前端主控实施，尚未发布；不在首屏挂载所有重型面板。
+- 保留挂载的复核和适用性面板在实际 revision 变化时重读。跨节点已访问面板的保活 C 在后续第二批发布，见下节；不在首屏挂载所有重型面板。
+
+## 第二批：已访问面板保活与同轮按需取证
+
+Host release `7682008054367685902` 已 finished，精确提交 `73561af4d37c8d6b8624f1bda9bbfb9587f86216`，error_logs 为空；origin 与 github 已同步。该提交包含前端主控 C 源提交 `e7733a175` 的集成 `1d65d01cd`：
+
+- 首次访问才挂载正文、Reader/PDF、适用性、复核；返回已访问页保留 DOM、PDF 文档对象、页码/缩放、材料展开、草稿及滚动位置。隐藏面板暂停轮询、observer 与 PDF 渲染，不在首屏预挂载所有重型面板。
+- 同一事项离开 Reader 不清空来源选择、不因此再次整包 GET；实际来源、身份、事项和版本变化仍按既有规则更新，授权/来源失败不靠保活掩盖。
+- 主控 client type-check、面板/刷新 2 suites / 10 tests、前后端生产构建通过。前端独立临时 Chrome 组件运行 16 项检查通过；它使用真实组件及计数测试子项，不包含真实 Hosted 数据或 PDF 网络，不是线上 SLO。
+- 本次生产主 JS gzip 为 590.11 kB，PDF 库已是独立 chunk 98.61 kB；既有构建警告保留。前端主控继续按实际入口依赖检查首屏拆分，不重复实施已有 PDF 动态加载。
+- 发布后主控在已登录 Chrome 重新载入同一 SB 页面，仍为原文不可读、讨论版本 11、Turn 17 FAILED 和历史候选；未新建回合。正常面板路径和秒级首显仍不能用此故障样本验收。
+
+同一提交的 Skill `r09.c21` 已通过既有 Publish Lite 流程原位安装到官方 Hosted，安装轮次 `7682008775905299661` completed。唯一同名、Ready/Visible，23/23 文件与源包一致；安装器额外 `.openclaw/source-origin.json` 单列。installed validation 105/105、consumer 3/3，通过范围均为离线测试，没有业务模型或新 Turn。ZIP 为 165803 bytes，既有 archive SHA-256 为 `1e696a3a2be4518c192386c20f12ebc8a44a6ccaa86b68ec2aa146a80d6e5203`。
+
+c21 先交接最小上下文和允许的资料目录，由模型通过 `read_wiselink_review_sources` 选择相关片段；驱动委托现有 `read_source_refs`，把实际结果回传相同原生 session 后继续分析，最终仍通过既有候选 commit。每轮不再默认预读全部来源，同轮重复引用复用已读取值，后续请求只含新 tool exchange，不重复发送整包。model.result 保存实读批次，使中断恢复仍能复用原 checkpoint 的已读集合而不重跑模型。未改变 Host Task/Result/MCP、正式采用、权限或业务版本规则；不新增 hash、表、gate、队列或缓存框架。跨 Turn 原生 session 仍按 requestId 隔离，稳定跨轮会话与页面真实活动尚未完成。
 
 ## 本轮核对范围
 
@@ -61,7 +75,9 @@ Host 优化 `72b9c156f` 与前端 A+B 已集成到 `3903eb6c1`，发布 `7681981
 - 该测试实际使用 `model=openclaw/default`、`agent:main:r10-native-diagnostic`，并非指定的 `wiselink-engineering`；只算 Gateway 能力证据，不算业务 profile 验收。首次脚手架把 CLI 告警当成凭据而得到 401，之后修正并重新运行；不能称全程无重试。未新建 Host ReviewTurn。
 - 纠正核查 `7681985071637597370` 发现配置只有 `agents.defaults`、未显式配置 `agents.list`；命名的 `wiselink-engineering` 目录存在。不能由目录等同正式路由，也不能据此推断旧业务成功调用实际用了 main；还需核对命名 agent 的默认配置继承行为。运行目录相对旧 HEAD 有此前安装及运行状态差异，本轮有意写入仅合成测试文件；没有本轮前后文件快照，不能把旧 HEAD 差异都算成本轮改动，也不能声称独立证明所有业务文件零变化。
 
-当前 `c20` driver 仍以 requestId 派生调用标识，程序预读资料并强制一次候选输出；能力存在不代表产品已经使用。下一实现复用 Host 持久化的 `openClawSessionKey`（仅控制面，不入模型提示）、当前授权及既有 `read_source_refs`，按任务需要读取片段并回传实际结果；权限/材料范围收缩时不能携带已无权读取的旧会话内容。原生 wake/订阅接口存在，也不自动意味着 Host 已能从云端安全到达 Gateway；60 秒领取路径尚未替换。
+后续只读轮次 `7681987988713032924` 核对实际 `resolveAgentIdFromModel`、`buildAgentCommandInput` 与 session agent 解析：`openclaw/wiselink-engineering` 在 agents.list 缺省时仍解析为命名 agent，继承 defaults 并使用独立工作区/session store；不是回退 main。显式 session key 的 agent 段决定 OpenAI ingress 的实际执行 agent，因此 key 与 profile 必须一致。此轮未发模型请求或改运行配置；此前 main 合成测试的原因是选用了 default alias 与 main key，不是版本不支持命名 agent。
+
+当前 `c21` 已接通同轮按需取证，但不同 Turn 仍隔离。下一实现复用 Host 持久化的 `openClawSessionKey`（仅控制面，不入模型提示）、当前授权、版本和来源范围实现跨轮延续；权限/材料范围收缩时不能携带已无权读取的旧会话内容。原生 wake/订阅接口存在，也不自动意味着 Host 已能从云端安全到达 Gateway；60 秒领取路径尚未替换。
 
 ## 后续交接与读取形态
 

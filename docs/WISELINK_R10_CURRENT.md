@@ -2,7 +2,7 @@
 
 同步日期：2026-09-05（Asia/Shanghai）。
 
-来源：[R10 云文档](https://hv5zjf4j8yb.feishu.cn/docx/MA3fdjEycoISjHxptAqcsyxvn9b)，revision 2144。
+来源：[R10 云文档](https://hv5zjf4j8yb.feishu.cn/docx/MA3fdjEycoISjHxptAqcsyxvn9b)，revision 2151。
 
 本文件是现行第 1–11 节、第 12 节当前摘要及第 13–14 节的读取镜像，便于代码开发引用；历史运行记录和附录保留在云文档。图示保留原云资源链接，少量 callout 保留导出的 DocxXML。当前执行进度见 [执行计划](WISELINK_R10_EXECUTION_PLAN.md)。原 GPT Pro 交接包不回写、不改写。
 
@@ -53,7 +53,7 @@ REVIEW_ON_DEMAND、知识空间检索与最小问题脉络属于当前主线；L
 |-|-|
 | R10 | 本云文档中的当前开发契约版本。 |
 | WiseLink v0.9 | 产品/架构阶段标签，不等于 Skill build。 |
-| r09.c10 / r09.c20 | r09.c10 是普通 R09 Task 的最低兼容 build；当前源码和官方 Hosted 最近安装记录为 r09.c20。Turn 13 实际执行 c16、Turn 14 实际执行 c17，历史结果保留实际版本，不重标为新 build。 |
+| r09.c10 / r09.c21 | r09.c10 是普通 R09 Task 的最低兼容 build；当前源码和官方 Hosted 最近安装记录为 r09.c21，增加同轮按需来源读取。Turn 13 实际执行 c16、Turn 14 实际执行 c17，历史结果保留实际版本，不重标为新 build。 |
 | Host commit / release | 妙搭 Host 的具体 Git 提交与线上发布身份。 |
 | DocumentVersion / revision | 业务文档和 WorkItem 的独立版本，不与以上版本混用。 |
 
@@ -159,7 +159,7 @@ driver 收窄为运行适配器：任务领取、会话映射、上下文交接�
 
 前端展示当前问题、已读取的具体材料、决定性依据、理由摘要、未知及结论变化；诊断细节放入折叠区，不伪造进度百分比。支持继续提问、补材料与下一轮承接；运行中 steering 未接通时显示“下一轮指示”，不能把已排队说成已干预当前运行。
 
-2026-09-05 当前实证：页面 append 已保存自动执行意图，官方 Hosted 原生 command cron 每 60 秒消费一次，Turn 15/16/17 已自动领取；三个自动回合均未产出候选，17 因旧原文文件不可读在上下文准备阶段失败。共同背景与历史讨论的任务输入增量 90b05aa8f 已随 Host d5ffbf4c9 发布，c20 已官方原位安装，尚待真实新分析验证。原文失败下的独立历史讨论及执行状态已在发布后页面读回。现行 driver 仍按 requestId 派生调用标识、程序预选来源后强制生成一次候选；稳定跨轮会话、按问题继续取证和真实活动展示尚待接通。此判断依据实际编排，不由 Chat Completions 或 stream=false 两个参数推断 OpenClaw 本身的能力。
+2026-09-05 当前实证：页面 append 已保存自动执行意图，官方 Hosted 原生 command cron 每 60 秒消费一次，Turn 15/16/17 已自动领取；三个自动回合均未产出候选，17 因旧原文文件不可读在上下文准备阶段失败。共同背景与历史讨论任务输入已发布；c21 已在官方 Hosted 原位安装，在既有 C3/MCP 上允许模型按问题请求 SourceRef、接收实际片段并继续分析。同轮后续只传新增 tool exchange，仍按 requestId 隔离不同 Turn；稳定跨轮会话、真实活动展示与秒级唤醒尚未接通。原文失败下的独立历史讨论及执行状态已在发布后页面读回；尚未用真实新回合证明 c21 自动候选。此判断依据实际编排，不由 Chat Completions 或 stream=false 参数推断 OpenClaw 本身能力。
 
 上游依据：[OpenClaw HTTP API](https://docs.openclaw.ai/gateway/openai-http-api) 支持稳定 user 的会话映射；[Agent loop](https://docs.openclaw.ai/concepts/agent-loop) 描述运行与活动输出。上游能力不等于当前 Hosted 版本和平台入口已开放，具体部署必须现场验证。
 
@@ -366,7 +366,7 @@ Agent 每轮承接共同上下文和必要变化，按问题读取具体材料�
 
 ## 11.2 第二步：自动运行与共同上下文接线
 
-复用 Turn/ActionAttempt 保存执行意图，官方 Hosted 原生 command cron 沿用既有每 60 秒配置和唯一 Skill 安装路径，该 Skill 已更新为 c20。Turn 15/16/17 均有页面保存和自动领取实证，自动候选及连续往返尚未完成，重启恢复未单独验证。既有授权下独立读取历史讨论及 ActionAttempt 终态已发布并在真实页面通过；原文错误单独呈现。共同语义背景及历史讨论任务输入已发布，完整材料 read model、稳定会话、按需调查和真实活动仍待接通。旧文件恢复并行推进；新文件在同桶写入及发布前后读回正常。消费者不依赖开发者电脑或手动 CLI，不增加第二业务状态机；真实页面新回合及追问仍是自动闭环的完成依据。
+复用 Turn/ActionAttempt 保存执行意图，官方 Hosted 原生 command cron 沿用既有每 60 秒配置和唯一 Skill 安装路径，Skill 已更新为 c21。Turn 15/16/17 均有页面保存和自动领取实证，自动候选及连续往返尚未完成；c21 本地与 installed 离线测试验证同轮按需取证和已完成模型 checkpoint 恢复，不能替代真实重启与业务 UAT。既有授权下独立读取历史讨论及 ActionAttempt 终态已发布并在真实页面通过，原文错误单独呈现。共同背景与任务输入已发布；完整材料 read model、跨轮稳定会话和真实活动仍待接通。旧文件恢复并行推进，新文件既有同桶读写正常。消费者不依赖开发者电脑或手动 CLI，不增加第二业务状态机；真实页面新回合及追问仍是自动闭环的完成依据。
 
 首条样本沿用已成功的 SB 777-34-0425 事项及可访问关联资料，保留已有 150 项结果；新增受影响候选，不重跑已成功初始操作来增加记录。其他文档族先作背景，不先全量改造评估引擎。
 
@@ -406,13 +406,13 @@ B 批次与 Host/Agent 同轮接通：同一事项的本次问题和材料、已
 
 # 12. 当前运行摘要与历史记录（2026-09-05）
 
-**最近功能发布与页面核实：**Host release 7681981887993253150 已 finished，commit 3903eb6c1789e9aace2b3aed1187f3d29bba01f8，error_logs 为空；已同步 origin 与 github。该版本在已发布共同任务背景 90b05aa8f 和独立讨论读取 100709797 上，增加 Host 同次整包/ledger 读取合并、相同内容完整校验结论有限复用（72b9c156f），以及前端同对象刷新保留内容、消费 Overall 已读回结果、入场 handoff 一次性使用（3903eb6c1）。本次主控集成 6 suites / 74 tests、client type-check、前后端生产构建通过；构建仍有仓库外 tsconfig 扫描和大 bundle 警告，未屏蔽。发布后真实登录页重新载入仍读到事项版本 11、Turn 17 FAILED 和历史候选，旧原文仍不可读，无法在该样本上验证正常整包路径的线上提速。官方 Hosted Skill 仍为已安装 c20，本轮未重装、未迁移数据库、未新建业务回合、未正式采用；发布成功与测试通过不等于页面已经秒开或连续评估完成。
+最近功能发布与页面核实：Host release 7682008054367685902 已 finished，commit 73561af4d37c8d6b8624f1bda9bbfb9587f86216，error_logs 为空；已同步 origin 与 github。本次增加前端已访问面板保活（1d65d01cd）：正文、Reader/PDF、适用性和复核切换保留挂载、草稿与位置，隐藏面板暂停轮询/渲染，身份或事项变化仍清除；此前 Host 读取优化与前端 A+B 保留。主控 client type-check、面板/刷新 2 suites / 10 tests、前后端生产构建通过；前端独立组件浏览器验证 16 项通过，不等同 Hosted 页面时延验收。官方 Hosted 同名 Skill 已原位更新 c21，安装轮次 7682008775905299661 completed，23/23 文件与包一致、Ready/Visible；installed validation 105/105、consumer 3/3。c21 在既有 C3/MCP 上接通同轮模型按需来源读取，未新增 Host 工具或正式业务写入口。发布后真实登录页重新载入仍读到版本 11、Turn 17 FAILED 和历史候选，旧原文仍不可读。本轮未新建业务回合、未正式采用、未迁移数据库；发布、安装及本地验证不等于页面已秒开或自动候选闭环已完成。
 
 ReviewConversation ACTIVE，lastTurnNo=17；Turn 13/14 均未采用，分别保留 2/10 个 SourceRef，实际 Skill 分别为 c16/c17。Turn 15/16/17 均由页面保存、原生 cron 自动领取；15/16 在模型前失败，其上下文修复已发布；17 在上下文准备阶段因原文包元数据不可读而 FAILED，尚未产生新的模型候选。事项 revision 仍为 11，未确认 ReviewAction、未正式采用。配置查询与真实知识空间仍 NOT_CONNECTED，不能声称完整连续评估或真实构型采用后重算已验证。
 
-**当前开发状态：**“页面自助连续评估闭环” Goal 为 ACTIVE。Host 读取优化与前端刷新/读回复用已发布；面板保活由前端主控独立推进，首屏轻量读取、讨论状态与历史分离继续实施，不新增通用缓存框架或 gate。完整分析仍受旧原文不可读影响；新测试文件同桶即时、延迟及上一发布后的读回均已通过，尚无旧对象文件级原因与恢复证据，不能认定用户删除或物理删除。Hosted OpenClaw 2026.6.6 的已安装代码确认支持稳定 session key、原生历史及 client function 回传；现行 c20 driver 尚未接通跨轮持续会话与按问题取证。下一步沿现有 Host/Turn/MCP 接通这些能力、展示真实活动，并在原文恢复后验证新回合自动候选及追问；合成能力测试、安装与历史只读恢复均不代替真实 SB 页面连续使用。
+当前开发状态：“页面自助连续评估闭环” Goal 为 ACTIVE。重复 I/O、普通刷新与面板卸载的优化已发布；c21 同轮取证由模型选择相关来源，驱动委托既有 read_source_refs 返回实际片段，后续只传新增 tool exchange，保留既有总超时和不确定结果恢复机制。跨 Turn 稳定授权会话、真实活动与逐材料使用记录、首屏轻量投影、讨论状态/历史分离、秒级唤醒仍待完成。前端主控继续检查首屏无关的重型依赖，按实际构成做最小拆分，不新增通用缓存框架或 gate。旧原文文件级恢复仍需平台侧证据；同桶新文件的既有读写成功不能证明旧对象已恢复。下一步继续这些可实现工作，原文恢复后用新页面回合验证自动候选及追问；不重放失败回合，不以安装、合成测试或只读历史替代真实使用。
 
-原生会话交接核查（2026-09-05）：已安装 OpenClaw 2026.6.6 (8c802aa) 的代码确认支持稳定 x-openclaw-session-key、原生历史加载和 client function 往返。合成测试在 Gateway 默认 main 下完成三次有效模型请求：工具调用、工具结果回传、仅发送新消息后准确回忆合成事实；它没有按要求路由至 wiselink-engineering，因此只证明通用 Gateway 能力，不作为业务 profile 或真实 SB 的验收。初次脚手架取值错误导致 401，修正后再运行，此失败没有被省略。配置当前只有 agents.defaults、未显式登记 agents.list；wiselink-engineering 目录存在，但命名路由如何继承默认配置仍须按实际代码核实，不能仅由目录或逻辑 profile 标签推断已接通。保持现行 c20 与业务回合不变；后续复用 Host 已有会话标识、版本、MCP 来源读取与运行记录接线，不重建会话引擎。
+原生会话交接核查（2026-09-05）：只读轮次 7681987988713032924 核对已安装 OpenClaw 2026.6.6 的实际代码，确认 model=openclaw/wiselink-engineering 即使 agents.list 缺省，也会解析命名 agent，并从 defaults 继承配置，使用独立工作区和会话目录；无需先改环境配置。显式 session header 的 agent 段决定 OpenAI ingress 实际执行 agent，因此不能传入与目标 profile 不符的 key。此前合成测试实际用了 openclaw/default 与 agent:main:*，只证明通用 Gateway 能力；初次 401 及修正后重新运行保留，不作为业务 profile 验收。c21 同轮取证复用相同 request 派生原生 session，跨轮仍隔离；后续沿 Host 已有会话标识、当前授权与版本接通稳定跨轮会话，不把旧 session 记忆当作当前权限、事实或实读来源。
 
 **存储运行异常与深入定位：**2026-09-05 13:57:33 原文包仍可读取，14:01:23 起同一路径元数据不可读；15:38 原始 PDF 也返回“File not found or no access”。成功与失败的真实页面 Trace 均运行 4edb3a376，期间未发生新发布，同一工程师及服务调用均受影响。管理台实际请求仍查询原桶 bucket_aadkprardjghu，请求体仅 limit=200，无过滤返回 attachments=[]、hasMore=false；单纯管理端切错桶或 UI 缓存已基本排除。官方 SDK 会将“不存在或无访问权”归一为 null，故尚不能判定物理删除、索引异常或全局可见性变化。用户确认未进行相关操作，现有日志未找到文件删除证据；需妙搭存储侧依据原桶、文件 ID 1875042263478407 / 1875042252601353 和成功/失败 Trace 核查文件级记录及恢复可能。应用还将原文读取作为整页返回前置，致已保存 Review 讨论与 FAILED 状态也被遮住，正在修复此加载依赖。Turn 17 保持 FAILED，未重放，事项 revision 11 不变；未发现完整匹配备份，不从片段重造原件、不放宽完整性校验、不重解析覆盖既有事项。
 
