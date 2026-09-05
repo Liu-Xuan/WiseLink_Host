@@ -52,6 +52,7 @@ export interface CanonicalServiceScopeAuthorizationPort {
       | 'BEGIN_DYNAMIC'
       | 'RECORD_DISCOVERY'
       | 'BEGIN_OVERALL'
+      | 'GET_PENDING_REVIEW_TURN'
       | 'BEGIN_TRANSLATE';
     workItemId: string;
   }): Promise<CanonicalVerifiedServiceScope>;

@@ -215,6 +215,7 @@ describe('ReviewConversationService session and ACL boundary', () => {
       requestId: 'request-1',
       userMessage: 'Engineer supplied context',
       selectedEvaluationItemId: null,
+      executionRequested: false,
       currentRevision: 7,
       attachmentBindings: [],
     });
@@ -498,16 +499,19 @@ function makeService() {
     close: jest.fn(),
   };
   const attachments = { ingest: jest.fn() };
+  const dispatch = { executionProjection: jest.fn().mockResolvedValue(null) };
   return {
     service: new ReviewConversationService(
       sessions as never,
       objectAccess as never,
       conversations as never,
       attachments as never,
+      dispatch as never,
     ),
     sessions,
     objectAccess,
     conversations,
     attachments,
+    dispatch,
   };
 }

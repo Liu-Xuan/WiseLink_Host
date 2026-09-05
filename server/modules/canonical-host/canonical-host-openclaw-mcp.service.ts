@@ -468,6 +468,17 @@ export class CanonicalHostOpenClawMcpService {
     );
 
     server.registerTool(
+      'get_pending_review_turn',
+      {
+        title: '读取下一条已请求自动执行的评审轮次',
+        description: '仅查询已授权 WorkItem 的 ACTIVE 会话，按保存顺序返回显式 AUTOMATIC 且尚未完成的下一轮。不会选择历史普通保存的 Turn，不改写业务数据；当前轮租约有效时返回 busy，不越过当前轮。',
+        inputSchema: z.object({ workItemId: mcpWorkItemId }).strict(),
+        annotations: resumeAnnotations,
+      },
+      async ({ workItemId }) => textResult(await this.review.pending(workItemId)),
+    );
+
+    server.registerTool(
       'begin_review_turn',
       {
         title: '开始已持久评审轮次',

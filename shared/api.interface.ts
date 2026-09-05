@@ -138,6 +138,26 @@ export interface ReviewTurnAssistantCandidate {
   completedAt: string;
 }
 
+export interface ReviewTurnExecutionReadModel {
+  status: CanonicalOverallRegenerationExecutionStatus;
+  attemptRef: string | null;
+  requestedAt: string | null;
+  startedAt: string | null;
+  updatedAt: string;
+  completedAt: string | null;
+  error: { code: string; message: string } | null;
+}
+
+export interface PendingReviewTurnResponse {
+  next: {
+    reviewConversationRef: string;
+    reviewTurnRef: string;
+    requestId: string;
+    turnNo: number;
+  } | null;
+  busy: boolean;
+}
+
 export interface ReviewTurnReadModel {
   reviewTurnId: string;
   turnNo: number;
@@ -146,6 +166,8 @@ export interface ReviewTurnReadModel {
   userMessage: string;
   /** The engineer's focus for this turn; absent in older responses. */
   selectedEvaluationItemId?: string | null;
+  /** Absent on older Hosts; null means no recorded execution request/attempt. */
+  execution?: ReviewTurnExecutionReadModel | null;
   engineerSuppliedInput: {
     engineerSuppliedInputId: string;
     inputType: EngineerSuppliedInputType;
@@ -191,6 +213,8 @@ export interface AppendReviewTextTurnRequest {
   requestId: string;
   userMessage: string;
   selectedEvaluationItemId?: string | null;
+  /** Explicit opt-in; existing saved turns are never picked up implicitly. */
+  executionMode?: 'AUTOMATIC';
   attachmentSelection?: {
     bucketId: string;
     filePath: string;

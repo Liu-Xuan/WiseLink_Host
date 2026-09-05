@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { IdentityModule } from '../identity/identity.module';
+import { ActionAttemptModule } from '../action-attempt/action-attempt.module';
 import { DocumentManagementRuntimeModule } from '../document-management-runtime/document-management-runtime.module';
 import { WorkItemRuntimeModule } from '../work-item/work-item-runtime.module';
 import { ReviewAttachmentService } from './review-attachment.service';
@@ -10,6 +11,7 @@ import { ReviewConversationService } from './review-conversation.service';
 
 @Module({
   imports: [
+    ActionAttemptModule,
     IdentityModule,
     WorkItemRuntimeModule,
     DocumentManagementRuntimeModule,

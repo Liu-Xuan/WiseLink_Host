@@ -22,6 +22,14 @@ jest.mock('@lark-apaas/fullstack-nestjs-core', () => {
 import { ReviewConversationController } from '../../server/modules/review-persistence/review-conversation.controller';
 
 describe('ReviewConversationController request boundary', () => {
+  it('accepts automatic execution as an explicit append option', async () => {
+    const setup = makeController();
+    await setup.controller.appendTextTurn('WI-1', 'RC-1', {
+      requestId: 'request-auto', userMessage: 'Continue this discussion', executionMode: 'AUTOMATIC',
+    }, {} as never);
+    expect(setup.service.appendTextTurn).toHaveBeenCalledWith('WI-1', 'RC-1', expect.objectContaining({ executionMode: 'AUTOMATIC' }), expect.anything());
+  });
+
   it('passes normalized WorkItem routes for create and current', async () => {
     const setup = makeController();
     setup.service.createOrResume.mockResolvedValue({ ok: true });

@@ -21,7 +21,7 @@ import {
 
 import { actionAttempt, workItem } from '../../database/schema';
 import { canonicalJson } from './action-attempt-envelope';
-import type { OpenClawResultEnvelope } from './action-attempt-envelope.types';
+import type { OpenClawResultEnvelope, OpenClawTaskEnvelope } from './action-attempt-envelope.types';
 import type {
   ActionAttemptRow,
   ActionAttemptWorkItemBinding,
@@ -240,6 +240,54 @@ export class ActionAttemptRepository {
       .limit(1);
     if (active) throw activeAttemptConflict();
     throw new Error('ACTION_ATTEMPT_RESERVATION_READBACK_FAILED');
+  }
+
+  async prepareReviewInput(
+    attemptId: string,
+    task: OpenClawTaskEnvelope,
+  ): Promise<void> {
+    await this.db.update(actionAttempt).set({
+      taskEnvelopeJson: canonicalJson(task),
+      taskInputHash: task.inputHash,
+      updatedAt: new Date(),
+    }).where(and(
+      eq(actionAttempt.attemptId, attemptId),
+      eq(actionAttempt.actionType, 'OPENCLAW_INTERACTIVE_REVIEW'),
+      eq(actionAttempt.status, 'QUEUED'),
+      eq(actionAttempt.claimCount, 0),
+      isNull(actionAttempt.taskEnvelopeJson),
+    ));
+  }
+
+  async readActiveReviewForWorkItem(input: {
+    tenantId: string;
+    workItemId: string;
+  }): Promise<ActionAttemptRow | null> {
+    const [row] = await this.db.select().from(actionAttempt).where(and(
+      eq(actionAttempt.tenantId, input.tenantId),
+      eq(actionAttempt.workItemId, input.workItemId),
+      eq(actionAttempt.actionType, 'OPENCLAW_INTERACTIVE_REVIEW'),
+      inArray(actionAttempt.status, [...ACTIVE_STATUSES]),
+    )).limit(1);
+    return (row as ActionAttemptRow | undefined) ?? null;
+  }
+
+  async failReviewPreparation(attemptId: string, errorCode: string): Promise<void> {
+    const now = new Date();
+    await this.db.update(actionAttempt).set({
+      status: 'FAILED',
+      errorCode,
+      errorMessage: '本轮上下文准备失败，问题和材料已保留。请查看错误原因后继续提问。',
+      terminalReason: 'REVIEW_CONTEXT_PREPARATION_FAILED',
+      completedAt: now,
+      updatedAt: now,
+    }).where(and(
+      eq(actionAttempt.attemptId, attemptId),
+      eq(actionAttempt.actionType, 'OPENCLAW_INTERACTIVE_REVIEW'),
+      eq(actionAttempt.status, 'QUEUED'),
+      eq(actionAttempt.claimCount, 0),
+      isNull(actionAttempt.taskEnvelopeJson),
+    ));
   }
 
   async claimExact(input: {

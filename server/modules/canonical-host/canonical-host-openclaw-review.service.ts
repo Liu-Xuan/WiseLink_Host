@@ -4,6 +4,7 @@ import type {
   CanonicalEngineerReviewPageContext,
   CanonicalReferenceTargetResolution,
   CanonicalWorkItemProjection,
+  PendingReviewTurnResponse,
   ReviewTurnAssistantCandidate,
 } from '@shared/api.interface';
 import {
@@ -11,6 +12,7 @@ import {
   parseTaskEnvelope,
 } from '../action-attempt/action-attempt-envelope';
 import { ActionAttemptLifecycleService } from '../action-attempt/action-attempt-lifecycle.service';
+import { ReviewAttemptDispatchService } from '../action-attempt/review-attempt-dispatch.service';
 import type {
   ActionAttemptRow,
   ActionAttemptTerminalProjection,
@@ -136,11 +138,43 @@ export class CanonicalHostOpenClawReviewService {
     private readonly artifactStore: UnifiedArtifactStorePort,
     @Inject(CANONICAL_SERVICE_SCOPE_AUTHORIZATION)
     private readonly serviceScope: CanonicalServiceScopeAuthorizationPort,
+    private readonly dispatch: ReviewAttemptDispatchService,
     @Optional()
     private readonly reader?: UnifiedReaderService,
     @Optional()
     private readonly documentManagement?: DocumentManagementHostedService,
   ) {}
+
+  async pending(workItemId: string): Promise<PendingReviewTurnResponse> {
+    const scope = await this.serviceScope.authorizeOpenClawWorkItem({
+      operation: 'GET_PENDING_REVIEW_TURN',
+      workItemId,
+    });
+    assertWorkItemScope(scope, workItemId);
+    const loaded = await this.workItems.loadTenantScopedProjection(workItemId, scope.tenantId);
+    if (!loaded?.projection) throw reviewNotFound();
+    const turn = await this.conversations.loadPendingOpenClawTurn({
+      tenantId: scope.tenantId,
+      actorId: loaded.row.requestedByUserId,
+      workItemId,
+    });
+    if (!turn) return { next: null, busy: false };
+    const busy = await this.dispatch.isBusy({
+      ...turn,
+      tenantId: scope.tenantId,
+      actorId: loaded.row.requestedByUserId,
+      workItemId,
+    });
+    return {
+      next: busy ? null : {
+        reviewConversationRef: turn.reviewConversationId,
+        reviewTurnRef: turn.reviewTurnId,
+        requestId: turn.requestId,
+        turnNo: turn.turnNo,
+      },
+      busy,
+    };
+  }
 
   async begin(
     reviewConversationRef: string,
@@ -168,23 +202,27 @@ export class CanonicalHostOpenClawReviewService {
       scope,
       scopedWorkItem.row.requestedByUserId,
     );
-    const workItem = await this.requiredCurrentWorkItem(binding, scope);
-    const taskContract = await this.buildTaskContract(binding, workItem);
-    const claim = await this.attempts.reserveAndClaim({
-      workItemId: workItem.workItemId,
-      taskType: REVIEW_TASK_TYPE,
-      actorUserId: binding.conversation.actorId,
-      tenantId: binding.conversation.tenantId,
-      leaseOwner: scope.principalId,
-      documentVersionId: workItem.source.documentVersionId,
-      inputRevision: binding.turn.inputRevision,
-      baseRevision: binding.turn.inputRevision,
-      idempotencyKey: reviewIdempotencyKey(binding),
-      sourceRefs: taskArtifactRefs(workItem, binding.turn, taskContract),
-      allowedConnectors: [],
-      buildModelInput: async () =>
-        structuredClone(taskContract) as unknown as Record<string, unknown>,
-    });
+    const buildInput = async () => {
+      const workItem = await this.requiredCurrentWorkItem(binding, scope);
+      const taskContract = await this.buildTaskContract(binding, workItem);
+      return {
+        modelInput: structuredClone(taskContract) as unknown as Record<string, unknown>,
+        sourceRefs: taskArtifactRefs(workItem, binding.turn, taskContract),
+      };
+    };
+    const claim = binding.turn.executionRequested
+      ? await this.dispatch.prepareAndClaim({
+          tenantId: binding.conversation.tenantId,
+          actorId: binding.conversation.actorId,
+          workItemId: binding.conversation.workItemId,
+          reviewConversationId: binding.conversation.reviewConversationId,
+          reviewTurnId: binding.turn.reviewTurnId,
+          inputRevision: binding.turn.inputRevision,
+          documentVersionId: scopedWorkItem.projection.source.documentVersionId,
+          leaseOwner: scope.principalId,
+          buildInput,
+        })
+      : await this.beginLegacyTurn(binding, scope, scopedWorkItem.projection, buildInput);
     return {
       attemptRef: claim.attemptRef,
       status: claim.status,
@@ -196,6 +234,32 @@ export class CanonicalHostOpenClawReviewService {
         ? { recoveryResult: structuredClone(claim.recoveryResult) }
         : {}),
     };
+  }
+
+  private async beginLegacyTurn(
+    binding: ReviewBinding,
+    scope: CanonicalVerifiedServiceScope,
+    workItem: CanonicalWorkItemProjection,
+    buildInput: () => Promise<{
+      modelInput: Record<string, unknown>;
+      sourceRefs: OpenClawTaskEnvelope['sourceRefs'];
+    }>,
+  ) {
+    const prepared = await buildInput();
+    return this.attempts.reserveAndClaim({
+      workItemId: workItem.workItemId,
+      taskType: REVIEW_TASK_TYPE,
+      actorUserId: binding.conversation.actorId,
+      tenantId: binding.conversation.tenantId,
+      leaseOwner: scope.principalId,
+      documentVersionId: workItem.source.documentVersionId,
+      inputRevision: binding.turn.inputRevision,
+      baseRevision: binding.turn.inputRevision,
+      idempotencyKey: reviewIdempotencyKey(binding),
+      sourceRefs: prepared.sourceRefs,
+      allowedConnectors: [],
+      buildModelInput: async () => prepared.modelInput,
+    });
   }
 
   async context(attemptRef: string): Promise<ReviewTurnContextResult> {
@@ -333,6 +397,17 @@ export class CanonicalHostOpenClawReviewService {
     });
     if (!binding) throw reviewNotFound();
     if (binding.turn.assistantCandidate) {
+      if (binding.turn.executionRequested) {
+        const execution = await this.dispatch.readExecution({
+          tenantId: binding.conversation.tenantId,
+          actorId: binding.conversation.actorId,
+          workItemId: binding.conversation.workItemId,
+          reviewConversationId: binding.conversation.reviewConversationId,
+          reviewTurnId: binding.turn.reviewTurnId,
+          inputRevision: binding.turn.inputRevision,
+        });
+        if (execution?.status === 'COMMITTING') return binding;
+      }
       this.warnBeginNotFound('CANDIDATE_ALREADY_PRESENT');
       throw reviewNotFound();
     }

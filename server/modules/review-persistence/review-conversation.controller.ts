@@ -101,6 +101,7 @@ function reviewTextBody(body: unknown): AppendReviewTextTurnRequest {
     'requestId',
     'userMessage',
     'selectedEvaluationItemId',
+    'executionMode',
     'attachmentSelection',
   ]);
   const requestId: string = requiredIdentifier(
@@ -115,6 +116,12 @@ function reviewTextBody(body: unknown): AppendReviewTextTurnRequest {
     throw badRequest('REVIEW_TURN_MESSAGE_INVALID');
   }
   const input: AppendReviewTextTurnRequest = { requestId, userMessage };
+  if (value.executionMode !== undefined) {
+    if (value.executionMode !== 'AUTOMATIC') {
+      throw badRequest('REVIEW_EXECUTION_MODE_INVALID');
+    }
+    input.executionMode = 'AUTOMATIC';
+  }
   if (value.selectedEvaluationItemId !== undefined) {
     input.selectedEvaluationItemId =
       value.selectedEvaluationItemId === null

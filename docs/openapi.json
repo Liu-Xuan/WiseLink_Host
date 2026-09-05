@@ -445,6 +445,12 @@
       "post": {
         "operationId": "handleOpenClawMcp",
         "summary": "OpenClaw 专用 ActionAttempt 队列与候选评估 MCP 入口",
+        "x-wiselink-review-execution": {
+          "pendingTool": "get_pending_review_turn",
+          "input": { "workItemId": "Host 已授权的 exact WorkItem" },
+          "behavior": "只读按保存顺序查询 ACTIVE 会话中显式 AUTOMATIC 的 Turn；未领取返回 next 引用，当前租约有效返回 busy，不自动重放历史普通保存或已完成的 Turn。begin_review_turn 在准备上下文前持久化既有 ActionAttempt，使准备失败可从页面回读。候选回写不确认 ReviewAction，不修改 WorkItem revision/current/STALE。",
+          "browserReadback": "ReviewTurn.execution 返回 REQUESTED、QUEUED、RUNNING、COMMITTING 及实际终态、时间和错误；没有执行记录时为 null，不推断模型运行状态。"
+        },
         "description": "承载 translation、applicability、dynamic-N 与 overall 的 PostgreSQL QUEUED→lease claim→RUNNING→完整 ResultEnvelope→COMMITTING→Host CAS 链路，并提供 heartbeat/cancel。普通单项流程保持既有 current 行为；配置证据采纳触发的 P0B 全量重算只把 Applicability 与 Dynamic 候选写入 Host staged bundle，由 Overall 基于 shadow 复核后一次 CAS 同时提升全部 serving current，任一中间失败都保留旧 serving current。TaskEnvelope 由 Host 密封；translation begin 通过同一工具按实际序列化 UTF-8 bytes 返回完整 MCP tool result 不超过 14,000 bytes 的可读 SourceUnit 批次，避免托管工具输出截断且不重复返回 modelInput，不暴露 tenant 或 FileService locator。RUNNING 默认使用 30 分钟 lease/60 分钟 deadline，Skill 在模型前后受控 heartbeat，模型生成期间不依赖短周期回调。重复 begin 遇到 COMMITTING 时返回 DB 中重新校验 hash/binding 的 recovery ResultEnvelope，executor 只重放 Host commit、不二次调用模型。损坏、缺字段或 hash/binding 不一致的 ResultEnvelope 不会被替换为 {}。仅当 API Key transport、service principal、tenant 与 exact WorkItem/ActionAttempt allowlist 全部可验证时处理业务 I/O；未配置时 fail closed。",
         "requestBody": {
           "required": true,
