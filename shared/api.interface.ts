@@ -196,6 +196,8 @@ export interface ReviewConversationReadModel {
   createdAt: string;
   lastActiveAt: string;
   closedAt: string | null;
+  /** Configured executor scope for this authorized conversation, not a live health check. */
+  automaticExecutionAvailable?: boolean;
   turns: ReviewTurnReadModel[];
 }
 

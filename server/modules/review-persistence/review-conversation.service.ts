@@ -12,6 +12,7 @@ import type {
 } from '@shared/api.interface';
 import { SessionResolver } from '../identity/session-resolver.service';
 import { ReviewAttemptDispatchService } from '../action-attempt/review-attempt-dispatch.service';
+import { isOpenClawAutomaticReviewConfigured } from '../canonical-host/configured-development-service-scope.authorization';
 import type { ResolvedSession } from '../identity/session-resolver.service';
 import {
   CANONICAL_OBJECT_ACCESS,
@@ -119,6 +120,14 @@ export class ReviewConversationService {
         selectedEvaluationItemId: input.selectedEvaluationItemId ?? null,
         executionRequested: input.executionMode === 'AUTOMATIC',
         attachmentBindings: replay.attachmentBindings,
+      });
+    }
+
+    if (input.executionMode === 'AUTOMATIC' &&
+        !isOpenClawAutomaticReviewConfigured(existing.conversation)) {
+      throw Object.assign(new Error('Automatic review is not available for this work item.'), {
+        code: 'REVIEW_AUTOMATIC_EXECUTION_UNAVAILABLE',
+        statusCode: 503,
       });
     }
 
@@ -236,6 +245,8 @@ export class ReviewConversationService {
   ): Promise<ReviewConversationReadModel> {
     const model = reviewConversationReadModel(aggregate, currentRevision);
     const conversation = aggregate.conversation;
+    model.automaticExecutionAvailable = conversation.status === 'ACTIVE' &&
+      isOpenClawAutomaticReviewConfigured(conversation);
     model.turns = await Promise.all(aggregate.turns.map(async (turn) => ({
       ...reviewTurnReadModel(turn),
       execution: await this.dispatch.executionProjection({

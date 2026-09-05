@@ -1,4 +1,4 @@
-import { ConfiguredDevelopmentCanonicalServiceScopeAuthorization } from '../../server/modules/canonical-host/configured-development-service-scope.authorization';
+import { ConfiguredDevelopmentCanonicalServiceScopeAuthorization, isOpenClawAutomaticReviewConfigured } from '../../server/modules/canonical-host/configured-development-service-scope.authorization';
 
 const KEYS = [
   'WL_OPENCLAW_SERVICE_SCOPE_ENABLED',
@@ -61,6 +61,16 @@ describe('ConfiguredDevelopmentCanonicalServiceScopeAuthorization', () => {
         workItemId: 'WI-PROTECTED',
       }),
     ).rejects.toMatchObject({ code: 'CANONICAL_WORK_ITEM_NOT_FOUND' });
+  });
+
+  it('projects automatic review only for the configured tenant and WorkItem', () => {
+    for (const key of KEYS) delete process.env[key];
+    const supported = { tenantId: 'tenant-dev', workItemId: 'WI-DEV-ISOLATED' };
+    expect(isOpenClawAutomaticReviewConfigured(supported)).toBe(false);
+    configure();
+    expect(isOpenClawAutomaticReviewConfigured(supported)).toBe(true);
+    expect(isOpenClawAutomaticReviewConfigured({ ...supported, tenantId: 'other' })).toBe(false);
+    expect(isOpenClawAutomaticReviewConfigured({ ...supported, workItemId: 'WI-OTHER' })).toBe(false);
   });
 
   it('authorizes the independent translation begin and commit operations', async () => {

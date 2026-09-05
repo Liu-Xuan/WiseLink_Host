@@ -148,6 +148,21 @@ interface DevelopmentServiceScopeConfig {
   workItemId: string;
 }
 
+/** Project the existing executor scope; do not expose its service identity/config. */
+export function isOpenClawAutomaticReviewConfigured(input: {
+  tenantId: string;
+  workItemId: string;
+}): boolean {
+  try {
+    const config = requiredConfig();
+    return config.tenantId === input.tenantId && config.workItemId === input.workItemId;
+  } catch (error) {
+    if (error instanceof Error && 'code' in error &&
+        error.code === 'CANONICAL_SERVICE_SCOPE_UNAVAILABLE') return false;
+    throw error;
+  }
+}
+
 interface DevelopmentCreateScopeConfig {
   environment: 'DEV' | 'UAT';
   principalId: string;

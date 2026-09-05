@@ -2,6 +2,7 @@ import type {
   ReviewConversationReadModel,
   ReviewTurnReadModel,
 } from '@shared/api.interface';
+import { reviewExecutionPresentation } from './review-execution';
 
 export type ContinuousReviewState =
   | 'NOT_STARTED'
@@ -96,12 +97,10 @@ export function reviewTurnGroups(
 }
 
 export function shouldAutoRefreshReviewTurn(
-  _turn: ReviewTurnReadModel,
+  turn: ReviewTurnReadModel,
   _now = Date.now(),
 ): boolean {
-  /* ReviewTurn 目前没有 Host-owned executionState。缺少候选只表示“尚未读回”，
-   * 不能凭 createdAt + 五分钟窗口伪装成正在运行。待 Host 提供真实状态后再轮询。 */
-  return false;
+  return reviewExecutionPresentation(turn).active;
 }
 
 export function reviewSourceRefLabel(sourceRef: string, index: number): string {
@@ -128,6 +127,9 @@ export function reviewOperationErrorPresentation(
     userMessage = '事项已经更新，请重新读取并同步到最新版本。';
   } else if (/ATTACHMENT/iu.test(searchable)) {
     userMessage = '补充资料未能受控接入，请保留文件并重试。';
+  } else if (/REVIEW_AUTOMATIC_EXECUTION_UNAVAILABLE/u.test(searchable)) {
+    userMessage =
+      '当前对象暂不支持自动分析，输入仍保留在编辑框中。请重新读取以确认支持范围。';
   } else if (/BROWSER_RANDOM_UUID_UNAVAILABLE/iu.test(searchable)) {
     userMessage =
       '当前浏览器缺少安全请求标识能力，请使用受支持的飞书客户端或浏览器。';
@@ -139,6 +141,17 @@ export function reviewOperationErrorPresentation(
     retryable: recordBoolean(error, 'retryable'),
     operatorAction: recordString(error, 'operatorAction'),
   };
+}
+
+export function reviewErrorRevokesReadback(reason: unknown): boolean {
+  const error = errorRecord(reason);
+  const status = recordNumber(error, 'statusCode');
+  return (
+    [401, 403, 404].includes(status ?? 0) ||
+    /LOGIN_REQUIRED|IDENTITY_REQUIRED|OBJECT_NOT_FOUND|FORBIDDEN|UNAUTHORIZED/u.test(
+      recordString(error, 'code') ?? errorMessage(reason),
+    )
+  );
 }
 
 function errorRecord(reason: unknown): Record<string, unknown> | null {

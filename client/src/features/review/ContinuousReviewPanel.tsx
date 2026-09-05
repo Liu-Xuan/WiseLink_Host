@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 
 import { canonicalHost } from '@client/src/api';
+import { getCanonicalHostClientSessionGeneration } from '@client/src/api/canonical-host';
 import {
   getHostedRuntimeFingerprint,
   type HostedRuntimeFingerprintResponse,
@@ -28,11 +29,20 @@ import type {
 } from '@shared/api.interface';
 
 import ReviewConversationTurn from './ReviewConversationTurn';
+import ReviewMaterialsPanel, {
+  type ReviewMaterialsContext,
+} from './ReviewMaterialsPanel';
+import { reviewConversationHasActiveExecution } from './review-execution';
+import {
+  automaticReviewAvailable,
+  reviewSubmissionIntent,
+  type ReviewSubmissionIntent,
+} from './review-submission';
 import {
   continuousReviewPresentation,
+  reviewErrorRevokesReadback,
   reviewOperationErrorPresentation,
   reviewTurnGroups,
-  shouldAutoRefreshReviewTurn,
   type ReviewOperationErrorPresentation,
 } from './continuous-review-state';
 
@@ -55,6 +65,7 @@ interface ContinuousReviewPanelProps {
   onConfirmationReceipt: (receipt: ReviewActionReceipt) => void;
   onLocateSourceRef: (sourceRef: string) => void;
   onWorkItemRefresh: () => Promise<void>;
+  materials?: ReviewMaterialsContext;
 }
 
 export default function ContinuousReviewPanel({
@@ -65,6 +76,7 @@ export default function ContinuousReviewPanel({
   onConfirmationReceipt,
   onLocateSourceRef,
   onWorkItemRefresh,
+  materials,
 }: ContinuousReviewPanelProps) {
   const [conversation, setConversation] =
     useState<ReviewConversationReadModel | null>(null);
@@ -80,20 +92,25 @@ export default function ContinuousReviewPanel({
   const [error, setError] = useState<ReviewOperationErrorPresentation | null>(
     null,
   );
+  const [accessUnavailable, setAccessUnavailable] = useState(false);
   const [errorFingerprint, setErrorFingerprint] =
     useState<HostedRuntimeFingerprintResponse | null>(null);
   const [errorFingerprintReading, setErrorFingerprintReading] = useState(false);
   const [activeRequestId, setActiveRequestId] = useState<string | null>(null);
   const [confirmingTurnId, setConfirmingTurnId] = useState<string | null>(null);
   const [rejectedDraftRefs, setRejectedDraftRefs] = useState<string[]>([]);
-  const requestIdRef = useRef<string | null>(null);
+  const submissionRef = useRef<ReviewSubmissionIntent | null>(null);
   const errorEpochRef = useRef(0);
+  const readEpochRef = useRef(0);
   const presentation = continuousReviewPresentation(conversation);
   const turns = reviewTurnGroups(conversation?.turns ?? []);
   const currentTurn = turns.current;
-  const awaitingCurrentCandidate = Boolean(
-    currentTurn && currentTurn.assistantCandidate === null,
+  const hasActiveExecution = reviewConversationHasActiveExecution(
+    conversation?.turns ?? [],
   );
+  const sendAutomatically = submissionRef.current
+    ? submissionRef.current.executionMode === 'AUTOMATIC'
+    : automaticReviewAvailable(conversation);
 
   const clearError = useCallback((): void => {
     errorEpochRef.current += 1;
@@ -103,6 +120,15 @@ export default function ContinuousReviewPanel({
   }, []);
 
   const captureError = useCallback((reason: unknown): void => {
+    if (reviewErrorRevokesReadback(reason)) {
+      setConversation(null);
+      setMessage('');
+      setFile(null);
+      setUploadedSelection(null);
+      submissionRef.current = null;
+      setActiveRequestId(null);
+      setAccessUnavailable(true);
+    }
     const errorEpoch = errorEpochRef.current + 1;
     errorEpochRef.current = errorEpoch;
     setError(reviewOperationErrorPresentation(reason));
@@ -123,16 +149,31 @@ export default function ContinuousReviewPanel({
   }, []);
 
   const readCurrent = useCallback(async (): Promise<void> => {
+    const epoch = ++readEpochRef.current;
+    const session = getCanonicalHostClientSessionGeneration();
     setRefreshing(true);
     clearError();
     try {
       const response = await canonicalHost.reloadReviewConversation(workItemId);
+      if (
+        epoch !== readEpochRef.current ||
+        session !== getCanonicalHostClientSessionGeneration()
+      )
+        return;
+      if (
+        response.conversation &&
+        response.conversation.workItemId !== workItemId
+      ) {
+        setConversation(null);
+        throw new Error('REVIEW_CONVERSATION_OBJECT_NOT_FOUND');
+      }
       setConversation(response.conversation);
       setCurrentRevision(response.currentWorkItemRevision);
+      setAccessUnavailable(false);
     } catch (reason) {
-      captureError(reason);
+      if (epoch === readEpochRef.current) captureError(reason);
     } finally {
-      setRefreshing(false);
+      if (epoch === readEpochRef.current) setRefreshing(false);
     }
   }, [captureError, clearError, workItemId]);
 
@@ -143,6 +184,7 @@ export default function ContinuousReviewPanel({
   useEffect(
     () => () => {
       errorEpochRef.current += 1;
+      readEpochRef.current += 1;
     },
     [],
   );
@@ -152,13 +194,12 @@ export default function ContinuousReviewPanel({
   }, [workItemRevision]);
 
   useEffect(() => {
-    const currentTurn = turns.current;
     if (
-      !currentTurn ||
-      !shouldAutoRefreshReviewTurn(currentTurn) ||
+      !hasActiveExecution ||
       conversation?.status !== 'ACTIVE' ||
       busyAction !== null ||
-      refreshing
+      refreshing ||
+      error !== null
     ) {
       return;
     }
@@ -167,6 +208,8 @@ export default function ContinuousReviewPanel({
   }, [
     busyAction,
     conversation?.status,
+    error,
+    hasActiveExecution,
     readCurrent,
     refreshing,
     turns.current,
@@ -176,7 +219,7 @@ export default function ContinuousReviewPanel({
     (acceptedFiles: File[]) => {
       const selected = acceptedFiles[0] ?? null;
       setUploadedSelection(null);
-      requestIdRef.current = null;
+      submissionRef.current = null;
       setActiveRequestId(null);
       clearError();
       if (!selected) {
@@ -250,8 +293,13 @@ export default function ContinuousReviewPanel({
     setBusyAction('append');
     clearError();
     try {
-      const requestId = requestIdRef.current ?? createRequestCorrelationId();
-      requestIdRef.current = requestId;
+      const submission = reviewSubmissionIntent(
+        submissionRef.current,
+        submissionRef.current?.requestId ?? createRequestCorrelationId(),
+        conversation,
+      );
+      submissionRef.current = submission;
+      const requestId = submission.requestId;
       setActiveRequestId(requestId);
       let selection = uploadedSelection;
       if (file && !selection) {
@@ -274,6 +322,9 @@ export default function ContinuousReviewPanel({
           requestId,
           userMessage,
           selectedEvaluationItemId,
+          ...(submission.executionMode
+            ? { executionMode: submission.executionMode }
+            : {}),
           ...(selection ? { attachmentSelection: selection } : {}),
         },
       );
@@ -282,7 +333,7 @@ export default function ContinuousReviewPanel({
       setMessage('');
       setFile(null);
       setUploadedSelection(null);
-      requestIdRef.current = null;
+      submissionRef.current = null;
       setActiveRequestId(null);
     } catch (reason) {
       captureError(reason);
@@ -352,6 +403,21 @@ export default function ContinuousReviewPanel({
 
   const active = presentation.state === 'ACTIVE';
 
+  if (accessUnavailable) {
+    return (
+      <section className="continuous-review" aria-label="持续工程复核">
+        <p role="alert">当前复核记录不可访问，已清除页面中的讨论与补充材料。</p>
+        <Button
+          type="button"
+          disabled={refreshing}
+          onClick={() => void readCurrent()}
+        >
+          {refreshing ? '正在读取…' : '重新读取'}
+        </Button>
+      </section>
+    );
+  }
+
   return (
     <section
       className="continuous-review"
@@ -384,6 +450,15 @@ export default function ContinuousReviewPanel({
           </Button>
         </div>
       </header>
+
+      {materials ? (
+        <ReviewMaterialsPanel
+          context={materials}
+          turns={conversation?.turns ?? []}
+          refreshing={refreshing}
+          onLocateSourceRef={onLocateSourceRef}
+        />
+      ) : null}
 
       {confirmationReceipt ? (
         <div className="continuous-review-receipt" role="status">
@@ -522,11 +597,15 @@ export default function ContinuousReviewPanel({
       {active ? (
         <div className="continuous-review-composer">
           <label htmlFor="continuous-review-message">
-            {awaitingCurrentCandidate ? '下一轮指示' : '工程师补充'}
+            {hasActiveExecution ? '下一轮指示' : '工程师补充'}
             <span>
-              {awaitingCurrentCandidate
-                ? '当前回合尚未读回候选；此处只准备下一轮输入，不代表正在执行'
-                : '将作为候选输入保存，提交成功不代表已被结论采纳'}
+              {hasActiveExecution
+                ? sendAutomatically
+                  ? '指示将保存并在下一轮处理；当前执行不会因此改变'
+                  : '本次只保存下一轮输入；当前对象尚未开放自动处理'
+                : sendAutomatically
+                  ? '消息保存后由系统处理；生成结果仍为待复核候选'
+                  : '当前对象未开放自动分析，本次只保存输入'}
             </span>
           </label>
           <Textarea
@@ -536,7 +615,7 @@ export default function ContinuousReviewPanel({
             disabled={busy || !presentation.composerEnabled}
             placeholder="补充事实、提出疑问，或说明希望核对的判断"
             onChange={(event) => {
-              requestIdRef.current = null;
+              submissionRef.current = null;
               setActiveRequestId(null);
               setMessage(event.target.value);
             }}
@@ -545,7 +624,11 @@ export default function ContinuousReviewPanel({
             <div className="continuous-review-generation" role="status">
               <RefreshCw aria-hidden="true" />
               <div>
-                <strong>正在保存输入并请求候选</strong>
+                <strong>
+                  {sendAutomatically
+                    ? '正在保存输入与执行请求'
+                    : '正在保存补充输入'}
+                </strong>
                 <span title={activeRequestId}>
                   requestId {shortRequestId(activeRequestId)}
                   ；此阶段不会采纳输入，也不会修改 WorkItem current、revision 或
@@ -584,7 +667,7 @@ export default function ContinuousReviewPanel({
                 onClick={() => {
                   setFile(null);
                   setUploadedSelection(null);
-                  requestIdRef.current = null;
+                  submissionRef.current = null;
                   setActiveRequestId(null);
                 }}
               >
@@ -605,9 +688,11 @@ export default function ContinuousReviewPanel({
               )}
               {busyAction === 'append'
                 ? '正在提交…'
-                : awaitingCurrentCandidate
-                  ? '提交下一轮指示'
-                  : '提交补充'}
+                : hasActiveExecution
+                  ? '保存下一轮指示'
+                  : sendAutomatically
+                    ? '发送并分析'
+                    : '保存补充'}
             </Button>
           </div>
           <div className="continuous-review-compose-footer">

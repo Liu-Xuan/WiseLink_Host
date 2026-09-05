@@ -18,7 +18,7 @@ describe('ReviewConversationTurn candidate boundary', () => {
 
     expect(html).toContain('data-generation-state="not-read-back"');
     expect(html).toContain('候选尚未读回');
-    expect(html).toContain('Host 尚未返回可核验的执行状态');
+    expect(html).toContain('未返回执行状态');
     expect(html).toContain('WorkItem current、revision 与');
     expect(html).toContain('STALE 状态均未因此改变');
     expect(html).not.toContain('候选生成中');

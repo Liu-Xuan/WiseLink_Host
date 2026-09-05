@@ -8,6 +8,10 @@ import {
 } from 'lucide-react';
 
 import { canonicalHost } from '@client/src/api';
+import {
+  readableReferenceTarget,
+  referenceMaterialGroups,
+} from '@client/src/features/review/review-materials';
 import type {
   CanonicalReferenceContextRole,
   CanonicalReferenceMentionPreviewItem,
@@ -45,20 +49,30 @@ export function ReferenceMentionPreview({
   onLocateSourceRef,
   onOpenTarget,
 }: ReferenceMentionPreviewProps) {
-  const [preview, setPreview] =
+  const [loadedPreview, setPreview] =
     useState<CanonicalRelatedContextPreviewResponse | null>(null);
+  const preview =
+    loadedPreview?.snapshot.workItemRef === workItemId &&
+    loadedPreview.revision === workItemRevision
+      ? loadedPreview
+      : null;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [refreshToken, setRefreshToken] = useState(0);
 
   useEffect(() => {
     let current = true;
-    setPreview(null);
     setLoading(true);
     setError(false);
     void canonicalHost
       .getRelatedContextPreview(workItemId, workItemRevision)
       .then((fresh) => {
+        if (
+          fresh.snapshot.workItemRef !== workItemId ||
+          fresh.revision !== workItemRevision
+        ) {
+          throw new Error('RELATED_CONTEXT_RESPONSE_MISMATCH');
+        }
         if (current) setPreview(fresh);
       })
       .catch(() => {
@@ -76,14 +90,14 @@ export function ReferenceMentionPreview({
   }, [refreshToken, workItemId, workItemRevision]);
 
   return (
-    <section className="reference-preview" aria-label="显式关联上下文预览">
+    <section className="reference-preview" aria-label="正文引用线索">
       <header>
         <div className="reference-preview-heading">
           <Network aria-hidden="true" />
           <div>
-            <span>关联上下文 · EXPLICIT_PREVIEW</span>
+            <span>正文引用线索</span>
             <h3>正文已显式提到的关联资料</h3>
-            <p>只读候选 · 未进入评估输入 · 未接受关系</p>
+            <p>已发现线索 · 尚未纳入评估输入</p>
           </div>
         </div>
         <div className="reference-preview-count">
@@ -94,7 +108,8 @@ export function ReferenceMentionPreview({
 
       {loading ? (
         <p className="reference-preview-state">正在从当前受控正文提取…</p>
-      ) : error ? (
+      ) : null}
+      {error ? (
         <div className="reference-preview-state is-error" role="status">
           <span>
             关联上下文暂不可用；主复核可继续，但不会把不可用当成无关联。
@@ -108,42 +123,43 @@ export function ReferenceMentionPreview({
         </div>
       ) : preview?.mentions.length ? (
         <div className="reference-preview-list">
-          {preview.mentions.map((mention) => (
+          {referenceMaterialGroups(preview).map((group) => (
             <ReferenceMentionRow
-              key={mention.mentionId}
-              mention={mention}
+              key={group.id}
+              mentions={group.mentions}
               onLocateSourceRef={onLocateSourceRef}
               onOpenTarget={onOpenTarget}
             />
           ))}
         </div>
-      ) : (
+      ) : !loading ? (
         <p className="reference-preview-state">
           当前正文未识别到显式关联资料。
         </p>
-      )}
+      ) : null}
 
       <footer>
-        当前展示逐次引用、租户内关联文件解析和上下文作用；
+        同一目标的多处引用合并展示，展开后可定位每处来源。
         {preview
-          ? `已准备 ${preview.snapshot.items.length} 个关联目标的只读快照。`
+          ? `已返回 ${preview.snapshot.items.length} 个关联目标。`
           : '只读快照尚未准备。'}
         {preview ? applicabilitySummary(preview) : ''}
-        所有关联上下文均未进入评估输入。
+        目录匹配、来源权限和适用性各自独立；目标正文读取与正式采用回执尚未返回。
       </footer>
     </section>
   );
 }
 
 function ReferenceMentionRow({
-  mention,
+  mentions,
   onLocateSourceRef,
   onOpenTarget,
 }: {
-  mention: CanonicalReferenceMentionPreviewItem;
+  mentions: CanonicalReferenceMentionPreviewItem[];
   onLocateSourceRef: ReferenceMentionPreviewProps['onLocateSourceRef'];
   onOpenTarget: ReferenceMentionPreviewProps['onOpenTarget'];
 }) {
+  const mention = mentions[0];
   const locator: CanonicalStructuredContentSourceLocator | undefined =
     mention.sourceLocators.find((item) =>
       item.quote
@@ -153,10 +169,7 @@ function ReferenceMentionRow({
     ) ?? mention.sourceLocators[0];
   const sourceRef: string | undefined =
     locator?.sourceRefId ?? mention.sourceRefIds[0];
-  const resolvedTarget =
-    mention.targetResolution.status === 'RESOLVED_EXACT'
-      ? mention.targetResolution
-      : null;
+  const resolvedTarget = readableReferenceTarget(mentions);
 
   return (
     <article>
@@ -166,28 +179,61 @@ function ReferenceMentionRow({
           {mention.normalizedIdentity.documentNumber ?? mention.citationText}
         </strong>
         <span>{mention.citationText}</span>
-      </div>
-      <div className="reference-preview-meta">
-        <small>{mention.documentTypeCandidate}</small>
-        <small>关系候选：{ROLE_LABELS[mention.contextRole]}</small>
-        <ResolutionState value={mention.resolutionState} />
-        {mention.resolutionState === 'RESOLVED_EXACT' ? (
-          <small>目标版本：目录当前</small>
-        ) : null}
-        <TargetApplicability value={mention.targetApplicability} />
-        <EvidenceStance value={mention.evidenceStance} />
-        <SourceAuthority value={mention.sourceAuthority} />
-        <PermissionState value={mention.permissionState} />
         <small>
-          提取：
-          {mention.extractionMethod === 'STRUCTURED_REFERENCE'
-            ? '结构化引用'
-            : '确定性文本'}
+          发现 {mentions.length} 处引用 · {ROLE_LABELS[mention.contextRole]}
         </small>
-        {mention.normalizedIdentity.publisher ? (
-          <small>发布方候选：{mention.normalizedIdentity.publisher}</small>
-        ) : null}
       </div>
+      <details className="reference-preview-details">
+        <summary>来源、使用情况与限制</summary>
+        <div className="reference-preview-meta">
+          <small>{mention.documentTypeCandidate}</small>
+          <small>关系候选：{ROLE_LABELS[mention.contextRole]}</small>
+          <ResolutionState value={mention.resolutionState} />
+          {mention.resolutionState === 'RESOLVED_EXACT' ? (
+            <small>目标版本：目录匹配，发布源现行状态未核实</small>
+          ) : null}
+          <TargetApplicability value={mention.targetApplicability} />
+          <EvidenceStance value={mention.evidenceStance} />
+          <SourceAuthority value={mention.sourceAuthority} />
+          <PermissionState value={mention.permissionState} />
+          <small>
+            提取：
+            {mention.extractionMethod === 'STRUCTURED_REFERENCE'
+              ? '结构化引用'
+              : '确定性文本'}
+          </small>
+          {mention.normalizedIdentity.publisher ? (
+            <small>发布方候选：{mention.normalizedIdentity.publisher}</small>
+          ) : null}
+        </div>
+        <p>
+          选入：尚未纳入评估输入；实际读取：未返回目标正文回执；正式采用：未返回回执。
+        </p>
+        <ul className="reference-preview-occurrences">
+          {mentions.map((occurrence) => {
+            const occurrenceLocator = occurrence.sourceLocators[0];
+            const ref =
+              occurrenceLocator?.sourceRefId ?? occurrence.mentionSourceRef;
+            return (
+              <li key={occurrence.mentionRef}>
+                <span>{occurrence.citationText}</span>
+                <button
+                  type="button"
+                  disabled={!ref}
+                  onClick={() =>
+                    ref && onLocateSourceRef(ref, occurrenceLocator)
+                  }
+                >
+                  <LocateFixed aria-hidden="true" />
+                  {occurrenceLocator?.pageStart
+                    ? `P${occurrenceLocator.pageStart} · 引用位置`
+                    : '定位引用位置'}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      </details>
       <div className="reference-preview-actions">
         {resolvedTarget ? (
           <button

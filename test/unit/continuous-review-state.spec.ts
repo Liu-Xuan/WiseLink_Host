@@ -9,12 +9,36 @@ import type {
 import {
   continuousReviewPresentation,
   reviewOperationErrorPresentation,
+  reviewErrorRevokesReadback,
   reviewSourceRefLabel,
   reviewTurnGroups,
   shouldAutoRefreshReviewTurn,
 } from '../../client/src/features/review/continuous-review-state';
 
 describe('continuous review client state', () => {
+  it('clears inaccessible readback but preserves it on temporary refresh failure', () => {
+    expect(reviewErrorRevokesReadback({ statusCode: 403 })).toBe(true);
+    expect(
+      reviewErrorRevokesReadback(
+        new Error('REVIEW_CONVERSATION_LOGIN_REQUIRED'),
+      ),
+    ).toBe(true);
+    expect(
+      reviewErrorRevokesReadback({ code: 'CANONICAL_OBJECT_NOT_FOUND' }),
+    ).toBe(true);
+    expect(
+      reviewErrorRevokesReadback({
+        statusCode: 503,
+        code: 'SERVICE_UNAVAILABLE',
+      }),
+    ).toBe(false);
+    expect(
+      reviewErrorRevokesReadback({
+        statusCode: 409,
+        code: 'REVISION_CONFLICT',
+      }),
+    ).toBe(false);
+  });
   it('keeps a same-revision active conversation writable', () => {
     expect(continuousReviewPresentation(conversation('ACTIVE', true))).toEqual(
       expect.objectContaining({
@@ -119,7 +143,9 @@ describe('continuous review client state', () => {
     const pending = turn(1);
     const createdAt = new Date(pending.createdAt).getTime();
 
-    expect(shouldAutoRefreshReviewTurn(pending, createdAt + 30_000)).toBe(false);
+    expect(shouldAutoRefreshReviewTurn(pending, createdAt + 30_000)).toBe(
+      false,
+    );
     expect(shouldAutoRefreshReviewTurn(pending, createdAt + 6 * 60_000)).toBe(
       false,
     );
