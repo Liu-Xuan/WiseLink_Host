@@ -13,6 +13,7 @@ import {
   assessmentRuleCategory,
   assessmentRuleConclusion,
   buildAssessmentRulePresentations,
+  resolveAssessmentRuleSelection,
 } from '../../client/src/pages/DocumentParsingPage/assessment-rule-presentation';
 import AssessmentRuleWorkspace from '../../client/src/pages/DocumentParsingPage/AssessmentRuleWorkspace';
 
@@ -102,7 +103,6 @@ describe('assessment rule presentation', () => {
       createElement(AssessmentRuleWorkspace, {
         items: [item],
         selectedCriterionId: item.criterionId,
-        preferSelectedOnLoad: true,
         onSelectCriterion: () => undefined,
         onLocateSourceRef: () => undefined,
       }),
@@ -112,6 +112,146 @@ describe('assessment rule presentation', () => {
     expect(html).toContain(`title="${conclusion}"`);
     expect(html).toContain(
       `aria-label="规则 1，${criterionName}，${conclusion}"`,
+    );
+  });
+});
+
+describe('assessment rule selection', () => {
+  const items: CanonicalEngineerReviewPageItem[] = Array.from(
+    { length: 8 },
+    (_: unknown, index: number): CanonicalEngineerReviewPageItem =>
+      reviewItem({
+        criterionId: `GOV-00${index + 1}`,
+        humanReviewRequired: index === 7,
+      }),
+  );
+
+  function renderSelection(
+    source: CanonicalEngineerReviewPageItem[],
+    selectedCriterionId: string | null,
+  ): string {
+    return renderToStaticMarkup(
+      createElement(AssessmentRuleWorkspace, {
+        items: source,
+        selectedCriterionId: selectedCriterionId ?? '',
+        onSelectCriterion: () => undefined,
+        onLocateSourceRef: () => undefined,
+      }),
+    );
+  }
+
+  it.each([null, undefined, ''])(
+    'uses the visible attention rule as the submission focus without a query (%s)',
+    (requested: string | null | undefined) => {
+      const selectedEvaluationItemId: string | null =
+        resolveAssessmentRuleSelection(items, requested);
+      const html: string = renderSelection(items, selectedEvaluationItemId);
+
+      expect(selectedEvaluationItemId).toBe('GOV-008');
+      expect(html).toContain('aria-current="true" aria-label="规则 8，');
+      expect(html).toContain('<small>规则 8</small>');
+      expect(html).not.toContain('<small>规则 1</small>');
+    },
+  );
+
+  it('honors an exact deep link even when a different category needs attention', () => {
+    const selected: string | null = resolveAssessmentRuleSelection(
+      items,
+      ' GOV-001 ',
+    );
+    const html: string = renderSelection(items, selected);
+
+    expect(selected).toBe('GOV-001');
+    expect(html).toContain('aria-current="true" aria-label="规则 1，');
+    expect(html).toContain('<small>规则 1</small>');
+    expect(html).not.toContain('<small>规则 8</small>');
+  });
+
+  it.each(['GOV-DELETED', '判断规则 1', '规则 1', 'gov-001'])(
+    'resolves an unavailable identifier through the same default, never by title (%s)',
+    (requested: string) => {
+      expect(resolveAssessmentRuleSelection(items, requested)).toBe('GOV-008');
+    },
+  );
+
+  it('moves filter selection through the parent focus instead of a display-only fallback', () => {
+    const current: string | null = resolveAssessmentRuleSelection(items, null);
+    const next: string | null = resolveAssessmentRuleSelection(
+      items,
+      current,
+      'concluded',
+    );
+    const requestedAfterNavigation: string | null =
+      resolveAssessmentRuleSelection(items, next);
+
+    expect(next).toBe('GOV-001');
+    expect(requestedAfterNavigation).toBe(next);
+    expect(renderSelection(items, requestedAfterNavigation)).toContain(
+      'aria-current="true" aria-label="规则 1，',
+    );
+    expect(resolveAssessmentRuleSelection(items, next, 'all')).toBe(next);
+    expect(resolveAssessmentRuleSelection(items, next, 'attention')).toBe(
+      'GOV-008',
+    );
+    expect(resolveAssessmentRuleSelection(items, next, 'unavailable')).toBe(
+      null,
+    );
+  });
+
+  it('keeps default category priority when no attention rule is available', () => {
+    const source: CanonicalEngineerReviewPageItem[] = [
+      reviewItem({
+        criterionId: 'UNAVAILABLE',
+        dynamicResult: 'WAITING_INPUT',
+      }),
+      reviewItem({ criterionId: 'CONCLUDED' }),
+      reviewItem({ criterionId: 'NOT-APPLICABLE', dynamicResult: 'N/A' }),
+    ];
+
+    expect(resolveAssessmentRuleSelection(source, null)).toBe('CONCLUDED');
+    expect(resolveAssessmentRuleSelection([source[0], source[2]], null)).toBe(
+      'UNAVAILABLE',
+    );
+    expect(resolveAssessmentRuleSelection([source[2]], null)).toBe(
+      'NOT-APPLICABLE',
+    );
+  });
+
+  it.each([{ source: null }, { source: undefined }, { source: [] }])(
+    'keeps absent review context unfocused ($source)',
+    ({
+      source,
+    }: {
+      source: CanonicalEngineerReviewPageItem[] | null | undefined;
+    }) => {
+      expect(resolveAssessmentRuleSelection(source, 'GOV-001')).toBeNull();
+      expect(renderSelection(source ?? [], null)).not.toContain(
+        'aria-current="true"',
+      );
+    },
+  );
+
+  it('does not display another rule when a controlled focus is missing', () => {
+    const html: string = renderSelection(items, 'GOV-DELETED');
+
+    expect(html).not.toContain('assessment-rule-reading');
+    expect(html).not.toContain('aria-current="true"');
+  });
+
+  it('keeps a selected deep-linked rule visible beyond the first list page', () => {
+    const source: CanonicalEngineerReviewPageItem[] = Array.from(
+      { length: 45 },
+      (_: unknown, index: number): CanonicalEngineerReviewPageItem =>
+        reviewItem({ criterionId: `EXACT-${index + 1}` }),
+    );
+    const selected: string | null = resolveAssessmentRuleSelection(
+      source,
+      'EXACT-45',
+    );
+
+    expect(selected).toBe('EXACT-45');
+    expect(renderSelection(source, selected)).toContain(
+      'aria-current="true" aria-label="规则 45，',
     );
   });
 });
