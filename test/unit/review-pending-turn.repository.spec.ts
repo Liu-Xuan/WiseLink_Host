@@ -28,6 +28,9 @@ describe('pending Review query', () => {
       unknown[],
     ];
     expect(sql).toContain("set_config('app.user_id'");
+    expect(sql).toContain('as "pending_review_actor_id"');
+    expect(sql).toContain('"review_turn"."actor_id" = "pending_review_actor_id"');
+    expect(sql).toContain('"review_conversation"."actor_id" = "pending_review_actor_id"');
     expect(sql).toContain('inner join lateral');
     expect(sql).toContain('not exists');
     expect(sql).toContain('order by');

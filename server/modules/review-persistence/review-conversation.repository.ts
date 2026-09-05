@@ -190,7 +190,9 @@ export class ReviewConversationRepository {
     // Its volatile expression makes PostgreSQL materialize this CTE.
     const actorContext = this.db.$with('review_actor_context').as(
       this.db.select({
-        actorId: sql<string>`set_config('app.user_id', ${input.actorId}, true)`.as('actor_id'),
+        // Drizzle references SQL aliases without a table qualifier. Keep this
+        // distinct from the joined conversation/turn columns named actor_id.
+        actorId: sql<string>`set_config('app.user_id', ${input.actorId}, true)`.as('pending_review_actor_id'),
       }).from(workItem).where(and(
         eq(workItem.workItemId, input.workItemId),
         eq(workItem.tenantId, input.tenantId),
