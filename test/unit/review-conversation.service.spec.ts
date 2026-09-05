@@ -1,4 +1,5 @@
 import { ReviewConversationService } from '../../server/modules/review-persistence/review-conversation.service';
+import * as executorScope from '../../server/modules/canonical-host/configured-development-service-scope.authorization';
 
 const actor = {
   principalKind: 'FINAL_USER',
@@ -47,6 +48,45 @@ const turn = {
 };
 
 describe('ReviewConversationService session and ACL boundary', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it.each([false, true])('projects configured automatic execution availability: %s', async (available) => {
+    jest.spyOn(executorScope, 'isOpenClawAutomaticReviewConfigured').mockReturnValue(available);
+    const setup = makeService();
+    setup.objectAccess.freshRead.mockResolvedValue({ ...grant, action: 'READ_WORK_ITEM' });
+    setup.conversations.loadCurrent.mockResolvedValue({ conversation, turns: [] });
+    const result = await setup.service.current('WI-1', {} as never);
+    expect(result.conversation?.automaticExecutionAvailable).toBe(available);
+    expect(executorScope.isOpenClawAutomaticReviewConfigured).toHaveBeenCalledWith(conversation);
+  });
+
+  it('reports unsupported automatic execution before saving input or attachments', async () => {
+    jest.spyOn(executorScope, 'isOpenClawAutomaticReviewConfigured').mockReturnValue(false);
+    const setup = makeService();
+    setup.conversations.loadById.mockResolvedValue({ conversation, turns: [] });
+    await expect(setup.service.appendTextTurn('WI-1', 'RC-1', {
+      requestId: 'request-auto', userMessage: 'Continue analysis', executionMode: 'AUTOMATIC',
+    }, {} as never)).rejects.toMatchObject({ code: 'REVIEW_AUTOMATIC_EXECUTION_UNAVAILABLE', statusCode: 503 });
+    expect(setup.conversations.appendTextTurn).not.toHaveBeenCalled();
+    expect(setup.attachments.ingest).not.toHaveBeenCalled();
+  });
+
+  it('persists an explicit automatic request in the supported executor scope', async () => {
+    jest.spyOn(executorScope, 'isOpenClawAutomaticReviewConfigured').mockReturnValue(true);
+    const setup = makeService();
+    setup.conversations.loadById
+      .mockResolvedValueOnce({ conversation, turns: [] })
+      .mockResolvedValueOnce({ conversation, turns: [turn] });
+    setup.conversations.appendTextTurn.mockResolvedValue({ turn, replayed: false });
+    const result = await setup.service.appendTextTurn('WI-1', 'RC-1', {
+      requestId: 'request-1', userMessage: turn.userMessage, executionMode: 'AUTOMATIC',
+    }, {} as never);
+    expect(setup.conversations.appendTextTurn).toHaveBeenCalledWith(expect.objectContaining({
+      executionRequested: true,
+    }));
+    expect(result.conversation.automaticExecutionAvailable).toBe(true);
+  });
+
   it('derives tenant, actor and revision only from session + fresh ACL', async () => {
     const setup = makeService();
     setup.conversations.createOrResume.mockResolvedValue({
