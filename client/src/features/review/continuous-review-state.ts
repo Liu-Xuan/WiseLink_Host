@@ -33,6 +33,38 @@ export interface ReviewOperationErrorPresentation {
   operatorAction: string | null;
 }
 
+export interface ContinuousReviewControls {
+  editorDisabled: boolean;
+  actionsDisabled: boolean;
+}
+
+export function continuousReviewControls(
+  presentation: ContinuousReviewPresentation,
+  mutationPending: boolean,
+  refreshing: boolean,
+  accessUnavailable: boolean,
+): ContinuousReviewControls {
+  return {
+    editorDisabled:
+      mutationPending || accessUnavailable || !presentation.composerEnabled,
+    actionsDisabled: mutationPending || refreshing || accessUnavailable,
+  };
+}
+
+export function reviewReadbackMessage(
+  refreshing: boolean,
+  readFailed: boolean,
+): string | null {
+  if (readFailed) {
+    return refreshing
+      ? '上次刷新失败，正在重新读取；仍显示旧投影，执行状态可能已变化。'
+      : '刷新失败：当前保留上次成功读回的旧投影，不代表最新执行状态。未提交的草稿仍保留，请重新读取。';
+  }
+  return refreshing
+    ? '正在读取最新记录；暂时保留上次读回的投影及未提交的草稿。'
+    : null;
+}
+
 const NOT_STARTED: ContinuousReviewPresentation = {
   state: 'NOT_STARTED',
   stateLabel: '尚未开始',
@@ -112,6 +144,7 @@ export function reviewSourceRefLabel(sourceRef: string, index: number): string {
 
 export function reviewOperationErrorPresentation(
   reason: unknown,
+  operation: 'action' | 'refresh' = 'action',
 ): ReviewOperationErrorPresentation {
   const error = errorRecord(reason);
   const message = errorMessage(reason);
@@ -134,8 +167,11 @@ export function reviewOperationErrorPresentation(
     userMessage =
       '当前浏览器缺少安全请求标识能力，请使用受支持的飞书客户端或浏览器。';
   }
+  if (operation === 'refresh' && !reviewErrorRevokesReadback(reason)) {
+    userMessage = '未能读取最新复核记录，请重新读取；未提交的草稿仍保留。';
+  }
   return {
-    title: '复核操作未完成',
+    title: operation === 'refresh' ? '复核记录刷新失败' : '复核操作未完成',
     message: userMessage,
     code,
     retryable: recordBoolean(error, 'retryable'),

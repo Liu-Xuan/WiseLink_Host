@@ -7,15 +7,116 @@ import type {
 } from '@shared/api.interface';
 
 import {
+  continuousReviewControls,
   continuousReviewPresentation,
   reviewOperationErrorPresentation,
   reviewErrorRevokesReadback,
+  reviewReadbackMessage,
   reviewSourceRefLabel,
   reviewTurnGroups,
   shouldAutoRefreshReviewTurn,
 } from '../../client/src/features/review/continuous-review-state';
 
 describe('continuous review client state', () => {
+  it('allows draft editing during a read-only refresh while keeping writes serialized', () => {
+    const view = continuousReviewPresentation(conversation('ACTIVE', true));
+
+    expect(continuousReviewControls(view, false, true, false)).toEqual({
+      editorDisabled: false,
+      actionsDisabled: true,
+    });
+    expect(continuousReviewControls(view, false, false, false)).toEqual({
+      editorDisabled: false,
+      actionsDisabled: false,
+    });
+  });
+
+  it.each([true, false])(
+    'locks editing and duplicate actions during a real write (refreshing=%s)',
+    (refreshing: boolean) => {
+      const view = continuousReviewPresentation(conversation('ACTIVE', true));
+
+      expect(continuousReviewControls(view, true, refreshing, false)).toEqual({
+        editorDisabled: true,
+        actionsDisabled: true,
+      });
+    },
+  );
+
+  it('does not turn refresh-time editing into a permission or revision bypass', () => {
+    const active = continuousReviewPresentation(conversation('ACTIVE', true));
+    expect(continuousReviewControls(active, false, false, true)).toEqual({
+      editorDisabled: true,
+      actionsDisabled: true,
+    });
+    const contexts: Array<ReviewConversationReadModel | null> = [
+      null,
+      conversation('CLOSED', true),
+      conversation('STALE_CONTEXT', false),
+      conversation('ACTIVE', false),
+    ];
+    for (const context of contexts) {
+      expect(
+        continuousReviewControls(
+          continuousReviewPresentation(context),
+          false,
+          true,
+          false,
+        ).editorDisabled,
+      ).toBe(true);
+    }
+  });
+
+  it('keeps stale-read disclosure during failure and retry until a successful readback', () => {
+    expect(reviewReadbackMessage(true, false)).toContain('上次读回的投影');
+    expect(reviewReadbackMessage(false, true)).toContain('不代表最新执行状态');
+    expect(reviewReadbackMessage(true, true)).toContain('仍显示旧投影');
+    expect(reviewReadbackMessage(false, false)).toBeNull();
+  });
+
+  it('distinguishes a failed fresh-read from a failed submit without disguising authorization errors', () => {
+    const failure = { statusCode: 500, code: 'INTERNAL_SERVER_ERROR' };
+    expect(reviewOperationErrorPresentation(failure, 'refresh')).toMatchObject({
+      title: '复核记录刷新失败',
+      code: failure.code,
+    });
+    expect(reviewOperationErrorPresentation(failure).title).toBe(
+      '复核操作未完成',
+    );
+    expect(
+      reviewOperationErrorPresentation({ statusCode: 403 }, 'refresh').message,
+    ).toContain('不可用');
+    expect(
+      reviewOperationErrorPresentation({ statusCode: 401 }, 'refresh').message,
+    ).toContain('授权');
+  });
+
+  it('wires draft controls separately while preserving submission and revoked-access cleanup', async () => {
+    const source = await readFile(
+      resolve(
+        __dirname,
+        '../../client/src/features/review/ContinuousReviewPanel.tsx',
+      ),
+      'utf8',
+    );
+
+    expect(source).toMatch(/<Textarea[\s\S]*?disabled=\{editorDisabled\}/u);
+    expect(source).toContain('disabled: editorDisabled');
+    expect(source).toContain("'aria-disabled': editorDisabled");
+    expect(source).toContain(
+      'busy || !presentation.composerEnabled || !message.trim()',
+    );
+    expect(source).toMatch(
+      /async function appendTurn\(\)[\s\S]*?if \(\s*busy \|\|/u,
+    );
+    expect(source).toMatch(
+      /reviewErrorRevokesReadback\(reason\)[\s\S]*?setConversation\(null\)[\s\S]*?setMessage\(''\)[\s\S]*?setFile\(null\)/u,
+    );
+    expect(source).toContain("captureError(reason, 'refresh')");
+    expect(source).toContain('setReadFailed(true)');
+    expect(source).toContain('reviewReadbackMessage(');
+  });
+
   it('clears inaccessible readback but preserves it on temporary refresh failure', () => {
     expect(reviewErrorRevokesReadback({ statusCode: 403 })).toBe(true);
     expect(

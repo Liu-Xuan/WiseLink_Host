@@ -39,9 +39,11 @@ import {
   type ReviewSubmissionIntent,
 } from './review-submission';
 import {
+  continuousReviewControls,
   continuousReviewPresentation,
   reviewErrorRevokesReadback,
   reviewOperationErrorPresentation,
+  reviewReadbackMessage,
   reviewTurnGroups,
   type ReviewOperationErrorPresentation,
 } from './continuous-review-state';
@@ -89,6 +91,7 @@ export default function ContinuousReviewPanel({
     'start' | 'append' | 'close' | 'confirm' | null
   >(null);
   const [refreshing, setRefreshing] = useState(true);
+  const [readFailed, setReadFailed] = useState(false);
   const [error, setError] = useState<ReviewOperationErrorPresentation | null>(
     null,
   );
@@ -119,34 +122,37 @@ export default function ContinuousReviewPanel({
     setErrorFingerprintReading(false);
   }, []);
 
-  const captureError = useCallback((reason: unknown): void => {
-    if (reviewErrorRevokesReadback(reason)) {
-      setConversation(null);
-      setMessage('');
-      setFile(null);
-      setUploadedSelection(null);
-      submissionRef.current = null;
-      setActiveRequestId(null);
-      setAccessUnavailable(true);
-    }
-    const errorEpoch = errorEpochRef.current + 1;
-    errorEpochRef.current = errorEpoch;
-    setError(reviewOperationErrorPresentation(reason));
-    setErrorFingerprint(null);
-    setErrorFingerprintReading(true);
-    void getHostedRuntimeFingerprint()
-      .then((fingerprint) => {
-        if (errorEpochRef.current === errorEpoch) {
-          setErrorFingerprint(fingerprint);
-          setErrorFingerprintReading(false);
-        }
-      })
-      .catch(() => {
-        if (errorEpochRef.current === errorEpoch) {
-          setErrorFingerprintReading(false);
-        }
-      });
-  }, []);
+  const captureError = useCallback(
+    (reason: unknown, operation: 'action' | 'refresh' = 'action'): void => {
+      if (reviewErrorRevokesReadback(reason)) {
+        setConversation(null);
+        setMessage('');
+        setFile(null);
+        setUploadedSelection(null);
+        submissionRef.current = null;
+        setActiveRequestId(null);
+        setAccessUnavailable(true);
+      }
+      const errorEpoch = errorEpochRef.current + 1;
+      errorEpochRef.current = errorEpoch;
+      setError(reviewOperationErrorPresentation(reason, operation));
+      setErrorFingerprint(null);
+      setErrorFingerprintReading(true);
+      void getHostedRuntimeFingerprint()
+        .then((fingerprint) => {
+          if (errorEpochRef.current === errorEpoch) {
+            setErrorFingerprint(fingerprint);
+            setErrorFingerprintReading(false);
+          }
+        })
+        .catch(() => {
+          if (errorEpochRef.current === errorEpoch) {
+            setErrorFingerprintReading(false);
+          }
+        });
+    },
+    [],
+  );
 
   const readCurrent = useCallback(async (): Promise<void> => {
     const epoch = ++readEpochRef.current;
@@ -170,8 +176,12 @@ export default function ContinuousReviewPanel({
       setConversation(response.conversation);
       setCurrentRevision(response.currentWorkItemRevision);
       setAccessUnavailable(false);
+      setReadFailed(false);
     } catch (reason) {
-      if (epoch === readEpochRef.current) captureError(reason);
+      if (epoch === readEpochRef.current) {
+        setReadFailed(true);
+        captureError(reason, 'refresh');
+      }
     } finally {
       if (epoch === readEpochRef.current) setRefreshing(false);
     }
@@ -199,6 +209,7 @@ export default function ContinuousReviewPanel({
       conversation?.status !== 'ACTIVE' ||
       busyAction !== null ||
       refreshing ||
+      readFailed ||
       error !== null
     ) {
       return;
@@ -211,6 +222,7 @@ export default function ContinuousReviewPanel({
     error,
     hasActiveExecution,
     readCurrent,
+    readFailed,
     refreshing,
     turns.current,
   ]);
@@ -254,10 +266,19 @@ export default function ContinuousReviewPanel({
     [clearError],
   );
 
-  const busy = busyAction !== null || refreshing;
+  const { editorDisabled, actionsDisabled: busy } = continuousReviewControls(
+    presentation,
+    busyAction !== null,
+    refreshing,
+    accessUnavailable,
+  );
+  const readbackMessage: string | null = reviewReadbackMessage(
+    refreshing,
+    readFailed,
+  );
   const { getInputProps, getRootProps, isDragActive } = useDropzone({
     accept: { 'application/pdf': ['.pdf'] },
-    disabled: busy || !presentation.composerEnabled,
+    disabled: editorDisabled,
     maxFiles: 1,
     multiple: false,
     onDrop,
@@ -272,6 +293,7 @@ export default function ContinuousReviewPanel({
         await canonicalHost.createOrResumeReviewConversation(workItemId);
       setConversation(response.conversation);
       setCurrentRevision(response.conversation.currentWorkItemRevision);
+      setReadFailed(false);
     } catch (reason) {
       captureError(reason);
     } finally {
@@ -330,6 +352,7 @@ export default function ContinuousReviewPanel({
       );
       setConversation(response.conversation);
       setCurrentRevision(response.conversation.currentWorkItemRevision);
+      setReadFailed(false);
       setMessage('');
       setFile(null);
       setUploadedSelection(null);
@@ -352,6 +375,7 @@ export default function ContinuousReviewPanel({
         conversation.reviewConversationId,
       );
       setConversation(response.conversation);
+      setReadFailed(false);
       setConfirmingTurnId(null);
     } catch (reason) {
       captureError(reason);
@@ -381,6 +405,7 @@ export default function ContinuousReviewPanel({
       onConfirmationReceipt(response.reviewAction);
       setConversation(response.conversation);
       setCurrentRevision(response.reviewAction.workItemRevision);
+      setReadFailed(false);
       setConfirmingTurnId(null);
       await onWorkItemRefresh();
     } catch (reason) {
@@ -442,7 +467,7 @@ export default function ContinuousReviewPanel({
             type="button"
             size="sm"
             variant="outline"
-            disabled={refreshing}
+            disabled={busy}
             onClick={() => void readCurrent()}
           >
             <RefreshCw aria-hidden="true" />
@@ -485,11 +510,13 @@ export default function ContinuousReviewPanel({
           <div>
             <span>讨论依据</span>
             <strong>
-              已同步至事项版本 {conversation.lastSyncedRevision} · 当前版本{' '}
-              {currentRevision}
+              {readFailed ? '上次读回：讨论版本 ' : '已同步至事项版本 '}
+              {conversation.lastSyncedRevision} · 页面事项版本 {currentRevision}
             </strong>
-            {refreshing ? (
-              <small>正在 fresh-read；当前投影保留至新读回完成。</small>
+            {readbackMessage ? (
+              <small role={readFailed ? 'alert' : undefined}>
+                {readbackMessage}
+              </small>
             ) : null}
           </div>
           {presentation.state === 'STALE_CONTEXT' ? (
@@ -612,7 +639,7 @@ export default function ContinuousReviewPanel({
             id="continuous-review-message"
             value={message}
             maxLength={20_000}
-            disabled={busy || !presentation.composerEnabled}
+            disabled={editorDisabled}
             placeholder="补充事实、提出疑问，或说明希望核对的判断"
             onChange={(event) => {
               submissionRef.current = null;
@@ -647,7 +674,7 @@ export default function ContinuousReviewPanel({
                 'aria-label': file
                   ? `更换补充 PDF，当前为 ${file.name}`
                   : '选择一份补充 PDF',
-                'aria-disabled': busy || !presentation.composerEnabled,
+                'aria-disabled': editorDisabled,
               })}
             >
               <input {...getInputProps()} />
@@ -663,7 +690,7 @@ export default function ContinuousReviewPanel({
                 type="button"
                 className="continuous-review-remove-file"
                 aria-label="移除补充 PDF"
-                disabled={busy}
+                disabled={editorDisabled}
                 onClick={() => {
                   setFile(null);
                   setUploadedSelection(null);
