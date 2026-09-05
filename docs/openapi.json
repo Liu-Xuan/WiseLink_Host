@@ -445,6 +445,11 @@
       "post": {
         "operationId": "handleOpenClawMcp",
         "summary": "OpenClaw 专用 ActionAttempt 队列与候选评估 MCP 入口",
+        "x-wiselink-common-context": {
+          "location": "JobAid / Overall modelInput.commonContext；Review modelInput.context.commonContext",
+          "behavior": "评估前复用主文件章节、当前身份可见的关联背景片段与普通讨论，存入现有 Task 输入。关联资料仍是 BACKGROUND_ONLY；施工引用默认只入目录。最近 12 个历史回合按顺序传入并报告省略数，旧 revision 的工作回答单独标记，不冒充正式采用。RAG 尚未连接时明确 NOT_CONNECTED。",
+          "compatibility": "可选背景扩展由 Skill r09.c20 识别；旧任务无字段时保持原输入。MCP 工具参数、TaskEnvelope、候选结果和正式采用入口不变。"
+        },
         "x-wiselink-review-execution": {
           "pendingTool": "get_pending_review_turn",
           "input": { "workItemId": "Host 已授权的 exact WorkItem" },

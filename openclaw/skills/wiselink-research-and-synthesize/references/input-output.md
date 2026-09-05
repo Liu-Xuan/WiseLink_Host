@@ -79,7 +79,7 @@ runtimePolicy.modelPolicyRef = official-hosted-profile-config
 ResultEnvelope.modelVersion = 官方托管 profile/config 本轮选择后的非空、可读实际模型
 Task.skillPolicyRef = wiselink-research-and-synthesize@r09
 ApplicabilityTask.runtimePolicy.skillVersion = wiselink-research-and-synthesize@r09  # v1 历史字段名，语义为兼容线
-ResultEnvelope.skillVersion = wiselink-research-and-synthesize@r09.c19       # 实际安装包版本
+ResultEnvelope.skillVersion = wiselink-research-and-synthesize@r09.c20       # 实际安装包版本
 toolVersions.wiselink-openclaw-engineering-assessment = 1.2.0
 promptVersion = 当前实际运行非空版本
 ```
@@ -141,6 +141,7 @@ multiset 与 ATA token 逐字保真检查，失败诊断包含 `unitKey`；它�
 purpose=EVALUATE_DYNAMIC_RULES
 callerCorrelationRef
 operatorInstruction / subjectContext / jobAidContext
+commonContext?（评估前共享背景，兼容旧输入）
 expectedSelfCheck / responseInstruction
 ```
 
@@ -264,6 +265,7 @@ adoptedDocumentVersions
 engineerReviewContext{revision,artifactSha256,reviewCount,history,effective}
 externalDiscoveryResults
 selectiveResynthesis（Host 现有选择性重综合摘要）
+commonContext?（文件章节、关联背景、普通讨论；不替代 current 来源和正式采用记录）
 ```
 
 同 criterion 多条 engineer review 必须保留连续 history，effective 为最后一条。它们是受控人工输入，不自动

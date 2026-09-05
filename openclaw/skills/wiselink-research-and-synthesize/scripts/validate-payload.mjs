@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
 export const WISELINK_SKILL_VERSION =
-  'wiselink-research-and-synthesize@r09.c19';
+  'wiselink-research-and-synthesize@r09.c20';
 export const WISELINK_SKILL_COMPATIBILITY_REF =
   'wiselink-research-and-synthesize@r09';
 export const WISELINK_HOST_MCP_NAME =
@@ -440,7 +440,7 @@ function validateDynamicRulesInput(input) {
       'expectedSelfCheck',
       'responseInstruction',
     ],
-    [],
+    ['commonContext'],
     'dynamic rules input',
   );
   equal(
@@ -1347,7 +1347,7 @@ function validateSynthesisInput(input) {
       'engineerReviewContext',
       'selectiveResynthesis',
     ],
-    [],
+    ['commonContext'],
     'synthesis input',
   );
   equal(

@@ -14,6 +14,7 @@ import {
   expectedOverallApplicabilityStatus,
   type OpenClawOverallSynthesisInput,
 } from '../../server/modules/canonical-host/openclaw-overall-synthesis.processor';
+import { projectCommonAssessmentContext } from '../../server/modules/canonical-host/canonical-host-common-context.service';
 
 const REAL_737_PACKAGE_PATH = resolve(
   __dirname,
@@ -58,6 +59,17 @@ const real777Package = JSON.parse(
 ) as FrozenPackage;
 
 describe('source-bound Overall engineering summary', () => {
+  it('carries shared background alongside the real current source corpus, not as adopted evidence', () => {
+    const input = buildRealInput(real737Package, real737Bytes, [real737Package.sourceRefs[0]], []);
+    expect(input.commonContext).toMatchObject({
+      primaryDocument: { documentVersionRef: input.unifiedSourceContext.documentVersionId },
+      knowledgeRetrieval: { status: 'NOT_CONNECTED', fragments: [] },
+      discussion: { usage: 'DISCUSSION_NOT_ADOPTION' },
+    });
+    expect(input.adoptedDocumentVersions).toHaveLength(1);
+    expect(input.unifiedSourceContext.currentDocumentSourceRefIds).toHaveLength(real737Package.sourceRefs.length);
+  });
+
   it('produces the 737-34-3830 engineering decision surface without any AIMS-2 contamination', () => {
     const background = sourceRef(real737Package, '0x1009 fault code');
     const actionAndEffectivity = sourceRef(
@@ -474,6 +486,7 @@ function buildRealInput(
       effective: [],
     },
     outputCorrelationRef: `overall://${documentVersionId}`,
+    commonContext: projectCommonAssessmentContext(workItem, { context: { status: 'UNAVAILABLE', reason: 'TEST_NO_READER' }, documentReadingStatus: 'UNAVAILABLE', items: [], sections: [], resourceRefs: [] }, []),
   });
 }
 

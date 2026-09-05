@@ -36,6 +36,7 @@ const {
 const {
   CanonicalHostOpenClawDynamicEvaluationService,
 } = require('../../dist/server/modules/canonical-host/canonical-host-openclaw-dynamic-evaluation.service.js');
+const { projectCommonAssessmentContext } = require('../../dist/server/modules/canonical-host/canonical-host-common-context.service.js');
 const {
   CanonicalHostAssessmentService,
 } = require('../../dist/server/modules/canonical-host/canonical-host-assessment.service.js');
@@ -177,10 +178,10 @@ test(
       const runningA = await harness.dynamic.begin(workItem.workItemId);
       assert.equal(runningA.status, 'RUNNING');
       assert.equal(
-        runningA.modelInput.ruleSetBinding.snapshotId,
+        runningA.task.modelInput.ruleSetBinding.snapshotId,
         activeA.snapshotId,
       );
-      assert.equal(runningA.modelInput.ruleSetBinding.criteriaCount, 150);
+      assert.equal(runningA.task.modelInput.ruleSetBinding.criteriaCount, 150);
 
       const snapshotB = await createReplacementSnapshot(
         harness.repository,
@@ -249,7 +250,7 @@ test(
       harness.ruleSets.readActiveRuntime = currentReaderAfterPromote;
       assert.equal(runningRecovery.status, 'RUNNING');
       assert.equal(
-        runningRecovery.modelInput.ruleSetBinding.snapshotId,
+        runningRecovery.task.modelInput.ruleSetBinding.snapshotId,
         activeA.snapshotId,
       );
 
@@ -271,7 +272,7 @@ test(
         currentWorkItem.workItemId,
       );
       assert.equal(
-        committingB.modelInput.ruleSetBinding.snapshotId,
+        committingB.task.modelInput.ruleSetBinding.snapshotId,
         activeB.snapshotId,
       );
       let interrupted = false;
@@ -326,7 +327,7 @@ test(
       harness.ruleSets.readActiveRuntime = actualReadActiveRuntime;
       assert.equal(committingRecovery.status, 'COMMITTING');
       assert.equal(
-        committingRecovery.modelInput.ruleSetBinding.snapshotId,
+        committingRecovery.task.modelInput.ruleSetBinding.snapshotId,
         activeB.snapshotId,
       );
 
@@ -345,7 +346,7 @@ test(
 
       const postRollback = await harness.dynamic.begin(workItem.workItemId);
       assert.equal(
-        postRollback.modelInput.ruleSetBinding.snapshotId,
+        postRollback.task.modelInput.ruleSetBinding.snapshotId,
         activeA.snapshotId,
       );
       const committedPostRollback = await harness.dynamic.commit(
@@ -456,6 +457,7 @@ function createHarness(sql, initialWorkItem) {
     ruleSets,
     scope,
     {},
+    { buildForWorkItem: async (item) => projectCommonAssessmentContext(item, { context: { status: 'UNAVAILABLE', reason: 'TEST_NO_READER' }, documentReadingStatus: 'UNAVAILABLE', items: [], sections: [], resourceRefs: [] }, []) },
   );
   return {
     dynamic,

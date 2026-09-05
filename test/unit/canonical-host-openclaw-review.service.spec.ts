@@ -22,9 +22,35 @@ import {
   REVIEW_PROFILE_REF,
 } from '../../server/modules/canonical-host/canonical-host-openclaw-review.contract';
 import { CanonicalHostOpenClawReviewService } from '../../server/modules/canonical-host/canonical-host-openclaw-review.service';
+import { CanonicalHostCommonContextService } from '../../server/modules/canonical-host/canonical-host-common-context.service';
 import { encodeReviewAttachmentParsedArtifact } from '../../server/modules/review-persistence/review-attachment-artifact';
 
 describe('CanonicalHostOpenClawReviewService', () => {
+  it('carries earlier discussion into the next task without adopting it or including future turns', async () => {
+    const harness = reviewHarness();
+    const { conversation, turn } = await harness.conversations.loadOpenClawTurnBinding();
+    turn.turnNo = 3;
+    harness.conversations.loadCurrent.mockResolvedValue({ conversation, turns: [
+      { ...turn, turnNo: 1, userMessage: '先解释故障机理。', assistantCandidate: { answer: '当前工作判断：需核对 FTD 原因分析。', missingInputs: ['FTD 原文'], warnings: [] } } as never,
+      { ...turn, turnNo: 2, inputRevision: 6, userMessage: '不要把 AMM 工卡当作问题分析。' },
+      turn,
+      { ...turn, turnNo: 4, userMessage: '这一轮还没有提交。' },
+    ] });
+    const begun = await harness.service.begin('RC-1', 'request-1');
+    expect(begun.task.modelInput.context).toMatchObject({ commonContext: {
+      discussion: {
+        totalPriorTurns: 2, omittedEarlierTurns: 0, usage: 'DISCUSSION_NOT_ADOPTION',
+        turns: [
+          { turnNo: 1, fromCurrentRevision: true, question: '先解释故障机理。', workingAnswer: '当前工作判断：需核对 FTD 原因分析。' },
+          { turnNo: 2, fromCurrentRevision: false, question: '不要把 AMM 工卡当作问题分析。', workingAnswer: null },
+        ],
+      },
+      knowledgeRetrieval: { status: 'NOT_CONNECTED', fragments: [] },
+    } });
+    expect(JSON.stringify(begun.task.modelInput.context)).not.toContain('这一轮还没有提交。');
+    expect(harness.conversations.persistOpenClawAssistantCandidate).not.toHaveBeenCalled();
+  });
+
   it('only returns the next authorized persisted automatic request without invoking the model', async () => {
     const harness = reviewHarness();
     harness.conversations.loadPendingOpenClawTurn.mockResolvedValue({
@@ -687,6 +713,7 @@ function reviewHarness(
   const conversations = {
     loadPendingOpenClawTurn: jest.fn().mockResolvedValue(null),
     loadById: jest.fn(async () => ({ conversation, turns: [turn] })),
+    loadCurrent: jest.fn(async () => ({ conversation, turns: [turn] })),
     loadTurnById: jest.fn(async () => turn),
     hasActiveOfficialActorMapping: jest.fn(async () => true),
     loadOpenClawTurnBinding: jest.fn(async () => ({ conversation, turn })),
@@ -965,8 +992,7 @@ function reviewHarness(
     artifactStore as never,
     serviceScope as never,
     dispatch as never,
-    reader as never,
-    documentManagement as never,
+    new CanonicalHostCommonContextService(conversations as never, workItems as never, artifactStore as never, reader as never, documentManagement as never),
   );
   return {
     service,

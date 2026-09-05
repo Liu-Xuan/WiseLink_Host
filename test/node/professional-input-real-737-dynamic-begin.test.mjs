@@ -26,6 +26,7 @@ test(
       { buildJobAidCriterionSetVersion },
       { CanonicalHostAssessmentService },
       { CanonicalHostOpenClawDynamicEvaluationService },
+      { projectCommonAssessmentContext },
     ] = await Promise.all([
       importBuilt(
         'modules/professional-input/builders/professional-input-pipeline.js',
@@ -54,6 +55,7 @@ test(
       importBuilt(
         'modules/canonical-host/canonical-host-openclaw-dynamic-evaluation.service.js',
       ),
+      importBuilt('modules/canonical-host/canonical-host-common-context.service.js'),
     ]);
 
     const sourceBytes = new Uint8Array(await readFile(fixturePath));
@@ -255,6 +257,7 @@ test(
         },
       },
       {},
+      { buildForWorkItem: async (item) => projectCommonAssessmentContext(item, { context: { status: 'UNAVAILABLE', reason: 'TEST_NO_READER' }, documentReadingStatus: 'UNAVAILABLE', items: [], sections: [], resourceRefs: [] }, []) },
     );
     const begun = await dynamic.begin(workItemId);
 
@@ -265,11 +268,11 @@ test(
     assert.equal(begun.modelInput.expectedSelfCheck.sourcePageCount, 22);
     assert.equal(begun.modelInput.jobAidContext.criterionTable.rowCount, 150);
     assert.equal(
-      begun.modelInput.ruleSetBinding.snapshotId,
+      begun.task.modelInput.ruleSetBinding.snapshotId,
       criterionSet.criterionSetId,
     );
-    assert.equal(begun.modelInput.ruleSetBinding.criteriaCount, 150);
-    assert.equal(begun.modelInput.ruleSetBinding.activationRevision, 1);
+    assert.equal(begun.task.modelInput.ruleSetBinding.criteriaCount, 150);
+    assert.equal(begun.task.modelInput.ruleSetBinding.activationRevision, 1);
   },
 );
 

@@ -35,6 +35,7 @@ import type {
 } from './canonical-host.types';
 import { CanonicalHostAssessmentService } from './canonical-host-assessment.service';
 import { CanonicalHostEngineerReviewService } from './canonical-host-engineer-review.service';
+import { CanonicalHostCommonContextService } from './canonical-host-common-context.service';
 import {
   CANONICAL_SERVICE_SCOPE_AUTHORIZATION,
   type CanonicalServiceScopeAuthorizationPort,
@@ -74,6 +75,7 @@ export class CanonicalHostOpenClawOverallService {
     private readonly attempts: ActionAttemptLifecycleService,
     @Inject(CANONICAL_SERVICE_SCOPE_AUTHORIZATION)
     private readonly serviceScope: CanonicalServiceScopeAuthorizationPort,
+    private readonly commonContext: CanonicalHostCommonContextService,
   ) {}
 
   async begin(
@@ -498,6 +500,7 @@ export class CanonicalHostOpenClawOverallService {
       packageBytes,
       dynamicCandidate,
       engineerReviewContext,
+      commonContext,
     ] = await Promise.all([
       packetInput('OPENCLAW_OVERALL_BASE_ARTIFACT_READ_FAILED', () =>
         this.artifactStore.readActualBytes(baseRules.artifact),
@@ -519,6 +522,11 @@ export class CanonicalHostOpenClawOverallService {
       packetInput('OPENCLAW_OVERALL_ENGINEER_REVIEW_READ_FAILED', () =>
         this.engineerReviews.modelContext(workItem),
       ),
+      this.commonContext.buildForWorkItem(
+        workItem,
+        attempt.tenantId,
+        timestamp,
+      ),
     ]);
     assertDynamicCandidateSummary(
       dynamicCandidate.summary,
@@ -539,6 +547,7 @@ export class CanonicalHostOpenClawOverallService {
         discoveries,
         sourceEvidenceCandidates,
         engineerReviewContext,
+        commonContext,
         outputCorrelationRef: attempt.triggerRequestId,
       }),
     };

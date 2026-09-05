@@ -12,6 +12,7 @@ import {
 } from '../../server/modules/action-attempt/action-attempt-envelope';
 import type { ActionAttemptRow } from '../../server/modules/action-attempt/action-attempt.types';
 import { CanonicalHostOpenClawDynamicEvaluationService } from '../../server/modules/canonical-host/canonical-host-openclaw-dynamic-evaluation.service';
+import { projectCommonAssessmentContext } from '../../server/modules/canonical-host/canonical-host-common-context.service';
 import { CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY } from '../../server/modules/canonical-host/canonical-host-openclaw-runtime-policy';
 import {
   createConfigurationEvidenceReevaluation,
@@ -71,16 +72,14 @@ describe('CanonicalHostOpenClawDynamicEvaluationService', () => {
       leaseGeneration: 1,
       modelInput: {
         purpose: 'EVALUATE_DYNAMIC_RULES',
-        ruleSetBinding: expect.objectContaining({
-          snapshotId: 'JACS-DYNAMIC-2',
-          criterionSetId: 'JACS-DYNAMIC-2',
-          activationRevision: 1,
-        }),
       },
     });
+    expect(begun.task.modelInput.ruleSetBinding.snapshotId).toBe('JACS-DYNAMIC-2');
+    expect(begun.modelInput).not.toHaveProperty('ruleSetBinding');
     expect(harness.processor.buildRequest.mock.calls[0][2]).toMatchObject({
       expectedRevision: 5,
     });
+    expect(begun.modelInput.commonContext).toMatchObject({ knowledgeRetrieval: { status: 'NOT_CONNECTED' } });
     expect(
       harness.ruleSets.readRuntimeSnapshotAtActivation,
     ).toHaveBeenCalledWith('tenant-dynamic', 'JACS-DYNAMIC-2', 1);
@@ -180,9 +179,7 @@ describe('CanonicalHostOpenClawDynamicEvaluationService', () => {
 
     await expect(harness.service.begin(WORK_ITEM_ID)).resolves.toMatchObject({
       status: 'RUNNING',
-      modelInput: {
-        ruleSetBinding: { snapshotId: 'JACS-DYNAMIC-2' },
-      },
+      task: { modelInput: { ruleSetBinding: { snapshotId: 'JACS-DYNAMIC-2' } } },
     });
     expect(harness.ruleSets.readActiveRuntime).not.toHaveBeenCalled();
     expect(
@@ -895,6 +892,7 @@ function createHarness(
         _transport: unknown,
         _privateEnvelope: unknown,
         _triggerRequestId: unknown,
+        commonContext: unknown,
       ) => ({
         privateEnvelope: {
           callerCorrelationRef: 'REQ-DYNAMIC-REAL',
@@ -903,6 +901,7 @@ function createHarness(
         modelInput: {
           purpose: 'EVALUATE_DYNAMIC_RULES',
           expectedSelfCheck: { criterionSetId: 'JACS-DYNAMIC-2' },
+          ...(commonContext ? { commonContext } : {}),
         },
       }),
     ),
@@ -1001,6 +1000,7 @@ function createHarness(
     ruleSets as never,
     scope as never,
     documentVersions as never,
+    { buildForWorkItem: jest.fn(async () => projectCommonAssessmentContext(workItem, { context: { status: 'UNAVAILABLE', reason: 'TEST_NO_READER' }, documentReadingStatus: 'UNAVAILABLE', items: [], sections: [], resourceRefs: [] }, [])) } as never,
   );
   return {
     service,
