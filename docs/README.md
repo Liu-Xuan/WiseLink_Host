@@ -2,8 +2,10 @@
 
 ## 当前说明
 
-- `WISELINK_R10_SYSTEM_REVIEW_20260905.md`：当前产品理念、上下文评估包设计、代码/运行实证与实施顺序；明确区分已实现与待接通能力。
-- [R10 云文档](https://hv5zjf4j8yb.feishu.cn/docx/MA3fdjEycoISjHxptAqcsyxvn9b)：现行开发说明与历史运行记录，按当前章节执行。
+- [R10 当前执行计划](WISELINK_R10_EXECUTION_PLAN.md)：独立评审后的 Goal、四步实施顺序、当前进度与并行分工，后续开发从这里继续。
+- [R10 当前正文](WISELINK_R10_CURRENT.md)：云文档 revision 2107 的现行正文镜像，区分评估前共同上下文、普通工作记录与正式采用。
+- [R10 云文档](https://hv5zjf4j8yb.feishu.cn/docx/MA3fdjEycoISjHxptAqcsyxvn9b)：现行开发说明与历史运行记录；以第 11 节实施顺序、第 12 节开头的当前摘要和第 14 节完成定义为准。
+- `WISELINK_R10_SYSTEM_REVIEW_20260905.md`：独立评审前的系统盘点与 GPT Pro 交接依据，保留为历史输入；冲突处以修订后的正文及执行计划为准。
 
 ## 2026-08 历史阶段资料
 
