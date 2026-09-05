@@ -1423,6 +1423,7 @@ export default function DocumentParsingPage() {
             key={workItemId}
             workItemId={workItemId}
             workItemRevision={data.workItem.revision}
+            selectedEvaluationItemId={selectedReviewCriterion || null}
             confirmationReceipt={continuousReviewReceipt}
             onConfirmationReceipt={setContinuousReviewReceipt}
             onLocateSourceRef={(sourceRef) => locateSourceRef(null, sourceRef)}
