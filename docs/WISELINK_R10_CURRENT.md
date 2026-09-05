@@ -2,7 +2,7 @@
 
 同步日期：2026-09-05（Asia/Shanghai）。
 
-来源：[R10 云文档](https://hv5zjf4j8yb.feishu.cn/docx/MA3fdjEycoISjHxptAqcsyxvn9b)，revision 2110。
+来源：[R10 云文档](https://hv5zjf4j8yb.feishu.cn/docx/MA3fdjEycoISjHxptAqcsyxvn9b)，revision 2114。
 
 本文件是现行第 1–11 节、第 12 节当前摘要及第 13–14 节的读取镜像，便于代码开发引用；历史运行记录和附录保留在云文档。图示保留原云资源链接，少量 callout 保留导出的 DocxXML。当前执行进度见 [执行计划](WISELINK_R10_EXECUTION_PLAN.md)。原 GPT Pro 交接包不回写、不改写。
 
@@ -356,6 +356,24 @@ JobAid、Overall、Review 使用同一共同上下文的不同任务视图。Ove
 
 稳定授权会话映射，传递当前问题和选中评估点，按需读取多来源；工程师补材料/纠正后，下一轮承接并说明改变了哪些判断。前端短轮询真实状态、候选和活动；运行中 steering 未实现时明示下一轮处理。Host 与 Skill 按兼容窗口分别发布，不以新字段存在冒充已消费。
 
+### 11.3.1 Silver / Carbon Satin 前端设计（UI-N02）
+
+采用用户于 2026-09-05 提供的 UI-N02「Silver / Carbon Satin」作为当前前端材质与交互实施依据，不另起业务契约或产品真源。业务语义仍以本 R10 当前正文为准，原型所依据旧导出的开头预览/P5 冲突已在 revision 2110 修正，不能回写旧口径。
+
+视觉分为四个整体表面：银灰/炭黑磨砂框架，白色/石墨实体阅读面，略退后的工程助手，以及有限悬浮的输入器与弹层。基础中性色 R=G=B，黑白主操作，状态色仅表达真实状态；正文不透明，不把段落、条件、例外或表格拆成发光卡片，PDF 保持真实原色。
+
+A 批次由既有前端主控立即并行实施：复用 tokens/glass/motion、Layout、资料库/快览、工程简报、连续文档和工程助手；单左栏，1440 下助手约 326px、快览约 324px，主阅读面可伸展，390 下单主面板。保留浅/深与默认/最高/兼容三档，兼容关闭弹层 blur，降低动效不隐藏业务信息。先交付资料库→工程简报→连续文档→来源→同一对话的真实页面纵切，不等全部后台和外部数据齐备。
+
+B 批次与 Host/Agent 同轮接通：同一事项的本次问题和材料、已保存工作判断、已采用意见、真实运行/取证/失败及下一轮指示。发现、选入、实际读取、被结果引用和正式采用分别表达；普通保存不触发 ReviewAction。未实现运行中 steering 时，补充消息明示下一轮承接，不伪造已读、暂停回执或进度。
+
+以下两张是用户设计包的静态示意，使用虚构材料，只解释材质和信息层次；不是当前线上页面、真实候选或自动运行证明。
+
+![UI-N02 深色工作台设计样例：实体阅读面与略后退协作区（非线上截图）](https://feishu.cn/file/TGHgbqJURo60NTxM0gecUMEEnSe)
+
+![UI-N02 浅色资料库设计样例：银灰框架与白色阅读面（非线上截图）](https://feishu.cn/file/Un7Qb6vmvoevjcxHFKucgDoJnpc)
+
+原始完整包：WiseLink_R10_Satin_Workspace_20260905/（本机 Downloads）；start.html 提供十个产品页、设计文档与前后对照。仓库 docs/design/r10-satin/ 保留原设计说明、实施建议、来源说明及 CSS 参考，生产不导入 prototype.js、fixtures 或虚构飞机资料。原型 136 项离线检查不计作 Hosted 验收。
+
 ## 11.4 第四步：真实样本往返与迭代
 
 实际完成页面提问→云端自动执行→候选回写→连续追问→新增材料或纠正→回答与判断变化。核对有用背景确实被读取/引用、来源能定位、失败可见及普通讨论与正式采用分离。保留未改变结论的合理情况及原因，不能为展示强迫模型改判。
@@ -364,7 +382,7 @@ JobAid、Overall、Review 使用同一共同上下文的不同任务视图。Ove
 
 ## 11.5 并行支线与后置范围
 
-前端主控负责对话、材料、来源和状态体验；Host/Agent 负责共同上下文与运行接线；方法/解析负责规则源绑定及真实样本语义；数据支线负责真实 RAG 薄适配、构型证据及原有重算。共享 DTO、数据库变化、集成和发布由项目主控统一收敛。
+前端主控并行实施 UI-N02 Silver / Carbon Satin：A 批次先完成既有页面材质、布局、连续正文和来源导航，B 批次按 shared DTO 接本次材料、工作判断与真实状态。Host/Agent 负责共同上下文与自动运行接线；方法/解析负责规则源绑定及真实样本语义；数据支线负责真实 RAG 薄适配、构型证据及原有重算。共享 DTO、数据库变化、集成和发布由项目主控统一收敛。A 批次不等待全部 B 字段，前端不以原型脚本替代业务实现。
 
 规则源硬编码先据实改为派生状态；未确认的正式 JobAid 来源不阻断边界明确的候选分析，但不能声称规则来源核验或正式采用已就绪。RAG/构型数据未接通不挂起已有材料分析。全量图谱、知识镜像、额外向量库、通用队列、完整 Skill 发布平台和第二业务 Agent 后置。
 
@@ -375,6 +393,8 @@ JobAid、Overall、Review 使用同一共同上下文的不同任务视图。Ove
 ReviewConversation ACTIVE，lastTurnNo=14；Turn 13/14 均未采用，分别保留 2/10 个 SourceRef，实际 Skill 分别为 c16/c17。配置查询 NOT_CONNECTED，configurationEvidenceCurrent 与 reevaluation 均为空；不能声称真实构型采用后重算已验证。
 
 **当前开发状态：**“页面自助连续评估闭环” Goal 为 ACTIVE。契约正文与执行计划已同步仓库；selectedEvaluationItemId 已贯穿页面、请求、既有 Turn JSON、回读和 Agent Task/Context（Host 2f5169560、前端集成 d8d77b1b0），兼容历史无选中字段的 Turn，尚未发布。自动领取、评估前共同上下文、原生持续调查及活动展示仍待接通与真实验证；不能据此声称完整闭环已完成。真实知识空间与构型事件源仍未接通。
+
+**前端设计接入（2026-09-05）：**UI-N02 Silver / Carbon Satin 已纳入第 11.3.1 节及仓库 docs/design/r10-satin/，两张图片为静态设计样例。既有前端主控已确认启动 A 批次，以主控 99d630868 为基线形成独立可集成提交；主控继续接 Host/Agent。当前尚未集成或发布 Satin 前端，也未把原型离线检查计作真实运行验收。
 
 **独立评审后代码核实：**SOURCE_IDENTITY_MISMATCH 是历史固定占位；正式 JobAid DocumentVersion 当前为 null / VERSION_UNCONFIRMED，并非实证来源不匹配。该常量不阻止 Hosted dynamic/overall 候选，且 blocks 字段不等于所有正式采用路径实际执行限制；下一增量从真实来源绑定派生状态，不直接改成匹配。
 
@@ -407,4 +427,3 @@ ReviewConversation ACTIVE，lastTurnNo=14；Turn 13/14 均未采用，分别保�
 ## 14.2 保留：EXPLICIT_PREVIEW 的既有完成记录
 
 真实 DocumentVersion 的引用索引和 RelatedContextSnapshot 能构建/回读，Reader 能定位引用位置，页面区分解析歧义、不可用、未知和历史版本；旧 v1 includedInAssessmentInput=false 保持不变。新开发通过共同上下文及任务输入实际消费选定片段，不改写旧快照来制造通过。资料库当前与发布源现行分开，背景用途不推导 NOT_APPLICABILITY_BEARING。
-
