@@ -2,7 +2,7 @@
 
 同步日期：2026-09-05（Asia/Shanghai）。
 
-来源：[R10 云文档](https://hv5zjf4j8yb.feishu.cn/docx/MA3fdjEycoISjHxptAqcsyxvn9b)，revision 2107。
+来源：[R10 云文档](https://hv5zjf4j8yb.feishu.cn/docx/MA3fdjEycoISjHxptAqcsyxvn9b)，revision 2110。
 
 本文件是现行第 1–11 节、第 12 节当前摘要及第 13–14 节的读取镜像，便于代码开发引用；历史运行记录和附录保留在云文档。图示保留原云资源链接，少量 callout 保留导出的 DocxXML。当前执行进度见 [执行计划](WISELINK_R10_EXECUTION_PLAN.md)。原 GPT Pro 交接包不回写、不改写。
 
@@ -348,7 +348,7 @@ JobAid、Overall、Review 使用同一共同上下文的不同任务视图。Ove
 
 ## 11.2 第二步：自动运行与共同上下文接线
 
-复用 Turn/ActionAttempt 保存可恢复执行意图；核实并实现云端消费者，优先验证 Hosted 主动领取，若已有合适应用级入口则使用。消费者不能依赖开发者电脑、开发 CLI 或第二业务状态机。同一批接入评估前材料装配、真实分项结果引用和 Review 历史。
+复用 Turn/ActionAttempt 保存可恢复执行意图；2026-09-05 已核实 Hosted OpenClaw 2026.6.6 的原生 cron 帮助包含 command/command-argv，调度器 enabled=true。下一步使用该云端载体运行领取脚本，接入授权待执行 Turn、既有 driver 与真实状态回读；任务创建、实际自动运行及重启恢复尚未验证。消费者不依赖开发者电脑、开发 CLI 或第二业务状态机。同一批接入评估前材料装配、真实分项结果引用和 Review 历史。
 
 首条样本沿用已成功的 SB 777-34-0425 事项及可访问关联资料，保留已有 150 项结果；新增受影响候选，不重跑已成功初始操作来增加记录。其他文档族先作背景，不先全量改造评估引擎。
 
@@ -374,11 +374,11 @@ JobAid、Overall、Review 使用同一共同上下文的不同任务视图。Ove
 
 ReviewConversation ACTIVE，lastTurnNo=14；Turn 13/14 均未采用，分别保留 2/10 个 SourceRef，实际 Skill 分别为 c16/c17。配置查询 NOT_CONNECTED，configurationEvidenceCurrent 与 reevaluation 均为空；不能声称真实构型采用后重算已验证。
 
-**当前开发状态：**本轮已建立“页面自助连续评估闭环” Goal 并执行契约修订，第一步为正文与执行计划同步；自动派发/领取、评估前共同上下文、原生持续会话与活动展示仍待实现与真实验证。已有显式预览和 Review 背景读取不能证明初始 JobAid/Overall 已消费关联/RAG。真实知识空间与构型事件源尚未接通。
+**当前开发状态：**“页面自助连续评估闭环” Goal 为 ACTIVE。契约正文与执行计划已同步仓库；selectedEvaluationItemId 已贯穿页面、请求、既有 Turn JSON、回读和 Agent Task/Context（Host 2f5169560、前端集成 d8d77b1b0），兼容历史无选中字段的 Turn，尚未发布。自动领取、评估前共同上下文、原生持续调查及活动展示仍待接通与真实验证；不能据此声称完整闭环已完成。真实知识空间与构型事件源仍未接通。
 
 **独立评审后代码核实：**SOURCE_IDENTITY_MISMATCH 是历史固定占位；正式 JobAid DocumentVersion 当前为 null / VERSION_UNCONFIRMED，并非实证来源不匹配。该常量不阻止 Hosted dynamic/overall 候选，且 blocks 字段不等于所有正式采用路径实际执行限制；下一增量从真实来源绑定派生状态，不直接改成匹配。
 
-**运行入口边界：**普通妙搭应用详情 API 对 app_17c3zn24kv2 返回不支持的应用类型；这不证明 Hosted 停机，也不等于无法云端自动运行。Host 直接调用入口尚未核实，Hosted 云端主动领取作为优先验证方案；管理页本次加载超时，不能声称消费者已部署。
+**运行入口实证（2026-09-05）：**Hosted 管理会话只读检查 7681886217462189043 已 completed；实际 OpenClaw 2026.6.6 (8c802aa)、Node 22.22.1，Gateway 可达；cron add 帮助包含无需模型的 command/command-argv，cron status enabled=true，jobs=0。本次未创建或启用任务，未改变安装/权限/凭据，未调用业务 begin/commit 或重放 Turn。后台 Gateway 存在平台启动脚本，但任务跨会话执行与重启恢复仍需真实验证。普通妙搭应用详情 API 不支持该应用类型、管理页加载超时，不妨碍上述已支持的开发期管理会话；Host 运行时代码不得调用开发 CLI。
 
 以下保留各阶段的原始运行记录。条目里的“当前”“下一唯一动作”和版本仅对应其记录时刻，不覆盖以上摘要或第 11 节。
 
@@ -407,5 +407,4 @@ ReviewConversation ACTIVE，lastTurnNo=14；Turn 13/14 均未采用，分别保�
 ## 14.2 保留：EXPLICIT_PREVIEW 的既有完成记录
 
 真实 DocumentVersion 的引用索引和 RelatedContextSnapshot 能构建/回读，Reader 能定位引用位置，页面区分解析歧义、不可用、未知和历史版本；旧 v1 includedInAssessmentInput=false 保持不变。新开发通过共同上下文及任务输入实际消费选定片段，不改写旧快照来制造通过。资料库当前与发布源现行分开，背景用途不推导 NOT_APPLICABILITY_BEARING。
-
 
