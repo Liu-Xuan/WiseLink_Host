@@ -66,6 +66,8 @@ export interface BeginReviewTurnResult {
   leaseGeneration: number;
   leaseExpiresAt: string;
   task: OpenClawTaskEnvelope;
+  /** Host-owned routing only; never part of model input or the browser projection. */
+  nativeSessionKey?: string;
   recoveryResult?: OpenClawResultEnvelope;
 }
 
@@ -224,6 +226,10 @@ export class CanonicalHostOpenClawReviewService {
       leaseGeneration: claim.leaseGeneration,
       leaseExpiresAt: claim.leaseExpiresAt,
       task: structuredClone(claim.task),
+      ...(typeof claim.task.modelInput.actorContextRef === 'string' &&
+      claim.task.modelInput.actorContextRef.startsWith('ACTX-RS-')
+        ? { nativeSessionKey: `agent:${REVIEW_PROFILE_REF}:review:${claim.task.modelInput.actorContextRef}` }
+        : {}),
       ...(claim.status === 'COMMITTING'
         ? { recoveryResult: structuredClone(claim.recoveryResult) }
         : {}),
@@ -517,6 +523,7 @@ export class CanonicalHostOpenClawReviewService {
       bilingual,
       attachmentContext,
       commonContext,
+      previousTask,
     ] = await Promise.all([
       this.engineerReviews.pageContext(workItem),
       this.engineerReviews.modelContext(workItem),
@@ -535,6 +542,13 @@ export class CanonicalHostOpenClawReviewService {
           beforeTurnNo: binding.turn.turnNo,
         },
       ),
+      this.conversations.loadPreviousOpenClawTask({
+        reviewConversationId: binding.conversation.reviewConversationId,
+        tenantId: binding.conversation.tenantId,
+        actorId: binding.conversation.actorId,
+        workItemId: binding.conversation.workItemId,
+        beforeTurnNo: binding.turn.turnNo,
+      }),
     ]);
     const relatedContext = commonContext.related;
     if (!pageContext)
@@ -641,7 +655,7 @@ export class CanonicalHostOpenClawReviewService {
       reviewConversationRef: binding.conversation.reviewConversationId,
       reviewTurnRef: binding.turn.reviewTurnId,
       requestId: binding.turn.requestId,
-      actorContextRef: actorContextRef(binding.conversation),
+      actorContextRef: reviewSessionActorContextRef(binding, resourceRefs, previousTask),
       inputRevision: binding.turn.inputRevision,
       selectedEvaluationItemId,
       userMessage: binding.turn.userMessage,
@@ -981,13 +995,34 @@ function reviewIdempotencyKey(binding: ReviewBinding): string {
   ].join(':');
 }
 
-function actorContextRef(conversation: PersistedReviewConversation): string {
-  return `ACTX-${canonicalSha256({
-    schemaVersion: 'wiselink.3_1.review_actor_context_ref.v1.c2',
-    reviewConversationRef: conversation.reviewConversationId,
-    tenantId: conversation.tenantId,
-    actorId: conversation.actorId,
-  })}`;
+function reviewSessionActorContextRef(
+  binding: ReviewBinding,
+  resources: FrozenReviewSourceRef[],
+  previous: { status: string | null; taskEnvelopeJson: string | null } | null,
+): string {
+  // Use existing Turn IDs and persisted attempt inputs, not another session
+  // registry/hash. A failed turn may have uncommitted native history, so it
+  // starts a new session too. Host discussion remains the recovery context.
+  const freshRef = `ACTX-RS-${binding.turn.reviewTurnId}`;
+  if (previous?.status !== 'SUCCEEDED' || !previous.taskEnvelopeJson) return freshRef;
+  const priorTask = parseTaskEnvelope(previous.taskEnvelopeJson);
+  const prior = parseReviewTurnTaskContract(priorTask.modelInput);
+  if (
+    priorTask.tenantId !== binding.conversation.tenantId ||
+    priorTask.workItemId !== binding.conversation.workItemId ||
+    prior.reviewConversationRef !== binding.conversation.reviewConversationId ||
+    prior.inputRevision !== binding.turn.inputRevision ||
+    !prior.actorContextRef.startsWith('ACTX-RS-')
+  ) return freshRef;
+  const priorResources = new Map(prior.resourceRefs.map((resource) => [resource.sourceRefId, resource]));
+  const sameSources = resources.length === priorResources.size && resources.every((resource) => {
+    const stored = priorResources.get(resource.sourceRefId);
+    return stored?.resourceArtifactRef === resource.resourceArtifactRef &&
+      stored.resourceArtifactSha256 === resource.resourceArtifactSha256;
+  });
+  // Related-document permission/material changes need not increment this WI's
+  // revision. Compare its fresh authorized catalog before retaining memory.
+  return sameSources ? prior.actorContextRef : freshRef;
 }
 
 function assertWorkItemScope(

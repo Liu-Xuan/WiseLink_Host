@@ -30,4 +30,6 @@ node <installed-skill-path>/scripts/consume-hosted-review-turn.mjs --work-item-i
 脚本返回 IDLE、BUSY、CANDIDATE_SAVED 或 REQUIRES_ATTENTION；后者及异常以非零退出码交给原生 cron 运行记录。不能把本地脚本通过或 cron 已安装当作 Hosted 闭环验收。
 
 c19 本次仅新增自动领取；后续 c20 兼容共同背景，c21 在同一原生 session 内接通按需 SourceRef client-function 循环。
-稳定跨轮模型会话、原生运行中 steering、知识空间 RAG 与秒级唤醒仍未接通。现有 driver 遇到不确定提交仍保留既有只读恢复规则，并明确报告需继续处理；不把“恢复待处理”显示为候选成功。
+c22 在 Host 提供 `nativeSessionKey` 时承接相同授权范围的跨轮模型讨论，消费者不增加会话注册表或更改 cron。
+旧 Host 无该字段时报告逐轮隔离，不能宣称已经承接原生历史。原生运行中 steering、知识空间 RAG 与秒级唤醒仍未接通。
+现有 driver 遇到不确定提交仍保留既有只读恢复规则，并明确报告需继续处理；不把“恢复待处理”显示为候选成功。
