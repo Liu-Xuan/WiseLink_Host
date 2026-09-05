@@ -45,11 +45,13 @@ import {
   subscribeCanonicalHostClientSession,
 } from '../../client/src/api/canonical-host';
 import { createRequestCorrelationId } from '../../client/src/utils/request-correlation-id';
+import { logger } from '@lark-apaas/client-toolkit/logger';
 
 describe('canonical host assessment client', () => {
   beforeEach(() => {
     invalidateCanonicalHostClientSession();
     request.mockReset();
+    jest.mocked(logger.error).mockClear();
     resolveAppUrl.mockReset();
     resolveAppUrl.mockImplementation((path: string) => path);
   });
@@ -75,6 +77,67 @@ describe('canonical host assessment client', () => {
       code: 'INTERNAL_SERVER_ERROR',
     });
   });
+
+  it.each(['resolved', 'rejected'])(
+    'preserves an exact source failure and logs only safe fields (%s response)',
+    async (mode) => {
+      const response = {
+        status: 500,
+        headers: {
+          'x-tt-logid': '0123456789abcdef0123456789abcdef',
+          'set-cookie': 'SYNTHETIC_SECRET_COOKIE',
+        },
+        data: {
+          error: {
+            code: 'INTERNAL_ERROR',
+            message: '服务器内部错误',
+            stack:
+              'Error: ARTIFACT_READBACK_MISMATCH:METADATA\n at SYNTHETIC_PRIVATE_PATH',
+            unrelated: 'SYNTHETIC_PRIVATE_BODY',
+          },
+        },
+      };
+      const axiosError = {
+        message: 'Request failed with status code 500',
+        code: 'ERR_BAD_RESPONSE',
+        config: {
+          headers: {
+            Authorization: 'SYNTHETIC_SECRET_AUTH',
+            Cookie: 'SYNTHETIC_SECRET_COOKIE',
+          },
+          url: '/private-query',
+        },
+        response,
+      };
+      if (mode === 'resolved') request.mockResolvedValue(response);
+      else request.mockRejectedValue(axiosError);
+
+      if (mode === 'resolved') {
+        await expect(
+          getDocumentParsingPage('WI-SOURCE-UNAVAILABLE', ''),
+        ).rejects.toMatchObject({
+          statusCode: 500,
+          code: 'ARTIFACT_READBACK_MISMATCH:METADATA',
+        });
+      } else {
+        await expect(
+          getDocumentParsingPage('WI-SOURCE-UNAVAILABLE', ''),
+        ).rejects.toBe(axiosError);
+      }
+      expect(logger.error).toHaveBeenCalledTimes(1);
+      expect(logger.error).toHaveBeenCalledWith(
+        '读取文档与解析投影失败，未确认当前资料状态',
+        {
+          statusCode: 500,
+          code: 'ARTIFACT_READBACK_MISMATCH:METADATA',
+          traceId: '0123456789abcdef0123456789abcdef',
+        },
+      );
+      expect(JSON.stringify(jest.mocked(logger.error).mock.calls)).not.toMatch(
+        /SYNTHETIC_|Authorization|Cookie|private-query|stack/u,
+      );
+    },
+  );
 
   it('preflights the official opaque session through the Hosted axios bridge', async () => {
     request.mockResolvedValue({

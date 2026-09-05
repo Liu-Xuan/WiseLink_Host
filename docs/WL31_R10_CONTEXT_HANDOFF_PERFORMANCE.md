@@ -2,7 +2,7 @@
 
 日期：2026-09-05。用户要求：评估包等信息交接和使用要稳定、高效，常用前端路径达到秒级响应、尽量没有可见加载。
 
-Git 同步授权更新：本页历史推送不符合当时的 main-only 限制；用户随后明确长期允许向 `Liu-Xuan/WiseLink_Host` 非强制推送项目相关 `codex/*`。后续范围内不再重复询问，main 分叉只暂停 main 镜像。详见 [授权记录](WL31_GITHUB_SYNC_BOUNDARY_20260905.md)。未更改已发布功能、删除分支或授权强推。
+Git 同步授权更新：本页前两批历史推送不符合当时的 main-only 限制；用户随后明确长期允许向 `Liu-Xuan/WiseLink_Host` 非强制推送项目相关 `codex/*`。第三批 c22 的 `7a9b9c4b7` 已在该授权下使用单一同名 refspec 快进两个远端；main 分叉只暂停 main 镜像。详见 [授权记录](WL31_GITHUB_SYNC_BOUNDARY_20260905.md)。未删除分支、触碰 main 或使用强推。
 
 当前设计要求已写入 [R10 §10.6](https://hv5zjf4j8yb.feishu.cn/docx/MA3fdjEycoISjHxptAqcsyxvn9b#doxcnABcGL9dWjaOu9ogEAbWzje)。这些是迭代目标，不是新 gate，也不是当前已达标声明。
 
@@ -58,7 +58,7 @@ Host release `7682008054367685902` 已 finished，精确提交 `73561af4d37c8d6b
 
 c21 先交接最小上下文和允许的资料目录，由模型通过 `read_wiselink_review_sources` 选择相关片段；驱动委托现有 `read_source_refs`，把实际结果回传相同原生 session 后继续分析，最终仍通过既有候选 commit。每轮不再默认预读全部来源，同轮重复引用复用已读取值，后续请求只含新 tool exchange，不重复发送整包。model.result 保存实读批次，使中断恢复仍能复用原 checkpoint 的已读集合而不重跑模型。未改变 Host Task/Result/MCP、正式采用、权限或业务版本规则；不新增 hash、表、gate、队列或缓存框架。跨 Turn 原生 session 仍按 requestId 隔离，稳定跨轮会话与页面真实活动尚未完成。
 
-## 本轮核对范围
+## 前两批核对范围
 
 - 既有 Reader/vertical/U0 普通测试 3 suites / 34 tests 通过。
 - 本批校验复用、vertical、engineer-review 普通测试 3 suites / 36 tests 通过；随后增加单次 ledger 及实际来源失效用例，对应 2 suites / 16 tests 通过。测试集有重叠，不相加冒充独立覆盖数量。
@@ -79,7 +79,22 @@ c21 先交接最小上下文和允许的资料目录，由模型通过 `read_wis
 
 后续只读轮次 `7681987988713032924` 核对实际 `resolveAgentIdFromModel`、`buildAgentCommandInput` 与 session agent 解析：`openclaw/wiselink-engineering` 在 agents.list 缺省时仍解析为命名 agent，继承 defaults 并使用独立工作区/session store；不是回退 main。显式 session key 的 agent 段决定 OpenAI ingress 的实际执行 agent，因此 key 与 profile 必须一致。此轮未发模型请求或改运行配置；此前 main 合成测试的原因是选用了 default alias 与 main key，不是版本不支持命名 agent。
 
-当前 `c21` 已接通同轮按需取证，但不同 Turn 仍隔离。下一实现复用 Host 持久化的 `openClawSessionKey`（仅控制面，不入模型提示）、当前授权、版本和来源范围实现跨轮延续；权限/材料范围收缩时不能携带已无权读取的旧会话内容。原生 wake/订阅接口存在，也不自动意味着 Host 已能从云端安全到达 Gateway；60 秒领取路径尚未替换。
+上述核查时 `c21` 已接通同轮按需取证，但不同 Turn 仍隔离；第三批现已按下面的 Host 授权映射接通跨轮延续，仍待真实页面验证。原生 wake/订阅接口存在，不自动意味着 Host 已能从云端安全到达 Gateway；60 秒领取路径尚未替换。
+
+## 第三批：c22 跨轮授权会话已发布
+
+功能提交 `7a9b9c4b784841af6e415eb71ac698ecc89a485f` 已分别非强制同步 origin 与 github 的同名 Codex 分支。Host release `7682054671425031353` 已 finished，精确 commit 相同，error_logs 为空；无数据库迁移。
+
+- Host 复用现有 ReviewTurn/ActionAttempt，查询最近前序任务并保留 owner/tenant/actor/WI 范围。Drizzle 单语句 actor CTE 使用独立别名 `previous_review_actor_id`，不建立新连接、不降低 RLS，也不跳过最近失败回合寻找更早的成功会话。
+- 只有前序 SUCCEEDED、同一讨论/事项版本且新核实的 SourceRef 与产物引用范围一致时，延续既有授权上下文。版本、材料范围或前序状态不适合延续时，从当前 Turn 主键派生新引用，再承接 Host 保存的讨论；不新增 hash 或表。
+- `begin_review_turn` 的可选 `nativeSessionKey` 是控制面字段，仅由 driver 放入 Gateway header，明确绑定 `wiselink-engineering`，不进入模型/前端。每轮交接当前问题与上下文，引用仍须本轮实读，原生记忆不替代持久评估包或当前权限。
+- c22 对新 Host 报告 `HOST_SCOPED`；旧 Host 缺少字段时保留兼容并明确记录 `TURN_ISOLATED_LEGACY_HOST`。新 Host 与旧 Skill 仍兼容，双方升级才获得延续能力。既有单轮 tool exchange、独立 Turn/request/checkpoint、候选 exact-once 和不确定结果恢复保持。
+
+同名 Skill 先原位安装，管理轮次 `7682052334020758506` completed，再发布配套 Host；未改 Gateway、cron 或业务配置。唯一安装 Ready/Visible，23/23 源文件与 manifest 一致；安装器生成的 `.openclaw/source-origin.json` 单列。ZIP `wiselink-research-and-synthesize-r09.c22.zip` 为 168283 bytes，既有 archive SHA-256 `6c944988549fa6c85841b4deb6ea746d33b140c52363deef10615f2799ea7dd7`；私有飞书文件 token `KzUwbJJT3ojj5GxD5iwcyxzOn7g`，未设置公共分享或覆盖旧 ZIP。
+
+验证范围：Host server type-check、4 suites / 51 tests、前后端生产构建通过；Skill 本地与 installed validation 均 107/107，consumer 均 3/3；技能结构检查通过。现有构建警告保留，主 JS gzip 仍 590.11 kB。独立子智能体复核被平台安全系统阻止，未产出结论，不算通过；未绕过或重复派发该复核。
+
+浏览器扩展连接超时后，经原生界面读到原文不可读、版本 11、Turn 17 FAILED 与历史候选；刷新被用户切换窗口中断，未宣称新版页面完整重载或跨轮 UAT 通过。22:23 真实日志进一步确认三个旧事项均在文件元数据读取处失败。本轮对原桶既有新测试文档再次读取元数据并下载 498 bytes，未再次与最初文件逐字节比较；旧 PDF 名称查询为空。详见 [存储记录](WL31_HOSTED_STORAGE_INCIDENT_20260905.md)。无新业务 Turn、正式采用或 WorkItem 版本变更。
 
 ## 后续交接与读取形态
 
@@ -95,4 +110,4 @@ c21 先交接最小上下文和允许的资料目录，由模型通过 `read_wis
 
 正常已登录网络下目标：冷开核心内容 p50 ≤1 秒、p95 ≤2 秒；已加载同事项切换 p95 ≤100 ms；轻量状态读取 p95 ≤1 秒；普通刷新无整页空白。首次认证、首次 PDF、解析、云端领取等待、模型调查分别记录，不用假活动补齐等待时间。
 
-本批不以性能工程取代 R10 连续评估主线。旧对象恢复、稳定授权会话、按问题取证和实际页面候选往返仍须完成；当前 60 秒领取周期也不等于秒级启动。
+本批不以性能工程取代 R10 连续评估主线。稳定授权会话及按问题取证已接线发布，旧对象恢复、真实页面候选往返与活动/材料回执仍须完成；当前 60 秒领取周期也不等于秒级启动。

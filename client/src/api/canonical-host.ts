@@ -345,6 +345,7 @@ export async function getDocumentParsingPage(
   } = {},
 ): Promise<CanonicalDocumentParsingPageResponse> {
   const requestGeneration = clientSessionGeneration;
+  let readFailureSummary: CanonicalDocumentReadFailureSummary | null = null;
   try {
     const normalizedQuery: string = query.trim();
     const normalizedSourceRef: string = options.sourceRef?.trim() ?? '';
@@ -378,17 +379,95 @@ export async function getDocumentParsingPage(
       throw canonicalObjectNotFound();
     }
     if (response.status < 200 || response.status >= 300) {
-      throw backendResponseError(
+      const readError = backendResponseError(
         response.data,
         'CANONICAL_DOCUMENT_VIEW_UNAVAILABLE',
         response.status,
       );
+      const summary = summarizeCanonicalDocumentReadFailure({ response });
+      readFailureSummary = summary;
+      if (summary.sourceUnavailable && summary.code) {
+        readError.code = summary.code;
+      }
+      throw readError;
     }
     return response.data;
   } catch (error) {
-    logger.error('读取文档与解析 fresh projection 失败', error);
+    const { statusCode, code, traceId } =
+      readFailureSummary ?? summarizeCanonicalDocumentReadFailure(error);
+    logger.error('读取文档与解析投影失败，未确认当前资料状态', {
+      statusCode,
+      code,
+      traceId,
+    });
     throw normalizedDirectObjectError(error, requestGeneration);
   }
+}
+
+export interface CanonicalDocumentReadFailureSummary {
+  statusCode: number | null;
+  code: string | null;
+  traceId: string | null;
+  sourceUnavailable: boolean;
+}
+
+/** This read path only: never return request config, headers, body or stack. */
+export function summarizeCanonicalDocumentReadFailure(
+  reason: unknown,
+): CanonicalDocumentReadFailureSummary {
+  const error = isRecord(reason) ? reason : {};
+  const response = isRecord(error.response) ? error.response : {};
+  const data = isRecord(response.data) ? response.data : {};
+  const payload = isRecord(data.error) ? data.error : data;
+  const status = responseStatus(reason) ?? error.statusCode;
+  const statusCode =
+    typeof status === 'number' && Number.isInteger(status) ? status : null;
+  // The current error envelope may carry this exact code in the first stack
+  // line. Only recognize the stable token; never display or log that stack.
+  const sourceCode = [
+    payload.code,
+    payload.message,
+    payload.details,
+    payload.cause,
+    payload.stack,
+    error.code,
+    error.message,
+    error.details,
+  ]
+    .map((value: unknown): string =>
+      typeof value === 'string'
+        ? value
+            .split(/[\r\n]/u, 1)[0]
+            .trim()
+            .replace(/^Error:\s*/u, '')
+            // Host may append a metadata reason; retain only the stable code.
+            .replace(/^(ARTIFACT_READBACK_MISMATCH:METADATA):.*$/u, '$1')
+        : '',
+    )
+    .find((value: string): boolean =>
+      /^(?:ARTIFACT_READBACK_MISMATCH(?::(?:METADATA|BYTES|PATH|DESCRIPTOR|REF|BYTE_LENGTH|BODY|DESCRIPTOR_OR_BYTES))?|ARTIFACT_STORE_(?:DEFAULT_BUCKET_READ_FAILED|METADATA_READ_FAILED|DOWNLOAD_FAILED|DOWNLOAD_BODY_READ_FAILED))$/u.test(
+        value,
+      ),
+    );
+  const code =
+    sourceCode ??
+    [payload.code, error.code].find(
+      (value: unknown): value is string =>
+        typeof value === 'string' && /^[A-Z][A-Z0-9_]{1,95}$/u.test(value),
+    ) ??
+    null;
+  const headers = isRecord(response.headers) ? response.headers : {};
+  const trace = headers['x-tt-logid'] ?? headers['x-trace-id'];
+  return {
+    statusCode,
+    code,
+    traceId:
+      typeof trace === 'string' && /^[\da-f-]{16,64}$/iu.test(trace)
+        ? trace
+        : null,
+    sourceUnavailable:
+      Boolean(sourceCode) && ![401, 403, 404].includes(statusCode ?? 0),
+  };
 }
 
 export async function requestOverallRegeneration(

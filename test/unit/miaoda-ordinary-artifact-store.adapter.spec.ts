@@ -147,8 +147,55 @@ describe('MiaodaOrdinaryArtifactStoreAdapter', () => {
     expect(scoped.removeCount).toBe(1);
     expect(scoped.files.size).toBe(0);
     await expect(adapter.readActualBytes(staged.artifact)).rejects.toThrow(
-      'ARTIFACT_READBACK_MISMATCH:METADATA',
+      'ARTIFACT_READBACK_MISMATCH:METADATA:NOT_FOUND_OR_INACCESSIBLE',
     );
+  });
+
+  it.each([
+    'NOT_FOUND_OR_INACCESSIBLE',
+    'BUCKET',
+    'PATH',
+    'LENGTH',
+    'MEDIA_TYPE',
+  ])('reports metadata %s without starting a download', async (reason: string) => {
+    const bytes: Uint8Array = new TextEncoder().encode('{"package":true}\n');
+    const digest: string = sha256Raw(bytes);
+    const path: string = `unified-parsed-packages/sha256/${digest}.json`;
+    const bucketId: string = 'bucket-metadata-reasons';
+    const metadata: Awaited<
+      ReturnType<LocalScopedFileService['getFileMetadata']>
+    > = reason === 'NOT_FOUND_OR_INACCESSIBLE'
+      ? null
+      : {
+          id: 'metadata-reasons-file',
+          bucketID: reason === 'BUCKET' ? 'another-bucket' : bucketId,
+          filePath: reason === 'PATH' ? `/${path}.other` : `/${path}`,
+          metadata: {
+            contentLength: String(bytes.byteLength + (reason === 'LENGTH' ? 1 : 0)),
+            mimeType: reason === 'MEDIA_TYPE' ? 'text/plain' : 'application/json',
+          },
+        };
+    const scoped: { getFileMetadata: jest.Mock; download: jest.Mock } = {
+      getFileMetadata: jest.fn().mockResolvedValue(metadata),
+      download: jest.fn(),
+    };
+    const adapter: MiaodaOrdinaryArtifactStoreAdapter =
+      new MiaodaOrdinaryArtifactStoreAdapter({
+        getDefaultBucket: async () => bucketId,
+        from: () => scoped,
+      } as never);
+
+    await expect(
+      adapter.readActualBytes({
+        storeRole: 'UnifiedArtifactStoreCandidate',
+        ref: `artifact://UnifiedArtifactStoreCandidate/unified-parsed-packages/sha256/${digest}`,
+        sha256: digest,
+        byteLength: bytes.byteLength,
+        mediaType: 'application/json',
+      }),
+    ).rejects.toThrow(`ARTIFACT_READBACK_MISMATCH:METADATA:${reason}`);
+    expect(scoped.getFileMetadata).toHaveBeenCalledTimes(1);
+    expect(scoped.download).not.toHaveBeenCalled();
   });
 
   it('treats a hosted metadata 404 as an absent object before upload', async () => {

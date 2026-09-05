@@ -366,7 +366,9 @@ describe('single canonical app workspace', () => {
     expect(api).not.toContain('persistIntegratedOpenClawOverall');
     expect(api).not.toContain('evaluateAssessment');
     expect(api).not.toContain('resynthesizeAssessment');
-    expect(page).toContain('regeneration={overallRegeneration}');
+    expect(page).toMatch(
+      /regeneration=\{\{\s*\.\.\.overallRegeneration,\s*disabled: loading \|\| overallRegeneration\.disabled,/u,
+    );
     expect(api).toContain('requestOverallRegeneration');
     expect(api).toContain('getOverallRegenerationStatus');
     expect(page).toContain(
