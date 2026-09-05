@@ -9,6 +9,7 @@ import type {
   ReviewUncertaintyDispositionKind,
 } from '@shared/api.interface';
 import { reviewSourceRefLabel } from './continuous-review-state';
+import ReviewExecutionStatus from './ReviewExecutionStatus';
 
 interface ReviewConversationTurnProps {
   turn: ReviewTurnReadModel;
@@ -59,6 +60,8 @@ export default function ReviewConversationTurn(
             : ''}
         </small>
       </div>
+
+      <ReviewExecutionStatus turn={props.turn} />
 
       {candidate ? (
         <div className="continuous-review-candidate">
@@ -274,8 +277,9 @@ export default function ReviewConversationTurn(
           <div>
             <strong>候选尚未读回</strong>
             <span>
-              工程师输入已经记录；Host 尚未返回可核验的执行状态或候选结果。
-              WorkItem current、revision 与 STALE 状态均未因此改变。
+              工程师输入已经记录，候选结果尚未返回。
+              保存输入不会自动采用意见，WorkItem current、revision 与 STALE
+              状态均未因此改变。
             </span>
           </div>
         </div>

@@ -1260,19 +1260,6 @@ export default function DocumentParsingPage() {
           )
         ) : null}
 
-        {activeNode === 'review' ? (
-          <ReferenceMentionPreview
-            workItemId={workItemId}
-            workItemRevision={data.workItem.revision}
-            onLocateSourceRef={locateStructuredSourceRef}
-            onOpenTarget={(targetWorkItemId) =>
-              navigate(
-                `/work-items/${encodeURIComponent(targetWorkItemId)}/documents?node=reader&tab=reader&readerMode=structured`,
-              )
-            }
-          />
-        ) : null}
-
         {/* ── §4.2 复核意见：CriterionSet 逐项投影 + 工程师逐项复核 ── */}
         {activeNode === 'review' ? (
           reviewContext ? (
@@ -1428,6 +1415,34 @@ export default function DocumentParsingPage() {
             onConfirmationReceipt={setContinuousReviewReceipt}
             onLocateSourceRef={(sourceRef) => locateSourceRef(null, sourceRef)}
             onWorkItemRefresh={() => load(activeQuery)}
+            materials={{
+              primary: {
+                title:
+                  pkg?.title ??
+                  pkg?.documentIdentity?.documentCode ??
+                  fileLabel,
+                documentVersionId: data.workItem.source.documentVersionId,
+                versionLabel: workItemView.documentVersion,
+              },
+              onOpenPrimary: () =>
+                updateDeepLink({
+                  node: 'reader',
+                  tab: 'reader',
+                  readerMode: 'structured',
+                }),
+              related: (
+                <ReferenceMentionPreview
+                  workItemId={workItemId}
+                  workItemRevision={data.workItem.revision}
+                  onLocateSourceRef={locateStructuredSourceRef}
+                  onOpenTarget={(targetWorkItemId) =>
+                    navigate(
+                      `/work-items/${encodeURIComponent(targetWorkItemId)}/documents?node=reader&tab=reader&readerMode=structured`,
+                    )
+                  }
+                />
+              ),
+            }}
           />
         ) : null}
 

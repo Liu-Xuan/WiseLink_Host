@@ -1,0 +1,121 @@
+.review-materials {
+  margin-block: 16px;
+  border-block: 1px solid var(--wl-border);
+  color: var(--wl-ink);
+}
+
+.review-materials > summary {
+  padding: 14px 2px;
+  cursor: pointer;
+}
+
+.review-materials > summary span {
+  margin-inline-start: 10px;
+  color: var(--wl-muted);
+  font-size: var(--wl-text-caption);
+}
+
+.review-materials-body {
+  display: grid;
+  min-width: 0;
+  gap: 18px;
+  padding-bottom: 18px;
+}
+
+.review-materials-body h4 {
+  margin: 0 0 6px;
+  font-size: var(--wl-text-body-sm);
+}
+
+.review-materials-body p,
+.review-materials-body details,
+.review-material-citations span {
+  margin: 5px 0;
+  color: var(--wl-muted);
+  font-size: var(--wl-text-caption);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.review-material-row {
+  display: flex;
+  gap: 12px;
+  align-items: start;
+  padding: 14px;
+  border: 1px solid var(--wl-border);
+  border-radius: var(--wl-radius-sm);
+  background: var(--wl-sheet);
+}
+
+.review-material-row + .review-material-row {
+  margin-top: 8px;
+}
+
+.review-material-row > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.review-materials svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.review-materials button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 7px 9px;
+  border: 1px solid var(--wl-border-strong);
+  border-radius: var(--wl-radius-sm);
+  background: var(--wl-sheet);
+  color: var(--wl-ink);
+  font: inherit;
+  font-size: var(--wl-text-caption);
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.review-materials button:focus-visible,
+.review-materials summary:focus-visible {
+  outline: 2px solid var(--wl-accent);
+  outline-offset: 3px;
+}
+
+.review-material-inputs article {
+  padding-block: 10px;
+  border-bottom: 1px solid var(--wl-border);
+}
+
+.review-material-inputs p {
+  white-space: pre-wrap;
+}
+
+.review-material-citations ul {
+  display: grid;
+  gap: 10px;
+  padding: 0;
+  list-style: none;
+}
+
+.review-material-citations li {
+  display: grid;
+  justify-items: start;
+}
+
+@media (max-width: 600px) {
+  .review-material-row {
+    flex-wrap: wrap;
+  }
+
+  .review-material-row > button {
+    margin-left: 28px;
+  }
+
+  .review-materials > summary span {
+    display: block;
+    margin: 5px 0 0 18px;
+  }
+}

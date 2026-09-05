@@ -2,6 +2,7 @@ import type {
   ReviewConversationReadModel,
   ReviewTurnReadModel,
 } from '@shared/api.interface';
+import { reviewExecutionPresentation } from './review-execution';
 
 export type ContinuousReviewState =
   | 'NOT_STARTED'
@@ -96,12 +97,10 @@ export function reviewTurnGroups(
 }
 
 export function shouldAutoRefreshReviewTurn(
-  _turn: ReviewTurnReadModel,
+  turn: ReviewTurnReadModel,
   _now = Date.now(),
 ): boolean {
-  /* ReviewTurn 目前没有 Host-owned executionState。缺少候选只表示“尚未读回”，
-   * 不能凭 createdAt + 五分钟窗口伪装成正在运行。待 Host 提供真实状态后再轮询。 */
-  return false;
+  return reviewExecutionPresentation(turn).active;
 }
 
 export function reviewSourceRefLabel(sourceRef: string, index: number): string {
@@ -139,6 +138,17 @@ export function reviewOperationErrorPresentation(
     retryable: recordBoolean(error, 'retryable'),
     operatorAction: recordString(error, 'operatorAction'),
   };
+}
+
+export function reviewErrorRevokesReadback(reason: unknown): boolean {
+  const error = errorRecord(reason);
+  const status = recordNumber(error, 'statusCode');
+  return (
+    [401, 403, 404].includes(status ?? 0) ||
+    /LOGIN_REQUIRED|IDENTITY_REQUIRED|OBJECT_NOT_FOUND|FORBIDDEN|UNAUTHORIZED/u.test(
+      recordString(error, 'code') ?? errorMessage(reason),
+    )
+  );
 }
 
 function errorRecord(reason: unknown): Record<string, unknown> | null {

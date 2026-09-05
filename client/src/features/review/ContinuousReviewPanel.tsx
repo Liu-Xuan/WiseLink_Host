@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 
 import { canonicalHost } from '@client/src/api';
+import { getCanonicalHostClientSessionGeneration } from '@client/src/api/canonical-host';
 import {
   getHostedRuntimeFingerprint,
   type HostedRuntimeFingerprintResponse,
@@ -28,11 +29,15 @@ import type {
 } from '@shared/api.interface';
 
 import ReviewConversationTurn from './ReviewConversationTurn';
+import ReviewMaterialsPanel, {
+  type ReviewMaterialsContext,
+} from './ReviewMaterialsPanel';
+import { reviewConversationHasActiveExecution } from './review-execution';
 import {
   continuousReviewPresentation,
+  reviewErrorRevokesReadback,
   reviewOperationErrorPresentation,
   reviewTurnGroups,
-  shouldAutoRefreshReviewTurn,
   type ReviewOperationErrorPresentation,
 } from './continuous-review-state';
 
@@ -55,6 +60,7 @@ interface ContinuousReviewPanelProps {
   onConfirmationReceipt: (receipt: ReviewActionReceipt) => void;
   onLocateSourceRef: (sourceRef: string) => void;
   onWorkItemRefresh: () => Promise<void>;
+  materials?: ReviewMaterialsContext;
 }
 
 export default function ContinuousReviewPanel({
@@ -65,6 +71,7 @@ export default function ContinuousReviewPanel({
   onConfirmationReceipt,
   onLocateSourceRef,
   onWorkItemRefresh,
+  materials,
 }: ContinuousReviewPanelProps) {
   const [conversation, setConversation] =
     useState<ReviewConversationReadModel | null>(null);
@@ -80,6 +87,7 @@ export default function ContinuousReviewPanel({
   const [error, setError] = useState<ReviewOperationErrorPresentation | null>(
     null,
   );
+  const [accessUnavailable, setAccessUnavailable] = useState(false);
   const [errorFingerprint, setErrorFingerprint] =
     useState<HostedRuntimeFingerprintResponse | null>(null);
   const [errorFingerprintReading, setErrorFingerprintReading] = useState(false);
@@ -88,11 +96,12 @@ export default function ContinuousReviewPanel({
   const [rejectedDraftRefs, setRejectedDraftRefs] = useState<string[]>([]);
   const requestIdRef = useRef<string | null>(null);
   const errorEpochRef = useRef(0);
+  const readEpochRef = useRef(0);
   const presentation = continuousReviewPresentation(conversation);
   const turns = reviewTurnGroups(conversation?.turns ?? []);
   const currentTurn = turns.current;
-  const awaitingCurrentCandidate = Boolean(
-    currentTurn && currentTurn.assistantCandidate === null,
+  const hasActiveExecution = reviewConversationHasActiveExecution(
+    conversation?.turns ?? [],
   );
 
   const clearError = useCallback((): void => {
@@ -103,6 +112,13 @@ export default function ContinuousReviewPanel({
   }, []);
 
   const captureError = useCallback((reason: unknown): void => {
+    if (reviewErrorRevokesReadback(reason)) {
+      setConversation(null);
+      setMessage('');
+      setFile(null);
+      setUploadedSelection(null);
+      setAccessUnavailable(true);
+    }
     const errorEpoch = errorEpochRef.current + 1;
     errorEpochRef.current = errorEpoch;
     setError(reviewOperationErrorPresentation(reason));
@@ -123,16 +139,31 @@ export default function ContinuousReviewPanel({
   }, []);
 
   const readCurrent = useCallback(async (): Promise<void> => {
+    const epoch = ++readEpochRef.current;
+    const session = getCanonicalHostClientSessionGeneration();
     setRefreshing(true);
     clearError();
     try {
       const response = await canonicalHost.reloadReviewConversation(workItemId);
+      if (
+        epoch !== readEpochRef.current ||
+        session !== getCanonicalHostClientSessionGeneration()
+      )
+        return;
+      if (
+        response.conversation &&
+        response.conversation.workItemId !== workItemId
+      ) {
+        setConversation(null);
+        throw new Error('REVIEW_CONVERSATION_OBJECT_NOT_FOUND');
+      }
       setConversation(response.conversation);
       setCurrentRevision(response.currentWorkItemRevision);
+      setAccessUnavailable(false);
     } catch (reason) {
-      captureError(reason);
+      if (epoch === readEpochRef.current) captureError(reason);
     } finally {
-      setRefreshing(false);
+      if (epoch === readEpochRef.current) setRefreshing(false);
     }
   }, [captureError, clearError, workItemId]);
 
@@ -143,6 +174,7 @@ export default function ContinuousReviewPanel({
   useEffect(
     () => () => {
       errorEpochRef.current += 1;
+      readEpochRef.current += 1;
     },
     [],
   );
@@ -152,13 +184,12 @@ export default function ContinuousReviewPanel({
   }, [workItemRevision]);
 
   useEffect(() => {
-    const currentTurn = turns.current;
     if (
-      !currentTurn ||
-      !shouldAutoRefreshReviewTurn(currentTurn) ||
+      !hasActiveExecution ||
       conversation?.status !== 'ACTIVE' ||
       busyAction !== null ||
-      refreshing
+      refreshing ||
+      error !== null
     ) {
       return;
     }
@@ -167,6 +198,8 @@ export default function ContinuousReviewPanel({
   }, [
     busyAction,
     conversation?.status,
+    error,
+    hasActiveExecution,
     readCurrent,
     refreshing,
     turns.current,
@@ -352,6 +385,21 @@ export default function ContinuousReviewPanel({
 
   const active = presentation.state === 'ACTIVE';
 
+  if (accessUnavailable) {
+    return (
+      <section className="continuous-review" aria-label="持续工程复核">
+        <p role="alert">当前复核记录不可访问，已清除页面中的讨论与补充材料。</p>
+        <Button
+          type="button"
+          disabled={refreshing}
+          onClick={() => void readCurrent()}
+        >
+          {refreshing ? '正在读取…' : '重新读取'}
+        </Button>
+      </section>
+    );
+  }
+
   return (
     <section
       className="continuous-review"
@@ -384,6 +432,15 @@ export default function ContinuousReviewPanel({
           </Button>
         </div>
       </header>
+
+      {materials ? (
+        <ReviewMaterialsPanel
+          context={materials}
+          turns={conversation?.turns ?? []}
+          refreshing={refreshing}
+          onLocateSourceRef={onLocateSourceRef}
+        />
+      ) : null}
 
       {confirmationReceipt ? (
         <div className="continuous-review-receipt" role="status">
@@ -522,10 +579,10 @@ export default function ContinuousReviewPanel({
       {active ? (
         <div className="continuous-review-composer">
           <label htmlFor="continuous-review-message">
-            {awaitingCurrentCandidate ? '下一轮指示' : '工程师补充'}
+            {hasActiveExecution ? '下一轮指示' : '工程师补充'}
             <span>
-              {awaitingCurrentCandidate
-                ? '当前回合尚未读回候选；此处只准备下一轮输入，不代表正在执行'
+              {hasActiveExecution
+                ? '已有回合仍在执行；补充将保存为下一轮输入，不会中断或改变当前执行'
                 : '将作为候选输入保存，提交成功不代表已被结论采纳'}
             </span>
           </label>
@@ -545,7 +602,7 @@ export default function ContinuousReviewPanel({
             <div className="continuous-review-generation" role="status">
               <RefreshCw aria-hidden="true" />
               <div>
-                <strong>正在保存输入并请求候选</strong>
+                <strong>正在保存补充输入</strong>
                 <span title={activeRequestId}>
                   requestId {shortRequestId(activeRequestId)}
                   ；此阶段不会采纳输入，也不会修改 WorkItem current、revision 或
@@ -605,7 +662,7 @@ export default function ContinuousReviewPanel({
               )}
               {busyAction === 'append'
                 ? '正在提交…'
-                : awaitingCurrentCandidate
+                : hasActiveExecution
                   ? '提交下一轮指示'
                   : '提交补充'}
             </Button>
