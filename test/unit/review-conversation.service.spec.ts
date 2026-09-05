@@ -214,6 +214,8 @@ describe('ReviewConversationService session and ACL boundary', () => {
       conversation,
       requestId: 'request-1',
       userMessage: 'Engineer supplied context',
+      selectedEvaluationItemId: null,
+      executionRequested: false,
       currentRevision: 7,
       attachmentBindings: [],
     });
@@ -234,6 +236,44 @@ describe('ReviewConversationService session and ACL boundary', () => {
     });
     expect(JSON.stringify(result)).not.toContain('openClawSessionKey');
   });
+
+  it.each([false, true])(
+    'persists and returns the turn focus (replayed=%s)',
+    async (replayed) => {
+      const setup = makeService();
+      const selectedTurn = { ...turn, selectedEvaluationItemId: 'GOV-008' };
+      setup.conversations.loadById
+        .mockResolvedValueOnce({
+          conversation,
+          turns: replayed ? [selectedTurn] : [],
+        })
+        .mockResolvedValueOnce({ conversation, turns: [selectedTurn] });
+      setup.conversations.appendTextTurn.mockResolvedValue({
+        turn: selectedTurn,
+        replayed,
+      });
+
+      const result = await setup.service.appendTextTurn(
+        'WI-1',
+        'RC-1',
+        {
+          requestId: 'request-1',
+          userMessage: turn.userMessage,
+          selectedEvaluationItemId: 'GOV-008',
+        },
+        {} as never,
+      );
+
+      expect(setup.conversations.appendTextTurn).toHaveBeenCalledWith(
+        expect.objectContaining({ selectedEvaluationItemId: 'GOV-008' }),
+      );
+      expect(result.turn.selectedEvaluationItemId).toBe('GOV-008');
+      expect(result.conversation.turns[0].selectedEvaluationItemId).toBe(
+        'GOV-008',
+      );
+      expect(result.replayed).toBe(replayed);
+    },
+  );
 
   it('authorizes, ingests and publicly redacts an official-selection attachment', async () => {
     const setup = makeService();
@@ -459,16 +499,19 @@ function makeService() {
     close: jest.fn(),
   };
   const attachments = { ingest: jest.fn() };
+  const dispatch = { executionProjection: jest.fn().mockResolvedValue(null) };
   return {
     service: new ReviewConversationService(
       sessions as never,
       objectAccess as never,
       conversations as never,
       attachments as never,
+      dispatch as never,
     ),
     sessions,
     objectAccess,
     conversations,
     attachments,
+    dispatch,
   };
 }

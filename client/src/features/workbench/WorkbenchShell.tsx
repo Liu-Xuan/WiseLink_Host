@@ -82,12 +82,12 @@ export interface WorkbenchShellProps {
 const NAV_MIN = 232;
 const NAV_MAX = 440;
 const NAV_DEFAULT = 304;
-/** Spec R01 §4.2：右侧证据栏 280–360px */
+/** UI-N02：1440 工作台右侧协作/证据区推荐 326px。 */
 const EVIDENCE_MIN = 280;
-const EVIDENCE_MAX = 360;
-const EVIDENCE_DEFAULT = 320;
+const EVIDENCE_MAX = 380;
+const EVIDENCE_DEFAULT = 326;
 /** Spec R01 §4.2：仅保存布局偏好，不保存 WorkItem/current（禁止平行真源） */
-const LAYOUT_PREFS_KEY = 'wiselink.layout.workbench';
+const LAYOUT_PREFS_KEY = 'wiselink.layout.workbench.satin.v1';
 
 interface WorkbenchLayoutPrefs {
   treeWidth: number;
@@ -108,7 +108,7 @@ function clampNumber(
 }
 
 function defaultEvidenceOpen(): boolean {
-  return typeof window === 'undefined' || window.innerWidth > 1360;
+  return typeof window === 'undefined' || window.innerWidth >= 1280;
 }
 
 function defaultCompactViewport(): boolean {
@@ -139,7 +139,7 @@ function readLayoutPrefs(): Partial<WorkbenchLayoutPrefs> {
           ? record.evidenceOpen
           : defaultEvidenceOpen(),
       navCollapsed:
-        typeof record.navCollapsed === 'boolean' ? record.navCollapsed : false,
+        typeof record.navCollapsed === 'boolean' ? record.navCollapsed : true,
     };
   } catch {
     return {};
@@ -180,7 +180,7 @@ export default function WorkbenchShell({
     initialPrefs.treeWidth ?? NAV_DEFAULT,
   );
   const [navCollapsed, setNavCollapsed] = useState(
-    initialPrefs.navCollapsed ?? false,
+    initialPrefs.navCollapsed ?? true,
   );
   const [evidenceOpen, setEvidenceOpen] = useState(
     initialPrefs.evidenceOpen ?? defaultEvidenceOpen(),
@@ -210,7 +210,7 @@ export default function WorkbenchShell({
   const evidenceDrawerRef = useRef<HTMLElement>(null);
   const drawerOriginRef = useRef<HTMLElement | null>(null);
   const focusRestoreRef = useRef({
-    navCollapsed: initialPrefs.navCollapsed ?? false,
+    navCollapsed: initialPrefs.navCollapsed ?? true,
     evidenceOpen: initialPrefs.evidenceOpen ?? defaultEvidenceOpen(),
     immersive: false,
   });
@@ -656,7 +656,7 @@ export default function WorkbenchShell({
     <div
       ref={shellRef}
       className={`wl-workbench-shell${immersive ? ' is-immersive' : ''}${focusMode ? ' is-focus-mode' : ''}${isCompact ? ' is-compact' : ''}`}
-      data-wl-material="g3"
+      data-wl-material="g1"
       onPointerMove={(event) => {
         onDragMove(event);
         evidenceDragMove(event);

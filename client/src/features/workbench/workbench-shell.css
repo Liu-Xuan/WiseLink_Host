@@ -550,6 +550,91 @@ html[data-wl-visual-mode='ultra'] .wl-workbench-mobilebar {
     saturate(var(--wl-saturation-mobile)) brightness(1.04);
 }
 
+/* UI-N02 · 框架磨砂 / 正文实纸 / 侧区凹槽 */
+.wl-workbench-shell {
+  border-color: var(--wl-material-edge);
+  border-radius: 22px 22px 0 0;
+  background: var(--wl-frame);
+  box-shadow:
+    inset 0 1px 0 var(--wl-material-edge),
+    0 18px 44px var(--wl-g1-space-shadow);
+}
+
+.wl-workbench-toolbar {
+  min-height: 46px;
+  padding-inline: 10px;
+  border-bottom-color: var(--wl-border);
+  background: transparent;
+}
+
+.wl-workbench-tool-btn:hover,
+.wl-workbench-tab:hover,
+.wl-workbench-tab.is-active,
+.wl-workbench-focus-trigger[aria-pressed='true'] {
+  color: var(--wl-ink);
+  border-color: var(--wl-border-strong);
+  background: var(--wl-selected);
+}
+
+.wl-workbench-body {
+  gap: 10px;
+  padding: 10px;
+  background: transparent;
+}
+
+.wl-workbench-main {
+  border: 1px solid var(--wl-border);
+  border-radius: 18px;
+  background: var(--wl-sheet);
+  box-shadow: var(--wl-sheet-shadow);
+}
+
+.wl-workbench-nav,
+.wl-workbench-evidence {
+  border: 1px solid var(--wl-well-edge);
+  border-radius: 18px;
+  background: var(--wl-well);
+  box-shadow: inset 0 10px 22px rgb(0 0 0 / 4%);
+}
+
+.wl-workbench-divider--v {
+  width: 2px;
+  margin-inline: -6px;
+}
+
+.wl-workbench-divider--v::after {
+  left: 0;
+  width: 1px;
+}
+
+.wl-workbench-body.is-evidence-overlay > .wl-workbench-evidence {
+  max-width: min(380px, calc(100% - 16px));
+  background: var(--wl-well);
+  box-shadow: -12px 0 34px rgb(0 0 0 / 24%);
+}
+
+.wl-workbench-mobile-tab.is-active {
+  color: var(--wl-ink);
+  background: var(--wl-selected);
+}
+
+@media (max-width: 720px) {
+  .wl-workbench-body {
+    padding: 0;
+  }
+
+  .wl-workbench-main {
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .wl-workbench-nav,
+  .wl-workbench-evidence {
+    background: var(--wl-well);
+  }
+}
+
 html[data-wl-visual-mode='compatible'] .wl-workbench-mobilebar {
   background: var(--wl-reduced-g1);
   -webkit-backdrop-filter: none;

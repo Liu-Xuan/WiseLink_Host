@@ -129,7 +129,7 @@ function errorLabel(error: unknown): string {
     error instanceof Error &&
     /NOT_FOUND|无权|FORBIDDEN|403|404/iu.test(error.message)
   ) {
-    return '无法找到该事项，或当前账户没有查看权限。';
+    return '无法找到该工程评估，或当前账户没有查看权限。';
   }
   return '当前连接无法读取资料，请稍后重试。';
 }
@@ -155,7 +155,7 @@ function candidateStepCopy(
   if (/document|version|source|bind|文件|版本|来源|绑定/u.test(source)) {
     return {
       label: '绑定当前受控文件',
-      summary: '当前文件版本已关联到这次工程事项。',
+      summary: '当前文件版本已关联到这次工程评估。',
     };
   }
   if (/parse|package|unit|解析|结构/u.test(source)) {
@@ -322,7 +322,7 @@ export default function WorkspaceHomePage() {
   }, [currentObject, publishCurrentObject]);
   const phaseLabel = projection
     ? PHASE_LABELS[projection.phase]
-    : '尚未选择工程事项';
+    : '尚未选择工程评估';
   const tone = projection ? phaseTone(projection.phase) : 'muted';
   const parseAction = availableParseAction(
     visibleDevelopmentIntakeAvailable,
@@ -481,7 +481,7 @@ export default function WorkspaceHomePage() {
         `/work-items/${encodeURIComponent(expected.workItemId)}/documents?node=document&tab=source`,
       );
     } catch {
-      setRetryError('重新解析未完成；原文件与事项已保留，请稍后再试。');
+      setRetryError('重新解析未完成；原文件与工程评估已保留，请稍后再试。');
     } finally {
       setRetrying(false);
     }
@@ -496,11 +496,11 @@ export default function WorkspaceHomePage() {
           </p>
           <h1>资料库</h1>
           <p className="library-home-lede">
-            在同一页面浏览文档族与工程事项，并同步查看当前工程快览。
+            在同一页面浏览文档族与工程评估，并同步查看当前工程快览。
           </p>
         </div>
         <div className="library-home-status" aria-label="当前资料库视图">
-          <span>{treeMode === 'document' ? '文档族' : '工程事项'}</span>
+          <span>{treeMode === 'document' ? '文档族' : '工程评估'}</span>
           <strong>{visibleRecentWorkItems.length} 项最近资料</strong>
         </div>
       </header>
@@ -510,7 +510,7 @@ export default function WorkspaceHomePage() {
           <span>
             <Search aria-hidden="true" /> 打开或受理资料
           </span>
-          <small>粘贴已有链接，或选择 PDF 创建工程事项</small>
+          <small>粘贴已有链接，或选择 PDF 创建工程评估</small>
         </summary>
         <div
           className={`library-entry-grid${visibleDevelopmentIntakeAvailable ? ' has-intake' : ''}`}
@@ -520,7 +520,7 @@ export default function WorkspaceHomePage() {
             aria-labelledby="library-query-title"
           >
             <div>
-              <span className="library-section-label">已有工程事项</span>
+              <span className="library-section-label">已有工程评估</span>
               <h2 id="library-query-title">打开已有资料</h2>
               <p className="library-query-note">
                 粘贴 WiseLink 工作链接，只按当前用户权限读取，不会改变现有结果。
@@ -567,7 +567,7 @@ export default function WorkspaceHomePage() {
         <div className="library-alert" role="alert">
           <CircleAlert aria-hidden="true" />
           <div>
-            <strong>当前事项无法读取</strong>
+            <strong>当前工程评估无法读取</strong>
             <span>{error}</span>
           </div>
           <Button type="button" variant="outline" onClick={refresh}>
@@ -596,11 +596,11 @@ export default function WorkspaceHomePage() {
                   <div
                     className="library-recent-list"
                     role="tree"
-                    aria-label="最近访问的受控事项"
+                    aria-label="最近访问的受控工程评估"
                   >
                     <div className="library-recent-heading">
                       <FileClock aria-hidden="true" />
-                      <span>最近访问的受控事项</span>
+                      <span>最近访问的受控工程评估</span>
                     </div>
                     {visibleRecentFamilies.map((group) => (
                       <section
@@ -665,7 +665,7 @@ export default function WorkspaceHomePage() {
                     <strong>尚无最近资料</strong>
                     <p>
                       {visibleDevelopmentIntakeAvailable
-                        ? '粘贴已有工作链接，或在上方上传 PDF 创建工程事项；打开过的资料会按当前用户显示在这里。'
+                        ? '粘贴已有工作链接，或在上方上传 PDF 创建工程评估；打开过的资料会按当前用户显示在这里。'
                         : '粘贴团队共享的工作链接打开资料；最近访问只用于当前用户的导航。'}
                     </p>
                   </div>
@@ -745,7 +745,7 @@ export default function WorkspaceHomePage() {
                     <h3>
                       {projection.package?.documentIdentity?.documentCode ??
                         projection.package?.title ??
-                        '当前工程事项'}
+                        '当前工程评估'}
                     </h3>
                     <p>
                       {projection.classification.normalizedFamily} ·

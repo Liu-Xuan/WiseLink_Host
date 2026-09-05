@@ -79,6 +79,35 @@ describe('continuous review client state', () => {
     );
   });
 
+  it('forwards the Host-validated selected Criterion into the review turn request', async () => {
+    const [pageSource, panelSource] = await Promise.all([
+      readFile(
+        resolve(
+          __dirname,
+          '../../client/src/pages/DocumentParsingPage/DocumentParsingPage.tsx',
+        ),
+        'utf8',
+      ),
+      readFile(
+        resolve(
+          __dirname,
+          '../../client/src/features/review/ContinuousReviewPanel.tsx',
+        ),
+        'utf8',
+      ),
+    ]);
+
+    expect(pageSource).toContain(
+      'selectedEvaluationItemId={selectedReviewCriterion || null}',
+    );
+    expect(panelSource).toMatch(
+      /selectedEvaluationItemId:\s*string\s*\|\s*null;/u,
+    );
+    expect(panelSource).toMatch(
+      /requestId,\s*userMessage,\s*selectedEvaluationItemId,/u,
+    );
+  });
+
   it('separates the newest Host turn from ordered history', () => {
     const groups = reviewTurnGroups([turn(3), turn(1), turn(2)]);
 
@@ -86,11 +115,11 @@ describe('continuous review client state', () => {
     expect(groups.history.map((item) => item.turnNo)).toEqual([1, 2]);
   });
 
-  it('auto-refreshes only a recent pending Host turn', () => {
+  it('does not infer running state or polling from a missing candidate and a timer', () => {
     const pending = turn(1);
     const createdAt = new Date(pending.createdAt).getTime();
 
-    expect(shouldAutoRefreshReviewTurn(pending, createdAt + 30_000)).toBe(true);
+    expect(shouldAutoRefreshReviewTurn(pending, createdAt + 30_000)).toBe(false);
     expect(shouldAutoRefreshReviewTurn(pending, createdAt + 6 * 60_000)).toBe(
       false,
     );

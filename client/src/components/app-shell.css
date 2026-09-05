@@ -400,6 +400,47 @@ select:focus-visible {
   outline-offset: 2px;
 }
 
+/* UI-N02 · 中性 Satin 应用框架 */
+.wiselink-app-chrome {
+  margin-left: 104px;
+  border: 1px solid var(--wl-material-edge);
+  background: var(--wl-frame);
+  box-shadow:
+    inset 0 1px 0 var(--wl-material-edge),
+    0 16px 38px var(--wl-g1-space-shadow);
+}
+
+.wiselink-app-mark {
+  color: var(--primary-foreground);
+  background: var(--wl-accent);
+  box-shadow: 0 9px 24px var(--wl-g1-contact-shadow);
+}
+
+.wiselink-object-kind,
+.wiselink-object-kind.is-matter {
+  color: var(--wl-ink);
+  border-color: var(--wl-border-strong);
+  background: var(--wl-selected);
+}
+
+.wiselink-header-icon-action:hover,
+.wiselink-header-icon-action:focus-visible,
+.wiselink-account-menu-trigger:hover,
+.wiselink-account-menu-trigger[data-state='open'],
+.wiselink-account-state.is-action:hover {
+  color: var(--wl-ink);
+  border-color: var(--wl-border-strong);
+  background: var(--wl-selected);
+}
+
+.wiselink-app-body {
+  padding-left: 104px;
+}
+
+html[data-wl-theme='dark'] .wiselink-app-chrome {
+  border-color: var(--wl-border);
+}
+
 @media (max-width: 920px) {
   .wiselink-app-shell.is-workbench-route .wl-dock {
     display: none;

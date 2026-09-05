@@ -45,7 +45,7 @@ export default function FloatingDock() {
     },
     {
       key: 'tasks',
-      label: '任务',
+      label: '事项',
       icon: ClipboardList,
       to: '/library?mode=matter',
       active: libraryMatterActive,

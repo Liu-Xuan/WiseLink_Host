@@ -1,0 +1,47 @@
+/* UI-N02 · Silver / Carbon. One neutral lighting direction, four material roles. */
+:root {
+  color-scheme: light;
+  --canvas:#dcdcdc; --shell:#ededed; --surface:#ffffff; --subtle:#f5f5f5; --raised:#fafafa;
+  --selected:#e9e9e9; --text:#242424; --secondary:#626262; --muted:#707070;
+  --line:rgba(0,0,0,.09); --line-strong:#888888;
+  --glass:rgba(244,244,244,.74); --glass-edge:rgba(255,255,255,.85);
+  --shadow:0 2px 5px rgb(0 0 0 / 7%),0 20px 52px rgb(0 0 0 / 13%);
+  --contact:0 1px 3px rgb(0 0 0 / 10%);
+  --primary:#303030; --primary-text:#ffffff;
+  --warning:#855513; --warning-bg:#f7f0e5; --error:#9b3740; --error-bg:#faedef;
+  --success:#326c50; --success-bg:#edf4ef; --focus:#353535;
+  --blur:24px; --edge-alpha:.4; --sidebar:216px; --header:64px; --reader-font:16px;
+  --r-shell:26px; --r-control:10px;
+  --font:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Noto Sans CJK SC","Microsoft YaHei",sans-serif;
+  --scene:linear-gradient(130deg,#f4f4f4 0%,#d8d8d8 55%,#bebebe 100%);
+  --frame:rgba(243,243,243,.87); --frame-line:rgba(255,255,255,.78);
+  --chrome-film:linear-gradient(160deg,rgba(255,255,255,.55),rgba(255,255,255,.06) 60%);
+  --satin-film:linear-gradient(180deg,rgba(255,255,255,.45),rgba(255,255,255,0) 100%);
+  --well:rgba(222,222,222,.6); --sheet-edge:rgba(0,0,0,.075);
+  --sheet-shadow:0 1px 2px rgb(0 0 0 / 4%),0 10px 24px rgb(0 0 0 / 6%);
+  --float-shadow:inset 0 1px 0 rgba(255,255,255,.85),0 2px 4px rgb(0 0 0 / 5%),0 12px 26px rgb(0 0 0 / 8%);
+  --frame-shadow:inset 0 1px 0 rgba(255,255,255,.92),inset 0 -1px 0 rgba(0,0,0,.08),0 1px 2px rgb(0 0 0 / 8%),0 24px 64px rgb(0 0 0 / 17%);
+  --inner-highlight:rgba(255,255,255,.84);
+}
+:root[data-theme=dark] {
+  color-scheme:dark;
+  --canvas:#101010; --shell:#191919; --surface:#252525; --subtle:#2c2c2c; --raised:#313131;
+  --selected:#393939; --text:#ececec; --secondary:#b8b8b8; --muted:#a4a4a4;
+  --line:rgba(255,255,255,.105); --line-strong:#929292;
+  --glass:rgba(35,35,35,.76); --glass-edge:rgba(255,255,255,.15);
+  --shadow:0 2px 5px rgb(0 0 0 / 30%),0 20px 52px rgb(0 0 0 / 40%);
+  --contact:0 1px 3px rgb(0 0 0 / 28%);
+  --primary:#e8e8e8; --primary-text:#232323; --warning:#dab47b; --warning-bg:#352d23;
+  --error:#e2a2a8; --error-bg:#36272a; --success:#a1c7af; --success-bg:#26332b; --focus:#ededed;
+  --scene:linear-gradient(130deg,#393939 0%,#181818 52%,#0c0c0c 100%);
+  --frame:rgba(26,26,26,.86); --frame-line:rgba(255,255,255,.12);
+  --chrome-film:linear-gradient(160deg,rgba(255,255,255,.075),rgba(255,255,255,0) 66%);
+  --satin-film:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,0));
+  --well:rgba(15,15,15,.53); --sheet-edge:rgba(255,255,255,.065);
+  --sheet-shadow:0 1px 2px rgb(0 0 0 / 25%),0 10px 24px rgb(0 0 0 / 19%);
+  --float-shadow:inset 0 1px 0 rgba(255,255,255,.12),0 2px 4px rgb(0 0 0 / 20%),0 12px 26px rgb(0 0 0 / 21%);
+  --frame-shadow:inset 0 1px 0 rgba(255,255,255,.18),inset 0 -1px 0 rgba(0,0,0,.7),0 2px 6px rgb(0 0 0 / 32%),0 24px 64px rgb(0 0 0 / 46%);
+  --inner-highlight:rgba(255,255,255,.10);
+}
+:root[data-effects=ultra] {--blur:30px;--edge-alpha:.6;--shadow:0 3px 6px rgb(0 0 0 / 7%),0 24px 64px rgb(0 0 0 / 16%);--sheet-shadow:0 2px 4px rgb(0 0 0 / 5%),0 14px 32px rgb(0 0 0 / 9%)}
+:root[data-theme=dark][data-effects=ultra] {--shadow:0 3px 6px rgb(0 0 0 / 28%),0 24px 64px rgb(0 0 0 / 44%);--sheet-shadow:0 2px 5px rgb(0 0 0 / 24%),0 14px 32px rgb(0 0 0 / 28%)}

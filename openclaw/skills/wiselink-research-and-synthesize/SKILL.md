@@ -12,9 +12,9 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（当前配置端点为 `miaoda/miaoda-model-auto`；下游具体模型不暴露，Skill 不绑定具体模型）
-- Skill：`wiselink-research-and-synthesize@r09.c18`
+- Skill：`wiselink-research-and-synthesize@r09.c19`
 - Skill compatibility：`wiselink-research-and-synthesize@r09`（Host 最低接受 `r09.c10`）
-- Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（exact 20 tools）
+- Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（既有 20 项能力；兼容新增的只读自动领取查询）
 - Host baseline：`6fd2655d27edc3851c745547efaf8796ad22c82c`
 
 app/profile/Skill/MCP 是执行合同，不是允许模型自报的标签。具体模型由官方托管 profile/config 选择；驱动从唯一
@@ -41,8 +41,8 @@ Task/Result/MCP 语义的 prompt 时可 Skill-only 发布新 c 修订；改变 s
 - TaskEnvelope 中的 `actorContextRef` 是 Host 控制面引用，不发送给模型，也不视为凭据或 ACL 替代品。
 - 不使用本地 OpenClaw/Docker、OpenAI/Codex OAuth、外部 provider、通用 shell、自造 HTTP、普通 app
   OpenAPI 伪造 invoke 或旧 0.11 runtime。
-- 本目录脚本是无凭据的编排/validator 模块，不连接 Host、不调用模型、不安装 Skill。历史 ZIP 安装器和
-  `archive/internal-lab/phase13-ab.mjs` 均不在本版本运行资产中。
+- 本目录不内嵌凭据。validator 只处理本地数据；Hosted driver／消费者从既有官方配置读取连接信息并调用
+  已授权 Host 与官方 Gateway，不安装 Skill。历史 ZIP 安装器和 `archive/internal-lab/phase13-ab.mjs` 均不在本版本运行资产中。
 - 官方 Hosted Agent 的真实路径是按本文件调用 MCP。Translation 的 sealed ResultEnvelope 必须先落到本轮本地
   `commit-payload.json`，再由本 Skill 的 `commitTranslationPayloadFile` 按原始字节分块读取并调用 MCP；不得让模型
   手工复刻完整 JSON。除这个无凭据的 bundled helper 外，不依赖通用 shell、自造 HTTP 或本地 decoder。
@@ -243,6 +243,16 @@ get_parse_status
 
 ## Mode 2：INTERACTIVE_REVIEW
 
+### 页面自动执行（c19）
+
+页面以 `executionMode=AUTOMATIC` 保存新 Turn 后，官方 Hosted OpenClaw 原生 command cron 可执行
+`scripts/consume-hosted-review-turn.mjs`。消费者只读 `get_pending_review_turn` 返回的下一轮，继而复用现有
+driver；没有待办或已有运行中的租约时不调用模型。历史普通保存、已完成的 Turn 不自动重放。
+这里的工作判断／讨论保存不是正式采用，消费者不确认 ReviewAction。部署与已知范围见
+[Hosted 自动领取](references/hosted-review-consumer.md)。
+
+以下五工具约束针对模型外的单轮 driver；自动领取查询和失败后停止 attempt 属于消费者控制面，均不交给模型。
+
 当前精确 C3 复核合同仍只使用以下五个工具：
 
 ```text
@@ -361,7 +371,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - `modelVersion` 是响应中可读实际模型，或响应未提供时由无 fallback 的唯一 configured provider/model endpoint 解析出的可证明执行标识；不得把它扩张解释为未暴露的下游具体模型，也不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c18`
+- `skillVersion=wiselink-research-and-synthesize@r09.c19`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致

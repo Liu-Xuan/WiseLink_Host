@@ -96,13 +96,12 @@ export function reviewTurnGroups(
 }
 
 export function shouldAutoRefreshReviewTurn(
-  turn: ReviewTurnReadModel,
-  now = Date.now(),
+  _turn: ReviewTurnReadModel,
+  _now = Date.now(),
 ): boolean {
-  if (turn.assistantCandidate) return false;
-  const createdAt = new Date(turn.createdAt).getTime();
-  const age = now - createdAt;
-  return Number.isFinite(createdAt) && age >= 0 && age <= 5 * 60_000;
+  /* ReviewTurn 目前没有 Host-owned executionState。缺少候选只表示“尚未读回”，
+   * 不能凭 createdAt + 五分钟窗口伪装成正在运行。待 Host 提供真实状态后再轮询。 */
+  return false;
 }
 
 export function reviewSourceRefLabel(sourceRef: string, index: number): string {

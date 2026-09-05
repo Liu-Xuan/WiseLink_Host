@@ -1,66 +1,80 @@
 /* ============================================================
- * WiseLink 3.1 · Apple Glass Design Tokens (R05.1)
- * Light/Dark 分别调校；G1/G2 才采样背景，G3/G4 保持稳定阅读面。
+ * WiseLink 3.1 · Silver / Carbon Satin Tokens (UI-N02)
+ * 框架只使用中性磨砂；语义色只表达真实状态。G3/G4 保持稳定阅读面。
  * ============================================================ */
 
 :root {
   /* 基础色 */
-  --wl-bg: #f4f7fc;
-  --wl-bg-2: #eaf0f9;
-  --wl-ink: #172033;
-  --wl-muted: #647086;
-  --wl-faint: #8c97aa;
+  --wl-bg: #dedede;
+  --wl-bg-2: #cecece;
+  --wl-ink: #242424;
+  --wl-muted: #666666;
+  --wl-faint: #8a8a8a;
 
   /* G0：三组低饱和定向环境光 */
-  --wl-ambient-cold: rgb(69 137 255 / 28%);
-  --wl-ambient-warm: rgb(244 177 104 / 22%);
-  --wl-ambient-reflect: rgb(112 90 255 / 17%);
-  --wl-ambient-cyan: rgb(44 201 225 / 12%);
+  --wl-ambient-cold: rgb(255 255 255 / 26%);
+  --wl-ambient-warm: rgb(255 255 255 / 16%);
+  --wl-ambient-reflect: rgb(0 0 0 / 5%);
+  --wl-ambient-cyan: rgb(255 255 255 / 10%);
 
   /* 线条 */
-  --wl-border: rgba(30, 55, 92, 0.1);
-  --wl-border-strong: rgba(30, 55, 92, 0.16);
+  --wl-border: rgb(0 0 0 / 10%);
+  --wl-border-strong: rgb(0 0 0 / 17%);
 
   /* 五级材质（G0–G4） */
-  --wl-glass-nav: rgb(250 252 255 / 58%);
-  --wl-glass-panel: rgb(249 252 255 / 74%);
-  --wl-glass-content: rgb(252 253 255 / 91%);
-  --wl-glass-soft: rgb(247 250 255 / 72%);
-  --wl-surface-solid: #fbfcfe;
+  --wl-glass-nav: rgb(244 244 244 / 72%);
+  --wl-glass-panel: rgb(234 234 234 / 82%);
+  --wl-glass-content: #ffffff;
+  --wl-glass-soft: #f1f1f1;
+  --wl-surface-solid: #ffffff;
+
+  /* UI-N02 四种工作材料 */
+  --wl-scene: #dedede;
+  --wl-frame: rgb(239 239 239 / 78%);
+  --wl-frame-solid: #ededed;
+  --wl-sheet: #ffffff;
+  --wl-sheet-muted: #f7f7f7;
+  --wl-well: #e5e5e5;
+  --wl-floating: #ffffff;
+  --wl-selected: #e8e8e8;
+  --wl-material-edge: rgb(255 255 255 / 82%);
+  --wl-well-edge: rgb(0 0 0 / 8%);
+  --wl-sheet-shadow: 0 18px 46px rgb(0 0 0 / 12%);
+  --wl-float-shadow: 0 16px 34px rgb(0 0 0 / 16%);
 
   /* G1：透明 tint + 方向性镜面边缘 + 悬浮阴影 */
-  --wl-g1-tint: rgb(250 252 255 / 58%);
-  --wl-g1-tint-strong: rgb(255 255 255 / 68%);
-  --wl-g1-highlight: rgb(255 255 255 / 90%);
-  --wl-g1-cold-rim: rgb(88 157 255 / 62%);
-  --wl-g1-warm-rim: rgb(255 191 119 / 48%);
-  --wl-g1-thickness: rgb(66 110 174 / 16%);
-  --wl-g1-shadow: rgb(30 59 105 / 16%);
-  --wl-g1-contact-shadow: rgb(30 59 105 / 12%);
-  --wl-g1-space-shadow: rgb(30 59 105 / 17%);
+  --wl-g1-tint: rgb(239 239 239 / 72%);
+  --wl-g1-tint-strong: rgb(250 250 250 / 80%);
+  --wl-g1-highlight: rgb(255 255 255 / 92%);
+  --wl-g1-cold-rim: rgb(255 255 255 / 62%);
+  --wl-g1-warm-rim: rgb(255 255 255 / 44%);
+  --wl-g1-thickness: rgb(0 0 0 / 14%);
+  --wl-g1-shadow: rgb(0 0 0 / 16%);
+  --wl-g1-contact-shadow: rgb(0 0 0 / 12%);
+  --wl-g1-space-shadow: rgb(0 0 0 / 18%);
 
   /* G2：比 G1 更稳、更远；内部子面不再 backdrop blur */
-  --wl-g2-tint: rgb(249 252 255 / 74%);
-  --wl-g2-tint-strong: rgb(255 255 255 / 80%);
-  --wl-g2-highlight: rgb(255 255 255 / 62%);
-  --wl-g2-cold-rim: rgb(93 151 232 / 34%);
-  --wl-g2-warm-rim: rgb(240 177 111 / 24%);
-  --wl-g2-shadow: rgb(42 67 108 / 11%);
-  --wl-g2-contact-shadow: rgb(42 67 108 / 8%);
-  --wl-g2-space-shadow: rgb(42 67 108 / 12%);
+  --wl-g2-tint: rgb(232 232 232 / 86%);
+  --wl-g2-tint-strong: rgb(245 245 245 / 88%);
+  --wl-g2-highlight: rgb(255 255 255 / 68%);
+  --wl-g2-cold-rim: rgb(255 255 255 / 42%);
+  --wl-g2-warm-rim: rgb(255 255 255 / 28%);
+  --wl-g2-shadow: rgb(0 0 0 / 11%);
+  --wl-g2-contact-shadow: rgb(0 0 0 / 8%);
+  --wl-g2-space-shadow: rgb(0 0 0 / 13%);
 
   /* G3/G4：不采样背景 */
   --wl-g3-highlight: rgb(255 255 255 / 68%);
-  --wl-g3-shadow: rgb(35 61 101 / 10%);
+  --wl-g3-shadow: rgb(0 0 0 / 10%);
   --wl-g4-highlight: rgb(255 255 255 / 82%);
-  --wl-g4-shadow: rgb(29 51 83 / 7%);
-  --wl-reduced-g1: rgb(248 250 254 / 97%);
-  --wl-reduced-g2: rgb(248 250 254 / 95%);
+  --wl-g4-shadow: rgb(0 0 0 / 8%);
+  --wl-reduced-g1: #ededed;
+  --wl-reduced-g2: #e8e8e8;
 
   /* 语义色（§5.2 颜色权威规则） */
-  --wl-accent: #1677ff;
-  --wl-accent-soft: rgba(22, 119, 255, 0.1);
-  --wl-accent-2: #6e7cff;
+  --wl-accent: #242424;
+  --wl-accent-soft: rgb(36 36 36 / 8%);
+  --wl-accent-2: #555555;
   --wl-green: #25b86b;
   --wl-green-soft: rgba(37, 184, 107, 0.11);
   --wl-amber: #f2a23a;
@@ -69,21 +83,21 @@
   --wl-amber-ink: #a3620f;
   --wl-red: #e85a62;
   --wl-red-soft: rgba(232, 90, 98, 0.12);
-  --wl-purple: #8b6cff;
+  --wl-purple: #555555;
 
   /* 阴影 */
   --wl-shadow-1: 0 14px 34px var(--wl-g3-shadow);
-  --wl-shadow-2: 0 28px 76px rgb(30 58 101 / 17%);
+  --wl-shadow-2: 0 28px 76px rgb(0 0 0 / 18%);
   --wl-shadow-focus:
-    0 0 0 1px rgb(83 145 255 / 28%), 0 22px 58px rgb(48 111 255 / 17%);
+    0 0 0 1px rgb(0 0 0 / 24%), 0 22px 58px rgb(0 0 0 / 16%);
 
   /* 模糊 */
   --wl-blur-nav: 28px;
   --wl-blur-panel: 20px;
   --wl-blur-mobile: 24px;
-  --wl-saturation-nav: 158%;
-  --wl-saturation-panel: 134%;
-  --wl-saturation-mobile: 152%;
+  --wl-saturation-nav: 100%;
+  --wl-saturation-panel: 100%;
+  --wl-saturation-mobile: 100%;
 
   /* 圆角 */
   --wl-radius-shell: 30px;
@@ -145,53 +159,69 @@
 }
 
 html[data-wl-theme='dark'] {
-  --wl-bg: #08101b;
-  --wl-bg-2: #111c2c;
-  --wl-ink: #f2f6ff;
-  --wl-muted: #b2bfd4;
-  --wl-faint: #8997ae;
+  --wl-bg: #101010;
+  --wl-bg-2: #171717;
+  --wl-ink: #ececec;
+  --wl-muted: #aeaeae;
+  --wl-faint: #858585;
 
-  --wl-ambient-cold: rgb(50 111 221 / 24%);
-  --wl-ambient-warm: rgb(214 137 76 / 14%);
-  --wl-ambient-reflect: rgb(111 82 230 / 20%);
-  --wl-ambient-cyan: rgb(35 160 190 / 12%);
+  --wl-ambient-cold: rgb(255 255 255 / 5%);
+  --wl-ambient-warm: rgb(255 255 255 / 3%);
+  --wl-ambient-reflect: rgb(0 0 0 / 22%);
+  --wl-ambient-cyan: rgb(255 255 255 / 3%);
 
   --wl-border: rgba(255, 255, 255, 0.09);
   --wl-border-strong: rgba(255, 255, 255, 0.15);
 
-  --wl-glass-nav: rgb(17 27 43 / 62%);
-  --wl-glass-panel: rgb(20 31 48 / 74%);
-  --wl-glass-content: rgb(17 27 42 / 92%);
-  --wl-glass-soft: rgb(24 36 54 / 78%);
-  --wl-surface-solid: #0d1521;
+  --wl-glass-nav: rgb(29 29 29 / 78%);
+  --wl-glass-panel: rgb(34 34 34 / 86%);
+  --wl-glass-content: #252525;
+  --wl-glass-soft: #303030;
+  --wl-surface-solid: #282828;
 
-  --wl-g1-tint: rgb(17 27 43 / 62%);
-  --wl-g1-tint-strong: rgb(29 42 62 / 68%);
-  --wl-g1-highlight: rgb(224 239 255 / 32%);
-  --wl-g1-cold-rim: rgb(75 145 255 / 48%);
-  --wl-g1-warm-rim: rgb(236 163 98 / 31%);
+  --wl-scene: #101010;
+  --wl-frame: rgb(28 28 28 / 82%);
+  --wl-frame-solid: #1b1b1b;
+  --wl-sheet: #252525;
+  --wl-sheet-muted: #2b2b2b;
+  --wl-well: #191919;
+  --wl-floating: #303030;
+  --wl-selected: #393939;
+  --wl-material-edge: rgb(255 255 255 / 13%);
+  --wl-well-edge: rgb(255 255 255 / 7%);
+  --wl-sheet-shadow: 0 20px 48px rgb(0 0 0 / 38%);
+  --wl-float-shadow: 0 18px 38px rgb(0 0 0 / 48%);
+
+  --wl-g1-tint: rgb(27 27 27 / 78%);
+  --wl-g1-tint-strong: rgb(38 38 38 / 80%);
+  --wl-g1-highlight: rgb(255 255 255 / 18%);
+  --wl-g1-cold-rim: rgb(255 255 255 / 14%);
+  --wl-g1-warm-rim: rgb(255 255 255 / 9%);
   --wl-g1-thickness: rgb(0 0 0 / 42%);
   --wl-g1-shadow: rgb(0 0 0 / 42%);
   --wl-g1-contact-shadow: rgb(0 0 0 / 30%);
   --wl-g1-space-shadow: rgb(0 0 0 / 44%);
 
-  --wl-g2-tint: rgb(20 31 48 / 74%);
-  --wl-g2-tint-strong: rgb(28 42 61 / 78%);
-  --wl-g2-highlight: rgb(214 232 255 / 22%);
-  --wl-g2-cold-rim: rgb(76 139 232 / 31%);
-  --wl-g2-warm-rim: rgb(221 151 91 / 19%);
+  --wl-g2-tint: rgb(32 32 32 / 88%);
+  --wl-g2-tint-strong: rgb(42 42 42 / 90%);
+  --wl-g2-highlight: rgb(255 255 255 / 12%);
+  --wl-g2-cold-rim: rgb(255 255 255 / 10%);
+  --wl-g2-warm-rim: rgb(255 255 255 / 7%);
   --wl-g2-shadow: rgb(0 0 0 / 30%);
   --wl-g2-contact-shadow: rgb(0 0 0 / 20%);
   --wl-g2-space-shadow: rgb(0 0 0 / 32%);
 
-  --wl-g3-highlight: rgb(220 236 255 / 12%);
+  --wl-g3-highlight: rgb(255 255 255 / 9%);
   --wl-g3-shadow: rgb(0 0 0 / 28%);
-  --wl-g4-highlight: rgb(220 236 255 / 10%);
+  --wl-g4-highlight: rgb(255 255 255 / 8%);
   --wl-g4-shadow: rgb(0 0 0 / 22%);
-  --wl-reduced-g1: rgb(15 24 38 / 98%);
-  --wl-reduced-g2: rgb(17 27 42 / 97%);
+  --wl-reduced-g1: #1b1b1b;
+  --wl-reduced-g2: #222222;
 
-  --wl-accent-soft: rgba(64, 132, 255, 0.16);
+  --wl-accent: #eeeeee;
+  --wl-accent-soft: rgb(255 255 255 / 10%);
+  --wl-accent-2: #bdbdbd;
+  --wl-purple: #bdbdbd;
   --wl-green-soft: rgba(46, 196, 110, 0.14);
   --wl-amber-soft: rgba(240, 166, 60, 0.16);
   --wl-amber-ink: #f2a23a;
@@ -206,18 +236,18 @@ html[data-wl-visual-mode='ultra'] {
   --wl-blur-nav: 32px;
   --wl-blur-panel: 21px;
   --wl-blur-mobile: 28px;
-  --wl-saturation-nav: 168%;
-  --wl-saturation-panel: 138%;
-  --wl-saturation-mobile: 162%;
-  --wl-g1-tint: rgb(250 252 255 / 54%);
-  --wl-g1-tint-strong: rgb(255 255 255 / 70%);
+  --wl-saturation-nav: 100%;
+  --wl-saturation-panel: 100%;
+  --wl-saturation-mobile: 100%;
+  --wl-g1-tint: rgb(239 239 239 / 70%);
+  --wl-g1-tint-strong: rgb(255 255 255 / 82%);
   --wl-g1-highlight: rgb(255 255 255 / 96%);
-  --wl-g1-cold-rim: rgb(70 146 255 / 72%);
-  --wl-g1-warm-rim: rgb(255 181 102 / 57%);
-  --wl-g1-thickness: rgb(53 98 168 / 22%);
-  --wl-g1-contact-shadow: rgb(35 71 126 / 15%);
-  --wl-g1-space-shadow: rgb(31 68 125 / 22%);
-  --wl-g2-tint: rgb(249 252 255 / 78%);
+  --wl-g1-cold-rim: rgb(255 255 255 / 76%);
+  --wl-g1-warm-rim: rgb(255 255 255 / 54%);
+  --wl-g1-thickness: rgb(0 0 0 / 18%);
+  --wl-g1-contact-shadow: rgb(0 0 0 / 15%);
+  --wl-g1-space-shadow: rgb(0 0 0 / 22%);
+  --wl-g2-tint: rgb(235 235 235 / 86%);
   --wl-g2-tint-strong: rgb(255 255 255 / 84%);
   --wl-g2-highlight: rgb(255 255 255 / 70%);
   --wl-g2-contact-shadow: rgb(42 67 108 / 8%);
@@ -225,17 +255,17 @@ html[data-wl-visual-mode='ultra'] {
 }
 
 html[data-wl-theme='dark'][data-wl-visual-mode='ultra'] {
-  --wl-g1-tint: rgb(14 24 40 / 58%);
-  --wl-g1-tint-strong: rgb(35 49 70 / 69%);
-  --wl-g1-highlight: rgb(232 244 255 / 40%);
-  --wl-g1-cold-rim: rgb(65 143 255 / 62%);
-  --wl-g1-warm-rim: rgb(242 158 89 / 40%);
+  --wl-g1-tint: rgb(24 24 24 / 80%);
+  --wl-g1-tint-strong: rgb(40 40 40 / 84%);
+  --wl-g1-highlight: rgb(255 255 255 / 22%);
+  --wl-g1-cold-rim: rgb(255 255 255 / 17%);
+  --wl-g1-warm-rim: rgb(255 255 255 / 11%);
   --wl-g1-thickness: rgb(0 0 0 / 54%);
   --wl-g1-contact-shadow: rgb(0 0 0 / 38%);
   --wl-g1-space-shadow: rgb(0 0 0 / 54%);
-  --wl-g2-tint: rgb(18 29 46 / 77%);
-  --wl-g2-tint-strong: rgb(31 45 65 / 82%);
-  --wl-g2-highlight: rgb(220 237 255 / 26%);
+  --wl-g2-tint: rgb(30 30 30 / 89%);
+  --wl-g2-tint-strong: rgb(44 44 44 / 92%);
+  --wl-g2-highlight: rgb(255 255 255 / 14%);
   --wl-g2-contact-shadow: rgb(0 0 0 / 24%);
   --wl-g2-space-shadow: rgb(0 0 0 / 36%);
 }

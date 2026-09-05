@@ -11,6 +11,7 @@ import type {
   ReviewTurnReadModel,
 } from '@shared/api.interface';
 import { SessionResolver } from '../identity/session-resolver.service';
+import { ReviewAttemptDispatchService } from '../action-attempt/review-attempt-dispatch.service';
 import type { ResolvedSession } from '../identity/session-resolver.service';
 import {
   CANONICAL_OBJECT_ACCESS,
@@ -34,6 +35,7 @@ export class ReviewConversationService {
     private readonly objectAccess: CanonicalObjectAccessPort,
     private readonly conversations: ReviewConversationRepository,
     private readonly attachments: ReviewAttachmentService,
+    private readonly dispatch: ReviewAttemptDispatchService,
   ) {}
 
   async createOrResume(
@@ -52,7 +54,7 @@ export class ReviewConversationService {
       currentRevision: authorized.grant.workItemRevision,
     });
     return {
-      conversation: reviewConversationReadModel(
+      conversation: await this.projectConversation(
         result.aggregate,
         authorized.grant.workItemRevision,
       ),
@@ -77,7 +79,7 @@ export class ReviewConversationService {
       });
     return {
       conversation: aggregate
-        ? reviewConversationReadModel(
+        ? await this.projectConversation(
             aggregate,
             authorized.grant.workItemRevision,
           )
@@ -114,6 +116,8 @@ export class ReviewConversationService {
         conversation: existing.conversation,
         requestId: input.requestId,
         userMessage: input.userMessage,
+        selectedEvaluationItemId: input.selectedEvaluationItemId ?? null,
+        executionRequested: input.executionMode === 'AUTOMATIC',
         attachmentBindings: replay.attachmentBindings,
       });
     }
@@ -154,6 +158,8 @@ export class ReviewConversationService {
       conversation: existing.conversation,
       requestId: input.requestId,
       userMessage: input.userMessage,
+      selectedEvaluationItemId: input.selectedEvaluationItemId ?? null,
+      executionRequested: input.executionMode === 'AUTOMATIC',
       attachmentBindings,
     });
   }
@@ -163,23 +169,28 @@ export class ReviewConversationService {
     conversation: PersistedReviewConversation;
     requestId: string;
     userMessage: string;
+    selectedEvaluationItemId: string | null;
+    executionRequested: boolean;
     attachmentBindings: ReviewAttachmentBinding[];
   }): Promise<AppendReviewTextTurnResponse> {
     const appended = await this.conversations.appendTextTurn({
       conversation: input.conversation,
       requestId: input.requestId,
       userMessage: input.userMessage,
+      selectedEvaluationItemId: input.selectedEvaluationItemId,
+      executionRequested: input.executionRequested,
       currentRevision: input.authorized.grant.workItemRevision,
       attachmentBindings: input.attachmentBindings,
     });
     const aggregate: PersistedReviewConversationAggregate =
       await this.requiredConversation(input.conversation.reviewConversationId);
+    const conversation = await this.projectConversation(
+      aggregate,
+      input.authorized.grant.workItemRevision,
+    );
     return {
-      conversation: reviewConversationReadModel(
-        aggregate,
-        input.authorized.grant.workItemRevision,
-      ),
-      turn: reviewTurnReadModel(appended.turn),
+      conversation,
+      turn: conversation.turns.find((turn) => turn.reviewTurnId === appended.turn.reviewTurnId)!,
       replayed: appended.replayed,
     };
   }
@@ -202,7 +213,7 @@ export class ReviewConversationService {
       currentRevision: authorized.grant.workItemRevision,
     });
     return {
-      conversation: reviewConversationReadModel(
+      conversation: await this.projectConversation(
         closed.aggregate,
         authorized.grant.workItemRevision,
       ),
@@ -217,6 +228,28 @@ export class ReviewConversationService {
       await this.conversations.loadById(reviewConversationId);
     if (!aggregate) throw reviewNotFound();
     return aggregate;
+  }
+
+  private async projectConversation(
+    aggregate: PersistedReviewConversationAggregate,
+    currentRevision: number,
+  ): Promise<ReviewConversationReadModel> {
+    const model = reviewConversationReadModel(aggregate, currentRevision);
+    const conversation = aggregate.conversation;
+    model.turns = await Promise.all(aggregate.turns.map(async (turn) => ({
+      ...reviewTurnReadModel(turn),
+      execution: await this.dispatch.executionProjection({
+        tenantId: conversation.tenantId,
+        actorId: conversation.actorId,
+        workItemId: conversation.workItemId,
+        reviewConversationId: conversation.reviewConversationId,
+        reviewTurnId: turn.reviewTurnId,
+        inputRevision: turn.inputRevision,
+        executionRequested: turn.executionRequested,
+        createdAt: turn.createdAt,
+      }),
+    })));
+    return model;
   }
 
   private async authorize(
@@ -341,6 +374,7 @@ export function reviewTurnReadModel(
     requestId: turn.requestId,
     inputRevision: turn.inputRevision,
     userMessage: turn.userMessage,
+    selectedEvaluationItemId: turn.selectedEvaluationItemId ?? null,
     engineerSuppliedInput: {
       engineerSuppliedInputId: turn.engineerSuppliedInputId,
       inputType: 'ENGINEER_TEXT',

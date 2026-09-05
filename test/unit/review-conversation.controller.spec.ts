@@ -22,6 +22,14 @@ jest.mock('@lark-apaas/fullstack-nestjs-core', () => {
 import { ReviewConversationController } from '../../server/modules/review-persistence/review-conversation.controller';
 
 describe('ReviewConversationController request boundary', () => {
+  it('accepts automatic execution as an explicit append option', async () => {
+    const setup = makeController();
+    await setup.controller.appendTextTurn('WI-1', 'RC-1', {
+      requestId: 'request-auto', userMessage: 'Continue this discussion', executionMode: 'AUTOMATIC',
+    }, {} as never);
+    expect(setup.service.appendTextTurn).toHaveBeenCalledWith('WI-1', 'RC-1', expect.objectContaining({ executionMode: 'AUTOMATIC' }), expect.anything());
+  });
+
   it('passes normalized WorkItem routes for create and current', async () => {
     const setup = makeController();
     setup.service.createOrResume.mockResolvedValue({ ok: true });
@@ -56,7 +64,7 @@ describe('ReviewConversationController request boundary', () => {
     expect(setup.service.createOrResume).not.toHaveBeenCalled();
   });
 
-  it('accepts only requestId and text for append', async () => {
+  it('keeps text-only append requests compatible', async () => {
     const setup = makeController();
     setup.service.appendTextTurn.mockResolvedValue({ ok: true });
     await setup.controller.appendTextTurn(
@@ -73,6 +81,33 @@ describe('ReviewConversationController request boundary', () => {
     );
   });
 
+  it.each(['GOV-008', null])(
+    'passes the selected evaluation item %s',
+    async (selectedEvaluationItemId) => {
+      const setup = makeController();
+      await setup.controller.appendTextTurn(
+        'WI-1',
+        'RC-1',
+        {
+          requestId: 'request-focus-1',
+          userMessage: 'Explain this point',
+          selectedEvaluationItemId,
+        },
+        {} as never,
+      );
+      expect(setup.service.appendTextTurn).toHaveBeenCalledWith(
+        'WI-1',
+        'RC-1',
+        {
+          requestId: 'request-focus-1',
+          userMessage: 'Explain this point',
+          selectedEvaluationItemId,
+        },
+        expect.anything(),
+      );
+    },
+  );
+
   it('accepts an exact official FileService selection without client authority fields', async () => {
     const setup = makeController();
     setup.service.appendTextTurn.mockResolvedValue({ ok: true });
@@ -82,6 +117,7 @@ describe('ReviewConversationController request boundary', () => {
       {
         requestId: 'request-attachment-1',
         userMessage: 'Use the attached engineering note',
+        selectedEvaluationItemId: 'GOV-008',
         attachmentSelection: {
           bucketId: 'default-bucket',
           filePath: 'official-selection/engineering-note.pdf',
@@ -95,6 +131,7 @@ describe('ReviewConversationController request boundary', () => {
       {
         requestId: 'request-attachment-1',
         userMessage: 'Use the attached engineering note',
+        selectedEvaluationItemId: 'GOV-008',
         attachmentSelection: {
           bucketId: 'default-bucket',
           filePath: 'official-selection/engineering-note.pdf',

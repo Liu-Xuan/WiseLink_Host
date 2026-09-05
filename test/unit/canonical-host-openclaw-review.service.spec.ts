@@ -25,6 +25,20 @@ import { CanonicalHostOpenClawReviewService } from '../../server/modules/canonic
 import { encodeReviewAttachmentParsedArtifact } from '../../server/modules/review-persistence/review-attachment-artifact';
 
 describe('CanonicalHostOpenClawReviewService', () => {
+  it('only returns the next authorized persisted automatic request without invoking the model', async () => {
+    const harness = reviewHarness();
+    harness.conversations.loadPendingOpenClawTurn.mockResolvedValue({
+      reviewConversationId: 'RC-1', reviewTurnId: 'RT-2', requestId: 'request-2', turnNo: 2, inputRevision: 7,
+    });
+    await expect(harness.service.pending('WI-1')).resolves.toEqual({
+      next: { reviewConversationRef: 'RC-1', reviewTurnRef: 'RT-2', requestId: 'request-2', turnNo: 2 }, busy: false,
+    });
+    expect(harness.conversations.loadPendingOpenClawTurn).toHaveBeenCalledWith({ tenantId: 'tenant-1', actorId: 'actor-1', workItemId: 'WI-1' });
+    expect(harness.attempts.reserveAndClaim).not.toHaveBeenCalled();
+    harness.dispatch.isBusy.mockResolvedValue(true);
+    await expect(harness.service.pending('WI-1')).resolves.toEqual({ next: null, busy: true });
+  });
+
   it('derives the user/work item/revision from C1 persistence and freezes exact SourceRefs', async () => {
     const harness = reviewHarness();
     const begin = await harness.service.begin('RC-1', 'request-1');
@@ -95,6 +109,27 @@ describe('CanonicalHostOpenClawReviewService', () => {
     expect(harness.workItems.loadTenantScopedProjection).toHaveBeenCalledTimes(
       2,
     );
+  });
+
+  it('passes the persisted focus to the Agent task and context tool', async () => {
+    const harness = reviewHarness(false, false, false, 'RULE-1');
+    const begin = await harness.service.begin('RC-1', 'request-1');
+
+    expect(begin.task.modelInput.selectedEvaluationItemId).toBe('RULE-1');
+    await expect(harness.service.context('AQ-REVIEW-1')).resolves.toMatchObject(
+      {
+        selectedEvaluationItemId: 'RULE-1',
+      },
+    );
+  });
+
+  it('does not run against a focus absent from the current assessment', async () => {
+    const harness = reviewHarness(false, false, false, 'RULE-OTHER');
+    await expect(
+      harness.service.begin('RC-1', 'request-1'),
+    ).rejects.toMatchObject({
+      code: 'REVIEW_SELECTED_EVALUATION_ITEM_NOT_FOUND',
+    });
   });
 
   it('expands stored source-evidence candidate IDs to exact package SourceRefs', async () => {
@@ -548,6 +583,7 @@ function reviewHarness(
   withAttachment = false,
   withRelatedContext = false,
   withRelatedApplicability = false,
+  selectedEvaluationItemId: string | null = null,
 ) {
   const workItem = parsedWorkItem();
   const relatedWorkItem: CanonicalWorkItemProjection = {
@@ -605,6 +641,7 @@ function reviewHarness(
     requestId: 'request-1',
     inputRevision: 7,
     userMessage: 'Please review rule 1.',
+    selectedEvaluationItemId,
     inputType: 'ENGINEER_TEXT',
     adoptionStatus: 'CANDIDATE_UNADOPTED',
     candidateText: 'Please review rule 1.',
@@ -634,6 +671,7 @@ function reviewHarness(
   let task: OpenClawTaskEnvelope | null = null;
   let row: ActionAttemptRow | null = null;
   const conversations = {
+    loadPendingOpenClawTurn: jest.fn().mockResolvedValue(null),
     loadById: jest.fn(async () => ({ conversation, turns: [turn] })),
     loadTurnById: jest.fn(async () => turn),
     hasActiveOfficialActorMapping: jest.fn(async () => true),
@@ -899,6 +937,11 @@ function reviewHarness(
       attemptRef: 'AQ-REVIEW-1',
     })),
   };
+  const dispatch = {
+    isBusy: jest.fn().mockResolvedValue(false),
+    readExecution: jest.fn().mockResolvedValue(null),
+    prepareAndClaim: jest.fn(),
+  };
   const service = new CanonicalHostOpenClawReviewService(
     conversations as never,
     workItems as never,
@@ -907,11 +950,13 @@ function reviewHarness(
     attempts as never,
     artifactStore as never,
     serviceScope as never,
+    dispatch as never,
     reader as never,
     documentManagement as never,
   );
   return {
     service,
+    dispatch,
     attempts,
     conversations,
     workItems,

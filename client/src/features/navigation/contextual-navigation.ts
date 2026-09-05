@@ -88,26 +88,27 @@ export function buildCurrentObjectContext(
         ? `${documentCode} 工程评估`
         : '当前受控资料';
   const baseRules = page.workItem.integratedAssessment?.baseRules;
-  const reviewCount: number = page.engineerReviewContext?.items.length ?? 0;
 
   return {
     kind,
     routeWorkItemId: page.workItem.workItemId,
-    displayCode: kind === 'DOCUMENT' ? documentCode : `${documentCode} 事项`,
+    /* Host 尚未返回独立 matterCode；此处只展示真实文档身份，不拼造事项编号。 */
+    displayCode: documentCode,
     title,
     meta: `${view.documentVersion} · ${view.aircraftFamily}`,
     parentLabel:
       kind === 'DOCUMENT'
-        ? '关联事项 · 当前工程事项'
-        : `当前来源 · ${documentCode}`,
+        ? '关联评估 · 当前工程评估'
+        : `主要来源 · ${documentCode}`,
     statusLabel: `${AUTHORITY_LABELS[view.authority]} · ${
       FRESHNESS_LABELS[view.freshness]
     }`,
     routes: workItemRoutes(page.workItem.workItemId),
     badges: {
-      process: baseRules?.unresolvedCount,
-      jobAid: baseRules ? `${baseRules.evaluationItemCount} 项` : undefined,
-      review: reviewCount || undefined,
+      /* 普通统计不进入 rail；这里只呈现工程师可行动的完成度。 */
+      jobAid: baseRules
+        ? `${baseRules.evaluationItemCount}/${baseRules.criterionCount}`
+        : undefined,
     },
   };
 }

@@ -301,6 +301,7 @@ export function StructuredContentBrowser({
                     ? ' is-selected'
                     : ''
                 }`}
+                data-display-kind={unit.displayKind}
                 id={`structured-unit-${unit.ordinal}`}
                 key={unit.ordinal}
               >
@@ -378,7 +379,7 @@ export function StructuredContentBrowser({
               已浏览到结构化内容末尾，共{' '}
               {page.totalDisplayUnitCount.toLocaleString('zh-CN')} 个浏览项。
               {page.omittedUnitCount > 0
-                ? ` 另有 ${page.omittedUnitCount.toLocaleString('zh-CN')} 项窗口元数据未作为正文卡片显示。`
+                ? ` 另有 ${page.omittedUnitCount.toLocaleString('zh-CN')} 项窗口元数据未进入连续正文。`
                 : ''}
             </p>
           )}

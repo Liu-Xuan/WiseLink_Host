@@ -84,6 +84,19 @@
   --spacing: 0.25rem;
 }
 
+html[data-wl-theme='dark'] {
+  --primary-foreground: #111111;
+  --info-foreground: #111111;
+  --sidebar: #1b1b1b;
+  --sidebar-foreground: #ececec;
+  --sidebar-primary: #eeeeee;
+  --sidebar-primary-foreground: #111111;
+  --sidebar-accent: #303030;
+  --sidebar-accent-foreground: #ececec;
+  --sidebar-border: #383838;
+  --sidebar-ring: #eeeeee;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

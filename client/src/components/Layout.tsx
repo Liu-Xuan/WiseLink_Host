@@ -80,11 +80,19 @@ function LayoutChrome() {
             <div className="wiselink-object-context-sub">
               {currentObject ? (
                 <>
-                  <span>{currentObject.parentLabel}</span>
-                  <i aria-hidden="true" />
+                  {currentObject.parentLabel ? (
+                    <>
+                      <span>{currentObject.parentLabel}</span>
+                      <i aria-hidden="true" />
+                    </>
+                  ) : null}
                   <span>{currentObject.meta}</span>
-                  <i aria-hidden="true" />
-                  <span>{currentObject.statusLabel}</span>
+                  {currentObject.statusLabel ? (
+                    <>
+                      <i aria-hidden="true" />
+                      <span>{currentObject.statusLabel}</span>
+                    </>
+                  ) : null}
                 </>
               ) : (
                 <span>受控资料、工程事项与候选结果按当前权限显示</span>
@@ -120,7 +128,7 @@ function derivePageLabel(pathname: string): string {
   if (/\/work-items\/[^/]+\/documents(?:\/|$)/u.test(pathname)) {
     return '工程分析工作台';
   }
-  if (pathname.startsWith('/work-items/')) return '工程事项';
+  if (pathname.startsWith('/work-items/')) return '工程评估';
   if (pathname === '/external-discovery') return '补充资料';
   if (pathname === '/runtime-probe') return '连接状态';
   return 'WiseLink';

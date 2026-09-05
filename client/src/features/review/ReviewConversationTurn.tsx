@@ -41,7 +41,7 @@ export default function ReviewConversationTurn(
   return (
     <article
       className={`continuous-review-turn${props.isCurrent ? ' is-current' : ' is-history'}`}
-      data-generation-state={candidate ? 'candidate-ready' : 'pending'}
+      data-generation-state={candidate ? 'candidate-ready' : 'not-read-back'}
     >
       <div className="continuous-review-input">
         <header>
@@ -272,10 +272,10 @@ export default function ReviewConversationTurn(
         <div className="continuous-review-pending" role="status">
           <RefreshCw aria-hidden="true" />
           <div>
-            <strong>候选生成中</strong>
+            <strong>候选尚未读回</strong>
             <span>
-              工程师输入已经记录；候选尚未形成，WorkItem current、revision 与
-              STALE 状态均未因此改变。
+              工程师输入已经记录；Host 尚未返回可核验的执行状态或候选结果。
+              WorkItem current、revision 与 STALE 状态均未因此改变。
             </span>
           </div>
         </div>

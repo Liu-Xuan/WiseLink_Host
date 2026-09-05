@@ -50,6 +50,7 @@ type ReviewActionReceipt = ConfirmReviewActionDraftResponse['reviewAction'];
 interface ContinuousReviewPanelProps {
   workItemId: string;
   workItemRevision: number;
+  selectedEvaluationItemId: string | null;
   confirmationReceipt: ReviewActionReceipt | null;
   onConfirmationReceipt: (receipt: ReviewActionReceipt) => void;
   onLocateSourceRef: (sourceRef: string) => void;
@@ -59,6 +60,7 @@ interface ContinuousReviewPanelProps {
 export default function ContinuousReviewPanel({
   workItemId,
   workItemRevision,
+  selectedEvaluationItemId,
   confirmationReceipt,
   onConfirmationReceipt,
   onLocateSourceRef,
@@ -89,6 +91,9 @@ export default function ContinuousReviewPanel({
   const presentation = continuousReviewPresentation(conversation);
   const turns = reviewTurnGroups(conversation?.turns ?? []);
   const currentTurn = turns.current;
+  const awaitingCurrentCandidate = Boolean(
+    currentTurn && currentTurn.assistantCandidate === null,
+  );
 
   const clearError = useCallback((): void => {
     errorEpochRef.current += 1;
@@ -268,6 +273,7 @@ export default function ContinuousReviewPanel({
         {
           requestId,
           userMessage,
+          selectedEvaluationItemId,
           ...(selection ? { attachmentSelection: selection } : {}),
         },
       );
@@ -516,8 +522,12 @@ export default function ContinuousReviewPanel({
       {active ? (
         <div className="continuous-review-composer">
           <label htmlFor="continuous-review-message">
-            工程师补充
-            <span>将作为候选输入保存，提交成功不代表已被结论采纳</span>
+            {awaitingCurrentCandidate ? '下一轮指示' : '工程师补充'}
+            <span>
+              {awaitingCurrentCandidate
+                ? '当前回合尚未读回候选；此处只准备下一轮输入，不代表正在执行'
+                : '将作为候选输入保存，提交成功不代表已被结论采纳'}
+            </span>
           </label>
           <Textarea
             id="continuous-review-message"
@@ -593,7 +603,11 @@ export default function ContinuousReviewPanel({
               ) : (
                 <Send aria-hidden="true" />
               )}
-              {busyAction === 'append' ? '正在提交…' : '提交补充'}
+              {busyAction === 'append'
+                ? '正在提交…'
+                : awaitingCurrentCandidate
+                  ? '提交下一轮指示'
+                  : '提交补充'}
             </Button>
           </div>
           <div className="continuous-review-compose-footer">
