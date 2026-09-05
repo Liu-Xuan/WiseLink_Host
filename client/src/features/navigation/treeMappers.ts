@@ -42,7 +42,7 @@ export interface NavigationNodeView {
 
 /** 后端技术名词 → 用户语言（Spec R01 §2.3） */
 const KIND_LABELS: Record<CanonicalLibraryIndexNodeKind, string> = {
-  WORK_ITEM: '工程事项',
+  WORK_ITEM: '工程评估',
   DOCUMENT: '受控文件',
   DOCUMENT_VERSION: '当前文件版本',
   PARSED_PACKAGE: '解析结果',
@@ -95,7 +95,7 @@ function humanLabel(node: CanonicalLibraryIndexNode): string {
     return KIND_LABELS[node.kind] || '动态综合评估';
   }
   if (label && /document\s*version/i.test(label)) return '当前文件版本';
-  if (label && /work\s*item/i.test(label)) return '当前工程事项';
+  if (label && /work\s*item/i.test(label)) return '当前工程评估';
   return label || KIND_LABELS[node.kind] || '资料节点';
 }
 
@@ -194,7 +194,7 @@ export function buildMatterTree(
     id: wi.id,
     kind: 'matter' as const,
     label: humanLabel(wi),
-    subtitle: humanDetail(wi.detail) || '工程事项',
+    subtitle: humanDetail(wi.detail) || '工程评估',
     badge: humanState(wi.state),
     badgeTone: stateTone(wi.state),
     targetNode: wi.targetNode,
@@ -207,8 +207,8 @@ export function buildMatterTree(
     ({
       id: 'matter-root',
       kind: 'matter' as const,
-      label: '当前工程事项',
-      subtitle: '当前事项资料',
+      label: '当前工程评估',
+      subtitle: '当前评估资料',
       selectable: true,
       children: [],
     } satisfies NavigationNodeView);

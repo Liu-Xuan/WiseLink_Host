@@ -667,3 +667,75 @@
     border-color: CanvasText;
   }
 }
+
+/* UI-N02 · 协作区是凹槽，输入框是唯一悬浮材料。 */
+.continuous-review {
+  border-color: var(--wl-well-edge);
+  background: var(--wl-well);
+  box-shadow:
+    inset 0 12px 26px rgb(0 0 0 / 5%),
+    inset 0 1px 0 color-mix(in srgb, var(--wl-material-edge) 50%, transparent);
+}
+
+.continuous-review-header > div:first-child > span,
+.continuous-review-sync span,
+.continuous-review-draft span {
+  color: var(--wl-muted);
+}
+
+.continuous-review-state.is-active,
+.continuous-review-sync.is-refreshing,
+.continuous-review-turn.is-current,
+.continuous-review-candidate > header > span {
+  color: var(--wl-ink) !important;
+  border-color: var(--wl-border-strong);
+  background: var(--wl-selected);
+}
+
+.continuous-review-turn {
+  border-color: var(--wl-border);
+  background: var(--wl-sheet);
+  box-shadow: 0 8px 22px var(--wl-g4-shadow);
+}
+
+.continuous-review-input {
+  background: var(--wl-sheet-muted);
+}
+
+.continuous-review-candidate,
+.continuous-review-pending {
+  background: var(--wl-sheet);
+}
+
+.continuous-review-composer {
+  position: sticky;
+  bottom: 10px;
+  z-index: 4;
+  border-color: var(--wl-border-strong);
+  background: var(--wl-floating);
+  box-shadow: var(--wl-float-shadow);
+}
+
+.continuous-review-composer textarea,
+.continuous-review-drop {
+  background: var(--wl-sheet-muted);
+  box-shadow: inset 0 1px 2px rgb(0 0 0 / 5%);
+}
+
+.continuous-review-generation {
+  color: var(--wl-muted);
+  border-color: var(--wl-border-strong);
+  background: var(--wl-selected);
+}
+
+@media (max-width: 760px) {
+  .continuous-review {
+    border-inline: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .continuous-review-composer {
+    bottom: calc(var(--wl-mobile-navigation-block) + 8px);
+  }
+}

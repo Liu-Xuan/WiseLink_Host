@@ -115,11 +115,11 @@ describe('continuous review client state', () => {
     expect(groups.history.map((item) => item.turnNo)).toEqual([1, 2]);
   });
 
-  it('auto-refreshes only a recent pending Host turn', () => {
+  it('does not infer running state or polling from a missing candidate and a timer', () => {
     const pending = turn(1);
     const createdAt = new Date(pending.createdAt).getTime();
 
-    expect(shouldAutoRefreshReviewTurn(pending, createdAt + 30_000)).toBe(true);
+    expect(shouldAutoRefreshReviewTurn(pending, createdAt + 30_000)).toBe(false);
     expect(shouldAutoRefreshReviewTurn(pending, createdAt + 6 * 60_000)).toBe(
       false,
     );
