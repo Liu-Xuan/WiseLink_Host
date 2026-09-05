@@ -50,18 +50,18 @@ Goal 当前为 ACTIVE，尚未完成。保存、安装、mock、自动领取或�
 
 用户要求作为当前 Goal 的体验要求纳入，不另设 Goal 或发布 gate。R10 §10.6 已明确：持久标识/版本与按需片段交接，前端首屏与重包处理分开，普通刷新不整页清空，身份/权限与实际版本仍从 Host 核实。目标为正常已登录网络下核心首屏 p50 ≤1 秒、p95 ≤2 秒、已加载事项切换 p95 ≤100 ms；当前未宣称达标。
 
-本批先消除 Host 重复整包读取、重复 U0 校验和 ledger/附件重复 I/O，并与前端主控并行修普通刷新和 Overall 重复回读。随后拆轻量首屏/讨论状态、正文与历史按需读取、面板保活；同时继续稳定会话与按问题取证。依据、实现与实测范围见 [交接与响应记录](WL31_R10_CONTEXT_HANDOFF_PERFORMANCE.md)。
+Host 重复整包读取、重复 U0 校验和 ledger/附件重复 I/O，以及前端普通刷新、Overall 重复回读和 handoff 反复解析，已随 `3903eb6c1` 发布。前端主控继续独立实施已访问面板保活 C；主控继续轻量首屏/讨论状态、正文与历史按需读取、稳定会话与按问题取证。依据、实现与实测范围见 [交接与响应记录](WL31_R10_CONTEXT_HANDOFF_PERFORMANCE.md)。
 
 - 主控：shared DTO、Host/Skill、共同上下文、兼容集成、技术发布、实际运行与云文档。
 - [WiseLink 前端与 v0.6 接续](codex://threads/01a06014-5282-7f90-91bf-12759224d211)：A、B、自动发送及焦点修复均已交付独立提交并集成。后续按真实 Host read model 继续页面体验，不导入 prototype.js 或虚构业务脚本，不单独重复发布。
 - 方法/解析：保持主文件结构、条件、例外；JobAid 正式来源据实际绑定派生。SOURCE_IDENTITY_MISMATCH 是固定占位，不应直接改成 MATCH。
 - 数据支线：真实 RAG 薄适配、构型事件源及原有采用后重算；不建立全量知识镜像、复杂图谱或新的通用发布平台来阻断当前运行。
 
-Host 与 Skill 可按兼容窗口分别发布；前后端仍是一个 Host App 发布单元。当前 Skill 官方安装为 r09.c20，最低兼容 r09.c10；本次先安装兼容新背景字段的 c20，再发布 Host。历史 Turn 13/14 保留真实 c16/c17 记录，不因技术升级重写旧候选来源。
+Host 与 Skill 可按兼容窗口分别发布；前后端仍是一个 Host App 发布单元。当前 Skill 官方安装为 r09.c20，最低兼容 r09.c10；此前先安装兼容共同背景字段的 c20，再发布 Host。本次性能优化是 Host-only，未重装 Skill。历史 Turn 13/14 保留真实 c16/c17 记录，不因技术升级重写旧候选来源。
 
 ## 当前已核实状态
 
-主分支 codex/wl31-r09-master-handoff-20260903；Host release 7681965597551529166 / d5ffbf4c9 已 finished，error_logs 为空，代码已同步 origin 与 github。共同背景 90b05aa8f 和只读修复 100709797 已发布，c20 安装轮次 7681964424842185987 completed，唯一同名/Ready/Visible，installed validation 103/103。真实页面已读回历史讨论和 FAILED；新测试文件在发布后仍可下载且内容一致，旧原文/新分析仍未恢复。R10 云文档及正文镜像已同步 revision 2140。无数据库迁移，未新建业务回合。
+主分支 codex/wl31-r09-master-handoff-20260903；Host release 7681981887993253150 / 3903eb6c1 已 finished，error_logs 为空，代码已同步 origin 与 github。本批包含 Host 读取优化及前端 A+B 刷新/读回复用；共同背景 90b05aa8f 和只读修复 100709797 继续在发布内。c20 安装轮次 7681964424842185987 completed，唯一同名/Ready/Visible，installed validation 103/103，本批未重装。发布后真实登录页重新载入仍能读取历史讨论、事项版本 11 和 Turn 17 FAILED；旧原文/新分析仍未恢复，正常 Reader 路径提速仍未在线验证。新测试文件三次成功读回属于 16:15/16:21/16:36 的既有证据，不冒充本次再测。R10 云文档及正文镜像已同步 revision 2144。无数据库迁移，未新建业务回合。
 
 样本 WI-2c1902db-c2cd-427d-b0d4-1f8f70fe6597，SB 777-34-0425，事项 revision 11；JobAid 150 项、124 项暂缺受控输入，Review ACTIVE。新增 Turn 15/16/17 尚未产生候选，历史 Turn 13/14 未采用。14:01 起原文存储读取异常，不能将之前的页面可用证据当成当前健康状态。
 
