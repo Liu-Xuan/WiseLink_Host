@@ -108,7 +108,7 @@ test('pins exact20 MCP 1.2, five review tools, and hosted provenance', () => {
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c18',
+    'wiselink-research-and-synthesize@r09.c19',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -2251,6 +2251,39 @@ test('reads both selected Criterion sources and the current attachment for candi
     staleChanged: false,
     reviewActionExecuted: false,
   });
+});
+
+test('reads more than 100 authorized sources in API-sized batches without truncation', async (t) => {
+  const checkpointDir = await mkdtemp(join(tmpdir(), 'wiselink-review-batches-'));
+  t.after(() => rm(checkpointDir, { recursive: true, force: true }));
+  const reviewTask = await readJson(REVIEW_TASK_FIXTURE_URL);
+  reviewTask.selectedEvaluationItemId = null;
+  const original = reviewTask.resourceRefs[0];
+  reviewTask.resourceRefs.push(...Array.from({ length: 101 }, (_, i) => ({
+    ...original, sourceRefId: `SOURCE-BATCH-${i}`, value: { sourceRefId: `SOURCE-BATCH-${i}`, kind: 'page', statement: 'Fixture source' },
+  })));
+  const task = makeTask('OPENCLAW_INTERACTIVE_REVIEW', reviewTask);
+  const reads = [];
+  const result = await runHostedReviewTurn({ reviewConversationRef: reviewTask.reviewConversationRef, requestId: reviewTask.requestId, checkpointDir }, {
+    callTool: async (name, args) => {
+      if (name === 'begin_review_turn') return runningBegin(task);
+      if (name === 'get_review_turn_context') return reviewContext(task, reviewTask);
+      if (name === 'read_source_refs') {
+        reads.push(args.sourceRefIds);
+        assert.ok(args.sourceRefIds.length <= 100);
+        return { schemaVersion: 'wiselink.3_1.review_source_refs.v1.c2', attemptRef: task.operationRef, sourceRefs: args.sourceRefIds.map(sourceRefId => ({ sourceRefId, kind: 'page', statement: 'Fixture source' })) };
+      }
+      if (name === 'commit_review_turn_candidate') return reviewCommit(task.operationRef);
+      throw new Error(`UNEXPECTED_TOOL:${name}`);
+    },
+    invokeModel: async (input) => {
+      assert.equal(input.sourceRefs.length, reviewTask.resourceRefs.length);
+      return { output: { responseType: 'ANSWER', answer: '依据所读材料形成候选。', sourceRefs: [original.sourceRefId], missingInputs: [], candidateEvidenceRefs: [], reviewActionDraft: null, affectedItemIds: [], warnings: [] }, provenance: provenance() };
+    },
+  });
+  assert.equal(result.ok, true);
+  assert.equal(reads.length, 2);
+  assert.deepEqual(reads.flat(), reviewTask.resourceRefs.map(({ sourceRefId }) => sourceRefId));
 });
 
 test('does not relabel a document SourceRef as new candidate evidence', async (t) => {

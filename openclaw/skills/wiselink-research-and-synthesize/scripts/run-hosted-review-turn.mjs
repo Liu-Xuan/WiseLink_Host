@@ -94,10 +94,11 @@ export async function runHostedReviewTurn(options, dependencies = {}) {
     }
     const count = (callCounts.get(name) ?? 0) + 1;
     callCounts.set(name, count);
-    if (count > 1) {
+    if (count > 1 && name !== 'read_source_refs') {
       throw new Error(`REVIEW_DRIVER_TOOL_REPLAY_FORBIDDEN:${name}`);
     }
-    const step = toolStep(name);
+    const step = name === 'read_source_refs' && count > 1
+      ? `sources-${count}` : toolStep(name);
     const value = await checkpoint.remoteStep({
       step,
       args,
@@ -116,10 +117,10 @@ export async function runHostedReviewTurn(options, dependencies = {}) {
     respond: async ({ input, readSourceRefs }) => {
       assertModelInputHasNoControlPlane(input, normalized, beginResult);
       const selectedSourceRefIds = selectSourceRefIds(input);
-      const sourceRefs =
-        selectedSourceRefIds.length === 0
-          ? []
-          : await readSourceRefs(selectedSourceRefIds);
+      const sourceRefs = [];
+      for (let offset = 0; offset < selectedSourceRefIds.length; offset += MAX_SOURCE_REFS) {
+        sourceRefs.push(...await readSourceRefs(selectedSourceRefIds.slice(offset, offset + MAX_SOURCE_REFS)));
+      }
       const generationInput = {
         schemaVersion: MODEL_INPUT_SCHEMA,
         mode: 'INTERACTIVE_REVIEW',
@@ -614,13 +615,17 @@ export async function createHostMcpConnection(options) {
   validateHostToolMetadata(tools);
   return {
     callTool: async (name, args) => callJsonTool(client, name, args),
+    hasTool: (name) => tools.tools.some((tool) => tool.name === name),
     close: async () => client.close(),
   };
 }
 
 function validateHostToolMetadata(value) {
   const tools = Array.isArray(value?.tools) ? value.tools : [];
-  const names = tools.map(({ name }) => name).sort();
+  // The pending-work query is an additive control-plane capability. It does
+  // not change the established C3 model/commit contract or the required tools.
+  const names = tools.map(({ name }) => name)
+    .filter((name) => name !== 'get_pending_review_turn').sort();
   const expected = [...HOST_MCP_TOOLS].sort();
   if (canonicalJson(names) !== canonicalJson(expected)) {
     throw new Error('REVIEW_HOST_MCP_EXACT20_MISMATCH');
@@ -781,9 +786,6 @@ function selectSourceRefIds(input) {
     ...attachments,
   ].filter((id) => available.has(id));
   const unique = [...new Set(ids)];
-  if (unique.length > MAX_SOURCE_REFS) {
-    throw new Error('REVIEW_SOURCE_REF_SELECTION_TOO_LARGE');
-  }
   return unique;
 }
 
@@ -1283,7 +1285,7 @@ async function loadMcpSdk() {
   throw new Error('REVIEW_MCP_SDK_NOT_FOUND');
 }
 
-async function resolveRuntimeConfig(argv, env) {
+export async function resolveRuntimeConfig(argv, env) {
   const explicitConfigPath =
     option(argv, '--openclaw-config') || env.OPENCLAW_CONFIG_PATH || '';
   const candidates = openClawConfigCandidates(argv, env);

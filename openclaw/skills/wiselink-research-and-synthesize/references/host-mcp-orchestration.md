@@ -6,6 +6,8 @@ Endpoint 仍是 Host 提供的 `POST /openapi/wiselink/openclaw-mcp`；Skill 不
 
 ## 20 个当前工具（MCP 1.2.0）
 
+以下是既有基础能力清单。c19 自动消费者另外识别兼容的只读 `get_pending_review_turn({workItemId})`；它不进入单轮模型工具集、不改变 C3 提交参数。部署顺序与范围见 [页面自动领取](hosted-review-consumer.md)。
+
 只读：
 
 1. `get_parse_status({workItemId})`
