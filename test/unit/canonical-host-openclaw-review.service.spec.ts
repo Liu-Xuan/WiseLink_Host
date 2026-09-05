@@ -213,7 +213,10 @@ describe('CanonicalHostOpenClawReviewService', () => {
     const persistedSnapshot = JSON.parse(new TextDecoder().decode(snapshotBytes));
     expect(persistedSnapshot).toMatchObject({
       snapshotRef: modelContext.relatedContext.snapshotRef,
+      workItemRef: 'WI-1',
+      inputRevision: 7,
     });
+    expect(modelContext.relatedContext.snapshotRef).not.toContain('WI-1');
     // Real Turn 15 stopped before model execution on this legacy alias.
     // Keep the public snapshot intact and preserve its source semantics.
     expect(persistedSnapshot.items[0].authority).toBeDefined();
