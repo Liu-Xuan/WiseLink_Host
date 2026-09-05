@@ -50,6 +50,7 @@ type ReviewActionReceipt = ConfirmReviewActionDraftResponse['reviewAction'];
 interface ContinuousReviewPanelProps {
   workItemId: string;
   workItemRevision: number;
+  selectedEvaluationItemId: string | null;
   confirmationReceipt: ReviewActionReceipt | null;
   onConfirmationReceipt: (receipt: ReviewActionReceipt) => void;
   onLocateSourceRef: (sourceRef: string) => void;
@@ -59,6 +60,7 @@ interface ContinuousReviewPanelProps {
 export default function ContinuousReviewPanel({
   workItemId,
   workItemRevision,
+  selectedEvaluationItemId,
   confirmationReceipt,
   onConfirmationReceipt,
   onLocateSourceRef,
@@ -268,6 +270,7 @@ export default function ContinuousReviewPanel({
         {
           requestId,
           userMessage,
+          selectedEvaluationItemId,
           ...(selection ? { attachmentSelection: selection } : {}),
         },
       );

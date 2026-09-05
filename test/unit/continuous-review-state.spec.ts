@@ -79,6 +79,35 @@ describe('continuous review client state', () => {
     );
   });
 
+  it('forwards the Host-validated selected Criterion into the review turn request', async () => {
+    const [pageSource, panelSource] = await Promise.all([
+      readFile(
+        resolve(
+          __dirname,
+          '../../client/src/pages/DocumentParsingPage/DocumentParsingPage.tsx',
+        ),
+        'utf8',
+      ),
+      readFile(
+        resolve(
+          __dirname,
+          '../../client/src/features/review/ContinuousReviewPanel.tsx',
+        ),
+        'utf8',
+      ),
+    ]);
+
+    expect(pageSource).toContain(
+      'selectedEvaluationItemId={selectedReviewCriterion || null}',
+    );
+    expect(panelSource).toMatch(
+      /selectedEvaluationItemId:\s*string\s*\|\s*null;/u,
+    );
+    expect(panelSource).toMatch(
+      /requestId,\s*userMessage,\s*selectedEvaluationItemId,/u,
+    );
+  });
+
   it('separates the newest Host turn from ordered history', () => {
     const groups = reviewTurnGroups([turn(3), turn(1), turn(2)]);
 
