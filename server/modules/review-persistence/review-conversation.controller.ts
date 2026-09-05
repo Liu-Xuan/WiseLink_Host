@@ -97,7 +97,12 @@ export class ReviewConversationController {
 
 function reviewTextBody(body: unknown): AppendReviewTextTurnRequest {
   const value: Record<string, unknown> = objectBody(body);
-  strictKeys(value, ['requestId', 'userMessage', 'attachmentSelection']);
+  strictKeys(value, [
+    'requestId',
+    'userMessage',
+    'selectedEvaluationItemId',
+    'attachmentSelection',
+  ]);
   const requestId: string = requiredIdentifier(
     value.requestId,
     'REVIEW_TURN_REQUEST_ID_INVALID',
@@ -109,16 +114,23 @@ function reviewTextBody(body: unknown): AppendReviewTextTurnRequest {
   if (userMessage.length === 0 || userMessage.length > MAX_MESSAGE_LENGTH) {
     throw badRequest('REVIEW_TURN_MESSAGE_INVALID');
   }
-  if (value.attachmentSelection === undefined) {
-    return { requestId, userMessage };
+  const input: AppendReviewTextTurnRequest = { requestId, userMessage };
+  if (value.selectedEvaluationItemId !== undefined) {
+    input.selectedEvaluationItemId =
+      value.selectedEvaluationItemId === null
+        ? null
+        : requiredIdentifier(
+            value.selectedEvaluationItemId,
+            'REVIEW_SELECTED_EVALUATION_ITEM_INVALID',
+          );
   }
+  if (value.attachmentSelection === undefined) return input;
   const selection: Record<string, unknown> = objectBody(
     value.attachmentSelection,
   );
   strictKeys(selection, ['bucketId', 'filePath']);
   return {
-    requestId,
-    userMessage,
+    ...input,
     attachmentSelection: {
       bucketId: exactNonEmptyString(
         selection.bucketId,

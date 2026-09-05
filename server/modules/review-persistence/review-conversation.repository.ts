@@ -67,6 +67,7 @@ export interface PersistedReviewTurn {
   requestId: string;
   inputRevision: number;
   userMessage: string;
+  selectedEvaluationItemId?: string | null;
   inputType: string;
   adoptionStatus: string;
   candidateText: string;
@@ -772,6 +773,7 @@ export class ReviewConversationRepository {
     conversation: PersistedReviewConversation;
     requestId: string;
     userMessage: string;
+    selectedEvaluationItemId?: string | null;
     currentRevision: number;
     attachmentBindings?: ReviewAttachmentBinding[];
   }): Promise<{ turn: PersistedReviewTurn; replayed: boolean }> {
@@ -784,6 +786,7 @@ export class ReviewConversationRepository {
         existing,
         input.userMessage,
         input.attachmentBindings ?? [],
+        input.selectedEvaluationItemId ?? null,
       );
       return { turn: existing, replayed: true };
     }
@@ -794,6 +797,7 @@ export class ReviewConversationRepository {
     const storedInput: string = encodeEngineerInput({
       schemaVersion: 'wiselink.3_1.review_engineer_input.v1.c7',
       userMessage: input.userMessage,
+      selectedEvaluationItemId: input.selectedEvaluationItemId ?? null,
       attachments: structuredClone(input.attachmentBindings ?? []),
     });
     try {
@@ -826,6 +830,7 @@ export class ReviewConversationRepository {
         replay,
         input.userMessage,
         input.attachmentBindings ?? [],
+        input.selectedEvaluationItemId ?? null,
       );
       return { turn: replay, replayed: true };
     }
@@ -1423,6 +1428,7 @@ function persistedTurn(row: SelectedReviewTurn): PersistedReviewTurn {
     requestId: row.requestId,
     inputRevision: row.inputRevision,
     userMessage: turnInput.userMessage,
+    selectedEvaluationItemId: turnInput.selectedEvaluationItemId ?? null,
     inputType: row.inputType,
     adoptionStatus: row.adoptionStatus,
     candidateText: suppliedInput.userMessage,
@@ -1565,10 +1571,12 @@ function assertIdempotentReplay(
   turn: PersistedReviewTurn,
   userMessage: string,
   attachmentBindings: ReviewAttachmentBinding[],
+  selectedEvaluationItemId: string | null,
 ): void {
   if (
     turn.userMessage !== userMessage ||
     turn.candidateText !== userMessage ||
+    (turn.selectedEvaluationItemId ?? null) !== selectedEvaluationItemId ||
     canonicalJson(turn.attachmentBindings) !==
       canonicalJson(attachmentBindings) ||
     turn.inputType !== ENGINEER_TEXT ||
@@ -1610,6 +1618,10 @@ function validateEngineerInput(value: unknown): void {
     record.schemaVersion !== 'wiselink.3_1.review_engineer_input.v1.c7' ||
     typeof record.userMessage !== 'string' ||
     !record.userMessage.trim() ||
+    (record.selectedEvaluationItemId !== undefined &&
+      record.selectedEvaluationItemId !== null &&
+      (typeof record.selectedEvaluationItemId !== 'string' ||
+        !record.selectedEvaluationItemId.trim())) ||
     !Array.isArray(record.attachments) ||
     record.attachments.length > 1
   ) {

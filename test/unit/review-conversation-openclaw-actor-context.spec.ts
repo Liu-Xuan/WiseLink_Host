@@ -65,79 +65,98 @@ describe('ReviewConversationRepository OpenClaw actor context', () => {
     );
   });
 
-  it('normalizes raw SQL timestamp strings at the Review persistence boundary', async () => {
-    const db = {
-      execute: jest.fn(async () => [
-        {
-          actorContext: 'actor-1',
-          authenticatedRoleMember: true,
-          serviceRoleMember: false,
-          rowSecurityActive: true,
-          expectedSchemaResolved: true,
-          reviewSelectPolicyPresent: true,
-          reviewCandidateUpdatePolicyPresent: true,
-          reviewRlsEnabled: true,
-          reviewConversationId: 'RC-1',
-          conversationTenantId: 'tenant-1',
-          conversationActorId: 'actor-1',
-          conversationWorkItemId: 'WI-1',
-          openClawAgentId: 'wiselink-engineering',
-          openClawSessionKey: 'review:server-owned-secret',
-          startedAtRevision: 7,
-          lastSyncedRevision: 7,
-          conversationStatus: 'ACTIVE',
-          conversationCreatedAt: '2026-08-26T10:00:00.000Z',
-          lastActiveAt: '2026-08-26T10:01:00.000Z',
-          closedAt: null,
-          officialMappingId: 'ISM-1',
-          reviewTurnId: 'RT-1',
-          turnReviewConversationId: 'RC-1',
-          engineerSuppliedInputId: 'ESI-1',
-          turnNo: 1,
-          requestId: 'request-1',
-          inputRevision: 7,
-          userMessage: 'Please review rule 1.',
-          inputType: 'ENGINEER_TEXT',
-          adoptionStatus: 'CANDIDATE_UNADOPTED',
-          candidateText: 'Please review rule 1.',
-          responseType: null,
-          assistantResponse: null,
-          sourceRefsJson: null,
-          missingInputsJson: null,
-          candidateEvidenceRefsJson: null,
-          reviewActionDraftJson: null,
-          affectedItemIdsJson: null,
-          warningsJson: null,
-          resultProvenanceJson: null,
-          resultContentHash: null,
-          actionAttemptId: null,
-          assistantCompletedAt: null,
-          turnCreatedAt: '2026-08-26T10:02:00.000Z',
-        },
-      ]),
-    };
-    const repository = new ReviewConversationRepository(db as never);
+  it.each([
+    ['legacy text', 'Please review rule 1.', null],
+    [
+      'legacy JSON',
+      `WLR7:${JSON.stringify({ schemaVersion: 'wiselink.3_1.review_engineer_input.v1.c7', userMessage: 'Please review rule 1.', attachments: [] })}`,
+      null,
+    ],
+    [
+      'focused JSON',
+      `WLR7:${JSON.stringify({ schemaVersion: 'wiselink.3_1.review_engineer_input.v1.c7', userMessage: 'Please review rule 1.', selectedEvaluationItemId: 'RULE-1', attachments: [] })}`,
+      'RULE-1',
+    ],
+  ])(
+    'reads %s and normalizes raw SQL timestamps',
+    async (_label, storedInput, selectedEvaluationItemId) => {
+      const db = {
+        execute: jest.fn(async () => [
+          {
+            actorContext: 'actor-1',
+            authenticatedRoleMember: true,
+            serviceRoleMember: false,
+            rowSecurityActive: true,
+            expectedSchemaResolved: true,
+            reviewSelectPolicyPresent: true,
+            reviewCandidateUpdatePolicyPresent: true,
+            reviewRlsEnabled: true,
+            reviewConversationId: 'RC-1',
+            conversationTenantId: 'tenant-1',
+            conversationActorId: 'actor-1',
+            conversationWorkItemId: 'WI-1',
+            openClawAgentId: 'wiselink-engineering',
+            openClawSessionKey: 'review:server-owned-secret',
+            startedAtRevision: 7,
+            lastSyncedRevision: 7,
+            conversationStatus: 'ACTIVE',
+            conversationCreatedAt: '2026-08-26T10:00:00.000Z',
+            lastActiveAt: '2026-08-26T10:01:00.000Z',
+            closedAt: null,
+            officialMappingId: 'ISM-1',
+            reviewTurnId: 'RT-1',
+            turnReviewConversationId: 'RC-1',
+            engineerSuppliedInputId: 'ESI-1',
+            turnNo: 1,
+            requestId: 'request-1',
+            inputRevision: 7,
+            userMessage: storedInput,
+            inputType: 'ENGINEER_TEXT',
+            adoptionStatus: 'CANDIDATE_UNADOPTED',
+            candidateText: storedInput,
+            responseType: null,
+            assistantResponse: null,
+            sourceRefsJson: null,
+            missingInputsJson: null,
+            candidateEvidenceRefsJson: null,
+            reviewActionDraftJson: null,
+            affectedItemIdsJson: null,
+            warningsJson: null,
+            resultProvenanceJson: null,
+            resultContentHash: null,
+            actionAttemptId: null,
+            assistantCompletedAt: null,
+            turnCreatedAt: '2026-08-26T10:02:00.000Z',
+          },
+        ]),
+      };
+      const repository = new ReviewConversationRepository(db as never);
 
-    const binding = await repository.loadOpenClawTurnBinding({
-      reviewConversationId: 'RC-1',
-      requestId: 'request-1',
-      tenantId: 'tenant-1',
-      actorId: 'actor-1',
-      workItemId: 'WI-1',
-    });
+      const binding = await repository.loadOpenClawTurnBinding({
+        reviewConversationId: 'RC-1',
+        requestId: 'request-1',
+        tenantId: 'tenant-1',
+        actorId: 'actor-1',
+        workItemId: 'WI-1',
+      });
 
-    expect(binding?.conversation.createdAt).toEqual(
-      new Date('2026-08-26T10:00:00.000Z'),
-    );
-    expect(binding?.conversation.lastActiveAt).toEqual(
-      new Date('2026-08-26T10:01:00.000Z'),
-    );
-    expect(binding?.turn.createdAt).toEqual(
-      new Date('2026-08-26T10:02:00.000Z'),
-    );
-    expect(binding?.conversation.createdAt).toBeInstanceOf(Date);
-    expect(binding?.turn.createdAt).toBeInstanceOf(Date);
-  });
+      expect(binding?.conversation.createdAt).toEqual(
+        new Date('2026-08-26T10:00:00.000Z'),
+      );
+      expect(binding?.conversation.lastActiveAt).toEqual(
+        new Date('2026-08-26T10:01:00.000Z'),
+      );
+      expect(binding?.turn.createdAt).toEqual(
+        new Date('2026-08-26T10:02:00.000Z'),
+      );
+      expect(binding?.conversation.createdAt).toBeInstanceOf(Date);
+      expect(binding?.turn.createdAt).toBeInstanceOf(Date);
+      expect(binding?.turn.userMessage).toBe('Please review rule 1.');
+      expect(binding?.turn.selectedEvaluationItemId).toBe(
+        selectedEvaluationItemId,
+      );
+    },
+  );
 
   it('fails closed when the one-statement actor context is not established', async () => {
     const warning = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
@@ -360,7 +379,7 @@ describe('ReviewConversationRepository OpenClaw actor context', () => {
             profileRef: 'wiselink-engineering',
             modelVersion: 'GLM-5.3',
             promptVersion: 'wiselink-review-turn-prompt@r09.c5',
-        skillVersion: 'wiselink-research-and-synthesize@r09.c9',
+            skillVersion: 'wiselink-research-and-synthesize@r09.c9',
             toolVersions: {
               'wiselink-openclaw-engineering-assessment': '1.2.0',
             },

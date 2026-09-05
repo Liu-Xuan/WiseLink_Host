@@ -114,6 +114,7 @@ export class ReviewConversationService {
         conversation: existing.conversation,
         requestId: input.requestId,
         userMessage: input.userMessage,
+        selectedEvaluationItemId: input.selectedEvaluationItemId ?? null,
         attachmentBindings: replay.attachmentBindings,
       });
     }
@@ -154,6 +155,7 @@ export class ReviewConversationService {
       conversation: existing.conversation,
       requestId: input.requestId,
       userMessage: input.userMessage,
+      selectedEvaluationItemId: input.selectedEvaluationItemId ?? null,
       attachmentBindings,
     });
   }
@@ -163,12 +165,14 @@ export class ReviewConversationService {
     conversation: PersistedReviewConversation;
     requestId: string;
     userMessage: string;
+    selectedEvaluationItemId: string | null;
     attachmentBindings: ReviewAttachmentBinding[];
   }): Promise<AppendReviewTextTurnResponse> {
     const appended = await this.conversations.appendTextTurn({
       conversation: input.conversation,
       requestId: input.requestId,
       userMessage: input.userMessage,
+      selectedEvaluationItemId: input.selectedEvaluationItemId,
       currentRevision: input.authorized.grant.workItemRevision,
       attachmentBindings: input.attachmentBindings,
     });
@@ -341,6 +345,7 @@ export function reviewTurnReadModel(
     requestId: turn.requestId,
     inputRevision: turn.inputRevision,
     userMessage: turn.userMessage,
+    selectedEvaluationItemId: turn.selectedEvaluationItemId ?? null,
     engineerSuppliedInput: {
       engineerSuppliedInputId: turn.engineerSuppliedInputId,
       inputType: 'ENGINEER_TEXT',

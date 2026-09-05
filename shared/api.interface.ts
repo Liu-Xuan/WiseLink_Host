@@ -144,6 +144,8 @@ export interface ReviewTurnReadModel {
   requestId: string;
   inputRevision: number;
   userMessage: string;
+  /** The engineer's focus for this turn; absent in older responses. */
+  selectedEvaluationItemId?: string | null;
   engineerSuppliedInput: {
     engineerSuppliedInputId: string;
     inputType: EngineerSuppliedInputType;
@@ -188,6 +190,7 @@ export interface CurrentReviewConversationResponse {
 export interface AppendReviewTextTurnRequest {
   requestId: string;
   userMessage: string;
+  selectedEvaluationItemId?: string | null;
   attachmentSelection?: {
     bucketId: string;
     filePath: string;
