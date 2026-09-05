@@ -2,6 +2,8 @@
 
 更新日期：2026-09-05。依据：[R10 云文档](https://hv5zjf4j8yb.feishu.cn/docx/MA3fdjEycoISjHxptAqcsyxvn9b) 与 [当前正文镜像](WISELINK_R10_CURRENT.md)。本轮最新发布和页面证据见 [交接与响应记录](WL31_R10_CONTEXT_HANDOFF_PERFORMANCE.md)，此前视觉交付见 [Satin 运行记录](WL31_R10_SATIN_HOSTED_ROLLOUT_20260905.md)。
 
+Git 同步授权更新：此前 Codex 分支推送不符合当时的 main-only 限制；用户现已明确长期允许向 `Liu-Xuan/WiseLink_Host` 非强制推送项目相关 `codex/*`，后续范围内不再重复询问。两个 main 的分叉（131 / 1）只暂停 main 镜像，不阻断已授权分支同步。见仓库根 `AGENTS.md` 与 [授权记录](WL31_GITHUB_SYNC_BOUNDARY_20260905.md)。该授权不涵盖强推、删除引用或其他仓库；c22 在途代码仍为未提交、未发布状态，云文档尚未记录本次授权变更。
+
 ## 已设定的 Goal
 
 让工程师在既有真实 SB 事项页面中提问、补材料、纠正方向后，由云端自动执行并基于共同上下文返回候选；连续追问承接讨论，展示实际取证、依据、未知及判断变化。全过程不依赖 Codex 手工启动 driver 或开发者电脑常驻。

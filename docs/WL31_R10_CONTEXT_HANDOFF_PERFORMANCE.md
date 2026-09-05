@@ -2,6 +2,8 @@
 
 日期：2026-09-05。用户要求：评估包等信息交接和使用要稳定、高效，常用前端路径达到秒级响应、尽量没有可见加载。
 
+Git 同步授权更新：本页历史推送不符合当时的 main-only 限制；用户随后明确长期允许向 `Liu-Xuan/WiseLink_Host` 非强制推送项目相关 `codex/*`。后续范围内不再重复询问，main 分叉只暂停 main 镜像。详见 [授权记录](WL31_GITHUB_SYNC_BOUNDARY_20260905.md)。未更改已发布功能、删除分支或授权强推。
+
 当前设计要求已写入 [R10 §10.6](https://hv5zjf4j8yb.feishu.cn/docx/MA3fdjEycoISjHxptAqcsyxvn9b#doxcnABcGL9dWjaOu9ogEAbWzje)。这些是迭代目标，不是新 gate，也不是当前已达标声明。
 
 ## 已有真实耗时与原因
