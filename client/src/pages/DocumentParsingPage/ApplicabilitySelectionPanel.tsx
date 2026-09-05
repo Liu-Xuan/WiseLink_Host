@@ -24,12 +24,16 @@ import './applicability-selection-panel.css';
 
 interface ApplicabilitySelectionPanelProps {
   workItemId: string;
+  workItemRevision: number;
+  workItemRefreshing?: boolean;
   onOpenInteractiveReview: () => void;
   onConfigurationEvidenceAdopted: () => Promise<void>;
 }
 
 const ApplicabilitySelectionPanel: FC<ApplicabilitySelectionPanelProps> = ({
   workItemId,
+  workItemRevision,
+  workItemRefreshing = false,
   onOpenInteractiveReview,
   onConfigurationEvidenceAdopted,
 }) => {
@@ -102,7 +106,7 @@ const ApplicabilitySelectionPanel: FC<ApplicabilitySelectionPanelProps> = ({
       requestEpochRef.current += 1;
       evidenceRequestEpochRef.current += 1;
     };
-  }, [readEvidenceStatus, readSelection]);
+  }, [readEvidenceStatus, readSelection, workItemRevision]);
 
   const refresh = useCallback(async (): Promise<void> => {
     await Promise.all([readSelection(), readEvidenceStatus()]);
@@ -110,7 +114,8 @@ const ApplicabilitySelectionPanel: FC<ApplicabilitySelectionPanelProps> = ({
 
   const adoptEvidence = useCallback(async (): Promise<void> => {
     const latest = evidenceStatus?.latestQuery;
-    if (!latest?.adoptionEligible) return;
+    if (workItemRefreshing || adoptingEvidence || !latest?.adoptionEligible)
+      return;
     setAdoptingEvidence(true);
     setEvidenceError(null);
     try {
@@ -129,7 +134,13 @@ const ApplicabilitySelectionPanel: FC<ApplicabilitySelectionPanelProps> = ({
     } finally {
       setAdoptingEvidence(false);
     }
-  }, [evidenceStatus?.latestQuery, onConfigurationEvidenceAdopted, workItemId]);
+  }, [
+    adoptingEvidence,
+    evidenceStatus?.latestQuery,
+    onConfigurationEvidenceAdopted,
+    workItemId,
+    workItemRefreshing,
+  ]);
 
   const isLoading: boolean = loadState === 'loading' || evidenceLoading;
   const presentation: ApplicabilitySelectionPresentation =
@@ -281,7 +292,7 @@ const ApplicabilitySelectionPanel: FC<ApplicabilitySelectionPanelProps> = ({
         {evidenceStatus?.latestQuery?.adoptionEligible ? (
           <Button
             type="button"
-            disabled={adoptingEvidence}
+            disabled={workItemRefreshing || adoptingEvidence}
             onClick={() => void adoptEvidence()}
           >
             {adoptingEvidence ? '正在采纳并重算…' : '采纳构型证据候选'}

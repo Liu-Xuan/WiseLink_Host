@@ -92,6 +92,7 @@ import {
   type ReaderViewMode,
 } from './workbench-projection';
 import {
+  canReuseCanonicalDocumentParsingReadback,
   createCanonicalDocumentParsingProjectionReader,
   resolveCanonicalDocumentParsingRouteHandoff,
   runCanonicalDocumentParsingLoad,
@@ -191,6 +192,7 @@ export default function DocumentParsingPage() {
   const sessionGenerationRef = useRef<number>(sessionGeneration);
   sessionGenerationRef.current = sessionGeneration;
   const loadEpochRef = useRef<number>(0);
+  const scrolledNodeRef = useRef<string | null>(null);
   const { workItemId = '' } = useParams<{ workItemId: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const activeNode: WorkbenchNode = getWorkbenchNode(searchParams.get('node'));
@@ -200,14 +202,6 @@ export default function DocumentParsingPage() {
     searchParams.get('sourceRef')?.trim() ?? '';
   const activeReaderSourceRef: string =
     activeNode === 'reader' ? requestedSourceRef : '';
-  const routeHandoff =
-    activeReaderSourceRef === ''
-      ? resolveCanonicalDocumentParsingRouteHandoff(
-          (location.state as { documentParsingHandoff?: unknown } | null)
-            ?.documentParsingHandoff,
-          { sessionGeneration, workItemId, query: activeQuery },
-        )
-      : null;
   const evidenceContextActive: boolean = resolveWorkbenchEvidenceActive(
     activeNode,
     requestedSourceRef,
@@ -216,12 +210,31 @@ export default function DocumentParsingPage() {
     searchParams.get('readerMode'),
   );
   const [query, setQuery] = useState<string>(activeQuery);
+  // Validate the short-lived handoff only on entry, not on every local render.
   const [pageData, setPageData] =
-    useState<CanonicalDocumentParsingPageResponse | null>(routeHandoff);
+    useState<CanonicalDocumentParsingPageResponse | null>(() =>
+      !authenticationRequired && activeReaderSourceRef === ''
+        ? resolveCanonicalDocumentParsingRouteHandoff(
+            (location.state as { documentParsingHandoff?: unknown } | null)
+              ?.documentParsingHandoff,
+            { sessionGeneration, workItemId, query: activeQuery },
+          )
+        : null,
+    );
   const [pageSessionGeneration, setPageSessionGeneration] = useState<
     number | null
-  >(routeHandoff ? sessionGeneration : null);
-  const [loading, setLoading] = useState<boolean>(routeHandoff === null);
+  >(pageData ? sessionGeneration : null);
+  const [loading, setLoading] = useState<boolean>(pageData === null);
+  const initialHandoffScopeRef = useRef(
+    pageData
+      ? {
+          workItemId,
+          sessionGeneration,
+          query: activeQuery,
+          sourceRef: activeReaderSourceRef,
+        }
+      : null,
+  );
   const [error, setError] = useState<string | null>(null);
   const [unavailableDocumentScope, setUnavailableDocumentScope] = useState<{
     workItemId: string;
@@ -252,10 +265,43 @@ export default function DocumentParsingPage() {
   const [pdfLocateSignal, setPdfLocateSignal] = useState(0);
   const [structuredSourceLocator, setStructuredSourceLocator] =
     useState<CanonicalStructuredContentSourceLocator | null>(null);
+  const data: CanonicalDocumentParsingPageResponse | null =
+    !authenticationRequired &&
+    pageSessionGeneration === sessionGeneration &&
+    pageData?.workItem.workItemId === workItemId
+      ? pageData
+      : null;
+  const latestLoadRef = useRef({
+    workItemId,
+    sessionGeneration,
+    authenticationRequired,
+    query: activeQuery,
+    sourceRef: activeReaderSourceRef,
+    data,
+    load,
+  });
+  latestLoadRef.current = {
+    workItemId,
+    sessionGeneration,
+    authenticationRequired,
+    query: activeQuery,
+    sourceRef: activeReaderSourceRef,
+    data,
+    load,
+  };
   const overallRegeneration = useOverallRegeneration({
     workItemId,
     sessionGeneration,
-    onSucceeded: async () => load(activeQuery),
+    onSucceeded: async (fresh) => {
+      const current = latestLoadRef.current;
+      if (
+        current.workItemId !== workItemId ||
+        current.sessionGeneration !== sessionGeneration ||
+        current.authenticationRequired
+      )
+        return;
+      await current.load(current.query, current.sourceRef, fresh);
+    },
   });
 
   function updateDeepLink(
@@ -276,30 +322,69 @@ export default function DocumentParsingPage() {
   async function load(
     nextQuery: string,
     nextSourceRef: string = activeReaderSourceRef,
+    readback?: CanonicalDocumentParsingPageResponse,
   ): Promise<void> {
+    const isCurrentScope = (): boolean => {
+      const current = latestLoadRef.current;
+      return (
+        !current.authenticationRequired &&
+        current.workItemId === workItemId &&
+        current.sessionGeneration === sessionGeneration &&
+        current.query === nextQuery &&
+        current.sourceRef === nextSourceRef &&
+        canonicalHost.getCanonicalHostClientSessionGeneration() ===
+          sessionGeneration
+      );
+    };
+    if (!isCurrentScope()) return;
+    initialHandoffScopeRef.current = null;
     const epoch: number = loadEpochRef.current + 1;
     loadEpochRef.current = epoch;
     const startedSessionGeneration: number = sessionGeneration;
     setUnavailableDocumentScope(null);
     if (!workItemId) {
+      setPageData(null);
+      setPageSessionGeneration(null);
       setError('WORKITEM_ID_REQUIRED');
       setLoading(false);
       return;
     }
     setLoading(true);
-    setPageData(null);
-    setPageSessionGeneration(null);
+    if (!latestLoadRef.current.data) {
+      setPageData(null);
+      setPageSessionGeneration(null);
+    }
     setError(null);
     const isCurrent = (): boolean =>
       loadEpochRef.current === epoch &&
       sessionGenerationRef.current === startedSessionGeneration &&
-      canonicalHost.getCanonicalHostClientSessionGeneration() ===
-        startedSessionGeneration;
+      isCurrentScope();
     await runCanonicalDocumentParsingLoad({
       isCurrent,
       readIdentity: canonicalHost.getCanonicalHostIdentityContext,
-      readPage: (identity) =>
-        documentParsingProjectionReader.read(
+      readPage: (identity) => {
+        if (
+          readback &&
+          canReuseCanonicalDocumentParsingReadback(readback, {
+            workItemId,
+            query: nextQuery,
+            sourceRef: nextSourceRef,
+            currentRevision: latestLoadRef.current.data?.workItem.revision,
+          })
+        )
+          return Promise.resolve(readback);
+        const readProjection = () =>
+          canonicalHost.getDocumentParsingPage(workItemId, nextQuery, {
+            sourceRef: nextSourceRef,
+            ...(nextSourceRef !== ''
+              ? { freshness: 'source-link' as const }
+              : readback
+                ? { freshness: 'mutation' as const }
+                : {}),
+          });
+        // A post-mutation scoped read must not join a pre-mutation request.
+        if (readback) return readProjection();
+        return documentParsingProjectionReader.read(
           {
             identity,
             sessionGeneration: startedSessionGeneration,
@@ -307,14 +392,9 @@ export default function DocumentParsingPage() {
             query: nextQuery,
             sourceRef: nextSourceRef,
           },
-          () =>
-            canonicalHost.getDocumentParsingPage(workItemId, nextQuery, {
-              sourceRef: nextSourceRef,
-              ...(nextSourceRef === ''
-                ? {}
-                : { freshness: 'source-link' as const }),
-            }),
-        ),
+          readProjection,
+        );
+      },
       onFresh: (identity, fresh) => {
         setPageData(fresh);
         setPageSessionGeneration(startedSessionGeneration);
@@ -358,6 +438,7 @@ export default function DocumentParsingPage() {
   useEffect(() => {
     setQuery(activeQuery);
     if (authenticationRequired) {
+      initialHandoffScopeRef.current = null;
       loadEpochRef.current += 1;
       setUnavailableDocumentScope(null);
       setPageData(null);
@@ -368,13 +449,14 @@ export default function DocumentParsingPage() {
         loadEpochRef.current += 1;
       };
     }
-    if (routeHandoff) {
-      loadEpochRef.current += 1;
-      setUnavailableDocumentScope(null);
-      setPageData(routeHandoff);
-      setPageSessionGeneration(sessionGeneration);
-      setError(null);
-      setLoading(false);
+    const handoffScope = initialHandoffScopeRef.current;
+    if (
+      handoffScope?.workItemId === workItemId &&
+      handoffScope.sessionGeneration === sessionGeneration &&
+      handoffScope.query === activeQuery &&
+      handoffScope.sourceRef === activeReaderSourceRef
+    ) {
+      // The initial state already consumed it. Effect replay must not reapply it.
       return () => {
         loadEpochRef.current += 1;
       };
@@ -389,16 +471,15 @@ export default function DocumentParsingPage() {
     activeReaderSourceRef,
     authenticationRequired,
     sessionGeneration,
-    routeHandoff,
   ]);
 
   useEffect(() => {
     setContinuousReviewReceipt(null);
     setStructuredSourceLocator(null);
-  }, [workItemId]);
+    setReviewComment('');
+    setReviewPreviewOpen(false);
+  }, [workItemId, sessionGeneration, authenticationRequired]);
 
-  const data: CanonicalDocumentParsingPageResponse | null =
-    pageSessionGeneration === sessionGeneration ? pageData : null;
   const currentObject = useMemo(
     () => (data ? buildCurrentObjectContext(data, 'DOCUMENT') : null),
     [data],
@@ -421,14 +502,20 @@ export default function DocumentParsingPage() {
   );
 
   useEffect(() => {
+    const destination = `${sessionGeneration}:${workItemId}:${activeNode}`;
+    if (scrolledNodeRef.current === destination) return;
+    if (activeNode === 'package' || activeNode === 'reader') {
+      scrolledNodeRef.current = destination;
+      return;
+    }
     if (loading || data === null) return;
-    if (activeNode === 'package' || activeNode === 'reader') return;
     const targetId: string =
       activeNode === 'aeo' && !data.workItem.aeo
         ? 'workspace-assessment'
         : NODE_TARGETS[activeNode];
     const target: HTMLElement | null = document.getElementById(targetId);
     if (!target) return;
+    scrolledNodeRef.current = destination;
     window.requestAnimationFrame(() => {
       const reduceMotion = window.matchMedia(
         '(prefers-reduced-motion: reduce)',
@@ -438,9 +525,9 @@ export default function DocumentParsingPage() {
         block: 'start',
       });
     });
-  }, [activeNode, data, loading]);
+  }, [activeNode, data, loading, sessionGeneration, workItemId]);
 
-  if (loading) {
+  if (loading && data === null) {
     return (
       <LockedState
         title="正在读取当前工程事项…"
@@ -548,6 +635,7 @@ export default function DocumentParsingPage() {
   }
 
   async function confirmOverallForAeo(): Promise<void> {
+    if (loading) return;
     setAssessmentAction('CONFIRM_OVERALL_FOR_AEO');
     setAssessmentError(null);
     try {
@@ -561,6 +649,7 @@ export default function DocumentParsingPage() {
   }
 
   async function generateAeoCandidate(): Promise<void> {
+    if (loading) return;
     setAssessmentAction('GENERATE_AEO_CANDIDATE');
     setAssessmentError(null);
     try {
@@ -574,6 +663,7 @@ export default function DocumentParsingPage() {
   }
 
   async function recordEngineerReview(): Promise<void> {
+    if (loading) return;
     if (!selectedReviewCriterion || !reviewComment.trim()) {
       setAssessmentError('请选择评估项并填写说明。');
       return;
@@ -756,6 +846,11 @@ export default function DocumentParsingPage() {
         ) : null}
         {/* §7 AuthorityStrip：候选/有效性/文件版本状态，全工作台固定可见 */}
         <AuthorityStrip view={workItemView} />
+        {loading ? (
+          <p className="wl-projection-refresh" role="status">
+            正在刷新当前结果…仍显示上次读回的内容，尚未确认最新状态；确认和采纳暂不可用。
+          </p>
+        ) : null}
         {integratedAssessment ? (
           <details
             className={`parse-overall-bar${
@@ -997,6 +1092,8 @@ export default function DocumentParsingPage() {
           <ApplicabilitySelectionPanel
             key={workItemId}
             workItemId={workItemId}
+            workItemRevision={data.workItem.revision}
+            workItemRefreshing={loading}
             onOpenInteractiveReview={() =>
               updateDeepLink({ node: 'review', tab: 'review' })
             }
@@ -1017,7 +1114,10 @@ export default function DocumentParsingPage() {
               </div>
               <OverallAssessmentHero
                 view={workItemView}
-                regeneration={overallRegeneration}
+                regeneration={{
+                  ...overallRegeneration,
+                  disabled: loading || overallRegeneration.disabled,
+                }}
                 onOpenWorkbench={() =>
                   updateDeepLink({ node: 'review', tab: 'review' })
                 }
@@ -1167,7 +1267,7 @@ export default function DocumentParsingPage() {
                         {!aeo ? (
                           <Button
                             type="button"
-                            disabled={assessmentAction !== null}
+                            disabled={loading || assessmentAction !== null}
                             onClick={() => void generateAeoCandidate()}
                           >
                             {assessmentAction === 'GENERATE_AEO_CANDIDATE'
@@ -1179,7 +1279,7 @@ export default function DocumentParsingPage() {
                     ) : (
                       <Button
                         type="button"
-                        disabled={assessmentAction !== null}
+                        disabled={loading || assessmentAction !== null}
                         onClick={() => void confirmOverallForAeo()}
                       >
                         {assessmentAction === 'CONFIRM_OVERALL_FOR_AEO'
@@ -1241,7 +1341,10 @@ export default function DocumentParsingPage() {
               </div>
               <OverallAssessmentHero
                 view={workItemView}
-                regeneration={overallRegeneration}
+                regeneration={{
+                  ...overallRegeneration,
+                  disabled: loading || overallRegeneration.disabled,
+                }}
                 primaryActionLabel="核对原文依据"
                 onOpenWorkbench={() =>
                   updateDeepLink({
@@ -1401,7 +1504,7 @@ export default function DocumentParsingPage() {
                     </label>
                     <Button
                       type="button"
-                      disabled={reviewSubmitting}
+                      disabled={loading || reviewSubmitting}
                       onClick={() => {
                         if (!selectedReviewCriterion || !reviewComment.trim()) {
                           setAssessmentError('请选择评估项并填写说明。');
@@ -1442,6 +1545,7 @@ export default function DocumentParsingPage() {
             key={workItemId}
             workItemId={workItemId}
             workItemRevision={data.workItem.revision}
+            workItemRefreshing={loading}
             selectedEvaluationItemId={selectedReviewCriterion || null}
             confirmationReceipt={continuousReviewReceipt}
             onConfirmationReceipt={setContinuousReviewReceipt}
@@ -1594,6 +1698,7 @@ export default function DocumentParsingPage() {
             null
           }
           submitting={reviewSubmitting}
+          refreshing={loading}
           onCancel={() => setReviewPreviewOpen(false)}
           onConfirm={() => void recordEngineerReview()}
         />

@@ -11,6 +11,17 @@
   gap: 14px;
 }
 
+.wl-projection-refresh {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 8px 12px;
+  color: var(--wl-muted);
+  background: var(--wl-sheet-muted);
+  border: 1px solid var(--wl-border);
+  border-radius: var(--wl-radius-sm);
+  font-size: 12px;
+}
+
 /* ── AuthorityStrip ── */
 .wl-authority-strip {
   display: flex;

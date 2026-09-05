@@ -37,6 +37,26 @@ export interface CanonicalDocumentParsingProjectionReader {
 
 const ROUTE_HANDOFF_MAX_AGE_MS = 5_000;
 
+/** Overall's mutation readback has no SourceRef selection; never reuse it as one. */
+export function canReuseCanonicalDocumentParsingReadback(
+  page: CanonicalDocumentParsingPageResponse,
+  expected: {
+    workItemId: string;
+    query: string;
+    sourceRef: string;
+    currentRevision?: number;
+  },
+): boolean {
+  return (
+    page.status === 'FRESH_READ' &&
+    page.workItem.workItemId === expected.workItemId &&
+    (page.readerProjection?.query ?? '') === expected.query.trim() &&
+    expected.sourceRef.trim() === '' &&
+    (expected.currentRevision === undefined ||
+      page.workItem.revision >= expected.currentRevision)
+  );
+}
+
 export interface CanonicalDocumentParsingRouteHandoff {
   version: 1;
   createdAtMs: number;

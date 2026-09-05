@@ -62,6 +62,7 @@ type ReviewActionReceipt = ConfirmReviewActionDraftResponse['reviewAction'];
 interface ContinuousReviewPanelProps {
   workItemId: string;
   workItemRevision: number;
+  workItemRefreshing?: boolean;
   selectedEvaluationItemId: string | null;
   confirmationReceipt: ReviewActionReceipt | null;
   onConfirmationReceipt: (receipt: ReviewActionReceipt) => void;
@@ -73,6 +74,7 @@ interface ContinuousReviewPanelProps {
 export default function ContinuousReviewPanel({
   workItemId,
   workItemRevision,
+  workItemRefreshing = false,
   selectedEvaluationItemId,
   confirmationReceipt,
   onConfirmationReceipt,
@@ -189,7 +191,7 @@ export default function ContinuousReviewPanel({
 
   useEffect(() => {
     void readCurrent();
-  }, [readCurrent]);
+  }, [readCurrent, workItemRevision]);
 
   useEffect(
     () => () => {
@@ -269,7 +271,7 @@ export default function ContinuousReviewPanel({
   const { editorDisabled, actionsDisabled: busy } = continuousReviewControls(
     presentation,
     busyAction !== null,
-    refreshing,
+    refreshing || workItemRefreshing,
     accessUnavailable,
   );
   const readbackMessage: string | null = reviewReadbackMessage(

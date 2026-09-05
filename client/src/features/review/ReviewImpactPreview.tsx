@@ -14,6 +14,7 @@ export interface ReviewImpactPreviewProps {
   /** 整体候选当前状态（预览将标记为需重综合） */
   overallStatus: string | null;
   submitting: boolean;
+  refreshing?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
 }
@@ -30,6 +31,7 @@ export default function ReviewImpactPreview({
   decision,
   comment,
   submitting,
+  refreshing = false,
   onCancel,
   onConfirm,
 }: ReviewImpactPreviewProps) {
@@ -147,7 +149,7 @@ export default function ReviewImpactPreview({
           </Button>
           <Button
             type="button"
-            disabled={submitting}
+            disabled={submitting || refreshing}
             onClick={onConfirm}
             data-ai-section-type="button"
           >
