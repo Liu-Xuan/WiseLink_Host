@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ArrowRight,
-  ChevronRight,
   CircleAlert,
   Clock3,
   FileBox,
@@ -63,6 +62,10 @@ import {
 } from './reparse-completed-work-item';
 import { createCanonicalDocumentParsingRouteHandoff } from '../DocumentParsingPage/document-parsing-load';
 import EngineeringQuicklook from './EngineeringQuicklook';
+import {
+  libraryReadErrorPresentation,
+  type LibraryReadErrorPresentation,
+} from './library-read-error';
 
 type LibrarySelection = string;
 
@@ -122,16 +125,6 @@ function contentKindLabel(kind: string): string {
   if (upper.includes('LIST')) return '列表内容';
   if (upper.includes('PARAGRAPH') || upper.includes('TEXT')) return '正文';
   return '结构化内容';
-}
-
-function errorLabel(error: unknown): string {
-  if (
-    error instanceof Error &&
-    /NOT_FOUND|无权|FORBIDDEN|403|404/iu.test(error.message)
-  ) {
-    return '无法找到该工程评估，或当前账户没有查看权限。';
-  }
-  return '当前连接无法读取资料，请稍后重试。';
 }
 
 function phaseTone(
@@ -210,7 +203,7 @@ export default function WorkspaceHomePage() {
     RecentWorkItemReference[]
   >([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<LibraryReadErrorPresentation | null>(null);
   const [developmentIntakeAvailable, setDevelopmentIntakeAvailable] =
     useState(false);
   const [refreshRevision, setRefreshRevision] = useState(0);
@@ -232,7 +225,9 @@ export default function WorkspaceHomePage() {
     setDevelopmentIntakeAvailable(false);
     if (authenticationRequired) {
       setLoading(false);
-      setError('请先登录，再读取当前账户可访问的资料。');
+      setError(
+        libraryReadErrorPresentation({ code: 'CANONICAL_PAGE_LOGIN_REQUIRED' }),
+      );
       return () => {
         cancelled = true;
       };
@@ -271,14 +266,14 @@ export default function WorkspaceHomePage() {
           setRecentWorkItems(readRecentWorkItems(identity));
         }
         setPageData(null);
-        setError(errorLabel(reason));
+        setError(libraryReadErrorPresentation(reason));
       }
     })()
       .catch((reason: unknown) => {
         if (isCurrentSession()) {
           setPageData(null);
           setRecentWorkItems([]);
-          setError(errorLabel(reason));
+          setError(libraryReadErrorPresentation(reason));
         }
       })
       .finally(() => {
@@ -297,7 +292,10 @@ export default function WorkspaceHomePage() {
 
   const sessionDataVisible =
     !authenticationRequired && loadedSessionGeneration === sessionGeneration;
-  const data = sessionDataVisible ? pageData : null;
+  const data =
+    sessionDataVisible && pageData?.workItem.workItemId === deepLinkedWorkItemId
+      ? pageData
+      : null;
   const visibleRecentWorkItems = sessionDataVisible ? recentWorkItems : [];
   const visibleDevelopmentIntakeAvailable =
     sessionDataVisible && developmentIntakeAvailable;
@@ -496,7 +494,7 @@ export default function WorkspaceHomePage() {
           </p>
           <h1>资料库</h1>
           <p className="library-home-lede">
-            在同一页面浏览文档族与工程评估，并同步查看当前工程快览。
+            选择最近访问的资料查看工程快览，进入统一工作台继续评估与复核。
           </p>
         </div>
         <div className="library-home-status" aria-label="当前资料库视图">
@@ -567,8 +565,8 @@ export default function WorkspaceHomePage() {
         <div className="library-alert" role="alert">
           <CircleAlert aria-hidden="true" />
           <div>
-            <strong>当前工程评估无法读取</strong>
-            <span>{error}</span>
+            <strong>{error.title}</strong>
+            <span>{error.message}</span>
           </div>
           <Button type="button" variant="outline" onClick={refresh}>
             <RefreshCw aria-hidden="true" />
@@ -578,47 +576,51 @@ export default function WorkspaceHomePage() {
       ) : null}
 
       <>
-        <section
-          className={`library-surface${projection ? ' has-projection' : ''}${!projection && !loading ? ' is-catalog-only' : ''}`}
-          aria-label="资料库目录与预览"
-        >
-          <aside className="library-tree-panel">
+        <section className="library-surface" aria-label="最近访问与工程快览">
+          <section className="library-tree-panel" aria-label="最近访问列表">
             <div className="library-panel-heading">
               <div>
                 <span className="library-section-label">浏览资料</span>
-                <h2>资料目录</h2>
+                <h2>最近访问</h2>
               </div>
               <FolderTree aria-hidden="true" />
             </div>
-            {nodes.length === 0 ? (
-              <div className="library-tree-recent-wrapper">
-                {visibleRecentWorkItems.length > 0 ? (
-                  <div
-                    className="library-recent-list"
-                    role="tree"
-                    aria-label="最近访问的受控工程评估"
-                  >
-                    <div className="library-recent-heading">
-                      <FileClock aria-hidden="true" />
-                      <span>最近访问的受控工程评估</span>
-                    </div>
-                    {visibleRecentFamilies.map((group) => (
-                      <section
-                        className="library-recent-group"
-                        key={group.family}
-                      >
-                        <h3>
-                          <FolderTree aria-hidden="true" /> {group.family}
-                        </h3>
+            <p className="library-recent-boundary">
+              仅含当前用户在此浏览器打开过的记录，不代表全部授权资料。内容与状态以每次服务端读取为准。
+            </p>
+            <div className="library-tree-recent-wrapper">
+              {visibleRecentWorkItems.length > 0 ? (
+                <div
+                  className="library-recent-list"
+                  aria-label="最近访问的工程评估"
+                >
+                  <div className="library-recent-heading">
+                    <FileClock aria-hidden="true" />
+                    <span>
+                      按资料类型分组 · {visibleRecentWorkItems.length} 项
+                    </span>
+                  </div>
+                  {visibleRecentFamilies.map((group) => (
+                    <section
+                      className="library-recent-group"
+                      key={group.family}
+                    >
+                      <h3>
+                        <FolderTree aria-hidden="true" /> {group.family}
+                      </h3>
+                      <ul className="library-recent-rows">
                         {group.documents.map(
                           (reference: RecentWorkItemReference) => (
-                            <div
-                              className="library-recent-item"
+                            <li
+                              className={`library-recent-item${reference.workItemId === deepLinkedWorkItemId ? ' is-selected' : ''}`}
                               key={reference.workItemId}
                             >
                               <button
                                 className="library-recent-open"
                                 type="button"
+                                aria-pressed={
+                                  reference.workItemId === deepLinkedWorkItemId
+                                }
                                 onClick={() =>
                                   navigate(
                                     `/library?workItemId=${encodeURIComponent(reference.workItemId)}&mode=${treeMode}`,
@@ -628,264 +630,217 @@ export default function WorkspaceHomePage() {
                                 <FileText aria-hidden="true" />
                                 <span>
                                   <strong>{reference.documentLabel}</strong>
-                                  <small>当前受控文件版本</small>
+                                  <small>
+                                    {reference.workItemId ===
+                                    deepLinkedWorkItemId
+                                      ? loading
+                                        ? '正在读取…'
+                                        : (error?.title ?? '已选择')
+                                      : '最近访问 · 点击读取'}
+                                  </small>
                                 </span>
-                                <ChevronRight aria-hidden="true" />
+                                <ArrowRight aria-hidden="true" />
                               </button>
-                              <button
-                                className="library-recent-preview"
-                                type="button"
-                                title="预览资料"
-                                aria-label={`预览 ${reference.documentLabel}`}
-                                onClick={() =>
-                                  navigate(
-                                    `/library?workItemId=${encodeURIComponent(reference.workItemId)}`,
-                                  )
-                                }
-                              >
-                                <Search aria-hidden="true" />
-                              </button>
-                            </div>
+                            </li>
                           ),
                         )}
-                      </section>
-                    ))}
-                    {visibleRecentFamilies.length === 0 ? (
-                      <p className="library-recent-no-result">
-                        当前筛选没有匹配资料。
-                      </p>
-                    ) : null}
-                    <p className="library-recent-boundary">
-                      最近访问仅用于导航，不保存资料内容、权限或候选状态。
-                    </p>
-                  </div>
-                ) : (
-                  <div className="library-tree-empty">
-                    <FileBox aria-hidden="true" />
-                    <strong>尚无最近资料</strong>
-                    <p>
-                      {visibleDevelopmentIntakeAvailable
-                        ? '粘贴已有工作链接，或在上方上传 PDF 创建工程评估；打开过的资料会按当前用户显示在这里。'
-                        : '粘贴团队共享的工作链接打开资料；最近访问只用于当前用户的导航。'}
-                    </p>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <NavigatorTree
-                nodes={nodes}
-                mode={treeMode}
-                onModeChange={handleTreeModeChange}
-                selectedId={selection}
-                onSelect={handleTreeSelect}
-              />
-            )}
-          </aside>
-
-          <section
-            className="library-preview-panel"
-            aria-label="资料预览与概述"
-          >
-            <div className="library-panel-heading">
-              <div>
-                <span className="library-section-label">当前选择</span>
-                <h2>{projection ? '资料预览' : '预览与概述'}</h2>
-              </div>
-              {projection ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="library-mobile-catalog-return"
-                  onClick={() => navigate('/library')}
-                >
-                  <FolderTree aria-hidden="true" /> 返回资料目录
-                </Button>
-              ) : null}
-              {projection ? (
-                <span className={`library-phase library-phase--${tone}`}>
-                  {phaseLabel}
-                </span>
-              ) : null}
-            </div>
-            {!projection ? (
-              loading ? (
-                <div
-                  className="library-preview-skeleton"
-                  role="status"
-                  aria-live="polite"
-                >
-                  <div className="skeleton-line skeleton-line--lg" />
-                  <div className="skeleton-line" />
-                  <div className="skeleton-line" />
-                  <div className="skeleton-grid">
-                    <div className="skeleton-block" />
-                    <div className="skeleton-block" />
-                    <div className="skeleton-block" />
-                  </div>
-                  <div className="skeleton-line" />
-                  <span className="library-skeleton-hint">
-                    正在读取最新资料…
-                  </span>
+                      </ul>
+                    </section>
+                  ))}
+                  <p className="library-recent-boundary">
+                    最近访问仅用于导航，不保存资料内容、权限或候选状态。
+                  </p>
                 </div>
               ) : (
-                <div className="library-preview-empty">
-                  <FileText aria-hidden="true" />
-                  <h3>选择左侧资料节点</h3>
-                  <p>资料预览、来源绑定和候选状态会在最新资料返回后显示。</p>
+                <div className="library-tree-empty">
+                  <FileBox aria-hidden="true" />
+                  <strong>
+                    {loading ? '正在读取最近访问…' : '尚无最近资料'}
+                  </strong>
+                  <p>
+                    {visibleDevelopmentIntakeAvailable
+                      ? '粘贴已有工作链接，或在上方上传 PDF 创建工程评估；打开过的资料会按当前用户显示在这里。'
+                      : '粘贴团队共享的工作链接打开资料；最近访问只用于当前用户的导航。'}
+                  </p>
                 </div>
-              )
-            ) : (
-              <>
-                <div className="library-preview-title">
-                  <div className="library-document-icon">
-                    <FileText aria-hidden="true" />
+              )}
+            </div>
+            {projection ? (
+              <details className="library-selected-details">
+                <summary>当前选择 · 解析操作与来源详情</summary>
+                <NavigatorTree
+                  nodes={nodes}
+                  mode={treeMode}
+                  onModeChange={handleTreeModeChange}
+                  selectedId={selection}
+                  onSelect={handleTreeSelect}
+                />
+                <section
+                  className="library-preview-panel"
+                  aria-label="资料预览与概述"
+                >
+                  <div className="library-panel-heading">
+                    <div>
+                      <span className="library-section-label">当前选择</span>
+                      <h2>资料预览</h2>
+                    </div>
+                    <span className={`library-phase library-phase--${tone}`}>
+                      {phaseLabel}
+                    </span>
                   </div>
-                  <div>
-                    <h3>
-                      {projection.package?.documentIdentity?.documentCode ??
-                        projection.package?.title ??
-                        '当前工程评估'}
-                    </h3>
-                    <p>
-                      {projection.classification.normalizedFamily} ·
-                      当前受控版本
-                    </p>
-                  </div>
-                  <div className="library-preview-actions">
-                    {parseAction !== null ? (
+                  <div className="library-preview-title">
+                    <div className="library-document-icon">
+                      <FileText aria-hidden="true" />
+                    </div>
+                    <div>
+                      <h3>
+                        {projection.package?.documentIdentity?.documentCode ??
+                          projection.package?.title ??
+                          '当前工程评估'}
+                      </h3>
+                      <p>
+                        {projection.classification.normalizedFamily} ·
+                        当前受控版本
+                      </p>
+                    </div>
+                    <div className="library-preview-actions">
+                      {parseAction !== null ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          disabled={retrying}
+                          onClick={() => void retryExistingWorkItem()}
+                        >
+                          <RefreshCw
+                            className={retrying ? 'library-spin' : undefined}
+                            aria-hidden="true"
+                          />
+                          {retrying
+                            ? parseAction === 'RESUME_PENDING'
+                              ? '继续解析中…'
+                              : '重新解析中…'
+                            : parseActionLabel(parseAction)}
+                        </Button>
+                      ) : null}
                       <Button
                         type="button"
                         size="sm"
-                        disabled={retrying}
-                        onClick={() => void retryExistingWorkItem()}
+                        variant="outline"
+                        onClick={() => openWorkbench()}
                       >
-                        <RefreshCw
-                          className={retrying ? 'library-spin' : undefined}
-                          aria-hidden="true"
-                        />
-                        {retrying
-                          ? parseAction === 'RESUME_PENDING'
-                            ? '继续解析中…'
-                            : '重新解析中…'
-                          : parseActionLabel(parseAction)}
+                        <Workflow aria-hidden="true" />
+                        进入工作台
                       </Button>
-                    ) : null}
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => openWorkbench()}
-                    >
-                      <Workflow aria-hidden="true" />
-                      进入工作台
-                    </Button>
-                  </div>
-                </div>
-                {retryError ? (
-                  <p className="library-inline-empty" role="alert">
-                    {retryError}
-                  </p>
-                ) : null}
-                <dl className="library-facts">
-                  <div>
-                    <dt>
-                      <Shield aria-hidden="true" />
-                      当前状态
-                    </dt>
-                    <dd>{phaseLabel}</dd>
-                  </div>
-                  <div>
-                    <dt>
-                      <Clock3 aria-hidden="true" />
-                      文件版本
-                    </dt>
-                    <dd>当前受控版本</dd>
-                  </div>
-                  <div>
-                    <dt>
-                      <FileBox aria-hidden="true" />
-                      文件大小
-                    </dt>
-                    <dd>{byteLabel(projection.source.sourceByteLength)}</dd>
-                  </div>
-                  <div>
-                    <dt>
-                      <Network aria-hidden="true" />
-                      可定位原文
-                    </dt>
-                    <dd>{projection.package?.sourceRefCount ?? 0} 处</dd>
-                  </div>
-                </dl>
-                <details className="library-preview-details">
-                  <summary>查看解析与来源摘要</summary>
-                  <div className="library-preview-block">
-                    <div className="library-block-heading">
-                      <span>候选形成记录</span>
-                      <strong>
-                        {data.workbenchAudit.reader.queryResultCount} 条原文命中
-                      </strong>
                     </div>
-                    <div className="library-content-list">
-                      {data.workbenchAudit.candidateFormationSteps.map(
-                        (step) => {
-                          const copy = candidateStepCopy(
-                            step.label,
-                            step.summary,
-                          );
-                          return (
-                            <article key={step.id}>
+                  </div>
+                  {retryError ? (
+                    <p className="library-inline-empty" role="alert">
+                      {retryError}
+                    </p>
+                  ) : null}
+                  <dl className="library-facts">
+                    <div>
+                      <dt>
+                        <Shield aria-hidden="true" />
+                        当前状态
+                      </dt>
+                      <dd>{phaseLabel}</dd>
+                    </div>
+                    <div>
+                      <dt>
+                        <Clock3 aria-hidden="true" />
+                        文件版本
+                      </dt>
+                      <dd>当前受控版本</dd>
+                    </div>
+                    <div>
+                      <dt>
+                        <FileBox aria-hidden="true" />
+                        文件大小
+                      </dt>
+                      <dd>{byteLabel(projection.source.sourceByteLength)}</dd>
+                    </div>
+                    <div>
+                      <dt>
+                        <Network aria-hidden="true" />
+                        可定位原文
+                      </dt>
+                      <dd>{projection.package?.sourceRefCount ?? 0} 处</dd>
+                    </div>
+                  </dl>
+                  <details className="library-preview-details">
+                    <summary>查看解析与来源摘要</summary>
+                    <div className="library-preview-block">
+                      <div className="library-block-heading">
+                        <span>候选形成记录</span>
+                        <strong>
+                          {data.workbenchAudit.reader.queryResultCount}{' '}
+                          条原文命中
+                        </strong>
+                      </div>
+                      <div className="library-content-list">
+                        {data.workbenchAudit.candidateFormationSteps.map(
+                          (step) => {
+                            const copy = candidateStepCopy(
+                              step.label,
+                              step.summary,
+                            );
+                            return (
+                              <article key={step.id}>
+                                <div>
+                                  <strong>{copy.label}</strong>
+                                  <span>
+                                    {humanState(step.status) ?? '状态待确认'}
+                                  </span>
+                                </div>
+                                <p>{copy.summary}</p>
+                              </article>
+                            );
+                          },
+                        )}
+                      </div>
+                    </div>
+                    <div className="library-preview-block">
+                      <div className="library-block-heading">
+                        <span>已绑定来源内容</span>
+                        <strong>
+                          {data.queryResults.length} 个当前返回单元
+                        </strong>
+                      </div>
+                      {data.queryResults.length ? (
+                        <div className="library-content-list">
+                          {data.queryResults.slice(0, 4).map((result) => (
+                            <article key={result.unitId}>
                               <div>
-                                <strong>{copy.label}</strong>
-                                <span>
-                                  {humanState(step.status) ?? '状态待确认'}
-                                </span>
+                                <strong>{contentKindLabel(result.kind)}</strong>
                               </div>
-                              <p>{copy.summary}</p>
+                              <p>{result.text}</p>
                             </article>
-                          );
-                        },
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="library-inline-empty">
+                          当前没有可显示的来源内容。
+                        </p>
                       )}
                     </div>
-                  </div>
-                  <div className="library-preview-block">
-                    <div className="library-block-heading">
-                      <span>已绑定来源内容</span>
-                      <strong>{data.queryResults.length} 个当前返回单元</strong>
-                    </div>
-                    {data.queryResults.length ? (
-                      <div className="library-content-list">
-                        {data.queryResults.slice(0, 4).map((result) => (
-                          <article key={result.unitId}>
-                            <div>
-                              <strong>{contentKindLabel(result.kind)}</strong>
-                            </div>
-                            <p>{result.text}</p>
-                          </article>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="library-inline-empty">
-                        当前没有可显示的来源内容。
-                      </p>
-                    )}
-                  </div>
-                </details>
-                {relations.length > 0 ? (
-                  <details className="library-mobile-relations">
-                    <summary>查看关联资料（{relations.length}）</summary>
-                    <ul>
-                      {relations.map((relation) => (
-                        <li key={relation.id}>
-                          <strong>{relation.label}</strong>
-                          <span>{relation.detail}</span>
-                        </li>
-                      ))}
-                    </ul>
                   </details>
-                ) : null}
-              </>
-            )}
+                  {relations.length > 0 ? (
+                    <details className="library-mobile-relations">
+                      <summary>查看关联资料（{relations.length}）</summary>
+                      <ul>
+                        {relations.map((relation) => (
+                          <li key={relation.id}>
+                            <strong>{relation.label}</strong>
+                            <span>{relation.detail}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  ) : null}
+                </section>
+              </details>
+            ) : null}
           </section>
 
           <EngineeringQuicklook
@@ -895,6 +850,8 @@ export default function WorkspaceHomePage() {
               '当前选择'
             }
             quicklook={engineeringQuicklook}
+            loading={loading && Boolean(deepLinkedWorkItemId)}
+            readError={error}
             onOpenWorkbench={() => openWorkbench('reader')}
             onContinueReview={openReview}
             onOpenFamily={() => openWorkbench('document')}

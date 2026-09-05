@@ -6,6 +6,7 @@ import {
   ClipboardCopy,
   FileSearch2,
   Link2,
+  LoaderCircle,
   Sparkles,
 } from 'lucide-react';
 
@@ -18,6 +19,8 @@ import {
 interface EngineeringQuicklookProps {
   title: string;
   quicklook: EngineeringQuicklookView | null;
+  loading?: boolean;
+  readError?: { title: string; message: string } | null;
   onOpenWorkbench: () => void;
   onContinueReview: () => void;
   onOpenFamily: () => void;
@@ -27,6 +30,8 @@ interface EngineeringQuicklookProps {
 export default function EngineeringQuicklook({
   title,
   quicklook,
+  loading = false,
+  readError = null,
   onOpenWorkbench,
   onContinueReview,
   onOpenFamily,
@@ -62,10 +67,26 @@ export default function EngineeringQuicklook({
       </div>
 
       {!quicklook ? (
-        <div className="library-quicklook-empty">
-          <FileSearch2 aria-hidden="true" />
-          <strong>选择资料查看工程摘要</strong>
-          <p>当前判断、适用范围、依据、缺口和建议动作将在这里同步显示。</p>
+        <div className="library-quicklook-empty" role="status">
+          {loading ? (
+            <LoaderCircle className="library-spin" aria-hidden="true" />
+          ) : readError ? (
+            <AlertTriangle aria-hidden="true" />
+          ) : (
+            <FileSearch2 aria-hidden="true" />
+          )}
+          <strong>
+            {loading
+              ? '正在读取当前资料…'
+              : (readError?.title ?? '选择资料查看工程摘要')}
+          </strong>
+          <p>
+            {loading
+              ? '待服务端返回后显示当前判断、来源依据与复核状态。'
+              : readError
+                ? '本次读取未成功，工程快览暂不可用。可选择其他资料，或重试当前资料。'
+                : '当前判断、适用范围、依据、缺口和建议动作将在这里同步显示。'}
+          </p>
         </div>
       ) : (
         <div className="library-quicklook-scroll">
