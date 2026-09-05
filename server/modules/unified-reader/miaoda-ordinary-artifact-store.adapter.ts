@@ -272,14 +272,22 @@ export class MiaodaOrdinaryArtifactStoreAdapter
       'ARTIFACT_STORE_METADATA_READ_FAILED',
       () => scoped.getFileMetadata(filePath),
     );
-    if (
-      metadata === null ||
-      metadata.bucketID !== bucketId ||
-      canonicalPath(metadata.filePath) !== canonicalPath(filePath) ||
-      Number(metadata.metadata?.contentLength) !== artifact.byteLength ||
-      metadata.metadata?.mimeType !== artifact.mediaType
-    ) {
-      throw new Error('ARTIFACT_READBACK_MISMATCH:METADATA');
+    if (metadata === null) {
+      throw new Error(
+        'ARTIFACT_READBACK_MISMATCH:METADATA:NOT_FOUND_OR_INACCESSIBLE',
+      );
+    }
+    if (metadata.bucketID !== bucketId) {
+      throw new Error('ARTIFACT_READBACK_MISMATCH:METADATA:BUCKET');
+    }
+    if (canonicalPath(metadata.filePath) !== canonicalPath(filePath)) {
+      throw new Error('ARTIFACT_READBACK_MISMATCH:METADATA:PATH');
+    }
+    if (Number(metadata.metadata?.contentLength) !== artifact.byteLength) {
+      throw new Error('ARTIFACT_READBACK_MISMATCH:METADATA:LENGTH');
+    }
+    if (metadata.metadata?.mimeType !== artifact.mediaType) {
+      throw new Error('ARTIFACT_READBACK_MISMATCH:METADATA:MEDIA_TYPE');
     }
     const downloaded = await providerCallWithTransportRetry(
       'ARTIFACT_STORE_DOWNLOAD_FAILED',
