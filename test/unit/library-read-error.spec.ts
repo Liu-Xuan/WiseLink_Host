@@ -46,6 +46,7 @@ describe('library document-read presentation', () => {
 
   it.each([
     new Error('ARTIFACT_READBACK_MISMATCH:METADATA'),
+    new Error('ARTIFACT_READBACK_MISMATCH:METADATA:NOT_FOUND_OR_INACCESSIBLE'),
     { statusCode: 500, code: 'ARTIFACT_READBACK_MISMATCH:BYTES' },
     {
       response: {

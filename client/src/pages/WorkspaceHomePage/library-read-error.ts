@@ -30,7 +30,8 @@ export function libraryReadErrorPresentation(
   if (
     isCanonicalObjectNotFound(reason) ||
     [403, 404].includes(summary.statusCode ?? 0) ||
-    /NOT_FOUND|无权|FORBIDDEN|403|404/iu.test(message)
+    (!summary.sourceUnavailable &&
+      /NOT_FOUND|无权|FORBIDDEN|403|404/iu.test(message))
   ) {
     return {
       title: '当前工程评估无法读取',
