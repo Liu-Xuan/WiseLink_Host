@@ -11,11 +11,14 @@ import type {
 import { reviewSourceRefLabel } from './continuous-review-state';
 import ReviewExecutionStatus from './ReviewExecutionStatus';
 
-interface ReviewConversationTurnProps {
+interface ReviewConversationTurnBaseProps {
   turn: ReviewTurnReadModel;
   conversation: ReviewConversationReadModel;
   currentRevision: number;
   isCurrent: boolean;
+}
+
+interface ReviewConversationTurnActions {
   busy: boolean;
   confirming: boolean;
   rejected: boolean;
@@ -26,14 +29,20 @@ interface ReviewConversationTurnProps {
   onLocateSourceRef: (sourceRef: string) => void;
 }
 
+type ReviewConversationTurnProps = ReviewConversationTurnBaseProps &
+  ({ readOnly: true } | ({ readOnly?: false } & ReviewConversationTurnActions));
+
 export default function ReviewConversationTurn(
   props: ReviewConversationTurnProps,
 ) {
+  const interactive: ReviewConversationTurnActions | null =
+    !props.readOnly && 'onConfirm' in props ? props : null;
   const candidate = props.turn.assistantCandidate;
   const draft = candidate?.reviewActionDraft ?? null;
   const snapshot = draft?.decisionSnapshot ?? null;
   const dispositions = draft?.uncertaintyDispositions ?? [];
   const draftCurrent =
+    interactive !== null &&
     props.isCurrent &&
     props.conversation.status === 'ACTIVE' &&
     props.conversation.currentRevisionSynced &&
@@ -54,7 +63,7 @@ export default function ReviewConversationTurn(
         </header>
         <p>{props.turn.engineerSuppliedInput.text}</p>
         <small>
-          候选输入，尚未采纳
+          {props.readOnly ? '已保存的工程师输入' : '候选输入，尚未采纳'}
           {props.turn.engineerSuppliedInput.attachmentRefs.length
             ? ` · 已附 ${props.turn.engineerSuppliedInput.attachmentRefs.length} 份受控资料`
             : ''}
@@ -69,7 +78,7 @@ export default function ReviewConversationTurn(
             <strong>{responseTypeLabel(candidate.responseType)}</strong>
             <span>
               <CheckCircle2 aria-hidden="true" />
-              候选已生成 · 未采纳
+              {props.readOnly ? '已保存候选 · 仅供追溯' : '候选已生成 · 未采纳'}
             </span>
           </header>
           <p>{candidate.answer}</p>
@@ -77,7 +86,7 @@ export default function ReviewConversationTurn(
             <SourceRefButtons
               label="原文依据"
               sourceRefs={candidate.sourceRefs}
-              onLocateSourceRef={props.onLocateSourceRef}
+              onLocateSourceRef={interactive?.onLocateSourceRef}
             />
           ) : null}
           {candidate.candidateEvidenceRefs.length ? (
@@ -106,7 +115,7 @@ export default function ReviewConversationTurn(
                   </strong>
                 </div>
                 <span>
-                  {props.rejected
+                  {interactive?.rejected
                     ? '已拒绝，未写入'
                     : `基于事项版本 ${draft.baseRevision}`}
                 </span>
@@ -130,7 +139,7 @@ export default function ReviewConversationTurn(
                     <SourceRefButtons
                       label="草稿 SourceRef"
                       sourceRefs={draft.sourceRefs}
-                      onLocateSourceRef={props.onLocateSourceRef}
+                      onLocateSourceRef={interactive?.onLocateSourceRef}
                     />
                   ) : null}
                   <ul>
@@ -195,7 +204,11 @@ export default function ReviewConversationTurn(
                   </ul>
                 </div>
               ) : null}
-              {props.rejected ? (
+              {!interactive ? (
+                <p className="continuous-review-draft-stale">
+                  已保存草稿仅供追溯；当前只读展示不提供确认或采用操作。
+                </p>
+              ) : interactive.rejected ? (
                 <p className="continuous-review-draft-stale">
                   此草稿已在当前页面拒绝；没有修改 Host
                   current，也没有推进事项版本。继续对话可形成新草稿。
@@ -208,7 +221,7 @@ export default function ReviewConversationTurn(
                 <p className="continuous-review-draft-stale">
                   事项版本已经变化，请同步后重新形成草稿。
                 </p>
-              ) : props.confirming ? (
+              ) : interactive.confirming ? (
                 <div className="continuous-review-confirm">
                   <p>
                     确认会新增一版工程师复核记录，把整体意见标记为需更新，并仅安排受影响项目重新综合；不会立即得到完成结果。
@@ -218,8 +231,8 @@ export default function ReviewConversationTurn(
                       type="button"
                       size="sm"
                       variant="outline"
-                      disabled={props.busy}
-                      onClick={props.onCancelConfirm}
+                      disabled={interactive.busy}
+                      onClick={interactive.onCancelConfirm}
                     >
                       继续对话调整
                     </Button>
@@ -227,18 +240,18 @@ export default function ReviewConversationTurn(
                       type="button"
                       size="sm"
                       variant="outline"
-                      disabled={props.busy}
-                      onClick={props.onRejectDraft}
+                      disabled={interactive.busy}
+                      onClick={interactive.onRejectDraft}
                     >
                       拒绝草案
                     </Button>
                     <Button
                       type="button"
                       size="sm"
-                      disabled={props.busy}
-                      onClick={props.onConfirm}
+                      disabled={interactive.busy}
+                      onClick={interactive.onConfirm}
                     >
-                      {props.busy ? '正在确认…' : '确认修改'}
+                      {interactive.busy ? '正在确认…' : '确认修改'}
                     </Button>
                   </div>
                 </div>
@@ -247,8 +260,8 @@ export default function ReviewConversationTurn(
                   type="button"
                   size="sm"
                   variant="outline"
-                  disabled={props.busy}
-                  onClick={props.onBeginConfirm}
+                  disabled={interactive.busy}
+                  onClick={interactive.onBeginConfirm}
                 >
                   查看详细差异
                 </Button>
@@ -295,7 +308,7 @@ function SourceRefButtons({
 }: {
   label: string;
   sourceRefs: string[];
-  onLocateSourceRef: (sourceRef: string) => void;
+  onLocateSourceRef?: (sourceRef: string) => void;
 }) {
   return (
     <div className="continuous-review-sources">
@@ -304,8 +317,11 @@ function SourceRefButtons({
         <button
           type="button"
           key={`${index}-${sourceRef}`}
-          title={sourceRef}
-          onClick={() => onLocateSourceRef(sourceRef)}
+          title={
+            onLocateSourceRef ? sourceRef : `原文暂时无法读取 · ${sourceRef}`
+          }
+          disabled={!onLocateSourceRef}
+          onClick={() => onLocateSourceRef?.(sourceRef)}
         >
           <Link2 aria-hidden="true" />
           {reviewSourceRefLabel(sourceRef, index)}

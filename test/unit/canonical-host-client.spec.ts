@@ -63,6 +63,19 @@ describe('canonical host assessment client', () => {
     }
   });
 
+  it('preserves document HTTP 500 for independent saved-review readback', async () => {
+    request.mockResolvedValue({
+      status: 500,
+      data: {
+        error: { code: 'INTERNAL_SERVER_ERROR', message: 'Source unavailable' },
+      },
+    });
+    await expect(getDocumentParsingPage('WI-SAVED', '')).rejects.toMatchObject({
+      statusCode: 500,
+      code: 'INTERNAL_SERVER_ERROR',
+    });
+  });
+
   it('preflights the official opaque session through the Hosted axios bridge', async () => {
     request.mockResolvedValue({
       status: 200,
