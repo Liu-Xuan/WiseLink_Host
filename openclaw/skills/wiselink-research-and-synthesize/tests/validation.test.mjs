@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { copyFile, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -124,7 +124,7 @@ test('pins exact20 MCP 1.2, five review tools, and hosted provenance', () => {
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c20',
+    'wiselink-research-and-synthesize@r09.c21',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -1992,7 +1992,7 @@ test('stops a SOURCE_LINK without SourceRefs before review commit', async (t) =>
   );
   assert.deepEqual(
     calls.map(({ name }) => name),
-    ['begin_review_turn', 'get_review_turn_context', 'read_source_refs'],
+    ['begin_review_turn', 'get_review_turn_context'],
   );
 });
 
@@ -2056,8 +2056,10 @@ test('runs a review turn from durable checkpoints without replaying remote work'
   };
   const invokeModel = async (
     input,
-    { observeOutputShape, sessionDiscriminator },
+    { observeOutputShape, sessionDiscriminator, readSourceRefs },
   ) => {
+    assert.deepEqual(input.sourceRefs, []);
+    await readSourceRefs([reviewTask.resourceRefs[0].sourceRefId]);
     modelInputs.push(input);
     modelSessionDiscriminators.push(sessionDiscriminator);
     shapeObserverCalls += 1;
@@ -2235,7 +2237,9 @@ test('reads both selected Criterion sources and the current attachment for candi
     },
     {
       callTool,
-      invokeModel: async () => ({
+      invokeModel: async (_input, { readSourceRefs }) => {
+        await readSourceRefs([reviewTask.resourceRefs[0].sourceRefId, reviewTask.attachmentRefs[0]]);
+        return {
         output: {
           responseType: 'CANDIDATE_EVIDENCE',
           answer: '本轮附件形成候选证据，但尚未采纳或改变任何业务状态。',
@@ -2247,7 +2251,8 @@ test('reads both selected Criterion sources and the current attachment for candi
           warnings: ['candidate_only', 'not_adopted'],
         },
         provenance: provenance(),
-      }),
+        };
+      },
     },
   );
 
@@ -2292,14 +2297,131 @@ test('reads more than 100 authorized sources in API-sized batches without trunca
       if (name === 'commit_review_turn_candidate') return reviewCommit(task.operationRef);
       throw new Error(`UNEXPECTED_TOOL:${name}`);
     },
-    invokeModel: async (input) => {
-      assert.equal(input.sourceRefs.length, reviewTask.resourceRefs.length);
+    invokeModel: async (input, { readSourceRefs }) => {
+      assert.deepEqual(input.sourceRefs, []);
+      const requested = reviewTask.resourceRefs.map(({ sourceRefId }) => sourceRefId);
+      for (let offset = 0; offset < requested.length; offset += 100) {
+        await readSourceRefs(requested.slice(offset, offset + 100));
+      }
       return { output: { responseType: 'ANSWER', answer: '依据所读材料形成候选。', sourceRefs: [original.sourceRefId], missingInputs: [], candidateEvidenceRefs: [], reviewActionDraft: null, affectedItemIds: [], warnings: [] }, provenance: provenance() };
     },
   });
   assert.equal(result.ok, true);
   assert.equal(reads.length, 2);
   assert.deepEqual(reads.flat(), reviewTask.resourceRefs.map(({ sourceRefId }) => sourceRefId));
+});
+
+test('reads only requested fragments across native tool rounds and restores a completed model checkpoint', async (t) => {
+  const checkpointDir = await mkdtemp(join(tmpdir(), 'wiselink-review-on-demand-'));
+  const resumeDir = await mkdtemp(join(tmpdir(), 'wiselink-review-on-demand-resume-'));
+  const originalFetch = globalThis.fetch;
+  t.after(async () => {
+    globalThis.fetch = originalFetch;
+    await rm(checkpointDir, { recursive: true, force: true });
+    await rm(resumeDir, { recursive: true, force: true });
+  });
+  const reviewTask = await readJson(REVIEW_ATTACHMENT_TASK_FIXTURE_URL);
+  const primary = reviewTask.resourceRefs[0].sourceRefId;
+  const attachment = reviewTask.attachmentRefs[0];
+  reviewTask.resourceRefs.push({
+    ...reviewTask.resourceRefs[0], sourceRefId: 'SOURCE-UNRELATED',
+    value: { sourceRefId: 'SOURCE-UNRELATED', statement: 'Never requested' },
+  });
+  const task = makeTask('OPENCLAW_INTERACTIVE_REVIEW', reviewTask, [],
+    [...new Map(reviewTask.resourceRefs.map(({ resourceArtifactRef: ref, resourceArtifactSha256: sha256 }) => [ref, { ref, sha256 }])).values()]);
+  const requests = [];
+  const reads = [];
+  const calls = [];
+  let snapshotSaved = false;
+  let commits = 0;
+  const candidate = {
+    responseType: 'CANDIDATE_EVIDENCE', answer: '根据原文与附件形成候选解释，尚未采用。',
+    sourceRefs: [primary, attachment], missingInputs: [], candidateEvidenceRefs: [attachment],
+    reviewActionDraft: null, affectedItemIds: [], warnings: ['candidate_only'],
+  };
+  globalThis.fetch = async (_url, init) => {
+    const body = JSON.parse(init.body);
+    requests.push(body);
+    const round = requests.length;
+    if (round === 1) assert.equal(reads.length, 0, 'no eager source prefetch');
+    const name = round < 3 ? 'read_wiselink_review_sources' : 'return_wiselink_review_candidate';
+    const args = round === 1 ? { sourceRefIds: [primary] }
+      : round === 2 ? { sourceRefIds: [primary, attachment] } : candidate;
+    return Response.json({ model: 'fixture/provider', choices: [{ message: {
+      content: null, tool_calls: [{ id: `call-${round}`, type: 'function', function: {
+        name, arguments: JSON.stringify(args),
+      } }],
+    } }] });
+  };
+  const callTool = async (name, args) => {
+    calls.push(name);
+    if (name === 'begin_review_turn') return runningBegin(task);
+    if (name === 'get_review_turn_context') return reviewContext(task, reviewTask);
+    if (name === 'read_source_refs') {
+      reads.push([...args.sourceRefIds]);
+      return { schemaVersion: 'wiselink.3_1.review_source_refs.v1.c2', attemptRef: task.operationRef,
+        sourceRefs: args.sourceRefIds.map((sourceRefId) => ({ sourceRefId, kind: 'page', statement: `Read ${sourceRefId}` })) };
+    }
+    if (name === 'commit_review_turn_candidate') {
+      commits += 1;
+      assert.deepEqual(JSON.parse(JSON.parse(args.resultJson).modelOutput).sourceRefs, candidate.sourceRefs);
+      if (!snapshotSaved) {
+        // Capture the real completed model/read files at the pre-commit boundary.
+        for (const file of await readdir(checkpointDir)) {
+          if (/^(begin|context|sources(?:-\d+)?|model)\./u.test(file)) {
+            await copyFile(join(checkpointDir, file), join(resumeDir, file));
+          }
+        }
+        snapshotSaved = true;
+      }
+      return reviewCommit(task.operationRef);
+    }
+    throw new Error(`UNEXPECTED_TOOL:${name}`);
+  };
+  const invokeModel = (input, hooks) => invokeHostedReviewModel(input, {
+    gatewayUrl: 'http://127.0.0.1:18789', gatewayToken: 'fixture-only',
+    configuredModelVersion: 'fixture/provider', ...hooks,
+  });
+  const options = { reviewConversationRef: reviewTask.reviewConversationRef, requestId: reviewTask.requestId, checkpointDir };
+  const first = await runHostedReviewTurn(options, { callTool, invokeModel });
+  assert.equal(first.ok, true);
+  assert.deepEqual(reads, [[primary], [attachment]], 'repeated ref is reused within the authorized turn');
+  assert.equal(requests.length, 3);
+  assert.equal(new Set(requests.map(({ user }) => user)).size, 1);
+  assert.ok(requests.every(({ model }) => model === 'openclaw/wiselink-engineering'));
+  assert.match(requests[0].messages[1].content, /SOURCE-UNRELATED/u);
+  for (const request of requests.slice(1)) {
+    assert.deepEqual(request.messages.map(({ role }) => role), ['system', 'assistant', 'tool']);
+    assert.equal(JSON.stringify(request.messages).includes('SOURCE-UNRELATED'), false);
+    assert.equal(request.messages[2].tool_call_id, request.messages[1].tool_calls[0].id);
+  }
+  const callsBeforeResume = calls.length;
+  const resumed = await runHostedReviewTurn({ ...options, checkpointDir: resumeDir }, { callTool, invokeModel });
+  assert.equal(resumed.ok, true);
+  assert.deepEqual(calls.slice(callsBeforeResume), ['commit_review_turn_candidate']);
+  assert.equal(requests.length, 3, 'completed model is not replayed');
+  assert.equal(commits, 2, 'one commit per independent pre-commit test snapshot');
+});
+
+test('rejects an unauthorized model source request without reading or continuing the model', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  let modelCalls = 0;
+  let sourceCalls = 0;
+  globalThis.fetch = async () => {
+    modelCalls += 1;
+    return Response.json({ choices: [{ message: { content: null, tool_calls: [{
+      id: 'unauthorized-read', type: 'function', function: {
+        name: 'read_wiselink_review_sources', arguments: JSON.stringify({ sourceRefIds: ['NOT-AUTHORIZED'] }),
+      },
+    }] } }] });
+  };
+  await assert.rejects(invokeHostedReviewModel({ input: { availableSourceRefIds: ['ALLOWED'] } }, {
+    gatewayUrl: 'http://127.0.0.1:18789', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+    readSourceRefs: async () => { sourceCalls += 1; return []; },
+  }), /REVIEW_MODEL_SOURCE_REQUEST_INVALID/u);
+  assert.equal(modelCalls, 1);
+  assert.equal(sourceCalls, 0);
 });
 
 test('does not relabel a document SourceRef as new candidate evidence', async (t) => {
@@ -2345,7 +2467,9 @@ test('does not relabel a document SourceRef as new candidate evidence', async (t
           }
           throw new Error(`MODEL_MUST_NOT_COMMIT:${name}`);
         },
-        invokeModel: async () => ({
+        invokeModel: async (_input, { readSourceRefs }) => {
+          await readSourceRefs([reviewTask.resourceRefs[0].sourceRefId]);
+          return {
           output: {
             responseType: 'CANDIDATE_EVIDENCE',
             answer: '错误地把受控原文标为新证据。',
@@ -2357,7 +2481,8 @@ test('does not relabel a document SourceRef as new candidate evidence', async (t
             warnings: ['candidate_only'],
           },
           provenance: provenance(),
-        }),
+          };
+        },
       },
     ),
     /REVIEW_MODEL_CANDIDATE_EVIDENCE_REF_NOT_ATTACHMENT/u,
@@ -2451,7 +2576,9 @@ test('persists a complete candidate-only review action draft without confirming 
     },
     {
       callTool,
-      invokeModel: async () => ({
+      invokeModel: async (_input, { readSourceRefs }) => {
+        await readSourceRefs([sourceRefId, attachmentRef]);
+        return {
         output: {
           responseType: 'REVIEW_ACTION_DRAFT',
           answer: '已形成确认前差异草案；尚未确认、采纳或执行。',
@@ -2463,7 +2590,8 @@ test('persists a complete candidate-only review action draft without confirming 
           warnings: ['candidate_only', 'confirmation_required'],
         },
         provenance: provenance(),
-      }),
+        };
+      },
     },
   );
 
@@ -2672,7 +2800,7 @@ test('rejects ambiguous, fallback-enabled, and unreadable model config', () => {
   }
 });
 
-test('uses one forced output function with blank assistant content', async (t) => {
+test('offers source reading and one final candidate function with blank assistant content', async (t) => {
   const originalFetch = globalThis.fetch;
   let requestBody;
   t.after(() => {
@@ -2715,7 +2843,7 @@ test('uses one forced output function with blank assistant content', async (t) =
 
   assert.deepEqual(result.output, { candidateOnly: true });
   assert.equal(Object.hasOwn(requestBody, 'response_format'), false);
-  assert.equal(requestBody.tools.length, 1);
+  assert.equal(requestBody.tools.length, 2);
   assert.equal(
     requestBody.tools[0].function.name,
     'return_wiselink_review_candidate',
@@ -2725,17 +2853,15 @@ test('uses one forced output function with blank assistant content', async (t) =
     requestBody.tools[0].function.parameters.additionalProperties,
     false,
   );
-  assert.deepEqual(requestBody.tool_choice, {
-    type: 'function',
-    function: { name: 'return_wiselink_review_candidate' },
-  });
+  assert.equal(requestBody.tools[1].function.name, 'read_wiselink_review_sources');
+  assert.equal(requestBody.tool_choice, 'auto');
   assert.equal(requestBody.parallel_tool_calls, false);
   assert.equal(requestBody.n, 1);
   assert.match(requestBody.user, /^review-driver:[0-9a-f]{24}$/u);
   assert.equal(result.provenance.modelVersion, 'openai-codex/gpt-5.4');
   assert.equal(
     result.provenance.promptVersion,
-    'wiselink.3_1.review_prompt.v1.c16',
+    'wiselink.3_1.review_prompt.v1.c21',
   );
 });
 
@@ -2788,7 +2914,7 @@ test('falls back to the configured model and records only output shape v2', asyn
   assert.equal(result.provenance.modelVersion, 'provider/configured');
   assert.equal(
     result.provenance.promptVersion,
-    'wiselink.3_1.review_prompt.v1.c16',
+    'wiselink.3_1.review_prompt.v1.c21',
   );
   assert.equal(
     outputShape.schemaVersion,
@@ -3074,7 +3200,9 @@ test('recovers an ambiguous checkpointed review commit with one status read and 
     },
     {
       callTool,
-      invokeModel: async () => ({
+      invokeModel: async (_input, { readSourceRefs }) => {
+        await readSourceRefs([reviewTask.resourceRefs[0].sourceRefId]);
+        return {
         output: {
           responseType: 'SOURCE_LINK',
           answer: '候选答复。',
@@ -3086,7 +3214,8 @@ test('recovers an ambiguous checkpointed review commit with one status read and 
           warnings: ['candidate_only'],
         },
         provenance: provenance(),
-      }),
+        };
+      },
     },
   );
 
@@ -3180,7 +3309,7 @@ test('never retries invalid model arguments after output-shape checkpoint', asyn
   );
   assert.equal(counts.get('begin_review_turn'), 1);
   assert.equal(counts.get('get_review_turn_context'), 1);
-  assert.equal(counts.get('read_source_refs'), 1);
+  assert.equal(counts.get('read_source_refs'), undefined);
   assert.equal(counts.get('commit_review_turn_candidate'), undefined);
   assert.equal(modelCalls, 1);
   await stat(join(checkpointDir, 'model.output-shape.json'));
@@ -3238,7 +3367,8 @@ test('recovers a proven pre-dispatch gateway 404 once without replaying Host rea
   await assert.rejects(
     runHostedReviewTurn(options, {
       callTool,
-      invokeModel: async () => {
+      invokeModel: async (_input, { readSourceRefs }) => {
+        await readSourceRefs([reviewTask.resourceRefs[0].sourceRefId]);
         modelCalls += 1;
         throw new Error(failureCode);
       },
@@ -3257,7 +3387,8 @@ test('recovers a proven pre-dispatch gateway 404 once without replaying Host rea
 
   const dependencies = {
     callTool,
-    invokeModel: async () => {
+    invokeModel: async (_input, { readSourceRefs }) => {
+      await readSourceRefs([reviewTask.resourceRefs[0].sourceRefId]);
       modelCalls += 1;
       return {
         output: {

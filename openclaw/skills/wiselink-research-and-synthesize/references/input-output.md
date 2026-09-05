@@ -79,7 +79,7 @@ runtimePolicy.modelPolicyRef = official-hosted-profile-config
 ResultEnvelope.modelVersion = 官方托管 profile/config 本轮选择后的非空、可读实际模型
 Task.skillPolicyRef = wiselink-research-and-synthesize@r09
 ApplicabilityTask.runtimePolicy.skillVersion = wiselink-research-and-synthesize@r09  # v1 历史字段名，语义为兼容线
-ResultEnvelope.skillVersion = wiselink-research-and-synthesize@r09.c20       # 实际安装包版本
+ResultEnvelope.skillVersion = wiselink-research-and-synthesize@r09.c21       # 实际安装包版本
 toolVersions.wiselink-openclaw-engineering-assessment = 1.2.0
 promptVersion = 当前实际运行非空版本
 ```
@@ -321,11 +321,12 @@ requestId 仅在驱动控制面派生不可逆 session discriminator；它不进
 
 模型输出 schema：`wiselink.3_1.review_turn_candidate.v1.c3`。
 
-当前 Gateway transport 不依赖 `response_format`，只声明唯一 forced function
-`return_wiselink_review_candidate`，固定 `tool_choice` 指向该函数、`parallel_tool_calls=false`、`n=1`。该函数是无实现、
-不执行的序列化通道。响应必须只有一个 choice 和一个同名 function call；assistant content 必须为 null 或仅空白，
-function arguments 必须直接是 strict JSON object。其他函数、多 tool call、fence、prose、array、null arguments 或任何
-analysis 全部拒绝，不抽取、修复或归一化。
+当前 Gateway transport 不依赖 `response_format`。c21 声明两个 client function：
+`read_wiselink_review_sources({sourceRefIds})` 只委托驱动读取本轮已授权来源；
+`return_wiselink_review_candidate` 仍是无实现、不执行的最终序列化通道。
+`tool_choice=auto`、`parallel_tool_calls=false`、`n=1`。每次响应只有一个 choice 和一个上述 function call，
+assistant content 为 null 或空白，arguments 为 strict JSON object。其它函数、多个调用、包裹文本与 analysis 仍拒绝。
+同轮读取循环只传新增 tool exchange；实际读取批次随 model.result 保存，以便恢复原已读集合而不重跑模型。
 
 驱动在业务 strict parse 前先写 `model.output-shape.json` v2：只含 input argsHash、provider/model、HTTP/finish、
 choice/tool-call 数量、assistant content 类型/长度/空白状态与 SHA、function 名称匹配、arguments 类型/长度、raw JSON

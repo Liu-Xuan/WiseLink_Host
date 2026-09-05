@@ -1,8 +1,12 @@
-# 官方托管 R09 c20 发布与 UAT runbook
+# 官方托管 R09 c21 发布与 UAT runbook
 
 c19 新增页面自动领取，先安装兼容 Skill，再发布 Host，最后启用原生 command cron 与页面自动发送；本批具体步骤见 [页面自动领取](hosted-review-consumer.md)。下列历史五工具 UAT 保留给单轮 driver，不把它的手工启动结果当作页面自助闭环。
 
 c20 兼容读取 JobAid / Overall / Review 的可选共同背景，并区分普通工作判断修改与正式采用。仍先安装 Skill，再发布提供新背景的 Host；旧任务、现有 cron 和候选提交入口保持。存储不可读期间只完成安装与代码验证，不重放失败 Turn，不把它们记为页面 UAT。
+
+c21 在相同 C3/MCP/ResultEnvelope 上改为模型按需取证，不增加 Host 工具或业务写入口。
+同轮复用原生 session，先发最小上下文与目录，随后仅传新增 tool exchange；跨 Turn 仍隔离。
+必须分别记录本地协议测试、安装读回与真实新 Turn 验证，不以安装代替 UAT。
 
 本 runbook 只定义 Host C4+C5 accepted 后的真实验证顺序；本地实现不执行安装、发布、Session 创建、模型调用或
 云配置修改。
@@ -47,7 +51,7 @@ Task/Result schema、MCP tool 形状、authority 或安全语义改变时升级 
    优先读回非空、可识别的实际 `modelVersion`；响应未提供可读模型时才使用上述唯一 configured endpoint 作为可证明执行标识，不把它解释为未暴露的下游具体模型。重复 agent、
    不可读 primary、fallbacks 非数组或非空均在调用模型前停止；
 4. 同名 Skill 只有一个，安装版本精确
-   `wiselink-research-and-synthesize@r09.c20`；
+   `wiselink-research-and-synthesize@r09.c21`；
 5. Host MCP package/version 为
    `wiselink-openclaw-engineering-assessment@1.2.0`，exact 20 tools 可见；
 6. C3 successor 已进入 current Hosted release；只凭 Git commit 不等于 deployed readback；
@@ -143,9 +147,9 @@ authenticated user。
    conversation/turn/request/attempt/lease/WorkItem 控制面值；确认本轮 requestId 只派生不可逆 session discriminator，
    相同正文的新 Turn 也不会复用模型会话。
 5. 模型经 Gateway HTTP 仅生成 SOURCE_LINK/ANSWER 内容；本用例要求 `SOURCE_LINK` 且至少一个
-   `sourceRefs` 来自本轮实读 allowlist，`sourceRefs=[]` 必须在 commit 前 fail closed。当前请求只暴露唯一 forced
-   function `return_wiselink_review_candidate`，固定 `tool_choice`、`parallel_tool_calls=false` 和 `n=1`；该函数只作为
-   序列化通道且永不执行。响应必须只有一个 choice 和一个同名 function call，assistant content 为 null 或仅空白，
+   `sourceRefs` 来自本轮实读 allowlist，`sourceRefs=[]` 必须在 commit 前 fail closed。c21 请求暴露
+   `read_wiselink_review_sources` 与 `return_wiselink_review_candidate`，`tool_choice=auto`、`parallel_tool_calls=false`
+   和 `n=1`；前者按需调用现有 Host 读取，后者仅作为最终序列化通道且永不执行。每次响应只有一个 choice 和一个合法 function call，assistant content 为 null 或仅空白，
    arguments 为 direct strict JSON object。其他函数、多 tool call、fence/prose/array/null arguments 或任何 analysis
    均 fail closed，不抽取、不修复、不归一化。
    strict parse 前的 `model.output-shape` v2 0600 write-once checkpoint 只保存 provider/model、HTTP/finish、choice/tool

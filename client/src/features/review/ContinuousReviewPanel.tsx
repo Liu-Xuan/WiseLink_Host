@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useWorkbenchPanelActive } from '@client/src/features/workbench/RetainedWorkbenchPanel';
 import { useDropzone } from 'react-dropzone';
 import {
   FileCheck2,
@@ -82,6 +83,7 @@ export default function ContinuousReviewPanel({
   onWorkItemRefresh,
   materials,
 }: ContinuousReviewPanelProps) {
+  const panelActive: boolean = useWorkbenchPanelActive();
   const [conversation, setConversation] =
     useState<ReviewConversationReadModel | null>(null);
   const [currentRevision, setCurrentRevision] = useState(workItemRevision);
@@ -207,6 +209,7 @@ export default function ContinuousReviewPanel({
 
   useEffect(() => {
     if (
+      !panelActive ||
       !hasActiveExecution ||
       conversation?.status !== 'ACTIVE' ||
       busyAction !== null ||
@@ -219,6 +222,7 @@ export default function ContinuousReviewPanel({
     const timer = window.setTimeout(() => void readCurrent(), 4_000);
     return () => window.clearTimeout(timer);
   }, [
+    panelActive,
     busyAction,
     conversation?.status,
     error,

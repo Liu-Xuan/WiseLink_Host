@@ -221,7 +221,10 @@ RUNNING 正常路径由 `scripts/run-hosted-review-turn.mjs` 外部驱动执行�
 
 驱动在私有 `0700` 目录中以 `0600` 持久化每步 started/result。重启只读已完成 checkpoint；非 commit 步骤的
 started-without-result 一律停止且不重试。commit started-without-result 触发且只触发一次 status readback，不再
-提交 commit。模型调用通过无工具 Gateway HTTP 完成，返回 tool_calls 时 fail closed。
+提交 commit。c21 通过 Gateway client functions 允许模型按需请求 `read_wiselink_review_sources`，
+驱动委托既有 `read_source_refs` 取回实际片段；模型最终调用仅序列化的 `return_wiselink_review_candidate`。
+不向模型暴露 Host MCP、begin/lease/commit。每次响应只接一个合法 function call；同轮后续只传新 tool exchange，
+使用相同原生 session 和既有总超时，不重传完整评估上下文。跨轮 session 仍隔离，不宣称已完成稳定跨轮延续。
 
 COMMITTING：
 

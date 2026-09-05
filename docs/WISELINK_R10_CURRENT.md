@@ -2,7 +2,7 @@
 
 同步日期：2026-09-05（Asia/Shanghai）。
 
-来源：[R10 云文档](https://hv5zjf4j8yb.feishu.cn/docx/MA3fdjEycoISjHxptAqcsyxvn9b)，revision 2141。
+来源：[R10 云文档](https://hv5zjf4j8yb.feishu.cn/docx/MA3fdjEycoISjHxptAqcsyxvn9b)，revision 2144。
 
 本文件是现行第 1–11 节、第 12 节当前摘要及第 13–14 节的读取镜像，便于代码开发引用；历史运行记录和附录保留在云文档。图示保留原云资源链接，少量 callout 保留导出的 DocxXML。当前执行进度见 [执行计划](WISELINK_R10_EXECUTION_PLAN.md)。原 GPT Pro 交接包不回写、不改写。
 
@@ -406,11 +406,13 @@ B 批次与 Host/Agent 同轮接通：同一事项的本次问题和材料、已
 
 # 12. 当前运行摘要与历史记录（2026-09-05）
 
-**最近功能发布与页面核实：**Host release 7681965597551529166 已 finished，commit d5ffbf4c939a6c3a929dafb8d626ab01eecd629c，error_logs 为空；包含共同任务背景 90b05aa8f 与独立历史讨论读取 100709797。官方 Hosted c20 已先安装，唯一同名、Ready、模型可见，installed validation.test.mjs 为 103 pass / 0 fail。前端增量在主控集成后 2 suites / 50 tests 与前后端生产构建通过。发布后真实登录页冷刷新已显示事项版本 11、Turn 17 FAILED 及 ARTIFACT_READBACK_MISMATCH:METADATA、历史 Turn 13/14 候选；来源入口禁用且无提交/采用操作。当前已恢复历史讨论与真实状态的只读使用，旧原文/PDF 和新模型执行仍未恢复。无数据库迁移，未新建业务回合，未正式采用；共同背景的真实新分析效果仍待验证。
+**最近功能发布与页面核实：**Host release 7681981887993253150 已 finished，commit 3903eb6c1789e9aace2b3aed1187f3d29bba01f8，error_logs 为空；已同步 origin 与 github。该版本在已发布共同任务背景 90b05aa8f 和独立讨论读取 100709797 上，增加 Host 同次整包/ledger 读取合并、相同内容完整校验结论有限复用（72b9c156f），以及前端同对象刷新保留内容、消费 Overall 已读回结果、入场 handoff 一次性使用（3903eb6c1）。本次主控集成 6 suites / 74 tests、client type-check、前后端生产构建通过；构建仍有仓库外 tsconfig 扫描和大 bundle 警告，未屏蔽。发布后真实登录页重新载入仍读到事项版本 11、Turn 17 FAILED 和历史候选，旧原文仍不可读，无法在该样本上验证正常整包路径的线上提速。官方 Hosted Skill 仍为已安装 c20，本轮未重装、未迁移数据库、未新建业务回合、未正式采用；发布成功与测试通过不等于页面已经秒开或连续评估完成。
 
 ReviewConversation ACTIVE，lastTurnNo=17；Turn 13/14 均未采用，分别保留 2/10 个 SourceRef，实际 Skill 分别为 c16/c17。Turn 15/16/17 均由页面保存、原生 cron 自动领取；15/16 在模型前失败，其上下文修复已发布；17 在上下文准备阶段因原文包元数据不可读而 FAILED，尚未产生新的模型候选。事项 revision 仍为 11，未确认 ReviewAction、未正式采用。配置查询与真实知识空间仍 NOT_CONNECTED，不能声称完整连续评估或真实构型采用后重算已验证。
 
-**当前开发状态：**“页面自助连续评估闭环” Goal 为 ACTIVE，完整分析仍不可用，但原文失败不再遮住已保存讨论和真实终态。Satin A/B、焦点同步、页面自动发送、Host 授权领取、原生消费者、草稿编辑修复、共同任务背景和独立讨论读取均已发布，c20 已官方安装。新文档在同一原桶即时、约 5 分钟后及本次发布后均可读回，旧对象仍不可访问，需平台文件级原因与恢复证据；不能认定用户删除或物理删除。下一步恢复旧材料并验证新回合自动候选及追问，同时继续完整共同上下文页面、稳定原生会话、按需调查及真实活动。安装、发布和历史只读恢复均不等同完整连续评估。
+**当前开发状态：**“页面自助连续评估闭环” Goal 为 ACTIVE。Host 读取优化与前端刷新/读回复用已发布；面板保活由前端主控独立推进，首屏轻量读取、讨论状态与历史分离继续实施，不新增通用缓存框架或 gate。完整分析仍受旧原文不可读影响；新测试文件同桶即时、延迟及上一发布后的读回均已通过，尚无旧对象文件级原因与恢复证据，不能认定用户删除或物理删除。Hosted OpenClaw 2026.6.6 的已安装代码确认支持稳定 session key、原生历史及 client function 回传；现行 c20 driver 尚未接通跨轮持续会话与按问题取证。下一步沿现有 Host/Turn/MCP 接通这些能力、展示真实活动，并在原文恢复后验证新回合自动候选及追问；合成能力测试、安装与历史只读恢复均不代替真实 SB 页面连续使用。
+
+原生会话交接核查（2026-09-05）：已安装 OpenClaw 2026.6.6 (8c802aa) 的代码确认支持稳定 x-openclaw-session-key、原生历史加载和 client function 往返。合成测试在 Gateway 默认 main 下完成三次有效模型请求：工具调用、工具结果回传、仅发送新消息后准确回忆合成事实；它没有按要求路由至 wiselink-engineering，因此只证明通用 Gateway 能力，不作为业务 profile 或真实 SB 的验收。初次脚手架取值错误导致 401，修正后再运行，此失败没有被省略。配置当前只有 agents.defaults、未显式登记 agents.list；wiselink-engineering 目录存在，但命名路由如何继承默认配置仍须按实际代码核实，不能仅由目录或逻辑 profile 标签推断已接通。保持现行 c20 与业务回合不变；后续复用 Host 已有会话标识、版本、MCP 来源读取与运行记录接线，不重建会话引擎。
 
 **存储运行异常与深入定位：**2026-09-05 13:57:33 原文包仍可读取，14:01:23 起同一路径元数据不可读；15:38 原始 PDF 也返回“File not found or no access”。成功与失败的真实页面 Trace 均运行 4edb3a376，期间未发生新发布，同一工程师及服务调用均受影响。管理台实际请求仍查询原桶 bucket_aadkprardjghu，请求体仅 limit=200，无过滤返回 attachments=[]、hasMore=false；单纯管理端切错桶或 UI 缓存已基本排除。官方 SDK 会将“不存在或无访问权”归一为 null，故尚不能判定物理删除、索引异常或全局可见性变化。用户确认未进行相关操作，现有日志未找到文件删除证据；需妙搭存储侧依据原桶、文件 ID 1875042263478407 / 1875042252601353 和成功/失败 Trace 核查文件级记录及恢复可能。应用还将原文读取作为整页返回前置，致已保存 Review 讨论与 FAILED 状态也被遮住，正在修复此加载依赖。Turn 17 保持 FAILED，未重放，事项 revision 11 不变；未发现完整匹配备份，不从片段重造原件、不放宽完整性校验、不重解析覆盖既有事项。
 
