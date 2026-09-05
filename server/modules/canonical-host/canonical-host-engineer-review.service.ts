@@ -382,11 +382,12 @@ export class CanonicalHostEngineerReviewService {
     workItem: CanonicalWorkItemProjection,
   ): Promise<CanonicalEngineerReviewPageContext | null> {
     if (!workItem.integratedAssessment?.baseRules) return null;
-    const items = await this.readDynamicItems(workItem);
-    const rules = await readActiveJobAidBrowserRules(
-      workItem.integratedAssessment.baseRules.criterionSetId,
-    );
-    const ledger = await this.readLedger(workItem);
+    const [{ items, ledger }, rules] = await Promise.all([
+      this.readDynamicItemsAndLedger(workItem),
+      readActiveJobAidBrowserRules(
+        workItem.integratedAssessment.baseRules.criterionSetId,
+      ),
+    ]);
     const effective = effectiveReviews(ledger?.reviews ?? []);
     const pageItems = items.map((item) => {
       const latest = effective.get(item.criterionId) ?? null;
@@ -463,37 +464,26 @@ export class CanonicalHostEngineerReviewService {
   ): Promise<void> {
     const ledger = await this.readLedger(workItem);
     if (!ledger) return;
-    if (ledger.criterionSetId !== baseRules.criterionSetId) {
-      throw new Error('ENGINEER_REVIEW_RULESET_CHANGED');
-    }
-    const known = new Set(
-      readDynamicRuleReviewItems(baseRules, bytes).map(
-        (item) => item.criterionId,
-      ),
+    assertLedgerItems(
+      ledger,
+      baseRules,
+      readDynamicRuleReviewItems(baseRules, bytes),
     );
-    if (
-      ledger.reviews.some(
-        (review) =>
-          !known.has(review.criterionId) ||
-          (review.affectedCriterionIds ?? [review.criterionId]).some(
-            (criterionId) => !known.has(criterionId),
-          ),
-      )
-    ) {
-      throw new Error('ENGINEER_REVIEW_CRITERION_SET_DRIFT');
-    }
   }
 
   private async readDynamicItems(workItem: CanonicalWorkItemProjection) {
+    return (await this.readDynamicItemsAndLedger(workItem)).items;
+  }
+
+  private async readDynamicItemsAndLedger(workItem: CanonicalWorkItemProjection) {
     const baseRules = workItem.integratedAssessment!.baseRules;
-    const bytes = await this.artifactStore.readActualBytes(baseRules.artifact);
+    const [bytes, ledger] = await Promise.all([
+      this.artifactStore.readActualBytes(baseRules.artifact),
+      this.readLedger(workItem),
+    ]);
     const items = readDynamicRuleReviewItems(baseRules, bytes);
-    await this.assertLedgerCompatibleWithDynamicBytes(
-      workItem,
-      baseRules,
-      bytes,
-    );
-    return items;
+    if (ledger) assertLedgerItems(ledger, baseRules, items);
+    return { items, ledger };
   }
 
   private async readLedger(
@@ -504,33 +494,25 @@ export class CanonicalHostEngineerReviewService {
     const bytes = await this.artifactStore.readActualBytes(projection.artifact);
     const ledger = parseLedger(bytes);
     assertLedger(ledger, projection, workItem);
-    const attachmentEvidence = ledger.reviews.flatMap((review) =>
-      (review.evidence ?? []).filter(
-        (evidence) => evidence.kind === 'ATTACHMENT',
-      ),
-    );
     await Promise.all(
       ledger.reviews.flatMap((review) =>
         (review.evidence ?? [])
           .filter((evidence) => evidence.artifact !== undefined)
-          .map((evidence) =>
-            this.artifactStore.readActualBytes(evidence.artifact!),
-          ),
+          .map(async (evidence) => {
+            const evidenceBytes = await this.artifactStore.readActualBytes(
+              evidence.artifact!,
+            );
+            if (evidence.kind !== 'ATTACHMENT') return;
+            const parsed = parseReviewAttachmentParsedArtifact(evidenceBytes);
+            if (
+              parsed.workItemId !== workItem.workItemId ||
+              parsed.attachmentRef !== evidence.locator ||
+              reviewAttachmentEvidenceStatement(parsed) !== evidence.statement
+            ) {
+              throw new Error('ENGINEER_REVIEW_ATTACHMENT_BINDING_INVALID');
+            }
+          }),
       ),
-    );
-    await Promise.all(
-      attachmentEvidence.map(async (evidence) => {
-        const parsed = parseReviewAttachmentParsedArtifact(
-          await this.artifactStore.readActualBytes(evidence.artifact!),
-        );
-        if (
-          parsed.workItemId !== workItem.workItemId ||
-          parsed.attachmentRef !== evidence.locator ||
-          reviewAttachmentEvidenceStatement(parsed) !== evidence.statement
-        ) {
-          throw new Error('ENGINEER_REVIEW_ATTACHMENT_BINDING_INVALID');
-        }
-      }),
     );
     return ledger;
   }
@@ -566,6 +548,27 @@ export class CanonicalHostEngineerReviewService {
       action: 'RECORD_ENGINEER_REVIEW',
       workItemId,
     });
+  }
+}
+
+function assertLedgerItems(
+  ledger: EngineerReviewLedger,
+  baseRules: CanonicalIntegratedAssessmentProjection['baseRules'],
+  items: ReturnType<typeof readDynamicRuleReviewItems>,
+): void {
+  if (ledger.criterionSetId !== baseRules.criterionSetId) {
+    throw new Error('ENGINEER_REVIEW_RULESET_CHANGED');
+  }
+  const known = new Set(items.map((item) => item.criterionId));
+  if (
+    ledger.reviews.some((review) =>
+      !known.has(review.criterionId) ||
+      (review.affectedCriterionIds ?? [review.criterionId]).some(
+        (id) => !known.has(id),
+      ),
+    )
+  ) {
+    throw new Error('ENGINEER_REVIEW_CRITERION_SET_DRIFT');
   }
 }
 

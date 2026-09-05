@@ -115,6 +115,8 @@ describe('continuous review client state', () => {
     expect(source).toContain("captureError(reason, 'refresh')");
     expect(source).toContain('setReadFailed(true)');
     expect(source).toContain('reviewReadbackMessage(');
+    expect(source).toContain('refreshing || workItemRefreshing');
+    expect(source).toContain('[readCurrent, workItemRevision]');
   });
 
   it('clears inaccessible readback but preserves it on temporary refresh failure', () => {

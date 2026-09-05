@@ -33,6 +33,7 @@ describe('CanonicalHostEngineerReviewService', () => {
     expect(serialized).not.toContain('automationMode');
     expect(serialized).not.toContain('stageCode');
     expect(serialized).not.toContain('stageName');
+    expect(harness.state.readRefs).toEqual(['artifact://dynamic']);
   });
 
   it('derives one browser-safe current gap for a shared missing input', async () => {
@@ -70,6 +71,27 @@ describe('CanonicalHostEngineerReviewService', () => {
         }),
       ],
     });
+  });
+
+  it('reads the same ledger only once while composing a page context', async () => {
+    const harness = target();
+    harness.state.workItem.integratedAssessment!.baseRules!.criterionSetId =
+      CANONICAL_ACTIVE_JOB_AID_CRITERION_SET_ID;
+    harness.artifacts.set('artifact://dynamic', dynamicBytes('GOV-001'));
+    const updated = await harness.service.recordReview({
+      workItemId: 'WI-REVIEW',
+      expectedRevision: 5,
+      criterionId: 'GOV-001',
+      decision: 'deferred',
+      comment: 'Local test review',
+    }, engineerActor());
+    harness.state.readRefs.length = 0;
+    const context = await harness.service.pageContext(updated);
+    expect(context?.items[0].latestReview?.comment).toBe('Local test review');
+    expect(harness.state.readRefs.sort()).toEqual([
+      'artifact://dynamic',
+      updated.integratedAssessment!.engineerReviews!.artifact.ref,
+    ].sort());
   });
 
   it('fresh-reads and resolves only the exact Host gap-to-criterion mapping', async () => {

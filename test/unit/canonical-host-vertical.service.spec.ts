@@ -1125,6 +1125,7 @@ describe('CanonicalHostVerticalService', () => {
     );
     await service.runPdf(request, TEST_ACTOR);
 
+    const sourceReads = jest.spyOn(store, 'readActualBytes');
     const page = await service.page(
       {
         workItemId: request.workItemId,
@@ -1142,6 +1143,7 @@ describe('CanonicalHostVerticalService', () => {
       },
     });
     expect(page.queryResults.length).toBeGreaterThan(0);
+    expect(sourceReads).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(page.queryResults)).not.toMatch(
       /observationType|authority|candidateOnly|windowId|artifact:\/\//iu,
     );
@@ -1177,6 +1179,7 @@ describe('CanonicalHostVerticalService', () => {
       expect.objectContaining({ action: 'READ_DOCUMENT_PARSING' }),
     );
     const sourceRef: string = page.queryResults[0].sourceRefIds[0];
+    sourceReads.mockClear();
     const sourceLinked = await service.page(
       {
         workItemId: request.workItemId,
@@ -1186,6 +1189,7 @@ describe('CanonicalHostVerticalService', () => {
       TEST_ACTOR,
     );
     expect(sourceLinked.queryResults.length).toBeGreaterThan(0);
+    expect(sourceReads).toHaveBeenCalledTimes(1);
     expect(
       sourceLinked.queryResults.every((result) =>
         result.sourceRefIds.includes(sourceRef),

@@ -10,6 +10,7 @@ import { UNIFIED_READER } from './unified-reader.constants';
 import type {
   UnifiedReaderPackageInspection,
   UnifiedReaderPackageSummary,
+  UnifiedReaderSourcePackage,
 } from './unified-reader.types';
 import {
   assertNoDuplicateJsonKeys,
@@ -45,13 +46,24 @@ export class Frozen2CandidateReaderService {
     artifact: UnifiedPackageArtifactDescriptor,
     bytes: Uint8Array,
   ): UnifiedReaderQueryResult[] {
-    return this.inspectInternal(artifact, bytes).units.map((unit) => ({
-      unitId: unit.unitId,
-      kind: unit.kind,
-      text: unit.text,
-      sourceRefIds: [...unit.sourceRefIds],
-      sourceLocators: unit.sourceLocators.map(cloneLocator),
-    }));
+    return this.readSourcePackage(artifact, bytes).units;
+  }
+
+  readSourcePackage(
+    artifact: UnifiedPackageArtifactDescriptor,
+    bytes: Uint8Array,
+  ): UnifiedReaderSourcePackage {
+    const { inspection, units } = this.inspectInternal(artifact, bytes);
+    return {
+      inspection,
+      units: units.map((unit) => ({
+        unitId: unit.unitId,
+        kind: unit.kind,
+        text: unit.text,
+        sourceRefIds: [...unit.sourceRefIds],
+        sourceLocators: unit.sourceLocators.map(cloneLocator),
+      })),
+    };
   }
 
   read(

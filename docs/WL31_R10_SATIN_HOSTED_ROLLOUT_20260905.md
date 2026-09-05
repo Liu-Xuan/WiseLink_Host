@@ -25,6 +25,7 @@
 | 7681921550199491764 | 2110b5c26 | finished；来源权威语义映射修复 |
 | 7681924845857262806 | 4edb3a376 | finished；UUID 快照引用及默认规则焦点同步 |
 | 7681935244031429931 | d620b22c8 | finished；后台刷新可编辑草稿、旧状态明确提示 |
+| 7681965597551529166 | d5ffbf4c9 | finished；共同任务背景和原文失败下独立历史讨论读取；真实登录页已读回 FAILED 及历史候选 |
 
 以上发布均回读到对应 commit，error_logs 为空。最终后续发布与回合结果在本文件继续补充。
 
@@ -39,7 +40,7 @@
 
 ## 云端原生自动执行
 
-官方 Hosted `app_17c3zn24kv2` 已安装 Skill r09.c19；最低兼容版本仍为 r09.c10。原生 command cron `8db789fa-4fe9-4e58-850c-97b4cd70eb46` 每 60 秒执行一次已安装消费者，范围为上述已授权样本；不依赖 Codex 手工 driver、开发 CLI 或开发者电脑常驻进程。
+官方 Hosted `app_17c3zn24kv2` 已安装 Skill r09.c20；最低兼容版本仍为 r09.c10。原生 command cron `8db789fa-4fe9-4e58-850c-97b4cd70eb46` 每 60 秒执行唯一安装路径中的消费者，范围为上述已授权样本，配置未改变；不依赖 Codex 手工 driver、开发 CLI 或开发者电脑常驻进程。
 
 空闲自然 tick 已回读 IDLE/exit 0，不消耗模型调用。以下非空回合全部由真实页面创建、原生 cron 自动领取，未手工启动其业务 driver。
 
@@ -57,9 +58,15 @@ Turn 17 同样未调用模型、未写入候选，未重新执行。完整时间
 
 ## 验证与剩余工作
 
-### 独立讨论读取增量（已集成，待生产页面核实）
+### 独立讨论读取增量（已发布并完成真实只读页面核实）
 
-100709797 只修改 client 与普通测试。身份成功且原文页返回临时 5xx 时，通过既有授权的 `getCurrentReviewConversation` 独立读取数据库已保存讨论与 execution；不合成 pageData 或当前材料状态。复用回合展示组件的只读分支，不提供新回合、来源定位、草案确认或采用动作；身份/对象不可访问时仍隐藏受限内容。前端交付时 3 suites / 25 tests 与 client typecheck 通过；主控集成后实际运行 2 suites / 50 tests 和前后端生产构建通过。构建仍有既有周边工作树 tsconfig、模块类型和 chunk-size 警告，未静默屏蔽。当前尚不能把生产讨论回读记为成功。
+100709797 只修改 client 与普通测试。身份成功且原文页返回临时 5xx 时，通过既有授权的 `getCurrentReviewConversation` 独立读取数据库已保存讨论与 execution；不合成 pageData 或当前材料状态。复用回合展示组件的只读分支，不提供新回合、来源定位、草案确认或采用动作；身份/对象不可访问时仍隐藏受限内容。前端交付时 3 suites / 25 tests 与 client typecheck 通过；主控集成后实际运行 2 suites / 50 tests 和前后端生产构建通过。构建仍有既有周边工作树 tsconfig、模块类型和 chunk-size 警告，未静默屏蔽。发布后 Chrome 真实登录页冷刷新已显示事项版本 11、Turn 17 FAILED、历史 Turn 13/14 候选，展开执行记录准确显示原错误与操作记录，来源按钮禁用。首次过早读取仍看到旧画面，后续实际加载完成即通过，未增加额外补丁；未做线上权限撤销或写入操作。
+
+### c20 官方安装与交付入口修正
+
+源提交 `90b05aa8fb186d33e2f69f9a705909de48cf97e7`，ZIP 162428 bytes，既有 Publish Lite SHA-256 `7a5f7fbd9851b21f8bba7e31aa42ea9f12782d89a1fe0f343dc144c7c4e40793`。首次管理轮次发现当前 Hosted 没有 Drive 文件下载工具，访问私有文件页面只能得到登录页，未完成安装；没有以登录 HTML 或猜测包替代。随后将同一包与清单通过官方应用文件能力交付 Hosted 自身私有桶，短时下载地址仅给该实例，不改变公开权限。
+
+安装轮次 `7681964424842185987` completed：官方同名 `--force` 原位覆盖一次，installed 23 个包内文件与清单一致；唯一同名、Ready、Visible、Available as command。已安装 `validation.test.mjs` 103 pass / 0 fail；源码完整 Skill 测试 106 与此单文件范围不同。先安装 c20，再发布 Host `d5ffbf4c9`。未调用业务 begin/claim/context/commit/confirm、未手工运行消费者、未变更 cron；不将管理查询或安装算作真实业务分析。企业云端交付文件保留，下载/解压临时目录由 Hosted 清理。
 
 ### 共同上下文增量（代码完成，发布与页面验证分开记录）
 

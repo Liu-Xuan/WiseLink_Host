@@ -31,6 +31,12 @@ export interface PythonU0FullPackageValidatorOptions {
  * only; no path or executable is read from an HTTP request.
  */
 export class PythonU0FullPackageValidatorAdapter implements U0FullPackageValidatorPort {
+  // Only validation conclusions are reused, never source bytes or authorization.
+  // A new adapter on deployment starts empty; every call still checks actual bytes.
+  private readonly packageValidations = new Map<
+    string,
+    Promise<U0FullValidationProof>
+  >();
   private readonly pythonExecutable: string;
   private readonly contractRoot: string;
   private readonly validatorRevision: string;
@@ -85,6 +91,31 @@ export class PythonU0FullPackageValidatorAdapter implements U0FullPackageValidat
     ) {
       throw new Error('FULL_U0_VALIDATOR_REJECTED:ACTUAL_BYTE_MISMATCH');
     }
+    const key = `${input.packageId}:${input.artifact.sha256}`;
+    let validation = this.packageValidations.get(key);
+    if (!validation) {
+      validation = this.validatePackageBytes(input);
+      this.packageValidations.set(key, validation);
+      if (this.packageValidations.size > 32) {
+        const oldestKey = this.packageValidations.keys().next().value;
+        if (oldestKey !== undefined) this.packageValidations.delete(oldestKey);
+      }
+    }
+    try {
+      return { ...(await validation) };
+    } catch (error) {
+      if (this.packageValidations.get(key) === validation) {
+        this.packageValidations.delete(key);
+      }
+      throw error;
+    }
+  }
+
+  private async validatePackageBytes(input: {
+    artifact: import('@shared/api.interface').UnifiedPackageArtifactDescriptor;
+    bytes: Uint8Array;
+    packageId: string;
+  }): Promise<U0FullValidationProof> {
     await this.assertVendoredRuntime();
     const directory = await mkdtemp(
       join(tmpdir(), 'wiselink-u0-full-validator-'),

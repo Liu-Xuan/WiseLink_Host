@@ -1,5 +1,6 @@
 import type { CanonicalDocumentParsingPageResponse } from '@shared/api.interface';
 import {
+  canReuseCanonicalDocumentParsingReadback,
   createCanonicalDocumentParsingRouteHandoff,
   createCanonicalDocumentParsingProjectionReader,
   resolveCanonicalDocumentParsingRouteHandoff,
@@ -30,6 +31,7 @@ function page(marker: string): CanonicalDocumentParsingPageResponse {
     status: 'FRESH_READ',
     workItem: {
       workItemId: 'WI-SHARED',
+      revision: 11,
       classification: { normalizedFamily: 'SB' },
       source: {
         documentId: marker,
@@ -306,6 +308,92 @@ describe('DocumentParsingPage identity-bound load epoch', () => {
         nowMs: 5_999,
       }),
     ).toBe(fresh);
+  });
+
+  it('consumes the exact Overall readback without another full read when the current request matches', async () => {
+    const fresh = page('OVERALL_READBACK');
+    const readPage = jest.fn().mockResolvedValue(page('UNNECESSARY_READ'));
+    const onFresh = jest.fn();
+    await runCanonicalDocumentParsingLoad({
+      isCurrent: () => true,
+      readIdentity: async () => identityA,
+      readPage: () =>
+        canReuseCanonicalDocumentParsingReadback(fresh, {
+          workItemId: 'WI-SHARED',
+          query: '',
+          sourceRef: '',
+          currentRevision: 10,
+        })
+          ? Promise.resolve(fresh)
+          : readPage(),
+      onFresh,
+      onDenied: jest.fn(),
+      onIdentityError: jest.fn(),
+      onSettled: jest.fn(),
+    });
+    expect(readPage).not.toHaveBeenCalled();
+    expect(onFresh).toHaveBeenCalledWith(identityA, fresh);
+    expect(onFresh.mock.calls[0][1]).toBe(fresh);
+  });
+
+  it.each([
+    { workItemId: 'WI-OTHER', query: '', sourceRef: '', currentRevision: 11 },
+    {
+      workItemId: 'WI-SHARED',
+      query: 'effectivity',
+      sourceRef: '',
+      currentRevision: 11,
+    },
+    {
+      workItemId: 'WI-SHARED',
+      query: '',
+      sourceRef: 'SOURCE-P9',
+      currentRevision: 11,
+    },
+    { workItemId: 'WI-SHARED', query: '', sourceRef: '', currentRevision: 12 },
+  ])(
+    'requires the scoped Host read instead of reusing a mismatching or older Overall response: %j',
+    async (expected) => {
+      const readback = page('OVERALL_READBACK');
+      const scoped = page('SCOPED_HOST_READ');
+      const readPage = jest.fn().mockResolvedValue(scoped);
+      const onFresh = jest.fn();
+      await runCanonicalDocumentParsingLoad({
+        isCurrent: () => true,
+        readIdentity: async () => identityA,
+        readPage: () =>
+          canReuseCanonicalDocumentParsingReadback(readback, expected)
+            ? Promise.resolve(readback)
+            : readPage(),
+        onFresh,
+        onDenied: jest.fn(),
+        onIdentityError: jest.fn(),
+        onSettled: jest.fn(),
+      });
+      expect(readPage).toHaveBeenCalledTimes(1);
+      expect(onFresh).toHaveBeenCalledWith(identityA, scoped);
+    },
+  );
+
+  it('does not accept a matching Overall readback after the session changes during identity discovery', async () => {
+    const identity = deferred<typeof identityA>();
+    let current = true;
+    const readPage = jest.fn().mockResolvedValue(page('OVERALL_READBACK'));
+    const onFresh = jest.fn();
+    const pending = runCanonicalDocumentParsingLoad({
+      isCurrent: () => current,
+      readIdentity: () => identity.promise,
+      readPage,
+      onFresh,
+      onDenied: jest.fn(),
+      onIdentityError: jest.fn(),
+      onSettled: jest.fn(),
+    });
+    current = false;
+    identity.resolve(identityA);
+    await pending;
+    expect(readPage).not.toHaveBeenCalled();
+    expect(onFresh).not.toHaveBeenCalled();
   });
 
   it('rejects stale, cross-session, cross-work-item, and cross-query route handoffs', () => {

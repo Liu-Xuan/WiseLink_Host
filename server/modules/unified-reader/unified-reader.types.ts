@@ -249,6 +249,11 @@ export type UnifiedReaderPackageInspection = Omit<
   'queryResults'
 >;
 
+export interface UnifiedReaderSourcePackage {
+  inspection: UnifiedReaderPackageInspection;
+  units: UnifiedReaderQueryResult[];
+}
+
 export interface AeoSpecialistReaderInspection {
   packageId: string;
   contractId: 'aeo_structured_parse_v1';

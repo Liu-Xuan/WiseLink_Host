@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   CircleAlert,
@@ -49,45 +49,77 @@ export default function WorkItemOverviewPage() {
   const [reloadSignal, setReloadSignal] = useState(0);
   const [contextView, setContextView] =
     useState<CurrentObjectContextView | null>(null);
+  const visibleView =
+    !authenticationRequired &&
+    viewSessionGeneration === sessionGeneration &&
+    view?.id === workItemId
+      ? view
+      : null;
+  const loadEpochRef = useRef(0);
+  const currentScopeRef = useRef({
+    workItemId,
+    sessionGeneration,
+    authenticationRequired,
+    visibleView,
+  });
+  currentScopeRef.current = {
+    workItemId,
+    sessionGeneration,
+    authenticationRequired,
+    visibleView,
+  };
   const overallRegeneration = useOverallRegeneration({
     workItemId,
     sessionGeneration,
     onSucceeded: (fresh) => {
+      const current = currentScopeRef.current;
       if (
-        authenticationRequired ||
-        getCanonicalHostClientSessionGeneration() !== sessionGeneration
+        current.authenticationRequired ||
+        current.workItemId !== workItemId ||
+        current.sessionGeneration !== sessionGeneration ||
+        getCanonicalHostClientSessionGeneration() !== sessionGeneration ||
+        fresh.workItem.workItemId !== workItemId ||
+        (current.visibleView &&
+          fresh.workItem.revision < current.visibleView.revision)
       ) {
         return;
       }
+      loadEpochRef.current += 1;
       setView(toWorkItemView(fresh));
       setContextView(buildCurrentObjectContext(fresh, 'MATTER'));
       setViewSessionGeneration(sessionGeneration);
       setError(null);
+      setLoading(false);
     },
   });
 
   useEffect(() => {
-    let cancelled = false;
+    const epoch = ++loadEpochRef.current;
     const isCurrentSession = (): boolean =>
-      !cancelled &&
+      loadEpochRef.current === epoch &&
+      !currentScopeRef.current.authenticationRequired &&
+      currentScopeRef.current.workItemId === workItemId &&
+      currentScopeRef.current.sessionGeneration === sessionGeneration &&
       getCanonicalHostClientSessionGeneration() === sessionGeneration;
     setLoading(true);
     setError(null);
-    setView(null);
-    setContextView(null);
-    setViewSessionGeneration(null);
+    if (!currentScopeRef.current.visibleView) {
+      setView(null);
+      setContextView(null);
+      setViewSessionGeneration(null);
+    }
     if (authenticationRequired) {
       setLoading(false);
       setError('请先登录，再读取当前账户可访问的事项。');
       return () => {
-        cancelled = true;
+        loadEpochRef.current += 1;
       };
     }
     if (!workItemId) {
       setLoading(false);
       setError('当前事项标识缺失，请从资料库重新进入。');
       return () => {
-        cancelled = true;
+        loadEpochRef.current += 1;
       };
     }
     void (async () => {
@@ -100,6 +132,9 @@ export default function WorkItemOverviewPage() {
         }
       } catch (reason) {
         if (isCurrentSession()) {
+          setView(null);
+          setContextView(null);
+          setViewSessionGeneration(null);
           setError(
             isCanonicalObjectNotFound(reason)
               ? '该事项不存在或当前用户无权读取；请从资料库重新进入。'
@@ -111,13 +146,13 @@ export default function WorkItemOverviewPage() {
       }
     })();
     return () => {
-      cancelled = true;
+      loadEpochRef.current += 1;
     };
   }, [authenticationRequired, reloadSignal, sessionGeneration, workItemId]);
 
   useEffect(() => {
-    publishCurrentObject(authenticationRequired ? null : contextView);
-  }, [authenticationRequired, contextView, publishCurrentObject]);
+    publishCurrentObject(visibleView ? contextView : null);
+  }, [visibleView, contextView, publishCurrentObject]);
 
   function openWorkbench(): void {
     navigate(
@@ -134,12 +169,7 @@ export default function WorkItemOverviewPage() {
     );
   }
 
-  const visibleView =
-    !authenticationRequired && viewSessionGeneration === sessionGeneration
-      ? view
-      : null;
-
-  if (loading) {
+  if (loading && visibleView === null) {
     return (
       <main className="wl-overview-page" aria-busy="true">
         <div className="wl-overview-loading wl-glass-content">
@@ -185,12 +215,20 @@ export default function WorkItemOverviewPage() {
     <main className="wl-overview-page wl-workbench-enter">
       <h1 className="wl-visually-hidden">当前工程事项综合评估</h1>
       <AuthorityStrip view={visibleView} />
+      {loading ? (
+        <p className="wl-projection-refresh" role="status">
+          正在刷新当前结果…仍显示上次读回的内容，尚未确认最新状态。
+        </p>
+      ) : null}
 
       <OverallAssessmentHero
         view={visibleView}
         onOpenWorkbench={openWorkbench}
         onViewEvidence={viewEvidence}
-        regeneration={overallRegeneration}
+        regeneration={{
+          ...overallRegeneration,
+          disabled: loading || overallRegeneration.disabled,
+        }}
       />
 
       <div className="wl-overview-side">

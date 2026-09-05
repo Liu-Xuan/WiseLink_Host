@@ -22,6 +22,7 @@ import type {
   UnifiedReaderHostBindingState,
   UnifiedReaderPackageInspection,
   UnifiedReaderPackageSummary,
+  UnifiedReaderSourcePackage,
 } from './unified-reader.types';
 import {
   canonicalJson,
@@ -97,13 +98,21 @@ export class UnifiedReaderService {
     artifact: UnifiedPackageArtifactDescriptor;
     packageId: string;
   }): Promise<UnifiedReaderQueryResult[]> {
+    return (await this.readSourcePackage(input)).units;
+  }
+
+  /** One authenticated store read supplies both source metadata and units. */
+  async readSourcePackage(input: {
+    artifact: UnifiedPackageArtifactDescriptor;
+    packageId: string;
+  }): Promise<UnifiedReaderSourcePackage> {
     const bytes = await this.artifactStore.readActualBytes(input.artifact);
     await this.fullValidator.validate({
       artifact: input.artifact,
       bytes,
       packageId: input.packageId,
     });
-    return this.reader.readAllSourceUnits(input.artifact, bytes);
+    return this.reader.readSourcePackage(input.artifact, bytes);
   }
 
   async inspectSourcePackage(input: {
