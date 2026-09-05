@@ -2,7 +2,12 @@
 
 ## 当前说明
 
-- `CANONICAL_HOST_CANDIDATE_ASSEMBLY.md`：当前唯一架构与运行时装配边界。
+- `WISELINK_R10_SYSTEM_REVIEW_20260905.md`：当前产品理念、上下文评估包设计、代码/运行实证与实施顺序；明确区分已实现与待接通能力。
+- [R10 云文档](https://hv5zjf4j8yb.feishu.cn/docx/MA3fdjEycoISjHxptAqcsyxvn9b)：现行开发说明与历史运行记录，按当前章节执行。
+
+## 2026-08 历史阶段资料
+
+- `CANONICAL_HOST_CANDIDATE_ASSEMBLY.md`：2026-08-15 装配边界，只作为历史资料，不代表当前 OpenClaw/Review 架构。
 - `AILY_MINIMAL_ENTRY_HANDOFF_20260814.md`：Skill-first、单一只读 MCP 方案。
 - `FIRST_REAL_FTD_WORKITEM_VERTICAL_ACCEPTANCE_20260814.md`：真实 hosted FTD 纵切。
 - `PHASE7_737_ASSESSMENT_CUMULATIVE_RESYNTHESIS_ACCEPTANCE_20260815.md`：737 累计评估。
