@@ -5,7 +5,7 @@ import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import { and, asc, eq, inArray, isNull, like, notExists, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, like, lt, notExists, sql } from 'drizzle-orm';
 
 import type {
   ReviewActionDraftCandidate,
@@ -264,6 +264,48 @@ export class ReviewConversationRepository {
       ...input,
       requestId: input.requestId,
     });
+  }
+
+  /** The immediately preceding turn, including failures; never skip back to an older session. */
+  async loadPreviousOpenClawTask(input: {
+    reviewConversationId: string;
+    tenantId: string;
+    actorId: string;
+    workItemId: string;
+    beforeTurnNo: number;
+  }): Promise<{ status: string | null; taskEnvelopeJson: string | null } | null> {
+    assertOpenClawActorContext(input.actorId);
+    const actorContext = this.db.$with('review_previous_actor_context').as(
+      this.db.select({
+        actorId: sql<string>`set_config('app.user_id', ${input.actorId}, true)`
+          .as('previous_review_actor_id'),
+      }).from(workItem).where(and(
+        eq(workItem.workItemId, input.workItemId),
+        eq(workItem.tenantId, input.tenantId),
+        eq(workItem.requestedByUserId, input.actorId),
+      )),
+    );
+    const previousTask = this.db.select({
+      status: actionAttempt.status,
+      taskEnvelopeJson: actionAttempt.taskEnvelopeJson,
+    }).from(reviewTurn).leftJoin(actionAttempt, and(
+      eq(actionAttempt.attemptId, reviewTurn.actionAttemptId),
+      eq(actionAttempt.tenantId, input.tenantId),
+      eq(actionAttempt.actorUserId, actorContext.actorId),
+      eq(actionAttempt.workItemId, input.workItemId),
+      eq(actionAttempt.actionType, 'OPENCLAW_INTERACTIVE_REVIEW'),
+    )).where(and(
+      eq(reviewTurn.reviewConversationId, input.reviewConversationId),
+      eq(reviewTurn.tenantId, input.tenantId),
+      eq(reviewTurn.actorId, actorContext.actorId),
+      eq(reviewTurn.workItemId, input.workItemId),
+      lt(reviewTurn.turnNo, input.beforeTurnNo),
+    )).orderBy(desc(reviewTurn.turnNo)).limit(1).as('previous_review_task');
+    const [previous] = await this.db.with(actorContext).select({
+      status: previousTask.status,
+      taskEnvelopeJson: previousTask.taskEnvelopeJson,
+    }).from(actorContext).innerJoinLateral(previousTask, sql`true`);
+    return previous ?? null;
   }
 
   async loadOpenClawTurnByIdBinding(input: {

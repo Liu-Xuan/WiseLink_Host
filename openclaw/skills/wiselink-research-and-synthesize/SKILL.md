@@ -12,7 +12,7 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（当前配置端点为 `miaoda/miaoda-model-auto`；下游具体模型不暴露，Skill 不绑定具体模型）
-- Skill：`wiselink-research-and-synthesize@r09.c21`
+- Skill：`wiselink-research-and-synthesize@r09.c22`
 - Skill compatibility：`wiselink-research-and-synthesize@r09`（Host 最低接受 `r09.c10`）
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（既有 20 项能力；兼容新增的只读自动领取查询）
 - Host baseline：`6fd2655d27edc3851c745547efaf8796ad22c82c`
@@ -280,14 +280,16 @@ commit_review_turn_candidate
 驱动先从官方 OpenClaw 配置确认 `gateway.http.endpoints.chatCompletions.enabled=true`，未明确启用时在任何
 Host business begin 之前停止。完整 MCP 结果写入权限为 `0600` 的持久 checkpoint，目录限制为 `0700`：已完成
 步骤只从 checkpoint 恢复；model response 在 strict parse 前只额外写入不含原文的 `model.output-shape` v2 0600
-write-once checkpoint；同轮后续响应按序号保存。c21 驱动向模型提供 `read_wiselink_review_sources` 与
+write-once checkpoint；同轮后续响应按序号保存。驱动向模型提供 `read_wiselink_review_sources` 与
 `return_wiselink_review_candidate` 两个 client function：前者只委托驱动读取当前 Host 已授权来源，后者仅序列化最终候选。
 每次响应只有一个 choice、一个上述 function；assistant content 必须为 null 或空白，arguments 为 direct strict JSON object。
 其他函数、多 choice、多 tool call、fence、prose、analysis、array 或 null arguments 仍拒绝。begin/context/SourceRef/model
 的结果一旦不确定即停止且不重试；只有 commit 响应
 丢失时允许恰好一次只读 status 恢复。唯一例外是有 c8 原始日志严格证明 HTTP 404 在路由层未触达模型时，c12
 可将旧 `model.started` 原样归档并只恢复一次 model/commit，不重放任何已完成 Host 读取。模型只收到移除
-conversation/turn/request/attempt/lease/WorkItem 控制面值的生成输入；每个 requestId 只派生不可逆 session discriminator，确保相同正文的新 Turn 不复用模型会话。当前驱动允许模型在用户明确意图和 Host allowlist 内返回只读答复、CandidateEvidence、
+conversation/turn/request/attempt/lease/WorkItem 控制面值的生成输入。c22 使用 Host begin 返回的可选
+`nativeSessionKey` 路由原生讨论；它只放在 Gateway header，不进入模型或浏览器。旧 Host 没有该字段时保留
+request 派生的逐轮隔离，并在报告中明确 `TURN_ISOLATED_LEGACY_HOST`。当前驱动允许模型在用户明确意图和 Host allowlist 内返回只读答复、CandidateEvidence、
 affected-items preview 或完整 ReviewActionDraft proposal；候选绑定、ResultEnvelope 和 commit 仍均由驱动
 机械完成，模型永远不能确认或执行草案。
 
@@ -312,7 +314,9 @@ begin_review_turn({reviewConversationRef, requestId})
 - 不得用普通对话 Session 承载 begin/lease/commit 状态；Session compaction、重启或重放不能再次发起任何已开始的
   Host 调用。同轮取证循环复用原生 session 与既有总超时；后续请求只传新增 tool exchange，不重传整包与完整历史。
   模型决定读取哪些相关来源，每批至多 100 项；重复读取同一来源复用本轮已授权实读值。没有需要时允许零读取，
-  但不能引用未读来源。跨 Turn 仍使用不同 request 派生 session，本版不宣称跨轮稳定会话已接通。
+  但不能引用未读来源。跨 Turn 由 Host 根据上一条成功 Turn 的持久任务、本轮版本及授权来源目录决定是否
+  延续；首次、旧任务、上一轮失败或材料范围变化时重新建立上下文。新 Turn 仍有独立 request、checkpoint 和
+  候选提交；每轮带入当前 Host 上下文，旧会话记忆不代替本轮实读依据。原生运行中 steering 仍未接通。
 - model.result 保存实际读取批次；恢复已完成模型结果时，按原批次从已有 SourceRef checkpoint 注册已读集合，
   不重跑模型、不把候选自报的引用当作读取证据。最终候选仍只有一次既有 commit。
 - `context.evaluation.gapLedger` 是 Host 从 current dynamic artifact、active CriterionSet 和 effective
@@ -390,7 +394,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - `modelVersion` 是响应中可读实际模型，或响应未提供时由无 fallback 的唯一 configured provider/model endpoint 解析出的可证明执行标识；不得把它扩张解释为未暴露的下游具体模型，也不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c21`
+- `skillVersion=wiselink-research-and-synthesize@r09.c22`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致

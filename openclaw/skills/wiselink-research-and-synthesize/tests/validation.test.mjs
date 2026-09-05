@@ -124,7 +124,7 @@ test('pins exact20 MCP 1.2, five review tools, and hosted provenance', () => {
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c21',
+    'wiselink-research-and-synthesize@r09.c22',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -2403,6 +2403,83 @@ test('reads only requested fragments across native tool rounds and restores a co
   assert.equal(commits, 2, 'one commit per independent pre-commit test snapshot');
 });
 
+test('carries Host session routing across two new turns while reading citations anew per turn', async (t) => {
+  const originalFetch = globalThis.fetch;
+  const directories = [];
+  t.after(async () => {
+    globalThis.fetch = originalFetch;
+    for (const path of directories) await rm(path, { recursive: true, force: true });
+  });
+  const requests = [];
+  const sourceReads = [];
+  const commits = [];
+  const reviewTask = await readJson(REVIEW_TASK_FIXTURE_URL);
+  reviewTask.actorContextRef = 'ACTX-RS-RT-first';
+  const sourceRefId = reviewTask.resourceRefs[0].sourceRefId;
+  const nativeSessionKey = 'agent:wiselink-engineering:review:ACTX-RS-RT-first';
+  globalThis.fetch = async (_url, init) => {
+    requests.push({ body: JSON.parse(init.body), headers: init.headers });
+    const reading = requests.length % 2 === 1;
+    return Response.json({ model: 'fixture/provider', choices: [{ message: {
+      content: null, tool_calls: [{ id: `call-${requests.length}`, type: 'function', function: {
+        name: reading ? 'read_wiselink_review_sources' : 'return_wiselink_review_candidate',
+        arguments: JSON.stringify(reading ? { sourceRefIds: [sourceRefId] } : {
+          responseType: 'SOURCE_LINK', answer: '本轮根据重新读取的依据继续讨论。', sourceRefs: [sourceRefId],
+          missingInputs: [], candidateEvidenceRefs: [], reviewActionDraft: null, affectedItemIds: [], warnings: [],
+        }),
+      } }],
+    } }] });
+  };
+  for (const turnNo of [1, 2]) {
+    const checkpointDir = await mkdtemp(join(tmpdir(), 'wiselink-native-continuation-'));
+    directories.push(checkpointDir);
+    const input = { ...reviewTask, reviewTurnRef: `RT-new-${turnNo}`, requestId: `request-new-${turnNo}`,
+      userMessage: `请处理第 ${turnNo} 个新问题。` };
+    const task = makeTask('OPENCLAW_INTERACTIVE_REVIEW', input);
+    const calls = [];
+    const dependencies = {
+      callTool: async (name, args) => {
+        calls.push(name);
+        if (name === 'begin_review_turn') return runningBegin(task, { nativeSessionKey });
+        if (name === 'get_review_turn_context') return reviewContext(task, input);
+        if (name === 'read_source_refs') {
+          sourceReads.push({ turnNo, ids: args.sourceRefIds });
+          return { schemaVersion: 'wiselink.3_1.review_source_refs.v1.c2', attemptRef: task.operationRef,
+            sourceRefs: input.resourceRefs.filter((ref) => args.sourceRefIds.includes(ref.sourceRefId)).map((ref) => ref.value) };
+        }
+        if (name === 'commit_review_turn_candidate') {
+          const candidate = JSON.parse(JSON.parse(args.resultJson).modelOutput);
+          commits.push(candidate.reviewTurnRef);
+          return reviewCommit(task.operationRef);
+        }
+        throw new Error(`UNEXPECTED_TOOL:${name}`);
+      },
+      invokeModel: (value, hooks) => invokeHostedReviewModel(value, {
+        gatewayUrl: 'http://127.0.0.1:18789', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider', ...hooks,
+      }),
+    };
+    const options = { reviewConversationRef: input.reviewConversationRef, requestId: input.requestId, checkpointDir };
+    const result = await runHostedReviewTurn(options, dependencies);
+    assert.equal(result.sessionRouting, 'HOST_SCOPED');
+    const callCount = calls.length;
+    await runHostedReviewTurn(options, dependencies);
+    assert.equal(calls.length, callCount, 'restarting a completed turn performs no remote work');
+  }
+  assert.equal(requests.length, 4);
+  assert.ok(requests.every(({ headers, body }) => headers['x-openclaw-session-key'] === nativeSessionKey && !Object.hasOwn(body, 'user')));
+  assert.ok(requests.every(({ body }) => body.model === 'openclaw/wiselink-engineering' && !JSON.stringify(body.messages).includes(nativeSessionKey)));
+  assert.deepEqual(sourceReads, [{ turnNo: 1, ids: [sourceRefId] }, { turnNo: 2, ids: [sourceRefId] }]);
+  assert.deepEqual(commits, ['RT-new-1', 'RT-new-2']);
+  assert.match(requests[2].body.messages[1].content, /第 2 个新问题/u);
+});
+
+test('does not send a native key bound to a different profile', async () => {
+  await assert.rejects(invokeHostedReviewModel({ input: {} }, {
+    gatewayUrl: 'http://127.0.0.1:18789', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+    nativeSessionKey: 'agent:main:review:ACTX-RS-RT-first',
+  }), /REVIEW_NATIVE_SESSION_BINDING_INVALID/u);
+});
+
 test('rejects an unauthorized model source request without reading or continuing the model', async (t) => {
   const originalFetch = globalThis.fetch;
   t.after(() => { globalThis.fetch = originalFetch; });
@@ -2861,7 +2938,7 @@ test('offers source reading and one final candidate function with blank assistan
   assert.equal(result.provenance.modelVersion, 'openai-codex/gpt-5.4');
   assert.equal(
     result.provenance.promptVersion,
-    'wiselink.3_1.review_prompt.v1.c21',
+    'wiselink.3_1.review_prompt.v1.c22',
   );
 });
 
@@ -2914,7 +2991,7 @@ test('falls back to the configured model and records only output shape v2', asyn
   assert.equal(result.provenance.modelVersion, 'provider/configured');
   assert.equal(
     result.provenance.promptVersion,
-    'wiselink.3_1.review_prompt.v1.c21',
+    'wiselink.3_1.review_prompt.v1.c22',
   );
   assert.equal(
     outputShape.schemaVersion,

@@ -79,7 +79,7 @@ runtimePolicy.modelPolicyRef = official-hosted-profile-config
 ResultEnvelope.modelVersion = 官方托管 profile/config 本轮选择后的非空、可读实际模型
 Task.skillPolicyRef = wiselink-research-and-synthesize@r09
 ApplicabilityTask.runtimePolicy.skillVersion = wiselink-research-and-synthesize@r09  # v1 历史字段名，语义为兼容线
-ResultEnvelope.skillVersion = wiselink-research-and-synthesize@r09.c21       # 实际安装包版本
+ResultEnvelope.skillVersion = wiselink-research-and-synthesize@r09.c22       # 实际安装包版本
 toolVersions.wiselink-openclaw-engineering-assessment = 1.2.0
 promptVersion = 当前实际运行非空版本
 ```
@@ -315,7 +315,14 @@ ReviewTurn 完成 DM/DV/FileService actual-byte 绑定与解析时，可把对�
 `read_source_refs({attemptRef,sourceRefIds})` 读取其 `ENGINEER_ATTACHMENT` parsed value。模型只看到 opaque ref、
 文件显示 metadata 与解析页内容，不接触 raw FileService locator/bytes、actor、tenant 或 sessionKey；Task 中的
 resource artifact ref/SHA 也不进入模型输入。
-requestId 仅在驱动控制面派生不可逆 session discriminator；它不进入模型正文，但保证相同正文的新 Turn 使用不同 Gateway session。
+`begin_review_turn` 可额外返回控制面 `nativeSessionKey`，形如
+`agent:wiselink-engineering:review:<Host actorContextRef>`。c22 核对它与 Task 的 profile、actorContextRef 绑定后，
+仅作为 Gateway `x-openclaw-session-key` header 使用，不放进模型输入、浏览器 DTO 或用户报告。
+Host 在相同 ReviewConversation、revision 和 fresh 授权来源目录下延续上一成功 Turn 的原生讨论；首次、旧任务、
+上一轮未成功或材料范围变化时使用现有 Turn 主键派生新引用。requestId 仍标识独立请求和 checkpoint；只有旧 Host
+未提供该字段时使用既有 request 派生的隔离 session，并明确报告 `TURN_ISOLATED_LEGACY_HOST`。
+新 Host 配旧 Skill 仍逐轮隔离；新 Skill 配旧 Host 也保持原路径。两侧升级后才启用该增量，Task/Result schema、
+MCP 入参、认证和候选提交语义不变。
 
 ## INTERACTIVE_REVIEW candidate
 

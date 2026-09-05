@@ -1,4 +1,4 @@
-# 官方托管 R09 c21 发布与 UAT runbook
+# 官方托管 R09 c22 发布与 UAT runbook
 
 c19 新增页面自动领取，先安装兼容 Skill，再发布 Host，最后启用原生 command cron 与页面自动发送；本批具体步骤见 [页面自动领取](hosted-review-consumer.md)。下列历史五工具 UAT 保留给单轮 driver，不把它的手工启动结果当作页面自助闭环。
 
@@ -7,6 +7,10 @@ c20 兼容读取 JobAid / Overall / Review 的可选共同背景，并区分普�
 c21 在相同 C3/MCP/ResultEnvelope 上改为模型按需取证，不增加 Host 工具或业务写入口。
 同轮复用原生 session，先发最小上下文与目录，随后仅传新增 tool exchange；跨 Turn 仍隔离。
 必须分别记录本地协议测试、安装读回与真实新 Turn 验证，不以安装代替 UAT。
+
+c22 增加 Host 可选控制面会话路由，承接同一授权范围下连续成功 Turn 的原生讨论。两侧保留旧逐轮路径的兼容，
+先安装 c22，再发布返回 `nativeSessionKey` 的 Host；不更改 cron、模型配置、C3 输出或正式采用入口。
+只有同一真实事项的两个新页面 Turn 均自动返回候选并承接工程师补充，才记为页面跨轮验证通过。
 
 本 runbook 只定义 Host C4+C5 accepted 后的真实验证顺序；本地实现不执行安装、发布、Session 创建、模型调用或
 云配置修改。
@@ -30,8 +34,8 @@ c21 在相同 C3/MCP/ResultEnvelope 上改为模型按需取证，不增加 Host
    独立覆盖唯一同名 Skill。不创建第二份、不绑定模型、不手工修改 installed 文件。
 5. 安装后 fresh-read `openclaw skills list/info/check`，复跑 installed tests，并将 installed 递归文件摘要与
    manifest 比较；安装器允许额外的 `.openclaw/source-origin.json` 必须单独报告，不当作 source 包内文件。
-6. 只用全新 OpenClaw Session 和全新 Host successor attempt 执行 smoke/UAT。历史 attempt、requestId、
-   checkpoint 不得重试、删除或改写。
+6. 只用新 Host Turn/requestId 和 successor attempt 执行 smoke/UAT；后续新 Turn 可按 Host 返回的 key 延续
+   本次获授权的原生讨论。历史 attempt、requestId、checkpoint 不得重试、删除或改写。
 
 ZIP 的 SHA-256 只用于证明“私有存储中的实际字节”与“安装时验证的字节”相同；Git 提交无法跨越该
 上传/下载边界，因此不能用 Git SHA 替代 archive SHA。该 manifest 不是新的业务 contract、baseline 或 gate。
@@ -51,7 +55,7 @@ Task/Result schema、MCP tool 形状、authority 或安全语义改变时升级 
    优先读回非空、可识别的实际 `modelVersion`；响应未提供可读模型时才使用上述唯一 configured endpoint 作为可证明执行标识，不把它解释为未暴露的下游具体模型。重复 agent、
    不可读 primary、fallbacks 非数组或非空均在调用模型前停止；
 4. 同名 Skill 只有一个，安装版本精确
-   `wiselink-research-and-synthesize@r09.c21`；
+   `wiselink-research-and-synthesize@r09.c22`；
 5. Host MCP package/version 为
    `wiselink-openclaw-engineering-assessment@1.2.0`，exact 20 tools 可见；
 6. C3 successor 已进入 current Hosted release；只凭 Git commit 不等于 deployed readback；
@@ -144,8 +148,8 @@ authenticated user。
    之前停止。随后只启动一次 `scripts/run-hosted-review-turn.mjs` 外部驱动；不得让对话模型直接调用五个 Host 工具。
 3. 驱动执行一次 `begin_review_turn`；确认 Host 派生 actor/tenant/WorkItem/session，调用参数中没有这些字段。
 4. 驱动执行一次 `get_review_turn_context` fresh-read current，并只读取本轮所需 SourceRef；确认模型输入不含
-   conversation/turn/request/attempt/lease/WorkItem 控制面值；确认本轮 requestId 只派生不可逆 session discriminator，
-   相同正文的新 Turn 也不会复用模型会话。
+   conversation/turn/request/attempt/lease/WorkItem 控制面值。确认 c22 的会话 key 仅在 Gateway header；连续成功、
+   相同版本与材料范围的新 Turn 使用 Host 同一 key，而旧 Host 明确走逐轮隔离路径。新 Turn 不复用旧 checkpoint。
 5. 模型经 Gateway HTTP 仅生成 SOURCE_LINK/ANSWER 内容；本用例要求 `SOURCE_LINK` 且至少一个
    `sourceRefs` 来自本轮实读 allowlist，`sourceRefs=[]` 必须在 commit 前 fail closed。c21 请求暴露
    `read_wiselink_review_sources` 与 `return_wiselink_review_candidate`，`tool_choice=auto`、`parallel_tool_calls=false`

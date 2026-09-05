@@ -26,6 +26,55 @@ import { CanonicalHostCommonContextService } from '../../server/modules/canonica
 import { encodeReviewAttachmentParsedArtifact } from '../../server/modules/review-persistence/review-attachment-artifact';
 
 describe('CanonicalHostOpenClawReviewService', () => {
+  it('continues native history only across successful turns with the same fresh authorized sources', async () => {
+    const harness = reviewHarness(false, true);
+    const first = await harness.service.begin('RC-1', 'request-1');
+    expect(first.nativeSessionKey).toBe('agent:wiselink-engineering:review:ACTX-RS-RT-1');
+    harness.conversations.loadPreviousOpenClawTask.mockResolvedValue({
+      status: 'SUCCEEDED', taskEnvelopeJson: JSON.stringify(first.task),
+    });
+    const { turn } = await harness.conversations.loadOpenClawTurnBinding();
+    turn.reviewTurnId = 'RT-2';
+    turn.requestId = 'request-2';
+    turn.turnNo = 2;
+    turn.userMessage = '请接着解释上一轮提到的原因。';
+    const next = await harness.service.begin('RC-1', 'request-2');
+    expect(next.nativeSessionKey).toBe(first.nativeSessionKey);
+    expect(next.task.modelInput.userMessage).toBe(turn.userMessage);
+    expect(next.task.modelInput.requestId).toBe('request-2');
+    expect(harness.conversations.loadPreviousOpenClawTask).toHaveBeenLastCalledWith({
+      tenantId: 'tenant-1', actorId: 'actor-1', workItemId: 'WI-1',
+      reviewConversationId: 'RC-1', beforeTurnNo: 2,
+    });
+
+    // Related access can disappear without changing the primary WI revision.
+    harness.workItems.loadAuthorizationBinding.mockResolvedValue(null as never);
+    const revoked = await harness.service.begin('RC-1', 'request-2');
+    expect(revoked.task.inputRevision).toBe(first.task.inputRevision);
+    expect(revoked.nativeSessionKey).not.toBe(first.nativeSessionKey);
+    expect(revoked.task.modelInput.resourceRefs).not.toContainEqual(
+      expect.objectContaining({ sourceRefId: 'TARGET-SRC-1' }),
+    );
+  });
+
+  it.each(['FAILED', 'RUNNING', 'COMMITTING', 'legacy', 'old-revision'])(
+    'starts new native history after %s instead of reusing uncertain or stale memory', async (previousState) => {
+      const harness = reviewHarness();
+      const first = await harness.service.begin('RC-1', 'request-1');
+      const { inputHash: _hash, ...fields } = first.task;
+      if (previousState === 'legacy') fields.modelInput.actorContextRef = 'ACTX-legacy';
+      if (previousState === 'old-revision') fields.modelInput.inputRevision = 6;
+      harness.conversations.loadPreviousOpenClawTask.mockResolvedValue({
+        status: ['legacy', 'old-revision'].includes(previousState) ? 'SUCCEEDED' : previousState,
+        taskEnvelopeJson: JSON.stringify(sealTaskEnvelope(fields)),
+      });
+      const { turn } = await harness.conversations.loadOpenClawTurnBinding();
+      turn.reviewTurnId = 'RT-2'; turn.requestId = 'request-2'; turn.turnNo = 2;
+      const next = await harness.service.begin('RC-1', 'request-2');
+      expect(next.nativeSessionKey).toBe('agent:wiselink-engineering:review:ACTX-RS-RT-2');
+    },
+  );
+
   it('carries earlier discussion into the next task without adopting it or including future turns', async () => {
     const harness = reviewHarness();
     const { conversation, turn } = await harness.conversations.loadOpenClawTurnBinding();
@@ -711,6 +760,7 @@ function reviewHarness(
   let task: OpenClawTaskEnvelope | null = null;
   let row: ActionAttemptRow | null = null;
   const conversations = {
+    loadPreviousOpenClawTask: jest.fn<Promise<{ status: string | null; taskEnvelopeJson: string | null } | null>, [unknown]>(async () => null),
     loadPendingOpenClawTurn: jest.fn().mockResolvedValue(null),
     loadById: jest.fn(async () => ({ conversation, turns: [turn] })),
     loadCurrent: jest.fn(async () => ({ conversation, turns: [turn] })),

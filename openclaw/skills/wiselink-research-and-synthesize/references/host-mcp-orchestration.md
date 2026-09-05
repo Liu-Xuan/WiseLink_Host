@@ -224,7 +224,10 @@ started-without-result 一律停止且不重试。commit started-without-result 
 提交 commit。c21 通过 Gateway client functions 允许模型按需请求 `read_wiselink_review_sources`，
 驱动委托既有 `read_source_refs` 取回实际片段；模型最终调用仅序列化的 `return_wiselink_review_candidate`。
 不向模型暴露 Host MCP、begin/lease/commit。每次响应只接一个合法 function call；同轮后续只传新 tool exchange，
-使用相同原生 session 和既有总超时，不重传完整评估上下文。跨轮 session 仍隔离，不宣称已完成稳定跨轮延续。
+使用相同原生 session 和既有总超时，不重传完整评估上下文。c22 通过 begin 的可选控制面 `nativeSessionKey`
+承接同一授权范围下的跨轮讨论；Host 比较上一条成功 Turn 的任务与当前 revision/来源目录后决定延续或重建。
+该 key 只进入 Gateway header，不成为模型可写字段。每个新 Turn 仍重新同步当前 Host 输入并独立提交候选，
+引用来源仍须本轮读取。旧 Host 无 key 时明确报告旧逐轮隔离路径；失败或权限变化不携带未获授权的旧记忆。
 
 COMMITTING：
 
