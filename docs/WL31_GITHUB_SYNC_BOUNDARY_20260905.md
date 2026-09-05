@@ -10,10 +10,10 @@
 
 ## 授权前已确认事实
 
-- 父目录 `AGENTS.md` 第 14 行明确只允许非强制 `origin/main → github/main`，禁止推送 Codex 分支；main 分叉时暂停 GitHub 同步。
+- 当时父目录 `AGENTS.md` 第 14 行明确只允许非强制 `origin/main → github/main`，禁止推送 Codex 分支；main 分叉时暂停 GitHub 同步。该旧条款现已依用户明确授权修订，以下保留授权前事实。
 - 本地远端跟踪 reflog 记录当前 Codex 分支两次 `update by push`：`53c322371 → 73561af4d → 9597d8e53`。对应新增三项提交为面板保活、同轮按需取证、项目文档。
 - 只读 `git ls-remote` 确认：两个远端的 `codex/wl31-r09-master-handoff-20260903` 都为 `9597d8e53132e848c3f074320bea09794734a913`。
-- 当前 `origin/main=550ced5cc858dc3153bc0ef90c487b3d6f94ddeb`，`github/main=7ff54fba7b6eb6042e0930d650fa30a4ccf8677f`。只抓取 main 后，`git rev-list --left-right --count origin/main...github/main` 为 `131 / 1`，仍然分叉，不能直接快进同步。
+- 当时核对 `origin/main=550ced5cc858dc3153bc0ef90c487b3d6f94ddeb`，`github/main=7ff54fba7b6eb6042e0930d650fa30a4ccf8677f`。只抓取 main 后，`git rev-list --left-right --count origin/main...github/main` 为 `131 / 1`，仍然分叉，不能直接快进同步。
 - GitHub 仓库元数据接口返回 `visibility=public`。这确认当前可见性，但不证明谁访问过分支，不证明发生了凭据泄露，也不代表完成了全部历史内容审计。
 
 ## 系统性原因
@@ -32,8 +32,22 @@
 - 仅将本机仓库的 `remote.github.push` 设为 `refs/remotes/origin/main:refs/heads/main`，避免省略 refspec 时跟随工作分支。保留非强制 Git 语义，没有添加业务 hash、gate 或权限绕过。
 - 实际执行 `git push --dry-run --porcelain github`：目标仅为 `refs/remotes/origin/main:refs/heads/main`，因当前分叉返回 `rejected (non-fast-forward)`。随后只读确认 GitHub main 和 Codex 分支均未变化；这次 dry-run 没有远端写入。
 - 此默认配置不能拦截显式指定错误分支的 push；执行方仍必须遵守范围，不宣称已安装强制安全屏障。
-- 既有 R10 文档中的“origin 与 github 同步”只描述历史技术结果，不应读成符合授权。执行计划和性能记录已添加更正；本地更正尚未推送或写回云文档。
-- 当前 c22 开发改动保留在工作区，未混入此次修正、未提交或发布；当前线上仍以 c21 既有发布/安装证据为准。
+- 既有 R10 文档中的“origin 与 github 同步”只描述历史技术结果，不应读成符合授权。执行计划和性能记录已添加更正；在这个授权前阶段，本地更正尚未推送或写回云文档。
+- 在该授权前阶段，c22 开发改动保留在工作区，未混入修正、未提交或发布；当时线上仍以 c21 发布/安装证据为准。
+
+## 明确授权后的推送与再次提醒核对
+
+- 用户明确确认之后，`405c13e4fd08f307f3bb1d0438d14d6caaaa310e` 只提交四份授权/项目说明文档，未包含在途 c22 代码。两个远端均已以显式同名 refspec 非强制更新 `codex/wl31-r09-master-handoff-20260903`；GitHub reflog 的该次 `update by push` 时间为 2026-09-05 20:54:55 +08:00。授权依据是用户确认，不是此提交本身。
+- 本轮较早转交的英文提醒只引用 `73561af4d`、`9597d8e53` 和授权前的 main-only 纠正过程；随后最新报告已明确区分这两次历史越界与获得授权后的 `405c13e4f` 文档推送。最新报告未指出新的越界操作，不能将历史事实当作当前权限仍未解决，也不能把旧事件改写成已被追溯授权。
+- 再次提醒的核对阶段执行只读 `git ls-remote`：origin 与 github 的该 Codex 分支当时均为 `405c13e4f`；两个 main 仍分别为 `550ced5cc`、`7ff54fba7`。当时相关 reflog 没有晚于上述 20:54 推送的新记录，该核对阶段未执行 push、删除引用或改写历史。
+- 本轮发现父目录仍残留旧禁令，已仅修订 `/Volumes/SSD/LLM/WiseLink/AGENTS.md` 的 GitHub 条款，使其与用户明确授权及仓库根指令一致；保留强推、删除、其他目标和认证/数据安全边界。父目录残留是可确认的指令不一致，但不能据此断言它就是平台重复提示的内部触发原因。
+- 平台此次历史提醒的具体生成机制不可见；不修改审查设置、清除日志或删除已公开分支来消除提醒。此项不应阻断已授权的项目开发，也不要求用户重复确认相同的 GitHub 分支范围；该核对阶段补记当时尚未提交，云文档未修改。
+
+## 用户继续后：c22 功能发布
+
+用户随后要求继续，主控完成 c22 功能提交 `7a9b9c4b784841af6e415eb71ac698ecc89a485f`。显式向 origin 和 `https://github.com/Liu-Xuan/WiseLink_Host.git` 推送单一同名 `refs/heads/codex/wl31-r09-master-handoff-20260903`，两个远端均由 `405c13e4f` 非强制快进至 `7a9b9c4b7`。这次操作符合用户确认后生效的长期授权；未同步 main、强推、删除引用、推标签或其他分支。
+
+Host release `7682054671425031353` / `7a9b9c4b7` finished，c22 Skill 安装轮次 `7682052334020758506` completed，分别按技术发布授权执行。候选分析、正式采用与 Git 同步仍是不同操作；此次未创建业务 Turn 或确认 ReviewAction。以上不追溯改变授权前推送的性质。
 
 ## 后续执行方式
 
