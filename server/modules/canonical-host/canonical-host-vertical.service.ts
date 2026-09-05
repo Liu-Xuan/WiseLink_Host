@@ -608,18 +608,13 @@ export class CanonicalHostVerticalService {
       projection.phase === 'CANDIDATE_READBACK_VERIFIED' &&
       projection.package !== null
     ) {
-      const inspection = await this.reader.inspectSourcePackage({
-        artifact: projection.package.artifact,
-        packageId: projection.package.packageId,
-      });
-      readerSourceKind = inspection.sourceKind;
       if (sourceRef !== '') {
-        const sourceUnits: UnifiedReaderQueryResult[] =
-          await this.reader.readAllSourceUnits({
-            artifact: projection.package.artifact,
-            packageId: projection.package.packageId,
-          });
-        queryResults = sourceUnits
+        const sourcePackage = await this.reader.readSourcePackage({
+          artifact: projection.package.artifact,
+          packageId: projection.package.packageId,
+        });
+        readerSourceKind = sourcePackage.inspection.sourceKind;
+        queryResults = sourcePackage.units
           .filter((unit: UnifiedReaderQueryResult): boolean =>
             unit.sourceRefIds.includes(sourceRef),
           )
@@ -634,11 +629,18 @@ export class CanonicalHostVerticalService {
           actionContext.decision.permissionSnapshotVersion,
           query,
         );
+        readerSourceKind = readback.package.sourceKind;
         queryResults = readback.queryResults
           .map((result, index) =>
             projectCanonicalBrowserQueryResult(result, index + 1),
           )
           .filter((result) => result !== null);
+      } else {
+        const inspection = await this.reader.inspectSourcePackage({
+          artifact: projection.package.artifact,
+          packageId: projection.package.packageId,
+        });
+        readerSourceKind = inspection.sourceKind;
       }
     }
     const translation = await this.readTranslationConsumptionAxes(projection);

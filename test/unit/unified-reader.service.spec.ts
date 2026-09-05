@@ -198,6 +198,19 @@ describe('UnifiedReaderService hosted candidate loop', () => {
       'ARTIFACT_READBACK_MISMATCH',
     );
   });
+
+  it('reads metadata and units once per request, without retaining missing source bytes', async () => {
+    const { bytes, packageId } = makeCandidatePackage('pdf');
+    const { artifact } = await store.persistAndReadback(bytes);
+    const reads = jest.spyOn(store, 'readActualBytes');
+    const sourcePackage = await service.readSourcePackage({ artifact, packageId });
+    expect(sourcePackage.inspection.sourceKind).toBe('pdf');
+    expect(sourcePackage.units).toHaveLength(2);
+    expect(reads).toHaveBeenCalledTimes(1);
+    reads.mockRejectedValueOnce(new Error('SOURCE_ARTIFACT_NOT_FOUND'));
+    await expect(service.readSourcePackage({ artifact, packageId }))
+      .rejects.toThrow('SOURCE_ARTIFACT_NOT_FOUND');
+  });
 });
 
 function makeCandidatePackage(sourceKind: 'pdf' | 'native_s1000d'): {
