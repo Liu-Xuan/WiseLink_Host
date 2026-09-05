@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import type { CanonicalCommonAssessmentContext } from '@shared/api.interface';
 
 import type { ControlledAilyHolisticDynamicInput } from './aily-holistic-assessment';
 import {
@@ -24,6 +25,7 @@ export type DynamicRulesEvaluationInput = Omit<
   callerCorrelationRef: string;
   operatorInstruction: string[];
   expectedSelfCheck: Record<string, unknown>;
+  commonContext?: CanonicalCommonAssessmentContext;
 };
 
 export interface DynamicRulesEvaluationPrivateEnvelope {
@@ -50,12 +52,14 @@ export class DynamicRulesEvaluationProcessor {
     input: ControlledAilyHolisticDynamicInput,
     correlation: DynamicRulesEvaluationCorrelation,
     callerCorrelationRef: string,
+    commonContext?: CanonicalCommonAssessmentContext,
   ): DynamicRulesEvaluationRequest {
     return buildDynamicRulesEvaluationRequest(
       assessmentInput,
       input,
       correlation,
       callerCorrelationRef,
+      commonContext,
     );
   }
 
@@ -72,6 +76,7 @@ export function buildDynamicRulesEvaluationRequest(
   input: ControlledAilyHolisticDynamicInput,
   correlation: DynamicRulesEvaluationCorrelation,
   callerCorrelationRef: string,
+  commonContext?: CanonicalCommonAssessmentContext,
 ): DynamicRulesEvaluationRequest {
   if (
     typeof callerCorrelationRef !== 'string' ||
@@ -107,6 +112,10 @@ export function buildDynamicRulesEvaluationRequest(
   operatorInstruction.push(
     'sourceRefs 只能复用对应 criterionTable 行经 valueDictionaries 解码出的 sourceEvidenceCandidateIds；不得生成未知、跨规则或重复来源 ID。',
   );
+  if (commonContext)
+    operatorInstruction.push(
+      'commonContext 提供评估前的文件章节、关联背景和普通讨论。用它理解问题与工程师纠正的方向；工卡目录不等于已读问题分析，历史工作回答不等于正式采用，NOT_CONNECTED 不等于检索零结果。背景不能代替受控机队事实或改变本行 SourceRef allowlist。',
+    );
 
   const expectedSelfCheck = structuredClone(historical.expectedSelfCheck);
   delete expectedSelfCheck.transportId;
@@ -137,6 +146,7 @@ export function buildDynamicRulesEvaluationRequest(
     operatorInstruction,
     expectedSelfCheck,
     responseInstruction,
+    ...(commonContext ? { commonContext: structuredClone(commonContext) } : {}),
   };
   assertNoPrivateAuthorityInModelInput(modelInput, correlation);
   return {
@@ -174,9 +184,10 @@ export function consumeDynamicRulesEvaluationOutput(
   }
   let parsed: Record<string, unknown>;
   try {
-    parsed = JSON.parse(
-      normalizeBoundaryJsonFormatMarks(output),
-    ) as Record<string, unknown>;
+    parsed = JSON.parse(normalizeBoundaryJsonFormatMarks(output)) as Record<
+      string,
+      unknown
+    >;
   } catch {
     throw new Error('BASE_ONE_SHOT_OUTPUT_JSON_INVALID');
   }
@@ -284,8 +295,8 @@ function assertSourceRefsBoundToInput(
   ) {
     throw new Error('DYNAMIC_RULES_SOURCE_REF_BINDING_INVALID');
   }
-  const dictionary = criterionTable.valueDictionaries
-    ?.sourceEvidenceCandidateIds;
+  const dictionary =
+    criterionTable.valueDictionaries?.sourceEvidenceCandidateIds;
   if (!Array.isArray(dictionary)) {
     throw new Error('DYNAMIC_RULES_SOURCE_REF_DICTIONARY_INVALID');
   }
@@ -318,9 +329,7 @@ function assertSourceRefsBoundToInput(
     }
     const invalid = returnedIds.find((value) => !allowed.has(value));
     if (invalid) {
-      throw new Error(
-        `DYNAMIC_RULES_SOURCE_REF_NOT_BOUND:${index}:${invalid}`,
-      );
+      throw new Error(`DYNAMIC_RULES_SOURCE_REF_NOT_BOUND:${index}:${invalid}`);
     }
     const missingValue = criterionTable.rows[index][missingIndex];
     if (
@@ -333,8 +342,9 @@ function assertSourceRefsBoundToInput(
     const returnedMissing = ruleResult.missingInputs;
     if (
       !Array.isArray(returnedMissing) ||
-      returnedMissing.some((value: unknown): boolean =>
-        typeof value !== 'string' || !allowedMissing.has(value),
+      returnedMissing.some(
+        (value: unknown): boolean =>
+          typeof value !== 'string' || !allowedMissing.has(value),
       )
     ) {
       throw new Error(`DYNAMIC_RULES_MISSING_INPUT_NOT_BOUND:${index}`);

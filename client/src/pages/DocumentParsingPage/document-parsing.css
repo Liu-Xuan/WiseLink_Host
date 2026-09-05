@@ -36,6 +36,12 @@
   background: transparent;
 }
 
+.parse-shell.parse-saved-review {
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+}
+
 .parse-locked-shell {
   display: grid;
   min-height: calc(100vh - 60px);

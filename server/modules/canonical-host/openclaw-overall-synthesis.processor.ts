@@ -1,6 +1,7 @@
 import type {
   CanonicalApplicabilityCandidateProjection,
   CanonicalBaseRuleCandidateProjection,
+  CanonicalCommonAssessmentContext,
   CanonicalWorkItemProjection,
 } from '@shared/api.interface';
 import type { FeishuNativeOemSearchRun } from '../external-discovery/feishu-native-oem-monitoring-ingress';
@@ -66,6 +67,7 @@ export interface OpenClawOverallSynthesisInput {
   externalDiscoveryResults: Array<Record<string, unknown>>;
   engineerReviewContext: OpenClawEngineerReviewContext;
   selectiveResynthesis: SelectiveOverallResynthesisSummary;
+  commonContext?: CanonicalCommonAssessmentContext;
 }
 
 export interface OpenClawOverallApplicabilityResult {
@@ -93,6 +95,7 @@ export function buildOpenClawOverallSynthesisInput(input: {
   sourceEvidenceCandidates: unknown[];
   engineerReviewContext: OpenClawEngineerReviewContext;
   outputCorrelationRef: string;
+  commonContext?: CanonicalCommonAssessmentContext;
 }): OpenClawOverallSynthesisInput {
   const baseOutput = parseObject(
     input.baseArtifactBytes,
@@ -249,6 +252,9 @@ export function buildOpenClawOverallSynthesisInput(input: {
     externalDiscoveryResults: input.discoveries.map(toHostedDiscovery),
     engineerReviewContext: structuredClone(input.engineerReviewContext),
     selectiveResynthesis: summarizeSelectiveOverallResynthesis(plan),
+    ...(input.commonContext
+      ? { commonContext: structuredClone(input.commonContext) }
+      : {}),
   };
   rejectPrivateAuthority(modelInput);
   return modelInput;

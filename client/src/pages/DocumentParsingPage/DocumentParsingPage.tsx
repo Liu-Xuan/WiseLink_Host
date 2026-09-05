@@ -63,6 +63,8 @@ import { StructuredContentBrowser } from './StructuredContentBrowser';
 import { parsePdfTargetPage } from './pdf-viewer-state';
 import ReviewImpactPreview from '@client/src/features/review/ReviewImpactPreview';
 import ContinuousReviewPanel from '@client/src/features/review/ContinuousReviewPanel';
+import DocumentUnavailableReview from './DocumentUnavailableReview';
+import { documentFailureAllowsReviewReadback } from './saved-review-readback';
 import RevisionTimeline from '@client/src/features/review/RevisionTimeline';
 import TaskPills from '@client/src/features/review/TaskPills';
 import WorkbenchShell from '@client/src/features/workbench/WorkbenchShell';
@@ -221,6 +223,10 @@ export default function DocumentParsingPage() {
   >(routeHandoff ? sessionGeneration : null);
   const [loading, setLoading] = useState<boolean>(routeHandoff === null);
   const [error, setError] = useState<string | null>(null);
+  const [unavailableDocumentScope, setUnavailableDocumentScope] = useState<{
+    workItemId: string;
+    sessionGeneration: number;
+  } | null>(null);
   const [assessmentAction, setAssessmentAction] = useState<
     'CONFIRM_OVERALL_FOR_AEO' | 'GENERATE_AEO_CANDIDATE' | null
   >(null);
@@ -274,6 +280,7 @@ export default function DocumentParsingPage() {
     const epoch: number = loadEpochRef.current + 1;
     loadEpochRef.current = epoch;
     const startedSessionGeneration: number = sessionGeneration;
+    setUnavailableDocumentScope(null);
     if (!workItemId) {
       setError('WORKITEM_ID_REQUIRED');
       setLoading(false);
@@ -324,6 +331,12 @@ export default function DocumentParsingPage() {
       onDenied: (identity, cause) => {
         setPageData(null);
         setPageSessionGeneration(null);
+        if (documentFailureAllowsReviewReadback(cause)) {
+          setUnavailableDocumentScope({
+            workItemId,
+            sessionGeneration: startedSessionGeneration,
+          });
+        }
         if (canonicalHost.isCanonicalObjectNotFound(cause)) {
           forgetRecentWorkItem(identity, workItemId);
         }
@@ -346,6 +359,7 @@ export default function DocumentParsingPage() {
     setQuery(activeQuery);
     if (authenticationRequired) {
       loadEpochRef.current += 1;
+      setUnavailableDocumentScope(null);
       setPageData(null);
       setPageSessionGeneration(null);
       setError('CANONICAL_HOST_IDENTITY_REQUIRED');
@@ -356,6 +370,7 @@ export default function DocumentParsingPage() {
     }
     if (routeHandoff) {
       loadEpochRef.current += 1;
+      setUnavailableDocumentScope(null);
       setPageData(routeHandoff);
       setPageSessionGeneration(sessionGeneration);
       setError(null);
@@ -435,6 +450,21 @@ export default function DocumentParsingPage() {
     );
   }
   if (error || data === null) {
+    if (
+      !authenticationRequired &&
+      unavailableDocumentScope?.workItemId === workItemId &&
+      unavailableDocumentScope.sessionGeneration === sessionGeneration
+    ) {
+      return (
+        <DocumentUnavailableReview
+          key={`${workItemId}:${sessionGeneration}`}
+          workItemId={workItemId}
+          sessionGeneration={sessionGeneration}
+          onRetryDocument={() => void load(activeQuery)}
+          onBack={() => navigate('/library')}
+        />
+      );
+    }
     return (
       <LockedState
         title="暂时无法打开当前工程事项"

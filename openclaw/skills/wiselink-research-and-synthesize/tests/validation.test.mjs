@@ -88,6 +88,22 @@ const ARTIFACT_SHA = 'b'.repeat(64);
 const LEASE_TOKEN = '9bc7de9d-1e86-4c12-8e78-e27cce3aa0d4';
 const WORK_ITEM_ID = 'WI-CONTROL-001';
 
+test('accepts shared background in new JobAid and Overall inputs while retaining old inputs', async () => {
+  const commonContext = {
+    primaryDocument: { documentVersionRef: 'DV-fixture-001', documentCode: '777-SL-31-064', businessRevision: '1', title: 'Issue analysis' },
+    documentReading: { status: 'AVAILABLE', sections: [] },
+    relatedMaterials: { status: 'AVAILABLE', reason: null, items: [] },
+    discussion: { status: 'AVAILABLE', totalPriorTurns: 1, omittedEarlierTurns: 0, turns: [{ turnNo: 1, fromCurrentRevision: true, question: 'Explain the problem before the work card.', selectedEvaluationItemId: null, attachmentNames: [], workingAnswer: 'Need the issue analysis.', missingInputs: [], warnings: [] }], usage: 'DISCUSSION_NOT_ADOPTION' },
+    knowledgeRetrieval: { status: 'NOT_CONNECTED', fragments: [] },
+  };
+  const dynamic = await readJson(DYNAMIC_FIXTURE_URL);
+  const overall = synthesisInput();
+  validatePayload('dynamic-rules-input', dynamic);
+  validatePayload('synthesis-input', overall);
+  validatePayload('dynamic-rules-input', { ...dynamic, commonContext });
+  validatePayload('synthesis-input', { ...overall, commonContext });
+});
+
 test('pins exact20 MCP 1.2, five review tools, and hosted provenance', () => {
   assert.deepEqual(INITIAL_ANALYSIS_OPERATIONS, [
     'TRANSLATE',
@@ -108,7 +124,7 @@ test('pins exact20 MCP 1.2, five review tools, and hosted provenance', () => {
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c19',
+    'wiselink-research-and-synthesize@r09.c20',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,

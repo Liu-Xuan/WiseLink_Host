@@ -3,6 +3,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import type {
   CanonicalBaseRuleCandidateProjection,
   CanonicalConfigurationEvidenceReevaluationAttemptBinding,
+  CanonicalCommonAssessmentContext,
   CanonicalIntegratedAssessmentProjection,
   CanonicalOpenClawOverallProjection,
   CanonicalWorkItemProjection,
@@ -14,7 +15,6 @@ import { ActionAttemptLifecycleService } from '../action-attempt/action-attempt-
 import type {
   OpenClawDynamicRuleSetBinding,
   OpenClawDynamicTaskEnvelope,
-  OpenClawDynamicTaskModelInput,
   OpenClawResultEnvelope,
   OpenClawTaskEnvelope,
 } from '../action-attempt/action-attempt-envelope.types';
@@ -45,6 +45,7 @@ import {
 import { preflightCanonicalHostOpenClawResult } from './canonical-host-openclaw-runtime-policy';
 import { CanonicalHostAssessmentService } from './canonical-host-assessment.service';
 import { CanonicalHostEngineerReviewService } from './canonical-host-engineer-review.service';
+import { CanonicalHostCommonContextService } from './canonical-host-common-context.service';
 import {
   CanonicalRuleSetLifecycleService,
   type ActiveCanonicalRuleSetRuntime,
@@ -72,7 +73,7 @@ export interface BeginDynamicEvaluationResult {
   leaseExpiresAt: string;
   task: OpenClawDynamicTaskEnvelope;
   recoveryResult?: OpenClawResultEnvelope;
-  modelInput: OpenClawDynamicTaskModelInput;
+  modelInput: Record<string, unknown>;
 }
 
 export interface CommitDynamicEvaluationResult {
@@ -103,6 +104,7 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
     @Inject(CANONICAL_SERVICE_SCOPE_AUTHORIZATION)
     private readonly serviceScope: CanonicalServiceScopeAuthorizationPort,
     private readonly documentVersions: MiaodaDocumentVersionSourceResolver,
+    private readonly commonContext: CanonicalHostCommonContextService,
   ) {}
 
   async begin(workItemId: string): Promise<BeginDynamicEvaluationResult> {
@@ -155,6 +157,11 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
           activeRuleSet,
           ruleSetBinding,
           dynamicConfigurationEvidenceTaskBinding(workItem),
+          await this.commonContext.buildForWorkItem(
+            workItem,
+            actor.tenantId,
+            identity.createdAt.toISOString(),
+          ),
         );
         return structuredClone(request.modelInput) as Record<string, unknown>;
       },
@@ -179,7 +186,7 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
       ...(claim.status === 'COMMITTING'
         ? { recoveryResult: structuredClone(claim.recoveryResult) }
         : {}),
-      modelInput: structuredClone(task.modelInput),
+      modelInput: dynamicModelInput(task.modelInput),
     };
   }
 
@@ -297,6 +304,9 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
         boundRuleSet,
         ruleSetBinding,
         reevaluationTaskBinding,
+        prepared.task.modelInput.commonContext as
+          | CanonicalCommonAssessmentContext
+          | undefined,
       );
       if (
         canonicalJson(request.modelInput) !==
@@ -641,6 +651,7 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
     ruleSet: CanonicalRuleSetRuntime,
     ruleSetBinding: OpenClawDynamicRuleSetBinding,
     reevaluationTaskBinding: DynamicConfigurationEvidenceTaskBinding | null,
+    commonContext?: CanonicalCommonAssessmentContext,
   ) {
     const timestamp = attempt.createdAt.toISOString();
     const candidate =
@@ -667,6 +678,7 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
         documentVersionId: workItem.source.documentVersionId,
       },
       attempt.triggerRequestId,
+      commonContext,
     );
     return {
       ...request,
@@ -1075,6 +1087,19 @@ function assertRuleSetBindingMatchesRuntime(
   ) {
     throw new Error('DYNAMIC_EVALUATION_RULE_SET_BINDING_MISMATCH');
   }
+}
+
+function dynamicModelInput(
+  stored: Record<string, unknown>,
+): Record<string, unknown> {
+  // These bindings remain on the durable Task for Host replay/commit. They
+  // contain artifact/control metadata, not engineering inputs for the model.
+  const {
+    ruleSetBinding: _ruleSet,
+    configurationEvidenceReevaluationBinding: _reevaluation,
+    ...modelInput
+  } = stored;
+  return structuredClone(modelInput);
 }
 
 function requiredModelOutput(result: OpenClawResultEnvelope): string {

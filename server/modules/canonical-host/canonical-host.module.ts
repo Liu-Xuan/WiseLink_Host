@@ -42,6 +42,7 @@ import { CanonicalHostApplicabilitySelectionService } from './canonical-host-app
 import { CanonicalFleetMasterDataRepository } from './canonical-fleet-master-data.repository';
 import { MiaodaApplicabilityControlledSelectionAdapter } from './miaoda-applicability-controlled-selection.adapter';
 import { CanonicalHostOpenClawReviewService } from './canonical-host-openclaw-review.service';
+import { CanonicalHostCommonContextService } from './canonical-host-common-context.service';
 import { CanonicalHostReviewActionController } from './canonical-host-review-action.controller';
 import { CanonicalHostReviewActionService } from './canonical-host-review-action.service';
 import { HostOwnedV1TranslationRuleSetPrivateProvider } from './canonical-translation-rule-set-v1.private';
@@ -205,6 +206,7 @@ export interface CanonicalHostModuleOptions {
     CanonicalFleetMasterDataRepository,
     MiaodaApplicabilityControlledSelectionAdapter,
     CanonicalHostOpenClawReviewService,
+    CanonicalHostCommonContextService,
     CanonicalHostReviewActionService,
     HostOwnedV1TranslationRuleSetPrivateProvider,
     HostNativeDocumentFamilyPdfProducerAdapter,
@@ -452,6 +454,7 @@ export class CanonicalHostModule {
         CanonicalFleetMasterDataRepository,
         MiaodaApplicabilityControlledSelectionAdapter,
         CanonicalHostOpenClawReviewService,
+        CanonicalHostCommonContextService,
         CanonicalHostReviewActionService,
         HostOwnedV1TranslationRuleSetPrivateProvider,
         HostNativeDocumentFamilyPdfProducerAdapter,

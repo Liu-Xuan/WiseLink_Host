@@ -12,7 +12,7 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（当前配置端点为 `miaoda/miaoda-model-auto`；下游具体模型不暴露，Skill 不绑定具体模型）
-- Skill：`wiselink-research-and-synthesize@r09.c19`
+- Skill：`wiselink-research-and-synthesize@r09.c20`
 - Skill compatibility：`wiselink-research-and-synthesize@r09`（Host 最低接受 `r09.c10`）
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（既有 20 项能力；兼容新增的只读自动领取查询）
 - Host baseline：`6fd2655d27edc3851c745547efaf8796ad22c82c`
@@ -48,6 +48,19 @@ Task/Result/MCP 语义的 prompt 时可 Skill-only 发布新 c 修订；改变 s
   手工复刻完整 JSON。除这个无凭据的 bundled helper 外，不依赖通用 shell、自造 HTTP 或本地 decoder。
 
 ## Mode 1：INITIAL_ANALYSIS
+
+### 共同背景（兼容增量）
+
+Host 可在 JobAid / Overall 输入的 `commonContext`，以及 Review 的 `context.commonContext` 中提供评估前
+共同背景：主文件身份与章节目录、关联资料作用与实际读取片段、此前普通讨论及工作回答。旧任务没有该字段时仍按原输入执行。
+优先理解当前问题、技术机理、措施演进和工程师纠正的方向。`PROCEDURAL_REFERENCE` 是施工或操作引用，
+不表示其全文有助于理解问题；不能把目录、选入或历史引用说成本轮已读。
+
+`discussion` 是可继续修改的工作过程，不是正式采用；按时间承接后续纠正，`fromCurrentRevision=false`
+的旧判断要对照当前资料。`omittedEarlierTurns` 非零时不能声称已读全部历史。历史附件仅列文件名，不表示已读取其正文。
+`knowledgeRetrieval.status=NOT_CONNECTED` 表示尚未接通 RAG，不是检索零结果，也不阻断已有资料分析。
+背景片段不替代受控机队事实，不扩展 JobAid 本行引用或 Overall 当前主文件引用边界；Review 引用仍须本轮
+通过既有 `read_source_refs` 实际读取。新增背景字段不改变 TaskEnvelope、候选输出、MCP 参数或正式采用入口。
 
 每次只路由一个 Host 授权 operation：
 
@@ -371,7 +384,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - `modelVersion` 是响应中可读实际模型，或响应未提供时由无 fallback 的唯一 configured provider/model endpoint 解析出的可证明执行标识；不得把它扩张解释为未暴露的下游具体模型，也不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c19`
+- `skillVersion=wiselink-research-and-synthesize@r09.c20`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致

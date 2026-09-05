@@ -7,6 +7,7 @@ import {
 } from '../../server/modules/action-attempt/action-attempt-envelope';
 import type { ActionAttemptRow } from '../../server/modules/action-attempt/action-attempt.types';
 import { CanonicalHostOpenClawOverallService } from '../../server/modules/canonical-host/canonical-host-openclaw-overall.service';
+import { projectCommonAssessmentContext } from '../../server/modules/canonical-host/canonical-host-common-context.service';
 import { CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY } from '../../server/modules/canonical-host/canonical-host-openclaw-runtime-policy';
 import { createConfigurationEvidenceReevaluation } from '../../server/modules/canonical-host/configuration-evidence/configuration-evidence-reevaluation.state';
 
@@ -737,6 +738,7 @@ function createHarness(input: { p0b?: boolean } = {}) {
     } as never,
     attempts as never,
     scope as never,
+    { buildForWorkItem: jest.fn(async () => projectCommonAssessmentContext(workItem, { context: { status: 'UNAVAILABLE', reason: 'TEST_NO_READER' }, documentReadingStatus: 'UNAVAILABLE', items: [], sections: [], resourceRefs: [] }, [])) } as never,
   );
   return {
     service,

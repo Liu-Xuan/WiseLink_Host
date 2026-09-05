@@ -381,6 +381,7 @@ export async function getDocumentParsingPage(
       throw backendResponseError(
         response.data,
         'CANONICAL_DOCUMENT_VIEW_UNAVAILABLE',
+        response.status,
       );
     }
     return response.data;

@@ -432,6 +432,59 @@ export interface CanonicalStructuredContentUnit {
   sourceLocators: CanonicalStructuredContentSourceLocator[];
 }
 
+/** Shared task background. Available before evaluation; saving it is not adoption. */
+export interface CanonicalCommonAssessmentContext {
+  primaryDocument: {
+    documentVersionRef: string;
+    documentCode: string | null;
+    businessRevision: string | null;
+    title: string;
+  };
+  documentReading: {
+    status: 'AVAILABLE' | 'UNAVAILABLE';
+    sections: Array<{ title: string; sourceRefIds: string[] }>;
+  };
+  relatedMaterials: {
+    status: 'AVAILABLE' | 'UNAVAILABLE';
+    reason: string | null;
+    items: Array<{
+      documentCode: string;
+      documentVersionRef: string | null;
+      documentType: CanonicalReferenceDocumentType;
+      contributionRoles: CanonicalRelatedContextRelationRole[];
+      sourceAuthority: CanonicalRelatedContextSourceAuthority;
+      targetApplicability: CanonicalRelatedContextSnapshotItem['targetApplicability'];
+      currentness: CanonicalRelatedContextSnapshotItem['currentness'];
+      availability: CanonicalRelatedContextSnapshotItem['availability'];
+      contextUse: 'BACKGROUND_ONLY';
+      selection: 'BACKGROUND_CANDIDATE' | 'PROCEDURAL_REFERENCE';
+      reasonCodes: string[];
+      availableSourceRefIds: string[];
+      readFragments: Array<{ sourceRefId: string; excerpt: string }>;
+    }>;
+  };
+  discussion: {
+    status: 'AVAILABLE' | 'NO_PRIOR_DISCUSSION' | 'ACCESS_DENIED';
+    totalPriorTurns: number;
+    omittedEarlierTurns: number;
+    turns: Array<{
+      turnNo: number;
+      fromCurrentRevision: boolean;
+      question: string;
+      selectedEvaluationItemId: string | null;
+      attachmentNames: string[];
+      workingAnswer: string | null;
+      missingInputs: string[];
+      warnings: string[];
+    }>;
+    usage: 'DISCUSSION_NOT_ADOPTION';
+  };
+  knowledgeRetrieval: {
+    status: 'NOT_CONNECTED';
+    fragments: [];
+  };
+}
+
 export interface CanonicalStructuredContentPageResponse {
   schemaVersion: 'wiselink.3_1.structured_content_page.v1';
   status: 'FRESH_READ';
