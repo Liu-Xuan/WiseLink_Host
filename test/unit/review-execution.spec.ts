@@ -9,6 +9,44 @@ import ReviewExecutionStatus from '../../client/src/features/review/ReviewExecut
 import { shouldAutoRefreshReviewTurn } from '../../client/src/features/review/continuous-review-state';
 
 describe('Host review execution readback', () => {
+  it('shows only recorded evidence activity and source links, separately from candidate citations', () => {
+    const turn = Object.assign(reviewUiTurn(), {
+      execution: {
+        ...execution('RUNNING'),
+        evidenceActivity: {
+          items: [
+            {
+              kind: 'CONTEXT_PREPARED',
+              observedAt: '2026-09-06T04:00:00Z',
+              sourceRefIds: [],
+              sourceCatalogCount: 4,
+            },
+            {
+              kind: 'SOURCE_REFS_RESOLVED',
+              observedAt: '2026-09-06T04:01:00Z',
+              sourceRefIds: ['SRC-READ'],
+              sourceCatalogCount: 4,
+            },
+          ],
+          omittedEarlierCount: 0,
+          error: null,
+        },
+      },
+    });
+    const html = renderToStaticMarkup(
+      createElement(ReviewExecutionStatus, {
+        turn,
+        onLocateSourceRef: jest.fn(),
+      }),
+    );
+    expect(html).toContain('取证活动 · 2 条');
+    expect(html).toContain('已准备本轮上下文');
+    expect(html).toContain('已取回 1 个片段');
+    expect(html).toContain('title="SRC-READ"');
+    expect(html).not.toContain('候选已生成');
+    expect(turn.assistantCandidate).toBeNull();
+  });
+
   it.each(['REQUESTED', 'QUEUED', 'RUNNING', 'RETRY_SCHEDULED', 'COMMITTING'])(
     'polls a persisted %s even after five minutes, without inventing a deadline',
     (status) => {

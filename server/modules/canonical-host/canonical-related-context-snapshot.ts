@@ -176,6 +176,9 @@ function snapshotItems(
       reasonCodes: [
         'PRIMARY_DOCUMENT_EXPLICIT_MENTION',
         `REFERENCE_${resolution.status}`,
+        ...(resolution.status === 'UNAVAILABLE' && resolution.reasonCode
+          ? [resolution.reasonCode]
+          : []),
         'RELATION_CANDIDATE_NOT_ACCEPTED',
         'SOURCE_AUTHORITY_NOT_EVALUATED',
       ],

@@ -196,5 +196,137 @@ describe('shared pre-evaluation context', () => {
       status: 'UNAVAILABLE',
       reason: 'RELATED_SNAPSHOT_UNAVAILABLE',
     });
+    const identityFailure = new Error('IDENTITY_LOOKUP_UNAVAILABLE');
+    conversations.hasActiveOfficialActorMapping.mockRejectedValue(
+      identityFailure,
+    );
+    await expect(
+      service.buildForWorkItem(workItem, 'tenant-one', '2026-09-05T06:00:00Z'),
+    ).rejects.toBe(identityFailure);
+    expect(conversations.loadCurrent).toHaveBeenCalledTimes(1);
+  });
+
+  it('isolates a failed related document while preserving authorized readable evidence and its failure reason', async () => {
+    const targets = ['777-FTD-31-21002', '777-FTD-31-21003'];
+    const bindings = targets.map((_, index) => ({
+      workItemId: `WI-RELATED-${index}`,
+      documentVersionId: `DV-RELATED-${index}`,
+      requestId: `REQUEST-RELATED-${index}`,
+      tenantId: 'tenant-one',
+      requestedByUserId: 'engineer-owner',
+      revision: 1,
+    }));
+    const workItems = {
+      listTenantDocumentAuthorizationBindings: jest.fn(
+        async (input: { documentVersionId: string }) =>
+          bindings.filter(
+            (binding) => binding.documentVersionId === input.documentVersionId,
+          ),
+      ),
+      loadAuthorizationBinding: jest.fn(async (input: { workItemId: string }) =>
+        bindings.find((binding) => binding.workItemId === input.workItemId),
+      ),
+      loadTenantScopedProjection: jest.fn(async (id: string) => {
+        const binding = bindings.find((item) => item.workItemId === id)!;
+        return {
+          row: binding,
+          projection: {
+            ...workItem,
+            ...binding,
+            source: { documentVersionId: binding.documentVersionId },
+            package: {
+              ...workItem.package,
+              artifact: { ref: `artifact://${id}`, sha256: 'a'.repeat(64) },
+            },
+          },
+        };
+      }),
+    };
+    const artifactStore = {
+      persistAndReadback: jest.fn(async (_bytes: Uint8Array) => ({
+        artifact: { ref: 'private://snapshot' },
+      })),
+      readActualBytes: jest.fn(async (artifact: { ref: string }) => {
+        if (artifact.ref === 'artifact://WI-RELATED-0') {
+          throw Object.assign(new Error('Private file service details'), {
+            code: 'RELATED_FILE_UNAVAILABLE',
+          });
+        }
+        return new TextEncoder().encode(
+          JSON.stringify({
+            sourceRefs: [
+              { sourceRefId: 'SRC-GOOD', quote: 'Actual related evidence.' },
+            ],
+          }),
+        );
+      }),
+    };
+    const service = new CanonicalHostCommonContextService(
+      {
+        hasActiveOfficialActorMapping: jest.fn(async () => true),
+        loadCurrent: jest.fn(async () => null),
+      } as never,
+      workItems as never,
+      artifactStore as never,
+      {
+        readAllSourceUnits: jest.fn(async () => [
+          {
+            unitId: 'U1',
+            kind: 'paragraph',
+            text: `For more information, refer to ${targets.join(' and ')}.`,
+            sourceRefIds: ['SRC-PRIMARY'],
+          },
+        ]),
+      } as never,
+      {
+        listCurrentReferenceTargets: jest.fn(async () =>
+          targets.map((code, index) => ({
+            canonicalDocumentNumber: code,
+            documentVersionId: bindings[index].documentVersionId,
+            issuerAuthority: 'BOEING',
+          })),
+        ),
+      } as never,
+    );
+    const result = await service.build(
+      workItem,
+      { tenantId: 'tenant-one', actorId: 'engineer-owner' },
+      { asOf: '2026-09-05T06:00:00Z' },
+    );
+    expect(result.common.relatedMaterials).toMatchObject({
+      status: 'AVAILABLE',
+      items: [
+        {
+          documentCode: targets[0],
+          availability: 'UNAVAILABLE',
+          reasonCodes: expect.arrayContaining(['RELATED_FILE_UNAVAILABLE']),
+          availableSourceRefIds: [],
+        },
+        {
+          documentCode: targets[1],
+          availability: 'AVAILABLE',
+          availableSourceRefIds: ['SRC-GOOD'],
+          readFragments: [
+            { sourceRefId: 'SRC-GOOD', excerpt: 'Actual related evidence.' },
+          ],
+        },
+      ],
+    });
+    expect(result.related.resourceRefs.map((ref) => ref.sourceRefId)).toEqual([
+      'SRC-GOOD',
+    ]);
+    const persisted = JSON.parse(
+      new TextDecoder().decode(
+        artifactStore.persistAndReadback.mock.calls[0][0],
+      ),
+    );
+    expect(persisted.items[0].reasonCodes).toContain(
+      'RELATED_FILE_UNAVAILABLE',
+    );
+    expect(JSON.stringify(result.common)).not.toContain(
+      'Private file service details',
+    );
+    expect(workItems.loadAuthorizationBinding).toHaveBeenCalledTimes(2);
+    expect(artifactStore.readActualBytes).toHaveBeenCalledTimes(2);
   });
 });

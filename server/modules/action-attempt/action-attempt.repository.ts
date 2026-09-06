@@ -20,6 +20,7 @@ import {
 } from 'drizzle-orm';
 
 import { actionAttempt, workItem } from '../../database/schema';
+import type { ReviewEvidenceActivity } from '@shared/api.interface';
 import { canonicalJson } from './action-attempt-envelope';
 import type { OpenClawResultEnvelope, OpenClawTaskEnvelope } from './action-attempt-envelope.types';
 import type {
@@ -240,6 +241,27 @@ export class ActionAttemptRepository {
       .limit(1);
     if (active) throw activeAttemptConflict();
     throw new Error('ACTION_ATTEMPT_RESERVATION_READBACK_FAILED');
+  }
+
+  async appendReviewActivity(
+    row: ActionAttemptRow,
+    activity: ReviewEvidenceActivity,
+  ): Promise<void> {
+    // Atomic append on the existing attempt; never rewrite its task/result or
+    // create another execution record. The caller has freshly authorized it.
+    const saved = await this.db.update(actionAttempt).set({
+      reviewActivityJson: sql`(COALESCE(${actionAttempt.reviewActivityJson}::jsonb, '[]'::jsonb) || ${JSON.stringify([activity])}::jsonb)::text`,
+      updatedAt: new Date(),
+    }).where(and(
+      eq(actionAttempt.attemptId, row.attemptId),
+      eq(actionAttempt.tenantId, row.tenantId),
+      eq(actionAttempt.workItemId, row.workItemId),
+      eq(actionAttempt.actorUserId, row.actorUserId),
+      eq(actionAttempt.actionType, 'OPENCLAW_INTERACTIVE_REVIEW'),
+      eq(actionAttempt.requestOrigin, row.requestOrigin),
+      eq(actionAttempt.leaseGeneration, row.leaseGeneration),
+    )).returning({ attemptId: actionAttempt.attemptId });
+    if (saved.length !== 1) throw new Error('REVIEW_ACTIVITY_BINDING_CHANGED');
   }
 
   async prepareReviewInput(

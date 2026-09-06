@@ -1,12 +1,16 @@
 import type { ReviewTurnReadModel } from '@shared/api.interface';
 import { reviewExecutionPresentation } from './review-execution';
+import { reviewSourceRefLabel } from './continuous-review-state';
 
 export default function ReviewExecutionStatus({
   turn,
+  onLocateSourceRef,
 }: {
   turn: ReviewTurnReadModel;
+  onLocateSourceRef?: (sourceRef: string) => void;
 }) {
   const execution = reviewExecutionPresentation(turn);
+  const activity = turn.execution?.evidenceActivity;
   return (
     <section
       className="review-execution"
@@ -20,6 +24,66 @@ export default function ReviewExecutionStatus({
           <small>状态更新于 {formatTime(execution.updatedAt)}</small>
         ) : null}
       </div>
+      {activity ? (
+        <details className="review-evidence-activity">
+          <summary>取证活动 · {activity.items.length} 条</summary>
+          <p>
+            以下是 Host
+            实际准备上下文与取回片段的记录，不代表模型已读全文、已引用或已正式采用。
+          </p>
+          {activity.error ? (
+            <p role="alert">
+              {activity.error.message}（{activity.error.code}）
+            </p>
+          ) : null}
+          {activity.omittedEarlierCount > 0 ? (
+            <p>
+              显示最近 {activity.items.length} 条；另有{' '}
+              {activity.omittedEarlierCount} 条更早记录保存在本回合。
+            </p>
+          ) : null}
+          <ol>
+            {activity.items.map((item, index) => (
+              <li key={`${item.observedAt}-${index}`}>
+                <strong>
+                  {item.kind === 'CONTEXT_PREPARED'
+                    ? '已准备本轮上下文'
+                    : `已取回 ${item.sourceRefIds.length} 个片段`}
+                </strong>
+                <small>{formatTime(item.observedAt)}</small>
+                {item.kind === 'CONTEXT_PREPARED' ? (
+                  <p>
+                    来源目录包含 {item.sourceCatalogCount}{' '}
+                    项，可按问题继续取证。
+                  </p>
+                ) : null}
+                {item.sourceRefIds.length ? (
+                  <div className="review-evidence-source-links">
+                    {item.sourceRefIds.map((ref, refIndex) =>
+                      onLocateSourceRef ? (
+                        <button
+                          key={ref}
+                          type="button"
+                          title={ref}
+                          onClick={() => onLocateSourceRef(ref)}
+                        >
+                          {reviewSourceRefLabel(ref, refIndex)}
+                        </button>
+                      ) : (
+                        <span key={ref} title={ref}>
+                          {reviewSourceRefLabel(ref, refIndex)}
+                        </span>
+                      ),
+                    )}
+                  </div>
+                ) : null}
+              </li>
+            ))}
+          </ol>
+        </details>
+      ) : (
+        <small>本回合尚无可读回的逐次取证记录。</small>
+      )}
       {execution.status || execution.errorCode ? (
         <details>
           <summary>执行记录</summary>

@@ -1,4 +1,4 @@
-import { createElement } from 'react';
+import { Children, createElement, isValidElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import type { CanonicalDocumentParsingPageResponse } from '@shared/api.interface';
@@ -20,6 +20,27 @@ import { toWorkItemView } from '../../client/src/services/viewModelMappers';
 const SOURCE_REF = 'urn:techpub:source-ref:v1:sha256:source-bound-current';
 
 describe('OverallAssessmentHero user-visible technical details', () => {
+  it('opens source reading, not Review, from the no-candidate primary button', () => {
+    const onOpenWorkbench = jest.fn();
+    const onViewEvidence = jest.fn();
+    const element = OverallAssessmentHero({
+      view: {
+        ...toWorkItemView(pageWithInternalTransportDetails()),
+        overall: null,
+      },
+      onOpenWorkbench,
+      onViewEvidence,
+    });
+    const button = Children.toArray(element.props.children).find(
+      (node) => isValidElement(node) && node.type === 'button',
+    );
+    if (!isValidElement<{ onClick: () => void }>(button))
+      throw new Error('Source-reading button missing');
+    button.props.onClick();
+    expect(onViewEvidence).toHaveBeenCalledWith();
+    expect(onOpenWorkbench).not.toHaveBeenCalled();
+  });
+
   it('renders engineering semantics without internal ids, enums, runtime names, or revisions', () => {
     const html = renderToStaticMarkup(
       createElement(OverallAssessmentHero, {

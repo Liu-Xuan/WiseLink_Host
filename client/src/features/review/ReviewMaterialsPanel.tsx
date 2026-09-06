@@ -39,7 +39,8 @@ export default function ReviewMaterialsPanel({
       {open ? (
         <div className="review-materials-body">
           <p className="review-materials-boundary">
-            保存、选入、实际读取、候选引用与正式采用分别记录。当前服务尚未返回逐材料的选入、读取和采用回执。
+            保存、选入、实际读取、候选引用与正式采用分别表达。逐次取证见各回合的真实活动记录；未返回记录时不推定已读。当前
+            RAG 尚未接通，不阻断已有获准资料分析。
             {refreshing ? ' 正在刷新讨论，已读回记录保留。' : ''}
           </p>
           <article className="review-material-row">

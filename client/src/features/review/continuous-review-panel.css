@@ -481,6 +481,39 @@
   cursor: pointer;
 }
 
+.review-evidence-activity ol {
+  display: grid;
+  gap: 12px;
+  padding-inline-start: 20px;
+}
+
+.review-evidence-activity small {
+  display: block;
+  color: var(--wl-muted);
+}
+
+.review-evidence-source-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-block-start: 8px;
+}
+
+.review-evidence-source-links button {
+  border: 1px solid var(--wl-border);
+  border-radius: var(--wl-radius-sm);
+  background: var(--wl-sheet);
+  color: var(--wl-ink);
+  font: inherit;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.review-evidence-source-links button:focus-visible {
+  outline: 2px solid var(--wl-accent);
+  outline-offset: 3px;
+}
+
 .review-execution summary:focus-visible {
   outline: 2px solid var(--wl-accent);
   outline-offset: 3px;

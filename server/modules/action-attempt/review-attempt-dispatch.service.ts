@@ -1,7 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
 
-import type { ReviewTurnExecutionReadModel } from '@shared/api.interface';
+import type {
+  ReviewEvidenceActivity,
+  ReviewTurnExecutionReadModel,
+} from '@shared/api.interface';
+import { projectReviewEvidenceActivity } from './review-evidence-activity';
 import { parseTaskEnvelope, sealTaskEnvelope } from './action-attempt-envelope';
 import { ActionAttemptLifecycleService } from './action-attempt-lifecycle.service';
 import { ActionAttemptRepository } from './action-attempt.repository';
@@ -99,6 +103,7 @@ export class ReviewAttemptDispatchService {
       startedAt: row?.startedAt?.toISOString() ?? null,
       updatedAt: (row?.updatedAt ?? input.createdAt).toISOString(),
       completedAt: row?.completedAt?.toISOString() ?? null,
+      evidenceActivity: projectReviewEvidenceActivity(row?.reviewActivityJson),
       error:
         row &&
         (row.errorCode ||
@@ -119,6 +124,22 @@ export class ReviewAttemptDispatchService {
             }
           : null,
     };
+  }
+
+  async recordEvidenceActivity(
+    row: ActionAttemptRow,
+    activity: Omit<ReviewEvidenceActivity, 'observedAt'>,
+  ): Promise<void> {
+    if (
+      row.actionType !== REVIEW_TASK_TYPE ||
+      row.requestOrigin !== ACTION_ATTEMPT_REQUEST_ORIGIN
+    ) {
+      throw dispatchConflict('REVIEW_ACTIVITY_BINDING_MISMATCH');
+    }
+    await this.repository.appendReviewActivity(row, {
+      ...activity,
+      observedAt: new Date().toISOString(),
+    });
   }
 
   async prepareAndClaim(
