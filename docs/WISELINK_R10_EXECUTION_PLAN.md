@@ -18,10 +18,10 @@ Git 同步授权更新：此前 Codex 分支推送不符合当时的 main-only �
 
 | 步骤 | 状态 | 交付内容 |
 | --- | --- | --- |
-| 1. 契约与设计 | 本轮修订完成，持续同步 | R10 云文档 revision 2195 影响范围回读通过，正文镜像同步；c24 已安装且 Host 已发布，DLI 已由用户登记；两模型真实流程未完成，M3 失败后的 c25 输出分窗修订已通过本地验证、待安装。保留依赖感知并行、全局模型选择、全文连续输出、辅助理解方向、历史记录和 UI-N02 资源。 |
+| 1. 契约与设计 | 本轮修订完成，持续同步 | R10 云文档 revision 2203 八处影响范围回读通过，正文镜像同步；c25 已安装、Host 0c36eb97f 已发布，新真实 787 PDF 正常受理。DLI 已由用户登记，模型管理角色仍待明确；两模型真实初始分析与连续 Review 未完成。保留依赖感知并行、全局模型选择、全文连续输出、辅助理解方向、历史记录和 UI-N02 资源。 |
 | 2. 页面到云端自动运行 | c24 自然 tick 已实际调用绑定的 M3，失败保留 | 新真实 SB 671 单元已读齐；M3 首轮网关 HTTP 400 / incomplete_result，未返回有效片段、无候选写回。原生 Gateway 的一次内部重试与 driver 的单次 HTTP 请求分别记账；旧 Turn 与全部失败 attempt/checkpoint 保留。 |
 | 3. 连续调查与页面体验 | 数据库目录/快览已发布并实测 | 新目录返回当前账户 10 项资料；事故事项历史快览独立 HTTP 200，明确标注原文未在本次核验。两条实际 Trace 均无 FileService span；c22 跨轮会话能力继续保留。 |
-| 4. 页面连续往返 | 第二份真实 SB 已受理，初始候选及两轮 Review 待完成 | 当前事项 `WI-6584f4cb-0a28-478e-9746-fe66acaf1b56` revision 3，受控 PDF 实际加载 24 页；Host scope 与唯一 cron 已迁移一致。c24 页面实读初始 RUNNING → 未完成、M3 绑定和失败原因；来源查询命中并定位 PDF 第 1 页。模型设置页显示五项登记模型及 ROLE_NOT_CONFIGURED 只读状态。 |
+| 4. 页面连续往返 | 新 787 SB 已受理，初始候选及两轮 Review 待完成 | 19:15 页面复用先前上传的真实 PDF 创建 `WI-1c1e3f05-0807-4cd1-b43c-df4aea5e4be3`，正式编号 B787-81205-SB310019-00，数据库 PARSE_PDF SUCCEEDED、revision 3。本轮未迁移其 Host scope/cron，未调用翻译模型；后续 PDF 查看器核验因页签不可用未完成。此前 737 的 24 页加载、初始 RUNNING → 未完成、来源定位及模型设置 ROLE_NOT_CONFIGURED 只读状态保留为历史实证。 |
 | 5. 真实取证与可选资料隔离 | a7dad7e37 已发布，实际 Review 活动待验收 | 关联目标逐份隔离并保留原因；ActionAttempt 可空活动字段记录 Host 上下文准备与 SourceRef 解析，回合可回读并定位来源，不冒充模型阅读或正式采用。发布后数据库差异为空；见 [实现记录](WL31_R10_EVIDENCE_ACTIVITY_20260906.md)。 |
 
 这些是实施顺序，不是逐级解锁的 gate。出现具体故障就定位原因、做必要普通测试，然后返回完整流程。
@@ -30,7 +30,7 @@ Git 同步授权更新：此前 Codex 分支推送不符合当时的 main-only �
 
 1. **选中评估点。** selectedEvaluationItemId 已贯穿页面、请求、既有 Turn JSON、回读和 Agent Task/Context，历史无字段 Turn 继续兼容。本轮实测发现页面默认显示 GOV-008、原提交却为 GOV-001；前端源提交 70a74167c 已集成 8fd75218d，统一默认选择、分类切换、URL 和发送焦点。
 2. **自动执行意图。** 新 append 在 Host 明确支持时携带 AUTOMATIC，持久化在现有 Turn JSON；普通保存与历史 Turn 不加入自动队列。范围来自已配置租户/事项，不是前端硬编码；automaticExecutionAvailable 不是实时健康状态。
-3. **授权领取与运行。** get_pending_review_turn 复用现有 owner、官方身份映射与 exact WorkItem service scope；ActionAttempt 在模型上下文准备前持久化。实际 SQL 中 actor_id 别名冲突已以唯一 CTE 别名修复，没有降低 RLS。官方 Hosted 原生 command cron 每 60 秒读取唯一 Skill 安装路径，现为 c24 统一事项入口；13:34 auto 与 18:05 M3 的自然 tick 均实际运行 TRANSLATE，失败记录保留。此前 c19 的 IDLE 和安装检查不冒充本次候选成功。
+3. **授权领取与运行。** get_pending_review_turn 复用现有 owner、官方身份映射与 exact WorkItem service scope；ActionAttempt 在模型上下文准备前持久化。实际 SQL 中 actor_id 别名冲突已以唯一 CTE 别名修复，没有降低 RLS。官方 Hosted 原生 command cron 每 60 秒读取唯一 Skill 安装路径，现已安装 c25 统一事项入口；13:34 auto 与 18:05 M3 的自然 tick 均实际运行 TRANSLATE，失败记录保留。c25 安装后尚无新任务生成验证；19:15 新 787 事项仅完成解析，不把安装或 PARSE_PDF 成功当作初始候选成功。
 4. **页面真实状态。** 复用对话回读的 execution，显示状态、时间和失败原因。仅真实活动状态触发四秒只读刷新，终态和读取失败停止自动刷新；临时服务错误保留内容与草稿，权限失效清除不再可读内容。没有候选不等于正在运行。
 5. **来源和材料。** 本次材料按需展开主文件、已保存输入/附件、正文引用目标和候选 SourceRef；此前 10 处真实引用聚合为 6 个目标，点击来源已定位受控 PDF 第 5 页；原文故障后不能复用该历史成功作为当前证明。c21 让模型先收到目录，再按问题请求相关片段，驱动委托既有 MCP 每批 100 项读取；同轮后续只发新 tool exchange，不重复发送整包。选入、读取、引用、采用仍分别表达。
 6. **跨轮延续。** c22 的 Host 从现有 ReviewTurn/ActionAttempt 读取最近前序任务，同一租户/工程师/事项/讨论且前序成功、版本与新核实来源范围一致时延续。前序失败或范围改变则从当前 Turn 主键派生新会话并承接 Host 保存的讨论；查询沿用单语句 actor CTE 与现有 RLS。控制面 nativeSessionKey 仅传给 Gateway header，绑定 wiselink-engineering，不进入模型/浏览器；每轮来源引用仍需本轮实读。无新表、hash、gate 或原生配置变更。
@@ -75,13 +75,13 @@ Host 读取优化与前端 A+B 已随 `3903eb6c1` 发布；面板保活 C 集成
 - 方法/解析：保持主文件结构、条件、例外；JobAid 正式来源据实际绑定派生。SOURCE_IDENTITY_MISMATCH 是固定占位，不应直接改成 MATCH。
 - 数据支线：真实 RAG 薄适配、构型事件源及原有采用后重算；不建立全量知识镜像、复杂图谱或新的通用发布平台来阻断当前运行。
 
-Host 与 Skill 可按兼容窗口分别发布；前后端仍是一个 Host App 发布单元。当前官方 Skill 为 r09.c24，兼容线仍 r09，Host 最低 r09.c10；c25 为兼容的 Skill-only 输出适配修订，待正常安装。唯一 cron 在空闲时暂时禁用并迁移新事项；Host exact WorkItem scope 同步迁移，4d38faea7 发布完成且数据库差异为空后再启用，仅等待自然 tick，未手工运行 driver。历史 Turn/request/attempt/checkpoint 全保留，不因技术升级重写旧候选；当前开发不自动重放失败记录。正式运行的有界重试、可选失败跳过和任务隔离仍需实现和实测，不将开发限制固化为生产停摆。
+Host 与 Skill 可按兼容窗口分别发布；前后端仍是一个 Host App 发布单元。当前官方 Skill 为 r09.c25，兼容线仍 r09，Host 最低 r09.c10；c25 已按正常路径兼容安装。此前唯一 cron 在空闲时禁用并迁移到 737-46-1053，Host exact WorkItem scope 同步迁移，4d38faea7 发布完成且数据库差异为空后再启用，仅自然 tick 执行，未手工运行 driver。19:15 新 787 事项本轮仅完成受理，未迁移 scope/cron、未启动模型；全局模型管理角色仍待用户明确，不据样本或范围迁移授权自行扩展角色、成员或凭据权限。历史 Turn/request/attempt/checkpoint 全保留，不因技术升级重写旧候选；当前开发不自动重放失败记录。正式运行的有界重试、可选失败跳过和任务隔离仍需实现和实测，不将开发限制固化为生产停摆。
 
 ## 当前已核实状态
 
-当前分支 codex/wl31-r09-master-handoff-20260903；最新 Host release `7682359509466106846` 于 2026-09-06 18:02:38 返回 `finished`，对应完整提交 `4d38faea79b0db15382aef9a2d5f96e9339bb14f`，`error_logs=[]`。该提交已以单一同名 refspec 非强制写入妙搭 origin 与获长期授权的 GitHub codex 分支，实际快进 `a7dad7e37 → 4d38faea7`；未直接推 main、标签、删除引用或强推。新增模型设置表及可空任务模型字段随发布迁移，发布后 dev→online 数据库差异为空。
+当前分支 codex/wl31-r09-master-handoff-20260903；最新 Host release `7682377591382428892` 于 2026-09-06 19:13:18 返回 `finished`，对应完整提交 `0c36eb97fbc6380352729e054481d58ed7f5ca79`，`error_logs=[]`。c25 源提交及 Host 修复已以单一同名 refspec 非强制写入妙搭 origin 与获长期授权的 GitHub codex 分支，实际快进 `4d38faea7 → 59550e642 → 0c36eb97f`；未直接推 main、标签、删除引用或强推。此版仅修复真实 PDF 身份解析与错误通道，无数据库结构或角色变更；此前模型设置表及任务模型字段已随 18:02 发布迁移，彼时 dev→online 差异为空。
 
-官方 Hosted 安装轮次 `7682357276456176840` 回报 c24 Ready/Visible、26/26 源文件与 Publish Lite manifest 一致，installed 三文件测试 125 pass / 0 fail。私有存储的相对 download_url 不作可下载地址，实际安装使用官方 +file-sign 的临时绝对 HTTPS 链接。迁移管理轮次 `7682358935945530346` 在既有唯一 cron 空闲后禁用并仅修改新事项 argv；启用管理轮次 `7682360923508296677` 只启用同一任务，再观察自然 tick，没有手工运行 driver。每 60 秒、timeout 1800 秒、原 cwd 和模型/profile/Gateway 保持；Host scope 与 argv 的事项均为获准新样本。原生 `runningAtMs` 排除重叠、不积压补跑的行为已由官方源码核实，无需另加锁/队列。
+官方 Hosted 最新安装轮次 `7682368307975376059` 回报 c25 Ready/Visible、26/26 源文件与 Publish Lite manifest 一致，installed 三文件测试 127 pass / 0 fail；只更新唯一 Skill，无模型、业务、配置或 cron 调用。私有存储的相对 download_url 不作可下载地址，安装使用官方 +file-sign 的临时绝对 HTTPS 链接。此前迁移管理轮次 `7682358935945530346` 在唯一 cron 空闲后禁用并仅修改 737 事项 argv；启用轮次 `7682360923508296677` 只启用同一任务，随后观察自然 tick，没有手工运行 driver。每 60 秒、timeout 1800 秒、原 cwd 和模型/profile/Gateway 保持；本轮尚未迁移至新 787 事项。原生 `runningAtMs` 排除重叠、不积压补跑的行为已由官方源码核实，无需另加锁/队列。
 
 11:49 已登录 Chrome 实读新版目录与事故样本快览：
 
@@ -104,7 +104,7 @@ Host 与 Skill 可按兼容窗口分别发布；前后端仍是一个 Host App �
 
 容量只读轮次 `7682296925610396968` 核实当前 auto 声明 contextWindow 200000、maxTokens 8192；真实上游 token 用量和最终生效预算未知。原文 27107 字符，传输 JSON 157319 字节，其中机械标识约 94.6 KB，不能仅凭 length 断言输入上下文不足。用户要求默认整篇理解，仅为实际输入容量限制适配分段；已明确接受同一全文上下文下分次连续输出。辅助领域术语锚点、摘要和元数据作为带来源/版本的后续增量，当前不预建图谱或新表。
 
-本地在研适配保持全文输入不变，模型仅输出单元序号与译文，由适配器恢复原来源绑定并执行既有完整性校验；新增安全输出形态观测，不记录原文、推理正文或凭证。两组普通测试 117 pass / 0 fail；未发布、安装或重新实跑，不宣称已完成连续输出。下一步还需正常失败处理入口及真实候选验证，不能靠删除 checkpoint 或改旧记录强制重放。
+早期本地适配保持全文输入不变，模型仅输出单元序号与译文，由适配器恢复原来源绑定并执行既有完整性校验；新增安全输出形态观测，不记录原文、推理正文或凭证。当时两组普通测试 117 pass / 0 fail、尚未发布或安装；后续 c24 实跑及 c25 安装见下文。真实连续输出仍未完成，不能靠删除 checkpoint 或改旧记录强制重放。
 
 模型清单只读轮次 `7682302157848349625` completed：本实例 Miaoda provider 实际登记且 available=true 的选项为 auto、多模态、Flash、MiniMax-M3；前三项声明输出 8192，M3 为 16000，均声明上下文 200000。该次只读核查时默认仍为 `miaoda/miaoda-model-auto`，图像默认为多模态，fallback 为空；工程 profile 无独立模型声明，沿用默认。其余 provider 的全局目录不算本实例可选；飞书 4 月公开名单也不等于此实例当前清单。该只读轮次未切换模型、未改配置/cron、未做推理测试；随后用户选择与实际变更如下。
 
@@ -114,7 +114,7 @@ Host 与 Skill 可按兼容窗口分别发布；前后端仍是一个 Host App �
 
 c24 已安装并随 4d38faea7 发布 /settings/models 页面、Host 受控全局设置、新 ActionAttempt 的启动模型持久化，以及初始/Review 适配器的原生 x-openclaw-model 路由。选择只进入控制面及既有 inputHash，不进入模型业务输入；恢复不重选，失败不换 Provider。全文翻译紧凑输出并在必要时同会话续写，默认每个自然 tick 最多连续推进四个已就绪阶段；CAS 写回串行，独立背景资料最多四路读取。相关 7 suites / 52 tests、125 项 Skill 测试和生产构建通过；正常发布迁移后数据库差异为空，历史数据不改写。真实 M3 首轮失败，无候选；内置浏览器已实读初始状态变化、来源定位及模型设置只读页面。模型管理角色尚待用户确认，不擅自扩大现有角色权限。生产有界恢复重试仍需后续实现和实测，不以本次调度提速代替。
 
-18:05 自然 tick 的 M3 翻译在首个输出前失败。只读诊断轮次 7682363592980958140 核实：driver 一次 HTTP 请求，原生 Gateway 内部空结果重试 1/1 后 length / incomplete_result，未返回工具参数或有效前缀，实际生效 maxTokens 与 reasoning 预算未知，不能伪报 token 用量。c24 事后续写无法承接不存在的前缀；c25 因此在生成前明确规划每次最多 96 个完整单元、约 6000 原文字符的输出工作窗，首次仍发送全文、后续同原生会话续写、不切输入或漏单元。127 项普通 Skill 测试通过，尚待安装和新请求真实验证；不重放原失败任务。完整事实见 [c24 实跑与 c25 修订记录](WL31_R10_M3_OUTPUT_WINDOW_20260906.md)。
+18:05 自然 tick 的 M3 翻译在首个输出前失败。只读诊断轮次 7682363592980958140 核实：driver 一次 HTTP 请求，原生 Gateway 内部空结果重试 1/1 后 length / incomplete_result，未返回工具参数或有效前缀，实际生效 maxTokens 与 reasoning 预算未知，不能伪报 token 用量。c24 事后续写无法承接不存在的前缀；c25 因此在生成前明确规划每次最多 96 个完整单元、约 6000 原文字符的输出工作窗，首次仍发送全文、后续同原生会话续写、不切输入或漏单元。c25 已安装，installed 127 项普通测试通过，尚待新任务真实验证；不重放原失败任务。19:15 新真实 787 事项的页面受理及解析成功已核实，无翻译 ActionAttempt。完整事实见 [c24 实跑与 c25 修订记录](WL31_R10_M3_OUTPUT_WINDOW_20260906.md)。
 
 ## 普通保存与正式采用边界
 
