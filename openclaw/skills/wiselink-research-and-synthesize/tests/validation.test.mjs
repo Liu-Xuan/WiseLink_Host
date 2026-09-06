@@ -375,7 +375,85 @@ test('translation binding rejects missing, reordered, duplicate and invented uni
     { translatedUnits: [] }, { translatedUnits: [[1, '译文']] },
     { translatedUnits: [[0, '译文'], [0, '译文']] },
     { translatedUnits: [[0, '译文']], sourceRefIds: ['invented'] },
-  ]) assert.throws(() => bindWholeDocumentTranslation(input, candidate), /INITIAL_TRANSLATION_UNIT_/u);
+  ]) assert.throws(() => bindWholeDocumentTranslation(input, candidate), /INITIAL_TRANSLATION_(?:UNIT_|CANDIDATE_SHAPE)/u);
+});
+
+test('translation consumes the observed M3 item/index/text wire form without changing text or bindings', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  const input = translationInput();
+  input.sourceUnits = Array.from({ length: 137 }, (_, index) => ({
+    ...input.sourceUnits[0], unitKey: `unit-${index}`, sourceRefIds: [`source-${index}`],
+  }));
+  const observations = [];
+  let calls = 0;
+  globalThis.fetch = async (_url, init) => {
+    const request = JSON.parse(init.body);
+    const window = JSON.parse(request.messages[2].content).translationOutputWindow;
+    const schema = request.tools[0].function.parameters.properties.candidate;
+    assert.deepEqual(schema.required, ['translatedUnits']);
+    assert.equal(schema.additionalProperties, false);
+    assert.equal(schema.properties.translatedUnits.type, 'array');
+    assert.equal(schema.properties.translatedUnits.maxItems, window.endUnitIndexExclusive - window.startUnitIndex);
+    assert.deepEqual(schema.properties.translatedUnits.items.required, ['index', 'text']);
+    assert.equal(schema.properties.translatedUnits.items.additionalProperties, false);
+    assert.equal(schema.properties.translatedUnits.items.properties.index.type, 'integer');
+    assert.equal(schema.properties.translatedUnits.items.properties.index.minimum, window.startUnitIndex);
+    assert.equal(schema.properties.translatedUnits.items.properties.index.maximum, window.endUnitIndexExclusive - 1);
+    if (calls === 0) assert.deepEqual(JSON.parse(request.messages[1].content), input);
+    else assert.equal(JSON.stringify(request.messages).includes('sourceUnits\":['), false);
+    calls += 1;
+    return Response.json({ choices: [{ finish_reason: 'tool_calls', message: {
+      content: null, tool_calls: [{ id: `m3-wire-${calls}`, type: 'function', function: {
+        name: 'return_wiselink_initial_candidate', arguments: JSON.stringify({ candidate: {
+          translatedUnits: { item: input.sourceUnits.slice(window.startUnitIndex, window.endUnitIndexExclusive)
+            .map((unit, index) => ({ index: String(window.startUnitIndex + index), text: unit.text })) },
+        } }),
+      } }],
+    } }] });
+  };
+  const result = await invokeHostedInitialModel({ operation: 'TRANSLATE', modelInput: input }, {
+    gatewayChatCompletionsEnabled: true, gatewayUrl: 'https://official.invalid', gatewayToken: 'test-only',
+    configuredModelVersion: 'miaoda/minimax-m3', sessionDiscriminator: 'm3-wire-shape',
+    observeModelOutput: (shape) => { observations.push(shape); },
+  });
+  assert.equal(calls, 2);
+  assert.deepEqual(result.output.candidateUnits.map((unit) => [unit.unitKey, unit.text, unit.sourceRefIds]),
+    input.sourceUnits.map((unit) => [unit.unitKey, unit.text, unit.sourceRefIds]));
+  assert.ok(observations.every((shape) => shape.translationTransport.format === 'ITEM_INDEX_TEXT_ROWS'));
+  assert.deepEqual(observations.map((shape) => shape.translationTransport.receivedUnitCount), [96, 41]);
+  assert.equal(observations.at(-1).translationTransport.lastUnitIndex, 136);
+  assert.equal(JSON.stringify(observations).includes(input.sourceUnits[0].text), false);
+});
+
+test('translation accepts only exact declared rows and canonical integer indices', () => {
+  const input = translationInput();
+  for (const translatedUnits of [
+    [{ index: 0, text: '  译文  ' }], [{ index: '0', text: '  译文  ' }],
+    { item: [{ index: '0', text: '  译文  ' }] }, [[0, '  译文  ']],
+  ]) {
+    assert.equal(bindWholeDocumentTranslation(input, { translatedUnits }).candidateUnits[0].text, '  译文  ');
+  }
+  for (const translatedUnits of [
+    { item: [{ index: '00', text: '译文' }] }, { item: [{ index: '1e0', text: '译文' }] },
+    { item: [{ index: '+0', text: '译文' }] }, { item: [{ index: ' 0 ', text: '译文' }] },
+    { item: [{ index: '9007199254740992', text: '译文' }] },
+    { item: [{ index: '-1', text: '译文' }] }, { item: [{ index: '0', text: '译文', sourceRefIds: [] }] },
+    { item: [[0, '译文']] }, { items: [{ index: 0, text: '译文' }] },
+    { item: [{ index: 0, text: '译文' }], complete: true },
+    [['0', '译文']], [{ index: 0, text: '' }],
+  ]) {
+    assert.throws(() => bindWholeDocumentTranslation(input, { translatedUnits }), /INITIAL_TRANSLATION_/u);
+  }
+});
+
+test('recognized transport never repairs translation content that fails the existing numeric check', () => {
+  const input = translationInput();
+  const output = bindWholeDocumentTranslation(input, {
+    translatedUnits: { item: [{ index: '0', text: '保持 27 VDC 和 ATA 24。' }] },
+  });
+  assert.equal(output.candidateUnits[0].text, '保持 27 VDC 和 ATA 24。');
+  assert.throws(() => validatePayload('translation-pair', { input, output }));
 });
 
 test('initial Gateway failure records only safe token and terminal observations, without retrying', async (t) => {
@@ -434,7 +512,7 @@ test('pins exact20 MCP 1.2, five review tools, and hosted provenance', () => {
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c25',
+    'wiselink-research-and-synthesize@r09.c26',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,

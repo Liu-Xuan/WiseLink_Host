@@ -12,7 +12,7 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（任务可绑定已登记的内置或用户授权自定义模型；仍经唯一官方 Hosted profile/Gateway）
-- Skill：`wiselink-research-and-synthesize@r09.c25`
+- Skill：`wiselink-research-and-synthesize@r09.c26`
 - Skill compatibility：`wiselink-research-and-synthesize@r09`（Host 最低接受 `r09.c10`）
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（既有 20 项能力；兼容新增的只读自动领取查询）
 - Host baseline：`6fd2655d27edc3851c745547efaf8796ad22c82c`
@@ -147,12 +147,16 @@ CAS；Skill 不声称这些步骤由模型完成。8. commit 响应未知时只�
 - 输入/输出分别使用 Host 当前
   `wiselink.3_1.translation_task.v0.candidate` 与
   `wiselink.3_1.translation_result.v0.candidate`。
-- c25 初始适配器先给模型完整 sourceUnits 与术语上下文，只让它输出紧凑 `translatedUnits:[[index,text],...]`；
+- c26 初始适配器先给模型完整 sourceUnits 与术语上下文，工具 schema 明确要求紧凑 `translatedUnits:[{index,text},...]`；
   unitKey、SourceRefs、rulePack 和 taskStartBinding 由驱动从未改变的 Host 输入机械还原。因实际网关在 length
   终态不返回可解析前缀，驱动在首次生成前就指定输出窗口：最多 96 个单元、约 6000 原文字符；单个长单元
   保持完整，不裁切原文。这是保守工作预算，不是声称模型的 token 上限。短文可一次完成，其余在同一原生
   session 中承接全文与已有译文继续输出；模型返回更短的有效连续前缀时也从实际已收齐位置继续。全部收齐前
   不封印、不提交、不显示为翻译完成；不把全文切成互不知情的独立小任务，也不修补截断 JSON。
+- c26 驱动在完整 JSON 解析后识别三种精确定义的传输形态：上述 index/text 行、旧 index/text 二元数组、
+  真实 M3 返回的 `translatedUnits:{item:[{index:"0",text:...},...]}`。只把规范十进制整数索引和明确字段无损映射，
+  不猜索引、不重排、不丢行、不改译文；未知包装、额外字段、重复/跳号、超出请求窗口仍失败。
+  output-shape 记录实际传输形态、条数和首尾索引，不保存原文、译文或私有推理。Host 输出合同不变。
 - `rulePackId + rulePackVersion`、taskStartBinding、unit 数量/顺序、unitKey 与 SourceRef 集必须逐项一致。
 - Host TranslationRuleSet ResultGate 仍是编号、数值、单位、ATA/件号、表格和警示层级的最终权威。模型
   生成后、封印或上传前，Skill validator 读取同一 Host-frozen rulePack：`numericFidelity` 使用与 Host 相同的
@@ -424,7 +428,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - `modelVersion` 优先取响应中可读实际模型；绑定任务未回报实际模型时使用 `configured-route:<modelRef>`，旧无绑定任务使用无 fallback 的 configured endpoint。后两者只证明路由，不代表已暴露下游具体模型，也不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c25`
+- `skillVersion=wiselink-research-and-synthesize@r09.c26`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致
