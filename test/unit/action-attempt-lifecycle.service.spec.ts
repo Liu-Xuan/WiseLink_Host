@@ -16,10 +16,10 @@ import {
 } from '../../server/modules/action-attempt/action-attempt.types';
 
 describe('ActionAttemptLifecycleService', () => {
-  it('captures the global selection once and preserves it through a resumed claim', async () => {
+  it('captures the WorkItem selection once and preserves it through a resumed claim', async () => {
     const repository = new MemoryActionAttemptRepository();
     const models = fixedModelSettings();
-    const capture = jest.spyOn(models, 'captureForNewTask');
+    const capture = jest.spyOn(models, 'captureForWorkItem');
     const service = new ActionAttemptLifecycleService(
       repository as never,
       models,
@@ -27,7 +27,7 @@ describe('ActionAttemptLifecycleService', () => {
     const input = reservationInput(async () => ({ controlled: true }));
     const reserved = await service.reserve(input);
     capture.mockImplementation(
-      fixedModelSettings('dli/gpt-5.6-sol').captureForNewTask,
+      fixedModelSettings('dli/gpt-5.6-sol').captureForWorkItem,
     );
     const claimed = await service.reserveAndClaim(input);
     expect(capture).toHaveBeenCalledTimes(1);

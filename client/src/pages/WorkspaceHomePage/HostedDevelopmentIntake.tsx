@@ -25,6 +25,9 @@ import { uploadFile } from '@client/src/components/business-ui/api/files/service
 import { Button } from '@client/src/components/ui/button';
 import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSessionProvider';
 import { createRequestCorrelationId } from '@client/src/utils/request-correlation-id';
+import TaskModelPicker, {
+  useTaskModelOptions,
+} from '@client/src/features/review/TaskModelPicker';
 
 import {
   EXISTING_PDF_PAGE_SIZE,
@@ -56,6 +59,9 @@ interface SelectedExistingPdf extends ExistingStoragePdfOption {
 export function HostedDevelopmentIntake() {
   const navigate = useNavigate();
   const { invalidateSession, sessionGeneration } = useCurrentUserSession();
+  const models = useTaskModelOptions();
+  const [modelRef, setModelRef] = useState('');
+  const [pendingModelRef, setPendingModelRef] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [uploaded, setUploaded] = useState<HostedUploadSelection | null>(null);
   const [existingPdf, setExistingPdf] = useState<SelectedExistingPdf | null>(
@@ -79,7 +85,13 @@ export function HostedDevelopmentIntake() {
     phase === 'uploading' || phase === 'creating' || phase === 'readback';
 
   useEffect(() => {
+    if (models.data && !modelRef) setModelRef(models.data.defaultModelRef);
+  }, [models.data, modelRef]);
+
+  useEffect(() => {
     setFile(null);
+    setModelRef('');
+    setPendingModelRef(null);
     setUploaded(null);
     setExistingPdf(null);
     setPhase('idle');
@@ -136,6 +148,7 @@ export function HostedDevelopmentIntake() {
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const next = acceptedFiles[0] ?? null;
     setUploaded(null);
+    setPendingModelRef(null);
     setExistingPdf(null);
     setPickerOpen(false);
     setError(null);
@@ -171,6 +184,8 @@ export function HostedDevelopmentIntake() {
     const selectedExistingPdf = existingPdf;
     if (
       (!selectedFile && !selectedExistingPdf) ||
+      !modelRef ||
+      !models.ready ||
       busy ||
       !beginHostedIntakeSubmission(submissionInFlightRef)
     ) {
@@ -216,8 +231,10 @@ export function HostedDevelopmentIntake() {
       if (resolved.uploadedNow) setUploaded(resolved.selection);
 
       setPhase('creating');
+      const submittedModel = pendingModelRef ?? modelRef;
+      setPendingModelRef(submittedModel);
       const created = await createDevelopmentWorkItem(
-        developmentWorkItemRequest(resolved.selection),
+        developmentWorkItemRequest(resolved.selection, submittedModel),
       );
       const workItemId = created.result.workItem.workItemId;
       setPhase('readback');
@@ -253,6 +270,7 @@ export function HostedDevelopmentIntake() {
   }
 
   function selectExistingPdf(option: ExistingStoragePdfOption): void {
+    setPendingModelRef(null);
     setExistingPdf({
       ...option,
       selection: {
@@ -290,6 +308,23 @@ export function HostedDevelopmentIntake() {
       </div>
 
       <div className="hosted-intake-action">
+        <TaskModelPicker
+          id="intake-model"
+          label="此事项的分析模型"
+          value={modelRef}
+          onChange={setModelRef}
+          catalog={models}
+          disabled={busy || pendingModelRef !== null}
+        />
+        <small>
+          初始翻译、适用性、Job-Aid 和综合评估沿用此模型；Review 新回合可另选。
+        </small>
+        {pendingModelRef && !busy ? (
+          <small>
+            本次请求已提交，重试保留原模型。要新建不同模型的事项，请重新选择
+            PDF。
+          </small>
+        ) : null}
         <div
           {...getRootProps({
             className: `hosted-intake-drop${isDragActive ? ' is-active' : ''}`,
@@ -343,7 +378,9 @@ export function HostedDevelopmentIntake() {
         <Button
           type="button"
           size="lg"
-          disabled={(!file && !existingPdf) || busy}
+          disabled={
+            (!file && !existingPdf) || busy || !models.ready || !modelRef
+          }
           onClick={() => void createWorkItem()}
         >
           {busy ? (

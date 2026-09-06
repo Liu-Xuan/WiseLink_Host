@@ -201,24 +201,27 @@ export class CanonicalHostOpenClawReviewService {
         sourceRefs: taskArtifactRefs(workItem, binding.turn, taskContract),
       };
     };
-    const claim = binding.turn.executionRequested
-      ? await this.dispatch.prepareAndClaim({
-          tenantId: binding.conversation.tenantId,
-          actorId: binding.conversation.actorId,
-          workItemId: binding.conversation.workItemId,
-          reviewConversationId: binding.conversation.reviewConversationId,
-          reviewTurnId: binding.turn.reviewTurnId,
-          inputRevision: binding.turn.inputRevision,
-          documentVersionId: scopedWorkItem.projection.source.documentVersionId,
-          leaseOwner: scope.principalId,
-          buildInput,
-        })
-      : await this.beginLegacyTurn(
-          binding,
-          scope,
-          scopedWorkItem.projection,
-          buildInput,
-        );
+    const claim =
+      binding.turn.executionRequested || binding.turn.requestedModel
+        ? await this.dispatch.prepareAndClaim({
+            tenantId: binding.conversation.tenantId,
+            actorId: binding.conversation.actorId,
+            workItemId: binding.conversation.workItemId,
+            reviewConversationId: binding.conversation.reviewConversationId,
+            reviewTurnId: binding.turn.reviewTurnId,
+            inputRevision: binding.turn.inputRevision,
+            documentVersionId:
+              scopedWorkItem.projection.source.documentVersionId,
+            executionModel: binding.turn.requestedModel,
+            leaseOwner: scope.principalId,
+            buildInput,
+          })
+        : await this.beginLegacyTurn(
+            binding,
+            scope,
+            scopedWorkItem.projection,
+            buildInput,
+          );
     return {
       attemptRef: claim.attemptRef,
       status: claim.status,
@@ -228,7 +231,9 @@ export class CanonicalHostOpenClawReviewService {
       task: structuredClone(claim.task),
       ...(typeof claim.task.modelInput.actorContextRef === 'string' &&
       claim.task.modelInput.actorContextRef.startsWith('ACTX-RS-')
-        ? { nativeSessionKey: `agent:${REVIEW_PROFILE_REF}:review:${claim.task.modelInput.actorContextRef}` }
+        ? {
+            nativeSessionKey: `agent:${REVIEW_PROFILE_REF}:review:${claim.task.modelInput.actorContextRef}`,
+          }
         : {}),
       ...(claim.status === 'COMMITTING'
         ? { recoveryResult: structuredClone(claim.recoveryResult) }
@@ -673,7 +678,11 @@ export class CanonicalHostOpenClawReviewService {
       reviewConversationRef: binding.conversation.reviewConversationId,
       reviewTurnRef: binding.turn.reviewTurnId,
       requestId: binding.turn.requestId,
-      actorContextRef: reviewSessionActorContextRef(binding, resourceRefs, previousTask),
+      actorContextRef: reviewSessionActorContextRef(
+        binding,
+        resourceRefs,
+        previousTask,
+      ),
       inputRevision: binding.turn.inputRevision,
       selectedEvaluationItemId,
       userMessage: binding.turn.userMessage,
@@ -1021,22 +1030,32 @@ function reviewSessionActorContextRef(
   // registry/hash. A failed turn may have uncommitted native history, so it
   // starts a new session too. Host discussion remains the recovery context.
   const freshRef = `ACTX-RS-${binding.turn.reviewTurnId}`;
-  if (previous?.status !== 'SUCCEEDED' || !previous.taskEnvelopeJson) return freshRef;
+  if (previous?.status !== 'SUCCEEDED' || !previous.taskEnvelopeJson)
+    return freshRef;
   const priorTask = parseTaskEnvelope(previous.taskEnvelopeJson);
   const prior = parseReviewTurnTaskContract(priorTask.modelInput);
   if (
     priorTask.tenantId !== binding.conversation.tenantId ||
     priorTask.workItemId !== binding.conversation.workItemId ||
+    priorTask.executionModel?.modelRef !==
+      binding.turn.requestedModel?.modelRef ||
     prior.reviewConversationRef !== binding.conversation.reviewConversationId ||
     prior.inputRevision !== binding.turn.inputRevision ||
     !prior.actorContextRef.startsWith('ACTX-RS-')
-  ) return freshRef;
-  const priorResources = new Map(prior.resourceRefs.map((resource) => [resource.sourceRefId, resource]));
-  const sameSources = resources.length === priorResources.size && resources.every((resource) => {
-    const stored = priorResources.get(resource.sourceRefId);
-    return stored?.resourceArtifactRef === resource.resourceArtifactRef &&
-      stored.resourceArtifactSha256 === resource.resourceArtifactSha256;
-  });
+  )
+    return freshRef;
+  const priorResources = new Map(
+    prior.resourceRefs.map((resource) => [resource.sourceRefId, resource]),
+  );
+  const sameSources =
+    resources.length === priorResources.size &&
+    resources.every((resource) => {
+      const stored = priorResources.get(resource.sourceRefId);
+      return (
+        stored?.resourceArtifactRef === resource.resourceArtifactRef &&
+        stored.resourceArtifactSha256 === resource.resourceArtifactSha256
+      );
+    });
   // Related-document permission/material changes need not increment this WI's
   // revision. Compare its fresh authorized catalog before retaining memory.
   return sameSources ? prior.actorContextRef : freshRef;

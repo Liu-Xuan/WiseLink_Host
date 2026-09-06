@@ -13,6 +13,11 @@ import { CanonicalModelSettingsService } from './canonical-model-settings.servic
 export class CanonicalModelSettingsController {
   constructor(private readonly service: CanonicalModelSettingsService) {}
 
+  @Get('task-options')
+  taskOptions(@Req() request: Request) {
+    return this.service.taskOptions(hostActor(request));
+  }
+
   @Get()
   read(@Req() request: Request) {
     return this.service.read(hostActor(request));

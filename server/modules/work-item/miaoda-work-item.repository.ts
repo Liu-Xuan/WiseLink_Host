@@ -10,12 +10,17 @@ import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm';
 import type {
   CanonicalParseAuthorizationProjection,
   CanonicalWorkItemProjection,
+  CanonicalExecutionModelSelection,
 } from '@shared/api.interface';
 import { actionAttempt, workItem } from '../../database/schema';
+import { readStoredExecutionModel } from '../model-settings/canonical-execution-model';
+import { canonicalModelError } from '../model-settings/canonical-model-catalog';
 
 const ACTION_TYPE = 'PARSE_PDF';
 
 export interface WorkItemReservationInput {
+  analysisModel?: CanonicalExecutionModelSelection;
+  modelChoiceExplicit?: boolean;
   tenantId: string;
   actorUserId: string;
   documentId: string;
@@ -133,6 +138,9 @@ export class MiaodaWorkItemRepository {
           sourceByteLength: input.sourceByteLength,
           normalizedFamily: input.normalizedFamily,
           runKey: input.runKey,
+          analysisModelJson: input.analysisModel
+            ? JSON.stringify(input.analysisModel)
+            : null,
           requestId: candidate.requestId,
           status: 'RESERVED',
           revision: 0,
@@ -1283,6 +1291,13 @@ function assertReservationIdentity(
   row: typeof workItem.$inferSelect,
   input: WorkItemReservationInput,
 ): void {
+  const model = readStoredExecutionModel(row.analysisModelJson);
+  if (
+    input.modelChoiceExplicit &&
+    input.analysisModel?.modelRef !== model?.modelRef
+  ) {
+    throw canonicalModelError('WORK_ITEM_MODEL_IDEMPOTENCY_CONFLICT', 409);
+  }
   if (
     row.documentId !== input.documentId ||
     row.sourceArtifactId !== input.sourceArtifactId ||

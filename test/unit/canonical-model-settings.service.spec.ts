@@ -1,6 +1,9 @@
 import type { CanonicalHostActor } from '../../server/modules/canonical-host/canonical-host.types';
 import { CanonicalModelSettingsService } from '../../server/modules/model-settings/canonical-model-settings.service';
-import { CANONICAL_MODEL_MANAGER_ROLE_ENV } from '../../server/modules/model-settings/canonical-model-catalog';
+import {
+  CANONICAL_MODEL_MANAGER_ROLE_ENV,
+  taskModelSelection,
+} from '../../server/modules/model-settings/canonical-model-catalog';
 import { parseExecutionModel } from '../../server/modules/model-settings/canonical-execution-model';
 import { miaodaHostedFinalUserActor } from '../../server/modules/work-item/production-miaoda-browser-ingress';
 import type { StoredCanonicalModelSetting } from '../../server/modules/model-settings/canonical-model-settings.repository';
@@ -52,6 +55,66 @@ function setup(initial: StoredCanonicalModelSetting | null = null) {
 }
 
 describe('tenant global model selection', () => {
+  it('offers registered task choices to a valid existing user without any global manager role', () => {
+    delete process.env[CANONICAL_MODEL_MANAGER_ROLE_ENV];
+    const { service, repository } = setup();
+    expect(service.taskOptions(actor([])).options).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ modelRef: 'dli/gpt-5.6-sol' }),
+      ]),
+    );
+    expect(repository.read).not.toHaveBeenCalled();
+    expect(repository.compareAndSet).not.toHaveBeenCalled();
+    expect(() =>
+      service.taskOptions({ ...actor([]), tenantId: 'forged' }),
+    ).toThrow('MODEL_SETTINGS_IDENTITY_REQUIRED');
+  });
+
+  it('keeps all stages on the WorkItem snapshot, independent from global settings', async () => {
+    const selected = taskModelSelection(
+      'dli/gpt-5.6-sol',
+      new Date('2026-09-06T00:00:00Z'),
+    );
+    const repository = {
+      read: jest.fn(() => {
+        throw new Error('Global settings must not be read');
+      }),
+      readWorkItemModel: jest.fn().mockResolvedValue(selected),
+      pinWorkItemModel: jest.fn().mockResolvedValue(selected),
+    };
+    const service = new CanonicalModelSettingsService(repository as never);
+    for (let stage = 0; stage < 4; stage++) {
+      expect(
+        await service.captureForWorkItem('tenant-1', 'WI-1', new Date()),
+      ).toEqual(selected);
+    }
+    expect(repository.read).not.toHaveBeenCalled();
+    expect(repository.pinWorkItemModel).toHaveBeenCalledWith(
+      'tenant-1',
+      'WI-1',
+      selected,
+    );
+  });
+
+  it('uses the concurrent pin winner for a legacy task and never switches on a read failure', async () => {
+    const winner = taskModelSelection('dli/gpt-5.6-sol');
+    const repository = {
+      readWorkItemModel: jest.fn().mockResolvedValue(null),
+      pinWorkItemModel: jest.fn().mockResolvedValue(winner),
+    };
+    const service = new CanonicalModelSettingsService(repository as never);
+    expect(
+      await service.captureForWorkItem('tenant-1', 'WI-1', new Date()),
+    ).toEqual(winner);
+    repository.readWorkItemModel.mockRejectedValue(
+      new Error('Database unavailable'),
+    );
+    repository.pinWorkItemModel.mockClear();
+    await expect(
+      service.captureForWorkItem('tenant-1', 'WI-1', new Date()),
+    ).rejects.toThrow('Database unavailable');
+    expect(repository.pinWorkItemModel).not.toHaveBeenCalled();
+  });
   beforeEach(() => {
     process.env.SANDBOX_ID = 'offline-unit-fixture';
     delete process.env.MIAODA_LOCAL_DEV;

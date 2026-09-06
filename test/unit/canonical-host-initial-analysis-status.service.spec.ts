@@ -26,29 +26,65 @@ describe('CanonicalHost initial-analysis status projection', () => {
     const workItem = translatedWorkItem(parsedWorkItem());
     const status = projectCanonicalHostInitialAnalysisStatus(workItem, []);
     expect(status).toMatchObject({
-      status: 'WAITING_INPUT', nextOperation: 'EVALUATE_JOBAID', applicabilityContextRef: null,
-      stages: { applicability: { status: 'WAITING_INPUT', attemptRef: null, terminalCode: 'APPLICABILITY_SELECTION_REQUIRED' } },
+      status: 'WAITING_INPUT',
+      nextOperation: 'EVALUATE_JOBAID',
+      applicabilityContextRef: null,
+      stages: {
+        applicability: {
+          status: 'WAITING_INPUT',
+          attemptRef: null,
+          terminalCode: 'APPLICABILITY_SELECTION_REQUIRED',
+        },
+      },
     });
     expect(workItem.applicability).toBeUndefined();
-    const failed = projectCanonicalHostInitialAnalysisStatus(workItem, [attempt('OPENCLAW_APPLICABILITY_EVALUATION', 'FAILED')]);
+    const failed = projectCanonicalHostInitialAnalysisStatus(workItem, [
+      attempt('OPENCLAW_APPLICABILITY_EVALUATION', 'FAILED'),
+    ]);
     expect(failed.status).toBe('FAILED');
     expect(failed.nextOperation).toBeNull();
   });
 
   it('keeps browser progress free of attempt and applicability control references', async () => {
-    const service = new CanonicalHostInitialAnalysisStatusService({} as never);
+    const limit = jest.fn().mockResolvedValue([{ model: null }]);
+    const service = new CanonicalHostInitialAnalysisStatusService({
+      select: () => ({ from: () => ({ where: () => ({ limit }) }) }),
+    } as never);
     const workItem = parsedWorkItem();
-    jest.spyOn(service, 'project').mockResolvedValue(projectCanonicalHostInitialAnalysisStatus(workItem, [attempt('OPENCLAW_TRANSLATE', 'RUNNING')]));
-    const value = await service.projectForBrowser({ workItem, tenantId: 'tenant-1' });
+    jest
+      .spyOn(service, 'project')
+      .mockResolvedValue(
+        projectCanonicalHostInitialAnalysisStatus(workItem, [
+          attempt('OPENCLAW_TRANSLATE', 'RUNNING'),
+        ]),
+      );
+    const value = await service.projectForBrowser({
+      workItem,
+      tenantId: 'tenant-1',
+    });
     expect(value.stages.translation.status).toBe('BUSY');
     expect(value.workItemId).toBe(workItem.workItemId);
-    expect(JSON.stringify(value)).not.toMatch(/attemptRef|attemptStatus|applicabilityContextRef/u);
+    expect(JSON.stringify(value)).not.toMatch(
+      /attemptRef|attemptStatus|applicabilityContextRef/u,
+    );
   });
 
   it('preserves the bounded executor cause but never emits arbitrary cancellation text', () => {
     const base = { terminalReason: 'CANCELLED_BY_REQUEST', errorCode: null };
-    expect(initialAnalysisTerminalCode({ ...base, cancelReason: 'HOSTED_INITIAL_EXECUTION_FAILED:INITIAL_GATEWAY_HTTP_400' })).toBe('INITIAL_GATEWAY_HTTP_400');
-    expect(initialAnalysisTerminalCode({ ...base, cancelReason: 'HOSTED_INITIAL_EXECUTION_FAILED:private details and credentials' })).toBe('CANCELLED_BY_REQUEST');
+    expect(
+      initialAnalysisTerminalCode({
+        ...base,
+        cancelReason:
+          'HOSTED_INITIAL_EXECUTION_FAILED:INITIAL_GATEWAY_HTTP_400',
+      }),
+    ).toBe('INITIAL_GATEWAY_HTTP_400');
+    expect(
+      initialAnalysisTerminalCode({
+        ...base,
+        cancelReason:
+          'HOSTED_INITIAL_EXECUTION_FAILED:private details and credentials',
+      }),
+    ).toBe('CANCELLED_BY_REQUEST');
   });
 
   it('does not offer an operation before the parsed package is current', () => {
@@ -96,10 +132,9 @@ describe('CanonicalHost initial-analysis status projection', () => {
   });
 
   it('never treats a successful attempt without its current projection as success', () => {
-    const status = projectCanonicalHostInitialAnalysisStatus(
-      parsedWorkItem(),
-      [attempt('OPENCLAW_TRANSLATE', 'SUCCEEDED')],
-    );
+    const status = projectCanonicalHostInitialAnalysisStatus(parsedWorkItem(), [
+      attempt('OPENCLAW_TRANSLATE', 'SUCCEEDED'),
+    ]);
 
     expect(status).toMatchObject({
       status: 'CONFLICT',

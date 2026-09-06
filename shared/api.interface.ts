@@ -181,6 +181,8 @@ export interface ReviewTurnReadModel {
   userMessage: string;
   /** The engineer's focus for this turn; absent in older responses. */
   selectedEvaluationItemId?: string | null;
+  /** Host-resolved choice captured when this turn was submitted. */
+  requestedModel?: CanonicalExecutionModelSelection | null;
   /** Absent on older Hosts; null means no recorded execution request/attempt. */
   execution?: ReviewTurnExecutionReadModel | null;
   engineerSuppliedInput: {
@@ -213,6 +215,8 @@ export interface ReviewConversationReadModel {
   closedAt: string | null;
   /** Configured executor scope for this authorized conversation, not a live health check. */
   automaticExecutionAvailable?: boolean;
+  /** The previous turn's choice, or the engineering item's initial choice. */
+  defaultModel?: CanonicalExecutionModelSelection | null;
   turns: ReviewTurnReadModel[];
 }
 
@@ -232,6 +236,8 @@ export interface AppendReviewTextTurnRequest {
   selectedEvaluationItemId?: string | null;
   /** Explicit opt-in; existing saved turns are never picked up implicitly. */
   executionMode?: 'AUTOMATIC';
+  /** A registered model identifier only; omission inherits this discussion's choice. */
+  modelRef?: string;
   attachmentSelection?: {
     bucketId: string;
     filePath: string;
@@ -2371,6 +2377,8 @@ export interface CanonicalDevelopmentWorkItemRunRequest {
   };
   developmentRunToken: string;
   query?: string;
+  /** One choice for all initial-analysis stages; no endpoint or credentials. */
+  modelRef?: string;
 }
 
 export interface CanonicalOrdinaryWorkItemRunResponse {
@@ -2552,6 +2560,11 @@ export interface CanonicalModelOption {
   available: boolean;
 }
 
+export interface CanonicalTaskModelOptions {
+  options: CanonicalModelOption[];
+  defaultModelRef: string;
+}
+
 /** Routing metadata, never provider credentials or a browser-supplied endpoint. */
 export interface CanonicalExecutionModelSelection {
   modelRef: string;
@@ -2582,6 +2595,8 @@ export interface CanonicalInitialAnalysisReadModel {
   workItemId: string;
   workItemRevision: number;
   documentVersionId: string;
+  /** Chosen on intake, including before the first model attempt starts. */
+  analysisModel?: CanonicalExecutionModelSelection | null;
   status: AilyInitialAnalysisStatus['status'];
   nextOperation: AilyInitialAnalysisOperation | null;
   stages: {

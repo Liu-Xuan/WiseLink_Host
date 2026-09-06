@@ -3,6 +3,7 @@ import type { ReviewConversationReadModel } from '@shared/api.interface';
 export interface ReviewSubmissionIntent {
   requestId: string;
   executionMode?: 'AUTOMATIC';
+  modelRef?: string;
 }
 
 /** Host-declared support for this conversation, not a browser switch or a live health signal. */
@@ -22,10 +23,12 @@ export function reviewSubmissionIntent(
   pending: ReviewSubmissionIntent | null,
   requestId: string,
   conversation: ReviewConversationReadModel,
+  modelRef?: string,
 ): ReviewSubmissionIntent {
   return (
     pending ?? {
       requestId,
+      ...(modelRef ? { modelRef } : {}),
       ...(automaticReviewAvailable(conversation)
         ? { executionMode: 'AUTOMATIC' }
         : {}),

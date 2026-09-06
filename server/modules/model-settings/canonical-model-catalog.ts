@@ -1,4 +1,7 @@
-import type { CanonicalModelOption } from '@shared/api.interface';
+import type {
+  CanonicalExecutionModelSelection,
+  CanonicalModelOption,
+} from '@shared/api.interface';
 
 // Registration snapshot read from the official Hosted instance on 2026-09-06.
 // This is an allowlist of routing identifiers, not a live inference health check.
@@ -45,6 +48,25 @@ export const CANONICAL_REGISTERED_MODELS: readonly CanonicalModelOption[] = [
 export const CANONICAL_INITIAL_MODEL_REF = 'miaoda/minimax-m3';
 export const CANONICAL_MODEL_MANAGER_ROLE_ENV =
   'WL_CANONICAL_MODEL_MANAGER_ROLE_ID';
+
+/** Called behind the existing task authorization, never a global settings write. */
+export function taskModelSelection(
+  modelRef: unknown = CANONICAL_INITIAL_MODEL_REF,
+  selectedAt = new Date(),
+): CanonicalExecutionModelSelection {
+  const option = CANONICAL_REGISTERED_MODELS.find(
+    (candidate) => candidate.available && candidate.modelRef === modelRef,
+  );
+  if (!option) throw canonicalModelError('TASK_MODEL_UNAVAILABLE', 400);
+  return {
+    modelRef: option.modelRef,
+    displayName: option.displayName,
+    providerKind: option.providerKind,
+    // Compatibility field: explicit task choices do not revise global settings.
+    settingsRevision: 0,
+    selectedAt: selectedAt.toISOString(),
+  };
+}
 
 export function canonicalModelError(
   code: string,

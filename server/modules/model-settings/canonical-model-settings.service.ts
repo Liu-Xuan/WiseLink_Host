@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type {
   CanonicalExecutionModelSelection,
   CanonicalModelSettingsReadModel,
+  CanonicalTaskModelOptions,
   UpdateCanonicalModelSettingsRequest,
 } from '@shared/api.interface';
 import type { CanonicalHostActor } from '../canonical-host/canonical-host.types';
@@ -14,6 +15,7 @@ import {
   CANONICAL_MODEL_MANAGER_ROLE_ENV,
   CANONICAL_REGISTERED_MODELS,
   canonicalModelError,
+  taskModelSelection,
 } from './canonical-model-catalog';
 import {
   CanonicalModelSettingsRepository,
@@ -23,6 +25,32 @@ import {
 @Injectable()
 export class CanonicalModelSettingsService {
   constructor(private readonly repository: CanonicalModelSettingsRepository) {}
+
+  taskOptions(actor: CanonicalHostActor): CanonicalTaskModelOptions {
+    assertModelSettingsActor(actor);
+    return {
+      options: CANONICAL_REGISTERED_MODELS.map((option) => ({ ...option })),
+      defaultModelRef: CANONICAL_INITIAL_MODEL_REF,
+    };
+  }
+
+  /** Only use after the task's existing authorization has succeeded. */
+  readWorkItemModel(tenantId: string, workItemId: string) {
+    return this.repository.readWorkItemModel(tenantId, workItemId);
+  }
+
+  async captureForWorkItem(
+    tenantId: string,
+    workItemId: string,
+    selectedAt: Date,
+  ): Promise<CanonicalExecutionModelSelection> {
+    const model = await this.repository.readWorkItemModel(tenantId, workItemId);
+    return this.repository.pinWorkItemModel(
+      tenantId,
+      workItemId,
+      model ?? taskModelSelection(CANONICAL_INITIAL_MODEL_REF, selectedAt),
+    );
+  }
 
   async read(
     actor: CanonicalHostActor,

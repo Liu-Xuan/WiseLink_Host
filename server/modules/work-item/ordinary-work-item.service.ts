@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import { Injectable } from '@nestjs/common';
+import { taskModelSelection } from '../model-settings/canonical-model-catalog';
 import { FileService } from '@lark-apaas/fullstack-nestjs-core';
 
 import type {
@@ -70,6 +71,7 @@ const S1000D_CLASSIFICATION: CanonicalClassificationSelection = {
 };
 
 export interface OrdinaryPdfParseInput {
+  modelRef?: unknown;
   documentVersionId?: unknown;
   selection?: {
     bucketId?: unknown;
@@ -115,7 +117,9 @@ export class OrdinaryWorkItemService {
     const listed = await this.fileService.from(bucketId).list('', {
       maxKeys: 200,
     });
-    const search = String(input.search ?? '').trim().toLocaleLowerCase();
+    const search = String(input.search ?? '')
+      .trim()
+      .toLocaleLowerCase();
     const offset = boundedListOffset(input.offset);
     const ownedPdfs = listed.attachments.flatMap((metadata) => {
       const filePath = normalizedExistingPdfPath(metadata.filePath);
@@ -147,8 +151,7 @@ export class OrdinaryWorkItemService {
     });
     const pageSize = 24;
     return {
-      schemaVersion:
-        'wiselink.3_1.oauth_session_existing_pdf_page.v1' as const,
+      schemaVersion: 'wiselink.3_1.oauth_session_existing_pdf_page.v1' as const,
       items: ownedPdfs.slice(offset, offset + pageSize),
       hasNextPage: ownedPdfs.length > offset + pageSize,
       sourceTruncated: listed.hasMore,
@@ -260,8 +263,16 @@ export class OrdinaryWorkItemService {
     const actor = oauthSessionDevelopmentActor(sessionActor, gatewayActor);
     return this.runPdf(
       input.documentVersionId
-        ? { documentVersionId: input.documentVersionId, query: input.query }
-        : { selection: input.selection, query: input.query },
+        ? {
+            documentVersionId: input.documentVersionId,
+            query: input.query,
+            modelRef: input.modelRef,
+          }
+        : {
+            selection: input.selection,
+            query: input.query,
+            modelRef: input.modelRef,
+          },
       actor,
       'MIAODA',
       `dev:${developmentRunToken}`,
@@ -339,8 +350,16 @@ export class OrdinaryWorkItemService {
     );
     return this.runPdf(
       input.documentVersionId
-        ? { documentVersionId: input.documentVersionId, query: input.query }
-        : { selection: input.selection, query: input.query },
+        ? {
+            documentVersionId: input.documentVersionId,
+            query: input.query,
+            modelRef: input.modelRef,
+          }
+        : {
+            selection: input.selection,
+            query: input.query,
+            modelRef: input.modelRef,
+          },
       actor,
       'MIAODA',
       `dev:${developmentRunToken}`,
@@ -402,6 +421,13 @@ export class OrdinaryWorkItemService {
       normalizedFamily: classification.normalizedFamily,
       requestOrigin: origin,
       runKey,
+      // Explicit parse recovery preserves the original WorkItem's selection.
+      ...(retryTarget
+        ? {}
+        : {
+            analysisModel: taskModelSelection(input.modelRef),
+            modelChoiceExplicit: input.modelRef !== undefined,
+          }),
     };
     const reservation = retryTarget
       ? {
@@ -835,7 +861,9 @@ function boundedListOffset(value: unknown): number {
 }
 
 function normalizedExistingPdfPath(value: unknown): string | null {
-  const normalized = String(value ?? '').trim().replace(/^\/+/, '');
+  const normalized = String(value ?? '')
+    .trim()
+    .replace(/^\/+/, '');
   const segments = normalized.split('/');
   if (
     !normalized ||

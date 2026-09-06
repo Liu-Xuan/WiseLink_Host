@@ -7,6 +7,23 @@ const selection = {
 };
 
 describe('canonical hosted development-run input', () => {
+  it('accepts a registered task choice but rejects endpoint/key payloads and unknown models', () => {
+    const input = {
+      selection,
+      developmentRunToken: '7c9e6679-7425-40de-944b-e07fc1f90ae7',
+      modelRef: 'dli/gpt-5.6-sol',
+    };
+    expect(developmentRunBody(input).modelRef).toBe(input.modelRef);
+    expect(() =>
+      developmentRunBody({ ...input, modelRef: 'other/unknown' }),
+    ).toThrow('TASK_MODEL_UNAVAILABLE');
+    expect(() =>
+      developmentRunBody({ ...input, endpoint: 'https://example.invalid' }),
+    ).toThrow();
+    expect(() =>
+      developmentRunBody({ ...input, apiKey: 'not-a-real-key' }),
+    ).toThrow();
+  });
   it('accepts one server-authorized FileService selection', () => {
     expect(
       developmentRunBody({

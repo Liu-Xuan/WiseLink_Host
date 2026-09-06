@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Post, Req } from '@nestjs/common';
 import { NeedLogin } from '@lark-apaas/fullstack-nestjs-core';
 import type { Request } from 'express';
+import { taskModelSelection } from '../model-settings/canonical-model-catalog';
 
 import type {
   AppendReviewTextTurnRequest,
@@ -103,6 +104,7 @@ function reviewTextBody(body: unknown): AppendReviewTextTurnRequest {
     'selectedEvaluationItemId',
     'executionMode',
     'attachmentSelection',
+    'modelRef',
   ]);
   const requestId: string = requiredIdentifier(
     value.requestId,
@@ -116,6 +118,8 @@ function reviewTextBody(body: unknown): AppendReviewTextTurnRequest {
     throw badRequest('REVIEW_TURN_MESSAGE_INVALID');
   }
   const input: AppendReviewTextTurnRequest = { requestId, userMessage };
+  if (value.modelRef !== undefined)
+    input.modelRef = taskModelSelection(value.modelRef).modelRef;
   if (value.executionMode !== undefined) {
     if (value.executionMode !== 'AUTOMATIC') {
       throw badRequest('REVIEW_EXECUTION_MODE_INVALID');

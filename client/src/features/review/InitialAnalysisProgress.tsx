@@ -121,6 +121,11 @@ export default function InitialAnalysisProgress(props: Props) {
   return (
     <div className="parse-task-strip" aria-label="分析任务状态">
       <span className="parse-task-strip-label">分析进度</span>
+      {value?.analysisModel ? (
+        <span className="text-xs">
+          事项模型：{value.analysisModel.displayName}
+        </span>
+      ) : null}
       <TaskPills timeline={props.timeline} initialAnalysis={value} />
       {props.initial ? (
         <Button

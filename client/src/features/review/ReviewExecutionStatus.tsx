@@ -20,7 +20,17 @@ export default function ReviewExecutionStatus({
       <div role="status" className="review-execution-summary">
         <strong>{execution.label}</strong>
         <span>{execution.description}</span>
-        {turn.execution?.executionModel ? <small>任务模型：{turn.execution.executionModel.displayName} · {turn.execution.executionModel.providerKind === 'CUSTOM' ? '自定义' : '内置'}</small> : null}
+        {turn.requestedModel ? (
+          <small>本轮选择：{turn.requestedModel.displayName}</small>
+        ) : null}
+        {turn.execution?.executionModel ? (
+          <small>
+            任务模型：{turn.execution.executionModel.displayName} ·{' '}
+            {turn.execution.executionModel.providerKind === 'CUSTOM'
+              ? '自定义'
+              : '内置'}
+          </small>
+        ) : null}
         {execution.updatedAt ? (
           <small>状态更新于 {formatTime(execution.updatedAt)}</small>
         ) : null}
@@ -93,9 +103,12 @@ export default function ReviewExecutionStatus({
               <dt>输入版本</dt>
               <dd>{turn.inputRevision}</dd>
             </div>
-            {turn.execution?.executionModel ? <div>
-              <dt>启动时模型选择</dt><dd>{turn.execution.executionModel.modelRef} · 设置版本 {turn.execution.executionModel.settingsRevision}</dd>
-            </div> : null}
+            {turn.execution?.executionModel ? (
+              <div>
+                <dt>执行绑定模型</dt>
+                <dd>{turn.execution.executionModel.modelRef}</dd>
+              </div>
+            ) : null}
             <div>
               <dt>状态</dt>
               <dd>{execution.status ?? '未返回'}</dd>

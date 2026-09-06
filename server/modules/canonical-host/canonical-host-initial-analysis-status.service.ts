@@ -14,7 +14,7 @@ import type {
   CanonicalWorkItemProjection,
 } from '@shared/api.interface';
 
-import { actionAttempt } from '../../database/schema';
+import { actionAttempt, workItem } from '../../database/schema';
 import { readStoredExecutionModel } from '../model-settings/canonical-execution-model';
 import { ACTION_ATTEMPT_REQUEST_ORIGIN } from '../action-attempt/action-attempt.types';
 import {
@@ -109,6 +109,16 @@ export class CanonicalHostInitialAnalysisStatusService {
     tenantId: string;
   }): Promise<CanonicalInitialAnalysisReadModel> {
     const status = await this.project(input);
+    const [root] = await this.db
+      .select({ model: workItem.analysisModelJson })
+      .from(workItem)
+      .where(
+        and(
+          eq(workItem.tenantId, input.tenantId),
+          eq(workItem.workItemId, input.workItem.workItemId),
+        ),
+      )
+      .limit(1);
     const stage = (key: keyof typeof status.stages) => ({
       status: status.stages[key].status,
       terminalCode: status.stages[key].terminalCode,
@@ -121,6 +131,7 @@ export class CanonicalHostInitialAnalysisStatusService {
       workItemRevision: status.workItemRevision,
       documentVersionId: status.documentVersionId,
       status: status.status,
+      analysisModel: readStoredExecutionModel(root?.model),
       nextOperation: status.nextOperation,
       stages: {
         translation: stage('translation'),

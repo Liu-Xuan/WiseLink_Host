@@ -6,6 +6,31 @@ import {
 import { reviewOperationErrorPresentation } from '../../client/src/features/review/continuous-review-state';
 
 describe('new review turn automatic execution opt-in', () => {
+  it('freezes the chosen model through an uncertain retry and allows a different model only for a new request', () => {
+    const first = reviewSubmissionIntent(
+      null,
+      'REQ-1',
+      conversation(true),
+      'dli/gpt-5.6-sol',
+    );
+    expect(first.modelRef).toBe('dli/gpt-5.6-sol');
+    expect(
+      reviewSubmissionIntent(
+        first,
+        'REQ-2',
+        conversation(true),
+        'miaoda/minimax-m3',
+      ),
+    ).toBe(first);
+    expect(
+      reviewSubmissionIntent(
+        null,
+        'REQ-2',
+        conversation(true),
+        'miaoda/minimax-m3',
+      ).modelRef,
+    ).toBe('miaoda/minimax-m3');
+  });
   it('reports a rejected automatic request without implying that it was saved or queued', () => {
     expect(
       reviewOperationErrorPresentation({

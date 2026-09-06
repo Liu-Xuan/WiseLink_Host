@@ -1,5 +1,6 @@
 import { canonicalJson } from '../../server/modules/action-attempt/action-attempt-envelope';
 import { fixedModelSettings } from '../support/fixed-model-settings';
+import { taskModelSelection } from '../../server/modules/model-settings/canonical-model-catalog';
 import {
   ReviewAttemptDispatchService,
   reviewTurnIdempotencyKey,
@@ -26,6 +27,29 @@ const projectionInput = {
 };
 
 describe('automatic Review dispatch', () => {
+  it('binds the submitted turn choice and retains it when a recovering caller supplies a different choice', async () => {
+    const harness = setup();
+    const buildInput = jest.fn(async () => ({
+      modelInput: { question: 'Continue' },
+      sourceRefs: [],
+    }));
+    const chosen = taskModelSelection('dli/gpt-5.6-sol');
+    await harness.service.prepareAndClaim({
+      ...request,
+      buildInput,
+      executionModel: chosen,
+    });
+    await harness.service.prepareAndClaim({
+      ...request,
+      buildInput,
+      executionModel: taskModelSelection('miaoda/minimax-m3'),
+    });
+    expect(JSON.parse(harness.row()!.executionModelJson!)).toEqual(chosen);
+    expect(JSON.parse(harness.row()!.taskEnvelopeJson!).executionModel).toEqual(
+      chosen,
+    );
+    expect(buildInput).toHaveBeenCalledTimes(1);
+  });
   it('persists an attempt before preparing context and records preparation failure for the page', async () => {
     const harness = setup();
     const buildInput = jest.fn(async () => {
