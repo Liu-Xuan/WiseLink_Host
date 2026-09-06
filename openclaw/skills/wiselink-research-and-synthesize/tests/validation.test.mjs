@@ -197,7 +197,7 @@ test('initial model rejects prose and altered translation before sealing or comm
   }
 });
 
-test('whole-document translation keeps all 503 units in one model invocation and restores exact Host bindings', async (t) => {
+test('whole-document translation keeps all 503 input units in one native session with bounded output windows', async (t) => {
   const originalFetch = globalThis.fetch;
   t.after(() => { globalThis.fetch = originalFetch; });
   const input = translationInput();
@@ -206,34 +206,101 @@ test('whole-document translation keeps all 503 units in one model invocation and
   }));
   const generated = { translatedUnits: input.sourceUnits.map((_, index) => [index, '保持 28 VDC 和 ATA 24。']) };
   let calls = 0;
-  let observation;
+  const observations = [];
   globalThis.fetch = async (_url, init) => {
-    calls += 1;
     const request = JSON.parse(init.body);
-    assert.deepEqual(JSON.parse(request.messages[1].content), input);
+    if (calls === 0) assert.deepEqual(JSON.parse(request.messages[1].content), input);
+    else assert.equal(JSON.stringify(request.messages).includes('sourceUnits\":['), false);
+    assert.equal(request.user, 'initial:whole-document');
+    const { translationOutputWindow: window } = JSON.parse(request.messages[2].content);
+    assert.equal(window.startUnitIndex, calls * 96);
+    assert.equal(window.endUnitIndexExclusive, Math.min((calls + 1) * 96, input.sourceUnits.length));
+    assert.equal(window.totalUnitCount, input.sourceUnits.length);
+    assert.ok(window.sourceCharacters <= 6000);
     assert.match(request.messages[0].content, /one whole-document translation/u);
+    assert.match(request.messages[0].content, /stop before endUnitIndexExclusive/u);
+    calls += 1;
     return new Response(JSON.stringify({ model: 'actual-official-model', usage: { prompt_tokens: 10000, completion_tokens: 5000 }, choices: [{ finish_reason: 'tool_calls', message: {
-      content: null, tool_calls: [{ type: 'function', function: {
-        name: 'return_wiselink_initial_candidate', arguments: JSON.stringify({ candidate: generated }),
+      content: null, tool_calls: [{ id: `translation-window-${calls}`, type: 'function', function: {
+        name: 'return_wiselink_initial_candidate', arguments: JSON.stringify({ candidate: {
+          translatedUnits: generated.translatedUnits.slice(window.startUnitIndex, window.endUnitIndexExclusive),
+        } }),
       } }],
     } }] }), { status: 200 });
   };
   const result = await invokeHostedInitialModel({ operation: 'TRANSLATE', modelInput: input }, {
     gatewayChatCompletionsEnabled: true, gatewayUrl: 'https://official.invalid', gatewayToken: 'test-only',
     configuredModelVersion: 'miaoda/miaoda-model-auto', sessionDiscriminator: 'whole-document',
-    observeModelOutput: async (value) => { observation = value; },
+    observeModelOutput: async (value) => { observations.push(value); },
   });
-  assert.equal(calls, 1);
+  assert.equal(calls, 6);
   assert.equal(result.output.candidateUnits.length, 503);
   for (const [index, unit] of result.output.candidateUnits.entries()) {
     assert.equal(unit.unitKey, input.sourceUnits[index].unitKey);
     assert.deepEqual(unit.sourceRefIds, input.sourceUnits[index].sourceRefIds);
     assert.equal(unit.text, generated.translatedUnits[index][1]);
   }
-  assert.equal(observation.inputTokens, 10000);
-  assert.equal(observation.outputTokens, 5000);
-  assert.equal(JSON.stringify(observation).includes('保持'), false);
-  assert.equal(JSON.stringify(observation).includes('test-only'), false);
+  assert.equal(observations.length, 6);
+  assert.equal(observations[0].inputTokens, 10000);
+  assert.equal(observations[0].outputTokens, 5000);
+  assert.equal(observations.at(-1).translationOutputWindow.endUnitIndexExclusive, 503);
+  assert.equal(JSON.stringify(observations).includes('保持'), false);
+  assert.equal(JSON.stringify(observations).includes('test-only'), false);
+});
+
+test('translation output work budget uses source length without cutting a long Host unit', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  const input = translationInput();
+  input.sourceUnits = [7000, 3500, 3500, 100].map((length, index) => ({
+    ...input.sourceUnits[0], unitKey: `unit-${index}`, sourceRefIds: [`source-${index}`],
+    text: `${'Context sentence. '.repeat(Math.ceil(length / 18)).slice(0, length)} ${input.sourceUnits[0].text}`,
+  }));
+  const ranges = [];
+  globalThis.fetch = async (_url, init) => {
+    const request = JSON.parse(init.body);
+    if (!ranges.length) assert.deepEqual(JSON.parse(request.messages[1].content), input);
+    const { translationOutputWindow: window } = JSON.parse(request.messages[2].content);
+    ranges.push([window.startUnitIndex, window.endUnitIndexExclusive]);
+    return Response.json({ choices: [{ message: {
+      content: null, tool_calls: [{ id: `window-${ranges.length}`, type: 'function', function: {
+        name: 'return_wiselink_initial_candidate', arguments: JSON.stringify({ candidate: {
+          translatedUnits: input.sourceUnits.slice(window.startUnitIndex, window.endUnitIndexExclusive)
+            .map((unit, index) => [window.startUnitIndex + index, unit.text]),
+        } }),
+      } }],
+    } }] });
+  };
+  const result = await invokeHostedInitialModel({ operation: 'TRANSLATE', modelInput: input }, {
+    gatewayChatCompletionsEnabled: true, gatewayUrl: 'https://official.invalid', gatewayToken: 'test-only',
+    configuredModelVersion: 'miaoda/minimax-m3', sessionDiscriminator: 'long-units',
+  });
+  assert.deepEqual(ranges, [[0, 1], [1, 2], [2, 4]]);
+  assert.deepEqual(result.output.candidateUnits.map((unit) => unit.text), input.sourceUnits.map((unit) => unit.text));
+});
+
+test('a failed translation window is not retried and cannot return an incomplete candidate', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  const input = translationInput();
+  input.sourceUnits.push({ ...input.sourceUnits[0], unitKey: 'unit-1', sourceRefIds: ['source-1'] });
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    if (calls === 2) return Response.json({ error: { code: 'incomplete_result' } }, { status: 400 });
+    return Response.json({ choices: [{ message: {
+      content: null, tool_calls: [{ id: 'first-prefix', type: 'function', function: {
+        name: 'return_wiselink_initial_candidate', arguments: JSON.stringify({ candidate: {
+          translatedUnits: [[0, '保持 28 VDC 和 ATA 24。']],
+        } }),
+      } }],
+    } }] });
+  };
+  await assert.rejects(invokeHostedInitialModel({ operation: 'TRANSLATE', modelInput: input }, {
+    gatewayChatCompletionsEnabled: true, gatewayUrl: 'https://official.invalid', gatewayToken: 'test-only',
+    configuredModelVersion: 'miaoda/minimax-m3', sessionDiscriminator: 'failed-window',
+  }), /INITIAL_GATEWAY_HTTP_400/u);
+  assert.equal(calls, 2);
 });
 
 test('translation continues only an output prefix in the same full-document native session', async (t) => {
@@ -367,7 +434,7 @@ test('pins exact20 MCP 1.2, five review tools, and hosted provenance', () => {
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c24',
+    'wiselink-research-and-synthesize@r09.c25',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,

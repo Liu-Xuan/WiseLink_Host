@@ -10,6 +10,7 @@ import { PdfjsDistLayoutExtractor } from '../../server/modules/professional-inpu
 import { sha256Raw } from '../../server/modules/unified-reader/unified-reader.utils';
 
 const REAL_FTD_PATH = process.env.WL31_REAL_FTD_IDENTITY_PDF_PATH?.trim();
+const REAL_787_SB_PATH = process.env.WL31_REAL_787_SB_IDENTITY_PDF_PATH?.trim();
 const REAL_FTD_REFERENCE_DOMINATED_PATH =
   process.env.WL31_REAL_FTD_REFERENCE_DOMINATED_PDF_PATH?.trim();
 const REAL_SL_PATH = process.env.WL31_REAL_SL_IDENTITY_PDF_PATH?.trim();
@@ -30,6 +31,7 @@ const REAL_AIRBUS_FOT_PATH =
   process.env.WL31_REAL_AIRBUS_FOT_IDENTITY_PDF_PATH?.trim();
 
 const describeFtd = REAL_FTD_PATH ? describe : describe.skip;
+const describe787Sb = REAL_787_SB_PATH ? describe : describe.skip;
 const describeReferenceDominatedFtd = REAL_FTD_REFERENCE_DOMINATED_PATH
   ? describe
   : describe.skip;
@@ -54,6 +56,86 @@ describeFtd('actual Boeing FTD PDF identity owner', () => {
       sourceGeneratedDate: '2023-01-08',
       documentFamilyAdapterId: 'issuer.boeing.ftd.v1',
       identityAuthority: 'DM_ACTUAL_PDF_FIRST_THREE_PAGES',
+    });
+  });
+});
+
+describe787Sb('actual Boeing 787 publication-module SB identity owner', () => {
+  it('binds the complete primary publication code and issue from the actual PDF', async () => {
+    const identity = await resolveIdentity(REAL_787_SB_PATH as string);
+    expect(identity).toMatchObject({
+      documentCode: 'B787-81205-SB310019-00',
+      documentFamily: 'SB',
+      sourceType: 'boeing_sb',
+      issuer: 'BOEING',
+      businessRevision: 'ISSUE 001',
+      revisionDate: '2020-09-24',
+      pageCount: 13,
+      documentFamilyAdapterId: 'issuer.boeing.service_bulletin.v1',
+      identityAuthority: 'DM_ACTUAL_PDF_FIRST_THREE_PAGES',
+    });
+  });
+});
+
+describe('Boeing SB primary publication layout variants', () => {
+  const masthead = 'BOEING PROPRIETARY AIRCRAFT SERVICE BULLETIN';
+  it('uses the publication row rather than a cited data module or filename alias', () => {
+    expect(
+      resolveIdentityFromText(
+        [
+          masthead,
+          'Service Bulletin B787-81205-SB310019-00 Primary Display System',
+          'Publication: B787-81205-SB310019-00 Issue 001, 24 Sep 2020',
+          'Refer to Data Module SB B787-A-31-00-0019-00A-932A-D.',
+        ].join(' '),
+      ),
+    ).toMatchObject({
+      documentCode: 'B787-81205-SB310019-00',
+      businessRevision: 'ISSUE 001',
+      revisionDate: '2020-09-24',
+    });
+  });
+
+  it.each([
+    'References: B787-81205-SB310019-00 Issue 001, 24 Sep 2020',
+    'Publication: B787-81205-SB310019-00',
+  ])(
+    'does not accept a reference or an incomplete primary row (%s)',
+    (text) => {
+      expect(() => resolveIdentityFromText(`${masthead} ${text}`)).toThrow(
+        expect.objectContaining({
+          code: 'DM_PDF_IDENTITY_UNRESOLVED',
+          statusCode: 422,
+        }),
+      );
+    },
+  );
+
+  it('rejects conflicting publication rows', () => {
+    expect(() =>
+      resolveIdentityFromText(
+        [
+          masthead,
+          'Publication: B787-81205-SB310019-00 Issue 001, 24 Sep 2020',
+          'Publication: B787-81205-SB310020-00 Issue 001, 24 Sep 2020',
+        ].join(' '),
+      ),
+    ).toThrow(expect.objectContaining({ code: 'DM_PDF_IDENTITY_CONFLICT' }));
+  });
+
+  it('preserves the traditional Boeing SB masthead and current revision', () => {
+    expect(
+      resolveIdentityFromText(
+        [
+          masthead,
+          'SERVICE BULLETIN NUMBER: 737-46-1053',
+          'ORIGINAL ISSUE: January 15, 2010 REVISION 4: March 20, 2020',
+        ].join(' '),
+      ),
+    ).toMatchObject({
+      documentCode: '737-46-1053',
+      businessRevision: 'R4',
+      revisionDate: '2020-03-20',
     });
   });
 });

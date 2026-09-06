@@ -79,6 +79,39 @@ function binding() {
 }
 
 describe('ordinary document-management authorization', () => {
+  it.each([undefined, 403])(
+    'preserves a storage read failure without assuming authorization or retrying (%s)',
+    async (status) => {
+      const cause = Object.assign(new Error('fetch failed'), {
+        response: status ? { status } : undefined,
+      });
+      const fileService = {
+        getDefaultBucket: jest.fn().mockRejectedValue(cause),
+        from: jest.fn(),
+      };
+      const authorizer = new OrdinaryDocumentManagementAuthorizer(
+        {} as never,
+        fileService as never,
+      );
+      await expect(
+        authorizer.assertCanIngest({
+          ...runtimeContext(),
+          action: 'DOCUMENT_INGEST',
+          selection: { bucketId: 'bucket-default', filePath: OWNED_PATH },
+        }),
+      ).rejects.toMatchObject({
+        code:
+          status === 403
+            ? 'DOCUMENT_ACTION_FORBIDDEN'
+            : 'DOCUMENT_STORAGE_BUCKET_READ_FAILED',
+        statusCode: status ?? 503,
+        cause,
+      });
+      expect(fileService.getDefaultBucket).toHaveBeenCalledTimes(1);
+      expect(fileService.from).not.toHaveBeenCalled();
+    },
+  );
+
   it('allows a verified WorkItem creator to read a DocumentVersion', async () => {
     const repository = {
       loadTenantDocumentAuthorizationBinding: jest

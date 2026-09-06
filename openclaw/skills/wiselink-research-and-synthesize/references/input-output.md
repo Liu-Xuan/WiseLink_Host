@@ -86,7 +86,7 @@ runtimePolicy.modelPolicyRef = official-hosted-profile-config
 ResultEnvelope.modelVersion = 官方托管 profile/config 本轮选择后的非空、可读实际模型
 Task.skillPolicyRef = wiselink-research-and-synthesize@r09
 ApplicabilityTask.runtimePolicy.skillVersion = wiselink-research-and-synthesize@r09  # v1 历史字段名，语义为兼容线
-ResultEnvelope.skillVersion = wiselink-research-and-synthesize@r09.c24       # 实际安装包版本
+ResultEnvelope.skillVersion = wiselink-research-and-synthesize@r09.c25       # 实际安装包版本
 toolVersions.wiselink-openclaw-engineering-assessment = 1.2.0
 promptVersion = 当前实际运行非空版本
 ```
@@ -137,8 +137,12 @@ prepareCommit 前明确失败。
 - `candidateUnits[]` 与 source units 数量、顺序、unitKey、SourceRef 集精确一致；
 - translated text 和可空 engineerRevision metadata。
 
-c24 模型侧只输出紧凑的 index/text，驱动从完整原输入还原上述字段。全文与术语上下文在同一原生 session
-保留，必要时仅在完整单元边界续写；所有单元收齐、完整 pair 校验通过后才形成唯一候选，不保存部分完成结果。
+c25 模型侧只输出紧凑的 index/text，驱动从完整原输入还原上述字段。全文与术语上下文在同一原生 session
+保留；首次请求附加输出窗口，后续只传新 tool exchange 与下一窗口，不把完整输入改成片段。窗口按最多 96
+个单元、约 6000 原文字符安排，在完整单元边界结束，不依赖模型自行预判 length 截断；单个长单元不会被切开。
+这些数字是保守工作预算而非实际 token 容量。仍接受更短的有效连续前缀，并从已收齐位置继续；所有单元收齐、
+完整 pair 校验通过后才形成唯一候选，不保存部分完成结果。安全 output-shape 额外记录窗口位置与字符数，
+不记录原文或私有推理。既有 Task/Result/MCP 形状、来源和提交边界不变。
 
 Skill 做结构和绑定预检，并在封印/分块提交前依据同一 Host-frozen rulePack 镜像数字 token occurrence
 multiset 与 ATA token 逐字保真检查，失败诊断包含 `unitKey`；它不自动改写候选。Host 继续拥有术语、编号、
