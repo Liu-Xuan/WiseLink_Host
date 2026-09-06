@@ -2,7 +2,7 @@
 
 更新日期：2026-09-06。依据：[R10 云文档](https://hv5zjf4j8yb.feishu.cn/docx/MA3fdjEycoISjHxptAqcsyxvn9b) 与 [当前正文镜像](WISELINK_R10_CURRENT.md)。9 月 6 日发布复核与数据库/存储续查见 [存储异常记录](WL31_HOSTED_STORAGE_INCIDENT_20260905.md)，此前功能发布和页面证据见 [交接与响应记录](WL31_R10_CONTEXT_HANDOFF_PERFORMANCE.md)，视觉交付见 [Satin 运行记录](WL31_R10_SATIN_HOSTED_ROLLOUT_20260905.md)。
 
-主控交接：用户于 2026-09-06 明确指定 [WiseLink R10 项目主控（2026-09-06 接管）](codex://threads/01a0726d-5e6e-7b70-b1b9-a7e84fd1d31b) 接替 [WiseLink R09 项目主控（接替旧主控）](codex://threads/01a06562-e90c-7340-9fd5-9a96cdd3073f)。后续项目协调、集成与运行核验由新主控接续，继承当前 R10 目标、既有授权和分工。接管时本地 HEAD 为 `d1bd56b1d`，已包含资料库列表和存储错误分类修复；随后通过官方发布查询确认同提交已于 00:01:52 完成 release `7682080634169658567`。本轮没有重复发布；新主控尚未取得新版页面完整验收证据。历史会话中的旧待办不覆盖当前执行顺序。
+主控交接：用户于 2026-09-06 明确指定 [WiseLink R10 项目主控（2026-09-06 接管）](codex://threads/01a0726d-5e6e-7b70-b1b9-a7e84fd1d31b) 接替 [WiseLink R09 项目主控（接替旧主控）](codex://threads/01a06562-e90c-7340-9fd5-9a96cdd3073f)。后续项目协调、集成与运行核验由新主控接续，继承当前 R10 目标、既有授权和分工。接管时本地 HEAD 为 `d1bd56b1d`，已包含资料库列表和存储错误分类修复；随后通过官方发布查询确认同提交已于 00:01:52 完成 release `7682080634169658567`。该次接管核查没有重复发布；后续用户授权开发后的新发布、页面实测及当前阻塞见下文。历史会话中的旧待办不覆盖当前执行顺序。
 
 Git 同步授权更新：此前 Codex 分支推送不符合当时的 main-only 限制；用户现已明确长期允许向 `Liu-Xuan/WiseLink_Host` 非强制推送项目相关 `codex/*`，后续范围内不再重复询问。两个 main 的既有分叉（131 / 1）只暂停 main 镜像，不阻断已授权分支同步。见仓库根 `AGENTS.md` 与 [授权记录](WL31_GITHUB_SYNC_BOUNDARY_20260905.md)。c22 功能提交 `7a9b9c4b7` 已以单一同名 refspec 非强制推送两个远端，符合当前授权；未触碰 main、标签、删除或强推。
 
@@ -17,9 +17,9 @@ Git 同步授权更新：此前 Codex 分支推送不符合当时的 main-only �
 | 步骤 | 状态 | 交付内容 |
 | --- | --- | --- |
 | 1. 契约与设计 | 已接入，持续同步 | R10 正文与 UI-N02 Silver / Carbon Satin 设计进入云文档及仓库；原型与生产证据分开。 |
-| 2. 页面到云端自动运行 | 接线已运行，当前原文存储不可读 | Turn 执行意图、Host 授权领取、原生 command cron、实际 execution 回读和页面发送均已发布。Turn 15/16/17 均自动领取；15/16 的模型前兼容问题已修复，17 因原文包元数据不可读而 FAILED。 |
-| 3. 连续调查与页面体验 | c22 授权跨轮会话及配套 Host 已发布 | 保留共同背景、原文故障下历史回读、面板保活和 c21 同轮按需取证；c22 使用 Host 当前授权、版本与来源范围决定会话延续。完整材料视图、逐材料使用记录及真实活动仍待完成，真实连续回合尚未验证。 |
-| 4. 页面连续往返 | 验证中 | 真实资料展开与 PDF 来源定位已通过；完整自动候选、追问及判断变化说明仍待实际证明。 |
+| 2. 页面到云端自动运行 | c23 已安装，统一入口待切换到新资料 | 既有原生 cron 保持旧事项空闲运行。新 Host 提供初始阶段状态，c23 可逐阶段生成初始候选后消费页面 Review；尚无本轮业务执行证据。旧 Turn 15/16/17 保留原失败记录。 |
+| 3. 连续调查与页面体验 | 数据库目录/快览已发布并实测 | 新目录返回当前账户 10 项资料；事故事项历史快览独立 HTTP 200，明确标注原文未在本次核验。两条实际 Trace 均无 FileService span；c22 跨轮会话能力继续保留。 |
+| 4. 页面连续往返 | 等待浏览器本地文件权限 | 首份获准新 PDF 已选定，但 Chrome 扩展不允许设置本地文件；尚未上传、未创建新事项、未调用业务模型。启用文件 URL 访问后从同一正常入口继续，初始候选及两轮 Review 尚未验收。 |
 
 这些是实施顺序，不是逐级解锁的 gate。出现具体故障就定位原因、做必要普通测试，然后返回完整流程。
 
@@ -55,7 +55,7 @@ Git 同步授权更新：此前 Codex 分支推送不符合当时的 main-only �
 
 存储机制评估同步采用这一顺序：保留 PostgreSQL＋文件服务，按访问方式组织数据；不是将全部 JSON 搬库，也不把全部 JSON 只能存文件当原则。独立恢复副本、同步双写、多后端切换和新分布式缓存不在实施范围。根因证据与正常路径改进分别交付，详见 [Host 存储设计评估](WL31_HOST_STORAGE_DESIGN_REVIEW_20260906.md)。
 
-本轮待发布增量已实现：存储内部 `ordinary_artifact_locator`（dev→online 差异仅新增该表及必要约束/RLS）、受理登记短事务、owner-scoped 数据库目录/快览与前端真实接线、请求/任务读取复用。真实 SB fixture 的 Reader→JobAid 同次装配测得 1 次下载和 1 次完整 JSON 解析；目录/快览无 FileService 依赖。新资料自动初始分析的缺口以 c23 薄消费者补齐，由现有 Host projection/ActionAttempt 推导下一阶段，完成后进入原 Review 消费者，不新建业务状态机。c23 本地 117 项通过，最新前后端生产构建通过；原有构建警告保留。尚未把这些本地证据记为发布或业务验收。
+本轮增量已随 `1abbfefce` 发布：存储内部 `ordinary_artifact_locator`（发布前 dev→online 差异仅新增该表及必要约束/RLS，发布后差异为空）、受理登记短事务、owner-scoped 数据库目录/快览与前端真实接线、请求/任务读取复用。真实 SB fixture 的 Reader→JobAid 同次装配测得 1 次下载和 1 次完整 JSON 解析；目录/快览无 FileService 依赖。新资料自动初始分析的缺口以 c23 薄消费者补齐，由现有 Host projection/ActionAttempt 推导下一阶段，完成后进入原 Review 消费者，不新建业务状态机。Host/前端 12 suites / 132 tests、c23 本地 117 项及前后端生产构建通过；原有构建警告保留。本地测试与已发布、已安装、真实业务验收分别记账。
 
 用户已明确授权使用 `/Volumes/SSD/LLM/WiseLink/Docs/uploads` 内不同真实 PDF，并允许将单事项执行 scope 切换到新样本及扩大多资料测试。首份选用 `737-46-1061_Original.pdf`（18 页）；其内容摘要与另外三份候选均未命中当前 DocumentVersion 表。保持文件内容不变、正常入口受理，不覆盖事故对象或历史引用。
 
@@ -72,13 +72,24 @@ Host 读取优化与前端 A+B 已随 `3903eb6c1` 发布；面板保活 C 集成
 - 方法/解析：保持主文件结构、条件、例外；JobAid 正式来源据实际绑定派生。SOURCE_IDENTITY_MISMATCH 是固定占位，不应直接改成 MATCH。
 - 数据支线：真实 RAG 薄适配、构型事件源及原有采用后重算；不建立全量知识镜像、复杂图谱或新的通用发布平台来阻断当前运行。
 
-Host 与 Skill 可按兼容窗口分别发布；前后端仍是一个 Host App 发布单元。当前 Skill 官方安装为 r09.c22，最低兼容 r09.c10；本次先安装 Skill、再发布配套 Host，双方均升级才启用跨轮延续。旧 Host 缺少新控制字段时 c22 明确记录逐轮隔离，旧 Skill 仍能使用新 Host 原有入口；不把字段存在当作能力已消费。历史 Turn 13/14 保留真实 c16/c17 记录，不因技术升级重写旧候选来源。
+Host 与 Skill 可按兼容窗口分别发布；前后端仍是一个 Host App 发布单元。当前官方 Skill 为 r09.c23，兼容线仍 r09，Host 最低 r09.c10；本次 Host 先发布，兼容旧 Review 消费者，c23 随后安装。既有 cron 尚未切换新资料；取得新事项后，才将 Host exact WorkItem scope 与统一入口 argv 同步切至同一获准事项。历史 Turn/request/attempt/checkpoint 全保留，不因技术升级重放或重写旧候选。
 
 ## 当前已核实状态
 
-主分支 codex/wl31-r09-master-handoff-20260903；最新已核实 Host release `7682080634169658567` / `d1bd56b1d37ea06c4b0a88a8eb76853ecff451be` 于 2026-09-06 00:01:52 为 `FINISHED`，`error_logs` 为空。本轮仅复核已有发布，未推送、未重新发布。此前 c22 功能提交 `7a9b9c4b7` 的双远端非强制同步、Skill 安装 `7682052334020758506` 的 completed/Ready/Visible、23/23 文件、installed validation 107/107、consumer 3/3，以及 Host 4 suites / 51 tests、类型检查和构建均保留原轮次证据，不冒充本轮重测或业务跨轮验收。
+主分支 codex/wl31-r09-master-handoff-20260903；最新 Host release `7682262637312936935` 于 2026-09-06 11:46:32 返回 `finished`，对应完整提交 `1abbfefce9c17b2c275e8a465b88b505757ccbf9`，`error_logs=[]`。该提交已以单一同名 refspec 非强制写入妙搭 origin 与获长期授权的 GitHub codex 分支，实际快进 `d1bd56b1d → 1abbfefce`；未直接推 main、标签、删除引用或强推。发布前 origin/main 新合并提交 `de0fae872` 的代码树与原 HEAD 完全相同，未覆盖其他新代码。
 
-历史页面已读到事项版本 11、Turn 17 FAILED 与历史候选；22:23 三个旧事项的真实请求仍报元数据错误，当时 bundle 为 73561af4d。本轮 00:45 主解析包官方精确 GET 仍返回 400000034；新主控没有取得新版页面完整验收或旧原件恢复证据。40 张表未开启行审计，恢复预览存在已记录矛盾；本轮未改变审计设置、未执行恢复/删除、未新建业务回合。执行计划按此次实读更新，云文档及正文镜像仍保留各自标注的同步时点。
+官方 Hosted 安装轮次 `7682263795376803027` 已回报 c23 安装完成、Ready/Visible、26/26 源文件与 Publish Lite manifest 字节及 SHA 完全一致，另列安装器 `.openclaw/source-origin.json`。同一次 installed 三文件测试为 117 pass / 0 fail / 0 skipped。旧 cron 仍是每 60 秒的 Review 入口，模型/profile/Gateway/Host scope 未改；只读管理轮次 `7682262106624150468` 从已安装官方源码核实同一个 cron job 以 `runningAtMs` 排除重叠，不积压补跑，无需另加锁/队列。这些管理轮次没有调用业务模型或执行 Host business 工具。
+
+11:49 已登录 Chrome 实读新版目录与事故样本快览：
+
+| 请求 | 实际证据 | 读取边界 |
+| --- | --- | --- |
+| `GET library/documents` | HTTP 200；10 项；Trace `3d0df3ac503b8f3c348dd7fbd483eb40`，app_server 48.23 ms，1 条 SQL | SQL 内含 tenant＋requested_by，稳定创建时间/事项主键排序；不选择完整 projection；0 FileService span |
+| `GET work-items/.../quicklook` | HTTP 200；历史 777-34-0425 候选可见；Trace `9b77e9864c14f228ec7385cf2e5125f7`，app_server 125.53 ms，3 条 SQL | 两次现有权限绑定读取＋数据库薄摘要；0 FileService span；页面明确“已保存候选意见／原文未在本次核验” |
+
+两条 Trace `is_break=false`。这是这两次请求的实际观测，不是 p50/p95 性能承诺，也不是旧原文恢复。原生文件选择器对首份新 PDF 的 `setFiles` 返回 `Not allowed`；官方 Chrome 扩展指引要求用户启用“Allow access to file URLs”。未改扩展权限、未以 CLI 或其他入口绕过，尚未上传该 PDF、创建新事项或切换自动执行 scope。
+
+历史页面已读到事项版本 11、Turn 17 FAILED 与历史候选；22:23 三个旧事项的真实请求仍报元数据错误，当时 bundle 为 73561af4d。9 月 6 日 00:45/08:44 旧主包精确 GET 仍失败；本轮没有旧原件恢复证据，40 张历史表的审计状态及恢复预览矛盾仍按事故记录保留。未改变审计设置、未执行恢复/删除、未新建业务回合。执行计划按此次实读更新，云文档及正文镜像仍保留各自标注的同步时点。
 
 样本 WI-2c1902db-c2cd-427d-b0d4-1f8f70fe6597，SB 777-34-0425，事项 revision 11；JobAid 150 项、124 项暂缺受控输入，Review ACTIVE。新增 Turn 15/16/17 尚未产生候选，历史 Turn 13/14 未采用。14:01 起原文存储读取异常，不能将之前的页面可用证据当成当前健康状态。
 
