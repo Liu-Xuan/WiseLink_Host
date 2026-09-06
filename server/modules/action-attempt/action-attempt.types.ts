@@ -105,6 +105,7 @@ export interface ActionAttemptRow {
   baseRevision: number | null;
   documentVersionId: string | null;
   taskEnvelopeJson: string | null;
+  executionModelJson?: string | null;
   taskInputHash: string | null;
   resultEnvelopeJson: string | null;
   reviewActivityJson?: string | null;

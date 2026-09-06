@@ -177,6 +177,14 @@
   min-width: 0;
 }
 
+.wl-initial-analysis-note {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--wl-muted);
+  font-size: var(--wl-text-caption);
+  line-height: 1.6;
+}
+
 /* ── §4.3 版本冲突反馈：不覆盖新结果，提供刷新 ── */
 .wl-conflict-banner {
   display: flex;

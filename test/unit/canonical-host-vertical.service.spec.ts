@@ -236,6 +236,29 @@ function permissionSnapshots() {
 }
 
 describe('CanonicalHostVerticalService', () => {
+  it('reads initial progress after authorization without reading artifact bytes', async () => {
+    const projection = { workItemId: 'WI-progress' };
+    const registrar = { getTenantScopedByWorkItemId: jest.fn().mockResolvedValue(projection) };
+    const auth = authorization();
+    const authorize = jest.spyOn(auth, 'authorize');
+    const store = { readActualBytes: jest.fn().mockRejectedValue(new Error('ARTIFACT_MUST_NOT_BE_READ')) };
+    const initialStatus = { projectForBrowser: jest.fn().mockResolvedValue({ status: 'FAILED' }) };
+    const service = new CanonicalHostVerticalService(
+      registrar as never, {} as never, auth, permissionSnapshots(), store as never,
+      {} as never, {} as never, {} as never, null,
+      undefined, undefined, undefined, undefined, undefined, initialStatus as never,
+    );
+    await expect(service.browserInitialAnalysisStatus('WI-progress', TEST_ACTOR)).resolves.toEqual({ status: 'FAILED' });
+    expect(authorize).toHaveBeenCalledWith(expect.objectContaining({ action: 'READ_DOCUMENT_PARSING', workItemId: 'WI-progress', actor: TEST_ACTOR }));
+    expect(registrar.getTenantScopedByWorkItemId).toHaveBeenCalledWith({ workItemId: 'WI-progress', tenantId: TEST_ACTOR.tenantId });
+    expect(initialStatus.projectForBrowser).toHaveBeenCalledWith({ workItem: projection, tenantId: TEST_ACTOR.tenantId });
+    expect(store.readActualBytes).not.toHaveBeenCalled();
+    authorize.mockRejectedValueOnce(new Error('ACCESS_DENIED'));
+    await expect(service.browserInitialAnalysisStatus('WI-other', TEST_ACTOR)).rejects.toThrow('ACCESS_DENIED');
+    expect(registrar.getTenantScopedByWorkItemId).toHaveBeenCalledTimes(1);
+    expect(initialStatus.projectForBrowser).toHaveBeenCalledTimes(1);
+  });
+
   it('runs one real frozen.2 package through one WorkItem, Reader and entry facade', async () => {
     const request = await realRequest();
     const bytes = await realPackageBytes();

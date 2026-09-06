@@ -14,12 +14,19 @@ sourceRefs[{ref,sha256}]
 allowedConnectors
 hostResolvedMissingInputs[{code,message}]
 modelInput
+executionModel?{modelRef,displayName,providerKind,settingsRevision,selectedAt}
 deadline / idempotencyKey / inputHash
 ```
 
 `inputHash` 是对除自身外的 TaskEnvelope 做递归 key-sort canonical JSON 后得到的裸 64 位小写 SHA-256。
 TaskEnvelope 是 Host 控制面对象；不能整体发给模型。INITIAL_ANALYSIS 只传 `modelInput`，review 还必须移除
 task 中的 actorContextRef 和 context 中的 workItemId。
+
+c24 的可选 executionModel 是非秘密路由元数据，包含在既有 inputHash 中，不进入 modelInput。
+Host 在新 ActionAttempt 保留启动时全局默认；已排队、运行或恢复的 ActionAttempt 不重新选模型。
+modelRef 必须在官方配置 `agents.defaults.models` 已登记；只通过 Gateway `x-openclaw-model` 使用，
+保留原 profile/body/session。旧任务没有该字段时兼容原 profile；字段存在但无效或未登记时明确失败，禁止回退。
+Translation 每个 taskBinding 也返回相同的可选 executionModel，仍受每包实际 14,000 bytes 上限约束。
 
 `begin_translation` 不重复返回顶层 `modelInput`，也不把完整 TaskEnvelope 暴露给 Hosted Agent。它以同一工具的
 `deliveryPart` 参数返回按实际序列化字节计算的可读批次：
@@ -79,15 +86,17 @@ runtimePolicy.modelPolicyRef = official-hosted-profile-config
 ResultEnvelope.modelVersion = 官方托管 profile/config 本轮选择后的非空、可读实际模型
 Task.skillPolicyRef = wiselink-research-and-synthesize@r09
 ApplicabilityTask.runtimePolicy.skillVersion = wiselink-research-and-synthesize@r09  # v1 历史字段名，语义为兼容线
-ResultEnvelope.skillVersion = wiselink-research-and-synthesize@r09.c23       # 实际安装包版本
+ResultEnvelope.skillVersion = wiselink-research-and-synthesize@r09.c24       # 实际安装包版本
 toolVersions.wiselink-openclaw-engineering-assessment = 1.2.0
 promptVersion = 当前实际运行非空版本
 ```
 
-当前官方 profile 配置的 provider/model endpoint 为 `miaoda/miaoda-model-auto`，其下游具体模型未暴露。Skill 不维护具体模型
-allowlist，也不把 task policy ref 冒充实际 `modelVersion`。驱动从唯一 profile 的 `agents.list[].model` 解析 string 或 `{primary,fallbacks}`；未显式配置时才使用
+2026-09-06 读回的原生默认为 `miaoda/minimax-m3`，用户新增已登记路由为 `dli/gpt-5.6-sol`；
+此处是配置事实，不是生成健康保证。新任务按 Host executionModel 使用已登记模型，也不把 task policy ref
+冒充实际 `modelVersion`。旧无绑定任务从唯一 profile 的 `agents.list[].model` 解析 string 或 `{primary,fallbacks}`；未显式配置时才使用
 同形状的 `agents.defaults.model`，并要求 fallbacks 为空。响应有可读实际模型时优先使用响应值；响应缺失或不可读时
-使用该 configured endpoint 作为可证明执行标识，但不得把它扩张解释为未暴露的下游具体模型。重复 agent、不可读 primary、fallbacks 非数组或非空均 fail closed。
+绑定任务记录 `configured-route:<modelRef>`，旧任务使用该 configured endpoint，均只作为可证明路由标识，
+不得解释为服务商已回报下游具体型号。重复 agent、不可读 primary、fallbacks 非数组或非空均 fail closed。
 
 ### Translation ResultEnvelope 分块传输
 
@@ -127,6 +136,9 @@ prepareCommit 前明确失败。
 - 原样 `taskStartBinding`；
 - `candidateUnits[]` 与 source units 数量、顺序、unitKey、SourceRef 集精确一致；
 - translated text 和可空 engineerRevision metadata。
+
+c24 模型侧只输出紧凑的 index/text，驱动从完整原输入还原上述字段。全文与术语上下文在同一原生 session
+保留，必要时仅在完整单元边界续写；所有单元收齐、完整 pair 校验通过后才形成唯一候选，不保存部分完成结果。
 
 Skill 做结构和绑定预检，并在封印/分块提交前依据同一 Host-frozen rulePack 镜像数字 token occurrence
 multiset 与 ATA token 逐字保真检查，失败诊断包含 `unitKey`；它不自动改写候选。Host 继续拥有术语、编号、

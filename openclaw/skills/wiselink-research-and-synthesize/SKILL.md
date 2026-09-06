@@ -11,8 +11,8 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
-- model policy：`official-hosted-profile-config`（当前配置端点为 `miaoda/miaoda-model-auto`；下游具体模型不暴露，Skill 不绑定具体模型）
-- Skill：`wiselink-research-and-synthesize@r09.c23`
+- model policy：`official-hosted-profile-config`（任务可绑定已登记的内置或用户授权自定义模型；仍经唯一官方 Hosted profile/Gateway）
+- Skill：`wiselink-research-and-synthesize@r09.c24`
 - Skill compatibility：`wiselink-research-and-synthesize@r09`（Host 最低接受 `r09.c10`）
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（既有 20 项能力；兼容新增的只读自动领取查询）
 - Host baseline：`6fd2655d27edc3851c745547efaf8796ad22c82c`
@@ -23,10 +23,19 @@ profile 的 `agents.list[].model` 读取 string 或 `{primary,fallbacks}`，缺�
 时使用上述 configured provider/model endpoint，再连同 `promptVersion`、`skillVersion` 和 `toolVersions` 由 validator 校验后写入完整
 ResultEnvelope。重复 agent、不可读 primary、fallbacks 非数组或非空均停止；Skill 不维护模型版本 allowlist。
 
+c24 接受 Host 在新 TaskEnvelope 中保存的可选 `executionModel`。该非秘密控制元数据包含
+`modelRef/displayName/providerKind/settingsRevision/selectedAt`，由既有 inputHash 绑定；Translation 每个
+`taskBinding` 也携带相同选择。驱动确认 modelRef 在官方 `agents.defaults.models` 中已登记后，仅通过
+`x-openclaw-model` header 选择它；body 的 `openclaw/wiselink-engineering`、原生会话及凭据来源均不变。
+模型选择不混入 modelInput，不允许任意 URL 或凭据。登记不存在或路由失败时明确停止，不切换 provider。
+任务恢复使用已保存选择，不重新读取全局默认。响应没有可读实际模型时记录 `configured-route:<modelRef>`，
+只证明所请求的配置路由，不冒充服务商已回报下游型号；旧任务无该字段时维持原有官方 profile 路径。
+
 `skillVersion` 始终记录实际安装包版本；Task 中的 `skillPolicyRef`（以及 Applicability v1 的历史字段
 `runtimePolicy.skillVersion`）表示兼容线 `wiselink-research-and-synthesize@r09`。只改 references、示例或不改变
-Task/Result/MCP 语义的 prompt 时可 Skill-only 发布新 c 修订；改变 schema、tool 参数、authority 或安全语义时
-必须升级兼容线并与 Host 协同发布。
+Task/Result/MCP 语义的 prompt 时可 Skill-only 发布新 c 修订；不兼容 schema、tool 参数、authority 或安全语义
+变更必须升级兼容线并与 Host 协同发布。c24 的可选控制元数据保持旧任务兼容，但旧 Skill 不接受新字段，
+必须先安装 c24，再发布生成该字段的 Host；不能把新任务交给旧 Skill。
 
 ## 不变边界
 
@@ -39,8 +48,9 @@ Task/Result/MCP 语义的 prompt 时可 Skill-only 发布新 c 修订；改变 s
   `reviewConversationRef` 和 `requestId`；Host 派生其余身份和业务绑定。Host review context 中的
   `workItemId` 在送模型前移除。
 - TaskEnvelope 中的 `actorContextRef` 是 Host 控制面引用，不发送给模型，也不视为凭据或 ACL 替代品。
-- 不使用本地 OpenClaw/Docker、OpenAI/Codex OAuth、外部 provider、通用 shell、自造 HTTP、普通 app
-  OpenAPI 伪造 invoke 或旧 0.11 runtime。
+- 不使用本地 OpenClaw/Docker、OpenAI/Codex OAuth、未获用户授权或未登记的外部 provider、通用 shell、
+  自造直连模型 HTTP、普通 app OpenAPI 伪造 invoke 或旧 0.11 runtime。用户授权的自定义模型只能通过
+  妙搭官方模型设置登记并经同一 Hosted Gateway 使用；Codex 模型偏好不改变产品运行模型。
 - 本目录不内嵌凭据。validator 只处理本地数据；Hosted driver／消费者从既有官方配置读取连接信息并调用
   已授权 Host 与官方 Gateway，不安装 Skill。历史 ZIP 安装器和 `archive/internal-lab/phase13-ab.mjs` 均不在本版本运行资产中。
 - 官方 Hosted Agent 的真实路径是按本文件调用 MCP。Translation 的 sealed ResultEnvelope 必须先落到本轮本地
@@ -49,11 +59,13 @@ Task/Result/MCP 语义的 prompt 时可 Skill-only 发布新 c 修订；改变 s
 
 ## Mode 1：INITIAL_ANALYSIS
 
-### 新资料自动推进（c23）
+### 新资料自动推进（c24）
 
 `scripts/consume-hosted-work-item.mjs` 是既有原生 command cron 的统一入口。它先读 Host
-`get_parse_status.initialAnalysis`，每次只运行 `nextOperation` 指定的一个未执行阶段；四阶段完成后复用原有
-Review 消费者。该状态来自现有 projection 与 ActionAttempt，不是消费者另建业务状态机。
+`get_parse_status.initialAnalysis`，一次 tick 默认最多连续运行四个已就绪阶段。每阶段成功写回后 fresh-read，
+只继续 `nextOperation` 指定的未执行阶段；满 15 分钟后不再启动新阶段，给在途调用与提交留出原生 cron
+预算。四阶段完成后的后续 tick 复用原有 Review 消费者。该状态来自现有 projection 与 ActionAttempt，
+不是消费者另建业务状态机。独立资料读取可有限并行；依赖分析与同一 WorkItem 的 CAS 写回保持有序。
 `NOT_READY/BUSY` 不调用模型，`FAILED/CONFLICT` 或未知结果停止并报告。普通 applicability 的
 `WAITING_INPUT` 保持缺口，可继续 Host 指定的 JobAid/Overall；它不自动启动 P0B 重算。
 新 Host 未提供该字段时统一入口明确停止，原有单 operation 与 Review 入口仍兼容。
@@ -135,6 +147,10 @@ CAS；Skill 不声称这些步骤由模型完成。8. commit 响应未知时只�
 - 输入/输出分别使用 Host 当前
   `wiselink.3_1.translation_task.v0.candidate` 与
   `wiselink.3_1.translation_result.v0.candidate`。
+- c24 初始适配器先给模型完整 sourceUnits 与术语上下文，只让它输出紧凑 `translatedUnits:[[index,text],...]`；
+  unitKey、SourceRefs、rulePack 和 taskStartBinding 由驱动从未改变的 Host 输入机械还原。优先一次完成；
+  输出预算不足时，仅接受完整单元边界上的连续非空前缀，在同一原生 session 内续写剩余部分。全部收齐前
+  不封印、不提交、不显示为翻译完成；不把全文切成互不知情的独立小任务，也不修补截断 JSON。
 - `rulePackId + rulePackVersion`、taskStartBinding、unit 数量/顺序、unitKey 与 SourceRef 集必须逐项一致。
 - Host TranslationRuleSet ResultGate 仍是编号、数值、单位、ATA/件号、表格和警示层级的最终权威。模型
   生成后、封印或上传前，Skill validator 读取同一 Host-frozen rulePack：`numericFidelity` 使用与 Host 相同的
@@ -405,8 +421,8 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 
 当前 validator 强制：
 
-- `modelVersion` 是响应中可读实际模型，或响应未提供时由无 fallback 的唯一 configured provider/model endpoint 解析出的可证明执行标识；不得把它扩张解释为未暴露的下游具体模型，也不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c23`
+- `modelVersion` 优先取响应中可读实际模型；绑定任务未回报实际模型时使用 `configured-route:<modelRef>`，旧无绑定任务使用无 fallback 的 configured endpoint。后两者只证明路由，不代表已暴露下游具体模型，也不做具体版本等值判断
+- `skillVersion=wiselink-research-and-synthesize@r09.c24`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致

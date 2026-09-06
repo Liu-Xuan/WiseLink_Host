@@ -28,6 +28,7 @@ import {
   WISELINK_SKILL_VERSION,
   canonicalJson,
   canonicalSha256,
+  validateExecutionModelSelection,
 } from './validate-payload.mjs';
 
 const DRIVER_SCHEMA = 'wiselink.3_1.hosted_review_driver.v1';
@@ -143,6 +144,7 @@ export async function runHostedReviewTurn(options, dependencies = {}) {
           const generated = await invokeModel(structuredClone(generationInput), {
             sessionDiscriminator: sha256(normalized.requestId),
             nativeSessionKey,
+            executionModel: beginResult?.task?.executionModel,
             readSourceRefs: async (ids) => {
               const values = await readSourceRefs(ids);
               readSourceRefBatches.push([...ids]);
@@ -223,6 +225,7 @@ export async function runHostedReviewTurn(options, dependencies = {}) {
 }
 
 export async function invokeHostedReviewModel(input, options = {}) {
+  const modelHeaders = executionModelHeaders(options);
   const gatewayUrl = requiredUrl(
     options.gatewayUrl,
     'REVIEW_GATEWAY_URL_REQUIRED',
@@ -284,6 +287,7 @@ export async function invokeHostedReviewModel(input, options = {}) {
         authorization: `Bearer ${gatewayToken}`,
         'content-type': 'application/json',
         ...(nativeSessionKey ? { 'x-openclaw-session-key': nativeSessionKey } : {}),
+        ...modelHeaders,
       },
       body: JSON.stringify({
         model: `openclaw/${agentId}`,
@@ -324,7 +328,8 @@ export async function invokeHostedReviewModel(input, options = {}) {
       return {
         output,
         provenance: {
-          modelVersion: actualModelVersion(payload, choice, message, configuredModelVersion),
+          modelVersion: actualModelVersion(payload, choice, message,
+            options.executionModel ? `configured-route:${options.executionModel.modelRef}` : configuredModelVersion),
           promptVersion: REVIEW_PROMPT_VERSION,
           skillVersion: WISELINK_SKILL_VERSION,
           toolVersions: { [WISELINK_HOST_MCP_NAME]: WISELINK_HOST_MCP_VERSION },
@@ -1263,6 +1268,16 @@ export function actualModelVersion(
     : String(model).trim();
 }
 
+/** Routing control comes only from the sealed Host task, never modelInput. */
+export function executionModelHeaders(options) {
+  if (options.executionModel === undefined) return {};
+  const selected = validateExecutionModelSelection(options.executionModel);
+  if (!Array.isArray(options.registeredModelRefs) || !options.registeredModelRefs.includes(selected.modelRef)) {
+    throw new Error('HOSTED_SELECTED_MODEL_NOT_REGISTERED');
+  }
+  return { 'x-openclaw-model': selected.modelRef };
+}
+
 function isReadableActualModel(value) {
   if (typeof value !== 'string' || value.trim() === '') return false;
   const normalized = value.trim().toLowerCase();
@@ -1408,6 +1423,7 @@ export async function resolveRuntimeConfig(argv, env) {
     gatewayToken,
     gatewayChatCompletionsEnabled: isChatCompletionsEnabled(config),
     configuredModelVersion: resolveConfiguredModelVersion(config, agentId),
+    registeredModelRefs: Object.keys(config?.agents?.defaults?.models ?? {}),
   };
 }
 

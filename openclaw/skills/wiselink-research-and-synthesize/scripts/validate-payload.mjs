@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
 export const WISELINK_SKILL_VERSION =
-  'wiselink-research-and-synthesize@r09.c23';
+  'wiselink-research-and-synthesize@r09.c24';
 export const WISELINK_SKILL_COMPATIBILITY_REF =
   'wiselink-research-and-synthesize@r09';
 export const WISELINK_HOST_MCP_NAME =
@@ -3082,7 +3082,7 @@ export function validateTaskEnvelope(value) {
       'idempotencyKey',
       'inputHash',
     ],
-    [],
+    ['executionModel'],
     'task envelope',
   );
   equal(
@@ -3116,6 +3116,7 @@ export function validateTaskEnvelope(value) {
     'TASK_ENVELOPE_MISSING_INPUTS_INVALID',
   );
   assertObject(value.modelInput, 'task envelope model input');
+  if (Object.hasOwn(value, 'executionModel')) validateExecutionModelSelection(value.executionModel);
   isoDate(value.deadline, 'TASK_ENVELOPE_DEADLINE_INVALID');
   nonEmpty(value.idempotencyKey, 'TASK_ENVELOPE_IDEMPOTENCY_KEY_REQUIRED');
   match(value.inputHash, BARE_SHA256, 'TASK_ENVELOPE_INPUT_HASH_INVALID');
@@ -3125,6 +3126,17 @@ export function validateTaskEnvelope(value) {
     canonicalSha256(unsealed),
     'TASK_ENVELOPE_INPUT_HASH_MISMATCH',
   );
+  return value;
+}
+
+export function validateExecutionModelSelection(value) {
+  exactKeys(value, ['modelRef', 'displayName', 'providerKind', 'settingsRevision', 'selectedAt'], [], 'execution model selection');
+  match(value.modelRef, /^[a-z0-9][a-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9/._:-]*$/u, 'TASK_EXECUTION_MODEL_INVALID');
+  if (value.modelRef.length > 255) fail('TASK_EXECUTION_MODEL_INVALID');
+  nonEmpty(value.displayName, 'TASK_EXECUTION_MODEL_INVALID');
+  if (value.displayName.length > 120 || !['BUILT_IN', 'CUSTOM'].includes(value.providerKind)) fail('TASK_EXECUTION_MODEL_INVALID');
+  integerInRange(value.settingsRevision, 0, Number.MAX_SAFE_INTEGER, 'TASK_EXECUTION_MODEL_INVALID');
+  isoDate(value.selectedAt, 'TASK_EXECUTION_MODEL_INVALID');
   return value;
 }
 
@@ -3162,7 +3174,7 @@ export function validateTranslationDeliveryTaskBinding(value) {
       'inputHash',
       'sourceArtifactSha256',
     ],
-    [],
+    ['executionModel'],
     'translation delivery task binding',
   );
   nonEmpty(
@@ -3193,6 +3205,7 @@ export function validateTranslationDeliveryTaskBinding(value) {
     'TRANSLATION_DELIVERY_DOCUMENT_VERSION_REQUIRED',
   );
   isoDate(value.deadline, 'TRANSLATION_DELIVERY_DEADLINE_INVALID');
+  if (Object.hasOwn(value, 'executionModel')) validateExecutionModelSelection(value.executionModel);
   match(
     value.inputHash,
     BARE_SHA256,

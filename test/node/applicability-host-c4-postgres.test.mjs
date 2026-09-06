@@ -25,6 +25,7 @@ process.env.TS_NODE_COMPILER_OPTIONS = JSON.stringify({
 const require = createRequire(import.meta.url);
 require('ts-node/register/transpile-only');
 require('tsconfig-paths/register');
+const { fixedModelSettings } = require('../support/fixed-model-settings.ts');
 const { drizzle } = require('drizzle-orm/postgres-js');
 const {
   sealResultEnvelope,
@@ -76,7 +77,7 @@ test(
       const workItems = new MiaodaWorkItemRepository(db);
       const registrar = new MiaodaCanonicalWorkItemRegistrarAdapter(workItems);
       const attemptRepository = new ActionAttemptRepository(db);
-      const attempts = new ActionAttemptLifecycleService(attemptRepository);
+      const attempts = new ActionAttemptLifecycleService(attemptRepository, fixedModelSettings());
       const scope = serviceScope();
       const artifactStore = artifactOwner.store;
       const reader = {
@@ -759,6 +760,7 @@ async function resetDatabase(sql) {
       base_revision integer,
       document_version_id varchar(96),
       task_envelope_json text,
+      execution_model_json text,
       task_input_hash varchar(64),
       result_envelope_json text,
       result_content_hash varchar(64),
@@ -891,7 +893,7 @@ async function realHarness(sql, options = {}) {
     },
   };
   const attemptRepository = new ActionAttemptRepository(db);
-  const attempts = new ActionAttemptLifecycleService(attemptRepository);
+  const attempts = new ActionAttemptLifecycleService(attemptRepository, fixedModelSettings());
   if (options.afterPrepare) {
     const actualPrepare = attempts.prepareCommit.bind(attempts);
     let prepareHookUsed = false;

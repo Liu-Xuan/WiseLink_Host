@@ -5,6 +5,9 @@ import type {
   CanonicalConfigurationEvidenceStatusReadModel,
   CanonicalAeoCandidateRunResponse,
   CanonicalDocumentParsingPageResponse,
+  CanonicalInitialAnalysisReadModel,
+  CanonicalModelSettingsReadModel,
+  UpdateCanonicalModelSettingsRequest,
   CanonicalRelatedContextPreviewResponse,
   CanonicalStructuredContentPageResponse,
   CanonicalEntryQueryRequest,
@@ -398,6 +401,58 @@ async function readCanonicalLibrary<T>(input: {
         traceId,
       });
     }
+    throw normalizedDirectObjectError(error, requestGeneration);
+  }
+}
+
+export function getCanonicalModelSettings(): Promise<CanonicalModelSettingsReadModel> {
+  return requestCanonicalModelSettings('GET');
+}
+
+export function updateCanonicalModelSettings(input: UpdateCanonicalModelSettingsRequest): Promise<CanonicalModelSettingsReadModel> {
+  return requestCanonicalModelSettings('POST', input);
+}
+
+async function requestCanonicalModelSettings(method: 'GET' | 'POST', data?: UpdateCanonicalModelSettingsRequest): Promise<CanonicalModelSettingsReadModel> {
+  const requestGeneration = clientSessionGeneration;
+  try {
+    const response = await axiosForBackend<CanonicalModelSettingsReadModel>({
+      url: '/api/canonical-host/settings/models', method, data,
+      headers: { 'Cache-Control': 'no-cache' },
+    });
+    if (response.status === 401) throw clientLoginRequired('MODEL_SETTINGS_LOGIN_REQUIRED', requestGeneration);
+    if (response.status < 200 || response.status >= 300) {
+      throw backendResponseError(response.data, 'MODEL_SETTINGS_UNAVAILABLE', response.status);
+    }
+    return response.data;
+  } catch (error) {
+    const status = responseStatus(error);
+    if (status === 401) requireCanonicalHostClientAuthentication(requestGeneration);
+    if (isRecord(error) && isRecord(error.response)) {
+      throw backendResponseError(error.response.data, 'MODEL_SETTINGS_UNAVAILABLE', status);
+    }
+    throw error;
+  }
+}
+
+export async function getInitialAnalysisStatus(
+  workItemId: string,
+): Promise<CanonicalInitialAnalysisReadModel> {
+  const requestGeneration = clientSessionGeneration;
+  try {
+    const response = await axiosForBackend<CanonicalInitialAnalysisReadModel>({
+      url: `/api/canonical-host/work-items/${encodeURIComponent(workItemId)}/initial-analysis`,
+      method: 'GET',
+      headers: { 'Cache-Control': 'no-cache' },
+    });
+    if (response.status === 401) throw clientLoginRequired('INITIAL_ANALYSIS_LOGIN_REQUIRED', requestGeneration);
+    if (response.status === 403 || response.status === 404) throw canonicalObjectNotFound();
+    if (response.status < 200 || response.status >= 300) {
+      throw backendResponseError(response.data, 'INITIAL_ANALYSIS_STATUS_UNAVAILABLE', response.status);
+    }
+    return response.data;
+  } catch (error) {
+    logger.error('读取初始分析进度失败', error);
     throw normalizedDirectObjectError(error, requestGeneration);
   }
 }

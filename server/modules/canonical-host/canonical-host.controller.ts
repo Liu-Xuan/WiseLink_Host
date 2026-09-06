@@ -184,6 +184,13 @@ export class CanonicalHostController {
     });
   }
 
+  @Get('work-items/:workItemId/initial-analysis')
+  initialAnalysis(@Param('workItemId') workItemId: string, @Req() httpRequest: Request) {
+    return this.service.browserInitialAnalysisStatus(
+      requiredText(workItemId, 'workItemId'), hostActor(httpRequest),
+    );
+  }
+
   @Get('work-items/:workItemId/status')
   status(
     @Param('workItemId') workItemId: string,

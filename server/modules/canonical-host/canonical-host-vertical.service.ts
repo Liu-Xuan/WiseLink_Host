@@ -543,6 +543,17 @@ export class CanonicalHostVerticalService {
     };
   }
 
+  async browserInitialAnalysisStatus(workItemId: string, actor: CanonicalHostActor) {
+    await this.authorizeAction({ actor, action: 'READ_DOCUMENT_PARSING', workItemId });
+    const projection = await this.registrar.getTenantScopedByWorkItemId({
+      workItemId, tenantId: actor.tenantId,
+    });
+    if (!this.initialAnalysisStatus) throw new Error('INITIAL_ANALYSIS_STATUS_UNCONFIGURED');
+    return this.initialAnalysisStatus.projectForBrowser({
+      workItem: projection, tenantId: actor.tenantId,
+    });
+  }
+
   async openApiDeepLink(
     workItemId: string,
     scope: CanonicalVerifiedServiceScope,
@@ -682,6 +693,11 @@ export class CanonicalHostVerticalService {
         queryResults,
         engineerReviewContext: null,
       }),
+      ...(this.initialAnalysisStatus ? {
+        initialAnalysis: await this.initialAnalysisStatus.projectForBrowser({
+          workItem: projection, tenantId: actor.tenantId,
+        }),
+      } : {}),
       readAuthorization: {
         action: 'READ_DOCUMENT_PARSING',
         decisionId: actionContext.decision.decisionId,

@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { CanonicalModelSettingsService } from '../model-settings/canonical-model-settings.service';
+import { readStoredExecutionModel } from '../model-settings/canonical-execution-model';
 import { Injectable, Logger } from '@nestjs/common';
 
 import type {
@@ -44,6 +46,7 @@ export class ReviewAttemptDispatchService {
   constructor(
     private readonly repository: ActionAttemptRepository,
     private readonly lifecycle: ActionAttemptLifecycleService,
+    private readonly modelSettings: CanonicalModelSettingsService,
   ) {}
 
   async readExecution(
@@ -103,6 +106,7 @@ export class ReviewAttemptDispatchService {
       startedAt: row?.startedAt?.toISOString() ?? null,
       updatedAt: (row?.updatedAt ?? input.createdAt).toISOString(),
       completedAt: row?.completedAt?.toISOString() ?? null,
+      executionModel: readStoredExecutionModel(row?.executionModelJson),
       evidenceActivity: projectReviewEvidenceActivity(row?.reviewActivityJson),
       error:
         row &&
@@ -158,6 +162,10 @@ export class ReviewAttemptDispatchService {
       throw dispatchConflict('REVIEW_TURN_EXECUTION_ALREADY_FINISHED');
     }
     if (!row) {
+      const executionModel = await this.modelSettings.captureForNewTask(
+        input.tenantId,
+        now,
+      );
       await this.repository.terminalizeExpiredActiveForSuccessor({
         workItemId: input.workItemId,
         tenantId: input.tenantId,
@@ -182,6 +190,7 @@ export class ReviewAttemptDispatchService {
         idempotencyKey: reviewTurnIdempotencyKey(input),
         attemptNo,
         requestOrigin: ACTION_ATTEMPT_REQUEST_ORIGIN,
+        executionModelJson: JSON.stringify(executionModel),
         status: 'QUEUED',
         priority: 100,
         maxAttempts: 3,
@@ -196,6 +205,7 @@ export class ReviewAttemptDispatchService {
     }
     if (!row.taskEnvelopeJson) {
       try {
+        const executionModel = readStoredExecutionModel(row.executionModelJson);
         const prepared = await input.buildInput();
         const task = sealTaskEnvelope({
           schemaVersion: 'wiselink.3_1.openclaw_task_envelope.v1',
@@ -212,6 +222,7 @@ export class ReviewAttemptDispatchService {
           allowedConnectors: [],
           hostResolvedMissingInputs: [],
           modelInput: prepared.modelInput,
+          ...(executionModel ? { executionModel } : {}),
           deadline: row.deadlineAt!.toISOString(),
           idempotencyKey: reviewTurnIdempotencyKey(input),
         });

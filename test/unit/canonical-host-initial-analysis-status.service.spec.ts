@@ -9,6 +9,8 @@ import type {
 
 import {
   projectCanonicalHostInitialAnalysisStatus,
+  initialAnalysisTerminalCode,
+  CanonicalHostInitialAnalysisStatusService,
   type CanonicalInitialAnalysisAttemptObservation,
 } from '../../server/modules/canonical-host/canonical-host-initial-analysis-status.service';
 import {
@@ -20,6 +22,35 @@ const HASH = `sha256:${'a'.repeat(64)}`;
 const OTHER_HASH = `sha256:${'b'.repeat(64)}`;
 
 describe('CanonicalHost initial-analysis status projection', () => {
+  it('keeps missing aircraft selection explicit without blocking document-level candidates', () => {
+    const workItem = translatedWorkItem(parsedWorkItem());
+    const status = projectCanonicalHostInitialAnalysisStatus(workItem, []);
+    expect(status).toMatchObject({
+      status: 'WAITING_INPUT', nextOperation: 'EVALUATE_JOBAID', applicabilityContextRef: null,
+      stages: { applicability: { status: 'WAITING_INPUT', attemptRef: null, terminalCode: 'APPLICABILITY_SELECTION_REQUIRED' } },
+    });
+    expect(workItem.applicability).toBeUndefined();
+    const failed = projectCanonicalHostInitialAnalysisStatus(workItem, [attempt('OPENCLAW_APPLICABILITY_EVALUATION', 'FAILED')]);
+    expect(failed.status).toBe('FAILED');
+    expect(failed.nextOperation).toBeNull();
+  });
+
+  it('keeps browser progress free of attempt and applicability control references', async () => {
+    const service = new CanonicalHostInitialAnalysisStatusService({} as never);
+    const workItem = parsedWorkItem();
+    jest.spyOn(service, 'project').mockResolvedValue(projectCanonicalHostInitialAnalysisStatus(workItem, [attempt('OPENCLAW_TRANSLATE', 'RUNNING')]));
+    const value = await service.projectForBrowser({ workItem, tenantId: 'tenant-1' });
+    expect(value.stages.translation.status).toBe('BUSY');
+    expect(value.workItemId).toBe(workItem.workItemId);
+    expect(JSON.stringify(value)).not.toMatch(/attemptRef|attemptStatus|applicabilityContextRef/u);
+  });
+
+  it('preserves the bounded executor cause but never emits arbitrary cancellation text', () => {
+    const base = { terminalReason: 'CANCELLED_BY_REQUEST', errorCode: null };
+    expect(initialAnalysisTerminalCode({ ...base, cancelReason: 'HOSTED_INITIAL_EXECUTION_FAILED:INITIAL_GATEWAY_HTTP_400' })).toBe('INITIAL_GATEWAY_HTTP_400');
+    expect(initialAnalysisTerminalCode({ ...base, cancelReason: 'HOSTED_INITIAL_EXECUTION_FAILED:private details and credentials' })).toBe('CANCELLED_BY_REQUEST');
+  });
+
   it('does not offer an operation before the parsed package is current', () => {
     const workItem = parsedWorkItem();
     workItem.phase = 'PARSING';

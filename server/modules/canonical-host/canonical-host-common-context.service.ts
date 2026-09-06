@@ -343,151 +343,152 @@ export class CanonicalHostCommonContextService {
       );
     }
     const result = new Map<string, ResolvedReviewReferenceTarget>();
-    await Promise.all(
-      targets.map(async (target) => {
-        try {
-          const matches = catalogTargets.filter(
-            (candidate) =>
-              canonicalReferenceLookupKey(candidate.canonicalDocumentNumber) ===
-              canonicalReferenceLookupKey(target),
-          );
-          if (matches.length === 0) {
-            result.set(
-              target,
-              unresolvedReviewReferenceTarget('DOCUMENT_NOT_INGESTED'),
-            );
-            return;
-          }
-          if (matches.length > 1) {
-            result.set(target, {
-              resolution: {
-                status: 'RESOLVED_MULTIPLE',
-                candidateCount: matches.length,
-              },
-              publisherCandidate: null,
-              resourceRefs: [],
-              targetApplicability: 'NOT_EVALUATED',
-            });
-            return;
-          }
-          const [match] = matches;
-          const tenantBindings =
-            await this.workItems.listTenantDocumentAuthorizationBindings({
-              tenantId: scope.tenantId,
-              documentVersionId: match.documentVersionId,
-            });
-          if (tenantBindings.length === 0) {
-            result.set(
-              target,
-              unresolvedReviewReferenceTarget('DOCUMENT_NOT_INGESTED'),
-            );
-            return;
-          }
-          const bindings: typeof tenantBindings = [];
-          for (const candidate of tenantBindings) {
-            if (candidate.requestedByUserId !== scope.actorId) {
-              continue;
-            }
-            const freshBinding = await this.workItems.loadAuthorizationBinding({
-              workItemId: candidate.workItemId,
-              tenantId: scope.tenantId,
-              actorUserId: scope.actorId,
-            });
-            if (
-              freshBinding?.workItemId === candidate.workItemId &&
-              freshBinding.tenantId === candidate.tenantId &&
-              freshBinding.requestId === candidate.requestId &&
-              freshBinding.documentVersionId === candidate.documentVersionId &&
-              freshBinding.requestedByUserId === candidate.requestedByUserId &&
-              freshBinding.revision === candidate.revision
-            ) {
-              bindings.push(freshBinding);
-            }
-          }
-          if (bindings.length === 0) {
-            result.set(
-              target,
-              unresolvedReviewReferenceTarget('ACCESS_DENIED'),
-            );
-            return;
-          }
-          if (bindings.length > 1) {
-            result.set(target, {
-              resolution: {
-                status: 'RESOLVED_MULTIPLE',
-                candidateCount: bindings.length,
-              },
-              publisherCandidate: null,
-              resourceRefs: [],
-              targetApplicability: 'NOT_EVALUATED',
-            });
-            return;
-          }
-          const [owned] = bindings;
-          const loaded = await this.workItems.loadTenantScopedProjection(
-            owned.workItemId,
-            scope.tenantId,
-          );
-          if (!loaded?.projection.package) {
-            result.set(target, unresolvedReviewReferenceTarget('UNAVAILABLE'));
-            return;
-          }
-          if (
-            loaded.row.workItemId !== owned.workItemId ||
-            loaded.row.tenantId !== owned.tenantId ||
-            loaded.row.requestedByUserId !== scope.actorId ||
-            loaded.row.requestId !== owned.requestId ||
-            loaded.row.documentVersionId !== match.documentVersionId ||
-            loaded.row.revision !== owned.revision ||
-            loaded.projection.workItemId !== owned.workItemId ||
-            loaded.projection.requestId !== owned.requestId ||
-            loaded.projection.revision !== owned.revision ||
-            loaded.projection.source.documentVersionId !==
-              match.documentVersionId
-          ) {
-            result.set(
-              target,
-              unresolvedReviewReferenceTarget('ACCESS_DENIED'),
-            );
-            return;
-          }
-          const targetWorkItem = loaded.projection;
-          const applicability = resolveCanonicalRelatedTargetApplicability(
-            assessmentTarget,
-            targetWorkItem,
-          );
-          const packageBytes = await readScope.readActualBytes(
-            targetWorkItem.package.artifact,
-          );
-          result.set(target, {
-            resolution: {
-              status: 'RESOLVED_EXACT',
-              workItemId: targetWorkItem.workItemId,
-              documentVersionId: match.documentVersionId,
-              canonicalDocumentNumber: match.canonicalDocumentNumber,
-              businessRevision:
-                targetWorkItem.package.documentIdentity?.businessRevision ??
-                null,
-            },
-            ...applicability,
-            publisherCandidate: match.issuerAuthority,
-            resourceRefs: relatedDocumentResourceRefs(
-              packageBytes,
-              targetWorkItem.package.artifact.ref,
-              targetWorkItem.package.artifact.sha256,
-              target,
-              match.documentVersionId,
-              applicability,
-              readScope,
-            ),
-          });
-        } catch (error) {
-          const reasonCode = relatedContextErrorCode(error);
-          this.logger.warn(`Related Context target unavailable: ${reasonCode}`);
+    const resolveTarget = async (target: string) => {
+      try {
+        const matches = catalogTargets.filter(
+          (candidate) =>
+            canonicalReferenceLookupKey(candidate.canonicalDocumentNumber) ===
+            canonicalReferenceLookupKey(target),
+        );
+        if (matches.length === 0) {
           result.set(
             target,
-            unresolvedReviewReferenceTarget('UNAVAILABLE', reasonCode),
+            unresolvedReviewReferenceTarget('DOCUMENT_NOT_INGESTED'),
           );
+          return;
+        }
+        if (matches.length > 1) {
+          result.set(target, {
+            resolution: {
+              status: 'RESOLVED_MULTIPLE',
+              candidateCount: matches.length,
+            },
+            publisherCandidate: null,
+            resourceRefs: [],
+            targetApplicability: 'NOT_EVALUATED',
+          });
+          return;
+        }
+        const [match] = matches;
+        const tenantBindings =
+          await this.workItems.listTenantDocumentAuthorizationBindings({
+            tenantId: scope.tenantId,
+            documentVersionId: match.documentVersionId,
+          });
+        if (tenantBindings.length === 0) {
+          result.set(
+            target,
+            unresolvedReviewReferenceTarget('DOCUMENT_NOT_INGESTED'),
+          );
+          return;
+        }
+        const bindings: typeof tenantBindings = [];
+        for (const candidate of tenantBindings) {
+          if (candidate.requestedByUserId !== scope.actorId) {
+            continue;
+          }
+          const freshBinding = await this.workItems.loadAuthorizationBinding({
+            workItemId: candidate.workItemId,
+            tenantId: scope.tenantId,
+            actorUserId: scope.actorId,
+          });
+          if (
+            freshBinding?.workItemId === candidate.workItemId &&
+            freshBinding.tenantId === candidate.tenantId &&
+            freshBinding.requestId === candidate.requestId &&
+            freshBinding.documentVersionId === candidate.documentVersionId &&
+            freshBinding.requestedByUserId === candidate.requestedByUserId &&
+            freshBinding.revision === candidate.revision
+          ) {
+            bindings.push(freshBinding);
+          }
+        }
+        if (bindings.length === 0) {
+          result.set(target, unresolvedReviewReferenceTarget('ACCESS_DENIED'));
+          return;
+        }
+        if (bindings.length > 1) {
+          result.set(target, {
+            resolution: {
+              status: 'RESOLVED_MULTIPLE',
+              candidateCount: bindings.length,
+            },
+            publisherCandidate: null,
+            resourceRefs: [],
+            targetApplicability: 'NOT_EVALUATED',
+          });
+          return;
+        }
+        const [owned] = bindings;
+        const loaded = await this.workItems.loadTenantScopedProjection(
+          owned.workItemId,
+          scope.tenantId,
+        );
+        if (!loaded?.projection.package) {
+          result.set(target, unresolvedReviewReferenceTarget('UNAVAILABLE'));
+          return;
+        }
+        if (
+          loaded.row.workItemId !== owned.workItemId ||
+          loaded.row.tenantId !== owned.tenantId ||
+          loaded.row.requestedByUserId !== scope.actorId ||
+          loaded.row.requestId !== owned.requestId ||
+          loaded.row.documentVersionId !== match.documentVersionId ||
+          loaded.row.revision !== owned.revision ||
+          loaded.projection.workItemId !== owned.workItemId ||
+          loaded.projection.requestId !== owned.requestId ||
+          loaded.projection.revision !== owned.revision ||
+          loaded.projection.source.documentVersionId !== match.documentVersionId
+        ) {
+          result.set(target, unresolvedReviewReferenceTarget('ACCESS_DENIED'));
+          return;
+        }
+        const targetWorkItem = loaded.projection;
+        const applicability = resolveCanonicalRelatedTargetApplicability(
+          assessmentTarget,
+          targetWorkItem,
+        );
+        const packageBytes = await readScope.readActualBytes(
+          targetWorkItem.package.artifact,
+        );
+        result.set(target, {
+          resolution: {
+            status: 'RESOLVED_EXACT',
+            workItemId: targetWorkItem.workItemId,
+            documentVersionId: match.documentVersionId,
+            canonicalDocumentNumber: match.canonicalDocumentNumber,
+            businessRevision:
+              targetWorkItem.package.documentIdentity?.businessRevision ?? null,
+          },
+          ...applicability,
+          publisherCandidate: match.issuerAuthority,
+          resourceRefs: relatedDocumentResourceRefs(
+            packageBytes,
+            targetWorkItem.package.artifact.ref,
+            targetWorkItem.package.artifact.sha256,
+            target,
+            match.documentVersionId,
+            applicability,
+            readScope,
+          ),
+        });
+      } catch (error) {
+        const reasonCode = relatedContextErrorCode(error);
+        this.logger.warn(`Related Context target unavailable: ${reasonCode}`);
+        result.set(
+          target,
+          unresolvedReviewReferenceTarget('UNAVAILABLE', reasonCode),
+        );
+      }
+    };
+    // Independent documents can overlap; bound file/DB pressure without
+    // changing per-document authorization or swallowing a target's failure.
+    let nextTarget = 0;
+    await Promise.all(
+      Array.from({ length: Math.min(4, targets.length) }, async () => {
+        while (nextTarget < targets.length) {
+          const target = targets[nextTarget++];
+          await resolveTarget(target);
         }
       }),
     );

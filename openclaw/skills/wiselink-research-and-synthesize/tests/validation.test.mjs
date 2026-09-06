@@ -4,7 +4,7 @@ import { copyFile, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { invokeHostedInitialModel } from '../scripts/invoke-hosted-initial-model.mjs';
+import { bindWholeDocumentTranslation, invokeHostedInitialModel } from '../scripts/invoke-hosted-initial-model.mjs';
 
 import {
   WISELINK_HOST_MCP_NAME,
@@ -39,6 +39,7 @@ import {
 } from '../scripts/orchestrate-host-mcp.mjs';
 import {
   assertHostedModelGatewayReady,
+  executionModelHeaders,
   findMcpConfig,
   invokeHostedReviewModel,
   isChatCompletionsEnabled,
@@ -89,6 +90,58 @@ const ARTIFACT_SHA = 'b'.repeat(64);
 const LEASE_TOKEN = '9bc7de9d-1e86-4c12-8e78-e27cce3aa0d4';
 const WORK_ITEM_ID = 'WI-CONTROL-001';
 
+function modelSelection(modelRef) {
+  return { modelRef, displayName: modelRef.startsWith('dli/') ? 'GPT 5.6 Sol' : 'MiniMax-M3',
+    providerKind: modelRef.startsWith('dli/') ? 'CUSTOM' : 'BUILT_IN', settingsRevision: 2, selectedAt: '2026-09-06T00:00:00.000Z' };
+}
+
+test('routes both registered models for Initial and Review without changing profile or reporting the old default', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  for (const modelRef of ['miaoda/minimax-m3', 'dli/gpt-5.6-sol']) {
+    const runtime = {
+      gatewayUrl: 'http://127.0.0.1:18789', gatewayToken: 'fixture-only', gatewayChatCompletionsEnabled: true,
+      configuredModelVersion: 'miaoda/minimax-m3', sessionDiscriminator: 'routing-fixture',
+      executionModel: modelSelection(modelRef), registeredModelRefs: ['miaoda/minimax-m3', 'dli/gpt-5.6-sol'],
+    };
+    let review = false;
+    globalThis.fetch = async (_url, init) => {
+      const body = JSON.parse(init.body);
+      assert.equal(init.headers['x-openclaw-model'], modelRef);
+      assert.equal(body.model, 'openclaw/wiselink-engineering');
+      assert.equal(JSON.stringify(body.messages).includes('settingsRevision'), false);
+      if (review) assert.equal(init.headers['x-openclaw-session-key'], 'agent:wiselink-engineering:review:ACTX-RS-fixture');
+      return Response.json({ model: 'openclaw/wiselink-engineering', choices: [{ message: {
+        content: null, tool_calls: [{ type: 'function', function: {
+          name: review ? 'return_wiselink_review_candidate' : 'return_wiselink_initial_candidate',
+          arguments: JSON.stringify(review ? { candidateOnly: true } : { candidate: { translatedUnits: [[0, '保持 28 VDC 和 ATA 24。']] } }),
+        } }],
+      } }] });
+    };
+    const initial = await invokeHostedInitialModel({ operation: 'TRANSLATE', modelInput: translationInput() }, runtime);
+    assert.equal(initial.provenance.modelVersion, `configured-route:${modelRef}`);
+    review = true;
+    const result = await invokeHostedReviewModel({ candidateOnly: true }, { ...runtime, nativeSessionKey: 'agent:wiselink-engineering:review:ACTX-RS-fixture' });
+    assert.equal(result.provenance.modelVersion, `configured-route:${modelRef}`);
+  }
+});
+
+test('selected model cannot inject headers, carry credentials, or silently use an unregistered route', () => {
+  assert.deepEqual(executionModelHeaders({}), {});
+  assert.throws(() => executionModelHeaders({ executionModel: modelSelection('dli/gpt-5.6-sol'), registeredModelRefs: ['miaoda/minimax-m3'] }), /HOSTED_SELECTED_MODEL_NOT_REGISTERED/u);
+  assert.throws(() => executionModelHeaders({ executionModel: modelSelection('dli/gpt-5.6-sol\r\nx-header: changed'), registeredModelRefs: [] }));
+  const task = makeTask('OPENCLAW_TRANSLATE', translationInput());
+  task.executionModel = modelSelection('dli/gpt-5.6-sol');
+  assert.throws(() => validatePayload('task-envelope', task), /TASK_ENVELOPE_INPUT_HASH_MISMATCH/u);
+  const { inputHash: _hash, ...unsealed } = task;
+  task.inputHash = canonicalSha256(unsealed);
+  validatePayload('task-envelope', task);
+  const [part] = translationDeliveryParts(task, task.modelInput);
+  assert.equal(part.taskBinding.executionModel.modelRef, 'dli/gpt-5.6-sol');
+  task.executionModel.apiKey = 'fixture-only';
+  assert.throws(() => validatePayload('task-envelope', task));
+});
+
 test('official initial model adapter validates all four operation outputs without sending control bindings', async (t) => {
   const originalFetch = globalThis.fetch;
   t.after(() => { globalThis.fetch = originalFetch; });
@@ -101,6 +154,9 @@ test('official initial model adapter validates all four operation outputs withou
     ['SYNTHESIZE_OVERALL', synthesis, synthesisOutput(synthesis)],
   ];
   for (const [operation, modelInput, candidate] of examples) {
+    const generated = operation === 'TRANSLATE'
+      ? { translatedUnits: candidate.candidateUnits.map(({ text }, index) => [index, text]) }
+      : candidate;
     let calls = 0;
     globalThis.fetch = async (_url, init) => {
       calls += 1;
@@ -111,7 +167,7 @@ test('official initial model adapter validates all four operation outputs withou
       assert.equal(JSON.stringify(request.messages).includes('control-session-only'), false);
       return new Response(JSON.stringify({ model: 'actual-official-model', choices: [{ message: {
         role: 'assistant', content: null,
-        tool_calls: [{ type: 'function', function: { name: 'return_wiselink_initial_candidate', arguments: JSON.stringify({ candidate }) } }],
+        tool_calls: [{ type: 'function', function: { name: 'return_wiselink_initial_candidate', arguments: JSON.stringify({ candidate: generated }) } }],
       } }] }), { status: 200 });
     };
     const result = await invokeHostedInitialModel({ operation, modelInput }, {
@@ -132,12 +188,147 @@ test('initial model rejects prose and altered translation before sealing or comm
   for (const malformed of ['prose', 'numeric']) {
     const candidate = translationOutput();
     if (malformed === 'numeric') candidate.candidateUnits[0].text = '保持 29 VDC 和 ATA 24。';
+    const generated = { translatedUnits: candidate.candidateUnits.map(({ text }, index) => [index, text]) };
     globalThis.fetch = async () => new Response(JSON.stringify({ choices: [{ message: {
       content: malformed === 'prose' ? 'Extra answer' : null,
-      tool_calls: [{ type: 'function', function: { name: 'return_wiselink_initial_candidate', arguments: JSON.stringify({ candidate }) } }],
+      tool_calls: [{ type: 'function', function: { name: 'return_wiselink_initial_candidate', arguments: JSON.stringify({ candidate: generated }) } }],
     } }] }), { status: 200 });
     await assert.rejects(invokeHostedInitialModel({ operation: 'TRANSLATE', modelInput: translationInput() }, runtime));
   }
+});
+
+test('whole-document translation keeps all 503 units in one model invocation and restores exact Host bindings', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  const input = translationInput();
+  input.sourceUnits = Array.from({ length: 503 }, (_, index) => ({
+    ...input.sourceUnits[0], unitKey: `unit-${index}`, sourceRefIds: [`source-${index}`],
+  }));
+  const generated = { translatedUnits: input.sourceUnits.map((_, index) => [index, '保持 28 VDC 和 ATA 24。']) };
+  let calls = 0;
+  let observation;
+  globalThis.fetch = async (_url, init) => {
+    calls += 1;
+    const request = JSON.parse(init.body);
+    assert.deepEqual(JSON.parse(request.messages[1].content), input);
+    assert.match(request.messages[0].content, /one whole-document translation/u);
+    return new Response(JSON.stringify({ model: 'actual-official-model', usage: { prompt_tokens: 10000, completion_tokens: 5000 }, choices: [{ finish_reason: 'tool_calls', message: {
+      content: null, tool_calls: [{ type: 'function', function: {
+        name: 'return_wiselink_initial_candidate', arguments: JSON.stringify({ candidate: generated }),
+      } }],
+    } }] }), { status: 200 });
+  };
+  const result = await invokeHostedInitialModel({ operation: 'TRANSLATE', modelInput: input }, {
+    gatewayChatCompletionsEnabled: true, gatewayUrl: 'https://official.invalid', gatewayToken: 'test-only',
+    configuredModelVersion: 'miaoda/miaoda-model-auto', sessionDiscriminator: 'whole-document',
+    observeModelOutput: async (value) => { observation = value; },
+  });
+  assert.equal(calls, 1);
+  assert.equal(result.output.candidateUnits.length, 503);
+  for (const [index, unit] of result.output.candidateUnits.entries()) {
+    assert.equal(unit.unitKey, input.sourceUnits[index].unitKey);
+    assert.deepEqual(unit.sourceRefIds, input.sourceUnits[index].sourceRefIds);
+    assert.equal(unit.text, generated.translatedUnits[index][1]);
+  }
+  assert.equal(observation.inputTokens, 10000);
+  assert.equal(observation.outputTokens, 5000);
+  assert.equal(JSON.stringify(observation).includes('保持'), false);
+  assert.equal(JSON.stringify(observation).includes('test-only'), false);
+});
+
+test('translation continues only an output prefix in the same full-document native session', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  const input = translationInput();
+  input.sourceUnits = [0, 1, 2].map((index) => ({
+    ...input.sourceUnits[0], unitKey: `unit-${index}`, sourceRefIds: [`source-${index}`],
+  }));
+  const observations = [];
+  let calls = 0;
+  globalThis.fetch = async (_url, init) => {
+    const request = JSON.parse(init.body);
+    assert.equal(request.user, 'initial:whole-continuation');
+    assert.equal(init.headers['x-openclaw-model'], 'miaoda/minimax-m3');
+    if (calls === 0) {
+      assert.deepEqual(JSON.parse(request.messages[1].content), input);
+    } else {
+      assert.equal(request.messages[1].role, 'assistant');
+      assert.equal(request.messages[1].tool_calls[0].id, 'translation-prefix');
+      assert.equal(JSON.parse(request.messages[2].content).nextUnitIndex, 1);
+      assert.equal(request.messages[2].tool_call_id, 'translation-prefix');
+      assert.match(request.messages[0].content, /same native session/u);
+      // Native history contains the FULL original input, not an isolated subset.
+      assert.equal(JSON.stringify(request.messages).includes('sourceUnits\":['), false);
+    }
+    const rows = calls++ === 0 ? [[0, '保持 28 VDC 和 ATA 24。']]
+      : [[1, '保持 28 VDC 和 ATA 24。'], [2, '保持 28 VDC 和 ATA 24。']];
+    return new Response(JSON.stringify({ model: 'miaoda/minimax-m3', choices: [{ message: {
+      content: null, tool_calls: [{ id: 'translation-prefix', type: 'function', function: {
+        name: 'return_wiselink_initial_candidate', arguments: JSON.stringify({ candidate: { translatedUnits: rows } }),
+      } }],
+    } }] }), { status: 200 });
+  };
+  const result = await invokeHostedInitialModel({ operation: 'TRANSLATE', modelInput: input }, {
+    gatewayChatCompletionsEnabled: true, gatewayUrl: 'https://official.invalid', gatewayToken: 'test-only',
+    configuredModelVersion: 'miaoda/minimax-m3', sessionDiscriminator: 'whole-continuation',
+    executionModel: modelSelection('miaoda/minimax-m3'), registeredModelRefs: ['miaoda/minimax-m3'],
+    observeModelOutput: (shape, round) => { observations.push([shape.round, round]); },
+  });
+  assert.equal(calls, 2);
+  assert.deepEqual(observations, [[1, 1], [2, 2]]);
+  assert.deepEqual(result.output.candidateUnits.map((unit) => unit.unitKey), ['unit-0', 'unit-1', 'unit-2']);
+  assert.equal(result.provenance.modelVersion, 'miaoda/minimax-m3');
+});
+
+test('translation rejects a continuation that repeats or skips accepted indices', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  for (const wrongIndex of [0, 2]) {
+    const input = translationInput();
+    input.sourceUnits.push({ ...input.sourceUnits[0], unitKey: 'unit-1', sourceRefIds: ['source-1'] });
+    let calls = 0;
+    globalThis.fetch = async () => new Response(JSON.stringify({ choices: [{ message: {
+      content: null, tool_calls: [{ id: 'prefix', type: 'function', function: {
+        name: 'return_wiselink_initial_candidate', arguments: JSON.stringify({ candidate: {
+          translatedUnits: [[calls++ === 0 ? 0 : wrongIndex, '保持 28 VDC 和 ATA 24。']],
+        } }),
+      } }],
+    } }] }), { status: 200 });
+    await assert.rejects(invokeHostedInitialModel({ operation: 'TRANSLATE', modelInput: input }, {
+      gatewayChatCompletionsEnabled: true, gatewayUrl: 'https://official.invalid', gatewayToken: 'test-only',
+      configuredModelVersion: 'miaoda/minimax-m3', sessionDiscriminator: 'invalid-continuation',
+    }), /INITIAL_TRANSLATION_UNIT_MAPPING_INVALID/u);
+    assert.equal(calls, 2);
+  }
+});
+
+test('translation binding rejects missing, reordered, duplicate and invented unit indices', () => {
+  const input = translationInput();
+  for (const candidate of [
+    { translatedUnits: [] }, { translatedUnits: [[1, '译文']] },
+    { translatedUnits: [[0, '译文'], [0, '译文']] },
+    { translatedUnits: [[0, '译文']], sourceRefIds: ['invented'] },
+  ]) assert.throws(() => bindWholeDocumentTranslation(input, candidate), /INITIAL_TRANSLATION_UNIT_/u);
+});
+
+test('initial Gateway failure records only safe token and terminal observations, without retrying', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  let calls = 0;
+  let observation;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return new Response(JSON.stringify({ error: { code: 'incomplete_result', message: 'private detail must not persist' } }), { status: 400 });
+  };
+  await assert.rejects(invokeHostedInitialModel({ operation: 'TRANSLATE', modelInput: translationInput() }, {
+    gatewayChatCompletionsEnabled: true, gatewayUrl: 'https://official.invalid', gatewayToken: 'test-only',
+    configuredModelVersion: 'miaoda/miaoda-model-auto', sessionDiscriminator: 'failed-document',
+    observeModelOutput: async (value) => { observation = value; },
+  }), /INITIAL_GATEWAY_HTTP_400/u);
+  assert.equal(calls, 1);
+  assert.equal(observation.errorCode, 'incomplete_result');
+  assert.equal(observation.outputTokens, null);
+  assert.equal(JSON.stringify(observation).includes('private detail'), false);
 });
 
 test('accepts shared background in new JobAid and Overall inputs while retaining old inputs', async () => {
@@ -176,7 +367,7 @@ test('pins exact20 MCP 1.2, five review tools, and hosted provenance', () => {
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c23',
+    'wiselink-research-and-synthesize@r09.c24',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -4324,6 +4515,7 @@ function translationDeliveryParts(
         deadline: task.deadline,
         inputHash: task.inputHash,
         sourceArtifactSha256: task.sourceRefs.map(({ sha256 }) => sha256),
+        ...(task.executionModel ? { executionModel: structuredClone(task.executionModel) } : {}),
       },
       delivery: {
         partIndex,

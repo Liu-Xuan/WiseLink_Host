@@ -3,6 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 
 import { actionAttempt } from '../../database/schema';
+import { CanonicalModelSettingsService } from '../model-settings/canonical-model-settings.service';
+import { readStoredExecutionModel } from '../model-settings/canonical-execution-model';
 import {
   canonicalJson,
   parseResultEnvelope,
@@ -39,7 +41,10 @@ const DEFAULT_MAX_ATTEMPTS = 3;
 
 @Injectable()
 export class ActionAttemptLifecycleService {
-  constructor(private readonly repository: ActionAttemptRepository) {}
+  constructor(
+    private readonly repository: ActionAttemptRepository,
+    private readonly modelSettings: CanonicalModelSettingsService,
+  ) {}
 
   async reserve(
     input: ReserveActionAttemptInput,
@@ -100,6 +105,10 @@ export class ActionAttemptLifecycleService {
       input.deadlineAt ??
       new Date(now.getTime() + ACTION_ATTEMPT_DEFAULT_DEADLINE_MS);
     const priority = input.priority ?? DEFAULT_PRIORITY;
+    const executionModel = await this.modelSettings.captureForNewTask(
+      input.tenantId,
+      now,
+    );
     const modelInput = await input.buildModelInput(identity);
     const task = parseTaskEnvelope(
       canonicalJson(
@@ -120,6 +129,7 @@ export class ActionAttemptLifecycleService {
             ...(input.hostResolvedMissingInputs ?? []),
           ],
           modelInput: structuredClone(modelInput),
+          executionModel,
           deadline: deadlineAt.toISOString(),
           idempotencyKey: input.idempotencyKey,
         }),
@@ -141,6 +151,7 @@ export class ActionAttemptLifecycleService {
       baseRevision: input.baseRevision,
       documentVersionId: input.documentVersionId,
       taskEnvelopeJson: canonicalJson(task),
+      executionModelJson: canonicalJson(executionModel),
       taskInputHash: task.inputHash,
       idempotencyKey: input.idempotencyKey,
       maxAttempts: input.maxAttempts ?? DEFAULT_MAX_ATTEMPTS,
@@ -967,7 +978,9 @@ function validatedTask(row: ActionAttemptRow): OpenClawTaskEnvelope {
     task.inputRevision !== row.inputRevision ||
     task.documentVersionId !== row.documentVersionId ||
     task.inputHash !== row.taskInputHash ||
-    task.idempotencyKey !== row.idempotencyKey
+    task.idempotencyKey !== row.idempotencyKey ||
+    canonicalJson(task.executionModel ?? null) !==
+      canonicalJson(readStoredExecutionModel(row.executionModelJson))
   ) {
     throw conflict('TASK_ENVELOPE_ROW_BINDING_MISMATCH');
   }

@@ -153,6 +153,7 @@ export interface ReviewTurnExecutionReadModel {
   startedAt: string | null;
   updatedAt: string;
   completedAt: string | null;
+  executionModel?: CanonicalExecutionModelSelection | null;
   error: { code: string; message: string } | null;
   /** Absent on older Hosts; null means no recorded receipts for this attempt. */
   evidenceActivity?: {
@@ -2506,7 +2507,14 @@ export type AilyInitialAnalysisOperation =
   | 'SYNTHESIZE_OVERALL';
 
 export interface AilyInitialAnalysisStageStatus {
-  status: 'PENDING' | 'BUSY' | 'SUCCEEDED' | 'WAITING_INPUT' | 'FAILED' | 'CONFLICT';
+  executionModel?: CanonicalExecutionModelSelection | null;
+  status:
+    | 'PENDING'
+    | 'BUSY'
+    | 'SUCCEEDED'
+    | 'WAITING_INPUT'
+    | 'FAILED'
+    | 'CONFLICT';
   attemptRef: string | null;
   attemptStatus: string | null;
   terminalCode: string | null;
@@ -2517,13 +2525,70 @@ export interface AilyInitialAnalysisStatus {
   workItemRevision: number;
   documentVersionId: string;
   applicabilityContextRef: string | null;
-  status: 'NOT_READY' | 'REQUIRED' | 'BUSY' | 'WAITING_INPUT' | 'FAILED' | 'CONFLICT' | 'SUCCEEDED';
+  status:
+    | 'NOT_READY'
+    | 'REQUIRED'
+    | 'BUSY'
+    | 'WAITING_INPUT'
+    | 'FAILED'
+    | 'CONFLICT'
+    | 'SUCCEEDED';
   nextOperation: AilyInitialAnalysisOperation | null;
   stages: {
     translation: AilyInitialAnalysisStageStatus;
     applicability: AilyInitialAnalysisStageStatus;
     jobAid: AilyInitialAnalysisStageStatus;
     overall: AilyInitialAnalysisStageStatus;
+  };
+  candidateOnly: true;
+}
+
+/** Non-secret snapshot of models registered in the official Hosted instance. */
+export interface CanonicalModelOption {
+  modelRef: string;
+  displayName: string;
+  providerKind: 'BUILT_IN' | 'CUSTOM';
+  providerLabel: string;
+  available: boolean;
+}
+
+/** Routing metadata, never provider credentials or a browser-supplied endpoint. */
+export interface CanonicalExecutionModelSelection {
+  modelRef: string;
+  displayName: string;
+  providerKind: 'BUILT_IN' | 'CUSTOM';
+  settingsRevision: number;
+  selectedAt: string;
+}
+
+export interface CanonicalModelSettingsReadModel {
+  status: 'CONFIGURED' | 'UNAVAILABLE';
+  revision: number;
+  selectedModelRef: string | null;
+  options: CanonicalModelOption[];
+  updatedAt: string | null;
+  canManage: boolean;
+  managementStatus: 'CONFIGURED' | 'ROLE_NOT_CONFIGURED';
+  effectiveFor: 'NEW_ANALYSIS_TASKS_ONLY';
+}
+
+export interface UpdateCanonicalModelSettingsRequest {
+  expectedRevision: number;
+  modelRef: string;
+}
+
+/** Browser-safe view of the same initial-analysis projection; no control refs. */
+export interface CanonicalInitialAnalysisReadModel {
+  workItemId: string;
+  workItemRevision: number;
+  documentVersionId: string;
+  status: AilyInitialAnalysisStatus['status'];
+  nextOperation: AilyInitialAnalysisOperation | null;
+  stages: {
+    [K in keyof AilyInitialAnalysisStatus['stages']]: Pick<
+      AilyInitialAnalysisStageStatus,
+      'status' | 'terminalCode' | 'executionModel'
+    >;
   };
   candidateOnly: true;
 }
@@ -2915,6 +2980,7 @@ export interface CanonicalDocumentParsingPageResponse {
   relatedDocuments: CanonicalRelatedDocumentProjection;
   workbenchAudit: CanonicalWorkbenchAuditProjection;
   timeline: CanonicalTimelineProjection;
+  initialAnalysis?: CanonicalInitialAnalysisReadModel;
   readAuthorization: {
     action: 'READ_DOCUMENT_PARSING';
     decisionId: string;

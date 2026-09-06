@@ -117,6 +117,26 @@ export const fileAttachmentArray = customType<{
   },
 });
 
+export const canonicalModelSetting = pgTable("canonical_model_setting", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: varchar("tenant_id", { length: 128 }).notNull().unique(),
+  revision: integer("revision").notNull(),
+  modelRef: varchar("model_ref", { length: 255 }).notNull(),
+  changedByUserId: varchar("changed_by_user_id", { length: 255 }).notNull(),
+  // System field: Creation time (auto-filled, do not modify)
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  // System field: Creator (auto-filled, do not modify)
+  createdBy: userProfile("_created_by").default(sql`CASE
+    WHEN (current_setting('app.user_id'::text, true) = ''::text) THEN NULL`),
+  // System field: Update time (auto-filled, do not modify)
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  // System field: Updater (auto-filled, do not modify)
+  updatedBy: userProfile("_updated_by").default(sql`CASE
+    WHEN (current_setting('app.user_id'::text, true) = ''::text) THEN NULL`),
+}, (table) => [
+  uniqueIndex("canonical_model_setting_tenant_id_key").on(table.tenantId),
+]);
+
 export const ordinaryArtifactLocator = pgTable("ordinary_artifact_locator", {
   id: uuid("id").primaryKey().defaultRandom(),
   artifactRef: text("artifact_ref").notNull().unique(),
@@ -1096,6 +1116,7 @@ export const actionAttempt = pgTable("action_attempt", {
   commitStartedAt: customTimestamptz("commit_started_at", { precision: 3 }),
   leaseSlot: integer("lease_slot"),
   reviewActivityJson: text("review_activity_json"),
+  executionModelJson: text("execution_model_json"),
   // System field: Creator (auto-filled, do not modify)
   createdBy: userProfile("_created_by"),
   // System field: Updater (auto-filled, do not modify)
@@ -1361,6 +1382,7 @@ export const canonicalFleetAssetVersionTable = canonicalFleetAssetVersion;
 export const canonicalFleetConfigurationFactVersionTable = canonicalFleetConfigurationFactVersion;
 export const canonicalFleetScopeHeadTable = canonicalFleetScopeHead;
 export const canonicalFleetSourceSnapshotTable = canonicalFleetSourceSnapshot;
+export const canonicalModelSettingTable = canonicalModelSetting;
 export const canonicalRuleSetActivationTable = canonicalRuleSetActivation;
 export const canonicalRuleSetSnapshotTable = canonicalRuleSetSnapshot;
 export const configurationEvidenceEventVersionTable = configurationEvidenceEventVersion;

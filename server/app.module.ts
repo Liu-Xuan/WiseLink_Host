@@ -31,6 +31,7 @@ import { createHostedU0FullPackageValidatorProvider } from './modules/unified-re
 import { createHostedU0Frozen2FailureAdapterProvider } from './modules/unified-reader/hosted-u0-frozen2-failure-adapter.provider';
 import { ViewModule } from './modules/view/view.module';
 import { IdentityModule } from './modules/identity/identity.module';
+import { CanonicalModelSettingsModule } from './modules/model-settings/canonical-model-settings.module';
 import { ConfiguredDevelopmentCanonicalServiceScopeAuthorization } from './modules/canonical-host/configured-development-service-scope.authorization';
 import { CANONICAL_EXECUTOR_SERVICE_SCOPE_AUTHORIZATION } from './modules/canonical-host/canonical-service-scope.authorization';
 import { ReviewPersistenceModule } from './modules/review-persistence/review-persistence.module';
@@ -101,6 +102,7 @@ import { S1000dXmlStructuredPackageProducerAdapter } from './modules/s1000d-ingr
     RuntimeProbeModule,
     ExternalDiscoveryModule,
     IdentityModule,
+    CanonicalModelSettingsModule,
     ReviewPersistenceModule,
     // ====== @route-section: business-modules END ======
 
