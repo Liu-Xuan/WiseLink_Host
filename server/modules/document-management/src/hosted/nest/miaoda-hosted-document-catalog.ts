@@ -982,48 +982,78 @@ export class MiaodaHostedDocumentCatalog {
   }
 
   async recordAcquisition({ sourceArtifact, acquisition }) {
-    await this.db.insert(dmSourceArtifact).values({
-      ...sourceArtifact,
-      createdAt: asDate(sourceArtifact.createdAt),
-    }).onConflictDoNothing({ target: dmSourceArtifact.sourceArtifactId });
-    const [storedArtifact] = await this.db.select().from(dmSourceArtifact).where(
-      eq(dmSourceArtifact.sourceArtifactId, sourceArtifact.sourceArtifactId),
-    ).limit(1);
-    if (
-      !storedArtifact
-      || storedArtifact.sha256 !== sourceArtifact.sha256
-      || Number(storedArtifact.byteLength) !== Number(sourceArtifact.byteLength)
-      || storedArtifact.bucketId !== sourceArtifact.bucketId
-      || storedArtifact.filePath !== sourceArtifact.filePath
-    ) {
-      fail('SOURCE_ARTIFACT_IDENTITY_CONFLICT', 'SourceArtifact identity drifted in hosted Catalog.');
-    }
+    return this.db.transaction(async (transaction) => {
+      await transaction.insert(dmSourceArtifact).values({
+        ...sourceArtifact,
+        createdAt: asDate(sourceArtifact.createdAt),
+      }).onConflictDoNothing({ target: dmSourceArtifact.sourceArtifactId });
+      const [storedArtifact] = await transaction.select().from(dmSourceArtifact).where(
+        eq(dmSourceArtifact.sourceArtifactId, sourceArtifact.sourceArtifactId),
+      ).limit(1);
+      if (
+        !storedArtifact
+        || storedArtifact.sha256 !== sourceArtifact.sha256
+        || Number(storedArtifact.byteLength) !== Number(sourceArtifact.byteLength)
+        || storedArtifact.mediaType !== sourceArtifact.mediaType
+        || storedArtifact.bucketId !== sourceArtifact.bucketId
+        || storedArtifact.filePath !== sourceArtifact.filePath
+        || storedArtifact.providerObjectId !== sourceArtifact.providerObjectId
+        || storedArtifact.providerVersionId !== sourceArtifact.providerVersionId
+        || storedArtifact.readbackVerified !== true
+      ) {
+        fail('SOURCE_ARTIFACT_IDENTITY_CONFLICT', 'SourceArtifact identity drifted in hosted Catalog.');
+      }
 
-    await this.db.insert(dmAcquisition).values({
-      acquisitionId: acquisition.acquisitionId,
-      sourceArtifactId: acquisition.sourceArtifactId,
-      sourceChannel: acquisition.sourceChannel,
-      sourceRef: acquisition.sourceRef,
-      selectionBucketId: acquisition.selectionBucketId,
-      selectionFilePath: acquisition.selectionFilePath,
-      providerObjectId: acquisition.providerObjectId,
-      providerVersionId: acquisition.providerVersionId,
-      acquiredBy: acquisition.acquiredBy,
-      acquiredAt: asDate(acquisition.acquiredAt),
-      idempotencyKey: acquisition.idempotencyKey,
-      sourceDescriptorJson: JSON.stringify(acquisition.sourceDescriptor),
-      status: 'ACQUIRED_READBACK_VERIFIED',
-    }).onConflictDoNothing({ target: dmAcquisition.idempotencyKey });
-    const [stored] = await this.db.select().from(dmAcquisition).where(
-      eq(dmAcquisition.idempotencyKey, acquisition.idempotencyKey),
-    ).limit(1);
-    if (!stored || stored.acquisitionId !== acquisition.acquisitionId) {
-      fail('ACQUISITION_IDEMPOTENCY_CONFLICT', 'Idempotency key resolved to another Acquisition.');
-    }
-    return {
-      ...stored,
-      sourceDescriptor: parseJson(stored.sourceDescriptorJson),
-    };
+      await transaction.insert(dmAcquisition).values({
+        acquisitionId: acquisition.acquisitionId,
+        sourceArtifactId: acquisition.sourceArtifactId,
+        sourceChannel: acquisition.sourceChannel,
+        sourceRef: acquisition.sourceRef,
+        selectionBucketId: acquisition.selectionBucketId,
+        selectionFilePath: acquisition.selectionFilePath,
+        providerObjectId: acquisition.providerObjectId,
+        providerVersionId: acquisition.providerVersionId,
+        acquiredBy: acquisition.acquiredBy,
+        acquiredAt: asDate(acquisition.acquiredAt),
+        idempotencyKey: acquisition.idempotencyKey,
+        sourceDescriptorJson: JSON.stringify(acquisition.sourceDescriptor),
+        status: 'ACQUIRED_READBACK_VERIFIED',
+      }).onConflictDoNothing({ target: dmAcquisition.idempotencyKey });
+      const [stored] = await transaction.select().from(dmAcquisition).where(
+        eq(dmAcquisition.idempotencyKey, acquisition.idempotencyKey),
+      ).limit(1);
+      if (
+        !stored
+        || stored.acquisitionId !== acquisition.acquisitionId
+        || stored.sourceArtifactId !== acquisition.sourceArtifactId
+        || stored.sourceChannel !== acquisition.sourceChannel
+        || stored.sourceRef !== acquisition.sourceRef
+        || stored.selectionBucketId !== acquisition.selectionBucketId
+        || stored.selectionFilePath !== acquisition.selectionFilePath
+        || stored.providerObjectId !== acquisition.providerObjectId
+        || stored.providerVersionId !== acquisition.providerVersionId
+        || stored.acquiredBy !== acquisition.acquiredBy
+        || stored.idempotencyKey !== acquisition.idempotencyKey
+        || stableJson(parseJson(stored.sourceDescriptorJson))
+          !== stableJson(acquisition.sourceDescriptor)
+      ) {
+        fail(
+          'ACQUISITION_IDEMPOTENCY_CONFLICT',
+          'Idempotency key resolved to another Acquisition identity.',
+        );
+      }
+      const unlinked = stored.status === 'ACQUIRED_READBACK_VERIFIED'
+        && stored.documentVersionId === null;
+      const completed = ['COMMITTED_CANONICAL', 'LINKED_EXACT_DOCUMENT_VERSION'].includes(stored.status)
+        && typeof stored.documentVersionId === 'string' && stored.documentVersionId.length > 0;
+      if (!unlinked && !completed) {
+        fail('ACQUISITION_REPLAY_STATE_INVALID', 'Acquisition has an inconsistent link state.');
+      }
+      return {
+        ...stored,
+        sourceDescriptor: parseJson(stored.sourceDescriptorJson),
+      };
+    });
   }
 
   async listIngressDocuments({ tenantId }: { tenantId?: unknown } = {}) {
@@ -1037,12 +1067,12 @@ export class MiaodaHostedDocumentCatalog {
       .innerJoin(
         dmPublicationFamily,
         eq(dmDocumentVersion.familyId, dmPublicationFamily.familyId),
-      );
-    return rows
-      .filter(({ family }) =>
-        family.canonicalIdentityKey.startsWith(tenantPrefix),
       )
-      .map(({ version, family }) => ({
+      .where(sql<boolean>`starts_with(
+        ${dmPublicationFamily.canonicalIdentityKey},
+        ${tenantPrefix}
+      )`);
+    return rows.map(({ version, family }) => ({
         documentId: version.documentId,
         documentVersionId: version.documentVersionId,
         familyId: version.familyId,

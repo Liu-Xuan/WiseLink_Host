@@ -1,5 +1,7 @@
 import type {
   CanonicalDocumentParsingPageResponse,
+  CanonicalLibraryDocumentSummary,
+  CanonicalLibraryQuicklookResponse,
   CanonicalRelatedDocumentRelation,
 } from '@shared/api.interface';
 import {
@@ -31,6 +33,7 @@ export interface EngineeringQuicklookView {
   sourceCount?: number;
   currentVersionLabel: string | null;
   derivedArtifactCount: number | null;
+  sourceReadNote?: string;
 }
 
 function firstNonEmpty(...values: Array<string | null | undefined>): string {
@@ -178,6 +181,90 @@ export function buildEngineeringQuicklook(
   };
 }
 
+export function buildLibraryObjectContext(
+  document: CanonicalLibraryDocumentSummary,
+  kind: CurrentObjectKind,
+): CurrentObjectContextView {
+  const displayCode: string =
+    document.documentCode || document.originalFilename;
+  return {
+    kind,
+    routeWorkItemId: document.workItemId,
+    displayCode,
+    title: document.originalFilename || '当前受控资料',
+    meta: `${document.businessRevision || '版本未标注'} · ${document.normalizedFamily}`,
+    parentLabel:
+      kind === 'DOCUMENT'
+        ? '关联评估 · 当前工程评估'
+        : `主要来源 · ${displayCode}`,
+    statusLabel: `${document.selectedVersionIsCurrent ? '当前登记版本' : '历史登记版本'} · 原文未核验`,
+    routes: workItemRoutes(document.workItemId),
+  };
+}
+
+/** A saved result is useful even when the source has not been opened in this read. */
+export function buildLibraryEngineeringQuicklook(
+  response: CanonicalLibraryQuicklookResponse,
+): EngineeringQuicklookView {
+  const result = response.result;
+  const summary = result?.engineeringSummary;
+  const evidenceStatements: EngineeringStatementView[] = summary
+    ? [
+        summary.conclusion,
+        ...summary.whyItMatters,
+        ...summary.applicability.requiredFacts,
+        ...summary.implementationImpact,
+      ]
+    : [];
+  const evidenceBySourceRef: Map<string, EngineeringQuicklookEvidence> =
+    new Map();
+  evidenceStatements.forEach((statement: EngineeringStatementView): void => {
+    const key: string = statement.sourceRefIds[0] ?? statement.text;
+    if (!evidenceBySourceRef.has(key)) {
+      evidenceBySourceRef.set(key, statementEvidence(statement));
+    }
+  });
+  const unresolvedQuestions: string[] = [
+    ...(summary?.applicability.requiredFacts.map(
+      (statement) => statement.text,
+    ) ?? []),
+    ...(result?.missingInputs ?? []),
+    ...(result?.gap ? [result.gap] : []),
+    ...(result?.staleReason ? [staleReasonLabel(result.staleReason)!] : []),
+  ];
+  return {
+    authorityLabel: result ? '已保存候选意见' : '尚无候选意见',
+    freshnessLabel:
+      result?.status === 'STALE' ? '结论需更新' : '原文未在本次核验',
+    currentJudgment: firstNonEmpty(
+      summary?.conclusion.text,
+      result?.overallCandidate,
+      '当前资料尚无已保存的工程摘要，可进入工作台查看解析与评估进度。',
+    ),
+    applicabilitySummary:
+      [
+        summary?.applicability.sourceScope.text,
+        summary?.applicability.fleetMatch.text,
+      ]
+        .filter(Boolean)
+        .join(' ') || '当前未返回适用范围摘要。',
+    whyItMatters: firstNonEmpty(
+      summary?.whyItMatters[0]?.text,
+      summary?.implementationImpact[0]?.text,
+      '当前未返回风险或影响摘要。',
+    ),
+    keyEvidence: [...evidenceBySourceRef.values()].slice(0, 4),
+    unresolvedQuestions: [...new Set(unresolvedQuestions)].slice(0, 5),
+    recommendedActions:
+      summary?.nextActions.map((statement) => statement.text) ?? [],
+    sourceCount: result?.sourceCount,
+    currentVersionLabel: response.document.businessRevision || null,
+    derivedArtifactCount: null,
+    sourceReadNote:
+      '摘要来自已保存的评估结果。本次未读取原文或解析包；打开依据时再核对来源。',
+  };
+}
+
 export function quicklookMarkdown(
   title: string,
   quicklook: EngineeringQuicklookView,
@@ -190,6 +277,7 @@ export function quicklookMarkdown(
     `# ${title}`,
     '',
     `> ${quicklook.authorityLabel} · ${quicklook.freshnessLabel}；内容仅用于工程辅助，不代表批准或放行。`,
+    ...(quicklook.sourceReadNote ? ['', quicklook.sourceReadNote] : []),
     '',
     '## 当前判断',
     quicklook.currentJudgment,

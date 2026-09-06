@@ -677,6 +677,29 @@ export class DocumentManagementHostedCore {
         sourceArtifact: sourceArtifactRecord,
         acquisition: acquisitionRecord,
       });
+      // A concurrent request can finish after our initial idempotency lookup.
+      // Reuse the existing complete-lineage reader, not another preflight or
+      // current-version write for an acquisition that is already linked.
+      if (acquisition.documentVersionId) {
+        const replay = await this.catalog.findIngestionByIdempotency({
+          idempotencyKey,
+          expectedAcquisitionId: acquisitionId,
+          tenantId,
+          sourceChannel: request.sourceChannel,
+          sourceRef: request.sourceRef,
+          selection: request.selection,
+        });
+        if (replay?.status !== 'COMMITTED') {
+          fail('INGESTION_REPLAY_STATE_INVALID', 'Concurrent acquisition lacks verified committed lineage.');
+        }
+        return {
+          ...replay,
+          disposition: 'IDEMPOTENT_REPLAY',
+          newDocumentVersionCreated: false,
+          currentnessChanged: false,
+          catalogFreshReadVerified: true,
+        };
+      }
     }
 
     const normalizedDescriptor = normalizeUploadDescriptor(sourceDescriptor);

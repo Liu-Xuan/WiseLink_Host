@@ -29,6 +29,8 @@ import {
   getApplicabilitySelection,
   getCanonicalHostIdentityContext,
   getCanonicalHostClientSessionGeneration,
+  getCanonicalLibraryDocuments,
+  getCanonicalLibraryQuicklook,
   getCurrentReviewConversation,
   getDocumentParsingPage,
   getStructuredContentPage,
@@ -63,6 +65,69 @@ describe('canonical host assessment client', () => {
     } else {
       process.env.CLIENT_BASE_PATH = originalClientBasePath;
     }
+  });
+
+  it('reads lightweight directory search and cursor through the existing axios bridge only', async () => {
+    const controller = new AbortController();
+    const data = { items: [], nextCursor: null, fileReadPerformed: false };
+    request.mockResolvedValue({ status: 200, data });
+    const params = { search: '737 SB', cursor: 'opaque-cursor', limit: 24 };
+
+    await expect(getCanonicalLibraryDocuments(params, controller.signal)).resolves.toBe(data);
+    expect(request.mock.calls).toEqual([[{
+      url: '/api/canonical-host/library/documents', method: 'GET', params,
+      signal: controller.signal,
+    }]]);
+  });
+
+  it('reads a selected saved quicklook without issuing a source or parsing request', async () => {
+    const controller = new AbortController();
+    const data = { result: null, fileReadPerformed: false };
+    request.mockResolvedValue({ status: 200, data });
+
+    await expect(getCanonicalLibraryQuicklook('WI-737/34', controller.signal)).resolves.toBe(data);
+    expect(request.mock.calls).toEqual([[{
+      url: '/api/canonical-host/work-items/WI-737%2F34/quicklook', method: 'GET',
+      signal: controller.signal,
+    }]]);
+  });
+
+  it.each(['resolved', 'rejected'])(
+    'invalidates the current session after lightweight read HTTP 401 (%s)', async (mode) => {
+      const generation = getCanonicalHostClientSessionGeneration();
+      const response = { status: 401, data: {} };
+      if (mode === 'resolved') request.mockResolvedValue(response);
+      else request.mockRejectedValue({ response });
+      await expect(getCanonicalLibraryDocuments()).rejects.toBeDefined();
+      expect(getCanonicalHostClientSessionGeneration()).toBe(generation + 1);
+      expect(isCanonicalHostClientSessionAuthenticationRequired()).toBe(true);
+    },
+  );
+
+  it.each([403, 404])('normalizes lightweight denial HTTP %s without invalidating the account', async (status) => {
+    const generation = getCanonicalHostClientSessionGeneration();
+    request.mockRejectedValue({ response: { status, data: {} } });
+    await expect(getCanonicalLibraryQuicklook('WI-DENIED')).rejects.toMatchObject({
+      code: 'CANONICAL_WORK_ITEM_NOT_FOUND',
+    });
+    expect(getCanonicalHostClientSessionGeneration()).toBe(generation);
+    expect(isCanonicalHostClientSessionAuthenticationRequired()).toBe(false);
+  });
+
+  it('retains the actual lightweight service failure without reporting file loss', async () => {
+    request.mockResolvedValue({ status: 503, data: { error: { code: 'DATABASE_UNAVAILABLE' } } });
+    await expect(getCanonicalLibraryDocuments()).rejects.toMatchObject({
+      statusCode: 503, code: 'DATABASE_UNAVAILABLE',
+    });
+  });
+
+  it('does not log intentional cancellation as a library read failure', async () => {
+    const controller = new AbortController();
+    const cancellation = { code: 'ERR_CANCELED' };
+    request.mockRejectedValue(cancellation);
+    controller.abort();
+    await expect(getCanonicalLibraryQuicklook('WI-A', controller.signal)).rejects.toBe(cancellation);
+    expect(logger.error).not.toHaveBeenCalled();
   });
 
   it('preserves document HTTP 500 for independent saved-review readback', async () => {

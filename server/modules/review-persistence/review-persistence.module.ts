@@ -8,6 +8,7 @@ import { ReviewAttachmentService } from './review-attachment.service';
 import { ReviewConversationController } from './review-conversation.controller';
 import { ReviewConversationRepository } from './review-conversation.repository';
 import { ReviewConversationService } from './review-conversation.service';
+import { OrdinaryArtifactStorageModule } from '../unified-reader/ordinary-artifact-storage.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { ReviewConversationService } from './review-conversation.service';
     IdentityModule,
     WorkItemRuntimeModule,
     DocumentManagementRuntimeModule,
+    OrdinaryArtifactStorageModule,
   ],
   controllers: [ReviewConversationController],
   providers: [

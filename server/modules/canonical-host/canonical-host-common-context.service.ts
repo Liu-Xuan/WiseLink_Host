@@ -12,9 +12,9 @@ import {
 } from '../review-persistence/review-conversation.repository';
 import { DocumentManagementHostedService } from '../document-management/src/hosted/nest';
 import { UNIFIED_ARTIFACT_STORE } from '../unified-reader/unified-reader.constants';
+import { UnifiedArtifactReadScope } from '../unified-reader/unified-artifact-read-scope';
 import { UnifiedReaderService } from '../unified-reader/unified-reader.service';
 import type { UnifiedArtifactStorePort } from '../unified-reader/unified-reader.types';
-import { assertNoDuplicateJsonKeys } from '../unified-reader/unified-reader.utils';
 import { MiaodaWorkItemRepository } from '../work-item/miaoda-work-item.repository';
 import type { FrozenReviewSourceRef } from './canonical-host-openclaw-review.contract';
 import {
@@ -79,6 +79,7 @@ export class CanonicalHostCommonContextService {
     workItem: CanonicalWorkItemProjection,
     tenantId: string,
     asOf: string,
+    readScope?: UnifiedArtifactReadScope,
   ): Promise<CanonicalCommonAssessmentContext> {
     // Service execution uses the existing WorkItem owner, not a service actor,
     // for ordinary discussion and cross-document access.
@@ -100,6 +101,7 @@ export class CanonicalHostCommonContextService {
           actorId: loaded.row.requestedByUserId,
         },
         { asOf },
+        readScope,
       )
     ).common;
   }
@@ -108,6 +110,9 @@ export class CanonicalHostCommonContextService {
     workItem: CanonicalWorkItemProjection,
     scope: CommonContextScope,
     history: CommonContextHistorySelection,
+    readScope: UnifiedArtifactReadScope = new UnifiedArtifactReadScope(
+      this.artifactStore,
+    ),
   ): Promise<{
     common: CanonicalCommonAssessmentContext;
     related: ReviewRelatedContextBuild;
@@ -116,7 +121,7 @@ export class CanonicalHostCommonContextService {
       .hasActiveOfficialActorMapping(scope)
       .catch(() => false);
     const [related, aggregate] = await Promise.all([
-      this.readRelatedContext(scope, workItem, actorMappingActive),
+      this.readRelatedContext(scope, workItem, actorMappingActive, readScope),
       actorMappingActive
         ? this.conversations.loadCurrent({
             ...scope,
@@ -154,6 +159,7 @@ export class CanonicalHostCommonContextService {
     scope: CommonContextScope,
     workItem: CanonicalWorkItemProjection,
     actorMappingActive: boolean,
+    readScope: UnifiedArtifactReadScope,
   ): Promise<ReviewRelatedContextBuild> {
     if (!this.reader || !workItem.package) {
       return unavailableReviewRelatedContext(
@@ -167,6 +173,8 @@ export class CanonicalHostCommonContextService {
       const allUnits = await this.reader.readAllSourceUnits({
         artifact: workItem.package.artifact,
         packageId: workItem.package.packageId,
+        documentVersionId: workItem.source.documentVersionId,
+        readScope,
       });
       const browserUnits = allUnits
         .map((unit, index) =>
@@ -191,6 +199,7 @@ export class CanonicalHostCommonContextService {
         scope,
         assessmentTarget,
         actorMappingActive,
+        readScope,
       );
       const mentions = candidates.map((mention) => {
         const target = resolved.get(mention.normalizedTarget);
@@ -285,6 +294,7 @@ export class CanonicalHostCommonContextService {
     scope: CommonContextScope,
     assessmentTarget: CanonicalRelatedContextAssessmentTarget | null,
     actorMappingActive: boolean,
+    readScope: UnifiedArtifactReadScope,
   ): Promise<Map<string, ResolvedReviewReferenceTarget>> {
     const targets = [
       ...new Set(
@@ -437,7 +447,7 @@ export class CanonicalHostCommonContextService {
           assessmentTarget,
           targetWorkItem,
         );
-        const packageBytes = await this.artifactStore.readActualBytes(
+        const packageBytes = await readScope.readActualBytes(
           targetWorkItem.package.artifact,
         );
         result.set(target, {
@@ -458,6 +468,7 @@ export class CanonicalHostCommonContextService {
             target,
             match.documentVersionId,
             applicability,
+            readScope,
           ),
         });
       }),
@@ -565,10 +576,9 @@ function relatedDocumentResourceRefs(
   normalizedTarget: string,
   documentVersionRef: string,
   applicability: CanonicalRelatedTargetApplicabilityResolution,
+  readScope: UnifiedArtifactReadScope,
 ): FrozenReviewSourceRef[] {
-  const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-  assertNoDuplicateJsonKeys(text);
-  const raw: unknown = JSON.parse(text) as unknown;
+  const raw: unknown = readScope.parseJson(bytes);
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
     throw new Error('REVIEW_RELATED_PACKAGE_JSON_INVALID');
   }

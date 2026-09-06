@@ -23,6 +23,7 @@ import type {
 } from '../action-attempt/action-attempt.types';
 import { ExternalDiscoveryService } from '../external-discovery/external-discovery.service';
 import { UNIFIED_ARTIFACT_STORE } from '../unified-reader/unified-reader.constants';
+import { UnifiedArtifactReadScope } from '../unified-reader/unified-artifact-read-scope';
 import type { UnifiedArtifactStorePort } from '../unified-reader/unified-reader.types';
 import {
   MiaodaWorkItemRepository,
@@ -485,6 +486,9 @@ export class CanonicalHostOpenClawOverallService {
     modelInput: OpenClawOverallSynthesisInput;
   }> {
     const baseRules = workItem.integratedAssessment!.baseRules;
+    const readScope: UnifiedArtifactReadScope = new UnifiedArtifactReadScope(
+      this.artifactStore,
+    );
     const discoveries = await packetInput(
       'OPENCLAW_OVERALL_DISCOVERY_READ_FAILED',
       () =>
@@ -503,10 +507,10 @@ export class CanonicalHostOpenClawOverallService {
       commonContext,
     ] = await Promise.all([
       packetInput('OPENCLAW_OVERALL_BASE_ARTIFACT_READ_FAILED', () =>
-        this.artifactStore.readActualBytes(baseRules.artifact),
+        readScope.readActualBytes(baseRules.artifact),
       ),
       packetInput('OPENCLAW_OVERALL_PACKAGE_ARTIFACT_READ_FAILED', () =>
-        this.artifactStore.readActualBytes(workItem.package!.artifact),
+        readScope.readActualBytes(workItem.package!.artifact),
       ),
       packetInput('OPENCLAW_OVERALL_DYNAMIC_CANDIDATE_BUILD_FAILED', () =>
         this.assessment.prepareDynamicRulesCandidate({
@@ -517,6 +521,7 @@ export class CanonicalHostOpenClawOverallService {
           generatedAt: timestamp,
           externalDiscovery: null,
           reviewedExternalManifest: null,
+          readScope,
         }),
       ),
       packetInput('OPENCLAW_OVERALL_ENGINEER_REVIEW_READ_FAILED', () =>
@@ -526,6 +531,7 @@ export class CanonicalHostOpenClawOverallService {
         workItem,
         attempt.tenantId,
         timestamp,
+        readScope,
       ),
     ]);
     assertDynamicCandidateSummary(
@@ -548,6 +554,7 @@ export class CanonicalHostOpenClawOverallService {
         sourceEvidenceCandidates,
         engineerReviewContext,
         commonContext,
+        readScope,
         outputCorrelationRef: attempt.triggerRequestId,
       }),
     };

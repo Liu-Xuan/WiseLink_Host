@@ -117,6 +117,30 @@ export const fileAttachmentArray = customType<{
   },
 });
 
+export const ordinaryArtifactLocator = pgTable("ordinary_artifact_locator", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  artifactRef: text("artifact_ref").notNull().unique(),
+  sha256: varchar("sha256", { length: 64 }).notNull(),
+  byteLength: bigint("byte_length", { mode: 'number' }).notNull(),
+  mediaType: varchar("media_type", { length: 160 }).notNull(),
+  bucketId: varchar("bucket_id", { length: 255 }).notNull(),
+  filePath: text("file_path").notNull(),
+  providerObjectId: varchar("provider_object_id", { length: 255 }).notNull(),
+  // System field: Creation time (auto-filled, do not modify)
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  // System field: Creator (auto-filled, do not modify)
+  createdBy: userProfile("_created_by").default(sql`CASE
+    WHEN (current_setting('app.user_id'::text, true) = ''::text) THEN NULL`),
+  // System field: Update time (auto-filled, do not modify)
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  // System field: Updater (auto-filled, do not modify)
+  updatedBy: userProfile("_updated_by").default(sql`CASE
+    WHEN (current_setting('app.user_id'::text, true) = ''::text) THEN NULL`),
+}, (table) => [
+  uniqueIndex("ordinary_artifact_locator_artifact_ref_key").on(table.artifactRef),
+  uniqueIndex("ordinary_artifact_locator_bucket_id_file_path_key").on(table.bucketId, table.filePath),
+]);
+
 export const configurationEvidenceQueryAttempt = pgTable("configuration_evidence_query_attempt", {
   id: uuid("id").primaryKey().defaultRandom(),
   tenantId: varchar("tenant_id", { length: 128 }).notNull(),
@@ -1361,6 +1385,7 @@ export const externalSearchRunTable = externalSearchRun;
 export const identityOauthStateTable = identityOauthState;
 export const identitySessionTable = identitySession;
 export const identitySubjectMappingTable = identitySubjectMapping;
+export const ordinaryArtifactLocatorTable = ordinaryArtifactLocator;
 export const reviewConversationTable = reviewConversation;
 export const reviewTurnTable = reviewTurn;
 export const translationKnowledgeCandidateTable = translationKnowledgeCandidate;

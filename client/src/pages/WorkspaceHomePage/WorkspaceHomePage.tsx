@@ -1,186 +1,55 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ArrowRight,
   CircleAlert,
   Clock3,
   FileBox,
-  FileClock,
   FileText,
   FolderTree,
-  LoaderCircle,
-  Network,
   RefreshCw,
   Search,
   Shield,
   Workflow,
 } from 'lucide-react';
 
-import type {
-  CanonicalDocumentParsingPageResponse,
-  CanonicalLibraryIndexNode,
-  CanonicalRelatedDocumentRelation,
-  CanonicalWorkItemProjection,
-} from '@shared/api.interface';
 import {
   getCanonicalHostIdentityContext,
   getCanonicalHostClientSessionGeneration,
   getDocumentParsingPage,
-  isCanonicalObjectNotFound,
   requireOfficialOauthSession,
   retryDevelopmentWorkItem,
 } from '@client/src/api/canonical-host';
-import NavigatorTree from '@client/src/features/navigation/NavigatorTree';
-import type {
-  NavigationNodeView,
-  NavigatorMode,
-} from '@client/src/features/navigation/treeMappers';
-import { humanState } from '@client/src/features/navigation/treeMappers';
 import { Button } from '@client/src/components/ui/button';
 import { Input } from '@client/src/components/ui/input';
 import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSessionProvider';
 import { useCurrentObjectContext } from '@client/src/app/providers/CurrentObjectContextProvider';
 import {
-  buildCurrentObjectContext,
-  buildEngineeringQuicklook,
+  buildLibraryObjectContext,
+  buildLibraryEngineeringQuicklook,
 } from '@client/src/features/navigation/contextual-navigation';
-import {
-  forgetRecentWorkItem,
-  readRecentWorkItems,
-  rememberRecentWorkItem,
-  type RecentWorkItemReference,
-  workItemIdFromLocator,
-} from '@client/src/utils/recent-work-items';
-
-import './workspace-home.css';
+import { workItemIdFromLocator } from '@client/src/utils/recent-work-items';
+import { createCanonicalDocumentParsingRouteHandoff } from '../DocumentParsingPage/document-parsing-load';
 import { HostedDevelopmentIntake } from './HostedDevelopmentIntake';
 import {
   assertSameWorkItemReparseReadback,
   assertSameWorkItemReparseRun,
   availableParseAction,
-  parseActionLabel,
 } from './reparse-completed-work-item';
-import { createCanonicalDocumentParsingRouteHandoff } from '../DocumentParsingPage/document-parsing-load';
 import EngineeringQuicklook from './EngineeringQuicklook';
 import {
   libraryReadErrorPresentation,
   type LibraryReadErrorPresentation,
 } from './library-read-error';
-
-type LibrarySelection = string;
-
-interface RelationNode {
-  id: LibrarySelection;
-  label: string;
-  detail: string;
-  icon: typeof FolderTree;
-  tone: 'blue' | 'teal' | 'amber' | 'purple' | 'slate';
-}
-
-const PHASE_LABELS: Record<CanonicalWorkItemProjection['phase'], string> = {
-  PARSE_REQUESTED: '等待解析',
-  PARSING: '解析中',
-  CANDIDATE_READBACK_VERIFIED: '候选待复核',
-  FAILED: '解析失败',
-  RECORDING_FAILED: '记录失败',
-};
-
-function byteLabel(value: number | null | undefined): string {
-  if (!Number.isFinite(value)) return '未返回';
-  const bytes = Number(value);
-  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${bytes.toLocaleString('zh-CN')} 字节`;
-}
-
-function relationRoleLabel(
-  role: CanonicalRelatedDocumentRelation['relationRole'],
-): string {
-  if (role === 'SELECTED_DOCUMENT_VERSION') return '当前文件版本';
-  if (role === 'PRODUCED_PARSED_PACKAGE') return '结构化解析结果';
-  if (role === 'HAS_OVERALL_SYNTHESIS') return '综合评估候选';
-  if (role === 'HAS_AEO_CANDIDATE') return '后续编写候选';
-  return '关联资料';
-}
-
-function relationDisplayLabel(
-  relation: CanonicalRelatedDocumentRelation,
-): string {
-  const label = relation.label?.trim() ?? '';
-  if (
-    !label ||
-    /OPENCLAW|ACTIONATTEMPT|SHA-?256|DOCUMENT\s*VERSION|WORK\s*ITEM|\b[0-9a-f]{40,64}\b|\b[0-9a-f]{8}-[0-9a-f-]{27,}\b|\b[A-Z][A-Z0-9_]{3,}\b/iu.test(
-      label,
-    )
-  ) {
-    return relationRoleLabel(relation.relationRole);
-  }
-  return label;
-}
-
-function contentKindLabel(kind: string): string {
-  const upper = kind.toUpperCase();
-  if (upper.includes('TITLE') || upper.includes('HEADING')) return '标题';
-  if (upper.includes('TABLE')) return '表格内容';
-  if (upper.includes('LIST')) return '列表内容';
-  if (upper.includes('PARAGRAPH') || upper.includes('TEXT')) return '正文';
-  return '结构化内容';
-}
-
-function phaseTone(
-  phase: CanonicalWorkItemProjection['phase'],
-): 'candidate' | 'loading' | 'danger' | 'muted' {
-  if (phase === 'CANDIDATE_READBACK_VERIFIED') return 'candidate';
-  if (phase === 'PARSING' || phase === 'PARSE_REQUESTED') return 'loading';
-  if (phase === 'FAILED' || phase === 'RECORDING_FAILED') return 'danger';
-  return 'muted';
-}
-
-function candidateStepCopy(
-  label: string,
-  summary: string,
-): {
-  label: string;
-  summary: string;
-} {
-  const source = `${label} ${summary}`.toLowerCase();
-
-  if (/document|version|source|bind|文件|版本|来源|绑定/u.test(source)) {
-    return {
-      label: '绑定当前受控文件',
-      summary: '当前文件版本已关联到这次工程评估。',
-    };
-  }
-  if (/parse|package|unit|解析|结构/u.test(source)) {
-    return {
-      label: '准备结构化内容',
-      summary: '结构化内容已准备，可进入原文与解析结果复核。',
-    };
-  }
-  if (/reader|query|reference|locator|检索|引用|定位/u.test(source)) {
-    return {
-      label: '定位资料依据',
-      summary: '已从当前受控资料中定位可供复核的内容。',
-    };
-  }
-  if (/dynamic|evaluation|criterion|评估|判断/u.test(source)) {
-    return {
-      label: '形成逐项判断',
-      summary: '已形成待工程师核对的逐项判断。',
-    };
-  }
-  if (/overall|synth|candidate|综合|候选/u.test(source)) {
-    return {
-      label: '汇总综合候选意见',
-      summary: '已汇总当前资料，结果仍需工程师复核。',
-    };
-  }
-
-  return {
-    label: '记录候选形成步骤',
-    summary: '该步骤已按当前资料状态记录，结果仍需工程师复核。',
-  };
-}
+import { useLibraryDocuments } from './useLibraryDocuments';
+import { useLibraryQuicklook } from './useLibraryQuicklook';
+import { LibraryDocumentDirectory } from './LibraryDocumentDirectory';
+import {
+  byteLabel,
+  documentLabel,
+  LIBRARY_PHASE_LABELS,
+} from './library-document-presentation';
+import './workspace-home.css';
 
 export default function WorkspaceHomePage() {
   const { authenticationRequired, sessionGeneration } = useCurrentUserSession();
@@ -189,304 +58,216 @@ export default function WorkspaceHomePage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const deepLinkedWorkItemId: string =
     searchParams.get('workItemId')?.trim() ?? '';
+  const search: string = searchParams.get('search')?.trim() ?? '';
+  const treeMode: string =
+    searchParams.get('mode') === 'matter' ? 'matter' : 'document';
   const [workItemId, setWorkItemId] = useState<string>('');
-  const [pageData, setPageData] =
-    useState<CanonicalDocumentParsingPageResponse | null>(null);
+  const [searchText, setSearchText] = useState<string>(search);
   const [loadedSessionGeneration, setLoadedSessionGeneration] = useState<
     number | null
   >(null);
-  const [selection, setSelection] = useState<LibrarySelection>('work-item');
-  const [treeMode, setTreeMode] = useState<NavigatorMode>(
-    searchParams.get('mode') === 'matter' ? 'matter' : 'document',
-  );
-  const [recentWorkItems, setRecentWorkItems] = useState<
-    RecentWorkItemReference[]
-  >([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<LibraryReadErrorPresentation | null>(null);
   const [developmentIntakeAvailable, setDevelopmentIntakeAvailable] =
     useState(false);
+  const [identityError, setIdentityError] =
+    useState<LibraryReadErrorPresentation | null>(null);
   const [refreshRevision, setRefreshRevision] = useState(0);
   const [retrying, setRetrying] = useState(false);
   const [retryError, setRetryError] = useState<string | null>(null);
+  const selectionRef = useRef(deepLinkedWorkItemId);
+  selectionRef.current = deepLinkedWorkItemId;
+  const directory = useLibraryDocuments(
+    search,
+    sessionGeneration,
+    authenticationRequired,
+    refreshRevision,
+  );
+  const quicklook = useLibraryQuicklook(
+    deepLinkedWorkItemId,
+    sessionGeneration,
+    authenticationRequired,
+    refreshRevision,
+  );
 
   useEffect(() => {
-    // 深链标识仅用于路由读取，不回显到用户输入框。
+    if (quicklook.accessDenied) directory.discard(deepLinkedWorkItemId);
+  }, [deepLinkedWorkItemId, directory.discard, quicklook.accessDenied]);
+
+  useEffect(() => setSearchText(search), [search]);
+  useEffect(() => {
     setWorkItemId('');
-    let cancelled = false;
+    setRetryError(null);
+  }, [deepLinkedWorkItemId, sessionGeneration]);
+
+  useEffect(() => {
+    let cancelled: boolean = false;
     const isCurrentSession = (): boolean =>
       !cancelled &&
       getCanonicalHostClientSessionGeneration() === sessionGeneration;
-    setLoading(true);
-    setPageData(null);
     setLoadedSessionGeneration(null);
-    setError(null);
-    setRecentWorkItems([]);
     setDevelopmentIntakeAvailable(false);
-    if (authenticationRequired) {
-      setLoading(false);
-      setError(
-        libraryReadErrorPresentation({ code: 'CANONICAL_PAGE_LOGIN_REQUIRED' }),
-      );
-      return () => {
-        cancelled = true;
-      };
-    }
-    void (async () => {
-      const identity = await getCanonicalHostIdentityContext();
-      if (!isCurrentSession()) return;
-      setLoadedSessionGeneration(sessionGeneration);
-      setDevelopmentIntakeAvailable(
-        identity.developmentIntakeAvailable === true,
-      );
-      setRecentWorkItems(readRecentWorkItems(identity));
-      if (!deepLinkedWorkItemId) {
-        setSelection('work-item');
-        return;
-      }
-      try {
-        const fresh = await getDocumentParsingPage(deepLinkedWorkItemId, '');
-        if (!isCurrentSession()) return;
-        setPageData(fresh);
-        setSelection('work-item');
-        rememberRecentWorkItem(identity, {
-          workItemId: fresh.workItem.workItemId,
-          family: fresh.workItem.classification.normalizedFamily,
-          documentLabel:
-            fresh.workItem.package?.documentIdentity?.documentCode ??
-            fresh.workItem.package?.title ??
-            fresh.workItem.source.documentId,
-          documentVersionId: fresh.workItem.source.documentVersionId,
+    setIdentityError(null);
+    if (!authenticationRequired) {
+      void getCanonicalHostIdentityContext()
+        .then((identity) => {
+          if (!isCurrentSession()) return;
+          setLoadedSessionGeneration(sessionGeneration);
+          setDevelopmentIntakeAvailable(
+            identity.developmentIntakeAvailable === true,
+          );
+        })
+        .catch((reason: unknown) => {
+          if (isCurrentSession())
+            setIdentityError(libraryReadErrorPresentation(reason));
         });
-        setRecentWorkItems(readRecentWorkItems(identity));
-      } catch (reason) {
-        if (!isCurrentSession()) return;
-        if (isCanonicalObjectNotFound(reason)) {
-          forgetRecentWorkItem(identity, deepLinkedWorkItemId);
-          setRecentWorkItems(readRecentWorkItems(identity));
-        }
-        setPageData(null);
-        setError(libraryReadErrorPresentation(reason));
-      }
-    })()
-      .catch((reason: unknown) => {
-        if (isCurrentSession()) {
-          setPageData(null);
-          setRecentWorkItems([]);
-          setError(libraryReadErrorPresentation(reason));
-        }
-      })
-      .finally(() => {
-        if (isCurrentSession()) setLoading(false);
-      });
-
+    }
     return () => {
       cancelled = true;
     };
-  }, [
-    authenticationRequired,
-    deepLinkedWorkItemId,
-    refreshRevision,
-    sessionGeneration,
-  ]);
+  }, [authenticationRequired, refreshRevision, sessionGeneration]);
 
-  const sessionDataVisible =
+  const sessionDataVisible: boolean =
     !authenticationRequired && loadedSessionGeneration === sessionGeneration;
-  const data =
-    sessionDataVisible && pageData?.workItem.workItemId === deepLinkedWorkItemId
-      ? pageData
-      : null;
-  const visibleRecentWorkItems = sessionDataVisible ? recentWorkItems : [];
-  const visibleDevelopmentIntakeAvailable =
+  const visibleDevelopmentIntakeAvailable: boolean =
     sessionDataVisible && developmentIntakeAvailable;
-  const projection = data?.workItem ?? null;
+  const data = quicklook.data;
+  const projection = data?.document ?? null;
   const currentObject = useMemo(
     () =>
-      data
-        ? buildCurrentObjectContext(
-            data,
+      projection
+        ? buildLibraryObjectContext(
+            projection,
             treeMode === 'matter' ? 'MATTER' : 'DOCUMENT',
           )
         : null,
-    [data, treeMode],
+    [projection, treeMode],
   );
   const engineeringQuicklook = useMemo(
-    () => (data ? buildEngineeringQuicklook(data) : null),
+    () => (data ? buildLibraryEngineeringQuicklook(data) : null),
     [data],
   );
-
-  useEffect(() => {
-    publishCurrentObject(currentObject);
-  }, [currentObject, publishCurrentObject]);
-  const phaseLabel = projection
-    ? PHASE_LABELS[projection.phase]
-    : '尚未选择工程评估';
-  const tone = projection ? phaseTone(projection.phase) : 'muted';
-  const parseAction = availableParseAction(
-    visibleDevelopmentIntakeAvailable,
-    projection,
+  useEffect(
+    () => publishCurrentObject(currentObject),
+    [currentObject, publishCurrentObject],
   );
-  const nodes = useMemo(() => {
-    if (!data) return [];
-    return data.libraryIndex.nodes;
-  }, [data]);
-  const recentFamilies = useMemo<
-    Array<{ family: string; documents: RecentWorkItemReference[] }>
-  >(() => {
-    const grouped: Map<string, RecentWorkItemReference[]> = new Map();
-    visibleRecentWorkItems.forEach(
-      (reference: RecentWorkItemReference): void => {
-        grouped.set(reference.family, [
-          ...(grouped.get(reference.family) ?? []),
-          reference,
-        ]);
-      },
-    );
-    return Array.from(grouped.entries()).map(
-      ([family, documents]: [string, RecentWorkItemReference[]]) => ({
-        family,
-        documents,
-      }),
-    );
-  }, [visibleRecentWorkItems]);
+  const error: LibraryReadErrorPresentation | null = authenticationRequired
+    ? libraryReadErrorPresentation({ code: 'CANONICAL_PAGE_LOGIN_REQUIRED' })
+    : identityError;
+  const phaseLabel: string = projection
+    ? (LIBRARY_PHASE_LABELS[projection.phase] ?? '状态待确认')
+    : '';
+  const canCheckParse: boolean =
+    visibleDevelopmentIntakeAvailable &&
+    !!projection &&
+    (projection.phase === 'PARSE_REQUESTED' ||
+      projection.phase === 'FAILED' ||
+      (projection.phase === 'CANDIDATE_READBACK_VERIFIED' &&
+        projection.packageRegistered));
 
-  const visibleRecentFamilies = recentFamilies;
-
-  const relations = useMemo<RelationNode[]>(() => {
-    if (!data) return [];
-    return data.relatedDocuments.relations.map(
-      (relation: CanonicalRelatedDocumentRelation): RelationNode => ({
-        id: relation.toNodeId,
-        label: relationDisplayLabel(relation),
-        detail: relationRoleLabel(relation.relationRole),
-        icon: FolderTree,
-        tone:
-          relation.relationRole === 'SELECTED_DOCUMENT_VERSION'
-            ? 'blue'
-            : relation.relationRole === 'PRODUCED_PARSED_PACKAGE'
-              ? 'amber'
-              : relation.relationRole === 'HAS_OVERALL_SYNTHESIS'
-                ? 'purple'
-                : relation.relationRole === 'HAS_AEO_CANDIDATE'
-                  ? 'slate'
-                  : 'teal',
-      }),
-    );
-  }, [data]);
+  function selectDocument(targetWorkItemId: string): void {
+    const params: URLSearchParams = new URLSearchParams(searchParams);
+    params.set('workItemId', targetWorkItemId);
+    setSearchParams(params);
+  }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
-    const normalized = workItemIdFromLocator(workItemId);
-    if (!normalized) return;
-    navigate(`/library?workItemId=${encodeURIComponent(normalized)}`);
+    const normalized: string | null = workItemIdFromLocator(workItemId);
+    if (normalized) selectDocument(normalized);
   }
 
-  function openWorkbench(targetNodeOverride?: string): void {
+  function handleSearch(event: FormEvent<HTMLFormElement>): void {
+    event.preventDefault();
+    const params: URLSearchParams = new URLSearchParams(searchParams);
+    if (searchText.trim()) params.set('search', searchText.trim());
+    else params.delete('search');
+    params.delete('workItemId');
+    setSearchParams(params);
+  }
+
+  function openWorkbench(targetNode: string = 'reader'): void {
     if (!projection) return;
-    const navigationOptions = data
-      ? {
-          state: {
-            documentParsingHandoff: createCanonicalDocumentParsingRouteHandoff(
-              data,
-              sessionGeneration,
-            ),
-          },
-        }
-      : undefined;
-    const selectedNode: CanonicalLibraryIndexNode | undefined = nodes.find(
-      (node: CanonicalLibraryIndexNode) => node.id === selection,
-    );
-    const targetNode: string =
-      targetNodeOverride ?? selectedNode?.targetNode ?? 'reader';
-    const targetTab: string =
-      targetNode === 'document'
-        ? 'source'
-        : targetNode === 'package'
-          ? 'source'
-          : targetNode;
+    const targetTab: string = targetNode === 'document' ? 'source' : targetNode;
     navigate(
-      `/work-items/${encodeURIComponent(projection.workItemId)}/documents?node=${encodeURIComponent(targetNode)}&tab=${encodeURIComponent(targetTab)}`,
-      navigationOptions,
+      `/work-items/${encodeURIComponent(projection.workItemId)}/documents?node=${targetNode}&tab=${targetTab}`,
     );
-  }
-
-  function handleTreeModeChange(mode: NavigatorMode): void {
-    setTreeMode(mode);
-    const params = new URLSearchParams(searchParams);
-    params.set('mode', mode);
-    setSearchParams(params, { replace: true });
-  }
-
-  function handleTreeSelect(node: NavigationNodeView): void {
-    setSelection(node.id);
-  }
-
-  function openReview(): void {
-    openWorkbench('review');
   }
 
   function locateQuicklookEvidence(sourceRefId: string): void {
     if (!projection || !sourceRefId) return;
     navigate(
       `/work-items/${encodeURIComponent(projection.workItemId)}/documents?node=reader&tab=reader&readerMode=source&sourceRef=${encodeURIComponent(sourceRefId)}`,
-      data
-        ? {
-            state: {
-              documentParsingHandoff:
-                createCanonicalDocumentParsingRouteHandoff(
-                  data,
-                  sessionGeneration,
-                ),
-            },
-          }
-        : undefined,
     );
   }
 
   function refresh(): void {
-    const currentLocator =
-      workItemId.trim() || searchParams.get('workItemId')?.trim();
-    if (!currentLocator) return;
-    setRefreshRevision((current) => current + 1);
+    setRefreshRevision((current: number) => current + 1);
   }
 
   async function retryExistingWorkItem(): Promise<void> {
-    if (!projection || parseAction === null || retrying) return;
-    const startedSessionGeneration = sessionGeneration;
+    if (!projection || !canCheckParse || retrying) return;
+    const startedSessionGeneration: number = sessionGeneration;
     const expected = {
       workItemId: projection.workItemId,
-      documentVersionId: projection.source.documentVersionId,
+      documentVersionId: projection.documentVersionId,
     };
+    const isCurrent = (): boolean =>
+      getCanonicalHostClientSessionGeneration() === startedSessionGeneration &&
+      selectionRef.current === expected.workItemId;
     setRetryError(null);
     setRetrying(true);
     try {
       await requireOfficialOauthSession();
+      if (!isCurrent()) return;
+      // Full source verification is explicit here, never part of the directory or quicklook.
+      const current = await getDocumentParsingPage(expected.workItemId, '');
+      if (!isCurrent()) return;
+      if (
+        current.workItem.workItemId !== expected.workItemId ||
+        current.workItem.source.documentVersionId !==
+          expected.documentVersionId ||
+        availableParseAction(true, current.workItem) === null
+      ) {
+        throw new Error('CANONICAL_PARSE_ACTION_NO_LONGER_AVAILABLE');
+      }
       const retried = await retryDevelopmentWorkItem(expected.workItemId);
       assertSameWorkItemReparseRun(retried, expected);
+      if (!isCurrent()) return;
       const readback = await getDocumentParsingPage(
         expected.workItemId,
         'applicability',
+        { freshness: 'mutation' },
       );
       assertSameWorkItemReparseReadback(readback, expected);
-      if (
-        getCanonicalHostClientSessionGeneration() !== startedSessionGeneration
-      ) {
-        return;
-      }
-      setPageData(readback);
-      setLoadedSessionGeneration(startedSessionGeneration);
+      if (!isCurrent()) return;
       navigate(
         `/work-items/${encodeURIComponent(expected.workItemId)}/documents?node=document&tab=source`,
+        {
+          state: {
+            documentParsingHandoff: createCanonicalDocumentParsingRouteHandoff(
+              readback,
+              sessionGeneration,
+            ),
+          },
+        },
       );
-    } catch {
-      setRetryError('重新解析未完成；原文件与工程评估已保留，请稍后再试。');
+    } catch (reason: unknown) {
+      if (isCurrent())
+        setRetryError(
+          reason instanceof Error &&
+            reason.message === 'CANONICAL_PARSE_ACTION_NO_LONGER_AVAILABLE'
+            ? '当前状态不支持此解析操作，请刷新资料状态后进入工作台核对。'
+            : libraryReadErrorPresentation(reason).message,
+        );
     } finally {
       setRetrying(false);
     }
   }
 
   return (
-    <main className="library-home" aria-busy={loading}>
+    <main
+      className="library-home"
+      aria-busy={directory.loading || quicklook.loading}
+    >
       <header className="library-home-header">
         <div>
           <p className="library-home-eyebrow">
@@ -494,12 +275,12 @@ export default function WorkspaceHomePage() {
           </p>
           <h1>资料库</h1>
           <p className="library-home-lede">
-            选择最近访问的资料查看工程快览，进入统一工作台继续评估与复核。
+            检索已登记资料，查看工程快览，进入统一工作台继续评估与讨论。
           </p>
         </div>
         <div className="library-home-status" aria-label="当前资料库视图">
-          <span>{treeMode === 'document' ? '文档族' : '工程评估'}</span>
-          <strong>{visibleRecentWorkItems.length} 项最近资料</strong>
+          <span>当前账户的资料</span>
+          <strong>已加载 {directory.items.length} 项</strong>
         </div>
       </header>
 
@@ -521,7 +302,7 @@ export default function WorkspaceHomePage() {
               <span className="library-section-label">已有工程评估</span>
               <h2 id="library-query-title">打开已有资料</h2>
               <p className="library-query-note">
-                粘贴 WiseLink 工作链接，只按当前用户权限读取，不会改变现有结果。
+                粘贴 WiseLink 工作链接，按当前账户权限读取已保存摘要。
               </p>
             </div>
             <form className="library-query-form" onSubmit={handleSubmit}>
@@ -541,20 +322,14 @@ export default function WorkspaceHomePage() {
                 <Button
                   type="submit"
                   size="lg"
-                  disabled={!workItemId.trim() || loading}
+                  disabled={!workItemId.trim() || authenticationRequired}
                   data-ai-section-type="button"
                 >
-                  {loading ? (
-                    <LoaderCircle className="library-spin" aria-hidden="true" />
-                  ) : (
-                    <ArrowRight aria-hidden="true" />
-                  )}
-                  {loading ? '读取中…' : '定位资料'}
+                  <ArrowRight aria-hidden="true" /> 定位资料
                 </Button>
               </div>
             </form>
           </section>
-
           {visibleDevelopmentIntakeAvailable ? (
             <HostedDevelopmentIntake />
           ) : null}
@@ -569,296 +344,129 @@ export default function WorkspaceHomePage() {
             <span>{error.message}</span>
           </div>
           <Button type="button" variant="outline" onClick={refresh}>
-            <RefreshCw aria-hidden="true" />
-            重试
+            <RefreshCw aria-hidden="true" /> 重试
           </Button>
         </div>
       ) : null}
 
-      <>
-        <section className="library-surface" aria-label="最近访问与工程快览">
-          <section className="library-tree-panel" aria-label="最近访问列表">
-            <div className="library-panel-heading">
-              <div>
-                <span className="library-section-label">浏览资料</span>
-                <h2>最近访问</h2>
-              </div>
-              <FolderTree aria-hidden="true" />
-            </div>
-            <p className="library-recent-boundary">
-              仅含当前用户在此浏览器打开过的记录，不代表全部授权资料。内容与状态以每次服务端读取为准。
-            </p>
-            <div className="library-tree-recent-wrapper">
-              {visibleRecentWorkItems.length > 0 ? (
-                <div
-                  className="library-recent-list"
-                  aria-label="最近访问的工程评估"
-                >
-                  <div className="library-recent-heading">
-                    <FileClock aria-hidden="true" />
-                    <span>
-                      按资料类型分组 · {visibleRecentWorkItems.length} 项
-                    </span>
+      <section className="library-surface" aria-label="资料目录与工程快览">
+        <section className="library-tree-panel" aria-label="当前账户资料目录">
+          <LibraryDocumentDirectory
+            directory={directory}
+            authenticationRequired={authenticationRequired}
+            search={search}
+            searchText={searchText}
+            selectedWorkItemId={deepLinkedWorkItemId}
+            quicklookLoading={quicklook.loading}
+            onSearchTextChange={setSearchText}
+            onSearch={handleSearch}
+            onRefresh={refresh}
+            onSelect={selectDocument}
+          />
+
+          {projection ? (
+            <details className="library-selected-details">
+              <summary>当前选择 · 资料登记与解析操作</summary>
+              <section
+                className="library-preview-panel"
+                aria-label="资料登记与解析操作"
+              >
+                <div className="library-preview-title">
+                  <div className="library-document-icon">
+                    <FolderTree aria-hidden="true" />
                   </div>
-                  {visibleRecentFamilies.map((group) => (
-                    <section
-                      className="library-recent-group"
-                      key={group.family}
-                    >
-                      <h3>
-                        <FolderTree aria-hidden="true" /> {group.family}
-                      </h3>
-                      <ul className="library-recent-rows">
-                        {group.documents.map(
-                          (reference: RecentWorkItemReference) => (
-                            <li
-                              className={`library-recent-item${reference.workItemId === deepLinkedWorkItemId ? ' is-selected' : ''}`}
-                              key={reference.workItemId}
-                            >
-                              <button
-                                className="library-recent-open"
-                                type="button"
-                                aria-pressed={
-                                  reference.workItemId === deepLinkedWorkItemId
-                                }
-                                onClick={() =>
-                                  navigate(
-                                    `/library?workItemId=${encodeURIComponent(reference.workItemId)}&mode=${treeMode}`,
-                                  )
-                                }
-                              >
-                                <FileText aria-hidden="true" />
-                                <span>
-                                  <strong>{reference.documentLabel}</strong>
-                                  <small>
-                                    {reference.workItemId ===
-                                    deepLinkedWorkItemId
-                                      ? loading
-                                        ? '正在读取…'
-                                        : (error?.title ?? '已选择')
-                                      : '最近访问 · 点击读取'}
-                                  </small>
-                                </span>
-                                <ArrowRight aria-hidden="true" />
-                              </button>
-                            </li>
-                          ),
-                        )}
-                      </ul>
-                    </section>
-                  ))}
-                  <p className="library-recent-boundary">
-                    最近访问仅用于导航，不保存资料内容、权限或候选状态。
-                  </p>
-                </div>
-              ) : (
-                <div className="library-tree-empty">
-                  <FileBox aria-hidden="true" />
-                  <strong>
-                    {loading ? '正在读取最近访问…' : '尚无最近资料'}
-                  </strong>
-                  <p>
-                    {visibleDevelopmentIntakeAvailable
-                      ? '粘贴已有工作链接，或在上方上传 PDF 创建工程评估；打开过的资料会按当前用户显示在这里。'
-                      : '粘贴团队共享的工作链接打开资料；最近访问只用于当前用户的导航。'}
-                  </p>
-                </div>
-              )}
-            </div>
-            {projection ? (
-              <details className="library-selected-details">
-                <summary>当前选择 · 解析操作与来源详情</summary>
-                <NavigatorTree
-                  nodes={nodes}
-                  mode={treeMode}
-                  onModeChange={handleTreeModeChange}
-                  selectedId={selection}
-                  onSelect={handleTreeSelect}
-                />
-                <section
-                  className="library-preview-panel"
-                  aria-label="资料预览与概述"
-                >
-                  <div className="library-panel-heading">
-                    <div>
-                      <span className="library-section-label">当前选择</span>
-                      <h2>资料预览</h2>
-                    </div>
-                    <span className={`library-phase library-phase--${tone}`}>
-                      {phaseLabel}
-                    </span>
+                  <div>
+                    <h3>{documentLabel(projection)}</h3>
+                    <p>{projection.originalFilename}</p>
                   </div>
-                  <div className="library-preview-title">
-                    <div className="library-document-icon">
-                      <FileText aria-hidden="true" />
-                    </div>
-                    <div>
-                      <h3>
-                        {projection.package?.documentIdentity?.documentCode ??
-                          projection.package?.title ??
-                          '当前工程评估'}
-                      </h3>
-                      <p>
-                        {projection.classification.normalizedFamily} ·
-                        当前受控版本
-                      </p>
-                    </div>
-                    <div className="library-preview-actions">
-                      {parseAction !== null ? (
-                        <Button
-                          type="button"
-                          size="sm"
-                          disabled={retrying}
-                          onClick={() => void retryExistingWorkItem()}
-                        >
-                          <RefreshCw
-                            className={retrying ? 'library-spin' : undefined}
-                            aria-hidden="true"
-                          />
-                          {retrying
-                            ? parseAction === 'RESUME_PENDING'
-                              ? '继续解析中…'
-                              : '重新解析中…'
-                            : parseActionLabel(parseAction)}
-                        </Button>
-                      ) : null}
+                  <div className="library-preview-actions">
+                    {canCheckParse ? (
                       <Button
                         type="button"
                         size="sm"
-                        variant="outline"
-                        onClick={() => openWorkbench()}
+                        disabled={retrying}
+                        onClick={() => void retryExistingWorkItem()}
                       >
-                        <Workflow aria-hidden="true" />
-                        进入工作台
+                        <RefreshCw
+                          className={retrying ? 'library-spin' : undefined}
+                          aria-hidden="true"
+                        />
+                        {retrying
+                          ? '正在核对并解析…'
+                          : projection.phase === 'PARSE_REQUESTED'
+                            ? '继续解析'
+                            : '重新解析'}
                       </Button>
-                    </div>
+                    ) : null}
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => openWorkbench()}
+                    >
+                      <Workflow aria-hidden="true" /> 进入工作台
+                    </Button>
                   </div>
-                  {retryError ? (
-                    <p className="library-inline-empty" role="alert">
-                      {retryError}
-                    </p>
-                  ) : null}
-                  <dl className="library-facts">
-                    <div>
-                      <dt>
-                        <Shield aria-hidden="true" />
-                        当前状态
-                      </dt>
-                      <dd>{phaseLabel}</dd>
-                    </div>
-                    <div>
-                      <dt>
-                        <Clock3 aria-hidden="true" />
-                        文件版本
-                      </dt>
-                      <dd>当前受控版本</dd>
-                    </div>
-                    <div>
-                      <dt>
-                        <FileBox aria-hidden="true" />
-                        文件大小
-                      </dt>
-                      <dd>{byteLabel(projection.source.sourceByteLength)}</dd>
-                    </div>
-                    <div>
-                      <dt>
-                        <Network aria-hidden="true" />
-                        可定位原文
-                      </dt>
-                      <dd>{projection.package?.sourceRefCount ?? 0} 处</dd>
-                    </div>
-                  </dl>
-                  <details className="library-preview-details">
-                    <summary>查看解析与来源摘要</summary>
-                    <div className="library-preview-block">
-                      <div className="library-block-heading">
-                        <span>候选形成记录</span>
-                        <strong>
-                          {data.workbenchAudit.reader.queryResultCount}{' '}
-                          条原文命中
-                        </strong>
-                      </div>
-                      <div className="library-content-list">
-                        {data.workbenchAudit.candidateFormationSteps.map(
-                          (step) => {
-                            const copy = candidateStepCopy(
-                              step.label,
-                              step.summary,
-                            );
-                            return (
-                              <article key={step.id}>
-                                <div>
-                                  <strong>{copy.label}</strong>
-                                  <span>
-                                    {humanState(step.status) ?? '状态待确认'}
-                                  </span>
-                                </div>
-                                <p>{copy.summary}</p>
-                              </article>
-                            );
-                          },
-                        )}
-                      </div>
-                    </div>
-                    <div className="library-preview-block">
-                      <div className="library-block-heading">
-                        <span>已绑定来源内容</span>
-                        <strong>
-                          {data.queryResults.length} 个当前返回单元
-                        </strong>
-                      </div>
-                      {data.queryResults.length ? (
-                        <div className="library-content-list">
-                          {data.queryResults.slice(0, 4).map((result) => (
-                            <article key={result.unitId}>
-                              <div>
-                                <strong>{contentKindLabel(result.kind)}</strong>
-                              </div>
-                              <p>{result.text}</p>
-                            </article>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="library-inline-empty">
-                          当前没有可显示的来源内容。
-                        </p>
-                      )}
-                    </div>
-                  </details>
-                  {relations.length > 0 ? (
-                    <details className="library-mobile-relations">
-                      <summary>查看关联资料（{relations.length}）</summary>
-                      <ul>
-                        {relations.map((relation) => (
-                          <li key={relation.id}>
-                            <strong>{relation.label}</strong>
-                            <span>{relation.detail}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </details>
-                  ) : null}
-                </section>
-              </details>
-            ) : null}
-          </section>
-
-          <EngineeringQuicklook
-            title={
-              projection?.package?.documentIdentity?.documentCode ??
-              projection?.package?.title ??
-              '当前选择'
-            }
-            quicklook={engineeringQuicklook}
-            loading={loading && Boolean(deepLinkedWorkItemId)}
-            readError={error}
-            onOpenWorkbench={() => openWorkbench('reader')}
-            onContinueReview={openReview}
-            onOpenFamily={() => openWorkbench('document')}
-            onLocateEvidence={locateQuicklookEvidence}
-          />
+                </div>
+                {retryError ? (
+                  <p className="library-inline-empty" role="alert">
+                    {retryError}
+                  </p>
+                ) : null}
+                <dl className="library-facts">
+                  <div>
+                    <dt>
+                      <Shield aria-hidden="true" /> 已登记状态
+                    </dt>
+                    <dd>{phaseLabel}</dd>
+                  </div>
+                  <div>
+                    <dt>
+                      <Clock3 aria-hidden="true" /> 文件版本
+                    </dt>
+                    <dd>
+                      {projection.businessRevision || '版本未标注'} ·{' '}
+                      {projection.selectedVersionIsCurrent
+                        ? '当前登记'
+                        : '历史版本'}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>
+                      <FileBox aria-hidden="true" /> 文件大小
+                    </dt>
+                    <dd>{byteLabel(projection.byteLength)}</dd>
+                  </div>
+                  <div>
+                    <dt>
+                      <FileText aria-hidden="true" /> 解析包登记
+                    </dt>
+                    <dd>
+                      {projection.packageRegistered
+                        ? '已登记，正文未核验'
+                        : '尚未登记'}
+                    </dd>
+                  </div>
+                </dl>
+                <p className="library-recent-boundary">
+                  这些是已保存的登记信息。打开工作台原文或发起解析操作时，才读取并核对实际来源。
+                </p>
+              </section>
+            </details>
+          ) : null}
         </section>
-      </>
+
+        <EngineeringQuicklook
+          title={projection ? documentLabel(projection) : '当前选择'}
+          quicklook={engineeringQuicklook}
+          loading={quicklook.loading}
+          readError={quicklook.error ?? error}
+          onOpenWorkbench={() => openWorkbench('reader')}
+          onContinueReview={() => openWorkbench('review')}
+          onOpenFamily={() => openWorkbench('document')}
+          onLocateEvidence={locateQuicklookEvidence}
+        />
+      </section>
     </main>
   );
 }

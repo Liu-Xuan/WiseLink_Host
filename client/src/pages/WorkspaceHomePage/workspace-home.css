@@ -2711,6 +2711,58 @@
   list-style: none;
 }
 
+.library-catalog-search {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0;
+}
+
+.library-catalog-search > label {
+  color: var(--wl-muted);
+  font-size: var(--wl-text-meta);
+}
+
+.library-catalog-more {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.library-catalog-error,
+.library-quicklook-read-error {
+  padding: 12px;
+  border: 1px solid var(--wl-border-strong);
+  border-radius: var(--wl-radius-md);
+  color: var(--wl-ink);
+  background: var(--wl-sheet-muted);
+  font-size: var(--wl-text-meta);
+}
+
+.library-catalog-error {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.library-catalog-error > svg {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+}
+
+.library-catalog-error > div {
+  flex: 1 1 180px;
+}
+
+.library-catalog-error p,
+.library-quicklook-read-error p {
+  margin: 5px 0 0;
+  line-height: 1.6;
+}
+
 .library-recent-item.is-selected {
   border-color: var(--wl-border-strong);
   background: var(--wl-selected);

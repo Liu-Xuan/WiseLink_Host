@@ -719,7 +719,7 @@ async function callJsonTool(client, name, args) {
   }
 }
 
-async function createCheckpointStore(directory) {
+export async function createCheckpointStore(directory) {
   const root = requiredText(directory, 'REVIEW_CHECKPOINT_DIRECTORY_REQUIRED');
   await mkdir(root, { recursive: true, mode: 0o700 });
   await chmod(root, 0o700);
@@ -1084,7 +1084,7 @@ function readReviewCandidateArguments(payload) {
   };
 }
 
-function parseStrictJsonObject(value) {
+export function parseStrictJsonObject(value) {
   if (typeof value !== 'string') {
     throw new Error('REVIEW_MODEL_STRICT_JSON_REQUIRED');
   }
@@ -1152,7 +1152,7 @@ function hasNonEmptyValue(value) {
   return isRecord(value) && Object.keys(value).length > 0;
 }
 
-function isBlankAssistantContent(value) {
+export function isBlankAssistantContent(value) {
   return (
     value === undefined ||
     value === null ||
@@ -1234,7 +1234,7 @@ function buildReviewPrompt(input) {
   ].join('\n');
 }
 
-function actualModelVersion(
+export function actualModelVersion(
   payload,
   choice,
   message,

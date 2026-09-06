@@ -28,8 +28,8 @@ import {
 import { parseReviewAttachmentParsedArtifact } from '../review-persistence/review-attachment-artifact';
 import type { ReviewAttachmentBinding } from '../review-persistence/review-attachment.types';
 import { UNIFIED_ARTIFACT_STORE } from '../unified-reader/unified-reader.constants';
+import { UnifiedArtifactReadScope } from '../unified-reader/unified-artifact-read-scope';
 import type { UnifiedArtifactStorePort } from '../unified-reader/unified-reader.types';
-import { assertNoDuplicateJsonKeys } from '../unified-reader/unified-reader.utils';
 import { MiaodaWorkItemRepository } from '../work-item/miaoda-work-item.repository';
 import { CanonicalHostAssessmentService } from './canonical-host-assessment.service';
 import { CanonicalHostEngineerReviewService } from './canonical-host-engineer-review.service';
@@ -516,6 +516,9 @@ export class CanonicalHostOpenClawReviewService {
     binding: ReviewBinding,
     workItem: CanonicalWorkItemProjection,
   ): Promise<ReviewTurnTaskContract> {
+    const readScope: UnifiedArtifactReadScope = new UnifiedArtifactReadScope(
+      this.artifactStore,
+    );
     const [
       pageContext,
       adoptedContext,
@@ -527,7 +530,7 @@ export class CanonicalHostOpenClawReviewService {
     ] = await Promise.all([
       this.engineerReviews.pageContext(workItem),
       this.engineerReviews.modelContext(workItem),
-      this.artifactStore.readActualBytes(workItem.package!.artifact),
+      readScope.readActualBytes(workItem.package!.artifact),
       this.readBilingualContext(workItem),
       this.readAttachmentContext(binding),
       this.commonContext.build(
@@ -541,6 +544,7 @@ export class CanonicalHostOpenClawReviewService {
           reviewConversationId: binding.conversation.reviewConversationId,
           beforeTurnNo: binding.turn.turnNo,
         },
+        readScope,
       ),
       this.conversations.loadPreviousOpenClawTask({
         reviewConversationId: binding.conversation.reviewConversationId,
@@ -560,6 +564,7 @@ export class CanonicalHostOpenClawReviewService {
         tenantId: binding.conversation.tenantId,
         packageBytes,
         assessmentAsOf: binding.turn.createdAt.toISOString(),
+        readScope,
       }),
     );
     const packageResourceRefs = frozenPackageResourceRefs(
@@ -570,6 +575,7 @@ export class CanonicalHostOpenClawReviewService {
         ...packageReferencedSourceRefIds(resolvedPageContext, workItem),
         ...relatedContext.mentionSourceRefIds,
       ]),
+      readScope,
     );
     const adoptedInputs = adoptedContext.effective.map((review) => ({
       adoptedInputRef: `engineer-review:${review.sequence}`,
@@ -802,10 +808,9 @@ function frozenPackageResourceRefs(
   resourceArtifactRef: string,
   resourceArtifactSha256: string,
   referenced: Set<string>,
+  readScope: UnifiedArtifactReadScope,
 ): FrozenReviewSourceRef[] {
-  const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-  assertNoDuplicateJsonKeys(text);
-  const raw: unknown = JSON.parse(text) as unknown;
+  const raw: unknown = readScope.parseJson(bytes);
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
     throw new Error('REVIEW_PACKAGE_JSON_INVALID');
   }

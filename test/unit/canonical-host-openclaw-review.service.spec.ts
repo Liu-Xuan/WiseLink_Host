@@ -3,6 +3,7 @@ import type {
   CanonicalApplicabilityInputProjection,
   CanonicalWorkItemProjection,
   ReviewTurnAssistantCandidate,
+  UnifiedPackageArtifactDescriptor,
 } from '../../shared/api.interface';
 import {
   sealResultEnvelope,
@@ -24,8 +25,30 @@ import {
 import { CanonicalHostOpenClawReviewService } from '../../server/modules/canonical-host/canonical-host-openclaw-review.service';
 import { CanonicalHostCommonContextService } from '../../server/modules/canonical-host/canonical-host-common-context.service';
 import { encodeReviewAttachmentParsedArtifact } from '../../server/modules/review-persistence/review-attachment-artifact';
+import type { UnifiedArtifactReadScope } from '../../server/modules/unified-reader/unified-artifact-read-scope';
 
 describe('CanonicalHostOpenClawReviewService', () => {
+  it('shares one primary read across context and SourceRef assembly, but starts fresh for the next turn', async () => {
+    const harness = reviewHarness(false, true);
+    await harness.service.begin('RC-1', 'request-1');
+    const firstScope = harness.reader!.readAllSourceUnits.mock.calls[0][0].readScope;
+    expect(harness.artifactStore.readActualBytes.mock.calls.filter(
+      ([artifact]) => artifact.ref === 'artifact://package',
+    )).toHaveLength(1);
+    expect(harness.assessment.resolveStoredBaseSourceEvidenceRefs).toHaveBeenCalledWith(
+      expect.objectContaining({ readScope: firstScope }),
+    );
+    const { turn } = await harness.conversations.loadOpenClawTurnBinding();
+    turn.reviewTurnId = 'RT-2';
+    turn.requestId = 'request-2';
+    turn.turnNo = 2;
+    await harness.service.begin('RC-1', 'request-2');
+    expect(harness.artifactStore.readActualBytes.mock.calls.filter(
+      ([artifact]) => artifact.ref === 'artifact://package',
+    )).toHaveLength(2);
+    expect(harness.reader!.readAllSourceUnits.mock.calls[1][0].readScope).not.toBe(firstScope);
+  });
+
   it('continues native history only across successful turns with the same fresh authorized sources', async () => {
     const harness = reviewHarness(false, true);
     const first = await harness.service.begin('RC-1', 'request-1');
@@ -997,14 +1020,24 @@ function reviewHarness(
   };
   const reader = withRelatedContext
     ? {
-        readAllSourceUnits: jest.fn(async () => [
-          {
+        readAllSourceUnits: jest.fn(async (input: {
+          artifact: UnifiedPackageArtifactDescriptor;
+          documentVersionId?: string;
+          readScope?: UnifiedArtifactReadScope;
+        }) => {
+          // Probe the real common-context/Review wiring. Reader validation and
+          // parse counts are covered with actual packages in its own tests.
+          if (!input.readScope || input.documentVersionId !== 'DV-1') {
+            throw new Error('TEST_REVIEW_READER_SCOPE_MISSING');
+          }
+          input.readScope.parseJson(await input.readScope.readActualBytes(input.artifact));
+          return [{
             unitId: 'UNIT-REL-1',
             kind: 'paragraph',
             text: 'Please refer to 777-SL-31-064 for more information.',
             sourceRefIds: ['SRC-REL'],
-          },
-        ]),
+          }];
+        }),
       }
     : undefined;
   const documentManagement = withRelatedContext
@@ -1054,6 +1087,7 @@ function reviewHarness(
     assessment,
     serviceScope,
     artifactStore,
+    reader,
     expireLease() {
       row = {
         ...row!,

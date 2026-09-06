@@ -19,6 +19,7 @@ import {
 import { buildJobAidSourceEvidenceCandidates } from '../assessment-workbench/job-aid-runtime/sourceEvidenceCandidates.js';
 import { buildUnifiedSbJobAidAssessmentInput } from '../assessment-workbench/unified-assessment-input';
 import { UNIFIED_ARTIFACT_STORE } from '../unified-reader/unified-reader.constants';
+import { UnifiedArtifactReadScope } from '../unified-reader/unified-artifact-read-scope';
 import { UnifiedReaderService } from '../unified-reader/unified-reader.service';
 import type { UnifiedArtifactStorePort } from '../unified-reader/unified-reader.types';
 import {
@@ -166,6 +167,7 @@ export class CanonicalHostAssessmentService {
     generatedAt: string;
     externalDiscovery: HostedOpenClawDiscoveryResult | null;
     reviewedExternalManifest: unknown | null;
+    readScope?: UnifiedArtifactReadScope;
   }): Promise<PreparedDynamicRulesCandidate> {
     const activeRuleSet = await this.ruleSets.readActiveRuntime(input.tenantId);
     return this.prepareDynamicRulesCandidateWithRuleSet(input, activeRuleSet);
@@ -176,6 +178,7 @@ export class CanonicalHostAssessmentService {
     tenantId: string;
     packageBytes: Uint8Array;
     assessmentAsOf: string;
+    readScope?: UnifiedArtifactReadScope;
   }): Promise<Map<string, string[]>> {
     const baseRules = input.workItem.integratedAssessment?.baseRules;
     if (!baseRules) throw new Error('ASSESSMENT_STORED_BASE_RULES_REQUIRED');
@@ -196,6 +199,7 @@ export class CanonicalHostAssessmentService {
       documentVersionBinding: assessmentBinding(input.workItem),
       artifactBytes: input.packageBytes,
       assessmentAsOf: requiredIso(input.assessmentAsOf, 'assessmentAsOf'),
+      readScope: input.readScope,
     });
     const resolved = new Map<string, string[]>();
     for (const criterion of criteria) {
@@ -234,17 +238,22 @@ export class CanonicalHostAssessmentService {
       generatedAt: string;
       externalDiscovery: HostedOpenClawDiscoveryResult | null;
       reviewedExternalManifest: unknown | null;
+      readScope?: UnifiedArtifactReadScope;
     },
     ruleSet: CanonicalRuleSetRuntime,
   ): Promise<PreparedDynamicRulesCandidate> {
+    const readScope: UnifiedArtifactReadScope =
+      input.readScope ?? new UnifiedArtifactReadScope(this.artifactStore);
     const packageBytes = await this.readAcceptedPackage(
       input.workItem,
       input.permissionSnapshotVersion,
+      readScope,
     );
     const assessmentOptions = {
       workItemId: input.workItem.workItemId,
       documentVersionBinding: assessmentBinding(input.workItem),
       artifactBytes: packageBytes,
+      readScope,
       assessmentAsOf: requiredIso(input.assessmentAsOf, 'assessmentAsOf'),
       rulePack: ruleSet.rulePack,
       rulePackHash: ruleSet.rulePackHash,
@@ -262,6 +271,7 @@ export class CanonicalHostAssessmentService {
       documentVersionBinding: assessmentOptions.documentVersionBinding,
       artifactBytes: packageBytes,
       assessmentAsOf: assessmentOptions.assessmentAsOf,
+      readScope,
     });
     return {
       ...this.assessment.runCandidate({
@@ -371,28 +381,32 @@ export class CanonicalHostAssessmentService {
   private async readAcceptedPackage(
     workItem: CanonicalWorkItemProjection,
     permissionSnapshotVersion: string,
+    readScope: UnifiedArtifactReadScope,
   ): Promise<Uint8Array> {
     if (!workItem.package) throw new Error('ASSESSMENT_PACKAGE_REQUIRED');
-    const readback = await this.reader.readback({
-      workItemId: workItem.workItemId,
-      requestId: workItem.requestId,
-      documentVersionId: workItem.source.documentVersionId,
-      permissionSnapshotVersion,
-      package: {
-        packageId: workItem.package.packageId,
-        contractId: workItem.package.contractId,
-        contractRevision: workItem.package.contractRevision,
-        artifact: workItem.package.artifact,
+    const readback = await this.reader.readback(
+      {
+        workItemId: workItem.workItemId,
+        requestId: workItem.requestId,
+        documentVersionId: workItem.source.documentVersionId,
+        permissionSnapshotVersion,
+        package: {
+          packageId: workItem.package.packageId,
+          contractId: workItem.package.contractId,
+          contractRevision: workItem.package.contractRevision,
+          artifact: workItem.package.artifact,
+        },
+        query: 'applicability',
       },
-      query: 'applicability',
-    });
+      readScope,
+    );
     if (
       readback.status !== 'CANDIDATE_READBACK_VERIFIED' ||
       readback.fullValidatorProof.status !== 'FULL_STRICT_VALIDATOR_PASSED'
     ) {
       throw new Error('ASSESSMENT_READER_RECEIPT_REQUIRED');
     }
-    return this.artifactStore.readActualBytes(workItem.package.artifact);
+    return readScope.readActualBytes(workItem.package.artifact);
   }
 
   private async persistResult(result: AssessmentHostCandidateResult) {

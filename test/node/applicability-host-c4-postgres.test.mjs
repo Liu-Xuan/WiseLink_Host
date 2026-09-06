@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { InMemoryArtifactLocator } from '../support/offline-artifact-locator.mjs';
 import { createHash } from 'node:crypto';
 import {
   mkdir,
@@ -1100,7 +1101,7 @@ async function prepareOrdinaryArtifactOwner(fixture) {
   const store = new MiaodaOrdinaryArtifactStoreAdapter({
     getDefaultBucket: async () => 'bucket-c4-local',
     from: () => scoped,
-  });
+  }, new InMemoryArtifactLocator());
   const packageStored = await store.persistAndReadback(fixture.packageBytes);
   const bilingualStored = await store.persistAndReadback(
     fixture.bilingualBytes,

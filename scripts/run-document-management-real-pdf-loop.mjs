@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { InMemoryArtifactLocator } from '../test/support/offline-artifact-locator.mjs';
 import { access, readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -350,7 +351,7 @@ accept(
   'professional actual-byte SHA',
 );
 
-const artifactStore = new MiaodaOrdinaryArtifactStoreAdapter(fileService);
+const artifactStore = new MiaodaOrdinaryArtifactStoreAdapter(fileService, new InMemoryArtifactLocator());
 const reader = new UnifiedReaderService(
   artifactStore,
   new Frozen2CandidateReaderService(),

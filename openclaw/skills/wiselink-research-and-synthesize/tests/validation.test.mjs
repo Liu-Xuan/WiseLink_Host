@@ -4,6 +4,7 @@ import { copyFile, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { invokeHostedInitialModel } from '../scripts/invoke-hosted-initial-model.mjs';
 
 import {
   WISELINK_HOST_MCP_NAME,
@@ -88,6 +89,57 @@ const ARTIFACT_SHA = 'b'.repeat(64);
 const LEASE_TOKEN = '9bc7de9d-1e86-4c12-8e78-e27cce3aa0d4';
 const WORK_ITEM_ID = 'WI-CONTROL-001';
 
+test('official initial model adapter validates all four operation outputs without sending control bindings', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  const dynamic = await readJson(DYNAMIC_FIXTURE_URL);
+  const synthesis = synthesisInput();
+  const examples = [
+    ['TRANSLATE', translationInput(), translationOutput()],
+    ['EXTRACT_APPLICABILITY', await readJson(APPLICABILITY_TASK_FIXTURE_URL), await readJson(APPLICABILITY_AST_FIXTURE_URL)],
+    ['EVALUATE_JOBAID', dynamic, buildDynamicRulesOutput(dynamic)],
+    ['SYNTHESIZE_OVERALL', synthesis, synthesisOutput(synthesis)],
+  ];
+  for (const [operation, modelInput, candidate] of examples) {
+    let calls = 0;
+    globalThis.fetch = async (_url, init) => {
+      calls += 1;
+      const request = JSON.parse(init.body);
+      assert.equal(request.model, 'openclaw/wiselink-engineering');
+      assert.equal(request.user, 'initial:control-session-only');
+      assert.deepEqual(JSON.parse(request.messages[1].content), modelInput);
+      assert.equal(JSON.stringify(request.messages).includes('control-session-only'), false);
+      return new Response(JSON.stringify({ model: 'actual-official-model', choices: [{ message: {
+        role: 'assistant', content: null,
+        tool_calls: [{ type: 'function', function: { name: 'return_wiselink_initial_candidate', arguments: JSON.stringify({ candidate }) } }],
+      } }] }), { status: 200 });
+    };
+    const result = await invokeHostedInitialModel({ operation, modelInput }, {
+      gatewayChatCompletionsEnabled: true, gatewayUrl: 'https://official.invalid', gatewayToken: 'test-only',
+      configuredModelVersion: 'miaoda/miaoda-model-auto', sessionDiscriminator: 'control-session-only',
+    });
+    assert.deepEqual(result.output, candidate);
+    assert.equal(result.provenance.modelVersion, 'actual-official-model');
+    assert.equal(result.provenance.skillVersion, WISELINK_SKILL_VERSION);
+    assert.equal(calls, 1);
+  }
+});
+
+test('initial model rejects prose and altered translation before sealing or commit', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  const runtime = { gatewayChatCompletionsEnabled: true, gatewayUrl: 'https://official.invalid', gatewayToken: 'test-only', configuredModelVersion: 'miaoda/miaoda-model-auto', sessionDiscriminator: 'isolated' };
+  for (const malformed of ['prose', 'numeric']) {
+    const candidate = translationOutput();
+    if (malformed === 'numeric') candidate.candidateUnits[0].text = '保持 29 VDC 和 ATA 24。';
+    globalThis.fetch = async () => new Response(JSON.stringify({ choices: [{ message: {
+      content: malformed === 'prose' ? 'Extra answer' : null,
+      tool_calls: [{ type: 'function', function: { name: 'return_wiselink_initial_candidate', arguments: JSON.stringify({ candidate }) } }],
+    } }] }), { status: 200 });
+    await assert.rejects(invokeHostedInitialModel({ operation: 'TRANSLATE', modelInput: translationInput() }, runtime));
+  }
+});
+
 test('accepts shared background in new JobAid and Overall inputs while retaining old inputs', async () => {
   const commonContext = {
     primaryDocument: { documentVersionRef: 'DV-fixture-001', documentCode: '777-SL-31-064', businessRevision: '1', title: 'Issue analysis' },
@@ -124,7 +176,7 @@ test('pins exact20 MCP 1.2, five review tools, and hosted provenance', () => {
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c22',
+    'wiselink-research-and-synthesize@r09.c23',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,

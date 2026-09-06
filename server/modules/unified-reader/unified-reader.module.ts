@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 
 import { Frozen2CandidateReaderService } from './frozen2-candidate-reader.service';
-import { MiaodaOrdinaryArtifactStoreAdapter } from './miaoda-ordinary-artifact-store.adapter';
+import { OrdinaryArtifactStorageModule } from './ordinary-artifact-storage.module';
 import { UnconfiguredAeoSpecialistReaderAdapter } from './unconfigured-aeo-specialist-reader.adapter';
 import { UnconfiguredUnifiedArtifactStoreAdapter } from './unconfigured-unified-artifact-store.adapter';
 import { UnconfiguredU0FullPackageValidatorAdapter } from './unconfigured-u0-full-package-validator.adapter';
@@ -46,10 +46,10 @@ export function createAeoSpecialistReaderBridgeProvider(): Provider {
 }
 
 @Module({
+  imports: [OrdinaryArtifactStorageModule],
   controllers: [UnifiedReaderController],
   providers: [
     Frozen2CandidateReaderService,
-    MiaodaOrdinaryArtifactStoreAdapter,
     U0Frozen2FailureAdapterService,
     U0FullValidationService,
     UnifiedAcceptanceFacadeService,

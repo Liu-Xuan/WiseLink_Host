@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import type { UnifiedArtifactReadScope } from '../unified-reader/unified-artifact-read-scope';
 
 const PACKAGE_SCHEMA = 'techpub.parsed-package.v1';
 const CONTRACT_REVISION = 'frozen.2';
@@ -101,6 +102,7 @@ export interface UnifiedParsedPackageReadback {
 export function readFrozenUnifiedParsedPackageForSbAssessment(
   binding: DocumentVersionUnifiedArtifactBinding,
   artifactBytes: Uint8Array,
+  readScope?: UnifiedArtifactReadScope,
 ): UnifiedParsedPackageReadback {
   assertDocumentVersionBinding(binding);
   const record = binding.artifactRecord;
@@ -117,9 +119,9 @@ export function readFrozenUnifiedParsedPackageForSbAssessment(
   if (record.artifactHash !== artifactHash) {
     throw new Error('UNIFIED_ARTIFACT_BYTES_HASH_MISMATCH');
   }
-  const rawText = new TextDecoder('utf-8', { fatal: true }).decode(artifactBytes);
-  assertNoDuplicateJsonKeys(rawText);
-  const parsed: unknown = JSON.parse(rawText);
+  const parsed: unknown = readScope
+    ? readScope.parseJson(artifactBytes)
+    : parsePackageJson(artifactBytes);
   const pkg = recordValue(parsed, 'package');
   if (pkg.$schema !== PACKAGE_SCHEMA_ID
     || pkg.schemaVersion !== PACKAGE_SCHEMA
@@ -279,6 +281,12 @@ export function readFrozenUnifiedParsedPackageForSbAssessment(
       createsClosureDecision: false,
     },
   });
+}
+
+function parsePackageJson(bytes: Uint8Array): unknown {
+  const rawText: string = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  assertNoDuplicateJsonKeys(rawText);
+  return JSON.parse(rawText) as unknown;
 }
 
 function bindOwnerDocumentIdentity(

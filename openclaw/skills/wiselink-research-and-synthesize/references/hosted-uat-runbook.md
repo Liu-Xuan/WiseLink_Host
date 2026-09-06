@@ -1,4 +1,4 @@
-# 官方托管 R09 c22 发布与 UAT runbook
+# 官方托管 R09 c23 发布与 UAT runbook
 
 c19 新增页面自动领取，先安装兼容 Skill，再发布 Host，最后启用原生 command cron 与页面自动发送；本批具体步骤见 [页面自动领取](hosted-review-consumer.md)。下列历史五工具 UAT 保留给单轮 driver，不把它的手工启动结果当作页面自助闭环。
 
@@ -11,6 +11,10 @@ c21 在相同 C3/MCP/ResultEnvelope 上改为模型按需取证，不增加 Host
 c22 增加 Host 可选控制面会话路由，承接同一授权范围下连续成功 Turn 的原生讨论。两侧保留旧逐轮路径的兼容，
 先安装 c22，再发布返回 `nativeSessionKey` 的 Host；不更改 cron、模型配置、C3 输出或正式采用入口。
 只有同一真实事项的两个新页面 Turn 均自动返回候选并承接工程师补充，才记为页面跨轮验证通过。
+
+c23 增加新资料自动初始分析统一入口：先发布返回 `initialAnalysis` 的兼容 Host，再将既有 cron 切换到新入口及
+同一获准事项。四个 operation 与 Review 候选提交合同不变；只有实际新资料完成初始候选及两个新页面回合，
+其中一次承接方向纠正或新材料并解释判断变化，才记为真实连续使用通过。安装与本地测试不能替代它。
 
 本 runbook 只定义 Host C4+C5 accepted 后的真实验证顺序；本地实现不执行安装、发布、Session 创建、模型调用或
 云配置修改。
@@ -55,7 +59,7 @@ Task/Result schema、MCP tool 形状、authority 或安全语义改变时升级 
    优先读回非空、可识别的实际 `modelVersion`；响应未提供可读模型时才使用上述唯一 configured endpoint 作为可证明执行标识，不把它解释为未暴露的下游具体模型。重复 agent、
    不可读 primary、fallbacks 非数组或非空均在调用模型前停止；
 4. 同名 Skill 只有一个，安装版本精确
-   `wiselink-research-and-synthesize@r09.c22`；
+   `wiselink-research-and-synthesize@r09.c23`；
 5. Host MCP package/version 为
    `wiselink-openclaw-engineering-assessment@1.2.0`，exact 20 tools 可见；
 6. C3 successor 已进入 current Hosted release；只凭 Git commit 不等于 deployed readback；

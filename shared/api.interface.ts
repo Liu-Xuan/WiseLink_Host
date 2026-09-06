@@ -2485,12 +2485,42 @@ export interface CanonicalConfigurationEvidenceStatusReadModel {
   };
 }
 
+export type AilyInitialAnalysisOperation =
+  | 'TRANSLATE'
+  | 'EXTRACT_APPLICABILITY'
+  | 'EVALUATE_JOBAID'
+  | 'SYNTHESIZE_OVERALL';
+
+export interface AilyInitialAnalysisStageStatus {
+  status: 'PENDING' | 'BUSY' | 'SUCCEEDED' | 'WAITING_INPUT' | 'FAILED' | 'CONFLICT';
+  attemptRef: string | null;
+  attemptStatus: string | null;
+  terminalCode: string | null;
+}
+
+/** Read-only projection of existing current results and ActionAttempts. */
+export interface AilyInitialAnalysisStatus {
+  workItemRevision: number;
+  documentVersionId: string;
+  applicabilityContextRef: string | null;
+  status: 'NOT_READY' | 'REQUIRED' | 'BUSY' | 'WAITING_INPUT' | 'FAILED' | 'CONFLICT' | 'SUCCEEDED';
+  nextOperation: AilyInitialAnalysisOperation | null;
+  stages: {
+    translation: AilyInitialAnalysisStageStatus;
+    applicability: AilyInitialAnalysisStageStatus;
+    jobAid: AilyInitialAnalysisStageStatus;
+    overall: AilyInitialAnalysisStageStatus;
+  };
+  candidateOnly: true;
+}
+
 export interface AilyWorkItemStatusResponse {
   entry: CanonicalEntryFacadeResponse;
   packageSummary: AilyParsedPackageSummary | null;
   assessmentSummary: CanonicalAssessmentCandidateProjection | null;
   integratedAssessmentSummary: CanonicalIntegratedAssessmentProjection | null;
   configurationEvidenceReevaluation: AilyConfigurationEvidenceReevaluationStatus | null;
+  initialAnalysis?: AilyInitialAnalysisStatus;
 }
 
 export interface AilyParsedPackageQueryResponse {
@@ -2586,6 +2616,58 @@ export interface CanonicalLibraryIndexReadResponse {
     decisionId: string;
     permissionSnapshotVersion: string;
   };
+}
+
+/** Authenticated directory rows, read from business records without opening files. */
+export interface CanonicalLibraryDocumentSummary {
+  workItemId: string;
+  revision: number;
+  phase: string;
+  documentId: string;
+  documentVersionId: string;
+  documentCode: string;
+  businessRevision: string;
+  normalizedFamily: string;
+  originalFilename: string;
+  byteLength: number;
+  familyId: string;
+  selectedVersionIsCurrent: boolean;
+  packageRegistered: boolean;
+  /** Registration is not a successful source read in this request. */
+  sourceReadability: 'NOT_CHECKED';
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CanonicalLibraryDocumentsRequest {
+  search?: string;
+  cursor?: string;
+  limit?: number;
+}
+
+export interface CanonicalLibraryDocumentsResponse {
+  scope: 'CURRENT_USER_OWNED_WORK_ITEMS';
+  order: 'CREATED_AT_DESC_WORK_ITEM_ID_DESC';
+  items: CanonicalLibraryDocumentSummary[];
+  nextCursor: string | null;
+  fileReadPerformed: false;
+}
+
+export interface CanonicalLibraryQuicklookResponse {
+  document: CanonicalLibraryDocumentSummary;
+  /** Selected fields from the version-bound, verified result already in PostgreSQL. */
+  result: {
+    status: 'CANDIDATE_ONLY' | 'STALE';
+    revision: number;
+    sourceResultId: string;
+    engineeringSummary: CanonicalOverallEngineeringSummary | null;
+    overallCandidate: string | null;
+    missingInputs: string[];
+    gap: string | null;
+    staleReason: CanonicalOpenClawOverallProjection['staleReason'];
+    sourceCount: number;
+  } | null;
+  fileReadPerformed: false;
 }
 
 export interface CreateEngineeringMatterRequest {

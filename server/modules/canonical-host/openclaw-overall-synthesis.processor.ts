@@ -5,6 +5,7 @@ import type {
   CanonicalWorkItemProjection,
 } from '@shared/api.interface';
 import type { FeishuNativeOemSearchRun } from '../external-discovery/feishu-native-oem-monitoring-ingress';
+import type { UnifiedArtifactReadScope } from '../unified-reader/unified-artifact-read-scope';
 import {
   buildSelectiveOverallResynthesisPlan,
   summarizeSelectiveOverallResynthesis,
@@ -96,12 +97,18 @@ export function buildOpenClawOverallSynthesisInput(input: {
   engineerReviewContext: OpenClawEngineerReviewContext;
   outputCorrelationRef: string;
   commonContext?: CanonicalCommonAssessmentContext;
+  readScope?: UnifiedArtifactReadScope;
 }): OpenClawOverallSynthesisInput {
   const baseOutput = parseObject(
     input.baseArtifactBytes,
     'BASE_ARTIFACT_JSON_INVALID',
+    input.readScope,
   );
-  const pkg = parseObject(input.packageBytes, 'PACKAGE_ARTIFACT_JSON_INVALID');
+  const pkg = parseObject(
+    input.packageBytes,
+    'PACKAGE_ARTIFACT_JSON_INVALID',
+    input.readScope,
+  );
   const packageSourceRefs = requiredArray(
     pkg.sourceRefs,
     'SOURCE_CONTEXT_REFS_INVALID',
@@ -975,9 +982,16 @@ function engineeringSummaryStatements(
   );
 }
 
-function parseObject(bytes: Uint8Array, code: string): Record<string, unknown> {
+function parseObject(
+  bytes: Uint8Array,
+  code: string,
+  readScope?: UnifiedArtifactReadScope,
+): Record<string, unknown> {
   try {
-    return object(JSON.parse(new TextDecoder().decode(bytes)), code);
+    return object(
+      readScope ? readScope.parseJson(bytes) : JSON.parse(new TextDecoder().decode(bytes)),
+      code,
+    );
   } catch {
     throw new Error(code);
   }

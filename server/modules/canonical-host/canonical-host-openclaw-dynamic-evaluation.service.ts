@@ -25,6 +25,7 @@ import type {
   PreparedActionAttemptCommit,
 } from '../action-attempt/action-attempt.types';
 import { UNIFIED_ARTIFACT_STORE } from '../unified-reader/unified-reader.constants';
+import { UnifiedArtifactReadScope } from '../unified-reader/unified-artifact-read-scope';
 import type { UnifiedArtifactStorePort } from '../unified-reader/unified-reader.types';
 import type { DynamicEvaluationActionAttempt } from '../work-item/miaoda-work-item.repository';
 import { MiaodaDocumentVersionSourceResolver } from '../work-item/miaoda-document-version-source.resolver';
@@ -143,6 +144,9 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
         },
       ],
       buildModelInput: async (identity) => {
+        const readScope: UnifiedArtifactReadScope = new UnifiedArtifactReadScope(
+          this.artifactStore,
+        );
         // reserveAndClaim invokes this callback only for a genuinely new
         // attempt, before inserting it. Replays therefore never consult the
         // mutable ACTIVE head, while zero-head creation remains zero-write.
@@ -161,7 +165,9 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
             workItem,
             actor.tenantId,
             identity.createdAt.toISOString(),
+            readScope,
           ),
+          readScope,
         );
         return structuredClone(request.modelInput) as Record<string, unknown>;
       },
@@ -652,6 +658,7 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
     ruleSetBinding: OpenClawDynamicRuleSetBinding,
     reevaluationTaskBinding: DynamicConfigurationEvidenceTaskBinding | null,
     commonContext?: CanonicalCommonAssessmentContext,
+    readScope?: UnifiedArtifactReadScope,
   ) {
     const timestamp = attempt.createdAt.toISOString();
     const candidate =
@@ -664,6 +671,7 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
           generatedAt: timestamp,
           externalDiscovery: null,
           reviewedExternalManifest: null,
+          readScope,
         },
         ruleSet,
       );

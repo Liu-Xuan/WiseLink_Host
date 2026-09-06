@@ -67,6 +67,7 @@ import {
 import { CanonicalEntryFacadeService } from './canonical-entry-facade.service';
 import { projectConfigurationEvidenceReevaluationStatus } from './configuration-evidence/configuration-evidence-reevaluation.state';
 import { CanonicalFailureRecordingService } from './canonical-failure-recording.service';
+import { CanonicalHostInitialAnalysisStatusService } from './canonical-host-initial-analysis-status.service';
 import {
   deriveTranslationConsumptionAxes,
   type CanonicalTranslationConsumptionBinding,
@@ -132,6 +133,7 @@ export class CanonicalHostVerticalService {
     private readonly documentManagement?: DocumentManagementHostedService,
     @Optional()
     private readonly workItems?: MiaodaWorkItemRepository,
+    private readonly initialAnalysisStatus?: CanonicalHostInitialAnalysisStatusService,
   ) {}
 
   async runPdf(
@@ -510,6 +512,12 @@ export class CanonicalHostVerticalService {
       exactWorkItemId,
       scope,
     );
+    const initialAnalysis = this.initialAnalysisStatus
+      ? await this.initialAnalysisStatus.project({
+          workItem: projection,
+          tenantId: scope.tenantId,
+        })
+      : undefined;
     return {
       entry: this.entryFacade.status(projection),
       packageSummary:
@@ -531,6 +539,7 @@ export class CanonicalHostVerticalService {
       integratedAssessmentSummary: projection.integratedAssessment ?? null,
       configurationEvidenceReevaluation:
         projectConfigurationEvidenceReevaluationStatus(projection),
+      ...(initialAnalysis ? { initialAnalysis } : {}),
     };
   }
 
