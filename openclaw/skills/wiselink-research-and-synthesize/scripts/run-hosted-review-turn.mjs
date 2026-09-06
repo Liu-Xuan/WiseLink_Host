@@ -433,6 +433,7 @@ export function summarizeHostedReviewModelOutputShape({
   httpOk,
   requestedModel,
   payload,
+  expectedFunctionNames = [REVIEW_OUTPUT_FUNCTION_NAME, REVIEW_READ_FUNCTION_NAME],
 }) {
   const choices = Array.isArray(payload?.choices) ? payload.choices : [];
   const choice = isRecord(choices[0]) ? choices[0] : null;
@@ -485,8 +486,7 @@ export function summarizeHostedReviewModelOutputShape({
           ['analysis', 'reasoning'].includes(String(item.type).toLowerCase()),
       ));
   const assistantContentBlank = isBlankAssistantContent(content);
-  const expectedFunctionNameMatched =
-    [REVIEW_OUTPUT_FUNCTION_NAME, REVIEW_READ_FUNCTION_NAME].includes(outputFunction?.name);
+  const expectedFunctionNameMatched = expectedFunctionNames.includes(outputFunction?.name);
   const functionArgumentsAccepted = argumentsParseResult === 'OBJECT';
   const outputChannelAccepted =
     choices.length === 1 &&
@@ -494,7 +494,7 @@ export function summarizeHostedReviewModelOutputShape({
     toolCall?.type === 'function' &&
     expectedFunctionNameMatched &&
     typeof argumentsText === 'string' &&
-    assistantContentBlank &&
+    isFunctionResponseContentSupported(content) &&
     !hasAnalysis &&
     functionArgumentsAccepted;
   return {
@@ -514,7 +514,7 @@ export function summarizeHostedReviewModelOutputShape({
     choiceCount: choices.length,
     hasAnalysis,
     outputChannel: outputChannelAccepted
-      ? 'FUNCTION_ARGUMENTS'
+      ? (assistantContentBlank ? 'FUNCTION_ARGUMENTS' : 'FUNCTION_ARGUMENTS_WITH_COMMENTARY')
       : 'REJECTED',
     assistantContent: {
       type: diagnosticContentType(content),
@@ -1000,7 +1000,7 @@ function validateModelOutputShape(value) {
     !Number.isSafeInteger(value.choiceCount) ||
     value.choiceCount < 0 ||
     typeof value.hasAnalysis !== 'boolean' ||
-    !['FUNCTION_ARGUMENTS', 'REJECTED'].includes(value.outputChannel) ||
+    !['FUNCTION_ARGUMENTS', 'FUNCTION_ARGUMENTS_WITH_COMMENTARY', 'REJECTED'].includes(value.outputChannel) ||
     ![
       'string',
       'array',
@@ -1062,7 +1062,7 @@ function readReviewCandidateArguments(payload) {
   const choice = payload.choices[0];
   const message = isRecord(choice?.message) ? choice.message : null;
   if (!message) throw new Error('REVIEW_GATEWAY_MESSAGE_INVALID');
-  if (!isBlankAssistantContent(message.content)) {
+  if (!isFunctionResponseContentSupported(message.content)) {
     throw new Error('REVIEW_GATEWAY_ASSISTANT_CONTENT_FORBIDDEN');
   }
   if (!Array.isArray(message.tool_calls) || message.tool_calls.length !== 1) {
@@ -1163,6 +1163,16 @@ export function isBlankAssistantContent(value) {
     value === null ||
     (typeof value === 'string' && value.trim() === '')
   );
+}
+
+// The official Gateway can return commentary alongside a structured client
+// tool call, including after its own empty-response continuation. Only the
+// separately validated function arguments are consumed. Text is not parsed,
+// forwarded in our next exchange, saved as a candidate, or treated as evidence.
+// This predicate alone never authorizes a response: callers still require one
+// exact function, strict JSON, no analysis, and the existing business checks.
+export function isFunctionResponseContentSupported(value) {
+  return value === undefined || value === null || typeof value === 'string';
 }
 
 function reviewCandidateFunctionTool() {
