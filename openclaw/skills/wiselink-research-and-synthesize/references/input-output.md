@@ -86,7 +86,7 @@ runtimePolicy.modelPolicyRef = official-hosted-profile-config
 ResultEnvelope.modelVersion = 官方托管 profile/config 本轮选择后的非空、可读实际模型
 Task.skillPolicyRef = wiselink-research-and-synthesize@r09
 ApplicabilityTask.runtimePolicy.skillVersion = wiselink-research-and-synthesize@r09  # v1 历史字段名，语义为兼容线
-ResultEnvelope.skillVersion = wiselink-research-and-synthesize@r09.c26       # 实际安装包版本
+ResultEnvelope.skillVersion = wiselink-research-and-synthesize@r09.c27       # 实际安装包版本
 toolVersions.wiselink-openclaw-engineering-assessment = 1.2.0
 promptVersion = 当前实际运行非空版本
 ```
@@ -148,6 +148,11 @@ c26 的模型工具 schema 明确给出 `translatedUnits:[{index:integer,text:st
 驱动同时识别旧二元数组，以及实际 M3 的 `translatedUnits:{item:[{index:"0",text:...}]}` 包装；规范十进制
 字符串索引可无损转为安全整数。只允许这些精确形态，保留全部文本字节、顺序和来源；不修复不完整 JSON，
 不接受额外字段或模糊索引。安全观察记录格式/条数/首尾索引，错误不再只能依靠计数码猜测；完整 Host 输出仍由原绑定器生成。
+
+c27 修复已实测的 Gateway 附带说明文本与函数参数共存：只消费一个合法函数的严格 JSON 参数，纯文本说明不
+解析为结果、不进入候选或证据、不由驱动转发；仅记录安全形态。初始输出观察复用已有通道/类型/长度/计数观察，
+不保存原始 content/arguments。全文输出窗共享有界 20 分钟模型预算（可显式缩短），不改变 30 分钟租约和原生
+cron 的总时限；单响应的其他 operation 仍保持八分钟默认预算。没有超时重放或 provider fallback。
 
 Skill 做结构和绑定预检，并在封印/分块提交前依据同一 Host-frozen rulePack 镜像数字 token occurrence
 multiset 与 ATA token 逐字保真检查，失败诊断包含 `unitKey`；它不自动改写候选。Host 继续拥有术语、编号、
@@ -353,13 +358,17 @@ MCP 入参、认证和候选提交语义不变。
 `read_wiselink_review_sources({sourceRefIds})` 只委托驱动读取本轮已授权来源；
 `return_wiselink_review_candidate` 仍是无实现、不执行的最终序列化通道。
 `tool_choice=auto`、`parallel_tool_calls=false`、`n=1`。每次响应只有一个 choice 和一个上述 function call，
-assistant content 为 null 或空白，arguments 为 strict JSON object。其它函数、多个调用、包裹文本与 analysis 仍拒绝。
+arguments 为 strict JSON object。assistant content 可为 null、空白或官方 Gateway 附带的纯文本说明；只有工具参数
+被消费，附带文本不解析、不进入候选/证据或驱动的后续 exchange。其它函数、多个调用、纯文本结果、非文本
+content、analysis/reasoning 与参数中的包裹文本仍拒绝。
 同轮读取循环只传新增 tool exchange；实际读取批次随 model.result 保存，以便恢复原已读集合而不重跑模型。
 
 驱动在业务 strict parse 前先写 `model.output-shape.json` v2：只含 input argsHash、provider/model、HTTP/finish、
 choice/tool-call 数量、assistant content 类型/长度/空白状态与 SHA、function 名称匹配、arguments 类型/长度、raw JSON
 parse 分类、接受状态与 SHA；不含原始 content 或 arguments。该 checkpoint 在私有 `0700` 目录中以 `0600` 原子
 write-once 保存，不参与 replay 或业务状态判定。
+合法工具参数附带非空说明时，既有 `outputChannel` 记录 `FUNCTION_ARGUMENTS_WITH_COMMENTARY`；历史
+`FUNCTION_ARGUMENTS` / `REJECTED` 仍可读，业务 Task/ResultEnvelope 不增加字段。
 
 ```text
 mode=INTERACTIVE_REVIEW

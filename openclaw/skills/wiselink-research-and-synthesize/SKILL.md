@@ -12,7 +12,7 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（任务可绑定已登记的内置或用户授权自定义模型；仍经唯一官方 Hosted profile/Gateway）
-- Skill：`wiselink-research-and-synthesize@r09.c26`
+- Skill：`wiselink-research-and-synthesize@r09.c27`
 - Skill compatibility：`wiselink-research-and-synthesize@r09`（Host 最低接受 `r09.c10`）
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（既有 20 项能力；兼容新增的只读自动领取查询）
 - Host baseline：`6fd2655d27edc3851c745547efaf8796ad22c82c`
@@ -157,6 +157,11 @@ CAS；Skill 不声称这些步骤由模型完成。8. commit 响应未知时只�
   真实 M3 返回的 `translatedUnits:{item:[{index:"0",text:...},...]}`。只把规范十进制整数索引和明确字段无损映射，
   不猜索引、不重排、不丢行、不改译文；未知包装、额外字段、重复/跳号、超出请求窗口仍失败。
   output-shape 记录实际传输形态、条数和首尾索引，不保存原文、译文或私有推理。Host 输出合同不变。
+- c27 按官方 Gateway 工具响应协议区分函数参数与附带说明文本；唯一合法函数的严格 JSON 参数才进入候选校验。
+  附带的纯文本不解析为结果、不写入候选、不由驱动带入后续 exchange，也不作为证据；仅记录类型、长度和
+  `FUNCTION_ARGUMENTS_WITH_COMMENTARY` 安全形态。纯文本结果、多个调用、未知函数、analysis/reasoning 字段、
+  非文本 content 和不完整参数仍拒绝。该处理同样用于 Review，不改变 Host 的来源、数字保真、授权或提交校验。
+  全文多窗共享最多 20 分钟模型预算，仍受既有 30 分钟租约/cron 总时限约束；显式更短预算优先，超时不自动重放。
 - `rulePackId + rulePackVersion`、taskStartBinding、unit 数量/顺序、unitKey 与 SourceRef 集必须逐项一致。
 - Host TranslationRuleSet ResultGate 仍是编号、数值、单位、ATA/件号、表格和警示层级的最终权威。模型
   生成后、封印或上传前，Skill validator 读取同一 Host-frozen rulePack：`numericFidelity` 使用与 Host 相同的
@@ -316,8 +321,10 @@ Host business begin 之前停止。完整 MCP 结果写入权限为 `0600` 的�
 步骤只从 checkpoint 恢复；model response 在 strict parse 前只额外写入不含原文的 `model.output-shape` v2 0600
 write-once checkpoint；同轮后续响应按序号保存。驱动向模型提供 `read_wiselink_review_sources` 与
 `return_wiselink_review_candidate` 两个 client function：前者只委托驱动读取当前 Host 已授权来源，后者仅序列化最终候选。
-每次响应只有一个 choice、一个上述 function；assistant content 必须为 null 或空白，arguments 为 direct strict JSON object。
-其他函数、多 choice、多 tool call、fence、prose、analysis、array 或 null arguments 仍拒绝。begin/context/SourceRef/model
+每次响应只有一个 choice、一个上述 function，arguments 为 direct strict JSON object。assistant content 优先为 null
+或空白；官方 Gateway 附带的纯文本说明只记录安全形态，不解析、不进入候选/证据或驱动的后续 exchange。
+其他函数、多 choice、多 tool call、纯文本结果、analysis/reasoning、非文本 content，以及 fence/prose/array/null
+arguments 仍拒绝。begin/context/SourceRef/model
 的结果一旦不确定即停止且不重试；只有 commit 响应
 丢失时允许恰好一次只读 status 恢复。唯一例外是有 c8 原始日志严格证明 HTTP 404 在路由层未触达模型时，c12
 可将旧 `model.started` 原样归档并只恢复一次 model/commit，不重放任何已完成 Host 读取。模型只收到移除
@@ -428,7 +435,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - `modelVersion` 优先取响应中可读实际模型；绑定任务未回报实际模型时使用 `configured-route:<modelRef>`，旧无绑定任务使用无 fallback 的 configured endpoint。后两者只证明路由，不代表已暴露下游具体模型，也不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c26`
+- `skillVersion=wiselink-research-and-synthesize@r09.c27`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致

@@ -181,19 +181,95 @@ test('official initial model adapter validates all four operation outputs withou
   }
 });
 
-test('initial model rejects prose and altered translation before sealing or commit', async (t) => {
+test('initial model rejects prose-only, unsupported content, analysis, ambiguous calls and altered translation', async (t) => {
   const originalFetch = globalThis.fetch;
   t.after(() => { globalThis.fetch = originalFetch; });
   const runtime = { gatewayChatCompletionsEnabled: true, gatewayUrl: 'https://official.invalid', gatewayToken: 'test-only', configuredModelVersion: 'miaoda/miaoda-model-auto', sessionDiscriminator: 'isolated' };
-  for (const malformed of ['prose', 'numeric']) {
+  for (const malformed of ['prose-only', 'content-array', 'analysis', 'duplicate-call', 'numeric']) {
     const candidate = translationOutput();
     if (malformed === 'numeric') candidate.candidateUnits[0].text = '保持 29 VDC 和 ATA 24。';
     const generated = { translatedUnits: candidate.candidateUnits.map(({ text }, index) => [index, text]) };
+    const toolCall = { type: 'function', function: { name: 'return_wiselink_initial_candidate', arguments: JSON.stringify({ candidate: generated }) } };
     globalThis.fetch = async () => new Response(JSON.stringify({ choices: [{ message: {
-      content: malformed === 'prose' ? 'Extra answer' : null,
-      tool_calls: [{ type: 'function', function: { name: 'return_wiselink_initial_candidate', arguments: JSON.stringify({ candidate: generated }) } }],
+      content: malformed === 'prose-only' ? JSON.stringify({ candidate: generated }) : malformed === 'content-array' ? [] : null,
+      ...(malformed === 'analysis' ? { reasoning_content: 'DO-NOT-RETAIN' } : {}),
+      tool_calls: malformed === 'prose-only' ? [] : malformed === 'duplicate-call' ? [toolCall, toolCall] : [toolCall],
     } }] }), { status: 200 });
     await assert.rejects(invokeHostedInitialModel({ operation: 'TRANSLATE', modelInput: translationInput() }, runtime));
+  }
+});
+
+test('initial translation consumes only strict tool arguments and discards Gateway companion text', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  const input = translationInput();
+  input.sourceUnits = [0, 1].map((index) => ({ ...input.sourceUnits[0], unitKey: `commentary-unit-${index}` }));
+  const companion = 'COMPANION-TEXT-NOT-CANDIDATE'.padEnd(99, '.');
+  const observations = [];
+  let calls = 0;
+  globalThis.fetch = async (_url, init) => {
+    const request = JSON.parse(init.body);
+    assert.equal(JSON.stringify(request.messages).includes(companion), false);
+    const index = calls++;
+    return Response.json({ choices: [{ message: {
+      content: index === 0 ? companion : null,
+      tool_calls: [{ id: `commentary-call-${index}`, type: 'function', function: {
+        name: 'return_wiselink_initial_candidate',
+        arguments: JSON.stringify({ candidate: { translatedUnits: [{ index, text: '保持 28 VDC 和 ATA 24。' }] } }),
+      } }],
+    } }] });
+  };
+  const result = await invokeHostedInitialModel({ operation: 'TRANSLATE', modelInput: input }, {
+    gatewayChatCompletionsEnabled: true, gatewayUrl: 'https://official.invalid', gatewayToken: 'test-only',
+    configuredModelVersion: 'miaoda/minimax-m3', sessionDiscriminator: 'commentary-fixture',
+    observeModelOutput: (shape) => observations.push(shape),
+  });
+  assert.equal(calls, 2);
+  assert.equal(result.output.candidateUnits.length, 2);
+  assert.deepEqual(result.output.candidateUnits.map((unit) => unit.unitKey), input.sourceUnits.map((unit) => unit.unitKey));
+  assert.equal(observations[0].outputChannel, 'FUNCTION_ARGUMENTS_WITH_COMMENTARY');
+  assert.equal(observations[0].assistantContent.byteLength, 99);
+  assert.equal(observations[0].toolCall.count, 1);
+  assert.equal(observations[0].toolCall.nameMatched, true);
+  assert.equal(observations[0].hasAnalysis, false);
+  assert.equal(JSON.stringify({ result, observations }).includes(companion), false);
+});
+
+test('whole-document output windows share a bounded twenty-minute budget and honor an explicit shorter timeout', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  let now = 1_000;
+  t.mock.method(Date, 'now', () => now);
+  for (const scenario of [
+    { elapsed: 9 * 60_000, succeeds: true },
+    { elapsed: 21 * 60_000, succeeds: false },
+    { elapsed: 9 * 60_000, timeoutMs: 480_000, succeeds: false },
+  ]) {
+    now = 1_000;
+    let calls = 0;
+    const input = translationInput();
+    input.sourceUnits = [0, 1].map((index) => ({ ...input.sourceUnits[0], unitKey: `budget-unit-${index}` }));
+    globalThis.fetch = async () => {
+      const index = calls++;
+      now = 1_000 + scenario.elapsed;
+      return Response.json({ choices: [{ message: {
+        content: null, tool_calls: [{ id: `budget-call-${index}`, type: 'function', function: {
+          name: 'return_wiselink_initial_candidate',
+          arguments: JSON.stringify({ candidate: { translatedUnits: [{ index, text: '保持 28 VDC 和 ATA 24。' }] } }),
+        } }],
+      } }] });
+    };
+    const invoke = () => invokeHostedInitialModel({ operation: 'TRANSLATE', modelInput: input }, {
+      gatewayChatCompletionsEnabled: true, gatewayUrl: 'https://official.invalid', gatewayToken: 'test-only',
+      configuredModelVersion: 'miaoda/minimax-m3', sessionDiscriminator: 'budget-fixture', timeoutMs: scenario.timeoutMs,
+    });
+    if (scenario.succeeds) {
+      assert.equal((await invoke()).output.candidateUnits.length, 2);
+      assert.equal(calls, 2);
+    } else {
+      await assert.rejects(invoke(), /INITIAL_MODEL_TIMEOUT/u);
+      assert.equal(calls, 1);
+    }
   }
 });
 
@@ -512,7 +588,7 @@ test('pins exact20 MCP 1.2, five review tools, and hosted provenance', () => {
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c26',
+    'wiselink-research-and-synthesize@r09.c27',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -2720,6 +2796,7 @@ test('reads only requested fragments across native tool rounds and restores a co
   const requests = [];
   const reads = [];
   const calls = [];
+  const companion = 'REVIEW-COMPANION-NOT-EVIDENCE';
   let snapshotSaved = false;
   let commits = 0;
   const candidate = {
@@ -2729,6 +2806,7 @@ test('reads only requested fragments across native tool rounds and restores a co
   };
   globalThis.fetch = async (_url, init) => {
     const body = JSON.parse(init.body);
+    assert.equal(JSON.stringify(body.messages).includes(companion), false);
     requests.push(body);
     const round = requests.length;
     if (round === 1) assert.equal(reads.length, 0, 'no eager source prefetch');
@@ -2736,7 +2814,7 @@ test('reads only requested fragments across native tool rounds and restores a co
     const args = round === 1 ? { sourceRefIds: [primary] }
       : round === 2 ? { sourceRefIds: [primary, attachment] } : candidate;
     return Response.json({ model: 'fixture/provider', choices: [{ message: {
-      content: null, tool_calls: [{ id: `call-${round}`, type: 'function', function: {
+      content: companion, tool_calls: [{ id: `call-${round}`, type: 'function', function: {
         name, arguments: JSON.stringify(args),
       } }],
     } }] });
@@ -2773,6 +2851,11 @@ test('reads only requested fragments across native tool rounds and restores a co
   const options = { reviewConversationRef: reviewTask.reviewConversationRef, requestId: reviewTask.requestId, checkpointDir };
   const first = await runHostedReviewTurn(options, { callTool, invokeModel });
   assert.equal(first.ok, true);
+  for (const file of await readdir(checkpointDir)) {
+    assert.equal((await readFile(join(checkpointDir, file), 'utf8')).includes(companion), false);
+  }
+  const shape = JSON.parse(await readFile(join(checkpointDir, 'model.output-shape.json'), 'utf8'));
+  assert.equal(shape.value.outputChannel, 'FUNCTION_ARGUMENTS_WITH_COMMENTARY');
   assert.deepEqual(reads, [[primary], [attachment]], 'repeated ref is reused within the authorized turn');
   assert.equal(requests.length, 3);
   assert.equal(new Set(requests.map(({ user }) => user)).size, 1);
@@ -3397,7 +3480,7 @@ test('falls back to the configured model and records only output shape v2', asyn
   );
 });
 
-test('rejects prose, fences, arrays, null, analysis, and ambiguous output channels', async (t) => {
+test('accepts only tool arguments, rejects prose-only, wrappers, analysis and ambiguous calls', async (t) => {
   const originalFetch = globalThis.fetch;
   t.after(() => {
     globalThis.fetch = originalFetch;
@@ -3459,8 +3542,10 @@ test('rejects prose, fences, arrays, null, analysis, and ambiguous output channe
       },
     },
   ];
-  await assert.rejects(invoke(), /REVIEW_GATEWAY_ASSISTANT_CONTENT_FORBIDDEN/u);
+  assert.deepEqual((await invoke()).output, { candidateOnly: true });
   nextChoices = [{ message: { content: '{"candidateOnly":true}' } }];
+  await assert.rejects(invoke(), /REVIEW_GATEWAY_OUTPUT_FUNCTION_COUNT_INVALID/u);
+  nextChoices = [{ message: { content: [], tool_calls: [validToolCall()] } }];
   await assert.rejects(invoke(), /REVIEW_GATEWAY_ASSISTANT_CONTENT_FORBIDDEN/u);
   nextChoices = [
     {
@@ -3593,7 +3678,7 @@ test('classifies rejected forced-function output without retaining raw values', 
   assert.equal(nullValue.toolCall.rawJsonParseResult, 'NULL');
   assert.equal(nullValue.outputChannel, 'REJECTED');
   assert.equal(nonblankContent.assistantContent.isBlank, false);
-  assert.equal(nonblankContent.outputChannel, 'REJECTED');
+  assert.equal(nonblankContent.outputChannel, 'FUNCTION_ARGUMENTS_WITH_COMMENTARY');
   for (const shape of [
     analysis,
     prose,

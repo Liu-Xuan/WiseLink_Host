@@ -1,4 +1,4 @@
-# 官方托管 R09 c26 发布与 UAT runbook
+# 官方托管 R09 c27 发布与 UAT runbook
 
 c19 新增页面自动领取，先安装兼容 Skill，再发布 Host，最后启用原生 command cron 与页面自动发送；本批具体步骤见 [页面自动领取](hosted-review-consumer.md)。下列历史五工具 UAT 保留给单轮 driver，不把它的手工启动结果当作页面自助闭环。
 
@@ -30,6 +30,12 @@ c25 针对 M3 真实首轮 length / incomplete_result 失败，在生成前明�
 c26 修复已实际观察的 M3 输出序列化差异：87 条完整连续结果以 item/index/text 对象包装返回，而非旧二元数组。
 工具 schema 现明确定义 index/text 行；驱动只无损识别已声明的精确格式，原文本、索引、数字及来源校验不变。
 此为 Skill-only 兼容修订；旧失败记录保留，使用正常新请求验证，不从旧会话取译文补造候选。
+
+c27 修复 c26 实跑中的输出通道误判：Gateway 原生 length 后续写最终产生一个合法函数调用及 99 字附带说明，
+严格 JSON 中的 87 行/索引均正确，却被旧的“content 必须空白”假设拒绝。按官方工具响应协议，只验证/消费
+函数参数，附带文本仅作安全形态记录、不成为候选或证据；纯文本结果、analysis、未知/多个函数和无效参数仍拒绝。
+全文续写总预算调整为有界 20 分钟，保留原 30 分钟租约/cron 时限与不自动重放；其他 operation 默认预算不变。
+依据：[官方非流式工具响应形态](https://docs.openclaw.ai/gateway/openai-http-api#non-streaming-tool-response-shape)。
 
 本 runbook 只定义 Host C4+C5 accepted 后的真实验证顺序；本地实现不执行安装、发布、Session 创建、模型调用或
 云配置修改。
@@ -76,7 +82,7 @@ c24 可选控制元数据兼容旧任务，但旧 Skill 不接受新字段，因
    优先读回非空、可识别的实际 `modelVersion`；响应未提供时，绑定任务记录 `configured-route:<modelRef>`，旧任务才使用唯一 configured endpoint。它们只证明路由，不解释为未暴露的下游具体模型。重复 agent、
    不可读 primary、fallbacks 非数组或非空均在调用模型前停止；
 4. 同名 Skill 只有一个，安装版本精确
-   `wiselink-research-and-synthesize@r09.c26`；
+   `wiselink-research-and-synthesize@r09.c27`；
 5. Host MCP package/version 为
    `wiselink-openclaw-engineering-assessment@1.2.0`，exact 20 tools 可见；
 6. C3 successor 已进入 current Hosted release；只凭 Git commit 不等于 deployed readback；
@@ -174,9 +180,10 @@ authenticated user。
 5. 模型经 Gateway HTTP 仅生成 SOURCE_LINK/ANSWER 内容；本用例要求 `SOURCE_LINK` 且至少一个
    `sourceRefs` 来自本轮实读 allowlist，`sourceRefs=[]` 必须在 commit 前 fail closed。c21 请求暴露
    `read_wiselink_review_sources` 与 `return_wiselink_review_candidate`，`tool_choice=auto`、`parallel_tool_calls=false`
-   和 `n=1`；前者按需调用现有 Host 读取，后者仅作为最终序列化通道且永不执行。每次响应只有一个 choice 和一个合法 function call，assistant content 为 null 或仅空白，
-   arguments 为 direct strict JSON object。其他函数、多 tool call、fence/prose/array/null arguments 或任何 analysis
-   均 fail closed，不抽取、不修复、不归一化。
+   和 `n=1`；前者按需调用现有 Host 读取，后者仅作为最终序列化通道且永不执行。每次响应只有一个 choice 和一个合法 function call，
+   arguments 为 direct strict JSON object。附带纯文本说明不解析为结果、不写入候选/证据或驱动后续 exchange，
+   只记录安全形态。纯文本结果、非文本 content、其他函数、多 tool call、fence/prose/array/null arguments 或任何 analysis
+   均 fail closed，不从旁文本抽取或修复参数。
    strict parse 前的 `model.output-shape` v2 0600 write-once checkpoint 只保存 provider/model、HTTP/finish、choice/tool
    call 数量、assistant content 类型/长度/空白状态与 hash、function 名称匹配、arguments 类型/长度/JSON parse 分类与
    hash，不保存原始 content 或 arguments。
