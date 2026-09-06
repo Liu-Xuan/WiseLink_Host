@@ -34,4 +34,11 @@
 
 4 个相关 suites / 49 tests、前后端类型和生产构建通过，保留既有构建告警。这些证明修订的本地行为，尚不证明线上传输故障已恢复。
 
-此前正常解析、没有模型 attempt 的 `WI-1c1e3f05-0807-4cd1-b43c-df4aea5e4be3` 当前可在内置浏览器加载全部 13 页原文。官方管理轮次 `7682431486981491912` 在无在途/同脚本进程 0 时，暂停唯一 cron `8db789fa-4fe9-4e58-850c-97b4cd70eb46`，仅将 argv 最后一个事项标识迁至该可用事项。cwd、每 60 秒、payload.timeoutSeconds=1800、历史和计数均保留；Host online 的单事项 scope 已对齐。此刻 cron 保持 disabled，待本次修订正常发布后再启用自然 tick；没有 cron run 或手工 driver。
+此前正常解析、没有模型 attempt 的 `WI-1c1e3f05-0807-4cd1-b43c-df4aea5e4be3` 当前可在内置浏览器加载全部 13 页原文。官方管理轮次 `7682431486981491912` 在无在途/同脚本进程 0 时，暂停唯一 cron `8db789fa-4fe9-4e58-850c-97b4cd70eb46`，仅将 argv 最后一个事项标识迁至该可用事项。cwd、每 60 秒、payload.timeoutSeconds=1800、历史和计数均保留；Host online 的单事项 scope 已对齐。随后发布及启用见下文，没有 cron run 或手工 driver。
+
+## 22:48 发布后续行与 23:00 实际调度
+
+- 修订提交 `50a45b12e21d18b42d6efbe1613c836f2b6c1792` 已以单一同名 refspec 非强制推送 origin、github，release `7682433168808643560` 于 22:48:42 finished，完整提交一致、error_logs 为空。无新数据库差异；未改 main、标签、权限或凭据。
+- 管理轮次 `7682434417490480394` 在原 cron 无在途时只执行 enable。即时读回曾显示 nextRunAt 为 22:50:19.984，但后续只读轮次 `7682436516283567078` 发现 gateway 仍保留旧错误的一小时退避：lastRunAt 为 22:09:31.203，consecutiveErrors=13、进程 0、无 runningAt，新事项无 checkpoint；实际 nextRunAt 为 23:09:44.307。22:50 的计划没有实际启动，不能记为模型运行。保留调度历史并等待自然触发，不清计数或手动补跑。
+- 22:51:55.258 内置浏览器单次选择 DLI 并正常受理同一已上传真实 PDF，创建 `WI-214ded11-e5b5-4580-972d-0344da0f51c7`；根模型 `dli/gpt-5.6-sol`、selectedAt=2026-09-06T14:51:55.252Z，PARSE_PDF SUCCEEDED、revision 3、CANDIDATE_READBACK_VERIFIED。该成功证明新受理及模型保存，不证明发生了只读重试、旧对象恢复或 DLI 模型已生成。
+- M3 与 DLI 的初始候选及各至少两轮 Review 均未完成；生产有界容错仍待实现。R10 云文档五处当前状态已更新并逐段读回，revision 2211，同步当前正文镜像。
