@@ -5,6 +5,7 @@ import { Injectable, Logger } from '@nestjs/common';
 
 import type {
   ReviewEvidenceActivity,
+  CanonicalExecutionModelSelection,
   ReviewTurnExecutionReadModel,
 } from '@shared/api.interface';
 import { projectReviewEvidenceActivity } from './review-evidence-activity';
@@ -149,6 +150,7 @@ export class ReviewAttemptDispatchService {
   async prepareAndClaim(
     input: ReviewExecutionBinding & {
       documentVersionId: string;
+      executionModel?: CanonicalExecutionModelSelection;
       leaseOwner: string;
       buildInput(): Promise<{
         modelInput: Record<string, unknown>;
@@ -162,10 +164,13 @@ export class ReviewAttemptDispatchService {
       throw dispatchConflict('REVIEW_TURN_EXECUTION_ALREADY_FINISHED');
     }
     if (!row) {
-      const executionModel = await this.modelSettings.captureForNewTask(
-        input.tenantId,
-        now,
-      );
+      const executionModel =
+        input.executionModel ??
+        (await this.modelSettings.captureForWorkItem(
+          input.tenantId,
+          input.workItemId,
+          now,
+        ));
       await this.repository.terminalizeExpiredActiveForSuccessor({
         workItemId: input.workItemId,
         tenantId: input.tenantId,

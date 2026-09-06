@@ -30,6 +30,7 @@ import type {
 } from '@shared/api.interface';
 
 import ReviewConversationTurn from './ReviewConversationTurn';
+import TaskModelPicker, { useTaskModelOptions } from './TaskModelPicker';
 import ReviewMaterialsPanel, {
   type ReviewMaterialsContext,
 } from './ReviewMaterialsPanel';
@@ -88,6 +89,8 @@ export default function ContinuousReviewPanel({
     useState<ReviewConversationReadModel | null>(null);
   const [currentRevision, setCurrentRevision] = useState(workItemRevision);
   const [message, setMessage] = useState('');
+  const models = useTaskModelOptions();
+  const [modelRef, setModelRef] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [uploadedSelection, setUploadedSelection] =
     useState<UploadedReviewSelection | null>(null);
@@ -314,7 +317,8 @@ export default function ContinuousReviewPanel({
       !conversation ||
       conversation.status !== 'ACTIVE' ||
       !conversation.currentRevisionSynced ||
-      !userMessage
+      !userMessage ||
+      !models.ready
     ) {
       return;
     }
@@ -325,6 +329,7 @@ export default function ContinuousReviewPanel({
         submissionRef.current,
         submissionRef.current?.requestId ?? createRequestCorrelationId(),
         conversation,
+        modelRef || undefined,
       );
       submissionRef.current = submission;
       const requestId = submission.requestId;
@@ -349,6 +354,7 @@ export default function ContinuousReviewPanel({
         {
           requestId,
           userMessage,
+          ...(submission.modelRef ? { modelRef: submission.modelRef } : {}),
           selectedEvaluationItemId,
           ...(submission.executionMode
             ? { executionMode: submission.executionMode }
@@ -360,6 +366,7 @@ export default function ContinuousReviewPanel({
       setCurrentRevision(response.conversation.currentWorkItemRevision);
       setReadFailed(false);
       setMessage('');
+      setModelRef('');
       setFile(null);
       setUploadedSelection(null);
       submissionRef.current = null;
@@ -629,6 +636,22 @@ export default function ContinuousReviewPanel({
 
       {active ? (
         <div className="continuous-review-composer">
+          <TaskModelPicker
+            id="review-model"
+            label="新回合模型"
+            value={modelRef}
+            onChange={setModelRef}
+            catalog={models}
+            disabled={editorDisabled || submissionRef.current !== null}
+            inheritLabel={
+              conversation?.defaultModel?.displayName ?? '此事项的模型'
+            }
+          />
+          {submissionRef.current && !busy ? (
+            <small>
+              提交结果待核对，重试保持本轮模型。编辑内容会开始新请求。
+            </small>
+          ) : null}
           <label htmlFor="continuous-review-message">
             {hasActiveExecution ? '下一轮指示' : '工程师补充'}
             <span>
@@ -710,7 +733,10 @@ export default function ContinuousReviewPanel({
             <Button
               type="button"
               disabled={
-                busy || !presentation.composerEnabled || !message.trim()
+                busy ||
+                !presentation.composerEnabled ||
+                !message.trim() ||
+                !models.ready
               }
               onClick={() => void appendTurn()}
             >

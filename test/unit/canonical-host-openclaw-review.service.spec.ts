@@ -23,38 +23,97 @@ import {
   REVIEW_PROFILE_REF,
 } from '../../server/modules/canonical-host/canonical-host-openclaw-review.contract';
 import { CanonicalHostOpenClawReviewService } from '../../server/modules/canonical-host/canonical-host-openclaw-review.service';
+import { taskModelSelection } from '../../server/modules/model-settings/canonical-model-catalog';
 import { CanonicalHostCommonContextService } from '../../server/modules/canonical-host/canonical-host-common-context.service';
 import { encodeReviewAttachmentParsedArtifact } from '../../server/modules/review-persistence/review-attachment-artifact';
 import type { UnifiedArtifactReadScope } from '../../server/modules/unified-reader/unified-artifact-read-scope';
 
 describe('CanonicalHostOpenClawReviewService', () => {
+  it.each(['miaoda/minimax-m3', 'dli/gpt-5.6-sol'])(
+    'isolates native sessions when the new turn chooses %s',
+    async (modelRef) => {
+      const harness = reviewHarness();
+      const first = await harness.service.begin('RC-1', 'request-1');
+      const { inputHash: _hash, ...fields } = first.task;
+      harness.conversations.loadPreviousOpenClawTask.mockResolvedValue({
+        status: 'SUCCEEDED',
+        taskEnvelopeJson: JSON.stringify(
+          sealTaskEnvelope({
+            ...fields,
+            executionModel: taskModelSelection('miaoda/minimax-m3'),
+          }),
+        ),
+      });
+      const { turn } = await harness.conversations.loadOpenClawTurnBinding();
+      Object.assign(turn, {
+        reviewTurnId: 'RT-2',
+        requestId: 'request-2',
+        turnNo: 2,
+        requestedModel: taskModelSelection(modelRef),
+      });
+      harness.dispatch.prepareAndClaim.mockImplementation(async (input) => {
+        const prepared = await input.buildInput();
+        return {
+          ...first,
+          task: sealTaskEnvelope({
+            ...fields,
+            modelInput: prepared.modelInput,
+            executionModel: input.executionModel,
+          }),
+        };
+      });
+      const next = await harness.service.begin('RC-1', 'request-2');
+      expect(next.nativeSessionKey).toBe(
+        modelRef === 'miaoda/minimax-m3'
+          ? first.nativeSessionKey
+          : 'agent:wiselink-engineering:review:ACTX-RS-RT-2',
+      );
+      expect(next.task.executionModel?.modelRef).toBe(modelRef);
+      expect(next.task.modelInput).not.toHaveProperty('requestedModel');
+      expect(harness.dispatch.prepareAndClaim).toHaveBeenCalledWith(
+        expect.objectContaining({
+          executionModel: expect.objectContaining({ modelRef }),
+        }),
+      );
+    },
+  );
   it('shares one primary read across context and SourceRef assembly, but starts fresh for the next turn', async () => {
     const harness = reviewHarness(false, true);
     await harness.service.begin('RC-1', 'request-1');
-    const firstScope = harness.reader!.readAllSourceUnits.mock.calls[0][0].readScope;
-    expect(harness.artifactStore.readActualBytes.mock.calls.filter(
-      ([artifact]) => artifact.ref === 'artifact://package',
-    )).toHaveLength(1);
-    expect(harness.assessment.resolveStoredBaseSourceEvidenceRefs).toHaveBeenCalledWith(
-      expect.objectContaining({ readScope: firstScope }),
-    );
+    const firstScope =
+      harness.reader!.readAllSourceUnits.mock.calls[0][0].readScope;
+    expect(
+      harness.artifactStore.readActualBytes.mock.calls.filter(
+        ([artifact]) => artifact.ref === 'artifact://package',
+      ),
+    ).toHaveLength(1);
+    expect(
+      harness.assessment.resolveStoredBaseSourceEvidenceRefs,
+    ).toHaveBeenCalledWith(expect.objectContaining({ readScope: firstScope }));
     const { turn } = await harness.conversations.loadOpenClawTurnBinding();
     turn.reviewTurnId = 'RT-2';
     turn.requestId = 'request-2';
     turn.turnNo = 2;
     await harness.service.begin('RC-1', 'request-2');
-    expect(harness.artifactStore.readActualBytes.mock.calls.filter(
-      ([artifact]) => artifact.ref === 'artifact://package',
-    )).toHaveLength(2);
-    expect(harness.reader!.readAllSourceUnits.mock.calls[1][0].readScope).not.toBe(firstScope);
+    expect(
+      harness.artifactStore.readActualBytes.mock.calls.filter(
+        ([artifact]) => artifact.ref === 'artifact://package',
+      ),
+    ).toHaveLength(2);
+    expect(
+      harness.reader!.readAllSourceUnits.mock.calls[1][0].readScope,
+    ).not.toBe(firstScope);
   });
 
   it('continues native history only across successful turns with the same fresh authorized sources', async () => {
     const harness = reviewHarness(false, true);
     const first = await harness.service.begin('RC-1', 'request-1');
-    expect(first.nativeSessionKey).toBe('agent:wiselink-engineering:review:ACTX-RS-RT-1');
+    expect(first.nativeSessionKey).toBe(
+      'agent:wiselink-engineering:review:ACTX-RS-RT-1',
+    );
     harness.conversations.loadPreviousOpenClawTask.mockResolvedValue({
-      status: 'SUCCEEDED', taskEnvelopeJson: JSON.stringify(first.task),
+      status: 'SUCCEEDED',
+      taskEnvelopeJson: JSON.stringify(first.task),
     });
     const { turn } = await harness.conversations.loadOpenClawTurnBinding();
     turn.reviewTurnId = 'RT-2';
@@ -65,9 +124,14 @@ describe('CanonicalHostOpenClawReviewService', () => {
     expect(next.nativeSessionKey).toBe(first.nativeSessionKey);
     expect(next.task.modelInput.userMessage).toBe(turn.userMessage);
     expect(next.task.modelInput.requestId).toBe('request-2');
-    expect(harness.conversations.loadPreviousOpenClawTask).toHaveBeenLastCalledWith({
-      tenantId: 'tenant-1', actorId: 'actor-1', workItemId: 'WI-1',
-      reviewConversationId: 'RC-1', beforeTurnNo: 2,
+    expect(
+      harness.conversations.loadPreviousOpenClawTask,
+    ).toHaveBeenLastCalledWith({
+      tenantId: 'tenant-1',
+      actorId: 'actor-1',
+      workItemId: 'WI-1',
+      reviewConversationId: 'RC-1',
+      beforeTurnNo: 2,
     });
 
     // Related access can disappear without changing the primary WI revision.
@@ -81,60 +145,121 @@ describe('CanonicalHostOpenClawReviewService', () => {
   });
 
   it.each(['FAILED', 'RUNNING', 'COMMITTING', 'legacy', 'old-revision'])(
-    'starts new native history after %s instead of reusing uncertain or stale memory', async (previousState) => {
+    'starts new native history after %s instead of reusing uncertain or stale memory',
+    async (previousState) => {
       const harness = reviewHarness();
       const first = await harness.service.begin('RC-1', 'request-1');
       const { inputHash: _hash, ...fields } = first.task;
-      if (previousState === 'legacy') fields.modelInput.actorContextRef = 'ACTX-legacy';
+      if (previousState === 'legacy')
+        fields.modelInput.actorContextRef = 'ACTX-legacy';
       if (previousState === 'old-revision') fields.modelInput.inputRevision = 6;
       harness.conversations.loadPreviousOpenClawTask.mockResolvedValue({
-        status: ['legacy', 'old-revision'].includes(previousState) ? 'SUCCEEDED' : previousState,
+        status: ['legacy', 'old-revision'].includes(previousState)
+          ? 'SUCCEEDED'
+          : previousState,
         taskEnvelopeJson: JSON.stringify(sealTaskEnvelope(fields)),
       });
       const { turn } = await harness.conversations.loadOpenClawTurnBinding();
-      turn.reviewTurnId = 'RT-2'; turn.requestId = 'request-2'; turn.turnNo = 2;
+      turn.reviewTurnId = 'RT-2';
+      turn.requestId = 'request-2';
+      turn.turnNo = 2;
       const next = await harness.service.begin('RC-1', 'request-2');
-      expect(next.nativeSessionKey).toBe('agent:wiselink-engineering:review:ACTX-RS-RT-2');
+      expect(next.nativeSessionKey).toBe(
+        'agent:wiselink-engineering:review:ACTX-RS-RT-2',
+      );
     },
   );
 
   it('carries earlier discussion into the next task without adopting it or including future turns', async () => {
     const harness = reviewHarness();
-    const { conversation, turn } = await harness.conversations.loadOpenClawTurnBinding();
+    const { conversation, turn } =
+      await harness.conversations.loadOpenClawTurnBinding();
     turn.turnNo = 3;
-    harness.conversations.loadCurrent.mockResolvedValue({ conversation, turns: [
-      { ...turn, turnNo: 1, userMessage: '先解释故障机理。', assistantCandidate: { answer: '当前工作判断：需核对 FTD 原因分析。', missingInputs: ['FTD 原文'], warnings: [] } } as never,
-      { ...turn, turnNo: 2, inputRevision: 6, userMessage: '不要把 AMM 工卡当作问题分析。' },
-      turn,
-      { ...turn, turnNo: 4, userMessage: '这一轮还没有提交。' },
-    ] });
+    harness.conversations.loadCurrent.mockResolvedValue({
+      conversation,
+      turns: [
+        {
+          ...turn,
+          turnNo: 1,
+          userMessage: '先解释故障机理。',
+          assistantCandidate: {
+            answer: '当前工作判断：需核对 FTD 原因分析。',
+            missingInputs: ['FTD 原文'],
+            warnings: [],
+          },
+        } as never,
+        {
+          ...turn,
+          turnNo: 2,
+          inputRevision: 6,
+          userMessage: '不要把 AMM 工卡当作问题分析。',
+        },
+        turn,
+        { ...turn, turnNo: 4, userMessage: '这一轮还没有提交。' },
+      ],
+    });
     const begun = await harness.service.begin('RC-1', 'request-1');
-    expect(begun.task.modelInput.context).toMatchObject({ commonContext: {
-      discussion: {
-        totalPriorTurns: 2, omittedEarlierTurns: 0, usage: 'DISCUSSION_NOT_ADOPTION',
-        turns: [
-          { turnNo: 1, fromCurrentRevision: true, question: '先解释故障机理。', workingAnswer: '当前工作判断：需核对 FTD 原因分析。' },
-          { turnNo: 2, fromCurrentRevision: false, question: '不要把 AMM 工卡当作问题分析。', workingAnswer: null },
-        ],
+    expect(begun.task.modelInput.context).toMatchObject({
+      commonContext: {
+        discussion: {
+          totalPriorTurns: 2,
+          omittedEarlierTurns: 0,
+          usage: 'DISCUSSION_NOT_ADOPTION',
+          turns: [
+            {
+              turnNo: 1,
+              fromCurrentRevision: true,
+              question: '先解释故障机理。',
+              workingAnswer: '当前工作判断：需核对 FTD 原因分析。',
+            },
+            {
+              turnNo: 2,
+              fromCurrentRevision: false,
+              question: '不要把 AMM 工卡当作问题分析。',
+              workingAnswer: null,
+            },
+          ],
+        },
+        knowledgeRetrieval: { status: 'NOT_CONNECTED', fragments: [] },
       },
-      knowledgeRetrieval: { status: 'NOT_CONNECTED', fragments: [] },
-    } });
-    expect(JSON.stringify(begun.task.modelInput.context)).not.toContain('这一轮还没有提交。');
-    expect(harness.conversations.persistOpenClawAssistantCandidate).not.toHaveBeenCalled();
+    });
+    expect(JSON.stringify(begun.task.modelInput.context)).not.toContain(
+      '这一轮还没有提交。',
+    );
+    expect(
+      harness.conversations.persistOpenClawAssistantCandidate,
+    ).not.toHaveBeenCalled();
   });
 
   it('only returns the next authorized persisted automatic request without invoking the model', async () => {
     const harness = reviewHarness();
     harness.conversations.loadPendingOpenClawTurn.mockResolvedValue({
-      reviewConversationId: 'RC-1', reviewTurnId: 'RT-2', requestId: 'request-2', turnNo: 2, inputRevision: 7,
+      reviewConversationId: 'RC-1',
+      reviewTurnId: 'RT-2',
+      requestId: 'request-2',
+      turnNo: 2,
+      inputRevision: 7,
     });
     await expect(harness.service.pending('WI-1')).resolves.toEqual({
-      next: { reviewConversationRef: 'RC-1', reviewTurnRef: 'RT-2', requestId: 'request-2', turnNo: 2 }, busy: false,
+      next: {
+        reviewConversationRef: 'RC-1',
+        reviewTurnRef: 'RT-2',
+        requestId: 'request-2',
+        turnNo: 2,
+      },
+      busy: false,
     });
-    expect(harness.conversations.loadPendingOpenClawTurn).toHaveBeenCalledWith({ tenantId: 'tenant-1', actorId: 'actor-1', workItemId: 'WI-1' });
+    expect(harness.conversations.loadPendingOpenClawTurn).toHaveBeenCalledWith({
+      tenantId: 'tenant-1',
+      actorId: 'actor-1',
+      workItemId: 'WI-1',
+    });
     expect(harness.attempts.reserveAndClaim).not.toHaveBeenCalled();
     harness.dispatch.isBusy.mockResolvedValue(true);
-    await expect(harness.service.pending('WI-1')).resolves.toEqual({ next: null, busy: true });
+    await expect(harness.service.pending('WI-1')).resolves.toEqual({
+      next: null,
+      busy: true,
+    });
   });
 
   it('derives the user/work item/revision from C1 persistence and freezes exact SourceRefs', async () => {
@@ -308,7 +433,9 @@ describe('CanonicalHostOpenClawReviewService', () => {
         items: Array<Record<string, unknown>>;
       };
     };
-    const persistedSnapshot = JSON.parse(new TextDecoder().decode(snapshotBytes));
+    const persistedSnapshot = JSON.parse(
+      new TextDecoder().decode(snapshotBytes),
+    );
     expect(persistedSnapshot).toMatchObject({
       snapshotRef: modelContext.relatedContext.snapshotRef,
       workItemRef: 'WI-1',
@@ -318,7 +445,9 @@ describe('CanonicalHostOpenClawReviewService', () => {
     // Real Turn 15 stopped before model execution on this legacy alias.
     // Keep the public snapshot intact and preserve its source semantics.
     expect(persistedSnapshot.items[0].authority).toBeDefined();
-    expect(modelContext.relatedContext.items[0]).not.toHaveProperty('authority');
+    expect(modelContext.relatedContext.items[0]).not.toHaveProperty(
+      'authority',
+    );
     expect(modelContext.relatedContext.items[0].sourceAuthority).toBe(
       persistedSnapshot.items[0].sourceAuthority,
     );
@@ -489,7 +618,11 @@ describe('CanonicalHostOpenClawReviewService', () => {
     });
     expect(harness.dispatch.recordEvidenceActivity).toHaveBeenCalledWith(
       expect.objectContaining({ operationRef: 'AQ-REVIEW-1' }),
-      { kind: 'SOURCE_REFS_RESOLVED', sourceRefIds: ['SRC-1'], sourceCatalogCount: expect.any(Number) },
+      {
+        kind: 'SOURCE_REFS_RESOLVED',
+        sourceRefIds: ['SRC-1'],
+        sourceCatalogCount: expect.any(Number),
+      },
     );
   });
 
@@ -788,7 +921,13 @@ function reviewHarness(
   let task: OpenClawTaskEnvelope | null = null;
   let row: ActionAttemptRow | null = null;
   const conversations = {
-    loadPreviousOpenClawTask: jest.fn<Promise<{ status: string | null; taskEnvelopeJson: string | null } | null>, [unknown]>(async () => null),
+    loadPreviousOpenClawTask: jest.fn<
+      Promise<{
+        status: string | null;
+        taskEnvelopeJson: string | null;
+      } | null>,
+      [unknown]
+    >(async () => null),
     loadPendingOpenClawTurn: jest.fn().mockResolvedValue(null),
     loadById: jest.fn(async () => ({ conversation, turns: [turn] })),
     loadCurrent: jest.fn(async () => ({ conversation, turns: [turn] })),
@@ -1025,24 +1164,30 @@ function reviewHarness(
   };
   const reader = withRelatedContext
     ? {
-        readAllSourceUnits: jest.fn(async (input: {
-          artifact: UnifiedPackageArtifactDescriptor;
-          documentVersionId?: string;
-          readScope?: UnifiedArtifactReadScope;
-        }) => {
-          // Probe the real common-context/Review wiring. Reader validation and
-          // parse counts are covered with actual packages in its own tests.
-          if (!input.readScope || input.documentVersionId !== 'DV-1') {
-            throw new Error('TEST_REVIEW_READER_SCOPE_MISSING');
-          }
-          input.readScope.parseJson(await input.readScope.readActualBytes(input.artifact));
-          return [{
-            unitId: 'UNIT-REL-1',
-            kind: 'paragraph',
-            text: 'Please refer to 777-SL-31-064 for more information.',
-            sourceRefIds: ['SRC-REL'],
-          }];
-        }),
+        readAllSourceUnits: jest.fn(
+          async (input: {
+            artifact: UnifiedPackageArtifactDescriptor;
+            documentVersionId?: string;
+            readScope?: UnifiedArtifactReadScope;
+          }) => {
+            // Probe the real common-context/Review wiring. Reader validation and
+            // parse counts are covered with actual packages in its own tests.
+            if (!input.readScope || input.documentVersionId !== 'DV-1') {
+              throw new Error('TEST_REVIEW_READER_SCOPE_MISSING');
+            }
+            input.readScope.parseJson(
+              await input.readScope.readActualBytes(input.artifact),
+            );
+            return [
+              {
+                unitId: 'UNIT-REL-1',
+                kind: 'paragraph',
+                text: 'Please refer to 777-SL-31-064 for more information.',
+                sourceRefIds: ['SRC-REL'],
+              },
+            ];
+          },
+        ),
       }
     : undefined;
   const documentManagement = withRelatedContext
@@ -1081,7 +1226,13 @@ function reviewHarness(
     artifactStore as never,
     serviceScope as never,
     dispatch as never,
-    new CanonicalHostCommonContextService(conversations as never, workItems as never, artifactStore as never, reader as never, documentManagement as never),
+    new CanonicalHostCommonContextService(
+      conversations as never,
+      workItems as never,
+      artifactStore as never,
+      reader as never,
+      documentManagement as never,
+    ),
   );
   return {
     service,

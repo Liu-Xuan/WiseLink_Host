@@ -215,6 +215,25 @@ function s1000dVerticalResult() {
 }
 
 describe('OrdinaryWorkItemService run identity', () => {
+  it('stores the requested model at normal OAuth task creation without requiring a global manager role', async () => {
+    const instance = target();
+    await instance.service.createOauthSessionDevelopmentRun(
+      {
+        documentVersionId: 'document-version-sb',
+        developmentRunToken: '22222222-2222-4222-8222-222222222222',
+        modelRef: 'dli/gpt-5.6-sol',
+      },
+      OAUTH_SESSION_ACTOR,
+      GATEWAY_ACTOR,
+    );
+    expect(instance.repository.reserve).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: ACTOR.tenantId,
+        analysisModel: expect.objectContaining({ modelRef: 'dli/gpt-5.6-sol' }),
+        modelChoiceExplicit: true,
+      }),
+    );
+  });
   it('lists only actor-owned PDFs using the same canonical FileService path consumed by ingest', async () => {
     const targetValue = target();
     targetValue.fileServiceBucket.list.mockResolvedValue({
@@ -277,9 +296,7 @@ describe('OrdinaryWorkItemService run identity', () => {
       sourceTruncated: false,
     });
 
-    expect(targetValue.fileService.from).toHaveBeenCalledWith(
-      'bucket-default',
-    );
+    expect(targetValue.fileService.from).toHaveBeenCalledWith('bucket-default');
     expect(targetValue.fileServiceBucket.list).toHaveBeenCalledWith('', {
       maxKeys: 200,
     });

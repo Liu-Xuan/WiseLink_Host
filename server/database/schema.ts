@@ -1164,6 +1164,7 @@ export const workItem = pgTable("work_item", {
   createdAt: customTimestamptz("created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: customTimestamptz("updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
   runKey: varchar("run_key", { length: 96 }).notNull().default('canonical'),
+  analysisModelJson: text("analysis_model_json"),
   // System field: Creator (auto-filled, do not modify)
   createdBy: userProfile("_created_by"),
   // System field: Updater (auto-filled, do not modify)

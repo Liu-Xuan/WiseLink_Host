@@ -5,10 +5,22 @@ import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import { and, asc, desc, eq, inArray, isNull, like, lt, notExists, sql } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  inArray,
+  isNull,
+  like,
+  lt,
+  notExists,
+  sql,
+} from 'drizzle-orm';
 
 import type {
   ReviewActionDraftCandidate,
+  CanonicalExecutionModelSelection,
   ReviewTurnAssistantCandidate,
   ReviewTurnResponseType,
 } from '@shared/api.interface';
@@ -26,6 +38,7 @@ import {
   workItem,
 } from '../../database/schema';
 import { REVIEW_ACTIVE_EXECUTION_STATUSES } from '../action-attempt/review-attempt-dispatch.service';
+import { parseExecutionModel } from '../model-settings/canonical-execution-model';
 import type {
   ReviewAttachmentBinding,
   ReviewEngineerInputPayload,
@@ -72,6 +85,7 @@ export interface PersistedReviewTurn {
   userMessage: string;
   selectedEvaluationItemId?: string | null;
   executionRequested?: boolean;
+  requestedModel?: CanonicalExecutionModelSelection;
   inputType: string;
   adoptionStatus: string;
   candidateText: string;
@@ -189,64 +203,96 @@ export class ReviewConversationRepository {
     // set_config and the RLS-protected read must use the same statement/connection.
     // Its volatile expression makes PostgreSQL materialize this CTE.
     const actorContext = this.db.$with('review_actor_context').as(
-      this.db.select({
-        // Drizzle references SQL aliases without a table qualifier. Keep this
-        // distinct from the joined conversation/turn columns named actor_id.
-        actorId: sql<string>`set_config('app.user_id', ${input.actorId}, true)`.as('pending_review_actor_id'),
-      }).from(workItem).where(and(
-        eq(workItem.workItemId, input.workItemId),
-        eq(workItem.tenantId, input.tenantId),
-        eq(workItem.requestedByUserId, input.actorId),
-      )),
+      this.db
+        .select({
+          // Drizzle references SQL aliases without a table qualifier. Keep this
+          // distinct from the joined conversation/turn columns named actor_id.
+          actorId:
+            sql<string>`set_config('app.user_id', ${input.actorId}, true)`.as(
+              'pending_review_actor_id',
+            ),
+        })
+        .from(workItem)
+        .where(
+          and(
+            eq(workItem.workItemId, input.workItemId),
+            eq(workItem.tenantId, input.tenantId),
+            eq(workItem.requestedByUserId, input.actorId),
+          ),
+        ),
     );
-    const finishedAttempt = this.db.select({ attemptId: actionAttempt.attemptId })
-      .from(actionAttempt).where(and(
-        eq(actionAttempt.tenantId, input.tenantId),
-        eq(actionAttempt.workItemId, input.workItemId),
-        eq(actionAttempt.actorUserId, actorContext.actorId),
-        eq(actionAttempt.actionType, 'OPENCLAW_INTERACTIVE_REVIEW'),
-        eq(actionAttempt.idempotencyKey,
-          sql`concat('openclaw-v1:review:', ${reviewTurn.reviewConversationId}, ':', ${reviewTurn.reviewTurnId}, ':', ${reviewTurn.inputRevision})`),
-        sql`not ${inArray(actionAttempt.status, [...REVIEW_ACTIVE_EXECUTION_STATUSES])}`,
-      ));
-    const pendingTurn = this.db.select({
-      reviewConversationId: reviewTurn.reviewConversationId,
-      reviewTurnId: reviewTurn.reviewTurnId,
-      requestId: reviewTurn.requestId,
-      turnNo: reviewTurn.turnNo,
-      inputRevision: reviewTurn.inputRevision,
-    }).from(reviewConversation)
-      .innerJoin(identitySubjectMapping, and(
-        eq(identitySubjectMapping.miaodaTenantId, input.tenantId),
-        eq(identitySubjectMapping.miaodaUserId, actorContext.actorId),
-        eq(identitySubjectMapping.expectedClientId, OFFICIAL_CLIENT_ID),
-        eq(identitySubjectMapping.status, ACTIVE_STATUS),
-      ))
-      .innerJoin(reviewTurn, and(
-        eq(reviewTurn.reviewConversationId, reviewConversation.reviewConversationId),
-        eq(reviewTurn.tenantId, input.tenantId),
-        eq(reviewTurn.actorId, actorContext.actorId),
-        eq(reviewTurn.workItemId, input.workItemId),
-      ))
-      .where(and(
-        eq(reviewConversation.tenantId, input.tenantId),
-        eq(reviewConversation.actorId, actorContext.actorId),
-        eq(reviewConversation.workItemId, input.workItemId),
-        eq(reviewConversation.status, ACTIVE_STATUS),
-        like(reviewTurn.userMessage, 'WLR7:%'),
-        like(reviewTurn.userMessage, '%"executionRequested":true%'),
-        notExists(finishedAttempt),
-      ))
-      .orderBy(asc(reviewTurn.createdAt), asc(reviewTurn.turnNo)).limit(1)
+    const finishedAttempt = this.db
+      .select({ attemptId: actionAttempt.attemptId })
+      .from(actionAttempt)
+      .where(
+        and(
+          eq(actionAttempt.tenantId, input.tenantId),
+          eq(actionAttempt.workItemId, input.workItemId),
+          eq(actionAttempt.actorUserId, actorContext.actorId),
+          eq(actionAttempt.actionType, 'OPENCLAW_INTERACTIVE_REVIEW'),
+          eq(
+            actionAttempt.idempotencyKey,
+            sql`concat('openclaw-v1:review:', ${reviewTurn.reviewConversationId}, ':', ${reviewTurn.reviewTurnId}, ':', ${reviewTurn.inputRevision})`,
+          ),
+          sql`not ${inArray(actionAttempt.status, [...REVIEW_ACTIVE_EXECUTION_STATUSES])}`,
+        ),
+      );
+    const pendingTurn = this.db
+      .select({
+        reviewConversationId: reviewTurn.reviewConversationId,
+        reviewTurnId: reviewTurn.reviewTurnId,
+        requestId: reviewTurn.requestId,
+        turnNo: reviewTurn.turnNo,
+        inputRevision: reviewTurn.inputRevision,
+      })
+      .from(reviewConversation)
+      .innerJoin(
+        identitySubjectMapping,
+        and(
+          eq(identitySubjectMapping.miaodaTenantId, input.tenantId),
+          eq(identitySubjectMapping.miaodaUserId, actorContext.actorId),
+          eq(identitySubjectMapping.expectedClientId, OFFICIAL_CLIENT_ID),
+          eq(identitySubjectMapping.status, ACTIVE_STATUS),
+        ),
+      )
+      .innerJoin(
+        reviewTurn,
+        and(
+          eq(
+            reviewTurn.reviewConversationId,
+            reviewConversation.reviewConversationId,
+          ),
+          eq(reviewTurn.tenantId, input.tenantId),
+          eq(reviewTurn.actorId, actorContext.actorId),
+          eq(reviewTurn.workItemId, input.workItemId),
+        ),
+      )
+      .where(
+        and(
+          eq(reviewConversation.tenantId, input.tenantId),
+          eq(reviewConversation.actorId, actorContext.actorId),
+          eq(reviewConversation.workItemId, input.workItemId),
+          eq(reviewConversation.status, ACTIVE_STATUS),
+          like(reviewTurn.userMessage, 'WLR7:%'),
+          like(reviewTurn.userMessage, '%"executionRequested":true%'),
+          notExists(finishedAttempt),
+        ),
+      )
+      .orderBy(asc(reviewTurn.createdAt), asc(reviewTurn.turnNo))
+      .limit(1)
       .as('pending_review_turn');
     // Keep the RLS read dependent on the actor CTE, as in the existing begin path.
-    const [turn] = await this.db.with(actorContext).select({
-      reviewConversationId: pendingTurn.reviewConversationId,
-      reviewTurnId: pendingTurn.reviewTurnId,
-      requestId: pendingTurn.requestId,
-      turnNo: pendingTurn.turnNo,
-      inputRevision: pendingTurn.inputRevision,
-    }).from(actorContext).innerJoinLateral(pendingTurn, sql`true`);
+    const [turn] = await this.db
+      .with(actorContext)
+      .select({
+        reviewConversationId: pendingTurn.reviewConversationId,
+        reviewTurnId: pendingTurn.reviewTurnId,
+        requestId: pendingTurn.requestId,
+        turnNo: pendingTurn.turnNo,
+        inputRevision: pendingTurn.inputRevision,
+      })
+      .from(actorContext)
+      .innerJoinLateral(pendingTurn, sql`true`);
     return turn ?? null;
   }
 
@@ -273,38 +319,64 @@ export class ReviewConversationRepository {
     actorId: string;
     workItemId: string;
     beforeTurnNo: number;
-  }): Promise<{ status: string | null; taskEnvelopeJson: string | null } | null> {
+  }): Promise<{
+    status: string | null;
+    taskEnvelopeJson: string | null;
+  } | null> {
     assertOpenClawActorContext(input.actorId);
     const actorContext = this.db.$with('review_previous_actor_context').as(
-      this.db.select({
-        actorId: sql<string>`set_config('app.user_id', ${input.actorId}, true)`
-          .as('previous_review_actor_id'),
-      }).from(workItem).where(and(
-        eq(workItem.workItemId, input.workItemId),
-        eq(workItem.tenantId, input.tenantId),
-        eq(workItem.requestedByUserId, input.actorId),
-      )),
+      this.db
+        .select({
+          actorId:
+            sql<string>`set_config('app.user_id', ${input.actorId}, true)`.as(
+              'previous_review_actor_id',
+            ),
+        })
+        .from(workItem)
+        .where(
+          and(
+            eq(workItem.workItemId, input.workItemId),
+            eq(workItem.tenantId, input.tenantId),
+            eq(workItem.requestedByUserId, input.actorId),
+          ),
+        ),
     );
-    const previousTask = this.db.select({
-      status: actionAttempt.status,
-      taskEnvelopeJson: actionAttempt.taskEnvelopeJson,
-    }).from(reviewTurn).leftJoin(actionAttempt, and(
-      eq(actionAttempt.attemptId, reviewTurn.actionAttemptId),
-      eq(actionAttempt.tenantId, input.tenantId),
-      eq(actionAttempt.actorUserId, actorContext.actorId),
-      eq(actionAttempt.workItemId, input.workItemId),
-      eq(actionAttempt.actionType, 'OPENCLAW_INTERACTIVE_REVIEW'),
-    )).where(and(
-      eq(reviewTurn.reviewConversationId, input.reviewConversationId),
-      eq(reviewTurn.tenantId, input.tenantId),
-      eq(reviewTurn.actorId, actorContext.actorId),
-      eq(reviewTurn.workItemId, input.workItemId),
-      lt(reviewTurn.turnNo, input.beforeTurnNo),
-    )).orderBy(desc(reviewTurn.turnNo)).limit(1).as('previous_review_task');
-    const [previous] = await this.db.with(actorContext).select({
-      status: previousTask.status,
-      taskEnvelopeJson: previousTask.taskEnvelopeJson,
-    }).from(actorContext).innerJoinLateral(previousTask, sql`true`);
+    const previousTask = this.db
+      .select({
+        status: actionAttempt.status,
+        taskEnvelopeJson: actionAttempt.taskEnvelopeJson,
+      })
+      .from(reviewTurn)
+      .leftJoin(
+        actionAttempt,
+        and(
+          eq(actionAttempt.attemptId, reviewTurn.actionAttemptId),
+          eq(actionAttempt.tenantId, input.tenantId),
+          eq(actionAttempt.actorUserId, actorContext.actorId),
+          eq(actionAttempt.workItemId, input.workItemId),
+          eq(actionAttempt.actionType, 'OPENCLAW_INTERACTIVE_REVIEW'),
+        ),
+      )
+      .where(
+        and(
+          eq(reviewTurn.reviewConversationId, input.reviewConversationId),
+          eq(reviewTurn.tenantId, input.tenantId),
+          eq(reviewTurn.actorId, actorContext.actorId),
+          eq(reviewTurn.workItemId, input.workItemId),
+          lt(reviewTurn.turnNo, input.beforeTurnNo),
+        ),
+      )
+      .orderBy(desc(reviewTurn.turnNo))
+      .limit(1)
+      .as('previous_review_task');
+    const [previous] = await this.db
+      .with(actorContext)
+      .select({
+        status: previousTask.status,
+        taskEnvelopeJson: previousTask.taskEnvelopeJson,
+      })
+      .from(actorContext)
+      .innerJoinLateral(previousTask, sql`true`);
     return previous ?? null;
   }
 
@@ -898,6 +970,7 @@ export class ReviewConversationRepository {
     userMessage: string;
     selectedEvaluationItemId?: string | null;
     executionRequested?: boolean;
+    requestedModel?: CanonicalExecutionModelSelection;
     currentRevision: number;
     attachmentBindings?: ReviewAttachmentBinding[];
   }): Promise<{ turn: PersistedReviewTurn; replayed: boolean }> {
@@ -912,6 +985,7 @@ export class ReviewConversationRepository {
         input.attachmentBindings ?? [],
         input.selectedEvaluationItemId ?? null,
         input.executionRequested === true,
+        input.requestedModel,
       );
       return { turn: existing, replayed: true };
     }
@@ -924,6 +998,9 @@ export class ReviewConversationRepository {
       userMessage: input.userMessage,
       selectedEvaluationItemId: input.selectedEvaluationItemId ?? null,
       executionRequested: input.executionRequested === true,
+      ...(input.requestedModel
+        ? { requestedModel: structuredClone(input.requestedModel) }
+        : {}),
       attachments: structuredClone(input.attachmentBindings ?? []),
     });
     try {
@@ -958,6 +1035,7 @@ export class ReviewConversationRepository {
         input.attachmentBindings ?? [],
         input.selectedEvaluationItemId ?? null,
         input.executionRequested === true,
+        input.requestedModel,
       );
       return { turn: replay, replayed: true };
     }
@@ -1557,6 +1635,9 @@ function persistedTurn(row: SelectedReviewTurn): PersistedReviewTurn {
     userMessage: turnInput.userMessage,
     selectedEvaluationItemId: turnInput.selectedEvaluationItemId ?? null,
     executionRequested: turnInput.executionRequested === true,
+    ...(turnInput.requestedModel
+      ? { requestedModel: structuredClone(turnInput.requestedModel) }
+      : {}),
     inputType: row.inputType,
     adoptionStatus: row.adoptionStatus,
     candidateText: suppliedInput.userMessage,
@@ -1701,12 +1782,14 @@ function assertIdempotentReplay(
   attachmentBindings: ReviewAttachmentBinding[],
   selectedEvaluationItemId: string | null,
   executionRequested: boolean,
+  requestedModel?: CanonicalExecutionModelSelection,
 ): void {
   if (
     turn.userMessage !== userMessage ||
     turn.candidateText !== userMessage ||
     (turn.selectedEvaluationItemId ?? null) !== selectedEvaluationItemId ||
     (turn.executionRequested === true) !== executionRequested ||
+    turn.requestedModel?.modelRef !== requestedModel?.modelRef ||
     canonicalJson(turn.attachmentBindings) !==
       canonicalJson(attachmentBindings) ||
     turn.inputType !== ENGINEER_TEXT ||
@@ -1760,6 +1843,8 @@ function validateEngineerInput(value: unknown): void {
     throw new Error('REVIEW_ENGINEER_INPUT_JSON_INVALID');
   }
   const refs = new Set<string>();
+  if (record.requestedModel !== undefined)
+    parseExecutionModel(record.requestedModel);
   for (const attachment of record.attachments) {
     validateAttachmentBinding(attachment);
     refs.add((attachment as ReviewAttachmentBinding).attachmentRef);

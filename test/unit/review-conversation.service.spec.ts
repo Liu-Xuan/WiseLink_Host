@@ -1,4 +1,6 @@
 import { ReviewConversationService } from '../../server/modules/review-persistence/review-conversation.service';
+import { fixedModelSettings } from '../support/fixed-model-settings';
+import { taskModelSelection } from '../../server/modules/model-settings/canonical-model-catalog';
 import * as executorScope from '../../server/modules/canonical-host/configured-development-service-scope.authorization';
 
 const actor = {
@@ -50,40 +52,171 @@ const turn = {
 describe('ReviewConversationService session and ACL boundary', () => {
   afterEach(() => jest.restoreAllMocks());
 
-  it.each([false, true])('projects configured automatic execution availability: %s', async (available) => {
-    jest.spyOn(executorScope, 'isOpenClawAutomaticReviewConfigured').mockReturnValue(available);
+  it.each([undefined, 'miaoda/minimax-m3'])(
+    'inherits the last turn model unless a new request explicitly overrides it: %s',
+    async (modelRef) => {
+      const setup = makeService();
+      const prior = {
+        ...turn,
+        requestedModel: taskModelSelection('dli/gpt-5.6-sol'),
+      };
+      const next = {
+        ...turn,
+        reviewTurnId: 'RT-2',
+        requestId: 'request-2',
+        turnNo: 2,
+      };
+      setup.conversations.loadById
+        .mockResolvedValueOnce({ conversation, turns: [prior] })
+        .mockResolvedValueOnce({ conversation, turns: [prior, next] });
+      setup.conversations.appendTextTurn.mockResolvedValue({
+        turn: next,
+        replayed: false,
+      });
+      const capture = jest.spyOn(setup.models, 'captureForWorkItem');
+      await setup.service.appendTextTurn(
+        'WI-1',
+        'RC-1',
+        {
+          requestId: next.requestId,
+          userMessage: next.userMessage,
+          ...(modelRef ? { modelRef } : {}),
+        },
+        {} as never,
+      );
+      expect(setup.conversations.appendTextTurn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          requestedModel: expect.objectContaining({
+            modelRef: modelRef ?? 'dli/gpt-5.6-sol',
+          }),
+        }),
+      );
+      expect(capture).not.toHaveBeenCalled();
+    },
+  );
+
+  it('preserves a replayed turn model even after later turns and rejects an explicit change on the same request', async () => {
     const setup = makeService();
-    setup.objectAccess.freshRead.mockResolvedValue({ ...grant, action: 'READ_WORK_ITEM' });
-    setup.conversations.loadCurrent.mockResolvedValue({ conversation, turns: [] });
-    const result = await setup.service.current('WI-1', {} as never);
-    expect(result.conversation?.automaticExecutionAvailable).toBe(available);
-    expect(executorScope.isOpenClawAutomaticReviewConfigured).toHaveBeenCalledWith(conversation);
+    const original = {
+      ...turn,
+      requestedModel: taskModelSelection('dli/gpt-5.6-sol'),
+    };
+    const later = {
+      ...turn,
+      requestId: 'request-2',
+      turnNo: 2,
+      requestedModel: taskModelSelection('miaoda/minimax-m3'),
+    };
+    setup.conversations.loadById.mockResolvedValue({
+      conversation,
+      turns: [original, later],
+    });
+    setup.conversations.appendTextTurn.mockResolvedValue({
+      turn: original,
+      replayed: true,
+    });
+    const capture = jest.spyOn(setup.models, 'captureForWorkItem');
+    await setup.service.appendTextTurn(
+      'WI-1',
+      'RC-1',
+      { requestId: original.requestId, userMessage: original.userMessage },
+      {} as never,
+    );
+    expect(setup.conversations.appendTextTurn).toHaveBeenCalledWith(
+      expect.objectContaining({ requestedModel: original.requestedModel }),
+    );
+    expect(capture).not.toHaveBeenCalled();
+    setup.conversations.appendTextTurn.mockClear();
+    await expect(
+      setup.service.appendTextTurn(
+        'WI-1',
+        'RC-1',
+        {
+          requestId: original.requestId,
+          userMessage: original.userMessage,
+          modelRef: 'miaoda/minimax-m3',
+        },
+        {} as never,
+      ),
+    ).rejects.toMatchObject({ code: 'REVIEW_TURN_IDEMPOTENCY_CONFLICT' });
+    expect(setup.conversations.appendTextTurn).not.toHaveBeenCalled();
   });
 
+  it.each([false, true])(
+    'projects configured automatic execution availability: %s',
+    async (available) => {
+      jest
+        .spyOn(executorScope, 'isOpenClawAutomaticReviewConfigured')
+        .mockReturnValue(available);
+      const setup = makeService();
+      setup.objectAccess.freshRead.mockResolvedValue({
+        ...grant,
+        action: 'READ_WORK_ITEM',
+      });
+      setup.conversations.loadCurrent.mockResolvedValue({
+        conversation,
+        turns: [],
+      });
+      const result = await setup.service.current('WI-1', {} as never);
+      expect(result.conversation?.automaticExecutionAvailable).toBe(available);
+      expect(
+        executorScope.isOpenClawAutomaticReviewConfigured,
+      ).toHaveBeenCalledWith(conversation);
+    },
+  );
+
   it('reports unsupported automatic execution before saving input or attachments', async () => {
-    jest.spyOn(executorScope, 'isOpenClawAutomaticReviewConfigured').mockReturnValue(false);
+    jest
+      .spyOn(executorScope, 'isOpenClawAutomaticReviewConfigured')
+      .mockReturnValue(false);
     const setup = makeService();
     setup.conversations.loadById.mockResolvedValue({ conversation, turns: [] });
-    await expect(setup.service.appendTextTurn('WI-1', 'RC-1', {
-      requestId: 'request-auto', userMessage: 'Continue analysis', executionMode: 'AUTOMATIC',
-    }, {} as never)).rejects.toMatchObject({ code: 'REVIEW_AUTOMATIC_EXECUTION_UNAVAILABLE', statusCode: 503 });
+    await expect(
+      setup.service.appendTextTurn(
+        'WI-1',
+        'RC-1',
+        {
+          requestId: 'request-auto',
+          userMessage: 'Continue analysis',
+          executionMode: 'AUTOMATIC',
+        },
+        {} as never,
+      ),
+    ).rejects.toMatchObject({
+      code: 'REVIEW_AUTOMATIC_EXECUTION_UNAVAILABLE',
+      statusCode: 503,
+    });
     expect(setup.conversations.appendTextTurn).not.toHaveBeenCalled();
     expect(setup.attachments.ingest).not.toHaveBeenCalled();
   });
 
   it('persists an explicit automatic request in the supported executor scope', async () => {
-    jest.spyOn(executorScope, 'isOpenClawAutomaticReviewConfigured').mockReturnValue(true);
+    jest
+      .spyOn(executorScope, 'isOpenClawAutomaticReviewConfigured')
+      .mockReturnValue(true);
     const setup = makeService();
     setup.conversations.loadById
       .mockResolvedValueOnce({ conversation, turns: [] })
       .mockResolvedValueOnce({ conversation, turns: [turn] });
-    setup.conversations.appendTextTurn.mockResolvedValue({ turn, replayed: false });
-    const result = await setup.service.appendTextTurn('WI-1', 'RC-1', {
-      requestId: 'request-1', userMessage: turn.userMessage, executionMode: 'AUTOMATIC',
-    }, {} as never);
-    expect(setup.conversations.appendTextTurn).toHaveBeenCalledWith(expect.objectContaining({
-      executionRequested: true,
-    }));
+    setup.conversations.appendTextTurn.mockResolvedValue({
+      turn,
+      replayed: false,
+    });
+    const result = await setup.service.appendTextTurn(
+      'WI-1',
+      'RC-1',
+      {
+        requestId: 'request-1',
+        userMessage: turn.userMessage,
+        executionMode: 'AUTOMATIC',
+      },
+      {} as never,
+    );
+    expect(setup.conversations.appendTextTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        executionRequested: true,
+      }),
+    );
     expect(result.conversation.automaticExecutionAvailable).toBe(true);
   });
 
@@ -256,6 +389,9 @@ describe('ReviewConversationService session and ACL boundary', () => {
       userMessage: 'Engineer supplied context',
       selectedEvaluationItemId: null,
       executionRequested: false,
+      requestedModel: expect.objectContaining({
+        modelRef: 'miaoda/minimax-m3',
+      }),
       currentRevision: 7,
       attachmentBindings: [],
     });
@@ -539,7 +675,11 @@ function makeService() {
     close: jest.fn(),
   };
   const attachments = { ingest: jest.fn() };
-  const dispatch = { executionProjection: jest.fn().mockResolvedValue(null) };
+  const dispatch = {
+    executionProjection: jest.fn().mockResolvedValue(null),
+    readExecution: jest.fn().mockResolvedValue(null),
+  };
+  const models = fixedModelSettings();
   return {
     service: new ReviewConversationService(
       sessions as never,
@@ -547,11 +687,13 @@ function makeService() {
       conversations as never,
       attachments as never,
       dispatch as never,
+      models,
     ),
     sessions,
     objectAccess,
     conversations,
     attachments,
     dispatch,
+    models,
   };
 }

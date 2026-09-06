@@ -1,12 +1,14 @@
 import { BadRequestException } from '@nestjs/common';
 
 import type { CanonicalDevelopmentWorkItemRunRequest } from '@shared/api.interface';
+import { taskModelSelection } from '../model-settings/canonical-model-catalog';
 
 const ALLOWED_KEYS = new Set([
   'documentVersionId',
   'selection',
   'developmentRunToken',
   'query',
+  'modelRef',
 ]);
 
 const FORBIDDEN_AUTHORITY_KEYS = new Set([
@@ -41,10 +43,15 @@ export function developmentRunBody(
     'documentVersionId',
   );
   const selection = optionalSelection(value.selection);
+  const modelRef =
+    value.modelRef === undefined
+      ? undefined
+      : taskModelSelection(value.modelRef).modelRef;
   if ((documentVersionId ? 1 : 0) + (selection ? 1 : 0) !== 1) {
     throw badRequest('DEVELOPMENT_RUN_SOURCE_EXACTLY_ONE_REQUIRED');
   }
   return {
+    ...(modelRef ? { modelRef } : {}),
     ...(documentVersionId ? { documentVersionId } : { selection }),
     developmentRunToken: requiredText(
       value.developmentRunToken,

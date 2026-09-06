@@ -7,6 +7,19 @@ import {
 } from '../../client/src/pages/WorkspaceHomePage/hosted-development-intake-flow';
 
 describe('hosted development intake source flow', () => {
+  it('submits only the model reference and preserves the stable source/request token', () => {
+    const selection = {
+      bucketId: 'test',
+      filePath: 'source.pdf',
+      developmentRunToken: 'same-request',
+    };
+    expect(developmentWorkItemRequest(selection, 'dli/gpt-5.6-sol')).toEqual({
+      selection: { bucketId: 'test', filePath: 'source.pdf' },
+      developmentRunToken: 'same-request',
+      query: 'applicability',
+      modelRef: 'dli/gpt-5.6-sol',
+    });
+  });
   it('distinguishes PDF identity refusal from login and does not expose an upstream stack', () => {
     const reason = Object.assign(
       new Error(

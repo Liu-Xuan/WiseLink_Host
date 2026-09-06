@@ -66,6 +66,7 @@ export async function resolveHostedIntakeSelection<TFile>(
 
 export function developmentWorkItemRequest(
   selection: HostedUploadSelection,
+  modelRef?: string,
 ): CanonicalDevelopmentWorkItemRunRequest {
   return {
     selection: {
@@ -74,6 +75,7 @@ export function developmentWorkItemRequest(
     },
     developmentRunToken: selection.developmentRunToken,
     query: 'applicability',
+    ...(modelRef ? { modelRef } : {}),
   };
 }
 

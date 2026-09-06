@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 import { ReviewConversationRepository } from '../../server/modules/review-persistence/review-conversation.repository';
+import { taskModelSelection } from '../../server/modules/model-settings/canonical-model-catalog';
 
 describe('ReviewConversationRepository OpenClaw actor context', () => {
   afterEach(() => jest.restoreAllMocks());
@@ -76,6 +77,11 @@ describe('ReviewConversationRepository OpenClaw actor context', () => {
       'focused JSON',
       `WLR7:${JSON.stringify({ schemaVersion: 'wiselink.3_1.review_engineer_input.v1.c7', userMessage: 'Please review rule 1.', selectedEvaluationItemId: 'RULE-1', attachments: [] })}`,
       'RULE-1',
+    ],
+    [
+      'task model JSON',
+      `WLR7:${JSON.stringify({ schemaVersion: 'wiselink.3_1.review_engineer_input.v1.c7', userMessage: 'Please review rule 1.', requestedModel: taskModelSelection('dli/gpt-5.6-sol'), attachments: [] })}`,
+      null,
     ],
   ])(
     'reads %s and normalizes raw SQL timestamps',
@@ -155,6 +161,8 @@ describe('ReviewConversationRepository OpenClaw actor context', () => {
       expect(binding?.turn.selectedEvaluationItemId).toBe(
         selectedEvaluationItemId,
       );
+      if (_label === 'task model JSON')
+        expect(binding?.turn.requestedModel?.modelRef).toBe('dli/gpt-5.6-sol');
     },
   );
 

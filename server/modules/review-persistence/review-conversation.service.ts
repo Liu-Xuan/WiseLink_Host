@@ -3,6 +3,7 @@ import type { Request } from 'express';
 
 import type {
   AppendReviewTextTurnRequest,
+  CanonicalExecutionModelSelection,
   AppendReviewTextTurnResponse,
   CloseReviewConversationResponse,
   CreateOrResumeReviewConversationResponse,
@@ -12,6 +13,9 @@ import type {
 } from '@shared/api.interface';
 import { SessionResolver } from '../identity/session-resolver.service';
 import { ReviewAttemptDispatchService } from '../action-attempt/review-attempt-dispatch.service';
+import { CanonicalModelSettingsService } from '../model-settings/canonical-model-settings.service';
+import { taskModelSelection } from '../model-settings/canonical-model-catalog';
+import { readStoredExecutionModel } from '../model-settings/canonical-execution-model';
 import { isOpenClawAutomaticReviewConfigured } from '../canonical-host/configured-development-service-scope.authorization';
 import type { ResolvedSession } from '../identity/session-resolver.service';
 import {
@@ -37,6 +41,7 @@ export class ReviewConversationService {
     private readonly conversations: ReviewConversationRepository,
     private readonly attachments: ReviewAttachmentService,
     private readonly dispatch: ReviewAttemptDispatchService,
+    private readonly modelSettings: CanonicalModelSettingsService,
   ) {}
 
   async createOrResume(
@@ -112,6 +117,12 @@ export class ReviewConversationService {
     );
     if (replay) {
       assertAttachmentReplay(replay, input.attachmentSelection);
+      if (
+        input.modelRef !== undefined &&
+        input.modelRef !== replay.requestedModel?.modelRef
+      ) {
+        throw reviewConflict('REVIEW_TURN_IDEMPOTENCY_CONFLICT');
+      }
       return this.appendAndReadback({
         authorized,
         conversation: existing.conversation,
@@ -120,17 +131,28 @@ export class ReviewConversationService {
         selectedEvaluationItemId: input.selectedEvaluationItemId ?? null,
         executionRequested: input.executionMode === 'AUTOMATIC',
         attachmentBindings: replay.attachmentBindings,
+        requestedModel: replay.requestedModel,
       });
     }
 
-    if (input.executionMode === 'AUTOMATIC' &&
-        !isOpenClawAutomaticReviewConfigured(existing.conversation)) {
-      throw Object.assign(new Error('Automatic review is not available for this work item.'), {
-        code: 'REVIEW_AUTOMATIC_EXECUTION_UNAVAILABLE',
-        statusCode: 503,
-      });
+    if (
+      input.executionMode === 'AUTOMATIC' &&
+      !isOpenClawAutomaticReviewConfigured(existing.conversation)
+    ) {
+      throw Object.assign(
+        new Error('Automatic review is not available for this work item.'),
+        {
+          code: 'REVIEW_AUTOMATIC_EXECUTION_UNAVAILABLE',
+          statusCode: 503,
+        },
+      );
     }
 
+    const inherited =
+      input.modelRef === undefined ? await this.inheritedModel(existing) : null;
+    const requestedModel = taskModelSelection(
+      input.modelRef ?? inherited?.modelRef,
+    );
     let attachmentBindings: ReviewAttachmentBinding[] = [];
     if (input.attachmentSelection) {
       const attachmentGrant: AuthorizedReviewAccess =
@@ -170,6 +192,7 @@ export class ReviewConversationService {
       selectedEvaluationItemId: input.selectedEvaluationItemId ?? null,
       executionRequested: input.executionMode === 'AUTOMATIC',
       attachmentBindings,
+      requestedModel,
     });
   }
 
@@ -181,6 +204,7 @@ export class ReviewConversationService {
     selectedEvaluationItemId: string | null;
     executionRequested: boolean;
     attachmentBindings: ReviewAttachmentBinding[];
+    requestedModel?: CanonicalExecutionModelSelection;
   }): Promise<AppendReviewTextTurnResponse> {
     const appended = await this.conversations.appendTextTurn({
       conversation: input.conversation,
@@ -190,6 +214,7 @@ export class ReviewConversationService {
       executionRequested: input.executionRequested,
       currentRevision: input.authorized.grant.workItemRevision,
       attachmentBindings: input.attachmentBindings,
+      requestedModel: input.requestedModel,
     });
     const aggregate: PersistedReviewConversationAggregate =
       await this.requiredConversation(input.conversation.reviewConversationId);
@@ -199,7 +224,9 @@ export class ReviewConversationService {
     );
     return {
       conversation,
-      turn: conversation.turns.find((turn) => turn.reviewTurnId === appended.turn.reviewTurnId)!,
+      turn: conversation.turns.find(
+        (turn) => turn.reviewTurnId === appended.turn.reviewTurnId,
+      )!,
       replayed: appended.replayed,
     };
   }
@@ -245,22 +272,58 @@ export class ReviewConversationService {
   ): Promise<ReviewConversationReadModel> {
     const model = reviewConversationReadModel(aggregate, currentRevision);
     const conversation = aggregate.conversation;
-    model.automaticExecutionAvailable = conversation.status === 'ACTIVE' &&
+    model.automaticExecutionAvailable =
+      conversation.status === 'ACTIVE' &&
       isOpenClawAutomaticReviewConfigured(conversation);
-    model.turns = await Promise.all(aggregate.turns.map(async (turn) => ({
-      ...reviewTurnReadModel(turn),
-      execution: await this.dispatch.executionProjection({
+    model.turns = await Promise.all(
+      aggregate.turns.map(async (turn) => ({
+        ...reviewTurnReadModel(turn),
+        execution: await this.dispatch.executionProjection({
+          tenantId: conversation.tenantId,
+          actorId: conversation.actorId,
+          workItemId: conversation.workItemId,
+          reviewConversationId: conversation.reviewConversationId,
+          reviewTurnId: turn.reviewTurnId,
+          inputRevision: turn.inputRevision,
+          executionRequested: turn.executionRequested,
+          createdAt: turn.createdAt,
+        }),
+      })),
+    );
+    model.defaultModel =
+      [...model.turns]
+        .reverse()
+        .map((turn) => turn.requestedModel ?? turn.execution?.executionModel)
+        .find((choice) => choice != null) ??
+      (await this.modelSettings.readWorkItemModel(
+        conversation.tenantId,
+        conversation.workItemId,
+      ));
+    return model;
+  }
+
+  private async inheritedModel(
+    aggregate: PersistedReviewConversationAggregate,
+  ) {
+    const conversation = aggregate.conversation;
+    for (const turn of [...aggregate.turns].reverse()) {
+      if (turn.requestedModel) return turn.requestedModel;
+      const execution = await this.dispatch.readExecution({
         tenantId: conversation.tenantId,
         actorId: conversation.actorId,
         workItemId: conversation.workItemId,
         reviewConversationId: conversation.reviewConversationId,
         reviewTurnId: turn.reviewTurnId,
         inputRevision: turn.inputRevision,
-        executionRequested: turn.executionRequested,
-        createdAt: turn.createdAt,
-      }),
-    })));
-    return model;
+      });
+      const previous = readStoredExecutionModel(execution?.executionModelJson);
+      if (previous) return previous;
+    }
+    return this.modelSettings.captureForWorkItem(
+      conversation.tenantId,
+      conversation.workItemId,
+      new Date(),
+    );
   }
 
   private async authorize(
@@ -386,6 +449,9 @@ export function reviewTurnReadModel(
     inputRevision: turn.inputRevision,
     userMessage: turn.userMessage,
     selectedEvaluationItemId: turn.selectedEvaluationItemId ?? null,
+    requestedModel: turn.requestedModel
+      ? structuredClone(turn.requestedModel)
+      : null,
     engineerSuppliedInput: {
       engineerSuppliedInputId: turn.engineerSuppliedInputId,
       inputType: 'ENGINEER_TEXT',

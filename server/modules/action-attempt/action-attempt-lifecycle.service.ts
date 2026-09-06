@@ -105,8 +105,9 @@ export class ActionAttemptLifecycleService {
       input.deadlineAt ??
       new Date(now.getTime() + ACTION_ATTEMPT_DEFAULT_DEADLINE_MS);
     const priority = input.priority ?? DEFAULT_PRIORITY;
-    const executionModel = await this.modelSettings.captureForNewTask(
+    const executionModel = await this.modelSettings.captureForWorkItem(
       input.tenantId,
+      input.workItemId,
       now,
     );
     const modelInput = await input.buildModelInput(identity);

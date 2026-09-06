@@ -1,4 +1,7 @@
-import type { UnifiedPackageArtifactDescriptor } from '@shared/api.interface';
+import type {
+  CanonicalExecutionModelSelection,
+  UnifiedPackageArtifactDescriptor,
+} from '@shared/api.interface';
 
 export interface ReviewAttachmentBinding {
   attachmentRef: string;
@@ -15,5 +18,6 @@ export interface ReviewEngineerInputPayload {
   userMessage: string;
   selectedEvaluationItemId?: string | null;
   executionRequested?: boolean;
+  requestedModel?: CanonicalExecutionModelSelection;
   attachments: ReviewAttachmentBinding[];
 }

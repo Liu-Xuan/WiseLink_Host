@@ -7,6 +7,7 @@ import type {
   CanonicalDocumentParsingPageResponse,
   CanonicalInitialAnalysisReadModel,
   CanonicalModelSettingsReadModel,
+  CanonicalTaskModelOptions,
   UpdateCanonicalModelSettingsRequest,
   CanonicalRelatedContextPreviewResponse,
   CanonicalStructuredContentPageResponse,
@@ -422,20 +423,31 @@ export function getCanonicalModelSettings(): Promise<CanonicalModelSettingsReadM
   return requestCanonicalModelSettings('GET');
 }
 
+export function getCanonicalTaskModelOptions(): Promise<CanonicalTaskModelOptions> {
+  return requestCanonicalModelSettings<CanonicalTaskModelOptions>(
+    'GET',
+    undefined,
+    '/api/canonical-host/settings/models/task-options',
+  );
+}
+
 export function updateCanonicalModelSettings(
   input: UpdateCanonicalModelSettingsRequest,
 ): Promise<CanonicalModelSettingsReadModel> {
   return requestCanonicalModelSettings('POST', input);
 }
 
-async function requestCanonicalModelSettings(
+async function requestCanonicalModelSettings<
+  T = CanonicalModelSettingsReadModel,
+>(
   method: 'GET' | 'POST',
   data?: UpdateCanonicalModelSettingsRequest,
-): Promise<CanonicalModelSettingsReadModel> {
+  url = '/api/canonical-host/settings/models',
+): Promise<T> {
   const requestGeneration = clientSessionGeneration;
   try {
-    const response = await axiosForBackend<CanonicalModelSettingsReadModel>({
-      url: '/api/canonical-host/settings/models',
+    const response = await axiosForBackend<T>({
+      url,
       method,
       data,
       headers: { 'Cache-Control': 'no-cache' },
