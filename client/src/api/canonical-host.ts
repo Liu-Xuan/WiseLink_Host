@@ -227,12 +227,22 @@ export async function createDevelopmentWorkItem(
       throw backendResponseError(
         response.data,
         'CANONICAL_DEVELOPMENT_WORK_ITEM_CREATE_FAILED',
+        response.status,
       );
     }
     return response.data;
   } catch (error) {
     markRejectedCanonicalLogin(error, requestGeneration);
-    logger.error('创建隔离 DEV WorkItem 失败', error);
+    logCanonicalRequestFailure('创建工程事项失败', error);
+    const response =
+      isRecord(error) && isRecord(error.response) ? error.response : null;
+    if (response) {
+      throw backendResponseError(
+        response.data,
+        'CANONICAL_DEVELOPMENT_WORK_ITEM_CREATE_FAILED',
+        responseStatus(error) ?? undefined,
+      );
+    }
     throw error;
   }
 }
@@ -276,7 +286,7 @@ export async function listDevelopmentExistingPdfs(input: {
     return response.data;
   } catch (error) {
     markRejectedCanonicalLogin(error, requestGeneration);
-    logger.error('读取受控的现有 PDF 列表失败', error);
+    logCanonicalRequestFailure('读取受控的现有 PDF 列表失败', error);
     throw error;
   }
 }
@@ -306,7 +316,7 @@ export async function retryDevelopmentWorkItem(
     return response.data;
   } catch (error) {
     markRejectedCanonicalLogin(error, requestGeneration);
-    logger.error('重新解析既有 DEV WorkItem 失败', error);
+    logCanonicalRequestFailure('重新解析既有 DEV WorkItem 失败', error);
     throw error;
   }
 }
@@ -337,7 +347,10 @@ export async function getLibraryIndex(
     }
     return response.data;
   } catch (error) {
-    logger.error('读取 WorkItem LibraryIndex fresh projection 失败', error);
+    logCanonicalRequestFailure(
+      '读取 WorkItem LibraryIndex fresh projection 失败',
+      error,
+    );
     throw normalizedDirectObjectError(error, requestGeneration);
   }
 }
@@ -409,27 +422,47 @@ export function getCanonicalModelSettings(): Promise<CanonicalModelSettingsReadM
   return requestCanonicalModelSettings('GET');
 }
 
-export function updateCanonicalModelSettings(input: UpdateCanonicalModelSettingsRequest): Promise<CanonicalModelSettingsReadModel> {
+export function updateCanonicalModelSettings(
+  input: UpdateCanonicalModelSettingsRequest,
+): Promise<CanonicalModelSettingsReadModel> {
   return requestCanonicalModelSettings('POST', input);
 }
 
-async function requestCanonicalModelSettings(method: 'GET' | 'POST', data?: UpdateCanonicalModelSettingsRequest): Promise<CanonicalModelSettingsReadModel> {
+async function requestCanonicalModelSettings(
+  method: 'GET' | 'POST',
+  data?: UpdateCanonicalModelSettingsRequest,
+): Promise<CanonicalModelSettingsReadModel> {
   const requestGeneration = clientSessionGeneration;
   try {
     const response = await axiosForBackend<CanonicalModelSettingsReadModel>({
-      url: '/api/canonical-host/settings/models', method, data,
+      url: '/api/canonical-host/settings/models',
+      method,
+      data,
       headers: { 'Cache-Control': 'no-cache' },
     });
-    if (response.status === 401) throw clientLoginRequired('MODEL_SETTINGS_LOGIN_REQUIRED', requestGeneration);
+    if (response.status === 401)
+      throw clientLoginRequired(
+        'MODEL_SETTINGS_LOGIN_REQUIRED',
+        requestGeneration,
+      );
     if (response.status < 200 || response.status >= 300) {
-      throw backendResponseError(response.data, 'MODEL_SETTINGS_UNAVAILABLE', response.status);
+      throw backendResponseError(
+        response.data,
+        'MODEL_SETTINGS_UNAVAILABLE',
+        response.status,
+      );
     }
     return response.data;
   } catch (error) {
     const status = responseStatus(error);
-    if (status === 401) requireCanonicalHostClientAuthentication(requestGeneration);
+    if (status === 401)
+      requireCanonicalHostClientAuthentication(requestGeneration);
     if (isRecord(error) && isRecord(error.response)) {
-      throw backendResponseError(error.response.data, 'MODEL_SETTINGS_UNAVAILABLE', status);
+      throw backendResponseError(
+        error.response.data,
+        'MODEL_SETTINGS_UNAVAILABLE',
+        status,
+      );
     }
     throw error;
   }
@@ -445,14 +478,23 @@ export async function getInitialAnalysisStatus(
       method: 'GET',
       headers: { 'Cache-Control': 'no-cache' },
     });
-    if (response.status === 401) throw clientLoginRequired('INITIAL_ANALYSIS_LOGIN_REQUIRED', requestGeneration);
-    if (response.status === 403 || response.status === 404) throw canonicalObjectNotFound();
+    if (response.status === 401)
+      throw clientLoginRequired(
+        'INITIAL_ANALYSIS_LOGIN_REQUIRED',
+        requestGeneration,
+      );
+    if (response.status === 403 || response.status === 404)
+      throw canonicalObjectNotFound();
     if (response.status < 200 || response.status >= 300) {
-      throw backendResponseError(response.data, 'INITIAL_ANALYSIS_STATUS_UNAVAILABLE', response.status);
+      throw backendResponseError(
+        response.data,
+        'INITIAL_ANALYSIS_STATUS_UNAVAILABLE',
+        response.status,
+      );
     }
     return response.data;
   } catch (error) {
-    logger.error('读取初始分析进度失败', error);
+    logCanonicalRequestFailure('读取初始分析进度失败', error);
     throw normalizedDirectObjectError(error, requestGeneration);
   }
 }
@@ -532,7 +574,7 @@ export interface CanonicalDocumentReadFailureSummary {
   sourceUnavailable: boolean;
 }
 
-/** This read path only: never return request config, headers, body or stack. */
+/** Never return request config, headers, body or stack in client telemetry. */
 export function summarizeCanonicalDocumentReadFailure(
   reason: unknown,
 ): CanonicalDocumentReadFailureSummary {
@@ -589,6 +631,12 @@ export function summarizeCanonicalDocumentReadFailure(
     sourceUnavailable:
       Boolean(sourceCode) && ![401, 403, 404].includes(statusCode ?? 0),
   };
+}
+
+function logCanonicalRequestFailure(message: string, error: unknown): void {
+  const { statusCode, code, traceId } =
+    summarizeCanonicalDocumentReadFailure(error);
+  logger.error(message, { statusCode, code, traceId });
 }
 
 export async function requestOverallRegeneration(
@@ -649,7 +697,7 @@ async function overallRegenerationRequest<T>(input: {
     }
     return response.data;
   } catch (error) {
-    logger.error(`${input.operation}失败`, error);
+    logCanonicalRequestFailure(`${input.operation}失败`, error);
     throw normalizedOverallRegenerationError(error, requestGeneration);
   }
 }
@@ -699,7 +747,7 @@ export async function getStructuredContentPage(
     }
     return response.data;
   } catch (error) {
-    logger.error('读取结构化内容分页失败', error);
+    logCanonicalRequestFailure('读取结构化内容分页失败', error);
     throw normalizedDirectObjectError(error, requestGeneration);
   }
 }
@@ -732,7 +780,7 @@ export async function getRelatedContextPreview(
     }
     return response.data;
   } catch (error) {
-    logger.error('读取关联上下文预览失败', error);
+    logCanonicalRequestFailure('读取关联上下文预览失败', error);
     throw normalizedDirectObjectError(error, requestGeneration);
   }
 }
@@ -790,7 +838,7 @@ export async function getConfigurationEvidenceStatus(
     }
     return response.data;
   } catch (error) {
-    logger.error('读取构型证据状态失败', error);
+    logCanonicalRequestFailure('读取构型证据状态失败', error);
     throw normalizedDirectObjectError(error, requestGeneration);
   }
 }
@@ -824,7 +872,7 @@ export async function adoptConfigurationEvidenceCandidate(
       );
     }
   } catch (error) {
-    logger.error('采纳构型证据候选失败', error);
+    logCanonicalRequestFailure('采纳构型证据候选失败', error);
     throw normalizedDirectObjectError(error, requestGeneration);
   }
 }
@@ -857,7 +905,7 @@ async function applicabilitySelectionRequest(input: {
     }
     return response.data;
   } catch (error) {
-    logger.error(`${input.operation}失败`, error);
+    logCanonicalRequestFailure(`${input.operation}失败`, error);
     throw normalizedApplicabilitySelectionError(error, requestGeneration);
   }
 }
@@ -966,7 +1014,7 @@ async function reviewConversationRequest<T>(input: {
     }
     return response.data;
   } catch (error) {
-    logger.error(`${input.operation}失败`, error);
+    logCanonicalRequestFailure(`${input.operation}失败`, error);
     throw normalizedReviewConversationError(error, requestGeneration);
   }
 }
@@ -1166,7 +1214,7 @@ export async function recordEngineerReview(
     }
     return response.data;
   } catch (error) {
-    logger.error('记录工程师逐项意见失败', error);
+    logCanonicalRequestFailure('记录工程师逐项意见失败', error);
     throw normalizedDirectObjectError(error, requestGeneration);
   }
 }
@@ -1192,7 +1240,7 @@ export async function queryParsedUnits(
     }
     return response.data;
   } catch (error) {
-    logger.error('查询解析单元失败', error);
+    logCanonicalRequestFailure('查询解析单元失败', error);
     throw normalizedDirectObjectError(error, requestGeneration);
   }
 }
@@ -1218,7 +1266,7 @@ export async function confirmIntegratedOverallForAeo(
     }
     return response.data;
   } catch (error) {
-    logger.error('确认当前整体综合用于 AEO 失败', error);
+    logCanonicalRequestFailure('确认当前整体综合用于 AEO 失败', error);
     throw normalizedDirectObjectError(error, requestGeneration);
   }
 }
@@ -1244,7 +1292,7 @@ export async function generateAeoCandidate(
     }
     return response.data;
   } catch (error) {
-    logger.error('生成同一 WorkItem 的 AEO 候选失败', error);
+    logCanonicalRequestFailure('生成同一 WorkItem 的 AEO 候选失败', error);
     throw normalizedDirectObjectError(error, requestGeneration);
   }
 }

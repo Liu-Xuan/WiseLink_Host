@@ -37,6 +37,7 @@ import {
   beginHostedIntakeSubmission,
   developmentWorkItemRequest,
   endHostedIntakeSubmission,
+  hostedIntakeError,
   resolveHostedIntakeSelection,
   type HostedIntakeSource,
   type HostedUploadSelection,
@@ -245,7 +246,7 @@ export function HostedDevelopmentIntake() {
       navigate(`/work-items/${encodeURIComponent(workItemId)}`);
     } catch (reason) {
       setPhase('failed');
-      setError(intakeError(reason));
+      setError(hostedIntakeError(reason));
     } finally {
       endHostedIntakeSubmission(submissionInFlightRef);
     }
@@ -541,20 +542,6 @@ function fileSizeLabel(bytes: number): string {
   if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
   if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${bytes.toLocaleString('zh-CN')} 字节`;
-}
-
-function intakeError(reason: unknown): string {
-  const message = reason instanceof Error ? reason.message.trim() : '';
-  if (/IDENTITY|LOGIN|OAUTH|401|UNAUTHORIZED/iu.test(message)) {
-    return '请先完成飞书授权，再上传并创建工程事项。';
-  }
-  if (/SAME_USER_READBACK_MISMATCH/iu.test(message)) {
-    return '文件已上传，但事项校验尚未完成。请保留当前文件后重试；未通过校验的结果不会作为当前事项。';
-  }
-  if (/BROWSER_(RANDOM_UUID|SHA256)_UNAVAILABLE/iu.test(message)) {
-    return '当前浏览器缺少安全校验能力，请使用最新版飞书或受支持浏览器重试。';
-  }
-  return '工程事项创建失败，请保留当前文件后重试。';
 }
 
 function existingPickerError(reason: unknown): string {

@@ -40,11 +40,15 @@ export class OrdinaryDocumentManagementAuthorizer implements DocumentManagementI
     if (!bucketId || !filePath) {
       throw documentActionForbidden();
     }
-    const defaultBucketId = await this.fileService.getDefaultBucket();
+    const defaultBucketId = await readIngestStorage(
+      'DOCUMENT_STORAGE_BUCKET_READ_FAILED',
+      () => this.fileService.getDefaultBucket(),
+    );
     if (bucketId !== defaultBucketId) throw documentActionForbidden();
-    const metadata = await this.fileService
-      .from(defaultBucketId)
-      .getFileMetadata(filePath);
+    const metadata = await readIngestStorage(
+      'DOCUMENT_STORAGE_METADATA_READ_FAILED',
+      () => this.fileService.from(defaultBucketId).getFileMetadata(filePath),
+    );
     if (!metadata) throw documentSelectionNotFound();
     if (
       metadata.bucketID !== defaultBucketId ||
@@ -71,6 +75,45 @@ export class OrdinaryDocumentManagementAuthorizer implements DocumentManagementI
       },
     );
     if (!binding) throw documentNotFound();
+  }
+}
+
+async function readIngestStorage<T>(
+  code: string,
+  read: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await read();
+  } catch (cause: unknown) {
+    const value =
+      typeof cause === 'object' && cause !== null
+        ? (cause as {
+            statusCode?: unknown;
+            status?: unknown;
+            response?: { status?: unknown };
+          })
+        : {};
+    const status = value.statusCode ?? value.status ?? value.response?.status;
+    const statusCode =
+      typeof status === 'number' &&
+      Number.isInteger(status) &&
+      status >= 400 &&
+      status < 500
+        ? status
+        : 503;
+    // Only report a bounded operational error. Never use the supplied bucket
+    // as a fallback or promote a failed read into an authorization decision.
+    throw Object.assign(
+      new Error('受控文件空间核验未完成；本次未取得受理授权。'),
+      {
+        code:
+          statusCode === 401 || statusCode === 403
+            ? 'DOCUMENT_ACTION_FORBIDDEN'
+            : code,
+        statusCode,
+        cause,
+      },
+    );
   }
 }
 

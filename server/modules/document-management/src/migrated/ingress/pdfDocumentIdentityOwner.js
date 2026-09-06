@@ -7,7 +7,9 @@ const PDF_HEADER = Buffer.from('%PDF-', 'ascii');
 const UTF8_BOM = Buffer.from([0xef, 0xbb, 0xbf]);
 
 function fail(code, message, details = {}) {
-  throw Object.assign(new Error(message), { code, details });
+  // Identity refusal is an actionable input/format failure, not an opaque 500.
+  // Keep the stable code without exposing an internal stack to the browser.
+  throw Object.assign(new Error(message), { code, details, statusCode: 422 });
 }
 
 function normalizeText(value = '') {
@@ -351,8 +353,9 @@ function extractBoeingServiceLetter({ firstPageText }) {
 
 const BOEING_SB_CODE_PATTERN =
   '(?:737MAX|737NG|737|747|757|767|777|787)-\\d{2}(?:A?\\d{4}|-\\d{4})';
+const BOEING_787_PUBLICATION_CODE_PATTERN = 'B787-\\d{5}-SB\\d{6}-\\d{2}';
 
-function extractBoeingServiceBulletin({ firstPageText, inspectedText }) {
+function extractBoeingServiceBulletin({ firstPageText, inspectedText, layout }) {
   if (
     !/\bSERVICE\s+BULLETIN\b/iu.test(firstPageText) ||
     !/\bBOEING(?:\s+PROPRIETARY|\s+SERVICE\s+BULLETIN|\s+COMPANY)\b/iu.test(
@@ -362,6 +365,15 @@ function extractBoeingServiceBulletin({ firstPageText, inspectedText }) {
     return null;
   }
   const adapterId = 'issuer.boeing.service_bulletin.v1';
+  // Boeing 787 publication-module PDFs have a title-page Publication row,
+  // not the legacy "Service Bulletin Number / Original Issue" masthead.
+  // Bind the code, issue and date from that same primary row; cited data
+  // modules and a filename alone must never establish publication identity.
+  const publicationRows = [firstPageText, ...boeingPublicationRowTexts(layout)]
+    .flatMap((text) => [...text.matchAll(new RegExp(
+      `\\bPUBLICATION\\s*:\\s*(${BOEING_787_PUBLICATION_CODE_PATTERN})\\s+ISSUE\\s+(\\d{1,4})\\s*,\\s*(\\d{1,2}\\s+[A-Z]{3,9}\\s+\\d{4})\\b`,
+      'giu',
+    ))]);
   const documentCode = singleIdentityCandidate(
     [
       ...firstPageText.matchAll(
@@ -370,10 +382,33 @@ function extractBoeingServiceBulletin({ firstPageText, inspectedText }) {
           'giu',
         ),
       ),
-    ].map((match) => match[1].toUpperCase()),
+    ].map((match) => match[1].toUpperCase()).concat(
+      publicationRows.map((match) => match[1].toUpperCase()),
+    ),
     adapterId,
     'document code',
   );
+  if (publicationRows.length > 0) {
+    const businessRevision = singleIdentityCandidate(
+      publicationRows.map((match) => `ISSUE ${match[2]}`),
+      adapterId,
+      'publication issue',
+    );
+    const revisionDate = singleIdentityCandidate(
+      publicationRows.map((match) => requiredExtractedDate(
+        match[3], adapterId, 'publication date',
+      )),
+      adapterId,
+      'publication issue date',
+    );
+    return {
+      documentCode,
+      businessRevision,
+      revisionDate,
+      sourceGeneratedDate: '',
+      sourceType: 'boeing_sb',
+    };
+  }
   const revisions = [
     ...firstPageText.matchAll(
       /\bREVISION\s+(\d{1,4})\s*:\s*([A-Z]{3,9}\s+\d{1,2},\s+\d{4})\b/giu,
@@ -416,6 +451,20 @@ function extractBoeingServiceBulletin({ firstPageText, inspectedText }) {
     sourceGeneratedDate: '',
     sourceType: 'boeing_sb',
   };
+}
+
+function boeingPublicationRowTexts(layout) {
+  const firstPageRuns = (Array.isArray(layout?.textRuns) ? layout.textRuns : [])
+    .filter((run) => Number(run?.page) === 1 && Number.isFinite(run?.x) && Number.isFinite(run?.y));
+  return firstPageRuns
+    .filter((run) => /^Publication\s*:$/iu.test(normalizeText(run.text)))
+    .map((label) => firstPageRuns
+      // PDF text-object order is not reading order. These three table cells
+      // share a visual baseline (font baselines may differ by half a point).
+      .filter((run) => Math.abs(run.y - label.y) <= 1 && run.x >= label.x)
+      .sort((left, right) => left.x - right.x)
+      .map((run) => normalizeText(run.text))
+      .join(' '));
 }
 
 function extractAirbusServiceBulletin({ firstPageText }) {
