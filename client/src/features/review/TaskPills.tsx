@@ -1,12 +1,16 @@
 import { useMemo } from 'react';
 import { CircleDashed, UserCheck, XCircle } from 'lucide-react';
 
-import type { CanonicalTimelineProjection } from '@shared/api.interface';
+import type {
+  CanonicalInitialAnalysisReadModel,
+  CanonicalTimelineProjection,
+} from '@shared/api.interface';
 
 import './review-loop.css';
 
 export interface TaskPillsProps {
   timeline: CanonicalTimelineProjection;
+  initialAnalysis?: CanonicalInitialAnalysisReadModel;
 }
 
 interface TaskView {
@@ -37,6 +41,41 @@ const TASK_KINDS: ReadonlyArray<{
   { kind: 'OVERALL_CONFIRMATION', label: '整体确认' },
   { kind: 'AEO_CANDIDATE', label: 'AEO 候选' },
 ];
+
+const INITIAL_TASKS = [
+  ['translation', '全文翻译'],
+  ['applicability', '适用性匹配'],
+  ['jobAid', 'JobAid 评估'],
+  ['overall', '整体综合'],
+] as const;
+
+export function initialAnalysisNotes(
+  initial: CanonicalInitialAnalysisReadModel,
+): string[] {
+  return INITIAL_TASKS.flatMap(([key, label]) => {
+    const stage = initial.stages[key];
+    if (stage.status === 'WAITING_INPUT') {
+      return [
+        stage.terminalCode === 'APPLICABILITY_SELECTION_REQUIRED'
+          ? '尚未选择目标飞机，适用性匹配等待补充；其余分析继续基于已有原文，不能据此判定机队适用。'
+          : `${label}：受控输入尚不完整，不能把未知当作不适用。`,
+      ];
+    }
+    if (stage.status === 'FAILED') {
+      const reason = stage.terminalCode?.startsWith('INITIAL_GATEWAY_')
+        ? '模型未返回可用结果'
+        : stage.terminalCode === 'CANCELLED_BY_REQUEST'
+          ? '执行已停止'
+          : '执行失败';
+      return [
+        `${label}未完成：${reason}，本阶段未保存新候选，原失败记录保留。`,
+      ];
+    }
+    if (stage.status === 'CONFLICT')
+      return [`${label}的任务与当前结果或版本不一致，请刷新核对。`];
+    return [];
+  });
+}
 
 function stateFromStatus(
   status: string,
@@ -111,27 +150,57 @@ function safeTaskNote(value: string | undefined, fallback: string): string {
 /**
  * 任务胶囊（Spec R01 §4.3 / §2.2）。
  * OpenClaw 后台任务只暴露「任务、进度、结果、失败原因」；
- * 前端不轮询、不伪造进度，只读 Host current 投影。
+ * 只展示 Host 投影；初始任务由外层组件轻量刷新，不伪造进度。
  */
-export default function TaskPills({ timeline }: TaskPillsProps) {
+export default function TaskPills({
+  timeline,
+  initialAnalysis,
+}: TaskPillsProps) {
   const tasks = useMemo<TaskView[]>(() => {
-    return TASK_KINDS.flatMap(({ kind, label }) => {
-      const latest = [...timeline.events]
-        .reverse()
-        .find((event) => event.kind === kind);
-      if (!latest) return [];
-      const state = stateFromStatus(latest.status, latest.kind);
-      const statusLabel = stateLabel(state);
-      return [
-        {
-          key: kind,
-          label,
-          state,
-          note: safeTaskNote(latest.detail || latest.label, statusLabel),
-        },
-      ];
-    });
-  }, [timeline.events]);
+    const initialTasks: TaskView[] = initialAnalysis
+      ? INITIAL_TASKS.map(([key, label]) => {
+          const status = initialAnalysis.stages[key].status;
+          const state: TaskView['state'] =
+            status === 'BUSY'
+              ? 'running'
+              : status === 'SUCCEEDED'
+                ? 'candidate'
+                : status === 'WAITING_INPUT'
+                  ? 'waiting'
+                  : status === 'FAILED'
+                    ? 'failed'
+                    : status === 'CONFLICT'
+                      ? 'conflict'
+                      : 'pending';
+          const model = initialAnalysis.stages[key].executionModel;
+          return { key, label, state, note: model ? `${stateLabel(state)} · 任务模型 ${model.displayName}` : stateLabel(state) };
+        })
+      : [];
+    return [
+      ...initialTasks,
+      ...TASK_KINDS.flatMap(({ kind, label }) => {
+        if (
+          initialAnalysis &&
+          ['DYNAMIC_EVALUATION', 'OVERALL_SYNTHESIS'].includes(kind)
+        )
+          return [];
+        const latest = [...timeline.events]
+          .reverse()
+          .find((event) => event.kind === kind);
+        if (!latest) return [];
+        const state = stateFromStatus(latest.status, latest.kind);
+        const statusLabel = stateLabel(state);
+        return [
+          {
+            key: kind,
+            label,
+            state,
+            note: safeTaskNote(latest.detail || latest.label, statusLabel),
+          },
+        ];
+      }),
+    ];
+  }, [timeline.events, initialAnalysis]);
 
   return (
     <div className="wl-task-pills" role="status" aria-label="分析任务状态">

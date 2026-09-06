@@ -9,10 +9,13 @@ import type {
   AilyInitialAnalysisOperation,
   AilyInitialAnalysisStageStatus,
   AilyInitialAnalysisStatus,
+  CanonicalInitialAnalysisReadModel,
+  CanonicalExecutionModelSelection,
   CanonicalWorkItemProjection,
 } from '@shared/api.interface';
 
 import { actionAttempt } from '../../database/schema';
+import { readStoredExecutionModel } from '../model-settings/canonical-execution-model';
 import { ACTION_ATTEMPT_REQUEST_ORIGIN } from '../action-attempt/action-attempt.types';
 import {
   CANONICAL_TRANSLATION_RULE_SET_V1_ID,
@@ -26,10 +29,10 @@ const INITIAL_ANALYSIS_ACTION_TYPES = [
   'OPENCLAW_OVERALL_SYNTHESIS',
 ] as const;
 
-type InitialAnalysisActionType =
-  (typeof INITIAL_ANALYSIS_ACTION_TYPES)[number];
+type InitialAnalysisActionType = (typeof INITIAL_ANALYSIS_ACTION_TYPES)[number];
 
 export interface CanonicalInitialAnalysisAttemptObservation {
+  executionModel?: CanonicalExecutionModelSelection | null;
   attemptId: string;
   actionType: InitialAnalysisActionType;
   attemptRef: string | null;
@@ -71,6 +74,8 @@ export class CanonicalHostInitialAnalysisStatusService {
         status: actionAttempt.status,
         terminalReason: actionAttempt.terminalReason,
         errorCode: actionAttempt.errorCode,
+        cancelReason: actionAttempt.cancelReason,
+        executionModelJson: actionAttempt.executionModelJson,
       })
       .from(actionAttempt)
       .where(
@@ -82,9 +87,7 @@ export class CanonicalHostInitialAnalysisStatusService {
             input.workItem.source.documentVersionId,
           ),
           eq(actionAttempt.requestOrigin, ACTION_ATTEMPT_REQUEST_ORIGIN),
-          inArray(actionAttempt.actionType, [
-            ...INITIAL_ANALYSIS_ACTION_TYPES,
-          ]),
+          inArray(actionAttempt.actionType, [...INITIAL_ANALYSIS_ACTION_TYPES]),
         ),
       )
       .orderBy(actionAttempt.actionType, desc(actionAttempt.attemptNo));
@@ -95,10 +98,53 @@ export class CanonicalHostInitialAnalysisStatusService {
         actionType: initialAnalysisActionType(row.actionType),
         attemptRef: row.attemptRef,
         status: row.status,
-        terminalCode: row.terminalReason ?? row.errorCode,
+        terminalCode: initialAnalysisTerminalCode(row),
+        executionModel: readStoredExecutionModel(row.executionModelJson),
       })),
     );
   }
+
+  async projectForBrowser(input: {
+    workItem: CanonicalWorkItemProjection;
+    tenantId: string;
+  }): Promise<CanonicalInitialAnalysisReadModel> {
+    const status = await this.project(input);
+    const stage = (key: keyof typeof status.stages) => ({
+      status: status.stages[key].status,
+      terminalCode: status.stages[key].terminalCode,
+      ...(status.stages[key].executionModel
+        ? { executionModel: status.stages[key].executionModel }
+        : {}),
+    });
+    return {
+      workItemId: input.workItem.workItemId,
+      workItemRevision: status.workItemRevision,
+      documentVersionId: status.documentVersionId,
+      status: status.status,
+      nextOperation: status.nextOperation,
+      stages: {
+        translation: stage('translation'),
+        applicability: stage('applicability'),
+        jobAid: stage('jobAid'),
+        overall: stage('overall'),
+      },
+      candidateOnly: true,
+    };
+  }
+}
+
+export function initialAnalysisTerminalCode(row: {
+  terminalReason: string | null;
+  errorCode: string | null;
+  cancelReason: string | null;
+}): string | null {
+  // The consumer cancels before commit on a model failure. Preserve its bounded
+  // diagnostic code instead of hiding it behind the generic cancellation code.
+  const executionFailure = row.cancelReason?.match(
+    /^HOSTED_INITIAL_EXECUTION_FAILED:([A-Z][A-Z0-9_:.-]{0,199})$/u,
+  );
+  const code = executionFailure?.[1] ?? row.terminalReason ?? row.errorCode;
+  return code && /^[A-Z][A-Z0-9_:.-]{0,199}$/u.test(code) ? code : null;
 }
 
 export function projectCanonicalHostInitialAnalysisStatus(
@@ -113,8 +159,8 @@ export function projectCanonicalHostInitialAnalysisStatus(
           translationProjectionObservation(workItem),
           attemptByAction.OPENCLAW_TRANSLATE,
         ),
-        applicability: projectStage(
-          applicabilityProjectionObservation(workItem),
+        applicability: projectApplicabilityStage(
+          workItem,
           attemptByAction.OPENCLAW_APPLICABILITY_EVALUATION,
         ),
         jobAid: projectStage(
@@ -139,6 +185,22 @@ export function projectCanonicalHostInitialAnalysisStatus(
     stages,
     candidateOnly: true,
   };
+}
+
+function projectApplicabilityStage(
+  workItem: CanonicalWorkItemProjection,
+  attempt: CanonicalInitialAnalysisAttemptObservation | undefined,
+): AilyInitialAnalysisStageStatus {
+  if (!workItem.applicability && !workItem.applicabilityInput && !attempt) {
+    // No aircraft/configuration selection is not a model task or a false match.
+    // Leave fleet matching explicitly waiting while document-level work proceeds.
+    return {
+      ...pendingStage(),
+      status: 'WAITING_INPUT',
+      terminalCode: 'APPLICABILITY_SELECTION_REQUIRED',
+    };
+  }
+  return projectStage(applicabilityProjectionObservation(workItem), attempt);
 }
 
 function translationProjectionObservation(
@@ -259,6 +321,10 @@ function projectStage(
           ? attempt.status
           : null,
       terminalCode: projection.terminalCode,
+      ...(attempt?.attemptId === projection.actionAttemptId &&
+      attempt.executionModel
+        ? { executionModel: attempt.executionModel }
+        : {}),
     };
   }
   if (!attempt) return pendingStage();
@@ -301,6 +367,9 @@ function projectionStageStatus(
     status,
     attemptRef: exactAttempt?.attemptRef ?? null,
     attemptStatus: exactAttempt?.status ?? null,
+    ...(exactAttempt?.executionModel
+      ? { executionModel: exactAttempt.executionModel }
+      : {}),
     terminalCode:
       status === 'WAITING_INPUT'
         ? (exactAttempt?.terminalCode ?? projection.terminalCode)
@@ -317,6 +386,9 @@ function attemptStageStatus(
     attemptRef: attempt.attemptRef,
     attemptStatus: attempt.status,
     terminalCode: attempt.terminalCode,
+    ...(attempt.executionModel
+      ? { executionModel: attempt.executionModel }
+      : {}),
   };
 }
 
@@ -432,9 +504,7 @@ function isParsedPackageReady(workItem: CanonicalWorkItemProjection): boolean {
 
 function initialAnalysisActionType(value: string): InitialAnalysisActionType {
   if (
-    INITIAL_ANALYSIS_ACTION_TYPES.includes(
-      value as InitialAnalysisActionType,
-    )
+    INITIAL_ANALYSIS_ACTION_TYPES.includes(value as InitialAnalysisActionType)
   ) {
     return value as InitialAnalysisActionType;
   }

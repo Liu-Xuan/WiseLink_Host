@@ -38,30 +38,47 @@ const INITIAL_TOOLS = new Set([
   'begin_overall_synthesis', 'commit_overall_candidate',
 ]);
 
-/** One native cron tick: one unfinished initial stage, then ordinary Review ticks. */
+/** Drain dependency-ready initial stages within one native tick; commits remain serial. */
 export async function consumeHostedWorkItem(options, dependencies) {
   const statusResult = await dependencies.callTool('get_parse_status', {
     workItemId: options.workItemId,
   });
-  const initial = readInitialStatus(statusResult, options.workItemId);
+  let initial = readInitialStatus(statusResult, options.workItemId);
   if (initialComplete(initial)) {
     return (dependencies.consumeReview ?? consumePendingReviewTurn)(
       { ...options, checkpointRoot: join(options.checkpointRoot, 'review') },
       { callTool: dependencies.callTool, invokeModel: dependencies.invokeReviewModel },
     );
   }
-  if (initial.status === 'BUSY' || initial.status === 'NOT_READY') {
-    return { status: initial.status, nextOperation: null };
+  const limit = options.maxInitialStages ?? INITIAL_ANALYSIS_OPERATIONS.length;
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > INITIAL_ANALYSIS_OPERATIONS.length) throw new Error('INITIAL_STAGE_LIMIT_INVALID');
+  const tickStartedAt = Date.now();
+  const completedStages = [];
+  let report;
+  for (let index = 0; index < limit; index += 1) {
+    if (initial.status === 'BUSY' || initial.status === 'NOT_READY') {
+      return { status: initial.status, nextOperation: null, completedStages };
+    }
+    if (!['REQUIRED', 'WAITING_INPUT'].includes(initial.status) || !initial.nextOperation) {
+      return { status: 'REQUIRES_ATTENTION', initialStatus: initial.status, stages: initial.stages, completedStages };
+    }
+    const operation = initial.nextOperation;
+    if (completedStages.includes(operation) || initial.stages[STAGE_BY_OPERATION[operation]]?.status !== 'PENDING') {
+      throw new Error('HOST_INITIAL_STAGE_NOT_PENDING');
+    }
+    report = await runHostedInitialStage({ ...options, operation, initial }, dependencies);
+    if (report.status !== 'INITIAL_STAGE_SAVED') return { ...report, completedStages };
+    completedStages.push(operation);
+    // Leave a full model+commit window before the native cron's 30-minute limit.
+    // A later natural tick continues from Host status; there is no hidden retry.
+    if (!report.nextOperation || Date.now() - tickStartedAt >= 15 * 60_000 || index + 1 === limit) break;
+    const next = await dependencies.callTool('get_parse_status', { workItemId: options.workItemId });
+    const observed = readInitialStatus(next, options.workItemId);
+    if (observed.documentVersionId !== initial.documentVersionId) throw new Error('INITIAL_DOCUMENT_VERSION_DRIFT');
+    if (initialComplete(observed)) break;
+    initial = observed;
   }
-  if (!['REQUIRED', 'WAITING_INPUT'].includes(initial.status) || !initial.nextOperation) {
-    return { status: 'REQUIRES_ATTENTION', initialStatus: initial.status, stages: initial.stages };
-  }
-  const operation = initial.nextOperation;
-  if (initial.stages[STAGE_BY_OPERATION[operation]]?.status !== 'PENDING') {
-    throw new Error('HOST_INITIAL_STAGE_NOT_PENDING');
-  }
-  const report = await runHostedInitialStage({ ...options, operation, initial }, dependencies);
-  return report;
+  return { ...report, completedStages };
 }
 
 export async function runHostedInitialStage(options, dependencies) {
@@ -87,6 +104,7 @@ export async function runHostedInitialStage(options, dependencies) {
   }
   const callCounts = new Map();
   let startedAttempt = null;
+  let executionModel;
   let finalCommitStarted = false;
   let modelCallCount = 0;
   const callTool = async (name, args) => {
@@ -99,7 +117,10 @@ export async function runHostedInitialStage(options, dependencies) {
       ambiguousCommit: name.startsWith('commit_'),
       perform: () => dependencies.callTool(name, args),
     });
-    if (name.startsWith('begin_') && value.status === 'RUNNING') startedAttempt = value.attemptRef;
+    if (name.startsWith('begin_') && value.status === 'RUNNING') {
+      startedAttempt = value.attemptRef;
+      executionModel = value.task?.executionModel ?? value.taskBinding?.executionModel;
+    }
     return value;
   };
   const invoke = async (modelInput) => checkpoint.remoteStep({
@@ -107,7 +128,11 @@ export async function runHostedInitialStage(options, dependencies) {
     perform: () => {
       modelCallCount += 1;
       return dependencies.invokeInitialModel({ operation, modelInput }, {
+        executionModel,
         sessionDiscriminator: runBinding.requestId,
+        observeModelOutput: (shape, round = 1) => checkpoint.writeOnce(
+          round === 1 ? 'model.output-shape' : `model.output-shape-${round}`, shape,
+        ),
       });
     },
   });
@@ -193,7 +218,7 @@ function option(argv, name) {
 
 async function main(argv, env) {
   if (argv.includes('--help')) {
-    process.stdout.write('Usage: node consume-hosted-work-item.mjs --work-item-id WI-... [--applicability-context-ref REF] [--checkpoint-root PATH] [--openclaw-config PATH]\nOne initial-analysis stage or one pending candidate-only review per native cron tick.\n');
+    process.stdout.write('Usage: node consume-hosted-work-item.mjs --work-item-id WI-... [--applicability-context-ref REF] [--checkpoint-root PATH] [--openclaw-config PATH]\nDependency-ready initial stages with serial Host commits, or one pending candidate-only review, per native cron tick.\n');
     return;
   }
   const workItemId = option(argv, '--work-item-id');

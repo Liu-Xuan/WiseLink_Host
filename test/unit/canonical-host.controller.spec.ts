@@ -38,6 +38,7 @@ const HOST_REQUEST = {
 };
 
 function target() {
+  const service = { browserInitialAnalysisStatus: jest.fn().mockResolvedValue({ status: 'FAILED' }) };
   const workItems = {
     parsePdf: jest.fn().mockResolvedValue({ workItemCreated: true }),
     createDevelopmentRun: jest.fn().mockResolvedValue({
@@ -63,13 +64,14 @@ function target() {
     }),
   };
   return {
+    service,
     workItems,
     engineerReviews,
     integratedAssessments,
     aeo,
     libraryIndex,
     controller: new CanonicalHostController(
-      {} as never,
+      service as never,
       workItems as never,
       integratedAssessments as never,
       engineerReviews as never,
@@ -80,6 +82,11 @@ function target() {
 }
 
 describe('CanonicalHostController assessment actions', () => {
+  it('delegates the initial progress read with the existing trusted browser actor', async () => {
+    const { controller, service } = target();
+    await expect(controller.initialAnalysis('WI-progress', HOST_REQUEST as never)).resolves.toEqual({ status: 'FAILED' });
+    expect(service.browserInitialAnalysisStatus).toHaveBeenCalledWith('WI-progress', expect.objectContaining({ userId: 'engineer-1001', tenantId: 'tenant-2001' }));
+  });
   const previousSandboxId = process.env.SANDBOX_ID;
   const previousLocalDev = process.env.MIAODA_LOCAL_DEV;
 

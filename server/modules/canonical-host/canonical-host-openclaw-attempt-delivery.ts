@@ -37,6 +37,7 @@ export interface OpenClawTranslationDeliveryResult {
     deadline: string;
     inputHash: string;
     sourceArtifactSha256: string[];
+    executionModel?: OpenClawTaskEnvelope['executionModel'];
   };
   delivery: {
     partIndex: number;
@@ -169,6 +170,9 @@ function deliveryResponse(
       deadline: claim.task.deadline,
       inputHash: claim.task.inputHash,
       sourceArtifactSha256: claim.task.sourceRefs.map(({ sha256 }) => sha256),
+      ...(claim.task.executionModel
+        ? { executionModel: structuredClone(claim.task.executionModel) }
+        : {}),
     },
     delivery: {
       partIndex,

@@ -37,7 +37,9 @@ node <installed-skill-path>/scripts/consume-hosted-work-item.mjs --work-item-id 
 当前无在途任务，再使 Host 的 exact WorkItem scope 与 argv 指向同一获准新事项。批量测试也按获准事项逐个切换，
 不能据此扩大 owner/tenant 权限。按运行时官方 CLI 的实际 help 操作，不手工改 cron 文件。
 
-每个 tick 只执行 Host 指定的一个初始阶段，完成后退出；后续 tick 再继续。四阶段完成时转入既有 Review 消费者。
+c24 每个 tick 默认最多连续执行 Host 指定的四个已就绪初始阶段；每次写回后 fresh-read，再开始下一阶段。
+满 15 分钟后不再启动新阶段，已执行步骤不重放；保留原生 cron 的 30 分钟总预算。依赖计算与同一事项的
+CAS 写回仍有序，独立资料读取有限并行。四阶段完成后的后续 tick 转入既有 Review 消费者。
 Host 缺少受控适用性事实时，保留 WAITING_INPUT 并允许后续 JobAid/Overall 形成条件性候选。BUSY/NOT_READY
 零模型调用；FAILED/CONFLICT、阶段状态漂移或不确定结果均停止报告，不新建失败重试。阶段 requestId 及已有
 remote-step checkpoint 保存在 `.openclaw/wiselink-work-item-runs/<WorkItem>/initial/<operation>`，权限沿用
@@ -47,6 +49,10 @@ remote-step checkpoint 保存在 `.openclaw/wiselink-work-item-runs/<WorkItem>/i
 它不执行 Host 工具、不拼 Task/ResultEnvelope、不把本轮控制引用或物理 locator 发给模型。四种输入输出校验、
 ResultEnvelope、Translation parts、Host readback/CAS 均复用现有实现。初始候选由 Host 按原有规则更新 revision；
 后续普通 Review 候选仍保持 revision/current/STALE 不变，二者都不代表正式采用。
+
+c24 使用 Host 为每个新 ActionAttempt 保存的 executionModel；Translation 从 taskBinding 读取，其他初始分析
+及 Review 从 task 读取。两类适配器都只经同一官方 Gateway 的 x-openclaw-model header 路由到已登记模型，
+恢复仍使用本任务选择，不跟随之后的全局默认。模型失败明确显示，不改用另一 provider。
 
 ## 状态和当前边界
 

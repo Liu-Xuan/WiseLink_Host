@@ -10,6 +10,36 @@ import {
 } from '../../server/modules/canonical-host/canonical-host-openclaw-attempt-delivery';
 
 describe('OpenClaw translation delivery', () => {
+  it('keeps the selected model in every control binding, not in the delivered source input', () => {
+    const claim = actualRunShapedTranslationClaim();
+    const { inputHash: _hash, ...task } = claim.task;
+    claim.task = sealTaskEnvelope({
+      ...task,
+      executionModel: {
+        modelRef: 'dli/gpt-5.6-sol',
+        displayName: 'GPT 5.6 Sol',
+        providerKind: 'CUSTOM',
+        settingsRevision: 1,
+        selectedAt: '2026-09-06T00:00:00Z',
+      },
+    });
+    const first = buildOpenClawTranslationDelivery(claim);
+    for (
+      let partIndex = 0;
+      partIndex < first.delivery.partCount;
+      partIndex += 1
+    ) {
+      const part = buildOpenClawTranslationDelivery(claim, partIndex);
+      expect(part.taskBinding.executionModel).toEqual(
+        claim.task.executionModel,
+      );
+      expect(JSON.stringify(part.delivery)).not.toContain('executionModel');
+      expect(serializedToolResultBytes(part)).toBeLessThanOrEqual(
+        OPENCLAW_TRANSLATION_DELIVERY_MAX_UTF8_BYTES,
+      );
+    }
+  });
+
   it('batches the serialized 196-unit shape into readable bounded responses', () => {
     const claim = actualRunShapedTranslationClaim();
     const first = buildOpenClawTranslationDelivery(claim);

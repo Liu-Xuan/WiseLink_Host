@@ -2,6 +2,7 @@ import {
   canonicalJson,
   sealResultEnvelope,
 } from '../../server/modules/action-attempt/action-attempt-envelope';
+import { fixedModelSettings } from '../support/fixed-model-settings';
 import type { OpenClawResultEnvelope } from '../../server/modules/action-attempt/action-attempt-envelope.types';
 import { ActionAttemptLifecycleService } from '../../server/modules/action-attempt/action-attempt-lifecycle.service';
 import type {
@@ -15,9 +16,34 @@ import {
 } from '../../server/modules/action-attempt/action-attempt.types';
 
 describe('ActionAttemptLifecycleService', () => {
+  it('captures the global selection once and preserves it through a resumed claim', async () => {
+    const repository = new MemoryActionAttemptRepository();
+    const models = fixedModelSettings();
+    const capture = jest.spyOn(models, 'captureForNewTask');
+    const service = new ActionAttemptLifecycleService(
+      repository as never,
+      models,
+    );
+    const input = reservationInput(async () => ({ controlled: true }));
+    const reserved = await service.reserve(input);
+    capture.mockImplementation(
+      fixedModelSettings('dli/gpt-5.6-sol').captureForNewTask,
+    );
+    const claimed = await service.reserveAndClaim(input);
+    expect(capture).toHaveBeenCalledTimes(1);
+    expect(claimed.task.executionModel).toEqual(reserved.task.executionModel);
+    expect(claimed.task.executionModel?.modelRef).toBe('miaoda/minimax-m3');
+    expect(JSON.parse(repository.row!.executionModelJson!)).toEqual(
+      claimed.task.executionModel,
+    );
+  });
+
   it('reserves once as QUEUED and lets the existing begin path claim the same task', async () => {
     const repository = new MemoryActionAttemptRepository();
-    const service = new ActionAttemptLifecycleService(repository as never);
+    const service = new ActionAttemptLifecycleService(
+      repository as never,
+      fixedModelSettings(),
+    );
     let builds = 0;
     const input = reservationInput(async () => {
       builds += 1;
@@ -53,7 +79,10 @@ describe('ActionAttemptLifecycleService', () => {
     jest.useFakeTimers().setSystemTime(new Date('2026-09-03T00:00:00.000Z'));
     try {
       const repository = new MemoryActionAttemptRepository();
-      const service = new ActionAttemptLifecycleService(repository as never);
+      const service = new ActionAttemptLifecycleService(
+        repository as never,
+        fixedModelSettings(),
+      );
       const first = await service.reserveAndClaim(
         reservationInput(async () => ({ request: 'first' })),
       );
@@ -82,7 +111,9 @@ describe('ActionAttemptLifecycleService', () => {
         status: 'RUNNING',
         task: { idempotencyKey: 'openclaw-v1:successor' },
       });
-      expect(successor.task.actionAttemptId).not.toBe(first.task.actionAttemptId);
+      expect(successor.task.actionAttemptId).not.toBe(
+        first.task.actionAttemptId,
+      );
       expect(repository.row).toMatchObject({ attemptNo: 2, status: 'RUNNING' });
       expect(repository.transitions).toEqual([
         'QUEUED',
@@ -100,7 +131,10 @@ describe('ActionAttemptLifecycleService', () => {
     jest.useFakeTimers().setSystemTime(new Date('2026-09-03T00:00:00.000Z'));
     try {
       const repository = new MemoryActionAttemptRepository();
-      const service = new ActionAttemptLifecycleService(repository as never);
+      const service = new ActionAttemptLifecycleService(
+        repository as never,
+        fixedModelSettings(),
+      );
       const first = await service.reserveAndClaim(
         reservationInput(async () => ({ request: 'first' })),
       );
@@ -129,7 +163,9 @@ describe('ActionAttemptLifecycleService', () => {
         status: 'RUNNING',
         task: { idempotencyKey: 'openclaw-v1:successor' },
       });
-      expect(successor.task.actionAttemptId).not.toBe(first.task.actionAttemptId);
+      expect(successor.task.actionAttemptId).not.toBe(
+        first.task.actionAttemptId,
+      );
       expect(repository.row).toMatchObject({ attemptNo: 2, status: 'RUNNING' });
       expect(repository.transitions).toEqual([
         'QUEUED',
@@ -145,7 +181,10 @@ describe('ActionAttemptLifecycleService', () => {
 
   it('keeps a live prior request fenced against a different successor', async () => {
     const repository = new MemoryActionAttemptRepository();
-    const service = new ActionAttemptLifecycleService(repository as never);
+    const service = new ActionAttemptLifecycleService(
+      repository as never,
+      fixedModelSettings(),
+    );
     const first = await service.reserveAndClaim(
       reservationInput(async () => ({ request: 'first' })),
     );
@@ -169,7 +208,10 @@ describe('ActionAttemptLifecycleService', () => {
     jest.useFakeTimers().setSystemTime(new Date('2026-08-29T10:00:00.000Z'));
     try {
       const repository = new MemoryActionAttemptRepository();
-      const service = new ActionAttemptLifecycleService(repository as never);
+      const service = new ActionAttemptLifecycleService(
+        repository as never,
+        fixedModelSettings(),
+      );
       const input: ReserveAndClaimInput = {
         ...reservationInput(async () => ({ controlled: true })),
         taskType: 'OPENCLAW_OVERALL_SYNTHESIS',
@@ -180,6 +222,7 @@ describe('ActionAttemptLifecycleService', () => {
       const liveRepository = new MemoryActionAttemptRepository();
       const liveService = new ActionAttemptLifecycleService(
         liveRepository as never,
+        fixedModelSettings(),
       );
       const liveReservation = await liveService.reserve(input);
       const liveClaim = await liveService.reserveAndClaim(input);
@@ -230,6 +273,7 @@ describe('ActionAttemptLifecycleService', () => {
       const driftRepository = new MemoryActionAttemptRepository();
       const driftService = new ActionAttemptLifecycleService(
         driftRepository as never,
+        fixedModelSettings(),
       );
       jest.setSystemTime(new Date('2026-08-29T12:30:00.000Z'));
       const driftReservation = await driftService.reserve(input);
@@ -257,7 +301,10 @@ describe('ActionAttemptLifecycleService', () => {
     jest.useFakeTimers().setSystemTime(new Date('2026-08-29T10:00:00.000Z'));
     try {
       const repository = new MemoryActionAttemptRepository();
-      const service = new ActionAttemptLifecycleService(repository as never);
+      const service = new ActionAttemptLifecycleService(
+        repository as never,
+        fixedModelSettings(),
+      );
       const input = reservationInput(async () => ({ controlled: true }));
       await service.reserve(input);
 
@@ -274,7 +321,10 @@ describe('ActionAttemptLifecycleService', () => {
 
   it('persists QUEUED before claim and replays the same live fence', async () => {
     const repository = new MemoryActionAttemptRepository();
-    const service = new ActionAttemptLifecycleService(repository as never);
+    const service = new ActionAttemptLifecycleService(
+      repository as never,
+      fixedModelSettings(),
+    );
     let builds = 0;
     const input = reservationInput(async () => {
       builds += 1;
@@ -304,7 +354,10 @@ describe('ActionAttemptLifecycleService', () => {
 
   it('gives hosted model work a 30-minute lease within a one-hour deadline', async () => {
     const repository = new MemoryActionAttemptRepository();
-    const service = new ActionAttemptLifecycleService(repository as never);
+    const service = new ActionAttemptLifecycleService(
+      repository as never,
+      fixedModelSettings(),
+    );
 
     const claim = await service.reserveAndClaim(
       reservationInput(async () => ({ controlled: true })),
@@ -324,7 +377,10 @@ describe('ActionAttemptLifecycleService', () => {
 
   it('crosses a durable COMMITTING cutoff and reconciles duplicate delivery', async () => {
     const repository = new MemoryActionAttemptRepository();
-    const service = new ActionAttemptLifecycleService(repository as never);
+    const service = new ActionAttemptLifecycleService(
+      repository as never,
+      fixedModelSettings(),
+    );
     const input = reservationInput(async () => ({ controlled: true }));
     const claim = await service.reserveAndClaim(input);
     const result = successResult(claim.task);
@@ -384,7 +440,10 @@ describe('ActionAttemptLifecycleService', () => {
 
   it('terminalizes a Host-evaluated missing-fact candidate as WAITING_INPUT after COMMITTING', async () => {
     const repository = new MemoryActionAttemptRepository();
-    const service = new ActionAttemptLifecycleService(repository as never);
+    const service = new ActionAttemptLifecycleService(
+      repository as never,
+      fixedModelSettings(),
+    );
     const claim = await service.reserveAndClaim(
       reservationInput(async () => ({ controlled: true })),
     );
@@ -417,7 +476,10 @@ describe('ActionAttemptLifecycleService', () => {
 
   it('fails closed when current revision regresses below base revision', async () => {
     const repository = new MemoryActionAttemptRepository();
-    const service = new ActionAttemptLifecycleService(repository as never);
+    const service = new ActionAttemptLifecycleService(
+      repository as never,
+      fixedModelSettings(),
+    );
     const claim = await service.reserveAndClaim(
       reservationInput(async () => ({ controlled: true })),
     );
@@ -450,7 +512,10 @@ describe('ActionAttemptLifecycleService', () => {
     'terminalizes revision drift +$revisionDelta as $status',
     async ({ revisionDelta, status, code }) => {
       const repository = new MemoryActionAttemptRepository();
-      const service = new ActionAttemptLifecycleService(repository as never);
+      const service = new ActionAttemptLifecycleService(
+        repository as never,
+        fixedModelSettings(),
+      );
       const claim = await service.reserveAndClaim(
         reservationInput(async () => ({ controlled: true })),
       );
@@ -476,7 +541,10 @@ describe('ActionAttemptLifecycleService', () => {
 
   it('rejects corrupt COMMITTING readback instead of treating it as {}', async () => {
     const repository = new MemoryActionAttemptRepository();
-    const service = new ActionAttemptLifecycleService(repository as never);
+    const service = new ActionAttemptLifecycleService(
+      repository as never,
+      fixedModelSettings(),
+    );
     const claim = await service.reserveAndClaim(
       reservationInput(async () => ({ controlled: true })),
     );
@@ -507,7 +575,10 @@ describe('ActionAttemptLifecycleService', () => {
 
   it('recovers an expired lease with a new monotonically fenced claim', async () => {
     const repository = new MemoryActionAttemptRepository();
-    const service = new ActionAttemptLifecycleService(repository as never);
+    const service = new ActionAttemptLifecycleService(
+      repository as never,
+      fixedModelSettings(),
+    );
     const input = reservationInput(async () => ({ controlled: true }));
     const first = await service.reserveAndClaim(input);
     repository.row = {
@@ -529,7 +600,10 @@ describe('ActionAttemptLifecycleService', () => {
 
   it('rejects an expired candidate lease without mutating the attempt', async () => {
     const repository = new MemoryActionAttemptRepository();
-    const service = new ActionAttemptLifecycleService(repository as never);
+    const service = new ActionAttemptLifecycleService(
+      repository as never,
+      fixedModelSettings(),
+    );
     const claim = await service.reserveAndClaim(
       reservationInput(async () => ({ controlled: true })),
     );
@@ -558,7 +632,10 @@ describe('ActionAttemptLifecycleService', () => {
 
   it('terminalizes a running attempt when its deadline expires before heartbeat', async () => {
     const repository = new MemoryActionAttemptRepository();
-    const service = new ActionAttemptLifecycleService(repository as never);
+    const service = new ActionAttemptLifecycleService(
+      repository as never,
+      fixedModelSettings(),
+    );
     const claim = await service.reserveAndClaim(
       reservationInput(async () => ({ controlled: true })),
     );
@@ -585,7 +662,10 @@ describe('ActionAttemptLifecycleService', () => {
 
   it('stores a failed ResultEnvelope as an explicit terminal receipt', async () => {
     const repository = new MemoryActionAttemptRepository();
-    const service = new ActionAttemptLifecycleService(repository as never);
+    const service = new ActionAttemptLifecycleService(
+      repository as never,
+      fixedModelSettings(),
+    );
     const claim = await service.reserveAndClaim(
       reservationInput(async () => ({ controlled: true })),
     );
@@ -610,7 +690,10 @@ describe('ActionAttemptLifecycleService', () => {
 
   it('terminalizes a deterministic Host Result Gate rejection without losing the envelope', async () => {
     const repository = new MemoryActionAttemptRepository();
-    const service = new ActionAttemptLifecycleService(repository as never);
+    const service = new ActionAttemptLifecycleService(
+      repository as never,
+      fixedModelSettings(),
+    );
     const claim = await service.reserveAndClaim(
       reservationInput(async () => ({ controlled: true })),
     );
@@ -646,7 +729,10 @@ describe('ActionAttemptLifecycleService', () => {
 
   it('cancels RUNNING atomically and fences the stale executor', async () => {
     const repository = new MemoryActionAttemptRepository();
-    const service = new ActionAttemptLifecycleService(repository as never);
+    const service = new ActionAttemptLifecycleService(
+      repository as never,
+      fixedModelSettings(),
+    );
     const claim = await service.reserveAndClaim(
       reservationInput(async () => ({ controlled: true })),
     );
@@ -675,7 +761,10 @@ describe('ActionAttemptLifecycleService', () => {
 
   it('terminalizes a persisted RUNNING cancellation marker before commit', async () => {
     const repository = new MemoryActionAttemptRepository();
-    const service = new ActionAttemptLifecycleService(repository as never);
+    const service = new ActionAttemptLifecycleService(
+      repository as never,
+      fixedModelSettings(),
+    );
     const claim = await service.reserveAndClaim(
       reservationInput(async () => ({ controlled: true })),
     );
@@ -1172,6 +1261,10 @@ function newRow(value: Record<string, unknown>): ActionAttemptRow {
     baseRevision: Number(value.baseRevision),
     documentVersionId: String(value.documentVersionId),
     taskEnvelopeJson: String(value.taskEnvelopeJson),
+    executionModelJson:
+      typeof value.executionModelJson === 'string'
+        ? value.executionModelJson
+        : null,
     taskInputHash: String(value.taskInputHash),
     resultEnvelopeJson: null,
     resultContentHash: null,

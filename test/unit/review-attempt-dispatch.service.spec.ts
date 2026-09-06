@@ -1,4 +1,5 @@
 import { canonicalJson } from '../../server/modules/action-attempt/action-attempt-envelope';
+import { fixedModelSettings } from '../support/fixed-model-settings';
 import {
   ReviewAttemptDispatchService,
   reviewTurnIdempotencyKey,
@@ -29,6 +30,9 @@ describe('automatic Review dispatch', () => {
     const harness = setup();
     const buildInput = jest.fn(async () => {
       expect(harness.row()?.status).toBe('QUEUED');
+      expect(JSON.parse(harness.row()!.executionModelJson!)).toMatchObject({
+        modelRef: 'miaoda/minimax-m3',
+      });
       throw Object.assign(new Error('Document bytes unavailable'), {
         code: 'ARTIFACT_READ_FAILED',
       });
@@ -66,6 +70,9 @@ describe('automatic Review dispatch', () => {
       }),
     );
     const claimInput = harness.lifecycle.reserveAndClaim.mock.calls[0][0];
+    expect(
+      JSON.parse(harness.row()!.taskEnvelopeJson!).executionModel,
+    ).toMatchObject({ modelRef: 'miaoda/minimax-m3' });
     await expect(claimInput.buildModelInput()).resolves.toEqual({
       question: 'Check the source',
     });
@@ -94,19 +101,24 @@ describe('automatic Review dispatch', () => {
     Object.assign(harness.row()!, {
       status: 'SUCCEEDED',
       terminalReason: 'REVIEW_TURN_CANDIDATE_PERSISTED',
-      reviewActivityJson: JSON.stringify([{
-        kind: 'SOURCE_REFS_RESOLVED',
-        observedAt: '2026-09-06T04:00:00Z',
-        sourceRefIds: ['SRC-1'],
-        sourceCatalogCount: 2,
-      }]),
+      reviewActivityJson: JSON.stringify([
+        {
+          kind: 'SOURCE_REFS_RESOLVED',
+          observedAt: '2026-09-06T04:00:00Z',
+          sourceRefIds: ['SRC-1'],
+          sourceCatalogCount: 2,
+        },
+      ]),
     });
     await expect(
       harness.service.executionProjection(projectionInput),
     ).resolves.toMatchObject({
       status: 'SUCCEEDED',
       error: null,
-      evidenceActivity: { items: [{ kind: 'SOURCE_REFS_RESOLVED', sourceRefIds: ['SRC-1'] }], error: null },
+      evidenceActivity: {
+        items: [{ kind: 'SOURCE_REFS_RESOLVED', sourceRefIds: ['SRC-1'] }],
+        error: null,
+      },
     });
   });
 
@@ -162,6 +174,7 @@ function setup() {
     service: new ReviewAttemptDispatchService(
       repository as never,
       lifecycle as never,
+      fixedModelSettings(),
     ),
     repository,
     lifecycle,

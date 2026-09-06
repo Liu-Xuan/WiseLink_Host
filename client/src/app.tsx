@@ -9,6 +9,7 @@ import NotFound from './pages/NotFound/NotFound';
 import RuntimeProbePage from './pages/RuntimeProbePage/RuntimeProbePage';
 import ExternalDiscoveryPage from './pages/ExternalDiscoveryPage/ExternalDiscoveryPage';
 import OAuthCallbackPage from './pages/OAuthCallbackPage/OAuthCallbackPage';
+import ModelSettingsPage from './pages/ModelSettingsPage/ModelSettingsPage';
 
 const LibraryIndexRedirect = () => {
   const location = useLocation();
@@ -36,6 +37,7 @@ const RoutesComponent = () => {
           element={<WorkItemOverviewPage />}
         />
         <Route path="runtime-probe" element={<RuntimeProbePage />} />
+        <Route path="settings/models" element={<ModelSettingsPage />} />
         <Route path="external-discovery" element={<ExternalDiscoveryPage />} />
         <Route
           path="work-items/:workItemId/documents"

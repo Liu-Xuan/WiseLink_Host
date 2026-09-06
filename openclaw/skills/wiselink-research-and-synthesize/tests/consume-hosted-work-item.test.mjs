@@ -18,7 +18,7 @@ function status(overrides = {}) {
 async function options(t) {
   const checkpointRoot = await mkdtemp(join(tmpdir(), 'wiselink-initial-consumer-'));
   t.after(() => rm(checkpointRoot, { recursive: true, force: true }));
-  return { workItemId: 'WI-new', checkpointRoot, applicabilityContextRef: 'AC-authorized' };
+  return { workItemId: 'WI-new', checkpointRoot, applicabilityContextRef: 'AC-authorized', maxInitialStages: 1 };
 }
 
 test('not ready, busy and failed Host stages do not dispatch a model or operation', async (t) => {
@@ -44,7 +44,7 @@ test('one tick runs only the next Host stage and persists its exact binding', as
         workItemRevision: 3, nextOperation: 'EXTRACT_APPLICABILITY',
         stages: { ...status().initialAnalysis.stages, translation: { status: 'SUCCEEDED' } },
       }) : status();
-      if (name === 'begin_translation') return { status: 'RUNNING', attemptRef: 'AQ-new' };
+      if (name === 'begin_translation') return { status: 'RUNNING', attemptRef: 'AQ-new', taskBinding: { executionModel: { modelRef: 'dli/gpt-5.6-sol' } } };
       if (name === 'commit_translation_candidate') { saved = true; return { ok: true }; }
       assert.fail(name);
     },
@@ -52,6 +52,7 @@ test('one tick runs only the next Host stage and persists its exact binding', as
       assert.equal(operation, 'TRANSLATE');
       assert.deepEqual(modelInput, { sourceUnits: [] });
       assert.match(hooks.sessionDiscriminator, /^[0-9a-f-]{36}$/u);
+      assert.equal(hooks.executionModel.modelRef, 'dli/gpt-5.6-sol');
       modelCalls += 1;
       return { output: {}, provenance: {} };
     },
@@ -122,4 +123,33 @@ test('Host identity mismatch stops before any operation', async (t) => {
     callTool: async () => ({ ...status(), entry: { workItemId: 'WI-other' } }),
     runInitial: () => assert.fail('Must not run'),
   }), /HOST_INITIAL_STATUS_UNAVAILABLE/u);
+});
+
+test('one tick drains ready stages with fresh Host revisions and serial commits', async (t) => {
+  const input = { ...await options(t), maxInitialStages: 4 };
+  const operations = ['TRANSLATE', 'EVALUATE_JOBAID', 'SYNTHESIZE_OVERALL'];
+  const keys = ['translation', 'jobAid', 'overall'];
+  let saved = 0;
+  let active = 0;
+  const started = [];
+  const result = await consumeHostedWorkItem(input, {
+    callTool: async (name) => {
+      assert.equal(name, 'get_parse_status');
+      const stages = { applicability: { status: 'WAITING_INPUT' },
+        ...Object.fromEntries(keys.map((key, index) => [key, { status: index < saved ? 'SUCCEEDED' : 'PENDING' }])) };
+      return status({ workItemRevision: 2 + saved, status: 'WAITING_INPUT', nextOperation: operations[saved] ?? null, stages });
+    },
+    runInitial: async (run) => {
+      assert.equal(active++, 0, 'no simultaneous begin/model/commit against the shared WorkItem CAS');
+      assert.equal(run.operation, operations[saved]);
+      started.push(run.operation);
+      await Promise.resolve();
+      saved += 1; active -= 1;
+      return { outcome: 'CANDIDATE_READY' };
+    },
+  });
+  assert.deepEqual(started, operations);
+  assert.deepEqual(result.completedStages, operations);
+  assert.equal(result.workItemRevision, 5);
+  assert.equal(result.nextOperation, null);
 });

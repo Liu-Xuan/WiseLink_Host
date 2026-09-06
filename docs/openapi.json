@@ -461,6 +461,23 @@
           "behavior": "Host 根据已有上一条 Turn 的成功 ActionAttempt 和本轮 fresh 授权 SourceRef 目录决定是否延续会话；相同会话、revision、来源 ID 及 artifact 版本才复用已保存的 actorContextRef。首次、旧版本任务、上一轮失败或资料范围变化时使用当前 Turn 主键派生新引用，不新增表或 hash。",
           "compatibility": "Skill r09.c22 将该值仅作为匹配 wiselink-engineering 的 Gateway session header；旧 Host 无字段时明确报告 TURN_ISOLATED_LEGACY_HOST。原 Task/Result/MCP 参数、实际读取和单次候选提交规则不变。"
         },
+        "x-wiselink-execution-model": {
+          "location": "TaskEnvelope.executionModel；翻译分批交付时为 taskBinding.executionModel",
+          "schema": {
+            "type": "object",
+            "required": ["modelRef", "displayName", "providerKind", "settingsRevision", "selectedAt"],
+            "properties": {
+              "modelRef": { "type": "string", "example": "dli/gpt-5.6-sol" },
+              "displayName": { "type": "string", "example": "GPT 5.6 Sol" },
+              "providerKind": { "type": "string", "enum": ["BUILT_IN", "CUSTOM"], "example": "CUSTOM" },
+              "settingsRevision": { "type": "integer", "example": 1 },
+              "selectedAt": { "type": "string", "format": "date-time", "example": "2026-09-06T09:00:00.000Z" }
+            }
+          },
+          "behavior": "Host 在新 ActionAttempt 排队时保存租户全局选择，再纳入已有 TaskEnvelope inputHash；上下文准备、续租、恢复与重试不重新读取默认值。Skill c24 只把受控 modelRef 放进 x-openclaw-model，保持工程 profile、原会话与 MCP 授权；不把路由元数据放进模型业务输入，不传凭据或 URL。历史无字段任务保持原路由。",
+          "provenance": "executionModel 表示启动时选择；ResultEnvelope.modelVersion 优先记录 Gateway 报告值，协议未报告时明确记录 configured-route:模型标识，不冒充上游实际版本。没有跨模型失败 fallback。",
+          "browserReadback": "初始分析 stages.executionModel 与 ReviewTurn.execution.executionModel 提供同一非秘密启动模型元数据；普通 /api 模型设置不通过此 MCP 修改。"
+        },
         "description": "承载 translation、applicability、dynamic-N 与 overall 的 PostgreSQL QUEUED→lease claim→RUNNING→完整 ResultEnvelope→COMMITTING→Host CAS 链路，并提供 heartbeat/cancel。普通单项流程保持既有 current 行为；配置证据采纳触发的 P0B 全量重算只把 Applicability 与 Dynamic 候选写入 Host staged bundle，由 Overall 基于 shadow 复核后一次 CAS 同时提升全部 serving current，任一中间失败都保留旧 serving current。TaskEnvelope 由 Host 密封；translation begin 通过同一工具按实际序列化 UTF-8 bytes 返回完整 MCP tool result 不超过 14,000 bytes 的可读 SourceUnit 批次，避免托管工具输出截断且不重复返回 modelInput，不暴露 tenant 或 FileService locator。RUNNING 默认使用 30 分钟 lease/60 分钟 deadline，Skill 在模型前后受控 heartbeat，模型生成期间不依赖短周期回调。重复 begin 遇到 COMMITTING 时返回 DB 中重新校验 hash/binding 的 recovery ResultEnvelope，executor 只重放 Host commit、不二次调用模型。损坏、缺字段或 hash/binding 不一致的 ResultEnvelope 不会被替换为 {}。仅当 API Key transport、service principal、tenant 与 exact WorkItem/ActionAttempt allowlist 全部可验证时处理业务 I/O；未配置时 fail closed。",
         "requestBody": {
           "required": true,

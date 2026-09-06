@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { parseExecutionModel } from '../model-settings/canonical-execution-model';
 
 import type {
   ActionEnvelopeArtifactRef,
@@ -58,6 +59,7 @@ export function parseTaskEnvelope(value: string): OpenClawTaskEnvelope {
       'deadline',
       'idempotencyKey',
       'inputHash',
+      ...('executionModel' in record ? ['executionModel'] : []),
     ],
     'TASK_ENVELOPE_SCHEMA_INVALID',
   );
@@ -103,6 +105,8 @@ export function parseTaskEnvelope(value: string): OpenClawTaskEnvelope {
     'TASK_ENVELOPE_MISSING_INPUTS_INVALID',
   ).forEach(assertMissingInput);
   if (!isRecord(envelope.modelInput)) fail('TASK_ENVELOPE_MODEL_INPUT_INVALID');
+  if ('executionModel' in envelope)
+    parseExecutionModel(envelope.executionModel);
   const deadline = requiredText(
     envelope.deadline,
     'TASK_ENVELOPE_DEADLINE_REQUIRED',

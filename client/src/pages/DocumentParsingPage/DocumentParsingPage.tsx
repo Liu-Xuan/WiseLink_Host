@@ -66,7 +66,7 @@ import ContinuousReviewPanel from '@client/src/features/review/ContinuousReviewP
 import DocumentUnavailableReview from './DocumentUnavailableReview';
 import { documentFailureAllowsReviewReadback } from './saved-review-readback';
 import RevisionTimeline from '@client/src/features/review/RevisionTimeline';
-import TaskPills from '@client/src/features/review/TaskPills';
+import InitialAnalysisProgress from '@client/src/features/review/InitialAnalysisProgress';
 import WorkbenchShell from '@client/src/features/workbench/WorkbenchShell';
 import RetainedWorkbenchPanel from '@client/src/features/workbench/RetainedWorkbenchPanel';
 import type { QuickOpenItem } from '@client/src/features/workbench/QuickOpen';
@@ -855,6 +855,15 @@ export default function DocumentParsingPage() {
         ) : null}
         {/* §7 AuthorityStrip：候选/有效性/文件版本状态，全工作台固定可见 */}
         <AuthorityStrip view={workItemView} />
+        <InitialAnalysisProgress
+          key={`${sessionGeneration}:${workItemId}`}
+          workItemId={workItemId}
+          sessionGeneration={sessionGeneration}
+          initial={data.initialAnalysis}
+          timeline={data.timeline}
+          onRevisionChanged={() => { void load(activeQuery); }}
+          onAccessLost={() => { void load(activeQuery); }}
+        />
         {loading ? (
           <p className="wl-projection-refresh" role="status">
             正在刷新当前结果…仍显示上次读回的内容，尚未确认最新状态；确认和采纳暂不可用。
@@ -1636,12 +1645,6 @@ export default function DocumentParsingPage() {
             </div>
           </div>
         ) : null}
-
-        {/* ── §4.3 任务胶囊：后台任务只暴露任务/结果/失败原因，不伪造进度 ── */}
-        <div className="parse-task-strip" aria-label="分析任务状态">
-          <span className="parse-task-strip-label">分析进度</span>
-          <TaskPills timeline={data.timeline} />
-        </div>
 
         {/* ── §4.3 STALE / 需更新反馈：旧综合意见在工程师复核后标记需重综合 ── */}
         {integratedAssessment?.overallSynthesis?.staleReason ? (

@@ -1,3 +1,5 @@
+import type { CanonicalExecutionModelSelection } from '@shared/api.interface';
+
 export type OpenClawActionTaskType =
   | 'OPENCLAW_APPLICABILITY_EVALUATION'
   | 'OPENCLAW_DYNAMIC_EVALUATION'
@@ -67,6 +69,8 @@ export interface OpenClawTaskEnvelope {
   allowedConnectors: string[];
   hostResolvedMissingInputs: ActionEnvelopeMissingInput[];
   modelInput: Record<string, unknown>;
+  /** Host routing only; never forwarded as part of modelInput. Absent on historical tasks. */
+  executionModel?: CanonicalExecutionModelSelection;
   deadline: string;
   idempotencyKey: string;
   inputHash: string;

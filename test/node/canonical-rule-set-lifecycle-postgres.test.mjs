@@ -372,6 +372,7 @@ function createHarness(sql, initialWorkItem) {
   const ruleSets = new CanonicalRuleSetLifecycleService(repository, {});
   const attempts = new ActionAttemptLifecycleService(
     new ActionAttemptRepository(db),
+    require('../support/fixed-model-settings.ts').fixedModelSettings(),
   );
   const registrar = sqlRegistrar(sql);
   const usedSnapshots = [];
@@ -890,7 +891,7 @@ async function resetDatabase(sql) {
       updated_at timestamptz(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
       priority integer NOT NULL DEFAULT 100, input_revision integer,
       base_revision integer, document_version_id varchar(96),
-      task_envelope_json text, task_input_hash varchar(64),
+      task_envelope_json text, task_input_hash varchar(64), execution_model_json text,
       result_envelope_json text, result_content_hash varchar(64),
       idempotency_key varchar(255), claim_count integer NOT NULL DEFAULT 0,
       retry_count integer NOT NULL DEFAULT 0,
