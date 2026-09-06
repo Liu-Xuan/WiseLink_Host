@@ -2,11 +2,71 @@ import {
   beginHostedIntakeSubmission,
   developmentWorkItemRequest,
   endHostedIntakeSubmission,
+  hostedIntakeCompletionError,
   hostedIntakeError,
   resolveHostedIntakeSelection,
 } from '../../client/src/pages/WorkspaceHomePage/hosted-development-intake-flow';
 
 describe('hosted development intake source flow', () => {
+  it('reports the persisted recording failure instead of a same-user identity mismatch', () => {
+    const error = hostedIntakeCompletionError('RECORDING_FAILED', {
+      phase: 'RECORDING_FAILED',
+      failure: null,
+      recordingFailure: {
+        failureCode: 'FAILURE_REPORT_RECORDING_FAILED',
+        originalFailureCode: 'FETCH_FAILED',
+        message: 'private provider details must not be rendered',
+      },
+    });
+    expect(error?.recordedFailure).toBe(true);
+    expect(hostedIntakeError(error)).toContain('事项已登记');
+    expect(hostedIntakeError(error)).toContain('FETCH_FAILED');
+    expect(hostedIntakeError(error)).toContain('失败报告未能保存');
+    expect(hostedIntakeError(error)).not.toContain('校验尚未完成');
+    expect(hostedIntakeError(error)).not.toContain('private');
+  });
+
+  it('does not render arbitrary upstream text as a failure code', () => {
+    const error = hostedIntakeCompletionError('RECORDING_FAILED', {
+      phase: 'RECORDING_FAILED',
+      failure: null,
+      recordingFailure: {
+        failureCode: 'FAILURE_REPORT_RECORDING_FAILED',
+        originalFailureCode: 'private URL / token',
+        message: 'private stack',
+      },
+    });
+    expect(hostedIntakeError(error)).not.toContain('private');
+  });
+
+  it('keeps inconsistent receipt/readback states as an unknown result', () => {
+    const error = hostedIntakeCompletionError('CANDIDATE_VERTICAL_VERIFIED', {
+      phase: 'RECORDING_FAILED',
+      failure: null,
+      recordingFailure: null,
+    });
+    expect(error?.recordedFailure).toBeUndefined();
+    expect(error?.message).toBe('CANONICAL_SAME_USER_READBACK_MISMATCH');
+  });
+
+  it('accepts verified completion and distinguishes a recorded parse failure', () => {
+    expect(
+      hostedIntakeCompletionError('CANDIDATE_VERTICAL_VERIFIED', {
+        phase: 'CANDIDATE_READBACK_VERIFIED',
+        failure: null,
+        recordingFailure: null,
+      }),
+    ).toBeNull();
+    const error = hostedIntakeCompletionError('FAILED', {
+      phase: 'FAILED',
+      failure: null,
+      recordingFailure: null,
+    });
+    expect(error?.recordedFailure).toBe(true);
+    expect(hostedIntakeError(error)).toContain('解析失败');
+    expect(hostedIntakeError(error)).not.toContain('失败报告未能保存');
+  });
+
   it('submits only the model reference and preserves the stable source/request token', () => {
     const selection = {
       bucketId: 'test',

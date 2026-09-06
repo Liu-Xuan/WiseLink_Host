@@ -100,79 +100,86 @@ function actualReadback(value: ScopedProfessionalArtifactCorrelation) {
 }
 
 describe('scoped professional artifact correlation', () => {
-  it('persists Host-native output at the exact scope and verifies actual bytes', async () => {
-    const packageId = `urn:techpub:package:v1:sha256:${'e'.repeat(64)}`;
-    const bytes = new TextEncoder().encode(JSON.stringify({ packageId }));
-    const digest = sha256Raw(bytes);
-    const getFileMetadata = jest.fn().mockResolvedValue(null);
-    const upload = jest.fn().mockResolvedValue({});
-    const from = jest.fn(() => ({ getFileMetadata, upload }));
-    jest.mocked(MiaodaFileServiceArtifactStore).mockImplementation(
-      () =>
-        ({
-          readSelection: jest.fn().mockResolvedValue({
-            readbackVerified: true,
-            bytes,
-            sha256: digest,
-            byteLength: bytes.byteLength,
-            providerObjectId: 'provider-professional-new-dev',
-          }),
-        }) as never,
-    );
-    const adapter = new MiaodaScopedProfessionalArtifactCorrelationAdapter({
-      getDefaultBucket: jest.fn().mockResolvedValue('bucket-new-dev'),
-      from,
-    } as never);
+  it.each([false, true])(
+    'persists Host-native output at the exact scope and verifies actual bytes (transport retry: %s)',
+    async (transientFailure) => {
+      const packageId = `urn:techpub:package:v1:sha256:${'e'.repeat(64)}`;
+      const bytes = new TextEncoder().encode(JSON.stringify({ packageId }));
+      const digest = sha256Raw(bytes);
+      const getFileMetadata = jest.fn().mockResolvedValue(null);
+      if (transientFailure)
+        getFileMetadata.mockRejectedValueOnce(new TypeError('fetch failed'));
+      const upload = jest.fn().mockResolvedValue({});
+      const from = jest.fn(() => ({ getFileMetadata, upload }));
+      jest.mocked(MiaodaFileServiceArtifactStore).mockImplementation(
+        () =>
+          ({
+            readSelection: jest.fn().mockResolvedValue({
+              readbackVerified: true,
+              bytes,
+              sha256: digest,
+              byteLength: bytes.byteLength,
+              providerObjectId: 'provider-professional-new-dev',
+            }),
+          }) as never,
+      );
+      const adapter = new MiaodaScopedProfessionalArtifactCorrelationAdapter({
+        getDefaultBucket: jest.fn().mockResolvedValue('bucket-new-dev'),
+        from,
+      } as never);
 
-    const value = await adapter.persistAndCorrelate(request, {
-      packageId,
-      artifact: {
-        storeRole: 'UnifiedArtifactStoreCandidate',
-        ref:
-          'artifact://UnifiedArtifactStoreCandidate/' +
-          `unified-parsed-packages/sha256/${digest}`,
-        sha256: digest,
-        byteLength: bytes.byteLength,
-        mediaType: 'application/json',
-      },
-      bytes,
-      lineage: {
-        producerDocumentId: request.documentId,
-        producerDocumentVersionId: request.documentVersionId,
-        documentCode: '777-FTD-31-21002',
-        businessRevision: null,
-        packageRevisionLabel: null,
-      },
-    });
-
-    expect(adapter.available).toBe(true);
-    expect(from).toHaveBeenCalledWith('bucket-new-dev');
-    expect(upload).toHaveBeenCalledWith(
-      bytes,
-      expect.objectContaining({
-        filePath:
-          'canonical-host/professional-artifacts/' +
-          `${request.workItemId}/${request.documentVersionId}/${digest}.json`,
-        contentType: 'application/json',
-        upsert: false,
-      }),
-    );
-    expect(value).toMatchObject({
-      scope: {
-        workItemId: request.workItemId,
-        documentVersionId: request.documentVersionId,
-      },
-      professionalArtifact: {
-        ownerWorkItemId: request.workItemId,
-        ownerDocumentVersionId: request.documentVersionId,
+      const value = await adapter.persistAndCorrelate(request, {
         packageId,
-        artifact: { sha256: digest, byteLength: bytes.byteLength },
-        fileServiceLocator: {
-          providerObjectId: 'provider-professional-new-dev',
+        artifact: {
+          storeRole: 'UnifiedArtifactStoreCandidate',
+          ref:
+            'artifact://UnifiedArtifactStoreCandidate/' +
+            `unified-parsed-packages/sha256/${digest}`,
+          sha256: digest,
+          byteLength: bytes.byteLength,
+          mediaType: 'application/json',
         },
-      },
-    });
-  });
+        bytes,
+        lineage: {
+          producerDocumentId: request.documentId,
+          producerDocumentVersionId: request.documentVersionId,
+          documentCode: '777-FTD-31-21002',
+          businessRevision: null,
+          packageRevisionLabel: null,
+        },
+      });
+
+      expect(adapter.available).toBe(true);
+      expect(getFileMetadata).toHaveBeenCalledTimes(transientFailure ? 2 : 1);
+      expect(upload).toHaveBeenCalledTimes(1);
+      expect(from).toHaveBeenCalledWith('bucket-new-dev');
+      expect(upload).toHaveBeenCalledWith(
+        bytes,
+        expect.objectContaining({
+          filePath:
+            'canonical-host/professional-artifacts/' +
+            `${request.workItemId}/${request.documentVersionId}/${digest}.json`,
+          contentType: 'application/json',
+          upsert: false,
+        }),
+      );
+      expect(value).toMatchObject({
+        scope: {
+          workItemId: request.workItemId,
+          documentVersionId: request.documentVersionId,
+        },
+        professionalArtifact: {
+          ownerWorkItemId: request.workItemId,
+          ownerDocumentVersionId: request.documentVersionId,
+          packageId,
+          artifact: { sha256: digest, byteLength: bytes.byteLength },
+          fileServiceLocator: {
+            providerObjectId: 'provider-professional-new-dev',
+          },
+        },
+      });
+    },
+  );
 
   it('accepts exact new WorkItem and DocumentVersion scope with actual bytes', () => {
     const value: ScopedProfessionalArtifactCorrelation = correlation();

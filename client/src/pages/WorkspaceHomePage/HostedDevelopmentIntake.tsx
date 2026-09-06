@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   Check,
   ChevronLeft,
@@ -40,6 +40,7 @@ import {
   beginHostedIntakeSubmission,
   developmentWorkItemRequest,
   endHostedIntakeSubmission,
+  hostedIntakeCompletionError,
   hostedIntakeError,
   resolveHostedIntakeSelection,
   type HostedIntakeSource,
@@ -62,6 +63,7 @@ export function HostedDevelopmentIntake() {
   const models = useTaskModelOptions();
   const [modelRef, setModelRef] = useState('');
   const [pendingModelRef, setPendingModelRef] = useState<string | null>(null);
+  const [failedWorkItemId, setFailedWorkItemId] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [uploaded, setUploaded] = useState<HostedUploadSelection | null>(null);
   const [existingPdf, setExistingPdf] = useState<SelectedExistingPdf | null>(
@@ -92,6 +94,7 @@ export function HostedDevelopmentIntake() {
     setFile(null);
     setModelRef('');
     setPendingModelRef(null);
+    setFailedWorkItemId(null);
     setUploaded(null);
     setExistingPdf(null);
     setPhase('idle');
@@ -149,6 +152,7 @@ export function HostedDevelopmentIntake() {
     const next = acceptedFiles[0] ?? null;
     setUploaded(null);
     setPendingModelRef(null);
+    setFailedWorkItemId(null);
     setExistingPdf(null);
     setPickerOpen(false);
     setError(null);
@@ -186,6 +190,7 @@ export function HostedDevelopmentIntake() {
       (!selectedFile && !selectedExistingPdf) ||
       !modelRef ||
       !models.ready ||
+      failedWorkItemId !== null ||
       busy ||
       !beginHostedIntakeSubmission(submissionInFlightRef)
     ) {
@@ -245,8 +250,6 @@ export function HostedDevelopmentIntake() {
       const createdSource = created.result.workItem.source;
       const readbackSource = readback.workItem.source;
       if (
-        created.result.status !== 'CANDIDATE_VERTICAL_VERIFIED' ||
-        readback.workItem.phase !== 'CANDIDATE_READBACK_VERIFIED' ||
         readback.workItem.workItemId !== workItemId ||
         readback.workItem.requestId !== created.result.workItem.requestId ||
         readbackSource.documentVersionId !== createdSource.documentVersionId ||
@@ -258,6 +261,14 @@ export function HostedDevelopmentIntake() {
             readbackSource.sourceByteLength !== resolved.localFile.size))
       ) {
         throw new Error('CANONICAL_SAME_USER_READBACK_MISMATCH');
+      }
+      const completionError = hostedIntakeCompletionError(
+        created.result.status,
+        readback.workItem,
+      );
+      if (completionError) {
+        if (completionError.recordedFailure) setFailedWorkItemId(workItemId);
+        throw completionError;
       }
       // 新建完成后先进入事项综合概述；原文与解析结果由用户按需下钻。
       navigate(`/work-items/${encodeURIComponent(workItemId)}`);
@@ -271,6 +282,7 @@ export function HostedDevelopmentIntake() {
 
   function selectExistingPdf(option: ExistingStoragePdfOption): void {
     setPendingModelRef(null);
+    setFailedWorkItemId(null);
     setExistingPdf({
       ...option,
       selection: {
@@ -379,7 +391,11 @@ export function HostedDevelopmentIntake() {
           type="button"
           size="lg"
           disabled={
-            (!file && !existingPdf) || busy || !models.ready || !modelRef
+            (!file && !existingPdf) ||
+            busy ||
+            !models.ready ||
+            !modelRef ||
+            failedWorkItemId !== null
           }
           onClick={() => void createWorkItem()}
         >
@@ -390,11 +406,13 @@ export function HostedDevelopmentIntake() {
           ) : (
             <FileUp aria-hidden="true" />
           )}
-          {phaseLabel(
-            phase,
-            Boolean(uploaded || existingPdf),
-            Boolean(existingPdf),
-          )}
+          {failedWorkItemId
+            ? '本次事项已登记'
+            : phaseLabel(
+                phase,
+                Boolean(uploaded || existingPdf),
+                Boolean(existingPdf),
+              )}
         </Button>
         {pickerOpen ? (
           <section
@@ -531,6 +549,13 @@ export function HostedDevelopmentIntake() {
           <p className="hosted-intake-error" role="alert">
             <TriangleAlert aria-hidden="true" /> {error}
           </p>
+        ) : null}
+        {failedWorkItemId ? (
+          <Link
+            to={`/work-items/${encodeURIComponent(failedWorkItemId)}/documents?node=reader&tab=reader`}
+          >
+            查看已登记事项及失败详情
+          </Link>
         ) : null}
       </div>
     </section>

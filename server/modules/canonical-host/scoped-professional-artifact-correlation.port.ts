@@ -1,4 +1,5 @@
 import { FileService } from '@lark-apaas/fullstack-nestjs-core';
+import { withOneFileReadTransportRetry } from '../unified-reader/file-service-read-transport';
 import { Injectable } from '@nestjs/common';
 
 import type {
@@ -138,7 +139,9 @@ export class MiaodaScopedProfessionalArtifactCorrelationAdapter implements Scope
       produced.artifact.sha256,
     );
     const scoped = this.fileService.from(bucketId);
-    const existing = await scoped.getFileMetadata(filePath);
+    const existing = await withOneFileReadTransportRetry(() =>
+      scoped.getFileMetadata(filePath),
+    );
     if (!existing) {
       await scoped.upload(Uint8Array.from(produced.bytes), {
         filePath,

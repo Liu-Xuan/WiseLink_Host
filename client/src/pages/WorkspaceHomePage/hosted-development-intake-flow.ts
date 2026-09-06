@@ -1,4 +1,8 @@
-import type { CanonicalDevelopmentWorkItemRunRequest } from '@shared/api.interface';
+import type {
+  CanonicalDevelopmentWorkItemRunRequest,
+  CanonicalPdfVerticalRunResponse,
+  CanonicalWorkItemProjection,
+} from '@shared/api.interface';
 
 export interface HostedUploadSelection {
   bucketId: string;
@@ -97,13 +101,68 @@ export function endHostedIntakeSubmission(
   gate.current = false;
 }
 
+/** Called only after the same-user readback has matched the submitted source. */
+export function hostedIntakeCompletionError(
+  status: CanonicalPdfVerticalRunResponse['status'],
+  workItem: Pick<
+    CanonicalWorkItemProjection,
+    'phase' | 'failure' | 'recordingFailure'
+  >,
+): (Error & { recordedFailure?: true }) | null {
+  if (
+    status === 'CANDIDATE_VERTICAL_VERIFIED' &&
+    workItem.phase === 'CANDIDATE_READBACK_VERIFIED'
+  )
+    return null;
+
+  if (
+    (status === 'FAILED' && workItem.phase === 'FAILED') ||
+    (status === 'RECORDING_FAILED' && workItem.phase === 'RECORDING_FAILED')
+  ) {
+    const code =
+      status === 'RECORDING_FAILED'
+        ? 'CANONICAL_INTAKE_RECORDING_FAILED'
+        : 'CANONICAL_INTAKE_PARSE_FAILED';
+    return Object.assign(new Error(code), {
+      code,
+      recordedFailure: true as const,
+      diagnosticCode: safeFailureCode(
+        workItem.recordingFailure?.originalFailureCode ??
+          workItem.failure?.failureCode,
+      ),
+    });
+  }
+  return new Error('CANONICAL_SAME_USER_READBACK_MISMATCH');
+}
+
+function safeFailureCode(value: unknown): string {
+  return typeof value === 'string' && /^[A-Z][A-Z0-9_]{0,95}$/u.test(value)
+    ? value
+    : '';
+}
+
 export function hostedIntakeError(reason: unknown): string {
   const message = reason instanceof Error ? reason.message.trim() : '';
   const error =
     typeof reason === 'object' && reason !== null
-      ? (reason as { code?: unknown; statusCode?: unknown })
+      ? (reason as {
+          code?: unknown;
+          statusCode?: unknown;
+          diagnosticCode?: unknown;
+        })
       : {};
   const code = typeof error.code === 'string' ? error.code : '';
+  if (
+    code === 'CANONICAL_INTAKE_RECORDING_FAILED' ||
+    code === 'CANONICAL_INTAKE_PARSE_FAILED'
+  ) {
+    const diagnostic = safeFailureCode(error.diagnosticCode);
+    const failure =
+      code === 'CANONICAL_INTAKE_RECORDING_FAILED'
+        ? '解析失败，且失败报告未能保存'
+        : '解析失败';
+    return `事项已登记，但${failure}${diagnostic ? `（${diagnostic}）` : ''}。请打开已登记事项查看失败详情并处理；此入口不会重复创建事项。`;
+  }
   if (
     error.statusCode === 401 ||
     /CANONICAL_IDENTITY|LOGIN|OAUTH|401|UNAUTHORIZED/iu.test(message)

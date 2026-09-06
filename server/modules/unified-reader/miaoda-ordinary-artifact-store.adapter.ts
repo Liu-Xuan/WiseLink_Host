@@ -15,6 +15,7 @@ import type {
   UnifiedResultEnvelopePartStagingPort,
 } from './unified-reader.types';
 import { rawHashValue, sha256Raw } from './unified-reader.utils';
+import { withOneFileReadTransportRetry } from './file-service-read-transport';
 import {
   MiaodaOrdinaryArtifactLocatorRegistry,
   type OrdinaryArtifactLocator,
@@ -134,11 +135,16 @@ export class MiaodaOrdinaryArtifactStoreAdapter
   ): Promise<void> {
     this.assertCandidateDescriptor(candidate);
     const { filePath, bucketId, providerObjectId } = await this.resolveLocator(
-      candidate.artifact.ref, this.descriptorFilePath(candidate.artifact), candidate.artifact,
+      candidate.artifact.ref,
+      this.descriptorFilePath(candidate.artifact),
+      candidate.artifact,
     );
     const scoped = this.fileService.from(bucketId);
     const metadata = await scoped.getFileMetadata(filePath);
-    if (metadata === null || (providerObjectId && metadata.id !== providerObjectId)) {
+    if (
+      metadata === null ||
+      (providerObjectId && metadata.id !== providerObjectId)
+    ) {
       throw new Error('ARTIFACT_STAGE_DISCARD_IDENTITY_MISMATCH');
     }
     await providerCall('ARTIFACT_STORE_STAGE_DISCARD_FAILED', () =>
@@ -194,7 +200,10 @@ export class MiaodaOrdinaryArtifactStoreAdapter
     assertResultEnvelopePartDescriptor(input.ownerRef, input.part);
     const { filePath, bucketId, providerObjectId } = await this.resolveLocator(
       this.resultEnvelopePartRef(input.part.ownerRefHash, input.part.partIndex),
-      this.resultEnvelopePartFilePath(input.part.ownerRefHash, input.part.partIndex),
+      this.resultEnvelopePartFilePath(
+        input.part.ownerRefHash,
+        input.part.partIndex,
+      ),
       { ...input.part, mediaType: BINARY_MEDIA_TYPE },
     );
     const scoped = this.fileService.from(bucketId);
@@ -235,7 +244,9 @@ export class MiaodaOrdinaryArtifactStoreAdapter
     artifact: UnifiedPackageArtifactDescriptor,
   ): Promise<Uint8Array> {
     const { filePath, bucketId, providerObjectId } = await this.resolveLocator(
-      artifact.ref, this.descriptorFilePath(artifact), artifact,
+      artifact.ref,
+      this.descriptorFilePath(artifact),
+      artifact,
     );
     const scoped = this.fileService.from(bucketId);
     const metadata = await providerCallWithTransportRetry(
@@ -292,26 +303,37 @@ export class MiaodaOrdinaryArtifactStoreAdapter
   }): Promise<boolean> {
     const registered = await this.locators.find(input.artifactRef);
     if (registered) {
-      assertLocatorBinding(registered, { ...input, byteLength: input.bytes.byteLength });
+      assertLocatorBinding(registered, {
+        ...input,
+        byteLength: input.bytes.byteLength,
+      });
       // A registered but missing object is a read failure, never permission to
       // upload a replacement or try the application's new default bucket.
       return true;
     }
     const bucketId = await this.getDefaultBucket();
     const scoped = this.fileService.from(bucketId);
-    const existing = await providerCall('ARTIFACT_STORE_METADATA_READ_FAILED', () =>
-      getOptionalMetadata(() => scoped.getFileMetadata(input.filePath)),
+    const existing = await providerCallWithTransportRetry(
+      'ARTIFACT_STORE_METADATA_READ_FAILED',
+      () => getOptionalMetadata(() => scoped.getFileMetadata(input.filePath)),
     );
-    const metadata = existing ?? await providerCall(input.uploadFailureCode, () => scoped.upload(input.bytes, {
-      filePath: input.filePath,
-      fileName: input.fileName,
-      contentType: input.mediaType,
-      upsert: false,
-    }));
-    if (!metadata.id?.trim() || metadata.bucketID !== bucketId
-      || canonicalPath(metadata.filePath) !== canonicalPath(input.filePath)
-      || Number(metadata.metadata?.contentLength) !== input.bytes.byteLength
-      || metadata.metadata?.mimeType !== input.mediaType) {
+    const metadata =
+      existing ??
+      (await providerCall(input.uploadFailureCode, () =>
+        scoped.upload(input.bytes, {
+          filePath: input.filePath,
+          fileName: input.fileName,
+          contentType: input.mediaType,
+          upsert: false,
+        }),
+      ));
+    if (
+      !metadata.id?.trim() ||
+      metadata.bucketID !== bucketId ||
+      canonicalPath(metadata.filePath) !== canonicalPath(input.filePath) ||
+      Number(metadata.metadata?.contentLength) !== input.bytes.byteLength ||
+      metadata.metadata?.mimeType !== input.mediaType
+    ) {
       throw new Error('ARTIFACT_LOCATOR_PROVIDER_METADATA_MISMATCH');
     }
     await this.locators.record({
@@ -330,7 +352,11 @@ export class MiaodaOrdinaryArtifactStoreAdapter
     artifactRef: string,
     legacyFilePath: string,
     descriptor: { sha256: string; byteLength: number; mediaType: string },
-  ): Promise<{ bucketId: string; filePath: string; providerObjectId?: string }> {
+  ): Promise<{
+    bucketId: string;
+    filePath: string;
+    providerObjectId?: string;
+  }> {
     const registered = await this.locators.find(artifactRef);
     if (registered) {
       assertLocatorBinding(registered, descriptor);
@@ -339,10 +365,16 @@ export class MiaodaOrdinaryArtifactStoreAdapter
     // Explicit compatibility for pre-registry refs only. A DB lookup failure
     // propagates; a registered locator never falls back. No write/backfill or
     // bucket search is performed by a read of a historical artifact.
-    return { bucketId: await this.getDefaultBucket(), filePath: legacyFilePath };
+    return {
+      bucketId: await this.getDefaultBucket(),
+      filePath: legacyFilePath,
+    };
   }
 
-  private resultEnvelopePartRef(ownerRefHash: string, partIndex: number): string {
+  private resultEnvelopePartRef(
+    ownerRefHash: string,
+    partIndex: number,
+  ): string {
     return `artifact://${UNIFIED_READER.artifactStoreRole}/${this.resultEnvelopePartFilePath(ownerRefHash, partIndex)}`;
   }
 
@@ -447,9 +479,14 @@ function assertLocatorBinding(
   locator: OrdinaryArtifactLocator,
   descriptor: { sha256: string; byteLength: number; mediaType: string },
 ): void {
-  if (locator.sha256 !== descriptor.sha256 || locator.byteLength !== descriptor.byteLength
-    || locator.mediaType !== descriptor.mediaType || !locator.bucketId || !locator.filePath
-    || !locator.providerObjectId) {
+  if (
+    locator.sha256 !== descriptor.sha256 ||
+    locator.byteLength !== descriptor.byteLength ||
+    locator.mediaType !== descriptor.mediaType ||
+    !locator.bucketId ||
+    !locator.filePath ||
+    !locator.providerObjectId
+  ) {
     throw new Error('ARTIFACT_LOCATOR_BINDING_MISMATCH');
   }
 }
@@ -578,18 +615,7 @@ async function providerCallWithTransportRetry<T>(
   code: string,
   operation: () => T | PromiseLike<T>,
 ): Promise<T> {
-  try {
-    return await operation();
-  } catch (firstCause) {
-    if (!isTransportFailure(firstCause)) {
-      throw providerError(code, firstCause);
-    }
-    try {
-      return await operation();
-    } catch (secondCause) {
-      throw providerError(code, secondCause);
-    }
-  }
+  return providerCall(code, () => withOneFileReadTransportRetry(operation));
 }
 
 function providerError(code: string, cause: unknown): Error {
@@ -597,71 +623,6 @@ function providerError(code: string, cause: unknown): Error {
   const error = new Error(`${code}:${message}`);
   (error as Error & { cause?: unknown }).cause = cause;
   return error;
-}
-
-function isTransportFailure(cause: unknown): boolean {
-  return !hasHttpStatus(cause) && hasTransportSignature(cause);
-}
-
-function hasHttpStatus(cause: unknown, seen = new Set<unknown>()): boolean {
-  if (!cause || (typeof cause !== 'object' && typeof cause !== 'function')) {
-    return false;
-  }
-  if (seen.has(cause)) return false;
-  seen.add(cause);
-
-  const value = cause as {
-    message?: unknown;
-    code?: unknown;
-    status?: unknown;
-    statusCode?: unknown;
-    response?: { status?: unknown };
-    cause?: unknown;
-  };
-  const statusValues = [value.status, value.statusCode, value.response?.status];
-  if (statusValues.some((status) => status !== undefined && status !== null)) {
-    return true;
-  }
-  return hasHttpStatus(value.cause, seen);
-}
-
-function hasTransportSignature(
-  cause: unknown,
-  seen = new Set<unknown>(),
-): boolean {
-  if (!cause || (typeof cause !== 'object' && typeof cause !== 'function')) {
-    return false;
-  }
-  if (seen.has(cause)) return false;
-  seen.add(cause);
-
-  const value = cause as {
-    message?: unknown;
-    code?: unknown;
-    cause?: unknown;
-  };
-
-  const message = String(value.message ?? '')
-    .trim()
-    .toLowerCase();
-  const code = String(value.code ?? '')
-    .trim()
-    .toUpperCase();
-  if (
-    message === 'fetch failed' ||
-    [
-      'ECONNRESET',
-      'ETIMEDOUT',
-      'EAI_AGAIN',
-      'ENETUNREACH',
-      'ECONNREFUSED',
-      'UND_ERR_SOCKET',
-      'UND_ERR_CONNECT_TIMEOUT',
-    ].includes(code)
-  ) {
-    return true;
-  }
-  return hasTransportSignature(value.cause, seen);
 }
 
 /**
