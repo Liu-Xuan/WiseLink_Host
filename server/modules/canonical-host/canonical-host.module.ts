@@ -86,6 +86,9 @@ import { CanonicalAeoEditingInputProducer } from './canonical-aeo-editing-input.
 import { CanonicalHostIntegratedAssessmentService } from './canonical-host-integrated-assessment.service';
 import { CanonicalHostEngineerReviewService } from './canonical-host-engineer-review.service';
 import { CanonicalHostLibraryIndexService } from './canonical-host-library-index.service';
+import { CanonicalLibraryRepository } from './canonical-library.repository';
+import { CanonicalLibraryService } from './canonical-library.service';
+import { CanonicalHostInitialAnalysisStatusService } from './canonical-host-initial-analysis-status.service';
 import { AeoSameWorkItemAuthoringModule } from '../aeo-authoring/public-api';
 import {
   UnconfiguredCanonicalBaseRuleResultProvider,
@@ -217,6 +220,9 @@ export interface CanonicalHostModuleOptions {
     CanonicalHostIntegratedAssessmentService,
     CanonicalHostEngineerReviewService,
     CanonicalHostLibraryIndexService,
+    CanonicalLibraryRepository,
+    CanonicalLibraryService,
+    CanonicalHostInitialAnalysisStatusService,
     CanonicalHostAeoService,
     CanonicalRuleSetArtifactReader,
     CanonicalRuleSetLifecycleRepository,

@@ -10,6 +10,8 @@ jest.mock(
 import { ReviewAttachmentService } from '../../server/modules/review-persistence/review-attachment.service';
 import { parseReviewAttachmentParsedArtifact } from '../../server/modules/review-persistence/review-attachment-artifact';
 import { MiaodaFileServiceArtifactStore } from '../../server/modules/document-management/src/hosted/miaodaFileServiceArtifactStore.js';
+import { MiaodaOrdinaryArtifactStoreAdapter } from '../../server/modules/unified-reader/miaoda-ordinary-artifact-store.adapter';
+import { InMemoryArtifactLocator } from '../support/in-memory-artifact-locator';
 
 interface StoredFile {
   id: string;
@@ -77,6 +79,7 @@ describe('ReviewAttachmentService official FileService path', () => {
       fileService as never,
       documentManagement as never,
       documentVersions as never,
+      new MiaodaOrdinaryArtifactStoreAdapter(fileService as never, new InMemoryArtifactLocator()),
       {
         extractLayout: () => ({
           pageCount: 1,

@@ -83,6 +83,7 @@ export function evaluateByJobAidForAily(
     documentVersionBinding: options.documentVersionBinding,
     artifactBytes: options.artifactBytes,
     assessmentAsOf: options.assessmentAsOf,
+    readScope: options.readScope,
   });
   const assessmentPackage = buildRuntimeAssessment({
     input,

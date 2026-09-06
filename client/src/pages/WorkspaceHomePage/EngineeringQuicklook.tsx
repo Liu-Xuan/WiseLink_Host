@@ -77,19 +77,29 @@ export default function EngineeringQuicklook({
           )}
           <strong>
             {loading
-              ? '正在读取当前资料…'
+              ? '正在读取已保存摘要…'
               : (readError?.title ?? '选择资料查看工程摘要')}
           </strong>
           <p>
             {loading
-              ? '待服务端返回后显示当前判断、来源依据与复核状态。'
+              ? '正在读取当前账户可见的登记与候选摘要。'
               : readError
-                ? '本次读取未成功，工程快览暂不可用。可选择其他资料，或重试当前资料。'
+                ? readError.message
                 : '当前判断、适用范围、依据、缺口和建议动作将在这里同步显示。'}
           </p>
         </div>
       ) : (
         <div className="library-quicklook-scroll">
+          {readError ? (
+            <div className="library-quicklook-read-error" role="alert">
+              <strong>{readError.title}</strong>
+              <p>{readError.message} 以下保留上次读取的摘要。</p>
+            </div>
+          ) : loading ? (
+            <p className="library-quicklook-note" role="status">
+              正在更新已保存摘要…
+            </p>
+          ) : null}
           <header className="library-quicklook-title">
             <div>
               <h3>{title}</h3>
@@ -99,6 +109,10 @@ export default function EngineeringQuicklook({
             </div>
             <span className="library-quicklook-boundary">工程辅助</span>
           </header>
+
+          {quicklook.sourceReadNote ? (
+            <p className="library-quicklook-note">{quicklook.sourceReadNote}</p>
+          ) : null}
 
           <section className="library-quicklook-judgment">
             <span>
@@ -203,8 +217,7 @@ export default function EngineeringQuicklook({
               </div>
             </dl>
             <p>
-              仅显示 Host 当前 WorkItem
-              投影中的受控版本与派生产物；不推断附件、历史版本或外部关联资料。
+              仅显示本次授权读取返回的版本与派生产物；不推断附件、历史版本或外部关联资料。
             </p>
             <Button type="button" variant="outline" onClick={onOpenFamily}>
               打开当前资料 <ArrowRight aria-hidden="true" />

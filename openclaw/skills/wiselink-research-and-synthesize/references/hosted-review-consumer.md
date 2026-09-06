@@ -1,4 +1,4 @@
-# 页面自动领取
+# 新资料初始分析与页面自动领取
 
 c19 在单轮 driver 外增加薄消费者，不建立第二个队列或常驻自制进程。
 
@@ -24,6 +24,29 @@ node <installed-skill-path>/scripts/consume-hosted-review-turn.mjs --work-item-i
 ```
 
 `--checkpoint-root` 可指定持久私有目录；默认使用 Hosted 用户的 `.openclaw/wiselink-review-runs`，每个 Host ReviewTurn 主键对应一个目录。
+
+## c23 新资料统一入口
+
+在配套 Host 已发布并实际返回 `initialAnalysis` 后，将既有 cron 的 command argv 改为：
+
+```text
+node <installed-skill-path>/scripts/consume-hosted-work-item.mjs --work-item-id <authorized-work-item-id> --applicability-context-ref <Host-configured-context-ref>
+```
+
+保留原 cron、官方 profile、凭据来源与运行记录；不在开发者电脑运行常驻消费者，不创建第二队列。迁移事项时先确认
+当前无在途任务，再使 Host 的 exact WorkItem scope 与 argv 指向同一获准新事项。批量测试也按获准事项逐个切换，
+不能据此扩大 owner/tenant 权限。按运行时官方 CLI 的实际 help 操作，不手工改 cron 文件。
+
+每个 tick 只执行 Host 指定的一个初始阶段，完成后退出；后续 tick 再继续。四阶段完成时转入既有 Review 消费者。
+Host 缺少受控适用性事实时，保留 WAITING_INPUT 并允许后续 JobAid/Overall 形成条件性候选。BUSY/NOT_READY
+零模型调用；FAILED/CONFLICT、阶段状态漂移或不确定结果均停止报告，不新建失败重试。阶段 requestId 及已有
+remote-step checkpoint 保存在 `.openclaw/wiselink-work-item-runs/<WorkItem>/initial/<operation>`，权限沿用
+0700/0600；已开始的模型步骤不会因原生 tick 或重启再次运行。完成记录与 Host 当前投影不一致时报告漂移，不覆盖旧记录。
+
+初始模型适配器只接收既有 operation modelInput，调用唯一官方 Gateway/profile，并只返回该 operation 的候选。
+它不执行 Host 工具、不拼 Task/ResultEnvelope、不把本轮控制引用或物理 locator 发给模型。四种输入输出校验、
+ResultEnvelope、Translation parts、Host readback/CAS 均复用现有实现。初始候选由 Host 按原有规则更新 revision；
+后续普通 Review 候选仍保持 revision/current/STALE 不变，二者都不代表正式采用。
 
 ## 状态和当前边界
 

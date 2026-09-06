@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { InMemoryArtifactLocator } from '../test/support/offline-artifact-locator.mjs';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
@@ -355,7 +356,7 @@ const documentManagement = {
 };
 const reservationRepository = new LocalReservationRepository();
 const registrar = new LocalProjectionRegistrar();
-const artifactStore = new MiaodaOrdinaryArtifactStoreAdapter(fileService);
+const artifactStore = new MiaodaOrdinaryArtifactStoreAdapter(fileService, new InMemoryArtifactLocator());
 const validator = new U0FullValidationService(
   new PythonU0FullPackageValidatorAdapter({
     pythonExecutable: process.env.WL_LOCAL_U0_PYTHON || 'python3',

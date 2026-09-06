@@ -1,5 +1,5 @@
 import { FileService } from '@lark-apaas/fullstack-nestjs-core';
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 
 import type { UnifiedPackageArtifactDescriptor } from '@shared/api.interface';
 
@@ -15,6 +15,11 @@ import type {
   UnifiedResultEnvelopePartStagingPort,
 } from './unified-reader.types';
 import { rawHashValue, sha256Raw } from './unified-reader.utils';
+import {
+  MiaodaOrdinaryArtifactLocatorRegistry,
+  type OrdinaryArtifactLocator,
+  type OrdinaryArtifactLocatorRegistryPort,
+} from './miaoda-ordinary-artifact-locator.registry';
 
 const JSON_MEDIA_TYPE = 'application/json' as const;
 const BINARY_MEDIA_TYPE = 'application/octet-stream' as const;
@@ -33,7 +38,11 @@ export class MiaodaOrdinaryArtifactStoreAdapter
 {
   private defaultBucketLookup: Promise<string> | null = null;
 
-  constructor(private readonly fileService: FileService) {}
+  constructor(
+    private readonly fileService: FileService,
+    @Inject(MiaodaOrdinaryArtifactLocatorRegistry)
+    private readonly locators: OrdinaryArtifactLocatorRegistryPort,
+  ) {}
 
   async persistAndReadback(
     input: Uint8Array,
@@ -41,28 +50,6 @@ export class MiaodaOrdinaryArtifactStoreAdapter
     if (input.byteLength < 1) throw new Error('ARTIFACT_BYTES_REQUIRED');
     const bytes = Uint8Array.from(input);
     const digest = sha256Raw(bytes);
-    const filePath = this.filePath(digest);
-    const bucketId = await this.getDefaultBucket();
-    const scoped = this.fileService.from(bucketId);
-    const existing = await providerCall(
-      'ARTIFACT_STORE_METADATA_READ_FAILED',
-      () => getOptionalMetadata(() => scoped.getFileMetadata(filePath)),
-    );
-    let reused = true;
-    if (existing === null) {
-      const uploaded = await providerCall('ARTIFACT_STORE_UPLOAD_FAILED', () =>
-        scoped.upload(bytes, {
-          filePath,
-          fileName: `${digest}.json`,
-          contentType: JSON_MEDIA_TYPE,
-          upsert: false,
-        }),
-      );
-      if (canonicalPath(uploaded.filePath) !== canonicalPath(filePath)) {
-        throw new Error('ARTIFACT_UPLOAD_PATH_MISMATCH');
-      }
-      reused = false;
-    }
     const artifact: UnifiedPackageArtifactDescriptor = {
       storeRole: UNIFIED_READER.artifactStoreRole,
       ref: `${this.artifactRefPrefix()}${digest}`,
@@ -70,6 +57,15 @@ export class MiaodaOrdinaryArtifactStoreAdapter
       byteLength: bytes.byteLength,
       mediaType: JSON_MEDIA_TYPE,
     };
+    const reused = await this.ensureRegistered({
+      artifactRef: artifact.ref,
+      sha256: digest,
+      bytes,
+      filePath: this.filePath(digest),
+      fileName: `${digest}.json`,
+      mediaType: JSON_MEDIA_TYPE,
+      uploadFailureCode: 'ARTIFACT_STORE_UPLOAD_FAILED',
+    });
     const actual = await this.readActualBytes(artifact);
     if (!sameBytes(bytes, actual)) {
       throw new Error('ARTIFACT_ACTUAL_BYTE_MISMATCH');
@@ -87,30 +83,6 @@ export class MiaodaOrdinaryArtifactStoreAdapter
     const bytes = Uint8Array.from(input.bytes);
     const digest = sha256Raw(bytes);
     const ownerRefHash = sha256Raw(new TextEncoder().encode(input.ownerRef));
-    const filePath = this.candidateFilePath(ownerRefHash, digest);
-    const bucketId = await this.getDefaultBucket();
-    const scoped = this.fileService.from(bucketId);
-    const existing = await providerCall(
-      'ARTIFACT_STORE_METADATA_READ_FAILED',
-      () => getOptionalMetadata(() => scoped.getFileMetadata(filePath)),
-    );
-    let reused = true;
-    if (existing === null) {
-      const uploaded = await providerCall(
-        'ARTIFACT_STORE_STAGE_UPLOAD_FAILED',
-        () =>
-          scoped.upload(bytes, {
-            filePath,
-            fileName: `${digest}.json`,
-            contentType: JSON_MEDIA_TYPE,
-            upsert: false,
-          }),
-      );
-      if (canonicalPath(uploaded.filePath) !== canonicalPath(filePath)) {
-        throw new Error('ARTIFACT_STAGE_UPLOAD_PATH_MISMATCH');
-      }
-      reused = false;
-    }
     const artifact: UnifiedPackageArtifactDescriptor = {
       storeRole: UNIFIED_READER.artifactStoreRole,
       ref: `${this.artifactRefPrefix()}applicability-candidate/${ownerRefHash}/${digest}`,
@@ -118,6 +90,15 @@ export class MiaodaOrdinaryArtifactStoreAdapter
       byteLength: bytes.byteLength,
       mediaType: JSON_MEDIA_TYPE,
     };
+    const reused = await this.ensureRegistered({
+      artifactRef: artifact.ref,
+      sha256: digest,
+      bytes,
+      filePath: this.candidateFilePath(ownerRefHash, digest),
+      fileName: `${digest}.json`,
+      mediaType: JSON_MEDIA_TYPE,
+      uploadFailureCode: 'ARTIFACT_STORE_STAGE_UPLOAD_FAILED',
+    });
     const actual = await this.readActualBytes(artifact);
     if (!sameBytes(bytes, actual)) {
       throw new Error('ARTIFACT_ACTUAL_BYTE_MISMATCH');
@@ -152,9 +133,14 @@ export class MiaodaOrdinaryArtifactStoreAdapter
     candidate: CandidateArtifactPersistResult,
   ): Promise<void> {
     this.assertCandidateDescriptor(candidate);
-    const filePath = this.descriptorFilePath(candidate.artifact);
-    const bucketId = await this.getDefaultBucket();
+    const { filePath, bucketId, providerObjectId } = await this.resolveLocator(
+      candidate.artifact.ref, this.descriptorFilePath(candidate.artifact), candidate.artifact,
+    );
     const scoped = this.fileService.from(bucketId);
+    const metadata = await scoped.getFileMetadata(filePath);
+    if (metadata === null || (providerObjectId && metadata.id !== providerObjectId)) {
+      throw new Error('ARTIFACT_STAGE_DISCARD_IDENTITY_MISMATCH');
+    }
     await providerCall('ARTIFACT_STORE_STAGE_DISCARD_FAILED', () =>
       scoped.remove([filePath]),
     );
@@ -175,33 +161,6 @@ export class MiaodaOrdinaryArtifactStoreAdapter
     assertResultEnvelopePartInput(input);
     const bytes = Uint8Array.from(input.bytes);
     const ownerRefHash = sha256Raw(new TextEncoder().encode(input.ownerRef));
-    const filePath = this.resultEnvelopePartFilePath(
-      ownerRefHash,
-      input.partIndex,
-    );
-    const bucketId = await this.getDefaultBucket();
-    const scoped = this.fileService.from(bucketId);
-    const existing = await providerCall(
-      'ARTIFACT_STORE_METADATA_READ_FAILED',
-      () => getOptionalMetadata(() => scoped.getFileMetadata(filePath)),
-    );
-    let reused = true;
-    if (existing === null) {
-      const uploaded = await providerCall(
-        'RESULT_ENVELOPE_PART_UPLOAD_FAILED',
-        () =>
-          scoped.upload(bytes, {
-            filePath,
-            fileName: `part-${input.partIndex}.bin`,
-            contentType: BINARY_MEDIA_TYPE,
-            upsert: false,
-          }),
-      );
-      if (canonicalPath(uploaded.filePath) !== canonicalPath(filePath)) {
-        throw new Error('RESULT_ENVELOPE_PART_UPLOAD_PATH_MISMATCH');
-      }
-      reused = false;
-    }
     const part: Omit<StagedResultEnvelopePart, 'reused'> = {
       schemaVersion: 'wiselink.3_1.staged_result_envelope_part.v1',
       ownerRefHash,
@@ -209,6 +168,15 @@ export class MiaodaOrdinaryArtifactStoreAdapter
       sha256: sha256Raw(bytes),
       byteLength: bytes.byteLength,
     };
+    const reused = await this.ensureRegistered({
+      artifactRef: this.resultEnvelopePartRef(ownerRefHash, input.partIndex),
+      sha256: part.sha256,
+      bytes,
+      filePath: this.resultEnvelopePartFilePath(ownerRefHash, input.partIndex),
+      fileName: `part-${input.partIndex}.bin`,
+      mediaType: BINARY_MEDIA_TYPE,
+      uploadFailureCode: 'RESULT_ENVELOPE_PART_UPLOAD_FAILED',
+    });
     const actual = await this.readStagedResultEnvelopePart({
       ownerRef: input.ownerRef,
       part,
@@ -224,11 +192,11 @@ export class MiaodaOrdinaryArtifactStoreAdapter
     part: Omit<StagedResultEnvelopePart, 'reused'>;
   }): Promise<Uint8Array> {
     assertResultEnvelopePartDescriptor(input.ownerRef, input.part);
-    const filePath = this.resultEnvelopePartFilePath(
-      input.part.ownerRefHash,
-      input.part.partIndex,
+    const { filePath, bucketId, providerObjectId } = await this.resolveLocator(
+      this.resultEnvelopePartRef(input.part.ownerRefHash, input.part.partIndex),
+      this.resultEnvelopePartFilePath(input.part.ownerRefHash, input.part.partIndex),
+      { ...input.part, mediaType: BINARY_MEDIA_TYPE },
     );
-    const bucketId = await this.getDefaultBucket();
     const scoped = this.fileService.from(bucketId);
     const metadata = await providerCallWithTransportRetry(
       'RESULT_ENVELOPE_PART_METADATA_READ_FAILED',
@@ -236,6 +204,7 @@ export class MiaodaOrdinaryArtifactStoreAdapter
     );
     if (
       metadata === null ||
+      (providerObjectId !== undefined && metadata.id !== providerObjectId) ||
       metadata.bucketID !== bucketId ||
       canonicalPath(metadata.filePath) !== canonicalPath(filePath) ||
       Number(metadata.metadata?.contentLength) !== input.part.byteLength ||
@@ -265,8 +234,9 @@ export class MiaodaOrdinaryArtifactStoreAdapter
   async readActualBytes(
     artifact: UnifiedPackageArtifactDescriptor,
   ): Promise<Uint8Array> {
-    const filePath = this.descriptorFilePath(artifact);
-    const bucketId = await this.getDefaultBucket();
+    const { filePath, bucketId, providerObjectId } = await this.resolveLocator(
+      artifact.ref, this.descriptorFilePath(artifact), artifact,
+    );
     const scoped = this.fileService.from(bucketId);
     const metadata = await providerCallWithTransportRetry(
       'ARTIFACT_STORE_METADATA_READ_FAILED',
@@ -279,6 +249,9 @@ export class MiaodaOrdinaryArtifactStoreAdapter
     }
     if (metadata.bucketID !== bucketId) {
       throw new Error('ARTIFACT_READBACK_MISMATCH:METADATA:BUCKET');
+    }
+    if (providerObjectId !== undefined && metadata.id !== providerObjectId) {
+      throw new Error('ARTIFACT_READBACK_MISMATCH:METADATA:OBJECT_ID');
     }
     if (canonicalPath(metadata.filePath) !== canonicalPath(filePath)) {
       throw new Error('ARTIFACT_READBACK_MISMATCH:METADATA:PATH');
@@ -306,6 +279,71 @@ export class MiaodaOrdinaryArtifactStoreAdapter
       throw new Error('ARTIFACT_READBACK_MISMATCH:BYTES');
     }
     return actual;
+  }
+
+  private async ensureRegistered(input: {
+    artifactRef: string;
+    sha256: string;
+    bytes: Uint8Array;
+    filePath: string;
+    fileName: string;
+    mediaType: string;
+    uploadFailureCode: string;
+  }): Promise<boolean> {
+    const registered = await this.locators.find(input.artifactRef);
+    if (registered) {
+      assertLocatorBinding(registered, { ...input, byteLength: input.bytes.byteLength });
+      // A registered but missing object is a read failure, never permission to
+      // upload a replacement or try the application's new default bucket.
+      return true;
+    }
+    const bucketId = await this.getDefaultBucket();
+    const scoped = this.fileService.from(bucketId);
+    const existing = await providerCall('ARTIFACT_STORE_METADATA_READ_FAILED', () =>
+      getOptionalMetadata(() => scoped.getFileMetadata(input.filePath)),
+    );
+    const metadata = existing ?? await providerCall(input.uploadFailureCode, () => scoped.upload(input.bytes, {
+      filePath: input.filePath,
+      fileName: input.fileName,
+      contentType: input.mediaType,
+      upsert: false,
+    }));
+    if (!metadata.id?.trim() || metadata.bucketID !== bucketId
+      || canonicalPath(metadata.filePath) !== canonicalPath(input.filePath)
+      || Number(metadata.metadata?.contentLength) !== input.bytes.byteLength
+      || metadata.metadata?.mimeType !== input.mediaType) {
+      throw new Error('ARTIFACT_LOCATOR_PROVIDER_METADATA_MISMATCH');
+    }
+    await this.locators.record({
+      artifactRef: input.artifactRef,
+      sha256: input.sha256,
+      byteLength: input.bytes.byteLength,
+      mediaType: input.mediaType,
+      bucketId: metadata.bucketID,
+      filePath: canonicalPath(metadata.filePath),
+      providerObjectId: metadata.id,
+    });
+    return existing !== null;
+  }
+
+  private async resolveLocator(
+    artifactRef: string,
+    legacyFilePath: string,
+    descriptor: { sha256: string; byteLength: number; mediaType: string },
+  ): Promise<{ bucketId: string; filePath: string; providerObjectId?: string }> {
+    const registered = await this.locators.find(artifactRef);
+    if (registered) {
+      assertLocatorBinding(registered, descriptor);
+      return registered;
+    }
+    // Explicit compatibility for pre-registry refs only. A DB lookup failure
+    // propagates; a registered locator never falls back. No write/backfill or
+    // bucket search is performed by a read of a historical artifact.
+    return { bucketId: await this.getDefaultBucket(), filePath: legacyFilePath };
+  }
+
+  private resultEnvelopePartRef(ownerRefHash: string, partIndex: number): string {
+    return `artifact://${UNIFIED_READER.artifactStoreRole}/${this.resultEnvelopePartFilePath(ownerRefHash, partIndex)}`;
   }
 
   /**
@@ -402,6 +440,17 @@ export class MiaodaOrdinaryArtifactStoreAdapter
 
   private artifactRefPrefix(): string {
     return `artifact://${UNIFIED_READER.artifactStoreRole}/${UNIFIED_READER.artifactDirectory}/`;
+  }
+}
+
+function assertLocatorBinding(
+  locator: OrdinaryArtifactLocator,
+  descriptor: { sha256: string; byteLength: number; mediaType: string },
+): void {
+  if (locator.sha256 !== descriptor.sha256 || locator.byteLength !== descriptor.byteLength
+    || locator.mediaType !== descriptor.mediaType || !locator.bucketId || !locator.filePath
+    || !locator.providerObjectId) {
+    throw new Error('ARTIFACT_LOCATOR_BINDING_MISMATCH');
   }
 }
 

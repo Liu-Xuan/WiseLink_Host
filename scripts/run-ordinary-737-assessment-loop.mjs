@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { InMemoryArtifactLocator } from '../test/support/offline-artifact-locator.mjs';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
@@ -294,7 +295,7 @@ const validator = new U0FullValidationService(
     validatorRevision: 'canonical-host-phase5-local-real',
   }),
 );
-const artifactStore = new MiaodaOrdinaryArtifactStoreAdapter(fileService);
+const artifactStore = new MiaodaOrdinaryArtifactStoreAdapter(fileService, new InMemoryArtifactLocator());
 const reader = new UnifiedReaderService(
   artifactStore,
   new Frozen2CandidateReaderService(),

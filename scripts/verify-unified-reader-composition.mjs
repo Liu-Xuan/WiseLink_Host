@@ -2,9 +2,10 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { createRequire } from 'node:module';
 
 import 'reflect-metadata';
-import { Module, RequestMethod } from '@nestjs/common';
+import { Global, Module, RequestMethod } from '@nestjs/common';
 import {
   METHOD_METADATA,
   MODULE_METADATA,
@@ -13,6 +14,7 @@ import {
 import { NestFactory } from '@nestjs/core';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const { DRIZZLE_DATABASE } = createRequire(import.meta.url)('@lark-apaas/fullstack-nestjs-core');
 const manifest = JSON.parse(
   await readFile(
     join(
@@ -80,9 +82,16 @@ const noIoFileService = {
   },
 };
 class NoIoFileServiceModule {}
+Global()(NoIoFileServiceModule);
 Module({
-  providers: [{ provide: fileServiceProvider.inject[0], useValue: noIoFileService }],
-  exports: [fileServiceProvider.inject[0]],
+  providers: [
+    { provide: fileServiceProvider.inject[0], useValue: noIoFileService },
+    { provide: DRIZZLE_DATABASE, useValue: {
+      select() { throw new Error('UNEXPECTED_DATABASE_IO'); },
+      insert() { throw new Error('UNEXPECTED_DATABASE_IO'); },
+    } },
+  ],
+  exports: [fileServiceProvider.inject[0], DRIZZLE_DATABASE],
 })(NoIoFileServiceModule);
 const hostedArtifactStore = fileServiceProvider.useFactory(noIoFileService);
 assert.deepEqual(hostedArtifactStore.activationBinding, exactHostBinding);

@@ -150,7 +150,7 @@ describe('single canonical app workspace', () => {
     );
     expect(home).toContain('loadedSessionGeneration === sessionGeneration');
     expect(overallRegeneration).toContain('[sessionGeneration, workItemId]');
-    expect(home).toContain('尚无最近资料');
+    expect(home).toContain('<LibraryDocumentDirectory');
     expect(home).not.toContain('developmentIntakeAvailable ? null');
     expect(home).toContain('<EngineeringQuicklook');
     expect(engineeringQuicklook).toContain('当前判断');

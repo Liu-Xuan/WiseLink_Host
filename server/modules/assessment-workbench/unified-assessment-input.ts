@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import type { UnifiedArtifactReadScope } from '../unified-reader/unified-artifact-read-scope';
 
 import type {
   DocumentVersionUnifiedArtifactBinding,
@@ -63,12 +64,14 @@ export interface BuildUnifiedAssessmentInputOptions {
   documentVersionBinding: DocumentVersionUnifiedArtifactBinding;
   artifactBytes: Uint8Array;
   assessmentAsOf: string;
+  readScope?: UnifiedArtifactReadScope;
 }
 
 export function buildUnifiedSbJobAidAssessmentInput({
   documentVersionBinding,
   artifactBytes,
   assessmentAsOf,
+  readScope,
 }: BuildUnifiedAssessmentInputOptions): Record<string, unknown> {
   if (!Number.isFinite(Date.parse(assessmentAsOf))) {
     throw new Error('assessmentAsOf must be an ISO date or date-time.');
@@ -76,9 +79,11 @@ export function buildUnifiedSbJobAidAssessmentInput({
   const readback = readFrozenUnifiedParsedPackageForSbAssessment(
     documentVersionBinding,
     artifactBytes,
+    readScope,
   );
-  const pkg = JSON.parse(new TextDecoder('utf-8', { fatal: true })
-    .decode(artifactBytes)) as UnifiedPackage;
+  const pkg = (readScope
+    ? readScope.parseJson(artifactBytes)
+    : JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(artifactBytes))) as UnifiedPackage;
   const refs = new Map(pkg.sourceRefs.map((ref) => [ref.sourceRefId, ref]));
   const document = pkg.document;
   const identifier = document.identifiers.find(

@@ -12,7 +12,7 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（当前配置端点为 `miaoda/miaoda-model-auto`；下游具体模型不暴露，Skill 不绑定具体模型）
-- Skill：`wiselink-research-and-synthesize@r09.c22`
+- Skill：`wiselink-research-and-synthesize@r09.c23`
 - Skill compatibility：`wiselink-research-and-synthesize@r09`（Host 最低接受 `r09.c10`）
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（既有 20 项能力；兼容新增的只读自动领取查询）
 - Host baseline：`6fd2655d27edc3851c745547efaf8796ad22c82c`
@@ -48,6 +48,18 @@ Task/Result/MCP 语义的 prompt 时可 Skill-only 发布新 c 修订；改变 s
   手工复刻完整 JSON。除这个无凭据的 bundled helper 外，不依赖通用 shell、自造 HTTP 或本地 decoder。
 
 ## Mode 1：INITIAL_ANALYSIS
+
+### 新资料自动推进（c23）
+
+`scripts/consume-hosted-work-item.mjs` 是既有原生 command cron 的统一入口。它先读 Host
+`get_parse_status.initialAnalysis`，每次只运行 `nextOperation` 指定的一个未执行阶段；四阶段完成后复用原有
+Review 消费者。该状态来自现有 projection 与 ActionAttempt，不是消费者另建业务状态机。
+`NOT_READY/BUSY` 不调用模型，`FAILED/CONFLICT` 或未知结果停止并报告。普通 applicability 的
+`WAITING_INPUT` 保持缺口，可继续 Host 指定的 JobAid/Overall；它不自动启动 P0B 重算。
+新 Host 未提供该字段时统一入口明确停止，原有单 operation 与 Review 入口仍兼容。
+运行范围只取已授权的 `--work-item-id`；新事项尚无 applicability context 时使用与 Host 配置一致的
+`--applicability-context-ref`，该控制引用和本轮 requestId 不进入模型。部署见
+[Hosted 自动领取](references/hosted-review-consumer.md)。
 
 ### 共同背景（兼容增量）
 
@@ -394,7 +406,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - `modelVersion` 是响应中可读实际模型，或响应未提供时由无 fallback 的唯一 configured provider/model endpoint 解析出的可证明执行标识；不得把它扩张解释为未暴露的下游具体模型，也不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c22`
+- `skillVersion=wiselink-research-and-synthesize@r09.c23`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致

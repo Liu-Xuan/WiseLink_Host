@@ -1,5 +1,10 @@
 import { MiaodaOrdinaryArtifactStoreAdapter } from '../../server/modules/unified-reader/miaoda-ordinary-artifact-store.adapter';
 import { sha256Raw } from '../../server/modules/unified-reader/unified-reader.utils';
+import { InMemoryArtifactLocator } from '../support/in-memory-artifact-locator';
+
+function createAdapter(fileService: ConstructorParameters<typeof MiaodaOrdinaryArtifactStoreAdapter>[0], locators = new InMemoryArtifactLocator()) {
+  return new MiaodaOrdinaryArtifactStoreAdapter(fileService, locators);
+}
 
 interface StoredFile {
   id: string;
@@ -40,7 +45,7 @@ class LocalScopedFileService {
       bytes: Uint8Array.from(bytes),
       mimeType: options.contentType,
     });
-    return { filePath: options.filePath };
+    return this.getFileMetadata(options.filePath);
   }
 
   async download(filePath: string) {
@@ -66,13 +71,67 @@ class LocalScopedFileService {
 }
 
 describe('MiaodaOrdinaryArtifactStoreAdapter', () => {
+  it('registers SDK positions and reads the original object after a default-bucket change and process restart', async () => {
+    const original = new LocalScopedFileService('bucket-original');
+    const other = new LocalScopedFileService('bucket-other');
+    const registry = new InMemoryArtifactLocator();
+    const bytes = new TextEncoder().encode('{"registered":true}');
+    const first = createAdapter({ getDefaultBucket: async () => 'bucket-original', from: () => original } as never, registry);
+    const saved = await first.persistAndReadback(bytes);
+    expect(registry.rows.get(saved.artifact.ref)).toEqual({
+      artifactRef: saved.artifact.ref, sha256: saved.artifact.sha256,
+      byteLength: bytes.byteLength, mediaType: 'application/json', bucketId: 'bucket-original',
+      filePath: `unified-parsed-packages/sha256/${saved.artifact.sha256}.json`, providerObjectId: 'file-1',
+    });
+    const defaultLookup = jest.fn(async () => 'bucket-other');
+    const from = jest.fn((bucket: string) => bucket === 'bucket-original' ? original : other);
+    const restarted = createAdapter({ getDefaultBucket: defaultLookup, from } as never, registry);
+    await expect(restarted.readActualBytes(saved.artifact)).resolves.toEqual(bytes);
+    expect(defaultLookup).not.toHaveBeenCalled();
+    expect(from).toHaveBeenCalledWith('bucket-original');
+    expect(other.downloadCount).toBe(0);
+  });
+
+  it('never replaces a missing registered object or accepts an object-id change at the same path', async () => {
+    const scoped = new LocalScopedFileService('bucket-registered');
+    const registry = new InMemoryArtifactLocator();
+    const adapter = createAdapter({ getDefaultBucket: async () => 'bucket-registered', from: () => scoped } as never, registry);
+    const bytes = new TextEncoder().encode('{"immutable":true}');
+    const saved = await adapter.persistAndReadback(bytes);
+    const path = registry.rows.get(saved.artifact.ref)!.filePath;
+    scoped.files.get(path)!.id = 'replacement-object';
+    await expect(adapter.readActualBytes(saved.artifact)).rejects.toThrow('ARTIFACT_READBACK_MISMATCH:METADATA:OBJECT_ID');
+    scoped.files.delete(path);
+    await expect(adapter.persistAndReadback(bytes)).rejects.toThrow('ARTIFACT_READBACK_MISMATCH:METADATA:NOT_FOUND_OR_INACCESSIBLE');
+    expect(scoped.uploadCount).toBe(1);
+  });
+
+  it('does not backfill historical refs on read and does not fall back when the registry query fails', async () => {
+    const bytes = new TextEncoder().encode('{"historical":true}');
+    const digest = sha256Raw(bytes);
+    const path = `unified-parsed-packages/sha256/${digest}.json`;
+    const scoped = new LocalScopedFileService('bucket-legacy');
+    scoped.files.set(path, { id: 'legacy-object', bytes, mimeType: 'application/json' });
+    const registry = new InMemoryArtifactLocator();
+    const defaults = jest.fn(async () => 'bucket-legacy');
+    const adapter = createAdapter({ getDefaultBucket: defaults, from: () => scoped } as never, registry);
+    const artifact = { storeRole: 'UnifiedArtifactStoreCandidate' as const, ref: `artifact://UnifiedArtifactStoreCandidate/unified-parsed-packages/sha256/${digest}`, sha256: digest, byteLength: bytes.byteLength, mediaType: 'application/json' as const };
+    await expect(adapter.readActualBytes(artifact)).resolves.toEqual(bytes);
+    expect(registry.rows.size).toBe(0);
+    defaults.mockClear();
+    jest.spyOn(registry, 'find').mockRejectedValueOnce(new Error('DATABASE_UNAVAILABLE'));
+    await expect(adapter.readActualBytes(artifact)).rejects.toThrow('DATABASE_UNAVAILABLE');
+    expect(defaults).not.toHaveBeenCalled();
+    expect(scoped.downloadCount).toBe(1);
+  });
+
   it('persists once, reads stream bytes, and reuses exact content', async () => {
     const scoped = new LocalScopedFileService('bucket-local');
     const fileService = {
       getDefaultBucket: async () => 'bucket-local',
       from: () => scoped,
     };
-    const adapter = new MiaodaOrdinaryArtifactStoreAdapter(
+    const adapter = createAdapter(
       fileService as never,
     );
     const bytes = new TextEncoder().encode('{"package":true}\n');
@@ -89,7 +148,7 @@ describe('MiaodaOrdinaryArtifactStoreAdapter', () => {
 
   it('replays an identical attempt-owned result part without uploading twice and rejects conflicting bytes', async () => {
     const scoped = new LocalScopedFileService('bucket-result-parts');
-    const adapter = new MiaodaOrdinaryArtifactStoreAdapter({
+    const adapter = createAdapter({
       getDefaultBucket: async () => 'bucket-result-parts',
       from: () => scoped,
     } as never);
@@ -116,13 +175,13 @@ describe('MiaodaOrdinaryArtifactStoreAdapter', () => {
         partIndex: 0,
         bytes: new TextEncoder().encode('{"part":"conflict"}'),
       }),
-    ).rejects.toThrow('RESULT_ENVELOPE_PART_READBACK_MISMATCH:METADATA');
+    ).rejects.toThrow('ARTIFACT_LOCATOR_BINDING_MISMATCH');
     expect(scoped.uploadCount).toBe(1);
   });
 
   it('finalizes an attempt-owned stable descriptor before publication and discards with verified absence', async () => {
     const scoped = new LocalScopedFileService('bucket-stage-local');
-    const adapter = new MiaodaOrdinaryArtifactStoreAdapter({
+    const adapter = createAdapter({
       getDefaultBucket: async () => 'bucket-stage-local',
       from: () => scoped,
     } as never);
@@ -180,7 +239,7 @@ describe('MiaodaOrdinaryArtifactStoreAdapter', () => {
       download: jest.fn(),
     };
     const adapter: MiaodaOrdinaryArtifactStoreAdapter =
-      new MiaodaOrdinaryArtifactStoreAdapter({
+      createAdapter({
         getDefaultBucket: async () => bucketId,
         from: () => scoped,
       } as never);
@@ -221,7 +280,10 @@ describe('MiaodaOrdinaryArtifactStoreAdapter', () => {
         }),
       upload: jest.fn(
         async (_bytes: Uint8Array, options: { filePath: string }) => ({
+          id: 'hosted-file-1',
+          bucketID: 'bucket-hosted-test',
           filePath: options.filePath,
+          metadata: { contentLength: String(bytes.byteLength), mimeType: 'application/json' },
         }),
       ),
       download: jest.fn(async () => ({
@@ -233,7 +295,7 @@ describe('MiaodaOrdinaryArtifactStoreAdapter', () => {
       getDefaultBucket: async () => 'bucket-hosted-test',
       from: () => scoped,
     };
-    const adapter = new MiaodaOrdinaryArtifactStoreAdapter(
+    const adapter = createAdapter(
       fileService as never,
     );
 
@@ -274,7 +336,7 @@ describe('MiaodaOrdinaryArtifactStoreAdapter', () => {
         metadata: { id: metadata.id },
       })),
     };
-    const adapter = new MiaodaOrdinaryArtifactStoreAdapter({
+    const adapter = createAdapter({
       getDefaultBucket: async () => 'bucket-retry-test',
       from: () => scoped,
     } as never);
@@ -315,7 +377,7 @@ describe('MiaodaOrdinaryArtifactStoreAdapter', () => {
           metadata: { id: metadata.id },
         }),
     };
-    const adapter = new MiaodaOrdinaryArtifactStoreAdapter({
+    const adapter = createAdapter({
       getDefaultBucket: async () => 'bucket-download-retry-test',
       from: () => scoped,
     } as never);
@@ -341,7 +403,7 @@ describe('MiaodaOrdinaryArtifactStoreAdapter', () => {
       getFileMetadata: jest.fn().mockRejectedValue(notFound),
       download: jest.fn(),
     };
-    const adapter = new MiaodaOrdinaryArtifactStoreAdapter({
+    const adapter = createAdapter({
       getDefaultBucket: async () => 'bucket-no-retry-test',
       from: () => scoped,
     } as never);
@@ -371,7 +433,7 @@ describe('MiaodaOrdinaryArtifactStoreAdapter', () => {
       getFileMetadata: jest.fn().mockRejectedValue(transportWrapper),
       download: jest.fn(),
     };
-    const adapter = new MiaodaOrdinaryArtifactStoreAdapter({
+    const adapter = createAdapter({
       getDefaultBucket: async () => 'bucket-nested-no-retry-test',
       from: () => scoped,
     } as never);
@@ -407,7 +469,7 @@ describe('MiaodaOrdinaryArtifactStoreAdapter', () => {
         metadata: { id: 'different-file' },
       }),
     };
-    const adapter = new MiaodaOrdinaryArtifactStoreAdapter({
+    const adapter = createAdapter({
       getDefaultBucket: async () => 'bucket-semantic-mismatch-test',
       from: () => scoped,
     } as never);
@@ -446,7 +508,7 @@ describe('MiaodaOrdinaryArtifactStoreAdapter', () => {
         .mockRejectedValueOnce(first)
         .mockRejectedValueOnce(second),
     };
-    const adapter = new MiaodaOrdinaryArtifactStoreAdapter({
+    const adapter = createAdapter({
       getDefaultBucket: async () => 'bucket-download-fail-test',
       from: () => scoped,
     } as never);
@@ -469,7 +531,7 @@ describe('MiaodaOrdinaryArtifactStoreAdapter', () => {
       getDefaultBucket: async () => 'bucket-local',
       from: () => scoped,
     };
-    const adapter = new MiaodaOrdinaryArtifactStoreAdapter(
+    const adapter = createAdapter(
       fileService as never,
     );
     const expected = new TextEncoder().encode('{"package":true}\n');
@@ -496,7 +558,7 @@ describe('MiaodaOrdinaryArtifactStoreAdapter', () => {
       },
       from: jest.fn(),
     };
-    const adapter = new MiaodaOrdinaryArtifactStoreAdapter(
+    const adapter = createAdapter(
       fileService as never,
     );
     const bytes = new TextEncoder().encode('{"package":true}\n');
@@ -544,7 +606,7 @@ describe('MiaodaOrdinaryArtifactStoreAdapter', () => {
       getDefaultBucket,
       from: () => scoped,
     };
-    const adapter = new MiaodaOrdinaryArtifactStoreAdapter(
+    const adapter = createAdapter(
       fileService as never,
     );
     const artifact = {
@@ -559,6 +621,7 @@ describe('MiaodaOrdinaryArtifactStoreAdapter', () => {
 
     const first = adapter.readActualBytes(artifact);
     const second = adapter.readActualBytes(artifact);
+    await Promise.resolve();
     expect(getDefaultBucket).toHaveBeenCalledTimes(1);
     releaseBucket('bucket-concurrent-test');
 

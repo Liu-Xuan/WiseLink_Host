@@ -4,8 +4,16 @@ import type {
 } from '@shared/api.interface';
 
 import { Frozen2CandidateReaderService } from '../../server/modules/unified-reader/frozen2-candidate-reader.service';
+import { UnifiedArtifactReadScope } from '../../server/modules/unified-reader/unified-artifact-read-scope';
 import { UnifiedReaderService } from '../../server/modules/unified-reader/unified-reader.service';
 import { U0FullValidationService } from '../../server/modules/unified-reader/u0-full-validation.service';
+import { buildUnifiedSbJobAidAssessmentInput } from '../../server/modules/assessment-workbench/unified-assessment-input';
+import { evaluateByJobAidForAily } from '../../server/modules/assessment-workbench/assessment-aily-orchestration';
+import { buildJobAidCriterionSetVersion } from '../../server/modules/assessment-workbench/job-aid-runtime/criterionSet.js';
+import type {
+  DocumentVersionUnifiedArtifactBinding,
+  UnifiedParsedPackageArtifactRecord,
+} from '../../server/modules/assessment-workbench/unified-parsed-package-reader';
 import type {
   ImmutableArtifactPersistResult,
   UnifiedArtifactStorePort,
@@ -57,13 +65,17 @@ class InMemoryArtifactStore implements UnifiedArtifactStorePort {
 describe('UnifiedReaderService hosted candidate loop', () => {
   let store: InMemoryArtifactStore;
   let service: UnifiedReaderService;
+  let candidateReader: Frozen2CandidateReaderService;
+  let validator: U0FullValidationService;
 
   beforeEach(() => {
     store = new InMemoryArtifactStore();
+    candidateReader = new Frozen2CandidateReaderService();
+    validator = fullValidator();
     service = new UnifiedReaderService(
       store,
-      new Frozen2CandidateReaderService(),
-      fullValidator(),
+      candidateReader,
+      validator,
       {
         mode: 'DEFAULT_UNCONFIGURED',
         artifactStoreConfigured: false,
@@ -211,6 +223,167 @@ describe('UnifiedReaderService hosted candidate loop', () => {
     await expect(service.readSourcePackage({ artifact, packageId }))
       .rejects.toThrow('SOURCE_ARTIFACT_NOT_FOUND');
   });
+
+  it('coalesces the exact package download, strict validation and JSON parse within an explicit scope', async () => {
+    const { bytes, packageId } = makeCandidatePackage('pdf');
+    const { artifact } = await store.persistAndReadback(bytes);
+    const readScope = new UnifiedArtifactReadScope(store);
+    const reads = jest.spyOn(store, 'readActualBytes');
+    const validations = jest.spyOn(validator, 'validate');
+    const inspections = jest.spyOn(candidateReader, 'readSourcePackage');
+    const parses = jest.spyOn(JSON, 'parse');
+    const rawText = new TextDecoder().decode(bytes);
+    const input = { artifact, packageId, documentVersionId: 'DV-SCOPED', readScope };
+    try {
+      const [units, inspection, readback, actualBytes] = await Promise.all([
+        service.readAllSourceUnits(input),
+        service.inspectSourcePackage(input),
+        service.readback({
+          workItemId: 'WI-SCOPED',
+          requestId: 'REQ-SCOPED',
+          documentVersionId: input.documentVersionId,
+          permissionSnapshotVersion: 'PERMISSION-SCOPED',
+          package: {
+            artifact,
+            packageId,
+            contractId: 'techpub.parsed-package.v1',
+            contractRevision: 'frozen.2',
+          },
+          query: 'electrical power',
+        }, readScope),
+        readScope.readActualBytes(artifact),
+      ]);
+      // SourceRef extraction and the assessment consumer use this same parser.
+      expect(readScope.parseJson(actualBytes)).toBe(readScope.parseJson(actualBytes));
+      expect(units).toHaveLength(2);
+      expect(inspection.packageId).toBe(readback.package.packageId);
+      expect(readback.permissionSnapshotVersion).toBe('PERMISSION-SCOPED');
+      expect(reads).toHaveBeenCalledTimes(1);
+      expect(validations).toHaveBeenCalledTimes(1);
+      expect(inspections).toHaveBeenCalledTimes(1);
+      expect(parses.mock.calls.filter(([text]) => text === rawText)).toHaveLength(1);
+    } finally {
+      parses.mockRestore();
+    }
+  });
+
+  it('keeps requests isolated and never aliases a changed descriptor or version binding', async () => {
+    const { bytes, packageId } = makeCandidatePackage('pdf');
+    const { artifact } = await store.persistAndReadback(bytes);
+    const reads = jest.spyOn(store, 'readActualBytes');
+    const validations = jest.spyOn(validator, 'validate');
+    const firstScope = new UnifiedArtifactReadScope(store);
+    const input = { artifact, packageId, documentVersionId: 'DV-1', readScope: firstScope };
+    await service.readSourcePackage(input);
+    await service.readSourcePackage({ ...input, documentVersionId: 'DV-2' });
+    expect(reads).toHaveBeenCalledTimes(1);
+    expect(validations).toHaveBeenCalledTimes(2);
+    await service.readSourcePackage({ ...input, readScope: new UnifiedArtifactReadScope(store) });
+    expect(reads).toHaveBeenCalledTimes(2);
+    expect(validations).toHaveBeenCalledTimes(3);
+    await expect(service.readSourcePackage({
+      ...input,
+      artifact: { ...artifact, sha256: '0'.repeat(64) },
+    })).rejects.toThrow('ARTIFACT_READBACK_MISMATCH');
+    expect(reads).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not retain failed downloads or failed validations as successful source reads', async () => {
+    const { bytes, packageId } = makeCandidatePackage('pdf');
+    const { artifact } = await store.persistAndReadback(bytes);
+    const reads = jest.spyOn(store, 'readActualBytes');
+    const validations = jest.spyOn(validator, 'validate');
+    const input = {
+      artifact, packageId, documentVersionId: 'DV-RETRY',
+      readScope: new UnifiedArtifactReadScope(store),
+    };
+    reads.mockRejectedValueOnce(new Error('SOURCE_ARTIFACT_NOT_FOUND'));
+    const failed = await Promise.allSettled([
+      service.readSourcePackage(input), service.inspectSourcePackage(input),
+    ]);
+    expect(failed.map((entry) => entry.status)).toEqual(['rejected', 'rejected']);
+    expect(reads).toHaveBeenCalledTimes(1);
+    validations.mockRejectedValueOnce(new Error('FULL_U0_VALIDATOR_REJECTED'));
+    await expect(service.readSourcePackage(input)).rejects.toThrow('FULL_U0_VALIDATOR_REJECTED');
+    await expect(service.readSourcePackage(input)).resolves.toMatchObject({
+      inspection: { packageId },
+    });
+    expect(reads).toHaveBeenCalledTimes(3);
+    expect(validations).toHaveBeenCalledTimes(2);
+  });
+
+  it('reuses one parse across the actual Reader, SB input builder and 150-item JobAid consumer', async () => {
+    const assetDirectory = resolve(
+      process.cwd(), 'server/runtime-assets/assessment-host/real-sb/737-34-3830-original-issue',
+    );
+    const bytes = new Uint8Array(readFileSync(resolve(assetDirectory, 'unified-package.frozen-2.json')));
+    const artifactRecord = JSON.parse(readFileSync(
+      resolve(assetDirectory, 'artifact-record.frozen-2.json'), 'utf8',
+    )) as UnifiedParsedPackageArtifactRecord;
+    const { artifact } = await store.persistAndReadback(bytes);
+    const documentVersionBinding: DocumentVersionUnifiedArtifactBinding = {
+      documentId: 'document_10085d27e5c05266403bb74c',
+      documentVersionId: 'document_version_f4813607b91ee1a20e754e2d',
+      artifactRecord: { ...artifactRecord, artifactRef: artifact.ref },
+      lifecycleStatus: 'FROZEN', selectionStatus: 'SELECTED', isCurrent: true,
+      classification: {
+        schemaVersion: 'wiselink.v3_1.document_classification_envelope.v1',
+        classificationId: 'CLS-READ-SCOPE-TEST',
+        classificationHash: `sha256:${'a'.repeat(64)}`,
+        status: 'CONFIRMED', normalizedFamily: 'SB', issuer: 'BOEING',
+        subtype: 'service_bulletin',
+        profileId: 'document-family-profile:issuer.boeing.service_bulletin@1.0.0',
+        nativeParseProfileId: 'boeing.sb',
+      },
+    };
+    const ruleBytes = new Uint8Array(readFileSync(resolve(
+      process.cwd(), 'server/runtime-assets/assessment-host/job-aid/rule-pack-0.2.json',
+    )));
+    const rulePack = JSON.parse(new TextDecoder().decode(ruleBytes)) as Record<string, unknown>;
+    const rulePackHash = sha256Raw(ruleBytes);
+    const criterionSet = buildJobAidCriterionSetVersion({
+      rulePack,
+      artifactRef: 'artifact://rule-pack-read-scope',
+      artifactDigest: `sha256:${rulePackHash}`,
+      artifactVersion: '0.2',
+      lifecycleStatus: 'ACTIVE',
+    });
+    const referenceInput = buildUnifiedSbJobAidAssessmentInput({
+      documentVersionBinding, artifactBytes: bytes, assessmentAsOf: '2026-09-06T00:00:00.000Z',
+    });
+    const readScope = new UnifiedArtifactReadScope(store);
+    const reads = jest.spyOn(store, 'readActualBytes');
+    const parses = jest.spyOn(JSON, 'parse');
+    const rawText = new TextDecoder().decode(bytes);
+    try {
+      await service.readAllSourceUnits({
+        artifact, packageId: artifactRecord.packageId,
+        documentVersionId: documentVersionBinding.documentVersionId, readScope,
+      });
+      const options = {
+        documentVersionBinding,
+        artifactBytes: await readScope.readActualBytes(artifact),
+        assessmentAsOf: '2026-09-06T00:00:00.000Z',
+        readScope,
+      };
+      const scopedInput = buildUnifiedSbJobAidAssessmentInput(options);
+      const evaluation = evaluateByJobAidForAily({
+        ...options, workItemId: 'WI-READ-SCOPE', rulePack, rulePackHash, criterionSet,
+        generatedAt: '2026-09-06T00:00:00.000Z',
+        jobAidSourceIdentity: {
+          status: 'SOURCE_IDENTITY_MISMATCH', sourceManifestHash: 'sha256:test',
+          allowsCandidateOnlyAssessment: true,
+          blocksEngineeringClosure: true, blocksRulePromotion: true,
+        },
+      });
+      expect(scopedInput).toEqual(referenceInput);
+      expect(evaluation.snapshot.items).toHaveLength(150);
+      expect(reads).toHaveBeenCalledTimes(1);
+      expect(parses.mock.calls.filter(([text]) => text === rawText)).toHaveLength(1);
+    } finally {
+      parses.mockRestore();
+    }
+  });
 });
 
 function makeCandidatePackage(sourceKind: 'pdf' | 'native_s1000d'): {
@@ -311,3 +484,5 @@ function fullValidator(): U0FullValidationService {
     },
   });
 }
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';

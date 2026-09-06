@@ -7,6 +7,7 @@ import type {
 } from '@shared/api.interface';
 
 import { UNIFIED_READER } from './unified-reader.constants';
+import type { UnifiedArtifactReadScope } from './unified-artifact-read-scope';
 import type {
   UnifiedReaderPackageInspection,
   UnifiedReaderPackageSummary,
@@ -52,18 +53,10 @@ export class Frozen2CandidateReaderService {
   readSourcePackage(
     artifact: UnifiedPackageArtifactDescriptor,
     bytes: Uint8Array,
+    readScope?: UnifiedArtifactReadScope,
   ): UnifiedReaderSourcePackage {
-    const { inspection, units } = this.inspectInternal(artifact, bytes);
-    return {
-      inspection,
-      units: units.map((unit) => ({
-        unitId: unit.unitId,
-        kind: unit.kind,
-        text: unit.text,
-        sourceRefIds: [...unit.sourceRefIds],
-        sourceLocators: unit.sourceLocators.map(cloneLocator),
-      })),
-    };
+    const { inspection, units } = this.inspectInternal(artifact, bytes, readScope);
+    return { inspection, units };
   }
 
   read(
@@ -71,16 +64,22 @@ export class Frozen2CandidateReaderService {
     bytes: Uint8Array,
     query: string,
   ): UnifiedReaderPackageSummary {
-    const inspected: InspectedPackage = this.inspectInternal(artifact, bytes);
+    return this.querySourcePackage(this.readSourcePackage(artifact, bytes), query);
+  }
+
+  querySourcePackage(
+    sourcePackage: UnifiedReaderSourcePackage,
+    query: string,
+  ): UnifiedReaderPackageSummary {
     const normalizedQuery: string = normalizeQuery(query);
     const queryResults: UnifiedReaderQueryResult[] = this.queryUnits(
-      inspected.units,
+      sourcePackage.units,
       normalizedQuery,
     );
     if (queryResults.length === 0) {
       throw new Error('READER_QUERY_NO_RESULTS');
     }
-    return { ...inspected.inspection, queryResults };
+    return { ...sourcePackage.inspection, queryResults };
   }
 
   inspect(
@@ -93,13 +92,12 @@ export class Frozen2CandidateReaderService {
   private inspectInternal(
     artifact: UnifiedPackageArtifactDescriptor,
     bytes: Uint8Array,
+    readScope?: UnifiedArtifactReadScope,
   ): InspectedPackage {
     assertArtifactBytes(artifact, bytes);
-    const rawText: string = new TextDecoder('utf-8', { fatal: true }).decode(
-      bytes,
-    );
-    assertNoDuplicateJsonKeys(rawText);
-    const parsed: unknown = JSON.parse(rawText) as unknown;
+    const parsed: unknown = readScope
+      ? readScope.parseJson(bytes)
+      : parsePackageJson(bytes);
     const pkg: Record<string, unknown> = recordValue(parsed, 'package');
     this.assertContract(pkg);
     const packageId: string = packageIdValue(pkg.packageId, 'packageId');
@@ -282,23 +280,29 @@ export class Frozen2CandidateReaderService {
   }
 
   private queryUnits(
-    units: ParsedContentUnit[],
+    units: UnifiedReaderQueryResult[],
     normalizedQuery: string,
   ): UnifiedReaderQueryResult[] {
     const results: UnifiedReaderQueryResult[] = [];
-    units.forEach((unit: ParsedContentUnit) => {
+    units.forEach((unit: UnifiedReaderQueryResult) => {
       if (unit.text.toLocaleLowerCase().includes(normalizedQuery)) {
         results.push({
           unitId: unit.unitId,
           kind: unit.kind,
           text: unit.text,
           sourceRefIds: [...unit.sourceRefIds],
-          sourceLocators: unit.sourceLocators.map(cloneLocator),
+          sourceLocators: unit.sourceLocators?.map(cloneLocator),
         });
       }
     });
     return results.slice(0, 50);
   }
+}
+
+function parsePackageJson(bytes: Uint8Array): unknown {
+  const rawText: string = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  assertNoDuplicateJsonKeys(rawText);
+  return JSON.parse(rawText) as unknown;
 }
 
 function assertArtifactBytes(

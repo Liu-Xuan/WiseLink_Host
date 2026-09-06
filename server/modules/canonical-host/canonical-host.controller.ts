@@ -27,6 +27,7 @@ import { CanonicalHostIntegratedAssessmentService } from './canonical-host-integ
 import { buildCanonicalPageProjections } from './canonical-host-page-projections';
 import { CanonicalHostVerticalService } from './canonical-host-vertical.service';
 import { CanonicalHostLibraryIndexService } from './canonical-host-library-index.service';
+import { CanonicalLibraryService } from './canonical-library.service';
 import type { CanonicalHostActor } from './canonical-host.types';
 import { hostActor } from './canonical-host-request-actor';
 
@@ -49,6 +50,8 @@ export class CanonicalHostController {
     private readonly aeo: CanonicalHostAeoService,
     @Optional()
     private readonly libraryIndex?: CanonicalHostLibraryIndexService,
+    @Optional()
+    private readonly libraryDocuments?: CanonicalLibraryService,
   ) {}
 
   @Get('identity-context')
@@ -69,6 +72,27 @@ export class CanonicalHostController {
       request as Parameters<OrdinaryWorkItemService['parsePdf']>[0],
       hostActor(httpRequest),
     );
+  }
+
+  @Get('library/documents')
+  documents(
+    @Query('search') search: string | undefined,
+    @Query('cursor') cursor: string | undefined,
+    @Query('limit') limit: string | undefined,
+    @Req() httpRequest: Request,
+  ) {
+    if (!this.libraryDocuments) throw new Error('CANONICAL_LIBRARY_SERVICE_UNCONFIGURED');
+    return this.libraryDocuments.list({
+      search,
+      cursor,
+      ...(limit === undefined ? {} : { limit: optionalSafeInteger(limit, 'limit') }),
+    }, hostActor(httpRequest));
+  }
+
+  @Get('work-items/:workItemId/quicklook')
+  quicklook(@Param('workItemId') workItemId: string, @Req() httpRequest: Request) {
+    if (!this.libraryDocuments) throw new Error('CANONICAL_LIBRARY_SERVICE_UNCONFIGURED');
+    return this.libraryDocuments.quicklook(requiredText(workItemId, 'workItemId'), hostActor(httpRequest));
   }
 
   @Post('work-items/parse-s1000d')

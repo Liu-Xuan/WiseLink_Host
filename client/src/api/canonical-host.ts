@@ -12,6 +12,9 @@ import type {
   CanonicalWorkItemProjection,
   CanonicalEngineerReviewDecision,
   CanonicalLibraryIndexReadResponse,
+  CanonicalLibraryDocumentsRequest,
+  CanonicalLibraryDocumentsResponse,
+  CanonicalLibraryQuicklookResponse,
   CanonicalDevelopmentWorkItemRunRequest,
   CanonicalOverallRegenerationReadModel,
   CanonicalOrdinaryWorkItemRunResponse,
@@ -332,6 +335,69 @@ export async function getLibraryIndex(
     return response.data;
   } catch (error) {
     logger.error('读取 WorkItem LibraryIndex fresh projection 失败', error);
+    throw normalizedDirectObjectError(error, requestGeneration);
+  }
+}
+
+export async function getCanonicalLibraryDocuments(
+  input: CanonicalLibraryDocumentsRequest = {},
+  signal?: AbortSignal,
+): Promise<CanonicalLibraryDocumentsResponse> {
+  return readCanonicalLibrary<CanonicalLibraryDocumentsResponse>({
+    url: '/api/canonical-host/library/documents',
+    params: input,
+    signal,
+  });
+}
+
+export async function getCanonicalLibraryQuicklook(
+  workItemId: string,
+  signal?: AbortSignal,
+): Promise<CanonicalLibraryQuicklookResponse> {
+  return readCanonicalLibrary<CanonicalLibraryQuicklookResponse>({
+    url: `/api/canonical-host/work-items/${encodeURIComponent(workItemId)}/quicklook`,
+    signal,
+  });
+}
+
+async function readCanonicalLibrary<T>(input: {
+  url: string;
+  params?: CanonicalLibraryDocumentsRequest;
+  signal?: AbortSignal;
+}): Promise<T> {
+  const requestGeneration = clientSessionGeneration;
+  try {
+    const response = await axiosForBackend<T>({
+      ...input,
+      method: 'GET',
+    });
+    if (response.status === 401) {
+      throw clientLoginRequired(
+        'CANONICAL_LIBRARY_LOGIN_REQUIRED',
+        requestGeneration,
+      );
+    }
+    if (response.status === 403 || response.status === 404) {
+      throw canonicalObjectNotFound();
+    }
+    if (response.status < 200 || response.status >= 300) {
+      throw backendResponseError(
+        response.data,
+        'CANONICAL_LIBRARY_UNAVAILABLE',
+        response.status,
+      );
+    }
+    return response.data;
+  } catch (error: unknown) {
+    if (!input.signal?.aborted) {
+      const { statusCode, code, traceId } =
+        summarizeCanonicalDocumentReadFailure(error);
+      logger.error('读取资料目录或已保存摘要失败', {
+        statusCode,
+        code,
+        traceId,
+      });
+    }
     throw normalizedDirectObjectError(error, requestGeneration);
   }
 }

@@ -40,7 +40,7 @@ export class MiaodaHostedCanonicalObjectAccessAdapter implements CanonicalObject
   async freshRead(
     input: CanonicalObjectAccessInput,
   ): Promise<CanonicalObjectAccessResult> {
-    if (!hostedNativeActor(input.actor)) {
+    if (!isHostedCanonicalFinalUserActor(input.actor)) {
       return denied(input, 'CANONICAL_IDENTITY_HANDOFF_UNAVAILABLE', 503);
     }
     if (input.accessRoot.kind === 'REVIEW_CONVERSATION') {
@@ -90,7 +90,8 @@ export class MiaodaHostedCanonicalObjectAccessAdapter implements CanonicalObject
   }
 }
 
-function hostedNativeActor(
+/** Shared transport identity check; directory queries use the same owner policy. */
+export function isHostedCanonicalFinalUserActor(
   actor: CanonicalObjectAccessInput['actor'],
 ): actor is HostedFinalUserActor {
   if (

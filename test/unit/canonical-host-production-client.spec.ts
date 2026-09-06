@@ -137,8 +137,10 @@ describe('canonical Host production client boundary', () => {
       ),
     ]);
 
-    expect(home).toContain('data.libraryIndex.nodes');
-    expect(home).toContain('data.relatedDocuments.relations');
+    expect(home).toContain('useLibraryDocuments(');
+    expect(home).toContain('useLibraryQuicklook(');
+    expect(home).not.toContain('data.libraryIndex.nodes');
+    expect(home).not.toContain('data.relatedDocuments.relations');
     expect(reader).toContain('data.readerProjection.units');
     expect(reader).toContain('result.sourceLocators');
     expect(reader).toContain('locator.pageStart');

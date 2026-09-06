@@ -10,6 +10,7 @@ import type {
 } from '@shared/api.interface';
 
 import { Frozen2CandidateReaderService } from './frozen2-candidate-reader.service';
+import { UnifiedArtifactReadScope } from './unified-artifact-read-scope';
 import { U0FullValidationService } from './u0-full-validation.service';
 import {
   UNIFIED_ARTIFACT_STORE,
@@ -18,6 +19,7 @@ import {
 } from './unified-reader.constants';
 import type {
   ImmutableArtifactPersistResult,
+  U0FullValidationProof,
   UnifiedArtifactStorePort,
   UnifiedReaderHostBindingState,
   UnifiedReaderPackageInspection,
@@ -97,37 +99,29 @@ export class UnifiedReaderService {
   async readAllSourceUnits(input: {
     artifact: UnifiedPackageArtifactDescriptor;
     packageId: string;
+    documentVersionId?: string;
+    readScope?: UnifiedArtifactReadScope;
   }): Promise<UnifiedReaderQueryResult[]> {
     return (await this.readSourcePackage(input)).units;
   }
 
-  /** One authenticated store read supplies both source metadata and units. */
+  /** One caller-authorized read supplies source metadata and units. */
   async readSourcePackage(input: {
     artifact: UnifiedPackageArtifactDescriptor;
     packageId: string;
+    documentVersionId?: string;
+    readScope?: UnifiedArtifactReadScope;
   }): Promise<UnifiedReaderSourcePackage> {
-    const bytes = await this.artifactStore.readActualBytes(input.artifact);
-    await this.fullValidator.validate({
-      artifact: input.artifact,
-      bytes,
-      packageId: input.packageId,
-    });
-    return this.reader.readSourcePackage(input.artifact, bytes);
+    return (await this.readValidatedSourcePackage(input)).sourcePackage;
   }
 
   async inspectSourcePackage(input: {
     artifact: UnifiedPackageArtifactDescriptor;
     packageId: string;
+    documentVersionId?: string;
+    readScope?: UnifiedArtifactReadScope;
   }): Promise<UnifiedReaderPackageInspection> {
-    const bytes: Uint8Array = await this.artifactStore.readActualBytes(
-      input.artifact,
-    );
-    await this.fullValidator.validate({
-      artifact: input.artifact,
-      bytes,
-      packageId: input.packageId,
-    });
-    return this.reader.inspect(input.artifact, bytes);
+    return (await this.readValidatedSourcePackage(input)).sourcePackage.inspection;
   }
 
   async persistAndReadback(
@@ -158,19 +152,19 @@ export class UnifiedReaderService {
 
   async readback(
     request: UnifiedPackageReadbackRequest,
+    readScope?: UnifiedArtifactReadScope,
   ): Promise<UnifiedPackageReadbackResponse> {
     this.validateRequest(request);
     const artifact: UnifiedPackageArtifactDescriptor = request.package.artifact;
-    const bytes: Uint8Array =
-      await this.artifactStore.readActualBytes(artifact);
-    const fullValidatorProof = await this.fullValidator.validate({
-      artifact,
-      bytes,
-      packageId: request.package.packageId,
-    });
-    const summary: UnifiedReaderPackageSummary = this.reader.read(
-      artifact,
-      bytes,
+    const { sourcePackage, proof: fullValidatorProof } =
+      await this.readValidatedSourcePackage({
+        artifact,
+        packageId: request.package.packageId,
+        documentVersionId: request.documentVersionId,
+        readScope,
+      });
+    const summary: UnifiedReaderPackageSummary = this.reader.querySourcePackage(
+      sourcePackage,
       request.query,
     );
     if (
@@ -225,6 +219,33 @@ export class UnifiedReaderService {
         })),
       })),
     };
+  }
+
+  private async readValidatedSourcePackage(input: {
+    artifact: UnifiedPackageArtifactDescriptor;
+    packageId: string;
+    documentVersionId?: string;
+    readScope?: UnifiedArtifactReadScope;
+  }): Promise<{
+    sourcePackage: UnifiedReaderSourcePackage;
+    proof: U0FullValidationProof;
+  }> {
+    const readScope: UnifiedArtifactReadScope =
+      input.readScope ?? new UnifiedArtifactReadScope(this.artifactStore);
+    return readScope.readValidatedSourcePackage(input, async () => {
+      const bytes: Uint8Array = await readScope.readActualBytes(input.artifact);
+      const proof: U0FullValidationProof = await this.fullValidator.validate({
+        artifact: input.artifact,
+        bytes,
+        packageId: input.packageId,
+      });
+      const sourcePackage: UnifiedReaderSourcePackage =
+        this.reader.readSourcePackage(input.artifact, bytes, readScope);
+      if (sourcePackage.inspection.packageId !== input.packageId) {
+        throw new Error('READER_REJECTED:PACKAGE_BINDING_MISMATCH');
+      }
+      return { sourcePackage, proof };
+    });
   }
 
   private validateRequest(request: UnifiedPackageReadbackRequest): void {

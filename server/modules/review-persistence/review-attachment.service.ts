@@ -19,17 +19,16 @@ import type { ReviewAttachmentBinding } from './review-attachment.types';
 @Injectable()
 export class ReviewAttachmentService {
   private readonly selectedFiles: MiaodaFileServiceArtifactStore;
-  private readonly parsedArtifacts: MiaodaOrdinaryArtifactStoreAdapter;
   private readonly extractor: PdfjsDistLayoutExtractor;
 
   constructor(
     fileService: FileService,
     private readonly documentManagement: DocumentManagementHostedService,
     private readonly documentVersions: MiaodaDocumentVersionSourceResolver,
+    private readonly parsedArtifacts: MiaodaOrdinaryArtifactStoreAdapter,
     @Optional() extractor?: PdfjsDistLayoutExtractor,
   ) {
     this.selectedFiles = new MiaodaFileServiceArtifactStore(fileService);
-    this.parsedArtifacts = new MiaodaOrdinaryArtifactStoreAdapter(fileService);
     this.extractor = extractor ?? new PdfjsDistLayoutExtractor();
   }
 
