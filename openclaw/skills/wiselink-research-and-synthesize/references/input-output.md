@@ -86,7 +86,7 @@ runtimePolicy.modelPolicyRef = official-hosted-profile-config
 ResultEnvelope.modelVersion = 官方托管 profile/config 本轮选择后的非空、可读实际模型
 Task.skillPolicyRef = wiselink-research-and-synthesize@r09
 ApplicabilityTask.runtimePolicy.skillVersion = wiselink-research-and-synthesize@r09  # v1 历史字段名，语义为兼容线
-ResultEnvelope.skillVersion = wiselink-research-and-synthesize@r09.c25       # 实际安装包版本
+ResultEnvelope.skillVersion = wiselink-research-and-synthesize@r09.c26       # 实际安装包版本
 toolVersions.wiselink-openclaw-engineering-assessment = 1.2.0
 promptVersion = 当前实际运行非空版本
 ```
@@ -143,6 +143,11 @@ c25 模型侧只输出紧凑的 index/text，驱动从完整原输入还原上�
 这些数字是保守工作预算而非实际 token 容量。仍接受更短的有效连续前缀，并从已收齐位置继续；所有单元收齐、
 完整 pair 校验通过后才形成唯一候选，不保存部分完成结果。安全 output-shape 额外记录窗口位置与字符数，
 不记录原文或私有推理。既有 Task/Result/MCP 形状、来源和提交边界不变。
+
+c26 的模型工具 schema 明确给出 `translatedUnits:[{index:integer,text:string}]`，按本次窗口约束索引和数量。
+驱动同时识别旧二元数组，以及实际 M3 的 `translatedUnits:{item:[{index:"0",text:...}]}` 包装；规范十进制
+字符串索引可无损转为安全整数。只允许这些精确形态，保留全部文本字节、顺序和来源；不修复不完整 JSON，
+不接受额外字段或模糊索引。安全观察记录格式/条数/首尾索引，错误不再只能依靠计数码猜测；完整 Host 输出仍由原绑定器生成。
 
 Skill 做结构和绑定预检，并在封印/分块提交前依据同一 Host-frozen rulePack 镜像数字 token occurrence
 multiset 与 ATA token 逐字保真检查，失败诊断包含 `unitKey`；它不自动改写候选。Host 继续拥有术语、编号、
