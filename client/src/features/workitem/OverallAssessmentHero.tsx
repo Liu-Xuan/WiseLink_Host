@@ -135,7 +135,9 @@ export default function OverallAssessmentHero({
         <button
           type="button"
           className="wl-btn wl-btn-primary"
-          onClick={onOpenWorkbench}
+          onClick={() =>
+            onViewEvidence ? onViewEvidence() : onOpenWorkbench()
+          }
         >
           <FileSearch2 aria-hidden="true" /> 查看原文与解析
         </button>

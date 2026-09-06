@@ -138,6 +138,14 @@ export interface ReviewTurnAssistantCandidate {
   completedAt: string;
 }
 
+/** Host observations, not model reasoning, delivery acknowledgements or adoption. */
+export interface ReviewEvidenceActivity {
+  kind: 'CONTEXT_PREPARED' | 'SOURCE_REFS_RESOLVED';
+  observedAt: string;
+  sourceRefIds: string[];
+  sourceCatalogCount: number;
+}
+
 export interface ReviewTurnExecutionReadModel {
   status: CanonicalOverallRegenerationExecutionStatus;
   attemptRef: string | null;
@@ -146,6 +154,12 @@ export interface ReviewTurnExecutionReadModel {
   updatedAt: string;
   completedAt: string | null;
   error: { code: string; message: string } | null;
+  /** Absent on older Hosts; null means no recorded receipts for this attempt. */
+  evidenceActivity?: {
+    items: ReviewEvidenceActivity[];
+    omittedEarlierCount: number;
+    error: { code: string; message: string } | null;
+  } | null;
 }
 
 export interface PendingReviewTurnResponse {
@@ -577,7 +591,7 @@ export type CanonicalReferenceTargetResolution =
   | { status: 'RESOLVED_MULTIPLE'; candidateCount: number }
   | { status: 'UNRESOLVED' }
   | { status: 'DOCUMENT_NOT_INGESTED' }
-  | { status: 'UNAVAILABLE' }
+  | { status: 'UNAVAILABLE'; reasonCode?: string }
   | { status: 'ACCESS_DENIED' }
   | { status: 'UNSUPPORTED_DOCUMENT' };
 

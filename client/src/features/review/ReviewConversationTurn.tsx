@@ -70,7 +70,10 @@ export default function ReviewConversationTurn(
         </small>
       </div>
 
-      <ReviewExecutionStatus turn={props.turn} />
+      <ReviewExecutionStatus
+        turn={props.turn}
+        onLocateSourceRef={interactive?.onLocateSourceRef}
+      />
 
       {candidate ? (
         <div className="continuous-review-candidate">

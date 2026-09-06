@@ -94,10 +94,20 @@ describe('automatic Review dispatch', () => {
     Object.assign(harness.row()!, {
       status: 'SUCCEEDED',
       terminalReason: 'REVIEW_TURN_CANDIDATE_PERSISTED',
+      reviewActivityJson: JSON.stringify([{
+        kind: 'SOURCE_REFS_RESOLVED',
+        observedAt: '2026-09-06T04:00:00Z',
+        sourceRefIds: ['SRC-1'],
+        sourceCatalogCount: 2,
+      }]),
     });
     await expect(
       harness.service.executionProjection(projectionInput),
-    ).resolves.toMatchObject({ status: 'SUCCEEDED', error: null });
+    ).resolves.toMatchObject({
+      status: 'SUCCEEDED',
+      error: null,
+      evidenceActivity: { items: [{ kind: 'SOURCE_REFS_RESOLVED', sourceRefIds: ['SRC-1'] }], error: null },
+    });
   });
 
   it('waits for a valid current lease and makes expired work recoverable', async () => {

@@ -481,11 +481,16 @@ describe('CanonicalHostOpenClawReviewService', () => {
       code: 'REVIEW_SOURCE_REF_NOT_ALLOWED',
       statusCode: 400,
     });
+    expect(harness.dispatch.recordEvidenceActivity).not.toHaveBeenCalled();
     await expect(
       harness.service.readSourceRefs('AQ-REVIEW-1', ['SRC-1']),
     ).resolves.toMatchObject({
       sourceRefs: [{ sourceRefId: 'SRC-1', pageStart: 1, pageEnd: 1 }],
     });
+    expect(harness.dispatch.recordEvidenceActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ operationRef: 'AQ-REVIEW-1' }),
+      { kind: 'SOURCE_REFS_RESOLVED', sourceRefIds: ['SRC-1'], sourceCatalogCount: expect.any(Number) },
+    );
   });
 
   it('binds parsed attachment actual bytes and current EngineerSuppliedInput into the C2 task', async () => {
@@ -1065,6 +1070,7 @@ function reviewHarness(
     isBusy: jest.fn().mockResolvedValue(false),
     readExecution: jest.fn().mockResolvedValue(null),
     prepareAndClaim: jest.fn(),
+    recordEvidenceActivity: jest.fn(),
   };
   const service = new CanonicalHostOpenClawReviewService(
     conversations as never,

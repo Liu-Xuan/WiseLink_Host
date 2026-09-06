@@ -107,6 +107,7 @@ export interface ActionAttemptRow {
   taskEnvelopeJson: string | null;
   taskInputHash: string | null;
   resultEnvelopeJson: string | null;
+  reviewActivityJson?: string | null;
   resultContentHash: string | null;
   idempotencyKey: string | null;
   claimCount: number;

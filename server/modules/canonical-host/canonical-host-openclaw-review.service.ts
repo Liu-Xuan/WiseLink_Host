@@ -267,6 +267,11 @@ export class CanonicalHostOpenClawReviewService {
       attemptRef,
       'GET_REVIEW_CONTEXT',
     );
+    await this.dispatch.recordEvidenceActivity(attempt.row, {
+      kind: 'CONTEXT_PREPARED',
+      sourceRefIds: [],
+      sourceCatalogCount: attempt.contract.resourceRefs.length,
+    });
     return {
       schemaVersion: 'wiselink.3_1.review_turn_context.v1.c2',
       attemptRef,
@@ -305,6 +310,13 @@ export class CanonicalHostOpenClawReviewService {
       const resource = allowlist.get(sourceRefId);
       if (!resource) throw reviewSourceRefNotAllowed();
       return structuredClone(resource.value);
+    });
+    // This records actual allowlisted resolution from the current task's
+    // verified bytes, not another file download or a model-read assertion.
+    await this.dispatch.recordEvidenceActivity(attempt.row, {
+      kind: 'SOURCE_REFS_RESOLVED',
+      sourceRefIds: [...sourceRefIds],
+      sourceCatalogCount: attempt.contract.resourceRefs.length,
     });
     return {
       schemaVersion: 'wiselink.3_1.review_source_refs.v1.c2',

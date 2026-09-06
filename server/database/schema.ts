@@ -1095,6 +1095,7 @@ export const actionAttempt = pgTable("action_attempt", {
   operationRef: varchar("operation_ref", { length: 128 }).unique(),
   commitStartedAt: customTimestamptz("commit_started_at", { precision: 3 }),
   leaseSlot: integer("lease_slot"),
+  reviewActivityJson: text("review_activity_json"),
   // System field: Creator (auto-filled, do not modify)
   createdBy: userProfile("_created_by"),
   // System field: Updater (auto-filled, do not modify)
