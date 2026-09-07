@@ -86,7 +86,7 @@ runtimePolicy.modelPolicyRef = official-hosted-profile-config
 ResultEnvelope.modelVersion = 官方托管 profile/config 本轮选择后的非空、可读实际模型
 Task.skillPolicyRef = wiselink-research-and-synthesize@r09
 ApplicabilityTask.runtimePolicy.skillVersion = wiselink-research-and-synthesize@r09  # v1 历史字段名，语义为兼容线
-ResultEnvelope.skillVersion = wiselink-research-and-synthesize@r09.c30       # 实际安装包版本
+ResultEnvelope.skillVersion = wiselink-research-and-synthesize@r09.c31       # 实际安装包版本
 toolVersions.wiselink-openclaw-engineering-assessment = 1.2.0
 promptVersion = 当前实际运行非空版本
 ```
@@ -154,8 +154,10 @@ c27 修复已实测的 Gateway 附带说明文本与函数参数共存：只消�
 不保存原始 content/arguments。全文输出窗共享有界 20 分钟模型预算（可显式缩短），不改变 30 分钟租约和原生
 cron 的总时限；单响应的其他 operation 仍保持八分钟默认预算。没有超时重放或 provider fallback。
 
-c30 仅精简翻译的模型生成视图：全部 `{index,kind,text}` 与完整 `rulePack` 首轮一次送入原生会话。
-完整 Host 输入仍先校验并保留，用于回填和核对所有单元引用、版本与任务绑定；原文与规则无裁剪。
+c31 对绑定 `miaoda/minimax-m3` 的翻译请求显式设置 `max_completion_tokens=32000`，
+用于修复已实测的默认 16000 输出额度耗尽；`model.output-shape` 记录请求额度以便和实际 usage 核对。
+全文输入继续沿用 c29，c30 的输入精简暂缓；该参数不修改全局配置、其他模型或 Review 请求。
+Gateway 会将请求额度夹到模型条目的 `maxTokens`，运行前须核实该配置已允许请求值。
 
 c28 在当前窗口内按具体 findings 要求原模型重新输出失败索引，最多两次，原全文会话与总时间预算不变；
 纠正返回必须与请求索引一一匹配，其他单元保留，驱动不自动改写文本。中文紧邻数字纳入识别，完整无歧义日期
