@@ -1,0 +1,13 @@
+#!/bin/sh
+
+# The user's 2026-09-06 origin-only instruction supersedes GitHub permissions.
+# Check Git's resolved destination as well as the remote name.
+if [ "${1-}" = "origin" ] &&
+  [ "${2-}" = "https://miaoda-git.feishu.cn/apaas4.0/-/t_mx8LiKO6/code_T0OCUEHo3all.git" ]; then
+  exit 0
+fi
+
+printf '%s\n' \
+  'Push blocked: this project only permits the configured Feishu Host origin.' \
+  'Public GitHub pushes are not authorized. See AGENTS.md (Git synchronization).' >&2
+exit 1

@@ -550,8 +550,9 @@ function parseRulePack(value: unknown): TranslationRulePack | null {
   };
 }
 
-/** ATA chapter number: two or three digits, optionally fraction like 31-21. */
-const ATA_CHAPTER_PATTERN = /\b\d{2,3}(?:-\d{2,3})?\b/;
+/** Only an explicit ATA reference is a chapter; dates and counts are not. */
+const ATA_CHAPTER_PATTERN =
+  /\bATA(?:\s+chapters?)?\s*[:：#]?\s*(\d{2,3}(?:-\d{2,3})?)(?!\d)/giu;
 
 /** Part number families preserved in the FTD corpus (Boeing style). */
 const PART_NUMBER_PATTERN =
@@ -561,13 +562,62 @@ const PART_NUMBER_PATTERN =
 const CITATION_PATTERN = /\b\d{3}-FTD-\d{2,3}-\d{3,6}\b/;
 
 function sourceNumbers(text: string): string[] {
-  // A sign is semantic only at a token boundary. In A-12 or 2026-08-28 the
-  // hyphen is an identifier/date connector, so the following number is unsigned.
-  return (
-    text.match(
-      /(?<![\p{L}\p{N}_])[+-]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?/gu,
-    ) ?? []
+  const tokens: string[] = [];
+  const monthNumbers: Readonly<Record<string, number>> = {
+    jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
+    jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
+  };
+  const englishMonth =
+    '(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|' +
+    'Jul(?:y)?|Aug(?:ust)?|Sep(?:tember|t)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)';
+  const dateBoundary = '(?<![A-Za-z0-9_/-])';
+  const dateEnd = '(?![A-Za-z0-9_/-])';
+  const recordDate = (full: string, yearText: string, monthText: string, dayText: string): string => {
+    const year = Number(yearText);
+    const month = Number(monthText);
+    const day = Number(dayText);
+    if (year < 1000 || month < 1 || month > 12 || day < 1 ||
+      day > new Date(Date.UTC(year, month, 0)).getUTCDate()) return full;
+    tokens.push('date:' + year + '-' + String(month).padStart(2, '0') +
+      '-' + String(day).padStart(2, '0'));
+    return ' ';
+  };
+  // Compare complete, unambiguous calendar dates by value. A month name
+  // becoming a month number is localization, not an added engineering value.
+  // Identifier substrings and incomplete/invalid dates stay literal.
+  let remaining = text.replace(
+    new RegExp(dateBoundary + '(\\d{1,2})\\s+' + englishMonth +
+      '\\.?[\\s,]+(\\d{4})' + dateEnd, 'gi'),
+    (full: string, day: string, month: string, year: string) => recordDate(full, year,
+      String(monthNumbers[month.slice(0, 3).toLowerCase()]), day),
+  ).replace(
+    new RegExp(dateBoundary + englishMonth +
+      '\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?\\s*,?\\s+(\\d{4})' + dateEnd, 'gi'),
+    (full: string, month: string, day: string, year: string) => recordDate(full, year,
+      String(monthNumbers[month.slice(0, 3).toLowerCase()]), day),
   );
+  remaining = remaining.replace(
+    new RegExp(dateBoundary + '(\\d{4})-(\\d{1,2})-(\\d{1,2})' + dateEnd, 'g'),
+    (full: string, year: string, month: string, day: string) => recordDate(full, year, month, day),
+  ).replace(
+    new RegExp(dateBoundary + '(\\d{4})\\s*年\\s*(\\d{1,2})\\s*月\\s*(\\d{1,2})\\s*日' + dateEnd, 'g'),
+    (full: string, year: string, month: string, day: string) => recordDate(full, year, month, day),
+  );
+  for (const match of remaining.matchAll(/(?=[A-Za-z0-9_]*\d)[A-Za-z_][A-Za-z0-9_]*|[+-]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?/gu)) {
+    const value = match[0];
+    if (/^[A-Za-z_]/u.test(value)) {
+      // A letter-glued identifier must not become a different token by
+      // inserting whitespace or changing its numeric suffix.
+      tokens.push('identifier:' + value);
+      continue;
+    }
+    const before = remaining[match.index - 1] ?? '';
+    // CJK text can touch a numeric value. In identifiers/ranges, a sign
+    // following an ASCII word character is a connector, not a signed value.
+    tokens.push(/^[+-]/u.test(value) && /[A-Za-z0-9_]/u.test(before)
+      ? value.slice(1) : value);
+  }
+  return tokens;
 }
 
 /** Numeric token multiset: token -> occurrence count. */
@@ -1118,7 +1168,10 @@ export function validateTranslationCandidate(
     }
 
     if (rulePack.deterministic.preserveAtaChapterNumbers) {
-      const ataMatches = source.text.match(ATA_CHAPTER_PATTERN) ?? [];
+      const ataMatches = Array.from(
+        source.text.matchAll(ATA_CHAPTER_PATTERN),
+        (match) => match[1],
+      );
       for (const ata of ataMatches) {
         if (!candidate.text.includes(ata)) {
           findings.push({

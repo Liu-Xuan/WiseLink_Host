@@ -660,6 +660,27 @@ describe('translation rule contract on the real frozen FTD package (WL31 owner/r
     expect(result.findings).toEqual([]);
   });
 
+  it('matches Skill fidelity cases for calendar dates, CJK numbers, identifiers, and real errors', () => {
+    const cases: { name: string; source: string; translation: string; accepted: boolean }[] = JSON.parse(
+      readFileSync(resolve(__dirname,
+        '../../openclaw/skills/wiselink-research-and-synthesize/tests/fixtures/translation-fidelity-cases.json'), 'utf8'),
+    );
+    for (const item of cases) {
+      const sourceUnits: TranslationSourceUnit[] = [{
+        unitKey: 'fidelity-case', kind: 'paragraph', text: item.source,
+        sourceRefIds: ['fidelity-case-ref'],
+      }];
+      const result = validate({
+        sourceUnits,
+        candidateUnits: [{ unitKey: 'fidelity-case', text: item.translation,
+          sourceRefIds: ['fidelity-case-ref'], engineerRevision: null }],
+      });
+      expect({ name: item.name, verdict: result.verdict }).toEqual({
+        name: item.name, verdict: item.accepted ? 'ACCEPTED' : 'REJECTED',
+      });
+    }
+  });
+
   it('REJECTS loss of the real technical unit FL285 (flight level)', () => {
     const candidates = candidateFor(SOURCE_UNITS).map((candidate) => ({
       ...candidate,
