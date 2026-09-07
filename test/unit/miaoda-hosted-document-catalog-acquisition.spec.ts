@@ -2,6 +2,7 @@ import { PgDialect } from 'drizzle-orm/pg-core';
 
 import {
   dmAcquisition,
+  dmDocumentVersion,
   dmPublicationFamily,
   dmSourceArtifact,
 } from '@server/database/schema';
@@ -147,6 +148,116 @@ describe('MiaodaHostedDocumentCatalog tenant-scoped listing', () => {
     expect(query.params).toEqual(['tenant:%E7%A7%9F%E6%88%B7_1:family:']);
   });
 });
+
+describe('MiaodaHostedDocumentCatalog exact-version acquisition replay', () => {
+  it.each(['REUSE_EXACT', 'RESUME_EXISTING_PROCESS'])(
+    'reads an already linked %s acquisition while preserving the original version',
+    async (decision) => {
+      const fixture = replayCatalogFixture();
+      fixture.row.preflight.decision = decision;
+      const before = structuredClone(fixture.row);
+      const catalog = new MiaodaHostedDocumentCatalog(fixture.db as never);
+
+      await expect(catalog.findIngestionByIdempotency(fixture.input)).resolves.toMatchObject({
+        status: 'COMMITTED',
+        acquisitionId: 'ACQUISITION-1',
+        documentVersionId: 'DV-1',
+        sourceArtifactId: 'SOURCE-1',
+        immutableReadbackVerified: true,
+        catalogFreshReadVerified: true,
+      });
+      expect(fixture.row).toEqual(before);
+      expect(fixture.row.version.acquisitionId).toBe('ACQUISITION-ORIGINAL');
+    },
+  );
+
+  it('still accepts a replay of the original version-creating acquisition', async () => {
+    const fixture = replayCatalogFixture();
+    fixture.row.version.acquisitionId = fixture.acquisition.acquisitionId;
+    fixture.acquisition.status = 'COMMITTED_CANONICAL';
+    fixture.row.preflight.decision = 'INGEST_NEW_FAMILY';
+    const catalog = new MiaodaHostedDocumentCatalog(fixture.db as never);
+
+    await expect(catalog.findIngestionByIdempotency(fixture.input)).resolves.toMatchObject({
+      status: 'COMMITTED', documentVersionId: 'DV-1',
+    });
+  });
+
+  it.each<[string, (fixture: ReturnType<typeof replayCatalogFixture>) => void]>([
+    ['unfinished acquisition', (fixture) => { fixture.acquisition.status = 'ACQUIRED_READBACK_VERIFIED'; }],
+    ['different preflight decision', (fixture) => { fixture.row.preflight.decision = 'INGEST_NEW_FAMILY'; }],
+    ['different commit identity', (fixture) => { fixture.row.preflight.commitIdempotencyKey = 'catalog:OTHER'; }],
+    ['different document version', (fixture) => { fixture.row.preflight.documentVersionId = 'DV-OTHER'; }],
+    ['different source bytes', (fixture) => { fixture.row.artifact.sha256 = 'b'.repeat(64); }],
+    ['different source artifact', (fixture) => { fixture.row.version.sourceArtifactId = 'SOURCE-OTHER'; }],
+    ['different publication identity', (fixture) => { fixture.row.family.canonicalDocumentNumber = 'SB-OTHER'; }],
+  ])('rejects %s instead of accepting an unrelated version origin', async (_name, corrupt) => {
+    const fixture = replayCatalogFixture();
+    corrupt(fixture);
+    const catalog = new MiaodaHostedDocumentCatalog(fixture.db as never);
+
+    await expect(catalog.findIngestionByIdempotency(fixture.input)).rejects.toMatchObject({
+      code: 'CATALOG_REPLAY_IDENTITY_UNVERIFIED',
+    });
+  });
+});
+
+function replayCatalogFixture() {
+  const recorded = recordAcquisitionInput();
+  const acquisition = {
+    ...recorded.acquisition,
+    documentVersionId: 'DV-1',
+    status: 'LINKED_EXACT_DOCUMENT_VERSION',
+  };
+  const row = {
+    artifact: { ...recorded.sourceArtifact },
+    version: {
+      documentVersionId: 'DV-1', documentId: 'DOC-1', familyId: 'FAMILY-1',
+      acquisitionId: 'ACQUISITION-ORIGINAL', sourceArtifactId: 'SOURCE-1',
+      businessRevision: 'R1', revisionDate: '2020-09-24', sourceGeneratedDate: '',
+    },
+    family: {
+      familyId: 'FAMILY-1', canonicalIdentityKey: 'tenant:tenant-1:family:BOEING%7CSB%7CSB-1',
+      canonicalDocumentNumber: 'SB-1', documentFamily: 'SB', issuerAuthority: 'BOEING', currentGeneration: 1,
+    },
+    preflight: {
+      preflightId: 'PREFLIGHT-1', acquisitionId: 'ACQUISITION-1', documentVersionId: 'DV-1',
+      decision: 'RESUME_EXISTING_PROCESS', status: 'COMMITTED',
+      commitIdempotencyKey: 'catalog:ACQUISITION-1',
+      normalizedDescriptorJson: JSON.stringify({
+        identityAuthority: 'DM_ACTUAL_PDF_FIRST_THREE_PAGES', pageCount: 13,
+        sha256: recorded.sourceArtifact.sha256, sizeBytes: recorded.sourceArtifact.byteLength,
+        documentCode: 'SB-1', canonicalDocumentFamily: 'SB', issuer: 'BOEING',
+        businessRevision: 'R1', revisionDate: '2020-09-24', sourceGeneratedDate: '',
+      }),
+    },
+  };
+  const db = {
+    select: jest.fn(() => ({
+      from: (table: unknown) => {
+        const query = {
+          innerJoin: (..._args: unknown[]) => query,
+          where: (..._args: unknown[]) => query,
+          limit: async () => {
+            if (table === dmAcquisition) return [acquisition];
+            expect(table).toBe(dmDocumentVersion);
+            return [row];
+          },
+        };
+        return query;
+      },
+    })),
+  };
+  return {
+    db, row, acquisition,
+    input: {
+      idempotencyKey: acquisition.idempotencyKey,
+      expectedAcquisitionId: acquisition.acquisitionId,
+      sourceChannel: acquisition.sourceChannel, sourceRef: acquisition.sourceRef,
+      selection: { bucketId: acquisition.selectionBucketId, filePath: acquisition.selectionFilePath },
+    },
+  };
+}
 
 function recordAcquisitionInput(): RecordAcquisitionInput {
   return {
