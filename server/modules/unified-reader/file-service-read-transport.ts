@@ -1,16 +1,29 @@
+import { Logger } from '@nestjs/common';
+
+const logger = new Logger('FileServiceReadTransport');
+const READ_RETRY_DELAYS_MS = [250, 1000] as const;
+
 /**
- * Repeat one read only when no HTTP response was received. Authorization,
+ * Repeat reads with bounded backoff only when no HTTP response was received. Authorization,
  * not-found, provider errors and semantic checks are not transport failures.
  * Never use this helper to repeat uploads or other writes.
  */
-export async function withOneFileReadTransportRetry<T>(
+export async function withFileReadTransportRetry<T>(
   read: () => T | PromiseLike<T>,
 ): Promise<T> {
-  try {
-    return await read();
-  } catch (cause) {
-    if (!isFileServiceTransportFailure(cause)) throw cause;
-    return await read();
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await read();
+    } catch (cause) {
+      if (!isFileServiceTransportFailure(cause)) throw cause;
+      const delayMs = READ_RETRY_DELAYS_MS[attempt - 1];
+      if (delayMs === undefined) {
+        logger.warn({ event: 'FILE_SERVICE_READ_TRANSPORT_EXHAUSTED', attempt });
+        throw cause;
+      }
+      logger.warn({ event: 'FILE_SERVICE_READ_TRANSPORT_RETRY', attempt, delayMs });
+      await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+    }
   }
 }
 

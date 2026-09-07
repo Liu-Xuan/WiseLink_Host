@@ -558,7 +558,7 @@ describe('MiaodaOrdinaryArtifactStoreAdapter', () => {
     expect(scoped.download).toHaveBeenCalledTimes(1);
   });
 
-  it('fails closed after one transport retry without a third request', async () => {
+  it('fails closed after bounded transport retries without a fourth request', async () => {
     const bytes = new TextEncoder().encode('{"package":true}\n');
     const digest = sha256Raw(bytes);
     const path = `unified-parsed-packages/sha256/${digest}.json`;
@@ -577,7 +577,7 @@ describe('MiaodaOrdinaryArtifactStoreAdapter', () => {
       download: jest
         .fn()
         .mockRejectedValueOnce(first)
-        .mockRejectedValueOnce(second),
+        .mockRejectedValue(second),
     };
     const adapter = createAdapter({
       getDefaultBucket: async () => 'bucket-download-fail-test',
@@ -593,7 +593,7 @@ describe('MiaodaOrdinaryArtifactStoreAdapter', () => {
         mediaType: 'application/json',
       }),
     ).rejects.toThrow('ARTIFACT_STORE_DOWNLOAD_FAILED:fetch failed');
-    expect(scoped.download).toHaveBeenCalledTimes(2);
+    expect(scoped.download).toHaveBeenCalledTimes(3);
   });
 
   it('rejects a digest path containing different actual bytes', async () => {

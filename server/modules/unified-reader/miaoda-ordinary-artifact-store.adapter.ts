@@ -15,7 +15,7 @@ import type {
   UnifiedResultEnvelopePartStagingPort,
 } from './unified-reader.types';
 import { rawHashValue, sha256Raw } from './unified-reader.utils';
-import { withOneFileReadTransportRetry } from './file-service-read-transport';
+import { withFileReadTransportRetry } from './file-service-read-transport';
 import {
   MiaodaOrdinaryArtifactLocatorRegistry,
   type OrdinaryArtifactLocator,
@@ -615,7 +615,7 @@ async function providerCallWithTransportRetry<T>(
   code: string,
   operation: () => T | PromiseLike<T>,
 ): Promise<T> {
-  return providerCall(code, () => withOneFileReadTransportRetry(operation));
+  return providerCall(code, () => withFileReadTransportRetry(operation));
 }
 
 function providerError(code: string, cause: unknown): Error {
