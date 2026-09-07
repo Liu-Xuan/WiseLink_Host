@@ -1,7 +1,7 @@
 import { FileService } from '@lark-apaas/fullstack-nestjs-core';
 import {
   isFileServiceTransportFailure,
-  withOneFileReadTransportRetry,
+  withFileReadTransportRetry,
 } from '../unified-reader/file-service-read-transport';
 import { Injectable, Logger } from '@nestjs/common';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -144,8 +144,14 @@ export class MiaodaScopedProfessionalArtifactCorrelationAdapter implements Scope
       produced.artifact.sha256,
     );
     const scoped = this.fileService.from(bucketId);
-    const readMetadata = () => withOneFileReadTransportRetry(() =>
-      scoped.getFileMetadata(filePath));
+    const readMetadata = async () => {
+      try {
+        return await withFileReadTransportRetry(() => scoped.getFileMetadata(filePath));
+      } catch (cause) {
+        if (!isFileServiceTransportFailure(cause)) throw cause;
+        throw Object.assign(new Error('PROFESSIONAL_ARTIFACT_PERSIST_METADATA_TRANSPORT_EXHAUSTED'), { cause });
+      }
+    };
     const existing = await readMetadata();
     if (!existing) {
       for (let uploadAttempt = 1; uploadAttempt <= 2; uploadAttempt += 1) {

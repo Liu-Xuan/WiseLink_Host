@@ -173,9 +173,23 @@ describe('professional artifact upload result reconciliation', () => {
     const cause = new TypeError('fetch failed');
     f.upload.mockRejectedValueOnce(cause);
     f.getFileMetadata.mockResolvedValueOnce(null).mockRejectedValue(cause);
-    await expect(f.adapter.persistAndCorrelate(request, f.produced)).rejects.toBe(cause);
+    await expect(f.adapter.persistAndCorrelate(request, f.produced)).rejects.toMatchObject({
+      message: 'PROFESSIONAL_ARTIFACT_PERSIST_METADATA_TRANSPORT_EXHAUSTED', cause,
+    });
     expect(f.upload).toHaveBeenCalledTimes(1);
+    expect(f.getFileMetadata).toHaveBeenCalledTimes(4);
+    expect(f.readSelection).not.toHaveBeenCalled();
+  });
+
+  it('reports an exhausted pre-write metadata read as persistence failure without uploading', async () => {
+    const f = uploadRecoveryFixture();
+    const cause = new TypeError('fetch failed');
+    f.getFileMetadata.mockRejectedValue(cause);
+    await expect(f.adapter.persistAndCorrelate(request, f.produced)).rejects.toMatchObject({
+      message: 'PROFESSIONAL_ARTIFACT_PERSIST_METADATA_TRANSPORT_EXHAUSTED', cause,
+    });
     expect(f.getFileMetadata).toHaveBeenCalledTimes(3);
+    expect(f.upload).not.toHaveBeenCalled();
     expect(f.readSelection).not.toHaveBeenCalled();
   });
 
