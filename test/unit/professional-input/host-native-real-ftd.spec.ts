@@ -66,11 +66,11 @@ const SECTION_FIXTURE_PATH = process.env.WL31_REAL_FTD_SECTION_FIXTURE?.trim();
 const EXPECTED_SOURCE_SHA256 =
   'b1b5c198df4a3d42925218f48d70ddc361563c65692be35dac4c81e0d8367a3c';
 const EXPECTED_PACKAGE_ID =
-  'urn:techpub:package:v1:sha256:7eb3c400521fc86aaca7fc7b6a669a20d64e25dc08c2bf6f6d9589816745f3d4';
+  'urn:techpub:package:v1:sha256:68280a2fc2ffb88f852e64f71fd74d7b63388041d6cd682de28090c5533a7f9b';
 const EXPECTED_APPLICABILITY_TEXT =
-  'All777modelsequippedwithAirplaneInformationManagementSystem2(AIMS-2)Platform.';
+  'All 777 models equipped with Airplane Information Management System 2 (AIMS-2) Platform.';
 const EXPECTED_APPLICABILITY_SOURCE_REF =
-  'urn:techpub:source-ref:v1:sha256:0893eb82455c0d193bc56b18c67f344c515c97be35248b461c701fd06e316dcf';
+  'urn:techpub:source-ref:v1:sha256:6c5fe4565a6a4818f3f44f81c26b69e2e9287d2833b174970fa5dfc516c99dea';
 const U0_CONTRACT_COMMIT = 'fa69ada08265934951df53c7a61a3ccdb8cb2900' as const;
 const CVE_2024_4367_FIRST_FIXED = '4.2.67';
 
