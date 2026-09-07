@@ -34,8 +34,13 @@ c26 修复已实际观察的 M3 输出序列化差异：87 条完整连续结果
 c27 修复 c26 实跑中的输出通道误判：Gateway 原生 length 后续写最终产生一个合法函数调用及 99 字附带说明，
 严格 JSON 中的 87 行/索引均正确，却被旧的“content 必须空白”假设拒绝。按官方工具响应协议，只验证/消费
 函数参数，附带文本仅作安全形态记录、不成为候选或证据；纯文本结果、analysis、未知/多个函数和无效参数仍拒绝。
-全文续写总预算调整为有界 20 分钟，保留原 30 分钟租约/cron 时限与不自动重放；其他 operation 默认预算不变。
+当时全文续写总预算设为 20 分钟；c32 按下述真实长文失败证据修订，其他 operation 默认预算不变。
 依据：[官方非流式工具响应形态](https://docs.openclaw.ai/gateway/openai-http-api#non-streaming-tool-response-shape)。
+
+c32 修复 437 单元 DLI 在第 4 窗口纠正等待时耗尽 20 分钟总预算的失败：前 8 轮均成功响应，最终仅通过
+275/437 单元。全文总预算为 45 分钟、单响应最多 15 分钟；每轮通过原 Host heartbeat 续租，续租失败即停止。
+原 30 分钟 lease 与 60 分钟 attempt deadline 保留。暂停且核对唯一消费者空闲后，用官方 CLI 将其 timeout
+设为 3600 秒，安装 c32 并读回，然后对正常新请求恢复自然 tick。完整覆盖、候选提交和连续 Review 仍须实跑。
 
 c28 同步修订 Host/Skill 的日期、中文数字及显式 ATA 识别，并在新的全文生成过程中对具体失败索引最多纠正两次；
 沿用原模型、同一全文会话和总时间预算，完整保真校验仍在最终提交前执行。暂停且核对唯一 consumer 空闲后，
@@ -87,7 +92,7 @@ c24 可选控制元数据兼容旧任务，但旧 Skill 不接受新字段，因
    优先读回非空、可识别的实际 `modelVersion`；响应未提供时，绑定任务记录 `configured-route:<modelRef>`，旧任务才使用唯一 configured endpoint。它们只证明路由，不解释为未暴露的下游具体模型。重复 agent、
    不可读 primary、fallbacks 非数组或非空均在调用模型前停止；
 4. 同名 Skill 只有一个，安装版本精确
-   `wiselink-research-and-synthesize@r09.c31`；
+   `wiselink-research-and-synthesize@r09.c32`；
 5. Host MCP package/version 为
    `wiselink-openclaw-engineering-assessment@1.2.0`，exact 20 tools 可见；
 6. C3 successor 已进入 current Hosted release；只凭 Git commit 不等于 deployed readback；

@@ -86,7 +86,7 @@ runtimePolicy.modelPolicyRef = official-hosted-profile-config
 ResultEnvelope.modelVersion = 官方托管 profile/config 本轮选择后的非空、可读实际模型
 Task.skillPolicyRef = wiselink-research-and-synthesize@r09
 ApplicabilityTask.runtimePolicy.skillVersion = wiselink-research-and-synthesize@r09  # v1 历史字段名，语义为兼容线
-ResultEnvelope.skillVersion = wiselink-research-and-synthesize@r09.c31       # 实际安装包版本
+ResultEnvelope.skillVersion = wiselink-research-and-synthesize@r09.c32       # 实际安装包版本
 toolVersions.wiselink-openclaw-engineering-assessment = 1.2.0
 promptVersion = 当前实际运行非空版本
 ```
@@ -151,8 +151,12 @@ c26 的模型工具 schema 明确给出 `translatedUnits:[{index:integer,text:st
 
 c27 修复已实测的 Gateway 附带说明文本与函数参数共存：只消费一个合法函数的严格 JSON 参数，纯文本说明不
 解析为结果、不进入候选或证据、不由驱动转发；仅记录安全形态。初始输出观察复用已有通道/类型/长度/计数观察，
-不保存原始 content/arguments。全文输出窗共享有界 20 分钟模型预算（可显式缩短），不改变 30 分钟租约和原生
-cron 的总时限；单响应的其他 operation 仍保持八分钟默认预算。没有超时重放或 provider fallback。
+不保存原始 content/arguments。单响应的其他 operation 仍保持八分钟默认预算。没有超时重放或 provider fallback。
+
+c32 根据实跑 437 单元 DLI 在 20 分钟时仅完成 275 单元的证据，将全文生成/纠正总预算设为 45 分钟
+（可显式缩短），单响应最多 15 分钟。每轮请求前经确定性适配器续租原 Host attempt，续租失败即停止；
+模型输入不含租约。原 30 分钟 lease 与 60 分钟 attempt deadline 不变，唯一原生 cron 配置为 60 分钟 timeout。
+超时分别报告 INITIAL_MODEL_TIMEOUT 或 INITIAL_MODEL_RESPONSE_TIMEOUT；不重放已开始或失败的模型步骤。
 
 c31 对绑定 `miaoda/minimax-m3` 的翻译请求显式设置 `max_completion_tokens=32000`，
 用于修复已实测的默认 16000 输出额度耗尽；`model.output-shape` 记录请求额度以便和实际 usage 核对。

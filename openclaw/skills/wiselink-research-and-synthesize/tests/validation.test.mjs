@@ -238,23 +238,26 @@ test('initial translation consumes only strict tool arguments and discards Gatew
   assert.equal(JSON.stringify({ result, observations }).includes(companion), false);
 });
 
-test('whole-document output windows share a bounded twenty-minute budget and honor an explicit shorter timeout', async (t) => {
+test('long translation renews before each round, shares one 45-minute budget and honors a shorter timeout', async (t) => {
   const originalFetch = globalThis.fetch;
   t.after(() => { globalThis.fetch = originalFetch; });
   let now = 1_000;
   t.mock.method(Date, 'now', () => now);
   for (const scenario of [
-    { elapsed: 9 * 60_000, succeeds: true },
-    { elapsed: 21 * 60_000, succeeds: false },
-    { elapsed: 9 * 60_000, timeoutMs: 480_000, succeeds: false },
+    { units: 3, elapsed: 12 * 60_000, succeeds: true, calls: 3 },
+    { units: 5, elapsed: 12 * 60_000, succeeds: false, calls: 4 },
+    { units: 5, elapsed: 12 * 60_000, timeoutMs: 60 * 60_000, succeeds: false, calls: 4 },
+    { units: 2, elapsed: 9 * 60_000, timeoutMs: 480_000, succeeds: false, calls: 1 },
   ]) {
     now = 1_000;
     let calls = 0;
+    const renewals = [];
     const input = translationInput();
-    input.sourceUnits = [0, 1].map((index) => ({ ...input.sourceUnits[0], unitKey: `budget-unit-${index}` }));
+    input.sourceUnits = Array.from({ length: scenario.units }, (_, index) => ({ ...input.sourceUnits[0], unitKey: `budget-unit-${index}` }));
     globalThis.fetch = async () => {
+      assert.equal(renewals.length, calls + 1, 'renew the same lease before every response, including continuation');
       const index = calls++;
-      now = 1_000 + scenario.elapsed;
+      now += scenario.elapsed;
       return Response.json({ choices: [{ message: {
         content: null, tool_calls: [{ id: `budget-call-${index}`, type: 'function', function: {
           name: 'return_wiselink_initial_candidate',
@@ -265,15 +268,64 @@ test('whole-document output windows share a bounded twenty-minute budget and hon
     const invoke = () => invokeHostedInitialModel({ operation: 'TRANSLATE', modelInput: input }, {
       gatewayChatCompletionsEnabled: true, gatewayUrl: 'https://official.invalid', gatewayToken: 'test-only',
       configuredModelVersion: 'miaoda/minimax-m3', sessionDiscriminator: 'budget-fixture', timeoutMs: scenario.timeoutMs,
+      heartbeat: async () => { renewals.push(now); },
     });
     if (scenario.succeeds) {
-      assert.equal((await invoke()).output.candidateUnits.length, 2);
-      assert.equal(calls, 2);
+      assert.equal((await invoke()).output.candidateUnits.length, scenario.units);
     } else {
       await assert.rejects(invoke(), /INITIAL_MODEL_TIMEOUT/u);
-      assert.equal(calls, 1);
     }
+    assert.equal(calls, scenario.calls);
+    assert.equal(renewals.length, scenario.calls);
   }
+});
+
+test('lost translation lease prevents the next model response and any complete candidate', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  const input = translationInput();
+  input.sourceUnits.push({ ...input.sourceUnits[0], unitKey: 'lease-unit-1' });
+  let calls = 0;
+  let renewals = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    return Response.json({ choices: [{ message: { content: null, tool_calls: [{
+      id: 'lease-call-0', type: 'function', function: {
+        name: 'return_wiselink_initial_candidate',
+        arguments: JSON.stringify({ candidate: { translatedUnits: [{ index: 0, text: '保持 28 VDC 和 ATA 24。' }] } }),
+      },
+    }] } }] });
+  };
+  await assert.rejects(invokeHostedInitialModel({ operation: 'TRANSLATE', modelInput: input }, {
+    gatewayChatCompletionsEnabled: true, gatewayUrl: 'https://official.invalid', gatewayToken: 'test-only',
+    configuredModelVersion: 'dli/gpt-5.6-sol', sessionDiscriminator: 'lease-fixture',
+    heartbeat: async () => { if (++renewals === 2) throw new Error('ACTION_ATTEMPT_LEASE_LOST'); },
+  }), /ACTION_ATTEMPT_LEASE_LOST/u);
+  assert.equal(calls, 1);
+  assert.equal(renewals, 2);
+});
+
+test('translation aborts identify the response limit or total budget without a model replay', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  const budgets = [];
+  t.mock.method(AbortSignal, 'timeout', (milliseconds) => {
+    budgets.push(milliseconds);
+    const controller = new AbortController();
+    controller.abort(new DOMException('expired', 'TimeoutError'));
+    return controller.signal;
+  });
+  let calls = 0;
+  globalThis.fetch = async (_url, init) => { calls++; throw init.signal.reason; };
+  for (const [timeoutMs, code] of [[undefined, 'INITIAL_MODEL_RESPONSE_TIMEOUT'], [500, 'INITIAL_MODEL_TIMEOUT']]) {
+    await assert.rejects(invokeHostedInitialModel({ operation: 'TRANSLATE', modelInput: translationInput() }, {
+      gatewayChatCompletionsEnabled: true, gatewayUrl: 'https://official.invalid', gatewayToken: 'test-only',
+      configuredModelVersion: 'dli/gpt-5.6-sol', sessionDiscriminator: 'abort-fixture', timeoutMs,
+    }), new RegExp(code, 'u'));
+  }
+  assert.equal(budgets[0], 15 * 60_000);
+  assert.ok(budgets[1] <= 500 && budgets[1] > 0);
+  assert.equal(calls, 2);
 });
 
 test('whole-document translation keeps all 503 input units in one native session with bounded output windows', async (t) => {
@@ -740,7 +792,7 @@ test('pins exact20 MCP 1.2, five review tools, and hosted provenance', () => {
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c31',
+    'wiselink-research-and-synthesize@r09.c32',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -2019,8 +2071,9 @@ test('runs translation with fresh status and full fenced ResultEnvelope', async 
   const result = await runTranslation({
     workItemId: WORK_ITEM_ID,
     callTool,
-    translate: async (modelInput) => {
+    translate: async (modelInput, runtimeHooks) => {
       deliveredModelInput = modelInput;
+      await runtimeHooks.heartbeat();
       return { output, provenance: provenance() };
     },
   });
@@ -2033,6 +2086,7 @@ test('runs translation with fresh status and full fenced ResultEnvelope', async 
       'get_parse_status',
       'begin_translation',
       'begin_translation',
+      'heartbeat_action_attempt',
       'heartbeat_action_attempt',
       'heartbeat_action_attempt',
       'commit_translation_candidate',
