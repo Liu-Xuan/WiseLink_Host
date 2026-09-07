@@ -9,9 +9,14 @@ export async function withOneFileReadTransportRetry<T>(
   try {
     return await read();
   } catch (cause) {
-    if (hasHttpStatus(cause) || !hasTransportSignature(cause)) throw cause;
+    if (!isFileServiceTransportFailure(cause)) throw cause;
     return await read();
   }
+}
+
+/** No HTTP response was received; this alone never authorizes another write. */
+export function isFileServiceTransportFailure(cause: unknown): boolean {
+  return !hasHttpStatus(cause) && hasTransportSignature(cause);
 }
 
 function hasHttpStatus(cause: unknown, seen = new Set<unknown>()): boolean {
