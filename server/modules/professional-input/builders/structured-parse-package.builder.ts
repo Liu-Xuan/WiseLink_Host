@@ -520,6 +520,8 @@ function entityIdFromHash(kind: string, digest: string): string {
 }
 
 const FTD_AIMS_2_APPLICABILITY_TEXT =
+  'All 777 models equipped with Airplane Information Management System 2 (AIMS-2) Platform.';
+const LEGACY_FTD_AIMS_2_APPLICABILITY_TEXT =
   'All777modelsequippedwithAirplaneInformationManagementSystem2(AIMS-2)Platform.';
 
 interface DeterministicApplicabilityObservation {
@@ -610,7 +612,8 @@ function buildDeterministicApplicability(
     if (
       heading.text !== 'Applicability' ||
       expression.order !== heading.order + 1 ||
-      expression.text !== FTD_AIMS_2_APPLICABILITY_TEXT ||
+      (expression.text !== FTD_AIMS_2_APPLICABILITY_TEXT &&
+        expression.text !== LEGACY_FTD_AIMS_2_APPLICABILITY_TEXT) ||
       heading.sourceRefIds.length !== 1 ||
       expression.sourceRefIds.length !== 1
     ) {
@@ -1708,8 +1711,8 @@ function collectBoeing777SbApplicabilityObservations(
     const inclusiveEvidenceUnits = units.slice(index + 7, index + 9);
     const evidenceUnits = units.slice(index - 2, index + 9);
     if (
-      effectivityHeading.text !== 'A.Effectivity' ||
-      airplanesHeading.text !== '1.Airplanes' ||
+      !/^A\.\s*Effectivity$/u.test(effectivityHeading.text) ||
+      !/^1\.\s*Airplanes$/u.test(airplanesHeading.text) ||
       lineUnits.length !== 6 ||
       inclusiveEvidenceUnits.length !== 2 ||
       evidenceUnits.length !== 11 ||
@@ -1811,8 +1814,8 @@ function collectBoeingSbApplicabilityObservations(
     const effectivityHeading = units[index - 2];
     const airplanesHeading = units[index - 1];
     if (
-      effectivityHeading.text !== 'A.Effectivity' ||
-      airplanesHeading.text !== '1.Airplanes' ||
+      !/^A\.\s*Effectivity$/u.test(effectivityHeading.text) ||
+      !/^1\.\s*Airplanes$/u.test(airplanesHeading.text) ||
       airplanesHeading.order !== effectivityHeading.order + 1 ||
       modelUnit.order !== airplanesHeading.order + 1
     ) {
@@ -1986,7 +1989,9 @@ function collectBoeingExistingPartNumberEvidence(
   for (let index = afterIndex + 1; index < units.length - 4; index += 1) {
     const header = units[index];
     if (
-      header.text !== 'Part Number / Specifica-QTYNameExisting Part NumberNotes'
+      !/^Part Number \/ Specifica-\s*QTY\s*Name\s*Existing Part Number\s*Notes$/u.test(
+        header.text,
+      )
     ) {
       continue;
     }
@@ -1995,20 +2000,20 @@ function collectBoeingExistingPartNumberEvidence(
     const modelRow = units[index + 3];
     const manufacturerPartNumberRow = units[index + 4];
     const partNumberMatch = partNumberRow.text.match(
-      /^(\d{2}-\d{5}-\d{3}) \(GE model2FLIGHT MANAGEMENT(\d{2}-\d{5}-\d{3}) \(GE model\(a\)\(b\)\(c\)\(d\)\(e\)\(f\)\(g\)\(h\)$/u,
+      /^(\d{2}-\d{5}-\d{3}) \(GE model\s*2\s*FLIGHT MANAGEMENT\s*(\d{2}-\d{5}-\d{3}) \(GE model\s*\(a\)\(b\)\(c\)\(d\)\(e\)\(f\)\(g\)\(h\)$/u,
     );
     const modelMatch = modelRow.text.match(
-      /^number ([A-Z0-9]+), GE partCOMPUTERnumber ([A-Z0-9]+), GE part$/u,
+      /^number ([A-Z0-9]+), GE part\s*COMPUTER\s*number ([A-Z0-9]+), GE part$/u,
     );
     const manufacturerPartNumberMatch = manufacturerPartNumberRow.text.match(
-      /^number (\d{6}-\d{2}-\d{2})\)number (\d{6}-\d{2}-\d{2})\)$/u,
+      /^number (\d{6}-\d{2}-\d{2})\)\s*number (\d{6}-\d{2}-\d{2})\)$/u,
     );
     const context = units.slice(Math.max(afterIndex + 1, index - 10), index);
-    const sections = context.filter(
-      (unit) => unit.text === 'C.Parts Necessary for Each Airplane',
+    const sections = context.filter((unit) =>
+      /^C\.\s*Parts Necessary for Each Airplane$/u.test(unit.text),
     );
-    const operatorPartsHeadings = context.filter(
-      (unit) => unit.text === '2.Parts and Materials Supplied by the Operator',
+    const operatorPartsHeadings = context.filter((unit) =>
+      /^2\.\s*Parts and Materials Supplied by the Operator$/u.test(unit.text),
     );
     const section = sections[0];
     const operatorParts = operatorPartsHeadings[0];
@@ -2213,7 +2218,7 @@ function isBoeingPageFooter(value: string): boolean {
     /^Original Issue: .+$/u.test(value) ||
     /^\d{3}-\d{2}-\d{4}$/u.test(value) ||
     /^Export Controlled ECCN: [A-Z0-9]+$/u.test(value) ||
-    /^BOEING PROPRIETARY - See page 1 for details\d+ of \d+$/u.test(value)
+    /^BOEING PROPRIETARY - See page 1 for details\s*\d+ of \d+$/u.test(value)
   );
 }
 

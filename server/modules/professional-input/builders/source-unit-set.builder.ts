@@ -21,9 +21,9 @@ import type {
  * y-coordinate, joined left-to-right into lines, and every non-blank line
  * becomes exactly one source unit anchored by a PDF source ref. The first
  * text unit on each non-blank page carries that page's actual extracted text
- * context; later units retain granular line locators. No unit is dropped, no
- * text is synthesized, and identities are pure hashes of content — the count
- * of units is driven by the bytes, never hardcoded.
+ * context; later units retain granular line locators. Native whitespace and
+ * measured gaps separate runs without rewriting source characters. Identities
+ * are pure hashes of content — the count of units is driven by the bytes.
  */
 
 export const SEGMENTATION_PROFILE_ID =
@@ -212,7 +212,12 @@ function collectLines(layout: ParsedPdfLayout): ParsedLine[] {
   const lines: ParsedLine[] = [];
   const byPage = new Map<number, ParsedPdfTextRun[]>();
   for (const run of layout.textRuns) {
-    if (run.text.trim().length === 0) continue;
+    if (
+      run.text.length === 0 ||
+      (run.origin === 'ocr_tesseract_tsv' && run.text.trim().length === 0)
+    ) {
+      continue;
+    }
     const bucket = byPage.get(run.page) ?? [];
     bucket.push(run);
     byPage.set(run.page, bucket);
@@ -231,12 +236,16 @@ function collectLines(layout: ParsedPdfLayout): ParsedLine[] {
     const flush = () => {
       if (current.length === 0) return;
       const ordered = current.slice().sort((a, b) => a.x - b.x);
-      nativeLines.push({
-        page,
-        y: currentY ?? ordered[0].y,
-        runs: ordered,
-        text: ordered.map((run) => run.text).join(''),
-      });
+      const contentRuns = ordered.filter((run) => run.text.trim().length > 0);
+      if (contentRuns.length > 0) {
+        nativeLines.push({
+          page,
+          y: currentY ?? contentRuns[0].y,
+          // Whitespace contributes to text, but not heading style or bounds.
+          runs: contentRuns,
+          text: joinNativeTextRuns(ordered),
+        });
+      }
       current = [];
       currentY = null;
     };
@@ -291,6 +300,49 @@ function collectLines(layout: ParsedPdfLayout): ParsedLine[] {
     );
   }
   return filterPageAuxiliaryLines(lines, layout);
+}
+
+function joinNativeTextRuns(runs: readonly ParsedPdfTextRun[]): string {
+  let text = '';
+  let previous: ParsedPdfTextRun | undefined;
+  for (const run of runs) {
+    if (
+      previous &&
+      !/\s$/u.test(text) &&
+      !/^\s/u.test(run.text) &&
+      hasMeasuredWordGap(previous, run)
+    ) {
+      text += ' ';
+    }
+    text += run.text;
+    previous = run;
+  }
+  return text;
+}
+
+function hasMeasuredWordGap(
+  previous: ParsedPdfTextRun,
+  next: ParsedPdfTextRun,
+): boolean {
+  const left = previous.pdfUserSpaceBbox;
+  const right = next.pdfUserSpaceBbox;
+  if (!left || !right || ![...left, ...right].every(Number.isFinite)) {
+    return false;
+  }
+  if (left[2] <= left[0] || right[2] <= right[0]) return false;
+
+  // PDF table cells and distant page labels may have no whitespace item.
+  // Use actual PDF bounds, never estimated text width or token patterns.
+  // Sub-word kerning and touching fragments remain contiguous.
+  const fontSize = Math.max(
+    Math.abs(previous.fontSize),
+    Math.abs(next.fontSize),
+  );
+  return (
+    Number.isFinite(fontSize) &&
+    fontSize > 0 &&
+    right[0] - left[2] >= Math.max(0.5, fontSize * 0.25)
+  );
 }
 
 function assertOcrReadingOrder(run: ParsedPdfTextRun): number {
