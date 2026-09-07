@@ -355,6 +355,145 @@ test('translation output work budget uses source length without cutting a long H
   assert.deepEqual(result.output.candidateUnits.map((unit) => unit.text), input.sourceUnits.map((unit) => unit.text));
 });
 
+test('translation corrects only rejected units in the same full-document session and selected model', async (t) => {
+  const input = translationInput();
+  input.rulePack.terms = [{ ruleId: 'term.airplane', sourceTerm: 'airplane', targetRenderings: ['飞机'], severity: 'mandatory' }];
+  input.sourceUnits = [
+    'Issue 001, 24 Sep 2020',
+    'Effectivity for the list of affected airplanes.',
+    'Retain paragraph 10.',
+    'No special tools are necessary.',
+  ].map((text, index) => ({ ...input.sourceUnits[0], text, unitKey: 'unit-' + index, sourceRefIds: ['source-' + index] }));
+  const unchangedInput = structuredClone(input);
+  for (const modelRef of ['miaoda/minimax-m3', 'dli/gpt-5.6-sol']) {
+    let calls = 0;
+    const observations = [];
+    const originalFetch = globalThis.fetch;
+    t.after(() => { globalThis.fetch = originalFetch; });
+    globalThis.fetch = async (_url, init) => {
+      const request = JSON.parse(init.body);
+      assert.equal(request.user, 'initial:correction-session');
+      assert.equal(init.headers['x-openclaw-model'], modelRef);
+      let rows;
+      if (calls === 0) {
+        assert.deepEqual(JSON.parse(request.messages[1].content), input);
+        rows = [[0, '第001版，2020年9月24日'], [1, '适用性。'], [2, '保留第10段。'], [3, '无需专用工具，参见第20段。']];
+      } else {
+        assert.equal(request.messages.length, 3);
+        const feedback = JSON.parse(request.messages[2].content);
+        assert.equal(feedback.status, 'CORRECT_TRANSLATION_UNITS');
+        assert.deepEqual(feedback.unitIndices, [1, 3]);
+        assert.equal(feedback.rejectedUnits[0].sourceText, input.sourceUnits[1].text);
+        assert.equal(feedback.rejectedUnits[1].sourceText, input.sourceUnits[3].text);
+        const shape = request.tools[0].function.parameters.properties.candidate.properties.translatedUnits;
+        assert.deepEqual(shape.items.properties.index.enum, [1, 3]);
+        assert.equal(shape.minItems, 2);
+        assert.equal(JSON.stringify(request.messages).includes('sourceUnits":['), false);
+        rows = [[1, '受影响飞机清单的适用性。'], [3, '无需专用工具。']];
+      }
+      calls += 1;
+      return Response.json({ choices: [{ message: { content: null, tool_calls: [{
+        id: 'correction-' + calls, type: 'function', function: {
+          name: 'return_wiselink_initial_candidate', arguments: JSON.stringify({ candidate: { translatedUnits: rows } }),
+        },
+      }] } }] });
+    };
+    const result = await invokeHostedInitialModel({ operation: 'TRANSLATE', modelInput: input }, {
+      gatewayChatCompletionsEnabled: true, gatewayUrl: 'https://official.invalid', gatewayToken: 'test-only',
+      configuredModelVersion: modelRef, sessionDiscriminator: 'correction-session',
+      executionModel: modelSelection(modelRef), registeredModelRefs: [modelRef],
+      observeModelOutput: async (value) => observations.push(value),
+    });
+    assert.equal(calls, 2);
+    assert.equal(result.provenance.modelVersion, 'configured-route:' + modelRef);
+    assert.deepEqual(result.output.candidateUnits.map((unit) => unit.text), [
+      '第001版，2020年9月24日', '受影响飞机清单的适用性。', '保留第10段。', '无需专用工具。',
+    ]);
+    assert.deepEqual(input, unchangedInput);
+    assert.deepEqual(result.output.candidateUnits.map((unit) => unit.sourceRefIds), input.sourceUnits.map((unit) => unit.sourceRefIds));
+    assert.deepEqual(observations[1].translationCorrection, { round: 1, unitIndices: [1, 3] });
+    assert.equal(JSON.stringify(observations).includes('受影响'), false);
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('translation corrections stop after two unsuccessful replacements or an out-of-scope index', async (t) => {
+  for (const outOfScope of [false, true]) {
+    const input = translationInput();
+    let calls = 0;
+    const originalFetch = globalThis.fetch;
+    t.after(() => { globalThis.fetch = originalFetch; });
+    globalThis.fetch = async () => {
+      calls += 1;
+      return Response.json({ choices: [{ message: { content: null, tool_calls: [{
+        id: 'bad-' + calls, type: 'function', function: {
+          name: 'return_wiselink_initial_candidate', arguments: JSON.stringify({
+            candidate: { translatedUnits: [[outOfScope && calls > 1 ? 1 : 0, '保持 29 VDC 和 ATA 24。']] },
+          }),
+        },
+      }] } }] });
+    };
+    await assert.rejects(invokeHostedInitialModel({ operation: 'TRANSLATE', modelInput: input }, {
+      gatewayChatCompletionsEnabled: true, gatewayUrl: 'https://official.invalid', gatewayToken: 'test-only',
+      configuredModelVersion: 'miaoda/minimax-m3', sessionDiscriminator: 'bounded-correction',
+    }), outOfScope ? /INITIAL_TRANSLATION_CORRECTION_MAPPING_INVALID/u : /TRANSLATION_RULE_PREFLIGHT_REJECTED.*"correctionRounds":2/u);
+    assert.equal(calls, outOfScope ? 2 : 3);
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('corrected short output prefix continues from its real end without rewriting completed units', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  const input = translationInput();
+  input.sourceUnits.push({ ...input.sourceUnits[0], unitKey: 'second-unit', sourceRefIds: ['second-ref'] });
+  let calls = 0;
+  globalThis.fetch = async (_url, init) => {
+    const request = JSON.parse(init.body);
+    if (calls === 2) {
+      const feedback = JSON.parse(request.messages[2].content);
+      assert.equal(feedback.status, 'CONTINUE_TRANSLATION');
+      assert.equal(feedback.nextUnitIndex, 1);
+    }
+    const row = calls === 0 ? [0, '保持 29 VDC 和 ATA 24。']
+      : [calls === 1 ? 0 : 1, '保持 28 VDC 和 ATA 24。'];
+    calls += 1;
+    return Response.json({ choices: [{ message: { content: null, tool_calls: [{
+      id: 'prefix-' + calls, type: 'function', function: {
+        name: 'return_wiselink_initial_candidate', arguments: JSON.stringify({ candidate: { translatedUnits: [row] } }),
+      },
+    }] } }] });
+  };
+  const result = await invokeHostedInitialModel({ operation: 'TRANSLATE', modelInput: input }, {
+    gatewayChatCompletionsEnabled: true, gatewayUrl: 'https://official.invalid', gatewayToken: 'test-only',
+    configuredModelVersion: 'miaoda/minimax-m3', sessionDiscriminator: 'prefix-correction',
+  });
+  assert.equal(calls, 3);
+  assert.equal(result.output.candidateUnits.length, 2);
+});
+
+test('translation correction consumes the original timeout budget', async (t) => {
+  let now = 1000;
+  t.mock.method(Date, 'now', () => now);
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    now += 600;
+    return Response.json({ choices: [{ message: { content: null, tool_calls: [{
+      id: 'timed-correction', type: 'function', function: {
+        name: 'return_wiselink_initial_candidate', arguments: JSON.stringify({ candidate: { translatedUnits: [[0, '保持 29 VDC 和 ATA 24。']] } }),
+      },
+    }] } }] });
+  };
+  await assert.rejects(invokeHostedInitialModel({ operation: 'TRANSLATE', modelInput: translationInput() }, {
+    gatewayChatCompletionsEnabled: true, gatewayUrl: 'https://official.invalid', gatewayToken: 'test-only',
+    configuredModelVersion: 'miaoda/minimax-m3', sessionDiscriminator: 'timed-correction', timeoutMs: 500,
+  }), /INITIAL_MODEL_TIMEOUT/u);
+  assert.equal(calls, 1);
+});
+
 test('a failed translation window is not retried and cannot return an incomplete candidate', async (t) => {
   const originalFetch = globalThis.fetch;
   t.after(() => { globalThis.fetch = originalFetch; });
@@ -588,7 +727,7 @@ test('pins exact20 MCP 1.2, five review tools, and hosted provenance', () => {
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c27',
+    'wiselink-research-and-synthesize@r09.c28',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -1651,6 +1790,21 @@ test('seals actual model provenance without binding the Skill to one model versi
         }),
       /RUNTIME_MODEL_PROVENANCE_(?:REQUIRED|UNREADABLE)/u,
     );
+  }
+});
+
+test('Host and Skill fidelity cases preserve dates, CJK numbers, identifiers, and real errors', async () => {
+  const cases = JSON.parse(await readFile(new URL('./fixtures/translation-fidelity-cases.json', import.meta.url), 'utf8'));
+  for (const item of cases) {
+    const input = translationInput();
+    const output = translationOutput();
+    input.sourceUnits[0].text = item.source;
+    output.candidateUnits[0].text = item.translation;
+    if (item.accepted) {
+      assert.doesNotThrow(() => validatePayload('translation-pair', { input, output }), item.name);
+    } else {
+      assert.throws(() => validatePayload('translation-pair', { input, output }), /TRANSLATION_RULE_PREFLIGHT_REJECTED/u, item.name);
+    }
   }
 });
 

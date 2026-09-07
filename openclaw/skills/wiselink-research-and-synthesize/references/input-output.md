@@ -86,7 +86,7 @@ runtimePolicy.modelPolicyRef = official-hosted-profile-config
 ResultEnvelope.modelVersion = 官方托管 profile/config 本轮选择后的非空、可读实际模型
 Task.skillPolicyRef = wiselink-research-and-synthesize@r09
 ApplicabilityTask.runtimePolicy.skillVersion = wiselink-research-and-synthesize@r09  # v1 历史字段名，语义为兼容线
-ResultEnvelope.skillVersion = wiselink-research-and-synthesize@r09.c27       # 实际安装包版本
+ResultEnvelope.skillVersion = wiselink-research-and-synthesize@r09.c28       # 实际安装包版本
 toolVersions.wiselink-openclaw-engineering-assessment = 1.2.0
 promptVersion = 当前实际运行非空版本
 ```
@@ -154,8 +154,12 @@ c27 修复已实测的 Gateway 附带说明文本与函数参数共存：只消�
 不保存原始 content/arguments。全文输出窗共享有界 20 分钟模型预算（可显式缩短），不改变 30 分钟租约和原生
 cron 的总时限；单响应的其他 operation 仍保持八分钟默认预算。没有超时重放或 provider fallback。
 
-Skill 做结构和绑定预检，并在封印/分块提交前依据同一 Host-frozen rulePack 镜像数字 token occurrence
-multiset 与 ATA token 逐字保真检查，失败诊断包含 `unitKey`；它不自动改写候选。Host 继续拥有术语、编号、
+c28 在当前窗口内按具体 findings 要求原模型重新输出失败索引，最多两次，原全文会话与总时间预算不变；
+纠正返回必须与请求索引一一匹配，其他单元保留，驱动不自动改写文本。中文紧邻数字纳入识别，完整无歧义日期
+按同一日历值比较，连写标识仍逐字保留，ATA 只识别显式章节引用。真实漏译、串译和数值/日期变化仍拒绝。
+
+Skill 做结构和绑定预检，并在封印/分块提交前依据同一 Host-frozen rulePack 镜像数字/日期/标识 occurrence
+multiset 与 ATA token 逐字保真检查；纠正耗尽后的失败诊断包含 `unitKey`。Host 继续拥有术语、编号、
 数值、单位、ATA/件号、表格/警示层级和 currentness 的最终确定性 ResultGate、actual-byte persist/readback
 与 CAS。
 

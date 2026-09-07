@@ -12,7 +12,7 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（任务可绑定已登记的内置或用户授权自定义模型；仍经唯一官方 Hosted profile/Gateway）
-- Skill：`wiselink-research-and-synthesize@r09.c27`
+- Skill：`wiselink-research-and-synthesize@r09.c28`
 - Skill compatibility：`wiselink-research-and-synthesize@r09`（Host 最低接受 `r09.c10`）
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（既有 20 项能力；兼容新增的只读自动领取查询）
 - Host baseline：`6fd2655d27edc3851c745547efaf8796ad22c82c`
@@ -162,11 +162,18 @@ CAS；Skill 不声称这些步骤由模型完成。8. commit 响应未知时只�
   `FUNCTION_ARGUMENTS_WITH_COMMENTARY` 安全形态。纯文本结果、多个调用、未知函数、analysis/reasoning 字段、
   非文本 content 和不完整参数仍拒绝。该处理同样用于 Review，不改变 Host 的来源、数字保真、授权或提交校验。
   全文多窗共享最多 20 分钟模型预算，仍受既有 30 分钟租约/cron 总时限约束；显式更短预算优先，超时不自动重放。
+- c28 在每个输出窗口收齐后按同一 rulePack 检查实际内容；具体失败单元可在原全文会话、原模型中定向纠正，
+  每窗口最多两次且共用原 20 分钟总预算。纠正响应只能包含请求的索引，完整匹配后以模型实返文本替换这些单元；
+  未失败单元保持原文，驱动不编造、删改或补齐译文。各单元翻译自身片段，全文和相邻单元只帮助理解，不挪动内容。
+  耗尽预算或纠正仍失败时停止；不重放已经失败的 Host attempt，不执行上传或提交。
+- c28 与 Host 同步修正保真识别：完整、无歧义日期按日期值比较，允许 `24 Sep 2020` 与 `2020年9月24日`
+  等价；日期变化、无效日期和次数变化仍失败。中文紧邻数字正常识别，连写的字母数字标识仍逐字保留。
+  ATA 只匹配明确的 ATA 引用，不把普通日期或数值误称为章节；既有编号、术语、来源及最终提交校验保留。
 - `rulePackId + rulePackVersion`、taskStartBinding、unit 数量/顺序、unitKey 与 SourceRef 集必须逐项一致。
 - Host TranslationRuleSet ResultGate 仍是编号、数值、单位、ATA/件号、表格和警示层级的最终权威。模型
   生成后、封印或上传前，Skill validator 读取同一 Host-frozen rulePack：`numericFidelity` 使用与 Host 相同的
-  数字 token occurrence multiset，`preserveAtaChapterNumbers` 使用与 Host 相同的 ATA 逐字规则。失败时返回
-  包含 `unitKey` 和具体 finding 的本地诊断并停止，不等待 Host 拒绝后再修；该预检不取代 Host ResultGate。
+  数字/日期/连写标识 token occurrence multiset，`preserveAtaChapterNumbers` 使用与 Host 相同的 ATA 逐字规则。
+  本轮有界纠正后仍失败时返回 `unitKey` 和具体 finding 并停止；该预检不取代 Host ResultGate。
 - 翻译必须原样保留 Host 识别的数字 token 及出现次数，并逐字保留匹配的 ATA token。不得把字母或 OCR
   连写中的数字拆成新的独立数字（如把 `OCRX123` 改为 `OCRX 123`），不得拆分 leading-zero token（如
   `007`），也不得“修复”、分隔或重排会改变 Host tokenization 的 OCR 连写 decimal/table 字符串（如
@@ -435,7 +442,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - `modelVersion` 优先取响应中可读实际模型；绑定任务未回报实际模型时使用 `configured-route:<modelRef>`，旧无绑定任务使用无 fallback 的 configured endpoint。后两者只证明路由，不代表已暴露下游具体模型，也不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c27`
+- `skillVersion=wiselink-research-and-synthesize@r09.c28`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致

@@ -1,0 +1,20 @@
+[
+  {"name":"DLI full date localization","source":"Issue 001, 24 Sep 2020","translation":"第 001 版，2020 年 9 月 24 日","accepted":true},
+  {"name":"Chinese date without spaces","source":"24 September 2020","translation":"2020年9月24日","accepted":true},
+  {"name":"date leading zero is not an ATA chapter","source":"Jan 01, 2023","translation":"2023年1月1日","accepted":true},
+  {"name":"Chinese adjacent numbers and negative sign","source":"Retain paragraph 10 and limit -5.","translation":"保留第10段和限值-5。","accepted":true},
+  {"name":"identifier and ISO date connector","source":"Marker A-12 was recorded on 2026-08-28.","translation":"标记 A（12）记录于2026年08月28日。","accepted":true},
+  {"name":"unchanged glued identifiers","source":"Retain OCRX123 and B787-81205-SB310019-00.","translation":"保留OCRX123和B787-81205-SB310019-00。","accepted":true},
+  {"name":"changed month","source":"24 Sep 2020","translation":"2020年8月24日","accepted":false},
+  {"name":"changed day","source":"24 Sep 2020","translation":"2020年9月25日","accepted":false},
+  {"name":"changed year","source":"24 Sep 2020","translation":"2021年9月24日","accepted":false},
+  {"name":"invalid source date is not normalized","source":"31 Sep 2020","translation":"2020年9月30日","accepted":false},
+  {"name":"duplicated localized date","source":"24 Sep 2020","translation":"2020年9月24日，2020年9月24日","accepted":false},
+  {"name":"date-shaped identifier retains leading zeros","source":"Retain REF-2026-08-28.","translation":"保留REF-2026-8-28。","accepted":false},
+  {"name":"changed signed value","source":"Retain limit -5.","translation":"保留限值+5。","accepted":false},
+  {"name":"extra Chinese adjacent value","source":"Retain paragraph 10.","translation":"保留第10段和第11段。","accepted":false},
+  {"name":"duplicate value","source":"Retain value 10.","translation":"保留值10和值10。","accepted":false},
+  {"name":"split glued identifier","source":"Retain OCRX123.","translation":"保留OCRX 123。","accepted":false},
+  {"name":"changed identifier digits","source":"Retain B787.","translation":"保留B788。","accepted":false},
+  {"name":"split ATA chapter despite equal numbers","source":"Retain ATA 31-21.","translation":"保留ATA 31和21。","accepted":false}
+]
