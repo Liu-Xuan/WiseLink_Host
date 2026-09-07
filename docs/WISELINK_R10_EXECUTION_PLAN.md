@@ -8,7 +8,7 @@ Git 当前边界：**2026-09-06 用户要求仅向妙搭 Host 的 `origin` 推�
 
 2026-09-07 接管续查：Host release `7682594178899332332` 已 finished，对应 `408de9f17`，已安装 Skill c27。DLI 新事项 `WI-cb6a99bd-f336-48fe-bd95-a0e39e3311f1` 已生成 437 单元，但 attempt `ATT-f6f7c9e2-da51-4e2c-acbd-f4559d339e0c` 因 `TRANSLATION_RULE_PREFLIGHT_REJECTED` 取消，无候选。精确原始输出核查确认同时存在日期/中文相邻数字误判、漏译和跨单元串译；c28 与 Host 配套修正保真识别，在原模型、全文会话和总预算内对失败单元最多纠正两次，保留最终 Host 校验。40 项 Host 规则测试、16 项翻译服务测试、137 项 Skill 测试、lint 和生产构建通过；c28 已在唯一同名目录完成安装，27/27 文件摘要一致、installed 137/137 测试通过；Host release `7682816136916372431` 于 23:35:28 finished，对应 `45499e3a4`。尚无 c28 真实业务成功证据。旧失败保留，用正常新请求验证。下文 9 月 6 日状态保留为历史进度，以本段和后续新实证为准。
 
-23:33 新 DLI 事项 `WI-d8c42bc9-d0d7-42dc-9a8b-6ba5e6193a99` 正常登记后解析失败，尚未调用模型。Trace `da008f3f52d44858ce169a903d3559a6` 精确定位为 professional package 的 FileService `preUpload` 无 HTTP 响应（`fetch failed`），并非 PDF 缺失；通用失败分类当时显示 `SOURCE_BINDING_FAILED`。后续 Host 修订只恢复同一不可变对象写入：丢失响应先查相同 bucket/path，存在则仍验实际字节，成功查得不存在才在 250ms 后以同一 bytes/path、`upsert:false` 重写一次；读回未知、HTTP/权限错误、字节不符或次数耗尽均停止。28 项定向测试与 lint 通过。旧事项/attempt 不重放，唯一 cron 保持暂停，新的自然 tick 验收待受理与范围迁移。
+23:33 新 DLI 事项 `WI-d8c42bc9-d0d7-42dc-9a8b-6ba5e6193a99` 正常登记后解析失败，尚未调用模型。Trace `da008f3f52d44858ce169a903d3559a6` 精确定位为 professional package 的 FileService `preUpload` 无 HTTP 响应（`fetch failed`），并非 PDF 缺失；通用失败分类当时显示 `SOURCE_BINDING_FAILED`。后续 Host 修订只恢复同一不可变对象写入：丢失响应先查相同 bucket/path，存在则仍验实际字节，成功查得不存在才在 250ms 后以同一 bytes/path、`upsert:false` 重写一次；读回未知、HTTP/权限错误、字节不符或次数耗尽均停止。28 项定向测试、lint 与生产构建通过。修订 `aeddaf928` 随 release `7682818690430159859` 于 23:44:08 finished；旧事项/attempt 不重放，唯一 cron 保持暂停。新版的新 DLI 表单已准备，但提交再次被自动审批审查拒绝，理由是未接受原任务中的文件及 DLI 传输授权；已向用户请求在当前任务补充确认，未另换途径提交。新的自然 tick 验收待正常受理与范围迁移。R10 云文档四处状态已精确更新并读回，revision 2215；当前正文镜像同步。
 
 ## 本轮 Goal 修订目标
 
