@@ -163,7 +163,8 @@ test('official initial model adapter validates all four operation outputs withou
       const request = JSON.parse(init.body);
       assert.equal(request.model, 'openclaw/wiselink-engineering');
       assert.equal(request.user, 'initial:control-session-only');
-      assert.deepEqual(JSON.parse(request.messages[1].content), modelInput);
+      if (operation === 'TRANSLATE') assertWholeTranslationGenerationInput(JSON.parse(request.messages[1].content), modelInput);
+      else assert.deepEqual(JSON.parse(request.messages[1].content), modelInput);
       assert.equal(JSON.stringify(request.messages).includes('control-session-only'), false);
       return new Response(JSON.stringify({ model: 'actual-official-model', choices: [{ message: {
         role: 'assistant', content: null,
@@ -285,7 +286,7 @@ test('whole-document translation keeps all 503 input units in one native session
   const observations = [];
   globalThis.fetch = async (_url, init) => {
     const request = JSON.parse(init.body);
-    if (calls === 0) assert.deepEqual(JSON.parse(request.messages[1].content), input);
+    if (calls === 0) assertWholeTranslationGenerationInput(JSON.parse(request.messages[1].content), input);
     else assert.equal(JSON.stringify(request.messages).includes('sourceUnits\":['), false);
     assert.equal(request.user, 'initial:whole-document');
     const { translationOutputWindow: window } = JSON.parse(request.messages[2].content);
@@ -335,7 +336,7 @@ test('translation output work budget uses source length without cutting a long H
   const ranges = [];
   globalThis.fetch = async (_url, init) => {
     const request = JSON.parse(init.body);
-    if (!ranges.length) assert.deepEqual(JSON.parse(request.messages[1].content), input);
+    if (!ranges.length) assertWholeTranslationGenerationInput(JSON.parse(request.messages[1].content), input);
     const { translationOutputWindow: window } = JSON.parse(request.messages[2].content);
     ranges.push([window.startUnitIndex, window.endUnitIndexExclusive]);
     return Response.json({ choices: [{ message: {
@@ -376,7 +377,7 @@ test('translation corrects only rejected units in the same full-document session
       assert.equal(init.headers['x-openclaw-model'], modelRef);
       let rows;
       if (calls === 0) {
-        assert.deepEqual(JSON.parse(request.messages[1].content), input);
+        assertWholeTranslationGenerationInput(JSON.parse(request.messages[1].content), input);
         rows = [[0, '第001版，2020年9月24日'], [1, '适用性。'], [2, '保留第10段。'], [3, '无需专用工具，参见第20段。']];
       } else {
         assert.equal(request.messages.length, 3);
@@ -540,7 +541,7 @@ test('translation continues only an output prefix in the same full-document nati
     assert.equal(request.user, 'initial:whole-continuation');
     assert.equal(init.headers['x-openclaw-model'], 'miaoda/minimax-m3');
     if (calls === 0) {
-      assert.deepEqual(JSON.parse(request.messages[1].content), input);
+      assertWholeTranslationGenerationInput(JSON.parse(request.messages[1].content), input);
     } else {
       assert.equal(request.messages[1].role, 'assistant');
       assert.equal(request.messages[1].tool_calls[0].id, 'translation-prefix');
@@ -623,7 +624,7 @@ test('translation consumes the observed M3 item/index/text wire form without cha
     assert.equal(schema.properties.translatedUnits.items.properties.index.type, 'integer');
     assert.equal(schema.properties.translatedUnits.items.properties.index.minimum, window.startUnitIndex);
     assert.equal(schema.properties.translatedUnits.items.properties.index.maximum, window.endUnitIndexExclusive - 1);
-    if (calls === 0) assert.deepEqual(JSON.parse(request.messages[1].content), input);
+    if (calls === 0) assertWholeTranslationGenerationInput(JSON.parse(request.messages[1].content), input);
     else assert.equal(JSON.stringify(request.messages).includes('sourceUnits\":['), false);
     calls += 1;
     return Response.json({ choices: [{ finish_reason: 'tool_calls', message: {
@@ -735,7 +736,7 @@ test('pins exact20 MCP 1.2, five review tools, and hosted provenance', () => {
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c29',
+    'wiselink-research-and-synthesize@r09.c30',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -4922,6 +4923,17 @@ function translationDeliveryParts(
       },
     };
   });
+}
+
+function assertWholeTranslationGenerationInput(view, input) {
+  assert.deepEqual(Object.keys(view).sort(), ['rulePack', 'sourceUnits']);
+  assert.equal(view.sourceUnits.length, input.sourceUnits.length);
+  for (let index = 0; index < input.sourceUnits.length; index += 1) {
+    assert.deepEqual(view.sourceUnits[index], {
+      index, kind: input.sourceUnits[index].kind, text: input.sourceUnits[index].text,
+    });
+  }
+  assert.deepEqual(view.rulePack, input.rulePack);
 }
 
 function translationInput() {
