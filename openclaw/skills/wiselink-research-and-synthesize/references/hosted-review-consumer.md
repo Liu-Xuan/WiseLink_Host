@@ -38,7 +38,8 @@ node <installed-skill-path>/scripts/consume-hosted-work-item.mjs --work-item-id 
 不能据此扩大 owner/tenant 权限。按运行时官方 CLI 的实际 help 操作，不手工改 cron 文件。
 
 c24 每个 tick 默认最多连续执行 Host 指定的四个已就绪初始阶段；每次写回后 fresh-read，再开始下一阶段。
-满 15 分钟后不再启动新阶段，已执行步骤不重放；保留原生 cron 的 30 分钟总预算。依赖计算与同一事项的
+满 15 分钟后不再启动新阶段，已执行步骤不重放；c32 要求原生唯一 cron 的 timeout 为 60 分钟，以容纳
+有界 45 分钟全文翻译及提交。翻译每轮通过原 Host heartbeat 续租；原 lease/deadline 不变。依赖计算与同一事项的
 CAS 写回仍有序，独立资料读取有限并行。四阶段完成后的后续 tick 转入既有 Review 消费者。
 Host 缺少受控适用性事实时，保留 WAITING_INPUT 并允许后续 JobAid/Overall 形成条件性候选。BUSY/NOT_READY
 零模型调用；FAILED/CONFLICT、阶段状态漂移或不确定结果均停止报告，不新建失败重试。阶段 requestId 及已有

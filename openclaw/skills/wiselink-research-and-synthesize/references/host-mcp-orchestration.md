@@ -63,8 +63,9 @@ Translation delivery 不返回 tenant/actor/ACL、artifact ref/FileService locat
 full Fleet；只返回必要 attempt fence、脱敏 taskBinding、source artifact SHA 与 authority-free translation input。
 其它 TaskEnvelope 自身仍是控制面对象，不能整体发给模型。
 
-RUNNING attempt 的默认 deadline 为 60 分钟、lease 为 30 分钟。INITIAL_ANALYSIS 在每次模型调用前与返回后
-调用 heartbeat；模型生成期间不要求短周期回调。WAITING_INPUT 零模型路径、COMMITTING 只读恢复与 review 五工具
+RUNNING attempt 的默认 deadline 为 60 分钟、lease 为 30 分钟。INITIAL_ANALYSIS 在模型生成前与返回后
+调用 heartbeat；c32 全文翻译额外在每个输出/纠正轮请求前续租原 attempt，单次模型响应最多 15 分钟，
+全文共享 45 分钟总预算；续租失败不发起后续请求或提交。WAITING_INPUT 零模型路径、COMMITTING 只读恢复与 review 五工具
 路径不插入 heartbeat。
 
 所有 commit 使用 Host 返回的 exact attemptRef、leaseToken、leaseGeneration 和逻辑完整 ResultEnvelope。旧

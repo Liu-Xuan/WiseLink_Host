@@ -38,6 +38,8 @@ test('one tick runs only the next Host stage and persists its exact binding', as
   let runs = 0;
   let modelCalls = 0;
   let saved = false;
+  let renewed = 0;
+  const heartbeat = async () => { renewed++; };
   const result = await consumeHostedWorkItem(input, {
     callTool: async (name) => {
       if (name === 'get_parse_status') return saved ? status({
@@ -53,6 +55,8 @@ test('one tick runs only the next Host stage and persists its exact binding', as
       assert.deepEqual(modelInput, { sourceUnits: [] });
       assert.match(hooks.sessionDiscriminator, /^[0-9a-f-]{36}$/u);
       assert.equal(hooks.executionModel.modelRef, 'dli/gpt-5.6-sol');
+      assert.equal(hooks.heartbeat, heartbeat);
+      await hooks.heartbeat();
       modelCalls += 1;
       return { output: {}, provenance: {} };
     },
@@ -61,13 +65,14 @@ test('one tick runs only the next Host stage and persists its exact binding', as
       assert.deepEqual(run.providers, []);
       assert.equal(run.operation, 'TRANSLATE');
       await run.callTool('begin_translation', { workItemId: 'WI-new' });
-      await run.translate({ sourceUnits: [] });
+      await run.translate({ sourceUnits: [] }, { heartbeat });
       await run.callTool('commit_translation_candidate', { phase: 'FINALIZE' });
       return { outcome: 'CANDIDATE_READY' };
     },
   });
   assert.equal(runs, 1);
   assert.equal(modelCalls, 1);
+  assert.equal(renewed, 1);
   assert.equal(result.status, 'INITIAL_STAGE_SAVED');
   assert.equal(result.nextOperation, 'EXTRACT_APPLICABILITY');
   const binding = JSON.parse(await readFile(join(input.checkpointRoot, 'WI-new/initial/TRANSLATE/binding.json'), 'utf8'));

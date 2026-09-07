@@ -69,7 +69,8 @@ export async function consumeHostedWorkItem(options, dependencies) {
     report = await runHostedInitialStage({ ...options, operation, initial }, dependencies);
     if (report.status !== 'INITIAL_STAGE_SAVED') return { ...report, completedStages };
     completedStages.push(operation);
-    // Leave a full model+commit window before the native cron's 30-minute limit.
+    // Long translations finish their own stage before the native cron's
+    // 60-minute limit; leave later stages to a fresh natural tick after 15 minutes.
     // A later natural tick continues from Host status; there is no hidden retry.
     if (!report.nextOperation || Date.now() - tickStartedAt >= 15 * 60_000 || index + 1 === limit) break;
     const next = await dependencies.callTool('get_parse_status', { workItemId: options.workItemId });
@@ -123,12 +124,13 @@ export async function runHostedInitialStage(options, dependencies) {
     }
     return value;
   };
-  const invoke = async (modelInput) => checkpoint.remoteStep({
+  const invoke = async (modelInput, runtimeHooks = {}) => checkpoint.remoteStep({
     step: 'model', args: modelInput, ambiguousCommit: false,
     perform: () => {
       modelCallCount += 1;
       return dependencies.invokeInitialModel({ operation, modelInput }, {
         executionModel,
+        heartbeat: runtimeHooks.heartbeat,
         sessionDiscriminator: runBinding.requestId,
         observeModelOutput: (shape, round = 1) => checkpoint.writeOnce(
           round === 1 ? 'model.output-shape' : `model.output-shape-${round}`, shape,

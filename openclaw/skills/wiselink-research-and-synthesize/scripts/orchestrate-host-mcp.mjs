@@ -481,7 +481,9 @@ export async function runTranslation({ workItemId, callTool, translate }) {
   validatePayload('translation-input', begin.modelInput);
   await heartbeatAttempt(begin, callTool);
   const execution = normalizeExecution(
-    await translate(structuredClone(begin.modelInput)),
+    await translate(structuredClone(begin.modelInput), {
+      heartbeat: () => heartbeatAttempt(begin, callTool),
+    }),
   );
   validateTranslationBeforeCommit({
     input: begin.modelInput,
