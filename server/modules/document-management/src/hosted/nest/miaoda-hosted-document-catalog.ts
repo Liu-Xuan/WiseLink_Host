@@ -765,6 +765,12 @@ export class MiaodaHostedDocumentCatalog {
       normalizedDescriptor.identityAuthority || '',
     );
     const pageCount = Number(normalizedDescriptor.pageCount || 0);
+    // Exact reuse links another verified acquisition to the immutable version;
+    // that version retains the acquisition which originally created it.
+    const linkedExactVersion =
+      acquisition.status === 'LINKED_EXACT_DOCUMENT_VERSION' &&
+      ['REUSE_EXACT', 'RESUME_EXISTING_PROCESS'].includes(row.preflight.decision) &&
+      row.preflight.commitIdempotencyKey === `catalog:${acquisition.acquisitionId}`;
     if (
       !VERIFIED_DM_IDENTITY_AUTHORITIES.has(identityAuthority) ||
       !Number.isSafeInteger(pageCount) ||
@@ -785,7 +791,7 @@ export class MiaodaHostedDocumentCatalog {
         String(row.version.sourceGeneratedDate || '') ||
       acquisition.sourceArtifactId !== row.artifact.sourceArtifactId ||
       row.version.sourceArtifactId !== row.artifact.sourceArtifactId ||
-      row.version.acquisitionId !== acquisition.acquisitionId ||
+      (row.version.acquisitionId !== acquisition.acquisitionId && !linkedExactVersion) ||
       row.preflight.acquisitionId !== acquisition.acquisitionId ||
       row.preflight.documentVersionId !== row.version.documentVersionId
     ) {

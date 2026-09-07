@@ -132,6 +132,10 @@ export class InMemoryHostedDocumentCatalog {
       normalizedDescriptor.identityAuthority || '',
     );
     const pageCount = Number(normalizedDescriptor.pageCount || 0);
+    const linkedExactVersion =
+      acquisition.status === 'LINKED_EXACT_DOCUMENT_VERSION' &&
+      ['REUSE_EXACT', 'RESUME_EXISTING_PROCESS'].includes(preflight.decision) &&
+      preflight.commitIdempotencyKey === `catalog:${acquisition.acquisitionId}`;
     if (
       !VERIFIED_DM_IDENTITY_AUTHORITIES.has(identityAuthority) ||
       !Number.isSafeInteger(pageCount) ||
@@ -149,7 +153,7 @@ export class InMemoryHostedDocumentCatalog {
         String(version.sourceGeneratedDate || '') ||
       acquisition.sourceArtifactId !== artifact.sourceArtifactId ||
       version.sourceArtifactId !== artifact.sourceArtifactId ||
-      version.acquisitionId !== acquisition.acquisitionId ||
+      (version.acquisitionId !== acquisition.acquisitionId && !linkedExactVersion) ||
       preflight.acquisitionId !== acquisition.acquisitionId ||
       preflight.documentVersionId !== version.documentVersionId
     ) {
