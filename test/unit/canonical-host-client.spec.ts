@@ -31,6 +31,7 @@ import {
   getCanonicalHostIdentityContext,
   getCanonicalHostClientSessionGeneration,
   getCanonicalLibraryDocuments,
+  getCanonicalLibraryTasks,
   getCanonicalLibraryQuicklook,
   getCurrentReviewConversation,
   getDocumentParsingPage,
@@ -148,6 +149,16 @@ describe('canonical host assessment client', () => {
         },
       ],
     ]);
+  });
+
+  it('reads family-filtered tasks through their own authenticated endpoint', async () => {
+    const controller = new AbortController();
+    const data = { items: [], nextCursor: null, fileReadPerformed: false };
+    const params = { familyId: 'family-737', limit: 24 };
+    request.mockResolvedValue({ status: 200, data });
+    await expect(getCanonicalLibraryTasks(params, controller.signal)).resolves.toBe(data);
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(request).toHaveBeenCalledWith({ url: '/api/canonical-host/library/tasks', method: 'GET', params, signal: controller.signal });
   });
 
   it.each(['resolved', 'rejected'])(

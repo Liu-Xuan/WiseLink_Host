@@ -3,6 +3,9 @@ import type {
   CanonicalLibraryDocumentSummary,
   CanonicalLibraryDocumentsRequest,
   CanonicalLibraryDocumentsResponse,
+  CanonicalLibraryTasksRequest,
+  CanonicalLibraryTasksResponse,
+  CanonicalLibraryWorkItemSummary,
   CanonicalLibraryQuicklookResponse,
 } from '@shared/api.interface';
 import {
@@ -36,35 +39,62 @@ export class CanonicalLibraryService {
     actor: CanonicalHostActor,
   ): Promise<CanonicalLibraryDocumentsResponse> {
     const scope = ownedScope(actor);
-    const limit = input.limit ?? 20;
-    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50) {
-      throw new BadRequestException('LIBRARY_LIMIT_INVALID');
-    }
-    const search = input.search?.trim() ?? '';
-    if (search.length > 200)
-      throw new BadRequestException('LIBRARY_SEARCH_TOO_LONG');
-    const cursor = decodeCursor(input.cursor, search);
-    const rows = await this.repository.list({
+    const query = listQuery(input, 'DOCUMENTS');
+    const rows = await this.repository.listDocuments({ ...scope, ...query });
+    const items: CanonicalLibraryDocumentSummary[] = rows
+      .slice(0, query.limit)
+      .map((row) => ({
+        ...row,
+        kind: 'DOCUMENT',
+        createdAt: row.createdAt.toISOString(),
+        updatedAt: row.updatedAt.toISOString(),
+        versions: row.versions.map((version) => ({
+          ...version,
+          committedAt: new Date(version.committedAt).toISOString(),
+        })),
+      }));
+    const last = items.at(-1);
+    return {
+      scope: 'CURRENT_USER_DOCUMENT_CATALOG',
+      order: 'FAMILY_CREATED_AT_DESC_FAMILY_ID_DESC',
+      items,
+      nextCursor:
+        rows.length > query.limit && last
+          ? encodeCursor(
+              last.createdAt,
+              last.familyId,
+              query.search,
+              'DOCUMENTS',
+            )
+          : null,
+      fileReadPerformed: false,
+    };
+  }
+
+  async listTasks(
+    input: CanonicalLibraryTasksRequest,
+    actor: CanonicalHostActor,
+  ): Promise<CanonicalLibraryTasksResponse> {
+    const scope = ownedScope(actor);
+    const familyId = input.familyId?.trim() ?? '';
+    if (familyId.length > 96)
+      throw new BadRequestException('LIBRARY_FAMILY_INVALID');
+    const context = `TASKS:${familyId}`;
+    const query = listQuery(input, context);
+    const rows = await this.repository.listTasks({
       ...scope,
-      search,
-      cursor,
-      limit,
+      ...query,
+      familyId,
     });
-    const items = rows.slice(0, limit).map(summary);
+    const items = rows.slice(0, query.limit).map(summary);
     const last = items.at(-1);
     return {
       scope: 'CURRENT_USER_OWNED_WORK_ITEMS',
       order: 'CREATED_AT_DESC_WORK_ITEM_ID_DESC',
       items,
       nextCursor:
-        rows.length > limit && last
-          ? Buffer.from(
-              JSON.stringify({
-                createdAt: last.createdAt,
-                workItemId: last.workItemId,
-                search,
-              }),
-            ).toString('base64url')
+        rows.length > query.limit && last
+          ? encodeCursor(last.createdAt, last.workItemId, query.search, context)
           : null,
       fileReadPerformed: false,
     };
@@ -126,9 +156,10 @@ function ownedScope(actor: CanonicalHostActor) {
 
 function summary(
   row: CanonicalLibrarySummaryRow,
-): CanonicalLibraryDocumentSummary {
+): CanonicalLibraryWorkItemSummary {
   return {
     ...row,
+    kind: 'TASK',
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     sourceReadability: 'NOT_CHECKED',
@@ -138,6 +169,7 @@ function summary(
 function decodeCursor(
   value: string | undefined,
   search: string,
+  context: string,
 ): CanonicalLibraryCursor | null {
   if (!value) return null;
   try {
@@ -151,16 +183,38 @@ function decodeCursor(
       typeof cursor.createdAt !== 'string' ||
       !Number.isFinite(Date.parse(cursor.createdAt)) ||
       new Date(cursor.createdAt).toISOString() !== cursor.createdAt ||
-      typeof cursor.workItemId !== 'string' ||
-      !cursor.workItemId ||
-      cursor.workItemId.length > 96 ||
-      cursor.search !== search
+      typeof cursor.itemId !== 'string' ||
+      !cursor.itemId ||
+      cursor.itemId.length > 96 ||
+      cursor.search !== search ||
+      cursor.context !== context
     )
       throw new Error();
-    return { createdAt: cursor.createdAt, workItemId: cursor.workItemId };
+    return { createdAt: cursor.createdAt, itemId: cursor.itemId };
   } catch {
     throw new BadRequestException('LIBRARY_CURSOR_INVALID');
   }
+}
+
+function listQuery(input: CanonicalLibraryDocumentsRequest, context: string) {
+  const limit = input.limit ?? 20;
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50)
+    throw new BadRequestException('LIBRARY_LIMIT_INVALID');
+  const search = input.search?.trim() ?? '';
+  if (search.length > 200)
+    throw new BadRequestException('LIBRARY_SEARCH_TOO_LONG');
+  return { limit, search, cursor: decodeCursor(input.cursor, search, context) };
+}
+
+function encodeCursor(
+  createdAt: string,
+  itemId: string,
+  search: string,
+  context: string,
+): string {
+  return Buffer.from(
+    JSON.stringify({ createdAt, itemId, search, context }),
+  ).toString('base64url');
 }
 
 function notFound() {

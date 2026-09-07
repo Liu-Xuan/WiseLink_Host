@@ -12,7 +12,7 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（任务可绑定已登记的内置或用户授权自定义模型；仍经唯一官方 Hosted profile/Gateway）
-- Skill：`wiselink-research-and-synthesize@r09.c28`
+- Skill：`wiselink-research-and-synthesize@r09.c29`
 - Skill compatibility：`wiselink-research-and-synthesize@r09`（Host 最低接受 `r09.c10`）
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（既有 20 项能力；兼容新增的只读自动领取查询）
 - Host baseline：`6fd2655d27edc3851c745547efaf8796ad22c82c`
@@ -162,6 +162,8 @@ CAS；Skill 不声称这些步骤由模型完成。8. commit 响应未知时只�
   `FUNCTION_ARGUMENTS_WITH_COMMENTARY` 安全形态。纯文本结果、多个调用、未知函数、analysis/reasoning 字段、
   非文本 content 和不完整参数仍拒绝。该处理同样用于 Review，不改变 Host 的来源、数字保真、授权或提交校验。
   全文多窗共享最多 20 分钟模型预算，仍受既有 30 分钟租约/cron 总时限约束；显式更短预算优先，超时不自动重放。
+- c29 每轮翻译保真校验都会在私有 checkpoint 保存规则编号、单元索引、错误码与有长度上限的确定性校验说明。
+  在取消 attempt 前保留失败明细；诊断文件不保存原文、译文或模型思考，不改变既有纠正次数及提交边界。
 - c28 在每个输出窗口收齐后按同一 rulePack 检查实际内容；具体失败单元可在原全文会话、原模型中定向纠正，
   每窗口最多两次且共用原 20 分钟总预算。纠正响应只能包含请求的索引，完整匹配后以模型实返文本替换这些单元；
   未失败单元保持原文，驱动不编造、删改或补齐译文。各单元翻译自身片段，全文和相邻单元只帮助理解，不挪动内容。
@@ -442,7 +444,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - `modelVersion` 优先取响应中可读实际模型；绑定任务未回报实际模型时使用 `configured-route:<modelRef>`，旧无绑定任务使用无 fallback 的 configured endpoint。后两者只证明路由，不代表已暴露下游具体模型，也不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c28`
+- `skillVersion=wiselink-research-and-synthesize@r09.c29`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致

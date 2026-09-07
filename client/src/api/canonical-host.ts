@@ -18,6 +18,8 @@ import type {
   CanonicalLibraryIndexReadResponse,
   CanonicalLibraryDocumentsRequest,
   CanonicalLibraryDocumentsResponse,
+  CanonicalLibraryTasksRequest,
+  CanonicalLibraryTasksResponse,
   CanonicalLibraryQuicklookResponse,
   CanonicalDevelopmentWorkItemRunRequest,
   CanonicalOverallRegenerationReadModel,
@@ -377,9 +379,18 @@ export async function getCanonicalLibraryQuicklook(
   });
 }
 
+export async function getCanonicalLibraryTasks(
+  input: CanonicalLibraryTasksRequest = {},
+  signal?: AbortSignal,
+): Promise<CanonicalLibraryTasksResponse> {
+  return readCanonicalLibrary<CanonicalLibraryTasksResponse>({
+    url: '/api/canonical-host/library/tasks', params: input, signal,
+  });
+}
+
 async function readCanonicalLibrary<T>(input: {
   url: string;
-  params?: CanonicalLibraryDocumentsRequest;
+  params?: CanonicalLibraryTasksRequest;
   signal?: AbortSignal;
 }): Promise<T> {
   const requestGeneration = clientSessionGeneration;

@@ -6,6 +6,7 @@ import {
 import { and, desc, eq, ilike, lt, or, sql } from 'drizzle-orm';
 
 import type { CanonicalLibraryQuicklookResponse } from '@shared/api.interface';
+import { listOwnedLibraryFamilies } from '../document-management/src/hosted/nest/miaoda-hosted-library-query';
 import {
   dmDocumentVersion,
   dmPublicationFamily,
@@ -14,7 +15,7 @@ import {
 
 export interface CanonicalLibraryCursor {
   createdAt: string;
-  workItemId: string;
+  itemId: string;
 }
 
 export interface CanonicalLibraryQueryScope {
@@ -47,17 +48,30 @@ export class CanonicalLibraryRepository {
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
   ) {}
 
-  async list(
+  listDocuments(
     input: CanonicalLibraryQueryScope & {
       search: string;
       cursor: CanonicalLibraryCursor | null;
       limit: number;
     },
   ) {
+    return listOwnedLibraryFamilies(this.db, input);
+  }
+
+  async listTasks(
+    input: CanonicalLibraryQueryScope & {
+      search: string;
+      cursor: CanonicalLibraryCursor | null;
+      limit: number;
+      familyId: string;
+    },
+  ) {
     const conditions = [
       eq(workItem.tenantId, input.tenantId),
       eq(workItem.requestedByUserId, input.actorUserId),
     ];
+    if (input.familyId)
+      conditions.push(eq(dmPublicationFamily.familyId, input.familyId));
     if (input.search) {
       // Treat user text literally, including PostgreSQL LIKE metacharacters.
       const pattern = `%${input.search.replace(/[\\%_]/gu, '\\$&')}%`;
@@ -76,7 +90,7 @@ export class CanonicalLibraryRepository {
           lt(workItem.createdAt, createdAt),
           and(
             eq(workItem.createdAt, createdAt),
-            lt(workItem.workItemId, input.cursor.workItemId),
+            lt(workItem.workItemId, input.cursor.itemId),
           ),
         )!,
       );
@@ -150,5 +164,5 @@ export class CanonicalLibraryRepository {
 }
 
 export type CanonicalLibrarySummaryRow = Awaited<
-  ReturnType<CanonicalLibraryRepository['list']>
+  ReturnType<CanonicalLibraryRepository['listTasks']>
 >[number];

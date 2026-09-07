@@ -1,5 +1,3 @@
-import type { CanonicalLibraryDocumentSummary } from '@shared/api.interface';
-
 export const LIBRARY_PHASE_LABELS: Record<string, string> = {
   PARSE_REQUESTED: '等待解析',
   PARSING: '解析中',
@@ -15,8 +13,16 @@ export function byteLabel(bytes: number): string {
   return `${bytes.toLocaleString('zh-CN')} 字节`;
 }
 
-export function documentLabel(
-  document: CanonicalLibraryDocumentSummary,
-): string {
+export function documentLabel(document: {
+  documentCode: string;
+  originalFilename?: string;
+}): string {
   return document.documentCode || document.originalFilename || '未命名工程资料';
+}
+
+export function libraryDateLabel(value: string): string {
+  const date = new Date(value);
+  return Number.isFinite(date.getTime())
+    ? date.toLocaleString('zh-CN', { hour12: false })
+    : value || '未标注';
 }

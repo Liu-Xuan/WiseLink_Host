@@ -1,6 +1,6 @@
 import type {
   CanonicalDocumentParsingPageResponse,
-  CanonicalLibraryDocumentSummary,
+  CanonicalLibraryWorkItemSummary,
   CanonicalLibraryQuicklookResponse,
   CanonicalRelatedDocumentRelation,
 } from '@shared/api.interface';
@@ -182,7 +182,7 @@ export function buildEngineeringQuicklook(
 }
 
 export function buildLibraryObjectContext(
-  document: CanonicalLibraryDocumentSummary,
+  document: CanonicalLibraryWorkItemSummary,
   kind: CurrentObjectKind,
 ): CurrentObjectContextView {
   const displayCode: string =

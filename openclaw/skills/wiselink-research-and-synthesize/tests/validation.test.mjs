@@ -421,6 +421,7 @@ test('translation corrections stop after two unsuccessful replacements or an out
   for (const outOfScope of [false, true]) {
     const input = translationInput();
     let calls = 0;
+    const reports = [];
     const originalFetch = globalThis.fetch;
     t.after(() => { globalThis.fetch = originalFetch; });
     globalThis.fetch = async () => {
@@ -436,8 +437,15 @@ test('translation corrections stop after two unsuccessful replacements or an out
     await assert.rejects(invokeHostedInitialModel({ operation: 'TRANSLATE', modelInput: input }, {
       gatewayChatCompletionsEnabled: true, gatewayUrl: 'https://official.invalid', gatewayToken: 'test-only',
       configuredModelVersion: 'miaoda/minimax-m3', sessionDiscriminator: 'bounded-correction',
+      observeTranslationFidelity: (report, round) => { reports.push({ report, round }); },
     }), outOfScope ? /INITIAL_TRANSLATION_CORRECTION_MAPPING_INVALID/u : /TRANSLATION_RULE_PREFLIGHT_REJECTED.*"correctionRounds":2/u);
     assert.equal(calls, outOfScope ? 2 : 3);
+    assert.equal(reports.length, outOfScope ? 1 : 3);
+    assert.equal(reports.at(-1).report.correctionRound, outOfScope ? 0 : 2);
+    assert.equal(reports[0].report.checkedUnitCount, 1);
+    assert.ok(reports[0].report.findings.some((finding) => finding.code === 'NUMBER_NOT_PRESERVED' && finding.unitIndex === 0));
+    assert.equal(JSON.stringify(reports).includes(input.sourceUnits[0].text), false);
+    assert.equal(JSON.stringify(reports).includes('保持 29 VDC 和 ATA 24。'), false);
     globalThis.fetch = originalFetch;
   }
 });
@@ -727,7 +735,7 @@ test('pins exact20 MCP 1.2, five review tools, and hosted provenance', () => {
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c28',
+    'wiselink-research-and-synthesize@r09.c29',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,

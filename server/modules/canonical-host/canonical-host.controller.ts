@@ -95,6 +95,21 @@ export class CanonicalHostController {
     return this.libraryDocuments.quicklook(requiredText(workItemId, 'workItemId'), hostActor(httpRequest));
   }
 
+  @Get('library/tasks')
+  libraryTasks(
+    @Query('search') search: string | undefined,
+    @Query('cursor') cursor: string | undefined,
+    @Query('limit') limit: string | undefined,
+    @Query('familyId') familyId: string | undefined,
+    @Req() httpRequest: Request,
+  ) {
+    if (!this.libraryDocuments) throw new Error('CANONICAL_LIBRARY_SERVICE_UNCONFIGURED');
+    return this.libraryDocuments.listTasks({
+      search, cursor, familyId,
+      ...(limit === undefined ? {} : { limit: optionalSafeInteger(limit, 'limit') }),
+    }, hostActor(httpRequest));
+  }
+
   @Post('work-items/parse-s1000d')
   runS1000d(@Body() request: unknown, @Req() httpRequest: Request) {
     return this.workItems.parseS1000d(

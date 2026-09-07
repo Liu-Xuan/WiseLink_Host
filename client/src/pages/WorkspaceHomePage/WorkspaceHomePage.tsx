@@ -44,6 +44,7 @@ import {
 import { useLibraryDocuments } from './useLibraryDocuments';
 import { useLibraryQuicklook } from './useLibraryQuicklook';
 import { LibraryDocumentDirectory } from './LibraryDocumentDirectory';
+import { LibraryDocumentDetails } from './LibraryDocumentDetails';
 import {
   byteLabel,
   documentLabel,
@@ -59,8 +60,11 @@ export default function WorkspaceHomePage() {
   const deepLinkedWorkItemId: string =
     searchParams.get('workItemId')?.trim() ?? '';
   const search: string = searchParams.get('search')?.trim() ?? '';
-  const treeMode: string =
-    searchParams.get('mode') === 'matter' ? 'matter' : 'document';
+  const treeMode: 'document' | 'matter' =
+    searchParams.get('mode') === 'matter' || deepLinkedWorkItemId
+      ? 'matter'
+      : 'document';
+  const familyId = searchParams.get('familyId')?.trim() ?? '';
   const [workItemId, setWorkItemId] = useState<string>('');
   const [searchText, setSearchText] = useState<string>(search);
   const [loadedSessionGeneration, setLoadedSessionGeneration] = useState<
@@ -80,6 +84,8 @@ export default function WorkspaceHomePage() {
     sessionGeneration,
     authenticationRequired,
     refreshRevision,
+    treeMode,
+    treeMode === 'matter' ? familyId : '',
   );
   const quicklook = useLibraryQuicklook(
     deepLinkedWorkItemId,
@@ -131,6 +137,9 @@ export default function WorkspaceHomePage() {
     sessionDataVisible && developmentIntakeAvailable;
   const data = quicklook.data;
   const projection = data?.document ?? null;
+  const selectedDocument = directory.items.find(
+    (item) => item.kind === 'DOCUMENT' && item.familyId === familyId,
+  );
   const currentObject = useMemo(
     () =>
       projection
@@ -163,16 +172,44 @@ export default function WorkspaceHomePage() {
       (projection.phase === 'CANDIDATE_READBACK_VERIFIED' &&
         projection.packageRegistered));
 
-  function selectDocument(targetWorkItemId: string): void {
+  function selectTask(targetWorkItemId: string): void {
     const params: URLSearchParams = new URLSearchParams(searchParams);
+    params.set('mode', 'matter');
     params.set('workItemId', targetWorkItemId);
+    setSearchParams(params);
+  }
+
+  function selectDocument(targetFamilyId: string): void {
+    const params = new URLSearchParams(searchParams);
+    params.set('mode', 'document');
+    params.set('familyId', targetFamilyId);
+    params.delete('workItemId');
+    setSearchParams(params);
+  }
+
+  function viewTasks(targetFamilyId = ''): void {
+    const params = new URLSearchParams(searchParams);
+    params.set('mode', 'matter');
+    if (targetFamilyId) params.set('familyId', targetFamilyId);
+    else params.delete('familyId');
+    params.delete('workItemId');
+    params.delete('search');
+    setSearchParams(params);
+  }
+
+  function viewDocuments(): void {
+    const params = new URLSearchParams(searchParams);
+    params.set('mode', 'document');
+    params.delete('workItemId');
+    params.delete('familyId');
+    params.delete('search');
     setSearchParams(params);
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
     const normalized: string | null = workItemIdFromLocator(workItemId);
-    if (normalized) selectDocument(normalized);
+    if (normalized) selectTask(normalized);
   }
 
   function handleSearch(event: FormEvent<HTMLFormElement>): void {
@@ -181,6 +218,7 @@ export default function WorkspaceHomePage() {
     if (searchText.trim()) params.set('search', searchText.trim());
     else params.delete('search');
     params.delete('workItemId');
+    if (treeMode === 'document') params.delete('familyId');
     setSearchParams(params);
   }
 
@@ -273,14 +311,23 @@ export default function WorkspaceHomePage() {
           <p className="library-home-eyebrow">
             <span aria-hidden="true" /> 工程资料与综合评估
           </p>
-          <h1>资料库</h1>
+          <h1>{treeMode === 'matter' ? '最近任务' : '资料库'}</h1>
           <p className="library-home-lede">
-            检索已登记资料，查看工程快览，进入统一工作台继续评估与讨论。
+            {treeMode === 'matter'
+              ? '查看每次工程评估的进展与候选判断，继续评估与讨论。'
+              : '按工程文档检索资料，在同一 family 下查看当前版本与历史版本。'}
           </p>
         </div>
         <div className="library-home-status" aria-label="当前资料库视图">
-          <span>当前账户的资料</span>
-          <strong>已加载 {directory.items.length} 项</strong>
+          <span>
+            {treeMode === 'matter'
+              ? '当前账户的评估任务'
+              : '当前账户可见的文档'}
+          </span>
+          <strong>
+            已加载 {directory.items.length}{' '}
+            {treeMode === 'matter' ? '个任务' : '份文档'}
+          </strong>
         </div>
       </header>
 
@@ -349,19 +396,57 @@ export default function WorkspaceHomePage() {
         </div>
       ) : null}
 
-      <section className="library-surface" aria-label="资料目录与工程快览">
-        <section className="library-tree-panel" aria-label="当前账户资料目录">
+      <nav className="library-directory-tabs" aria-label="文档与任务视图">
+        <Button
+          type="button"
+          variant={treeMode === 'document' ? 'default' : 'outline'}
+          aria-pressed={treeMode === 'document'}
+          onClick={viewDocuments}
+        >
+          工程文档
+        </Button>
+        <Button
+          type="button"
+          variant={treeMode === 'matter' ? 'default' : 'outline'}
+          aria-pressed={treeMode === 'matter'}
+          onClick={() => viewTasks()}
+        >
+          最近任务
+        </Button>
+        {treeMode === 'matter' && familyId ? (
+          <span>
+            仅显示所选文档的评估任务{' '}
+            <Button type="button" variant="ghost" onClick={() => viewTasks()}>
+              查看全部任务
+            </Button>
+          </span>
+        ) : null}
+      </nav>
+
+      <section
+        className="library-surface"
+        aria-label={
+          treeMode === 'matter' ? '评估任务与工程快览' : '工程文档与版本'
+        }
+      >
+        <section
+          className="library-tree-panel"
+          aria-label={
+            treeMode === 'matter' ? '当前账户评估任务' : '当前账户文档目录'
+          }
+        >
           <LibraryDocumentDirectory
             directory={directory}
             authenticationRequired={authenticationRequired}
             search={search}
             searchText={searchText}
-            selectedWorkItemId={deepLinkedWorkItemId}
+            mode={treeMode}
+            selectedId={treeMode === 'matter' ? deepLinkedWorkItemId : familyId}
             quicklookLoading={quicklook.loading}
             onSearchTextChange={setSearchText}
             onSearch={handleSearch}
             onRefresh={refresh}
-            onSelect={selectDocument}
+            onSelect={treeMode === 'matter' ? selectTask : selectDocument}
           />
 
           {projection ? (
@@ -456,16 +541,30 @@ export default function WorkspaceHomePage() {
           ) : null}
         </section>
 
-        <EngineeringQuicklook
-          title={projection ? documentLabel(projection) : '当前选择'}
-          quicklook={engineeringQuicklook}
-          loading={quicklook.loading}
-          readError={quicklook.error ?? error}
-          onOpenWorkbench={() => openWorkbench('reader')}
-          onContinueReview={() => openWorkbench('review')}
-          onOpenFamily={() => openWorkbench('document')}
-          onLocateEvidence={locateQuicklookEvidence}
-        />
+        {treeMode === 'document' ? (
+          <LibraryDocumentDetails
+            document={
+              selectedDocument?.kind === 'DOCUMENT' ? selectedDocument : null
+            }
+            onOpenVersion={(readerWorkItemId) =>
+              navigate(
+                `/work-items/${encodeURIComponent(readerWorkItemId)}/documents?node=reader&tab=reader`,
+              )
+            }
+            onViewTasks={viewTasks}
+          />
+        ) : (
+          <EngineeringQuicklook
+            title={projection ? documentLabel(projection) : '当前选择'}
+            quicklook={engineeringQuicklook}
+            loading={quicklook.loading}
+            readError={quicklook.error ?? error}
+            onOpenWorkbench={() => openWorkbench('reader')}
+            onContinueReview={() => openWorkbench('review')}
+            onOpenFamily={() => openWorkbench('document')}
+            onLocateEvidence={locateQuicklookEvidence}
+          />
+        )}
       </section>
     </main>
   );
