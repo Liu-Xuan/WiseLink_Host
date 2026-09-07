@@ -2722,6 +2722,7 @@ export interface CanonicalLibraryWorkItemSummary {
   documentVersionId: string;
   documentCode: string;
   businessRevision: string;
+  sourceGeneratedDate: string;
   normalizedFamily: string;
   originalFilename: string;
   byteLength: number;
@@ -2738,6 +2739,7 @@ export interface CanonicalLibraryDocumentVersionSummary {
   documentVersionId: string;
   businessRevision: string;
   revisionDate: string;
+  sourceGeneratedDate: string;
   originalFilename: string;
   byteLength: number;
   committedAt: string;

@@ -15,6 +15,7 @@ import {
   byteLabel,
   documentLabel,
   LIBRARY_PHASE_LABELS,
+  libraryVersionLabel,
 } from './library-document-presentation';
 import type { useLibraryDocuments } from './useLibraryDocuments';
 import { libraryEntryId } from './library-document-read';
@@ -141,7 +142,7 @@ export function LibraryDocumentDirectory({
                           <small>
                             {document.normalizedFamily} ·{' '}
                             {version
-                              ? `当前版本 ${version.businessRevision || '未标注'}`
+                              ? `当前版本 ${libraryVersionLabel(version)}`
                               : '当前版本不可见'}{' '}
                             · {document.versions.length} 个可见版本
                           </small>
@@ -154,7 +155,7 @@ export function LibraryDocumentDirectory({
                         <>
                           <small>
                             {document.normalizedFamily} ·{' '}
-                            {document.businessRevision || '版本未标注'} ·{' '}
+                            {libraryVersionLabel(document)} ·{' '}
                             {LIBRARY_PHASE_LABELS[document.phase] ??
                               '状态待确认'}
                           </small>

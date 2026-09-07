@@ -31,6 +31,7 @@ const summaryColumns = {
   documentVersionId: workItem.documentVersionId,
   documentCode: dmPublicationFamily.canonicalDocumentNumber,
   businessRevision: dmDocumentVersion.businessRevision,
+  sourceGeneratedDate: dmDocumentVersion.sourceGeneratedDate,
   normalizedFamily: workItem.normalizedFamily,
   originalFilename: dmDocumentVersion.originalFilename,
   byteLength: dmDocumentVersion.byteLength,
