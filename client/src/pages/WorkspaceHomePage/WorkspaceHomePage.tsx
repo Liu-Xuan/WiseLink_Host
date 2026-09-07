@@ -49,6 +49,7 @@ import {
   byteLabel,
   documentLabel,
   LIBRARY_PHASE_LABELS,
+  libraryVersionLabel,
 } from './library-document-presentation';
 import './workspace-home.css';
 
@@ -501,7 +502,7 @@ export default function WorkspaceHomePage() {
                 <dl className="library-facts">
                   <div>
                     <dt>
-                      <Shield aria-hidden="true" /> 已登记状态
+                      <Shield aria-hidden="true" /> 解析状态
                     </dt>
                     <dd>{phaseLabel}</dd>
                   </div>
@@ -510,7 +511,7 @@ export default function WorkspaceHomePage() {
                       <Clock3 aria-hidden="true" /> 文件版本
                     </dt>
                     <dd>
-                      {projection.businessRevision || '版本未标注'} ·{' '}
+                      {libraryVersionLabel(projection)} ·{' '}
                       {projection.selectedVersionIsCurrent
                         ? '当前登记'
                         : '历史版本'}

@@ -5,6 +5,7 @@ import {
   byteLabel,
   documentLabel,
   libraryDateLabel,
+  libraryVersionLabel,
 } from './library-document-presentation';
 
 interface LibraryDocumentDetailsProps {
@@ -55,7 +56,7 @@ export function LibraryDocumentDetails({
             {document.versions.map((version) => (
               <li key={version.documentVersionId}>
                 <div className="library-version-heading">
-                  <strong>{version.businessRevision || '版本未标注'}</strong>
+                  <strong>{libraryVersionLabel(version)}</strong>
                   <span
                     className={
                       version.selectedVersionIsCurrent
@@ -68,8 +69,14 @@ export function LibraryDocumentDetails({
                 </div>
                 <dl className="library-quicklook-facts">
                   <div>
-                    <dt>版本日期</dt>
-                    <dd>{version.revisionDate || '未标注'}</dd>
+                    <dt>
+                      {version.revisionDate ? '版本日期' : '来源生成日期'}
+                    </dt>
+                    <dd>
+                      {version.revisionDate ||
+                        version.sourceGeneratedDate ||
+                        '未标注'}
+                    </dd>
                   </div>
                   <div>
                     <dt>入库时间</dt>
@@ -91,7 +98,7 @@ export function LibraryDocumentDetails({
                   type="button"
                   variant="outline"
                   onClick={() => onOpenVersion(version.readerWorkItemId)}
-                  aria-label={`打开 ${version.businessRevision || '未标注版本'} 原文`}
+                  aria-label={`打开 ${libraryVersionLabel(version)} 原文`}
                 >
                   打开原文 <ArrowRight aria-hidden="true" />
                 </Button>

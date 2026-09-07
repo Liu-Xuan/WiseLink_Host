@@ -192,7 +192,7 @@ export function buildLibraryObjectContext(
     routeWorkItemId: document.workItemId,
     displayCode,
     title: document.originalFilename || '当前受控资料',
-    meta: `${document.businessRevision || '版本未标注'} · ${document.normalizedFamily}`,
+    meta: `${document.businessRevision || document.sourceGeneratedDate || '版本未标注'} · ${document.normalizedFamily}`,
     parentLabel:
       kind === 'DOCUMENT'
         ? '关联评估 · 当前工程评估'
@@ -258,7 +258,7 @@ export function buildLibraryEngineeringQuicklook(
     recommendedActions:
       summary?.nextActions.map((statement) => statement.text) ?? [],
     sourceCount: result?.sourceCount,
-    currentVersionLabel: response.document.businessRevision || null,
+    currentVersionLabel: response.document.businessRevision || response.document.sourceGeneratedDate || null,
     derivedArtifactCount: null,
     sourceReadNote:
       '摘要来自已保存的评估结果。本次未读取原文或解析包；打开依据时再核对来源。',

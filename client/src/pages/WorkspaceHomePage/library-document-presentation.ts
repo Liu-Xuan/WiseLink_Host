@@ -1,7 +1,7 @@
 export const LIBRARY_PHASE_LABELS: Record<string, string> = {
   PARSE_REQUESTED: '等待解析',
   PARSING: '解析中',
-  CANDIDATE_READBACK_VERIFIED: '候选待复核',
+  CANDIDATE_READBACK_VERIFIED: '解析已完成',
   FAILED: '解析失败',
   RECORDING_FAILED: '记录失败',
 };
@@ -25,4 +25,16 @@ export function libraryDateLabel(value: string): string {
   return Number.isFinite(date.getTime())
     ? date.toLocaleString('zh-CN', { hour12: false })
     : value || '未标注';
+}
+
+export function libraryVersionLabel(version: {
+  businessRevision: string;
+  sourceGeneratedDate?: string;
+}): string {
+  return (
+    version.businessRevision ||
+    (version.sourceGeneratedDate
+      ? `生成日期 ${version.sourceGeneratedDate}`
+      : '版本未标注')
+  );
 }
