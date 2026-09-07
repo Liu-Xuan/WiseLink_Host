@@ -12,7 +12,7 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（任务可绑定已登记的内置或用户授权自定义模型；仍经唯一官方 Hosted profile/Gateway）
-- Skill：`wiselink-research-and-synthesize@r09.c32`
+- Skill：`wiselink-research-and-synthesize@r09.c33`
 - Skill compatibility：`wiselink-research-and-synthesize@r09`（Host 最低接受 `r09.c10`）
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（既有 20 项能力；兼容新增的只读自动领取查询）
 - Host baseline：`6fd2655d27edc3851c745547efaf8796ad22c82c`
@@ -173,6 +173,10 @@ CAS；Skill 不声称这些步骤由模型完成。8. commit 响应未知时只�
   模型调用和提交；模型不接触租约。既有 30 分钟租约及 60 分钟 attempt deadline 不变。原生唯一消费者须配置
   60 分钟 timeout；运行超过 15 分钟后将后续初始阶段留给下一次自然 tick。总预算或单响应超时保留具体错误码，
   不重放已失败 attempt，不改变全文输入、模型、输出窗口、纠正次数或最终保真校验。
+- c33 将 Initial 与 Review 的非流式 Gateway 请求改为 Node 核心 HTTP/HTTPS 单次连接，避免 `fetch` 的
+  独立 300 秒响应头上限先于操作预算断开。请求仍由已有 AbortSignal 限定整个响应，接收时执行 4 MiB 上限；
+  连接中断、超量或操作超时直接失败。端点、认证头、模型和原生 session 路由保持；无重定向、传输重试、
+  全局 dispatcher/agent timeout 修改或额外依赖。HTTPS 使用默认证书校验。旧失败记录保留，用正常新请求验证。
 - c28 在每个输出窗口收齐后按同一 rulePack 检查实际内容；具体失败单元可在原全文会话、原模型中定向纠正，
   每窗口最多两次且共用该次全文总预算。纠正响应只能包含请求的索引，完整匹配后以模型实返文本替换这些单元；
   未失败单元保持原文，驱动不编造、删改或补齐译文。各单元翻译自身片段，全文和相邻单元只帮助理解，不挪动内容。
@@ -453,7 +457,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - `modelVersion` 优先取响应中可读实际模型；绑定任务未回报实际模型时使用 `configured-route:<modelRef>`，旧无绑定任务使用无 fallback 的 configured endpoint。后两者只证明路由，不代表已暴露下游具体模型，也不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c32`
+- `skillVersion=wiselink-research-and-synthesize@r09.c33`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致

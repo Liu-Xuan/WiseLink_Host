@@ -15,6 +15,7 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
+import { requestHostedGateway } from './request-hosted-gateway.mjs';
 
 import {
   HOST_MCP_TOOLS,
@@ -224,7 +225,7 @@ export async function runHostedReviewTurn(options, dependencies = {}) {
   return report;
 }
 
-export async function invokeHostedReviewModel(input, options = {}) {
+export async function invokeHostedReviewModel(input, options = {}, dependencies = {}) {
   const modelHeaders = executionModelHeaders(options);
   const gatewayUrl = requiredUrl(
     options.gatewayUrl,
@@ -280,28 +281,39 @@ export async function invokeHostedReviewModel(input, options = {}) {
     if (remainingMs <= 0) throw new Error('REVIEW_MODEL_TIMEOUT');
     round += 1;
     inputUnits += Buffer.byteLength(JSON.stringify(messages));
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        accept: 'application/json',
-        authorization: `Bearer ${gatewayToken}`,
-        'content-type': 'application/json',
-        ...(nativeSessionKey ? { 'x-openclaw-session-key': nativeSessionKey } : {}),
-        ...modelHeaders,
-      },
-      body: JSON.stringify({
-        model: `openclaw/${agentId}`,
-        ...(nativeSessionKey ? {} : { user: `review-driver:${sha256(sessionDiscriminator).slice(0, 24)}` }),
-        messages,
-        tools: [reviewCandidateFunctionTool(), reviewSourceFunctionTool()],
-        tool_choice: 'auto',
-        parallel_tool_calls: false,
-        n: 1,
-        stream: false,
-      }),
-      signal: AbortSignal.timeout(remainingMs),
-    });
-    const text = await response.text();
+    const signal = AbortSignal.timeout(remainingMs);
+    let response;
+    let text;
+    try {
+      response = await (dependencies.requestGateway ?? requestHostedGateway)(endpoint, {
+        method: 'POST',
+        headers: {
+          accept: 'application/json',
+          authorization: `Bearer ${gatewayToken}`,
+          'content-type': 'application/json',
+          ...(nativeSessionKey ? { 'x-openclaw-session-key': nativeSessionKey } : {}),
+          ...modelHeaders,
+        },
+        body: JSON.stringify({
+          model: `openclaw/${agentId}`,
+          ...(nativeSessionKey ? {} : { user: `review-driver:${sha256(sessionDiscriminator).slice(0, 24)}` }),
+          messages,
+          tools: [reviewCandidateFunctionTool(), reviewSourceFunctionTool()],
+          tool_choice: 'auto',
+          parallel_tool_calls: false,
+          n: 1,
+          stream: false,
+        }),
+        signal,
+      });
+      text = await response.text();
+    } catch (error) {
+      if (signal.aborted) throw new Error('REVIEW_MODEL_TIMEOUT', { cause: error });
+      if (error.message === 'HOSTED_GATEWAY_RESPONSE_TOO_LARGE') {
+        throw new Error('REVIEW_GATEWAY_RESPONSE_TOO_LARGE', { cause: error });
+      }
+      throw error;
+    }
     if (Buffer.byteLength(text) > MAX_GATEWAY_BYTES) {
       throw new Error('REVIEW_GATEWAY_RESPONSE_TOO_LARGE');
     }

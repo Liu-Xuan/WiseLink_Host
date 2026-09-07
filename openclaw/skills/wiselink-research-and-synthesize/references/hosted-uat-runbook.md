@@ -42,6 +42,15 @@ c32 修复 437 单元 DLI 在第 4 窗口纠正等待时耗尽 20 分钟总预�
 原 30 分钟 lease 与 60 分钟 attempt deadline 保留。暂停且核对唯一消费者空闲后，用官方 CLI 将其 timeout
 设为 3600 秒，安装 c32 并读回，然后对正常新请求恢复自然 tick。完整覆盖、候选提交和连续 Review 仍须实跑。
 
+c33 修复 M3 全文 437/437 已提交后，JobAid 在约 300 秒等待响应头时中断的问题。已安装 OpenClaw 的
+agent 默认运行时限实读为 172800 秒；日志中通用 timeout 文案不足以认定它是 300 秒。消费者 fetch 有独立
+300 秒响应头上限，客户端断开后 Gateway 取消 agent。Initial/Review 共用 Node 核心 HTTP/HTTPS 单次连接，
+让已有操作 AbortSignal 控制响应头和正文，接收时限制 4 MiB，不改变全局配置或添加重试。先通过本地真实 HTTP
+延迟、取消、超量、中断和不跟随重定向检查，再在唯一消费者暂停且空闲时安装；保留已成功翻译和失败 attempt，
+用正常新请求验证后续候选与连续 Review。安装成功仍不等于真实循环完成。
+依据：[Undici Client 超时](https://raw.githubusercontent.com/nodejs/undici/main/docs/docs/api/Client.md)、
+[Node HTTP request 与 AbortSignal](https://nodejs.org/api/http.html#httprequesturl-options-callback)。
+
 c28 同步修订 Host/Skill 的日期、中文数字及显式 ATA 识别，并在新的全文生成过程中对具体失败索引最多纠正两次；
 沿用原模型、同一全文会话和总时间预算，完整保真校验仍在最终提交前执行。暂停且核对唯一 consumer 空闲后，
 安装 c28 并发布 Host 对应算法，再用正常新请求恢复自然 tick；旧失败 attempt 保留。验收要分别核实纠正次数、
@@ -92,7 +101,7 @@ c24 可选控制元数据兼容旧任务，但旧 Skill 不接受新字段，因
    优先读回非空、可识别的实际 `modelVersion`；响应未提供时，绑定任务记录 `configured-route:<modelRef>`，旧任务才使用唯一 configured endpoint。它们只证明路由，不解释为未暴露的下游具体模型。重复 agent、
    不可读 primary、fallbacks 非数组或非空均在调用模型前停止；
 4. 同名 Skill 只有一个，安装版本精确
-   `wiselink-research-and-synthesize@r09.c32`；
+   `wiselink-research-and-synthesize@r09.c33`；
 5. Host MCP package/version 为
    `wiselink-openclaw-engineering-assessment@1.2.0`，exact 20 tools 可见；
 6. C3 successor 已进入 current Hosted release；只凭 Git commit 不等于 deployed readback；
