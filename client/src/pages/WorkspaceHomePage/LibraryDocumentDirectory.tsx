@@ -9,7 +9,6 @@ import {
   Search,
 } from 'lucide-react';
 
-import type { CanonicalLibraryDocumentSummary } from '@shared/api.interface';
 import { Button } from '@client/src/components/ui/button';
 import { Input } from '@client/src/components/ui/input';
 import {
@@ -18,18 +17,21 @@ import {
   LIBRARY_PHASE_LABELS,
 } from './library-document-presentation';
 import type { useLibraryDocuments } from './useLibraryDocuments';
+import { libraryEntryId } from './library-document-read';
+import { libraryDateLabel } from './library-document-presentation';
 
 interface LibraryDocumentDirectoryProps {
   directory: ReturnType<typeof useLibraryDocuments>;
   authenticationRequired: boolean;
   search: string;
   searchText: string;
-  selectedWorkItemId: string;
+  mode: 'document' | 'matter';
+  selectedId: string;
   quicklookLoading: boolean;
   onSearchTextChange: (value: string) => void;
   onSearch: (event: FormEvent<HTMLFormElement>) => void;
   onRefresh: () => void;
-  onSelect: (workItemId: string) => void;
+  onSelect: (itemId: string) => void;
 }
 
 export function LibraryDocumentDirectory({
@@ -37,19 +39,24 @@ export function LibraryDocumentDirectory({
   authenticationRequired,
   search,
   searchText,
-  selectedWorkItemId,
+  mode,
+  selectedId,
   quicklookLoading,
   onSearchTextChange,
   onSearch,
   onRefresh,
   onSelect,
 }: LibraryDocumentDirectoryProps) {
+  const taskMode = mode === 'matter';
+  const label = taskMode ? '评估任务' : '工程文档';
   return (
     <>
       <div className="library-panel-heading">
         <div>
-          <span className="library-section-label">浏览资料</span>
-          <h2>资料目录</h2>
+          <span className="library-section-label">
+            {taskMode ? '任务记录' : '文档管理'}
+          </span>
+          <h2>{taskMode ? '最近任务' : '工程文档'}</h2>
         </div>
         <Button
           type="button"
@@ -57,7 +64,7 @@ export function LibraryDocumentDirectory({
           size="icon"
           onClick={onRefresh}
           disabled={directory.loading || authenticationRequired}
-          aria-label="刷新资料目录与快览"
+          aria-label={`刷新${label}`}
         >
           <RefreshCw
             className={directory.loading ? 'library-spin' : undefined}
@@ -66,7 +73,7 @@ export function LibraryDocumentDirectory({
         </Button>
       </div>
       <form className="library-catalog-search" onSubmit={onSearch}>
-        <label htmlFor="library-catalog-query">搜索已登记资料</label>
+        <label htmlFor="library-catalog-query">搜索{label}</label>
         <div className="library-query-row">
           <div className="library-query-input">
             <Search aria-hidden="true" />
@@ -85,13 +92,15 @@ export function LibraryDocumentDirectory({
         </div>
       </form>
       <p className="library-recent-boundary">
-        按受理时间从新到旧显示当前账户的资料。目录与快览不会读取原文；来源在打开时核验。
+        {taskMode
+          ? '按创建时间显示当前账户的评估任务，同一文档可以有多次评估。'
+          : '每个 family 显示一份工程文档，当前版本与历史版本由文档管理模块统一管理。'}
       </p>
       {directory.error ? (
         <div className="library-catalog-error" role="alert">
           <CircleAlert aria-hidden="true" />
           <div>
-            <strong>资料目录未能更新</strong>
+            <strong>{label}未能更新</strong>
             <p>
               {directory.error.message}
               {directory.items.length ? ' 以下保留上次成功读取的目录。' : ''}
@@ -104,34 +113,60 @@ export function LibraryDocumentDirectory({
       ) : null}
       <div className="library-tree-recent-wrapper">
         {directory.items.length ? (
-          <ul className="library-recent-rows" aria-label="已登记的工程资料">
-            {directory.items.map(
-              (document: CanonicalLibraryDocumentSummary) => (
+          <ul className="library-recent-rows" aria-label={label}>
+            {directory.items.map((document) => {
+              const itemId = libraryEntryId(document);
+              const version =
+                document.kind === 'DOCUMENT'
+                  ? document.versions.find(
+                      (item) => item.selectedVersionIsCurrent,
+                    )
+                  : null;
+              return (
                 <li
-                  className={`library-recent-item${document.workItemId === selectedWorkItemId ? ' is-selected' : ''}`}
-                  key={document.workItemId}
+                  className={`library-recent-item${itemId === selectedId ? ' is-selected' : ''}`}
+                  key={itemId}
                 >
                   <button
                     className="library-recent-open"
                     type="button"
-                    aria-pressed={document.workItemId === selectedWorkItemId}
-                    onClick={() => onSelect(document.workItemId)}
+                    aria-pressed={itemId === selectedId}
+                    onClick={() => onSelect(itemId)}
                   >
                     <FileText aria-hidden="true" />
                     <span>
                       <strong>{documentLabel(document)}</strong>
-                      <small>
-                        {document.normalizedFamily} ·{' '}
-                        {document.businessRevision || '版本未标注'} ·{' '}
-                        {LIBRARY_PHASE_LABELS[document.phase] ?? '状态待确认'}
-                      </small>
-                      <small>
-                        {document.originalFilename} ·{' '}
-                        {byteLabel(document.byteLength)}
-                      </small>
+                      {document.kind === 'DOCUMENT' ? (
+                        <>
+                          <small>
+                            {document.normalizedFamily} ·{' '}
+                            {version
+                              ? `当前版本 ${version.businessRevision || '未标注'}`
+                              : '当前版本不可见'}{' '}
+                            · {document.versions.length} 个可见版本
+                          </small>
+                          <small>
+                            {document.issuerAuthority} ·{' '}
+                            {document.workItemCount} 个评估任务
+                          </small>
+                        </>
+                      ) : (
+                        <>
+                          <small>
+                            {document.normalizedFamily} ·{' '}
+                            {document.businessRevision || '版本未标注'} ·{' '}
+                            {LIBRARY_PHASE_LABELS[document.phase] ??
+                              '状态待确认'}
+                          </small>
+                          <small>
+                            {libraryDateLabel(document.createdAt)} · 任务{' '}
+                            {document.workItemId.slice(-8)} ·{' '}
+                            {byteLabel(document.byteLength)}
+                          </small>
+                        </>
+                      )}
                     </span>
-                    {document.workItemId === selectedWorkItemId &&
-                    quicklookLoading ? (
+                    {itemId === selectedId && quicklookLoading ? (
                       <LoaderCircle
                         className="library-spin"
                         aria-hidden="true"
@@ -141,8 +176,8 @@ export function LibraryDocumentDirectory({
                     )}
                   </button>
                 </li>
-              ),
-            )}
+              );
+            })}
           </ul>
         ) : (
           <div className="library-tree-empty" role="status">
@@ -153,14 +188,14 @@ export function LibraryDocumentDirectory({
             )}
             <strong>
               {directory.loading
-                ? '正在读取资料目录…'
+                ? `正在读取${label}…`
                 : directory.error
                   ? '目录暂不可用'
                   : authenticationRequired
                     ? '请先登录'
                     : search
-                      ? '没有匹配的资料'
-                      : '尚无已登记资料'}
+                      ? `没有匹配的${label}`
+                      : `尚无${label}`}
             </strong>
             <p>
               {authenticationRequired
@@ -183,7 +218,7 @@ export function LibraryDocumentDirectory({
             {directory.loadingMore ? (
               <LoaderCircle className="library-spin" aria-hidden="true" />
             ) : null}
-            {directory.loadingMore ? '正在加载…' : '加载更多资料'}
+            {directory.loadingMore ? '正在加载…' : `加载更多${label}`}
           </Button>
         </div>
       ) : null}

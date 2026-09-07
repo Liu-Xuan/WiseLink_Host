@@ -125,6 +125,38 @@ test('Host identity mismatch stops before any operation', async (t) => {
   }), /HOST_INITIAL_STATUS_UNAVAILABLE/u);
 });
 
+test('translation rejection diagnostics survive attempt cancellation and cannot be replayed', async (t) => {
+  const input = await options(t);
+  const report = { round: 3, correctionRound: 2, findingCount: 1,
+    findings: [{ unitIndex: 7, unitKey: 'unit-7', code: 'NUMBER_NOT_PRESERVED', ruleId: 'number.fidelity', message: 'number "28" appears 1x in the source but only 0x in the translation' }] };
+  let cancelled = 0;
+  let models = 0;
+  const dependencies = {
+    callTool: async (name) => {
+      if (name === 'get_parse_status') return status();
+      if (name === 'begin_translation') return { status: 'RUNNING', attemptRef: 'AQ-new' };
+      if (name === 'cancel_action_attempt') { cancelled++; return { status: 'CANCELLED' }; }
+      assert.fail(name);
+    },
+    runInitial: async (run) => {
+      await run.callTool('begin_translation', {});
+      await run.translate({ sourceUnits: [] });
+      assert.fail('Rejected output must never commit');
+    },
+    invokeInitialModel: async (_input, hooks) => {
+      models++;
+      await hooks.observeTranslationFidelity(report, 3);
+      throw new Error('TRANSLATION_RULE_PREFLIGHT_REJECTED');
+    },
+  };
+  await assert.rejects(consumeHostedWorkItem(input, dependencies), /TRANSLATION_RULE_PREFLIGHT_REJECTED/u);
+  const saved = JSON.parse(await readFile(join(input.checkpointRoot, 'WI-new/initial/TRANSLATE/model.translation-fidelity-3.json'), 'utf8'));
+  assert.deepEqual(saved, report);
+  await assert.rejects(consumeHostedWorkItem(input, dependencies));
+  assert.equal(cancelled, 1);
+  assert.equal(models, 1);
+});
+
 test('one tick drains ready stages with fresh Host revisions and serial commits', async (t) => {
   const input = { ...await options(t), maxInitialStages: 4 };
   const operations = ['TRANSLATE', 'EVALUATE_JOBAID', 'SYNTHESIZE_OVERALL'];

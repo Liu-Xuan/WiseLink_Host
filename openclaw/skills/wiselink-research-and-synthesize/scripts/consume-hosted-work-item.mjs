@@ -133,6 +133,9 @@ export async function runHostedInitialStage(options, dependencies) {
         observeModelOutput: (shape, round = 1) => checkpoint.writeOnce(
           round === 1 ? 'model.output-shape' : `model.output-shape-${round}`, shape,
         ),
+        observeTranslationFidelity: (report, round) => checkpoint.writeOnce(
+          `model.translation-fidelity-${round}`, report,
+        ),
       });
     },
   });

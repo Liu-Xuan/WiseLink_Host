@@ -2712,8 +2712,9 @@ export interface CanonicalLibraryIndexReadResponse {
   };
 }
 
-/** Authenticated directory rows, read from business records without opening files. */
-export interface CanonicalLibraryDocumentSummary {
+/** Each row is one owned assessment task, independently of document identity. */
+export interface CanonicalLibraryWorkItemSummary {
+  kind: 'TASK';
   workItemId: string;
   revision: number;
   phase: string;
@@ -2733,6 +2734,33 @@ export interface CanonicalLibraryDocumentSummary {
   updatedAt: string;
 }
 
+export interface CanonicalLibraryDocumentVersionSummary {
+  documentVersionId: string;
+  businessRevision: string;
+  revisionDate: string;
+  originalFilename: string;
+  byteLength: number;
+  committedAt: string;
+  selectedVersionIsCurrent: boolean;
+  /** Existing authorized task used only to route to this version's reader. */
+  readerWorkItemId: string;
+  workItemCount: number;
+}
+
+/** One DM document per family; versions are immutable DM records, never task runs. */
+export interface CanonicalLibraryDocumentSummary {
+  kind: 'DOCUMENT';
+  familyId: string;
+  documentId: string;
+  documentCode: string;
+  normalizedFamily: string;
+  issuerAuthority: string;
+  createdAt: string;
+  updatedAt: string;
+  versions: CanonicalLibraryDocumentVersionSummary[];
+  workItemCount: number;
+}
+
 export interface CanonicalLibraryDocumentsRequest {
   search?: string;
   cursor?: string;
@@ -2740,15 +2768,27 @@ export interface CanonicalLibraryDocumentsRequest {
 }
 
 export interface CanonicalLibraryDocumentsResponse {
-  scope: 'CURRENT_USER_OWNED_WORK_ITEMS';
-  order: 'CREATED_AT_DESC_WORK_ITEM_ID_DESC';
+  scope: 'CURRENT_USER_DOCUMENT_CATALOG';
+  order: 'FAMILY_CREATED_AT_DESC_FAMILY_ID_DESC';
   items: CanonicalLibraryDocumentSummary[];
   nextCursor: string | null;
   fileReadPerformed: false;
 }
 
+export interface CanonicalLibraryTasksRequest extends CanonicalLibraryDocumentsRequest {
+  familyId?: string;
+}
+
+export interface CanonicalLibraryTasksResponse {
+  scope: 'CURRENT_USER_OWNED_WORK_ITEMS';
+  order: 'CREATED_AT_DESC_WORK_ITEM_ID_DESC';
+  items: CanonicalLibraryWorkItemSummary[];
+  nextCursor: string | null;
+  fileReadPerformed: false;
+}
+
 export interface CanonicalLibraryQuicklookResponse {
-  document: CanonicalLibraryDocumentSummary;
+  document: CanonicalLibraryWorkItemSummary;
   /** Selected fields from the version-bound, verified result already in PostgreSQL. */
   result: {
     status: 'CANDIDATE_ONLY' | 'STALE';

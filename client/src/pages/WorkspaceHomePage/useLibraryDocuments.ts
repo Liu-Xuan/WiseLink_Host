@@ -3,12 +3,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   getCanonicalHostClientSessionGeneration,
   getCanonicalLibraryDocuments,
+  getCanonicalLibraryTasks,
   isCanonicalObjectNotFound,
 } from '@client/src/api/canonical-host';
 import { libraryReadErrorPresentation } from './library-read-error';
 import {
   beginLibraryDocumentsRead,
   mergeLibraryDocumentsRead,
+  libraryEntryId,
   type LibraryDocumentsRead,
 } from './library-document-read';
 
@@ -17,6 +19,8 @@ export function useLibraryDocuments(
   sessionGeneration: number,
   authenticationRequired: boolean,
   refreshRevision: number,
+  mode: 'document' | 'matter',
+  familyId: string,
 ) {
   const [read, setRead] = useState<LibraryDocumentsRead | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
@@ -32,6 +36,8 @@ export function useLibraryDocuments(
         !controller.signal.aborted &&
         getCanonicalHostClientSessionGeneration() === sessionGeneration;
       const empty: LibraryDocumentsRead = {
+        mode,
+        familyId,
         search,
         sessionGeneration,
         items: [],
@@ -44,8 +50,17 @@ export function useLibraryDocuments(
         beginLibraryDocumentsRead(prior, empty),
       );
       try {
-        const response = await getCanonicalLibraryDocuments(
-          { search, ...(cursor ? { cursor } : {}), limit: 24 },
+        const readDirectory =
+          mode === 'matter'
+            ? getCanonicalLibraryTasks
+            : getCanonicalLibraryDocuments;
+        const response = await readDirectory(
+          {
+            search,
+            ...(cursor ? { cursor } : {}),
+            limit: 24,
+            ...(mode === 'matter' && familyId ? { familyId } : {}),
+          },
           controller.signal,
         );
         if (!current()) return;
@@ -67,7 +82,7 @@ export function useLibraryDocuments(
         }));
       }
     },
-    [authenticationRequired, search, sessionGeneration],
+    [authenticationRequired, search, sessionGeneration, mode, familyId],
   );
 
   useEffect(() => {
@@ -78,7 +93,9 @@ export function useLibraryDocuments(
   const visible =
     !authenticationRequired &&
     read?.sessionGeneration === sessionGeneration &&
-    read.search === search
+    read.search === search &&
+    read.mode === mode &&
+    read.familyId === familyId
       ? read
       : null;
   const discard = useCallback((workItemId: string): void => {
@@ -87,7 +104,9 @@ export function useLibraryDocuments(
       prior
         ? {
             ...prior,
-            items: prior.items.filter((item) => item.workItemId !== workItemId),
+            items: prior.items.filter(
+              (item) => libraryEntryId(item) !== workItemId,
+            ),
           }
         : null,
     );

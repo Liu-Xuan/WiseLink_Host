@@ -68,7 +68,8 @@ describe('canonical Host production client boundary', () => {
     );
     const app = await readFile(resolve(clientSourceRoot, 'app.tsx'), 'utf8');
 
-    expect(home).toContain('资料目录');
+    expect(home).toContain('工程文档与版本');
+    expect(home).toContain('评估任务与工程快览');
     expect(home).toContain('进入工作台');
     expect(home).toContain(
       '/work-items/${encodeURIComponent(projection.workItemId)}/documents',

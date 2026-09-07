@@ -27,7 +27,7 @@ const VERIFIED_DM_IDENTITY_AUTHORITIES = new Set([
   'DM_ACTUAL_PDF_LAYOUT_AND_SERVER_REVIEW_SCOPE',
 ]);
 
-function tenantFamilyIdentityPrefix(tenantId: unknown): string {
+export function tenantFamilyIdentityPrefix(tenantId: unknown): string {
   const normalized = String(tenantId || '').trim();
   if (!normalized) {
     fail('TENANT_SCOPE_REQUIRED', 'Catalog family reads require tenant scope.');

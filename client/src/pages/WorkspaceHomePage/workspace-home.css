@@ -12,6 +12,7 @@
 .library-entry-grid,
 .hosted-intake,
 .library-query-band,
+.library-directory-tabs,
 .library-surface,
 .library-home-footer {
   width: min(var(--library-canvas-max), 100%);
@@ -2872,4 +2873,47 @@
   .library-preview-panel {
     box-shadow: none;
   }
+}
+.library-directory-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-block: 1rem;
+}
+
+.library-directory-tabs > span {
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+}
+
+.library-version-list {
+  display: grid;
+  gap: 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.library-version-list > li {
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  padding: 1rem;
+}
+
+.library-version-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.library-version-heading > span {
+  font-size: 0.75rem;
+}
+
+.library-version-current {
+  color: var(--primary);
+  font-weight: 600;
 }
