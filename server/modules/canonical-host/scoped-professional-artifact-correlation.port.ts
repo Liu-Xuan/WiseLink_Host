@@ -1,6 +1,10 @@
 import { FileService } from '@lark-apaas/fullstack-nestjs-core';
-import { withOneFileReadTransportRetry } from '../unified-reader/file-service-read-transport';
-import { Injectable } from '@nestjs/common';
+import {
+  isFileServiceTransportFailure,
+  withOneFileReadTransportRetry,
+} from '../unified-reader/file-service-read-transport';
+import { Injectable, Logger } from '@nestjs/common';
+import { setTimeout as delay } from 'node:timers/promises';
 
 import type {
   CanonicalClassificationSelection,
@@ -121,6 +125,7 @@ export class UnavailableScopedProfessionalArtifactCorrelationAdapter implements 
 @Injectable()
 export class MiaodaScopedProfessionalArtifactCorrelationAdapter implements ScopedProfessionalArtifactCorrelationPort {
   readonly available = true;
+  private readonly logger = new Logger(MiaodaScopedProfessionalArtifactCorrelationAdapter.name);
 
   constructor(private readonly fileService: FileService) {}
 
@@ -139,16 +144,37 @@ export class MiaodaScopedProfessionalArtifactCorrelationAdapter implements Scope
       produced.artifact.sha256,
     );
     const scoped = this.fileService.from(bucketId);
-    const existing = await withOneFileReadTransportRetry(() =>
-      scoped.getFileMetadata(filePath),
-    );
+    const readMetadata = () => withOneFileReadTransportRetry(() =>
+      scoped.getFileMetadata(filePath));
+    const existing = await readMetadata();
     if (!existing) {
-      await scoped.upload(Uint8Array.from(produced.bytes), {
-        filePath,
-        fileName: `${produced.artifact.sha256}.json`,
-        contentType: 'application/json',
-        upsert: false,
-      });
+      for (let uploadAttempt = 1; uploadAttempt <= 2; uploadAttempt += 1) {
+        try {
+          await scoped.upload(Uint8Array.from(produced.bytes), {
+            filePath,
+            fileName: `${produced.artifact.sha256}.json`,
+            contentType: 'application/json',
+            upsert: false,
+          });
+          break;
+        } catch (cause) {
+          if (!isFileServiceTransportFailure(cause)) throw cause;
+          // The write result is unknown. Reconcile only this exact bucket/path;
+          // an object found here still has to pass actual-byte verification below.
+          const found = await readMetadata();
+          if (found) {
+            this.logger.warn({ event: 'PROFESSIONAL_ARTIFACT_UPLOAD_RECONCILED', uploadAttempt });
+            break;
+          }
+          if (uploadAttempt === 2) {
+            throw Object.assign(new Error('PROFESSIONAL_ARTIFACT_PERSIST_TRANSPORT_EXHAUSTED'), { cause });
+          }
+          // A successful metadata read confirmed absence. Repeat only the same
+          // immutable create, never an upsert, business attempt or parser run.
+          this.logger.warn({ event: 'PROFESSIONAL_ARTIFACT_UPLOAD_RETRY', uploadAttempt, delayMs: 250 });
+          await delay(250);
+        }
+      }
     }
     const readback = await new MiaodaFileServiceArtifactStore(
       this.fileService,

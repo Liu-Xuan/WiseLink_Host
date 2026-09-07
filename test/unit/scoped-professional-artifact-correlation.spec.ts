@@ -11,6 +11,7 @@ import {
   UnavailableScopedProfessionalArtifactCorrelationAdapter,
   type ScopedProfessionalArtifactCorrelation,
   type ScopedProfessionalArtifactCorrelationRequest,
+  type ScopedProfessionalArtifactProducedPackage,
 } from '../../server/modules/canonical-host/scoped-professional-artifact-correlation.port';
 import { sha256Raw } from '../../server/modules/unified-reader/unified-reader.utils';
 
@@ -98,6 +99,111 @@ function actualReadback(value: ScopedProfessionalArtifactCorrelation) {
     byteLength: bytes.byteLength,
   };
 }
+
+function uploadRecoveryFixture() {
+  const packageId = 'urn:techpub:package:v1:sha256:' + 'e'.repeat(64);
+  const bytes = new TextEncoder().encode(JSON.stringify({ packageId }));
+  const digest = sha256Raw(bytes);
+  const produced: ScopedProfessionalArtifactProducedPackage = {
+    packageId, bytes,
+    artifact: {
+      storeRole: 'UnifiedArtifactStoreCandidate',
+      ref: `artifact://UnifiedArtifactStoreCandidate/unified-parsed-packages/sha256/${digest}`,
+      sha256: digest, byteLength: bytes.byteLength, mediaType: 'application/json',
+    },
+    lineage: correlation().lineage,
+  };
+  const getFileMetadata = jest.fn().mockResolvedValue(null);
+  const upload = jest.fn().mockResolvedValue({});
+  const readSelection = jest.fn().mockResolvedValue({
+    readbackVerified: true, bytes, sha256: digest,
+    byteLength: bytes.byteLength, providerObjectId: 'provider-recovered',
+  });
+  jest.mocked(MiaodaFileServiceArtifactStore).mockImplementation(
+    () => ({ readSelection }) as never,
+  );
+  const adapter = new MiaodaScopedProfessionalArtifactCorrelationAdapter({
+    getDefaultBucket: jest.fn().mockResolvedValue('bucket-new-dev'),
+    from: jest.fn(() => ({ getFileMetadata, upload })),
+  } as never);
+  return { adapter, produced, getFileMetadata, upload, readSelection };
+}
+
+describe('professional artifact upload result reconciliation', () => {
+  it('accepts an exact object saved before the upload response was lost without another write', async () => {
+    const f = uploadRecoveryFixture();
+    f.upload.mockRejectedValueOnce(new TypeError('fetch failed'));
+    f.getFileMetadata.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: 'provider-recovered' });
+    await expect(f.adapter.persistAndCorrelate(request, f.produced)).resolves.toMatchObject({
+      professionalArtifact: { fileServiceLocator: { providerObjectId: 'provider-recovered' } },
+    });
+    expect(f.upload).toHaveBeenCalledTimes(1);
+    expect(f.readSelection).toHaveBeenCalledTimes(1);
+    expect(f.getFileMetadata.mock.calls[0]).toEqual(f.getFileMetadata.mock.calls[1]);
+  });
+
+  it('repeats the same immutable create once only after a successful absence read', async () => {
+    const f = uploadRecoveryFixture();
+    f.upload.mockRejectedValueOnce(new TypeError('fetch failed'));
+    await expect(f.adapter.persistAndCorrelate(request, f.produced)).resolves.toMatchObject({
+      status: 'HOST_SCOPE_BOUND_IMMUTABLE',
+    });
+    expect(f.upload).toHaveBeenCalledTimes(2);
+    expect(f.getFileMetadata).toHaveBeenCalledTimes(2);
+    expect(f.upload.mock.calls[1]).toEqual(f.upload.mock.calls[0]);
+    expect(f.upload.mock.calls[1][1]).toMatchObject({ upsert: false });
+    expect(f.getFileMetadata.mock.invocationCallOrder[1]).toBeLessThan(f.upload.mock.invocationCallOrder[1]);
+    expect(f.readSelection).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops after two absent writes with a persistence failure and the original cause', async () => {
+    const f = uploadRecoveryFixture();
+    const cause = new TypeError('fetch failed');
+    f.upload.mockRejectedValue(cause);
+    await expect(f.adapter.persistAndCorrelate(request, f.produced)).rejects.toMatchObject({
+      message: 'PROFESSIONAL_ARTIFACT_PERSIST_TRANSPORT_EXHAUSTED', cause,
+    });
+    expect(f.upload).toHaveBeenCalledTimes(2);
+    expect(f.getFileMetadata).toHaveBeenCalledTimes(3);
+    expect(f.readSelection).not.toHaveBeenCalled();
+  });
+
+  it('does not infer absence or repeat a write when reconciliation cannot read metadata', async () => {
+    const f = uploadRecoveryFixture();
+    const cause = new TypeError('fetch failed');
+    f.upload.mockRejectedValueOnce(cause);
+    f.getFileMetadata.mockResolvedValueOnce(null).mockRejectedValue(cause);
+    await expect(f.adapter.persistAndCorrelate(request, f.produced)).rejects.toBe(cause);
+    expect(f.upload).toHaveBeenCalledTimes(1);
+    expect(f.getFileMetadata).toHaveBeenCalledTimes(3);
+    expect(f.readSelection).not.toHaveBeenCalled();
+  });
+
+  it('rejects different actual bytes even when metadata exists after a lost response', async () => {
+    const f = uploadRecoveryFixture();
+    f.upload.mockRejectedValueOnce(new TypeError('fetch failed'));
+    f.getFileMetadata.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: 'provider-recovered' });
+    f.readSelection.mockResolvedValueOnce({
+      readbackVerified: true, bytes: new TextEncoder().encode('different'),
+      sha256: f.produced.artifact.sha256,
+      byteLength: f.produced.artifact.byteLength, providerObjectId: 'provider-recovered',
+    });
+    await expect(f.adapter.persistAndCorrelate(request, f.produced)).rejects.toThrow(
+      'PDF_PRODUCER_PROFESSIONAL_ACTUAL_BYTE_MISMATCH',
+    );
+    expect(f.upload).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([401, 403, 404, 409, 500, 503])('does not retry or reinterpret HTTP %s as a lost response', async (status) => {
+    const f = uploadRecoveryFixture();
+    const cause = Object.assign(new Error('fetch failed'), { response: { status } });
+    f.upload.mockRejectedValueOnce(cause);
+    await expect(f.adapter.persistAndCorrelate(request, f.produced)).rejects.toBe(cause);
+    expect(f.upload).toHaveBeenCalledTimes(1);
+    expect(f.getFileMetadata).toHaveBeenCalledTimes(1);
+    expect(f.readSelection).not.toHaveBeenCalled();
+  });
+});
 
 describe('scoped professional artifact correlation', () => {
   it.each([false, true])(
