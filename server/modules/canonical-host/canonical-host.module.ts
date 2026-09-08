@@ -32,6 +32,8 @@ import { CanonicalTranslationWorkspaceRepository } from './canonical-translation
 import { CanonicalTranslationV2Service } from './canonical-translation-v2.service';
 import { CanonicalTranslationRevisionService } from './canonical-translation-revision.service';
 import { CanonicalTranslationRevisionController } from './canonical-translation-revision.controller';
+import { CanonicalInitialAnalysisContinuationController } from './canonical-initial-analysis-continuation.controller';
+import { CanonicalInitialAnalysisContinuationService } from './canonical-initial-analysis-continuation.service';
 import { CanonicalTranslationKnowledgeController } from './canonical-translation-knowledge.controller';
 import { CanonicalTranslationKnowledgeProductService } from './canonical-translation-knowledge-product.service';
 import { MiaodaTranslationKnowledgeProductStore } from './miaoda-translation-knowledge-product.store';
@@ -191,6 +193,7 @@ export interface CanonicalHostModuleOptions {
     CanonicalHostAeoEditingController,
     CanonicalTranslationKnowledgeController,
     CanonicalTranslationRevisionController,
+    CanonicalInitialAnalysisContinuationController,
     BatchApplicabilityController,
     ConfigurationEvidenceController,
   ],
@@ -210,6 +213,7 @@ export interface CanonicalHostModuleOptions {
     CanonicalTranslationWorkspaceRepository,
     CanonicalTranslationV2Service,
     CanonicalTranslationRevisionService,
+    CanonicalInitialAnalysisContinuationService,
     CanonicalTranslationKnowledgeProductService,
     MiaodaTranslationKnowledgeProductStore,
     CanonicalHostOpenClawApplicabilityService,
@@ -427,6 +431,7 @@ export class CanonicalHostModule {
         CanonicalHostAeoEditingController,
         CanonicalTranslationKnowledgeController,
         CanonicalTranslationRevisionController,
+        CanonicalInitialAnalysisContinuationController,
         BatchApplicabilityController,
         ConfigurationEvidenceController,
       ],
@@ -466,6 +471,7 @@ export class CanonicalHostModule {
         CanonicalTranslationWorkspaceRepository,
         CanonicalTranslationV2Service,
         CanonicalTranslationRevisionService,
+        CanonicalInitialAnalysisContinuationService,
         CanonicalTranslationKnowledgeProductService,
         MiaodaTranslationKnowledgeProductStore,
         CanonicalHostOpenClawApplicabilityService,

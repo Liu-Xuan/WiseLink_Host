@@ -27,14 +27,23 @@ export function nextTranslationWorkV2(
   revisions: TranslationBlockRevisionV2[],
   reading: TranslationWorkspaceReadingV2,
   targetSourceCharacters = TRANSLATION_INITIAL_BATCH_SOURCE_CHARACTERS,
+  options: { retranslateBlockIds?: readonly string[] } = {},
 ): TranslationNextWorkV2 {
+  const requested = new Set(options.retranslateBlockIds ?? []);
+  const currentRevision = (revision: TranslationBlockRevisionV2) =>
+    !requested.has(revision.blockId) ||
+    revision.provenance.originAttemptId === workspace.activeAttemptId;
   const pendingRequest = workspace.generationRequests.find(
     (request) => request.status === 'REGISTERED',
   );
   if (pendingRequest)
     return { kind: 'UNRESOLVED_GENERATION', request: pendingRequest };
   const unfinished = reading.blocks.filter(
-    (block) => block.readingStatus !== 'READABLE',
+    (block) =>
+      block.readingStatus !== 'READABLE' ||
+      (requested.has(block.source.blockId) &&
+        block.selected?.provenance.originAttemptId !==
+          workspace.activeAttemptId),
   );
   for (const entry of unfinished) {
     if (entry.source.sourceIssues.some((issue) => issue.severity === 'BLOCK'))
@@ -43,6 +52,7 @@ export function nextTranslationWorkV2(
       .filter(
         (revision) =>
           revision.blockId === entry.source.blockId &&
+          currentRevision(revision) &&
           revision.planRevision === workspace.plan.planRevision &&
           revision.dependencies.contextRevision ===
             workspace.plan.documentContext.revision &&
@@ -77,7 +87,13 @@ export function nextTranslationWorkV2(
   }
   const missing = unfinished.filter(
     (entry) =>
-      entry.readingStatus === 'MISSING' &&
+      (entry.readingStatus === 'MISSING' ||
+        (requested.has(entry.source.blockId) &&
+          !revisions.some(
+            (revision) =>
+              revision.blockId === entry.source.blockId &&
+              currentRevision(revision),
+          ))) &&
       !entry.source.sourceIssues.some((issue) => issue.severity === 'BLOCK'),
   );
   const selected = new Set<string>();

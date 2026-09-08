@@ -225,6 +225,37 @@ export class ActionAttemptLifecycleService {
     return row;
   }
 
+  /** A user request remains the same request after its commit advances the WI. */
+  async readRequest(input: {
+    tenantId: string;
+    workItemId: string;
+    taskType: OpenClawTaskEnvelope['taskType'];
+    documentVersionId: string;
+    idempotencyKey: string;
+  }): Promise<ActionAttemptRow | null> {
+    if (
+      !input.tenantId.trim() ||
+      !input.workItemId.trim() ||
+      !input.documentVersionId.trim() ||
+      !input.idempotencyKey.trim() ||
+      input.idempotencyKey.trim() !== input.idempotencyKey ||
+      input.idempotencyKey.length > 255
+    )
+      throw new Error('ACTION_ATTEMPT_READ_INPUT_INVALID');
+    const row = await this.repository.readLatestByExactIdempotency(input);
+    if (!row) return null;
+    const task = validatedTask(row);
+    if (
+      row.tenantId !== input.tenantId ||
+      row.workItemId !== input.workItemId ||
+      row.actionType !== input.taskType ||
+      row.documentVersionId !== input.documentVersionId ||
+      task.idempotencyKey !== input.idempotencyKey
+    )
+      throw conflict('ACTION_ATTEMPT_IDEMPOTENCY_BINDING_INVALID');
+    return row;
+  }
+
   async heartbeat(
     input: ActionAttemptFence & {
       tenantId: string;

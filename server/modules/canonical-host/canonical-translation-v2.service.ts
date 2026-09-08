@@ -200,7 +200,22 @@ export class CanonicalTranslationV2Service {
     });
   }
 
-  taskInput(workspace: TranslationWorkspaceV2): Record<string, unknown> {
+  taskInput(
+    workspace: TranslationWorkspaceV2,
+    retranslateBlockIds: string[] = [],
+  ): Record<string, unknown> {
+    if (
+      new Set(retranslateBlockIds).size !== retranslateBlockIds.length ||
+      retranslateBlockIds.some(
+        (id) =>
+          !workspace.plan.blocks.some(
+            (block) =>
+              block.blockId === id &&
+              !block.sourceIssues.some((issue) => issue.severity === 'BLOCK'),
+          ),
+      )
+    )
+      throw new Error('TRANSLATION_REQUESTED_BLOCK_SCOPE_INVALID');
     return {
       schemaVersion: TRANSLATION_V2_TASK_SCHEMA,
       workspaceId: workspace.workspaceId,
@@ -208,6 +223,9 @@ export class CanonicalTranslationV2Service {
       contextRevision: workspace.plan.documentContext.revision,
       methodVersion: workspace.methodVersion,
       source: structuredClone(workspace.plan.source),
+      ...(retranslateBlockIds.length
+        ? { retranslateBlockIds: [...retranslateBlockIds] }
+        : {}),
       requiredCapabilities: [
         'TRANSLATION_SEMANTIC_BLOCKS_V2',
         'TRANSLATION_DURABLE_BLOCKS_V2',
@@ -235,6 +253,20 @@ export class CanonicalTranslationV2Service {
       };
     };
     let state = await load();
+    const requestedBlockIds =
+      z
+        .array(id)
+        .max(64)
+        .optional()
+        .parse(task.modelInput.retranslateBlockIds) ?? [];
+    const nextWork = () =>
+      nextTranslationWorkV2(
+        state.workspace,
+        state.revisions,
+        state.reading,
+        undefined,
+        { retranslateBlockIds: requestedBlockIds },
+      );
     if (input.phase === 'READ') return summary(state.reading);
     if (input.phase === 'RECORD_FAILURE')
       return this.workspaces.recordGenerationFailure({
@@ -346,11 +378,7 @@ export class CanonicalTranslationV2Service {
           0,
         );
       }
-      let next = nextTranslationWorkV2(
-        state.workspace,
-        state.revisions,
-        state.reading,
-      );
+      let next = nextWork();
       while (next.kind === 'LOCAL_CHECK') {
         await this.workspaces.checkAndSelect({
           ...fence,
@@ -362,11 +390,7 @@ export class CanonicalTranslationV2Service {
           }),
         });
         state = await load();
-        next = nextTranslationWorkV2(
-          state.workspace,
-          state.revisions,
-          state.reading,
-        );
+        next = nextWork();
       }
       if (next.kind === 'DONE')
         return { action: 'DONE', progress: summary(state.reading) };
@@ -397,6 +421,20 @@ export class CanonicalTranslationV2Service {
       );
     }
     if (input.phase === 'ASSEMBLE') {
+      // A failed replacement must not report the older readable body as a new
+      // successful translation. Keep it selected and retain the failed new work.
+      if (
+        requestedBlockIds.some(
+          (blockId) =>
+            !state.reading.blocks.some(
+              (block) =>
+                block.source.blockId === blockId &&
+                block.selected?.provenance.originAttemptId ===
+                  task.actionAttemptId,
+            ),
+        )
+      )
+        throw new Error('TRANSLATION_REQUESTED_BLOCK_NOT_REPLACED');
       if (
         state.workspace.generationRequests.some(
           (request) => request.status === 'REGISTERED',

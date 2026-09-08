@@ -1,6 +1,7 @@
 import type {
   CanonicalApplicabilityCandidateProjection,
   CanonicalApplicabilityInputProjection,
+  CanonicalBaseRuleCandidateProjection,
   CanonicalIntegratedAssessmentProjection,
   CanonicalTranslationCandidateProjection,
   CanonicalWorkItemProjection,
@@ -10,6 +11,7 @@ import type {
 import {
   projectCanonicalHostInitialAnalysisStatus,
   initialAnalysisTerminalCode,
+  canContinueInitialStage,
   CanonicalHostInitialAnalysisStatusService,
   type CanonicalInitialAnalysisAttemptObservation,
 } from '../../server/modules/canonical-host/canonical-host-initial-analysis-status.service';
@@ -17,46 +19,383 @@ import {
   CANONICAL_TRANSLATION_RULE_SET_V1_ID,
   CANONICAL_TRANSLATION_RULE_SET_V1_VERSION,
 } from '../../server/modules/canonical-host/canonical-translation-rule-set-v1.private';
+import {
+  activeConfigurationEvidenceReevaluation,
+  createConfigurationEvidenceReevaluation,
+  withConfigurationEvidenceTerminal,
+  withStagedApplicability,
+  withStagedApplicabilityInput,
+  withStagedBaseRules,
+} from '../../server/modules/canonical-host/configuration-evidence/configuration-evidence-reevaluation.state';
+import * as automaticScope from '../../server/modules/canonical-host/configured-development-service-scope.authorization';
 
 const HASH = `sha256:${'a'.repeat(64)}`;
 const OTHER_HASH = `sha256:${'b'.repeat(64)}`;
 
 describe('CanonicalHost initial-analysis status projection', () => {
+  it('recognizes the active staged JobAid success while preserving serving results and schedules this cycle Overall', () => {
+    const workItem = stagedReevaluationWorkItem();
+    const serving = structuredClone(workItem.integratedAssessment);
+    const marker = activeConfigurationEvidenceReevaluation(workItem)!;
+    const current = {
+      ...attempt('OPENCLAW_DYNAMIC_EVALUATION', 'SUCCEEDED'),
+      attemptId: marker.stages.dynamic.attempt!.attemptId,
+      baseRevision: marker.stages.dynamic.attempt!.baseRevision,
+      requestId: 'p0b-jobaid-successor',
+    };
+
+    const result = projectCanonicalHostInitialAnalysisStatus(workItem, [
+      current,
+    ]);
+
+    expect(result).toMatchObject({
+      workItemRevision: workItem.revision,
+      applicabilityContextRef: 'applicability-context-staged',
+      status: 'REQUIRED',
+      nextOperation: 'SYNTHESIZE_OVERALL',
+      stages: {
+        applicability: { status: 'SUCCEEDED' },
+        jobAid: {
+          status: 'SUCCEEDED',
+          attemptStatus: 'SUCCEEDED',
+          attemptRef: current.attemptRef,
+        },
+        overall: { status: 'PENDING' },
+      },
+    });
+    expect(workItem.integratedAssessment).toEqual(serving);
+    expect(serving!.baseRules.actionAttemptId).not.toBe(current.attemptId);
+  });
+
+  it('does not carry an old failed request into the pending P0B stage at a new revision', () => {
+    const workItem = applicabilityStagedWorkItem();
+    const old = {
+      ...attempt('OPENCLAW_DYNAMIC_EVALUATION', 'FAILED'),
+      baseRevision: workItem.revision - 1,
+      requestId: 'older-failed-request',
+    };
+    expect(
+      projectCanonicalHostInitialAnalysisStatus(workItem, [old]),
+    ).toMatchObject({
+      nextOperation: 'EVALUATE_JOBAID',
+      stages: { jobAid: { status: 'PENDING', attemptRef: null } },
+    });
+    const queued = {
+      ...old,
+      status: 'QUEUED',
+      baseRevision: workItem.revision,
+      requestId: 'new-p0b-request',
+    };
+    expect(
+      projectCanonicalHostInitialAnalysisStatus(workItem, [queued]),
+    ).toMatchObject({
+      nextOperation: 'EVALUATE_JOBAID',
+      stages: {
+        jobAid: {
+          status: 'PENDING',
+          attemptStatus: 'QUEUED',
+          requestId: queued.requestId,
+        },
+      },
+    });
+    expect(old.status).toBe('FAILED');
+  });
+
+  it('keeps P0B applicability WAITING_INPUT strictly blocking despite an older successful serving applicability', () => {
+    const workItem = withConfigurationEvidenceTerminal(
+      reevaluationWithInput(),
+      'APPLICABILITY',
+      'WAITING_INPUT',
+      null,
+      'CONTROLLED_FACTS_REQUIRED',
+    );
+    const result = projectCanonicalHostInitialAnalysisStatus(workItem, [], {
+      englishAssessmentEnabled: true,
+    });
+    expect(workItem.applicability!.status).toBe('CANDIDATE_ONLY');
+    expect(result).toMatchObject({
+      status: 'WAITING_INPUT',
+      nextOperation: null,
+      stages: {
+        applicability: {
+          status: 'WAITING_INPUT',
+          terminalCode: 'CONTROLLED_FACTS_REQUIRED',
+        },
+        jobAid: { status: 'PENDING' },
+        overall: { status: 'PENDING' },
+      },
+    });
+    expect(
+      canContinueInitialStage(result.stages, 'EVALUATE_JOBAID', true, workItem),
+    ).toBe(false);
+    expect(
+      canContinueInitialStage(
+        {
+          ...result.stages,
+          applicability: {
+            ...result.stages.applicability,
+            status: 'SUCCEEDED',
+          },
+        },
+        'EVALUATE_JOBAID',
+        true,
+        workItem,
+      ),
+    ).toBe(false);
+  });
+
+  it.each([
+    ['OPENCLAW_DYNAMIC_EVALUATION', 'jobAid'],
+    ['OPENCLAW_OVERALL_SYNTHESIS', 'overall'],
+  ] as const)(
+    'preserves explicit %s WAITING_INPUT beside the retained candidate',
+    (actionType, stage) => {
+      const workItem = {
+        ...translatedWorkItem(parsedWorkItem()),
+        integratedAssessment: integratedAssessment(),
+      };
+      const waiting = {
+        ...attempt(actionType, 'WAITING_INPUT'),
+        requestId: 'waiting-request',
+      };
+      const result = projectCanonicalHostInitialAnalysisStatus(workItem, [
+        waiting,
+      ]);
+      expect(result.stages[stage]).toMatchObject({
+        status: 'WAITING_INPUT',
+        attemptStatus: 'WAITING_INPUT',
+        requestId: waiting.requestId,
+        terminalCode: 'TERMINAL_WAITING_INPUT',
+      });
+    },
+  );
+
+  it.each([
+    ['translation', 'PENDING'],
+    ['translation', 'BUSY'],
+    ['applicability', 'FAILED'],
+    ['applicability', 'CONFLICT'],
+  ] as const)(
+    'rejects continuation when prerequisite %s is %s',
+    (stage, status) => {
+      const stages = projectCanonicalHostInitialAnalysisStatus(
+        translatedWorkItem(parsedWorkItem()),
+        [],
+      ).stages;
+      stages.jobAid = { ...stages.jobAid, status: 'SUCCEEDED' };
+      stages[stage] = { ...stages[stage], status };
+      expect(canContinueInitialStage(stages, 'EVALUATE_JOBAID', true)).toBe(
+        false,
+      );
+      expect(canContinueInitialStage(stages, 'SYNTHESIZE_OVERALL', true)).toBe(
+        false,
+      );
+    },
+  );
+
+  it('allows ordinary applicability waiting but requires this P0B JobAid success before Overall continuation', () => {
+    const ordinary = translatedWorkItem(parsedWorkItem());
+    const stages = projectCanonicalHostInitialAnalysisStatus(
+      ordinary,
+      [],
+    ).stages;
+    expect(stages.applicability.status).toBe('WAITING_INPUT');
+    expect(
+      canContinueInitialStage(stages, 'EVALUATE_JOBAID', true, ordinary),
+    ).toBe(true);
+    const p0b = applicabilityStagedWorkItem();
+    const p0bStages = projectCanonicalHostInitialAnalysisStatus(p0b, []).stages;
+    expect(
+      canContinueInitialStage(p0bStages, 'EVALUATE_JOBAID', true, p0b),
+    ).toBe(true);
+    expect(
+      canContinueInitialStage(
+        { ...p0bStages, jobAid: { ...p0bStages.jobAid, status: 'SUCCEEDED' } },
+        'SYNTHESIZE_OVERALL',
+        true,
+        p0b,
+      ),
+    ).toBe(false);
+  });
+
+  it('offers Overall recovery from staged v2 work even when the preserved serving base is legacy', async () => {
+    const staged = stagedReevaluationWorkItem();
+    const workItem = withConfigurationEvidenceTerminal(
+      staged,
+      'OVERALL',
+      'FAILED',
+      configurationAttempt('attempt-overall-staged', staged.revision),
+      'OVERALL_MODEL_FAILED',
+    );
+    const model = await browserStatus(workItem, [
+      {
+        ...attempt('OPENCLAW_OVERALL_SYNTHESIS', 'FAILED'),
+        attemptId: 'attempt-overall-staged',
+        requestId: 'p0b-overall-failed',
+        baseRevision: staged.revision,
+      },
+    ]);
+    expect(model.continuationOperations).toEqual(['SYNTHESIZE_OVERALL']);
+    expect(workItem.integratedAssessment!.baseRules).not.toHaveProperty(
+      'schemaVersion',
+    );
+  });
+
+  it('offers browser JobAid recovery only for a confirmed SB', async () => {
+    const workItem = translatedWorkItem(parsedWorkItem());
+    const failed = [
+      {
+        ...attempt('OPENCLAW_DYNAMIC_EVALUATION', 'FAILED'),
+        requestId: 'job-failed',
+      },
+    ];
+    expect(
+      (await browserStatus(workItem, failed)).continuationOperations,
+    ).toEqual(['EVALUATE_JOBAID']);
+    const candidate = {
+      ...workItem,
+      classification: {
+        ...workItem.classification,
+        status: 'CANDIDATE' as const,
+      },
+    };
+    expect(
+      (await browserStatus(candidate, failed)).continuationOperations,
+    ).toEqual([]);
+    const otherFamily = {
+      ...workItem,
+      classification: {
+        ...workItem.classification,
+        normalizedFamily: 'FTD' as const,
+      },
+    };
+    expect(
+      (await browserStatus(otherFamily, failed)).continuationOperations,
+    ).toEqual([]);
+  });
+
+  it('offers an explicitly queued successor without disguising the retained older candidate as its success', () => {
+    const workItem = translatedWorkItem(parsedWorkItem());
+    const retained = structuredClone(workItem.translation);
+    const queued = {
+      ...attempt('OPENCLAW_TRANSLATE', 'QUEUED'),
+      attemptId: 'attempt-successor',
+      requestId: 'normal-successor',
+    };
+    expect(
+      projectCanonicalHostInitialAnalysisStatus(workItem, [queued]),
+    ).toMatchObject({
+      status: 'REQUIRED',
+      nextOperation: 'TRANSLATE',
+      stages: {
+        translation: {
+          status: 'PENDING',
+          attemptStatus: 'QUEUED',
+          requestId: 'normal-successor',
+        },
+      },
+    });
+    expect(
+      projectCanonicalHostInitialAnalysisStatus(workItem, [
+        { ...queued, status: 'RUNNING' },
+      ]),
+    ).toMatchObject({
+      status: 'BUSY',
+      nextOperation: null,
+    });
+    expect(
+      projectCanonicalHostInitialAnalysisStatus(workItem, [
+        { ...queued, status: 'CANCELLED' },
+      ]),
+    ).toMatchObject({
+      status: 'FAILED',
+      nextOperation: null,
+    });
+    expect(workItem.translation).toEqual(retained);
+  });
   it('keeps verified-English applicability current without a translation and after translation changes', () => {
     const workItem = translatedWorkItem(parsedWorkItem());
     workItem.applicabilityInput = applicabilityInput(workItem);
     workItem.applicability = {
-      ...applicabilityCandidate(workItem, workItem.applicabilityInput, 'CANDIDATE_ONLY'),
+      ...applicabilityCandidate(
+        workItem,
+        workItem.applicabilityInput,
+        'CANDIDATE_ONLY',
+      ),
       schemaVersion: 'wiselink.3_1.applicability_candidate_projection.v2',
-      sourceReadingMode: 'VERIFIED_ENGLISH', translationActionAttemptId: null,
+      sourceReadingMode: 'VERIFIED_ENGLISH',
+      translationActionAttemptId: null,
     };
     const priorTranslation = workItem.translation;
     delete workItem.translation;
-    expect(projectCanonicalHostInitialAnalysisStatus(workItem, []).stages.applicability.status).toBe('SUCCEEDED');
-    workItem.translation = { ...priorTranslation!, actionAttemptId: 'later-translation-attempt' };
-    expect(projectCanonicalHostInitialAnalysisStatus(workItem, []).stages.applicability.status).toBe('SUCCEEDED');
+    expect(
+      projectCanonicalHostInitialAnalysisStatus(workItem, []).stages
+        .applicability.status,
+    ).toBe('SUCCEEDED');
+    workItem.translation = {
+      ...priorTranslation!,
+      actionAttemptId: 'later-translation-attempt',
+    };
+    expect(
+      projectCanonicalHostInitialAnalysisStatus(workItem, []).stages
+        .applicability.status,
+    ).toBe('SUCCEEDED');
     workItem.applicability.sourcePackageContentHash = OTHER_HASH;
-    expect(projectCanonicalHostInitialAnalysisStatus(workItem, []).stages.applicability.status).not.toBe('SUCCEEDED');
+    expect(
+      projectCanonicalHostInitialAnalysisStatus(workItem, []).stages
+        .applicability.status,
+    ).not.toBe('SUCCEEDED');
   });
 
   it('recognizes a saved semantic translation candidate while keeping its partial scope explicit', () => {
     const workItem = translatedWorkItem(parsedWorkItem());
-    workItem.translation = { ...workItem.translation!, schemaVersion: 'wiselink.3_1.translation_candidate_projection.v2',
-      workspaceId: 'TW-test', planRevision: 1, contextRevision: 1, completeness: 'PARTIAL', ruleSetId: 'semantic-translation', ruleSetVersion: '2.0',
-      pendingTranslationUnitCount: 1, validationVerdict: 'REVIEW_REQUIRED' };
-    expect(projectCanonicalHostInitialAnalysisStatus(workItem, [])).toMatchObject({
-      nextOperation: 'EVALUATE_JOBAID', stages: { translation: { status: 'SUCCEEDED', terminalCode: 'TRANSLATION_PARTIAL_CANDIDATE_SAVED' } },
+    workItem.translation = {
+      ...workItem.translation!,
+      schemaVersion: 'wiselink.3_1.translation_candidate_projection.v2',
+      workspaceId: 'TW-test',
+      planRevision: 1,
+      contextRevision: 1,
+      completeness: 'PARTIAL',
+      ruleSetId: 'semantic-translation',
+      ruleSetVersion: '2.0',
+      pendingTranslationUnitCount: 1,
+      validationVerdict: 'REVIEW_REQUIRED',
+    };
+    expect(
+      projectCanonicalHostInitialAnalysisStatus(workItem, []),
+    ).toMatchObject({
+      nextOperation: 'EVALUATE_JOBAID',
+      stages: {
+        translation: {
+          status: 'SUCCEEDED',
+          terminalCode: 'TRANSLATION_PARTIAL_CANDIDATE_SAVED',
+        },
+      },
     });
   });
 
   it('only the enabled direct English path advances beyond failed translation and retains the failure', () => {
     const workItem = parsedWorkItem();
     const failed = attempt('OPENCLAW_TRANSLATE', 'CANCELLED');
-    expect(projectCanonicalHostInitialAnalysisStatus(workItem, [failed]).nextOperation).toBeNull();
-    expect(projectCanonicalHostInitialAnalysisStatus(workItem, [failed], { englishAssessmentEnabled: true })).toMatchObject({
-      nextOperation: 'EVALUATE_JOBAID', stages: { translation: { status: 'FAILED', attemptStatus: 'CANCELLED' } },
+    expect(
+      projectCanonicalHostInitialAnalysisStatus(workItem, [failed])
+        .nextOperation,
+    ).toBeNull();
+    expect(
+      projectCanonicalHostInitialAnalysisStatus(workItem, [failed], {
+        englishAssessmentEnabled: true,
+      }),
+    ).toMatchObject({
+      nextOperation: 'EVALUATE_JOBAID',
+      stages: { translation: { status: 'FAILED', attemptStatus: 'CANCELLED' } },
     });
-    expect(projectCanonicalHostInitialAnalysisStatus(workItem, [attempt('OPENCLAW_TRANSLATE', 'RUNNING')], { englishAssessmentEnabled: true })).toMatchObject({ status: 'BUSY', nextOperation: null });
+    expect(
+      projectCanonicalHostInitialAnalysisStatus(
+        workItem,
+        [attempt('OPENCLAW_TRANSLATE', 'RUNNING')],
+        { englishAssessmentEnabled: true },
+      ),
+    ).toMatchObject({ status: 'BUSY', nextOperation: null });
   });
   it('keeps missing aircraft selection explicit without blocking document-level candidates', () => {
     const workItem = translatedWorkItem(parsedWorkItem());
@@ -300,6 +639,107 @@ describe('CanonicalHost initial-analysis status projection', () => {
     });
   });
 });
+
+async function browserStatus(
+  workItem: CanonicalWorkItemProjection,
+  observations: CanonicalInitialAnalysisAttemptObservation[],
+) {
+  const savedJobAidFlag = process.env.WL_JOBAID_PROBLEM_V2_ENABLED;
+  const savedTranslationFlag = process.env.WL_TRANSLATION_V2_ENABLED;
+  const automatic = jest
+    .spyOn(automaticScope, 'isOpenClawAutomaticReviewConfigured')
+    .mockReturnValue(true);
+  process.env.WL_JOBAID_PROBLEM_V2_ENABLED = '1';
+  process.env.WL_TRANSLATION_V2_ENABLED = '0';
+  try {
+    const limit = jest.fn().mockResolvedValue([{ model: null }]);
+    const service = new CanonicalHostInitialAnalysisStatusService({
+      select: () => ({ from: () => ({ where: () => ({ limit }) }) }),
+    } as never);
+    jest.spyOn(service, 'project').mockResolvedValue(
+      projectCanonicalHostInitialAnalysisStatus(workItem, observations, {
+        englishAssessmentEnabled: true,
+      }),
+    );
+    return await service.projectForBrowser({ workItem, tenantId: 'tenant-1' });
+  } finally {
+    automatic.mockRestore();
+    if (savedJobAidFlag === undefined)
+      delete process.env.WL_JOBAID_PROBLEM_V2_ENABLED;
+    else process.env.WL_JOBAID_PROBLEM_V2_ENABLED = savedJobAidFlag;
+    if (savedTranslationFlag === undefined)
+      delete process.env.WL_TRANSLATION_V2_ENABLED;
+    else process.env.WL_TRANSLATION_V2_ENABLED = savedTranslationFlag;
+  }
+}
+
+function configurationAttempt(attemptId: string, revision: number) {
+  return {
+    attemptId,
+    attemptRef: `AQ-${attemptId}`,
+    inputRevision: revision,
+    baseRevision: revision,
+  };
+}
+
+function reevaluationWithInput(): CanonicalWorkItemProjection {
+  const translated = translatedWorkItem(parsedWorkItem());
+  const input = applicabilityInput(translated);
+  const current = {
+    ...translated,
+    revision: 7,
+    applicabilityInput: input,
+    applicability: applicabilityCandidate(translated, input, 'CANDIDATE_ONLY'),
+    integratedAssessment: integratedAssessment(),
+    configurationEvidenceCurrent: {
+      snapshotId: 'CONFIG-STAGED',
+      configurationRevision: 2,
+    } as never,
+    configurationEvidenceReevaluation: createConfigurationEvidenceReevaluation({
+      triggerSnapshotId: 'CONFIG-STAGED',
+      triggerConfigurationRevision: 2,
+      adoptionWorkItemRevision: 7,
+    }),
+  };
+  return withStagedApplicabilityInput(current, {
+    ...input,
+    applicabilityContextRef: 'applicability-context-staged',
+    bindingRevision: 'binding-staged',
+  });
+}
+
+function applicabilityStagedWorkItem(): CanonicalWorkItemProjection {
+  const workItem = reevaluationWithInput();
+  const input =
+    activeConfigurationEvidenceReevaluation(workItem)!.stagedBundle
+      .applicabilityInput!;
+  return withStagedApplicability(
+    workItem,
+    {
+      ...applicabilityCandidate(workItem, input, 'CANDIDATE_ONLY'),
+      actionAttemptId: 'attempt-applicability-staged',
+    },
+    configurationAttempt('attempt-applicability-staged', workItem.revision),
+  );
+}
+
+function stagedReevaluationWorkItem(): CanonicalWorkItemProjection {
+  const workItem = applicabilityStagedWorkItem();
+  const base = {
+    ...integratedAssessment().baseRules,
+    schemaVersion: 'wiselink.jobaid-problem-result.v2',
+    actionAttemptId: 'attempt-job-aid-staged',
+    sourceResultId: 'openclaw-dynamic://staged',
+    workRevisionRef: 'JAWR-STAGED',
+    workRevision: 1,
+    roundCompletion: 'COMPLETE',
+  } as CanonicalBaseRuleCandidateProjection;
+  return withStagedBaseRules(
+    workItem,
+    base,
+    configurationAttempt('attempt-job-aid-staged', workItem.revision),
+  );
+}
 
 function parsedWorkItem(): CanonicalWorkItemProjection {
   return {

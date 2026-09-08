@@ -8,7 +8,7 @@ import { pathToFileURL } from 'node:url';
 
 import { consumePendingReviewTurn } from './consume-hosted-review-turn.mjs';
 import { invokeHostedInitialModel } from './invoke-hosted-initial-model.mjs';
-import { INITIAL_ANALYSIS_OPERATIONS, runInitialAnalysis } from './orchestrate-host-mcp.mjs';
+import { INITIAL_ANALYSIS_OPERATIONS, parseConfigurationEvidenceReevaluationStatus, runInitialAnalysis } from './orchestrate-host-mcp.mjs';
 import {
   assertHostedModelGatewayReady,
   createCheckpointStore,
@@ -42,7 +42,7 @@ const INITIAL_TOOLS = new Set([
 
 /** Drain dependency-ready initial stages within one native tick; commits remain serial. */
 export async function consumeHostedWorkItem(options, dependencies) {
-  const statusResult = await dependencies.callTool('get_parse_status', {
+  let statusResult = await dependencies.callTool('get_parse_status', {
     workItemId: options.workItemId,
   });
   let initial = readInitialStatus(statusResult, options.workItemId);
@@ -75,7 +75,11 @@ export async function consumeHostedWorkItem(options, dependencies) {
     if (completedStages.includes(operation) || initial.stages[STAGE_BY_OPERATION[operation]]?.status !== 'PENDING') {
       throw new Error('HOST_INITIAL_STAGE_NOT_PENDING');
     }
-    report = await runHostedInitialStage({ ...options, operation, initial }, dependencies);
+    const reevaluation = statusResult.configurationEvidenceReevaluation;
+    report = await runHostedInitialStage({ ...options, operation, initial,
+      ...(operation === 'SYNTHESIZE_OVERALL' && reevaluation && reevaluation.status !== 'SUCCEEDED'
+        ? { configurationEvidenceReevaluation: parseConfigurationEvidenceReevaluationStatus(statusResult, options.workItemId) } : {}),
+    }, dependencies);
     if (report.status !== 'INITIAL_STAGE_SAVED') return { ...report, completedStages };
     completedStages.push(operation);
     // Long translations finish their own stage before the native cron's
@@ -87,6 +91,7 @@ export async function consumeHostedWorkItem(options, dependencies) {
     if (observed.documentVersionId !== initial.documentVersionId) throw new Error('INITIAL_DOCUMENT_VERSION_DRIFT');
     if (initialComplete(observed)) break;
     initial = observed;
+    statusResult = next;
   }
   return { ...report, completedStages };
 }
@@ -94,8 +99,12 @@ export async function consumeHostedWorkItem(options, dependencies) {
 export async function runHostedInitialStage(options, dependencies) {
   const { operation, initial } = options;
   if (!INITIAL_ANALYSIS_OPERATIONS.includes(operation)) throw new Error('INITIAL_OPERATION_INVALID');
+  const continuationRequestId = initial.stages[STAGE_BY_OPERATION[operation]]?.requestId;
+  if (continuationRequestId !== undefined && !/^[A-Za-z0-9_-]{1,64}$/u.test(continuationRequestId))
+    throw new Error('INITIAL_CONTINUATION_REQUEST_INVALID');
   const checkpoint = await createCheckpointStore(join(
     options.checkpointRoot, encodeURIComponent(options.workItemId), 'initial', operation,
+    ...(continuationRequestId ? ['requests', continuationRequestId] : []),
   ));
   const binding = await checkpoint.readOptional('binding');
   const exactBinding = {
@@ -104,7 +113,9 @@ export async function runHostedInitialStage(options, dependencies) {
   if (binding && Object.entries(exactBinding).some(([key, value]) => binding[key] !== value)) {
     throw new Error('INITIAL_CHECKPOINT_BINDING_MISMATCH');
   }
-  const runBinding = binding ?? { ...exactBinding, requestId: randomUUID() };
+  if (binding && continuationRequestId && binding.requestId !== continuationRequestId)
+    throw new Error('INITIAL_CHECKPOINT_REQUEST_MISMATCH');
+  const runBinding = binding ?? { ...exactBinding, requestId: continuationRequestId ?? randomUUID() };
   if (!binding) await checkpoint.writeOnce('binding', runBinding);
   // A completed initial stage is not an instruction to rerun it if Host state drifts.
   if (await checkpoint.readOptional('run-result')) throw new Error('INITIAL_COMPLETED_STAGE_HOST_DRIFT');
@@ -163,6 +174,8 @@ export async function runHostedInitialStage(options, dependencies) {
       expectedWorkItemId: options.workItemId,
       applicabilityContextRef: contextRef,
       requestId: runBinding.requestId,
+      ...(continuationRequestId ? { continuationRequestId } : {}),
+      ...(options.configurationEvidenceReevaluation ? { configurationEvidenceReevaluation: options.configurationEvidenceReevaluation } : {}),
       providers: [], callTool,
       translate: invoke, extractApplicability: invoke,
       evaluateDynamicRules: invoke, synthesizeOverall: invoke,

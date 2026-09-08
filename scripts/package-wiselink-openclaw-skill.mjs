@@ -153,7 +153,7 @@ export async function buildPublishLitePackage({ outputDirectory }) {
       subtree: SKILL_ROOT_RELATIVE,
     },
     validation: {
-      command: `node --test ${SKILL_ROOT_RELATIVE}/tests/validation.test.mjs`,
+      command: `node --test ${SKILL_ROOT_RELATIVE}/tests/*.test.mjs`,
       passed: true,
       versionClaimsAligned: true,
     },

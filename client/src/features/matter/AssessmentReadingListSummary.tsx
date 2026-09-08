@@ -8,10 +8,16 @@ import { assessmentClaimGroups } from './assessment-reading';
 
 export function savedReadingSummary(
   result: AssessmentReadingResult,
+  knownSummary?: AssessmentReadingSummary | null,
 ): AssessmentReadingSummary {
   return {
     resultRef: result.resultRef,
     resultRevision: result.resultRevision,
+    roundCompletion:
+      knownSummary?.resultRef === result.resultRef &&
+      knownSummary.resultRevision === result.resultRevision
+        ? knownSummary.roundCompletion
+        : undefined,
     headline: result.content.headline,
     listBrief: result.content.listBrief,
     decisiveClaims: assessmentClaimGroups(result).decisive.map(

@@ -131,7 +131,10 @@ export function LibraryDocumentDirectory({
                       document.workItemId &&
                     selectedReadingResult.scope.documentVersionId ===
                       document.documentVersionId
-                    ? savedReadingSummary(selectedReadingResult)
+                    ? savedReadingSummary(
+                        selectedReadingResult,
+                        document.readingSummary,
+                      )
                     : document.readingSummary
                   : null;
               const version =

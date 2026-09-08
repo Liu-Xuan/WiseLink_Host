@@ -1351,7 +1351,7 @@ test('accepts shared background in new JobAid and Overall inputs while retaining
   validatePayload('synthesis-input', { ...overall, commonContext });
 });
 
-test('pins exact23 MCP 1.2, five review tools, and hosted provenance', () => {
+test('requires 24 MCP capabilities, five review tools, and hosted provenance', () => {
   assert.deepEqual(INITIAL_ANALYSIS_OPERATIONS, [
     'TRANSLATE',
     'EXTRACT_APPLICABILITY',
@@ -1365,9 +1365,9 @@ test('pins exact23 MCP 1.2, five review tools, and hosted provenance', () => {
     'get_action_attempt_status',
     'commit_review_turn_candidate',
   ]);
-  assert.equal(HOST_MCP_TOOLS.length, 23);
-  assert.equal(new Set(HOST_MCP_TOOLS).size, 23);
-  for (const name of ['read_assessment_sources', 'save_assessment_work', 'read_assessment_work']) assert.ok(HOST_MCP_TOOLS.includes(name));
+  assert.equal(HOST_MCP_TOOLS.length, 24);
+  assert.equal(new Set(HOST_MCP_TOOLS).size, 24);
+  for (const name of ['translation_workspace', 'read_assessment_sources', 'save_assessment_work', 'read_assessment_work']) assert.ok(HOST_MCP_TOOLS.includes(name));
   assert.ok(HOST_MCP_TOOLS.includes('begin_applicability_evaluation'));
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
@@ -1465,12 +1465,12 @@ test('distinguishes ordinary applicability waiting from terminal P0B stages', as
     new URL('../agents/openai.yaml', import.meta.url),
     'utf8',
   );
-  assert.match(contents, /ordinary non-P0B INITIAL_ANALYSIS/u);
+  assert.match(contents, /Applicability WAITING_INPUT preserves UNKNOWN.*ordinary JobAid and Overall may proceed when Host authorizes them/u);
   assert.match(
     contents,
-    /configuration-evidence P0B, any WAITING_INPUT, FAILED, or CONFLICT stage is terminal/u,
+    /configuration-evidence P0B coordinator must stop at WAITING_INPUT, FAILED or CONFLICT/u,
   );
-  assert.match(contents, /do not continue to a downstream stage/u);
+  assert.match(contents, /execute only its nextOperation/u);
 });
 
 test('requires the single sanitized Host P0B status field', () => {

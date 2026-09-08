@@ -27,6 +27,25 @@ const measureLabels = {
   REPORTED_IMPLEMENTED: '来源报告已实施',
   VERIFIED_EFFECTIVE: '有依据验证有效',
 };
+const classificationLabels = {
+  SAE_EVENT_CATEGORY: 'SAE 事件分类',
+  SOURCE_DOCUMENT_CLASSIFICATION: '源文件分类',
+  EO_ATTRIBUTE: 'EO 属性',
+};
+const executionLabels: Record<string, string> = {
+  REQUESTED: '已请求执行',
+  QUEUED: '排队等待',
+  RUNNING: '正在执行',
+  RETRY_SCHEDULED: '等待重试',
+  COMMITTING: '正在保存',
+  SUCCEEDED: '执行完成',
+  WAITING_INPUT: '等待补充信息',
+  FAILED: '执行失败',
+  TIMED_OUT: '执行超时',
+  CANCELLED: '已取消',
+  CONFLICT: '版本冲突',
+  OBSOLETE: '执行已过期',
+};
 
 export default function JobAidProblemWorkspace({
   workItemId,
@@ -49,7 +68,21 @@ export default function JobAidProblemWorkspace({
       try {
         const result = await readJobAidAssessmentWork(workItemId);
         if (cancelled) return;
-        setData(result);
+        // A work revision is immutable. Keep its mounted evidence while an
+        // unchanged polling response arrives, including an open claim dialog.
+        setData((previous) =>
+          previous?.workItemId === result.workItemId &&
+          previous.enabled === result.enabled &&
+          previous.current?.workRevisionRef ===
+            result.current?.workRevisionRef &&
+          previous.executionStatus === result.executionStatus &&
+          previous.currentInputChanged === result.currentInputChanged &&
+          previous.overallStatus === result.overallStatus &&
+          previous.overallBasedOnWorkRevisionRef ===
+            result.overallBasedOnWorkRevisionRef
+            ? previous
+            : result,
+        );
         setError(null);
         // Working revisions change independently of the WorkItem's formally adopted revision.
         if (result.enabled) timer = setTimeout(() => void read(), 6000);
@@ -132,7 +165,8 @@ export default function JobAidProblemWorkspace({
           data.executionStatus,
         ) ? (
           <p role="status">
-            本次运行状态：{data.executionStatus}
+            本次运行状态：
+            {executionLabels[data.executionStatus] ?? data.executionStatus}
             。以下为已保存的工作，运行未成功不等于业务分析完成。
           </p>
         ) : null}
@@ -238,7 +272,8 @@ export default function JobAidProblemWorkspace({
               ))}
               {issue.otherClassifications.map((item, index) => (
                 <p key={index}>
-                  {item.method}：{item.value}。{item.reason}
+                  {classificationLabels[item.method]}：{item.value}。
+                  {item.reason}
                 </p>
               ))}
               {issue.openQuestions.length ? (

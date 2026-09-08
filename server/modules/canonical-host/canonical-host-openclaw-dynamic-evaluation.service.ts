@@ -117,6 +117,7 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
 
   async begin(
     workItemId: string,
+    requestId?: string,
   ): Promise<BeginDynamicEvaluationResult | BeginJobAidProblemResult> {
     const scope = await this.serviceScope.authorizeOpenClawWorkItem({
       operation: 'BEGIN_DYNAMIC',
@@ -127,6 +128,16 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
       workItemId,
       scope.tenantId,
     );
+    if (requestId !== undefined) {
+      if (!this.problemAssessment)
+        throw new Error('JOBAID_PROBLEM_RUNTIME_UNAVAILABLE');
+      return this.problemAssessment.begin(
+        this.executionWorkItem(authoritative),
+        scope,
+        'INITIAL_PROBLEM_ASSESSMENT',
+        requestId,
+      );
+    }
     const workItem = await this.prepareExecutionWorkItem(
       authoritative,
       scope.tenantId,

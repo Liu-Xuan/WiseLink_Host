@@ -18,7 +18,7 @@ import {
 interface DocumentReaderWorkspaceProps {
   data: Pick<
     CanonicalDocumentParsingPageResponse,
-    'workItem' | 'entry' | 'readerProjection'
+    'workItem' | 'entry' | 'readerProjection' | 'initialAnalysis'
   >;
   query: string;
   requestedSourceRef: string;
@@ -29,6 +29,7 @@ interface DocumentReaderWorkspaceProps {
   onReaderModeChange: (mode: ReaderViewMode) => void;
   onSourceRefSelect: (unitId: string, sourceRef: string) => void;
   onClearSourceRef: () => void;
+  onContinuationRequested?: () => void;
 }
 
 function statusLabel(status: ReaderCapability['status']): string {
@@ -67,6 +68,7 @@ export function DocumentReaderWorkspace({
   onReaderModeChange,
   onSourceRefSelect,
   onClearSourceRef,
+  onContinuationRequested,
 }: DocumentReaderWorkspaceProps) {
   const capabilities: ReaderCapability[] = buildReaderCapabilities({
     readerProjection: data.readerProjection ?? null,
@@ -193,7 +195,20 @@ export function DocumentReaderWorkspace({
           role="tabpanel"
           aria-labelledby={`${idPrefix}-bilingual`}
         >
-          <SemanticBilingualReader translation={data.readerProjection?.translation ?? { status: 'UNAVAILABLE', reason: 'TRANSLATION_PROJECTION_NOT_AVAILABLE' }} onSourceRefSelect={onSourceRefSelect} workItem={data.workItem} />
+          <SemanticBilingualReader
+            translation={
+              data.readerProjection?.translation ?? {
+                status: 'UNAVAILABLE',
+                reason: 'TRANSLATION_PROJECTION_NOT_AVAILABLE',
+              }
+            }
+            onSourceRefSelect={onSourceRefSelect}
+            workItem={data.workItem}
+            canRequestBlockTranslation={
+              data.initialAnalysis?.canRequestBlockTranslation
+            }
+            onContinuationRequested={onContinuationRequested}
+          />
         </section>
       ) : null}
 

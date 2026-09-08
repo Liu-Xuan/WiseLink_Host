@@ -20,9 +20,15 @@ import {
 } from 'drizzle-orm';
 
 import { actionAttempt, workItem } from '../../database/schema';
-import type { ReviewEvidenceActivity, ReviewRuntimeActivity } from '@shared/api.interface';
+import type {
+  ReviewEvidenceActivity,
+  ReviewRuntimeActivity,
+} from '@shared/api.interface';
 import { canonicalJson } from './action-attempt-envelope';
-import type { OpenClawResultEnvelope, OpenClawTaskEnvelope } from './action-attempt-envelope.types';
+import type {
+  OpenClawResultEnvelope,
+  OpenClawTaskEnvelope,
+} from './action-attempt-envelope.types';
 import type {
   ActionAttemptRow,
   ActionAttemptWorkItemBinding,
@@ -216,19 +222,101 @@ export class ActionAttemptRepository {
   async reserve(
     attempt: typeof actionAttempt.$inferInsert,
   ): Promise<ActionAttemptReservation> {
-    const inserted = await this.db
+    if (attempt.idempotencyKey?.startsWith('openclaw-v2:')) {
+      // Serialize an explicit request against the ordinary WI row. The legacy
+      // partial unique index alone does not cover a response lost after commit.
+      return this.db.transaction(async (transaction) => {
+        const [owner] = await transaction
+          .select({
+            id: workItem.workItemId,
+            revision: workItem.revision,
+            documentVersionId: workItem.documentVersionId,
+          })
+          .from(workItem)
+          .where(
+            and(
+              eq(workItem.workItemId, String(attempt.workItemId)),
+              eq(workItem.tenantId, String(attempt.tenantId)),
+            ),
+          )
+          .limit(1)
+          .for('update');
+        if (!owner) throw new Error('ACTION_ATTEMPT_WORK_ITEM_NOT_FOUND');
+        const [existing] = await transaction
+          .select()
+          .from(actionAttempt)
+          .where(
+            and(
+              eq(actionAttempt.tenantId, String(attempt.tenantId)),
+              eq(actionAttempt.idempotencyKey, String(attempt.idempotencyKey)),
+            ),
+          )
+          .orderBy(desc(actionAttempt.attemptNo))
+          .limit(1);
+        if (existing)
+          return { row: existing as ActionAttemptRow, created: false };
+        if (
+          owner.revision !== attempt.baseRevision ||
+          owner.documentVersionId !== attempt.documentVersionId
+        )
+          throw new Error('ACTION_ATTEMPT_WORK_ITEM_BINDING_CHANGED');
+        const [active] = await transaction
+          .select({ id: actionAttempt.attemptId })
+          .from(actionAttempt)
+          .where(
+            and(
+              eq(actionAttempt.workItemId, String(attempt.workItemId)),
+              eq(actionAttempt.tenantId, String(attempt.tenantId)),
+              inArray(actionAttempt.actionType, [
+                'OPENCLAW_TRANSLATE',
+                'OPENCLAW_APPLICABILITY_EVALUATION',
+                'OPENCLAW_DYNAMIC_EVALUATION',
+                'OPENCLAW_OVERALL_SYNTHESIS',
+              ]),
+              inArray(actionAttempt.status, [
+                'QUEUED',
+                'RUNNING',
+                'RETRY_SCHEDULED',
+                'COMMITTING',
+              ]),
+            ),
+          )
+          .limit(1);
+        if (active) throw activeAttemptConflict();
+        return this.insertReservation(attempt, transaction);
+      });
+    }
+    return this.insertReservation(attempt, this.db);
+  }
+
+  private async insertReservation(
+    attempt: typeof actionAttempt.$inferInsert,
+    database: Pick<PostgresJsDatabase, 'select' | 'insert'>,
+  ): Promise<ActionAttemptReservation> {
+    const inserted = await database
       .insert(actionAttempt)
       .values(attempt)
       .onConflictDoNothing()
       .returning({ attemptId: actionAttempt.attemptId });
-    const storedByIdempotency = await this.readByIdempotency({
-      tenantId: String(attempt.tenantId),
-      idempotencyKey: String(attempt.idempotencyKey),
-    });
+    const [storedByIdempotency] = await database
+      .select()
+      .from(actionAttempt)
+      .where(
+        and(
+          eq(actionAttempt.tenantId, String(attempt.tenantId)),
+          eq(actionAttempt.idempotencyKey, String(attempt.idempotencyKey)),
+          inArray(actionAttempt.status, [...ACTIVE_STATUSES]),
+        ),
+      )
+      .orderBy(actionAttempt.createdAt)
+      .limit(1);
     if (storedByIdempotency) {
-      return { row: storedByIdempotency, created: inserted.length === 1 };
+      return {
+        row: storedByIdempotency as ActionAttemptRow,
+        created: inserted.length === 1,
+      };
     }
-    const [active] = await this.db
+    const [active] = await database
       .select()
       .from(actionAttempt)
       .where(
@@ -249,18 +337,24 @@ export class ActionAttemptRepository {
   ): Promise<void> {
     // Atomic append on the existing attempt; never rewrite its task/result or
     // create another execution record. The caller has freshly authorized it.
-    const saved = await this.db.update(actionAttempt).set({
-      reviewActivityJson: sql`(COALESCE(${actionAttempt.reviewActivityJson}::jsonb, '[]'::jsonb) || ${JSON.stringify([activity])}::jsonb)::text`,
-      updatedAt: new Date(),
-    }).where(and(
-      eq(actionAttempt.attemptId, row.attemptId),
-      eq(actionAttempt.tenantId, row.tenantId),
-      eq(actionAttempt.workItemId, row.workItemId),
-      eq(actionAttempt.actorUserId, row.actorUserId),
-      eq(actionAttempt.actionType, 'OPENCLAW_INTERACTIVE_REVIEW'),
-      eq(actionAttempt.requestOrigin, row.requestOrigin),
-      eq(actionAttempt.leaseGeneration, row.leaseGeneration),
-    )).returning({ attemptId: actionAttempt.attemptId });
+    const saved = await this.db
+      .update(actionAttempt)
+      .set({
+        reviewActivityJson: sql`(COALESCE(${actionAttempt.reviewActivityJson}::jsonb, '[]'::jsonb) || ${JSON.stringify([activity])}::jsonb)::text`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(actionAttempt.attemptId, row.attemptId),
+          eq(actionAttempt.tenantId, row.tenantId),
+          eq(actionAttempt.workItemId, row.workItemId),
+          eq(actionAttempt.actorUserId, row.actorUserId),
+          eq(actionAttempt.actionType, 'OPENCLAW_INTERACTIVE_REVIEW'),
+          eq(actionAttempt.requestOrigin, row.requestOrigin),
+          eq(actionAttempt.leaseGeneration, row.leaseGeneration),
+        ),
+      )
+      .returning({ attemptId: actionAttempt.attemptId });
     if (saved.length !== 1) throw new Error('REVIEW_ACTIVITY_BINDING_CHANGED');
   }
 
@@ -268,48 +362,68 @@ export class ActionAttemptRepository {
     attemptId: string,
     task: OpenClawTaskEnvelope,
   ): Promise<void> {
-    await this.db.update(actionAttempt).set({
-      taskEnvelopeJson: canonicalJson(task),
-      taskInputHash: task.inputHash,
-      updatedAt: new Date(),
-    }).where(and(
-      eq(actionAttempt.attemptId, attemptId),
-      eq(actionAttempt.actionType, 'OPENCLAW_INTERACTIVE_REVIEW'),
-      eq(actionAttempt.status, 'QUEUED'),
-      eq(actionAttempt.claimCount, 0),
-      isNull(actionAttempt.taskEnvelopeJson),
-    ));
+    await this.db
+      .update(actionAttempt)
+      .set({
+        taskEnvelopeJson: canonicalJson(task),
+        taskInputHash: task.inputHash,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(actionAttempt.attemptId, attemptId),
+          eq(actionAttempt.actionType, 'OPENCLAW_INTERACTIVE_REVIEW'),
+          eq(actionAttempt.status, 'QUEUED'),
+          eq(actionAttempt.claimCount, 0),
+          isNull(actionAttempt.taskEnvelopeJson),
+        ),
+      );
   }
 
   async readActiveReviewForWorkItem(input: {
     tenantId: string;
     workItemId: string;
   }): Promise<ActionAttemptRow | null> {
-    const [row] = await this.db.select().from(actionAttempt).where(and(
-      eq(actionAttempt.tenantId, input.tenantId),
-      eq(actionAttempt.workItemId, input.workItemId),
-      eq(actionAttempt.actionType, 'OPENCLAW_INTERACTIVE_REVIEW'),
-      inArray(actionAttempt.status, [...ACTIVE_STATUSES]),
-    )).limit(1);
+    const [row] = await this.db
+      .select()
+      .from(actionAttempt)
+      .where(
+        and(
+          eq(actionAttempt.tenantId, input.tenantId),
+          eq(actionAttempt.workItemId, input.workItemId),
+          eq(actionAttempt.actionType, 'OPENCLAW_INTERACTIVE_REVIEW'),
+          inArray(actionAttempt.status, [...ACTIVE_STATUSES]),
+        ),
+      )
+      .limit(1);
     return (row as ActionAttemptRow | undefined) ?? null;
   }
 
-  async failReviewPreparation(attemptId: string, errorCode: string): Promise<void> {
+  async failReviewPreparation(
+    attemptId: string,
+    errorCode: string,
+  ): Promise<void> {
     const now = new Date();
-    await this.db.update(actionAttempt).set({
-      status: 'FAILED',
-      errorCode,
-      errorMessage: '本轮上下文准备失败，问题和材料已保留。请查看错误原因后继续提问。',
-      terminalReason: 'REVIEW_CONTEXT_PREPARATION_FAILED',
-      completedAt: now,
-      updatedAt: now,
-    }).where(and(
-      eq(actionAttempt.attemptId, attemptId),
-      eq(actionAttempt.actionType, 'OPENCLAW_INTERACTIVE_REVIEW'),
-      eq(actionAttempt.status, 'QUEUED'),
-      eq(actionAttempt.claimCount, 0),
-      isNull(actionAttempt.taskEnvelopeJson),
-    ));
+    await this.db
+      .update(actionAttempt)
+      .set({
+        status: 'FAILED',
+        errorCode,
+        errorMessage:
+          '本轮上下文准备失败，问题和材料已保留。请查看错误原因后继续提问。',
+        terminalReason: 'REVIEW_CONTEXT_PREPARATION_FAILED',
+        completedAt: now,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(actionAttempt.attemptId, attemptId),
+          eq(actionAttempt.actionType, 'OPENCLAW_INTERACTIVE_REVIEW'),
+          eq(actionAttempt.status, 'QUEUED'),
+          eq(actionAttempt.claimCount, 0),
+          isNull(actionAttempt.taskEnvelopeJson),
+        ),
+      );
   }
 
   async claimExact(input: {
@@ -348,10 +462,7 @@ export class ActionAttemptRepository {
             eq(actionAttempt.attemptId, input.attemptId),
             eq(actionAttempt.status, input.expectedStatus),
             eq(actionAttempt.claimCount, input.expectedClaimCount),
-            eq(
-              actionAttempt.leaseGeneration,
-              input.expectedLeaseGeneration,
-            ),
+            eq(actionAttempt.leaseGeneration, input.expectedLeaseGeneration),
             eq(actionAttempt.operationRef, input.operationRef),
             isNull(actionAttempt.leaseToken),
             or(

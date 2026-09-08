@@ -753,13 +753,15 @@ export async function runApplicabilityEvaluation({
 
 export async function runDynamicEvaluation({
   workItemId,
+  continuationRequestId,
   query,
   callTool,
   evaluateDynamicRules,
 }) {
   assertCallbacks(workItemId, callTool, evaluateDynamicRules);
   const before = await callTool('get_parse_status', { workItemId });
-  const begin = await callTool('begin_dynamic_evaluation', { workItemId });
+  const begin = await callTool('begin_dynamic_evaluation', { workItemId,
+    ...(continuationRequestId ? { requestId: continuationRequestId } : {}) });
   assertBegin(begin, 'OPENCLAW_DYNAMIC_EVALUATION');
   if (begin.status === 'COMMITTING') {
     return recoverInitialCommitting({
@@ -835,6 +837,7 @@ export async function runDynamicEvaluation({
 
 export async function runOverallSynthesis({
   workItemId,
+  continuationRequestId,
   providers = [],
   callTool,
   synthesizeOverall,
@@ -864,6 +867,7 @@ export async function runOverallSynthesis({
   const begin = await callTool('begin_overall_synthesis', {
     workItemId,
     providers: selectedProviders,
+    ...(continuationRequestId ? { requestId: continuationRequestId } : {}),
   });
   assertBegin(begin, 'OPENCLAW_OVERALL_SYNTHESIS');
   assertOverallInput(begin, selectedProviders);

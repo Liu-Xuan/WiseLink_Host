@@ -11,12 +11,15 @@ import type {
   TranslationWorkspaceReadingV2,
 } from '@shared/canonical-translation-v2.interface';
 import { TranslationRevisionEditor } from './TranslationRevisionEditor';
+import InitialAnalysisContinueButton from '@client/src/features/review/InitialAnalysisContinueButton';
 import './semantic-bilingual-reader.css';
 
 interface Props {
   translation: CanonicalReaderTranslationProjection;
   onSourceRefSelect: (unitId: string, sourceRef: string) => void;
   workItem?: Pick<CanonicalWorkItemProjection, 'workItemId' | 'revision'>;
+  canRequestBlockTranslation?: boolean;
+  onContinuationRequested?: () => void;
 }
 const statusLabels = {
   MISSING: '待生成',
@@ -29,6 +32,8 @@ export function SemanticBilingualReader({
   translation,
   onSourceRefSelect,
   workItem,
+  canRequestBlockTranslation,
+  onContinuationRequested,
 }: Props) {
   const [selectedAnchors, setSelectedAnchors] = useState<string[]>([]);
   const [feedback, setFeedback] = useState('');
@@ -305,6 +310,25 @@ export function SemanticBilingualReader({
                 workspaceId={reading.workspaceId}
                 blockId={block.source.blockId}
                 onSaved={setRevisedReading}
+              />
+            ) : null}
+            {workItem &&
+            canRequestBlockTranslation &&
+            !block.source.sourceIssues.some(
+              (issue) => issue.severity === 'BLOCK',
+            ) ? (
+              <InitialAnalysisContinueButton
+                workItemId={workItem.workItemId}
+                expectedRevision={workItem.revision}
+                operation="TRANSLATE"
+                blockIds={[block.source.blockId]}
+                label="重新翻译此完整块"
+                onQueued={() => {
+                  setFeedback(
+                    '局部翻译请求已保存，原可读版本保留到新候选检查通过。',
+                  );
+                  onContinuationRequested?.();
+                }}
               />
             ) : null}
             <footer>

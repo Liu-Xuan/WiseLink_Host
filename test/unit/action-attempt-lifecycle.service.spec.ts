@@ -16,6 +16,34 @@ import {
 } from '../../server/modules/action-attempt/action-attempt.types';
 
 describe('ActionAttemptLifecycleService', () => {
+  it('reads the same explicit request after a successful commit advances the WI, without granting another claim', async () => {
+    const repository = new MemoryActionAttemptRepository();
+    const service = new ActionAttemptLifecycleService(
+      repository as never,
+      fixedModelSettings(),
+    );
+    const reserved = await service.reserve(
+      reservationInput(async () => ({ controlled: true })),
+    );
+    repository.row = { ...repository.requiredRow(), status: 'SUCCEEDED' };
+    const request = {
+      tenantId: 'tenant-test',
+      workItemId: 'WI-test',
+      taskType: 'OPENCLAW_DYNAMIC_EVALUATION' as const,
+      documentVersionId: 'DV-test',
+      idempotencyKey: 'openclaw-v1:test',
+    };
+    expect((await service.readRequest(request))?.attemptId).toBe(
+      reserved.row.attemptId,
+    );
+    await expect(
+      service.readExactIdempotency({ ...request, baseRevision: 8 }),
+    ).rejects.toThrow('IDEMPOTENCY_BINDING_INVALID');
+    await expect(
+      service.readRequest({ ...request, workItemId: 'different-item' }),
+    ).rejects.toThrow('IDEMPOTENCY_BINDING_INVALID');
+    expect(repository.transitions).toEqual(['QUEUED']);
+  });
   it('records Review runtime progress only inside the current authorized lease renewal', async () => {
     const repository = new MemoryActionAttemptRepository();
     const service = new ActionAttemptLifecycleService(

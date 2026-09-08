@@ -84,6 +84,7 @@ Host 新任务若为 `wiselink.jobaid-problem-task.v2`，执行问题分析协�
 没有待执行 Review 时才推进初始阶段；初始失败状态仍保留在回执，Review 成功不修复或重放失败初始阶段。
 该状态来自现有 projection 与 ActionAttempt，
 不是消费者另建业务状态机。独立资料读取可有限并行；依赖分析与同一 WorkItem 的 CAS 写回保持有序。
+页面显式接续产生新的 Host requestId。阶段带 requestId 时，消费者将其原样传入相应 begin，并使用 requests/requestId 下的独立检查点；不能用旧失败检查点代替新请求，也不能为同一终态请求重新生成。
 `NOT_READY/BUSY` 不调用模型，失败阶段不自动重试，未知结果停止并报告。启用英文评估路径后，Host 可保留翻译失败并继续已授权的其他初始阶段；消费者只执行 Host 新读回的 nextOperation。普通 applicability 的
 `WAITING_INPUT` 保持缺口，可继续 Host 指定的 JobAid/Overall；它不自动启动 P0B 重算。
 新 Host 未提供该字段时统一入口明确停止，原有单 operation 与 Review 入口仍兼容。

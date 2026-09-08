@@ -97,6 +97,7 @@ export class CanonicalHostOpenClawOverallService {
   async begin(
     workItemId: string,
     providers: string[],
+    requestId?: string,
   ): Promise<{
     attemptRef: string;
     status: 'RUNNING' | 'COMMITTING';
@@ -113,6 +114,22 @@ export class CanonicalHostOpenClawOverallService {
       workItemId,
     });
     assertWorkItemScope(scope, workItemId);
+    if (requestId !== undefined) {
+      if (!this.problemAssessment)
+        throw new Error('JOBAID_PROBLEM_RUNTIME_UNAVAILABLE');
+      if (providers.length)
+        throw new Error('JOBAID_UNREGISTERED_DISCOVERY_PROVIDERS');
+      const context = await this.requiredBaseRulesContext(
+        workItemId,
+        scope.tenantId,
+      );
+      return this.problemAssessment.begin(
+        context.execution,
+        scope,
+        'OVERALL_CONSISTENCY',
+        requestId,
+      );
+    }
     const context = await this.prepareOverallExecution(
       await this.requiredBaseRulesContext(workItemId, scope.tenantId),
       scope.tenantId,

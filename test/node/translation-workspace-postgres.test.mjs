@@ -15,6 +15,8 @@ const { getTableConfig } = require('drizzle-orm/pg-core');
 const { actionAttempt } = require('../../server/database/schema.ts');
 const { sealTaskEnvelope, canonicalJson } = require('../../server/modules/action-attempt/action-attempt-envelope.ts');
 const { CanonicalTranslationWorkspaceRepository } = require('../../server/modules/canonical-host/canonical-translation-workspace.repository.ts');
+const { ActionAttemptRepository } = require('../../server/modules/action-attempt/action-attempt.repository.ts');
+const { ACTION_ATTEMPT_REQUEST_ORIGIN } = require('../../server/modules/action-attempt/action-attempt.types.ts');
 const { CanonicalTranslationV2Service } = require('../../server/modules/canonical-host/canonical-translation-v2.service.ts');
 const { buildTranslationSourcePlan } = require('../../server/modules/canonical-host/canonical-translation-source-plan.ts');
 const { translationBatchDependenciesV2 } = require('../../server/modules/canonical-host/canonical-translation-v2-batch.ts');
@@ -221,7 +223,65 @@ test('real PostgreSQL translation work survives bounded requests and enforces sc
         feedbackDecision: 'ADOPTED_AS_CANDIDATE_SUGGESTION', expectedRevision: 1, resultingRevision: 2, actorKind: 'HUMAN', actorId: 'engineer-test',
         reason: 'Synthetic stale attempt', createdAt: '2026-09-09T00:00:00.000Z' }), /KNOWLEDGE_TRANSLATION_BLOCK_CHANGED/u);
     });
+    await t.test('an explicitly requested replacement preserves the readable body on failure and replaces only its complete block on a normal successor', async () => {
+      const before = await repository.readSnapshot(fence);
+      const oldReading = buildTranslationWorkspaceReadingV2(before.workspace, before.revisions);
+      const oldFirst = oldReading.blocks[0].selected;
+      const oldSecond = oldReading.blocks[1].selected;
+      active = await seedAttempt(sql, workspace, 'replacement-failed', 'miaoda/minimax-m3', { retranslateBlockIds: ['b1'] });
+      fence = { ...fence, attemptRef: active.task.operationRef, leaseToken: active.leaseToken };
+      workspace = await repository.attachAttempt(fence);
+      const failedRequest = await command({ phase: 'NEXT', requestId: 'replace-failed' });
+      assert.deepEqual(failedRequest.blockIds, ['b1']);
+      await command({ phase: 'RECORD_FAILURE', generationRequestRef: failedRequest.generationRequestRef,
+        error: { origin: 'TRANSPORT', code: 'SYNTHETIC_KNOWN_FAILURE', outcome: 'KNOWN_FAILURE', retryable: false } });
+      await assert.rejects(command({ phase: 'ASSEMBLE' }), /REQUESTED_BLOCK_NOT_REPLACED/u);
+      const stillReadable = await command({ phase: 'READ' }); assert.equal(stillReadable.completeness, 'COMPLETE');
+      await sql`UPDATE action_attempt SET status = 'CANCELLED', cancel_requested_at = now() WHERE operation_ref = ${fence.attemptRef}`;
+      active = await seedAttempt(sql, workspace, 'replacement-next', 'miaoda/minimax-m3', { retranslateBlockIds: ['b1'] });
+      fence = { ...fence, attemptRef: active.task.operationRef, leaseToken: active.leaseToken };
+      workspace = await repository.attachAttempt(fence);
+      const next = await command({ phase: 'NEXT', requestId: 'replace-next' });
+      assert.equal(next.action, 'GENERATE'); assert.deepEqual(next.blockIds, ['b1']);
+      await command({ phase: 'SAVE', generationRequestRef: next.generationRequestRef,
+        candidates: [{ blockId: 'b1', elements: [{ kind: 'heading', translatedText: '合成测试的新描述', anchorIds: ['a1'] }] }], actualExecution: execution });
+      const pending = await repository.readSnapshot(fence);
+      assert.equal(buildTranslationWorkspaceReadingV2(pending.workspace, pending.revisions).blocks[0].selected.blockRevisionId, oldFirst.blockRevisionId);
+      assert.equal((await command({ phase: 'NEXT', requestId: 'finish-replacement' })).action, 'DONE');
+      const finalReplacement = await command({ phase: 'ASSEMBLE' });
+      const replaced = parseBilingualTranslationArtifactV2(artifacts.get(finalReplacement.artifact.ref));
+      assert.equal(replaced.blocks[0].selected.contentRevision, oldFirst.contentRevision + 1);
+      assert.equal(replaced.blocks[1].selected.blockRevisionId, oldSecond.blockRevisionId);
+      assert.equal((await repository.readBlocks(fence)).find((revision) => revision.blockRevisionId === oldFirst.blockRevisionId).candidate.elements[0].translatedText, oldFirst.candidate.elements[0].translatedText);
+      await sql`UPDATE action_attempt SET status = 'SUCCEEDED' WHERE operation_ref = ${fence.attemptRef}`;
+    });
+    await t.test('one explicit request has one durable reservation under concurrency and after a terminal response is lost', async () => {
+      const attemptRepository = new ActionAttemptRepository(db);
+      const requestKey = `openclaw-v2:dynamic:WI-test:dv-test:${randomUUID()}`;
+      const record = (index) => {
+        const task = sealTaskEnvelope({ ...active.task, actionAttemptId: `ATT-queue-${index}`, operationRef: `AQ-queue-${index}`,
+          taskType: 'OPENCLAW_DYNAMIC_EVALUATION', idempotencyKey: requestKey, modelInput: { synthetic: true } });
+        return { id: randomUUID(), attemptId: task.actionAttemptId, operationRef: task.operationRef, workItemId: 'WI-test',
+          actionType: task.taskType, attemptNo: 90 + index, status: 'QUEUED', actorUserId: 'service:openclaw-main', tenantId: 'tenant-test',
+          requestOrigin: ACTION_ATTEMPT_REQUEST_ORIGIN, documentVersionId: 'dv-test', inputRevision: 1, baseRevision: 1,
+          idempotencyKey: requestKey, taskEnvelopeJson: canonicalJson(task), taskInputHash: task.inputHash,
+          executionModelJson: canonicalJson(task.executionModel), createdAt: new Date(), updatedAt: new Date() };
+      };
+      const concurrent = await Promise.all([attemptRepository.reserve(record(1)), attemptRepository.reserve(record(2))]);
+      assert.equal(concurrent.filter((entry) => entry.created).length, 1);
+      assert.equal(concurrent[0].row.attemptId, concurrent[1].row.attemptId);
+      const other = { ...record(4), idempotencyKey: `${requestKey}-different`, actionType: 'OPENCLAW_OVERALL_SYNTHESIS' };
+      await assert.rejects(attemptRepository.reserve(other), { code: 'ACTION_ATTEMPT_ACTIVE_CONFLICT', statusCode: 409 });
+      await sql`UPDATE action_attempt SET status = 'SUCCEEDED' WHERE idempotency_key = ${requestKey}`;
+      await sql`UPDATE work_item SET revision = 2 WHERE work_item_id = 'WI-test'`;
+      const replay = await attemptRepository.reserve(record(3));
+      assert.equal(replay.created, false); assert.equal(replay.row.status, 'SUCCEEDED');
+      assert.equal(replay.row.attemptId, concurrent[0].row.attemptId);
+      assert.equal((await sql`SELECT count(*)::int AS count FROM action_attempt WHERE idempotency_key = ${requestKey}`)[0].count, 1);
+      await assert.rejects(attemptRepository.reserve(other), /WORK_ITEM_BINDING_CHANGED/u);
+    });
     await t.test('RLS exposes only the owned tenant workspace and no authenticated mutation', async () => {
+      const beforeRevision = (await sql`SELECT revision FROM work_item`)[0].revision;
       await sql.begin(async (tx) => {
         await tx.unsafe('SET LOCAL ROLE authenticated');
         await tx`SELECT set_config('app.user_id', 'wrong-user', true)`;
@@ -234,7 +294,7 @@ test('real PostgreSQL translation work survives bounded requests and enforces sc
         assert.ok((await tx`SELECT block_revision_id FROM translation_block_revision`).length >= 3);
         assert.equal((await tx`UPDATE translation_workspace SET row_version = 999 RETURNING workspace_id`).length, 0);
       });
-      assert.equal((await sql`SELECT revision FROM work_item`)[0].revision, 1);
+      assert.equal((await sql`SELECT revision FROM work_item`)[0].revision, beforeRevision);
     });
   } finally { await sql.end({ timeout: 5 }); }
 });
@@ -254,6 +314,7 @@ async function reset(sql) {
   await sql.unsafe(`CREATE TABLE action_attempt (${columns.join(',')}, UNIQUE(attempt_id), UNIQUE(operation_ref))`);
   const migrationConnection = await sql.reserve();
   try {
+    await migrationConnection.unsafe(await readFile(new URL('../../migrations/0003_action_attempt_openclaw_v1.sql', import.meta.url), 'utf8'));
     await migrationConnection.unsafe(await readFile(new URL('../../migrations/0025_translation_workspace.sql', import.meta.url), 'utf8'));
     await migrationConnection.unsafe(await readFile(new URL('../../migrations/0015_translation_memory_knowledge_governance.sql', import.meta.url), 'utf8'));
   } finally {
@@ -272,12 +333,12 @@ function fixturePlan() {
         payload: i === 0 ? { text, level: 1 } : { text, role: 'body' } })),
     } });
 }
-async function seedAttempt(sql, workspace, suffix, modelRef) {
+async function seedAttempt(sql, workspace, suffix, modelRef, extraModelInput = {}) {
   const now = new Date(); const leaseToken = randomUUID(); const deadline = new Date(now.getTime() + 60 * 60_000);
   const executionModel = { modelRef, displayName: 'Synthetic model', providerKind: modelRef.startsWith('miaoda/') ? 'BUILT_IN' : 'CUSTOM', settingsRevision: 1, selectedAt: now.toISOString() };
   const task = sealTaskEnvelope({ schemaVersion: 'wiselink.3_1.openclaw_task_envelope.v1', actionAttemptId: `ATT-${suffix}`, operationRef: `AQ-${suffix}`, taskType: 'OPENCLAW_TRANSLATE', priority: 1,
     tenantId: 'tenant-test', workItemId: 'WI-test', inputRevision: 1, baseRevision: 1, documentVersionId: 'dv-test', sourceRefs: [{ ref: workspace.plan.source.parsedArtifact.ref, sha256: workspace.plan.source.parsedArtifact.sha256 }],
-    allowedConnectors: [], hostResolvedMissingInputs: [], modelInput: { schemaVersion: 'wiselink.3_1.translation_task.v2', workspaceId: workspace.workspaceId, planRevision: 1, contextRevision: 1, methodVersion: workspace.methodVersion },
+    allowedConnectors: [], hostResolvedMissingInputs: [], modelInput: { schemaVersion: 'wiselink.3_1.translation_task.v2', workspaceId: workspace.workspaceId, planRevision: 1, contextRevision: 1, methodVersion: workspace.methodVersion, ...extraModelInput },
     executionModel, deadline: deadline.toISOString(), idempotencyKey: `synthetic-translation-${suffix}` });
   await sql`INSERT INTO action_attempt (id, attempt_id, operation_ref, work_item_id, action_type, status, actor_user_id, tenant_id, input_revision, base_revision, document_version_id,
     task_envelope_json, task_input_hash, idempotency_key, execution_model_json, lease_owner, lease_token, lease_generation, lease_expires_at, deadline_at, created_at, updated_at)

@@ -429,7 +429,10 @@ export interface CanonicalReaderTranslationAxesProjection {
 }
 
 export type CanonicalReaderTranslationProjection =
-  | { status: 'SEMANTIC_READING_AID_AVAILABLE'; reading: TranslationWorkspaceReadingV2 }
+  | {
+      status: 'SEMANTIC_READING_AID_AVAILABLE';
+      reading: TranslationWorkspaceReadingV2;
+    }
   | {
       status: 'UNAVAILABLE';
       reason: 'TRANSLATION_PROJECTION_NOT_AVAILABLE';
@@ -1078,18 +1081,27 @@ interface CanonicalTranslationCandidateProjectionBase {
   artifact: UnifiedPackageArtifactDescriptor;
 }
 
-export type CanonicalTranslationCandidateProjection = CanonicalTranslationCandidateProjectionBase & (
-  | { schemaVersion: 'wiselink.3_1.translation_candidate_projection.v1' }
-  | { schemaVersion: 'wiselink.3_1.translation_candidate_projection.v2'; workspaceId: string;
-      planRevision: number; contextRevision: number; completeness: 'PARTIAL' | 'COMPLETE_WITH_ISSUES' | 'COMPLETE' }
-);
+export type CanonicalTranslationCandidateProjection =
+  CanonicalTranslationCandidateProjectionBase &
+    (
+      | { schemaVersion: 'wiselink.3_1.translation_candidate_projection.v1' }
+      | {
+          schemaVersion: 'wiselink.3_1.translation_candidate_projection.v2';
+          workspaceId: string;
+          planRevision: number;
+          contextRevision: number;
+          completeness: 'PARTIAL' | 'COMPLETE_WITH_ISSUES' | 'COMPLETE';
+        }
+    );
 
 export type CanonicalTranslationKnowledgeFeedbackDecision =
   | 'ADOPTED_AS_CANDIDATE_SUGGESTION'
   | 'REJECTED';
 
 export interface CanonicalTranslationKnowledgeCandidateSnapshot {
-  schemaVersion: 'wiselink.3_1.translation_knowledge_candidate_snapshot.v1' | 'wiselink.3_1.translation_knowledge_candidate_snapshot.v2';
+  schemaVersion:
+    | 'wiselink.3_1.translation_knowledge_candidate_snapshot.v1'
+    | 'wiselink.3_1.translation_knowledge_candidate_snapshot.v2';
   semanticScope?: import('./canonical-translation-v2.interface').TranslationKnowledgeSemanticScopeV2;
   assetId: string;
   workItemId: string;
@@ -2608,6 +2620,8 @@ export type AilyInitialAnalysisOperation =
   | 'SYNTHESIZE_OVERALL';
 
 export interface AilyInitialAnalysisStageStatus {
+  /** Explicit normal request identity for the authorized automatic consumer. */
+  requestId?: string;
   executionModel?: CanonicalExecutionModelSelection | null;
   status:
     | 'PENDING'
@@ -2692,12 +2706,30 @@ export interface CanonicalInitialAnalysisReadModel {
   analysisModel?: CanonicalExecutionModelSelection | null;
   status: AilyInitialAnalysisStatus['status'];
   nextOperation: AilyInitialAnalysisOperation | null;
+  continuationOperations?: CanonicalInitialAnalysisContinuationRequest['operation'][];
+  canRequestBlockTranslation?: boolean;
+  translationWork?: { workspaceId: string; rowVersion: number } | null;
   stages: {
     [K in keyof AilyInitialAnalysisStatus['stages']]: Pick<
       AilyInitialAnalysisStageStatus,
       'status' | 'terminalCode' | 'executionModel'
     >;
   };
+  candidateOnly: true;
+}
+
+export interface CanonicalInitialAnalysisContinuationRequest {
+  requestId: string;
+  expectedRevision: number;
+  operation: Exclude<AilyInitialAnalysisOperation, 'EXTRACT_APPLICABILITY'>;
+  retranslateBlockIds?: string[];
+}
+
+export interface CanonicalInitialAnalysisContinuationReceipt {
+  requestId: string;
+  operation: CanonicalInitialAnalysisContinuationRequest['operation'];
+  status: string;
+  replayed: boolean;
   candidateOnly: true;
 }
 

@@ -236,26 +236,49 @@ export class CanonicalHostOpenClawMcpService {
         description:
           'Host 为同一 WorkItem 创建或恢复 TRANSLATE ActionAttempt。新 v2 使用 requestId 与完整结构来源工作区，返回任务指针；通过 translation_workspace 领取完整语义批次、保存并检查后由 Host 组装。历史 v1 仍返回有界 SourceUnit 传输分片，COMMITTING 仅恢复相同提交。',
         inputSchema: z
-          .object({ workItemId: mcpWorkItemId, deliveryPart, requestId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/u).optional() })
+          .object({
+            workItemId: mcpWorkItemId,
+            deliveryPart,
+            requestId: z
+              .string()
+              .regex(/^[A-Za-z0-9_-]{1,64}$/u)
+              .optional(),
+          })
           .strict(),
         annotations: beginAnnotations,
       },
       async ({ workItemId, deliveryPart: selectedDeliveryPart, requestId }) => {
         const begin = await this.translation.begin(workItemId, requestId);
-        if (begin.task.modelInput.schemaVersion === TRANSLATION_V2_TASK_SCHEMA) {
-          if (selectedDeliveryPart !== undefined && selectedDeliveryPart !== 0) throw new Error('TRANSLATION_V2_TASK_HAS_NO_SOURCE_UNIT_PARTS');
+        if (
+          begin.task.modelInput.schemaVersion === TRANSLATION_V2_TASK_SCHEMA
+        ) {
+          if (selectedDeliveryPart !== undefined && selectedDeliveryPart !== 0)
+            throw new Error('TRANSLATION_V2_TASK_HAS_NO_SOURCE_UNIT_PARTS');
           return textResult(begin);
         }
-        return textResult(buildOpenClawTranslationDelivery(begin, selectedDeliveryPart ?? 0));
+        return textResult(
+          buildOpenClawTranslationDelivery(begin, selectedDeliveryPart ?? 0),
+        );
       },
     );
 
-    server.registerTool('translation_workspace', {
-      title: '翻译工作区批次、保存、检查与组装',
-      description: '在已有翻译 attempt 的租约和工作区范围内操作。NEXT 领取一批完整语义块；READ_BATCH 只传输该批完整输入；SAVE 幂等保存实际译文为待检查版本；CHECK 保存独立语义检查；RECORD_FAILURE 保留明确或未知生成结果；ASSEMBLE 从 Host 已选版本组装带覆盖范围的候选。全部为候选，不采用工程结论，不改变原文。',
-      inputSchema: translationWorkspaceCommandSchemaV2,
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-    }, async (input) => textResult(await this.translation.workspaceCommand(input)));
+    server.registerTool(
+      'translation_workspace',
+      {
+        title: '翻译工作区批次、保存、检查与组装',
+        description:
+          '在已有翻译 attempt 的租约和工作区范围内操作。NEXT 领取一批完整语义块；READ_BATCH 只传输该批完整输入；SAVE 幂等保存实际译文为待检查版本；CHECK 保存独立语义检查；RECORD_FAILURE 保留明确或未知生成结果；ASSEMBLE 从 Host 已选版本组装带覆盖范围的候选。全部为候选，不采用工程结论，不改变原文。',
+        inputSchema: translationWorkspaceCommandSchemaV2,
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
+      },
+      async (input) =>
+        textResult(await this.translation.workspaceCommand(input)),
+    );
 
     server.registerTool(
       'commit_translation_candidate',
@@ -363,11 +386,19 @@ export class CanonicalHostOpenClawMcpService {
         title: '开始 JobAid 候选评估',
         description:
           'Host 按任务已绑定的 schema 返回旧逐项或新问题分析输入。新任务可按已登记来源调查并保存完整工作；同一身份精确重放。COMMITTING 返回已存 recoveryResult，不重新生成。',
-        inputSchema: z.object({ workItemId: mcpWorkItemId }).strict(),
+        inputSchema: z
+          .object({
+            workItemId: mcpWorkItemId,
+            requestId: z
+              .string()
+              .regex(/^[A-Za-z0-9_-]{1,64}$/u)
+              .optional(),
+          })
+          .strict(),
         annotations: beginAnnotations,
       },
-      async ({ workItemId }) =>
-        textResult(await this.dynamicEvaluation.begin(workItemId)),
+      async ({ workItemId, requestId }) =>
+        textResult(await this.dynamicEvaluation.begin(workItemId, requestId)),
     );
 
     server.registerTool(
@@ -490,10 +521,14 @@ export class CanonicalHostOpenClawMcpService {
       {
         title: '开始整体候选综合',
         description:
-          '默认 providers=[]，先只基于同一 WorkItem 的完整 dynamic-N 实际字节和 frozen.2 来源完成整体综合；仅在已有综合明确指出不确定项后，才按需指定相关 OEM provider。重复 begin 遇到 COMMITTING 时返回 recoveryResult，禁止二次模型执行。',
+          'Host 按已绑定 schema 使用当前 JobAid 工作与核实来源；新问题评估只检查最新工作的一致性，历史逐项结果仍兼容。显式 requestId 领取同一新请求，COMMITTING 只恢复已存结果。',
         inputSchema: z
           .object({
             workItemId: mcpWorkItemId,
+            requestId: z
+              .string()
+              .regex(/^[A-Za-z0-9_-]{1,64}$/u)
+              .optional(),
             providers: z
               .array(z.enum(['AIRBUS', 'BOEING', 'COMAC']))
               .max(3)
@@ -502,8 +537,10 @@ export class CanonicalHostOpenClawMcpService {
           .strict(),
         annotations: beginAnnotations,
       },
-      async ({ workItemId, providers }) =>
-        textResult(await this.overall.begin(workItemId, providers ?? [])),
+      async ({ workItemId, providers, requestId }) =>
+        textResult(
+          await this.overall.begin(workItemId, providers ?? [], requestId),
+        ),
     );
 
     server.registerTool(

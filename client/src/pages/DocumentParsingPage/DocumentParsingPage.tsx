@@ -1173,6 +1173,9 @@ export default function DocumentParsingPage() {
               readerMode={readerMode}
               onQueryChange={setQuery}
               onQuerySubmit={submitReaderQuery}
+              onContinuationRequested={() => {
+                void load(activeQuery);
+              }}
               onReaderModeChange={(mode: ReaderViewMode) =>
                 updateDeepLink({
                   node: 'reader',

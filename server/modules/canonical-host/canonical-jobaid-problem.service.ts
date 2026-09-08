@@ -80,6 +80,7 @@ import {
   configurationEvidenceShadow,
   withStagedBaseRules,
   promoteConfigurationEvidenceReevaluation,
+  retryConfigurationEvidenceReevaluationStage,
 } from './configuration-evidence/configuration-evidence-reevaluation.state';
 
 export interface BeginJobAidProblemResult {
@@ -142,6 +143,7 @@ export class CanonicalJobAidProblemService {
     workItem: CanonicalWorkItemProjection,
     scope: CanonicalVerifiedServiceScope,
     purpose: JobAidProblemModelInput['purpose'],
+    requestId?: string,
   ): Promise<BeginJobAidProblemResult> {
     const loaded = await this.workItems.loadTenantScopedProjection(
       workItem.workItemId,
@@ -158,6 +160,27 @@ export class CanonicalJobAidProblemService {
       purpose === 'INITIAL_PROBLEM_ASSESSMENT'
         ? 'OPENCLAW_DYNAMIC_EVALUATION'
         : 'OPENCLAW_OVERALL_SYNTHESIS';
+    const idempotencyKey = problemIdempotencyKey(workItem, purpose, requestId);
+    if (requestId !== undefined) {
+      const existing = await this.attempts.readRequest({
+        tenantId: scope.tenantId,
+        workItemId: workItem.workItemId,
+        taskType,
+        documentVersionId: workItem.source.documentVersionId,
+        idempotencyKey,
+      });
+      if (existing) {
+        continuationReceipt(existing, purpose);
+        if (
+          !['QUEUED', 'RUNNING', 'RETRY_SCHEDULED', 'COMMITTING'].includes(
+            existing.status,
+          )
+        )
+          throw new Error(`ACTION_ATTEMPT_ALREADY_${existing.status}`);
+      } else if (!this.enabledForNewTasks()) {
+        throw new Error('JOBAID_PROBLEM_V2_NEW_REQUEST_DISABLED');
+      }
+    }
     const claim = await this.attempts.reserveAndClaim({
       workItemId: workItem.workItemId,
       taskType,
@@ -167,7 +190,7 @@ export class CanonicalJobAidProblemService {
       documentVersionId: workItem.source.documentVersionId,
       inputRevision: workItem.revision,
       baseRevision: workItem.revision,
-      idempotencyKey: problemIdempotencyKey(workItem, purpose),
+      idempotencyKey,
       sourceRefs: [
         {
           ref: workItem.package.artifact.ref,
@@ -205,6 +228,138 @@ export class CanonicalJobAidProblemService {
       modelInput: structuredClone(input.modelInput),
       selectedDiscoveryRefs: [],
     };
+  }
+
+  /** Called after browser owner, permission and current-version checks. */
+  async enqueueContinuation(
+    workItem: CanonicalWorkItemProjection,
+    tenantId: string,
+    permissionSnapshotVersion: string,
+    requestId: string,
+    purpose: 'INITIAL_PROBLEM_ASSESSMENT' | 'OVERALL_CONSISTENCY',
+  ) {
+    if (!permissionSnapshotVersion.trim())
+      throw new Error('JOBAID_PERMISSION_SNAPSHOT_REQUIRED');
+    const idempotencyKey = problemIdempotencyKey(workItem, purpose, requestId);
+    const taskType =
+      purpose === 'INITIAL_PROBLEM_ASSESSMENT'
+        ? 'OPENCLAW_DYNAMIC_EVALUATION'
+        : 'OPENCLAW_OVERALL_SYNTHESIS';
+    const existing = await this.attempts.readRequest({
+      tenantId,
+      workItemId: workItem.workItemId,
+      taskType,
+      documentVersionId: workItem.source.documentVersionId,
+      idempotencyKey,
+    });
+    if (existing) return continuationReceipt(existing, purpose);
+    if (!this.enabledForNewTasks())
+      throw new Error('JOBAID_PROBLEM_V2_NEW_REQUEST_DISABLED');
+
+    const execution = await this.prepareContinuationWorkItem(
+      workItem,
+      tenantId,
+      purpose,
+    );
+    const loaded = await this.workItems.loadTenantScopedProjection(
+      execution.workItemId,
+      tenantId,
+    );
+    if (
+      !loaded ||
+      loaded.row.documentVersionId !== execution.source.documentVersionId ||
+      !execution.package
+    )
+      throw new Error('JOBAID_WORK_ITEM_BINDING_INVALID');
+    const reserved = await this.attempts.reserve({
+      workItemId: execution.workItemId,
+      taskType,
+      actorUserId: 'service:openclaw-main',
+      tenantId,
+      documentVersionId: execution.source.documentVersionId,
+      inputRevision: execution.revision,
+      baseRevision: execution.revision,
+      idempotencyKey,
+      sourceRefs: [
+        {
+          ref: execution.package.artifact.ref,
+          sha256: execution.package.artifact.sha256,
+        },
+      ],
+      allowedConnectors: [],
+      buildModelInput: (identity) =>
+        this.buildInput(
+          execution,
+          tenantId,
+          loaded.row.requestedByUserId,
+          permissionSnapshotVersion,
+          purpose,
+          identity.createdAt.toISOString(),
+        ),
+    });
+    return {
+      attemptRef: reserved.task.operationRef,
+      status: reserved.row.status,
+      created: reserved.created,
+      workItemRevision: reserved.task.baseRevision,
+    };
+  }
+
+  private async prepareContinuationWorkItem(
+    requested: CanonicalWorkItemProjection,
+    tenantId: string,
+    purpose: 'INITIAL_PROBLEM_ASSESSMENT' | 'OVERALL_CONSISTENCY',
+  ): Promise<CanonicalWorkItemProjection> {
+    let authoritative = await this.registrar.getTenantScopedByWorkItemId({
+      tenantId,
+      workItemId: requested.workItemId,
+    });
+    if (
+      authoritative.revision !== requested.revision ||
+      authoritative.source.documentVersionId !==
+        requested.source.documentVersionId
+    )
+      throw new Error('JOBAID_WORK_ITEM_BINDING_CHANGED');
+    const marker = activeConfigurationEvidenceReevaluation(authoritative);
+    if (!marker) return authoritative;
+    if (
+      marker.stages.applicability.status !== 'SUCCEEDED' ||
+      !marker.stagedBundle.applicabilityInput ||
+      !marker.stagedBundle.applicability
+    )
+      throw new Error(
+        'CONFIGURATION_REEVALUATION_APPLICABILITY_STAGE_REQUIRED',
+      );
+    if (
+      purpose === 'INITIAL_PROBLEM_ASSESSMENT' &&
+      marker.stages.dynamic.status === 'SUCCEEDED'
+    )
+      throw new Error('CONFIGURATION_REEVALUATION_DYNAMIC_ALREADY_SUCCEEDED');
+    if (
+      purpose === 'OVERALL_CONSISTENCY' &&
+      (marker.stages.dynamic.status !== 'SUCCEEDED' ||
+        !marker.stagedBundle.baseRules)
+    )
+      throw new Error('CONFIGURATION_REEVALUATION_OVERALL_STAGE_REQUIRED');
+    const stage =
+      purpose === 'INITIAL_PROBLEM_ASSESSMENT' ? 'DYNAMIC' : 'OVERALL';
+    const status =
+      stage === 'DYNAMIC'
+        ? marker.stages.dynamic.status
+        : marker.stages.overall.status;
+    if (['WAITING_INPUT', 'FAILED', 'CONFLICT'].includes(status)) {
+      const retry = retryConfigurationEvidenceReevaluationStage({
+        workItem: authoritative,
+        stage,
+      });
+      authoritative = await this.registrar.compareAndSet({
+        workItemId: authoritative.workItemId,
+        expectedRevision: authoritative.revision,
+        syncPrimaryAttempt: false,
+        next: withoutRevision(retry),
+      });
+    }
+    return configurationEvidenceShadow(authoritative);
   }
 
   async enqueueOverall(
@@ -1151,6 +1306,32 @@ function attemptBinding(row: ActionAttemptRow) {
 function problemIdempotencyKey(
   workItem: CanonicalWorkItemProjection,
   purpose: JobAidProblemModelInput['purpose'],
+  requestId?: string,
 ): string {
+  if (requestId !== undefined) {
+    if (!/^[A-Za-z0-9_-]{1,64}$/u.test(requestId))
+      throw new Error('JOBAID_REQUEST_ID_INVALID');
+    if (
+      purpose !== 'INITIAL_PROBLEM_ASSESSMENT' &&
+      purpose !== 'OVERALL_CONSISTENCY'
+    )
+      throw new Error('JOBAID_CONTINUATION_PURPOSE_INVALID');
+    return `openclaw-v2:${purpose === 'INITIAL_PROBLEM_ASSESSMENT' ? 'dynamic' : 'overall'}:${workItem.workItemId}:${workItem.source.documentVersionId}:${requestId}`;
+  }
   return `openclaw-v1:${purpose === 'INITIAL_PROBLEM_ASSESSMENT' ? 'dynamic' : 'overall'}:${workItem.workItemId}:${workItem.revision}:problem-v2`;
+}
+
+function continuationReceipt(
+  row: ActionAttemptRow,
+  purpose: JobAidProblemModelInput['purpose'],
+) {
+  const task = parseTaskEnvelope(row.taskEnvelopeJson!);
+  if (parseJobAidProblemTask(task).modelInput.purpose !== purpose)
+    throw new Error('JOBAID_CONTINUATION_PURPOSE_MISMATCH');
+  return {
+    attemptRef: task.operationRef,
+    status: row.status,
+    created: false,
+    workItemRevision: task.baseRevision,
+  };
 }

@@ -11,16 +11,27 @@ import type {
   AilyInitialAnalysisStatus,
   CanonicalInitialAnalysisReadModel,
   CanonicalExecutionModelSelection,
+  CanonicalConfigurationEvidenceReevaluationStageProjection,
   CanonicalWorkItemProjection,
 } from '@shared/api.interface';
 
-import { actionAttempt, workItem } from '../../database/schema';
+import {
+  actionAttempt,
+  translationWorkspace,
+  workItem,
+} from '../../database/schema';
+import { isJobAidProblemProjection } from '@shared/jobaid-problem-assessment.interface';
+import { isOpenClawAutomaticReviewConfigured } from './configured-development-service-scope.authorization';
 import { readStoredExecutionModel } from '../model-settings/canonical-execution-model';
 import { ACTION_ATTEMPT_REQUEST_ORIGIN } from '../action-attempt/action-attempt.types';
 import {
   CANONICAL_TRANSLATION_RULE_SET_V1_ID,
   CANONICAL_TRANSLATION_RULE_SET_V1_VERSION,
 } from './canonical-translation-rule-set-v1.private';
+import {
+  activeConfigurationEvidenceReevaluation,
+  configurationEvidenceShadow,
+} from './configuration-evidence/configuration-evidence-reevaluation.state';
 
 const INITIAL_ANALYSIS_ACTION_TYPES = [
   'OPENCLAW_TRANSLATE',
@@ -32,6 +43,8 @@ const INITIAL_ANALYSIS_ACTION_TYPES = [
 type InitialAnalysisActionType = (typeof INITIAL_ANALYSIS_ACTION_TYPES)[number];
 
 export interface CanonicalInitialAnalysisAttemptObservation {
+  requestId?: string;
+  baseRevision?: number | null;
   executionModel?: CanonicalExecutionModelSelection | null;
   attemptId: string;
   actionType: InitialAnalysisActionType;
@@ -76,6 +89,8 @@ export class CanonicalHostInitialAnalysisStatusService {
         errorCode: actionAttempt.errorCode,
         cancelReason: actionAttempt.cancelReason,
         executionModelJson: actionAttempt.executionModelJson,
+        idempotencyKey: actionAttempt.idempotencyKey,
+        baseRevision: actionAttempt.baseRevision,
       })
       .from(actionAttempt)
       .where(
@@ -98,10 +113,17 @@ export class CanonicalHostInitialAnalysisStatusService {
         actionType: initialAnalysisActionType(row.actionType),
         attemptRef: row.attemptRef,
         status: row.status,
+        baseRevision: row.baseRevision,
         terminalCode: initialAnalysisTerminalCode(row),
         executionModel: readStoredExecutionModel(row.executionModelJson),
+        ...(continuationRequestId(row, input.workItem)
+          ? { requestId: continuationRequestId(row, input.workItem)! }
+          : {}),
       })),
-      { englishAssessmentEnabled: process.env.WL_JOBAID_PROBLEM_V2_ENABLED === '1' },
+      {
+        englishAssessmentEnabled:
+          process.env.WL_JOBAID_PROBLEM_V2_ENABLED === '1',
+      },
     );
   }
 
@@ -110,6 +132,9 @@ export class CanonicalHostInitialAnalysisStatusService {
     tenantId: string;
   }): Promise<CanonicalInitialAnalysisReadModel> {
     const status = await this.project(input);
+    const execution = activeConfigurationEvidenceReevaluation(input.workItem)
+      ? configurationEvidenceShadow(input.workItem)
+      : input.workItem;
     const [root] = await this.db
       .select({ model: workItem.analysisModelJson })
       .from(workItem)
@@ -127,6 +152,97 @@ export class CanonicalHostInitialAnalysisStatusService {
         ? { executionModel: status.stages[key].executionModel }
         : {}),
     });
+    const active = Object.values(status.stages).some(
+      (value) =>
+        value.attemptStatus &&
+        ['QUEUED', 'RUNNING', 'RETRY_SCHEDULED', 'COMMITTING'].includes(
+          value.attemptStatus,
+        ),
+    );
+    const automatic =
+      isParsedPackageReady(input.workItem) &&
+      !active &&
+      isOpenClawAutomaticReviewConfigured({
+        tenantId: input.tenantId,
+        workItemId: input.workItem.workItemId,
+      });
+    const canTranslate =
+      automatic && process.env.WL_TRANSLATION_V2_ENABLED === '1';
+    const continuationOperations: NonNullable<
+      CanonicalInitialAnalysisReadModel['continuationOperations']
+    > = [];
+    if (
+      canTranslate &&
+      (status.stages.translation.status !== 'SUCCEEDED' ||
+        input.workItem.translation?.schemaVersion !==
+          'wiselink.3_1.translation_candidate_projection.v2' ||
+        input.workItem.translation.completeness !== 'COMPLETE')
+    )
+      continuationOperations.push('TRANSLATE');
+    if (
+      automatic &&
+      process.env.WL_JOBAID_PROBLEM_V2_ENABLED === '1' &&
+      input.workItem.classification.status === 'CONFIRMED' &&
+      input.workItem.classification.normalizedFamily === 'SB'
+    ) {
+      if (
+        ['FAILED', 'CONFLICT'].includes(status.stages.jobAid.status) &&
+        canContinueInitialStage(
+          status.stages,
+          'EVALUATE_JOBAID',
+          true,
+          input.workItem,
+        )
+      )
+        continuationOperations.push('EVALUATE_JOBAID');
+      if (
+        isJobAidProblemProjection(execution.integratedAssessment?.baseRules) &&
+        ['FAILED', 'CONFLICT'].includes(status.stages.overall.status) &&
+        canContinueInitialStage(
+          status.stages,
+          'SYNTHESIZE_OVERALL',
+          true,
+          input.workItem,
+        )
+      )
+        continuationOperations.push('SYNTHESIZE_OVERALL');
+    }
+    let translationWork: CanonicalInitialAnalysisReadModel['translationWork'] =
+      null;
+    if (
+      input.workItem.package &&
+      (process.env.WL_TRANSLATION_V2_ENABLED === '1' ||
+        input.workItem.translation?.schemaVersion ===
+          'wiselink.3_1.translation_candidate_projection.v2')
+    ) {
+      const [saved] = await this.db
+        .select({
+          workspaceId: translationWorkspace.workspaceId,
+          rowVersion: translationWorkspace.rowVersion,
+        })
+        .from(translationWorkspace)
+        .where(
+          and(
+            eq(translationWorkspace.tenantId, input.tenantId),
+            eq(translationWorkspace.workItemId, input.workItem.workItemId),
+            eq(
+              translationWorkspace.documentVersionId,
+              input.workItem.source.documentVersionId,
+            ),
+            eq(
+              translationWorkspace.parsedArtifactRef,
+              input.workItem.package.artifact.ref,
+            ),
+            eq(
+              translationWorkspace.parsedArtifactSha256,
+              input.workItem.package.artifact.sha256,
+            ),
+            eq(translationWorkspace.targetLocale, 'zh-CN'),
+          ),
+        )
+        .limit(1);
+      translationWork = saved ?? null;
+    }
     return {
       workItemId: input.workItem.workItemId,
       workItemRevision: status.workItemRevision,
@@ -134,6 +250,9 @@ export class CanonicalHostInitialAnalysisStatusService {
       status: status.status,
       analysisModel: readStoredExecutionModel(root?.model),
       nextOperation: status.nextOperation,
+      continuationOperations,
+      canRequestBlockTranslation: canTranslate,
+      translationWork,
       stages: {
         translation: stage('translation'),
         applicability: stage('applicability'),
@@ -166,37 +285,110 @@ export function projectCanonicalHostInitialAnalysisStatus(
 ): AilyInitialAnalysisStatus {
   const attemptByAction = latestAttemptsByAction(attempts);
   const parsedPackageReady = isParsedPackageReady(workItem);
+  const reevaluation = parsedPackageReady
+    ? activeConfigurationEvidenceReevaluation(workItem)
+    : null;
+  const execution = reevaluation
+    ? configurationEvidenceShadow(workItem)
+    : workItem;
   const stages = parsedPackageReady
     ? {
         translation: projectStage(
           translationProjectionObservation(workItem),
           attemptByAction.OPENCLAW_TRANSLATE,
         ),
-        applicability: projectApplicabilityStage(
-          workItem,
-          attemptByAction.OPENCLAW_APPLICABILITY_EVALUATION,
-        ),
-        jobAid: projectStage(
-          jobAidProjectionObservation(workItem),
-          attemptByAction.OPENCLAW_DYNAMIC_EVALUATION,
-        ),
-        overall: projectStage(
-          overallProjectionObservation(workItem),
-          attemptByAction.OPENCLAW_OVERALL_SYNTHESIS,
-        ),
+        applicability: reevaluation
+          ? projectReevaluationStage(
+              reevaluation.stages.applicability,
+              applicabilityProjectionObservation(execution),
+              attemptByAction.OPENCLAW_APPLICABILITY_EVALUATION,
+              workItem.revision,
+            )
+          : projectApplicabilityStage(
+              workItem,
+              attemptByAction.OPENCLAW_APPLICABILITY_EVALUATION,
+            ),
+        jobAid: reevaluation
+          ? projectReevaluationStage(
+              reevaluation.stages.dynamic,
+              jobAidProjectionObservation(execution),
+              attemptByAction.OPENCLAW_DYNAMIC_EVALUATION,
+              workItem.revision,
+            )
+          : projectStage(
+              jobAidProjectionObservation(workItem),
+              attemptByAction.OPENCLAW_DYNAMIC_EVALUATION,
+            ),
+        overall: reevaluation
+          ? projectReevaluationStage(
+              reevaluation.stages.overall,
+              overallProjectionObservation(execution),
+              attemptByAction.OPENCLAW_OVERALL_SYNTHESIS,
+              workItem.revision,
+            )
+          : projectStage(
+              overallProjectionObservation(workItem),
+              attemptByAction.OPENCLAW_OVERALL_SYNTHESIS,
+            ),
       }
     : pendingStages();
   const progression = parsedPackageReady
-    ? deriveProgression(stages, options.englishAssessmentEnabled === true)
+    ? deriveProgression(
+        stages,
+        options.englishAssessmentEnabled === true,
+        reevaluation !== null,
+      )
     : { status: 'NOT_READY' as const, nextOperation: null };
   return {
     workItemRevision: workItem.revision,
     documentVersionId: workItem.source.documentVersionId,
-    applicabilityContextRef: applicabilityContextRef(workItem),
+    applicabilityContextRef: reevaluation
+      ? (reevaluation.stagedBundle.applicabilityInput
+          ?.applicabilityContextRef ?? null)
+      : applicabilityContextRef(workItem),
     status: progression.status,
     nextOperation: progression.nextOperation,
     stages,
     candidateOnly: true,
+  };
+}
+
+/** Retained serving results do not complete a stage in the active P0B cycle. */
+function projectReevaluationStage(
+  stage: CanonicalConfigurationEvidenceReevaluationStageProjection,
+  projection: StageProjectionObservation,
+  attempt: CanonicalInitialAnalysisAttemptObservation | undefined,
+  workItemRevision: number,
+): AilyInitialAnalysisStageStatus {
+  const currentAttempt =
+    attempt &&
+    (attempt.attemptId === stage.attempt?.attemptId ||
+      (['PENDING', 'RUNNING', 'COMMITTING'].includes(stage.status) &&
+        attempt.baseRevision === workItemRevision))
+      ? attempt
+      : undefined;
+  if (stage.status === 'SUCCEEDED')
+    return projectStage(projection, currentAttempt);
+  if (
+    stage.status === 'WAITING_INPUT' ||
+    stage.status === 'FAILED' ||
+    stage.status === 'CONFLICT'
+  ) {
+    return {
+      ...(currentAttempt
+        ? attemptStageStatus(stage.status, currentAttempt)
+        : pendingStage()),
+      status: stage.status,
+      attemptRef:
+        currentAttempt?.attemptRef ?? stage.attempt?.attemptRef ?? null,
+      terminalCode:
+        stage.terminal?.code ?? currentAttempt?.terminalCode ?? null,
+    };
+  }
+  if (currentAttempt) return projectStage(absentProjection(), currentAttempt);
+  return {
+    ...pendingStage(),
+    status: stage.status === 'PENDING' ? 'PENDING' : 'BUSY',
   };
 }
 
@@ -221,9 +413,14 @@ function translationProjectionObservation(
 ): StageProjectionObservation {
   const translation = workItem.translation;
   if (!translation) return absentProjection();
-  const supportedMethod = translation.schemaVersion === 'wiselink.3_1.translation_candidate_projection.v2'
-    ? translation.ruleSetId === 'semantic-translation' && translation.ruleSetVersion === '2.0'
-    : translation.ruleSetId === CANONICAL_TRANSLATION_RULE_SET_V1_ID && translation.ruleSetVersion === CANONICAL_TRANSLATION_RULE_SET_V1_VERSION;
+  const supportedMethod =
+    translation.schemaVersion ===
+    'wiselink.3_1.translation_candidate_projection.v2'
+      ? translation.ruleSetId === 'semantic-translation' &&
+        translation.ruleSetVersion === '2.0'
+      : translation.ruleSetId === CANONICAL_TRANSLATION_RULE_SET_V1_ID &&
+        translation.ruleSetVersion ===
+          CANONICAL_TRANSLATION_RULE_SET_V1_VERSION;
   if (
     translation.status === 'CANDIDATE_ONLY' &&
     translation.currentness === 'CURRENT' &&
@@ -232,9 +429,15 @@ function translationProjectionObservation(
     translation.sourcePackageContentHash === workItem.package?.contentHash &&
     supportedMethod
   ) {
-    return { ...successfulProjection(translation.actionAttemptId),
-      terminalCode: translation.schemaVersion === 'wiselink.3_1.translation_candidate_projection.v2' && translation.completeness !== 'COMPLETE'
-        ? `TRANSLATION_${translation.completeness}_CANDIDATE_SAVED` : null };
+    return {
+      ...successfulProjection(translation.actionAttemptId),
+      terminalCode:
+        translation.schemaVersion ===
+          'wiselink.3_1.translation_candidate_projection.v2' &&
+        translation.completeness !== 'COMPLETE'
+          ? `TRANSLATION_${translation.completeness}_CANDIDATE_SAVED`
+          : null,
+    };
   }
   return staleProjection(
     translation.actionAttemptId,
@@ -260,9 +463,12 @@ function applicabilityProjectionObservation(
     applicability.documentVersionId === workItem.source.documentVersionId &&
     applicability.sourcePackageId === workItem.package?.packageId &&
     applicability.sourcePackageContentHash === workItem.package?.contentHash &&
-    (applicability.schemaVersion === 'wiselink.3_1.applicability_candidate_projection.v2'
-      ? applicability.sourceReadingMode === 'VERIFIED_ENGLISH' && applicability.translationActionAttemptId === null
-      : applicability.translationActionAttemptId === workItem.translation?.actionAttemptId) &&
+    (applicability.schemaVersion ===
+    'wiselink.3_1.applicability_candidate_projection.v2'
+      ? applicability.sourceReadingMode === 'VERIFIED_ENGLISH' &&
+        applicability.translationActionAttemptId === null
+      : applicability.translationActionAttemptId ===
+        workItem.translation?.actionAttemptId) &&
     applicability.applicabilityContextRef ===
       applicabilityInput?.applicabilityContextRef &&
     applicability.applicabilityBindingRevision ===
@@ -321,6 +527,25 @@ function projectStage(
   projection: StageProjectionObservation,
   attempt: CanonicalInitialAnalysisAttemptObservation | undefined,
 ): AilyInitialAnalysisStageStatus {
+  // A separately requested run is visible beside the retained earlier result.
+  // QUEUED means the consumer may claim it; it is not an already running call.
+  if (
+    attempt?.requestId &&
+    (attempt.attemptId !== projection.actionAttemptId ||
+      ['QUEUED', 'RUNNING', 'RETRY_SCHEDULED', 'COMMITTING'].includes(
+        attempt.status,
+      ))
+  ) {
+    if (attempt.status === 'QUEUED')
+      return attemptStageStatus('PENDING', attempt);
+    if (['RUNNING', 'RETRY_SCHEDULED', 'COMMITTING'].includes(attempt.status))
+      return attemptStageStatus('BUSY', attempt);
+    if (attempt.status === 'WAITING_INPUT')
+      return attemptStageStatus('WAITING_INPUT', attempt);
+    if (['FAILED', 'TIMED_OUT', 'CANCELLED'].includes(attempt.status))
+      return attemptStageStatus('FAILED', attempt);
+    return attemptStageStatus('CONFLICT', attempt);
+  }
   if (projection.status === 'SUCCEEDED') {
     return projectionStageStatus('SUCCEEDED', projection, attempt);
   }
@@ -401,6 +626,7 @@ function attemptStageStatus(
 ): AilyInitialAnalysisStageStatus {
   return {
     status,
+    ...(attempt.requestId ? { requestId: attempt.requestId } : {}),
     attemptRef: attempt.attemptRef,
     attemptStatus: attempt.status,
     terminalCode: attempt.terminalCode,
@@ -410,9 +636,59 @@ function attemptStageStatus(
   };
 }
 
+function continuationRequestId(
+  row: { actionType: string; idempotencyKey: string | null },
+  item: CanonicalWorkItemProjection,
+): string | null {
+  const kind = {
+    OPENCLAW_TRANSLATE: 'translate',
+    OPENCLAW_DYNAMIC_EVALUATION: 'dynamic',
+    OPENCLAW_OVERALL_SYNTHESIS: 'overall',
+  }[row.actionType];
+  if (!kind) return null;
+  const prefix = `openclaw-v2:${kind}:${item.workItemId}:${item.source.documentVersionId}:`;
+  if (!row.idempotencyKey?.startsWith(prefix)) return null;
+  const requestId = row.idempotencyKey.slice(prefix.length);
+  return /^[A-Za-z0-9_-]{1,64}$/u.test(requestId) ? requestId : null;
+}
+
+export function canContinueInitialStage(
+  stages: AilyInitialAnalysisStatus['stages'],
+  operation: Exclude<AilyInitialAnalysisOperation, 'EXTRACT_APPLICABILITY'>,
+  englishAssessmentEnabled: boolean,
+  workItem?: CanonicalWorkItemProjection,
+): boolean {
+  if (operation === 'TRANSLATE') return true;
+  if (
+    !(
+      stages.translation.status === 'SUCCEEDED' ||
+      (englishAssessmentEnabled &&
+        ['FAILED', 'CONFLICT'].includes(stages.translation.status))
+    )
+  )
+    return false;
+  if (!['SUCCEEDED', 'WAITING_INPUT'].includes(stages.applicability.status))
+    return false;
+  const reevaluation = workItem
+    ? activeConfigurationEvidenceReevaluation(workItem)
+    : null;
+  if (
+    reevaluation &&
+    (reevaluation.stages.applicability.status !== 'SUCCEEDED' ||
+      stages.applicability.status !== 'SUCCEEDED' ||
+      (operation === 'SYNTHESIZE_OVERALL' &&
+        reevaluation.stages.dynamic.status !== 'SUCCEEDED'))
+  )
+    return false;
+  return (
+    operation === 'EVALUATE_JOBAID' || stages.jobAid.status === 'SUCCEEDED'
+  );
+}
+
 function deriveProgression(
   stages: AilyInitialAnalysisStatus['stages'],
   englishAssessmentEnabled: boolean,
+  configurationReevaluationActive = false,
 ): Pick<AilyInitialAnalysisStatus, 'status' | 'nextOperation'> {
   const ordered: Array<{
     stage: AilyInitialAnalysisStageStatus;
@@ -427,13 +703,19 @@ function deriveProgression(
   let deferredTranslationStatus: 'FAILED' | 'CONFLICT' | null = null;
   for (const item of ordered) {
     if (item.stage.status === 'SUCCEEDED') continue;
-    if (englishAssessmentEnabled && item.operation === 'TRANSLATE' && ['FAILED', 'CONFLICT'].includes(item.stage.status)) {
-      deferredTranslationStatus = item.stage.status === 'FAILED' ? 'FAILED' : 'CONFLICT';
+    if (
+      englishAssessmentEnabled &&
+      item.operation === 'TRANSLATE' &&
+      ['FAILED', 'CONFLICT'].includes(item.stage.status)
+    ) {
+      deferredTranslationStatus =
+        item.stage.status === 'FAILED' ? 'FAILED' : 'CONFLICT';
       continue;
     }
     if (
       item.operation === 'EXTRACT_APPLICABILITY' &&
-      item.stage.status === 'WAITING_INPUT'
+      item.stage.status === 'WAITING_INPUT' &&
+      !configurationReevaluationActive
     ) {
       hasNonBlockingMissingInput = true;
       continue;
@@ -447,7 +729,9 @@ function deriveProgression(
     return { status: item.stage.status, nextOperation: null };
   }
   return {
-    status: deferredTranslationStatus ?? (hasNonBlockingMissingInput ? 'WAITING_INPUT' : 'SUCCEEDED'),
+    status:
+      deferredTranslationStatus ??
+      (hasNonBlockingMissingInput ? 'WAITING_INPUT' : 'SUCCEEDED'),
     nextOperation: null,
   };
 }

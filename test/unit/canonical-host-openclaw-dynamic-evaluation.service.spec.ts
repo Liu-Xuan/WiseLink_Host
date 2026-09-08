@@ -30,6 +30,49 @@ const ATTEMPT_REF = 'AQ-DYNAMIC-REAL';
 const LEASE_TOKEN = '00000000-0000-4000-8000-000000000001';
 
 describe('CanonicalHostOpenClawDynamicEvaluationService', () => {
+  it('routes an explicit new request to JobAid v2 without consulting a legacy attempt or retrying the configuration stage', async () => {
+    const problemAssessment = {
+      begin: jest.fn(async () => ({ attemptRef: 'AQ-JOBAID-NEW' })),
+      enabledForNewTasks: jest.fn(() => false),
+      hasBoundTask: jest.fn(async () => false),
+    };
+    const workItem = withConfigurationEvidenceTerminal(
+      reevaluationWorkItem(),
+      'DYNAMIC',
+      'FAILED',
+      null,
+      'TEST_FAILURE',
+    );
+    const marker = workItem.configurationEvidenceReevaluation!;
+    if (
+      marker.schemaVersion !==
+      'wiselink.3_1.configuration_evidence_reevaluation.v2'
+    )
+      throw new Error('TEST_REEVALUATION_V2_REQUIRED');
+    const harness = createHarness(workItem, { problemAssessment });
+    const requestId = '00000000-0000-4000-8000-000000000010';
+
+    await expect(
+      harness.service.begin(WORK_ITEM_ID, requestId),
+    ).resolves.toEqual({
+      attemptRef: 'AQ-JOBAID-NEW',
+    });
+
+    expect(problemAssessment.begin).toHaveBeenCalledWith(
+      expect.objectContaining({
+        revision: workItem.revision,
+        applicability: marker.stagedBundle.applicability,
+      }),
+      expect.objectContaining({ tenantId: 'tenant-dynamic' }),
+      'INITIAL_PROBLEM_ASSESSMENT',
+      requestId,
+    );
+    expect(harness.attempts.reserveAndClaim).not.toHaveBeenCalled();
+    expect(harness.attempts.readExactIdempotency).not.toHaveBeenCalled();
+    expect(harness.registrar.compareAndSet).not.toHaveBeenCalled();
+    expect(problemAssessment.enabledForNewTasks).not.toHaveBeenCalled();
+  });
+
   it('rejects before ActionAttempt or WorkItem I/O when service scope is absent', async () => {
     const harness = createHarness();
     harness.scope.authorizeOpenClawAttempt.mockRejectedValueOnce(
@@ -853,7 +896,10 @@ describe('CanonicalHostOpenClawDynamicEvaluationService', () => {
 
 function createHarness(
   workItem = workItemProjection(),
-  options: { legacyReevaluationTask?: boolean } = {},
+  options: {
+    legacyReevaluationTask?: boolean;
+    problemAssessment?: unknown;
+  } = {},
 ) {
   let currentWorkItem = workItem;
   const task = taskEnvelope(workItem, !options.legacyReevaluationTask);
@@ -918,6 +964,7 @@ function createHarness(
     })),
   };
   const attempts = {
+    readExactIdempotency: jest.fn(async () => row),
     reserveAndClaim: jest.fn(
       async (input: {
         inputRevision: number;
@@ -1021,6 +1068,7 @@ function createHarness(
         ),
       ),
     } as never,
+    options.problemAssessment as never,
   );
   return {
     service,

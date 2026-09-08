@@ -25,6 +25,40 @@ const LEASE_TOKEN = '00000000-0000-4000-8000-000000000002';
 const BASE_SHA = 'a'.repeat(64);
 
 describe('CanonicalHostOpenClawOverallService', () => {
+  it('routes an explicit request to JobAid v2 even when the existing base and Overall attempt are legacy', async () => {
+    const problemAssessment = {
+      begin: jest.fn(async () => ({ attemptRef: 'AQ-JOBAID-OVERALL-NEW' })),
+    };
+    const harness = createHarness({ problemAssessment });
+    const requestId = '00000000-0000-4000-8000-000000000020';
+
+    await expect(
+      harness.service.begin(WORK_ITEM_ID, [], requestId),
+    ).resolves.toEqual({
+      attemptRef: 'AQ-JOBAID-OVERALL-NEW',
+    });
+
+    expect(problemAssessment.begin).toHaveBeenCalledWith(
+      harness.workItem,
+      expect.objectContaining({ tenantId: 'tenant-overall' }),
+      'OVERALL_CONSISTENCY',
+      requestId,
+    );
+    expect(harness.attempts.reserveAndClaim).not.toHaveBeenCalled();
+    expect(harness.registrar.compareAndSet).not.toHaveBeenCalled();
+  });
+
+  it('rejects unregistered providers on an explicit JobAid request before reserving work', async () => {
+    const problemAssessment = { begin: jest.fn() };
+    const harness = createHarness({ problemAssessment });
+
+    await expect(
+      harness.service.begin(WORK_ITEM_ID, ['external'], 'request-overall'),
+    ).rejects.toThrow('JOBAID_UNREGISTERED_DISCOVERY_PROVIDERS');
+    expect(problemAssessment.begin).not.toHaveBeenCalled();
+    expect(harness.attempts.reserveAndClaim).not.toHaveBeenCalled();
+  });
+
   it('rejects before ActionAttempt, WorkItem, or artifact I/O without scope', async () => {
     const harness = createHarness();
     harness.scope.authorizeOpenClawAttempt.mockRejectedValueOnce(
@@ -772,7 +806,13 @@ describe('CanonicalHostOpenClawOverallService', () => {
   });
 });
 
-function createHarness(input: { p0b?: boolean; readingV2?: boolean } = {}) {
+function createHarness(
+  input: {
+    p0b?: boolean;
+    readingV2?: boolean;
+    problemAssessment?: unknown;
+  } = {},
+) {
   const workItem = workItemProjection();
   if (input.p0b) activateP0B(workItem);
   const modelInput: OpenClawOverallSynthesisInput = overallModelInput();
@@ -987,6 +1027,7 @@ function createHarness(input: { p0b?: boolean; readingV2?: boolean } = {}) {
     attempts as never,
     scope as never,
     common as never,
+    input.problemAssessment as never,
   );
   return {
     service,
