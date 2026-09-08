@@ -226,9 +226,13 @@ async function readCommitUnixSeconds(commit) {
 }
 
 async function runSkillTests() {
+  const tests = (await readdir(join(SKILL_ROOT, 'tests')))
+    .filter((name) => name.endsWith('.test.mjs'))
+    .sort()
+    .map((name) => join(SKILL_ROOT, 'tests', name));
   await execFileAsync(
     process.execPath,
-    ['--test', join(SKILL_ROOT, 'tests/validation.test.mjs')],
+    ['--test', ...tests],
     {
       cwd: REPOSITORY_ROOT,
       encoding: 'utf8',

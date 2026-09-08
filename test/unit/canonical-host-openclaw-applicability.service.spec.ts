@@ -37,6 +37,84 @@ import {
 } from '../../server/modules/canonical-host/configuration-evidence/configuration-evidence-reevaluation.state';
 
 describe('CanonicalHostOpenClawApplicabilityService', () => {
+  it('builds and commits v2 from verified English without waiting for Chinese translation', async () => {
+    const previous = process.env.WL_JOBAID_PROBLEM_V2_ENABLED;
+    process.env.WL_JOBAID_PROBLEM_V2_ENABLED = '1';
+    try {
+      const harness = applicabilityHarness();
+      harness.mutateCurrent((current) => {
+        current.translation = null;
+      });
+      const begin = await harness.begin();
+      expect(begin.modelInput).toMatchObject({
+        schemaVersion: 'wiselink.3_1.applicability_task.v2',
+        sourceReadingMode: 'VERIFIED_ENGLISH',
+        bilingualBinding: null,
+        bilingualSourceUnits: [],
+        sourceContext: [
+          {
+            sourceText: 'Applicable to Boeing 737-8 airplanes.',
+            sourceRefIds: ['SRC-1'],
+          },
+        ],
+      });
+      expect(begin.task.sourceRefs).toHaveLength(1);
+      const result = harness.resultFor(candidateFor(begin));
+      const committed = await harness.service.commit(
+        begin.attemptRef,
+        begin.leaseToken,
+        begin.leaseGeneration,
+        result,
+      );
+      expect(committed).toMatchObject({
+        applicability: {
+          schemaVersion: 'wiselink.3_1.applicability_candidate_projection.v2',
+          sourceReadingMode: 'VERIFIED_ENGLISH',
+          translationActionAttemptId: null,
+          decision: 'APPLICABLE',
+          currentness: 'CURRENT',
+        },
+      });
+      const replay = await harness.service.commit(
+        begin.attemptRef,
+        begin.leaseToken,
+        begin.leaseGeneration,
+        result,
+      );
+      expect(replay).toEqual(committed);
+      expect(harness.registrar.compareAndSet).toHaveBeenCalledTimes(1);
+    } finally {
+      if (previous === undefined)
+        delete process.env.WL_JOBAID_PROBLEM_V2_ENABLED;
+      else process.env.WL_JOBAID_PROBLEM_V2_ENABLED = previous;
+    }
+  });
+
+  it('rebuilds an already sealed v1 task with its original bilingual binding after enabling v2', async () => {
+    const previous = process.env.WL_JOBAID_PROBLEM_V2_ENABLED;
+    delete process.env.WL_JOBAID_PROBLEM_V2_ENABLED;
+    try {
+      const harness = applicabilityHarness();
+      const first = await harness.begin();
+      harness.attempts.readExactIdempotency.mockResolvedValue({
+        taskEnvelopeJson: JSON.stringify(first.task),
+      });
+      process.env.WL_JOBAID_PROBLEM_V2_ENABLED = '1';
+      const second = await harness.begin();
+      expect(second.modelInput.schemaVersion).toBe(
+        'wiselink.3_1.applicability_task.v1',
+      );
+      expect(second.modelInput.bilingualBinding).toEqual(
+        first.modelInput.bilingualBinding,
+      );
+      expect(second.modelInput).not.toHaveProperty('sourceReadingMode');
+    } finally {
+      if (previous === undefined)
+        delete process.env.WL_JOBAID_PROBLEM_V2_ENABLED;
+      else process.env.WL_JOBAID_PROBLEM_V2_ENABLED = previous;
+    }
+  });
+
   it('freezes only the selected aircraft, bilingual SourceUnits and current SourceRefs', async () => {
     const harness = applicabilityHarness();
     const begin = await harness.begin();
@@ -1732,6 +1810,7 @@ function applicabilityHarness(
     discardCandidateArtifact: jest.fn(async () => undefined),
   };
   const attempts = {
+    readExactIdempotency: jest.fn().mockResolvedValue(null),
     reserveAndClaim: jest.fn(async (input: ReserveAndClaimInput) => {
       attemptSequence += 1;
       const identity = {

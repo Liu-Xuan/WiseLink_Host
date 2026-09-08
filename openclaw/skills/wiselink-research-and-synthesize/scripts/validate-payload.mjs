@@ -21,6 +21,8 @@ const TASK_ENVELOPE_SCHEMA = 'wiselink.3_1.openclaw_task_envelope.v1';
 const RESULT_ENVELOPE_SCHEMA = 'wiselink.3_1.openclaw_result_envelope.v1';
 const REVIEW_TASK_SCHEMA = 'wiselink.3_1.review_turn_task.v1.c2';
 const REVIEW_CANDIDATE_SCHEMA = 'wiselink.3_1.review_turn_candidate.v1.c3';
+export const REVIEW_JOBAID_TASK_SCHEMA = 'wiselink.3_1.review_turn_task.v1.c5';
+export const REVIEW_JOBAID_CANDIDATE_SCHEMA = 'wiselink.3_1.review_turn_candidate.v1.c5';
 export const REVIEW_MATTER_TASK_SCHEMA = 'wiselink.3_1.review_turn_task.v1.c4';
 export const REVIEW_MATTER_CANDIDATE_SCHEMA = 'wiselink.3_1.review_turn_candidate.v1.c4';
 const APPLICABILITY_TASK_SCHEMA = 'wiselink.3_1.applicability_task.v1';
@@ -2306,6 +2308,7 @@ function validateDiscoveryProviderSummaries(value) {
 }
 
 export function validateApplicabilityModelInput(input) {
+  const englishInput = input?.schemaVersion === 'wiselink.3_1.applicability_task.v2';
   exactKeys(
     input,
     [
@@ -2323,6 +2326,7 @@ export function validateApplicabilityModelInput(input) {
       'astVocabulary',
       'sourceExpressions',
       'bilingualSourceUnits',
+      ...(englishInput ? ['sourceReadingMode', 'sourceContext'] : []),
       'runtimePolicy',
       'authority',
     ],
@@ -2331,7 +2335,7 @@ export function validateApplicabilityModelInput(input) {
   );
   equal(
     input.schemaVersion,
-    APPLICABILITY_TASK_SCHEMA,
+    englishInput ? 'wiselink.3_1.applicability_task.v2' : APPLICABILITY_TASK_SCHEMA,
     'APPLICABILITY_TASK_SCHEMA_UNSUPPORTED',
   );
   equal(
@@ -2355,7 +2359,20 @@ export function validateApplicabilityModelInput(input) {
   validateApplicabilityControlledFacts(input.controlledFacts);
   validateApplicabilityAstVocabulary(input.astVocabulary);
   validateApplicabilitySourceExpressions(input.sourceExpressions);
-  validateApplicabilityBilingualUnits(input.bilingualSourceUnits);
+  if (englishInput) {
+    equal(input.sourceReadingMode, 'VERIFIED_ENGLISH', 'APPLICABILITY_SOURCE_READING_MODE_INVALID');
+    equal(input.bilingualBinding, null, 'APPLICABILITY_V2_LEGACY_BILINGUAL_FORBIDDEN');
+    equal(canonicalJson(input.bilingualSourceUnits), '[]', 'APPLICABILITY_V2_LEGACY_UNITS_FORBIDDEN');
+    array(input.sourceContext, 'APPLICABILITY_ENGLISH_CONTEXT_REQUIRED');
+    for (const unit of input.sourceContext) {
+      exactKeys(unit, ['unitId', 'kind', 'sourceText', 'sourceRefIds'], [], 'applicability English source context');
+      nonEmpty(unit.unitId, 'APPLICABILITY_ENGLISH_UNIT_REQUIRED');
+      nonEmpty(unit.sourceText, 'APPLICABILITY_ENGLISH_TEXT_REQUIRED');
+      uniqueTextArray(unit.sourceRefIds, 'APPLICABILITY_ENGLISH_SOURCE_REFS_INVALID');
+    }
+    const covered = new Set(input.sourceContext.flatMap((unit) => unit.sourceRefIds));
+    assertSubsetOf(input.sourceExpressions.flatMap((expression) => expression.sourceRefIds), covered, 'APPLICABILITY_ENGLISH_SOURCE_COVERAGE_REQUIRED');
+  } else validateApplicabilityBilingualUnits(input.bilingualSourceUnits);
   validateApplicabilityRuntimePolicy(input.runtimePolicy);
   if ('configurationEvidenceReevaluation' in input) {
     validateApplicabilityConfigurationEvidenceReevaluation(
@@ -3943,6 +3960,7 @@ function numberMultiset(tokens) {
 
 export function validateReviewTask(value) {
   const isMatter = value?.schemaVersion === REVIEW_MATTER_TASK_SCHEMA;
+  const isJobAid = value?.schemaVersion === REVIEW_JOBAID_TASK_SCHEMA;
   exactKeys(
     value,
     [
@@ -3963,13 +3981,14 @@ export function validateReviewTask(value) {
       'context',
       'executionPolicy',
       ...(isMatter ? ['matterContext'] : []),
+      ...(isJobAid ? ['jobAidContext'] : []),
     ],
     [],
     'review task',
   );
   equal(
     value.schemaVersion,
-    isMatter ? REVIEW_MATTER_TASK_SCHEMA : REVIEW_TASK_SCHEMA,
+    isJobAid ? REVIEW_JOBAID_TASK_SCHEMA : isMatter ? REVIEW_MATTER_TASK_SCHEMA : REVIEW_TASK_SCHEMA,
     'REVIEW_TASK_SCHEMA_UNSUPPORTED',
   );
   equal(value.mode, 'INTERACTIVE_REVIEW', 'REVIEW_TASK_MODE_INVALID');
@@ -4048,6 +4067,7 @@ export function validateReviewTask(value) {
       fail('REVIEW_MATTER_EVALUATION_SCOPE_INVALID');
     }
   }
+  if (isJobAid) validateFrozenJobAidReviewContext(value);
   exactKeys(
     value.executionPolicy,
     [
@@ -4082,7 +4102,7 @@ export function validateReviewTask(value) {
   );
   equal(
     value.executionPolicy.toolPolicyRef,
-    `${WISELINK_HOST_MCP_NAME}@${WISELINK_HOST_MCP_VERSION}#${isMatter ? 'interactive-matter-review-c4' : 'interactive-review-c3'}`,
+    `${WISELINK_HOST_MCP_NAME}@${WISELINK_HOST_MCP_VERSION}#${isJobAid ? 'interactive-jobaid-review-c5' : isMatter ? 'interactive-matter-review-c4' : 'interactive-review-c3'}`,
     'REVIEW_TASK_TOOL_POLICY_INVALID',
   );
   return value;
@@ -4091,6 +4111,7 @@ export function validateReviewTask(value) {
 export function validateReviewCandidate(task, candidate) {
   validateReviewTask(task);
   const isMatter = task.schemaVersion === REVIEW_MATTER_TASK_SCHEMA;
+  const isJobAid = task.schemaVersion === REVIEW_JOBAID_TASK_SCHEMA;
   exactKeys(
     candidate,
     [
@@ -4108,13 +4129,14 @@ export function validateReviewCandidate(task, candidate) {
       'warnings',
       'runtime',
       ...(isMatter ? ['matterWorkingDelta'] : []),
+      ...(isJobAid ? ['jobAidWorkingDelta'] : []),
     ],
     [],
     'review candidate',
   );
   equal(
     candidate.schemaVersion,
-    isMatter ? REVIEW_MATTER_CANDIDATE_SCHEMA : REVIEW_CANDIDATE_SCHEMA,
+    isJobAid ? REVIEW_JOBAID_CANDIDATE_SCHEMA : isMatter ? REVIEW_MATTER_CANDIDATE_SCHEMA : REVIEW_CANDIDATE_SCHEMA,
     'REVIEW_CANDIDATE_SCHEMA_UNSUPPORTED',
   );
   equal(candidate.mode, 'INTERACTIVE_REVIEW', 'REVIEW_CANDIDATE_MODE_INVALID');
@@ -4128,7 +4150,7 @@ export function validateReviewCandidate(task, candidate) {
     task.reviewTurnRef,
     'REVIEW_CANDIDATE_TURN_MISMATCH',
   );
-  if (!REVIEW_RESPONSE_TYPES.has(candidate.responseType) && !(isMatter && candidate.responseType === 'RESYNTHESIS_RESULT')) {
+  if (!REVIEW_RESPONSE_TYPES.has(candidate.responseType) && !((isMatter || isJobAid) && candidate.responseType === 'RESYNTHESIS_RESULT')) {
     fail(isMatter ? 'REVIEW_CANDIDATE_RESPONSE_TYPE_UNSUPPORTED_BY_C4' : 'REVIEW_CANDIDATE_RESPONSE_TYPE_UNSUPPORTED_BY_C3');
   }
   nonEmpty(candidate.answer, 'REVIEW_CANDIDATE_ANSWER_REQUIRED');
@@ -4156,6 +4178,10 @@ export function validateReviewCandidate(task, candidate) {
     if (candidate.reviewActionDraft !== null) fail('REVIEW_MATTER_FORMAL_ACTION_FORBIDDEN');
     if (candidate.affectedItemIds.length > 0) fail('REVIEW_MATTER_AFFECTED_ITEMS_FORBIDDEN');
     validateMatterWorkingDelta(task, candidate.matterWorkingDelta);
+  }
+  if (isJobAid) {
+    if (candidate.reviewActionDraft !== null || candidate.affectedItemIds.length > 0) fail('REVIEW_JOBAID_FORMAL_ACTION_FORBIDDEN');
+    validateJobAidReviewDelta(task, candidate.jobAidWorkingDelta);
   }
   const allowedSources = new Set(valueIds(task.resourceRefs, 'sourceRefId'));
   const allowedItems = new Set(task.allowedEvaluationItemIds);
@@ -4661,6 +4687,56 @@ function validateMatterDeltaPartition({ priorIds, additionIds, replacementIds, r
   if (priorIds.some((id) => !retained.has(id))) fail('REVIEW_MATTER_CARRY_FORWARD_INCOMPLETE');
 }
 
+function jobAidDeltaEvidenceRefs(delta) {
+  return (delta?.issues ?? []).flatMap((issue) => [...(issue.sourceDependencies ?? []), ...(issue.premiseRefs ?? []),
+    ...(issue.statements ?? []).flatMap((claim) => (claim.premises ?? []).map((p) => p.evidenceRef)),
+    ...(issue.riskScenarios ?? []).flatMap((risk) => [...(risk.severity?.basisRefs ?? []), ...(risk.likelihood?.basisRefs ?? []), ...(risk.importantEvent?.basisRefs ?? [])]),
+    ...(issue.measures ?? []).flatMap((item) => item.basisRefs ?? []),
+    ...(issue.otherClassifications ?? []).flatMap((item) => item.basisRefs ?? []),
+    ...(issue.requirementHandling ?? []).flatMap((item) => [item.methodRef, ...(item.basisRefs ?? [])])]);
+}
+function validateFrozenJobAidReviewContext(task) {
+  const jobAid = task.jobAidContext;
+  assertObject(jobAid, 'REVIEW_JOBAID_CONTEXT_REQUIRED');
+  equal(jobAid.schemaVersion, 'wiselink.jobaid-problem-task.v2', 'REVIEW_JOBAID_CONTEXT_INVALID');
+  equal(jobAid.modelInput?.purpose, 'PROBLEM_REVIEW', 'REVIEW_JOBAID_CONTEXT_INVALID');
+  equal(canonicalJson(task.context.problemAssessment), canonicalJson(jobAid.modelInput), 'REVIEW_JOBAID_MODEL_CONTEXT_DRIFT');
+  if (task.selectedEvaluationItemId !== null || task.allowedEvaluationItemIds.length || task.allowedAdoptedInputRefs.length) fail('REVIEW_JOBAID_EVALUATION_SCOPE_INVALID');
+  array(jobAid.sourceCatalog, 'REVIEW_JOBAID_SOURCE_CATALOG_REQUIRED');
+  array(jobAid.sourceBindings, 'REVIEW_JOBAID_SOURCE_BINDINGS_REQUIRED');
+  const refs = jobAid.sourceCatalog.map((item) => item.evidenceRef);
+  uniqueTextArray(refs, 'REVIEW_JOBAID_SOURCE_CATALOG_INVALID');
+  uniqueTextArray(jobAid.initiallyDeliveredRefs, 'REVIEW_JOBAID_DELIVERED_REFS_INVALID');
+  assertSubsetOf(jobAid.initiallyDeliveredRefs, new Set(refs), 'REVIEW_JOBAID_DELIVERED_REF_NOT_REGISTERED');
+  const delivered = jobAid.sourceCatalog.filter((item) => jobAid.initiallyDeliveredRefs.includes(item.evidenceRef)).map((item) => ({
+    evidenceRef: item.evidenceRef, kind: item.kind, title: item.title, versionLabel: item.versionLabel, excerpt: item.excerpt, locator: item.locator ?? null,
+  }));
+  equal(canonicalJson(delivered), canonicalJson(jobAid.modelInput.deliveredEvidence), 'REVIEW_JOBAID_DELIVERED_EVIDENCE_DRIFT');
+  for (const resource of task.resourceRefs) {
+    const item = jobAid.sourceCatalog.find((entry) => entry.evidenceRef === resource.sourceRefId);
+    if (!item || !['DOCUMENT_PASSAGE', 'ENGINEER_ATTACHMENT'].includes(item.kind)) fail('REVIEW_JOBAID_RESOURCE_BINDING_INVALID');
+    const binding = item.kind === 'DOCUMENT_PASSAGE' ? jobAid.sourceBindings.find((entry) => entry.workItemId === item.workItemId) : item;
+    if (!binding || resource.resourceArtifactRef !== binding.artifactRef || resource.resourceArtifactSha256 !== binding.artifactSha256) fail('REVIEW_JOBAID_RESOURCE_BINDING_INVALID');
+    equal(canonicalJson(resource.value), canonicalJson({ evidenceRef: item.evidenceRef, kind: item.kind, title: item.title, versionLabel: item.versionLabel,
+      excerpt: item.excerpt, locator: item.locator ?? null, sourceRefId: item.evidenceRef }), 'REVIEW_JOBAID_RESOURCE_BINDING_INVALID');
+  }
+}
+function validateJobAidReviewDelta(task, delta) {
+  if (delta === null) return;
+  assertObject(delta, 'REVIEW_JOBAID_DELTA_INVALID');
+  equal(delta.schemaVersion, 'wiselink.jobaid-problem-work.v2', 'REVIEW_JOBAID_WORK_SCHEMA_INVALID');
+  for (const key of ['headline', 'listBrief', 'understanding', 'completionReason', 'changeSummary', 'unchangedExplanation']) nonEmpty(delta[key], `REVIEW_JOBAID_${key.toUpperCase()}_REQUIRED`);
+  array(delta.issues, 'REVIEW_JOBAID_ISSUES_REQUIRED');
+  uniqueTextArray(delta.unchangedIssueKeys, 'REVIEW_JOBAID_UNCHANGED_INVALID');
+  array(delta.retiredIssues, 'REVIEW_JOBAID_RETIREMENTS_INVALID');
+  const prior = task.jobAidContext.previousWork?.content.issues.map((issue) => issue.issueKey) ?? [];
+  const keys = [...delta.issues.map((issue) => issue.issueKey), ...delta.unchangedIssueKeys, ...delta.retiredIssues.map((issue) => issue.issueKey)];
+  uniqueTextArray(keys, 'REVIEW_JOBAID_ISSUE_PARTITION_INVALID');
+  if (prior.some((key) => !keys.includes(key)) || [...delta.unchangedIssueKeys, ...delta.retiredIssues.map((issue) => issue.issueKey)].some((key) => !prior.includes(key))) fail('REVIEW_JOBAID_PRIOR_ISSUE_OMITTED');
+  const allowed = new Set(task.jobAidContext.sourceCatalog.map((item) => item.evidenceRef));
+  assertSubsetOf(jobAidDeltaEvidenceRefs(delta), allowed, 'REVIEW_JOBAID_EVIDENCE_NOT_REGISTERED');
+}
+
 /** Source keys used by the candidate include changed Matter claims and checked ranges. */
 export function reviewCandidateSourceRefIds(task, candidate) {
   const refs = [...candidate.sourceRefs, ...candidate.candidateEvidenceRefs, ...(candidate.reviewActionDraft?.sourceRefs ?? [])];
@@ -4677,6 +4753,11 @@ export function reviewCandidateSourceRefIds(task, candidate) {
       }
     }
     refs.push(...delta.coverageUpdates.flatMap((item) => item.checkedSourceRefIds));
+  }
+  if (task.schemaVersion === REVIEW_JOBAID_TASK_SCHEMA && candidate.jobAidWorkingDelta) {
+    const provided = new Set(task.jobAidContext.initiallyDeliveredRefs);
+    const resources = new Set(task.resourceRefs.map((item) => item.sourceRefId));
+    refs.push(...jobAidDeltaEvidenceRefs(candidate.jobAidWorkingDelta).filter((ref) => resources.has(ref) && !provided.has(ref)));
   }
   return [...new Set(refs)];
 }

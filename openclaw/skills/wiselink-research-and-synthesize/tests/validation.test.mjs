@@ -1351,7 +1351,7 @@ test('accepts shared background in new JobAid and Overall inputs while retaining
   validatePayload('synthesis-input', { ...overall, commonContext });
 });
 
-test('pins exact20 MCP 1.2, five review tools, and hosted provenance', () => {
+test('pins exact23 MCP 1.2, five review tools, and hosted provenance', () => {
   assert.deepEqual(INITIAL_ANALYSIS_OPERATIONS, [
     'TRANSLATE',
     'EXTRACT_APPLICABILITY',
@@ -1365,13 +1365,14 @@ test('pins exact20 MCP 1.2, five review tools, and hosted provenance', () => {
     'get_action_attempt_status',
     'commit_review_turn_candidate',
   ]);
-  assert.equal(HOST_MCP_TOOLS.length, 20);
-  assert.equal(new Set(HOST_MCP_TOOLS).size, 20);
+  assert.equal(HOST_MCP_TOOLS.length, 23);
+  assert.equal(new Set(HOST_MCP_TOOLS).size, 23);
+  for (const name of ['read_assessment_sources', 'save_assessment_work', 'read_assessment_work']) assert.ok(HOST_MCP_TOOLS.includes(name));
   assert.ok(HOST_MCP_TOOLS.includes('begin_applicability_evaluation'));
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c43',
+    'wiselink-research-and-synthesize@r09.c44',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,

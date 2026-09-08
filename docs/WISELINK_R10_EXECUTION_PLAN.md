@@ -1,6 +1,6 @@
 # WiseLink R10 当前执行计划
 
-更新日期：2026-09-08。依据：[R10 云文档](https://hv5zjf4j8yb.feishu.cn/docx/MA3fdjEycoISjHxptAqcsyxvn9b) 与 [当前正文镜像](WISELINK_R10_CURRENT.md)。当前运行证据以本页 9 月 8 日记录为准；云文档及正文镜像 revision 2215 的运行状态保留原时点，按用户要求不随每次排障更新。9 月 6 日发布复核与数据库/存储续查见 [存储异常记录](WL31_HOSTED_STORAGE_INCIDENT_20260905.md)，此前功能发布和页面证据见 [交接与响应记录](WL31_R10_CONTEXT_HANDOFF_PERFORMANCE.md)，视觉交付见 [Satin 运行记录](WL31_R10_SATIN_HOSTED_ROLLOUT_20260905.md)。
+更新日期：2026-09-09。依据：[R10 云文档](https://hv5zjf4j8yb.feishu.cn/docx/MA3fdjEycoISjHxptAqcsyxvn9b) 与 [当前正文镜像](WISELINK_R10_CURRENT.md)。当前运行证据以本页 9 月 8 日记录为准；云文档及正文镜像 revision 2215 的运行状态保留原时点，按用户要求不随每次排障更新。9 月 6 日发布复核与数据库/存储续查见 [存储异常记录](WL31_HOSTED_STORAGE_INCIDENT_20260905.md)，此前功能发布和页面证据见 [交接与响应记录](WL31_R10_CONTEXT_HANDOFF_PERFORMANCE.md)，视觉交付见 [Satin 运行记录](WL31_R10_SATIN_HOSTED_ROLLOUT_20260905.md)。
 
 主控交接：用户于 2026-09-07 指定 [WiseLink R10 项目主控（2026-09-07 接管）](codex://threads/01a079d1-918d-7af1-a283-75968ec294ea) 接替 [WiseLink R09 项目主控（接替旧主控）](codex://threads/01a06562-e90c-7340-9fd5-9a96cdd3073f)。新主控承接当前 R10 目标、已有业务授权和分工，并核对 [2026-09-06 接管任务](codex://threads/01a0726d-5e6e-7b70-b1b9-a7e84fd1d31b) 的存储调查结论。此次接管时本地 HEAD 为 `408de9f17`；工作区已有 AGENTS/技能整理及临时产物，独立保留。历史待办不覆盖当前执行顺序，最新推送边界见下一段。
 
@@ -12,7 +12,9 @@ Git 当前边界：**2026-09-06 用户要求仅向妙搭 Host 的 `origin` 推�
 
 本地实际 PostgreSQL 检查通过：翻译工作区 9 项（并发登记、保存幂等、检查与纠正、产物组装、知识导入、多模型接续、人工修订及 RLS），旧知识治理流程 1 组。Skill 短会话与消费检查 17 项通过；结构/质量及旧消费者相关单元检查、前后端类型检查通过。实际 Reader 组件以明确的合成数据检查了一段译文对应多个原文片段、跨行单元格和脚注、图内文字未提取的待处理提示，以及人工修订后版本 2 与旧版本并存。界面检查发现并修正了 `/payload/rowGroups` 定位缺失问题，源计划到表格检查链路已覆盖该场景。
 
-用户于 00:56 明确要求另一个子会话完成 [JobAid 完整方案](WISELINK_JOBAID_REDESIGN_20260909.md) 和 [开发与验收计划](WISELINK_JOBAID_REDESIGN_EXECUTION_PLAN_20260909.md)，两项实施整合后重新设立 Goal 完成真实流程验证。JobAid 在独立 worktree 实现；主控负责合并、英文原文依赖与翻译状态衔接、c44 统一版本和发布。本节为本地实施证据；此时尚未进行 c44 线上发布或新的 M3/DLI 业务调用，不能替代两模型各完整初始分析及至少两轮 Review 的实际验收。
+用户于 00:56 明确要求另一个子会话完成 [JobAid 完整方案](WISELINK_JOBAID_REDESIGN_20260909.md) 和 [开发与验收计划](WISELINK_JOBAID_REDESIGN_EXECUTION_PLAN_20260909.md)，两项实施整合后重新设立 Goal 完成真实流程验证。翻译提交 `b6b2cf773` 与 JobAid 独立提交 `2c3f03afc` 已在主开发目录正常合并；主控保留两套新运行接口，修订英文原文适用性的状态衔接并统一 c44。JobAid 以问题组织完整认识，按需读取来源，保存不可变工作版本，Overall 核对最新工作，Review c5 连续局部修订；页面和列表使用同一工作正文。旧 N/N、旧译文和旧结果继续独立读取。方法包来源版本及附件 5 配套关系保持待核实，旧 AEO 正式投影明确不支持新问题结果，不能编造旧准则行。
+
+组合后 8 组/141 项相关单元测试、实际 PostgreSQL 翻译 9 项和 JobAid 7 项通过；后者包含两轮 Review 与工作版本的原子保存、回滚和重放。实际 MCP HTTP 检查覆盖 25 个工具，新增四个工作接口和旧提交链均可调用，额外 actor 字段被拒。前后端生产构建完成，保留既有邻接旧 worktree 配置和体积警告；专用子 worktree 已正常清理。本节为本地实施证据；此时尚未进行 c44 线上发布或新的 M3/DLI 业务调用，不能替代两模型各完整初始分析及至少两轮 Review 的实际验收。
 
 ### 翻译方案接续时的 W0 事实
 

@@ -260,8 +260,9 @@ function applicabilityProjectionObservation(
     applicability.documentVersionId === workItem.source.documentVersionId &&
     applicability.sourcePackageId === workItem.package?.packageId &&
     applicability.sourcePackageContentHash === workItem.package?.contentHash &&
-    applicability.translationActionAttemptId ===
-      workItem.translation?.actionAttemptId &&
+    (applicability.schemaVersion === 'wiselink.3_1.applicability_candidate_projection.v2'
+      ? applicability.sourceReadingMode === 'VERIFIED_ENGLISH' && applicability.translationActionAttemptId === null
+      : applicability.translationActionAttemptId === workItem.translation?.actionAttemptId) &&
     applicability.applicabilityContextRef ===
       applicabilityInput?.applicabilityContextRef &&
     applicability.applicabilityBindingRevision ===

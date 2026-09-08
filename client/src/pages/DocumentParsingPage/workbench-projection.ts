@@ -1,3 +1,4 @@
+import { isJobAidProblemProjection } from '@shared/jobaid-problem-assessment.interface';
 import type {
   CanonicalEngineerReviewPageContext,
   CanonicalIntegratedAssessmentProjection,
@@ -267,7 +268,11 @@ function buildAssessmentSemantics(
         authority: 'HOST_GAP_LEDGER',
       });
     }
-  } else if (dynamic && dynamic.unresolvedCount > 0) {
+  } else if (
+    dynamic &&
+    !isJobAidProblemProjection(dynamic) &&
+    dynamic.unresolvedCount > 0
+  ) {
     gaps.push({
       code: 'DYNAMIC_ITEMS_UNRESOLVED',
       label: '逐项评估尚未闭合',
@@ -319,16 +324,17 @@ function buildAssessmentSemantics(
   return {
     candidateState:
       overall?.status ?? integrated?.status ?? 'WAITING_DYNAMIC_EVALUATION',
-    dynamic: dynamic
-      ? {
-          status: dynamic.status,
-          criterionSetId: dynamic.criterionSetId,
-          criterionCount: dynamic.criterionCount,
-          evaluationItemCount: dynamic.evaluationItemCount,
-          unresolvedCount: dynamic.unresolvedCount,
-          sourceBoundCandidateCount: dynamic.sourceBoundCandidateCount,
-        }
-      : null,
+    dynamic:
+      dynamic && !isJobAidProblemProjection(dynamic)
+        ? {
+            status: dynamic.status,
+            criterionSetId: dynamic.criterionSetId,
+            criterionCount: dynamic.criterionCount,
+            evaluationItemCount: dynamic.evaluationItemCount,
+            unresolvedCount: dynamic.unresolvedCount,
+            sourceBoundCandidateCount: dynamic.sourceBoundCandidateCount,
+          }
+        : null,
     review: {
       itemCount: reviewItems.length,
       pendingCount: pendingReviewCount,

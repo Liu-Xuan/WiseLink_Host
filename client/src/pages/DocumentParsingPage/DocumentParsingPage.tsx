@@ -1,3 +1,5 @@
+import { isJobAidProblemProjection } from '@shared/jobaid-problem-assessment.interface';
+import JobAidProblemWorkspace from './JobAidProblemWorkspace';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   useLocation,
@@ -603,7 +605,10 @@ export default function DocumentParsingPage() {
 
   const pkg = data.workItem.package;
   const savedReadingResult =
-    data.workItem.integratedAssessment?.overallSynthesis?.readingResult;
+    data.workItem.integratedAssessment?.overallSynthesis?.readingResult ??
+    (isJobAidProblemProjection(data.workItem.integratedAssessment?.baseRules)
+      ? data.workItem.integratedAssessment.baseRules.readingResult
+      : undefined);
   const usagePolicy = pkg?.usagePolicy;
   const referenceOnly = usagePolicy?.presentationMode === 'REFERENCE_ONLY';
   const assessment = data.workItem.assessment ?? null;
@@ -1213,34 +1218,40 @@ export default function DocumentParsingPage() {
                 <ClipboardCheck aria-hidden="true" /> 工程评估工作台 ·
                 判断、依据与复核
               </div>
-              {savedReadingResult ? (
-                <SavedAssessmentReading
-                  result={savedReadingResult}
-                  depth="full"
-                  onLocateDocument={locateAssessmentDocument}
-                />
-              ) : (
-                <OverallAssessmentHero
-                  view={workItemView}
-                  regeneration={{
-                    ...overallRegeneration,
-                    disabled: loading || overallRegeneration.disabled,
-                  }}
-                  onOpenWorkbench={() =>
-                    updateDeepLink({ node: 'review', tab: 'review' })
-                  }
-                  onViewEvidence={(sourceRefId) =>
-                    updateDeepLink({
-                      node: 'reader',
-                      tab: 'reader',
-                      readerMode: 'structured',
-                      unit: null,
-                      sourceRef: sourceRefId ?? null,
-                    })
-                  }
-                />
-              )}
-              {integratedAssessment ? (
+              <JobAidProblemWorkspace
+                workItemId={workItemId}
+                onLocateDocument={locateAssessmentDocument}
+              >
+                {savedReadingResult ? (
+                  <SavedAssessmentReading
+                    result={savedReadingResult}
+                    depth="full"
+                    onLocateDocument={locateAssessmentDocument}
+                  />
+                ) : (
+                  <OverallAssessmentHero
+                    view={workItemView}
+                    regeneration={{
+                      ...overallRegeneration,
+                      disabled: loading || overallRegeneration.disabled,
+                    }}
+                    onOpenWorkbench={() =>
+                      updateDeepLink({ node: 'review', tab: 'review' })
+                    }
+                    onViewEvidence={(sourceRefId) =>
+                      updateDeepLink({
+                        node: 'reader',
+                        tab: 'reader',
+                        readerMode: 'structured',
+                        unit: null,
+                        sourceRef: sourceRefId ?? null,
+                      })
+                    }
+                  />
+                )}
+              </JobAidProblemWorkspace>
+              {integratedAssessment &&
+              !isJobAidProblemProjection(integratedAssessment.baseRules) ? (
                 <>
                   <details className="parse-assessment-audit-details">
                     <summary>查看评估过程与版本详情</summary>
@@ -1515,7 +1526,12 @@ export default function DocumentParsingPage() {
 
         {/* ── §4.2 复核意见：CriterionSet 逐项投影 + 工程师逐项复核 ── */}
         <RetainedWorkbenchPanel active={activeNode === 'review'}>
-          {reviewContext ? (
+          {isJobAidProblemProjection(integratedAssessment?.baseRules) ? (
+            <JobAidProblemWorkspace
+              workItemId={workItemId}
+              onLocateDocument={locateAssessmentDocument}
+            />
+          ) : reviewContext ? (
             <>
               <AssessmentRuleWorkspace
                 key={`${workItemId}:${data.workItem.revision}:${selectedReviewCriterion}`}
@@ -1652,7 +1668,7 @@ export default function DocumentParsingPage() {
             </>
           ) : (
             <div className="parse-assessment-empty" id="workspace-review">
-              <p>当前资料尚未提供可复核的逐项内容。</p>
+              <p>可在下方继续讨论已有分析、补充材料或提出问题。</p>
             </div>
           )}
           <ContinuousReviewPanel

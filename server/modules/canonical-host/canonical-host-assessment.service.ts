@@ -1,3 +1,4 @@
+import { isJobAidProblemProjection } from '@shared/jobaid-problem-assessment.interface';
 import {
   BadRequestException,
   ConflictException,
@@ -182,6 +183,8 @@ export class CanonicalHostAssessmentService {
   }): Promise<Map<string, string[]>> {
     const baseRules = input.workItem.integratedAssessment?.baseRules;
     if (!baseRules) throw new Error('ASSESSMENT_STORED_BASE_RULES_REQUIRED');
+    if (isJobAidProblemProjection(baseRules))
+      throw new Error('JOBAID_PROBLEM_LEGACY_CRITERION_MAP_UNSUPPORTED');
     const ruleSet = await this.ruleSets.readRuntimeSnapshot(
       input.tenantId,
       baseRules.criterionSetId,

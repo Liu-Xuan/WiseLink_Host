@@ -143,6 +143,12 @@ export interface ReviewTurnAssistantCandidate {
   };
   completedAt: string;
   matterWorkingUpdate?: ReviewMatterWorkingUpdateReceipt;
+  jobAidWorkingUpdate?: {
+    status: 'APPLIED' | 'UNCHANGED';
+    workRevisionRef: string | null;
+    workRevision: number;
+    affectedIssueKeys: string[];
+  };
   /** Resolve task-local Review citations back to their original document reader. */
   sourceBindings?: Array<{
     sourceRefId: string;
@@ -1296,8 +1302,7 @@ export interface CanonicalApplicabilityInputProjection {
   };
 }
 
-export interface CanonicalApplicabilityCandidateProjection {
-  schemaVersion: 'wiselink.3_1.applicability_candidate_projection.v1';
+interface CanonicalApplicabilityCandidateProjectionFields {
   status: 'CANDIDATE_ONLY' | 'WAITING_INPUT' | 'STALE';
   currentness: 'CURRENT' | 'STALE';
   staleReason:
@@ -1312,7 +1317,6 @@ export interface CanonicalApplicabilityCandidateProjection {
   documentVersionId: string;
   sourcePackageId: string;
   sourcePackageContentHash: string;
-  translationActionAttemptId: string;
   applicabilityContextRef: string;
   applicabilityBindingRevision: string;
   aircraftNumber: string;
@@ -1330,6 +1334,21 @@ export interface CanonicalApplicabilityCandidateProjection {
   blockingUnknownCount: number;
   artifact: UnifiedPackageArtifactDescriptor;
 }
+
+export type CanonicalApplicabilityCandidateProjection =
+  CanonicalApplicabilityCandidateProjectionFields &
+    (
+      | {
+          schemaVersion: 'wiselink.3_1.applicability_candidate_projection.v1';
+          translationActionAttemptId: string;
+          sourceReadingMode?: 'BILINGUAL';
+        }
+      | {
+          schemaVersion: 'wiselink.3_1.applicability_candidate_projection.v2';
+          translationActionAttemptId: null;
+          sourceReadingMode: 'VERIFIED_ENGLISH';
+        }
+    );
 
 export interface CanonicalWorkItemFailureProjection {
   failureCode: string;
@@ -1591,7 +1610,12 @@ export interface ActivateCanonicalRuleSetSnapshotResponse {
   lifecycle: CanonicalRuleSetLifecycleReadModel;
 }
 
-export interface CanonicalBaseRuleCandidateProjection {
+export type CanonicalBaseRuleCandidateProjection =
+  | CanonicalLegacyBaseRuleCandidateProjection
+  | import('./jobaid-problem-assessment.interface').CanonicalJobAidProblemCandidateProjection;
+
+export interface CanonicalLegacyBaseRuleCandidateProjection {
+  schemaVersion?: 'wiselink.legacy-jobaid-result.v1';
   /**
    * Backward-compatible storage name. In the current runtime this projection
    * is produced only by the hosted OpenClaw dynamic-N evaluation; Base may
@@ -1674,6 +1698,9 @@ export interface CanonicalOpenClawOverallProjection {
   promptVersion?: string;
   skillVersion?: string;
   toolVersions?: Record<string, string>;
+  /** Problem v2 binds the exact saved analysis, independently of legacy N/N. */
+  basedOnJobAidWorkRevisionRef?: string;
+  affectedIssueKeys?: string[];
 }
 
 export interface CanonicalOverallRegenerationSourceIdentity {
@@ -2865,6 +2892,11 @@ export interface CanonicalLibraryQuicklookResponse {
     sourceResultId: string;
     engineeringSummary: CanonicalOverallEngineeringSummary | null;
     readingResult?: AssessmentReadingResult | null;
+    jobAidRoundCompletion?:
+      | 'IN_PROGRESS'
+      | 'COMPLETE'
+      | 'COMPLETE_WITH_OPEN_QUESTIONS';
+    overallStatus?: 'NOT_AVAILABLE' | 'CURRENT' | 'STALE';
     overallCandidate: string | null;
     missingInputs: string[];
     gap: string | null;
@@ -3045,6 +3077,13 @@ export interface CanonicalWorkbenchAuditProjection {
     assignmentCount: number | null;
     inferredFromDocumentPresence: false;
   };
+  problemAssessment?: {
+    schemaVersion: 'wiselink.jobaid-problem-result.v2';
+    issueCount: number;
+    openQuestionCount: number;
+    workRevisionRef: string;
+    roundCompletion: string;
+  } | null;
   dynamicEvaluation: {
     status: string;
     criterionSetId: string;

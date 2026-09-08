@@ -5,6 +5,7 @@ import {
 } from '@modelcontextprotocol/node';
 import { createMcpHandler, McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod/v4';
+import { CanonicalJobAidProblemService } from './canonical-jobaid-problem.service';
 
 import { ActionAttemptLifecycleService } from '../action-attempt/action-attempt-lifecycle.service';
 import { buildOpenClawTranslationDelivery } from './canonical-host-openclaw-attempt-delivery';
@@ -196,6 +197,7 @@ export class CanonicalHostOpenClawMcpService {
     private readonly attempts: ActionAttemptLifecycleService,
     @Inject(CANONICAL_SERVICE_SCOPE_AUTHORIZATION)
     private readonly serviceScope: CanonicalServiceScopeAuthorizationPort,
+    private readonly problemAssessment: CanonicalJobAidProblemService,
   ) {
     const handler = createMcpHandler(() => this.createServer(), {
       legacy: 'stateless',
@@ -310,7 +312,7 @@ export class CanonicalHostOpenClawMcpService {
       {
         title: '开始飞机号适用性条件提取与候选评估',
         description:
-          '输入仅含 Host opaque applicabilityContextRef 与幂等 requestId。Host 派生 tenant/WorkItem/ACL，fresh-read current DV、飞机号+asOf、受控 FleetMasterData、frozen.2 SourceExpressions/SourceRefs 和 current bilingual SourceUnits，冻结专属 durable ActionAttempt；不发送原始 PDF、FileService locator 或完整 Fleet。',
+          '输入仅含 Host opaque applicabilityContextRef 与幂等 requestId。Host 派生 tenant/WorkItem/ACL 并冻结当前文档、飞机号/asOf、窄受控机队事实及来源条件。v2 使用已验证英文，v1 保留完整译文绑定；不发送原始 PDF、FileService locator 或完整 Fleet。',
         inputSchema: z
           .object({
             applicabilityContextRef,
@@ -358,9 +360,9 @@ export class CanonicalHostOpenClawMcpService {
     server.registerTool(
       'begin_dynamic_evaluation',
       {
-        title: '开始动态 Job Aid 逐项候选评估',
+        title: '开始 JobAid 候选评估',
         description:
-          '由服务端读取并授权同一 WorkItem，预留一次候选评估并返回不含写权限的动态 N 模型输入。同一 WorkItem revision 重复调用返回同一 attempt/modelInput；若已进入 COMMITTING，同时返回 Host 持久化的 recoveryResult 供原样重放而不再调用模型。',
+          'Host 按任务已绑定的 schema 返回旧逐项或新问题分析输入。新任务可按已登记来源调查并保存完整工作；同一身份精确重放。COMMITTING 返回已存 recoveryResult，不重新生成。',
         inputSchema: z.object({ workItemId: mcpWorkItemId }).strict(),
         annotations: beginAnnotations,
       },
@@ -369,11 +371,71 @@ export class CanonicalHostOpenClawMcpService {
     );
 
     server.registerTool(
+      'read_assessment_sources',
+      {
+        title: '读取 JobAid 授权来源和方法',
+        description:
+          '按原任务的来源目录、actor/版本及有效 lease 读取正文，EXACT 或 PAGE 展开条件与脚注；保存实际读取回执后才加入可引用集合。',
+        inputSchema: z
+          .object({
+            attemptRef,
+            leaseToken,
+            leaseGeneration,
+            sourceRefs: z.array(z.string().min(1).max(512)).min(1).max(96),
+            purpose: z.string().trim().min(1).max(2000),
+            context: z.enum(['EXACT', 'PAGE']).default('PAGE'),
+          })
+          .strict(),
+        annotations: resumeAnnotations,
+      },
+      async (input) =>
+        textResult(await this.problemAssessment.readSources(input)),
+    );
+
+    server.registerTool(
+      'save_assessment_work',
+      {
+        title: '保存 JobAid 问题工作正文',
+        description:
+          '保存完整问题修订和实际依据，原 request 精确幂等及工作 revision CAS；不改变正式采用、WorkItem current 或已取消 attempt。',
+        inputSchema: z
+          .object({
+            attemptRef,
+            leaseToken,
+            leaseGeneration,
+            requestId: z.string().regex(/^[A-Za-z0-9:_-]{1,96}$/u),
+            expectedWorkRevision: z.number().int().min(0),
+            workJson: z.string().min(2).max(1_000_000),
+          })
+          .strict(),
+        annotations: beginAnnotations,
+      },
+      async (input) => textResult(await this.problemAssessment.saveWork(input)),
+    );
+
+    server.registerTool(
+      'read_assessment_work',
+      {
+        title: '读回已保存的 JobAid 工作',
+        description:
+          '在当前授权下读回原 request 的完整正文或最新工作，供保存响应丢失、退出及取消后的恢复核对；不发起模型或提升结果。',
+        inputSchema: z
+          .object({ attemptRef, requestId: z.string().max(96).optional() })
+          .strict(),
+        annotations: resumeAnnotations,
+      },
+      async ({ attemptRef: ref, requestId }) =>
+        textResult(
+          await this.problemAssessment.readAttemptWork(ref, requestId),
+        ),
+    );
+
+    server.registerTool(
       'commit_dynamic_evaluation_candidate',
       {
         title: '提交动态 Job Aid 候选评估',
         description:
-          '按服务端 attempt、lease fencing token 与完整 ResultEnvelope 校验动态 N 输出，将 candidate_only 产物 CAS 写回同一 WorkItem。',
+          '按冻结任务的 schema、attempt 和 lease 校验候选：历史协议提交准则结果，JobAid v2 提交已保存工作版本的精确引用；仅将候选 CAS 写回同一 WorkItem。',
         inputSchema: z
           .object({
             attemptRef,

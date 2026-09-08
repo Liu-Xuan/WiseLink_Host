@@ -1,3 +1,4 @@
+import type { JobAidWorkingReadModel } from '@shared/jobaid-problem-assessment.interface';
 import type {
   AppendReviewTextTurnRequest,
   AppendReviewTextTurnResponse,
@@ -562,6 +563,16 @@ export async function getInitialAnalysisStatus(
     logCanonicalRequestFailure('读取初始分析进度失败', error);
     throw normalizedDirectObjectError(error, requestGeneration);
   }
+}
+
+export function readJobAidAssessmentWork(
+  workItemId: string,
+): Promise<JobAidWorkingReadModel> {
+  return reviewConversationRequest<JobAidWorkingReadModel>({
+    url: `/api/canonical-host/work-items/${encodeURIComponent(workItemId)}/assessment-work`,
+    method: 'GET',
+    operation: '读取已保存的问题评估',
+  });
 }
 
 export async function getDocumentParsingPage(

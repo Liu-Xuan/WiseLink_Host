@@ -1,4 +1,9 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
+import {
+  CanonicalJobAidProblemService,
+  type BeginJobAidProblemResult,
+} from './canonical-jobaid-problem.service';
+import { isJobAidProblemTask } from './jobaid-problem-task';
 
 import type {
   CanonicalBaseRuleCandidateProjection,
@@ -106,9 +111,13 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
     private readonly serviceScope: CanonicalServiceScopeAuthorizationPort,
     private readonly documentVersions: MiaodaDocumentVersionSourceResolver,
     private readonly commonContext: CanonicalHostCommonContextService,
+    @Optional()
+    private readonly problemAssessment?: CanonicalJobAidProblemService,
   ) {}
 
-  async begin(workItemId: string): Promise<BeginDynamicEvaluationResult> {
+  async begin(
+    workItemId: string,
+  ): Promise<BeginDynamicEvaluationResult | BeginJobAidProblemResult> {
     const scope = await this.serviceScope.authorizeOpenClawWorkItem({
       operation: 'BEGIN_DYNAMIC',
       workItemId,
@@ -123,6 +132,30 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
       scope.tenantId,
     );
     const actor = serviceActor(scope.tenantId);
+    if (this.problemAssessment) {
+      const legacy = await this.attempts.readExactIdempotency({
+        tenantId: scope.tenantId,
+        workItemId,
+        taskType: 'OPENCLAW_DYNAMIC_EVALUATION',
+        baseRevision: workItem.revision,
+        documentVersionId: workItem.source.documentVersionId,
+        idempotencyKey: dynamicIdempotencyKey(workItem),
+      });
+      if (
+        !legacy &&
+        (this.problemAssessment.enabledForNewTasks() ||
+          (await this.problemAssessment.hasBoundTask(
+            workItem,
+            scope.tenantId,
+            'INITIAL_PROBLEM_ASSESSMENT',
+          )))
+      )
+        return this.problemAssessment.begin(
+          workItem,
+          scope,
+          'INITIAL_PROBLEM_ASSESSMENT',
+        );
+    }
     const permissionSnapshotVersion = servicePermissionSnapshot(
       workItem,
       scope,
@@ -144,9 +177,8 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
         },
       ],
       buildModelInput: async (identity) => {
-        const readScope: UnifiedArtifactReadScope = new UnifiedArtifactReadScope(
-          this.artifactStore,
-        );
+        const readScope: UnifiedArtifactReadScope =
+          new UnifiedArtifactReadScope(this.artifactStore);
         // reserveAndClaim invokes this callback only for a genuinely new
         // attempt, before inserting it. Replays therefore never consult the
         // mutable ACTIVE head, while zero-head creation remains zero-write.
@@ -201,7 +233,11 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
     leaseToken: string,
     leaseGeneration: number,
     resultEnvelope: unknown,
-  ): Promise<CommitDynamicEvaluationResult | ActionAttemptTerminalProjection> {
+  ): Promise<
+    | CommitDynamicEvaluationResult
+    | ActionAttemptTerminalProjection
+    | Awaited<ReturnType<CanonicalJobAidProblemService['commit']>>
+  > {
     const scope = await this.serviceScope.authorizeOpenClawAttempt({
       operation: 'COMMIT_DYNAMIC',
       attemptRef,
@@ -216,6 +252,17 @@ export class CanonicalHostOpenClawDynamicEvaluationService {
       row: preflightRow,
       result: resultEnvelope,
     });
+    if (isJobAidProblemTask(preflight.task.modelInput)) {
+      if (!this.problemAssessment)
+        throw new Error('JOBAID_PROBLEM_RUNTIME_UNAVAILABLE');
+      return this.problemAssessment.commit({
+        row: preflightRow,
+        scope,
+        leaseToken,
+        leaseGeneration,
+        result: resultEnvelope,
+      });
+    }
     const ruleSetBinding: OpenClawDynamicRuleSetBinding =
       parseDynamicRuleSetBinding(preflight.task.modelInput);
     const reevaluationTaskBinding =

@@ -47,6 +47,8 @@ import { CanonicalFleetMasterDataRepository } from './canonical-fleet-master-dat
 import { MiaodaApplicabilityControlledSelectionAdapter } from './miaoda-applicability-controlled-selection.adapter';
 import { CanonicalHostOpenClawReviewService } from './canonical-host-openclaw-review.service';
 import { CanonicalHostCommonContextService } from './canonical-host-common-context.service';
+import { CanonicalJobAidProblemService } from './canonical-jobaid-problem.service';
+import { JobAidWorkRepository } from './jobaid-work.repository';
 import { CanonicalHostReviewActionController } from './canonical-host-review-action.controller';
 import { CanonicalHostReviewActionService } from './canonical-host-review-action.service';
 import { HostOwnedV1TranslationRuleSetPrivateProvider } from './canonical-translation-rule-set-v1.private';
@@ -218,6 +220,8 @@ export interface CanonicalHostModuleOptions {
     MiaodaApplicabilityControlledSelectionAdapter,
     CanonicalHostOpenClawReviewService,
     CanonicalHostCommonContextService,
+    CanonicalJobAidProblemService,
+    JobAidWorkRepository,
     CanonicalHostReviewActionService,
     HostOwnedV1TranslationRuleSetPrivateProvider,
     HostNativeDocumentFamilyPdfProducerAdapter,
@@ -472,6 +476,8 @@ export class CanonicalHostModule {
         MiaodaApplicabilityControlledSelectionAdapter,
         CanonicalHostOpenClawReviewService,
         CanonicalHostCommonContextService,
+        CanonicalJobAidProblemService,
+        JobAidWorkRepository,
         CanonicalHostReviewActionService,
         HostOwnedV1TranslationRuleSetPrivateProvider,
         HostNativeDocumentFamilyPdfProducerAdapter,

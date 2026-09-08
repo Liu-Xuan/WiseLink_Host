@@ -22,6 +22,23 @@ const HASH = `sha256:${'a'.repeat(64)}`;
 const OTHER_HASH = `sha256:${'b'.repeat(64)}`;
 
 describe('CanonicalHost initial-analysis status projection', () => {
+  it('keeps verified-English applicability current without a translation and after translation changes', () => {
+    const workItem = translatedWorkItem(parsedWorkItem());
+    workItem.applicabilityInput = applicabilityInput(workItem);
+    workItem.applicability = {
+      ...applicabilityCandidate(workItem, workItem.applicabilityInput, 'CANDIDATE_ONLY'),
+      schemaVersion: 'wiselink.3_1.applicability_candidate_projection.v2',
+      sourceReadingMode: 'VERIFIED_ENGLISH', translationActionAttemptId: null,
+    };
+    const priorTranslation = workItem.translation;
+    delete workItem.translation;
+    expect(projectCanonicalHostInitialAnalysisStatus(workItem, []).stages.applicability.status).toBe('SUCCEEDED');
+    workItem.translation = { ...priorTranslation!, actionAttemptId: 'later-translation-attempt' };
+    expect(projectCanonicalHostInitialAnalysisStatus(workItem, []).stages.applicability.status).toBe('SUCCEEDED');
+    workItem.applicability.sourcePackageContentHash = OTHER_HASH;
+    expect(projectCanonicalHostInitialAnalysisStatus(workItem, []).stages.applicability.status).not.toBe('SUCCEEDED');
+  });
+
   it('recognizes a saved semantic translation candidate while keeping its partial scope explicit', () => {
     const workItem = translatedWorkItem(parsedWorkItem());
     workItem.translation = { ...workItem.translation!, schemaVersion: 'wiselink.3_1.translation_candidate_projection.v2',

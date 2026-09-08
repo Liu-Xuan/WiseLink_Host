@@ -106,6 +106,21 @@ test('complete saved prefix is retained and final assembly retries only the same
   assert.deepEqual(phases.slice(0, 3), ['NEXT', 'SAVE', 'RECORD_FAILURE']);
 });
 
+test('a normal attempt can assemble entirely saved work without attributing a new model call', async () => {
+  const result = await runSemanticTranslation({ begin: begin(), requestId: 'synthetic-all-reused',
+    translate: () => assert.fail('Persisted work must not regenerate'),
+    callTool: async (name, args) => {
+      if (name === 'heartbeat_action_attempt') return {};
+      if (args.phase === 'NEXT') return { action: 'DONE' };
+      if (args.phase === 'ASSEMBLE') return assembled();
+      assert.fail(args.phase);
+    } });
+  assert.equal(result.modelRequestCount, 0);
+  assert.equal(result.result.modelVersion, 'host-assembly/no-model-call');
+  assert.equal(result.result.skillVersion, WISELINK_SKILL_VERSION);
+  assert.deepEqual(JSON.parse(result.result.modelOutput).manifest, assembled().manifest);
+});
+
 function begin() {
   const fields = { schemaVersion: 'wiselink.3_1.openclaw_task_envelope.v1', actionAttemptId: 'ATT-synthetic', operationRef: 'AQ-synthetic', taskType: 'OPENCLAW_TRANSLATE',
     priority: 1, tenantId: 'tenant-synthetic', workItemId: 'WI-synthetic', inputRevision: 1, baseRevision: 1, documentVersionId: 'dv-synthetic',

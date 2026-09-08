@@ -1,6 +1,6 @@
 ---
 name: wiselink-research-and-synthesize
-description: Orchestrate the single official hosted WiseLink engineering profile through the canonical Host MCP for INITIAL_ANALYSIS and INTERACTIVE_REVIEW. Preserve applicability AST extraction, dynamic N/N tri-state semantics, SourceRef/currentness bindings, candidate-only authority, fenced ResultEnvelope commits including bounded Translation parts, and exact hosted provenance. Read Host-authorized parsed attachments only through the C3 SourceRef path, and fail closed for unavailable search, compare, reevaluation, or resynthesis tools.
+description: Orchestrate the single official hosted WiseLink engineering profile through the canonical Host MCP for INITIAL_ANALYSIS and INTERACTIVE_REVIEW. Support source-based JobAid problem work and incremental Review alongside frozen legacy dynamic N/N tasks. Preserve applicability AST extraction, SourceRef/currentness bindings, candidate-only authority, fenced ResultEnvelope commits, and exact hosted provenance. Read only Host-authorized sources and parsed attachments; unavailable capabilities remain explicit.
 ---
 
 # WiseLink R10 工程分析与事项讨论
@@ -12,10 +12,10 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（任务可绑定已登记的内置或用户授权自定义模型；仍经唯一官方 Hosted profile/Gateway）
-- Skill：`wiselink-research-and-synthesize@r09.c43`
-- Skill compatibility：`wiselink-research-and-synthesize@r09`（Host 最低接受 `r09.c10`）
-- Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（既有 20 项能力；兼容新增的只读自动领取查询）
-- Host baseline：`6fd2655d27edc3851c745547efaf8796ad22c82c`
+- Skill：`wiselink-research-and-synthesize@r09.c44`
+- Skill compatibility：`wiselink-research-and-synthesize@r09`（历史任务最低接受 `r09.c10`，翻译 v2 必须为 `r09.c44` 或更新兼容包）
+- Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（保留既有工具，新增语义翻译工作与 JobAid 来源/工作工具）
+- Host 集成提交：以本次发布包清单记录的实际提交为准
 
 app/profile/Skill/MCP 是执行合同，不是允许模型自报的标签。具体模型由官方托管 profile/config 选择；驱动从唯一
 profile 的 `agents.list[].model` 读取 string 或 `{primary,fallbacks}`，缺少显式 agent model 时才回退
@@ -28,19 +28,29 @@ c24 接受 Host 在新 TaskEnvelope 中保存的可选 `executionModel`。该非
 `taskBinding` 也携带相同选择。驱动确认 modelRef 在官方 `agents.defaults.models` 中已登记后，仅通过
 `x-openclaw-model` header 选择它；body 的 `openclaw/wiselink-engineering`、原生会话及凭据来源均不变。
 模型选择不混入 modelInput，不允许任意 URL 或凭据。登记不存在或路由失败时明确停止，不切换 provider。
-任务恢复使用已保存选择，不重新读取全局默认。响应没有可读实际模型时记录 `configured-route:<modelRef>`，
+任务恢复使用已保存选择，不重新读取全局默认。历史适配路径响应没有可读实际模型时记录 `configured-route:<modelRef>`；翻译 v2 缺少实返模型时失败，
 只证明所请求的配置路由，不冒充服务商已回报下游型号；旧任务无该字段时维持原有官方 profile 路径。
 
 `skillVersion` 始终记录实际安装包版本；Task 中的 `skillPolicyRef`（以及 Applicability v1 的历史字段
 `runtimePolicy.skillVersion`）表示兼容线 `wiselink-research-and-synthesize@r09`。只改 references、示例或不改变
 Task/Result/MCP 语义的 prompt 时可 Skill-only 发布新 c 修订；不兼容 schema、tool 参数、authority 或安全语义
-变更必须升级兼容线并与 Host 协同发布。c24 的可选控制元数据保持旧任务兼容，但旧 Skill 不接受新字段，
+若替换旧任务协议，必须升级兼容线并与 Host 协同发布；通过明确 schema 区分、保留旧任务双读的新路径可由兼容增量协同发布，并由 Host 开关只向支持它的运行包发新任务。c24 的可选控制元数据保持旧任务兼容，但旧 Skill 不接受新字段，
 必须先安装 c24，再发布生成该字段的 Host；不能把新任务交给旧 Skill。
 
 c34 增加以 schema 区分的 Overall v2 与 Matter Review c4，同时完整保留旧 Overall v1、Review c2/c3。
 先安装兼容包 c34，再发布生成新任务的 Host/前端。新任务不交给旧 Skill；r09 兼容线不变。
 
 c41 明确 Review 新生成的用户阅读文字默认使用简体中文，并遵从本轮工程师指定语言；英文原文与历史答复不覆盖该偏好。原文引句、技术标识、引用、JSON 键与枚举保留原形，不仅为翻译而重写已声明保留的判断。
+
+### JobAid 问题工作与直接英文适用性（新协议）
+
+Host 新任务若为 `wiselink.jobaid-problem-task.v2`，执行问题分析协议：先理解问题与完整来源条件，按需读来源，完成一段实质分析即保存，再做整体一致性检查。此分支不适用下文旧 Dynamic 的 N/N、`criterionTable`、逐行结论或 28KB 目标，也不要求先生成完整中文译文。旧任务仍按其已封存版本处理，不把旧产物伪装为问题工作。
+
+`run-jobaid-problem-assessment.mjs` 通过现有官方 Gateway 与确定性 Host 回调执行 `read_assessment_sources`、`save_assessment_work`、`read_assessment_work`。模型只返回读取/保存/完成意图；requestId、lease、最终 sealed ResultEnvelope 由驱动持有。已保存内容可在失败后阅读，同一请求响应丢失先读回原请求，不重复生成已保存正文。最终提交只绑定已保存的精确工作版本；Overall 保留该版本的完整问题和条件，不重新执行旧 Base 流程。
+
+`wiselink.3_1.applicability_task.v2` 的 `sourceReadingMode=VERIFIED_ENGLISH` 使用实际英文 SourceExpressions/SourceContext，`bilingualBinding=null`、`bilingualSourceUnits=[]`。保持原 AST、Host Fleet 匹配与 UNKNOWN 边界。旧 v1 继续检查其原译文绑定。
+
+`wiselink.3_1.review_turn_task.v1.c5` 的模型上下文是 `context.problemAssessment`。新候选 c5 通过 `jobAidWorkingDelta` 表达受影响问题，显式保留或说明撤回其他问题；普通解释用 null。Host 在同一事务保存问题工作和 Review 回答，不执行正式 ReviewAction。详细协议见 [JobAid 问题工作](references/jobaid-problem-work.md)。
 
 ## 不变边界
 
@@ -74,7 +84,7 @@ c41 明确 Review 新生成的用户阅读文字默认使用简体中文，并�
 没有待执行 Review 时才推进初始阶段；初始失败状态仍保留在回执，Review 成功不修复或重放失败初始阶段。
 该状态来自现有 projection 与 ActionAttempt，
 不是消费者另建业务状态机。独立资料读取可有限并行；依赖分析与同一 WorkItem 的 CAS 写回保持有序。
-`NOT_READY/BUSY` 不调用模型，`FAILED/CONFLICT` 不自动重试，未知结果停止并报告。普通 applicability 的
+`NOT_READY/BUSY` 不调用模型，失败阶段不自动重试，未知结果停止并报告。启用英文评估路径后，Host 可保留翻译失败并继续已授权的其他初始阶段；消费者只执行 Host 新读回的 nextOperation。普通 applicability 的
 `WAITING_INPUT` 保持缺口，可继续 Host 指定的 JobAid/Overall；它不自动启动 P0B 重算。
 新 Host 未提供该字段时统一入口明确停止，原有单 operation 与 Review 入口仍兼容。
 运行范围只取已授权的 `--work-item-id`；新事项尚无 applicability context 时使用与 Host 配置一致的
@@ -85,7 +95,7 @@ c41 明确 Review 新生成的用户阅读文字默认使用简体中文，并�
 
 c35 曾针对 M3 JobAid 的 `length/incomplete_result` 失败申请 32000 输出额度。c38 按用户后续要求统一
 将明确选择 M3 的初始分析和 Review 请求设为官方最大 524288，并配套更新同一 M3 条目的 maxTokens。
-仍返回全部 N 项并通过原校验；保留完整评估输入、全部准则、模型路由和原时间预算。
+旧 Dynamic 任务仍返回全部 N 项并通过原校验；问题工作 v2 按上文独立协议执行。
 
 Host 可在 JobAid / Overall 输入的 `commonContext`，以及 Review 的 `context.commonContext` 中提供评估前
 共同背景：主文件身份与章节目录、关联资料作用与实际读取片段、此前普通讨论及工作回答。旧任务没有该字段时仍按原输入执行。
@@ -102,7 +112,7 @@ Host 可在 JobAid / Overall 输入的 `commonContext`，以及 Review 的 `cont
 
 | Operation               | 当前工具路径                                                                                | 状态   |
 | ----------------------- | ------------------------------------------------------------------------------------------- | ------ |
-| `TRANSLATE`             | `begin_translation` → model → 同一 `commit_translation_candidate` 分块上传并 finalize       | 可执行 |
+| `TRANSLATE`             | `begin_translation` → `translation_workspace` → 完整块 model / 保存检查 → Host 组装 → commit       | 可执行 |
 | `EXTRACT_APPLICABILITY` | `begin_applicability_evaluation` → AST model → `commit_applicability_candidate`             | 可执行 |
 | `EVALUATE_JOBAID`       | `begin_dynamic_evaluation` → model → `commit_dynamic_evaluation_candidate`                  | 可执行 |
 | `SYNTHESIZE_OVERALL`    | `begin_overall_synthesis` / `resume_overall_synthesis` → model → `commit_overall_candidate` | 可执行 |
@@ -118,14 +128,14 @@ P0B 时只接受 Host 给出的精确协调绑定
 ### 通用 begin / commit
 
 1. `get_parse_status({workItemId})` fresh-read 当前状态。
-2. 调对应 `begin_*`。Translation begin 第 0 包直接返回可读的 attempt control、脱敏 taskBinding、
+2. 调对应 `begin_*`。Translation v2 返回工作区指针并使用专用驱动；以下 SourceUnit 传输说明仅适用于 v1。历史 Translation begin 第 0 包直接返回可读的 attempt control、脱敏 taskBinding、
    `modelInputBase` 与第一批 SourceUnits；若 `partCount > 1`，官方 Hosted Agent 用同一工具按 `deliveryPart=1..N-1`
    顺序读取剩余可读 SourceUnits。每个完整 MCP tool result 按实际 JSON UTF-8 bytes 限在 14,000 内，不从托管
    日志恢复截断 JSON。
 3. 若 status 为 `COMMITTING`，只调用一次 `get_action_attempt_status`，校验 Host 已持久化
    `recoveryResult.contentHash == resultContentHash == begin.recoveryResultContentHash` 后返回；不调用模型、不再次
    commit。begin 只返回该有界 hash，完整 recoveryResult 由既有 status 工具读取。
-4. 若 status 为 `RUNNING`，只使用 `delivery.modelInputBase + delivery.sourceUnits` 组成的 authority-free translation
+4. 历史 Translation 若 status 为 `RUNNING`，只使用 `delivery.modelInputBase + delivery.sourceUnits` 组成的 authority-free translation
    输入；attempt control/taskBinding 不混入翻译输入。收齐输入后 heartbeat，生成完成、commit 前再 heartbeat；生成期间
    不要求短周期回调，Host 的长租约覆盖该段运行。
 5. 模型执行必须返回 `{output, provenance}`；provenance 必须是实际读数，实际模型非空可读，并通过固定
@@ -148,7 +158,11 @@ CAS；Skill 不声称这些步骤由模型完成。8. commit 响应未知时只�
 `resultContentHash` 与本次 sealed ResultEnvelope `contentHash` 精确一致时返回只读恢复；否则 outcome unknown，
 绝不 blind retry。
 
-### Translation
+### Translation v2
+
+Host 返回 `wiselink.3_1.translation_task.v2` 时，运行 [语义块翻译工作协议](references/semantic-translation-work.md)：完整结构准备 → NEXT/READ_BATCH → 一个短会话生成 → SAVE/CHECK → 局部可读 → Host ASSEMBLE → 原提交链。正文保存与最终提交分开；自然段可绑定多个源片段，模型不重印全文。以下逐 unitKey 规则只用于明确的旧 v0/v1 任务。
+
+### 历史 Translation v0/v1 与共用最终字节提交
 
 - `begin_translation({workItemId, deliveryPart?})` 首次返回第 0 批；`partCount > 1` 时只用同一工具、同一
   WorkItem 顺序读取其余批。每次返回的 attemptRef、leaseToken/generation、taskBinding.inputHash 与 partCount
@@ -234,7 +248,7 @@ CAS；Skill 不声称这些步骤由模型完成。8. commit 响应未知时只�
   检查、实际字节 readback、组装后才进入原有 ResultEnvelope→ResultGate→FileService→CAS/current。
 - 任一 part/finalize 明确失败立即停止；未知或进入 COMMITTING 时只读一次通用 status，不盲重放 finalize。
 
-### Dynamic N/N
+### Dynamic N/N（仅已封存的旧协议）
 
 按 Host `criterionTable` 原顺序处理全部 N 项；N 由当前 CriterionSet 决定，不固定为 150。
 
@@ -250,8 +264,7 @@ CAS；Skill 不声称这些步骤由模型完成。8. commit 响应未知时只�
 ### Applicability AST + Host evaluator
 
 - 入口只接收 Host opaque `applicabilityContextRef + requestId`；Host 派生 tenant/WorkItem/ACL 并冻结 current
-  DocumentVersion、frozen.2 SourceExpressions/SourceRefs、current bilingual SourceUnits、飞机号/asOf 与窄受控
-  Fleet facts。
+  DocumentVersion、frozen.2 SourceExpressions/SourceRefs、飞机号/asOf 与窄受控 Fleet facts。v2 使用已验证英文 sourceContext，中文翻译仅为可选阅读辅助；v1 继续绑定完整 bilingual SourceUnits。
 - begin 后只使用 Host `modelInput`；TaskEnvelope 中的 tenant/workItem/lease 等控制面字段不进入模型。
 - `aircraftNumber/asOf` 是 Host 冻结的评估对象与时点，不是工程师对适用性的确认。初始分析可由 Host 自动冻结
   current 受控目标；前端手动输入仅用于切换目标或回溯时点，缺少手动选择不得被解释为“尚未确认适用性”。
@@ -531,7 +544,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - `modelVersion` 优先取响应中可读实际模型；绑定任务未回报实际模型时使用 `configured-route:<modelRef>`，旧无绑定任务使用无 fallback 的 configured endpoint。后两者只证明路由，不代表已暴露下游具体模型，也不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c43`
+- `skillVersion=wiselink-research-and-synthesize@r09.c44`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致

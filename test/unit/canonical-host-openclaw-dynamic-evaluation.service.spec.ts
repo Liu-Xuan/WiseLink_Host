@@ -74,12 +74,16 @@ describe('CanonicalHostOpenClawDynamicEvaluationService', () => {
         purpose: 'EVALUATE_DYNAMIC_RULES',
       },
     });
-    expect(begun.task.modelInput.ruleSetBinding.snapshotId).toBe('JACS-DYNAMIC-2');
+    expect(begun.task.modelInput.ruleSetBinding).toMatchObject({
+      snapshotId: 'JACS-DYNAMIC-2',
+    });
     expect(begun.modelInput).not.toHaveProperty('ruleSetBinding');
     expect(harness.processor.buildRequest.mock.calls[0][2]).toMatchObject({
       expectedRevision: 5,
     });
-    expect(begun.modelInput.commonContext).toMatchObject({ knowledgeRetrieval: { status: 'NOT_CONNECTED' } });
+    expect(begun.modelInput.commonContext).toMatchObject({
+      knowledgeRetrieval: { status: 'NOT_CONNECTED' },
+    });
     expect(
       harness.ruleSets.readRuntimeSnapshotAtActivation,
     ).toHaveBeenCalledWith('tenant-dynamic', 'JACS-DYNAMIC-2', 1);
@@ -179,7 +183,9 @@ describe('CanonicalHostOpenClawDynamicEvaluationService', () => {
 
     await expect(harness.service.begin(WORK_ITEM_ID)).resolves.toMatchObject({
       status: 'RUNNING',
-      task: { modelInput: { ruleSetBinding: { snapshotId: 'JACS-DYNAMIC-2' } } },
+      task: {
+        modelInput: { ruleSetBinding: { snapshotId: 'JACS-DYNAMIC-2' } },
+      },
     });
     expect(harness.ruleSets.readActiveRuntime).not.toHaveBeenCalled();
     expect(
@@ -1000,7 +1006,21 @@ function createHarness(
     ruleSets as never,
     scope as never,
     documentVersions as never,
-    { buildForWorkItem: jest.fn(async () => projectCommonAssessmentContext(workItem, { context: { status: 'UNAVAILABLE', reason: 'TEST_NO_READER' }, documentReadingStatus: 'UNAVAILABLE', items: [], sections: [], resourceRefs: [] }, [])) } as never,
+    {
+      buildForWorkItem: jest.fn(async () =>
+        projectCommonAssessmentContext(
+          workItem,
+          {
+            context: { status: 'UNAVAILABLE', reason: 'TEST_NO_READER' },
+            documentReadingStatus: 'UNAVAILABLE',
+            items: [],
+            sections: [],
+            resourceRefs: [],
+          },
+          [],
+        ),
+      ),
+    } as never,
   );
   return {
     service,
