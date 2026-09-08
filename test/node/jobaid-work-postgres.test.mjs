@@ -12,7 +12,7 @@ const require = createRequire(import.meta.url);
 require('ts-node/register/transpile-only');
 require('tsconfig-paths/register');
 const { drizzle } = require('drizzle-orm/postgres-js');
-const { eq } = require('drizzle-orm');
+const { eq, sql: drizzleSql } = require('drizzle-orm');
 const { getTableConfig } = require('drizzle-orm/pg-core');
 const {
   SqlExecutionContextMiddleware,
@@ -677,6 +677,88 @@ test(
               .workRevisionRef,
             saved.workRevisionRef,
           );
+
+          // Exercise the service used by GET /assessment-work with the actual
+          // authenticated role, no write privilege, and a READ ONLY transaction.
+          await sql.unsafe(
+            'REVOKE INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public FROM authenticated',
+          );
+          const browserView = await new Promise((resolve, reject) =>
+            sqlContext.use(
+              {
+                userContext: {
+                  userId: scope.actorUserId,
+                  isSystemAccount: false,
+                  roles: [],
+                },
+              },
+              {},
+              () =>
+                db
+                  .transaction(
+                    async (browserDb) => {
+                      const [role] = await browserDb.execute(drizzleSql`
+                      SELECT current_user AS role,
+                        current_setting('transaction_read_only') AS read_only,
+                        has_table_privilege(current_user, 'assessment_work_revision', 'UPDATE') AS can_update
+                    `);
+                      assert.equal(
+                        role.role,
+                        'authenticated_wiselink_jobaid_test',
+                      );
+                      assert.equal(role.read_only, 'on');
+                      assert.equal(role.can_update, false);
+                      const browserWorkItems = new MiaodaWorkItemRepository(
+                        browserDb,
+                      );
+                      const browserService = new CanonicalJobAidProblemService(
+                        {
+                          getTenantScopedByWorkItemId: async (input) => {
+                            const loaded =
+                              await browserWorkItems.loadTenantScopedProjection(
+                                input.workItemId,
+                                input.tenantId,
+                              );
+                            assert.ok(loaded?.projection);
+                            return loaded.projection;
+                          },
+                        },
+                        {},
+                        {},
+                        {
+                          authorize: async ({ actor, action, workItemId }) => ({
+                            allowed:
+                              actor.userId === scope.actorUserId &&
+                              actor.tenantId === scope.tenantId &&
+                              workItemId === scope.workItemId,
+                            action,
+                            permissionSnapshotVersion: 'browser-test',
+                          }),
+                        },
+                        {
+                          freshRead: async () => ({
+                            permissionSnapshotVersion: 'browser-test',
+                          }),
+                        },
+                        {},
+                        browserWorkItems,
+                        new ReviewConversationRepository(browserDb),
+                        {},
+                        new JobAidWorkRepository(browserDb, actors),
+                      );
+                      return browserService.readBrowser(scope.workItemId, {
+                        userId: scope.actorUserId,
+                        tenantId: scope.tenantId,
+                      });
+                    },
+                    { accessMode: 'read only' },
+                  )
+                  .then(resolve, reject),
+            ),
+          );
+          assert.deepEqual(browserView.current, saved);
+          assert.equal(browserView.executionStatus, 'SUCCEEDED');
+          assert.equal(browserView.currentInputChanged, false);
         },
       );
     } finally {
@@ -690,6 +772,7 @@ async function reset(sql) {
     DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='authenticated') THEN CREATE ROLE authenticated NOLOGIN; END IF;
       IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='service_role') THEN CREATE ROLE service_role NOLOGIN; END IF;
       IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='anon') THEN CREATE ROLE anon NOLOGIN; END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='authenticated_wiselink_jobaid_test') THEN CREATE ROLE authenticated_wiselink_jobaid_test NOLOGIN IN ROLE authenticated; END IF;
       IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='service_role_wiselink_jobaid_test') THEN CREATE ROLE service_role_wiselink_jobaid_test NOLOGIN IN ROLE service_role; END IF; END $$;
     CREATE TYPE user_profile AS (user_id text);
     CREATE TABLE identity_subject_mapping (id uuid DEFAULT gen_random_uuid(), miaoda_user_id text, miaoda_tenant_id text, expected_client_id text, status text);`);
@@ -796,7 +879,7 @@ async function seed(sql) {
   await sql`INSERT INTO identity_subject_mapping (miaoda_user_id,miaoda_tenant_id,expected_client_id,status)
     VALUES ('actor-job','tenant-job','cli_aadde8b579f95bc9','ACTIVE'), ('actor-other','other-tenant','cli_aadde8b579f95bc9','ACTIVE')`;
   await sql`INSERT INTO work_item (work_item_id,tenant_id,requested_by_user_id,revision,document_version_id,projection_json)
-    VALUES ('WI-job','tenant-job','actor-job',1,'dv-job',${JSON.stringify({ package: { artifact: { ref: sourceBindings[0].artifactRef, sha256: hash } } })})`;
+    VALUES ('WI-job','tenant-job','actor-job',1,'dv-job',${JSON.stringify(initialProjection(scope.workItemId))})`;
   await seedAttempt(
     sql,
     'ATT-initial',

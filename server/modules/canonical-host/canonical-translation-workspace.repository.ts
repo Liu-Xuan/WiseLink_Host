@@ -203,22 +203,25 @@ export class CanonicalTranslationWorkspaceRepository {
   }
 
   async readSnapshot(input: TranslationWorkspaceScope) {
-    return this.db.transaction(async (transaction) => {
-      // Every block mutation takes this workspace row exclusively. The shared
-      // lock keeps coverage, selected bodies and the manifest in one snapshot.
-      const workspace = workspaceFromRow(
-        await requiredWorkspace(transaction, input, 'share'),
-      );
-      const rows = await transaction
-        .select()
-        .from(translationBlockRevision)
-        .where(blockScope(input))
-        .orderBy(
-          asc(translationBlockRevision.blockId),
-          desc(translationBlockRevision.contentRevision),
+    return this.db.transaction(
+      async (transaction) => {
+        // Repeatable read keeps workspace coverage, selections and the manifest
+        // consistent without a row lock, which also requires UPDATE RLS access.
+        const workspace = workspaceFromRow(
+          await requiredWorkspace(transaction, input),
         );
-      return { workspace, revisions: rows.map(blockFromRow) };
-    });
+        const rows = await transaction
+          .select()
+          .from(translationBlockRevision)
+          .where(blockScope(input))
+          .orderBy(
+            asc(translationBlockRevision.blockId),
+            desc(translationBlockRevision.contentRevision),
+          );
+        return { workspace, revisions: rows.map(blockFromRow) };
+      },
+      { accessMode: 'read only', isolationLevel: 'repeatable read' },
+    );
   }
 
   async readSemanticScope(input: { tenantId: string; workItemId: string; blockRevisionId: string }) {
@@ -948,16 +951,14 @@ function blockScope(input: TranslationWorkspaceScope) {
 async function requiredWorkspace(
   database: Database,
   input: TranslationWorkspaceScope,
-  lock: boolean | 'share' = false,
+  lock = false,
 ): Promise<WorkspaceRow> {
   const query = database
     .select()
     .from(translationWorkspace)
     .where(workspaceScope(input))
     .limit(1);
-  const [row] = await (lock
-    ? query.for(lock === 'share' ? 'share' : 'update')
-    : query);
+  const [row] = await (lock ? query.for('update') : query);
   if (!row) throw new Error('TRANSLATION_WORKSPACE_NOT_FOUND');
   return row;
 }
