@@ -12,7 +12,7 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（任务可绑定已登记的内置或用户授权自定义模型；仍经唯一官方 Hosted profile/Gateway）
-- Skill：`wiselink-research-and-synthesize@r09.c40`
+- Skill：`wiselink-research-and-synthesize@r09.c41`
 - Skill compatibility：`wiselink-research-and-synthesize@r09`（Host 最低接受 `r09.c10`）
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（既有 20 项能力；兼容新增的只读自动领取查询）
 - Host baseline：`6fd2655d27edc3851c745547efaf8796ad22c82c`
@@ -39,6 +39,8 @@ Task/Result/MCP 语义的 prompt 时可 Skill-only 发布新 c 修订；不兼�
 
 c34 增加以 schema 区分的 Overall v2 与 Matter Review c4，同时完整保留旧 Overall v1、Review c2/c3。
 先安装兼容包 c34，再发布生成新任务的 Host/前端。新任务不交给旧 Skill；r09 兼容线不变。
+
+c41 明确 Review 新生成的用户阅读文字默认使用简体中文，并遵从本轮工程师指定语言；英文原文与历史答复不覆盖该偏好。原文引句、技术标识、引用、JSON 键与枚举保留原形，不仅为翻译而重写已声明保留的判断。
 
 ## 不变边界
 
@@ -527,7 +529,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - `modelVersion` 优先取响应中可读实际模型；绑定任务未回报实际模型时使用 `configured-route:<modelRef>`，旧无绑定任务使用无 fallback 的 configured endpoint。后两者只证明路由，不代表已暴露下游具体模型，也不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c40`
+- `skillVersion=wiselink-research-and-synthesize@r09.c41`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致
