@@ -1,15 +1,21 @@
 import type { CanonicalWorkItemProjection } from '@shared/api.interface';
+import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
 
 import {
   canonicalJson,
   sealResultEnvelope,
   sealTaskEnvelope,
 } from '../../server/modules/action-attempt/action-attempt-envelope';
-import type { ActionAttemptRow } from '../../server/modules/action-attempt/action-attempt.types';
+import type {
+  ActionAttemptRow,
+  ReserveActionAttemptInput,
+} from '../../server/modules/action-attempt/action-attempt.types';
 import { CanonicalHostOpenClawOverallService } from '../../server/modules/canonical-host/canonical-host-openclaw-overall.service';
 import { projectCommonAssessmentContext } from '../../server/modules/canonical-host/canonical-host-common-context.service';
 import { CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY } from '../../server/modules/canonical-host/canonical-host-openclaw-runtime-policy';
 import { createConfigurationEvidenceReevaluation } from '../../server/modules/canonical-host/configuration-evidence/configuration-evidence-reevaluation.state';
+import { overallModelEvidenceRegistry } from '../../server/modules/canonical-host/overall-assessment-reading';
+import type { OpenClawOverallSynthesisInput } from '../../server/modules/canonical-host/openclaw-overall-synthesis.processor';
 
 const WORK_ITEM_ID = 'WI-OVERALL-REAL';
 const ATTEMPT_ID = 'ATT-OVERALL-REAL';
@@ -83,6 +89,112 @@ describe('CanonicalHostOpenClawOverallService', () => {
         },
       ]),
     );
+  });
+
+  it('builds the model registry and its full Host bindings in the same task using the shared read scope', async () => {
+    const harness = createHarness({ readingV2: true });
+    harness.artifactStore.readActualBytes.mockImplementation(
+      async ({ ref }: { ref: string }) =>
+        new TextEncoder().encode(
+          JSON.stringify(
+            ref === 'artifact://package'
+              ? {
+                  sourceRefs: [
+                    {
+                      sourceRefId: 'SRC-001',
+                      pageStart: 1,
+                      pageEnd: 1,
+                      quote: '主文档实际正文。',
+                    },
+                  ],
+                }
+              : {
+                  ruleResults: {
+                    columns: [
+                      'ruleId',
+                      'result',
+                      'factsConsidered',
+                      'ruleApplication',
+                      'analysisSummary',
+                      'conclusion',
+                      'sourceRefs',
+                      'missingInputs',
+                      'humanReviewRequired',
+                    ],
+                    rows: [
+                      [
+                        'RULE-1',
+                        'PASS',
+                        ['来源事实'],
+                        '规则解释',
+                        '分析',
+                        '候选认识',
+                        ['SRC-001'],
+                        [],
+                        true,
+                      ],
+                    ],
+                  },
+                },
+          ),
+        ),
+    );
+    harness.assessment.prepareDynamicRulesCandidate.mockResolvedValue({
+      summary: {
+        workItemId: WORK_ITEM_ID,
+        documentVersionId: 'DV-737',
+        parsedPackageId: 'PKG-737',
+        criterionSetId: 'JACS-ONE',
+        criterionCount: 1,
+        evaluationItemCount: 1,
+      },
+      overall: { context: { criterionCards: [] } },
+    });
+    await harness.service.begin(WORK_ITEM_ID, []);
+    const reservation = (
+      harness.attempts.reserveAndClaim.mock.calls as unknown[][]
+    )[0][0] as ReserveActionAttemptInput;
+    const stored = await reservation.buildModelInput({
+      attemptId: ATTEMPT_ID,
+      operationRef: ATTEMPT_REF,
+      triggerRequestId: TRIGGER_REF,
+      attemptNo: 1,
+      createdAt: new Date('2026-09-08T00:00:00Z'),
+    });
+    expect(stored).toMatchObject({
+      readingEvidence: [
+        expect.objectContaining({
+          workItemId: WORK_ITEM_ID,
+          documentVersionId: 'DV-737',
+          sourceRefId: 'SRC-001',
+        }),
+        expect.objectContaining({
+          workItemId: 'WI-RELATED',
+          documentVersionId: 'DV-RELATED',
+        }),
+      ],
+      modelInput: {
+        evidenceRegistry: [
+          expect.objectContaining({
+            kind: 'DOCUMENT_PASSAGE',
+            excerpt: '主文档实际正文。',
+          }),
+          expect.objectContaining({
+            kind: 'DOCUMENT_PASSAGE',
+            excerpt: '关联材料的真实输入摘录。',
+          }),
+        ],
+      },
+    });
+    expect(JSON.stringify(stored.modelInput)).not.toContain('"workItemId"');
+    const dynamicScope =
+      harness.assessment.prepareDynamicRulesCandidate.mock.calls[0][0]
+        .readScope;
+    const commonScope = (
+      harness.common.buildForWorkItemWithEvidence.mock.calls as unknown[][]
+    )[0][3];
+    expect(dynamicScope).toBe(commonScope);
+    expect(harness.artifactStore.readActualBytes).toHaveBeenCalledTimes(2);
   });
 
   it('lets a Host-marked user regeneration reach the same begin path without discovery', async () => {
@@ -212,6 +324,76 @@ describe('CanonicalHostOpenClawOverallService', () => {
         actionAttemptId: ATTEMPT_ID,
       },
     });
+  });
+
+  it('saves a v2 reading result from Host-bound premises without overwriting v1 summary semantics', async () => {
+    const harness = createHarness({ readingV2: true });
+    const committed = await harness.service.commit(
+      ATTEMPT_REF,
+      LEASE_TOKEN,
+      1,
+      harness.prepared.result,
+    );
+    expect(committed).toMatchObject({
+      overallSynthesis: {
+        sourceResultId: TRIGGER_REF,
+        revision: 1,
+        readingResult: {
+          resultRef: TRIGGER_REF,
+          resultRevision: 1,
+          candidateOnly: true,
+          scope: {
+            kind: 'WORK_ITEM',
+            workItemId: WORK_ITEM_ID,
+            documentVersionId: 'DV-737',
+          },
+          content: {
+            schemaVersion: 'wiselink.3_1.assessment_reading.v1',
+            headline: '故障机理的当前认识',
+            decisiveClaimIds: ['C-1'],
+          },
+          evidence: [
+            expect.objectContaining({
+              workItemId: 'WI-RELATED',
+              documentVersionId: 'DV-RELATED',
+              sourceRefId: 'SRC-RELATED-ORIGINAL',
+              excerpt: '关联材料的真实输入摘录。',
+            }),
+          ],
+        },
+      },
+    });
+    expect(committed).not.toHaveProperty('overallSynthesis.engineeringSummary');
+    expect(harness.attempts.finishProjectionSuccess).toHaveBeenCalledTimes(1);
+    expect(harness.artifactStore.persistAndReadback).toHaveBeenCalledWith(
+      new TextEncoder().encode(harness.prepared.result.modelOutput!),
+    );
+  });
+
+  it('rejects v2 before persistence if its claimed premise was absent from the sealed Host registry', async () => {
+    const harness = createHarness({ readingV2: true });
+    const output = JSON.parse(harness.prepared.result.modelOutput!);
+    output.engineeringSummary.claims[0].premises[0].evidenceRef = 'UNREAD-REF';
+    const { contentHash: _oldHash, ...unsignedResult } =
+      harness.prepared.result;
+    harness.prepared.result = sealResultEnvelope({
+      ...unsignedResult,
+      modelOutput: JSON.stringify(output),
+    });
+    await harness.service.commit(
+      ATTEMPT_REF,
+      LEASE_TOKEN,
+      1,
+      harness.prepared.result,
+    );
+    expect(harness.attempts.finishResultGateFailure).toHaveBeenCalledWith(
+      harness.prepared,
+      expect.objectContaining({
+        message: 'OVERALL_UNKNOWN_EVIDENCE_REF:UNREAD-REF',
+      }),
+    );
+    expect(harness.artifactStore.persistAndReadback).not.toHaveBeenCalled();
+    expect(harness.registrar.compareAndSet).not.toHaveBeenCalled();
   });
 
   it('rejects unreadable model provenance before prepareCommit, artifact persistence, or CAS', async () => {
@@ -590,10 +772,25 @@ describe('CanonicalHostOpenClawOverallService', () => {
   });
 });
 
-function createHarness(input: { p0b?: boolean } = {}) {
+function createHarness(input: { p0b?: boolean; readingV2?: boolean } = {}) {
   const workItem = workItemProjection();
   if (input.p0b) activateP0B(workItem);
-  const modelInput = overallModelInput();
+  const modelInput: OpenClawOverallSynthesisInput = overallModelInput();
+  const readingEvidence: AssessmentEvidence[] = [
+    {
+      evidenceRef: 'READ-RELATED-1',
+      kind: 'DOCUMENT_PASSAGE',
+      title: '关联故障报告',
+      versionLabel: 'R2',
+      excerpt: '关联材料的真实输入摘录。',
+      workItemId: 'WI-RELATED',
+      documentVersionId: 'DV-RELATED',
+      sourceRefId: 'SRC-RELATED-ORIGINAL',
+      locator: 'page 3-3',
+    },
+  ];
+  if (input.readingV2)
+    modelInput.evidenceRegistry = overallModelEvidenceRegistry(readingEvidence);
   const task = sealTaskEnvelope({
     schemaVersion: 'wiselink.3_1.openclaw_task_envelope.v1',
     actionAttemptId: ATTEMPT_ID,
@@ -613,6 +810,7 @@ function createHarness(input: { p0b?: boolean } = {}) {
     hostResolvedMissingInputs: [],
     modelInput: {
       modelInput,
+      ...(input.readingV2 ? { readingEvidence } : {}),
       selectedDiscoveryRefs: [],
       providerCodes: [],
       ...(input.p0b
@@ -630,6 +828,39 @@ function createHarness(input: { p0b?: boolean } = {}) {
   });
   const row = actionRow(task);
   const prepared = { row, task, result: overallResult(task), recovery: false };
+  if (input.readingV2) {
+    const output = JSON.parse(validOutput());
+    output.overallCandidate = '已有材料支持问题认识，尚无实施决定。';
+    output.engineeringSummary = {
+      schemaVersion: 'wiselink.3_1.overall_engineering_summary.v2',
+      headline: '故障机理的当前认识',
+      listBrief: '故障机理已有依据，机队构型仍待核对。',
+      lead: output.overallCandidate,
+      claims: [
+        {
+          claimId: 'C-1',
+          text: '关联材料说明了故障机理。',
+          basis: 'SOURCE_FACT',
+          premises: [
+            {
+              evidenceRef: 'READ-RELATED-1',
+              role: 'SUPPORTS',
+              explanation: '说明故障机理。',
+              limitation: '不确认本机队适用性。',
+            },
+          ],
+        },
+      ],
+      decisiveClaimIds: ['C-1'],
+    };
+    output.findings = [];
+    output.findingCount = 0;
+    const { contentHash: _oldHash, ...unsignedResult } = prepared.result;
+    prepared.result = sealResultEnvelope({
+      ...unsignedResult,
+      modelOutput: JSON.stringify(output),
+    });
+  }
   const registrar = {
     getTenantScopedByWorkItemId: jest.fn(async () => workItem),
     compareAndSet: jest.fn(
@@ -721,12 +952,29 @@ function createHarness(input: { p0b?: boolean } = {}) {
       }),
     ),
   };
+  const assessment = { prepareDynamicRulesCandidate: jest.fn() };
+  const common = {
+    buildForWorkItemWithEvidence: jest.fn(async () => ({
+      common: projectCommonAssessmentContext(
+        workItem,
+        {
+          context: { status: 'UNAVAILABLE', reason: 'TEST_NO_READER' },
+          documentReadingStatus: 'UNAVAILABLE',
+          items: [],
+          sections: [],
+          resourceRefs: [],
+        },
+        [],
+      ),
+      readingEvidence: input.readingV2 ? readingEvidence : [],
+    })),
+  };
   const service = new CanonicalHostOpenClawOverallService(
     registrar as never,
     artifactStore as never,
     repository as never,
     { latestSearchRunsAsOf: jest.fn(async () => []) } as never,
-    { prepareDynamicRulesCandidate: jest.fn() } as never,
+    assessment as never,
     {
       modelContext: jest.fn(async () => ({
         revision: null,
@@ -738,7 +986,7 @@ function createHarness(input: { p0b?: boolean } = {}) {
     } as never,
     attempts as never,
     scope as never,
-    { buildForWorkItem: jest.fn(async () => projectCommonAssessmentContext(workItem, { context: { status: 'UNAVAILABLE', reason: 'TEST_NO_READER' }, documentReadingStatus: 'UNAVAILABLE', items: [], sections: [], resourceRefs: [] }, [])) } as never,
+    common as never,
   );
   return {
     service,
@@ -748,6 +996,8 @@ function createHarness(input: { p0b?: boolean } = {}) {
     artifactStore,
     attempts,
     scope,
+    assessment,
+    common,
   };
 }
 

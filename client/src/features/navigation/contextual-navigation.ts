@@ -4,6 +4,7 @@ import type {
   CanonicalLibraryQuicklookResponse,
   CanonicalRelatedDocumentRelation,
 } from '@shared/api.interface';
+import type { AssessmentReadingResult } from '@shared/assessment-reading.interface';
 import {
   AUTHORITY_LABELS,
   FRESHNESS_LABELS,
@@ -18,10 +19,17 @@ import type {
 
 export interface EngineeringQuicklookEvidence {
   label: string;
-  sourceRefId?: string;
+  sourceRefIds: string[];
 }
 
 export interface EngineeringQuicklookView {
+  readingResult: AssessmentReadingResult | null;
+  resultIdentity: {
+    resultRef: string;
+    revision: number;
+    workItemId: string;
+    documentVersionId: string;
+  } | null;
   authorityLabel: string;
   freshnessLabel: string;
   currentJudgment: string;
@@ -49,7 +57,7 @@ function statementEvidence(
 ): EngineeringQuicklookEvidence {
   return {
     label: statement.text,
-    sourceRefId: statement.sourceRefIds[0],
+    sourceRefIds: [...statement.sourceRefIds],
   };
 }
 
@@ -87,7 +95,7 @@ export function buildCurrentObjectContext(
   const title: string =
     packageTitle && packageTitle !== documentCode
       ? packageTitle
-      : kind === 'MATTER'
+      : kind !== 'DOCUMENT'
         ? `${documentCode} 工程评估`
         : '当前受控资料';
   const baseRules = page.workItem.integratedAssessment?.baseRules;
@@ -130,18 +138,18 @@ export function buildEngineeringQuicklook(
     ? [
         ...(overall.conclusion ? [overall.conclusion] : []),
         ...overall.whyItMatters,
+        ...(overall.applicability.sourceScope
+          ? [overall.applicability.sourceScope]
+          : []),
+        ...(overall.applicability.fleetMatch
+          ? [overall.applicability.fleetMatch]
+          : []),
         ...overall.applicability.requiredFacts,
         ...overall.implementationImpact,
+        ...overall.dispositionPriority,
+        ...overall.nextActions,
       ]
     : [];
-  const evidenceBySourceRef: Map<string, EngineeringQuicklookEvidence> =
-    new Map();
-  evidenceStatements.forEach((statement: EngineeringStatementView): void => {
-    const key: string = statement.sourceRefIds[0] ?? statement.text;
-    if (!evidenceBySourceRef.has(key)) {
-      evidenceBySourceRef.set(key, statementEvidence(statement));
-    }
-  });
   const unresolvedQuestions: string[] = [
     ...(overall?.applicability.requiredFacts.map(
       (statement: EngineeringStatementView) => statement.text,
@@ -154,6 +162,15 @@ export function buildEngineeringQuicklook(
   ];
 
   return {
+    readingResult: projection?.readingResult ?? null,
+    resultIdentity: projection
+      ? {
+          resultRef: projection.sourceResultId,
+          revision: projection.revision,
+          workItemId: page.workItem.workItemId,
+          documentVersionId: page.workItem.source.documentVersionId,
+        }
+      : null,
     authorityLabel: AUTHORITY_LABELS[view.authority],
     freshnessLabel: FRESHNESS_LABELS[view.freshness],
     currentJudgment:
@@ -162,12 +179,16 @@ export function buildEngineeringQuicklook(
     applicabilitySummary:
       applicabilityStatements.join(' ') || '当前未返回适用范围摘要。',
     whyItMatters: firstNonEmpty(
-      overall?.whyItMatters[0]?.text,
-      overall?.implementationImpact[0]?.text,
+      overall?.whyItMatters
+        .map((statement: EngineeringStatementView) => statement.text)
+        .join('\n\n'),
+      overall?.implementationImpact
+        .map((statement: EngineeringStatementView) => statement.text)
+        .join('\n\n'),
       '当前未返回风险或影响摘要。',
     ),
-    keyEvidence: Array.from(evidenceBySourceRef.values()).slice(0, 4),
-    unresolvedQuestions: Array.from(new Set(unresolvedQuestions)).slice(0, 5),
+    keyEvidence: evidenceStatements.map(statementEvidence),
+    unresolvedQuestions,
     recommendedActions:
       overall?.nextActions.map(
         (statement: EngineeringStatementView) => statement.text,
@@ -212,18 +233,14 @@ export function buildLibraryEngineeringQuicklook(
     ? [
         summary.conclusion,
         ...summary.whyItMatters,
+        summary.applicability.sourceScope,
+        summary.applicability.fleetMatch,
         ...summary.applicability.requiredFacts,
         ...summary.implementationImpact,
+        ...summary.dispositionPriority,
+        ...summary.nextActions,
       ]
     : [];
-  const evidenceBySourceRef: Map<string, EngineeringQuicklookEvidence> =
-    new Map();
-  evidenceStatements.forEach((statement: EngineeringStatementView): void => {
-    const key: string = statement.sourceRefIds[0] ?? statement.text;
-    if (!evidenceBySourceRef.has(key)) {
-      evidenceBySourceRef.set(key, statementEvidence(statement));
-    }
-  });
   const unresolvedQuestions: string[] = [
     ...(summary?.applicability.requiredFacts.map(
       (statement) => statement.text,
@@ -233,6 +250,15 @@ export function buildLibraryEngineeringQuicklook(
     ...(result?.staleReason ? [staleReasonLabel(result.staleReason)!] : []),
   ];
   return {
+    readingResult: result?.readingResult ?? null,
+    resultIdentity: result
+      ? {
+          resultRef: result.sourceResultId,
+          revision: result.revision,
+          workItemId: response.document.workItemId,
+          documentVersionId: response.document.documentVersionId,
+        }
+      : null,
     authorityLabel: result ? '已保存候选意见' : '尚无候选意见',
     freshnessLabel:
       result?.status === 'STALE' ? '结论需更新' : '原文未在本次核验',
@@ -249,16 +275,23 @@ export function buildLibraryEngineeringQuicklook(
         .filter(Boolean)
         .join(' ') || '当前未返回适用范围摘要。',
     whyItMatters: firstNonEmpty(
-      summary?.whyItMatters[0]?.text,
-      summary?.implementationImpact[0]?.text,
+      summary?.whyItMatters
+        .map((statement: EngineeringStatementView) => statement.text)
+        .join('\n\n'),
+      summary?.implementationImpact
+        .map((statement: EngineeringStatementView) => statement.text)
+        .join('\n\n'),
       '当前未返回风险或影响摘要。',
     ),
-    keyEvidence: [...evidenceBySourceRef.values()].slice(0, 4),
-    unresolvedQuestions: [...new Set(unresolvedQuestions)].slice(0, 5),
+    keyEvidence: evidenceStatements.map(statementEvidence),
+    unresolvedQuestions,
     recommendedActions:
       summary?.nextActions.map((statement) => statement.text) ?? [],
     sourceCount: result?.sourceCount,
-    currentVersionLabel: response.document.businessRevision || response.document.sourceGeneratedDate || null,
+    currentVersionLabel:
+      response.document.businessRevision ||
+      response.document.sourceGeneratedDate ||
+      null,
     derivedArtifactCount: null,
     sourceReadNote:
       '摘要来自已保存的评估结果。本次未读取原文或解析包；打开依据时再核对来源。',
@@ -269,6 +302,31 @@ export function quicklookMarkdown(
   title: string,
   quicklook: EngineeringQuicklookView,
 ): string {
+  if (quicklook.readingResult) {
+    const content = quicklook.readingResult.content;
+    return [
+      `# ${title}`,
+      '',
+      `## ${content.headline}`,
+      '',
+      '> 已保存候选认识；不代表正式采用、批准或实施决定。',
+      '',
+      content.listBrief,
+      '',
+      content.lead,
+      '',
+      ...content.claims.flatMap((claim) => [
+        `### ${claim.basis === 'SOURCE_FACT' ? '来源事实' : '条件性推断'}`,
+        '',
+        claim.text,
+        '',
+        ...claim.premises.flatMap((premise) => [
+          `- ${premise.explanation}${premise.limitation ? `；限制：${premise.limitation}` : ''}`,
+        ]),
+        '',
+      ]),
+    ].join('\n');
+  }
   const list = (items: string[]): string =>
     items.length > 0
       ? items.map((item: string) => `- ${item}`).join('\n')

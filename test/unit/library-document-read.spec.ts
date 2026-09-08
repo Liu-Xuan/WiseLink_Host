@@ -6,7 +6,7 @@ import {
 import { libraryDocuments, libraryTasks } from './fixtures/canonical-library';
 
 function empty(
-  mode: 'document' | 'matter',
+  mode: 'document' | 'tasks',
   familyId = '',
 ): LibraryDocumentsRead {
   return {
@@ -49,7 +49,7 @@ describe('library documents and tasks stay separate across reads', () => {
   it('preserves independent tasks for the same family, and clears them when switching to documents', () => {
     const tasks = mergeLibraryDocumentsRead(
       null,
-      empty('matter'),
+      empty('tasks'),
       libraryTasks(['WI-1', 'WI-2']),
       new Set(),
     );
@@ -70,22 +70,22 @@ describe('library documents and tasks stay separate across reads', () => {
   it('drops cached rows when family or account changes and keeps revoked tasks out of pagination', () => {
     const tasks = mergeLibraryDocumentsRead(
       null,
-      empty('matter', '737'),
+      empty('tasks', '737'),
       libraryTasks(['WI-1']),
       new Set(),
     );
     expect(
-      beginLibraryDocumentsRead(tasks, empty('matter', '777')).items,
+      beginLibraryDocumentsRead(tasks, empty('tasks', '777')).items,
     ).toEqual([]);
     expect(
       beginLibraryDocumentsRead(tasks, {
-        ...empty('matter', '737'),
+        ...empty('tasks', '737'),
         sessionGeneration: 2,
       }).items,
     ).toEqual([]);
     const next = mergeLibraryDocumentsRead(
       tasks,
-      { ...empty('matter', '737'), loadingMore: true },
+      { ...empty('tasks', '737'), loadingMore: true },
       libraryTasks(['WI-1', 'WI-2']),
       new Set(['WI-1']),
     );

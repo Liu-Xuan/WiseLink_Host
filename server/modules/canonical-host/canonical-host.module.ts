@@ -108,8 +108,7 @@ import { CanonicalRuleSetLifecycleController } from './canonical-rule-set-lifecy
 import { CanonicalRuleSetLifecycleRepository } from './canonical-rule-set-lifecycle.repository';
 import { CanonicalRuleSetLifecycleService } from './canonical-rule-set-lifecycle.service';
 import { EngineeringMatterController } from './engineering-matter.controller';
-import { EngineeringMatterRepository } from './engineering-matter.repository';
-import { EngineeringMatterService } from './engineering-matter.service';
+import { EngineeringMatterModule } from './engineering-matter.module';
 import { BatchApplicabilityModule } from '../batch-applicability/batch-applicability.module';
 import { BatchApplicabilityController } from '../batch-applicability/batch-applicability.controller';
 import { BatchApplicabilityHostService } from '../batch-applicability/batch-applicability-host.service';
@@ -161,6 +160,7 @@ export interface CanonicalHostModuleOptions {
 
 @Module({
   imports: [
+    EngineeringMatterModule,
     ActionAttemptModule,
     ExternalDiscoveryModule,
     AssessmentHostConsumerModule,
@@ -227,8 +227,6 @@ export interface CanonicalHostModuleOptions {
     CanonicalRuleSetArtifactReader,
     CanonicalRuleSetLifecycleRepository,
     CanonicalRuleSetLifecycleService,
-    EngineeringMatterRepository,
-    EngineeringMatterService,
     CanonicalHostAeoEditingService,
     CanonicalAeoEditingInputProducer,
     BatchApplicabilityHostService,
@@ -390,6 +388,7 @@ export class CanonicalHostModule {
     return {
       module: CanonicalHostModule,
       imports: [
+        EngineeringMatterModule,
         ActionAttemptModule,
         UnifiedReaderModule.forRoot(options.unifiedReader),
         AssessmentHostConsumerModule,
@@ -475,8 +474,6 @@ export class CanonicalHostModule {
         CanonicalRuleSetArtifactReader,
         CanonicalRuleSetLifecycleRepository,
         CanonicalRuleSetLifecycleService,
-        EngineeringMatterRepository,
-        EngineeringMatterService,
         CanonicalHostAeoEditingService,
         BatchApplicabilityHostService,
         BatchApplicabilityRepository,

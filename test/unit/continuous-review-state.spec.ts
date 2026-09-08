@@ -103,8 +103,8 @@ describe('continuous review client state', () => {
     expect(source).toMatch(/<Textarea[\s\S]*?disabled=\{editorDisabled\}/u);
     expect(source).toContain('disabled: editorDisabled');
     expect(source).toContain("'aria-disabled': editorDisabled");
-    expect(source).toContain(
-      'busy || !presentation.composerEnabled || !message.trim()',
+    expect(source).toMatch(
+      /busy\s*\|\|\s*!presentation\.composerEnabled\s*\|\|\s*!message\.trim\(\)\s*\|\|\s*!models\.ready/u,
     );
     expect(source).toMatch(
       /async function appendTurn\(\)[\s\S]*?if \(\s*busy \|\|/u,
@@ -237,7 +237,7 @@ describe('continuous review client state', () => {
       /selectedEvaluationItemId:\s*string\s*\|\s*null;/u,
     );
     expect(panelSource).toMatch(
-      /requestId,\s*userMessage,\s*selectedEvaluationItemId,/u,
+      /requestId,\s*userMessage,\s*\.\.\.\(submission\.modelRef[^\n]+\n\s*selectedEvaluationItemId,/u,
     );
   });
 

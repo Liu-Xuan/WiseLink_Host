@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Req } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Req } from '@nestjs/common';
 import { NeedLogin } from '@lark-apaas/fullstack-nestjs-core';
 import type { Request } from 'express';
 import { taskModelSelection } from '../model-settings/canonical-model-catalog';
@@ -9,6 +9,7 @@ import type {
   CloseReviewConversationResponse,
   CreateOrResumeReviewConversationResponse,
   CurrentReviewConversationResponse,
+  ReviewScopeSelection,
 } from '@shared/api.interface';
 import { ReviewConversationService } from './review-conversation.service';
 
@@ -28,24 +29,37 @@ export class ReviewConversationController {
     @Body() body: unknown,
     @Req() request: Request,
   ): Promise<CreateOrResumeReviewConversationResponse> {
-    emptyBody(body);
+    const value = body == null ? {} : objectBody(body);
+    strictKeys(value, ['reviewScope']);
+    const reviewScope = scopeSelection(value.reviewScope);
     const workItemId: string = requiredIdentifier(
       workItemIdValue,
       'WORK_ITEM_ID_INVALID',
     );
-    return this.service.createOrResume(workItemId, request);
+    return this.service.createOrResume(workItemId, request, reviewScope);
   }
 
   @Get('work-items/:workItemId/review-conversations/current')
   async current(
     @Param('workItemId') workItemIdValue: string,
     @Req() request: Request,
+    @Query('matterId') matterIdValue?: string,
   ): Promise<CurrentReviewConversationResponse> {
     const workItemId: string = requiredIdentifier(
       workItemIdValue,
       'WORK_ITEM_ID_INVALID',
     );
-    return this.service.current(workItemId, request);
+    const reviewScope: ReviewScopeSelection =
+      matterIdValue === undefined
+        ? { kind: 'WORK_ITEM' }
+        : {
+            kind: 'ENGINEERING_MATTER',
+            matterId: requiredIdentifier(
+              matterIdValue,
+              'REVIEW_MATTER_ID_INVALID',
+            ),
+          };
+    return this.service.current(workItemId, request, reviewScope);
   }
 
   @Post(
@@ -105,6 +119,7 @@ function reviewTextBody(body: unknown): AppendReviewTextTurnRequest {
     'executionMode',
     'attachmentSelection',
     'modelRef',
+    'reviewScope',
   ]);
   const requestId: string = requiredIdentifier(
     value.requestId,
@@ -118,6 +133,35 @@ function reviewTextBody(body: unknown): AppendReviewTextTurnRequest {
     throw badRequest('REVIEW_TURN_MESSAGE_INVALID');
   }
   const input: AppendReviewTextTurnRequest = { requestId, userMessage };
+  if (value.reviewScope !== undefined) {
+    const scope = objectBody(value.reviewScope);
+    strictKeys(scope, [
+      'kind',
+      'matterId',
+      'expectedWorkingRevision',
+      'targetClaimId',
+    ]);
+    if (
+      scope.kind !== 'ENGINEERING_MATTER' ||
+      !Number.isSafeInteger(scope.expectedWorkingRevision) ||
+      Number(scope.expectedWorkingRevision) < 0
+    ) {
+      throw badRequest('REVIEW_MATTER_SCOPE_INVALID');
+    }
+    input.reviewScope = {
+      kind: 'ENGINEERING_MATTER',
+      matterId: requiredIdentifier(scope.matterId, 'REVIEW_MATTER_ID_INVALID'),
+      expectedWorkingRevision: Number(scope.expectedWorkingRevision),
+      ...(scope.targetClaimId === undefined
+        ? {}
+        : {
+            targetClaimId: requiredIdentifier(
+              scope.targetClaimId,
+              'REVIEW_TARGET_CLAIM_INVALID',
+            ),
+          }),
+    };
+  }
   if (value.modelRef !== undefined)
     input.modelRef = taskModelSelection(value.modelRef).modelRef;
   if (value.executionMode !== undefined) {
@@ -161,6 +205,22 @@ function emptyBody(body: unknown): void {
   if (body === undefined || body === null) return;
   const value: Record<string, unknown> = objectBody(body);
   strictKeys(value, []);
+}
+
+function scopeSelection(value: unknown): ReviewScopeSelection {
+  if (value === undefined) return { kind: 'WORK_ITEM' };
+  const scope = objectBody(value);
+  if (scope.kind === 'WORK_ITEM') {
+    strictKeys(scope, ['kind']);
+    return { kind: 'WORK_ITEM' };
+  }
+  strictKeys(scope, ['kind', 'matterId']);
+  if (scope.kind !== 'ENGINEERING_MATTER')
+    throw badRequest('REVIEW_MATTER_SCOPE_INVALID');
+  return {
+    kind: 'ENGINEERING_MATTER',
+    matterId: requiredIdentifier(scope.matterId, 'REVIEW_MATTER_ID_INVALID'),
+  };
 }
 
 function objectBody(body: unknown): Record<string, unknown> {

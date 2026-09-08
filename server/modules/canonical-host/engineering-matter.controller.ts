@@ -5,6 +5,7 @@ import {
   Get,
   Param,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -19,12 +20,45 @@ import type {
 import { ProductionMiaodaBrowserObjectIngressGuard } from '../work-item/production-miaoda-browser-ingress';
 import { hostActor } from './canonical-host-request-actor';
 import { EngineeringMatterService } from './engineering-matter.service';
+import { EngineeringMatterWorkingService } from './engineering-matter-working.service';
+import { EngineeringMatterDirectoryService } from './engineering-matter-directory.service';
 
 @NeedLogin()
 @UseGuards(ProductionMiaodaBrowserObjectIngressGuard)
 @Controller('api/canonical-host/engineering-matters')
 export class EngineeringMatterController {
-  constructor(private readonly matters: EngineeringMatterService) {}
+  constructor(
+    private readonly matters: EngineeringMatterService,
+    private readonly working: EngineeringMatterWorkingService,
+    private readonly directory: EngineeringMatterDirectoryService,
+  ) {}
+
+  @Get()
+  list(
+    @Query('search') search: string | undefined,
+    @Query('cursor') cursor: string | undefined,
+    @Query('limit') limit: string | undefined,
+    @Query('workItemId') workItemId: string | undefined,
+    @Req() request: Request,
+  ) {
+    return this.directory.list(
+      {
+        search,
+        cursor,
+        ...(limit === undefined ? {} : { limit: Number(limit) }),
+        workItemId,
+      },
+      hostActor(request),
+    );
+  }
+
+  @Get(':matterId/working')
+  readWorking(@Param('matterId') matterId: string, @Req() request: Request) {
+    return this.working.readWorking(
+      requiredText(matterId, 'MATTER_ID', 96),
+      hostActor(request),
+    );
+  }
 
   @Post()
   create(@Body() body: unknown, @Req() request: Request) {

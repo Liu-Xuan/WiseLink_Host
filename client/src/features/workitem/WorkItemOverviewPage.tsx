@@ -1,18 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import {
-  CircleAlert,
-  FileClock,
-  FileText,
-  History,
-  Link2,
-  Network,
-  RefreshCw,
-} from 'lucide-react';
+import { CircleAlert, FileText, Link2, RefreshCw } from 'lucide-react';
 
 import {
   getCanonicalHostClientSessionGeneration,
-  getDocumentParsingPage,
+  getCanonicalLibraryQuicklook,
   isCanonicalObjectNotFound,
 } from '@client/src/api/canonical-host';
 import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSessionProvider';
@@ -20,27 +12,31 @@ import {
   useCurrentObjectContext,
   type CurrentObjectContextView,
 } from '@client/src/app/providers/CurrentObjectContextProvider';
-import { buildCurrentObjectContext } from '@client/src/features/navigation/contextual-navigation';
-import OverallAssessmentHero from '@client/src/features/workitem/OverallAssessmentHero';
+import {
+  buildLibraryObjectContext,
+  buildLibraryEngineeringQuicklook,
+} from '@client/src/features/navigation/contextual-navigation';
+import EngineeringQuicklook from '@client/src/pages/WorkspaceHomePage/EngineeringQuicklook';
+import TaskMatterActions from '@client/src/features/matter/TaskMatterActions';
+import { Button } from '@client/src/components/ui/button';
+import type { CanonicalLibraryQuicklookResponse } from '@shared/api.interface';
+import type { DocumentAssessmentEvidence } from '@client/src/features/matter/assessment-reading';
 import { useOverallRegeneration } from '@client/src/features/workitem/useOverallRegeneration';
-import AuthorityStrip from '@client/src/features/workitem/AuthorityStrip';
-import type { WorkItemView } from '@client/src/services/viewModelMappers';
-import { toWorkItemView } from '@client/src/services/viewModelMappers';
-import { humanState } from '@client/src/features/navigation/treeMappers';
 
 import '@client/src/features/workitem/workitem-overview.css';
 
 /**
- * 工程事项综合评估首页（Spec R01 §4.1）。
- * 选择文档或事项后默认第一屏：先看综合候选意见，再下钻解析与原文。
- * 数据全部来自 getDocumentParsingPage fresh-read，不建第二真源。
+ * 当前 WorkItem 的保存结果首页。首次 GET 只读数据库快览；
+ * 原文、解析和正式处置通过明确入口按需打开，不充任独立 Matter 结果。
  */
 export default function WorkItemOverviewPage() {
   const { authenticationRequired, sessionGeneration } = useCurrentUserSession();
   const { publishCurrentObject } = useCurrentObjectContext();
   const { workItemId = '' } = useParams<{ workItemId: string }>();
   const navigate = useNavigate();
-  const [view, setView] = useState<WorkItemView | null>(null);
+  const [view, setView] = useState<CanonicalLibraryQuicklookResponse | null>(
+    null,
+  );
   const [viewSessionGeneration, setViewSessionGeneration] = useState<
     number | null
   >(null);
@@ -52,7 +48,7 @@ export default function WorkItemOverviewPage() {
   const visibleView =
     !authenticationRequired &&
     viewSessionGeneration === sessionGeneration &&
-    view?.id === workItemId
+    view?.document.workItemId === workItemId
       ? view
       : null;
   const loadEpochRef = useRef(0);
@@ -71,7 +67,7 @@ export default function WorkItemOverviewPage() {
   const overallRegeneration = useOverallRegeneration({
     workItemId,
     sessionGeneration,
-    onSucceeded: (fresh) => {
+    onSucceeded: async (fresh) => {
       const current = currentScopeRef.current;
       if (
         current.authenticationRequired ||
@@ -80,13 +76,20 @@ export default function WorkItemOverviewPage() {
         getCanonicalHostClientSessionGeneration() !== sessionGeneration ||
         fresh.workItem.workItemId !== workItemId ||
         (current.visibleView &&
-          fresh.workItem.revision < current.visibleView.revision)
+          fresh.workItem.revision < current.visibleView.document.revision)
       ) {
         return;
       }
+      const saved: CanonicalLibraryQuicklookResponse =
+        await getCanonicalLibraryQuicklook(workItemId);
+      if (
+        currentScopeRef.current.workItemId !== workItemId ||
+        getCanonicalHostClientSessionGeneration() !== sessionGeneration
+      )
+        return;
       loadEpochRef.current += 1;
-      setView(toWorkItemView(fresh));
-      setContextView(buildCurrentObjectContext(fresh, 'MATTER'));
+      setView(saved);
+      setContextView(buildLibraryObjectContext(saved.document, 'WORK_ITEM'));
       setViewSessionGeneration(sessionGeneration);
       setError(null);
       setLoading(false);
@@ -124,10 +127,12 @@ export default function WorkItemOverviewPage() {
     }
     void (async () => {
       try {
-        const fresh = await getDocumentParsingPage(workItemId, '');
+        const fresh = await getCanonicalLibraryQuicklook(workItemId);
         if (isCurrentSession()) {
-          setView(toWorkItemView(fresh));
-          setContextView(buildCurrentObjectContext(fresh, 'MATTER'));
+          setView(fresh);
+          setContextView(
+            buildLibraryObjectContext(fresh.document, 'WORK_ITEM'),
+          );
           setViewSessionGeneration(sessionGeneration);
         }
       } catch (reason) {
@@ -211,67 +216,113 @@ export default function WorkItemOverviewPage() {
 
   if (!visibleView) return null;
 
+  function locateDocument(evidence: DocumentAssessmentEvidence): void {
+    const params: URLSearchParams = new URLSearchParams({
+      node: 'reader',
+      tab: 'reader',
+      documentVersionId: evidence.documentVersionId,
+      sourceRef: evidence.sourceRefId,
+      returnWorkItemId: workItemId,
+    });
+    navigate(
+      `/work-items/${encodeURIComponent(evidence.workItemId)}/documents?${params.toString()}`,
+    );
+  }
+
   return (
     <main className="wl-overview-page wl-workbench-enter">
-      <h1 className="wl-visually-hidden">当前工程事项综合评估</h1>
-      <AuthorityStrip view={visibleView} />
+      <header className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <p className="text-xs text-muted-foreground">
+            当前评估任务 · 已保存结果
+          </p>
+          <h1 className="text-2xl font-semibold">
+            {visibleView.document.documentCode ||
+              visibleView.document.originalFilename}
+          </h1>
+        </div>
+        <Button
+          variant="outline"
+          disabled={loading || overallRegeneration.disabled}
+          onClick={overallRegeneration.run}
+        >
+          {overallRegeneration.label}
+        </Button>
+      </header>
       {loading ? (
         <p className="wl-projection-refresh" role="status">
           正在刷新当前结果…仍显示上次读回的内容，尚未确认最新状态。
         </p>
       ) : null}
 
-      <OverallAssessmentHero
-        view={visibleView}
-        onOpenWorkbench={openWorkbench}
-        onViewEvidence={viewEvidence}
-        regeneration={{
-          ...overallRegeneration,
-          disabled: loading || overallRegeneration.disabled,
-        }}
+      {overallRegeneration.message ? (
+        <p className="wl-projection-refresh" role="status">
+          {overallRegeneration.message}
+        </p>
+      ) : null}
+      <EngineeringQuicklook
+        title={
+          visibleView.document.documentCode ||
+          visibleView.document.originalFilename
+        }
+        quicklook={buildLibraryEngineeringQuicklook(visibleView)}
+        loading={loading}
+        onOpenWorkbench={() => viewEvidence()}
+        onContinueReview={openWorkbench}
+        onOpenFamily={() =>
+          navigate(
+            `/work-items/${encodeURIComponent(workItemId)}/documents?node=document&tab=source`,
+          )
+        }
+        onLocateEvidence={viewEvidence}
+        onLocateDocument={locateDocument}
       />
 
       <div className="wl-overview-side">
-        <section className="wl-side-panel" aria-label="关联资料">
+        <section className="wl-side-panel" aria-label="任务与文档范围">
           <h3>
-            <FileText aria-hidden="true" /> 关联资料
+            <FileText aria-hidden="true" /> 任务与文档范围
           </h3>
           <ul className="wl-side-list">
             <li>
               <FileText aria-hidden="true" />
-              <span>{visibleView.documentLabel}</span>
-              <small>当前受控文件版本</small>
-            </li>
-            <li>
-              <Network aria-hidden="true" />
-              <span>结构化解析结果</span>
+              <span>{visibleView.document.documentCode}</span>
               <small>
-                {visibleView.overall
-                  ? `${visibleView.overall.sourceCount} 条来源引用`
-                  : '综合评估来源尚未形成'}
+                {visibleView.document.businessRevision || '版本未标注'} ·{' '}
+                {visibleView.document.selectedVersionIsCurrent
+                  ? '当前登记版本'
+                  : '历史登记版本'}
               </small>
             </li>
           </ul>
-          <p className="wl-side-empty">关联资料以当前事项返回为准。</p>
+          <p className="wl-side-empty">
+            当前结果只属于此评估任务。相同文档的其他任务、不同对象和跨资料事项的认识分别保存。
+          </p>
+          <TaskMatterActions
+            workItemId={workItemId}
+            documentLabel={
+              visibleView.document.documentCode ||
+              visibleView.document.originalFilename
+            }
+            disabled={loading}
+          />
         </section>
 
-        <section className="wl-side-panel" aria-label="最近变化">
-          <h3>
-            <History aria-hidden="true" /> 最近变化
-          </h3>
-          {visibleView.lastEvents.length > 0 ? (
-            <ul className="wl-side-list">
-              {visibleView.lastEvents.map((event) => (
-                <li key={event.id}>
-                  <FileClock aria-hidden="true" />
-                  <span>{event.label}</span>
-                  <small>{humanState(event.status) ?? '状态待确认'}</small>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="wl-side-empty">当前事项尚无进度记录。</p>
-          )}
+        <section className="wl-side-panel" aria-label="单独核对与正式处置入口">
+          <h3>单独核对与正式处置</h3>
+          <p className="wl-side-empty">
+            查看逐项评估、历史与人工处置时再进入任务工作台。打开简报不会执行模型或正式采用。
+          </p>
+          <Button
+            variant="outline"
+            onClick={() =>
+              navigate(
+                `/work-items/${encodeURIComponent(workItemId)}/documents?node=assessment&tab=assessment`,
+              )
+            }
+          >
+            查看逐项评估
+          </Button>
         </section>
       </div>
     </main>

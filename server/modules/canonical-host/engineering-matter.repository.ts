@@ -265,11 +265,14 @@ export class EngineeringMatterRepository {
     return { snapshot, linked: true, replayed: false };
   }
 
-  async loadCurrent(input: {
-    tenantId: string;
-    matterId: string;
-  }): Promise<EngineeringMatterSnapshot | null> {
-    const [row] = await this.db
+  async loadCurrent(
+    input: {
+      tenantId: string;
+      matterId: string;
+    },
+    executor: PostgresJsDatabase = this.db,
+  ): Promise<EngineeringMatterSnapshot | null> {
+    const [row] = await executor
       .select({
         matterId: engineeringMatter.matterId,
         tenantId: engineeringMatter.tenantId,
@@ -311,7 +314,7 @@ export class EngineeringMatterRepository {
     }
     const linkRows: Array<
       typeof engineeringMatterRevisionWorkItem.$inferSelect
-    > = await this.db
+    > = await executor
       .select()
       .from(engineeringMatterRevisionWorkItem)
       .where(

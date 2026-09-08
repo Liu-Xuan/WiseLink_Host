@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useWorkbenchPanelActive } from '@client/src/features/workbench/RetainedWorkbenchPanel';
 import { useDropzone } from 'react-dropzone';
 import {
@@ -25,11 +25,20 @@ import { Textarea } from '@client/src/components/ui/textarea';
 import { createRequestCorrelationId } from '@client/src/utils/request-correlation-id';
 import type {
   ConfirmReviewActionDraftResponse,
+  AppendMatterReviewScope,
   ReviewConversationReadModel,
+  ReviewScopeSelection,
   ReviewTurnReadModel,
 } from '@shared/api.interface';
 
 import ReviewConversationTurn from './ReviewConversationTurn';
+import useReviewDraft from './useReviewDraft';
+import useReviewWorkingRefresh from './useReviewWorkingRefresh';
+import {
+  assertReviewConversationScope,
+  reviewSourceBinding,
+  type ReviewSourceBinding,
+} from './review-scope';
 import TaskModelPicker, { useTaskModelOptions } from './TaskModelPicker';
 import ReviewMaterialsPanel, {
   type ReviewMaterialsContext,
@@ -63,32 +72,51 @@ type ReviewActionReceipt = ConfirmReviewActionDraftResponse['reviewAction'];
 
 interface ContinuousReviewPanelProps {
   workItemId: string;
+  draftScopeKey?: string;
+  reviewScope?: AppendMatterReviewScope;
+  discussionClaimText?: string;
+  onWorkingRefresh?: () => Promise<void>;
   workItemRevision: number;
   workItemRefreshing?: boolean;
   selectedEvaluationItemId: string | null;
   confirmationReceipt: ReviewActionReceipt | null;
   onConfirmationReceipt: (receipt: ReviewActionReceipt) => void;
   onLocateSourceRef: (sourceRef: string) => void;
+  onLocateSourceBinding?: (binding: ReviewSourceBinding) => void;
   onWorkItemRefresh: () => Promise<void>;
   materials?: ReviewMaterialsContext;
 }
 
 export default function ContinuousReviewPanel({
   workItemId,
+  draftScopeKey = `work-item:${workItemId}`,
+  reviewScope,
+  discussionClaimText,
+  onWorkingRefresh,
   workItemRevision,
   workItemRefreshing = false,
   selectedEvaluationItemId,
   confirmationReceipt,
   onConfirmationReceipt,
   onLocateSourceRef,
+  onLocateSourceBinding,
   onWorkItemRefresh,
   materials,
 }: ContinuousReviewPanelProps) {
   const panelActive: boolean = useWorkbenchPanelActive();
+  const matterId: string = reviewScope?.matterId ?? '';
+  const conversationScope: ReviewScopeSelection | undefined = useMemo(
+    () => (matterId ? { kind: 'ENGINEERING_MATTER', matterId } : undefined),
+    [matterId],
+  );
   const [conversation, setConversation] =
     useState<ReviewConversationReadModel | null>(null);
+  const workingRefreshError: string | null = useReviewWorkingRefresh(
+    conversation,
+    onWorkingRefresh,
+  );
   const [currentRevision, setCurrentRevision] = useState(workItemRevision);
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useReviewDraft(draftScopeKey);
   const models = useTaskModelOptions();
   const [modelRef, setModelRef] = useState('');
   const [file, setFile] = useState<File | null>(null);
@@ -158,7 +186,7 @@ export default function ContinuousReviewPanel({
           }
         });
     },
-    [],
+    [setMessage],
   );
 
   const readCurrent = useCallback(async (): Promise<void> => {
@@ -167,19 +195,20 @@ export default function ContinuousReviewPanel({
     setRefreshing(true);
     clearError();
     try {
-      const response = await canonicalHost.reloadReviewConversation(workItemId);
+      const response = await canonicalHost.reloadReviewConversation(
+        workItemId,
+        conversationScope,
+      );
       if (
         epoch !== readEpochRef.current ||
         session !== getCanonicalHostClientSessionGeneration()
       )
         return;
-      if (
-        response.conversation &&
-        response.conversation.workItemId !== workItemId
-      ) {
-        setConversation(null);
-        throw new Error('REVIEW_CONVERSATION_OBJECT_NOT_FOUND');
-      }
+      assertReviewConversationScope(
+        response.conversation,
+        workItemId,
+        conversationScope,
+      );
       setConversation(response.conversation);
       setCurrentRevision(response.currentWorkItemRevision);
       setAccessUnavailable(false);
@@ -192,7 +221,7 @@ export default function ContinuousReviewPanel({
     } finally {
       if (epoch === readEpochRef.current) setRefreshing(false);
     }
-  }, [captureError, clearError, workItemId]);
+  }, [captureError, clearError, workItemId, conversationScope]);
 
   useEffect(() => {
     void readCurrent();
@@ -298,8 +327,15 @@ export default function ContinuousReviewPanel({
     setBusyAction('start');
     clearError();
     try {
-      const response =
-        await canonicalHost.createOrResumeReviewConversation(workItemId);
+      const response = await canonicalHost.createOrResumeReviewConversation(
+        workItemId,
+        conversationScope,
+      );
+      assertReviewConversationScope(
+        response.conversation,
+        workItemId,
+        conversationScope,
+      );
       setConversation(response.conversation);
       setCurrentRevision(response.conversation.currentWorkItemRevision);
       setReadFailed(false);
@@ -330,6 +366,7 @@ export default function ContinuousReviewPanel({
         submissionRef.current?.requestId ?? createRequestCorrelationId(),
         conversation,
         modelRef || undefined,
+        reviewScope,
       );
       submissionRef.current = submission;
       const requestId = submission.requestId;
@@ -356,11 +393,19 @@ export default function ContinuousReviewPanel({
           userMessage,
           ...(submission.modelRef ? { modelRef: submission.modelRef } : {}),
           selectedEvaluationItemId,
+          ...(submission.reviewScope
+            ? { reviewScope: submission.reviewScope }
+            : {}),
           ...(submission.executionMode
             ? { executionMode: submission.executionMode }
             : {}),
           ...(selection ? { attachmentSelection: selection } : {}),
         },
+      );
+      assertReviewConversationScope(
+        response.conversation,
+        workItemId,
+        conversationScope,
       );
       setConversation(response.conversation);
       setCurrentRevision(response.conversation.currentWorkItemRevision);
@@ -379,7 +424,8 @@ export default function ContinuousReviewPanel({
   }
 
   async function closeConversation(): Promise<void> {
-    if (busy || !conversation || conversation.status !== 'ACTIVE') return;
+    if (matterId || busy || !conversation || conversation.status !== 'ACTIVE')
+      return;
     setBusyAction('close');
     clearError();
     try {
@@ -398,7 +444,12 @@ export default function ContinuousReviewPanel({
   }
 
   async function confirmDraft(turn: ReviewTurnReadModel): Promise<void> {
-    if (busy || !conversation || !turn.assistantCandidate?.reviewActionDraft) {
+    if (
+      matterId ||
+      busy ||
+      !conversation ||
+      !turn.assistantCandidate?.reviewActionDraft
+    ) {
       return;
     }
     setBusyAction('confirm');
@@ -439,6 +490,34 @@ export default function ContinuousReviewPanel({
     setConfirmingTurnId(null);
   }
 
+  function locateTurnSource(
+    turn: ReviewTurnReadModel,
+    sourceRef: string,
+  ): void {
+    const binding: ReviewSourceBinding | null = reviewSourceBinding(
+      turn,
+      sourceRef,
+    );
+    if (binding && onLocateSourceBinding) {
+      onLocateSourceBinding(binding);
+      return;
+    }
+    if (binding?.workItemId === workItemId) {
+      onLocateSourceRef(binding.originalSourceRefId);
+      return;
+    }
+    if (matterId || binding) {
+      setError(
+        reviewInputError(
+          'REVIEW_SOURCE_BINDING_UNAVAILABLE',
+          '未读回这条引用的唯一文档与版本绑定，暂不能定位；不会自动跳到主文档。',
+        ),
+      );
+      return;
+    }
+    onLocateSourceRef(sourceRef);
+  }
+
   const active = presentation.state === 'ACTIVE';
 
   if (accessUnavailable) {
@@ -466,7 +545,9 @@ export default function ContinuousReviewPanel({
           <span>持续工程复核</span>
           <h3 id="continuous-review-title">围绕当前事项继续核对</h3>
           <p>
-            工程师补充只作为待复核输入；系统返回的依据与动作也都是候选，确认后仍需重新综合。
+            {matterId
+              ? '普通解释保存为讨论；关键纠正和有效材料贡献由 Host 保存为事项工作更新。正式采用与实施决定仍独立处理。'
+              : '工程师补充只作为待复核输入；系统返回的依据与动作也都是候选，确认后仍需重新综合。'}
           </p>
         </div>
         <div className="continuous-review-toolbar">
@@ -488,6 +569,7 @@ export default function ContinuousReviewPanel({
           </Button>
         </div>
       </header>
+      {workingRefreshError ? <p role="alert">{workingRefreshError}</p> : null}
 
       {materials ? (
         <ReviewMaterialsPanel
@@ -558,6 +640,7 @@ export default function ContinuousReviewPanel({
           </div>
           <Button
             type="button"
+            data-review-start
             disabled={busy}
             onClick={() => void startOrSync()}
           >
@@ -583,6 +666,7 @@ export default function ContinuousReviewPanel({
                     conversation={conversation!}
                     currentRevision={currentRevision}
                     isCurrent={false}
+                    formalActionsAllowed={!matterId}
                     busy={busy}
                     confirming={confirmingTurnId === turn.reviewTurnId}
                     rejected={
@@ -598,7 +682,9 @@ export default function ContinuousReviewPanel({
                     onCancelConfirm={() => setConfirmingTurnId(null)}
                     onRejectDraft={() => rejectDraft(turn)}
                     onConfirm={() => void confirmDraft(turn)}
-                    onLocateSourceRef={onLocateSourceRef}
+                    onLocateSourceRef={(sourceRef: string) =>
+                      locateTurnSource(turn, sourceRef)
+                    }
                   />
                 ))}
               </div>
@@ -614,6 +700,7 @@ export default function ContinuousReviewPanel({
             conversation={conversation!}
             currentRevision={currentRevision}
             isCurrent
+            formalActionsAllowed={!matterId}
             busy={busy}
             confirming={confirmingTurnId === currentTurn.reviewTurnId}
             rejected={
@@ -627,7 +714,9 @@ export default function ContinuousReviewPanel({
             onCancelConfirm={() => setConfirmingTurnId(null)}
             onRejectDraft={() => rejectDraft(currentTurn)}
             onConfirm={() => void confirmDraft(currentTurn)}
-            onLocateSourceRef={onLocateSourceRef}
+            onLocateSourceRef={(sourceRef: string) =>
+              locateTurnSource(currentTurn, sourceRef)
+            }
           />
         </div>
       ) : conversation ? (
@@ -636,6 +725,11 @@ export default function ContinuousReviewPanel({
 
       {active ? (
         <div className="continuous-review-composer">
+          {discussionClaimText ? (
+            <blockquote className="whitespace-pre-wrap break-words border-l-2 border-border pl-3 text-sm leading-7">
+              本轮围绕：{discussionClaimText}
+            </blockquote>
+          ) : null}
           <TaskModelPicker
             id="review-model"
             label="新回合模型"
@@ -756,15 +850,19 @@ export default function ContinuousReviewPanel({
           </div>
           <div className="continuous-review-compose-footer">
             <span>单次最多附加 1 份 PDF，最大 100 MB。</span>
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              disabled={busy}
-              onClick={() => void closeConversation()}
-            >
-              结束本轮讨论
-            </Button>
+            {!matterId ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                disabled={busy}
+                onClick={() => void closeConversation()}
+              >
+                结束本轮讨论
+              </Button>
+            ) : (
+              <span>离开页面会保留未发送文字，不会关闭事项。</span>
+            )}
           </div>
         </div>
       ) : presentation.state === 'CLOSED' ? (

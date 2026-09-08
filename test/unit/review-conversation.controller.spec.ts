@@ -84,10 +84,12 @@ describe('ReviewConversationController request boundary', () => {
     expect(setup.service.createOrResume).toHaveBeenCalledWith(
       'WI-1',
       expect.anything(),
+      { kind: 'WORK_ITEM' },
     );
     expect(setup.service.current).toHaveBeenCalledWith(
       'WI-1',
       expect.anything(),
+      { kind: 'WORK_ITEM' },
     );
   });
 

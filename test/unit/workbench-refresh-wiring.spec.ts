@@ -34,14 +34,16 @@ describe('same-object refresh wiring', () => {
     expect(overview).toContain('if (loading && visibleView === null)');
     expect(overview).toContain('if (!currentScopeRef.current.visibleView)');
     expect(overview).toMatch(
-      /!authenticationRequired &&\s*viewSessionGeneration === sessionGeneration &&\s*view\?\.id === workItemId/u,
+      /!authenticationRequired &&\s*viewSessionGeneration === sessionGeneration &&\s*view\?\.document.workItemId === workItemId/u,
     );
     for (const source of [parsing, overview]) {
       expect(source).toContain('仍显示上次读回的内容，尚未确认最新状态');
-      expect(source).toContain(
-        'disabled: loading || overallRegeneration.disabled',
+      expect(source).toMatch(
+        /disabled(?::\s*|=\{)loading \|\| overallRegeneration.disabled/u,
       );
     }
+    expect(overview).toContain('getCanonicalLibraryQuicklook(workItemId)');
+    expect(overview).not.toContain('getDocumentParsingPage(');
   });
 
   it('still removes the displayed projection on failed reads instead of masking source or access failure', () => {

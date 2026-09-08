@@ -60,6 +60,11 @@ describe('OverallAssessmentHero user-visible technical details', () => {
     expect(html.indexOf('工程结论')).toBeLessThan(
       html.indexOf('展开依据、适用范围与下一步'),
     );
+    expect(html.indexOf('核对 Variable/Line Number。')).toBeLessThan(
+      html.indexOf('<details class="wl-overall-supporting"'),
+    );
+    expect(html).toContain('继续核对与讨论');
+    expect(html).not.toContain('处理异常并完成批准');
     expect(html).toContain('ORIGINAL ISSUE');
     expect(html).toContain('当前有效');
     expect(html).toContain('150/150');
@@ -156,6 +161,7 @@ function pageWithInternalTransportDetails(
           criterionCount: 150,
         },
         overallSynthesis: {
+          sourceResultId: 'saved-result-id',
           status: 'CANDIDATE_ONLY',
           authorityLevel: 'candidate_only',
           revision: 876543210,

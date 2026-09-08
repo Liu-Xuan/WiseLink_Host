@@ -31,6 +31,7 @@ import type {
   CurrentReviewConversationResponse,
   RequestCanonicalOverallRegenerationRequest,
   RequestCanonicalOverallRegenerationResponse,
+  ReviewScopeSelection,
 } from '@shared/api.interface';
 
 import { logger } from '@lark-apaas/client-toolkit/logger';
@@ -373,10 +374,24 @@ export async function getCanonicalLibraryQuicklook(
   workItemId: string,
   signal?: AbortSignal,
 ): Promise<CanonicalLibraryQuicklookResponse> {
-  return readCanonicalLibrary<CanonicalLibraryQuicklookResponse>({
-    url: `/api/canonical-host/work-items/${encodeURIComponent(workItemId)}/quicklook`,
-    signal,
-  });
+  const response: CanonicalLibraryQuicklookResponse =
+    await readCanonicalLibrary<CanonicalLibraryQuicklookResponse>({
+      url: `/api/canonical-host/work-items/${encodeURIComponent(workItemId)}/quicklook`,
+      signal,
+    });
+  const reading = response.result?.readingResult;
+  if (
+    response.document.workItemId !== workItemId ||
+    (reading &&
+      (reading.scope.kind !== 'WORK_ITEM' ||
+        reading.scope.workItemId !== workItemId ||
+        reading.scope.documentVersionId !==
+          response.document.documentVersionId ||
+        reading.resultRef !== response.result?.sourceResultId ||
+        reading.resultRevision !== response.result?.revision))
+  )
+    throw new Error('CANONICAL_LIBRARY_QUICKLOOK_BINDING_MISMATCH');
+  return response;
 }
 
 export async function getCanonicalLibraryTasks(
@@ -384,7 +399,9 @@ export async function getCanonicalLibraryTasks(
   signal?: AbortSignal,
 ): Promise<CanonicalLibraryTasksResponse> {
   return readCanonicalLibrary<CanonicalLibraryTasksResponse>({
-    url: '/api/canonical-host/library/tasks', params: input, signal,
+    url: '/api/canonical-host/library/tasks',
+    params: input,
+    signal,
   });
 }
 
@@ -935,20 +952,22 @@ async function applicabilitySelectionRequest(input: {
 
 export async function createOrResumeReviewConversation(
   workItemId: string,
+  reviewScope?: ReviewScopeSelection,
 ): Promise<CreateOrResumeReviewConversationResponse> {
   return reviewConversationRequest<CreateOrResumeReviewConversationResponse>({
     url: reviewConversationCurrentUrl(workItemId),
     method: 'POST',
-    data: {},
+    data: reviewScope?.kind === 'ENGINEERING_MATTER' ? { reviewScope } : {},
     operation: '开始或继续工程复核讨论',
   });
 }
 
 export async function getCurrentReviewConversation(
   workItemId: string,
+  reviewScope?: ReviewScopeSelection,
 ): Promise<CurrentReviewConversationResponse> {
   return reviewConversationRequest<CurrentReviewConversationResponse>({
-    url: reviewConversationCurrentUrl(workItemId),
+    url: reviewConversationCurrentUrl(workItemId, reviewScope),
     method: 'GET',
     operation: '读取当前工程复核讨论',
   });
@@ -960,8 +979,9 @@ export async function getCurrentReviewConversation(
  */
 export async function reloadReviewConversation(
   workItemId: string,
+  reviewScope?: ReviewScopeSelection,
 ): Promise<CurrentReviewConversationResponse> {
-  return getCurrentReviewConversation(workItemId);
+  return getCurrentReviewConversation(workItemId, reviewScope);
 }
 
 export async function appendReviewTextTurn(
@@ -1008,6 +1028,7 @@ async function reviewConversationRequest<T>(input: {
   method: 'GET' | 'POST';
   data?:
     | Record<string, never>
+    | { reviewScope: ReviewScopeSelection }
     | AppendReviewTextTurnRequest
     | ConfirmReviewActionDraftRequest;
   operation: string;
@@ -1042,8 +1063,14 @@ async function reviewConversationRequest<T>(input: {
   }
 }
 
-function reviewConversationCurrentUrl(workItemId: string): string {
-  return `/api/work-items/${encodeURIComponent(workItemId)}/review-conversations/current`;
+function reviewConversationCurrentUrl(
+  workItemId: string,
+  reviewScope?: ReviewScopeSelection,
+): string {
+  const path: string = `/api/work-items/${encodeURIComponent(workItemId)}/review-conversations/current`;
+  return reviewScope?.kind === 'ENGINEERING_MATTER'
+    ? `${path}?matterId=${encodeURIComponent(reviewScope.matterId)}`
+    : path;
 }
 
 function reviewConversationUrl(
@@ -1175,7 +1202,7 @@ function clientLoginRequired(code: string, requestGeneration: number): Error {
   return new Error(code);
 }
 
-function requireCanonicalHostClientAuthentication(
+export function requireCanonicalHostClientAuthentication(
   requestGeneration: number,
 ): void {
   if (requestGeneration !== clientSessionGeneration) return;

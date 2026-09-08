@@ -1,10 +1,12 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
 
 import type {
   CanonicalCommonAssessmentContext,
   CanonicalReferenceTargetResolution,
   CanonicalRelatedContextSnapshotItem,
   CanonicalWorkItemProjection,
+  ReviewScopeSelection,
 } from '@shared/api.interface';
 import {
   ReviewConversationRepository,
@@ -31,6 +33,7 @@ import {
   type CanonicalRelatedTargetApplicabilityResolution,
 } from './canonical-related-context-applicability';
 import { projectCanonicalStructuredContentUnit } from './canonical-structured-content-projection';
+import { sameReviewBusinessScope } from '../review-persistence/review-business-scope';
 
 const CANONICAL_APP_ID = 'app_17bzc551rsg';
 
@@ -43,6 +46,7 @@ interface CommonContextHistorySelection {
   asOf: string;
   reviewConversationId?: string;
   beforeTurnNo?: number;
+  reviewScope?: ReviewScopeSelection;
 }
 
 interface ReviewRelatedContextBuild {
@@ -52,12 +56,15 @@ interface ReviewRelatedContextBuild {
   sections: CanonicalCommonAssessmentContext['documentReading']['sections'];
   documentReadingStatus: 'AVAILABLE' | 'UNAVAILABLE';
   context: Record<string, unknown>;
+  /** Complete bindings are Host-only; common is the model-safe projection. */
+  readingEvidence?: AssessmentEvidence[];
 }
 
 interface ResolvedReviewReferenceTarget extends CanonicalRelatedTargetApplicabilityResolution {
   resolution: CanonicalReferenceTargetResolution;
   publisherCandidate: string | null;
   resourceRefs: FrozenReviewSourceRef[];
+  readingEvidence?: AssessmentEvidence[];
 }
 
 /** Builds background without requiring a JobAid or Overall result to exist. */
@@ -81,6 +88,25 @@ export class CanonicalHostCommonContextService {
     asOf: string,
     readScope?: UnifiedArtifactReadScope,
   ): Promise<CanonicalCommonAssessmentContext> {
+    return (
+      await this.buildForWorkItemWithEvidence(
+        workItem,
+        tenantId,
+        asOf,
+        readScope,
+      )
+    ).common;
+  }
+
+  async buildForWorkItemWithEvidence(
+    workItem: CanonicalWorkItemProjection,
+    tenantId: string,
+    asOf: string,
+    readScope?: UnifiedArtifactReadScope,
+  ): Promise<{
+    common: CanonicalCommonAssessmentContext;
+    readingEvidence: AssessmentEvidence[];
+  }> {
     // Service execution uses the existing WorkItem owner, not a service actor,
     // for ordinary discussion and cross-document access.
     const loaded = await this.workItems.loadTenantScopedProjection(
@@ -93,17 +119,15 @@ export class CanonicalHostCommonContextService {
     ) {
       throw new Error('COMMON_CONTEXT_WORK_ITEM_NOT_VISIBLE');
     }
-    return (
-      await this.build(
-        workItem,
-        {
-          tenantId,
-          actorId: loaded.row.requestedByUserId,
-        },
-        { asOf },
-        readScope,
-      )
-    ).common;
+    return this.build(
+      workItem,
+      {
+        tenantId,
+        actorId: loaded.row.requestedByUserId,
+      },
+      { asOf },
+      readScope,
+    );
   }
 
   async build(
@@ -116,6 +140,7 @@ export class CanonicalHostCommonContextService {
   ): Promise<{
     common: CanonicalCommonAssessmentContext;
     related: ReviewRelatedContextBuild;
+    readingEvidence: AssessmentEvidence[];
   }> {
     const actorMappingActive =
       await this.conversations.hasActiveOfficialActorMapping(scope);
@@ -138,6 +163,7 @@ export class CanonicalHostCommonContextService {
     }
     const priorTurns = (aggregate?.turns ?? []).filter(
       (turn) =>
+        sameReviewBusinessScope(turn.reviewScope, history.reviewScope) &&
         turn.createdAt.getTime() <= Date.parse(history.asOf) &&
         (history.beforeTurnNo === undefined ||
           turn.turnNo < history.beforeTurnNo),
@@ -148,9 +174,23 @@ export class CanonicalHostCommonContextService {
       priorTurns,
     );
     if (!actorMappingActive) common.discussion.status = 'ACCESS_DENIED';
+    const delivered = new Set(
+      common.relatedMaterials.items.flatMap((item) =>
+        item.readFragments.map((fragment) =>
+          JSON.stringify([item.documentVersionRef, fragment.sourceRefId]),
+        ),
+      ),
+    );
     return {
       related,
       common,
+      readingEvidence: (related.readingEvidence ?? []).filter(
+        (item) =>
+          item.kind === 'DOCUMENT_PASSAGE' &&
+          delivered.has(
+            JSON.stringify([item.documentVersionId, item.sourceRefId]),
+          ),
+      ),
     };
   }
 
@@ -239,6 +279,9 @@ export class CanonicalHostCommonContextService {
         ]),
       );
       return {
+        readingEvidence: [...resolved.values()].flatMap(
+          (entry) => entry.readingEvidence ?? [],
+        ),
         mentionSourceRefIds: new Set(
           mentions.flatMap((mention) => mention.sourceRefIds),
         ),
@@ -451,6 +494,45 @@ export class CanonicalHostCommonContextService {
         const packageBytes = await readScope.readActualBytes(
           targetWorkItem.package.artifact,
         );
+        const resourceRefs = relatedDocumentResourceRefs(
+          packageBytes,
+          targetWorkItem.package.artifact.ref,
+          targetWorkItem.package.artifact.sha256,
+          target,
+          match.documentVersionId,
+          applicability,
+          readScope,
+        );
+        const readingEvidence = resourceRefs.flatMap(
+          (resource, index): AssessmentEvidence[] => {
+            const quote = resource.value.quote;
+            if (typeof quote !== 'string' || !quote.trim()) return [];
+            const { pageStart, pageEnd } = resource.value;
+            if (
+              !Number.isInteger(pageStart) ||
+              Number(pageStart) < 1 ||
+              !Number.isInteger(pageEnd) ||
+              Number(pageEnd) < Number(pageStart)
+            ) {
+              throw new Error('COMMON_RELATED_EVIDENCE_LOCATOR_INVALID');
+            }
+            return [
+              {
+                evidenceRef: `overall-evidence:related:${targets.indexOf(target) + 1}:${index + 1}`,
+                kind: 'DOCUMENT_PASSAGE',
+                title: match.canonicalDocumentNumber,
+                versionLabel:
+                  targetWorkItem.package.documentIdentity?.businessRevision ??
+                  null,
+                excerpt: quote.trim(),
+                workItemId: targetWorkItem.workItemId,
+                documentVersionId: match.documentVersionId,
+                sourceRefId: resource.sourceRefId,
+                locator: `page ${pageStart}-${pageEnd}`,
+              },
+            ];
+          },
+        );
         result.set(target, {
           resolution: {
             status: 'RESOLVED_EXACT',
@@ -462,15 +544,8 @@ export class CanonicalHostCommonContextService {
           },
           ...applicability,
           publisherCandidate: match.issuerAuthority,
-          resourceRefs: relatedDocumentResourceRefs(
-            packageBytes,
-            targetWorkItem.package.artifact.ref,
-            targetWorkItem.package.artifact.sha256,
-            target,
-            match.documentVersionId,
-            applicability,
-            readScope,
-          ),
+          resourceRefs,
+          readingEvidence,
         });
       } catch (error) {
         const reasonCode = relatedContextErrorCode(error);

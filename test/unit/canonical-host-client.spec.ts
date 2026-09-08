@@ -134,7 +134,11 @@ describe('canonical host assessment client', () => {
 
   it('reads a selected saved quicklook without issuing a source or parsing request', async () => {
     const controller = new AbortController();
-    const data = { result: null, fileReadPerformed: false };
+    const data = {
+      document: { workItemId: 'WI-737/34' },
+      result: null,
+      fileReadPerformed: false,
+    };
     request.mockResolvedValue({ status: 200, data });
 
     await expect(
@@ -156,9 +160,16 @@ describe('canonical host assessment client', () => {
     const data = { items: [], nextCursor: null, fileReadPerformed: false };
     const params = { familyId: 'family-737', limit: 24 };
     request.mockResolvedValue({ status: 200, data });
-    await expect(getCanonicalLibraryTasks(params, controller.signal)).resolves.toBe(data);
+    await expect(
+      getCanonicalLibraryTasks(params, controller.signal),
+    ).resolves.toBe(data);
     expect(request).toHaveBeenCalledTimes(1);
-    expect(request).toHaveBeenCalledWith({ url: '/api/canonical-host/library/tasks', method: 'GET', params, signal: controller.signal });
+    expect(request).toHaveBeenCalledWith({
+      url: '/api/canonical-host/library/tasks',
+      method: 'GET',
+      params,
+      signal: controller.signal,
+    });
   });
 
   it.each(['resolved', 'rejected'])(
@@ -931,6 +942,40 @@ describe('canonical host assessment client', () => {
       url: '/api/work-items/WI-SB-1001/review-conversations/current',
       method: 'POST',
       data: {},
+    });
+  });
+
+  it('uses an explicit matter scope for history, creation and append while keeping the original claim basis', async () => {
+    request.mockResolvedValue({ status: 200, data: { conversation: null } });
+    const reviewScope = {
+      kind: 'ENGINEERING_MATTER' as const,
+      matterId: 'M/1',
+    };
+    await getCurrentReviewConversation('WI-1', reviewScope);
+    await createOrResumeReviewConversation('WI-1', reviewScope);
+    const input = {
+      requestId: 'REQ-M-1',
+      userMessage: '请核对这条判断。',
+      reviewScope: {
+        ...reviewScope,
+        expectedWorkingRevision: 3,
+        targetClaimId: 'claim-2',
+      },
+    };
+    await appendReviewTextTurn('WI-1', 'RC-1', input);
+    expect(request).toHaveBeenNthCalledWith(1, {
+      url: '/api/work-items/WI-1/review-conversations/current?matterId=M%2F1',
+      method: 'GET',
+    });
+    expect(request).toHaveBeenNthCalledWith(2, {
+      url: '/api/work-items/WI-1/review-conversations/current',
+      method: 'POST',
+      data: { reviewScope },
+    });
+    expect(request).toHaveBeenNthCalledWith(3, {
+      url: '/api/work-items/WI-1/review-conversations/RC-1/turns',
+      method: 'POST',
+      data: input,
     });
   });
 

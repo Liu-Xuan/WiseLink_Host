@@ -8,6 +8,12 @@ import type {
   ReviewUncertaintyDispositionKind,
 } from '@shared/api.interface';
 import { assertNoDuplicateJsonKeys } from '../unified-reader/unified-reader.utils';
+import {
+  parseFrozenMatterReviewContext,
+  parseMatterWorkingDeltaProposal,
+  type FrozenMatterReviewContext,
+  type MatterWorkingDeltaProposal,
+} from './matter-review-candidate';
 import type { OpenClawResultEnvelope } from '../action-attempt/action-attempt-envelope.types';
 import {
   CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY,
@@ -26,6 +32,8 @@ export const REVIEW_MINIMUM_COMPATIBLE_SKILL_VERSION =
   CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.minimumCompatibleSkillVersion;
 export const REVIEW_TOOL_POLICY_REF =
   'wiselink-openclaw-engineering-assessment@1.2.0#interactive-review-c3' as const;
+export const REVIEW_MATTER_TOOL_POLICY_REF =
+  'wiselink-openclaw-engineering-assessment@1.2.0#interactive-matter-review-c4' as const;
 export const REVIEW_MCP_PACKAGE_VERSION =
   CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.mcpServerVersion;
 
@@ -46,7 +54,9 @@ export interface FrozenReviewSourceRef {
 }
 
 export interface ReviewTurnTaskContract {
-  schemaVersion: 'wiselink.3_1.review_turn_task.v1.c2';
+  schemaVersion:
+    | 'wiselink.3_1.review_turn_task.v1.c2'
+    | 'wiselink.3_1.review_turn_task.v1.c4';
   mode: 'INTERACTIVE_REVIEW';
   reviewConversationRef: string;
   reviewTurnRef: string;
@@ -61,19 +71,24 @@ export interface ReviewTurnTaskContract {
   allowedAdoptedInputRefs: string[];
   attachmentRefs: string[];
   context: Record<string, unknown>;
+  /** Host-private business basis. Only context is projected into the model. */
+  matterContext?: FrozenMatterReviewContext;
   executionPolicy: {
     runtimeAppId: typeof REVIEW_RUNTIME_APP_ID;
     profileRef: typeof REVIEW_PROFILE_REF;
     modelPolicyRef: typeof REVIEW_MODEL_POLICY_REF;
     skillPolicyRef: typeof REVIEW_SKILL_POLICY_REF;
-    toolPolicyRef: typeof REVIEW_TOOL_POLICY_REF;
+    toolPolicyRef:
+      | typeof REVIEW_TOOL_POLICY_REF
+      | typeof REVIEW_MATTER_TOOL_POLICY_REF;
   };
 }
 
 export interface ReviewTurnCandidateContract {
   schemaVersion:
     | 'wiselink.3_1.review_turn_candidate.v1.c2'
-    | 'wiselink.3_1.review_turn_candidate.v1.c3';
+    | 'wiselink.3_1.review_turn_candidate.v1.c3'
+    | 'wiselink.3_1.review_turn_candidate.v1.c4';
   mode: 'INTERACTIVE_REVIEW';
   reviewConversationRef: string;
   reviewTurnRef: string;
@@ -85,6 +100,7 @@ export interface ReviewTurnCandidateContract {
   reviewActionDraft: ReviewActionDraftProposal | null;
   affectedItemIds: string[];
   warnings: string[];
+  matterWorkingDelta?: MatterWorkingDeltaProposal | null;
   runtime: {
     runtimeAppId: typeof REVIEW_RUNTIME_APP_ID;
     profileRef: typeof REVIEW_PROFILE_REF;
@@ -136,6 +152,8 @@ export function parseReviewTurnTaskContract(
   value: unknown,
 ): ReviewTurnTaskContract {
   const record = requiredRecord(value, 'REVIEW_TASK_CONTRACT_INVALID');
+  const isMatter =
+    record.schemaVersion === 'wiselink.3_1.review_turn_task.v1.c4';
   exactKeys(record, [
     'schemaVersion',
     'mode',
@@ -153,9 +171,11 @@ export function parseReviewTurnTaskContract(
     'attachmentRefs',
     'context',
     'executionPolicy',
+    ...(isMatter ? ['matterContext'] : []),
   ]);
   if (
-    record.schemaVersion !== 'wiselink.3_1.review_turn_task.v1.c2' ||
+    (!isMatter &&
+      record.schemaVersion !== 'wiselink.3_1.review_turn_task.v1.c2') ||
     record.mode !== 'INTERACTIVE_REVIEW'
   ) {
     fail('REVIEW_TASK_CONTRACT_UNSUPPORTED');
@@ -215,6 +235,14 @@ export function parseReviewTurnTaskContract(
     'REVIEW_TASK_ATTACHMENT_REF_NOT_ALLOWED',
   );
   requiredRecord(record.context, 'REVIEW_TASK_CONTEXT_INVALID');
+  if (isMatter) {
+    record.matterContext = parseFrozenMatterReviewContext(record.matterContext);
+    if (
+      record.selectedEvaluationItemId !== null ||
+      allowedEvaluationItemIds.length > 0
+    )
+      fail('REVIEW_MATTER_EVALUATION_SCOPE_INVALID');
+  }
   const executionPolicy = requiredRecord(
     record.executionPolicy,
     'REVIEW_TASK_EXECUTION_POLICY_INVALID',
@@ -231,7 +259,8 @@ export function parseReviewTurnTaskContract(
     executionPolicy.profileRef !== REVIEW_PROFILE_REF ||
     executionPolicy.modelPolicyRef !== REVIEW_MODEL_POLICY_REF ||
     executionPolicy.skillPolicyRef !== REVIEW_SKILL_POLICY_REF ||
-    executionPolicy.toolPolicyRef !== REVIEW_TOOL_POLICY_REF
+    executionPolicy.toolPolicyRef !==
+      (isMatter ? REVIEW_MATTER_TOOL_POLICY_REF : REVIEW_TOOL_POLICY_REF)
   ) {
     fail('REVIEW_TASK_EXECUTION_POLICY_INVALID');
   }
@@ -263,6 +292,7 @@ export function parseReviewTurnCandidateContract(input: {
     fail('REVIEW_RESULT_MODEL_OUTPUT_JSON_INVALID');
   }
   const record = requiredRecord(raw, 'REVIEW_RESULT_CONTRACT_INVALID');
+  const isMatter = task.schemaVersion === 'wiselink.3_1.review_turn_task.v1.c4';
   exactKeys(record, [
     'schemaVersion',
     'mode',
@@ -277,11 +307,13 @@ export function parseReviewTurnCandidateContract(input: {
     'affectedItemIds',
     'warnings',
     'runtime',
+    ...(isMatter ? ['matterWorkingDelta'] : []),
   ]);
   if (
     ![
       'wiselink.3_1.review_turn_candidate.v1.c2',
       'wiselink.3_1.review_turn_candidate.v1.c3',
+      ...(isMatter ? ['wiselink.3_1.review_turn_candidate.v1.c4'] : []),
     ].includes(String(record.schemaVersion)) ||
     record.mode !== 'INTERACTIVE_REVIEW' ||
     record.reviewConversationRef !== task.reviewConversationRef ||
@@ -290,6 +322,16 @@ export function parseReviewTurnCandidateContract(input: {
   ) {
     fail('REVIEW_RESULT_BINDING_INVALID');
   }
+  if (
+    isMatter &&
+    record.schemaVersion !== 'wiselink.3_1.review_turn_candidate.v1.c4'
+  )
+    fail('REVIEW_MATTER_CANDIDATE_VERSION_REQUIRED');
+  if (isMatter && record.reviewActionDraft !== null)
+    fail('REVIEW_MATTER_FORMAL_ACTION_FORBIDDEN');
+  const matterWorkingDelta = isMatter
+    ? parseMatterWorkingDeltaProposal(record.matterWorkingDelta)
+    : undefined;
   requiredText(record.answer, 'REVIEW_RESULT_ANSWER_REQUIRED');
   const sourceRefs = stringArray(
     record.sourceRefs,
@@ -395,6 +437,7 @@ export function parseReviewTurnCandidateContract(input: {
   return structuredClone({
     ...record,
     reviewActionDraft,
+    ...(isMatter ? { matterWorkingDelta } : {}),
   }) as unknown as ReviewTurnCandidateContract;
 }
 
@@ -702,10 +745,7 @@ function validateGapResolutionDraft(
   ).map((value) => requiredRecord(value, 'REVIEW_RESULT_GAP_LEDGER_INVALID'));
   const gapsByRef = new Map<string, Record<string, unknown>>();
   for (const gap of gaps) {
-    const gapRef = requiredText(
-      gap.gapRef,
-      'REVIEW_RESULT_GAP_LEDGER_INVALID',
-    );
+    const gapRef = requiredText(gap.gapRef, 'REVIEW_RESULT_GAP_LEDGER_INVALID');
     if (gapsByRef.has(gapRef)) fail('REVIEW_RESULT_GAP_LEDGER_INVALID');
     gapsByRef.set(gapRef, gap);
   }

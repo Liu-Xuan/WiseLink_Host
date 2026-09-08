@@ -32,6 +32,9 @@ export interface EngineeringStatementView {
 }
 
 export interface OverallAssessmentView {
+  /** Exact saved result, distinct from the WorkItem revision. */
+  resultRef: string;
+  legacyCandidate: string | null;
   /** overall synthesis revision（来自 overallSynthesis.revision） */
   revision: number;
   /** 生成时间：Host 未提供时为 undefined，UI 显示“时间未返回” */
@@ -175,6 +178,8 @@ export function toWorkItemView(
     aircraftFamily: workItem.classification.normalizedFamily,
     overall: overall
       ? {
+          resultRef: overall.sourceResultId,
+          legacyCandidate: overall.overallCandidate ?? null,
           revision: overall.revision,
           generatedAt: undefined,
           conclusion: engineeringSummary

@@ -40,6 +40,19 @@ const summaryColumns = {
   packageRegistered: sql<boolean>`${workItem.packageId} is not null and ${workItem.packageArtifactRef} is not null`,
   createdAt: workItem.createdAt,
   updatedAt: workItem.updatedAt,
+  readingSummary: sql<import('@shared/assessment-reading.interface').AssessmentReadingSummary | null>`case
+    when ${workItem.projectionJson}::jsonb #> '{integratedAssessment,overallSynthesis,readingResult,content}' is null then null
+    else jsonb_build_object(
+      'resultRef', ${workItem.projectionJson}::jsonb #> '{integratedAssessment,overallSynthesis,readingResult,resultRef}',
+      'resultRevision', ${workItem.projectionJson}::jsonb #> '{integratedAssessment,overallSynthesis,readingResult,resultRevision}',
+      'headline', ${workItem.projectionJson}::jsonb #> '{integratedAssessment,overallSynthesis,readingResult,content,headline}',
+      'listBrief', ${workItem.projectionJson}::jsonb #> '{integratedAssessment,overallSynthesis,readingResult,content,listBrief}',
+      'decisiveClaims', (
+        select coalesce(jsonb_agg(jsonb_build_object('claimId', claim->>'claimId', 'text', claim->>'text')), '[]'::jsonb)
+        from jsonb_array_elements(coalesce(${workItem.projectionJson}::jsonb #> '{integratedAssessment,overallSynthesis,readingResult,content,claims}', '[]'::jsonb)) claim
+        where (${workItem.projectionJson}::jsonb #> '{integratedAssessment,overallSynthesis,readingResult,content,decisiveClaimIds}') ? (claim->>'claimId')
+      )
+    ) end`,
 };
 
 /** No FileService, package reader, or whole WorkItem projection dependency. */
@@ -133,6 +146,7 @@ export class CanonicalLibraryRepository {
           'revision', ${workItem.projectionJson}::jsonb #> '{integratedAssessment,overallSynthesis,revision}',
           'sourceResultId', ${workItem.projectionJson}::jsonb #> '{integratedAssessment,overallSynthesis,sourceResultId}',
           'engineeringSummary', ${workItem.projectionJson}::jsonb #> '{integratedAssessment,overallSynthesis,engineeringSummary}',
+          'readingResult', ${workItem.projectionJson}::jsonb #> '{integratedAssessment,overallSynthesis,readingResult}',
           'overallCandidate', ${workItem.projectionJson}::jsonb #> '{integratedAssessment,overallSynthesis,overallCandidate}',
           'missingInputs', coalesce(${workItem.projectionJson}::jsonb #> '{integratedAssessment,overallSynthesis,missingInputs}', '[]'::jsonb),
           'gap', ${workItem.projectionJson}::jsonb #> '{integratedAssessment,overallSynthesis,gap}',

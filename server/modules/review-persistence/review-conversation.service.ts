@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import type { Request } from 'express';
 
 import type {
@@ -10,6 +10,8 @@ import type {
   CurrentReviewConversationResponse,
   ReviewConversationReadModel,
   ReviewTurnReadModel,
+  ReviewScopeSelection,
+  AppendMatterReviewScope,
 } from '@shared/api.interface';
 import { SessionResolver } from '../identity/session-resolver.service';
 import { ReviewAttemptDispatchService } from '../action-attempt/review-attempt-dispatch.service';
@@ -31,6 +33,14 @@ import {
 } from './review-conversation.repository';
 import { ReviewAttachmentService } from './review-attachment.service';
 import type { ReviewAttachmentBinding } from './review-attachment.types';
+import { EngineeringMatterWorkingService } from '../canonical-host/engineering-matter-working.service';
+import type { CanonicalHostActor } from '../canonical-host/canonical-host.types';
+import {
+  assertReviewScopeReplay,
+  reviewScopeSelection,
+  sameReviewBusinessScope,
+  type PersistedMatterReviewScope,
+} from './review-business-scope';
 
 @Injectable()
 export class ReviewConversationService {
@@ -42,17 +52,21 @@ export class ReviewConversationService {
     private readonly attachments: ReviewAttachmentService,
     private readonly dispatch: ReviewAttemptDispatchService,
     private readonly modelSettings: CanonicalModelSettingsService,
+    @Optional()
+    private readonly matterWorking?: EngineeringMatterWorkingService,
   ) {}
 
   async createOrResume(
     workItemId: string,
     request: Request,
+    reviewScope: ReviewScopeSelection = { kind: 'WORK_ITEM' },
   ): Promise<CreateOrResumeReviewConversationResponse> {
     const authorized: AuthorizedReviewAccess = await this.authorize(
       request,
       workItemId,
       'RECORD_ENGINEER_REVIEW',
     );
+    await this.authorizeMatterSelection(authorized, reviewScope);
     const result = await this.conversations.createOrResume({
       tenantId: authorized.grant.tenantId,
       actorId: authorized.grant.actorUserId,
@@ -63,6 +77,8 @@ export class ReviewConversationService {
       conversation: await this.projectConversation(
         result.aggregate,
         authorized.grant.workItemRevision,
+        reviewScope,
+        authorized,
       ),
       resumed: !result.created,
     };
@@ -71,12 +87,14 @@ export class ReviewConversationService {
   async current(
     workItemId: string,
     request: Request,
+    reviewScope: ReviewScopeSelection = { kind: 'WORK_ITEM' },
   ): Promise<CurrentReviewConversationResponse> {
     const authorized: AuthorizedReviewAccess = await this.authorize(
       request,
       workItemId,
       'READ_WORK_ITEM',
     );
+    await this.authorizeMatterSelection(authorized, reviewScope);
     const aggregate: PersistedReviewConversationAggregate | null =
       await this.conversations.loadCurrent({
         tenantId: authorized.grant.tenantId,
@@ -88,6 +106,8 @@ export class ReviewConversationService {
         ? await this.projectConversation(
             aggregate,
             authorized.grant.workItemRevision,
+            reviewScope,
+            authorized,
           )
         : null,
       currentWorkItemRevision: authorized.grant.workItemRevision,
@@ -100,6 +120,8 @@ export class ReviewConversationService {
     input: AppendReviewTextTurnRequest,
     request: Request,
   ): Promise<AppendReviewTextTurnResponse> {
+    if (input.reviewScope && input.selectedEvaluationItemId != null)
+      throw reviewConflict('REVIEW_MATTER_EVALUATION_SCOPE_INVALID');
     const authorized: AuthorizedReviewAccess = await this.authorize(
       request,
       workItemId,
@@ -116,6 +138,12 @@ export class ReviewConversationService {
       (turn: PersistedReviewTurn) => turn.requestId === input.requestId,
     );
     if (replay) {
+      assertReviewScopeReplay(replay.reviewScope, input.reviewScope);
+      await this.authorizeMatterSelection(
+        authorized,
+        reviewScopeSelection(replay.reviewScope),
+      );
+      await this.authorizeTurnMatterInputs(authorized, [replay]);
       assertAttachmentReplay(replay, input.attachmentSelection);
       if (
         input.modelRef !== undefined &&
@@ -132,6 +160,7 @@ export class ReviewConversationService {
         executionRequested: input.executionMode === 'AUTOMATIC',
         attachmentBindings: replay.attachmentBindings,
         requestedModel: replay.requestedModel,
+        reviewScope: replay.reviewScope ?? null,
       });
     }
 
@@ -149,7 +178,14 @@ export class ReviewConversationService {
     }
 
     const inherited =
-      input.modelRef === undefined ? await this.inheritedModel(existing) : null;
+      input.modelRef === undefined
+        ? await this.inheritedModel({
+            ...existing,
+            turns: existing.turns.filter((turn) =>
+              sameReviewBusinessScope(turn.reviewScope, input.reviewScope),
+            ),
+          })
+        : null;
     const requestedModel = taskModelSelection(
       input.modelRef ?? inherited?.modelRef,
     );
@@ -193,6 +229,9 @@ export class ReviewConversationService {
       executionRequested: input.executionMode === 'AUTOMATIC',
       attachmentBindings,
       requestedModel,
+      reviewScope: input.reviewScope
+        ? await this.freezeMatterScope(authorized, input.reviewScope)
+        : null,
     });
   }
 
@@ -205,6 +244,7 @@ export class ReviewConversationService {
     executionRequested: boolean;
     attachmentBindings: ReviewAttachmentBinding[];
     requestedModel?: CanonicalExecutionModelSelection;
+    reviewScope?: PersistedMatterReviewScope | null;
   }): Promise<AppendReviewTextTurnResponse> {
     const appended = await this.conversations.appendTextTurn({
       conversation: input.conversation,
@@ -215,12 +255,15 @@ export class ReviewConversationService {
       currentRevision: input.authorized.grant.workItemRevision,
       attachmentBindings: input.attachmentBindings,
       requestedModel: input.requestedModel,
+      reviewScope: input.reviewScope,
     });
     const aggregate: PersistedReviewConversationAggregate =
       await this.requiredConversation(input.conversation.reviewConversationId);
     const conversation = await this.projectConversation(
       aggregate,
       input.authorized.grant.workItemRevision,
+      reviewScopeSelection(input.reviewScope),
+      input.authorized,
     );
     return {
       conversation,
@@ -269,8 +312,19 @@ export class ReviewConversationService {
   private async projectConversation(
     aggregate: PersistedReviewConversationAggregate,
     currentRevision: number,
+    selected: ReviewScopeSelection = { kind: 'WORK_ITEM' },
+    authorized?: AuthorizedReviewAccess,
   ): Promise<ReviewConversationReadModel> {
+    aggregate = {
+      ...aggregate,
+      turns: aggregate.turns.filter((turn) =>
+        sameReviewBusinessScope(turn.reviewScope, selected),
+      ),
+    };
+    if (authorized)
+      await this.authorizeTurnMatterInputs(authorized, aggregate.turns);
     const model = reviewConversationReadModel(aggregate, currentRevision);
+    model.reviewScope = selected;
     const conversation = aggregate.conversation;
     model.automaticExecutionAvailable =
       conversation.status === 'ACTIVE' &&
@@ -300,6 +354,81 @@ export class ReviewConversationService {
         conversation.workItemId,
       ));
     return model;
+  }
+
+  private async authorizeMatterSelection(
+    authorized: AuthorizedReviewAccess,
+    selected: ReviewScopeSelection,
+  ) {
+    if (selected.kind === 'WORK_ITEM') return null;
+    if (!this.matterWorking)
+      throw reviewConflict('REVIEW_MATTER_RUNTIME_UNAVAILABLE');
+    const basis = await this.matterWorking.resolveWorkingBasis(
+      selected.matterId,
+      matterActor(authorized.session),
+    );
+    const primary = basis.snapshot.links.find(
+      (link) => link.relationRole === 'PRIMARY',
+    );
+    if (primary?.workItemId !== authorized.grant.workItemId)
+      throw reviewNotFound();
+    return basis;
+  }
+
+  private async freezeMatterScope(
+    authorized: AuthorizedReviewAccess,
+    requested: AppendMatterReviewScope,
+  ): Promise<PersistedMatterReviewScope> {
+    const basis = await this.authorizeMatterSelection(authorized, requested);
+    if (
+      !basis ||
+      (basis.working?.workingRevision ?? 0) !==
+        requested.expectedWorkingRevision
+    ) {
+      throw reviewConflict('REVIEW_MATTER_WORKING_REVISION_CHANGED');
+    }
+    if (
+      requested.targetClaimId &&
+      !basis.working?.state.substantiveResult?.content.claims.some(
+        (claim) => claim.claimId === requested.targetClaimId,
+      )
+    )
+      throw reviewConflict('REVIEW_TARGET_CLAIM_NOT_FOUND');
+    return {
+      schemaVersion: 'wiselink.3_1.matter_review_scope.v1',
+      kind: 'ENGINEERING_MATTER',
+      matterId: requested.matterId,
+      basedOnMatterRevisionId: basis.snapshot.currentMatterRevisionId,
+      expectedWorkingRevision: requested.expectedWorkingRevision,
+      targetClaimId: requested.targetClaimId ?? null,
+      inputs: structuredClone(basis.currentInputs),
+    };
+  }
+
+  private async authorizeTurnMatterInputs(
+    authorized: AuthorizedReviewAccess,
+    turns: PersistedReviewTurn[],
+  ): Promise<void> {
+    const memberIds = new Set(
+      turns.flatMap(
+        (turn) =>
+          turn.reviewScope?.inputs.map((input) => input.workItemId) ?? [],
+      ),
+    );
+    for (const workItemId of memberIds) {
+      const access = await this.objectAccess.freshRead({
+        actor: authorized.session.actor,
+        action: 'READ_WORK_ITEM',
+        accessRoot: { kind: 'WORK_ITEM', id: workItemId },
+      });
+      if (
+        !access.allowed ||
+        access.tenantId !== authorized.grant.tenantId ||
+        access.actorUserId !== authorized.grant.actorUserId ||
+        access.workItemId !== workItemId
+      )
+        throw reviewNotFound();
+    }
   }
 
   private async inheritedModel(
@@ -448,6 +577,7 @@ export function reviewTurnReadModel(
     requestId: turn.requestId,
     inputRevision: turn.inputRevision,
     userMessage: turn.userMessage,
+    reviewScope: reviewScopeSelection(turn.reviewScope),
     selectedEvaluationItemId: turn.selectedEvaluationItemId ?? null,
     requestedModel: turn.requestedModel
       ? structuredClone(turn.requestedModel)
@@ -464,6 +594,17 @@ export function reviewTurnReadModel(
       ? structuredClone(turn.assistantCandidate)
       : null,
     createdAt: turn.createdAt.toISOString(),
+  };
+}
+
+function matterActor(session: ResolvedSession): CanonicalHostActor {
+  return {
+    userId: session.actor.canonicalSubject.id,
+    tenantId: session.actor.tenantId,
+    appId: session.actor.applicationScopeId,
+    roles: [...session.actor.platformRoles],
+    env: session.actor.env,
+    objectAccessActor: session.actor,
   };
 }
 

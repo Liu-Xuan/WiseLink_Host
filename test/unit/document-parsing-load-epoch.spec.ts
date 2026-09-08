@@ -1,5 +1,6 @@
 import type { CanonicalDocumentParsingPageResponse } from '@shared/api.interface';
 import {
+  assertDocumentReadingVersion,
   canReuseCanonicalDocumentParsingReadback,
   createCanonicalDocumentParsingRouteHandoff,
   createCanonicalDocumentParsingProjectionReader,
@@ -47,6 +48,22 @@ function page(marker: string): CanonicalDocumentParsingPageResponse {
 describe('DocumentParsingPage identity-bound load epoch', () => {
   const identityA = { userId: 'user-a', tenantId: 'tenant-a' };
   const identityB = { userId: 'user-b', tenantId: 'tenant-b' };
+
+  it('rejects a source link that resolves to another member or document version', () => {
+    const readback = page('BOUND-VERSION');
+    expect(
+      assertDocumentReadingVersion(readback, 'WI-SHARED', 'DV-BOUND-VERSION'),
+    ).toBe(readback);
+    expect(() =>
+      assertDocumentReadingVersion(readback, 'WI-OTHER', 'DV-BOUND-VERSION'),
+    ).toThrow('VERSION_MISMATCH');
+    expect(() =>
+      assertDocumentReadingVersion(readback, 'WI-SHARED', 'DV-NEWER-VERSION'),
+    ).toThrow('VERSION_MISMATCH');
+    expect(assertDocumentReadingVersion(readback, 'WI-SHARED', '')).toBe(
+      readback,
+    );
+  });
 
   it('cannot render or cache an old actor response after the new actor is denied', async () => {
     const actorAReader = deferred<CanonicalDocumentParsingPageResponse>();

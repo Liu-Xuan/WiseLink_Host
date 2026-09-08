@@ -5,6 +5,21 @@ export interface CanonicalDocumentParsingIdentity {
   tenantId: string;
 }
 
+export function assertDocumentReadingVersion(
+  page: CanonicalDocumentParsingPageResponse,
+  workItemId: string,
+  documentVersionId: string,
+): CanonicalDocumentParsingPageResponse {
+  if (
+    page.workItem.workItemId !== workItemId ||
+    (documentVersionId &&
+      page.workItem.source.documentVersionId !== documentVersionId)
+  ) {
+    throw new Error('CANONICAL_DOCUMENT_READING_VERSION_MISMATCH');
+  }
+  return page;
+}
+
 export interface CanonicalDocumentParsingLoadCallbacks {
   isCurrent(): boolean;
   readIdentity(): Promise<CanonicalDocumentParsingIdentity>;
@@ -89,6 +104,7 @@ export function resolveCanonicalDocumentParsingRouteHandoff(
     workItemId: string;
     query: string;
     nowMs?: number;
+    documentVersionId?: string;
   },
 ): CanonicalDocumentParsingPageResponse | null {
   if (!value || typeof value !== 'object') return null;
@@ -105,6 +121,9 @@ export function resolveCanonicalDocumentParsingRouteHandoff(
     handoff.query !== normalizedQuery ||
     handoff.page?.status !== 'FRESH_READ' ||
     handoff.page.workItem.workItemId !== expected.workItemId ||
+    (Boolean(expected.documentVersionId) &&
+      handoff.page.workItem.source.documentVersionId !==
+        expected.documentVersionId) ||
     (handoff.page.readerProjection?.query ?? '') !== normalizedQuery
   ) {
     return null;

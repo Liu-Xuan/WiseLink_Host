@@ -10,12 +10,14 @@ import type {
 } from '@shared/api.interface';
 import { reviewSourceRefLabel } from './continuous-review-state';
 import ReviewExecutionStatus from './ReviewExecutionStatus';
+import MatterWorkingReceipt from './MatterWorkingReceipt';
 
 interface ReviewConversationTurnBaseProps {
   turn: ReviewTurnReadModel;
   conversation: ReviewConversationReadModel;
   currentRevision: number;
   isCurrent: boolean;
+  formalActionsAllowed?: boolean;
 }
 
 interface ReviewConversationTurnActions {
@@ -38,6 +40,8 @@ export default function ReviewConversationTurn(
   const interactive: ReviewConversationTurnActions | null =
     !props.readOnly && 'onConfirm' in props ? props : null;
   const candidate = props.turn.assistantCandidate;
+  const matterScope: boolean =
+    props.turn.reviewScope?.kind === 'ENGINEERING_MATTER';
   const draft = candidate?.reviewActionDraft ?? null;
   const snapshot = draft?.decisionSnapshot ?? null;
   const dispositions = draft?.uncertaintyDispositions ?? [];
@@ -72,7 +76,11 @@ export default function ReviewConversationTurn(
 
       <ReviewExecutionStatus
         turn={props.turn}
-        onLocateSourceRef={interactive?.onLocateSourceRef}
+        onLocateSourceRef={
+          matterScope && !candidate?.sourceBindings?.length
+            ? undefined
+            : interactive?.onLocateSourceRef
+        }
       />
 
       {candidate ? (
@@ -85,6 +93,9 @@ export default function ReviewConversationTurn(
             </span>
           </header>
           <p>{candidate.answer}</p>
+          {candidate.matterWorkingUpdate ? (
+            <MatterWorkingReceipt receipt={candidate.matterWorkingUpdate} />
+          ) : null}
           {candidate.sourceRefs.length ? (
             <SourceRefButtons
               label="原文依据"
@@ -207,7 +218,11 @@ export default function ReviewConversationTurn(
                   </ul>
                 </div>
               ) : null}
-              {!interactive ? (
+              {props.formalActionsAllowed === false ? (
+                <p className="continuous-review-draft-stale">
+                  这是事项工作讨论；正式采用草稿须进入相应成员任务单独核对，此处不提供采用操作。
+                </p>
+              ) : !interactive ? (
                 <p className="continuous-review-draft-stale">
                   已保存草稿仅供追溯；当前只读展示不提供确认或采用操作。
                 </p>
@@ -273,8 +288,9 @@ export default function ReviewConversationTurn(
           ) : null}
           <footer className="continuous-review-candidate-runtime">
             <span>
-              候选阶段没有采纳输入，也不会修改 WorkItem current、revision 或
-              STALE 状态。
+              {matterScope
+                ? '事项工作变化以 Host 工作记录读回为准；回复本身不是正式采用，成员 WorkItem current 与正式状态不因此推进。'
+                : '候选阶段没有采纳输入，也不会修改 WorkItem current、revision 或 STALE 状态。'}
             </span>
             <span title={candidate.actionAttemptRef}>
               Attempt {shortRef(candidate.actionAttemptRef)} · Model{' '}

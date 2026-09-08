@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 
 import Layout from './components/Layout';
 import WorkItemOverviewPage from './features/workitem/WorkItemOverviewPage';
+import EngineeringMatterPage from './features/matter/EngineeringMatterPage';
 import DocumentParsingPage from './pages/DocumentParsingPage/DocumentParsingPage';
 import WorkspaceHomePage from './pages/WorkspaceHomePage/WorkspaceHomePage';
 import NotFound from './pages/NotFound/NotFound';
@@ -32,6 +33,7 @@ const RoutesComponent = () => {
       <Route element={<Layout />}>
         <Route index element={<LibraryIndexRedirect />} />
         <Route path="library" element={<WorkspaceHomePage />} />
+        <Route path="matters/:matterId" element={<EngineeringMatterPage />} />
         <Route
           path="work-items/:workItemId"
           element={<WorkItemOverviewPage />}
