@@ -53,7 +53,7 @@ const OUTPUT_GUIDANCE = {
   EXTRACT_APPLICABILITY:
     'Return only wiselink.3_1.applicability_ast_candidate.v1 with expressions[{expressionId,sourceRefIds,extractionStatus:"extracted",expressionAst}]. Use this input astVocabulary exactly. Do not output aircraft decisions, Fleet facts, target levels or content refs. Express only source-bound applicability conditions; unknown facts are not false.',
   EVALUATE_JOBAID:
-    'Use the input responseInstruction for the exact columnar result shape. Return callerCorrelationRef, authorityLevel="candidate_only", engineeringConclusion=null, applicabilityOverall, ruleResults, overallSelfCheck, nextRoundChecklist, completionSelfCheck. Keep all N rows in input order. FALSE is NOT_APPLICABLE with no refs/missing input; UNKNOWN echoes only Host missingPredicateKeys; TRUE must not become UNKNOWN. Use only each criterion own source allowlist. Do not synthesize overall here.',
+    'Use the input responseInstruction for the exact columnar result shape. Return callerCorrelationRef, authorityLevel="candidate_only", engineeringConclusion=null, applicabilityOverall, ruleResults, overallSelfCheck, nextRoundChecklist, completionSelfCheck. Keep all N rows in input order. FALSE is NOT_APPLICABLE with no refs/missing input; UNKNOWN echoes only Host missingPredicateKeys; TRUE must not become UNKNOWN. Use only each criterion own source allowlist. Before returning, measure the UTF-8 byte length of JSON.stringify(row) for every row against responseInstruction.ruleResultsEncoding.maxRowUtf8Bytes, including JSON syntax. Remove redundant prose if necessary while preserving material facts, conditions, findings and every criterion. Do not synthesize overall here.',
   SYNTHESIZE_OVERALL:
     `${OVERALL_ENVELOPE_GUIDANCE} This historical input has no evidenceRegistry: keep engineeringSummary={schemaVersion:"wiselink.3_1.overall_engineering_summary.v1",conclusion:statement,whyItMatters:[statement],applicability:{sourceScope:statement,fleetMatch:statement,requiredFacts:[statement]},implementationImpact:[statement],dispositionPriority:[statement],nextActions:[statement]}; each statement={text,basis:"SOURCE_FACT"|"CONDITIONAL_INFERENCE",sourceRefIds:[currentDocumentSourceRefId]}. Explain the engineering conclusion, significance, source scope versus fleet match, implementation impact, priority and 1-3 next actions. Preserve the v1 synthesis-pair contract and overallCandidate=conclusion.text.`,
 };
@@ -89,7 +89,7 @@ export async function invokeHostedInitialModel(
   const promptVersion =
     operation === 'EXTRACT_APPLICABILITY'
       ? WISELINK_APPLICABILITY_PROMPT_VERSION
-      : 'wiselink-initial-generation@r09.c42';
+      : 'wiselink-initial-generation@r09.c43';
   const jobAidJson = operation === 'EVALUATE_JOBAID';
   const outputGuidance = operation === 'SYNTHESIZE_OVERALL' && Object.hasOwn(modelInput, 'evidenceRegistry')
     ? OVERALL_READING_GUIDANCE : OUTPUT_GUIDANCE[operation];
@@ -276,7 +276,7 @@ export async function invokeHostedInitialModel(
         parsed = { candidate };
       } catch (error) {
         const code = error instanceof Error ? error.message : '';
-        if (!/^(?:DYNAMIC_RULES|INITIAL_JOBAID)_[A-Z0-9_]+$/u.test(code) ||
+        if (!/^(?:DYNAMIC_RULES|INITIAL_JOBAID)_[A-Z0-9_]+(?::\d{1,6}){0,2}$/u.test(code) ||
           candidateCorrections >= MAX_JOBAID_CANDIDATE_CORRECTIONS ||
           typeof call.id !== 'string' || !call.id.trim()) throw error;
         candidateCorrections += 1;
@@ -287,7 +287,7 @@ export async function invokeHostedInitialModel(
           { role: 'assistant', content: null, tool_calls: [call] },
           { role: 'tool', tool_call_id: call.id, content: JSON.stringify({
             candidateAccepted: false, validationError: code,
-            instruction: 'Return the complete corrected candidateJson using the original input and responseInstruction. Preserve every criterion in order, Host predicate results, source allowlists and correlation binding. engineeringConclusion is JSON null and authorityLevel is candidate_only. Do not omit a finding merely to pass validation; nothing has been saved.',
+            instruction: 'Return the complete corrected candidateJson using the original input and responseInstruction. Numeric error suffixes identify zero-based row indices or counts. Check every row against responseInstruction.ruleResultsEncoding.maxRowUtf8Bytes using the UTF-8 byte length of JSON.stringify(row), including JSON syntax; shorten redundant prose while retaining material facts, conditions and findings. Preserve every criterion in order, Host predicate results, source allowlists and correlation binding. engineeringConclusion is JSON null and authorityLevel is candidate_only. Do not omit a finding merely to pass validation; nothing has been saved.',
           }) },
         ];
         continue;

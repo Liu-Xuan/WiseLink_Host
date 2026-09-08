@@ -447,6 +447,43 @@ test('JobAid JSON transport preserves null and column arrays and corrects reject
   assert.ok(Array.isArray(result.output.ruleResults.columns));
 });
 
+test('JobAid returns indexed row-budget errors to the same model without truncating rows', async () => {
+  const modelInput = await readJson(DYNAMIC_FIXTURE_URL);
+  const expected = buildDynamicRulesOutput(modelInput);
+  const rejected = structuredClone(expected);
+  rejected.ruleResults.rows[2][4] = '超长分析'.repeat(modelInput.responseInstruction.ruleResultsEncoding.maxRowUtf8Bytes);
+  const originalRow = structuredClone(rejected.ruleResults.rows[2]);
+  let calls = 0;
+  const receipts = [];
+  const result = await invokeInitialWithTransport({ operation: 'EVALUATE_JOBAID', modelInput }, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', gatewayChatCompletionsEnabled: true,
+    configuredModelVersion: 'dli/gpt-5.6-sol', sessionDiscriminator: 'indexed-row-budget',
+    executionModel: modelSelection('dli/gpt-5.6-sol'), registeredModelRefs: ['dli/gpt-5.6-sol'],
+    observeCandidateRejection: (receipt) => receipts.push(receipt),
+  }, { requestGateway: async (_url, init) => {
+    const request = JSON.parse(init.body);
+    calls += 1;
+    assert.equal(request.user, 'initial:indexed-row-budget');
+    assert.match(request.messages[0].content, /UTF-8 byte length/u);
+    if (calls === 2) {
+      const feedback = JSON.parse(request.messages[2].content);
+      assert.equal(feedback.validationError, 'DYNAMIC_RULES_RULE_RESULT_ROW_BUDGET_EXCEEDED:2');
+      assert.match(feedback.instruction, /every row/u);
+      assert.equal(request.messages[1].tool_calls[0].id, 'row-budget-1');
+    }
+    return Response.json({ choices: [{ message: { content: null, tool_calls: [{
+      id: `row-budget-${calls}`, type: 'function', function: {
+        name: 'return_wiselink_initial_candidate',
+        arguments: JSON.stringify({ candidateJson: JSON.stringify(calls === 1 ? rejected : expected) }),
+      },
+    }] } }] });
+  } });
+  assert.equal(calls, 2);
+  assert.equal(receipts[0].errorCode, 'DYNAMIC_RULES_RULE_RESULT_ROW_BUDGET_EXCEEDED:2');
+  assert.deepEqual(rejected.ruleResults.rows[2], originalRow);
+  assert.deepEqual(result.output, expected);
+});
+
 test('JobAid never repairs invalid output and stops after two model corrections or a failed lease renewal', async () => {
   const modelInput = await readJson(DYNAMIC_FIXTURE_URL);
   const candidate = buildDynamicRulesOutput(modelInput);
@@ -1334,7 +1371,7 @@ test('pins exact20 MCP 1.2, five review tools, and hosted provenance', () => {
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c42',
+    'wiselink-research-and-synthesize@r09.c43',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
