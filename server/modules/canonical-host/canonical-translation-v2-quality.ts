@@ -327,7 +327,7 @@ function normalizedDates(value: string): { text: string; dates: string[] } {
       replace(all, year, Number(month), day),
     )
     .replace(
-      /(\d{4})年\s*(\d{1,2})月\s*(\d{1,2})日/gu,
+      /(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/gu,
       (all, year, month, day) => replace(all, year, Number(month), day),
     );
   return { text, dates: dates.sort() };
@@ -428,15 +428,15 @@ export function buildTranslationWorkspaceReadingV2(
       return {
         source,
         selected,
-      readingStatus: selected
-        ? 'READABLE'
-        : source.sourceIssues.some((issue) => issue.severity === 'BLOCK')
-          ? 'BLOCKED'
-        : !latest
-            ? 'MISSING'
-            : latest.check?.issues.some((issue) => issue.severity === 'BLOCK')
-              ? 'BLOCKED'
-              : 'PENDING_CHECK',
+        readingStatus: selected
+          ? 'READABLE'
+          : source.sourceIssues.some((issue) => issue.severity === 'BLOCK')
+            ? 'BLOCKED'
+            : !latest
+              ? 'MISSING'
+              : latest.check?.issues.some((issue) => issue.severity === 'BLOCK')
+                ? 'BLOCKED'
+                : 'PENDING_CHECK',
         issues: structuredClone(
           selected?.check?.issues ??
             latest?.check?.issues ??

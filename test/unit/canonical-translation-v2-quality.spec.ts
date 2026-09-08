@@ -170,6 +170,23 @@ describe('translation v2 quality and actual reading coverage', () => {
       checkTranslationBlockV2({ plan: sourcePlan, candidate: value }).issues,
     ).toEqual([]);
   });
+  it('accepts spacing in equivalent Chinese publication dates while retaining changed-date detection', () => {
+    const sourcePlan = plan(['Issue 001, 24 Sep 2020']);
+    for (const date of ['2020 年 9 月 24 日', '2020年 9月 24日']) {
+      expect(
+        checkTranslationBlockV2({
+          plan: sourcePlan,
+          candidate: candidate(sourcePlan, `版本 001，${date}`),
+        }).issues,
+      ).toEqual([]);
+    }
+    expect(
+      checkTranslationBlockV2({
+        plan: sourcePlan,
+        candidate: candidate(sourcePlan, '版本 001，2020 年 9 月 23 日'),
+      }).issues.map((issue) => issue.code),
+    ).toContain('PROTECTED_VALUE_CHANGED');
+  });
   it('detects a changed date, O-to-0 part number and channel-value swap despite equal number totals', () => {
     const sourcePlan = plan([
       'On September 3, 2024 use PN-12O. Channel A: 5 seconds; Channel B: 10 seconds.',
