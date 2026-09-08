@@ -839,6 +839,14 @@ describe('CanonicalHostOpenClawReviewService', () => {
     expect(begin.task.modelInput.schemaVersion).toBe(
       'wiselink.3_1.review_turn_task.v1.c4',
     );
+    expect(harness.conversations.loadCurrent).toHaveBeenCalledWith(
+      {
+        tenantId: harness.conversation.tenantId,
+        actorId: harness.conversation.actorId,
+        workItemId: harness.conversation.workItemId,
+      },
+      harness.executor.database,
+    );
     expect(harness.engineerReviews.pageContext).not.toHaveBeenCalled();
     const safe = JSON.stringify(begin.task.modelInput.context);
     expect(safe).not.toContain('Primary passage.');
@@ -1509,6 +1517,7 @@ function reviewHarness(
     dispatch,
     attempts,
     conversations,
+    conversation,
     workItems,
     engineerReviews,
     assessment,

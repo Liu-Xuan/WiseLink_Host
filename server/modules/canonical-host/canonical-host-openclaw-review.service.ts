@@ -938,6 +938,8 @@ export class CanonicalHostOpenClawReviewService {
     binding: ReviewBinding,
     workItem: CanonicalWorkItemProjection,
   ): Promise<ReviewTurnTaskContract> {
+    const repository = this.matterWorkingRepository;
+    if (!repository) throw reviewConflict('REVIEW_MATTER_RUNTIME_UNAVAILABLE');
     const scope = binding.turn.reviewScope!;
     const basis = await this.authorizeMatterRuntime(binding);
     assertMatterReviewBasis(scope, basis);
@@ -982,11 +984,18 @@ export class CanonicalHostOpenClawReviewService {
           beforeTurnNo: binding.turn.turnNo,
           reviewScope: reviewScopeSelection(scope),
         }),
-        this.conversations.loadCurrent({
-          tenantId: binding.conversation.tenantId,
-          actorId: binding.conversation.actorId,
-          workItemId: binding.conversation.workItemId,
-        }),
+        repository.withActorTransaction(
+          binding.conversation.actorId,
+          ({ database }) =>
+            this.conversations.loadCurrent(
+              {
+                tenantId: binding.conversation.tenantId,
+                actorId: binding.conversation.actorId,
+                workItemId: binding.conversation.workItemId,
+              },
+              database,
+            ),
+        ),
       ],
     );
     if (
