@@ -12,7 +12,7 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（任务可绑定已登记的内置或用户授权自定义模型；仍经唯一官方 Hosted profile/Gateway）
-- Skill：`wiselink-research-and-synthesize@r09.c41`
+- Skill：`wiselink-research-and-synthesize@r09.c42`
 - Skill compatibility：`wiselink-research-and-synthesize@r09`（Host 最低接受 `r09.c10`）
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（既有 20 项能力；兼容新增的只读自动领取查询）
 - Host baseline：`6fd2655d27edc3851c745547efaf8796ad22c82c`
@@ -189,6 +189,7 @@ CAS；Skill 不声称这些步骤由模型完成。8. commit 响应未知时只�
   独立 300 秒响应头上限先于操作预算断开。请求仍由已有 AbortSignal 限定整个响应，接收时执行 4 MiB 上限；
   连接中断、超量或操作超时直接失败。端点、认证头、模型和原生 session 路由保持；无重定向、传输重试、
   全局 dispatcher/agent timeout 修改或额外依赖。HTTPS 使用默认证书校验。旧失败记录保留，用正常新请求验证。
+- c42 针对真实 JobAid 将 null 输出为字符串、数组包为 `{item:[...]}` 的失败，将 JobAid 候选改用单一 `candidateJson` 字符串传输，严格解析真实 JSON null、数组与布尔值后执行原 dynamic-rules-pair 校验。模型可在同一原生会话、原模型和原 8 分钟预算内最多纠正两次，每次请求前续租同一 attempt；仅反馈受限错误码，保存未提交的拒绝记录。适配器不转换字段、修补行或绕过校验，未知提交及已失败 attempt 不重放。
 - c28 在每个输出窗口收齐后按同一 rulePack 检查实际内容；具体失败单元可在原全文会话、原模型中定向纠正，
   每窗口最多两次且共用该次全文总预算。纠正响应只能包含请求的索引，完整匹配后以模型实返文本替换这些单元；
   未失败单元保持原文，驱动不编造、删改或补齐译文。各单元翻译自身片段，全文和相邻单元只帮助理解，不挪动内容。
@@ -529,7 +530,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - `modelVersion` 优先取响应中可读实际模型；绑定任务未回报实际模型时使用 `configured-route:<modelRef>`，旧无绑定任务使用无 fallback 的 configured endpoint。后两者只证明路由，不代表已暴露下游具体模型，也不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c41`
+- `skillVersion=wiselink-research-and-synthesize@r09.c42`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致

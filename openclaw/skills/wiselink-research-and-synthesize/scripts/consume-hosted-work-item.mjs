@@ -145,6 +145,9 @@ export async function runHostedInitialStage(options, dependencies) {
         observeTranslationFidelity: (report, round) => checkpoint.writeOnce(
           `model.translation-fidelity-${round}`, report,
         ),
+        observeCandidateRejection: (report) => checkpoint.writeOnce(
+          `model.candidate-rejection-${report.correctionNo}`, report,
+        ),
       });
     },
   });

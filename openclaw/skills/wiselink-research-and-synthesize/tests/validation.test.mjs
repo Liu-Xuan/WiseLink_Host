@@ -390,7 +390,7 @@ test('M3 JobAid has a bounded output budget and preserves the complete criterion
         return Response.json({ model: 'openclaw/wiselink-engineering', choices: [{ message: {
           content: null,
           tool_calls: [{ type: 'function', function: {
-            name: 'return_wiselink_initial_candidate', arguments: JSON.stringify({ candidate }),
+            name: 'return_wiselink_initial_candidate', arguments: JSON.stringify({ candidateJson: JSON.stringify(candidate) }),
           } }],
         } }] });
       },
@@ -399,6 +399,76 @@ test('M3 JobAid has a bounded output budget and preserves the complete criterion
     assert.deepEqual(result.output, candidate);
     assert.equal(observed[0].requestedMaxCompletionTokens, modelRef === 'miaoda/minimax-m3' ? 524_288 : null);
     assert.equal(result.provenance.modelVersion, `configured-route:${modelRef}`);
+  }
+});
+
+test('JobAid JSON transport preserves null and column arrays and corrects rejected candidates in the original session', async () => {
+  const modelInput = await readJson(DYNAMIC_FIXTURE_URL);
+  const expected = buildDynamicRulesOutput(modelInput);
+  const rejected = structuredClone(expected);
+  rejected.engineeringConclusion = 'null';
+  let calls = 0;
+  let heartbeats = 0;
+  const receipts = [];
+  const result = await invokeInitialWithTransport({ operation: 'EVALUATE_JOBAID', modelInput }, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', gatewayChatCompletionsEnabled: true,
+    configuredModelVersion: 'miaoda/minimax-m3', sessionDiscriminator: 'job-aid-json-fixture',
+    executionModel: modelSelection('miaoda/minimax-m3'), registeredModelRefs: ['miaoda/minimax-m3'],
+    heartbeat: () => { heartbeats += 1; }, observeCandidateRejection: (value) => receipts.push(value),
+  }, {
+    requestGateway: async (_url, init) => {
+      calls += 1;
+      const request = JSON.parse(init.body);
+      assert.equal(request.user, 'initial:job-aid-json-fixture');
+      assert.equal(init.headers['x-openclaw-model'], 'miaoda/minimax-m3');
+      assert.deepEqual(request.tools[0].function.parameters.required, ['candidateJson']);
+      assert.equal(request.tools[0].function.parameters.properties.candidateJson.type, 'string');
+      if (calls === 1) assert.deepEqual(JSON.parse(request.messages[1].content), modelInput);
+      else {
+        assert.equal(request.messages[1].tool_calls[0].id, 'jobaid-call-1');
+        const feedback = JSON.parse(request.messages[2].content);
+        assert.equal(feedback.candidateAccepted, false);
+        assert.equal(feedback.validationError, 'DYNAMIC_RULES_ENGINEERING_CONCLUSION_FORBIDDEN');
+      }
+      return Response.json({ choices: [{ message: { content: null, tool_calls: [{
+        id: `jobaid-call-${calls}`, type: 'function', function: {
+          name: 'return_wiselink_initial_candidate',
+          arguments: JSON.stringify({ candidateJson: JSON.stringify(calls === 1 ? rejected : expected) }),
+        },
+      }] } }] });
+    },
+  });
+  assert.equal(calls, 2);
+  assert.equal(heartbeats, 2);
+  assert.equal(receipts.length, 1);
+  assert.deepEqual(result.output, expected);
+  assert.equal(rejected.engineeringConclusion, 'null');
+  assert.equal(result.output.engineeringConclusion, null);
+  assert.ok(Array.isArray(result.output.ruleResults.columns));
+});
+
+test('JobAid never repairs invalid output and stops after two model corrections or a failed lease renewal', async () => {
+  const modelInput = await readJson(DYNAMIC_FIXTURE_URL);
+  const candidate = buildDynamicRulesOutput(modelInput);
+  candidate.engineeringConclusion = 'null';
+  for (const leaseFails of [false, true]) {
+    let calls = 0;
+    let heartbeats = 0;
+    await assert.rejects(invokeInitialWithTransport({ operation: 'EVALUATE_JOBAID', modelInput }, {
+      gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', gatewayChatCompletionsEnabled: true,
+      configuredModelVersion: 'miaoda/minimax-m3', sessionDiscriminator: 'job-aid-rejection-fixture',
+      executionModel: modelSelection('miaoda/minimax-m3'), registeredModelRefs: ['miaoda/minimax-m3'],
+      heartbeat: () => { if (++heartbeats === 2 && leaseFails) throw new Error('HOST_LEASE_LOST'); },
+    }, { requestGateway: async () => {
+      calls += 1;
+      return Response.json({ choices: [{ message: { content: null, tool_calls: [{
+        id: `invalid-${calls}`, type: 'function', function: {
+          name: 'return_wiselink_initial_candidate', arguments: JSON.stringify({ candidateJson: JSON.stringify(candidate) }),
+        },
+      }] } }] });
+    } }), leaseFails ? /HOST_LEASE_LOST/ : /DYNAMIC_RULES_ENGINEERING_CONCLUSION_FORBIDDEN/);
+    assert.equal(calls, leaseFails ? 1 : 3);
+    assert.equal(candidate.engineeringConclusion, 'null');
   }
 });
 
@@ -428,7 +498,7 @@ test('official initial model adapter validates all four operation outputs withou
       assert.equal(JSON.stringify(request.messages).includes('control-session-only'), false);
       return new Response(JSON.stringify({ model: 'actual-official-model', choices: [{ message: {
         role: 'assistant', content: null,
-        tool_calls: [{ type: 'function', function: { name: 'return_wiselink_initial_candidate', arguments: JSON.stringify({ candidate: generated }) } }],
+        tool_calls: [{ type: 'function', function: { name: 'return_wiselink_initial_candidate', arguments: JSON.stringify(operation === 'EVALUATE_JOBAID' ? { candidateJson: JSON.stringify(generated) } : { candidate: generated }) } }],
       } }] }), { status: 200 });
     };
     const result = await invokeHostedInitialModel({ operation, modelInput }, {
@@ -1264,7 +1334,7 @@ test('pins exact20 MCP 1.2, five review tools, and hosted provenance', () => {
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c41',
+    'wiselink-research-and-synthesize@r09.c42',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
