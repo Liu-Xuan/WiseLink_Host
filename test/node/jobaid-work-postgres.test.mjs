@@ -28,6 +28,22 @@ const {
   ReviewConversationRepository,
 } = require('../../server/modules/review-persistence/review-conversation.repository.ts');
 const {
+  CanonicalJobAidProblemService,
+} = require('../../server/modules/canonical-host/canonical-jobaid-problem.service.ts');
+const {
+  ActionAttemptLifecycleService,
+} = require('../../server/modules/action-attempt/action-attempt-lifecycle.service.ts');
+const {
+  ActionAttemptRepository,
+} = require('../../server/modules/action-attempt/action-attempt.repository.ts');
+const {
+  MiaodaWorkItemRepository,
+} = require('../../server/modules/work-item/miaoda-work-item.repository.ts');
+const {
+  projectCommonAssessmentContext,
+} = require('../../server/modules/canonical-host/canonical-host-common-context.service.ts');
+const { fixedModelSettings } = require('../support/fixed-model-settings.ts');
+const {
   materializeJobAidWork,
 } = require('../../server/modules/canonical-host/jobaid-problem-work.ts');
 const {
@@ -161,6 +177,179 @@ test(
           ),
         );
       await seed(sql);
+
+      await t.test(
+        'actual identity RLS filters an unbound Hosted query and admits only the bound official actor',
+        async () => {
+          const mapping = {
+            tenantId: scope.tenantId,
+            actorId: scope.actorUserId,
+          };
+          assert.equal(
+            await hosted(() => reviews.hasActiveOfficialActorMapping(mapping)),
+            false,
+          );
+          assert.equal(
+            await hosted(() =>
+              repository.withActorTransaction(scope.actorUserId, (executor) =>
+                reviews.hasActiveOfficialActorMapping(mapping, executor),
+              ),
+            ),
+            true,
+          );
+          assert.equal(
+            await hosted(() =>
+              repository.withActorTransaction('actor-other', (executor) =>
+                reviews.hasActiveOfficialActorMapping(mapping, executor),
+              ),
+            ),
+            false,
+          );
+          assert.equal(
+            await hosted(() =>
+              repository.withActorTransaction(scope.actorUserId, (executor) =>
+                reviews.hasActiveOfficialActorMapping(
+                  { ...mapping, tenantId: 'other-tenant' },
+                  executor,
+                ),
+              ),
+            ),
+            false,
+          );
+          assert.equal(
+            await hosted(() => reviews.hasActiveOfficialActorMapping(mapping)),
+            false,
+            'the verified actor must not leak into a later unbound Hosted query',
+          );
+        },
+      );
+
+      await t.test(
+        'initial JobAid authorizes before creating an attempt and rechecks the same claimed task under actual RLS',
+        async () => {
+          const initial = initialProjection('WI-job-begin');
+          const denied = initialProjection('WI-job-denied');
+          for (const candidate of [initial, denied]) {
+            await sql`INSERT INTO work_item (work_item_id,tenant_id,requested_by_user_id,revision,document_version_id,projection_json)
+              VALUES (${candidate.workItemId},${scope.tenantId},${scope.actorUserId},1,'dv-job',${JSON.stringify(candidate)})`;
+          }
+          const lifecycle = new ActionAttemptLifecycleService(
+            new ActionAttemptRepository(db),
+            fixedModelSettings(),
+          );
+          const service = new CanonicalJobAidProblemService(
+            {},
+            {
+              readActualBytes: async () =>
+                new TextEncoder().encode(
+                  JSON.stringify({
+                    sourceRefs: [
+                      {
+                        sourceRefId: 'sr1',
+                        pageStart: 1,
+                        pageEnd: 1,
+                        quote: document.excerpt,
+                      },
+                    ],
+                  }),
+                ),
+            },
+            {},
+            {},
+            {},
+            lifecycle,
+            new MiaodaWorkItemRepository(db),
+            reviews,
+            {
+              buildForWorkItemWithEvidence: async (candidate) => ({
+                common: projectCommonAssessmentContext(
+                  candidate,
+                  {
+                    context: {
+                      status: 'UNAVAILABLE',
+                      reason: 'ISOLATED_RLS_TEST',
+                    },
+                    documentReadingStatus: 'AVAILABLE',
+                    items: [],
+                    sections: [],
+                    resourceRefs: [],
+                  },
+                  [],
+                ),
+                availableReadingEvidence: [],
+              }),
+            },
+            repository,
+          );
+          const begin = (candidate) =>
+            hosted(() =>
+              service.begin(
+                candidate,
+                {
+                  tenantId: scope.tenantId,
+                  workItemId: candidate.workItemId,
+                  principalId: fence.principalId,
+                  appId: 'app-test',
+                  authorizationFingerprint: 'isolated-host-owner-binding',
+                },
+                'INITIAL_PROBLEM_ASSESSMENT',
+              ),
+            );
+          const first = await begin(initial);
+          assert.equal(first.status, 'RUNNING');
+          assert.equal(first.task.modelInput.actorUserId, scope.actorUserId);
+          const replay = await begin(initial);
+          assert.equal(replay.attemptRef, first.attemptRef);
+          assert.equal(replay.leaseToken, first.leaseToken);
+          assert.equal(replay.leaseGeneration, first.leaseGeneration);
+          assert.equal(
+            (
+              await sql`SELECT attempt_id FROM action_attempt WHERE work_item_id = ${initial.workItemId}`
+            ).length,
+            1,
+          );
+
+          try {
+            await sql`UPDATE identity_subject_mapping SET status = 'REVOKED' WHERE miaoda_user_id = ${scope.actorUserId}`;
+            await assert.rejects(
+              begin(denied),
+              /JOBAID_ACTOR_AUTHORIZATION_CHANGED/u,
+            );
+            assert.equal(
+              (
+                await sql`SELECT attempt_id FROM action_attempt WHERE work_item_id = ${denied.workItemId}`
+              ).length,
+              0,
+              'preflight rejection must not leave QUEUED or RUNNING work',
+            );
+            await assert.rejects(
+              begin(initial),
+              /JOBAID_ACTOR_AUTHORIZATION_CHANGED/u,
+            );
+            const [preserved] =
+              await sql`SELECT status, claim_count, lease_generation FROM action_attempt WHERE operation_ref = ${first.attemptRef}`;
+            assert.equal(preserved.status, 'RUNNING');
+            assert.equal(preserved.claim_count, 1);
+            assert.equal(preserved.lease_generation, first.leaseGeneration);
+          } finally {
+            await sql`UPDATE identity_subject_mapping SET status = 'ACTIVE' WHERE miaoda_user_id = ${scope.actorUserId}`;
+          }
+          const changed = structuredClone(initial);
+          changed.package.artifact.sha256 = 'b'.repeat(64);
+          await sql`UPDATE work_item SET projection_json = ${JSON.stringify(changed)} WHERE work_item_id = ${initial.workItemId}`;
+          await assert.rejects(
+            begin(initial),
+            /JOBAID_SOURCE_VERSION_CHANGED/u,
+          );
+          assert.equal(
+            (
+              await sql`SELECT attempt_id FROM action_attempt WHERE work_item_id = ${initial.workItemId}`
+            ).length,
+            1,
+          );
+        },
+      );
+
       let row = await attempt(db, 'ATT-initial');
       const command = proposal();
       let saved;
@@ -526,6 +715,12 @@ async function reset(sql) {
   }
   await sql.unsafe(`CREATE UNIQUE INDEX uk_action_attempt_active_work_task ON action_attempt(work_item_id, action_type)
     WHERE status IN ('QUEUED', 'RUNNING', 'RETRY_SCHEDULED', 'COMMITTING')`);
+  await sql.unsafe(`ALTER TABLE action_attempt
+    ALTER COLUMN claim_count SET DEFAULT 0,
+    ALTER COLUMN retry_count SET DEFAULT 0,
+    ALTER COLUMN lease_generation SET DEFAULT 0,
+    ALTER COLUMN projection_applied SET DEFAULT false;
+    ALTER TABLE identity_subject_mapping ENABLE ROW LEVEL SECURITY;`);
   const migration = await sql.reserve();
   try {
     for (const name of [
@@ -542,6 +737,18 @@ async function reset(sql) {
         ),
       );
     }
+    const identityRls = await readFile(
+      new URL(
+        '../../migrations/0005_identity_oauth_authenticated_rls.sql',
+        import.meta.url,
+      ),
+      'utf8',
+    );
+    const authenticatedIdentityPolicy = identityRls.match(
+      /CREATE POLICY identity_subject_mapping_authenticated_oauth_read[\s\S]+?\n  \);/u,
+    );
+    assert.ok(authenticatedIdentityPolicy);
+    await migration.unsafe(authenticatedIdentityPolicy[0]);
     await migration.unsafe(
       'ALTER TABLE review_turn ADD COLUMN review_scope_json jsonb',
     );
@@ -623,4 +830,31 @@ async function attempt(db, id) {
   return (
     await db.select().from(actionAttempt).where(eq(actionAttempt.attemptId, id))
   )[0];
+}
+
+function initialProjection(workItemId) {
+  return {
+    schemaVersion: 'wiselink.3_1.canonical_work_item_projection.v0.candidate',
+    workItemId,
+    requestId: `REQ-${workItemId}`,
+    revision: 1,
+    phase: 'CANDIDATE_READBACK_VERIFIED',
+    permissionSnapshotVersion: 'isolated-test',
+    source: { documentId: 'doc-job', documentVersionId: 'dv-job' },
+    classification: { status: 'CONFIRMED', normalizedFamily: 'SB' },
+    package: {
+      packageId: `PKG-${workItemId}`,
+      title: 'Synthetic English source',
+      artifact: {
+        ref: sourceBindings[0].artifactRef,
+        sha256: hash,
+        byteLength: 1,
+        storeRole: 'U0_PARSED_PACKAGE',
+        mediaType: 'application/json',
+      },
+    },
+    integratedAssessment: null,
+    failure: null,
+    recordingFailure: null,
+  };
 }

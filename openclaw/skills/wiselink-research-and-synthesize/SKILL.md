@@ -12,7 +12,7 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（任务可绑定已登记的内置或用户授权自定义模型；仍经唯一官方 Hosted profile/Gateway）
-- Skill：`wiselink-research-and-synthesize@r09.c44`
+- Skill：`wiselink-research-and-synthesize@r09.c45`
 - Skill compatibility：`wiselink-research-and-synthesize@r09`（历史任务最低接受 `r09.c10`，翻译 v2 必须为 `r09.c44` 或更新兼容包）
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（保留既有工具，新增语义翻译工作与 JobAid 来源/工作工具）
 - Host 集成提交：以本次发布包清单记录的实际提交为准
@@ -28,7 +28,7 @@ c24 接受 Host 在新 TaskEnvelope 中保存的可选 `executionModel`。该非
 `taskBinding` 也携带相同选择。驱动确认 modelRef 在官方 `agents.defaults.models` 中已登记后，仅通过
 `x-openclaw-model` header 选择它；body 的 `openclaw/wiselink-engineering`、原生会话及凭据来源均不变。
 模型选择不混入 modelInput，不允许任意 URL 或凭据。登记不存在或路由失败时明确停止，不切换 provider。
-任务恢复使用已保存选择，不重新读取全局默认。历史适配路径响应没有可读实际模型时记录 `configured-route:<modelRef>`；翻译 v2 缺少实返模型时失败，
+任务恢复使用已保存选择，不重新读取全局默认。响应没有可读实际模型时记录 `configured-route:<modelRef>`，翻译 v2 同样保留明确的路由回执，
 只证明所请求的配置路由，不冒充服务商已回报下游型号；旧任务无该字段时维持原有官方 profile 路径。
 
 `skillVersion` 始终记录实际安装包版本；Task 中的 `skillPolicyRef`（以及 Applicability v1 的历史字段
@@ -545,7 +545,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - `modelVersion` 优先取响应中可读实际模型；绑定任务未回报实际模型时使用 `configured-route:<modelRef>`，旧无绑定任务使用无 fallback 的 configured endpoint。后两者只证明路由，不代表已暴露下游具体模型，也不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c44`
+- `skillVersion=wiselink-research-and-synthesize@r09.c45`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致
