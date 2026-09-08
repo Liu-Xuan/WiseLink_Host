@@ -14,6 +14,11 @@ const require = createRequire(import.meta.url);
 require('ts-node/register/transpile-only');
 require('tsconfig-paths/register');
 const { drizzle } = require('drizzle-orm/postgres-js');
+const { sql: drizzleSql } = require('drizzle-orm');
+const {
+  SqlExecutionContextMiddleware,
+} = require('@lark-apaas/fullstack-nestjs-core');
+const { RequestContextService } = require('@lark-apaas/nestjs-common');
 const {
   EngineeringMatterRepository,
 } = require('../../server/modules/canonical-host/engineering-matter.repository.ts');
@@ -260,16 +265,70 @@ test(
           created.matter.matterId,
           linked.matter.currentRevision.matterRevisionId,
         );
-        const runtimeBasis =
-          await owner.workingService.authorizeRuntimeWorkingBasis({
+        const runtimeBasis = await owner.runtime(() =>
+          owner.workingService.authorizeRuntimeWorkingBasis({
             matterId: created.matter.matterId,
             tenantId: 'tenant-A',
             actorId: 'actor-A',
             basedOnMatterRevisionId:
               linked.matter.currentRevision.matterRevisionId,
-          });
+          }),
+        );
         assert.equal(runtimeBasis.working.workingRevision, 1);
         assert.equal(runtimeBasis.currentInputs.length, 2);
+        await owner.runtime(async () => {
+          const before = await owner.database.execute(
+            drizzleSql`SELECT current_setting('app.user_id', true) AS actor`,
+          );
+          assert.equal(before[0].actor, '-1');
+          await owner.working.withActorTransaction(
+            'actor-A',
+            async ({ database }) => {
+              for (let index = 0; index < 2; index++) {
+                const rows = await database.execute(
+                  drizzleSql`SELECT current_setting('app.user_id', true) AS actor, current_user AS role`,
+                );
+                assert.equal(rows[0].actor, 'actor-A');
+                assert.equal(rows[0].role, 'service_role_wiselink_r10_test');
+              }
+              // Row locks are permitted, but the runtime cannot mutate the
+              // parent Matter (its new UPDATE policy has WITH CHECK false).
+              await database.execute(
+                drizzleSql`SELECT matter_id FROM engineering_matter WHERE matter_id=${created.matter.matterId} FOR UPDATE`,
+              );
+            },
+          );
+          const after = await owner.database.execute(
+            drizzleSql`SELECT current_setting('app.user_id', true) AS actor`,
+          );
+          assert.equal(
+            after[0].actor,
+            '-1',
+            'the original system SQL identity is restored',
+          );
+          await assert.rejects(
+            owner.working.withActorTransaction('actor-A', ({ database }) =>
+              database.execute(
+                drizzleSql`UPDATE engineering_matter SET title='forbidden runtime mutation' WHERE matter_id=${created.matter.matterId}`,
+              ),
+            ),
+            (error) =>
+              error?.cause?.code === '42501' || error?.code === '42501',
+          );
+          await assert.rejects(
+            owner.working.withActorTransaction("actor-A'; RESET ROLE; --", () =>
+              assert.fail('must not execute'),
+            ),
+            /RUNTIME_AUTHORIZATION_UNAVAILABLE/u,
+          );
+        });
+        await assert.rejects(
+          owner.working.withActorTransaction('actor-A', () =>
+            assert.fail('browser scope must not become a service account'),
+          ),
+          /RUNTIME_AUTHORIZATION_UNAVAILABLE/u,
+        );
+        await assertHostedCandidateRls(sql, owner, created.matter.matterId);
 
         await advanceOwnerWorkItemCurrent(sql);
         const pending = await owner.workingService.readWorking(
@@ -292,11 +351,13 @@ test(
         const outsider = await reserveActorService('actor-B');
         try {
           await assert.rejects(
-            outsider.workingService.authorizeRuntimeWorkingBasis({
-              matterId: created.matter.matterId,
-              tenantId: 'tenant-A',
-              actorId: 'actor-B',
-            }),
+            outsider.runtime(() =>
+              outsider.workingService.authorizeRuntimeWorkingBasis({
+                matterId: created.matter.matterId,
+                tenantId: 'tenant-A',
+                actorId: 'actor-B',
+              }),
+            ),
             (error) =>
               error?.code ===
               'ENGINEERING_MATTER_RUNTIME_AUTHORIZATION_UNAVAILABLE',
@@ -373,6 +434,8 @@ async function resetDatabase(sql) {
       THEN CREATE ROLE authenticated NOLOGIN; END IF;
       IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role')
       THEN CREATE ROLE service_role NOLOGIN; END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role_wiselink_r10_test')
+      THEN CREATE ROLE service_role_wiselink_r10_test NOLOGIN IN ROLE service_role; END IF;
     END $$
   `);
   await sql.unsafe('CREATE TYPE user_profile AS (user_id text)');
@@ -420,12 +483,18 @@ async function resetDatabase(sql) {
   `);
   await sql.unsafe(`
     CREATE TABLE action_attempt (
-      attempt_id varchar(96) PRIMARY KEY
+      attempt_id varchar(96) PRIMARY KEY,
+      tenant_id varchar(128), actor_user_id varchar(255), work_item_id varchar(96),
+      action_type varchar(64), status varchar(32), request_origin varchar(32),
+      input_revision integer, idempotency_key varchar(255)
     )
   `);
   await sql.unsafe(`
     CREATE TABLE review_turn (
-      review_turn_id varchar(96) PRIMARY KEY
+      review_turn_id varchar(96) PRIMARY KEY,
+      tenant_id varchar(128), actor_id varchar(255), work_item_id varchar(96),
+      action_attempt_id varchar(96), review_conversation_id varchar(96),
+      input_revision integer
     )
   `);
   await applyMigration(
@@ -436,6 +505,10 @@ async function resetDatabase(sql) {
   await applyMigration(
     sql,
     'migrations/0023_engineering_matter_working_state.sql',
+  );
+  await applyMigration(
+    sql,
+    'migrations/0024_engineering_matter_hosted_runtime_actor.sql',
   );
   await sql.unsafe('ALTER TABLE work_item ENABLE ROW LEVEL SECURITY');
   await sql.unsafe(`
@@ -466,16 +539,178 @@ async function resetDatabase(sql) {
   // PostgreSQL row-locking SELECT also requires UPDATE privilege. The same
   // owner RLS policy continues to apply; only this isolated fixture grants it.
   await sql.unsafe('GRANT UPDATE ON work_item TO authenticated');
+  // Isolated equivalents of the platform's existing table privileges and
+  // Hosted actor policies. No production GRANT is introduced by migration 24.
+  await sql.unsafe('GRANT USAGE ON SCHEMA public TO service_role');
+  await sql.unsafe(
+    'GRANT SELECT ON identity_subject_mapping, action_attempt, review_turn, work_item, engineering_matter, engineering_matter_revision, engineering_matter_revision_work_item, engineering_matter_work_revision TO service_role',
+  );
+  await sql.unsafe(
+    'GRANT UPDATE ON engineering_matter, work_item TO service_role',
+  );
+  await sql.unsafe(
+    'GRANT INSERT ON engineering_matter_work_revision TO service_role',
+  );
+  await sql.unsafe(
+    'ALTER TABLE identity_subject_mapping ENABLE ROW LEVEL SECURITY',
+  );
+  await sql.unsafe(
+    `CREATE POLICY identity_browser_read ON identity_subject_mapping FOR SELECT TO authenticated USING (true)`,
+  );
+  await sql.unsafe(
+    `CREATE POLICY identity_hosted_read ON identity_subject_mapping FOR SELECT TO service_role USING (miaoda_user_id=current_setting('app.user_id', true) AND expected_client_id='cli_aadde8b579f95bc9' AND status='ACTIVE')`,
+  );
+  await sql.unsafe(
+    `CREATE POLICY work_item_hosted_read ON work_item FOR SELECT TO service_role USING (requested_by_user_id=current_setting('app.user_id', true))`,
+  );
+  await sql.unsafe(
+    `CREATE POLICY work_item_hosted_lock ON work_item FOR UPDATE TO service_role USING (requested_by_user_id=current_setting('app.user_id', true)) WITH CHECK (false)`,
+  );
+  const policyHelpers = await sql`
+    SELECT oid::regprocedure::text AS signature FROM pg_proc
+    WHERE pronamespace = 'public'::regnamespace
+      AND (proname LIKE 'engineering_matter_%_by_actor'
+        OR proname = 'engineering_matter_actor_has_tenant')
+  `;
+  for (const { signature } of policyHelpers) {
+    // The platform owns these privileges. Emulate them only in the isolated
+    // database, since production migrations intentionally contain no GRANT.
+    await sql.unsafe(`REVOKE ALL ON FUNCTION ${signature} FROM PUBLIC`);
+    await sql.unsafe(
+      `GRANT EXECUTE ON FUNCTION ${signature} TO authenticated, service_role`,
+    );
+  }
 }
 
 async function applyMigration(sql, path) {
   const migration = await readFile(resolve(process.cwd(), path), 'utf8');
   const reserved = await sql.reserve();
   try {
+    // Migration 14 captures the platform's current workspace search_path.
+    // Give this isolated public schema its corresponding explicit path.
+    await reserved.unsafe('SET search_path = public');
     await reserved.unsafe(migration);
+  } catch (error) {
+    await reserved.unsafe('ROLLBACK');
+    throw error;
   } finally {
+    await reserved.unsafe('RESET search_path');
     reserved.release();
   }
+}
+
+async function assertHostedCandidateRls(sql, owner, matterId) {
+  const [stored] = await sql`
+    SELECT command_json FROM engineering_matter_work_revision
+    WHERE matter_id = ${matterId} AND working_revision = 1
+  `;
+  const command = JSON.parse(stored.command_json);
+  command.requestId = 'review-turn:RT-R10-HOSTED';
+  command.expectedWorkingRevision = 1;
+  command.updateKind = 'CORRECTION';
+  command.changeSummary =
+    'Correct the candidate reading through Hosted Review.';
+  command.nextSubstantiveResult.resultRevision = 2;
+  command.nextSubstantiveResult.content.claims[0].text =
+    'The corrected condition remains candidate-only.';
+  command.claimDelta = {
+    changedBecause: 'The engineer corrected the test premise.',
+    additions: [],
+    replacements: structuredClone(command.nextSubstantiveResult.content.claims),
+    retirements: [],
+    explicitlyUnchangedClaimIds: [],
+  };
+  const source = {
+    actionAttemptId: 'ATT-R10-HOSTED',
+    reviewTurnId: 'RT-R10-HOSTED',
+  };
+  const exactKey = 'openclaw-v1:review:RC-R10-HOSTED:RT-R10-HOSTED:4';
+  await sql`
+    INSERT INTO action_attempt (
+      attempt_id, tenant_id, actor_user_id, work_item_id, action_type,
+      status, request_origin, input_revision, idempotency_key
+    ) VALUES (
+      ${source.actionAttemptId}, 'tenant-A', 'actor-A', ${FTD_WORK_ITEM_ID},
+      'OPENCLAW_INTERACTIVE_REVIEW', 'COMMITTING', 'OPENCLAW_MCP_V1', 4, ${exactKey}
+    )
+  `;
+  for (const turnId of [source.reviewTurnId, 'RT-R10-UNRELATED']) {
+    await sql`
+      INSERT INTO review_turn (
+        review_turn_id, tenant_id, actor_id, work_item_id,
+        review_conversation_id, input_revision, review_scope_json
+      ) VALUES (
+        ${turnId}, 'tenant-A', 'actor-A', ${FTD_WORK_ITEM_ID}, 'RC-R10-HOSTED', 4,
+        ${sql.json({ kind: 'ENGINEERING_MATTER', matterId, basedOnMatterRevisionId: command.basedOnMatterRevisionId })}
+      )
+    `;
+  }
+  const input = {
+    tenantId: 'tenant-A',
+    actorUserId: 'actor-A',
+    matterId,
+    command,
+    currentInputs: command.substantiveInputs,
+    source,
+  };
+  const commit = (patch = {}, afterAppend) =>
+    owner.runtime(() =>
+      owner.working.withActorTransaction('actor-A', async (executor) => {
+        await executor.authorizeRuntimeInputs({
+          tenantId: 'tenant-A',
+          actorUserId: 'actor-A',
+          matterId,
+        });
+        const result = await executor.appendWorkingRevision({
+          ...input,
+          ...patch,
+        });
+        if (afterAppend) await afterAppend(executor);
+        return result;
+      }),
+    );
+  const rejected = (operation) =>
+    assert.rejects(operation, (error) => databaseCode(error) === '42501');
+  await rejected(commit({ source: null }));
+  await rejected(
+    commit({ source: { ...source, reviewTurnId: 'RT-R10-UNRELATED' } }),
+  );
+  await sql`UPDATE action_attempt SET status = 'RUNNING' WHERE attempt_id = ${source.actionAttemptId}`;
+  await rejected(commit());
+  await sql`UPDATE action_attempt SET status = 'COMMITTING', idempotency_key = 'wrong-turn' WHERE attempt_id = ${source.actionAttemptId}`;
+  await rejected(commit());
+  await sql`UPDATE action_attempt SET idempotency_key = ${exactKey} WHERE attempt_id = ${source.actionAttemptId}`;
+  const rollback = new Error('CANDIDATE_PERSISTENCE_FAILED');
+  await assert.rejects(
+    commit({}, async () => {
+      throw rollback;
+    }),
+    (error) => error === rollback,
+  );
+  const [before] =
+    await sql`SELECT count(*)::int AS count FROM engineering_matter_work_revision WHERE matter_id = ${matterId}`;
+  assert.equal(
+    before.count,
+    1,
+    'failed authorization or candidate persistence must append nothing',
+  );
+  const result = await commit();
+  assert.equal(result.revision.workingRevision, 2);
+  assert.deepEqual(result.revision.source, source);
+  assert.equal(result.revision.state.substantiveResult.candidateOnly, true);
+  const replay = await commit();
+  assert.equal(replay.replayed, true);
+  assert.equal(
+    replay.revision.matterWorkRevisionId,
+    result.revision.matterWorkRevisionId,
+  );
+  const [turn] =
+    await sql`SELECT action_attempt_id FROM review_turn WHERE review_turn_id = ${source.reviewTurnId}`;
+  assert.equal(
+    turn.action_attempt_id,
+    null,
+    'append uses exact Turn binding before candidate persistence sets this field',
+  );
 }
 
 async function seedRealDocumentWorkItems(sql, fixtures) {
@@ -673,7 +908,15 @@ async function reserveActorService(actorId, tenantId = 'tenant-A') {
       objectAccess,
     );
     const matters = new EngineeringMatterRepository(db);
-    const working = new EngineeringMatterWorkingRepository(db);
+    const sqlContext = new SqlExecutionContextMiddleware({
+      roleSchema: 'wiselink_r10_test',
+    });
+    const requestContext = new RequestContextService();
+    const working = new EngineeringMatterWorkingRepository(
+      db,
+      sqlContext,
+      requestContext,
+    );
     const workingService = new EngineeringMatterWorkingService(
       matters,
       working,
@@ -685,6 +928,27 @@ async function reserveActorService(actorId, tenantId = 'tenant-A') {
       service,
       working,
       workingService,
+      database: db,
+      runtime: (operation) =>
+        requestContext.run(
+          { isSystemAccount: true, userId: '-1' },
+          () =>
+            new Promise((resolve, reject) => {
+              sqlContext.use(
+                {
+                  userContext: {
+                    userId: '-1',
+                    isSystemAccount: true,
+                    roles: [],
+                  },
+                },
+                {},
+                () => {
+                  Promise.resolve().then(operation).then(resolve, reject);
+                },
+              );
+            }),
+        ),
       actor: actor(actorId, tenantId),
       async release() {
         await connection.unsafe('RESET ROLE');
@@ -1113,7 +1377,7 @@ async function assertSecurityDefinerAndDirectRlsDenials(sql, matterId) {
     assert.equal(fn.prosecdef, true, fn.proname);
     assert.equal(fn.returns_boolean, true, fn.proname);
     assert.equal(fn.function_owner, fn.table_owner, fn.proname);
-    assert.deepEqual(fn.proconfig, ['search_path=pg_catalog, public']);
+    assert.deepEqual(fn.proconfig, ['search_path=public']);
     assert.equal(/(?:^\{|,)=X\//u.test(fn.acl), false, fn.proname);
     assert.equal(fn.acl.includes('authenticated=X/'), true, fn.proname);
   }
