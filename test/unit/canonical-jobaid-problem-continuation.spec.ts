@@ -13,9 +13,16 @@ import type {
   ActionAttemptRow,
   ReserveActionAttemptInput,
 } from '../../server/modules/action-attempt/action-attempt.types';
+import {
+  INITIAL_ANALYSIS_REQUEST_SCHEMA,
+  readInitialAnalysisRequestInput,
+} from '../../server/modules/action-attempt/initial-analysis-request';
 import { CanonicalJobAidProblemService } from '../../server/modules/canonical-host/canonical-jobaid-problem.service';
 import { projectCommonAssessmentContext } from '../../server/modules/canonical-host/canonical-host-common-context.service';
-import { createConfigurationEvidenceReevaluation } from '../../server/modules/canonical-host/configuration-evidence/configuration-evidence-reevaluation.state';
+import {
+  configurationEvidenceShadow,
+  createConfigurationEvidenceReevaluation,
+} from '../../server/modules/canonical-host/configuration-evidence/configuration-evidence-reevaluation.state';
 import { JOBAID_METHOD_BINDING } from '../../server/modules/canonical-host/jobaid-method-pack';
 import { parseJobAidProblemTask } from '../../server/modules/canonical-host/jobaid-problem-task';
 
@@ -41,6 +48,25 @@ describe('JobAid continuation requests', () => {
     if (originalFlag === undefined)
       delete process.env.WL_JOBAID_PROBLEM_V2_ENABLED;
     else process.env.WL_JOBAID_PROBLEM_V2_ENABLED = originalFlag;
+  });
+
+  it('queues a browser request without reading runtime sources, history or actor transactions', async () => {
+    const h = harness();
+    const queued = await h.enqueue(REQUEST_1);
+
+    expect(readInitialAnalysisRequestInput(h.task(queued.attemptRef))).toEqual({
+      schemaVersion: INITIAL_ANALYSIS_REQUEST_SCHEMA,
+      taskType: 'OPENCLAW_DYNAMIC_EVALUATION',
+      requestId: REQUEST_1,
+    });
+    expect(h.artifactStore.readActualBytes).not.toHaveBeenCalled();
+    expect(h.work.listForRuntime).not.toHaveBeenCalled();
+    expect(h.work.withActorTransaction).not.toHaveBeenCalled();
+    expect(
+      h.conversations.hasActiveOfficialActorMapping,
+    ).not.toHaveBeenCalled();
+    expect(await h.enqueue(REQUEST_1)).toEqual({ ...queued, created: false });
+    expect(h.attempts.reserve).toHaveBeenCalledTimes(1);
   });
 
   it('rejects a new initial task before reservation when the Host owner mapping is no longer authorized', async () => {
@@ -108,7 +134,7 @@ describe('JobAid continuation requests', () => {
     },
   );
 
-  it('creates a new request from complete persisted work and exact English source while retaining the failed attempt', async () => {
+  it('prepares complete persisted work and exact English only when the runtime claims the new request', async () => {
     const h = harness();
     const first = await h.enqueue(REQUEST_1);
     h.rows.get(first.attemptRef)!.status = 'FAILED';
@@ -117,6 +143,18 @@ describe('JobAid continuation requests', () => {
     h.work.listForRuntime.mockResolvedValue([previous]);
 
     const second = await h.enqueue(REQUEST_2);
+    expect(
+      readInitialAnalysisRequestInput(h.task(second.attemptRef)),
+    ).not.toBeNull();
+    expect(h.artifactStore.readActualBytes).not.toHaveBeenCalled();
+    const claimed = await h.service.begin(
+      h.current(),
+      scope,
+      'INITIAL_PROBLEM_ASSESSMENT',
+      REQUEST_2,
+    );
+    expect(claimed.attemptRef).toBe(second.attemptRef);
+    expect(readInitialAnalysisRequestInput(claimed.task)).toBeNull();
     const input = parseJobAidProblemTask(h.task(second.attemptRef));
 
     expect(second).toMatchObject({
@@ -222,7 +260,15 @@ describe('JobAid continuation requests', () => {
       }
 
       const queued = await h.enqueue(REQUEST_1, purpose);
-      await h.service.begin(h.current(), scope, purpose, REQUEST_1);
+      expect(h.artifactStore.readActualBytes).not.toHaveBeenCalled();
+      expect(h.work.withActorTransaction).not.toHaveBeenCalled();
+      // Both real execution entry points supply the staged configuration view.
+      await h.service.begin(
+        configurationEvidenceShadow(h.current()),
+        scope,
+        purpose,
+        REQUEST_1,
+      );
       const replay = await h.enqueue(REQUEST_1, purpose);
 
       expect(queued.workItemRevision).toBe(6);
@@ -417,6 +463,20 @@ function harness() {
       const reserved = existing
         ? { row: existing, task: task(existing.operationRef!) }
         : await attempts.reserve(input);
+      if (readInitialAnalysisRequestInput(reserved.task)) {
+        const { inputHash: _oldHash, ...pending } = reserved.task;
+        reserved.task = sealTaskEnvelope({
+          ...pending,
+          modelInput: await input.buildModelInput({
+            attemptId: pending.actionAttemptId,
+            operationRef: pending.operationRef,
+            triggerRequestId: 'TRIGGER-CONTINUATION',
+            attemptNo: 1,
+            createdAt: new Date('2026-09-09T00:00:00.000Z'),
+          }),
+        });
+        reserved.row.taskEnvelopeJson = canonicalJson(reserved.task);
+      }
       reserved.row.status = 'RUNNING';
       return {
         attemptRef: reserved.task.operationRef,

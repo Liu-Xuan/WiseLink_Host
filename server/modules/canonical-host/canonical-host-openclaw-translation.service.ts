@@ -12,7 +12,14 @@ import type {
   UnifiedPackageArtifactDescriptor,
   UnifiedReaderQueryResult,
 } from '@shared/api.interface';
-import { canonicalJson } from '../action-attempt/action-attempt-envelope';
+import {
+  canonicalJson,
+  parseTaskEnvelope,
+} from '../action-attempt/action-attempt-envelope';
+import {
+  buildInitialAnalysisRequestInput,
+  readInitialAnalysisRequestInput,
+} from '../action-attempt/initial-analysis-request';
 import { ActionAttemptLifecycleService } from '../action-attempt/action-attempt-lifecycle.service';
 import type {
   OpenClawResultEnvelope,
@@ -197,6 +204,11 @@ export class CanonicalHostOpenClawTranslationService {
           idempotencyKey: semanticKey,
         })
       : null;
+    const queuedRequest = existingSemantic
+      ? readInitialAnalysisRequestInput(
+          parseTaskEnvelope(existingSemantic.taskEnvelopeJson),
+        )
+      : null;
     if (
       existingSemantic &&
       !['QUEUED', 'RUNNING', 'RETRY_SCHEDULED', 'COMMITTING'].includes(
@@ -233,6 +245,7 @@ export class CanonicalHostOpenClawTranslationService {
         useSemantic
           ? this.semanticTranslation.taskInput(
               await this.semanticTranslation.prepare(workItem, scope.tenantId),
+              queuedRequest?.retranslateBlockIds,
             )
           : (structuredClone(
               await this.buildTaskContract(workItem),
@@ -295,14 +308,12 @@ export class CanonicalHostOpenClawTranslationService {
       throw new Error('TRANSLATION_V2_NEW_REQUEST_DISABLED');
     if (!workItem.package)
       throw new Error('TRANSLATION_STRUCTURED_SOURCE_NOT_READY');
-    const workspace = await this.semanticTranslation.prepare(
-      workItem,
-      tenantId,
-    );
-    const modelInput = this.semanticTranslation.taskInput(
-      workspace,
-      retranslateBlockIds,
-    );
+    if (retranslateBlockIds.length)
+      await this.semanticTranslation.validateRetranslationScope(
+        workItem,
+        tenantId,
+        retranslateBlockIds,
+      );
     const reserved = await this.attempts.reserve({
       workItemId: workItem.workItemId,
       taskType: 'OPENCLAW_TRANSLATE',
@@ -319,7 +330,12 @@ export class CanonicalHostOpenClawTranslationService {
         },
       ],
       allowedConnectors: [],
-      buildModelInput: async () => modelInput,
+      buildModelInput: async () =>
+        buildInitialAnalysisRequestInput({
+          taskType: 'OPENCLAW_TRANSLATE',
+          requestId,
+          ...(retranslateBlockIds.length ? { retranslateBlockIds } : {}),
+        }),
     });
     return {
       attemptRef: reserved.task.operationRef,

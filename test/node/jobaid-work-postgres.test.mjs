@@ -37,6 +37,16 @@ const {
   ActionAttemptRepository,
 } = require('../../server/modules/action-attempt/action-attempt.repository.ts');
 const {
+  parseTaskEnvelope,
+} = require('../../server/modules/action-attempt/action-attempt-envelope.ts');
+const {
+  INITIAL_ANALYSIS_REQUEST_SCHEMA,
+  readInitialAnalysisRequestInput,
+} = require('../../server/modules/action-attempt/initial-analysis-request.ts');
+const {
+  parseJobAidProblemTask,
+} = require('../../server/modules/canonical-host/jobaid-problem-task.ts');
+const {
   MiaodaWorkItemRepository,
 } = require('../../server/modules/work-item/miaoda-work-item.repository.ts');
 const {
@@ -157,6 +167,8 @@ test(
     assert.ok(['127.0.0.1', 'localhost'].includes(url.hostname));
     assert.match(url.pathname, /^\/wiselink_jobaid_test_[a-z0-9_]+$/u);
     const sql = postgres(databaseUrl, { max: 4, onnotice() {} });
+    const originalFeatureFlag = process.env.WL_JOBAID_PROBLEM_V2_ENABLED;
+    process.env.WL_JOBAID_PROBLEM_V2_ENABLED = '1';
     try {
       await reset(sql);
       const db = drizzle(sql);
@@ -172,6 +184,20 @@ test(
         new Promise((resolve, reject) =>
           sqlContext.use(
             { userContext: { userId: '-1', isSystemAccount: true, roles: [] } },
+            {},
+            () => Promise.resolve().then(callback).then(resolve, reject),
+          ),
+        );
+      const browser = (callback) =>
+        new Promise((resolve, reject) =>
+          sqlContext.use(
+            {
+              userContext: {
+                userId: scope.actorUserId,
+                isSystemAccount: false,
+                roles: [],
+              },
+            },
             {},
             () => Promise.resolve().then(callback).then(resolve, reject),
           ),
@@ -225,11 +251,13 @@ test(
       );
 
       await t.test(
-        'initial JobAid authorizes before creating an attempt and rechecks the same claimed task under actual RLS',
+        'authenticated JobAid requests prepare only at Hosted begin and preserve actor authorization under actual RLS',
         async () => {
           const initial = initialProjection('WI-job-begin');
           const denied = initialProjection('WI-job-denied');
-          for (const candidate of [initial, denied]) {
+          const queued = initialProjection('WI-job-queued');
+          const queuedDenied = initialProjection('WI-job-queued-denied');
+          for (const candidate of [initial, denied, queued, queuedDenied]) {
             await sql`INSERT INTO work_item (work_item_id,tenant_id,requested_by_user_id,revision,document_version_id,projection_json)
               VALUES (${candidate.workItemId},${scope.tenantId},${scope.actorUserId},1,'dv-job',${JSON.stringify(candidate)})`;
           }
@@ -237,11 +265,23 @@ test(
             new ActionAttemptRepository(db),
             fixedModelSettings(),
           );
+          const workItems = new MiaodaWorkItemRepository(db);
+          let sourceReads = 0;
           const service = new CanonicalJobAidProblemService(
-            {},
             {
-              readActualBytes: async () =>
-                new TextEncoder().encode(
+              getTenantScopedByWorkItemId: async (input) => {
+                const loaded = await workItems.loadTenantScopedProjection(
+                  input.workItemId,
+                  input.tenantId,
+                );
+                assert.ok(loaded?.projection);
+                return loaded.projection;
+              },
+            },
+            {
+              readActualBytes: async () => {
+                sourceReads += 1;
+                return new TextEncoder().encode(
                   JSON.stringify({
                     sourceRefs: [
                       {
@@ -252,13 +292,14 @@ test(
                       },
                     ],
                   }),
-                ),
+                );
+              },
             },
             {},
             {},
             {},
             lifecycle,
-            new MiaodaWorkItemRepository(db),
+            workItems,
             reviews,
             {
               buildForWorkItemWithEvidence: async (candidate) => ({
@@ -281,7 +322,7 @@ test(
             },
             repository,
           );
-          const begin = (candidate) =>
+          const begin = (candidate, requestId) =>
             hosted(() =>
               service.begin(
                 candidate,
@@ -293,6 +334,7 @@ test(
                   authorizationFingerprint: 'isolated-host-owner-binding',
                 },
                 'INITIAL_PROBLEM_ASSESSMENT',
+                requestId,
               ),
             );
           const first = await begin(initial);
@@ -309,6 +351,76 @@ test(
             1,
           );
 
+          const enqueue = (candidate, requestId) =>
+            browser(async () => {
+              const [role] = await db.execute(drizzleSql`
+                SELECT current_user AS role,
+                  current_setting('app.user_id') AS actor
+              `);
+              assert.equal(role.role, 'authenticated_wiselink_jobaid_test');
+              assert.equal(role.actor, scope.actorUserId);
+              return service.enqueueContinuation(
+                candidate,
+                scope.tenantId,
+                'browser-permission-snapshot',
+                requestId,
+                'INITIAL_PROBLEM_ASSESSMENT',
+              );
+            });
+          const queuedRequestId = 'f11c6fa2-1531-4dfb-9f4d-bd2bef4d26bf';
+          const deniedRequestId = '60cae79e-364b-4e1b-a8ae-8cfbb7d04d5d';
+          const beforeEnqueueReads = sourceReads;
+          const receipt = await enqueue(queued, queuedRequestId);
+          assert.equal(receipt.status, 'QUEUED');
+          assert.equal(receipt.created, true);
+          assert.equal(sourceReads, beforeEnqueueReads);
+          const [pendingRow] =
+            await sql`SELECT * FROM action_attempt WHERE operation_ref = ${receipt.attemptRef}`;
+          assert.equal(pendingRow.actor_user_id, 'service:openclaw-main');
+          const pendingTask = parseTaskEnvelope(pendingRow.task_envelope_json);
+          assert.deepEqual(readInitialAnalysisRequestInput(pendingTask), {
+            schemaVersion: INITIAL_ANALYSIS_REQUEST_SCHEMA,
+            taskType: 'OPENCLAW_DYNAMIC_EVALUATION',
+            requestId: queuedRequestId,
+          });
+          assert.equal(
+            (
+              await sql`SELECT count(*)::int AS n FROM assessment_work_revision WHERE work_item_id = ${queued.workItemId}`
+            )[0].n,
+            0,
+          );
+          assert.deepEqual(await enqueue(queued, queuedRequestId), {
+            ...receipt,
+            created: false,
+          });
+          assert.equal(sourceReads, beforeEnqueueReads);
+          const prepared = await begin(queued, queuedRequestId);
+          assert.equal(prepared.attemptRef, receipt.attemptRef);
+          assert.equal(prepared.status, 'RUNNING');
+          assert.equal(readInitialAnalysisRequestInput(prepared.task), null);
+          assert.equal(
+            parseJobAidProblemTask(prepared.task).actorUserId,
+            scope.actorUserId,
+          );
+          assert.equal(sourceReads, beforeEnqueueReads + 1);
+          const {
+            modelInput: _pendingInput,
+            inputHash: pendingHash,
+            ...pendingBindings
+          } = pendingTask;
+          const {
+            modelInput: _preparedInput,
+            inputHash: preparedHash,
+            ...preparedBindings
+          } = prepared.task;
+          assert.deepEqual(preparedBindings, pendingBindings);
+          assert.notEqual(preparedHash, pendingHash);
+          const preparedReplay = await begin(queued, queuedRequestId);
+          assert.equal(preparedReplay.attemptRef, receipt.attemptRef);
+          assert.equal(preparedReplay.leaseToken, prepared.leaseToken);
+          assert.equal(sourceReads, beforeEnqueueReads + 1);
+          const deniedReceipt = await enqueue(queuedDenied, deniedRequestId);
+
           try {
             await sql`UPDATE identity_subject_mapping SET status = 'REVOKED' WHERE miaoda_user_id = ${scope.actorUserId}`;
             await assert.rejects(
@@ -321,6 +433,19 @@ test(
               ).length,
               0,
               'preflight rejection must not leave QUEUED or RUNNING work',
+            );
+            await assert.rejects(
+              begin(queuedDenied, deniedRequestId),
+              /JOBAID_ACTOR_AUTHORIZATION_CHANGED/u,
+            );
+            const [failedPreparation] =
+              await sql`SELECT status, claim_count, lease_token, error_code FROM action_attempt WHERE operation_ref = ${deniedReceipt.attemptRef}`;
+            assert.equal(failedPreparation.status, 'FAILED');
+            assert.equal(failedPreparation.claim_count, 0);
+            assert.equal(failedPreparation.lease_token, null);
+            assert.equal(
+              failedPreparation.error_code,
+              'JOBAID_ACTOR_AUTHORIZATION_CHANGED',
             );
             await assert.rejects(
               begin(initial),
@@ -643,7 +768,9 @@ test(
         'browser owner reads the same latest work; no role can update/delete a saved work row through RLS',
         async () => {
           await sql.begin(async (tx) => {
-            await tx.unsafe('SET LOCAL ROLE authenticated');
+            await tx.unsafe(
+              'SET LOCAL ROLE authenticated_wiselink_jobaid_test',
+            );
             await tx`SELECT set_config('app.user_id', 'actor-job', true)`;
             const rows =
               await tx`SELECT assessment_work_revision_id FROM assessment_work_revision ORDER BY work_revision DESC`;
@@ -762,6 +889,9 @@ test(
         },
       );
     } finally {
+      if (originalFeatureFlag === undefined)
+        delete process.env.WL_JOBAID_PROBLEM_V2_ENABLED;
+      else process.env.WL_JOBAID_PROBLEM_V2_ENABLED = originalFeatureFlag;
       await sql.end({ timeout: 5 });
     }
   },
@@ -804,6 +934,15 @@ async function reset(sql) {
     ALTER COLUMN lease_generation SET DEFAULT 0,
     ALTER COLUMN projection_applied SET DEFAULT false;
     ALTER TABLE identity_subject_mapping ENABLE ROW LEVEL SECURITY;`);
+  // Match the existing platform ALL policies on these two tables. Source/work
+  // history and identity tables retain their actual actor-bound RLS below.
+  for (const name of ['work_item', 'action_attempt']) {
+    await sql.unsafe(`ALTER TABLE ${name} ENABLE ROW LEVEL SECURITY;
+      CREATE POLICY ${name}_authenticated ON ${name}
+        FOR ALL TO authenticated_wiselink_jobaid_test USING (true);
+      CREATE POLICY ${name}_service ON ${name}
+        FOR ALL TO service_role_wiselink_jobaid_test USING (true);`);
+  }
   const migration = await sql.reserve();
   try {
     for (const name of [

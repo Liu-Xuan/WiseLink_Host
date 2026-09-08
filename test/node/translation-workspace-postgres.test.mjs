@@ -10,13 +10,17 @@ process.env.TS_NODE_COMPILER_OPTIONS = JSON.stringify({ module: 'CommonJS', modu
 const require = createRequire(import.meta.url);
 require('ts-node/register/transpile-only'); require('tsconfig-paths/register');
 const { drizzle } = require('drizzle-orm/postgres-js');
-const { eq } = require('drizzle-orm');
+const { eq, sql: drizzleSql } = require('drizzle-orm');
 const { getTableConfig } = require('drizzle-orm/pg-core');
 const { SqlExecutionContextMiddleware } = require('@lark-apaas/fullstack-nestjs-core');
 const { actionAttempt } = require('../../server/database/schema.ts');
-const { sealTaskEnvelope, canonicalJson } = require('../../server/modules/action-attempt/action-attempt-envelope.ts');
+const { sealTaskEnvelope, canonicalJson, parseTaskEnvelope } = require('../../server/modules/action-attempt/action-attempt-envelope.ts');
 const { CanonicalTranslationWorkspaceRepository } = require('../../server/modules/canonical-host/canonical-translation-workspace.repository.ts');
 const { ActionAttemptRepository } = require('../../server/modules/action-attempt/action-attempt.repository.ts');
+const { ActionAttemptLifecycleService } = require('../../server/modules/action-attempt/action-attempt-lifecycle.service.ts');
+const { readInitialAnalysisRequestInput } = require('../../server/modules/action-attempt/initial-analysis-request.ts');
+const { CanonicalHostOpenClawTranslationService } = require('../../server/modules/canonical-host/canonical-host-openclaw-translation.service.ts');
+const { fixedModelSettings } = require('../support/fixed-model-settings.ts');
 const { ACTION_ATTEMPT_REQUEST_ORIGIN } = require('../../server/modules/action-attempt/action-attempt.types.ts');
 const { CanonicalTranslationV2Service } = require('../../server/modules/canonical-host/canonical-translation-v2.service.ts');
 const { buildTranslationSourcePlan } = require('../../server/modules/canonical-host/canonical-translation-source-plan.ts');
@@ -346,6 +350,171 @@ test('real PostgreSQL translation work survives bounded requests and enforces sc
       assert.equal(after.workspace.rowVersion, before.workspace.rowVersion + 1);
       assert.equal(after.revisions.find((entry) => entry.blockRevisionId === blockId).rowVersion, before.revisions[0].rowVersion + 1);
     });
+    await t.test('authenticated translation intents prepare at Hosted claim with one lease and fenced failure/cancellation', async (t) => {
+      await sql.unsafe(`ALTER TABLE work_item ADD COLUMN projection_json text DEFAULT '{}';
+        ALTER TABLE action_attempt ALTER COLUMN id SET DEFAULT gen_random_uuid(),
+          ALTER COLUMN claim_count SET DEFAULT 0, ALTER COLUMN retry_count SET DEFAULT 0,
+          ALTER COLUMN lease_generation SET DEFAULT 0, ALTER COLUMN projection_applied SET DEFAULT false;
+        DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='service_role_translation_snapshot_test')
+          THEN CREATE ROLE service_role_translation_snapshot_test; END IF; END $$;
+        GRANT service_role TO service_role_translation_snapshot_test;`);
+      // These existing platform policies permit the queue, while translation
+      // workspace RLS remains SELECT-only for the authenticated browser.
+      for (const name of ['work_item', 'action_attempt']) {
+        await sql.unsafe(`ALTER TABLE ${name} ENABLE ROW LEVEL SECURITY;
+          CREATE POLICY ${name}_authenticated ON ${name} FOR ALL TO authenticated USING (true);
+          CREATE POLICY ${name}_service ON ${name} FOR ALL TO service_role USING (true);`);
+      }
+      const sqlContext = new SqlExecutionContextMiddleware({ roleSchema: 'translation_snapshot_test' });
+      const asRole = (system, operation) => new Promise((resolve, reject) => sqlContext.use(
+        { userContext: { userId: system ? '-1' : 'engineer-test', isSystemAccount: system, roles: [] } }, {},
+        () => Promise.resolve().then(operation).then(resolve, reject),
+      ));
+      const browser = (operation) => asRole(false, operation);
+      const hosted = (operation) => asRole(true, operation);
+      const attemptRepository = new ActionAttemptRepository(db);
+      const lifecycle = new ActionAttemptLifecycleService(attemptRepository, fixedModelSettings());
+      let sourceReads = 0;
+      let sourceHook = async () => {};
+      const reader = { readStructuredSource: async () => {
+        const [role] = await db.execute(drizzleSql`SELECT current_user AS role`);
+        assert.equal(role.role, 'service_role_translation_snapshot_test');
+        sourceReads += 1;
+        await sourceHook();
+        return fixtureSource();
+      } };
+      const items = new Map();
+      const registrar = { getTenantScopedByWorkItemId: async ({ workItemId, tenantId }) => {
+        assert.equal(tenantId, 'tenant-test'); assert.ok(items.has(workItemId));
+        return items.get(workItemId);
+      } };
+      const scope = { authorizeOpenClawWorkItem: async ({ workItemId }) => ({
+        tenantId: 'tenant-test', workItemId, principalId: 'service-principal',
+        appId: 'app_17bzc551rsg', authorizationFingerprint: 'synthetic-scope',
+      }) };
+      const semantic = new CanonicalTranslationV2Service(repository, reader, lifecycle, {}, scope);
+      const translation = new CanonicalHostOpenClawTranslationService(registrar, {}, reader, {}, lifecycle, scope, semantic);
+      const originalFeatureFlag = process.env.WL_TRANSLATION_V2_ENABLED;
+      process.env.WL_TRANSLATION_V2_ENABLED = '1';
+      const newRequest = async (suffix) => {
+        const workItem = { workItemId: `WI-intent-${suffix}`, revision: 1, phase: 'CANDIDATE_READBACK_VERIFIED',
+          source: { documentId: 'doc-test', documentVersionId: 'dv-test' },
+          package: { packageId: 'pkg-test', contractId: 'techpub.parsed-package.v1', contractRevision: 'frozen.2',
+            artifact: plan.source.parsedArtifact, contentUnitCount: 2 } };
+        items.set(workItem.workItemId, workItem);
+        await sql`INSERT INTO work_item (work_item_id, tenant_id, document_version_id, package_id, package_artifact_ref,
+          package_artifact_sha256, requested_by_user_id, revision, projection_json)
+          VALUES (${workItem.workItemId}, 'tenant-test', 'dv-test', 'pkg-test', ${plan.source.parsedArtifact.ref},
+            ${plan.source.parsedArtifact.sha256}, 'engineer-test', 1, ${JSON.stringify(workItem)})`;
+        const requestId = randomUUID();
+        const readsBefore = sourceReads;
+        const receipt = await browser(async () => {
+          const [role] = await db.execute(drizzleSql`SELECT current_user AS role`);
+          assert.equal(role.role, 'authenticated_translation_snapshot_test');
+          return translation.enqueueContinuation(workItem, 'tenant-test', requestId);
+        });
+        assert.equal(receipt.status, 'QUEUED'); assert.equal(receipt.created, true);
+        assert.equal(sourceReads, readsBefore);
+        assert.equal((await sql`SELECT workspace_id FROM translation_workspace WHERE work_item_id = ${workItem.workItemId}`).length, 0);
+        const row = await hosted(() => lifecycle.readScoped({ ...receipt, tenantId: 'tenant-test', workItemId: workItem.workItemId }));
+        const task = parseTaskEnvelope(row.taskEnvelopeJson);
+        assert.equal(readInitialAnalysisRequestInput(task).requestId, requestId);
+        assert.equal(row.claimCount, 0); assert.equal(row.leaseToken, null);
+        return { workItem, requestId, receipt, row, task,
+          begin: () => hosted(() => translation.begin(workItem.workItemId, requestId)),
+          cancel: () => hosted(() => lifecycle.requestCancel({ attemptRef: receipt.attemptRef, tenantId: 'tenant-test',
+            workItemId: workItem.workItemId, reason: 'Synthetic test cancellation' })),
+        };
+      };
+      const unchangedBindings = (pending, prepared) => {
+        const { modelInput: _pending, inputHash: pendingHash, ...before } = pending;
+        const { modelInput: _prepared, inputHash: preparedHash, ...after } = prepared;
+        assert.deepEqual(after, before); assert.notEqual(preparedHash, pendingHash);
+        assert.equal(readInitialAnalysisRequestInput(prepared), null);
+        assert.equal(prepared.modelInput.schemaVersion, 'wiselink.3_1.translation_task.v2');
+      };
+      try {
+        await t.test('browser replay creates no source work; runtime prepares once and preserves all request bindings', async () => {
+          const pending = await newRequest('success');
+          const readsBefore = sourceReads;
+          assert.deepEqual(await browser(() => translation.enqueueContinuation(pending.workItem, 'tenant-test', pending.requestId)), {
+            ...pending.receipt, created: false,
+          });
+          const claimed = await pending.begin();
+          assert.equal(claimed.attemptRef, pending.receipt.attemptRef);
+          assert.equal(sourceReads, readsBefore + 1);
+          unchangedBindings(pending.task, claimed.task);
+          assert.equal((await sql`SELECT workspace_id FROM translation_workspace WHERE work_item_id = ${pending.workItem.workItemId}`).length, 1);
+          const replay = await pending.begin();
+          assert.equal(replay.leaseToken, claimed.leaseToken); assert.equal(replay.leaseGeneration, 1);
+          assert.equal(sourceReads, readsBefore + 1);
+          const { inputHash: _claimedHash, ...unsealedClaimed } = claimed.task;
+          const changed = sealTaskEnvelope({ ...unsealedClaimed, modelInput: { ...claimed.task.modelInput, contextRevision: 999 } });
+          assert.equal(await hosted(() => attemptRepository.prepareInitialRequestInput(pending.row, changed)), null);
+          await hosted(() => attemptRepository.failInitialRequestPreparation(pending.row, 'SYNTHETIC_LATE_FAILURE'));
+          const current = await hosted(() => attemptRepository.readByAttemptId(pending.row.attemptId));
+          assert.equal(current.status, 'RUNNING'); assert.equal(current.claimCount, 1);
+          assert.equal(current.taskInputHash, claimed.task.inputHash); assert.equal(current.errorCode, null);
+          await pending.cancel();
+        });
+        await t.test('source preparation failure terminates only its queued request without a lease or result', async () => {
+          const pending = await newRequest('failure');
+          sourceHook = async () => { throw new Error('SYNTHETIC_SOURCE_READ_FAILED'); };
+          try { await assert.rejects(pending.begin(), /SYNTHETIC_SOURCE_READ_FAILED/u); }
+          finally { sourceHook = async () => {}; }
+          const current = await hosted(() => attemptRepository.readByAttemptId(pending.row.attemptId));
+          assert.equal(current.status, 'FAILED'); assert.equal(current.errorCode, 'SYNTHETIC_SOURCE_READ_FAILED');
+          assert.equal(current.claimCount, 0); assert.equal(current.leaseToken, null);
+          assert.equal(current.taskInputHash, pending.task.inputHash);
+          assert.equal(current.resultEnvelopeJson, null); assert.equal(current.projectionApplied, false);
+        });
+        await t.test('cancellation during preparation is preserved by both preparation and failure CAS', async () => {
+          const pending = await newRequest('cancel');
+          sourceHook = async () => { await pending.cancel(); };
+          try { await assert.rejects(pending.begin(), /ACTION_ATTEMPT_ALREADY_CANCELLED/u); }
+          finally { sourceHook = async () => {}; }
+          await hosted(() => attemptRepository.failInitialRequestPreparation(pending.row, 'SYNTHETIC_LATE_FAILURE'));
+          const current = await hosted(() => attemptRepository.readByAttemptId(pending.row.attemptId));
+          assert.equal(current.status, 'CANCELLED'); assert.equal(current.claimCount, 0);
+          assert.equal(current.taskInputHash, pending.task.inputHash); assert.equal(current.leaseToken, null);
+          assert.equal(current.resultEnvelopeJson, null); assert.equal(current.projectionApplied, false);
+        });
+        await t.test('concurrent runtime preparation converges on one saved envelope and one lease', async () => {
+          const pending = await newRequest('concurrent');
+          let arrived = 0; let release;
+          const bothRead = new Promise((resolve) => { release = resolve; });
+          sourceHook = async () => { if (++arrived === 2) release(); await bothRead; };
+          let claims;
+          try { claims = await Promise.all([pending.begin(), pending.begin()]); }
+          finally { sourceHook = async () => {}; }
+          assert.equal(arrived, 2);
+          assert.equal(claims[0].leaseToken, claims[1].leaseToken);
+          assert.equal(claims[0].task.inputHash, claims[1].task.inputHash);
+          unchangedBindings(pending.task, claims[0].task);
+          const current = await hosted(() => attemptRepository.readByAttemptId(pending.row.attemptId));
+          assert.equal(current.claimCount, 1); assert.equal(current.leaseGeneration, 1);
+          assert.equal((await sql`SELECT workspace_id FROM translation_workspace WHERE work_item_id = ${pending.workItem.workItemId}`).length, 1);
+          await pending.cancel();
+        });
+        await t.test('an expired queued request performs no source preparation and gets no new deadline', async () => {
+          const pending = await newRequest('expired');
+          const expiredAt = new Date(Date.now() - 1000);
+          const { inputHash: _pendingHash, ...unsealedPending } = pending.task;
+          const expiredTask = sealTaskEnvelope({ ...unsealedPending, deadline: expiredAt.toISOString() });
+          await sql`UPDATE action_attempt SET deadline_at = ${expiredAt.toISOString()}, task_envelope_json = ${canonicalJson(expiredTask)},
+            task_input_hash = ${expiredTask.inputHash} WHERE attempt_id = ${pending.row.attemptId}`;
+          const readsBefore = sourceReads;
+          await assert.rejects(pending.begin(), /ACTION_ATTEMPT_TIMED_OUT/u);
+          assert.equal(sourceReads, readsBefore);
+          const current = await hosted(() => attemptRepository.readByAttemptId(pending.row.attemptId));
+          assert.equal(current.status, 'TIMED_OUT'); assert.equal(current.claimCount, 0);
+          assert.equal(current.deadlineAt.toISOString(), expiredAt.toISOString());
+        });
+      } finally {
+        if (originalFeatureFlag === undefined) delete process.env.WL_TRANSLATION_V2_ENABLED;
+        else process.env.WL_TRANSLATION_V2_ENABLED = originalFeatureFlag;
+      }
+    });
   } finally { await sql.end({ timeout: 5 }); }
 });
 
@@ -386,15 +555,18 @@ async function reset(sql) {
   await sql.unsafe('GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA public TO service_role, authenticated');
 }
 function fixturePlan() {
-  const texts = ['Synthetic test description', 'Do not replace the unit unless the indication remains after 5 seconds.'];
   return buildTranslationSourcePlan({ documentVersionId: 'dv-test', packageId: 'pkg-test', title: 'Synthetic only',
     parsedArtifact: { storeRole: 'UnifiedArtifactStoreCandidate', ref: 'artifact://synthetic/source', sha256: '1'.repeat(64), byteLength: 1, mediaType: 'application/json' },
-    source: { modules: [{ moduleId: 'm', order: 0 }], findings: [], references: [],
+    source: fixtureSource() });
+}
+function fixtureSource() {
+  const texts = ['Synthetic test description', 'Do not replace the unit unless the indication remains after 5 seconds.'];
+  return { modules: [{ moduleId: 'm', order: 0 }], findings: [], references: [],
       sourceLocators: texts.map((_text, i) => ({ sourceRefId: `sr${i}`, kind: 'pdf_page', artifactId: 'source', pageStart: i + 1, pageEnd: i + 1, charStart: null, charEnd: null, charOffsetUnit: null, normalizedPath: null, xpath: null, elementId: null, quote: null, bbox: null })),
       units: texts.map((text, i) => ({ unitId: `u${i}`, kind: i === 0 ? 'heading' : 'paragraph', moduleId: 'm', parentUnitId: i === 0 ? null : 'u0', order: i, depth: i,
         continuityKey: `u${i}`, sourceRefIds: [`sr${i}`], sourceSegmentIds: [`seg${i}`], mapping: { status: 'mapped_exactly', confidence: 'deterministic', findingIds: [] },
         payload: i === 0 ? { text, level: 1 } : { text, role: 'body' } })),
-    } });
+    };
 }
 async function seedAttempt(sql, workspace, suffix, modelRef, extraModelInput = {}) {
   const now = new Date(); const leaseToken = randomUUID(); const deadline = new Date(now.getTime() + 60 * 60_000);
