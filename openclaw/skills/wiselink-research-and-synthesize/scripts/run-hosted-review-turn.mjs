@@ -62,13 +62,17 @@ const REVIEW_RESPONSE_TYPES = [
   'AFFECTED_ITEMS_PREVIEW',
   'TASK_STATUS',
 ];
-const REVIEW_PROMPT_VERSION = 'wiselink.3_1.review_prompt.v1.c37';
+const REVIEW_PROMPT_VERSION = 'wiselink.3_1.review_prompt.v1.c38';
 const WISELINK_HOST_MCP_CONFIG_KEYS = new Set([
   WISELINK_HOST_MCP_NAME,
   'wiselink_host_controller',
 ]);
 const MAX_SOURCE_REFS = 100;
 const MAX_GATEWAY_BYTES = 4 * 1024 * 1024;
+// User requested the official M3 maximum after real 16000-token truncations.
+// MiniMax Chat Completions documents a 524288-token maximum (2026-09-08).
+// This is an output allowance, not a target length or actual usage claim.
+export const M3_MAX_COMPLETION_TOKENS = 524_288;
 
 /**
  * Execute one review turn with durable, model-external control-plane state.
@@ -253,6 +257,8 @@ export async function runHostedReviewTurn(options, dependencies = {}) {
 
 export async function invokeHostedReviewModel(input, options = {}, dependencies = {}) {
   const modelHeaders = executionModelHeaders(options);
+  const maxCompletionTokens = options.executionModel?.modelRef === 'miaoda/minimax-m3'
+    ? M3_MAX_COMPLETION_TOKENS : undefined;
   const gatewayUrl = requiredUrl(
     options.gatewayUrl,
     'REVIEW_GATEWAY_URL_REQUIRED',
@@ -336,6 +342,9 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
           parallel_tool_calls: false,
           n: 1,
           stream: false,
+          ...(maxCompletionTokens === undefined ? {} : {
+            max_completion_tokens: maxCompletionTokens,
+          }),
         }),
         signal,
       });
@@ -360,6 +369,7 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
       httpStatus: response.status,
       httpOk: response.ok,
       requestedModel: `openclaw/${agentId}`,
+      requestedMaxCompletionTokens: maxCompletionTokens,
       payload,
     });
     if (observeOutputShape) await observeOutputShape(outputShape, round);
@@ -487,6 +497,7 @@ export function summarizeHostedReviewModelOutputShape({
   httpStatus,
   httpOk,
   requestedModel,
+  requestedMaxCompletionTokens,
   payload,
   expectedFunctionNames = [REVIEW_OUTPUT_FUNCTION_NAME, REVIEW_READ_FUNCTION_NAME],
 }) {
@@ -554,6 +565,8 @@ export function summarizeHostedReviewModelOutputShape({
     functionArgumentsAccepted;
   return {
     schemaVersion: MODEL_OUTPUT_SHAPE_SCHEMA,
+    requestedMaxCompletionTokens: Number.isSafeInteger(requestedMaxCompletionTokens) && requestedMaxCompletionTokens > 0
+      ? requestedMaxCompletionTokens : null,
     http: {
       status: Number.isSafeInteger(httpStatus) ? httpStatus : null,
       ok: httpOk === true,
@@ -1016,6 +1029,7 @@ function validateModelOutputShape(value) {
       canonicalJson(
         [
           'schemaVersion',
+          ...(Object.hasOwn(value, 'requestedMaxCompletionTokens') ? ['requestedMaxCompletionTokens'] : []),
           'http',
           'routing',
           'finishReason',
@@ -1056,6 +1070,8 @@ function validateModelOutputShape(value) {
         ].sort(),
       ) ||
     (value.http.status !== null && !Number.isSafeInteger(value.http.status)) ||
+    (Object.hasOwn(value, 'requestedMaxCompletionTokens') && value.requestedMaxCompletionTokens !== null &&
+      (!Number.isSafeInteger(value.requestedMaxCompletionTokens) || value.requestedMaxCompletionTokens <= 0)) ||
     typeof value.http.ok !== 'boolean' ||
     !Number.isSafeInteger(value.choiceCount) ||
     value.choiceCount < 0 ||
@@ -1319,7 +1335,7 @@ function matterReviewGuidance() {
     'matterWorkingDelta has exactly updateKind, changeSummary, nextFocus, claimDelta, readingPresentation, openQuestionDelta, reviewConditionDelta, coverageUpdates. nextFocus is null to retain the focus or {question,targetRefs}. claimDelta and readingPresentation are both null to retain the exact current result, or both objects to revise it. Host supplies the scope, identities, versions and CAS; never generate those control bindings.',
     'claimDelta={changedBecause,additions,replacements,retirements,explicitlyUnchangedClaimIds}. Each addition or replacement is {claimId,text,basis:"SOURCE_FACT"|"CONDITIONAL_INFERENCE",premises:[{evidenceRef,role:"SUPPORTS"|"LIMITS"|"CONTEXT"|"CONFLICTS",explanation,limitation:string|null}]}. Replacements keep the exact existing claimId. Retirements are {claimId,reason}. Account for every current claim exactly once as replacement, retirement or explicitlyUnchangedClaimIds; keep all unmentioned substance and its premises through the unchanged IDs. Never add a new claimId to disguise a correction to an existing claim.',
     'When context.matterWorking.targetClaimId is present, focus the requested correction or explanation on that existing claim and retain other claims unless the supplied facts actually change them. A correction preserves the target claimId through a replacement.',
-    'readingPresentation={headline,listBrief,lead,decisiveClaimIds} describes the complete next reading, including retained claims. Keep decisive conditions, limits, uncertainty and negations visible across these reading depths. openQuestionDelta and reviewConditionDelta are null to retain their items, or {upserts:[{itemId,text,basisRefs}],retirements:[{itemId,reason}],explicitlyUnchangedItemIds}; preserve existing itemIds and account for every current item.',
+    'readingPresentation={headline,listBrief,lead,decisiveClaimIds} describes the complete next reading, including retained claims. headline, listBrief and lead are each one nonempty string, never an array or object; listBrief is the concise text displayed in a list row, not a list of bullets. decisiveClaimIds is an array of existing next-reading claimId strings. Keep decisive conditions, limits, uncertainty and negations visible across these reading depths. openQuestionDelta and reviewConditionDelta are null to retain their items, or {upserts:[{itemId,text,basisRefs}],retirements:[{itemId,reason}],explicitlyUnchangedItemIds}; preserve existing itemIds and account for every current item.',
     'Cite only registered evidenceRef values. An evidenceCatalog entry is a directory, not proof of reading. For every added or replaced DOCUMENT_PASSAGE premise, call read_wiselink_review_sources this turn using its sourceRefId and inspect the returned fragment with matching evidenceRef. The sourceRefId is a local key for this task: two documents can share an original SourceRef, so never substitute the original ID or a different document key. Remembered or unchanged prior claims do not authorize a newly cited passage. Non-document premises need their actual providedText or a read in this turn. ENGINEER_STATEMENT supports only what the engineer supplied; PRIOR_RESULT is prior candidate context and QUERY_RECEIPT covers only its explicit checked scope.',
     'coverageUpdates contains only ranges actually checked this turn: {inputRef,checkedSourceRefIds,checkedScope,contribution:"SUBSTANTIVE"|"NO_MATERIAL_CHANGE",reason}. Copy inputRef from the input list, use nonempty checkedSourceRefIds read for that same input, and explain the bounded checkedScope and contribution. A catalog, file name, pending flag or one excerpt never establishes that the complete PDF was read. Keep pending material visibly pending until its relevant range has actually been checked; do not infer coverage from document presence.',
     'For a plain explanation, source link, question or status, use empty candidateEvidenceRefs. CANDIDATE_EVIDENCE remains limited to actual authorized attachment refs read this turn. Ordinary corrections and working judgments use matterWorkingDelta without formal adoption.',

@@ -1,4 +1,16 @@
-# 官方托管 R10 c35 发布与 UAT runbook
+# 官方托管 R10 c38 发布与 UAT runbook
+
+c38 按用户要求，为明确选择 M3 的初始分析与每轮 Review 请求申请官方最大 524288 completion tokens，
+来源为 [MiniMax Chat Completions 参数说明](https://platform.minimax.io/docs/api-reference/text-chat-openai)（2026-09-08）。
+真实 c37 Matter 回合先读取 77 条
+来源，随后两次以 `length` 用尽 16000 输出额度、没有候选载荷，Gateway 返回 `incomplete_result`；不把它
+误判为候选参数校验错误。额度写入安全 output-shape，原输入、会话、总时限和全部校验保持。安装前等待当前
+回合结束并暂停唯一消费者，再用正常新回合核对实际额度、来源读回和候选保存；旧失败不重放。
+当前 Hosted M3 配置原为 maxTokens=16000，native adapter 会取请求值与配置值的较小者；只改请求并不能
+解除限制。按用户最新授权通过官方配置接口将同一路由的 maxTokens 调到 524288，并实读生效值；其余模型与
+provider 不变。每次实际执行同时记录申请额度、实际 usage/stopReason 和候选保存结果。
+DLI 的 c37 Matter 回合两轮均 HTTP 200/tool_calls，候选 JSON carrier 成功，但 listBrief 返回 array[4]，在
+候选校验时失败。c38 明确 headline/listBrief/lead 为非空字符串；校验继续拒绝错误类型，不手工修补旧候选。
 
 c35 为 M3 JobAid 显式申请 32000 completion tokens：c34 的真实 150 项调用未设置该请求参数，上游
 以 `length` 结束且无可用候选，Gateway 返回 `incomplete_result`。全部准则、输入、校验、原操作时限与模型
@@ -113,7 +125,7 @@ c24 可选控制元数据兼容旧任务，但旧 Skill 不接受新字段，因
    优先读回非空、可识别的实际 `modelVersion`；响应未提供时，绑定任务记录 `configured-route:<modelRef>`，旧任务才使用唯一 configured endpoint。它们只证明路由，不解释为未暴露的下游具体模型。重复 agent、
    不可读 primary、fallbacks 非数组或非空均在调用模型前停止；
 4. 同名 Skill 只有一个，安装版本精确
-   `wiselink-research-and-synthesize@r09.c37`；
+   `wiselink-research-and-synthesize@r09.c38`；
 5. Host MCP package/version 为
    `wiselink-openclaw-engineering-assessment@1.2.0`，exact 20 tools 可见；
 6. C3 successor 已进入 current Hosted release；只凭 Git commit 不等于 deployed readback；

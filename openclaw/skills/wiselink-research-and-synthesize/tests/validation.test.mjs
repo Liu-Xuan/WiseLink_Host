@@ -298,7 +298,7 @@ test('routes both registered models for Initial and Review without changing prof
       assert.equal(body.model, 'openclaw/wiselink-engineering');
       assert.equal(JSON.stringify(body.messages).includes('settingsRevision'), false);
       assert.equal(body.max_completion_tokens,
-        !review && modelRef === 'miaoda/minimax-m3' ? 32_000 : undefined);
+        modelRef === 'miaoda/minimax-m3' ? 524_288 : undefined);
       if (review) assert.equal(init.headers['x-openclaw-session-key'], 'agent:wiselink-engineering:review:ACTX-RS-fixture');
       return Response.json({ model: 'openclaw/wiselink-engineering', choices: [{ message: {
         content: null, tool_calls: [{ type: 'function', function: {
@@ -347,7 +347,7 @@ test('M3 JobAid has a bounded output budget and preserves the complete criterion
         calls += 1;
         const request = JSON.parse(init.body);
         assert.equal(init.headers['x-openclaw-model'], modelRef);
-        assert.equal(request.max_completion_tokens, modelRef === 'miaoda/minimax-m3' ? 32_000 : undefined);
+        assert.equal(request.max_completion_tokens, modelRef === 'miaoda/minimax-m3' ? 524_288 : undefined);
         assert.deepEqual(JSON.parse(request.messages[1].content), modelInput);
         return Response.json({ model: 'openclaw/wiselink-engineering', choices: [{ message: {
           content: null,
@@ -359,7 +359,7 @@ test('M3 JobAid has a bounded output budget and preserves the complete criterion
     });
     assert.equal(calls, 1);
     assert.deepEqual(result.output, candidate);
-    assert.equal(observed[0].requestedMaxCompletionTokens, modelRef === 'miaoda/minimax-m3' ? 32_000 : null);
+    assert.equal(observed[0].requestedMaxCompletionTokens, modelRef === 'miaoda/minimax-m3' ? 524_288 : null);
     assert.equal(result.provenance.modelVersion, `configured-route:${modelRef}`);
   }
 });
@@ -385,7 +385,7 @@ test('official initial model adapter validates all four operation outputs withou
       const request = JSON.parse(init.body);
       assert.equal(request.model, 'openclaw/wiselink-engineering');
       assert.equal(request.user, 'initial:control-session-only');
-      assert.equal(Object.hasOwn(request, 'max_completion_tokens'), false);
+      assert.equal(request.max_completion_tokens, 524_288);
       assert.deepEqual(JSON.parse(request.messages[1].content), modelInput);
       assert.equal(JSON.stringify(request.messages).includes('control-session-only'), false);
       return new Response(JSON.stringify({ model: 'actual-official-model', choices: [{ message: {
@@ -395,7 +395,8 @@ test('official initial model adapter validates all four operation outputs withou
     };
     const result = await invokeHostedInitialModel({ operation, modelInput }, {
       gatewayChatCompletionsEnabled: true, gatewayUrl: 'https://official.invalid', gatewayToken: 'test-only',
-      configuredModelVersion: 'miaoda/miaoda-model-auto', sessionDiscriminator: 'control-session-only',
+      configuredModelVersion: 'miaoda/minimax-m3', sessionDiscriminator: 'control-session-only',
+      executionModel: modelSelection('miaoda/minimax-m3'), registeredModelRefs: ['miaoda/minimax-m3'],
     });
     assert.deepEqual(result.output, candidate);
     assert.equal(result.provenance.modelVersion, 'actual-official-model');
@@ -650,7 +651,7 @@ test('translation corrects only rejected units in the same full-document session
       assert.equal(request.user, 'initial:correction-session');
       assert.equal(init.headers['x-openclaw-model'], modelRef);
       assert.equal(request.max_completion_tokens,
-        modelRef === 'miaoda/minimax-m3' ? 32_000 : undefined);
+        modelRef === 'miaoda/minimax-m3' ? 524_288 : undefined);
       let rows;
       if (calls === 0) {
         assert.deepEqual(JSON.parse(request.messages[1].content), input);
@@ -742,7 +743,7 @@ test('translation resolves a converging seven-unit token shift in one 437-unit s
       const feedback = JSON.parse(request.messages[2].content);
       const window = feedback.translationOutputWindow;
       assert.equal(request.user, 'initial:shifted-437');
-      assert.equal(request.max_completion_tokens, 32_000);
+      assert.equal(request.max_completion_tokens, 524_288);
       if (calls === 0) assert.deepEqual(JSON.parse(request.messages[1].content), unchangedInput);
       else assert.equal(JSON.stringify(request.messages).includes('sourceUnits\":['), false);
       calls += 1;
@@ -1225,7 +1226,7 @@ test('pins exact20 MCP 1.2, five review tools, and hosted provenance', () => {
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c37',
+    'wiselink-research-and-synthesize@r09.c38',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -3105,6 +3106,9 @@ test('Matter Review c4 continues two native turns with scoped source keys, prese
   for (const turnNo of [1, 2]) {
     const { reviewTask, delta } = await matterReviewFixture(turnNo);
     const task = makeTask('OPENCLAW_INTERACTIVE_REVIEW', reviewTask, [], reviewTask.resourceRefs.map((ref) => ({ ref: ref.resourceArtifactRef, sha256: ref.resourceArtifactSha256 })));
+    task.executionModel = modelSelection('miaoda/minimax-m3');
+    const { inputHash: _inputHash, ...unsealed } = task;
+    task.inputHash = canonicalSha256(unsealed);
     const checkpointDir = await mkdtemp(join(tmpdir(), 'wiselink-matter-review-'));
     directories.push(checkpointDir);
     const requested = turnNo === 1 ? ['matter-source:1:1', 'matter-source:2:1'] : ['matter-source:1:1'];
@@ -3130,7 +3134,8 @@ test('Matter Review c4 continues two native turns with scoped source keys, prese
         throw new Error('UNEXPECTED_TOOL:' + name);
       },
       invokeModel: (input, hooks) => invokeReviewWithTransport(input, {
-        gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider', ...hooks,
+        gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+        registeredModelRefs: ['miaoda/minimax-m3'], ...hooks,
       }, { requestGateway: async (_url, init) => {
         const body = JSON.parse(init.body);
         requests.push({ body, headers: init.headers });
@@ -3147,6 +3152,7 @@ test('Matter Review c4 continues two native turns with scoped source keys, prese
         assert.equal(schema.properties.candidateJson.type, 'string');
         assert.deepEqual(Object.keys(schema.properties), ['candidateJson']);
         assert.equal(body.tool_choice, 'required');
+        assert.equal(body.max_completion_tokens, 524_288);
         if (modelCalls === 1) {
           assert.equal(serialized.includes('SOURCE_A_FULL_PASSAGE'), false);
           assert.equal(serialized.includes('SOURCE_B_FULL_PASSAGE'), false);
@@ -3156,6 +3162,7 @@ test('Matter Review c4 continues two native turns with scoped source keys, prese
           assert.match(body.messages[1].content, /not force an implementation/u);
           assert.match(body.messages[1].content, /reviewActionDraft=null and affectedItemIds=\[\]/u);
           assert.match(body.messages[1].content, /single candidateJson string parameter/u);
+          assert.match(body.messages[1].content, /headline, listBrief and lead are each one nonempty string/u);
           if (turnNo === 2) {
             assert.ok(serialized.includes('claim-independent'));
             assert.ok(serialized.includes('claim-engineer'));
@@ -3182,6 +3189,10 @@ test('Matter Review c4 continues two native turns with scoped source keys, prese
     assert.equal(result.ok, true);
     assert.equal(result.sessionRouting, 'HOST_SCOPED');
     assert.equal(modelCalls, 2);
+    for (const name of ['model.output-shape.json', 'model.output-shape-2.json']) {
+      const shape = JSON.parse(await readFile(join(checkpointDir, name), 'utf8'));
+      assert.equal(shape.value.requestedMaxCompletionTokens, 524_288);
+    }
   }
   assert.equal(requests.length, 4);
   assert.ok(requests.every(({ headers, body }) => headers['x-openclaw-session-key'] === nativeSessionKey && !Object.hasOwn(body, 'user')));
@@ -3216,6 +3227,7 @@ test('Matter native JSON candidates still reject unread sources and formal actio
     ['formal action', (output) => { output.reviewActionDraft = {}; }, /REVIEW_MODEL_MATTER_DELTA_INVALID/u],
     ['array wrapper', (output) => { output.missingInputs = { item: [] }; }, /REVIEW_MODEL_MISSINGINPUTS_INVALID/u],
     ['nested claim array', (output, delta) => { output.matterWorkingDelta = structuredClone(delta); output.matterWorkingDelta.claimDelta.additions = { item: delta.claimDelta.additions }; }, /REVIEW_MATTER_/u],
+    ['list brief array', (output, delta) => { output.matterWorkingDelta = structuredClone(delta); output.matterWorkingDelta.readingPresentation.listBrief = ['Brief returned as an array']; }, /OVERALL_LIST_BRIEF_INVALID/u],
     ['control binding', (output) => { output.leaseToken = 'model-invented'; }, /REVIEW_MODEL_OUTPUT_KEYS_INVALID/u],
   ]) {
     const { reviewTask, delta } = await matterReviewFixture(1);
@@ -4507,7 +4519,7 @@ test('offers source reading and one final candidate function with blank assistan
   assert.equal(result.provenance.modelVersion, 'openai-codex/gpt-5.4');
   assert.equal(
     result.provenance.promptVersion,
-    'wiselink.3_1.review_prompt.v1.c37',
+    'wiselink.3_1.review_prompt.v1.c38',
   );
 });
 
@@ -4560,7 +4572,7 @@ test('falls back to the configured model and records only output shape v2', asyn
   assert.equal(result.provenance.modelVersion, 'provider/configured');
   assert.equal(
     result.provenance.promptVersion,
-    'wiselink.3_1.review_prompt.v1.c37',
+    'wiselink.3_1.review_prompt.v1.c38',
   );
   assert.equal(
     outputShape.schemaVersion,

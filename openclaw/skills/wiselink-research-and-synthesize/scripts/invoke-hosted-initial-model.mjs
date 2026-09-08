@@ -1,4 +1,5 @@
 import {
+  M3_MAX_COMPLETION_TOKENS,
   actualModelVersion,
   assertHostedModelGatewayReady,
   executionModelHeaders,
@@ -37,10 +38,6 @@ const TRANSLATION_CORRECTIONS_PER_WINDOW = 2;
 const TRANSLATION_RESIDUAL_UNIT_LIMIT = 8;
 const TRANSLATION_RESIDUAL_ATTEMPTS_PER_UNIT = 2;
 const SINGLE_UNIT_RETRANSLATION = 'SINGLE_UNIT_RETRANSLATION';
-// Real M3 translation and 150-row JobAid calls ended with stopReason=length
-// before returning a candidate under the Gateway's default budget. Set a
-// bounded budget only for these requests; keep model and global settings.
-const M3_LARGE_INITIAL_MAX_COMPLETION_TOKENS = 32_000;
 const INPUT_KINDS = {
   TRANSLATE: 'translation-input',
   EXTRACT_APPLICABILITY: 'applicability-input',
@@ -71,9 +68,8 @@ export async function invokeHostedInitialModel(
   validatePayload(kind, modelInput);
   assertHostedModelGatewayReady(options);
   const modelHeaders = executionModelHeaders(options);
-  const maxCompletionTokens = ['TRANSLATE', 'EVALUATE_JOBAID'].includes(operation) &&
-    options.executionModel?.modelRef === 'miaoda/minimax-m3'
-    ? M3_LARGE_INITIAL_MAX_COMPLETION_TOKENS : undefined;
+  const maxCompletionTokens = options.executionModel?.modelRef === 'miaoda/minimax-m3'
+    ? M3_MAX_COMPLETION_TOKENS : undefined;
   if (
     options.agentId !== undefined &&
     options.agentId !== WISELINK_PROFILE_REF
