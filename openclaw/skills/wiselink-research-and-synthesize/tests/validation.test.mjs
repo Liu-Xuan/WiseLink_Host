@@ -1226,7 +1226,7 @@ test('pins exact20 MCP 1.2, five review tools, and hosted provenance', () => {
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c38',
+    'wiselink-research-and-synthesize@r09.c39',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -3204,6 +3204,117 @@ test('Matter Review c4 continues two native turns with scoped source keys, prese
   assert.ok(submitted.every((result) => result.modelVersion === 'fixture/provider' && result.skillVersion === WISELINK_SKILL_VERSION && result.toolVersions[WISELINK_HOST_MCP_NAME] === WISELINK_HOST_MCP_VERSION));
 });
 
+test('Matter candidate validation feeds two corrections into the same native session before one Host commit', async (t) => {
+  const { reviewTask, delta } = await matterReviewFixture(1);
+  const task = makeTask('OPENCLAW_INTERACTIVE_REVIEW', reviewTask, [], reviewTask.resourceRefs.map((ref) => ({ ref: ref.resourceArtifactRef, sha256: ref.resourceArtifactSha256 })));
+  task.executionModel = modelSelection('miaoda/minimax-m3');
+  const { inputHash: _inputHash, ...unsealed } = task;
+  task.inputHash = canonicalSha256(unsealed);
+  const nativeSessionKey = 'agent:wiselink-engineering:review:ACTX-RS-matter-private';
+  const checkpointDir = await mkdtemp(join(tmpdir(), 'wiselink-matter-correction-'));
+  t.after(() => rm(checkpointDir, { recursive: true, force: true }));
+  const requested = ['matter-source:1:1', 'matter-source:2:1'];
+  const feedback = [];
+  const calls = [];
+  let modelCalls = 0;
+  let committed;
+  const result = await runHostedReviewTurn({ reviewConversationRef: reviewTask.reviewConversationRef, requestId: reviewTask.requestId, checkpointDir }, {
+    callTool: async (name, args) => {
+      calls.push(name);
+      if (name === 'heartbeat_action_attempt') return reviewProgressHeartbeat(task, args);
+      if (name === 'begin_review_turn') return runningBegin(task, { nativeSessionKey });
+      if (name === 'get_review_turn_context') return reviewContext(task, reviewTask);
+      if (name === 'read_source_refs') return {
+        schemaVersion: 'wiselink.3_1.review_source_refs.v1.c2', attemptRef: task.operationRef,
+        sourceRefs: args.sourceRefIds.map((id) => structuredClone(reviewTask.resourceRefs.find((ref) => ref.sourceRefId === id).value)),
+      };
+      if (name === 'commit_review_turn_candidate') {
+        const sealed = JSON.parse(args.resultJson);
+        validatePayload('result-envelope', { task, result: sealed });
+        committed = JSON.parse(sealed.modelOutput);
+        return reviewCommit(task.operationRef);
+      }
+      throw new Error('UNEXPECTED_TOOL:' + name);
+    },
+    invokeModel: (input, hooks) => invokeReviewWithTransport(input, {
+      gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+      registeredModelRefs: ['miaoda/minimax-m3'], ...hooks,
+    }, { requestGateway: async (_url, init) => {
+      modelCalls += 1;
+      assert.equal(calls.includes('commit_review_turn_candidate'), false);
+      assert.equal(init.headers['x-openclaw-session-key'], nativeSessionKey);
+      const body = JSON.parse(init.body);
+      assert.equal(body.max_completion_tokens, 524_288);
+      assert.equal(body.tool_choice, 'required');
+      if (modelCalls >= 3) {
+        assert.deepEqual(body.messages.map((message) => message.role), ['system', 'assistant', 'tool']);
+        const receipt = JSON.parse(body.messages[2].content);
+        feedback.push(receipt);
+        assert.equal(receipt.candidateAccepted, false);
+        const registered = [...requested.map((id) => reviewTask.resourceRefs.find((ref) => ref.sourceRefId === id).value.evidenceRef), reviewTask.matterContext.readingEvidence.at(-1).evidenceRef];
+        assert.deepEqual(new Set(receipt.availableEvidenceRefs), new Set(registered));
+        for (const privateValue of [reviewTask.requestId, reviewTask.reviewTurnRef, reviewTask.reviewConversationRef, task.operationRef]) {
+          assert.equal(body.messages[2].content.includes(privateValue), false);
+        }
+      }
+      const output = matterReviewModelOutput(structuredClone(delta));
+      if (modelCalls === 2) output.matterWorkingDelta.readingPresentation.listBrief = ['Wrong array type'];
+      if (modelCalls === 3) output.matterWorkingDelta.claimDelta.additions[0].premises[0].evidenceRef = requested[0];
+      return Response.json({ model: 'fixture/provider', choices: [{ message: { content: null, tool_calls: [{
+        id: `correction-call-${modelCalls}`, type: 'function', function: {
+          name: modelCalls === 1 ? 'read_wiselink_review_sources' : 'return_wiselink_review_candidate',
+          arguments: JSON.stringify(modelCalls === 1 ? { sourceRefIds: requested } : { candidateJson: JSON.stringify(output) }),
+        },
+      }] } }] });
+    } }),
+  });
+  assert.equal(result.ok, true);
+  assert.equal(modelCalls, 4);
+  assert.equal(calls.filter((name) => name === 'read_source_refs').length, 1);
+  assert.equal(calls.filter((name) => name === 'commit_review_turn_candidate').length, 1);
+  assert.deepEqual(committed.matterWorkingDelta, delta);
+  assert.deepEqual(feedback.map((entry) => entry.validationError), ['OVERALL_LIST_BRIEF_INVALID', 'REVIEW_MATTER_PREMISE_NOT_ALLOWED']);
+  for (const correctionNo of [1, 2]) {
+    const path = join(checkpointDir, `candidate-rejection-${correctionNo}.json`);
+    const receipt = JSON.parse(await readFile(path, 'utf8'));
+    assert.equal(receipt.correctionNo, correctionNo);
+    assert.equal(receipt.modelRound, correctionNo + 1);
+    assert.equal(receipt.errorCode, feedback[correctionNo - 1].validationError);
+    assert.equal((await stat(path)).mode & 0o077, 0);
+  }
+});
+
+test('Matter candidate corrections keep their original deadline and stop after exhaustion, lease loss or an unexpected failure', async () => {
+  for (const scenario of ['exhausted', 'lease-lost', 'deadline', 'unexpected']) {
+    let requests = 0;
+    let renewals = 0;
+    const rejected = [];
+    const validationError = scenario === 'unexpected' ? 'INTERNAL_VALIDATOR_FAILURE' : 'REVIEW_MATTER_PREMISE_NOT_ALLOWED';
+    await assert.rejects(invokeReviewWithTransport({ input: { context: { matterWorking: {} } } }, {
+      gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+      ...(scenario === 'deadline' ? { timeoutMs: 20 } : {}),
+      validateCandidate: async () => {
+        if (scenario === 'deadline') await new Promise((resolve) => setTimeout(resolve, 30));
+        throw new Error(validationError);
+      },
+      observeCandidateRejection: (value) => rejected.push(value),
+      observeProgress: () => {
+        renewals += 1;
+        if (scenario === 'lease-lost' && renewals === 2) throw new Error('HOST_LEASE_LOST');
+      },
+    }, { requestGateway: async () => {
+      requests += 1;
+      return Response.json({ choices: [{ message: { content: null, tool_calls: [{
+        id: `bounded-call-${requests}`, type: 'function', function: {
+          name: 'return_wiselink_review_candidate', arguments: JSON.stringify({ candidateJson: JSON.stringify(matterReviewModelOutput(null)) }),
+        },
+      }] } }] });
+    } }), new RegExp(scenario === 'lease-lost' ? 'HOST_LEASE_LOST' : scenario === 'deadline' ? 'REVIEW_MODEL_TIMEOUT' : validationError, 'u'), scenario);
+    assert.equal(requests, scenario === 'exhausted' ? 3 : 1, scenario);
+    assert.equal(rejected.length, scenario === 'exhausted' ? 2 : scenario === 'unexpected' ? 0 : 1, scenario);
+  }
+});
+
 test('Matter native JSON transport rejects wrappers without repairing model output', async () => {
   const output = matterReviewModelOutput(null);
   const request = (args) => invokeReviewWithTransport({ input: { context: { matterWorking: {} } } }, {
@@ -4519,7 +4630,7 @@ test('offers source reading and one final candidate function with blank assistan
   assert.equal(result.provenance.modelVersion, 'openai-codex/gpt-5.4');
   assert.equal(
     result.provenance.promptVersion,
-    'wiselink.3_1.review_prompt.v1.c38',
+    'wiselink.3_1.review_prompt.v1.c39',
   );
 });
 
@@ -4572,7 +4683,7 @@ test('falls back to the configured model and records only output shape v2', asyn
   assert.equal(result.provenance.modelVersion, 'provider/configured');
   assert.equal(
     result.provenance.promptVersion,
-    'wiselink.3_1.review_prompt.v1.c38',
+    'wiselink.3_1.review_prompt.v1.c39',
   );
   assert.equal(
     outputShape.schemaVersion,

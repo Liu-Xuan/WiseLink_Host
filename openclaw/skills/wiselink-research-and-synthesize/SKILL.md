@@ -12,7 +12,7 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（任务可绑定已登记的内置或用户授权自定义模型；仍经唯一官方 Hosted profile/Gateway）
-- Skill：`wiselink-research-and-synthesize@r09.c38`
+- Skill：`wiselink-research-and-synthesize@r09.c39`
 - Skill compatibility：`wiselink-research-and-synthesize@r09`（Host 最低接受 `r09.c10`）
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（既有 20 项能力；兼容新增的只读自动领取查询）
 - Host baseline：`6fd2655d27edc3851c745547efaf8796ad22c82c`
@@ -405,6 +405,11 @@ c38 按用户要求，对明确选择的 M3 初始分析和 Review 在每轮请�
 经 Hosted 生效及完成候选仍须实测，不把申请额度当成实际用量，也不要求模型用满额度。
 `readingPresentation` 的 headline、listBrief、lead 均为非空字符串；listBrief 是列表行上的短文本，不能返回
 项目数组。c38 明确这三个字段的类型，修复真实 DLI 候选将 listBrief 返回为数组的问题；类型错误仍不得提交。
+c39 在 Matter 候选返回后、任何 Host commit 前执行现有完整校验；将安全错误码及本轮已读或已提供的
+evidenceRef 作为工具结果反馈给同一原生会话，最多纠正两次，共享原操作总时限，每次请求仍续租同一 attempt。
+模型重新输出完整候选，驱动不得修补引用、补字段、删减实质内容或放宽来源与正式采用边界。拒绝记录写入私有
+`candidate-rejection-N.json`，只保存错误码、轮次和绑定摘要。次数耗尽、超时、租约失效或未知错误立即停止；
+仅通过全部校验的候选进入一次 Host commit。已失败的旧回合和不确定的提交不因此重放。
 每次响应只有一个 choice、一个上述 function，arguments 为 direct strict JSON object。assistant content 优先为 null
 或空白；官方 Gateway 附带的纯文本说明只记录安全形态，不解析、不进入候选/证据或驱动的后续 exchange。
 其他函数、多 choice、多 tool call、纯文本结果、analysis/reasoning、非文本 content，以及 fence/prose/array/null
@@ -519,7 +524,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - `modelVersion` 优先取响应中可读实际模型；绑定任务未回报实际模型时使用 `configured-route:<modelRef>`，旧无绑定任务使用无 fallback 的 configured endpoint。后两者只证明路由，不代表已暴露下游具体模型，也不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c38`
+- `skillVersion=wiselink-research-and-synthesize@r09.c39`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致

@@ -999,14 +999,21 @@ export async function runInteractiveReviewTurn({
     return sanitized;
   };
   const safeModelInput = buildReviewModelInput(task, contextResult);
+  const validateCandidate = (value) => {
+    const candidate = validateReviewCandidate(task, value);
+    assertReviewSourcesWereRead(candidate, readSourceRefIds, task, safeModelInput.context.matterWorking);
+    return candidate;
+  };
   const execution = normalizeExecution(
     await respond({
       input: safeModelInput,
       readSourceRefs,
+      // Pure validation of a proposed candidate. The Host bindings remain in
+      // this closure; a model correction never commits or changes the task.
+      validateCandidate,
     }),
   );
-  const candidate = validateReviewCandidate(task, execution.output);
-  assertReviewSourcesWereRead(candidate, readSourceRefIds, task, safeModelInput.context.matterWorking);
+  const candidate = validateCandidate(execution.output);
   const result = sealResultEnvelope({
     task: begin.task,
     modelOutput: candidate,
