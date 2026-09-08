@@ -304,6 +304,7 @@ test('real PostgreSQL translation work survives bounded requests and enforces sc
       assert.equal((await sql`SELECT revision FROM work_item`)[0].revision, beforeRevision);
     });
     await t.test('the browser service reads a consistent workspace through the official authenticated SQL context', async () => {
+      await sql.unsafe('REVOKE INSERT, UPDATE, DELETE ON translation_workspace, translation_block_revision FROM authenticated');
       const sqlContext = new SqlExecutionContextMiddleware({ roleSchema: 'translation_snapshot_test' });
       const browser = (actorId, operation) => new Promise((resolve, reject) => sqlContext.use(
         { userContext: { userId: actorId, isSystemAccount: false, roles: [] } }, {},
@@ -326,21 +327,18 @@ test('real PostgreSQL translation work survives bounded requests and enforces sc
         await tx`UPDATE translation_workspace SET row_version = row_version + 1 WHERE workspace_id = ${workspace.workspaceId}`;
         await tx`UPDATE translation_block_revision SET row_version = row_version + 1 WHERE block_revision_id = ${blockId}`;
       });
-      const interleaved = new CanonicalTranslationWorkspaceRepository({
-        transaction: (operation, config) => db.transaction((tx) => {
-          let firstSelect = true;
-          return operation(new Proxy(tx, { get(target, property) {
-            if (property === 'select') return (...args) => {
-              const query = target.select(...args);
-              if (!firstSelect) return query;
-              firstSelect = false;
-              return afterQueryResult(query, afterWorkspaceRead);
-            };
-            const value = Reflect.get(target, property);
-            return typeof value === 'function' ? value.bind(target) : value;
-          } }));
-        }, config),
-      });
+      let firstSelect = true;
+      const interleaved = new CanonicalTranslationWorkspaceRepository(new Proxy(db, { get(target, property) {
+        if (property === 'transaction') return () => { throw new Error('HOSTED_TRANSACTION_MODE_SWITCH_UNAVAILABLE'); };
+        if (property === 'select') return (...args) => {
+          const query = target.select(...args);
+          if (!firstSelect) return query;
+          firstSelect = false;
+          return afterQueryResult(query, afterWorkspaceRead);
+        };
+        const value = Reflect.get(target, property);
+        return typeof value === 'function' ? value.bind(target) : value;
+      } }));
       const during = await interleaved.readSnapshot(fence);
       assert.equal(during.workspace.rowVersion, before.workspace.rowVersion);
       assert.equal(during.revisions.find((entry) => entry.blockRevisionId === blockId).rowVersion, before.revisions[0].rowVersion);

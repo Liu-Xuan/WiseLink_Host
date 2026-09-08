@@ -53,6 +53,27 @@ type WorkspaceRow = typeof translationWorkspace.$inferSelect;
 type BlockRow = typeof translationBlockRevision.$inferSelect;
 type AttemptRow = typeof actionAttempt.$inferSelect;
 const activeStatuses = ['QUEUED', 'RUNNING', 'RETRY_SCHEDULED', 'COMMITTING'];
+const blockSnapshotColumns = {
+  blockRevisionId: translationBlockRevision.blockRevisionId,
+  workspaceId: translationBlockRevision.workspaceId,
+  blockId: translationBlockRevision.blockId,
+  planRevision: translationBlockRevision.planRevision,
+  contentRevision: translationBlockRevision.contentRevision,
+  rowVersion: translationBlockRevision.rowVersion,
+  generationRequestRef: translationBlockRevision.generationRequestRef,
+  originAttemptId: translationBlockRevision.originAttemptId,
+  authorKind: translationBlockRevision.authorKind,
+  authorUserId: translationBlockRevision.authorUserId,
+  candidateJson: translationBlockRevision.candidateJson,
+  dependenciesJson: translationBlockRevision.dependenciesJson,
+  provenanceJson: translationBlockRevision.provenanceJson,
+  generatedAt: translationBlockRevision.generatedAt,
+  savedAt: translationBlockRevision.savedAt,
+  checkJson: translationBlockRevision.checkJson,
+  checkedAt: translationBlockRevision.checkedAt,
+  selectedForReading: translationBlockRevision.selectedForReading,
+};
+type SnapshotBlockRow = Pick<BlockRow, keyof typeof blockSnapshotColumns>;
 
 export interface TranslationWorkspaceScope {
   tenantId: string;
@@ -203,25 +224,37 @@ export class CanonicalTranslationWorkspaceRepository {
   }
 
   async readSnapshot(input: TranslationWorkspaceScope) {
-    return this.db.transaction(
-      async (transaction) => {
-        // Repeatable read keeps workspace coverage, selections and the manifest
-        // consistent without a row lock, which also requires UPDATE RLS access.
-        const workspace = workspaceFromRow(
-          await requiredWorkspace(transaction, input),
-        );
-        const rows = await transaction
-          .select()
-          .from(translationBlockRevision)
-          .where(blockScope(input))
-          .orderBy(
-            asc(translationBlockRevision.blockId),
-            desc(translationBlockRevision.contentRevision),
-          );
-        return { workspace, revisions: rows.map(blockFromRow) };
-      },
-      { accessMode: 'read only', isolationLevel: 'repeatable read' },
+    // One SELECT provides one snapshot without UPDATE-only row locks or a
+    // transaction-mode switch rejected by Hosted. Aggregate the small block
+    // rows so the complete source plan is transmitted only once.
+    const fields = sql.join(
+      Object.entries(blockSnapshotColumns).flatMap(([key, column]) => [
+        sql`${key}::text`,
+        sql`${column}`,
+      ]),
+      sql`, `,
     );
+    const [snapshot] = await this.db
+      .select({
+        workspace: translationWorkspace,
+        revisions: sql<Record<string, unknown>[]>`(
+          SELECT coalesce(jsonb_agg(jsonb_build_object(${fields})
+            ORDER BY ${translationBlockRevision.blockId}, ${translationBlockRevision.contentRevision} DESC), '[]'::jsonb)
+          FROM ${translationBlockRevision} WHERE ${blockScope(input)}
+        )`,
+      })
+      .from(translationWorkspace)
+      .where(workspaceScope(input))
+      .limit(1);
+    if (!snapshot) throw new Error('TRANSLATION_WORKSPACE_NOT_FOUND');
+    return {
+      workspace: workspaceFromRow(snapshot.workspace),
+      revisions: snapshot.revisions.map((row) => blockFromRow(
+        Object.fromEntries(Object.entries(blockSnapshotColumns).map(([key, column]) => [
+          key, row[key] === null ? null : column.mapFromDriverValue(row[key]),
+        ])) as SnapshotBlockRow,
+      )),
+    };
   }
 
   async readSemanticScope(input: { tenantId: string; workItemId: string; blockRevisionId: string }) {
@@ -1148,7 +1181,7 @@ function workspaceFromRow(row: WorkspaceRow): TranslationWorkspaceV2 {
   };
 }
 
-function blockFromRow(row: BlockRow): TranslationBlockRevisionV2 {
+function blockFromRow(row: SnapshotBlockRow): TranslationBlockRevisionV2 {
   const candidate = parseTranslationJson(
     row.candidateJson,
     translationCandidateSchemaV2,
