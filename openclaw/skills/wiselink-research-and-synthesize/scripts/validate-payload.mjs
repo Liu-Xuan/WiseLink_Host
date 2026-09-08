@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
 export const WISELINK_SKILL_VERSION =
-  'wiselink-research-and-synthesize@r09.c33';
+  'wiselink-research-and-synthesize@r09.c34';
 export const WISELINK_SKILL_COMPATIBILITY_REF =
   'wiselink-research-and-synthesize@r09';
 export const WISELINK_HOST_MCP_NAME =
@@ -21,6 +21,8 @@ const TASK_ENVELOPE_SCHEMA = 'wiselink.3_1.openclaw_task_envelope.v1';
 const RESULT_ENVELOPE_SCHEMA = 'wiselink.3_1.openclaw_result_envelope.v1';
 const REVIEW_TASK_SCHEMA = 'wiselink.3_1.review_turn_task.v1.c2';
 const REVIEW_CANDIDATE_SCHEMA = 'wiselink.3_1.review_turn_candidate.v1.c3';
+export const REVIEW_MATTER_TASK_SCHEMA = 'wiselink.3_1.review_turn_task.v1.c4';
+export const REVIEW_MATTER_CANDIDATE_SCHEMA = 'wiselink.3_1.review_turn_candidate.v1.c4';
 const APPLICABILITY_TASK_SCHEMA = 'wiselink.3_1.applicability_task.v1';
 const APPLICABILITY_AST_CANDIDATE_SCHEMA =
   'wiselink.3_1.applicability_ast_candidate.v1';
@@ -93,6 +95,8 @@ const DISCOVERY_STATUSES = new Set([
 const SHA256 = /^sha256:[a-f0-9]{64}$/u;
 const PACKAGE_ID = /^urn:techpub:package:v1:sha256:[a-f0-9]{64}$/u;
 const SOURCE_REF_ID = /^urn:techpub:source-ref:v1:sha256:[a-f0-9]{64}$/u;
+const OVERALL_REVIEW_SOURCE_REF_ID = /^review-evidence:\/\/[^/\s]+\/[1-9][0-9]*\/[^/\s]+\/[1-9][0-9]*$/u;
+const OVERALL_MODEL_REVIEW_REF_ID = /^overall-evidence:engineer-review:[1-9][0-9]*:[1-9][0-9]*$/u;
 /** Keep these two patterns aligned with the current Host ResultGate. */
 const ATA_CHAPTER_PATTERN =
   /\bATA(?:\s+chapters?)?\s*[:：#]?\s*(\d{2,3}(?:-\d{2,3})?)(?!\d)/giu;
@@ -1153,11 +1157,20 @@ export function validateSynthesisPair(input, output) {
         fail(`OVERALL_UNKNOWN_SOURCE_REF:${sourceRefId}`);
     }
   }
-  validateEngineeringSummaryBindings(
-    output.engineeringSummary,
-    knownRefs,
-    new Set(context.currentDocumentSourceRefIds),
-  );
+  const readingV2 = output.engineeringSummary.schemaVersion === 'wiselink.3_1.overall_engineering_summary.v2';
+  if (input.evidenceRegistry !== undefined && !readingV2) fail('OVERALL_READING_SUMMARY_VERSION_REQUIRED');
+  if (readingV2) {
+    if (!input.evidenceRegistry) fail('OVERALL_READING_EVIDENCE_REGISTRY_REQUIRED');
+    const knownEvidence = new Set(input.evidenceRegistry.map((item) => item.evidenceRef));
+    for (const claim of output.engineeringSummary.claims) {
+      for (const premise of claim.premises) {
+        if (!knownEvidence.has(premise.evidenceRef)) fail(`OVERALL_UNKNOWN_EVIDENCE_REF:${premise.evidenceRef}`);
+      }
+    }
+  } else {
+    validateEngineeringSummaryBindings(output.engineeringSummary, knownRefs, new Set(context.currentDocumentSourceRefIds));
+  }
+  equal(output.unresolvedCount, base.unresolvedCount, 'OVERALL_UNRESOLVED_COUNT_MISMATCH');
   const candidateRefCount = input.externalDiscoveryResults.reduce(
     (count, result) => count + result.candidates.length,
     0,
@@ -1348,7 +1361,7 @@ function validateSynthesisInput(input) {
       'engineerReviewContext',
       'selectiveResynthesis',
     ],
-    ['commonContext'],
+    ['commonContext', 'evidenceRegistry'],
     'synthesis input',
   );
   equal(
@@ -1362,6 +1375,7 @@ function validateSynthesisInput(input) {
   validateUnifiedSourceContext(input.unifiedSourceContext);
   validateAdoptedDocumentVersions(input.adoptedDocumentVersions);
   validateEngineerReviewContext(input.engineerReviewContext);
+  if (input.evidenceRegistry !== undefined) validateOverallEvidenceRegistry(input.evidenceRegistry);
   assertObject(input.selectiveResynthesis, 'selective resynthesis');
   array(input.externalDiscoveryResults, 'SYNTHESIS_DISCOVERY_RESULTS_INVALID');
   for (const result of input.externalDiscoveryResults)
@@ -1406,6 +1420,23 @@ function validateSynthesisInput(input) {
   }
 }
 
+function validateOverallEvidenceRegistry(values) {
+  array(values, 'OVERALL_READING_EVIDENCE_REGISTRY_INVALID');
+  const seen = new Set();
+  for (const item of values) {
+    assertObject(item, 'Overall model evidence');
+    exactKeys(item, ['evidenceRef', 'kind', 'title', 'versionLabel', 'excerpt', 'locator'], [], 'Overall model evidence');
+    nonEmpty(item.evidenceRef, 'OVERALL_EVIDENCE_REF_INVALID');
+    if (seen.has(item.evidenceRef)) fail('OVERALL_DUPLICATE_EVIDENCE_REF');
+    seen.add(item.evidenceRef);
+    if (!['DOCUMENT_PASSAGE', 'ENGINEER_STATEMENT', 'HOST_FACT', 'QUERY_RECEIPT', 'PRIOR_RESULT'].includes(item.kind)) fail('OVERALL_EVIDENCE_KIND_INVALID');
+    nonEmpty(item.title, 'OVERALL_EVIDENCE_TITLE_INVALID');
+    nullableText(item.versionLabel, 'OVERALL_EVIDENCE_VERSION_INVALID');
+    nonEmpty(item.excerpt, 'OVERALL_EVIDENCE_EXCERPT_INVALID');
+    nullableText(item.locator, 'OVERALL_EVIDENCE_LOCATOR_INVALID');
+  }
+}
+
 function validateEngineerReviewContext(context) {
   assertObject(context, 'engineer review context');
   exactKeys(
@@ -1440,7 +1471,7 @@ function validateEngineerReviewContext(context) {
     return;
   }
   positiveInteger(context.revision, 'ENGINEER_REVIEW_REVISION_INVALID');
-  sha256(context.artifactSha256, 'ENGINEER_REVIEW_ARTIFACT_SHA_INVALID');
+  overallSha256(context.artifactSha256, 'ENGINEER_REVIEW_ARTIFACT_SHA_INVALID');
   if (context.reviewCount === 0) fail('ENGINEER_REVIEW_CONTEXT_EMPTY');
 
   const latestByCriterion = new Map();
@@ -1575,10 +1606,11 @@ function expectedOverallApplicabilityStatus(result) {
 
 function validateEngineerReviewEntry(review, expectedSequence = undefined) {
   assertObject(review, 'engineer review entry');
+  const extended = Object.hasOwn(review, 'actionType');
   exactKeys(
     review,
-    ['sequence', 'criterionId', 'decision', 'status', 'comment', 'recordedAt'],
-    [],
+    ['sequence', 'criterionId', 'decision', 'status', 'comment', 'recordedAt', ...(extended ? ['baseRuleRevision', 'baseRuleArtifactSha256', 'actionType', 'evidence', 'resolvedMissingInputs', 'uncertaintyDispositions', 'decisionSnapshot', 'correctedAnalysisDirection'] : [])],
+    extended ? ['affectedCriterionIds'] : [],
     'engineer review entry',
   );
   positiveInteger(review.sequence, 'ENGINEER_REVIEW_SEQUENCE_INVALID');
@@ -1600,14 +1632,69 @@ function validateEngineerReviewEntry(review, expectedSequence = undefined) {
   ) {
     fail('ENGINEER_REVIEW_DECISION_INVALID');
   }
-  const expectedStatus = ['confirmed_pass', 'confirmed_fail'].includes(
-    review.decision,
-  )
+  const expectedStatus = (!extended || review.actionType === 'REVISE_JUDGMENT') && ['confirmed_pass', 'confirmed_fail'].includes(review.decision)
     ? 'ENGINEER_CONFIRMED'
     : 'NEEDS_REVIEW';
   equal(review.status, expectedStatus, 'ENGINEER_REVIEW_STATUS_INVALID');
   nonEmpty(review.comment, 'ENGINEER_REVIEW_COMMENT_INVALID');
   isoDate(review.recordedAt, 'ENGINEER_REVIEW_RECORDED_AT_INVALID');
+  if (!extended) return;
+  positiveInteger(review.baseRuleRevision, 'ENGINEER_REVIEW_BASE_REVISION_INVALID');
+  overallSha256(review.baseRuleArtifactSha256, 'ENGINEER_REVIEW_BASE_ARTIFACT_INVALID');
+  if (!['REVISE_JUDGMENT', 'SUPPLEMENT_EVIDENCE', 'CORRECT_ANALYSIS_DIRECTION'].includes(review.actionType)) fail('ENGINEER_REVIEW_ACTION_TYPE_INVALID');
+  if (review.affectedCriterionIds !== undefined) {
+    uniqueTextArray(review.affectedCriterionIds, 'ENGINEER_REVIEW_AFFECTED_CRITERIA_INVALID');
+    if (!review.affectedCriterionIds.includes(review.criterionId)) fail('ENGINEER_REVIEW_AFFECTED_CRITERIA_INVALID');
+  }
+  array(review.evidence, 'ENGINEER_REVIEW_EVIDENCE_INVALID');
+  review.evidence.forEach(validateOverallEngineerEvidence);
+  if (new Set(review.evidence.map((item) => item.sourceRefId)).size !== review.evidence.length) fail('ENGINEER_REVIEW_EVIDENCE_DUPLICATE');
+  arrayOfText(review.resolvedMissingInputs, 'ENGINEER_REVIEW_RESOLVED_INPUTS_INVALID');
+  validateReviewUncertaintyDispositions(review.uncertaintyDispositions);
+  nullableText(review.correctedAnalysisDirection, 'ENGINEER_REVIEW_DIRECTION_INVALID');
+  if (review.decisionSnapshot !== null) {
+    assertObject(review.decisionSnapshot, 'Overall engineer decision snapshot');
+    const { decisionSnapshotRef, revision, engineerConfirmationRef, ...proposal } = review.decisionSnapshot;
+    nonEmpty(decisionSnapshotRef, 'ENGINEER_REVIEW_SNAPSHOT_REF_INVALID');
+    positiveInteger(revision, 'ENGINEER_REVIEW_SNAPSHOT_REVISION_INVALID');
+    nullableText(engineerConfirmationRef, 'ENGINEER_REVIEW_SNAPSHOT_CONFIRMATION_INVALID');
+    validateReviewDecisionSnapshot(proposal);
+  }
+  if (
+    (review.actionType === 'SUPPLEMENT_EVIDENCE' && (review.evidence.length === 0 || review.correctedAnalysisDirection !== null)) ||
+    (review.actionType === 'REVISE_JUDGMENT' && (review.evidence.length !== 0 || review.resolvedMissingInputs.length !== 0 || review.correctedAnalysisDirection !== null)) ||
+    (review.actionType === 'CORRECT_ANALYSIS_DIRECTION' && (review.evidence.length !== 0 || review.resolvedMissingInputs.length !== 0 || !review.correctedAnalysisDirection))
+  ) fail('ENGINEER_REVIEW_ACTION_DETAILS_INVALID');
+}
+
+function validateOverallEngineerEvidence(item) {
+  assertObject(item, 'Overall engineer evidence');
+  exactKeys(item, ['kind', 'statement', 'locator', 'sourceRefId'], ['artifact'], 'Overall engineer evidence');
+  if (!['ENGINEER_TEXT', 'AIRCRAFT_FACT', 'DOCUMENT_FACT', 'ATTACHMENT'].includes(item.kind)) fail('ENGINEER_REVIEW_EVIDENCE_KIND_INVALID');
+  nonEmpty(item.statement, 'ENGINEER_REVIEW_EVIDENCE_STATEMENT_INVALID');
+  nonEmpty(item.locator, 'ENGINEER_REVIEW_EVIDENCE_LOCATOR_INVALID');
+  overallReviewEvidenceRef(item.sourceRefId, 'ENGINEER_REVIEW_EVIDENCE_SOURCE_REF_INVALID');
+  if (item.artifact !== undefined) {
+    assertObject(item.artifact, 'Overall engineer evidence artifact');
+    exactKeys(item.artifact, ['storeRole', 'ref', 'sha256', 'byteLength', 'mediaType'], [], 'Overall engineer evidence artifact');
+    equal(item.artifact.storeRole, 'UnifiedArtifactStoreCandidate', 'ENGINEER_REVIEW_EVIDENCE_STORE_INVALID');
+    equal(item.artifact.mediaType, 'application/json', 'ENGINEER_REVIEW_EVIDENCE_MEDIA_INVALID');
+    nonEmpty(item.artifact.ref, 'ENGINEER_REVIEW_EVIDENCE_ARTIFACT_REF_INVALID');
+    overallSha256(item.artifact.sha256, 'ENGINEER_REVIEW_EVIDENCE_ARTIFACT_SHA_INVALID');
+    positiveInteger(item.artifact.byteLength, 'ENGINEER_REVIEW_EVIDENCE_ARTIFACT_LENGTH_INVALID');
+  }
+}
+
+function overallSha256(value, code) {
+  if (typeof value !== 'string' || (!SHA256.test(value) && !BARE_SHA256.test(value))) fail(code);
+}
+
+function overallSourceRef(value, code) {
+  if (typeof value !== 'string' || (!SOURCE_REF_ID.test(value) && !OVERALL_REVIEW_SOURCE_REF_ID.test(value) && !OVERALL_MODEL_REVIEW_REF_ID.test(value))) fail(code);
+}
+
+function overallReviewEvidenceRef(value, code) {
+  if (typeof value !== 'string' || (!OVERALL_REVIEW_SOURCE_REF_ID.test(value) && !OVERALL_MODEL_REVIEW_REF_ID.test(value))) fail(code);
 }
 
 // `baseRuleResult` is the Host's compatibility field name for the current
@@ -1689,7 +1776,7 @@ function validateBaseRuleResult(base) {
     nonEmpty(item.status, 'BASE_ITEM_STATUS_INVALID');
     arrayOfText(item.sourceRefIds, 'BASE_ITEM_SOURCE_REFS_INVALID');
     for (const sourceRefId of item.sourceRefIds)
-      match(sourceRefId, SOURCE_REF_ID, 'BASE_SOURCE_REF_INVALID');
+      overallSourceRef(sourceRefId, 'BASE_SOURCE_REF_INVALID');
     nullableText(item.fact, 'BASE_ITEM_FACT_INVALID');
     nonEmpty(item.analysis, 'BASE_ITEM_ANALYSIS_INVALID');
     nonEmpty(item.candidateConclusion, 'BASE_ITEM_CONCLUSION_INVALID');
@@ -1756,19 +1843,24 @@ function validateUnifiedSourceContext(context) {
     exactKeys(
       sourceRef,
       ['sourceRefId', 'locator', 'excerpt'],
-      [],
+      ['evidenceKind', 'artifactRef', 'artifactSha256'],
       'source ref',
     );
-    match(
-      sourceRef.sourceRefId,
-      SOURCE_REF_ID,
-      'SOURCE_CONTEXT_REF_ID_INVALID',
-    );
+    overallSourceRef(sourceRef.sourceRefId, 'SOURCE_CONTEXT_REF_ID_INVALID');
     if (seen.has(sourceRef.sourceRefId))
       fail(`SOURCE_CONTEXT_DUPLICATE_REF:${sourceRef.sourceRefId}`);
     seen.add(sourceRef.sourceRefId);
     nonEmpty(sourceRef.locator, 'SOURCE_CONTEXT_LOCATOR_INVALID');
     nullableText(sourceRef.excerpt, 'SOURCE_CONTEXT_EXCERPT_INVALID');
+    if (sourceRef.evidenceKind !== undefined) {
+      if (!['ENGINEER_TEXT', 'AIRCRAFT_FACT', 'DOCUMENT_FACT', 'ATTACHMENT'].includes(sourceRef.evidenceKind)) fail('SOURCE_CONTEXT_EVIDENCE_KIND_INVALID');
+      overallReviewEvidenceRef(sourceRef.sourceRefId, 'SOURCE_CONTEXT_REVIEW_EVIDENCE_REF_INVALID');
+    }
+    if ((sourceRef.artifactRef === undefined) !== (sourceRef.artifactSha256 === undefined)) fail('SOURCE_CONTEXT_ARTIFACT_BINDING_INVALID');
+    if (sourceRef.artifactRef !== undefined) {
+      nonEmpty(sourceRef.artifactRef, 'SOURCE_CONTEXT_ARTIFACT_REF_INVALID');
+      overallSha256(sourceRef.artifactSha256, 'SOURCE_CONTEXT_ARTIFACT_SHA_INVALID');
+    }
   }
   const knownRefs = new Set(context.sourceRefs.map((item) => item.sourceRefId));
   for (const sourceRefId of context.currentDocumentSourceRefIds) {
@@ -1860,7 +1952,7 @@ function validateSynthesisOutput(output) {
     );
   }
   if (output.engineerReviewArtifactSha256 !== null) {
-    sha256(
+    overallSha256(
       output.engineerReviewArtifactSha256,
       'OVERALL_ENGINEER_REVIEW_ARTIFACT_SHA_INVALID',
     );
@@ -1906,10 +1998,11 @@ function validateSynthesisOutput(output) {
   validateDiscoveryProviderSummaries(output.providers);
   nonEmpty(output.overallCandidate, 'OVERALL_CANDIDATE_INVALID');
   validateEngineeringSummary(output.engineeringSummary);
+  const readingV2 = output.engineeringSummary.schemaVersion === 'wiselink.3_1.overall_engineering_summary.v2';
   equal(
     output.overallCandidate,
-    output.engineeringSummary.conclusion.text,
-    'OVERALL_CONCLUSION_CANDIDATE_MISMATCH',
+    readingV2 ? output.engineeringSummary.lead : output.engineeringSummary.conclusion.text,
+    readingV2 ? 'OVERALL_LEAD_CANDIDATE_MISMATCH' : 'OVERALL_CONCLUSION_CANDIDATE_MISMATCH',
   );
   array(output.findings, 'OVERALL_FINDINGS_INVALID');
   if (output.findings.length !== output.findingCount)
@@ -1926,7 +2019,7 @@ function validateSynthesisOutput(output) {
     nonEmpty(finding.basis, 'OVERALL_FINDING_BASIS_INVALID');
     arrayOfText(finding.sourceRefIds, 'OVERALL_FINDING_SOURCE_REFS_INVALID');
     for (const sourceRefId of finding.sourceRefIds)
-      match(sourceRefId, SOURCE_REF_ID, 'OVERALL_SOURCE_REF_INVALID');
+      overallSourceRef(sourceRefId, 'OVERALL_SOURCE_REF_INVALID');
     arrayOfText(finding.assumptions, 'OVERALL_ASSUMPTIONS_INVALID');
     nonEmpty(finding.uncertainty, 'OVERALL_UNCERTAINTY_INVALID');
   }
@@ -1948,6 +2041,10 @@ function validateSynthesisOutput(output) {
 
 function validateEngineeringSummary(summary) {
   assertObject(summary, 'engineering summary');
+  if (summary.schemaVersion === 'wiselink.3_1.overall_engineering_summary.v2') {
+    validateEngineeringReadingSummary(summary);
+    return;
+  }
   exactKeys(
     summary,
     [
@@ -2011,6 +2108,43 @@ function validateEngineeringSummary(summary) {
   );
 }
 
+function validateEngineeringReadingSummary(summary) {
+  exactKeys(summary, ['schemaVersion', 'headline', 'listBrief', 'lead', 'claims', 'decisiveClaimIds'], [], 'engineering reading summary');
+  nonEmpty(summary.headline, 'OVERALL_HEADLINE_INVALID');
+  nonEmpty(summary.listBrief, 'OVERALL_LIST_BRIEF_INVALID');
+  nonEmpty(summary.lead, 'OVERALL_LEAD_INVALID');
+  array(summary.claims, 'OVERALL_CLAIMS_INVALID');
+  if (summary.claims.length === 0) fail('OVERALL_CLAIMS_REQUIRED');
+  const claimIds = new Set();
+  for (const claim of summary.claims) {
+    assertObject(claim, 'Overall reading claim');
+    exactKeys(claim, ['claimId', 'text', 'basis', 'premises'], [], 'Overall reading claim');
+    nonEmpty(claim.claimId, 'OVERALL_CLAIM_ID_INVALID');
+    if (claimIds.has(claim.claimId)) fail('OVERALL_DUPLICATE_CLAIM_ID');
+    claimIds.add(claim.claimId);
+    nonEmpty(claim.text, 'OVERALL_CLAIM_TEXT_INVALID');
+    if (!['SOURCE_FACT', 'CONDITIONAL_INFERENCE'].includes(claim.basis)) fail('OVERALL_CLAIM_BASIS_INVALID');
+    array(claim.premises, 'OVERALL_CLAIM_PREMISES_INVALID');
+    if (claim.premises.length === 0) fail('OVERALL_CLAIM_PREMISES_REQUIRED');
+    const evidenceRefs = new Set();
+    for (const premise of claim.premises) {
+      assertObject(premise, 'Overall claim premise');
+      exactKeys(premise, ['evidenceRef', 'role', 'explanation', 'limitation'], [], 'Overall claim premise');
+      nonEmpty(premise.evidenceRef, 'OVERALL_EVIDENCE_REF_INVALID');
+      if (evidenceRefs.has(premise.evidenceRef)) fail('OVERALL_DUPLICATE_CLAIM_EVIDENCE_REF');
+      evidenceRefs.add(premise.evidenceRef);
+      if (!['SUPPORTS', 'LIMITS', 'CONTEXT', 'CONFLICTS'].includes(premise.role)) fail('OVERALL_CLAIM_PREMISE_ROLE_INVALID');
+      nonEmpty(premise.explanation, 'OVERALL_CLAIM_PREMISE_EXPLANATION_INVALID');
+      nullableText(premise.limitation, 'OVERALL_CLAIM_PREMISE_LIMITATION_INVALID');
+    }
+  }
+  arrayOfText(summary.decisiveClaimIds, 'OVERALL_DECISIVE_CLAIM_IDS_INVALID');
+  if (new Set(summary.decisiveClaimIds).size !== summary.decisiveClaimIds.length) fail('OVERALL_DUPLICATE_DECISIVE_CLAIM_ID');
+  for (const claimId of summary.decisiveClaimIds) {
+    if (!claimIds.has(claimId)) fail(`OVERALL_UNKNOWN_DECISIVE_CLAIM_ID:${claimId}`);
+  }
+}
+
 function validateEngineeringStatementArray(
   statements,
   code,
@@ -2046,7 +2180,7 @@ function validateEngineeringStatement(statement, code) {
     fail(`${code}_SOURCE_REF_DUPLICATE`);
   }
   statement.sourceRefIds.forEach((sourceRefId) =>
-    match(sourceRefId, SOURCE_REF_ID, `${code}_SOURCE_REF_INVALID`),
+    overallSourceRef(sourceRefId, `${code}_SOURCE_REF_INVALID`),
   );
 }
 
@@ -2073,6 +2207,13 @@ function validateEngineeringSummaryBindings(
 }
 
 function engineeringSummaryStatements(summary) {
+  if (summary.schemaVersion === 'wiselink.3_1.overall_engineering_summary.v2') {
+    return [
+      ...[summary.headline, summary.listBrief, summary.lead].map((text) => ({ text })),
+      ...summary.claims,
+      ...summary.claims.flatMap((claim) => claim.premises.flatMap((premise) => [premise.explanation, ...(premise.limitation === null ? [] : [premise.limitation])].map((text) => ({ text })))),
+    ];
+  }
   return [
     summary.conclusion,
     ...summary.whyItMatters,
@@ -2955,11 +3096,7 @@ export function reviewCandidateArtifactRefs(task, candidate) {
   validateTaskEnvelope(task);
   const reviewTask = validateReviewTask(task.modelInput);
   validateReviewCandidate(reviewTask, candidate);
-  const usedSourceRefIds = new Set([
-    ...candidate.sourceRefs,
-    ...candidate.candidateEvidenceRefs,
-    ...(candidate.reviewActionDraft?.sourceRefs ?? []),
-  ]);
+  const usedSourceRefIds = new Set(reviewCandidateSourceRefIds(reviewTask, candidate));
   const artifacts = new Map();
   for (const resource of reviewTask.resourceRefs) {
     if (!usedSourceRefIds.has(resource.sourceRefId)) continue;
@@ -3805,6 +3942,7 @@ function numberMultiset(tokens) {
 }
 
 export function validateReviewTask(value) {
+  const isMatter = value?.schemaVersion === REVIEW_MATTER_TASK_SCHEMA;
   exactKeys(
     value,
     [
@@ -3824,13 +3962,14 @@ export function validateReviewTask(value) {
       'attachmentRefs',
       'context',
       'executionPolicy',
+      ...(isMatter ? ['matterContext'] : []),
     ],
     [],
     'review task',
   );
   equal(
     value.schemaVersion,
-    REVIEW_TASK_SCHEMA,
+    isMatter ? REVIEW_MATTER_TASK_SCHEMA : REVIEW_TASK_SCHEMA,
     'REVIEW_TASK_SCHEMA_UNSUPPORTED',
   );
   equal(value.mode, 'INTERACTIVE_REVIEW', 'REVIEW_TASK_MODE_INVALID');
@@ -3903,6 +4042,12 @@ export function validateReviewTask(value) {
     resourceIds,
     'REVIEW_TASK_ATTACHMENT_REF_NOT_ALLOWED',
   );
+  if (isMatter) {
+    validateFrozenMatterReviewContext(value.matterContext, resourceIds);
+    if (value.selectedEvaluationItemId !== null || value.allowedEvaluationItemIds.length > 0) {
+      fail('REVIEW_MATTER_EVALUATION_SCOPE_INVALID');
+    }
+  }
   exactKeys(
     value.executionPolicy,
     [
@@ -3937,7 +4082,7 @@ export function validateReviewTask(value) {
   );
   equal(
     value.executionPolicy.toolPolicyRef,
-    `${WISELINK_HOST_MCP_NAME}@${WISELINK_HOST_MCP_VERSION}#interactive-review-c3`,
+    `${WISELINK_HOST_MCP_NAME}@${WISELINK_HOST_MCP_VERSION}#${isMatter ? 'interactive-matter-review-c4' : 'interactive-review-c3'}`,
     'REVIEW_TASK_TOOL_POLICY_INVALID',
   );
   return value;
@@ -3945,6 +4090,7 @@ export function validateReviewTask(value) {
 
 export function validateReviewCandidate(task, candidate) {
   validateReviewTask(task);
+  const isMatter = task.schemaVersion === REVIEW_MATTER_TASK_SCHEMA;
   exactKeys(
     candidate,
     [
@@ -3961,13 +4107,14 @@ export function validateReviewCandidate(task, candidate) {
       'affectedItemIds',
       'warnings',
       'runtime',
+      ...(isMatter ? ['matterWorkingDelta'] : []),
     ],
     [],
     'review candidate',
   );
   equal(
     candidate.schemaVersion,
-    REVIEW_CANDIDATE_SCHEMA,
+    isMatter ? REVIEW_MATTER_CANDIDATE_SCHEMA : REVIEW_CANDIDATE_SCHEMA,
     'REVIEW_CANDIDATE_SCHEMA_UNSUPPORTED',
   );
   equal(candidate.mode, 'INTERACTIVE_REVIEW', 'REVIEW_CANDIDATE_MODE_INVALID');
@@ -3981,8 +4128,8 @@ export function validateReviewCandidate(task, candidate) {
     task.reviewTurnRef,
     'REVIEW_CANDIDATE_TURN_MISMATCH',
   );
-  if (!REVIEW_RESPONSE_TYPES.has(candidate.responseType)) {
-    fail('REVIEW_CANDIDATE_RESPONSE_TYPE_UNSUPPORTED_BY_C3');
+  if (!REVIEW_RESPONSE_TYPES.has(candidate.responseType) && !(isMatter && candidate.responseType === 'RESYNTHESIS_RESULT')) {
+    fail(isMatter ? 'REVIEW_CANDIDATE_RESPONSE_TYPE_UNSUPPORTED_BY_C4' : 'REVIEW_CANDIDATE_RESPONSE_TYPE_UNSUPPORTED_BY_C3');
   }
   nonEmpty(candidate.answer, 'REVIEW_CANDIDATE_ANSWER_REQUIRED');
   uniqueTextArray(candidate.sourceRefs, 'REVIEW_CANDIDATE_SOURCE_REFS_INVALID');
@@ -4005,6 +4152,11 @@ export function validateReviewCandidate(task, candidate) {
     'REVIEW_CANDIDATE_AFFECTED_ITEMS_INVALID',
   );
   uniqueTextArray(candidate.warnings, 'REVIEW_CANDIDATE_WARNINGS_INVALID');
+  if (isMatter) {
+    if (candidate.reviewActionDraft !== null) fail('REVIEW_MATTER_FORMAL_ACTION_FORBIDDEN');
+    if (candidate.affectedItemIds.length > 0) fail('REVIEW_MATTER_AFFECTED_ITEMS_FORBIDDEN');
+    validateMatterWorkingDelta(task, candidate.matterWorkingDelta);
+  }
   const allowedSources = new Set(valueIds(task.resourceRefs, 'sourceRefId'));
   const allowedItems = new Set(task.allowedEvaluationItemIds);
   const allowedAdopted = new Set(task.allowedAdoptedInputRefs);
@@ -4237,6 +4389,260 @@ export function validateReviewCandidate(task, candidate) {
     'REVIEW_CANDIDATE_PROFILE_INVALID',
   );
   return candidate;
+}
+
+/** Frozen Matter bindings stay with the driver; none are projected as model input. */
+function validateFrozenMatterReviewContext(value, resourceIds) {
+  exactKeys(value, ['scope', 'title', 'workingState', 'readingEvidence', 'evidenceSources'], [], 'review matter context');
+  nonEmpty(value.title, 'REVIEW_MATTER_TITLE_REQUIRED');
+  const scope = value.scope;
+  exactKeys(scope, ['schemaVersion', 'kind', 'matterId', 'basedOnMatterRevisionId', 'expectedWorkingRevision', 'targetClaimId', 'inputs'], [], 'review matter scope');
+  equal(scope.schemaVersion, 'wiselink.3_1.matter_review_scope.v1', 'REVIEW_MATTER_SCOPE_INVALID');
+  equal(scope.kind, 'ENGINEERING_MATTER', 'REVIEW_MATTER_SCOPE_INVALID');
+  nonEmpty(scope.matterId, 'REVIEW_MATTER_SCOPE_INVALID');
+  nonEmpty(scope.basedOnMatterRevisionId, 'REVIEW_MATTER_SCOPE_INVALID');
+  integerInRange(scope.expectedWorkingRevision, 0, Number.MAX_SAFE_INTEGER, 'REVIEW_MATTER_SCOPE_INVALID');
+  nullableText(scope.targetClaimId, 'REVIEW_MATTER_SCOPE_INVALID');
+  validateMatterInputBindings(scope.inputs);
+  if (scope.inputs.length === 0) fail('REVIEW_MATTER_SCOPE_INPUTS_REQUIRED');
+  const inputs = new Set(scope.inputs.map((item) => item.inputId));
+  const evidence = validateMatterEvidenceList(value.readingEvidence);
+  array(value.evidenceSources, 'REVIEW_MATTER_EVIDENCE_SOURCES_INVALID');
+  const evidenceSources = new Set();
+  for (const source of value.evidenceSources) {
+    exactKeys(source, ['evidenceRef', 'sourceRefId', 'inputId'], [], 'review matter evidence source');
+    if (!evidence.has(source.evidenceRef) || !inputs.has(source.inputId) || !resourceIds.has(source.sourceRefId)) {
+      fail('REVIEW_MATTER_EVIDENCE_BINDING_INVALID');
+    }
+    if (evidenceSources.has(source.evidenceRef)) fail('REVIEW_MATTER_EVIDENCE_SOURCE_DUPLICATE');
+    evidenceSources.add(source.evidenceRef);
+  }
+  if (value.workingState !== null) {
+    const state = value.workingState;
+    exactKeys(state, ['schemaVersion', 'focus', 'substantiveResult', 'openQuestions', 'reviewConditions', 'substantiveInputs', 'coverage'], [], 'review matter working state');
+    equal(state.schemaVersion, 'wiselink.3_1.engineering_matter_working_state.v1', 'REVIEW_MATTER_WORKING_STATE_INVALID');
+    validateMatterFocus(state.focus);
+    validateMatterTextItems(state.openQuestions);
+    validateMatterTextItems(state.reviewConditions);
+    validateMatterInputBindings(state.substantiveInputs);
+    array(state.coverage, 'REVIEW_MATTER_COVERAGE_INVALID');
+    const coveredInputs = new Set();
+    for (const item of state.coverage) {
+      exactKeys(item, ['binding', 'checkedSourceRefIds', 'checkedScope', 'contribution', 'reason'], [], 'review matter stored coverage');
+      validateMatterInputBindings([item.binding]);
+      validateMatterCoverageFields(item);
+      if (coveredInputs.has(item.binding.inputId)) fail('REVIEW_MATTER_INPUT_COVERAGE_DUPLICATE');
+      coveredInputs.add(item.binding.inputId);
+    }
+    if (state.substantiveResult !== null) {
+      const result = state.substantiveResult;
+      exactKeys(result, ['resultRef', 'resultRevision', 'scope', 'content', 'evidence', 'candidateOnly'], [], 'review matter reading result');
+      nonEmpty(result.resultRef, 'REVIEW_MATTER_RESULT_REF_INVALID');
+      positiveInteger(result.resultRevision, 'REVIEW_MATTER_RESULT_REVISION_INVALID');
+      exactKeys(result.scope, ['kind', 'matterId'], [], 'review matter result scope');
+      equal(result.scope.kind, 'ENGINEERING_MATTER', 'REVIEW_MATTER_RESULT_SCOPE_INVALID');
+      equal(result.scope.matterId, scope.matterId, 'REVIEW_MATTER_RESULT_SCOPE_INVALID');
+      equal(result.candidateOnly, true, 'REVIEW_MATTER_RESULT_AUTHORITY_INVALID');
+      equal(result.content?.schemaVersion, 'wiselink.3_1.assessment_reading.v1', 'REVIEW_MATTER_READING_SCHEMA_INVALID');
+      validateEngineeringReadingSummary(result.content);
+      const priorEvidence = validateMatterEvidenceList(result.evidence);
+      assertMatterClaimEvidence(result.content.claims, priorEvidence);
+    }
+  }
+  matterReviewEvidence(value); // Reject a reused evidenceRef whose actual carrier changed.
+}
+
+function validateMatterInputBindings(values) {
+  array(values, 'REVIEW_MATTER_INPUTS_INVALID');
+  const inputIds = new Set();
+  const workItemIds = new Set();
+  for (const binding of values) {
+    exactKeys(binding, ['inputId', 'workItemId', 'workItemRevision', 'documentVersionId', 'resultRef', 'resultRevision'], [], 'review matter input binding');
+    for (const key of ['inputId', 'workItemId', 'documentVersionId']) nonEmpty(binding[key], 'REVIEW_MATTER_INPUT_INVALID');
+    integerInRange(binding.workItemRevision, 0, Number.MAX_SAFE_INTEGER, 'REVIEW_MATTER_INPUT_REVISION_INVALID');
+    nullableText(binding.resultRef, 'REVIEW_MATTER_INPUT_RESULT_INVALID');
+    if (binding.resultRevision !== null) integerInRange(binding.resultRevision, 0, Number.MAX_SAFE_INTEGER, 'REVIEW_MATTER_INPUT_RESULT_INVALID');
+    if ((binding.resultRef === null) !== (binding.resultRevision === null)) fail('REVIEW_MATTER_INPUT_RESULT_INVALID');
+    if (inputIds.has(binding.inputId) || workItemIds.has(binding.workItemId)) fail('REVIEW_MATTER_INPUT_DUPLICATE');
+    inputIds.add(binding.inputId);
+    workItemIds.add(binding.workItemId);
+  }
+}
+
+function validateMatterEvidenceList(values) {
+  array(values, 'REVIEW_MATTER_EVIDENCE_INVALID');
+  const evidence = new Map();
+  for (const item of values) {
+    assertObject(item, 'review matter evidence');
+    const specific = {
+      DOCUMENT_PASSAGE: ['workItemId', 'documentVersionId', 'sourceRefId', 'locator'],
+      HOST_FACT: ['workItemId', 'workItemRevision', 'factRef', 'recordedAt'],
+      QUERY_RECEIPT: ['receiptRef', 'checkedScope', 'queriedAt', 'coverage'],
+      PRIOR_RESULT: ['resultRef', 'resultRevision', 'originalEvidenceRefs'],
+      ENGINEER_STATEMENT: item.origin === 'REVIEW_CONVERSATION'
+        ? ['origin', 'reviewConversationId', 'reviewTurnId', 'engineerSuppliedInputId', 'recordedAt']
+        : ['origin', 'workItemId', 'reviewRevision', 'sequence', 'sourceRefId', 'locator', 'recordedAt'],
+    }[item.kind];
+    if (!specific) fail('REVIEW_MATTER_EVIDENCE_KIND_INVALID');
+    exactKeys(item, ['evidenceRef', 'kind', 'title', 'versionLabel', 'excerpt', ...specific], [], 'review matter evidence');
+    for (const key of ['evidenceRef', 'title', 'excerpt', ...specific]) {
+      if (['workItemRevision', 'reviewRevision', 'resultRevision', 'sequence'].includes(key)) {
+        integerInRange(item[key], 0, Number.MAX_SAFE_INTEGER, 'REVIEW_MATTER_EVIDENCE_REVISION_INVALID');
+      } else if (key === 'originalEvidenceRefs') uniqueTextArray(item[key], 'REVIEW_MATTER_EVIDENCE_REFS_INVALID');
+      else nonEmpty(item[key], 'REVIEW_MATTER_EVIDENCE_INVALID');
+    }
+    nullableText(item.versionLabel, 'REVIEW_MATTER_EVIDENCE_VERSION_INVALID');
+    if (item.kind === 'ENGINEER_STATEMENT' && !['REVIEW_CONVERSATION', 'ENGINEER_REVIEW_LEDGER'].includes(item.origin)) fail('REVIEW_MATTER_STATEMENT_ORIGIN_INVALID');
+    if (item.kind === 'QUERY_RECEIPT' && !['COMPLETE', 'PARTIAL'].includes(item.coverage)) fail('REVIEW_MATTER_QUERY_COVERAGE_INVALID');
+    if (evidence.has(item.evidenceRef)) fail('REVIEW_MATTER_EVIDENCE_DUPLICATE');
+    evidence.set(item.evidenceRef, item);
+  }
+  return evidence;
+}
+
+function matterReviewEvidence(context) {
+  const evidence = new Map((context.workingState?.substantiveResult?.evidence ?? []).map((item) => [item.evidenceRef, item]));
+  for (const item of context.readingEvidence) {
+    const prior = evidence.get(item.evidenceRef);
+    if (prior && canonicalJson(prior) !== canonicalJson(item)) fail('REVIEW_MATTER_EVIDENCE_IDENTITY_DRIFT');
+    evidence.set(item.evidenceRef, item);
+  }
+  return evidence;
+}
+
+function validateMatterFocus(value) {
+  exactKeys(value, ['question', 'targetRefs'], [], 'review matter focus');
+  nonEmpty(value.question, 'REVIEW_MATTER_FOCUS_QUESTION_REQUIRED');
+  uniqueTextArray(value.targetRefs, 'REVIEW_MATTER_FOCUS_REFS_INVALID');
+}
+
+function validateMatterTextItems(values) {
+  array(values, 'REVIEW_MATTER_TEXT_ITEMS_INVALID');
+  const ids = new Set();
+  for (const item of values) {
+    exactKeys(item, ['itemId', 'text', 'basisRefs'], [], 'review matter text item');
+    nonEmpty(item.itemId, 'REVIEW_MATTER_TEXT_ITEM_ID_REQUIRED');
+    nonEmpty(item.text, 'REVIEW_MATTER_TEXT_REQUIRED');
+    uniqueTextArray(item.basisRefs, 'REVIEW_MATTER_TEXT_BASIS_INVALID');
+    if (ids.has(item.itemId)) fail('REVIEW_MATTER_TEXT_ITEM_DUPLICATE');
+    ids.add(item.itemId);
+  }
+}
+
+function validateMatterCoverageFields(value) {
+  uniqueTextArray(value.checkedSourceRefIds, 'REVIEW_MATTER_CHECKED_RANGE_INVALID');
+  if (value.checkedSourceRefIds.length === 0) fail('REVIEW_MATTER_CHECKED_RANGE_REQUIRED');
+  nonEmpty(value.checkedScope, 'REVIEW_MATTER_CHECKED_SCOPE_REQUIRED');
+  nonEmpty(value.reason, 'REVIEW_MATTER_COVERAGE_REASON_REQUIRED');
+  if (!['SUBSTANTIVE', 'NO_MATERIAL_CHANGE'].includes(value.contribution)) fail('REVIEW_MATTER_COVERAGE_INVALID');
+}
+
+function assertMatterClaimEvidence(claims, evidence) {
+  for (const claim of claims) {
+    for (const premise of claim.premises) if (!evidence.has(premise.evidenceRef)) fail('REVIEW_MATTER_PREMISE_NOT_ALLOWED');
+  }
+}
+
+function validateMatterWorkingDelta(task, value) {
+  if (value === null) return;
+  exactKeys(value, ['updateKind', 'changeSummary', 'nextFocus', 'claimDelta', 'readingPresentation', 'openQuestionDelta', 'reviewConditionDelta', 'coverageUpdates'], [], 'review matter delta');
+  if (!['INITIAL_SYNTHESIS', 'CORRECTION', 'MATERIAL_INCORPORATION'].includes(value.updateKind)) fail('REVIEW_MATTER_UPDATE_KIND_INVALID');
+  nonEmpty(value.changeSummary, 'REVIEW_MATTER_CHANGE_SUMMARY_REQUIRED');
+  const context = task.matterContext;
+  const current = context.workingState;
+  if (value.nextFocus !== null) validateMatterFocus(value.nextFocus);
+  if ((value.claimDelta === null) !== (value.readingPresentation === null)) fail('REVIEW_MATTER_PRESENTATION_DELTA_REQUIRED');
+  if (current === null && (value.updateKind !== 'INITIAL_SYNTHESIS' || value.nextFocus === null || value.claimDelta === null)) {
+    fail('REVIEW_MATTER_INITIAL_SYNTHESIS_REQUIRED');
+  }
+  if (current !== null && value.updateKind === 'INITIAL_SYNTHESIS') fail('REVIEW_MATTER_UPDATE_KIND_INVALID');
+  if (value.claimDelta !== null) {
+    const delta = value.claimDelta;
+    exactKeys(delta, ['changedBecause', 'additions', 'replacements', 'retirements', 'explicitlyUnchangedClaimIds'], [], 'review matter claim delta');
+    nonEmpty(delta.changedBecause, 'REVIEW_MATTER_CLAIM_CHANGE_REASON_REQUIRED');
+    array(delta.additions, 'REVIEW_MATTER_CLAIM_ADDITIONS_INVALID');
+    array(delta.replacements, 'REVIEW_MATTER_CLAIM_REPLACEMENTS_INVALID');
+    [...delta.additions, ...delta.replacements].forEach((claim) => assertObject(claim, 'review matter claim'));
+    const priorClaims = current?.substantiveResult?.content.claims ?? [];
+    validateMatterDeltaPartition({
+      priorIds: priorClaims.map((claim) => claim.claimId),
+      additionIds: delta.additions.map((claim) => claim.claimId),
+      replacementIds: delta.replacements.map((claim) => claim.claimId),
+      retirements: delta.retirements, unchangedIds: delta.explicitlyUnchangedClaimIds, idKey: 'claimId',
+    });
+    const replacements = new Map(delta.replacements.map((claim) => [claim.claimId, claim]));
+    const retired = new Set(delta.retirements.map((claim) => claim.claimId));
+    const claims = [...priorClaims.filter((claim) => !retired.has(claim.claimId)).map((claim) => replacements.get(claim.claimId) ?? claim), ...delta.additions];
+    exactKeys(value.readingPresentation, ['headline', 'listBrief', 'lead', 'decisiveClaimIds'], [], 'review matter reading presentation');
+    validateEngineeringReadingSummary({ schemaVersion: 'wiselink.3_1.assessment_reading.v1', ...value.readingPresentation, claims });
+    assertMatterClaimEvidence(claims, matterReviewEvidence(context));
+  }
+  for (const [key, priorKey] of [['openQuestionDelta', 'openQuestions'], ['reviewConditionDelta', 'reviewConditions']]) {
+    const delta = value[key];
+    if (delta === null) continue;
+    exactKeys(delta, ['upserts', 'retirements', 'explicitlyUnchangedItemIds'], [], 'review matter text delta');
+    validateMatterTextItems(delta.upserts);
+    const priorIds = (current?.[priorKey] ?? []).map((item) => item.itemId);
+    validateMatterDeltaPartition({
+      priorIds,
+      additionIds: delta.upserts.filter((item) => !priorIds.includes(item.itemId)).map((item) => item.itemId),
+      replacementIds: delta.upserts.filter((item) => priorIds.includes(item.itemId)).map((item) => item.itemId),
+      retirements: delta.retirements, unchangedIds: delta.explicitlyUnchangedItemIds, idKey: 'itemId',
+    });
+  }
+  array(value.coverageUpdates, 'REVIEW_MATTER_COVERAGE_INVALID');
+  const inputBindings = new Map(context.scope.inputs.map((binding, index) => ['matter-input:' + (index + 1), binding]));
+  const sourceBindings = new Map(context.evidenceSources.map((item) => [item.sourceRefId, item]));
+  const covered = new Set();
+  for (const item of value.coverageUpdates) {
+    exactKeys(item, ['inputRef', 'checkedSourceRefIds', 'checkedScope', 'contribution', 'reason'], [], 'review matter coverage');
+    validateMatterCoverageFields(item);
+    const binding = inputBindings.get(item.inputRef);
+    if (!binding) fail('REVIEW_MATTER_COVERAGE_INPUT_NOT_ALLOWED');
+    if (covered.has(item.inputRef)) fail('REVIEW_MATTER_INPUT_COVERAGE_DUPLICATE');
+    covered.add(item.inputRef);
+    for (const sourceRefId of item.checkedSourceRefIds) {
+      if (sourceBindings.get(sourceRefId)?.inputId !== binding.inputId) fail('REVIEW_MATTER_COVERAGE_SOURCE_NOT_ALLOWED');
+    }
+  }
+}
+
+function validateMatterDeltaPartition({ priorIds, additionIds, replacementIds, retirements, unchangedIds, idKey }) {
+  array(retirements, 'REVIEW_MATTER_RETIREMENTS_INVALID');
+  for (const item of retirements) {
+    exactKeys(item, [idKey, 'reason'], [], 'review matter retirement');
+    nonEmpty(item.reason, 'REVIEW_MATTER_RETIREMENT_REASON_REQUIRED');
+  }
+  const retirementIds = retirements.map((item) => item[idKey]);
+  const partitions = [additionIds, replacementIds, retirementIds, unchangedIds];
+  for (const ids of partitions) uniqueTextArray(ids, 'REVIEW_MATTER_DELTA_IDS_INVALID');
+  const all = partitions.flat();
+  if (new Set(all).size !== all.length) fail('REVIEW_MATTER_DELTA_OVERLAP');
+  const prior = new Set(priorIds);
+  if (additionIds.some((id) => prior.has(id))) fail('REVIEW_MATTER_ADDITION_EXISTS');
+  if ([...replacementIds, ...retirementIds, ...unchangedIds].some((id) => !prior.has(id))) fail('REVIEW_MATTER_EXISTING_ID_REQUIRED');
+  const retained = new Set([...replacementIds, ...retirementIds, ...unchangedIds]);
+  if (priorIds.some((id) => !retained.has(id))) fail('REVIEW_MATTER_CARRY_FORWARD_INCOMPLETE');
+}
+
+/** Source keys used by the candidate include changed Matter claims and checked ranges. */
+export function reviewCandidateSourceRefIds(task, candidate) {
+  const refs = [...candidate.sourceRefs, ...candidate.candidateEvidenceRefs, ...(candidate.reviewActionDraft?.sourceRefs ?? [])];
+  if (task.schemaVersion === REVIEW_MATTER_TASK_SCHEMA && candidate.matterWorkingDelta !== null) {
+    const delta = candidate.matterWorkingDelta;
+    const evidence = matterReviewEvidence(task.matterContext);
+    const sources = new Map(task.matterContext.evidenceSources.map((item) => [item.evidenceRef, item.sourceRefId]));
+    for (const claim of [...(delta.claimDelta?.additions ?? []), ...(delta.claimDelta?.replacements ?? [])]) {
+      for (const premise of claim.premises) {
+        if (evidence.get(premise.evidenceRef)?.kind !== 'DOCUMENT_PASSAGE') continue;
+        const sourceRefId = sources.get(premise.evidenceRef);
+        if (!sourceRefId) fail('REVIEW_MATTER_CHANGED_CLAIM_SOURCE_NOT_AVAILABLE');
+        refs.push(sourceRefId);
+      }
+    }
+    refs.push(...delta.coverageUpdates.flatMap((item) => item.checkedSourceRefIds));
+  }
+  return [...new Set(refs)];
 }
 
 function validateReviewUncertaintyDispositions(value) {
@@ -4473,7 +4879,7 @@ export function isForbiddenAuthorityInputKey(key) {
 }
 
 function rejectAuthoritativeNarrative(output) {
-  const text = [
+  const narratives = [
     output.overallCandidate,
     ...engineeringSummaryStatements(output.engineeringSummary).map(
       (statement) => statement.text,
@@ -4484,17 +4890,29 @@ function rejectAuthoritativeNarrative(output) {
       finding.uncertainty,
       ...finding.assumptions,
     ]),
-  ].join('\n');
-  const forbidden = [
-    /(?:已确认|确认)(?:该)?(?:机队)?适用/u,
-    /(?:已确认|确认)(?:该)?(?:机队)?不适用/u,
-    /(?:已批准|批准执行|批准放行|可直接实施|可以直接实施)/u,
-    /形成适航结论/u,
-    /\b(?:approved|airworthiness conclusion|confirmed applicable|confirmed inapplicable|safe to release)\b/iu,
   ];
-  if (forbidden.some((pattern) => pattern.test(text))) {
+  if (narratives.some(overallAuthoritativeAssertion)) {
     fail('OVERALL_AUTHORITATIVE_NARRATIVE_FORBIDDEN');
   }
+}
+
+function overallAuthoritativeAssertion(narrative) {
+  const clauses = narrative.split(/[。！？；;\n]|(?<=[a-z])\.(?:\s|$)|[,，]|\b(?:but|therefore|however|thus)\b|(?:但是|但|因此|所以|故而)/iu);
+  for (const clause of clauses) {
+    const assertions = clause.matchAll(/(?:已确认|确认)(?:该)?(?:机队)?(?:不)?适用|(?:已批准|批准执行|批准放行|可直接实施|可以直接实施|形成适航结论)|\b(?:approved|airworthiness conclusion|confirmed applicable|confirmed inapplicable|safe to release)\b/giu);
+    for (const match of assertions) {
+      const prefix = clause.slice(0, match.index).trimEnd();
+      const negated = /(?:尚未|并未|从未|没有|不是|并非|不代表|不等于|不得|不能|不可|未|不|无法)(?:被|获|获得|经|视为|认为)?[“"'‘「]?$/u.test(prefix)
+        || /\b(?:not|never|no longer)(?:\s+(?:yet|been|be|being|considered|deemed|formally|already))*\s*["'“‘]?$/iu.test(prefix)
+        || /\b(?:cannot|can't|does not|doesn't)\s+(?:be\s+)?(?:mean|imply|constitute|establish)(?:\s+(?:an?|that|it\s+is))?\s*["'“‘]?$/iu.test(prefix);
+      if (negated) continue;
+      const sourceAttributed = /(?:厂家|制造商|波音|空客|商飞|Boeing|Airbus|COMAC)(?:在[^。；;]{0,60})?(?:的[^。；;]{0,30})?(?:称|表示|声明|说明|写明|报告|原文|立场)[^。；;]{0,80}$/iu.test(prefix)
+        || /\b(?:Boeing|Airbus|COMAC|(?:the\s+)?manufacturer)\s+(?:states?|reports?|says?|notes?|describes?|wrote|said|stated)(?:\s+that)?[^.;]{0,80}$/iu.test(prefix)
+        || /\baccording to\s+(?:Boeing|Airbus|COMAC|(?:the\s+)?manufacturer)[^.;]{0,80}$/iu.test(prefix);
+      if (!sourceAttributed) return true;
+    }
+  }
+  return false;
 }
 
 function officialHost(providerName, hostname) {

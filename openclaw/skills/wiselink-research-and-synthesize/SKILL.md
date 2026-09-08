@@ -3,7 +3,7 @@ name: wiselink-research-and-synthesize
 description: Orchestrate the single official hosted WiseLink engineering profile through the canonical Host MCP for INITIAL_ANALYSIS and INTERACTIVE_REVIEW. Preserve applicability AST extraction, dynamic N/N tri-state semantics, SourceRef/currentness bindings, candidate-only authority, fenced ResultEnvelope commits including bounded Translation parts, and exact hosted provenance. Read Host-authorized parsed attachments only through the C3 SourceRef path, and fail closed for unavailable search, compare, reevaluation, or resynthesis tools.
 ---
 
-# WiseLink R09 工程分析与交互复核
+# WiseLink R10 工程分析与事项讨论
 
 本 Skill 是同名能力从历史 `d3ce25f` 迁移后的 R09 版本，不是第二套 Skill。
 
@@ -12,7 +12,7 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（任务可绑定已登记的内置或用户授权自定义模型；仍经唯一官方 Hosted profile/Gateway）
-- Skill：`wiselink-research-and-synthesize@r09.c33`
+- Skill：`wiselink-research-and-synthesize@r09.c34`
 - Skill compatibility：`wiselink-research-and-synthesize@r09`（Host 最低接受 `r09.c10`）
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（既有 20 项能力；兼容新增的只读自动领取查询）
 - Host baseline：`6fd2655d27edc3851c745547efaf8796ad22c82c`
@@ -36,6 +36,9 @@ c24 接受 Host 在新 TaskEnvelope 中保存的可选 `executionModel`。该非
 Task/Result/MCP 语义的 prompt 时可 Skill-only 发布新 c 修订；不兼容 schema、tool 参数、authority 或安全语义
 变更必须升级兼容线并与 Host 协同发布。c24 的可选控制元数据保持旧任务兼容，但旧 Skill 不接受新字段，
 必须先安装 c24，再发布生成该字段的 Host；不能把新任务交给旧 Skill。
+
+c34 增加以 schema 区分的 Overall v2 与 Matter Review c4，同时完整保留旧 Overall v1、Review c2/c3。
+先安装兼容包 c34，再发布生成新任务的 Host/前端。新任务不交给旧 Skill；r09 兼容线不变。
 
 ## 不变边界
 
@@ -181,6 +184,9 @@ CAS；Skill 不声称这些步骤由模型完成。8. commit 响应未知时只�
   每窗口最多两次且共用该次全文总预算。纠正响应只能包含请求的索引，完整匹配后以模型实返文本替换这些单元；
   未失败单元保持原文，驱动不编造、删改或补齐译文。各单元翻译自身片段，全文和相邻单元只帮助理解，不挪动内容。
   耗尽预算或纠正仍失败时停止；不重放已经失败的 Host attempt，不执行上传或提交。
+- c34 在上述两次批量纠正均严格减少 findings、失败单元数未增加且只剩至多 8 个单元时，允许逐单元尾段纠正。
+  每个单元最多两次，每次仍须严格减少自身 findings；停滞、增加、数量超限或原总预算到期立即失败。
+  模型返回该完整单元，驱动只原样替换其文本并重跑同一 rulePack；不自行搬动相邻编号或内容。
 - c28 与 Host 同步修正保真识别：完整、无歧义日期按日期值比较，允许 `24 Sep 2020` 与 `2020年9月24日`
   等价；日期变化、无效日期和次数变化仍失败。中文紧邻数字正常识别，连写的字母数字标识仍逐字保留。
   ATA 只匹配明确的 ATA 引用，不把普通日期或数值误称为章节；既有编号、术语、来源及最终提交校验保留。
@@ -275,9 +281,16 @@ CAS；Skill 不声称这些步骤由模型完成。8. commit 响应未知时只�
   仍执行 overall 模型并形成初步工程综合候选；只允许
   列出当前 SourceRef/effectivity 实际要求的缺失事实，保持适用性为条件性 UNKNOWN，并说明需要工程师或后续受控
   数据确认。不得引入当前文档、dynamic 缺口和 Host missingInputs 中不存在的设备、软件或构型名称。
-- 输出 `engineeringSummary` 必须回答一句话工程结论、为什么重要、来源适用范围与当前机队匹配、实施影响、处置
-  优先级和 1–3 个下一步动作；每个陈述至少引用一个 `currentDocumentSourceRefIds` 内的 SourceRef，并用
-  `SOURCE_FACT` / `CONDITIONAL_INFERENCE` 区分来源事实与条件性推断。状态、版本、模型与计数不是工程结论。
+- 新任务有 `evidenceRegistry` 时，`engineeringSummary.schemaVersion` 必须为
+  `wiselink.3_1.overall_engineering_summary.v2`，正文为 `headline/listBrief/lead/claims/decisiveClaimIds`。
+  `overallCandidate` 与 `lead` 完全一致。列表、简报和详情读取同一保存结果，不由 GET 重新生成。
+- 每条 claim 有稳定 claimId、正文、SOURCE_FACT/CONDITIONAL_INFERENCE 及全部实际前提。每项 premise 指向
+  本轮 evidenceRegistry 的 evidenceRef，注明 SUPPORTS/LIMITS/CONTEXT/CONFLICTS、解释和 limitation。
+  多来源推断要列出全部必要前提；关联材料可以独立支撑判断，不强制每条都引用主文档。
+  原文、工程师陈述、Host事实、查询回执和既有结果保留自己的载体类型；既有候选不成为独立新事实。
+- 用 decisiveClaimIds 标记会改变结论的条件、否定和冲突，阅读层必须完整显示。无需为完成评估强行给出实施、
+  优先级或固定数量的动作。制造商建议与工程师假设应归属其来源，均不自动成为批准或放行。
+  无 evidenceRegistry 的历史任务继续输出原 v1 结构并遵守其来源合同。
 - 工程师 review 的同 criterion 多次记录由 Host 保留 history，并以最后一条为 effective；Skill 不重写
   ledger 或把 review 自动升级为批准。
 - 只在一个明确 gap 需要外部事实时，选择直接相关且已实现的官方 provider；不固定遍历三家 OEM。
@@ -316,6 +329,30 @@ get_parse_status
   Applicability/baseRules 绑定、ResultGate、actual-byte readback 与最终单次 CAS 仍全由 Host 执行。
 
 ## Mode 2：INTERACTIVE_REVIEW
+
+### R10 Matter Review（c34）
+
+Host 的 `review_turn_task.v1.c4` 仍经同一驱动、原生会话和五个 MCP 工具执行。`matterContext` 是封存的 Host
+业务绑定，不进入模型；模型只接收 `context.matterWorking` 中的当前保存结果、工作版本、焦点、待解问题、
+复核条件、输入是否待处理及脱敏依据目录。该路径不要求主文档已有 JobAid，不生成 ReviewActionDraft。
+
+- 输出 `review_turn_candidate.v1.c4`，必须有 `matterWorkingDelta`；普通解释为 null，`reviewActionDraft=null`、
+  `affectedItemIds=[]`。根据实际新信息提出 INITIAL_SYNTHESIS、CORRECTION 或 MATERIAL_INCORPORATION，
+  不是每轮聊天都另写一个结果。
+- 非 null delta 精确包含 `updateKind/changeSummary/nextFocus/claimDelta/readingPresentation/`
+  `openQuestionDelta/reviewConditionDelta/coverageUpdates`。claimDelta 按稳定 claimId 添加、替换、撤销或明确保持，
+  写出 changedBecause；readingPresentation 与新的 claims 一起构成同一阅读结果。局部纠正保留未变化正文和依据。
+- DOCUMENT_PASSAGE 目录不包含正文；任何答复引用、变化 claim 的文档前提与 coverage 都必须本轮实际读取。
+  使用本轮 task-local source key，不能用另一个文档的同名原 SourceRef；工程师陈述只可用 Host 已提供的文本。
+- coverage 按 inputRef 记录实际读过的 source keys、明确检查范围、SUBSTANTIVE 或 NO_MATERIAL_CHANGE 及理由。
+  未读、仅登记或仅命中的材料保持 pending；覆盖一个片段不代表全文检查。新材料没有改变判断时允许只更新覆盖记录。
+- Host 核对全成员及历史依据访问、版本和真实读取后，在同一事务追加候选答复与工作记录；冲突保存
+  BASIS_CHANGED 回执，不能覆盖新结果。解释 null 不推进工作版本。工作结果与正式采用、审批、实施决定分离。
+- 工作版本因本事项上一轮正常保存而递增，不单独重置原生会话；换事项、输入范围/版本/权限变化或上一轮失败会
+  重新建立会话。所有保存仍由 Host 完成；模型不可回传 actor、tenant、WI、artifact、租约或 CAS 控制字段。
+
+以下 C3 规则继续适用于普通 WorkItem Review；其中“不写工作记录”和禁止 resynthesis 的限制不覆盖上面的 c4
+候选工作记录路径。两条路径都不执行正式 ReviewAction。
 
 ### 页面自动执行（c19）
 
@@ -457,7 +494,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - `modelVersion` 优先取响应中可读实际模型；绑定任务未回报实际模型时使用 `configured-route:<modelRef>`，旧无绑定任务使用无 fallback 的 configured endpoint。后两者只证明路由，不代表已暴露下游具体模型，也不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c33`
+- `skillVersion=wiselink-research-and-synthesize@r09.c34`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致

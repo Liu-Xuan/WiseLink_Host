@@ -8,11 +8,13 @@ import {
   WISELINK_RUNTIME_APP_ID,
   WISELINK_SKILL_VERSION,
   WISELINK_APPLICABILITY_PROMPT_VERSION,
+  REVIEW_MATTER_TASK_SCHEMA,
   buildApplicabilityCandidate,
   canonicalJson,
   isForbiddenAuthorityInputKey,
   normalizeAuthorityInputKey,
   reviewCandidateArtifactRefs,
+  reviewCandidateSourceRefIds,
   sealResultEnvelope,
   sealTranslationDeliveryResultEnvelope,
   sealWaitingInputResultEnvelope,
@@ -982,6 +984,17 @@ export async function runInteractiveReviewTurn({
       begin.attemptRef,
       requested,
     );
+    if (task.schemaVersion === REVIEW_MATTER_TASK_SCHEMA) {
+      for (const source of sanitized) {
+        const bindings = task.matterContext.evidenceSources.filter((binding) => binding.sourceRefId === source.sourceRefId);
+        // Existing engineer attachments retain their authorized C3 read shape;
+        // Matter document passages additionally bind the local key to evidenceRef.
+        if (bindings.length > 0 ? !bindings.some((binding) => binding.evidenceRef === source.evidenceRef)
+          : !task.attachmentRefs.includes(source.sourceRefId)) {
+          throw new Error('HOST_MCP_REVIEW_MATTER_SOURCE_BINDING_INVALID');
+        }
+      }
+    }
     requested.forEach((sourceRefId) => readSourceRefIds.add(sourceRefId));
     return sanitized;
   };
@@ -993,13 +1006,14 @@ export async function runInteractiveReviewTurn({
     }),
   );
   const candidate = validateReviewCandidate(task, execution.output);
-  assertReviewSourcesWereRead(candidate, readSourceRefIds);
+  assertReviewSourcesWereRead(candidate, readSourceRefIds, task, safeModelInput.context.matterWorking);
   const result = sealResultEnvelope({
     task: begin.task,
     modelOutput: candidate,
     provenance: execution.provenance,
     sourceRefs: reviewCandidateArtifactRefs(begin.task, candidate),
-    factsConsidered: [...candidate.sourceRefs],
+    factsConsidered: task.schemaVersion === REVIEW_MATTER_TASK_SCHEMA
+      ? reviewCandidateSourceRefIds(task, candidate) : [...candidate.sourceRefs],
     warnings: [...candidate.warnings],
   });
   let committed;
@@ -1751,6 +1765,9 @@ function assertReviewContext(value, begin, task) {
   ) {
     throw new Error('HOST_MCP_REVIEW_CONTEXT_INVALID');
   }
+  if ((task.schemaVersion === REVIEW_MATTER_TASK_SCHEMA) !== isRecord(value.context.matterWorking)) {
+    throw new Error('HOST_MCP_REVIEW_MATTER_CONTEXT_BINDING_INVALID');
+  }
   const expectedResourceRefs = task.resourceRefs.map(
     ({ sourceRefId, resourceArtifactRef, resourceArtifactSha256 }) => ({
       sourceRefId,
@@ -1788,7 +1805,8 @@ function assertReviewContext(value, begin, task) {
 function buildReviewModelInput(task, contextResult) {
   const context = sanitizeForModel(contextResult.context);
   return {
-    schemaVersion: 'wiselink.3_1.review_model_input.v1.c3',
+    schemaVersion: task.schemaVersion === REVIEW_MATTER_TASK_SCHEMA
+      ? 'wiselink.3_1.review_model_input.v1.c4' : 'wiselink.3_1.review_model_input.v1.c3',
     mode: 'INTERACTIVE_REVIEW',
     inputRevision: task.inputRevision,
     selectedEvaluationItemId: task.selectedEvaluationItemId,
@@ -1823,6 +1841,9 @@ function sanitizeForModel(value, modelPath = '$') {
   const result = {};
   for (const [key, child] of Object.entries(value)) {
     const normalized = normalizeAuthorityInputKey(key);
+    if (normalized === 'mattercontext') {
+      throw new Error(`REVIEW_MODEL_SENSITIVE_FIELD_FORBIDDEN:${modelPath}.${key}`);
+    }
     if (normalized === 'workitemid') continue;
     if (
       normalized === 'authority' &&
@@ -1921,14 +1942,30 @@ function sanitizeSourceRefReadback(value, attemptRef, requested) {
   );
 }
 
-function assertReviewSourcesWereRead(candidate, readSourceRefIds) {
-  const used = [
-    ...candidate.sourceRefs,
-    ...candidate.candidateEvidenceRefs,
-    ...(candidate.reviewActionDraft?.sourceRefs ?? []),
-  ];
+function assertReviewSourcesWereRead(candidate, readSourceRefIds, task, matterWorking) {
+  const used = reviewCandidateSourceRefIds(task, candidate);
   if (used.some((sourceRefId) => !readSourceRefIds.has(sourceRefId))) {
     throw new Error('REVIEW_CANDIDATE_SOURCE_REF_NOT_READ_THIS_TURN');
+  }
+  if (task.schemaVersion !== REVIEW_MATTER_TASK_SCHEMA || candidate.matterWorkingDelta === null) return;
+  const provided = new Set([
+    ...(matterWorking.evidenceCatalog ?? []),
+    ...(matterWorking.currentResult?.evidence ?? []),
+  ].filter((item) => item.kind !== 'DOCUMENT_PASSAGE' && typeof item.providedText === 'string' && item.providedText.trim())
+    .map((item) => item.evidenceRef));
+  const evidence = new Map([
+    ...(task.matterContext.workingState?.substantiveResult?.evidence ?? []),
+    ...task.matterContext.readingEvidence,
+  ].map((item) => [item.evidenceRef, item]));
+  const sources = new Map(task.matterContext.evidenceSources.map((item) => [item.evidenceRef, item.sourceRefId]));
+  const delta = candidate.matterWorkingDelta.claimDelta;
+  for (const claim of [...(delta?.additions ?? []), ...(delta?.replacements ?? [])]) {
+    for (const premise of claim.premises) {
+      if (evidence.get(premise.evidenceRef)?.kind !== 'DOCUMENT_PASSAGE' &&
+        !provided.has(premise.evidenceRef) && !readSourceRefIds.has(sources.get(premise.evidenceRef))) {
+        throw new Error('REVIEW_MATTER_PREMISE_NOT_PROVIDED_OR_READ_THIS_TURN');
+      }
+    }
   }
 }
 

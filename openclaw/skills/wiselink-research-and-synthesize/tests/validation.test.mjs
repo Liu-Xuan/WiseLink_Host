@@ -625,6 +625,219 @@ test('translation corrections stop after two unsuccessful replacements or an out
   }
 });
 
+test('translation resolves a converging seven-unit token shift in one 437-unit session before returning the full candidate', async () => {
+  for (const failFinalWindow of [false, true]) {
+    const { input, translations, shifted, otherWindowIndices } = shiftedTranslationFixture();
+    const unchangedInput = structuredClone(input);
+    const reports = [];
+    const residualRequests = [];
+    const windows = [];
+    const previous = new Map();
+    let calls = 0;
+    let fourthWindowCorrections = 0;
+    const requestGateway = async (_url, init) => {
+      const request = JSON.parse(init.body);
+      const feedback = JSON.parse(request.messages[2].content);
+      const window = feedback.translationOutputWindow;
+      assert.equal(request.user, 'initial:shifted-437');
+      assert.equal(request.max_completion_tokens, 32_000);
+      if (calls === 0) assert.deepEqual(JSON.parse(request.messages[1].content), unchangedInput);
+      else assert.equal(JSON.stringify(request.messages).includes('sourceUnits\":['), false);
+      calls += 1;
+      let rows;
+      if (feedback.status === 'CORRECT_TRANSLATION_UNITS') {
+        for (const unit of feedback.rejectedUnits) {
+          assert.equal(unit.sourceText, input.sourceUnits[unit.index].text);
+          assert.equal(unit.previousTranslation, previous.get(unit.index));
+        }
+        if (feedback.correctionMode === 'SINGLE_UNIT_RETRANSLATION') {
+          const [index] = feedback.unitIndices;
+          residualRequests.push([index, feedback.unitAttempt]);
+          assert.equal(feedback.unitIndices.length, 1);
+          assert.equal(feedback.rejectedUnits.length, 1);
+          const schema = request.tools[0].function.parameters.properties.candidate.properties.translatedUnits;
+          assert.deepEqual(schema.items.properties.index.enum, [index]);
+          assert.equal(schema.minItems, 1);
+          assert.equal(schema.maxItems, 1);
+          assert.match(feedback.instruction, /Retranslate the single requested index completely/u);
+          // The first complete replacement still lacks 9/E991; a decreasing
+          // per-unit finding count permits its one remaining retranslation.
+          rows = [[index, index === 364 && feedback.unitAttempt === 1
+            ? '参见相应段落和连接器。' : translations[index]]];
+        } else if (window.startUnitIndex === 276) {
+          fourthWindowCorrections += 1;
+          rows = feedback.unitIndices.map((index) => [index, shifted.get(index) ?? translations[index]]);
+          if (fourthWindowCorrections === 1) rows = rows.map(([index, text]) => {
+            const offset = otherWindowIndices.indexOf(index);
+            return [index, offset >= 0 && offset < 12
+              ? text + ' 参见 901、902、903' + (offset < 11 ? '、904。' : '。') : text];
+          });
+        } else {
+          assert.equal(window.startUnitIndex, 192);
+          rows = feedback.unitIndices.map((index) => [index, translations[index]]);
+        }
+      } else {
+        windows.push(window.startUnitIndex);
+        if (window.startUnitIndex === 372 && failFinalWindow) {
+          return Response.json({ error: { code: 'incomplete_result' } }, { status: 400 });
+        }
+        const end = window.startUnitIndex === 192 ? 276 : window.endUnitIndexExclusive;
+        rows = translations.slice(window.startUnitIndex, end).map((text, offset) => {
+          const index = window.startUnitIndex + offset;
+          if (window.startUnitIndex === 192 && offset < 43) text += ' 参见 901、902 和 903。';
+          if (window.startUnitIndex === 276) {
+            text = shifted.get(index) ?? text;
+            const otherOffset = otherWindowIndices.indexOf(index);
+            if (otherOffset >= 0 && otherOffset < 71) {
+              text += ' 参见 901、902、903' + (otherOffset < 15 ? '、904。' : '。');
+            }
+          }
+          return [index, text];
+        });
+      }
+      for (const [index, text] of rows) previous.set(index, text);
+      return translationModelResponse(rows, 'shifted-' + calls);
+    };
+    const invocation = invokeInitialWithTransport({ operation: 'TRANSLATE', modelInput: input }, {
+      gatewayChatCompletionsEnabled: true, gatewayUrl: 'https://official.invalid', gatewayToken: 'test-only',
+      configuredModelVersion: 'miaoda/minimax-m3', sessionDiscriminator: 'shifted-437',
+      executionModel: modelSelection('miaoda/minimax-m3'), registeredModelRefs: ['miaoda/minimax-m3'],
+      observeTranslationFidelity: (report) => { reports.push(report); },
+    }, { requestGateway });
+    if (failFinalWindow) await assert.rejects(invocation, /INITIAL_GATEWAY_HTTP_400/u);
+    else {
+      const result = await invocation;
+      assert.equal(result.output.candidateUnits.length, 437);
+      assert.deepEqual(result.output.candidateUnits.map((unit) => unit.text), translations);
+      assert.deepEqual(result.output.candidateUnits.map((unit) => unit.sourceRefIds), input.sourceUnits.map((unit) => unit.sourceRefIds));
+      assert.deepEqual(result.output.taskStartBinding, input.taskStartBinding);
+      assert.ok(result.output.candidateUnits.every((unit, index) => unit.text !== input.sourceUnits[index].text));
+    }
+    assert.deepEqual(input, unchangedInput);
+    assert.equal(calls, 16);
+    assert.deepEqual(windows, [0, 96, 192, 276, 372]);
+    assert.deepEqual(reports.filter((report) => report.translationOutputWindow.startUnitIndex === 192)
+      .map((report) => report.findingCount), [129, 0]);
+    const fourth = reports.filter((report) => report.translationOutputWindow.startUnitIndex === 276);
+    assert.deepEqual(fourth.slice(0, 3).map((report) => report.findingCount), [243, 62, 15]);
+    assert.deepEqual(fourth.slice(0, 3).map((report) => new Set(report.findings.map((finding) => finding.unitIndex)).size), [78, 19, 7]);
+    assert.ok(fourth[2].findings.some((finding) => finding.unitIndex === 366 && finding.code === 'TERM_MANDATORY_MISSING'));
+    assert.deepEqual(residualRequests, [[288, 1], [289, 1], [363, 1], [364, 1], [364, 2], [366, 1], [369, 1], [371, 1]]);
+    assert.equal(fourth.at(-1).findingCount, 0);
+    assert.ok(fourth.slice(3).every((report) => report.correctionMode === 'SINGLE_UNIT_RETRANSLATION'));
+    assert.equal(JSON.stringify(reports).includes('参见相应段落和连接器'), false);
+    assert.equal(JSON.stringify(reports).includes(input.sourceUnits[364].text), false);
+  }
+});
+
+test('translation residual correction rejects stalled, worse, exhausted or out-of-scope replacements', async () => {
+  for (const scenario of [
+    { name: 'stalled', rows: [[[0, '保留 1、2。']]], error: 'RESIDUAL_UNIT_NOT_IMPROVING', calls: 4 },
+    { name: 'worse', rows: [[[0, '保留 1。']]], error: 'RESIDUAL_UNIT_NOT_IMPROVING', calls: 4 },
+    { name: 'exhausted', rows: [[[0, '保留 1、2、3。']], [[0, '保留 1、2、3、4。']]], error: 'RESIDUAL_UNIT_ATTEMPTS_EXHAUSTED', calls: 5 },
+    { name: 'wrong index', rows: [[[1, '保留 1、2、3、4、5、6 和 7。']]], error: 'INITIAL_TRANSLATION_CORRECTION_MAPPING_INVALID', calls: 4 },
+    { name: 'extra index', rows: [[[0, '保留 1、2、3、4、5、6 和 7。'], [1, '额外译文。']]], error: 'INITIAL_TRANSLATION_CORRECTION_MAPPING_INVALID', calls: 4 },
+  ]) {
+    const input = residualTranslationFixture();
+    const reports = [];
+    let calls = 0;
+    await assert.rejects(invokeInitialWithTransport({ operation: 'TRANSLATE', modelInput: input }, {
+      gatewayChatCompletionsEnabled: true, gatewayUrl: 'https://official.invalid', gatewayToken: 'test-only',
+      configuredModelVersion: 'miaoda/minimax-m3', sessionDiscriminator: 'bounded-residual',
+      observeTranslationFidelity: (report) => { reports.push(report); },
+    }, { requestGateway: async (_url, init) => {
+      const feedback = JSON.parse(JSON.parse(init.body).messages[2].content);
+      const stage = calls++;
+      if (stage >= 3) {
+        assert.equal(feedback.correctionMode, 'SINGLE_UNIT_RETRANSLATION');
+        assert.deepEqual(feedback.unitIndices, [0]);
+        assert.equal(feedback.unitAttempt, stage - 2);
+      }
+      const rows = stage < 3 ? [[0, ['保留所列数值。', '保留 1。', '保留 1、2。'][stage]]]
+        : scenario.rows[stage - 3];
+      return translationModelResponse(rows, 'residual-' + calls);
+    } }), new RegExp(scenario.error, 'u'), scenario.name);
+    assert.equal(calls, scenario.calls, scenario.name);
+    if (scenario.name === 'exhausted') assert.deepEqual(reports.map((report) => report.findingCount), [7, 6, 5, 4, 3]);
+  }
+});
+
+test('translation residual correction requires both batch rounds to converge and at most eight failed units', async () => {
+  for (const scenario of [
+    { name: 'first batch stalled', texts: ['保留所列数值。', '保留所列数值。', '保留 1。'], unitCount: 1, error: 'BATCH_CORRECTIONS_NOT_CONVERGING' },
+    { name: 'first batch worsened', texts: ['保留 1、2。', '保留 1。', '保留 1、2、3、4、5 和 6。'], unitCount: 1, error: 'BATCH_CORRECTIONS_NOT_CONVERGING' },
+    { name: 'too many residuals', texts: ['保留所列数值。', '保留 1。', '保留 1、2。'], unitCount: 9, error: 'RESIDUAL_UNIT_LIMIT_EXCEEDED' },
+  ]) {
+    const input = residualTranslationFixture(scenario.unitCount);
+    let calls = 0;
+    await assert.rejects(invokeInitialWithTransport({ operation: 'TRANSLATE', modelInput: input }, {
+      gatewayChatCompletionsEnabled: true, gatewayUrl: 'https://official.invalid', gatewayToken: 'test-only',
+      configuredModelVersion: 'miaoda/minimax-m3', sessionDiscriminator: 'residual-entry-bound',
+    }, { requestGateway: async () => {
+      const text = scenario.texts[calls++];
+      return translationModelResponse(input.sourceUnits.map((_, index) => [index, text]), 'entry-' + calls);
+    } }), new RegExp(scenario.error, 'u'), scenario.name);
+    assert.equal(calls, 3, scenario.name);
+  }
+});
+
+test('translation residual correction permits at most sixteen single-unit responses for eight residual units', async () => {
+  const input = residualTranslationFixture(8);
+  const complete = '保留 1、2、3、4、5、6 和 7。';
+  const residualRequests = [];
+  let calls = 0;
+  const result = await invokeInitialWithTransport({ operation: 'TRANSLATE', modelInput: input }, {
+    gatewayChatCompletionsEnabled: true, gatewayUrl: 'https://official.invalid', gatewayToken: 'test-only',
+    configuredModelVersion: 'miaoda/minimax-m3', sessionDiscriminator: 'eight-residuals',
+  }, { requestGateway: async (_url, init) => {
+    const feedback = JSON.parse(JSON.parse(init.body).messages[2].content);
+    const stage = calls++;
+    let rows;
+    if (stage < 3) {
+      rows = input.sourceUnits.map((_, index) => [index, ['保留所列数值。', '保留 1。', '保留 1、2。'][stage]]);
+    } else {
+      assert.equal(feedback.correctionMode, 'SINGLE_UNIT_RETRANSLATION');
+      assert.equal(feedback.unitIndices.length, 1);
+      const [index] = feedback.unitIndices;
+      residualRequests.push([index, feedback.unitAttempt]);
+      rows = [[index, feedback.unitAttempt === 1 ? '保留 1、2、3、4、5 和 6。' : complete]];
+    }
+    return translationModelResponse(rows, 'eight-' + calls);
+  } });
+  assert.equal(calls, 19);
+  assert.deepEqual(residualRequests, input.sourceUnits.flatMap((_, index) => [[index, 1], [index, 2]]));
+  assert.deepEqual(result.output.candidateUnits.map((unit) => unit.text), Array(8).fill(complete));
+});
+
+test('translation residual correction retains the original 45-minute total and 15-minute response budgets', async (t) => {
+  let now = 1000;
+  const budgets = [];
+  t.mock.method(Date, 'now', () => now);
+  t.mock.method(AbortSignal, 'timeout', (ms) => {
+    budgets.push(ms);
+    return new AbortController().signal;
+  });
+  let calls = 0;
+  let heartbeats = 0;
+  await assert.rejects(invokeInitialWithTransport({ operation: 'TRANSLATE', modelInput: residualTranslationFixture() }, {
+    gatewayChatCompletionsEnabled: true, gatewayUrl: 'https://official.invalid', gatewayToken: 'test-only',
+    configuredModelVersion: 'miaoda/minimax-m3', sessionDiscriminator: 'residual-timeout',
+    heartbeat: () => { heartbeats += 1; },
+  }, { requestGateway: async (_url, init) => {
+    const stage = calls++;
+    if (stage === 3) {
+      const feedback = JSON.parse(JSON.parse(init.body).messages[2].content);
+      assert.equal(feedback.correctionMode, 'SINGLE_UNIT_RETRANSLATION');
+      assert.equal(feedback.unitAttempt, 1);
+    }
+    now += (stage === 3 ? 15 : 10) * 60_000;
+    return translationModelResponse([[0, ['保留所列数值。', '保留 1。', '保留 1、2。', '保留 1、2、3。'][stage]]], 'budget-' + calls);
+  } }), /INITIAL_MODEL_TIMEOUT/u);
+  assert.equal(calls, 4);
+  assert.equal(heartbeats, 4);
+  assert.deepEqual(budgets, Array(4).fill(15 * 60_000));
+});
+
 test('corrected short output prefix continues from its real end without rewriting completed units', async (t) => {
   const originalFetch = globalThis.fetch;
   t.after(() => { globalThis.fetch = originalFetch; });
@@ -910,7 +1123,7 @@ test('pins exact20 MCP 1.2, five review tools, and hosted provenance', () => {
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c33',
+    'wiselink-research-and-synthesize@r09.c34',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -2629,6 +2842,393 @@ test('binds Overall applicability status to the Host current candidate', () => {
   );
 });
 
+test('Overall v2 accepts a related premise independently and keeps all premise roles and conditions', () => {
+  const input = readingSynthesisInput();
+  const output = readingSynthesisOutput(input);
+  validatePayload('synthesis-pair', { input, output });
+  assert.equal(output.engineeringSummary.claims[0].premises[0].evidenceRef, 'overall-evidence:related:1');
+  assert.equal(Object.hasOwn(output.engineeringSummary, 'implementationImpact'), false);
+  assert.equal(Object.hasOwn(output.engineeringSummary, 'nextActions'), false);
+  output.engineeringSummary.claims[0].premises.push({ evidenceRef: input.evidenceRegistry[0].evidenceRef, role: 'LIMITS', explanation: '保留主文档限定的适用范围。', limitation: '具体构型仍需核对。' });
+  validatePayload('synthesis-pair', { input, output });
+  assert.equal(output.engineeringSummary.claims[0].premises.length, 2);
+});
+
+test('Overall new registry input requires v2 while a historical task retains v1 semantics', () => {
+  const input = readingSynthesisInput();
+  const output = synthesisOutput(input);
+  assert.throws(() => validatePayload('synthesis-pair', { input, output }), /OVERALL_READING_SUMMARY_VERSION_REQUIRED/u);
+  delete input.evidenceRegistry;
+  validatePayload('synthesis-pair', { input, output });
+  output.engineeringSummary.nextActions = [];
+  assert.throws(() => validatePayload('synthesis-pair', { input, output }), /OVERALL_NEXT_ACTIONS_COUNT_INVALID/u);
+});
+
+test('Overall v2 rejects unread catalog refs, duplicate claims, missing premises and changed result bindings', () => {
+  const cases = [
+    [(input, output) => { input.commonContext = { relatedMaterials: { items: [{ availableSourceRefIds: ['UNREAD'] }] } }; output.engineeringSummary.claims[0].premises[0].evidenceRef = 'UNREAD'; }, /OVERALL_UNKNOWN_EVIDENCE_REF:UNREAD/u],
+    [(_input, output) => { output.engineeringSummary.claims.push(structuredClone(output.engineeringSummary.claims[0])); }, /OVERALL_DUPLICATE_CLAIM_ID/u],
+    [(_input, output) => { output.engineeringSummary.claims[0].premises = []; }, /OVERALL_CLAIM_PREMISES_REQUIRED/u],
+    [(_input, output) => { output.engineeringSummary.decisiveClaimIds = ['MISSING']; }, /OVERALL_UNKNOWN_DECISIVE_CLAIM_ID/u],
+    [(_input, output) => { output.engineeringSummary.lead = '另一个结果'; }, /OVERALL_LEAD_CANDIDATE_MISMATCH/u],
+    [(_input, output) => { output.sourceResultId = 'OTHER-RESULT'; }, /OVERALL_CORRELATION_MISMATCH/u],
+    [(_input, output) => { output.unresolvedCount = 0; }, /OVERALL_UNRESOLVED_COUNT_MISMATCH/u],
+    [(_input, output) => { output.adopted = true; }, /OVERALL_ADOPTION_INVALID/u],
+    [(input) => { input.evidenceRegistry.push(structuredClone(input.evidenceRegistry[0])); }, /OVERALL_DUPLICATE_EVIDENCE_REF/u],
+    [(input) => { delete input.evidenceRegistry; }, /OVERALL_READING_EVIDENCE_REGISTRY_REQUIRED/u],
+    [(input) => { input.evidenceRegistry[0].workItemId = 'WI-PRIVATE'; }, /FORBIDDEN_AUTHORITY_INPUT/u],
+  ];
+  for (const [change, expected] of cases) {
+    const input = readingSynthesisInput();
+    const output = readingSynthesisOutput(input);
+    change(input, output);
+    assert.throws(() => validatePayload('synthesis-pair', { input, output }), expected);
+  }
+});
+
+test('Overall v2 accepts actual Host ledger fields and keeps engineering statements separate from document passages', () => {
+  const input = readingSynthesisInput();
+  const sourceRefId = 'overall-evidence:engineer-review:1:1';
+  const artifact = { storeRole: 'UnifiedArtifactStoreCandidate', ref: 'artifact://review-evidence', sha256: 'a'.repeat(64), byteLength: 99, mediaType: 'application/json' };
+  const review = {
+    sequence: 1, criterionId: 'criterion-001', affectedCriterionIds: ['criterion-001'], baseRuleRevision: 1, baseRuleArtifactSha256: 'e'.repeat(64),
+    actionType: 'SUPPLEMENT_EVIDENCE', decision: 'deferred', status: 'NEEDS_REVIEW', comment: '记录了工程师补充说明。', recordedAt: '2026-09-08T00:00:00.000Z',
+    evidence: [{ kind: 'AIRCRAFT_FACT', statement: '工程师表示构型记录尚不完整。', locator: '工程师评审 1', sourceRefId, artifact }],
+    resolvedMissingInputs: [], uncertaintyDispositions: [], decisionSnapshot: {
+      decisionSnapshotRef: 'SNAPSHOT-1', revision: 2, engineerConfirmationRef: null,
+      assessmentAsOf: '2026-09-08T00:00:00.000Z', evidenceHorizon: ['SOURCE_DOCUMENT_COMPLETE'], currentBestJudgment: '当前只能保留候选认识。', alternativeJudgments: [], decisionMaturity: 'PRELIMINARY', decisiveFacts: [], assumptions: [], residualUncertainties: [], uncertaintyDispositions: [], controlsAndMitigations: [], monitoringPlan: null, validUntil: null, reviewBy: null, reopenTriggers: [], whatWouldChangeDecision: [], candidateOnly: true,
+    }, correctedAnalysisDirection: null,
+  };
+  input.engineerReviewContext = { revision: 1, artifactSha256: 'b'.repeat(64), reviewCount: 1, history: [review], effective: [structuredClone(review)] };
+  input.unifiedSourceContext.sourceRefs.push({ sourceRefId, locator: review.evidence[0].locator, excerpt: review.evidence[0].statement, evidenceKind: 'AIRCRAFT_FACT', artifactRef: artifact.ref, artifactSha256: artifact.sha256 });
+  input.unifiedSourceContext.sourceRefCount += 1;
+  input.baseRuleResult.items[0].sourceRefIds.push(sourceRefId);
+  input.evidenceRegistry.push({ evidenceRef: 'overall-evidence:engineer-review:1:1', kind: 'ENGINEER_STATEMENT', title: '工程师评审 criterion-001 · AIRCRAFT_FACT', versionLabel: 'review revision 1', excerpt: review.evidence[0].statement, locator: review.evidence[0].locator });
+  const output = readingSynthesisOutput(input);
+  output.engineerReviewRevision = 1;
+  output.engineerReviewArtifactSha256 = input.engineerReviewContext.artifactSha256;
+  output.engineeringSummary.claims[0].premises.push({ evidenceRef: 'overall-evidence:engineer-review:1:1', role: 'LIMITS', explanation: '这是工程师陈述，未成为受控构型记录。', limitation: '陈述不证明改装已经完成。' });
+  validatePayload('synthesis-pair', { input, output });
+  assert.equal(input.evidenceRegistry.at(-1).kind, 'ENGINEER_STATEMENT');
+  assert.equal(input.evidenceRegistry.some((item) => item.kind === 'QUERY_RECEIPT'), false);
+  input.engineerReviewContext.history[0].evidence[0].sourceRefId = 'review-evidence://WI-ENGINEER/1/criterion-001/1';
+  assert.throws(() => validatePayload('synthesis-input', input), /FORBIDDEN_WORKITEM_VALUE/u);
+});
+
+test('Overall accepts negation and manufacturer attribution while rejecting actual approval assertions in both versions', () => {
+  const allowed = ['未批准执行。', '尚未确认该机队适用。', 'This has not yet been approved for execution.', 'The fleet is not confirmed applicable.', 'Boeing states that the modification is approved; fleet matching remains unresolved.', '厂家声明：“已批准执行”是厂家立场；本机队仍需核对。'];
+  const forbidden = ['已批准执行。', '已确认该机队适用。', 'The work is approved.', 'It is safe to release.', '未批准执行；但本次可以直接实施。', 'Boeing states that the modification is approved; therefore this work is approved.'];
+  for (const reading of [false, true]) {
+    for (const [narratives, rejected] of [[allowed, false], [forbidden, true]]) {
+      for (const narrative of narratives) {
+        const input = reading ? readingSynthesisInput() : synthesisInput();
+        const output = reading ? readingSynthesisOutput(input) : synthesisOutput(input);
+        output.overallCandidate = narrative;
+        if (reading) output.engineeringSummary.lead = narrative;
+        else output.engineeringSummary.conclusion.text = narrative;
+        const validate = () => validatePayload('synthesis-pair', { input, output });
+        if (rejected) assert.throws(validate, /OVERALL_AUTHORITATIVE_NARRATIVE_FORBIDDEN/u, narrative);
+        else assert.doesNotThrow(validate, narrative);
+      }
+    }
+  }
+});
+
+test('official initial model adapter selects the Overall v2 contract and sends the entire registered passage', async () => {
+  const modelInput = readingSynthesisInput();
+  modelInput.evidenceRegistry[0].excerpt = `${'Source context. '.repeat(500)}This does not approve operator execution.`;
+  const candidate = readingSynthesisOutput(modelInput);
+  const result = await invokeInitialWithTransport({ operation: 'SYNTHESIZE_OVERALL', modelInput }, {
+    gatewayChatCompletionsEnabled: true, gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'miaoda/miaoda-model-auto', sessionDiscriminator: 'v2-test',
+  }, { requestGateway: async (_url, init) => {
+    const request = JSON.parse(init.body);
+    const guidance = request.messages[0].content;
+    assert.match(guidance, /overall_engineering_summary\.v2/u);
+    assert.doesNotMatch(guidance, /overall_engineering_summary\.v1/u);
+    assert.match(guidance, /no implementation decision/u);
+    assert.match(request.tools[0].function.parameters.properties.candidate.description, /decisiveClaimIds/u);
+    assert.deepEqual(JSON.parse(request.messages[1].content), modelInput);
+    assert.doesNotMatch(JSON.stringify(request.messages), /"workItemId"/u);
+    return Response.json({ model: 'actual-official-model', choices: [{ message: { content: null, tool_calls: [{ type: 'function', function: { name: 'return_wiselink_initial_candidate', arguments: JSON.stringify({ candidate }) } }] } }] });
+  } });
+  assert.deepEqual(result.output, candidate);
+});
+
+test('Matter Review c4 validates exact Host deltas while retaining the WorkItem c3 contract', async () => {
+  for (const turnNo of [1, 2]) {
+    const { reviewTask, delta } = await matterReviewFixture(turnNo);
+    validatePayload('review-task', reviewTask);
+    validateReviewCandidate(reviewTask, matterReviewCandidate(reviewTask, delta));
+    validateReviewCandidate(reviewTask, matterReviewCandidate(reviewTask, null));
+  }
+  const { reviewTask, delta } = await matterReviewFixture(2);
+  for (const [name, mutate, error] of [
+    ['missing delta', (candidate) => { delete candidate.matterWorkingDelta; }, /MATTERWORKINGDELTA|matterWorkingDelta/u],
+    ['old candidate schema', (candidate) => { candidate.schemaVersion = 'wiselink.3_1.review_turn_candidate.v1.c3'; }, /REVIEW_CANDIDATE_SCHEMA_UNSUPPORTED/u],
+    ['formal action', (candidate) => { candidate.reviewActionDraft = {}; }, /REVIEW_MATTER_FORMAL_ACTION_FORBIDDEN/u],
+    ['affected item', (candidate) => { candidate.affectedItemIds = ['criterion-001']; }, /REVIEW_MATTER_AFFECTED_ITEMS_FORBIDDEN/u],
+    ['wrong replacement id', (candidate) => { candidate.matterWorkingDelta.claimDelta.replacements[0].claimId = 'invented-replacement'; }, /REVIEW_MATTER_EXISTING_ID_REQUIRED/u],
+    ['lost unchanged claim', (candidate) => { candidate.matterWorkingDelta.claimDelta.explicitlyUnchangedClaimIds.pop(); }, /REVIEW_MATTER_CARRY_FORWARD_INCOMPLETE/u],
+    ['overlapping change', (candidate) => { candidate.matterWorkingDelta.claimDelta.explicitlyUnchangedClaimIds.push('claim-origin'); }, /REVIEW_MATTER_DELTA_OVERLAP/u],
+    ['unregistered premise', (candidate) => { candidate.matterWorkingDelta.claimDelta.replacements[0].premises[0].evidenceRef = 'unknown-evidence'; }, /REVIEW_MATTER_PREMISE_NOT_ALLOWED/u],
+    ['presentation omitted', (candidate) => { candidate.matterWorkingDelta.readingPresentation = null; }, /REVIEW_MATTER_PRESENTATION_DELTA_REQUIRED/u],
+    ['cross-document coverage', (candidate) => { candidate.matterWorkingDelta.coverageUpdates[0].inputRef = 'matter-input:2'; }, /REVIEW_MATTER_COVERAGE_SOURCE_NOT_ALLOWED/u],
+    ['empty checked range', (candidate) => { candidate.matterWorkingDelta.coverageUpdates[0].checkedSourceRefIds = []; }, /REVIEW_MATTER_CHECKED_RANGE_REQUIRED/u],
+    ['private control in delta', (candidate) => { candidate.matterWorkingDelta.expectedWorkingRevision = 1; }, /REVIEW_MATTER_DELTA_UNKNOWN_FIELD/u],
+  ]) {
+    const candidate = matterReviewCandidate(reviewTask, structuredClone(delta));
+    mutate(candidate);
+    assert.throws(() => validateReviewCandidate(reviewTask, candidate), error, name);
+  }
+  const missingContext = structuredClone(reviewTask);
+  delete missingContext.matterContext;
+  assert.throws(() => validatePayload('review-task', missingContext), /REVIEW_TASK_MISSING_FIELD:matterContext/u);
+  const wrongPolicy = structuredClone(reviewTask);
+  wrongPolicy.executionPolicy.toolPolicyRef = 'wiselink-openclaw-engineering-assessment@1.2.0#interactive-review-c3';
+  assert.throws(() => validatePayload('review-task', wrongPolicy), /REVIEW_TASK_TOOL_POLICY_INVALID/u);
+  const legacyTask = await readJson(REVIEW_TASK_FIXTURE_URL);
+  const legacyCandidate = await readJson(REVIEW_CANDIDATE_FIXTURE_URL);
+  validateReviewCandidate(legacyTask, legacyCandidate);
+  assert.throws(() => validateReviewCandidate(legacyTask, { ...legacyCandidate, matterWorkingDelta: null }), /REVIEW_CANDIDATE_UNKNOWN_FIELD:matterWorkingDelta/u);
+  assert.throws(() => validatePayload('review-task', { ...legacyTask, matterContext: reviewTask.matterContext }), /REVIEW_TASK_UNKNOWN_FIELD:matterContext/u);
+});
+
+test('Matter Review c4 continues two native turns with scoped source keys, preserved claims and delta provenance', async (t) => {
+  const directories = [];
+  t.after(async () => { for (const directory of directories) await rm(directory, { recursive: true, force: true }); });
+  const requests = [];
+  const reads = [];
+  const submitted = [];
+  const nativeSessionKey = 'agent:wiselink-engineering:review:ACTX-RS-matter-private';
+  for (const turnNo of [1, 2]) {
+    const { reviewTask, delta } = await matterReviewFixture(turnNo);
+    const task = makeTask('OPENCLAW_INTERACTIVE_REVIEW', reviewTask, [], reviewTask.resourceRefs.map((ref) => ({ ref: ref.resourceArtifactRef, sha256: ref.resourceArtifactSha256 })));
+    const checkpointDir = await mkdtemp(join(tmpdir(), 'wiselink-matter-review-'));
+    directories.push(checkpointDir);
+    const requested = turnNo === 1 ? ['matter-source:1:1', 'matter-source:2:1'] : ['matter-source:1:1'];
+    let modelCalls = 0;
+    const result = await runHostedReviewTurn({ reviewConversationRef: reviewTask.reviewConversationRef, requestId: reviewTask.requestId, checkpointDir }, {
+      callTool: async (name, args) => {
+        if (name === 'begin_review_turn') return runningBegin(task, { nativeSessionKey });
+        if (name === 'get_review_turn_context') return reviewContext(task, reviewTask);
+        if (name === 'read_source_refs') {
+          reads.push({ turnNo, ids: args.sourceRefIds });
+          return { schemaVersion: 'wiselink.3_1.review_source_refs.v1.c2', attemptRef: task.operationRef,
+            sourceRefs: args.sourceRefIds.map((id) => structuredClone(reviewTask.resourceRefs.find((ref) => ref.sourceRefId === id).value)) };
+        }
+        if (name === 'commit_review_turn_candidate') {
+          const result = JSON.parse(args.resultJson);
+          validatePayload('result-envelope', { task, result });
+          submitted.push(result);
+          assert.deepEqual(result.factsConsidered, requested);
+          assert.deepEqual(result.sourceRefs, reviewTask.resourceRefs.slice(0, requested.length).map((ref) => ({ ref: ref.resourceArtifactRef, sha256: ref.resourceArtifactSha256 })));
+          return reviewCommit(task.operationRef);
+        }
+        throw new Error('UNEXPECTED_TOOL:' + name);
+      },
+      invokeModel: (input, hooks) => invokeReviewWithTransport(input, {
+        gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider', ...hooks,
+      }, { requestGateway: async (_url, init) => {
+        const body = JSON.parse(init.body);
+        requests.push({ body, headers: init.headers });
+        modelCalls += 1;
+        const serialized = JSON.stringify(body.messages);
+        for (const forbidden of [reviewTask.reviewTurnRef, reviewTask.reviewConversationRef, reviewTask.requestId,
+          reviewTask.actorContextRef, reviewTask.matterContext.scope.matterId,
+          ...reviewTask.matterContext.scope.inputs.map((binding) => binding.workItemId),
+          'matterContext', 'engineerSuppliedInputId', 'resourceArtifactRef', 'urn:source:shared-original-page']) {
+          assert.equal(serialized.includes(forbidden), false, forbidden);
+        }
+        const schema = body.tools.find((tool) => tool.function.name === 'return_wiselink_review_candidate').function.parameters;
+        assert.ok(schema.required.includes('matterWorkingDelta'));
+        assert.deepEqual(schema.properties.reviewActionDraft, { type: 'null' });
+        assert.equal(schema.properties.affectedItemIds.maxItems, 0);
+        assert.ok(schema.properties.responseType.enum.includes('RESYNTHESIS_RESULT'));
+        assert.equal(schema.properties.responseType.enum.includes('REVIEW_ACTION_DRAFT'), false);
+        assert.deepEqual(schema.properties.matterWorkingDelta.anyOf[0].required.sort(),
+          ['updateKind', 'changeSummary', 'nextFocus', 'claimDelta', 'readingPresentation', 'openQuestionDelta', 'reviewConditionDelta', 'coverageUpdates'].sort());
+        if (modelCalls === 1) {
+          assert.equal(serialized.includes('SOURCE_A_FULL_PASSAGE'), false);
+          assert.equal(serialized.includes('SOURCE_B_FULL_PASSAGE'), false);
+          assert.equal(serialized.includes('SOURCE_C_UNREAD_PASSAGE'), false);
+          assert.ok(serialized.includes(reviewTask.matterContext.readingEvidence.at(-1).excerpt));
+          assert.match(body.messages[1].content, /INITIAL_SYNTHESIS/u);
+          assert.match(body.messages[1].content, /not force an implementation/u);
+          if (turnNo === 2) {
+            assert.ok(serialized.includes('claim-independent'));
+            assert.ok(serialized.includes('claim-engineer'));
+          }
+        } else {
+          assert.deepEqual(body.messages.map((message) => message.role), ['system', 'assistant', 'tool']);
+          const fragments = JSON.parse(body.messages[2].content).sourceRefs;
+          assert.deepEqual(fragments.map((item) => item.sourceRefId), requested);
+          assert.deepEqual(fragments.map((item) => item.evidenceRef), requested.map((id) => reviewTask.resourceRefs.find((ref) => ref.sourceRefId === id).value.evidenceRef));
+          assert.ok(fragments[0].quote.startsWith('SOURCE_A_FULL_PASSAGE'));
+          if (turnNo === 1) assert.ok(fragments[1].quote.startsWith('SOURCE_B_FULL_PASSAGE'));
+          assert.equal(serialized.includes('SOURCE_C_UNREAD_PASSAGE'), false);
+        }
+        return Response.json({ model: 'fixture/provider', choices: [{ message: { content: null, tool_calls: [{
+          id: 'matter-call-' + turnNo + '-' + modelCalls, type: 'function', function: {
+            name: modelCalls === 1 ? 'read_wiselink_review_sources' : 'return_wiselink_review_candidate',
+            arguments: JSON.stringify(modelCalls === 1 ? { sourceRefIds: requested } : matterReviewModelOutput(delta)),
+          },
+        }] } }] });
+      } }),
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.sessionRouting, 'HOST_SCOPED');
+    assert.equal(modelCalls, 2);
+  }
+  assert.equal(requests.length, 4);
+  assert.ok(requests.every(({ headers, body }) => headers['x-openclaw-session-key'] === nativeSessionKey && !Object.hasOwn(body, 'user')));
+  assert.deepEqual(reads, [{ turnNo: 1, ids: ['matter-source:1:1', 'matter-source:2:1'] }, { turnNo: 2, ids: ['matter-source:1:1'] }]);
+  const candidates = submitted.map((result) => JSON.parse(result.modelOutput));
+  assert.ok(candidates.every((candidate) => candidate.schemaVersion === 'wiselink.3_1.review_turn_candidate.v1.c4' && candidate.sourceRefs.length === 0));
+  assert.equal(candidates[1].matterWorkingDelta.claimDelta.replacements[0].claimId, candidates[0].matterWorkingDelta.claimDelta.additions[0].claimId);
+  assert.deepEqual(candidates[1].matterWorkingDelta.claimDelta.explicitlyUnchangedClaimIds, ['claim-independent', 'claim-engineer']);
+  assert.ok(submitted.every((result) => result.modelVersion === 'fixture/provider' && result.skillVersion === WISELINK_SKILL_VERSION && result.toolVersions[WISELINK_HOST_MCP_NAME] === WISELINK_HOST_MCP_VERSION));
+});
+
+test('Matter Review c4 plain explanations retain a null delta without source reads or a fabricated working revision', async (t) => {
+  const directories = [];
+  t.after(async () => { for (const directory of directories) await rm(directory, { recursive: true, force: true }); });
+  for (const turnNo of [1, 2]) {
+    const { reviewTask } = await matterReviewFixture(turnNo);
+    const task = makeTask('OPENCLAW_INTERACTIVE_REVIEW', reviewTask, [], reviewTask.resourceRefs.map((ref) => ({ ref: ref.resourceArtifactRef, sha256: ref.resourceArtifactSha256 })));
+    const checkpointDir = await mkdtemp(join(tmpdir(), 'wiselink-matter-explanation-'));
+    directories.push(checkpointDir);
+    const calls = [];
+    const result = await runHostedReviewTurn({ reviewConversationRef: reviewTask.reviewConversationRef, requestId: reviewTask.requestId, checkpointDir }, {
+      callTool: async (name, args) => {
+        calls.push(name);
+        if (name === 'begin_review_turn') return runningBegin(task);
+        if (name === 'get_review_turn_context') return reviewContext(task, reviewTask);
+        if (name === 'commit_review_turn_candidate') {
+          const sealed = JSON.parse(args.resultJson);
+          assert.deepEqual(sealed.sourceRefs, []);
+          assert.deepEqual(sealed.factsConsidered, []);
+          const candidate = JSON.parse(sealed.modelOutput);
+          assert.equal(candidate.schemaVersion, 'wiselink.3_1.review_turn_candidate.v1.c4');
+          assert.equal(candidate.matterWorkingDelta, null);
+          assert.equal(candidate.reviewActionDraft, null);
+          return reviewCommit(task.operationRef);
+        }
+        throw new Error('UNEXPECTED_TOOL:' + name);
+      },
+      invokeModel: async (input) => {
+        assert.equal(input.input.context.matterWorking.workingRevision, turnNo - 1);
+        return { output: matterReviewModelOutput(null), provenance: provenance() };
+      },
+    });
+    assert.equal(result.ok, true);
+    assert.deepEqual(calls, ['begin_review_turn', 'get_review_turn_context', 'commit_review_turn_candidate']);
+  }
+});
+
+test('Matter Review c4 keeps authorized engineer attachments on their existing source read path', async (t) => {
+  const { reviewTask } = await matterReviewFixture(1);
+  const attachment = { sourceRefId: 'review-attachment:fixture-1', resourceArtifactRef: 'artifact://fixture/matter-attachment',
+    resourceArtifactSha256: 'd'.repeat(64), value: { sourceRefId: 'review-attachment:fixture-1', kind: 'ENGINEER_ATTACHMENT', statement: '工程师提供的补充附件内容。' } };
+  reviewTask.resourceRefs.push(attachment);
+  reviewTask.attachmentRefs = [attachment.sourceRefId];
+  reviewTask.context.engineerInput = { text: '请解释这份补充材料。', attachmentRefs: [attachment.sourceRefId] };
+  const task = makeTask('OPENCLAW_INTERACTIVE_REVIEW', reviewTask, [], reviewTask.resourceRefs.map((ref) => ({ ref: ref.resourceArtifactRef, sha256: ref.resourceArtifactSha256 })));
+  const checkpointDir = await mkdtemp(join(tmpdir(), 'wiselink-matter-attachment-'));
+  t.after(() => rm(checkpointDir, { recursive: true, force: true }));
+  let reads = 0;
+  const result = await runHostedReviewTurn({ reviewConversationRef: reviewTask.reviewConversationRef, requestId: reviewTask.requestId, checkpointDir }, {
+    callTool: async (name, args) => {
+      if (name === 'begin_review_turn') return runningBegin(task);
+      if (name === 'get_review_turn_context') return reviewContext(task, reviewTask);
+      if (name === 'read_source_refs') {
+        reads += 1;
+        assert.deepEqual(args.sourceRefIds, [attachment.sourceRefId]);
+        return { schemaVersion: 'wiselink.3_1.review_source_refs.v1.c2', attemptRef: task.operationRef, sourceRefs: [attachment.value] };
+      }
+      if (name === 'commit_review_turn_candidate') {
+        const sealed = JSON.parse(args.resultJson);
+        assert.deepEqual(sealed.sourceRefs, [{ ref: attachment.resourceArtifactRef, sha256: attachment.resourceArtifactSha256 }]);
+        const candidate = JSON.parse(sealed.modelOutput);
+        assert.equal(candidate.schemaVersion, 'wiselink.3_1.review_turn_candidate.v1.c4');
+        assert.equal(candidate.matterWorkingDelta, null);
+        assert.deepEqual(candidate.candidateEvidenceRefs, [attachment.sourceRefId]);
+        return reviewCommit(task.operationRef);
+      }
+      throw new Error('UNEXPECTED_TOOL:' + name);
+    },
+    invokeModel: async (_input, { readSourceRefs }) => {
+      const values = await readSourceRefs([attachment.sourceRefId]);
+      assert.equal(values[0].statement, attachment.value.statement);
+      return { output: { ...matterReviewModelOutput(null), responseType: 'CANDIDATE_EVIDENCE',
+        sourceRefs: [attachment.sourceRefId], candidateEvidenceRefs: [attachment.sourceRefId] }, provenance: provenance() };
+    },
+  });
+  assert.equal(result.ok, true);
+  assert.equal(reads, 1);
+});
+
+test('Matter Review c4 rejects unread delta premises, unchecked coverage and mismatched fragment identities before commit', async () => {
+  for (const scenario of ['unread changed premise', 'unread coverage', 'wrong evidence binding', 'unprovided engineer statement']) {
+    const { reviewTask, delta } = await matterReviewFixture(2);
+    if (scenario === 'unread coverage') {
+      delta.claimDelta = null;
+      delta.readingPresentation = null;
+    }
+    if (scenario === 'unprovided engineer statement') {
+      reviewTask.context.matterWorking.evidenceCatalog.at(-1).providedText = null;
+    }
+    const task = makeTask('OPENCLAW_INTERACTIVE_REVIEW', reviewTask, [], reviewTask.resourceRefs.map((ref) => ({ ref: ref.resourceArtifactRef, sha256: ref.resourceArtifactSha256 })));
+    let commits = 0;
+    const reading = scenario === 'wrong evidence binding' || scenario === 'unprovided engineer statement';
+    await assert.rejects(runInteractiveReviewTurn({ mode: 'INTERACTIVE_REVIEW', reviewConversationRef: reviewTask.reviewConversationRef, requestId: reviewTask.requestId,
+      callTool: async (name, args) => {
+        if (name === 'begin_review_turn') return runningBegin(task);
+        if (name === 'get_review_turn_context') return reviewContext(task, reviewTask);
+        if (name === 'read_source_refs') {
+          const value = structuredClone(reviewTask.resourceRefs[0].value);
+          if (scenario === 'wrong evidence binding') value.evidenceRef = reviewTask.resourceRefs[1].value.evidenceRef;
+          return { schemaVersion: 'wiselink.3_1.review_source_refs.v1.c2', attemptRef: task.operationRef, sourceRefs: [value] };
+        }
+        if (name === 'commit_review_turn_candidate') { commits += 1; throw new Error('COMMIT_MUST_NOT_RUN'); }
+        throw new Error('UNEXPECTED_TOOL:' + name);
+      },
+      respond: async ({ readSourceRefs }) => {
+        if (reading) await readSourceRefs(['matter-source:1:1']);
+        return { output: matterReviewCandidate(reviewTask, delta), provenance: provenance() };
+      },
+    }), scenario === 'wrong evidence binding' ? /HOST_MCP_REVIEW_MATTER_SOURCE_BINDING_INVALID/u
+      : scenario === 'unprovided engineer statement' ? /REVIEW_MATTER_PREMISE_NOT_PROVIDED_OR_READ_THIS_TURN/u
+        : /REVIEW_CANDIDATE_SOURCE_REF_NOT_READ_THIS_TURN/u, scenario);
+    assert.equal(commits, 0, scenario);
+  }
+});
+
+test('Matter Review c4 preserves model privacy guards and requires a matching safe Matter context', async () => {
+  for (const scenario of ['private context', 'normalized private context', 'actor', 'credential', 'missing safe context']) {
+    const { reviewTask } = await matterReviewFixture(1);
+    const task = makeTask('OPENCLAW_INTERACTIVE_REVIEW', reviewTask, [], reviewTask.resourceRefs.map((ref) => ({ ref: ref.resourceArtifactRef, sha256: ref.resourceArtifactSha256 })));
+    let modelCalls = 0;
+    await assert.rejects(runInteractiveReviewTurn({ mode: 'INTERACTIVE_REVIEW', reviewConversationRef: reviewTask.reviewConversationRef, requestId: reviewTask.requestId,
+      callTool: async (name) => {
+        if (name === 'begin_review_turn') return runningBegin(task);
+        if (name === 'get_review_turn_context') {
+          const result = reviewContext(task, reviewTask);
+          if (scenario === 'missing safe context') delete result.context.matterWorking;
+          else if (scenario === 'private context') result.context.matterContext = reviewTask.matterContext;
+          else if (scenario === 'normalized private context') result.context.matterWorking.matter_Context = reviewTask.matterContext;
+          else if (scenario === 'actor') result.context.matterWorking.actorId = 'actor-private';
+          else result.context.matterWorking.evidenceCatalog.at(-1).providedText = 'Bearer private-fixture-secret';
+          return result;
+        }
+        throw new Error('UNEXPECTED_TOOL:' + name);
+      },
+      respond: async () => { modelCalls += 1; throw new Error('MODEL_MUST_NOT_RUN'); },
+    }), scenario === 'missing safe context' ? /HOST_MCP_REVIEW_MATTER_CONTEXT_BINDING_INVALID/u
+      : scenario === 'credential' ? /REVIEW_MODEL_CREDENTIAL_FORBIDDEN/u : /REVIEW_MODEL_SENSITIVE_FIELD_FORBIDDEN/u, scenario);
+    assert.equal(modelCalls, 0, scenario);
+  }
+});
+
 test('validates the exact C3 review task and candidate fixtures', async () => {
   const task = await readJson(REVIEW_TASK_FIXTURE_URL);
   const attachmentTask = await readJson(REVIEW_ATTACHMENT_TASK_FIXTURE_URL);
@@ -3229,6 +3829,7 @@ test('carries Host session routing across two new turns while reading citations 
   const nativeSessionKey = 'agent:wiselink-engineering:review:ACTX-RS-RT-first';
   globalThis.fetch = async (_url, init) => {
     requests.push({ body: JSON.parse(init.body), headers: init.headers });
+    assert.equal(requests.at(-1).body.tools[0].function.parameters.required.includes('matterWorkingDelta'), false);
     const reading = requests.length % 2 === 1;
     return Response.json({ model: 'fixture/provider', choices: [{ message: {
       content: null, tool_calls: [{ id: `call-${requests.length}`, type: 'function', function: {
@@ -3259,6 +3860,8 @@ test('carries Host session routing across two new turns while reading citations 
         }
         if (name === 'commit_review_turn_candidate') {
           const candidate = JSON.parse(JSON.parse(args.resultJson).modelOutput);
+          assert.equal(candidate.schemaVersion, 'wiselink.3_1.review_turn_candidate.v1.c3');
+          assert.equal(Object.hasOwn(candidate, 'matterWorkingDelta'), false);
           commits.push(candidate.reviewTurnRef);
           return reviewCommit(task.operationRef);
         }
@@ -3748,7 +4351,7 @@ test('offers source reading and one final candidate function with blank assistan
   assert.equal(result.provenance.modelVersion, 'openai-codex/gpt-5.4');
   assert.equal(
     result.provenance.promptVersion,
-    'wiselink.3_1.review_prompt.v1.c22',
+    'wiselink.3_1.review_prompt.v1.c34',
   );
 });
 
@@ -3801,7 +4404,7 @@ test('falls back to the configured model and records only output shape v2', asyn
   assert.equal(result.provenance.modelVersion, 'provider/configured');
   assert.equal(
     result.provenance.promptVersion,
-    'wiselink.3_1.review_prompt.v1.c22',
+    'wiselink.3_1.review_prompt.v1.c34',
   );
   assert.equal(
     outputShape.schemaVersion,
@@ -5137,6 +5740,54 @@ function translationInput() {
   };
 }
 
+function translationModelResponse(rows, id) {
+  return Response.json({ choices: [{ finish_reason: 'tool_calls', message: {
+    content: null, tool_calls: [{ id, type: 'function', function: {
+      name: 'return_wiselink_initial_candidate',
+      arguments: JSON.stringify({ candidate: { translatedUnits: rows } }),
+    } }],
+  } }] });
+}
+
+function shiftedTranslationFixture() {
+  const input = translationInput();
+  input.rulePack.terms = [{ ruleId: 'term.airplane', sourceTerm: 'airplane', targetRenderings: ['飞机'], severity: 'mandatory' }];
+  input.sourceUnits = Array.from({ length: 437 }, (_, index) => ({
+    ...input.sourceUnits[0], unitKey: 'unit-' + index, sourceRefIds: ['source-' + index],
+    text: 'Inspect item ' + index + ' and retain the recorded value.',
+  }));
+  const translations = input.sourceUnits.map((_, index) => '检查第 ' + index + ' 项并保留记录值。');
+  const shifted = new Map();
+  // Same misplaced literal tokens as the observed residual; the proper Chinese
+  // translations restore source ownership by index, never by moving text here.
+  for (const [index, source, translation, rejected] of [
+    [288, 'Retain the configuration label.', '保留构型标签。', '保留构型标签 3。'],
+    [289, 'Review paragraph 3 before maintenance.', '维修前查阅第 3 段。', '维修前查阅该段。'],
+    [363, 'Review paragraphs 11 and 13.', '查阅第 11 和 13 段。', '查阅相应段落。'],
+    [364, 'Refer to paragraph 9 and connector E991.', '参见第 9 段和连接器 E991。', '参见第 11 和 13 段及连接器。'],
+    [366, 'Inspect airplane connector 6.', '检查飞机的连接器 6。', '检查第 9 段和连接器 E991。'],
+    [369, 'Read paragraph 7.', '阅读第 7 段。', '阅读第 6 段。'],
+    [371, 'Retain the stated warning.', '保留所述警告。', '保留第 7 段所述警告。'],
+  ]) {
+    input.sourceUnits[index].text = source;
+    translations[index] = translation;
+    shifted.set(index, rejected);
+  }
+  return {
+    input, translations, shifted,
+    otherWindowIndices: Array.from({ length: 96 }, (_, offset) => 276 + offset).filter((index) => !shifted.has(index)),
+  };
+}
+
+function residualTranslationFixture(unitCount = 1) {
+  const input = translationInput();
+  input.sourceUnits = Array.from({ length: unitCount }, (_, index) => ({
+    ...input.sourceUnits[0], unitKey: 'unit-' + index, sourceRefIds: ['source-' + index],
+    text: 'Retain 1, 2, 3, 4, 5, 6 and 7.',
+  }));
+  return input;
+}
+
 function translationOutput() {
   const input = translationInput();
   return {
@@ -5423,6 +6074,30 @@ function synthesisOutput(input) {
   };
 }
 
+function readingSynthesisInput() {
+  const input = synthesisInput();
+  input.unifiedSourceContext.sourceRefs[0].excerpt = '主文档说明故障范围与条件。';
+  input.evidenceRegistry = [
+    { evidenceRef: 'overall-evidence:primary:1', kind: 'DOCUMENT_PASSAGE', title: '主文档', versionLabel: 'R1', excerpt: input.unifiedSourceContext.sourceRefs[0].excerpt, locator: 'page 1-1' },
+    { evidenceRef: 'overall-evidence:related:1', kind: 'DOCUMENT_PASSAGE', title: '关联故障报告', versionLabel: 'R2', excerpt: '关联正文独立解释失效机理；并未批准执行。', locator: 'page 2-2' },
+  ];
+  return input;
+}
+
+function readingSynthesisOutput(input) {
+  const output = synthesisOutput(input);
+  output.overallCandidate = '现有材料已形成有用认识；具体构型待核对，尚无实施决定。';
+  output.engineeringSummary = {
+    schemaVersion: 'wiselink.3_1.overall_engineering_summary.v2',
+    headline: '故障机理的当前认识', listBrief: '故障机理已有依据，具体构型仍待核对。', lead: output.overallCandidate,
+    claims: [{ claimId: 'MECHANISM', text: '关联正文解释了故障机理；机队构型仍待核对。', basis: 'CONDITIONAL_INFERENCE', premises: [{ evidenceRef: 'overall-evidence:related:1', role: 'SUPPORTS', explanation: '已读关联正文支持该判断。', limitation: '没有形成实施决定。' }] }],
+    decisiveClaimIds: ['MECHANISM'],
+  };
+  output.findings = [];
+  output.findingCount = 0;
+  return output;
+}
+
 function status(workItemId) {
   return { entry: { workItemId }, integratedAssessmentSummary: null };
 }
@@ -5501,6 +6176,131 @@ function p0bReevaluation(nextStage) {
     servingCurrentPreserved: nextStage !== null,
     candidateOnly: true,
   };
+}
+
+async function matterReviewFixture(turnNo = 1) {
+  const first = turnNo === 2 ? await matterReviewFixture(1) : null;
+  const reviewTask = await readJson(REVIEW_TASK_FIXTURE_URL);
+  Object.assign(reviewTask, {
+    schemaVersion: 'wiselink.3_1.review_turn_task.v1.c4',
+    reviewConversationRef: 'RC-matter-private', reviewTurnRef: 'RT-matter-private-' + turnNo,
+    requestId: 'REQ-matter-private-' + turnNo, actorContextRef: 'ACTX-RS-matter-private',
+    selectedEvaluationItemId: null, allowedEvaluationItemIds: [], allowedAdoptedInputRefs: [], attachmentRefs: [],
+    userMessage: turnNo === 1 ? '请根据文件 A、B 形成当前问题理解，其他材料仍待核对。' : '请纠正 claim-origin，保留传感器安装条件和其他未变结论。',
+    executionPolicy: { ...reviewTask.executionPolicy, toolPolicyRef: 'wiselink-openclaw-engineering-assessment@1.2.0#interactive-matter-review-c4' },
+  });
+  const inputs = [1, 2, 3].map((index) => ({
+    inputId: 'WI-matter-private-' + index, workItemId: 'WI-matter-private-' + index,
+    workItemRevision: 7, documentVersionId: 'DV-matter-' + index,
+    resultRef: null, resultRevision: null,
+  }));
+  const scope = {
+    schemaVersion: 'wiselink.3_1.matter_review_scope.v1', kind: 'ENGINEERING_MATTER',
+    matterId: 'MATTER-private-identity', basedOnMatterRevisionId: 'MREV-membership-1',
+    expectedWorkingRevision: turnNo - 1, targetClaimId: turnNo === 1 ? null : 'claim-origin', inputs,
+  };
+  const documentEvidence = [
+    'SOURCE_A_FULL_PASSAGE: The proposed check applies only to aircraft with sensor P installed.',
+    'SOURCE_B_FULL_PASSAGE: Document B separately describes connector Q inspection.',
+    'SOURCE_C_UNREAD_PASSAGE: A later service issue remains outside the ranges checked in this review.',
+  ].map((excerpt, index) => ({
+    evidenceRef: `matter-evidence:revision:${turnNo === 2 && index === 2 ? 2 : 1}:document:${index + 1}:1`,
+    kind: 'DOCUMENT_PASSAGE', title: '文件 ' + ['A', 'B', 'C'][index], versionLabel: 'Revision 1', excerpt,
+    workItemId: inputs[index].workItemId, documentVersionId: inputs[index].documentVersionId,
+    sourceRefId: 'urn:source:shared-original-page', locator: 'page 1-1',
+  }));
+  const engineerEvidence = {
+    evidenceRef: `matter-evidence:revision:${turnNo}:engineer`, kind: 'ENGINEER_STATEMENT', origin: 'REVIEW_CONVERSATION',
+    title: '工程师本轮说明', versionLabel: null,
+    excerpt: turnNo === 1 ? '当前尚未核对本机传感器安装状态。' : '请保留传感器安装条件；补充说法仅代表工程师陈述。',
+    reviewConversationId: reviewTask.reviewConversationRef, reviewTurnId: reviewTask.reviewTurnRef,
+    engineerSuppliedInputId: 'EINPUT-private-' + turnNo, recordedAt: '2026-09-08T02:00:00.000Z',
+  };
+  const evidenceSources = documentEvidence.map((item, index) => ({
+    evidenceRef: item.evidenceRef, sourceRefId: `matter-source:${index + 1}:1`, inputId: inputs[index].inputId,
+  }));
+  reviewTask.resourceRefs = documentEvidence.map((item, index) => ({
+    sourceRefId: evidenceSources[index].sourceRefId,
+    resourceArtifactRef: 'artifact://fixture/matter-document-' + (index + 1), resourceArtifactSha256: ['a', 'b', 'c'][index].repeat(64),
+    value: { sourceRefId: evidenceSources[index].sourceRefId, kind: item.kind, evidenceRef: item.evidenceRef,
+      inputRef: 'matter-input:' + (index + 1), documentVersionRef: item.documentVersionId,
+      title: item.title, versionLabel: item.versionLabel, locator: item.locator, pageStart: 1, pageEnd: 1, quote: item.excerpt },
+  }));
+  const firstDelta = first?.delta;
+  const workingState = first ? {
+    schemaVersion: 'wiselink.3_1.engineering_matter_working_state.v1',
+    focus: firstDelta.nextFocus,
+    substantiveResult: {
+      resultRef: 'MRESULT-private-1', resultRevision: 1,
+      scope: { kind: 'ENGINEERING_MATTER', matterId: scope.matterId },
+      content: { schemaVersion: 'wiselink.3_1.assessment_reading.v1', ...firstDelta.readingPresentation, claims: firstDelta.claimDelta.additions },
+      evidence: first.reviewTask.matterContext.readingEvidence.filter((item) => item.kind === 'ENGINEER_STATEMENT' || item.title !== '文件 C'),
+      candidateOnly: true,
+    },
+    openQuestions: firstDelta.openQuestionDelta.upserts, reviewConditions: [],
+    substantiveInputs: inputs.slice(0, 2),
+    coverage: firstDelta.coverageUpdates.map(({ inputRef, ...coverage }) => ({ binding: inputs[Number(inputRef.split(':')[1]) - 1], ...coverage })),
+  } : null;
+  const readingEvidence = [...documentEvidence,
+    ...(workingState?.substantiveResult.evidence.filter((item) => item.kind === 'ENGINEER_STATEMENT') ?? []), engineerEvidence];
+  const safeEvidence = (item) => ({
+    evidenceRef: item.evidenceRef, kind: item.kind, title: item.title, versionLabel: item.versionLabel,
+    locator: item.locator ?? null,
+    sourceRefId: evidenceSources.find((source) => source.evidenceRef === item.evidenceRef)?.sourceRefId ?? null,
+    providedText: item.kind === 'DOCUMENT_PASSAGE' ? null : item.excerpt,
+  });
+  reviewTask.matterContext = { scope, title: '传感器条件与独立连接器问题', workingState, readingEvidence, evidenceSources };
+  reviewTask.context = { matterWorking: {
+    title: reviewTask.matterContext.title, workingRevision: scope.expectedWorkingRevision,
+    membershipRevisionRef: scope.basedOnMatterRevisionId, targetClaimId: scope.targetClaimId,
+    currentResult: workingState ? { content: workingState.substantiveResult.content, evidence: workingState.substantiveResult.evidence.map(safeEvidence) } : null,
+    focus: workingState?.focus ?? null, openQuestions: workingState?.openQuestions ?? [], reviewConditions: [],
+    inputs: inputs.map((item, index) => ({ inputRef: 'matter-input:' + (index + 1), documentVersionRef: item.documentVersionId,
+      title: documentEvidence[index].title, versionLabel: documentEvidence[index].versionLabel, pending: turnNo === 1 || index === 2 })),
+    evidenceCatalog: readingEvidence.map(safeEvidence),
+  } };
+  const premise = (evidenceRef, role = 'SUPPORTS') => ({ evidenceRef, role,
+    explanation: role === 'LIMITS' ? '工程师补充限定当前理解的边界。' : '该前提直接支持此项表述。',
+    limitation: role === 'LIMITS' ? '工程师陈述不是受控完成记录。' : null });
+  const originClaim = {
+    claimId: 'claim-origin', text: turnNo === 1 ? '文件 A 所述检查仅适用于已安装传感器 P 的飞机。' : '保留文件 A 的传感器 P 安装条件；当前陈述不证明本机已满足该条件。',
+    basis: turnNo === 1 ? 'SOURCE_FACT' : 'CONDITIONAL_INFERENCE',
+    premises: [premise(documentEvidence[0].evidenceRef), ...(turnNo === 2 ? [premise(engineerEvidence.evidenceRef, 'LIMITS')] : [])],
+  };
+  const additions = turnNo === 1 ? [originClaim,
+    { claimId: 'claim-independent', text: '文件 B 独立描述连接器 Q 检查。', basis: 'SOURCE_FACT', premises: [premise(documentEvidence[1].evidenceRef)] },
+    { claimId: 'claim-engineer', text: '工程师表示本机传感器安装状态尚未核对。', basis: 'SOURCE_FACT', premises: [premise(engineerEvidence.evidenceRef)] },
+  ] : [];
+  const delta = {
+    updateKind: turnNo === 1 ? 'INITIAL_SYNTHESIS' : 'CORRECTION',
+    changeSummary: turnNo === 1 ? '建立保留构型条件的当前理解，记录独立问题。' : '按原文和工程师补充修正 claim-origin，保留其他两项理解。',
+    nextFocus: turnNo === 1 ? { question: '当前问题的适用条件与独立影响是什么？', targetRefs: [] } : null,
+    claimDelta: { changedBecause: turnNo === 1 ? '本轮实际读取文件 A、B 的相关片段。' : '本轮复读 A 的适用条件，并纳入工程师陈述的限制。',
+      additions, replacements: turnNo === 2 ? [originClaim] : [], retirements: [],
+      explicitlyUnchangedClaimIds: turnNo === 2 ? ['claim-independent', 'claim-engineer'] : [] },
+    readingPresentation: { headline: '保留传感器安装条件', listBrief: '传感器条件与独立连接器问题仍需分别理解。',
+      lead: '文件 A 的条件仍保留；文件 B 独立说明连接器问题，工程师尚未核对本机构型。',
+      decisiveClaimIds: ['claim-origin', 'claim-independent'] },
+    openQuestionDelta: turnNo === 1 ? { upserts: [{ itemId: 'question-config', text: '本机是否安装传感器 P？', basisRefs: [documentEvidence[0].evidenceRef] }], retirements: [], explicitlyUnchangedItemIds: [] } : null,
+    reviewConditionDelta: null,
+    coverageUpdates: inputs.slice(0, turnNo === 1 ? 2 : 1).map((_, index) => ({
+      inputRef: 'matter-input:' + (index + 1), checkedSourceRefIds: [evidenceSources[index].sourceRefId],
+      checkedScope: `仅核对文件 ${['A', 'B'][index]} 第 1 页所给片段`, contribution: 'SUBSTANTIVE', reason: '该范围支持上述保留条件的理解。',
+    })),
+  };
+  return { reviewTask, delta };
+}
+
+function matterReviewModelOutput(delta) {
+  return { responseType: delta === null ? 'ANSWER' : 'RESYNTHESIS_RESULT',
+    answer: delta === null ? '这是对当前问题的普通解释。' : delta.changeSummary,
+    sourceRefs: [], missingInputs: [], candidateEvidenceRefs: [], reviewActionDraft: null, affectedItemIds: [], warnings: [], matterWorkingDelta: delta };
+}
+
+function matterReviewCandidate(reviewTask, delta) {
+  return { schemaVersion: 'wiselink.3_1.review_turn_candidate.v1.c4', mode: 'INTERACTIVE_REVIEW',
+    reviewConversationRef: reviewTask.reviewConversationRef, reviewTurnRef: reviewTask.reviewTurnRef,
+    ...matterReviewModelOutput(delta), runtime: { runtimeAppId: reviewTask.executionPolicy.runtimeAppId, profileRef: reviewTask.executionPolicy.profileRef } };
 }
 
 function reviewContext(task, reviewTask) {
