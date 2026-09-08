@@ -12,6 +12,7 @@ require('ts-node/register/transpile-only'); require('tsconfig-paths/register');
 const { drizzle } = require('drizzle-orm/postgres-js');
 const { eq } = require('drizzle-orm');
 const { getTableConfig } = require('drizzle-orm/pg-core');
+const { SqlExecutionContextMiddleware } = require('@lark-apaas/fullstack-nestjs-core');
 const { actionAttempt } = require('../../server/database/schema.ts');
 const { sealTaskEnvelope, canonicalJson } = require('../../server/modules/action-attempt/action-attempt-envelope.ts');
 const { CanonicalTranslationWorkspaceRepository } = require('../../server/modules/canonical-host/canonical-translation-workspace.repository.ts');
@@ -302,15 +303,73 @@ test('real PostgreSQL translation work survives bounded requests and enforces sc
       });
       assert.equal((await sql`SELECT revision FROM work_item`)[0].revision, beforeRevision);
     });
+    await t.test('the browser service reads a consistent workspace through the official authenticated SQL context', async () => {
+      const sqlContext = new SqlExecutionContextMiddleware({ roleSchema: 'translation_snapshot_test' });
+      const browser = (actorId, operation) => new Promise((resolve, reject) => sqlContext.use(
+        { userContext: { userId: actorId, isSystemAccount: false, roles: [] } }, {},
+        () => Promise.resolve().then(operation).then(resolve, reject),
+      ));
+      const current = { workItemId: fence.workItemId, source: { documentVersionId: plan.source.documentVersionId },
+        package: { artifact: plan.source.parsedArtifact } };
+      const reading = await browser('engineer-test', () => service.readCurrent(current, fence.tenantId));
+      assert.equal(reading.workspaceId, workspace.workspaceId);
+      assert.equal(reading.blocks.length, plan.blocks.length);
+      assert.equal(await browser('wrong-user', () => service.readCurrent(current, fence.tenantId)), null);
+      assert.equal(await browser('engineer-test', () => service.readCurrent(current, 'wrong-tenant')), null);
+      await assert.rejects(browser('engineer-test', () => repository.readSnapshot({ ...fence, workItemId: 'wrong-work-item' })), /WORKSPACE_NOT_FOUND/u);
+    });
+    await t.test('a concurrent saved update cannot mix new block versions with an older workspace snapshot', async () => {
+      const before = await repository.readSnapshot(fence);
+      const blockId = before.revisions[0].blockRevisionId;
+      const afterWorkspaceRead = async () => sql.begin(async (tx) => {
+        await tx.unsafe("SET LOCAL lock_timeout = '1s'");
+        await tx`UPDATE translation_workspace SET row_version = row_version + 1 WHERE workspace_id = ${workspace.workspaceId}`;
+        await tx`UPDATE translation_block_revision SET row_version = row_version + 1 WHERE block_revision_id = ${blockId}`;
+      });
+      const interleaved = new CanonicalTranslationWorkspaceRepository({
+        transaction: (operation, config) => db.transaction((tx) => {
+          let firstSelect = true;
+          return operation(new Proxy(tx, { get(target, property) {
+            if (property === 'select') return (...args) => {
+              const query = target.select(...args);
+              if (!firstSelect) return query;
+              firstSelect = false;
+              return afterQueryResult(query, afterWorkspaceRead);
+            };
+            const value = Reflect.get(target, property);
+            return typeof value === 'function' ? value.bind(target) : value;
+          } }));
+        }, config),
+      });
+      const during = await interleaved.readSnapshot(fence);
+      assert.equal(during.workspace.rowVersion, before.workspace.rowVersion);
+      assert.equal(during.revisions.find((entry) => entry.blockRevisionId === blockId).rowVersion, before.revisions[0].rowVersion);
+      const after = await repository.readSnapshot(fence);
+      assert.equal(after.workspace.rowVersion, before.workspace.rowVersion + 1);
+      assert.equal(after.revisions.find((entry) => entry.blockRevisionId === blockId).rowVersion, before.revisions[0].rowVersion + 1);
+    });
   } finally { await sql.end({ timeout: 5 }); }
 });
+
+function afterQueryResult(query, operation) {
+  return new Proxy(query, { get(target, property) {
+    if (property === 'then') return (resolve, reject) => Promise.resolve(target)
+      .then(async (result) => { await operation(); return result; }).then(resolve, reject);
+    const value = Reflect.get(target, property);
+    return typeof value === 'function'
+      ? (...args) => afterQueryResult(value.apply(target, args), operation)
+      : value;
+  } });
+}
 
 async function reset(sql) {
   await sql.unsafe(`DROP TABLE IF EXISTS translation_knowledge_governance_event, translation_knowledge_import_request_item, translation_knowledge_source_ref,
     translation_knowledge_candidate, translation_block_revision, translation_workspace, action_attempt, work_item, identity_subject_mapping CASCADE;
     DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname='user_profile') THEN CREATE TYPE user_profile AS (user_id text); END IF; END $$;
     DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='service_role') THEN CREATE ROLE service_role; END IF;
-      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='authenticated') THEN CREATE ROLE authenticated; END IF; END $$;
+      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='authenticated') THEN CREATE ROLE authenticated; END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='authenticated_translation_snapshot_test') THEN CREATE ROLE authenticated_translation_snapshot_test; END IF; END $$;
+    GRANT authenticated TO authenticated_translation_snapshot_test;
     CREATE TABLE work_item (work_item_id varchar(96) UNIQUE NOT NULL, tenant_id varchar(128) NOT NULL, document_version_id varchar(96), package_id text,
       package_artifact_ref text, package_artifact_sha256 varchar(64), requested_by_user_id varchar(255), revision integer, UNIQUE(tenant_id,work_item_id));
     CREATE TABLE identity_subject_mapping (miaoda_user_id text, miaoda_tenant_id text, expected_client_id text, status text);`);
