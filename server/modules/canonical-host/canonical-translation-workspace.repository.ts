@@ -906,10 +906,12 @@ function modelProvenance(
       actual.skillVersion,
     ) ||
     Number(actual.skillVersion.split('.c').at(-1)) < 44 ||
-    actual.promptVersion !== TRANSLATION_V2_PROMPT_VERSION ||
+    ![TRANSLATION_V2_PROMPT_VERSION, 'wiselink-translation-block@r09.c44'].includes(actual.promptVersion) ||
     ['unknown', 'fallback', ''].includes(
       actual.modelVersion.trim().toLowerCase(),
-    )
+    ) ||
+    (actual.modelVersion.startsWith('configured-route:') &&
+      actual.modelVersion !== `configured-route:${executionModel.modelRef}`)
   ) {
     throw new Error('TRANSLATION_BLOCK_RUNTIME_BINDING_INVALID');
   }

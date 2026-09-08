@@ -63,6 +63,55 @@ export class JobAidWorkRepository {
     private readonly actorTransactions: EngineeringMatterWorkingRepository,
   ) {}
 
+  /** The caller supplies the actor resolved from the Host owner/task binding. */
+  async withActorTransaction<T>(
+    actorUserId: string,
+    operation: (database: PostgresJsDatabase) => Promise<T>,
+  ): Promise<T> {
+    return this.actorTransactions.withActorTransaction(
+      actorUserId,
+      ({ database }) => operation(database),
+    );
+  }
+
+  async loadOwnedSourceBinding(
+    input: { tenantId: string; workItemId: string; actorUserId: string },
+    database: PostgresJsDatabase,
+  ): Promise<JobAidSourceBinding | null> {
+    const [row] = await database
+      .select({
+        documentVersionId: workItem.documentVersionId,
+        projectionJson: workItem.projectionJson,
+      })
+      .from(workItem)
+      .where(
+        and(
+          eq(workItem.workItemId, input.workItemId),
+          eq(workItem.tenantId, input.tenantId),
+          eq(workItem.requestedByUserId, input.actorUserId),
+        ),
+      )
+      .limit(1);
+    if (!row?.projectionJson) return null;
+    const projection = JSON.parse(row.projectionJson) as {
+      package?: { artifact?: { ref?: unknown; sha256?: unknown } };
+    };
+    const artifact = projection.package?.artifact;
+    if (
+      typeof artifact?.ref !== 'string' ||
+      !artifact.ref ||
+      typeof artifact.sha256 !== 'string' ||
+      !artifact.sha256
+    )
+      return null;
+    return {
+      workItemId: input.workItemId,
+      documentVersionId: row.documentVersionId,
+      artifactRef: artifact.ref,
+      artifactSha256: artifact.sha256,
+    };
+  }
+
   async list(
     input: { tenantId: string; workItemId: string },
     db = this.db,

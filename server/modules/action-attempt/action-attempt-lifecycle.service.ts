@@ -645,6 +645,30 @@ export class ActionAttemptLifecycleService {
     return this.requiredScoped(input.attemptRef, input);
   }
 
+  /** A departed worker cannot leave an expired initial analysis BUSY forever.
+   * Reconcile only its existing hard deadline; never claim, retry or discard a
+   * COMMITTING result. The saved lease generation fences a concurrent commit. */
+  async reconcileRunningDeadline(input: {
+    attemptRef: string;
+    tenantId: string;
+    workItemId: string;
+  }): Promise<ActionAttemptRow> {
+    const row = await this.requiredScoped(input.attemptRef, input);
+    const now = new Date();
+    if (row.status !== 'RUNNING' || !row.deadlineAt || row.deadlineAt > now)
+      return row;
+    await this.repository.finishTerminal({
+      attemptId: row.attemptId,
+      fromStatus: 'RUNNING',
+      status: 'TIMED_OUT',
+      terminalReason: 'ACTION_ATTEMPT_DEADLINE_EXCEEDED',
+      leaseToken: requiredLeaseToken(row),
+      leaseGeneration: row.leaseGeneration,
+      now,
+    });
+    return this.requiredScoped(input.attemptRef, input);
+  }
+
   projectTerminal(row: ActionAttemptRow): ActionAttemptTerminalProjection {
     if (!isTerminal(row.status)) {
       throw conflict('ACTION_ATTEMPT_NOT_TERMINAL');

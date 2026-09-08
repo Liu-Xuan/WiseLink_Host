@@ -827,7 +827,7 @@ export function readHostMcpJsonResult(result, name) {
 
 function safeHostErrorCode(value) {
   if (typeof value !== 'string') return null;
-  const code = value.match(/^(?:Error:\s*)?((?:REVIEW|ACTION_ATTEMPT|OPENCLAW|ENGINEERING_MATTER|OVERALL)_[A-Z0-9_]+)(?=:|$)/u)?.[1];
+  const code = value.match(/^(?:Error:\s*)?((?:REVIEW|ACTION_ATTEMPT|OPENCLAW|ENGINEERING_MATTER|OVERALL|JOBAID|DYNAMIC_EVALUATION|CONFIGURATION_REEVALUATION|TRANSLATION|COMMON_CONTEXT|PACKAGE_ARTIFACT|SOURCE_CONTEXT|SOURCE_PAGE)_[A-Z0-9_]+)(?=:|$)/u)?.[1];
   return code && code.length <= 160 ? code : null;
 }
 

@@ -43,6 +43,50 @@ describe('JobAid continuation requests', () => {
     else process.env.WL_JOBAID_PROBLEM_V2_ENABLED = originalFlag;
   });
 
+  it('rejects a new initial task before reservation when the Host owner mapping is no longer authorized', async () => {
+    const h = harness();
+    h.conversations.hasActiveOfficialActorMapping.mockResolvedValue(false);
+
+    await expect(
+      h.service.begin(h.current(), scope, 'INITIAL_PROBLEM_ASSESSMENT'),
+    ).rejects.toThrow('JOBAID_ACTOR_AUTHORIZATION_CHANGED');
+
+    expect(h.rows.size).toBe(0);
+    expect(h.work.withActorTransaction).toHaveBeenCalledWith(
+      OWNER,
+      expect.any(Function),
+    );
+    expect(h.conversations.hasActiveOfficialActorMapping).toHaveBeenCalledWith(
+      { tenantId: TENANT, actorId: OWNER },
+      h.actorExecutor,
+    );
+  });
+
+  it('rechecks the stored actor after an existing claim without rebuilding or replacing the task', async () => {
+    const h = harness();
+    const first = await h.service.begin(
+      h.current(),
+      scope,
+      'INITIAL_PROBLEM_ASSESSMENT',
+    );
+    expect(h.conversations.hasActiveOfficialActorMapping).toHaveBeenCalledTimes(
+      2,
+    );
+    h.conversations.hasActiveOfficialActorMapping.mockResolvedValue(false);
+
+    await expect(
+      h.service.begin(h.current(), scope, 'INITIAL_PROBLEM_ASSESSMENT'),
+    ).rejects.toThrow('JOBAID_ACTOR_AUTHORIZATION_CHANGED');
+
+    expect(h.rows.size).toBe(1);
+    expect(h.rows.get(first.attemptRef)?.status).toBe('RUNNING');
+    expect(h.attempts.reserve).toHaveBeenCalledTimes(1);
+    expect(h.artifactStore.readActualBytes).toHaveBeenCalledTimes(1);
+    expect(h.conversations.hasActiveOfficialActorMapping).toHaveBeenCalledTimes(
+      3,
+    );
+  });
+
   it.each(['SUCCEEDED', 'FAILED', 'CANCELLED', 'TIMED_OUT'] as const)(
     'returns the same %s request after WorkItem revision advances without reserving, reading sources or preparing configuration again',
     async (status) => {
@@ -306,8 +350,24 @@ function harness() {
       documentVersionId: current.source.documentVersionId,
     })),
   };
+  const actorExecutor = { kind: 'host-owner-transaction' };
   const work = {
     listForRuntime: jest.fn(async (): Promise<JobAidWorkRevision[]> => []),
+    withActorTransaction: jest.fn(
+      async (
+        _actorUserId: string,
+        operation: (database: typeof actorExecutor) => Promise<unknown>,
+      ) => operation(actorExecutor),
+    ),
+    loadOwnedSourceBinding: jest.fn(async () => ({
+      workItemId: current.workItemId,
+      documentVersionId: current.source.documentVersionId,
+      artifactRef: current.package!.artifact.ref,
+      artifactSha256: current.package!.artifact.sha256,
+    })),
+  };
+  const conversations = {
+    hasActiveOfficialActorMapping: jest.fn(async () => true),
   };
   const attempts = {
     readRequest: jest.fn(
@@ -376,7 +436,7 @@ function harness() {
     {} as never,
     attempts as never,
     workItems as never,
-    { hasActiveOfficialActorMapping: jest.fn(async () => true) } as never,
+    conversations as never,
     {
       buildForWorkItemWithEvidence: jest.fn(async () => ({
         common: projectCommonAssessmentContext(
@@ -403,6 +463,8 @@ function harness() {
     artifactStore,
     attempts,
     work,
+    conversations,
+    actorExecutor,
     current: () => current,
     advanceRevision: () => {
       current = { ...current, revision: current.revision + 1 };

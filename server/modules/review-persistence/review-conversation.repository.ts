@@ -392,20 +392,23 @@ export class ReviewConversationRepository {
     return previous ?? null;
   }
 
-  async loadOpenClawTurnByIdBinding(input: {
-    reviewConversationId: string;
-    reviewTurnId: string;
-    tenantId: string;
-    actorId: string;
-    workItemId: string;
-  }): Promise<{
+  async loadOpenClawTurnByIdBinding(
+    input: {
+      reviewConversationId: string;
+      reviewTurnId: string;
+      tenantId: string;
+      actorId: string;
+      workItemId: string;
+    },
+    executor: DatabaseExecutor = this.db,
+  ): Promise<{
     conversation: PersistedReviewConversation;
     turn: PersistedReviewTurn;
   } | null> {
-    return this.loadActorBoundOpenClawTurn({
-      ...input,
-      reviewTurnId: input.reviewTurnId,
-    });
+    return this.loadActorBoundOpenClawTurn(
+      { ...input, reviewTurnId: input.reviewTurnId },
+      executor,
+    );
   }
 
   private async loadActorBoundOpenClawTurn(
@@ -415,6 +418,7 @@ export class ReviewConversationRepository {
       actorId: string;
       workItemId: string;
     } & ({ requestId: string } | { reviewTurnId: string }),
+    executor: DatabaseExecutor = this.db,
   ): Promise<{
     conversation: PersistedReviewConversation;
     turn: PersistedReviewTurn;
@@ -427,7 +431,7 @@ export class ReviewConversationRepository {
       'requestId' in input
         ? sql`candidate_turn.request_id = ${input.requestId}`
         : sql`candidate_turn.review_turn_id = ${input.reviewTurnId}`;
-    const rows = await this.db
+    const rows = await executor
       .execute<ActorBoundReviewTurnRow>(
         sql`
       WITH actor_context AS MATERIALIZED (
@@ -791,11 +795,14 @@ export class ReviewConversationRepository {
     return row ? persistedTurn(row) : null;
   }
 
-  async hasActiveOfficialActorMapping(input: {
-    tenantId: string;
-    actorId: string;
-  }): Promise<boolean> {
-    return this.hasActiveOfficialActorMappingInternal(input, this.db);
+  async hasActiveOfficialActorMapping(
+    input: {
+      tenantId: string;
+      actorId: string;
+    },
+    executor: DatabaseExecutor = this.db,
+  ): Promise<boolean> {
+    return this.hasActiveOfficialActorMappingInternal(input, executor);
   }
 
   private async hasActiveOfficialActorMappingInternal(

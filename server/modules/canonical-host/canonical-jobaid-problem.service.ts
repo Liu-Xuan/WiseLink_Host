@@ -446,13 +446,8 @@ export class CanonicalJobAidProblemService {
       ...common.availableReadingEvidence,
       ...extraEvidence,
     ];
-    if (history[0])
-      await this.assertEvidenceOwned(
-        history[0].content.evidence,
-        tenantId,
-        actorUserId,
-        workItem.workItemId,
-      );
+    // Authorize the complete new input inside buildModelInput, before the
+    // lifecycle persists or claims an attempt. begin also rechecks replays.
     const sourceBindings = await this.sourceBindings(
       [...sourceCatalog, ...(history[0]?.content.evidence ?? [])],
       workItem,
@@ -490,11 +485,14 @@ export class CanonicalJobAidProblemService {
   }): Promise<JobAidWorkRevision | null> {
     const current = await this.work.latestForRuntime(input);
     if (current)
-      await this.assertEvidenceOwned(
-        current.content.evidence,
-        input.tenantId,
-        input.actorUserId,
-        input.workItemId,
+      await this.work.withActorTransaction(input.actorUserId, (database) =>
+        this.assertEvidenceOwned(
+          current.content.evidence,
+          input.tenantId,
+          input.actorUserId,
+          input.workItemId,
+          database,
+        ),
       );
     return current;
   }
@@ -1124,30 +1122,25 @@ export class CanonicalJobAidProblemService {
         item.kind === 'DOCUMENT_PASSAGE' ? [item.workItemId] : [],
       ),
     ]);
-    const bindings: JobAidSourceBinding[] = [];
-    for (const workItemId of ids) {
-      const authorized = await this.workItems.loadAuthorizationBinding({
-        workItemId,
+    return this.work.withActorTransaction(actorUserId, async (database) => {
+      await this.assertEvidenceOwned(
+        evidence,
         tenantId,
         actorUserId,
-      });
-      const loaded = authorized
-        ? await this.workItems.loadTenantScopedProjection(workItemId, tenantId)
-        : null;
-      if (
-        !authorized ||
-        !loaded?.projection?.package ||
-        loaded.row.requestedByUserId !== actorUserId
-      )
-        throw new Error('JOBAID_SOURCE_AUTHORIZATION_CHANGED');
-      bindings.push({
-        workItemId,
-        documentVersionId: loaded.row.documentVersionId,
-        artifactSha256: loaded.projection.package.artifact.sha256,
-        artifactRef: loaded.projection.package.artifact.ref,
-      });
-    }
-    return bindings;
+        primary.workItemId,
+        database,
+      );
+      const bindings: JobAidSourceBinding[] = [];
+      for (const workItemId of ids) {
+        const binding = await this.work.loadOwnedSourceBinding(
+          { workItemId, tenantId, actorUserId },
+          database,
+        );
+        if (!binding) throw new Error('JOBAID_SOURCE_AUTHORIZATION_CHANGED');
+        bindings.push(binding);
+      }
+      return bindings;
+    });
   }
 
   private async assertSourcesAuthorized(
@@ -1156,25 +1149,34 @@ export class CanonicalJobAidProblemService {
     tenantId: string,
     workItemId: string,
   ): Promise<void> {
-    await this.assertEvidenceOwned(
-      evidence,
-      tenantId,
+    await this.work.withActorTransaction(
       input.actorUserId,
-      workItemId,
+      async (database) => {
+        await this.assertEvidenceOwned(
+          evidence,
+          tenantId,
+          input.actorUserId,
+          workItemId,
+          database,
+        );
+        for (const binding of input.sourceBindings) {
+          const current = await this.work.loadOwnedSourceBinding(
+            {
+              workItemId: binding.workItemId,
+              tenantId,
+              actorUserId: input.actorUserId,
+            },
+            database,
+          );
+          if (
+            !current ||
+            current.documentVersionId !== binding.documentVersionId ||
+            current.artifactSha256 !== binding.artifactSha256
+          )
+            throw new Error('JOBAID_SOURCE_VERSION_CHANGED');
+        }
+      },
     );
-    for (const binding of input.sourceBindings) {
-      const loaded = await this.workItems.loadTenantScopedProjection(
-        binding.workItemId,
-        tenantId,
-      );
-      if (
-        !loaded?.projection?.package ||
-        loaded.row.requestedByUserId !== input.actorUserId ||
-        loaded.row.documentVersionId !== binding.documentVersionId ||
-        loaded.projection.package.artifact.sha256 !== binding.artifactSha256
-      )
-        throw new Error('JOBAID_SOURCE_VERSION_CHANGED');
-    }
   }
 
   private async assertEvidenceOwned(
@@ -1182,12 +1184,13 @@ export class CanonicalJobAidProblemService {
     tenantId: string,
     actorUserId: string,
     primaryWorkItemId: string,
+    database?: PostgresJsDatabase,
   ): Promise<void> {
     if (
-      !(await this.conversations.hasActiveOfficialActorMapping({
-        tenantId,
-        actorId: actorUserId,
-      }))
+      !(await this.conversations.hasActiveOfficialActorMapping(
+        { tenantId, actorId: actorUserId },
+        database,
+      ))
     )
       throw new Error('JOBAID_ACTOR_AUTHORIZATION_CHANGED');
     const bindings = new Map<string, string | null>([
@@ -1198,13 +1201,16 @@ export class CanonicalJobAidProblemService {
         bindings.set(item.workItemId, item.documentVersionId);
     for (const item of evidence)
       if (item.kind === 'ENGINEER_ATTACHMENT') {
-        const binding = await this.conversations.loadOpenClawTurnByIdBinding({
-          reviewConversationId: item.reviewConversationId,
-          reviewTurnId: item.reviewTurnId,
-          tenantId,
-          actorId: actorUserId,
-          workItemId: item.workItemId,
-        });
+        const binding = await this.conversations.loadOpenClawTurnByIdBinding(
+          {
+            reviewConversationId: item.reviewConversationId,
+            reviewTurnId: item.reviewTurnId,
+            tenantId,
+            actorId: actorUserId,
+            workItemId: item.workItemId,
+          },
+          database,
+        );
         const attachment = binding?.turn.attachmentBindings?.find(
           (entry) => entry.attachmentRef === item.attachmentRef,
         );
@@ -1217,11 +1223,16 @@ export class CanonicalJobAidProblemService {
           throw new Error('JOBAID_ATTACHMENT_AUTHORIZATION_CHANGED');
       }
     for (const [workItemId, documentVersionId] of bindings) {
-      const owned = await this.workItems.loadAuthorizationBinding({
-        workItemId,
-        tenantId,
-        actorUserId,
-      });
+      const owned = database
+        ? await this.work.loadOwnedSourceBinding(
+            { workItemId, tenantId, actorUserId },
+            database,
+          )
+        : await this.workItems.loadAuthorizationBinding({
+            workItemId,
+            tenantId,
+            actorUserId,
+          });
       if (
         !owned ||
         (documentVersionId && owned.documentVersionId !== documentVersionId)

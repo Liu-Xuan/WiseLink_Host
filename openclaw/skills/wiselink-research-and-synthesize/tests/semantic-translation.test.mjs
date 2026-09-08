@@ -12,7 +12,7 @@ function batch(ref = 'GEN-1') {
 }
 function options() { return { gatewayUrl: 'https://synthetic.invalid', gatewayToken: 'synthetic-test-token', gatewayChatCompletionsEnabled: true, executionModel: model, registeredModelRefs: [model.modelRef] }; }
 function response(value = output, extra = {}) { return { ok: true, status: 200, text: async () => JSON.stringify({ model: 'synthetic-actual-m3', usage: { prompt_tokens: 100, completion_tokens: 32 },
-  choices: [{ finish_reason: 'tool_calls', message: { role: 'assistant', content: null, tool_calls: [{ type: 'function', function: { name: 'return_wiselink_translation_block', arguments: JSON.stringify({ candidateJson: JSON.stringify(value) }) } }] } }], ...extra }) }; }
+  choices: [{ finish_reason: 'tool_calls', message: { role: 'assistant', content: null, tool_calls: [{ type: 'function', function: { name: 'return_wiselink_translation_block', arguments: JSON.stringify({ candidateJson: JSON.stringify(value).replaceAll('"b1"', '"B1"').replaceAll('"a1"', '"A1"') }) } }] } }], ...extra }) }; }
 
 test('each registered generation has one short native session and actual provenance', async () => {
   const requests = [];
@@ -26,10 +26,36 @@ test('each registered generation has one short native session and actual provena
   assert.ok(requests.every((request) => request.messages.length === 2 && request.tools.length === 1));
 });
 
-test('empty HTTP 200, unreadable actual model and timeout statuses never cause hidden generation retries', async () => {
+test('the official profile-only response keeps complete blocks with an explicitly unreported model version', async () => {
+  let requests = 0; const observed = [];
+  const result = await invokeHostedTranslationBlock(batch(), {
+    ...options(), observeModelOutput: async (shape) => observed.push(shape),
+  }, { requestGateway: async () => { requests++;
+    return response(output, { model: 'openclaw/wiselink-engineering', id: 'chatcmpl-synthetic-gateway' });
+  } });
+  assert.equal(requests, 1);
+  assert.deepEqual(result.output, output);
+  assert.equal(result.actualExecution.modelVersion, 'configured-route:miaoda/minimax-m3');
+  assert.equal(result.actualExecution.providerRequestId, null, 'Gateway response ID is not a provider request ID');
+  assert.equal(observed[0].configuredModelRef, model.modelRef);
+  assert.equal(observed[0].reportedModelVersion, null);
+  assert.equal(observed[0].modelProvenanceSource, 'CONFIGURED_ROUTE_ONLY');
+  assert.equal(observed[0].gatewayResponseId, 'chatcmpl-synthetic-gateway');
+  assert.equal(result.provenance.modelVersion, result.actualExecution.modelVersion);
+});
+
+test('gateway model metadata is recorded as reported and never replaced by a configured route', async () => {
+  const observed = [];
+  const result = await invokeHostedTranslationBlock(batch(), { ...options(), observeModelOutput: async (shape) => observed.push(shape) },
+    { requestGateway: async () => response(output, { model: 'synthetic-reported-model' }) });
+  assert.equal(result.actualExecution.modelVersion, 'synthetic-reported-model');
+  assert.equal(observed[0].reportedModelVersion, 'synthetic-reported-model');
+  assert.equal(observed[0].modelProvenanceSource, 'GATEWAY_RESPONSE');
+});
+
+test('empty HTTP 200 and timeout statuses never cause hidden generation retries', async () => {
   const cases = [
     [{ ok: true, status: 200, text: async () => JSON.stringify({ choices: [] }) }, 'OUTPUT_CONTRACT', 'KNOWN_FAILURE'],
-    [response(output, { model: 'openclaw/wiselink-hosted-u0' }), 'OUTPUT_CONTRACT', 'KNOWN_FAILURE'],
     [{ ok: false, status: 408, text: async () => JSON.stringify({ error: { code: 'upstream_error' } }) }, 'UPSTREAM', 'GENERATION_UNKNOWN'],
   ];
   for (const [reply, origin, outcome] of cases) {

@@ -177,7 +177,12 @@ export function TranslationRevisionEditor({
                   版本 {revision.contentRevision} ·{' '}
                   {revision.provenance.authorKind === 'ENGINEER'
                     ? '工程师修订'
-                    : revision.provenance.modelVersion}{' '}
+                    : revision.provenance.modelVersion?.startsWith(
+                          'configured-route:',
+                        )
+                      ? `已选路由：${revision.provenance.executionModel?.displayName ?? revision.provenance.modelVersion.slice('configured-route:'.length)}；平台未报告模型版本`
+                      : (revision.provenance.modelVersion ??
+                        '平台未报告模型版本')}{' '}
                   · {new Date(revision.savedAt).toLocaleString('zh-CN')}
                   {revision.selectedForReading ? ' · 当前可读' : ''}
                 </p>

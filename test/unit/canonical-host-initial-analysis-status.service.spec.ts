@@ -33,6 +33,22 @@ const HASH = `sha256:${'a'.repeat(64)}`;
 const OTHER_HASH = `sha256:${'b'.repeat(64)}`;
 
 describe('CanonicalHost initial-analysis status projection', () => {
+  it('reconciles an orphaned RUNNING deadline before projecting progress without generating a successor', async () => {
+    const workItem = parsedWorkItem();
+    const row = { ...attempt('OPENCLAW_DYNAMIC_EVALUATION', 'RUNNING'),
+      terminalReason: null, errorCode: null, cancelReason: null, executionModelJson: null,
+      idempotencyKey: 'synthetic-existing-request', deadlineAt: new Date(Date.now() - 1000) };
+    const orderBy = jest.fn().mockResolvedValue([row]);
+    const reconcileRunningDeadline = jest.fn().mockResolvedValue({ ...row, status: 'TIMED_OUT', terminalReason: 'ACTION_ATTEMPT_DEADLINE_EXCEEDED' });
+    const service = new CanonicalHostInitialAnalysisStatusService({
+      selectDistinctOn: () => ({ from: () => ({ where: () => ({ orderBy }) }) }),
+    } as never, { reconcileRunningDeadline } as never);
+    const value = await service.project({ workItem, tenantId: 'tenant-1' });
+    expect(reconcileRunningDeadline).toHaveBeenCalledTimes(1);
+    expect(reconcileRunningDeadline).toHaveBeenCalledWith({ attemptRef: row.attemptRef, tenantId: 'tenant-1', workItemId: workItem.workItemId });
+    expect(value.stages.jobAid).toMatchObject({ status: 'FAILED', attemptStatus: 'TIMED_OUT', terminalCode: 'ACTION_ATTEMPT_DEADLINE_EXCEEDED' });
+  });
+
   it('recognizes the active staged JobAid success while preserving serving results and schedules this cycle Overall', () => {
     const workItem = stagedReevaluationWorkItem();
     const serving = structuredClone(workItem.integratedAssessment);
@@ -424,7 +440,7 @@ describe('CanonicalHost initial-analysis status projection', () => {
     const limit = jest.fn().mockResolvedValue([{ model: null }]);
     const service = new CanonicalHostInitialAnalysisStatusService({
       select: () => ({ from: () => ({ where: () => ({ limit }) }) }),
-    } as never);
+    } as never, {} as never);
     const workItem = parsedWorkItem();
     jest
       .spyOn(service, 'project')
@@ -655,7 +671,7 @@ async function browserStatus(
     const limit = jest.fn().mockResolvedValue([{ model: null }]);
     const service = new CanonicalHostInitialAnalysisStatusService({
       select: () => ({ from: () => ({ where: () => ({ limit }) }) }),
-    } as never);
+    } as never, {} as never);
     jest.spyOn(service, 'project').mockResolvedValue(
       projectCanonicalHostInitialAnalysisStatus(workItem, observations, {
         englishAssessmentEnabled: true,

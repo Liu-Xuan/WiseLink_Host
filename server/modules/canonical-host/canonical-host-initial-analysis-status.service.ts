@@ -24,6 +24,7 @@ import { isJobAidProblemProjection } from '@shared/jobaid-problem-assessment.int
 import { isOpenClawAutomaticReviewConfigured } from './configured-development-service-scope.authorization';
 import { readStoredExecutionModel } from '../model-settings/canonical-execution-model';
 import { ACTION_ATTEMPT_REQUEST_ORIGIN } from '../action-attempt/action-attempt.types';
+import { ActionAttemptLifecycleService } from '../action-attempt/action-attempt-lifecycle.service';
 import {
   CANONICAL_TRANSLATION_RULE_SET_V1_ID,
   CANONICAL_TRANSLATION_RULE_SET_V1_VERSION,
@@ -70,6 +71,7 @@ interface InitialAnalysisAttemptByAction {
 export class CanonicalHostInitialAnalysisStatusService {
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
+    private readonly attempts: ActionAttemptLifecycleService,
   ) {}
 
   async project(input: {
@@ -91,6 +93,7 @@ export class CanonicalHostInitialAnalysisStatusService {
         executionModelJson: actionAttempt.executionModelJson,
         idempotencyKey: actionAttempt.idempotencyKey,
         baseRevision: actionAttempt.baseRevision,
+        deadlineAt: actionAttempt.deadlineAt,
       })
       .from(actionAttempt)
       .where(
@@ -106,6 +109,18 @@ export class CanonicalHostInitialAnalysisStatusService {
         ),
       )
       .orderBy(actionAttempt.actionType, desc(actionAttempt.attemptNo));
+    for (const row of rows) {
+      if (row.status !== 'RUNNING' || !row.attemptRef || !row.deadlineAt || row.deadlineAt > new Date()) continue;
+      const current = await this.attempts.reconcileRunningDeadline({
+        attemptRef: row.attemptRef,
+        tenantId: input.tenantId,
+        workItemId: input.workItem.workItemId,
+      });
+      row.status = current.status;
+      row.terminalReason = current.terminalReason;
+      row.errorCode = current.errorCode;
+      row.cancelReason = current.cancelReason;
+    }
     return projectCanonicalHostInitialAnalysisStatus(
       input.workItem,
       rows.map((row) => ({

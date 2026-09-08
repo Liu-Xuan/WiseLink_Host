@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import test from 'node:test';
 import postgres from 'postgres';
-import { sealResultEnvelope as sealSkillResultEnvelope, WISELINK_HOST_MCP_NAME, WISELINK_HOST_MCP_VERSION } from '../../openclaw/skills/wiselink-research-and-synthesize/scripts/validate-payload.mjs';
+import { sealResultEnvelope as sealSkillResultEnvelope, WISELINK_SKILL_VERSION, WISELINK_HOST_MCP_NAME, WISELINK_HOST_MCP_VERSION } from '../../openclaw/skills/wiselink-research-and-synthesize/scripts/validate-payload.mjs';
 
 process.env.TS_NODE_COMPILER_OPTIONS = JSON.stringify({ module: 'CommonJS', moduleResolution: 'node' });
 const require = createRequire(import.meta.url);
@@ -47,7 +47,7 @@ test('real PostgreSQL translation work survives bounded requests and enforces sc
     let fence = { workspaceId: workspace.workspaceId, tenantId: 'tenant-test', workItemId: 'WI-test', principalId: 'service-principal',
       attemptRef: active.task.operationRef, leaseToken: active.leaseToken, leaseGeneration: 1 };
     workspace = await repository.attachAttempt(fence);
-    const execution = { modelRef: 'miaoda/minimax-m3', modelVersion: 'minimax-m3-synthetic-test', skillVersion: 'wiselink-research-and-synthesize@r09.c44',
+    const execution = { modelRef: 'miaoda/minimax-m3', modelVersion: 'minimax-m3-synthetic-test', skillVersion: WISELINK_SKILL_VERSION,
       promptVersion: 'wiselink-translation-block@r09.c44', providerRequestId: 'synthetic-provider-request', generatedAt: null, usage: { inputTokens: 120, outputTokens: 32 } };
     const artifacts = new Map(); let persistCount = 0;
     const artifactStore = { persistAndReadback: async (bytes) => {
@@ -79,6 +79,8 @@ test('real PostgreSQL translation work survives bounded requests and enforces sc
     await t.test('late known body is saved once, changed replay conflicts, and saved does not mean readable', async () => {
       const args = { ...fence, generationRequestRef: firstRequest.generationRequestRef, actualExecution: execution,
         candidates: [{ blockId: 'b1', elements: [{ elementId: 'e-heading', kind: 'heading', translatedText: '合成测试说明', anchorIds: ['a1'] }] }] };
+      await assert.rejects(repository.saveCandidates({ ...args,
+        actualExecution: { ...execution, modelVersion: 'configured-route:other/model' } }), /RUNTIME_BINDING_INVALID/u);
       [firstSaved] = await repository.saveCandidates(args);
       const [same] = await repository.saveCandidates(args);
       assert.equal(same.blockRevisionId, firstSaved.blockRevisionId); assert.equal(same.savedAt, firstSaved.savedAt);
@@ -244,13 +246,17 @@ test('real PostgreSQL translation work survives bounded requests and enforces sc
       const next = await command({ phase: 'NEXT', requestId: 'replace-next' });
       assert.equal(next.action, 'GENERATE'); assert.deepEqual(next.blockIds, ['b1']);
       await command({ phase: 'SAVE', generationRequestRef: next.generationRequestRef,
-        candidates: [{ blockId: 'b1', elements: [{ kind: 'heading', translatedText: '合成测试的新描述', anchorIds: ['a1'] }] }], actualExecution: execution });
+        candidates: [{ blockId: 'b1', elements: [{ kind: 'heading', translatedText: '合成测试的新描述', anchorIds: ['a1'] }] }],
+        actualExecution: { ...execution, skillVersion: 'wiselink-research-and-synthesize@r09.c45',
+          promptVersion: 'wiselink-translation-block@r09.c45', modelVersion: 'configured-route:miaoda/minimax-m3', providerRequestId: null } });
       const pending = await repository.readSnapshot(fence);
       assert.equal(buildTranslationWorkspaceReadingV2(pending.workspace, pending.revisions).blocks[0].selected.blockRevisionId, oldFirst.blockRevisionId);
       assert.equal((await command({ phase: 'NEXT', requestId: 'finish-replacement' })).action, 'DONE');
       const finalReplacement = await command({ phase: 'ASSEMBLE' });
       const replaced = parseBilingualTranslationArtifactV2(artifacts.get(finalReplacement.artifact.ref));
       assert.equal(replaced.blocks[0].selected.contentRevision, oldFirst.contentRevision + 1);
+      assert.equal(replaced.blocks[0].selected.provenance.modelVersion, 'configured-route:miaoda/minimax-m3');
+      assert.equal(replaced.blocks[0].selected.provenance.providerRequestId, null);
       assert.equal(replaced.blocks[1].selected.blockRevisionId, oldSecond.blockRevisionId);
       assert.equal((await repository.readBlocks(fence)).find((revision) => revision.blockRevisionId === oldFirst.blockRevisionId).candidate.elements[0].translatedText, oldFirst.candidate.elements[0].translatedText);
       await sql`UPDATE action_attempt SET status = 'SUCCEEDED' WHERE operation_ref = ${fence.attemptRef}`;

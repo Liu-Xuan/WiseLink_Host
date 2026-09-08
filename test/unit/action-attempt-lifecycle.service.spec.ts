@@ -16,6 +16,49 @@ import {
 } from '../../server/modules/action-attempt/action-attempt.types';
 
 describe('ActionAttemptLifecycleService', () => {
+  it('reconciles a scoped expired RUNNING deadline with the saved fence without claiming new work', async () => {
+    const repository = new MemoryActionAttemptRepository();
+    const service = new ActionAttemptLifecycleService(repository as never, fixedModelSettings());
+    const claim = await service.reserveAndClaim(reservationInput(async () => ({ controlled: true })));
+    repository.row = { ...repository.requiredRow(), deadlineAt: new Date(Date.now() - 1000) };
+    const finish = jest.spyOn(repository, 'finishTerminal');
+    const input = { attemptRef: claim.attemptRef, tenantId: 'tenant-test', workItemId: 'WI-test' };
+    await expect(service.reconcileRunningDeadline({ ...input, workItemId: 'other-item' })).rejects.toThrow();
+    expect(finish).not.toHaveBeenCalled();
+    const row = await service.reconcileRunningDeadline(input);
+    expect(row.status).toBe('TIMED_OUT');
+    expect(row.terminalReason).toBe('ACTION_ATTEMPT_DEADLINE_EXCEEDED');
+    expect(finish).toHaveBeenCalledWith(expect.objectContaining({
+      fromStatus: 'RUNNING', status: 'TIMED_OUT', leaseToken: claim.leaseToken, leaseGeneration: claim.leaseGeneration,
+    }));
+    await service.reconcileRunningDeadline(input);
+    expect(finish).toHaveBeenCalledTimes(1);
+    expect(repository.transitions).toEqual(['QUEUED', 'RUNNING', 'TIMED_OUT']);
+  });
+
+  it('deadline reconciliation preserves live work, unclaimed requests and a concurrent COMMITTING result', async () => {
+    const repository = new MemoryActionAttemptRepository();
+    const service = new ActionAttemptLifecycleService(repository as never, fixedModelSettings());
+    const claim = await service.reserveAndClaim(reservationInput(async () => ({ controlled: true })));
+    const input = { attemptRef: claim.attemptRef, tenantId: 'tenant-test', workItemId: 'WI-test' };
+    const running = { ...repository.requiredRow() };
+    const finish = jest.spyOn(repository, 'finishTerminal');
+    repository.row = { ...running, leaseExpiresAt: new Date(Date.now() - 1000) };
+    expect((await service.reconcileRunningDeadline(input)).status).toBe('RUNNING');
+    repository.row = { ...running, status: 'QUEUED', deadlineAt: new Date(Date.now() - 1000) };
+    expect((await service.reconcileRunningDeadline(input)).status).toBe('QUEUED');
+    expect(finish).not.toHaveBeenCalled();
+    repository.row = { ...running, deadlineAt: new Date(Date.now() - 1000) };
+    finish.mockImplementationOnce(async () => {
+      repository.row = { ...repository.requiredRow(), status: 'COMMITTING', resultContentHash: 'synthetic-committing-hash' };
+      return false;
+    });
+    const current = await service.reconcileRunningDeadline(input);
+    expect(current.status).toBe('COMMITTING');
+    expect(current.resultContentHash).toBe('synthetic-committing-hash');
+    expect(repository.transitions).toEqual(['QUEUED', 'RUNNING']);
+  });
+
   it('reads the same explicit request after a successful commit advances the WI, without granting another claim', async () => {
     const repository = new MemoryActionAttemptRepository();
     const service = new ActionAttemptLifecycleService(
