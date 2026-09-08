@@ -46,6 +46,15 @@ function describeTranslationProjection(
       bilingualTranslationConsumptionAllowed: false,
     };
   }
+  if (translation.status === 'SEMANTIC_READING_AID_AVAILABLE') {
+    const { completeness, coverage } = translation.reading;
+    return { capability: completeness === 'PARTIAL' ? 'LIMITED' : 'AVAILABLE',
+      headline: completeness === 'PARTIAL' ? '部分译文可读' : completeness === 'COMPLETE_WITH_ISSUES' ? '完整译文有待复核项' : '完整译文候选可读',
+      detail: `可读范围覆盖 ${coverage.readableSourceCharacters.toLocaleString('zh-CN')} / ${coverage.registeredSourceCharacters.toLocaleString('zh-CN')} 个原文字符；${coverage.missingBlockCount} 块待生成，${coverage.pendingCheckBlockCount} 块待检查，${coverage.blockedBlockCount} 块需处理。`,
+      ownerSourceReaderConsumptionAllowed: true,
+      bilingualTranslationConsumptionAllowed: coverage.readableSourceCharacters > 0,
+    };
+  }
   const axes = translation.axes;
   if (translation.status === 'BILINGUAL_READING_AID_AVAILABLE') {
     return {

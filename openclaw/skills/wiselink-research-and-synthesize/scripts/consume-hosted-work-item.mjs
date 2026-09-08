@@ -33,6 +33,7 @@ const INITIAL_TOOLS = new Set([
   'get_parse_status', 'get_deep_link', 'get_action_attempt_status',
   'heartbeat_action_attempt',
   'begin_translation', 'commit_translation_candidate',
+  'translation_workspace',
   'begin_applicability_evaluation', 'commit_applicability_candidate',
   'begin_dynamic_evaluation', 'commit_dynamic_evaluation_candidate',
   'begin_overall_synthesis', 'commit_overall_candidate',
@@ -132,15 +133,16 @@ export async function runHostedInitialStage(options, dependencies) {
     return value;
   };
   const invoke = async (modelInput, runtimeHooks = {}) => checkpoint.remoteStep({
-    step: 'model', args: modelInput, ambiguousCommit: false,
+    step: runtimeHooks.checkpointKey ?? 'model', args: modelInput, ambiguousCommit: false,
     perform: () => {
       modelCallCount += 1;
       return dependencies.invokeInitialModel({ operation, modelInput }, {
         executionModel,
         heartbeat: runtimeHooks.heartbeat,
-        sessionDiscriminator: runBinding.requestId,
+        timeoutMs: runtimeHooks.timeoutMs,
+        sessionDiscriminator: runtimeHooks.sessionDiscriminator ?? runBinding.requestId,
         observeModelOutput: (shape, round = 1) => checkpoint.writeOnce(
-          round === 1 ? 'model.output-shape' : `model.output-shape-${round}`, shape,
+          `${runtimeHooks.checkpointKey ?? 'model'}.output-shape${round === 1 ? '' : '-' + round}`, shape,
         ),
         observeTranslationFidelity: (report, round) => checkpoint.writeOnce(
           `model.translation-fidelity-${round}`, report,

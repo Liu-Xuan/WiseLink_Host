@@ -28,6 +28,10 @@ import { CanonicalHostOpenClawOverallService } from './canonical-host-openclaw-o
 import { CanonicalHostOverallRegenerationController } from './canonical-host-overall-regeneration.controller';
 import { CanonicalHostOverallRegenerationService } from './canonical-host-overall-regeneration.service';
 import { CanonicalHostOpenClawTranslationService } from './canonical-host-openclaw-translation.service';
+import { CanonicalTranslationWorkspaceRepository } from './canonical-translation-workspace.repository';
+import { CanonicalTranslationV2Service } from './canonical-translation-v2.service';
+import { CanonicalTranslationRevisionService } from './canonical-translation-revision.service';
+import { CanonicalTranslationRevisionController } from './canonical-translation-revision.controller';
 import { CanonicalTranslationKnowledgeController } from './canonical-translation-knowledge.controller';
 import { CanonicalTranslationKnowledgeProductService } from './canonical-translation-knowledge-product.service';
 import { MiaodaTranslationKnowledgeProductStore } from './miaoda-translation-knowledge-product.store';
@@ -184,6 +188,7 @@ export interface CanonicalHostModuleOptions {
     EngineeringMatterController,
     CanonicalHostAeoEditingController,
     CanonicalTranslationKnowledgeController,
+    CanonicalTranslationRevisionController,
     BatchApplicabilityController,
     ConfigurationEvidenceController,
   ],
@@ -200,6 +205,9 @@ export interface CanonicalHostModuleOptions {
     CanonicalHostOpenClawOverallService,
     CanonicalHostOverallRegenerationService,
     CanonicalHostOpenClawTranslationService,
+    CanonicalTranslationWorkspaceRepository,
+    CanonicalTranslationV2Service,
+    CanonicalTranslationRevisionService,
     CanonicalTranslationKnowledgeProductService,
     MiaodaTranslationKnowledgeProductStore,
     CanonicalHostOpenClawApplicabilityService,
@@ -414,6 +422,7 @@ export class CanonicalHostModule {
         EngineeringMatterController,
         CanonicalHostAeoEditingController,
         CanonicalTranslationKnowledgeController,
+        CanonicalTranslationRevisionController,
         BatchApplicabilityController,
         ConfigurationEvidenceController,
       ],
@@ -450,6 +459,9 @@ export class CanonicalHostModule {
         CanonicalHostOpenClawOverallService,
         CanonicalHostOverallRegenerationService,
         CanonicalHostOpenClawTranslationService,
+        CanonicalTranslationWorkspaceRepository,
+        CanonicalTranslationV2Service,
+        CanonicalTranslationRevisionService,
         CanonicalTranslationKnowledgeProductService,
         MiaodaTranslationKnowledgeProductStore,
         CanonicalHostOpenClawApplicabilityService,

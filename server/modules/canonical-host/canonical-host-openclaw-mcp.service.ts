@@ -22,6 +22,8 @@ import {
   TRANSLATION_RESULT_PART_MAX_COUNT,
 } from './canonical-host-openclaw-translation.service';
 import { CanonicalHostOpenClawApplicabilityService } from './canonical-host-openclaw-applicability.service';
+import { translationWorkspaceCommandSchemaV2 } from './canonical-translation-v2.service';
+import { TRANSLATION_V2_TASK_SCHEMA } from './canonical-translation-v2.contract';
 import {
   mcpWorkItemId,
   registerCanonicalHostReadonlyMcpTools,
@@ -230,20 +232,28 @@ export class CanonicalHostOpenClawMcpService {
       {
         title: '开始来源绑定的中英文候选翻译',
         description:
-          'Host fresh-read 同一 WorkItem，冻结 frozen.2 SourceUnits、SourceRefs 与 exact versioned TranslationRuleSet，创建 durable TRANSLATE ActionAttempt；按实际序列化字节上限返回可读 SourceUnit 批次，重复 part 读取只恢复同一未完成 attempt；COMMITTING 只返回 recoveryResultContentHash，完整结果从通用 status 只读恢复。',
+          'Host 为同一 WorkItem 创建或恢复 TRANSLATE ActionAttempt。新 v2 使用 requestId 与完整结构来源工作区，返回任务指针；通过 translation_workspace 领取完整语义批次、保存并检查后由 Host 组装。历史 v1 仍返回有界 SourceUnit 传输分片，COMMITTING 仅恢复相同提交。',
         inputSchema: z
-          .object({ workItemId: mcpWorkItemId, deliveryPart })
+          .object({ workItemId: mcpWorkItemId, deliveryPart, requestId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/u).optional() })
           .strict(),
         annotations: beginAnnotations,
       },
-      async ({ workItemId, deliveryPart: selectedDeliveryPart }) =>
-        textResult(
-          buildOpenClawTranslationDelivery(
-            await this.translation.begin(workItemId),
-            selectedDeliveryPart ?? 0,
-          ),
-        ),
+      async ({ workItemId, deliveryPart: selectedDeliveryPart, requestId }) => {
+        const begin = await this.translation.begin(workItemId, requestId);
+        if (begin.task.modelInput.schemaVersion === TRANSLATION_V2_TASK_SCHEMA) {
+          if (selectedDeliveryPart !== undefined && selectedDeliveryPart !== 0) throw new Error('TRANSLATION_V2_TASK_HAS_NO_SOURCE_UNIT_PARTS');
+          return textResult(begin);
+        }
+        return textResult(buildOpenClawTranslationDelivery(begin, selectedDeliveryPart ?? 0));
+      },
     );
+
+    server.registerTool('translation_workspace', {
+      title: '翻译工作区批次、保存、检查与组装',
+      description: '在已有翻译 attempt 的租约和工作区范围内操作。NEXT 领取一批完整语义块；READ_BATCH 只传输该批完整输入；SAVE 幂等保存实际译文为待检查版本；CHECK 保存独立语义检查；RECORD_FAILURE 保留明确或未知生成结果；ASSEMBLE 从 Host 已选版本组装带覆盖范围的候选。全部为候选，不采用工程结论，不改变原文。',
+      inputSchema: translationWorkspaceCommandSchemaV2,
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    }, async (input) => textResult(await this.translation.workspaceCommand(input)));
 
     server.registerTool(
       'commit_translation_candidate',

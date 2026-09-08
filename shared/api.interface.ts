@@ -2,6 +2,7 @@ import type {
   AssessmentReadingResult,
   AssessmentReadingSummary,
 } from './assessment-reading.interface';
+import type { TranslationWorkspaceReadingV2 } from './canonical-translation-v2.interface';
 
 export type UnifiedPackageSourceKind = 'pdf' | 'native_s1000d';
 
@@ -422,6 +423,7 @@ export interface CanonicalReaderTranslationAxesProjection {
 }
 
 export type CanonicalReaderTranslationProjection =
+  | { status: 'SEMANTIC_READING_AID_AVAILABLE'; reading: TranslationWorkspaceReadingV2 }
   | {
       status: 'UNAVAILABLE';
       reason: 'TRANSLATION_PROJECTION_NOT_AVAILABLE';
@@ -1045,8 +1047,7 @@ export interface CanonicalWorkItemPackageProjection {
   };
 }
 
-export interface CanonicalTranslationCandidateProjection {
-  schemaVersion: 'wiselink.3_1.translation_candidate_projection.v1';
+interface CanonicalTranslationCandidateProjectionBase {
   status: 'CANDIDATE_ONLY' | 'STALE';
   currentness: 'CURRENT' | 'STALE';
   staleReason: 'SOURCE_CHANGED' | 'RULE_SET_CHANGED' | null;
@@ -1071,12 +1072,19 @@ export interface CanonicalTranslationCandidateProjection {
   artifact: UnifiedPackageArtifactDescriptor;
 }
 
+export type CanonicalTranslationCandidateProjection = CanonicalTranslationCandidateProjectionBase & (
+  | { schemaVersion: 'wiselink.3_1.translation_candidate_projection.v1' }
+  | { schemaVersion: 'wiselink.3_1.translation_candidate_projection.v2'; workspaceId: string;
+      planRevision: number; contextRevision: number; completeness: 'PARTIAL' | 'COMPLETE_WITH_ISSUES' | 'COMPLETE' }
+);
+
 export type CanonicalTranslationKnowledgeFeedbackDecision =
   | 'ADOPTED_AS_CANDIDATE_SUGGESTION'
   | 'REJECTED';
 
 export interface CanonicalTranslationKnowledgeCandidateSnapshot {
-  schemaVersion: 'wiselink.3_1.translation_knowledge_candidate_snapshot.v1';
+  schemaVersion: 'wiselink.3_1.translation_knowledge_candidate_snapshot.v1' | 'wiselink.3_1.translation_knowledge_candidate_snapshot.v2';
+  semanticScope?: import('./canonical-translation-v2.interface').TranslationKnowledgeSemanticScopeV2;
   assetId: string;
   workItemId: string;
   snapshotWorkItemRevision: number;

@@ -117,6 +117,136 @@ export const fileAttachmentArray = customType<{
   },
 });
 
+export const assessmentWorkRevision = pgTable("assessment_work_revision", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  assessmentWorkRevisionId: varchar("assessment_work_revision_id", { length: 96 }).notNull().unique(),
+  tenantId: varchar("tenant_id", { length: 128 }).notNull(),
+  workItemId: varchar("work_item_id", { length: 96 }).notNull(),
+  workRevision: integer("work_revision").notNull(),
+  requestId: varchar("request_id", { length: 96 }).notNull(),
+  actionAttemptId: varchar("action_attempt_id", { length: 96 }).notNull(),
+  basedOnWorkItemRevision: integer("based_on_work_item_revision").notNull(),
+  documentVersionId: varchar("document_version_id", { length: 96 }).notNull(),
+  previousWorkRevisionId: varchar("previous_work_revision_id", { length: 96 }),
+  commandJson: text("command_json").notNull(),
+  contentJson: text("content_json").notNull(),
+  createdByUserId: varchar("created_by_user_id", { length: 255 }).notNull(),
+  createdAt: customTimestamptz("created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("assessment_work_revision_assessment_work_revision_id_key").on(table.assessmentWorkRevisionId),
+  uniqueIndex("uk_assessment_work_revision_number").on(table.workItemId, table.workRevision),
+  uniqueIndex("uk_assessment_work_revision_request").on(table.workItemId, table.requestId),
+  uniqueIndex("uk_assessment_work_revision_scope").on(table.tenantId, table.workItemId, table.assessmentWorkRevisionId),
+  index("idx_assessment_work_revision_attempt").on(table.actionAttemptId, table.workRevision.desc()),
+  foreignKey({
+    columns: [table.actionAttemptId],
+    foreignColumns: [actionAttempt.attemptId],
+    name: "assessment_work_revision_action_attempt_id_fkey",
+  }),
+  foreignKey({
+    columns: [table.tenantId, table.workItemId],
+    foreignColumns: [workItem.tenantId, workItem.workItemId],
+    name: "fk_assessment_work_revision_owner",
+  }),
+  foreignKey({
+    columns: [table.previousWorkRevisionId, table.tenantId, table.workItemId],
+    foreignColumns: [table.assessmentWorkRevisionId, table.tenantId, table.workItemId],
+    name: "fk_assessment_work_revision_previous",
+  }),
+]);
+
+export const translationBlockRevision = pgTable("translation_block_revision", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  blockRevisionId: varchar("block_revision_id", { length: 96 }).notNull().unique(),
+  tenantId: varchar("tenant_id", { length: 128 }).notNull(),
+  workItemId: varchar("work_item_id", { length: 96 }).notNull(),
+  workspaceId: varchar("workspace_id", { length: 96 }).notNull(),
+  blockId: varchar("block_id", { length: 96 }).notNull(),
+  planRevision: integer("plan_revision").notNull(),
+  contentRevision: integer("content_revision").notNull(),
+  generationRequestRef: varchar("generation_request_ref", { length: 160 }).notNull(),
+  originAttemptId: varchar("origin_attempt_id", { length: 96 }),
+  authorKind: varchar("author_kind", { length: 24 }).notNull(),
+  authorUserId: varchar("author_user_id", { length: 255 }).notNull(),
+  candidateJson: text("candidate_json").notNull(),
+  dependenciesJson: text("dependencies_json").notNull(),
+  provenanceJson: text("provenance_json").notNull(),
+  generatedAt: customTimestamptz("generated_at", { precision: 3 }),
+  savedAt: customTimestamptz("saved_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  checkStatus: varchar("check_status", { length: 24 }).notNull().default('PENDING'),
+  checkJson: text("check_json"),
+  checkedAt: customTimestamptz("checked_at", { precision: 3 }),
+  selectedForReading: boolean("selected_for_reading").notNull().default(false),
+  rowVersion: integer("row_version").notNull().default(1),
+  // System field: Creation time (auto-filled, do not modify)
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  // System field: Creator (auto-filled, do not modify)
+  createdBy: userProfile("_created_by").default(sql`CASE WHEN nullif(current_setting('app.user_id', true), '') IS NULL THEN NULL ELSE concat('(', current_setting('app.user_id', true), ')')::user_profile END`),
+  // System field: Update time (auto-filled, do not modify)
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  // System field: Updater (auto-filled, do not modify)
+  updatedBy: userProfile("_updated_by").default(sql`CASE WHEN nullif(current_setting('app.user_id', true), '') IS NULL THEN NULL ELSE concat('(', current_setting('app.user_id', true), ')')::user_profile END`),
+}, (table) => [
+  uniqueIndex("translation_block_revision_block_revision_id_key").on(table.blockRevisionId),
+  uniqueIndex("uk_translation_block_content_revision").on(table.workspaceId, table.blockId, table.contentRevision),
+  uniqueIndex("uk_translation_block_generation").on(table.workspaceId, table.generationRequestRef, table.blockId),
+  uniqueIndex("uk_translation_block_selected").on(table.workspaceId, table.blockId).where(sql`${table.selectedForReading}`),
+  index("idx_translation_block_workspace").on(table.tenantId, table.workItemId, table.workspaceId, table.blockId, table.contentRevision),
+  foreignKey({
+    columns: [table.tenantId, table.workItemId, table.workspaceId],
+    foreignColumns: [translationWorkspace.tenantId, translationWorkspace.workItemId, translationWorkspace.workspaceId],
+    name: "fk_translation_block_workspace",
+  }),
+  foreignKey({
+    columns: [table.originAttemptId],
+    foreignColumns: [actionAttempt.attemptId],
+    name: "fk_translation_block_attempt",
+  }),
+]);
+
+export const translationWorkspace = pgTable("translation_workspace", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceId: varchar("workspace_id", { length: 96 }).notNull().unique(),
+  tenantId: varchar("tenant_id", { length: 128 }).notNull(),
+  workItemId: varchar("work_item_id", { length: 96 }).notNull(),
+  documentVersionId: varchar("document_version_id", { length: 96 }).notNull(),
+  packageId: text("package_id").notNull(),
+  parsedArtifactRef: text("parsed_artifact_ref").notNull(),
+  parsedArtifactSha256: varchar("parsed_artifact_sha256", { length: 64 }).notNull(),
+  targetLocale: varchar("target_locale", { length: 32 }).notNull(),
+  planRevision: integer("plan_revision").notNull().default(1),
+  contextRevision: integer("context_revision").notNull().default(1),
+  sourcePlanJson: text("source_plan_json").notNull(),
+  methodVersion: varchar("method_version", { length: 96 }).notNull(),
+  activeAttemptId: varchar("active_attempt_id", { length: 96 }),
+  generationRequestsJson: text("generation_requests_json").notNull().default('[]'),
+  rowVersion: integer("row_version").notNull().default(1),
+  resultArtifactJson: text("result_artifact_json"),
+  resultManifestJson: text("result_manifest_json"),
+  // System field: Creation time (auto-filled, do not modify)
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  // System field: Creator (auto-filled, do not modify)
+  createdBy: userProfile("_created_by").default(sql`CASE WHEN nullif(current_setting('app.user_id', true), '') IS NULL THEN NULL ELSE concat('(', current_setting('app.user_id', true), ')')::user_profile END`),
+  // System field: Update time (auto-filled, do not modify)
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  // System field: Updater (auto-filled, do not modify)
+  updatedBy: userProfile("_updated_by").default(sql`CASE WHEN nullif(current_setting('app.user_id', true), '') IS NULL THEN NULL ELSE concat('(', current_setting('app.user_id', true), ')')::user_profile END`),
+}, (table) => [
+  uniqueIndex("translation_workspace_workspace_id_key").on(table.workspaceId),
+  uniqueIndex("uk_translation_workspace_scope").on(table.tenantId, table.workItemId, table.workspaceId),
+  uniqueIndex("uk_translation_workspace_source").on(table.tenantId, table.workItemId, table.documentVersionId, table.parsedArtifactSha256, table.targetLocale),
+  foreignKey({
+    columns: [table.tenantId, table.workItemId],
+    foreignColumns: [workItem.tenantId, workItem.workItemId],
+    name: "fk_translation_workspace_work_item",
+  }),
+  foreignKey({
+    columns: [table.activeAttemptId],
+    foreignColumns: [actionAttempt.attemptId],
+    name: "fk_translation_workspace_attempt",
+  }),
+]);
+
 export const canonicalModelSetting = pgTable("canonical_model_setting", {
   id: uuid("id").primaryKey().defaultRandom(),
   tenantId: varchar("tenant_id", { length: 128 }).notNull().unique(),
@@ -1462,8 +1592,12 @@ export const identitySubjectMappingTable = identitySubjectMapping;
 export const ordinaryArtifactLocatorTable = ordinaryArtifactLocator;
 export const reviewConversationTable = reviewConversation;
 export const reviewTurnTable = reviewTurn;
+export const translationBlockRevisionTable = translationBlockRevision;
+export const translationWorkspaceTable = translationWorkspace;
 export const translationKnowledgeCandidateTable = translationKnowledgeCandidate;
 export const translationKnowledgeGovernanceEventTable = translationKnowledgeGovernanceEvent;
 export const translationKnowledgeImportRequestItemTable = translationKnowledgeImportRequestItem;
 export const translationKnowledgeSourceRefTable = translationKnowledgeSourceRef;
 export const workItemTable = workItem;
+
+export const assessmentWorkRevisionTable = assessmentWorkRevision;

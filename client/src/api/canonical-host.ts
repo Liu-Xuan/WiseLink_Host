@@ -38,6 +38,31 @@ import { logger } from '@lark-apaas/client-toolkit/logger';
 import { axiosForBackend } from '@lark-apaas/client-toolkit/utils/getAxiosForBackend';
 import { resolveAppUrl } from '@lark-apaas/client-toolkit/utils/resolveAppUrl';
 import { createRequestCorrelationId } from '../utils/request-correlation-id';
+import type { TranslationEngineerRevisionCommandV2, TranslationRevisionReadModelV2, TranslationBlockRevisionV2 } from '@shared/canonical-translation-v2.interface';
+
+export async function readTranslationRevisions(workItemId: string, workspaceId: string): Promise<TranslationRevisionReadModelV2> {
+  const requestGeneration = clientSessionGeneration;
+  try {
+    const response = await axiosForBackend<TranslationRevisionReadModelV2>({
+      url: `/api/canonical-host/work-items/${encodeURIComponent(workItemId)}/translation-workspaces/${encodeURIComponent(workspaceId)}/revisions`, method: 'GET',
+    });
+    if (response.status === 401) throw clientLoginRequired('TRANSLATION_REVISION_ACCESS_DENIED', requestGeneration);
+    if (response.status === 403 || response.status === 404) throw canonicalObjectNotFound();
+    return response.data;
+  } catch (error) { throw normalizedDirectObjectError(error, requestGeneration); }
+}
+
+export async function saveTranslationRevision(workItemId: string, input: TranslationEngineerRevisionCommandV2): Promise<TranslationRevisionReadModelV2 & { revision: TranslationBlockRevisionV2; candidateOnly: true }> {
+  const requestGeneration = clientSessionGeneration;
+  try {
+    const response = await axiosForBackend<TranslationRevisionReadModelV2 & { revision: TranslationBlockRevisionV2; candidateOnly: true }>({
+      url: `/api/canonical-host/work-items/${encodeURIComponent(workItemId)}/translation-workspaces/revisions`, method: 'POST', data: input,
+    });
+    if (response.status === 401) throw clientLoginRequired('TRANSLATION_REVISION_ACCESS_DENIED', requestGeneration);
+    if (response.status === 403 || response.status === 404) throw canonicalObjectNotFound();
+    return response.data;
+  } catch (error) { throw normalizedDirectObjectError(error, requestGeneration); }
+}
 
 export interface CanonicalHostIdentityContext {
   userId: string;

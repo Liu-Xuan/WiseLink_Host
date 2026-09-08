@@ -5,6 +5,7 @@ import type {
 
 import type { BilingualTranslationArtifact } from './canonical-host-openclaw-translation.service';
 import type { CanonicalTranslationConsumptionBinding } from './canonical-reader-consumption';
+import type { BilingualTranslationArtifactV2, TranslationKnowledgeSemanticScopeV2 } from '@shared/canonical-translation-v2.interface';
 
 export const TRANSLATION_KNOWLEDGE_CANDIDATE_SCHEMA =
   'wiselink.3_1.translation_knowledge_candidate.v1';
@@ -94,6 +95,10 @@ export interface SaveTranslationKnowledgeCandidateResult {
  * inferred here.
  */
 export interface TranslationKnowledgeCandidateStore {
+  readSemanticScope?(input: { tenantId: string; workItemId: string; blockRevisionId: string }): Promise<{
+    scope: TranslationKnowledgeSemanticScopeV2;
+    selectedForReading: boolean;
+  } | null>;
   saveCandidate(
     candidate: TranslationKnowledgeCandidateRecord,
   ): Promise<SaveTranslationKnowledgeCandidateResult>;
@@ -128,7 +133,14 @@ export interface ImportBilingualTranslationCandidatesResult {
   assetIds: string[];
 }
 
+export type ImportSemanticTranslationCandidatesInput = Omit<ImportBilingualTranslationCandidatesInput, 'artifact'> & {
+  artifact: BilingualTranslationArtifactV2;
+  finalActionAttemptId: string;
+  finalResultContentHash: string;
+};
+
 export interface TranslationKnowledgeCandidateSnapshot {
+  semanticScope?: TranslationKnowledgeSemanticScopeV2;
   candidate: TranslationKnowledgeCandidateRecord;
   governanceRevision: number;
   confirmationStatus:

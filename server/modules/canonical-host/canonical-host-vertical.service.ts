@@ -93,6 +93,7 @@ import {
 } from './scoped-professional-artifact-correlation.port';
 import type { CanonicalTranslationOwnerObservationPort } from './canonical-translation-owner-observation.port';
 import { parseBilingualTranslationArtifact } from './canonical-host-openclaw-translation.service';
+import { CanonicalTranslationV2Service } from './canonical-translation-v2.service';
 import { CanonicalPdfPreviewService } from './canonical-pdf-preview.service';
 import {
   CANONICAL_TRANSLATION_RULE_SET_V1_ID,
@@ -134,6 +135,8 @@ export class CanonicalHostVerticalService {
     @Optional()
     private readonly workItems?: MiaodaWorkItemRepository,
     private readonly initialAnalysisStatus?: CanonicalHostInitialAnalysisStatusService,
+    @Optional()
+    private readonly semanticTranslation?: CanonicalTranslationV2Service,
   ) {}
 
   async runPdf(
@@ -663,7 +666,7 @@ export class CanonicalHostVerticalService {
         readerSourceKind = inspection.sourceKind;
       }
     }
-    const translation = await this.readTranslationConsumptionAxes(projection);
+    const translation = await this.readTranslationConsumptionAxes(projection, actor.tenantId);
     const pdfPreview: CanonicalPdfPreviewProjection =
       projection.package !== null &&
       readerSourceKind !== null &&
@@ -1068,6 +1071,7 @@ export class CanonicalHostVerticalService {
    */
   private async readTranslationConsumptionAxes(
     projection: CanonicalWorkItemProjection,
+    tenantId: string,
   ): Promise<CanonicalReaderProjection['translation']> {
     if (projection.package === null) {
       return {
@@ -1075,6 +1079,12 @@ export class CanonicalHostVerticalService {
         reason: 'TRANSLATION_PROJECTION_NOT_AVAILABLE',
       };
     }
+    if (this.semanticTranslation) {
+      const reading = await this.semanticTranslation.readCurrent(projection, tenantId);
+      if (reading) return { status: 'SEMANTIC_READING_AID_AVAILABLE', reading };
+    }
+    if (projection.translation?.schemaVersion === 'wiselink.3_1.translation_candidate_projection.v2')
+      throw new Error('TRANSLATION_V2_READER_WORKSPACE_MISSING');
     const binding: CanonicalTranslationConsumptionBinding | null =
       workItemTranslationBinding(projection);
     if (binding === null) {

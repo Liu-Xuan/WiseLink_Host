@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { runSemanticTranslation } from './run-semantic-translation.mjs';
 
 import {
   WISELINK_HOST_MCP_NAME,
@@ -56,6 +57,7 @@ export const HOST_MCP_TOOLS = [
   'get_deep_link',
   'begin_translation',
   'commit_translation_candidate',
+  'translation_workspace',
   'begin_applicability_evaluation',
   'commit_applicability_candidate',
   'begin_dynamic_evaluation',
@@ -467,10 +469,10 @@ function stoppedConfigurationEvidenceReevaluation(input) {
   };
 }
 
-export async function runTranslation({ workItemId, callTool, translate }) {
+export async function runTranslation({ workItemId, callTool, translate, requestId }) {
   assertCallbacks(workItemId, callTool, translate);
   const before = await callTool('get_parse_status', { workItemId });
-  const begin = await collectTranslationDelivery(workItemId, callTool);
+  const begin = await collectTranslationDelivery(workItemId, callTool, requestId);
   if (begin.status === 'COMMITTING') {
     return recoverInitialCommitting({
       stage: 'TRANSLATE',
@@ -479,6 +481,24 @@ export async function runTranslation({ workItemId, callTool, translate }) {
       begin,
       callTool,
     });
+  }
+  if (begin.task?.modelInput?.schemaVersion === 'wiselink.3_1.translation_task.v2') {
+    const execution = await runSemanticTranslation({ begin, callTool, translate, requestId });
+    let committed;
+    try {
+      committed = await callTool('commit_translation_candidate', commitArgs(begin, execution.result));
+      assertTranslationCommit(committed, workItemId);
+    } catch (error) {
+      const recovered = await recoverCommitResponseLoss({ mode: 'INITIAL_ANALYSIS', operation: 'TRANSLATE', before, begin,
+        result: execution.result, callTool, cause: error });
+      if (recovered.status?.status !== 'COMMITTING') return recovered;
+      // Only replay the identical prepared envelope, never call the model.
+      committed = await callTool('commit_translation_candidate', commitArgs(begin, execution.result));
+      assertTranslationCommit(committed, workItemId);
+    }
+    return { ...completedResult({ mode: 'INITIAL_ANALYSIS', operation: 'TRANSLATE', before, committed,
+      after: await callTool('get_parse_status', { workItemId }), deepLink: await callTool('get_deep_link', { workItemId }), result: execution.result }),
+      completeness: execution.completeness, modelRequestCount: execution.modelRequestCount };
   }
   validatePayload('translation-input', begin.modelInput);
   await heartbeatAttempt(begin, callTool);
@@ -1299,8 +1319,13 @@ function assertBegin(value, taskType) {
   }
 }
 
-async function collectTranslationDelivery(workItemId, callTool) {
-  const first = await callTool('begin_translation', { workItemId });
+async function collectTranslationDelivery(workItemId, callTool, requestId) {
+  const first = await callTool('begin_translation', { workItemId, ...(requestId ? { requestId } : {}) });
+  if (first.task?.modelInput?.schemaVersion === 'wiselink.3_1.translation_task.v2') {
+    assertBegin(first, 'OPENCLAW_TRANSLATE');
+    if (first.task.workItemId !== workItemId) throw new Error('TRANSLATION_V2_WORK_ITEM_BINDING_INVALID');
+    return first;
+  }
   assertTranslationDeliveryPart(first, {
     workItemId,
     expectedPartIndex: 0,
@@ -1316,6 +1341,7 @@ async function collectTranslationDelivery(workItemId, callTool) {
   ) {
     const part = await callTool('begin_translation', {
       workItemId,
+      ...(requestId ? { requestId } : {}),
       deliveryPart: partIndex,
     });
     assertTranslationDeliveryPart(part, {

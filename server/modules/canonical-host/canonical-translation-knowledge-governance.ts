@@ -3,6 +3,9 @@ import { randomUUID } from 'node:crypto';
 import type { BilingualTranslationArtifact } from './canonical-host-openclaw-translation.service';
 import { translationConsumptionBindingsIdentical } from './canonical-translation-rule-contract';
 import type { PrivateTranslationRuleSetProvider } from './canonical-translation-rule-set-v1.private';
+import { assertTranslationArtifactV2 } from './canonical-translation-v2-artifact';
+import { canonicalJson } from '../action-attempt/action-attempt-envelope';
+import type { ImportSemanticTranslationCandidatesInput } from './canonical-translation-knowledge-governance.types';
 import {
   TRANSLATION_KNOWLEDGE_CANDIDATE_SCHEMA,
   type ImportBilingualTranslationCandidatesInput,
@@ -127,6 +130,48 @@ export class CanonicalTranslationKnowledgeGovernanceService {
     };
   }
 
+  async importSemanticCandidates(input: ImportSemanticTranslationCandidatesInput): Promise<ImportBilingualTranslationCandidatesResult> {
+    validateImportMetadata(input);
+    assertTranslationArtifactV2(input.artifact);
+    assertNonBlank(input.finalActionAttemptId, 'KNOWLEDGE_ACTION_ATTEMPT_REQUIRED');
+    if (!/^[0-9a-f]{64}$/u.test(input.finalResultContentHash)) throw new Error('KNOWLEDGE_RESULT_HASH_REQUIRED');
+    if (input.artifact.source.documentVersionId !== input.currentBinding.revisionId ||
+      input.artifact.source.packageId !== input.currentBinding.sbdPackageId || input.artifact.methodVersion !== 'semantic-translation@2.0')
+      throw new Error('KNOWLEDGE_SOURCE_NOT_CURRENT');
+    const readable = input.artifact.blocks.filter((block) => block.selected && block.source.anchorIds.length);
+    if (!readable.length) throw new Error('KNOWLEDGE_READABLE_TRANSLATION_BLOCKS_REQUIRED');
+    const assetIds: string[] = []; let createdCount = 0; let reusedCount = 0;
+    for (const block of readable) {
+      const revision = block.selected!;
+      const anchors = input.artifact.anchors.filter((anchor) => block.source.anchorIds.includes(anchor.anchorId));
+      const sourceRefIds = [...new Set(anchors.flatMap((anchor) => anchor.sourceRefIds))];
+      assertSourceRefs(sourceRefIds);
+      const current = await this.store.readSemanticScope?.({ tenantId: input.tenantId, workItemId: input.workItemId, blockRevisionId: revision.blockRevisionId });
+      if (!current?.selectedForReading || canonicalJson(current.scope.elements) !== canonicalJson(revision.candidate.elements) ||
+        canonicalJson(current.scope.anchors) !== canonicalJson(anchors)) throw new Error('KNOWLEDGE_TRANSLATION_BLOCK_CHANGED');
+      const provenance = revision.provenance;
+      const saved = await this.store.saveCandidate({
+        schemaVersion: TRANSLATION_KNOWLEDGE_CANDIDATE_SCHEMA, assetId: this.idFactory('ASSET'), tenantId: input.tenantId, workItemId: input.workItemId,
+        snapshotWorkItemRevision: input.snapshotWorkItemRevision, knowledgeKind: 'TRANSLATION_MEMORY', candidateOnly: true, usagePolicy: 'SUGGESTION_ONLY',
+        ownerActorId: input.ownerActorId, importedByActorId: input.importedByActorId,
+        sourceArtifact: { ref: input.sourceArtifact.ref, sha256: input.sourceArtifact.sha256 }, sourceBinding: structuredClone(input.currentBinding),
+        translationExecution: { actionAttemptId: input.finalActionAttemptId,
+          resultContentHash: input.finalResultContentHash, modelVersion: provenance.modelVersion ?? 'human-authored',
+          promptVersion: provenance.promptVersion ?? 'human-source-review', skillVersion: provenance.skillVersion ?? 'not-applicable' },
+        ruleSet: { ruleSetId: 'semantic-translation', ruleSetVersion: '2.0', sourceLocale: 'en', targetLocale: 'zh-CN' },
+        // The existing table's source_unit_id stores a block revision for this
+        // explicit kind. It never receives a fabricated v1 source-unit mapping.
+        unit: { unitId: revision.blockRevisionId, kind: `semantic_block:${block.source.kind}`, sourceUnitCount: input.artifact.coverage.sourceUnitCount,
+          sourceText: anchors.map((anchor) => anchor.sourceText).join('\n'), translatedText: revision.candidate.elements.map((element) => element.translatedText).join('\n'),
+          sourceRefIds, engineerRevisionId: provenance.authorKind === 'ENGINEER' ? revision.blockRevisionId : null },
+        validFrom: input.validFrom, expiresAt: input.expiresAt, createdAt: input.importedAt,
+      });
+      assetIds.push(saved.candidate.assetId);
+      if (saved.disposition === 'CREATED') createdCount++; else reusedCount++;
+    }
+    return { status: 'CANDIDATE_ONLY', assetIds, createdCount, reusedCount };
+  }
+
   async readCandidate(
     input: ReadTranslationKnowledgeCandidateInput,
   ): Promise<TranslationKnowledgeCandidateSnapshot> {
@@ -176,7 +221,13 @@ export class CanonicalTranslationKnowledgeGovernanceService {
     const workItemCurrent: boolean =
       aggregate.candidate.snapshotWorkItemRevision ===
       input.currentWorkItemRevision;
+    const semantic = aggregate.candidate.unit.kind.startsWith('semantic_block:') ?
+      await this.store.readSemanticScope?.({ tenantId: input.tenantId, workItemId: input.workItemId, blockRevisionId: aggregate.candidate.unit.unitId }) : null;
+    const semanticCurrent = !aggregate.candidate.unit.kind.startsWith('semantic_block:') || Boolean(semantic?.selectedForReading &&
+      aggregate.candidate.unit.sourceText === semantic.scope.anchors.map((anchor) => anchor.sourceText).join('\n') &&
+      aggregate.candidate.unit.translatedText === semantic.scope.elements.map((element) => element.translatedText).join('\n'));
     const sourceCurrent: boolean =
+      semanticCurrent &&
       workItemCurrent &&
       input.currentBinding !== null &&
       translationConsumptionBindingsIdentical(
@@ -200,6 +251,7 @@ export class CanonicalTranslationKnowledgeGovernanceService {
 
     return {
       candidate: structuredClone(aggregate.candidate),
+      ...(semantic ? { semanticScope: structuredClone(semantic.scope) } : {}),
       governanceRevision: events.length,
       confirmationStatus,
       validityStatus,
@@ -378,6 +430,11 @@ function validateImport(
   input: ImportBilingualTranslationCandidatesInput,
   ruleSets: PrivateTranslationRuleSetProvider,
 ): void {
+  validateImportMetadata(input);
+  validateLegacyImportArtifact(input, ruleSets);
+}
+
+function validateImportMetadata(input: Omit<ImportBilingualTranslationCandidatesInput, 'artifact'>): void {
   assertNonBlank(input.tenantId, 'KNOWLEDGE_TENANT_REQUIRED');
   assertNonBlank(input.workItemId, 'KNOWLEDGE_WORK_ITEM_REQUIRED');
   assertPositiveRevision(
@@ -397,6 +454,9 @@ function validateImport(
   if (Date.parse(input.expiresAt) <= Date.parse(input.validFrom)) {
     throw new Error('KNOWLEDGE_VALIDITY_WINDOW_INVALID');
   }
+}
+
+function validateLegacyImportArtifact(input: ImportBilingualTranslationCandidatesInput, ruleSets: PrivateTranslationRuleSetProvider): void {
   if (
     input.artifact.schemaVersion !==
       'wiselink.3_1.bilingual_translation_artifact.v1' ||

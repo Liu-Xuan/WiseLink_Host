@@ -101,6 +101,7 @@ export class CanonicalHostInitialAnalysisStatusService {
         terminalCode: initialAnalysisTerminalCode(row),
         executionModel: readStoredExecutionModel(row.executionModelJson),
       })),
+      { englishAssessmentEnabled: process.env.WL_JOBAID_PROBLEM_V2_ENABLED === '1' },
     );
   }
 
@@ -161,6 +162,7 @@ export function initialAnalysisTerminalCode(row: {
 export function projectCanonicalHostInitialAnalysisStatus(
   workItem: CanonicalWorkItemProjection,
   attempts: readonly CanonicalInitialAnalysisAttemptObservation[],
+  options: { englishAssessmentEnabled?: boolean } = {},
 ): AilyInitialAnalysisStatus {
   const attemptByAction = latestAttemptsByAction(attempts);
   const parsedPackageReady = isParsedPackageReady(workItem);
@@ -185,7 +187,7 @@ export function projectCanonicalHostInitialAnalysisStatus(
       }
     : pendingStages();
   const progression = parsedPackageReady
-    ? deriveProgression(stages)
+    ? deriveProgression(stages, options.englishAssessmentEnabled === true)
     : { status: 'NOT_READY' as const, nextOperation: null };
   return {
     workItemRevision: workItem.revision,
@@ -219,16 +221,20 @@ function translationProjectionObservation(
 ): StageProjectionObservation {
   const translation = workItem.translation;
   if (!translation) return absentProjection();
+  const supportedMethod = translation.schemaVersion === 'wiselink.3_1.translation_candidate_projection.v2'
+    ? translation.ruleSetId === 'semantic-translation' && translation.ruleSetVersion === '2.0'
+    : translation.ruleSetId === CANONICAL_TRANSLATION_RULE_SET_V1_ID && translation.ruleSetVersion === CANONICAL_TRANSLATION_RULE_SET_V1_VERSION;
   if (
     translation.status === 'CANDIDATE_ONLY' &&
     translation.currentness === 'CURRENT' &&
     translation.documentVersionId === workItem.source.documentVersionId &&
     translation.sourcePackageId === workItem.package?.packageId &&
     translation.sourcePackageContentHash === workItem.package?.contentHash &&
-    translation.ruleSetId === CANONICAL_TRANSLATION_RULE_SET_V1_ID &&
-    translation.ruleSetVersion === CANONICAL_TRANSLATION_RULE_SET_V1_VERSION
+    supportedMethod
   ) {
-    return successfulProjection(translation.actionAttemptId);
+    return { ...successfulProjection(translation.actionAttemptId),
+      terminalCode: translation.schemaVersion === 'wiselink.3_1.translation_candidate_projection.v2' && translation.completeness !== 'COMPLETE'
+        ? `TRANSLATION_${translation.completeness}_CANDIDATE_SAVED` : null };
   }
   return staleProjection(
     translation.actionAttemptId,
@@ -405,6 +411,7 @@ function attemptStageStatus(
 
 function deriveProgression(
   stages: AilyInitialAnalysisStatus['stages'],
+  englishAssessmentEnabled: boolean,
 ): Pick<AilyInitialAnalysisStatus, 'status' | 'nextOperation'> {
   const ordered: Array<{
     stage: AilyInitialAnalysisStageStatus;
@@ -416,8 +423,13 @@ function deriveProgression(
     { stage: stages.overall, operation: 'SYNTHESIZE_OVERALL' },
   ];
   let hasNonBlockingMissingInput = false;
+  let deferredTranslationStatus: 'FAILED' | 'CONFLICT' | null = null;
   for (const item of ordered) {
     if (item.stage.status === 'SUCCEEDED') continue;
+    if (englishAssessmentEnabled && item.operation === 'TRANSLATE' && ['FAILED', 'CONFLICT'].includes(item.stage.status)) {
+      deferredTranslationStatus = item.stage.status === 'FAILED' ? 'FAILED' : 'CONFLICT';
+      continue;
+    }
     if (
       item.operation === 'EXTRACT_APPLICABILITY' &&
       item.stage.status === 'WAITING_INPUT'
@@ -434,7 +446,7 @@ function deriveProgression(
     return { status: item.stage.status, nextOperation: null };
   }
   return {
-    status: hasNonBlockingMissingInput ? 'WAITING_INPUT' : 'SUCCEEDED',
+    status: deferredTranslationStatus ?? (hasNonBlockingMissingInput ? 'WAITING_INPUT' : 'SUCCEEDED'),
     nextOperation: null,
   };
 }

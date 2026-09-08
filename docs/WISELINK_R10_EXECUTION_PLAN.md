@@ -6,11 +6,45 @@
 
 Git 当前边界：**2026-09-06 用户要求仅向妙搭 Host 的 `origin` 推送，停止一切主动 GitHub 推送；2026-09-07 接管再次重申避免越权。** 该要求取代 9 月 5 日的 GitHub `codex/*` 长期授权；旧凭据、refspec、成功记录和下文历史发布说明都不构成继续推送授权。每次明确指定 `origin` 和单一源/目标引用，非强制推送；不删除 GitHub 引用、不改写公开历史。现有 `core.hooksPath=.githooks` 下的 `pre-push` 同时校验 remote 名称及实际 URL，仅接受本项目已核实的飞书目标。见根 `AGENTS.md` 与 [边界纠正记录](WL31_GITHUB_SYNC_BOUNDARY_20260905.md)。
 
-## 2026 年 9 月 8 日翻译模块设计修订
+## 2026 年 9 月 9 日翻译实现与 JobAid 集成
+
+翻译 v2 已接通原始结构读取、完整语义块规划、同库工作记录、逐批短会话、保存与检查、局部可读投影和 Host 全文组装。工程师修订保存为新版本，保留模型原文及来源；知识导入支持 v1/v2，并继续核对最终提交、当前选用版本和治理权限。`WL_TRANSLATION_V2_ENABLED=1` 只启用新请求，已有 v2 工作记录可通过正常新 attempt 接续；取消与未知生成不自动重放，保存响应未知只读回并重交同一保存。新表仍使用既有数据库及租户/actor/lease/CAS 边界，未新增并行流程或独立数据库。
+
+本地实际 PostgreSQL 检查通过：翻译工作区 9 项（并发登记、保存幂等、检查与纠正、产物组装、知识导入、多模型接续、人工修订及 RLS），旧知识治理流程 1 组。Skill 短会话与消费检查 17 项通过；结构/质量及旧消费者相关单元检查、前后端类型检查通过。实际 Reader 组件以明确的合成数据检查了一段译文对应多个原文片段、跨行单元格和脚注、图内文字未提取的待处理提示，以及人工修订后版本 2 与旧版本并存。界面检查发现并修正了 `/payload/rowGroups` 定位缺失问题，源计划到表格检查链路已覆盖该场景。
+
+用户于 00:56 明确要求另一个子会话完成 [JobAid 完整方案](WISELINK_JOBAID_REDESIGN_20260909.md) 和 [开发与验收计划](WISELINK_JOBAID_REDESIGN_EXECUTION_PLAN_20260909.md)，两项实施整合后重新设立 Goal 完成真实流程验证。JobAid 在独立 worktree 实现；主控负责合并、英文原文依赖与翻译状态衔接、c44 统一版本和发布。本节为本地实施证据；此时尚未进行 c44 线上发布或新的 M3/DLI 业务调用，不能替代两模型各完整初始分析及至少两轮 Review 的实际验收。
+
+### 翻译方案接续时的 W0 事实
+
+用户提供了 [完整重设计方案](WISELINK_TRANSLATION_REDESIGN_20260908.md) 和 [开发工作与验收计划](WISELINK_TRANSLATION_REDESIGN_EXECUTION_PLAN_20260908.md)，原文已保留。继续按“全文结构准备、语义块有界生成、Host 持久工作、确定性组装全文候选”推进首个完整流程。两份文件中的建议字段、调用预算和外部能力仍须依据实际实现收敛；现有候选、来源、授权、事务与发布边界不变。
+
+W0 实读：本地与妙搭 origin 的 `codex/wl31-r09-master-handoff-20260903` 均为 `33591c53230e2519724d288f355603b1308cd4a0`；相对输入基线 `e9b353b0d` 仅两份文档有已提交差异，运行代码仍对应 c43 阶段。本次核对得到的具体消费者如下，尚不代表 v2 已编码或发布。
+
+| 消费环节 | 实际输入或限制 | 首批处理 |
+| --- | --- | --- |
+| UnifiedReader / Frozen2CandidateReader | 已验证解析包有 parent/depth、advisory scope、grid rowGroups/cells/rowSpan/colSpan 和显式 continuation；当前读取结果主要为 text 与 SourceRef/locator | 为新翻译路径保留真实结构和原始字段，不能把 JSON 表格文本交给模型重造布局 |
+| Host Translation | `buildTaskContract` 将读出单元缩成 unitKey/kind/text/sourceRefIds；`buildBilingualArtifact` 按源 unitKey 查找并逐项装配 | 新输入与最终产物明确使用块结构，v1 继续独立读取，不将新段落反拆为旧单元 |
+| Skill 初始消费 | 一个 model 远程步骤中完成全文；全部窗口通过后才有完整结果 | 生成批次与工作保存分开，实际正文持久后才能成为恢复依据 |
+| Host Reader / workbench-projection | 当前双语显示及计数依赖完整 v1 artifact、旧规则身份和逐单元 owner observation | 增加明确的新结构与局部可读状态，旧完整译文继续读取 |
+| Applicability | `buildRequest` 实际读取完整 bilingual.units，并绑定翻译 attempt/artifact；不是单纯状态检查 | 先迁移真实数据依赖；不能直接删翻译前置或填空中文绕过 |
+| 翻译知识产品及数据库 | candidate 表按完成产物、WorkItem snapshot revision 与 sourceUnitId 导入；服务核对完整译文计数 | 保留知识治理与人工历史，不能把该表直接充当生成中的块工作记录 |
+| Review 与后续综合 | 已有来源读取与共同上下文，仍须核对具体译文绑定和消费者 | 复用真实来源能力，区分原文依据和译文版本，不因新结构改变正式采用 |
+
+后端现有翻译知识表缺少跨 attempt 的未完成工作及块选用职责；首批需要在现有 PostgreSQL 内承载相应工作记录，沿用已有执行与事务设施。解析包已有结构可以减少新的结构推断，但不证明所有实际 PDF 都有可靠续表或段落边界；仅文本的区域采用完整上下文范围，具体结构疑点保留。
+
+补齐上一失败的只读证据：官方会话 `7683198170357107644` 读回 DLI JobAid `ATT-61c55f86-2031-4134-b95b-cb3c90a96862` 首轮于 22:28:52 返回工具候选（输入 59,016 / 输出 12,884 tokens），因 `DYNAMIC_RULES_RULE_RESULT_ROW_INVALID:0` 进入纠正；第二轮于 22:32:07 收到 HTTP 408，原生记录为 upstream_error，无有效候选，无 model.result 或 commit。不能将它表述为整个 JobAid 从未输出。原生记录还出现 exec 调用，未知生成的自动重做前仍须核对实际工具权限，不能仅凭外层输出函数就认定内部运行无副作用。此次诊断未修改运行配置、Host 数据或重放模型；旧翻译及失败保持。
+
+## 2026 年 9 月 8 日翻译与 JobAid 设计修订
 
 用户质疑翻译容错、耗时和逐片段对应方式，随后明确要求进行设计修订，并提供文档交给网页版 GPT 生成新的完整方案。交付见 [翻译模块设计修订说明](WISELINK_TRANSLATION_REDESIGN_BRIEF_20260908.md)。该文档区分实际证据、修订原则与待论证方案，要求重新设计语义块、来源映射、上下文、分级校验、进度保存和恢复，以及 Host、Skill、Reader 和下游消费者的迁移；不代表新架构已实施。原 R10 验收目标和候选边界保留，不以反复新建整份任务代替恢复设计。
 
+用户进一步要求 JobAid 基于文档与事项的统一上下文，按需使用 Skill/MCP 进行分析、判断；随后明确重新查阅原文、综合理解，不机械执行 150 项，短期外部信息有限也不能阻塞系统，并要求独立文档。交付见 [JobAid 评估流程修订说明](WISELINK_JOBAID_ASSESSMENT_REDESIGN_BRIEF_20260908.md)：依据用户提供的 JA-DS093 R01（2026-01-28）及风险 JobAid R01（2023-11-27）正文、流程与案例重写，按工程问题组织综合判断、递进调查、阶段性成果和持续复看；150 条只作为旧实现迁移背景。所提供 JA-DS093 PDF 未包含正文引用的附件 5，明确该局部来源限制，不据此阻塞现有材料上的设计。翻译说明仅保留两方案接口的交叉引用。
+
+当前 JobAid 已传入 commonContext，但初始模型接口主要开放候选输出，仍沿用一次性全项、每行 400 UTF-8 字节、静态准则来源清单；知识检索明确为 NOT_CONNECTED。独立方案要求已有资料支持完整候选流程，按需调查及新来源登记、局部保存与恢复接入 Overall/Review 和事项消费者，保留 Host 授权、版本、来源与正式采用边界。此处完成设计文档，不代表运行代码或线上 RuleSet 已修订。
+
 最近运行补充：M3 `WI-bf78ccb2-efd0-4cf5-8098-c3436d39507f` 翻译在前三窗推进至 276/437 后，于 21:42:44.278 因上游 `server_error` 结束；该响应输出为 0，网关 HTTP 200 无有效工具候选，适配器报告 `INITIAL_OUTPUT_CHANNEL_INVALID`，旧记录保留。DLI `WI-c67d44e3-c78c-49e9-91fa-8bce7aa34004` 在显式 online scope 迁移和发布 `7683165269792492476` finished 后，于 22:11:20.501 启动翻译 `ATT-d5f1c3d6-660f-42a7-8e4d-f50938624e9b`，22:24:45.365 成功保存；JobAid `ATT-61c55f86-2031-4134-b95b-cb3c90a96862` 于 22:24:46.599 自动启动，本文时点未取得终态。后续 M3 正常任务 `WI-33f5b8fa-53e3-44ec-8b9f-05bbd1e03df0` 已解析完成，绑定同一文档版本和 MiniMax-M3，尚未迁移消费者。不能把翻译成功算作两模型完整初始分析及连续 Review 验收。
+
+后续线上读回：上述 DLI JobAid 于 22:32:07.510 因 `HOSTED_INITIAL_EXECUTION_FAILED:INITIAL_GATEWAY_HTTP_408` 取消，projection_applied=false，无分项候选；同一任务的翻译成功产物仍保留。该错误不单独证明整表协议是超时原因，调查执行链的设计缺口依据当前代码另行确认。保留本次失败，不以再次新建整份评估任务代替所需的设计修订。
 
 ## 2026-09-08 Goal 实施与真实运行进展
 

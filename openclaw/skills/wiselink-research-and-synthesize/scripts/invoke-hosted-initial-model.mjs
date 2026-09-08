@@ -18,6 +18,7 @@ import {
   validatePayload,
 } from './validate-payload.mjs';
 import { requestHostedGateway } from './request-hosted-gateway.mjs';
+import { invokeHostedTranslationBlock } from './invoke-hosted-translation-block.mjs';
 
 const OUTPUT_FUNCTION = 'return_wiselink_initial_candidate';
 const MAX_JOBAID_CANDIDATE_CORRECTIONS = 2;
@@ -64,6 +65,8 @@ export async function invokeHostedInitialModel(
   options,
   dependencies = {},
 ) {
+  if (operation === 'TRANSLATE' && modelInput?.schemaVersion === 'wiselink.3_1.translation_semantic_batch.v2')
+    return invokeHostedTranslationBlock(modelInput, options, dependencies);
   const kind = INPUT_KINDS[operation];
   if (!kind) throw new Error('INITIAL_OPERATION_INVALID');
   validatePayload(kind, modelInput);

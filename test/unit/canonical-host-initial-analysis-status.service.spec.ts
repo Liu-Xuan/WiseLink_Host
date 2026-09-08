@@ -22,6 +22,25 @@ const HASH = `sha256:${'a'.repeat(64)}`;
 const OTHER_HASH = `sha256:${'b'.repeat(64)}`;
 
 describe('CanonicalHost initial-analysis status projection', () => {
+  it('recognizes a saved semantic translation candidate while keeping its partial scope explicit', () => {
+    const workItem = translatedWorkItem(parsedWorkItem());
+    workItem.translation = { ...workItem.translation!, schemaVersion: 'wiselink.3_1.translation_candidate_projection.v2',
+      workspaceId: 'TW-test', planRevision: 1, contextRevision: 1, completeness: 'PARTIAL', ruleSetId: 'semantic-translation', ruleSetVersion: '2.0',
+      pendingTranslationUnitCount: 1, validationVerdict: 'REVIEW_REQUIRED' };
+    expect(projectCanonicalHostInitialAnalysisStatus(workItem, [])).toMatchObject({
+      nextOperation: 'EVALUATE_JOBAID', stages: { translation: { status: 'SUCCEEDED', terminalCode: 'TRANSLATION_PARTIAL_CANDIDATE_SAVED' } },
+    });
+  });
+
+  it('only the enabled direct English path advances beyond failed translation and retains the failure', () => {
+    const workItem = parsedWorkItem();
+    const failed = attempt('OPENCLAW_TRANSLATE', 'CANCELLED');
+    expect(projectCanonicalHostInitialAnalysisStatus(workItem, [failed]).nextOperation).toBeNull();
+    expect(projectCanonicalHostInitialAnalysisStatus(workItem, [failed], { englishAssessmentEnabled: true })).toMatchObject({
+      nextOperation: 'EVALUATE_JOBAID', stages: { translation: { status: 'FAILED', attemptStatus: 'CANCELLED' } },
+    });
+    expect(projectCanonicalHostInitialAnalysisStatus(workItem, [attempt('OPENCLAW_TRANSLATE', 'RUNNING')], { englishAssessmentEnabled: true })).toMatchObject({ status: 'BUSY', nextOperation: null });
+  });
   it('keeps missing aircraft selection explicit without blocking document-level candidates', () => {
     const workItem = translatedWorkItem(parsedWorkItem());
     const status = projectCanonicalHostInitialAnalysisStatus(workItem, []);
