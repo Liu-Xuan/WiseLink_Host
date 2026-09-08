@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { JOBAID_WORK_GUIDANCE } from './jobaid-problem-guidance.mjs';
+import { REVIEW_JOBAID_TASK_SCHEMA, REVIEW_JOBAID_CANDIDATE_SCHEMA } from './validate-payload.mjs';
 
 import { createHash } from 'node:crypto';
 import {
@@ -128,6 +130,7 @@ export async function runHostedReviewTurn(options, dependencies = {}) {
       assertModelInputHasNoControlPlane(input, normalized, beginResult);
       const nativeSessionKey = hostNativeSessionKey(beginResult);
       const isMatter = beginResult.task.modelInput.schemaVersion === REVIEW_MATTER_TASK_SCHEMA;
+      const isJobAid = beginResult.task.modelInput.schemaVersion === REVIEW_JOBAID_TASK_SCHEMA;
       const generationInput = {
         schemaVersion: MODEL_INPUT_SCHEMA,
         mode: 'INTERACTIVE_REVIEW',
@@ -181,8 +184,8 @@ export async function runHostedReviewTurn(options, dependencies = {}) {
               return values;
             },
             validateCandidate: (output) => {
-              validateModelCandidateOutput(output, readSourceRefBatches.flat(), input.attachmentRefs, isMatter);
-              validateCandidate(bindHostedReviewCandidate(beginResult, output, isMatter));
+              validateModelCandidateOutput(output, readSourceRefBatches.flat(), input.attachmentRefs, isMatter, isJobAid);
+              validateCandidate(bindHostedReviewCandidate(beginResult, output, isMatter, isJobAid));
             },
             observeCandidateRejection: (value) => checkpoint.writeOnce(
               `candidate-rejection-${value.correctionNo}`,
@@ -213,10 +216,10 @@ export async function runHostedReviewTurn(options, dependencies = {}) {
         execution,
         (execution.readSourceRefBatches ?? []).flat(),
         input.attachmentRefs,
-        isMatter,
+        isMatter, isJobAid,
       );
       return {
-        output: bindHostedReviewCandidate(beginResult, partial.output, isMatter),
+        output: bindHostedReviewCandidate(beginResult, partial.output, isMatter, isJobAid),
         provenance: partial.provenance,
       };
     },
@@ -276,6 +279,7 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
   }
   const prompt = buildReviewPrompt(input);
   const isMatter = isRecord(input.input?.context?.matterWorking);
+  const isJobAid = isRecord(input.input?.context?.problemAssessment);
   const sessionDiscriminator = requiredText(
     options.sessionDiscriminator ?? canonicalSha256(input),
     'REVIEW_MODEL_SESSION_DISCRIMINATOR_REQUIRED',
@@ -329,7 +333,7 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
           model: `openclaw/${agentId}`,
           ...(nativeSessionKey ? {} : { user: `review-driver:${sha256(sessionDiscriminator).slice(0, 24)}` }),
           messages,
-          tools: [reviewCandidateFunctionTool(isMatter), reviewSourceFunctionTool()],
+          tools: [reviewCandidateFunctionTool(isMatter || isJobAid), reviewSourceFunctionTool()],
           tool_choice: 'required',
           parallel_tool_calls: false,
           n: 1,
@@ -378,7 +382,7 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
       let candidate;
       try {
         candidate = output;
-        if (isMatter) {
+        if (isMatter || isJobAid) {
           if (Object.keys(output).length !== 1 || typeof output.candidateJson !== 'string') {
             throw new Error('REVIEW_MATTER_CANDIDATE_JSON_REQUIRED');
           }
@@ -387,7 +391,7 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
         if (typeof options.validateCandidate === 'function') await options.validateCandidate(candidate);
       } catch (error) {
         const errorCode = candidateValidationErrorCode(error);
-        if (!isMatter || typeof options.validateCandidate !== 'function' || !errorCode ||
+        if (!(isMatter || isJobAid) || typeof options.validateCandidate !== 'function' || !errorCode ||
           candidateCorrections >= MAX_MATTER_CANDIDATE_CORRECTIONS ||
           typeof toolCall.id !== 'string' || toolCall.id.trim() === '') throw error;
         candidateCorrections += 1;
@@ -948,14 +952,15 @@ function toolStep(name) {
   );
 }
 
-function bindHostedReviewCandidate(begin, output, isMatter) {
+function bindHostedReviewCandidate(begin, output, isMatter, isJobAid = false) {
   return {
-    schemaVersion: isMatter ? REVIEW_MATTER_CANDIDATE_SCHEMA : 'wiselink.3_1.review_turn_candidate.v1.c3',
+    schemaVersion: isJobAid ? REVIEW_JOBAID_CANDIDATE_SCHEMA : isMatter ? REVIEW_MATTER_CANDIDATE_SCHEMA : 'wiselink.3_1.review_turn_candidate.v1.c3',
     mode: 'INTERACTIVE_REVIEW',
     reviewConversationRef: begin.task.modelInput.reviewConversationRef,
     reviewTurnRef: begin.task.modelInput.reviewTurnRef,
     ...Object.fromEntries(MODEL_OUTPUT_KEYS.map((key) => [key, output[key]])),
     ...(isMatter ? { matterWorkingDelta: output.matterWorkingDelta } : {}),
+    ...(isJobAid ? { jobAidWorkingDelta: output.jobAidWorkingDelta } : {}),
     runtime: { runtimeAppId: WISELINK_RUNTIME_APP_ID, profileRef: WISELINK_PROFILE_REF },
   };
 }
@@ -973,7 +978,8 @@ function candidateFeedbackEvidenceRefs(input, sourceCache) {
   const matter = input.input?.context?.matterWorking;
   const provided = [...(matter?.evidenceCatalog ?? []), ...(matter?.currentResult?.evidence ?? [])]
     .filter((item) => item.kind !== 'DOCUMENT_PASSAGE' && typeof item.providedText === 'string' && item.providedText.trim());
-  return [...new Set([...sourceCache.values(), ...provided]
+  const jobAidProvided = input.input?.context?.problemAssessment?.deliveredEvidence ?? [];
+  return [...new Set([...sourceCache.values(), ...provided, ...jobAidProvided]
     .map((item) => item.evidenceRef)
     .filter((ref) => typeof ref === 'string' && ref.trim()))];
 }
@@ -983,6 +989,7 @@ function validateModelExecution(
   readSourceRefIds,
   candidateEvidenceRefIds,
   isMatter = false,
+  isJobAid = false,
 ) {
   if (
     !isRecord(value) ||
@@ -991,19 +998,19 @@ function validateModelExecution(
   ) {
     throw new Error('REVIEW_MODEL_EXECUTION_INVALID');
   }
-  validateModelCandidateOutput(value.output, readSourceRefIds, candidateEvidenceRefIds, isMatter);
+  validateModelCandidateOutput(value.output, readSourceRefIds, candidateEvidenceRefIds, isMatter, isJobAid);
   return value;
 }
 
-function validateModelCandidateOutput(output, readSourceRefIds, candidateEvidenceRefIds, isMatter) {
+function validateModelCandidateOutput(output, readSourceRefIds, candidateEvidenceRefIds, isMatter, isJobAid = false) {
   if (!isRecord(output)) throw new Error('REVIEW_MODEL_OUTPUT_INVALID');
   if (
     canonicalJson(Object.keys(output).sort()) !==
-    canonicalJson([...MODEL_OUTPUT_KEYS, ...(isMatter ? ['matterWorkingDelta'] : [])].sort())
+    canonicalJson([...MODEL_OUTPUT_KEYS, ...(isMatter ? ['matterWorkingDelta'] : []), ...(isJobAid ? ['jobAidWorkingDelta'] : [])].sort())
   ) {
     throw new Error('REVIEW_MODEL_OUTPUT_KEYS_INVALID');
   }
-  if (!reviewResponseTypes(isMatter).includes(output.responseType)) {
+  if (!reviewResponseTypes(isMatter || isJobAid).includes(output.responseType)) {
     throw new Error('REVIEW_MODEL_RESPONSE_TYPE_INVALID');
   }
   requiredText(output.answer, 'REVIEW_MODEL_ANSWER_REQUIRED');
@@ -1028,6 +1035,7 @@ function validateModelCandidateOutput(output, readSourceRefIds, candidateEvidenc
     output.reviewActionDraft !== null || output.affectedItemIds.length > 0 ||
     (output.matterWorkingDelta !== null && !isRecord(output.matterWorkingDelta))
   )) throw new Error('REVIEW_MODEL_MATTER_DELTA_INVALID');
+  if (isJobAid && (output.reviewActionDraft !== null || output.affectedItemIds.length > 0 || (output.jobAidWorkingDelta !== null && !isRecord(output.jobAidWorkingDelta)))) throw new Error('REVIEW_MODEL_JOBAID_DELTA_INVALID');
   if (output.responseType === 'SOURCE_LINK' && output.sourceRefs.length === 0) {
     throw new Error('REVIEW_MODEL_SOURCE_LINK_REF_REQUIRED');
   }
@@ -1419,6 +1427,7 @@ function matterReviewGuidance() {
     'When the engineer requests a substantive new understanding, correction or incorporation of additional material, return matterWorkingDelta with updateKind INITIAL_SYNTHESIS, CORRECTION or MATERIAL_INCORPORATION and a concrete changeSummary. RESYNTHESIS_RESULT may describe that updated reading. If there is no working state yet and an assessment is requested, INITIAL_SYNTHESIS supplies nextFocus and a first claimDelta/readingPresentation. A useful assessment may conclude with bounded understanding and open questions; do not force an implementation, priority, approval or release decision.',
     'matterWorkingDelta has exactly updateKind, changeSummary, nextFocus, claimDelta, readingPresentation, openQuestionDelta, reviewConditionDelta, coverageUpdates. nextFocus is null to retain the focus or {question,targetRefs}. claimDelta and readingPresentation are both null to retain the exact current result, or both objects to revise it. Host supplies the scope, identities, versions and CAS; never generate those control bindings.',
     'claimDelta={changedBecause,additions,replacements,retirements,explicitlyUnchangedClaimIds}. Each addition or replacement is {claimId,text,basis:"SOURCE_FACT"|"CONDITIONAL_INFERENCE",premises:[{evidenceRef,role:"SUPPORTS"|"LIMITS"|"CONTEXT"|"CONFLICTS",explanation,limitation:string|null}]}. Replacements keep the exact existing claimId. Retirements are {claimId,reason}. Account for every current claim exactly once as replacement, retirement or explicitlyUnchangedClaimIds; keep all unmentioned substance and its premises through the unchanged IDs. Never add a new claimId to disguise a correction to an existing claim.',
+    'An input previousProblemAssessment is already saved JobAid work with issue identities, complete conditions and method provenance. Use it to continue the engineering question without rebuilding an old checklist. It remains candidate context: inspect original authorized passages for new document premises and use the evidence identities of this Matter task. Do not convert JA-AC grades, SAE categories, source priorities or EO attributes into one scale.',
     'When context.matterWorking.targetClaimId is present, focus the requested correction or explanation on that existing claim and retain other claims unless the supplied facts actually change them. A correction preserves the target claimId through a replacement.',
     'readingPresentation={headline,listBrief,lead,decisiveClaimIds} describes the complete next reading, including retained claims. headline, listBrief and lead are each one nonempty string, never an array or object; listBrief is the concise text displayed in a list row, not a list of bullets. decisiveClaimIds is an array of existing next-reading claimId strings. Keep decisive conditions, limits, uncertainty and negations visible across these reading depths. openQuestionDelta and reviewConditionDelta are null to retain their items, or {upserts:[{itemId,text,basisRefs}],retirements:[{itemId,reason}],explicitlyUnchangedItemIds}; preserve existing itemIds and account for every current item.',
     'Cite only registered evidenceRef values. An evidenceCatalog entry is a directory, not proof of reading. For every added or replaced DOCUMENT_PASSAGE premise, call read_wiselink_review_sources this turn using its sourceRefId and inspect the returned fragment with matching evidenceRef. The sourceRefId is a local key for this task: two documents can share an original SourceRef, so never substitute the original ID or a different document key. Remembered or unchanged prior claims do not authorize a newly cited passage. Non-document premises need their actual providedText or a read in this turn. ENGINEER_STATEMENT supports only what the engineer supplied; PRIOR_RESULT is prior candidate context and QUERY_RECEIPT covers only its explicit checked scope.',
@@ -1428,14 +1437,24 @@ function matterReviewGuidance() {
   ];
 }
 
+function jobAidReviewGuidance() {
+  return [
+    `Serialize the complete candidate as candidateJson with exactly ${[...MODEL_OUTPUT_KEYS, 'jobAidWorkingDelta'].join(', ')}. Use responseType ANSWER, CLARIFYING_QUESTION, SOURCE_LINK, INPUT_REQUEST, TASK_STATUS or RESYNTHESIS_RESULT as appropriate. Always set reviewActionDraft=null and affectedItemIds=[].`,
+    'context.problemAssessment is the actual saved JobAid problem work, method material, available source catalog and earlier discussion. Use jobAidWorkingDelta=null for explanations and questions that change no working understanding. For a correction or new material, include a local work update preserving every unaffected issue and source/premise identity. Host saves the complete revised understanding and this reply atomically with CAS; this is an ordinary candidate update, not formal adoption. Never reconstruct a criterion checklist or generate replacement reasoning from an abbreviated brief.',
+    'Read relevant DOCUMENT_PASSAGE and ENGINEER_ATTACHMENT resources through the current source-read function. The catalog is not a read receipt. Previously saved sources freshly supplied in deliveredEvidence may support retained work; new citations require actual current delivery. Keep sourceRefs limited to resources read this turn; method evidence remains METHOD_CLAUSE in the working update and never pretends to be a document SourceRef. ENGINEER_ATTACHMENT proves only what the uploaded material reports, not implemented controls or controlled Host facts.',
+    JOBAID_WORK_GUIDANCE,
+  ];
+}
+
 function buildReviewPrompt(input) {
   const isMatter = isRecord(input.input?.context?.matterWorking);
+  const isJobAid = isRecord(input.input?.context?.problemAssessment);
   return [
     'Generate one candidate-only WiseLink engineering review response from the engineer message and the current Host-frozen context.',
     `Call ${REVIEW_OUTPUT_FUNCTION_NAME} exactly once. It is only a serialization channel and will not be executed. Emit no prose outside its arguments.`,
     'Use sourceRefs and candidateEvidenceRefs only from SOURCE_REFS read this turn. Never invent facts, IDs, evidence, adoption, approval, publication, confirmation, current changes, or gap closure.',
     'When the engineer asks to locate, cite, or return a SourceRef, use SOURCE_LINK and include at least one relevant sourceRefs entry read this turn. SOURCE_LINK with an empty sourceRefs array is invalid.',
-    ...(isMatter ? matterReviewGuidance() : [
+    ...(isJobAid ? jobAidReviewGuidance() : isMatter ? matterReviewGuidance() : [
       'For an explanation, source link, clarification, input request, or task status, set candidateEvidenceRefs and affectedItemIds to [] and reviewActionDraft to null.',
       'Use CANDIDATE_EVIDENCE only when the engineer asks to analyze supplied or Host-authorized evidence; keep reviewActionDraft null and include every proposed evidence ref in candidateEvidenceRefs.',
       'Ordinary questions, corrections, additional material, or revisions to a working judgment do not require a ReviewAction. Return an answer or candidate evidence and continue the discussion.',
@@ -1447,7 +1466,7 @@ function buildReviewPrompt(input) {
     ]),
     'State the current best bounded judgment, remaining uncertainty, and what would change the judgment when relevant.',
     'Use context.commonContext when supplied: continue prior discussion and later engineer corrections, distinguishing historical working answers from adopted inputs and current evidence. Report omitted history or unavailable RAG honestly. Procedural-reference catalogs and historical attachment names do not mean their contents were read.',
-    `Use ${REVIEW_READ_FUNCTION_NAME} as needed, then continue your analysis from the returned fragments. Start from ${isMatter ? 'the Matter working focus' : 'the selected criterion'} and current question; read relevant engineer attachments as well when they affect the question. Do not read every available source just because it is listed.`,
+    `Use ${REVIEW_READ_FUNCTION_NAME} as needed, then continue your analysis from the returned fragments. Start from ${isJobAid ? 'the saved issue and current question' : isMatter ? 'the Matter working focus' : 'the selected criterion'} and current question; read relevant engineer attachments as well when they affect the question. Do not read every available source just because it is listed.`,
     'Do not call any Host MCP or other tool directly. The driver exclusively owns begin, authorized SourceRef read, commit, and status. A previous answer or native session memory does not authorize an unread citation this turn.',
     `INPUT:\n${canonicalJson(input)}`,
   ].join('\n');

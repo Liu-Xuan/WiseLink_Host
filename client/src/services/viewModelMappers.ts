@@ -1,3 +1,4 @@
+import { isJobAidProblemProjection } from '@shared/jobaid-problem-assessment.interface';
 import type {
   CanonicalDocumentParsingPageResponse,
   CanonicalEngineeringStatementBasis,
@@ -220,7 +221,11 @@ export function toWorkItemView(
             translationProgress: workItem.translation
               ? `${workItem.translation.translatedUnitCount}/${workItem.translation.sourceUnitCount}`
               : null,
-            evaluationProgress: `${workItem.integratedAssessment!.baseRules.evaluationItemCount}/${workItem.integratedAssessment!.baseRules.criterionCount}`,
+            evaluationProgress: isJobAidProblemProjection(
+              workItem.integratedAssessment!.baseRules,
+            )
+              ? `${workItem.integratedAssessment!.baseRules.issueCount} 个问题`
+              : `${workItem.integratedAssessment!.baseRules.evaluationItemCount}/${workItem.integratedAssessment!.baseRules.criterionCount}`,
           },
         }
       : null,

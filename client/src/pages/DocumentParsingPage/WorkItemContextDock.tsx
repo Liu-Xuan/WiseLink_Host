@@ -1,3 +1,4 @@
+import { isJobAidProblemProjection } from '@shared/jobaid-problem-assessment.interface';
 import {
   ArrowUpRight,
   CheckCircle2,
@@ -29,7 +30,11 @@ export function WorkItemContextDock({
 }: WorkItemContextDockProps) {
   const integrated = data.workItem.integratedAssessment ?? null;
   const overall = integrated?.overallSynthesis ?? null;
-  const unresolvedCount: number = integrated?.baseRules.unresolvedCount ?? 0;
+  const unresolvedCount: number = isJobAidProblemProjection(
+    integrated?.baseRules,
+  )
+    ? integrated.baseRules.openQuestionCount
+    : (integrated?.baseRules.unresolvedCount ?? 0);
   const steps: ContextStep[] = [
     {
       label: '文件版本已绑定',

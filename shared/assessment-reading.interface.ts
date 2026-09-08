@@ -76,6 +76,25 @@ export type AssessmentEvidence = {
       /** A previous candidate is context, not a new independent source fact. */
       originalEvidenceRefs: string[];
     }
+  | {
+      kind: 'ENGINEER_ATTACHMENT';
+      workItemId: string;
+      reviewConversationId: string;
+      reviewTurnId: string;
+      attachmentRef: string;
+      documentVersionId: string;
+      artifactRef: string;
+      artifactSha256: string;
+      locator: string;
+    }
+  | {
+      kind: 'METHOD_CLAUSE';
+      packRef: string;
+      methodRef: string;
+      sourceIdentity: string;
+      locator: string;
+      sourceVersionStatus: 'CONFIRMED' | 'VERSION_UNCONFIRMED';
+    }
 );
 
 export interface AssessmentReadingResult {
@@ -98,6 +117,7 @@ export interface AssessmentClaimEvidenceReadModel {
 
 /** A saved result projected for a directory row, without shortening its claims. */
 export interface AssessmentReadingSummary {
+  roundCompletion?: 'IN_PROGRESS' | 'COMPLETE' | 'COMPLETE_WITH_OPEN_QUESTIONS';
   resultRef: string;
   resultRevision: number;
   headline: string;

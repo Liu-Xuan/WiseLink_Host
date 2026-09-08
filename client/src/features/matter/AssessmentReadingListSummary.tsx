@@ -28,6 +28,9 @@ const AssessmentReadingListSummary: FC<{
     data-result-ref={summary.resultRef}
     data-result-revision={summary.resultRevision}
   >
+    {summary.roundCompletion === 'IN_PROGRESS' ? (
+      <small>分析进行中 · 已保存工作</small>
+    ) : null}
     <strong className="library-saved-list-brief">{summary.headline}</strong>
     <small className="library-saved-list-brief">{summary.listBrief}</small>
     {summary.decisiveClaims.map((claim) => (

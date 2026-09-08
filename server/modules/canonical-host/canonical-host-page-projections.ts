@@ -1,3 +1,4 @@
+import { isJobAidProblemProjection } from '@shared/jobaid-problem-assessment.interface';
 import type {
   CanonicalDocumentParsingPageResponse,
   CanonicalEngineerReviewPageContext,
@@ -127,10 +128,12 @@ function buildLibraryNodes(
         id: 'dynamic-evaluation',
         parentId: 'parsed-package',
         kind: 'DYNAMIC_EVALUATION',
-        label: 'OpenClaw dynamic-N evaluation',
-        detail:
-          `${integrated.baseRules.evaluationItemCount}/` +
-          `${integrated.baseRules.criterionCount} criteria`,
+        label: isJobAidProblemProjection(integrated.baseRules)
+          ? 'JobAid 问题评估'
+          : 'OpenClaw dynamic-N evaluation',
+        detail: isJobAidProblemProjection(integrated.baseRules)
+          ? `${integrated.baseRules.issueCount} 个问题 · ${integrated.baseRules.openQuestionCount} 项待确认`
+          : `${integrated.baseRules.evaluationItemCount}/${integrated.baseRules.criterionCount} criteria`,
         state: integrated.baseRules.status,
         targetNode: 'assessment',
         authority: 'HOST_WORKITEM_PROJECTION',
@@ -330,18 +333,28 @@ function buildWorkbenchAudit(
       assignmentCount: usagePolicy?.applicability.assignmentCount ?? null,
       inferredFromDocumentPresence: false,
     },
-    dynamicEvaluation: dynamic
+    problemAssessment: isJobAidProblemProjection(dynamic)
       ? {
-          status: dynamic.status,
-          criterionSetId: dynamic.criterionSetId,
-          criterionCount: dynamic.criterionCount,
-          evaluationItemCount: dynamic.evaluationItemCount,
-          unresolvedCount: dynamic.unresolvedCount,
-          sourceBoundCandidateCount: dynamic.sourceBoundCandidateCount,
-          artifactSha256: dynamic.artifact.sha256,
-          actionAttemptId: dynamic.actionAttemptId,
+          schemaVersion: dynamic.schemaVersion,
+          issueCount: dynamic.issueCount,
+          openQuestionCount: dynamic.openQuestionCount,
+          workRevisionRef: dynamic.workRevisionRef,
+          roundCompletion: dynamic.roundCompletion,
         }
       : null,
+    dynamicEvaluation:
+      dynamic && !isJobAidProblemProjection(dynamic)
+        ? {
+            status: dynamic.status,
+            criterionSetId: dynamic.criterionSetId,
+            criterionCount: dynamic.criterionCount,
+            evaluationItemCount: dynamic.evaluationItemCount,
+            unresolvedCount: dynamic.unresolvedCount,
+            sourceBoundCandidateCount: dynamic.sourceBoundCandidateCount,
+            artifactSha256: dynamic.artifact.sha256,
+            actionAttemptId: dynamic.actionAttemptId,
+          }
+        : null,
     engineerReview: ledger
       ? {
           revision: ledger.revision,
@@ -429,10 +442,13 @@ function buildTimeline(
     const dynamic = workItem.integratedAssessment.baseRules;
     pushEvent(events, {
       kind: 'DYNAMIC_EVALUATION',
-      label: 'OpenClaw dynamic-N candidate',
+      label: isJobAidProblemProjection(dynamic)
+        ? 'JobAid 问题评估候选'
+        : 'OpenClaw dynamic-N candidate',
       status: dynamic.status,
-      detail:
-        `${dynamic.evaluationItemCount}/${dynamic.criterionCount} criteria`,
+      detail: isJobAidProblemProjection(dynamic)
+        ? `${dynamic.issueCount} 个问题 · ${dynamic.openQuestionCount} 项待确认`
+        : `${dynamic.evaluationItemCount}/${dynamic.criterionCount} criteria`,
       occurredAt: null,
       revision: dynamic.revision,
       artifactRef: dynamic.artifact.ref,
@@ -458,8 +474,7 @@ function buildTimeline(
       kind: 'OVERALL_SYNTHESIS',
       label: 'OpenClaw overall candidate',
       status: overall.status,
-      detail:
-        `${overall.findingCount} findings · gap ${overall.gap ?? 'NONE'}`,
+      detail: `${overall.findingCount} findings · gap ${overall.gap ?? 'NONE'}`,
       occurredAt: null,
       revision: overall.revision,
       artifactRef: overall.artifact.ref,
@@ -467,7 +482,8 @@ function buildTimeline(
     });
   }
   if (workItem.integratedAssessment?.overallForAeoConfirmation) {
-    const confirmation = workItem.integratedAssessment.overallForAeoConfirmation;
+    const confirmation =
+      workItem.integratedAssessment.overallForAeoConfirmation;
     pushEvent(events, {
       kind: 'OVERALL_CONFIRMATION',
       label: 'Human confirmation for downstream AEO',
@@ -557,10 +573,14 @@ function candidateFormationSteps(
     },
     {
       id: 'run-dynamic-evaluation',
-      label: 'Run OpenClaw dynamic-N evaluation',
+      label: isJobAidProblemProjection(dynamic)
+        ? '阅读 JobAid 问题评估'
+        : 'Run OpenClaw dynamic-N evaluation',
       status: dynamic?.status ?? 'WAITING',
       summary: dynamic
-        ? `${dynamic.evaluationItemCount}/${dynamic.criterionCount} criteria`
+        ? isJobAidProblemProjection(dynamic)
+          ? `${dynamic.issueCount} 个问题 · ${dynamic.openQuestionCount} 项待确认`
+          : `${dynamic.evaluationItemCount}/${dynamic.criterionCount} criteria`
         : 'No dynamic candidate has been committed',
       evidenceRef: dynamic?.actionAttemptId ?? 'NO_DYNAMIC_ATTEMPT',
     },
@@ -620,8 +640,9 @@ function documentLabel(workItem: CanonicalWorkItemProjection): string {
 
 function sourceBoundState(results: UnifiedReaderQueryResult[]): string {
   if (results.length === 0) return 'NO_RESULTS';
-  return results.every((result: UnifiedReaderQueryResult): boolean =>
-    result.sourceRefIds.length > 0,
+  return results.every(
+    (result: UnifiedReaderQueryResult): boolean =>
+      result.sourceRefIds.length > 0,
   )
     ? 'SOURCE_BOUND'
     : 'SOURCE_REF_MISSING';
@@ -641,9 +662,8 @@ function effectiveReviewedCount(
   context: CanonicalEngineerReviewPageContext | null,
 ): number {
   return (
-    context?.items.filter(
-      (item): boolean => item.latestReview !== null,
-    ).length ?? 0
+    context?.items.filter((item): boolean => item.latestReview !== null)
+      .length ?? 0
   );
 }
 

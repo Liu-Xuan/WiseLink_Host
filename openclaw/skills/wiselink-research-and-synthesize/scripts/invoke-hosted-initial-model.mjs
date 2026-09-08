@@ -18,6 +18,7 @@ import {
   validatePayload,
 } from './validate-payload.mjs';
 import { requestHostedGateway } from './request-hosted-gateway.mjs';
+import { invokeHostedJobAidProblemModel, JOBAID_PROBLEM_TASK_SCHEMA } from './run-jobaid-problem-assessment.mjs';
 
 const OUTPUT_FUNCTION = 'return_wiselink_initial_candidate';
 const MAX_JOBAID_CANDIDATE_CORRECTIONS = 2;
@@ -51,7 +52,7 @@ const OUTPUT_GUIDANCE = {
   TRANSLATE:
     'Read the entire document in input.sourceUnits before translating, using its headings, cross-references and rulePack terminology to understand context and keep terminology consistent throughout. This is one whole-document translation, not isolated unit tasks. Return only {translatedUnits:[{index:0,text:"Chinese translation"},...]}, with a zero-based integer index and one complete text for each requested source unit, in the exact input order. Each index must translate its own source text, including a fragment that continues in another unit. Use adjacent units for understanding but never move, merge, duplicate or omit their content across indices. translatedUnits is an array of objects, not XML or an item wrapper. The caller supplies a translationOutputWindow: start at startUnitIndex and stop before endUnitIndexExclusive. End the function arguments at that boundary instead of trying to emit the remaining document. For a short document the window covers the whole input. If even this output cannot fit, finish a non-empty contiguous prefix at a complete source-unit boundary and return valid function arguments before reaching the limit; the caller will ask you to continue in this same native session, retaining the original full document and previous translation. Never shorten the text to fit, omit units, restart the translation or repeat accepted indices. If the caller returns CORRECT_TRANSLATION_UNITS, return exactly those requested indices in order with corrected complete translations using the same original full-document context. The deterministic caller restores unitKey, sourceRefIds, rulePack and taskStartBinding from the unchanged Host input; do not repeat or invent those mechanical fields. Preserve numeric values and occurrence counts, ATA tokens, identifiers (including glued OCR identifiers), part numbers, table structure and warnings. Complete calendar dates may use equivalent Chinese year/month/day notation; preserve the exact date. Do not invent source units, summarize instead of translating, or silently repair OCR tokens.',
   EXTRACT_APPLICABILITY:
-    'Return only wiselink.3_1.applicability_ast_candidate.v1 with expressions[{expressionId,sourceRefIds,extractionStatus:"extracted",expressionAst}]. Use this input astVocabulary exactly. Do not output aircraft decisions, Fleet facts, target levels or content refs. Express only source-bound applicability conditions; unknown facts are not false.',
+    'Return only wiselink.3_1.applicability_ast_candidate.v1 with expressions[{expressionId,sourceRefIds,extractionStatus:"extracted",expressionAst}]. Use this input astVocabulary exactly. Do not output aircraft decisions, Fleet facts, target levels or content refs. Express only source-bound applicability conditions; unknown facts are not false. For applicability_task.v2, the verified English sourceExpressions and sourceContext are the primary input. A Chinese translation is optional assistance, never a prerequisite or authority. Preserve target bindings and extract conditions only; Host alone evaluates them against controlled aircraft and Fleet facts.',
   EVALUATE_JOBAID:
     'Use the input responseInstruction for the exact columnar result shape. Return callerCorrelationRef, authorityLevel="candidate_only", engineeringConclusion=null, applicabilityOverall, ruleResults, overallSelfCheck, nextRoundChecklist, completionSelfCheck. Keep all N rows in input order. FALSE is NOT_APPLICABLE with no refs/missing input; UNKNOWN echoes only Host missingPredicateKeys; TRUE must not become UNKNOWN. Use only each criterion own source allowlist. Before returning, measure the UTF-8 byte length of JSON.stringify(row) for every row against responseInstruction.ruleResultsEncoding.maxRowUtf8Bytes, including JSON syntax. Remove redundant prose if necessary while preserving material facts, conditions, findings and every criterion. Do not synthesize overall here.',
   SYNTHESIZE_OVERALL:
@@ -64,6 +65,8 @@ export async function invokeHostedInitialModel(
   options,
   dependencies = {},
 ) {
+  if (modelInput?.schemaVersion === JOBAID_PROBLEM_TASK_SCHEMA)
+    return invokeHostedJobAidProblemModel({ operation, modelInput }, options, dependencies);
   const kind = INPUT_KINDS[operation];
   if (!kind) throw new Error('INITIAL_OPERATION_INVALID');
   validatePayload(kind, modelInput);

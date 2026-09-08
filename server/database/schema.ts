@@ -1467,3 +1467,44 @@ export const translationKnowledgeGovernanceEventTable = translationKnowledgeGove
 export const translationKnowledgeImportRequestItemTable = translationKnowledgeImportRequestItem;
 export const translationKnowledgeSourceRefTable = translationKnowledgeSourceRef;
 export const workItemTable = workItem;
+
+export const assessmentWorkRevision = pgTable("assessment_work_revision", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  assessmentWorkRevisionId: varchar("assessment_work_revision_id", { length: 96 }).notNull().unique(),
+  tenantId: varchar("tenant_id", { length: 128 }).notNull(),
+  workItemId: varchar("work_item_id", { length: 96 }).notNull(),
+  workRevision: integer("work_revision").notNull(),
+  requestId: varchar("request_id", { length: 96 }).notNull(),
+  actionAttemptId: varchar("action_attempt_id", { length: 96 }).notNull(),
+  basedOnWorkItemRevision: integer("based_on_work_item_revision").notNull(),
+  documentVersionId: varchar("document_version_id", { length: 96 }).notNull(),
+  previousWorkRevisionId: varchar("previous_work_revision_id", { length: 96 }),
+  commandJson: text("command_json").notNull(),
+  contentJson: text("content_json").notNull(),
+  createdByUserId: varchar("created_by_user_id", { length: 255 }).notNull(),
+  createdAt: customTimestamptz("created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("assessment_work_revision_assessment_work_revision_id_key").on(table.assessmentWorkRevisionId),
+  uniqueIndex("uk_assessment_work_revision_number").on(table.workItemId, table.workRevision),
+  uniqueIndex("uk_assessment_work_revision_request").on(table.workItemId, table.requestId),
+  uniqueIndex("uk_assessment_work_revision_scope").on(table.tenantId, table.workItemId, table.assessmentWorkRevisionId),
+  index("idx_assessment_work_revision_attempt").on(table.actionAttemptId, table.workRevision.desc()),
+  foreignKey({
+    columns: [table.actionAttemptId],
+    foreignColumns: [actionAttempt.attemptId],
+    name: "assessment_work_revision_action_attempt_id_fkey",
+  }),
+  foreignKey({
+    columns: [table.tenantId, table.workItemId],
+    foreignColumns: [workItem.tenantId, workItem.workItemId],
+    name: "fk_assessment_work_revision_owner",
+  }),
+  foreignKey({
+    columns: [table.previousWorkRevisionId, table.tenantId, table.workItemId],
+    foreignColumns: [table.assessmentWorkRevisionId, table.tenantId, table.workItemId],
+    name: "fk_assessment_work_revision_previous",
+  }),
+]);
+
+
+export const assessmentWorkRevisionTable = assessmentWorkRevision;

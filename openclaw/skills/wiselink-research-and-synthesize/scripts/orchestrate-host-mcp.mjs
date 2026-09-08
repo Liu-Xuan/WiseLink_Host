@@ -9,6 +9,7 @@ import {
   WISELINK_SKILL_VERSION,
   WISELINK_APPLICABILITY_PROMPT_VERSION,
   REVIEW_MATTER_TASK_SCHEMA,
+  REVIEW_JOBAID_TASK_SCHEMA,
   buildApplicabilityCandidate,
   canonicalJson,
   isForbiddenAuthorityInputKey,
@@ -60,6 +61,9 @@ export const HOST_MCP_TOOLS = [
   'commit_applicability_candidate',
   'begin_dynamic_evaluation',
   'commit_dynamic_evaluation_candidate',
+  'read_assessment_sources',
+  'save_assessment_work',
+  'read_assessment_work',
   'record_oem_discovery_run',
   'begin_overall_synthesis',
   'resume_overall_synthesis',
@@ -746,13 +750,14 @@ export async function runDynamicEvaluation({
       callTool,
     });
   }
-  validatePayload('dynamic-rules-input', begin.modelInput);
+  const problemV2 = begin.modelInput?.schemaVersion === 'wiselink.jobaid-problem-task.v2';
+  if (!problemV2) validatePayload('dynamic-rules-input', begin.modelInput);
   await heartbeatAttempt(begin, callTool);
   const execution = normalizeExecution(
-    await evaluateDynamicRules(structuredClone(begin.modelInput)),
+    await evaluateDynamicRules(structuredClone(begin.modelInput), problemV2 ? problemAssessmentHooks(begin, callTool) : undefined),
   );
   await heartbeatAttempt(begin, callTool);
-  const serializedOutput = serializeDynamicRulesCommitOutput(
+  const serializedOutput = problemV2 ? execution.output : serializeDynamicRulesCommitOutput(
     begin.modelInput,
     execution.output,
   );
@@ -760,7 +765,7 @@ export async function runDynamicEvaluation({
     task: begin.task,
     modelOutput: serializedOutput,
     provenance: execution.provenance,
-    factsConsidered: execution.output.ruleResults.rows.map((row) => row[0]),
+    factsConsidered: problemV2 ? [execution.output.workRevisionRef] : execution.output.ruleResults.rows.map((row) => row[0]),
   });
   let committed = null;
   let after = null;
@@ -889,13 +894,14 @@ async function completeOverall({
   synthesizeOverall,
   resumed = false,
 }) {
-  validatePayload('synthesis-input', begin.modelInput);
+  const problemV2 = begin.modelInput?.schemaVersion === 'wiselink.jobaid-problem-task.v2';
+  if (!problemV2) validatePayload('synthesis-input', begin.modelInput);
   await heartbeatAttempt(begin, callTool);
   const execution = normalizeExecution(
-    await synthesizeOverall(structuredClone(begin.modelInput)),
+    await synthesizeOverall(structuredClone(begin.modelInput), problemV2 ? problemAssessmentHooks(begin, callTool) : undefined),
   );
   await heartbeatAttempt(begin, callTool);
-  validatePayload('synthesis-pair', {
+  if (!problemV2) validatePayload('synthesis-pair', {
     input: begin.modelInput,
     output: execution.output,
   });
@@ -903,7 +909,7 @@ async function completeOverall({
     task: begin.task,
     modelOutput: execution.output,
     provenance: execution.provenance,
-    factsConsidered: begin.modelInput.baseRuleResult.items.map(
+    factsConsidered: problemV2 ? [execution.output.workRevisionRef] : begin.modelInput.baseRuleResult.items.map(
       ({ criterionId }) => criterionId,
     ),
   });
@@ -995,6 +1001,10 @@ export async function runInteractiveReviewTurn({
         }
       }
     }
+    if (task.schemaVersion === REVIEW_JOBAID_TASK_SCHEMA) for (const source of sanitized) {
+      const evidence = task.jobAidContext.sourceCatalog.find((item) => item.evidenceRef === source.sourceRefId);
+      if (!evidence || source.evidenceRef !== evidence.evidenceRef || source.excerpt !== evidence.excerpt || source.kind !== evidence.kind) throw new Error('HOST_MCP_REVIEW_JOBAID_SOURCE_BINDING_INVALID');
+    }
     requested.forEach((sourceRefId) => readSourceRefIds.add(sourceRefId));
     return sanitized;
   };
@@ -1019,7 +1029,7 @@ export async function runInteractiveReviewTurn({
     modelOutput: candidate,
     provenance: execution.provenance,
     sourceRefs: reviewCandidateArtifactRefs(begin.task, candidate),
-    factsConsidered: task.schemaVersion === REVIEW_MATTER_TASK_SCHEMA
+    factsConsidered: [REVIEW_MATTER_TASK_SCHEMA, REVIEW_JOBAID_TASK_SCHEMA].includes(task.schemaVersion)
       ? reviewCandidateSourceRefIds(task, candidate) : [...candidate.sourceRefs],
     warnings: [...candidate.warnings],
   });
@@ -1196,6 +1206,12 @@ export function preserveDiscoveryObservation(observation) {
 
 export function assertOverallSynthesisReady(statusResult) {
   const dynamicRules = statusResult?.integratedAssessmentSummary?.baseRules;
+  if (dynamicRules?.schemaVersion === 'wiselink.jobaid-problem-result.v2') {
+    if (dynamicRules.status !== 'CANDIDATE_ONLY' || !dynamicRules.workRevisionRef || !Number.isSafeInteger(dynamicRules.workRevision) || dynamicRules.workRevision < 1 ||
+      !['COMPLETE', 'COMPLETE_WITH_OPEN_QUESTIONS'].includes(dynamicRules.roundCompletion))
+      throw new Error('HOST_MCP_OVERALL_REQUIRES_PERSISTED_PROBLEM_WORK');
+    return statusResult;
+  }
   if (
     !dynamicRules ||
     dynamicRules.status !== 'CANDIDATE_ONLY' ||
@@ -1206,6 +1222,16 @@ export function assertOverallSynthesisReady(statusResult) {
     throw new Error('HOST_MCP_OVERALL_REQUIRES_PERSISTED_DYNAMIC_N');
   }
   return statusResult;
+}
+
+function problemAssessmentHooks(begin, callTool) {
+  const control = { attemptRef: begin.attemptRef, leaseToken: begin.leaseToken, leaseGeneration: begin.leaseGeneration };
+  return {
+    heartbeat: () => heartbeatAttempt(begin, callTool),
+    readAssessmentSources: (intent) => callTool('read_assessment_sources', { ...intent, ...control }),
+    saveAssessmentWork: (intent) => callTool('save_assessment_work', { ...intent, ...control }),
+    readAssessmentWork: (intent) => callTool('read_assessment_work', { ...intent, attemptRef: begin.attemptRef }),
+  };
 }
 
 export function summarizeQueryParsedPackage(value) {
@@ -1775,6 +1801,7 @@ function assertReviewContext(value, begin, task) {
   if ((task.schemaVersion === REVIEW_MATTER_TASK_SCHEMA) !== isRecord(value.context.matterWorking)) {
     throw new Error('HOST_MCP_REVIEW_MATTER_CONTEXT_BINDING_INVALID');
   }
+  if ((task.schemaVersion === REVIEW_JOBAID_TASK_SCHEMA) !== isRecord(value.context.problemAssessment)) throw new Error('HOST_MCP_REVIEW_JOBAID_CONTEXT_BINDING_INVALID');
   const expectedResourceRefs = task.resourceRefs.map(
     ({ sourceRefId, resourceArtifactRef, resourceArtifactSha256 }) => ({
       sourceRefId,
@@ -1812,7 +1839,7 @@ function assertReviewContext(value, begin, task) {
 function buildReviewModelInput(task, contextResult) {
   const context = sanitizeForModel(contextResult.context);
   return {
-    schemaVersion: task.schemaVersion === REVIEW_MATTER_TASK_SCHEMA
+    schemaVersion: task.schemaVersion === REVIEW_JOBAID_TASK_SCHEMA ? 'wiselink.3_1.review_model_input.v1.c5' : task.schemaVersion === REVIEW_MATTER_TASK_SCHEMA
       ? 'wiselink.3_1.review_model_input.v1.c4' : 'wiselink.3_1.review_model_input.v1.c3',
     mode: 'INTERACTIVE_REVIEW',
     inputRevision: task.inputRevision,

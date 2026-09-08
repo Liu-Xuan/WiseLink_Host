@@ -10,10 +10,14 @@ import {
 
 export const APPLICABILITY_TASK_SCHEMA_VERSION =
   'wiselink.3_1.applicability_task.v1' as const;
+export const APPLICABILITY_TASK_V2_SCHEMA_VERSION =
+  'wiselink.3_1.applicability_task.v2' as const;
 export const APPLICABILITY_CANDIDATE_SCHEMA_VERSION =
   'wiselink.3_1.applicability_candidate.v1' as const;
 export const APPLICABILITY_ARTIFACT_SCHEMA_VERSION =
   'wiselink.3_1.applicability_candidate_artifact.v1' as const;
+export const APPLICABILITY_ARTIFACT_V2_SCHEMA_VERSION =
+  'wiselink.3_1.applicability_candidate_artifact.v2' as const;
 export const APPLICABILITY_MCP_SERVER_NAME =
   CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.mcpServerName;
 export const APPLICABILITY_MCP_SERVER_VERSION =
@@ -52,7 +56,9 @@ export interface ApplicabilityTaskBilingualSourceUnit {
 }
 
 export interface ApplicabilityTaskContract {
-  schemaVersion: typeof APPLICABILITY_TASK_SCHEMA_VERSION;
+  schemaVersion:
+    | typeof APPLICABILITY_TASK_SCHEMA_VERSION
+    | typeof APPLICABILITY_TASK_V2_SCHEMA_VERSION;
   operation: 'EXTRACT_APPLICABILITY';
   applicabilityContextRef: string;
   inputRevision: number;
@@ -105,6 +111,11 @@ export interface ApplicabilityTaskContract {
   astVocabulary: ApplicabilityAstVocabulary;
   sourceExpressions: ApplicabilityTaskSourceExpression[];
   bilingualSourceUnits: ApplicabilityTaskBilingualSourceUnit[];
+  /** v2 uses verified English source content directly. Translation is optional assistance. */
+  sourceReadingMode?: 'VERIFIED_ENGLISH';
+  sourceContext?: Array<
+    Omit<ApplicabilityTaskBilingualSourceUnit, 'translatedText'>
+  >;
   runtimePolicy: ApplicabilityRuntimePolicy;
   authority: {
     candidateOnly: true;

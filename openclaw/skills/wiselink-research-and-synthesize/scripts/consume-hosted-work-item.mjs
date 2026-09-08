@@ -35,6 +35,7 @@ const INITIAL_TOOLS = new Set([
   'begin_translation', 'commit_translation_candidate',
   'begin_applicability_evaluation', 'commit_applicability_candidate',
   'begin_dynamic_evaluation', 'commit_dynamic_evaluation_candidate',
+  'read_assessment_sources', 'save_assessment_work', 'read_assessment_work',
   'begin_overall_synthesis', 'commit_overall_candidate',
 ]);
 
@@ -138,6 +139,9 @@ export async function runHostedInitialStage(options, dependencies) {
       return dependencies.invokeInitialModel({ operation, modelInput }, {
         executionModel,
         heartbeat: runtimeHooks.heartbeat,
+        readAssessmentSources: runtimeHooks.readAssessmentSources,
+        saveAssessmentWork: runtimeHooks.saveAssessmentWork,
+        readAssessmentWork: runtimeHooks.readAssessmentWork,
         sessionDiscriminator: runBinding.requestId,
         observeModelOutput: (shape, round = 1) => checkpoint.writeOnce(
           round === 1 ? 'model.output-shape' : `model.output-shape-${round}`, shape,

@@ -1,6 +1,6 @@
 ---
 name: wiselink-research-and-synthesize
-description: Orchestrate the single official hosted WiseLink engineering profile through the canonical Host MCP for INITIAL_ANALYSIS and INTERACTIVE_REVIEW. Preserve applicability AST extraction, dynamic N/N tri-state semantics, SourceRef/currentness bindings, candidate-only authority, fenced ResultEnvelope commits including bounded Translation parts, and exact hosted provenance. Read Host-authorized parsed attachments only through the C3 SourceRef path, and fail closed for unavailable search, compare, reevaluation, or resynthesis tools.
+description: Orchestrate the single official hosted WiseLink engineering profile through the canonical Host MCP for INITIAL_ANALYSIS and INTERACTIVE_REVIEW. Support source-based JobAid problem work and incremental Review alongside frozen legacy dynamic N/N tasks. Preserve applicability AST extraction, SourceRef/currentness bindings, candidate-only authority, fenced ResultEnvelope commits, and exact hosted provenance. Read only Host-authorized sources and parsed attachments; unavailable capabilities remain explicit.
 ---
 
 # WiseLink R10 工程分析与事项讨论
@@ -41,6 +41,16 @@ c34 增加以 schema 区分的 Overall v2 与 Matter Review c4，同时完整保
 先安装兼容包 c34，再发布生成新任务的 Host/前端。新任务不交给旧 Skill；r09 兼容线不变。
 
 c41 明确 Review 新生成的用户阅读文字默认使用简体中文，并遵从本轮工程师指定语言；英文原文与历史答复不覆盖该偏好。原文引句、技术标识、引用、JSON 键与枚举保留原形，不仅为翻译而重写已声明保留的判断。
+
+### JobAid 问题工作与直接英文适用性（新协议）
+
+Host 新任务若为 `wiselink.jobaid-problem-task.v2`，执行问题分析协议：先理解问题与完整来源条件，按需读来源，完成一段实质分析即保存，再做整体一致性检查。此分支不适用下文旧 Dynamic 的 N/N、`criterionTable`、逐行结论或 28KB 目标，也不要求先生成完整中文译文。旧任务仍按其已封存版本处理，不把旧产物伪装为问题工作。
+
+`run-jobaid-problem-assessment.mjs` 通过现有官方 Gateway 与确定性 Host 回调执行 `read_assessment_sources`、`save_assessment_work`、`read_assessment_work`。模型只返回读取/保存/完成意图；requestId、lease、最终 sealed ResultEnvelope 由驱动持有。已保存内容可在失败后阅读，同一请求响应丢失先读回原请求，不重复生成已保存正文。最终提交只绑定已保存的精确工作版本；Overall 保留该版本的完整问题和条件，不重新执行旧 Base 流程。
+
+`wiselink.3_1.applicability_task.v2` 的 `sourceReadingMode=VERIFIED_ENGLISH` 使用实际英文 SourceExpressions/SourceContext，`bilingualBinding=null`、`bilingualSourceUnits=[]`。保持原 AST、Host Fleet 匹配与 UNKNOWN 边界。旧 v1 继续检查其原译文绑定。
+
+`wiselink.3_1.review_turn_task.v1.c5` 的模型上下文是 `context.problemAssessment`。新候选 c5 通过 `jobAidWorkingDelta` 表达受影响问题，显式保留或说明撤回其他问题；普通解释用 null。Host 在同一事务保存问题工作和 Review 回答，不执行正式 ReviewAction。详细协议见 [JobAid 问题工作](references/jobaid-problem-work.md)。
 
 ## 不变边界
 
@@ -85,7 +95,7 @@ c41 明确 Review 新生成的用户阅读文字默认使用简体中文，并�
 
 c35 曾针对 M3 JobAid 的 `length/incomplete_result` 失败申请 32000 输出额度。c38 按用户后续要求统一
 将明确选择 M3 的初始分析和 Review 请求设为官方最大 524288，并配套更新同一 M3 条目的 maxTokens。
-仍返回全部 N 项并通过原校验；保留完整评估输入、全部准则、模型路由和原时间预算。
+旧 Dynamic 任务仍返回全部 N 项并通过原校验；问题工作 v2 按上文独立协议执行。
 
 Host 可在 JobAid / Overall 输入的 `commonContext`，以及 Review 的 `context.commonContext` 中提供评估前
 共同背景：主文件身份与章节目录、关联资料作用与实际读取片段、此前普通讨论及工作回答。旧任务没有该字段时仍按原输入执行。
@@ -234,7 +244,7 @@ CAS；Skill 不声称这些步骤由模型完成。8. commit 响应未知时只�
   检查、实际字节 readback、组装后才进入原有 ResultEnvelope→ResultGate→FileService→CAS/current。
 - 任一 part/finalize 明确失败立即停止；未知或进入 COMMITTING 时只读一次通用 status，不盲重放 finalize。
 
-### Dynamic N/N
+### Dynamic N/N（仅已封存的旧协议）
 
 按 Host `criterionTable` 原顺序处理全部 N 项；N 由当前 CriterionSet 决定，不固定为 150。
 
