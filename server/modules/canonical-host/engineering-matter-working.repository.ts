@@ -3,8 +3,11 @@ import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import {
   DRIZZLE_DATABASE,
+  SqlExecutionContextMiddleware,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
+import { RequestContextService } from '@lark-apaas/nestjs-common';
+import type { Request, Response } from 'express';
 import { and, asc, desc, eq, or, sql } from 'drizzle-orm';
 
 import type {
@@ -78,6 +81,8 @@ export interface EngineeringMatterRuntimeAuthorization {
 export class EngineeringMatterWorkingRepository {
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
+    private readonly sqlContext: SqlExecutionContextMiddleware,
+    private readonly requestContext: RequestContextService,
   ) {}
 
   async withTransaction<T>(
@@ -90,20 +95,37 @@ export class EngineeringMatterWorkingRepository {
     );
   }
 
-  /** Set RLS actor context and keep every W4 read/write on one pinned connection. */
+  /** Bind the verified Host actor for every query of this Hosted transaction. */
   async withActorTransaction<T>(
     actorUserId: string,
     operation: (
       executor: EngineeringMatterWorkingTransactionExecutor,
     ) => Promise<T>,
   ): Promise<T> {
-    if (actorUserId.trim() === '') throw runtimeAuthorizationUnavailable();
-    return this.db.transaction(async (transaction) => {
-      const database = transaction as PostgresJsDatabase;
-      await database.execute(
-        sql`SELECT set_config('app.user_id', ${actorUserId}, TRUE)`,
+    // The official SDK re-applies its SQL context before EVERY query, including
+    // queries inside a pinned transaction. A standalone set_config is reset by
+    // that next query. Use its injected middleware to scope the existing
+    // service role to the Host-resolved actor, without changing the HTTP actor,
+    // platform identity, global context or any role membership.
+    if (
+      this.requestContext.get('isSystemAccount') !== true ||
+      !/^[A-Za-z0-9_-]{1,255}$/u.test(actorUserId)
+    )
+      throw runtimeAuthorizationUnavailable();
+    return new Promise<T>((resolve, reject) => {
+      this.sqlContext.use(
+        {
+          userContext: { userId: actorUserId, isSystemAccount: true, roles: [] },
+        } as Request,
+        {} as Response,
+        () => {
+          void this.db
+            .transaction(async (transaction) =>
+              operation(this.executor(transaction as PostgresJsDatabase)),
+            )
+            .then(resolve, reject);
+        },
       );
-      return operation(this.executor(database));
     });
   }
 
