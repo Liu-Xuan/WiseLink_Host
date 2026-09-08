@@ -1,4 +1,11 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
+import { isJobAidProblemProjection } from '@shared/jobaid-problem-assessment.interface';
+import { CanonicalJobAidProblemService } from './canonical-jobaid-problem.service';
+import {
+  isJobAidProblemTask,
+  parseJobAidProblemTask,
+  type JobAidProblemModelInput,
+} from './jobaid-problem-task';
 
 import type {
   CanonicalOverallEngineeringSummary,
@@ -83,11 +90,14 @@ export class CanonicalHostOpenClawOverallService {
     @Inject(CANONICAL_SERVICE_SCOPE_AUTHORIZATION)
     private readonly serviceScope: CanonicalServiceScopeAuthorizationPort,
     private readonly commonContext: CanonicalHostCommonContextService,
+    @Optional()
+    private readonly problemAssessment?: CanonicalJobAidProblemService,
   ) {}
 
   async begin(
     workItemId: string,
     providers: string[],
+    requestId?: string,
   ): Promise<{
     attemptRef: string;
     status: 'RUNNING' | 'COMMITTING';
@@ -97,18 +107,45 @@ export class CanonicalHostOpenClawOverallService {
     task: OpenClawTaskEnvelope;
     recoveryResult?: OpenClawResultEnvelope;
     selectedDiscoveryRefs: string[];
-    modelInput: OpenClawOverallSynthesisInput;
+    modelInput: OpenClawOverallSynthesisInput | JobAidProblemModelInput;
   }> {
     const scope = await this.serviceScope.authorizeOpenClawWorkItem({
       operation: 'BEGIN_OVERALL',
       workItemId,
     });
     assertWorkItemScope(scope, workItemId);
+    if (requestId !== undefined) {
+      if (!this.problemAssessment)
+        throw new Error('JOBAID_PROBLEM_RUNTIME_UNAVAILABLE');
+      if (providers.length)
+        throw new Error('JOBAID_UNREGISTERED_DISCOVERY_PROVIDERS');
+      const context = await this.requiredBaseRulesContext(
+        workItemId,
+        scope.tenantId,
+      );
+      return this.problemAssessment.begin(
+        context.execution,
+        scope,
+        'OVERALL_CONSISTENCY',
+        requestId,
+      );
+    }
     const context = await this.prepareOverallExecution(
       await this.requiredBaseRulesContext(workItemId, scope.tenantId),
       scope.tenantId,
     );
     const workItem = context.execution;
+    if (isJobAidProblemProjection(workItem.integratedAssessment?.baseRules)) {
+      if (!this.problemAssessment)
+        throw new Error('JOBAID_PROBLEM_RUNTIME_UNAVAILABLE');
+      if (providers.length)
+        throw new Error('JOBAID_UNREGISTERED_DISCOVERY_PROVIDERS');
+      return this.problemAssessment.begin(
+        workItem,
+        scope,
+        'OVERALL_CONSISTENCY',
+      );
+    }
     if (
       workItem.overallRegenerationRequest?.executionRevision ===
       workItem.revision
@@ -168,6 +205,15 @@ export class CanonicalHostOpenClawOverallService {
       input.tenantId,
     );
     assertUserRequestedRegenerationBinding(workItem);
+    if (isJobAidProblemProjection(workItem.integratedAssessment?.baseRules)) {
+      if (!this.problemAssessment)
+        throw new Error('JOBAID_PROBLEM_RUNTIME_UNAVAILABLE');
+      return this.problemAssessment.enqueueOverall(
+        workItem,
+        input.tenantId,
+        input.permissionSnapshotVersion,
+      );
+    }
     const reservation = await this.attempts.reserve(
       this.reservationInput(
         workItem,
@@ -190,7 +236,7 @@ export class CanonicalHostOpenClawOverallService {
     leaseExpiresAt: string;
     task: OpenClawTaskEnvelope;
     selectedDiscoveryRefs: string[];
-    modelInput: OpenClawOverallSynthesisInput;
+    modelInput: OpenClawOverallSynthesisInput | JobAidProblemModelInput;
   }> {
     const scope = await this.serviceScope.authorizeOpenClawAttempt({
       operation: 'RESUME_OVERALL',
@@ -216,6 +262,20 @@ export class CanonicalHostOpenClawOverallService {
     }
     if (!row.taskEnvelopeJson) throw new Error('TASK_ENVELOPE_MISSING');
     const task = parseTaskEnvelope(row.taskEnvelopeJson);
+    if (isJobAidProblemTask(task.modelInput)) {
+      if (!this.problemAssessment)
+        throw new Error('JOBAID_PROBLEM_RUNTIME_UNAVAILABLE');
+      await this.problemAssessment.readAttemptWork(attemptReference);
+      return {
+        attemptRef: attemptReference,
+        leaseToken: row.leaseToken,
+        leaseGeneration: row.leaseGeneration,
+        leaseExpiresAt: row.leaseExpiresAt.toISOString(),
+        task: structuredClone(task),
+        selectedDiscoveryRefs: [],
+        modelInput: structuredClone(parseJobAidProblemTask(task).modelInput),
+      };
+    }
     const storedInput = storedOverallInput(task.modelInput);
     return {
       attemptRef: attemptReference,
@@ -248,6 +308,17 @@ export class CanonicalHostOpenClawOverallService {
       row: preflightRow,
       result: resultEnvelope,
     });
+    if (isJobAidProblemTask(preflight.task.modelInput)) {
+      if (!this.problemAssessment)
+        throw new Error('JOBAID_PROBLEM_RUNTIME_UNAVAILABLE');
+      return this.problemAssessment.commit({
+        row: preflightRow,
+        scope,
+        leaseToken,
+        leaseGeneration,
+        result: resultEnvelope,
+      });
+    }
     assertAttemptBinding(
       scope,
       overallAttemptFromRow(preflightRow),
@@ -1255,6 +1326,8 @@ function assertDynamicCandidateSummary(
   workItem: CanonicalWorkItemProjection,
   baseRules: CanonicalIntegratedAssessmentProjection['baseRules'],
 ): void {
+  if (isJobAidProblemProjection(baseRules))
+    throw new Error('JOBAID_PROBLEM_LEGACY_SUMMARY_UNSUPPORTED');
   if (
     summary.workItemId !== workItem.workItemId ||
     summary.documentVersionId !== workItem.source.documentVersionId ||

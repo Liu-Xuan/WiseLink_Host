@@ -1,4 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
+import {
+  CanonicalTranslationV2Service,
+  translationWorkspaceCommandSchemaV2,
+} from './canonical-translation-v2.service';
+import { TRANSLATION_V2_TASK_SCHEMA } from './canonical-translation-v2.contract';
 
 import type {
   CanonicalReaderBilingualUnit,
@@ -156,9 +161,13 @@ export class CanonicalHostOpenClawTranslationService {
     private readonly attempts: ActionAttemptLifecycleService,
     @Inject(CANONICAL_SERVICE_SCOPE_AUTHORIZATION)
     private readonly serviceScope: CanonicalServiceScopeAuthorizationPort,
+    private readonly semanticTranslation: CanonicalTranslationV2Service,
   ) {}
 
-  async begin(workItemId: string): Promise<BeginTranslationResult> {
+  async begin(
+    workItemId: string,
+    requestId?: string,
+  ): Promise<BeginTranslationResult> {
     const scope = await this.serviceScope.authorizeOpenClawWorkItem({
       operation: 'BEGIN_TRANSLATE',
       workItemId,
@@ -168,7 +177,39 @@ export class CanonicalHostOpenClawTranslationService {
       workItemId,
       scope.tenantId,
     );
-    assertTranslationNotCurrent(workItem);
+    if (requestId !== undefined && !/^[A-Za-z0-9_-]{1,64}$/u.test(requestId))
+      throw new Error('TRANSLATION_REQUEST_ID_INVALID');
+    const semanticKey = requestId
+      ? [
+          'openclaw-v2',
+          'translate',
+          workItemId,
+          workItem.source.documentVersionId,
+          requestId,
+        ].join(':')
+      : null;
+    const existingSemantic = semanticKey
+      ? await this.attempts.readRequest({
+          tenantId: scope.tenantId,
+          workItemId,
+          taskType: 'OPENCLAW_TRANSLATE',
+          documentVersionId: workItem.source.documentVersionId,
+          idempotencyKey: semanticKey,
+        })
+      : null;
+    if (
+      existingSemantic &&
+      !['QUEUED', 'RUNNING', 'RETRY_SCHEDULED', 'COMMITTING'].includes(
+        existingSemantic.status,
+      )
+    )
+      throw new Error(`ACTION_ATTEMPT_ALREADY_${existingSemantic.status}`);
+    if (!existingSemantic) assertTranslationNotCurrent(workItem);
+    const useSemantic =
+      process.env.WL_TRANSLATION_V2_ENABLED === '1' ||
+      existingSemantic !== null;
+    if (useSemantic && !semanticKey)
+      throw new Error('TRANSLATION_V2_REQUEST_ID_REQUIRED');
     const claim = await this.attempts.reserveAndClaim({
       workItemId: workItem.workItemId,
       taskType: 'OPENCLAW_TRANSLATE',
@@ -178,7 +219,9 @@ export class CanonicalHostOpenClawTranslationService {
       documentVersionId: workItem.source.documentVersionId,
       inputRevision: workItem.revision,
       baseRevision: workItem.revision,
-      idempotencyKey: translationIdempotencyKey(workItem),
+      idempotencyKey: useSemantic
+        ? semanticKey!
+        : translationIdempotencyKey(workItem),
       sourceRefs: [
         {
           ref: workItem.package!.artifact.ref,
@@ -187,10 +230,27 @@ export class CanonicalHostOpenClawTranslationService {
       ],
       allowedConnectors: [],
       buildModelInput: async (_identity: NewActionAttemptIdentity) =>
-        structuredClone(
-          await this.buildTaskContract(workItem),
-        ) as unknown as Record<string, unknown>,
+        useSemantic
+          ? this.semanticTranslation.taskInput(
+              await this.semanticTranslation.prepare(workItem, scope.tenantId),
+            )
+          : (structuredClone(
+              await this.buildTaskContract(workItem),
+            ) as unknown as Record<string, unknown>),
     });
+    if (
+      claim.status === 'RUNNING' &&
+      claim.task.modelInput.schemaVersion === TRANSLATION_V2_TASK_SCHEMA
+    )
+      await this.semanticTranslation.attach({
+        tenantId: scope.tenantId,
+        workItemId,
+        workspaceId: String(claim.task.modelInput.workspaceId),
+        attemptRef: claim.attemptRef,
+        principalId: scope.principalId,
+        leaseToken: claim.leaseToken,
+        leaseGeneration: claim.leaseGeneration,
+      });
     return {
       attemptRef: claim.attemptRef,
       status: claim.status,
@@ -202,6 +262,76 @@ export class CanonicalHostOpenClawTranslationService {
         ? { recoveryResult: structuredClone(claim.recoveryResult) }
         : {}),
     };
+  }
+
+  /** Called only after browser owner/permission/current-version checks. */
+  async enqueueContinuation(
+    workItem: CanonicalWorkItemProjection,
+    tenantId: string,
+    requestId: string,
+    retranslateBlockIds: string[] = [],
+  ) {
+    const idempotencyKey = [
+      'openclaw-v2',
+      'translate',
+      workItem.workItemId,
+      workItem.source.documentVersionId,
+      requestId,
+    ].join(':');
+    const existing = await this.attempts.readRequest({
+      tenantId,
+      workItemId: workItem.workItemId,
+      taskType: 'OPENCLAW_TRANSLATE',
+      documentVersionId: workItem.source.documentVersionId,
+      idempotencyKey,
+    });
+    if (existing)
+      return {
+        attemptRef: existing.operationRef,
+        status: existing.status,
+        created: false,
+      };
+    if (process.env.WL_TRANSLATION_V2_ENABLED !== '1')
+      throw new Error('TRANSLATION_V2_NEW_REQUEST_DISABLED');
+    if (!workItem.package)
+      throw new Error('TRANSLATION_STRUCTURED_SOURCE_NOT_READY');
+    const workspace = await this.semanticTranslation.prepare(
+      workItem,
+      tenantId,
+    );
+    const modelInput = this.semanticTranslation.taskInput(
+      workspace,
+      retranslateBlockIds,
+    );
+    const reserved = await this.attempts.reserve({
+      workItemId: workItem.workItemId,
+      taskType: 'OPENCLAW_TRANSLATE',
+      actorUserId: OPENCLAW_SERVICE_USER_ID,
+      tenantId,
+      documentVersionId: workItem.source.documentVersionId,
+      inputRevision: workItem.revision,
+      baseRevision: workItem.revision,
+      idempotencyKey,
+      sourceRefs: [
+        {
+          ref: workItem.package.artifact.ref,
+          sha256: workItem.package.artifact.sha256,
+        },
+      ],
+      allowedConnectors: [],
+      buildModelInput: async () => modelInput,
+    });
+    return {
+      attemptRef: reserved.task.operationRef,
+      status: reserved.row.status,
+      created: reserved.created,
+    };
+  }
+
+  async workspaceCommand(input: unknown) {
+    return this.semanticTranslation.execute(
+      translationWorkspaceCommandSchemaV2.parse(input),
+    );
   }
 
   async commit(
@@ -266,6 +396,76 @@ export class CanonicalHostOpenClawTranslationService {
       throw new Error('WORK_ITEM_CAS_CONFLICT');
     }
     try {
+      if (
+        prepared.task.modelInput.schemaVersion === TRANSLATION_V2_TASK_SCHEMA
+      ) {
+        let final: Awaited<
+          ReturnType<CanonicalTranslationV2Service['loadFinalForCommit']>
+        >;
+        try {
+          if (typeof prepared.result.modelOutput !== 'string')
+            throw new Error('TRANSLATION_FINAL_RESULT_REQUIRED');
+          assertNoDuplicateJsonKeys(prepared.result.modelOutput);
+          final = await this.semanticTranslation.loadFinalForCommit(
+            prepared.task,
+            JSON.parse(prepared.result.modelOutput),
+            workItem,
+          );
+        } catch (error) {
+          return this.attempts.finishResultGateFailure(prepared, error);
+        }
+        const issues = final.value.blocks.flatMap((block) => block.issues);
+        const translation: CanonicalTranslationCandidateProjection = {
+          schemaVersion: 'wiselink.3_1.translation_candidate_projection.v2',
+          status: 'CANDIDATE_ONLY',
+          currentness: 'CURRENT',
+          staleReason: null,
+          sourceResultId: `openclaw-translate://${attempt.triggerRequestId}`,
+          actionAttemptId: attempt.attemptId,
+          inputRevision: attempt.inputRevision,
+          documentId: workItem.source.documentId,
+          documentVersionId: workItem.source.documentVersionId,
+          sourcePackageId: workItem.package!.packageId,
+          sourcePackageContentHash: workItem.package!.contentHash,
+          ruleSetId: 'semantic-translation',
+          ruleSetVersion: '2.0',
+          sourceLocale: SOURCE_LOCALE,
+          targetLocale: TARGET_LOCALE,
+          sourceUnitCount: final.value.coverage.sourceUnitCount,
+          translatedUnitCount:
+            final.value.coverage.sourceUnitCount -
+            final.value.coverage.unresolvedSourceUnitCount,
+          pendingTranslationUnitCount:
+            final.value.coverage.unresolvedSourceUnitCount,
+          sourceRefCount: workItem.package!.sourceRefCount,
+          engineerRevisionCount: final.value.blocks.filter(
+            (block) => block.selected?.provenance.authorKind === 'ENGINEER',
+          ).length,
+          validationVerdict:
+            final.value.completeness === 'COMPLETE'
+              ? 'ACCEPTED'
+              : 'REVIEW_REQUIRED',
+          validationFindingCount: issues.length,
+          artifact: final.result.artifact,
+          workspaceId: final.result.workspaceId,
+          planRevision: final.result.manifest.planRevision,
+          contextRevision: final.result.manifest.contextRevision,
+          completeness: final.value.completeness,
+        };
+        const updated = await this.registrar.compareAndSet({
+          workItemId: workItem.workItemId,
+          expectedRevision: prepared.task.baseRevision,
+          syncPrimaryAttempt: false,
+          next: { ...withoutRevision(workItem), translation },
+        });
+        await this.attempts.finishProjectionSuccess(prepared);
+        return {
+          workItemId: updated.workItemId,
+          workItemRevision: updated.revision,
+          status: translation.status,
+          translation,
+        };
+      }
       const taskContract = await this.buildTaskContract(workItem);
       if (
         canonicalJson(taskContract) !== canonicalJson(prepared.task.modelInput)
@@ -1043,8 +1243,12 @@ function assertTranslationNotCurrent(
     translation.documentVersionId === workItem.source.documentVersionId &&
     translation.sourcePackageId === workItem.package!.packageId &&
     translation.sourcePackageContentHash === workItem.package!.contentHash &&
-    translation.ruleSetId === CANONICAL_TRANSLATION_RULE_SET_V1_ID &&
-    translation.ruleSetVersion === CANONICAL_TRANSLATION_RULE_SET_V1_VERSION
+    ((translation.ruleSetId === CANONICAL_TRANSLATION_RULE_SET_V1_ID &&
+      translation.ruleSetVersion ===
+        CANONICAL_TRANSLATION_RULE_SET_V1_VERSION) ||
+      (translation.schemaVersion ===
+        'wiselink.3_1.translation_candidate_projection.v2' &&
+        translation.completeness !== 'PARTIAL'))
   ) {
     throw new Error('TRANSLATION_ALREADY_CURRENT');
   }

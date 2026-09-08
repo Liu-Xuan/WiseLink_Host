@@ -93,6 +93,13 @@ export default function ReviewConversationTurn(
             </span>
           </header>
           <p>{candidate.answer}</p>
+          {candidate.jobAidWorkingUpdate ? (
+            <p role="status">
+              {candidate.jobAidWorkingUpdate.status === 'APPLIED'
+                ? `问题评估工作已更新至修订 ${candidate.jobAidWorkingUpdate.workRevision}，相关问题和完整前提已保存。`
+                : '本轮答复沿用已有问题认识，工作内容未变。'}
+            </p>
+          ) : null}
           {candidate.matterWorkingUpdate ? (
             <MatterWorkingReceipt receipt={candidate.matterWorkingUpdate} />
           ) : null}

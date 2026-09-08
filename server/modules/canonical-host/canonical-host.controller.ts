@@ -1,3 +1,4 @@
+import { CanonicalJobAidProblemService } from './canonical-jobaid-problem.service';
 import {
   BadRequestException,
   Body,
@@ -52,6 +53,7 @@ export class CanonicalHostController {
     private readonly libraryIndex?: CanonicalHostLibraryIndexService,
     @Optional()
     private readonly libraryDocuments?: CanonicalLibraryService,
+    @Optional() private readonly jobAid?: CanonicalJobAidProblemService,
   ) {}
 
   @Get('identity-context')
@@ -81,18 +83,31 @@ export class CanonicalHostController {
     @Query('limit') limit: string | undefined,
     @Req() httpRequest: Request,
   ) {
-    if (!this.libraryDocuments) throw new Error('CANONICAL_LIBRARY_SERVICE_UNCONFIGURED');
-    return this.libraryDocuments.list({
-      search,
-      cursor,
-      ...(limit === undefined ? {} : { limit: optionalSafeInteger(limit, 'limit') }),
-    }, hostActor(httpRequest));
+    if (!this.libraryDocuments)
+      throw new Error('CANONICAL_LIBRARY_SERVICE_UNCONFIGURED');
+    return this.libraryDocuments.list(
+      {
+        search,
+        cursor,
+        ...(limit === undefined
+          ? {}
+          : { limit: optionalSafeInteger(limit, 'limit') }),
+      },
+      hostActor(httpRequest),
+    );
   }
 
   @Get('work-items/:workItemId/quicklook')
-  quicklook(@Param('workItemId') workItemId: string, @Req() httpRequest: Request) {
-    if (!this.libraryDocuments) throw new Error('CANONICAL_LIBRARY_SERVICE_UNCONFIGURED');
-    return this.libraryDocuments.quicklook(requiredText(workItemId, 'workItemId'), hostActor(httpRequest));
+  quicklook(
+    @Param('workItemId') workItemId: string,
+    @Req() httpRequest: Request,
+  ) {
+    if (!this.libraryDocuments)
+      throw new Error('CANONICAL_LIBRARY_SERVICE_UNCONFIGURED');
+    return this.libraryDocuments.quicklook(
+      requiredText(workItemId, 'workItemId'),
+      hostActor(httpRequest),
+    );
   }
 
   @Get('library/tasks')
@@ -103,11 +118,19 @@ export class CanonicalHostController {
     @Query('familyId') familyId: string | undefined,
     @Req() httpRequest: Request,
   ) {
-    if (!this.libraryDocuments) throw new Error('CANONICAL_LIBRARY_SERVICE_UNCONFIGURED');
-    return this.libraryDocuments.listTasks({
-      search, cursor, familyId,
-      ...(limit === undefined ? {} : { limit: optionalSafeInteger(limit, 'limit') }),
-    }, hostActor(httpRequest));
+    if (!this.libraryDocuments)
+      throw new Error('CANONICAL_LIBRARY_SERVICE_UNCONFIGURED');
+    return this.libraryDocuments.listTasks(
+      {
+        search,
+        cursor,
+        familyId,
+        ...(limit === undefined
+          ? {}
+          : { limit: optionalSafeInteger(limit, 'limit') }),
+      },
+      hostActor(httpRequest),
+    );
   }
 
   @Post('work-items/parse-s1000d')
@@ -133,6 +156,15 @@ export class CanonicalHostController {
       },
       hostActor(httpRequest),
     );
+  }
+
+  @Get('work-items/:workItemId/assessment-work')
+  assessmentWork(
+    @Param('workItemId') workItemId: string,
+    @Req() request: Request,
+  ) {
+    if (!this.jobAid) throw new Error('JOBAID_RUNTIME_UNAVAILABLE');
+    return this.jobAid.readBrowser(workItemId, hostActor(request));
   }
 
   @Get('work-items/:workItemId/structured-content')
@@ -200,9 +232,13 @@ export class CanonicalHostController {
   }
 
   @Get('work-items/:workItemId/initial-analysis')
-  initialAnalysis(@Param('workItemId') workItemId: string, @Req() httpRequest: Request) {
+  initialAnalysis(
+    @Param('workItemId') workItemId: string,
+    @Req() httpRequest: Request,
+  ) {
     return this.service.browserInitialAnalysisStatus(
-      requiredText(workItemId, 'workItemId'), hostActor(httpRequest),
+      requiredText(workItemId, 'workItemId'),
+      hostActor(httpRequest),
     );
   }
 

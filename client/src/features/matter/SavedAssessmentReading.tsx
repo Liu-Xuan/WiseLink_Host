@@ -20,13 +20,14 @@ import {
 interface SavedAssessmentReadingProps {
   result: AssessmentReadingResult;
   depth?: 'brief' | 'full';
+  locationSuffix?: string;
   onLocateDocument: (evidence: DocumentAssessmentEvidence) => void;
 }
 
 const SavedAssessmentReading: FC<SavedAssessmentReadingProps> = (props) => {
   const session = getCanonicalHostClientSessionGeneration();
   const scope = props.result.scope;
-  const scopeKey = `reading:${scope.kind}:${scope.kind === 'ENGINEERING_MATTER' ? scope.matterId : scope.workItemId}:${props.depth ?? 'brief'}`;
+  const scopeKey = `reading:${scope.kind}:${scope.kind === 'ENGINEERING_MATTER' ? scope.matterId : scope.workItemId}:${props.depth ?? 'brief'}:${props.locationSuffix ?? ''}`;
   return (
     <SavedReadingLocation
       key={`${session}:${scopeKey}`}

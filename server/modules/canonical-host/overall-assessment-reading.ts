@@ -56,6 +56,58 @@ export function readStoredOverallEvidence(
         excerpt: text(item.excerpt, 'OVERALL_EVIDENCE_EXCERPT_INVALID'),
       };
       switch (item.kind) {
+        case 'ENGINEER_ATTACHMENT':
+          return {
+            ...common,
+            kind: 'ENGINEER_ATTACHMENT',
+            workItemId: text(
+              item.workItemId,
+              'OVERALL_ATTACHMENT_WORK_ITEM_REQUIRED',
+            ),
+            reviewConversationId: text(
+              item.reviewConversationId,
+              'OVERALL_ATTACHMENT_CONVERSATION_REQUIRED',
+            ),
+            reviewTurnId: text(
+              item.reviewTurnId,
+              'OVERALL_ATTACHMENT_TURN_REQUIRED',
+            ),
+            attachmentRef: text(
+              item.attachmentRef,
+              'OVERALL_ATTACHMENT_REF_REQUIRED',
+            ),
+            documentVersionId: text(
+              item.documentVersionId,
+              'OVERALL_ATTACHMENT_VERSION_REQUIRED',
+            ),
+            artifactRef: text(
+              item.artifactRef,
+              'OVERALL_ATTACHMENT_ARTIFACT_REQUIRED',
+            ),
+            artifactSha256: text(
+              item.artifactSha256,
+              'OVERALL_ATTACHMENT_HASH_REQUIRED',
+            ),
+            locator: text(item.locator, 'OVERALL_ATTACHMENT_LOCATOR_REQUIRED'),
+          };
+        case 'METHOD_CLAUSE':
+          if (
+            item.sourceVersionStatus !== 'CONFIRMED' &&
+            item.sourceVersionStatus !== 'VERSION_UNCONFIRMED'
+          )
+            throw new Error('OVERALL_METHOD_VERSION_STATUS_INVALID');
+          return {
+            ...common,
+            kind: item.kind,
+            packRef: text(item.packRef, 'OVERALL_METHOD_PACK_INVALID'),
+            methodRef: text(item.methodRef, 'OVERALL_METHOD_REF_INVALID'),
+            sourceIdentity: text(
+              item.sourceIdentity,
+              'OVERALL_METHOD_SOURCE_INVALID',
+            ),
+            locator: text(item.locator, 'OVERALL_METHOD_LOCATOR_INVALID'),
+            sourceVersionStatus: item.sourceVersionStatus,
+          };
         case 'DOCUMENT_PASSAGE':
           return {
             ...common,

@@ -905,6 +905,7 @@ function harnessForTranslation(selectedSourceUnits = sourceUnits()) {
     new HostOwnedV1TranslationRuleSetPrivateProvider(),
     attempts as never,
     serviceScope as never,
+    null as never,
   );
   return {
     service,

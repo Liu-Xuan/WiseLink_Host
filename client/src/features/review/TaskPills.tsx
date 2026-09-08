@@ -67,9 +67,7 @@ export function initialAnalysisNotes(
         : stage.terminalCode === 'CANCELLED_BY_REQUEST'
           ? '执行已停止'
           : '执行失败';
-      return [
-        `${label}未完成：${reason}，本阶段未保存新候选，原失败记录保留。`,
-      ];
+      return [`${label}未完成：${reason}，已保存内容和原失败记录保留。`];
     }
     if (stage.status === 'CONFLICT')
       return [`${label}的任务与当前结果或版本不一致，请刷新核对。`];
@@ -173,7 +171,14 @@ export default function TaskPills({
                       ? 'conflict'
                       : 'pending';
           const model = initialAnalysis.stages[key].executionModel;
-          return { key, label, state, note: model ? `${stateLabel(state)} · 任务模型 ${model.displayName}` : stateLabel(state) };
+          return {
+            key,
+            label,
+            state,
+            note: model
+              ? `${stateLabel(state)} · 任务模型 ${model.displayName}`
+              : stateLabel(state),
+          };
         })
       : [];
     return [

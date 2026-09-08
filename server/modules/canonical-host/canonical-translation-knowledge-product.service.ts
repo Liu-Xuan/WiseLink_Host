@@ -42,6 +42,8 @@ import { HostOwnedV1TranslationRuleSetPrivateProvider } from './canonical-transl
 import { MiaodaTranslationKnowledgeProductStore } from './miaoda-translation-knowledge-product.store';
 import { UNIFIED_ARTIFACT_STORE } from '../unified-reader/unified-reader.constants';
 import type { UnifiedArtifactStorePort } from '../unified-reader/unified-reader.types';
+import type { BilingualTranslationArtifactV2 } from '@shared/canonical-translation-v2.interface';
+import { assertTranslationArtifactV2Current, parseBilingualTranslationArtifactV2 } from './canonical-translation-v2-artifact';
 
 const SNAPSHOT_SCHEMA =
   'wiselink.3_1.translation_knowledge_candidate_snapshot.v1' as const;
@@ -68,7 +70,8 @@ interface AuthorizedWorkItem {
 
 interface CurrentTranslationContext {
   binding: CanonicalTranslationConsumptionBinding;
-  artifact: BilingualTranslationArtifact;
+  artifact: BilingualTranslationArtifact | BilingualTranslationArtifactV2;
+  finalResultContentHash?: string;
 }
 
 @Injectable()
@@ -135,22 +138,28 @@ export class CanonicalTranslationKnowledgeProductService {
       request.expectedWorkItemRevision,
     );
     const context: CurrentTranslationContext =
-      await this.currentTranslationContext(authorized.workItem);
+      await this.currentTranslationContext(authorized.workItem, actor.tenantId);
     const importedAt: string = this.clock.nowIso();
-    const imported = await this.governance.importBilingualCandidates({
+    const importMetadata = {
       tenantId: actor.tenantId,
       workItemId,
       snapshotWorkItemRevision: authorized.workItem.revision,
       ownerActorId: actor.userId,
       importedByActorId: actor.userId,
       sourceArtifact: authorized.workItem.translation!.artifact,
-      artifact: context.artifact,
       currentBinding: context.binding,
       validFrom: request.validFrom,
       expiresAt: request.expiresAt,
       importedAt,
-    });
-    for (const [sourceUnitOrdinal, unit] of context.artifact.units.entries()) {
+    };
+    const imported = context.artifact.schemaVersion === 'wiselink.3_1.bilingual_translation_artifact.v2'
+      ? await this.governance.importSemanticCandidates({ ...importMetadata, artifact: context.artifact,
+        finalActionAttemptId: authorized.workItem.translation!.actionAttemptId, finalResultContentHash: context.finalResultContentHash! })
+      : await this.governance.importBilingualCandidates({ ...importMetadata, artifact: context.artifact });
+    const importedIds = context.artifact.schemaVersion === 'wiselink.3_1.bilingual_translation_artifact.v2'
+      ? context.artifact.blocks.filter((block) => block.selected && block.source.anchorIds.length).map((block) => block.selected!.blockRevisionId)
+      : context.artifact.units.map((unit) => unit.unitId);
+    for (const [sourceUnitOrdinal, sourceUnitId] of importedIds.entries()) {
       const assetId: string | undefined = imported.assetIds[sourceUnitOrdinal];
       if (assetId === undefined) {
         throw new Error('KNOWLEDGE_IMPORT_ASSET_MAPPING_INCOMPLETE');
@@ -161,9 +170,9 @@ export class CanonicalTranslationKnowledgeProductService {
         requestId: request.requestId,
         snapshotWorkItemRevision: authorized.workItem.revision,
         sourceArtifactSha256: authorized.workItem.translation!.artifact.sha256,
-        sourceUnitId: unit.unitId,
+        sourceUnitId,
         sourceUnitOrdinal,
-        expectedUnitCount: context.artifact.units.length,
+        expectedUnitCount: importedIds.length,
         assetId,
         validFrom: request.validFrom,
         expiresAt: request.expiresAt,
@@ -341,6 +350,7 @@ export class CanonicalTranslationKnowledgeProductService {
 
   private async currentTranslationContext(
     workItem: CanonicalWorkItemProjection,
+    tenantId: string,
   ): Promise<CurrentTranslationContext> {
     const binding: CanonicalTranslationConsumptionBinding | null =
       currentBinding(workItem);
@@ -350,8 +360,14 @@ export class CanonicalTranslationKnowledgeProductService {
     const bytes: Uint8Array = await this.artifactStore.readActualBytes(
       workItem.translation.artifact,
     );
-    const artifact: BilingualTranslationArtifact =
-      parseBilingualTranslationArtifact(bytes);
+    const artifact = workItem.translation.schemaVersion === 'wiselink.3_1.translation_candidate_projection.v2'
+      ? parseBilingualTranslationArtifactV2(bytes) : parseBilingualTranslationArtifact(bytes);
+    if (artifact.schemaVersion === 'wiselink.3_1.bilingual_translation_artifact.v2') {
+      assertTranslationArtifactV2Current(artifact, workItem);
+      const finalResultContentHash = await this.productStore.readFinalSemanticCommit({ tenantId, workItemId: workItem.workItemId,
+        actionAttemptId: workItem.translation.actionAttemptId, artifact: workItem.translation.artifact, value: artifact });
+      return { binding, artifact, finalResultContentHash };
+    }
     assertTranslationProjectionArtifact(workItem, artifact);
     return {
       binding,
@@ -434,7 +450,7 @@ function currentBinding(
     !sourcePackage ||
     translation.status !== 'CANDIDATE_ONLY' ||
     translation.currentness !== 'CURRENT' ||
-    translation.validationVerdict !== 'ACCEPTED' ||
+    (translation.validationVerdict !== 'ACCEPTED' && translation.schemaVersion !== 'wiselink.3_1.translation_candidate_projection.v2') ||
     translation.documentId !== workItem.source.documentId ||
     translation.documentVersionId !== workItem.source.documentVersionId ||
     translation.sourcePackageId !== sourcePackage.packageId ||
@@ -465,7 +481,8 @@ function browserSnapshot(
         event.eventType === 'ENGINEER_REJECTED',
     );
   return {
-    schemaVersion: SNAPSHOT_SCHEMA,
+    schemaVersion: snapshot.candidate.unit.kind.startsWith('semantic_block:') ? 'wiselink.3_1.translation_knowledge_candidate_snapshot.v2' : SNAPSHOT_SCHEMA,
+    ...(snapshot.semanticScope ? { semanticScope: structuredClone(snapshot.semanticScope) } : {}),
     assetId: snapshot.candidate.assetId,
     workItemId: snapshot.candidate.workItemId,
     snapshotWorkItemRevision: snapshot.candidate.snapshotWorkItemRevision,

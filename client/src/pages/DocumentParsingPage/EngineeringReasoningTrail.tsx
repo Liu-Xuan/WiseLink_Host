@@ -1,3 +1,4 @@
+import { isJobAidProblemProjection } from '@shared/jobaid-problem-assessment.interface';
 import {
   BookOpenCheck,
   CheckCircle2,
@@ -32,7 +33,9 @@ export function EngineeringReasoningTrail({
   const overall = integrated?.overallSynthesis ?? null;
   const timeline = data.timeline;
   const sourceRefCount: number = data.workItem.package?.sourceRefCount ?? 0;
-  const unresolvedCount: number = dynamic?.unresolvedCount ?? 0;
+  const unresolvedCount: number = isJobAidProblemProjection(dynamic)
+    ? dynamic.openQuestionCount
+    : (dynamic?.unresolvedCount ?? 0);
   const latestTimelineEvent =
     timeline.events[timeline.events.length - 1] ?? null;
   const steps: TrailStep[] = [
@@ -53,10 +56,14 @@ export function EngineeringReasoningTrail({
       icon: BookOpenCheck,
     },
     {
-      label: '执行当前规则集',
+      label: isJobAidProblemProjection(dynamic)
+        ? '形成问题评估'
+        : '执行当前规则集',
       status: humanState(dynamic?.status) ?? '等待逐项评估',
       detail: dynamic
-        ? `${dynamic.evaluationItemCount}/${dynamic.criterionCount} 项 · ${dynamic.unresolvedCount} 项未闭合`
+        ? isJobAidProblemProjection(dynamic)
+          ? `${dynamic.issueCount} 个问题 · ${dynamic.openQuestionCount} 项待确认`
+          : `${dynamic.evaluationItemCount}/${dynamic.criterionCount} 项 · ${dynamic.unresolvedCount} 项未闭合`
         : '当前尚未形成逐项评估结果',
       state: dynamic ? 'candidate' : 'pending',
       icon: SearchCheck,

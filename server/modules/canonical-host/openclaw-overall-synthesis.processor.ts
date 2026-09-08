@@ -1,3 +1,4 @@
+import { isJobAidProblemProjection } from '@shared/jobaid-problem-assessment.interface';
 import type {
   CanonicalApplicabilityCandidateProjection,
   CanonicalBaseRuleCandidateProjection,
@@ -125,6 +126,8 @@ export function buildOpenClawOverallSynthesisInput(input: {
   readingEvidence?: AssessmentEvidence[];
   readScope?: UnifiedArtifactReadScope;
 }): OpenClawOverallSynthesisInput {
+  if (isJobAidProblemProjection(input.baseRules))
+    throw new Error('JOBAID_PROBLEM_LEGACY_OVERALL_UNSUPPORTED');
   const baseOutput = parseObject(
     input.baseArtifactBytes,
     'BASE_ARTIFACT_JSON_INVALID',
@@ -673,6 +676,8 @@ export function readDynamicRuleReviewItems(
   baseRules: CanonicalBaseRuleCandidateProjection,
   bytes: Uint8Array,
 ): DynamicRuleReviewItem[] {
+  if (isJobAidProblemProjection(baseRules))
+    throw new Error('JOBAID_PROBLEM_LEGACY_REVIEW_ITEMS_UNSUPPORTED');
   const output = parseObject(bytes, 'BASE_ARTIFACT_JSON_INVALID');
   const ruleResults = object(output.ruleResults, 'BASE_RULE_RESULTS_INVALID');
   if (JSON.stringify(ruleResults.columns) !== JSON.stringify(RULE_COLUMNS)) {

@@ -188,8 +188,10 @@ export class ReviewConversationRepository {
     const conversation: PersistedReviewConversation | null =
       await this.loadConversationInternal(reviewConversationId, executor);
     if (!conversation) return null;
-    const turns: PersistedReviewTurn[] =
-      await this.loadTurns(reviewConversationId, executor);
+    const turns: PersistedReviewTurn[] = await this.loadTurns(
+      reviewConversationId,
+      executor,
+    );
     return { conversation, turns };
   }
 
@@ -903,6 +905,9 @@ export class ReviewConversationRepository {
         ${canonicalJson({
           ...candidate.provenance,
           actionAttemptRef: candidate.actionAttemptRef,
+          ...(candidate.jobAidWorkingUpdate
+            ? { jobAidWorkingUpdate: candidate.jobAidWorkingUpdate }
+            : {}),
           ...(candidate.matterWorkingUpdate
             ? { matterWorkingUpdate: candidate.matterWorkingUpdate }
             : {}),
@@ -955,6 +960,9 @@ export class ReviewConversationRepository {
         resultProvenanceJson: canonicalJson({
           ...candidate.provenance,
           actionAttemptRef: candidate.actionAttemptRef,
+          ...(candidate.jobAidWorkingUpdate
+            ? { jobAidWorkingUpdate: candidate.jobAidWorkingUpdate }
+            : {}),
           ...(candidate.matterWorkingUpdate
             ? { matterWorkingUpdate: candidate.matterWorkingUpdate }
             : {}),
@@ -1713,6 +1721,7 @@ function parseAssistantCandidate(
   const {
     actionAttemptRef: _actionAttemptRef,
     matterWorkingUpdate,
+    jobAidWorkingUpdate,
     sourceBindings,
     ...resultProvenance
   } = provenance;
@@ -1734,9 +1743,38 @@ function parseAssistantCandidate(
     warnings: parseJsonStringArray(row.warningsJson),
     actionAttemptRef,
     ...storedMatterCandidateFields(matterWorkingUpdate, sourceBindings),
+    ...(jobAidWorkingUpdate === undefined
+      ? {}
+      : { jobAidWorkingUpdate: storedJobAidReceipt(jobAidWorkingUpdate) }),
     provenance:
       resultProvenance as unknown as ReviewTurnAssistantCandidate['provenance'],
     completedAt: row.assistantCompletedAt.toISOString(),
+  };
+}
+
+function storedJobAidReceipt(
+  value: unknown,
+): NonNullable<ReviewTurnAssistantCandidate['jobAidWorkingUpdate']> {
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    throw new Error('REVIEW_JOBAID_RECEIPT_INVALID');
+  const row = value as Record<string, unknown>;
+  if (
+    !['APPLIED', 'UNCHANGED'].includes(String(row.status)) ||
+    !Number.isSafeInteger(row.workRevision) ||
+    Number(row.workRevision) < 0 ||
+    (row.workRevisionRef === null) !== (row.workRevision === 0) ||
+    !Array.isArray(row.affectedIssueKeys) ||
+    row.affectedIssueKeys.some((key) => typeof key !== 'string' || !key)
+  )
+    throw new Error('REVIEW_JOBAID_RECEIPT_INVALID');
+  return {
+    status: row.status as 'APPLIED' | 'UNCHANGED',
+    workRevisionRef:
+      row.workRevisionRef === null
+        ? null
+        : requiredJsonText(row.workRevisionRef),
+    workRevision: Number(row.workRevision),
+    affectedIssueKeys: row.affectedIssueKeys as string[],
   };
 }
 

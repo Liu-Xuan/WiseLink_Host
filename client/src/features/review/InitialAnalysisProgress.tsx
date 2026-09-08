@@ -11,6 +11,7 @@ import {
 } from '@client/src/api/canonical-host';
 import { Button } from '@client/src/components/ui/button';
 import TaskPills, { initialAnalysisNotes } from './TaskPills';
+import InitialAnalysisContinueButton from './InitialAnalysisContinueButton';
 
 interface Props {
   workItemId: string;
@@ -31,7 +32,7 @@ export function shouldPollInitialAnalysis(
   );
 }
 
-/** Only reads progress; neither page entry nor Refresh starts/replays a model. */
+/** Automatic polling only reads; continuation requires its own explicit click. */
 export default function InitialAnalysisProgress(props: Props) {
   const [readback, setReadback] = useState({
     workItemId: props.workItemId,
@@ -44,6 +45,9 @@ export default function InitialAnalysisProgress(props: Props) {
   latest.current = props;
   const readEpoch = useRef(0);
   const notifiedRevision = useRef(props.initial?.workItemRevision ?? -1);
+  const notifiedTranslation = useRef(
+    JSON.stringify(props.initial?.translationWork ?? null),
+  );
   const sameScope =
     readback.workItemId === props.workItemId &&
     readback.generation === props.sessionGeneration;
@@ -53,6 +57,9 @@ export default function InitialAnalysisProgress(props: Props) {
   useEffect(() => {
     readEpoch.current += 1;
     notifiedRevision.current = props.initial?.workItemRevision ?? -1;
+    notifiedTranslation.current = JSON.stringify(
+      props.initial?.translationWork ?? null,
+    );
     setReadback({
       workItemId: props.workItemId,
       generation: props.sessionGeneration,
@@ -90,8 +97,13 @@ export default function InitialAnalysisProgress(props: Props) {
         error: '',
         reading: false,
       });
-      if (status.workItemRevision > notifiedRevision.current) {
+      const translationVersion = JSON.stringify(status.translationWork ?? null);
+      if (
+        status.workItemRevision > notifiedRevision.current ||
+        translationVersion !== notifiedTranslation.current
+      ) {
         notifiedRevision.current = status.workItemRevision;
+        notifiedTranslation.current = translationVersion;
         scope.onRevisionChanged();
       }
     } catch (reason) {
@@ -126,6 +138,28 @@ export default function InitialAnalysisProgress(props: Props) {
           事项模型：{value.analysisModel.displayName}
         </span>
       ) : null}
+      {value?.continuationOperations?.map((operation) => (
+        <InitialAnalysisContinueButton
+          key={operation}
+          workItemId={props.workItemId}
+          expectedRevision={value.workItemRevision}
+          operation={operation}
+          label={
+            operation === 'TRANSLATE'
+              ? value.stages.translation.status === 'SUCCEEDED'
+                ? '重新翻译中文'
+                : '继续中文翻译'
+              : operation === 'EVALUATE_JOBAID'
+                ? '继续问题评估'
+                : '继续综合评估'
+          }
+          onQueued={() => {
+            void refresh();
+            props.onRevisionChanged();
+          }}
+          onAccessLost={props.onAccessLost}
+        />
+      ))}
       <TaskPills timeline={props.timeline} initialAnalysis={value} />
       {props.initial ? (
         <Button

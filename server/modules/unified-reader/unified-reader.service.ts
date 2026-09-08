@@ -8,6 +8,7 @@ import type {
   UnifiedReaderCandidateReceipt,
   UnifiedReaderQueryResult,
 } from '@shared/api.interface';
+import type { TranslationStructuredSource } from '@shared/canonical-translation-v2.interface';
 
 import { Frozen2CandidateReaderService } from './frozen2-candidate-reader.service';
 import { UnifiedArtifactReadScope } from './unified-artifact-read-scope';
@@ -122,6 +123,18 @@ export class UnifiedReaderService {
     readScope?: UnifiedArtifactReadScope;
   }): Promise<UnifiedReaderPackageInspection> {
     return (await this.readValidatedSourcePackage(input)).sourcePackage.inspection;
+  }
+
+  /** Uses the same authorization, exact-artifact read and full validator as v1. */
+  async readStructuredSource(input: {
+    artifact: UnifiedPackageArtifactDescriptor;
+    packageId: string;
+    documentVersionId: string;
+    readScope?: UnifiedArtifactReadScope;
+  }): Promise<TranslationStructuredSource> {
+    const readScope = input.readScope ?? new UnifiedArtifactReadScope(this.artifactStore);
+    await this.readValidatedSourcePackage({ ...input, readScope });
+    return this.reader.readStructuredSource(input.artifact, await readScope.readActualBytes(input.artifact), readScope);
   }
 
   async persistAndReadback(

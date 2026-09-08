@@ -106,6 +106,7 @@ export class CanonicalHostCommonContextService {
   ): Promise<{
     common: CanonicalCommonAssessmentContext;
     readingEvidence: AssessmentEvidence[];
+    availableReadingEvidence: AssessmentEvidence[];
   }> {
     // Service execution uses the existing WorkItem owner, not a service actor,
     // for ordinary discussion and cross-document access.
@@ -141,6 +142,7 @@ export class CanonicalHostCommonContextService {
     common: CanonicalCommonAssessmentContext;
     related: ReviewRelatedContextBuild;
     readingEvidence: AssessmentEvidence[];
+    availableReadingEvidence: AssessmentEvidence[];
   }> {
     const actorMappingActive =
       await this.conversations.hasActiveOfficialActorMapping(scope);
@@ -184,6 +186,23 @@ export class CanonicalHostCommonContextService {
     return {
       related,
       common,
+      availableReadingEvidence: [
+        ...(related.readingEvidence ?? []),
+        ...priorTurns.slice(-12).map(
+          (turn): AssessmentEvidence => ({
+            evidenceRef: `engineer-statement:${turn.engineerSuppliedInputId}`,
+            kind: 'ENGINEER_STATEMENT',
+            origin: 'REVIEW_CONVERSATION',
+            title: `工程师陈述 · 第 ${turn.turnNo} 轮`,
+            versionLabel: null,
+            excerpt: turn.userMessage,
+            reviewConversationId: turn.reviewConversationId,
+            reviewTurnId: turn.reviewTurnId,
+            engineerSuppliedInputId: turn.engineerSuppliedInputId,
+            recordedAt: turn.createdAt.toISOString(),
+          }),
+        ),
+      ],
       readingEvidence: (related.readingEvidence ?? []).filter(
         (item) =>
           item.kind === 'DOCUMENT_PASSAGE' &&

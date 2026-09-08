@@ -1,4 +1,11 @@
-import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import { jobAidReadingResult } from '@shared/jobaid-problem-assessment.interface';
+import { CanonicalJobAidProblemService } from './canonical-jobaid-problem.service';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  Optional,
+} from '@nestjs/common';
 import type {
   CanonicalLibraryDocumentSummary,
   CanonicalLibraryDocumentsRequest,
@@ -32,6 +39,7 @@ export class CanonicalLibraryService {
     private readonly authorization: CanonicalAuthorizationPort,
     @Inject(CANONICAL_PERMISSION_SNAPSHOT)
     private readonly permissions: CanonicalPermissionSnapshotPort,
+    @Optional() private readonly jobAid?: CanonicalJobAidProblemService,
   ) {}
 
   async list(
@@ -86,7 +94,33 @@ export class CanonicalLibraryService {
       ...query,
       familyId,
     });
-    const items = rows.slice(0, query.limit).map(summary);
+    const items = await Promise.all(
+      rows.slice(0, query.limit).map(async (row) => {
+        const item = summary(row);
+        if (row.jobAidWorkRevisionRef) {
+          if (!this.jobAid)
+            throw new Error('JOBAID_LIBRARY_READER_UNAVAILABLE');
+          const working = await this.jobAid.readBrowser(row.workItemId, actor);
+          const revision = working.current;
+          if (!revision)
+            throw new Error('JOBAID_LIBRARY_WORK_READBACK_MISSING');
+          const reading = jobAidReadingResult(revision);
+          item.readingSummary = {
+            resultRef: reading.resultRef,
+            resultRevision: reading.resultRevision,
+            headline: reading.content.headline,
+            listBrief: reading.content.listBrief,
+            roundCompletion: revision.content.roundCompletion,
+            decisiveClaims: reading.content.claims
+              .filter((claim) =>
+                reading.content.decisiveClaimIds.includes(claim.claimId),
+              )
+              .map(({ claimId, text }) => ({ claimId, text })),
+          };
+        }
+        return item;
+      }),
+    );
     const last = items.at(-1);
     return {
       scope: 'CURRENT_USER_OWNED_WORK_ITEMS',
@@ -128,6 +162,34 @@ export class CanonicalLibraryService {
     const row = await this.repository.quicklook({ ...scope, workItemId });
     if (!row) throw notFound();
     const { result, ...document } = row;
+    if (row.jobAidWorkRevisionRef) {
+      if (!this.jobAid) throw new Error('JOBAID_LIBRARY_READER_UNAVAILABLE');
+      const working = await this.jobAid.readBrowser(workItemId, actor);
+      const current = working.current;
+      if (!current) throw new Error('JOBAID_LIBRARY_WORK_READBACK_MISSING');
+      return {
+        document: summary(document),
+        result: {
+          status: 'CANDIDATE_ONLY',
+          revision: current.workRevision,
+          sourceResultId: current.workRevisionRef,
+          engineeringSummary: null,
+          readingResult: jobAidReadingResult(current),
+          overallCandidate: current.content.understanding,
+          missingInputs: current.content.issues.flatMap((issue) =>
+            issue.openQuestions.map((question) => question.question),
+          ),
+          gap: null,
+          staleReason: null,
+          sourceCount: current.content.evidence.filter(
+            (item) => item.kind === 'DOCUMENT_PASSAGE',
+          ).length,
+          jobAidRoundCompletion: current.content.roundCompletion,
+          overallStatus: working.overallStatus,
+        },
+        fileReadPerformed: false,
+      };
+    }
     return { document: summary(document), result, fileReadPerformed: false };
   }
 }
@@ -157,8 +219,9 @@ function ownedScope(actor: CanonicalHostActor) {
 function summary(
   row: CanonicalLibrarySummaryRow,
 ): CanonicalLibraryWorkItemSummary {
+  const { jobAidWorkRevisionRef: _workRef, ...visible } = row;
   return {
-    ...row,
+    ...visible,
     kind: 'TASK',
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),

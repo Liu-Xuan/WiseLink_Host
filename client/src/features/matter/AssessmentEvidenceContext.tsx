@@ -16,6 +16,8 @@ const ASSESSMENT_EVIDENCE_LABELS: Record<AssessmentEvidence['kind'], string> = {
   HOST_FACT: 'Host 受控事实',
   QUERY_RECEIPT: '查询范围回执',
   PRIOR_RESULT: '历史候选认识',
+  METHOD_CLAUSE: '评估方法条款',
+  ENGINEER_ATTACHMENT: '工程师上传附件',
 };
 
 const AssessmentEvidenceContext: FC<AssessmentEvidenceContextProps> = ({
@@ -48,6 +50,21 @@ const AssessmentEvidenceContext: FC<AssessmentEvidenceContextProps> = ({
     {evidence.kind === 'ENGINEER_STATEMENT' ? (
       <p className="text-xs leading-6 text-muted-foreground">
         记录于 {evidence.recordedAt}。这是工程师提供的陈述，不等于受控完成记录。
+      </p>
+    ) : null}
+    {evidence.kind === 'METHOD_CLAUSE' ? (
+      <p className="text-xs leading-6 text-muted-foreground">
+        {evidence.sourceIdentity} · {evidence.locator} ·{' '}
+        {evidence.sourceVersionStatus === 'CONFIRMED'
+          ? '版本已确认'
+          : '版本尚待确认'}
+        。方法条款说明评估要求，不证明当前对象的技术事实。
+      </p>
+    ) : null}
+    {evidence.kind === 'ENGINEER_ATTACHMENT' ? (
+      <p className="text-xs leading-6 text-muted-foreground">
+        {evidence.locator} · 附件版本 {evidence.documentVersionId}
+        。内容来自工程师上传资料，其执行及有效性需按对应来源核实。
       </p>
     ) : null}
     {evidence.kind === 'HOST_FACT' ? (

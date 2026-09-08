@@ -1,3 +1,4 @@
+import type { JobAidWorkRevision } from '@shared/jobaid-problem-assessment.interface';
 import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
 import type { CanonicalWorkItemProjection } from '@shared/api.interface';
 import type { EngineeringMatterWorkingInputBinding } from '@shared/matter-working.interface';
@@ -42,6 +43,7 @@ export function buildMatterReviewContext(input: {
     binding: EngineeringMatterWorkingInputBinding;
     workItem: CanonicalWorkItemProjection;
     packageValue: unknown;
+    problemWork?: JobAidWorkRevision | null;
   }>;
 }): {
   frozen: FrozenMatterReviewContext;
@@ -65,7 +67,7 @@ export function buildMatterReviewContext(input: {
     ).map((item) => item.inputId),
   );
   const inputs = input.documents.map(
-    ({ binding, workItem, packageValue }, inputIndex) => {
+    ({ binding, workItem, packageValue, problemWork }, inputIndex) => {
       const pkg = record(packageValue);
       if (!Array.isArray(pkg.sourceRefs) || !workItem.package)
         fail('REVIEW_MATTER_PACKAGE_INVALID');
@@ -145,6 +147,19 @@ export function buildMatterReviewContext(input: {
       });
       return {
         inputRef: matterInputRef(input.scope, binding.inputId),
+        ...(problemWork
+          ? {
+              previousProblemAssessment: {
+                workRevisionRef: problemWork.workRevisionRef,
+                roundCompletion: problemWork.content.roundCompletion,
+                understanding: problemWork.content.understanding,
+                issues: jobAidProblemModelWorkContent(problemWork.content)
+                  .issues,
+                methodBinding: problemWork.content.methodBinding,
+                candidateOnly: true,
+              },
+            }
+          : {}),
         documentVersionRef: binding.documentVersionId,
         title,
         versionLabel,
@@ -222,3 +237,4 @@ function text(value: unknown): string {
 function fail(code: string): never {
   throw Object.assign(new Error(code), { code, statusCode: 409 });
 }
+import { jobAidProblemModelWorkContent } from './jobaid-problem-task';

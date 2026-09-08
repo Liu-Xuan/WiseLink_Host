@@ -28,6 +28,12 @@ import { CanonicalHostOpenClawOverallService } from './canonical-host-openclaw-o
 import { CanonicalHostOverallRegenerationController } from './canonical-host-overall-regeneration.controller';
 import { CanonicalHostOverallRegenerationService } from './canonical-host-overall-regeneration.service';
 import { CanonicalHostOpenClawTranslationService } from './canonical-host-openclaw-translation.service';
+import { CanonicalTranslationWorkspaceRepository } from './canonical-translation-workspace.repository';
+import { CanonicalTranslationV2Service } from './canonical-translation-v2.service';
+import { CanonicalTranslationRevisionService } from './canonical-translation-revision.service';
+import { CanonicalTranslationRevisionController } from './canonical-translation-revision.controller';
+import { CanonicalInitialAnalysisContinuationController } from './canonical-initial-analysis-continuation.controller';
+import { CanonicalInitialAnalysisContinuationService } from './canonical-initial-analysis-continuation.service';
 import { CanonicalTranslationKnowledgeController } from './canonical-translation-knowledge.controller';
 import { CanonicalTranslationKnowledgeProductService } from './canonical-translation-knowledge-product.service';
 import { MiaodaTranslationKnowledgeProductStore } from './miaoda-translation-knowledge-product.store';
@@ -43,6 +49,8 @@ import { CanonicalFleetMasterDataRepository } from './canonical-fleet-master-dat
 import { MiaodaApplicabilityControlledSelectionAdapter } from './miaoda-applicability-controlled-selection.adapter';
 import { CanonicalHostOpenClawReviewService } from './canonical-host-openclaw-review.service';
 import { CanonicalHostCommonContextService } from './canonical-host-common-context.service';
+import { CanonicalJobAidProblemService } from './canonical-jobaid-problem.service';
+import { JobAidWorkRepository } from './jobaid-work.repository';
 import { CanonicalHostReviewActionController } from './canonical-host-review-action.controller';
 import { CanonicalHostReviewActionService } from './canonical-host-review-action.service';
 import { HostOwnedV1TranslationRuleSetPrivateProvider } from './canonical-translation-rule-set-v1.private';
@@ -184,6 +192,8 @@ export interface CanonicalHostModuleOptions {
     EngineeringMatterController,
     CanonicalHostAeoEditingController,
     CanonicalTranslationKnowledgeController,
+    CanonicalTranslationRevisionController,
+    CanonicalInitialAnalysisContinuationController,
     BatchApplicabilityController,
     ConfigurationEvidenceController,
   ],
@@ -200,6 +210,10 @@ export interface CanonicalHostModuleOptions {
     CanonicalHostOpenClawOverallService,
     CanonicalHostOverallRegenerationService,
     CanonicalHostOpenClawTranslationService,
+    CanonicalTranslationWorkspaceRepository,
+    CanonicalTranslationV2Service,
+    CanonicalTranslationRevisionService,
+    CanonicalInitialAnalysisContinuationService,
     CanonicalTranslationKnowledgeProductService,
     MiaodaTranslationKnowledgeProductStore,
     CanonicalHostOpenClawApplicabilityService,
@@ -210,6 +224,8 @@ export interface CanonicalHostModuleOptions {
     MiaodaApplicabilityControlledSelectionAdapter,
     CanonicalHostOpenClawReviewService,
     CanonicalHostCommonContextService,
+    CanonicalJobAidProblemService,
+    JobAidWorkRepository,
     CanonicalHostReviewActionService,
     HostOwnedV1TranslationRuleSetPrivateProvider,
     HostNativeDocumentFamilyPdfProducerAdapter,
@@ -414,6 +430,8 @@ export class CanonicalHostModule {
         EngineeringMatterController,
         CanonicalHostAeoEditingController,
         CanonicalTranslationKnowledgeController,
+        CanonicalTranslationRevisionController,
+        CanonicalInitialAnalysisContinuationController,
         BatchApplicabilityController,
         ConfigurationEvidenceController,
       ],
@@ -450,6 +468,10 @@ export class CanonicalHostModule {
         CanonicalHostOpenClawOverallService,
         CanonicalHostOverallRegenerationService,
         CanonicalHostOpenClawTranslationService,
+        CanonicalTranslationWorkspaceRepository,
+        CanonicalTranslationV2Service,
+        CanonicalTranslationRevisionService,
+        CanonicalInitialAnalysisContinuationService,
         CanonicalTranslationKnowledgeProductService,
         MiaodaTranslationKnowledgeProductStore,
         CanonicalHostOpenClawApplicabilityService,
@@ -460,6 +482,8 @@ export class CanonicalHostModule {
         MiaodaApplicabilityControlledSelectionAdapter,
         CanonicalHostOpenClawReviewService,
         CanonicalHostCommonContextService,
+        CanonicalJobAidProblemService,
+        JobAidWorkRepository,
         CanonicalHostReviewActionService,
         HostOwnedV1TranslationRuleSetPrivateProvider,
         HostNativeDocumentFamilyPdfProducerAdapter,

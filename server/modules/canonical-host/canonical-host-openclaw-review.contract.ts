@@ -1,3 +1,7 @@
+import type { JobAidProblemTaskInput } from './jobaid-problem-task';
+import { assertJobAidProblemTaskBinding } from './jobaid-problem-task';
+import { canonicalJson } from '../action-attempt/action-attempt-envelope';
+import { overallModelEvidenceRegistry } from './overall-assessment-reading';
 import type {
   ReviewDecisionMaturity,
   ReviewDecisionSnapshotProposal,
@@ -32,6 +36,8 @@ export const REVIEW_MINIMUM_COMPATIBLE_SKILL_VERSION =
   CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY.minimumCompatibleSkillVersion;
 export const REVIEW_TOOL_POLICY_REF =
   'wiselink-openclaw-engineering-assessment@1.2.0#interactive-review-c3' as const;
+export const REVIEW_JOBAID_TOOL_POLICY_REF =
+  'wiselink-openclaw-engineering-assessment@1.2.0#interactive-jobaid-review-c5' as const;
 export const REVIEW_MATTER_TOOL_POLICY_REF =
   'wiselink-openclaw-engineering-assessment@1.2.0#interactive-matter-review-c4' as const;
 export const REVIEW_MCP_PACKAGE_VERSION =
@@ -56,7 +62,8 @@ export interface FrozenReviewSourceRef {
 export interface ReviewTurnTaskContract {
   schemaVersion:
     | 'wiselink.3_1.review_turn_task.v1.c2'
-    | 'wiselink.3_1.review_turn_task.v1.c4';
+    | 'wiselink.3_1.review_turn_task.v1.c4'
+    | 'wiselink.3_1.review_turn_task.v1.c5';
   mode: 'INTERACTIVE_REVIEW';
   reviewConversationRef: string;
   reviewTurnRef: string;
@@ -73,6 +80,7 @@ export interface ReviewTurnTaskContract {
   context: Record<string, unknown>;
   /** Host-private business basis. Only context is projected into the model. */
   matterContext?: FrozenMatterReviewContext;
+  jobAidContext?: JobAidProblemTaskInput;
   executionPolicy: {
     runtimeAppId: typeof REVIEW_RUNTIME_APP_ID;
     profileRef: typeof REVIEW_PROFILE_REF;
@@ -80,7 +88,8 @@ export interface ReviewTurnTaskContract {
     skillPolicyRef: typeof REVIEW_SKILL_POLICY_REF;
     toolPolicyRef:
       | typeof REVIEW_TOOL_POLICY_REF
-      | typeof REVIEW_MATTER_TOOL_POLICY_REF;
+      | typeof REVIEW_MATTER_TOOL_POLICY_REF
+      | typeof REVIEW_JOBAID_TOOL_POLICY_REF;
   };
 }
 
@@ -88,7 +97,8 @@ export interface ReviewTurnCandidateContract {
   schemaVersion:
     | 'wiselink.3_1.review_turn_candidate.v1.c2'
     | 'wiselink.3_1.review_turn_candidate.v1.c3'
-    | 'wiselink.3_1.review_turn_candidate.v1.c4';
+    | 'wiselink.3_1.review_turn_candidate.v1.c4'
+    | 'wiselink.3_1.review_turn_candidate.v1.c5';
   mode: 'INTERACTIVE_REVIEW';
   reviewConversationRef: string;
   reviewTurnRef: string;
@@ -101,6 +111,7 @@ export interface ReviewTurnCandidateContract {
   affectedItemIds: string[];
   warnings: string[];
   matterWorkingDelta?: MatterWorkingDeltaProposal | null;
+  jobAidWorkingDelta?: Record<string, unknown> | null;
   runtime: {
     runtimeAppId: typeof REVIEW_RUNTIME_APP_ID;
     profileRef: typeof REVIEW_PROFILE_REF;
@@ -152,6 +163,8 @@ export function parseReviewTurnTaskContract(
   value: unknown,
 ): ReviewTurnTaskContract {
   const record = requiredRecord(value, 'REVIEW_TASK_CONTRACT_INVALID');
+  const isJobAid =
+    record.schemaVersion === 'wiselink.3_1.review_turn_task.v1.c5';
   const isMatter =
     record.schemaVersion === 'wiselink.3_1.review_turn_task.v1.c4';
   exactKeys(record, [
@@ -172,9 +185,11 @@ export function parseReviewTurnTaskContract(
     'context',
     'executionPolicy',
     ...(isMatter ? ['matterContext'] : []),
+    ...(isJobAid ? ['jobAidContext'] : []),
   ]);
   if (
     (!isMatter &&
+      !isJobAid &&
       record.schemaVersion !== 'wiselink.3_1.review_turn_task.v1.c2') ||
     record.mode !== 'INTERACTIVE_REVIEW'
   ) {
@@ -243,6 +258,51 @@ export function parseReviewTurnTaskContract(
     )
       fail('REVIEW_MATTER_EVALUATION_SCOPE_INVALID');
   }
+  if (isJobAid) {
+    const jobAid = assertJobAidProblemTaskBinding(record.jobAidContext);
+    const modelContext = requiredRecord(
+      record.context,
+      'REVIEW_TASK_CONTEXT_INVALID',
+    );
+    if (
+      jobAid.modelInput.purpose !== 'PROBLEM_REVIEW' ||
+      record.selectedEvaluationItemId !== null ||
+      allowedEvaluationItemIds.length !== 0 ||
+      allowedAdoptedInputRefs.length !== 0 ||
+      !modelContext.problemAssessment ||
+      canonicalJson(modelContext.problemAssessment) !==
+        canonicalJson(jobAid.modelInput)
+    )
+      fail('REVIEW_JOBAID_CONTEXT_INVALID');
+    for (const resource of resourceRefs) {
+      const evidence = jobAid.sourceCatalog.find(
+        (item) => item.evidenceRef === resource.sourceRefId,
+      );
+      if (
+        !evidence ||
+        (evidence.kind !== 'DOCUMENT_PASSAGE' &&
+          evidence.kind !== 'ENGINEER_ATTACHMENT')
+      )
+        fail('REVIEW_JOBAID_RESOURCE_BINDING_INVALID');
+      const binding =
+        evidence.kind === 'DOCUMENT_PASSAGE'
+          ? jobAid.sourceBindings.find(
+              (item) => item.workItemId === evidence.workItemId,
+            )
+          : evidence;
+      if (
+        !binding ||
+        resource.resourceArtifactRef !== binding.artifactRef ||
+        resource.resourceArtifactSha256 !== binding.artifactSha256 ||
+        canonicalJson(resource.value) !==
+          canonicalJson({
+            ...overallModelEvidenceRegistry([evidence])[0],
+            sourceRefId: evidence.evidenceRef,
+          })
+      )
+        fail('REVIEW_JOBAID_RESOURCE_BINDING_INVALID');
+    }
+  }
   const executionPolicy = requiredRecord(
     record.executionPolicy,
     'REVIEW_TASK_EXECUTION_POLICY_INVALID',
@@ -260,7 +320,11 @@ export function parseReviewTurnTaskContract(
     executionPolicy.modelPolicyRef !== REVIEW_MODEL_POLICY_REF ||
     executionPolicy.skillPolicyRef !== REVIEW_SKILL_POLICY_REF ||
     executionPolicy.toolPolicyRef !==
-      (isMatter ? REVIEW_MATTER_TOOL_POLICY_REF : REVIEW_TOOL_POLICY_REF)
+      (isJobAid
+        ? REVIEW_JOBAID_TOOL_POLICY_REF
+        : isMatter
+          ? REVIEW_MATTER_TOOL_POLICY_REF
+          : REVIEW_TOOL_POLICY_REF)
   ) {
     fail('REVIEW_TASK_EXECUTION_POLICY_INVALID');
   }
@@ -293,6 +357,7 @@ export function parseReviewTurnCandidateContract(input: {
   }
   const record = requiredRecord(raw, 'REVIEW_RESULT_CONTRACT_INVALID');
   const isMatter = task.schemaVersion === 'wiselink.3_1.review_turn_task.v1.c4';
+  const isJobAid = task.schemaVersion === 'wiselink.3_1.review_turn_task.v1.c5';
   exactKeys(record, [
     'schemaVersion',
     'mode',
@@ -308,12 +373,14 @@ export function parseReviewTurnCandidateContract(input: {
     'warnings',
     'runtime',
     ...(isMatter ? ['matterWorkingDelta'] : []),
+    ...(isJobAid ? ['jobAidWorkingDelta'] : []),
   ]);
   if (
     ![
       'wiselink.3_1.review_turn_candidate.v1.c2',
       'wiselink.3_1.review_turn_candidate.v1.c3',
       ...(isMatter ? ['wiselink.3_1.review_turn_candidate.v1.c4'] : []),
+      ...(isJobAid ? ['wiselink.3_1.review_turn_candidate.v1.c5'] : []),
     ].includes(String(record.schemaVersion)) ||
     record.mode !== 'INTERACTIVE_REVIEW' ||
     record.reviewConversationRef !== task.reviewConversationRef ||
@@ -327,6 +394,14 @@ export function parseReviewTurnCandidateContract(input: {
     record.schemaVersion !== 'wiselink.3_1.review_turn_candidate.v1.c4'
   )
     fail('REVIEW_MATTER_CANDIDATE_VERSION_REQUIRED');
+  if (
+    isJobAid &&
+    (record.schemaVersion !== 'wiselink.3_1.review_turn_candidate.v1.c5' ||
+      record.reviewActionDraft !== null)
+  )
+    fail('REVIEW_JOBAID_CANDIDATE_INVALID');
+  if (isJobAid && record.jobAidWorkingDelta !== null)
+    requiredRecord(record.jobAidWorkingDelta, 'REVIEW_JOBAID_DELTA_INVALID');
   if (isMatter && record.reviewActionDraft !== null)
     fail('REVIEW_MATTER_FORMAL_ACTION_FORBIDDEN');
   const matterWorkingDelta = isMatter

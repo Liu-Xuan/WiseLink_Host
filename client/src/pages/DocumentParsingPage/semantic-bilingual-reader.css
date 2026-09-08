@@ -1,0 +1,205 @@
+.wl-bilingual-reader {
+  width: 100%;
+  min-width: 0;
+  color: var(--parse-ink);
+}
+.wl-bilingual-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px;
+  border-bottom: 1px solid var(--parse-rule);
+}
+.wl-bilingual-toolbar p,
+.wl-bilingual-scope {
+  margin: 6px 0;
+  color: var(--parse-muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.wl-bilingual-reader > .wl-bilingual-scope {
+  padding: 0 16px;
+}
+.wl-bilingual-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.wl-bilingual-block {
+  margin: 12px;
+  border: 1px solid var(--parse-rule);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.wl-bilingual-block.is-selected {
+  border-color: var(--parse-blue);
+}
+.wl-bilingual-block > header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--wl-surface-subtle, transparent);
+  color: var(--parse-muted);
+  font-size: 11px;
+}
+.wl-bilingual-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+.wl-bilingual-columns > div {
+  padding: 12px;
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  line-height: 1.85;
+}
+.wl-bilingual-columns > div + div {
+  border-left: 1px solid var(--parse-rule);
+}
+.wl-bilingual-column-label {
+  display: block;
+  margin-bottom: 10px;
+  color: var(--parse-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+.wl-bilingual-columns p {
+  margin: 0 0 8px;
+}
+.wl-bilingual-element button,
+.wl-bilingual-grid td button,
+.wl-bilingual-grid th button {
+  width: 100%;
+  text-align: inherit;
+  white-space: pre-wrap;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+.wl-bilingual-element button:focus-visible,
+.wl-bilingual-grid button:focus-visible {
+  outline: 2px solid var(--parse-blue);
+  outline-offset: 2px;
+}
+.wl-bilingual-element.kind-heading {
+  font-weight: 650;
+}
+.wl-bilingual-element.kind-advisory {
+  border-left: 3px solid var(--parse-warning);
+  padding-left: 8px;
+}
+.wl-bilingual-columns .is-highlighted {
+  background: var(--parse-blue-soft);
+  border-radius: 3px;
+}
+.wl-bilingual-unresolved {
+  color: var(--parse-warning);
+  font-size: 12px;
+}
+.wl-bilingual-block > footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+  padding: 8px 12px;
+  border-top: 1px solid var(--parse-rule);
+}
+.wl-bilingual-block > footer > button {
+  color: var(--parse-blue);
+  font-size: 11px;
+}
+.wl-bilingual-block > footer details {
+  margin-left: auto;
+  color: var(--parse-muted);
+  font-size: 11px;
+}
+.wl-bilingual-block > footer details p {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.wl-bilingual-issues {
+  padding: 10px 16px 10px 30px;
+  border-top: 1px solid var(--parse-rule);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.wl-bilingual-issues li[data-severity='BLOCK'] {
+  color: var(--parse-danger);
+}
+.wl-bilingual-issues li[data-severity='REVIEW'] {
+  color: var(--parse-warning);
+}
+.wl-bilingual-grid {
+  overflow-x: auto;
+  margin-bottom: 12px;
+}
+.wl-bilingual-grid table {
+  width: 100%;
+  border-collapse: collapse;
+  white-space: normal;
+}
+.wl-bilingual-grid td,
+.wl-bilingual-grid th {
+  min-width: 48px;
+  padding: 6px;
+  vertical-align: top;
+  border: 1px solid var(--parse-rule);
+  white-space: pre-wrap;
+}
+.wl-bilingual-grid th {
+  font-weight: 650;
+}
+.wl-bilingual-grid tfoot {
+  font-size: 11px;
+}
+@media (max-width: 650px) {
+  .wl-bilingual-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .wl-bilingual-columns > div + div {
+    border-left: 0;
+    border-top: 1px solid var(--parse-rule);
+  }
+}
+.wl-translation-editor {
+  padding: 0.75rem 1rem;
+  border-top: 1px solid var(--border, #e2e8f0);
+}
+.wl-translation-editor > div {
+  display: grid;
+  gap: 0.75rem;
+}
+.wl-translation-editor label {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.875rem;
+}
+.wl-translation-editor textarea {
+  width: 100%;
+  border: 1px solid var(--border, #cbd5e1);
+  border-radius: 0.4rem;
+  padding: 0.65rem;
+  background: var(--background, white);
+  color: inherit;
+  line-height: 1.7;
+  resize: vertical;
+}
+.wl-translation-editor .wl-translation-editor-confirm {
+  display: flex;
+  align-items: flex-start;
+}
+.wl-translation-editor section {
+  border-top: 1px solid var(--border, #e2e8f0);
+  padding: 0.7rem 0;
+}
+.wl-translation-editor p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

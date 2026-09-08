@@ -4,6 +4,12 @@ import {
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
 import { and, asc, eq } from 'drizzle-orm';
+import { CanonicalTranslationWorkspaceRepository } from './canonical-translation-workspace.repository';
+import { actionAttempt, translationBlockRevision, translationWorkspace } from '../../database/schema';
+import { canonicalJson, parseResultEnvelope, parseTaskEnvelope } from '../action-attempt/action-attempt-envelope';
+import { translationFinalResultSchemaV2 } from './canonical-translation-v2.service';
+import type { BilingualTranslationArtifactV2 } from '@shared/canonical-translation-v2.interface';
+import type { UnifiedPackageArtifactDescriptor } from '@shared/api.interface';
 
 import type { CanonicalTranslationKnowledgeFeedbackDecision } from '@shared/api.interface';
 import {
@@ -34,6 +40,28 @@ export class MiaodaTranslationKnowledgeProductStore implements TranslationKnowle
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
   ) {}
+
+  readSemanticScope(input: { tenantId: string; workItemId: string; blockRevisionId: string }) {
+    return new CanonicalTranslationWorkspaceRepository(this.db).readSemanticScope(input);
+  }
+
+  async readFinalSemanticCommit(input: { tenantId: string; workItemId: string; actionAttemptId: string;
+    artifact: UnifiedPackageArtifactDescriptor; value: BilingualTranslationArtifactV2 }): Promise<string> {
+    const [attempt] = await this.db.select().from(actionAttempt).where(and(eq(actionAttempt.tenantId, input.tenantId),
+      eq(actionAttempt.workItemId, input.workItemId), eq(actionAttempt.attemptId, input.actionAttemptId))).limit(1);
+    if (!attempt || attempt.status !== 'SUCCEEDED' || !attempt.projectionApplied || !attempt.taskEnvelopeJson || !attempt.resultEnvelopeJson)
+      throw conflict('KNOWLEDGE_TRANSLATION_COMMIT_REQUIRED');
+    const task = parseTaskEnvelope(attempt.taskEnvelopeJson);
+    const result = parseResultEnvelope({ task, value: JSON.parse(attempt.resultEnvelopeJson) });
+    if (typeof result.modelOutput !== 'string' || task.modelInput.schemaVersion !== 'wiselink.3_1.translation_task.v2')
+      throw conflict('KNOWLEDGE_TRANSLATION_COMMIT_BINDING_INVALID');
+    const final = translationFinalResultSchemaV2.parse(JSON.parse(result.modelOutput));
+    if (result.contentHash !== attempt.resultContentHash || canonicalJson(final.artifact) !== canonicalJson(input.artifact) ||
+      canonicalJson(final.manifest) !== canonicalJson(input.value.manifest) || final.completeness !== input.value.completeness ||
+      final.workspaceId !== input.value.manifest.workspaceId)
+      throw conflict('KNOWLEDGE_TRANSLATION_COMMIT_BINDING_INVALID');
+    return result.contentHash;
+  }
 
   async saveCandidate(
     candidate: TranslationKnowledgeCandidateRecord,
@@ -114,11 +142,31 @@ export class MiaodaTranslationKnowledgeProductStore implements TranslationKnowle
   ): Promise<TranslationKnowledgeGovernanceEvent> {
     let inserted: Array<{ eventId: string }>;
     try {
-      inserted = await this.db
-        .insert(translationKnowledgeGovernanceEvent)
-        .values(eventValues(event))
-        .onConflictDoNothing()
-        .returning({ eventId: translationKnowledgeGovernanceEvent.eventId });
+      inserted = await this.db.transaction(async (transaction) => {
+        const [existingEvent] = await transaction.select().from(translationKnowledgeGovernanceEvent).where(and(
+          eq(translationKnowledgeGovernanceEvent.tenantId, event.tenantId), eq(translationKnowledgeGovernanceEvent.workItemId, event.workItemId),
+          event.requestId === null ? eq(translationKnowledgeGovernanceEvent.eventId, event.eventId) : eq(translationKnowledgeGovernanceEvent.requestId, event.requestId),
+        )).limit(1);
+        if (existingEvent) return [];
+        const [candidate] = await transaction.select().from(translationKnowledgeCandidate).where(and(
+          eq(translationKnowledgeCandidate.tenantId, event.tenantId), eq(translationKnowledgeCandidate.workItemId, event.workItemId),
+          eq(translationKnowledgeCandidate.assetId, event.assetId),
+        )).limit(1);
+        if (candidate?.sourceUnitKind.startsWith('semantic_block:')) {
+          const blockScope = and(eq(translationBlockRevision.tenantId, event.tenantId), eq(translationBlockRevision.workItemId, event.workItemId),
+            eq(translationBlockRevision.blockRevisionId, candidate.sourceUnitId));
+          const [block] = await transaction.select().from(translationBlockRevision).where(blockScope).limit(1);
+          if (!block) throw conflict('KNOWLEDGE_TRANSLATION_BLOCK_CHANGED');
+          // Human editing and model selection both lock this workspace; keep
+          // the selected revision stable until the feedback event commits.
+          await transaction.select().from(translationWorkspace).where(and(eq(translationWorkspace.workspaceId, block.workspaceId),
+            eq(translationWorkspace.tenantId, event.tenantId), eq(translationWorkspace.workItemId, event.workItemId))).limit(1).for('share');
+          const [current] = await transaction.select().from(translationBlockRevision).where(blockScope).limit(1);
+          if (!current?.selectedForReading) throw conflict('KNOWLEDGE_TRANSLATION_BLOCK_CHANGED');
+        }
+        return transaction.insert(translationKnowledgeGovernanceEvent).values(eventValues(event)).onConflictDoNothing()
+          .returning({ eventId: translationKnowledgeGovernanceEvent.eventId });
+      });
     } catch (error) {
       throw normalizedPersistenceError(error);
     }

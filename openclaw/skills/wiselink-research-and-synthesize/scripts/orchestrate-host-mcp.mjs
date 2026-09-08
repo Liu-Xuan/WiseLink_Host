@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { runSemanticTranslation } from './run-semantic-translation.mjs';
 
 import {
   WISELINK_HOST_MCP_NAME,
@@ -9,6 +10,7 @@ import {
   WISELINK_SKILL_VERSION,
   WISELINK_APPLICABILITY_PROMPT_VERSION,
   REVIEW_MATTER_TASK_SCHEMA,
+  REVIEW_JOBAID_TASK_SCHEMA,
   buildApplicabilityCandidate,
   canonicalJson,
   isForbiddenAuthorityInputKey,
@@ -56,10 +58,14 @@ export const HOST_MCP_TOOLS = [
   'get_deep_link',
   'begin_translation',
   'commit_translation_candidate',
+  'translation_workspace',
   'begin_applicability_evaluation',
   'commit_applicability_candidate',
   'begin_dynamic_evaluation',
   'commit_dynamic_evaluation_candidate',
+  'read_assessment_sources',
+  'save_assessment_work',
+  'read_assessment_work',
   'record_oem_discovery_run',
   'begin_overall_synthesis',
   'resume_overall_synthesis',
@@ -467,10 +473,10 @@ function stoppedConfigurationEvidenceReevaluation(input) {
   };
 }
 
-export async function runTranslation({ workItemId, callTool, translate }) {
+export async function runTranslation({ workItemId, callTool, translate, requestId }) {
   assertCallbacks(workItemId, callTool, translate);
   const before = await callTool('get_parse_status', { workItemId });
-  const begin = await collectTranslationDelivery(workItemId, callTool);
+  const begin = await collectTranslationDelivery(workItemId, callTool, requestId);
   if (begin.status === 'COMMITTING') {
     return recoverInitialCommitting({
       stage: 'TRANSLATE',
@@ -479,6 +485,24 @@ export async function runTranslation({ workItemId, callTool, translate }) {
       begin,
       callTool,
     });
+  }
+  if (begin.task?.modelInput?.schemaVersion === 'wiselink.3_1.translation_task.v2') {
+    const execution = await runSemanticTranslation({ begin, callTool, translate, requestId });
+    let committed;
+    try {
+      committed = await callTool('commit_translation_candidate', commitArgs(begin, execution.result));
+      assertTranslationCommit(committed, workItemId);
+    } catch (error) {
+      const recovered = await recoverCommitResponseLoss({ mode: 'INITIAL_ANALYSIS', operation: 'TRANSLATE', before, begin,
+        result: execution.result, callTool, cause: error });
+      if (recovered.status?.status !== 'COMMITTING') return recovered;
+      // Only replay the identical prepared envelope, never call the model.
+      committed = await callTool('commit_translation_candidate', commitArgs(begin, execution.result));
+      assertTranslationCommit(committed, workItemId);
+    }
+    return { ...completedResult({ mode: 'INITIAL_ANALYSIS', operation: 'TRANSLATE', before, committed,
+      after: await callTool('get_parse_status', { workItemId }), deepLink: await callTool('get_deep_link', { workItemId }), result: execution.result }),
+      completeness: execution.completeness, modelRequestCount: execution.modelRequestCount };
   }
   validatePayload('translation-input', begin.modelInput);
   await heartbeatAttempt(begin, callTool);
@@ -729,13 +753,15 @@ export async function runApplicabilityEvaluation({
 
 export async function runDynamicEvaluation({
   workItemId,
+  continuationRequestId,
   query,
   callTool,
   evaluateDynamicRules,
 }) {
   assertCallbacks(workItemId, callTool, evaluateDynamicRules);
   const before = await callTool('get_parse_status', { workItemId });
-  const begin = await callTool('begin_dynamic_evaluation', { workItemId });
+  const begin = await callTool('begin_dynamic_evaluation', { workItemId,
+    ...(continuationRequestId ? { requestId: continuationRequestId } : {}) });
   assertBegin(begin, 'OPENCLAW_DYNAMIC_EVALUATION');
   if (begin.status === 'COMMITTING') {
     return recoverInitialCommitting({
@@ -746,13 +772,14 @@ export async function runDynamicEvaluation({
       callTool,
     });
   }
-  validatePayload('dynamic-rules-input', begin.modelInput);
+  const problemV2 = begin.modelInput?.schemaVersion === 'wiselink.jobaid-problem-task.v2';
+  if (!problemV2) validatePayload('dynamic-rules-input', begin.modelInput);
   await heartbeatAttempt(begin, callTool);
   const execution = normalizeExecution(
-    await evaluateDynamicRules(structuredClone(begin.modelInput)),
+    await evaluateDynamicRules(structuredClone(begin.modelInput), problemV2 ? problemAssessmentHooks(begin, callTool) : undefined),
   );
   await heartbeatAttempt(begin, callTool);
-  const serializedOutput = serializeDynamicRulesCommitOutput(
+  const serializedOutput = problemV2 ? execution.output : serializeDynamicRulesCommitOutput(
     begin.modelInput,
     execution.output,
   );
@@ -760,7 +787,7 @@ export async function runDynamicEvaluation({
     task: begin.task,
     modelOutput: serializedOutput,
     provenance: execution.provenance,
-    factsConsidered: execution.output.ruleResults.rows.map((row) => row[0]),
+    factsConsidered: problemV2 ? [execution.output.workRevisionRef] : execution.output.ruleResults.rows.map((row) => row[0]),
   });
   let committed = null;
   let after = null;
@@ -810,6 +837,7 @@ export async function runDynamicEvaluation({
 
 export async function runOverallSynthesis({
   workItemId,
+  continuationRequestId,
   providers = [],
   callTool,
   synthesizeOverall,
@@ -839,6 +867,7 @@ export async function runOverallSynthesis({
   const begin = await callTool('begin_overall_synthesis', {
     workItemId,
     providers: selectedProviders,
+    ...(continuationRequestId ? { requestId: continuationRequestId } : {}),
   });
   assertBegin(begin, 'OPENCLAW_OVERALL_SYNTHESIS');
   assertOverallInput(begin, selectedProviders);
@@ -889,13 +918,14 @@ async function completeOverall({
   synthesizeOverall,
   resumed = false,
 }) {
-  validatePayload('synthesis-input', begin.modelInput);
+  const problemV2 = begin.modelInput?.schemaVersion === 'wiselink.jobaid-problem-task.v2';
+  if (!problemV2) validatePayload('synthesis-input', begin.modelInput);
   await heartbeatAttempt(begin, callTool);
   const execution = normalizeExecution(
-    await synthesizeOverall(structuredClone(begin.modelInput)),
+    await synthesizeOverall(structuredClone(begin.modelInput), problemV2 ? problemAssessmentHooks(begin, callTool) : undefined),
   );
   await heartbeatAttempt(begin, callTool);
-  validatePayload('synthesis-pair', {
+  if (!problemV2) validatePayload('synthesis-pair', {
     input: begin.modelInput,
     output: execution.output,
   });
@@ -903,7 +933,7 @@ async function completeOverall({
     task: begin.task,
     modelOutput: execution.output,
     provenance: execution.provenance,
-    factsConsidered: begin.modelInput.baseRuleResult.items.map(
+    factsConsidered: problemV2 ? [execution.output.workRevisionRef] : begin.modelInput.baseRuleResult.items.map(
       ({ criterionId }) => criterionId,
     ),
   });
@@ -995,6 +1025,10 @@ export async function runInteractiveReviewTurn({
         }
       }
     }
+    if (task.schemaVersion === REVIEW_JOBAID_TASK_SCHEMA) for (const source of sanitized) {
+      const evidence = task.jobAidContext.sourceCatalog.find((item) => item.evidenceRef === source.sourceRefId);
+      if (!evidence || source.evidenceRef !== evidence.evidenceRef || source.excerpt !== evidence.excerpt || source.kind !== evidence.kind) throw new Error('HOST_MCP_REVIEW_JOBAID_SOURCE_BINDING_INVALID');
+    }
     requested.forEach((sourceRefId) => readSourceRefIds.add(sourceRefId));
     return sanitized;
   };
@@ -1019,7 +1053,7 @@ export async function runInteractiveReviewTurn({
     modelOutput: candidate,
     provenance: execution.provenance,
     sourceRefs: reviewCandidateArtifactRefs(begin.task, candidate),
-    factsConsidered: task.schemaVersion === REVIEW_MATTER_TASK_SCHEMA
+    factsConsidered: [REVIEW_MATTER_TASK_SCHEMA, REVIEW_JOBAID_TASK_SCHEMA].includes(task.schemaVersion)
       ? reviewCandidateSourceRefIds(task, candidate) : [...candidate.sourceRefs],
     warnings: [...candidate.warnings],
   });
@@ -1196,6 +1230,12 @@ export function preserveDiscoveryObservation(observation) {
 
 export function assertOverallSynthesisReady(statusResult) {
   const dynamicRules = statusResult?.integratedAssessmentSummary?.baseRules;
+  if (dynamicRules?.schemaVersion === 'wiselink.jobaid-problem-result.v2') {
+    if (dynamicRules.status !== 'CANDIDATE_ONLY' || !dynamicRules.workRevisionRef || !Number.isSafeInteger(dynamicRules.workRevision) || dynamicRules.workRevision < 1 ||
+      !['COMPLETE', 'COMPLETE_WITH_OPEN_QUESTIONS'].includes(dynamicRules.roundCompletion))
+      throw new Error('HOST_MCP_OVERALL_REQUIRES_PERSISTED_PROBLEM_WORK');
+    return statusResult;
+  }
   if (
     !dynamicRules ||
     dynamicRules.status !== 'CANDIDATE_ONLY' ||
@@ -1206,6 +1246,16 @@ export function assertOverallSynthesisReady(statusResult) {
     throw new Error('HOST_MCP_OVERALL_REQUIRES_PERSISTED_DYNAMIC_N');
   }
   return statusResult;
+}
+
+function problemAssessmentHooks(begin, callTool) {
+  const control = { attemptRef: begin.attemptRef, leaseToken: begin.leaseToken, leaseGeneration: begin.leaseGeneration };
+  return {
+    heartbeat: () => heartbeatAttempt(begin, callTool),
+    readAssessmentSources: (intent) => callTool('read_assessment_sources', { ...intent, ...control }),
+    saveAssessmentWork: (intent) => callTool('save_assessment_work', { ...intent, ...control }),
+    readAssessmentWork: (intent) => callTool('read_assessment_work', { ...intent, attemptRef: begin.attemptRef }),
+  };
 }
 
 export function summarizeQueryParsedPackage(value) {
@@ -1299,8 +1349,13 @@ function assertBegin(value, taskType) {
   }
 }
 
-async function collectTranslationDelivery(workItemId, callTool) {
-  const first = await callTool('begin_translation', { workItemId });
+async function collectTranslationDelivery(workItemId, callTool, requestId) {
+  const first = await callTool('begin_translation', { workItemId, ...(requestId ? { requestId } : {}) });
+  if (first.task?.modelInput?.schemaVersion === 'wiselink.3_1.translation_task.v2') {
+    assertBegin(first, 'OPENCLAW_TRANSLATE');
+    if (first.task.workItemId !== workItemId) throw new Error('TRANSLATION_V2_WORK_ITEM_BINDING_INVALID');
+    return first;
+  }
   assertTranslationDeliveryPart(first, {
     workItemId,
     expectedPartIndex: 0,
@@ -1316,6 +1371,7 @@ async function collectTranslationDelivery(workItemId, callTool) {
   ) {
     const part = await callTool('begin_translation', {
       workItemId,
+      ...(requestId ? { requestId } : {}),
       deliveryPart: partIndex,
     });
     assertTranslationDeliveryPart(part, {
@@ -1775,6 +1831,7 @@ function assertReviewContext(value, begin, task) {
   if ((task.schemaVersion === REVIEW_MATTER_TASK_SCHEMA) !== isRecord(value.context.matterWorking)) {
     throw new Error('HOST_MCP_REVIEW_MATTER_CONTEXT_BINDING_INVALID');
   }
+  if ((task.schemaVersion === REVIEW_JOBAID_TASK_SCHEMA) !== isRecord(value.context.problemAssessment)) throw new Error('HOST_MCP_REVIEW_JOBAID_CONTEXT_BINDING_INVALID');
   const expectedResourceRefs = task.resourceRefs.map(
     ({ sourceRefId, resourceArtifactRef, resourceArtifactSha256 }) => ({
       sourceRefId,
@@ -1812,7 +1869,7 @@ function assertReviewContext(value, begin, task) {
 function buildReviewModelInput(task, contextResult) {
   const context = sanitizeForModel(contextResult.context);
   return {
-    schemaVersion: task.schemaVersion === REVIEW_MATTER_TASK_SCHEMA
+    schemaVersion: task.schemaVersion === REVIEW_JOBAID_TASK_SCHEMA ? 'wiselink.3_1.review_model_input.v1.c5' : task.schemaVersion === REVIEW_MATTER_TASK_SCHEMA
       ? 'wiselink.3_1.review_model_input.v1.c4' : 'wiselink.3_1.review_model_input.v1.c3',
     mode: 'INTERACTIVE_REVIEW',
     inputRevision: task.inputRevision,

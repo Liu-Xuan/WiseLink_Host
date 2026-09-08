@@ -8,6 +8,7 @@ import { and, desc, eq, ilike, lt, or, sql } from 'drizzle-orm';
 import type { CanonicalLibraryQuicklookResponse } from '@shared/api.interface';
 import { listOwnedLibraryFamilies } from '../document-management/src/hosted/nest/miaoda-hosted-library-query';
 import {
+  assessmentWorkRevision,
   dmDocumentVersion,
   dmPublicationFamily,
   workItem,
@@ -40,7 +41,13 @@ const summaryColumns = {
   packageRegistered: sql<boolean>`${workItem.packageId} is not null and ${workItem.packageArtifactRef} is not null`,
   createdAt: workItem.createdAt,
   updatedAt: workItem.updatedAt,
-  readingSummary: sql<import('@shared/assessment-reading.interface').AssessmentReadingSummary | null>`case
+  jobAidWorkRevisionRef: sql<
+    string | null
+  >`(select ${assessmentWorkRevision.assessmentWorkRevisionId} from ${assessmentWorkRevision} where ${assessmentWorkRevision.tenantId} = ${workItem.tenantId} and ${assessmentWorkRevision.workItemId} = ${workItem.workItemId} order by ${assessmentWorkRevision.workRevision} desc limit 1)`,
+  readingSummary: sql<
+    | import('@shared/assessment-reading.interface').AssessmentReadingSummary
+    | null
+  >`case
     when ${workItem.projectionJson}::jsonb #> '{integratedAssessment,overallSynthesis,readingResult,content}' is null then null
     else jsonb_build_object(
       'resultRef', ${workItem.projectionJson}::jsonb #> '{integratedAssessment,overallSynthesis,readingResult,resultRef}',

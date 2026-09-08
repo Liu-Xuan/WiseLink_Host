@@ -99,6 +99,12 @@ export function assertCanonicalHostOpenClawRuntimePolicy(
   ) {
     throw policyError('OPENCLAW_APPLICABILITY_PROMPT_POLICY_MISMATCH');
   }
+  if (task.modelInput.schemaVersion === 'wiselink.3_1.translation_task.v2' && (
+    result.promptVersion !== 'wiselink-translation-block@r09.c44' ||
+    (parseCompatibleSkillRevision(result.skillVersion, policy.skillCompatibilityRef) ?? -1) < 44
+  )) {
+    throw policyError('OPENCLAW_TRANSLATION_V2_RUNTIME_POLICY_MISMATCH');
+  }
 }
 
 export function isCanonicalHostOpenClawSkillVersionCompatible(

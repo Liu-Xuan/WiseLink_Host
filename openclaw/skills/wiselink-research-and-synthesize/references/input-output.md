@@ -86,7 +86,7 @@ runtimePolicy.modelPolicyRef = official-hosted-profile-config
 ResultEnvelope.modelVersion = 官方托管 profile/config 本轮选择后的非空、可读实际模型
 Task.skillPolicyRef = wiselink-research-and-synthesize@r09
 ApplicabilityTask.runtimePolicy.skillVersion = wiselink-research-and-synthesize@r09  # v1 历史字段名，语义为兼容线
-ResultEnvelope.skillVersion = wiselink-research-and-synthesize@r09.c43       # 实际安装包版本
+ResultEnvelope.skillVersion = wiselink-research-and-synthesize@r09.c44       # 实际安装包版本
 toolVersions.wiselink-openclaw-engineering-assessment = 1.2.0
 promptVersion = 当前实际运行非空版本
 ```
@@ -122,7 +122,11 @@ sha256/byteLength/replayed
 原有 ResultEnvelope preflight、TranslationRuleSet ResultGate、final artifact actual-byte readback 和 CAS。缺 part 在
 prepareCommit 前明确失败。
 
-## Translation
+## Translation v2
+
+输入以 `wiselink.3_1.translation_task.v2` 明确区分，运行协议见 [语义块翻译](semantic-translation-work.md)。工作批次使用 `translation_semantic_batch.v2`；最终结果使用 `translation_final_result.v2`，只含 Host 产物引用、manifest 和完成范围。原文片段与新阅读段落分别保留，不转换成旧 candidateUnits。下述内容仅适用于旧任务。
+
+## 历史 Translation v0/v1
 
 输入 `wiselink.3_1.translation_task.v0.candidate`：
 

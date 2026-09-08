@@ -1,3 +1,4 @@
+import { isJobAidProblemProjection } from '@shared/jobaid-problem-assessment.interface';
 import type {
   CanonicalEngineerReviewPageContext,
   CanonicalIntegratedAssessmentProjection,
@@ -44,6 +45,15 @@ function describeTranslationProjection(
       detail: '当前事项尚未提供可核验的译文。',
       ownerSourceReaderConsumptionAllowed: false,
       bilingualTranslationConsumptionAllowed: false,
+    };
+  }
+  if (translation.status === 'SEMANTIC_READING_AID_AVAILABLE') {
+    const { completeness, coverage } = translation.reading;
+    return { capability: completeness === 'PARTIAL' ? 'LIMITED' : 'AVAILABLE',
+      headline: completeness === 'PARTIAL' ? '部分译文可读' : completeness === 'COMPLETE_WITH_ISSUES' ? '完整译文有待复核项' : '完整译文候选可读',
+      detail: `可读范围覆盖 ${coverage.readableSourceCharacters.toLocaleString('zh-CN')} / ${coverage.registeredSourceCharacters.toLocaleString('zh-CN')} 个原文字符；${coverage.missingBlockCount} 块待生成，${coverage.pendingCheckBlockCount} 块待检查，${coverage.blockedBlockCount} 块需处理。`,
+      ownerSourceReaderConsumptionAllowed: true,
+      bilingualTranslationConsumptionAllowed: coverage.readableSourceCharacters > 0,
     };
   }
   const axes = translation.axes;
@@ -258,7 +268,11 @@ function buildAssessmentSemantics(
         authority: 'HOST_GAP_LEDGER',
       });
     }
-  } else if (dynamic && dynamic.unresolvedCount > 0) {
+  } else if (
+    dynamic &&
+    !isJobAidProblemProjection(dynamic) &&
+    dynamic.unresolvedCount > 0
+  ) {
     gaps.push({
       code: 'DYNAMIC_ITEMS_UNRESOLVED',
       label: '逐项评估尚未闭合',
@@ -310,16 +324,17 @@ function buildAssessmentSemantics(
   return {
     candidateState:
       overall?.status ?? integrated?.status ?? 'WAITING_DYNAMIC_EVALUATION',
-    dynamic: dynamic
-      ? {
-          status: dynamic.status,
-          criterionSetId: dynamic.criterionSetId,
-          criterionCount: dynamic.criterionCount,
-          evaluationItemCount: dynamic.evaluationItemCount,
-          unresolvedCount: dynamic.unresolvedCount,
-          sourceBoundCandidateCount: dynamic.sourceBoundCandidateCount,
-        }
-      : null,
+    dynamic:
+      dynamic && !isJobAidProblemProjection(dynamic)
+        ? {
+            status: dynamic.status,
+            criterionSetId: dynamic.criterionSetId,
+            criterionCount: dynamic.criterionCount,
+            evaluationItemCount: dynamic.evaluationItemCount,
+            unresolvedCount: dynamic.unresolvedCount,
+            sourceBoundCandidateCount: dynamic.sourceBoundCandidateCount,
+          }
+        : null,
     review: {
       itemCount: reviewItems.length,
       pendingCount: pendingReviewCount,

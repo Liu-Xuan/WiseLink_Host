@@ -5,6 +5,10 @@ import type {
   UnifiedReaderSourceLocator,
   UnifiedReaderQueryResult,
 } from '@shared/api.interface';
+import type {
+  TranslationStructuredSource,
+  TranslationStructuredSourceUnit,
+} from '@shared/canonical-translation-v2.interface';
 
 import { UNIFIED_READER } from './unified-reader.constants';
 import type { UnifiedArtifactReadScope } from './unified-artifact-read-scope';
@@ -55,8 +59,32 @@ export class Frozen2CandidateReaderService {
     bytes: Uint8Array,
     readScope?: UnifiedArtifactReadScope,
   ): UnifiedReaderSourcePackage {
-    const { inspection, units } = this.inspectInternal(artifact, bytes, readScope);
-    return { inspection, units };
+    return this.inspectInternal(artifact, bytes, readScope);
+  }
+
+  /** Explicit v2 access; legacy text consumers do not acquire richer payloads. */
+  readStructuredSource(
+    artifact: UnifiedPackageArtifactDescriptor,
+    bytes: Uint8Array,
+    readScope?: UnifiedArtifactReadScope,
+  ): TranslationStructuredSource {
+    assertArtifactBytes(artifact, bytes);
+    const pkg = recordValue(readScope ? readScope.parseJson(bytes) : parsePackageJson(bytes), 'package');
+    this.assertContract(pkg);
+    const sourceRefById = this.sourceRefIndex(recordArray(pkg.sourceRefs, 'sourceRefs'));
+    return {
+      units: recordArray(pkg.contentUnits, 'contentUnits').map(structuredUnit),
+      modules: recordArray(pkg.modules, 'modules').map((value) => {
+        const module = recordValue(value, 'module');
+        if (typeof module.order !== 'number' || !Number.isSafeInteger(module.order)) {
+          throw new Error('PACKAGE_SEMANTIC_VALIDATION_FAILED:MODULE_ORDER');
+        }
+        return { moduleId: requiredText(module.moduleId, 'moduleId'), order: module.order };
+      }),
+      sourceLocators: [...sourceRefById.values()].map(cloneLocator),
+      findings: recordArray(pkg.findings, 'findings').map((value) => structuredClone(recordValue(value, 'finding'))),
+      references: recordArray(pkg.references, 'references').map((value) => structuredClone(recordValue(value, 'reference'))),
+    };
   }
 
   read(
@@ -299,6 +327,31 @@ export class Frozen2CandidateReaderService {
   }
 }
 
+function structuredUnit(value: unknown, index: number): TranslationStructuredSourceUnit {
+  const unit = recordValue(value, `contentUnits[${index}]`);
+  const integer = (field: string): number => {
+    const candidate = unit[field];
+    if (typeof candidate !== 'number' || !Number.isSafeInteger(candidate) || candidate < 0) {
+      throw new Error(`PACKAGE_SEMANTIC_VALIDATION_FAILED:CONTENT_UNIT_${field.toUpperCase()}`);
+    }
+    return candidate;
+  };
+  return {
+    unitId: requiredText(unit.unitId, 'unitId'),
+    kind: requiredText(unit.kind, 'kind'),
+    moduleId: requiredText(unit.moduleId, 'moduleId'),
+    parentUnitId: unit.parentUnitId === undefined ? null : requiredText(unit.parentUnitId, 'parentUnitId'),
+    order: integer('order'),
+    depth: integer('depth'),
+    continuityKey: requiredText(unit.continuityKey, 'continuityKey'),
+    sourceRefIds: stringArray(unit.sourceRefIds, 'sourceRefIds'),
+    sourceSegmentIds: stringArray(unit.sourceSegmentIds, 'sourceSegmentIds'),
+    mapping: structuredClone(recordValue(unit.mapping, 'mapping')),
+    // Do not normalize, trim, or replace any original source string here.
+    payload: structuredClone(recordValue(unit.payload, 'payload')),
+  };
+}
+
 function parsePackageJson(bytes: Uint8Array): unknown {
   const rawText: string = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
   assertNoDuplicateJsonKeys(rawText);
@@ -335,7 +388,7 @@ function sourceLocator(
     normalizedPath: optionalTextOrNull(ref.normalizedPath),
     xpath: optionalTextOrNull(ref.xpath),
     elementId: optionalTextOrNull(ref.elementId),
-    quote: optionalTextOrNull(ref.quote),
+    quote: typeof ref.quote === 'string' ? ref.quote : null,
     bbox: optionalNumberArrayOrNull(ref.bbox),
   };
 }

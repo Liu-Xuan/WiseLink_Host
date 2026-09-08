@@ -3,6 +3,7 @@ import { useId, type KeyboardEvent } from 'react';
 
 import { Button } from '@client/src/components/ui/button';
 import { Input } from '@client/src/components/ui/input';
+import { SemanticBilingualReader } from './SemanticBilingualReader';
 import type {
   CanonicalReaderProjection,
   CanonicalDocumentParsingPageResponse,
@@ -10,7 +11,6 @@ import type {
 
 import {
   buildReaderCapabilities,
-  describeTranslationProjection,
   type ReaderCapability,
   type ReaderViewMode,
 } from './workbench-projection';
@@ -18,7 +18,7 @@ import {
 interface DocumentReaderWorkspaceProps {
   data: Pick<
     CanonicalDocumentParsingPageResponse,
-    'workItem' | 'entry' | 'readerProjection'
+    'workItem' | 'entry' | 'readerProjection' | 'initialAnalysis'
   >;
   query: string;
   requestedSourceRef: string;
@@ -29,6 +29,7 @@ interface DocumentReaderWorkspaceProps {
   onReaderModeChange: (mode: ReaderViewMode) => void;
   onSourceRefSelect: (unitId: string, sourceRef: string) => void;
   onClearSourceRef: () => void;
+  onContinuationRequested?: () => void;
 }
 
 function statusLabel(status: ReaderCapability['status']): string {
@@ -67,13 +68,11 @@ export function DocumentReaderWorkspace({
   onReaderModeChange,
   onSourceRefSelect,
   onClearSourceRef,
+  onContinuationRequested,
 }: DocumentReaderWorkspaceProps) {
   const capabilities: ReaderCapability[] = buildReaderCapabilities({
     readerProjection: data.readerProjection ?? null,
   });
-  const translationView = data.readerProjection
-    ? describeTranslationProjection(data.readerProjection.translation)
-    : null;
   const activeCapability: ReaderCapability =
     capabilities.find(
       (capability: ReaderCapability) => capability.mode === readerMode,
@@ -192,15 +191,24 @@ export function DocumentReaderWorkspace({
       {readerMode === 'bilingual' ? (
         <section
           id={panelId}
-          className="parse-reader-missing-state"
+          className="parse-reader-bilingual-view"
           role="tabpanel"
           aria-labelledby={`${idPrefix}-bilingual`}
         >
-          <Languages aria-hidden="true" />
-          <div>
-            <strong>{translationView?.headline ?? '中英文对照暂不可用'}</strong>
-            <p>{translationView?.detail ?? '当前事项尚无可核验的译文。'}</p>
-          </div>
+          <SemanticBilingualReader
+            translation={
+              data.readerProjection?.translation ?? {
+                status: 'UNAVAILABLE',
+                reason: 'TRANSLATION_PROJECTION_NOT_AVAILABLE',
+              }
+            }
+            onSourceRefSelect={onSourceRefSelect}
+            workItem={data.workItem}
+            canRequestBlockTranslation={
+              data.initialAnalysis?.canRequestBlockTranslation
+            }
+            onContinuationRequested={onContinuationRequested}
+          />
         </section>
       ) : null}
 

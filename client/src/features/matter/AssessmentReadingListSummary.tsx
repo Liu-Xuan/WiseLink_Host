@@ -8,10 +8,16 @@ import { assessmentClaimGroups } from './assessment-reading';
 
 export function savedReadingSummary(
   result: AssessmentReadingResult,
+  knownSummary?: AssessmentReadingSummary | null,
 ): AssessmentReadingSummary {
   return {
     resultRef: result.resultRef,
     resultRevision: result.resultRevision,
+    roundCompletion:
+      knownSummary?.resultRef === result.resultRef &&
+      knownSummary.resultRevision === result.resultRevision
+        ? knownSummary.roundCompletion
+        : undefined,
     headline: result.content.headline,
     listBrief: result.content.listBrief,
     decisiveClaims: assessmentClaimGroups(result).decisive.map(
@@ -28,6 +34,9 @@ const AssessmentReadingListSummary: FC<{
     data-result-ref={summary.resultRef}
     data-result-revision={summary.resultRevision}
   >
+    {summary.roundCompletion === 'IN_PROGRESS' ? (
+      <small>分析进行中 · 已保存工作</small>
+    ) : null}
     <strong className="library-saved-list-brief">{summary.headline}</strong>
     <small className="library-saved-list-brief">{summary.listBrief}</small>
     {summary.decisiveClaims.map((claim) => (

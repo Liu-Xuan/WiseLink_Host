@@ -22,6 +22,8 @@ const calls = [];
 const dynamicCalls = [];
 const orchestratorCalls = [];
 const translationCalls = [];
+const semanticCalls = [];
+const problemWorkCalls = [];
 const translationResultParts = new Map();
 let assembledTranslationResult = null;
 let translationTransportProof = null;
@@ -246,7 +248,13 @@ const attempts = {
   },
 };
 const translation = {
-  begin: async (workItemId) => {
+  workspaceCommand: async (input) => { semanticCalls.push(input); return { action: 'DONE' }; },
+  begin: async (workItemId, requestId) => {
+    if (workItemId === 'WI-SEMANTIC') {
+      semanticCalls.push({ tool: 'begin_translation', workItemId, requestId });
+      return { attemptRef: 'TRN-SEMANTIC', status: 'RUNNING', leaseToken, leaseGeneration: 1,
+        task: mockTaskEnvelope({ actionAttemptId: 'ATT-SEMANTIC', operationRef: 'TRN-SEMANTIC', taskType: 'OPENCLAW_TRANSLATE', modelInput: { schemaVersion: 'wiselink.3_1.translation_task.v2' } }) };
+    }
     translationCalls.push({ tool: 'begin_translation', workItemId });
     return { attemptRef: 'TRN-OPAQUE', status: 'RUNNING' };
   },
@@ -450,6 +458,11 @@ const openClawMcp = new CanonicalHostOpenClawMcpService(
   attemptStatus,
   attempts,
   serviceScope,
+  {
+    readSources: async (input) => { problemWorkCalls.push({ tool: 'read_assessment_sources', ...input }); return { sources: [], synthetic: true }; },
+    saveWork: async (input) => { problemWorkCalls.push({ tool: 'save_assessment_work', ...input }); return { workRevisionRef: 'JA-SYNTHETIC-1' }; },
+    readAttemptWork: async (attemptRef, requestId) => { problemWorkCalls.push({ tool: 'read_assessment_work', attemptRef, requestId }); return { workRevisionRef: 'JA-SYNTHETIC-1' }; },
+  },
 );
 
 const httpServer = createServer(async (request, response) => {
@@ -615,15 +628,20 @@ try {
         'query_parsed_package',
         'get_deep_link',
         'begin_translation',
+        'translation_workspace',
         'commit_translation_candidate',
         'begin_applicability_evaluation',
         'commit_applicability_candidate',
         'begin_dynamic_evaluation',
+        'read_assessment_sources',
+        'save_assessment_work',
+        'read_assessment_work',
         'commit_dynamic_evaluation_candidate',
         'record_oem_discovery_run',
         'begin_overall_synthesis',
         'resume_overall_synthesis',
         'commit_overall_candidate',
+        'get_pending_review_turn',
         'begin_review_turn',
         'get_review_turn_context',
         'read_source_refs',
@@ -633,8 +651,27 @@ try {
         'cancel_action_attempt',
       ],
     );
-    assert.equal(listed.tools.length, 20);
+    assert.equal(listed.tools.length, 25);
     assert.equal(openClawClient.getServerVersion()?.version, '1.2.0');
+    const semanticBegin = await openClawClient.callTool({ name: 'begin_translation', arguments: { workItemId: 'WI-SEMANTIC', requestId: 'synthetic-v2' } });
+    assert.notEqual(semanticBegin.isError, true);
+    assert.deepEqual(semanticCalls[0], { tool: 'begin_translation', workItemId: 'WI-SEMANTIC', requestId: 'synthetic-v2' });
+    const fence = { attemptRef: 'TRN-SEMANTIC', leaseToken, leaseGeneration: 1 };
+    assert.notEqual((await openClawClient.callTool({ name: 'translation_workspace', arguments: { ...fence, phase: 'READ' } })).isError, true);
+    assert.deepEqual(semanticCalls[1], { ...fence, phase: 'READ' });
+    const sourceRead = { ...fence, sourceRefs: ['source-synthetic'], purpose: 'Synthetic transport verification', context: 'PAGE' };
+    const workSave = { ...fence, requestId: 'synthetic-save', expectedWorkRevision: 0, workJson: '{"synthetic":true}' };
+    const workRead = { attemptRef: fence.attemptRef, requestId: 'synthetic-save' };
+    for (const [name, args] of [['read_assessment_sources', sourceRead], ['save_assessment_work', workSave], ['read_assessment_work', workRead]]) {
+      assert.notEqual((await openClawClient.callTool({ name, arguments: args })).isError, true);
+    }
+    assert.deepEqual(problemWorkCalls, [
+      { tool: 'read_assessment_sources', ...sourceRead }, { tool: 'save_assessment_work', ...workSave }, { tool: 'read_assessment_work', ...workRead },
+    ]);
+    const injected = await openClawClient.callTool({ name: 'save_assessment_work', arguments: { ...workSave, actor: 'synthetic-injected' } });
+    assert.equal(injected.isError, true);
+    assert.equal(problemWorkCalls.length, 3);
+
     const largeTranslation = largeTranslationResultEnvelope();
     assert.ok(
       largeTranslation.bytes.byteLength >= 65_000 &&
@@ -1122,15 +1159,20 @@ try {
           'query_parsed_package',
           'get_deep_link',
           'begin_translation',
+          'translation_workspace',
           'commit_translation_candidate',
           'begin_applicability_evaluation',
           'commit_applicability_candidate',
           'begin_dynamic_evaluation',
+          'read_assessment_sources',
+          'save_assessment_work',
+          'read_assessment_work',
           'commit_dynamic_evaluation_candidate',
           'record_oem_discovery_run',
           'begin_overall_synthesis',
           'resume_overall_synthesis',
           'commit_overall_candidate',
+          'get_pending_review_turn',
           'begin_review_turn',
           'get_review_turn_context',
           'read_source_refs',
@@ -1142,7 +1184,7 @@ try {
         resources: 0,
         prompts: 0,
         ailyMutationTools: 0,
-        openClawCandidateMutationTools: 13,
+        openClawCandidateMutationTools: 15,
         servedMethods: ['POST'],
         rejectedClientTransportMethods: [
           ...new Set(methods.filter((method) => method !== 'POST')),

@@ -1,3 +1,7 @@
+import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
+import { isJobAidProblemProjection } from '@shared/jobaid-problem-assessment.interface';
+import { CanonicalJobAidProblemService } from './canonical-jobaid-problem.service';
+import { overallModelEvidenceRegistry } from './overall-assessment-reading';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
 import type {
@@ -49,6 +53,7 @@ import {
   REVIEW_SKILL_POLICY_REF,
   REVIEW_TOOL_POLICY_REF,
   REVIEW_MATTER_TOOL_POLICY_REF,
+  REVIEW_JOBAID_TOOL_POLICY_REF,
   type FrozenReviewSourceRef,
   type ReviewTurnCandidateContract,
   type ReviewTurnTaskContract,
@@ -148,6 +153,7 @@ export class CanonicalHostOpenClawReviewService {
     private readonly matterWorking?: EngineeringMatterWorkingService,
     @Optional()
     private readonly matterWorkingRepository?: EngineeringMatterWorkingRepository,
+    @Optional() private readonly jobAid?: CanonicalJobAidProblemService,
   ) {}
 
   async pending(workItemId: string): Promise<PendingReviewTurnResponse> {
@@ -375,7 +381,7 @@ export class CanonicalHostOpenClawReviewService {
       authorized.row.reviewActivityJson,
     );
     if (
-      matterContext &&
+      (matterContext || authorized.contract.jobAidContext) &&
       [...candidate.sourceRefs, ...candidate.candidateEvidenceRefs].some(
         (ref) => !readRefs.has(ref),
       )
@@ -391,6 +397,13 @@ export class CanonicalHostOpenClawReviewService {
             resolvedSourceRefIds: readRefs,
           })
         : null;
+    if (authorized.contract.jobAidContext && candidate.jobAidWorkingDelta)
+      this.jobAid!.prepareReviewWork(
+        authorized.contract.jobAidContext,
+        authorized.row.workItemId,
+        candidate.jobAidWorkingDelta,
+        readRefs,
+      );
     assertReviewCommitFence({
       row: authorized.row,
       principalId: authorized.scope.principalId,
@@ -420,16 +433,28 @@ export class CanonicalHostOpenClawReviewService {
       candidate: assistantCandidate(attemptRef, candidate, result),
       completedAt: new Date(),
     };
-    const persisted = authorized.contract.matterContext
-      ? await this.persistMatterCandidate(
+    const persisted = authorized.contract.jobAidContext
+      ? await this.persistJobAidCandidate(
           authorized,
           candidate,
           persistenceInput,
-          matterCommand,
+          {
+            principalId: authorized.scope.principalId,
+            leaseToken,
+            leaseGeneration,
+          },
+          readRefs,
         )
-      : await this.conversations.persistOpenClawAssistantCandidate(
-          persistenceInput,
-        );
+      : authorized.contract.matterContext
+        ? await this.persistMatterCandidate(
+            authorized,
+            candidate,
+            persistenceInput,
+            matterCommand,
+          )
+        : await this.conversations.persistOpenClawAssistantCandidate(
+            persistenceInput,
+          );
     const terminal =
       await this.attempts.finishCandidatePersistenceSuccess(prepared);
     if (!persisted.turn.assistantCandidate) {
@@ -449,6 +474,85 @@ export class CanonicalHostOpenClawReviewService {
         staleMarked: false,
       },
     };
+  }
+
+  private async persistJobAidCandidate(
+    authorized: AuthorizedReviewAttempt,
+    candidate: ReviewTurnCandidateContract,
+    input: Parameters<
+      ReviewConversationRepository['persistOpenClawAssistantCandidate']
+    >[0],
+    fence: { principalId: string; leaseToken: string; leaseGeneration: number },
+    readRefs: Set<string>,
+  ) {
+    if (!this.jobAid || !this.matterWorkingRepository)
+      throw reviewConflict('REVIEW_JOBAID_RUNTIME_UNAVAILABLE');
+    const task = authorized.contract.jobAidContext!;
+    const cited = new Set([
+      ...candidate.sourceRefs,
+      ...candidate.candidateEvidenceRefs,
+    ]);
+    input.candidate.sourceBindings = task.sourceCatalog.flatMap((item) =>
+      item.kind === 'DOCUMENT_PASSAGE' && cited.has(item.evidenceRef)
+        ? [
+            {
+              sourceRefId: item.evidenceRef,
+              workItemId: item.workItemId,
+              documentVersionId: item.documentVersionId,
+              originalSourceRefId: item.sourceRefId,
+            },
+          ]
+        : [],
+    );
+    return this.matterWorkingRepository.withActorTransaction(
+      authorized.conversation.actorId,
+      async ({ database }) => {
+        if (authorized.turn.assistantCandidate) {
+          if (
+            authorized.turn.assistantCandidate.actionAttemptRef !==
+            input.candidate.actionAttemptRef
+          )
+            throw reviewConflict('REVIEW_TURN_CANDIDATE_CONFLICT');
+          input.candidate.jobAidWorkingUpdate =
+            authorized.turn.assistantCandidate.jobAidWorkingUpdate;
+        } else if (candidate.jobAidWorkingDelta) {
+          const saved = await this.jobAid!.saveReviewWork(
+            {
+              row: authorized.row,
+              task,
+              fence,
+              requestId: `review-turn:${authorized.turn.reviewTurnId}`,
+              proposal: candidate.jobAidWorkingDelta,
+              actualReadRefs: readRefs,
+            },
+            database,
+          );
+          input.candidate.jobAidWorkingUpdate = {
+            status: 'APPLIED',
+            workRevisionRef: saved.revision.workRevisionRef,
+            workRevision: saved.revision.workRevision,
+            affectedIssueKeys: Array.isArray(
+              candidate.jobAidWorkingDelta.issues,
+            )
+              ? candidate.jobAidWorkingDelta.issues.map((issue) =>
+                  String((issue as Record<string, unknown>).issueKey),
+                )
+              : [],
+          };
+        } else {
+          input.candidate.jobAidWorkingUpdate = {
+            status: 'UNCHANGED',
+            workRevisionRef: task.previousWork?.workRevisionRef ?? null,
+            workRevision: task.previousWork?.workRevision ?? 0,
+            affectedIssueKeys: [],
+          };
+        }
+        return this.conversations.persistOpenClawAssistantCandidate(
+          input,
+          database,
+        );
+      },
+    );
   }
 
   private async persistMatterCandidate(
@@ -663,7 +767,8 @@ export class CanonicalHostOpenClawReviewService {
       loaded.projection.phase !== 'CANDIDATE_READBACK_VERIFIED' ||
       !loaded.projection.package ||
       (!binding.turn.reviewScope &&
-        !loaded.projection.integratedAssessment?.baseRules)
+        !loaded.projection.integratedAssessment?.baseRules &&
+        !this.jobAid?.enabledForNewTasks())
     ) {
       throw reviewConflict('REVIEW_TURN_BINDING_STALE_OR_INELIGIBLE');
     }
@@ -716,6 +821,18 @@ export class CanonicalHostOpenClawReviewService {
     ) {
       throw reviewNotFound();
     }
+    if (contract.jobAidContext) {
+      if (
+        !this.jobAid ||
+        contract.jobAidContext.actorUserId !== binding.conversation.actorId
+      )
+        throw reviewNotFound();
+      await this.jobAid.assertReviewSources(
+        contract.jobAidContext,
+        row.tenantId,
+        row.workItemId,
+      );
+    }
     if (requireCurrent) {
       if (binding.conversation.status !== 'ACTIVE') throw reviewNotFound();
       await this.requiredCurrentWorkItem(binding, scope);
@@ -736,6 +853,12 @@ export class CanonicalHostOpenClawReviewService {
   ): Promise<ReviewTurnTaskContract> {
     if (binding.turn.reviewScope)
       return this.buildMatterTaskContract(binding, workItem);
+    if (
+      isJobAidProblemProjection(workItem.integratedAssessment?.baseRules) ||
+      (!workItem.integratedAssessment?.baseRules &&
+        this.jobAid?.enabledForNewTasks())
+    )
+      return this.buildJobAidTaskContract(binding, workItem);
     const readScope: UnifiedArtifactReadScope = new UnifiedArtifactReadScope(
       this.artifactStore,
     );
@@ -905,6 +1028,155 @@ export class CanonicalHostOpenClawReviewService {
     });
   }
 
+  private async buildJobAidTaskContract(
+    binding: ReviewBinding,
+    workItem: CanonicalWorkItemProjection,
+  ): Promise<ReviewTurnTaskContract> {
+    if (!this.jobAid) throw reviewConflict('REVIEW_JOBAID_RUNTIME_UNAVAILABLE');
+    if (binding.turn.selectedEvaluationItemId)
+      throw reviewConflict('REVIEW_JOBAID_LEGACY_CRITERION_UNSUPPORTED');
+    const [attachments, previousTask] = await Promise.all([
+      this.readAttachmentContext(binding),
+      this.conversations.loadPreviousOpenClawTask({
+        reviewConversationId: binding.conversation.reviewConversationId,
+        tenantId: binding.conversation.tenantId,
+        actorId: binding.conversation.actorId,
+        workItemId: workItem.workItemId,
+        beforeTurnNo: binding.turn.turnNo,
+      }),
+    ]);
+    const evidence: AssessmentEvidence[] = [
+      {
+        kind: 'ENGINEER_STATEMENT',
+        origin: 'REVIEW_CONVERSATION',
+        evidenceRef: `engineer-input:${binding.turn.engineerSuppliedInputId}`,
+        title: '本轮工程师陈述',
+        versionLabel: `Review ${binding.turn.turnNo}`,
+        excerpt: binding.turn.candidateText || binding.turn.userMessage,
+        reviewConversationId: binding.conversation.reviewConversationId,
+        reviewTurnId: binding.turn.reviewTurnId,
+        engineerSuppliedInputId: binding.turn.engineerSuppliedInputId,
+        recordedAt: binding.turn.createdAt.toISOString(),
+      },
+    ];
+    for (const resource of attachments.resourceRefs) {
+      const attachment = binding.turn.attachmentBindings!.find(
+        (item) => item.attachmentRef === resource.sourceRefId,
+      )!;
+      evidence.push({
+        kind: 'ENGINEER_ATTACHMENT',
+        evidenceRef: resource.sourceRefId,
+        title: attachment.fileName,
+        versionLabel: attachment.documentVersionId,
+        excerpt: canonicalJson(resource.value.pages),
+        workItemId: workItem.workItemId,
+        reviewConversationId: binding.conversation.reviewConversationId,
+        reviewTurnId: binding.turn.reviewTurnId,
+        attachmentRef: attachment.attachmentRef,
+        documentVersionId: attachment.documentVersionId,
+        artifactRef: attachment.parsedArtifact.ref,
+        artifactSha256: attachment.parsedArtifact.sha256,
+        locator: '工程师上传附件的已解析页面',
+      });
+    }
+    const jobAidContext = await this.jobAid.prepareReview({
+      workItem,
+      tenantId: binding.conversation.tenantId,
+      actorUserId: binding.conversation.actorId,
+      asOf: binding.turn.createdAt.toISOString(),
+      evidence,
+    });
+    const resourceRefs = jobAidContext.sourceCatalog.flatMap(
+      (item): FrozenReviewSourceRef[] => {
+        if (
+          item.kind !== 'DOCUMENT_PASSAGE' &&
+          item.kind !== 'ENGINEER_ATTACHMENT'
+        )
+          return [];
+        const source =
+          item.kind === 'DOCUMENT_PASSAGE'
+            ? jobAidContext.sourceBindings.find(
+                (entry) => entry.workItemId === item.workItemId,
+              )!
+            : null;
+        return [
+          {
+            sourceRefId: item.evidenceRef,
+            resourceArtifactRef:
+              source?.artifactRef ??
+              (
+                item as Extract<
+                  AssessmentEvidence,
+                  { kind: 'ENGINEER_ATTACHMENT' }
+                >
+              ).artifactRef,
+            resourceArtifactSha256:
+              source?.artifactSha256 ??
+              (
+                item as Extract<
+                  AssessmentEvidence,
+                  { kind: 'ENGINEER_ATTACHMENT' }
+                >
+              ).artifactSha256,
+            value: {
+              ...overallModelEvidenceRegistry([item])[0],
+              sourceRefId: item.evidenceRef,
+            },
+          },
+        ];
+      },
+    );
+    // Methods are delivered as method clauses, never synthetic document resources.
+    jobAidContext.initiallyDeliveredRefs = [
+      ...new Set([
+        ...jobAidContext.initiallyDeliveredRefs,
+        ...jobAidContext.sourceCatalog
+          .filter((item) => item.kind === 'METHOD_CLAUSE')
+          .map((item) => item.evidenceRef),
+      ]),
+    ];
+    jobAidContext.modelInput.deliveredEvidence = overallModelEvidenceRegistry(
+      jobAidContext.sourceCatalog.filter((item) =>
+        jobAidContext.initiallyDeliveredRefs.includes(item.evidenceRef),
+      ),
+    );
+    return parseReviewTurnTaskContract({
+      schemaVersion: 'wiselink.3_1.review_turn_task.v1.c5',
+      mode: 'INTERACTIVE_REVIEW',
+      reviewConversationRef: binding.conversation.reviewConversationId,
+      reviewTurnRef: binding.turn.reviewTurnId,
+      requestId: binding.turn.requestId,
+      actorContextRef: reviewSessionActorContextRef(
+        binding,
+        resourceRefs,
+        previousTask,
+      ),
+      inputRevision: binding.turn.inputRevision,
+      selectedEvaluationItemId: null,
+      userMessage: binding.turn.userMessage,
+      allowedOperations: [...REVIEW_ALLOWED_OPERATIONS],
+      resourceRefs,
+      allowedEvaluationItemIds: [],
+      allowedAdoptedInputRefs: [],
+      attachmentRefs: attachments.attachmentRefs,
+      jobAidContext,
+      context: {
+        problemAssessment: jobAidContext.modelInput,
+        engineerInput: {
+          text: binding.turn.candidateText,
+          attachmentRefs: attachments.attachmentRefs,
+        },
+      },
+      executionPolicy: {
+        runtimeAppId: REVIEW_RUNTIME_APP_ID,
+        profileRef: REVIEW_PROFILE_REF,
+        modelPolicyRef: REVIEW_MODEL_POLICY_REF,
+        skillPolicyRef: REVIEW_SKILL_POLICY_REF,
+        toolPolicyRef: REVIEW_JOBAID_TOOL_POLICY_REF,
+      },
+    });
+  }
+
   private async authorizeMatterRuntime(binding: ReviewBinding) {
     const scope = binding.turn.reviewScope;
     if (!scope || !this.matterWorking)
@@ -972,6 +1244,13 @@ export class CanonicalHostOpenClawReviewService {
               packageValue: readScope.parseJson(
                 await readScope.readActualBytes(projection.package.artifact),
               ),
+              problemWork: this.jobAid
+                ? await this.jobAid.readCurrentWorkForRuntime({
+                    workItemId: projection.workItemId,
+                    tenantId: binding.conversation.tenantId,
+                    actorUserId: binding.conversation.actorId,
+                  })
+                : null,
             };
           }),
         ),

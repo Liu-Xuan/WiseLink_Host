@@ -214,6 +214,9 @@
 .continuous-review-turn {
   display: grid;
   grid-template-columns: minmax(220px, 0.72fr) minmax(320px, 1.28fr);
+  grid-template-areas:
+    'input execution'
+    'input response';
   overflow: hidden;
   border: 1px solid var(--wl-border);
   border-radius: var(--wl-radius-md);
@@ -237,8 +240,18 @@
 }
 
 .continuous-review-input {
+  grid-area: input;
   border-right: 1px solid var(--wl-border);
   background: var(--wl-bg-2);
+}
+
+.continuous-review-turn > .review-execution {
+  grid-area: execution;
+}
+
+.continuous-review-turn > .continuous-review-candidate,
+.continuous-review-turn > .continuous-review-pending {
+  grid-area: response;
 }
 
 .continuous-review-turn header,
@@ -737,6 +750,10 @@
 
   .continuous-review-turn {
     grid-template-columns: 1fr;
+    grid-template-areas:
+      'input'
+      'execution'
+      'response';
   }
 
   .continuous-review-input {

@@ -1,3 +1,5 @@
+import type { CanonicalLegacyBaseRuleCandidateProjection } from '@shared/api.interface';
+import { isJobAidProblemProjection } from '@shared/jobaid-problem-assessment.interface';
 import { Inject, Injectable } from '@nestjs/common';
 
 import type {
@@ -381,7 +383,11 @@ export class CanonicalHostEngineerReviewService {
   async pageContext(
     workItem: CanonicalWorkItemProjection,
   ): Promise<CanonicalEngineerReviewPageContext | null> {
-    if (!workItem.integratedAssessment?.baseRules) return null;
+    if (
+      !workItem.integratedAssessment?.baseRules ||
+      isJobAidProblemProjection(workItem.integratedAssessment.baseRules)
+    )
+      return null;
     const [{ items, ledger }, rules] = await Promise.all([
       this.readDynamicItemsAndLedger(workItem),
       readActiveJobAidBrowserRules(
@@ -475,7 +481,9 @@ export class CanonicalHostEngineerReviewService {
     return (await this.readDynamicItemsAndLedger(workItem)).items;
   }
 
-  private async readDynamicItemsAndLedger(workItem: CanonicalWorkItemProjection) {
+  private async readDynamicItemsAndLedger(
+    workItem: CanonicalWorkItemProjection,
+  ) {
     const baseRules = workItem.integratedAssessment!.baseRules;
     const [bytes, ledger] = await Promise.all([
       this.artifactStore.readActualBytes(baseRules.artifact),
@@ -556,25 +564,35 @@ function assertLedgerItems(
   baseRules: CanonicalIntegratedAssessmentProjection['baseRules'],
   items: ReturnType<typeof readDynamicRuleReviewItems>,
 ): void {
+  if (isJobAidProblemProjection(baseRules))
+    throw new Error('JOBAID_PROBLEM_LEGACY_LEDGER_UNSUPPORTED');
   if (ledger.criterionSetId !== baseRules.criterionSetId) {
     throw new Error('ENGINEER_REVIEW_RULESET_CHANGED');
   }
   const known = new Set(items.map((item) => item.criterionId));
   if (
-    ledger.reviews.some((review) =>
-      !known.has(review.criterionId) ||
-      (review.affectedCriterionIds ?? [review.criterionId]).some(
-        (id) => !known.has(id),
-      ),
+    ledger.reviews.some(
+      (review) =>
+        !known.has(review.criterionId) ||
+        (review.affectedCriterionIds ?? [review.criterionId]).some(
+          (id) => !known.has(id),
+        ),
     )
   ) {
     throw new Error('ENGINEER_REVIEW_CRITERION_SET_DRIFT');
   }
 }
 
+type LegacyDynamicWorkItem = CanonicalWorkItemProjection & {
+  integratedAssessment: CanonicalIntegratedAssessmentProjection & {
+    baseRules: CanonicalLegacyBaseRuleCandidateProjection;
+  };
+};
 function requiredDynamicWorkItem(
   workItem: CanonicalWorkItemProjection,
-): CanonicalWorkItemProjection {
+): LegacyDynamicWorkItem {
+  if (isJobAidProblemProjection(workItem.integratedAssessment?.baseRules))
+    throw new Error('JOBAID_PROBLEM_LEGACY_REVIEW_ACTION_UNSUPPORTED');
   if (
     workItem.phase !== 'CANDIDATE_READBACK_VERIFIED' ||
     !workItem.package ||
@@ -585,7 +603,7 @@ function requiredDynamicWorkItem(
   ) {
     throw new Error('ENGINEER_REVIEW_DYNAMIC_N_CANDIDATE_REQUIRED');
   }
-  return workItem;
+  return workItem as LegacyDynamicWorkItem;
 }
 
 function validateReviewActionInput(
@@ -803,6 +821,8 @@ function assertLedger(
   projection: CanonicalEngineerReviewLedgerProjection,
   workItem: CanonicalWorkItemProjection,
 ): void {
+  if (isJobAidProblemProjection(workItem.integratedAssessment?.baseRules))
+    throw new Error('JOBAID_PROBLEM_LEGACY_LEDGER_UNSUPPORTED');
   if (
     ledger.kind !== LEDGER_KIND ||
     ledger.version !== LEDGER_VERSION ||

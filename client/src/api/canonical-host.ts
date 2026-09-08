@@ -1,3 +1,4 @@
+import type { JobAidWorkingReadModel } from '@shared/jobaid-problem-assessment.interface';
 import type {
   AppendReviewTextTurnRequest,
   AppendReviewTextTurnResponse,
@@ -6,6 +7,8 @@ import type {
   CanonicalAeoCandidateRunResponse,
   CanonicalDocumentParsingPageResponse,
   CanonicalInitialAnalysisReadModel,
+  CanonicalInitialAnalysisContinuationRequest,
+  CanonicalInitialAnalysisContinuationReceipt,
   CanonicalModelSettingsReadModel,
   CanonicalTaskModelOptions,
   UpdateCanonicalModelSettingsRequest,
@@ -38,6 +41,68 @@ import { logger } from '@lark-apaas/client-toolkit/logger';
 import { axiosForBackend } from '@lark-apaas/client-toolkit/utils/getAxiosForBackend';
 import { resolveAppUrl } from '@lark-apaas/client-toolkit/utils/resolveAppUrl';
 import { createRequestCorrelationId } from '../utils/request-correlation-id';
+import type {
+  TranslationEngineerRevisionCommandV2,
+  TranslationRevisionReadModelV2,
+  TranslationBlockRevisionV2,
+} from '@shared/canonical-translation-v2.interface';
+
+export async function readTranslationRevisions(
+  workItemId: string,
+  workspaceId: string,
+): Promise<TranslationRevisionReadModelV2> {
+  const requestGeneration = clientSessionGeneration;
+  try {
+    const response = await axiosForBackend<TranslationRevisionReadModelV2>({
+      url: `/api/canonical-host/work-items/${encodeURIComponent(workItemId)}/translation-workspaces/${encodeURIComponent(workspaceId)}/revisions`,
+      method: 'GET',
+    });
+    if (response.status === 401)
+      throw clientLoginRequired(
+        'TRANSLATION_REVISION_ACCESS_DENIED',
+        requestGeneration,
+      );
+    if (response.status === 403 || response.status === 404)
+      throw canonicalObjectNotFound();
+    return response.data;
+  } catch (error) {
+    throw normalizedDirectObjectError(error, requestGeneration);
+  }
+}
+
+export async function saveTranslationRevision(
+  workItemId: string,
+  input: TranslationEngineerRevisionCommandV2,
+): Promise<
+  TranslationRevisionReadModelV2 & {
+    revision: TranslationBlockRevisionV2;
+    candidateOnly: true;
+  }
+> {
+  const requestGeneration = clientSessionGeneration;
+  try {
+    const response = await axiosForBackend<
+      TranslationRevisionReadModelV2 & {
+        revision: TranslationBlockRevisionV2;
+        candidateOnly: true;
+      }
+    >({
+      url: `/api/canonical-host/work-items/${encodeURIComponent(workItemId)}/translation-workspaces/revisions`,
+      method: 'POST',
+      data: input,
+    });
+    if (response.status === 401)
+      throw clientLoginRequired(
+        'TRANSLATION_REVISION_ACCESS_DENIED',
+        requestGeneration,
+      );
+    if (response.status === 403 || response.status === 404)
+      throw canonicalObjectNotFound();
+    return response.data;
+  } catch (error) {
+    throw normalizedDirectObjectError(error, requestGeneration);
+  }
+}
 
 export interface CanonicalHostIdentityContext {
   userId: string;
@@ -537,6 +602,47 @@ export async function getInitialAnalysisStatus(
     logCanonicalRequestFailure('读取初始分析进度失败', error);
     throw normalizedDirectObjectError(error, requestGeneration);
   }
+}
+
+export async function requestInitialAnalysisContinuation(
+  workItemId: string,
+  input: CanonicalInitialAnalysisContinuationRequest,
+): Promise<CanonicalInitialAnalysisContinuationReceipt> {
+  const requestGeneration = clientSessionGeneration;
+  try {
+    const response =
+      await axiosForBackend<CanonicalInitialAnalysisContinuationReceipt>({
+        url: `/api/canonical-host/work-items/${encodeURIComponent(workItemId)}/initial-analysis/continue`,
+        method: 'POST',
+        data: input,
+      });
+    if (response.status === 401)
+      throw clientLoginRequired(
+        'INITIAL_ANALYSIS_LOGIN_REQUIRED',
+        requestGeneration,
+      );
+    if (response.status === 403 || response.status === 404)
+      throw canonicalObjectNotFound();
+    if (response.status < 200 || response.status >= 300)
+      throw backendResponseError(
+        response.data,
+        'INITIAL_CONTINUATION_UNAVAILABLE',
+        response.status,
+      );
+    return response.data;
+  } catch (error) {
+    throw normalizedDirectObjectError(error, requestGeneration);
+  }
+}
+
+export function readJobAidAssessmentWork(
+  workItemId: string,
+): Promise<JobAidWorkingReadModel> {
+  return reviewConversationRequest<JobAidWorkingReadModel>({
+    url: `/api/canonical-host/work-items/${encodeURIComponent(workItemId)}/assessment-work`,
+    method: 'GET',
+    operation: '读取已保存的问题评估',
+  });
 }
 
 export async function getDocumentParsingPage(

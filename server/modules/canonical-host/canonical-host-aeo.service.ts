@@ -1,3 +1,4 @@
+import { isJobAidProblemProjection } from '@shared/jobaid-problem-assessment.interface';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -644,6 +645,8 @@ function makeAeoWorkItem(input: {
 }): AeoWorkItemReadModel {
   const { canonical } = input;
   const dynamic = canonical.integratedAssessment!.baseRules;
+  if (isJobAidProblemProjection(dynamic))
+    throw new Error('JOBAID_PROBLEM_AEO_PROJECTION_UNSUPPORTED');
   const overall = canonical.integratedAssessment!.overallSynthesis!;
   return {
     schemaVersion: AEO_ARTIFACT_INDEX_VERSION,

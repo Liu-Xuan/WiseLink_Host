@@ -50,7 +50,9 @@ import { CanonicalHostApplicabilityInputProducer } from './canonical-host-applic
 import { readFrozenApplicabilitySourceBinding } from './canonical-host-applicability-source';
 import {
   APPLICABILITY_ARTIFACT_SCHEMA_VERSION,
+  APPLICABILITY_ARTIFACT_V2_SCHEMA_VERSION,
   APPLICABILITY_TASK_SCHEMA_VERSION,
+  APPLICABILITY_TASK_V2_SCHEMA_VERSION,
   applicabilityRuntimePolicy,
   applicabilityAstVocabulary,
   parseApplicabilityCandidate,
@@ -109,14 +111,17 @@ interface ConfigurationEvidenceApplicabilityCasOwner {
 }
 
 interface ApplicabilityCandidateArtifact {
-  schemaVersion: typeof APPLICABILITY_ARTIFACT_SCHEMA_VERSION;
+  schemaVersion:
+    | typeof APPLICABILITY_ARTIFACT_SCHEMA_VERSION
+    | typeof APPLICABILITY_ARTIFACT_V2_SCHEMA_VERSION;
   candidateOnly: true;
   source: {
     documentId: string;
     documentVersionId: string;
     packageId: string;
     packageContentHash: string;
-    translationActionAttemptId: string;
+    translationActionAttemptId: string | null;
+    sourceReadingMode?: 'VERIFIED_ENGLISH';
     applicabilityContextRef: string;
     applicabilityBindingRevision: string;
     targetBindingHash: string;
@@ -198,9 +203,25 @@ export class CanonicalHostOpenClawApplicabilityService {
     const { workItem, applicabilityInput } =
       await this.applicabilityInputs.readCurrentOwnerValidated(scope);
     assertApplicabilityNotCurrent(workItem, applicabilityInput);
+    const bound = await this.attempts.readExactIdempotency({
+      tenantId: scope.tenantId,
+      workItemId: workItem.workItemId,
+      taskType: 'OPENCLAW_APPLICABILITY_EVALUATION',
+      baseRevision: workItem.revision,
+      documentVersionId: workItem.source.documentVersionId,
+      idempotencyKey: applicabilityIdempotencyKey({
+        workItem,
+        applicabilityInput,
+        requestId,
+      }),
+    });
+    const frozenVersion = bound?.taskEnvelopeJson
+      ? applicabilityTaskVersion(parseTaskEnvelope(bound.taskEnvelopeJson))
+      : undefined;
     const taskBuild = await this.buildTaskContract(
       workItem,
       applicabilityInput,
+      frozenVersion,
     );
     const claim = await this.attempts.reserveAndClaim({
       workItemId: workItem.workItemId,
@@ -407,7 +428,11 @@ export class CanonicalHostOpenClawApplicabilityService {
           : 'WORK_ITEM_REVISION_CONFLICT',
       );
     }
-    let rebuilt = await this.buildTaskContract(workItem, applicabilityInput);
+    let rebuilt = await this.buildTaskContract(
+      workItem,
+      applicabilityInput,
+      applicabilityTaskVersion(task),
+    );
     assertTaskBuildMatches(rebuilt, task);
     if (result.status === 'WAITING_INPUT') {
       assertApplicabilityWaitingResult(result, task);
@@ -845,6 +870,7 @@ export class CanonicalHostOpenClawApplicabilityService {
     const rebuilt = await this.buildTaskContract(
       ownerValidated.workItem,
       ownerValidated.applicabilityInput,
+      applicabilityTaskVersion(input.task),
     );
     const frozenContract = {
       ...rebuilt.contract,
@@ -1234,7 +1260,11 @@ export class CanonicalHostOpenClawApplicabilityService {
           : 'WORK_ITEM_REVISION_CONFLICT',
       );
     }
-    const rebuilt = await this.buildTaskContract(workItem, applicabilityInput);
+    const rebuilt = await this.buildTaskContract(
+      workItem,
+      applicabilityInput,
+      applicabilityTaskVersion(task),
+    );
     assertTaskBuildMatches(rebuilt, task);
     return { workItem, applicabilityInput, rebuilt };
   }
@@ -1242,6 +1272,10 @@ export class CanonicalHostOpenClawApplicabilityService {
   private async buildTaskContract(
     workItem: CanonicalWorkItemProjection,
     applicabilityInput: CanonicalApplicabilityInputProjection,
+    schemaVersion: ApplicabilityTaskContract['schemaVersion'] = process.env
+      .WL_JOBAID_PROBLEM_V2_ENABLED === '1'
+      ? APPLICABILITY_TASK_V2_SCHEMA_VERSION
+      : APPLICABILITY_TASK_SCHEMA_VERSION,
   ): Promise<ApplicabilityTaskBuild> {
     const sourceUnits = await this.reader.readAllSourceUnits({
       artifact: workItem.package!.artifact,
@@ -1268,15 +1302,20 @@ export class CanonicalHostOpenClawApplicabilityService {
     }
     const sourceExpressions = sourceBinding.sourceExpressions;
 
-    const bilingual = await this.readCurrentBilingual(workItem);
-    if (bilingual === null) {
+    const englishInput = schemaVersion === APPLICABILITY_TASK_V2_SCHEMA_VERSION;
+    // A completed Chinese translation is not a prerequisite for extracting English effectivity.
+    // v2 intentionally leaves legacy bilingual units empty; semantic blocks never masquerade as units.
+    const bilingual = englishInput
+      ? null
+      : await this.readCurrentBilingual(workItem);
+    if (!englishInput && bilingual === null) {
       throw new Error('CURRENT_BILINGUAL_TRANSLATION_REQUIRED');
     }
     const relevantRefIds = new Set(
       sourceExpressions.flatMap((expression) => expression.sourceRefIds),
     );
     const bilingualUnits = selectBilingualUnits(
-      bilingual.units,
+      bilingual?.units ?? [],
       sourceUnits,
       relevantRefIds,
     );
@@ -1284,8 +1323,11 @@ export class CanonicalHostOpenClawApplicabilityService {
       bilingualUnits.flatMap((unit) => unit.sourceRefIds),
     );
     if (
-      bilingualUnits.length === 0 ||
-      [...relevantRefIds].some((sourceRefId) => !coveredRefs.has(sourceRefId))
+      !englishInput &&
+      (bilingualUnits.length === 0 ||
+        [...relevantRefIds].some(
+          (sourceRefId) => !coveredRefs.has(sourceRefId),
+        ))
     ) {
       throw new Error('BILINGUAL_APPLICABILITY_SOURCE_COVERAGE_REQUIRED');
     }
@@ -1367,7 +1409,7 @@ export class CanonicalHostOpenClawApplicabilityService {
       : [];
     const reevaluation = activeConfigurationEvidenceReevaluation(workItem);
     const contract: ApplicabilityTaskContract = {
-      schemaVersion: APPLICABILITY_TASK_SCHEMA_VERSION,
+      schemaVersion,
       operation: 'EXTRACT_APPLICABILITY',
       applicabilityContextRef: applicabilityInput.applicabilityContextRef,
       inputRevision: workItem.revision,
@@ -1429,6 +1471,21 @@ export class CanonicalHostOpenClawApplicabilityService {
       astVocabulary: applicabilityAstVocabulary(),
       sourceExpressions,
       bilingualSourceUnits: bilingualUnits,
+      ...(englishInput
+        ? {
+            sourceReadingMode: 'VERIFIED_ENGLISH' as const,
+            sourceContext: sourceUnits
+              .filter((unit) =>
+                unit.sourceRefIds.some((ref) => relevantRefIds.has(ref)),
+              )
+              .map((unit) => ({
+                unitId: unit.unitId,
+                kind: unit.kind,
+                sourceText: unit.text,
+                sourceRefIds: [...unit.sourceRefIds],
+              })),
+          }
+        : {}),
       runtimePolicy: applicabilityRuntimePolicy(),
       authority: {
         candidateOnly: true,
@@ -2037,8 +2094,11 @@ function assertRecoveredProjectionBinding(
     projection.documentVersionId !== task.documentVersionId ||
     projection.sourcePackageId !== workItem.package!.packageId ||
     projection.sourcePackageContentHash !== workItem.package!.contentHash ||
-    projection.translationActionAttemptId !==
-      workItem.translation?.actionAttemptId ||
+    !applicabilityProjectionSourceMatches(projection, workItem) ||
+    (projection.schemaVersion ===
+      'wiselink.3_1.applicability_candidate_projection.v2') !==
+      (applicabilityTaskVersion(task) ===
+        APPLICABILITY_TASK_V2_SCHEMA_VERSION) ||
     projection.applicabilityContextRef !==
       applicabilityInput.applicabilityContextRef ||
     projection.applicabilityBindingRevision !==
@@ -2050,6 +2110,18 @@ function assertRecoveredProjectionBinding(
   ) {
     throw conflict('APPLICABILITY_RECOVERY_CURRENT_BINDING_MISMATCH');
   }
+}
+
+function applicabilityTaskVersion(
+  task: OpenClawTaskEnvelope,
+): ApplicabilityTaskContract['schemaVersion'] {
+  const schema = task.modelInput.schemaVersion;
+  if (
+    schema !== APPLICABILITY_TASK_SCHEMA_VERSION &&
+    schema !== APPLICABILITY_TASK_V2_SCHEMA_VERSION
+  )
+    throw conflict('APPLICABILITY_TASK_VERSION_UNSUPPORTED');
+  return schema;
 }
 
 function requiredApplicabilityTask(
@@ -2065,7 +2137,13 @@ function requiredApplicabilityTask(
     task.workItemId !== row.workItemId ||
     task.tenantId !== row.tenantId ||
     task.inputHash !== row.taskInputHash ||
-    task.modelInput.schemaVersion !== APPLICABILITY_TASK_SCHEMA_VERSION
+    ![
+      APPLICABILITY_TASK_SCHEMA_VERSION,
+      APPLICABILITY_TASK_V2_SCHEMA_VERSION,
+    ].includes(
+      task.modelInput
+        .schemaVersion as ApplicabilityTaskContract['schemaVersion'],
+    )
   ) {
     throw conflict('APPLICABILITY_TASK_ROW_BINDING_MISMATCH');
   }
@@ -2096,15 +2174,22 @@ function buildApplicabilityArtifact(input: {
   evaluation: ApplicabilityEvaluation;
   result: OpenClawResultEnvelope;
 }): ApplicabilityCandidateArtifact {
+  const english =
+    input.task.schemaVersion === APPLICABILITY_TASK_V2_SCHEMA_VERSION;
   return {
-    schemaVersion: APPLICABILITY_ARTIFACT_SCHEMA_VERSION,
+    schemaVersion: english
+      ? APPLICABILITY_ARTIFACT_V2_SCHEMA_VERSION
+      : APPLICABILITY_ARTIFACT_SCHEMA_VERSION,
     candidateOnly: true,
     source: {
       documentId: input.workItem.source.documentId,
       documentVersionId: input.workItem.source.documentVersionId,
       packageId: input.workItem.package!.packageId,
       packageContentHash: input.workItem.package!.contentHash,
-      translationActionAttemptId: input.workItem.translation!.actionAttemptId,
+      translationActionAttemptId: english
+        ? null
+        : input.workItem.translation!.actionAttemptId,
+      ...(english ? { sourceReadingMode: 'VERIFIED_ENGLISH' as const } : {}),
       applicabilityContextRef: input.applicabilityInput.applicabilityContextRef,
       applicabilityBindingRevision: input.applicabilityInput.bindingRevision,
       targetBindingHash: input.applicabilityInput.targetBindingHash,
@@ -2152,7 +2237,22 @@ function applicabilityProjection(input: {
     ),
   ).size;
   return {
-    schemaVersion: 'wiselink.3_1.applicability_candidate_projection.v1',
+    ...(input.artifactValue.schemaVersion ===
+    APPLICABILITY_ARTIFACT_V2_SCHEMA_VERSION
+      ? {
+          schemaVersion:
+            'wiselink.3_1.applicability_candidate_projection.v2' as const,
+          translationActionAttemptId: null,
+          sourceReadingMode: 'VERIFIED_ENGLISH' as const,
+        }
+      : {
+          schemaVersion:
+            'wiselink.3_1.applicability_candidate_projection.v1' as const,
+          translationActionAttemptId: requiredText(
+            input.artifactValue.source.translationActionAttemptId,
+            'APPLICABILITY_TRANSLATION_BINDING_REQUIRED',
+          ),
+        }),
     status:
       input.artifactValue.evaluation.status === 'WAITING_INPUT'
         ? 'WAITING_INPUT'
@@ -2166,7 +2266,6 @@ function applicabilityProjection(input: {
     documentVersionId: input.workItem.source.documentVersionId,
     sourcePackageId: input.workItem.package!.packageId,
     sourcePackageContentHash: input.workItem.package!.contentHash,
-    translationActionAttemptId: input.workItem.translation!.actionAttemptId,
     applicabilityContextRef: input.applicabilityInput.applicabilityContextRef,
     applicabilityBindingRevision: input.applicabilityInput.bindingRevision,
     aircraftNumber: input.applicabilityInput.aircraftNumber,
@@ -2328,8 +2427,7 @@ function assertApplicabilityNotCurrent(
     current.documentVersionId === workItem.source.documentVersionId &&
     current.sourcePackageId === workItem.package!.packageId &&
     current.sourcePackageContentHash === workItem.package!.contentHash &&
-    current.translationActionAttemptId ===
-      workItem.translation?.actionAttemptId &&
+    applicabilityProjectionSourceMatches(current, workItem) &&
     current.applicabilityContextRef === input.applicabilityContextRef &&
     current.applicabilityBindingRevision === input.bindingRevision &&
     current.aircraftNumber === input.aircraftNumber &&
@@ -2337,6 +2435,18 @@ function assertApplicabilityNotCurrent(
   ) {
     throw new Error('APPLICABILITY_ALREADY_CURRENT');
   }
+}
+
+function applicabilityProjectionSourceMatches(
+  projection: CanonicalApplicabilityCandidateProjection,
+  workItem: CanonicalWorkItemProjection,
+): boolean {
+  return projection.schemaVersion ===
+    'wiselink.3_1.applicability_candidate_projection.v2'
+    ? projection.sourceReadingMode === 'VERIFIED_ENGLISH' &&
+        projection.translationActionAttemptId === null
+    : projection.translationActionAttemptId ===
+        workItem.translation?.actionAttemptId;
 }
 
 function assertApplicabilityContextScope(

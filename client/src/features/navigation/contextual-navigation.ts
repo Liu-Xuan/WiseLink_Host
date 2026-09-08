@@ -1,3 +1,4 @@
+import { isJobAidProblemProjection } from '@shared/jobaid-problem-assessment.interface';
 import type {
   CanonicalDocumentParsingPageResponse,
   CanonicalLibraryWorkItemSummary,
@@ -118,7 +119,9 @@ export function buildCurrentObjectContext(
     badges: {
       /* 普通统计不进入 rail；这里只呈现工程师可行动的完成度。 */
       jobAid: baseRules
-        ? `${baseRules.evaluationItemCount}/${baseRules.criterionCount}`
+        ? isJobAidProblemProjection(baseRules)
+          ? `${baseRules.issueCount} 个问题`
+          : `${baseRules.evaluationItemCount}/${baseRules.criterionCount}`
         : undefined,
     },
   };
@@ -259,7 +262,12 @@ export function buildLibraryEngineeringQuicklook(
           documentVersionId: response.document.documentVersionId,
         }
       : null,
-    authorityLabel: result ? '已保存候选意见' : '尚无候选意见',
+    authorityLabel:
+      result?.jobAidRoundCompletion === 'IN_PROGRESS'
+        ? '分析进行中 · 已保存工作'
+        : result
+          ? '已保存候选意见'
+          : '尚无候选意见',
     freshnessLabel:
       result?.status === 'STALE' ? '结论需更新' : '原文未在本次核验',
     currentJudgment: firstNonEmpty(
@@ -293,8 +301,9 @@ export function buildLibraryEngineeringQuicklook(
       response.document.sourceGeneratedDate ||
       null,
     derivedArtifactCount: null,
-    sourceReadNote:
-      '摘要来自已保存的评估结果。本次未读取原文或解析包；打开依据时再核对来源。',
+    sourceReadNote: result?.jobAidRoundCompletion
+      ? `${result.jobAidRoundCompletion === 'IN_PROGRESS' ? '本轮分析尚未完成。' : result.jobAidRoundCompletion === 'COMPLETE_WITH_OPEN_QUESTIONS' ? '本轮分析完成，待确认事项仍保持开放。' : '本轮分析完成。'}${result.overallStatus === 'STALE' ? '整体意见基于较早工作版本；这里展示最新已保存认识。' : ''}本次未重新读取原文；可打开具体判断核对其完整前提。`
+      : '摘要来自已保存的评估结果。本次未读取原文或解析包；打开依据时再核对来源。',
   };
 }
 

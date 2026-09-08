@@ -126,6 +126,9 @@ export class ConfiguredDevelopmentCanonicalServiceScopeAuthorization implements 
       | 'COMMIT_APPLICABILITY'
       | 'GET_REVIEW_CONTEXT'
       | 'READ_REVIEW_SOURCE_REFS'
+      | 'READ_ASSESSMENT_SOURCES'
+      | 'SAVE_ASSESSMENT_WORK'
+      | 'READ_ASSESSMENT_WORK'
       | 'GET_ACTION_ATTEMPT_STATUS'
       | 'COMMIT_REVIEW'
       | 'HEARTBEAT_ATTEMPT'
@@ -155,10 +158,17 @@ export function isOpenClawAutomaticReviewConfigured(input: {
 }): boolean {
   try {
     const config = requiredConfig();
-    return config.tenantId === input.tenantId && config.workItemId === input.workItemId;
+    return (
+      config.tenantId === input.tenantId &&
+      config.workItemId === input.workItemId
+    );
   } catch (error) {
-    if (error instanceof Error && 'code' in error &&
-        error.code === 'CANONICAL_SERVICE_SCOPE_UNAVAILABLE') return false;
+    if (
+      error instanceof Error &&
+      'code' in error &&
+      error.code === 'CANONICAL_SERVICE_SCOPE_UNAVAILABLE'
+    )
+      return false;
     throw error;
   }
 }

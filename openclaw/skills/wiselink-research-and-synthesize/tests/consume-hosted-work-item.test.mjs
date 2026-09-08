@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -20,6 +20,59 @@ async function options(t) {
   t.after(() => rm(checkpointRoot, { recursive: true, force: true }));
   return { workItemId: 'WI-new', checkpointRoot, applicabilityContextRef: 'AC-authorized', maxInitialStages: 1 };
 }
+
+test('an explicit queued request uses its own checkpoint and preserves the old failed run', async (t) => {
+  const input = await options(t);
+  const oldPath = join(input.checkpointRoot, 'WI-new/initial/EVALUATE_JOBAID');
+  await mkdir(oldPath, { recursive: true });
+  const oldFailure = JSON.stringify({ status: 'REQUIRES_ATTENTION', operation: 'EVALUATE_JOBAID', candidateOnly: true });
+  await writeFile(join(oldPath, 'run-result.json'), oldFailure);
+  const requestId = 'explicit-successor';
+  let saved = false;
+  const result = await consumeHostedWorkItem(input, {
+    callTool: async (name) => {
+      if (name === 'get_pending_review_turn') return { next: null, busy: false };
+      assert.equal(name, 'get_parse_status');
+      return status({ status: 'WAITING_INPUT', nextOperation: saved ? 'SYNTHESIZE_OVERALL' : 'EVALUATE_JOBAID',
+        stages: { translation: { status: 'SUCCEEDED' }, applicability: { status: 'WAITING_INPUT' },
+          jobAid: { status: saved ? 'SUCCEEDED' : 'PENDING', requestId }, overall: { status: 'PENDING' } } });
+    },
+    runInitial: async (run) => {
+      assert.equal(run.requestId, requestId); assert.equal(run.continuationRequestId, requestId);
+      saved = true; return { outcome: 'CANDIDATE_READY' };
+    },
+  });
+  assert.equal(result.status, 'INITIAL_STAGE_SAVED');
+  assert.equal(await readFile(join(oldPath, 'run-result.json'), 'utf8'), oldFailure);
+  const binding = JSON.parse(await readFile(join(oldPath, 'requests', requestId, 'binding.json'), 'utf8'));
+  assert.equal(binding.requestId, requestId);
+});
+
+test('an explicitly continued P0B Overall carries its current staged binding even without a serving base', async (t) => {
+  const input = await options(t);
+  const reevaluation = { schemaVersion: 'wiselink.3_1.configuration_evidence_reevaluation_status.v1',
+    triggerSnapshotId: 'CES-current', triggerConfigurationRevision: 2, mode: 'FULL_APPLICABILITY_JOB_AID_OVERALL',
+    status: 'RUNNING', nextStage: 'OVERALL', servingCurrentPreserved: true, candidateOnly: true,
+    stages: { applicability: { status: 'SUCCEEDED', retryNo: 0 }, jobAid: { status: 'SUCCEEDED', retryNo: 0 }, overall: { status: 'PENDING', retryNo: 1 } } };
+  let saved = false;
+  const result = await consumeHostedWorkItem(input, {
+    callTool: async (name) => {
+      if (name === 'get_pending_review_turn') return { next: null, busy: false };
+      return { ...status({ nextOperation: saved ? null : 'SYNTHESIZE_OVERALL', status: saved ? 'SUCCEEDED' : 'REQUIRED',
+        stages: { translation: { status: 'SUCCEEDED' }, applicability: { status: 'SUCCEEDED' }, jobAid: { status: 'SUCCEEDED' },
+          overall: { status: saved ? 'SUCCEEDED' : 'PENDING', requestId: 'p0b-overall-request' } } }),
+      integratedAssessmentSummary: null, configurationEvidenceReevaluation: reevaluation };
+    },
+    runInitial: async (run) => {
+      assert.equal(run.operation, 'SYNTHESIZE_OVERALL');
+      assert.equal(run.continuationRequestId, 'p0b-overall-request');
+      assert.equal(run.configurationEvidenceReevaluation.triggerSnapshotId, 'CES-current');
+      assert.equal(run.configurationEvidenceReevaluation.nextStage, 'OVERALL');
+      saved = true; return { outcome: 'CANDIDATE_READY' };
+    },
+  });
+  assert.equal(result.status, 'INITIAL_STAGE_SAVED');
+});
 
 test('not ready and busy Host stages do not query or dispatch Review', async (t) => {
   const input = await options(t);
