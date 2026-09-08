@@ -58,6 +58,75 @@ const fakeGateway = { requestGateway: (...args) => globalThis.fetch(...args) };
 const invokeHostedInitialModel = (input, options) => invokeInitialWithTransport(input, options, fakeGateway);
 const invokeHostedReviewModel = (input, options) => invokeReviewWithTransport(input, options, fakeGateway);
 
+test('Review transient HTTP failures retry twice in the same native turn and expose each retry', async () => {
+  for (const httpStatus of [429, 502, 503, 504]) {
+    const requests = [];
+    const progress = [];
+    const waits = [];
+    const result = await invokeReviewWithTransport({ input: {} }, {
+      gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only',
+      configuredModelVersion: 'fixture/provider',
+      nativeSessionKey: 'agent:wiselink-engineering:review:ACTX-RS-transient',
+      observeProgress: async (value) => { progress.push(value); },
+    }, {
+      wait: async (ms) => { waits.push(ms); },
+      requestGateway: async (_url, init) => {
+        requests.push({ headers: init.headers, body: init.body });
+        if (requests.length < 3) return Response.json({ error: 'temporarily unavailable' }, { status: httpStatus });
+        return Response.json({ model: 'fixture/provider', choices: [{ message: { content: null, tool_calls: [{
+          type: 'function', function: { name: 'return_wiselink_review_candidate', arguments: '{"answer":"候选答复"}' },
+        }] } }] });
+      },
+    });
+    assert.equal(result.output.answer, '候选答复');
+    assert.equal(requests.length, 3);
+    assert.deepEqual(requests[0], requests[1]);
+    assert.deepEqual(requests[1], requests[2]);
+    assert.deepEqual(waits, [1000, 3000]);
+    assert.deepEqual(progress.map(({ kind, retryNo }) => [kind, retryNo]), [
+      ['MODEL_REQUEST', 0], ['MODEL_RETRY', 1], ['MODEL_REQUEST', 1], ['MODEL_RETRY', 2], ['MODEL_REQUEST', 2],
+    ]);
+  }
+});
+
+test('Review stops after its retry budget and cannot retry after losing its Host lease', async () => {
+  for (const loseLease of [false, true]) {
+    let calls = 0;
+    const result = invokeReviewWithTransport({ input: {} }, {
+      gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+      observeProgress: async ({ kind }) => {
+        if (loseLease && kind === 'MODEL_RETRY') throw new Error('ACTION_ATTEMPT_LEASE_EXPIRED');
+      },
+    }, {
+      wait: async () => {},
+      requestGateway: async () => { calls++; return Response.json({}, { status: 503 }); },
+    });
+    await assert.rejects(result, loseLease ? /ACTION_ATTEMPT_LEASE_EXPIRED/u : /REVIEW_GATEWAY_HTTP_503/u);
+    assert.equal(calls, loseLease ? 1 : 3);
+  }
+});
+
+test('Review does not retry authorization, input, missing endpoint or ambiguous transport failures', async () => {
+  for (const failure of [400, 401, 403, 404, 'ECONNRESET', 'ETIMEDOUT']) {
+    let calls = 0;
+    const progress = [];
+    const result = invokeReviewWithTransport({ input: {} }, {
+      gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+      observeProgress: async (value) => { progress.push(value); },
+    }, {
+      wait: () => assert.fail('must not delay or retry this failure'),
+      requestGateway: async () => {
+        calls++;
+        if (typeof failure === 'number') return Response.json({}, { status: failure });
+        throw new Error('HOSTED_GATEWAY_REQUEST_FAILED', { cause: Object.assign(new Error('network failure'), { code: failure }) });
+      },
+    });
+    await assert.rejects(result);
+    assert.equal(calls, 1);
+    assert.equal(progress.length, 1);
+  }
+});
+
 const DYNAMIC_FIXTURE_URL = new URL(
   './fixtures/dynamic-rules-evaluation-737.input.json',
   import.meta.url,
@@ -1156,7 +1225,7 @@ test('pins exact20 MCP 1.2, five review tools, and hosted provenance', () => {
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c35',
+    'wiselink-research-and-synthesize@r09.c36',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -3042,6 +3111,7 @@ test('Matter Review c4 continues two native turns with scoped source keys, prese
     let modelCalls = 0;
     const result = await runHostedReviewTurn({ reviewConversationRef: reviewTask.reviewConversationRef, requestId: reviewTask.requestId, checkpointDir }, {
       callTool: async (name, args) => {
+        if (name === 'heartbeat_action_attempt') return reviewProgressHeartbeat(task, args);
         if (name === 'begin_review_turn') return runningBegin(task, { nativeSessionKey });
         if (name === 'get_review_turn_context') return reviewContext(task, reviewTask);
         if (name === 'read_source_refs') {
@@ -3795,6 +3865,7 @@ test('reads only requested fragments across native tool rounds and restores a co
     calls.push(name);
     if (name === 'begin_review_turn') return runningBegin(task);
     if (name === 'get_review_turn_context') return reviewContext(task, reviewTask);
+    if (name === 'heartbeat_action_attempt') return reviewProgressHeartbeat(task, args);
     if (name === 'read_source_refs') {
       reads.push([...args.sourceRefIds]);
       return { schemaVersion: 'wiselink.3_1.review_source_refs.v1.c2', attemptRef: task.operationRef,
@@ -3885,6 +3956,7 @@ test('carries Host session routing across two new turns while reading citations 
       callTool: async (name, args) => {
         calls.push(name);
         if (name === 'begin_review_turn') return runningBegin(task, { nativeSessionKey });
+        if (name === 'heartbeat_action_attempt') return reviewProgressHeartbeat(task, args);
         if (name === 'get_review_turn_context') return reviewContext(task, input);
         if (name === 'read_source_refs') {
           sourceReads.push({ turnNo, ids: args.sourceRefIds });
@@ -5633,6 +5705,14 @@ function heartbeatResult(task, args) {
     status: 'RUNNING',
     leaseExpiresAt: '2026-08-27T11:30:00.000Z',
   };
+}
+
+function reviewProgressHeartbeat(task, args) {
+  const { reviewProgress, ...fence } = args;
+  heartbeatResult(task, fence);
+  assert.ok(['MODEL_REQUEST', 'MODEL_RETRY'].includes(reviewProgress.kind));
+  assert.ok(Number.isSafeInteger(reviewProgress.requestNo) && reviewProgress.requestNo > 0);
+  return { leaseExpiresAt: new Date(Date.now() + 30 * 60_000).toISOString() };
 }
 
 function stageTranslationPart(args, uploaded) {

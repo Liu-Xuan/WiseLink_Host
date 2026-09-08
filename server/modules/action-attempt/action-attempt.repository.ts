@@ -20,7 +20,7 @@ import {
 } from 'drizzle-orm';
 
 import { actionAttempt, workItem } from '../../database/schema';
-import type { ReviewEvidenceActivity } from '@shared/api.interface';
+import type { ReviewEvidenceActivity, ReviewRuntimeActivity } from '@shared/api.interface';
 import { canonicalJson } from './action-attempt-envelope';
 import type { OpenClawResultEnvelope, OpenClawTaskEnvelope } from './action-attempt-envelope.types';
 import type {
@@ -479,6 +479,7 @@ export class ActionAttemptRepository {
     leaseGeneration: number;
     now: Date;
     leaseMs: number;
+    reviewActivity?: ReviewRuntimeActivity;
   }): Promise<boolean> {
     const updated = await this.db
       .update(actionAttempt)
@@ -486,6 +487,11 @@ export class ActionAttemptRepository {
         lastHeartbeatAt: input.now,
         leaseExpiresAt: new Date(input.now.getTime() + input.leaseMs),
         updatedAt: input.now,
+        ...(input.reviewActivity
+          ? {
+              reviewActivityJson: sql`(COALESCE(${actionAttempt.reviewActivityJson}::jsonb, '[]'::jsonb) || ${JSON.stringify([input.reviewActivity])}::jsonb)::text`,
+            }
+          : {}),
       })
       .where(
         and(

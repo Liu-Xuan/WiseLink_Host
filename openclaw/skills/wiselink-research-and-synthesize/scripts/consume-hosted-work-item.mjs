@@ -179,12 +179,21 @@ export async function runHostedInitialStage(options, dependencies) {
   } catch (error) {
     if (startedAttempt && !finalCommitStarted) {
       try {
-        await checkpoint.remoteStep({
+        const stopped = await checkpoint.remoteStep({
           step: 'stop-attempt', args: { attemptRef: startedAttempt }, ambiguousCommit: false,
           perform: () => dependencies.callTool('cancel_action_attempt', {
             attemptRef: startedAttempt, reason: `HOSTED_INITIAL_EXECUTION_FAILED:${errorCode(error)}`,
           }),
         });
+        if (stopped.attemptRef !== startedAttempt || stopped.status !== 'CANCELLED')
+          throw new Error('HOSTED_INITIAL_STOP_NOT_CONFIRMED');
+        const report = {
+          status: 'REQUIRES_ATTENTION', operation,
+          attemptRef: startedAttempt, attemptStatus: stopped.status,
+          errorCode: errorCode(error), modelCallCount, candidateOnly: true,
+        };
+        await checkpoint.writeOnce('run-result', report);
+        return report;
       } catch (cancelError) {
         throw new Error(`HOSTED_INITIAL_CANCEL_FAILED:${errorCode(error)}:${errorCode(cancelError)}`, { cause: error });
       }
@@ -256,7 +265,6 @@ async function main(argv, env) {
       },
     });
     process.stdout.write(`${JSON.stringify(result)}\n`);
-    if (result.status === 'REQUIRES_ATTENTION') process.exitCode = 1;
   } finally {
     await connection.close();
   }

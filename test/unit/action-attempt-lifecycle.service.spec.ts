@@ -16,6 +16,61 @@ import {
 } from '../../server/modules/action-attempt/action-attempt.types';
 
 describe('ActionAttemptLifecycleService', () => {
+  it('records Review runtime progress only inside the current authorized lease renewal', async () => {
+    const repository = new MemoryActionAttemptRepository();
+    const service = new ActionAttemptLifecycleService(
+      repository as never,
+      fixedModelSettings(),
+    );
+    const claim = await service.reserveAndClaim(
+      reservationInput(async () => ({ controlled: true })),
+    );
+    const renewal = jest.fn(async (_input?: unknown) => true);
+    repository.heartbeat = renewal;
+    const input = {
+      attemptRef: claim.attemptRef,
+      tenantId: 'tenant-test',
+      workItemId: 'WI-test',
+      principalId: 'openclaw-real',
+      leaseToken: claim.leaseToken,
+      leaseGeneration: claim.leaseGeneration,
+      reviewProgress: {
+        kind: 'MODEL_RETRY' as const,
+        requestNo: 1,
+        retryNo: 1,
+        delayMs: 1000,
+        errorCode: 'REVIEW_GATEWAY_HTTP_503',
+      },
+    };
+    await expect(service.heartbeat(input)).rejects.toMatchObject({
+      code: 'REVIEW_RUNTIME_PROGRESS_INVALID',
+    });
+    expect(renewal).not.toHaveBeenCalled();
+    repository.row = {
+      ...repository.requiredRow(),
+      actionType: 'OPENCLAW_INTERACTIVE_REVIEW',
+    };
+    await service.heartbeat(input);
+    expect(renewal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attemptId: repository.row.attemptId,
+        leaseToken: claim.leaseToken,
+        leaseGeneration: claim.leaseGeneration,
+        reviewActivity: {
+          ...input.reviewProgress,
+          observedAt: expect.any(String),
+        },
+      }),
+    );
+    await expect(
+      service.heartbeat({
+        ...input,
+        leaseGeneration: claim.leaseGeneration + 1,
+      }),
+    ).rejects.toThrow();
+    expect(renewal).toHaveBeenCalledTimes(1);
+  });
+
   it('captures the WorkItem selection once and preserves it through a resumed claim', async () => {
     const repository = new MemoryActionAttemptRepository();
     const models = fixedModelSettings();

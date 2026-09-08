@@ -12,7 +12,7 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（任务可绑定已登记的内置或用户授权自定义模型；仍经唯一官方 Hosted profile/Gateway）
-- Skill：`wiselink-research-and-synthesize@r09.c35`
+- Skill：`wiselink-research-and-synthesize@r09.c36`
 - Skill compatibility：`wiselink-research-and-synthesize@r09`（Host 最低接受 `r09.c10`）
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（既有 20 项能力；兼容新增的只读自动领取查询）
 - Host baseline：`6fd2655d27edc3851c745547efaf8796ad22c82c`
@@ -369,7 +369,16 @@ driver；没有待办或已有运行中的租约时不调用模型。历史普�
 这里的工作判断／讨论保存不是正式采用，消费者不确认 ReviewAction。部署与已知范围见
 [Hosted 自动领取](references/hosted-review-consumer.md)。
 
-以下五工具约束针对模型外的单轮 driver；自动领取查询和失败后停止 attempt 属于消费者控制面，均不交给模型。
+以下五工具约束针对模型外的业务候选流程；自动领取查询、续租与运行进度、失败后停止 attempt 属于消费者控制面，均不交给模型。
+
+c36 在交互 Review 内对明确的 429/502/503/504 或连接建立前失败最多短重试两次（1 秒、3 秒），
+共享原回合总时限与原生会话。每次请求和重试均由外部适配器经 `heartbeat_action_attempt` 核对当前
+租约/授权，并以可选 `reviewProgress` 保存 MODEL_REQUEST/MODEL_RETRY；进度不含模型思考或来源正文。
+Host 以同一次续租 CAS 追加记录，页面将运行进度与实际取证分开。认证、输入、来源校验错误不重试；
+已送达状态不确定的网络中断/超时与候选提交不盲重放，仍使用原状态回读规则。
+Host 已记录的业务失败或 exact attempt 已确认取消，返回 REQUIRES_ATTENTION 且消费器正常退出，
+避免旧业务失败触发 cron 的一小时退避并阻断新交互。未确认的取消或消费器故障仍明确报错。
+先发布支持此可选进度输入与回读的 Host，再安装 c36；完整部署步骤见自动领取参考。
 
 当前精确 C3 复核合同仍只使用以下五个工具：
 
@@ -501,7 +510,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - `modelVersion` 优先取响应中可读实际模型；绑定任务未回报实际模型时使用 `configured-route:<modelRef>`，旧无绑定任务使用无 fallback 的 configured endpoint。后两者只证明路由，不代表已暴露下游具体模型，也不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c35`
+- `skillVersion=wiselink-research-and-synthesize@r09.c36`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致

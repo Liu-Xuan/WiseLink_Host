@@ -49,8 +49,7 @@ test('one tick dispatches exactly the persisted next turn with its own checkpoin
 test('pre-commit failure stops the exact attempt; an uncertain commit is never cancelled', async () => {
   for (const commitStarted of [false, true]) {
     const calls = [];
-    await assert.rejects(
-      consumePendingReviewTurn(options, {
+    const run = consumePendingReviewTurn(options, {
         callTool: async (name, args) => {
           calls.push({ name, args });
           if (name === 'get_pending_review_turn') return { busy: false, next };
@@ -58,7 +57,7 @@ test('pre-commit failure stops the exact attempt; an uncertain commit is never c
             return { status: 'RUNNING', attemptRef: 'AQ-2' };
           if (name === 'commit_review_turn_candidate')
             throw new Error('REVIEW_COMMIT_OUTCOME_UNKNOWN');
-          return { status: 'CANCELLED' };
+          return { status: 'CANCELLED', attemptRef: 'AQ-2' };
         },
         runTurn: async (_input, dependencies) => {
           await dependencies.callTool('begin_review_turn', {});
@@ -66,10 +65,27 @@ test('pre-commit failure stops the exact attempt; an uncertain commit is never c
             await dependencies.callTool('commit_review_turn_candidate', {});
           throw new Error('REVIEW_MODEL_OUTPUT_INVALID');
         },
-      }),
-    );
+      });
+    if (commitStarted) await assert.rejects(run, /REVIEW_COMMIT_OUTCOME_UNKNOWN/u);
+    else assert.deepEqual(await run, {
+      status: 'REQUIRES_ATTENTION', reviewTurnRef: 'RT-2', attemptRef: 'AQ-2',
+      errorCode: 'REVIEW_MODEL_OUTPUT_INVALID', attemptStatus: 'CANCELLED', candidateOnly: true,
+    });
     const cancel = calls.find(({ name }) => name === 'cancel_action_attempt');
     if (commitStarted) assert.equal(cancel, undefined);
     else assert.equal(cancel.args.attemptRef, 'AQ-2');
+  }
+});
+
+test('unconfirmed or wrong-attempt cancellation remains a consumer error', async () => {
+  for (const stopped of [{ status: 'CANCELLED', attemptRef: 'AQ-other' }, { status: 'RUNNING', attemptRef: 'AQ-2' }]) {
+    await assert.rejects(consumePendingReviewTurn(options, {
+      callTool: async (name) => name === 'get_pending_review_turn' ? { busy: false, next }
+        : name === 'begin_review_turn' ? { status: 'RUNNING', attemptRef: 'AQ-2' } : stopped,
+      runTurn: async (_options, { callTool }) => {
+        await callTool('begin_review_turn', {});
+        throw new Error('REVIEW_MODEL_INVALID');
+      },
+    }), /ATTEMPT_STOP_FAILED:HOSTED_REVIEW_STOP_NOT_CONFIRMED/u);
   }
 });

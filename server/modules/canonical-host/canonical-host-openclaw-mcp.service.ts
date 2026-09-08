@@ -36,6 +36,18 @@ import {
 const attemptRef = z.string().trim().min(1).max(200);
 const leaseToken = z.string().uuid();
 const leaseGeneration = z.number().int().positive();
+const reviewProgress = z
+  .object({
+    kind: z.enum(['MODEL_REQUEST', 'MODEL_RETRY']),
+    requestNo: z.number().int().positive(),
+    retryNo: z.number().int().min(0).max(2),
+    delayMs: z.number().int().min(0).max(30000),
+    errorCode: z
+      .string()
+      .regex(/^[A-Z][A-Z0-9_]{0,119}$/u)
+      .nullable(),
+  })
+  .strict();
 const resultEnvelope = z.record(z.string(), z.unknown());
 const reviewCommitInput = z
   .object({
@@ -471,11 +483,13 @@ export class CanonicalHostOpenClawMcpService {
       'get_pending_review_turn',
       {
         title: '读取下一条已请求自动执行的评审轮次',
-        description: '仅查询已授权 WorkItem 的 ACTIVE 会话，按保存顺序返回显式 AUTOMATIC 且尚未完成的下一轮。不会选择历史普通保存的 Turn，不改写业务数据；当前轮租约有效时返回 busy，不越过当前轮。',
+        description:
+          '仅查询已授权 WorkItem 的 ACTIVE 会话，按保存顺序返回显式 AUTOMATIC 且尚未完成的下一轮。不会选择历史普通保存的 Turn，不改写业务数据；当前轮租约有效时返回 busy，不越过当前轮。',
         inputSchema: z.object({ workItemId: mcpWorkItemId }).strict(),
         annotations: resumeAnnotations,
       },
-      async ({ workItemId }) => textResult(await this.review.pending(workItemId)),
+      async ({ workItemId }) =>
+        textResult(await this.review.pending(workItemId)),
     );
 
     server.registerTool(
@@ -568,7 +582,12 @@ export class CanonicalHostOpenClawMcpService {
         description:
           '使用当前 attempt 的 fencing token 与 generation 续期 RUNNING lease；旧 worker、过期 token 或跨 WorkItem scope 一律拒绝。',
         inputSchema: z
-          .object({ attemptRef, leaseToken, leaseGeneration })
+          .object({
+            attemptRef,
+            leaseToken,
+            leaseGeneration,
+            reviewProgress: reviewProgress.optional(),
+          })
           .strict(),
         annotations: commitAnnotations,
       },
@@ -576,6 +595,7 @@ export class CanonicalHostOpenClawMcpService {
         attemptRef: selectedAttemptRef,
         leaseToken: selectedLeaseToken,
         leaseGeneration: selectedLeaseGeneration,
+        reviewProgress: selectedReviewProgress,
       }) => {
         const scope = await this.serviceScope.authorizeOpenClawAttempt({
           operation: 'HEARTBEAT_ATTEMPT',
@@ -589,6 +609,14 @@ export class CanonicalHostOpenClawMcpService {
             principalId: scope.principalId,
             leaseToken: selectedLeaseToken,
             leaseGeneration: selectedLeaseGeneration,
+            ...(selectedReviewProgress
+              ? {
+                  reviewProgress: {
+                    ...selectedReviewProgress,
+                    errorCode: selectedReviewProgress.errorCode ?? null,
+                  },
+                }
+              : {}),
           }),
         );
       },

@@ -1,7 +1,11 @@
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { ActionAttemptRepository } from '../../server/modules/action-attempt/action-attempt.repository';
 import type { ActionAttemptRow } from '../../server/modules/action-attempt/action-attempt.types';
-import { projectReviewEvidenceActivity } from '../../server/modules/action-attempt/review-evidence-activity';
+import {
+  projectReviewEvidenceActivity,
+  projectReviewRuntimeActivity,
+} from '../../server/modules/action-attempt/review-evidence-activity';
+import { resolvedReviewSourceRefs } from '../../server/modules/canonical-host/matter-review-candidate';
 
 const receipt = {
   kind: 'SOURCE_REFS_RESOLVED' as const,
@@ -11,6 +15,28 @@ const receipt = {
 };
 
 describe('Host-observed Review evidence activity', () => {
+  it('projects retries separately and never treats runtime metadata as source evidence', () => {
+    const retry = {
+      kind: 'MODEL_RETRY',
+      observedAt: receipt.observedAt,
+      requestNo: 1,
+      retryNo: 1,
+      delayMs: 1000,
+      errorCode: 'REVIEW_GATEWAY_HTTP_503',
+    };
+    const stored = JSON.stringify([
+      receipt,
+      { ...retry, sourceRefIds: ['FORGED-REF'], privateCredential: 'secret' },
+    ]);
+    expect(projectReviewEvidenceActivity(stored)?.items).toEqual([receipt]);
+    expect(projectReviewRuntimeActivity(stored)?.items).toEqual([retry]);
+    expect([...resolvedReviewSourceRefs(stored)]).toEqual(['SRC-1']);
+    expect(
+      projectReviewRuntimeActivity(JSON.stringify([{ ...retry, retryNo: 3 }]))
+        ?.error?.code,
+    ).toBe('REVIEW_RUNTIME_ACTIVITY_UNREADABLE');
+  });
+
   it('preserves missing and invalid receipts honestly, without exposing private fields', () => {
     expect(projectReviewEvidenceActivity(null)).toBeNull();
     expect(projectReviewEvidenceActivity('{bad private record')).toMatchObject({
@@ -41,7 +67,9 @@ describe('Host-observed Review evidence activity', () => {
   it('appends atomically to the exact authorized attempt and retains tenant, actor and lease fences', async () => {
     const returning = jest.fn(async () => [{ attemptId: 'ATT-1' }]);
     const where = jest.fn((_condition: unknown) => ({ returning }));
-    const set = jest.fn((_values: { reviewActivityJson: unknown }) => ({ where }));
+    const set = jest.fn((_values: { reviewActivityJson: unknown }) => ({
+      where,
+    }));
     const repository = new ActionAttemptRepository({
       update: jest.fn(() => ({ set })),
     } as never);

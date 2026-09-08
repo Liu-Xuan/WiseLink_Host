@@ -161,7 +161,7 @@ test('pre-commit failure cancels once; unknown final commit never cancels or rep
         if (name === 'get_parse_status') return status();
         if (name === 'begin_translation') return { status: 'RUNNING', attemptRef: 'AQ-new' };
         if (name === 'commit_translation_candidate') throw new Error('TRANSPORT_RESPONSE_LOST');
-        if (name === 'cancel_action_attempt') return { status: 'CANCELLED' };
+        if (name === 'cancel_action_attempt') return { status: 'CANCELLED', attemptRef: 'AQ-new' };
         assert.fail(name);
       },
       runInitial: async (run) => {
@@ -170,7 +170,8 @@ test('pre-commit failure cancels once; unknown final commit never cancels or rep
         throw new Error('INITIAL_MODEL_INVALID');
       },
     };
-    await assert.rejects(consumeHostedWorkItem(input, dependencies));
+    if (finalCommit) await assert.rejects(consumeHostedWorkItem(input, dependencies), /TRANSPORT_RESPONSE_LOST/u);
+    else assert.equal((await consumeHostedWorkItem(input, dependencies)).errorCode, 'INITIAL_MODEL_INVALID');
     await assert.rejects(consumeHostedWorkItem(input, dependencies));
     assert.equal(calls.filter((name) => name === 'begin_translation').length, 1);
     assert.equal(calls.filter((name) => name === 'commit_translation_candidate').length, finalCommit ? 1 : 0);
@@ -196,7 +197,7 @@ test('translation rejection diagnostics survive attempt cancellation and cannot 
       if (name === 'get_pending_review_turn') return { next: null, busy: false };
       if (name === 'get_parse_status') return status();
       if (name === 'begin_translation') return { status: 'RUNNING', attemptRef: 'AQ-new' };
-      if (name === 'cancel_action_attempt') { cancelled++; return { status: 'CANCELLED' }; }
+      if (name === 'cancel_action_attempt') { cancelled++; return { status: 'CANCELLED', attemptRef: 'AQ-new' }; }
       assert.fail(name);
     },
     runInitial: async (run) => {
@@ -210,7 +211,7 @@ test('translation rejection diagnostics survive attempt cancellation and cannot 
       throw new Error('TRANSLATION_RULE_PREFLIGHT_REJECTED');
     },
   };
-  await assert.rejects(consumeHostedWorkItem(input, dependencies), /TRANSLATION_RULE_PREFLIGHT_REJECTED/u);
+  assert.equal((await consumeHostedWorkItem(input, dependencies)).errorCode, 'TRANSLATION_RULE_PREFLIGHT_REJECTED');
   const saved = JSON.parse(await readFile(join(input.checkpointRoot, 'WI-new/initial/TRANSLATE/model.translation-fidelity-3.json'), 'utf8'));
   assert.deepEqual(saved, report);
   await assert.rejects(consumeHostedWorkItem(input, dependencies));

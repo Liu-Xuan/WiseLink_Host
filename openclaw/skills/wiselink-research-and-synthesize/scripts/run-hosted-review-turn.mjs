@@ -15,7 +15,7 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
-import { requestHostedGateway } from './request-hosted-gateway.mjs';
+import { createHostedReviewRequester, requestHostedGateway } from './request-hosted-gateway.mjs';
 
 import {
   HOST_MCP_TOOLS,
@@ -148,6 +148,27 @@ export async function runHostedReviewTurn(options, dependencies = {}) {
             sessionDiscriminator: sha256(normalized.requestId),
             nativeSessionKey,
             executionModel: beginResult?.task?.executionModel,
+            observeProgress: async (reviewProgress) => {
+              if (beginResult?.status !== 'RUNNING') throw new Error('REVIEW_PROGRESS_ATTEMPT_NOT_RUNNING');
+              const name = 'heartbeat_action_attempt';
+              const count = (callCounts.get(name) ?? 0) + 1;
+              callCounts.set(name, count);
+              // Always contact the Host: a prior receipt cannot renew or
+              // authorize this request after lease loss, cancel or scope drift.
+              const renewed = await remoteCall(name, {
+                attemptRef: beginResult.attemptRef,
+                leaseToken: beginResult.leaseToken,
+                leaseGeneration: beginResult.leaseGeneration,
+                reviewProgress,
+              });
+              if (!Number.isFinite(Date.parse(renewed?.leaseExpiresAt)) ||
+                Date.parse(renewed.leaseExpiresAt) <= Date.now()) {
+                throw new Error('REVIEW_PROGRESS_LEASE_NOT_RENEWED');
+              }
+              await checkpoint.writeOnce(`runtime-progress-${count}`, {
+                ...reviewProgress, observedAt: new Date().toISOString(),
+              });
+            },
             readSourceRefs: async (ids) => {
               const values = await readSourceRefs(ids);
               readSourceRefBatches.push([...ids]);
@@ -276,12 +297,18 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
   };
   let messages = [systemMessage, { role: 'user', content: prompt }];
   const sourceCache = new Map();
+  const requestGateway = createHostedReviewRequester({
+    requestGateway: dependencies.requestGateway ?? requestHostedGateway,
+    observeProgress: options.observeProgress,
+    wait: dependencies.wait,
+  });
   let round = 0;
   let inputUnits = 0;
   let outputUnits = 0;
   // All read/analysis rounds share the Host-scoped native session (or the
   // explicitly reported legacy per-turn session) and
-  // total time budget. A failed/ambiguous request is never retried here.
+  // total time budget. Only known transient responses / non-dispatch failures
+  // get two bounded retries; ambiguous requests and commits are not replayed.
   while (true) {
     const remainingMs = timeoutMs - (Date.now() - startedAt);
     if (remainingMs <= 0) throw new Error('REVIEW_MODEL_TIMEOUT');
@@ -291,7 +318,7 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
     let response;
     let text;
     try {
-      response = await (dependencies.requestGateway ?? requestHostedGateway)(endpoint, {
+      response = await requestGateway(endpoint, {
         method: 'POST',
         headers: {
           accept: 'application/json',

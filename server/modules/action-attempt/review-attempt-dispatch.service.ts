@@ -8,7 +8,10 @@ import type {
   CanonicalExecutionModelSelection,
   ReviewTurnExecutionReadModel,
 } from '@shared/api.interface';
-import { projectReviewEvidenceActivity } from './review-evidence-activity';
+import {
+  projectReviewEvidenceActivity,
+  projectReviewRuntimeActivity,
+} from './review-evidence-activity';
 import { parseTaskEnvelope, sealTaskEnvelope } from './action-attempt-envelope';
 import { ActionAttemptLifecycleService } from './action-attempt-lifecycle.service';
 import { ActionAttemptRepository } from './action-attempt.repository';
@@ -109,6 +112,7 @@ export class ReviewAttemptDispatchService {
       completedAt: row?.completedAt?.toISOString() ?? null,
       executionModel: readStoredExecutionModel(row?.executionModelJson),
       evidenceActivity: projectReviewEvidenceActivity(row?.reviewActivityJson),
+      runtimeActivity: projectReviewRuntimeActivity(row?.reviewActivityJson),
       error:
         row &&
         (row.errorCode ||
