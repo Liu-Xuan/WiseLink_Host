@@ -15,6 +15,13 @@ const require = createRequire(import.meta.url);
 require('ts-node/register/transpile-only');
 require('tsconfig-paths/register');
 const { drizzle } = require('drizzle-orm/postgres-js');
+const { sql: drizzleSql } = require('drizzle-orm');
+const {
+  SqlExecutionContextMiddleware,
+} = require('@lark-apaas/fullstack-nestjs-core');
+const {
+  EngineeringMatterWorkingRepository,
+} = require('../../server/modules/canonical-host/engineering-matter-working.repository.ts');
 const {
   ReviewConversationRepository,
 } = require('../../server/modules/review-persistence/review-conversation.repository.ts');
@@ -32,6 +39,7 @@ test(
       await seedC1Turn(sql);
       await assertOpenClawActorScopedBinding(databaseUrl);
       await assertHostedSystemAccountActorScopedBinding(sql, databaseUrl);
+      await assertHostedConversationAggregate(databaseUrl);
       const repository = new ReviewConversationRepository(drizzle(sql));
       const aggregate = await repository.loadById('RC-C2');
       assert.ok(aggregate);
@@ -137,6 +145,9 @@ async function resetDatabase(sql) {
       IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role')
       THEN CREATE ROLE service_role NOLOGIN;
       END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role_wiselink_review_c2_test')
+      THEN CREATE ROLE service_role_wiselink_review_c2_test NOLOGIN IN ROLE service_role;
+      END IF;
       IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon')
       THEN CREATE ROLE anon NOLOGIN;
       END IF;
@@ -181,6 +192,11 @@ async function resetDatabase(sql) {
   try {
     await migrationSql.unsafe(c1);
     await migrationSql.unsafe(c2);
+    // Current nullable business scope from migration 23. This fixture does
+    // not need the independent Matter tables introduced by that migration.
+    await migrationSql.unsafe(
+      'ALTER TABLE review_turn ADD COLUMN review_scope_json jsonb',
+    );
     await migrationSql.unsafe(authenticatedCandidateUpdate);
     await migrationSql.unsafe(hostedRuntimeSelect);
     await migrationSql.unsafe(hostedRuntimeCandidateUpdate);
@@ -239,6 +255,70 @@ async function resetDatabase(sql) {
     TO service_role
   `);
   await sql.unsafe('GRANT UPDATE ON public.review_turn TO service_role');
+}
+
+async function assertHostedConversationAggregate(value) {
+  const connection = postgres(value, { max: 1, onnotice: () => {} });
+  const db = drizzle(connection);
+  const sqlContext = new SqlExecutionContextMiddleware({
+    roleSchema: 'wiselink_review_c2_test',
+  });
+  const working = new EngineeringMatterWorkingRepository(db, sqlContext, {
+    roleSchema: 'wiselink_review_c2_test',
+  });
+  const repository = new ReviewConversationRepository(db);
+  const scope = {
+    tenantId: 'tenant-C2',
+    actorId: 'actor-C2',
+    workItemId: 'WI-C2',
+  };
+  try {
+    await new Promise((resolve, reject) => {
+      sqlContext.use(
+        { userContext: { userId: '-1', isSystemAccount: true, roles: [] } },
+        {},
+        () => {
+          Promise.resolve()
+            .then(async () => {
+              assert.equal(
+                await repository.loadCurrent(scope),
+                null,
+                'ordinary discussion read is hidden from an unbound Hosted system actor',
+              );
+              const aggregate = await working.withActorTransaction(
+                scope.actorId,
+                ({ database }) => repository.loadCurrent(scope, database),
+              );
+              assert.equal(
+                aggregate.conversation.reviewConversationId,
+                'RC-C2',
+              );
+              assert.equal(
+                aggregate.turns.length,
+                1,
+                'conversation, turn and engineer input all use the actor transaction',
+              );
+              assert.equal(aggregate.turns[0].reviewTurnId, 'RT-C2');
+              assert.equal(aggregate.turns[0].assistantCandidate, null);
+              assert.equal(
+                await working.withActorTransaction(
+                  'actor-other',
+                  ({ database }) => repository.loadCurrent(scope, database),
+                ),
+                null,
+              );
+              const [restored] = await db.execute(
+                drizzleSql`SELECT current_setting('app.user_id', true) AS actor`,
+              );
+              assert.equal(restored.actor, '-1');
+            })
+            .then(resolve, reject);
+        },
+      );
+    });
+  } finally {
+    await connection.end({ timeout: 5 });
+  }
 }
 
 async function seedC1Turn(sql) {

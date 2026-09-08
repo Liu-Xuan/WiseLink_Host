@@ -171,25 +171,25 @@ export class ReviewConversationRepository {
     throw reviewPersistenceConflict('REVIEW_CONVERSATION_CREATE_CONFLICT');
   }
 
-  async loadCurrent(input: {
-    tenantId: string;
-    actorId: string;
-    workItemId: string;
-  }): Promise<PersistedReviewConversationAggregate | null> {
+  async loadCurrent(
+    input: { tenantId: string; actorId: string; workItemId: string },
+    executor: DatabaseExecutor = this.db,
+  ): Promise<PersistedReviewConversationAggregate | null> {
     const conversation: PersistedReviewConversation | null =
-      await this.loadActiveInternal(input);
+      await this.loadActiveInternal(input, executor);
     if (!conversation) return null;
-    return this.requiredAggregate(conversation.reviewConversationId);
+    return this.requiredAggregate(conversation.reviewConversationId, executor);
   }
 
   async loadById(
     reviewConversationId: string,
+    executor: DatabaseExecutor = this.db,
   ): Promise<PersistedReviewConversationAggregate | null> {
     const conversation: PersistedReviewConversation | null =
-      await this.loadConversationInternal(reviewConversationId);
+      await this.loadConversationInternal(reviewConversationId, executor);
     if (!conversation) return null;
     const turns: PersistedReviewTurn[] =
-      await this.loadTurns(reviewConversationId);
+      await this.loadTurns(reviewConversationId, executor);
     return { conversation, turns };
   }
 
@@ -1191,12 +1191,11 @@ export class ReviewConversationRepository {
     return row ?? null;
   }
 
-  private async loadActiveInternal(input: {
-    tenantId: string;
-    actorId: string;
-    workItemId: string;
-  }): Promise<PersistedReviewConversation | null> {
-    const [row] = await this.db
+  private async loadActiveInternal(
+    input: { tenantId: string; actorId: string; workItemId: string },
+    executor: DatabaseExecutor = this.db,
+  ): Promise<PersistedReviewConversation | null> {
+    const [row] = await executor
       .select(conversationSelection())
       .from(reviewConversation)
       .where(
@@ -1225,8 +1224,9 @@ export class ReviewConversationRepository {
 
   private async loadTurns(
     reviewConversationId: string,
+    executor: DatabaseExecutor = this.db,
   ): Promise<PersistedReviewTurn[]> {
-    const rows = await this.db
+    const rows = await executor
       .select(turnSelection())
       .from(reviewTurn)
       .innerJoin(
@@ -1268,9 +1268,10 @@ export class ReviewConversationRepository {
 
   private async requiredAggregate(
     reviewConversationId: string,
+    executor: DatabaseExecutor = this.db,
   ): Promise<PersistedReviewConversationAggregate> {
     const aggregate: PersistedReviewConversationAggregate | null =
-      await this.loadById(reviewConversationId);
+      await this.loadById(reviewConversationId, executor);
     if (!aggregate) throw new Error('REVIEW_CONVERSATION_READBACK_FAILED');
     return aggregate;
   }
