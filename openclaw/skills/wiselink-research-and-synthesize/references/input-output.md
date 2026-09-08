@@ -86,7 +86,7 @@ runtimePolicy.modelPolicyRef = official-hosted-profile-config
 ResultEnvelope.modelVersion = 官方托管 profile/config 本轮选择后的非空、可读实际模型
 Task.skillPolicyRef = wiselink-research-and-synthesize@r09
 ApplicabilityTask.runtimePolicy.skillVersion = wiselink-research-and-synthesize@r09  # v1 历史字段名，语义为兼容线
-ResultEnvelope.skillVersion = wiselink-research-and-synthesize@r09.c36       # 实际安装包版本
+ResultEnvelope.skillVersion = wiselink-research-and-synthesize@r09.c37       # 实际安装包版本
 toolVersions.wiselink-openclaw-engineering-assessment = 1.2.0
 promptVersion = 当前实际运行非空版本
 ```
@@ -407,7 +407,9 @@ MCP 入参、认证和候选提交语义不变。
 当前 Gateway transport 不依赖 `response_format`。c21 声明两个 client function：
 `read_wiselink_review_sources({sourceRefIds})` 只委托驱动读取本轮已授权来源；
 `return_wiselink_review_candidate` 仍是无实现、不执行的最终序列化通道。
-`tool_choice=auto`、`parallel_tool_calls=false`、`n=1`。每次响应只有一个 choice 和一个上述 function call，
+Matter Review 使用 `{candidateJson: "<完整候选 JSON>"}` 参数承载嵌套数组和 null；此字符串只允许严格 JSON 对象，
+解析后继续使用同一 c4 候选及来源校验。此传输形式不适用于纯文本回答，不改写模型内容或自动补齐字段。
+`tool_choice=required`、`parallel_tool_calls=false`、`n=1`。每次响应只有一个 choice 和一个上述 function call，
 arguments 为 strict JSON object。assistant content 可为 null、空白或官方 Gateway 附带的纯文本说明；只有工具参数
 被消费，附带文本不解析、不进入候选/证据或驱动的后续 exchange。其它函数、多个调用、纯文本结果、非文本
 content、analysis/reasoning 与参数中的包裹文本仍拒绝。

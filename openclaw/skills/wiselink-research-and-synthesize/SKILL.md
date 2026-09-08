@@ -12,7 +12,7 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（任务可绑定已登记的内置或用户授权自定义模型；仍经唯一官方 Hosted profile/Gateway）
-- Skill：`wiselink-research-and-synthesize@r09.c36`
+- Skill：`wiselink-research-and-synthesize@r09.c37`
 - Skill compatibility：`wiselink-research-and-synthesize@r09`（Host 最低接受 `r09.c10`）
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（既有 20 项能力；兼容新增的只读自动领取查询）
 - Host baseline：`6fd2655d27edc3851c745547efaf8796ad22c82c`
@@ -396,6 +396,9 @@ Host business begin 之前停止。完整 MCP 结果写入权限为 `0600` 的�
 步骤只从 checkpoint 恢复；model response 在 strict parse 前只额外写入不含原文的 `model.output-shape` v2 0600
 write-once checkpoint；同轮后续响应按序号保存。驱动向模型提供 `read_wiselink_review_sources` 与
 `return_wiselink_review_candidate` 两个 client function：前者只委托驱动读取当前 Host 已授权来源，后者仅序列化最终候选。
+使用原生 `tool_choice=required` 要求本次返回读取或候选工具调用。c37 的 Matter 输出函数只有 `candidateJson`
+字符串参数：其中是完整候选 JSON，保留真正的嵌套数组与 null；驱动只作严格 JSON 解析，再执行完整候选、来源、
+事项增量及 ResultEnvelope 校验，不能修补 `{item:[...]}`、缺字段或错误来源。普通 WorkItem Review 保留直接对象参数。
 每次响应只有一个 choice、一个上述 function，arguments 为 direct strict JSON object。assistant content 优先为 null
 或空白；官方 Gateway 附带的纯文本说明只记录安全形态，不解析、不进入候选/证据或驱动的后续 exchange。
 其他函数、多 choice、多 tool call、纯文本结果、analysis/reasoning、非文本 content，以及 fence/prose/array/null
@@ -510,7 +513,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - `modelVersion` 优先取响应中可读实际模型；绑定任务未回报实际模型时使用 `configured-route:<modelRef>`，旧无绑定任务使用无 fallback 的 configured endpoint。后两者只证明路由，不代表已暴露下游具体模型，也不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c36`
+- `skillVersion=wiselink-research-and-synthesize@r09.c37`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致

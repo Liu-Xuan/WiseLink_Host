@@ -1225,7 +1225,7 @@ test('pins exact20 MCP 1.2, five review tools, and hosted provenance', () => {
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c36',
+    'wiselink-research-and-synthesize@r09.c37',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -3143,13 +3143,10 @@ test('Matter Review c4 continues two native turns with scoped source keys, prese
           assert.equal(serialized.includes(forbidden), false, forbidden);
         }
         const schema = body.tools.find((tool) => tool.function.name === 'return_wiselink_review_candidate').function.parameters;
-        assert.ok(schema.required.includes('matterWorkingDelta'));
-        assert.deepEqual(schema.properties.reviewActionDraft, { type: 'null' });
-        assert.equal(schema.properties.affectedItemIds.maxItems, 0);
-        assert.ok(schema.properties.responseType.enum.includes('RESYNTHESIS_RESULT'));
-        assert.equal(schema.properties.responseType.enum.includes('REVIEW_ACTION_DRAFT'), false);
-        assert.deepEqual(schema.properties.matterWorkingDelta.anyOf[0].required.sort(),
-          ['updateKind', 'changeSummary', 'nextFocus', 'claimDelta', 'readingPresentation', 'openQuestionDelta', 'reviewConditionDelta', 'coverageUpdates'].sort());
+        assert.deepEqual(schema.required, ['candidateJson']);
+        assert.equal(schema.properties.candidateJson.type, 'string');
+        assert.deepEqual(Object.keys(schema.properties), ['candidateJson']);
+        assert.equal(body.tool_choice, 'required');
         if (modelCalls === 1) {
           assert.equal(serialized.includes('SOURCE_A_FULL_PASSAGE'), false);
           assert.equal(serialized.includes('SOURCE_B_FULL_PASSAGE'), false);
@@ -3157,6 +3154,8 @@ test('Matter Review c4 continues two native turns with scoped source keys, prese
           assert.ok(serialized.includes(reviewTask.matterContext.readingEvidence.at(-1).excerpt));
           assert.match(body.messages[1].content, /INITIAL_SYNTHESIS/u);
           assert.match(body.messages[1].content, /not force an implementation/u);
+          assert.match(body.messages[1].content, /reviewActionDraft=null and affectedItemIds=\[\]/u);
+          assert.match(body.messages[1].content, /single candidateJson string parameter/u);
           if (turnNo === 2) {
             assert.ok(serialized.includes('claim-independent'));
             assert.ok(serialized.includes('claim-engineer'));
@@ -3173,7 +3172,9 @@ test('Matter Review c4 continues two native turns with scoped source keys, prese
         return Response.json({ model: 'fixture/provider', choices: [{ message: { content: null, tool_calls: [{
           id: 'matter-call-' + turnNo + '-' + modelCalls, type: 'function', function: {
             name: modelCalls === 1 ? 'read_wiselink_review_sources' : 'return_wiselink_review_candidate',
-            arguments: JSON.stringify(modelCalls === 1 ? { sourceRefIds: requested } : matterReviewModelOutput(delta)),
+            arguments: JSON.stringify(modelCalls === 1 ? { sourceRefIds: requested } : {
+              candidateJson: JSON.stringify(matterReviewModelOutput(delta)),
+            }),
           },
         }] } }] });
       } }),
@@ -3190,6 +3191,56 @@ test('Matter Review c4 continues two native turns with scoped source keys, prese
   assert.equal(candidates[1].matterWorkingDelta.claimDelta.replacements[0].claimId, candidates[0].matterWorkingDelta.claimDelta.additions[0].claimId);
   assert.deepEqual(candidates[1].matterWorkingDelta.claimDelta.explicitlyUnchangedClaimIds, ['claim-independent', 'claim-engineer']);
   assert.ok(submitted.every((result) => result.modelVersion === 'fixture/provider' && result.skillVersion === WISELINK_SKILL_VERSION && result.toolVersions[WISELINK_HOST_MCP_NAME] === WISELINK_HOST_MCP_VERSION));
+});
+
+test('Matter native JSON transport rejects wrappers without repairing model output', async () => {
+  const output = matterReviewModelOutput(null);
+  const request = (args) => invokeReviewWithTransport({ input: { context: { matterWorking: {} } } }, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+  }, { requestGateway: async () => Response.json({ choices: [{ message: { content: null, tool_calls: [{
+    type: 'function', function: { name: 'return_wiselink_review_candidate', arguments: JSON.stringify(args) },
+  }] } }] }) });
+  for (const args of [output, { candidateJson: output }, { candidateJson: JSON.stringify(output), extra: true }]) {
+    await assert.rejects(request(args), /REVIEW_MATTER_CANDIDATE_JSON_REQUIRED/u);
+  }
+  for (const candidateJson of ['```json\n{}\n```', '[]', 'null', 'explanation {}', '{broken}']) {
+    await assert.rejects(request({ candidateJson }), /REVIEW_MODEL_(STRICT_JSON_REQUIRED|JSON_INVALID)/u);
+  }
+  output.answer = '保留 "Windows 7"、反斜杠 \\、换行\n以及 null 和空数组的含义。';
+  assert.deepEqual((await request({ candidateJson: JSON.stringify(output) })).output, output);
+});
+
+test('Matter native JSON candidates still reject unread sources and formal actions before any commit', async (t) => {
+  for (const [name, mutate, error] of [
+    ['unread source', (output) => { output.sourceRefs = ['matter-source:1:1']; }, /REVIEW_MODEL_SOURCE_REF_NOT_READ/u],
+    ['formal action', (output) => { output.reviewActionDraft = {}; }, /REVIEW_MODEL_MATTER_DELTA_INVALID/u],
+    ['array wrapper', (output) => { output.missingInputs = { item: [] }; }, /REVIEW_MODEL_MISSINGINPUTS_INVALID/u],
+    ['nested claim array', (output, delta) => { output.matterWorkingDelta = structuredClone(delta); output.matterWorkingDelta.claimDelta.additions = { item: delta.claimDelta.additions }; }, /REVIEW_MATTER_/u],
+    ['control binding', (output) => { output.leaseToken = 'model-invented'; }, /REVIEW_MODEL_OUTPUT_KEYS_INVALID/u],
+  ]) {
+    const { reviewTask, delta } = await matterReviewFixture(1);
+    const task = makeTask('OPENCLAW_INTERACTIVE_REVIEW', reviewTask, [], reviewTask.resourceRefs.map((ref) => ({ ref: ref.resourceArtifactRef, sha256: ref.resourceArtifactSha256 })));
+    const checkpointDir = await mkdtemp(join(tmpdir(), 'wiselink-matter-json-reject-'));
+    t.after(() => rm(checkpointDir, { recursive: true, force: true }));
+    const output = matterReviewModelOutput(null);
+    mutate(output, delta);
+    const calls = [];
+    await assert.rejects(runHostedReviewTurn({ reviewConversationRef: reviewTask.reviewConversationRef, requestId: reviewTask.requestId, checkpointDir }, {
+      callTool: async (tool, args) => {
+        calls.push(tool);
+        if (tool === 'heartbeat_action_attempt') return reviewProgressHeartbeat(task, args);
+        if (tool === 'begin_review_turn') return runningBegin(task);
+        if (tool === 'get_review_turn_context') return reviewContext(task, reviewTask);
+        throw new Error('UNEXPECTED_TOOL:' + tool);
+      },
+      invokeModel: (input, hooks) => invokeReviewWithTransport(input, {
+        gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider', ...hooks,
+      }, { requestGateway: async () => Response.json({ choices: [{ message: { content: null, tool_calls: [{
+        type: 'function', function: { name: 'return_wiselink_review_candidate', arguments: JSON.stringify({ candidateJson: JSON.stringify(output) }) },
+      }] } }] }) }),
+    }), error, name);
+    assert.equal(calls.includes('commit_review_turn_candidate'), false, name);
+  }
 });
 
 test('Matter Review c4 plain explanations retain a null delta without source reads or a fabricated working revision', async (t) => {
@@ -4449,14 +4500,14 @@ test('offers source reading and one final candidate function with blank assistan
     false,
   );
   assert.equal(requestBody.tools[1].function.name, 'read_wiselink_review_sources');
-  assert.equal(requestBody.tool_choice, 'auto');
+  assert.equal(requestBody.tool_choice, 'required');
   assert.equal(requestBody.parallel_tool_calls, false);
   assert.equal(requestBody.n, 1);
   assert.match(requestBody.user, /^review-driver:[0-9a-f]{24}$/u);
   assert.equal(result.provenance.modelVersion, 'openai-codex/gpt-5.4');
   assert.equal(
     result.provenance.promptVersion,
-    'wiselink.3_1.review_prompt.v1.c35',
+    'wiselink.3_1.review_prompt.v1.c37',
   );
 });
 
@@ -4509,7 +4560,7 @@ test('falls back to the configured model and records only output shape v2', asyn
   assert.equal(result.provenance.modelVersion, 'provider/configured');
   assert.equal(
     result.provenance.promptVersion,
-    'wiselink.3_1.review_prompt.v1.c35',
+    'wiselink.3_1.review_prompt.v1.c37',
   );
   assert.equal(
     outputShape.schemaVersion,

@@ -62,7 +62,7 @@ const REVIEW_RESPONSE_TYPES = [
   'AFFECTED_ITEMS_PREVIEW',
   'TASK_STATUS',
 ];
-const REVIEW_PROMPT_VERSION = 'wiselink.3_1.review_prompt.v1.c35';
+const REVIEW_PROMPT_VERSION = 'wiselink.3_1.review_prompt.v1.c37';
 const WISELINK_HOST_MCP_CONFIG_KEYS = new Set([
   WISELINK_HOST_MCP_NAME,
   'wiselink_host_controller',
@@ -332,7 +332,7 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
           ...(nativeSessionKey ? {} : { user: `review-driver:${sha256(sessionDiscriminator).slice(0, 24)}` }),
           messages,
           tools: [reviewCandidateFunctionTool(isMatter), reviewSourceFunctionTool()],
-          tool_choice: 'auto',
+          tool_choice: 'required',
           parallel_tool_calls: false,
           n: 1,
           stream: false,
@@ -370,8 +370,18 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
     const choice = payload.choices[0];
     const message = choice.message;
     if (toolCall.function.name === REVIEW_OUTPUT_FUNCTION_NAME) {
+      // M3 repeatedly emitted {item: [...]} for nested Matter arrays in the
+      // native function channel. Transport the candidate as one JSON string;
+      // never repair its content or skip the existing candidate validators.
+      let candidate = output;
+      if (isMatter) {
+        if (Object.keys(output).length !== 1 || typeof output.candidateJson !== 'string') {
+          throw new Error('REVIEW_MATTER_CANDIDATE_JSON_REQUIRED');
+        }
+        candidate = parseStrictJsonObject(output.candidateJson);
+      }
       return {
-        output,
+        output: candidate,
         provenance: {
           modelVersion: actualModelVersion(payload, choice, message,
             options.executionModel ? `configured-route:${options.executionModel.modelRef}` : configuredModelVersion),
@@ -1232,6 +1242,24 @@ function reviewResponseTypes(isMatter) {
 }
 
 function reviewCandidateFunctionTool(isMatter = false) {
+  if (isMatter) {
+    return {
+      type: 'function',
+      function: {
+        name: REVIEW_OUTPUT_FUNCTION_NAME,
+        description: 'Return the Matter review candidate as JSON text in candidateJson. Serialization only; the Host validates all candidate fields and evidence before saving.',
+        parameters: {
+          type: 'object', additionalProperties: false, required: ['candidateJson'],
+          properties: {
+            candidateJson: {
+              type: 'string', minLength: 2,
+              description: 'One complete JSON object following the candidate contract in the current instruction. Preserve arrays as JSON arrays and null as JSON null. No Markdown fences or prose wrapper.',
+            },
+          },
+        },
+      },
+    };
+  }
   const stringArray = {
     type: 'array',
     items: { type: 'string', minLength: 1 },
@@ -1246,19 +1274,18 @@ function reviewCandidateFunctionTool(isMatter = false) {
       parameters: {
         type: 'object',
         additionalProperties: false,
-        required: [...MODEL_OUTPUT_KEYS, ...(isMatter ? ['matterWorkingDelta'] : [])],
+        required: [...MODEL_OUTPUT_KEYS],
         properties: {
-          responseType: { type: 'string', enum: [...reviewResponseTypes(isMatter)] },
+          responseType: { type: 'string', enum: [...reviewResponseTypes(false)] },
           answer: { type: 'string', minLength: 1 },
           sourceRefs: structuredClone(stringArray),
           missingInputs: structuredClone(stringArray),
           candidateEvidenceRefs: structuredClone(stringArray),
-          reviewActionDraft: isMatter ? { type: 'null' } : {
+          reviewActionDraft: {
             anyOf: [{ type: 'object' }, { type: 'null' }],
           },
-          affectedItemIds: { ...structuredClone(stringArray), ...(isMatter ? { maxItems: 0 } : {}) },
+          affectedItemIds: structuredClone(stringArray),
           warnings: structuredClone(stringArray),
-          ...(isMatter ? { matterWorkingDelta: matterWorkingDeltaSchema() } : {}),
         },
       },
     },
@@ -1284,51 +1311,9 @@ function reviewSourceFunctionTool() {
   };
 }
 
-function matterWorkingDeltaSchema() {
-  const text = { type: 'string', minLength: 1 };
-  const strings = { type: 'array', items: text, uniqueItems: true };
-  const object = (properties) => ({ type: 'object', additionalProperties: false, required: Object.keys(properties), properties });
-  const array = (items, minItems = 0) => ({ type: 'array', items, minItems });
-  const nullable = (schema) => ({ anyOf: [schema, { type: 'null' }] });
-  const claim = object({
-    claimId: text, text,
-    basis: { type: 'string', enum: ['SOURCE_FACT', 'CONDITIONAL_INFERENCE'] },
-    premises: array(object({
-      evidenceRef: text,
-      role: { type: 'string', enum: ['SUPPORTS', 'LIMITS', 'CONTEXT', 'CONFLICTS'] },
-      explanation: text, limitation: nullable(text),
-    }), 1),
-  });
-  const textDelta = object({
-    upserts: array(object({ itemId: text, text, basisRefs: strings })),
-    retirements: array(object({ itemId: text, reason: text })),
-    explicitlyUnchangedItemIds: strings,
-  });
-  return nullable(object({
-    updateKind: { type: 'string', enum: ['INITIAL_SYNTHESIS', 'CORRECTION', 'MATERIAL_INCORPORATION'] },
-    changeSummary: text,
-    nextFocus: nullable(object({ question: text, targetRefs: strings })),
-    claimDelta: nullable(object({
-      changedBecause: text,
-      additions: array(claim), replacements: array(claim),
-      retirements: array(object({ claimId: text, reason: text })),
-      explicitlyUnchangedClaimIds: strings,
-    })),
-    readingPresentation: nullable(object({ headline: text, listBrief: text, lead: text, decisiveClaimIds: strings })),
-    openQuestionDelta: nullable(textDelta),
-    reviewConditionDelta: nullable(textDelta),
-    coverageUpdates: array(object({
-      inputRef: { type: 'string', pattern: '^matter-input:[1-9][0-9]*$' },
-      checkedSourceRefIds: { ...strings, minItems: 1 },
-      checkedScope: text,
-      contribution: { type: 'string', enum: ['SUBSTANTIVE', 'NO_MATERIAL_CHANGE'] },
-      reason: text,
-    })),
-  }));
-}
-
 function matterReviewGuidance() {
   return [
+    `Serialize the complete Matter candidate as the single candidateJson string parameter of ${REVIEW_OUTPUT_FUNCTION_NAME}. Its JSON object has exactly ${[...MODEL_OUTPUT_KEYS, 'matterWorkingDelta'].join(', ')}. responseType is one of ${reviewResponseTypes(true).join(', ')}. answer is nonempty text; sourceRefs, missingInputs, candidateEvidenceRefs, affectedItemIds and warnings are arrays of unique nonempty strings. Nested arrays must be JSON arrays, never {item:[...]} objects. Keep null values present as JSON null; do not omit required keys.`,
     'This is a Matter Review. context.matterWorking is the authoritative working focus, current saved reading, open questions, review conditions, input list and evidence catalog. The driver returns the c4 candidate contract. Always include matterWorkingDelta, use null for an explanation or clarification that does not update the working understanding, and always set reviewActionDraft=null and affectedItemIds=[]. Formal ReviewActions are unavailable in this Matter turn.',
     'When the engineer requests a substantive new understanding, correction or incorporation of additional material, return matterWorkingDelta with updateKind INITIAL_SYNTHESIS, CORRECTION or MATERIAL_INCORPORATION and a concrete changeSummary. RESYNTHESIS_RESULT may describe that updated reading. If there is no working state yet and an assessment is requested, INITIAL_SYNTHESIS supplies nextFocus and a first claimDelta/readingPresentation. A useful assessment may conclude with bounded understanding and open questions; do not force an implementation, priority, approval or release decision.',
     'matterWorkingDelta has exactly updateKind, changeSummary, nextFocus, claimDelta, readingPresentation, openQuestionDelta, reviewConditionDelta, coverageUpdates. nextFocus is null to retain the focus or {question,targetRefs}. claimDelta and readingPresentation are both null to retain the exact current result, or both objects to revise it. Host supplies the scope, identities, versions and CAS; never generate those control bindings.',

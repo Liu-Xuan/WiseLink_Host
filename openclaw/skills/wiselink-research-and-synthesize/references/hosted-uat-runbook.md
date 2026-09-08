@@ -113,7 +113,7 @@ c24 可选控制元数据兼容旧任务，但旧 Skill 不接受新字段，因
    优先读回非空、可识别的实际 `modelVersion`；响应未提供时，绑定任务记录 `configured-route:<modelRef>`，旧任务才使用唯一 configured endpoint。它们只证明路由，不解释为未暴露的下游具体模型。重复 agent、
    不可读 primary、fallbacks 非数组或非空均在调用模型前停止；
 4. 同名 Skill 只有一个，安装版本精确
-   `wiselink-research-and-synthesize@r09.c36`；
+   `wiselink-research-and-synthesize@r09.c37`；
 5. Host MCP package/version 为
    `wiselink-openclaw-engineering-assessment@1.2.0`，exact 20 tools 可见；
 6. C3 successor 已进入 current Hosted release；只凭 Git commit 不等于 deployed readback；
@@ -210,7 +210,7 @@ authenticated user。
    相同版本与材料范围的新 Turn 使用 Host 同一 key，而旧 Host 明确走逐轮隔离路径。新 Turn 不复用旧 checkpoint。
 5. 模型经 Gateway HTTP 仅生成 SOURCE_LINK/ANSWER 内容；本用例要求 `SOURCE_LINK` 且至少一个
    `sourceRefs` 来自本轮实读 allowlist，`sourceRefs=[]` 必须在 commit 前 fail closed。c21 请求暴露
-   `read_wiselink_review_sources` 与 `return_wiselink_review_candidate`，`tool_choice=auto`、`parallel_tool_calls=false`
+   `read_wiselink_review_sources` 与 `return_wiselink_review_candidate`，`tool_choice=required`、`parallel_tool_calls=false`
    和 `n=1`；前者按需调用现有 Host 读取，后者仅作为最终序列化通道且永不执行。每次响应只有一个 choice 和一个合法 function call，
    arguments 为 direct strict JSON object。附带纯文本说明不解析为结果、不写入候选/证据或驱动后续 exchange，
    只记录安全形态。纯文本结果、非文本 content、其他函数、多 tool call、fence/prose/array/null arguments 或任何 analysis
