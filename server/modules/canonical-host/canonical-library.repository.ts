@@ -50,7 +50,10 @@ const summaryColumns = {
       'decisiveClaims', (
         select coalesce(jsonb_agg(jsonb_build_object('claimId', claim->>'claimId', 'text', claim->>'text')), '[]'::jsonb)
         from jsonb_array_elements(coalesce(${workItem.projectionJson}::jsonb #> '{integratedAssessment,overallSynthesis,readingResult,content,claims}', '[]'::jsonb)) claim
-        where (${workItem.projectionJson}::jsonb #> '{integratedAssessment,overallSynthesis,readingResult,content,decisiveClaimIds}') ? (claim->>'claimId')
+        where jsonb_exists(
+          ${workItem.projectionJson}::jsonb #> '{integratedAssessment,overallSynthesis,readingResult,content,decisiveClaimIds}',
+          claim->>'claimId'
+        )
       )
     ) end`,
 };
