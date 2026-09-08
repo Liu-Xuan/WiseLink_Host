@@ -2,11 +2,12 @@ import { randomUUID } from 'node:crypto';
 
 import { Inject, Injectable } from '@nestjs/common';
 import {
+  DATAPAAS_CONFIG,
   DRIZZLE_DATABASE,
   SqlExecutionContextMiddleware,
+  type DataPaasConfig,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import { RequestContextService } from '@lark-apaas/nestjs-common';
 import type { Request, Response } from 'express';
 import { and, asc, desc, eq, or, sql } from 'drizzle-orm';
 
@@ -82,7 +83,8 @@ export class EngineeringMatterWorkingRepository {
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
     private readonly sqlContext: SqlExecutionContextMiddleware,
-    private readonly requestContext: RequestContextService,
+    @Inject(DATAPAAS_CONFIG)
+    private readonly databaseConfig: Pick<DataPaasConfig, 'roleSchema'>,
   ) {}
 
   async withTransaction<T>(
@@ -107,10 +109,18 @@ export class EngineeringMatterWorkingRepository {
     // that next query. Use its injected middleware to scope the existing
     // service role to the Host-resolved actor, without changing the HTTP actor,
     // platform identity, global context or any role membership.
-    if (
-      this.requestContext.get('isSystemAccount') !== true ||
-      !/^[A-Za-z0-9_-]{1,255}$/u.test(actorUserId)
-    )
+    if (!/^[A-Za-z0-9_-]{1,255}$/u.test(actorUserId))
+      throw runtimeAuthorizationUnavailable();
+    // MCP tool dispatch does not guarantee RequestContextService's HTTP flag.
+    // Check the actual pre-existing SQL role before binding an actor; this
+    // cannot turn an authenticated/browser database context into service_role.
+    const roleSchema = this.databaseConfig.roleSchema;
+    if (!roleSchema || !/^[A-Za-z0-9_]{1,255}$/u.test(roleSchema))
+      throw runtimeAuthorizationUnavailable();
+    const [runtimeRole] = await this.db.execute<{ isHostedService: boolean }>(
+      sql`SELECT current_user = ${`service_role_${roleSchema}`} AS "isHostedService"`,
+    );
+    if (runtimeRole?.isHostedService !== true)
       throw runtimeAuthorizationUnavailable();
     return new Promise<T>((resolve, reject) => {
       this.sqlContext.use(

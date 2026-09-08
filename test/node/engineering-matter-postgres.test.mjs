@@ -18,7 +18,6 @@ const { sql: drizzleSql } = require('drizzle-orm');
 const {
   SqlExecutionContextMiddleware,
 } = require('@lark-apaas/fullstack-nestjs-core');
-const { RequestContextService } = require('@lark-apaas/nestjs-common');
 const {
   EngineeringMatterRepository,
 } = require('../../server/modules/canonical-host/engineering-matter.repository.ts');
@@ -911,12 +910,9 @@ async function reserveActorService(actorId, tenantId = 'tenant-A') {
     const sqlContext = new SqlExecutionContextMiddleware({
       roleSchema: 'wiselink_r10_test',
     });
-    const requestContext = new RequestContextService();
-    const working = new EngineeringMatterWorkingRepository(
-      db,
-      sqlContext,
-      requestContext,
-    );
+    const working = new EngineeringMatterWorkingRepository(db, sqlContext, {
+      roleSchema: 'wiselink_r10_test',
+    });
     const workingService = new EngineeringMatterWorkingService(
       matters,
       working,
@@ -929,26 +925,24 @@ async function reserveActorService(actorId, tenantId = 'tenant-A') {
       working,
       workingService,
       database: db,
+      // Hosted MCP does not guarantee an HTTP RequestContextService store.
+      // Exercise the actual SDK SQL context without manufacturing that flag.
       runtime: (operation) =>
-        requestContext.run(
-          { isSystemAccount: true, userId: '-1' },
-          () =>
-            new Promise((resolve, reject) => {
-              sqlContext.use(
-                {
-                  userContext: {
-                    userId: '-1',
-                    isSystemAccount: true,
-                    roles: [],
-                  },
-                },
-                {},
-                () => {
-                  Promise.resolve().then(operation).then(resolve, reject);
-                },
-              );
-            }),
-        ),
+        new Promise((resolve, reject) => {
+          sqlContext.use(
+            {
+              userContext: {
+                userId: '-1',
+                isSystemAccount: true,
+                roles: [],
+              },
+            },
+            {},
+            () => {
+              Promise.resolve().then(operation).then(resolve, reject);
+            },
+          );
+        }),
       actor: actor(actorId, tenantId),
       async release() {
         await connection.unsafe('RESET ROLE');
