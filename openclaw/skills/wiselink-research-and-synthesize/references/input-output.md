@@ -86,7 +86,7 @@ runtimePolicy.modelPolicyRef = official-hosted-profile-config
 ResultEnvelope.modelVersion = 官方托管 profile/config 本轮选择后的非空、可读实际模型
 Task.skillPolicyRef = wiselink-research-and-synthesize@r09
 ApplicabilityTask.runtimePolicy.skillVersion = wiselink-research-and-synthesize@r09  # v1 历史字段名，语义为兼容线
-ResultEnvelope.skillVersion = wiselink-research-and-synthesize@r09.c39       # 实际安装包版本
+ResultEnvelope.skillVersion = wiselink-research-and-synthesize@r09.c40       # 实际安装包版本
 toolVersions.wiselink-openclaw-engineering-assessment = 1.2.0
 promptVersion = 当前实际运行非空版本
 ```
@@ -365,6 +365,9 @@ null | {
 c4 的 reviewActionDraft 必须 null，affectedItemIds 必须 []；普通解释 delta=null。claimDelta 和
 readingPresentation 同时存在或同时 null。Host 用原文身份替换 task-local checked keys，按实际读记录核对范围，
 并在 COMMITTING 后同事务保存候选与事项工作版本。解释不推进版本；过时输入返回 BASIS_CHANGED 回执，不覆盖结果。
+覆盖记录按输入替换；新结果使用的全部文档前提必须在该输入的已核查范围内，保持的 claim 也适用。
+驱动提交前核对 SUBSTANTIVE 输入、文档身份及每个已引用片段，并把拒绝交给已有模型修订回合；实读记录不能替代
+模型对检查范围的准确声明。MCP 错误只保留脱敏错误码，commit.error.json 不构成重放或正式采用的授权。
 required 工作内容不能来自私有 matterContext；外层 ResultEnvelope provenance 包含答复、变化 claim 和 coverage
 真正使用的 artifact ref/SHA。下面原 c2/c3 合同保持历史兼容。
 

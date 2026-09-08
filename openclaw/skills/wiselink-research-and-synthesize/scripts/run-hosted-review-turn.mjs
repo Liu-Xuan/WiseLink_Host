@@ -62,7 +62,7 @@ const REVIEW_RESPONSE_TYPES = [
   'AFFECTED_ITEMS_PREVIEW',
   'TASK_STATUS',
 ];
-const REVIEW_PROMPT_VERSION = 'wiselink.3_1.review_prompt.v1.c39';
+const REVIEW_PROMPT_VERSION = 'wiselink.3_1.review_prompt.v1.c40';
 const WISELINK_HOST_MCP_CONFIG_KEYS = new Set([
   WISELINK_HOST_MCP_NAME,
   'wiselink_host_controller',
@@ -403,7 +403,7 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
           { role: 'tool', tool_call_id: toolCall.id, content: canonicalJson({
             candidateAccepted: false, validationError: errorCode,
             availableEvidenceRefs: candidateFeedbackEvidenceRefs(input, sourceCache),
-            instruction: 'Correct the candidate using the current contract and registered evidence. Keep the original question, unchanged claims and source meaning. Read any additional passage through the read function. Return the complete corrected candidate; do not invent evidence, remove a substantive finding merely to pass validation, or claim that anything was saved.',
+            instruction: 'Correct the candidate using the current contract and registered evidence. Keep the original question, unchanged claims and source meaning. Read any additional passage through the read function. Every document premise in the resulting reading must be included in that input\'s checked coverage; an updated coverage entry replaces its old checked range, so include every cited passage for that input, not just representative anchors. Return the complete corrected candidate; do not invent evidence or coverage, remove a substantive finding merely to pass validation, or claim that anything was saved.',
           }) },
         ];
         continue;
@@ -797,17 +797,34 @@ function validateHostToolMetadata(value) {
 
 async function callJsonTool(client, name, args) {
   const result = await client.callTool({ name, arguments: args });
+  return readHostMcpJsonResult(result, name);
+}
+
+export function readHostMcpJsonResult(result, name) {
   const textBlocks = Array.isArray(result?.content)
     ? result.content.filter((item) => item?.type === 'text')
     : [];
   if (result?.isError === true || textBlocks.length !== 1) {
-    throw new Error(`REVIEW_HOST_MCP_TOOL_FAILED:${name}`);
+    // MCP wraps application exceptions in text. Keep only the bounded Host
+    // error code; never retain response bodies, identities or lease tokens.
+    const hostErrorCode = result?.isError === true && textBlocks.length === 1
+      ? safeHostErrorCode(textBlocks[0].text) : null;
+    const error = new Error(`REVIEW_HOST_MCP_TOOL_FAILED:${name}${hostErrorCode ? ':' + hostErrorCode : ''}`);
+    error.hostErrorCode = hostErrorCode;
+    error.receivedHostToolError = result?.isError === true;
+    throw error;
   }
   try {
     return JSON.parse(textBlocks[0].text);
   } catch {
     throw new Error(`REVIEW_HOST_MCP_TOOL_INVALID_JSON:${name}`);
   }
+}
+
+function safeHostErrorCode(value) {
+  if (typeof value !== 'string') return null;
+  const code = value.match(/^(?:Error:\s*)?((?:REVIEW|ACTION_ATTEMPT|OPENCLAW|ENGINEERING_MATTER|OVERALL)_[A-Z0-9_]+)(?=:|$)/u)?.[1];
+  return code && code.length <= 160 ? code : null;
 }
 
 export async function createCheckpointStore(directory) {
@@ -839,7 +856,23 @@ export async function createCheckpointStore(directory) {
         argsHash,
         startedAt: new Date().toISOString(),
       });
-      const value = await perform();
+      let value;
+      try {
+        value = await perform();
+      } catch (error) {
+        if (ambiguousCommit) {
+          await writeCheckpointOnce(root, `${step}.error`, {
+            schemaVersion: DRIVER_SCHEMA,
+            step,
+            argsHash,
+            observedAt: new Date().toISOString(),
+            hostErrorCode: safeHostErrorCode(error?.hostErrorCode),
+            receivedHostToolError: error?.receivedHostToolError === true,
+            outcome: 'UNKNOWN',
+          });
+        }
+        throw error;
+      }
       await writeCheckpoint(root, `${step}.result`, {
         schemaVersion: DRIVER_SCHEMA,
         step,
@@ -1390,7 +1423,7 @@ function matterReviewGuidance() {
     'readingPresentation={headline,listBrief,lead,decisiveClaimIds} describes the complete next reading, including retained claims. headline, listBrief and lead are each one nonempty string, never an array or object; listBrief is the concise text displayed in a list row, not a list of bullets. decisiveClaimIds is an array of existing next-reading claimId strings. Keep decisive conditions, limits, uncertainty and negations visible across these reading depths. openQuestionDelta and reviewConditionDelta are null to retain their items, or {upserts:[{itemId,text,basisRefs}],retirements:[{itemId,reason}],explicitlyUnchangedItemIds}; preserve existing itemIds and account for every current item.',
     'Cite only registered evidenceRef values. An evidenceCatalog entry is a directory, not proof of reading. For every added or replaced DOCUMENT_PASSAGE premise, call read_wiselink_review_sources this turn using its sourceRefId and inspect the returned fragment with matching evidenceRef. The sourceRefId is a local key for this task: two documents can share an original SourceRef, so never substitute the original ID or a different document key. Remembered or unchanged prior claims do not authorize a newly cited passage. Non-document premises need their actual providedText or a read in this turn. ENGINEER_STATEMENT supports only what the engineer supplied; PRIOR_RESULT is prior candidate context and QUERY_RECEIPT covers only its explicit checked scope.',
     'Copy every evidenceRef exactly from its returned fragment or provided evidence entry, including all colon-delimited segments. Never abbreviate a document evidenceRef, infer it from a page number, or substitute sourceRefId. A driver validation rejection may request a corrected candidate at most twice within the same turn budget; it does not authorize different facts, omitted substance, wider sources or a saved result.',
-    'coverageUpdates contains only ranges actually checked this turn: {inputRef,checkedSourceRefIds,checkedScope,contribution:"SUBSTANTIVE"|"NO_MATERIAL_CHANGE",reason}. Copy inputRef from the input list, use nonempty checkedSourceRefIds read for that same input, and explain the bounded checkedScope and contribution. A catalog, file name, pending flag or one excerpt never establishes that the complete PDF was read. Keep pending material visibly pending until its relevant range has actually been checked; do not infer coverage from document presence.',
+    'coverageUpdates contains only ranges actually checked this turn: {inputRef,checkedSourceRefIds,checkedScope,contribution:"SUBSTANTIVE"|"NO_MATERIAL_CHANGE",reason}. Copy inputRef from the input list, use nonempty checkedSourceRefIds read for that same input, and explain the bounded checkedScope and contribution. Every document premise in the resulting reading must remain in that input\'s checked coverage. An updated entry replaces the old range: include every cited passage for that input, including retained claims; read any missing passage first. Inputs supporting the result require SUBSTANTIVE coverage; do not label an unused input SUBSTANTIVE. A catalog, file name, pending flag or one excerpt never establishes that the complete PDF was read. Keep pending material visibly pending until its relevant range has actually been checked; do not infer coverage from document presence.',
     'For a plain explanation, source link, question or status, use empty candidateEvidenceRefs. CANDIDATE_EVIDENCE remains limited to actual authorized attachment refs read this turn. Ordinary corrections and working judgments use matterWorkingDelta without formal adoption.',
   ];
 }

@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
 export const WISELINK_SKILL_VERSION =
-  'wiselink-research-and-synthesize@r09.c39';
+  'wiselink-research-and-synthesize@r09.c40';
 export const WISELINK_SKILL_COMPATIBILITY_REF =
   'wiselink-research-and-synthesize@r09';
 export const WISELINK_HOST_MCP_NAME =
@@ -4550,6 +4550,7 @@ function validateMatterWorkingDelta(task, value) {
   nonEmpty(value.changeSummary, 'REVIEW_MATTER_CHANGE_SUMMARY_REQUIRED');
   const context = task.matterContext;
   const current = context.workingState;
+  let nextClaims = null;
   if (value.nextFocus !== null) validateMatterFocus(value.nextFocus);
   if ((value.claimDelta === null) !== (value.readingPresentation === null)) fail('REVIEW_MATTER_PRESENTATION_DELTA_REQUIRED');
   if (current === null && (value.updateKind !== 'INITIAL_SYNTHESIS' || value.nextFocus === null || value.claimDelta === null)) {
@@ -4573,6 +4574,7 @@ function validateMatterWorkingDelta(task, value) {
     const replacements = new Map(delta.replacements.map((claim) => [claim.claimId, claim]));
     const retired = new Set(delta.retirements.map((claim) => claim.claimId));
     const claims = [...priorClaims.filter((claim) => !retired.has(claim.claimId)).map((claim) => replacements.get(claim.claimId) ?? claim), ...delta.additions];
+    nextClaims = claims;
     exactKeys(value.readingPresentation, ['headline', 'listBrief', 'lead', 'decisiveClaimIds'], [], 'review matter reading presentation');
     validateEngineeringReadingSummary({ schemaVersion: 'wiselink.3_1.assessment_reading.v1', ...value.readingPresentation, claims });
     assertMatterClaimEvidence(claims, matterReviewEvidence(context));
@@ -4593,6 +4595,12 @@ function validateMatterWorkingDelta(task, value) {
   array(value.coverageUpdates, 'REVIEW_MATTER_COVERAGE_INVALID');
   const inputBindings = new Map(context.scope.inputs.map((binding, index) => ['matter-input:' + (index + 1), binding]));
   const sourceBindings = new Map(context.evidenceSources.map((item) => [item.sourceRefId, item]));
+  const sourcesByEvidence = new Map(context.evidenceSources.map((item) => [item.evidenceRef, item]));
+  const evidence = matterReviewEvidence(context);
+  const usedEvidenceRefs = new Set(nextClaims?.flatMap((claim) => claim.premises.map((premise) => premise.evidenceRef)) ?? []);
+  const nextEvidence = nextClaims === null ? null : [...evidence.values()].filter((item) => usedEvidenceRefs.has(item.evidenceRef));
+  const resultEvidence = nextEvidence ?? current?.substantiveResult?.evidence ?? [];
+  const coverageByInputId = new Map((current?.coverage ?? []).map((item) => [item.binding.inputId, item]));
   const covered = new Set();
   for (const item of value.coverageUpdates) {
     exactKeys(item, ['inputRef', 'checkedSourceRefIds', 'checkedScope', 'contribution', 'reason'], [], 'review matter coverage');
@@ -4601,8 +4609,36 @@ function validateMatterWorkingDelta(task, value) {
     if (!binding) fail('REVIEW_MATTER_COVERAGE_INPUT_NOT_ALLOWED');
     if (covered.has(item.inputRef)) fail('REVIEW_MATTER_INPUT_COVERAGE_DUPLICATE');
     covered.add(item.inputRef);
-    for (const sourceRefId of item.checkedSourceRefIds) {
-      if (sourceBindings.get(sourceRefId)?.inputId !== binding.inputId) fail('REVIEW_MATTER_COVERAGE_SOURCE_NOT_ALLOWED');
+    const checkedSourceRefIds = item.checkedSourceRefIds.map((sourceRefId) => {
+      const source = sourceBindings.get(sourceRefId);
+      if (source?.inputId !== binding.inputId) fail('REVIEW_MATTER_COVERAGE_SOURCE_NOT_ALLOWED');
+      const carrier = evidence.get(source.evidenceRef);
+      if (carrier?.kind !== 'DOCUMENT_PASSAGE') fail('REVIEW_MATTER_COVERAGE_DOCUMENT_REQUIRED');
+      return carrier.sourceRefId;
+    });
+    if (item.contribution === 'SUBSTANTIVE' && !resultEvidence.some((carrier) =>
+      sourcesByEvidence.get(carrier.evidenceRef)?.inputId === binding.inputId)) fail('REVIEW_MATTER_SUBSTANTIVE_INPUT_UNUSED');
+    coverageByInputId.set(binding.inputId, { ...item, binding, checkedSourceRefIds });
+  }
+  if (nextEvidence !== null) {
+    // Match Host materialization: resolving a passage and declaring the
+    // result's checked coverage are separate. Retained claims also need their
+    // original, document-bound coverage after a local correction.
+    const contributingIds = new Set(nextEvidence.map((item) => sourcesByEvidence.get(item.evidenceRef)?.inputId));
+    const substantiveInputs = context.scope.inputs.filter((binding) => contributingIds.has(binding.inputId));
+    for (const binding of substantiveInputs) {
+      const item = coverageByInputId.get(binding.inputId);
+      if (!item || item.contribution !== 'SUBSTANTIVE' || canonicalJson(item.binding) !== canonicalJson(binding)) {
+        fail('REVIEW_MATTER_SUBSTANTIVE_INPUT_NOT_COVERED');
+      }
+    }
+    for (const carrier of nextEvidence) {
+      if (carrier.kind !== 'DOCUMENT_PASSAGE') continue;
+      const binding = substantiveInputs.find((item) => item.workItemId === carrier.workItemId && item.documentVersionId === carrier.documentVersionId);
+      if (!binding) fail('REVIEW_MATTER_DOCUMENT_EVIDENCE_INPUT_MISSING');
+      if (!coverageByInputId.get(binding.inputId).checkedSourceRefIds.includes(carrier.sourceRefId)) {
+        fail('REVIEW_MATTER_DOCUMENT_EVIDENCE_NOT_CHECKED');
+      }
     }
   }
 }

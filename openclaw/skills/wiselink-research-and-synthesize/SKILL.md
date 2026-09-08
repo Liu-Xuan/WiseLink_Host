@@ -12,7 +12,7 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（任务可绑定已登记的内置或用户授权自定义模型；仍经唯一官方 Hosted profile/Gateway）
-- Skill：`wiselink-research-and-synthesize@r09.c39`
+- Skill：`wiselink-research-and-synthesize@r09.c40`
 - Skill compatibility：`wiselink-research-and-synthesize@r09`（Host 最低接受 `r09.c10`）
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（既有 20 项能力；兼容新增的只读自动领取查询）
 - Host baseline：`6fd2655d27edc3851c745547efaf8796ad22c82c`
@@ -353,6 +353,9 @@ Host 的 `review_turn_task.v1.c4` 仍经同一驱动、原生会话和五个 MCP
   使用本轮 task-local source key，不能用另一个文档的同名原 SourceRef；工程师陈述只可用 Host 已提供的文本。
 - coverage 按 inputRef 记录实际读过的 source keys、明确检查范围、SUBSTANTIVE 或 NO_MATERIAL_CHANGE 及理由。
   未读、仅登记或仅命中的材料保持 pending；覆盖一个片段不代表全文检查。新材料没有改变判断时允许只更新覆盖记录。
+  更新同一输入的 coverage 会替换原范围；所得结果全部文档前提（含保持的 claim）必须落在该输入的覆盖记录中，
+  不能只列代表性片段。支持结果的输入须有 SUBSTANTIVE 覆盖，未用于结果的输入不能这样标记。
+  驱动在提交前检查这项要求，错误交给同轮模型修订；不得自动补齐范围或删掉有效 claim 来通过校验。
 - Host 核对全成员及历史依据访问、版本和真实读取后，在同一事务追加候选答复与工作记录；冲突保存
   BASIS_CHANGED 回执，不能覆盖新结果。解释 null 不推进工作版本。工作结果与正式采用、审批、实施决定分离。
 - 工作版本因本事项上一轮正常保存而递增，不单独重置原生会话；换事项、输入范围/版本/权限变化或上一轮失败会
@@ -524,7 +527,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - `modelVersion` 优先取响应中可读实际模型；绑定任务未回报实际模型时使用 `configured-route:<modelRef>`，旧无绑定任务使用无 fallback 的 configured endpoint。后两者只证明路由，不代表已暴露下游具体模型，也不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c39`
+- `skillVersion=wiselink-research-and-synthesize@r09.c40`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致
