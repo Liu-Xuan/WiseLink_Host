@@ -22,6 +22,10 @@ import type {
 } from './action-attempt-envelope.types';
 import { ActionAttemptRepository } from './action-attempt.repository';
 import {
+  assertPreparedInitialAnalysisInput,
+  readInitialAnalysisRequestInput,
+} from './initial-analysis-request';
+import {
   ACTION_ATTEMPT_COMMIT_RECOVERY_MS,
   ACTION_ATTEMPT_DEFAULT_DEADLINE_MS,
   ACTION_ATTEMPT_LEASE_MS,
@@ -179,12 +183,86 @@ export class ActionAttemptLifecycleService {
     }
     const now = new Date();
     const reservation = await this.reserveAt(input, now);
-    const claimed = await this.claimExisting(reservation.row, input, now);
+    const prepared = await this.prepareInitialRequest(reservation, input);
+    const claimed = await this.claimExisting(prepared, input, new Date());
     return {
       ...claimed,
       created: reservation.created,
       triggerRequestId: reservation.row.triggerRequestId,
     };
+  }
+
+  private async prepareInitialRequest(
+    reservation: ReserveActionAttemptResult,
+    input: ReserveAndClaimInput,
+  ): Promise<ActionAttemptRow> {
+    const { row, task } = reservation;
+    const request = readInitialAnalysisRequestInput(task);
+    if (
+      !request ||
+      row.status !== 'QUEUED' ||
+      (row.deadlineAt && row.deadlineAt <= new Date())
+    )
+      return row;
+    if (
+      row.claimCount !== 0 ||
+      row.leaseGeneration !== 0 ||
+      row.startedAt ||
+      row.leaseToken
+    )
+      throw conflict('ACTION_ATTEMPT_INITIAL_REQUEST_ALREADY_CLAIMED');
+    // Only the authorized execution entry calls reserveAndClaim. The browser
+    // reserves a small intent; full source/work preparation occurs here before
+    // the first lease. All envelope bindings and its original deadline survive.
+    try {
+      const modelInput = await input.buildModelInput({
+        attemptId: row.attemptId,
+        operationRef: requiredOperationRef(row),
+        triggerRequestId: row.triggerRequestId,
+        attemptNo: row.attemptNo,
+        createdAt: row.createdAt,
+      });
+      assertPreparedInitialAnalysisInput(request, modelInput);
+      const { inputHash: _previousInputHash, ...unsealedTask } = task;
+      const preparedTask = parseTaskEnvelope(
+        canonicalJson(
+          sealTaskEnvelope({
+            ...unsealedTask,
+            modelInput: structuredClone(modelInput),
+          }),
+        ),
+      );
+      const prepared = await this.repository.prepareInitialRequestInput(
+        row,
+        preparedTask,
+      );
+      if (prepared) return prepared;
+      const current = requiredRow(
+        await this.repository.readByAttemptId(row.attemptId),
+      );
+      assertReplay(current, input);
+      if (
+        readInitialAnalysisRequestInput(validatedTask(current)) &&
+        current.status === 'QUEUED' &&
+        (!current.deadlineAt || current.deadlineAt > new Date())
+      )
+        throw conflict('ACTION_ATTEMPT_INITIAL_PREPARATION_CAS_REJECTED');
+      return current;
+    } catch (error) {
+      const code =
+        error instanceof Error && /^[A-Z][A-Z0-9_]{0,159}$/u.test(error.message)
+          ? error.message
+          : 'ACTION_ATTEMPT_INITIAL_PREPARATION_FAILED';
+      try {
+        await this.repository.failInitialRequestPreparation(row, code);
+      } catch (recordingError) {
+        throw new AggregateError(
+          [error, recordingError],
+          'ACTION_ATTEMPT_INITIAL_PREPARATION_FAILURE_UNRECORDED',
+        );
+      }
+      throw error;
+    }
   }
 
   async readExactIdempotency(input: {
@@ -737,6 +815,8 @@ export class ActionAttemptLifecycleService {
       throw conflict('ACTION_ATTEMPT_NOT_CLAIMABLE');
     }
     const task = validatedTask(row);
+    if (readInitialAnalysisRequestInput(task))
+      throw conflict('ACTION_ATTEMPT_INITIAL_REQUEST_NOT_PREPARED');
     const binding = await this.repository.readWorkItemBinding({
       workItemId: row.workItemId,
       tenantId: row.tenantId,

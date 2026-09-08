@@ -19,6 +19,10 @@ import {
   parseTaskEnvelope,
 } from '../action-attempt/action-attempt-envelope';
 import { ActionAttemptLifecycleService } from '../action-attempt/action-attempt-lifecycle.service';
+import {
+  buildInitialAnalysisRequestInput,
+  readInitialAnalysisRequestInput,
+} from '../action-attempt/initial-analysis-request';
 import type {
   OpenClawResultEnvelope,
   OpenClawTaskEnvelope,
@@ -287,15 +291,8 @@ export class CanonicalJobAidProblemService {
         },
       ],
       allowedConnectors: [],
-      buildModelInput: (identity) =>
-        this.buildInput(
-          execution,
-          tenantId,
-          loaded.row.requestedByUserId,
-          permissionSnapshotVersion,
-          purpose,
-          identity.createdAt.toISOString(),
-        ),
+      buildModelInput: async () =>
+        buildInitialAnalysisRequestInput({ taskType, requestId }),
     });
     return {
       attemptRef: reserved.task.operationRef,
@@ -1337,7 +1334,16 @@ function continuationReceipt(
   purpose: JobAidProblemModelInput['purpose'],
 ) {
   const task = parseTaskEnvelope(row.taskEnvelopeJson!);
-  if (parseJobAidProblemTask(task).modelInput.purpose !== purpose)
+  const request = readInitialAnalysisRequestInput(task);
+  const expectedTaskType =
+    purpose === 'INITIAL_PROBLEM_ASSESSMENT'
+      ? 'OPENCLAW_DYNAMIC_EVALUATION'
+      : 'OPENCLAW_OVERALL_SYNTHESIS';
+  if (
+    request
+      ? request.taskType !== expectedTaskType
+      : parseJobAidProblemTask(task).modelInput.purpose !== purpose
+  )
     throw new Error('JOBAID_CONTINUATION_PURPOSE_MISMATCH');
   return {
     attemptRef: task.operationRef,

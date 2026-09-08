@@ -200,6 +200,24 @@ export class CanonicalTranslationV2Service {
     });
   }
 
+  async validateRetranslationScope(
+    workItem: CanonicalWorkItemProjection,
+    tenantId: string,
+    blockIds: string[],
+  ): Promise<void> {
+    if (!workItem.package)
+      throw new Error('TRANSLATION_STRUCTURED_SOURCE_NOT_READY');
+    const workspace = await this.workspaces.readForSource({
+      tenantId,
+      workItemId: workItem.workItemId,
+      documentVersionId: workItem.source.documentVersionId,
+      parsedArtifactRef: workItem.package.artifact.ref,
+      parsedArtifactSha256: workItem.package.artifact.sha256,
+    });
+    if (!workspace) throw new Error('TRANSLATION_WORKSPACE_NOT_FOUND');
+    this.taskInput(workspace, blockIds);
+  }
+
   taskInput(
     workspace: TranslationWorkspaceV2,
     retranslateBlockIds: string[] = [],

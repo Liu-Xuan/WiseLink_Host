@@ -25,6 +25,7 @@ import type {
   ReviewRuntimeActivity,
 } from '@shared/api.interface';
 import { canonicalJson } from './action-attempt-envelope';
+import { INITIAL_ANALYSIS_REQUEST_SCHEMA } from './initial-analysis-request';
 import type {
   OpenClawResultEnvelope,
   OpenClawTaskEnvelope,
@@ -378,6 +379,45 @@ export class ActionAttemptRepository {
           isNull(actionAttempt.taskEnvelopeJson),
         ),
       );
+  }
+
+  async prepareInitialRequestInput(
+    row: ActionAttemptRow,
+    task: OpenClawTaskEnvelope,
+  ): Promise<ActionAttemptRow | null> {
+    const [prepared] = await this.db
+      .update(actionAttempt)
+      .set({
+        taskEnvelopeJson: canonicalJson(task),
+        taskInputHash: task.inputHash,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          unclaimedInitialRequest(row),
+          gt(actionAttempt.deadlineAt, new Date()),
+        ),
+      )
+      .returning();
+    return (prepared as ActionAttemptRow | undefined) ?? null;
+  }
+
+  async failInitialRequestPreparation(
+    row: ActionAttemptRow,
+    errorCode: string,
+  ): Promise<void> {
+    const now = new Date();
+    await this.db
+      .update(actionAttempt)
+      .set({
+        status: 'FAILED',
+        errorCode,
+        errorMessage: '本次分析请求的上下文准备失败，原请求和已保存成果保留。',
+        terminalReason: 'ACTION_ATTEMPT_INITIAL_PREPARATION_FAILED',
+        completedAt: now,
+        updatedAt: now,
+      })
+      .where(unclaimedInitialRequest(row));
   }
 
   async readActiveReviewForWorkItem(input: {
@@ -844,6 +884,33 @@ export class ActionAttemptRepository {
       now: input.now,
     });
   }
+}
+
+function unclaimedInitialRequest(row: ActionAttemptRow) {
+  return and(
+    eq(actionAttempt.attemptId, row.attemptId),
+    eq(actionAttempt.tenantId, row.tenantId),
+    eq(actionAttempt.workItemId, row.workItemId),
+    eq(actionAttempt.actionType, row.actionType),
+    eq(actionAttempt.requestOrigin, row.requestOrigin),
+    eq(actionAttempt.taskInputHash, String(row.taskInputHash)),
+    sql`${actionAttempt.taskEnvelopeJson}::jsonb #>> '{modelInput,schemaVersion}' = ${INITIAL_ANALYSIS_REQUEST_SCHEMA}`,
+    eq(actionAttempt.status, 'QUEUED'),
+    eq(actionAttempt.claimCount, 0),
+    eq(actionAttempt.retryCount, 0),
+    eq(actionAttempt.leaseGeneration, 0),
+    eq(actionAttempt.projectionApplied, false),
+    isNull(actionAttempt.startedAt),
+    isNull(actionAttempt.completedAt),
+    isNull(actionAttempt.cancelRequestedAt),
+    isNull(actionAttempt.leaseOwner),
+    isNull(actionAttempt.leaseToken),
+    isNull(actionAttempt.leaseExpiresAt),
+    isNull(actionAttempt.leaseSlot),
+    isNull(actionAttempt.commitStartedAt),
+    isNull(actionAttempt.resultEnvelopeJson),
+    isNull(actionAttempt.resultContentHash),
+  );
 }
 
 function isLeaseSlotConflict(cause: unknown): boolean {
