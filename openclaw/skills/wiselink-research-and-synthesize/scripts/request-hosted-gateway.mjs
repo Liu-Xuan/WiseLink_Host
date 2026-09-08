@@ -1,7 +1,60 @@
 import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
+import { setTimeout as delay } from 'node:timers/promises';
 
 const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
+
+const TRANSIENT_HTTP_STATUSES = new Set([429, 502, 503, 504]);
+const NONDISPATCH_NETWORK_CODES = new Set([
+  'ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREACH', 'ENETUNREACH',
+]);
+
+/** Two short retries across this turn, within its original operation deadline.
+ * Only explicit transient HTTP responses or failures before connecting qualify.
+ * Lost responses/timeouts are ambiguous and are never replayed here.
+ */
+export function createHostedReviewRequester({ requestGateway = requestHostedGateway,
+  observeProgress, wait = (ms, signal) => delay(ms, undefined, { signal }),
+}) {
+  let retryNo = 0;
+  let requestNo = 0;
+  return async (endpoint, init) => {
+    for (;;) {
+      init.signal.throwIfAborted();
+      requestNo += 1;
+      await observeProgress?.({ kind: 'MODEL_REQUEST', requestNo, retryNo, delayMs: 0, errorCode: null });
+      let response;
+      let error;
+      let retryCode;
+      try {
+        response = await requestGateway(endpoint, init);
+        if (!TRANSIENT_HTTP_STATUSES.has(response.status)) return response;
+        retryCode = `REVIEW_GATEWAY_HTTP_${response.status}`;
+      } catch (cause) {
+        error = cause;
+        // ECONNRESET, interrupted bodies and aborted requests may already have
+        // reached the native session. They do not establish non-dispatch.
+        const networkCode = cause?.cause?.code ?? cause?.code;
+        if (!NONDISPATCH_NETWORK_CODES.has(networkCode) || init.signal.aborted) throw cause;
+        retryCode = `REVIEW_GATEWAY_${networkCode}`;
+      }
+      if (retryNo >= 2) {
+        if (error) throw error;
+        return response;
+      }
+      // The callback renews the exact Host lease and reauthorizes this worker.
+      // An unbound direct invocation cannot silently retry a native session.
+      if (typeof observeProgress !== 'function') {
+        if (error) throw error;
+        return response;
+      }
+      retryNo += 1;
+      const delayMs = retryNo === 1 ? 1000 : 3000;
+      await observeProgress({ kind: 'MODEL_RETRY', requestNo, retryNo, delayMs, errorCode: retryCode });
+      await wait(delayMs, init.signal);
+    }
+  };
+}
 
 /**
  * One non-streaming request to the already configured Gateway. Node fetch has

@@ -40,9 +40,12 @@ node <installed-skill-path>/scripts/consume-hosted-work-item.mjs --work-item-id 
 c24 每个 tick 默认最多连续执行 Host 指定的四个已就绪初始阶段；每次写回后 fresh-read，再开始下一阶段。
 满 15 分钟后不再启动新阶段，已执行步骤不重放；c32 要求原生唯一 cron 的 timeout 为 60 分钟，以容纳
 有界 45 分钟全文翻译及提交。翻译每轮通过原 Host heartbeat 续租；原 lease/deadline 不变。依赖计算与同一事项的
-CAS 写回仍有序，独立资料读取有限并行。四阶段完成后的后续 tick 转入既有 Review 消费者。
+CAS 写回仍有序，独立资料读取有限并行。c35 在非 BUSY/NOT_READY 时先检查工程师显式排队的 Review，
+有请求即交给原 Review 消费者，并由 Host 验证其实际范围与前提；无请求才推进初始阶段。
+Matter Review 可以独立使用已解析材料，不以 JobAid/Overall 完成为前提。初始失败状态和阶段摘要继续返回，
+既有失败与 checkpoint 保留，不因 Review 成功而重放或改写初始阶段。
 Host 缺少受控适用性事实时，保留 WAITING_INPUT 并允许后续 JobAid/Overall 形成条件性候选。BUSY/NOT_READY
-零模型调用；FAILED/CONFLICT、阶段状态漂移或不确定结果均停止报告，不新建失败重试。阶段 requestId 及已有
+零模型调用；FAILED/CONFLICT 不自动重试，阶段状态漂移或不确定结果均停止报告。阶段 requestId 及已有
 remote-step checkpoint 保存在 `.openclaw/wiselink-work-item-runs/<WorkItem>/initial/<operation>`，权限沿用
 0700/0600；已开始的模型步骤不会因原生 tick 或重启再次运行。完成记录与 Host 当前投影不一致时报告漂移，不覆盖旧记录。
 
@@ -57,7 +60,19 @@ c24 使用 Host 为每个新 ActionAttempt 保存的 executionModel；Translatio
 
 ## 状态和当前边界
 
-脚本返回 IDLE、BUSY、CANDIDATE_SAVED 或 REQUIRES_ATTENTION；后者及异常以非零退出码交给原生 cron 运行记录。不能把本地脚本通过或 cron 已安装当作 Hosted 闭环验收。
+脚本返回 IDLE、BUSY、CANDIDATE_SAVED 或 REQUIRES_ATTENTION。c36 中，Host 已记录的业务失败，
+或通过原取消工具精确读回同一 attempt 为 CANCELLED 的失败，返回明确的 REQUIRES_ATTENTION JSON，
+以零退出码表示本次消费已处理完毕；它不代表候选成功。未能确认取消、未知提交结果、认证或消费者本身异常
+仍以非零退出。旧初始阶段失败不会反复累积 cron 退避并阻断工程师的新 Review。
+
+c36 的交互 Review 对明确的 HTTP 429/502/503/504，或连接建立前的临时网络失败，在本轮原总时限内
+最多重试两次，等待 1 秒、3 秒。每次请求和重试均通过 Host heartbeat 重新授权、核对原租约并记录运行进度；
+原模型、原生 session、完整消息及来源范围保持。权限、输入、来源错误和可能已送达的断连/超时不盲重放；
+提交响应丢失仍只查原结果。运行进度与取证活动分别显示，不能用重试事件满足 SourceRef 引用。
+部署 c36 前先发布支持 heartbeat.reviewProgress 和页面回读的兼容 Host。更新期间保持原消费者暂停，
+完成后可通过实际官方 Gateway cron.update 的 patch.state.consecutiveErrors 清除该消费者的旧退避计数，
+保留最后失败状态和全部历史 run；再调整同一 job 的自然读取间隔。不得直接修改 cron 原始存储或全局退避策略。
+不能把本地脚本通过或 cron 已安装当作 Hosted 闭环验收。
 
 c19 本次仅新增自动领取；后续 c20 兼容共同背景，c21 在同一原生 session 内接通按需 SourceRef client-function 循环。
 c22 在 Host 提供 `nativeSessionKey` 时承接相同授权范围的跨轮模型讨论，消费者不增加会话注册表或更改 cron。

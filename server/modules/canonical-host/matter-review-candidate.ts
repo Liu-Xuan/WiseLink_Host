@@ -12,6 +12,7 @@ import type {
   EngineeringMatterWorkingUpdateKind,
 } from '@shared/matter-working.interface';
 import { canonicalJson } from '../action-attempt/action-attempt-envelope';
+import { isReviewRuntimeActivity } from '../action-attempt/review-evidence-activity';
 import {
   parsePersistedMatterReviewScope,
   type PersistedMatterReviewScope,
@@ -368,6 +369,9 @@ export function resolvedReviewSourceRefs(
   const refs: string[] = [];
   for (const valueItem of array(value)) {
     const item = object(valueItem);
+    // Runtime observations share the append-only activity log but can never
+    // satisfy a citation, even if they contain an unexpected sourceRefIds key.
+    if (isReviewRuntimeActivity(item)) continue;
     if (
       item.kind !== 'CONTEXT_PREPARED' &&
       item.kind !== 'SOURCE_REFS_RESOLVED'

@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 
 import { Injectable } from '@nestjs/common';
+import type { ReviewRuntimeActivity } from '@shared/api.interface';
+import { isReviewRuntimeActivity } from './review-evidence-activity';
 
 import { actionAttempt } from '../../database/schema';
 import { CanonicalModelSettingsService } from '../model-settings/canonical-model-settings.service';
@@ -228,6 +230,7 @@ export class ActionAttemptLifecycleService {
       tenantId: string;
       workItemId: string;
       principalId: string;
+      reviewProgress?: Omit<ReviewRuntimeActivity, 'observedAt'>;
     },
   ): Promise<{ leaseExpiresAt: string }> {
     const row = await this.requiredScoped(input.attemptRef, input);
@@ -236,6 +239,19 @@ export class ActionAttemptLifecycleService {
     }
     const now = new Date();
     assertFence(row, input);
+    const reviewActivity = input.reviewProgress
+      ? {
+          ...input.reviewProgress,
+          observedAt: now.toISOString(),
+        }
+      : undefined;
+    if (
+      reviewActivity &&
+      (row.actionType !== 'OPENCLAW_INTERACTIVE_REVIEW' ||
+        !isReviewRuntimeActivity(reviewActivity))
+    ) {
+      throw conflict('REVIEW_RUNTIME_PROGRESS_INVALID');
+    }
     if (row.deadlineAt && row.deadlineAt <= now) {
       const timedOut = await this.repository.finishTerminal({
         attemptId: row.attemptId,
@@ -257,6 +273,7 @@ export class ActionAttemptLifecycleService {
       leaseGeneration: input.leaseGeneration,
       now,
       leaseMs: ACTION_ATTEMPT_LEASE_MS,
+      ...(reviewActivity ? { reviewActivity } : {}),
     });
     if (!updated)
       throw leaseConflict('ACTION_ATTEMPT_HEARTBEAT_FENCE_REJECTED');

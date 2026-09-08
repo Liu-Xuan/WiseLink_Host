@@ -54,10 +54,23 @@ export async function consumePendingReviewTurn(options, dependencies) {
     // Never cancel a commit whose response may merely have been lost.
     if (startedAttempt && !commitStarted) {
       try {
-        await dependencies.callTool('cancel_action_attempt', {
+        const stopped = await dependencies.callTool('cancel_action_attempt', {
           attemptRef: startedAttempt,
           reason: `HOSTED_REVIEW_EXECUTION_FAILED:${code}`,
         });
+        if (stopped.attemptRef !== startedAttempt || stopped.status !== 'CANCELLED')
+          throw new Error('HOSTED_REVIEW_STOP_NOT_CONFIRMED');
+        // The Host has retained the failure and ended this attempt. The
+        // consumer succeeded in handling it; a later user turn must not inherit
+        // the command scheduler's exponentially increasing error backoff.
+        return {
+          status: 'REQUIRES_ATTENTION',
+          reviewTurnRef: next.reviewTurnRef,
+          attemptRef: startedAttempt,
+          errorCode: code,
+          attemptStatus: stopped.status,
+          candidateOnly: true,
+        };
       } catch (cancelError) {
         throw new Error(
           `${code};ATTEMPT_STOP_FAILED:${errorCode(cancelError)}`,
@@ -110,7 +123,6 @@ async function main(argv, env) {
       },
     );
     process.stdout.write(`${JSON.stringify(result)}\n`);
-    if (result.status === 'REQUIRES_ATTENTION') process.exitCode = 1;
   } finally {
     await connection.close();
   }

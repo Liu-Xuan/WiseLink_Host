@@ -44,11 +44,18 @@ export async function consumeHostedWorkItem(options, dependencies) {
     workItemId: options.workItemId,
   });
   let initial = readInitialStatus(statusResult, options.workItemId);
-  if (initialComplete(initial)) {
-    return (dependencies.consumeReview ?? consumePendingReviewTurn)(
+  if (initial.status !== 'BUSY' && initial.status !== 'NOT_READY') {
+    // An explicit Review is an independent request. In particular, a Matter
+    // review can assess parsed material before JobAid/Overall are available.
+    // The Host still validates the queued turn's scope and prerequisites.
+    const review = await (dependencies.consumeReview ?? consumePendingReviewTurn)(
       { ...options, checkpointRoot: join(options.checkpointRoot, 'review') },
       { callTool: dependencies.callTool, invokeModel: dependencies.invokeReviewModel },
     );
+    if (initialComplete(initial)) return review;
+    if (review.status !== 'IDLE') {
+      return { ...review, initialStatus: initial.status, initialStages: initial.stages };
+    }
   }
   const limit = options.maxInitialStages ?? INITIAL_ANALYSIS_OPERATIONS.length;
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > INITIAL_ANALYSIS_OPERATIONS.length) throw new Error('INITIAL_STAGE_LIMIT_INVALID');
@@ -172,12 +179,21 @@ export async function runHostedInitialStage(options, dependencies) {
   } catch (error) {
     if (startedAttempt && !finalCommitStarted) {
       try {
-        await checkpoint.remoteStep({
+        const stopped = await checkpoint.remoteStep({
           step: 'stop-attempt', args: { attemptRef: startedAttempt }, ambiguousCommit: false,
           perform: () => dependencies.callTool('cancel_action_attempt', {
             attemptRef: startedAttempt, reason: `HOSTED_INITIAL_EXECUTION_FAILED:${errorCode(error)}`,
           }),
         });
+        if (stopped.attemptRef !== startedAttempt || stopped.status !== 'CANCELLED')
+          throw new Error('HOSTED_INITIAL_STOP_NOT_CONFIRMED');
+        const report = {
+          status: 'REQUIRES_ATTENTION', operation,
+          attemptRef: startedAttempt, attemptStatus: stopped.status,
+          errorCode: errorCode(error), modelCallCount, candidateOnly: true,
+        };
+        await checkpoint.writeOnce('run-result', report);
+        return report;
       } catch (cancelError) {
         throw new Error(`HOSTED_INITIAL_CANCEL_FAILED:${errorCode(error)}:${errorCode(cancelError)}`, { cause: error });
       }
@@ -249,7 +265,6 @@ async function main(argv, env) {
       },
     });
     process.stdout.write(`${JSON.stringify(result)}\n`);
-    if (result.status === 'REQUIRES_ATTENTION') process.exitCode = 1;
   } finally {
     await connection.close();
   }

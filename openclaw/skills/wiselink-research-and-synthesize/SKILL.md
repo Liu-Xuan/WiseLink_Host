@@ -12,7 +12,7 @@ description: Orchestrate the single official hosted WiseLink engineering profile
 - hosted app：`app_17c3zn24kv2`
 - logical profile：`wiselink-engineering`
 - model policy：`official-hosted-profile-config`（任务可绑定已登记的内置或用户授权自定义模型；仍经唯一官方 Hosted profile/Gateway）
-- Skill：`wiselink-research-and-synthesize@r09.c34`
+- Skill：`wiselink-research-and-synthesize@r09.c36`
 - Skill compatibility：`wiselink-research-and-synthesize@r09`（Host 最低接受 `r09.c10`）
 - Host MCP：`wiselink-openclaw-engineering-assessment@1.2.0`（既有 20 项能力；兼容新增的只读自动领取查询）
 - Host baseline：`6fd2655d27edc3851c745547efaf8796ad22c82c`
@@ -67,9 +67,12 @@ c34 增加以 schema 区分的 Overall v2 与 Matter Review c4，同时完整保
 `scripts/consume-hosted-work-item.mjs` 是既有原生 command cron 的统一入口。它先读 Host
 `get_parse_status.initialAnalysis`，一次 tick 默认最多连续运行四个已就绪阶段。每阶段成功写回后 fresh-read，
 只继续 `nextOperation` 指定的未执行阶段；满 15 分钟后不再启动新阶段，给在途调用与提交留出原生 cron
-预算。四阶段完成后的后续 tick 复用原有 Review 消费者。该状态来自现有 projection 与 ActionAttempt，
+预算。c35 在材料就绪且无 BUSY 时先检查工程师明确排队的 Review；有请求则复用原有 Review 消费者，
+由 Host 继续校验该回合的实际范围和前提。Matter 可以基于已解析材料形成认识，不要求先完成 JobAid/Overall。
+没有待执行 Review 时才推进初始阶段；初始失败状态仍保留在回执，Review 成功不修复或重放失败初始阶段。
+该状态来自现有 projection 与 ActionAttempt，
 不是消费者另建业务状态机。独立资料读取可有限并行；依赖分析与同一 WorkItem 的 CAS 写回保持有序。
-`NOT_READY/BUSY` 不调用模型，`FAILED/CONFLICT` 或未知结果停止并报告。普通 applicability 的
+`NOT_READY/BUSY` 不调用模型，`FAILED/CONFLICT` 不自动重试，未知结果停止并报告。普通 applicability 的
 `WAITING_INPUT` 保持缺口，可继续 Host 指定的 JobAid/Overall；它不自动启动 P0B 重算。
 新 Host 未提供该字段时统一入口明确停止，原有单 operation 与 Review 入口仍兼容。
 运行范围只取已授权的 `--work-item-id`；新事项尚无 applicability context 时使用与 Host 配置一致的
@@ -77,6 +80,10 @@ c34 增加以 schema 区分的 Overall v2 与 Matter Review c4，同时完整保
 [Hosted 自动领取](references/hosted-review-consumer.md)。
 
 ### 共同背景（兼容增量）
+
+c35 针对 M3 真实 150 项 JobAid 调用在未返回候选时以 `length/incomplete_result` 结束的失败，
+仅将 M3 JobAid 请求的 `max_completion_tokens` 显式设为 32000，与既有 M3 翻译一致。
+仍返回全部 N 项并通过原校验；不分割评估输入、不减少准则、不切模型、不修改全局参数或增加传输重试。
 
 Host 可在 JobAid / Overall 输入的 `commonContext`，以及 Review 的 `context.commonContext` 中提供评估前
 共同背景：主文件身份与章节目录、关联资料作用与实际读取片段、此前普通讨论及工作回答。旧任务没有该字段时仍按原输入执行。
@@ -362,7 +369,16 @@ driver；没有待办或已有运行中的租约时不调用模型。历史普�
 这里的工作判断／讨论保存不是正式采用，消费者不确认 ReviewAction。部署与已知范围见
 [Hosted 自动领取](references/hosted-review-consumer.md)。
 
-以下五工具约束针对模型外的单轮 driver；自动领取查询和失败后停止 attempt 属于消费者控制面，均不交给模型。
+以下五工具约束针对模型外的业务候选流程；自动领取查询、续租与运行进度、失败后停止 attempt 属于消费者控制面，均不交给模型。
+
+c36 在交互 Review 内对明确的 429/502/503/504 或连接建立前失败最多短重试两次（1 秒、3 秒），
+共享原回合总时限与原生会话。每次请求和重试均由外部适配器经 `heartbeat_action_attempt` 核对当前
+租约/授权，并以可选 `reviewProgress` 保存 MODEL_REQUEST/MODEL_RETRY；进度不含模型思考或来源正文。
+Host 以同一次续租 CAS 追加记录，页面将运行进度与实际取证分开。认证、输入、来源校验错误不重试；
+已送达状态不确定的网络中断/超时与候选提交不盲重放，仍使用原状态回读规则。
+Host 已记录的业务失败或 exact attempt 已确认取消，返回 REQUIRES_ATTENTION 且消费器正常退出，
+避免旧业务失败触发 cron 的一小时退避并阻断新交互。未确认的取消或消费器故障仍明确报错。
+先发布支持此可选进度输入与回读的 Host，再安装 c36；完整部署步骤见自动领取参考。
 
 当前精确 C3 复核合同仍只使用以下五个工具：
 
@@ -494,7 +510,7 @@ Interactive Review 的复杂 ResultEnvelope 必须由 `sealResultEnvelope` 生�
 当前 validator 强制：
 
 - `modelVersion` 优先取响应中可读实际模型；绑定任务未回报实际模型时使用 `configured-route:<modelRef>`，旧无绑定任务使用无 fallback 的 configured endpoint。后两者只证明路由，不代表已暴露下游具体模型，也不做具体版本等值判断
-- `skillVersion=wiselink-research-and-synthesize@r09.c34`
+- `skillVersion=wiselink-research-and-synthesize@r09.c36`
 - `toolVersions.wiselink-openclaw-engineering-assessment=1.2.0`
 - `promptVersion` 非空并来自当前运行
 - task/result exact binding、SourceRef allowlist 和 canonical hash 一致

@@ -11,6 +11,9 @@ export default function ReviewExecutionStatus({
 }) {
   const execution = reviewExecutionPresentation(turn);
   const activity = turn.execution?.evidenceActivity;
+  const runtime = turn.execution?.runtimeActivity;
+  const latestRuntime = runtime?.items.at(-1);
+  const active = turn.execution?.status === 'RUNNING';
   return (
     <section
       className="review-execution"
@@ -35,6 +38,31 @@ export default function ReviewExecutionStatus({
           <small>状态更新于 {formatTime(execution.updatedAt)}</small>
         ) : null}
       </div>
+      {active && latestRuntime ? (
+        <p role="status">
+          {latestRuntime.kind === 'MODEL_RETRY'
+            ? `服务暂时未响应，${Math.ceil(latestRuntime.delayMs / 1000)} 秒后自动重试（第 ${latestRuntime.retryNo}/2 次）。`
+            : latestRuntime.retryNo > 0
+              ? `已开始第 ${latestRuntime.retryNo} 次重试，正在生成本轮答复。`
+              : '正在生成本轮答复。'}
+        </p>
+      ) : null}
+      {runtime?.error ? <p role="alert">{runtime.error.message}</p> : null}
+      {runtime?.items.some((item) => item.kind === 'MODEL_RETRY') ? (
+        <details>
+          <summary>本轮重试记录</summary>
+          <ul>
+            {runtime.items
+              .filter((item) => item.kind === 'MODEL_RETRY')
+              .map((item, index) => (
+                <li key={`${item.observedAt}-${index}`}>
+                  {formatTime(item.observedAt)} · 第 {item.retryNo} 次重试 ·{' '}
+                  {item.errorCode}
+                </li>
+              ))}
+          </ul>
+        </details>
+      ) : null}
       {activity ? (
         <details className="review-evidence-activity">
           <summary>取证活动 · {activity.items.length} 条</summary>

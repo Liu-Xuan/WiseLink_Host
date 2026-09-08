@@ -170,6 +170,16 @@ export interface ReviewEvidenceActivity {
   sourceCatalogCount: number;
 }
 
+/** Runtime adapter observations; never source evidence or model reasoning. */
+export interface ReviewRuntimeActivity {
+  kind: 'MODEL_REQUEST' | 'MODEL_RETRY';
+  observedAt: string;
+  requestNo: number;
+  retryNo: number;
+  delayMs: number;
+  errorCode: string | null;
+}
+
 export interface ReviewTurnExecutionReadModel {
   status: CanonicalOverallRegenerationExecutionStatus;
   attemptRef: string | null;
@@ -182,6 +192,11 @@ export interface ReviewTurnExecutionReadModel {
   /** Absent on older Hosts; null means no recorded receipts for this attempt. */
   evidenceActivity?: {
     items: ReviewEvidenceActivity[];
+    omittedEarlierCount: number;
+    error: { code: string; message: string } | null;
+  } | null;
+  runtimeActivity?: {
+    items: ReviewRuntimeActivity[];
     omittedEarlierCount: number;
     error: { code: string; message: string } | null;
   } | null;
