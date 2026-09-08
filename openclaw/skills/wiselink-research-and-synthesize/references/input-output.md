@@ -86,7 +86,7 @@ runtimePolicy.modelPolicyRef = official-hosted-profile-config
 ResultEnvelope.modelVersion = 官方托管 profile/config 本轮选择后的非空、可读实际模型
 Task.skillPolicyRef = wiselink-research-and-synthesize@r09
 ApplicabilityTask.runtimePolicy.skillVersion = wiselink-research-and-synthesize@r09  # v1 历史字段名，语义为兼容线
-ResultEnvelope.skillVersion = wiselink-research-and-synthesize@r09.c32       # 实际安装包版本
+ResultEnvelope.skillVersion = wiselink-research-and-synthesize@r09.c33       # 实际安装包版本
 toolVersions.wiselink-openclaw-engineering-assessment = 1.2.0
 promptVersion = 当前实际运行非空版本
 ```
@@ -157,6 +157,11 @@ c32 根据实跑 437 单元 DLI 在 20 分钟时仅完成 275 单元的证据，
 （可显式缩短），单响应最多 15 分钟。每轮请求前经确定性适配器续租原 Host attempt，续租失败即停止；
 模型输入不含租约。原 30 分钟 lease 与 60 分钟 attempt deadline 不变，唯一原生 cron 配置为 60 分钟 timeout。
 超时分别报告 INITIAL_MODEL_TIMEOUT 或 INITIAL_MODEL_RESPONSE_TIMEOUT；不重放已开始或失败的模型步骤。
+
+c33 的 Initial/Review Gateway 传输使用无额外依赖的 Node HTTP/HTTPS 单次连接；已有 AbortSignal 覆盖
+等待响应头及正文的全过程，避免内置 fetch 另行施加 300 秒响应头上限。接收正文时即执行 4 MiB 上限，
+拒绝连接中断和超量响应，不跟随重定向、不重试请求，不改全局超时或 dispatcher。Review 到期明确报告
+REVIEW_MODEL_TIMEOUT。既有端点、凭据、模型、原生 session 和候选解析合同不变；HTTPS 使用默认 TLS 校验。
 
 c31 对绑定 `miaoda/minimax-m3` 的翻译请求显式设置 `max_completion_tokens=32000`，
 用于修复已实测的默认 16000 输出额度耗尽；`model.output-shape` 记录请求额度以便和实际 usage 核对。

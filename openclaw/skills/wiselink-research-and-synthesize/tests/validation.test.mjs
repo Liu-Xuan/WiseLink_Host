@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { copyFile, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { bindWholeDocumentTranslation, invokeHostedInitialModel } from '../scripts/invoke-hosted-initial-model.mjs';
+import { bindWholeDocumentTranslation, invokeHostedInitialModel as invokeInitialWithTransport } from '../scripts/invoke-hosted-initial-model.mjs';
+import { requestHostedGateway } from '../scripts/request-hosted-gateway.mjs';
 
 import {
   WISELINK_HOST_MCP_NAME,
@@ -41,7 +43,7 @@ import {
   assertHostedModelGatewayReady,
   executionModelHeaders,
   findMcpConfig,
-  invokeHostedReviewModel,
+  invokeHostedReviewModel as invokeReviewWithTransport,
   isChatCompletionsEnabled,
   openClawConfigCandidates,
   prepareKnownModelNonDispatchRecovery,
@@ -49,6 +51,12 @@ import {
   runHostedReviewTurn,
   summarizeHostedReviewModelOutputShape,
 } from '../scripts/run-hosted-review-turn.mjs';
+
+// Protocol tests explicitly inject their synthetic response transport. The
+// production transport is exercised against a local HTTP server below.
+const fakeGateway = { requestGateway: (...args) => globalThis.fetch(...args) };
+const invokeHostedInitialModel = (input, options) => invokeInitialWithTransport(input, options, fakeGateway);
+const invokeHostedReviewModel = (input, options) => invokeReviewWithTransport(input, options, fakeGateway);
 
 const DYNAMIC_FIXTURE_URL = new URL(
   './fixtures/dynamic-rules-evaluation-737.input.json',
@@ -89,6 +97,116 @@ const ARTIFACT_REF = 'artifact://fixture/frozen-package';
 const ARTIFACT_SHA = 'b'.repeat(64);
 const LEASE_TOKEN = '9bc7de9d-1e86-4c12-8e78-e27cce3aa0d4';
 const WORK_ITEM_ID = 'WI-CONTROL-001';
+
+async function localGateway(t, handler) {
+  const server = createServer(handler);
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(async () => {
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
+  });
+  return `http://127.0.0.1:${server.address().port}`;
+}
+
+test('Initial and Review use the bounded production HTTP transport with their original routing and payload', async (t) => {
+  let calls = 0;
+  const gatewayUrl = await localGateway(t, async (req, res) => {
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    const body = Buffer.concat(chunks);
+    assert.equal(Number(req.headers['content-length']), body.length);
+    assert.equal(req.url, '/v1/chat/completions');
+    assert.equal(req.headers.authorization, 'Bearer fixture-only');
+    assert.equal(req.headers['x-openclaw-model'], 'miaoda/minimax-m3');
+    const input = JSON.parse(body.toString('utf8'));
+    assert.equal(input.model, 'openclaw/wiselink-engineering');
+    assert.equal(input.stream, false);
+    const review = calls++ === 1;
+    if (review) assert.equal(req.headers['x-openclaw-session-key'], 'agent:wiselink-engineering:review:ACTX-RS-local');
+    else assert.deepEqual(JSON.parse(input.messages[1].content), translationInput());
+    setTimeout(() => res.end(JSON.stringify({ choices: [{ message: {
+      content: null, tool_calls: [{ type: 'function', function: {
+        name: review ? 'return_wiselink_review_candidate' : 'return_wiselink_initial_candidate',
+        arguments: JSON.stringify(review ? { candidateOnly: true } : {
+          candidate: { translatedUnits: [[0, '保持 28 VDC 和 ATA 24。']] },
+        }),
+      } }],
+    } }] })), 30);
+  });
+  const options = { gatewayUrl, gatewayToken: 'fixture-only', gatewayChatCompletionsEnabled: true,
+    configuredModelVersion: 'miaoda/minimax-m3', sessionDiscriminator: 'local', timeoutMs: 2000,
+    executionModel: modelSelection('miaoda/minimax-m3'), registeredModelRefs: ['miaoda/minimax-m3'] };
+  const initial = await invokeInitialWithTransport({ operation: 'TRANSLATE', modelInput: translationInput() }, options);
+  assert.equal(initial.output.candidateUnits[0].text, '保持 28 VDC 和 ATA 24。');
+  const review = await invokeReviewWithTransport({ candidateOnly: true }, {
+    ...options, nativeSessionKey: 'agent:wiselink-engineering:review:ACTX-RS-local',
+  });
+  assert.deepEqual(review.output, { candidateOnly: true });
+  assert.equal(calls, 2);
+});
+
+for (const stage of ['headers', 'body']) {
+  test(`Gateway operation deadline interrupts waiting for ${stage} without replay`, async (t) => {
+    let calls = 0;
+    let closed = 0;
+    const gatewayUrl = await localGateway(t, (req, res) => {
+      calls++;
+      req.resume();
+      res.once('close', () => closed++);
+      if (stage === 'body') {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.write('{');
+      }
+    });
+    const options = { gatewayUrl, gatewayToken: 'fixture-only', gatewayChatCompletionsEnabled: true,
+      configuredModelVersion: 'miaoda/minimax-m3', sessionDiscriminator: 'timeout', timeoutMs: 70 };
+    await assert.rejects(invokeInitialWithTransport({ operation: 'TRANSLATE', modelInput: translationInput() }, options),
+      /INITIAL_MODEL_TIMEOUT/u);
+    await assert.rejects(invokeReviewWithTransport({ candidateOnly: true }, options), /REVIEW_MODEL_TIMEOUT/u);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(calls, 2);
+    assert.equal(closed, 2);
+  });
+}
+
+test('Gateway transport stops oversized or interrupted bodies before a candidate can be returned', async (t) => {
+  let calls = 0;
+  const gatewayUrl = await localGateway(t, (req, res) => {
+    req.resume();
+    if (calls++ === 0) res.end(Buffer.alloc(4 * 1024 * 1024 + 1, 32));
+    else {
+      res.writeHead(200, { 'content-length': 100 });
+      res.write('{');
+      setImmediate(() => res.socket.destroy());
+    }
+  });
+  const options = { gatewayUrl, gatewayToken: 'fixture-only', gatewayChatCompletionsEnabled: true,
+    configuredModelVersion: 'miaoda/minimax-m3', sessionDiscriminator: 'bounded', timeoutMs: 2000 };
+  await assert.rejects(invokeInitialWithTransport({ operation: 'TRANSLATE', modelInput: translationInput() }, options),
+    /INITIAL_GATEWAY_RESPONSE_TOO_LARGE/u);
+  await assert.rejects(invokeReviewWithTransport({ candidateOnly: true }, options), /HOSTED_GATEWAY_RESPONSE_INTERRUPTED/u);
+  assert.equal(calls, 2);
+});
+
+test('Gateway transport never follows redirects, retries failures, or dispatches an already aborted request', async (t) => {
+  let calls = 0;
+  const gatewayUrl = await localGateway(t, (req, res) => {
+    calls++;
+    req.resume();
+    res.writeHead(302, { location: '/must-not-receive-credentials' });
+    res.end('{}');
+  });
+  const init = { method: 'POST', headers: { authorization: 'Bearer fixture-only' }, body: '{}', signal: AbortSignal.timeout(2000) };
+  const response = await requestHostedGateway(new URL('/v1/chat/completions', gatewayUrl), init);
+  assert.equal(response.status, 302);
+  assert.equal(response.ok, false);
+  const abort = new AbortController();
+  abort.abort();
+  await assert.rejects(requestHostedGateway(gatewayUrl, { ...init, signal: abort.signal }), { name: 'AbortError' });
+  await assert.rejects(requestHostedGateway('file:///tmp/unused', init), /HOSTED_GATEWAY_HTTP_URL_INVALID/u);
+  await assert.rejects(requestHostedGateway('http://user:password@127.0.0.1/', init), /HOSTED_GATEWAY_HTTP_URL_INVALID/u);
+  assert.equal(calls, 1);
+});
 
 function modelSelection(modelRef) {
   return { modelRef, displayName: modelRef.startsWith('dli/') ? 'GPT 5.6 Sol' : 'MiniMax-M3',
@@ -792,7 +910,7 @@ test('pins exact20 MCP 1.2, five review tools, and hosted provenance', () => {
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c32',
+    'wiselink-research-and-synthesize@r09.c33',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
