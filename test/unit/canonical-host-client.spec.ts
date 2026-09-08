@@ -979,6 +979,58 @@ describe('canonical host assessment client', () => {
     });
   });
 
+  it.each(['resolved', 'rejected'])(
+    'keeps platform login when Review requires its engineering OAuth session (%s)',
+    async (mode) => {
+      const whoami = {
+        authenticated: true,
+        verifiedIdentity: { userId: 'engineer' },
+        session: { provenance: 'SERVER_OPAQUE_SESSION' },
+      };
+      request.mockResolvedValueOnce({ status: 200, data: whoami });
+      await requireOfficialOauthSession();
+      const generation = getCanonicalHostClientSessionGeneration();
+      const response = {
+        status: 401,
+        data: {
+          error: {
+            code: 'SESSION_REQUIRED',
+            message: 'A valid OAuth session is required.',
+          },
+        },
+      };
+      if (mode === 'resolved') request.mockResolvedValueOnce(response);
+      else request.mockRejectedValueOnce({ response });
+
+      await expect(
+        reloadReviewConversation('WI-SB-1001'),
+      ).rejects.toMatchObject({
+        code: 'OFFICIAL_OAUTH_SESSION_REQUIRED',
+        statusCode: 401,
+      });
+      expect(isCanonicalHostClientSessionAuthenticationRequired()).toBe(false);
+      expect(getCanonicalHostClientSessionGeneration()).toBe(generation);
+      request.mockResolvedValueOnce({ status: 200, data: whoami });
+      await requireOfficialOauthSession();
+      expect(request).toHaveBeenCalledTimes(3);
+      expect(request.mock.calls[2][0].url).toBe('/api/identity/whoami');
+    },
+  );
+
+  it.each(['resolved', 'rejected'])(
+    'still invalidates platform login for an unclassified Review 401 (%s)',
+    async (mode) => {
+      const response = { status: 401, data: {} };
+      if (mode === 'resolved') request.mockResolvedValueOnce(response);
+      else request.mockRejectedValueOnce({ response });
+      await expect(
+        reloadReviewConversation('WI-SB-1001'),
+      ).rejects.toBeDefined();
+      expect(isCanonicalHostClientSessionAuthenticationRequired()).toBe(true);
+      expect(request).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it('fresh-reads the current review conversation without creating browser state', async () => {
     request.mockResolvedValue({
       status: 200,

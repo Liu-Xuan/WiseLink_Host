@@ -1,4 +1,23 @@
-# 官方托管 R10 c35 发布与 UAT runbook
+# 官方托管 R10 c39 发布与 UAT runbook
+
+c39 为真实 DLI c38 候选的未登记依据 ID 失败增加同一原生会话内的有界纠正。Turn8 已正确返回三个字符串字段，
+但 6 个不同依据 ID 漏掉 `document:1`（共 8 个 premise 引用）；目录和实际已读来源映射一致，旧候选不修补、不重放。
+驱动在提交前执行现有完整 c4/来源/增量校验，将安全错误码及本轮已读或已提供的 evidenceRef 反馈给模型，最多纠正
+两次，共享原操作总时限，每次请求仍续租原 Host attempt。模型自行重新输出完整候选，通过后仅提交一次；不改写文本、
+缩写映射、补字段或放宽允许范围。安全拒绝记录保存在 0600 checkpoint，未知错误、超时或租约失效停止。
+本版无需 Host 更新；暂停唯一消费者并核对无在途后原位安装同名 Skill，再以正常新页面请求实测。
+
+前序 c38 按用户要求，为明确选择 M3 的初始分析与每轮 Review 请求申请官方最大 524288 completion tokens，
+来源为 [MiniMax Chat Completions 参数说明](https://platform.minimax.io/docs/api-reference/text-chat-openai)（2026-09-08）。
+真实 c37 Matter 回合先读取 77 条
+来源，随后两次以 `length` 用尽 16000 输出额度、没有候选载荷，Gateway 返回 `incomplete_result`；不把它
+误判为候选参数校验错误。额度写入安全 output-shape，原输入、会话、总时限和全部校验保持。安装前等待当前
+回合结束并暂停唯一消费者，再用正常新回合核对实际额度、来源读回和候选保存；旧失败不重放。
+c38 已确认全局配置与两次真实请求为 524288；但 Turn7 的第二请求在原生三次尝试中仍分别 length/output=16000，
+实际调用链的剩余限制仍需定位。wiselink-engineering 的本地模型目录另声明 32000，与全局不一致，但这不能单独解释
+16000。不得把任一配置读回或简单 clamp 计算当成最终上游生效证据；不覆盖其他会话的新配置。
+DLI 的 c37 Matter 回合两轮均 HTTP 200/tool_calls，候选 JSON carrier 成功，但 listBrief 返回 array[4]，在
+候选校验时失败。c38 明确 headline/listBrief/lead 为非空字符串；校验继续拒绝错误类型，不手工修补旧候选。
 
 c35 为 M3 JobAid 显式申请 32000 completion tokens：c34 的真实 150 项调用未设置该请求参数，上游
 以 `length` 结束且无可用候选，Gateway 返回 `incomplete_result`。全部准则、输入、校验、原操作时限与模型
@@ -113,7 +132,7 @@ c24 可选控制元数据兼容旧任务，但旧 Skill 不接受新字段，因
    优先读回非空、可识别的实际 `modelVersion`；响应未提供时，绑定任务记录 `configured-route:<modelRef>`，旧任务才使用唯一 configured endpoint。它们只证明路由，不解释为未暴露的下游具体模型。重复 agent、
    不可读 primary、fallbacks 非数组或非空均在调用模型前停止；
 4. 同名 Skill 只有一个，安装版本精确
-   `wiselink-research-and-synthesize@r09.c36`；
+   `wiselink-research-and-synthesize@r09.c40`；
 5. Host MCP package/version 为
    `wiselink-openclaw-engineering-assessment@1.2.0`，exact 20 tools 可见；
 6. C3 successor 已进入 current Hosted release；只凭 Git commit 不等于 deployed readback；
@@ -210,7 +229,7 @@ authenticated user。
    相同版本与材料范围的新 Turn 使用 Host 同一 key，而旧 Host 明确走逐轮隔离路径。新 Turn 不复用旧 checkpoint。
 5. 模型经 Gateway HTTP 仅生成 SOURCE_LINK/ANSWER 内容；本用例要求 `SOURCE_LINK` 且至少一个
    `sourceRefs` 来自本轮实读 allowlist，`sourceRefs=[]` 必须在 commit 前 fail closed。c21 请求暴露
-   `read_wiselink_review_sources` 与 `return_wiselink_review_candidate`，`tool_choice=auto`、`parallel_tool_calls=false`
+   `read_wiselink_review_sources` 与 `return_wiselink_review_candidate`，`tool_choice=required`、`parallel_tool_calls=false`
    和 `n=1`；前者按需调用现有 Host 读取，后者仅作为最终序列化通道且永不执行。每次响应只有一个 choice 和一个合法 function call，
    arguments 为 direct strict JSON object。附带纯文本说明不解析为结果、不写入候选/证据或驱动后续 exchange，
    只记录安全形态。纯文本结果、非文本 content、其他函数、多 tool call、fence/prose/array/null arguments 或任何 analysis

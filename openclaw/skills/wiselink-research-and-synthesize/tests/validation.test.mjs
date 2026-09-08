@@ -41,12 +41,14 @@ import {
 } from '../scripts/orchestrate-host-mcp.mjs';
 import {
   assertHostedModelGatewayReady,
+  createCheckpointStore,
   executionModelHeaders,
   findMcpConfig,
   invokeHostedReviewModel as invokeReviewWithTransport,
   isChatCompletionsEnabled,
   openClawConfigCandidates,
   prepareKnownModelNonDispatchRecovery,
+  readHostMcpJsonResult,
   resolveConfiguredModelVersion,
   runHostedReviewTurn,
   summarizeHostedReviewModelOutputShape,
@@ -57,6 +59,42 @@ import {
 const fakeGateway = { requestGateway: (...args) => globalThis.fetch(...args) };
 const invokeHostedInitialModel = (input, options) => invokeInitialWithTransport(input, options, fakeGateway);
 const invokeHostedReviewModel = (input, options) => invokeReviewWithTransport(input, options, fakeGateway);
+
+test('retains a bounded Host rejection code without exposing the MCP error body or replaying a commit', async (t) => {
+  const checkpointDir = await mkdtemp(join(tmpdir(), 'wiselink-review-host-error-'));
+  t.after(() => rm(checkpointDir, { recursive: true, force: true }));
+  const checkpoint = await createCheckpointStore(checkpointDir);
+  let calls = 0;
+  const step = () => checkpoint.remoteStep({
+    step: 'commit', args: { leaseToken: 'fixture-secret-token' }, ambiguousCommit: true,
+    perform: () => {
+      calls++;
+      return readHostMcpJsonResult({ isError: true, content: [{ type: 'text',
+        text: 'OVERALL_UNKNOWN_EVIDENCE_REF:fixture-secret-token',
+      }] }, 'commit_review_turn_candidate');
+    },
+  });
+  await assert.rejects(step(), (error) => {
+    assert.equal(error.hostErrorCode, 'OVERALL_UNKNOWN_EVIDENCE_REF');
+    assert.equal(error.receivedHostToolError, true);
+    assert.equal(error.message.includes('fixture-secret-token'), false);
+    return true;
+  });
+  const saved = await readFile(join(checkpointDir, 'commit.error.json'), 'utf8');
+  assert.equal(saved.includes('fixture-secret-token'), false);
+  assert.deepEqual(Object.fromEntries(Object.entries(JSON.parse(saved)).filter(([key]) =>
+    ['hostErrorCode', 'receivedHostToolError', 'outcome'].includes(key))), {
+    hostErrorCode: 'OVERALL_UNKNOWN_EVIDENCE_REF', receivedHostToolError: true, outcome: 'UNKNOWN',
+  });
+  assert.equal((await stat(join(checkpointDir, 'commit.error.json'))).mode & 0o777, 0o600);
+  await assert.rejects(step(), /REVIEW_COMMIT_OUTCOME_UNKNOWN/u);
+  assert.equal(calls, 1);
+  for (const text of ['private-url fixture-secret-token', 'OVERALL_' + 'A'.repeat(200)]) {
+    assert.throws(() => readHostMcpJsonResult({ isError: true, content: [{ type: 'text', text }] }, 'commit_review_turn_candidate'),
+      (error) => error.hostErrorCode === null && !error.message.includes('fixture-secret-token'));
+  }
+  assert.deepEqual(readHostMcpJsonResult({ content: [{ type: 'text', text: '{"status":"SUCCEEDED"}' }] }, 'get_action_attempt_status'), { status: 'SUCCEEDED' });
+});
 
 test('Review transient HTTP failures retry twice in the same native turn and expose each retry', async () => {
   for (const httpStatus of [429, 502, 503, 504]) {
@@ -298,7 +336,7 @@ test('routes both registered models for Initial and Review without changing prof
       assert.equal(body.model, 'openclaw/wiselink-engineering');
       assert.equal(JSON.stringify(body.messages).includes('settingsRevision'), false);
       assert.equal(body.max_completion_tokens,
-        !review && modelRef === 'miaoda/minimax-m3' ? 32_000 : undefined);
+        modelRef === 'miaoda/minimax-m3' ? 524_288 : undefined);
       if (review) assert.equal(init.headers['x-openclaw-session-key'], 'agent:wiselink-engineering:review:ACTX-RS-fixture');
       return Response.json({ model: 'openclaw/wiselink-engineering', choices: [{ message: {
         content: null, tool_calls: [{ type: 'function', function: {
@@ -347,7 +385,7 @@ test('M3 JobAid has a bounded output budget and preserves the complete criterion
         calls += 1;
         const request = JSON.parse(init.body);
         assert.equal(init.headers['x-openclaw-model'], modelRef);
-        assert.equal(request.max_completion_tokens, modelRef === 'miaoda/minimax-m3' ? 32_000 : undefined);
+        assert.equal(request.max_completion_tokens, modelRef === 'miaoda/minimax-m3' ? 524_288 : undefined);
         assert.deepEqual(JSON.parse(request.messages[1].content), modelInput);
         return Response.json({ model: 'openclaw/wiselink-engineering', choices: [{ message: {
           content: null,
@@ -359,7 +397,7 @@ test('M3 JobAid has a bounded output budget and preserves the complete criterion
     });
     assert.equal(calls, 1);
     assert.deepEqual(result.output, candidate);
-    assert.equal(observed[0].requestedMaxCompletionTokens, modelRef === 'miaoda/minimax-m3' ? 32_000 : null);
+    assert.equal(observed[0].requestedMaxCompletionTokens, modelRef === 'miaoda/minimax-m3' ? 524_288 : null);
     assert.equal(result.provenance.modelVersion, `configured-route:${modelRef}`);
   }
 });
@@ -385,7 +423,7 @@ test('official initial model adapter validates all four operation outputs withou
       const request = JSON.parse(init.body);
       assert.equal(request.model, 'openclaw/wiselink-engineering');
       assert.equal(request.user, 'initial:control-session-only');
-      assert.equal(Object.hasOwn(request, 'max_completion_tokens'), false);
+      assert.equal(request.max_completion_tokens, 524_288);
       assert.deepEqual(JSON.parse(request.messages[1].content), modelInput);
       assert.equal(JSON.stringify(request.messages).includes('control-session-only'), false);
       return new Response(JSON.stringify({ model: 'actual-official-model', choices: [{ message: {
@@ -395,7 +433,8 @@ test('official initial model adapter validates all four operation outputs withou
     };
     const result = await invokeHostedInitialModel({ operation, modelInput }, {
       gatewayChatCompletionsEnabled: true, gatewayUrl: 'https://official.invalid', gatewayToken: 'test-only',
-      configuredModelVersion: 'miaoda/miaoda-model-auto', sessionDiscriminator: 'control-session-only',
+      configuredModelVersion: 'miaoda/minimax-m3', sessionDiscriminator: 'control-session-only',
+      executionModel: modelSelection('miaoda/minimax-m3'), registeredModelRefs: ['miaoda/minimax-m3'],
     });
     assert.deepEqual(result.output, candidate);
     assert.equal(result.provenance.modelVersion, 'actual-official-model');
@@ -650,7 +689,7 @@ test('translation corrects only rejected units in the same full-document session
       assert.equal(request.user, 'initial:correction-session');
       assert.equal(init.headers['x-openclaw-model'], modelRef);
       assert.equal(request.max_completion_tokens,
-        modelRef === 'miaoda/minimax-m3' ? 32_000 : undefined);
+        modelRef === 'miaoda/minimax-m3' ? 524_288 : undefined);
       let rows;
       if (calls === 0) {
         assert.deepEqual(JSON.parse(request.messages[1].content), input);
@@ -742,7 +781,7 @@ test('translation resolves a converging seven-unit token shift in one 437-unit s
       const feedback = JSON.parse(request.messages[2].content);
       const window = feedback.translationOutputWindow;
       assert.equal(request.user, 'initial:shifted-437');
-      assert.equal(request.max_completion_tokens, 32_000);
+      assert.equal(request.max_completion_tokens, 524_288);
       if (calls === 0) assert.deepEqual(JSON.parse(request.messages[1].content), unchangedInput);
       else assert.equal(JSON.stringify(request.messages).includes('sourceUnits\":['), false);
       calls += 1;
@@ -1225,7 +1264,7 @@ test('pins exact20 MCP 1.2, five review tools, and hosted provenance', () => {
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c36',
+    'wiselink-research-and-synthesize@r09.c40',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -3076,12 +3115,17 @@ test('Matter Review c4 validates exact Host deltas while retaining the WorkItem 
     ['presentation omitted', (candidate) => { candidate.matterWorkingDelta.readingPresentation = null; }, /REVIEW_MATTER_PRESENTATION_DELTA_REQUIRED/u],
     ['cross-document coverage', (candidate) => { candidate.matterWorkingDelta.coverageUpdates[0].inputRef = 'matter-input:2'; }, /REVIEW_MATTER_COVERAGE_SOURCE_NOT_ALLOWED/u],
     ['empty checked range', (candidate) => { candidate.matterWorkingDelta.coverageUpdates[0].checkedSourceRefIds = []; }, /REVIEW_MATTER_CHECKED_RANGE_REQUIRED/u],
+    ['used input labelled unchanged', (candidate) => { candidate.matterWorkingDelta.coverageUpdates[0].contribution = 'NO_MATERIAL_CHANGE'; }, /REVIEW_MATTER_SUBSTANTIVE_INPUT_NOT_COVERED/u],
+    ['unused input labelled substantive', (candidate) => { candidate.matterWorkingDelta.coverageUpdates.push({ inputRef: 'matter-input:3', checkedSourceRefIds: ['matter-source:3:1'], checkedScope: 'Read one passage', contribution: 'SUBSTANTIVE', reason: 'Incorrectly claims contribution without a cited premise' }); }, /REVIEW_MATTER_SUBSTANTIVE_INPUT_UNUSED/u],
     ['private control in delta', (candidate) => { candidate.matterWorkingDelta.expectedWorkingRevision = 1; }, /REVIEW_MATTER_DELTA_UNKNOWN_FIELD/u],
   ]) {
     const candidate = matterReviewCandidate(reviewTask, structuredClone(delta));
     mutate(candidate);
     assert.throws(() => validateReviewCandidate(reviewTask, candidate), error, name);
   }
+  const missingRetainedCoverage = structuredClone(reviewTask);
+  missingRetainedCoverage.matterContext.workingState.coverage = missingRetainedCoverage.matterContext.workingState.coverage.filter((item) => item.binding.inputId !== missingRetainedCoverage.matterContext.scope.inputs[1].inputId);
+  assert.throws(() => validateReviewCandidate(missingRetainedCoverage, matterReviewCandidate(missingRetainedCoverage, delta)), /REVIEW_MATTER_SUBSTANTIVE_INPUT_NOT_COVERED/u);
   const missingContext = structuredClone(reviewTask);
   delete missingContext.matterContext;
   assert.throws(() => validatePayload('review-task', missingContext), /REVIEW_TASK_MISSING_FIELD:matterContext/u);
@@ -3105,6 +3149,9 @@ test('Matter Review c4 continues two native turns with scoped source keys, prese
   for (const turnNo of [1, 2]) {
     const { reviewTask, delta } = await matterReviewFixture(turnNo);
     const task = makeTask('OPENCLAW_INTERACTIVE_REVIEW', reviewTask, [], reviewTask.resourceRefs.map((ref) => ({ ref: ref.resourceArtifactRef, sha256: ref.resourceArtifactSha256 })));
+    task.executionModel = modelSelection('miaoda/minimax-m3');
+    const { inputHash: _inputHash, ...unsealed } = task;
+    task.inputHash = canonicalSha256(unsealed);
     const checkpointDir = await mkdtemp(join(tmpdir(), 'wiselink-matter-review-'));
     directories.push(checkpointDir);
     const requested = turnNo === 1 ? ['matter-source:1:1', 'matter-source:2:1'] : ['matter-source:1:1'];
@@ -3130,7 +3177,8 @@ test('Matter Review c4 continues two native turns with scoped source keys, prese
         throw new Error('UNEXPECTED_TOOL:' + name);
       },
       invokeModel: (input, hooks) => invokeReviewWithTransport(input, {
-        gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider', ...hooks,
+        gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+        registeredModelRefs: ['miaoda/minimax-m3'], ...hooks,
       }, { requestGateway: async (_url, init) => {
         const body = JSON.parse(init.body);
         requests.push({ body, headers: init.headers });
@@ -3143,13 +3191,11 @@ test('Matter Review c4 continues two native turns with scoped source keys, prese
           assert.equal(serialized.includes(forbidden), false, forbidden);
         }
         const schema = body.tools.find((tool) => tool.function.name === 'return_wiselink_review_candidate').function.parameters;
-        assert.ok(schema.required.includes('matterWorkingDelta'));
-        assert.deepEqual(schema.properties.reviewActionDraft, { type: 'null' });
-        assert.equal(schema.properties.affectedItemIds.maxItems, 0);
-        assert.ok(schema.properties.responseType.enum.includes('RESYNTHESIS_RESULT'));
-        assert.equal(schema.properties.responseType.enum.includes('REVIEW_ACTION_DRAFT'), false);
-        assert.deepEqual(schema.properties.matterWorkingDelta.anyOf[0].required.sort(),
-          ['updateKind', 'changeSummary', 'nextFocus', 'claimDelta', 'readingPresentation', 'openQuestionDelta', 'reviewConditionDelta', 'coverageUpdates'].sort());
+        assert.deepEqual(schema.required, ['candidateJson']);
+        assert.equal(schema.properties.candidateJson.type, 'string');
+        assert.deepEqual(Object.keys(schema.properties), ['candidateJson']);
+        assert.equal(body.tool_choice, 'required');
+        assert.equal(body.max_completion_tokens, 524_288);
         if (modelCalls === 1) {
           assert.equal(serialized.includes('SOURCE_A_FULL_PASSAGE'), false);
           assert.equal(serialized.includes('SOURCE_B_FULL_PASSAGE'), false);
@@ -3157,6 +3203,9 @@ test('Matter Review c4 continues two native turns with scoped source keys, prese
           assert.ok(serialized.includes(reviewTask.matterContext.readingEvidence.at(-1).excerpt));
           assert.match(body.messages[1].content, /INITIAL_SYNTHESIS/u);
           assert.match(body.messages[1].content, /not force an implementation/u);
+          assert.match(body.messages[1].content, /reviewActionDraft=null and affectedItemIds=\[\]/u);
+          assert.match(body.messages[1].content, /single candidateJson string parameter/u);
+          assert.match(body.messages[1].content, /headline, listBrief and lead are each one nonempty string/u);
           if (turnNo === 2) {
             assert.ok(serialized.includes('claim-independent'));
             assert.ok(serialized.includes('claim-engineer'));
@@ -3173,7 +3222,9 @@ test('Matter Review c4 continues two native turns with scoped source keys, prese
         return Response.json({ model: 'fixture/provider', choices: [{ message: { content: null, tool_calls: [{
           id: 'matter-call-' + turnNo + '-' + modelCalls, type: 'function', function: {
             name: modelCalls === 1 ? 'read_wiselink_review_sources' : 'return_wiselink_review_candidate',
-            arguments: JSON.stringify(modelCalls === 1 ? { sourceRefIds: requested } : matterReviewModelOutput(delta)),
+            arguments: JSON.stringify(modelCalls === 1 ? { sourceRefIds: requested } : {
+              candidateJson: JSON.stringify(matterReviewModelOutput(delta)),
+            }),
           },
         }] } }] });
       } }),
@@ -3181,6 +3232,10 @@ test('Matter Review c4 continues two native turns with scoped source keys, prese
     assert.equal(result.ok, true);
     assert.equal(result.sessionRouting, 'HOST_SCOPED');
     assert.equal(modelCalls, 2);
+    for (const name of ['model.output-shape.json', 'model.output-shape-2.json']) {
+      const shape = JSON.parse(await readFile(join(checkpointDir, name), 'utf8'));
+      assert.equal(shape.value.requestedMaxCompletionTokens, 524_288);
+    }
   }
   assert.equal(requests.length, 4);
   assert.ok(requests.every(({ headers, body }) => headers['x-openclaw-session-key'] === nativeSessionKey && !Object.hasOwn(body, 'user')));
@@ -3190,6 +3245,183 @@ test('Matter Review c4 continues two native turns with scoped source keys, prese
   assert.equal(candidates[1].matterWorkingDelta.claimDelta.replacements[0].claimId, candidates[0].matterWorkingDelta.claimDelta.additions[0].claimId);
   assert.deepEqual(candidates[1].matterWorkingDelta.claimDelta.explicitlyUnchangedClaimIds, ['claim-independent', 'claim-engineer']);
   assert.ok(submitted.every((result) => result.modelVersion === 'fixture/provider' && result.skillVersion === WISELINK_SKILL_VERSION && result.toolVersions[WISELINK_HOST_MCP_NAME] === WISELINK_HOST_MCP_VERSION));
+});
+
+test('Matter candidate validation feeds two corrections into the same native session before one Host commit', async (t) => {
+  const { reviewTask, delta } = await matterReviewFixture(1);
+  const extra = { ...reviewTask.matterContext.readingEvidence[0], evidenceRef: 'matter-evidence:revision:1:document:1:2',
+    sourceRefId: 'urn:source:another-page', excerpt: 'Another checked passage in document A.' };
+  reviewTask.matterContext.readingEvidence.splice(1, 0, extra);
+  reviewTask.matterContext.evidenceSources.push({ evidenceRef: extra.evidenceRef, sourceRefId: 'matter-source:1:2', inputId: reviewTask.matterContext.scope.inputs[0].inputId });
+  const resource = structuredClone(reviewTask.resourceRefs[0]);
+  resource.sourceRefId = resource.value.sourceRefId = 'matter-source:1:2';
+  resource.value.evidenceRef = extra.evidenceRef;
+  resource.value.quote = extra.excerpt;
+  reviewTask.resourceRefs.push(resource);
+  reviewTask.context.matterWorking.evidenceCatalog.push({ evidenceRef: extra.evidenceRef, kind: extra.kind,
+    title: extra.title, versionLabel: extra.versionLabel, locator: extra.locator, sourceRefId: resource.sourceRefId, providedText: null });
+  const artifacts = [...new Map(reviewTask.resourceRefs.map((ref) => [ref.resourceArtifactRef,
+    { ref: ref.resourceArtifactRef, sha256: ref.resourceArtifactSha256 }])).values()];
+  const task = makeTask('OPENCLAW_INTERACTIVE_REVIEW', reviewTask, [], artifacts);
+  task.executionModel = modelSelection('miaoda/minimax-m3');
+  const { inputHash: _inputHash, ...unsealed } = task;
+  task.inputHash = canonicalSha256(unsealed);
+  const nativeSessionKey = 'agent:wiselink-engineering:review:ACTX-RS-matter-private';
+  const checkpointDir = await mkdtemp(join(tmpdir(), 'wiselink-matter-correction-'));
+  t.after(() => rm(checkpointDir, { recursive: true, force: true }));
+  const requested = ['matter-source:1:1', 'matter-source:2:1', 'matter-source:1:2'];
+  const feedback = [];
+  const calls = [];
+  let modelCalls = 0;
+  let committed;
+  const result = await runHostedReviewTurn({ reviewConversationRef: reviewTask.reviewConversationRef, requestId: reviewTask.requestId, checkpointDir }, {
+    callTool: async (name, args) => {
+      calls.push(name);
+      if (name === 'heartbeat_action_attempt') return reviewProgressHeartbeat(task, args);
+      if (name === 'begin_review_turn') return runningBegin(task, { nativeSessionKey });
+      if (name === 'get_review_turn_context') return reviewContext(task, reviewTask);
+      if (name === 'read_source_refs') return {
+        schemaVersion: 'wiselink.3_1.review_source_refs.v1.c2', attemptRef: task.operationRef,
+        sourceRefs: args.sourceRefIds.map((id) => structuredClone(reviewTask.resourceRefs.find((ref) => ref.sourceRefId === id).value)),
+      };
+      if (name === 'commit_review_turn_candidate') {
+        const sealed = JSON.parse(args.resultJson);
+        validatePayload('result-envelope', { task, result: sealed });
+        committed = JSON.parse(sealed.modelOutput);
+        return reviewCommit(task.operationRef);
+      }
+      throw new Error('UNEXPECTED_TOOL:' + name);
+    },
+    invokeModel: (input, hooks) => invokeReviewWithTransport(input, {
+      gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+      registeredModelRefs: ['miaoda/minimax-m3'], ...hooks,
+    }, { requestGateway: async (_url, init) => {
+      modelCalls += 1;
+      assert.equal(calls.includes('commit_review_turn_candidate'), false);
+      assert.equal(init.headers['x-openclaw-session-key'], nativeSessionKey);
+      const body = JSON.parse(init.body);
+      assert.equal(body.max_completion_tokens, 524_288);
+      assert.equal(body.tool_choice, 'required');
+      if (modelCalls >= 3) {
+        assert.deepEqual(body.messages.map((message) => message.role), ['system', 'assistant', 'tool']);
+        const receipt = JSON.parse(body.messages[2].content);
+        feedback.push(receipt);
+        assert.equal(receipt.candidateAccepted, false);
+        const registered = [...requested.map((id) => reviewTask.resourceRefs.find((ref) => ref.sourceRefId === id).value.evidenceRef), reviewTask.matterContext.readingEvidence.at(-1).evidenceRef];
+        assert.deepEqual(new Set(receipt.availableEvidenceRefs), new Set(registered));
+        for (const privateValue of [reviewTask.requestId, reviewTask.reviewTurnRef, reviewTask.reviewConversationRef, task.operationRef]) {
+          assert.equal(body.messages[2].content.includes(privateValue), false);
+        }
+      }
+      const output = matterReviewModelOutput(structuredClone(delta));
+      if (modelCalls === 2) output.matterWorkingDelta.readingPresentation.listBrief = ['Wrong array type'];
+      // Both passages were really read, but coverage of page 2 cannot cover
+      // the page 1 premise. The model must repair its own declared range.
+      if (modelCalls === 3) output.matterWorkingDelta.coverageUpdates[0].checkedSourceRefIds = ['matter-source:1:2'];
+      return Response.json({ model: 'fixture/provider', choices: [{ message: { content: null, tool_calls: [{
+        id: `correction-call-${modelCalls}`, type: 'function', function: {
+          name: modelCalls === 1 ? 'read_wiselink_review_sources' : 'return_wiselink_review_candidate',
+          arguments: JSON.stringify(modelCalls === 1 ? { sourceRefIds: requested } : { candidateJson: JSON.stringify(output) }),
+        },
+      }] } }] });
+    } }),
+  });
+  assert.equal(result.ok, true);
+  assert.equal(modelCalls, 4);
+  assert.equal(calls.filter((name) => name === 'read_source_refs').length, 1);
+  assert.equal(calls.filter((name) => name === 'commit_review_turn_candidate').length, 1);
+  assert.deepEqual(committed.matterWorkingDelta, delta);
+  assert.deepEqual(feedback.map((entry) => entry.validationError), ['OVERALL_LIST_BRIEF_INVALID', 'REVIEW_MATTER_DOCUMENT_EVIDENCE_NOT_CHECKED']);
+  for (const correctionNo of [1, 2]) {
+    const path = join(checkpointDir, `candidate-rejection-${correctionNo}.json`);
+    const receipt = JSON.parse(await readFile(path, 'utf8'));
+    assert.equal(receipt.correctionNo, correctionNo);
+    assert.equal(receipt.modelRound, correctionNo + 1);
+    assert.equal(receipt.errorCode, feedback[correctionNo - 1].validationError);
+    assert.equal((await stat(path)).mode & 0o077, 0);
+  }
+});
+
+test('Matter candidate corrections keep their original deadline and stop after exhaustion, lease loss or an unexpected failure', async () => {
+  for (const scenario of ['exhausted', 'lease-lost', 'deadline', 'unexpected']) {
+    let requests = 0;
+    let renewals = 0;
+    const rejected = [];
+    const validationError = scenario === 'unexpected' ? 'INTERNAL_VALIDATOR_FAILURE' : 'REVIEW_MATTER_PREMISE_NOT_ALLOWED';
+    await assert.rejects(invokeReviewWithTransport({ input: { context: { matterWorking: {} } } }, {
+      gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+      ...(scenario === 'deadline' ? { timeoutMs: 20 } : {}),
+      validateCandidate: async () => {
+        if (scenario === 'deadline') await new Promise((resolve) => setTimeout(resolve, 30));
+        throw new Error(validationError);
+      },
+      observeCandidateRejection: (value) => rejected.push(value),
+      observeProgress: () => {
+        renewals += 1;
+        if (scenario === 'lease-lost' && renewals === 2) throw new Error('HOST_LEASE_LOST');
+      },
+    }, { requestGateway: async () => {
+      requests += 1;
+      return Response.json({ choices: [{ message: { content: null, tool_calls: [{
+        id: `bounded-call-${requests}`, type: 'function', function: {
+          name: 'return_wiselink_review_candidate', arguments: JSON.stringify({ candidateJson: JSON.stringify(matterReviewModelOutput(null)) }),
+        },
+      }] } }] });
+    } }), new RegExp(scenario === 'lease-lost' ? 'HOST_LEASE_LOST' : scenario === 'deadline' ? 'REVIEW_MODEL_TIMEOUT' : validationError, 'u'), scenario);
+    assert.equal(requests, scenario === 'exhausted' ? 3 : 1, scenario);
+    assert.equal(rejected.length, scenario === 'exhausted' ? 2 : scenario === 'unexpected' ? 0 : 1, scenario);
+  }
+});
+
+test('Matter native JSON transport rejects wrappers without repairing model output', async () => {
+  const output = matterReviewModelOutput(null);
+  const request = (args) => invokeReviewWithTransport({ input: { context: { matterWorking: {} } } }, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+  }, { requestGateway: async () => Response.json({ choices: [{ message: { content: null, tool_calls: [{
+    type: 'function', function: { name: 'return_wiselink_review_candidate', arguments: JSON.stringify(args) },
+  }] } }] }) });
+  for (const args of [output, { candidateJson: output }, { candidateJson: JSON.stringify(output), extra: true }]) {
+    await assert.rejects(request(args), /REVIEW_MATTER_CANDIDATE_JSON_REQUIRED/u);
+  }
+  for (const candidateJson of ['```json\n{}\n```', '[]', 'null', 'explanation {}', '{broken}']) {
+    await assert.rejects(request({ candidateJson }), /REVIEW_MODEL_(STRICT_JSON_REQUIRED|JSON_INVALID)/u);
+  }
+  output.answer = '保留 "Windows 7"、反斜杠 \\、换行\n以及 null 和空数组的含义。';
+  assert.deepEqual((await request({ candidateJson: JSON.stringify(output) })).output, output);
+});
+
+test('Matter native JSON candidates still reject unread sources and formal actions before any commit', async (t) => {
+  for (const [name, mutate, error] of [
+    ['unread source', (output) => { output.sourceRefs = ['matter-source:1:1']; }, /REVIEW_MODEL_SOURCE_REF_NOT_READ/u],
+    ['formal action', (output) => { output.reviewActionDraft = {}; }, /REVIEW_MODEL_MATTER_DELTA_INVALID/u],
+    ['array wrapper', (output) => { output.missingInputs = { item: [] }; }, /REVIEW_MODEL_MISSINGINPUTS_INVALID/u],
+    ['nested claim array', (output, delta) => { output.matterWorkingDelta = structuredClone(delta); output.matterWorkingDelta.claimDelta.additions = { item: delta.claimDelta.additions }; }, /REVIEW_MATTER_/u],
+    ['list brief array', (output, delta) => { output.matterWorkingDelta = structuredClone(delta); output.matterWorkingDelta.readingPresentation.listBrief = ['Brief returned as an array']; }, /OVERALL_LIST_BRIEF_INVALID/u],
+    ['control binding', (output) => { output.leaseToken = 'model-invented'; }, /REVIEW_MODEL_OUTPUT_KEYS_INVALID/u],
+  ]) {
+    const { reviewTask, delta } = await matterReviewFixture(1);
+    const task = makeTask('OPENCLAW_INTERACTIVE_REVIEW', reviewTask, [], reviewTask.resourceRefs.map((ref) => ({ ref: ref.resourceArtifactRef, sha256: ref.resourceArtifactSha256 })));
+    const checkpointDir = await mkdtemp(join(tmpdir(), 'wiselink-matter-json-reject-'));
+    t.after(() => rm(checkpointDir, { recursive: true, force: true }));
+    const output = matterReviewModelOutput(null);
+    mutate(output, delta);
+    const calls = [];
+    await assert.rejects(runHostedReviewTurn({ reviewConversationRef: reviewTask.reviewConversationRef, requestId: reviewTask.requestId, checkpointDir }, {
+      callTool: async (tool, args) => {
+        calls.push(tool);
+        if (tool === 'heartbeat_action_attempt') return reviewProgressHeartbeat(task, args);
+        if (tool === 'begin_review_turn') return runningBegin(task);
+        if (tool === 'get_review_turn_context') return reviewContext(task, reviewTask);
+        throw new Error('UNEXPECTED_TOOL:' + tool);
+      },
+      invokeModel: (input, hooks) => invokeReviewWithTransport(input, {
+        gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider', ...hooks,
+      }, { requestGateway: async () => Response.json({ choices: [{ message: { content: null, tool_calls: [{
+        type: 'function', function: { name: 'return_wiselink_review_candidate', arguments: JSON.stringify({ candidateJson: JSON.stringify(output) }) },
+      }] } }] }) }),
+    }), error, name);
+    assert.equal(calls.includes('commit_review_turn_candidate'), false, name);
+  }
 });
 
 test('Matter Review c4 plain explanations retain a null delta without source reads or a fabricated working revision', async (t) => {
@@ -4449,14 +4681,14 @@ test('offers source reading and one final candidate function with blank assistan
     false,
   );
   assert.equal(requestBody.tools[1].function.name, 'read_wiselink_review_sources');
-  assert.equal(requestBody.tool_choice, 'auto');
+  assert.equal(requestBody.tool_choice, 'required');
   assert.equal(requestBody.parallel_tool_calls, false);
   assert.equal(requestBody.n, 1);
   assert.match(requestBody.user, /^review-driver:[0-9a-f]{24}$/u);
   assert.equal(result.provenance.modelVersion, 'openai-codex/gpt-5.4');
   assert.equal(
     result.provenance.promptVersion,
-    'wiselink.3_1.review_prompt.v1.c35',
+    'wiselink.3_1.review_prompt.v1.c40',
   );
 });
 
@@ -4509,7 +4741,7 @@ test('falls back to the configured model and records only output shape v2', asyn
   assert.equal(result.provenance.modelVersion, 'provider/configured');
   assert.equal(
     result.provenance.promptVersion,
-    'wiselink.3_1.review_prompt.v1.c35',
+    'wiselink.3_1.review_prompt.v1.c40',
   );
   assert.equal(
     outputShape.schemaVersion,
@@ -6352,7 +6584,15 @@ async function matterReviewFixture(turnNo = 1) {
     },
     openQuestions: firstDelta.openQuestionDelta.upserts, reviewConditions: [],
     substantiveInputs: inputs.slice(0, 2),
-    coverage: firstDelta.coverageUpdates.map(({ inputRef, ...coverage }) => ({ binding: inputs[Number(inputRef.split(':')[1]) - 1], ...coverage })),
+    coverage: firstDelta.coverageUpdates.map(({ inputRef, ...coverage }) => ({
+      binding: inputs[Number(inputRef.split(':')[1]) - 1], ...coverage,
+      // Host persists original SourceRefs inside the document binding, while
+      // model deltas contain task-local aliases.
+      checkedSourceRefIds: coverage.checkedSourceRefIds.map((id) => {
+        const source = first.reviewTask.matterContext.evidenceSources.find((item) => item.sourceRefId === id);
+        return first.reviewTask.matterContext.readingEvidence.find((item) => item.evidenceRef === source.evidenceRef).sourceRefId;
+      }),
+    })),
   } : null;
   const readingEvidence = [...documentEvidence,
     ...(workingState?.substantiveResult.evidence.filter((item) => item.kind === 'ENGINEER_STATEMENT') ?? []), engineerEvidence];

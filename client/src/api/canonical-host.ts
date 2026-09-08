@@ -1041,6 +1041,11 @@ async function reviewConversationRequest<T>(input: {
       ...(input.data === undefined ? {} : { data: input.data }),
     });
     if (response.status === 401) {
+      const sessionError = reviewOauthSessionRequired(
+        response.data,
+        requestGeneration,
+      );
+      if (sessionError) throw sessionError;
       throw clientLoginRequired(
         'REVIEW_CONVERSATION_LOGIN_REQUIRED',
         requestGeneration,
@@ -1120,6 +1125,17 @@ function normalizedReviewConversationError(
   error: unknown,
   requestGeneration: number,
 ): unknown {
+  if (
+    responseStatus(error) === 401 &&
+    isRecord(error) &&
+    isRecord(error.response)
+  ) {
+    const sessionError = reviewOauthSessionRequired(
+      error.response.data,
+      requestGeneration,
+    );
+    if (sessionError) return sessionError;
+  }
   const normalized = normalizedDirectObjectError(error, requestGeneration);
   if (normalized !== error || !isRecord(error)) return normalized;
   const response = error.response;
@@ -1129,6 +1145,20 @@ function normalizedReviewConversationError(
     'REVIEW_CONVERSATION_UNAVAILABLE',
     typeof response.status === 'number' ? response.status : undefined,
   );
+}
+
+function reviewOauthSessionRequired(
+  data: unknown,
+  requestGeneration: number,
+): CanonicalHostClientError | null {
+  // This Host error means the protected engineering session is missing. The
+  // platform login was already checked by NeedLogin and remains independent.
+  if (backendResponseError(data, '').code !== 'SESSION_REQUIRED') return null;
+  if (requestGeneration === clientSessionGeneration) officialOauthRead = null;
+  return Object.assign(new Error('OFFICIAL_OAUTH_SESSION_REQUIRED'), {
+    code: 'OFFICIAL_OAUTH_SESSION_REQUIRED',
+    statusCode: 401,
+  });
 }
 
 export function isCanonicalObjectNotFound(error: unknown): boolean {
