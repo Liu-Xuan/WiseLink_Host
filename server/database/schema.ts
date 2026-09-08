@@ -1,7 +1,7 @@
 /* eslint-disable */
 /** auto generated, do not edit */
 import { sql } from 'drizzle-orm';
-import { bigint, boolean, foreignKey, index, integer, pgTable, text, uniqueIndex, uuid, varchar, customType } from "drizzle-orm/pg-core"
+import { bigint, boolean, foreignKey, index, integer, jsonb, pgTable, text, uniqueIndex, uuid, varchar, customType } from "drizzle-orm/pg-core"
 
 export const customTimestamptz = customType<{
   data: Date;
@@ -637,9 +637,57 @@ export const engineeringMatter = pgTable("engineering_matter", {
   uniqueIndex("uk_engineering_matter_create_request").on(table.tenantId, table.createdByUserId, table.requestId),
   index("idx_engineering_matter_owner").on(table.tenantId, table.createdByUserId, table.updatedAt),
   foreignKey({
-    columns: [table.currentMatterRevisionId, table.matterId, table.tenantId],
-    foreignColumns: [engineeringMatterRevision.matterId, engineeringMatterRevision.matterRevisionId, engineeringMatterRevision.tenantId],
+    columns: [table.tenantId, table.matterId, table.currentMatterRevisionId],
+    foreignColumns: [engineeringMatterRevision.tenantId, engineeringMatterRevision.matterId, engineeringMatterRevision.matterRevisionId],
     name: "fk_engineering_matter_current_revision",
+  }),
+]);
+
+export const engineeringMatterWorkRevision = pgTable("engineering_matter_work_revision", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  matterWorkRevisionId: varchar("matter_work_revision_id", { length: 96 }).notNull().unique(),
+  tenantId: varchar("tenant_id", { length: 128 }).notNull(),
+  matterId: varchar("matter_id", { length: 96 }).notNull(),
+  workingRevision: integer("working_revision").notNull(),
+  requestId: varchar("request_id", { length: 96 }).notNull(),
+  basedOnMatterRevisionId: varchar("based_on_matter_revision_id", { length: 96 }).notNull(),
+  updateKind: varchar("update_kind", { length: 32 }).notNull(),
+  commandJson: text("command_json").notNull(),
+  stateJson: text("state_json").notNull(),
+  substantiveResultRef: text("substantive_result_ref"),
+  substantiveResultRevision: integer("substantive_result_revision"),
+  changeSummary: text("change_summary").notNull(),
+  actionAttemptId: varchar("action_attempt_id", { length: 96 }),
+  reviewTurnId: varchar("review_turn_id", { length: 96 }),
+  createdByUserId: varchar("created_by_user_id", { length: 255 }).notNull(),
+  createdAt: customTimestamptz("created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("uk_engineering_matter_work_revision_business_id").on(table.matterWorkRevisionId),
+  uniqueIndex("uk_engineering_matter_work_revision_scope").on(table.tenantId, table.matterId, table.matterWorkRevisionId),
+  uniqueIndex("uk_engineering_matter_work_revision_number").on(table.matterId, table.workingRevision),
+  uniqueIndex("uk_engineering_matter_work_revision_request").on(table.matterId, table.requestId),
+  uniqueIndex("uk_engineering_matter_work_revision_attempt").on(table.actionAttemptId),
+  uniqueIndex("uk_engineering_matter_work_revision_turn").on(table.reviewTurnId),
+  index("idx_engineering_matter_work_revision_history").on(table.matterId, table.workingRevision),
+  foreignKey({
+    columns: [table.tenantId, table.matterId],
+    foreignColumns: [engineeringMatter.tenantId, engineeringMatter.matterId],
+    name: "fk_engineering_matter_work_revision_matter",
+  }),
+  foreignKey({
+    columns: [table.tenantId, table.matterId, table.basedOnMatterRevisionId],
+    foreignColumns: [engineeringMatterRevision.tenantId, engineeringMatterRevision.matterId, engineeringMatterRevision.matterRevisionId],
+    name: "fk_engineering_matter_work_revision_basis",
+  }),
+  foreignKey({
+    columns: [table.actionAttemptId],
+    foreignColumns: [actionAttempt.attemptId],
+    name: "fk_engineering_matter_work_revision_attempt",
+  }),
+  foreignKey({
+    columns: [table.reviewTurnId],
+    foreignColumns: [reviewTurn.reviewTurnId],
+    name: "fk_engineering_matter_work_revision_turn",
   }),
 ]);
 
@@ -868,6 +916,7 @@ export const reviewTurn = pgTable("review_turn", {
   warningsJson: text("warnings_json"),
   resultProvenanceJson: text("result_provenance_json"),
   resultContentHash: varchar("result_content_hash", { length: 64 }),
+  reviewScopeJson: jsonb("review_scope_json"),
   actionAttemptId: varchar("action_attempt_id", { length: 96 }).unique(),
   assistantCompletedAt: customTimestamptz("assistant_completed_at", { precision: 3 }),
 }, (table) => [
@@ -1404,6 +1453,7 @@ export const engineerSuppliedInputTable = engineerSuppliedInput;
 export const engineeringMatterTable = engineeringMatter;
 export const engineeringMatterRevisionTable = engineeringMatterRevision;
 export const engineeringMatterRevisionWorkItemTable = engineeringMatterRevisionWorkItem;
+export const engineeringMatterWorkRevisionTable = engineeringMatterWorkRevision;
 export const externalDiscoveryCandidateTable = externalDiscoveryCandidate;
 export const externalSearchRunTable = externalSearchRun;
 export const identityOauthStateTable = identityOauthState;

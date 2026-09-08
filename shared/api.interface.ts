@@ -1,3 +1,8 @@
+import type {
+  AssessmentReadingResult,
+  AssessmentReadingSummary,
+} from './assessment-reading.interface';
+
 export type UnifiedPackageSourceKind = 'pdf' | 'native_s1000d';
 
 export interface OfficialOauthStartResponse {
@@ -136,6 +141,25 @@ export interface ReviewTurnAssistantCandidate {
     resultContentHash: string;
   };
   completedAt: string;
+  matterWorkingUpdate?: ReviewMatterWorkingUpdateReceipt;
+  /** Resolve task-local Review citations back to their original document reader. */
+  sourceBindings?: Array<{
+    sourceRefId: string;
+    workItemId: string;
+    documentVersionId: string;
+    originalSourceRefId: string;
+  }>;
+}
+
+export interface ReviewMatterWorkingUpdateReceipt {
+  matterId: string;
+  status: 'APPLIED' | 'UNCHANGED' | 'BASIS_CHANGED';
+  workingRevision: number;
+  resultRef: string | null;
+  resultRevision: number | null;
+  resultChanged: boolean;
+  coverageChanged: boolean;
+  reasonCode: string | null;
 }
 
 /** Host observations, not model reasoning, delivery acknowledgements or adoption. */
@@ -179,6 +203,8 @@ export interface ReviewTurnReadModel {
   requestId: string;
   inputRevision: number;
   userMessage: string;
+  /** Host-verified scope; absent/null legacy turns belong to the WorkItem. */
+  reviewScope?: ReviewScopeSelection | null;
   /** The engineer's focus for this turn; absent in older responses. */
   selectedEvaluationItemId?: string | null;
   /** Host-resolved choice captured when this turn was submitted. */
@@ -205,6 +231,8 @@ export interface ReviewConversationReadModel {
   schemaVersion: 'wiselink.3_1.review_conversation.v1.c1';
   reviewConversationId: string;
   workItemId: string;
+  /** History in this response is filtered to this business scope. */
+  reviewScope?: ReviewScopeSelection | null;
   startedAtRevision: number;
   lastSyncedRevision: number;
   currentWorkItemRevision: number;
@@ -230,9 +258,22 @@ export interface CurrentReviewConversationResponse {
   currentWorkItemRevision: number;
 }
 
+export type ReviewScopeSelection =
+  | { kind: 'WORK_ITEM' }
+  | { kind: 'ENGINEERING_MATTER'; matterId: string };
+
+export interface AppendMatterReviewScope {
+  kind: 'ENGINEERING_MATTER';
+  matterId: string;
+  expectedWorkingRevision: number;
+  targetClaimId?: string;
+}
+
 export interface AppendReviewTextTurnRequest {
   requestId: string;
   userMessage: string;
+  /** Host reauthorizes the full Matter and freezes its actual inputs. */
+  reviewScope?: AppendMatterReviewScope;
   selectedEvaluationItemId?: string | null;
   /** Explicit opt-in; existing saved turns are never picked up implicitly. */
   executionMode?: 'AUTOMATIC';
@@ -1592,6 +1633,8 @@ export interface CanonicalOpenClawOverallProjection {
   overallCandidate?: string;
   /** Source-bound engineering synthesis for the user-visible Overall view. */
   engineeringSummary?: CanonicalOverallEngineeringSummary;
+  /** Same saved candidate, rendered at list, brief and detailed reading depths. */
+  readingResult?: AssessmentReadingResult;
   findings?: Array<{
     finding: string;
     basis: string;
@@ -2733,6 +2776,7 @@ export interface CanonicalLibraryWorkItemSummary {
   sourceReadability: 'NOT_CHECKED';
   createdAt: string;
   updatedAt: string;
+  readingSummary?: AssessmentReadingSummary | null;
 }
 
 export interface CanonicalLibraryDocumentVersionSummary {
@@ -2797,6 +2841,7 @@ export interface CanonicalLibraryQuicklookResponse {
     revision: number;
     sourceResultId: string;
     engineeringSummary: CanonicalOverallEngineeringSummary | null;
+    readingResult?: AssessmentReadingResult | null;
     overallCandidate: string | null;
     missingInputs: string[];
     gap: string | null;
@@ -2810,6 +2855,28 @@ export interface CreateEngineeringMatterRequest {
   requestId: string;
   title: string;
   primaryWorkItemId: string;
+}
+
+export interface EngineeringMatterDirectoryRequest {
+  search?: string;
+  cursor?: string;
+  limit?: number;
+  workItemId?: string;
+}
+
+export interface EngineeringMatterDirectoryResponse {
+  items: Array<{
+    matterId: string;
+    title: string;
+    primaryWorkItemId: string;
+    createdAt: string;
+    updatedAt: string;
+    currentMatterRevisionId: string;
+    workingRevision: number;
+    result: AssessmentReadingSummary | null;
+  }>;
+  nextCursor: string | null;
+  fileReadPerformed: false;
 }
 
 export interface LinkEngineeringMatterWorkItemRequest {

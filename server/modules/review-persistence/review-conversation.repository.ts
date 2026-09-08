@@ -23,6 +23,7 @@ import type {
   CanonicalExecutionModelSelection,
   ReviewTurnAssistantCandidate,
   ReviewTurnResponseType,
+  ReviewScopeSelection,
 } from '@shared/api.interface';
 import {
   canonicalJson,
@@ -39,6 +40,10 @@ import {
 } from '../../database/schema';
 import { REVIEW_ACTIVE_EXECUTION_STATUSES } from '../action-attempt/review-attempt-dispatch.service';
 import { parseExecutionModel } from '../model-settings/canonical-execution-model';
+import {
+  parsePersistedMatterReviewScope,
+  type PersistedMatterReviewScope,
+} from './review-business-scope';
 import type {
   ReviewAttachmentBinding,
   ReviewEngineerInputPayload,
@@ -83,6 +88,7 @@ export interface PersistedReviewTurn {
   requestId: string;
   inputRevision: number;
   userMessage: string;
+  reviewScope?: PersistedMatterReviewScope | null;
   selectedEvaluationItemId?: string | null;
   executionRequested?: boolean;
   requestedModel?: CanonicalExecutionModelSelection;
@@ -319,6 +325,7 @@ export class ReviewConversationRepository {
     actorId: string;
     workItemId: string;
     beforeTurnNo: number;
+    reviewScope?: ReviewScopeSelection;
   }): Promise<{
     status: string | null;
     taskEnvelopeJson: string | null;
@@ -364,6 +371,9 @@ export class ReviewConversationRepository {
           eq(reviewTurn.actorId, actorContext.actorId),
           eq(reviewTurn.workItemId, input.workItemId),
           lt(reviewTurn.turnNo, input.beforeTurnNo),
+          input.reviewScope?.kind === 'ENGINEERING_MATTER'
+            ? sql`${reviewTurn.reviewScopeJson} ->> 'matterId' = ${input.reviewScope.matterId}`
+            : isNull(reviewTurn.reviewScopeJson),
         ),
       )
       .orderBy(desc(reviewTurn.turnNo))
@@ -454,6 +464,7 @@ export class ReviewConversationRepository {
         bound_turn.request_id AS "requestId",
         bound_turn.input_revision AS "inputRevision",
         bound_turn.user_message AS "userMessage",
+        bound_turn.review_scope_json AS "reviewScopeJson",
         bound_turn.supplied_input_type AS "inputType",
         bound_turn.supplied_adoption_status AS "adoptionStatus",
         bound_turn.supplied_candidate_text AS "candidateText",
@@ -817,19 +828,22 @@ export class ReviewConversationRepository {
     return this.persistAssistantCandidateWithExecutor(this.db, input);
   }
 
-  async persistOpenClawAssistantCandidate(input: {
-    conversation: PersistedReviewConversation;
-    turn: PersistedReviewTurn;
-    actionAttemptId: string;
-    candidate: Omit<
-      ReviewTurnAssistantCandidate,
-      'actionAttemptRef' | 'completedAt'
-    > & { actionAttemptRef: string };
-    completedAt: Date;
-  }): Promise<{ turn: PersistedReviewTurn; replayed: boolean }> {
+  async persistOpenClawAssistantCandidate(
+    input: {
+      conversation: PersistedReviewConversation;
+      turn: PersistedReviewTurn;
+      actionAttemptId: string;
+      candidate: Omit<
+        ReviewTurnAssistantCandidate,
+        'actionAttemptRef' | 'completedAt'
+      > & { actionAttemptRef: string };
+      completedAt: Date;
+    },
+    executor: DatabaseExecutor = this.db,
+  ): Promise<{ turn: PersistedReviewTurn; replayed: boolean }> {
     assertOpenClawActorContext(input.conversation.actorId);
     const candidate = input.candidate;
-    const rows = await this.db.execute<ActorPersistedReviewTurnRow>(sql`
+    const rows = await executor.execute<ActorPersistedReviewTurnRow>(sql`
       SELECT
         persisted_candidate.actor_context AS "actorContext",
         persisted_candidate.candidate_inserted AS "candidateInserted",
@@ -843,6 +857,7 @@ export class ReviewConversationRepository {
         (persisted_candidate.turn_row ->> 'input_revision')::integer AS
           "inputRevision",
         persisted_candidate.turn_row ->> 'user_message' AS "userMessage",
+        persisted_candidate.turn_row -> 'review_scope_json' AS "reviewScopeJson",
         persisted_candidate.input_row ->> 'input_type' AS "inputType",
         persisted_candidate.input_row ->> 'adoption_status' AS
           "adoptionStatus",
@@ -888,6 +903,12 @@ export class ReviewConversationRepository {
         ${canonicalJson({
           ...candidate.provenance,
           actionAttemptRef: candidate.actionAttemptRef,
+          ...(candidate.matterWorkingUpdate
+            ? { matterWorkingUpdate: candidate.matterWorkingUpdate }
+            : {}),
+          ...(candidate.sourceBindings
+            ? { sourceBindings: candidate.sourceBindings }
+            : {}),
         })},
         ${candidate.provenance.resultContentHash},
         ${input.actionAttemptId},
@@ -934,6 +955,12 @@ export class ReviewConversationRepository {
         resultProvenanceJson: canonicalJson({
           ...candidate.provenance,
           actionAttemptRef: candidate.actionAttemptRef,
+          ...(candidate.matterWorkingUpdate
+            ? { matterWorkingUpdate: candidate.matterWorkingUpdate }
+            : {}),
+          ...(candidate.sourceBindings
+            ? { sourceBindings: candidate.sourceBindings }
+            : {}),
         }),
         resultContentHash: candidate.provenance.resultContentHash,
         actionAttemptId: input.actionAttemptId,
@@ -968,6 +995,7 @@ export class ReviewConversationRepository {
     conversation: PersistedReviewConversation;
     requestId: string;
     userMessage: string;
+    reviewScope?: PersistedMatterReviewScope | null;
     selectedEvaluationItemId?: string | null;
     executionRequested?: boolean;
     requestedModel?: CanonicalExecutionModelSelection;
@@ -986,6 +1014,7 @@ export class ReviewConversationRepository {
         input.selectedEvaluationItemId ?? null,
         input.executionRequested === true,
         input.requestedModel,
+        input.reviewScope,
       );
       return { turn: existing, replayed: true };
     }
@@ -1015,6 +1044,7 @@ export class ReviewConversationRepository {
         requestId: input.requestId,
         inputRevision: input.currentRevision,
         userMessage: storedInput,
+        reviewScopeJson: input.reviewScope ?? null,
         inputType: ENGINEER_TEXT,
         adoptionStatus: CANDIDATE_UNADOPTED,
         createdAt: now,
@@ -1036,6 +1066,7 @@ export class ReviewConversationRepository {
         input.selectedEvaluationItemId ?? null,
         input.executionRequested === true,
         input.requestedModel,
+        input.reviewScope,
       );
       return { turn: replay, replayed: true };
     }
@@ -1290,6 +1321,7 @@ function turnSelection() {
     requestId: reviewTurn.requestId,
     inputRevision: reviewTurn.inputRevision,
     userMessage: reviewTurn.userMessage,
+    reviewScopeJson: reviewTurn.reviewScopeJson,
     inputType: engineerSuppliedInput.inputType,
     adoptionStatus: engineerSuppliedInput.adoptionStatus,
     candidateText: engineerSuppliedInput.candidateText,
@@ -1317,6 +1349,7 @@ interface SelectedReviewTurn {
   requestId: string;
   inputRevision: number;
   userMessage: string;
+  reviewScopeJson?: unknown;
   inputType: string;
   adoptionStatus: string;
   candidateText: string;
@@ -1345,6 +1378,7 @@ interface ActorPersistedReviewTurnRow extends Record<string, unknown> {
   requestId: string;
   inputRevision: number;
   userMessage: string;
+  reviewScopeJson?: unknown;
   inputType: string;
   adoptionStatus: string;
   candidateText: string;
@@ -1394,6 +1428,7 @@ interface ActorBoundReviewTurnRow extends Record<string, unknown> {
   requestId: string | null;
   inputRevision: number | null;
   userMessage: string | null;
+  reviewScopeJson?: unknown;
   inputType: string | null;
   adoptionStatus: string | null;
   candidateText: string | null;
@@ -1545,6 +1580,7 @@ function actorBoundTurn(row: ActorBoundReviewTurnRow): SelectedReviewTurn {
     requestId: row.requestId,
     inputRevision: row.inputRevision,
     userMessage: row.userMessage,
+    reviewScopeJson: row.reviewScopeJson,
     inputType: row.inputType,
     adoptionStatus: row.adoptionStatus,
     candidateText: row.candidateText,
@@ -1589,6 +1625,7 @@ function actorPersistedTurn(
     requestId: row.requestId,
     inputRevision: row.inputRevision,
     userMessage: row.userMessage,
+    reviewScopeJson: row.reviewScopeJson,
     inputType: row.inputType,
     adoptionStatus: row.adoptionStatus,
     candidateText: row.candidateText,
@@ -1633,6 +1670,7 @@ function persistedTurn(row: SelectedReviewTurn): PersistedReviewTurn {
     requestId: row.requestId,
     inputRevision: row.inputRevision,
     userMessage: turnInput.userMessage,
+    reviewScope: parsePersistedMatterReviewScope(row.reviewScopeJson),
     selectedEvaluationItemId: turnInput.selectedEvaluationItemId ?? null,
     executionRequested: turnInput.executionRequested === true,
     ...(turnInput.requestedModel
@@ -1671,8 +1709,12 @@ function parseAssistantCandidate(
     throw new Error('REVIEW_TURN_CANDIDATE_PROVENANCE_MISMATCH');
   }
   const actionAttemptRef = requiredJsonText(provenance.actionAttemptRef);
-  const { actionAttemptRef: _actionAttemptRef, ...resultProvenance } =
-    provenance;
+  const {
+    actionAttemptRef: _actionAttemptRef,
+    matterWorkingUpdate,
+    sourceBindings,
+    ...resultProvenance
+  } = provenance;
   const reviewActionDraft = parseStoredReviewActionDraft({
     value: row.reviewActionDraftJson,
     actionAttemptRef,
@@ -1690,10 +1732,75 @@ function parseAssistantCandidate(
     affectedItemIds: parseJsonStringArray(row.affectedItemIdsJson),
     warnings: parseJsonStringArray(row.warningsJson),
     actionAttemptRef,
+    ...storedMatterCandidateFields(matterWorkingUpdate, sourceBindings),
     provenance:
       resultProvenance as unknown as ReviewTurnAssistantCandidate['provenance'],
     completedAt: row.assistantCompletedAt.toISOString(),
   };
+}
+
+function storedMatterCandidateFields(
+  receipt: unknown,
+  bindings: unknown,
+): Pick<
+  ReviewTurnAssistantCandidate,
+  'matterWorkingUpdate' | 'sourceBindings'
+> {
+  const result: Pick<
+    ReviewTurnAssistantCandidate,
+    'matterWorkingUpdate' | 'sourceBindings'
+  > = {};
+  if (receipt !== undefined) {
+    if (!receipt || typeof receipt !== 'object' || Array.isArray(receipt))
+      throw new Error('REVIEW_MATTER_RECEIPT_INVALID');
+    const row = receipt as Record<string, unknown>;
+    if (
+      !['APPLIED', 'UNCHANGED', 'BASIS_CHANGED'].includes(String(row.status)) ||
+      !Number.isSafeInteger(row.workingRevision) ||
+      Number(row.workingRevision) < 0 ||
+      typeof row.resultChanged !== 'boolean' ||
+      typeof row.coverageChanged !== 'boolean' ||
+      (row.resultRevision !== null &&
+        (!Number.isSafeInteger(row.resultRevision) ||
+          Number(row.resultRevision) < 1)) ||
+      (row.resultRef === null) !== (row.resultRevision === null)
+    )
+      throw new Error('REVIEW_MATTER_RECEIPT_INVALID');
+    result.matterWorkingUpdate = {
+      matterId: requiredJsonText(row.matterId),
+      status: row.status as 'APPLIED' | 'UNCHANGED' | 'BASIS_CHANGED',
+      workingRevision: Number(row.workingRevision),
+      resultRef:
+        row.resultRef === null ? null : requiredJsonText(row.resultRef),
+      resultRevision:
+        row.resultRevision === null ? null : Number(row.resultRevision),
+      resultChanged: row.resultChanged,
+      coverageChanged: row.coverageChanged,
+      reasonCode:
+        row.reasonCode === null ? null : requiredJsonText(row.reasonCode),
+    };
+  }
+  if (bindings !== undefined) {
+    if (!Array.isArray(bindings))
+      throw new Error('REVIEW_MATTER_SOURCE_BINDINGS_INVALID');
+    result.sourceBindings = bindings.map((value) => {
+      if (!value || typeof value !== 'object' || Array.isArray(value))
+        throw new Error('REVIEW_MATTER_SOURCE_BINDINGS_INVALID');
+      const row = value as Record<string, unknown>;
+      return {
+        sourceRefId: requiredJsonText(row.sourceRefId),
+        workItemId: requiredJsonText(row.workItemId),
+        documentVersionId: requiredJsonText(row.documentVersionId),
+        originalSourceRefId: requiredJsonText(row.originalSourceRefId),
+      };
+    });
+    if (
+      new Set(result.sourceBindings.map((item) => item.sourceRefId)).size !==
+      result.sourceBindings.length
+    )
+      throw new Error('REVIEW_MATTER_SOURCE_BINDINGS_DUPLICATE');
+  }
+  return result;
 }
 
 function parseStoredReviewActionDraft(input: {
@@ -1783,9 +1890,12 @@ function assertIdempotentReplay(
   selectedEvaluationItemId: string | null,
   executionRequested: boolean,
   requestedModel?: CanonicalExecutionModelSelection,
+  reviewScope?: PersistedMatterReviewScope | null,
 ): void {
   if (
     turn.userMessage !== userMessage ||
+    canonicalJson(turn.reviewScope ?? null) !==
+      canonicalJson(reviewScope ?? null) ||
     turn.candidateText !== userMessage ||
     (turn.selectedEvaluationItemId ?? null) !== selectedEvaluationItemId ||
     (turn.executionRequested === true) !== executionRequested ||

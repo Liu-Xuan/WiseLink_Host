@@ -7,7 +7,7 @@ import type {
 import type { LibraryReadErrorPresentation } from './library-read-error';
 
 export interface LibraryDocumentsRead {
-  mode: 'document' | 'matter';
+  mode: 'document' | 'tasks';
   familyId: string;
   search: string;
   sessionGeneration: number;

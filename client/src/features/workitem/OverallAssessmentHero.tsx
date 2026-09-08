@@ -42,15 +42,18 @@ function SourceBoundStatement({
         <span className="wl-statement-basis" data-basis={statement.basis}>
           {statement.basis === 'SOURCE_FACT' ? '来源事实' : '条件性推断'}
         </span>
-        <button
-          type="button"
-          className="wl-source-ref-button"
-          onClick={() => onViewEvidence?.(statement.sourceRefIds[0])}
-          disabled={!onViewEvidence}
-        >
-          <Link2 aria-hidden="true" />
-          {statement.sourceRefIds.length} 条原文依据
-        </button>
+        {statement.sourceRefIds.map((sourceRefId: string, index: number) => (
+          <button
+            key={`${sourceRefId}:${index}`}
+            type="button"
+            className="wl-source-ref-button"
+            onClick={() => onViewEvidence?.(sourceRefId)}
+            disabled={!onViewEvidence}
+          >
+            <Link2 aria-hidden="true" />
+            核对依据 {index + 1}
+          </button>
+        ))}
       </div>
     </li>
   );
@@ -78,15 +81,15 @@ function StatementList({
 
 /**
  * 综合评估主卡。
- * 第一屏只呈现有当前 DocumentVersion SourceRef 支撑的工程结论、影响与动作；
- * 候选状态、版本、模型与计数统一收进折叠技术详情。
+ * 保留历史 v1 的来源绑定与工程语义；决定性范围和待核事实直接可见。
+ * 新版多载体判断由 AssessmentReadingBrief 展示，不把 v1 引用改写成新证据。
  */
 export default function OverallAssessmentHero({
   view,
   onOpenWorkbench,
   onViewEvidence,
   regeneration,
-  primaryActionLabel = '处理异常并完成批准',
+  primaryActionLabel = '继续核对与讨论',
 }: {
   view: WorkItemView;
   onOpenWorkbench: () => void;
@@ -118,7 +121,7 @@ export default function OverallAssessmentHero({
           ? '工程候选 · 人工确认已记录'
           : view.authority === 'formal_readback'
             ? '正式系统回读结果'
-            : '工程候选 · 待最终批准';
+            : '已保存工程候选';
 
   if (!overall) {
     return (
@@ -155,9 +158,14 @@ export default function OverallAssessmentHero({
         <span className="wl-overall-empty-mark" aria-hidden="true">
           <CircleAlert className="wl-overall-empty-icon" />
         </span>
-        <h2>需要重新生成工程摘要</h2>
+        <h2>
+          {overall.legacyCandidate
+            ? '历史保存的评估意见'
+            : '需要重新生成工程摘要'}
+        </h2>
+        {overall.legacyCandidate ? <p>{overall.legacyCandidate}</p> : null}
         <p>
-          历史候选没有逐结论绑定当前文件版本原文依据，不能作为当前工程判断展示。
+          历史候选未提供逐句来源绑定；以上如有内容，保留其原始含义，不视作新生成或已重新核验的判断。
         </p>
         <button
           type="button"
@@ -229,6 +237,24 @@ export default function OverallAssessmentHero({
         </ul>
       </div>
 
+      <section className="wl-overall-block" aria-label="范围与待核条件">
+        <h3>
+          <Target aria-hidden="true" /> 范围与待核条件
+        </h3>
+        <StatementList
+          statements={[
+            ...(overall.applicability.sourceScope
+              ? [overall.applicability.sourceScope]
+              : []),
+            ...(overall.applicability.fleetMatch
+              ? [overall.applicability.fleetMatch]
+              : []),
+            ...overall.applicability.requiredFacts,
+          ]}
+          onViewEvidence={onViewEvidence}
+        />
+      </section>
+
       <details className="wl-overall-supporting">
         <summary>
           <span>展开依据、适用范围与下一步</span>
@@ -242,24 +268,6 @@ export default function OverallAssessmentHero({
             </h3>
             <StatementList
               statements={overall.whyItMatters}
-              onViewEvidence={onViewEvidence}
-            />
-          </section>
-
-          <section className="wl-overall-block is-wide">
-            <h3>
-              <Target aria-hidden="true" /> 适用飞机与当前机队匹配
-            </h3>
-            <StatementList
-              statements={[
-                ...(overall.applicability.sourceScope
-                  ? [overall.applicability.sourceScope]
-                  : []),
-                ...(overall.applicability.fleetMatch
-                  ? [overall.applicability.fleetMatch]
-                  : []),
-                ...overall.applicability.requiredFacts,
-              ]}
               onViewEvidence={onViewEvidence}
             />
           </section>

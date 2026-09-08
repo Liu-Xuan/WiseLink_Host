@@ -394,6 +394,7 @@ describe('ReviewConversationService session and ACL boundary', () => {
       }),
       currentRevision: 7,
       attachmentBindings: [],
+      reviewScope: null,
     });
     expect(setup.sessions.resolve.mock.invocationCallOrder[0]).toBeLessThan(
       setup.objectAccess.freshRead.mock.invocationCallOrder[0],

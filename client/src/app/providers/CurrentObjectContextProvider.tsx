@@ -9,7 +9,7 @@ import {
 } from 'react';
 import { useLocation } from 'react-router-dom';
 
-export type CurrentObjectKind = 'DOCUMENT' | 'MATTER';
+export type CurrentObjectKind = 'DOCUMENT' | 'WORK_ITEM' | 'MATTER';
 
 export interface CurrentObjectRoutes {
   overview: string;
@@ -24,6 +24,7 @@ export interface CurrentObjectRoutes {
 export interface CurrentObjectContextView {
   kind: CurrentObjectKind;
   routeWorkItemId: string;
+  routeMatterId?: string;
   displayCode: string;
   title: string;
   meta: string;
@@ -67,6 +68,21 @@ export function currentRouteWorkItemId(
   return new URLSearchParams(search).get('workItemId')?.trim() ?? '';
 }
 
+export function currentRouteMatterId(pathname: string): string {
+  const match: RegExpMatchArray | null = pathname.match(
+    /^\/matters\/([^/]+)(?:\/|$)/u,
+  );
+  return match?.[1] ? decodeRouteSegment(match[1]) : '';
+}
+
+export function currentObjectKindLabel(kind: CurrentObjectKind): string {
+  return kind === 'DOCUMENT'
+    ? '文档'
+    : kind === 'WORK_ITEM'
+      ? '评估任务'
+      : '工程事项';
+}
+
 export function CurrentObjectContextProvider({
   children,
 }: {
@@ -77,15 +93,23 @@ export function CurrentObjectContextProvider({
     location.pathname,
     location.search,
   );
+  const routeMatterId: string = currentRouteMatterId(location.pathname);
   const [published, setPublished] = useState<CurrentObjectContextView | null>(
     null,
   );
 
   useEffect(() => {
     setPublished((current: CurrentObjectContextView | null) =>
-      current?.routeWorkItemId === routeWorkItemId ? current : null,
+      (
+        routeMatterId
+          ? current?.routeMatterId === routeMatterId
+          : !current?.routeMatterId &&
+            current?.routeWorkItemId === routeWorkItemId
+      )
+        ? current
+        : null,
     );
-  }, [routeWorkItemId]);
+  }, [routeWorkItemId, routeMatterId]);
 
   const publishCurrentObject = useCallback(
     (view: CurrentObjectContextView | null): void => {
@@ -94,8 +118,13 @@ export function CurrentObjectContextProvider({
     [],
   );
 
-  const currentObject: CurrentObjectContextView | null =
-    routeWorkItemId !== '' && published?.routeWorkItemId === routeWorkItemId
+  const currentObject: CurrentObjectContextView | null = routeMatterId
+    ? published?.routeMatterId === routeMatterId
+      ? published
+      : null
+    : routeWorkItemId !== '' &&
+        !published?.routeMatterId &&
+        published?.routeWorkItemId === routeWorkItemId
       ? published
       : null;
   const value: CurrentObjectContextValue = useMemo(

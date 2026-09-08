@@ -806,6 +806,15 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.library-recent-open .library-saved-list-brief {
+  overflow: visible;
+  color: var(--wl-ink);
+  line-height: 1.65;
+  text-overflow: clip;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .library-recent-preview {
   display: grid;
   width: 31px;

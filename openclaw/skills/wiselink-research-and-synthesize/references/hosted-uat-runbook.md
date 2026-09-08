@@ -1,4 +1,10 @@
-# 官方托管 R09 c28 发布与 UAT runbook
+# 官方托管 R10 c34 发布与 UAT runbook
+
+c34 同批接入 Overall v2 保存阅读结果、Matter c4 连续工作增量和翻译收敛尾段逐单元纠正。保留旧任务合同，
+先安装兼容 c34，再迁移 0023、发布 Host/前端，最后用正常新请求恢复唯一消费者自然调度。
+真实验证应覆盖同一个保存结果的列表/简报/多前提详情、返回讨论草稿、解释不变、局部纠正、新材料未读仍 pending
+以及实际覆盖但不改结论。版本/CAS 冲突不能覆盖新认识，所有产物保持候选。M3/DLI 原有完整初始分析及各两轮
+连续 Review 目标继续，不把本地模拟、安装或发布完成记为真实流程通过。
 
 c19 新增页面自动领取，先安装兼容 Skill，再发布 Host，最后启用原生 command cron 与页面自动发送；本批具体步骤见 [页面自动领取](hosted-review-consumer.md)。下列历史五工具 UAT 保留给单轮 driver，不把它的手工启动结果当作页面自助闭环。
 
@@ -101,7 +107,7 @@ c24 可选控制元数据兼容旧任务，但旧 Skill 不接受新字段，因
    优先读回非空、可识别的实际 `modelVersion`；响应未提供时，绑定任务记录 `configured-route:<modelRef>`，旧任务才使用唯一 configured endpoint。它们只证明路由，不解释为未暴露的下游具体模型。重复 agent、
    不可读 primary、fallbacks 非数组或非空均在调用模型前停止；
 4. 同名 Skill 只有一个，安装版本精确
-   `wiselink-research-and-synthesize@r09.c33`；
+   `wiselink-research-and-synthesize@r09.c34`；
 5. Host MCP package/version 为
    `wiselink-openclaw-engineering-assessment@1.2.0`，exact 20 tools 可见；
 6. C3 successor 已进入 current Hosted release；只凭 Git commit 不等于 deployed readback；

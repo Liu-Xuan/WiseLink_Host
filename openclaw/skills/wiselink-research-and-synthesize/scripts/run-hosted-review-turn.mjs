@@ -27,6 +27,8 @@ import {
   WISELINK_PROFILE_REF,
   WISELINK_RUNTIME_APP_ID,
   WISELINK_SKILL_VERSION,
+  REVIEW_MATTER_TASK_SCHEMA,
+  REVIEW_MATTER_CANDIDATE_SCHEMA,
   canonicalJson,
   canonicalSha256,
   validateExecutionModelSelection,
@@ -60,7 +62,7 @@ const REVIEW_RESPONSE_TYPES = [
   'AFFECTED_ITEMS_PREVIEW',
   'TASK_STATUS',
 ];
-const REVIEW_PROMPT_VERSION = 'wiselink.3_1.review_prompt.v1.c22';
+const REVIEW_PROMPT_VERSION = 'wiselink.3_1.review_prompt.v1.c34';
 const WISELINK_HOST_MCP_CONFIG_KEYS = new Set([
   WISELINK_HOST_MCP_NAME,
   'wiselink_host_controller',
@@ -175,10 +177,12 @@ export async function runHostedReviewTurn(options, dependencies = {}) {
         execution,
         (execution.readSourceRefBatches ?? []).flat(),
         input.attachmentRefs,
+        beginResult.task.modelInput.schemaVersion === REVIEW_MATTER_TASK_SCHEMA,
       );
+      const isMatter = beginResult.task.modelInput.schemaVersion === REVIEW_MATTER_TASK_SCHEMA;
       return {
         output: {
-          schemaVersion: 'wiselink.3_1.review_turn_candidate.v1.c3',
+          schemaVersion: isMatter ? REVIEW_MATTER_CANDIDATE_SCHEMA : 'wiselink.3_1.review_turn_candidate.v1.c3',
           mode: 'INTERACTIVE_REVIEW',
           reviewConversationRef:
             beginResult.task.modelInput.reviewConversationRef,
@@ -191,6 +195,7 @@ export async function runHostedReviewTurn(options, dependencies = {}) {
           reviewActionDraft: partial.output.reviewActionDraft,
           affectedItemIds: partial.output.affectedItemIds,
           warnings: partial.output.warnings,
+          ...(isMatter ? { matterWorkingDelta: partial.output.matterWorkingDelta } : {}),
           runtime: {
             runtimeAppId: WISELINK_RUNTIME_APP_ID,
             profileRef: WISELINK_PROFILE_REF,
@@ -252,6 +257,7 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
     throw new Error('REVIEW_MODEL_OUTPUT_SHAPE_OBSERVER_INVALID');
   }
   const prompt = buildReviewPrompt(input);
+  const isMatter = isRecord(input.input?.context?.matterWorking);
   const sessionDiscriminator = requiredText(
     options.sessionDiscriminator ?? canonicalSha256(input),
     'REVIEW_MODEL_SESSION_DISCRIMINATOR_REQUIRED',
@@ -298,7 +304,7 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
           model: `openclaw/${agentId}`,
           ...(nativeSessionKey ? {} : { user: `review-driver:${sha256(sessionDiscriminator).slice(0, 24)}` }),
           messages,
-          tools: [reviewCandidateFunctionTool(), reviewSourceFunctionTool()],
+          tools: [reviewCandidateFunctionTool(isMatter), reviewSourceFunctionTool()],
           tool_choice: 'auto',
           parallel_tool_calls: false,
           n: 1,
@@ -845,6 +851,7 @@ function validateModelExecution(
   value,
   readSourceRefIds,
   candidateEvidenceRefIds,
+  isMatter = false,
 ) {
   if (
     !isRecord(value) ||
@@ -856,11 +863,11 @@ function validateModelExecution(
   const output = value.output;
   if (
     canonicalJson(Object.keys(output).sort()) !==
-    canonicalJson([...MODEL_OUTPUT_KEYS].sort())
+    canonicalJson([...MODEL_OUTPUT_KEYS, ...(isMatter ? ['matterWorkingDelta'] : [])].sort())
   ) {
     throw new Error('REVIEW_MODEL_OUTPUT_KEYS_INVALID');
   }
-  if (!REVIEW_RESPONSE_TYPES.includes(output.responseType)) {
+  if (!reviewResponseTypes(isMatter).includes(output.responseType)) {
     throw new Error('REVIEW_MODEL_RESPONSE_TYPE_INVALID');
   }
   requiredText(output.answer, 'REVIEW_MODEL_ANSWER_REQUIRED');
@@ -881,6 +888,10 @@ function validateModelExecution(
       throw new Error(`REVIEW_MODEL_${key.toUpperCase()}_INVALID`);
     }
   }
+  if (isMatter && (
+    output.reviewActionDraft !== null || output.affectedItemIds.length > 0 ||
+    (output.matterWorkingDelta !== null && !isRecord(output.matterWorkingDelta))
+  )) throw new Error('REVIEW_MODEL_MATTER_DELTA_INVALID');
   if (output.responseType === 'SOURCE_LINK' && output.sourceRefs.length === 0) {
     throw new Error('REVIEW_MODEL_SOURCE_LINK_REF_REQUIRED');
   }
@@ -1187,7 +1198,13 @@ export function isFunctionResponseContentSupported(value) {
   return value === undefined || value === null || typeof value === 'string';
 }
 
-function reviewCandidateFunctionTool() {
+function reviewResponseTypes(isMatter) {
+  return isMatter
+    ? [...REVIEW_RESPONSE_TYPES.filter((type) => !['REVIEW_ACTION_DRAFT', 'AFFECTED_ITEMS_PREVIEW'].includes(type)), 'RESYNTHESIS_RESULT']
+    : REVIEW_RESPONSE_TYPES;
+}
+
+function reviewCandidateFunctionTool(isMatter = false) {
   const stringArray = {
     type: 'array',
     items: { type: 'string', minLength: 1 },
@@ -1202,18 +1219,19 @@ function reviewCandidateFunctionTool() {
       parameters: {
         type: 'object',
         additionalProperties: false,
-        required: [...MODEL_OUTPUT_KEYS],
+        required: [...MODEL_OUTPUT_KEYS, ...(isMatter ? ['matterWorkingDelta'] : [])],
         properties: {
-          responseType: { type: 'string', enum: [...REVIEW_RESPONSE_TYPES] },
+          responseType: { type: 'string', enum: [...reviewResponseTypes(isMatter)] },
           answer: { type: 'string', minLength: 1 },
           sourceRefs: structuredClone(stringArray),
           missingInputs: structuredClone(stringArray),
           candidateEvidenceRefs: structuredClone(stringArray),
-          reviewActionDraft: {
+          reviewActionDraft: isMatter ? { type: 'null' } : {
             anyOf: [{ type: 'object' }, { type: 'null' }],
           },
-          affectedItemIds: structuredClone(stringArray),
+          affectedItemIds: { ...structuredClone(stringArray), ...(isMatter ? { maxItems: 0 } : {}) },
           warnings: structuredClone(stringArray),
+          ...(isMatter ? { matterWorkingDelta: matterWorkingDeltaSchema() } : {}),
         },
       },
     },
@@ -1239,23 +1257,83 @@ function reviewSourceFunctionTool() {
   };
 }
 
+function matterWorkingDeltaSchema() {
+  const text = { type: 'string', minLength: 1 };
+  const strings = { type: 'array', items: text, uniqueItems: true };
+  const object = (properties) => ({ type: 'object', additionalProperties: false, required: Object.keys(properties), properties });
+  const array = (items, minItems = 0) => ({ type: 'array', items, minItems });
+  const nullable = (schema) => ({ anyOf: [schema, { type: 'null' }] });
+  const claim = object({
+    claimId: text, text,
+    basis: { type: 'string', enum: ['SOURCE_FACT', 'CONDITIONAL_INFERENCE'] },
+    premises: array(object({
+      evidenceRef: text,
+      role: { type: 'string', enum: ['SUPPORTS', 'LIMITS', 'CONTEXT', 'CONFLICTS'] },
+      explanation: text, limitation: nullable(text),
+    }), 1),
+  });
+  const textDelta = object({
+    upserts: array(object({ itemId: text, text, basisRefs: strings })),
+    retirements: array(object({ itemId: text, reason: text })),
+    explicitlyUnchangedItemIds: strings,
+  });
+  return nullable(object({
+    updateKind: { type: 'string', enum: ['INITIAL_SYNTHESIS', 'CORRECTION', 'MATERIAL_INCORPORATION'] },
+    changeSummary: text,
+    nextFocus: nullable(object({ question: text, targetRefs: strings })),
+    claimDelta: nullable(object({
+      changedBecause: text,
+      additions: array(claim), replacements: array(claim),
+      retirements: array(object({ claimId: text, reason: text })),
+      explicitlyUnchangedClaimIds: strings,
+    })),
+    readingPresentation: nullable(object({ headline: text, listBrief: text, lead: text, decisiveClaimIds: strings })),
+    openQuestionDelta: nullable(textDelta),
+    reviewConditionDelta: nullable(textDelta),
+    coverageUpdates: array(object({
+      inputRef: { type: 'string', pattern: '^matter-input:[1-9][0-9]*$' },
+      checkedSourceRefIds: { ...strings, minItems: 1 },
+      checkedScope: text,
+      contribution: { type: 'string', enum: ['SUBSTANTIVE', 'NO_MATERIAL_CHANGE'] },
+      reason: text,
+    })),
+  }));
+}
+
+function matterReviewGuidance() {
+  return [
+    'This is a Matter Review. context.matterWorking is the authoritative working focus, current saved reading, open questions, review conditions, input list and evidence catalog. The driver returns the c4 candidate contract. Always include matterWorkingDelta, use null for an explanation or clarification that does not update the working understanding, and always set reviewActionDraft=null and affectedItemIds=[]. Formal ReviewActions are unavailable in this Matter turn.',
+    'When the engineer requests a substantive new understanding, correction or incorporation of additional material, return matterWorkingDelta with updateKind INITIAL_SYNTHESIS, CORRECTION or MATERIAL_INCORPORATION and a concrete changeSummary. RESYNTHESIS_RESULT may describe that updated reading. If there is no working state yet and an assessment is requested, INITIAL_SYNTHESIS supplies nextFocus and a first claimDelta/readingPresentation. A useful assessment may conclude with bounded understanding and open questions; do not force an implementation, priority, approval or release decision.',
+    'matterWorkingDelta has exactly updateKind, changeSummary, nextFocus, claimDelta, readingPresentation, openQuestionDelta, reviewConditionDelta, coverageUpdates. nextFocus is null to retain the focus or {question,targetRefs}. claimDelta and readingPresentation are both null to retain the exact current result, or both objects to revise it. Host supplies the scope, identities, versions and CAS; never generate those control bindings.',
+    'claimDelta={changedBecause,additions,replacements,retirements,explicitlyUnchangedClaimIds}. Each addition or replacement is {claimId,text,basis:"SOURCE_FACT"|"CONDITIONAL_INFERENCE",premises:[{evidenceRef,role:"SUPPORTS"|"LIMITS"|"CONTEXT"|"CONFLICTS",explanation,limitation:string|null}]}. Replacements keep the exact existing claimId. Retirements are {claimId,reason}. Account for every current claim exactly once as replacement, retirement or explicitlyUnchangedClaimIds; keep all unmentioned substance and its premises through the unchanged IDs. Never add a new claimId to disguise a correction to an existing claim.',
+    'When context.matterWorking.targetClaimId is present, focus the requested correction or explanation on that existing claim and retain other claims unless the supplied facts actually change them. A correction preserves the target claimId through a replacement.',
+    'readingPresentation={headline,listBrief,lead,decisiveClaimIds} describes the complete next reading, including retained claims. Keep decisive conditions, limits, uncertainty and negations visible across these reading depths. openQuestionDelta and reviewConditionDelta are null to retain their items, or {upserts:[{itemId,text,basisRefs}],retirements:[{itemId,reason}],explicitlyUnchangedItemIds}; preserve existing itemIds and account for every current item.',
+    'Cite only registered evidenceRef values. An evidenceCatalog entry is a directory, not proof of reading. For every added or replaced DOCUMENT_PASSAGE premise, call read_wiselink_review_sources this turn using its sourceRefId and inspect the returned fragment with matching evidenceRef. The sourceRefId is a local key for this task: two documents can share an original SourceRef, so never substitute the original ID or a different document key. Remembered or unchanged prior claims do not authorize a newly cited passage. Non-document premises need their actual providedText or a read in this turn. ENGINEER_STATEMENT supports only what the engineer supplied; PRIOR_RESULT is prior candidate context and QUERY_RECEIPT covers only its explicit checked scope.',
+    'coverageUpdates contains only ranges actually checked this turn: {inputRef,checkedSourceRefIds,checkedScope,contribution:"SUBSTANTIVE"|"NO_MATERIAL_CHANGE",reason}. Copy inputRef from the input list, use nonempty checkedSourceRefIds read for that same input, and explain the bounded checkedScope and contribution. A catalog, file name, pending flag or one excerpt never establishes that the complete PDF was read. Keep pending material visibly pending until its relevant range has actually been checked; do not infer coverage from document presence.',
+    'For a plain explanation, source link, question or status, use empty candidateEvidenceRefs. CANDIDATE_EVIDENCE remains limited to actual authorized attachment refs read this turn. Ordinary corrections and working judgments use matterWorkingDelta without formal adoption.',
+  ];
+}
+
 function buildReviewPrompt(input) {
+  const isMatter = isRecord(input.input?.context?.matterWorking);
   return [
     'Generate one candidate-only WiseLink engineering review response from the engineer message and the current Host-frozen context.',
     `Call ${REVIEW_OUTPUT_FUNCTION_NAME} exactly once. It is only a serialization channel and will not be executed. Emit no prose outside its arguments.`,
     'Use sourceRefs and candidateEvidenceRefs only from SOURCE_REFS read this turn. Never invent facts, IDs, evidence, adoption, approval, publication, confirmation, current changes, or gap closure.',
     'When the engineer asks to locate, cite, or return a SourceRef, use SOURCE_LINK and include at least one relevant sourceRefs entry read this turn. SOURCE_LINK with an empty sourceRefs array is invalid.',
-    'For an explanation, source link, clarification, input request, or task status, set candidateEvidenceRefs and affectedItemIds to [] and reviewActionDraft to null.',
-    'Use CANDIDATE_EVIDENCE only when the engineer asks to analyze supplied or Host-authorized evidence; keep reviewActionDraft null and include every proposed evidence ref in candidateEvidenceRefs.',
-    'Ordinary questions, corrections, additional material, or revisions to a working judgment do not require a ReviewAction. Return an answer or candidate evidence and continue the discussion.',
-    'Use REVIEW_ACTION_DRAFT only when the engineer explicitly asks to formally adopt evidence or change the adopted business judgment, assumptions, conservative bound, or monitoring/review controls.',
-    'A reviewActionDraft must contain exactly: baseRevision, evaluationItemId, proposedStatus, resolvedGapRefs, adoptedInputRefs, sourceRefs, assumptions, affectedItemIds, overallImpact, uncertaintyDispositions, decisionSnapshot.',
-    'Each uncertainty disposition must contain exactly: gapRef, disposition, rationale, assumptions, controlsAndMitigations, evidenceRefs, reviewBy, reopenTriggers.',
-    'decisionSnapshot must contain exactly: assessmentAsOf, evidenceHorizon, currentBestJudgment, alternativeJudgments, decisionMaturity, decisiveFacts, assumptions, residualUncertainties, uncertaintyDispositions, controlsAndMitigations, monitoringPlan, validUntil, reviewBy, reopenTriggers, whatWouldChangeDecision, candidateOnly. Its uncertaintyDispositions must exactly equal the draft list and candidateOnly must be true.',
-    'Copy only allowed revision, evaluation item, adopted input, source, attachment, and gap refs from INPUT. A draft proposes change but never confirms or executes it.',
+    ...(isMatter ? matterReviewGuidance() : [
+      'For an explanation, source link, clarification, input request, or task status, set candidateEvidenceRefs and affectedItemIds to [] and reviewActionDraft to null.',
+      'Use CANDIDATE_EVIDENCE only when the engineer asks to analyze supplied or Host-authorized evidence; keep reviewActionDraft null and include every proposed evidence ref in candidateEvidenceRefs.',
+      'Ordinary questions, corrections, additional material, or revisions to a working judgment do not require a ReviewAction. Return an answer or candidate evidence and continue the discussion.',
+      'Use REVIEW_ACTION_DRAFT only when the engineer explicitly asks to formally adopt evidence or change the adopted business judgment, assumptions, conservative bound, or monitoring/review controls.',
+      'A reviewActionDraft must contain exactly: baseRevision, evaluationItemId, proposedStatus, resolvedGapRefs, adoptedInputRefs, sourceRefs, assumptions, affectedItemIds, overallImpact, uncertaintyDispositions, decisionSnapshot.',
+      'Each uncertainty disposition must contain exactly: gapRef, disposition, rationale, assumptions, controlsAndMitigations, evidenceRefs, reviewBy, reopenTriggers.',
+      'decisionSnapshot must contain exactly: assessmentAsOf, evidenceHorizon, currentBestJudgment, alternativeJudgments, decisionMaturity, decisiveFacts, assumptions, residualUncertainties, uncertaintyDispositions, controlsAndMitigations, monitoringPlan, validUntil, reviewBy, reopenTriggers, whatWouldChangeDecision, candidateOnly. Its uncertaintyDispositions must exactly equal the draft list and candidateOnly must be true.',
+      'Copy only allowed revision, evaluation item, adopted input, source, attachment, and gap refs from INPUT. A draft proposes change but never confirms or executes it.',
+    ]),
     'State the current best bounded judgment, remaining uncertainty, and what would change the judgment when relevant.',
     'Use context.commonContext when supplied: continue prior discussion and later engineer corrections, distinguishing historical working answers from adopted inputs and current evidence. Report omitted history or unavailable RAG honestly. Procedural-reference catalogs and historical attachment names do not mean their contents were read.',
-    `Use ${REVIEW_READ_FUNCTION_NAME} as needed, then continue your analysis from the returned fragments. Start from the selected criterion and current question; read relevant engineer attachments as well when they affect the question. Do not read every available source just because it is listed.`,
+    `Use ${REVIEW_READ_FUNCTION_NAME} as needed, then continue your analysis from the returned fragments. Start from ${isMatter ? 'the Matter working focus' : 'the selected criterion'} and current question; read relevant engineer attachments as well when they affect the question. Do not read every available source just because it is listed.`,
     'Do not call any Host MCP or other tool directly. The driver exclusively owns begin, authorized SourceRef read, commit, and status. A previous answer or native session memory does not authorize an unread citation this turn.',
     `INPUT:\n${canonicalJson(input)}`,
   ].join('\n');

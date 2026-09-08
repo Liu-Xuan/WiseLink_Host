@@ -12,8 +12,12 @@ import {
   Waypoints,
 } from 'lucide-react';
 
-import { useCurrentObjectContext } from '@client/src/app/providers/CurrentObjectContextProvider';
+import {
+  currentObjectKindLabel,
+  useCurrentObjectContext,
+} from '@client/src/app/providers/CurrentObjectContextProvider';
 import VisualModeControl from '@client/src/components/VisualModeControl';
+import { libraryViewMode } from '@client/src/pages/WorkspaceHomePage/library-view-mode';
 
 import './floating-dock.css';
 
@@ -31,24 +35,31 @@ export default function FloatingDock() {
   const { currentObject } = useCurrentObjectContext();
   const params = new URLSearchParams(location.search);
   const activeNode: string = params.get('node') ?? '';
-  const libraryMatterActive: boolean =
-    location.pathname === '/library' && params.get('mode') === 'matter';
+  const libraryMode =
+    location.pathname === '/library' || location.pathname === '/'
+      ? libraryViewMode(params)
+      : null;
   const globalItems: DockItemView[] = [
     {
       key: 'library',
       label: '资料库',
       icon: LibraryBig,
       to: '/library',
-      active:
-        (location.pathname === '/' || location.pathname === '/library') &&
-        !libraryMatterActive,
+      active: libraryMode === 'document',
+    },
+    {
+      key: 'matters',
+      label: '工程事项',
+      icon: BookOpenCheck,
+      to: '/library?mode=matter',
+      active: libraryMode === 'matter',
     },
     {
       key: 'tasks',
-      label: '事项',
+      label: '最近任务',
       icon: ClipboardList,
-      to: '/library?mode=matter',
-      active: libraryMatterActive,
+      to: '/library?mode=tasks',
+      active: libraryMode === 'tasks',
     },
     {
       key: 'search',
@@ -59,57 +70,82 @@ export default function FloatingDock() {
     },
   ];
   const contextItems: DockItemView[] = currentObject
-    ? [
-        {
-          key: 'workspace',
-          label: '工作台',
-          icon: BookOpenCheck,
-          to: currentObject.routes.workspace,
-          active:
-            location.pathname.includes('/documents') &&
-            (activeNode === 'reader' || activeNode === 'package'),
-        },
-        {
-          key: 'process',
-          label: '过程',
-          icon: Activity,
-          to: currentObject.routes.process,
-          active:
-            activeNode === 'overall' && location.hash !== '#workspace-history',
-          badge: currentObject.badges?.process,
-        },
-        {
-          key: 'job-aid',
-          label: 'Job-Aid',
-          icon: Waypoints,
-          to: currentObject.routes.jobAid,
-          active: activeNode === 'assessment',
-          badge: currentObject.badges?.jobAid,
-        },
-        {
-          key: 'review',
-          label: '复核',
-          icon: MessagesSquare,
-          to: currentObject.routes.review,
-          active: activeNode === 'review',
-          badge: currentObject.badges?.review,
-        },
-        {
-          key: 'history',
-          label: '历史',
-          icon: FileClock,
-          to: currentObject.routes.history,
-          active: location.hash === '#workspace-history',
-        },
-        {
-          key: 'family',
-          label: '资料族',
-          icon: Files,
-          to: currentObject.routes.family,
-          active: activeNode === 'document',
-          badge: currentObject.badges?.family,
-        },
-      ]
+    ? currentObject.kind === 'MATTER' && currentObject.routeMatterId
+      ? [
+          {
+            key: 'workspace',
+            label: '简报',
+            icon: BookOpenCheck,
+            to: currentObject.routes.overview,
+            active: !params.get('panel') || params.get('panel') === 'brief',
+          },
+          {
+            key: 'review',
+            label: '讨论',
+            icon: MessagesSquare,
+            to: currentObject.routes.review,
+            active: params.get('panel') === 'review',
+          },
+          {
+            key: 'family',
+            label: '关联资料',
+            icon: Files,
+            to: currentObject.routes.family,
+            active: params.get('panel') === 'materials',
+          },
+        ]
+      : [
+          {
+            key: 'workspace',
+            label: '工作台',
+            icon: BookOpenCheck,
+            to: currentObject.routes.workspace,
+            active:
+              location.pathname.includes('/documents') &&
+              (activeNode === 'reader' || activeNode === 'package'),
+          },
+          {
+            key: 'process',
+            label: '过程',
+            icon: Activity,
+            to: currentObject.routes.process,
+            active:
+              activeNode === 'overall' &&
+              location.hash !== '#workspace-history',
+            badge: currentObject.badges?.process,
+          },
+          {
+            key: 'job-aid',
+            label: 'Job-Aid',
+            icon: Waypoints,
+            to: currentObject.routes.jobAid,
+            active: activeNode === 'assessment',
+            badge: currentObject.badges?.jobAid,
+          },
+          {
+            key: 'review',
+            label: '复核',
+            icon: MessagesSquare,
+            to: currentObject.routes.review,
+            active: activeNode === 'review',
+            badge: currentObject.badges?.review,
+          },
+          {
+            key: 'history',
+            label: '历史',
+            icon: FileClock,
+            to: currentObject.routes.history,
+            active: location.hash === '#workspace-history',
+          },
+          {
+            key: 'family',
+            label: '资料族',
+            icon: Files,
+            to: currentObject.routes.family,
+            active: activeNode === 'document',
+            badge: currentObject.badges?.family,
+          },
+        ]
     : [];
 
   return (
@@ -145,10 +181,16 @@ export default function FloatingDock() {
             <NavLink
               className="wl-dock-context-anchor"
               to={currentObject.routes.overview}
-              aria-label={`当前${currentObject.kind === 'DOCUMENT' ? '文档' : '事项'}：${currentObject.displayCode}`}
+              aria-label={`当前${currentObjectKindLabel(currentObject.kind)}：${currentObject.displayCode}`}
               title={`${currentObject.displayCode} · ${currentObject.title}`}
             >
-              <span>{currentObject.kind === 'DOCUMENT' ? '文' : '事'}</span>
+              <span>
+                {currentObject.kind === 'DOCUMENT'
+                  ? '文'
+                  : currentObject.kind === 'WORK_ITEM'
+                    ? '任'
+                    : '事'}
+              </span>
               <small>{currentObject.displayCode}</small>
               <i aria-hidden="true" />
             </NavLink>

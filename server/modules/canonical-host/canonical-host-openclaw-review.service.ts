@@ -1,13 +1,16 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
 import type {
   CanonicalEngineerReviewPageContext,
   CanonicalWorkItemProjection,
   PendingReviewTurnResponse,
   ReviewTurnAssistantCandidate,
+  ReviewMatterWorkingUpdateReceipt,
 } from '@shared/api.interface';
+import type { EngineeringMatterWorkingRevisionCommand } from '@shared/matter-working.interface';
 import {
   canonicalSha256,
+  canonicalJson,
   parseTaskEnvelope,
 } from '../action-attempt/action-attempt-envelope';
 import { ActionAttemptLifecycleService } from '../action-attempt/action-attempt-lifecycle.service';
@@ -45,6 +48,7 @@ import {
   REVIEW_RUNTIME_APP_ID,
   REVIEW_SKILL_POLICY_REF,
   REVIEW_TOOL_POLICY_REF,
+  REVIEW_MATTER_TOOL_POLICY_REF,
   type FrozenReviewSourceRef,
   type ReviewTurnCandidateContract,
   type ReviewTurnTaskContract,
@@ -55,6 +59,20 @@ import {
   type CanonicalVerifiedOpenClawAttemptScope,
   type CanonicalVerifiedServiceScope,
 } from './canonical-service-scope.authorization';
+import { EngineeringMatterWorkingService } from './engineering-matter-working.service';
+import { EngineeringMatterWorkingRepository } from './engineering-matter-working.repository';
+import {
+  assertMatterReviewBasis,
+  buildMatterReviewContext,
+} from './matter-review-context';
+import {
+  matterWorkingCommand,
+  resolvedReviewSourceRefs,
+} from './matter-review-candidate';
+import {
+  reviewScopeSelection,
+  sameReviewBusinessScope,
+} from '../review-persistence/review-business-scope';
 
 const CANONICAL_APP_ID = 'app_17bzc551rsg';
 const REVIEW_TASK_TYPE = 'OPENCLAW_INTERACTIVE_REVIEW' as const;
@@ -126,6 +144,10 @@ export class CanonicalHostOpenClawReviewService {
     private readonly serviceScope: CanonicalServiceScopeAuthorizationPort,
     private readonly dispatch: ReviewAttemptDispatchService,
     private readonly commonContext: CanonicalHostCommonContextService,
+    @Optional()
+    private readonly matterWorking?: EngineeringMatterWorkingService,
+    @Optional()
+    private readonly matterWorkingRepository?: EngineeringMatterWorkingRepository,
   ) {}
 
   async pending(workItemId: string): Promise<PendingReviewTurnResponse> {
@@ -348,6 +370,27 @@ export class CanonicalHostOpenClawReviewService {
       result,
       task: authorized.contract,
     });
+    const matterContext = authorized.contract.matterContext;
+    const readRefs = resolvedReviewSourceRefs(
+      authorized.row.reviewActivityJson,
+    );
+    if (
+      matterContext &&
+      [...candidate.sourceRefs, ...candidate.candidateEvidenceRefs].some(
+        (ref) => !readRefs.has(ref),
+      )
+    )
+      throw reviewConflict('REVIEW_MATTER_CITED_SOURCE_NOT_READ');
+    const matterCommand =
+      matterContext && candidate.matterWorkingDelta
+        ? matterWorkingCommand({
+            context: matterContext,
+            proposal: candidate.matterWorkingDelta,
+            requestId: 'review-turn:' + authorized.turn.reviewTurnId,
+            attemptRef: authorized.row.attemptId,
+            resolvedSourceRefIds: readRefs,
+          })
+        : null;
     assertReviewCommitFence({
       row: authorized.row,
       principalId: authorized.scope.principalId,
@@ -370,14 +413,23 @@ export class CanonicalHostOpenClawReviewService {
     ) {
       return this.attempts.projectTerminal(prepared.row);
     }
-    const persisted =
-      await this.conversations.persistOpenClawAssistantCandidate({
-        conversation: authorized.conversation,
-        turn: authorized.turn,
-        actionAttemptId: prepared.row.attemptId,
-        candidate: assistantCandidate(attemptRef, candidate, result),
-        completedAt: new Date(),
-      });
+    const persistenceInput = {
+      conversation: authorized.conversation,
+      turn: authorized.turn,
+      actionAttemptId: prepared.row.attemptId,
+      candidate: assistantCandidate(attemptRef, candidate, result),
+      completedAt: new Date(),
+    };
+    const persisted = authorized.contract.matterContext
+      ? await this.persistMatterCandidate(
+          authorized,
+          candidate,
+          persistenceInput,
+          matterCommand,
+        )
+      : await this.conversations.persistOpenClawAssistantCandidate(
+          persistenceInput,
+        );
     const terminal =
       await this.attempts.finishCandidatePersistenceSuccess(prepared);
     if (!persisted.turn.assistantCandidate) {
@@ -397,6 +449,149 @@ export class CanonicalHostOpenClawReviewService {
         staleMarked: false,
       },
     };
+  }
+
+  private async persistMatterCandidate(
+    authorized: AuthorizedReviewAttempt,
+    candidate: ReviewTurnCandidateContract,
+    input: Parameters<
+      ReviewConversationRepository['persistOpenClawAssistantCandidate']
+    >[0],
+    command: EngineeringMatterWorkingRevisionCommand | null,
+  ) {
+    const context = authorized.contract.matterContext!;
+    const repository = this.matterWorkingRepository;
+    if (!repository) throw reviewConflict('REVIEW_MATTER_RUNTIME_UNAVAILABLE');
+    const sourceByRef = new Map(
+      context.evidenceSources.map((source) => [source.evidenceRef, source]),
+    );
+    const cited = new Set([
+      ...candidate.sourceRefs,
+      ...candidate.candidateEvidenceRefs,
+    ]);
+    input.candidate.sourceBindings = context.readingEvidence.flatMap((item) => {
+      const source = sourceByRef.get(item.evidenceRef);
+      return item.kind === 'DOCUMENT_PASSAGE' &&
+        source &&
+        cited.has(source.sourceRefId)
+        ? [
+            {
+              sourceRefId: source.sourceRefId,
+              workItemId: item.workItemId,
+              documentVersionId: item.documentVersionId,
+              originalSourceRefId: item.sourceRefId,
+            },
+          ]
+        : [];
+    });
+    return repository.withActorTransaction(
+      authorized.conversation.actorId,
+      async (executor) => {
+        // Current and based membership are reauthorized on the same connection as both writes.
+        const basis = await executor.authorizeRuntimeInputs({
+          tenantId: authorized.row.tenantId,
+          matterId: context.scope.matterId,
+          actorUserId: authorized.row.actorUserId,
+          basedOnMatterRevisionId: context.scope.basedOnMatterRevisionId,
+        });
+        const persistedCandidate = authorized.turn.assistantCandidate;
+        if (persistedCandidate) {
+          if (
+            persistedCandidate.actionAttemptRef !==
+            input.candidate.actionAttemptRef
+          )
+            throw reviewConflict('REVIEW_TURN_CANDIDATE_CONFLICT');
+          input.candidate.matterWorkingUpdate =
+            persistedCandidate.matterWorkingUpdate;
+          return this.conversations.persistOpenClawAssistantCandidate(
+            input,
+            executor.database,
+          );
+        }
+        let current = await executor.loadCurrent({
+          tenantId: authorized.row.tenantId,
+          matterId: context.scope.matterId,
+        });
+        let receipt: ReviewMatterWorkingUpdateReceipt = {
+          matterId: context.scope.matterId,
+          status: 'UNCHANGED',
+          workingRevision: current?.workingRevision ?? 0,
+          resultRef: current?.substantiveResultRef ?? null,
+          resultRevision: current?.substantiveResultRevision ?? null,
+          resultChanged: false,
+          coverageChanged: false,
+          reasonCode: null,
+        };
+        if (command) {
+          try {
+            // Repository checks own source replay before version CAS. The candidate and revision commit together.
+            const applied = await executor.appendWorkingRevision({
+              tenantId: authorized.row.tenantId,
+              matterId: context.scope.matterId,
+              actorUserId: authorized.row.actorUserId,
+              command,
+              currentInputs: context.scope.inputs,
+              source: {
+                actionAttemptId: authorized.row.attemptId,
+                reviewTurnId: authorized.turn.reviewTurnId,
+              },
+            });
+            receipt = {
+              ...receipt,
+              status: 'APPLIED',
+              workingRevision: applied.revision.workingRevision,
+              resultRef: applied.revision.substantiveResultRef,
+              resultRevision: applied.revision.substantiveResultRevision,
+              resultChanged: applied.resultChanged,
+              coverageChanged: applied.coverageChanged,
+            };
+          } catch (error) {
+            const code =
+              error && typeof error === 'object' && 'code' in error
+                ? String(error.code)
+                : '';
+            if (
+              ![
+                'ENGINEERING_MATTER_WORKING_CAS_CONFLICT',
+                'ENGINEERING_MATTER_WORKING_MEMBERSHIP_CONFLICT',
+                'ENGINEERING_MATTER_WORKING_INPUT_CONFLICT',
+              ].includes(code)
+            )
+              throw error;
+            current = await executor.loadCurrent({
+              tenantId: authorized.row.tenantId,
+              matterId: context.scope.matterId,
+            });
+            receipt = {
+              ...receipt,
+              status: 'BASIS_CHANGED',
+              reasonCode: code,
+              workingRevision: current?.workingRevision ?? 0,
+              resultRef: current?.substantiveResultRef ?? null,
+              resultRevision: current?.substantiveResultRevision ?? null,
+            };
+          }
+        } else if (
+          basis.currentMatterRevisionId !==
+            context.scope.basedOnMatterRevisionId ||
+          (current?.workingRevision ?? 0) !==
+            context.scope.expectedWorkingRevision ||
+          canonicalJson(basis.currentInputs) !==
+            canonicalJson(context.scope.inputs)
+        ) {
+          receipt = {
+            ...receipt,
+            status: 'BASIS_CHANGED',
+            reasonCode: 'REVIEW_MATTER_BASIS_CHANGED',
+          };
+        }
+        input.candidate.matterWorkingUpdate = receipt;
+        return this.conversations.persistOpenClawAssistantCandidate(
+          input,
+          executor.database,
+        );
+      },
+    );
   }
 
   private async requiredConversationTurn(
@@ -461,14 +656,18 @@ export class CanonicalHostOpenClawReviewService {
       loaded.row.requestedByUserId !== binding.conversation.actorId ||
       loaded.row.revision !== loaded.projection.revision ||
       loaded.projection.workItemId !== binding.conversation.workItemId ||
-      binding.turn.inputRevision !== loaded.row.revision ||
-      binding.conversation.lastSyncedRevision !== loaded.row.revision ||
+      (!binding.turn.reviewScope &&
+        binding.turn.inputRevision !== loaded.row.revision) ||
+      (!binding.turn.reviewScope &&
+        binding.conversation.lastSyncedRevision !== loaded.row.revision) ||
       loaded.projection.phase !== 'CANDIDATE_READBACK_VERIFIED' ||
       !loaded.projection.package ||
-      !loaded.projection.integratedAssessment?.baseRules
+      (!binding.turn.reviewScope &&
+        !loaded.projection.integratedAssessment?.baseRules)
     ) {
       throw reviewConflict('REVIEW_TURN_BINDING_STALE_OR_INELIGIBLE');
     }
+    if (binding.turn.reviewScope) await this.authorizeMatterRuntime(binding);
     return loaded.projection;
   }
 
@@ -511,7 +710,9 @@ export class CanonicalHostOpenClawReviewService {
       !binding ||
       binding.turn.requestId !== contract.requestId ||
       binding.turn.inputRevision !== row.inputRevision ||
-      task.inputRevision !== binding.turn.inputRevision
+      task.inputRevision !== binding.turn.inputRevision ||
+      canonicalJson(contract.matterContext?.scope ?? null) !==
+        canonicalJson(binding.turn.reviewScope ?? null)
     ) {
       throw reviewNotFound();
     }
@@ -533,6 +734,8 @@ export class CanonicalHostOpenClawReviewService {
     binding: ReviewBinding,
     workItem: CanonicalWorkItemProjection,
   ): Promise<ReviewTurnTaskContract> {
+    if (binding.turn.reviewScope)
+      return this.buildMatterTaskContract(binding, workItem);
     const readScope: UnifiedArtifactReadScope = new UnifiedArtifactReadScope(
       this.artifactStore,
     );
@@ -698,6 +901,168 @@ export class CanonicalHostOpenClawReviewService {
         modelPolicyRef: REVIEW_MODEL_POLICY_REF,
         skillPolicyRef: REVIEW_SKILL_POLICY_REF,
         toolPolicyRef: REVIEW_TOOL_POLICY_REF,
+      },
+    });
+  }
+
+  private async authorizeMatterRuntime(binding: ReviewBinding) {
+    const scope = binding.turn.reviewScope;
+    if (!scope || !this.matterWorking)
+      throw reviewConflict('REVIEW_MATTER_RUNTIME_UNAVAILABLE');
+    const basis = await this.matterWorking.authorizeRuntimeWorkingBasis({
+      matterId: scope.matterId,
+      tenantId: binding.conversation.tenantId,
+      actorId: binding.conversation.actorId,
+      basedOnMatterRevisionId: scope.basedOnMatterRevisionId,
+    });
+    // Saved premises can outlive a membership change; permission must not be inherited from that old read.
+    for (const evidence of basis.working?.state.substantiveResult?.evidence ??
+      []) {
+      if (!('workItemId' in evidence)) continue;
+      const loaded = await this.workItems.loadTenantScopedProjection(
+        evidence.workItemId,
+        binding.conversation.tenantId,
+      );
+      if (
+        !loaded ||
+        loaded.row.requestedByUserId !== binding.conversation.actorId ||
+        (evidence.kind === 'DOCUMENT_PASSAGE' &&
+          loaded.row.documentVersionId !== evidence.documentVersionId)
+      )
+        throw reviewNotFound();
+    }
+    return basis;
+  }
+
+  private async buildMatterTaskContract(
+    binding: ReviewBinding,
+    workItem: CanonicalWorkItemProjection,
+  ): Promise<ReviewTurnTaskContract> {
+    const scope = binding.turn.reviewScope!;
+    const basis = await this.authorizeMatterRuntime(binding);
+    assertMatterReviewBasis(scope, basis);
+    const readScope = new UnifiedArtifactReadScope(this.artifactStore);
+    const [documents, attachments, previousTask, aggregate] = await Promise.all(
+      [
+        Promise.all(
+          scope.inputs.map(async (member) => {
+            const loaded =
+              member.workItemId === workItem.workItemId
+                ? {
+                    projection: workItem,
+                    row: { requestedByUserId: binding.conversation.actorId },
+                  }
+                : await this.workItems.loadTenantScopedProjection(
+                    member.workItemId,
+                    binding.conversation.tenantId,
+                  );
+            const projection = loaded?.projection;
+            if (
+              !projection?.package ||
+              loaded.row.requestedByUserId !== binding.conversation.actorId ||
+              projection.revision !== member.workItemRevision ||
+              projection.source.documentVersionId !== member.documentVersionId
+            )
+              throw reviewConflict('REVIEW_MATTER_INPUT_CHANGED');
+            return {
+              binding: member,
+              workItem: projection,
+              packageValue: readScope.parseJson(
+                await readScope.readActualBytes(projection.package.artifact),
+              ),
+            };
+          }),
+        ),
+        this.readAttachmentContext(binding),
+        this.conversations.loadPreviousOpenClawTask({
+          reviewConversationId: binding.conversation.reviewConversationId,
+          tenantId: binding.conversation.tenantId,
+          actorId: binding.conversation.actorId,
+          workItemId: binding.conversation.workItemId,
+          beforeTurnNo: binding.turn.turnNo,
+          reviewScope: reviewScopeSelection(scope),
+        }),
+        this.conversations.loadCurrent({
+          tenantId: binding.conversation.tenantId,
+          actorId: binding.conversation.actorId,
+          workItemId: binding.conversation.workItemId,
+        }),
+      ],
+    );
+    if (
+      !aggregate ||
+      aggregate.conversation.reviewConversationId !==
+        binding.conversation.reviewConversationId
+    )
+      throw reviewConflict('REVIEW_CONVERSATION_CHANGED');
+    const priorTurns = aggregate.turns.filter(
+      (turn) =>
+        turn.turnNo < binding.turn.turnNo &&
+        sameReviewBusinessScope(turn.reviewScope, reviewScopeSelection(scope)),
+    );
+    for (const past of priorTurns) {
+      if (
+        past.reviewScope?.basedOnMatterRevisionId !==
+        scope.basedOnMatterRevisionId
+      )
+        await this.authorizeMatterRuntime({
+          conversation: binding.conversation,
+          turn: past,
+        });
+    }
+    const context = buildMatterReviewContext({
+      scope,
+      basis,
+      conversation: binding.conversation,
+      turn: binding.turn,
+      documents,
+    });
+    const resourceRefs = mergeResourceRefs(
+      context.resourceRefs,
+      attachments.resourceRefs,
+    );
+    // Recheck membership, working version and input versions after the actual reads.
+    assertMatterReviewBasis(scope, await this.authorizeMatterRuntime(binding));
+    return parseReviewTurnTaskContract({
+      schemaVersion: 'wiselink.3_1.review_turn_task.v1.c4',
+      mode: 'INTERACTIVE_REVIEW',
+      reviewConversationRef: binding.conversation.reviewConversationId,
+      reviewTurnRef: binding.turn.reviewTurnId,
+      requestId: binding.turn.requestId,
+      actorContextRef: reviewSessionActorContextRef(
+        binding,
+        resourceRefs,
+        previousTask,
+      ),
+      inputRevision: binding.turn.inputRevision,
+      selectedEvaluationItemId: null,
+      userMessage: binding.turn.userMessage,
+      allowedOperations: [...REVIEW_ALLOWED_OPERATIONS],
+      resourceRefs,
+      allowedEvaluationItemIds: [],
+      allowedAdoptedInputRefs: [],
+      attachmentRefs: attachments.attachmentRefs,
+      matterContext: context.frozen,
+      context: {
+        matterWorking: context.model,
+        engineerInput: {
+          text: binding.turn.candidateText,
+          attachmentRefs: attachments.attachmentRefs,
+        },
+        discussion: {
+          turns: priorTurns.map((turn) => ({
+            turnNo: turn.turnNo,
+            userMessage: turn.userMessage,
+            assistantAnswer: turn.assistantCandidate?.answer ?? null,
+          })),
+        },
+      },
+      executionPolicy: {
+        runtimeAppId: REVIEW_RUNTIME_APP_ID,
+        profileRef: REVIEW_PROFILE_REF,
+        modelPolicyRef: REVIEW_MODEL_POLICY_REF,
+        skillPolicyRef: REVIEW_SKILL_POLICY_REF,
+        toolPolicyRef: REVIEW_MATTER_TOOL_POLICY_REF,
       },
     });
   }
@@ -924,7 +1289,7 @@ function taskArtifactRefs(
   const artifacts = [
     workItem.package?.artifact,
     workItem.translation?.artifact,
-    workItem.integratedAssessment?.baseRules.artifact,
+    workItem.integratedAssessment?.baseRules?.artifact,
     workItem.integratedAssessment?.engineerReviews?.artifact,
     workItem.integratedAssessment?.overallSynthesis?.artifact,
     ...(turn.attachmentBindings ?? []).map(
@@ -1041,6 +1406,13 @@ function reviewSessionActorContextRef(
       binding.turn.requestedModel?.modelRef ||
     prior.reviewConversationRef !== binding.conversation.reviewConversationId ||
     prior.inputRevision !== binding.turn.inputRevision ||
+    !sameReviewBusinessScope(
+      prior.matterContext?.scope,
+      reviewScopeSelection(binding.turn.reviewScope),
+    ) ||
+    (binding.turn.reviewScope &&
+      prior.matterContext?.scope.basedOnMatterRevisionId !==
+        binding.turn.reviewScope.basedOnMatterRevisionId) ||
     !prior.actorContextRef.startsWith('ACTX-RS-')
   )
     return freshRef;

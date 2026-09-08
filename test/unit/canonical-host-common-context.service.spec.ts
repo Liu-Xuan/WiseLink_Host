@@ -255,7 +255,12 @@ describe('shared pre-evaluation context', () => {
         return new TextEncoder().encode(
           JSON.stringify({
             sourceRefs: [
-              { sourceRefId: 'SRC-GOOD', quote: 'Actual related evidence.' },
+              {
+                sourceRefId: 'SRC-GOOD',
+                quote: 'Actual related evidence.',
+                pageStart: 2,
+                pageEnd: 2,
+              },
             ],
           }),
         );
@@ -315,6 +320,18 @@ describe('shared pre-evaluation context', () => {
     expect(result.related.resourceRefs.map((ref) => ref.sourceRefId)).toEqual([
       'SRC-GOOD',
     ]);
+    expect(result.readingEvidence).toEqual([
+      expect.objectContaining({
+        evidenceRef: 'overall-evidence:related:2:1',
+        kind: 'DOCUMENT_PASSAGE',
+        workItemId: 'WI-RELATED-1',
+        documentVersionId: 'DV-RELATED-1',
+        sourceRefId: 'SRC-GOOD',
+        excerpt: 'Actual related evidence.',
+        locator: 'page 2-2',
+      }),
+    ]);
+    expect(JSON.stringify(result.common)).not.toContain('WI-RELATED-1');
     const persisted = JSON.parse(
       new TextDecoder().decode(
         artifactStore.persistAndReadback.mock.calls[0][0],

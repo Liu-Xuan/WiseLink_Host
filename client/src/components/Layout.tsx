@@ -4,6 +4,7 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import {
   CurrentObjectContextProvider,
   useCurrentObjectContext,
+  currentObjectKindLabel,
 } from '@client/src/app/providers/CurrentObjectContextProvider';
 import { CurrentUserSessionProvider } from '@client/src/app/providers/CurrentUserSessionProvider';
 import CurrentUserControl from '@client/src/components/CurrentUserControl';
@@ -66,7 +67,7 @@ function LayoutChrome() {
                   <span
                     className={`wiselink-object-kind is-${currentObject.kind.toLowerCase()}`}
                   >
-                    {currentObject.kind === 'DOCUMENT' ? '文档' : '事项'}
+                    {currentObjectKindLabel(currentObject.kind)}
                   </span>
                   <strong>{currentObject.displayCode}</strong>
                   <span className="wiselink-object-title">
@@ -110,7 +111,12 @@ function LayoutChrome() {
               <Search aria-hidden="true" />
             </NavLink>
             <CurrentUserControl />
-            <NavLink className="wiselink-header-icon-action" to="/settings/models" aria-label="分析模型设置" title="分析模型设置">
+            <NavLink
+              className="wiselink-header-icon-action"
+              to="/settings/models"
+              aria-label="分析模型设置"
+              title="分析模型设置"
+            >
               <Settings2 aria-hidden="true" />
             </NavLink>
           </div>
@@ -132,6 +138,7 @@ function derivePageLabel(pathname: string): string {
     return '工程分析工作台';
   }
   if (pathname.startsWith('/work-items/')) return '工程评估';
+  if (pathname.startsWith('/matters/')) return '事项阅读与讨论';
   if (pathname === '/external-discovery') return '补充资料';
   if (pathname === '/runtime-probe') return '连接状态';
   if (pathname === '/settings/models') return '分析模型设置';

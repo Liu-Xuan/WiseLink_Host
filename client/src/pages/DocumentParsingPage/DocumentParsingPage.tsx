@@ -40,6 +40,11 @@ import { forgetRecentWorkItem } from '@client/src/utils/recent-work-items';
 import { useCurrentUserSession } from '@client/src/app/providers/CurrentUserSessionProvider';
 import { useCurrentObjectContext } from '@client/src/app/providers/CurrentObjectContextProvider';
 import { buildCurrentObjectContext } from '@client/src/features/navigation/contextual-navigation';
+import SavedAssessmentReading from '@client/src/features/matter/SavedAssessmentReading';
+import ReadingReturnLink from '@client/src/features/matter/ReadingReturnLink';
+import type { DocumentAssessmentEvidence } from '@client/src/features/matter/assessment-reading';
+import type { ReviewSourceBinding } from '@client/src/features/review/review-scope';
+import { assertDocumentReadingVersion } from './document-parsing-load';
 
 import {
   getWorkbenchNode,
@@ -202,6 +207,8 @@ export default function DocumentParsingPage() {
   const requestedReaderUnit: string = searchParams.get('unit')?.trim() ?? '';
   const requestedSourceRef: string =
     searchParams.get('sourceRef')?.trim() ?? '';
+  const expectedDocumentVersionId: string =
+    searchParams.get('documentVersionId')?.trim() ?? '';
   const activeReaderSourceRef: string = useReaderRequestScope(
     workItemId,
     sessionGeneration,
@@ -223,7 +230,12 @@ export default function DocumentParsingPage() {
         ? resolveCanonicalDocumentParsingRouteHandoff(
             (location.state as { documentParsingHandoff?: unknown } | null)
               ?.documentParsingHandoff,
-            { sessionGeneration, workItemId, query: activeQuery },
+            {
+              sessionGeneration,
+              workItemId,
+              query: activeQuery,
+              documentVersionId: expectedDocumentVersionId,
+            },
           )
         : null,
     );
@@ -274,7 +286,9 @@ export default function DocumentParsingPage() {
   const data: CanonicalDocumentParsingPageResponse | null =
     !authenticationRequired &&
     pageSessionGeneration === sessionGeneration &&
-    pageData?.workItem.workItemId === workItemId
+    pageData?.workItem.workItemId === workItemId &&
+    (!expectedDocumentVersionId ||
+      pageData.workItem.source.documentVersionId === expectedDocumentVersionId)
       ? pageData
       : null;
   const latestLoadRef = useRef({
@@ -283,6 +297,7 @@ export default function DocumentParsingPage() {
     authenticationRequired,
     query: activeQuery,
     sourceRef: activeReaderSourceRef,
+    documentVersionId: expectedDocumentVersionId,
     data,
     load,
   });
@@ -292,6 +307,7 @@ export default function DocumentParsingPage() {
     authenticationRequired,
     query: activeQuery,
     sourceRef: activeReaderSourceRef,
+    documentVersionId: expectedDocumentVersionId,
     data,
     load,
   };
@@ -338,6 +354,7 @@ export default function DocumentParsingPage() {
         current.sessionGeneration === sessionGeneration &&
         current.query === nextQuery &&
         current.sourceRef === nextSourceRef &&
+        current.documentVersionId === expectedDocumentVersionId &&
         canonicalHost.getCanonicalHostClientSessionGeneration() ===
           sessionGeneration
       );
@@ -369,6 +386,14 @@ export default function DocumentParsingPage() {
       isCurrent,
       readIdentity: canonicalHost.getCanonicalHostIdentityContext,
       readPage: (identity) => {
+        const checkedVersion = (
+          page: CanonicalDocumentParsingPageResponse,
+        ): CanonicalDocumentParsingPageResponse =>
+          assertDocumentReadingVersion(
+            page,
+            workItemId,
+            expectedDocumentVersionId,
+          );
         if (
           readback &&
           canReuseCanonicalDocumentParsingReadback(readback, {
@@ -378,7 +403,7 @@ export default function DocumentParsingPage() {
             currentRevision: latestLoadRef.current.data?.workItem.revision,
           })
         )
-          return Promise.resolve(readback);
+          return Promise.resolve(readback).then(checkedVersion);
         const readProjection = () =>
           canonicalHost.getDocumentParsingPage(workItemId, nextQuery, {
             sourceRef: nextSourceRef,
@@ -389,17 +414,19 @@ export default function DocumentParsingPage() {
                 : {}),
           });
         // A post-mutation scoped read must not join a pre-mutation request.
-        if (readback) return readProjection();
-        return documentParsingProjectionReader.read(
-          {
-            identity,
-            sessionGeneration: startedSessionGeneration,
-            workItemId,
-            query: nextQuery,
-            sourceRef: nextSourceRef,
-          },
-          readProjection,
-        );
+        if (readback) return readProjection().then(checkedVersion);
+        return documentParsingProjectionReader
+          .read(
+            {
+              identity,
+              sessionGeneration: startedSessionGeneration,
+              workItemId,
+              query: nextQuery,
+              sourceRef: nextSourceRef,
+            },
+            readProjection,
+          )
+          .then(checkedVersion);
       },
       onFresh: (identity, fresh) => {
         setPageData(fresh);
@@ -475,6 +502,7 @@ export default function DocumentParsingPage() {
     workItemId,
     activeQuery,
     activeReaderSourceRef,
+    expectedDocumentVersionId,
     authenticationRequired,
     sessionGeneration,
   ]);
@@ -561,7 +589,11 @@ export default function DocumentParsingPage() {
     }
     return (
       <LockedState
-        title="暂时无法打开当前工程事项"
+        title={
+          error === 'CANONICAL_DOCUMENT_READING_VERSION_MISMATCH'
+            ? '所选原文版本与实际读回不一致，请返回简报重新选择'
+            : '暂时无法打开当前工程事项'
+        }
         role="alert"
         onRetry={() => void load(activeQuery)}
         onBack={() => navigate('/library')}
@@ -570,6 +602,8 @@ export default function DocumentParsingPage() {
   }
 
   const pkg = data.workItem.package;
+  const savedReadingResult =
+    data.workItem.integratedAssessment?.overallSynthesis?.readingResult;
   const usagePolicy = pkg?.usagePolicy;
   const referenceOnly = usagePolicy?.presentationMode === 'REFERENCE_ONLY';
   const assessment = data.workItem.assessment ?? null;
@@ -754,6 +788,51 @@ export default function DocumentParsingPage() {
     updateDeepLink(structuredSourceDeepLink(sourceRef, locator?.pageStart));
   }
 
+  function locateAssessmentDocument(
+    evidence: Pick<
+      DocumentAssessmentEvidence,
+      'workItemId' | 'documentVersionId' | 'sourceRefId'
+    >,
+  ): void {
+    if (evidence.workItemId === workItemId) {
+      updateDeepLink({
+        node: 'reader',
+        tab: 'reader',
+        readerMode: 'structured',
+        sourceRef: evidence.sourceRefId,
+        documentVersionId: evidence.documentVersionId,
+        unit: null,
+      });
+      return;
+    }
+    const params: URLSearchParams = new URLSearchParams({
+      node: 'reader',
+      tab: 'reader',
+      readerMode: 'structured',
+      sourceRef: evidence.sourceRefId,
+      documentVersionId: evidence.documentVersionId,
+    });
+    const returnMatterId: string =
+      searchParams.get('returnMatterId')?.trim() ?? '';
+    const returnLibraryWorkItemId =
+      searchParams.get('returnLibraryWorkItemId')?.trim() ?? '';
+    if (returnMatterId) {
+      params.set('returnMatterId', returnMatterId);
+      const panel = searchParams.get('returnMatterPanel');
+      if (panel === 'review' || panel === 'materials')
+        params.set('returnMatterPanel', panel);
+    } else if (returnLibraryWorkItemId) {
+      params.set('returnLibraryWorkItemId', returnLibraryWorkItemId);
+    } else
+      params.set(
+        'returnWorkItemId',
+        searchParams.get('returnWorkItemId') || workItemId,
+      );
+    navigate(
+      `/work-items/${encodeURIComponent(evidence.workItemId)}/documents?${params.toString()}`,
+    );
+  }
+
   const quickOpenItems: QuickOpenItem[] = [
     ...WORKBENCH_TABS.filter((tab) => tab.key !== 'aeo' || Boolean(aeo)).map(
       (tab) => ({
@@ -786,14 +865,17 @@ export default function DocumentParsingPage() {
         retainTabScroll
         contextLabel={`${pkg?.documentIdentity?.documentCode ?? fileLabel} · ${WORKBENCH_TABS.find((tab) => tab.key === activeNode)?.label ?? '综合评估'}`}
         navigator={
-          <NavigatorTree
-            nodes={data.libraryIndex.nodes}
-            mode={treeMode}
-            onModeChange={setTreeMode}
-            selectedId={treeSelection}
-            onSelect={handleNavigatorSelect}
-            searchPlaceholder="搜索当前资料的文件、解析与判断"
-          />
+          <>
+            <ReadingReturnLink />
+            <NavigatorTree
+              nodes={data.libraryIndex.nodes}
+              mode={treeMode}
+              onModeChange={setTreeMode}
+              selectedId={treeSelection}
+              onSelect={handleNavigatorSelect}
+              searchPlaceholder="搜索当前资料的文件、解析与判断"
+            />
+          </>
         }
         evidencePanel={
           <EvidencePanel
@@ -861,8 +943,12 @@ export default function DocumentParsingPage() {
           sessionGeneration={sessionGeneration}
           initial={data.initialAnalysis}
           timeline={data.timeline}
-          onRevisionChanged={() => { void load(activeQuery); }}
-          onAccessLost={() => { void load(activeQuery); }}
+          onRevisionChanged={() => {
+            void load(activeQuery);
+          }}
+          onAccessLost={() => {
+            void load(activeQuery);
+          }}
         />
         {loading ? (
           <p className="wl-projection-refresh" role="status">
@@ -1127,25 +1213,33 @@ export default function DocumentParsingPage() {
                 <ClipboardCheck aria-hidden="true" /> 工程评估工作台 ·
                 判断、依据与复核
               </div>
-              <OverallAssessmentHero
-                view={workItemView}
-                regeneration={{
-                  ...overallRegeneration,
-                  disabled: loading || overallRegeneration.disabled,
-                }}
-                onOpenWorkbench={() =>
-                  updateDeepLink({ node: 'review', tab: 'review' })
-                }
-                onViewEvidence={(sourceRefId) =>
-                  updateDeepLink({
-                    node: 'reader',
-                    tab: 'reader',
-                    readerMode: 'structured',
-                    unit: null,
-                    sourceRef: sourceRefId ?? null,
-                  })
-                }
-              />
+              {savedReadingResult ? (
+                <SavedAssessmentReading
+                  result={savedReadingResult}
+                  depth="full"
+                  onLocateDocument={locateAssessmentDocument}
+                />
+              ) : (
+                <OverallAssessmentHero
+                  view={workItemView}
+                  regeneration={{
+                    ...overallRegeneration,
+                    disabled: loading || overallRegeneration.disabled,
+                  }}
+                  onOpenWorkbench={() =>
+                    updateDeepLink({ node: 'review', tab: 'review' })
+                  }
+                  onViewEvidence={(sourceRefId) =>
+                    updateDeepLink({
+                      node: 'reader',
+                      tab: 'reader',
+                      readerMode: 'structured',
+                      unit: null,
+                      sourceRef: sourceRefId ?? null,
+                    })
+                  }
+                />
+              )}
               {integratedAssessment ? (
                 <>
                   <details className="parse-assessment-audit-details">
@@ -1354,30 +1448,38 @@ export default function DocumentParsingPage() {
                 <ClipboardCheck aria-hidden="true" /> 工程评估工作台 ·
                 判断、依据与复核
               </div>
-              <OverallAssessmentHero
-                view={workItemView}
-                regeneration={{
-                  ...overallRegeneration,
-                  disabled: loading || overallRegeneration.disabled,
-                }}
-                primaryActionLabel="核对原文依据"
-                onOpenWorkbench={() =>
-                  updateDeepLink({
-                    node: 'reader',
-                    tab: 'reader',
-                    readerMode: 'structured',
-                  })
-                }
-                onViewEvidence={(sourceRefId) =>
-                  updateDeepLink({
-                    node: 'reader',
-                    tab: 'reader',
-                    readerMode: 'structured',
-                    unit: null,
-                    sourceRef: sourceRefId ?? null,
-                  })
-                }
-              />
+              {savedReadingResult ? (
+                <SavedAssessmentReading
+                  result={savedReadingResult}
+                  depth="full"
+                  onLocateDocument={locateAssessmentDocument}
+                />
+              ) : (
+                <OverallAssessmentHero
+                  view={workItemView}
+                  regeneration={{
+                    ...overallRegeneration,
+                    disabled: loading || overallRegeneration.disabled,
+                  }}
+                  primaryActionLabel="核对原文依据"
+                  onOpenWorkbench={() =>
+                    updateDeepLink({
+                      node: 'reader',
+                      tab: 'reader',
+                      readerMode: 'structured',
+                    })
+                  }
+                  onViewEvidence={(sourceRefId) =>
+                    updateDeepLink({
+                      node: 'reader',
+                      tab: 'reader',
+                      readerMode: 'structured',
+                      unit: null,
+                      sourceRef: sourceRefId ?? null,
+                    })
+                  }
+                />
+              )}
               <AssessmentSemanticsOverview data={data} />
               <article className="parse-assessment-scope-note">
                 <AlertTriangle aria-hidden="true" />
@@ -1562,6 +1664,13 @@ export default function DocumentParsingPage() {
             confirmationReceipt={continuousReviewReceipt}
             onConfirmationReceipt={setContinuousReviewReceipt}
             onLocateSourceRef={(sourceRef) => locateSourceRef(null, sourceRef)}
+            onLocateSourceBinding={(binding: ReviewSourceBinding) =>
+              locateAssessmentDocument({
+                workItemId: binding.workItemId,
+                documentVersionId: binding.documentVersionId,
+                sourceRefId: binding.originalSourceRefId,
+              })
+            }
             onWorkItemRefresh={() => load(activeQuery)}
             materials={{
               primary: {

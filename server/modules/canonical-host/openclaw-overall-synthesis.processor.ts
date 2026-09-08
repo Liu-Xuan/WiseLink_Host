@@ -4,6 +4,7 @@ import type {
   CanonicalCommonAssessmentContext,
   CanonicalWorkItemProjection,
 } from '@shared/api.interface';
+import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
 import type { FeishuNativeOemSearchRun } from '../external-discovery/feishu-native-oem-monitoring-ingress';
 import type { UnifiedArtifactReadScope } from '../unified-reader/unified-artifact-read-scope';
 import {
@@ -11,9 +12,15 @@ import {
   summarizeSelectiveOverallResynthesis,
   type DynamicRuleReviewItem,
   type OpenClawEngineerReviewContext,
+  type OpenClawEngineerReviewItem,
   type SelectiveJobAidItemCandidate,
   type SelectiveOverallResynthesisSummary,
 } from './selective-overall-resynthesis';
+import {
+  overallModelEvidenceRegistry,
+  validateOverallAssessmentReading,
+  type OverallModelEvidence,
+} from './overall-assessment-reading';
 
 export type {
   DynamicRuleReviewItem,
@@ -58,6 +65,16 @@ const OUTPUT_KEYS = [
   'providers',
 ] as const;
 
+type OverallModelEngineerReviewItem = Omit<
+  OpenClawEngineerReviewItem,
+  'decisionSnapshot'
+> & {
+  decisionSnapshot: Omit<
+    NonNullable<OpenClawEngineerReviewItem['decisionSnapshot']>,
+    'workItemId'
+  > | null;
+};
+
 export interface OpenClawOverallSynthesisInput {
   operation: 'SYNTHESIZE_OVERALL_CANDIDATE';
   outputCorrelationRef: string;
@@ -66,9 +83,17 @@ export interface OpenClawOverallSynthesisInput {
   unifiedSourceContext: Record<string, unknown>;
   adoptedDocumentVersions: Array<Record<string, unknown>>;
   externalDiscoveryResults: Array<Record<string, unknown>>;
-  engineerReviewContext: OpenClawEngineerReviewContext;
+  engineerReviewContext: Omit<
+    OpenClawEngineerReviewContext,
+    'history' | 'effective'
+  > & {
+    history: OverallModelEngineerReviewItem[];
+    effective: OverallModelEngineerReviewItem[];
+  };
   selectiveResynthesis: SelectiveOverallResynthesisSummary;
   commonContext?: CanonicalCommonAssessmentContext;
+  /** Sanitized premises actually included in this model call. */
+  evidenceRegistry?: OverallModelEvidence[];
 }
 
 export interface OpenClawOverallApplicabilityResult {
@@ -97,6 +122,7 @@ export function buildOpenClawOverallSynthesisInput(input: {
   engineerReviewContext: OpenClawEngineerReviewContext;
   outputCorrelationRef: string;
   commonContext?: CanonicalCommonAssessmentContext;
+  readingEvidence?: AssessmentEvidence[];
   readScope?: UnifiedArtifactReadScope;
 }): OpenClawOverallSynthesisInput {
   const baseOutput = parseObject(
@@ -257,12 +283,28 @@ export function buildOpenClawOverallSynthesisInput(input: {
       },
     ],
     externalDiscoveryResults: input.discoveries.map(toHostedDiscovery),
-    engineerReviewContext: structuredClone(input.engineerReviewContext),
+    engineerReviewContext: {
+      ...structuredClone(input.engineerReviewContext),
+      history: input.engineerReviewContext.history.map(
+        overallModelEngineerReview,
+      ),
+      effective: input.engineerReviewContext.effective.map(
+        overallModelEngineerReview,
+      ),
+    },
     selectiveResynthesis: summarizeSelectiveOverallResynthesis(plan),
+    ...(input.readingEvidence
+      ? {
+          evidenceRegistry: overallModelEvidenceRegistry(input.readingEvidence),
+        }
+      : {}),
     ...(input.commonContext
       ? { commonContext: structuredClone(input.commonContext) }
       : {}),
   };
+  if (input.readingEvidence !== undefined) {
+    bindOverallModelReviewEvidence(modelInput, input.engineerReviewContext);
+  }
   rejectPrivateAuthority(modelInput);
   return modelInput;
 }
@@ -331,6 +373,7 @@ function expandBaseSourceRefs(
 export function consumeOpenClawOverallSynthesisOutput(
   input: OpenClawOverallSynthesisInput,
   output: string,
+  readingEvidence?: AssessmentEvidence[],
 ): Record<string, unknown> {
   const parsed = parseObject(
     new TextEncoder().encode(output),
@@ -415,16 +458,61 @@ export function consumeOpenClawOverallSynthesisOutput(
       'CURRENT_DOCUMENT_SOURCE_REFS_INVALID',
     ),
   );
-  const engineeringSummary = validateEngineeringSummary(
+  const engineeringSummary = object(
     parsed.engineeringSummary,
-    knownRefs,
-    currentDocumentRefs,
+    'OVERALL_ENGINEERING_SUMMARY_INVALID',
   );
-  same(
-    parsed.overallCandidate,
-    object(engineeringSummary.conclusion, 'OVERALL_CONCLUSION_INVALID').text,
-    'OVERALL_CONCLUSION_CANDIDATE_MISMATCH',
-  );
+  const readingV2 =
+    engineeringSummary.schemaVersion ===
+    'wiselink.3_1.overall_engineering_summary.v2';
+  if (input.evidenceRegistry !== undefined && !readingV2) {
+    throw new Error('OVERALL_READING_SUMMARY_VERSION_REQUIRED');
+  }
+  if (readingV2) {
+    if (!readingEvidence || !input.evidenceRegistry) {
+      throw new Error('OVERALL_READING_EVIDENCE_REGISTRY_REQUIRED');
+    }
+    const expectedRegistry = overallModelEvidenceRegistry(readingEvidence);
+    same(
+      input.evidenceRegistry.length,
+      expectedRegistry.length,
+      'OVERALL_READING_EVIDENCE_INPUT_MISMATCH',
+    );
+    expectedRegistry.forEach((expected, index) => {
+      const actual = object(
+        input.evidenceRegistry![index],
+        'OVERALL_READING_EVIDENCE_INPUT_MISMATCH',
+      );
+      exactKeys(
+        actual,
+        Object.keys(expected),
+        'OVERALL_READING_EVIDENCE_INPUT',
+      );
+      for (const [key, value] of Object.entries(expected)) {
+        same(actual[key], value, 'OVERALL_READING_EVIDENCE_INPUT_MISMATCH');
+      }
+    });
+    const content = validateOverallAssessmentReading(
+      engineeringSummary,
+      readingEvidence,
+    );
+    same(
+      parsed.overallCandidate,
+      content.lead,
+      'OVERALL_LEAD_CANDIDATE_MISMATCH',
+    );
+  } else {
+    validateEngineeringSummary(
+      engineeringSummary,
+      knownRefs,
+      currentDocumentRefs,
+    );
+    same(
+      parsed.overallCandidate,
+      object(engineeringSummary.conclusion, 'OVERALL_CONCLUSION_INVALID').text,
+      'OVERALL_CONCLUSION_CANDIDATE_MISMATCH',
+    );
+  }
   findings.forEach((value) => {
     const finding = object(value, 'OVERALL_FINDING_INVALID');
     exactKeys(
@@ -451,6 +539,26 @@ export function consumeOpenClawOverallSynthesisOutput(
       ),
     ),
   );
+  if (readingV2 && readingEvidence) {
+    const content = validateOverallAssessmentReading(
+      engineeringSummary,
+      readingEvidence,
+    );
+    const citedEvidence = new Set(
+      content.claims.flatMap((claim) =>
+        claim.premises.map((premise) => premise.evidenceRef),
+      ),
+    );
+    for (const evidence of readingEvidence) {
+      if (
+        citedEvidence.has(evidence.evidenceRef) &&
+        'sourceRefId' in evidence
+      ) {
+        citedRefs.add(evidence.sourceRefId);
+        citedRefs.add(evidence.evidenceRef);
+      }
+    }
+  }
   input.selectiveResynthesis.adoptedEvidenceSourceRefIds.forEach((ref) => {
     if (!citedRefs.has(ref)) {
       throw new Error(`OVERALL_ADOPTED_EVIDENCE_NOT_CITED:${ref}`);
@@ -616,6 +724,67 @@ function supplementalSourceRefs(context: OpenClawEngineerReviewContext) {
         : {}),
     })),
   );
+}
+
+function overallModelEngineerReview(
+  review: OpenClawEngineerReviewItem,
+): OverallModelEngineerReviewItem {
+  const { decisionSnapshot, ...content } = structuredClone(review);
+  if (decisionSnapshot === null) return { ...content, decisionSnapshot: null };
+  const { workItemId: _hostBinding, ...modelSnapshot } = decisionSnapshot;
+  return { ...content, decisionSnapshot: modelSnapshot };
+}
+
+function bindOverallModelReviewEvidence(
+  modelInput: OpenClawOverallSynthesisInput,
+  context: OpenClawEngineerReviewContext,
+): void {
+  const aliases = new Map(
+    context.history.flatMap((review) =>
+      review.evidence.map(
+        (evidence, index) =>
+          [
+            evidence.sourceRefId,
+            `overall-evidence:engineer-review:${review.sequence}:${index + 1}`,
+          ] as const,
+      ),
+    ),
+  );
+  const refs = (values: string[]) =>
+    values.map((value) => aliases.get(value) ?? value);
+  for (const value of requiredArray(
+    modelInput.baseRuleResult.items,
+    'BASE_ITEMS_INVALID',
+  )) {
+    const item = object(value, 'BASE_ITEM_INVALID');
+    item.sourceRefIds = refs(
+      textArray(item.sourceRefIds, 'BASE_ITEM_SOURCE_REFS_INVALID'),
+    );
+  }
+  for (const value of requiredArray(
+    modelInput.unifiedSourceContext.sourceRefs,
+    'SOURCE_CONTEXT_REFS_INVALID',
+  )) {
+    const item = object(value, 'SOURCE_CONTEXT_REF_INVALID');
+    const sourceRefId = text(item.sourceRefId, 'SOURCE_CONTEXT_REF_ID_INVALID');
+    item.sourceRefId = aliases.get(sourceRefId) ?? sourceRefId;
+  }
+  modelInput.selectiveResynthesis.adoptedEvidenceSourceRefIds = refs(
+    modelInput.selectiveResynthesis.adoptedEvidenceSourceRefIds,
+  );
+  for (const review of [
+    ...modelInput.engineerReviewContext.history,
+    ...modelInput.engineerReviewContext.effective,
+  ]) {
+    for (const evidence of review.evidence)
+      evidence.sourceRefId =
+        aliases.get(evidence.sourceRefId) ?? evidence.sourceRefId;
+    for (const disposition of review.uncertaintyDispositions)
+      disposition.evidenceRefs = refs(disposition.evidenceRefs);
+    for (const disposition of review.decisionSnapshot
+      ?.uncertaintyDispositions ?? [])
+      disposition.evidenceRefs = refs(disposition.evidenceRefs);
+  }
 }
 
 function sourceExcerpt(value: unknown): string | null {
@@ -924,7 +1093,7 @@ function rejectAuthoritativeNarrative(
   findings: unknown[],
   engineeringSummary: Record<string, unknown>,
 ): void {
-  const narrative = [
+  const narratives = [
     output.overallCandidate,
     ...engineeringSummaryStatements(engineeringSummary),
     ...findings.flatMap((value) => {
@@ -936,21 +1105,89 @@ function rejectAuthoritativeNarrative(
         ...requiredArray(finding.assumptions, 'OVERALL_ASSUMPTIONS_INVALID'),
       ];
     }),
-  ].join('\n');
-  if (
-    [
-      /(?:已确认|确认)(?:该)?(?:机队)?(?:不)?适用/u,
-      /(?:已批准|批准执行|批准放行|可直接实施|可以直接实施)/u,
-      /\b(?:approved|airworthiness conclusion|confirmed applicable|confirmed inapplicable|safe to release)\b/iu,
-    ].some((pattern) => pattern.test(narrative))
-  ) {
+  ];
+  if (narratives.some((value) => authoritativeAssertion(String(value)))) {
     throw new Error('OVERALL_AUTHORITATIVE_NARRATIVE_FORBIDDEN');
   }
+}
+
+function authoritativeAssertion(narrative: string): boolean {
+  // Check each clause separately: a source quotation or a negation must not
+  // suppress a later independent assertion that the Host has approved work.
+  const clauses = narrative.split(
+    /[。！？；;\n]|(?<=[a-z])\.(?:\s|$)|[,，]|\b(?:but|therefore|however|thus)\b|(?:但是|但|因此|所以|故而)/iu,
+  );
+  for (const clause of clauses) {
+    const assertions = clause.matchAll(
+      /(?:已确认|确认)(?:该)?(?:机队)?(?:不)?适用|(?:已批准|批准执行|批准放行|可直接实施|可以直接实施)|\b(?:approved|airworthiness conclusion|confirmed applicable|confirmed inapplicable|safe to release)\b/giu,
+    );
+    for (const match of assertions) {
+      const prefix = clause.slice(0, match.index).trimEnd();
+      const negated =
+        /(?:尚未|并未|从未|没有|不是|并非|不代表|不等于|不得|不能|不可|未|不|无法)(?:被|获|获得|经|视为|认为)?[“"'‘「]?$/u.test(
+          prefix,
+        ) ||
+        /\b(?:not|never|no longer)(?:\s+(?:yet|been|be|being|considered|deemed|formally|already))*\s*["'“‘]?$/iu.test(
+          prefix,
+        ) ||
+        /\b(?:cannot|can't|does not|doesn't)\s+(?:be\s+)?(?:mean|imply|constitute|establish)(?:\s+(?:an?|that|it\s+is))?\s*["'“‘]?$/iu.test(
+          prefix,
+        );
+      if (negated) continue;
+      const sourceAttributed =
+        /(?:厂家|制造商|波音|空客|商飞|Boeing|Airbus|COMAC)(?:在[^。；;]{0,60})?(?:的[^。；;]{0,30})?(?:称|表示|声明|说明|写明|报告|原文|立场)[^。；;]{0,80}$/iu.test(
+          prefix,
+        ) ||
+        /\b(?:Boeing|Airbus|COMAC|(?:the\s+)?manufacturer)\s+(?:states?|reports?|says?|notes?|describes?|wrote|said|stated)(?:\s+that)?[^.;]{0,80}$/iu.test(
+          prefix,
+        ) ||
+        /\baccording to\s+(?:Boeing|Airbus|COMAC|(?:the\s+)?manufacturer)[^.;]{0,80}$/iu.test(
+          prefix,
+        );
+      if (!sourceAttributed) return true;
+    }
+  }
+  return false;
 }
 
 function engineeringSummaryStatements(
   summary: Record<string, unknown>,
 ): string[] {
+  if (summary.schemaVersion === 'wiselink.3_1.overall_engineering_summary.v2') {
+    return [
+      text(summary.headline, 'OVERALL_HEADLINE_INVALID'),
+      text(summary.listBrief, 'OVERALL_LIST_BRIEF_INVALID'),
+      text(summary.lead, 'OVERALL_LEAD_INVALID'),
+      ...requiredArray(summary.claims, 'OVERALL_CLAIMS_INVALID').flatMap(
+        (value) => {
+          const claim = object(value, 'OVERALL_CLAIM_INVALID');
+          return [
+            text(claim.text, 'OVERALL_CLAIM_TEXT_INVALID'),
+            ...requiredArray(
+              claim.premises,
+              'OVERALL_CLAIM_PREMISES_INVALID',
+            ).flatMap((value) => {
+              const premise = object(value, 'OVERALL_CLAIM_PREMISE_INVALID');
+              return [
+                text(
+                  premise.explanation,
+                  'OVERALL_CLAIM_PREMISE_EXPLANATION_INVALID',
+                ),
+                ...(premise.limitation === null
+                  ? []
+                  : [
+                      text(
+                        premise.limitation,
+                        'OVERALL_CLAIM_PREMISE_LIMITATION_INVALID',
+                      ),
+                    ]),
+              ];
+            }),
+          ];
+        },
+      ),
+    ];
+  }
   const applicability = object(
     summary.applicability,
     'OVERALL_APPLICABILITY_SUMMARY_INVALID',
@@ -989,7 +1226,9 @@ function parseObject(
 ): Record<string, unknown> {
   try {
     return object(
-      readScope ? readScope.parseJson(bytes) : JSON.parse(new TextDecoder().decode(bytes)),
+      readScope
+        ? readScope.parseJson(bytes)
+        : JSON.parse(new TextDecoder().decode(bytes)),
       code,
     );
   } catch {

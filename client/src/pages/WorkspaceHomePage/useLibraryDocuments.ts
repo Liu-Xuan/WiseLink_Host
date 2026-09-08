@@ -19,8 +19,9 @@ export function useLibraryDocuments(
   sessionGeneration: number,
   authenticationRequired: boolean,
   refreshRevision: number,
-  mode: 'document' | 'matter',
+  mode: 'document' | 'tasks',
   familyId: string,
+  enabled = true,
 ) {
   const [read, setRead] = useState<LibraryDocumentsRead | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
@@ -28,7 +29,7 @@ export function useLibraryDocuments(
   const readPage = useCallback(
     async (cursor?: string): Promise<void> => {
       controllerRef.current?.abort();
-      if (authenticationRequired) return;
+      if (authenticationRequired || !enabled) return;
       if (!cursor) discardedRef.current = new Set();
       const controller: AbortController = new AbortController();
       controllerRef.current = controller;
@@ -51,7 +52,7 @@ export function useLibraryDocuments(
       );
       try {
         const readDirectory =
-          mode === 'matter'
+          mode === 'tasks'
             ? getCanonicalLibraryTasks
             : getCanonicalLibraryDocuments;
         const response = await readDirectory(
@@ -59,7 +60,7 @@ export function useLibraryDocuments(
             search,
             ...(cursor ? { cursor } : {}),
             limit: 24,
-            ...(mode === 'matter' && familyId ? { familyId } : {}),
+            ...(mode === 'tasks' && familyId ? { familyId } : {}),
           },
           controller.signal,
         );
@@ -82,7 +83,14 @@ export function useLibraryDocuments(
         }));
       }
     },
-    [authenticationRequired, search, sessionGeneration, mode, familyId],
+    [
+      authenticationRequired,
+      search,
+      sessionGeneration,
+      mode,
+      familyId,
+      enabled,
+    ],
   );
 
   useEffect(() => {
@@ -91,6 +99,7 @@ export function useLibraryDocuments(
   }, [readPage, refreshRevision]);
 
   const visible =
+    enabled &&
     !authenticationRequired &&
     read?.sessionGeneration === sessionGeneration &&
     read.search === search &&
@@ -114,7 +123,7 @@ export function useLibraryDocuments(
   return {
     items: visible?.items ?? [],
     nextCursor: visible?.nextCursor ?? null,
-    loading: visible?.loading ?? !authenticationRequired,
+    loading: visible?.loading ?? (enabled && !authenticationRequired),
     loadingMore: visible?.loadingMore ?? false,
     error: visible?.error ?? null,
     discard,

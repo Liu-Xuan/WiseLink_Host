@@ -11,6 +11,8 @@ import {
 } from 'lucide-react';
 
 import { Button } from '@client/src/components/ui/button';
+import SavedAssessmentReading from '@client/src/features/matter/SavedAssessmentReading';
+import type { DocumentAssessmentEvidence } from '@client/src/features/matter/assessment-reading';
 import {
   quicklookMarkdown,
   type EngineeringQuicklookView,
@@ -25,6 +27,7 @@ interface EngineeringQuicklookProps {
   onContinueReview: () => void;
   onOpenFamily: () => void;
   onLocateEvidence: (sourceRefId: string) => void;
+  onLocateDocument: (evidence: DocumentAssessmentEvidence) => void;
 }
 
 export default function EngineeringQuicklook({
@@ -36,6 +39,7 @@ export default function EngineeringQuicklook({
   onContinueReview,
   onOpenFamily,
   onLocateEvidence,
+  onLocateDocument,
 }: EngineeringQuicklookProps) {
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'error'>(
     'idle',
@@ -57,6 +61,8 @@ export default function EngineeringQuicklook({
       className="library-quicklook-panel"
       aria-label="工程快览"
       data-wl-material="g3"
+      data-result-ref={quicklook?.resultIdentity?.resultRef}
+      data-result-revision={quicklook?.resultIdentity?.revision}
     >
       <div className="library-panel-heading">
         <div>
@@ -114,92 +120,104 @@ export default function EngineeringQuicklook({
             <p className="library-quicklook-note">{quicklook.sourceReadNote}</p>
           ) : null}
 
-          <section className="library-quicklook-judgment">
-            <span>
-              <Sparkles aria-hidden="true" /> 当前候选判断
-            </span>
-            <p>{quicklook.currentJudgment}</p>
-          </section>
+          {quicklook.readingResult ? (
+            <SavedAssessmentReading
+              result={quicklook.readingResult}
+              onLocateDocument={onLocateDocument}
+            />
+          ) : (
+            <>
+              <section className="library-quicklook-judgment">
+                <span>
+                  <Sparkles aria-hidden="true" /> 当前候选判断
+                </span>
+                <p>{quicklook.currentJudgment}</p>
+              </section>
 
-          <dl className="library-quicklook-facts">
-            <div>
-              <dt>适用范围</dt>
-              <dd>{quicklook.applicabilitySummary}</dd>
-            </div>
-            <div>
-              <dt>为什么需要关注</dt>
-              <dd>{quicklook.whyItMatters}</dd>
-            </div>
-          </dl>
+              <dl className="library-quicklook-facts">
+                <div>
+                  <dt>适用范围</dt>
+                  <dd>{quicklook.applicabilitySummary}</dd>
+                </div>
+                <div>
+                  <dt>为什么需要关注</dt>
+                  <dd>{quicklook.whyItMatters}</dd>
+                </div>
+              </dl>
 
-          <section className="library-quicklook-section">
-            <h3>
-              <Link2 aria-hidden="true" /> 关键依据
-              {typeof quicklook.sourceCount === 'number' ? (
-                <small>{quicklook.sourceCount} 条来源</small>
-              ) : null}
-            </h3>
-            {quicklook.keyEvidence.length > 0 ? (
-              <ul>
-                {quicklook.keyEvidence.map((evidence, index: number) => (
-                  <li key={`${evidence.sourceRefId ?? 'evidence'}:${index}`}>
-                    {evidence.sourceRefId ? (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          onLocateEvidence(evidence.sourceRefId ?? '')
-                        }
-                      >
-                        <span>{evidence.label}</span>
-                        <ArrowRight aria-hidden="true" />
-                      </button>
-                    ) : (
-                      <span>{evidence.label}</span>
+              <section className="library-quicklook-section">
+                <h3>
+                  <Link2 aria-hidden="true" /> 关键依据
+                  {typeof quicklook.sourceCount === 'number' ? (
+                    <small>{quicklook.sourceCount} 条来源</small>
+                  ) : null}
+                </h3>
+                {quicklook.keyEvidence.length > 0 ? (
+                  <ul>
+                    {quicklook.keyEvidence.map((evidence, index: number) => (
+                      <li key={`statement:${index}`}>
+                        <p>{evidence.label}</p>
+                        {evidence.sourceRefIds.map(
+                          (sourceRefId: string, sourceIndex: number) => (
+                            <button
+                              key={`${sourceRefId}:${sourceIndex}`}
+                              type="button"
+                              onClick={() => onLocateEvidence(sourceRefId)}
+                            >
+                              <span>核对依据 {sourceIndex + 1}</span>
+                              <ArrowRight aria-hidden="true" />
+                            </button>
+                          ),
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="library-quicklook-missing">
+                    当前未返回可定位的关键依据。
+                  </p>
+                )}
+              </section>
+
+              <section className="library-quicklook-section is-warning">
+                <h3>
+                  <AlertTriangle aria-hidden="true" /> 未决问题
+                </h3>
+                {quicklook.unresolvedQuestions.length > 0 ? (
+                  <ul>
+                    {quicklook.unresolvedQuestions.map(
+                      (question: string, index: number) => (
+                        <li key={`${index}:${question}`}>{question}</li>
+                      ),
                     )}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="library-quicklook-missing">
-                当前未返回可定位的关键依据。
-              </p>
-            )}
-          </section>
+                  </ul>
+                ) : (
+                  <p className="library-quicklook-missing">
+                    当前没有明确返回的未决问题。
+                  </p>
+                )}
+              </section>
 
-          <section className="library-quicklook-section is-warning">
-            <h3>
-              <AlertTriangle aria-hidden="true" /> 未决问题
-            </h3>
-            {quicklook.unresolvedQuestions.length > 0 ? (
-              <ul>
-                {quicklook.unresolvedQuestions.map((question: string) => (
-                  <li key={question}>{question}</li>
-                ))}
-              </ul>
-            ) : (
-              <p className="library-quicklook-missing">
-                当前没有明确返回的未决问题。
-              </p>
-            )}
-          </section>
-
-          <section className="library-quicklook-section is-next">
-            <h3>
-              <Check aria-hidden="true" /> 建议下一步
-            </h3>
-            {quicklook.recommendedActions.length > 0 ? (
-              <ol>
-                {quicklook.recommendedActions.map((action: string) => (
-                  <li key={action}>{action}</li>
-                ))}
-              </ol>
-            ) : (
-              <p className="library-quicklook-missing">
-                可进入统一工作台继续查看原文、解析结果和复核状态。
-              </p>
-            )}
-          </section>
-
+              <section className="library-quicklook-section is-next">
+                <h3>
+                  <Check aria-hidden="true" /> 建议下一步
+                </h3>
+                {quicklook.recommendedActions.length > 0 ? (
+                  <ol>
+                    {quicklook.recommendedActions.map(
+                      (action: string, index: number) => (
+                        <li key={`${index}:${action}`}>{action}</li>
+                      ),
+                    )}
+                  </ol>
+                ) : (
+                  <p className="library-quicklook-missing">
+                    可进入统一工作台继续查看原文、解析结果和复核状态。
+                  </p>
+                )}
+              </section>
+            </>
+          )}
           <details className="library-quicklook-family">
             <summary>当前版本／派生产物</summary>
             <dl>

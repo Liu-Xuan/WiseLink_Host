@@ -1,4 +1,8 @@
 import type { FormEvent } from 'react';
+import type { AssessmentReadingResult } from '@shared/assessment-reading.interface';
+import AssessmentReadingListSummary, {
+  savedReadingSummary,
+} from '@client/src/features/matter/AssessmentReadingListSummary';
 import {
   ArrowRight,
   CircleAlert,
@@ -26,9 +30,10 @@ interface LibraryDocumentDirectoryProps {
   authenticationRequired: boolean;
   search: string;
   searchText: string;
-  mode: 'document' | 'matter';
+  mode: 'document' | 'tasks';
   selectedId: string;
   quicklookLoading: boolean;
+  selectedReadingResult?: AssessmentReadingResult | null;
   onSearchTextChange: (value: string) => void;
   onSearch: (event: FormEvent<HTMLFormElement>) => void;
   onRefresh: () => void;
@@ -43,12 +48,13 @@ export function LibraryDocumentDirectory({
   mode,
   selectedId,
   quicklookLoading,
+  selectedReadingResult,
   onSearchTextChange,
   onSearch,
   onRefresh,
   onSelect,
 }: LibraryDocumentDirectoryProps) {
-  const taskMode = mode === 'matter';
+  const taskMode = mode === 'tasks';
   const label = taskMode ? '评估任务' : '工程文档';
   return (
     <>
@@ -117,6 +123,17 @@ export function LibraryDocumentDirectory({
           <ul className="library-recent-rows" aria-label={label}>
             {directory.items.map((document) => {
               const itemId = libraryEntryId(document);
+              const summary =
+                document.kind === 'TASK'
+                  ? selectedId === itemId &&
+                    selectedReadingResult?.scope.kind === 'WORK_ITEM' &&
+                    selectedReadingResult.scope.workItemId ===
+                      document.workItemId &&
+                    selectedReadingResult.scope.documentVersionId ===
+                      document.documentVersionId
+                    ? savedReadingSummary(selectedReadingResult)
+                    : document.readingSummary
+                  : null;
               const version =
                 document.kind === 'DOCUMENT'
                   ? document.versions.find(
@@ -164,6 +181,9 @@ export function LibraryDocumentDirectory({
                             {document.workItemId.slice(-8)} ·{' '}
                             {byteLabel(document.byteLength)}
                           </small>
+                          {summary ? (
+                            <AssessmentReadingListSummary summary={summary} />
+                          ) : null}
                         </>
                       )}
                     </span>

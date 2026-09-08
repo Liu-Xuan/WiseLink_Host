@@ -8,6 +8,7 @@ import type {
   CanonicalSourceBoundEngineeringStatement,
   CanonicalWorkItemProjection,
 } from '@shared/api.interface';
+import type { AssessmentEvidence } from '@shared/assessment-reading.interface';
 import { ActionAttemptLifecycleService } from '../action-attempt/action-attempt-lifecycle.service';
 import { parseTaskEnvelope } from '../action-attempt/action-attempt-envelope';
 import type {
@@ -48,6 +49,11 @@ import {
   consumeOpenClawOverallSynthesisOutput,
   type OpenClawOverallSynthesisInput,
 } from './openclaw-overall-synthesis.processor';
+import {
+  buildOverallReadingEvidence,
+  projectOverallAssessmentReading,
+  readStoredOverallEvidence,
+} from './overall-assessment-reading';
 import { assertLatestOverallCandidate } from './selective-overall-resynthesis';
 import { preflightCanonicalHostOpenClawResult } from './canonical-host-openclaw-runtime-policy';
 import { canonicalHostBareSha256 } from './canonical-host-sha256';
@@ -318,14 +324,17 @@ export class CanonicalHostOpenClawOverallService {
     );
     try {
       void permissionSnapshotVersion;
-      const modelInput = storedOverallInput(
-        prepared.task.modelInput,
-      ).modelInput;
+      const storedInput = storedOverallInput(prepared.task.modelInput);
+      const modelInput = storedInput.modelInput;
       let output: string;
       let parsed: ReturnType<typeof consumeOpenClawOverallSynthesisOutput>;
       try {
         output = requiredModelOutput(prepared.result);
-        parsed = consumeOpenClawOverallSynthesisOutput(modelInput, output);
+        parsed = consumeOpenClawOverallSynthesisOutput(
+          modelInput,
+          output,
+          storedInput.readingEvidence,
+        );
       } catch (error) {
         const terminal = await this.attempts.finishResultGateFailure(
           prepared,
@@ -364,10 +373,25 @@ export class CanonicalHostOpenClawOverallService {
         actionAttemptId: attempt.attemptId,
         staleReason: null,
         overallCandidate: requiredText(parsed.overallCandidate),
-        engineeringSummary: overallEngineeringSummary(
-          parsed.engineeringSummary,
-        ),
-        findings: overallFindings(parsed.findings),
+        ...(requiredObject(parsed.engineeringSummary).schemaVersion ===
+        'wiselink.3_1.overall_engineering_summary.v2'
+          ? {
+              readingResult: projectOverallAssessmentReading({
+                summary: parsed.engineeringSummary,
+                evidenceRegistry: storedInput.readingEvidence!,
+                resultRef: requiredText(parsed.sourceResultId),
+                resultRevision:
+                  modelInput.selectiveResynthesis.targetOverallRevision,
+                workItemId: workItem.workItemId,
+                documentVersionId: workItem.source.documentVersionId,
+              }),
+            }
+          : {
+              engineeringSummary: overallEngineeringSummary(
+                parsed.engineeringSummary,
+              ),
+            }),
+        findings: overallFindings(parsed.findings, storedInput.readingEvidence),
         missingInputs: requiredTextArray(parsed.missingInputs),
         applicabilityStatus: requiredText(parsed.applicabilityStatus),
         engineeringReviewRequired: parsed.engineeringReviewRequired === true,
@@ -484,6 +508,7 @@ export class CanonicalHostOpenClawOverallService {
   ): Promise<{
     selectedDiscoveryRefs: string[];
     modelInput: OpenClawOverallSynthesisInput;
+    readingEvidence: AssessmentEvidence[];
   }> {
     const baseRules = workItem.integratedAssessment!.baseRules;
     const readScope: UnifiedArtifactReadScope = new UnifiedArtifactReadScope(
@@ -504,7 +529,7 @@ export class CanonicalHostOpenClawOverallService {
       packageBytes,
       dynamicCandidate,
       engineerReviewContext,
-      commonContext,
+      commonContextBuild,
     ] = await Promise.all([
       packetInput('OPENCLAW_OVERALL_BASE_ARTIFACT_READ_FAILED', () =>
         readScope.readActualBytes(baseRules.artifact),
@@ -527,7 +552,7 @@ export class CanonicalHostOpenClawOverallService {
       packetInput('OPENCLAW_OVERALL_ENGINEER_REVIEW_READ_FAILED', () =>
         this.engineerReviews.modelContext(workItem),
       ),
-      this.commonContext.buildForWorkItem(
+      this.commonContext.buildForWorkItemWithEvidence(
         workItem,
         attempt.tenantId,
         timestamp,
@@ -543,8 +568,16 @@ export class CanonicalHostOpenClawOverallService {
       dynamicCandidate.overall.context.criterionCards.flatMap(
         (criterion) => criterion.sourceEvidenceCandidates,
       );
+    const readingEvidence = buildOverallReadingEvidence({
+      workItem,
+      packageBytes,
+      engineerReviewContext,
+      relatedReadingEvidence: commonContextBuild.readingEvidence,
+      readScope,
+    });
     return {
       selectedDiscoveryRefs: discoveries.map((value) => value.searchRunRef),
+      readingEvidence,
       modelInput: buildOpenClawOverallSynthesisInput({
         workItem,
         baseRules,
@@ -553,7 +586,8 @@ export class CanonicalHostOpenClawOverallService {
         discoveries,
         sourceEvidenceCandidates,
         engineerReviewContext,
-        commonContext,
+        commonContext: commonContextBuild.common,
+        readingEvidence,
         readScope,
         outputCorrelationRef: attempt.triggerRequestId,
       }),
@@ -604,6 +638,7 @@ export class CanonicalHostOpenClawOverallService {
         );
         return {
           modelInput: structuredClone(packet.modelInput),
+          readingEvidence: structuredClone(packet.readingEvidence),
           selectedDiscoveryRefs: [...packet.selectedDiscoveryRefs],
           providerCodes: [...providerCodes],
           configurationEvidenceReevaluation:
@@ -1063,6 +1098,8 @@ export function overallUserRegenerationIdempotencyKey(
 
 interface StoredOverallTaskInput {
   modelInput: OpenClawOverallSynthesisInput;
+  /** Host source bindings are kept outside the model-facing input. */
+  readingEvidence?: AssessmentEvidence[];
   selectedDiscoveryRefs: string[];
   providerCodes: string[];
   configurationEvidenceReevaluation: {
@@ -1131,6 +1168,9 @@ function storedOverallInput(value: unknown): StoredOverallTaskInput {
   }
   return {
     modelInput: modelInput as unknown as OpenClawOverallSynthesisInput,
+    ...(record.readingEvidence !== undefined
+      ? { readingEvidence: readStoredOverallEvidence(record.readingEvidence) }
+      : {}),
     selectedDiscoveryRefs: [...record.selectedDiscoveryRefs] as string[],
     providerCodes: [...record.providerCodes] as string[],
     configurationEvidenceReevaluation,
@@ -1342,7 +1382,10 @@ function overallEngineeringSummary(
     nextActions: sourceBoundEngineeringStatements(summary.nextActions),
   };
 }
-function overallFindings(value: unknown): Array<{
+function overallFindings(
+  value: unknown,
+  readingEvidence?: AssessmentEvidence[],
+): Array<{
   finding: string;
   basis: string;
   sourceRefIds: string[];
@@ -1359,7 +1402,14 @@ function overallFindings(value: unknown): Array<{
     return {
       finding: requiredText(finding.finding),
       basis: requiredText(finding.basis),
-      sourceRefIds: requiredTextArray(finding.sourceRefIds),
+      sourceRefIds: requiredTextArray(finding.sourceRefIds).map((ref) => {
+        const evidence = readingEvidence?.find(
+          (item) => item.evidenceRef === ref,
+        );
+        return evidence && 'sourceRefId' in evidence
+          ? evidence.sourceRefId
+          : ref;
+      }),
       assumptions: requiredTextArray(finding.assumptions),
       uncertainty: requiredText(finding.uncertainty),
     };

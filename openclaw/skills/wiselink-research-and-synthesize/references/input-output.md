@@ -86,7 +86,7 @@ runtimePolicy.modelPolicyRef = official-hosted-profile-config
 ResultEnvelope.modelVersion = 官方托管 profile/config 本轮选择后的非空、可读实际模型
 Task.skillPolicyRef = wiselink-research-and-synthesize@r09
 ApplicabilityTask.runtimePolicy.skillVersion = wiselink-research-and-synthesize@r09  # v1 历史字段名，语义为兼容线
-ResultEnvelope.skillVersion = wiselink-research-and-synthesize@r09.c33       # 实际安装包版本
+ResultEnvelope.skillVersion = wiselink-research-and-synthesize@r09.c34       # 实际安装包版本
 toolVersions.wiselink-openclaw-engineering-assessment = 1.2.0
 promptVersion = 当前实际运行非空版本
 ```
@@ -310,6 +310,7 @@ engineerReviewContext{revision,artifactSha256,reviewCount,history,effective}
 externalDiscoveryResults
 selectiveResynthesis（Host 现有选择性重综合摘要）
 commonContext?（文件章节、关联背景、普通讨论；不替代 current 来源和正式采用记录）
+evidenceRegistry?（新任务：仅模型可见的证据元数据、实读文字和 evidenceRef，不含 Host 身份/存储绑定）
 ```
 
 同 criterion 多条 engineer review 必须保留连续 history，effective 为最后一条。它们是受控人工输入，不自动
@@ -327,14 +328,45 @@ engineeringReviewRequired=true
 ```
 
 并返回 overallCandidate、engineeringSummary、findings、missingInputs、applicabilityStatus、provider status 和
-计数。`engineeringSummary` 包含一句话工程结论、whyItMatters、applicability.sourceScope/fleetMatch/requiredFacts、
-implementationImpact、dispositionPriority 和 1–3 个 nextActions。每个陈述必须带至少一个当前 DocumentVersion
-SourceRef，并标明 `SOURCE_FACT` 或 `CONDITIONAL_INFERENCE`。`applicabilityStatus` 必须与 Host
+计数。有 evidenceRegistry 的新任务使用 engineeringSummary v2：headline、listBrief、lead、claims、decisiveClaimIds；
+overallCandidate 精确等于 lead。每条 claim 具有 claimId、text、SOURCE_FACT/CONDITIONAL_INFERENCE 和全部
+premises[{evidenceRef,role,explanation,limitation}]。role 为 SUPPORTS/LIMITS/CONTEXT/CONFLICTS；只能引用本轮
+registry。关联材料可独立支持判断，前提保留自己的真实载体身份；条件、否定和冲突用 decisiveClaimIds 保持可见。
+没有 registry 的历史任务保留 v1 字段。v2 不强制实施决定或固定动作数量。`applicabilityStatus` 必须与 Host
 `applicabilityResult` 一致；Host 已求值为 APPLICABLE/NOT_APPLICABLE 时不得改回人工复核或 UNKNOWN。缺当前
 候选或其 decision=UNKNOWN 时 applicability 保持 `UNKNOWN/WAITING_INPUT`，但仍形成初步工程综合候选；只列当前来源条件实际要求的缺失事实，不从其它文档带入
 设备、软件或构型名称，不得最终批准或发布。
 
 ## INTERACTIVE_REVIEW task
+
+c34 新增 `wiselink.3_1.review_turn_task.v1.c4`，toolPolicyRef 为
+`wiselink-openclaw-engineering-assessment@1.2.0#interactive-matter-review-c4`。新增必需 `matterContext` 封存
+Host 的 scope、title、workingState、readingEvidence、evidenceSources；其全部私有绑定都不转发模型。
+模型只接收 context.matterWorking 的 title、workingRevision、membershipRevisionRef、targetClaimId、currentResult、
+focus、openQuestions、reviewConditions、inputs、evidenceCatalog。输入别名 matter-input:N，读来源别名
+matter-source:N:N；DOCUMENT_PASSAGE providedText=null，必须调用读工具取得原文。非文档前提只有 Host 已提供
+providedText 才可使用。Host 仍返回相同 c2 context response envelope，因此 MCP 工具参数不变。
+
+对应 candidate 为 `wiselink.3_1.review_turn_candidate.v1.c4`，原字段保留并增加必需 matterWorkingDelta：
+
+```text
+null | {
+  updateKind: INITIAL_SYNTHESIS | CORRECTION | MATERIAL_INCORPORATION,
+  changeSummary,
+  nextFocus: {question,targetRefs} | null,
+  claimDelta: {changedBecause,additions,replacements,retirements,explicitlyUnchangedClaimIds} | null,
+  readingPresentation: {headline,listBrief,lead,decisiveClaimIds} | null,
+  openQuestionDelta: {upserts,retirements,explicitlyUnchangedItemIds} | null,
+  reviewConditionDelta: {upserts,retirements,explicitlyUnchangedItemIds} | null,
+  coverageUpdates: [{inputRef,checkedSourceRefIds,checkedScope,contribution,reason}]
+}
+```
+
+c4 的 reviewActionDraft 必须 null，affectedItemIds 必须 []；普通解释 delta=null。claimDelta 和
+readingPresentation 同时存在或同时 null。Host 用原文身份替换 task-local checked keys，按实际读记录核对范围，
+并在 COMMITTING 后同事务保存候选与事项工作版本。解释不推进版本；过时输入返回 BASIS_CHANGED 回执，不覆盖结果。
+required 工作内容不能来自私有 matterContext；外层 ResultEnvelope provenance 包含答复、变化 claim 和 coverage
+真正使用的 artifact ref/SHA。下面原 c2/c3 合同保持历史兼容。
 
 Host task schema：`wiselink.3_1.review_turn_task.v1.c2`。
 

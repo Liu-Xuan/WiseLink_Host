@@ -1,9 +1,13 @@
-import type { ReviewConversationReadModel } from '@shared/api.interface';
+import type {
+  AppendMatterReviewScope,
+  ReviewConversationReadModel,
+} from '@shared/api.interface';
 
 export interface ReviewSubmissionIntent {
   requestId: string;
   executionMode?: 'AUTOMATIC';
   modelRef?: string;
+  reviewScope?: AppendMatterReviewScope;
 }
 
 /** Host-declared support for this conversation, not a browser switch or a live health signal. */
@@ -24,11 +28,13 @@ export function reviewSubmissionIntent(
   requestId: string,
   conversation: ReviewConversationReadModel,
   modelRef?: string,
+  reviewScope?: AppendMatterReviewScope,
 ): ReviewSubmissionIntent {
   return (
     pending ?? {
       requestId,
       ...(modelRef ? { modelRef } : {}),
+      ...(reviewScope ? { reviewScope: { ...reviewScope } } : {}),
       ...(automaticReviewAvailable(conversation)
         ? { executionMode: 'AUTOMATIC' }
         : {}),

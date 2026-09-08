@@ -1,4 +1,7 @@
-import type { ReviewConversationReadModel } from '@shared/api.interface';
+import type {
+  AppendMatterReviewScope,
+  ReviewConversationReadModel,
+} from '@shared/api.interface';
 import {
   automaticReviewAvailable,
   reviewSubmissionIntent,
@@ -6,6 +9,47 @@ import {
 import { reviewOperationErrorPresentation } from '../../client/src/features/review/continuous-review-state';
 
 describe('new review turn automatic execution opt-in', () => {
+  it('copies the exact matter basis and target claim and preserves them through an uncertain retry', () => {
+    const scope: AppendMatterReviewScope = {
+      kind: 'ENGINEERING_MATTER',
+      matterId: 'M-1',
+      expectedWorkingRevision: 4,
+      targetClaimId: 'claim-a',
+    };
+    const pending = reviewSubmissionIntent(
+      null,
+      'REQ-M',
+      conversation(true),
+      'model-a',
+      scope,
+    );
+    scope.expectedWorkingRevision = 5;
+    scope.targetClaimId = 'claim-b';
+    expect(pending.reviewScope).toEqual({
+      kind: 'ENGINEERING_MATTER',
+      matterId: 'M-1',
+      expectedWorkingRevision: 4,
+      targetClaimId: 'claim-a',
+    });
+    expect(
+      reviewSubmissionIntent(
+        pending,
+        'REQ-NEXT',
+        conversation(false),
+        'model-b',
+        scope,
+      ),
+    ).toBe(pending);
+    expect(
+      reviewSubmissionIntent(
+        null,
+        'REQ-NEXT',
+        conversation(true),
+        'model-b',
+        scope,
+      ).reviewScope,
+    ).toEqual(scope);
+  });
   it('freezes the chosen model through an uncertain retry and allows a different model only for a new request', () => {
     const first = reviewSubmissionIntent(
       null,

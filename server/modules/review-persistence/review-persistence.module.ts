@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { EngineeringMatterModule } from '../canonical-host/engineering-matter.module';
 import { CanonicalModelSettingsModule } from '../model-settings/canonical-model-settings.module';
 
 import { IdentityModule } from '../identity/identity.module';
@@ -13,6 +14,7 @@ import { OrdinaryArtifactStorageModule } from '../unified-reader/ordinary-artifa
 
 @Module({
   imports: [
+    EngineeringMatterModule,
     CanonicalModelSettingsModule,
     ActionAttemptModule,
     IdentityModule,

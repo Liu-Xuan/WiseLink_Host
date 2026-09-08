@@ -21,12 +21,17 @@ import {
   REVIEW_MODEL_POLICY_REF,
   REVIEW_MINIMUM_COMPATIBLE_SKILL_VERSION,
   REVIEW_PROFILE_REF,
+  parseReviewTurnTaskContract,
 } from '../../server/modules/canonical-host/canonical-host-openclaw-review.contract';
 import { CanonicalHostOpenClawReviewService } from '../../server/modules/canonical-host/canonical-host-openclaw-review.service';
 import { taskModelSelection } from '../../server/modules/model-settings/canonical-model-catalog';
 import { CanonicalHostCommonContextService } from '../../server/modules/canonical-host/canonical-host-common-context.service';
 import { encodeReviewAttachmentParsedArtifact } from '../../server/modules/review-persistence/review-attachment-artifact';
 import type { UnifiedArtifactReadScope } from '../../server/modules/unified-reader/unified-artifact-read-scope';
+import type { PersistedReviewTurn } from '../../server/modules/review-persistence/review-conversation.repository';
+import type { EngineeringMatterWorkingBasis } from '../../server/modules/canonical-host/engineering-matter-working.service';
+import type { MatterWorkingDeltaProposal } from '../../server/modules/canonical-host/matter-review-candidate';
+import { materializeEngineeringMatterWorkingState } from '../../server/modules/canonical-host/engineering-matter-working-state';
 
 describe('CanonicalHostOpenClawReviewService', () => {
   it.each(['miaoda/minimax-m3', 'dli/gpt-5.6-sol'])(
@@ -827,6 +832,182 @@ describe('CanonicalHostOpenClawReviewService', () => {
       harness.conversations.persistOpenClawAssistantCandidate,
     ).toHaveBeenCalledTimes(1);
   });
+
+  it('builds a Matter task without base rules, keeps cross-document keys distinct and only sends text through actual reads', async () => {
+    const harness = reviewHarness(false, false, false, null, true);
+    const begin = await harness.service.begin('RC-1', 'request-1');
+    expect(begin.task.modelInput.schemaVersion).toBe(
+      'wiselink.3_1.review_turn_task.v1.c4',
+    );
+    expect(harness.engineerReviews.pageContext).not.toHaveBeenCalled();
+    const safe = JSON.stringify(begin.task.modelInput.context);
+    expect(safe).not.toContain('Primary passage.');
+    expect(safe).not.toContain('Related document evidence.');
+    expect(safe).not.toContain('WI-RELATED-1');
+    expect(safe).not.toContain('RT-1');
+    const refs = begin.task.modelInput.resourceRefs as Array<{
+      sourceRefId: string;
+    }>;
+    expect(refs.map((ref) => ref.sourceRefId)).toEqual([
+      'matter-source:1:1',
+      'matter-source:2:1',
+    ]);
+    await expect(
+      harness.service.readSourceRefs(
+        begin.attemptRef,
+        refs.map((ref) => ref.sourceRefId),
+      ),
+    ).resolves.toMatchObject({
+      sourceRefs: [
+        {
+          sourceRefId: 'matter-source:1:1',
+          quote: 'Primary passage.',
+          documentVersionRef: 'DV-1',
+        },
+        {
+          sourceRefId: 'matter-source:2:1',
+          quote: 'Related document evidence.',
+          documentVersionRef: 'DV-SL-1',
+        },
+      ],
+    });
+    expect(
+      harness.matterWorking.authorizeRuntimeWorkingBasis,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorId: 'actor-1',
+        matterId: 'MAT-1',
+        basedOnMatterRevisionId: 'MREV-1',
+      }),
+    );
+  });
+
+  it('persists a Matter explanation with an unchanged receipt on the actor-bound executor', async () => {
+    const harness = reviewHarness(false, false, false, null, true);
+    const begin = await harness.service.begin('RC-1', 'request-1');
+    const result = harness.result(begin.task, {
+      'wiselink-openclaw-engineering-assessment': '1.2.0',
+    });
+    const committed = await harness.service.commit(
+      begin.attemptRef,
+      begin.leaseToken,
+      begin.leaseGeneration,
+      result,
+    );
+    expect(committed).toMatchObject({
+      assistantCandidate: {
+        matterWorkingUpdate: { status: 'UNCHANGED', workingRevision: 0 },
+      },
+    });
+    expect(harness.executor.appendWorkingRevision).not.toHaveBeenCalled();
+    expect(
+      harness.conversations.persistOpenClawAssistantCandidate,
+    ).toHaveBeenCalledWith(expect.anything(), harness.executor.database);
+  });
+
+  it('commits a source-checked Matter patch atomically and preserves original source identity in the saved result', async () => {
+    const harness = reviewHarness(false, false, false, null, true);
+    const begin = await harness.service.begin('RC-1', 'request-1');
+    await harness.service.readSourceRefs(begin.attemptRef, [
+      'matter-source:1:1',
+    ]);
+    const result = matterResult(
+      harness.result(begin.task, {
+        'wiselink-openclaw-engineering-assessment': '1.2.0',
+      }),
+      initialMatterDelta(begin.task),
+    );
+    const committed = await harness.service.commit(
+      begin.attemptRef,
+      begin.leaseToken,
+      begin.leaseGeneration,
+      result,
+    );
+    expect(committed).toMatchObject({
+      assistantCandidate: {
+        matterWorkingUpdate: {
+          status: 'APPLIED',
+          workingRevision: 1,
+          resultChanged: true,
+        },
+      },
+    });
+    const command =
+      harness.executor.appendWorkingRevision.mock.calls[0][0].command;
+    expect(command.coverageUpdates[0].checkedSourceRefIds).toEqual(['SRC-1']);
+    expect(command.nextSubstantiveResult.evidence[0]).toMatchObject({
+      workItemId: 'WI-1',
+      documentVersionId: 'DV-1',
+      sourceRefId: 'SRC-1',
+    });
+    expect(
+      harness.executor.appendWorkingRevision.mock.invocationCallOrder[0],
+    ).toBeLessThan(
+      harness.conversations.persistOpenClawAssistantCandidate.mock
+        .invocationCallOrder[0],
+    );
+    expect(
+      harness.conversations.persistOpenClawAssistantCandidate,
+    ).toHaveBeenCalledWith(expect.anything(), harness.executor.database);
+  });
+
+  it('rejects a Matter claim whose source was catalogued but never read, before either business write', async () => {
+    const harness = reviewHarness(false, false, false, null, true);
+    const begin = await harness.service.begin('RC-1', 'request-1');
+    const result = matterResult(
+      harness.result(begin.task, {
+        'wiselink-openclaw-engineering-assessment': '1.2.0',
+      }),
+      initialMatterDelta(begin.task),
+    );
+    await expect(
+      harness.service.commit(
+        begin.attemptRef,
+        begin.leaseToken,
+        begin.leaseGeneration,
+        result,
+      ),
+    ).rejects.toThrow('REVIEW_MATTER_CITED_SOURCE_NOT_READ');
+    expect(harness.attempts.prepareCommit).not.toHaveBeenCalled();
+    expect(harness.executor.appendWorkingRevision).not.toHaveBeenCalled();
+    expect(
+      harness.conversations.persistOpenClawAssistantCandidate,
+    ).not.toHaveBeenCalled();
+  });
+
+  it('returns BASIS_CHANGED after a concurrent Matter edit and never overwrites that result', async () => {
+    const harness = reviewHarness(false, false, false, null, true);
+    const begin = await harness.service.begin('RC-1', 'request-1');
+    await harness.service.readSourceRefs(begin.attemptRef, [
+      'matter-source:1:1',
+    ]);
+    harness.executor.appendWorkingRevision.mockRejectedValue(
+      Object.assign(new Error('conflict'), {
+        code: 'ENGINEERING_MATTER_WORKING_CAS_CONFLICT',
+      }),
+    );
+    const result = matterResult(
+      harness.result(begin.task, {
+        'wiselink-openclaw-engineering-assessment': '1.2.0',
+      }),
+      initialMatterDelta(begin.task),
+    );
+    const committed = await harness.service.commit(
+      begin.attemptRef,
+      begin.leaseToken,
+      begin.leaseGeneration,
+      result,
+    );
+    expect(committed).toMatchObject({
+      assistantCandidate: {
+        matterWorkingUpdate: {
+          status: 'BASIS_CHANGED',
+          resultChanged: false,
+          reasonCode: 'ENGINEERING_MATTER_WORKING_CAS_CONFLICT',
+        },
+      },
+    });
+  });
 });
 
 function reviewHarness(
@@ -834,6 +1015,7 @@ function reviewHarness(
   withRelatedContext = false,
   withRelatedApplicability = false,
   selectedEvaluationItemId: string | null = null,
+  withMatter = false,
 ) {
   const workItem = parsedWorkItem();
   const relatedWorkItem: CanonicalWorkItemProjection = {
@@ -883,7 +1065,7 @@ function reviewHarness(
     lastActiveAt: new Date('2026-08-26T10:01:00.000Z'),
     closedAt: null,
   };
-  const turn = {
+  const turn: PersistedReviewTurn = {
     reviewTurnId: 'RT-1',
     reviewConversationId: 'RC-1',
     engineerSuppliedInputId: 'ESI-1',
@@ -918,6 +1100,41 @@ function reviewHarness(
     assistantCandidate: null,
     createdAt: new Date('2026-08-26T10:01:00.000Z'),
   };
+  const matterBasis: EngineeringMatterWorkingBasis = {
+    snapshot: {
+      matterId: 'MAT-1',
+      tenantId: 'tenant-1',
+      title: 'Display engineering question',
+      status: 'ACTIVE',
+      currentRevisionNo: 1,
+      currentMatterRevisionId: 'MREV-1',
+      changeKind: 'CREATED',
+      changeSummary: 'Create matter',
+      revisionCreatedAt: new Date(),
+      links: [],
+    },
+    currentInputs: [workItem, relatedWorkItem].map((item) => ({
+      inputId: item.workItemId,
+      workItemId: item.workItemId,
+      workItemRevision: item.revision,
+      documentVersionId: item.source.documentVersionId,
+      resultRef: null,
+      resultRevision: null,
+    })),
+    working: null,
+  };
+  if (withMatter) {
+    delete workItem.integratedAssessment;
+    turn.reviewScope = {
+      schemaVersion: 'wiselink.3_1.matter_review_scope.v1',
+      kind: 'ENGINEERING_MATTER',
+      matterId: 'MAT-1',
+      basedOnMatterRevisionId: 'MREV-1',
+      expectedWorkingRevision: 0,
+      targetClaimId: null,
+      inputs: structuredClone(matterBasis.currentInputs),
+    };
+  }
   let task: OpenClawTaskEnvelope | null = null;
   let row: ActionAttemptRow | null = null;
   const conversations = {
@@ -1143,7 +1360,7 @@ function reviewHarness(
               JSON.stringify({
                 sourceRefs: [
                   {
-                    sourceRefId: 'TARGET-SRC-1',
+                    sourceRefId: withMatter ? 'SRC-1' : 'TARGET-SRC-1',
                     pageStart: 1,
                     pageEnd: 1,
                     quote: 'Related document evidence.',
@@ -1153,11 +1370,20 @@ function reviewHarness(
             )
           : new TextEncoder().encode(
               JSON.stringify({
-                sourceRefs: [
-                  { sourceRefId: 'SRC-1', pageStart: 1, pageEnd: 1 },
-                  { sourceRefId: 'SRC-REL', pageStart: 2, pageEnd: 2 },
-                  { sourceRefId: 'SRC-UNUSED', pageStart: 2, pageEnd: 2 },
-                ],
+                sourceRefs: withMatter
+                  ? [
+                      {
+                        sourceRefId: 'SRC-1',
+                        pageStart: 1,
+                        pageEnd: 1,
+                        quote: 'Primary passage.',
+                      },
+                    ]
+                  : [
+                      { sourceRefId: 'SRC-1', pageStart: 1, pageEnd: 1 },
+                      { sourceRefId: 'SRC-REL', pageStart: 2, pageEnd: 2 },
+                      { sourceRefId: 'SRC-UNUSED', pageStart: 2, pageEnd: 2 },
+                    ],
               }),
             ),
     ),
@@ -1215,7 +1441,49 @@ function reviewHarness(
     isBusy: jest.fn().mockResolvedValue(false),
     readExecution: jest.fn().mockResolvedValue(null),
     prepareAndClaim: jest.fn(),
-    recordEvidenceActivity: jest.fn(),
+    recordEvidenceActivity: jest.fn(async (_row, entry) => {
+      if (withMatter)
+        row!.reviewActivityJson = JSON.stringify([
+          ...JSON.parse(row!.reviewActivityJson ?? '[]'),
+          entry,
+        ]);
+    }),
+  };
+  const matterWorking = {
+    authorizeRuntimeWorkingBasis: jest.fn(async () => matterBasis),
+  };
+  const executor = {
+    database: { name: 'actor-transaction' },
+    authorizeRuntimeInputs: jest.fn(async () => ({
+      currentMatterRevisionId: matterBasis.snapshot.currentMatterRevisionId,
+      currentInputs: matterBasis.currentInputs,
+    })),
+    loadCurrent: jest.fn(async () => matterBasis.working),
+    appendWorkingRevision: jest.fn(async (input) => {
+      const materialized = materializeEngineeringMatterWorkingState({
+        matterId: 'MAT-1',
+        current: matterBasis.working?.state ?? null,
+        command: input.command,
+      });
+      return {
+        revision: {
+          workingRevision: 1,
+          substantiveResultRef:
+            input.command.nextSubstantiveResult?.resultRef ?? null,
+          substantiveResultRevision:
+            input.command.nextSubstantiveResult?.resultRevision ?? null,
+          state: materialized.state,
+        },
+        replayed: false,
+        resultChanged: materialized.resultChanged,
+        coverageChanged: materialized.coverageChanged,
+      };
+    }),
+  };
+  const matterRepository = {
+    withActorTransaction: jest.fn(async (_actor, callback) =>
+      callback(executor),
+    ),
   };
   const service = new CanonicalHostOpenClawReviewService(
     conversations as never,
@@ -1233,6 +1501,8 @@ function reviewHarness(
       reader as never,
       documentManagement as never,
     ),
+    matterWorking as never,
+    matterRepository as never,
   );
   return {
     service,
@@ -1245,6 +1515,9 @@ function reviewHarness(
     serviceScope,
     artifactStore,
     reader,
+    matterWorking,
+    matterBasis,
+    executor,
     expireLease() {
       row = {
         ...row!,
@@ -1278,13 +1551,16 @@ function reviewHarness(
         businessOutcome: 'CANDIDATE_READY',
         candidateStatus: null,
         modelOutput: JSON.stringify({
-          schemaVersion: 'wiselink.3_1.review_turn_candidate.v1.c3',
+          schemaVersion: withMatter
+            ? 'wiselink.3_1.review_turn_candidate.v1.c4'
+            : 'wiselink.3_1.review_turn_candidate.v1.c3',
+          ...(withMatter ? { matterWorkingDelta: null } : {}),
           mode: 'INTERACTIVE_REVIEW',
           reviewConversationRef: 'RC-1',
           reviewTurnRef: 'RT-1',
           responseType: withDraft ? 'REVIEW_ACTION_DRAFT' : 'ANSWER',
           answer: 'Candidate answer.',
-          sourceRefs: ['SRC-1'],
+          sourceRefs: withMatter ? [] : ['SRC-1'],
           missingInputs: [],
           candidateEvidenceRefs: [],
           reviewActionDraft: withDraft
@@ -1342,6 +1618,72 @@ function reviewHarness(
       });
     },
   };
+}
+
+function initialMatterDelta(
+  task: OpenClawTaskEnvelope,
+): MatterWorkingDeltaProposal {
+  const context = parseReviewTurnTaskContract(task.modelInput).matterContext!;
+  const source = context.evidenceSources[0];
+  return {
+    updateKind: 'INITIAL_SYNTHESIS',
+    changeSummary: 'Record the source-supported display finding.',
+    nextFocus: { question: 'Which display condition matters?', targetRefs: [] },
+    claimDelta: {
+      changedBecause:
+        'The cited package passage identifies the display condition.',
+      additions: [
+        {
+          claimId: 'claim-display',
+          text: 'The source identifies a display condition.',
+          basis: 'SOURCE_FACT',
+          premises: [
+            {
+              evidenceRef: source.evidenceRef,
+              role: 'SUPPORTS',
+              explanation: 'The cited passage states the condition.',
+              limitation: null,
+            },
+          ],
+        },
+      ],
+      replacements: [],
+      retirements: [],
+      explicitlyUnchangedClaimIds: [],
+    },
+    readingPresentation: {
+      headline: 'Display condition',
+      listBrief: 'A display condition is identified.',
+      lead: 'The cited source identifies a display condition.',
+      decisiveClaimIds: ['claim-display'],
+    },
+    openQuestionDelta: null,
+    reviewConditionDelta: null,
+    coverageUpdates: [
+      {
+        inputRef: 'matter-input:1',
+        checkedSourceRefIds: [source.sourceRefId],
+        checkedScope: 'page 1, display passage',
+        contribution: 'SUBSTANTIVE',
+        reason: 'Supports the recorded display finding.',
+      },
+    ],
+  };
+}
+
+function matterResult(
+  result: OpenClawResultEnvelope,
+  delta: MatterWorkingDeltaProposal,
+): OpenClawResultEnvelope {
+  const { contentHash: _hash, ...fields } = result;
+  return sealResultEnvelope({
+    ...fields,
+    modelOutput: JSON.stringify({
+      ...JSON.parse(result.modelOutput!),
+      sourceRefs: ['matter-source:1:1'],
+      matterWorkingDelta: delta,
+    }),
+  });
 }
 
 function actionAttemptRow(task: OpenClawTaskEnvelope): ActionAttemptRow {
