@@ -44,11 +44,18 @@ export async function consumeHostedWorkItem(options, dependencies) {
     workItemId: options.workItemId,
   });
   let initial = readInitialStatus(statusResult, options.workItemId);
-  if (initialComplete(initial)) {
-    return (dependencies.consumeReview ?? consumePendingReviewTurn)(
+  if (initial.status !== 'BUSY' && initial.status !== 'NOT_READY') {
+    // An explicit Review is an independent request. In particular, a Matter
+    // review can assess parsed material before JobAid/Overall are available.
+    // The Host still validates the queued turn's scope and prerequisites.
+    const review = await (dependencies.consumeReview ?? consumePendingReviewTurn)(
       { ...options, checkpointRoot: join(options.checkpointRoot, 'review') },
       { callTool: dependencies.callTool, invokeModel: dependencies.invokeReviewModel },
     );
+    if (initialComplete(initial)) return review;
+    if (review.status !== 'IDLE') {
+      return { ...review, initialStatus: initial.status, initialStages: initial.stages };
+    }
   }
   const limit = options.maxInitialStages ?? INITIAL_ANALYSIS_OPERATIONS.length;
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > INITIAL_ANALYSIS_OPERATIONS.length) throw new Error('INITIAL_STAGE_LIMIT_INVALID');

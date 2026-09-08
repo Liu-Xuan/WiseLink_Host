@@ -1,4 +1,10 @@
-# 官方托管 R10 c34 发布与 UAT runbook
+# 官方托管 R10 c35 发布与 UAT runbook
+
+c35 为 M3 JobAid 显式申请 32000 completion tokens：c34 的真实 150 项调用未设置该请求参数，上游
+以 `length` 结束且无可用候选，Gateway 返回 `incomplete_result`。全部准则、输入、校验、原操作时限与模型
+选择保留，是否完成仍须正常新请求实测。统一消费者同时优先处理工程师明确排队的 Review；Matter Review
+可基于已解析材料独立执行，初始失败及已有 checkpoint 保留，未排队时不调用模型或重放失败。
+本修订兼容已发布 c34 Host，暂停并核对唯一消费者空闲后，只更新同名 Skill，再恢复自然调度。
 
 c34 同批接入 Overall v2 保存阅读结果、Matter c4 连续工作增量和翻译收敛尾段逐单元纠正。保留旧任务合同，
 先安装兼容 c34，再迁移 0023、发布 Host/前端，最后用正常新请求恢复唯一消费者自然调度。
@@ -107,7 +113,7 @@ c24 可选控制元数据兼容旧任务，但旧 Skill 不接受新字段，因
    优先读回非空、可识别的实际 `modelVersion`；响应未提供时，绑定任务记录 `configured-route:<modelRef>`，旧任务才使用唯一 configured endpoint。它们只证明路由，不解释为未暴露的下游具体模型。重复 agent、
    不可读 primary、fallbacks 非数组或非空均在调用模型前停止；
 4. 同名 Skill 只有一个，安装版本精确
-   `wiselink-research-and-synthesize@r09.c34`；
+   `wiselink-research-and-synthesize@r09.c35`；
 5. Host MCP package/version 为
    `wiselink-openclaw-engineering-assessment@1.2.0`，exact 20 tools 可见；
 6. C3 successor 已进入 current Hosted release；只凭 Git commit 不等于 deployed readback；

@@ -21,16 +21,69 @@ async function options(t) {
   return { workItemId: 'WI-new', checkpointRoot, applicabilityContextRef: 'AC-authorized', maxInitialStages: 1 };
 }
 
-test('not ready, busy and failed Host stages do not dispatch a model or operation', async (t) => {
+test('not ready and busy Host stages do not query or dispatch Review', async (t) => {
   const input = await options(t);
-  for (const state of ['NOT_READY', 'BUSY', 'FAILED', 'CONFLICT']) {
+  for (const state of ['NOT_READY', 'BUSY']) {
     const result = await consumeHostedWorkItem(input, {
       callTool: async () => status({ status: state, nextOperation: null }),
       runInitial: () => assert.fail('Must not dispatch an initial stage'),
       consumeReview: () => assert.fail('Must not dispatch review'),
     });
-    assert.equal(result.status, ['NOT_READY', 'BUSY'].includes(state) ? state : 'REQUIRES_ATTENTION');
+    assert.equal(result.status, state);
   }
+});
+
+test('failed initial stages remain attention when no explicit Review is queued', async (t) => {
+  const input = await options(t);
+  for (const state of ['FAILED', 'CONFLICT']) {
+    const calls = [];
+    const result = await consumeHostedWorkItem(input, {
+      callTool: async (name) => {
+        calls.push(name);
+        if (name === 'get_parse_status') return status({ status: state, nextOperation: null });
+        if (name === 'get_pending_review_turn') return { next: null, busy: false };
+        assert.fail(name);
+      },
+      runInitial: () => assert.fail('Must not replay an initial stage'),
+      invokeReviewModel: () => assert.fail('An idle Review check must not call the model'),
+    });
+    assert.equal(result.status, 'REQUIRES_ATTENTION');
+    assert.equal(result.initialStatus, state);
+    assert.deepEqual(calls, ['get_parse_status', 'get_pending_review_turn']);
+  }
+});
+
+test('explicit Matter Review proceeds independently and retains failed initial status', async (t) => {
+  const input = await options(t);
+  const failed = status({ status: 'FAILED', nextOperation: null });
+  const result = await consumeHostedWorkItem(input, {
+    callTool: async (name) => {
+      assert.equal(name, 'get_parse_status');
+      return failed;
+    },
+    consumeReview: async (value, dependencies) => {
+      assert.equal(value.workItemId, input.workItemId);
+      assert.equal(value.checkpointRoot, join(input.checkpointRoot, 'review'));
+      assert.equal(typeof dependencies.callTool, 'function');
+      return { status: 'CANDIDATE_SAVED', reviewTurnRef: 'RT-matter' };
+    },
+    runInitial: () => assert.fail('Review must never replay the failed initial stage'),
+  });
+  assert.equal(result.status, 'CANDIDATE_SAVED');
+  assert.equal(result.reviewTurnRef, 'RT-matter');
+  assert.equal(result.initialStatus, 'FAILED');
+  assert.deepEqual(result.initialStages, failed.initialAnalysis.stages);
+});
+
+test('an explicit queued Review precedes pending automatic initial work', async (t) => {
+  const input = await options(t);
+  const result = await consumeHostedWorkItem(input, {
+    callTool: async () => status(),
+    consumeReview: async () => ({ status: 'BUSY' }),
+    runInitial: () => assert.fail('Must not start initial work while Review is busy'),
+  });
+  assert.equal(result.status, 'BUSY');
+  assert.equal(result.initialStatus, 'REQUIRED');
 });
 
 test('one tick runs only the next Host stage and persists its exact binding', async (t) => {
@@ -42,6 +95,7 @@ test('one tick runs only the next Host stage and persists its exact binding', as
   const heartbeat = async () => { renewed++; };
   const result = await consumeHostedWorkItem(input, {
     callTool: async (name) => {
+      if (name === 'get_pending_review_turn') return { next: null, busy: false };
       if (name === 'get_parse_status') return saved ? status({
         workItemRevision: 3, nextOperation: 'EXTRACT_APPLICABILITY',
         stages: { ...status().initialAnalysis.stages, translation: { status: 'SUCCEEDED' } },
@@ -103,6 +157,7 @@ test('pre-commit failure cancels once; unknown final commit never cancels or rep
     const dependencies = {
       callTool: async (name) => {
         calls.push(name);
+        if (name === 'get_pending_review_turn') return { next: null, busy: false };
         if (name === 'get_parse_status') return status();
         if (name === 'begin_translation') return { status: 'RUNNING', attemptRef: 'AQ-new' };
         if (name === 'commit_translation_candidate') throw new Error('TRANSPORT_RESPONSE_LOST');
@@ -138,6 +193,7 @@ test('translation rejection diagnostics survive attempt cancellation and cannot 
   let models = 0;
   const dependencies = {
     callTool: async (name) => {
+      if (name === 'get_pending_review_turn') return { next: null, busy: false };
       if (name === 'get_parse_status') return status();
       if (name === 'begin_translation') return { status: 'RUNNING', attemptRef: 'AQ-new' };
       if (name === 'cancel_action_attempt') { cancelled++; return { status: 'CANCELLED' }; }
@@ -171,6 +227,7 @@ test('one tick drains ready stages with fresh Host revisions and serial commits'
   const started = [];
   const result = await consumeHostedWorkItem(input, {
     callTool: async (name) => {
+      if (name === 'get_pending_review_turn') return { next: null, busy: false };
       assert.equal(name, 'get_parse_status');
       const stages = { applicability: { status: 'WAITING_INPUT' },
         ...Object.fromEntries(keys.map((key, index) => [key, { status: index < saved ? 'SUCCEEDED' : 'PENDING' }])) };

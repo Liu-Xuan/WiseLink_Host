@@ -262,6 +262,39 @@ test('selected model cannot inject headers, carry credentials, or silently use a
   assert.throws(() => validatePayload('task-envelope', task));
 });
 
+test('M3 JobAid has a bounded output budget and preserves the complete criterion input and output', async () => {
+  const modelInput = await readJson(DYNAMIC_FIXTURE_URL);
+  const candidate = buildDynamicRulesOutput(modelInput);
+  for (const modelRef of ['miaoda/minimax-m3', 'dli/gpt-5.6-sol']) {
+    let calls = 0;
+    const observed = [];
+    const result = await invokeInitialWithTransport({ operation: 'EVALUATE_JOBAID', modelInput }, {
+      gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', gatewayChatCompletionsEnabled: true,
+      configuredModelVersion: 'miaoda/minimax-m3', sessionDiscriminator: 'job-aid-budget-fixture',
+      executionModel: modelSelection(modelRef), registeredModelRefs: ['miaoda/minimax-m3', 'dli/gpt-5.6-sol'],
+      observeModelOutput: (value) => observed.push(value),
+    }, {
+      requestGateway: async (_url, init) => {
+        calls += 1;
+        const request = JSON.parse(init.body);
+        assert.equal(init.headers['x-openclaw-model'], modelRef);
+        assert.equal(request.max_completion_tokens, modelRef === 'miaoda/minimax-m3' ? 32_000 : undefined);
+        assert.deepEqual(JSON.parse(request.messages[1].content), modelInput);
+        return Response.json({ model: 'openclaw/wiselink-engineering', choices: [{ message: {
+          content: null,
+          tool_calls: [{ type: 'function', function: {
+            name: 'return_wiselink_initial_candidate', arguments: JSON.stringify({ candidate }),
+          } }],
+        } }] });
+      },
+    });
+    assert.equal(calls, 1);
+    assert.deepEqual(result.output, candidate);
+    assert.equal(observed[0].requestedMaxCompletionTokens, modelRef === 'miaoda/minimax-m3' ? 32_000 : null);
+    assert.equal(result.provenance.modelVersion, `configured-route:${modelRef}`);
+  }
+});
+
 test('official initial model adapter validates all four operation outputs without sending control bindings', async (t) => {
   const originalFetch = globalThis.fetch;
   t.after(() => { globalThis.fetch = originalFetch; });
@@ -1123,7 +1156,7 @@ test('pins exact20 MCP 1.2, five review tools, and hosted provenance', () => {
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c34',
+    'wiselink-research-and-synthesize@r09.c35',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -4351,7 +4384,7 @@ test('offers source reading and one final candidate function with blank assistan
   assert.equal(result.provenance.modelVersion, 'openai-codex/gpt-5.4');
   assert.equal(
     result.provenance.promptVersion,
-    'wiselink.3_1.review_prompt.v1.c34',
+    'wiselink.3_1.review_prompt.v1.c35',
   );
 });
 
@@ -4404,7 +4437,7 @@ test('falls back to the configured model and records only output shape v2', asyn
   assert.equal(result.provenance.modelVersion, 'provider/configured');
   assert.equal(
     result.provenance.promptVersion,
-    'wiselink.3_1.review_prompt.v1.c34',
+    'wiselink.3_1.review_prompt.v1.c35',
   );
   assert.equal(
     outputShape.schemaVersion,

@@ -40,9 +40,12 @@ node <installed-skill-path>/scripts/consume-hosted-work-item.mjs --work-item-id 
 c24 每个 tick 默认最多连续执行 Host 指定的四个已就绪初始阶段；每次写回后 fresh-read，再开始下一阶段。
 满 15 分钟后不再启动新阶段，已执行步骤不重放；c32 要求原生唯一 cron 的 timeout 为 60 分钟，以容纳
 有界 45 分钟全文翻译及提交。翻译每轮通过原 Host heartbeat 续租；原 lease/deadline 不变。依赖计算与同一事项的
-CAS 写回仍有序，独立资料读取有限并行。四阶段完成后的后续 tick 转入既有 Review 消费者。
+CAS 写回仍有序，独立资料读取有限并行。c35 在非 BUSY/NOT_READY 时先检查工程师显式排队的 Review，
+有请求即交给原 Review 消费者，并由 Host 验证其实际范围与前提；无请求才推进初始阶段。
+Matter Review 可以独立使用已解析材料，不以 JobAid/Overall 完成为前提。初始失败状态和阶段摘要继续返回，
+既有失败与 checkpoint 保留，不因 Review 成功而重放或改写初始阶段。
 Host 缺少受控适用性事实时，保留 WAITING_INPUT 并允许后续 JobAid/Overall 形成条件性候选。BUSY/NOT_READY
-零模型调用；FAILED/CONFLICT、阶段状态漂移或不确定结果均停止报告，不新建失败重试。阶段 requestId 及已有
+零模型调用；FAILED/CONFLICT 不自动重试，阶段状态漂移或不确定结果均停止报告。阶段 requestId 及已有
 remote-step checkpoint 保存在 `.openclaw/wiselink-work-item-runs/<WorkItem>/initial/<operation>`，权限沿用
 0700/0600；已开始的模型步骤不会因原生 tick 或重启再次运行。完成记录与 Host 当前投影不一致时报告漂移，不覆盖旧记录。
 
