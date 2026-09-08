@@ -150,6 +150,15 @@ export function reviewOperationErrorPresentation(
   const message = errorMessage(reason);
   const code = recordString(error, 'code');
   const statusCode = recordNumber(error, 'statusCode');
+  if (code === 'OFFICIAL_OAUTH_SESSION_REQUIRED') {
+    return {
+      title: '需要连接飞书身份',
+      message: '工程身份连接缺失或已过期。连接后返回本事项继续复核。',
+      code,
+      retryable: null,
+      operatorAction: null,
+    };
+  }
   const searchable = `${code ?? ''} ${message} ${statusCode ?? ''}`;
   let userMessage = '本次复核操作未完成，当前输入仍保留。';
   if (/LOGIN|IDENTITY|OAUTH|UNAUTHORIZED|401/iu.test(searchable)) {

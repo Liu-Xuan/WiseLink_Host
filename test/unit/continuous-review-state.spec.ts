@@ -119,6 +119,16 @@ describe('continuous review client state', () => {
     expect(source).toContain('[readCurrent, workItemRevision]');
   });
 
+  it('requests engineering identity connection while withholding protected readback', () => {
+    const error = { code: 'OFFICIAL_OAUTH_SESSION_REQUIRED', statusCode: 401 };
+    expect(reviewErrorRevokesReadback(error)).toBe(true);
+    expect(reviewOperationErrorPresentation(error, 'refresh')).toMatchObject({
+      title: '需要连接飞书身份',
+      message: '工程身份连接缺失或已过期。连接后返回本事项继续复核。',
+      code: 'OFFICIAL_OAUTH_SESSION_REQUIRED',
+    });
+  });
+
   it('clears inaccessible readback but preserves it on temporary refresh failure', () => {
     expect(reviewErrorRevokesReadback({ statusCode: 403 })).toBe(true);
     expect(

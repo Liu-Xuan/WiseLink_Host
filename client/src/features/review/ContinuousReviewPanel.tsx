@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useWorkbenchPanelActive } from '@client/src/features/workbench/RetainedWorkbenchPanel';
 import { useDropzone } from 'react-dropzone';
 import {
@@ -878,61 +879,67 @@ export default function ContinuousReviewPanel({
           <div>
             <strong>{error.title}</strong>
             <span>{error.message}</span>
-            <dl>
-              <div>
-                <dt>错误码</dt>
-                <dd>{error.code ?? 'UNAVAILABLE'}</dd>
-              </div>
-              <div>
-                <dt>重试语义</dt>
-                <dd>
-                  {error.retryable === true
-                    ? 'Host 允许原样重试'
-                    : error.retryable === false
-                      ? 'Host 不允许原样重试'
-                      : 'Host 未返回'}
-                </dd>
-              </div>
-              {error.operatorAction ? (
+            {error.code === 'OFFICIAL_OAUTH_SESSION_REQUIRED' ? (
+              <Button asChild>
+                <Link to="/client/oauth/callback">连接飞书身份</Link>
+              </Button>
+            ) : (
+              <dl>
                 <div>
-                  <dt>运维动作</dt>
-                  <dd>{error.operatorAction}</dd>
+                  <dt>错误码</dt>
+                  <dd>{error.code ?? 'UNAVAILABLE'}</dd>
                 </div>
-              ) : null}
-              {!error.code?.startsWith('REVIEW_PDF_') ? (
-                <>
+                <div>
+                  <dt>重试语义</dt>
+                  <dd>
+                    {error.retryable === true
+                      ? 'Host 允许原样重试'
+                      : error.retryable === false
+                        ? 'Host 不允许原样重试'
+                        : 'Host 未返回'}
+                  </dd>
+                </div>
+                {error.operatorAction ? (
                   <div>
-                    <dt>前端源码</dt>
-                    <dd>{runtimeBuildFingerprint.sourceCommit}</dd>
+                    <dt>运维动作</dt>
+                    <dd>{error.operatorAction}</dd>
                   </div>
-                  <div>
-                    <dt>Host 部署</dt>
-                    <dd>
-                      {errorFingerprintReading
-                        ? '正在读取…'
-                        : (errorFingerprint?.deployedCommit ?? 'UNAVAILABLE')}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Release</dt>
-                    <dd>
-                      {errorFingerprintReading
-                        ? '正在读取…'
-                        : (errorFingerprint?.releaseId ?? 'UNAVAILABLE')}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>API 合同</dt>
-                    <dd>
-                      {errorFingerprintReading
-                        ? '正在读取…'
-                        : (errorFingerprint?.apiContractVersion ??
-                          'UNAVAILABLE')}
-                    </dd>
-                  </div>
-                </>
-              ) : null}
-            </dl>
+                ) : null}
+                {!error.code?.startsWith('REVIEW_PDF_') ? (
+                  <>
+                    <div>
+                      <dt>前端源码</dt>
+                      <dd>{runtimeBuildFingerprint.sourceCommit}</dd>
+                    </div>
+                    <div>
+                      <dt>Host 部署</dt>
+                      <dd>
+                        {errorFingerprintReading
+                          ? '正在读取…'
+                          : (errorFingerprint?.deployedCommit ?? 'UNAVAILABLE')}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Release</dt>
+                      <dd>
+                        {errorFingerprintReading
+                          ? '正在读取…'
+                          : (errorFingerprint?.releaseId ?? 'UNAVAILABLE')}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>API 合同</dt>
+                      <dd>
+                        {errorFingerprintReading
+                          ? '正在读取…'
+                          : (errorFingerprint?.apiContractVersion ??
+                            'UNAVAILABLE')}
+                      </dd>
+                    </div>
+                  </>
+                ) : null}
+              </dl>
+            )}
             {activeRequestId ? (
               <small>
                 当前输入与 requestId {shortRequestId(activeRequestId)}
