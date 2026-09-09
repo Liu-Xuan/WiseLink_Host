@@ -6,6 +6,19 @@ const object = (properties) => ({ type: 'object', properties });
 const choice = (...values) => ({ type: 'string', enum: values });
 const nullable = (schema) => ({ ...schema, nullable: true });
 const classification = (...labels) => nullable(object({ label: choice(...labels), reason: text, basisRefs: texts }));
+
+// Function tools consume JSON Schema, not OpenAPI's nullable extension. The
+// native validator rejected legitimate null limitations as short strings.
+// Keep the internal shape for decoding/diagnostics, and express the same union
+// explicitly at the tool boundary without changing or coercing model values.
+export function jobAidFunctionSchema(shape) {
+  if (Array.isArray(shape)) return shape.map(jobAidFunctionSchema);
+  if (!shape || typeof shape !== 'object') return shape;
+  const { nullable: allowsNull, ...rest } = shape;
+  const schema = Object.fromEntries(Object.entries(rest).map(([key, value]) => [key, jobAidFunctionSchema(value)]));
+  return allowsNull ? { anyOf: [schema, { type: 'null' }] } : schema;
+}
+
 export const JOBAID_WORK_UPDATE_SHAPE = object({
   schemaVersion: choice('wiselink.jobaid-problem-work.v2'),
   headline: text, listBrief: text, understanding: text, decisiveIssueKeys: texts,

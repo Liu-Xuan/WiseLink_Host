@@ -83,6 +83,8 @@ JobAid v2 复核在驱动提供逐请求 Host 续租回调时，使用与初始�
 
 JobAid v2 的模型 candidate 只生成答复、引用、问题与工作更新。`reviewActionDraft` 和 `affectedItemIds` 不属于模型函数参数，若模型显式提供则拒绝；驱动在既有完整候选契约中绑定固定的 `null` 与 `[]`。无工作变化时模型可省略 `jobAidWorkingDelta`，驱动按协议绑定 `null`。正文来源放在 `sourceRefs` 或工作认识的依据字段；`candidateEvidenceRefs` 仅限本轮已读取的工程师附件，无附件时必须为空。完整候选仍经过原校验与 Host 事务。
 
+JobAid 复核的答复字段直接位于函数参数根部，不再包裹 `candidate`；工作字段仅放入 `jobAidWorkingDelta`，问题字段仅放入其 `issues`。旧包装、错位字段、额外字段和缺少必填字段均拒绝，不合并或丢弃模型数据。初始分析和复核的函数参数使用标准 JSON Schema `anyOf` 声明可空值，避免原生校验将内部 `nullable` 标注下的合法 `null` 误判为空字符串；空字符串、错误类型和无效枚举仍被拒绝。
+
 明确的 Host MCP 提交拒绝不会被当作成功：只有同一 attempt 的只读结果确认 RUNNING、commitStartedAt/resultContentHash 均为空、projectionApplied/recoveryAvailable 均为 false 时，消费者才调用现有原子取消接口，保存失败原因并结束本候选。网络结果不明、状态读回失败、身份不符或已进入提交阶段均不取消、不重放；Host 的 COMMITTING 截止点继续防止竞争取消。
 
 进程重启后，如已存在明确 Host 拒绝的 commit.error，先核对其与原 commit.started 的调用摘要，以及原 begin.result 与当前请求的绑定，再实时读取同一 attempt。只有当前仍明确未进入提交阶段时才结束失败候选；保留原始检查点，追加本次状态读回，不用新 Skill 版本重新生成旧 ResultEnvelope，也不重放模型或提交。旧状态快照不能授权取消。

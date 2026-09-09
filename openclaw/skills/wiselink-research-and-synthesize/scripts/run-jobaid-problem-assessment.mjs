@@ -1,4 +1,4 @@
-import { jobAidWorkTypeErrors, jobAidWorkDependencyErrors, JOBAID_STEP_SHAPE, decodeJobAidStep } from './jobaid-work-shape.mjs';
+import { jobAidWorkTypeErrors, jobAidWorkDependencyErrors, JOBAID_STEP_SHAPE, decodeJobAidStep, jobAidFunctionSchema } from './jobaid-work-shape.mjs';
 import { randomUUID } from 'node:crypto';
 import {
   M3_MAX_COMPLETION_TOKENS,
@@ -145,7 +145,7 @@ export async function invokeHostedJobAidProblemModel(
                 type: 'object',
                 additionalProperties: false,
                 required: ['step'],
-                properties: { step: JOBAID_STEP_SHAPE },
+                properties: { step: jobAidFunctionSchema(JOBAID_STEP_SHAPE) },
               },
             },
           },
