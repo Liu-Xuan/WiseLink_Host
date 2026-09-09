@@ -57,7 +57,9 @@ describe('canonical Host workbench projection', () => {
         expect.objectContaining({ mode: 'bilingual', status: 'UNAVAILABLE' }),
       ]),
     );
-    expect(capabilities[0].note).toContain('PDF 页面预览');
+    expect(capabilities.find((item) => item.mode === 'source')?.note).toContain(
+      'PDF 页面预览',
+    );
     expect(capabilities[2].note).toContain('尚无可核验的译文');
   });
 
@@ -89,11 +91,15 @@ describe('canonical Host workbench projection', () => {
       readerProjection: projection,
     });
 
-    expect(capabilities[0]).toEqual(
+    expect(capabilities.find((item) => item.mode === 'source')).toEqual(
       expect.objectContaining({ mode: 'source', status: 'AVAILABLE' }),
     );
-    expect(capabilities[0].note).toContain('完整读取');
-    expect(capabilities[0].note).not.toContain('按页加载');
+    expect(capabilities.find((item) => item.mode === 'source')?.note).toContain(
+      '完整读取',
+    );
+    expect(
+      capabilities.find((item) => item.mode === 'source')?.note,
+    ).not.toContain('按页加载');
   });
 
   it('uses Host Reader locators and business assessment content without a second source', () => {

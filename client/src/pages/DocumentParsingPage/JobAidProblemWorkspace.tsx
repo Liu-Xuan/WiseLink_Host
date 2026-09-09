@@ -1,42 +1,43 @@
-import { useEffect, useState, type ReactNode } from 'react';
-import { readJobAidAssessmentWork } from '@client/src/api/canonical-host';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { getCanonicalHostClientSessionGeneration } from '@client/src/api/canonical-host';
 import { Button } from '@client/src/components/ui/button';
-import { useWorkbenchPanelActive } from '@client/src/features/workbench/RetainedWorkbenchPanel';
-import AssessmentEvidenceContext from '@client/src/features/matter/AssessmentEvidenceContext';
+import InitialAnalysisContinueButton from '@client/src/features/review/InitialAnalysisContinueButton';
 import SavedAssessmentReading from '@client/src/features/matter/SavedAssessmentReading';
 import type { DocumentAssessmentEvidence } from '@client/src/features/matter/assessment-reading';
+import type {
+  CanonicalInitialAnalysisReadModel,
+  CanonicalOpenClawOverallProjection,
+} from '@shared/api.interface';
 import {
   jobAidReadingResult,
   type JobAidWorkingReadModel,
 } from '@shared/jobaid-problem-assessment.interface';
+import {
+  JobAidEvidenceDetails,
+  JobAidIssueArticle,
+  JobAidRequirement,
+} from './JobAidIssueArticle';
+import { useJobAidWorkingRead } from './useJobAidWorkingRead';
+import './jobaid-problem-workspace.css';
 
+interface Props {
+  workItemId: string;
+  onLocateDocument: (evidence: DocumentAssessmentEvidence) => void;
+  initialAnalysis?: CanonicalInitialAnalysisReadModel | null;
+  overall?: CanonicalOpenClawOverallProjection | null;
+  onUpdated?: () => void;
+  children?: ReactNode;
+}
 const completionLabels = {
   IN_PROGRESS: '分析进行中',
   COMPLETE: '本轮分析完成',
   COMPLETE_WITH_OPEN_QUESTIONS: '本轮分析完成，仍有待确认事项',
 };
-const treatmentLabels = {
-  ADDRESSED: '已处理',
-  CONDITIONS_UNCONFIRMED: '条件待确认',
-  NOT_APPLICABLE_WITH_BASIS: '有依据地不适用',
-  LATER_BUSINESS_STAGE: '属于后续业务阶段',
-  NOT_YET_ADDRESSED: '尚未处理',
-};
-const measureLabels = {
-  PROPOSED: '提出的措施',
-  REPORTED_IMPLEMENTED: '来源报告已实施',
-  VERIFIED_EFFECTIVE: '有依据验证有效',
-};
-const classificationLabels = {
-  SAE_EVENT_CATEGORY: 'SAE 事件分类',
-  SOURCE_DOCUMENT_CLASSIFICATION: '源文件分类',
-  EO_ATTRIBUTE: 'EO 属性',
-};
 const executionLabels: Record<string, string> = {
   REQUESTED: '已请求执行',
   QUEUED: '排队等待',
   RUNNING: '正在执行',
-  RETRY_SCHEDULED: '等待重试',
+  RETRY_SCHEDULED: '等待服务重试',
   COMMITTING: '正在保存',
   SUCCEEDED: '执行完成',
   WAITING_INPUT: '等待补充信息',
@@ -46,291 +47,325 @@ const executionLabels: Record<string, string> = {
   CONFLICT: '版本冲突',
   OBSOLETE: '执行已过期',
 };
+const capabilityLabels = {
+  AVAILABLE: '可用',
+  NOT_CONNECTED: '未接通',
+  ACCESS_DENIED: '无权读取',
+  NOT_FOUND: '本次未查到',
+  PARTIAL: '部分可用',
+  READ_FAILED: '读取失败',
+};
 
-export default function JobAidProblemWorkspace({
-  workItemId,
-  onLocateDocument,
-  children,
-}: {
-  workItemId: string;
-  onLocateDocument: (evidence: DocumentAssessmentEvidence) => void;
-  children?: ReactNode;
-}) {
-  const active = useWorkbenchPanelActive();
-  const [data, setData] = useState<JobAidWorkingReadModel | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [retry, setRetry] = useState(0);
+export default function JobAidProblemWorkspace(props: Props) {
+  const session: number = getCanonicalHostClientSessionGeneration();
+  return (
+    <JobAidWorkspaceRead key={`${session}:${props.workItemId}`} {...props} />
+  );
+}
+
+function JobAidWorkspaceRead(props: Props) {
+  const { data, error, refresh } = useJobAidWorkingRead(props.workItemId);
+  const signature: string = `${data?.current?.workRevisionRef ?? ''}:${data?.overallStatus ?? ''}:${data?.overallBasedOnWorkRevisionRef ?? ''}`;
+  const notified = useRef<string | null>(null);
+  const latestUpdated = useRef(props.onUpdated);
+  latestUpdated.current = props.onUpdated;
   useEffect(() => {
-    if (!active) return;
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout>;
-    const read = async () => {
-      try {
-        const result = await readJobAidAssessmentWork(workItemId);
-        if (cancelled) return;
-        // A work revision is immutable. Keep its mounted evidence while an
-        // unchanged polling response arrives, including an open claim dialog.
-        setData((previous) =>
-          previous?.workItemId === result.workItemId &&
-          previous.enabled === result.enabled &&
-          previous.current?.workRevisionRef ===
-            result.current?.workRevisionRef &&
-          previous.executionStatus === result.executionStatus &&
-          previous.currentInputChanged === result.currentInputChanged &&
-          previous.overallStatus === result.overallStatus &&
-          previous.overallBasedOnWorkRevisionRef ===
-            result.overallBasedOnWorkRevisionRef
-            ? previous
-            : result,
-        );
-        setError(null);
-        // Working revisions change independently of the WorkItem's formally adopted revision.
-        if (result.enabled) timer = setTimeout(() => void read(), 6000);
-      } catch (caught) {
-        if (!cancelled) {
-          setData(null);
-          setError(
-            caught instanceof Error ? caught.message : '已保存评估暂时无法读取',
-          );
-        }
-      }
-    };
-    void read();
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [workItemId, active, retry]);
-  if (error)
-    return (
-      <div role="alert" className="space-y-3 rounded border p-4">
-        <p>问题评估读取失败：{error}</p>
-        <Button
-          variant="outline"
-          onClick={() => setRetry((value) => value + 1)}
-        >
-          重新读取
-        </Button>
-      </div>
-    );
-  if (!data)
-    return (
-      <p role="status" className="p-4 text-sm">
-        正在读取已保存的评估工作…
-      </p>
-    );
-  if (!data.enabled) return <>{children}</>;
-  if (!data.current)
-    return (
-      <p className="p-4 text-sm">
-        问题评估尚未保存。原文和工程师输入可继续阅读；完成的分析会在这里显示。
-      </p>
-    );
+    if (!data?.enabled || notified.current === signature) return;
+    const previous = notified.current;
+    notified.current = signature;
+    if (previous !== null) latestUpdated.current?.();
+  }, [signature, data?.enabled]);
+  return (
+    <>
+      {error ? (
+        <div role="alert" className="wl-jobaid-read-error">
+          <p>
+            问题分析刷新失败：{error}
+            {data?.current
+              ? '。以下保留上次读回的已保存工作，未确认有更新。'
+              : ''}
+          </p>
+          <Button variant="outline" onClick={refresh}>
+            重新读取
+          </Button>
+        </div>
+      ) : null}
+      {data ? (
+        data.enabled ? (
+          <JobAidProblemReading
+            {...props}
+            data={data}
+            onContinue={() => {
+              refresh();
+              props.onUpdated?.();
+            }}
+          />
+        ) : (
+          props.children
+        )
+      ) : !error ? (
+        <p role="status" className="p-4 text-sm">
+          正在读取已保存的问题分析…
+        </p>
+      ) : null}
+    </>
+  );
+}
+
+export function JobAidProblemReading({
+  data,
+  onLocateDocument,
+  initialAnalysis,
+  overall,
+  onContinue,
+}: Omit<Props, 'workItemId' | 'children' | 'onUpdated'> & {
+  data: JobAidWorkingReadModel;
+  onContinue?: () => void;
+}) {
+  const [tab, setTab] = useState<'understanding' | 'issues' | 'method'>(
+    'issues',
+  );
+  const [selectedIssue, setSelectedIssue] = useState<string | null>(null);
+  const nodes = useRef(new Map<string, HTMLElement>());
   const current = data.current;
+  const allowed = initialAnalysis?.continuationOperations ?? [];
+  const actions = (
+    <div className="wl-jobaid-actions">
+      {initialAnalysis
+        ? (['EVALUATE_JOBAID', 'SYNTHESIZE_OVERALL'] as const)
+            .filter((operation) => allowed.includes(operation))
+            .map((operation) => (
+              <InitialAnalysisContinueButton
+                key={operation}
+                workItemId={data.workItemId}
+                expectedRevision={initialAnalysis.workItemRevision}
+                operation={operation}
+                label={
+                  operation === 'EVALUATE_JOBAID'
+                    ? '继续问题分析'
+                    : '继续形成整体意见'
+                }
+                onQueued={() => onContinue?.()}
+              />
+            ))
+        : null}
+    </div>
+  );
+  if (!current)
+    return (
+      <section className="wl-jobaid-workspace">
+        <p>
+          尚无已保存的问题分析。原文和工程师输入仍可阅读；形成的工作会在这里接续。
+        </p>
+        {actions}
+      </section>
+    );
   const content = current.content;
   const reading = jobAidReadingResult(current);
-  const byRef = new Map(
-    content.evidence.map((item) => [item.evidenceRef, item]),
+  const overallMatches: boolean = Boolean(
+    overall?.readingResult &&
+    overall.basedOnJobAidWorkRevisionRef === current.workRevisionRef &&
+    data.overallStatus === 'CURRENT' &&
+    data.overallBasedOnWorkRevisionRef === current.workRevisionRef,
   );
-  const sourceDetails = (refs: string[]) => (
-    <details className="rounded border p-3 text-sm">
-      <summary className="cursor-pointer">核对依据与方法</summary>
-      <div className="mt-4 space-y-6">
-        {[...new Set(refs)].map((ref) => {
-          const evidence = byRef.get(ref);
-          return evidence ? (
-            <AssessmentEvidenceContext
-              key={ref}
-              evidence={evidence}
-              onLocateDocument={onLocateDocument}
-            />
-          ) : (
-            <p key={ref} role="alert">
-              依据 {ref} 未能读回。
-            </p>
-          );
-        })}
-      </div>
-    </details>
-  );
+  function locateIssue(issueKey: string): void {
+    setSelectedIssue(issueKey);
+    nodes.current
+      .get(issueKey)
+      ?.scrollIntoView({ block: 'start', behavior: 'auto' });
+    nodes.current.get(issueKey)?.focus({ preventScroll: true });
+  }
   return (
-    <section aria-label="JobAid 问题评估" className="space-y-6">
-      <div className="space-y-2 text-sm">
-        <p>
-          {completionLabels[content.roundCompletion]} · 工作修订{' '}
-          {current.workRevision}
-        </p>
-        {data.executionStatus &&
-        !['SUCCEEDED', 'RUNNING', 'COMMITTING'].includes(
-          data.executionStatus,
-        ) ? (
-          <p role="status">
-            本次运行状态：
+    <section
+      aria-label="JobAid 问题分析"
+      className="wl-jobaid-workspace"
+      data-work-revision-ref={current.workRevisionRef}
+    >
+      <header className="wl-jobaid-status">
+        <div>
+          <strong>{completionLabels[content.roundCompletion]}</strong>
+          <span>
+            工作修订 {current.workRevision} ·{' '}
+            {new Date(current.createdAt).toLocaleString('zh-CN')}
+          </span>
+        </div>
+        {actions}
+        {data.executionStatus ? (
+          <p>
+            运行：
             {executionLabels[data.executionStatus] ?? data.executionStatus}
-            。以下为已保存的工作，运行未成功不等于业务分析完成。
+            。本轮分析是否完成以已保存内容为准。
           </p>
         ) : null}
-        {data.currentInputChanged ? (
-          <p role="status">
-            对象输入已变化，当前内容保留了原工作版本的判断和条件，需按新输入继续核对。
-          </p>
-        ) : null}
-        {data.overallStatus === 'STALE' ? (
-          <p role="status">
-            整体意见基于较早的工作版本；以下展示最新已保存的问题认识。
-          </p>
-        ) : null}
-        <p className="whitespace-pre-wrap text-muted-foreground">
-          {content.completionReason}
+        <p>{content.completionReason}</p>
+      </header>
+      {data.currentInputChanged ? (
+        <p role="status" className="wl-jobaid-notice">
+          对象输入已变化。以下保留原工作版本的判断和条件，需按新输入继续核对。
         </p>
-      </div>
-      <SavedAssessmentReading
-        result={reading}
-        depth="brief"
-        onLocateDocument={onLocateDocument}
-      />
-      <div className="space-y-4">
-        {content.issues.map((issue) => (
-          <details
-            key={issue.issueKey}
-            className="rounded-lg border p-4"
-            open={content.decisiveIssueKeys.includes(issue.issueKey)}
+      ) : null}
+      {data.overallStatus === 'STALE' ? (
+        <p role="status" className="wl-jobaid-notice">
+          问题认识已有更新；整体意见仍基于较早的工作版本。新分析没有被旧整体意见替代。
+        </p>
+      ) : !overallMatches ? (
+        <p className="wl-jobaid-notice">
+          当前展示已保存的问题分析；尚未读到与本工作版本一致的整体意见。
+        </p>
+      ) : null}
+      <div className="wl-jobaid-tabs" aria-label="问题分析阅读视图">
+        {(
+          [
+            ['understanding', '当前认识'],
+            ['issues', '问题分析'],
+            ['method', '方法与要求'],
+          ] as const
+        ).map(([key, label]) => (
+          <Button
+            key={key}
+            variant="ghost"
+            size="sm"
+            aria-pressed={tab === key}
+            onClick={() => setTab(key)}
           >
-            <summary className="cursor-pointer font-medium">
-              {issue.question}
-            </summary>
-            <div className="mt-4 space-y-5 text-sm leading-7">
-              <p className="whitespace-pre-wrap">{issue.understanding}</p>
-              <SavedAssessmentReading
-                result={{
-                  ...reading,
-                  content: {
-                    ...reading.content,
-                    headline: issue.question,
-                    listBrief: issue.understanding,
-                    lead: '',
-                    claims: issue.statements,
-                    decisiveClaimIds: issue.statements.map(
-                      (item) => item.claimId,
-                    ),
-                  },
-                }}
-                depth="full"
-                locationSuffix={issue.issueKey}
-                onLocateDocument={onLocateDocument}
-              />
-              {issue.riskScenarios.map((risk, index) => (
-                <article
-                  key={index}
-                  className="space-y-2 rounded bg-muted/40 p-3"
-                >
-                  <h4 className="font-medium">风险情景：{risk.scenario}</h4>
-                  {risk.conditions.map((condition) => (
-                    <p key={condition}>成立条件：{condition}</p>
-                  ))}
-                  <p>
-                    JA-AC：严重性 {risk.severity?.label ?? '待确认'}；可能性{' '}
-                    {risk.likelihood?.label ?? '待确认'}；
-                    {risk.score === null
-                      ? '尚不具备计算分数与等级的依据'
-                      : `${risk.score} 分，${risk.gradeMeaning}`}
-                  </p>
-                  {risk.severity ? (
-                    <p>严重性依据：{risk.severity.reason}</p>
-                  ) : null}
-                  {risk.likelihood ? (
-                    <p>可能性依据：{risk.likelihood.reason}</p>
-                  ) : null}
-                  {risk.importantEvent ? (
-                    <p>
-                      重要事件核对：{risk.importantEvent.event}。
-                      {risk.importantEvent.reason}
-                    </p>
-                  ) : null}
-                  <p>措施与后果的比较：{risk.controlComparison}</p>
-                  {risk.limitations.map((limit) => (
-                    <p key={limit}>限制：{limit}</p>
-                  ))}
-                  {sourceDetails([
-                    ...(risk.severity?.basisRefs ?? []),
-                    ...(risk.likelihood?.basisRefs ?? []),
-                    ...(risk.importantEvent?.basisRefs ?? []),
-                  ])}
-                </article>
-              ))}
-              {issue.measures.map((measure, index) => (
-                <article key={index} className="space-y-1">
-                  <h4 className="font-medium">
-                    {measureLabels[measure.status]}：{measure.text}
-                  </h4>
-                  <p>针对：{measure.addresses}</p>
-                  {measure.limitations.map((limit) => (
-                    <p key={limit}>限制：{limit}</p>
-                  ))}
-                  {sourceDetails(measure.basisRefs)}
-                </article>
-              ))}
-              {issue.otherClassifications.map((item, index) => (
-                <p key={index}>
-                  {classificationLabels[item.method]}：{item.value}。
-                  {item.reason}
-                </p>
-              ))}
-              {issue.openQuestions.length ? (
-                <div className="space-y-2">
-                  <h4 className="font-medium">仍需确认</h4>
-                  {issue.openQuestions.map((question, index) => (
-                    <article key={index}>
-                      <p>{question.question}</p>
-                      <p>
-                        影响：{question.affects}。原因：{question.reason}
-                      </p>
-                      <p>下一步所需依据：{question.nextEvidence}</p>
-                    </article>
-                  ))}
-                </div>
-              ) : null}
-              {issue.requirementHandling.map((item, index) => (
-                <article key={index} className="space-y-1">
-                  <h4 className="font-medium">
-                    {item.requirement} · {treatmentLabels[item.treatment]}
-                  </h4>
-                  {item.conditions.map((condition) => (
-                    <p key={condition}>适用条件：{condition}</p>
-                  ))}
-                  <p>{item.explanation}</p>
-                  {sourceDetails([item.methodRef, ...item.basisRefs])}
-                </article>
-              ))}
-              {sourceDetails([
-                ...issue.sourceDependencies,
-                ...issue.premiseRefs,
-              ])}
-            </div>
-          </details>
+            {label}
+          </Button>
         ))}
       </div>
-      <details className="rounded border p-4 text-sm">
-        <summary className="cursor-pointer">
-          本轮变化、方法版本与资料能力
-        </summary>
-        <div className="mt-3 space-y-3 leading-7">
-          <p>{content.changeSummary}</p>
-          <p>{content.unchangedExplanation}</p>
+      {tab === 'understanding' ? (
+        <div className="wl-jobaid-reading">
+          <SavedAssessmentReading
+            result={reading}
+            depth="full"
+            onLocateDocument={onLocateDocument}
+          />
+          {overall?.readingResult ? (
+            <section className="wl-jobaid-overall">
+              <h3>
+                {overallMatches
+                  ? '基于本工作版本的整体意见'
+                  : '此前保存的整体意见 · 另行保留'}
+              </h3>
+              <p className="wl-jobaid-meta">
+                {overallMatches
+                  ? `对应工作修订 ${current.workRevision}`
+                  : '其基础版本与当前工作不同或尚未确认，不与新分析拼接。'}
+              </p>
+              <SavedAssessmentReading
+                result={overall.readingResult}
+                depth="full"
+                locationSuffix="overall"
+                onLocateDocument={onLocateDocument}
+              />
+            </section>
+          ) : null}
+        </div>
+      ) : null}
+      {tab === 'issues' ? (
+        <div
+          className={`wl-jobaid-layout${content.issues.length ? ' has-issues' : ''}`}
+        >
+          {content.issues.length ? (
+            <nav className="wl-jobaid-index" aria-label="实际问题目录">
+              <span>本轮问题</span>
+              {content.issues.map((issue) => (
+                <button
+                  type="button"
+                  key={issue.issueKey}
+                  aria-current={
+                    selectedIssue === issue.issueKey ? 'location' : undefined
+                  }
+                  onClick={() => locateIssue(issue.issueKey)}
+                >
+                  {issue.question}
+                </button>
+              ))}
+            </nav>
+          ) : null}
+          <div className="wl-jobaid-reading">
+            <header>
+              <h2>{content.headline}</h2>
+              <p>{content.understanding}</p>
+            </header>
+            {content.issues.map((issue) => (
+              <article
+                key={issue.issueKey}
+                className="wl-jobaid-issue"
+                data-issue-key={issue.issueKey}
+                tabIndex={-1}
+                ref={(node) => {
+                  if (node) nodes.current.set(issue.issueKey, node);
+                  else nodes.current.delete(issue.issueKey);
+                }}
+              >
+                <JobAidIssueArticle
+                  issue={issue}
+                  reading={reading}
+                  onLocateDocument={onLocateDocument}
+                />
+              </article>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      {tab === 'method' ? (
+        <div className="wl-jobaid-reading">
+          <h2>方法与原始要求</h2>
+          <p>方法包版本：{content.methodBinding.version}</p>
           {content.methodBinding.sources.map((source) => (
             <p key={source.sourceIdentity}>
               {source.sourceIdentity} {source.versionLabel} ·{' '}
               {source.status === 'CONFIRMED' ? '版本已确认' : '版本未确认'}
             </p>
           ))}
-          {content.capabilities.map((item) => (
-            <p key={item.capability}>{item.impact}</p>
-          ))}
-          {content.historyReview.limitation ? (
-            <p>历史核对：{content.historyReview.limitation}</p>
+          <p className="wl-jobaid-notice">
+            附件 5：已报告 R00 内容，但 R01
+            链接尚未确认。该限制针对正式表单版本，不阻止有明确条件的候选分析。
+          </p>
+          {content.issues.map((issue) =>
+            issue.requirementHandling.length ? (
+              <section key={issue.issueKey}>
+                <h3>{issue.question}</h3>
+                {issue.requirementHandling.map((item, index) => (
+                  <JobAidRequirement key={index} item={item}>
+                    <JobAidEvidenceDetails
+                      refs={[item.methodRef, ...item.basisRefs]}
+                      evidence={content.evidence}
+                      onLocateDocument={onLocateDocument}
+                    />
+                  </JobAidRequirement>
+                ))}
+              </section>
+            ) : null,
+          )}
+          <section>
+            <h3>本轮变化与保留理由</h3>
+            {content.changeSummary ? <p>{content.changeSummary}</p> : null}
+            {content.unchangedExplanation ? (
+              <p>{content.unchangedExplanation}</p>
+            ) : null}
+          </section>
+          {content.capabilities.length ? (
+            <section>
+              <h3>资料能力与限制</h3>
+              {content.capabilities.map((item) => (
+                <p key={item.capability}>
+                  {capabilityLabels[item.status]}：{item.impact}
+                </p>
+              ))}
+            </section>
           ) : null}
+          {content.historyReview.limitation ? (
+            <p>历史核对范围：{content.historyReview.limitation}</p>
+          ) : null}
+          <JobAidEvidenceDetails
+            refs={content.evidence.map((item) => item.evidenceRef)}
+            evidence={content.evidence}
+            onLocateDocument={onLocateDocument}
+            label="本轮实际资料"
+          />
         </div>
-      </details>
+      ) : null}
     </section>
   );
 }

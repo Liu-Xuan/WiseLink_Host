@@ -8,7 +8,7 @@ import type {
   CanonicalWorkbenchAuditProjection,
 } from '@shared/api.interface';
 
-type ReaderViewMode = 'source' | 'structured' | 'bilingual';
+type ReaderViewMode = 'source' | 'structured' | 'bilingual' | 'translation';
 type ReaderCapabilityStatus = 'AVAILABLE' | 'LIMITED' | 'UNAVAILABLE';
 
 interface ReaderCapability {
@@ -49,11 +49,18 @@ function describeTranslationProjection(
   }
   if (translation.status === 'SEMANTIC_READING_AID_AVAILABLE') {
     const { completeness, coverage } = translation.reading;
-    return { capability: completeness === 'PARTIAL' ? 'LIMITED' : 'AVAILABLE',
-      headline: completeness === 'PARTIAL' ? '部分译文可读' : completeness === 'COMPLETE_WITH_ISSUES' ? '完整译文有待复核项' : '完整译文候选可读',
+    return {
+      capability: completeness === 'PARTIAL' ? 'LIMITED' : 'AVAILABLE',
+      headline:
+        completeness === 'PARTIAL'
+          ? '部分译文可读'
+          : completeness === 'COMPLETE_WITH_ISSUES'
+            ? '完整译文有待复核项'
+            : '完整译文候选可读',
       detail: `可读范围覆盖 ${coverage.readableSourceCharacters.toLocaleString('zh-CN')} / ${coverage.registeredSourceCharacters.toLocaleString('zh-CN')} 个原文字符；${coverage.missingBlockCount} 块待生成，${coverage.pendingCheckBlockCount} 块待检查，${coverage.blockedBlockCount} 块需处理。`,
       ownerSourceReaderConsumptionAllowed: true,
-      bilingualTranslationConsumptionAllowed: coverage.readableSourceCharacters > 0,
+      bilingualTranslationConsumptionAllowed:
+        coverage.readableSourceCharacters > 0,
     };
   }
   const axes = translation.axes;
@@ -154,7 +161,8 @@ interface AssessmentSemantics {
 }
 
 function getReaderViewMode(value: string | null): ReaderViewMode {
-  if (value === 'source' || value === 'bilingual') return value;
+  if (value === 'source' || value === 'bilingual' || value === 'translation')
+    return value;
   return 'structured';
 }
 
@@ -183,8 +191,31 @@ function buildReaderCapabilities(
 
   return [
     {
+      mode: 'translation',
+      label: '中文',
+      status: translationView?.capability ?? 'UNAVAILABLE',
+      note: translationView?.headline ?? '当前事项尚无可核验的译文。',
+    },
+    {
+      mode: 'structured',
+      label: '原文',
+      status: projection ? 'AVAILABLE' : 'UNAVAILABLE',
+      note:
+        projection?.translation.status === 'SEMANTIC_READING_AID_AVAILABLE'
+          ? '按当前语义范围连续阅读原文；来源定位使用实际记录。'
+          : projection
+            ? `当前查询返回 ${projection.units.length} 个内容单元，其中 ${locatedUnitCount} 个可定位到原文页码。`
+            : '当前事项尚无可查询的结构化原文。',
+    },
+    {
+      mode: 'bilingual',
+      label: '中英对照',
+      status: translationView?.capability ?? 'UNAVAILABLE',
+      note: translationView?.headline ?? '当前事项尚无可核验的译文。',
+    },
+    {
       mode: 'source',
-      label: 'PDF 原文',
+      label: '原文件对照',
       status: projection ? projection.pdfPreview.status : 'UNAVAILABLE',
       note:
         projection?.pdfPreview.status === 'AVAILABLE'
@@ -192,22 +223,6 @@ function buildReaderCapabilities(
             ? '受控 PDF 原文可用，支持按页加载、缩放与来源定位。'
             : '受控 PDF 原文可用；当前文件将完整读取后在本页按页显示。'
           : '当前 PDF 页面预览尚不可用，可继续使用结构化原文与页码定位。',
-    },
-    {
-      mode: 'structured',
-      label: '结构化原文',
-      status: projection ? 'AVAILABLE' : 'UNAVAILABLE',
-      note: projection
-        ? `当前查询返回 ${projection.units.length} 个内容单元，其中 ${locatedUnitCount} 个可定位到原文页码。`
-        : '当前事项尚无可查询的结构化原文。',
-    },
-    {
-      mode: 'bilingual',
-      label: '中英文对照',
-      status: translationView ? translationView.capability : 'UNAVAILABLE',
-      note: translationView
-        ? translationView.detail
-        : '当前事项尚无可核验的译文。',
     },
   ];
 }

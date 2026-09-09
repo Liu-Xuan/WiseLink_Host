@@ -221,9 +221,6 @@ export default function DocumentParsingPage() {
     activeNode,
     requestedSourceRef,
   );
-  const readerMode: ReaderViewMode = getReaderViewMode(
-    searchParams.get('readerMode'),
-  );
   const [query, setQuery] = useState<string>(activeQuery);
   // Validate the short-lived handoff only on entry, not on every local render.
   const [pageData, setPageData] =
@@ -604,6 +601,12 @@ export default function DocumentParsingPage() {
   }
 
   const pkg = data.workItem.package;
+  const semanticReading =
+    data.readerProjection?.translation.status ===
+    'SEMANTIC_READING_AID_AVAILABLE';
+  const readerMode: ReaderViewMode = getReaderViewMode(
+    searchParams.get('readerMode') ?? (semanticReading ? 'translation' : null),
+  );
   const savedReadingResult =
     data.workItem.integratedAssessment?.overallSynthesis?.readingResult ??
     (isJobAidProblemProjection(data.workItem.integratedAssessment?.baseRules)
@@ -1161,7 +1164,7 @@ export default function DocumentParsingPage() {
 
         <RetainedWorkbenchPanel active={activeNode === 'reader'}>
           <div
-            className={`parse-reader-split${
+            className={`parse-reader-split${semanticReading ? ' is-semantic' : ''}${
               readerMode === 'source' ? ' is-pdf-active' : ''
             }`}
           >
@@ -1211,20 +1214,23 @@ export default function DocumentParsingPage() {
             }
             onConfigurationEvidenceAdopted={() => load(activeQuery)}
           />
-          {assessmentEligible ? (
-            <section
-              className="parse-assessment-panel parse-assessment-workspace"
-              id="workspace-assessment-results"
-              aria-label="工程评估工作台"
-            >
-              <div className="parse-panel-label">
-                <ClipboardCheck aria-hidden="true" /> 工程评估工作台 ·
-                判断、依据与复核
-              </div>
-              <JobAidProblemWorkspace
-                workItemId={workItemId}
-                onLocateDocument={locateAssessmentDocument}
+          <JobAidProblemWorkspace
+            workItemId={workItemId}
+            initialAnalysis={data.initialAnalysis}
+            overall={integratedAssessment?.overallSynthesis}
+            onUpdated={() => void load(activeQuery)}
+            onLocateDocument={locateAssessmentDocument}
+          >
+            {assessmentEligible ? (
+              <section
+                className="parse-assessment-panel parse-assessment-workspace"
+                id="workspace-assessment-results"
+                aria-label="工程评估工作台"
               >
+                <div className="parse-panel-label">
+                  <ClipboardCheck aria-hidden="true" /> 工程评估工作台 ·
+                  判断、依据与复核
+                </div>
                 {savedReadingResult ? (
                   <SavedAssessmentReading
                     result={savedReadingResult}
@@ -1252,428 +1258,440 @@ export default function DocumentParsingPage() {
                     }
                   />
                 )}
-              </JobAidProblemWorkspace>
-              {integratedAssessment &&
-              !isJobAidProblemProjection(integratedAssessment.baseRules) ? (
-                <>
-                  <details className="parse-assessment-audit-details">
-                    <summary>查看评估过程与版本详情</summary>
-                    <div
-                      className="parse-assessment-audit"
-                      aria-label="评估过程与版本详情"
-                    >
-                      <article>
-                        <span>动态评估 · 逐项判断</span>
-                        <h3>逐项规则候选</h3>
-                        <dl>
-                          <div>
-                            <dt>当前状态</dt>
-                            <dd>
-                              {humanState(
-                                integratedAssessment.baseRules.status,
-                              ) ?? '待评估'}
-                            </dd>
-                          </div>
-                          <div>
-                            <dt>完整度</dt>
-                            <dd>
-                              {
-                                integratedAssessment.baseRules
-                                  .evaluationItemCount
-                              }
-                              /{integratedAssessment.baseRules.criterionCount}
-                            </dd>
-                          </div>
-                          <div>
-                            <dt>来源绑定候选</dt>
-                            <dd>
-                              {
-                                integratedAssessment.baseRules
-                                  .sourceBoundCandidateCount
-                              }
-                            </dd>
-                          </div>
-                          <div>
-                            <dt>未闭合</dt>
-                            <dd>
-                              {integratedAssessment.baseRules.unresolvedCount}
-                            </dd>
-                          </div>
-                        </dl>
-                        <small>所有数量均来自当前事项的最新受控投影。</small>
-                      </article>
-
-                      <article>
-                        <span>综合评估意见 · 待工程师确认</span>
-                        <h3>证据比较与整体候选</h3>
-                        {integratedAssessment.overallSynthesis ? (
-                          <>
-                            <dl>
-                              <div>
-                                <dt>形成依据</dt>
-                                <dd>当前逐项评估结果</dd>
-                              </div>
-                              <div>
-                                <dt>判断 / 来源依据</dt>
-                                <dd>
-                                  {
-                                    integratedAssessment.overallSynthesis
-                                      .findingCount
-                                  }{' '}
-                                  /{' '}
-                                  {
-                                    integratedAssessment.overallSynthesis
-                                      .candidateRefCount
-                                  }
-                                </dd>
-                              </div>
-                              <div>
-                                <dt>未闭合</dt>
-                                <dd>
-                                  {
-                                    integratedAssessment.overallSynthesis
-                                      .unresolvedCount
-                                  }
-                                </dd>
-                              </div>
-                              <div>
-                                <dt>缺口</dt>
-                                <dd>
-                                  {integratedAssessment.overallSynthesis.gap
-                                    ? '仍有待补信息'
-                                    : '当前无明确缺口'}
-                                </dd>
-                              </div>
-                              <div>
-                                <dt>资料调查</dt>
-                                <dd>
-                                  {humanState(
-                                    integratedAssessment.overallSynthesis
-                                      .discoveryStatus,
-                                  ) ?? '状态待确认'}
-                                  {' · '}
-                                  {integratedAssessment.overallSynthesis
-                                    .externalDiscoveryIsEvidence
-                                    ? '已采纳资料可作为依据'
-                                    : '外部资料尚未作为判断依据'}
-                                </dd>
-                              </div>
-                            </dl>
-                            <small>
-                              {integratedAssessment.overallSynthesis.staleReason
-                                ? `当前意见需更新（${staleReasonLabel(
-                                    integratedAssessment.overallSynthesis
-                                      .staleReason as
-                                      | 'BASE_RULE_RESULT_CHANGED'
-                                      | 'ENGINEER_REVIEW_CHANGED',
-                                  )}）`
-                                : '当前意见仍是候选，需工程师确认。'}
-                            </small>
-                          </>
-                        ) : (
-                          <p>
-                            尚无整体候选。分析任务需要先读取完整逐项评估输入，
-                            再根据明确缺口选择相关资料来源。
-                          </p>
-                        )}
-                      </article>
-                    </div>
-                  </details>
-                  {integratedAssessment.overallSynthesis?.status ===
-                    'CANDIDATE_ONLY' &&
-                  integratedAssessment.overallSynthesis.staleReason === null ? (
-                    integratedAssessment.overallForAeoConfirmation ? (
-                      <div className="parse-aeo-ready-action">
-                        <p>
-                          工程师确认已记录，可用于形成后续编写候选。该确认不等于工程批准或发布。
-                        </p>
-                        {!aeo ? (
-                          <Button
-                            type="button"
-                            disabled={loading || assessmentAction !== null}
-                            onClick={() => void generateAeoCandidate()}
-                          >
-                            {assessmentAction === 'GENERATE_AEO_CANDIDATE'
-                              ? '正在生成 AEO 候选…'
-                              : '生成 AEO 候选'}
-                          </Button>
-                        ) : null}
-                      </div>
-                    ) : (
-                      <Button
-                        type="button"
-                        disabled={loading || assessmentAction !== null}
-                        onClick={() => void confirmOverallForAeo()}
+                {integratedAssessment &&
+                !isJobAidProblemProjection(integratedAssessment.baseRules) ? (
+                  <>
+                    <details className="parse-assessment-audit-details">
+                      <summary>查看评估过程与版本详情</summary>
+                      <div
+                        className="parse-assessment-audit"
+                        aria-label="评估过程与版本详情"
                       >
-                        {assessmentAction === 'CONFIRM_OVERALL_FOR_AEO'
-                          ? '正在确认当前整体综合…'
-                          : '确认当前整体综合用于 AEO 候选'}
-                      </Button>
-                    )
-                  ) : null}
-                </>
-              ) : (
-                <div className="parse-assessment-empty">
-                  <p>
-                    逐项评估尚未形成。完成当前规则要求的评估后，这里会显示最新结果。
-                  </p>
-                </div>
-              )}
-              {assessment ? (
-                <details
-                  className="parse-historical-assessment"
-                  open={searchParams.get('drawer') === 'history'}
-                >
-                  <summary
-                    onClick={(event) => {
-                      event.preventDefault();
-                      updateDeepLink({
-                        drawer:
-                          searchParams.get('drawer') === 'history'
-                            ? null
-                            : 'history',
-                      });
-                    }}
+                        <article>
+                          <span>动态评估 · 逐项判断</span>
+                          <h3>逐项规则候选</h3>
+                          <dl>
+                            <div>
+                              <dt>当前状态</dt>
+                              <dd>
+                                {humanState(
+                                  integratedAssessment.baseRules.status,
+                                ) ?? '待评估'}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>完整度</dt>
+                              <dd>
+                                {
+                                  integratedAssessment.baseRules
+                                    .evaluationItemCount
+                                }
+                                /{integratedAssessment.baseRules.criterionCount}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>来源绑定候选</dt>
+                              <dd>
+                                {
+                                  integratedAssessment.baseRules
+                                    .sourceBoundCandidateCount
+                                }
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>未闭合</dt>
+                              <dd>
+                                {integratedAssessment.baseRules.unresolvedCount}
+                              </dd>
+                            </div>
+                          </dl>
+                          <small>所有数量均来自当前事项的最新受控投影。</small>
+                        </article>
+
+                        <article>
+                          <span>综合评估意见 · 待工程师确认</span>
+                          <h3>证据比较与整体候选</h3>
+                          {integratedAssessment.overallSynthesis ? (
+                            <>
+                              <dl>
+                                <div>
+                                  <dt>形成依据</dt>
+                                  <dd>当前逐项评估结果</dd>
+                                </div>
+                                <div>
+                                  <dt>判断 / 来源依据</dt>
+                                  <dd>
+                                    {
+                                      integratedAssessment.overallSynthesis
+                                        .findingCount
+                                    }{' '}
+                                    /{' '}
+                                    {
+                                      integratedAssessment.overallSynthesis
+                                        .candidateRefCount
+                                    }
+                                  </dd>
+                                </div>
+                                <div>
+                                  <dt>未闭合</dt>
+                                  <dd>
+                                    {
+                                      integratedAssessment.overallSynthesis
+                                        .unresolvedCount
+                                    }
+                                  </dd>
+                                </div>
+                                <div>
+                                  <dt>缺口</dt>
+                                  <dd>
+                                    {integratedAssessment.overallSynthesis.gap
+                                      ? '仍有待补信息'
+                                      : '当前无明确缺口'}
+                                  </dd>
+                                </div>
+                                <div>
+                                  <dt>资料调查</dt>
+                                  <dd>
+                                    {humanState(
+                                      integratedAssessment.overallSynthesis
+                                        .discoveryStatus,
+                                    ) ?? '状态待确认'}
+                                    {' · '}
+                                    {integratedAssessment.overallSynthesis
+                                      .externalDiscoveryIsEvidence
+                                      ? '已采纳资料可作为依据'
+                                      : '外部资料尚未作为判断依据'}
+                                  </dd>
+                                </div>
+                              </dl>
+                              <small>
+                                {integratedAssessment.overallSynthesis
+                                  .staleReason
+                                  ? `当前意见需更新（${staleReasonLabel(
+                                      integratedAssessment.overallSynthesis
+                                        .staleReason as
+                                        | 'BASE_RULE_RESULT_CHANGED'
+                                        | 'ENGINEER_REVIEW_CHANGED',
+                                    )}）`
+                                  : '当前意见仍是候选，需工程师确认。'}
+                              </small>
+                            </>
+                          ) : (
+                            <p>
+                              尚无整体候选。分析任务需要先读取完整逐项评估输入，
+                              再根据明确缺口选择相关资料来源。
+                            </p>
+                          )}
+                        </article>
+                      </div>
+                    </details>
+                    {integratedAssessment.overallSynthesis?.status ===
+                      'CANDIDATE_ONLY' &&
+                    integratedAssessment.overallSynthesis.staleReason ===
+                      null ? (
+                      integratedAssessment.overallForAeoConfirmation ? (
+                        <div className="parse-aeo-ready-action">
+                          <p>
+                            工程师确认已记录，可用于形成后续编写候选。该确认不等于工程批准或发布。
+                          </p>
+                          {!aeo ? (
+                            <Button
+                              type="button"
+                              disabled={loading || assessmentAction !== null}
+                              onClick={() => void generateAeoCandidate()}
+                            >
+                              {assessmentAction === 'GENERATE_AEO_CANDIDATE'
+                                ? '正在生成 AEO 候选…'
+                                : '生成 AEO 候选'}
+                            </Button>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <Button
+                          type="button"
+                          disabled={loading || assessmentAction !== null}
+                          onClick={() => void confirmOverallForAeo()}
+                        >
+                          {assessmentAction === 'CONFIRM_OVERALL_FOR_AEO'
+                            ? '正在确认当前整体综合…'
+                            : '确认当前整体综合用于 AEO 候选'}
+                        </Button>
+                      )
+                    ) : null}
+                  </>
+                ) : (
+                  <div className="parse-assessment-empty">
+                    <p>
+                      逐项评估尚未形成。完成当前规则要求的评估后，这里会显示最新结果。
+                    </p>
+                  </div>
+                )}
+                {assessment ? (
+                  <details
+                    className="parse-historical-assessment"
+                    open={searchParams.get('drawer') === 'history'}
                   >
-                    查看历史逐项评估（只读）
-                  </summary>
-                  <p>
-                    {humanState(assessment.status) ?? '状态待确认'} ·{' '}
-                    {assessment.criterionCount} 项 ·{' '}
-                    {humanState(assessment.applicabilityOverall) ??
-                      '适用性待确认'}{' '}
-                    · {assessment.staleReason ? '结论需更新' : '历史候选'}
+                    <summary
+                      onClick={(event) => {
+                        event.preventDefault();
+                        updateDeepLink({
+                          drawer:
+                            searchParams.get('drawer') === 'history'
+                              ? null
+                              : 'history',
+                        });
+                      }}
+                    >
+                      查看历史逐项评估（只读）
+                    </summary>
+                    <p>
+                      {humanState(assessment.status) ?? '状态待确认'} ·{' '}
+                      {assessment.criterionCount} 项 ·{' '}
+                      {humanState(assessment.applicabilityOverall) ??
+                        '适用性待确认'}{' '}
+                      · {assessment.staleReason ? '结论需更新' : '历史候选'}
+                    </p>
+                  </details>
+                ) : null}
+                {assessmentError ? (
+                  <p className="parse-assessment-error" role="alert">
+                    {assessmentError}
                   </p>
-                </details>
-              ) : null}
-              {assessmentError ? (
-                <p className="parse-assessment-error" role="alert">
-                  {assessmentError}
-                </p>
-              ) : null}
-            </section>
-          ) : (
-            <section
-              className="parse-assessment-panel parse-assessment-workspace"
-              id="workspace-assessment-results"
-              aria-label="工程评估工作台"
-            >
-              <div className="parse-panel-label">
-                <ClipboardCheck aria-hidden="true" /> 工程评估工作台 ·
-                判断、依据与复核
-              </div>
-              {savedReadingResult ? (
-                <SavedAssessmentReading
-                  result={savedReadingResult}
-                  depth="full"
-                  onLocateDocument={locateAssessmentDocument}
-                />
-              ) : (
-                <OverallAssessmentHero
-                  view={workItemView}
-                  regeneration={{
-                    ...overallRegeneration,
-                    disabled: loading || overallRegeneration.disabled,
-                  }}
-                  primaryActionLabel="核对原文依据"
-                  onOpenWorkbench={() =>
+                ) : null}
+              </section>
+            ) : (
+              <section
+                className="parse-assessment-panel parse-assessment-workspace"
+                id="workspace-assessment-results"
+                aria-label="工程评估工作台"
+              >
+                <div className="parse-panel-label">
+                  <ClipboardCheck aria-hidden="true" /> 工程评估工作台 ·
+                  判断、依据与复核
+                </div>
+                {savedReadingResult ? (
+                  <SavedAssessmentReading
+                    result={savedReadingResult}
+                    depth="full"
+                    onLocateDocument={locateAssessmentDocument}
+                  />
+                ) : (
+                  <OverallAssessmentHero
+                    view={workItemView}
+                    regeneration={{
+                      ...overallRegeneration,
+                      disabled: loading || overallRegeneration.disabled,
+                    }}
+                    primaryActionLabel="核对原文依据"
+                    onOpenWorkbench={() =>
+                      updateDeepLink({
+                        node: 'reader',
+                        tab: 'reader',
+                        readerMode: 'structured',
+                      })
+                    }
+                    onViewEvidence={(sourceRefId) =>
+                      updateDeepLink({
+                        node: 'reader',
+                        tab: 'reader',
+                        readerMode: 'structured',
+                        unit: null,
+                        sourceRef: sourceRefId ?? null,
+                      })
+                    }
+                  />
+                )}
+                <AssessmentSemanticsOverview data={data} />
+                <article className="parse-assessment-scope-note">
+                  <AlertTriangle aria-hidden="true" />
+                  <div>
+                    <span>逐项规则评估</span>
+                    <h3>当前文件不进入 SB 逐项规则评估</h3>
+                    <p>
+                      当前文件类别为{' '}
+                      {data.workItem.classification.normalizedFamily}
+                      {data.workItem.classification.status === 'CONFIRMED'
+                        ? '，分类已经确认。'
+                        : '，分类尚待确认。'}
+                      你仍可核对综合候选意见、原文依据与分析过程；系统不会套用不适配的规则生成数字或结论。
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() =>
+                      updateDeepLink({
+                        node: 'reader',
+                        tab: 'reader',
+                        readerMode: 'structured',
+                      })
+                    }
+                  >
+                    查看原文与依据
+                  </Button>
+                </article>
+              </section>
+            )}
+          </JobAidProblemWorkspace>
+        </RetainedWorkbenchPanel>
+
+        {/* Legacy rule reviews remain read-only alongside problem-oriented work. */}
+        <RetainedWorkbenchPanel active={activeNode === 'review'}>
+          <JobAidProblemWorkspace
+            workItemId={workItemId}
+            initialAnalysis={data.initialAnalysis}
+            overall={integratedAssessment?.overallSynthesis}
+            onUpdated={() => void load(activeQuery)}
+            onLocateDocument={locateAssessmentDocument}
+          >
+            {reviewContext ? (
+              <>
+                <AssessmentRuleWorkspace
+                  key={`${workItemId}:${data.workItem.revision}:${selectedReviewCriterion}`}
+                  items={reviewContext.items}
+                  selectedCriterionId={selectedReviewCriterion}
+                  onSelectCriterion={(criterionId: string) =>
                     updateDeepLink({
-                      node: 'reader',
-                      tab: 'reader',
-                      readerMode: 'structured',
+                      criterion: criterionId,
+                      node: 'review',
+                      tab: 'review',
                     })
                   }
-                  onViewEvidence={(sourceRefId) =>
+                  onLocateSourceRef={(sourceRef: string) =>
                     updateDeepLink({
                       node: 'reader',
                       tab: 'reader',
                       readerMode: 'structured',
                       unit: null,
-                      sourceRef: sourceRefId ?? null,
+                      sourceRef,
                     })
                   }
                 />
-              )}
-              <AssessmentSemanticsOverview data={data} />
-              <article className="parse-assessment-scope-note">
-                <AlertTriangle aria-hidden="true" />
-                <div>
-                  <span>逐项规则评估</span>
-                  <h3>当前文件不进入 SB 逐项规则评估</h3>
-                  <p>
-                    当前文件类别为{' '}
-                    {data.workItem.classification.normalizedFamily}
-                    {data.workItem.classification.status === 'CONFIRMED'
-                      ? '，分类已经确认。'
-                      : '，分类尚待确认。'}
-                    你仍可核对综合候选意见、原文依据与分析过程；系统不会套用不适配的规则生成数字或结论。
-                  </p>
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() =>
-                    updateDeepLink({
-                      node: 'reader',
-                      tab: 'reader',
-                      readerMode: 'structured',
-                    })
-                  }
+                <details
+                  className="parse-engineer-review"
+                  aria-label="记录必要的工程师修订"
                 >
-                  查看原文与依据
-                </Button>
-              </article>
-            </section>
-          )}
-        </RetainedWorkbenchPanel>
-
-        {/* ── §4.2 复核意见：CriterionSet 逐项投影 + 工程师逐项复核 ── */}
-        <RetainedWorkbenchPanel active={activeNode === 'review'}>
-          {isJobAidProblemProjection(integratedAssessment?.baseRules) ? (
-            <JobAidProblemWorkspace
-              workItemId={workItemId}
-              onLocateDocument={locateAssessmentDocument}
-            />
-          ) : reviewContext ? (
-            <>
-              <AssessmentRuleWorkspace
-                key={`${workItemId}:${data.workItem.revision}:${selectedReviewCriterion}`}
-                items={reviewContext.items}
-                selectedCriterionId={selectedReviewCriterion}
-                onSelectCriterion={(criterionId: string) =>
-                  updateDeepLink({
-                    criterion: criterionId,
-                    node: 'review',
-                    tab: 'review',
-                  })
-                }
-                onLocateSourceRef={(sourceRef: string) =>
-                  updateDeepLink({
-                    node: 'reader',
-                    tab: 'reader',
-                    readerMode: 'structured',
-                    unit: null,
-                    sourceRef,
-                  })
-                }
-              />
-              <details
-                className="parse-engineer-review"
-                aria-label="记录必要的工程师修订"
-              >
-                <summary className="parse-engineer-review-summary">
-                  <div>
-                    <span>可选 · 仅在需要修正时使用</span>
-                    <strong>记录必要的工程师修订</strong>
-                  </div>
-                  <small>
-                    {reviewContext.ledger?.reviewCount ?? 0} 条历史意见
-                  </small>
-                </summary>
-                <div className="parse-engineer-review-body">
-                  <p>
-                    保存只记录工程师判断，不运行模型，也不会直接改写逐项评估结果。
-                    只有发现判断方向、依据或输入需要修正时才记录，无需逐项确认。
-                  </p>
-                  <p className="parse-review-mobile-hint" role="note">
-                    复杂修订建议使用桌面端全屏工作台。
-                  </p>
-                  <div className="parse-engineer-review-form">
-                    <label>
-                      规则项
-                      <NativeSelect
-                        value={selectedReviewCriterion}
-                        onChange={(event) =>
-                          updateDeepLink({
-                            criterion: event.target.value,
-                            node: 'review',
-                            tab: 'review',
-                          })
-                        }
-                      >
-                        {reviewContext.items.map((item, index) => (
-                          <NativeSelectOption
-                            key={item.criterionId}
-                            value={item.criterionId}
-                          >
-                            {assessmentRuleName(item, index)} ·{' '}
-                            {humanState(item.dynamicResult) ?? '状态待确认'}
+                  <summary className="parse-engineer-review-summary">
+                    <div>
+                      <span>可选 · 仅在需要修正时使用</span>
+                      <strong>记录必要的工程师修订</strong>
+                    </div>
+                    <small>
+                      {reviewContext.ledger?.reviewCount ?? 0} 条历史意见
+                    </small>
+                  </summary>
+                  <div className="parse-engineer-review-body">
+                    <p>
+                      保存只记录工程师判断，不运行模型，也不会直接改写逐项评估结果。
+                      只有发现判断方向、依据或输入需要修正时才记录，无需逐项确认。
+                    </p>
+                    <p className="parse-review-mobile-hint" role="note">
+                      复杂修订建议使用桌面端全屏工作台。
+                    </p>
+                    <div className="parse-engineer-review-form">
+                      <label>
+                        规则项
+                        <NativeSelect
+                          value={selectedReviewCriterion}
+                          onChange={(event) =>
+                            updateDeepLink({
+                              criterion: event.target.value,
+                              node: 'review',
+                              tab: 'review',
+                            })
+                          }
+                        >
+                          {reviewContext.items.map((item, index) => (
+                            <NativeSelectOption
+                              key={item.criterionId}
+                              value={item.criterionId}
+                            >
+                              {assessmentRuleName(item, index)} ·{' '}
+                              {humanState(item.dynamicResult) ?? '状态待确认'}
+                            </NativeSelectOption>
+                          ))}
+                        </NativeSelect>
+                      </label>
+                      <label>
+                        处理意见
+                        <NativeSelect
+                          value={reviewDecision}
+                          onChange={(event) =>
+                            setReviewDecision(
+                              event.target
+                                .value as CanonicalEngineerReviewDecision,
+                            )
+                          }
+                        >
+                          <NativeSelectOption value="confirmed_pass">
+                            确认通过
                           </NativeSelectOption>
-                        ))}
-                      </NativeSelect>
-                    </label>
-                    <label>
-                      处理意见
-                      <NativeSelect
-                        value={reviewDecision}
-                        onChange={(event) =>
-                          setReviewDecision(
-                            event.target
-                              .value as CanonicalEngineerReviewDecision,
-                          )
-                        }
+                          <NativeSelectOption value="confirmed_fail">
+                            确认不通过
+                          </NativeSelectOption>
+                          <NativeSelectOption value="returned_for_rework">
+                            退回补充
+                          </NativeSelectOption>
+                          <NativeSelectOption value="deferred">
+                            暂缓判断
+                          </NativeSelectOption>
+                        </NativeSelect>
+                      </label>
+                      <label className="parse-engineer-review-comment">
+                        说明
+                        <Textarea
+                          value={reviewComment}
+                          onChange={(event) =>
+                            setReviewComment(event.target.value)
+                          }
+                          placeholder="说明依据、异议或仍需补齐的输入"
+                          maxLength={4000}
+                        />
+                      </label>
+                      <Button
+                        type="button"
+                        disabled={loading || reviewSubmitting}
+                        onClick={() => {
+                          if (
+                            !selectedReviewCriterion ||
+                            !reviewComment.trim()
+                          ) {
+                            setAssessmentError('请选择评估项并填写说明。');
+                            return;
+                          }
+                          setAssessmentError(null);
+                          setReviewPreviewOpen(true);
+                        }}
                       >
-                        <NativeSelectOption value="confirmed_pass">
-                          确认通过
-                        </NativeSelectOption>
-                        <NativeSelectOption value="confirmed_fail">
-                          确认不通过
-                        </NativeSelectOption>
-                        <NativeSelectOption value="returned_for_rework">
-                          退回补充
-                        </NativeSelectOption>
-                        <NativeSelectOption value="deferred">
-                          暂缓判断
-                        </NativeSelectOption>
-                      </NativeSelect>
-                    </label>
-                    <label className="parse-engineer-review-comment">
-                      说明
-                      <Textarea
-                        value={reviewComment}
-                        onChange={(event) =>
-                          setReviewComment(event.target.value)
-                        }
-                        placeholder="说明依据、异议或仍需补齐的输入"
-                        maxLength={4000}
-                      />
-                    </label>
-                    <Button
-                      type="button"
-                      disabled={loading || reviewSubmitting}
-                      onClick={() => {
-                        if (!selectedReviewCriterion || !reviewComment.trim()) {
-                          setAssessmentError('请选择评估项并填写说明。');
-                          return;
-                        }
-                        setAssessmentError(null);
-                        setReviewPreviewOpen(true);
-                      }}
-                    >
-                      {reviewSubmitting
-                        ? '正在保存…'
-                        : '预览影响并保存工程师意见'}
-                    </Button>
+                        {reviewSubmitting
+                          ? '正在保存…'
+                          : '预览影响并保存工程师意见'}
+                      </Button>
+                    </div>
+                    {reviewContext.items
+                      .filter((item) => item.latestReview)
+                      .map((item) => (
+                        <p
+                          key={item.criterionId}
+                          className="parse-review-latest"
+                        >
+                          <strong>
+                            {reviewCriterionLabel(item.criterionId)}
+                          </strong>{' '}
+                          ·{' '}
+                          {REVIEW_DECISION_LABELS[item.latestReview!.decision]}{' '}
+                          · {item.latestReview!.comment}
+                        </p>
+                      ))}
                   </div>
-                  {reviewContext.items
-                    .filter((item) => item.latestReview)
-                    .map((item) => (
-                      <p key={item.criterionId} className="parse-review-latest">
-                        <strong>
-                          {reviewCriterionLabel(item.criterionId)}
-                        </strong>{' '}
-                        · {REVIEW_DECISION_LABELS[item.latestReview!.decision]}{' '}
-                        · {item.latestReview!.comment}
-                      </p>
-                    ))}
-                </div>
-              </details>
-            </>
-          ) : (
-            <div className="parse-assessment-empty" id="workspace-review">
-              <p>可在下方继续讨论已有分析、补充材料或提出问题。</p>
-            </div>
-          )}
+                </details>
+              </>
+            ) : (
+              <div className="parse-assessment-empty" id="workspace-review">
+                <p>可在下方继续讨论已有分析、补充材料或提出问题。</p>
+              </div>
+            )}
+          </JobAidProblemWorkspace>
           <ContinuousReviewPanel
             key={workItemId}
             workItemId={workItemId}

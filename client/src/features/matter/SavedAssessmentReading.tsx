@@ -20,6 +20,7 @@ import {
 interface SavedAssessmentReadingProps {
   result: AssessmentReadingResult;
   depth?: 'brief' | 'full';
+  presentation?: 'complete' | 'claims';
   locationSuffix?: string;
   onLocateDocument: (evidence: DocumentAssessmentEvidence) => void;
 }
@@ -40,7 +41,14 @@ const SavedAssessmentReading: FC<SavedAssessmentReadingProps> = (props) => {
 
 const SavedReadingLocation: FC<
   SavedAssessmentReadingProps & { scopeKey: string; session: number }
-> = ({ result, depth = 'brief', onLocateDocument, scopeKey, session }) => {
+> = ({
+  result,
+  depth = 'brief',
+  presentation,
+  onLocateDocument,
+  scopeKey,
+  session,
+}) => {
   const panelActive = useWorkbenchPanelActive();
   const [initialLocation] = useState(() => readReadingLocation(scopeKey));
   const [selection, setSelection] = useState<AssessmentClaimSelection | null>(
@@ -67,6 +75,7 @@ const SavedReadingLocation: FC<
       <AssessmentReadingBrief
         result={result}
         depth={depth}
+        presentation={presentation}
         onOpenClaim={(
           selected: AssessmentClaimSelection,
           trigger: HTMLButtonElement,

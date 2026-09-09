@@ -1,0 +1,193 @@
+.wl-jobaid-workspace {
+  min-width: 0;
+  color: var(--parse-ink, var(--foreground));
+  container-type: inline-size;
+  background: var(--wl-surface-solid, var(--background));
+}
+.wl-jobaid-status {
+  padding: 18px 24px 10px;
+  font-size: 12px;
+  line-height: 1.8;
+}
+.wl-jobaid-status > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+}
+.wl-jobaid-status span,
+.wl-jobaid-meta {
+  color: var(--parse-muted, var(--muted-foreground));
+  font-size: 12px;
+}
+.wl-jobaid-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 8px;
+}
+.wl-jobaid-notice {
+  margin: 6px 24px 14px;
+  padding: 10px 14px;
+  border-left: 2px solid var(--parse-warning, var(--border));
+  font-size: 13px;
+  line-height: 1.8;
+}
+.wl-jobaid-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 24px;
+  border-bottom: 1px solid var(--parse-rule, var(--border));
+}
+.wl-jobaid-tabs [aria-pressed='true'] {
+  background: var(--wl-surface-subtle, var(--muted));
+  color: var(--parse-ink, var(--foreground));
+  font-weight: 650;
+}
+.wl-jobaid-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+.wl-jobaid-layout.has-issues {
+  grid-template-columns: 196px minmax(0, 1fr);
+}
+.wl-jobaid-index {
+  position: sticky;
+  top: 0;
+  padding: 24px 16px;
+  font-size: 12px;
+  line-height: 1.75;
+  max-height: 80dvh;
+  overflow-y: auto;
+}
+.wl-jobaid-index > span {
+  color: var(--parse-muted, var(--muted-foreground));
+  display: block;
+  margin-bottom: 12px;
+}
+.wl-jobaid-index button {
+  display: block;
+  text-align: left;
+  width: 100%;
+  padding: 10px 4px;
+  overflow-wrap: anywhere;
+  color: var(--parse-muted, var(--muted-foreground));
+}
+.wl-jobaid-index button[aria-current] {
+  color: var(--parse-ink, var(--foreground));
+  font-weight: 650;
+}
+.wl-jobaid-index button:focus-visible {
+  outline: 2px solid var(--parse-ink, var(--foreground));
+  outline-offset: 2px;
+}
+.wl-jobaid-reading {
+  min-width: 0;
+  max-width: 88ch;
+  padding: 30px clamp(20px, 4cqw, 56px) 72px;
+  margin-inline: auto;
+  font-size: 15px;
+  line-height: 1.95;
+  overflow-wrap: anywhere;
+}
+.wl-jobaid-reading h2 {
+  font-size: 24px;
+  font-weight: 650;
+  line-height: 1.5;
+  margin-bottom: 18px;
+}
+.wl-jobaid-reading h3 {
+  font-size: 20px;
+  font-weight: 650;
+  line-height: 1.6;
+  margin-bottom: 16px;
+}
+.wl-jobaid-reading h4 {
+  font-size: 15px;
+  font-weight: 650;
+  margin: 20px 0 10px;
+}
+.wl-jobaid-reading p {
+  white-space: pre-wrap;
+  margin: 10px 0;
+}
+.wl-jobaid-reading small {
+  color: var(--parse-muted, var(--muted-foreground));
+  font-size: 12px;
+  font-weight: 400;
+}
+.wl-jobaid-issue {
+  border-top: 1px solid var(--parse-rule, var(--border));
+  padding-top: 32px;
+  margin-top: 36px;
+  scroll-margin-top: 20px;
+  outline-offset: 8px;
+}
+.wl-jobaid-risk-classification {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 24px;
+  margin: 20px 0;
+  padding: 16px 0;
+  border-block: 1px solid var(--parse-rule, var(--border));
+}
+.wl-jobaid-risk-classification dt {
+  color: var(--parse-muted, var(--muted-foreground));
+  font-size: 12px;
+}
+.wl-jobaid-risk-classification dd {
+  font-size: 14px;
+}
+.wl-jobaid-evidence {
+  margin: 12px 0 22px;
+  font-size: 12px;
+}
+.wl-jobaid-evidence summary {
+  cursor: pointer;
+  color: var(--parse-muted, var(--muted-foreground));
+}
+.wl-jobaid-evidence > div {
+  display: grid;
+  gap: 24px;
+  padding: 16px;
+  border-left: 1px solid var(--parse-rule, var(--border));
+}
+.wl-jobaid-open-questions {
+  padding-left: 16px;
+  border-left: 2px solid var(--parse-warning, var(--border));
+}
+.wl-jobaid-requirement {
+  margin-top: 20px;
+}
+.wl-jobaid-overall {
+  margin-top: 36px;
+  padding-top: 26px;
+  border-top: 1px solid var(--parse-rule, var(--border));
+}
+.wl-jobaid-read-error {
+  padding: 14px 20px;
+  font-size: 13px;
+  line-height: 1.8;
+  border: 1px solid var(--parse-warning, var(--border));
+}
+@container (max-width: 720px) {
+  .wl-jobaid-layout.has-issues {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .wl-jobaid-index {
+    position: static;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+    max-height: 150px;
+    border-bottom: 1px solid var(--parse-rule, var(--border));
+  }
+  .wl-jobaid-index button {
+    width: auto;
+    max-width: 100%;
+  }
+  .wl-jobaid-reading {
+    padding: 24px 20px 50px;
+  }
+}

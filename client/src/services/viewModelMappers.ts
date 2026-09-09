@@ -218,9 +218,13 @@ export function toWorkItemView(
           sourceCount,
           staleReason: overall.staleReason,
           technicalDetails: {
-            translationProgress: workItem.translation
-              ? `${workItem.translation.translatedUnitCount}/${workItem.translation.sourceUnitCount}`
-              : null,
+            translationProgress:
+              page.readerProjection?.translation.status ===
+              'SEMANTIC_READING_AID_AVAILABLE'
+                ? `${page.readerProjection.translation.reading.coverage.readableSourceCharacters}/${page.readerProjection.translation.reading.coverage.registeredSourceCharacters} 个已登记原文字符可读`
+                : workItem.translation
+                  ? `${workItem.translation.translatedUnitCount}/${workItem.translation.sourceUnitCount} 个历史翻译单元`
+                  : null,
             evaluationProgress: isJobAidProblemProjection(
               workItem.integratedAssessment!.baseRules,
             )
