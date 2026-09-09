@@ -87,10 +87,46 @@
 
 .wl-workbench-shell.is-focus-mode .wl-workbench-context-title {
   display: flex;
+  flex: 0 1 200px;
 }
 
 .wl-workbench-shell.is-focus-mode .wl-workbench-tabs {
-  display: none;
+  display: flex;
+}
+
+.wl-workbench-fullscreen-trigger {
+  display: flex;
+  width: auto;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+  padding-inline: 9px;
+  color: var(--wl-ink);
+  border-color: var(--wl-border);
+}
+
+.wl-workbench-fullscreen-trigger span {
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.wl-workbench-fullscreen-error {
+  max-width: 240px;
+  color: var(--wl-amber-ink, var(--wl-ink));
+  font-size: 12px;
+}
+
+@media (max-width: 720px) {
+  .wl-workbench-fullscreen-trigger span {
+    display: none;
+  }
+}
+
+@media (max-width: 1100px) {
+  .wl-workbench-shell.is-focus-mode:not(.is-compact)
+    .wl-workbench-context-title {
+    display: none;
+  }
 }
 
 /* 沉浸按钮：两态图标切换 */
@@ -345,6 +381,8 @@
 
 /* 原生全屏时的背景兜底 */
 .wl-workbench-shell:fullscreen {
+  width: 100vw;
+  height: 100dvh;
   background: var(--wl-bg);
   border: 0;
   border-radius: 0;

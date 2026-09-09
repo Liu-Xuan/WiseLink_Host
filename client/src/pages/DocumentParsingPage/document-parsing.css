@@ -731,6 +731,42 @@
   grid-template-columns: minmax(300px, 1fr) minmax(440px, 1.08fr);
 }
 
+/* 阅读时把状态信息折叠到一行，正文占据剩余高度。 */
+.parse-reading-context {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.parse-reading-context > summary {
+  padding: 5px 10px;
+  color: var(--wl-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+.parse-reading-context > summary span {
+  margin-left: 12px;
+  font-size: 11px;
+}
+
+.wl-workbench-main:not(.is-workspace) > .parse-reading-context > summary {
+  display: none;
+}
+
+.wl-workbench-main.is-workspace > .parse-reading-context[open] {
+  max-height: 35vh;
+  overflow: auto;
+}
+
+.parse-reader-split.is-pdf-active {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.parse-reader-split.is-pdf-active > .parse-reader-workspace {
+  display: none;
+}
+
 @media (min-width: 721px) {
   .wl-workbench-main.is-workspace > .wl-authority-strip {
     flex-wrap: nowrap;

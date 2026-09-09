@@ -71,6 +71,8 @@ export interface WorkbenchShellProps {
   activeTab: string;
   /** 普通页面由主栏滚动；Reader/package 工作区把滚动交给各自内容窗格。 */
   contentMode?: 'flow' | 'workspace';
+  /** 文档阅读默认收起辅助栏并隐藏应用外壳；不写入普通布局偏好。 */
+  readingLayout?: boolean;
   /** In-memory scroll positions, reset with the session/WorkItem-keyed shell. */
   retainTabScroll?: boolean;
   /** 窄屏四项底栏的语义归组；例如解析结果归入「原文」。 */
@@ -171,6 +173,7 @@ export default function WorkbenchShell({
   tabs,
   activeTab,
   contentMode = 'flow',
+  readingLayout = false,
   retainTabScroll = false,
   mobileActiveTab,
   quickOpenItems = [],
@@ -183,19 +186,23 @@ export default function WorkbenchShell({
     initialPrefs.treeWidth ?? NAV_DEFAULT,
   );
   const [navCollapsed, setNavCollapsed] = useState(
-    initialPrefs.navCollapsed ?? true,
+    readingLayout ? true : (initialPrefs.navCollapsed ?? true),
   );
   const [evidenceOpen, setEvidenceOpen] = useState(
-    initialPrefs.evidenceOpen ?? defaultEvidenceOpen(),
+    readingLayout
+      ? false
+      : (initialPrefs.evidenceOpen ?? defaultEvidenceOpen()),
   );
   const [evidenceRequested, setEvidenceRequested] = useState(false);
   const [evidenceWidth, setEvidenceWidth] = useState(
     initialPrefs.evidenceWidth ?? EVIDENCE_DEFAULT,
   );
-  const [immersive, setImmersive] = useState(false);
-  const [focusMode, setFocusMode] = useState(false);
+  const [immersive, setImmersive] = useState(readingLayout);
+  const [focusMode, setFocusMode] = useState(readingLayout);
   const [quickOpen, setQuickOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [fullscreenError, setFullscreenError] = useState<string | null>(null);
+  const previousReadingLayoutRef = useRef(readingLayout);
   const [isCompact, setIsCompact] = useState(defaultCompactViewport);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [mobileEvidenceOpen, setMobileEvidenceOpen] = useState(false);
@@ -381,20 +388,14 @@ export default function WorkbenchShell({
 
   /* ── 原生全屏 ── */
   useEffect(() => {
-    const handler = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    const handler = () =>
+      setIsFullscreen(document.fullscreenElement === shellRef.current);
     document.addEventListener('fullscreenchange', handler);
     return () => document.removeEventListener('fullscreenchange', handler);
   }, []);
 
-  const toggleFullscreen = useCallback(() => {
-    if (document.fullscreenElement) {
-      void document.exitFullscreen();
-    } else if (shellRef.current?.requestFullscreen) {
-      void shellRef.current.requestFullscreen();
-    }
-  }, []);
-
   const toggleFocusMode = useCallback(() => {
+    setFullscreenError(null);
     if (focusMode) {
       const previous = focusRestoreRef.current;
       setNavCollapsed(previous.navCollapsed);
@@ -416,6 +417,66 @@ export default function WorkbenchShell({
     setImmersive(true);
     setFocusMode(true);
   }, [evidenceOpen, focusMode, immersive, navCollapsed]);
+
+  useEffect(() => {
+    if (previousReadingLayoutRef.current === readingLayout) return;
+    previousReadingLayoutRef.current = readingLayout;
+    if (readingLayout !== focusMode) toggleFocusMode();
+  }, [readingLayout, focusMode, toggleFocusMode]);
+
+  const toggleFullscreen = useCallback(() => {
+    setFullscreenError(null);
+    if (document.fullscreenElement === shellRef.current) {
+      void document.exitFullscreen().catch(() => {
+        setFullscreenError(
+          '退出系统全屏失败，请按 Esc 或使用浏览器全屏菜单退出。',
+        );
+      });
+      return;
+    }
+    if (!focusMode) toggleFocusMode();
+    if (!shellRef.current?.requestFullscreen) {
+      setFullscreenError('当前浏览器不支持系统全屏，已展开专注阅读布局。');
+      return;
+    }
+    void shellRef.current.requestFullscreen().catch(() => {
+      setFullscreenError(
+        '浏览器未允许系统全屏；可继续专注阅读，或重新点击全屏。',
+      );
+    });
+  }, [focusMode, toggleFocusMode]);
+
+  useEffect(() => {
+    const exitFocus = (event: KeyboardEvent): void => {
+      if (
+        event.key !== 'Escape' ||
+        event.defaultPrevented ||
+        !focusMode ||
+        isFullscreen ||
+        quickOpen ||
+        mobileNavOpen ||
+        mobileEvidenceOpen
+      )
+        return;
+      if (
+        event.target instanceof Element &&
+        event.target.closest(
+          '[role="dialog"], [role="menu"], input, textarea, [contenteditable="true"]',
+        )
+      )
+        return;
+      toggleFocusMode();
+    };
+    document.addEventListener('keydown', exitFocus);
+    return () => document.removeEventListener('keydown', exitFocus);
+  }, [
+    focusMode,
+    isFullscreen,
+    quickOpen,
+    mobileNavOpen,
+    mobileEvidenceOpen,
+    toggleFocusMode,
+  ]);
 
   const adaptiveLayout = resolveWorkbenchAdaptiveLayout({
     bodyWidth,
@@ -735,6 +796,26 @@ export default function WorkbenchShell({
         </div>
 
         <div className="wl-workbench-toolbar-actions">
+          <button
+            type="button"
+            className="wl-workbench-tool-btn wl-workbench-fullscreen-trigger"
+            onClick={toggleFullscreen}
+            aria-label={isFullscreen ? '退出全屏' : '全屏阅读'}
+            title={isFullscreen ? '退出全屏（Esc）' : '全屏阅读'}
+            aria-pressed={isFullscreen}
+          >
+            {isFullscreen ? (
+              <Minimize2 aria-hidden="true" />
+            ) : (
+              <Maximize2 aria-hidden="true" />
+            )}
+            <span>{isFullscreen ? '退出全屏' : '全屏'}</span>
+          </button>
+          {fullscreenError ? (
+            <span className="wl-workbench-fullscreen-error" role="alert">
+              {fullscreenError}
+            </span>
+          ) : null}
           {!isCompact ? (
             <button
               type="button"
