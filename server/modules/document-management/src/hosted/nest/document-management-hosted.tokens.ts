@@ -1,3 +1,4 @@
+import type { DocumentUploadAuthority } from './document-upload-authority';
 export const DOCUMENT_MANAGEMENT_INGEST_AUTHORIZER = Symbol(
   'DOCUMENT_MANAGEMENT_INGEST_AUTHORIZER',
 );
@@ -21,7 +22,7 @@ export interface DocumentManagementIngestAuthorizer {
       workItemId?: string;
       expectedRevision?: number;
       authorizationFingerprint?: string;
-    };
+    } | DocumentUploadAuthority;
   }): Promise<void>;
 
   assertCanRead(input: {

@@ -82,12 +82,18 @@ export class CanonicalHostController {
     @Query('cursor') cursor: string | undefined,
     @Query('limit') limit: string | undefined,
     @Req() httpRequest: Request,
+    @Query('normalizedFamily') normalizedFamily?: string,
+    @Query('ata') ata?: string,
+    @Query('aircraftModel') aircraftModel?: string,
   ) {
     if (!this.libraryDocuments)
       throw new Error('CANONICAL_LIBRARY_SERVICE_UNCONFIGURED');
     return this.libraryDocuments.list(
       {
         search,
+        normalizedFamily,
+        ata,
+        aircraftModel,
         cursor,
         ...(limit === undefined
           ? {}

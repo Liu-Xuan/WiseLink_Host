@@ -1,3 +1,4 @@
+import { extractActualPdfMetadata } from './pdfDocumentMetadata.js';
 import { resolveDocumentFamilyAdapter } from '../adapters/documentFamilyAdapterRegistry.js';
 
 const FIRST_PAGE_LIMIT = 1;
@@ -692,6 +693,7 @@ export function controlledPdfByteView(bytes) {
   );
 }
 
+/** @param {{ layout: import('../../../../professional-input/pure/professional-input-pure.types').ParsedPdfLayout, actualSha256: string, actualByteLength: number, inspectionSha256?: string, inspectionByteLength?: number }} input */
 export function readActualPdfPageCount({
   layout,
   actualSha256,
@@ -822,6 +824,7 @@ export function resolveActualPdfDocumentIdentity({
     revisionDate: extracted.revisionDate,
     sourceGeneratedDate: extracted.sourceGeneratedDate,
     documentCodeProvenance: provenance,
+    extractedMetadata: extractActualPdfMetadata({ layout, actualSha256, actualByteLength, identity: { documentFamily: adapter.docFamily, issuer } }),
     ...(extracted.sourceGeneratedDate
       ? {
           sourceGeneratedDateProvenance: {

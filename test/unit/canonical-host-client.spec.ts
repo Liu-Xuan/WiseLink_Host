@@ -33,6 +33,10 @@ import {
   getCanonicalLibraryDocuments,
   getCanonicalLibraryTasks,
   getCanonicalLibraryQuicklook,
+  enrichDocumentVersionMetadata,
+  uploadLibraryDocument,
+  confirmLibraryHistoricalImport,
+  refreshLibraryHistoricalImport,
   getCurrentReviewConversation,
   getDocumentParsingPage,
   getStructuredContentPage,
@@ -50,8 +54,44 @@ import {
 } from '../../client/src/api/canonical-host';
 import { createRequestCorrelationId } from '../../client/src/utils/request-correlation-id';
 import { logger } from '@lark-apaas/client-toolkit/logger';
+import { libraryMetadata } from './fixtures/canonical-library';
 
 describe('canonical host assessment client', () => {
+  it('uses ordinary upload and exact explicit historical confirmation, without auto-retry', async () => {
+    const receipt = { status: 'REVIEW_REQUIRED', historicalImport: null };
+    request.mockResolvedValue({ status: 200, data: receipt });
+    const upload = { requestId: 'upload-1', selection: { bucketId: 'private', filePath: 'document.pdf' } };
+    await expect(uploadLibraryDocument(upload)).resolves.toEqual(receipt);
+    expect(request).toHaveBeenLastCalledWith({ url: '/api/document-management/uploads/file-service', method: 'POST', data: upload });
+    const confirmation = { confirmed: true as const, expectedCurrentGeneration: 4, expectedCurrentDocumentVersionId: 'DV-current' };
+    await confirmLibraryHistoricalImport('P/1', confirmation);
+    expect(request).toHaveBeenLastCalledWith({ url: '/api/document-management/uploads/ingress-preflights/P%2F1/import-historical', method: 'POST', data: confirmation });
+    await refreshLibraryHistoricalImport('P/1');
+    expect(request).toHaveBeenLastCalledWith({ url: '/api/document-management/uploads/ingress-preflights/P%2F1/refresh-historical', method: 'POST' });
+    request.mockRejectedValueOnce(new Error('HISTORICAL_IMPORT_CONFIRMATION_STALE'));
+    await expect(confirmLibraryHistoricalImport('P/1', confirmation)).rejects.toThrow('STALE');
+    expect(request).toHaveBeenCalledTimes(4);
+  });
+
+  it('rejects upload success without a registered version ID', async () => {
+    request.mockResolvedValue({ status: 200, data: { status: 'COMMITTED', documentVersionId: null } });
+    await expect(uploadLibraryDocument({ requestId: 'one', selection: { bucketId: 'private', filePath: 'one.pdf' } })).rejects.toThrow('DOCUMENT_UPLOAD_RECEIPT_INVALID');
+  });
+
+  it('submits metadata enrichment for the exact version without a fabricated body', async () => {
+    request.mockResolvedValue({ status: 200, data: { documentVersionId: 'DV/old', disposition: 'ENRICHED', extractedMetadata: libraryMetadata() } });
+    await expect(enrichDocumentVersionMetadata('DV/old')).resolves.toMatchObject({ documentVersionId: 'DV/old' });
+    expect(request).toHaveBeenCalledWith({ url: '/api/document-management/document-versions/DV%2Fold/metadata/enrich', method: 'POST' });
+    request.mockResolvedValue({ status: 200, data: { documentVersionId: 'DV/wrong', disposition: 'ALREADY_PRESENT', extractedMetadata: libraryMetadata() } });
+    await expect(enrichDocumentVersionMetadata('DV/old')).rejects.toThrow('DOCUMENT_METADATA_RECEIPT_MISMATCH');
+  });
+
+  it('passes all exact catalog facets through without folding them into search', async () => {
+    request.mockResolvedValue({ status: 200, data: {} });
+    const params = { search: 'condition', normalizedFamily: 'SB', ata: '__UNKNOWN__', aircraftModel: '737', cursor: 'opaque', limit: 24 };
+    await getCanonicalLibraryDocuments(params);
+    expect(request).toHaveBeenCalledWith({ url: '/api/canonical-host/library/documents', method: 'GET', params, signal: undefined });
+  });
   beforeEach(() => {
     invalidateCanonicalHostClientSession();
     request.mockReset();

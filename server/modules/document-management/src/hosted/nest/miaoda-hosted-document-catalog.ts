@@ -3,7 +3,7 @@ import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 
 import {
   actionAttempt,
@@ -11,12 +11,35 @@ import {
   dmCurrentnessDecision,
   dmDocument,
   dmDocumentVersion,
+  dmDocumentVersionMetadata,
   dmIngressPreflight,
   dmPublicationFamily,
   dmSourceArtifact,
   reviewConversation,
   workItem,
 } from '@server/database/schema';
+
+import {
+  compareDocumentIngressVersions,
+  documentIngressIdentityFromDescriptor,
+} from '../../migrated/ingress/documentIngressPreflight.js';
+import { deterministicId } from '../../runtime/valueTools.js';
+
+interface HistoricalImportScope {
+  preflightId: string;
+  actorUserId: string;
+  tenantId: string;
+}
+interface HistoricalImportCommand extends HistoricalImportScope {
+  expectedCurrentGeneration: number;
+  expectedCurrentDocumentVersionId: string;
+  documentVersionId: string;
+  revisionId: string;
+  canonicalRevisionIdentity: string;
+  confirmedAt: string;
+  sha256: string;
+  byteLength: number;
+}
 
 const REVIEW_ATTACHMENT_SOURCE_CHANNEL =
   'canonical_review_attachment_selection';
@@ -379,13 +402,37 @@ export function classifyIncompleteIngestionRecoveryState(
   };
 }
 
+function activeSourcePreflights(
+  preflights: Array<typeof dmIngressPreflight.$inferSelect>,
+  acquisitions: Array<typeof dmAcquisition.$inferSelect>,
+) {
+  for (const row of preflights.filter((value) => value.status === 'SUPERSEDED')) {
+    const replacementId = recordJson(row.decisionPayloadJson).supersededByPreflightId;
+    const replacement = preflights.find((value) => value.preflightId === replacementId);
+    const acquisition = acquisitions.find((value) => value.acquisitionId === row.acquisitionId);
+    if (row.decision !== 'ASK_IMPORT_OLDER_REVISION' || row.executionAuthorized !== false
+      || row.commitIdempotencyKey || !row.documentVersionId
+      || acquisition?.status !== 'COMMITTED_CANONICAL'
+      || acquisition.documentVersionId !== row.documentVersionId
+      || replacement?.status !== 'COMMITTED' || replacement.decision !== 'ASK_IMPORT_OLDER_REVISION'
+      || replacement.acquisitionId !== row.acquisitionId
+      || replacement.documentVersionId !== row.documentVersionId
+      || replacement.commitIdempotencyKey !== `catalog:${row.acquisitionId}`
+      || recordValue(recordJson(replacement.decisionPayloadJson), 'historicalImportConfirmation').confirmedBy
+        !== acquisition.acquiredBy) {
+      fail('IMMUTABLE_SOURCE_REUSE_DB_PARTIAL', 'Superseded historical preflight lacks a complete confirmed replacement.');
+    }
+  }
+  return preflights.filter((row) => row.status !== 'SUPERSEDED');
+}
+
 export function classifyImmutableSourceReuseState(
   input: ImmutableSourceReuseInput,
   state: ImmutableSourceReuseState,
 ) {
   const artifacts = state.artifacts ?? [];
   const acquisitions = state.acquisitions ?? [];
-  const preflights = state.preflights ?? [];
+  const preflights = activeSourcePreflights(state.preflights ?? [], acquisitions);
   const versions = state.versions ?? [];
   if (
     artifacts.length === 0
@@ -703,6 +750,8 @@ export class MiaodaHostedDocumentCatalog {
     sourceChannel,
     sourceRef,
     selection,
+    tenantId = '',
+    actorUserId = '',
   }) {
     const normalizedExpectedAcquisitionId = String(
       expectedAcquisitionId || '',
@@ -731,6 +780,36 @@ export class MiaodaHostedDocumentCatalog {
       fail('ACQUISITION_IDEMPOTENCY_CONFLICT', 'Idempotency key was reused for another selection.');
     }
     if (!acquisition.documentVersionId) {
+      // A lost upload response must recover the pending review, never route a
+      // normal historical confirmation through orphan-recovery heuristics.
+      if (tenantId && actorUserId) {
+        const [pending] = await this.db.select().from(dmIngressPreflight).where(and(
+          eq(dmIngressPreflight.acquisitionId, acquisition.acquisitionId),
+          eq(dmIngressPreflight.decision, 'ASK_IMPORT_OLDER_REVISION'),
+          eq(dmIngressPreflight.status, 'READY'),
+        )).orderBy(desc(dmIngressPreflight.observedCurrentGeneration), desc(dmIngressPreflight.createdAt), desc(dmIngressPreflight.preflightId)).limit(1);
+        if (pending) {
+          const candidate = await this.loadHistoricalImportCandidate({
+            preflightId: pending.preflightId, actorUserId, tenantId,
+          });
+          const descriptor = candidate.normalizedDescriptor;
+          return {
+            status: 'PENDING_HISTORICAL_IMPORT', decision: 'ASK_IMPORT_OLDER_REVISION',
+            acquisitionId: acquisition.acquisitionId, sourceArtifactId: acquisition.sourceArtifactId,
+            preflightId: pending.preflightId,
+            historicalImport: { preflightId: pending.preflightId,
+              expectedCurrentGeneration: pending.observedCurrentGeneration,
+              expectedCurrentDocumentVersionId: pending.observedCurrentDocumentVersionId },
+            identityReadback: {
+              identityAuthority: descriptor.identityAuthority, canonicalIdentityKey: candidate.family.canonicalIdentityKey,
+              issuerAuthority: descriptor.issuer, documentFamily: descriptor.canonicalDocumentFamily,
+              documentNumber: descriptor.documentCode, businessRevision: descriptor.businessRevision,
+              revisionDate: descriptor.revisionDate, sourceGeneratedDate: descriptor.sourceGeneratedDate,
+              pageCount: descriptor.pageCount, sourceArtifactId: acquisition.sourceArtifactId,
+            },
+          };
+        }
+      }
       return { status: 'INCOMPLETE', acquisitionId: acquisition.acquisitionId };
     }
     const rows = await this.db.select({
@@ -852,9 +931,10 @@ export class MiaodaHostedDocumentCatalog {
       input.acquisitionId,
       ...acquisitions.map((row) => row.acquisitionId),
     ])];
-    const preflights = await this.db.select().from(dmIngressPreflight).where(
+    const preflightRows = await this.db.select().from(dmIngressPreflight).where(
       inArray(dmIngressPreflight.acquisitionId, acquisitionIds),
     ).limit(100);
+    const preflights = activeSourcePreflights(preflightRows, acquisitions);
     const versions = await this.db.select().from(dmDocumentVersion).where(or(
       eq(dmDocumentVersion.sourceArtifactId, input.sourceArtifactId),
       eq(dmDocumentVersion.acquisitionId, input.acquisitionId),
@@ -1229,6 +1309,185 @@ export class MiaodaHostedDocumentCatalog {
     return updated || current;
   }
 
+  async readHistoricalImportCandidate(input: HistoricalImportScope) {
+    return this.loadHistoricalImportCandidate(input);
+  }
+
+  private async loadHistoricalImportCandidate(
+    input: HistoricalImportScope,
+    database: Pick<PostgresJsDatabase, 'select'> = this.db,
+  ) {
+    const [row] = await database.select({
+      preflight: dmIngressPreflight, acquisition: dmAcquisition, artifact: dmSourceArtifact,
+    }).from(dmIngressPreflight).innerJoin(
+      dmAcquisition, eq(dmAcquisition.acquisitionId, dmIngressPreflight.acquisitionId),
+    ).innerJoin(
+      dmSourceArtifact, eq(dmSourceArtifact.sourceArtifactId, dmAcquisition.sourceArtifactId),
+    ).where(and(
+      eq(dmIngressPreflight.preflightId, input.preflightId),
+      eq(dmAcquisition.acquiredBy, input.actorUserId),
+      sql`starts_with(${dmAcquisition.idempotencyKey}, ${`tenant:${encodeURIComponent(input.tenantId)}:request:`})`,
+    )).limit(1);
+    if (!row) {
+      throw Object.assign(new Error('Historical import preflight not found.'), {
+        code: 'HISTORICAL_IMPORT_NOT_FOUND', statusCode: 404,
+      });
+    }
+    const normalizedDescriptor = parseJson(row.preflight.normalizedDescriptorJson);
+    const sourceDescriptor = parseJson(row.acquisition.sourceDescriptorJson);
+    if (row.preflight.decision !== 'ASK_IMPORT_OLDER_REVISION'
+      || row.preflight.executionAuthorized !== false
+      || !['READY', 'COMMITTED'].includes(row.preflight.status)
+      || row.artifact.readbackVerified !== true
+      || normalizedDescriptor.identityAuthority !== 'DM_ACTUAL_PDF_FIRST_THREE_PAGES'
+      || sourceDescriptor.identityAuthority !== 'DM_ACTUAL_PDF_FIRST_THREE_PAGES'
+      || sourceDescriptor.sha256 !== row.artifact.sha256
+      || normalizedDescriptor.sha256 !== row.artifact.sha256
+      || Number(sourceDescriptor.sizeBytes) !== Number(row.artifact.byteLength)
+      || Number(normalizedDescriptor.sizeBytes) !== Number(row.artifact.byteLength)
+      || ['documentCode', 'issuer', 'businessRevision', 'revisionDate', 'sourceGeneratedDate']
+        .some((field) => String(sourceDescriptor[field] || '') !== String(normalizedDescriptor[field] || ''))
+      || !Number.isSafeInteger(normalizedDescriptor.pageCount) || normalizedDescriptor.pageCount < 1) {
+      fail('HISTORICAL_IMPORT_LINEAGE_INVALID', 'The pending preflight lacks verified publication and byte lineage.');
+    }
+    const identityKey = tenantFamilyIdentityPrefix(input.tenantId) + encodeURIComponent(
+      `${normalizedDescriptor.issuer}|${normalizedDescriptor.canonicalDocumentFamily}|${normalizedDescriptor.documentCode}`,
+    );
+    const [family] = await database.select().from(dmPublicationFamily).where(
+      eq(dmPublicationFamily.canonicalIdentityKey, identityKey),
+    ).limit(1);
+    if (!family) fail('HISTORICAL_IMPORT_FAMILY_MISSING', 'The reviewed publication family no longer exists.');
+    const [document] = await database.select().from(dmDocument).where(
+      eq(dmDocument.familyId, family.familyId),
+    ).limit(1);
+    if (!document) fail('HISTORICAL_IMPORT_FAMILY_MISSING', 'The publication document no longer exists.');
+    return { ...row, normalizedDescriptor, sourceDescriptor, family, document };
+  }
+
+  async commitHistoricalVersion(command: HistoricalImportCommand) {
+    return this.db.transaction(async (transaction) => {
+      const initial = await this.loadHistoricalImportCandidate(command, transaction);
+      // Serialize with new-revision CAS updates without changing the head or generation.
+      await transaction.select().from(dmPublicationFamily).where(
+        eq(dmPublicationFamily.familyId, initial.family.familyId),
+      ).for('update');
+      await transaction.select().from(dmAcquisition).where(
+        eq(dmAcquisition.acquisitionId, initial.acquisition.acquisitionId),
+      ).for('update');
+      const candidate = await this.loadHistoricalImportCandidate(command, transaction);
+      const { preflight, acquisition, artifact, family, document, normalizedDescriptor, sourceDescriptor } = candidate;
+      const commitIdempotencyKey = `catalog:${acquisition.acquisitionId}`;
+      if (preflight.observedCurrentGeneration !== command.expectedCurrentGeneration
+        || preflight.observedCurrentDocumentVersionId !== command.expectedCurrentDocumentVersionId
+        || artifact.sha256 !== command.sha256 || Number(artifact.byteLength) !== command.byteLength) {
+        fail('HISTORICAL_IMPORT_CONFIRMATION_STALE', 'Confirmation differs from the stored source or current-version observation.');
+      }
+      if (preflight.status === 'COMMITTED') {
+        const [version] = await transaction.select().from(dmDocumentVersion).where(
+          eq(dmDocumentVersion.documentVersionId, preflight.documentVersionId || ''),
+        ).limit(1);
+        const confirmation = parseJson(preflight.decisionPayloadJson).historicalImportConfirmation;
+        if (!version || acquisition.status !== 'COMMITTED_CANONICAL'
+          || version.lifecycleStatus !== 'COMMITTED_IMMUTABLE'
+          || version.documentId !== document.documentId
+          || ['businessRevision', 'revisionDate', 'sourceGeneratedDate'].some((field) =>
+            String(version[field] || '') !== String(normalizedDescriptor[field] || ''))
+          || acquisition.documentVersionId !== version.documentVersionId
+          || version.acquisitionId !== acquisition.acquisitionId
+          || version.familyId !== family.familyId || version.sourceArtifactId !== artifact.sourceArtifactId
+          || version.pdfSha256 !== command.sha256 || Number(version.byteLength) !== command.byteLength
+          || preflight.commitIdempotencyKey !== commitIdempotencyKey
+          || confirmation?.confirmedBy !== command.actorUserId) {
+          fail('HISTORICAL_IMPORT_REPLAY_INVALID', 'Historical import replay lacks its committed confirmation lineage.');
+        }
+        return { version, family, replayed: true };
+      }
+      if (family.currentGeneration !== command.expectedCurrentGeneration
+        || family.currentDocumentVersionId !== command.expectedCurrentDocumentVersionId) {
+        fail('CURRENTNESS_CAS_CONFLICT', 'The current version changed after the displayed preflight.');
+      }
+      if (preflight.documentVersionId || preflight.commitIdempotencyKey
+        || acquisition.documentVersionId || acquisition.status !== 'ACQUIRED_READBACK_VERIFIED') {
+        fail('ACQUISITION_VERSION_CONFLICT', 'The source acquisition is no longer pending.');
+      }
+      const incoming = documentIngressIdentityFromDescriptor(sourceDescriptor, normalizedDescriptor);
+      const versions = await transaction.select().from(dmDocumentVersion).where(
+        eq(dmDocumentVersion.familyId, family.familyId),
+      );
+      const comparisons = versions.map((version) => {
+        const descriptor = {
+          ...normalizedDescriptor,
+          businessRevision: version.businessRevision, revisionDate: version.revisionDate,
+          sourceGeneratedDate: version.sourceGeneratedDate, sha256: version.pdfSha256,
+          originalFilename: version.originalFilename,
+          sourceGeneratedDateProvenance: {
+            schemaVersion: 'wiselink.source_generated_date_provenance.v1', source: 'controlled_metadata',
+            value: version.sourceGeneratedDate, inspectedSha256: version.pdfSha256, conflict: false,
+          },
+        };
+        return { version, comparison: compareDocumentIngressVersions(
+          incoming, documentIngressIdentityFromDescriptor(descriptor, descriptor),
+        ) };
+      });
+      if (!incoming.identityResolved || !incoming.versionOrderResolved
+        || comparisons.some(({ comparison }) => comparison === null || comparison === 0)
+        || comparisons.find(({ version }) => version.documentVersionId === family.currentDocumentVersionId)?.comparison !== -1
+        || command.canonicalRevisionIdentity !== incoming.comparableVersion
+        || command.documentVersionId !== deterministicId('document_version', family.familyId, incoming.comparableVersion)
+        || command.revisionId !== deterministicId('revision', family.familyId, incoming.comparableVersion)) {
+        fail('HISTORICAL_IMPORT_REPREFLIGHT_REQUIRED', 'The locked family no longer permits this exact historical revision.');
+      }
+      const [version] = await transaction.insert(dmDocumentVersion).values({
+        documentVersionId: command.documentVersionId, documentId: document.documentId, familyId: family.familyId,
+        revisionId: command.revisionId, canonicalRevisionIdentity: incoming.comparableVersion,
+        businessRevision: incoming.businessRevision, revisionDate: incoming.revisionDate,
+        sourceGeneratedDate: incoming.sourceGeneratedDate, originalFilename: normalizedDescriptor.originalFilename,
+        sourceArtifactId: artifact.sourceArtifactId, acquisitionId: acquisition.acquisitionId,
+        pdfSha256: artifact.sha256, byteLength: Number(artifact.byteLength), mediaType: artifact.mediaType,
+        lifecycleStatus: 'COMMITTED_IMMUTABLE', committedAt: asDate(command.confirmedAt), committedBy: command.actorUserId,
+      }).returning();
+      if (!version) fail('DOCUMENT_VERSION_INSERT_CONFLICT', 'Historical version was not inserted.');
+      if (sourceDescriptor.extractedMetadata) {
+        await transaction.insert(dmDocumentVersionMetadata).values({
+          documentVersionId: version.documentVersionId, extractedMetadata: sourceDescriptor.extractedMetadata,
+        });
+      }
+      const acquired = await transaction.update(dmAcquisition).set({
+        documentVersionId: version.documentVersionId, status: 'COMMITTED_CANONICAL',
+      }).where(and(eq(dmAcquisition.acquisitionId, acquisition.acquisitionId), isNull(dmAcquisition.documentVersionId)))
+        .returning({ acquisitionId: dmAcquisition.acquisitionId });
+      const confirmed = await transaction.update(dmIngressPreflight).set({
+        status: 'COMMITTED', documentVersionId: version.documentVersionId, commitIdempotencyKey,
+        committedAt: asDate(command.confirmedAt),
+        decisionPayloadJson: JSON.stringify({
+          ...parseJson(preflight.decisionPayloadJson),
+          historicalImportConfirmation: {
+            confirmedBy: command.actorUserId, confirmedAt: command.confirmedAt,
+            observedCurrentGeneration: family.currentGeneration,
+            observedCurrentDocumentVersionId: family.currentDocumentVersionId,
+          },
+        }),
+      }).where(and(eq(dmIngressPreflight.preflightId, preflight.preflightId), eq(dmIngressPreflight.status, 'READY')))
+        .returning({ preflightId: dmIngressPreflight.preflightId });
+      if (acquired.length !== 1 || confirmed.length !== 1) {
+        fail('HISTORICAL_IMPORT_LINK_CONFLICT', 'The confirmed historical import could not be linked atomically.');
+      }
+      // Keep every displayed observation while retiring obsolete READY rows;
+      // only the explicitly confirmed preflight owns the commit idempotency key.
+      await transaction.update(dmIngressPreflight).set({
+        status: 'SUPERSEDED', documentVersionId: version.documentVersionId,
+        decisionPayloadJson: sql`(${dmIngressPreflight.decisionPayloadJson}::jsonb ||
+          jsonb_build_object('supersededByPreflightId', ${preflight.preflightId}::text))::text`,
+      }).where(and(
+        eq(dmIngressPreflight.acquisitionId, acquisition.acquisitionId),
+        eq(dmIngressPreflight.status, 'READY'),
+        eq(dmIngressPreflight.decision, 'ASK_IMPORT_OLDER_REVISION'),
+        ne(dmIngressPreflight.preflightId, preflight.preflightId),
+      ));
+      return { version, family, replayed: false };
+    });
+  }
+
   async commitNewVersion(command) {
     const [storedPreflight] = await this.db.select().from(dmIngressPreflight).where(
       eq(dmIngressPreflight.preflightId, command.preflightId),
@@ -1379,6 +1638,13 @@ export class MiaodaHostedDocumentCatalog {
         fail('DOCUMENT_VERSION_INSERT_CONFLICT', 'DocumentVersion was not created in the hosted transaction.');
       }
 
+      if (command.documentVersion.extractedMetadata) {
+        await transaction.insert(dmDocumentVersionMetadata).values({
+          documentVersionId: command.documentVersion.documentVersionId,
+          extractedMetadata: command.documentVersion.extractedMetadata,
+        });
+      }
+
       const currentnessRows = await transaction.insert(dmCurrentnessDecision).values({
         currentnessDecisionId: command.currentnessDecision.currentnessDecisionId,
         familyId: command.family.familyId,
@@ -1418,6 +1684,55 @@ export class MiaodaHostedDocumentCatalog {
       currentnessChanged: true,
       currentGeneration: command.observedCurrentGeneration + 1,
     };
+  }
+
+  async readOwnedAcquisitionVersionBinding(input: { documentVersionId: string; tenantId: string; actorUserId: string }): Promise<boolean> {
+    const [row] = await this.db.select({ documentVersionId: dmDocumentVersion.documentVersionId })
+      .from(dmDocumentVersion)
+      .innerJoin(dmPublicationFamily, eq(dmPublicationFamily.familyId, dmDocumentVersion.familyId))
+      .innerJoin(dmAcquisition, and(eq(dmAcquisition.documentVersionId, dmDocumentVersion.documentVersionId),
+        eq(dmAcquisition.sourceArtifactId, dmDocumentVersion.sourceArtifactId)))
+      .where(and(eq(dmDocumentVersion.documentVersionId, input.documentVersionId),
+        eq(dmAcquisition.acquiredBy, input.actorUserId),
+        inArray(dmAcquisition.status, ['COMMITTED_CANONICAL', 'LINKED_EXACT_DOCUMENT_VERSION']),
+        sql`starts_with(${dmPublicationFamily.canonicalIdentityKey}, ${tenantFamilyIdentityPrefix(input.tenantId)})`,
+        sql`starts_with(${dmAcquisition.idempotencyKey}, ${`tenant:${encodeURIComponent(input.tenantId)}:request:`})`)).limit(1);
+    return Boolean(row);
+  }
+
+  async readMetadataSource(documentVersionId: string, tenantId: string) {
+    const [row] = await this.db.select({ version: dmDocumentVersion, family: dmPublicationFamily, source: dmSourceArtifact, metadata: dmDocumentVersionMetadata })
+      .from(dmDocumentVersion)
+      .innerJoin(dmPublicationFamily, eq(dmPublicationFamily.familyId, dmDocumentVersion.familyId))
+      .innerJoin(dmSourceArtifact, eq(dmSourceArtifact.sourceArtifactId, dmDocumentVersion.sourceArtifactId))
+      .leftJoin(dmDocumentVersionMetadata, eq(dmDocumentVersionMetadata.documentVersionId, dmDocumentVersion.documentVersionId))
+      .where(and(eq(dmDocumentVersion.documentVersionId, documentVersionId),
+        sql`starts_with(${dmPublicationFamily.canonicalIdentityKey}, ${tenantFamilyIdentityPrefix(tenantId)})`)).limit(1);
+    return row || null;
+  }
+
+  async fillMissingExtractedMetadata(input: {
+    documentVersionId: string;
+    sourceSha256: string;
+    sourceByteLength: number;
+    extractedMetadata: import('@shared/api.interface').DocumentExtractedMetadata;
+  }) {
+    return this.db.transaction(async (transaction) => {
+      const [version] = await transaction.select().from(dmDocumentVersion).where(and(
+        eq(dmDocumentVersion.documentVersionId, input.documentVersionId),
+        eq(dmDocumentVersion.pdfSha256, input.sourceSha256),
+        eq(dmDocumentVersion.byteLength, input.sourceByteLength))).limit(1);
+      if (!version || input.extractedMetadata.sourceSha256 !== version.pdfSha256 || input.extractedMetadata.sourceByteLength !== version.byteLength) {
+        fail('DOCUMENT_METADATA_FILL_CONFLICT', 'Document metadata does not match its immutable version.');
+      }
+      const [inserted] = await transaction.insert(dmDocumentVersionMetadata).values({
+        documentVersionId: input.documentVersionId, extractedMetadata: input.extractedMetadata,
+      }).onConflictDoNothing({ target: dmDocumentVersionMetadata.documentVersionId }).returning();
+      const [metadata] = inserted ? [inserted] : await transaction.select().from(dmDocumentVersionMetadata)
+        .where(eq(dmDocumentVersionMetadata.documentVersionId, input.documentVersionId)).limit(1);
+      if (!metadata) fail('DOCUMENT_METADATA_FILL_CONFLICT', 'Document metadata was not persisted.');
+      return { disposition: inserted ? 'ENRICHED' as const : 'ALREADY_PRESENT' as const, extractedMetadata: metadata.extractedMetadata };
+    });
   }
 
   async readDocumentVersion(documentVersionId: string) {

@@ -2861,7 +2861,37 @@ export interface CanonicalLibraryWorkItemSummary {
   readingSummary?: AssessmentReadingSummary | null;
 }
 
+/** Observations from actual PDF text; never an applicability or fleet conclusion. */
+export interface DocumentMetadataObservation {
+  value: string;
+  status: 'PENDING_REVIEW';
+  evidence: Array<{ page: number; text: string }>;
+}
+
+export interface DocumentMetadataField {
+  status: 'PENDING_REVIEW' | 'NOT_FOUND';
+  observations: DocumentMetadataObservation[];
+}
+
+export interface DocumentExtractedMetadata {
+  schemaVersion: 'wiselink.document_metadata.v1';
+  source: 'ACTUAL_PDF_TEXT';
+  sourceSha256: string;
+  sourceByteLength: number;
+  pageCount: number;
+  inspectedPages: number[];
+  extractedAt: string;
+  title: DocumentMetadataField;
+  documentType: DocumentMetadataField;
+  issuer: DocumentMetadataField;
+  ata: DocumentMetadataField;
+  mentionedAircraftModels: DocumentMetadataField;
+  aircraftModelSemantics: 'DOCUMENT_MENTION_ONLY';
+  applicabilityAssessment: 'NOT_EVALUATED';
+}
+
 export interface CanonicalLibraryDocumentVersionSummary {
+  extractedMetadata?: DocumentExtractedMetadata | null;
   documentVersionId: string;
   businessRevision: string;
   revisionDate: string;
@@ -2889,7 +2919,52 @@ export interface CanonicalLibraryDocumentSummary {
   workItemCount: number;
 }
 
+export interface DocumentLibraryUploadRequest {
+  requestId: string;
+  selection: { bucketId: string; filePath: string };
+}
+
+export interface DocumentHistoricalImportRequest {
+  confirmed: true;
+  expectedCurrentGeneration: number;
+  expectedCurrentDocumentVersionId: string;
+}
+
+export interface DocumentUploadIdentity {
+  documentNumber: string;
+  documentFamily: string;
+  issuerAuthority: string | null;
+  businessRevision: string;
+  revisionDate: string;
+  sourceGeneratedDate: string;
+  pageCount: number | null;
+}
+
+export interface DocumentUploadResponse {
+  status: 'COMMITTED' | 'REVIEW_REQUIRED';
+  identity: DocumentUploadIdentity | null;
+  currentVersion: { documentVersionId: string; identity: DocumentUploadIdentity | null; access: 'READABLE' | 'NOT_AUTHORIZED' } | null;
+  disposition: string;
+  decision: string;
+  preflightId: string;
+  documentVersionId: string | null;
+  familyId: string | null;
+  newDocumentVersionCreated: boolean;
+  currentnessChanged: boolean;
+  reason: string | null;
+  historicalImport: {
+    preflightId: string;
+    expectedCurrentGeneration: number;
+    expectedCurrentDocumentVersionId: string;
+  } | null;
+}
+
+export type DocumentUploadRequest = DocumentLibraryUploadRequest;
+
 export interface CanonicalLibraryDocumentsRequest {
+  normalizedFamily?: string;
+  ata?: string;
+  aircraftModel?: string;
   search?: string;
   cursor?: string;
   limit?: number;
@@ -2897,6 +2972,11 @@ export interface CanonicalLibraryDocumentsRequest {
 
 export interface CanonicalLibraryDocumentsResponse {
   scope: 'CURRENT_USER_DOCUMENT_CATALOG';
+  totalCount: number;
+  /** Search-wide counts before normalizedFamily filtering. */
+  familyCounts: Record<string, number>;
+  ataCounts: Record<string, number>;
+  aircraftModelCounts: Record<string, number>;
   order: 'FAMILY_CREATED_AT_DESC_FAMILY_ID_DESC';
   items: CanonicalLibraryDocumentSummary[];
   nextCursor: string | null;

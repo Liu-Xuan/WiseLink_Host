@@ -1450,6 +1450,24 @@ export const dmDocumentVersion = pgTable("dm_document_version", {
   index("idx_dm_document_version_acquisition").on(table.acquisitionId),
 ]);
 
+export const dmDocumentVersionMetadata = pgTable("dm_document_version_metadata", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  documentVersionId: varchar("document_version_id", { length: 96 }).notNull().unique().references(() => dmDocumentVersion.documentVersionId),
+  extractedMetadata: jsonb("extracted_metadata").$type<import('@shared/api.interface').DocumentExtractedMetadata>().notNull(),
+  // System field: Creation time (auto-filled, do not modify)
+  createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  // System field: Creator (auto-filled, do not modify)
+  createdBy: userProfile("_created_by").default(sql`CASE
+    WHEN current_setting('app.user_id', TRUE) = '' THEN NULL
+    ELSE concat('(', current_setting('app.user_id', TRUE), ')')::user_profile END`),
+  // System field: Update time (auto-filled, do not modify)
+  updatedAt: customTimestamptz("_updated_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  // System field: Updater (auto-filled, do not modify)
+  updatedBy: userProfile("_updated_by").default(sql`CASE
+    WHEN current_setting('app.user_id', TRUE) = '' THEN NULL
+    ELSE concat('(', current_setting('app.user_id', TRUE), ')')::user_profile END`),
+});
+
 export const dmDocument = pgTable("dm_document", {
   id: uuid("id").primaryKey().defaultRandom(),
   documentId: varchar("document_id", { length: 96 }).notNull().unique(),

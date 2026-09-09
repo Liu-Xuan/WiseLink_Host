@@ -225,7 +225,8 @@ export function documentIngressIdentityFromDescriptor(
   const sourceGeneratedDateControlled = Boolean(sourceGeneratedDate)
     && !sourceGeneratedDateConflict
     && !sourceGeneratedDateExplicitInvalid
-    && Boolean(filenameSourceGeneratedDate || sourceGeneratedDateProvenanceVerified);
+    && Boolean(filenameSourceGeneratedDate || sourceGeneratedDateProvenanceVerified
+      || (storedDocument && explicitSourceGeneratedDate));
   const filenameRevision =
     upperFilename.match(/(?:^|[_\s-])R(?:EV)?[_\s-]?(\d{1,4})(?:[^A-Z0-9]|$)/u)?.[1] || '';
   const businessRevision = normalizeString(
@@ -249,17 +250,25 @@ export function documentIngressIdentityFromDescriptor(
     ? `${issuerAuthority}|${canonicalDocumentFamily}|${documentCode}`
     : '';
   if (!issuerAuthority) identityIssues.push('ISSUER_AUTHORITY_UNRESOLVED');
-  const comparableVersion = revisionDate
-    ? `DATE:${revisionDate}`
-    : /^R\d{1,4}$/u.test(businessRevision)
-      ? `REV:${String(Number(businessRevision.slice(1))).padStart(8, '0')}`
-      // Numbered OEM publications use their source issue as the exact version
-      // axis when no controlled day-level publication date exists.
-      : /^ISSUE\s*#?\s*\d{1,6}$/u.test(businessRevision)
-        ? `ISSUE:${String(Number(businessRevision.match(/\d+/u)?.[0])).padStart(8, '0')}`
-        : sourceGeneratedDateControlled
-          ? `GENERATED:${sourceGeneratedDate}`
+  // Revision-bearing publications keep their business revision as the axis.
+  // FTD has no business revision: only its controlled generated date orders it.
+  const revisionVersion = canonicalDocumentFamily === 'FTD'
+    ? ''
+    : businessRevision === 'ORIGINAL ISSUE'
+      ? 'REV:00000000'
+      : /^R\d{1,4}$/u.test(businessRevision)
+        ? `REV:${String(Number(businessRevision.slice(1))).padStart(8, '0')}`
+        : /^ISSUE\s*#?\s*\d{1,6}$/u.test(businessRevision)
+          ? `ISSUE:${String(Number(businessRevision.match(/\d+/u)?.[0])).padStart(8, '0')}`
           : '';
+  const comparableVersion = revisionVersion || (
+    canonicalDocumentFamily === 'FTD'
+      ? sourceGeneratedDateControlled ? `GENERATED:${sourceGeneratedDate}` : ''
+      // Unknown explicit revision labels cannot be ordered by their dates.
+      : businessRevision ? ''
+        : revisionDate ? `DATE:${revisionDate}`
+          : sourceGeneratedDateControlled ? `GENERATED:${sourceGeneratedDate}` : ''
+  );
 
   return {
     schemaVersion: 'wiselink.0_10.document_ingress_identity.v1',
@@ -276,8 +285,10 @@ export function documentIngressIdentityFromDescriptor(
         ? 'conflict'
         : sourceGeneratedDateExplicitInvalid
           ? 'invalid_explicit_value'
-          : sourceGeneratedDateProvenanceVerified
-            ? sourceGeneratedDateProvenanceSource
+          : storedDocument && explicitSourceGeneratedDate
+            ? 'stored_document'
+            : sourceGeneratedDateProvenanceVerified
+              ? sourceGeneratedDateProvenanceSource
             : explicitSourceGeneratedDate && filenameSourceGeneratedDate
               ? 'descriptor_and_filename'
               : filenameSourceGeneratedDate
@@ -364,18 +375,24 @@ export function documentIngressAnalysisReusable(document = {}) {
 export function compareDocumentIngressVersions(incomingIdentity = {}, existingIdentity = {}) {
   const incoming = normalizeString(incomingIdentity.comparableVersion);
   const existing = normalizeString(existingIdentity.comparableVersion);
-  const sameControlledSourceGeneratedDate = Boolean(
-    incomingIdentity.sourceGeneratedDateProvenance?.controlled === true
-      && existingIdentity.sourceGeneratedDateProvenance?.controlled === true
-      && normalizeString(incomingIdentity.sourceGeneratedDate)
-      && normalizeString(incomingIdentity.sourceGeneratedDate)
-        === normalizeString(existingIdentity.sourceGeneratedDate),
-  );
-  if (!incoming || !existing) return sameControlledSourceGeneratedDate ? 0 : null;
+  if (
+    incomingIdentity.revisionFamilyKey && existingIdentity.revisionFamilyKey
+    && incomingIdentity.revisionFamilyKey !== existingIdentity.revisionFamilyKey
+  ) return null;
+  if (!incoming || !existing) return null;
   const incomingKind = incoming.split(':', 1)[0];
   const existingKind = existing.split(':', 1)[0];
-  if (incomingKind !== existingKind) return sameControlledSourceGeneratedDate ? 0 : null;
-  return incoming === existing ? 0 : (incoming > existing ? 1 : -1);
+  if (incomingKind !== existingKind) return null;
+  const comparison = incoming === existing ? 0 : (incoming > existing ? 1 : -1);
+  if (comparison !== 0 && ['REV', 'ISSUE'].includes(incomingKind)) {
+    const incomingDate = normalizeString(incomingIdentity.revisionDate);
+    const existingDate = normalizeString(existingIdentity.revisionDate);
+    if (incomingDate && existingDate && incomingDate !== existingDate) {
+      const dateComparison = incomingDate > existingDate ? 1 : -1;
+      if (dateComparison !== comparison) return null;
+    }
+  }
+  return comparison;
 }
 
 export function buildDocumentIngressExistingSummary(document = {}, identity = {}) {
@@ -440,6 +457,14 @@ export function buildDocumentIngressPreflightDecision({
     )
     : familyRows;
   const currentFamilyRow = currentHeadRows.length === 1 ? currentHeadRows[0] : null;
+  const familyOrderUnknown = comparableFamilyRows.some((row, index) =>
+    index > 0 && compareDocumentIngressVersions(
+      comparableFamilyRows[index - 1].identity, row.identity,
+    ) === null,
+  );
+  const incomingComparisons = familyRows.map((row) =>
+    compareDocumentIngressVersions(incomingIdentity, row.identity),
+  );
 
   let decision;
   let reason;
@@ -476,11 +501,20 @@ export function buildDocumentIngressPreflightDecision({
     decision = 'VERSION_ORDER_UNKNOWN';
     reason = 'At least one visible family document has no trusted comparable version; the current family head cannot be proven.';
     requiresUserConfirmation = true;
+  } else if (familyOrderUnknown || incomingComparisons.includes(null)) {
+    decision = 'VERSION_ORDER_UNKNOWN';
+    reason = 'Publication revision axes or dates conflict; automatic ordering is blocked.';
+    requiresUserConfirmation = true;
   } else if (currentHeadRows.length > 1) {
     decision = 'MULTIPLE_CURRENT_HEADS';
     reason = 'More than one visible family document has the same leading comparable version; automatic version ordering is blocked.';
     requiresUserConfirmation = true;
     conflicts.push('CURRENT_FAMILY_HEAD_NOT_UNIQUE');
+  } else if (incomingComparisons.includes(0)) {
+    decision = 'SAME_REVISION_CONTENT_CONFLICT';
+    reason = 'An existing business revision has different content and requires explicit engineering review.';
+    requiresUserConfirmation = true;
+    conflicts.push('SAME_REVISION_DIFFERENT_CONTENT');
   } else {
     const comparison =
       compareDocumentIngressVersions(incomingIdentity, currentFamilyRow?.identity);

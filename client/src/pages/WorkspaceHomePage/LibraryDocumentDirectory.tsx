@@ -1,4 +1,4 @@
-import type { FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import type { AssessmentReadingResult } from '@shared/assessment-reading.interface';
 import AssessmentReadingListSummary, {
   savedReadingSummary,
@@ -25,6 +25,8 @@ import type { useLibraryDocuments } from './useLibraryDocuments';
 import { libraryEntryId } from './library-document-read';
 import { libraryDateLabel } from './library-document-presentation';
 import { LibraryHierarchy } from './LibraryHierarchy';
+import { LibraryClassificationControls } from './LibraryClassificationControls';
+import type { LibraryCatalogFilters, LibraryGrouping } from './library-classification';
 
 interface LibraryDocumentDirectoryProps {
   directory: ReturnType<typeof useLibraryDocuments>;
@@ -39,6 +41,8 @@ interface LibraryDocumentDirectoryProps {
   onSearch: (event: FormEvent<HTMLFormElement>) => void;
   onRefresh: () => void;
   onSelect: (itemId: string) => void;
+  filters?: LibraryCatalogFilters;
+  onFilterChange?: (filters: LibraryCatalogFilters) => void;
 }
 
 export function LibraryDocumentDirectory({
@@ -54,8 +58,12 @@ export function LibraryDocumentDirectory({
   onSearch,
   onRefresh,
   onSelect,
+  filters = {},
+  onFilterChange,
 }: LibraryDocumentDirectoryProps) {
+  const [grouping, setGrouping] = useState<LibraryGrouping>('category');
   const taskMode = mode === 'tasks';
+  const filtered = Boolean(search || Object.values(filters).some(Boolean));
   const label = taskMode ? '评估任务' : '工程文档';
   return (
     <>
@@ -90,7 +98,7 @@ export function LibraryDocumentDirectory({
               value={searchText}
               maxLength={200}
               onChange={(event) => onSearchTextChange(event.target.value)}
-              placeholder="文档编号、文件名或资料类型"
+              placeholder={taskMode ? '文档编号、文件名或资料类型' : '编号、标题、ATA 或正文提及机型'}
               autoComplete="off"
             />
           </div>
@@ -104,6 +112,12 @@ export function LibraryDocumentDirectory({
           ? '按创建时间显示当前账户的评估任务，同一文档可以有多次评估。'
           : '每个 family 显示一份工程文档，当前版本与历史版本由文档管理模块统一管理。'}
       </p>
+      {!taskMode ? <LibraryClassificationControls grouping={grouping}
+        onGroupingChange={setGrouping} filters={filters}
+        onFilterChange={onFilterChange ?? (() => undefined)} counts={directory}
+        disabled={authenticationRequired || directory.loading || !onFilterChange} /> : null}
+      {!taskMode && !directory.items.length && directory.totalCount !== undefined ?
+        <p className="library-classification-note">当前搜索与筛选共 {directory.totalCount} 份文档。</p> : null}
       {directory.error ? (
         <div className="library-catalog-error" role="alert">
           <CircleAlert aria-hidden="true" />
@@ -125,6 +139,8 @@ export function LibraryDocumentDirectory({
             documents={directory.items.filter((item) => item.kind === 'DOCUMENT')}
             selectedId={selectedId}
             hasMore={Boolean(directory.nextCursor)}
+            totalCount={directory.totalCount}
+            grouping={grouping}
             onSelect={onSelect}
           />
         ) : directory.items.length ? (
@@ -225,15 +241,15 @@ export function LibraryDocumentDirectory({
                   ? '目录暂不可用'
                   : authenticationRequired
                     ? '请先登录'
-                    : search
+                    : filtered
                       ? `没有匹配的${label}`
                       : `尚无${label}`}
             </strong>
             <p>
               {authenticationRequired
                 ? '登录后可读取当前账户的资料目录。'
-                : search
-                  ? '调整文档编号或文件名后重新搜索。'
+                : filtered
+                  ? '调整搜索内容或分类筛选后重试。'
                   : '可粘贴已有工作链接，或通过上方受理入口添加获准使用的资料。'}
             </p>
           </div>

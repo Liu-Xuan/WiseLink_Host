@@ -7,6 +7,7 @@ import {
   isCanonicalObjectNotFound,
 } from '@client/src/api/canonical-host';
 import { libraryReadErrorPresentation } from './library-read-error';
+import type { LibraryCatalogFilters } from './library-classification';
 import {
   beginLibraryDocumentsRead,
   mergeLibraryDocumentsRead,
@@ -22,7 +23,13 @@ export function useLibraryDocuments(
   mode: 'document' | 'tasks',
   familyId: string,
   enabled = true,
+  filters: LibraryCatalogFilters = {},
 ) {
+  const normalizedFamily =
+    mode === 'document' ? (filters.normalizedFamily ?? '') : '';
+  const ata = mode === 'document' ? (filters.ata ?? '') : '';
+  const aircraftModel =
+    mode === 'document' ? (filters.aircraftModel ?? '') : '';
   const [read, setRead] = useState<LibraryDocumentsRead | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
   const discardedRef = useRef<Set<string>>(new Set());
@@ -46,6 +53,9 @@ export function useLibraryDocuments(
         loading: true,
         loadingMore: Boolean(cursor),
         error: null,
+        normalizedFamily,
+        ata,
+        aircraftModel,
       };
       setRead((prior: LibraryDocumentsRead | null) =>
         beginLibraryDocumentsRead(prior, empty),
@@ -61,6 +71,9 @@ export function useLibraryDocuments(
             ...(cursor ? { cursor } : {}),
             limit: 24,
             ...(mode === 'tasks' && familyId ? { familyId } : {}),
+            ...(normalizedFamily ? { normalizedFamily } : {}),
+            ...(ata ? { ata } : {}),
+            ...(aircraftModel ? { aircraftModel } : {}),
           },
           controller.signal,
         );
@@ -90,6 +103,9 @@ export function useLibraryDocuments(
       mode,
       familyId,
       enabled,
+      normalizedFamily,
+      ata,
+      aircraftModel,
     ],
   );
 
@@ -104,7 +120,10 @@ export function useLibraryDocuments(
     read?.sessionGeneration === sessionGeneration &&
     read.search === search &&
     read.mode === mode &&
-    read.familyId === familyId
+    read.familyId === familyId &&
+    (read.normalizedFamily ?? '') === normalizedFamily &&
+    (read.ata ?? '') === ata &&
+    (read.aircraftModel ?? '') === aircraftModel
       ? read
       : null;
   const discard = useCallback((workItemId: string): void => {
@@ -126,6 +145,10 @@ export function useLibraryDocuments(
     loading: visible?.loading ?? (enabled && !authenticationRequired),
     loadingMore: visible?.loadingMore ?? false,
     error: visible?.error ?? null,
+    totalCount: visible?.totalCount,
+    familyCounts: visible?.familyCounts,
+    ataCounts: visible?.ataCounts,
+    aircraftModelCounts: visible?.aircraftModelCounts,
     discard,
     loadMore: (): void => {
       if (visible?.nextCursor && !visible.loading)

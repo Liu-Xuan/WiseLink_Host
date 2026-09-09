@@ -74,6 +74,9 @@ export class CanonicalLibraryRepository {
 
   listDocuments(
     input: CanonicalLibraryQueryScope & {
+      normalizedFamily?: string;
+      ata?: string;
+      aircraftModel?: string;
       search: string;
       cursor: CanonicalLibraryCursor | null;
       limit: number;

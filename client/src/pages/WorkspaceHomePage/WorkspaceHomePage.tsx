@@ -50,6 +50,8 @@ import { useLibraryDocuments } from './useLibraryDocuments';
 import { useLibraryQuicklook } from './useLibraryQuicklook';
 import { LibraryDocumentDirectory } from './LibraryDocumentDirectory';
 import { LibraryDocumentDetails } from './LibraryDocumentDetails';
+import { DocumentUpload } from './DocumentUpload';
+import type { LibraryCatalogFilters } from './library-classification';
 import {
   byteLabel,
   documentLabel,
@@ -70,6 +72,11 @@ export default function WorkspaceHomePage() {
   const treeMode = libraryViewMode(searchParams);
   const linkMatterId = searchParams.get('linkMatterId')?.trim() ?? '';
   const familyId = searchParams.get('familyId')?.trim() ?? '';
+  const catalogFilters: LibraryCatalogFilters = {
+    normalizedFamily: searchParams.get('normalizedFamily') ?? '',
+    ata: searchParams.get('ata') ?? '',
+    aircraftModel: searchParams.get('aircraftModel') ?? '',
+  };
   const [workItemId, setWorkItemId] = useState<string>('');
   const [searchText, setSearchText] = useState<string>(search);
   const [loadedSessionGeneration, setLoadedSessionGeneration] = useState<
@@ -92,6 +99,7 @@ export default function WorkspaceHomePage() {
     treeMode === 'tasks' ? 'tasks' : 'document',
     treeMode === 'tasks' ? familyId : '',
     treeMode !== 'matter',
+    catalogFilters,
   );
   const matters = useMatterDirectory(
     search,
@@ -197,6 +205,19 @@ export default function WorkspaceHomePage() {
     params.set('mode', 'document');
     params.set('familyId', targetFamilyId);
     params.delete('workItemId');
+    setSearchParams(params);
+  }
+
+  function filterDocuments(filters: LibraryCatalogFilters): void {
+    const params = new URLSearchParams(searchParams);
+    params.set('mode', 'document');
+    params.delete('familyId');
+    params.delete('workItemId');
+    for (const key of ['normalizedFamily', 'ata', 'aircraftModel'] as const) {
+      const value = filters[key];
+      if (value) params.set(key, value);
+      else params.delete(key);
+    }
     setSearchParams(params);
   }
 
@@ -418,6 +439,9 @@ export default function WorkspaceHomePage() {
         </div>
       </details>
 
+      {treeMode === 'document' ? <DocumentUpload key={sessionGeneration}
+        disabled={authenticationRequired} onRefresh={refresh} /> : null}
+
       {error ? (
         <div className="library-alert" role="alert">
           <CircleAlert aria-hidden="true" />
@@ -507,6 +531,7 @@ export default function WorkspaceHomePage() {
               }
             >
               <LibraryDocumentDirectory
+                key={`${sessionGeneration}:${treeMode}`}
                 directory={directory}
                 authenticationRequired={authenticationRequired}
                 search={search}
@@ -521,6 +546,8 @@ export default function WorkspaceHomePage() {
                 onSearch={handleSearch}
                 onRefresh={refresh}
                 onSelect={treeMode === 'tasks' ? selectTask : selectDocument}
+                filters={catalogFilters}
+                onFilterChange={filterDocuments}
               />
 
               {projection ? (
@@ -617,16 +644,13 @@ export default function WorkspaceHomePage() {
 
             {treeMode === 'document' ? (
               <LibraryDocumentDetails
+                key={`${sessionGeneration}:${familyId}`}
                 document={
                   selectedDocument?.kind === 'DOCUMENT'
                     ? selectedDocument
                     : null
                 }
-                onOpenVersion={(readerWorkItemId) =>
-                  navigate(
-                    `/work-items/${encodeURIComponent(readerWorkItemId)}/documents?node=reader&tab=reader`,
-                  )
-                }
+                onRefresh={refresh}
                 onViewTasks={viewTasks}
               />
             ) : (

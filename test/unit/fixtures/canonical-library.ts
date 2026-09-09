@@ -5,7 +5,23 @@ import type {
   CanonicalLibraryWorkItemSummary,
   CanonicalLibraryQuicklookResponse,
   CanonicalSourceBoundEngineeringStatement,
+  DocumentExtractedMetadata,
 } from '@shared/api.interface';
+
+export function libraryMetadata(ata = '34', aircraft = '737'): DocumentExtractedMetadata {
+  const field = (value: string) => ({ status: 'PENDING_REVIEW' as const,
+    observations: [{ value, status: 'PENDING_REVIEW' as const, evidence: [{ page: 1, text: value }] }],
+  });
+  return {
+    schemaVersion: 'wiselink.document_metadata.v1', source: 'ACTUAL_PDF_TEXT',
+    sourceSha256: 'a'.repeat(64), sourceByteLength: 200, pageCount: 3,
+    inspectedPages: [1, 2, 3], extractedAt: '2026-09-09T10:00:00.000Z',
+    title: field('测试原文标题'), documentType: field('SB'), issuer: field('BOEING'),
+    ata: field(ata), mentionedAircraftModels: field(aircraft),
+    aircraftModelSemantics: 'DOCUMENT_MENTION_ONLY', applicabilityAssessment: 'NOT_EVALUATED',
+  };
+}
+
 
 export function libraryDocument(
   workItemId: string,
@@ -93,6 +109,10 @@ export function libraryDocuments(
 ): CanonicalLibraryDocumentsResponse {
   return {
     scope: 'CURRENT_USER_DOCUMENT_CATALOG',
+    totalCount: ids.length,
+    familyCounts: {},
+    ataCounts: {},
+    aircraftModelCounts: {},
     order: 'FAMILY_CREATED_AT_DESC_FAMILY_ID_DESC',
     items: ids.map(libraryFamily),
     nextCursor,

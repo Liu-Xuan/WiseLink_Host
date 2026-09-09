@@ -139,6 +139,42 @@ describe('ordinary document-management authorization', () => {
     });
   });
 
+  it.each([true, false])(
+    'checks committed acquisition access without a WorkItem: %s',
+    async (allowed) => {
+      const repository = {
+        loadTenantDocumentAuthorizationBinding: jest
+          .fn()
+          .mockResolvedValue(null),
+      };
+      const catalog = {
+        readOwnedAcquisitionVersionBinding: jest
+          .fn()
+          .mockResolvedValue(allowed),
+      };
+      const authorizer = new OrdinaryDocumentManagementAuthorizer(
+        repository as never,
+        {} as never,
+        catalog as never,
+      );
+      const result = authorizer.assertCanRead({
+        ...creatorContext,
+        action: 'DOCUMENT_READ',
+        documentVersionId: 'DV-1',
+      });
+      if (allowed) await expect(result).resolves.toBeUndefined();
+      else
+        await expect(result).rejects.toMatchObject({
+          code: 'DOCUMENT_VERSION_NOT_FOUND',
+        });
+      expect(catalog.readOwnedAcquisitionVersionBinding).toHaveBeenCalledWith({
+        actorUserId: creatorContext.actorUserId,
+        tenantId: creatorContext.tenantId,
+        documentVersionId: 'DV-1',
+      });
+    },
+  );
+
   it.each([
     ['same-tenant outsider', { ...creatorContext, actorUserId: 'outsider' }],
     ['cross-tenant actor', { ...creatorContext, tenantId: 'tenant-b' }],
