@@ -1374,7 +1374,7 @@ test('requires 25 MCP capabilities, six review tools, and hosted provenance', ()
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c67',
+    'wiselink-research-and-synthesize@r09.c68',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -4798,7 +4798,7 @@ test('offers source reading and one final candidate function with blank assistan
   assert.equal(result.provenance.modelVersion, 'openai-codex/gpt-5.4');
   assert.equal(
     result.provenance.promptVersion,
-    'wiselink.3_1.review_prompt.v1.c46',
+    'wiselink.3_1.review_prompt.v1.c47',
   );
 });
 
@@ -4851,7 +4851,7 @@ test('falls back to the configured model and records only output shape v2', asyn
   assert.equal(result.provenance.modelVersion, 'provider/configured');
   assert.equal(
     result.provenance.promptVersion,
-    'wiselink.3_1.review_prompt.v1.c46',
+    'wiselink.3_1.review_prompt.v1.c47',
   );
   assert.equal(
     outputShape.schemaVersion,
@@ -7442,4 +7442,70 @@ test('citation feedback never fetches out-of-scope sources or treats incomplete 
     }] } }] }) }), mode === 'foreign' ? /REVIEW_MODEL_SOURCE_REF_NOT_READ/u : mode === 'incomplete' ? /REVIEW_CITATION_SOURCE_READ_INCOMPLETE/u : /HOST_READ_FAILED/u);
     assert.equal(reads, mode === 'foreign' ? 0 : 1);
   }
+});
+
+
+test('JobAid invalid evidence feedback identifies every validated field without repairing values', async () => {
+  const { task, candidate } = await emptyJobAidReviewFixture();
+  const issue = { issueKey: 'one', sourceDependencies: ['bad-1'], premiseRefs: ['bad-2'],
+    statements: [{ premises: [{ evidenceRef: 'bad-3' }] }],
+    riskScenarios: [{ severity: { basisRefs: ['bad-4'] }, likelihood: { basisRefs: ['bad-5'] }, importantEvent: { basisRefs: ['bad-6'] } }],
+    measures: [{ basisRefs: ['bad-7'] }], otherClassifications: [{ basisRefs: ['bad-8'] }],
+    requirementHandling: [{ methodRef: 'bad-9', basisRefs: ['bad-10'] }] };
+  const delta = { schemaVersion: 'wiselink.jobaid-problem-work.v2', headline: '待核', listBrief: '待核',
+    understanding: '保留未知', completionReason: '待证据', changeSummary: '纠正风险', unchangedExplanation: '保留其余', issues: [issue] };
+  const before = structuredClone(delta);
+  assert.throws(() => validateReviewCandidate(task, { ...candidate, jobAidWorkingDelta: delta }), (error) => {
+    assert.equal(error.message, 'REVIEW_JOBAID_EVIDENCE_NOT_REGISTERED');
+    assert.equal(error.invalidEvidenceRefCount, 10);
+    assert.deepEqual(error.invalidEvidenceRefs.map((entry) => entry.evidenceRef), Array.from({ length: 10 }, (_, i) => `bad-${i + 1}`));
+    assert.equal(error.invalidEvidenceRefs[2].path, 'jobAidWorkingDelta.issues[0].statements[0].premises[0].evidenceRef');
+    assert.equal(error.invalidEvidenceRefs[8].path, 'jobAidWorkingDelta.issues[0].requirementHandling[0].methodRef');
+    return true;
+  });
+  assert.deepEqual(delta, before);
+  delta.issues[0].sourceDependencies = Array.from({ length: 40 }, (_, i) => `bad-${i}`);
+  assert.throws(() => validateReviewCandidate(task, { ...candidate, jobAidWorkingDelta: delta }), (error) => {
+    assert.equal(error.invalidEvidenceRefCount, 49);
+    assert.equal(error.invalidEvidenceRefs.length, 32);
+    return true;
+  });
+});
+
+test('JobAid reference rejection returns exact paths and requires a fresh validated candidate', async () => {
+  const { task, candidate } = await emptyJobAidReviewFixture();
+  task.context.purpose = 'UPDATE_ASSESSMENT';
+  const evidence = { evidenceRef: 'method:scope', kind: 'METHOD_CLAUSE', title: '范围', versionLabel: 'v1', excerpt: '未知不填零', locator: null };
+  task.jobAidContext.sourceCatalog = [evidence];
+  task.jobAidContext.initiallyDeliveredRefs = [evidence.evidenceRef];
+  task.jobAidContext.modelInput.deliveredEvidence = [evidence];
+  const work = { schemaVersion: 'wiselink.jobaid-problem-work.v2', headline: '当前认识', listBrief: '待核',
+    understanding: '风险可能性未知', completionReason: '待证据', changeSummary: '撤回无依据概率', unchangedExplanation: '保留其他',
+    issues: [{ issueKey: 'one', statements: [{ premises: [{ evidenceRef: 'method:scoope' }] }] }] };
+  const before = structuredClone(work);
+  let requests = 0;
+  let validations = 0;
+  const result = await invokeReviewWithTransport({ input: { context: task.context, availableSourceRefIds: [], attachmentRefs: [] } }, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+    validateCandidate: (value) => { validations++; validateReviewCandidate(task, { ...candidate, ...value }); },
+  }, { requestGateway: async (_url, init) => {
+    requests++;
+    if (requests === 2) {
+      const feedback = JSON.parse(JSON.parse(init.body).messages.at(-1).content);
+      assert.equal(feedback.candidateAccepted, false);
+      assert.deepEqual(feedback.evidenceReferenceFeedback.invalidReferences, [{
+        path: 'jobAidWorkingDelta.issues[0].statements[0].premises[0].evidenceRef', evidenceRef: 'method:scoope' }]);
+      assert.equal(feedback.evidenceReferenceFeedback.invalidReferenceCount, 1);
+      assert.deepEqual(feedback.availableEvidenceRefs, ['method:scope']);
+      assert.deepEqual(feedback.evidenceReferenceFeedback.readEvidenceRefs, []);
+    }
+    const authored = structuredClone(work);
+    if (requests === 2) authored.issues[0].statements[0].premises[0].evidenceRef = 'method:scope';
+    return Response.json({ choices: [{ message: { content: null, tool_calls: [{ id: `evidence-${requests}`, type: 'function',
+      function: { name: 'return_wiselink_review_candidate', arguments: JSON.stringify({ answer: requests === 1 ? '未保存' : '重新核对', jobAidWorkingDelta: authored }) } }] } }] });
+  } });
+  assert.equal(requests, 2);
+  assert.equal(validations, 2);
+  assert.equal(result.output.answer, '重新核对');
+  assert.deepEqual(work, before);
 });

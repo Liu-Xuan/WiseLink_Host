@@ -69,7 +69,7 @@ const REVIEW_RESPONSE_TYPES = [
   'AFFECTED_ITEMS_PREVIEW',
   'TASK_STATUS',
 ];
-const REVIEW_PROMPT_VERSION = 'wiselink.3_1.review_prompt.v1.c46';
+const REVIEW_PROMPT_VERSION = 'wiselink.3_1.review_prompt.v1.c47';
 const WISELINK_HOST_MCP_CONFIG_KEYS = new Set([
   WISELINK_HOST_MCP_NAME,
   'wiselink_host_controller',
@@ -557,6 +557,20 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
           { role: 'assistant', content: null, tool_calls: [toolCall] },
           { role: 'tool', tool_call_id: toolCall.id, content: canonicalJson({
             candidateAccepted: false, validationError: errorCode,
+            ...(isJobAid && isAssessmentUpdate && errorCode === 'REVIEW_JOBAID_EVIDENCE_NOT_REGISTERED'
+              ? { evidenceReferenceFeedback: {
+                invalidReferences: (Array.isArray(error.invalidEvidenceRefs) ? error.invalidEvidenceRefs : [])
+                  .filter((entry) => typeof entry?.path === 'string' && entry.path.length <= 256 &&
+                    /^[A-Za-z0-9_.\[\]]+$/u.test(entry.path))
+                  .slice(0, 32).map((entry) => ({ path: entry.path,
+                    ...(typeof entry.evidenceRef === 'string' && entry.evidenceRef.length <= 1024
+                      ? { evidenceRef: entry.evidenceRef } : { invalidValue: true }) })),
+                invalidReferenceCount: Number.isSafeInteger(error.invalidEvidenceRefCount)
+                  ? error.invalidEvidenceRefCount : null,
+                readEvidenceRefs: [...new Set([...sourceCache.values()].map((source) => source.evidenceRef)
+                  .filter((ref) => typeof ref === 'string' && ref.trim()))],
+                instruction: 'These exact fields cite unregistered evidence identifiers. Compare them with readEvidenceRefs and availableEvidenceRefs, and copy the exact registered identifier only when its evidence supports the premise. Do not reconstruct, shorten or alter an identifier. No replacement is inferred for you. Preserve the substantive findings, read additional authorized sources if needed, and submit a complete new candidate; the rejected candidate remains unsaved.',
+              } } : {}),
             ...(citedSourceFeedback ? { citedSourceFeedback } : {}),
             availableEvidenceRefs: candidateFeedbackEvidenceRefs(input, sourceCache),
             instruction: isChat

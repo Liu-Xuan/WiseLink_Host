@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
 export const WISELINK_SKILL_VERSION =
-  'wiselink-research-and-synthesize@r09.c67';
+  'wiselink-research-and-synthesize@r09.c68';
 export const WISELINK_SKILL_COMPATIBILITY_REF =
   'wiselink-research-and-synthesize@r09';
 export const WISELINK_HOST_MCP_NAME =
@@ -4693,12 +4693,30 @@ function validateMatterDeltaPartition({ priorIds, additionIds, replacementIds, r
 }
 
 function jobAidDeltaEvidenceRefs(delta) {
-  return (delta?.issues ?? []).flatMap((issue) => [...(issue.sourceDependencies ?? []), ...(issue.premiseRefs ?? []),
-    ...(issue.statements ?? []).flatMap((claim) => (claim.premises ?? []).map((p) => p.evidenceRef)),
-    ...(issue.riskScenarios ?? []).flatMap((risk) => [...(risk.severity?.basisRefs ?? []), ...(risk.likelihood?.basisRefs ?? []), ...(risk.importantEvent?.basisRefs ?? [])]),
-    ...(issue.measures ?? []).flatMap((item) => item.basisRefs ?? []),
-    ...(issue.otherClassifications ?? []).flatMap((item) => item.basisRefs ?? []),
-    ...(issue.requirementHandling ?? []).flatMap((item) => [item.methodRef, ...(item.basisRefs ?? [])])]);
+  return jobAidDeltaEvidenceEntries(delta).map((entry) => entry.evidenceRef);
+}
+function jobAidDeltaEvidenceEntries(delta) {
+  const entries = [];
+  const add = (path, evidenceRef) => entries.push({ path, evidenceRef });
+  const refs = (path, values) => (values ?? []).forEach((ref, index) => add(`${path}[${index}]`, ref));
+  (delta?.issues ?? []).forEach((issue, index) => {
+    const path = `jobAidWorkingDelta.issues[${index}]`;
+    refs(`${path}.sourceDependencies`, issue.sourceDependencies);
+    refs(`${path}.premiseRefs`, issue.premiseRefs);
+    (issue.statements ?? []).forEach((claim, ci) => (claim.premises ?? []).forEach((premise, pi) =>
+      add(`${path}.statements[${ci}].premises[${pi}].evidenceRef`, premise.evidenceRef)));
+    (issue.riskScenarios ?? []).forEach((risk, ri) => {
+      for (const key of ['severity', 'likelihood', 'importantEvent'])
+        refs(`${path}.riskScenarios[${ri}].${key}.basisRefs`, risk[key]?.basisRefs);
+    });
+    for (const key of ['measures', 'otherClassifications', 'requirementHandling']) {
+      (issue[key] ?? []).forEach((item, ii) => {
+        if (key === 'requirementHandling') add(`${path}.${key}[${ii}].methodRef`, item.methodRef);
+        refs(`${path}.${key}[${ii}].basisRefs`, item.basisRefs);
+      });
+    }
+  });
+  return entries;
 }
 function validateFrozenJobAidReviewContext(task) {
   const jobAid = task.jobAidContext;
@@ -4743,7 +4761,15 @@ function validateJobAidReviewDelta(task, delta) {
   uniqueTextArray(keys, 'REVIEW_JOBAID_ISSUE_PARTITION_INVALID');
   if (prior.some((key) => !keys.includes(key)) || [...unchanged, ...retired.map((issue) => issue.issueKey)].some((key) => !prior.includes(key))) fail('REVIEW_JOBAID_PRIOR_ISSUE_OMITTED');
   const allowed = new Set(task.jobAidContext.sourceCatalog.map((item) => item.evidenceRef));
-  assertSubsetOf(jobAidDeltaEvidenceRefs(delta), allowed, 'REVIEW_JOBAID_EVIDENCE_NOT_REGISTERED');
+  const invalid = jobAidDeltaEvidenceEntries(delta).filter((entry) => !allowed.has(entry.evidenceRef));
+  if (invalid.length) {
+    const error = new Error('REVIEW_JOBAID_EVIDENCE_NOT_REGISTERED');
+    // Exact failing locations help the model correct copied identifiers. Never
+    // infer a replacement or mutate the rejected candidate.
+    error.invalidEvidenceRefs = invalid.slice(0, 32);
+    error.invalidEvidenceRefCount = invalid.length;
+    throw error;
+  }
 }
 
 /** Source keys used by the candidate include changed Matter claims and checked ranges. */
