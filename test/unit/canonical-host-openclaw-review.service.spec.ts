@@ -64,7 +64,17 @@ describe('CanonicalHostOpenClawReviewService', () => {
     const harness = reviewHarness();
     const { turn } = await harness.conversations.loadOpenClawTurnBinding();
     Object.assign(turn, { purpose: 'CHAT' });
+    const aggregate = await harness.conversations.loadById();
+    harness.conversations.loadById.mockImplementation(async (...args: unknown[]) => {
+      if (args[1] !== harness.executor.database)
+        throw new Error('Hosted history requires the actor executor');
+      return aggregate;
+    });
     const result = await harness.service.begin('RC-1', 'request-1');
+    expect(harness.conversations.loadById).toHaveBeenLastCalledWith(
+      'RC-1',
+      harness.executor.database,
+    );
     expect(result.task.modelInput.context).toMatchObject({
       purpose: 'CHAT',
       assessmentUpdateAllowed: false,
