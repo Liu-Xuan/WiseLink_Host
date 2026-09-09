@@ -3,6 +3,9 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import type { DocumentUploadResponse } from '@shared/api.interface';
 import { DocumentUploadReceipt } from '../../client/src/pages/WorkspaceHomePage/DocumentUploadReceipt';
 
+jest.mock('@client/src/components/ui/button', () => ({ Button: 'button' }));
+jest.mock('@client/src/api/canonical-host', () => ({ getCanonicalHostClientSessionGeneration: () => 1 }));
+
 jest.mock('@lark-apaas/client-toolkit/utils/resolveAppUrl', () => ({
   resolveAppUrl: (path: string) => `/app/test${path}`,
 }));
@@ -27,7 +30,10 @@ describe('ordinary document upload receipt', () => {
 
   it('links the exact registered original without inventing an evaluation task', () => {
     const html = renderToStaticMarkup(createElement(DocumentUploadReceipt, { receipt: { ...receipt, status: 'COMMITTED', documentVersionId: 'DV/one', historicalImport: null } }));
-    expect(html).toContain('/app/test/api/document-management/document-versions/DV%2Fone/original');
+    expect(html).toContain('data-document-version-id="DV/one"');
+    expect(html).toContain('读取原件以预览');
+    expect(html).not.toContain('href=');
+    expect(html).not.toContain('/original');
     expect(html).toContain('已复用已保存的文档版本');
     expect(html).toContain('当前版本未改变');
     expect(html).toContain('没有创建评估任务');

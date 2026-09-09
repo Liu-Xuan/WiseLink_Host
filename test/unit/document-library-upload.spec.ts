@@ -64,6 +64,38 @@ describe('ordinary document library upload', () => {
       ingest,
     };
   }
+  it('returns a bounded 409 for the known exact-identity conflict without stack or internal details', async () => {
+    const f = service();
+    f.ingest.mockRejectedValue(
+      Object.assign(new Error('private original diagnostic'), {
+        code: 'CATALOG_EXACT_DOCUMENT_IDENTITY_CONFLICT',
+        details: { sourcePath: '/private/source.pdf' },
+      }),
+    );
+    try {
+      await f.service.ingestDocumentLibraryUpload(request, context);
+      throw new Error('expected rejection');
+    } catch (error: unknown) {
+      expect(error).toMatchObject({
+        code: 'CATALOG_EXACT_DOCUMENT_IDENTITY_CONFLICT',
+        status: 409,
+      });
+      const response = (error as { getResponse(): unknown }).getResponse();
+      expect(response).toEqual({
+        code: 'CATALOG_EXACT_DOCUMENT_IDENTITY_CONFLICT',
+        message: '文件与已有版本的出版身份记录不一致，请核对已有文档。',
+      });
+      expect(JSON.stringify(response)).not.toContain('private');
+    }
+  });
+  it('keeps unknown ingest failures observable instead of reporting success or an invented input conflict', async () => {
+    const f = service();
+    const failure = new Error('unexpected internal failure');
+    f.ingest.mockRejectedValue(failure);
+    await expect(
+      f.service.ingestDocumentLibraryUpload(request, context),
+    ).rejects.toBe(failure);
+  });
   it('binds production user authority and source server-side without a development role or WorkItem', async () => {
     const target = service();
     const result = await target.service.ingestDocumentLibraryUpload(
@@ -112,11 +144,9 @@ describe('ordinary document library upload', () => {
     };
     const fileService = {
       getDefaultBucket: jest.fn().mockResolvedValue('default'),
-      from: jest
-        .fn()
-        .mockReturnValue({
-          getFileMetadata: jest.fn().mockResolvedValue(metadata),
-        }),
+      from: jest.fn().mockReturnValue({
+        getFileMetadata: jest.fn().mockResolvedValue(metadata),
+      }),
     };
     const authorizer = new OrdinaryDocumentManagementAuthorizer(
       {} as never,

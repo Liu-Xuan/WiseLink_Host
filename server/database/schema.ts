@@ -1452,7 +1452,9 @@ export const dmDocumentVersion = pgTable("dm_document_version", {
 
 export const dmDocumentVersionMetadata = pgTable("dm_document_version_metadata", {
   id: uuid("id").primaryKey().defaultRandom(),
-  documentVersionId: varchar("document_version_id", { length: 96 }).notNull().unique().references(() => dmDocumentVersion.documentVersionId),
+  documentVersionId: varchar("document_version_id", { length: 96 }).notNull().references(() => dmDocumentVersion.documentVersionId),
+  metadataRevision: integer("metadata_revision").notNull().default(1),
+  requestId: varchar("request_id", { length: 128 }),
   extractedMetadata: jsonb("extracted_metadata").$type<import('@shared/api.interface').DocumentExtractedMetadata>().notNull(),
   // System field: Creation time (auto-filled, do not modify)
   createdAt: customTimestamptz("_created_at", { precision: 3 }).notNull().default(sql`CURRENT_TIMESTAMP`),
@@ -1466,7 +1468,10 @@ export const dmDocumentVersionMetadata = pgTable("dm_document_version_metadata",
   updatedBy: userProfile("_updated_by").default(sql`CASE
     WHEN current_setting('app.user_id', TRUE) = '' THEN NULL
     ELSE concat('(', current_setting('app.user_id', TRUE), ')')::user_profile END`),
-});
+}, (table) => [
+  uniqueIndex("uk_dm_document_version_metadata_revision").on(table.documentVersionId, table.metadataRevision),
+  uniqueIndex("uk_dm_document_version_metadata_request").on(table.documentVersionId, table.requestId).where(sql`${table.requestId} IS NOT NULL`),
+]);
 
 export const dmDocument = pgTable("dm_document", {
   id: uuid("id").primaryKey().defaultRandom(),

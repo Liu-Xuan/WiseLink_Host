@@ -43,6 +43,15 @@ const metadata = extractActualPdfMetadata({
   actualByteLength: bytes.length,
   identity: { documentFamily: 'SB', issuer: 'BOEING' },
 });
+const metadataRow = (
+  metadataRevision = 1,
+  requestId: string | null = null,
+) => ({
+  id: `metadata-${metadataRevision}`,
+  metadataRevision,
+  requestId,
+  extractedMetadata: metadata,
+});
 const sourceRow = () => ({
   version: {
     documentVersionId: 'version-1',
@@ -59,18 +68,23 @@ const sourceRow = () => ({
     providerObjectId: 'object-1',
     providerVersionId: 'object-v1',
   },
-  metadata: null as { extractedMetadata: typeof metadata } | null,
+  metadata: null as ReturnType<typeof metadataRow> | null,
 });
 
 function fixture() {
   const catalog = {
     readMetadataSource: jest.fn().mockResolvedValue(sourceRow()),
-    fillMissingExtractedMetadata: jest
+    readExtractedMetadata: jest.fn().mockResolvedValue(null),
+    appendExtractedMetadata: jest
       .fn()
       .mockResolvedValue({
-        disposition: 'ENRICHED',
-        extractedMetadata: metadata,
+        disposition: 'APPENDED',
+        metadata: metadataRow(2, 'request-1'),
       }),
+    fillMissingExtractedMetadata: jest.fn().mockResolvedValue({
+      disposition: 'ENRICHED',
+      extractedMetadata: metadata,
+    }),
   };
   const authorizer = {
     assertCanRead: jest.fn().mockResolvedValue(undefined),
@@ -153,11 +167,134 @@ describe('existing-version metadata enrichment', () => {
     ).rejects.toThrow('DOCUMENT_NOT_FOUND');
     expect(f.read).not.toHaveBeenCalled();
   });
+  it('appends a correction from the same registered source and returns its revision receipt', async () => {
+    const f = fixture();
+    f.catalog.readMetadataSource.mockResolvedValue({
+      ...sourceRow(),
+      metadata: metadataRow(),
+    });
+    await expect(
+      f.service.reextractDocumentMetadata(
+        'version-1',
+        { expectedMetadataRevision: 1, requestId: 'request-1' },
+        context,
+      ),
+    ).resolves.toMatchObject({
+      disposition: 'APPENDED',
+      metadataRevision: 2,
+      requestId: 'request-1',
+    });
+    expect(f.read).toHaveBeenCalledTimes(1);
+    expect(f.authorizer.assertCanRead).toHaveBeenCalledTimes(2);
+    expect(f.catalog.appendExtractedMetadata).toHaveBeenCalledWith(
+      expect.objectContaining({
+        documentVersionId: 'version-1',
+        sourceSha256: sha256,
+        expectedMetadataRevision: 1,
+        requestId: 'request-1',
+      }),
+    );
+    expect(f.catalog.fillMissingExtractedMetadata).not.toHaveBeenCalled();
+  });
+  it('returns a replay without reading unavailable original bytes and rejects reuse for another expected revision', async () => {
+    const f = fixture();
+    f.catalog.readMetadataSource.mockResolvedValue({
+      ...sourceRow(),
+      metadata: metadataRow(3, 'later'),
+    });
+    f.catalog.readExtractedMetadata.mockResolvedValue(
+      metadataRow(2, 'request-1'),
+    );
+    await expect(
+      f.service.reextractDocumentMetadata(
+        'version-1',
+        { expectedMetadataRevision: 1, requestId: 'request-1' },
+        context,
+      ),
+    ).resolves.toMatchObject({
+      disposition: 'IDEMPOTENT_REPLAY',
+      metadataRevision: 2,
+    });
+    await expect(
+      f.service.reextractDocumentMetadata(
+        'version-1',
+        { expectedMetadataRevision: 2, requestId: 'request-1' },
+        context,
+      ),
+    ).rejects.toMatchObject({
+      code: 'DOCUMENT_METADATA_REQUEST_CONFLICT',
+      status: 409,
+    });
+    expect(f.read).not.toHaveBeenCalled();
+    expect(f.catalog.appendExtractedMetadata).not.toHaveBeenCalled();
+  });
+  it('rejects a stale new request before reading the source', async () => {
+    const f = fixture();
+    f.catalog.readMetadataSource.mockResolvedValue({
+      ...sourceRow(),
+      metadata: metadataRow(2, 'earlier'),
+    });
+    await expect(
+      f.service.reextractDocumentMetadata(
+        'version-1',
+        { expectedMetadataRevision: 1, requestId: 'new-request' },
+        context,
+      ),
+    ).rejects.toMatchObject({
+      code: 'DOCUMENT_METADATA_REVISION_CONFLICT',
+      status: 409,
+    });
+    expect(f.read).not.toHaveBeenCalled();
+  });
+  it('resolves interrupted requests and historical revisions read-only, keeping missing receipts explicit', async () => {
+    const f = fixture();
+    await expect(
+      f.service.readDocumentMetadata(
+        'version-1',
+        { requestId: 'not-committed' },
+        context,
+      ),
+    ).resolves.toMatchObject({
+      metadataRevision: null,
+      extractedMetadata: null,
+    });
+    f.catalog.readExtractedMetadata.mockResolvedValue(metadataRow());
+    await expect(
+      f.service.readDocumentMetadata('version-1', { revision: '1' }, context),
+    ).resolves.toMatchObject({
+      metadataRevision: 1,
+      extractedMetadata: metadata,
+    });
+    expect(f.catalog.readExtractedMetadata).toHaveBeenLastCalledWith({
+      documentVersionId: 'version-1',
+      revision: 1,
+    });
+    expect(f.read).not.toHaveBeenCalled();
+    expect(f.catalog.appendExtractedMetadata).not.toHaveBeenCalled();
+  });
+  it.each([
+    { expectedMetadataRevision: 0, requestId: 'a' },
+    { expectedMetadataRevision: 1, requestId: 'a', extractedMetadata: {} },
+    { expectedMetadataRevision: 1, requestId: '' },
+    { expectedMetadataRevision: '1', requestId: 'a' },
+  ])(
+    'rejects malformed re-extraction requests without storage access',
+    async (request) => {
+      const f = fixture();
+      await expect(
+        f.service.reextractDocumentMetadata('version-1', request, context),
+      ).rejects.toMatchObject({
+        code: 'DOCUMENT_METADATA_REQUEST_INVALID',
+        status: 400,
+      });
+      expect(f.read).not.toHaveBeenCalled();
+    },
+  );
   it('does not read storage or write when the immutable derived record already exists', async () => {
     const f = fixture();
     f.catalog.readMetadataSource.mockResolvedValue({
       ...sourceRow(),
-      metadata: { extractedMetadata: metadata },
+      metadata: metadataRow(),
     });
     await expect(
       f.service.enrichDocumentMetadata('version-1', context),
@@ -212,6 +349,7 @@ describe('metadata insert-only catalog boundary', () => {
       const query = {
         from: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
         limit: jest
           .fn()
           .mockResolvedValueOnce([
@@ -249,7 +387,10 @@ describe('metadata insert-only catalog boundary', () => {
         dmDocumentVersionMetadata,
       );
       expect(insert.onConflictDoNothing).toHaveBeenCalledWith({
-        target: dmDocumentVersionMetadata.documentVersionId,
+        target: [
+          dmDocumentVersionMetadata.documentVersionId,
+          dmDocumentVersionMetadata.metadataRevision,
+        ],
       });
     },
   );

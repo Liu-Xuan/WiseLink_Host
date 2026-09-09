@@ -7,6 +7,7 @@ import {
   Param,
   Post,
   Req,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { NeedLogin } from '@lark-apaas/fullstack-nestjs-core';
@@ -82,6 +83,25 @@ export class DocumentManagementHostedController {
   ) {
     assertProductionMiaodaBrowserIdentityAvailable(request.userContext);
     return this.service.confirmHistoricalImport(preflightId, body, contextFromRequest(request));
+  }
+
+  @Get('document-versions/:documentVersionId/metadata')
+  @Header('Cache-Control', 'private, no-store')
+  readDocumentMetadata(
+    @Param('documentVersionId') documentVersionId: string,
+    @Query() query: Record<string, unknown>,
+    @Req() request: Request,
+  ) {
+    return this.service.readDocumentMetadata(documentVersionId, query, contextFromRequest(request));
+  }
+
+  @Post('document-versions/:documentVersionId/metadata/reextract')
+  reextractDocumentMetadata(
+    @Param('documentVersionId') documentVersionId: string,
+    @Body() body: unknown,
+    @Req() request: Request,
+  ) {
+    return this.service.reextractDocumentMetadata(documentVersionId, body, contextFromRequest(request));
   }
 
   @Post('document-versions/:documentVersionId/metadata/enrich')

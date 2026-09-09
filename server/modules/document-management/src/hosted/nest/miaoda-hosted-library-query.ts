@@ -69,6 +69,7 @@ export function listOwnedLibraryFamilies(
         sourceGeneratedDate: dmDocumentVersion.sourceGeneratedDate,
         originalFilename: dmDocumentVersion.originalFilename,
         extractedMetadata: dmDocumentVersionMetadata.extractedMetadata,
+        metadataRevision: dmDocumentVersionMetadata.metadataRevision,
         byteLength: dmDocumentVersion.byteLength,
         committedAt: dmDocumentVersion.committedAt,
         selectedVersionIsCurrent:
@@ -96,9 +97,18 @@ export function listOwnedLibraryFamilies(
       )
       .leftJoin(
         dmDocumentVersionMetadata,
-        eq(
-          dmDocumentVersionMetadata.documentVersionId,
-          dmDocumentVersion.documentVersionId,
+        and(
+          eq(
+            dmDocumentVersionMetadata.documentVersionId,
+            dmDocumentVersion.documentVersionId,
+          ),
+          // Metadata revisions are append-only; choose the latest for this exact
+          // document version before search, grouping and facet counts.
+          sql`${dmDocumentVersionMetadata.metadataRevision} = (
+            select max(latest_metadata.metadata_revision)
+            from ${dmDocumentVersionMetadata} latest_metadata
+            where latest_metadata.document_version_id = ${dmDocumentVersion.documentVersionId}
+          )`,
         ),
       )
       .leftJoin(
@@ -160,6 +170,7 @@ export function listOwnedLibraryFamilies(
       'sourceGeneratedDate', ${versions.sourceGeneratedDate},
       'originalFilename', ${versions.originalFilename},
       'extractedMetadata', ${versions.extractedMetadata},
+      'metadataRevision', ${versions.metadataRevision},
       'byteLength', ${versions.byteLength},
       'committedAt', ${versions.committedAt},
       'selectedVersionIsCurrent', ${versions.selectedVersionIsCurrent},

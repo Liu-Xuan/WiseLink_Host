@@ -34,6 +34,9 @@ import {
   getCanonicalLibraryTasks,
   getCanonicalLibraryQuicklook,
   enrichDocumentVersionMetadata,
+  readDocumentVersionMetadata,
+  reextractDocumentVersionMetadata,
+  readDocumentVersionOriginal,
   uploadLibraryDocument,
   confirmLibraryHistoricalImport,
   refreshLibraryHistoricalImport,
@@ -57,6 +60,72 @@ import { logger } from '@lark-apaas/client-toolkit/logger';
 import { libraryMetadata } from './fixtures/canonical-library';
 
 describe('canonical host assessment client', () => {
+  const pdfBytes = new TextEncoder().encode('%PDF-1.7\nsynthetic PDF\n%%EOF').buffer;
+  it('reads the exact taskless original through authenticated platform Axios as binary', async () => {
+    request.mockResolvedValue({ status: 200, headers: { 'content-type': 'application/pdf' }, data: pdfBytes });
+    const signal = new AbortController().signal;
+    const blob = await readDocumentVersionOriginal('DV/exact-old', signal);
+    expect(blob.type).toBe('application/pdf');
+    expect(await blob.arrayBuffer()).toEqual(pdfBytes);
+    expect(request).toHaveBeenCalledWith({ url: '/api/document-management/document-versions/DV%2Fexact-old/original', method: 'GET', responseType: 'arraybuffer', signal });
+    expect(request.mock.calls[0][0]).not.toHaveProperty('params');
+  });
+
+  it.each([401, 403, 404, 500])('rejects original response status %s instead of preparing a fake PDF', async (status) => {
+    request.mockResolvedValue({ status, data: pdfBytes });
+    await expect(readDocumentVersionOriginal('DV-1')).rejects.toThrow();
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects successful HTML or non-PDF original responses', async () => {
+    request.mockResolvedValue({ status: 200, headers: { 'content-type': 'text/html' }, data: pdfBytes });
+    await expect(readDocumentVersionOriginal('DV-1')).rejects.toThrow('DOCUMENT_ORIGINAL_NOT_PDF');
+    request.mockResolvedValue({ status: 200, data: new TextEncoder().encode('Forbidden').buffer });
+    await expect(readDocumentVersionOriginal('DV-1')).rejects.toThrow('DOCUMENT_ORIGINAL_NOT_PDF');
+  });
+
+  it('discards PDF bytes if identity changes before read completion', async () => {
+    request.mockImplementation(async () => { invalidateCanonicalHostClientSession(); return { status: 200, data: pdfBytes }; });
+    await expect(readDocumentVersionOriginal('DV-1')).rejects.toThrow('DOCUMENT_ORIGINAL_READ_OBSOLETE');
+  });
+
+  const metadataReceipt = {
+    documentVersionId: 'DV/1', metadataId: 'M2', metadataRevision: 2,
+    requestId: 'b7bef4ac-d54a-4c96-9b07-87d8140e7502', extractedMetadata: libraryMetadata(),
+  };
+
+  it('appends metadata using the exact seen revision and UUID, validating the receipt', async () => {
+    const input = { expectedMetadataRevision: 1, requestId: metadataReceipt.requestId };
+    for (const disposition of ['APPENDED', 'IDEMPOTENT_REPLAY']) {
+      request.mockResolvedValue({ status: 200, data: { ...metadataReceipt, disposition } });
+      await expect(reextractDocumentVersionMetadata('DV/1', input)).resolves.toMatchObject({ metadataRevision: 2, disposition });
+    }
+    expect(request).toHaveBeenLastCalledWith({ url: '/api/document-management/document-versions/DV%2F1/metadata/reextract', method: 'POST', data: input });
+    request.mockResolvedValue({ status: 200, data: { ...metadataReceipt, metadataRevision: 3, disposition: 'APPENDED' } });
+    await expect(reextractDocumentVersionMetadata('DV/1', input)).rejects.toThrow('DOCUMENT_METADATA_RECEIPT_MISMATCH');
+  });
+
+  it('reads latest, exact historical revision, and uncertain request receipt with GET only', async () => {
+    request.mockResolvedValue({ status: 200, data: metadataReceipt });
+    await readDocumentVersionMetadata('DV/1');
+    expect(request).toHaveBeenLastCalledWith({ url: '/api/document-management/document-versions/DV%2F1/metadata', method: 'GET' });
+    await readDocumentVersionMetadata('DV/1', { revision: 2 });
+    expect(request).toHaveBeenLastCalledWith({ url: '/api/document-management/document-versions/DV%2F1/metadata', method: 'GET', params: { revision: 2 } });
+    await readDocumentVersionMetadata('DV/1', { requestId: metadataReceipt.requestId });
+    expect(request).toHaveBeenLastCalledWith({ url: '/api/document-management/document-versions/DV%2F1/metadata', method: 'GET', params: { requestId: metadataReceipt.requestId } });
+    await expect(readDocumentVersionMetadata('DV/1', { revision: 1 })).rejects.toThrow('DOCUMENT_METADATA_RECEIPT_MISMATCH');
+    await expect(readDocumentVersionMetadata('DV/1', { requestId: 'different' })).rejects.toThrow('DOCUMENT_METADATA_RECEIPT_MISMATCH');
+  });
+
+  it('accepts an explicitly empty request lookup but never replays the write automatically', async () => {
+    request.mockResolvedValueOnce({ status: 409, data: { code: 'DOCUMENT_METADATA_REVISION_CONFLICT' } });
+    await expect(reextractDocumentVersionMetadata('DV/1', { expectedMetadataRevision: 1, requestId: metadataReceipt.requestId })).rejects.toThrow();
+    expect(request).toHaveBeenCalledTimes(1);
+    request.mockResolvedValue({ status: 200, data: { documentVersionId: 'DV/1', metadataId: null, metadataRevision: null, requestId: null, extractedMetadata: null } });
+    await expect(readDocumentVersionMetadata('DV/1', { requestId: metadataReceipt.requestId })).resolves.toMatchObject({ metadataId: null });
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+
   it('uses ordinary upload and exact explicit historical confirmation, without auto-retry', async () => {
     const receipt = { status: 'REVIEW_REQUIRED', historicalImport: null };
     request.mockResolvedValue({ status: 200, data: receipt });
