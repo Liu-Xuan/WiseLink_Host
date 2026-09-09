@@ -1,4 +1,5 @@
-import { Injectable } from '@nestjs/common';
+import { isMintedDocumentUploadAuthority } from '../document-management/src/hosted/nest/document-upload-authority';
+import { Injectable, Optional } from '@nestjs/common';
 import { FileService } from '@lark-apaas/fullstack-nestjs-core';
 
 import type { DocumentManagementIngestAuthorizer } from '../document-management/src/hosted/nest/document-management-hosted.tokens';
@@ -6,6 +7,7 @@ import {
   CANONICAL_DEVELOPMENT_ROLE_ID,
   CANONICAL_MIAODA_APP_ID,
 } from '../canonical-host/canonical-host.constants';
+import { MiaodaHostedDocumentCatalog } from '../document-management/src/hosted/nest/miaoda-hosted-document-catalog';
 import { MiaodaWorkItemRepository } from '../work-item/miaoda-work-item.repository';
 
 @Injectable()
@@ -16,17 +18,23 @@ export class OrdinaryDocumentManagementAuthorizer implements DocumentManagementI
   constructor(
     private readonly workItems: MiaodaWorkItemRepository,
     private readonly fileService: FileService,
+    @Optional() private readonly catalog?: MiaodaHostedDocumentCatalog,
   ) {}
 
   async assertCanIngest(
     input: Parameters<DocumentManagementIngestAuthorizer['assertCanIngest']>[0],
   ): Promise<void> {
     assertAuthenticated(input);
+    const documentUpload = isMintedDocumentUploadAuthority(
+      input.runtimeIngestAuthority,
+      input,
+    );
     const reviewAttachment: boolean = isReviewAttachmentIngest(input);
     const oauthDevelopmentSelection: boolean =
       isOauthSessionDevelopmentIngest(input);
     if (
       !reviewAttachment &&
+      !documentUpload &&
       !input.roles.includes(CANONICAL_DEVELOPMENT_ROLE_ID)
     ) {
       throw documentActionForbidden();
@@ -34,7 +42,7 @@ export class OrdinaryDocumentManagementAuthorizer implements DocumentManagementI
     const bucketId = input.selection.bucketId.trim();
     const filePath: string | null = reviewAttachment
       ? normalizedReviewAttachmentPath(input.selection.filePath)
-      : oauthDevelopmentSelection
+      : oauthDevelopmentSelection || documentUpload
         ? normalizedOauthDevelopmentFilePath(input.selection.filePath)
         : normalizedDevelopmentFilePath(input.selection.filePath);
     if (!bucketId || !filePath) {
@@ -74,7 +82,13 @@ export class OrdinaryDocumentManagementAuthorizer implements DocumentManagementI
         actorUserId: input.actorUserId,
       },
     );
-    if (!binding) throw documentNotFound();
+    if (binding) return;
+    const acquired = await this.catalog?.readOwnedAcquisitionVersionBinding({
+      tenantId: input.tenantId,
+      documentVersionId: input.documentVersionId,
+      actorUserId: input.actorUserId,
+    });
+    if (!acquired) throw documentNotFound();
   }
 }
 

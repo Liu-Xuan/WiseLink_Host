@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { StaticRouter } from 'react-router-dom/server';
 import type { EngineeringMatterDirectoryResponse } from '@shared/api.interface';
 import type { AssessmentReadingSummary } from '@shared/assessment-reading.interface';
+jest.mock('@lark-apaas/client-toolkit/utils/resolveAppUrl', () => ({ resolveAppUrl: (path: string) => path }), { virtual: true });
 
 jest.mock('@client/src/components/ui/button', () => ({ Button: 'button' }), {
   virtual: true,
@@ -116,6 +117,10 @@ describe('real matter directory and saved list summaries', () => {
           loading: false,
           loadingMore: false,
           error: null,
+          totalCount: undefined,
+          familyCounts: undefined,
+          ataCounts: undefined,
+          aircraftModelCounts: undefined,
           discard: jest.fn(),
           loadMore: jest.fn(),
         },

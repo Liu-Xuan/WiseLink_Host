@@ -16,6 +16,24 @@ export interface LibraryDocumentsRead {
   loading: boolean;
   loadingMore: boolean;
   error: LibraryReadErrorPresentation | null;
+  normalizedFamily?: string;
+  ata?: string;
+  aircraftModel?: string;
+  totalCount?: number;
+  familyCounts?: Record<string, number>;
+  ataCounts?: Record<string, number>;
+  aircraftModelCounts?: Record<string, number>;
+}
+
+function sameFilters(
+  a: LibraryDocumentsRead,
+  b: LibraryDocumentsRead,
+): boolean {
+  return (
+    (a.normalizedFamily ?? '') === (b.normalizedFamily ?? '') &&
+    (a.ata ?? '') === (b.ata ?? '') &&
+    (a.aircraftModel ?? '') === (b.aircraftModel ?? '')
+  );
 }
 
 export type LibraryDirectoryEntry =
@@ -34,7 +52,8 @@ export function beginLibraryDocumentsRead(
     ...(prior?.sessionGeneration === empty.sessionGeneration &&
     prior.search === empty.search &&
     prior.mode === empty.mode &&
-    prior.familyId === empty.familyId
+    prior.familyId === empty.familyId &&
+    sameFilters(prior, empty)
       ? prior
       : empty),
     loading: true,
@@ -54,7 +73,8 @@ export function mergeLibraryDocumentsRead(
     prior?.sessionGeneration === empty.sessionGeneration &&
     prior.search === empty.search &&
     prior.mode === empty.mode &&
-    prior.familyId === empty.familyId
+    prior.familyId === empty.familyId &&
+    sameFilters(prior, empty)
       ? prior.items
       : [];
   const seen: Set<string> = new Set(discarded);
@@ -71,5 +91,13 @@ export function mergeLibraryDocumentsRead(
     nextCursor: response.nextCursor,
     loading: false,
     loadingMore: false,
+    ...(response.scope === 'CURRENT_USER_DOCUMENT_CATALOG'
+      ? {
+          totalCount: response.totalCount,
+          familyCounts: response.familyCounts,
+          ataCounts: response.ataCounts,
+          aircraftModelCounts: response.aircraftModelCounts,
+        }
+      : {}),
   };
 }

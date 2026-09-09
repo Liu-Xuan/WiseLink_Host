@@ -23,6 +23,36 @@ function empty(
 }
 
 describe('library documents and tasks stay separate across reads', () => {
+  it('keeps full server counts separate from the loaded page and invalidates all facets on filter changes', () => {
+    const first = mergeLibraryDocumentsRead(
+      null,
+      { ...empty('document'), normalizedFamily: 'SB', ata: '34' },
+      {
+        ...libraryDocuments(['a'], 'next'),
+        totalCount: 100,
+        familyCounts: { SB: 120, SL: 30 },
+        ataCounts: { '34': 110 },
+        aircraftModelCounts: { '737': 125 },
+      },
+      new Set(),
+    );
+    expect(first.items).toHaveLength(1);
+    expect(first.totalCount).toBe(100);
+    expect(first.familyCounts).toEqual({ SB: 120, SL: 30 });
+    for (const changed of [
+      { normalizedFamily: 'SL', ata: '34' },
+      { normalizedFamily: 'SB', ata: '29' },
+      { normalizedFamily: 'SB', ata: '34', aircraftModel: '777' },
+    ]) {
+      const next = beginLibraryDocumentsRead(first, {
+        ...empty('document'),
+        ...changed,
+      });
+      expect(next.items).toEqual([]);
+      expect(next.totalCount).toBeUndefined();
+      expect(next.familyCounts).toBeUndefined();
+    }
+  });
   it('deduplicates overlapping family pages while preserving versions within each document', () => {
     const first = mergeLibraryDocumentsRead(
       null,

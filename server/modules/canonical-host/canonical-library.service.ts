@@ -47,15 +47,22 @@ export class CanonicalLibraryService {
     actor: CanonicalHostActor,
   ): Promise<CanonicalLibraryDocumentsResponse> {
     const scope = ownedScope(actor);
-    const query = listQuery(input, 'DOCUMENTS');
-    const rows = await this.repository.listDocuments({ ...scope, ...query });
+    const normalizedFamily = input.normalizedFamily?.trim() ?? '';
+    if (normalizedFamily.length > 96) throw new BadRequestException('LIBRARY_FAMILY_INVALID');
+    const ata = input.ata?.trim() ?? '';
+    const aircraftModel = input.aircraftModel?.trim() ?? '';
+    if (ata.length > 96 || aircraftModel.length > 96) throw new BadRequestException('LIBRARY_FILTER_INVALID');
+    const context = normalizedFamily || ata || aircraftModel ? `DOCUMENTS:${JSON.stringify([normalizedFamily, ata, aircraftModel])}` : 'DOCUMENTS';
+    const query = listQuery(input, context);
+    const [result] = await this.repository.listDocuments({ ...scope, ...query, normalizedFamily, ata, aircraftModel });
+    const rows = result.rows;
     const items: CanonicalLibraryDocumentSummary[] = rows
       .slice(0, query.limit)
       .map((row) => ({
         ...row,
         kind: 'DOCUMENT',
-        createdAt: row.createdAt.toISOString(),
-        updatedAt: row.updatedAt.toISOString(),
+        createdAt: new Date(row.createdAt).toISOString(),
+        updatedAt: new Date(row.updatedAt).toISOString(),
         versions: row.versions.map((version) => ({
           ...version,
           committedAt: new Date(version.committedAt).toISOString(),
@@ -64,6 +71,10 @@ export class CanonicalLibraryService {
     const last = items.at(-1);
     return {
       scope: 'CURRENT_USER_DOCUMENT_CATALOG',
+      totalCount: result.totalCount,
+      familyCounts: result.familyCounts,
+      ataCounts: result.ataCounts,
+      aircraftModelCounts: result.aircraftModelCounts,
       order: 'FAMILY_CREATED_AT_DESC_FAMILY_ID_DESC',
       items,
       nextCursor:
@@ -72,7 +83,7 @@ export class CanonicalLibraryService {
               last.createdAt,
               last.familyId,
               query.search,
-              'DOCUMENTS',
+              context,
             )
           : null,
       fileReadPerformed: false,

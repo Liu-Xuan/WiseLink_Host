@@ -36,16 +36,22 @@ function target() {
     listTasks: jest
       .fn()
       .mockResolvedValue([row('WI-C'), row('WI-B'), row('WI-A')]),
-    listDocuments: jest.fn().mockResolvedValue(
-      ['family-c', 'family-b', 'family-a'].map((id) => {
-        const item = libraryFamily(id);
-        return {
-          ...item,
-          createdAt: new Date(item.createdAt),
-          updatedAt: new Date(item.updatedAt),
-        };
-      }),
-    ),
+    listDocuments: jest.fn().mockResolvedValue([
+      {
+        totalCount: 3,
+        familyCounts: { SB: 3 },
+        ataCounts: {},
+        aircraftModelCounts: {},
+        rows: ['family-c', 'family-b', 'family-a'].map((id) => {
+          const item = libraryFamily(id);
+          return {
+            ...item,
+            createdAt: new Date(item.createdAt),
+            updatedAt: new Date(item.updatedAt),
+          };
+        }),
+      },
+    ]),
     quicklook: jest.fn().mockResolvedValue({
       ...row('WI-B'),
       result: libraryQuicklook('WI-B').result,

@@ -1,5 +1,3 @@
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
 import type { CanonicalLibraryDocumentSummary } from '@shared/api.interface';
 import { Button } from '@client/src/components/ui/button';
 import {
@@ -8,15 +6,18 @@ import {
 } from './library-document-presentation';
 import {
   groupLibraryDocuments,
-  LIBRARY_GROUPINGS,
   type LibraryGrouping,
 } from './library-classification';
+import { DocumentVersionLink } from './DocumentVersionLink';
+import { metadataValues } from './library-classification';
 
 interface LibraryHierarchyProps {
   documents: CanonicalLibraryDocumentSummary[];
   selectedId: string;
   hasMore: boolean;
   onSelect: (familyId: string) => void;
+  grouping?: LibraryGrouping;
+  totalCount?: number;
 }
 
 export function LibraryHierarchy({
@@ -24,11 +25,10 @@ export function LibraryHierarchy({
   selectedId,
   hasMore,
   onSelect,
+  grouping = 'category',
+  totalCount,
 }: LibraryHierarchyProps) {
-  const [grouping, setGrouping] = useState<LibraryGrouping>('category');
-  const groups = groupLibraryDocuments(documents);
-  const missingDimension: string | null =
-    grouping === 'ata' ? 'ATA 章节' : grouping === 'aircraft' ? '机型' : null;
+  const groups = groupLibraryDocuments(documents, grouping);
 
   function documentRows(items: CanonicalLibraryDocumentSummary[]) {
     return (
@@ -62,9 +62,7 @@ export function LibraryHierarchy({
               >
                 {document.versions.map((version) => (
                   <li key={version.documentVersionId}>
-                    <Link
-                      to={`/work-items/${encodeURIComponent(version.readerWorkItemId)}/documents?node=reader&tab=reader`}
-                    >
+                    <DocumentVersionLink version={version}>
                       <strong>{libraryVersionLabel(version)}</strong>
                       <span>
                         {version.selectedVersionIsCurrent
@@ -72,7 +70,17 @@ export function LibraryHierarchy({
                           : '历史版本'}
                       </span>
                       <small>{version.originalFilename}</small>
-                    </Link>
+                      {version.extractedMetadata ? (
+                        <small>
+                          {metadataValues(version.extractedMetadata.title).join(
+                            ' / ',
+                          ) || '标题本次未检出'}
+                          {' · 元数据待核'}
+                        </small>
+                      ) : (
+                        <small>元数据未提取</small>
+                      )}
+                    </DocumentVersionLink>
                   </li>
                 ))}
               </ul>
@@ -89,7 +97,7 @@ export function LibraryHierarchy({
         <details key={group.key} open>
           <summary>
             <strong>{group.label}</strong>
-            <span>{group.documents.length} 份文档</span>
+            <span>已加载 {group.documents.length} 份文档</span>
           </summary>
           {documentRows(group.documents)}
         </details>
@@ -99,48 +107,22 @@ export function LibraryHierarchy({
 
   return (
     <section className="library-hierarchy" aria-label="文档分类目录">
-      <div
-        className="library-grouping-controls"
-        role="group"
-        aria-label="资料分组方式"
-      >
-        {LIBRARY_GROUPINGS.map((option) => (
-          <Button
-            key={option.value}
-            size="sm"
-            variant={grouping === option.value ? 'default' : 'outline'}
-            aria-pressed={grouping === option.value}
-            onClick={() => setGrouping(option.value)}
-          >
-            {option.label}
-          </Button>
-        ))}
-      </div>
+      <h3>资料分类（含历史版本）</h3>
       <p className="library-classification-note">
-        {hasMore
-          ? `已加载 ${documents.length} 份；以下分组与数量仅覆盖已加载的搜索结果，可在下方加载更多。`
-          : `当前搜索结果共 ${documents.length} 份文档。`}{' '}
-        展开文档查看版本，或打开文档快览。
+        {totalCount === undefined
+          ? '全量统计尚未取得。'
+          : `当前搜索与筛选共 ${totalCount} 份文档。`}
+        {`已加载 ${documents.length} 份；下方树节点数量仅覆盖已加载的搜索结果。`}
+        {hasMore ? '可在下方加载更多。' : ''} 展开文档查看版本，或打开文档快览。
       </p>
-      {missingDimension ? (
-        <>
-          <p className="library-classification-note" role="status">
-            当前目录尚未登记{missingDimension}
-            。以下文档均为未分类，不从文件名、文档编号或评估对象推断。
-          </p>
-          <details className="library-unclassified-group" open>
-            <summary>
-              未分类 · {missingDimension}
-              <span>{documents.length} 份文档</span>
-            </summary>
-            {categories}
-          </details>
-        </>
-      ) : grouping === 'all' ? (
-        documentRows(documents)
-      ) : (
-        categories
-      )}
+      {grouping === 'ata' || grouping === 'aircraft' ? (
+        <p className="library-classification-note">
+          按各获权版本的原文观察值分类，全部待核；可能来自历史版本，不代表当前版本。
+          {grouping === 'aircraft' ? '正文提及机型（非适用性）。' : ''}
+          未分类包含尚未提取或本次文本未检出的版本；可在文档快览中查看依据或补提取。
+        </p>
+      ) : null}
+      {grouping === 'all' ? documentRows(documents) : categories}
     </section>
   );
 }

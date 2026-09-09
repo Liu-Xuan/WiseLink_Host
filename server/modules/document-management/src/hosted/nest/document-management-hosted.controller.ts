@@ -2,6 +2,8 @@ import {
   Body,
   Controller,
   Get,
+  Header,
+  StreamableFile,
   Param,
   Post,
   Req,
@@ -52,6 +54,55 @@ export class DocumentManagementHostedController {
       body,
       contextFromRequest(request),
     );
+  }
+
+  @Post('uploads/file-service')
+  ingestDocumentLibraryUpload(@Body() body: unknown, @Req() request: Request) {
+    assertProductionMiaodaBrowserIdentityAvailable(request.userContext);
+    return this.service.ingestDocumentLibraryUpload(body, contextFromRequest(request));
+  }
+
+  @Post('uploads/ingress-preflights/:preflightId/import-historical')
+  confirmUploadedHistoricalImport(@Param('preflightId') preflightId: string, @Body() body: unknown, @Req() request: Request) {
+    assertProductionMiaodaBrowserIdentityAvailable(request.userContext);
+    return this.service.confirmUploadedHistoricalImport(preflightId, body, contextFromRequest(request));
+  }
+
+  @Post('uploads/ingress-preflights/:preflightId/refresh-historical')
+  refreshUploadedHistoricalImport(@Param('preflightId') preflightId: string, @Req() request: Request) {
+    assertProductionMiaodaBrowserIdentityAvailable(request.userContext);
+    return this.service.refreshUploadedHistoricalImport(preflightId, contextFromRequest(request));
+  }
+
+  @Post('ingress-preflights/:preflightId/import-historical')
+  confirmHistoricalImport(
+    @Param('preflightId') preflightId: string,
+    @Body() body: unknown,
+    @Req() request: Request,
+  ) {
+    assertProductionMiaodaBrowserIdentityAvailable(request.userContext);
+    return this.service.confirmHistoricalImport(preflightId, body, contextFromRequest(request));
+  }
+
+  @Post('document-versions/:documentVersionId/metadata/enrich')
+  enrichDocumentMetadata(
+    @Param('documentVersionId') documentVersionId: string,
+    @Req() request: Request,
+  ) {
+    return this.service.enrichDocumentMetadata(documentVersionId, contextFromRequest(request));
+  }
+
+  @Get('document-versions/:documentVersionId/original')
+  @Header('Cache-Control', 'private, no-store')
+  async readDocumentOriginal(
+    @Param('documentVersionId') documentVersionId: string,
+    @Req() request: Request,
+  ) {
+    const source = await this.service.readDocumentOriginal(documentVersionId, contextFromRequest(request));
+    return new StreamableFile(source.bytes, {
+      type: 'application/pdf',
+      disposition: `inline; filename*=UTF-8''${encodeURIComponent(source.filename)}`,
+    });
   }
 
   @Get('document-versions/:documentVersionId')

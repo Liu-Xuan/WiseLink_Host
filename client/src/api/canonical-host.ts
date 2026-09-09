@@ -24,6 +24,10 @@ import type {
   CanonicalLibraryTasksRequest,
   CanonicalLibraryTasksResponse,
   CanonicalLibraryQuicklookResponse,
+  DocumentExtractedMetadata,
+  DocumentUploadRequest,
+  DocumentUploadResponse,
+  DocumentHistoricalImportRequest,
   CanonicalDevelopmentWorkItemRunRequest,
   CanonicalOverallRegenerationReadModel,
   CanonicalOrdinaryWorkItemRunResponse,
@@ -474,12 +478,14 @@ async function readCanonicalLibrary<T>(input: {
   url: string;
   params?: CanonicalLibraryTasksRequest;
   signal?: AbortSignal;
+  method?: 'GET' | 'POST';
+  data?: DocumentUploadRequest | DocumentHistoricalImportRequest;
 }): Promise<T> {
   const requestGeneration = clientSessionGeneration;
   try {
     const response = await axiosForBackend<T>({
       ...input,
-      method: 'GET',
+      method: input.method ?? 'GET',
     });
     if (response.status === 401) {
       throw clientLoginRequired(
@@ -510,6 +516,48 @@ async function readCanonicalLibrary<T>(input: {
     }
     throw normalizedDirectObjectError(error, requestGeneration);
   }
+}
+
+export async function enrichDocumentVersionMetadata(documentVersionId: string): Promise<{
+  documentVersionId: string;
+  disposition: 'ENRICHED' | 'ALREADY_PRESENT';
+  extractedMetadata: DocumentExtractedMetadata;
+}> {
+  const receipt = await readCanonicalLibrary<{
+    documentVersionId: string;
+    disposition: 'ENRICHED' | 'ALREADY_PRESENT';
+    extractedMetadata: DocumentExtractedMetadata;
+  }>({
+    url: `/api/document-management/document-versions/${encodeURIComponent(documentVersionId)}/metadata/enrich`,
+    method: 'POST',
+  });
+  if (receipt.documentVersionId !== documentVersionId ||
+    !['ENRICHED', 'ALREADY_PRESENT'].includes(receipt.disposition) ||
+    receipt.extractedMetadata?.source !== 'ACTUAL_PDF_TEXT') {
+    throw new Error('DOCUMENT_METADATA_RECEIPT_MISMATCH');
+  }
+  return receipt;
+}
+
+export function uploadLibraryDocument(input: DocumentUploadRequest): Promise<DocumentUploadResponse> {
+  return requestDocumentUpload('/api/document-management/uploads/file-service', input);
+}
+
+export function confirmLibraryHistoricalImport(preflightId: string, input: DocumentHistoricalImportRequest): Promise<DocumentUploadResponse> {
+  return requestDocumentUpload(`/api/document-management/uploads/ingress-preflights/${encodeURIComponent(preflightId)}/import-historical`, input);
+}
+
+export function refreshLibraryHistoricalImport(preflightId: string): Promise<DocumentUploadResponse> {
+  return requestDocumentUpload(`/api/document-management/uploads/ingress-preflights/${encodeURIComponent(preflightId)}/refresh-historical`);
+}
+
+async function requestDocumentUpload(url: string, data?: DocumentUploadRequest | DocumentHistoricalImportRequest): Promise<DocumentUploadResponse> {
+  const receipt = await readCanonicalLibrary<DocumentUploadResponse>({ url, method: 'POST', ...(data ? { data } : {}) });
+  if (!receipt || !['COMMITTED', 'REVIEW_REQUIRED'].includes(receipt.status) ||
+    (receipt.status === 'COMMITTED' && !receipt.documentVersionId)) {
+    throw new Error('DOCUMENT_UPLOAD_RECEIPT_INVALID');
+  }
+  return receipt;
 }
 
 export function getCanonicalModelSettings(): Promise<CanonicalModelSettingsReadModel> {

@@ -1,6 +1,8 @@
 import { ArrowRight, FileSearch2, History } from 'lucide-react';
 import type { CanonicalLibraryDocumentSummary } from '@shared/api.interface';
 import { Button } from '@client/src/components/ui/button';
+import { DocumentVersionLink } from './DocumentVersionLink';
+import { LibraryMetadata } from './LibraryMetadata';
 import {
   byteLabel,
   documentLabel,
@@ -10,13 +12,13 @@ import {
 
 interface LibraryDocumentDetailsProps {
   document: CanonicalLibraryDocumentSummary | null;
-  onOpenVersion: (workItemId: string) => void;
+  onRefresh: () => void;
   onViewTasks: (familyId: string) => void;
 }
 
 export function LibraryDocumentDetails({
   document,
-  onOpenVersion,
+  onRefresh,
   onViewTasks,
 }: LibraryDocumentDetailsProps) {
   return (
@@ -94,14 +96,10 @@ export function LibraryDocumentDetails({
                     <dd>{version.workItemCount} 个任务</dd>
                   </div>
                 </dl>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => onOpenVersion(version.readerWorkItemId)}
-                  aria-label={`打开 ${libraryVersionLabel(version)} 原文`}
-                >
+                <DocumentVersionLink version={version}>
                   打开原文 <ArrowRight aria-hidden="true" />
-                </Button>
+                </DocumentVersionLink>
+                <LibraryMetadata version={version} onRefresh={onRefresh} />
               </li>
             ))}
           </ol>

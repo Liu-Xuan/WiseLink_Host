@@ -14,6 +14,8 @@ export interface HostedCorePorts {
     findExactDocumentVersion(input: unknown): Promise<unknown>;
     linkAcquisitionToVersion(input: unknown): Promise<unknown>;
     commitNewVersion(input: unknown): Promise<unknown>;
+    readHistoricalImportCandidate(input: unknown): Promise<unknown>;
+    commitHistoricalVersion(input: unknown): Promise<unknown>;
     readDocumentVersion(documentVersionId: string): Promise<unknown>;
     readFamily(familyId: string): Promise<unknown>;
   };
@@ -29,6 +31,8 @@ export interface HostedCorePorts {
 
 export class DocumentManagementHostedCore {
   constructor(ports: HostedCorePorts);
+  refreshHistoricalImport(preflightId: string, serverContext: unknown): Promise<Record<string, unknown>>;
+  confirmHistoricalImport(preflightId: string, request: unknown, serverContext: unknown): Promise<Record<string, unknown>>;
   ingestFileServiceSelection(
     request: unknown,
     serverContext: unknown,

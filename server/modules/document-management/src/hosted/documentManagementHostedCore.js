@@ -36,6 +36,7 @@ const CALLER_IDENTITY_FIELDS = Object.freeze([
   'documentFamily',
   'documentFamilyAdapterId',
   'documentTitle',
+  'extractedMetadata',
   'fileName',
   'generatedDate',
   'identityAuthority',
@@ -422,6 +423,151 @@ export class DocumentManagementHostedCore {
     this.now = now;
   }
 
+  async verifyHistoricalImportSource(candidate, serverContext) {
+    const actorUserId = required(serverContext.actorUserId, 'serverContext.actorUserId');
+    const tenantId = required(serverContext.tenantId, 'serverContext.tenantId');
+    const selection = {
+      bucketId: candidate.acquisition.selectionBucketId,
+      filePath: candidate.acquisition.selectionFilePath,
+    };
+    await this.authorizer.assertCanIngest({
+      actorUserId, tenantId, roles: Array.isArray(serverContext.roles) ? [...serverContext.roles] : [],
+      action: 'DOCUMENT_INGEST', selection,
+      ...(serverContext.runtimeIngestAuthority
+        ? { runtimeIngestAuthority: serverContext.runtimeIngestAuthority.mode === 'HOSTED_MIAODA_DOCUMENT_UPLOAD'
+            ? serverContext.runtimeIngestAuthority : structuredClone(serverContext.runtimeIngestAuthority) } : {}),
+    });
+    // Confirmation never substitutes for fresh access and actual byte verification.
+    const selected = await this.artifactStore.readSelection(selection);
+    controlledPdfByteView(selected.bytes);
+    if (sha256Hex(selected.bytes) !== candidate.artifact.sha256
+      || selected.bytes.byteLength !== Number(candidate.artifact.byteLength)
+      || selected.providerObjectId !== candidate.acquisition.providerObjectId
+      || selected.providerVersionId !== candidate.acquisition.providerVersionId) {
+      fail('HISTORICAL_IMPORT_SOURCE_CHANGED', 'The selected source no longer matches the reviewed preflight.');
+    }
+    const immutableSource = await this.artifactStore.readSelection({
+      bucketId: candidate.artifact.bucketId, filePath: candidate.artifact.filePath,
+    });
+    if (!Buffer.isBuffer(immutableSource.bytes)
+      || sha256Hex(immutableSource.bytes) !== candidate.artifact.sha256
+      || immutableSource.bytes.byteLength !== Number(candidate.artifact.byteLength)) {
+      fail('HISTORICAL_IMPORT_SOURCE_CHANGED', 'The immutable source no longer matches the reviewed bytes.');
+    }
+  }
+
+  async refreshHistoricalImport(preflightId, serverContext = {}) {
+    const actorUserId = required(serverContext.actorUserId, 'serverContext.actorUserId');
+    const tenantId = required(serverContext.tenantId, 'serverContext.tenantId');
+    const candidate = await this.catalog.readHistoricalImportCandidate({
+      preflightId: required(preflightId, 'preflightId'), actorUserId, tenantId,
+    });
+    if (candidate.preflight.status !== 'READY' || candidate.acquisition.documentVersionId) {
+      fail('HISTORICAL_IMPORT_ALREADY_COMMITTED', 'This acquisition is already committed; use its existing version.');
+    }
+    await this.verifyHistoricalImportSource(candidate, serverContext);
+    const decision = buildGovernedDocumentIngressPreflightDecision({
+      generatedAt: this.now(), documents: await this.catalog.listIngressDocuments({ tenantId }),
+      rawDescriptor: candidate.sourceDescriptor, normalizedDescriptor: candidate.normalizedDescriptor,
+    });
+    if (decision.decision !== 'ASK_IMPORT_OLDER_REVISION') {
+      fail('HISTORICAL_IMPORT_REPREFLIGHT_REQUIRED', 'The source no longer qualifies for historical import.');
+    }
+    const family = await this.catalog.observeFamily(candidate.family.canonicalIdentityKey);
+    if (!family?.currentDocumentVersionId || family.currentGeneration < 1) {
+      fail('HISTORICAL_IMPORT_FAMILY_MISSING', 'No current family version can be displayed for confirmation.');
+    }
+    const refreshedId = deterministicId('preflight', candidate.acquisition.acquisitionId,
+      decision.decision, family.currentGeneration, family.currentDocumentVersionId);
+    const stored = await this.catalog.recordPreflight({
+      preflightId: refreshedId, acquisitionId: candidate.acquisition.acquisitionId,
+      decision: decision.decision, branch: decision.branch, executionAuthorized: false,
+      observedCurrentGeneration: family.currentGeneration,
+      observedCurrentDocumentVersionId: family.currentDocumentVersionId,
+      normalizedDescriptor: candidate.normalizedDescriptor,
+      decisionPayload: { ...decision, refreshedFromPreflightId: preflightId },
+      status: 'READY', createdAt: this.now(),
+    });
+    if (!stored || stored.status !== 'READY'
+      || stored.acquisitionId !== candidate.acquisition.acquisitionId
+      || stored.observedCurrentGeneration !== family.currentGeneration
+      || stored.observedCurrentDocumentVersionId !== family.currentDocumentVersionId) {
+      fail('HISTORICAL_IMPORT_REFRESH_CONFLICT', 'The refreshed preflight changed concurrently.');
+    }
+    return {
+      disposition: 'REVIEW_REQUIRED', decision: 'ASK_IMPORT_OLDER_REVISION',
+      acquisitionId: candidate.acquisition.acquisitionId,
+      sourceArtifactId: candidate.artifact.sourceArtifactId,
+      preflightId: refreshedId,
+      historicalImport: {
+        preflightId: refreshedId, expectedCurrentGeneration: family.currentGeneration,
+        expectedCurrentDocumentVersionId: family.currentDocumentVersionId,
+      },
+      identityReadback: identityReadback({ family, normalizedDescriptor: candidate.normalizedDescriptor,
+        sourceArtifactId: candidate.artifact.sourceArtifactId }),
+      newDocumentVersionCreated: false, currentnessChanged: false,
+    };
+  }
+
+  async confirmHistoricalImport(preflightId, request = {}, serverContext = {}) {
+    rejectSelfReportedAuthority(request);
+    const actorUserId = required(serverContext.actorUserId, 'serverContext.actorUserId');
+    const tenantId = required(serverContext.tenantId, 'serverContext.tenantId');
+    if (request.confirmed !== true || !Number.isSafeInteger(request.expectedCurrentGeneration)
+      || request.expectedCurrentGeneration < 1 || !request.expectedCurrentDocumentVersionId) {
+      fail('HISTORICAL_IMPORT_CONFIRMATION_REQUIRED', 'Explicit historical import confirmation and the displayed current version are required.');
+    }
+    const candidate = await this.catalog.readHistoricalImportCandidate({
+      preflightId: required(preflightId, 'preflightId'), actorUserId, tenantId,
+    });
+    if (candidate.preflight.observedCurrentGeneration !== request.expectedCurrentGeneration
+      || candidate.preflight.observedCurrentDocumentVersionId !== request.expectedCurrentDocumentVersionId) {
+      fail('HISTORICAL_IMPORT_CONFIRMATION_STALE', 'Confirmation differs from the displayed preflight.');
+    }
+    await this.verifyHistoricalImportSource(candidate, serverContext);
+    const normalizedDescriptor = candidate.normalizedDescriptor;
+    const decision = buildGovernedDocumentIngressPreflightDecision({
+      generatedAt: this.now(),
+      documents: await this.catalog.listIngressDocuments({ tenantId }),
+      rawDescriptor: candidate.sourceDescriptor, normalizedDescriptor,
+    });
+    if (candidate.preflight.status !== 'COMMITTED'
+      && decision.decision !== 'ASK_IMPORT_OLDER_REVISION') {
+      fail('HISTORICAL_IMPORT_REPREFLIGHT_REQUIRED', 'The publication is no longer an unambiguous older revision.');
+    }
+    const familyId = candidate.family.familyId;
+    const documentVersionId = candidate.preflight.documentVersionId || deterministicId(
+      'document_version', familyId, decision.incoming.comparableVersion,
+    );
+    const result = await this.catalog.commitHistoricalVersion({
+      preflightId, actorUserId, tenantId,
+      expectedCurrentGeneration: request.expectedCurrentGeneration,
+      expectedCurrentDocumentVersionId: request.expectedCurrentDocumentVersionId,
+      documentVersionId,
+      revisionId: deterministicId('revision', familyId, decision.incoming.comparableVersion),
+      canonicalRevisionIdentity: decision.incoming.comparableVersion,
+      confirmedAt: this.now(),
+      sha256: candidate.artifact.sha256,
+      byteLength: Number(candidate.artifact.byteLength),
+    });
+    return {
+      disposition: result.replayed ? 'IDEMPOTENT_REPLAY' : 'IMPORTED_HISTORICAL_REVISION',
+      decision: 'ASK_IMPORT_OLDER_REVISION',
+      acquisitionId: candidate.acquisition.acquisitionId,
+      sourceArtifactId: candidate.artifact.sourceArtifactId,
+      preflightId, familyId, documentId: result.version.documentId,
+      documentVersionId: result.version.documentVersionId,
+      currentGeneration: result.family.currentGeneration,
+      currentDocumentVersionId: result.family.currentDocumentVersionId,
+      newDocumentVersionCreated: !result.replayed,
+      currentnessChanged: false, immutableReadbackVerified: true, catalogFreshReadVerified: true,
+      identityReadback: identityReadback({
+        family: result.family, version: result.version, normalizedDescriptor,
+        sourceArtifactId: candidate.artifact.sourceArtifactId,
+      }),
+    };
+  }
+
   async ingestFileServiceSelection(request = {}, serverContext = {}) {
     rejectSelfReportedAuthority(request);
     const actorUserId = required(
@@ -470,9 +616,9 @@ export class DocumentManagementHostedCore {
       selection,
       ...(serverContext.runtimeIngestAuthority
         ? {
-            runtimeIngestAuthority: structuredClone(
-              serverContext.runtimeIngestAuthority,
-            ),
+            runtimeIngestAuthority: serverContext.runtimeIngestAuthority.mode === 'HOSTED_MIAODA_DOCUMENT_UPLOAD'
+              ? serverContext.runtimeIngestAuthority
+              : structuredClone(serverContext.runtimeIngestAuthority),
           }
         : {}),
     });
@@ -480,7 +626,7 @@ export class DocumentManagementHostedCore {
     let existingIngestion = await this.catalog.findIngestionByIdempotency({
       idempotencyKey,
       expectedAcquisitionId: scopedAcquisitionId,
-      tenantId,
+      tenantId, actorUserId,
       sourceChannel: request.sourceChannel,
       sourceRef: request.sourceRef,
       selection: request.selection,
@@ -489,7 +635,7 @@ export class DocumentManagementHostedCore {
       const legacyIngestion = await this.catalog.findIngestionByIdempotency({
         idempotencyKey: requestIdempotencyKey,
         expectedAcquisitionId: legacyAcquisitionId,
-        tenantId,
+        tenantId, actorUserId,
         sourceChannel: request.sourceChannel,
         sourceRef: request.sourceRef,
         selection: request.selection,
@@ -503,6 +649,10 @@ export class DocumentManagementHostedCore {
     const commitIdempotencyKey = `catalog:${acquisitionId}`;
     let incompleteIngestion = null;
     if (existingIngestion) {
+      if (existingIngestion.status === 'PENDING_HISTORICAL_IMPORT') {
+        return { ...existingIngestion, disposition: 'REVIEW_REQUIRED',
+          newDocumentVersionCreated: false, currentnessChanged: false };
+      }
       if (existingIngestion.status === 'INCOMPLETE') {
         incompleteIngestion = existingIngestion;
       } else if (existingIngestion.status !== 'COMMITTED') {
@@ -684,7 +834,7 @@ export class DocumentManagementHostedCore {
         const replay = await this.catalog.findIngestionByIdempotency({
           idempotencyKey,
           expectedAcquisitionId: acquisitionId,
-          tenantId,
+          tenantId, actorUserId,
           sourceChannel: request.sourceChannel,
           sourceRef: request.sourceRef,
           selection: request.selection,
@@ -851,6 +1001,13 @@ export class DocumentManagementHostedCore {
         preflightId,
         decision: decision.decision,
         disposition: 'REVIEW_REQUIRED',
+        ...(decision.decision === 'ASK_IMPORT_OLDER_REVISION' ? {
+          historicalImport: {
+            preflightId,
+            expectedCurrentGeneration: observedFamily?.currentGeneration,
+            expectedCurrentDocumentVersionId: observedFamily?.currentDocumentVersionId,
+          },
+        } : {}),
         newDocumentVersionCreated: false,
         currentnessChanged: false,
         immutableReadbackVerified: true,
@@ -960,6 +1117,7 @@ export class DocumentManagementHostedCore {
         revisionDate: decision.incoming.revisionDate,
         sourceGeneratedDate: decision.incoming.sourceGeneratedDate,
         originalFilename: normalizedDescriptor.originalFilename,
+        extractedMetadata: pdfObservation.extractedMetadata || null,
         sourceArtifactId,
         acquisitionId: acquisition.acquisitionId,
         pdfSha256: actualSha256,

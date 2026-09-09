@@ -3,8 +3,10 @@ import { and, desc, eq, ilike, lt, or, sql } from 'drizzle-orm';
 
 import type { CanonicalLibraryDocumentVersionSummary } from '@shared/api.interface';
 import {
+  dmAcquisition,
   dmDocument,
   dmDocumentVersion,
+  dmDocumentVersionMetadata,
   dmPublicationFamily,
   workItem,
 } from '@server/database/schema';
@@ -14,6 +16,9 @@ export interface OwnedLibraryFamilyQuery {
   tenantId: string;
   actorUserId: string;
   search: string;
+  normalizedFamily?: string;
+  ata?: string;
+  aircraftModel?: string;
   cursor: { createdAt: string; itemId: string } | null;
   limit: number;
 }
@@ -63,14 +68,19 @@ export function listOwnedLibraryFamilies(
         revisionDate: dmDocumentVersion.revisionDate,
         sourceGeneratedDate: dmDocumentVersion.sourceGeneratedDate,
         originalFilename: dmDocumentVersion.originalFilename,
+        extractedMetadata: dmDocumentVersionMetadata.extractedMetadata,
         byteLength: dmDocumentVersion.byteLength,
         committedAt: dmDocumentVersion.committedAt,
         selectedVersionIsCurrent:
           sql<boolean>`coalesce(${dmPublicationFamily.currentDocumentVersionId} = ${dmDocumentVersion.documentVersionId}, false)`.as(
             'is_current',
           ),
-        readerWorkItemId: owned.workItemId,
-        workItemCount: owned.workItemCount,
+        readerWorkItemId: sql<string>`coalesce(${owned.workItemId}, '')`.as(
+          'reader_work_item_id',
+        ),
+        workItemCount: sql<number>`coalesce(${owned.workItemCount}, 0)`.as(
+          'owned_task_count',
+        ),
       })
       .from(dmDocument)
       .innerJoin(
@@ -84,7 +94,14 @@ export function listOwnedLibraryFamilies(
           eq(dmDocumentVersion.familyId, dmDocument.familyId),
         ),
       )
-      .innerJoin(
+      .leftJoin(
+        dmDocumentVersionMetadata,
+        eq(
+          dmDocumentVersionMetadata.documentVersionId,
+          dmDocumentVersion.documentVersionId,
+        ),
+      )
+      .leftJoin(
         owned,
         and(
           eq(owned.documentVersionId, dmDocumentVersion.documentVersionId),
@@ -95,15 +112,24 @@ export function listOwnedLibraryFamilies(
       // Match the existing DM ingress catalog's tenant namespace. Legacy task
       // records remain in task history without becoming another current document.
       .where(
-        sql`starts_with(${dmPublicationFamily.canonicalIdentityKey}, ${tenantFamilyIdentityPrefix(input.tenantId)})`,
+        and(
+          sql`starts_with(${dmPublicationFamily.canonicalIdentityKey}, ${tenantFamilyIdentityPrefix(input.tenantId)})`,
+          sql`(${owned.workItemId} is not null or exists (
+            select 1 from ${dmAcquisition} a
+            where a.document_version_id = ${dmDocumentVersion.documentVersionId}
+              and a.source_artifact_id = ${dmDocumentVersion.sourceArtifactId}
+              and a.acquired_by = ${input.actorUserId}
+              and a.status in ('COMMITTED_CANONICAL', 'LINKED_EXACT_DOCUMENT_VERSION')
+              and starts_with(a.idempotency_key, ${`tenant:${encodeURIComponent(input.tenantId)}:request:`})
+          ))`,
+        ),
       ),
   );
 
   const pattern = `%${input.search.replace(/[\\%_]/gu, '\\$&')}%`;
   const cursor = input.cursor;
-  return (
+  const matched = db.$with('library_matched_families').as(
     db
-      .with(owned, versions)
       .select({
         familyId: versions.familyId,
         documentId: versions.documentId,
@@ -112,7 +138,19 @@ export function listOwnedLibraryFamilies(
         issuerAuthority: versions.issuerAuthority,
         createdAt: versions.createdAt,
         updatedAt: versions.updatedAt,
-        workItemCount: sql<number>`sum(${versions.workItemCount})::integer`,
+        ataValues: sql<
+          string[]
+        >`jsonb_path_query_array(jsonb_agg(${versions.extractedMetadata}), '$[*].ata.observations[*].value')`.as(
+          'ata_values',
+        ),
+        aircraftValues: sql<
+          string[]
+        >`jsonb_path_query_array(jsonb_agg(${versions.extractedMetadata}), '$[*].mentionedAircraftModels.observations[*].value')`.as(
+          'aircraft_values',
+        ),
+        workItemCount: sql<number>`sum(${versions.workItemCount})::integer`.as(
+          'work_item_count',
+        ),
         versions: sql<
           CanonicalLibraryDocumentVersionSummary[]
         >`jsonb_agg(jsonb_build_object(
@@ -121,26 +159,18 @@ export function listOwnedLibraryFamilies(
       'revisionDate', ${versions.revisionDate},
       'sourceGeneratedDate', ${versions.sourceGeneratedDate},
       'originalFilename', ${versions.originalFilename},
+      'extractedMetadata', ${versions.extractedMetadata},
       'byteLength', ${versions.byteLength},
       'committedAt', ${versions.committedAt},
       'selectedVersionIsCurrent', ${versions.selectedVersionIsCurrent},
       'readerWorkItemId', ${versions.readerWorkItemId},
       'workItemCount', ${versions.workItemCount}
     ) order by ${versions.selectedVersionIsCurrent} desc,
-      ${versions.committedAt} desc, ${versions.documentVersionId} desc)`,
+      ${versions.committedAt} desc, ${versions.documentVersionId} desc)`.as(
+          'versions',
+        ),
       })
       .from(versions)
-      .where(
-        cursor
-          ? or(
-              lt(versions.createdAt, new Date(cursor.createdAt)),
-              and(
-                eq(versions.createdAt, new Date(cursor.createdAt)),
-                lt(versions.familyId, cursor.itemId),
-              ),
-            )
-          : undefined,
-      )
       .groupBy(
         versions.familyId,
         versions.documentId,
@@ -158,12 +188,98 @@ export function listOwnedLibraryFamilies(
               ilike(versions.originalFilename, pattern),
               ilike(versions.businessRevision, pattern),
               ilike(versions.normalizedFamily, pattern),
+              ilike(versions.issuerAuthority, pattern),
+              sql`exists (select 1 from jsonb_each(${versions.extractedMetadata}) f,
+                jsonb_array_elements(case when jsonb_typeof(f.value->'observations') = 'array'
+                  then f.value->'observations' else '[]'::jsonb end) observation
+                where f.key in ('title', 'documentType', 'issuer', 'ata', 'mentionedAircraftModels')
+                  and observation->>'value' ilike ${pattern})`,
             )})`
           : undefined,
-      )
-      .orderBy(desc(versions.createdAt), desc(versions.familyId))
-      .limit(input.limit + 1)
+      ),
   );
+  const filtered = db.$with('library_filtered_families').as(
+    db
+      .select()
+      .from(matched)
+      .where(
+        and(
+          input.normalizedFamily
+            ? input.normalizedFamily === '__UNKNOWN__'
+              ? sql`${matched.normalizedFamily} = ''`
+              : eq(matched.normalizedFamily, input.normalizedFamily)
+            : undefined,
+          input.ata
+            ? input.ata === '__UNKNOWN__'
+              ? sql`jsonb_array_length(${matched.ataValues}) = 0`
+              : sql`${matched.ataValues} ? ${input.ata}`
+            : undefined,
+          input.aircraftModel
+            ? input.aircraftModel === '__UNKNOWN__'
+              ? sql`jsonb_array_length(${matched.aircraftValues}) = 0`
+              : sql`${matched.aircraftValues} ? ${input.aircraftModel}`
+            : undefined,
+        ),
+      ),
+  );
+  const page = db.$with('library_family_page').as(
+    db
+      .select()
+      .from(filtered)
+      .where(
+        cursor
+          ? or(
+              lt(filtered.createdAt, new Date(cursor.createdAt)),
+              and(
+                eq(filtered.createdAt, new Date(cursor.createdAt)),
+                lt(filtered.familyId, cursor.itemId),
+              ),
+            )
+          : undefined,
+      )
+      .orderBy(desc(filtered.createdAt), desc(filtered.familyId))
+      .limit(input.limit + 1),
+  );
+  return db
+    .with(owned, versions, matched, filtered, page)
+    .select({
+      totalCount: sql<number>`(select count(*)::integer from ${filtered})`,
+      familyCounts: sql<
+        Record<string, number>
+      >`coalesce((select jsonb_object_agg(family, total) from
+      (select coalesce(nullif(${matched.normalizedFamily}, ''), '__UNKNOWN__') as family, count(*)::integer as total from ${matched} group by ${matched.normalizedFamily}) counts), '{}'::jsonb)`,
+      ataCounts: sql<
+        Record<string, number>
+      >`coalesce((select jsonb_object_agg(value, total) from
+      (select facet.value, count(distinct ${matched.familyId})::integer total from ${matched}
+       cross join lateral jsonb_array_elements_text(case when jsonb_array_length(${matched.ataValues}) = 0 then '["__UNKNOWN__"]'::jsonb else ${matched.ataValues} end) facet(value)
+       group by facet.value) counts), '{}'::jsonb)`,
+      aircraftModelCounts: sql<
+        Record<string, number>
+      >`coalesce((select jsonb_object_agg(value, total) from
+      (select facet.value, count(distinct ${matched.familyId})::integer total from ${matched}
+       cross join lateral jsonb_array_elements_text(case when jsonb_array_length(${matched.aircraftValues}) = 0 then '["__UNKNOWN__"]'::jsonb else ${matched.aircraftValues} end) facet(value)
+       group by facet.value) counts), '{}'::jsonb)`,
+      rows: sql<
+        Array<{
+          familyId: string;
+          documentId: string;
+          documentCode: string;
+          normalizedFamily: string;
+          issuerAuthority: string;
+          createdAt: string;
+          updatedAt: string;
+          workItemCount: number;
+          versions: CanonicalLibraryDocumentVersionSummary[];
+        }>
+      >`coalesce((select jsonb_agg(jsonb_build_object(
+      'familyId', ${page.familyId}, 'documentId', ${page.documentId}, 'documentCode', ${page.documentCode},
+      'normalizedFamily', ${page.normalizedFamily}, 'issuerAuthority', ${page.issuerAuthority},
+      'createdAt', ${page.createdAt}, 'updatedAt', ${page.updatedAt},
+      'workItemCount', ${page.workItemCount}, 'versions', ${page.versions}
+    ) order by ${page.createdAt} desc, ${page.familyId} desc) from ${page}), '[]'::jsonb)`,
+    })
+    .from(sql`(values (1)) as one(value)`);
 }
 
 export type OwnedLibraryFamilyRow = Awaited<
