@@ -15,6 +15,45 @@ import {
 } from '../../server/modules/canonical-host/canonical-host-openclaw-review.contract';
 
 describe('interactive review C2 task / C2 legacy and C3 current result contract', () => {
+  it('requires persisted work proposals for explicit JobAid and Matter updates', () => {
+    for (const [schemaVersion, deltaKey, candidateVersion] of [
+      [
+        'wiselink.3_1.review_turn_task.v1.c5',
+        'jobAidWorkingDelta',
+        'wiselink.3_1.review_turn_candidate.v1.c5',
+      ],
+      [
+        'wiselink.3_1.review_turn_task.v1.c4',
+        'matterWorkingDelta',
+        'wiselink.3_1.review_turn_candidate.v1.c4',
+      ],
+    ] as const) {
+      const task = reviewTask();
+      task.schemaVersion = schemaVersion;
+      task.context.purpose = 'UPDATE_ASSESSMENT';
+      expect(() =>
+        parseReviewTurnCandidateContract({
+          task,
+          result: reviewResult(task, {
+            schemaVersion: candidateVersion,
+            [deltaKey]: null,
+            answer: 'The assessment was updated.',
+          }),
+        }),
+      ).toThrow('REVIEW_UPDATE_WORKING_DELTA_REQUIRED');
+      delete task.context.purpose;
+      expect(() =>
+        parseReviewTurnCandidateContract({
+          task,
+          result: reviewResult(task, {
+            schemaVersion: candidateVersion,
+            [deltaKey]: null,
+          }),
+        }),
+      ).not.toThrow();
+    }
+  });
+
   it('allows chat answers and rejects attempts to change an assessment through chat', () => {
     const task = reviewTask();
     task.context.purpose = 'CHAT';

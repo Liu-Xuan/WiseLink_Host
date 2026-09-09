@@ -405,6 +405,12 @@ export function parseReviewTurnCandidateContract(input: {
   if (isMatter && record.reviewActionDraft !== null)
     fail('REVIEW_MATTER_FORMAL_ACTION_FORBIDDEN');
   if (
+    task.context.purpose === 'UPDATE_ASSESSMENT' &&
+    ((isJobAid && record.jobAidWorkingDelta == null) ||
+      (isMatter && record.matterWorkingDelta == null))
+  )
+    fail('REVIEW_UPDATE_WORKING_DELTA_REQUIRED');
+  if (
     task.context.purpose === 'CHAT' &&
     (record.reviewActionDraft !== null ||
       record.matterWorkingDelta != null ||
