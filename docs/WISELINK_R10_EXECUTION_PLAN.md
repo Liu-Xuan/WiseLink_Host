@@ -8,6 +8,8 @@ Git 当前边界：**2026-09-06 用户要求仅向妙搭 Host 的 `origin` 推�
 
 ## 2026 年 9 月 9 日晚资料库实测与运行阻塞
 
+**22:35 收尾读回：**SL 标题续行修复 `9a62197b9fa8a9c78ed3c1b97a12bea23d5ea51c` 已随 release `7683541393059056580` finished。主控服务端构建及 11 项定向测试通过；支线另以五份真实 PDF 验证 SL 与 SB 回归。正常页面于 22:34:00 追加 SL 064 元数据 rev2，完整标题为 `AIRPLANE INFORMATION MANAGEMENT SYSTEMS (AIMS) BLOCKPOINT VERSION 18 (BP V18) OPERATIONAL PROGRAM SOFTWARE (OPS) UPGRADE FOR THE AIMS-2 PLATFORM`，rev1 截断文本仍可在历史证据中完整读取。搜索新增标题尾部 `UPGRADE FOR THE AIMS-2 PLATFORM` 正确返回一份文档。SL 034 已核对实际 PDF，标题原本完整，无需重提取。以下 22:25 的 SL 待修说明保留排障时点；分析主循环阻塞仍未解除。
+
 截至 22:25，Host release `7683531795555830984` 已 finished，实际提交 `57672b05c73532c89d7d4f3978f3f0ab72f20611`；仅推送妙搭 origin。此前 `635f48462` 的三级目录与 Satin 界面、`14bfe2b40` 的原文元数据修订随本次版本生效。联合筛选原有 JSONB `?` 表达式在平台 SQL 调用中返回 42601；改用参数化 `jsonb_exists` 后，隔离 PostgreSQL 六项检查通过，线上正常 Chrome 页面实际验证 SB＋ATA 4613＋737 返回正确文档。切换为机型首层后，三项筛选保持选中，结果不变。
 
 文档版本与元数据修订分别管理。真实 737-46-1053 元数据 rev2 已修正完整标题、ATA 4613 及机型；生产序号不再被截成 707/717 等机型。rev1 仍可查看，搜索旧错误值 7077 返回零份。真实 787 SB 的多行标题与商标列表误识别也已修正并保存新元数据修订。查询、搜索与分类计数只消费每个精确文档版本的最新元数据，不删除旧提取记录。
