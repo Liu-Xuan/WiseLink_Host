@@ -457,9 +457,14 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
               shape.required.some((key) => !Object.hasOwn(authored, key))) {
             throw new Error('REVIEW_JOBAID_CANDIDATE_FIELDS_INVALID');
           }
+          if (Object.hasOwn(authored, 'responseType') && !reviewResponseTypes(true).includes(authored.responseType)) {
+            throw new Error('REVIEW_MODEL_RESPONSE_TYPE_INVALID');
+          }
           // JobAid has no formal-action operation. These protocol constants
           // are driver-owned, never a model choice or a repair of supplied data.
           candidate = { ...authored, reviewActionDraft: null, affectedItemIds: [],
+            responseType: Object.hasOwn(authored, 'responseType') ? authored.responseType :
+              isRecord(authored.jobAidWorkingDelta) ? 'RESYNTHESIS_RESULT' : 'ANSWER',
             jobAidWorkingDelta: Object.hasOwn(authored, 'jobAidWorkingDelta') ? authored.jobAidWorkingDelta : null };
         } else if (isMatter) {
           if (Object.keys(output).length !== 1 || typeof output.candidateJson !== 'string') {
@@ -1455,9 +1460,10 @@ function jobAidReviewCandidateShape(attachmentRefs = []) {
   const strings = { type: 'array', items: { type: 'string', minLength: 1 } };
   return {
     type: 'object', additionalProperties: false,
-    required: MODEL_OUTPUT_KEYS.filter((key) => !['reviewActionDraft', 'affectedItemIds'].includes(key)),
+    required: MODEL_OUTPUT_KEYS.filter((key) => !['responseType', 'reviewActionDraft', 'affectedItemIds'].includes(key)),
     properties: {
-      responseType: { type: 'string', enum: reviewResponseTypes(true) },
+      responseType: { type: 'string', enum: reviewResponseTypes(true),
+        description: 'Optional display classification. If omitted, the driver labels a work update RESYNTHESIS_RESULT and an ordinary reply ANSWER. This never adopts the candidate or grants an action.' },
       answer: { type: 'string', minLength: 1 },
       sourceRefs: strings, missingInputs: strings,
       candidateEvidenceRefs: { ...strings,
@@ -1565,7 +1571,7 @@ function matterReviewGuidance() {
 
 function jobAidReviewGuidance() {
   return [
-    `Return the candidate fields directly at the function-argument root: ${MODEL_OUTPUT_KEYS.filter((key) => !['reviewActionDraft', 'affectedItemIds'].includes(key)).join(', ')}. Do not wrap them in candidate or candidateJson, JSON.stringify them, or repeat them inside jobAidWorkingDelta. Include jobAidWorkingDelta when updating work; work fields belong only there and issue fields belong only inside its issues. Use ordinary JSON arrays, with strings as string elements, not item objects. A nullable limitation or unknown classification is JSON null, never an empty string. Use responseType ANSWER, CLARIFYING_QUESTION, SOURCE_LINK, INPUT_REQUEST, TASK_STATUS or RESYNTHESIS_RESULT as appropriate. Never emit reviewActionDraft or affectedItemIds: the driver binds the fixed no-formal-action values null and [] and rejects model-supplied formal fields.`,
+    `Return the required candidate fields directly at the function-argument root: ${MODEL_OUTPUT_KEYS.filter((key) => !['responseType', 'reviewActionDraft', 'affectedItemIds'].includes(key)).join(', ')}. Do not wrap them in candidate or candidateJson, JSON.stringify them, or repeat them inside jobAidWorkingDelta. Include jobAidWorkingDelta when updating work; work fields belong only there and issue fields belong only inside its issues. Use ordinary JSON arrays, with strings as string elements, not item objects. A nullable limitation or unknown classification is JSON null, never an empty string. responseType is optional display metadata: if omitted, the driver labels a work update RESYNTHESIS_RESULT and an ordinary reply ANSWER. When supplied, use ANSWER, CLARIFYING_QUESTION, SOURCE_LINK, INPUT_REQUEST, TASK_STATUS or RESYNTHESIS_RESULT as appropriate. Never emit reviewActionDraft or affectedItemIds: the driver binds the fixed no-formal-action values null and [] and rejects model-supplied formal fields.`,
     'sourceRefs are document or attachment resources actually read this turn. candidateEvidenceRefs is a different field: use only current input.attachmentRefs that were actually read. With no current attachments it must be []. Never put ordinary document SourceRefs, method references or working-delta source dependencies in candidateEvidenceRefs.',
     'context.problemAssessment is the actual saved JobAid problem work, method material, available source catalog and earlier discussion. Omit jobAidWorkingDelta for explanations and questions that change no working understanding. For a correction or new material, include a local work update preserving every unaffected issue and source/premise identity. Host saves the complete revised understanding and this reply atomically with CAS; this is an ordinary candidate update, not formal adoption. Never reconstruct a criterion checklist or generate replacement reasoning from an abbreviated brief.',
     'Read relevant DOCUMENT_PASSAGE and ENGINEER_ATTACHMENT resources through the current source-read function. The catalog is not a read receipt. Previously saved sources freshly supplied in deliveredEvidence may support retained work; new citations require actual current delivery. Keep sourceRefs limited to resources read this turn; method evidence remains METHOD_CLAUSE in the working update and never pretends to be a document SourceRef. ENGINEER_ATTACHMENT proves only what the uploaded material reports, not implemented controls or controlled Host facts.',

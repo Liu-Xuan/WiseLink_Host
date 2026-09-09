@@ -1373,7 +1373,7 @@ test('requires 24 MCP capabilities, five review tools, and hosted provenance', (
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c60',
+    'wiselink-research-and-synthesize@r09.c61',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -6945,7 +6945,7 @@ test('JobAid review uses a typed candidate and preserves quoted text, nulls, loc
     const body = JSON.parse(init.body);
     assert.equal(body.tool_choice, 'auto');
     const schema = body.tools[0].function.parameters;
-    assert.deepEqual(schema.required, ['responseType', 'answer', 'sourceRefs', 'missingInputs', 'candidateEvidenceRefs', 'warnings']);
+    assert.deepEqual(schema.required, ['answer', 'sourceRefs', 'missingInputs', 'candidateEvidenceRefs', 'warnings']);
     assert.equal(schema.properties.candidate, undefined);
     assert.equal(schema.additionalProperties, false);
     assert.equal(schema.properties.jobAidWorkingDelta.anyOf[0].properties.issues.type, 'array');
@@ -7139,7 +7139,7 @@ test('JobAid wire rejects model-supplied formal fields instead of overwriting th
 
 test('flat JobAid wire refuses misplaced fields and the former wrapper without merging or dropping data', async () => {
   const valid = { responseType: 'ANSWER', answer: '候选', sourceRefs: [], missingInputs: [], candidateEvidenceRefs: [], warnings: [] };
-  const { responseType: _omitted, ...missingField } = valid;
+  const { answer: _omitted, ...missingField } = valid;
   for (const output of [{ candidate: valid }, { ...valid, candidate: valid },
     { ...valid, unchangedIssueKeys: ['app1'] }, missingField]) {
     const before = JSON.stringify(output);
@@ -7150,6 +7150,38 @@ test('flat JobAid wire refuses misplaced fields and the former wrapper without m
       type: 'function', function: { name: 'return_wiselink_review_candidate', arguments: JSON.stringify(output) },
     }] } }] }) }), /REVIEW_JOBAID_CANDIDATE_FIELDS_INVALID/u);
     assert.equal(JSON.stringify(output), before);
+  }
+});
+
+test('JobAid derives only an omitted reply label and never replaces explicit invalid metadata or engineering work', async () => {
+  const base = { answer: '待核对的候选', sourceRefs: [], missingInputs: [], candidateEvidenceRefs: [], warnings: [] };
+  const work = { schemaVersion: 'wiselink.jobaid-problem-work.v2', issues: [{ issueKey: 'unchanged-engineering-content' }] };
+  for (const [extra, expected] of [[{}, 'ANSWER'], [{ jobAidWorkingDelta: null }, 'ANSWER'],
+    [{ jobAidWorkingDelta: work }, 'RESYNTHESIS_RESULT'], [{ responseType: 'CLARIFYING_QUESTION' }, 'CLARIFYING_QUESTION']]) {
+    const authored = { ...base, ...extra };
+    const before = structuredClone(authored);
+    let validations = 0;
+    const result = await invokeReviewWithTransport({ input: { context: { problemAssessment: {} } } }, {
+      gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+      validateCandidate: async (candidate) => {
+        validations++;
+        assert.deepEqual(candidate, { ...authored, responseType: expected, reviewActionDraft: null, affectedItemIds: [],
+          jobAidWorkingDelta: extra.jobAidWorkingDelta ?? null });
+      },
+    }, { requestGateway: async () => Response.json({ choices: [{ message: { content: null, tool_calls: [{
+      type: 'function', function: { name: 'return_wiselink_review_candidate', arguments: JSON.stringify(authored) },
+    }] } }] }) });
+    assert.equal(result.output.responseType, expected);
+    assert.equal(validations, 1);
+    assert.deepEqual(authored, before);
+  }
+  for (const responseType of [null, '', 'REVIEW_ACTION_DRAFT', 'AFFECTED_ITEMS_PREVIEW', { value: 'ANSWER' }]) {
+    await assert.rejects(invokeReviewWithTransport({ input: { context: { problemAssessment: {} } } }, {
+      gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+      validateCandidate: async () => assert.fail('Explicit invalid labels must not receive defaults'),
+    }, { requestGateway: async () => Response.json({ choices: [{ message: { content: null, tool_calls: [{
+      type: 'function', function: { name: 'return_wiselink_review_candidate', arguments: JSON.stringify({ ...base, responseType }) },
+    }] } }] }) }), /REVIEW_MODEL_RESPONSE_TYPE_INVALID/u);
   }
 });
 
