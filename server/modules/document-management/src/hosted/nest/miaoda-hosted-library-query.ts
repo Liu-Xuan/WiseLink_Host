@@ -223,12 +223,12 @@ export function listOwnedLibraryFamilies(
           input.ata
             ? input.ata === '__UNKNOWN__'
               ? sql`jsonb_array_length(${matched.ataValues}) = 0`
-              : sql`${matched.ataValues} ? ${input.ata}`
+              : sql`jsonb_exists(${matched.ataValues}, ${input.ata}::text)`
             : undefined,
           input.aircraftModel
             ? input.aircraftModel === '__UNKNOWN__'
               ? sql`jsonb_array_length(${matched.aircraftValues}) = 0`
-              : sql`${matched.aircraftValues} ? ${input.aircraftModel}`
+              : sql`jsonb_exists(${matched.aircraftValues}, ${input.aircraftModel}::text)`
             : undefined,
         ),
       ),

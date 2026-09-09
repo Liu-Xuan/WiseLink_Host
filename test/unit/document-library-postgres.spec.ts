@@ -96,6 +96,61 @@ const enabled = process.env.WL_DM_LIBRARY_LOCAL_PG === '1';
       });
       expect(empty).toMatchObject({ rows: [], totalCount: 0, ataCounts: {} });
     });
+    it('uses parameterized jsonb_exists for the production SB + ATA 4613 filter and exact aircraft values', async () => {
+      await client`insert into dm_document_version_metadata values ('a', ${JSON.stringify({ ata: { observations: [{ value: '4613' }] }, mentionedAircraftModels: { observations: [{ value: '737' }] } })}, 2)`;
+      try {
+        const query = listOwnedLibraryFamilies(db as never, {
+          ...scope,
+          limit: 24,
+          normalizedFamily: 'SB',
+          ata: '4613',
+          aircraftModel: '737',
+        });
+        const generated = query.toSQL();
+        expect(generated.sql.match(/jsonb_exists\(/gu)).toHaveLength(2);
+        expect(generated.sql).not.toMatch(/\s\?\s/u);
+        expect(generated.params).toEqual(
+          expect.arrayContaining(['SB', '4613', '737']),
+        );
+        const [result] = await query;
+        expect(result.totalCount).toBe(1);
+        expect(result.rows.map((row) => row.familyId)).toEqual(['a']);
+        expect(result.familyCounts).toEqual({ SB: 2 });
+        expect(result.ataCounts).toEqual({ '4613': 1, __UNKNOWN__: 1 });
+        expect(result.aircraftModelCounts).toEqual({
+          '737': 1,
+          __UNKNOWN__: 1,
+        });
+        const [ataOnly] = await listOwnedLibraryFamilies(db as never, {
+          ...scope,
+          limit: 24,
+          normalizedFamily: 'SB',
+          ata: '4613',
+        });
+        expect(ataOnly.totalCount).toBe(1);
+        for (const filters of [
+          { ata: '46' },
+          { aircraftModel: '73' },
+          { ata: "4613' OR true" },
+        ]) {
+          const [none] = await listOwnedLibraryFamilies(db as never, {
+            ...scope,
+            normalizedFamily: 'SB',
+            ...filters,
+          });
+          expect(none.totalCount).toBe(0);
+        }
+        const [unknown] = await listOwnedLibraryFamilies(db as never, {
+          ...scope,
+          ata: '__UNKNOWN__',
+          aircraftModel: '__UNKNOWN__',
+        });
+        expect(unknown.rows.map((row) => row.familyId)).toEqual(['b']);
+      } finally {
+        await client`delete from dm_document_version_metadata where document_version_id='a' and metadata_revision=2`;
+      }
+    });
+
     it('keeps authorized history under a matching family and never adds an unowned version', async () => {
       await client`insert into dm_document_version values ('a-old','a','a','old-source','R0','','','old.pdf',90,'2026-08-01'), ('a-private','a','a','private-source','R2','','','private.pdf',110,'2026-09-02')`;
       await client`insert into dm_acquisition values ('a-old','old-source','u1','LINKED_EXACT_DOCUMENT_VERSION','tenant:t1:request:old')`;
