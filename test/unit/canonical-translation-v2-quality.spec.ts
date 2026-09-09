@@ -247,6 +247,62 @@ describe('translation v2 quality and actual reading coverage', () => {
       checkTranslationBlockV2({ plan: sourcePlan, candidate: value }).issues,
     ).toEqual([]);
   });
+  it.each([
+    [
+      ['Refer to MOD-A-12-00A-', '932A-D, paragraph 10.'],
+      '参见 MOD-A-12-00A-932A-D 第 10 段。',
+    ],
+    [
+      [
+        'PN4A-0018- Displays and 31 CORE NET- LS1975568 *[1]*[2]',
+        '0003 Crew Alerting WORK CSM',
+        '(DCA) System',
+      ],
+      'PN4A-0018-0003 显示告警（DCA）系统 31 CORE NETWORK CSM LS1975568 *[1]*[2]',
+    ],
+  ])(
+    'accepts preserved identifiers across explicit PDF line wraps',
+    (source, translated) => {
+      const sourcePlan = plan(source);
+      expect(
+        checkTranslationBlockV2({
+          plan: sourcePlan,
+          candidate: candidate(sourcePlan, translated),
+        }).issues,
+      ).toEqual([]);
+      expect(
+        checkTranslationBlockV2({
+          plan: sourcePlan,
+          candidate: candidate(sourcePlan, translated),
+        }).semanticCheck,
+      ).toBe('PENDING');
+      for (const changed of [
+        translated.replace('0018', '0019').replace('932A', '932B'),
+        `${translated} PN4A-0018-0003`,
+      ]) {
+        expect(
+          checkTranslationBlockV2({
+            plan: sourcePlan,
+            candidate: candidate(sourcePlan, changed),
+          }).issues.map((issue) => issue.code),
+        ).toContain('PROTECTED_VALUE_CHANGED');
+      }
+    },
+  );
+  it('does not join separate same-line identifiers or invent a missing hyphen', () => {
+    for (const source of [
+      ['Use PN4A-0018- 0003.'],
+      ['Use PN4A-0018', '0003.'],
+    ]) {
+      const sourcePlan = plan(source);
+      expect(
+        checkTranslationBlockV2({
+          plan: sourcePlan,
+          candidate: candidate(sourcePlan, '使用 PN4A-0018-0003。'),
+        }).issues.map((issue) => issue.code),
+      ).toContain('PROTECTED_VALUE_CHANGED');
+    }
+  });
   it('accepts spacing in equivalent Chinese publication dates while retaining changed-date detection', () => {
     const sourcePlan = plan(['Issue 001, 24 Sep 2020']);
     for (const date of ['2020 年 9 月 24 日', '2020年 9月 24日']) {

@@ -654,7 +654,36 @@ describe('MiaodaOrdinaryArtifactStoreAdapter', () => {
     expect(fileService.from).not.toHaveBeenCalled();
   });
 
-  it('shares one concurrent default-bucket read without retrying it', async () => {
+  it('retries only a response-less default-bucket lookup before a single upload', async () => {
+    const scoped = new LocalScopedFileService('bucket-lookup-retry');
+    const getDefaultBucket = jest
+      .fn()
+      .mockRejectedValueOnce(new TypeError('fetch failed'))
+      .mockResolvedValue('bucket-lookup-retry');
+    const adapter = createAdapter({
+      getDefaultBucket,
+      from: () => scoped,
+    } as never);
+    await adapter.persistAndReadback(
+      new TextEncoder().encode('{"lookupRetry":true}'),
+    );
+    expect(getDefaultBucket).toHaveBeenCalledTimes(2);
+    expect(scoped.uploadCount).toBe(1);
+  });
+
+  it('does not retry a status-bearing default-bucket denial', async () => {
+    const cause = Object.assign(new TypeError('fetch failed'), { status: 403 });
+    const getDefaultBucket = jest.fn().mockRejectedValue(cause);
+    const from = jest.fn();
+    const adapter = createAdapter({ getDefaultBucket, from } as never);
+    await expect(
+      adapter.persistAndReadback(new TextEncoder().encode('{}')),
+    ).rejects.toThrow('ARTIFACT_STORE_DEFAULT_BUCKET_READ_FAILED');
+    expect(getDefaultBucket).toHaveBeenCalledTimes(1);
+    expect(from).not.toHaveBeenCalled();
+  });
+
+  it('shares one concurrent successful default-bucket read', async () => {
     const bytes = new TextEncoder().encode('{"package":true}\n');
     const digest = sha256Raw(bytes);
     const path = `unified-parsed-packages/sha256/${digest}.json`;

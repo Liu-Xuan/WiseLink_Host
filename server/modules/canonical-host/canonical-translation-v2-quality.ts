@@ -114,7 +114,10 @@ export function checkTranslationBlockV2(input: {
     const scope = group.anchors.map((anchor) => anchor.anchorId);
     if (
       canonicalJson(protectedValues(sourceText)) !==
-      canonicalJson(protectedValues(translatedText))
+        canonicalJson(protectedValues(translatedText)) &&
+      canonicalJson(
+        protectedValues(joinWrappedSourceIdentifiers(sourceText)),
+      ) !== canonicalJson(protectedValues(translatedText))
     )
       add(
         'PROTECTED_VALUE_CHANGED',
@@ -331,6 +334,28 @@ function normalizedDates(value: string): { text: string; dates: string[] } {
       (all, year, month, day) => replace(all, year, Number(month), day),
     );
   return { text, dates: dates.sort() };
+}
+/** Compare a PDF line-wrapped identifier without changing stored source text.
+ * Only join an existing trailing hyphen to the next line's leading numeric
+ * segment. The first-column case retains all intervening columns verbatim.
+ * No characters, punctuation, counts or segment order are corrected/inferred.
+ */
+function joinWrappedSourceIdentifiers(value: string): string {
+  const identifier =
+    '(?=[A-Za-z0-9./-]*[A-Za-z])(?=[A-Za-z0-9./-]*\\d)[A-Za-z0-9]+(?:[-./][A-Za-z0-9]+)*-';
+  const continuation = '(\\d[A-Za-z0-9]*(?:[-./][A-Za-z0-9]+)*)(?=\\s|[,;.]|$)';
+  return value
+    .replace(
+      new RegExp(`\\b(${identifier})[ \\t]*\\n[ \\t]*${continuation}`, 'gu'),
+      '$1$2',
+    )
+    .replace(
+      new RegExp(
+        `^(${identifier})([ \\t]+[^\\n]+\\n)[ \\t]*${continuation}`,
+        'gmu',
+      ),
+      '$1$3$2',
+    );
 }
 function protectedValues(value: string) {
   const normalized = normalizedDates(value);

@@ -381,12 +381,12 @@ export class MiaodaOrdinaryArtifactStoreAdapter
   /**
    * The SDK caches a successful bucket lookup, but does not deduplicate
    * concurrent misses. Build-packet reads can arrive together, so share only
-   * the in-flight read. A rejected lookup is cleared and is never retried by
-   * this adapter; a later business action may make its own explicit attempt.
+   * the in-flight read, including bounded retries of response-less transport
+   * failures. Authorization/provider failures remain terminal.
    */
   private getDefaultBucket(): Promise<string> {
     if (this.defaultBucketLookup) return this.defaultBucketLookup;
-    const lookup = providerCall(
+    const lookup = providerCallWithTransportRetry(
       'ARTIFACT_STORE_DEFAULT_BUCKET_READ_FAILED',
       () => this.fileService.getDefaultBucket(),
     );
@@ -607,7 +607,7 @@ async function providerCall<T>(
 
 /**
  * A FileService request can fail before receiving an HTTP response when the
- * hosted transport briefly loses its connection. Retry that request once;
+ * hosted transport briefly loses its connection. Use bounded read retries;
  * status-bearing provider errors and all semantic readback checks stay
  * fail-closed and are never retried.
  */
