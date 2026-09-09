@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
 export const WISELINK_SKILL_VERSION =
-  'wiselink-research-and-synthesize@r09.c64';
+  'wiselink-research-and-synthesize@r09.c65';
 export const WISELINK_SKILL_COMPATIBILITY_REF =
   'wiselink-research-and-synthesize@r09';
 export const WISELINK_HOST_MCP_NAME =
@@ -4728,12 +4728,16 @@ function validateJobAidReviewDelta(task, delta) {
   equal(delta.schemaVersion, 'wiselink.jobaid-problem-work.v2', 'REVIEW_JOBAID_WORK_SCHEMA_INVALID');
   for (const key of ['headline', 'listBrief', 'understanding', 'completionReason', 'changeSummary', 'unchangedExplanation']) nonEmpty(delta[key], `REVIEW_JOBAID_${key.toUpperCase()}_REQUIRED`);
   array(delta.issues, 'REVIEW_JOBAID_ISSUES_REQUIRED');
-  uniqueTextArray(delta.unchangedIssueKeys, 'REVIEW_JOBAID_UNCHANGED_INVALID');
-  array(delta.retiredIssues, 'REVIEW_JOBAID_RETIREMENTS_INVALID');
+  // Match Host's existing omission semantics, without normalizing a supplied
+  // malformed collection or inferring which prior issues remain unchanged.
+  const unchanged = delta.unchangedIssueKeys === undefined ? [] : delta.unchangedIssueKeys;
+  const retired = delta.retiredIssues === undefined ? [] : delta.retiredIssues;
+  uniqueTextArray(unchanged, 'REVIEW_JOBAID_UNCHANGED_INVALID');
+  array(retired, 'REVIEW_JOBAID_RETIREMENTS_INVALID');
   const prior = task.jobAidContext.previousWork?.content.issues.map((issue) => issue.issueKey) ?? [];
-  const keys = [...delta.issues.map((issue) => issue.issueKey), ...delta.unchangedIssueKeys, ...delta.retiredIssues.map((issue) => issue.issueKey)];
+  const keys = [...delta.issues.map((issue) => issue.issueKey), ...unchanged, ...retired.map((issue) => issue.issueKey)];
   uniqueTextArray(keys, 'REVIEW_JOBAID_ISSUE_PARTITION_INVALID');
-  if (prior.some((key) => !keys.includes(key)) || [...delta.unchangedIssueKeys, ...delta.retiredIssues.map((issue) => issue.issueKey)].some((key) => !prior.includes(key))) fail('REVIEW_JOBAID_PRIOR_ISSUE_OMITTED');
+  if (prior.some((key) => !keys.includes(key)) || [...unchanged, ...retired.map((issue) => issue.issueKey)].some((key) => !prior.includes(key))) fail('REVIEW_JOBAID_PRIOR_ISSUE_OMITTED');
   const allowed = new Set(task.jobAidContext.sourceCatalog.map((item) => item.evidenceRef));
   assertSubsetOf(jobAidDeltaEvidenceRefs(delta), allowed, 'REVIEW_JOBAID_EVIDENCE_NOT_REGISTERED');
 }

@@ -94,3 +94,5 @@ JobAid 复核的答复字段直接位于函数参数根部，不再包裹 `candi
 JobAid 的 `responseType` 是可选展示分类。省略时，驱动按是否附带工作更新分别绑定 `RESYNTHESIS_RESULT` 或 `ANSWER`；显式提供的值仍须通过原枚举校验，不覆盖无效值、不改变正文或工作更新、不获得任何正式动作权限。候选仍经过完整校验后才提交 Host。
 
 原生函数先校验参数，再交给驱动。JobAid 的函数 JSON Schema 与现有解码器同时接受声明数组位置的普通数组和精确 `{item:[...]}` 封套；两条分支保留相同元素规则及数量限制。封套多键、item 非数组、单对象替代数组、错误嵌套和未知枚举仍拒绝。这里只解开传输封套，不补工程内容或修改旧失败候选。
+
+JobAid c5 可省略没有新增条目的 sourceRefs、missingInputs、candidateEvidenceRefs、warnings；省略只表达空集合，已提供的 null、空字符串、错误类型不会被修复或替换。工作增量的 retiredIssues 和 unchangedIssueKeys 省略语义与 Host 一致，旧问题仍须完整分区。带已知结果函数失败横幅的原生 idle-timeout 文本也按超时失败收尾，不自动重试。

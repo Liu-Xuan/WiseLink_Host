@@ -68,7 +68,7 @@ const REVIEW_RESPONSE_TYPES = [
   'AFFECTED_ITEMS_PREVIEW',
   'TASK_STATUS',
 ];
-const REVIEW_PROMPT_VERSION = 'wiselink.3_1.review_prompt.v1.c43';
+const REVIEW_PROMPT_VERSION = 'wiselink.3_1.review_prompt.v1.c44';
 const WISELINK_HOST_MCP_CONFIG_KEYS = new Set([
   WISELINK_HOST_MCP_NAME,
   'wiselink_host_controller',
@@ -76,6 +76,9 @@ const WISELINK_HOST_MCP_CONFIG_KEYS = new Set([
 const MAX_SOURCE_REFS = 100;
 const MAX_GATEWAY_BYTES = 4 * 1024 * 1024;
 const MAX_REVIEW_MODEL_CORRECTIONS = 2;
+const JOBAID_OPTIONAL_COLLECTIONS = ['sourceRefs', 'missingInputs', 'candidateEvidenceRefs', 'warnings'];
+const GATEWAY_IDLE_TIMEOUT_TEXT = 'LLM request timed out.\n\nThe model did not produce a response before the model idle timeout. Please try again, or increase `models.providers.<id>.timeoutSeconds` for slow local or self-hosted providers. If `agents.defaults.timeoutSeconds` or a run-specific timeout is lower, raise that ceiling too; provider timeouts cannot extend the whole agent run.';
+const GATEWAY_REVIEW_FAILURE_BANNER = '⚠️ 🧩 Return Wiselink Review Candidate failed\n\n';
 // User requested the official M3 maximum after real 16000-token truncations.
 // MiniMax Chat Completions documents a 524288-token maximum (2026-09-08).
 // This is an output allowance, not a target length or actual usage claim.
@@ -449,7 +452,8 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
     // Report the upstream timeout, rather than a misleading function-count
     // error. It is not candidate text and never authorizes a retry or commit.
     if (payload.choices?.length === 1 && !payload.choices[0].message?.tool_calls?.length &&
-      payload.choices[0].message?.content === 'LLM request timed out.\n\nThe model did not produce a response before the model idle timeout. Please try again, or increase `models.providers.<id>.timeoutSeconds` for slow local or self-hosted providers. If `agents.defaults.timeoutSeconds` or a run-specific timeout is lower, raise that ceiling too; provider timeouts cannot extend the whole agent run.') {
+      [GATEWAY_IDLE_TIMEOUT_TEXT, GATEWAY_REVIEW_FAILURE_BANNER + GATEWAY_IDLE_TIMEOUT_TEXT]
+        .includes(payload.choices[0].message?.content)) {
       throw new Error('REVIEW_GATEWAY_MODEL_IDLE_TIMEOUT');
     }
     const { argumentsText, output, toolCall } = readReviewCandidateArguments(payload);
@@ -488,7 +492,12 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
           }
           // JobAid has no formal-action operation. These protocol constants
           // are driver-owned, never a model choice or a repair of supplied data.
-          candidate = { ...authored, reviewActionDraft: null, affectedItemIds: [],
+          candidate = { ...authored,
+            // Omission explicitly proposes no entries. Supplied values remain
+            // untouched, including malformed arrays, null and empty strings.
+            ...Object.fromEntries(JOBAID_OPTIONAL_COLLECTIONS.map((key) =>
+              [key, Object.hasOwn(authored, key) ? authored[key] : []])),
+            reviewActionDraft: null, affectedItemIds: [],
             responseType: Object.hasOwn(authored, 'responseType') ? authored.responseType :
               isRecord(authored.jobAidWorkingDelta) ? 'RESYNTHESIS_RESULT' : 'ANSWER',
             jobAidWorkingDelta: Object.hasOwn(authored, 'jobAidWorkingDelta') ? authored.jobAidWorkingDelta : null };
@@ -520,7 +529,7 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
             instruction: isChat
               ? 'Correct this discussion answer using the same question and actually read sources. Ordinary document SourceRefs belong only in sourceRefs. For ANSWER, SOURCE_LINK, CLARIFYING_QUESTION, INPUT_REQUEST or TASK_STATUS, candidateEvidenceRefs must be []; this field only accepts current attachmentRefs for CANDIDATE_EVIDENCE. Keep reviewActionDraft=null and affectedItemIds=[]; do not add a working delta or change the assessment. Return the complete corrected candidate through the declared output function, using candidateJson only when the Matter contract requires it. Never invent sources or claim that a rejected answer was saved.'
               : isJobAid
-              ? 'Return the complete corrected JobAid candidate directly as the declared function arguments, without a candidate wrapper. Keep the original question, unaffected issues and their premises. candidateEvidenceRefs may contain only current input.attachmentRefs actually read this turn; ordinary document SourceRefs belong in sourceRefs or working-delta evidence fields, never candidateEvidenceRefs. With no attachments use []. Omit reviewActionDraft and affectedItemIds; the driver owns their fixed no-formal-action values. Omit jobAidWorkingDelta only when no work changes. Read any additional passage through the read function. Never invent references, drop findings merely to pass validation, or claim the rejected candidate was saved.'
+              ? 'Return the complete corrected JobAid candidate directly as the declared function arguments, without a candidate wrapper. Keep the original question, unaffected issues and their premises. candidateEvidenceRefs may contain only current input.attachmentRefs actually read this turn; ordinary document SourceRefs belong in sourceRefs or working-delta evidence fields, never candidateEvidenceRefs. Omit empty sourceRefs, missingInputs, candidateEvidenceRefs and warnings; omission means no entries, never [""] or a placeholder object. Omit retiredIssues when retiring none. Omit reviewActionDraft and affectedItemIds; the driver owns their fixed no-formal-action values. Omit jobAidWorkingDelta only when no work changes. Read any additional passage through the read function. Never invent references, drop findings merely to pass validation, or claim the rejected candidate was saved.'
               : 'Correct the candidate using the current contract and registered evidence. Keep the original question, unchanged claims and source meaning. Read any additional passage through the read function. Every document premise in the resulting reading must be included in that input\'s checked coverage; an updated coverage entry replaces its old checked range, so include every cited passage for that input, not just representative anchors. Return the complete corrected candidate; do not invent evidence or coverage, remove a substantive finding merely to pass validation, or claim that anything was saved.',
           }) },
         ];
@@ -1488,7 +1497,7 @@ function jobAidReviewCandidateShape(attachmentRefs = []) {
   const strings = { type: 'array', items: { type: 'string', minLength: 1 } };
   return {
     type: 'object', additionalProperties: false,
-    required: MODEL_OUTPUT_KEYS.filter((key) => !['responseType', 'reviewActionDraft', 'affectedItemIds'].includes(key)),
+    required: ['answer'],
     properties: {
       responseType: { type: 'string', enum: reviewResponseTypes(true),
         description: 'Optional display classification. If omitted, the driver labels a work update RESYNTHESIS_RESULT and an ordinary reply ANSWER. This never adopts the candidate or grants an action.' },
@@ -1599,7 +1608,8 @@ function matterReviewGuidance() {
 
 function jobAidReviewGuidance() {
   return [
-    `Return the required candidate fields directly at the function-argument root: ${MODEL_OUTPUT_KEYS.filter((key) => !['responseType', 'reviewActionDraft', 'affectedItemIds'].includes(key)).join(', ')}. Do not wrap them in candidate or candidateJson, JSON.stringify them, or repeat them inside jobAidWorkingDelta. Include jobAidWorkingDelta when updating work; work fields belong only there and issue fields belong only inside its issues. Use ordinary JSON arrays, with strings as string elements, not item objects. A nullable limitation or unknown classification is JSON null, never an empty string. responseType is optional display metadata: if omitted, the driver labels a work update RESYNTHESIS_RESULT and an ordinary reply ANSWER. When supplied, use ANSWER, CLARIFYING_QUESTION, SOURCE_LINK, INPUT_REQUEST, TASK_STATUS or RESYNTHESIS_RESULT as appropriate. Never emit reviewActionDraft or affectedItemIds: the driver binds the fixed no-formal-action values null and [] and rejects model-supplied formal fields.`,
+    `Return answer and any proposed candidate fields directly at the function-argument root. answer is required; sourceRefs, missingInputs, candidateEvidenceRefs and warnings are optional collections. Omit them when proposing no entries; never represent an empty collection as [""], null or a placeholder object. Explicitly supplied values are still fully validated. Do not wrap them in candidate or candidateJson, JSON.stringify them, or repeat them inside jobAidWorkingDelta. Include jobAidWorkingDelta when updating work; work fields belong only there and issue fields belong only inside its issues. Use ordinary JSON arrays, with strings as string elements, not item objects. A nullable limitation or unknown classification is JSON null, never an empty string. responseType is optional display metadata: if omitted, the driver labels a work update RESYNTHESIS_RESULT and an ordinary reply ANSWER. When supplied, use ANSWER, CLARIFYING_QUESTION, SOURCE_LINK, INPUT_REQUEST, TASK_STATUS or RESYNTHESIS_RESULT as appropriate. Never emit reviewActionDraft or affectedItemIds: the driver binds the fixed no-formal-action values null and [] and rejects model-supplied formal fields.`,
+    'Omit retiredIssues when retiring no issue. unchangedIssueKeys may be omitted only when every previous issue is explicitly updated or retired; omission never drops a previous issue. Other work fields remain governed by the complete work contract.',
     'sourceRefs are document or attachment resources actually read this turn. candidateEvidenceRefs is a different field: use only current input.attachmentRefs that were actually read. With no current attachments it must be []. Never put ordinary document SourceRefs, method references or working-delta source dependencies in candidateEvidenceRefs.',
     'context.problemAssessment is the actual saved JobAid problem work, method material, available source catalog and earlier discussion. Omit jobAidWorkingDelta for explanations and questions that change no working understanding. For a correction or new material, include a local work update preserving every unaffected issue and source/premise identity. Host saves the complete revised understanding and this reply atomically with CAS; this is an ordinary candidate update, not formal adoption. Never reconstruct a criterion checklist or generate replacement reasoning from an abbreviated brief.',
     'Read relevant DOCUMENT_PASSAGE and ENGINEER_ATTACHMENT resources through the current source-read function. The catalog is not a read receipt. Previously saved sources freshly supplied in deliveredEvidence may support retained work; new citations require actual current delivery. Keep sourceRefs limited to resources read this turn; method evidence remains METHOD_CLAUSE in the working update and never pretends to be a document SourceRef. ENGINEER_ATTACHMENT proves only what the uploaded material reports, not implemented controls or controlled Host facts.',

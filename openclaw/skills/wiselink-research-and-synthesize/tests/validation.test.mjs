@@ -1374,7 +1374,7 @@ test('requires 25 MCP capabilities, six review tools, and hosted provenance', ()
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c64',
+    'wiselink-research-and-synthesize@r09.c65',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -4798,7 +4798,7 @@ test('offers source reading and one final candidate function with blank assistan
   assert.equal(result.provenance.modelVersion, 'openai-codex/gpt-5.4');
   assert.equal(
     result.provenance.promptVersion,
-    'wiselink.3_1.review_prompt.v1.c43',
+    'wiselink.3_1.review_prompt.v1.c44',
   );
 });
 
@@ -4851,7 +4851,7 @@ test('falls back to the configured model and records only output shape v2', asyn
   assert.equal(result.provenance.modelVersion, 'provider/configured');
   assert.equal(
     result.provenance.promptVersion,
-    'wiselink.3_1.review_prompt.v1.c43',
+    'wiselink.3_1.review_prompt.v1.c44',
   );
   assert.equal(
     outputShape.schemaVersion,
@@ -6946,7 +6946,7 @@ test('JobAid review uses a typed candidate and preserves quoted text, nulls, loc
     const body = JSON.parse(init.body);
     assert.equal(body.tool_choice, 'auto');
     const schema = body.tools[0].function.parameters;
-    assert.deepEqual(schema.required, ['answer', 'sourceRefs', 'missingInputs', 'candidateEvidenceRefs', 'warnings']);
+    assert.deepEqual(schema.required, ['answer']);
     assert.equal(schema.properties.candidate, undefined);
     assert.equal(schema.additionalProperties, false);
     assert.equal(schema.properties.jobAidWorkingDelta.anyOf[0].properties.issues.anyOf[0].type, 'array');
@@ -7112,15 +7112,17 @@ test('leased JobAid review spans the former 8-minute cutoff with bounded respons
 });
 
 test('public HTTP 200 Gateway idle-timeout text is a failure, never a candidate or retry instruction', async () => {
-  let calls = 0;
-  await assert.rejects(invokeReviewWithTransport({ input: {} }, {
-    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
-    observeProgress: async () => {},
-  }, { requestGateway: async () => {
-    calls++;
-    return Response.json({ choices: [{ message: { content: 'LLM request timed out.\n\nThe model did not produce a response before the model idle timeout. Please try again, or increase `models.providers.<id>.timeoutSeconds` for slow local or self-hosted providers. If `agents.defaults.timeoutSeconds` or a run-specific timeout is lower, raise that ceiling too; provider timeouts cannot extend the whole agent run.' }, finish_reason: 'stop' }] });
-  }, wait: async () => assert.fail('must not retry ambiguous timeout') }), /REVIEW_GATEWAY_MODEL_IDLE_TIMEOUT/u);
-  assert.equal(calls, 1);
+  for (const prefix of ['', '⚠️ 🧩 Return Wiselink Review Candidate failed\n\n']) {
+    let calls = 0;
+    await assert.rejects(invokeReviewWithTransport({ input: {} }, {
+      gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+      observeProgress: async () => {},
+    }, { requestGateway: async () => {
+      calls++;
+      return Response.json({ choices: [{ message: { content: prefix + 'LLM request timed out.\n\nThe model did not produce a response before the model idle timeout. Please try again, or increase `models.providers.<id>.timeoutSeconds` for slow local or self-hosted providers. If `agents.defaults.timeoutSeconds` or a run-specific timeout is lower, raise that ceiling too; provider timeouts cannot extend the whole agent run.' }, finish_reason: 'stop' }] });
+    }, wait: async () => assert.fail('must not retry ambiguous timeout') }), /REVIEW_GATEWAY_MODEL_IDLE_TIMEOUT/u);
+    assert.equal(calls, 1);
+  }
 });
 
 test('JobAid wire rejects model-supplied formal fields instead of overwriting them with protocol constants', async () => {
@@ -7307,4 +7309,61 @@ test('free chat corrects invalid attachment citations within the same bounded ex
     assert.equal(validations, requests);
     assert.equal(rejections.length, alwaysInvalid ? 2 : 1);
   }
+});
+
+async function emptyJobAidReviewFixture() {
+  const task = await readJson(REVIEW_TASK_FIXTURE_URL);
+  Object.assign(task, { schemaVersion: 'wiselink.3_1.review_turn_task.v1.c5',
+    selectedEvaluationItemId: null, allowedEvaluationItemIds: [], allowedAdoptedInputRefs: [], resourceRefs: [],
+    jobAidContext: { schemaVersion: 'wiselink.jobaid-problem-task.v2', sourceCatalog: [], sourceBindings: [],
+      initiallyDeliveredRefs: [], modelInput: { purpose: 'PROBLEM_REVIEW', deliveredEvidence: [] },
+      previousWork: { content: { issues: [] } } },
+  });
+  task.context.problemAssessment = task.jobAidContext.modelInput;
+  task.executionPolicy.toolPolicyRef = `${WISELINK_HOST_MCP_NAME}@${WISELINK_HOST_MCP_VERSION}#interactive-jobaid-review-c5`;
+  const candidate = { ...(await readJson(REVIEW_CANDIDATE_FIXTURE_URL)),
+    schemaVersion: 'wiselink.3_1.review_turn_candidate.v1.c5', responseType: 'ANSWER',
+    sourceRefs: [], missingInputs: [], candidateEvidenceRefs: [], warnings: [],
+    reviewActionDraft: null, affectedItemIds: [], jobAidWorkingDelta: null };
+  return { task, candidate };
+}
+
+test('JobAid omitted collections propose no entries while supplied malformed values remain rejected', async () => {
+  const { task, candidate } = await emptyJobAidReviewFixture();
+  for (const extra of [{}, { sourceRefs: [''] }, { missingInputs: [{}] },
+    { candidateEvidenceRefs: null }, { warnings: { item: '' } }]) {
+    const authored = { answer: '讨论候选', ...extra };
+    const before = structuredClone(authored);
+    const invoke = invokeReviewWithTransport({ input: { context: { problemAssessment: {} } } }, {
+      gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+      validateCandidate: async (value) => {
+        for (const [key, supplied] of Object.entries(extra)) assert.deepEqual(value[key], supplied);
+        validateReviewCandidate(task, { ...candidate, ...value });
+      },
+    }, { requestGateway: async () => Response.json({ choices: [{ message: { content: null, tool_calls: [{
+      type: 'function', function: { name: 'return_wiselink_review_candidate', arguments: JSON.stringify(authored) },
+    }] } }] }) });
+    if (Object.keys(extra).length) await assert.rejects(invoke, /REVIEW_CANDIDATE_/u);
+    else {
+      const output = (await invoke).output;
+      for (const key of ['sourceRefs', 'missingInputs', 'candidateEvidenceRefs', 'warnings']) assert.deepEqual(output[key], []);
+    }
+    assert.deepEqual(authored, before);
+  }
+});
+
+test('omitted JobAid retirement lists preserve prior-issue partition checks', async () => {
+  const { task, candidate } = await emptyJobAidReviewFixture();
+  task.jobAidContext.previousWork.content.issues = [{ issueKey: 'issue-1' }];
+  const delta = { schemaVersion: 'wiselink.jobaid-problem-work.v2', headline: '当前认识', listBrief: '概览',
+    understanding: '保留原认识', completionReason: '仍待核对', changeSummary: '无新增工作', unchangedExplanation: '原问题保留',
+    issues: [], unchangedIssueKeys: ['issue-1'] };
+  const validate = (work) => validateReviewCandidate(task, { ...candidate, jobAidWorkingDelta: work });
+  assert.doesNotThrow(() => validate(delta));
+  assert.throws(() => validate({ ...delta, retiredIssues: null }), /REVIEW_JOBAID_RETIREMENTS_INVALID/u);
+  assert.throws(() => validate({ ...delta, unchangedIssueKeys: null }), /REVIEW_JOBAID_UNCHANGED_INVALID/u);
+  const omitted = { ...delta };
+  delete omitted.unchangedIssueKeys;
+  assert.throws(() => validate(omitted), /REVIEW_JOBAID_PRIOR_ISSUE_OMITTED/u);
+  assert.doesNotThrow(() => validate({ ...omitted, issues: [{ issueKey: 'issue-1' }] }));
 });
