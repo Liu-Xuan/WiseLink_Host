@@ -5,7 +5,7 @@ const texts = list(text);
 const object = (properties) => ({ type: 'object', properties });
 const choice = (...values) => ({ type: 'string', enum: values });
 const nullable = (schema) => ({ ...schema, nullable: true });
-const classification = nullable(object({ label: text, reason: text, basisRefs: texts }));
+const classification = (...labels) => nullable(object({ label: choice(...labels), reason: text, basisRefs: texts }));
 export const JOBAID_WORK_UPDATE_SHAPE = object({
   schemaVersion: choice('wiselink.jobaid-problem-work.v2'),
   headline: text, listBrief: text, understanding: text, decisiveIssueKeys: texts,
@@ -22,8 +22,13 @@ export const JOBAID_WORK_UPDATE_SHAPE = object({
         explanation: text, limitation: nullable(text) })),
     })),
     riskScenarios: list(object({ scenario: text, conditions: texts,
-      method: choice('JA_AC_R01'), severity: classification, likelihood: classification,
-      importantEvent: nullable(object({ event: text, reason: text, basisRefs: texts })),
+      method: choice('JA_AC_R01'),
+      severity: classification('轻微', '重要', '严重', '灾难'),
+      likelihood: classification('可能', '不大可能', '不可能（极少）', '极不可能（极端少）'),
+      importantEvent: nullable(object({
+        event: choice('空中停车', '重力放起落架', '爆胎／脱胎', '空中释压', '通讯中断', '客货舱火警／烟雾'),
+        reason: text, basisRefs: texts,
+      })),
       limitations: texts, controlComparison: text,
     })),
     measures: list(object({ text, addresses: text, limitations: texts,

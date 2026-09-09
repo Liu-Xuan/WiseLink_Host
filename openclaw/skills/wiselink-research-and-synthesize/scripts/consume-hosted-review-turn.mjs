@@ -22,6 +22,7 @@ export async function consumePendingReviewTurn(options, dependencies) {
   const next = pending.next;
   let startedAttempt = null;
   let commitStarted = false;
+  let commitRejection = null;
   try {
     const result = await (dependencies.runTurn ?? runHostedReviewTurn)(
       {
@@ -35,7 +36,17 @@ export async function consumePendingReviewTurn(options, dependencies) {
       {
         callTool: async (name, args) => {
           if (name === 'commit_review_turn_candidate') commitStarted = true;
-          const value = await dependencies.callTool(name, args);
+          let value;
+          try {
+            value = await dependencies.callTool(name, args);
+          } catch (error) {
+            if (name === 'commit_review_turn_candidate' &&
+              error?.receivedHostToolError === true &&
+              /^[A-Z][A-Z0-9_]+$/u.test(error?.hostErrorCode ?? '')) {
+              commitRejection = error.hostErrorCode;
+            }
+            throw error;
+          }
           if (name === 'begin_review_turn' && value.status === 'RUNNING')
             startedAttempt = value.attemptRef;
           return value;
@@ -49,10 +60,22 @@ export async function consumePendingReviewTurn(options, dependencies) {
       result,
     };
   } catch (error) {
-    const code = errorCode(error);
+    const readback = error?.readback;
+    const rejectedBeforePrepare = commitRejection !== null &&
+      error?.code === 'HOST_MCP_COMMIT_OUTCOME_UNKNOWN' &&
+      readback?.attemptRef === startedAttempt &&
+      readback?.taskType === 'OPENCLAW_INTERACTIVE_REVIEW' &&
+      readback?.status === 'RUNNING' &&
+      readback?.commitStartedAt === null &&
+      readback?.resultContentHash === null &&
+      readback?.projectionApplied === false &&
+      readback?.recoveryAvailable === false;
+    const code = rejectedBeforePrepare ? commitRejection : errorCode(error);
     // A local/model failure before commit ends only this candidate attempt.
-    // Never cancel a commit whose response may merely have been lost.
-    if (startedAttempt && !commitStarted) {
+    // A definite Host rejection plus exact readback proves prepare never ran.
+    // Cancellation is atomic on the Host and still rejects a race to COMMITTING.
+    // Missing responses/readback remain ambiguous and must never be cancelled.
+    if (startedAttempt && (!commitStarted || rejectedBeforePrepare)) {
       try {
         const stopped = await dependencies.callTool('cancel_action_attempt', {
           attemptRef: startedAttempt,

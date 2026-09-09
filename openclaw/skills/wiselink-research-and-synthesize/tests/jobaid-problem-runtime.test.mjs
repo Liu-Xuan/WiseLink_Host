@@ -322,6 +322,37 @@ test('work shape diagnostics leave nullable unknowns intact and identify nested 
   assert.deepEqual(work, original);
 });
 
+test('an invalid important-event placeholder reaches Host unchanged and correction preserves unknown risk', async () => {
+  const invalid = { ...completed, issues: [{ riskScenarios: [{
+    severity: null, likelihood: null,
+    importantEvent: { event: 'synthetic not established', reason: '未核查', basisRefs: [] },
+  }] }] };
+  const corrected = structuredClone(invalid);
+  corrected.issues[0].riskScenarios[0].importantEvent = null;
+  const f = fixture([
+    { action: 'SAVE_WORK', work: invalid },
+    { action: 'SAVE_WORK', work: corrected }, { action: 'FINISH' },
+  ]);
+  const save = f.options.saveAssessmentWork;
+  let attempts = 0;
+  f.options.saveAssessmentWork = async (input) => {
+    if (++attempts === 1) {
+      assert.deepEqual(JSON.parse(input.workJson), invalid);
+      throw Object.assign(new Error('REVIEW_HOST_MCP_TOOL_FAILED'), {
+        hostErrorCode: 'JOBAID_IMPORTANT_EVENT_CATEGORY',
+      });
+    }
+    return save(input);
+  };
+  await f.run();
+  const receipt = JSON.parse(f.calls[1].messages.at(-1).content);
+  assert.equal(receipt.errorCode, 'JOBAID_IMPORTANT_EVENT_CATEGORY');
+  assert.equal(receipt.fieldErrors[0].path, 'work.issues[0].riskScenarios[0].importantEvent.event');
+  assert.match(receipt.fieldErrors[0].expected, /空中停车.*客货舱火警／烟雾/u);
+  assert.equal(JSON.stringify(receipt).includes('synthetic not established'), false);
+  assert.deepEqual([...f.store.values()][0].content, corrected);
+});
+
 test('Host dependency rejection identifies omitted method reference and preserves corrected work', async () => {
   const invalid = { ...completed, issues: [{ sourceDependencies: ['source:1'], premiseRefs: [],
     requirementHandling: [{ methodRef: 'method:synthetic-sensitive', basisRefs: [] }] }] };

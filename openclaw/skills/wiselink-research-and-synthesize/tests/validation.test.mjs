@@ -1372,7 +1372,7 @@ test('requires 24 MCP capabilities, five review tools, and hosted provenance', (
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c56',
+    'wiselink-research-and-synthesize@r09.c57',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -6853,6 +6853,13 @@ test('JobAid review uses a typed candidate and preserves quoted text, nulls, loc
     assert.equal(schema.properties.candidate.properties.reviewActionDraft, undefined);
     assert.equal(schema.properties.candidate.properties.affectedItemIds, undefined);
     assert.equal(schema.properties.candidate.properties.candidateEvidenceRefs.maxItems, 0);
+    const riskShape = schema.properties.candidate.properties.jobAidWorkingDelta.properties.issues.items.properties.riskScenarios.items.properties;
+    assert.deepEqual(riskShape.importantEvent.properties.event.enum,
+      ['空中停车', '重力放起落架', '爆胎／脱胎', '空中释压', '通讯中断', '客货舱火警／烟雾']);
+    assert.deepEqual(riskShape.severity.properties.label.enum, ['轻微', '重要', '严重', '灾难']);
+    assert.deepEqual(riskShape.likelihood.properties.label.enum,
+      ['可能', '不大可能', '不可能（极少）', '极不可能（极端少）']);
+    assert.equal(riskShape.importantEvent.nullable, true);
     return Response.json({ choices: [{ message: { content: null, tool_calls: [{ id: 'typed-review',
       type: 'function', function: { name: 'return_wiselink_review_candidate', arguments: JSON.stringify({ candidate: native }) },
     }] } }] });

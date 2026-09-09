@@ -89,3 +89,74 @@ test('unconfirmed or wrong-attempt cancellation remains a consumer error', async
     }), /ATTEMPT_STOP_FAILED:HOSTED_REVIEW_STOP_NOT_CONFIRMED/u);
   }
 });
+
+test('a definite Host validation rejection and exact unprepared readback end only the failed attempt', async () => {
+  const calls = [];
+  const result = await rejectedCommit(calls);
+  assert.equal(result.status, 'REQUIRES_ATTENTION');
+  assert.equal(result.errorCode, 'JOBAID_IMPORTANT_EVENT_CATEGORY');
+  assert.equal(result.attemptStatus, 'CANCELLED');
+  assert.deepEqual(calls.map(({ name }) => name), [
+    'get_pending_review_turn', 'begin_review_turn', 'commit_review_turn_candidate', 'cancel_action_attempt',
+  ]);
+  assert.deepEqual(calls.at(-1).args, {
+    attemptRef: 'AQ-2', reason: 'HOSTED_REVIEW_EXECUTION_FAILED:JOBAID_IMPORTANT_EVENT_CATEGORY',
+  });
+});
+
+test('uncertain, mismatched, prepared and terminal commit outcomes never authorize cancellation', async () => {
+  for (const overrides of [
+    { receivedHostToolError: false }, { hostErrorCode: null },
+    { code: 'HOST_MCP_COMMIT_READBACK_FAILED' }, { readback: null },
+    { readback: { attemptRef: 'AQ-other' } }, { readback: { taskType: 'OTHER' } },
+    { readback: { status: 'COMMITTING' } }, { readback: { status: 'SUCCEEDED' } },
+    { readback: { commitStartedAt: '2026-09-09T08:33:09Z' } },
+    { readback: { resultContentHash: 'sealed' } },
+    { readback: { projectionApplied: true } }, { readback: { recoveryAvailable: true } },
+  ]) {
+    const calls = [];
+    await assert.rejects(rejectedCommit(calls, overrides), /HOST_MCP_COMMIT/u);
+    assert.equal(calls.some(({ name }) => name === 'cancel_action_attempt'), false);
+    assert.equal(calls.filter(({ name }) => name === 'commit_review_turn_candidate').length, 1);
+  }
+});
+
+test('a race across the Host commit cutoff remains an error without replay', async () => {
+  const calls = [];
+  await assert.rejects(rejectedCommit(calls, { cancelError: 'ACTION_ATTEMPT_COMMIT_CUTOFF' }),
+    /JOBAID_IMPORTANT_EVENT_CATEGORY;ATTEMPT_STOP_FAILED:ACTION_ATTEMPT_COMMIT_CUTOFF/u);
+  assert.equal(calls.filter(({ name }) => name === 'cancel_action_attempt').length, 1);
+  assert.equal(calls.filter(({ name }) => name === 'commit_review_turn_candidate').length, 1);
+});
+
+function rejectedCommit(calls, overrides = {}) {
+  return consumePendingReviewTurn(options, {
+    callTool: async (name, args) => {
+      calls.push({ name, args });
+      if (name === 'get_pending_review_turn') return { busy: false, next };
+      if (name === 'begin_review_turn') return { status: 'RUNNING', attemptRef: 'AQ-2' };
+      if (name === 'commit_review_turn_candidate') throw Object.assign(new Error('HOST_REJECTED'), {
+        receivedHostToolError: overrides.receivedHostToolError ?? true,
+        hostErrorCode: 'hostErrorCode' in overrides ? overrides.hostErrorCode : 'JOBAID_IMPORTANT_EVENT_CATEGORY',
+      });
+      if (overrides.cancelError) throw new Error(overrides.cancelError);
+      return { status: 'CANCELLED', attemptRef: 'AQ-2' };
+    },
+    runTurn: async (_input, { callTool }) => {
+      await callTool('begin_review_turn', {});
+      try {
+        await callTool('commit_review_turn_candidate', {});
+      } catch {
+        // Same exact-identity readback and error contract as the orchestrator.
+        throw Object.assign(new Error('HOST_MCP_COMMIT_OUTCOME_UNKNOWN'), {
+          code: overrides.code ?? 'HOST_MCP_COMMIT_OUTCOME_UNKNOWN',
+          readback: overrides.readback === null ? null : {
+            attemptRef: 'AQ-2', taskType: 'OPENCLAW_INTERACTIVE_REVIEW', status: 'RUNNING',
+            commitStartedAt: null, resultContentHash: null,
+            recoveryAvailable: false, projectionApplied: false, ...overrides.readback,
+          },
+        });
+      }
+    },
+  });
+}
