@@ -1352,7 +1352,7 @@ test('accepts shared background in new JobAid and Overall inputs while retaining
   validatePayload('synthesis-input', { ...overall, commonContext });
 });
 
-test('requires 24 MCP capabilities, five review tools, and hosted provenance', () => {
+test('requires 25 MCP capabilities, six review tools, and hosted provenance', () => {
   assert.deepEqual(INITIAL_ANALYSIS_OPERATIONS, [
     'TRANSLATE',
     'EXTRACT_APPLICABILITY',
@@ -1360,20 +1360,21 @@ test('requires 24 MCP capabilities, five review tools, and hosted provenance', (
     'SYNTHESIZE_OVERALL',
   ]);
   assert.deepEqual(INTERACTIVE_REVIEW_TOOLS, [
+    'query_review_aily',
     'begin_review_turn',
     'get_review_turn_context',
     'read_source_refs',
     'get_action_attempt_status',
     'commit_review_turn_candidate',
   ]);
-  assert.equal(HOST_MCP_TOOLS.length, 24);
-  assert.equal(new Set(HOST_MCP_TOOLS).size, 24);
+  assert.equal(HOST_MCP_TOOLS.length, 25);
+  assert.equal(new Set(HOST_MCP_TOOLS).size, 25);
   for (const name of ['translation_workspace', 'read_assessment_sources', 'save_assessment_work', 'read_assessment_work']) assert.ok(HOST_MCP_TOOLS.includes(name));
   assert.ok(HOST_MCP_TOOLS.includes('begin_applicability_evaluation'));
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c62',
+    'wiselink-research-and-synthesize@r09.c63',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -4797,7 +4798,7 @@ test('offers source reading and one final candidate function with blank assistan
   assert.equal(result.provenance.modelVersion, 'openai-codex/gpt-5.4');
   assert.equal(
     result.provenance.promptVersion,
-    'wiselink.3_1.review_prompt.v1.c41',
+    'wiselink.3_1.review_prompt.v1.c42',
   );
 });
 
@@ -4850,7 +4851,7 @@ test('falls back to the configured model and records only output shape v2', asyn
   assert.equal(result.provenance.modelVersion, 'provider/configured');
   assert.equal(
     result.provenance.promptVersion,
-    'wiselink.3_1.review_prompt.v1.c41',
+    'wiselink.3_1.review_prompt.v1.c42',
   );
   assert.equal(
     outputShape.schemaVersion,
@@ -7224,4 +7225,44 @@ test('JobAid attachment citation feedback keeps the candidate unchanged until th
   assert.equal(validations, 2);
   assert.equal(feedback[0].validationError, 'REVIEW_MODEL_CANDIDATE_EVIDENCE_REF_NOT_ATTACHMENT');
   assert.deepEqual(result.output.candidateEvidenceRefs, []);
+});
+
+test('free chat calls Aily only through its delegated tool and keeps retrieval out of Host source handles', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  const requests = [];
+  globalThis.fetch = async (_url, init) => {
+    requests.push(JSON.parse(init.body));
+    const first = requests.length === 1;
+    return Response.json({ choices: [{ message: { content: null, tool_calls: [{ id: first ? 'aily-call-1' : 'answer-1',
+      type: 'function', function: { name: first ? 'query_wiselink_aily' : 'return_wiselink_review_candidate',
+        arguments: JSON.stringify(first ? { query: '查找 FMC 相关资料' } : { answer: '据 Aily 检索返回了资料线索。', sourceRefs: [],
+          candidateEvidenceRefs: [], affectedItemIds: [], reviewActionDraft: null, missingInputs: [], warnings: [], responseType: 'ANSWER' }) } }] } }] });
+  };
+  const calls = [];
+  const result = await invokeHostedReviewModel({ input: { context: { purpose: 'CHAT', aily: { available: true } }, availableSourceRefIds: [] } }, {
+    gatewayUrl: 'http://127.0.0.1:18789', gatewayToken: 'fixture-only-never-logged', configuredModelVersion: 'provider/configured',
+    queryAily: async (...args) => { calls.push(args); return { status: 'COMPLETED', answer: '检索材料', candidateOnly: true }; },
+  });
+  assert.deepEqual(calls, [['查找 FMC 相关资料', 'aily-call-1']]);
+  assert.ok(requests[0].tools.some((tool) => tool.function.name === 'query_wiselink_aily'));
+  assert.match(requests[1].messages[2].content, /retrieved|retrieval|检索材料/u);
+  assert.deepEqual(result.output.sourceRefs, []);
+  assert.equal(requests[0].tools[0].function.parameters.properties.reviewActionDraft.type, 'null');
+});
+
+test('a model cannot invoke Aily when Host marks the user delegation unavailable', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  let called = false;
+  globalThis.fetch = async (_url, init) => {
+    assert.equal(JSON.parse(init.body).tools.some((tool) => tool.function.name === 'query_wiselink_aily'), false);
+    return Response.json({ choices: [{ message: { content: null, tool_calls: [{ id: 'call', type: 'function',
+      function: { name: 'query_wiselink_aily', arguments: '{"query":"FMC"}' } }] } }] });
+  };
+  await assert.rejects(invokeHostedReviewModel({ input: { context: { purpose: 'CHAT', aily: { available: false } } } }, {
+    gatewayUrl: 'http://127.0.0.1:18789', gatewayToken: 'fixture-only-never-logged', configuredModelVersion: 'provider/configured',
+    queryAily: async () => { called = true; },
+  }), /AILY_QUERY_ARGUMENTS_INVALID/u);
+  assert.equal(called, false);
 });

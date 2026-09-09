@@ -168,6 +168,8 @@ export class IdentityRepository {
     subjectMappingId: string;
     feishuUserId: string | null;
     absoluteTtlMs: number;
+    ailyAccessTokenSealed?: string;
+    ailyAccessTokenExpiresAt?: Date;
   }): Promise<{ sessionId: string; revision: number; expiresAt: Date }> {
     const issuedAt = sql`CURRENT_TIMESTAMP`;
     const expiresAt = sql`CURRENT_TIMESTAMP + (${input.absoluteTtlMs}::bigint * interval '1 millisecond')`;
@@ -175,6 +177,8 @@ export class IdentityRepository {
       .insert(identitySession)
       .values({
         sessionTokenHash: input.tokenHash,
+        ailyAccessTokenSealed: input.ailyAccessTokenSealed,
+        ailyAccessTokenExpiresAt: input.ailyAccessTokenExpiresAt,
         subjectMappingId: input.subjectMappingId,
         feishuUserId: input.feishuUserId,
         revision: 1,

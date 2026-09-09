@@ -3,6 +3,7 @@ import { Injectable } from '@nestjs/common';
 
 import { IdentityRepository } from './identity.repository';
 import type { VerifiedIdentity } from './identity.types';
+import { ailyAgentId, sealAilyUserGrant } from './aily-user-grant.codec';
 
 export interface ValidatedSession {
   sessionId: string;
@@ -17,18 +18,43 @@ export const HOST_SESSION_ABSOLUTE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 export class SessionStore {
   constructor(private readonly repository: IdentityRepository) {}
 
-  async create(identity: VerifiedIdentity): Promise<{
+  async create(
+    identity: VerifiedIdentity,
+    delegation?: { accessToken: string; expiresIn: number },
+  ): Promise<{
     token: string;
     sessionId: string;
     revision: number;
     expiresAt: Date;
   }> {
     const token = randomBytes(32).toString('base64url');
+    const tokenHash = digest(token);
+    const grant =
+      ailyAgentId() &&
+      delegation &&
+      Number.isSafeInteger(delegation.expiresIn) &&
+      delegation.expiresIn > 0
+        ? {
+            ailyAccessTokenSealed: sealAilyUserGrant(
+              delegation.accessToken,
+              `${tokenHash}:${identity.subjectMappingId}`,
+            ),
+            ailyAccessTokenExpiresAt: new Date(
+              Date.now() +
+                Math.min(
+                  delegation.expiresIn * 1000,
+                  HOST_SESSION_ABSOLUTE_TTL_MS,
+                ) -
+                30_000,
+            ),
+          }
+        : {};
     const persisted = await this.repository.createSession({
-      tokenHash: digest(token),
+      tokenHash,
       subjectMappingId: identity.subjectMappingId,
       feishuUserId: identity.feishuUserId,
       absoluteTtlMs: HOST_SESSION_ABSOLUTE_TTL_MS,
+      ...grant,
     });
     return { token, ...persisted };
   }

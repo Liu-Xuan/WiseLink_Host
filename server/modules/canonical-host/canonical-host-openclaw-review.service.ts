@@ -78,6 +78,8 @@ import {
   reviewScopeSelection,
   sameReviewBusinessScope,
 } from '../review-persistence/review-business-scope';
+import { jobAidProblemModelWorkContent } from './jobaid-problem-task';
+import { ReviewAilyService } from './review-aily.service';
 
 const CANONICAL_APP_ID = 'app_17bzc551rsg';
 const REVIEW_TASK_TYPE = 'OPENCLAW_INTERACTIVE_REVIEW' as const;
@@ -154,6 +156,7 @@ export class CanonicalHostOpenClawReviewService {
     @Optional()
     private readonly matterWorkingRepository?: EngineeringMatterWorkingRepository,
     @Optional() private readonly jobAid?: CanonicalJobAidProblemService,
+    @Optional() private readonly aily?: ReviewAilyService,
   ) {}
 
   async pending(workItemId: string): Promise<PendingReviewTurnResponse> {
@@ -227,6 +230,12 @@ export class CanonicalHostOpenClawReviewService {
           unknown
         >,
         sourceRefs: taskArtifactRefs(workItem, binding.turn, taskContract),
+        allowedConnectors:
+          taskContract.context.purpose === 'CHAT' &&
+          (taskContract.context.aily as { available?: boolean } | undefined)
+            ?.available === true
+            ? ['feishu-aily-user']
+            : [],
       };
     };
     const claim =
@@ -276,6 +285,7 @@ export class CanonicalHostOpenClawReviewService {
     buildInput: () => Promise<{
       modelInput: Record<string, unknown>;
       sourceRefs: OpenClawTaskEnvelope['sourceRefs'];
+      allowedConnectors?: string[];
     }>,
   ) {
     const prepared = await buildInput();
@@ -290,7 +300,7 @@ export class CanonicalHostOpenClawReviewService {
       baseRevision: binding.turn.inputRevision,
       idempotencyKey: reviewIdempotencyKey(binding),
       sourceRefs: prepared.sourceRefs,
-      allowedConnectors: [],
+      allowedConnectors: prepared.allowedConnectors ?? [],
       buildModelInput: async () => prepared.modelInput,
     });
   }
@@ -358,6 +368,31 @@ export class CanonicalHostOpenClawReviewService {
     };
   }
 
+  async queryAily(
+    attemptRef: string,
+    input: { requestKey: string; query: string } | { queryRef: string },
+  ) {
+    const attempt = await this.requiredReviewAttempt(
+      attemptRef,
+      'READ_REVIEW_SOURCE_REFS',
+    );
+    if (
+      attempt.turn.purpose !== 'CHAT' ||
+      !this.aily ||
+      attempt.row.status !== 'RUNNING' ||
+      !attempt.task.allowedConnectors.includes('feishu-aily-user')
+    )
+      throw reviewConflict('AILY_QUERY_NOT_ALLOWED');
+    const actor = {
+      actorId: attempt.conversation.actorId,
+      tenantId: attempt.conversation.tenantId,
+      sessionId: attempt.turn.ailySessionId,
+    };
+    return 'queryRef' in input
+      ? this.aily.result(actor, attemptRef, input.queryRef)
+      : this.aily.start(actor, attemptRef, input.requestKey, input.query);
+  }
+
   async commit(
     attemptRef: string,
     leaseToken: string,
@@ -376,12 +411,23 @@ export class CanonicalHostOpenClawReviewService {
       result,
       task: authorized.contract,
     });
+    if (
+      authorized.turn.purpose === 'CHAT' &&
+      (candidate.reviewActionDraft ||
+        candidate.jobAidWorkingDelta ||
+        candidate.matterWorkingDelta ||
+        candidate.affectedItemIds.length ||
+        candidate.responseType === 'RESYNTHESIS_RESULT')
+    )
+      throw reviewConflict('REVIEW_CHAT_ASSESSMENT_MUTATION_FORBIDDEN');
     const matterContext = authorized.contract.matterContext;
     const readRefs = resolvedReviewSourceRefs(
       authorized.row.reviewActivityJson,
     );
     if (
-      (matterContext || authorized.contract.jobAidContext) &&
+      (matterContext ||
+        authorized.contract.jobAidContext ||
+        authorized.turn.purpose === 'CHAT') &&
       [...candidate.sourceRefs, ...candidate.candidateEvidenceRefs].some(
         (ref) => !readRefs.has(ref),
       )
@@ -847,10 +893,192 @@ export class CanonicalHostOpenClawReviewService {
     };
   }
 
+  private async discussionHistory(binding: ReviewBinding) {
+    const aggregate = await this.conversations.loadById(
+      binding.conversation.reviewConversationId,
+    );
+    if (
+      !aggregate ||
+      aggregate.conversation.tenantId !== binding.conversation.tenantId ||
+      aggregate.conversation.actorId !== binding.conversation.actorId ||
+      aggregate.conversation.workItemId !== binding.conversation.workItemId
+    )
+      throw reviewNotFound();
+    const selected =
+      binding.turn.purpose === 'UPDATE_ASSESSMENT'
+        ? new Set(binding.turn.includedDiscussionTurnIds ?? [])
+        : null;
+    const turns = aggregate.turns.filter(
+      (turn) =>
+        turn.turnNo < binding.turn.turnNo &&
+        sameReviewBusinessScope(
+          turn.reviewScope,
+          reviewScopeSelection(binding.turn.reviewScope),
+        ) &&
+        (!selected || selected.has(turn.reviewTurnId)),
+    );
+    if (
+      selected &&
+      (turns.length !== selected.size ||
+        turns.some(
+          (turn) => turn.purpose !== 'CHAT' || !turn.assistantCandidate,
+        ))
+    )
+      throw reviewConflict('REVIEW_UPDATE_DISCUSSION_INVALID');
+    for (const turn of turns) {
+      if (turn.reviewScope)
+        await this.authorizeMatterRuntime({
+          conversation: binding.conversation,
+          turn,
+        });
+    }
+    return turns;
+  }
+
+  private async buildChatTaskContract(
+    binding: ReviewBinding,
+    workItem: CanonicalWorkItemProjection,
+  ): Promise<ReviewTurnTaskContract> {
+    const aily = this.aily
+      ? await this.aily.availability({
+          actorId: binding.conversation.actorId,
+          tenantId: binding.conversation.tenantId,
+          sessionId: binding.turn.ailySessionId,
+        })
+      : { available: false, reason: 'NOT_CONFIGURED' };
+    if (binding.turn.reviewScope) {
+      // This builder only reads the authorized Matter inputs and saved state.
+      // Keep its scope binding for later source reads and commit authorization.
+      const task = await this.buildMatterTaskContract(binding, workItem);
+      return parseReviewTurnTaskContract({
+        ...task,
+        context: {
+          ...task.context,
+          assessmentUpdateAllowed: false,
+          aily,
+        },
+      });
+    }
+    const readScope = new UnifiedArtifactReadScope(this.artifactStore);
+    const [
+      bytes,
+      attachments,
+      history,
+      previousTask,
+      matterBasis,
+      problemWork,
+    ] = await Promise.all([
+      readScope.readActualBytes(workItem.package!.artifact),
+      this.readAttachmentContext(binding),
+      this.discussionHistory(binding),
+      this.conversations.loadPreviousOpenClawTask({
+        reviewConversationId: binding.conversation.reviewConversationId,
+        tenantId: binding.conversation.tenantId,
+        actorId: binding.conversation.actorId,
+        workItemId: workItem.workItemId,
+        beforeTurnNo: binding.turn.turnNo,
+        reviewScope: reviewScopeSelection(binding.turn.reviewScope),
+      }),
+      binding.turn.reviewScope ? this.authorizeMatterRuntime(binding) : null,
+      this.jobAid
+        ? this.jobAid.readCurrentWorkForRuntime({
+            workItemId: workItem.workItemId,
+            tenantId: binding.conversation.tenantId,
+            actorUserId: binding.conversation.actorId,
+          })
+        : null,
+    ]);
+    const resourceRefs = mergeResourceRefs(
+      frozenPackageResourceRefs(
+        bytes,
+        workItem.package!.artifact.ref,
+        workItem.package!.artifact.sha256,
+        null,
+        readScope,
+      ),
+      attachments.resourceRefs,
+    );
+    return parseReviewTurnTaskContract({
+      schemaVersion: 'wiselink.3_1.review_turn_task.v1.c2',
+      mode: 'INTERACTIVE_REVIEW',
+      reviewConversationRef: binding.conversation.reviewConversationId,
+      reviewTurnRef: binding.turn.reviewTurnId,
+      requestId: binding.turn.requestId,
+      actorContextRef: reviewSessionActorContextRef(
+        binding,
+        resourceRefs,
+        previousTask,
+      ),
+      inputRevision: binding.turn.inputRevision,
+      selectedEvaluationItemId: null,
+      userMessage: binding.turn.userMessage,
+      allowedOperations: [...REVIEW_ALLOWED_OPERATIONS],
+      resourceRefs,
+      allowedEvaluationItemIds: [],
+      allowedAdoptedInputRefs: [],
+      attachmentRefs: attachments.attachmentRefs,
+      context: {
+        purpose: 'CHAT',
+        assessmentUpdateAllowed: false,
+        workItem: {
+          workItemId: workItem.workItemId,
+          title: workItem.package!.title,
+          documentVersionId: workItem.source.documentVersionId,
+        },
+        savedUnderstanding: matterBasis
+          ? {
+              title: matterBasis.snapshot.title,
+              focus: matterBasis.working?.state.focus ?? null,
+              content:
+                matterBasis.working?.state.substantiveResult?.content ?? null,
+              openQuestions: matterBasis.working?.state.openQuestions ?? [],
+              reviewConditions:
+                matterBasis.working?.state.reviewConditions ?? [],
+            }
+          : problemWork
+            ? jobAidProblemModelWorkContent(problemWork.content)
+            : {
+                overallCandidate:
+                  workItem.integratedAssessment?.overallSynthesis
+                    ?.overallCandidate ?? null,
+                engineeringSummary:
+                  workItem.integratedAssessment?.overallSynthesis
+                    ?.engineeringSummary ?? null,
+                findings:
+                  workItem.integratedAssessment?.overallSynthesis?.findings ??
+                  [],
+                missingInputs:
+                  workItem.integratedAssessment?.overallSynthesis
+                    ?.missingInputs ?? [],
+              },
+        discussion: history.map((turn) => ({
+          reviewTurnId: turn.reviewTurnId,
+          engineerStatement: turn.userMessage,
+          assistantReply: turn.assistantCandidate?.answer ?? null,
+          candidateOnly: true,
+        })),
+        engineerInput: {
+          text: binding.turn.userMessage,
+          attachmentRefs: attachments.attachmentRefs,
+        },
+        aily,
+      },
+      executionPolicy: {
+        runtimeAppId: REVIEW_RUNTIME_APP_ID,
+        profileRef: REVIEW_PROFILE_REF,
+        modelPolicyRef: REVIEW_MODEL_POLICY_REF,
+        skillPolicyRef: REVIEW_SKILL_POLICY_REF,
+        toolPolicyRef: REVIEW_TOOL_POLICY_REF,
+      },
+    });
+  }
+
   private async buildTaskContract(
     binding: ReviewBinding,
     workItem: CanonicalWorkItemProjection,
   ): Promise<ReviewTurnTaskContract> {
+    if (binding.turn.purpose === 'CHAT')
+      return this.buildChatTaskContract(binding, workItem);
     if (binding.turn.reviewScope)
       return this.buildMatterTaskContract(binding, workItem);
     if (
@@ -886,6 +1114,12 @@ export class CanonicalHostOpenClawReviewService {
           asOf: binding.turn.createdAt.toISOString(),
           reviewConversationId: binding.conversation.reviewConversationId,
           beforeTurnNo: binding.turn.turnNo,
+          ...(binding.turn.purpose === 'UPDATE_ASSESSMENT'
+            ? {
+                includedDiscussionTurnIds:
+                  binding.turn.includedDiscussionTurnIds ?? [],
+              }
+            : {}),
         },
         readScope,
       ),
@@ -996,6 +1230,8 @@ export class CanonicalHostOpenClawReviewService {
         attachmentRefs: [...attachmentContext.attachmentRefs],
       },
       relatedContext: relatedContext.context,
+      purpose: binding.turn.purpose ?? null,
+      discussion: commonContext.common.discussion,
       commonContext: commonContext.common,
     };
     return parseReviewTurnTaskContract({
@@ -1079,12 +1315,64 @@ export class CanonicalHostOpenClawReviewService {
         locator: '工程师上传附件的已解析页面',
       });
     }
+    const discussion =
+      binding.turn.purpose === 'UPDATE_ASSESSMENT'
+        ? await this.discussionHistory(binding)
+        : [];
+    for (const turn of discussion) {
+      evidence.push({
+        kind: 'ENGINEER_STATEMENT',
+        origin: 'REVIEW_CONVERSATION',
+        evidenceRef: `engineer-input:${turn.engineerSuppliedInputId}`,
+        title: '本次更新选中的工程师陈述',
+        versionLabel: `Review ${turn.turnNo}`,
+        excerpt: turn.candidateText || turn.userMessage,
+        reviewConversationId: binding.conversation.reviewConversationId,
+        reviewTurnId: turn.reviewTurnId,
+        engineerSuppliedInputId: turn.engineerSuppliedInputId,
+        recordedAt: turn.createdAt.toISOString(),
+      });
+      const savedAttachments = await this.readAttachmentContext({
+        conversation: binding.conversation,
+        turn,
+      });
+      for (const resource of savedAttachments.resourceRefs) {
+        const attachment = turn.attachmentBindings.find(
+          (item) => item.attachmentRef === resource.sourceRefId,
+        )!;
+        evidence.push({
+          kind: 'ENGINEER_ATTACHMENT',
+          evidenceRef: resource.sourceRefId,
+          title: attachment.fileName,
+          versionLabel: attachment.documentVersionId,
+          excerpt: canonicalJson(resource.value.pages),
+          workItemId: workItem.workItemId,
+          reviewConversationId: binding.conversation.reviewConversationId,
+          reviewTurnId: turn.reviewTurnId,
+          attachmentRef: attachment.attachmentRef,
+          documentVersionId: attachment.documentVersionId,
+          artifactRef: attachment.parsedArtifact.ref,
+          artifactSha256: attachment.parsedArtifact.sha256,
+          locator: '本次更新选中的讨论附件已解析页面',
+        });
+      }
+    }
     const jobAidContext = await this.jobAid.prepareReview({
       workItem,
       tenantId: binding.conversation.tenantId,
       actorUserId: binding.conversation.actorId,
       asOf: binding.turn.createdAt.toISOString(),
       evidence,
+      ...(binding.turn.purpose === 'UPDATE_ASSESSMENT'
+        ? {
+            reviewSelection: {
+              reviewConversationId: binding.conversation.reviewConversationId,
+              beforeTurnNo: binding.turn.turnNo,
+              // Selected statements and attachments were materialized above.
+              includedDiscussionTurnIds: [],
+            },
+          }
+        : {}),
     });
     const resourceRefs = jobAidContext.sourceCatalog.flatMap(
       (item): FrozenReviewSourceRef[] => {
@@ -1161,6 +1449,14 @@ export class CanonicalHostOpenClawReviewService {
       attachmentRefs: attachments.attachmentRefs,
       jobAidContext,
       context: {
+        purpose: binding.turn.purpose ?? null,
+        includedDiscussionTurnIds: binding.turn.includedDiscussionTurnIds ?? [],
+        discussion: discussion.map((turn) => ({
+          reviewTurnId: turn.reviewTurnId,
+          engineerStatement: turn.userMessage,
+          assistantReply: turn.assistantCandidate?.answer ?? null,
+          candidateOnly: true,
+        })),
         problemAssessment: jobAidContext.modelInput,
         engineerInput: {
           text: binding.turn.candidateText,
@@ -1285,6 +1581,10 @@ export class CanonicalHostOpenClawReviewService {
       throw reviewConflict('REVIEW_CONVERSATION_CHANGED');
     const priorTurns = aggregate.turns.filter(
       (turn) =>
+        (binding.turn.purpose !== 'UPDATE_ASSESSMENT' ||
+          (binding.turn.includedDiscussionTurnIds ?? []).includes(
+            turn.reviewTurnId,
+          )) &&
         turn.turnNo < binding.turn.turnNo &&
         sameReviewBusinessScope(turn.reviewScope, reviewScopeSelection(scope)),
     );
@@ -1298,11 +1598,55 @@ export class CanonicalHostOpenClawReviewService {
           turn: past,
         });
     }
+    const discussionEvidence: AssessmentEvidence[] = [];
+    if (binding.turn.purpose === 'UPDATE_ASSESSMENT') {
+      // Recheck the exact selected set at execution, before making its content model-visible.
+      const selected = await this.discussionHistory(binding);
+      for (const turn of selected) {
+        discussionEvidence.push({
+          kind: 'ENGINEER_STATEMENT',
+          origin: 'REVIEW_CONVERSATION',
+          evidenceRef: `engineer-input:${turn.engineerSuppliedInputId}`,
+          title: '本次更新选中的工程师陈述',
+          versionLabel: `Review ${turn.turnNo}`,
+          excerpt: turn.candidateText || turn.userMessage,
+          reviewConversationId: binding.conversation.reviewConversationId,
+          reviewTurnId: turn.reviewTurnId,
+          engineerSuppliedInputId: turn.engineerSuppliedInputId,
+          recordedAt: turn.createdAt.toISOString(),
+        });
+        const savedAttachments = await this.readAttachmentContext({
+          conversation: binding.conversation,
+          turn,
+        });
+        for (const resource of savedAttachments.resourceRefs) {
+          const attachment = turn.attachmentBindings.find(
+            (item) => item.attachmentRef === resource.sourceRefId,
+          )!;
+          discussionEvidence.push({
+            kind: 'ENGINEER_ATTACHMENT',
+            evidenceRef: resource.sourceRefId,
+            title: attachment.fileName,
+            versionLabel: attachment.documentVersionId,
+            excerpt: canonicalJson(resource.value.pages),
+            workItemId: workItem.workItemId,
+            reviewConversationId: binding.conversation.reviewConversationId,
+            reviewTurnId: turn.reviewTurnId,
+            attachmentRef: attachment.attachmentRef,
+            documentVersionId: attachment.documentVersionId,
+            artifactRef: attachment.parsedArtifact.ref,
+            artifactSha256: attachment.parsedArtifact.sha256,
+            locator: '本次更新选中的讨论附件已解析页面',
+          });
+        }
+      }
+    }
     const context = buildMatterReviewContext({
       scope,
       basis,
       conversation: binding.conversation,
       turn: binding.turn,
+      discussionEvidence,
       documents,
     });
     const resourceRefs = mergeResourceRefs(
@@ -1332,6 +1676,7 @@ export class CanonicalHostOpenClawReviewService {
       attachmentRefs: attachments.attachmentRefs,
       matterContext: context.frozen,
       context: {
+        purpose: binding.turn.purpose ?? null,
         matterWorking: context.model,
         engineerInput: {
           text: binding.turn.candidateText,
@@ -1481,7 +1826,7 @@ function frozenPackageResourceRefs(
   bytes: Uint8Array,
   resourceArtifactRef: string,
   resourceArtifactSha256: string,
-  referenced: Set<string>,
+  referenced: Set<string> | null,
   readScope: UnifiedArtifactReadScope,
 ): FrozenReviewSourceRef[] {
   const raw: unknown = readScope.parseJson(bytes);
@@ -1505,7 +1850,7 @@ function frozenPackageResourceRefs(
     if (seen.has(sourceRefId))
       throw new Error('REVIEW_PACKAGE_SOURCE_REF_DUPLICATE');
     seen.add(sourceRefId);
-    if (!referenced.has(sourceRefId)) continue;
+    if (referenced && !referenced.has(sourceRefId)) continue;
     result.push({
       sourceRefId,
       resourceArtifactRef,
@@ -1513,7 +1858,10 @@ function frozenPackageResourceRefs(
       value: structuredClone(ref),
     });
   }
-  if ([...referenced].some((sourceRefId) => !seen.has(sourceRefId))) {
+  if (
+    referenced &&
+    [...referenced].some((sourceRefId) => !seen.has(sourceRefId))
+  ) {
     throw new Error('REVIEW_REFERENCED_SOURCE_REF_NOT_IN_PACKAGE');
   }
   return result;
@@ -1683,11 +2031,14 @@ function reviewSessionActorContextRef(
   // registry/hash. A failed turn may have uncommitted native history, so it
   // starts a new session too. Host discussion remains the recovery context.
   const freshRef = `ACTX-RS-${binding.turn.reviewTurnId}`;
+  // An update consumes only its explicit selection, never implicit native chat memory.
+  if (binding.turn.purpose === 'UPDATE_ASSESSMENT') return freshRef;
   if (previous?.status !== 'SUCCEEDED' || !previous.taskEnvelopeJson)
     return freshRef;
   const priorTask = parseTaskEnvelope(previous.taskEnvelopeJson);
   const prior = parseReviewTurnTaskContract(priorTask.modelInput);
   if (
+    (prior.context.purpose === 'CHAT') !== (binding.turn.purpose === 'CHAT') ||
     priorTask.tenantId !== binding.conversation.tenantId ||
     priorTask.workItemId !== binding.conversation.workItemId ||
     priorTask.executionModel?.modelRef !==

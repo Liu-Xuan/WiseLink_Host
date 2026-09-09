@@ -15,6 +15,28 @@ import {
 } from '../../server/modules/canonical-host/canonical-host-openclaw-review.contract';
 
 describe('interactive review C2 task / C2 legacy and C3 current result contract', () => {
+  it('allows chat answers and rejects attempts to change an assessment through chat', () => {
+    const task = reviewTask();
+    task.context.purpose = 'CHAT';
+    expect(
+      parseReviewTurnCandidateContract({ task, result: reviewResult(task) })
+        .answer,
+    ).toBe('Candidate answer.');
+    for (const override of [
+      { responseType: 'RESYNTHESIS_RESULT' },
+      { affectedItemIds: ['RULE-1'] },
+      { reviewActionDraft: { baseRevision: 7 } },
+      { jobAidWorkingDelta: { issues: [] } },
+      { matterWorkingDelta: { changeSummary: 'unauthorized' } },
+    ])
+      expect(() =>
+        parseReviewTurnCandidateContract({
+          task,
+          result: reviewResult(task, override),
+        }),
+      ).toThrow();
+  });
+
   it('accepts a complete candidate-only result bound to the frozen allowlists', () => {
     const task = reviewTask();
     const result = reviewResult(task, {
@@ -75,10 +97,13 @@ describe('interactive review C2 task / C2 legacy and C3 current result contract'
             'SOURCE_DOCUMENT_COMPLETE',
             'TARGET_IDENTITY_KNOWN',
           ],
-          currentBestJudgment: 'The criterion is satisfied as of the evidence time.',
+          currentBestJudgment:
+            'The criterion is satisfied as of the evidence time.',
           alternativeJudgments: [],
           decisionMaturity: 'CONFIRMABLE',
-          decisiveFacts: ['The controlled configuration record matches the target.'],
+          decisiveFacts: [
+            'The controlled configuration record matches the target.',
+          ],
           assumptions: [],
           residualUncertainties: [],
           uncertaintyDispositions,
@@ -87,7 +112,9 @@ describe('interactive review C2 task / C2 legacy and C3 current result contract'
           validUntil: null,
           reviewBy: null,
           reopenTriggers: ['A newer configuration record becomes current.'],
-          whatWouldChangeDecision: ['Contradictory controlled configuration evidence.'],
+          whatWouldChangeDecision: [
+            'Contradictory controlled configuration evidence.',
+          ],
           candidateOnly: true,
         },
       },

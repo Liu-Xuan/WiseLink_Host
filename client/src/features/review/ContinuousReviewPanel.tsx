@@ -33,6 +33,7 @@ import type {
 } from '@shared/api.interface';
 
 import ReviewConversationTurn from './ReviewConversationTurn';
+import AssessmentUpdateControl from './AssessmentUpdateControl';
 import useReviewDraft from './useReviewDraft';
 import useReviewWorkingRefresh from './useReviewWorkingRefresh';
 import {
@@ -47,6 +48,7 @@ import ReviewMaterialsPanel, {
 import { reviewConversationHasActiveExecution } from './review-execution';
 import {
   automaticReviewAvailable,
+  latestAssessmentCandidateId,
   reviewSubmissionIntent,
   type ReviewSubmissionIntent,
 } from './review-submission';
@@ -114,7 +116,7 @@ export default function ContinuousReviewPanel({
     useState<ReviewConversationReadModel | null>(null);
   const workingRefreshError: string | null = useReviewWorkingRefresh(
     conversation,
-    onWorkingRefresh,
+    onWorkingRefresh ?? onWorkItemRefresh,
   );
   const [currentRevision, setCurrentRevision] = useState(workItemRevision);
   const [message, setMessage] = useReviewDraft(draftScopeKey);
@@ -124,7 +126,7 @@ export default function ContinuousReviewPanel({
   const [uploadedSelection, setUploadedSelection] =
     useState<UploadedReviewSelection | null>(null);
   const [busyAction, setBusyAction] = useState<
-    'start' | 'append' | 'close' | 'confirm' | null
+    'start' | 'append' | 'update' | 'close' | 'confirm' | null
   >(null);
   const [refreshing, setRefreshing] = useState(true);
   const [readFailed, setReadFailed] = useState(false);
@@ -144,12 +146,12 @@ export default function ContinuousReviewPanel({
   const presentation = continuousReviewPresentation(conversation);
   const turns = reviewTurnGroups(conversation?.turns ?? []);
   const currentTurn = turns.current;
+  const assessmentCandidateId = latestAssessmentCandidateId(
+    conversation?.turns ?? [],
+  );
   const hasActiveExecution = reviewConversationHasActiveExecution(
     conversation?.turns ?? [],
   );
-  const sendAutomatically = submissionRef.current
-    ? submissionRef.current.executionMode === 'AUTOMATIC'
-    : automaticReviewAvailable(conversation);
 
   const clearError = useCallback((): void => {
     errorEpochRef.current += 1;
@@ -355,20 +357,26 @@ export default function ContinuousReviewPanel({
       conversation.status !== 'ACTIVE' ||
       !conversation.currentRevisionSynced ||
       !userMessage ||
-      !models.ready
+      !models.ready ||
+      !automaticReviewAvailable(conversation)
     ) {
       return;
     }
     setBusyAction('append');
     clearError();
     try {
-      const submission = reviewSubmissionIntent(
+      const basis = reviewSubmissionIntent(
         submissionRef.current,
         submissionRef.current?.requestId ?? createRequestCorrelationId(),
         conversation,
         modelRef || undefined,
         reviewScope,
       );
+      const submission: ReviewSubmissionIntent = submissionRef.current ?? {
+        ...basis,
+        userMessage,
+        selectedEvaluationItemId,
+      };
       submissionRef.current = submission;
       const requestId = submission.requestId;
       setActiveRequestId(requestId);
@@ -391,14 +399,13 @@ export default function ContinuousReviewPanel({
         conversation.reviewConversationId,
         {
           requestId,
-          userMessage,
+          purpose: 'CHAT',
+          executionMode: 'AUTOMATIC',
+          userMessage: submission.userMessage ?? userMessage,
           ...(submission.modelRef ? { modelRef: submission.modelRef } : {}),
-          selectedEvaluationItemId,
+          selectedEvaluationItemId: submission.selectedEvaluationItemId ?? null,
           ...(submission.reviewScope
             ? { reviewScope: submission.reviewScope }
-            : {}),
-          ...(submission.executionMode
-            ? { executionMode: submission.executionMode }
             : {}),
           ...(selection ? { attachmentSelection: selection } : {}),
         },
@@ -546,9 +553,7 @@ export default function ContinuousReviewPanel({
           <span>持续工程复核</span>
           <h3 id="continuous-review-title">围绕当前事项继续核对</h3>
           <p>
-            {matterId
-              ? '普通解释保存为讨论；关键纠正和有效材料贡献由 Host 保存为事项工作更新。正式采用与实施决定仍独立处理。'
-              : '工程师补充只作为待复核输入；系统返回的依据与动作也都是候选，确认后仍需重新综合。'}
+            自由讨论不会改写当前评估。讨论充分后点击“更新评估”，核对范围后才重算；正式采用与实施决定仍独立处理。
           </p>
         </div>
         <div className="continuous-review-toolbar">
@@ -657,7 +662,12 @@ export default function ContinuousReviewPanel({
       {currentTurn ? (
         <div className="continuous-review-turns" aria-label="复核讨论记录">
           {turns.history.length ? (
-            <details className="continuous-review-history">
+            <details
+              className="continuous-review-history"
+              open={
+                currentTurn.purpose === 'CHAT' && Boolean(assessmentCandidateId)
+              }
+            >
               <summary>历史回合 · {turns.history.length}</summary>
               <div>
                 {turns.history.map((turn) => (
@@ -667,6 +677,9 @@ export default function ContinuousReviewPanel({
                     conversation={conversation!}
                     currentRevision={currentRevision}
                     isCurrent={false}
+                    assessmentCurrent={
+                      turn.reviewTurnId === assessmentCandidateId
+                    }
                     formalActionsAllowed={!matterId}
                     busy={busy}
                     confirming={confirmingTurnId === turn.reviewTurnId}
@@ -701,6 +714,9 @@ export default function ContinuousReviewPanel({
             conversation={conversation!}
             currentRevision={currentRevision}
             isCurrent
+            assessmentCurrent={
+              currentTurn.reviewTurnId === assessmentCandidateId
+            }
             formalActionsAllowed={!matterId}
             busy={busy}
             confirming={confirmingTurnId === currentTurn.reviewTurnId}
@@ -733,7 +749,7 @@ export default function ContinuousReviewPanel({
           ) : null}
           <TaskModelPicker
             id="review-model"
-            label="新回合模型"
+            label="对话与下次更新的模型"
             value={modelRef}
             onChange={setModelRef}
             catalog={models}
@@ -748,15 +764,11 @@ export default function ContinuousReviewPanel({
             </small>
           ) : null}
           <label htmlFor="continuous-review-message">
-            {hasActiveExecution ? '下一轮指示' : '工程师补充'}
+            工程师对话
             <span>
-              {hasActiveExecution
-                ? sendAutomatically
-                  ? '指示将保存并在下一轮处理；当前执行不会因此改变'
-                  : '本次只保存下一轮输入；当前对象尚未开放自动处理'
-                : sendAutomatically
-                  ? '消息保存后由系统处理；生成结果仍为待复核候选'
-                  : '当前对象未开放自动分析，本次只保存输入'}
+              {automaticReviewAvailable(conversation)
+                ? '发送只进行讨论，不触发更新评估；已有评估请求不因此改变范围'
+                : '当前 Host 未开放自动对话与更新评估，输入保留，不会伪装成已接通'}
             </span>
           </label>
           <Textarea
@@ -775,11 +787,7 @@ export default function ContinuousReviewPanel({
             <div className="continuous-review-generation" role="status">
               <RefreshCw aria-hidden="true" />
               <div>
-                <strong>
-                  {sendAutomatically
-                    ? '正在保存输入与执行请求'
-                    : '正在保存补充输入'}
-                </strong>
+                <strong>正在保存对话与答复请求</strong>
                 <span title={activeRequestId}>
                   requestId {shortRequestId(activeRequestId)}
                   ；此阶段不会采纳输入，也不会修改 WorkItem current、revision 或
@@ -831,7 +839,8 @@ export default function ContinuousReviewPanel({
                 busy ||
                 !presentation.composerEnabled ||
                 !message.trim() ||
-                !models.ready
+                !models.ready ||
+                !automaticReviewAvailable(conversation)
               }
               onClick={() => void appendTurn()}
             >
@@ -840,15 +849,45 @@ export default function ContinuousReviewPanel({
               ) : (
                 <Send aria-hidden="true" />
               )}
-              {busyAction === 'append'
-                ? '正在提交…'
-                : hasActiveExecution
-                  ? '保存下一轮指示'
-                  : sendAutomatically
-                    ? '发送并分析'
-                    : '保存补充'}
+              {busyAction === 'append' ? '正在提交…' : '发送'}
             </Button>
           </div>
+          {conversation ? (
+            <AssessmentUpdateControl
+              conversation={conversation}
+              reviewScope={reviewScope}
+              selectedEvaluationItemId={selectedEvaluationItemId}
+              modelRef={modelRef || undefined}
+              modelLabel={
+                models.data?.options.find(
+                  (model) => model.modelRef === modelRef,
+                )?.displayName ??
+                conversation.defaultModel?.displayName ??
+                '此事项的模型'
+              }
+              disabled={
+                busy ||
+                hasActiveExecution ||
+                readFailed ||
+                !presentation.composerEnabled ||
+                !models.ready ||
+                !automaticReviewAvailable(conversation)
+              }
+              hasUnsentDraft={Boolean(message.trim() || file)}
+              materialTitle={materials?.primary.title}
+              documentVersionId={materials?.primary.documentVersionId}
+              onBusy={(value: boolean) => {
+                setBusyAction(value ? 'update' : null);
+                if (value) clearError();
+              }}
+              onResult={(next: ReviewConversationReadModel) => {
+                setConversation(next);
+                setCurrentRevision(next.currentWorkItemRevision);
+                setReadFailed(false);
+              }}
+              onError={captureError}
+            />
+          ) : null}
           <div className="continuous-review-compose-footer">
             <span>单次最多附加 1 份 PDF，最大 100 MB。</span>
             {!matterId ? (

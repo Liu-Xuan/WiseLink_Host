@@ -26,6 +26,7 @@ import {
 } from './feishu-oauth-verification.adapter';
 import { SessionStore } from './session.store';
 import type { VerifiedIdentityResult } from './identity.types';
+import { ailyAgentId } from './aily-user-grant.codec';
 
 /**
  * Server-side Feishu OAuth flow controller.
@@ -71,9 +72,7 @@ export class OauthFlowController {
    */
   @Post('start')
   @HttpCode(HttpStatus.OK)
-  async beginAuthorize(
-    @Res() response: Response,
-  ): Promise<void> {
+  async beginAuthorize(@Res() response: Response): Promise<void> {
     // Fail-closed: when OAuth is not configured, return 503.
     if (!this.oauthConfig.configured || !this.oauthConfig.tokenApiVersion) {
       response.status(503).json({
@@ -102,10 +101,12 @@ export class OauthFlowController {
     authorizeUrl.searchParams.set('redirect_uri', redirectUri);
     authorizeUrl.searchParams.set('response_type', 'code');
     authorizeUrl.searchParams.set('state', state);
-    authorizeUrl.searchParams.set(
-      'code_challenge',
-      pkce.codeChallenge,
-    );
+    if (ailyAgentId())
+      authorizeUrl.searchParams.set(
+        'scope',
+        'aily:agent_chat:read aily:agent_chat:write',
+      );
+    authorizeUrl.searchParams.set('code_challenge', pkce.codeChallenge);
     authorizeUrl.searchParams.set(
       'code_challenge_method',
       pkce.codeChallengeMethod,
@@ -215,14 +216,15 @@ export class OauthFlowController {
     }
 
     // 4. Verify identity: user_info → Host mapping
-    const verifyResult: VerifiedIdentityResult =
-      await this.verification.verify({
+    const verifyResult: VerifiedIdentityResult = await this.verification.verify(
+      {
         accessToken: tokenResponse.accessToken,
         clientId,
         contextTenantId: '', // The mapping port resolves tenant, not the
         // caller. When a gateway context tenantId is available it will be
         // checked against the mapping in the verification adapter.
-      });
+      },
+    );
 
     if (verifyResult.kind !== 'VERIFIED') {
       response.status(503).json({
@@ -235,8 +237,15 @@ export class OauthFlowController {
     }
 
     // 5. Create opaque server session
-    const { token: sessionToken, expiresAt } =
-      await this.sessionStore.create(verifyResult.identity);
+    const { token: sessionToken, expiresAt } = await this.sessionStore.create(
+      verifyResult.identity,
+      ailyAgentId()
+        ? {
+            accessToken: tokenResponse.accessToken,
+            expiresIn: tokenResponse.expiresIn,
+          }
+        : undefined,
+    );
 
     // 6. Set httpOnly cookie — token never visible to JS
     response.cookie('wl_session', sessionToken, {

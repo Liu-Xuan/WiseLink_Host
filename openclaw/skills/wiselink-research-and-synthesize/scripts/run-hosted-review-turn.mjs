@@ -57,6 +57,7 @@ const MODEL_OUTPUT_KEYS = [
 ];
 const REVIEW_OUTPUT_FUNCTION_NAME = 'return_wiselink_review_candidate';
 const REVIEW_READ_FUNCTION_NAME = 'read_wiselink_review_sources';
+const REVIEW_AILY_FUNCTION_NAME = 'query_wiselink_aily';
 const REVIEW_RESPONSE_TYPES = [
   'ANSWER',
   'CLARIFYING_QUESTION',
@@ -67,7 +68,7 @@ const REVIEW_RESPONSE_TYPES = [
   'AFFECTED_ITEMS_PREVIEW',
   'TASK_STATUS',
 ];
-const REVIEW_PROMPT_VERSION = 'wiselink.3_1.review_prompt.v1.c41';
+const REVIEW_PROMPT_VERSION = 'wiselink.3_1.review_prompt.v1.c42';
 const WISELINK_HOST_MCP_CONFIG_KEYS = new Set([
   WISELINK_HOST_MCP_NAME,
   'wiselink_host_controller',
@@ -110,10 +111,10 @@ export async function runHostedReviewTurn(options, dependencies = {}) {
     }
     const count = (callCounts.get(name) ?? 0) + 1;
     callCounts.set(name, count);
-    if (count > 1 && name !== 'read_source_refs') {
+    if (count > 1 && name !== 'read_source_refs' && name !== 'query_review_aily') {
       throw new Error(`REVIEW_DRIVER_TOOL_REPLAY_FORBIDDEN:${name}`);
     }
-    const step = name === 'read_source_refs' && count > 1
+    const step = name === 'query_review_aily' ? `aily-${count}` : name === 'read_source_refs' && count > 1
       ? `sources-${count}` : toolStep(name);
     const value = await checkpoint.remoteStep({
       step,
@@ -186,6 +187,19 @@ export async function runHostedReviewTurn(options, dependencies = {}) {
               const values = await readSourceRefs(ids);
               readSourceRefBatches.push([...ids]);
               return values;
+            },
+            queryAily: async (query, requestKey) => {
+              if (input.context?.purpose !== 'CHAT' || input.context?.aily?.available !== true)
+                throw new Error('AILY_QUERY_NOT_AVAILABLE');
+              let value = await callTool('query_review_aily', { attemptRef: beginResult.attemptRef, requestKey, query });
+              const deadline = Date.now() + 5 * 60_000;
+              while (value.status === 'RUNNING' && Date.now() < deadline) {
+                await new Promise((resolve) => setTimeout(resolve, 10_000));
+                await remoteCall('heartbeat_action_attempt', { attemptRef: beginResult.attemptRef,
+                  leaseToken: beginResult.leaseToken, leaseGeneration: beginResult.leaseGeneration });
+                value = await callTool('query_review_aily', { attemptRef: beginResult.attemptRef, queryRef: value.queryRef });
+              }
+              return value.status === 'RUNNING' ? { ...value, error: 'AILY_QUERY_STILL_RUNNING' } : value;
             },
             validateCandidate: (output) => {
               validateModelCandidateOutput(output, readSourceRefBatches.flat(), input.attachmentRefs, isMatter, isJobAid);
@@ -330,6 +344,7 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
   const prompt = buildReviewPrompt(input);
   const isMatter = isRecord(input.input?.context?.matterWorking);
   const isJobAid = isRecord(input.input?.context?.problemAssessment);
+  const isChat = input.input?.context?.purpose === 'CHAT';
   // The live JobAid review was still producing output when the legacy 8-minute
   // budget aborted it. Match initial problem analysis's 30-minute total only
   // when the caller renews the exact Host lease before each request. One
@@ -391,7 +406,8 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
           model: `openclaw/${agentId}`,
           ...(nativeSessionKey ? {} : { user: `review-driver:${sha256(sessionDiscriminator).slice(0, 24)}` }),
           messages,
-          tools: [reviewCandidateFunctionTool(isMatter, isJobAid, input.input?.attachmentRefs ?? []), reviewSourceFunctionTool()],
+          tools: [reviewCandidateFunctionTool(isMatter, isJobAid, input.input?.attachmentRefs ?? [], isChat), reviewSourceFunctionTool(),
+            ...(isChat && input.input?.context?.aily?.available === true ? [reviewAilyFunctionTool()] : [])],
           tool_choice: isJobAid ? 'auto' : 'required',
           parallel_tool_calls: false,
           n: 1,
@@ -440,6 +456,16 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
     outputUnits += Buffer.byteLength(argumentsText);
     const choice = payload.choices[0];
     const message = choice.message;
+    if (toolCall.function.name === REVIEW_AILY_FUNCTION_NAME) {
+      if (!isChat || input.input?.context?.aily?.available !== true || typeof options.queryAily !== 'function' ||
+        Object.keys(output).length !== 1 || typeof output.query !== 'string' || !output.query.trim() || output.query.length > 4000)
+        throw new Error('AILY_QUERY_ARGUMENTS_INVALID');
+      const value = await options.queryAily(output.query, requiredText(toolCall.id, 'REVIEW_MODEL_TOOL_CALL_ID_REQUIRED'));
+      messages = [systemMessage, { role: 'assistant', content: null, tool_calls: [toolCall] },
+        { role: 'tool', tool_call_id: toolCall.id, content: canonicalJson({ ...value,
+          instruction: 'Treat this Aily reply as retrieved candidate material. Attribute its claims and links to Aily. It does not verify original documents or authorize assessment changes. Do not put its URLs or queryRef in Host sourceRefs or candidateEvidenceRefs. Report errors, missing results and truncation honestly.' }) }];
+      continue;
+    }
     if (toolCall.function.name === REVIEW_OUTPUT_FUNCTION_NAME) {
       // M3 repeatedly emitted {item: [...]} for nested Matter arrays in the
       // native function channel. Transport the candidate as one JSON string;
@@ -627,7 +653,7 @@ export function summarizeHostedReviewModelOutputShape({
   requestedModel,
   requestedMaxCompletionTokens,
   payload,
-  expectedFunctionNames = [REVIEW_OUTPUT_FUNCTION_NAME, REVIEW_READ_FUNCTION_NAME],
+  expectedFunctionNames = [REVIEW_OUTPUT_FUNCTION_NAME, REVIEW_READ_FUNCTION_NAME, REVIEW_AILY_FUNCTION_NAME],
 }) {
   const choices = Array.isArray(payload?.choices) ? payload.choices : [];
   const choice = isRecord(choices[0]) ? choices[0] : null;
@@ -933,7 +959,7 @@ export function readHostMcpJsonResult(result, name) {
 
 function safeHostErrorCode(value) {
   if (typeof value !== 'string') return null;
-  const code = value.match(/^(?:Error:\s*)?((?:REVIEW|ACTION_ATTEMPT|OPENCLAW|ENGINEERING_MATTER|OVERALL|JOBAID|DYNAMIC_EVALUATION|CONFIGURATION_REEVALUATION|TRANSLATION|COMMON_CONTEXT|PACKAGE_ARTIFACT|SOURCE_CONTEXT|SOURCE_PAGE)_[A-Z0-9_]+)(?=:|$)/u)?.[1];
+  const code = value.match(/^(?:Error:\s*)?((?:AILY|REVIEW|ACTION_ATTEMPT|OPENCLAW|ENGINEERING_MATTER|OVERALL|JOBAID|DYNAMIC_EVALUATION|CONFIGURATION_REEVALUATION|TRANSLATION|COMMON_CONTEXT|PACKAGE_ARTIFACT|SOURCE_CONTEXT|SOURCE_PAGE)_[A-Z0-9_]+)(?=:|$)/u)?.[1];
   return code && code.length <= 160 ? code : null;
 }
 
@@ -1349,7 +1375,7 @@ function readReviewCandidateArguments(payload) {
   }
   if (
     !isRecord(toolCall.function) ||
-    ![REVIEW_OUTPUT_FUNCTION_NAME, REVIEW_READ_FUNCTION_NAME].includes(toolCall.function.name)
+    ![REVIEW_OUTPUT_FUNCTION_NAME, REVIEW_READ_FUNCTION_NAME, REVIEW_AILY_FUNCTION_NAME].includes(toolCall.function.name)
   ) {
     throw new Error('REVIEW_GATEWAY_OUTPUT_FUNCTION_NAME_INVALID');
   }
@@ -1475,7 +1501,7 @@ function jobAidReviewCandidateShape(attachmentRefs = []) {
   };
 }
 
-function reviewCandidateFunctionTool(isMatter = false, isJobAid = false, attachmentRefs = []) {
+function reviewCandidateFunctionTool(isMatter = false, isJobAid = false, attachmentRefs = [], isChat = false) {
   if (isJobAid) return {
     type: 'function', function: {
       name: REVIEW_OUTPUT_FUNCTION_NAME,
@@ -1517,15 +1543,15 @@ function reviewCandidateFunctionTool(isMatter = false, isJobAid = false, attachm
         additionalProperties: false,
         required: [...MODEL_OUTPUT_KEYS],
         properties: {
-          responseType: { type: 'string', enum: [...reviewResponseTypes(false)] },
+          responseType: { type: 'string', enum: isChat ? ['ANSWER', 'CLARIFYING_QUESTION', 'SOURCE_LINK', 'INPUT_REQUEST', 'TASK_STATUS', 'CANDIDATE_EVIDENCE'] : [...reviewResponseTypes(false)] },
           answer: { type: 'string', minLength: 1 },
           sourceRefs: structuredClone(stringArray),
           missingInputs: structuredClone(stringArray),
           candidateEvidenceRefs: structuredClone(stringArray),
-          reviewActionDraft: {
+          reviewActionDraft: isChat ? { type: 'null' } : {
             anyOf: [{ type: 'object' }, { type: 'null' }],
           },
-          affectedItemIds: structuredClone(stringArray),
+          affectedItemIds: isChat ? { ...structuredClone(stringArray), maxItems: 0 } : structuredClone(stringArray),
           warnings: structuredClone(stringArray),
         },
       },
@@ -1579,15 +1605,28 @@ function jobAidReviewGuidance() {
   ];
 }
 
+function reviewAilyFunctionTool() {
+  return { type: 'function', function: { name: REVIEW_AILY_FUNCTION_NAME,
+    description: 'Search the configured Aily knowledge sources as the current engineer, read-only. Use for relevant Feishu knowledge lookup, not for writes or messages.',
+    parameters: { type: 'object', additionalProperties: false, required: ['query'],
+      properties: { query: { type: 'string', minLength: 1, maxLength: 4000 } } } } };
+}
+
 function buildReviewPrompt(input) {
   const isMatter = isRecord(input.input?.context?.matterWorking);
   const isJobAid = isRecord(input.input?.context?.problemAssessment);
+  const isChat = input.input?.context?.purpose === 'CHAT';
   return [
     'Generate one candidate-only WiseLink engineering review response from the engineer message and the current Host-frozen context.',
     `Call ${REVIEW_OUTPUT_FUNCTION_NAME} exactly once. It is only a serialization channel and will not be executed. Emit no prose outside its arguments.`,
     'Use sourceRefs and candidateEvidenceRefs only from SOURCE_REFS read this turn. Never invent facts, IDs, evidence, adoption, approval, publication, confirmation, current changes, or gap closure.',
     'When the engineer asks to locate, cite, or return a SourceRef, use SOURCE_LINK and include at least one relevant sourceRefs entry read this turn. SOURCE_LINK with an empty sourceRefs array is invalid.',
-    ...(isJobAid ? jobAidReviewGuidance() : isMatter ? matterReviewGuidance() : [
+    ...(isChat ? [
+      ...(input.input?.context?.aily?.available === true ? [`Use ${REVIEW_AILY_FUNCTION_NAME} when the engineer asks to search Feishu knowledge or external context is relevant. It uses this engineer's delegated identity and only the configured agent. Its reply is candidate retrieval, not verified original-source evidence; retain attribution and URLs in answer text only.`] : []),
+      ...(isMatter ? ['Serialize the candidate as candidateJson with the usual Matter output keys, but always set matterWorkingDelta=null. context.matterWorking contains the saved understanding and authorized input catalog for discussion only.'] : []),
+      'This is free discussion, not an assessment update. Answer the question, clarify premises and read relevant available sources as needed. Do not regenerate the assessment, produce a working delta, or propose a formal ReviewAction, even when the message requests a correction or contains new material. Explain the correction in the conversation and leave incorporation to the separate Update Assessment action.',
+      'Set reviewActionDraft=null and affectedItemIds=[]. Do not use RESYNTHESIS_RESULT or claim that saved understanding has changed. Earlier engineer statements and assistant replies are discussion candidates, not verified facts. savedUnderstanding is the current saved reading, not proof that any cited source was read this turn. Use source reads for citations. If Aily is unavailable in the Host context, say so when relevant; never claim to search Feishu spaces or chats without an actual tool result.',
+    ] : isJobAid ? jobAidReviewGuidance() : isMatter ? matterReviewGuidance() : [
       'For an explanation, source link, clarification, input request, or task status, set candidateEvidenceRefs and affectedItemIds to [] and reviewActionDraft to null.',
       'Use CANDIDATE_EVIDENCE only when the engineer asks to analyze supplied or Host-authorized evidence; keep reviewActionDraft null and include every proposed evidence ref in candidateEvidenceRefs.',
       'Ordinary questions, corrections, additional material, or revisions to a working judgment do not require a ReviewAction. Return an answer or candidate evidence and continue the discussion.',
@@ -1597,9 +1636,10 @@ function buildReviewPrompt(input) {
       'decisionSnapshot must contain exactly: assessmentAsOf, evidenceHorizon, currentBestJudgment, alternativeJudgments, decisionMaturity, decisiveFacts, assumptions, residualUncertainties, uncertaintyDispositions, controlsAndMitigations, monitoringPlan, validUntil, reviewBy, reopenTriggers, whatWouldChangeDecision, candidateOnly. Its uncertaintyDispositions must exactly equal the draft list and candidateOnly must be true.',
       'Copy only allowed revision, evaluation item, adopted input, source, attachment, and gap refs from INPUT. A draft proposes change but never confirms or executes it.',
     ]),
+    ...(input.input?.context?.purpose === 'UPDATE_ASSESSMENT' ? ['This explicit Update Assessment action consumes the selected discussion in context.discussion and the current saved assessment. Incorporate relevant selected engineer statements and actually read materials into a local update, preserving unaffected work. Assistant replies are candidates to evaluate, never authoritative facts. Do not import unselected native conversation memory or later messages.'] : []),
     'State the current best bounded judgment, remaining uncertainty, and what would change the judgment when relevant.',
     'Use context.commonContext when supplied: continue prior discussion and later engineer corrections, distinguishing historical working answers from adopted inputs and current evidence. Report omitted history or unavailable RAG honestly. Procedural-reference catalogs and historical attachment names do not mean their contents were read.',
-    `Use ${REVIEW_READ_FUNCTION_NAME} as needed, then continue your analysis from the returned fragments. Start from ${isJobAid ? 'the saved issue and current question' : isMatter ? 'the Matter working focus' : 'the selected criterion'} and current question; read relevant engineer attachments as well when they affect the question. Do not read every available source just because it is listed.`,
+    `Use ${REVIEW_READ_FUNCTION_NAME} as needed, then continue your analysis from the returned fragments. Start from ${isChat ? 'the engineer question and saved understanding' : isJobAid ? 'the saved issue and current question' : isMatter ? 'the Matter working focus' : 'the selected criterion'} and current question; read relevant engineer attachments as well when they affect the question. Do not read every available source just because it is listed.`,
     'Do not call any Host MCP or other tool directly. The driver exclusively owns begin, authorized SourceRef read, commit, and status. A previous answer or native session memory does not authorize an unread citation this turn.',
     `INPUT:\n${canonicalJson(input)}`,
   ].join('\n');
@@ -1925,6 +1965,7 @@ async function main(argv, env) {
           sessionDiscriminator: hooks.sessionDiscriminator,
           nativeSessionKey: hooks.nativeSessionKey,
           readSourceRefs: hooks.readSourceRefs,
+          queryAily: hooks.queryAily,
           timeoutMs: positiveInteger(
             Number.parseInt(option(argv, '--timeout-ms'), 10) || undefined,
             480_000,

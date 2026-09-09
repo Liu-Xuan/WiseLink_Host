@@ -1,5 +1,14 @@
 # WiseLink R10 当前执行计划
 
+## 2026 年 9 月 10 日：自由讨论、显式更新与 Aily 接入
+
+本次把 CHAT 与 UPDATE_ASSESSMENT 接入同一持久 ReviewConversation。普通发送仅生成讨论回答；“更新评估”先预览并选中已回复讨论，再冻结输入版本、事项范围和讨论 ID。Host 在提交前禁止 CHAT 携带工作增量、正式动作或重算响应；事项聊天保持完整的多文档授权与实际来源读取。前端保留已有可确认候选，并以实际工作更新回执刷新评估。
+
+指定 Aily 智能体 `agent_4km47c77ujwqphg` 经用户确认发布当前配置，OpenAPI 保持用户身份、企业全员，应用身份关闭。官方 API 只读对话 `7683562995163712778` 已 Completed，返回两处已配置知识空间的条目、摘录及链接；此记录证明调用与检索回答成功，不替代原文核查，也不代表群聊检索已配置。Host 新接线使用当前轮次的会话授权、加密短期用户令牌和 durable query；新增 OAuth 权限的启用与重新授权仍待用户答复。
+
+本地 Skill c63 共 40 个文件、238 项检查通过。新增迁移 0029 已在开发库执行，并在核对只有本次 15 条结构差异后迁移到线上；保留原有 RLS、身份映射和业务数据。数据库生成器丢失了既有自引用、索引条件和 JSON 业务类型，因此只合入本次生成的新表与两列，保留原有正确声明。Host/Skill 技术发布与正常页面端到端结果待完成后记录；旧 M3/DLI 失败仍保留，不能因这次代码与结构检查通过而标记原分析循环完成。
+
+
 更新日期：2026-09-09。依据：[R10 云文档](https://hv5zjf4j8yb.feishu.cn/docx/MA3fdjEycoISjHxptAqcsyxvn9b) 与 [当前正文镜像](WISELINK_R10_CURRENT.md)。当前运行证据以本页 9 月 8 日记录为准；云文档及正文镜像 revision 2215 的运行状态保留原时点，按用户要求不随每次排障更新。9 月 6 日发布复核与数据库/存储续查见 [存储异常记录](WL31_HOSTED_STORAGE_INCIDENT_20260905.md)，此前功能发布和页面证据见 [交接与响应记录](WL31_R10_CONTEXT_HANDOFF_PERFORMANCE.md)，视觉交付见 [Satin 运行记录](WL31_R10_SATIN_HOSTED_ROLLOUT_20260905.md)。
 
 主控交接：用户于 2026-09-07 指定 [WiseLink R10 项目主控（2026-09-07 接管）](codex://threads/01a079d1-918d-7af1-a283-75968ec294ea) 接替 [WiseLink R09 项目主控（接替旧主控）](codex://threads/01a06562-e90c-7340-9fd5-9a96cdd3073f)。新主控承接当前 R10 目标、已有业务授权和分工，并核对 [2026-09-06 接管任务](codex://threads/01a0726d-5e6e-7b70-b1b9-a7e84fd1d31b) 的存储调查结论。此次接管时本地 HEAD 为 `408de9f17`；工作区已有 AGENTS/技能整理及临时产物，独立保留。历史待办不覆盖当前执行顺序，最新推送边界见下一段。
@@ -7,6 +16,8 @@
 Git 当前边界：**2026-09-06 用户要求仅向妙搭 Host 的 `origin` 推送，停止一切主动 GitHub 推送；2026-09-07 接管再次重申避免越权。** 该要求取代 9 月 5 日的 GitHub `codex/*` 长期授权；旧凭据、refspec、成功记录和下文历史发布说明都不构成继续推送授权。每次明确指定 `origin` 和单一源/目标引用，非强制推送；不删除 GitHub 引用、不改写公开历史。现有 `core.hooksPath=.githooks` 下的 `pre-push` 同时校验 remote 名称及实际 URL，仅接受本项目已核实的飞书目标。见根 `AGENTS.md` 与 [边界纠正记录](WL31_GITHUB_SYNC_BOUNDARY_20260905.md)。
 
 ## 2026 年 9 月 9 日晚资料库实测与运行阻塞
+
+**22:35 收尾读回：**SL 标题续行修复 `9a62197b9fa8a9c78ed3c1b97a12bea23d5ea51c` 已随 release `7683541393059056580` finished。主控服务端构建及 11 项定向测试通过；支线另以五份真实 PDF 验证 SL 与 SB 回归。正常页面于 22:34:00 追加 SL 064 元数据 rev2，完整标题为 `AIRPLANE INFORMATION MANAGEMENT SYSTEMS (AIMS) BLOCKPOINT VERSION 18 (BP V18) OPERATIONAL PROGRAM SOFTWARE (OPS) UPGRADE FOR THE AIMS-2 PLATFORM`，rev1 截断文本仍可在历史证据中完整读取。搜索新增标题尾部 `UPGRADE FOR THE AIMS-2 PLATFORM` 正确返回一份文档。SL 034 已核对实际 PDF，标题原本完整，无需重提取。以下 22:25 的 SL 待修说明保留排障时点；分析主循环阻塞仍未解除。
 
 截至 22:25，Host release `7683531795555830984` 已 finished，实际提交 `57672b05c73532c89d7d4f3978f3f0ab72f20611`；仅推送妙搭 origin。此前 `635f48462` 的三级目录与 Satin 界面、`14bfe2b40` 的原文元数据修订随本次版本生效。联合筛选原有 JSONB `?` 表达式在平台 SQL 调用中返回 42601；改用参数化 `jsonb_exists` 后，隔离 PostgreSQL 六项检查通过，线上正常 Chrome 页面实际验证 SB＋ATA 4613＋737 返回正确文档。切换为机型首层后，三项筛选保持选中，结果不变。
 

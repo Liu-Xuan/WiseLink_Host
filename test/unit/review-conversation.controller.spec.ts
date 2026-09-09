@@ -22,6 +22,34 @@ jest.mock('@lark-apaas/fullstack-nestjs-core', () => {
 import { ReviewConversationController } from '../../server/modules/review-persistence/review-conversation.controller';
 
 describe('ReviewConversationController request boundary', () => {
+  it('accepts explicit updates only with a fixed revision and distinct discussion selection', async () => {
+    const setup = makeController();
+    const update = {
+      requestId: 'update-1',
+      userMessage: '更新评估',
+      purpose: 'UPDATE_ASSESSMENT',
+      executionMode: 'AUTOMATIC',
+      expectedInputRevision: 7,
+      includedDiscussionTurnIds: ['RT-1'],
+    };
+    await setup.controller.appendTextTurn('WI-1', 'RC-1', update, {} as never);
+    expect(setup.service.appendTextTurn).toHaveBeenCalledWith(
+      'WI-1',
+      'RC-1',
+      update,
+      expect.anything(),
+    );
+    for (const invalid of [
+      { ...update, expectedInputRevision: undefined },
+      { ...update, includedDiscussionTurnIds: ['RT-1', 'RT-1'] },
+      { ...update, purpose: 'CHAT' },
+      { ...update, executionMode: undefined },
+    ])
+      await expect(
+        setup.controller.appendTextTurn('WI-1', 'RC-1', invalid, {} as never),
+      ).rejects.toMatchObject({ statusCode: 400 });
+  });
+
   it('accepts only a registered model reference for the new turn', async () => {
     const setup = makeController();
     const input = {

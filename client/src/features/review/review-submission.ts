@@ -1,13 +1,75 @@
 import type {
   AppendMatterReviewScope,
   ReviewConversationReadModel,
+  AppendReviewTextTurnRequest,
+  ReviewTurnReadModel,
 } from '@shared/api.interface';
+import { sameReviewScope } from './review-scope';
+
+export function assessmentDiscussionTurns(
+  conversation: ReviewConversationReadModel,
+): ReviewTurnReadModel[] {
+  const lastUpdate: number = conversation.turns.reduce(
+    (last: number, turn: ReviewTurnReadModel) =>
+      turn.purpose === 'UPDATE_ASSESSMENT' ? Math.max(last, turn.turnNo) : last,
+    0,
+  );
+  return conversation.turns
+    .filter(
+      (turn: ReviewTurnReadModel) =>
+        turn.purpose === 'CHAT' &&
+        turn.turnNo > lastUpdate &&
+        Boolean(turn.assistantCandidate) &&
+        sameReviewScope(turn.reviewScope, conversation.reviewScope),
+    )
+    .sort(
+      (a: ReviewTurnReadModel, b: ReviewTurnReadModel) => a.turnNo - b.turnNo,
+    );
+}
+
+export function latestAssessmentCandidateId(
+  turns: ReviewTurnReadModel[],
+): string | null {
+  return (
+    [...turns]
+      .sort(
+        (a: ReviewTurnReadModel, b: ReviewTurnReadModel) => b.turnNo - a.turnNo,
+      )
+      .find(
+        (turn: ReviewTurnReadModel) =>
+          turn.purpose !== 'CHAT' && turn.assistantCandidate,
+      )?.reviewTurnId ?? null
+  );
+}
+
+export function assessmentUpdateRequest(
+  requestId: string,
+  conversation: ReviewConversationReadModel,
+  ids: string[],
+  modelRef?: string,
+  reviewScope?: AppendMatterReviewScope,
+  selectedEvaluationItemId?: string | null,
+): AppendReviewTextTurnRequest {
+  return {
+    requestId,
+    purpose: 'UPDATE_ASSESSMENT',
+    executionMode: 'AUTOMATIC',
+    userMessage: '请基于已确认的对话与资料范围更新评估。',
+    includedDiscussionTurnIds: [...ids],
+    expectedInputRevision: conversation.currentWorkItemRevision,
+    ...(modelRef ? { modelRef } : {}),
+    ...(reviewScope ? { reviewScope: { ...reviewScope } } : {}),
+    selectedEvaluationItemId,
+  };
+}
 
 export interface ReviewSubmissionIntent {
   requestId: string;
   executionMode?: 'AUTOMATIC';
   modelRef?: string;
   reviewScope?: AppendMatterReviewScope;
+  userMessage?: string;
+  selectedEvaluationItemId?: string | null;
 }
 
 /** Host-declared support for this conversation, not a browser switch or a live health signal. */

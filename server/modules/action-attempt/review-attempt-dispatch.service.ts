@@ -158,6 +158,7 @@ export class ReviewAttemptDispatchService {
       leaseOwner: string;
       buildInput(): Promise<{
         modelInput: Record<string, unknown>;
+        allowedConnectors?: string[];
         sourceRefs: ActionEnvelopeArtifactRef[];
       }>;
     },
@@ -228,7 +229,7 @@ export class ReviewAttemptDispatchService {
           baseRevision: input.inputRevision,
           documentVersionId: input.documentVersionId,
           sourceRefs: prepared.sourceRefs,
-          allowedConnectors: [],
+          allowedConnectors: prepared.allowedConnectors ?? [],
           hostResolvedMissingInputs: [],
           modelInput: prepared.modelInput,
           ...(executionModel ? { executionModel } : {}),

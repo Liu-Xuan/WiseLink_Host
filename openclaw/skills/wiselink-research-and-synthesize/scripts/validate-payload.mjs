@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
 export const WISELINK_SKILL_VERSION =
-  'wiselink-research-and-synthesize@r09.c62';
+  'wiselink-research-and-synthesize@r09.c63';
 export const WISELINK_SKILL_COMPATIBILITY_REF =
   'wiselink-research-and-synthesize@r09';
 export const WISELINK_HOST_MCP_NAME =
@@ -4174,6 +4174,7 @@ export function validateReviewCandidate(task, candidate) {
     'REVIEW_CANDIDATE_AFFECTED_ITEMS_INVALID',
   );
   uniqueTextArray(candidate.warnings, 'REVIEW_CANDIDATE_WARNINGS_INVALID');
+  if (task.context.purpose === 'CHAT' && (candidate.reviewActionDraft !== null || candidate.matterWorkingDelta != null || candidate.jobAidWorkingDelta != null || candidate.affectedItemIds.length > 0 || candidate.responseType === 'REVIEW_ACTION_DRAFT' || candidate.responseType === 'RESYNTHESIS_RESULT')) fail('REVIEW_CHAT_ASSESSMENT_MUTATION_FORBIDDEN');
   if (isMatter) {
     if (candidate.reviewActionDraft !== null) fail('REVIEW_MATTER_FORMAL_ACTION_FORBIDDEN');
     if (candidate.affectedItemIds.length > 0) fail('REVIEW_MATTER_AFFECTED_ITEMS_FORBIDDEN');

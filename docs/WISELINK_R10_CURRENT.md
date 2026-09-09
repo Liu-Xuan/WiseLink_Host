@@ -64,7 +64,7 @@ REVIEW_ON_DEMAND、知识空间检索与最小问题脉络属于当前主线；L
 | Host、SourceRef、版本与 CAS | 继续管理业务真值和正式采用；普通材料、讨论、工作判断和候选可正常持久化，不因此变成正式业务事实。外部系统拥有原始事实。 |
 | 一个 Agent、两类 Session | 保留 INITIAL_ANALYSIS 与 INTERACTIVE_REVIEW；持久 ReviewConversation 与 OpenClaw 运行会话分开标识并按授权范围稳定映射。 |
 | 四个初始 ActionAttempt | Translation、Applicability、JobAid、Overall 保留现有生命周期，共享同一事项的评估前上下文和已有真实结果，不重复建设。 |
-| Chat-first Review | 聊天、材料和候选更新无需先正式采纳；ReviewAction 确认只负责明确的正式采用与相应 current 变更。 |
+| Chat-first Review | 默认发言是自由讨论，可读材料与按需检索；只有点击“更新评估”才将选中的已回复讨论送入重新生成。候选更新不要求先正式采纳；ReviewAction 确认仍只负责正式采用。 |
 | 有限信息与判断成熟度 | Gap 不要求清零。区分方法覆盖、决定性未知及正式采用就绪；CONFIRMABLE 不等于信息完整或自动批准。 |
 | C3 五工具 | begin、status、commit 由确定性适配器控制；get_review_turn_context、read_source_refs 属于授权读取，Agent 可按问题选择读取意图；模型不持有 lease。 |
 | 一个物理 Skill | 内部 references 模块化，方法/提示独立演进；兼容变更可与 Host 分别发布，不把 150 个 Criterion 拆成 150 个 Skill。 |
@@ -131,7 +131,9 @@ Decision Snapshot 是结果侧的判断快照，承接共同上下文与实际�
 
 ## 6.2 普通工作记录与正式采用分离
 
-工程师提问、补材料、纠正方向，Agent 读取、记录讨论摘要、更新 WorkingAssessment 或保存候选，都属于普通工作流程，可正常持久化。它们不以确认 ReviewAction 为前提，也不自动修改正式采用的业务事实。
+工程师提问、补材料和纠正方向默认形成 CHAT，只保存讨论回答，不触发 JobAid/Overall 重算，也不改写 WorkingAssessment。工程师点击“更新评估”时，先选择本次要纳入的已回复讨论，再由 Host 冻结其 ID、当前输入版本和事项范围；重新生成只吸收这组选中内容与可读材料，保留未受影响的工作。旧助手回复始终是候选，不能自动成为正式依据。候选工作更新不以确认 ReviewAction 为前提，也不自动修改正式采用的业务事实。
+
+对话可按需调用已配置 Aily 智能体，沿用当前工程师的飞书授权与智能体可访问的数据源。Host 只保存会话绑定的加密短期令牌，令牌不进入模型、前端或任务参数；授权缺失或到期时明确要求重新授权。Aily 返回的知识条目与链接作为检索材料标注，不伪装成 Host 已核查的原文 SourceRef；知识空间、群聊等能力只按实际配置和返回结果声明。
 
 正式采用时，工程师在妙搭确认具体 ReviewActionDraft；Host 按现有身份、权限、当前证据与 expectedRevision 核对，执行既有 CAS/采用与重算。正式审批、业务发布和执行仍由外部 owner system 完成。
 

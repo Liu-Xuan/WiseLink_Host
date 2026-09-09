@@ -47,6 +47,7 @@ interface CommonContextHistorySelection {
   reviewConversationId?: string;
   beforeTurnNo?: number;
   reviewScope?: ReviewScopeSelection;
+  includedDiscussionTurnIds?: string[];
 }
 
 interface ReviewRelatedContextBuild {
@@ -103,6 +104,7 @@ export class CanonicalHostCommonContextService {
     tenantId: string,
     asOf: string,
     readScope?: UnifiedArtifactReadScope,
+    historySelection?: Omit<CommonContextHistorySelection, 'asOf'>,
   ): Promise<{
     common: CanonicalCommonAssessmentContext;
     readingEvidence: AssessmentEvidence[];
@@ -126,7 +128,7 @@ export class CanonicalHostCommonContextService {
         tenantId,
         actorId: loaded.row.requestedByUserId,
       },
-      { asOf },
+      { ...historySelection, asOf },
       readScope,
     );
   }
@@ -165,6 +167,8 @@ export class CanonicalHostCommonContextService {
     }
     const priorTurns = (aggregate?.turns ?? []).filter(
       (turn) =>
+        (history.includedDiscussionTurnIds === undefined ||
+          history.includedDiscussionTurnIds.includes(turn.reviewTurnId)) &&
         sameReviewBusinessScope(turn.reviewScope, history.reviewScope) &&
         turn.createdAt.getTime() <= Date.parse(history.asOf) &&
         (history.beforeTurnNo === undefined ||

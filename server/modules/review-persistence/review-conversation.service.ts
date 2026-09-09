@@ -157,6 +157,9 @@ export class ReviewConversationService {
         requestId: input.requestId,
         userMessage: input.userMessage,
         selectedEvaluationItemId: input.selectedEvaluationItemId ?? null,
+        purpose: input.purpose,
+        includedDiscussionTurnIds: input.includedDiscussionTurnIds,
+        expectedInputRevision: input.expectedInputRevision,
         executionRequested: input.executionMode === 'AUTOMATIC',
         attachmentBindings: replay.attachmentBindings,
         requestedModel: replay.requestedModel,
@@ -175,6 +178,23 @@ export class ReviewConversationService {
           statusCode: 503,
         },
       );
+    }
+
+    if (input.purpose === 'UPDATE_ASSESSMENT') {
+      if (input.expectedInputRevision !== authorized.grant.workItemRevision)
+        throw reviewConflict('REVIEW_UPDATE_REVISION_STALE');
+      const selected = (input.includedDiscussionTurnIds ?? []).map((id) => {
+        const turn = existing.turns.find((item) => item.reviewTurnId === id);
+        if (
+          !turn ||
+          turn.purpose !== 'CHAT' ||
+          !turn.assistantCandidate ||
+          !sameReviewBusinessScope(turn.reviewScope, input.reviewScope)
+        )
+          throw reviewConflict('REVIEW_UPDATE_DISCUSSION_INVALID');
+        return turn;
+      });
+      await this.authorizeTurnMatterInputs(authorized, selected);
     }
 
     const inherited =
@@ -226,6 +246,9 @@ export class ReviewConversationService {
       requestId: input.requestId,
       userMessage: input.userMessage,
       selectedEvaluationItemId: input.selectedEvaluationItemId ?? null,
+      purpose: input.purpose,
+      includedDiscussionTurnIds: input.includedDiscussionTurnIds,
+      expectedInputRevision: input.expectedInputRevision,
       executionRequested: input.executionMode === 'AUTOMATIC',
       attachmentBindings,
       requestedModel,
@@ -241,6 +264,9 @@ export class ReviewConversationService {
     requestId: string;
     userMessage: string;
     selectedEvaluationItemId: string | null;
+    purpose?: AppendReviewTextTurnRequest['purpose'];
+    includedDiscussionTurnIds?: string[];
+    expectedInputRevision?: number;
     executionRequested: boolean;
     attachmentBindings: ReviewAttachmentBinding[];
     requestedModel?: CanonicalExecutionModelSelection;
@@ -251,7 +277,14 @@ export class ReviewConversationService {
       requestId: input.requestId,
       userMessage: input.userMessage,
       selectedEvaluationItemId: input.selectedEvaluationItemId,
+      purpose: input.purpose,
+      includedDiscussionTurnIds: input.includedDiscussionTurnIds,
+      expectedInputRevision: input.expectedInputRevision,
       executionRequested: input.executionRequested,
+      ailySessionId:
+        input.purpose === 'CHAT'
+          ? input.authorized.session.session.id
+          : undefined,
       currentRevision: input.authorized.grant.workItemRevision,
       attachmentBindings: input.attachmentBindings,
       requestedModel: input.requestedModel,
@@ -577,6 +610,8 @@ export function reviewTurnReadModel(
     requestId: turn.requestId,
     inputRevision: turn.inputRevision,
     userMessage: turn.userMessage,
+    purpose: turn.purpose,
+    includedDiscussionTurnIds: turn.includedDiscussionTurnIds,
     reviewScope: reviewScopeSelection(turn.reviewScope),
     selectedEvaluationItemId: turn.selectedEvaluationItemId ?? null,
     requestedModel: turn.requestedModel

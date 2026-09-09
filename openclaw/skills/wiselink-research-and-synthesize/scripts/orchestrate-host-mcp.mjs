@@ -45,6 +45,7 @@ export const INITIAL_ANALYSIS_OPERATIONS = [
 ];
 
 export const INTERACTIVE_REVIEW_TOOLS = [
+  'query_review_aily',
   'begin_review_turn',
   'get_review_turn_context',
   'read_source_refs',
@@ -53,6 +54,7 @@ export const INTERACTIVE_REVIEW_TOOLS = [
 ];
 
 export const HOST_MCP_TOOLS = [
+  'query_review_aily',
   'get_parse_status',
   'query_parsed_package',
   'get_deep_link',

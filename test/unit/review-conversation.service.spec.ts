@@ -52,6 +52,45 @@ const turn = {
 describe('ReviewConversationService session and ACL boundary', () => {
   afterEach(() => jest.restoreAllMocks());
 
+  it('rejects an outdated explicit update and foreign or unanswered discussion before writing', async () => {
+    jest
+      .spyOn(executorScope, 'isOpenClawAutomaticReviewConfigured')
+      .mockReturnValue(true);
+    const setup = makeService();
+    setup.conversations.loadById.mockResolvedValue({
+      conversation,
+      turns: [{ ...turn, purpose: 'CHAT' }],
+    });
+    const update = {
+      requestId: 'update-1',
+      userMessage: '更新评估',
+      purpose: 'UPDATE_ASSESSMENT' as const,
+      executionMode: 'AUTOMATIC' as const,
+      expectedInputRevision: 7,
+      includedDiscussionTurnIds: ['RT-1'],
+    };
+    await expect(
+      setup.service.appendTextTurn(
+        'WI-1',
+        'RC-1',
+        { ...update, expectedInputRevision: 6 },
+        {} as never,
+      ),
+    ).rejects.toMatchObject({ code: 'REVIEW_UPDATE_REVISION_STALE' });
+    await expect(
+      setup.service.appendTextTurn('WI-1', 'RC-1', update, {} as never),
+    ).rejects.toMatchObject({ code: 'REVIEW_UPDATE_DISCUSSION_INVALID' });
+    await expect(
+      setup.service.appendTextTurn(
+        'WI-1',
+        'RC-1',
+        { ...update, includedDiscussionTurnIds: ['RT-FOREIGN'] },
+        {} as never,
+      ),
+    ).rejects.toMatchObject({ code: 'REVIEW_UPDATE_DISCUSSION_INVALID' });
+    expect(setup.conversations.appendTextTurn).not.toHaveBeenCalled();
+  });
+
   it.each([undefined, 'miaoda/minimax-m3'])(
     'inherits the last turn model unless a new request explicitly overrides it: %s',
     async (modelRef) => {

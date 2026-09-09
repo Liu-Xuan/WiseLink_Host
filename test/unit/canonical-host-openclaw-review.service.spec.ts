@@ -34,6 +34,50 @@ import type { MatterWorkingDeltaProposal } from '../../server/modules/canonical-
 import { materializeEngineeringMatterWorkingState } from '../../server/modules/canonical-host/engineering-matter-working-state';
 
 describe('CanonicalHostOpenClawReviewService', () => {
+  it('keeps Matter chat sources authorized across documents and commits without a working update', async () => {
+    const harness = reviewHarness(false, false, false, null, true);
+    const { turn } = await harness.conversations.loadOpenClawTurnBinding();
+    Object.assign(turn, { purpose: 'CHAT' });
+    const begin = await harness.service.begin('RC-1', 'request-1');
+    expect(begin.task.modelInput.context).toMatchObject({
+      purpose: 'CHAT',
+      assessmentUpdateAllowed: false,
+    });
+    await expect(
+      harness.service.readSourceRefs(begin.attemptRef, ['matter-source:2:1']),
+    ).resolves.toMatchObject({
+      sourceRefs: [{ quote: 'Related document evidence.' }],
+    });
+    const result = harness.result(begin.task, {
+      'wiselink-openclaw-engineering-assessment': '1.2.0',
+    });
+    await harness.service.commit(
+      begin.attemptRef,
+      begin.leaseToken,
+      begin.leaseGeneration,
+      result,
+    );
+    expect(harness.executor.appendWorkingRevision).not.toHaveBeenCalled();
+  });
+
+  it('builds a chat with readable sources without preparing a heavy assessment', async () => {
+    const harness = reviewHarness();
+    const { turn } = await harness.conversations.loadOpenClawTurnBinding();
+    Object.assign(turn, { purpose: 'CHAT' });
+    const result = await harness.service.begin('RC-1', 'request-1');
+    expect(result.task.modelInput.context).toMatchObject({
+      purpose: 'CHAT',
+      assessmentUpdateAllowed: false,
+    });
+    expect(result.task.modelInput).not.toHaveProperty('jobAidContext');
+    expect(result.task.modelInput).not.toHaveProperty('matterContext');
+    expect(result.task.modelInput.resourceRefs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ sourceRefId: 'SRC-1' }),
+      ]),
+    );
+  });
+
   it.each(['miaoda/minimax-m3', 'dli/gpt-5.6-sol'])(
     'isolates native sessions when the new turn chooses %s',
     async (modelRef) => {

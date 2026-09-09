@@ -410,6 +410,11 @@ export class CanonicalJobAidProblemService {
     purpose: JobAidProblemModelInput['purpose'],
     asOf: string,
     extraEvidence: AssessmentEvidence[] = [],
+    reviewSelection?: {
+      reviewConversationId: string;
+      beforeTurnNo: number;
+      includedDiscussionTurnIds: string[];
+    },
   ): Promise<JobAidProblemTaskInput> {
     const readScope = new UnifiedArtifactReadScope(this.artifactStore);
     const [packageBytes, common, history] = await Promise.all([
@@ -419,6 +424,7 @@ export class CanonicalJobAidProblemService {
         tenantId,
         asOf,
         readScope,
+        reviewSelection,
       ),
       this.work.listForRuntime({
         tenantId: tenantId,
@@ -500,6 +506,11 @@ export class CanonicalJobAidProblemService {
     actorUserId: string;
     asOf: string;
     evidence: AssessmentEvidence[];
+    reviewSelection?: {
+      reviewConversationId: string;
+      beforeTurnNo: number;
+      includedDiscussionTurnIds: string[];
+    };
   }): Promise<JobAidProblemTaskInput> {
     return this.buildInput(
       input.workItem,
@@ -509,6 +520,7 @@ export class CanonicalJobAidProblemService {
       'PROBLEM_REVIEW',
       input.asOf,
       input.evidence,
+      input.reviewSelection,
     );
   }
 
