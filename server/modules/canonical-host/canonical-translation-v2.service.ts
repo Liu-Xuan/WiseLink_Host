@@ -94,12 +94,27 @@ const modelCandidate = z.strictObject({
     }),
   ),
 });
+const semanticReview = z.strictObject({
+  blockId: id,
+  issues: z.array(
+    translationIssueSchemaV2.omit({
+      origin: true,
+      blockIds: true,
+      sourceFindingId: true,
+    }),
+  ),
+});
 
 export const translationWorkspaceCommandSchemaV2 = z.discriminatedUnion(
   'phase',
   [
     z.strictObject({ ...base, phase: z.literal('READ') }),
-    z.strictObject({ ...base, phase: z.literal('NEXT'), requestId: id }),
+    z.strictObject({
+      ...base,
+      phase: z.literal('NEXT'),
+      requestId: id,
+      batchSemanticChecks: z.boolean().optional(),
+    }),
     z.strictObject({
       ...base,
       phase: z.literal('READ_BATCH'),
@@ -118,16 +133,14 @@ export const translationWorkspaceCommandSchemaV2 = z.discriminatedUnion(
       phase: z.literal('CHECK'),
       generationRequestRef: id,
       expectedRowVersion: positive,
-      semanticReview: z.strictObject({
-        blockId: id,
-        issues: z.array(
-          translationIssueSchemaV2.omit({
-            origin: true,
-            blockIds: true,
-            sourceFindingId: true,
-          }),
-        ),
-      }),
+      semanticReview,
+      actualExecution,
+    }),
+    z.strictObject({
+      ...base,
+      phase: z.literal('CHECK_BATCH'),
+      generationRequestRef: id,
+      semanticReviews: z.array(semanticReview).min(2).max(32),
       actualExecution,
     }),
     z.strictObject({
@@ -283,7 +296,11 @@ export class CanonicalTranslationV2Service {
         state.revisions,
         state.reading,
         undefined,
-        { retranslateBlockIds: requestedBlockIds },
+        {
+          retranslateBlockIds: requestedBlockIds,
+          batchSemanticChecks:
+            input.phase === 'NEXT' && input.batchSemanticChecks === true,
+        },
       );
     if (input.phase === 'READ') return summary(state.reading);
     if (input.phase === 'RECORD_FAILURE')
@@ -322,15 +339,33 @@ export class CanonicalTranslationV2Service {
         })),
       };
     }
-    if (input.phase === 'CHECK') {
+    if (input.phase === 'CHECK' || input.phase === 'CHECK_BATCH') {
       const request = state.workspace.generationRequests.find(
         (entry) => entry.generationRequestRef === input.generationRequestRef,
       );
-      const target = state.revisions.find(
-        (revision) =>
-          revision.blockRevisionId === request?.targetBlockRevisionId,
-      );
-      if (!request || request.purpose !== 'CHECK' || !target)
+      const targets =
+        input.phase === 'CHECK_BATCH'
+          ? (request?.checkTargets ?? [])
+          : [
+              {
+                blockRevisionId: request?.targetBlockRevisionId ?? '',
+                rowVersion: input.expectedRowVersion,
+                blockId: request?.blockIds[0] ?? '',
+              },
+            ];
+      const reviews =
+        input.phase === 'CHECK_BATCH'
+          ? input.semanticReviews
+          : [input.semanticReview];
+      if (
+        !request ||
+        request.purpose !== input.phase ||
+        targets.length !== reviews.length ||
+        (input.phase === 'CHECK_BATCH' &&
+          targets.some(
+            (target, index) => target.blockId !== reviews[index].blockId,
+          ))
+      )
         throw new Error('TRANSLATION_SEMANTIC_CHECK_TARGET_INVALID');
       if (input.actualExecution.modelRef !== executionModel.modelRef)
         throw new Error('TRANSLATION_SEMANTIC_CHECK_MODEL_MISMATCH');
@@ -347,16 +382,42 @@ export class CanonicalTranslationV2Service {
         generationRequestRef: request.generationRequestRef,
         originAttemptId: task.actionAttemptId,
       });
-      const check = checkTranslationBlockV2({
-        plan: state.workspace.plan,
-        candidate: target.candidate,
-        semanticReview: { result: input.semanticReview, provenance },
+      const checks = targets.map((target, index) => {
+        const revision = state.revisions.find(
+          (entry) => entry.blockRevisionId === target.blockRevisionId,
+        );
+        if (!revision || revision.blockId !== target.blockId)
+          throw new Error('TRANSLATION_SEMANTIC_CHECK_TARGET_INVALID');
+        return {
+          blockRevisionId: target.blockRevisionId,
+          expectedRowVersion: target.rowVersion,
+          check: checkTranslationBlockV2({
+            plan: state.workspace.plan,
+            candidate: revision.candidate,
+            semanticReview: { result: reviews[index], provenance },
+          }),
+        };
       });
+      if (input.phase === 'CHECK_BATCH') {
+        const saved = await this.workspaces.checkAndSelectBatch({
+          ...fence,
+          generationRequestRef: request.generationRequestRef,
+          checks,
+        });
+        return {
+          generationRequestRef: request.generationRequestRef,
+          blocks: saved.map((entry) => ({
+            blockId: entry.blockId,
+            blockRevisionId: entry.blockRevisionId,
+            rowVersion: entry.rowVersion,
+            check: entry.check,
+            selectedForReading: entry.selectedForReading,
+          })),
+        };
+      }
       const saved = await this.workspaces.checkAndSelect({
         ...fence,
-        blockRevisionId: target.blockRevisionId,
-        expectedRowVersion: input.expectedRowVersion,
-        check,
+        ...checks[0],
       });
       return {
         blockRevisionId: saved.blockRevisionId,
@@ -425,6 +486,9 @@ export class CanonicalTranslationV2Service {
         blockIds: next.blockIds,
         purpose: next.kind,
         targetBlockRevisionId: next.targetBlockRevisionId,
+        ...(next.kind === 'CHECK_BATCH'
+          ? { checkTargets: next.checkTargets }
+          : {}),
         dependencies: translationBatchDependenciesV2(
           state.workspace,
           next.blockIds,
@@ -639,6 +703,7 @@ export class CanonicalTranslationV2Service {
       generationRequestRef: ref,
       blockIds: request.blockIds,
       targetBlockRevisionId: request.targetBlockRevisionId,
+      ...(request.checkTargets ? { checkTargets: request.checkTargets } : {}),
       targetRowVersion:
         revisions.find(
           (revision) =>

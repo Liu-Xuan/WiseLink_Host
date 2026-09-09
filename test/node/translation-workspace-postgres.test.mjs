@@ -380,8 +380,9 @@ test('real PostgreSQL translation work survives bounded requests and enforces sc
         const [role] = await db.execute(drizzleSql`SELECT current_user AS role`);
         assert.equal(role.role, 'service_role_translation_snapshot_test');
         sourceReads += 1;
-        await sourceHook();
-        return fixtureSource();
+        const source = fixtureSource();
+        await sourceHook(source);
+        return source;
       } };
       const items = new Map();
       const registrar = { getTenantScopedByWorkItemId: async ({ workItemId, tenantId }) => {
@@ -391,7 +392,11 @@ test('real PostgreSQL translation work survives bounded requests and enforces sc
       const scope = { authorizeOpenClawWorkItem: async ({ workItemId }) => ({
         tenantId: 'tenant-test', workItemId, principalId: 'service-principal',
         appId: 'app_17bzc551rsg', authorizationFingerprint: 'synthetic-scope',
-      }) };
+      }), authorizeOpenClawAttempt: async ({ attemptRef }) => {
+        const [row] = await db.select().from(actionAttempt).where(eq(actionAttempt.operationRef, attemptRef));
+        assert.equal(row?.tenantId, 'tenant-test'); assert.ok(items.has(row.workItemId));
+        return { tenantId: row.tenantId, workItemId: row.workItemId, principalId: 'service-principal' };
+      } };
       const semantic = new CanonicalTranslationV2Service(repository, reader, lifecycle, {}, scope);
       const translation = new CanonicalHostOpenClawTranslationService(registrar, {}, reader, {}, lifecycle, scope, semantic);
       const originalFeatureFlag = process.env.WL_TRANSLATION_V2_ENABLED;
@@ -434,6 +439,60 @@ test('real PostgreSQL translation work survives bounded requests and enforces sc
         assert.equal(prepared.modelInput.schemaVersion, 'wiselink.3_1.translation_task.v2');
       };
       try {
+        await t.test('batched semantic checks bind every candidate and save atomically with exact replay', async () => {
+          const pending = await newRequest('check-batch');
+          sourceHook = async (source) => {
+            source.units[0].kind = 'paragraph';
+            source.units[0].payload = { text: 'Do not replace the sensor unless the indication remains after 7 seconds.', role: 'body' };
+          };
+          let claimed;
+          try { claimed = await pending.begin(); }
+          finally { sourceHook = async () => {}; }
+          const binding = { attemptRef: claimed.attemptRef, leaseToken: claimed.leaseToken, leaseGeneration: claimed.leaseGeneration };
+          const cmd = (args) => hosted(() => semantic.execute({ ...binding, ...args }));
+          const scopeInput = { workspaceId: claimed.task.modelInput.workspaceId, tenantId: 'tenant-test', workItemId: pending.workItem.workItemId };
+          const snapshot = () => hosted(() => repository.readSnapshot(scopeInput));
+          const generate = await cmd({ phase: 'NEXT', requestId: 'batch-generate', batchSemanticChecks: true });
+          assert.equal(generate.action, 'GENERATE'); assert.deepEqual(generate.blockIds, ['b1', 'b2']);
+          await cmd({ phase: 'SAVE', generationRequestRef: generate.generationRequestRef, actualExecution: execution,
+            candidates: [
+              { blockId: 'b1', elements: [{ kind: 'paragraph', translatedText: '除非指示在 7 秒后仍然存在，否则不要更换传感器。', anchorIds: ['a1'] }] },
+              { blockId: 'b2', elements: [{ kind: 'paragraph', translatedText: '除非指示在 5 秒后仍然存在，否则不要更换该组件。', anchorIds: ['a2'] }] },
+            ] });
+          const next = await cmd({ phase: 'NEXT', requestId: 'batch-check', batchSemanticChecks: true });
+          assert.equal(next.action, 'CHECK_BATCH'); assert.deepEqual(next.blockIds, ['b1', 'b2']);
+          const before = await snapshot();
+          assert.deepEqual(next.checkTargets, before.revisions.map((entry) => ({ blockId: entry.blockId,
+            blockRevisionId: entry.blockRevisionId, rowVersion: entry.rowVersion })));
+          const args = { phase: 'CHECK_BATCH', generationRequestRef: next.generationRequestRef, actualExecution: execution,
+            semanticReviews: [{ blockId: 'b1', issues: [] }, { blockId: 'b2', issues: [
+              { code: 'SYNTHETIC_MEANING_CHANGE', severity: 'BLOCK', message: 'Synthetic per-block semantic finding', anchorIds: ['a2'] },
+            ] }] };
+          await assert.rejects(cmd({ ...args, semanticReviews: [...args.semanticReviews].reverse() }), /TARGET_INVALID/u);
+          await assert.rejects(cmd({ ...args, semanticReviews: args.semanticReviews.slice(0, 1) }));
+          await assert.rejects(cmd({ ...args, semanticReviews: [args.semanticReviews[0], { ...args.semanticReviews[1],
+            issues: [{ ...args.semanticReviews[1].issues[0], anchorIds: ['a1'] }] }] }), /SEMANTIC_REVIEW/u);
+          await assert.rejects(cmd({ ...args, actualExecution: { ...execution, modelRef: 'other/model' } }), /MODEL_MISMATCH/u);
+          assert.deepEqual(await snapshot(), before);
+          const secondId = next.checkTargets[1].blockRevisionId;
+          await sql`UPDATE translation_block_revision SET row_version = row_version + 1 WHERE block_revision_id = ${secondId}`;
+          const stale = await snapshot();
+          await assert.rejects(cmd(args), /CHECK_CAS_CONFLICT/u);
+          assert.deepEqual(await snapshot(), stale, 'a later stale block rolls back every earlier block check');
+          await sql`UPDATE translation_block_revision SET row_version = row_version - 1 WHERE block_revision_id = ${secondId}`;
+          const saved = await cmd(args);
+          assert.equal(saved.generationRequestRef, next.generationRequestRef);
+          assert.deepEqual(saved.blocks.map((entry) => entry.selectedForReading), [true, false]);
+          assert.ok(saved.blocks.every((entry, index) => entry.rowVersion === next.checkTargets[index].rowVersion + 1));
+          const after = await snapshot();
+          assert.equal(after.workspace.generationRequests.at(-1).status, 'SAVED');
+          assert.deepEqual(await cmd(args), saved);
+          assert.deepEqual(await snapshot(), after, 'exact result replay does not change versions or timestamps');
+          await assert.rejects(cmd({ ...args, semanticReviews: [{ blockId: 'b1', issues: [] }, { blockId: 'b2', issues: [] }] }), /CHECK_CAS_CONFLICT/u);
+          await pending.cancel();
+          await assert.rejects(cmd(args));
+          assert.deepEqual(await snapshot(), after, 'cancelled attempt cannot write or replay checks');
+        });
         await t.test('browser replay creates no source work; runtime prepares once and preserves all request bindings', async () => {
           const pending = await newRequest('success');
           const readsBefore = sourceReads;

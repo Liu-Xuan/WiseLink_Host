@@ -153,9 +153,15 @@ export interface TranslationGenerationRequestV2 {
   leaseGeneration: number;
   blockIds: string[];
   dependencies: TranslationBlockDependenciesV2;
-  purpose: 'GENERATE' | 'CORRECT' | 'CHECK';
+  purpose: 'GENERATE' | 'CORRECT' | 'CHECK' | 'CHECK_BATCH';
   /** Exact candidate being corrected or reviewed; null for new generation. */
   targetBlockRevisionId: string | null;
+  /** Host-captured immutable candidates and their check CAS versions. */
+  checkTargets?: {
+    blockId: string;
+    blockRevisionId: string;
+    rowVersion: number;
+  }[];
   status: 'REGISTERED' | 'SAVED' | 'SUPERSEDED' | 'FAILED';
   registeredAt: string;
   finishedAt: string | null;

@@ -249,30 +249,64 @@ export class CanonicalTranslationWorkspaceRepository {
     if (!snapshot) throw new Error('TRANSLATION_WORKSPACE_NOT_FOUND');
     return {
       workspace: workspaceFromRow(snapshot.workspace),
-      revisions: snapshot.revisions.map((row) => blockFromRow(
-        Object.fromEntries(Object.entries(blockSnapshotColumns).map(([key, column]) => [
-          key, row[key] === null ? null : column.mapFromDriverValue(row[key]),
-        ])) as SnapshotBlockRow,
-      )),
+      revisions: snapshot.revisions.map((row) =>
+        blockFromRow(
+          Object.fromEntries(
+            Object.entries(blockSnapshotColumns).map(([key, column]) => [
+              key,
+              row[key] === null ? null : column.mapFromDriverValue(row[key]),
+            ]),
+          ) as SnapshotBlockRow,
+        ),
+      ),
     };
   }
 
-  async readSemanticScope(input: { tenantId: string; workItemId: string; blockRevisionId: string }) {
-    const [row] = await this.db.select().from(translationBlockRevision).where(and(
-      eq(translationBlockRevision.tenantId, input.tenantId), eq(translationBlockRevision.workItemId, input.workItemId),
-      eq(translationBlockRevision.blockRevisionId, input.blockRevisionId),
-    )).limit(1);
+  async readSemanticScope(input: {
+    tenantId: string;
+    workItemId: string;
+    blockRevisionId: string;
+  }) {
+    const [row] = await this.db
+      .select()
+      .from(translationBlockRevision)
+      .where(
+        and(
+          eq(translationBlockRevision.tenantId, input.tenantId),
+          eq(translationBlockRevision.workItemId, input.workItemId),
+          eq(translationBlockRevision.blockRevisionId, input.blockRevisionId),
+        ),
+      )
+      .limit(1);
     if (!row) return null;
-    const { workspace, revisions } = await this.readSnapshot({ ...input, workspaceId: row.workspaceId });
-    const revision = revisions.find((entry) => entry.blockRevisionId === input.blockRevisionId);
-    const block = workspace.plan.blocks.find((entry) => entry.blockId === revision?.blockId);
-    if (!revision || !block) throw new Error('TRANSLATION_BLOCK_REVISION_NOT_FOUND');
-    return { selectedForReading: revision.selectedForReading, scope: {
-      workspaceId: workspace.workspaceId, blockId: block.blockId, blockRevisionId: revision.blockRevisionId,
-      planRevision: revision.planRevision, contextRevision: revision.dependencies.contextRevision,
-      sourceUnitIds: [...block.sourceUnitIds], anchors: workspace.plan.anchors.filter((anchor) => block.anchorIds.includes(anchor.anchorId)),
-      elements: revision.candidate.elements, provenance: revision.provenance,
-    } };
+    const { workspace, revisions } = await this.readSnapshot({
+      ...input,
+      workspaceId: row.workspaceId,
+    });
+    const revision = revisions.find(
+      (entry) => entry.blockRevisionId === input.blockRevisionId,
+    );
+    const block = workspace.plan.blocks.find(
+      (entry) => entry.blockId === revision?.blockId,
+    );
+    if (!revision || !block)
+      throw new Error('TRANSLATION_BLOCK_REVISION_NOT_FOUND');
+    return {
+      selectedForReading: revision.selectedForReading,
+      scope: {
+        workspaceId: workspace.workspaceId,
+        blockId: block.blockId,
+        blockRevisionId: revision.blockRevisionId,
+        planRevision: revision.planRevision,
+        contextRevision: revision.dependencies.contextRevision,
+        sourceUnitIds: [...block.sourceUnitIds],
+        anchors: workspace.plan.anchors.filter((anchor) =>
+          block.anchorIds.includes(anchor.anchorId),
+        ),
+        elements: revision.candidate.elements,
+        provenance: revision.provenance,
+      },
+    };
   }
 
   async attachAttempt(
@@ -337,6 +371,7 @@ export class CanonicalTranslationWorkspaceRepository {
       dependencies: TranslationBlockDependenciesV2;
       purpose: TranslationGenerationRequestV2['purpose'];
       targetBlockRevisionId: string | null;
+      checkTargets?: TranslationGenerationRequestV2['checkTargets'];
     },
   ): Promise<TranslationGenerationRequestV2> {
     return this.withFencedWorkspace(
@@ -369,6 +404,8 @@ export class CanonicalTranslationWorkspaceRepository {
               canonicalJson(input.blockIds) ||
             previous.purpose !== input.purpose ||
             previous.targetBlockRevisionId !== input.targetBlockRevisionId ||
+            canonicalJson(previous.checkTargets ?? []) !==
+              canonicalJson(input.checkTargets ?? []) ||
             canonicalJson(previous.dependencies) !== canonicalJson(dependencies)
           ) {
             throw new Error('TRANSLATION_GENERATION_IDEMPOTENCY_CONFLICT');
@@ -382,7 +419,50 @@ export class CanonicalTranslationWorkspaceRepository {
         ) {
           throw new Error('TRANSLATION_GENERATION_ALREADY_IN_FLIGHT');
         }
-        if (input.purpose === 'GENERATE') {
+        if (input.purpose === 'CHECK_BATCH') {
+          const targets = input.checkTargets ?? [];
+          if (
+            input.targetBlockRevisionId !== null ||
+            targets.length < 2 ||
+            targets.length > 32 ||
+            canonicalJson(targets.map((target) => target.blockId)) !==
+              canonicalJson(input.blockIds) ||
+            new Set(targets.map((target) => target.blockRevisionId)).size !==
+              targets.length
+          )
+            throw new Error('TRANSLATION_GENERATION_TARGET_INVALID');
+          for (const target of targets) {
+            const [row] = await transaction
+              .select()
+              .from(translationBlockRevision)
+              .where(
+                and(
+                  blockScope(input),
+                  eq(
+                    translationBlockRevision.blockRevisionId,
+                    target.blockRevisionId,
+                  ),
+                ),
+              )
+              .limit(1);
+            if (
+              !row ||
+              row.blockId !== target.blockId ||
+              row.rowVersion !== target.rowVersion ||
+              row.planRevision !== workspace.plan.planRevision
+            )
+              throw new Error('TRANSLATION_GENERATION_TARGET_INVALID');
+            const revision = blockFromRow(row);
+            assertDependencies(workspace, revision.dependencies);
+            if (
+              revision.check?.semanticCheck !== 'PENDING' ||
+              revision.check.issues.some((issue) => issue.severity === 'BLOCK')
+            )
+              throw new Error('TRANSLATION_GENERATION_TARGET_INVALID');
+          }
+        } else if (input.checkTargets !== undefined) {
+          throw new Error('TRANSLATION_GENERATION_TARGET_INVALID');
+        } else if (input.purpose === 'GENERATE') {
           if (input.targetBlockRevisionId !== null)
             throw new Error('TRANSLATION_GENERATION_TARGET_INVALID');
         } else {
@@ -416,6 +496,9 @@ export class CanonicalTranslationWorkspaceRepository {
           dependencies,
           purpose: input.purpose,
           targetBlockRevisionId: input.targetBlockRevisionId,
+          ...(input.checkTargets
+            ? { checkTargets: structuredClone(input.checkTargets) }
+            : {}),
           status: 'REGISTERED',
           registeredAt: new Date().toISOString(),
           finishedAt: null,
@@ -479,77 +562,192 @@ export class CanonicalTranslationWorkspaceRepository {
   }
 
   /** A fresh browser-authorized engineer creates a new immutable candidate. */
-  async saveEngineerRevision(input: TranslationWorkspaceScope & {
-    actorUserId: string;
-    expectedWorkItemRevision: number;
-    requestId: string;
-    baseBlockRevisionId: string;
-    expectedRowVersion: number;
-    candidate: TranslationBlockCandidateV2;
-  }): Promise<TranslationBlockRevisionV2> {
+  async saveEngineerRevision(
+    input: TranslationWorkspaceScope & {
+      actorUserId: string;
+      expectedWorkItemRevision: number;
+      requestId: string;
+      baseBlockRevisionId: string;
+      expectedRowVersion: number;
+      candidate: TranslationBlockCandidateV2;
+    },
+  ): Promise<TranslationBlockRevisionV2> {
     const candidate = translationCandidateSchemaV2.parse(input.candidate);
     return this.db.transaction(async (transaction) => {
       // Match model lock order (attempt, workspace, source); editing is available
       // after an attempt ends, so its late writes cannot replace the human text.
       const before = await requiredWorkspace(transaction, input, false);
       if (before.activeAttemptId) {
-        const [attempt] = await transaction.select().from(actionAttempt).where(and(
-          eq(actionAttempt.attemptId, before.activeAttemptId),
-          eq(actionAttempt.tenantId, input.tenantId), eq(actionAttempt.workItemId, input.workItemId),
-        )).limit(1).for('update');
+        const [attempt] = await transaction
+          .select()
+          .from(actionAttempt)
+          .where(
+            and(
+              eq(actionAttempt.attemptId, before.activeAttemptId),
+              eq(actionAttempt.tenantId, input.tenantId),
+              eq(actionAttempt.workItemId, input.workItemId),
+            ),
+          )
+          .limit(1)
+          .for('update');
         if (attempt && activeStatuses.includes(attempt.status))
           throw new Error('TRANSLATION_ENGINEER_REVISION_ATTEMPT_ACTIVE');
       }
-      const workspace = workspaceFromRow(await requiredWorkspace(transaction, input, true));
+      const workspace = workspaceFromRow(
+        await requiredWorkspace(transaction, input, true),
+      );
       if (workspace.activeAttemptId !== before.activeAttemptId)
         throw new Error('TRANSLATION_WORKSPACE_COORDINATOR_CHANGED');
-      await assertCurrentSource(transaction, input.tenantId, input.workItemId, workspace.plan);
-      const [owner] = await transaction.select({ owner: workItem.requestedByUserId, revision: workItem.revision }).from(workItem)
-        .where(and(eq(workItem.tenantId, input.tenantId), eq(workItem.workItemId, input.workItemId))).limit(1).for('share');
-      if (owner?.owner !== input.actorUserId) throw new Error('TRANSLATION_ENGINEER_REVISION_OWNER_MISMATCH');
+      await assertCurrentSource(
+        transaction,
+        input.tenantId,
+        input.workItemId,
+        workspace.plan,
+      );
+      const [owner] = await transaction
+        .select({
+          owner: workItem.requestedByUserId,
+          revision: workItem.revision,
+        })
+        .from(workItem)
+        .where(
+          and(
+            eq(workItem.tenantId, input.tenantId),
+            eq(workItem.workItemId, input.workItemId),
+          ),
+        )
+        .limit(1)
+        .for('share');
+      if (owner?.owner !== input.actorUserId)
+        throw new Error('TRANSLATION_ENGINEER_REVISION_OWNER_MISMATCH');
       const requestRef = `ENGINEER:${input.requestId}`;
-      const [existing] = await transaction.select().from(translationBlockRevision).where(and(blockScope(input),
-        eq(translationBlockRevision.generationRequestRef, requestRef))).limit(1);
+      const [existing] = await transaction
+        .select()
+        .from(translationBlockRevision)
+        .where(
+          and(
+            blockScope(input),
+            eq(translationBlockRevision.generationRequestRef, requestRef),
+          ),
+        )
+        .limit(1);
       if (existing) {
-        if (existing.candidateJson !== canonicalJson(candidate) || existing.authorUserId !== input.actorUserId)
+        if (
+          existing.candidateJson !== canonicalJson(candidate) ||
+          existing.authorUserId !== input.actorUserId
+        )
           throw new Error('TRANSLATION_BLOCK_IDEMPOTENCY_CONFLICT');
         return blockFromRow(existing);
       }
-      if (owner.revision !== input.expectedWorkItemRevision) throw new Error('TRANSLATION_ENGINEER_REVISION_WORK_ITEM_CHANGED');
-      const [latest] = await transaction.select().from(translationBlockRevision).where(and(blockScope(input),
-        eq(translationBlockRevision.blockId, candidate.blockId))).orderBy(desc(translationBlockRevision.contentRevision)).limit(1);
-      if (!latest || latest.blockRevisionId !== input.baseBlockRevisionId || latest.rowVersion !== input.expectedRowVersion)
+      if (owner.revision !== input.expectedWorkItemRevision)
+        throw new Error('TRANSLATION_ENGINEER_REVISION_WORK_ITEM_CHANGED');
+      const [latest] = await transaction
+        .select()
+        .from(translationBlockRevision)
+        .where(
+          and(
+            blockScope(input),
+            eq(translationBlockRevision.blockId, candidate.blockId),
+          ),
+        )
+        .orderBy(desc(translationBlockRevision.contentRevision))
+        .limit(1);
+      if (
+        !latest ||
+        latest.blockRevisionId !== input.baseBlockRevisionId ||
+        latest.rowVersion !== input.expectedRowVersion
+      )
         throw new Error('TRANSLATION_ENGINEER_REVISION_CAS_CONFLICT');
       const baseRevision = blockFromRow(latest);
       // This editor changes wording only; list/table identity and multi-anchor
       // paragraph mappings remain the exact mappings reviewed by the engineer.
-      if (canonicalJson(candidate.elements.map(({ translatedText: _text, ...element }) => element)) !==
-        canonicalJson(baseRevision.candidate.elements.map(({ translatedText: _text, ...element }) => element)))
+      if (
+        canonicalJson(
+          candidate.elements.map(
+            ({ translatedText: _text, ...element }) => element,
+          ),
+        ) !==
+        canonicalJson(
+          baseRevision.candidate.elements.map(
+            ({ translatedText: _text, ...element }) => element,
+          ),
+        )
+      )
         throw new Error('TRANSLATION_ENGINEER_REVISION_MAPPING_CHANGED');
       assertDependencies(workspace, baseRevision.dependencies);
       const provenance: TranslationBlockProvenanceV2 = {
-        authorKind: 'ENGINEER', authorUserId: input.actorUserId, executionModel: null, modelVersion: null,
-        skillVersion: null, promptVersion: null, generationRequestRef: requestRef, originAttemptId: null,
-        providerRequestId: null, usage: { inputTokens: null, outputTokens: null },
+        authorKind: 'ENGINEER',
+        authorUserId: input.actorUserId,
+        executionModel: null,
+        modelVersion: null,
+        skillVersion: null,
+        promptVersion: null,
+        generationRequestRef: requestRef,
+        originAttemptId: null,
+        providerRequestId: null,
+        usage: { inputTokens: null, outputTokens: null },
       };
-      const check = checkTranslationBlockV2({ plan: workspace.plan, candidate,
-        semanticReview: { result: { blockId: candidate.blockId, issues: [] }, provenance } });
-      const selected = !check.issues.some((issue) => issue.severity === 'BLOCK');
+      const check = checkTranslationBlockV2({
+        plan: workspace.plan,
+        candidate,
+        semanticReview: {
+          result: { blockId: candidate.blockId, issues: [] },
+          provenance,
+        },
+      });
+      const selected = !check.issues.some(
+        (issue) => issue.severity === 'BLOCK',
+      );
       const now = new Date();
-      if (selected) await transaction.update(translationBlockRevision).set({ selectedForReading: false,
-        rowVersion: sql`${translationBlockRevision.rowVersion} + 1`, updatedAt: now }).where(and(blockScope(input),
-          eq(translationBlockRevision.blockId, candidate.blockId), eq(translationBlockRevision.selectedForReading, true)));
-      const [inserted] = await transaction.insert(translationBlockRevision).values({
-        blockRevisionId: `TB-${randomUUID()}`, tenantId: input.tenantId, workItemId: input.workItemId,
-        workspaceId: input.workspaceId, blockId: candidate.blockId, planRevision: workspace.plan.planRevision,
-        contentRevision: latest.contentRevision + 1, generationRequestRef: requestRef, originAttemptId: null,
-        authorKind: 'ENGINEER', authorUserId: input.actorUserId, candidateJson: canonicalJson(candidate),
-        dependenciesJson: canonicalJson(baseRevision.dependencies), provenanceJson: canonicalJson(provenance),
-        generatedAt: null, checkStatus: 'CHECKED', checkJson: canonicalJson(check), checkedAt: now, selectedForReading: selected,
-      }).returning();
-      await transaction.update(translationWorkspace).set({ rowVersion: workspace.rowVersion + 1, updatedAt: now,
-        ...(selected ? { resultArtifactJson: null, resultManifestJson: null } : {}),
-      }).where(workspaceScope(input));
+      if (selected)
+        await transaction
+          .update(translationBlockRevision)
+          .set({
+            selectedForReading: false,
+            rowVersion: sql`${translationBlockRevision.rowVersion} + 1`,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              blockScope(input),
+              eq(translationBlockRevision.blockId, candidate.blockId),
+              eq(translationBlockRevision.selectedForReading, true),
+            ),
+          );
+      const [inserted] = await transaction
+        .insert(translationBlockRevision)
+        .values({
+          blockRevisionId: `TB-${randomUUID()}`,
+          tenantId: input.tenantId,
+          workItemId: input.workItemId,
+          workspaceId: input.workspaceId,
+          blockId: candidate.blockId,
+          planRevision: workspace.plan.planRevision,
+          contentRevision: latest.contentRevision + 1,
+          generationRequestRef: requestRef,
+          originAttemptId: null,
+          authorKind: 'ENGINEER',
+          authorUserId: input.actorUserId,
+          candidateJson: canonicalJson(candidate),
+          dependenciesJson: canonicalJson(baseRevision.dependencies),
+          provenanceJson: canonicalJson(provenance),
+          generatedAt: null,
+          checkStatus: 'CHECKED',
+          checkJson: canonicalJson(check),
+          checkedAt: now,
+          selectedForReading: selected,
+        })
+        .returning();
+      await transaction
+        .update(translationWorkspace)
+        .set({
+          rowVersion: workspace.rowVersion + 1,
+          updatedAt: now,
+          ...(selected
+            ? { resultArtifactJson: null, resultManifestJson: null }
+            : {}),
+        })
+        .where(workspaceScope(input));
       return blockFromRow(inserted);
     });
   }
@@ -694,145 +892,256 @@ export class CanonicalTranslationWorkspaceRepository {
     },
   ): Promise<TranslationBlockRevisionV2> {
     const check = translationCheckSchemaV2.parse(input.check);
+    return this.withFencedWorkspace(input, (transaction, attempt, workspace) =>
+      this.applyBlockCheck(transaction, attempt, workspace, input, check),
+    );
+  }
+
+  async checkAndSelectBatch(
+    input: TranslationWorkspaceFence & {
+      generationRequestRef: string;
+      checks: {
+        blockRevisionId: string;
+        expectedRowVersion: number;
+        check: TranslationBlockCheckV2;
+      }[];
+    },
+  ): Promise<TranslationBlockRevisionV2[]> {
+    const checks = input.checks.map((entry) => ({
+      ...entry,
+      check: translationCheckSchemaV2.parse(entry.check),
+    }));
     return this.withFencedWorkspace(
       input,
       async (transaction, attempt, workspace) => {
-        const [row] = await transaction
-          .select()
-          .from(translationBlockRevision)
-          .where(
-            and(
-              blockScope(input),
-              eq(
-                translationBlockRevision.blockRevisionId,
-                input.blockRevisionId,
-              ),
-            ),
-          )
-          .limit(1)
-          .for('update');
-        if (!row) throw new Error('TRANSLATION_BLOCK_REVISION_NOT_FOUND');
-        const revision = blockFromRow(row);
-        assertDependencies(workspace, revision.dependencies);
-        if (row.rowVersion !== input.expectedRowVersion) {
-          if (row.checkJson === canonicalJson(check)) return revision;
-          throw new Error('TRANSLATION_BLOCK_CHECK_CAS_CONFLICT');
-        }
-        const request = workspace.generationRequests.find(
-          (entry) =>
-            entry.generationRequestRef ===
-            revision.provenance.generationRequestRef,
+        const request = requiredGeneration(
+          workspace,
+          input.generationRequestRef,
+          attempt,
         );
-        if (!request || request.status === 'SUPERSEDED')
-          throw new Error('TRANSLATION_GENERATION_SUPERSEDED');
-        const block = workspace.plan.blocks.find(
-          (entry) => entry.blockId === row.blockId,
-        )!;
+        const targets = request.checkTargets ?? [];
         if (
-          block.sourceIssues.some(
-            (issue) =>
-              !check.issues.some(
-                (checkedIssue) =>
-                  checkedIssue.code === issue.code &&
-                  checkedIssue.origin === issue.origin &&
-                  checkedIssue.severity === issue.severity,
-              ),
+          request.purpose !== 'CHECK_BATCH' ||
+          !['REGISTERED', 'SAVED'].includes(request.status) ||
+          targets.length < 2 ||
+          targets.length !== checks.length ||
+          checks.some(
+            (entry, index) =>
+              entry.blockRevisionId !== targets[index].blockRevisionId ||
+              entry.expectedRowVersion !== targets[index].rowVersion ||
+              entry.check.semanticCheck !== 'COMPLETED' ||
+              entry.check.semanticReview?.generationRequestRef !==
+                request.generationRequestRef,
           )
-        ) {
-          throw new Error('TRANSLATION_BLOCK_SOURCE_ISSUES_MISSING');
+        )
+          throw new Error('TRANSLATION_SEMANTIC_CHECK_BATCH_BINDING_INVALID');
+        if (request.status === 'SAVED') {
+          const saved = [];
+          for (const entry of checks) {
+            const [row] = await transaction
+              .select()
+              .from(translationBlockRevision)
+              .where(
+                and(
+                  blockScope(input),
+                  eq(
+                    translationBlockRevision.blockRevisionId,
+                    entry.blockRevisionId,
+                  ),
+                ),
+              )
+              .limit(1);
+            if (!row || row.checkJson !== canonicalJson(entry.check))
+              throw new Error('TRANSLATION_BLOCK_CHECK_CAS_CONFLICT');
+            saved.push(blockFromRow(row));
+          }
+          return saved;
         }
-        let requests = workspace.generationRequests;
-        if (check.semanticCheck === 'COMPLETED') {
-          const review = check.semanticReview;
-          if (!review)
-            throw new Error('TRANSLATION_SEMANTIC_CHECK_PROVENANCE_MISSING');
-          const checkRequest = requiredGeneration(
-            workspace,
-            review.generationRequestRef,
-            attempt,
+        const saved = [];
+        for (const entry of checks) {
+          saved.push(
+            await this.applyBlockCheck(
+              transaction,
+              attempt,
+              workspace,
+              { ...input, ...entry },
+              entry.check,
+              request,
+            ),
           );
-          if (
-            checkRequest.purpose !== 'CHECK' ||
-            checkRequest.targetBlockRevisionId !== row.blockRevisionId ||
-            !checkRequest.blockIds.includes(row.blockId) ||
-            !['REGISTERED', 'SAVED'].includes(checkRequest.status)
-          )
-            throw new Error('TRANSLATION_SEMANTIC_CHECK_REQUEST_INVALID');
-          const actual = modelProvenance(attempt, checkRequest, {
-            modelRef: review.executionModel?.modelRef ?? '',
-            modelVersion: review.modelVersion ?? '',
-            skillVersion: review.skillVersion ?? '',
-            promptVersion: review.promptVersion ?? '',
-            providerRequestId: review.providerRequestId,
-            usage: review.usage,
-            generatedAt: null,
-          });
-          if (canonicalJson(actual) !== canonicalJson(review))
-            throw new Error('TRANSLATION_SEMANTIC_CHECK_PROVENANCE_INVALID');
-          // Semantic checks currently execute one complete block per request.
-          if (checkRequest.blockIds.length !== 1)
-            throw new Error('TRANSLATION_SEMANTIC_CHECK_SCOPE_INVALID');
-          requests = requests.map((entry) =>
-            entry.generationRequestRef === checkRequest.generationRequestRef
+        }
+        await saveRequests(
+          transaction,
+          input,
+          workspace,
+          workspace.generationRequests.map((entry) =>
+            entry.generationRequestRef === request.generationRequestRef
               ? {
                   ...entry,
                   status: 'SAVED',
-                  finishedAt: entry.finishedAt ?? new Date().toISOString(),
+                  finishedAt: new Date().toISOString(),
                   error: null,
                 }
               : entry,
-          );
-        } else if (check.semanticReview !== null)
-          throw new Error('TRANSLATION_SEMANTIC_CHECK_STATUS_INVALID');
-        const selected =
-          check.semanticCheck !== 'PENDING' &&
-          !check.issues.some((issue) => issue.severity === 'BLOCK');
-        if (selected)
-          await transaction
-            .update(translationBlockRevision)
-            .set({
-              selectedForReading: false,
-              rowVersion: sql`${translationBlockRevision.rowVersion} + 1`,
-              updatedAt: new Date(),
-            })
-            .where(
-              and(
-                blockScope(input),
-                eq(translationBlockRevision.blockId, row.blockId),
-                eq(translationBlockRevision.selectedForReading, true),
-              ),
-            );
-        const [updated] = await transaction
-          .update(translationBlockRevision)
-          .set({
-            checkStatus: 'CHECKED',
-            checkJson: canonicalJson(check),
-            checkedAt: new Date(),
-            selectedForReading: selected,
-            rowVersion: row.rowVersion + 1,
-            updatedAt: new Date(),
-          })
-          .where(
-            and(
-              blockScope(input),
-              eq(translationBlockRevision.blockRevisionId, row.blockRevisionId),
-            ),
-          )
-          .returning();
-        await transaction
-          .update(translationWorkspace)
-          .set({
-            rowVersion: workspace.rowVersion + 1,
-            updatedAt: new Date(),
-            generationRequestsJson: canonicalJson(requests),
-            ...(selected || row.selectedForReading
-              ? { resultArtifactJson: null, resultManifestJson: null }
-              : {}),
-          })
-          .where(workspaceScope(input));
-        return blockFromRow(updated);
+          ),
+        );
+        return saved;
       },
     );
+  }
+
+  private async applyBlockCheck(
+    transaction: Database,
+    attempt: AttemptRow,
+    workspace: TranslationWorkspaceV2,
+    input: TranslationWorkspaceFence & {
+      blockRevisionId: string;
+      expectedRowVersion: number;
+    },
+    check: TranslationBlockCheckV2,
+    batchRequest?: TranslationGenerationRequestV2,
+  ): Promise<TranslationBlockRevisionV2> {
+    const [row] = await transaction
+      .select()
+      .from(translationBlockRevision)
+      .where(
+        and(
+          blockScope(input),
+          eq(translationBlockRevision.blockRevisionId, input.blockRevisionId),
+        ),
+      )
+      .limit(1)
+      .for('update');
+    if (!row) throw new Error('TRANSLATION_BLOCK_REVISION_NOT_FOUND');
+    const revision = blockFromRow(row);
+    assertDependencies(workspace, revision.dependencies);
+    if (row.rowVersion !== input.expectedRowVersion) {
+      if (row.checkJson === canonicalJson(check)) return revision;
+      throw new Error('TRANSLATION_BLOCK_CHECK_CAS_CONFLICT');
+    }
+    const request = workspace.generationRequests.find(
+      (entry) =>
+        entry.generationRequestRef === revision.provenance.generationRequestRef,
+    );
+    if (!request || request.status === 'SUPERSEDED')
+      throw new Error('TRANSLATION_GENERATION_SUPERSEDED');
+    const block = workspace.plan.blocks.find(
+      (entry) => entry.blockId === row.blockId,
+    )!;
+    if (
+      block.sourceIssues.some(
+        (issue) =>
+          !check.issues.some(
+            (checkedIssue) =>
+              checkedIssue.code === issue.code &&
+              checkedIssue.origin === issue.origin &&
+              checkedIssue.severity === issue.severity,
+          ),
+      )
+    ) {
+      throw new Error('TRANSLATION_BLOCK_SOURCE_ISSUES_MISSING');
+    }
+    let requests = workspace.generationRequests;
+    if (check.semanticCheck === 'COMPLETED') {
+      const review = check.semanticReview;
+      if (!review)
+        throw new Error('TRANSLATION_SEMANTIC_CHECK_PROVENANCE_MISSING');
+      const checkRequest = requiredGeneration(
+        workspace,
+        review.generationRequestRef,
+        attempt,
+      );
+      if (
+        (batchRequest
+          ? checkRequest.purpose !== 'CHECK_BATCH' ||
+            checkRequest.generationRequestRef !==
+              batchRequest.generationRequestRef ||
+            !checkRequest.checkTargets?.some(
+              (target) =>
+                target.blockId === row.blockId &&
+                target.blockRevisionId === row.blockRevisionId &&
+                target.rowVersion === input.expectedRowVersion,
+            )
+          : checkRequest.purpose !== 'CHECK' ||
+            checkRequest.targetBlockRevisionId !== row.blockRevisionId) ||
+        !checkRequest.blockIds.includes(row.blockId) ||
+        !['REGISTERED', 'SAVED'].includes(checkRequest.status)
+      )
+        throw new Error('TRANSLATION_SEMANTIC_CHECK_REQUEST_INVALID');
+      const actual = modelProvenance(attempt, checkRequest, {
+        modelRef: review.executionModel?.modelRef ?? '',
+        modelVersion: review.modelVersion ?? '',
+        skillVersion: review.skillVersion ?? '',
+        promptVersion: review.promptVersion ?? '',
+        providerRequestId: review.providerRequestId,
+        usage: review.usage,
+        generatedAt: null,
+      });
+      if (canonicalJson(actual) !== canonicalJson(review))
+        throw new Error('TRANSLATION_SEMANTIC_CHECK_PROVENANCE_INVALID');
+      if (!batchRequest && checkRequest.blockIds.length !== 1)
+        throw new Error('TRANSLATION_SEMANTIC_CHECK_SCOPE_INVALID');
+      if (!batchRequest)
+        requests = requests.map((entry) =>
+          entry.generationRequestRef === checkRequest.generationRequestRef
+            ? {
+                ...entry,
+                status: 'SAVED',
+                finishedAt: entry.finishedAt ?? new Date().toISOString(),
+                error: null,
+              }
+            : entry,
+        );
+    } else if (check.semanticReview !== null)
+      throw new Error('TRANSLATION_SEMANTIC_CHECK_STATUS_INVALID');
+    const selected =
+      check.semanticCheck !== 'PENDING' &&
+      !check.issues.some((issue) => issue.severity === 'BLOCK');
+    if (selected)
+      await transaction
+        .update(translationBlockRevision)
+        .set({
+          selectedForReading: false,
+          rowVersion: sql`${translationBlockRevision.rowVersion} + 1`,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            blockScope(input),
+            eq(translationBlockRevision.blockId, row.blockId),
+            eq(translationBlockRevision.selectedForReading, true),
+          ),
+        );
+    const [updated] = await transaction
+      .update(translationBlockRevision)
+      .set({
+        checkStatus: 'CHECKED',
+        checkJson: canonicalJson(check),
+        checkedAt: new Date(),
+        selectedForReading: selected,
+        rowVersion: row.rowVersion + 1,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          blockScope(input),
+          eq(translationBlockRevision.blockRevisionId, row.blockRevisionId),
+        ),
+      )
+      .returning();
+    await transaction
+      .update(translationWorkspace)
+      .set({
+        rowVersion: workspace.rowVersion + 1,
+        updatedAt: new Date(),
+        generationRequestsJson: canonicalJson(requests),
+        ...(selected || row.selectedForReading
+          ? { resultArtifactJson: null, resultManifestJson: null }
+          : {}),
+      })
+      .where(workspaceScope(input));
+    workspace.rowVersion += 1;
+    return blockFromRow(updated);
   }
 
   async saveFinalArtifact(
@@ -942,7 +1251,11 @@ function modelProvenance(
       actual.skillVersion,
     ) ||
     Number(actual.skillVersion.split('.c').at(-1)) < 44 ||
-    ![TRANSLATION_V2_PROMPT_VERSION, 'wiselink-translation-block@r09.c44'].includes(actual.promptVersion) ||
+    ![
+      TRANSLATION_V2_PROMPT_VERSION,
+      'wiselink-translation-block@r09.c45',
+      'wiselink-translation-block@r09.c44',
+    ].includes(actual.promptVersion) ||
     ['unknown', 'fallback', ''].includes(
       actual.modelVersion.trim().toLowerCase(),
     ) ||
