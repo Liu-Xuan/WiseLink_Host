@@ -27,7 +27,7 @@ export async function runSemanticTranslation({ begin, callTool, translate, reque
     if (Date.now() >= Date.parse(begin.task.deadline)) throw new Error('TRANSLATION_ATTEMPT_DEADLINE_REACHED');
     await heartbeat();
     requestNo += 1;
-    const next = await workspace({ phase: 'NEXT', requestId: `${requestId}:batch-${requestNo}` });
+    const next = await workspace({ phase: 'NEXT', requestId: `${requestId}:batch-${requestNo}`, batchSemanticChecks: true });
     if (next.action === 'DONE') break;
     if (next.action === 'REQUEST_RECONCILED') continue;
     if (next.action === 'UNRESOLVED_GENERATION') throw new Error('TRANSLATION_GENERATION_OUTCOME_UNKNOWN');
@@ -47,7 +47,14 @@ export async function runSemanticTranslation({ begin, callTool, translate, reque
     if (!execution?.output || !execution.actualExecution || !execution.provenance) throw new Error('TRANSLATION_EXECUTION_PROVENANCE_REQUIRED');
     executions.push(execution.provenance);
     await heartbeat();
-    if (batch.purpose === 'CHECK') {
+    if (batch.purpose === 'CHECK_BATCH') {
+      const saved = await workspace({ phase: 'CHECK_BATCH', generationRequestRef: batch.generationRequestRef,
+        semanticReviews: execution.output.checks, actualExecution: execution.actualExecution });
+      if (saved.generationRequestRef !== batch.generationRequestRef || saved.blocks?.length !== batch.blocks.length ||
+        saved.blocks.some((entry, index) => entry.blockId !== batch.blocks[index].blockId ||
+          entry.blockRevisionId !== batch.checkCandidates[index].blockRevisionId))
+        throw new Error('TRANSLATION_CHECK_READBACK_MISMATCH');
+    } else if (batch.purpose === 'CHECK') {
       await workspace({ phase: 'CHECK', generationRequestRef: batch.generationRequestRef,
         expectedRowVersion: next.targetRowVersion, semanticReview: execution.output, actualExecution: execution.actualExecution });
     } else {
@@ -84,14 +91,14 @@ export async function runSemanticTranslation({ begin, callTool, translate, reque
 
 async function collectBatch(first, workspace) {
   if (first.schemaVersion !== 'wiselink.3_1.translation_batch_delivery.v2' || first.delivery?.partIndex !== 0 ||
-    !['GENERATE', 'CORRECT', 'CHECK'].includes(first.action)) throw new Error('TRANSLATION_BATCH_DELIVERY_INVALID');
+    !['GENERATE', 'CORRECT', 'CHECK', 'CHECK_BATCH'].includes(first.action)) throw new Error('TRANSLATION_BATCH_DELIVERY_INVALID');
   const buffers = [];
   for (let partIndex = 0; partIndex < first.delivery.partCount; partIndex += 1) {
     const part = partIndex === 0 ? first : await workspace({ phase: 'READ_BATCH', generationRequestRef: first.generationRequestRef, partIndex });
     if (part.schemaVersion !== first.schemaVersion || part.action !== first.action || part.workspaceId !== first.workspaceId ||
       part.generationRequestRef !== first.generationRequestRef || part.delivery?.partIndex !== partIndex ||
       part.delivery.partCount !== first.delivery.partCount || part.delivery.byteLength !== first.delivery.byteLength ||
-      canonicalJson(part.blockIds) !== canonicalJson(first.blockIds) || part.targetBlockRevisionId !== first.targetBlockRevisionId ||
+      canonicalJson(part.blockIds) !== canonicalJson(first.blockIds) || canonicalJson(part.checkTargets ?? []) !== canonicalJson(first.checkTargets ?? []) || part.targetBlockRevisionId !== first.targetBlockRevisionId ||
       part.targetRowVersion !== first.targetRowVersion || typeof part.delivery.payloadBase64 !== 'string') throw new Error('TRANSLATION_BATCH_DELIVERY_BINDING_INVALID');
     const bytes = Buffer.from(part.delivery.payloadBase64, 'base64');
     if (bytes.toString('base64') !== part.delivery.payloadBase64 || !bytes.length) throw new Error('TRANSLATION_BATCH_DELIVERY_ENCODING_INVALID');
@@ -103,5 +110,7 @@ async function collectBatch(first, workspace) {
   validateTranslationSemanticBatch(batch);
   if (batch.workspaceId !== first.workspaceId || batch.generationRequestRef !== first.generationRequestRef || batch.purpose !== first.action ||
     canonicalJson(batch.blocks.map((block) => block.blockId)) !== canonicalJson(first.blockIds)) throw new Error('TRANSLATION_BATCH_CONTENT_BINDING_INVALID');
+  if (batch.purpose === 'CHECK_BATCH' && canonicalJson(batch.checkCandidates.map(({ candidate: _candidate, ...target }) => target)) !== canonicalJson(first.checkTargets))
+    throw new Error('TRANSLATION_BATCH_CONTENT_BINDING_INVALID');
   return batch;
 }

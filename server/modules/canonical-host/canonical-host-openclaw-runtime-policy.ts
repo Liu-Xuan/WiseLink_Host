@@ -99,10 +99,18 @@ export function assertCanonicalHostOpenClawRuntimePolicy(
   ) {
     throw policyError('OPENCLAW_APPLICABILITY_PROMPT_POLICY_MISMATCH');
   }
-  if (task.modelInput.schemaVersion === 'wiselink.3_1.translation_task.v2' && (
-    !['wiselink-translation-block@r09.c44', 'wiselink-translation-block@r09.c45'].includes(result.promptVersion) ||
-    (parseCompatibleSkillRevision(result.skillVersion, policy.skillCompatibilityRef) ?? -1) < 44
-  )) {
+  if (
+    task.modelInput.schemaVersion === 'wiselink.3_1.translation_task.v2' &&
+    (![
+      'wiselink-translation-block@r09.c44',
+      'wiselink-translation-block@r09.c45',
+      'wiselink-translation-block@r09.c46',
+    ].includes(result.promptVersion) ||
+      (parseCompatibleSkillRevision(
+        result.skillVersion,
+        policy.skillCompatibilityRef,
+      ) ?? -1) < 44)
+  ) {
     throw policyError('OPENCLAW_TRANSLATION_V2_RUNTIME_POLICY_MISMATCH');
   }
 }

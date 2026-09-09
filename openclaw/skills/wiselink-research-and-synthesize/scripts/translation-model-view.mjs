@@ -73,6 +73,7 @@ export function buildTranslationModelView(batch) {
       blocks: (context.blocks ?? []).map(block), anchors: (context.anchors ?? []).map(anchor), conditionsAreSourceQuotations: true,
     },
     terminology: structuredClone(batch.terminology), previousCandidate: candidate(batch.previousCandidate),
+    ...(batch.checkCandidates ? { previousCandidates: batch.checkCandidates.map((entry) => candidate(entry.candidate)) } : {}),
     correctionIssues: (batch.correctionIssues ?? []).map(issue),
   };
   const originalBlocks = new Map([...blockAliases].map(([original, short]) => [short, original]));
@@ -84,8 +85,10 @@ export function buildTranslationModelView(batch) {
   return { input, restoreOutput(output) {
     // Preserve every field for the strict output validator; aliases never hide
     // an extra model field or make an out-of-scope source acceptable.
-    if (batch.purpose === 'CHECK') return { ...output, blockId: original(originalBlocks, output.blockId),
-      issues: output.issues.map((entry) => ({ ...entry, anchorIds: entry.anchorIds.map((id) => original(originalAnchors, id)) })) };
+    const review = (value) => ({ ...value, blockId: original(originalBlocks, value.blockId),
+      issues: value.issues.map((entry) => ({ ...entry, anchorIds: entry.anchorIds.map((id) => original(originalAnchors, id)) })) });
+    if (batch.purpose === 'CHECK') return review(output);
+    if (batch.purpose === 'CHECK_BATCH') return { ...output, checks: output.checks.map(review) };
     return { ...output, blocks: output.blocks.map((entry) => ({ ...entry, blockId: original(originalBlocks, entry.blockId),
       elements: entry.elements.map((element) => ({ ...element, anchorIds: element.anchorIds.map((id) => original(originalAnchors, id)) })) })) };
   } };

@@ -15,6 +15,12 @@ export type TranslationNextWorkV2 =
       blockIds: string[];
       targetBlockRevisionId: string | null;
     }
+  | {
+      kind: 'CHECK_BATCH';
+      blockIds: string[];
+      targetBlockRevisionId: null;
+      checkTargets: NonNullable<TranslationGenerationRequestV2['checkTargets']>;
+    }
   | { kind: 'UNRESOLVED_GENERATION'; request: TranslationGenerationRequestV2 }
   | { kind: 'DONE' };
 
@@ -27,7 +33,10 @@ export function nextTranslationWorkV2(
   revisions: TranslationBlockRevisionV2[],
   reading: TranslationWorkspaceReadingV2,
   targetSourceCharacters = TRANSLATION_INITIAL_BATCH_SOURCE_CHARACTERS,
-  options: { retranslateBlockIds?: readonly string[] } = {},
+  options: {
+    retranslateBlockIds?: readonly string[];
+    batchSemanticChecks?: boolean;
+  } = {},
 ): TranslationNextWorkV2 {
   const requested = new Set(options.retranslateBlockIds ?? []);
   const currentRevision = (revision: TranslationBlockRevisionV2) =>
@@ -45,6 +54,25 @@ export function nextTranslationWorkV2(
         block.selected?.provenance.originAttemptId !==
           workspace.activeAttemptId),
   );
+  const pendingChecks: TranslationBlockRevisionV2[] = [];
+  let checkCharacters = 0;
+  const checkBatch = (): TranslationNextWorkV2 =>
+    pendingChecks.length === 1
+      ? {
+          kind: 'CHECK',
+          blockIds: [pendingChecks[0].blockId],
+          targetBlockRevisionId: pendingChecks[0].blockRevisionId,
+        }
+      : {
+          kind: 'CHECK_BATCH',
+          blockIds: pendingChecks.map((revision) => revision.blockId),
+          targetBlockRevisionId: null,
+          checkTargets: pendingChecks.map((revision) => ({
+            blockId: revision.blockId,
+            blockRevisionId: revision.blockRevisionId,
+            rowVersion: revision.rowVersion,
+          })),
+        };
   for (const entry of unfinished) {
     if (entry.source.sourceIssues.some((issue) => issue.severity === 'BLOCK'))
       continue;
@@ -78,6 +106,18 @@ export function nextTranslationWorkV2(
           targetBlockRevisionId: latest.blockRevisionId,
         };
     } else if (latest.check.semanticCheck === 'PENDING') {
+      if (options.batchSemanticChecks) {
+        if (
+          pendingChecks.length &&
+          (pendingChecks.length >= 32 ||
+            checkCharacters + entry.source.sourceCharacterCount >
+              targetSourceCharacters)
+        )
+          return checkBatch();
+        pendingChecks.push(latest);
+        checkCharacters += entry.source.sourceCharacterCount;
+        continue;
+      }
       return {
         kind: 'CHECK',
         blockIds: [latest.blockId],
@@ -85,6 +125,7 @@ export function nextTranslationWorkV2(
       };
     }
   }
+  if (pendingChecks.length) return checkBatch();
   const missing = unfinished.filter(
     (entry) =>
       (entry.readingStatus === 'MISSING' ||
@@ -202,6 +243,18 @@ export function buildTranslationBatchV2(
     : null;
   if (request.targetBlockRevisionId && !target)
     throw new Error('TRANSLATION_BATCH_TARGET_NOT_FOUND');
+  const checkCandidates = request.checkTargets?.map((entry) => {
+    const revision = revisions.find(
+      (value) => value.blockRevisionId === entry.blockRevisionId,
+    );
+    if (
+      !revision ||
+      revision.blockId !== entry.blockId ||
+      revision.rowVersion !== entry.rowVersion
+    )
+      throw new Error('TRANSLATION_BATCH_TARGET_CHANGED');
+    return { ...entry, candidate: structuredClone(revision.candidate) };
+  });
   const sourceIds = new Set(request.dependencies.sourceAnchorIds);
   const contextIds = new Set(request.dependencies.contextAnchorIds);
   const contextBlocks = plan.blocks.filter((block) =>
@@ -247,6 +300,7 @@ export function buildTranslationBatchV2(
     },
     previousCandidate: target ? structuredClone(target.candidate) : null,
     previousBlockRevisionId: target?.blockRevisionId ?? null,
+    ...(checkCandidates ? { checkCandidates } : {}),
     correctionIssues: target ? structuredClone(target.check?.issues ?? []) : [],
   };
 }

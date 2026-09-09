@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { canonicalSha256, WISELINK_SKILL_VERSION } from '../scripts/validate-payload.mjs';
-import { invokeHostedTranslationBlock, validateTranslationBlockOutput } from '../scripts/invoke-hosted-translation-block.mjs';
+import { invokeHostedTranslationBlock, validateTranslationBlockOutput, validateTranslationSemanticBatch } from '../scripts/invoke-hosted-translation-block.mjs';
 import { runSemanticTranslation } from '../scripts/run-semantic-translation.mjs';
 
 const model = { modelRef: 'miaoda/minimax-m3', displayName: 'Synthetic M3', providerKind: 'BUILT_IN', settingsRevision: 1, selectedAt: '2026-09-09T00:00:00.000Z' };
@@ -12,7 +12,7 @@ function batch(ref = 'GEN-1') {
 }
 function options() { return { gatewayUrl: 'https://synthetic.invalid', gatewayToken: 'synthetic-test-token', gatewayChatCompletionsEnabled: true, executionModel: model, registeredModelRefs: [model.modelRef] }; }
 function response(value = output, extra = {}) { return { ok: true, status: 200, text: async () => JSON.stringify({ model: 'synthetic-actual-m3', usage: { prompt_tokens: 100, completion_tokens: 32 },
-  choices: [{ finish_reason: 'tool_calls', message: { role: 'assistant', content: null, tool_calls: [{ type: 'function', function: { name: 'return_wiselink_translation_block', arguments: JSON.stringify({ candidateJson: JSON.stringify(value).replaceAll('"b1"', '"B1"').replaceAll('"a1"', '"A1"') }) } }] } }], ...extra }) }; }
+  choices: [{ finish_reason: 'tool_calls', message: { role: 'assistant', content: null, tool_calls: [{ type: 'function', function: { name: 'return_wiselink_translation_block', arguments: JSON.stringify({ candidateJson: JSON.stringify(value).replaceAll('"b1"', '"B1"').replaceAll('"a1"', '"A1"').replaceAll('"b2"', '"B2"').replaceAll('"a2"', '"A2"') }) } }] } }], ...extra }) }; }
 
 test('each registered generation has one short native session and actual provenance', async () => {
   const requests = [];
@@ -24,6 +24,71 @@ test('each registered generation has one short native session and actual provena
   }
   assert.deepEqual(requests.map((request) => request.user), ['translation:GEN-1', 'translation:GEN-2']);
   assert.ok(requests.every((request) => request.messages.length === 2 && request.tools.length === 1));
+  assert.ok(requests.every((request) => request.tool_choice === 'required' && request.parallel_tool_calls === false));
+});
+
+function checkBatch() {
+  const blocks = [output.blocks[0], { blockId: 'b2', elements: [{ kind: 'paragraph', translatedText: '第二个完整块。', anchorIds: ['a2'] }] }];
+  return { ...batch('GEN-check-batch'), purpose: 'CHECK_BATCH',
+    blocks: blocks.map((entry) => ({ blockId: entry.blockId, anchorIds: entry.elements[0].anchorIds })),
+    anchors: [...batch().anchors, { anchorId: 'a2', sourceText: 'Second complete block.' }],
+    checkCandidates: blocks.map((candidate, index) => ({ blockId: candidate.blockId,
+      blockRevisionId: `TB-${index + 1}`, rowVersion: 2, candidate })) };
+}
+
+test('one batched check preserves all candidate text and aliases without conflicting output shapes', async () => {
+  let request; let count = 0;
+  const value = { checks: [{ blockId: 'b1', issues: [] }, { blockId: 'b2', issues: [
+    { code: 'SYNTHETIC_WARNING', severity: 'REVIEW', message: 'Synthetic uncertainty', anchorIds: ['a2'] },
+  ] }] };
+  const result = await invokeHostedTranslationBlock(checkBatch(), options(), { requestGateway: async (_url, init) => {
+    count++; request = JSON.parse(init.body); return response(value);
+  } });
+  assert.equal(count, 1); assert.deepEqual(result.output, value);
+  const view = JSON.parse(request.messages[1].content);
+  assert.deepEqual(view.previousCandidates.map((entry) => entry.elements[0].translatedText), ['合成示例。', '第二个完整块。']);
+  assert.deepEqual(view.previousCandidates.map((entry) => entry.blockId), ['B1', 'B2']);
+  assert.ok(!JSON.stringify(view).includes('TB-'));
+  assert.ok(request.messages[0].content.includes('Return {checks:'));
+  assert.ok(!request.messages[0].content.includes('Return {blockId,issues:'));
+});
+
+test('batched checks reject missing, reordered or cross-block results and changed target mappings', () => {
+  const source = checkBatch();
+  const checks = [{ blockId: 'b1', issues: [] }, { blockId: 'b2', issues: [] }];
+  validateTranslationSemanticBatch(source); validateTranslationBlockOutput(source, { checks });
+  for (const invalid of [{ checks: checks.slice(0, 1) }, { checks: [...checks].reverse() },
+    { checks: [checks[0], { blockId: 'b2', issues: [{ code: 'TEST', severity: 'BLOCK', message: 'Synthetic', anchorIds: ['a1'] }] }] }])
+    assert.throws(() => validateTranslationBlockOutput(source, invalid), /SEMANTIC_REVIEW_INVALID/u);
+  assert.throws(() => validateTranslationSemanticBatch({ ...source, checkCandidates: [...source.checkCandidates].reverse() }), /TARGET_REQUIRED/u);
+});
+
+test('a stop response without the required function remains rejected and records only bounded shape', async () => {
+  const observed = []; let count = 0;
+  await assert.rejects(invokeHostedTranslationBlock(batch(), { ...options(), observeModelOutput: async (shape) => observed.push(shape) },
+    { requestGateway: async () => { count++; return response(output, { choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: 'Synthetic non-candidate response' } }] }); } }),
+    /OUTPUT_CHANNEL_INVALID/u);
+  assert.equal(count, 1); assert.equal(observed[0].toolCall.count, 0);
+  assert.equal(observed[0].assistantContent.type, 'string'); assert.equal(observed[0].assistantContent.isBlank, false);
+  assert.ok(!JSON.stringify(observed).includes('Synthetic non-candidate response'));
+});
+
+test('batch-check response loss repeats exactly one save while retaining one model call', async () => {
+  const source = checkBatch(); const checks = source.blocks.map((entry) => ({ blockId: entry.blockId, issues: [] }));
+  let nextNo = 0; let requests = 0; const saves = [];
+  await runSemanticTranslation({ begin: begin(), requestId: 'synthetic-batch-check',
+    translate: async () => { requests++; return { ...execution(), output: { checks } }; },
+    callTool: async (name, args) => {
+      if (name === 'heartbeat_action_attempt') return {};
+      if (args.phase === 'NEXT') { assert.equal(args.batchSemanticChecks, true); return nextNo++ === 0 ? delivery(source) : { action: 'DONE' }; }
+      if (args.phase === 'READ') return {};
+      if (args.phase === 'CHECK_BATCH') {
+        saves.push(args); if (saves.length === 1) throw new Error('SYNTHETIC_CHECK_SAVE_RESPONSE_LOSS');
+        return { generationRequestRef: source.generationRequestRef, blocks: source.checkCandidates.map(({ candidate: _candidate, ...target }) => target) };
+      }
+      if (args.phase === 'ASSEMBLE') return assembled(); assert.fail(args.phase);
+    } });
+  assert.equal(requests, 1); assert.deepEqual(saves[0], saves[1]); assert.deepEqual(saves[0].semanticReviews, checks);
 });
 
 test('the official profile-only response keeps complete blocks with an explicitly unreported model version', async () => {
@@ -157,6 +222,7 @@ function begin() {
 }
 function delivery(value) { const bytes = Buffer.from(JSON.stringify(value)); return { schemaVersion: 'wiselink.3_1.translation_batch_delivery.v2', action: value.purpose,
   workspaceId: value.workspaceId, generationRequestRef: value.generationRequestRef, blockIds: value.blocks.map((block) => block.blockId), targetBlockRevisionId: null,
+  ...(value.checkCandidates ? { checkTargets: value.checkCandidates.map(({ candidate: _candidate, ...target }) => target) } : {}),
   targetRowVersion: null, delivery: { partIndex: 0, partCount: 1, byteLength: bytes.length, payloadBase64: bytes.toString('base64') } }; }
 function execution() { return { output, actualExecution: { modelRef: model.modelRef, modelVersion: 'synthetic-m3' },
   provenance: { modelVersion: 'synthetic-m3', runMetrics: { inputUnits: 100, outputUnits: 32 } } }; }

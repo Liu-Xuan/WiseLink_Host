@@ -6,13 +6,17 @@ import type {
   TranslationWorkspaceV2,
 } from '@shared/canonical-translation-v2.interface';
 import { buildTranslationSourcePlan } from '../../server/modules/canonical-host/canonical-translation-source-plan';
+import { nextTranslationWorkV2 } from '../../server/modules/canonical-host/canonical-translation-v2-batch';
 import {
   buildTranslationWorkspaceReadingV2,
   checkTranslationBlockV2,
 } from '../../server/modules/canonical-host/canonical-translation-v2-quality';
 
 // Invented content used only for behavioral checks, never aircraft evidence.
-function plan(texts: string[]): TranslationSourcePlanV2 {
+function plan(
+  texts: string[],
+  separateModules = false,
+): TranslationSourcePlanV2 {
   return buildTranslationSourcePlan({
     documentVersionId: 'dv-test',
     packageId: 'pkg-test',
@@ -25,7 +29,9 @@ function plan(texts: string[]): TranslationSourcePlanV2 {
       mediaType: 'application/json',
     },
     source: {
-      modules: [{ moduleId: 'm', order: 0 }],
+      modules: separateModules
+        ? texts.map((_text, index) => ({ moduleId: `m${index}`, order: index }))
+        : [{ moduleId: 'm', order: 0 }],
       findings: [],
       references: [],
       sourceLocators: texts.map((_text, index) => ({
@@ -46,7 +52,7 @@ function plan(texts: string[]): TranslationSourcePlanV2 {
       units: texts.map((text, index) => ({
         unitId: `u${index}`,
         kind: 'paragraph',
-        moduleId: 'm',
+        moduleId: separateModules ? `m${index}` : 'm',
         parentUnitId: null,
         order: index,
         depth: 0,
@@ -142,6 +148,77 @@ function workspace(
 }
 
 describe('translation v2 quality and actual reading coverage', () => {
+  it('batches complete pending checks within source and count bounds only for a capable caller', () => {
+    const sourcePlan = plan(
+      Array.from(
+        { length: 34 },
+        () =>
+          'Do not replace the unit unless the indication remains after 5 seconds.',
+      ),
+      true,
+    );
+    expect(sourcePlan.blocks).toHaveLength(34);
+    const work = workspace(sourcePlan);
+    const revisions = sourcePlan.blocks.map((block, index) => {
+      const value: TranslationBlockCandidateV2 = {
+        blockId: block.blockId,
+        elements: [
+          {
+            elementId: `e${index}`,
+            kind: 'paragraph',
+            translatedText: '除非指示在 5 秒后仍然存在，否则不要更换该组件。',
+            anchorIds: block.anchorIds,
+          },
+        ],
+      };
+      const entry = revision(sourcePlan, value);
+      return {
+        ...entry,
+        blockRevisionId: `TB-${index}`,
+        rowVersion: 2,
+        dependencies: {
+          ...entry.dependencies,
+          sourceAnchorIds: block.anchorIds,
+        },
+        check: checkTranslationBlockV2({ plan: sourcePlan, candidate: value }),
+      };
+    });
+    expect(
+      revisions.every((entry) => entry.check.semanticCheck === 'PENDING'),
+    ).toBe(true);
+    expect(revisions.flatMap((entry) => entry.check.issues)).toEqual([]);
+    const reading = buildTranslationWorkspaceReadingV2(work, revisions);
+    expect(nextTranslationWorkV2(work, revisions, reading).kind).toBe('CHECK');
+    const bounded = nextTranslationWorkV2(
+      work,
+      revisions,
+      reading,
+      sourcePlan.blocks[0].sourceCharacterCount * 2,
+      { batchSemanticChecks: true },
+    );
+    expect(bounded.kind).toBe('CHECK_BATCH');
+    if (bounded.kind !== 'CHECK_BATCH')
+      throw new Error('Expected a complete two-block batch');
+    expect(bounded.checkTargets).toEqual(
+      revisions.slice(0, 2).map((entry) => ({
+        blockId: entry.blockId,
+        blockRevisionId: entry.blockRevisionId,
+        rowVersion: 2,
+      })),
+    );
+    const maximum = nextTranslationWorkV2(work, revisions, reading, 1_000_000, {
+      batchSemanticChecks: true,
+    });
+    expect(maximum.kind === 'CHECK_BATCH' && maximum.blockIds.length).toBe(32);
+    const oversized = nextTranslationWorkV2(work, revisions, reading, 1, {
+      batchSemanticChecks: true,
+    });
+    expect(oversized).toEqual({
+      kind: 'CHECK',
+      blockIds: [sourcePlan.blocks[0].blockId],
+      targetBlockRevisionId: 'TB-0',
+    });
+  });
   it('accepts a natural paragraph with three original anchors and equivalent full dates', () => {
     const sourcePlan = plan([
       'On September 3, 2024,',
