@@ -1372,7 +1372,7 @@ test('requires 24 MCP capabilities, five review tools, and hosted provenance', (
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c54',
+    'wiselink-research-and-synthesize@r09.c55',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -6879,4 +6879,66 @@ test('gateway required-tool contract failure is reported once without transient 
   }, wait: async () => { assert.fail('contract failure must not retry'); } }), /REVIEW_TOOL_CHOICE_NOT_SATISFIED/u);
   assert.equal(requests, 1);
   assert.deepEqual(progress.map((event) => event.kind), ['MODEL_REQUEST']);
+});
+
+test('leased JobAid review spans the former 8-minute cutoff with bounded responses and stops on lease loss', async (t) => {
+  let now = 0;
+  const budgets = [];
+  const realTimeout = AbortSignal.timeout;
+  t.mock.method(Date, 'now', () => now);
+  t.mock.method(AbortSignal, 'timeout', (ms) => { budgets.push(ms); return realTimeout(30_000); });
+  const input = { input: { context: { problemAssessment: {} }, availableSourceRefIds: ['s1', 's2'] } };
+  const candidate = { responseType: 'ANSWER', answer: '保留未知', sourceRefs: [], missingInputs: [],
+    candidateEvidenceRefs: [], reviewActionDraft: null, affectedItemIds: [], warnings: [], jobAidWorkingDelta: null };
+  const options = {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+    observeProgress: async () => {},
+    readSourceRefs: async (ids) => ids.map((id) => ({ sourceRefId: id, evidenceRef: id, excerpt: 'fixture' })),
+  };
+  let requests = 0;
+  const transport = { requestGateway: async () => {
+    requests++;
+    const reading = requests < 3;
+    now = requests === 1 ? 9 * 60_000 : 25 * 60_000;
+    return Response.json({ choices: [{ message: { content: null, tool_calls: [{ id: `r${requests}`, type: 'function', function: {
+      name: reading ? 'read_wiselink_review_sources' : 'return_wiselink_review_candidate',
+      arguments: JSON.stringify(reading ? { sourceRefIds: [`s${requests}`] } : { candidate }),
+    } }] } }] });
+  } };
+  const result = await invokeReviewWithTransport(input, options, transport);
+  assert.deepEqual(result.output, candidate);
+  assert.deepEqual(budgets, [15 * 60_000, 15 * 60_000, 5 * 60_000]);
+  now = 0; requests = 0;
+  let renewals = 0;
+  await assert.rejects(invokeReviewWithTransport(input, { ...options, observeProgress: async () => {
+    if (++renewals === 2) throw new Error('ACTION_ATTEMPT_LEASE_EXPIRED');
+  } }, transport), /ACTION_ATTEMPT_LEASE_EXPIRED/u);
+  assert.equal(requests, 1);
+  now = 0; requests = 0;
+  await assert.rejects(invokeReviewWithTransport(input, { ...options, timeoutMs: 480_000 }, transport), /REVIEW_MODEL_TIMEOUT/u);
+  assert.equal(requests, 1);
+  now = 0; requests = 0;
+  await assert.rejects(invokeReviewWithTransport(input, { ...options, observeProgress: undefined }, transport), /REVIEW_MODEL_TIMEOUT/u);
+  assert.equal(requests, 1);
+  now = 0; requests = 0;
+  await assert.rejects(invokeReviewWithTransport(input, { ...options, timeoutMs: 3 * 60 * 60_000 }, {
+    requestGateway: async (...args) => {
+      const response = await transport.requestGateway(...args);
+      now = 31 * 60_000;
+      return response;
+    },
+  }), /REVIEW_MODEL_TIMEOUT/u);
+  assert.equal(requests, 1);
+});
+
+test('public HTTP 200 Gateway idle-timeout text is a failure, never a candidate or retry instruction', async () => {
+  let calls = 0;
+  await assert.rejects(invokeReviewWithTransport({ input: {} }, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+    observeProgress: async () => {},
+  }, { requestGateway: async () => {
+    calls++;
+    return Response.json({ choices: [{ message: { content: 'LLM request timed out.\n\nThe model did not produce a response before the model idle timeout. Please try again, or increase `models.providers.<id>.timeoutSeconds` for slow local or self-hosted providers. If `agents.defaults.timeoutSeconds` or a run-specific timeout is lower, raise that ceiling too; provider timeouts cannot extend the whole agent run.' }, finish_reason: 'stop' }] });
+  }, wait: async () => assert.fail('must not retry ambiguous timeout') }), /REVIEW_GATEWAY_MODEL_IDLE_TIMEOUT/u);
+  assert.equal(calls, 1);
 });

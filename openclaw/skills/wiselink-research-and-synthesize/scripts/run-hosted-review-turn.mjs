@@ -266,7 +266,6 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
     options.agentId ?? WISELINK_PROFILE_REF,
     'REVIEW_AGENT_REQUIRED',
   );
-  const timeoutMs = positiveInteger(options.timeoutMs, 480_000);
   const configuredModelVersion = requiredText(
     options.configuredModelVersion,
     'REVIEW_MODEL_CONFIG_UNREADABLE',
@@ -281,6 +280,14 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
   const prompt = buildReviewPrompt(input);
   const isMatter = isRecord(input.input?.context?.matterWorking);
   const isJobAid = isRecord(input.input?.context?.problemAssessment);
+  // The live JobAid review was still producing output when the legacy 8-minute
+  // budget aborted it. Match initial problem analysis's 30-minute total only
+  // when the caller renews the exact Host lease before each request. One
+  // response stays below the 30-minute lease; Host's 60-minute deadline holds.
+  const leasedJobAid = isJobAid && typeof options.observeProgress === 'function';
+  const timeoutMs = leasedJobAid
+    ? Math.min(positiveInteger(options.timeoutMs, 30 * 60_000), 30 * 60_000)
+    : positiveInteger(options.timeoutMs, 480_000);
   const sessionDiscriminator = requiredText(
     options.sessionDiscriminator ?? canonicalSha256(input),
     'REVIEW_MODEL_SESSION_DISCRIMINATOR_REQUIRED',
@@ -317,7 +324,7 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
     if (remainingMs <= 0) throw new Error('REVIEW_MODEL_TIMEOUT');
     round += 1;
     inputUnits += Buffer.byteLength(JSON.stringify(messages));
-    const signal = AbortSignal.timeout(remainingMs);
+    const signal = AbortSignal.timeout(leasedJobAid ? Math.min(remainingMs, 15 * 60_000) : remainingMs);
     let response;
     let text;
     try {
@@ -372,6 +379,13 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
     if (observeOutputShape) await observeOutputShape(outputShape, round);
     if (!response.ok) throw new Error(`REVIEW_GATEWAY_HTTP_${response.status}`);
     if (outputShape.hasAnalysis) throw new Error('REVIEW_MODEL_ANALYSIS_FORBIDDEN');
+    // This exact public Gateway error was returned as HTTP 200 with no calls.
+    // Report the upstream timeout, rather than a misleading function-count
+    // error. It is not candidate text and never authorizes a retry or commit.
+    if (payload.choices?.length === 1 && !payload.choices[0].message?.tool_calls?.length &&
+      payload.choices[0].message?.content === 'LLM request timed out.\n\nThe model did not produce a response before the model idle timeout. Please try again, or increase `models.providers.<id>.timeoutSeconds` for slow local or self-hosted providers. If `agents.defaults.timeoutSeconds` or a run-specific timeout is lower, raise that ceiling too; provider timeouts cannot extend the whole agent run.') {
+      throw new Error('REVIEW_GATEWAY_MODEL_IDLE_TIMEOUT');
+    }
     const { argumentsText, output, toolCall } = readReviewCandidateArguments(payload);
     outputUnits += Buffer.byteLength(argumentsText);
     const choice = payload.choices[0];
