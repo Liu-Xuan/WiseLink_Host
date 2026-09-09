@@ -1,4 +1,4 @@
-import { groupLibraryDocuments } from '../../client/src/pages/WorkspaceHomePage/library-classification';
+import { buildLibraryHierarchy, groupLibraryDocuments, libraryGroupingOrder, type LibraryGrouping } from '../../client/src/pages/WorkspaceHomePage/library-classification';
 import { libraryFamily, libraryMetadata } from './fixtures/canonical-library';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -14,6 +14,43 @@ jest.mock(
 );
 
 describe('library category hierarchy', () => {
+  it.each<LibraryGrouping>(['category', 'ata', 'aircraft'])('uses all dimensions with %s first and preserves all three filters', (first) => {
+    const matching = libraryFamily('matching');
+    matching.versions[0].extractedMetadata = libraryMetadata('34', '737');
+    matching.versions[1].extractedMetadata = libraryMetadata('29', '777');
+    const other = libraryFamily('other');
+    other.versions[0].extractedMetadata = libraryMetadata('34', '787');
+    const filters = { normalizedFamily: 'SB', ata: '29', aircraftModel: '777' };
+    const tree = buildLibraryHierarchy([matching, other], first, filters);
+    expect(tree).toHaveLength(1);
+    const path = [tree[0], tree[0].children[0], tree[0].children[0].children[0]];
+    expect(path.map((node) => node.dimension)).toEqual(libraryGroupingOrder(first));
+    expect(path[2].children).toEqual([]);
+    expect(path[2].pathFilters).toEqual(filters);
+    expect(path[2].documents).toEqual([matching]);
+    expect(path[2].documents[0].versions).toHaveLength(2);
+    expect(filters).toEqual({ normalizedFamily: 'SB', ata: '29', aircraftModel: '777' });
+  });
+
+  it('prunes nonselected branches and returns no rows for an impossible intersection', () => {
+    const item = libraryFamily('multi');
+    item.versions[0].extractedMetadata = libraryMetadata('34', '737');
+    item.versions[1].extractedMetadata = libraryMetadata('29', '777');
+    const tree = buildLibraryHierarchy([item], 'category', { ata: '34' });
+    expect(tree[0].children.map((node) => node.key)).toEqual(['34']);
+    expect(tree[0].children[0].children.map((node) => node.key)).toEqual(['737', '777']);
+    expect(buildLibraryHierarchy([item], 'ata', { ata: '34', aircraftModel: '787' })).toEqual([]);
+    expect(buildLibraryHierarchy([item], 'ata', { ata: '__UNKNOWN__' })).toEqual([]);
+  });
+
+  it('keeps a real unclassified path in every missing dimension', () => {
+    const item = { ...libraryFamily('unknown'), normalizedFamily: '' };
+    const tree = buildLibraryHierarchy([item], 'aircraft');
+    const leaf = tree[0].children[0].children[0];
+    expect(leaf.pathFilters).toEqual({ normalizedFamily: '__UNKNOWN__', ata: '__UNKNOWN__', aircraftModel: '__UNKNOWN__' });
+    expect(leaf.documents).toEqual([item]);
+  });
+
   it('renders category/family/version levels and exact historical reader links', () => {
     const html = renderToStaticMarkup(
       createElement(
@@ -65,6 +102,7 @@ describe('library category hierarchy', () => {
     const document = libraryFamily('without-task');
     document.versions[1].readerWorkItemId = '';
     document.versions[1].documentVersionId = 'DV/exact-old';
+    document.versions[1].extractedMetadata = libraryMetadata();
     const html = renderToStaticMarkup(
       createElement(
         StaticRouter,
@@ -85,6 +123,11 @@ describe('library category hierarchy', () => {
     expect(html).not.toContain('/work-items//');
     expect(html).not.toContain('/original');
     expect(html).toContain('读取原件以预览');
+    expect(html).toContain('<strong>R1</strong>');
+    expect(html).toContain('<span>历史版本</span>');
+    expect(html).toContain('old.pdf');
+    expect(html).toContain('测试原文标题');
+    expect(html).toContain('library-version-label');
     expect(html).toContain('共 7 份');
     expect(html).toContain('非适用性');
     expect(html).toContain('可能来自历史版本');

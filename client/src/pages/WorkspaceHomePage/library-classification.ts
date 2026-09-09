@@ -4,13 +4,12 @@ import type {
   DocumentMetadataField,
 } from '@shared/api.interface';
 
-export type LibraryGrouping = 'category' | 'ata' | 'aircraft' | 'all';
+export type LibraryGrouping = 'category' | 'ata' | 'aircraft';
 
 export const LIBRARY_GROUPINGS: { value: LibraryGrouping; label: string }[] = [
   { value: 'category', label: '文档类别' },
   { value: 'ata', label: 'ATA 章节' },
   { value: 'aircraft', label: '文档提及机型' },
-  { value: 'all', label: '全部文档' },
 ];
 
 export interface LibraryCategoryGroup {
@@ -43,7 +42,6 @@ export function documentClassificationValues(
 ): string[] {
   if (grouping === 'category')
     return [document.normalizedFamily || LIBRARY_UNCLASSIFIED];
-  if (grouping === 'all') return ['all'];
   const values: string[] = document.versions.flatMap((version) =>
     metadataValues(
       grouping === 'ata'
@@ -76,4 +74,44 @@ export function groupLibraryDocuments(
     if (b.key === LIBRARY_UNCLASSIFIED) return -1;
     return a.label.localeCompare(b.label, 'zh-CN', { numeric: true });
   });
+}
+
+export const LIBRARY_GROUPING_FACETS: Record<LibraryGrouping, LibraryFacetKey> = {
+  category: 'normalizedFamily', ata: 'ata', aircraft: 'aircraftModel',
+};
+
+export function libraryGroupingOrder(first: LibraryGrouping): LibraryGrouping[] {
+  return [first, ...LIBRARY_GROUPINGS.map((item) => item.value).filter((value) => value !== first)];
+}
+
+export interface LibraryHierarchyGroup extends LibraryCategoryGroup {
+  dimension: LibraryGrouping;
+  pathFilters: LibraryCatalogFilters;
+  children: LibraryHierarchyGroup[];
+}
+
+/** All three facets remain active; ordering changes presentation, never filter semantics.
+ * Values are family-level observations, not proof that ATA/model co-occur in one version. */
+export function buildLibraryHierarchy(
+  documents: CanonicalLibraryDocumentSummary[],
+  first: LibraryGrouping = 'category',
+  filters: LibraryCatalogFilters = {},
+): LibraryHierarchyGroup[] {
+  const order = libraryGroupingOrder(first);
+  const matching = documents.filter((document) => order.every((dimension) => {
+    const selected = filters[LIBRARY_GROUPING_FACETS[dimension]];
+    return !selected || documentClassificationValues(document, dimension).includes(selected);
+  }));
+  function branch(items: CanonicalLibraryDocumentSummary[], depth: number, pathFilters: LibraryCatalogFilters): LibraryHierarchyGroup[] {
+    const dimension = order[depth];
+    if (!dimension) return [];
+    const facet = LIBRARY_GROUPING_FACETS[dimension];
+    return groupLibraryDocuments(items, dimension)
+      .filter((group) => !filters[facet] || group.key === filters[facet])
+      .map((group) => {
+        const path = { ...pathFilters, [facet]: group.key };
+        return { ...group, dimension, pathFilters: path, children: branch(group.documents, depth + 1, path) };
+      });
+  }
+  return branch(matching, 0, {});
 }

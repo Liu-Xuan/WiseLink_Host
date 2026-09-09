@@ -20,8 +20,11 @@ export function DocumentVersionLink({
     );
   }
   return (
-    <DocumentOriginalPreview key={version.documentVersionId} documentVersionId={version.documentVersionId}>
-      打开 {version.originalFilename} 原件（新标签页）
-    </DocumentOriginalPreview>
+    <div className="library-version-original">
+      <div className="library-version-label">{children}</div>
+      <DocumentOriginalPreview key={version.documentVersionId} documentVersionId={version.documentVersionId}>
+        打开 {version.originalFilename} 原件（新标签页）
+      </DocumentOriginalPreview>
+    </div>
   );
 }

@@ -9,7 +9,6 @@ import {
 } from '@client/src/app/providers/CurrentObjectContextProvider';
 import { CurrentUserSessionProvider } from '@client/src/app/providers/CurrentUserSessionProvider';
 import CurrentUserControl from '@client/src/components/CurrentUserControl';
-import WiseLinkBrandMark from '@client/src/components/WiseLinkBrandMark';
 import FloatingDock from '@client/src/features/navigation/FloatingDock';
 
 import './app-shell.css';
@@ -60,23 +59,13 @@ function LayoutChrome() {
 
       <div className="wiselink-app-chrome wl-glass-nav" data-wl-material="g1">
         <header className="wiselink-app-header" role="banner">
-          <NavLink className="wiselink-app-brand" to="/library">
-            <span className="wiselink-app-mark" aria-hidden="true">
-              <WiseLinkBrandMark size={34} />
-            </span>
-            <span>
-              <strong>WiseLink</strong>
-              <small>工程资料智能分析</small>
-            </span>
-          </NavLink>
-
           <div
             className={`wiselink-object-context${currentObject ? ' has-object' : ' is-global'}`}
           >
             <div className="wiselink-object-context-main">
-              <span className="wiselink-object-page-label">{pageLabel}</span>
               {currentObject ? (
                 <>
+                  <span className="wiselink-object-page-label">{pageLabel}</span>
                   <span
                     className={`wiselink-object-kind is-${currentObject.kind.toLowerCase()}`}
                   >

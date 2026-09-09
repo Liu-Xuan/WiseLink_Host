@@ -5,7 +5,12 @@ import {
   libraryVersionLabel,
 } from './library-document-presentation';
 import {
-  groupLibraryDocuments,
+  buildLibraryHierarchy,
+  libraryGroupingOrder,
+  LIBRARY_GROUPINGS,
+  LIBRARY_GROUPING_FACETS,
+  type LibraryHierarchyGroup,
+  type LibraryCatalogFilters,
   type LibraryGrouping,
 } from './library-classification';
 import { DocumentVersionLink } from './DocumentVersionLink';
@@ -18,6 +23,9 @@ interface LibraryHierarchyProps {
   onSelect: (familyId: string) => void;
   grouping?: LibraryGrouping;
   totalCount?: number;
+  filters?: LibraryCatalogFilters;
+  onFilterChange?: (filters: LibraryCatalogFilters) => void;
+  disabled?: boolean;
 }
 
 export function LibraryHierarchy({
@@ -27,8 +35,12 @@ export function LibraryHierarchy({
   onSelect,
   grouping = 'category',
   totalCount,
+  filters = {},
+  onFilterChange,
+  disabled = false,
 }: LibraryHierarchyProps) {
-  const groups = groupLibraryDocuments(documents, grouping);
+  const groups = buildLibraryHierarchy(documents, grouping, filters);
+  const labelFor = (dimension: LibraryGrouping) => LIBRARY_GROUPINGS.find((option) => option.value === dimension)?.label;
 
   function documentRows(items: CanonicalLibraryDocumentSummary[]) {
     return (
@@ -91,23 +103,34 @@ export function LibraryHierarchy({
     );
   }
 
-  const categories = (
-    <div className="library-category-tree">
-      {groups.map((group) => (
-        <details key={group.key} open>
+  function categoryRows(items: LibraryHierarchyGroup[], depth = 0) {
+    return <div className="library-category-tree" data-depth={depth}>
+      {items.map((group) => {
+        const facet = LIBRARY_GROUPING_FACETS[group.dimension];
+        const pathLabel = Object.entries(group.pathFilters)
+          .map(([key, value]) => `${key === 'normalizedFamily' ? '类别' : key === 'ata' ? 'ATA' : '机型'} ${value === '__UNKNOWN__' ? '未分类' : value}`).join(' / ');
+        return <details key={`${group.dimension}:${group.key}`} open={depth === 0 || Boolean(filters[facet])}
+          data-facet={facet} data-facet-value={group.key}>
           <summary>
-            <strong>{group.label}</strong>
-            <span>已加载 {group.documents.length} 份文档</span>
+            <span className="library-branch-label"><small>{labelFor(group.dimension)}</small><strong>{group.label}</strong></span>
+            <span className="library-branch-count">已加载 {group.documents.length} 份</span>
           </summary>
-          {documentRows(group.documents)}
-        </details>
-      ))}
-    </div>
-  );
+          {onFilterChange ? <div className="library-branch-actions">
+            <Button variant="ghost" size="sm" disabled={disabled} aria-label={`筛选路径 ${pathLabel}`}
+              onClick={() => onFilterChange({ ...filters, ...group.pathFilters })}>筛选此路径</Button>
+          </div> : null}
+          {group.children.length ? categoryRows(group.children, depth + 1) : documentRows(group.documents)}
+        </details>;
+      })}
+    </div>;
+  }
 
   return (
     <section className="library-hierarchy" aria-label="文档分类目录">
       <h3>资料分类（含历史版本）</h3>
+      <p className="library-hierarchy-order" aria-label="当前目录层级">
+        {libraryGroupingOrder(grouping).map((dimension) => labelFor(dimension)).join(' → ')} → 文档 → 版本
+      </p>
       <p className="library-classification-note">
         {totalCount === undefined
           ? '全量统计尚未取得。'
@@ -115,14 +138,11 @@ export function LibraryHierarchy({
         {`已加载 ${documents.length} 份；下方树节点数量仅覆盖已加载的搜索结果。`}
         {hasMore ? '可在下方加载更多。' : ''} 展开文档查看版本，或打开文档快览。
       </p>
-      {grouping === 'ata' || grouping === 'aircraft' ? (
-        <p className="library-classification-note">
-          按各获权版本的原文观察值分类，全部待核；可能来自历史版本，不代表当前版本。
-          {grouping === 'aircraft' ? '正文提及机型（非适用性）。' : ''}
-          未分类包含尚未提取或本次文本未检出的版本；可在文档快览中查看依据或补提取。
-        </p>
-      ) : null}
-      {grouping === 'all' ? documentRows(documents) : categories}
+      <p className="library-classification-note">
+        三项筛选共同生效，切换首层只改变目录层级。ATA 与正文提及机型（非适用性）按文档族各获权版本的原文观察值归类，全部待核；可能来自历史版本或不同版本，不代表同版关联。
+        未分类表示尚未提取或本次文本未检出；可在文档快览查看依据或补提取。
+      </p>
+      <div key={grouping}>{categoryRows(groups)}</div>
     </section>
   );
 }
