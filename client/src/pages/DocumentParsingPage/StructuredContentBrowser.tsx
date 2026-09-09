@@ -6,17 +6,12 @@ import {
   type FormEvent,
   type ReactNode,
 } from 'react';
-import {
-  BookOpenText,
-  ChevronDown,
-  ChevronRight,
-  ListTree,
-  LocateFixed,
-  Search,
-  TriangleAlert,
-} from 'lucide-react';
+import { BookOpenText, ListTree, Search, TriangleAlert } from 'lucide-react';
 
 import { canonicalHost } from '@client/src/api';
+import { useWorkbenchPanelActive } from '@client/src/features/workbench/RetainedWorkbenchPanel';
+import { Input } from '@client/src/components/ui/input';
+import { StructuredDocumentArticle } from './StructuredDocumentArticle';
 import { Button } from '@client/src/components/ui/button';
 import type {
   CanonicalStructuredContentPageResponse,
@@ -42,29 +37,8 @@ interface StructuredContentBrowserProps {
   onRefresh: () => void;
 }
 
-function unitKindLabel(
-  displayKind: CanonicalStructuredContentUnit['displayKind'],
-): string {
-  if (displayKind === 'section') return '章节';
-  if (displayKind === 'unavailable') return '结构化记录';
-  return '正文';
-}
-
 function isOutlineUnit(unit: CanonicalStructuredContentUnit): boolean {
   return unit.outlineKind === 'SECTION' && unit.sectionTitle !== null;
-}
-
-function locatorLabel(
-  locator: CanonicalStructuredContentSourceLocator | undefined,
-  index: number,
-): string {
-  if (locator?.pageStart !== null && locator?.pageStart !== undefined) {
-    const pageEnd: number = locator.pageEnd ?? locator.pageStart;
-    return pageEnd === locator.pageStart
-      ? `第 ${locator.pageStart} 页`
-      : `第 ${locator.pageStart}–${pageEnd} 页`;
-  }
-  return `来源 ${index + 1}`;
 }
 
 function browseErrorLabel(error: unknown): string {
@@ -89,6 +63,9 @@ export function StructuredContentBrowser({
   onLocateSourceRef,
   onRefresh,
 }: StructuredContentBrowserProps) {
+  const panelActive = useWorkbenchPanelActive();
+  const scrollRootRef = useRef<HTMLDivElement | null>(null);
+  const continuationRef = useRef<HTMLDivElement | null>(null);
   const requestEpochRef = useRef<number>(0);
   const [page, setPage] =
     useState<CanonicalStructuredContentPageResponse | null>(null);
@@ -97,9 +74,6 @@ export function StructuredContentBrowser({
   const [loadingMore, setLoadingMore] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [refreshToken, setRefreshToken] = useState<number>(0);
-  const [expandedOrdinals, setExpandedOrdinals] = useState<Set<number>>(
-    new Set(),
-  );
 
   useEffect(() => {
     const epoch: number = requestEpochRef.current + 1;
@@ -107,8 +81,8 @@ export function StructuredContentBrowser({
     setPage(null);
     setUnits([]);
     setError(null);
-    setExpandedOrdinals(new Set());
     setLoading(true);
+    setLoadingMore(false);
     void canonicalHost
       .getStructuredContentPage(workItemId, {
         limit: STRUCTURED_CONTENT_PAGE_SIZE,
@@ -131,6 +105,21 @@ export function StructuredContentBrowser({
     };
   }, [refreshToken, workItemId, workItemRevision]);
 
+  useEffect(() => {
+    if (!panelActive || loading || loadingMore || error || !page?.hasMore)
+      return;
+    const sentinel = continuationRef.current;
+    if (!sentinel || typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) void loadMore();
+      },
+      { root: scrollRootRef.current, rootMargin: '240px 0px' },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [page, loading, loadingMore, error, panelActive]);
+
   const outlineUnits: CanonicalStructuredContentUnit[] =
     units.filter(isOutlineUnit);
   const usable: boolean =
@@ -140,15 +129,6 @@ export function StructuredContentBrowser({
     event.preventDefault();
     if (query.trim().length < 2) return;
     onQuerySubmit();
-  }
-
-  function toggleExpanded(ordinal: number): void {
-    setExpandedOrdinals((current: Set<number>) => {
-      const next: Set<number> = new Set(current);
-      if (next.has(ordinal)) next.delete(ordinal);
-      else next.add(ordinal);
-      return next;
-    });
   }
 
   async function loadMore(): Promise<void> {
@@ -241,7 +221,7 @@ export function StructuredContentBrowser({
       >
         <Search aria-hidden="true" />
         <label htmlFor="structured-content-search">搜索结构化内容</label>
-        <input
+        <Input
           id="structured-content-search"
           type="search"
           value={query}
@@ -274,6 +254,7 @@ export function StructuredContentBrowser({
       </details>
 
       <div
+        ref={scrollRootRef}
         className="structured-browser-layout"
         tabIndex={0}
         aria-label="结构化正文与已加载章节"
@@ -291,71 +272,11 @@ export function StructuredContentBrowser({
         </aside>
 
         <div className="structured-browser-units">
-          {units.map((unit: CanonicalStructuredContentUnit) => {
-            const expanded: boolean = expandedOrdinals.has(unit.ordinal);
-            const longText: boolean = unit.displayText.length > 360;
-            return (
-              <article
-                className={`structured-browser-unit${
-                  unit.sourceRefIds.includes(requestedSourceRef)
-                    ? ' is-selected'
-                    : ''
-                }`}
-                data-display-kind={unit.displayKind}
-                id={`structured-unit-${unit.ordinal}`}
-                key={unit.ordinal}
-              >
-                <div className="structured-browser-unit-meta">
-                  <span>{unitKindLabel(unit.displayKind)}</span>
-                  <small>内容 {unit.ordinal}</small>
-                </div>
-                <p
-                  id={`structured-unit-text-${unit.ordinal}`}
-                  className={longText && !expanded ? 'is-collapsed' : undefined}
-                >
-                  {unit.displayText}
-                </p>
-                <div className="structured-browser-unit-actions">
-                  {longText ? (
-                    <button
-                      type="button"
-                      className="structured-browser-expand"
-                      onClick={() => toggleExpanded(unit.ordinal)}
-                      aria-expanded={expanded}
-                      aria-controls={`structured-unit-text-${unit.ordinal}`}
-                    >
-                      {expanded ? (
-                        <ChevronDown aria-hidden="true" />
-                      ) : (
-                        <ChevronRight aria-hidden="true" />
-                      )}
-                      {expanded ? '收起内容' : '展开全文'}
-                    </button>
-                  ) : null}
-                  {unit.sourceRefIds.map((sourceRef: string, index: number) => {
-                    const locator = unit.sourceLocators.find(
-                      (item: CanonicalStructuredContentSourceLocator) =>
-                        item.sourceRefId === sourceRef,
-                    );
-                    return (
-                      <button
-                        type="button"
-                        className={
-                          requestedSourceRef === sourceRef ? 'is-selected' : ''
-                        }
-                        key={`${unit.ordinal}-${index}`}
-                        onClick={() => onLocateSourceRef(sourceRef, locator)}
-                        title={locator?.quote ?? locatorLabel(locator, index)}
-                      >
-                        <LocateFixed aria-hidden="true" />
-                        {locatorLabel(locator, index)}
-                      </button>
-                    );
-                  })}
-                </div>
-              </article>
-            );
-          })}
+          <StructuredDocumentArticle
+            units={units}
+            requestedSourceRef={requestedSourceRef}
+            onLocateSourceRef={onLocateSourceRef}
+          />
 
           {error ? (
             <div className="structured-browser-inline-error" role="alert">
@@ -365,15 +286,24 @@ export function StructuredContentBrowser({
           ) : null}
 
           {page.hasMore ? (
-            <Button
-              type="button"
-              variant="outline"
-              className="structured-browser-more"
-              onClick={() => void loadMore()}
-              disabled={loadingMore}
+            <div
+              ref={continuationRef}
+              className="structured-browser-continuation"
             >
-              {loadingMore ? '正在继续读取…' : '继续加载下一批'}
-            </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="structured-browser-more"
+                onClick={() => void loadMore()}
+                disabled={loadingMore}
+              >
+                {loadingMore
+                  ? '正在接续正文…'
+                  : error
+                    ? '重试接续正文'
+                    : '继续阅读'}
+              </Button>
+            </div>
           ) : (
             <p className="structured-browser-complete">
               已浏览到结构化内容末尾，共{' '}
