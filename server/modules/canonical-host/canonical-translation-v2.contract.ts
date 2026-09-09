@@ -13,7 +13,7 @@ import type {
 
 export const TRANSLATION_V2_METHOD_VERSION = 'semantic-translation@2.0';
 export const TRANSLATION_V2_PROMPT_VERSION =
-  'wiselink-translation-block@r09.c47';
+  'wiselink-translation-block@r09.c48';
 export const TRANSLATION_V2_TASK_SCHEMA = 'wiselink.3_1.translation_task.v2';
 
 const id = z.string().min(1).max(512);
