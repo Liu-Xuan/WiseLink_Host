@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { canonicalSha256, WISELINK_SKILL_VERSION } from '../scripts/validate-payload.mjs';
-import { invokeHostedTranslationBlock, validateTranslationBlockOutput, validateTranslationSemanticBatch } from '../scripts/invoke-hosted-translation-block.mjs';
+import { invokeHostedTranslationBlock, normalizeTranslationCheckSeverity, validateTranslationBlockOutput, validateTranslationSemanticBatch } from '../scripts/invoke-hosted-translation-block.mjs';
 import { runSemanticTranslation } from '../scripts/run-semantic-translation.mjs';
 
 const model = { modelRef: 'miaoda/minimax-m3', displayName: 'Synthetic M3', providerKind: 'BUILT_IN', settingsRevision: 1, selectedAt: '2026-09-09T00:00:00.000Z' };
@@ -82,6 +82,29 @@ test('failed checks record the first invalid field without retaining model or so
     assert.equal(observations[1].shape.validation.reason, reason);
     assert.ok(!JSON.stringify(observations).includes('Synthetic private'));
     assert.ok(!JSON.stringify(observations).includes('Second complete block.'));
+  }
+});
+
+test('a 29-block check accepts equivalent severity casing while retaining the blocking finding and every binding', async () => {
+  const source = checkBatch();
+  source.blocks = Array.from({ length: 29 }, (_, index) => ({ blockId: `b${index + 1}`, anchorIds: [`a${index + 1}`] }));
+  source.anchors = source.blocks.map((block, index) => ({ anchorId: block.anchorIds[0], sourceText: `Synthetic source ${index + 1}.` }));
+  source.checkCandidates = source.blocks.map((block, index) => ({ blockId: block.blockId, blockRevisionId: `TB-${index + 1}`, rowVersion: 2,
+    candidate: { blockId: block.blockId, elements: [{ kind: 'paragraph', translatedText: `合成译文 ${index + 1}。`, anchorIds: block.anchorIds }] } }));
+  const modelOutput = { checks: source.blocks.map((_block, index) => ({ blockId: `B${index + 1}`, issues: index === 7 ? [
+    { code: 'SYNTHETIC_NEGATION_CHANGED', severity: 'block', message: 'Synthetic condition was changed.', anchorIds: ['A8'] },
+  ] : [] })) };
+  let calls = 0;
+  const result = await invokeHostedTranslationBlock(source, options(), { requestGateway: async () => { calls++; return response(modelOutput); } });
+  assert.equal(calls, 1);
+  assert.deepEqual(result.output.checks.map((check) => check.blockId), source.blocks.map((block) => block.blockId));
+  assert.deepEqual(result.output.checks[7].issues, [
+    { code: 'SYNTHETIC_NEGATION_CHANGED', severity: 'BLOCK', message: 'Synthetic condition was changed.', anchorIds: ['a8'] },
+  ]);
+  assert.equal(modelOutput.checks[7].issues[0].severity, 'block');
+  for (const severity of ['warning', ' BLOCK ', '', null]) {
+    const raw = { blockId: 'b1', issues: [{ code: 'TEST', severity, message: 'Synthetic', anchorIds: ['a1'] }] };
+    assert.throws(() => validateTranslationBlockOutput({ purpose: 'CHECK', blocks: source.blocks.slice(0, 1) }, normalizeTranslationCheckSeverity('CHECK', raw)), /SEMANTIC_REVIEW_INVALID/u);
   }
 });
 

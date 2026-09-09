@@ -20,7 +20,7 @@
 
 保存以 workspace、generation request 和 block 绑定；相同请求内容冲突明确失败，正文与来源版本不可覆盖。保存响应未知时先 READ，再仅重交同一幂等保存，不能重新生成。HTTP 408/504 或传输中断不证明远端已停止；记录 GENERATION_UNKNOWN 并停止当前运行。原生 profile 的全部内部工具权限尚未证明为纯生成，因此不启用未知生成的自动补发。HTTP 200 无有效函数候选属于输出协议失败，不当作自动可重试网络故障。
 
-输出先在 B/A/U 别名范围内校验，再恢复 Host ID 并复核。失败时另存 `translation-<generationRequestRef>.output-shape-2.json`，只包含首个失败字段路径、固定原因、类型与数量；不保存模型字段正文、未知键名或私有思考。检查失败不补发模型、不部分采用同批检查，也不把日志缺少细节当作已定位原因。
+只对 CHECK/CHECK_BATCH 的已知等级 BLOCK/REVIEW/NOTE 统一字母大小写（例如 block → BLOCK）；不修改等级含义、正文、锚点或其他字段，未知等级仍拒绝。输出先在 B/A/U 别名范围内校验，再恢复 Host ID 并复核。失败时另存 `translation-<generationRequestRef>.output-shape-2.json`，只包含首个失败字段路径、固定原因、类型与数量；不保存模型字段正文、未知键名或私有思考。检查失败不补发模型、不部分采用同批检查，也不把日志缺少细节当作已定位原因。
 
 取消或到期后的迟到写入被 Host 拒绝。之后正常新 attempt 可接续同一 workspace，已保存、已检查版本按实际依赖复用，旧模型来源继续显示；不能复活旧终态、换 WorkItem 掩盖失败或冒充新模型重新生成了旧正文。块保存不推进全局 WorkItem revision。
 

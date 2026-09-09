@@ -101,7 +101,7 @@ export async function invokeHostedTranslationBlock(modelInput, options, dependen
     if (call?.type !== 'function' || call.function?.name !== OUTPUT_FUNCTION) throw new Error('TRANSLATION_OUTPUT_FUNCTION_INVALID');
     const parsed = parseStrictJsonObject(call.function.arguments);
     if (Object.keys(parsed).length !== 1 || typeof parsed.candidateJson !== 'string') throw new Error('TRANSLATION_OUTPUT_JSON_REQUIRED');
-    const modelOutput = parseStrictJsonObject(parsed.candidateJson);
+    const modelOutput = normalizeTranslationCheckSeverity(modelInput.purpose, parseStrictJsonObject(parsed.candidateJson));
     // Diagnose the model-facing shape before alias restoration calls map() or
     // resolves a reference. This retains the exact failing field, not prose.
     validateTranslationBlockOutput(modelView.input, modelOutput);
@@ -124,6 +124,22 @@ export async function invokeHostedTranslationBlock(modelInput, options, dependen
     }, 2);
     throw translationFailure(boundedCode(cause?.message) ?? 'TRANSLATION_OUTPUT_CONTRACT_INVALID', 'OUTPUT_CONTRACT', 'KNOWN_FAILURE', false, cause);
   }
+}
+
+/** Enum spelling only: a model's "block" remains BLOCK, never REVIEW/NOTE.
+ * Preserve every other field for the existing exact-field and scope checks. */
+export function normalizeTranslationCheckSeverity(purpose, output) {
+  if (!['CHECK', 'CHECK_BATCH'].includes(purpose) || !output || typeof output !== 'object' || Array.isArray(output)) return output;
+  const review = (value) => {
+    if (!value || typeof value !== 'object' || Array.isArray(value) || !Array.isArray(value.issues)) return value;
+    return { ...value, issues: value.issues.map((issue) => {
+      if (!issue || typeof issue !== 'object' || Array.isArray(issue) || typeof issue.severity !== 'string') return issue;
+      const severity = issue.severity.toUpperCase();
+      return ['BLOCK', 'REVIEW', 'NOTE'].includes(severity) ? { ...issue, severity } : issue;
+    }) };
+  };
+  return purpose === 'CHECK' ? review(output)
+    : Array.isArray(output.checks) ? { ...output, checks: output.checks.map(review) } : output;
 }
 
 export function validateTranslationSemanticBatch(value) {
