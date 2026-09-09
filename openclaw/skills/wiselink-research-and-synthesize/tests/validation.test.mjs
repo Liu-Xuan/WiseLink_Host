@@ -1374,7 +1374,7 @@ test('requires 25 MCP capabilities, six review tools, and hosted provenance', ()
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c65',
+    'wiselink-research-and-synthesize@r09.c66',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -4798,7 +4798,7 @@ test('offers source reading and one final candidate function with blank assistan
   assert.equal(result.provenance.modelVersion, 'openai-codex/gpt-5.4');
   assert.equal(
     result.provenance.promptVersion,
-    'wiselink.3_1.review_prompt.v1.c44',
+    'wiselink.3_1.review_prompt.v1.c45',
   );
 });
 
@@ -4851,7 +4851,7 @@ test('falls back to the configured model and records only output shape v2', asyn
   assert.equal(result.provenance.modelVersion, 'provider/configured');
   assert.equal(
     result.provenance.promptVersion,
-    'wiselink.3_1.review_prompt.v1.c44',
+    'wiselink.3_1.review_prompt.v1.c45',
   );
   assert.equal(
     outputShape.schemaVersion,
@@ -7366,4 +7366,29 @@ test('omitted JobAid retirement lists preserve prior-issue partition checks', as
   delete omitted.unchangedIssueKeys;
   assert.throws(() => validate(omitted), /REVIEW_JOBAID_PRIOR_ISSUE_OMITTED/u);
   assert.doesNotThrow(() => validate({ ...omitted, issues: [{ issueKey: 'issue-1' }] }));
+});
+
+test('explicit assessment update rejects prose-only success and accepts a corrected work proposal', async () => {
+  const { task, candidate } = await emptyJobAidReviewFixture();
+  task.context.purpose = 'UPDATE_ASSESSMENT';
+  assert.throws(() => validateReviewCandidate(task, candidate), /REVIEW_UPDATE_WORKING_DELTA_REQUIRED/u);
+  const work = { schemaVersion: 'wiselink.jobaid-problem-work.v2', headline: '待核对', listBrief: '已保存问题',
+    understanding: '未取得发生率，保留未知', completionReason: '待受控资料', changeSummary: '修正无依据的可能性判断',
+    issues: [], unchangedIssueKeys: [], unchangedExplanation: '当前没有已保存问题需要保留' };
+  let requests = 0;
+  const result = await invokeReviewWithTransport({ input: { context: task.context } }, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+    validateCandidate: async (value) => validateReviewCandidate(task, { ...candidate, ...value }),
+  }, { requestGateway: async (_url, init) => {
+    const request = JSON.parse(init.body);
+    const schema = request.tools.find((tool) => tool.function.name === 'return_wiselink_review_candidate').function.parameters;
+    assert.ok(schema.required.includes('jobAidWorkingDelta'));
+    assert.equal(schema.properties.jobAidWorkingDelta.type, 'object');
+    const authored = ++requests === 1 ? { answer: '已更新，但未提供增量' } : { answer: '提议修正', jobAidWorkingDelta: work };
+    return Response.json({ choices: [{ message: { content: null, tool_calls: [{
+      id: `candidate-${requests}`, type: 'function', function: { name: 'return_wiselink_review_candidate', arguments: JSON.stringify(authored) },
+    }] } }] });
+  } });
+  assert.equal(requests, 2);
+  assert.deepEqual(result.output.jobAidWorkingDelta, work);
 });
