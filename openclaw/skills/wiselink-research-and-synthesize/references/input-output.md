@@ -86,7 +86,7 @@ runtimePolicy.modelPolicyRef = official-hosted-profile-config
 ResultEnvelope.modelVersion = 官方托管 profile/config 本轮选择后的非空、可读实际模型
 Task.skillPolicyRef = wiselink-research-and-synthesize@r09
 ApplicabilityTask.runtimePolicy.skillVersion = wiselink-research-and-synthesize@r09  # v1 历史字段名，语义为兼容线
-ResultEnvelope.skillVersion = wiselink-research-and-synthesize@r09.c66       # 实际安装包版本
+ResultEnvelope.skillVersion = wiselink-research-and-synthesize@r09.c67       # 实际安装包版本
 toolVersions.wiselink-openclaw-engineering-assessment = 1.2.0
 promptVersion = 当前实际运行非空版本
 ```
@@ -478,3 +478,5 @@ evidenceRefs/reviewBy/reopenTriggers`。`decisionSnapshot` 包含评估时点、
 JobAid c5 模型函数只要求 answer；未提出条目的 sourceRefs、missingInputs、candidateEvidenceRefs、warnings 可省略，驱动表达为 []，不替换实际提供的任何值。完整 Host 候选仍包含这些字段并执行原校验。工作增量 retiredIssues 可按 Host 既有语义省略；unchangedIssueKeys 省略时仍要求更新与退役集合覆盖所有旧问题，不默认为自动保留。
 
 显式 `context.purpose=UPDATE_ASSESSMENT` 必须返回非空 `jobAidWorkingDelta` 或 `matterWorkingDelta`，将相关讨论实际写入候选工作更新并保留未知项。仅在 answer 中描述“已更新”不构成更新；Host 与驱动均拒绝缺少增量的成功候选。普通复核答复的无增量语义不变。
+
+JobAid 显式更新若返回引用本轮未读来源的候选，驱动可按该候选的来源声明，通过现有 Host 读取回调取得最多 100 个本轮授权片段，作为拒绝反馈交给模型重新核对和提交。包含越界引用时整批不读；读取失败或回读不完整时停止。读取不代表接受旧候选，不改写模型内容，不放宽最终来源校验，仍使用同一回合、租约、期限与最多两次纠正。

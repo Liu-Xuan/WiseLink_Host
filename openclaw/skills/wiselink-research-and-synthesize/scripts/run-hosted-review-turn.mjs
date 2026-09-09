@@ -37,6 +37,7 @@ import {
   validateExecutionModelSelection,
   validateTaskEnvelope,
   validateReviewTask,
+  reviewCandidateSourceRefIds,
 } from './validate-payload.mjs';
 
 const DRIVER_SCHEMA = 'wiselink.3_1.hosted_review_driver.v1';
@@ -68,7 +69,7 @@ const REVIEW_RESPONSE_TYPES = [
   'AFFECTED_ITEMS_PREVIEW',
   'TASK_STATUS',
 ];
-const REVIEW_PROMPT_VERSION = 'wiselink.3_1.review_prompt.v1.c45';
+const REVIEW_PROMPT_VERSION = 'wiselink.3_1.review_prompt.v1.c46';
 const WISELINK_HOST_MCP_CONFIG_KEYS = new Set([
   WISELINK_HOST_MCP_NAME,
   'wiselink_host_controller',
@@ -208,6 +209,8 @@ export async function runHostedReviewTurn(options, dependencies = {}) {
               validateModelCandidateOutput(output, readSourceRefBatches.flat(), input.attachmentRefs, isMatter, isJobAid);
               validateCandidate(bindHostedReviewCandidate(beginResult, output, isMatter, isJobAid));
             },
+            candidateSourceRefIds: (output) => reviewCandidateSourceRefIds(
+              beginResult.task.modelInput, bindHostedReviewCandidate(beginResult, output, isMatter, isJobAid)),
             observeCandidateRejection: (value) => checkpoint.writeOnce(
               `candidate-rejection-${value.correctionNo}`,
               { schemaVersion: 'wiselink.3_1.review_candidate_validation.v1', argsHash: modelArgsHash,
@@ -518,6 +521,34 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
         if (typeof options.observeCandidateRejection === 'function') {
           await options.observeCandidateRejection({ modelRound: round, correctionNo: candidateCorrections, errorCode });
         }
+        let citedSourceFeedback;
+        if (isJobAid && isAssessmentUpdate && ['REVIEW_MODEL_SOURCE_REF_NOT_READ', 'REVIEW_CANDIDATE_SOURCE_REF_NOT_READ_THIS_TURN'].includes(errorCode) &&
+            typeof options.readSourceRefs === 'function') {
+          const cited = [...candidate.sourceRefs, ...candidate.candidateEvidenceRefs,
+            ...(typeof options.candidateSourceRefIds === 'function' ? options.candidateSourceRefIds(candidate) : [])];
+          const permitted = new Set(input.input?.availableSourceRefIds ?? []);
+          const attachments = new Set(input.input?.attachmentRefs ?? []);
+          const unread = [...new Set(cited)].filter((ref) => !sourceCache.has(ref));
+          // A proposed citation is enough to fetch an authorized fragment, but
+          // never enough to accept the proposal. Return the actual read result
+          // and require another model submission after it has seen the source.
+          // Reject the entire fetch if any citation is outside the frozen scope.
+          if (unread.length > 0 && unread.length <= MAX_SOURCE_REFS &&
+              cited.every((ref) => typeof ref === 'string' && permitted.has(ref)) &&
+              candidate.candidateEvidenceRefs.every((ref) => attachments.has(ref))) {
+            const sources = await options.readSourceRefs(unread);
+            if (!Array.isArray(sources) || sources.length !== unread.length ||
+                new Set(sources.map((source) => source?.sourceRefId)).size !== unread.length ||
+                sources.some((source) => !unread.includes(source?.sourceRefId))) {
+              throw new Error('REVIEW_CITATION_SOURCE_READ_INCOMPLETE');
+            }
+            for (const source of sources) sourceCache.set(source.sourceRefId, source);
+            citedSourceFeedback = {
+              sourceRefs: sources,
+              instruction: 'The candidate was rejected because these citations had not been read in this turn. The Host has now returned the actual authorized fragments. Reassess your proposal against their content and submit a complete corrected candidate. Fetch additional passages through the read function if needed. The rejected candidate has not been accepted, patched or saved.',
+            };
+          }
+        }
         // Continue the same native tool exchange. These are model corrections
         // before any commit, within the original deadline and source scope.
         // Never patch an invalid candidate or resend a mutating Host request.
@@ -526,6 +557,7 @@ export async function invokeHostedReviewModel(input, options = {}, dependencies 
           { role: 'assistant', content: null, tool_calls: [toolCall] },
           { role: 'tool', tool_call_id: toolCall.id, content: canonicalJson({
             candidateAccepted: false, validationError: errorCode,
+            ...(citedSourceFeedback ? { citedSourceFeedback } : {}),
             availableEvidenceRefs: candidateFeedbackEvidenceRefs(input, sourceCache),
             instruction: isChat
               ? 'Correct this discussion answer using the same question and actually read sources. Ordinary document SourceRefs belong only in sourceRefs. For ANSWER, SOURCE_LINK, CLARIFYING_QUESTION, INPUT_REQUEST or TASK_STATUS, candidateEvidenceRefs must be []; this field only accepts current attachmentRefs for CANDIDATE_EVIDENCE. Keep reviewActionDraft=null and affectedItemIds=[]; do not add a working delta or change the assessment. Return the complete corrected candidate through the declared output function, using candidateJson only when the Matter contract requires it. Never invent sources or claim that a rejected answer was saved.'

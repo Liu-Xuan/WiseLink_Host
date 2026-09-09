@@ -1374,7 +1374,7 @@ test('requires 25 MCP capabilities, six review tools, and hosted provenance', ()
   assert.ok(HOST_MCP_TOOLS.includes('commit_applicability_candidate'));
   assert.equal(
     WISELINK_SKILL_VERSION,
-    'wiselink-research-and-synthesize@r09.c66',
+    'wiselink-research-and-synthesize@r09.c67',
   );
   assert.equal(
     WISELINK_SKILL_COMPATIBILITY_REF,
@@ -4798,7 +4798,7 @@ test('offers source reading and one final candidate function with blank assistan
   assert.equal(result.provenance.modelVersion, 'openai-codex/gpt-5.4');
   assert.equal(
     result.provenance.promptVersion,
-    'wiselink.3_1.review_prompt.v1.c45',
+    'wiselink.3_1.review_prompt.v1.c46',
   );
 });
 
@@ -4851,7 +4851,7 @@ test('falls back to the configured model and records only output shape v2', asyn
   assert.equal(result.provenance.modelVersion, 'provider/configured');
   assert.equal(
     result.provenance.promptVersion,
-    'wiselink.3_1.review_prompt.v1.c45',
+    'wiselink.3_1.review_prompt.v1.c46',
   );
   assert.equal(
     outputShape.schemaVersion,
@@ -7391,4 +7391,55 @@ test('explicit assessment update rejects prose-only success and accepts a correc
   } });
   assert.equal(requests, 2);
   assert.deepEqual(result.output.jobAidWorkingDelta, work);
+});
+
+test('unread update citations are fetched within scope and returned for a fresh model proposal', async () => {
+  const proposed = { answer: '旧候选', sourceRefs: ['source-1'], jobAidWorkingDelta: { issues: [] } };
+  const before = structuredClone(proposed);
+  let requests = 0;
+  let reads = 0;
+  const sources = [{ sourceRefId: 'source-1', value: { text: '本轮实际读取的片段' } },
+    { sourceRefId: 'source-2', value: { text: '工作增量中的来源前提' } }];
+  const result = await invokeReviewWithTransport({ input: { context: { purpose: 'UPDATE_ASSESSMENT', problemAssessment: {} },
+    availableSourceRefIds: ['source-1', 'source-2'], attachmentRefs: [] } }, {
+    gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+    candidateSourceRefIds: () => ['source-1', 'source-2'],
+    readSourceRefs: async (ids) => { reads++; assert.deepEqual(ids, ['source-1', 'source-2']); return sources; },
+    validateCandidate: async (candidate) => {
+      if (!reads) throw new Error('REVIEW_MODEL_SOURCE_REF_NOT_READ');
+      assert.equal(candidate.answer, '读后重新提议');
+    },
+  }, { requestGateway: async (_url, init) => {
+    if (++requests === 2) {
+      const feedback = JSON.parse(JSON.parse(init.body).messages.at(-1).content);
+      assert.equal(feedback.candidateAccepted, false);
+      assert.deepEqual(feedback.citedSourceFeedback.sourceRefs, sources);
+      assert.equal(reads, 1);
+    }
+    return Response.json({ choices: [{ message: { content: null, tool_calls: [{ id: `citation-${requests}`,
+      type: 'function', function: { name: 'return_wiselink_review_candidate',
+        arguments: JSON.stringify(requests === 1 ? proposed : { ...proposed, answer: '读后重新提议' }) },
+    }] } }] });
+  } });
+  assert.equal(requests, 2);
+  assert.equal(result.output.answer, '读后重新提议');
+  assert.deepEqual(proposed, before);
+});
+
+test('citation feedback never fetches out-of-scope sources or treats incomplete reads as evidence', async () => {
+  for (const mode of ['foreign', 'incomplete', 'failure']) {
+    let reads = 0;
+    const cited = mode === 'foreign' ? ['source-1', 'foreign-source'] : ['source-1'];
+    await assert.rejects(invokeReviewWithTransport({ input: { context: { purpose: 'UPDATE_ASSESSMENT', problemAssessment: {} },
+      availableSourceRefIds: ['source-1'], attachmentRefs: [] } }, {
+      gatewayUrl: 'https://official.invalid', gatewayToken: 'fixture-only', configuredModelVersion: 'fixture/provider',
+      readSourceRefs: async () => { reads++; if (mode === 'failure') throw new Error('HOST_READ_FAILED'); return []; },
+      validateCandidate: async () => { throw new Error('REVIEW_MODEL_SOURCE_REF_NOT_READ'); },
+    }, { requestGateway: async () => Response.json({ choices: [{ message: { content: null, tool_calls: [{ id: 'citation',
+      type: 'function', function: { name: 'return_wiselink_review_candidate', arguments: JSON.stringify({
+        answer: '不得自动接纳', sourceRefs: cited, jobAidWorkingDelta: { issues: [] },
+      }) },
+    }] } }] }) }), mode === 'foreign' ? /REVIEW_MODEL_SOURCE_REF_NOT_READ/u : mode === 'incomplete' ? /REVIEW_CITATION_SOURCE_READ_INCOMPLETE/u : /HOST_READ_FAILED/u);
+    assert.equal(reads, mode === 'foreign' ? 0 : 1);
+  }
 });
