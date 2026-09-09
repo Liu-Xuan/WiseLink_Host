@@ -35,7 +35,7 @@ function boeingPublicationTitle(lines, identity) {
   return null;
 }
 
-function labelledTitle(lines, index, label) {
+function labelledTitle(lines, index, label, identity) {
   const line = lines[index];
   const value = (label[1] || lines[index + 1]?.text || '').split(
     /\s+(?:Reference|References|ATA|Date|Revision|Number|Applicability|Effectivity|Summary|Description|Status|Background)\s*:/iu,
@@ -47,6 +47,7 @@ function labelledTitle(lines, index, label) {
   // In the proven two-column SUBJECT block, the value starts in a separate
   // PDF run to the right of the label. Follow only tightly spaced continuation
   // lines aligned to that value column, stopping before the next section.
+  // Boeing SL covers can instead wrap to the SUBJECT label's left margin.
   const labelIndex = line.runs.findIndex((run) =>
     /\b(?:issue\s+title|subject|title)\s*:\s*$/iu.test(run.text),
   );
@@ -68,7 +69,12 @@ function labelledTitle(lines, index, label) {
       !Number.isFinite(gap) ||
       gap <= 0 ||
       gap > valueRun.fontSize * 1.6 ||
-      Math.abs(next.x - valueRun.x) > 2 ||
+      (Math.abs(next.x - valueRun.x) > 2 &&
+        !(
+          identity?.issuer === 'BOEING' &&
+          identity?.documentFamily === 'SL' &&
+          Math.abs(next.x - labelRun.x) <= 2
+        )) ||
       Math.abs(next.fontSize - valueRun.fontSize) > 0.5 ||
       /^(?:[A-Z][A-Z /-]*:|EXPORT CONTROLLED|BOEING PROPRIETARY|Copyright)(?=\s|$)/u.test(
         next.text,
@@ -113,14 +119,12 @@ export function extractActualPdfMetadata({
     )
       continue;
     if (!pages.has(page)) pages.set(page, []);
-    pages
-      .get(page)
-      .push({
-        text: text(run.text),
-        x: Number(run.x),
-        y: Number(run.y),
-        fontSize: Number(run.fontSize),
-      });
+    pages.get(page).push({
+      text: text(run.text),
+      x: Number(run.x),
+      y: Number(run.y),
+      fontSize: Number(run.fontSize),
+    });
   }
   const fields = Object.fromEntries(
     ['title', 'documentType', 'issuer', 'ata', 'mentionedAircraftModels'].map(
@@ -186,7 +190,7 @@ export function extractActualPdfMetadata({
           /\b(?:issue\s+title|subject|title)\s*:\s*(.*)/iu,
         );
         if (!label) continue;
-        const title = labelledTitle(lines, index, label);
+        const title = labelledTitle(lines, index, label, identity);
         if (title.value.length >= 3 && title.value.length <= 350)
           add('title', title.value, page, title.evidence);
       }

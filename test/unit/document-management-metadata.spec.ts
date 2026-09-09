@@ -129,6 +129,34 @@ describe('actual PDF descriptive metadata', () => {
       },
     ]);
   });
+  it('follows Boeing SL left-margin wrapping but stops before MODEL and does not broaden SB wrapping', () => {
+    const base = layout([[]]);
+    base.textRuns = [
+      { text: 'SUBJECT :', x: 64, y: 619 },
+      { text: 'SYSTEM VERSION 18 (BP', x: 117, y: 619 },
+      { text: 'V18) SOFTWARE UPGRADE', x: 64, y: 607 },
+      { text: 'MODEL : 777', x: 64, y: 592 },
+    ].map((run) => ({
+      ...run,
+      page: 1,
+      fontSize: 10,
+      fontName: 'F1',
+      bold: false,
+    }));
+    for (const family of ['SL', 'SB']) {
+      const metadata = extractActualPdfMetadata({
+        layout: base,
+        actualSha256: 'a'.repeat(64),
+        actualByteLength: 200,
+        identity: { documentFamily: family, issuer: 'BOEING' },
+      });
+      expect(metadata.title.observations.map((item) => item.value)).toEqual([
+        family === 'SL'
+          ? 'SYSTEM VERSION 18 (BP V18) SOFTWARE UPGRADE'
+          : 'SYSTEM VERSION 18 (BP',
+      ]);
+    }
+  });
   it('excludes only explicit trademark declarations and keeps the same model when real text mentions it', () => {
     const metadata = extract([
       [
