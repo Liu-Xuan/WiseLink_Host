@@ -321,3 +321,46 @@ test('work shape diagnostics leave nullable unknowns intact and identify nested 
   assert.equal(errors[1].path, 'work.issues[0].measures[0].status');
   assert.deepEqual(work, original);
 });
+
+test('Host dependency rejection identifies omitted method reference and preserves corrected work', async () => {
+  const invalid = { ...completed, issues: [{ sourceDependencies: ['source:1'], premiseRefs: [],
+    requirementHandling: [{ methodRef: 'method:synthetic-sensitive', basisRefs: [] }] }] };
+  const corrected = structuredClone(invalid);
+  corrected.issues[0].sourceDependencies.push('method:synthetic-sensitive');
+  const f = fixture([{ action: 'SAVE_WORK', work: invalid }, { action: 'SAVE_WORK', work: corrected }, { action: 'FINISH' }]);
+  const observations = [];
+  f.options.observeCandidateRejection = async (value) => observations.push(value);
+  const save = f.options.saveAssessmentWork;
+  let attempts = 0;
+  f.options.saveAssessmentWork = async (input) => {
+    if (++attempts === 1) {
+      assert.deepEqual(JSON.parse(input.workJson), invalid);
+      throw Object.assign(new Error('REVIEW_HOST_MCP_TOOL_FAILED'), { hostErrorCode: 'JOBAID_ISSUE_DEPENDENCY_MISSING' });
+    }
+    return save(input);
+  };
+  await f.run();
+  const receipt = JSON.parse(f.calls[1].messages.at(-1).content);
+  assert.deepEqual(receipt.fieldErrors, [{ path: 'work.issues[0].requirementHandling[0].methodRef',
+    expected: 'reference included in work.issues[0].sourceDependencies or work.issues[0].premiseRefs', received: 'undeclared reference' }]);
+  assert.equal(JSON.stringify(receipt).includes('synthetic-sensitive'), false);
+  assert.deepEqual(observations[0].fieldErrors, receipt.fieldErrors);
+  assert.equal(JSON.stringify(observations).includes('synthetic-sensitive'), false);
+  assert.deepEqual([...f.store.values()][0].content, corrected);
+  assert.equal(f.store.size, 1);
+});
+
+test('dependency diagnostics cover every Host citation location and stay within each issue', async () => {
+  const { jobAidWorkDependencyErrors } = await import('../scripts/jobaid-work-shape.mjs');
+  const issue = { sourceDependencies: [], premiseRefs: [],
+    statements: [{ premises: [{ evidenceRef: 'ref' }] }],
+    riskScenarios: [{ severity: { basisRefs: ['ref'] }, likelihood: { basisRefs: ['ref'] }, importantEvent: { basisRefs: ['ref'] } }],
+    measures: [{ basisRefs: ['ref'] }], otherClassifications: [{ basisRefs: ['ref'] }],
+    requirementHandling: [{ methodRef: 'ref', basisRefs: ['ref'] }],
+  };
+  const work = { issues: [issue, { sourceDependencies: ['ref'] }] };
+  assert.equal(jobAidWorkDependencyErrors(work).length, 8);
+  issue.premiseRefs = [' ref '];
+  assert.deepEqual(jobAidWorkDependencyErrors(work), []);
+  assert.deepEqual(issue.sourceDependencies, []);
+});

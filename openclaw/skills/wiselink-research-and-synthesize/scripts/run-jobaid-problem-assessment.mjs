@@ -1,4 +1,4 @@
-import { jobAidWorkTypeErrors } from './jobaid-work-shape.mjs';
+import { jobAidWorkTypeErrors, jobAidWorkDependencyErrors } from './jobaid-work-shape.mjs';
 import { randomUUID } from 'node:crypto';
 import {
   M3_MAX_COMPLETION_TOKENS,
@@ -304,6 +304,7 @@ export async function invokeHostedJobAidProblemModel(
       await options.observeCandidateRejection?.({
         correctionNo: corrections,
         code,
+        ...(receipt.fieldErrors ? { fieldErrors: receipt.fieldErrors } : {}),
       });
     }
     // The configured Gateway resumes this native session's history. Keep one
@@ -326,12 +327,14 @@ export async function invokeHostedJobAidProblemModel(
 // work is still submitted unchanged and only the Host can accept a revision.
 function workShapeCorrection(code, work) {
   if (!work) return {};
-  const fieldErrors = jobAidWorkTypeErrors(work);
+  const fieldErrors = [...jobAidWorkTypeErrors(work),
+    ...(code === 'JOBAID_ISSUE_DEPENDENCY_MISSING' ? jobAidWorkDependencyErrors(work) : []),
+  ];
   if (!fieldErrors.length) return {};
   return {
     fieldErrors,
     instruction:
-      'Correct the reported field types using the original evidence and the work-update shape. conditions, limitations and basisRefs are arrays of strings; addresses is one non-empty string describing the problem or risk addressed. Preserve justified analysis and unknowns; do not invent content or remove substantive work merely to pass validation. The Host will validate the revised work.' +
+      'Reconcile every reported citation with the same issue sourceDependencies or premiseRefs; include the exact already-used evidenceRef, including requirementHandling.methodRef. Do not remove supported statements to hide a missing dependency. Correct the reported field types using the original evidence and the work-update shape. conditions, limitations and basisRefs are arrays of strings; addresses is one non-empty string describing the problem or risk addressed. Preserve justified analysis and unknowns; do not invent content or remove substantive work merely to pass validation. The Host will validate the revised work.' +
       (code === 'JOBAID_MEASURE_ADDRESSES_INVALID'
         ? ' The rejected field is addresses; changing status does not repair it.'
         : ''),

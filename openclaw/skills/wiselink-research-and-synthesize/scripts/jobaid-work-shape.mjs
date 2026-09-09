@@ -62,3 +62,38 @@ export function jobAidWorkTypeErrors(work) {
   visit(work, JOBAID_WORK_UPDATE_SHAPE, 'work');
   return errors;
 }
+
+// Explain an existing Host dependency rejection; never insert references or
+// synthesize an evidence registry. Paths reveal where the model must reconcile
+// its own citations with the issue's declared dependencies.
+export function jobAidWorkDependencyErrors(work) {
+  const errors = [];
+  if (!Array.isArray(work?.issues)) return errors;
+  work.issues.forEach((issue, issueIndex) => {
+    const root = `work.issues[${issueIndex}]`;
+    const declared = new Set([
+      ...(Array.isArray(issue?.sourceDependencies) ? issue.sourceDependencies : []),
+      ...(Array.isArray(issue?.premiseRefs) ? issue.premiseRefs : []),
+    ].filter((ref) => typeof ref === 'string').map((ref) => ref.trim()));
+    const check = (ref, path) => {
+      if (typeof ref === 'string' && !declared.has(ref.trim())) errors.push({
+        path, expected: `reference included in ${root}.sourceDependencies or ${root}.premiseRefs`,
+        received: 'undeclared reference',
+      });
+    };
+    const each = (items, visit) => { if (Array.isArray(items)) items.forEach(visit); };
+    const basis = (value, path) => each(value?.basisRefs, (ref, i) => check(ref, `${path}.basisRefs[${i}]`));
+    each(issue?.statements, (statement, i) => each(statement?.premises, (premise, j) =>
+      check(premise?.evidenceRef, `${root}.statements[${i}].premises[${j}].evidenceRef`)));
+    each(issue?.riskScenarios, (risk, i) => {
+      for (const field of ['severity', 'likelihood', 'importantEvent']) basis(risk?.[field], `${root}.riskScenarios[${i}].${field}`);
+    });
+    for (const field of ['measures', 'otherClassifications', 'requirementHandling']) {
+      each(issue?.[field], (item, i) => {
+        basis(item, `${root}.${field}[${i}]`);
+        if (field === 'requirementHandling') check(item?.methodRef, `${root}.${field}[${i}].methodRef`);
+      });
+    }
+  });
+  return errors;
+}
