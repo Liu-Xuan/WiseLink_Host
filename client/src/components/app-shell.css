@@ -35,67 +35,22 @@
   top: 10px;
   display: grid;
   margin: 12px 12px 0 112px;
-  border-radius: 26px;
+  border-radius: var(--wl-radius-md);
 }
 
 .wiselink-app-header {
   display: grid;
-  min-height: 76px;
-  grid-template-columns: 158px minmax(0, 1fr) auto;
+  min-height: 64px;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 14px;
-  padding: 8px 14px;
+  padding: 8px 20px;
   border: 0;
   border-radius: inherit;
   background: transparent;
   box-shadow: none;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
-}
-
-.wiselink-app-brand {
-  display: inline-flex;
-  min-width: 0;
-  align-items: center;
-  gap: 10px;
-  color: var(--wl-ink);
-  text-decoration: none;
-}
-
-.wiselink-app-brand > span:last-child {
-  display: grid;
-  min-width: 0;
-  gap: 2px;
-}
-
-.wiselink-app-brand strong {
-  overflow: hidden;
-  font-size: 16px;
-  font-weight: 750;
-  letter-spacing: 0;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.wiselink-app-brand small {
-  overflow: hidden;
-  color: var(--wl-muted);
-  font-size: var(--wl-text-caption);
-  font-weight: 550;
-  letter-spacing: 0.02em;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.wiselink-app-mark {
-  display: grid;
-  width: 34px;
-  height: 34px;
-  flex: 0 0 34px;
-  place-items: center;
-  border-radius: 12px;
-  overflow: hidden;
-  background: #fff;
 }
 
 .wiselink-brand-image {
@@ -116,12 +71,6 @@
   display: grid;
   min-width: 0;
   gap: 4px;
-  padding-left: 13px;
-  border-left: 1px solid var(--wl-border);
-}
-
-.wiselink-object-context.is-global {
-  border-left-color: transparent;
 }
 
 .wiselink-object-context-main,
@@ -146,7 +95,7 @@
   max-width: 210px;
   color: var(--wl-ink);
   font-size: 14px;
-  font-weight: 790;
+  font-weight: 600;
   letter-spacing: -0.01em;
   text-overflow: ellipsis;
 }
@@ -160,7 +109,7 @@
   border-radius: 999px;
   color: var(--wl-accent);
   background: var(--wl-accent-soft);
-  font-size: 10.5px;
+  font-size: var(--wl-text-caption);
   font-weight: 720;
 }
 
@@ -181,7 +130,7 @@
 
 .wiselink-object-context-sub {
   color: var(--wl-muted);
-  font-size: 10.5px;
+  font-size: var(--wl-text-caption);
   font-weight: 560;
 }
 
@@ -345,7 +294,7 @@ button.wiselink-account-state {
   position: relative;
   top: auto;
   align-self: center;
-  min-height: 76px;
+  min-height: 64px;
   margin-block: 0;
 }
 
@@ -353,7 +302,7 @@ button.wiselink-account-state {
 .wiselink-app-shell.is-workbench-route .wiselink-app-chrome {
   border-color: var(--wl-border);
   background: var(--wl-glass-content);
-  box-shadow: 0 10px 24px var(--wl-g3-shadow);
+  box-shadow: inset 0 1px 0 var(--wl-material-edge);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }
@@ -407,16 +356,27 @@ select:focus-visible {
 /* UI-N02 · 中性 Satin 应用框架 */
 .wiselink-app-chrome {
   margin-left: 104px;
-  border: 1px solid var(--wl-material-edge);
-  background: var(--wl-frame);
-  box-shadow:
-    inset 0 1px 0 var(--wl-material-edge),
-    0 16px 38px var(--wl-g1-space-shadow);
 }
 
-.wiselink-app-mark {
-  background: #fff;
-  box-shadow: 0 9px 24px var(--wl-g1-contact-shadow);
+/* Design object bar: one neutral film, a fine edge, no floating capsule shadow.
+ * Keep the g1 class so compatible / reduced-transparency remain effective. */
+.wiselink-app-chrome.wl-glass-nav,
+html[data-wl-visual-mode] .wiselink-app-chrome.wl-glass-nav {
+  border: 1px solid var(--wl-border);
+  background: var(--wl-glass-nav);
+  box-shadow: inset 0 1px 0 var(--wl-material-edge);
+  -webkit-backdrop-filter: blur(var(--wl-objectbar-blur, 24px)) saturate(100%);
+  backdrop-filter: blur(var(--wl-objectbar-blur, 24px)) saturate(100%);
+}
+
+html[data-wl-visual-mode='ultra'] .wiselink-app-chrome {
+  --wl-objectbar-blur: 30px;
+}
+
+.wiselink-app-shell.is-workbench-route .wiselink-app-chrome.wl-glass-nav {
+  background: var(--wl-glass-content);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 .wiselink-object-kind,
@@ -454,7 +414,7 @@ html[data-wl-theme='dark'] .wiselink-app-chrome {
   }
 
   .wiselink-app-header {
-    grid-template-columns: 44px minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 
   .wiselink-app-body {
@@ -463,10 +423,6 @@ html[data-wl-theme='dark'] .wiselink-app-chrome {
 
   .wiselink-app-shell:not(.is-workbench-route) .wiselink-app-body {
     padding-bottom: var(--wl-floating-dock-clearance);
-  }
-
-  .wiselink-app-brand > span:last-child {
-    display: none;
   }
 
   .wiselink-object-page-label,
@@ -494,14 +450,10 @@ html[data-wl-theme='dark'] .wiselink-app-chrome {
 
   .wiselink-app-header {
     display: grid;
-    min-height: 56px;
-    grid-template-columns: 44px minmax(0, 1fr) auto;
+    min-height: 64px;
+    grid-template-columns: minmax(0, 1fr) auto;
     gap: 10px;
     padding: 8px 12px;
-  }
-
-  .wiselink-app-brand {
-    min-width: 0;
   }
 
   .wiselink-app-context {
@@ -542,14 +494,6 @@ html[data-wl-theme='dark'] .wiselink-app-chrome {
 @media (max-width: 390px) {
   .wiselink-app-header {
     padding: 8px 10px;
-  }
-
-  .wiselink-app-brand strong {
-    font-size: 14px;
-  }
-
-  .wiselink-app-brand small {
-    font-size: var(--wl-text-caption);
   }
 
   .wiselink-account-display > div > div {

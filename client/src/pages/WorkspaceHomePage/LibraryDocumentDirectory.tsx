@@ -141,6 +141,9 @@ export function LibraryDocumentDirectory({
             hasMore={Boolean(directory.nextCursor)}
             totalCount={directory.totalCount}
             grouping={grouping}
+            filters={filters}
+            onFilterChange={onFilterChange}
+            disabled={authenticationRequired || directory.loading}
             onSelect={onSelect}
           />
         ) : directory.items.length ? (

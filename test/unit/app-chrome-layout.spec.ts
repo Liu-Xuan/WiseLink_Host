@@ -41,13 +41,19 @@ describe('App chrome contextual navigation ownership', () => {
 
   it('keeps sticky positioning and glass treatment on the outer chrome only', () => {
     expect(shellCss).toMatch(
-      /\.wiselink-app-chrome\s*\{[\s\S]*?position: sticky;[\s\S]*?top: 10px;[\s\S]*?border-radius: 26px;/,
+      /\.wiselink-app-chrome\s*\{[\s\S]*?position: sticky;[\s\S]*?top: 10px;[\s\S]*?border-radius: var\(--wl-radius-md\);/,
     );
     expect(shellCss).toMatch(
       /\.wiselink-app-header\s*\{[\s\S]*?border: 0;[\s\S]*?background: transparent;[\s\S]*?box-shadow: none;[\s\S]*?backdrop-filter: none;/,
     );
     expect(shellCss).toContain('.wiselink-object-context');
     expect(shellCss).toContain('.wiselink-object-context-sub');
+    expect(shellCss).toMatch(/\.wiselink-app-header\s*\{[\s\S]*?min-height: 64px;[\s\S]*?grid-template-columns: minmax\(0, 1fr\) auto;/);
+    expect(layoutSource).not.toContain('WiseLinkBrandMark');
+    expect(layoutSource).not.toContain('wiselink-app-brand');
+    expect(layoutSource).toContain('<FloatingDock />');
+    const dock = fs.readFileSync(path.join(root, 'client/src/features/navigation/FloatingDock.tsx'), 'utf8');
+    expect(dock.match(/<WiseLinkBrandMark /g)).toHaveLength(1);
   });
 
   it('preserves workbench and mobile height ownership on the chrome wrapper', () => {

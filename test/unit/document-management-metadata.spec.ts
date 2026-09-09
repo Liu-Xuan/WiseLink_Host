@@ -75,6 +75,60 @@ describe('actual PDF descriptive metadata', () => {
     });
   });
 
+  it('requires numeric model separators and preserves explicit variant lists instead of interpreting line numbers', () => {
+    const metadata = extract([
+      [
+        'Airplane line numbers: 7077, 7079-7080, 7178, 7278, 7378, 7478, 7578, 7678-7679, 7877, 7879.',
+        'Model references: 737-8, 737-8200, 787-9 and 737-7/8/8200/9/10 AMM.',
+      ],
+    ]);
+    expect(
+      metadata.mentionedAircraftModels.observations.map((item) => item.value),
+    ).toEqual(['737-8', '737-8200', '787-9', '737-7/8/8200/9/10']);
+  });
+  it('preserves complete explicitly labelled ATA codes without interpreting ATA Spec publication numbers', () => {
+    const metadata = extract([
+      ['ATA System: 4613. ATA Chapter: 46-13. Order using ATA Spec 2000.'],
+    ]);
+    expect(metadata.ata.observations.map((item) => item.value)).toEqual([
+      '4613',
+      '46-13',
+    ]);
+  });
+  it('joins an aligned two-column subject continuation and stops at the next labelled block', () => {
+    const base = layout([[]]);
+    const runs = [
+      { text: 'SUBJECT:', x: 101, y: 580 },
+      { text: 'Network File', x: 171, y: 580 },
+      { text: 'Server Configuration Software', x: 171, y: 568 },
+      { text: 'EXPORT CONTROLLED', x: 171, y: 556 },
+    ];
+    base.textRuns = runs.map((run) => ({
+      ...run,
+      page: 1,
+      fontSize: 10,
+      fontName: 'F1',
+      bold: false,
+    }));
+    const metadata = extractActualPdfMetadata({
+      layout: base,
+      actualSha256: 'a'.repeat(64),
+      actualByteLength: 200,
+      identity: { documentFamily: 'SB', issuer: 'BOEING' },
+    });
+    expect(metadata.title.observations).toEqual([
+      {
+        value: 'Network File Server Configuration Software',
+        status: 'PENDING_REVIEW',
+        evidence: [
+          {
+            page: 1,
+            text: 'SUBJECT: Network File Server Configuration Software',
+          },
+        ],
+      },
+    ]);
+  });
   it('excludes only explicit trademark declarations and keeps the same model when real text mentions it', () => {
     const metadata = extract([
       [
