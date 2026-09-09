@@ -30,7 +30,7 @@
 
 Reader 从 Host 保存结果显示 PARTIAL、COMPLETE_WITH_ISSUES 或 COMPLETE，区分已保存、待检查、可读与待处理。点击自然段显示其全部实际来源；复制与导出保留完成范围及缺项。人工修订生成独立版本、明确人工来源，保留旧模型正文，仍是阅读候选。
 
-所有可做批次结束后，ASSEMBLE 由 Host 读取当前选用版本、保存最终产物并返回 manifest。模型不重印全文；最终 ResultEnvelope 仅引用 Host 产物与精确 manifest，使用实际 Skill c47 和 `wiselink-translation-block@r09.c47`。即使全部复用旧块，最终组装也必须使用 v2 运行协议，且实际模型记录为 `host-assembly/no-model-call`。提交继续通过既有 `commit_translation_candidate` 字节分片与 FINALIZE，最终提交未知只查询原 attempt 的精确结果身份。
+所有可做批次结束后，ASSEMBLE 由 Host 读取当前选用版本、保存最终产物并返回 manifest。模型不重印全文；最终 ResultEnvelope 仅引用 Host 产物与精确 manifest，使用实际 Skill c47 和 `wiselink-translation-block@r09.c48`。即使全部复用旧块，最终组装也必须使用 v2 运行协议，且实际模型记录为 `host-assembly/no-model-call`。提交继续通过既有 `commit_translation_candidate` 字节分片与 FINALIZE，最终提交未知只查询原 attempt 的精确结果身份。
 
 `WL_TRANSLATION_V2_ENABLED=1` 用于启用新请求；旧 v1 译文继续独立读取。已有 v2 workspace 可恢复。直接使用已验证英文的 Applicability/JobAid/Overall 保持各自真实来源与授权，不用虚构中文满足旧前置条件。知识产品导入仍要求对应最终提交和当前选用版本，部分可读范围不冒充完整或正式采用。
 

@@ -27,6 +27,34 @@ test('each registered generation has one short native session and actual provena
   assert.ok(requests.every((request) => request.tool_choice === 'required' && request.parallel_tool_calls === false));
 });
 
+test('two-layer serialization preserves literal quotes, backslashes and line breaks', async () => {
+  const quoted = { blocks: [{ blockId: 'b1', elements: [{ kind: 'paragraph',
+    translatedText: '合成示例：选择 "ON"；路径 C:\\synthetic\\file。\n下一行。', anchorIds: ['a1'] }] }] };
+  let request;
+  const result = await invokeHostedTranslationBlock(batch(), options(), { requestGateway: async (_url, init) => {
+    request = JSON.parse(init.body); return response(quoted);
+  } });
+  assert.deepEqual(result.output, quoted);
+  const example = request.messages[0].content.split('Serialization-only example, not source content or an output target: ')[1].split('. After decoding')[0];
+  assert.equal(JSON.parse(JSON.parse(example).candidateJson).blocks[0].elements[0].translatedText, '合成示例：选择 "ON"。');
+});
+
+test('invalid inner JSON is rejected once with only its layer and numeric location recorded', async () => {
+  const candidateJson = '{"blocks":[{"blockId":"B1","elements":[{"kind":"paragraph","translatedText":"Synthetic "private" quote","anchorIds":["A1"]}]}]}';
+  const observations = []; let calls = 0;
+  const reply = JSON.parse(await response().text());
+  reply.choices[0].message.tool_calls[0].function.arguments = JSON.stringify({ candidateJson });
+  await assert.rejects(invokeHostedTranslationBlock(batch(), {
+    ...options(), observeModelOutput: async (shape) => observations.push(shape),
+  }, { requestGateway: async () => { calls++; return { ok: true, status: 200, text: async () => JSON.stringify(reply) }; } }), /REVIEW_MODEL_JSON_INVALID/u);
+  assert.equal(calls, 1);
+  assert.deepEqual(observations[1].validation, { path: '$.candidateJson', reason: 'INVALID_JSON_SYNTAX',
+    characterCount: candidateJson.length, characterOffset: candidateJson.indexOf('private') });
+  assert.equal(observations[0].toolCall.strictJsonObjectAccepted, true);
+  assert.ok(!JSON.stringify(observations).includes('Synthetic'));
+  assert.ok(!JSON.stringify(observations).includes('private'));
+});
+
 function checkBatch() {
   const blocks = [output.blocks[0], { blockId: 'b2', elements: [{ kind: 'paragraph', translatedText: '第二个完整块。', anchorIds: ['a2'] }] }];
   return { ...batch('GEN-check-batch'), purpose: 'CHECK_BATCH',
