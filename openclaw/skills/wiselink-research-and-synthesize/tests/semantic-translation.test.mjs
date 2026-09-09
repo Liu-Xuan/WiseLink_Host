@@ -12,7 +12,7 @@ function batch(ref = 'GEN-1') {
 }
 function options() { return { gatewayUrl: 'https://synthetic.invalid', gatewayToken: 'synthetic-test-token', gatewayChatCompletionsEnabled: true, executionModel: model, registeredModelRefs: [model.modelRef] }; }
 function response(value = output, extra = {}) { return { ok: true, status: 200, text: async () => JSON.stringify({ model: 'synthetic-actual-m3', usage: { prompt_tokens: 100, completion_tokens: 32 },
-  choices: [{ finish_reason: 'tool_calls', message: { role: 'assistant', content: null, tool_calls: [{ type: 'function', function: { name: 'return_wiselink_translation_block', arguments: JSON.stringify({ candidateJson: JSON.stringify(value).replaceAll('"b1"', '"B1"').replaceAll('"a1"', '"A1"').replaceAll('"b2"', '"B2"').replaceAll('"a2"', '"A2"') }) } }] } }], ...extra }) }; }
+  choices: [{ finish_reason: 'tool_calls', message: { role: 'assistant', content: null, tool_calls: [{ type: 'function', function: { name: 'return_wiselink_translation_block', arguments: JSON.stringify({ candidate: JSON.parse(JSON.stringify(value).replaceAll('"b1"', '"B1"').replaceAll('"a1"', '"A1"').replaceAll('"b2"', '"B2"').replaceAll('"a2"', '"A2"')) }) } }] } }], ...extra }) }; }
 
 test('each registered generation has one short native session and actual provenance', async () => {
   const requests = [];
@@ -27,7 +27,7 @@ test('each registered generation has one short native session and actual provena
   assert.ok(requests.every((request) => request.tool_choice === 'required' && request.parallel_tool_calls === false));
 });
 
-test('two-layer serialization preserves literal quotes, backslashes and line breaks', async () => {
+test('structured function arguments preserve literal quotes, backslashes and line breaks', async () => {
   const quoted = { blocks: [{ blockId: 'b1', elements: [{ kind: 'paragraph',
     translatedText: '合成示例：选择 "ON"；路径 C:\\synthetic\\file。\n下一行。', anchorIds: ['a1'] }] }] };
   let request;
@@ -35,22 +35,25 @@ test('two-layer serialization preserves literal quotes, backslashes and line bre
     request = JSON.parse(init.body); return response(quoted);
   } });
   assert.deepEqual(result.output, quoted);
-  const example = request.messages[0].content.split('Serialization-only example, not source content or an output target: ')[1].split('. After decoding')[0];
-  assert.equal(JSON.parse(JSON.parse(example).candidateJson).blocks[0].elements[0].translatedText, '合成示例：选择 "ON"。');
+  const schema = request.tools[0].function.parameters;
+  assert.deepEqual(schema.required, ['candidate']);
+  assert.equal(schema.properties.candidate.type, 'object');
+  assert.equal(schema.properties.candidate.properties.blocks.type, 'array');
+  assert.ok(request.messages[0].content.includes('Do not stringify the candidate'));
 });
 
-test('invalid inner JSON is rejected once with only its layer and numeric location recorded', async () => {
-  const candidateJson = '{"blocks":[{"blockId":"B1","elements":[{"kind":"paragraph","translatedText":"Synthetic "private" quote","anchorIds":["A1"]}]}]}';
+test('invalid outer JSON is rejected once with only its layer and numeric location recorded', async () => {
+  const argumentsText = '{"candidate":{"blocks":[{"blockId":"B1","elements":[{"kind":"paragraph","translatedText":"Synthetic "private" quote","anchorIds":["A1"]}]}]}}';
   const observations = []; let calls = 0;
   const reply = JSON.parse(await response().text());
-  reply.choices[0].message.tool_calls[0].function.arguments = JSON.stringify({ candidateJson });
+  reply.choices[0].message.tool_calls[0].function.arguments = argumentsText;
   await assert.rejects(invokeHostedTranslationBlock(batch(), {
     ...options(), observeModelOutput: async (shape) => observations.push(shape),
   }, { requestGateway: async () => { calls++; return { ok: true, status: 200, text: async () => JSON.stringify(reply) }; } }), /REVIEW_MODEL_JSON_INVALID/u);
   assert.equal(calls, 1);
-  assert.deepEqual(observations[1].validation, { path: '$.candidateJson', reason: 'INVALID_JSON_SYNTAX',
-    characterCount: candidateJson.length, characterOffset: candidateJson.indexOf('private') });
-  assert.equal(observations[0].toolCall.strictJsonObjectAccepted, true);
+  assert.deepEqual(observations[1].validation, { path: '$.arguments', reason: 'INVALID_JSON_SYNTAX',
+    characterCount: argumentsText.length, characterOffset: argumentsText.indexOf('private') });
+  assert.equal(observations[0].toolCall.strictJsonObjectAccepted, false);
   assert.ok(!JSON.stringify(observations).includes('Synthetic'));
   assert.ok(!JSON.stringify(observations).includes('private'));
 });
@@ -63,6 +66,50 @@ function checkBatch() {
     checkCandidates: blocks.map((candidate, index) => ({ blockId: candidate.blockId,
       blockRevisionId: `TB-${index + 1}`, rowVersion: 2, candidate })) };
 }
+
+test('native array envelopes decode losslessly at declared array fields only', async () => {
+  const wrapped = { blocks: { item: [{ blockId: 'b1', elements: { item: [{ kind: 'paragraph',
+    translatedText: '合成 "引号" 与 \\ 路径。', anchorIds: { item: ['a1'] } }] } }] } };
+  const expected = { blocks: [{ blockId: 'b1', elements: [{ kind: 'paragraph',
+    translatedText: '合成 "引号" 与 \\ 路径。', anchorIds: ['a1'] }] }] };
+  let calls = 0;
+  const result = await invokeHostedTranslationBlock(batch(), options(), { requestGateway: async () => { calls++; return response(wrapped); } });
+  assert.equal(calls, 1); assert.deepEqual(result.output, expected);
+  assert.deepEqual(wrapped.blocks.item[0].elements.item[0].anchorIds, { item: ['a1'] });
+
+  const checks = { checks: { item: [{ blockId: 'b1', issues: { item: [] } }, { blockId: 'b2', issues: { item: [
+    { code: 'SYNTHETIC', severity: 'BLOCK', message: '合成 "引用"。', anchorIds: { item: ['a2'] } },
+  ] } }] } };
+  const checked = await invokeHostedTranslationBlock(checkBatch(), options(), { requestGateway: async () => response(checks) });
+  assert.deepEqual(checked.output, { checks: [{ blockId: 'b1', issues: [] }, { blockId: 'b2', issues: [
+    { code: 'SYNTHETIC', severity: 'BLOCK', message: '合成 "引用"。', anchorIds: ['a2'] },
+  ] }] });
+});
+
+test('array decoding cannot hide extra fields, invent arrays or change source scope', async () => {
+  const element = output.blocks[0].elements[0];
+  const cases = [
+    { blocks: { item: output.blocks, extra: true } },
+    { blocks: { item: output.blocks[0] } },
+    { blocks: [{ blockId: 'b1', elements: { item: [{ ...element, extra: true }] } }] },
+    { blocks: [{ blockId: 'b1', elements: [{ ...element, translatedText: { item: ['合成'] } }] }] },
+    { blocks: [{ blockId: 'b1', elements: [{ ...element, anchorIds: { item: ['other-anchor'] } }] }] },
+    { blocks: [{ blockId: 'b1', elements: [{ ...element, anchorIds: { item: ['a1'], extra: true } }] }] },
+  ];
+  for (const candidate of cases) {
+    let calls = 0;
+    await assert.rejects(invokeHostedTranslationBlock(batch(), options(), { requestGateway: async () => { calls++; return response(candidate); } }), /TRANSLATION_OUTPUT_/u);
+    assert.equal(calls, 1);
+  }
+});
+
+test('the translation function rejects legacy nested JSON and mixed argument shapes', async () => {
+  for (const args of [{ candidateJson: JSON.stringify(output) }, { candidate: JSON.stringify(output) }, { candidate: output, extra: true }]) {
+    const reply = JSON.parse(await response().text());
+    reply.choices[0].message.tool_calls[0].function.arguments = JSON.stringify(args);
+    await assert.rejects(invokeHostedTranslationBlock(batch(), options(), { requestGateway: async () => ({ ok: true, status: 200, text: async () => JSON.stringify(reply) }) }), /TRANSLATION_OUTPUT_OBJECT_REQUIRED/u);
+  }
+});
 
 test('one batched check preserves all candidate text and aliases without conflicting output shapes', async () => {
   let request; let count = 0;
