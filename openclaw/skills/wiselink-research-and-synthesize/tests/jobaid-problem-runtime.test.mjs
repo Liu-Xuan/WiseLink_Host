@@ -85,7 +85,7 @@ function fixture(steps, overrides = {}) {
                     function: {
                       name: 'return_wiselink_assessment_step',
                       arguments: JSON.stringify({
-                        stepJson: JSON.stringify(step),
+                        step,
                       }),
                     },
                   },
@@ -363,4 +363,32 @@ test('dependency diagnostics cover every Host citation location and stay within 
   issue.premiseRefs = [' ref '];
   assert.deepEqual(jobAidWorkDependencyErrors(work), []);
   assert.deepEqual(issue.sourceDependencies, []);
+});
+
+test('typed Overall finish preserves quotes and line breaks with one JSON encoding and no resave', async () => {
+  const consistencyCheck = '保留原文 "Do not install"。\n路径示例 C:\\maintenance；条件仍待确认。';
+  const f = fixture([{ action: 'FINISH', consistencyCheck }]);
+  const result = await f.run({ ...modelInput(), purpose: 'OVERALL_CONSISTENCY', expectedWorkRevision: 1,
+    previousWork: { workRevisionRef: 'JAWR-1', workRevision: 1, content: completed } });
+  assert.equal(result.output.workRevisionRef, 'JAWR-1');
+  assert.equal(result.output.consistencyCheck, consistencyCheck);
+  assert.equal(f.saves.length, 0);
+  const parameters = f.calls[0].tools[0].function.parameters;
+  assert.deepEqual(parameters.required, ['step']);
+  assert.equal(parameters.properties.step.type, 'object');
+  assert.equal(parameters.properties.step.properties.work.properties.issues.type, 'array');
+});
+
+test('typed step unwraps only exact declared native arrays without editing content or extra fields', async () => {
+  const { decodeJobAidStep } = await import('../scripts/jobaid-work-shape.mjs');
+  const step = { action: 'SAVE_WORK', work: { issues: { item: [{ measures: { item: [
+    { addresses: '原文 "quote"\n下一行', basisRefs: { item: ['ref'] }, extra: { item: ['keep'] } },
+  ] } }] } } };
+  const result = decodeJobAidStep(step);
+  assert.equal(result.work.issues[0].measures[0].addresses, '原文 "quote"\n下一行');
+  assert.deepEqual(result.work.issues[0].measures[0].basisRefs, ['ref']);
+  assert.deepEqual(result.work.issues[0].measures[0].extra, { item: ['keep'] });
+  assert.deepEqual(decodeJobAidStep({ action: 'READ_SOURCES', sourceRefs: { item: ['ref'], extra: true } }).sourceRefs,
+    { item: ['ref'], extra: true });
+  assert.deepEqual(step.work.issues.item[0].measures.item[0].basisRefs, { item: ['ref'] });
 });

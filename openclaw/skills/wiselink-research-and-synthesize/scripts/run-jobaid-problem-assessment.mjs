@@ -1,4 +1,4 @@
-import { jobAidWorkTypeErrors, jobAidWorkDependencyErrors } from './jobaid-work-shape.mjs';
+import { jobAidWorkTypeErrors, jobAidWorkDependencyErrors, JOBAID_STEP_SHAPE, decodeJobAidStep } from './jobaid-work-shape.mjs';
 import { randomUUID } from 'node:crypto';
 import {
   M3_MAX_COMPLETION_TOKENS,
@@ -144,14 +144,8 @@ export async function invokeHostedJobAidProblemModel(
               parameters: {
                 type: 'object',
                 additionalProperties: false,
-                required: ['stepJson'],
-                properties: {
-                  stepJson: {
-                    type: 'string',
-                    description:
-                      'Complete JSON step as specified in the system instructions.',
-                  },
-                },
+                required: ['step'],
+                properties: { step: JOBAID_STEP_SHAPE },
               },
             },
           },
@@ -216,9 +210,9 @@ export async function invokeHostedJobAidProblemModel(
     let submittedWork;
     try {
       const args = parseStrictJsonObject(call.function.arguments);
-      if (Object.keys(args).length !== 1 || typeof args.stepJson !== 'string')
-        throw new Error('JOBAID_STEP_JSON_REQUIRED');
-      const step = parseStrictJsonObject(args.stepJson);
+      if (Object.keys(args).length !== 1 || !args.step || typeof args.step !== 'object' || Array.isArray(args.step))
+        throw new Error('JOBAID_STEP_OBJECT_REQUIRED');
+      const step = decodeJobAidStep(args.step);
       if (step.action === 'READ_SOURCES') {
         if (
           !Array.isArray(step.sourceRefs) ||
