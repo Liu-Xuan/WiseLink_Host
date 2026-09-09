@@ -43,6 +43,11 @@ import {
 } from '@client/src/features/workbench/workbench-layout';
 
 import './workbench-shell.css';
+import {
+  createFullscreenRequestController,
+  type FullscreenRequestController,
+  type FullscreenRequestState,
+} from './fullscreen-request';
 
 export interface WorkbenchTab {
   key: string;
@@ -200,8 +205,17 @@ export default function WorkbenchShell({
   const [immersive, setImmersive] = useState(readingLayout);
   const [focusMode, setFocusMode] = useState(readingLayout);
   const [quickOpen, setQuickOpen] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [fullscreenError, setFullscreenError] = useState<string | null>(null);
+  const [fullscreenState, setFullscreenState] =
+    useState<FullscreenRequestState>({
+      isFullscreen: false,
+      phase: 'idle',
+      message: null,
+    });
+  const fullscreenControllerRef = useRef<FullscreenRequestController | null>(
+    null,
+  );
+  const isFullscreen = fullscreenState.isFullscreen;
+  const fullscreenPending = fullscreenState.phase !== 'idle';
   const previousReadingLayoutRef = useRef(readingLayout);
   const [isCompact, setIsCompact] = useState(defaultCompactViewport);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -388,14 +402,35 @@ export default function WorkbenchShell({
 
   /* ── 原生全屏 ── */
   useEffect(() => {
-    const handler = () =>
-      setIsFullscreen(document.fullscreenElement === shellRef.current);
+    const shell = shellRef.current;
+    if (!shell) return;
+    const controller = createFullscreenRequestController(
+      {
+        read: () => document.fullscreenElement === shell,
+        enter:
+          typeof shell.requestFullscreen === 'function'
+            ? () => shell.requestFullscreen()
+            : undefined,
+        exit:
+          typeof document.exitFullscreen === 'function'
+            ? () => document.exitFullscreen()
+            : undefined,
+      },
+      setFullscreenState,
+    );
+    fullscreenControllerRef.current = controller;
+    controller.observe();
+    const handler = () => controller.observe();
     document.addEventListener('fullscreenchange', handler);
-    return () => document.removeEventListener('fullscreenchange', handler);
+    return () => {
+      document.removeEventListener('fullscreenchange', handler);
+      controller.dispose();
+      fullscreenControllerRef.current = null;
+    };
   }, []);
 
   const toggleFocusMode = useCallback(() => {
-    setFullscreenError(null);
+    fullscreenControllerRef.current?.clearFeedback();
     if (focusMode) {
       const previous = focusRestoreRef.current;
       setNavCollapsed(previous.navCollapsed);
@@ -425,26 +460,20 @@ export default function WorkbenchShell({
   }, [readingLayout, focusMode, toggleFocusMode]);
 
   const toggleFullscreen = useCallback(() => {
-    setFullscreenError(null);
-    if (document.fullscreenElement === shellRef.current) {
-      void document.exitFullscreen().catch(() => {
-        setFullscreenError(
-          '退出系统全屏失败，请按 Esc 或使用浏览器全屏菜单退出。',
-        );
+    if (fullscreenPending) return;
+    if (!focusMode && document.fullscreenElement !== shellRef.current)
+      toggleFocusMode();
+    const controller = fullscreenControllerRef.current;
+    if (!controller) {
+      setFullscreenState({
+        isFullscreen: Boolean(shellRef.current && document.fullscreenElement === shellRef.current),
+        phase: 'idle',
+        message: '全屏控制尚未就绪，请稍后重试。',
       });
       return;
     }
-    if (!focusMode) toggleFocusMode();
-    if (!shellRef.current?.requestFullscreen) {
-      setFullscreenError('当前浏览器不支持系统全屏，已展开专注阅读布局。');
-      return;
-    }
-    void shellRef.current.requestFullscreen().catch(() => {
-      setFullscreenError(
-        '浏览器未允许系统全屏；可继续专注阅读，或重新点击全屏。',
-      );
-    });
-  }, [focusMode, toggleFocusMode]);
+    controller.toggle();
+  }, [focusMode, fullscreenPending, toggleFocusMode]);
 
   useEffect(() => {
     const exitFocus = (event: KeyboardEvent): void => {
@@ -800,6 +829,8 @@ export default function WorkbenchShell({
             type="button"
             className="wl-workbench-tool-btn wl-workbench-fullscreen-trigger"
             onClick={toggleFullscreen}
+            disabled={fullscreenPending}
+            aria-busy={fullscreenPending}
             aria-label={isFullscreen ? '退出全屏' : '全屏阅读'}
             title={isFullscreen ? '退出全屏（Esc）' : '全屏阅读'}
             aria-pressed={isFullscreen}
@@ -809,11 +840,20 @@ export default function WorkbenchShell({
             ) : (
               <Maximize2 aria-hidden="true" />
             )}
-            <span>{isFullscreen ? '退出全屏' : '全屏'}</span>
+            <span>
+              {fullscreenPending
+                ? '等待浏览器'
+                : isFullscreen
+                  ? '退出全屏'
+                  : '全屏'}
+            </span>
           </button>
-          {fullscreenError ? (
-            <span className="wl-workbench-fullscreen-error" role="alert">
-              {fullscreenError}
+          {fullscreenState.message ? (
+            <span
+              className="wl-workbench-fullscreen-error"
+              role={fullscreenState.phase === 'pending' ? 'status' : 'alert'}
+            >
+              {fullscreenState.message}
             </span>
           ) : null}
           {!isCompact ? (
@@ -920,7 +960,10 @@ export default function WorkbenchShell({
                 仅隐藏应用外壳
               </DropdownMenuCheckboxItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onSelect={toggleFullscreen}>
+              <DropdownMenuItem
+                onSelect={toggleFullscreen}
+                disabled={fullscreenPending}
+              >
                 <Maximize2 aria-hidden="true" />
                 {isFullscreen ? '退出系统全屏' : '进入系统全屏'}
               </DropdownMenuItem>

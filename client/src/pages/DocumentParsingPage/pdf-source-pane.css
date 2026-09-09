@@ -376,6 +376,7 @@ html[data-wl-transparency='reduced'] .parse-pdf-toolbar {
   }
 }
 
+.parse-reader-split.is-pdf-active .parse-pdf-mobile-return,
 .wl-workbench-main[data-content-layout='reader-single']
   .parse-pdf-mobile-return {
   display: inline-flex;
@@ -389,6 +390,7 @@ html[data-wl-transparency='reduced'] .parse-pdf-toolbar {
   font: inherit;
 }
 
+.parse-reader-split.is-pdf-active .parse-pdf-mobile-return:focus-visible,
 .wl-workbench-main[data-content-layout='reader-single']
   .parse-pdf-mobile-return:focus-visible {
   outline: 2px solid var(--wl-accent);

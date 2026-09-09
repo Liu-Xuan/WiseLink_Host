@@ -563,10 +563,7 @@ export default function DocumentParsingPage() {
 
   if (loading && data === null) {
     return (
-      <main
-        className="parse-shell parse-shell--workbench"
-        aria-busy="true"
-      >
+      <main className="parse-shell parse-shell--workbench" aria-busy="true">
         <WorkbenchShell
           key={`${sessionGeneration}:${workItemId}`}
           retainTabScroll
@@ -797,11 +794,11 @@ export default function DocumentParsingPage() {
     locateSourceRef(unitId, sourceRef, 'structured');
   }
 
-  function returnToStructuredReader(): void {
+  function returnToDocumentReader(): void {
     updateDeepLink({
       node: 'reader',
       tab: 'reader',
-      readerMode: 'structured',
+      readerMode: semanticReading ? 'translation' : 'structured',
     });
   }
 
@@ -1226,7 +1223,10 @@ export default function DocumentParsingPage() {
               explicitTargetPage={requestedPdfTargetPage}
               locateSignal={evidenceSignal}
               onLocate={locatePdfQuerySourceRef}
-              onReturnStructured={returnToStructuredReader}
+              onReturnStructured={returnToDocumentReader}
+              returnLabel={
+                semanticReading ? '返回中文 / 对照阅读' : '返回结构化原文'
+              }
             />
           </div>
         </RetainedWorkbenchPanel>

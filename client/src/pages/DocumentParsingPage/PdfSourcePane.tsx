@@ -25,8 +25,9 @@ export interface PdfSourcePaneProps {
   locateSignal: number;
   /** 点击页码定位：跳回 Reader 结构化视图 */
   onLocate: (unitId: string, sourceRef: string) => void;
-  /** 390px 单面板下返回结构化原文 */
+  /** 单独 PDF 阅读时返回文档内容；语义译文可用时由调用方切回中文。 */
   onReturnStructured: () => void;
+  returnLabel?: string;
 }
 
 function fileSizeLabel(bytes: number): string {
@@ -48,6 +49,7 @@ export default function PdfSourcePane({
   locateSignal,
   onLocate,
   onReturnStructured,
+  returnLabel = '返回结构化原文',
 }: PdfSourcePaneProps) {
   const pdfPreview = data.readerProjection?.pdfPreview ?? null;
   const translation = data.readerProjection?.translation ?? null;
@@ -136,7 +138,7 @@ export default function PdfSourcePane({
           className="parse-pdf-mobile-return"
           onClick={onReturnStructured}
         >
-          返回结构化原文
+          {returnLabel}
         </button>
       </div>
 

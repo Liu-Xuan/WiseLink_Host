@@ -215,7 +215,7 @@ function buildReaderCapabilities(
     },
     {
       mode: 'source',
-      label: '原文件对照',
+      label: 'PDF 原文',
       status: projection ? projection.pdfPreview.status : 'UNAVAILABLE',
       note:
         projection?.pdfPreview.status === 'AVAILABLE'
